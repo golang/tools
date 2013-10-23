@@ -8,3 +8,4 @@ Packages include a type-checker for Go and an implementation of the Single Stati
 Assignment (SSA) representation for Go programs.
 
 To submit changes to this repository, see http://golang.org/doc/contribute.html.
+
