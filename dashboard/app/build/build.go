@@ -24,6 +24,8 @@ import (
 	"appengine/datastore"
 
 	"cache"
+
+	_ "appengine/remote_api"
 )
 
 const (
