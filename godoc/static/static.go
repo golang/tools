@@ -731,7 +731,7 @@ function setupDropdownPlayground() {
       'runEl': $('.run', div),
       'fmtEl': $('.fmt', div),
       'shareEl': $('.share', div),
-      'shareRedirect': 'http://play.golang.org/p/'
+      'shareRedirect': '//play.golang.org/p/'
     });
   },
   function() {
@@ -755,7 +755,7 @@ function setupInlinePlayground() {
 				'runEl':    $('.run', el),
 				'fmtEl':    $('.fmt', el),
 				'shareEl':  $('.share', el),
-				'shareRedirect': 'http://play.golang.org/p/'
+				'shareRedirect': '//play.golang.org/p/'
 			});
 
 			// Make the code textarea resize to fit content.
