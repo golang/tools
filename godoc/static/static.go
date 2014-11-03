@@ -535,7 +535,6 @@ func main() {
 <div class="container">
 
 {{with .Title}}
-  <div id="plusone"><g:plusone size="small" annotation="none"></g:plusone></div>
   <h1>{{html .}}</h1>
 {{end}}
 {{with .Subtitle}}
@@ -811,15 +810,6 @@ function toggleHash() {
     }
 }
 
-function addPlusButtons() {
-  var po = document.createElement('script');
-  po.type = 'text/javascript';
-  po.async = true;
-  po.src = 'https://apis.google.com/js/platform.js';
-  var s = document.getElementsByTagName('script')[0];
-  s.parentNode.insertBefore(po, s);
-}
-
 $(document).ready(function() {
   bindSearchEvents();
   generateTOC();
@@ -835,7 +825,6 @@ $(document).ready(function() {
   setupTypeInfo();
   setupCallgraphs();
   toggleHash();
-  addPlusButtons();
 
   // godoc.html defines window.initFuncs in the <head> tag, and root.html and
   // codewalk.js push their on-page-ready functions to the list.
