@@ -40,7 +40,7 @@ func Now(c appengine.Context) uint64 {
 func Tick(c appengine.Context) uint64 {
 	t, err := memcache.Increment(c, TimeKey, 1, newTime())
 	if err != nil {
-		c.Errorf("cache.Tick: %v", err)
+		c.Errorf("cache: tick: %v", err)
 		return 0
 	}
 	return t
@@ -50,19 +50,21 @@ func Tick(c appengine.Context) uint64 {
 // value. It reports whether it found the cache record and logs any errors to
 // the admin console.
 func Get(r *http.Request, now uint64, name string, value interface{}) bool {
+	c := appengine.NewContext(r)
 	if now == 0 || r.FormValue(nocache) != "" {
+		c.Debugf("cache: skipping get: now=%v, nocache=%q", now, nocache)
 		return false
 	}
-	c := appengine.NewContext(r)
 	key := fmt.Sprintf("%s.%d", name, now)
 	_, err := memcache.JSON.Get(c, key, value)
-	if err == nil {
-		c.Debugf("cache hit %q", key)
+	switch err {
+	case nil:
+		c.Debugf("cache: get %q: hit", key)
 		return true
-	}
-	c.Debugf("cache miss %q", key)
-	if err != memcache.ErrCacheMiss {
-		c.Errorf("get cache %q: %v", key, err)
+	case memcache.ErrCacheMiss:
+		c.Debugf("cache: get %q: cache miss", key)
+	default:
+		c.Errorf("cache: get %q: %v", key, err)
 	}
 	return false
 }
@@ -70,10 +72,11 @@ func Get(r *http.Request, now uint64, name string, value interface{}) bool {
 // Set puts value into memcache under name at time now.
 // It logs any errors to the admin console.
 func Set(r *http.Request, now uint64, name string, value interface{}) {
+	c := appengine.NewContext(r)
 	if now == 0 || r.FormValue(nocache) != "" {
+		c.Debugf("cache: skipping set: now=%v, nocache=%q", now, nocache)
 		return
 	}
-	c := appengine.NewContext(r)
 	key := fmt.Sprintf("%s.%d", name, now)
 	err := memcache.JSON.Set(c, &memcache.Item{
 		Key:        key,
@@ -81,6 +84,8 @@ func Set(r *http.Request, now uint64, name string, value interface{}) {
 		Expiration: expiry,
 	})
 	if err != nil {
-		c.Errorf("set cache %q: %v", key, err)
+		c.Errorf("cache: set %q: %v", key, err)
+		return
 	}
+	c.Debugf("cache: set %q: ok", key)
 }
