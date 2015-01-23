@@ -34,6 +34,12 @@ var importToGroup = []func(importPath string) (num int, ok bool){
 		}
 		return
 	},
+	func(importPath string) (num int, ok bool) {
+		if strings.HasPrefix(importPath, "sm/") {
+			return 3, true
+		}
+		return
+	},
 }
 
 func importGroup(importPath string) int {

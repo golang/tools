@@ -710,21 +710,38 @@ var (
 `,
 	},
 
-	// Unused named import is mistaken for unnamed import
-	// golang.org/issue/8149
+	// make sure spacaemonkey goes into it's own group
 	{
-		name: "issue 8149",
+		name: "spacemonkey",
 		in: `package main
 
-import foo "fmt"
+import (
+"fmt"
+"sm/foo"
+"github.com/foo/bar"
+)
 
-func main() { fmt.Println() }
+var (
+a = bar.a
+b = foo.a
+c = fmt.Printf
+)
 `,
 		out: `package main
 
-import "fmt"
+import (
+	"fmt"
 
-func main() { fmt.Println() }
+	"github.com/foo/bar"
+
+	"sm/foo"
+)
+
+var (
+	a = bar.a
+	b = foo.a
+	c = fmt.Printf
+)
 `,
 	},
 }
