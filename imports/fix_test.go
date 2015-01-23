@@ -494,7 +494,6 @@ c = fmt.Printf
 
 import (
 	"fmt"
-
 	"gu"
 
 	"github.com/foo/bar"
@@ -601,15 +600,11 @@ func main() {
 
 import (
 	"fmt"
-
-	renamed_bar "github.com/foo/bar"
-
 	"io"
-
-	. "github.com/foo/baz"
-
 	"strings"
 
+	renamed_bar "github.com/foo/bar"
+	. "github.com/foo/baz"
 	_ "github.com/foo/qux"
 )
 
@@ -741,6 +736,46 @@ var (
 	a = bar.a
 	b = foo.a
 	c = fmt.Printf
+)
+`,
+	},
+
+	// make sure spacaemonkey goes into it's own group or whatever
+	{
+		name: "spacemonkey whatever",
+		in: `package main
+
+import (
+"fmt"
+"sm/foo"
+"github.com/foo/bar"
+
+"sm/baz"
+)
+
+var (
+a = bar.a
+b = foo.a
+c = fmt.Printf
+d = baz.a
+)
+`,
+		out: `package main
+
+import (
+	"fmt"
+
+	"github.com/foo/bar"
+
+	"sm/baz"
+	"sm/foo"
+)
+
+var (
+	a = bar.a
+	b = foo.a
+	c = fmt.Printf
+	d = baz.a
 )
 `,
 	},
