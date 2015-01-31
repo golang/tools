@@ -10,6 +10,7 @@ import (
 	"errors"
 	"go/ast"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
@@ -64,13 +65,15 @@ var (
 	errTagSyntax      = errors.New("bad syntax for struct tag pair")
 	errTagKeySyntax   = errors.New("bad syntax for struct tag key")
 	errTagValueSyntax = errors.New("bad syntax for struct tag value")
+	structTagRegexp   = regexp.MustCompile(
+		"([^:]+:\"[^\"]+\")( [^:]+:\"[^\"]+\")*")
 )
 
 // validateStructTag parses the struct tag and returns an error if it is not
 // in the canonical format, which is a space-separated list of key:"value"
 // settings.
 func validateStructTag(tag string) error {
-	elems := strings.Split(tag, " ")
+	elems := structTagRegexp.Split(tag, -1)
 	for _, elem := range elems {
 		if elem == "" {
 			continue
