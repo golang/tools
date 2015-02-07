@@ -23,6 +23,12 @@ import (
 // a group number.
 var importToGroup = []func(importPath string) (num int, ok bool){
 	func(importPath string) (num int, ok bool) {
+		if strings.HasPrefix(importPath, "sm/") {
+			return 3, true
+		}
+		return
+	},
+	func(importPath string) (num int, ok bool) {
 		if strings.HasPrefix(importPath, "appengine") {
 			return 2, true
 		}
@@ -31,12 +37,6 @@ var importToGroup = []func(importPath string) (num int, ok bool){
 	func(importPath string) (num int, ok bool) {
 		if strings.Contains(importPath, ".") {
 			return 1, true
-		}
-		return
-	},
-	func(importPath string) (num int, ok bool) {
-		if strings.HasPrefix(importPath, "sm/") {
-			return 3, true
 		}
 		return
 	},
