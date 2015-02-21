@@ -17,6 +17,7 @@ type Image struct {
 	URL    string
 	Width  int
 	Height int
+	Align  string
 }
 
 func (i Image) TemplateName() string { return "image" }
@@ -42,6 +43,21 @@ func parseImage(ctx *Context, fileName string, lineno int, text string) (Elem, e
 		}
 		if v, ok := a[1].(int); ok {
 			img.Width = v
+		}
+	case 3:
+		// If a parameter is empty (underscore) or invalid
+		// leave the field set to zero. The "image" action
+		// template will then omit that img tag attribute and
+		// the browser will calculate the value to preserve
+		// the aspect ratio.
+		if v, ok := a[0].(int); ok {
+			img.Height = v
+		}
+		if v, ok := a[1].(int); ok {
+			img.Width = v
+		}
+		if v, ok := a[2].(string); ok {
+			img.Align = v
 		}
 	default:
 		return nil, fmt.Errorf("incorrect image invocation: %q", text)

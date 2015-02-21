@@ -238,6 +238,10 @@ func parseArgs(name string, line int, args []string) (res []interface{}, err err
 			res[i] = v
 		case '$':
 			res[i] = "$"
+		case 'l':
+			res[i] = "left"
+		case 'r':
+			res[i] = "right"
 		case '_':
 			if len(v) == 1 {
 				// Do nothing; "_" indicates an intentionally empty parameter.
