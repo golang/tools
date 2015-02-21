@@ -33,7 +33,7 @@ It determines how the formatting actions are rendered.
 
 {{define "image"}}
 <div class="image">
-  <img src="{{.URL}}"{{with .Height}} height="{{.}}"{{end}}{{with .Width}} width="{{.}}"{{end}}>
+  <img src="{{.URL}}"{{with .Height}} height="{{.}}"{{end}}{{with .Width}} width="{{.}}"{{end}}{{with .Align}} class="{{.}}"{{end}}>
 </div>
 {{end}}
 
