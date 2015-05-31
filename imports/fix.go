@@ -23,6 +23,13 @@ import (
 // a group number.
 var importToGroup = []func(importPath string) (num int, ok bool){
 	func(importPath string) (num int, ok bool) {
+		if strings.HasPrefix(importPath, "zeebo/") ||
+			strings.HasPrefix(importPath, "github.com/zeebo/") {
+			return 4, true
+		}
+		return
+	},
+	func(importPath string) (num int, ok bool) {
 		if strings.HasPrefix(importPath, "sm/") {
 			return 3, true
 		}
