@@ -62,6 +62,7 @@ After that come slides/sections, each after a blank line:
 	.link http://foo label
 	.html file.html
 	.caption _Gopher_ by [[http://www.reneefrench.com][Renée French]]
+	.latex \frac{2L}{c*\sqrt{1-\frac{u^2}{c^2}}}
 
 	Again, more text
 
@@ -200,6 +201,23 @@ that cannot be created using only the slide format.
 It is your responsibilty to make sure the included HTML is valid and safe.
 
 	.html file.html
+
+latex:
+
+The template uses the function "latex" to inject LaTeX equations as SVG image files.
+
+The syntax is simple: 1 or 3 space-separated arguments.
+The first argument is always the LaTeX syntax.
+If there are more arguments, they are the height and width;
+both must be present, or substituted with an underscore.
+Replacing a dimension argument with the underscore parameter
+preserves the aspect ratio of the image when scaling.
+
+	.latex e=mc^2
+
+	.latex 2L/[c*sqrt(1-u^2/c^2)] 300 200
+
+	.latex t_{0}=\frac{2L}{c*\sqrt{1-\frac{u^2}{c^2}}} _ 200
 
 */
 package present // import "golang.org/x/tools/present"
