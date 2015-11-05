@@ -30,7 +30,8 @@ var importToGroup = []func(importPath string) (num int, ok bool){
 		return
 	},
 	func(importPath string) (num int, ok bool) {
-		if strings.HasPrefix(importPath, "sm/") {
+		if strings.HasPrefix(importPath, "sm/") ||
+			strings.HasPrefix(importPath, "fabric/") {
 			return 3, true
 		}
 		return
