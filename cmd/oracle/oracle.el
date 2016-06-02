@@ -40,7 +40,6 @@
 (let ((m go-mode-map))
   (define-key m (kbd "C-c C-o t") #'go-oracle-describe) ; t for type
   (define-key m (kbd "C-c C-o f") #'go-oracle-freevars)
-  (define-key m (kbd "C-c C-o g") #'go-oracle-callgraph)
   (define-key m (kbd "C-c C-o i") #'go-oracle-implements)
   (define-key m (kbd "C-c C-o c") #'go-oracle-peers)  ; c for channel
   (define-key m (kbd "C-c C-o r") #'go-oracle-referrers)
@@ -171,11 +170,6 @@ file name with a small hyperlink.  Display the result."
   "Show the set of callers of the function containing the current point."
   (interactive)
   (go-oracle--run "callers" t))
-
-(defun go-oracle-callgraph ()
-  "Show the callgraph of the current program."
-  (interactive)
-  (go-oracle--run "callgraph" t))
 
 (defun go-oracle-callstack ()
   "Show an arbitrary path from a root of the call graph to the
