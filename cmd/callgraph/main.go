@@ -175,8 +175,7 @@ func doCallgraph(ctxt *build.Context, algo, format string, tests bool, args []st
 	}
 
 	// Use the initial packages from the command line.
-	_, err := conf.FromArgs(args, tests)
-	if err != nil {
+	if _, err := conf.FromArgs(args, tests); err != nil {
 		return err
 	}
 
