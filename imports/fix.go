@@ -150,7 +150,7 @@ func fixImports(fset *token.FileSet, f *ast.File, filename string, removeOnly bo
 			delete(refs, pkgName)
 		}
 	}
-	if removeOnly{
+	if removeOnly {
 		return nil, nil
 	}
 	// Search for imports matching potential package references.

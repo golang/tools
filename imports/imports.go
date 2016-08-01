@@ -6,7 +6,7 @@
 
 // Package imports implements a Go pretty-printer (like package "go/format")
 // that also adds or removes import statements as necessary.
-package imports 
+package imports
 
 import (
 	"bufio"
@@ -55,17 +55,19 @@ func Process(filename string, src []byte, opt *Options) ([]byte, error) {
 		return nil, err
 	}
 
-	if !opt.FormatOnly {
-		_, err = fixImports(fileSet, file, filename, false)
-		if err != nil {
-			return nil, err
-		}
-	}
 	if opt.RemoveOnly {
 		_, err = fixImports(fileSet, file, filename, true)
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		if !opt.FormatOnly {
+			_, err = fixImports(fileSet, file, filename, false)
+			if err != nil {
+				return nil, err
+			}
+		}
+
 	}
 
 	sortImports(fileSet, file)
