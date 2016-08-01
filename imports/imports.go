@@ -6,7 +6,7 @@
 
 // Package imports implements a Go pretty-printer (like package "go/format")
 // that also adds or removes import statements as necessary.
-package imports // import "golang.org/x/tools/imports"
+package imports 
 
 import (
 	"bufio"
@@ -34,6 +34,7 @@ type Options struct {
 	TabIndent bool // Use tabs for indent (true if nil *Options provided)
 	TabWidth  int  // Tab width (8 if nil *Options provided)
 
+	RemoveOnly bool // Disable the insertion of imports
 	FormatOnly bool // Disable the insertion and deletion of imports
 }
 
@@ -55,7 +56,13 @@ func Process(filename string, src []byte, opt *Options) ([]byte, error) {
 	}
 
 	if !opt.FormatOnly {
-		_, err = fixImports(fileSet, file, filename)
+		_, err = fixImports(fileSet, file, filename, false)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if opt.RemoveOnly {
+		_, err = fixImports(fileSet, file, filename, true)
 		if err != nil {
 			return nil, err
 		}

@@ -68,7 +68,7 @@ func importGroup(importPath string) int {
 	return 0
 }
 
-func fixImports(fset *token.FileSet, f *ast.File, filename string) (added []string, err error) {
+func fixImports(fset *token.FileSet, f *ast.File, filename string, removeOnly bool) (added []string, err error) {
 	// refs are a set of possible package references currently unsatisfied by imports.
 	// first key: either base package (e.g. "fmt") or renamed package
 	// second key: referenced package symbol (e.g. "Println")
@@ -150,7 +150,9 @@ func fixImports(fset *token.FileSet, f *ast.File, filename string) (added []stri
 			delete(refs, pkgName)
 		}
 	}
-
+	if removeOnly{
+		return nil, nil
+	}
 	// Search for imports matching potential package references.
 	searches := 0
 	type result struct {
