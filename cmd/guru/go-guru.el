@@ -10,18 +10,43 @@
 
 ;;; Commentary:
 
-;; To install the Go guru, run:
+;; To enable the Go guru in Emacs, use this command to download,
+;; build, and install the tool in $GOROOT/bin:
 ;;
-;; $ go get golang.org/x/tools/cmd/guru
+;;     $ go get golang.org/x/tools/cmd/guru
 ;;
-;; Load this file into Emacs and set go-guru-scope to your
-;; configuration.  Then, find a file of Go source code,
-;; select an expression of interest, and press `C-c C-o d' (for "describe")
-;; or run one of the other go-guru-xxx commands.
+;; Verify that the tool is on your $PATH:
+;;
+;;     $ guru -help
+;;     Go source code guru.
+;;     Usage: guru [flags] <mode> <position>
+;;     ...
+;;
+;; Then copy this file to a directory on your `load-path',
+;; and add this to your ~/.emacs:
+;;
+;;     (require 'go-guru)
+;;
+;; Inside a buffer of Go source code, select an expression of
+;; interest, and type `C-c C-o d' (for "describe") or run one of the
+;; other go-guru-xxx commands.  If you use `menu-bar-mode', these
+;; commands are available from the Guru menu.
+;;
+;; To enable identifier highlighting mode in a Go source buffer, use:
+;;
+;;     (go-guru-hl-identifier-mode)
+;;
+;; To enable it automatically in all Go source buffers,
+;; add this to your ~/.emacs:
+;;
+;;     (add-hook 'go-mode-hook #'go-guru-hl-identifier-mode)
+;;
+;; See http://golang.org/s/using-guru for more information about guru.
 
 ;;; Code:
 
 (require 'compile)
+(require 'easymenu)
 (require 'go-mode)
 (require 'json)
 (require 'simple)
@@ -93,6 +118,25 @@
   (define-key m "x" #'go-guru-expand-region)) ;; x for expand
 
 (define-key go-mode-map (kbd "C-c C-o") #'go-guru-map)
+
+(easy-menu-define go-guru-mode-menu go-mode-map
+  "Menu for Go Guru."
+  '("Guru"
+    ["Jump to Definition"    go-guru-definition t]
+    ["Show Referrers"        go-guru-referrers t]
+    ["Show Free Names"       go-guru-freevars t]
+    ["Describe Expression"   go-guru-describe t]
+    ["Show Implements"       go-guru-implements t]
+    "---"
+    ["Show Callers"          go-guru-callers t]
+    ["Show Callees"          go-guru-callees t]
+    ["Show Callstack"        go-guru-callstack t]
+    "---"
+    ["Show Points-To"        go-guru-pointsto t]
+    ["Show Which Errors"     go-guru-whicherrs t]
+    ["Show Channel Peers"    go-guru-peers t]
+    "---"
+    ["Set pointer analysis scope..." go-guru-set-scope t]))
 
 ;;;###autoload
 (defun go-guru-set-scope ()
@@ -209,7 +253,7 @@ variant of `compilation-mode'."
   (or buffer-file-name
       (error "Cannot use guru on a buffer without a file name"))
   (let* ((filename (file-truename buffer-file-name))
-	 (cmd (combine-and-quote-strings (go-guru--command mode filename)))
+	 (cmd (mapconcat #'shell-quote-argument (go-guru--command mode filename) " "))
 	 (process-connection-type nil) ; use pipe (not pty) so EOF closes stdin
 	 (procbuf (compilation-start cmd 'go-guru-output-mode)))
     (with-current-buffer procbuf
