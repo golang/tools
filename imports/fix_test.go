@@ -771,7 +771,7 @@ func main() {}
 import (
 	"fmt"
 
-	"golang.org/x/foo"
+	"github.com/golang/foo"
 )
 
 func main() {}
@@ -1090,14 +1090,14 @@ func TestFindImportRandRead(t *testing.T) {
 func TestFindImportVendor(t *testing.T) {
 	testConfig{
 		gorootFiles: map[string]string{
-			"vendor/golang.org/x/net/http2/hpack/huffman.go": "package hpack\nfunc HuffmanDecode() { }\n",
+			"vendor/github.com/golang/net/http2/hpack/huffman.go": "package hpack\nfunc HuffmanDecode() { }\n",
 		},
 	}.test(t, func(t *goimportTest) {
 		got, rename, err := findImportGoPath("hpack", map[string]bool{"HuffmanDecode": true}, filepath.Join(t.goroot, "src/math/x.go"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := "golang.org/x/net/http2/hpack"
+		want := "github.com/golang/net/http2/hpack"
 		if got != want || rename {
 			t.Errorf(`findImportGoPath("hpack", HuffmanDecode ...) = %q, %t; want %q, false`, got, rename, want)
 		}
@@ -1120,7 +1120,7 @@ func TestProcessVendor(t *testing.T) {
 
 		want := "golang_org/x/net/http2/hpack"
 		if _, err := os.Stat(filepath.Join(runtime.GOROOT(), "src/vendor", want)); os.IsNotExist(err) {
-			want = "golang.org/x/net/http2/hpack"
+			want = "github.com/golang/net/http2/hpack"
 		}
 
 		if !bytes.Contains(out, []byte(want)) {
