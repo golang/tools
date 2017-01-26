@@ -247,7 +247,7 @@ function fixFocus() {
 function toggleHash() {
   // Open all of the toggles for a particular hash.
   var els = $(document.getElementById(window.location.hash.substring(1)),
-      $("a[name='" + window.location.hash.substring(1) + "']"));
+      $.find("a[name='" + window.location.hash.substring(1) + "']"));
   while (els.length) {
     for (var i = 0; i < els.length; i++) {
       var el = $(els[i]);
@@ -263,7 +263,14 @@ function personalizeInstallInstructions() {
   var prefix = '?download=';
   var s = window.location.search;
   if (s.indexOf(prefix) != 0) {
-    // No 'download' query string; bail.
+    // No 'download' query string; detect "test" instructions from User Agent.
+    if (navigator.platform.indexOf('Win') != -1) {
+      $('.testUnix').hide();
+      $('.testWindows').show();
+    } else {
+      $('.testUnix').show();
+      $('.testWindows').hide();
+    }
     return;
   }
 
