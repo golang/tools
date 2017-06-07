@@ -631,12 +631,12 @@ import (
 type I int
 `)
 	// The AddImport order here matters.
-	AddImport(fset, file, "golang.org/x/tools/go/ast/astutil")
+	AddImport(fset, file, "go/ast/astutil")
 	AddImport(fset, file, "os")
 	want := `package main
 
 import (
-	"golang.org/x/tools/go/ast/astutil"
+	"go/ast/astutil"
 	"os"
 )
 
