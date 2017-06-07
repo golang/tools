@@ -50,9 +50,9 @@ func htmlOutput(profile, outfile string) error {
 			return err
 		}
 		d.Files = append(d.Files, &templateFile{
-			Name:     fn,
-			Body:     template.HTML(buf.String()),
-			Coverage: percentCovered(profile),
+			Name:    fn,
+			Body:    template.HTML(buf.String()),
+			Summary: coverageSummary(profile),
 		})
 	}
 
@@ -87,10 +87,11 @@ func htmlOutput(profile, outfile string) error {
 	return nil
 }
 
-// percentCovered returns, as a percentage, the fraction of the statements in
-// the profile covered by the test run.
+// coverageSummary returns, as a string, the fraction of the statements in
+// the profile covered by the test run as a rational (covered/uncovered) and
+// a percentage.
 // In effect, it reports the coverage of a given source file.
-func percentCovered(p *cover.Profile) float64 {
+func coverageSummary(p *cover.Profile) string {
 	var total, covered int64
 	for _, b := range p.Blocks {
 		total += int64(b.NumStmt)
@@ -98,10 +99,11 @@ func percentCovered(p *cover.Profile) float64 {
 			covered += int64(b.NumStmt)
 		}
 	}
-	if total == 0 {
-		return 0
+	var percentage float64
+	if total != 0 {
+		percentage = float64(covered) / float64(total) * 100
 	}
-	return float64(covered) / float64(total) * 100
+	return fmt.Sprintf("(%.1f%%) (-%d)", percentage, total-covered)
 }
 
 // htmlGen generates an HTML coverage report with the provided filename,
@@ -187,9 +189,9 @@ type templateData struct {
 }
 
 type templateFile struct {
-	Name     string
-	Body     template.HTML
-	Coverage float64
+	Name    string
+	Body    template.HTML
+	Summary string
 }
 
 const tmplHTML = `
@@ -237,7 +239,7 @@ const tmplHTML = `
 			<div id="nav">
 				<select id="files">
 				{{range $i, $f := .Files}}
-				<option value="file{{$i}}">{{$f.Name}} ({{printf "%.1f" $f.Coverage}}%)</option>
+				<option value="file{{$i}}">{{$f.Name}} {{$f.Summary}}</option>
 				{{end}}
 				</select>
 			</div>
