@@ -307,13 +307,13 @@ func (h *handlerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		info.TypeInfoIndex[ti.Name] = i
 	}
 
-	info.Share = allowShare(r)
+	info.GoogleCN = googleCN(r)
 	h.p.ServePage(w, Page{
 		Title:    title,
 		Tabtitle: tabtitle,
 		Subtitle: subtitle,
 		Body:     applyTemplate(h.p.PackageHTML, "packageHTML", info),
-		Share:    info.Share,
+		GoogleCN: info.GoogleCN,
 	})
 }
 
@@ -555,7 +555,7 @@ func (p *Presentation) serveTextFile(w http.ResponseWriter, r *http.Request, abs
 		Title:    title + " " + relpath,
 		Tabtitle: relpath,
 		Body:     buf.Bytes(),
-		Share:    allowShare(r),
+		GoogleCN: googleCN(r),
 	})
 }
 
@@ -616,7 +616,7 @@ func (p *Presentation) serveDirectory(w http.ResponseWriter, r *http.Request, ab
 		Title:    "Directory " + relpath,
 		Tabtitle: relpath,
 		Body:     applyTemplate(p.DirlistHTML, "dirlistHTML", list),
-		Share:    allowShare(r),
+		GoogleCN: googleCN(r),
 	})
 }
 
@@ -645,7 +645,7 @@ func (p *Presentation) ServeHTMLDoc(w http.ResponseWriter, r *http.Request, absp
 	page := Page{
 		Title:    meta.Title,
 		Subtitle: meta.Subtitle,
-		Share:    allowShare(r),
+		GoogleCN: googleCN(r),
 	}
 
 	// evaluate as template if indicated
