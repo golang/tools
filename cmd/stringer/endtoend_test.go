@@ -33,7 +33,7 @@ func TestEndToEnd(t *testing.T) {
 	defer os.RemoveAll(dir)
 	// Create stringer in temporary directory.
 	stringer := filepath.Join(dir, "stringer.exe")
-	err = run("go", "build", "-o", stringer, "stringer.go")
+	err = run("go", "build", "-o", stringer)
 	if err != nil {
 		t.Fatalf("building stringer: %s", err)
 	}
@@ -54,7 +54,7 @@ func TestEndToEnd(t *testing.T) {
 			continue
 		}
 		if name == "cgo.go" && !build.Default.CgoEnabled {
-			t.Logf("cgo is no enabled for %s", name)
+			t.Logf("cgo is not enabled for %s", name)
 			continue
 		}
 		// Names are known to be ASCII and long enough.

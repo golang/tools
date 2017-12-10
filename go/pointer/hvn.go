@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.5
-
 package pointer
 
 // This file implements Hash-Value Numbering (HVN), a pre-solver
@@ -76,7 +74,7 @@ package pointer
 //
 // PERFORMANCE
 //
-// In two benchmarks (oracle and godoc), HVN eliminates about two thirds
+// In two benchmarks (guru and godoc), HVN eliminates about two thirds
 // of nodes, the majority accounted for by non-pointers: nodes of
 // non-pointer type, pointers that remain nil, formal parameters of dead
 // functions, nodes of untracked types, etc.  It also reduces the number
@@ -535,7 +533,7 @@ func (h *hvn) markIndirectNodes() {
 		if tArray, ok := h.a.nodes[id].typ.(*types.Array); ok {
 			// Mark the array element nodes indirect.
 			// (Skip past the identity field.)
-			for _ = range h.a.flatten(tArray.Elem()) {
+			for range h.a.flatten(tArray.Elem()) {
 				id++
 				h.markIndirect(onodeid(id), "array elem")
 			}

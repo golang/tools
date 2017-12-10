@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.5
-
 // Package eg implements the example-based refactoring tool whose
 // command-line is defined in golang.org/x/tools/cmd/eg.
 package eg // import "golang.org/x/tools/refactor/eg"
@@ -181,7 +179,6 @@ func NewTransformer(fset *token.FileSet, tmplPkg *types.Package, tmplFile *ast.F
 			// Dot imports are currently forbidden.  We
 			// make the simplifying assumption that all
 			// imports are regular, without local renames.
-			// TODO(adonovan): document
 			return nil, fmt.Errorf("dot-import (of %s) in template", imp.Path.Value)
 		}
 	}

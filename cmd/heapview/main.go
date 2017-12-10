@@ -8,6 +8,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"go/build"
 	"io"
 	"log"
 	"net/http"
@@ -15,13 +16,16 @@ import (
 	"path/filepath"
 )
 
+var host = flag.String("host", "", "host addr to listen on")
 var port = flag.Int("port", 8080, "service port")
 
 var index = `<!DOCTYPE html>
+<script src="js/customelements.js"></script>
 <script src="js/typescript.js"></script>
 <script src="js/moduleloader.js"></script>
 <script>
   System.transpiler = 'typescript';
+  System.typescriptOptions = {target: ts.ScriptTarget.ES2015};
   System.locate = (load) => load.name + '.ts';
 </script>
 <script type="module">
@@ -31,12 +35,12 @@ var index = `<!DOCTYPE html>
 `
 
 func toolsDir() string {
-	gopath := os.Getenv("GOPATH")
-	if gopath == "" {
-		log.Println("error: GOPATH not set. Can't find client files")
+	p, err := build.Import("golang.org/x/tools", "", build.FindOnly)
+	if err != nil {
+		log.Println("error: can't find client files:", err)
 		os.Exit(1)
 	}
-	return filepath.Join(filepath.SplitList(gopath)[0], "/src/golang.org/x/tools")
+	return p.Dir
 }
 
 var parseFlags = func() {
@@ -44,16 +48,21 @@ var parseFlags = func() {
 }
 
 var addHandlers = func() {
+	toolsDir := toolsDir()
+
 	// Directly serve typescript code in client directory for development.
 	http.Handle("/client/", http.StripPrefix("/client",
-		http.FileServer(http.Dir(filepath.Join(toolsDir(), "cmd/heapview/client")))))
+		http.FileServer(http.Dir(filepath.Join(toolsDir, "cmd/heapview/client")))))
 
 	// Serve typescript.js and moduleloader.js for development.
 	http.HandleFunc("/js/typescript.js", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, filepath.Join(toolsDir(), "third_party/typescript/typescript.js"))
+		http.ServeFile(w, r, filepath.Join(toolsDir, "third_party/typescript/typescript.js"))
 	})
 	http.HandleFunc("/js/moduleloader.js", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, filepath.Join(toolsDir(), "third_party/moduleloader/moduleloader.js"))
+		http.ServeFile(w, r, filepath.Join(toolsDir, "third_party/moduleloader/moduleloader.js"))
+	})
+	http.HandleFunc("/js/customelements.js", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, filepath.Join(toolsDir, "third_party/webcomponents/customelements.js"))
 	})
 
 	// Serve index.html using html string above.
@@ -63,12 +72,12 @@ var addHandlers = func() {
 	})
 }
 
-var listenAndServe = func() {
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", *port), nil))
+var listenAndServe = func() error {
+	return http.ListenAndServe(fmt.Sprintf("%s:%d", *host, *port), nil)
 }
 
 func main() {
 	parseFlags()
 	addHandlers()
-	listenAndServe()
+	log.Fatal(listenAndServe())
 }

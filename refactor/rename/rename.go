@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.5
-
 // Package rename contains the implementation of the 'gorename' command
 // whose main function is in golang.org/x/tools/cmd/gorename.
 // See the Usage constant for the command documentation.
@@ -25,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -163,7 +162,7 @@ type renamer struct {
 	iprog              *loader.Program
 	objsToUpdate       map[types.Object]bool
 	hadConflicts       bool
-	to                 string
+	from, to           string
 	satisfyConstraints map[satisfy.Constraint]bool
 	packages           map[*types.Package]*loader.PackageInfo // subset of iprog.AllPackages to inspect
 	msets              typeutil.MethodSetCache
@@ -314,6 +313,7 @@ func Main(ctxt *build.Context, offsetFlag, fromFlag, to string) error {
 	r := renamer{
 		iprog:        iprog,
 		objsToUpdate: make(map[types.Object]bool),
+		from:         spec.fromName,
 		to:           to,
 		packages:     make(map[*types.Package]*loader.PackageInfo),
 	}
@@ -363,7 +363,6 @@ func loadProgram(ctxt *build.Context, pkgs map[string]bool) (*loader.Program, er
 		// TODO(adonovan): enable this.  Requires making a lot of code more robust!
 		AllowErrors: false,
 	}
-
 	// Optimization: don't type-check the bodies of functions in our
 	// dependencies, since we only need exported package members.
 	conf.TypeCheckFuncBodies = func(p string) bool {
@@ -384,7 +383,45 @@ func loadProgram(ctxt *build.Context, pkgs map[string]bool) (*loader.Program, er
 	for pkg := range pkgs {
 		conf.ImportWithTests(pkg)
 	}
-	return conf.Load()
+
+	// Ideally we would just return conf.Load() here, but go/types
+	// reports certain "soft" errors that gc does not (Go issue 14596).
+	// As a workaround, we set AllowErrors=true and then duplicate
+	// the loader's error checking but allow soft errors.
+	// It would be nice if the loader API permitted "AllowErrors: soft".
+	conf.AllowErrors = true
+	prog, err := conf.Load()
+	if err != nil {
+		return nil, err
+	}
+
+	var errpkgs []string
+	// Report hard errors in indirectly imported packages.
+	for _, info := range prog.AllPackages {
+		if containsHardErrors(info.Errors) {
+			errpkgs = append(errpkgs, info.Pkg.Path())
+		}
+	}
+	if errpkgs != nil {
+		var more string
+		if len(errpkgs) > 3 {
+			more = fmt.Sprintf(" and %d more", len(errpkgs)-3)
+			errpkgs = errpkgs[:3]
+		}
+		return nil, fmt.Errorf("couldn't load packages due to errors: %s%s",
+			strings.Join(errpkgs, ", "), more)
+	}
+	return prog, nil
+}
+
+func containsHardErrors(errors []error) bool {
+	for _, err := range errors {
+		if err, ok := err.(types.Error); ok && err.Soft {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // requiresGlobalRename reports whether this renaming could potentially
@@ -418,8 +455,10 @@ func (r *renamer) update() error {
 	// We use token.File, not filename, since a file may appear to
 	// belong to multiple packages and be parsed more than once.
 	// token.File captures this distinction; filename does not.
+
 	var nidents int
 	var filesToUpdate = make(map[*token.File]bool)
+	docRegexp := regexp.MustCompile(`\b` + r.from + `\b`)
 	for _, info := range r.packages {
 		// Mutate the ASTs and note the filenames.
 		for id, obj := range info.Defs {
@@ -427,8 +466,15 @@ func (r *renamer) update() error {
 				nidents++
 				id.Name = r.to
 				filesToUpdate[r.iprog.Fset.File(id.Pos())] = true
+				// Perform the rename in doc comments too.
+				if doc := r.docComment(id); doc != nil {
+					for _, comment := range doc.List {
+						comment.Text = docRegexp.ReplaceAllString(comment.Text, r.to)
+					}
+				}
 			}
 		}
+
 		for id, obj := range info.Uses {
 			if r.objsToUpdate[obj] {
 				nidents++
@@ -438,7 +484,21 @@ func (r *renamer) update() error {
 		}
 	}
 
-	// TODO(adonovan): don't rewrite cgo + generated files.
+	// Renaming not supported if cgo files are affected.
+	var generatedFileNames []string
+	for _, info := range r.packages {
+		for _, f := range info.Files {
+			tokenFile := r.iprog.Fset.File(f.Pos())
+			if filesToUpdate[tokenFile] && generated(f, tokenFile) {
+				generatedFileNames = append(generatedFileNames, tokenFile.Name())
+			}
+		}
+	}
+	if len(generatedFileNames) > 0 {
+		return fmt.Errorf("refusing to modify generated file%s containing DO NOT EDIT marker: %v", plural(len(generatedFileNames)), generatedFileNames)
+	}
+
+	// Write affected files.
 	var nerrs, npkgs int
 	for _, info := range r.packages {
 		first := true
@@ -475,6 +535,35 @@ func (r *renamer) update() error {
 	}
 	if nerrs > 0 {
 		return fmt.Errorf("failed to rewrite %d file%s", nerrs, plural(nerrs))
+	}
+	return nil
+}
+
+// docComment returns the doc for an identifier.
+func (r *renamer) docComment(id *ast.Ident) *ast.CommentGroup {
+	_, nodes, _ := r.iprog.PathEnclosingInterval(id.Pos(), id.End())
+	for _, node := range nodes {
+		switch decl := node.(type) {
+		case *ast.FuncDecl:
+			return decl.Doc
+		case *ast.Field:
+			return decl.Doc
+		case *ast.GenDecl:
+			return decl.Doc
+		// For {Type,Value}Spec, if the doc on the spec is absent,
+		// search for the enclosing GenDecl
+		case *ast.TypeSpec:
+			if decl.Doc != nil {
+				return decl.Doc
+			}
+		case *ast.ValueSpec:
+			if decl.Doc != nil {
+				return decl.Doc
+			}
+		case *ast.Ident:
+		default:
+			return nil
+		}
 	}
 	return nil
 }

@@ -327,20 +327,23 @@ func describeValue(qpos *queryPos, path []ast.Node) (*describeValueResult, error
 		return nil, fmt.Errorf("unexpected AST for expr: %T", n)
 	}
 
-	t := qpos.info.TypeOf(expr)
-	if t == nil {
-		t = types.Typ[types.Invalid]
+	typ := qpos.info.TypeOf(expr)
+	if typ == nil {
+		typ = types.Typ[types.Invalid]
 	}
 	constVal := qpos.info.Types[expr].Value
+	if c, ok := obj.(*types.Const); ok {
+		constVal = c.Val()
+	}
 
 	return &describeValueResult{
 		qpos:     qpos,
 		expr:     expr,
-		typ:      t,
+		typ:      typ,
 		constVal: constVal,
 		obj:      obj,
-		methods:  accessibleMethods(t, qpos.info.Pkg),
-		fields:   accessibleFields(t, qpos.info.Pkg),
+		methods:  accessibleMethods(typ, qpos.info.Pkg),
+		fields:   accessibleFields(typ, qpos.info.Pkg),
 	}, nil
 }
 
@@ -357,7 +360,7 @@ type describeValueResult struct {
 func (r *describeValueResult) PrintPlain(printf printfFunc) {
 	var prefix, suffix string
 	if r.constVal != nil {
-		suffix = fmt.Sprintf(" of constant value %s", constValString(r.constVal))
+		suffix = fmt.Sprintf(" of value %s", r.constVal)
 	}
 	switch obj := r.obj.(type) {
 	case *types.Func:
@@ -422,48 +425,46 @@ func (r *describeValueResult) JSON(fset *token.FileSet) []byte {
 
 func describeType(qpos *queryPos, path []ast.Node) (*describeTypeResult, error) {
 	var description string
-	var t types.Type
+	var typ types.Type
 	switch n := path[0].(type) {
 	case *ast.Ident:
-		t = qpos.info.TypeOf(n)
-		switch t := t.(type) {
-		case *types.Basic:
+		obj := qpos.info.ObjectOf(n).(*types.TypeName)
+		typ = obj.Type()
+		if isAlias(obj) {
+			description = "alias of "
+		} else if obj.Pos() == n.Pos() {
+			description = "definition of " // (Named type)
+		} else if _, ok := typ.(*types.Basic); ok {
 			description = "reference to built-in "
-
-		case *types.Named:
-			isDef := t.Obj().Pos() == n.Pos() // see caveats at isDef above
-			if isDef {
-				description = "definition of "
-			} else {
-				description = "reference to "
-			}
+		} else {
+			description = "reference to " // (Named type)
 		}
 
 	case ast.Expr:
-		t = qpos.info.TypeOf(n)
+		typ = qpos.info.TypeOf(n)
 
 	default:
 		// Unreachable?
 		return nil, fmt.Errorf("unexpected AST for type: %T", n)
 	}
 
-	description = description + "type " + qpos.typeString(t)
+	description = description + "type " + qpos.typeString(typ)
 
 	// Show sizes for structs and named types (it's fairly obvious for others).
-	switch t.(type) {
+	switch typ.(type) {
 	case *types.Named, *types.Struct:
 		szs := types.StdSizes{WordSize: 8, MaxAlign: 8} // assume amd64
 		description = fmt.Sprintf("%s (size %d, align %d)", description,
-			szs.Sizeof(t), szs.Alignof(t))
+			szs.Sizeof(typ), szs.Alignof(typ))
 	}
 
 	return &describeTypeResult{
 		qpos:        qpos,
 		node:        path[0],
 		description: description,
-		typ:         t,
-		methods:     accessibleMethods(t, qpos.info.Pkg),
-		fields:      accessibleFields(t, qpos.info.Pkg),
+		typ:         typ,
+		methods:     accessibleMethods(typ, qpos.info.Pkg),
+		fields:      accessibleFields(typ, qpos.info.Pkg),
 	}, nil
 }
 
@@ -657,47 +658,41 @@ func (r *describePackageResult) PrintPlain(printf printfFunc) {
 	}
 }
 
-// Helper function to adjust go1.5 numeric go/constant formatting.
-// Can be removed once we give up compatibility with go1.5.
-func constValString(v exact.Value) string {
-	if v.Kind() == exact.Float {
-		// In go1.5, go/constant floating-point values are printed
-		// as fractions. Make them appear as floating-point numbers.
-		f, _ := exact.Float64Val(v)
-		return fmt.Sprintf("%g", f)
-	}
-	return v.String()
-}
-
 func formatMember(obj types.Object, maxname int) string {
 	qualifier := types.RelativeTo(obj.Pkg())
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "%-5s %-*s", tokenOf(obj), maxname, obj.Name())
 	switch obj := obj.(type) {
 	case *types.Const:
-		fmt.Fprintf(&buf, " %s = %s", types.TypeString(obj.Type(), qualifier), constValString(obj.Val()))
+		fmt.Fprintf(&buf, " %s = %s", types.TypeString(obj.Type(), qualifier), obj.Val())
 
 	case *types.Func:
 		fmt.Fprintf(&buf, " %s", types.TypeString(obj.Type(), qualifier))
 
 	case *types.TypeName:
+		typ := obj.Type()
+		if isAlias(obj) {
+			buf.WriteString(" = ")
+		} else {
+			buf.WriteByte(' ')
+			typ = typ.Underlying()
+		}
+		var typestr string
 		// Abbreviate long aggregate type names.
-		var abbrev string
-		switch t := obj.Type().Underlying().(type) {
+		switch typ := typ.(type) {
 		case *types.Interface:
-			if t.NumMethods() > 1 {
-				abbrev = "interface{...}"
+			if typ.NumMethods() > 1 {
+				typestr = "interface{...}"
 			}
 		case *types.Struct:
-			if t.NumFields() > 1 {
-				abbrev = "struct{...}"
+			if typ.NumFields() > 1 {
+				typestr = "struct{...}"
 			}
 		}
-		if abbrev == "" {
-			fmt.Fprintf(&buf, " %s", types.TypeString(obj.Type().Underlying(), qualifier))
-		} else {
-			fmt.Fprintf(&buf, " %s", abbrev)
+		if typestr == "" {
+			typestr = types.TypeString(typ, qualifier)
 		}
+		buf.WriteString(typestr)
 
 	case *types.Var:
 		fmt.Fprintf(&buf, " %s", types.TypeString(obj.Type(), qualifier))
@@ -708,20 +703,26 @@ func formatMember(obj types.Object, maxname int) string {
 func (r *describePackageResult) JSON(fset *token.FileSet) []byte {
 	var members []*serial.DescribeMember
 	for _, mem := range r.members {
-		typ := mem.obj.Type()
+		obj := mem.obj
+		typ := obj.Type()
 		var val string
-		switch mem := mem.obj.(type) {
+		var alias string
+		switch obj := obj.(type) {
 		case *types.Const:
-			val = constValString(mem.Val())
+			val = obj.Val().String()
 		case *types.TypeName:
-			typ = typ.Underlying()
+			if isAlias(obj) {
+				alias = "= " // kludgy
+			} else {
+				typ = typ.Underlying()
+			}
 		}
 		members = append(members, &serial.DescribeMember{
-			Name:    mem.obj.Name(),
-			Type:    typ.String(),
+			Name:    obj.Name(),
+			Type:    alias + typ.String(),
 			Value:   val,
-			Pos:     fset.Position(mem.obj.Pos()).String(),
-			Kind:    tokenOf(mem.obj),
+			Pos:     fset.Position(obj.Pos()).String(),
+			Kind:    tokenOf(obj),
 			Methods: methodsToSerial(r.pkg, mem.methods, fset),
 		})
 	}

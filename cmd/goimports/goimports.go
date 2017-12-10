@@ -19,7 +19,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
-	"runtime/trace"
 	"strings"
 
 	"golang.org/x/tools/imports"
@@ -31,12 +30,11 @@ var (
 	write   = flag.Bool("w", false, "write result to (source) file instead of stdout")
 	doDiff  = flag.Bool("d", false, "display diffs instead of rewriting files")
 	srcdir  = flag.String("srcdir", "", "choose imports as if source code is from `dir`. When operating on a single file, dir may instead be the complete file name.")
-	verbose = flag.Bool("v", false, "verbose logging")
+	verbose bool // verbose logging
 
 	cpuProfile     = flag.String("cpuprofile", "", "CPU profile output")
 	memProfile     = flag.String("memprofile", "", "memory profile output")
 	memProfileRate = flag.Int("memrate", 0, "if > 0, sets runtime.MemProfileRate")
-	traceProfile   = flag.String("trace", "", "trace profile output")
 
 	options = &imports.Options{
 		TabWidth:  8,
@@ -146,17 +144,24 @@ func processFile(filename string, in io.Reader, out io.Writer, argType argumentT
 			fmt.Fprintln(out, filename)
 		}
 		if *write {
+			if argType == fromStdin {
+				// filename is "<standard input>"
+				return errors.New("can't use -w on stdin")
+			}
 			err = ioutil.WriteFile(filename, res, 0)
 			if err != nil {
 				return err
 			}
 		}
 		if *doDiff {
-			data, err := diff(src, res)
+			if argType == fromStdin {
+				filename = "stdin.go" // because <standard input>.orig looks silly
+			}
+			data, err := diff(src, res, filename)
 			if err != nil {
 				return fmt.Errorf("computing diff: %s", err)
 			}
-			fmt.Printf("diff %s gofmt/%s\n", filename, filename)
+			fmt.Printf("diff -u %s %s\n", filepath.ToSlash(filename+".orig"), filepath.ToSlash(filename))
 			out.Write(data)
 		}
 	}
@@ -195,6 +200,8 @@ func main() {
 // parseFlags parses command line flags and returns the paths to process.
 // It's a var so that custom implementations can replace it in other files.
 var parseFlags = func() []string {
+	flag.BoolVar(&verbose, "v", false, "verbose logging")
+
 	flag.Parse()
 	return flag.Args()
 }
@@ -225,12 +232,10 @@ func gofmtMain() {
 		defer flush()
 		defer pprof.StopCPUProfile()
 	}
-	if *traceProfile != "" {
-		bw, flush := bufferedFileWriter(*traceProfile)
-		trace.Start(bw)
-		defer flush()
-		defer trace.Stop()
-	}
+	// doTrace is a conditionally compiled wrapper around runtime/trace. It is
+	// used to allow goimports to compile under gccgo, which does not support
+	// runtime/trace. See https://golang.org/issue/15544.
+	defer doTrace()()
 	if *memProfileRate > 0 {
 		runtime.MemProfileRate = *memProfileRate
 		bw, flush := bufferedFileWriter(*memProfile)
@@ -243,7 +248,7 @@ func gofmtMain() {
 		}()
 	}
 
-	if *verbose {
+	if verbose {
 		log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 		imports.Debug = true
 	}
@@ -279,31 +284,76 @@ func gofmtMain() {
 	}
 }
 
-func diff(b1, b2 []byte) (data []byte, err error) {
-	f1, err := ioutil.TempFile("", "gofmt")
+func writeTempFile(dir, prefix string, data []byte) (string, error) {
+	file, err := ioutil.TempFile(dir, prefix)
+	if err != nil {
+		return "", err
+	}
+	_, err = file.Write(data)
+	if err1 := file.Close(); err == nil {
+		err = err1
+	}
+	if err != nil {
+		os.Remove(file.Name())
+		return "", err
+	}
+	return file.Name(), nil
+}
+
+func diff(b1, b2 []byte, filename string) (data []byte, err error) {
+	f1, err := writeTempFile("", "gofmt", b1)
 	if err != nil {
 		return
 	}
-	defer os.Remove(f1.Name())
-	defer f1.Close()
+	defer os.Remove(f1)
 
-	f2, err := ioutil.TempFile("", "gofmt")
+	f2, err := writeTempFile("", "gofmt", b2)
 	if err != nil {
 		return
 	}
-	defer os.Remove(f2.Name())
-	defer f2.Close()
+	defer os.Remove(f2)
 
-	f1.Write(b1)
-	f2.Write(b2)
+	cmd := "diff"
+	if runtime.GOOS == "plan9" {
+		cmd = "/bin/ape/diff"
+	}
 
-	data, err = exec.Command("diff", "-u", f1.Name(), f2.Name()).CombinedOutput()
+	data, err = exec.Command(cmd, "-u", f1, f2).CombinedOutput()
 	if len(data) > 0 {
 		// diff exits with a non-zero status when the files don't match.
 		// Ignore that failure as long as we get output.
-		err = nil
+		return replaceTempFilename(data, filename)
 	}
 	return
+}
+
+// replaceTempFilename replaces temporary filenames in diff with actual one.
+//
+// --- /tmp/gofmt316145376	2017-02-03 19:13:00.280468375 -0500
+// +++ /tmp/gofmt617882815	2017-02-03 19:13:00.280468375 -0500
+// ...
+// ->
+// --- path/to/file.go.orig	2017-02-03 19:13:00.280468375 -0500
+// +++ path/to/file.go	2017-02-03 19:13:00.280468375 -0500
+// ...
+func replaceTempFilename(diff []byte, filename string) ([]byte, error) {
+	bs := bytes.SplitN(diff, []byte{'\n'}, 3)
+	if len(bs) < 3 {
+		return nil, fmt.Errorf("got unexpected diff for %s", filename)
+	}
+	// Preserve timestamps.
+	var t0, t1 []byte
+	if i := bytes.LastIndexByte(bs[0], '\t'); i != -1 {
+		t0 = bs[0][i:]
+	}
+	if i := bytes.LastIndexByte(bs[1], '\t'); i != -1 {
+		t1 = bs[1][i:]
+	}
+	// Always print filepath with slash separator.
+	f := filepath.ToSlash(filename)
+	bs[0] = []byte(fmt.Sprintf("--- %s%s", f+".orig", t0))
+	bs[1] = []byte(fmt.Sprintf("+++ %s%s", f, t1))
+	return bytes.Join(bs, []byte{'\n'}), nil
 }
 
 // isFile reports whether name is a file.

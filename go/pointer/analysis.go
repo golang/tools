@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.5
-
 package pointer
 
 // This file defines the main datatypes and Analyze function of the pointer analysis.
@@ -179,6 +177,11 @@ func (a *analysis) warnf(pos token.Pos, format string, args ...interface{}) {
 
 // computeTrackBits sets a.track to the necessary 'track' bits for the pointer queries.
 func (a *analysis) computeTrackBits() {
+	if len(a.config.extendedQueries) != 0 {
+		// TODO(dh): only track the types necessary for the query.
+		a.track = trackAll
+		return
+	}
 	var queryTypes []types.Type
 	for v := range a.config.Queries {
 		queryTypes = append(queryTypes, v.Type())

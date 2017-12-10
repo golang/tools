@@ -74,7 +74,7 @@ func what(q *Query) error {
 			}
 		}
 
-		// For pointsto, we approximate findInterestingNode.
+		// For pointsto and whicherrs, we approximate findInterestingNode.
 		if _, ok := enable["pointsto"]; !ok {
 			switch n.(type) {
 			case ast.Stmt,
@@ -84,10 +84,14 @@ func what(q *Query) error {
 				*ast.InterfaceType,
 				*ast.MapType,
 				*ast.ChanType:
-				enable["pointsto"] = false // not an expr
+				// not an expression
+				enable["pointsto"] = false
+				enable["whicherrs"] = false
 
 			case ast.Expr, ast.Decl, *ast.ValueSpec:
-				enable["pointsto"] = true // an expr, maybe
+				// an expression, maybe
+				enable["pointsto"] = true
+				enable["whicherrs"] = true
 
 			default:
 				// Comment, Field, KeyValueExpr, etc: ascend.
@@ -169,11 +173,16 @@ func what(q *Query) error {
 func guessImportPath(filename string, buildContext *build.Context) (srcdir, importPath string, err error) {
 	absFile, err := filepath.Abs(filename)
 	if err != nil {
-		err = fmt.Errorf("can't form absolute path of %s", filename)
-		return
+		return "", "", fmt.Errorf("can't form absolute path of %s: %v", filename, err)
 	}
-	absFileDir := segments(filepath.Dir(absFile))
 
+	absFileDir := filepath.Dir(absFile)
+	resolvedAbsFileDir, err := filepath.EvalSymlinks(absFileDir)
+	if err != nil {
+		return "", "", fmt.Errorf("can't evaluate symlinks of %s: %v", absFileDir, err)
+	}
+
+	segmentedAbsFileDir := segments(resolvedAbsFileDir)
 	// Find the innermost directory in $GOPATH that encloses filename.
 	minD := 1024
 	for _, gopathDir := range buildContext.SrcDirs() {
@@ -181,14 +190,19 @@ func guessImportPath(filename string, buildContext *build.Context) (srcdir, impo
 		if err != nil {
 			continue // e.g. non-existent dir on $GOPATH
 		}
-		d := prefixLen(segments(absDir), absFileDir)
+		resolvedAbsDir, err := filepath.EvalSymlinks(absDir)
+		if err != nil {
+			continue // e.g. non-existent dir on $GOPATH
+		}
+
+		d := prefixLen(segments(resolvedAbsDir), segmentedAbsFileDir)
 		// If there are multiple matches,
 		// prefer the innermost enclosing directory
 		// (smallest d).
 		if d >= 0 && d < minD {
 			minD = d
 			srcdir = gopathDir
-			importPath = strings.Join(absFileDir[len(absFileDir)-minD:], string(os.PathSeparator))
+			importPath = strings.Join(segmentedAbsFileDir[len(segmentedAbsFileDir)-minD:], string(os.PathSeparator))
 		}
 	}
 	if srcdir == "" {

@@ -188,7 +188,9 @@ _, _ := bytes.Buffer, bytes.NewReader
 `,
 		out: `package foo
 
-import "bytes"
+import (
+	"bytes"
+)
 
 func bar() {
 	_, _ := bytes.Buffer, bytes.NewReader
@@ -747,7 +749,9 @@ func main() { fmt.Println() }
 `,
 		out: `package main
 
-import "fmt"
+import (
+	"fmt"
+)
 
 func main() { fmt.Println() }
 `,
@@ -775,6 +779,91 @@ import (
 )
 
 func main() {}
+`,
+	},
+
+	{
+		name: "do not make grouped imports non-grouped",
+		in: `package p
+
+import (
+	"bytes"
+	"fmt"
+)
+
+var _ = fmt.Sprintf
+`,
+		out: `package p
+
+import (
+	"fmt"
+)
+
+var _ = fmt.Sprintf
+`,
+	},
+
+	{
+		name: "issue #19190 1",
+		in: `package main
+
+import (
+	"time"
+)
+
+func main() {
+	_ = snappy.Encode
+	_ = p.P
+	_ = time.Parse
+}
+`,
+		out: `package main
+
+import (
+	"time"
+
+	"code.google.com/p/snappy-go/snappy"
+	"rsc.io/p"
+)
+
+func main() {
+	_ = snappy.Encode
+	_ = p.P
+	_ = time.Parse
+}
+`,
+	},
+
+	{
+		name: "issue #19190 2",
+		in: `package main
+
+import (
+	"time"
+
+	"code.google.com/p/snappy-go/snappy"
+)
+
+func main() {
+	_ = snappy.Encode
+	_ = p.P
+	_ = time.Parse
+}
+`,
+		out: `package main
+
+import (
+	"time"
+
+	"code.google.com/p/snappy-go/snappy"
+	"rsc.io/p"
+)
+
+func main() {
+	_ = snappy.Encode
+	_ = p.P
+	_ = time.Parse
+}
 `,
 	},
 }
@@ -838,6 +927,15 @@ func TestImportSymlinks(t *testing.T) {
 	}
 	defer os.RemoveAll(newGoPath)
 
+	// Create:
+	//    $GOPATH/target/
+	//    $GOPATH/target/f.go  // package mypkg\nvar Foo = 123\n
+	//    $GOPATH/src/x/
+	//    $GOPATH/src/x/mypkg => $GOPATH/target   // symlink
+	//    $GOPATH/src/x/apkg  => $GOPATH/src/x    // symlink loop
+	// Test:
+	//    $GOPATH/src/myotherpkg/toformat.go referencing mypkg.Foo
+
 	targetPath := newGoPath + "/target"
 	if err := os.MkdirAll(targetPath, 0755); err != nil {
 		t.Fatal(err)
@@ -889,6 +987,40 @@ var (
 			t.Fatalf("results differ\nGOT:\n%s\nWANT:\n%s\n", got, output)
 		}
 	})
+
+	// Add a .goimportsignore and ensure it is respected.
+	if err := ioutil.WriteFile(newGoPath+"/src/.goimportsignore", []byte("x/mypkg\n"), 0666); err != nil {
+		t.Fatal(err)
+	}
+
+	withEmptyGoPath(func() {
+		build.Default.GOPATH = newGoPath
+
+		input := `package p
+
+var (
+	_ = fmt.Print
+	_ = mypkg.Foo
+)
+`
+		output := `package p
+
+import "fmt"
+
+var (
+	_ = fmt.Print
+	_ = mypkg.Foo
+)
+`
+		buf, err := Process(newGoPath+"/src/myotherpkg/toformat.go", []byte(input), &Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := string(buf); got != output {
+			t.Fatalf("ignored results differ\nGOT:\n%s\nWANT:\n%s\n", got, output)
+		}
+	})
+
 }
 
 // Test for correctly identifying the name of a vendored package when it
@@ -1001,7 +1133,6 @@ func withEmptyGoPath(fn func()) {
 	oldGOPATH := build.Default.GOPATH
 	oldGOROOT := build.Default.GOROOT
 	build.Default.GOPATH = ""
-	visitedSymlinks.m = nil
 	testHookScanDir = func(string) {}
 	testMu.Unlock()
 
@@ -1428,6 +1559,98 @@ func TestGoRootPrefixOfGoPath(t *testing.T) {
 
 }
 
+const testGlobalImportsUsesGlobal = `package globalimporttest
+
+func doSomething() {
+	t := time.Now()
+}
+`
+
+const testGlobalImportsGlobalDecl = `package globalimporttest
+
+type Time struct{}
+
+func (t Time) Now() Time {
+	return Time{}
+}
+
+var time Time
+`
+
+// Tests that package global variables with the same name and function name as
+// a function in a separate package do not result in an import which masks
+// the global variable
+func TestGlobalImports(t *testing.T) {
+	const pkg = "globalimporttest"
+	const usesGlobalFile = pkg + "/uses_global.go"
+	testConfig{
+		gopathFiles: map[string]string{
+			usesGlobalFile:     testGlobalImportsUsesGlobal,
+			pkg + "/global.go": testGlobalImportsGlobalDecl,
+		},
+	}.test(t, func(t *goimportTest) {
+		buf, err := Process(
+			t.gopath+"/src/"+usesGlobalFile, []byte(testGlobalImportsUsesGlobal), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(buf) != testGlobalImportsUsesGlobal {
+			t.Errorf("wrong output.\ngot:\n%q\nwant:\n%q\n", buf, testGlobalImportsUsesGlobal)
+		}
+	})
+}
+
+// Tests that sibling files - other files in the same package - can provide an
+// import that may not be the default one otherwise.
+func TestSiblingImports(t *testing.T) {
+
+	// provide is the sibling file that provides the desired import.
+	const provide = `package siblingimporttest
+
+import "local/log"
+
+func LogSomething() {
+	log.Print("Something")
+}
+`
+
+	// need is the file being tested that needs the import.
+	const need = `package siblingimporttest
+
+func LogSomethingElse() {
+	log.Print("Something else")
+}
+`
+
+	// want is the expected result file
+	const want = `package siblingimporttest
+
+import "local/log"
+
+func LogSomethingElse() {
+	log.Print("Something else")
+}
+`
+
+	const pkg = "siblingimporttest"
+	const siblingFile = pkg + "/needs_import.go"
+	testConfig{
+		gopathFiles: map[string]string{
+			siblingFile:                 need,
+			pkg + "/provides_import.go": provide,
+		},
+	}.test(t, func(t *goimportTest) {
+		buf, err := Process(
+			t.gopath+"/src/"+siblingFile, []byte(need), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(buf) != want {
+			t.Errorf("wrong output.\ngot:\n%q\nwant:\n%q\n", buf, want)
+		}
+	})
+}
+
 func strSet(ss []string) map[string]bool {
 	m := make(map[string]bool)
 	for _, s := range ss {
@@ -1572,4 +1795,165 @@ func TestPkgIsCandidate(t *testing.T) {
 				i, tt.filename, tt.pkgIdent, *tt.pkg, got, tt.want)
 		}
 	}
+}
+
+func TestShouldTraverse(t *testing.T) {
+	switch runtime.GOOS {
+	case "windows", "plan9":
+		t.Skipf("skipping symlink-requiring test on %s", runtime.GOOS)
+	}
+
+	dir, err := ioutil.TempDir("", "goimports-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	// Note: mapToDir prepends "src" to each element, since
+	// mapToDir was made for creating GOPATHs.
+	if err := mapToDir(dir, map[string]string{
+		"foo/foo2/file.txt":        "",
+		"foo/foo2/link-to-src":     "LINK:" + dir + "/src",
+		"foo/foo2/link-to-src-foo": "LINK:" + dir + "/src/foo",
+		"foo/foo2/link-to-dot":     "LINK:.",
+		"bar/bar2/file.txt":        "",
+		"bar/bar2/link-to-src-foo": "LINK:" + dir + "/src/foo",
+
+		"a/b/c": "LINK:" + dir + "/src/a/d",
+		"a/d/e": "LINK:" + dir + "/src/a/b",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		dir  string
+		file string
+		want bool
+	}{
+		{
+			dir:  dir + "/src/foo/foo2",
+			file: "link-to-src-foo",
+			want: false, // loop
+		},
+		{
+			dir:  dir + "/src/foo/foo2",
+			file: "link-to-src",
+			want: false, // loop
+		},
+		{
+			dir:  dir + "/src/foo/foo2",
+			file: "link-to-dot",
+			want: false, // loop
+		},
+		{
+			dir:  dir + "/src/bar/bar2",
+			file: "link-to-src-foo",
+			want: true, // not a loop
+		},
+		{
+			dir:  dir + "/src/a/b/c",
+			file: "e",
+			want: false, // loop: "e" is the same as "b".
+		},
+	}
+	for i, tt := range tests {
+		fi, err := os.Stat(filepath.Join(tt.dir, tt.file))
+		if err != nil {
+			t.Errorf("%d. Stat = %v", i, err)
+			continue
+		}
+		got := shouldTraverse(tt.dir, fi)
+		if got != tt.want {
+			t.Errorf("%d. shouldTraverse(%q, %q) = %v; want %v", i, tt.dir, tt.file, got, tt.want)
+		}
+	}
+}
+
+// Issue 20941: this used to panic on Windows.
+func TestProcessStdin(t *testing.T) {
+	got, err := Process("<standard input>", []byte("package main\nfunc main() {\n\tfmt.Println(123)\n}\n"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), `"fmt"`) {
+		t.Errorf("expected fmt import; got: %s", got)
+	}
+}
+
+// Tests LocalPackagePromotion when there is a local package that matches, it
+// should be the closest match.
+// https://golang.org/issues/17557
+func TestLocalPackagePromotion(t *testing.T) {
+	testConfig{
+		gopathFiles: map[string]string{
+			"config.net/config/config.go":         "package config\n type SystemConfig struct {}", // Will match but should not be first choice
+			"mycompany.net/config/config.go":      "package config\n type SystemConfig struct {}", // Will match but should not be first choice
+			"mycompany.net/tool/config/config.go": "package config\n type SystemConfig struct {}", // Local package should be promoted over shorter package
+		},
+	}.test(t, func(t *goimportTest) {
+		const in = "package main\n var c = &config.SystemConfig{}"
+		const want = `package main
+
+import "mycompany.net/tool/config"
+
+var c = &config.SystemConfig{}
+`
+		got, err := Process(filepath.Join(t.gopath, "src", "mycompany.net/tool/main.go"), []byte(in), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != want {
+			t.Errorf("Process = %q; want %q", got, want)
+		}
+	})
+}
+
+// Tests FindImportInLocalGoFiles looks at the import lines for other Go files in the
+// local directory, since the user is likely to import the same packages in the current
+// Go file.  If an import is found that satisfies the need, it should be used over the
+// standard library.
+// https://golang.org/issues/17557
+func TestFindImportInLocalGoFiles(t *testing.T) {
+	testConfig{
+		gopathFiles: map[string]string{
+			"bytes.net/bytes/bytes.go":  "package bytes\n type Buffer struct {}",                               // Should be selected over standard library
+			"mycompany.net/tool/io.go":  "package main\n import \"bytes.net/bytes\"\n var _ = &bytes.Buffer{}", // Contains package import that will cause stdlib to be ignored
+			"mycompany.net/tool/err.go": "package main\n import \"bogus.net/bytes\"\n var _ = &bytes.Buffer{}", // Contains import which is not resolved, so it is ignored
+		},
+	}.test(t, func(t *goimportTest) {
+		const in = "package main\n var _ = &bytes.Buffer{}"
+		const want = `package main
+
+import "bytes.net/bytes"
+
+var _ = &bytes.Buffer{}
+`
+		got, err := Process(filepath.Join(t.gopath, "src", "mycompany.net/tool/main.go"), []byte(in), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != want {
+			t.Errorf("Process = got %q; want %q", got, want)
+		}
+	})
+}
+
+func TestImportNoGoFiles(t *testing.T) {
+	testConfig{
+		gopathFiles: map[string]string{},
+	}.test(t, func(t *goimportTest) {
+		const in = "package main\n var _ = &bytes.Buffer{}"
+		const want = `package main
+
+import "bytes"
+
+var _ = &bytes.Buffer{}
+`
+		got, err := Process(filepath.Join(t.gopath, "src", "mycompany.net/tool/main.go"), []byte(in), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != want {
+			t.Errorf("Process = got %q; want %q", got, want)
+		}
+	})
 }

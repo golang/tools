@@ -5,10 +5,11 @@
 package vfs_test
 
 import (
-	"golang.org/x/tools/godoc/vfs"
-	"golang.org/x/tools/godoc/vfs/mapfs"
 	"testing"
 	"time"
+
+	"golang.org/x/tools/godoc/vfs"
+	"golang.org/x/tools/godoc/vfs/mapfs"
 )
 
 func TestNewNameSpace(t *testing.T) {
@@ -25,9 +26,9 @@ func TestNewNameSpace(t *testing.T) {
 	t2.Bind("/fs1", mount, "/", vfs.BindReplace)
 
 	testcases := map[string][]bool{
-		"/":            []bool{false, true},
-		"/fs1":         []bool{true, true},
-		"/fs1/fs1file": []bool{true, true},
+		"/":            {false, true},
+		"/fs1":         {true, true},
+		"/fs1/fs1file": {true, true},
 	}
 
 	fss := []vfs.FileSystem{t1, t2}

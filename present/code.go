@@ -36,6 +36,7 @@ func init() {
 type Code struct {
 	Text     template.HTML
 	Play     bool   // runnable code
+	Edit     bool   // editable code
 	FileName string // file name
 	Ext      string // file extension
 	Raw      []byte // content of the file
@@ -61,6 +62,9 @@ func parseCode(ctx *Context, sourceFile string, sourceLine int, cmd string) (Ele
 	// Pull off the HL, if any, from the end of the input line.
 	highlight := ""
 	if hl := highlightRE.FindStringSubmatchIndex(cmd); len(hl) == 4 {
+		if hl[2] < 0 || hl[3] < 0 {
+			return nil, fmt.Errorf("%s:%d invalid highlight syntax", sourceFile, sourceLine)
+		}
 		highlight = cmd[hl[2]:hl[3]]
 		cmd = cmd[:hl[2]-2]
 	}
@@ -88,6 +92,11 @@ func parseCode(ctx *Context, sourceFile string, sourceLine int, cmd string) (Ele
 	lo, hi, err := addrToByteRange(addr, 0, textBytes)
 	if err != nil {
 		return nil, fmt.Errorf("%s:%d: %v", sourceFile, sourceLine, err)
+	}
+	if lo > hi {
+		// The search in addrToByteRange can wrap around so we might
+		// end up with the range ending before its starting point
+		hi, lo = lo, hi
 	}
 
 	// Acme pattern matches can stop mid-line,
@@ -122,6 +131,7 @@ func parseCode(ctx *Context, sourceFile string, sourceLine int, cmd string) (Ele
 	return Code{
 		Text:     template.HTML(buf.String()),
 		Play:     play,
+		Edit:     data.Edit,
 		FileName: filepath.Base(filename),
 		Ext:      filepath.Ext(filename),
 		Raw:      rawCode(lines),
@@ -254,45 +264,4 @@ func parseArgs(name string, line int, args []string) (res []interface{}, err err
 		}
 	}
 	return
-}
-
-// parseArg returns the integer or string value of the argument and tells which it is.
-func parseArg(arg interface{}, max int) (ival int, sval string, isInt bool, err error) {
-	switch n := arg.(type) {
-	case int:
-		if n <= 0 || n > max {
-			return 0, "", false, fmt.Errorf("%d is out of range", n)
-		}
-		return n, "", true, nil
-	case string:
-		return 0, n, false, nil
-	}
-	return 0, "", false, fmt.Errorf("unrecognized argument %v type %T", arg, arg)
-}
-
-// match identifies the input line that matches the pattern in a code invocation.
-// If start>0, match lines starting there rather than at the beginning.
-// The return value is 1-indexed.
-func match(file string, start int, lines []string, pattern string) (int, error) {
-	// $ matches the end of the file.
-	if pattern == "$" {
-		if len(lines) == 0 {
-			return 0, fmt.Errorf("%q: empty file", file)
-		}
-		return len(lines), nil
-	}
-	// /regexp/ matches the line that matches the regexp.
-	if len(pattern) > 2 && pattern[0] == '/' && pattern[len(pattern)-1] == '/' {
-		re, err := regexp.Compile(pattern[1 : len(pattern)-1])
-		if err != nil {
-			return 0, err
-		}
-		for i := start; i < len(lines); i++ {
-			if re.MatchString(lines[i]) {
-				return i + 1, nil
-			}
-		}
-		return 0, fmt.Errorf("%s: no match for %#q", file, pattern)
-	}
-	return 0, fmt.Errorf("unrecognized pattern: %q", pattern)
 }

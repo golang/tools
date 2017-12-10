@@ -79,11 +79,13 @@ func (p *Presentation) initFuncMap() {
 		"sanitize":     sanitizeFunc,
 
 		// support for URL attributes
-		"pkgLink":     pkgLinkFunc,
-		"srcLink":     srcLinkFunc,
-		"posLink_url": newPosLink_urlFunc(srcPosLinkFunc),
-		"docLink":     docLinkFunc,
-		"queryLink":   queryLinkFunc,
+		"pkgLink":       pkgLinkFunc,
+		"srcLink":       srcLinkFunc,
+		"posLink_url":   newPosLink_urlFunc(srcPosLinkFunc),
+		"docLink":       docLinkFunc,
+		"queryLink":     queryLinkFunc,
+		"srcBreadcrumb": srcBreadcrumbFunc,
+		"srcToPkgLink":  srcToPkgLinkFunc,
 
 		// formatting of Examples
 		"example_html":   p.example_htmlFunc,
@@ -101,6 +103,9 @@ func (p *Presentation) initFuncMap() {
 
 		// Number operation
 		"multiply": multiply,
+
+		// formatting of PageInfoMode query string
+		"modeQueryString": modeQueryString,
 	}
 	if p.URLForSrc != nil {
 		p.funcMap["srcLink"] = p.URLForSrc
@@ -190,11 +195,148 @@ func (p *Presentation) node_htmlFunc(info *PageInfo, node interface{}, linkify b
 	var buf2 bytes.Buffer
 	if n, _ := node.(ast.Node); n != nil && linkify && p.DeclLinks {
 		LinkifyText(&buf2, buf1.Bytes(), n)
+		if st, name := isStructTypeDecl(n); st != nil {
+			addStructFieldIDAttributes(&buf2, name, st)
+		}
 	} else {
 		FormatText(&buf2, buf1.Bytes(), -1, true, "", nil)
 	}
 
 	return buf2.String()
+}
+
+// isStructTypeDecl checks whether n is a struct declaration.
+// It either returns a non-nil StructType and its name, or zero values.
+func isStructTypeDecl(n ast.Node) (st *ast.StructType, name string) {
+	gd, ok := n.(*ast.GenDecl)
+	if !ok || gd.Tok != token.TYPE {
+		return nil, ""
+	}
+	if gd.Lparen > 0 {
+		// Parenthesized type. Who does that, anyway?
+		// TODO: Reportedly gri does. Fix this to handle that too.
+		return nil, ""
+	}
+	if len(gd.Specs) != 1 {
+		return nil, ""
+	}
+	ts, ok := gd.Specs[0].(*ast.TypeSpec)
+	if !ok {
+		return nil, ""
+	}
+	st, ok = ts.Type.(*ast.StructType)
+	if !ok {
+		return nil, ""
+	}
+	return st, ts.Name.Name
+}
+
+// addStructFieldIDAttributes modifies the contents of buf such that
+// all struct fields of the named struct have <span id='name.Field'>
+// in them, so people can link to /#Struct.Field.
+func addStructFieldIDAttributes(buf *bytes.Buffer, name string, st *ast.StructType) {
+	if st.Fields == nil {
+		return
+	}
+	// needsLink is a set of identifiers that still need to be
+	// linked, where value == key, to avoid an allocation in func
+	// linkedField.
+	needsLink := make(map[string]string)
+
+	for _, f := range st.Fields.List {
+		if len(f.Names) == 0 {
+			continue
+		}
+		fieldName := f.Names[0].Name
+		needsLink[fieldName] = fieldName
+	}
+	var newBuf bytes.Buffer
+	foreachLine(buf.Bytes(), func(line []byte) {
+		if fieldName := linkedField(line, needsLink); fieldName != "" {
+			fmt.Fprintf(&newBuf, `<span id="%s.%s"></span>`, name, fieldName)
+			delete(needsLink, fieldName)
+		}
+		newBuf.Write(line)
+	})
+	buf.Reset()
+	buf.Write(newBuf.Bytes())
+}
+
+// foreachLine calls fn for each line of in, where a line includes
+// the trailing "\n", except on the last line, if it doesn't exist.
+func foreachLine(in []byte, fn func(line []byte)) {
+	for len(in) > 0 {
+		nl := bytes.IndexByte(in, '\n')
+		if nl == -1 {
+			fn(in)
+			return
+		}
+		fn(in[:nl+1])
+		in = in[nl+1:]
+	}
+}
+
+// commentPrefix is the line prefix for comments after they've been HTMLified.
+var commentPrefix = []byte(`<span class="comment">// `)
+
+// linkedField determines whether the given line starts with an
+// identifer in the provided ids map (mapping from identifier to the
+// same identifier). The line can start with either an identifier or
+// an identifier in a comment. If one matches, it returns the
+// identifier that matched. Otherwise it returns the empty string.
+func linkedField(line []byte, ids map[string]string) string {
+	line = bytes.TrimSpace(line)
+
+	// For fields with a doc string of the
+	// conventional form, we put the new span into
+	// the comment instead of the field.
+	// The "conventional" form is a complete sentence
+	// per https://golang.org/s/style#comment-sentences like:
+	//
+	//    // Foo is an optional Fooer to foo the foos.
+	//    Foo Fooer
+	//
+	// In this case, we want the #StructName.Foo
+	// link to make the browser go to the comment
+	// line "Foo is an optional Fooer" instead of
+	// the "Foo Fooer" line, which could otherwise
+	// obscure the docs above the browser's "fold".
+	//
+	// TODO: do this better, so it works for all
+	// comments, including unconventional ones.
+	if bytes.HasPrefix(line, commentPrefix) {
+		line = line[len(commentPrefix):]
+	}
+	id := scanIdentifier(line)
+	if len(id) == 0 {
+		// No leading identifier. Avoid map lookup for
+		// somewhat common case.
+		return ""
+	}
+	return ids[string(id)]
+}
+
+// scanIdentifier scans a valid Go identifier off the front of v and
+// either returns a subslice of v if there's a valid identifier, or
+// returns a zero-length slice.
+func scanIdentifier(v []byte) []byte {
+	var n int // number of leading bytes of v belonging to an identifier
+	for {
+		r, width := utf8.DecodeRune(v[n:])
+		if !(isLetter(r) || n > 0 && isDigit(r)) {
+			break
+		}
+		n += width
+	}
+	return v[:n]
+}
+
+func isLetter(ch rune) bool {
+	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_' || ch >= utf8.RuneSelf && unicode.IsLetter(ch)
+}
+
+func isDigit(ch rune) bool {
+	return '0' <= ch && ch <= '9' || ch >= utf8.RuneSelf && unicode.IsDigit(ch)
 }
 
 func comment_htmlFunc(comment string) string {
@@ -279,9 +421,11 @@ func sanitizeFunc(src string) string {
 }
 
 type PageInfo struct {
-	Dirname string // directory containing the package
-	Err     error  // error or nil
-	Share   bool   // show share button on examples
+	Dirname  string // directory containing the package
+	Err      error  // error or nil
+	GoogleCN bool   // page is being served from golang.google.cn
+
+	Mode PageInfoMode // display metadata from query string
 
 	// package info
 	FSet       *token.FileSet         // nil if no package documentation
@@ -315,6 +459,48 @@ func pkgLinkFunc(path string) string {
 	path = strings.TrimPrefix(path, "src/")
 	path = strings.TrimPrefix(path, "pkg/")
 	return "pkg/" + path
+}
+
+// srcToPkgLinkFunc builds an <a> tag linking to the package
+// documentation of relpath.
+func srcToPkgLinkFunc(relpath string) string {
+	relpath = pkgLinkFunc(relpath)
+	relpath = pathpkg.Dir(relpath)
+	if relpath == "pkg" {
+		return `<a href="/pkg">Index</a>`
+	}
+	return fmt.Sprintf(`<a href="/%s">%s</a>`, relpath, relpath[len("pkg/"):])
+}
+
+// srcBreadcrumbFun converts each segment of relpath to a HTML <a>.
+// Each segment links to its corresponding src directories.
+func srcBreadcrumbFunc(relpath string) string {
+	segments := strings.Split(relpath, "/")
+	var buf bytes.Buffer
+	var selectedSegment string
+	var selectedIndex int
+
+	if strings.HasSuffix(relpath, "/") {
+		// relpath is a directory ending with a "/".
+		// Selected segment is the segment before the last slash.
+		selectedIndex = len(segments) - 2
+		selectedSegment = segments[selectedIndex] + "/"
+	} else {
+		selectedIndex = len(segments) - 1
+		selectedSegment = segments[selectedIndex]
+	}
+
+	for i := range segments[:selectedIndex] {
+		buf.WriteString(fmt.Sprintf(`<a href="/%s">%s</a>/`,
+			strings.Join(segments[:i+1], "/"),
+			segments[i],
+		))
+	}
+
+	buf.WriteString(`<span class="text-muted">`)
+	buf.WriteString(selectedSegment)
+	buf.WriteString(`</span>`)
+	return buf.String()
 }
 
 func newPosLink_urlFunc(srcPosLinkFunc func(s string, line, low, high int) string) func(info *PageInfo, n interface{}) string {
@@ -418,21 +604,24 @@ func (p *Presentation) example_textFunc(info *PageInfo, funcName, indent string)
 
 		// print code
 		cnode := &printer.CommentedNode{Node: eg.Code, Comments: eg.Comments}
+		config := &printer.Config{Mode: printer.UseSpaces, Tabwidth: p.TabWidth}
 		var buf1 bytes.Buffer
-		p.writeNode(&buf1, info.FSet, cnode)
+		config.Fprint(&buf1, info.FSet, cnode)
 		code := buf1.String()
-		// Additional formatting if this is a function body.
+
+		// Additional formatting if this is a function body. Unfortunately, we
+		// can't print statements individually because we would lose comments
+		// on later statements.
 		if n := len(code); n >= 2 && code[0] == '{' && code[n-1] == '}' {
 			// remove surrounding braces
 			code = code[1 : n-1]
 			// unindent
-			code = strings.Replace(code, "\n    ", "\n", -1)
+			code = replaceLeadingIndentation(code, strings.Repeat(" ", p.TabWidth), indent)
 		}
 		code = strings.Trim(code, "\n")
-		code = strings.Replace(code, "\n", "\n\t", -1)
 
 		buf.WriteString(indent)
-		buf.WriteString("Example:\n\t")
+		buf.WriteString("Example:\n")
 		buf.WriteString(code)
 		buf.WriteString("\n\n")
 	}
@@ -460,7 +649,7 @@ func (p *Presentation) example_htmlFunc(info *PageInfo, funcName string) string 
 			// remove surrounding braces
 			code = code[1 : n-1]
 			// unindent
-			code = strings.Replace(code, "\n    ", "\n", -1)
+			code = replaceLeadingIndentation(code, strings.Repeat(" ", p.TabWidth), "")
 			// remove output comment
 			if loc := exampleOutputRx.FindStringIndex(code); loc != nil {
 				code = strings.TrimSpace(code[:loc[0]])
@@ -491,8 +680,8 @@ func (p *Presentation) example_htmlFunc(info *PageInfo, funcName string) string 
 
 		err := p.ExampleHTML.Execute(&buf, struct {
 			Name, Doc, Code, Play, Output string
-			Share                         bool
-		}{eg.Name, eg.Doc, code, play, out, info.Share})
+			GoogleCN                      bool
+		}{eg.Name, eg.Doc, code, play, out, info.GoogleCN})
 		if err != nil {
 			log.Print(err)
 		}
@@ -609,6 +798,93 @@ func splitExampleName(s string) (name, suffix string) {
 	}
 	name = s
 	return
+}
+
+// replaceLeadingIndentation replaces oldIndent at the beginning of each line
+// with newIndent. This is used for formatting examples. Raw strings that
+// span multiple lines are handled specially: oldIndent is not removed (since
+// go/printer will not add any indentation there), but newIndent is added
+// (since we may still want leading indentation).
+func replaceLeadingIndentation(body, oldIndent, newIndent string) string {
+	// Handle indent at the beginning of the first line. After this, we handle
+	// indentation only after a newline.
+	var buf bytes.Buffer
+	if strings.HasPrefix(body, oldIndent) {
+		buf.WriteString(newIndent)
+		body = body[len(oldIndent):]
+	}
+
+	// Use a state machine to keep track of whether we're in a string or
+	// rune literal while we process the rest of the code.
+	const (
+		codeState = iota
+		runeState
+		interpretedStringState
+		rawStringState
+	)
+	searchChars := []string{
+		"'\"`\n", // codeState
+		`\'`,     // runeState
+		`\"`,     // interpretedStringState
+		"`\n",    // rawStringState
+		// newlineState does not need to search
+	}
+	state := codeState
+	for {
+		i := strings.IndexAny(body, searchChars[state])
+		if i < 0 {
+			buf.WriteString(body)
+			break
+		}
+		c := body[i]
+		buf.WriteString(body[:i+1])
+		body = body[i+1:]
+		switch state {
+		case codeState:
+			switch c {
+			case '\'':
+				state = runeState
+			case '"':
+				state = interpretedStringState
+			case '`':
+				state = rawStringState
+			case '\n':
+				if strings.HasPrefix(body, oldIndent) {
+					buf.WriteString(newIndent)
+					body = body[len(oldIndent):]
+				}
+			}
+
+		case runeState:
+			switch c {
+			case '\\':
+				r, size := utf8.DecodeRuneInString(body)
+				buf.WriteRune(r)
+				body = body[size:]
+			case '\'':
+				state = codeState
+			}
+
+		case interpretedStringState:
+			switch c {
+			case '\\':
+				r, size := utf8.DecodeRuneInString(body)
+				buf.WriteRune(r)
+				body = body[size:]
+			case '"':
+				state = codeState
+			}
+
+		case rawStringState:
+			switch c {
+			case '`':
+				state = codeState
+			case '\n':
+				buf.WriteString(newIndent)
+			}
+		}
+	}
+	return buf.String()
 }
 
 // Write an AST node to w.

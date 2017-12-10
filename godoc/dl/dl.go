@@ -32,13 +32,12 @@ import (
 	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine/log"
 	"google.golang.org/appengine/memcache"
-	"google.golang.org/appengine/user"
 )
 
 const (
-	gcsBaseURL    = "https://storage.googleapis.com/golang/"
-	cacheKey      = "download_list_3" // increment if listTemplateData changes
-	cacheDuration = time.Hour
+	downloadBaseURL = "https://dl.google.com/go/"
+	cacheKey        = "download_list_3" // increment if listTemplateData changes
+	cacheDuration   = time.Hour
 )
 
 func RegisterHandlers(mux *http.ServeMux) {
@@ -98,6 +97,22 @@ func (f File) PrettySize() string {
 	return fmt.Sprintf("%.0fMB", float64(f.Size)/mb)
 }
 
+var primaryPorts = map[string]bool{
+	"darwin/amd64":  true,
+	"linux/386":     true,
+	"linux/amd64":   true,
+	"linux/armv6l":  true,
+	"windows/386":   true,
+	"windows/amd64": true,
+}
+
+func (f File) PrimaryPort() bool {
+	if f.Kind == "source" {
+		return true
+	}
+	return primaryPorts[f.OS+"/"+f.Arch]
+}
+
 func (f File) Highlight() bool {
 	switch {
 	case f.Kind == "source":
@@ -118,14 +133,15 @@ func (f File) Highlight() bool {
 }
 
 func (f File) URL() string {
-	return gcsBaseURL + f.Filename
+	return downloadBaseURL + f.Filename
 }
 
 type Release struct {
-	Version string
-	Stable  bool
-	Files   []File
-	Visible bool // show files on page load
+	Version        string
+	Stable         bool
+	Files          []File
+	Visible        bool // show files on page load
+	SplitPortTable bool // whether files should be split by primary/other ports.
 }
 
 type Feature struct {
@@ -134,7 +150,7 @@ type Feature struct {
 	File
 	fileRE *regexp.Regexp
 
-	Platform     string // "Microsoft Windows", "Mac OS X", "Linux"
+	Platform     string // "Microsoft Windows", "Apple macOS", "Linux"
 	Requirements string // "Windows XP and above, 64-bit Intel Processor"
 }
 
@@ -143,12 +159,12 @@ type Feature struct {
 var featuredFiles = []Feature{
 	{
 		Platform:     "Microsoft Windows",
-		Requirements: "Windows XP or later, Intel 64-bit processor",
+		Requirements: "Windows XP SP3 or later, Intel 64-bit processor",
 		fileRE:       regexp.MustCompile(`\.windows-amd64\.msi$`),
 	},
 	{
-		Platform:     "Apple OS X",
-		Requirements: "OS X 10.8 or later, Intel 64-bit processor",
+		Platform:     "Apple macOS",
+		Requirements: "macOS 10.8 or later, Intel 64-bit processor",
 		fileRE:       regexp.MustCompile(`\.darwin-amd64(-osx10\.8)?\.pkg$`),
 	},
 	{
@@ -164,9 +180,8 @@ var featuredFiles = []Feature{
 
 // data to send to the template; increment cacheKey if you change this.
 type listTemplateData struct {
-	Featured         []Feature
-	Stable, Unstable []Release
-	LoginURL         string
+	Featured                  []Feature
+	Stable, Unstable, Archive []Release
 }
 
 var (
@@ -196,14 +211,9 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 			log.Errorf(c, "error listing: %v", err)
 			return
 		}
-		d.Stable, d.Unstable = filesToReleases(fs)
+		d.Stable, d.Unstable, d.Archive = filesToReleases(fs)
 		if len(d.Stable) > 0 {
 			d.Featured = filesToFeatured(d.Stable[0].Files)
-		}
-
-		d.LoginURL, _ = user.LoginURL(c, "/dl")
-		if user.Current(c) != nil {
-			d.LoginURL, _ = user.LogoutURL(c, "/dl")
 		}
 
 		item := &memcache.Item{Key: cacheKey, Object: &d, Expiration: cacheDuration}
@@ -229,7 +239,7 @@ func filesToFeatured(fs []File) (featured []Feature) {
 	return
 }
 
-func filesToReleases(fs []File) (stable, unstable []Release) {
+func filesToReleases(fs []File) (stable, unstable, archive []Release) {
 	sort.Sort(fileOrder(fs))
 
 	var r *Release
@@ -238,27 +248,53 @@ func filesToReleases(fs []File) (stable, unstable []Release) {
 		if r == nil {
 			return
 		}
-		if r.Stable {
-			if len(stable) == 0 {
-				// Display files for latest stable release.
-				stableMaj, stableMin, _ = parseVersion(r.Version)
-				r.Visible = len(stable) == 0
+		if !r.Stable {
+			if len(unstable) != 0 {
+				// Only show one (latest) unstable version.
+				return
 			}
-			stable = append(stable, *r)
+			maj, min, _ := parseVersion(r.Version)
+			if maj < stableMaj || maj == stableMaj && min <= stableMin {
+				// Display unstable version only if newer than the
+				// latest stable release.
+				return
+			}
+			unstable = append(unstable, *r)
+		}
+
+		// Reports whether the release is the most recent minor version of the
+		// two most recent major versions.
+		shouldAddStable := func() bool {
+			if len(stable) >= 2 {
+				// Show up to two stable versions.
+				return false
+			}
+			if len(stable) == 0 {
+				// Most recent stable version.
+				stableMaj, stableMin, _ = parseVersion(r.Version)
+				return true
+			}
+			if maj, _, _ := parseVersion(r.Version); maj == stableMaj {
+				// Older minor version of most recent major version.
+				return false
+			}
+			// Second most recent stable version.
+			return true
+		}
+		if !shouldAddStable() {
+			archive = append(archive, *r)
 			return
 		}
-		if len(unstable) != 0 {
-			// Only show one (latest) unstable version.
-			return
-		}
-		maj, min, _ := parseVersion(r.Version)
-		if maj < stableMaj || maj == stableMaj && min <= stableMin {
-			// Display unstable version only if newer than the
-			// latest stable release.
-			return
-		}
-		r.Visible = true
-		unstable = append(unstable, *r)
+
+		// Split the file list into primary/other ports for the stable releases.
+		// NOTE(cbro): This is only done for stable releases because maintaining the historical
+		// nature of primary/other ports for older versions is infeasible.
+		// If freebsd is considered primary some time in the future, we'd not want to
+		// mark all of the older freebsd binaries as "primary".
+		// It might be better if we set that as a flag when uploading.
+		r.SplitPortTable = true
+		r.Visible = true // Toggle open all stable releases.
+		stable = append(stable, *r)
 	}
 	for _, f := range fs {
 		if r == nil || f.Version != r.Version {
@@ -388,12 +424,12 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	http.Redirect(w, r, gcsBaseURL+name, http.StatusFound)
+	http.Redirect(w, r, downloadBaseURL+name, http.StatusFound)
 }
 
 func validUser(user string) bool {
 	switch user {
-	case "adg", "bradfitz", "cbro":
+	case "adg", "bradfitz", "cbro", "andybons":
 		return true
 	}
 	return false
@@ -443,15 +479,15 @@ func pretty(s string) string {
 }
 
 var prettyStrings = map[string]string{
-	"darwin":  "OS X",
+	"darwin":  "macOS",
 	"freebsd": "FreeBSD",
 	"linux":   "Linux",
 	"windows": "Windows",
 
-	"386":   "32-bit",
-	"amd64": "64-bit",
-
+	"386":    "x86",
+	"amd64":  "x86-64",
 	"armv6l": "ARMv6",
+	"arm64":  "ARMv8",
 
 	"archive":   "Archive",
 	"installer": "Installer",

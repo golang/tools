@@ -150,7 +150,7 @@ func Handler(target string) http.Handler {
 	})
 }
 
-var validId = regexp.MustCompile(`^[A-Za-z0-9-]*$`)
+var validId = regexp.MustCompile(`^[A-Za-z0-9-]*/?$`)
 
 func PrefixHandler(prefix, baseURL string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -196,7 +196,7 @@ func clHandler(w http.ResponseWriter, r *http.Request) {
 	if n, err := strconv.Atoi(id); err == nil && n > 150000 {
 		target = "https://codereview.appspot.com/" + id
 	} else {
-		target = "https://go-review.googlesource.com/r/" + id
+		target = "https://go-review.googlesource.com/" + id
 	}
 	http.Redirect(w, r, target, http.StatusFound)
 }

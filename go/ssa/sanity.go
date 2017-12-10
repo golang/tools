@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.5
-
 package ssa
 
 // An optional pass for sanity-checking invariants of the SSA representation.
@@ -353,7 +351,9 @@ func (s *sanity) checkBlock(b *BasicBlock, index int) {
 			// Check that Operands that are also Instructions belong to same function.
 			// TODO(adonovan): also check their block dominates block b.
 			if val, ok := val.(Instruction); ok {
-				if val.Parent() != s.fn {
+				if val.Block() == nil {
+					s.errorf("operand %d of %s is an instruction (%s) that belongs to no block", i, instr, val)
+				} else if val.Parent() != s.fn {
 					s.errorf("operand %d of %s is an instruction (%s) from function %s", i, instr, val, val.Parent())
 				}
 			}

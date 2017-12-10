@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.5
-
 package rename
 
 import (
 	"go/ast"
+	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
@@ -52,7 +51,7 @@ func isValidIdentifier(id string) bool {
 			return false
 		}
 	}
-	return true
+	return token.Lookup(id) == token.IDENT
 }
 
 // isLocal reports whether obj is local to some function.
@@ -80,7 +79,7 @@ func isDigit(ch rune) bool {
 	return '0' <= ch && ch <= '9' || ch >= 0x80 && unicode.IsDigit(ch)
 }
 
-// -- Plundered from golang.org/x/tools/oracle -----------------
+// -- Plundered from golang.org/x/tools/cmd/guru -----------------
 
 // sameFile returns true if x and y have the same basename and denote
 // the same file.

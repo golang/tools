@@ -53,10 +53,7 @@ import (
 	"golang.org/x/tools/godoc/vfs/zipfs"
 )
 
-const (
-	defaultAddr = ":6060" // default webserver address
-	toolsPath   = "golang.org/x/tools/cmd/"
-)
+const defaultAddr = ":6060" // default webserver address
 
 var (
 	// file system to serve
@@ -89,7 +86,7 @@ var (
 	// layout control
 	tabWidth       = flag.Int("tabwidth", 4, "tab width")
 	showTimestamps = flag.Bool("timestamps", false, "show timestamps with directory listings")
-	templateDir    = flag.String("templates", "", "directory containing alternate template files")
+	templateDir    = flag.String("templates", "", "load templates/JS/CSS from disk in this directory")
 	showPlayground = flag.Bool("play", false, "enable playground in web interface")
 	showExamples   = flag.Bool("ex", false, "show examples in command line mode")
 	declLinks      = flag.Bool("links", true, "link identifiers to their declarations")
@@ -162,8 +159,15 @@ func main() {
 
 	playEnabled = *showPlayground
 
-	// Check usage: either server and no args, command line and args, or index creation mode
+	// Check usage: server and no args.
+	if (*httpAddr != "" || *urlFlag != "") && (flag.NArg() > 0) {
+		fmt.Fprintln(os.Stderr, "can't use -http with args.")
+		usage()
+	}
+
+	// Check usage: command line args or index creation mode.
 	if (*httpAddr != "" || *urlFlag != "") != (flag.NArg() == 0) && !*writeIndex {
+		fmt.Fprintln(os.Stderr, "missing args.")
 		usage()
 	}
 
@@ -310,6 +314,14 @@ func main() {
 			go analysis.Run(pointerAnalysis, &corpus.Analysis)
 		}
 
+		if serveAutoCertHook != nil {
+			go func() {
+				if err := serveAutoCertHook(handler); err != nil {
+					log.Fatalf("ListenAndServe TLS: %v", err)
+				}
+			}()
+		}
+
 		// Start http server.
 		if err := http.ListenAndServe(*httpAddr, handler); err != nil {
 			log.Fatalf("ListenAndServe %s: %v", *httpAddr, err)
@@ -327,3 +339,7 @@ func main() {
 		log.Print(err)
 	}
 }
+
+// serveAutoCertHook if non-nil specifies a function to listen on port 443.
+// See autocert.go.
+var serveAutoCertHook func(http.Handler) error

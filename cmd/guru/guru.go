@@ -21,6 +21,7 @@ import (
 	"io"
 	"log"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/buildutil"
@@ -62,11 +63,6 @@ func (qpos *queryPos) typeString(T types.Type) string {
 // ObjectString prints object obj relative to the query position.
 func (qpos *queryPos) objectString(obj types.Object) string {
 	return types.ObjectString(obj, types.RelativeTo(qpos.info.Pkg))
-}
-
-// SelectionString prints selection sel relative to the query position.
-func (qpos *queryPos) selectionString(sel *types.Selection) string {
-	return types.SelectionString(sel, types.RelativeTo(qpos.info.Pkg))
 }
 
 // A Query specifies a single guru query.
@@ -129,26 +125,18 @@ func setPTAScope(lconf *loader.Config, scope []string) error {
 // Create a pointer.Config whose scope is the initial packages of lprog
 // and their dependencies.
 func setupPTA(prog *ssa.Program, lprog *loader.Program, ptaLog io.Writer, reflection bool) (*pointer.Config, error) {
-	// TODO(adonovan): the body of this function is essentially
-	// duplicated in all go/pointer clients.  Refactor.
-
 	// For each initial package (specified on the command line),
 	// if it has a main function, analyze that,
 	// otherwise analyze its tests, if any.
-	var testPkgs, mains []*ssa.Package
+	var mains []*ssa.Package
 	for _, info := range lprog.InitialPackages() {
-		initialPkg := prog.Package(info.Pkg)
+		p := prog.Package(info.Pkg)
 
 		// Add package to the pointer analysis scope.
-		if initialPkg.Func("main") != nil {
-			mains = append(mains, initialPkg)
-		} else {
-			testPkgs = append(testPkgs, initialPkg)
-		}
-	}
-	if testPkgs != nil {
-		if p := prog.CreateTestMainPackage(testPkgs...); p != nil {
+		if p.Pkg.Name() == "main" && p.Func("main") != nil {
 			mains = append(mains, p)
+		} else if main := prog.CreateTestMainPackage(p); main != nil {
+			mains = append(mains, main)
 		}
 	}
 	if mains == nil {
@@ -173,32 +161,35 @@ func importQueryPackage(pos string, conf *loader.Config) (string, error) {
 
 	_, importPath, err := guessImportPath(filename, conf.Build)
 	if err != nil {
-		return "", err // can't find GOPATH dir
-	}
+		// Can't find GOPATH dir.
+		// Treat the query file as its own package.
+		importPath = "command-line-arguments"
+		conf.CreateFromFilenames(importPath, filename)
+	} else {
+		// Check that it's possible to load the queried package.
+		// (e.g. guru tests contain different 'package' decls in same dir.)
+		// Keep consistent with logic in loader/util.go!
+		cfg2 := *conf.Build
+		cfg2.CgoEnabled = false
+		bp, err := cfg2.Import(importPath, "", 0)
+		if err != nil {
+			return "", err // no files for package
+		}
 
-	// Check that it's possible to load the queried package.
-	// (e.g. guru tests contain different 'package' decls in same dir.)
-	// Keep consistent with logic in loader/util.go!
-	cfg2 := *conf.Build
-	cfg2.CgoEnabled = false
-	bp, err := cfg2.Import(importPath, "", 0)
-	if err != nil {
-		return "", err // no files for package
-	}
-
-	switch pkgContainsFile(bp, filename) {
-	case 'T':
-		conf.ImportWithTests(importPath)
-	case 'X':
-		conf.ImportWithTests(importPath)
-		importPath += "_test" // for TypeCheckFuncBodies
-	case 'G':
-		conf.Import(importPath)
-	default:
-		// This happens for ad-hoc packages like
-		// $GOROOT/src/net/http/triv.go.
-		return "", fmt.Errorf("package %q doesn't contain file %s",
-			importPath, filename)
+		switch pkgContainsFile(bp, filename) {
+		case 'T':
+			conf.ImportWithTests(importPath)
+		case 'X':
+			conf.ImportWithTests(importPath)
+			importPath += "_test" // for TypeCheckFuncBodies
+		case 'G':
+			conf.Import(importPath)
+		default:
+			// This happens for ad-hoc packages like
+			// $GOROOT/src/net/http/triv.go.
+			return "", fmt.Errorf("package %q doesn't contain file %s",
+				importPath, filename)
+		}
 	}
 
 	conf.TypeCheckFuncBodies = func(p string) bool { return p == importPath }
@@ -260,6 +251,53 @@ func parseQueryPos(lprog *loader.Program, pos string, needExact bool) (*queryPos
 
 // ---------- Utilities ----------
 
+// loadWithSoftErrors calls lconf.Load, suppressing "soft" errors.  (See Go issue 16530.)
+// TODO(adonovan): Once the loader has an option to allow soft errors,
+// replace calls to loadWithSoftErrors with loader calls with that parameter.
+func loadWithSoftErrors(lconf *loader.Config) (*loader.Program, error) {
+	lconf.AllowErrors = true
+
+	// Ideally we would just return conf.Load() here, but go/types
+	// reports certain "soft" errors that gc does not (Go issue 14596).
+	// As a workaround, we set AllowErrors=true and then duplicate
+	// the loader's error checking but allow soft errors.
+	// It would be nice if the loader API permitted "AllowErrors: soft".
+	prog, err := lconf.Load()
+	if err != nil {
+		return nil, err
+	}
+	var errpkgs []string
+	// Report hard errors in indirectly imported packages.
+	for _, info := range prog.AllPackages {
+		if containsHardErrors(info.Errors) {
+			errpkgs = append(errpkgs, info.Pkg.Path())
+		} else {
+			// Enable SSA construction for packages containing only soft errors.
+			info.TransitivelyErrorFree = true
+		}
+	}
+	if errpkgs != nil {
+		var more string
+		if len(errpkgs) > 3 {
+			more = fmt.Sprintf(" and %d more", len(errpkgs)-3)
+			errpkgs = errpkgs[:3]
+		}
+		return nil, fmt.Errorf("couldn't load packages due to errors: %s%s",
+			strings.Join(errpkgs, ", "), more)
+	}
+	return prog, err
+}
+
+func containsHardErrors(errors []error) bool {
+	for _, err := range errors {
+		if err, ok := err.(types.Error); ok && err.Soft {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // allowErrors causes type errors to be silently ignored.
 // (Not suitable if SSA construction follows.)
 func allowErrors(lconf *loader.Config) {
@@ -315,6 +353,14 @@ func fprintf(w io.Writer, fset *token.FileSet, pos interface{}, format string, a
 	case token.Pos:
 		start = pos
 		end = start
+	case *types.PkgName:
+		// The Pos of most PkgName objects does not coincide with an identifier,
+		// so we suppress the usual start+len(name) heuristic for types.Objects.
+		start = pos.Pos()
+		end = start
+	case types.Object:
+		start = pos.Pos()
+		end = start + token.Pos(len(pos.Name())) // heuristic
 	case interface {
 		Pos() token.Pos
 	}:

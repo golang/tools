@@ -22,50 +22,6 @@ import (
 	"time"
 )
 
-var godocTests = []struct {
-	args      []string
-	matches   []string // regular expressions
-	dontmatch []string // regular expressions
-}{
-	{
-		args: []string{"fmt"},
-		matches: []string{
-			`import "fmt"`,
-			`Package fmt implements formatted I/O`,
-		},
-	},
-	{
-		args: []string{"io", "WriteString"},
-		matches: []string{
-			`func WriteString\(`,
-			`WriteString writes the contents of the string s to w`,
-		},
-	},
-	{
-		args: []string{"nonexistingpkg"},
-		matches: []string{
-			// The last pattern (does not e) is for plan9:
-			// http://build.golang.org/log/2d8e5e14ed365bfa434b37ec0338cd9e6f8dd9bf
-			`no such file or directory|does not exist|cannot find the file|(?:' does not e)`,
-		},
-	},
-	{
-		args: []string{"fmt", "NonexistentSymbol"},
-		matches: []string{
-			`No match found\.`,
-		},
-	},
-	{
-		args: []string{"-src", "syscall", "Open"},
-		matches: []string{
-			`func Open\(`,
-		},
-		dontmatch: []string{
-			`No match found\.`,
-		},
-	},
-}
-
 // buildGodoc builds the godoc executable.
 // It returns its path, and a cleanup function.
 //
@@ -97,11 +53,69 @@ func buildGodoc(t *testing.T) (bin string, cleanup func()) {
 	return bin, func() { os.RemoveAll(tmp) }
 }
 
+var isGo19 bool // godoc19_test.go sets it to true.
+
 // Basic regression test for godoc command-line tool.
 func TestCLI(t *testing.T) {
 	bin, cleanup := buildGodoc(t)
 	defer cleanup()
-	for _, test := range godocTests {
+
+	// condStr returns s if cond is true, otherwise empty string.
+	condStr := func(cond bool, s string) string {
+		if !cond {
+			return ""
+		}
+		return s
+	}
+
+	tests := []struct {
+		args      []string
+		matches   []string // regular expressions
+		dontmatch []string // regular expressions
+	}{
+		{
+			args: []string{"fmt"},
+			matches: []string{
+				`import "fmt"`,
+				`Package fmt implements formatted I/O`,
+			},
+		},
+		{
+			args: []string{"io", "WriteString"},
+			matches: []string{
+				`func WriteString\(`,
+				`WriteString writes the contents of the string s to w`,
+			},
+		},
+		{
+			args: []string{"nonexistingpkg"},
+			matches: []string{
+				`cannot find package` +
+					// TODO: Remove this when support for Go 1.8 is dropped.
+					condStr(!isGo19,
+						// For Go 1.8 and older, because it doesn't have CL 33158 change applied to go/build.
+						// The last pattern (does not e) is for plan9:
+						// http://build.golang.org/log/2d8e5e14ed365bfa434b37ec0338cd9e6f8dd9bf
+						`|no such file or directory|does not exist|cannot find the file|(?:' does not e)`),
+			},
+		},
+		{
+			args: []string{"fmt", "NonexistentSymbol"},
+			matches: []string{
+				`No match found\.`,
+			},
+		},
+		{
+			args: []string{"-src", "syscall", "Open"},
+			matches: []string{
+				`func Open\(`,
+			},
+			dontmatch: []string{
+				`No match found\.`,
+			},
+		},
+	}
+	for _, test := range tests {
 		cmd := exec.Command(bin, test.args...)
 		cmd.Args[0] = "godoc"
 		out, err := cmd.CombinedOutput()
@@ -140,7 +154,7 @@ func waitForServerReady(t *testing.T, addr string) {
 	waitForServer(t,
 		fmt.Sprintf("http://%v/", addr),
 		"The Go Programming Language",
-		5*time.Second)
+		15*time.Second)
 }
 
 func waitForSearchReady(t *testing.T, addr string) {
@@ -191,6 +205,9 @@ func TestWebIndex(t *testing.T) {
 
 // Basic integration test for godoc HTTP interface.
 func testWeb(t *testing.T, withIndex bool) {
+	if runtime.GOOS == "plan9" {
+		t.Skip("skipping on plan9; files to start up quickly enough")
+	}
 	bin, cleanup := buildGodoc(t)
 	defer cleanup()
 	addr := serverAddress(t)
@@ -252,14 +269,14 @@ func testWeb(t *testing.T, withIndex bool) {
 			match: []string{
 				"Standard library",
 				"Package fmt implements formatted I/O",
-				"internal/syscall",
+				"internal/syscall/?m=all",
 			},
 			dontmatch: []string{
 				"cmd/gc",
 			},
 		},
 		{
-			path: "/search?q=notwithstanding",
+			path: "/search?q=ListenAndServe",
 			match: []string{
 				"/src",
 			},
@@ -277,7 +294,7 @@ func testWeb(t *testing.T, withIndex bool) {
 		{
 			path: "/cmd/compile/internal/amd64/",
 			match: []string{
-				`href="/src/cmd/compile/internal/amd64/reg.go"`,
+				`href="/src/cmd/compile/internal/amd64/ssa.go"`,
 			},
 		},
 	}

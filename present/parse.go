@@ -66,12 +66,13 @@ func Register(name string, parser ParseFunc) {
 
 // Doc represents an entire document.
 type Doc struct {
-	Title    string
-	Subtitle string
-	Time     time.Time
-	Authors  []Author
-	Sections []Section
-	Tags     []string
+	Title      string
+	Subtitle   string
+	Time       time.Time
+	Authors    []Author
+	TitleNotes []string
+	Sections   []Section
+	Tags       []string
 }
 
 // Author represents the person who wrote and/or is presenting the document.
@@ -95,12 +96,32 @@ func (p *Author) TextElem() (elems []Elem) {
 // Section represents a section of a document (such as a presentation slide)
 // comprising a title and a list of elements.
 type Section struct {
-	Number []int
-	Title  string
-	Elem   []Elem
-	Notes  []string
+	Number  []int
+	Title   string
+	Elem    []Elem
+	Notes   []string
+	Classes []string
+	Styles  []string
 }
 
+// HTMLAttributes for the section
+func (s Section) HTMLAttributes() template.HTMLAttr {
+	if len(s.Classes) == 0 && len(s.Styles) == 0 {
+		return ""
+	}
+
+	var class string
+	if len(s.Classes) > 0 {
+		class = fmt.Sprintf(`class=%q`, strings.Join(s.Classes, " "))
+	}
+	var style string
+	if len(s.Styles) > 0 {
+		style = fmt.Sprintf(`style=%q`, strings.Join(s.Styles, " "))
+	}
+	return template.HTMLAttr(strings.Join([]string{class, style}, " "))
+}
+
+// Sections contained within the section.
 func (s Section) Sections() (sections []Section) {
 	for _, e := range s.Elem {
 		if section, ok := e.(Section); ok {
@@ -250,6 +271,17 @@ func (ctx *Context) Parse(r io.Reader, name string, mode ParseMode) (*Doc, error
 	if err != nil {
 		return nil, err
 	}
+
+	for i := lines.line; i < len(lines.text); i++ {
+		if strings.HasPrefix(lines.text[i], "*") {
+			break
+		}
+
+		if isSpeakerNote(lines.text[i]) {
+			doc.TitleNotes = append(doc.TitleNotes, lines.text[i][2:])
+		}
+	}
+
 	err = parseHeader(doc, lines)
 	if err != nil {
 		return nil, err
@@ -257,12 +289,13 @@ func (ctx *Context) Parse(r io.Reader, name string, mode ParseMode) (*Doc, error
 	if mode&TitlesOnly != 0 {
 		return doc, nil
 	}
+
 	// Authors
 	if doc.Authors, err = parseAuthors(lines); err != nil {
 		return nil, err
 	}
 	// Sections
-	if doc.Sections, err = parseSections(ctx, name, lines, []int{}, doc); err != nil {
+	if doc.Sections, err = parseSections(ctx, name, lines, []int{}); err != nil {
 		return nil, err
 	}
 	return doc, nil
@@ -286,7 +319,7 @@ func lesserHeading(text, prefix string) bool {
 
 // parseSections parses Sections from lines for the section level indicated by
 // number (a nil number indicates the top level).
-func parseSections(ctx *Context, name string, lines *Lines, number []int, doc *Doc) ([]Section, error) {
+func parseSections(ctx *Context, name string, lines *Lines, number []int) ([]Section, error) {
 	var sections []Section
 	for i := 1; ; i++ {
 		// Next non-empty line is title.
@@ -340,11 +373,11 @@ func parseSections(ctx *Context, name string, lines *Lines, number []int, doc *D
 				}
 				lines.back()
 				e = List{Bullet: b}
-			case strings.HasPrefix(text, ": "):
+			case isSpeakerNote(text):
 				section.Notes = append(section.Notes, text[2:])
 			case strings.HasPrefix(text, prefix+"* "):
 				lines.back()
-				subsecs, err := parseSections(ctx, name, lines, section.Number, doc)
+				subsecs, err := parseSections(ctx, name, lines, section.Number)
 				if err != nil {
 					return nil, err
 				}
@@ -353,6 +386,11 @@ func parseSections(ctx *Context, name string, lines *Lines, number []int, doc *D
 				}
 			case strings.HasPrefix(text, "."):
 				args := strings.Fields(text)
+				if args[0] == ".background" {
+					section.Classes = append(section.Classes, "background")
+					section.Styles = append(section.Styles, "background-image: url('"+args[1]+"')")
+					break
+				}
 				parser := parsers[args[0]]
 				if parser == nil {
 					return nil, fmt.Errorf("%s:%d: unknown command %q\n", name, lines.line, text)
@@ -407,6 +445,9 @@ func parseHeader(doc *Doc, lines *Lines) error {
 		if text == "" {
 			break
 		}
+		if isSpeakerNote(text) {
+			continue
+		}
 		const tagPrefix = "Tags:"
 		if strings.HasPrefix(text, tagPrefix) {
 			tags := strings.Split(text[len(tagPrefix):], ",")
@@ -445,6 +486,10 @@ func parseAuthors(lines *Lines) (authors []Author, err error) {
 		if strings.HasPrefix(text, "* ") {
 			lines.back()
 			break
+		}
+
+		if isSpeakerNote(text) {
+			continue
 		}
 
 		// If we encounter a blank we're done with this author.
@@ -507,4 +552,8 @@ func parseTime(text string) (t time.Time, ok bool) {
 		return t, true
 	}
 	return time.Time{}, false
+}
+
+func isSpeakerNote(s string) bool {
+	return strings.HasPrefix(s, ": ")
 }

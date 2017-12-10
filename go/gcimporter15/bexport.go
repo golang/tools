@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.6
-
 // Binary package export.
 // This file was derived from $GOROOT/src/cmd/compile/internal/gc/bexport.go;
 // see that file for specification of the format.
@@ -40,10 +38,13 @@ const debugFormat = false // default: false
 // If trace is set, debugging output is printed to std out.
 const trace = false // default: false
 
-// This version doesn't write the nointerface flag for exported methods.
-// The corresponding importer handles both "v0" and "v1".
-// See also issues #16243, #16244.
-const exportVersion = "v0"
+// Current export format version. Increase with each format change.
+// 4: type name objects support type aliases, uses aliasTag
+// 3: Go1.8 encoding (same as version 2, aliasTag defined but never used)
+// 2: removed unused bool in ODCL export (compiler only)
+// 1: header format change (more regular), export package for _ struct fields
+// 0: Go1.7 encoding
+const exportVersion = 4
 
 // trackAllTypes enables cycle tracking for all types, not just named
 // types. The existing compiler invariants assume that unnamed types
@@ -86,38 +87,20 @@ func BExportData(fset *token.FileSet, pkg *types.Package) []byte {
 		posInfoFormat: true, // TODO(gri) might become a flag, eventually
 	}
 
-	// first byte indicates low-level encoding format
-	var format byte = 'c' // compact
+	// write version info
+	// The version string must start with "version %d" where %d is the version
+	// number. Additional debugging information may follow after a blank; that
+	// text is ignored by the importer.
+	p.rawStringln(fmt.Sprintf("version %d", exportVersion))
+	var debug string
 	if debugFormat {
-		format = 'd'
+		debug = "debug"
 	}
-	p.rawByte(format)
-
-	format = 'n' // track named types only
-	if trackAllTypes {
-		format = 'a'
-	}
-	p.rawByte(format)
-
-	// posInfo exported or not?
+	p.rawStringln(debug) // cannot use p.bool since it's affected by debugFormat; also want to see this clearly
+	p.bool(trackAllTypes)
 	p.bool(p.posInfoFormat)
 
 	// --- generic export data ---
-
-	if trace {
-		p.tracef("\n--- generic export data ---\n")
-		if p.indent != 0 {
-			log.Fatalf("gcimporter: incorrect indentation %d", p.indent)
-		}
-	}
-
-	if trace {
-		p.tracef("version = ")
-	}
-	p.string(exportVersion)
-	if trace {
-		p.tracef("\n")
-	}
 
 	// populate type map with predeclared "known" types
 	for index, typ := range predeclared {
@@ -202,7 +185,13 @@ func (p *exporter) obj(obj types.Object) {
 		p.value(obj.Val())
 
 	case *types.TypeName:
-		p.tag(typeTag)
+		if isAlias(obj) {
+			p.tag(aliasTag)
+			p.pos(obj)
+			p.qualifiedName(obj)
+		} else {
+			p.tag(typeTag)
+		}
 		p.typ(obj.Type())
 
 	case *types.Var:
@@ -401,6 +390,7 @@ func (p *exporter) assocMethods(named *types.Named) {
 		p.paramList(types.NewTuple(sig.Recv()), false)
 		p.paramList(sig.Params(), sig.Variadic())
 		p.paramList(sig.Results(), false)
+		p.int(0) // dummy value for go:nointerface pragma - ignored by importer
 	}
 
 	if trace && methods != nil {
@@ -476,26 +466,42 @@ func (p *exporter) method(m *types.Func) {
 	p.paramList(sig.Results(), false)
 }
 
-// fieldName is like qualifiedName but it doesn't record the package
-// for blank (_) or exported names.
 func (p *exporter) fieldName(f *types.Var) {
 	name := f.Name()
 
-	// anonymous field with unexported base type name: use "?" as field name
-	// (bname != "" per spec, but we are conservative in case of errors)
 	if f.Anonymous() {
-		base := f.Type()
-		if ptr, ok := base.(*types.Pointer); ok {
-			base = ptr.Elem()
-		}
-		if named, ok := base.(*types.Named); ok && !named.Obj().Exported() {
-			name = "?"
+		// anonymous field - we distinguish between 3 cases:
+		// 1) field name matches base type name and is exported
+		// 2) field name matches base type name and is not exported
+		// 3) field name doesn't match base type name (alias name)
+		bname := basetypeName(f.Type())
+		if name == bname {
+			if ast.IsExported(name) {
+				name = "" // 1) we don't need to know the field name or package
+			} else {
+				name = "?" // 2) use unexported name "?" to force package export
+			}
+		} else {
+			// 3) indicate alias and export name as is
+			// (this requires an extra "@" but this is a rare case)
+			p.string("@")
 		}
 	}
 
 	p.string(name)
-	if name == "?" || name != "_" && !f.Exported() {
+	if name != "" && !ast.IsExported(name) {
 		p.pkg(f.Pkg(), false)
+	}
+}
+
+func basetypeName(typ types.Type) string {
+	switch typ := deref(typ).(type) {
+	case *types.Basic:
+		return typ.Name()
+	case *types.Named:
+		return typ.Obj().Name()
+	default:
+		return "" // unnamed type
 	}
 }
 
@@ -719,13 +725,21 @@ func (p *exporter) marker(m byte) {
 	p.rawInt64(int64(p.written))
 }
 
-// rawInt64 should only be used by low-level encoders
+// rawInt64 should only be used by low-level encoders.
 func (p *exporter) rawInt64(x int64) {
 	var tmp [binary.MaxVarintLen64]byte
 	n := binary.PutVarint(tmp[:], x)
 	for i := 0; i < n; i++ {
 		p.rawByte(tmp[i])
 	}
+}
+
+// rawStringln should only be used to emit the initial version string.
+func (p *exporter) rawStringln(s string) {
+	for i := 0; i < len(s); i++ {
+		p.rawByte(s[i])
+	}
+	p.rawByte('\n')
 }
 
 // rawByte is the bottleneck interface to write to p.out.
@@ -756,7 +770,7 @@ func (p *exporter) rawByte(b byte) {
 // tracef is like fmt.Printf but it rewrites the format string
 // to take care of indentation.
 func (p *exporter) tracef(format string, args ...interface{}) {
-	if strings.IndexAny(format, "<>\n") >= 0 {
+	if strings.ContainsAny(format, "<>\n") {
 		var buf bytes.Buffer
 		for i := 0; i < len(format); i++ {
 			// no need to deal with runes
@@ -784,10 +798,10 @@ func (p *exporter) tracef(format string, args ...interface{}) {
 // Debugging support.
 // (tagString is only used when tracing is enabled)
 var tagString = [...]string{
-	// Packages:
+	// Packages
 	-packageTag: "package",
 
-	// Types:
+	// Types
 	-namedTag:     "named type",
 	-arrayTag:     "array",
 	-sliceTag:     "slice",
@@ -799,7 +813,7 @@ var tagString = [...]string{
 	-mapTag:       "map",
 	-chanTag:      "chan",
 
-	// Values:
+	// Values
 	-falseTag:    "false",
 	-trueTag:     "true",
 	-int64Tag:    "int64",
@@ -808,4 +822,7 @@ var tagString = [...]string{
 	-complexTag:  "complex",
 	-stringTag:   "string",
 	-unknownTag:  "unknown",
+
+	// Type aliases
+	-aliasTag: "alias",
 }

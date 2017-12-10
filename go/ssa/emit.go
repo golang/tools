@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.5
-
 package ssa
 
 // Helpers for emitting SSA instructions.
@@ -149,7 +147,7 @@ func emitCompare(f *Function, op token.Token, x, y Value, pos token.Pos) Value {
 //
 func isValuePreserving(ut_src, ut_dst types.Type) bool {
 	// Identical underlying types?
-	if types.Identical(ut_dst, ut_src) {
+	if structTypesIdentical(ut_dst, ut_src) {
 		return true
 	}
 

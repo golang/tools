@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.5
-
 // Package analysis performs type and pointer analysis
 // and generates mark-up for the Go source view.
 //
@@ -47,7 +45,6 @@ package analysis // import "golang.org/x/tools/godoc/analysis"
 import (
 	"fmt"
 	"go/build"
-	exact "go/constant"
 	"go/scanner"
 	"go/token"
 	"go/types"
@@ -302,7 +299,7 @@ type analysis struct {
 	result    *Result
 	prog      *ssa.Program
 	ops       []chanOp       // all channel ops in program
-	allNamed  []*types.Named // all named types in the program
+	allNamed  []*types.Named // all "defined" (formerly "named") types in the program
 	ptaConfig pointer.Config
 	path2url  map[string]string // maps openable path to godoc file URL (/src/fmt/print.go)
 	pcgs      map[*ssa.Package]*packageCallGraph
@@ -396,21 +393,12 @@ func Run(pta bool, result *Result) {
 	// Only the transitively error-free packages are used.
 	prog := ssautil.CreateProgram(iprog, ssa.GlobalDebug)
 
-	// Compute the set of main packages, including testmain.
-	allPackages := prog.AllPackages()
-	var mainPkgs []*ssa.Package
-	if testmain := prog.CreateTestMainPackage(allPackages...); testmain != nil {
-		mainPkgs = append(mainPkgs, testmain)
-		if p := testmain.Const("packages"); p != nil {
-			log.Printf("Tested packages: %v", exact.StringVal(p.Value.Value))
+	// Create a "testmain" package for each package with tests.
+	for _, pkg := range prog.AllPackages() {
+		if testmain := prog.CreateTestMainPackage(pkg); testmain != nil {
+			log.Printf("Adding tests for %s", pkg.Pkg.Path())
 		}
 	}
-	for _, pkg := range allPackages {
-		if pkg.Pkg.Name() == "main" && pkg.Func("main") != nil {
-			mainPkgs = append(mainPkgs, pkg)
-		}
-	}
-	log.Print("Transitively error-free main packages: ", mainPkgs)
 
 	// Build SSA code for bodies of all functions in the whole program.
 	result.setStatusf("Constructing SSA form...")
@@ -487,7 +475,9 @@ func Run(pta bool, result *Result) {
 	for _, info := range iprog.AllPackages {
 		for _, obj := range info.Defs {
 			if obj, ok := obj.(*types.TypeName); ok {
-				a.allNamed = append(a.allNamed, obj.Type().(*types.Named))
+				if named, ok := obj.Type().(*types.Named); ok {
+					a.allNamed = append(a.allNamed, named)
+				}
 			}
 		}
 	}
@@ -505,6 +495,8 @@ func Run(pta bool, result *Result) {
 	result.setStatusf("Type analysis complete.")
 
 	if pta {
+		mainPkgs := ssautil.MainPackages(prog.AllPackages())
+		log.Print("Transitively error-free main packages: ", mainPkgs)
 		a.pointer(mainPkgs)
 	}
 }
