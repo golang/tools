@@ -3,15 +3,14 @@
 // license that can be found in the LICENSE file.
 
 // Package vcs exposes functions for resolving import paths
-// and using version control systems (like Mercurial, Git, or Subversion),
-// which can be used to implement behavior consistent with
-// the standard "go get" command.
+// and using version control systems, which can be used to
+// implement behavior similar to the standard "go get" command.
 //
 // This package is a copy of internal code in package cmd/go/internal/get,
 // modified to make the identifiers exported. It's provided here
 // for developers who want to write tools with similar semantics.
 // It needs to be manually kept in sync with upstream when changes are
-// done to cmd/go/internal/get, see https://golang.org/issues/11490.
+// made to cmd/go/internal/get; see https://golang.org/issues/11490.
 //
 package vcs // import "golang.org/x/tools/go/vcs"
 
