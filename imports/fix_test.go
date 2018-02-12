@@ -9,10 +9,12 @@ import (
 	"bytes"
 	"flag"
 	"go/build"
+	"go/token"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -24,10 +26,12 @@ var tests = []struct {
 	name       string
 	formatOnly bool
 	in, out    string
+	added      []string
 }{
 	// Adding an import to an existing parenthesized import
 	{
-		name: "factored_imports_add",
+		name:  "factored_imports_add",
+		added: []string{"bytes"},
 		in: `package foo
 import (
   "fmt"
@@ -54,7 +58,8 @@ func bar() {
 	// Adding an import to an existing parenthesized import,
 	// verifying it goes into the first section.
 	{
-		name: "factored_imports_add_first_sec",
+		name:  "factored_imports_add_first_sec",
+		added: []string{"bytes"},
 		in: `package foo
 import (
   "fmt"
@@ -87,7 +92,8 @@ func bar() {
 	// Adding an import to an existing parenthesized import,
 	// verifying it goes into the first section. (test 2)
 	{
-		name: "factored_imports_add_first_sec_2",
+		name:  "factored_imports_add_first_sec_2",
+		added: []string{"math"},
 		in: `package foo
 import (
   "fmt"
@@ -119,7 +125,8 @@ func bar() {
 
 	// Adding a new import line, without parens
 	{
-		name: "add_import_section",
+		name:  "add_import_section",
+		added: []string{"bytes"},
 		in: `package foo
 func bar() {
 var b bytes.Buffer
@@ -137,7 +144,8 @@ func bar() {
 
 	// Adding two new imports, which should make a parenthesized import decl.
 	{
-		name: "add_import_paren_section",
+		name:  "add_import_paren_section",
+		added: []string{"archive/zip", "bytes"},
 		in: `package foo
 func bar() {
 _, _ := bytes.Buffer, zip.NewReader
@@ -158,7 +166,8 @@ func bar() {
 
 	// Make sure we don't add things twice
 	{
-		name: "no_double_add",
+		name:  "no_double_add",
+		added: []string{"bytes"},
 		in: `package foo
 func bar() {
 _, _ := bytes.Buffer, bytes.NewReader
@@ -330,7 +339,8 @@ import "C"
 
 	// Put some things in their own section
 	{
-		name: "make_sections",
+		name:  "make_sections",
+		added: []string{"appengine", "appengine/user", "fmt"},
 		in: `package foo
 
 import (
@@ -372,7 +382,8 @@ import ()
 
 	// Use existing empty import block
 	{
-		name: "use_empty_import_block",
+		name:  "use_empty_import_block",
+		added: []string{"fmt"},
 		in: `package foo
 
 import ()
@@ -393,7 +404,8 @@ func f() {
 
 	// Blank line before adding new section.
 	{
-		name: "blank_line_before_new_group",
+		name:  "blank_line_before_new_group",
+		added: []string{"code.google.com/p/snappy-go/snappy"},
 		in: `package foo
 
 import (
@@ -460,7 +472,8 @@ func f() {
 
 	// golang.org/issue/6884
 	{
-		name: "issue 6884",
+		name:  "issue 6884",
+		added: []string{"fmt"},
 		in: `package main
 
 // A comment
@@ -516,7 +529,8 @@ var (
 	},
 
 	{
-		name: "renamed package",
+		name:  "renamed package",
+		added: []string{"strings"},
 		in: `package main
 
 var _ = str.HasPrefix
@@ -530,8 +544,9 @@ var _ = str.HasPrefix
 	},
 
 	{
-		name: "fragment with main",
-		in:   `func main(){fmt.Println("Hello, world")}`,
+		name:  "fragment with main",
+		added: []string{"fmt"},
+		in:    `func main(){fmt.Println("Hello, world")}`,
 		out: `package main
 
 import "fmt"
@@ -541,8 +556,9 @@ func main() { fmt.Println("Hello, world") }
 	},
 
 	{
-		name: "fragment without main",
-		in:   `func notmain(){fmt.Println("Hello, world")}`,
+		name:  "fragment without main",
+		added: []string{"fmt"},
+		in:    `func notmain(){fmt.Println("Hello, world")}`,
 		out: `import "fmt"
 
 func notmain() { fmt.Println("Hello, world") }`,
@@ -682,7 +698,8 @@ func main() { fmt.Println("pi:", math.Pi) }
 	// Too aggressive prefix matching
 	// golang.org/issue/9961
 	{
-		name: "issue 9961",
+		name:  "issue 9961",
+		added: []string{"fmt", "regexp"},
 		in: `package p
 
 import (
@@ -720,7 +737,8 @@ var (
 	// Unused named import is mistaken for unnamed import
 	// golang.org/issue/8149
 	{
-		name: "issue 8149",
+		name:  "issue 8149",
+		added: []string{"fmt"},
 		in: `package main
 
 import foo "fmt"
@@ -805,7 +823,8 @@ var _ = fmt.Sprintf
 	},
 
 	{
-		name: "issue #19190 1",
+		name:  "issue #19190 1",
+		added: []string{"code.google.com/p/snappy-go/snappy", "rsc.io/p"},
 		in: `package main
 
 import (
@@ -836,7 +855,8 @@ func main() {
 	},
 
 	{
-		name: "issue #19190 2",
+		name:  "issue #19190 2",
+		added: []string{"rsc.io/p"},
 		in: `package main
 
 import (
@@ -890,7 +910,6 @@ func TestFixImports(t *testing.T) {
 	findImport = func(pkgName string, symbols map[string]bool, filename string) (string, bool, error) {
 		return simplePkgs[pkgName], pkgName == "str", nil
 	}
-
 	options := &Options{
 		TabWidth:  8,
 		TabIndent: true,
@@ -898,20 +917,62 @@ func TestFixImports(t *testing.T) {
 		Fragment:  true,
 	}
 
-	for _, tt := range tests {
-		options.FormatOnly = tt.formatOnly
-		if *only != "" && tt.name != *only {
-			continue
+	t.Run("fiximports", func(t *testing.T) {
+		addedEqual := func(name string, got, want []string) bool {
+			if len(got) != len(want) {
+				return false
+			}
+			sort.Strings(got)
+			for i, v := range want {
+				if got[i] != v {
+					t.Errorf("added not equal on %q\nGOT:%v\nWANT:%v",
+						name, got, want)
+					return false
+				}
+			}
+			return true
 		}
-		buf, err := Process(tt.name+".go", []byte(tt.in), options)
-		if err != nil {
-			t.Errorf("error on %q: %v", tt.name, err)
-			continue
+		for _, tt := range tests {
+			if *only != "" && tt.name != *only {
+				continue
+			}
+
+			fileSet := token.NewFileSet()
+			filename := tt.name + ".go"
+			file, _, err := parse(fileSet, filename,
+				[]byte(tt.in), options)
+			if err != nil {
+				t.Errorf("error parsing %q: %v", tt.name, err)
+				continue
+			}
+			added, err := FixImports(fileSet, file, filename)
+			if err != nil {
+				t.Errorf("error on %q: %v", tt.name, err)
+				continue
+			}
+			if !addedEqual(tt.name, added, tt.added) {
+				t.Errorf("added not equal on %q\nGOT:%v\nWANT:%v", tt.name,
+					added, tt.added)
+			}
 		}
-		if got := string(buf); got != tt.out {
-			t.Errorf("results diff on %q\nGOT:\n%s\nWANT:\n%s\n", tt.name, got, tt.out)
+
+	})
+	t.Run("process", func(t *testing.T) {
+		for _, tt := range tests {
+			options.FormatOnly = tt.formatOnly
+			if *only != "" && tt.name != *only {
+				continue
+			}
+			buf, err := Process(tt.name+".go", []byte(tt.in), options)
+			if err != nil {
+				t.Errorf("error on %q: %v", tt.name, err)
+				continue
+			}
+			if got := string(buf); got != tt.out {
+				t.Errorf("results diff on %q\nGOT:\n%s\nWANT:\n%s\n", tt.name, got, tt.out)
+			}
 		}
-	}
+	})
 }
 
 // Test support for packages in GOPATH that are actually symlinks.
