@@ -52,7 +52,7 @@ type File struct {
 	OS             string    `json:"os"`
 	Arch           string    `json:"arch"`
 	Version        string    `json:"-"`
-	Checksum       string    `datastore:",noindex"` // SHA1; deprecated
+	Checksum       string    `json:"-" datastore:",noindex"` // SHA1; deprecated
 	ChecksumSHA256 string    `json:"sha256" datastore:",noindex"`
 	Size           int64     `json:"size" datastore:",noindex"`
 	Kind           string    `json:"kind"` // "archive", "installer", "source"
@@ -223,10 +223,13 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.URL.Query().Get("mode") == "json" {
-		e := json.NewEncoder(w).SetIndent("=", "\t")
+		w.Header().Set("Content-Type", "application/json")
+
+		e := json.NewEncoder(w).SetIndent("", " ")
 		if err := e.Encode(d.Stable); err != nil {
-			log.Errorf(c, "failed rendering json for releases: %v", err)
+			log.Errorf(c, "failed rendering JSON for releases: %v", err)
 		}
+
 		return
 	}
 
