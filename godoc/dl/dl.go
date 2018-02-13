@@ -223,7 +223,7 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.URL.Query().Get("mode") == "json" {
-		w.Header().Set("Content-Type", "application/json")
+		w.Header.Set("Content-Type", "application/json")
 
 		e := json.NewEncoder(w).SetIndent("", " ")
 		if err := e.Encode(d.Stable); err != nil {
