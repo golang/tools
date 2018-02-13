@@ -227,7 +227,6 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 		if err := e.Encode(d.Stable); err != nil {
 			log.Errorf(c, "failed rendering json for releases: %v", err)
 		}
-
 		return
 	}
 
