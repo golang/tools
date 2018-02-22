@@ -225,13 +225,12 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("mode") == "json" {
 		w.Header().Set("Content-Type", "application/json")
 
-		e := json.NewEncoder(w)
-		e.SetIndent("", " ")
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", " ")
 
-		if err := e.Encode(d.Stable); err != nil {
+		if err := enc.Encode(d.Stable); err != nil {
 			log.Errorf(c, "failed rendering JSON for releases: %v", err)
 		}
-
 		return
 	}
 
