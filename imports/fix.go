@@ -901,7 +901,7 @@ func findImportGoPath(pkgName string, symbols map[string]bool, filename string) 
 				// If it doesn't have the right
 				// symbols, send nil to mean no match.
 				for symbol := range symbols {
-					if !exports[symbol] {
+					if (symbol != "_") && (!exports[symbol]) {
 						pkg = nil
 						break
 					}
@@ -1057,10 +1057,26 @@ func (fn visitFn) Visit(node ast.Node) ast.Visitor {
 	return fn(node)
 }
 
+// findImportStdlibByFuzzy fuzzy matching pkg path
+func findImportStdlibByFuzzy(shortPkg string) (importPath string, ok bool) {
+	pkgPrefix := fmt.Sprintf("%s.", shortPkg)
+	for key, value := range stdlib {
+		if strings.HasPrefix(key, pkgPrefix) {
+			return value, true
+		}
+	}
+	return "", false
+}
+
 func findImportStdlib(shortPkg string, symbols map[string]bool) (importPath string, ok bool) {
+	var path string
 	for symbol := range symbols {
 		key := shortPkg + "." + symbol
-		path := stdlib[key]
+		if symbol == "_" {
+			path, _ = findImportStdlibByFuzzy(shortPkg)
+
+		} else {
+			path = stdlib[key]
 		if path == "" {
 			if key == "rand.Read" {
 				continue
