@@ -26,6 +26,9 @@ var (
 	funcs   = template.FuncMap{}
 )
 
+// FullScreenEnabled specifies whether slides should be displayed in the full screen mode.
+var FullScreenEnabled = false
+
 // Template returns an empty template with the action functions in its FuncMap.
 func Template() *template.Template {
 	return template.New("").Funcs(funcs)
@@ -35,10 +38,11 @@ func Template() *template.Template {
 func (d *Doc) Render(w io.Writer, t *template.Template) error {
 	data := struct {
 		*Doc
-		Template     *template.Template
-		PlayEnabled  bool
-		NotesEnabled bool
-	}{d, t, PlayEnabled, NotesEnabled}
+		Template          *template.Template
+		PlayEnabled       bool
+		NotesEnabled      bool
+		FullScreenEnabled bool
+	}{d, t, PlayEnabled, NotesEnabled, FullScreenEnabled}
 	return t.ExecuteTemplate(w, "root", data)
 }
 

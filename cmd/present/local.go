@@ -32,6 +32,7 @@ var (
 func main() {
 	flag.BoolVar(&present.PlayEnabled, "play", true, "enable playground (permit execution of arbitrary user code)")
 	flag.BoolVar(&present.NotesEnabled, "notes", false, "enable presenter notes (press 'N' from the browser to display them)")
+	flag.BoolVar(&present.FullScreenEnabled, "fullscreen", false, "enable full screen mode")
 	flag.Parse()
 
 	if *basePath == "" {
