@@ -63,6 +63,7 @@ After that come slides/sections, each after a blank line:
 	.link http://foo label
 	.html file.html
 	.caption _Gopher_ by [[https://www.instagram.com/reneefrench/][Renée French]]
+	.quote Never memorize something that you can look up //CITATION: Albert Einstein
 
 	Again, more text
 
@@ -213,6 +214,16 @@ The text after ".caption" is embedded in a figcaption element after
 processing styling and links as in standard text lines.
 
 	.caption _Gopher_ by [[http://www.reneefrench.com][Renée French]]
+
+quote:
+
+The template uses the function "quote" to inject quotes and citations.
+
+The text after ".quote" is embedded in a blockquote element after
+processing styling. The text after the optional "//CITATION:" is treated
+as a citation and embedded in a cite element after processing styling.
+
+	.quote Never memorize something that you can look up //CITATION: Albert Einstein
 
 iframe:
 
