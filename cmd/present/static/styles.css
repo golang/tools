@@ -532,3 +532,13 @@ figcaption {
   -moz-border-radius: 10px;
   -webkit-border-radius: 10px;
 }
+
+/* blockquote */
+blockquote {
+  padding: 5px 20px;
+  border-left: 5px solid #999;
+}
+blockquote cite {
+  font-size: 85%;
+  color: #999;
+}
