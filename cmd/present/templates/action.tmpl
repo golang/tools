@@ -61,4 +61,9 @@ It determines how the formatting actions are rendered.
 
 {{define "caption"}}<figcaption>{{style .Text}}</figcaption>{{end}}
 
-{{define "quote"}}<blockquote><p>{{style .Text}}</p><cite>&mdash; {{style .Citation}}</cite></blockquote>{{end}}
+{{define "quote"}}
+<blockquote>
+    <p>{{style .Text}}</p>
+    {{with .Citation}}<cite>&mdash; {{style .}}</cite>{{end}}
+</blockquote>
+{{end}}
