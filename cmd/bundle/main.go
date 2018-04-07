@@ -105,7 +105,7 @@ var (
 	outputFile = flag.String("o", "", "write output to `file` (default standard output)")
 	dstPath    = flag.String("dst", "", "set destination import `path` (default taken from current directory)")
 	pkgName    = flag.String("pkg", "", "set destination package `name` (default taken from current directory)")
-	prefix     = flag.String("prefix", "", "set bundled identifier prefix to `p` (default source package name + \"_\")")
+	prefix     = flag.String("prefix", "%s_", "set bundled identifier prefix to `p` (default source package name + \"_\")")
 	underscore = flag.Bool("underscore", false, "rewrite golang.org to golang_org in imports; temporary workaround for golang.org/issue/16333")
 
 	importMap = map[string]string{}
@@ -203,9 +203,8 @@ func bundle(src, dst, dstpkg, prefix string) ([]byte, error) {
 	// Because there was a single Import call and Load succeeded,
 	// InitialPackages is guaranteed to hold the sole requested package.
 	info := lprog.InitialPackages()[0]
-	if prefix == "" {
-		pkgName := info.Files[0].Name.Name
-		prefix = pkgName + "_"
+	if strings.Contains(prefix, "%s") {
+		prefix = fmt.Sprintf(prefix, info.Files[0].Name.Name)
 	}
 
 	objsToUpdate := make(map[types.Object]bool)
