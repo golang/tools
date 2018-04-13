@@ -957,7 +957,7 @@ func pkgIsCandidate(filename, pkgIdent string, pkg *pkg) bool {
 	// anyway. There's no reason goimports needs
 	// to be slow just to accomodate that.
 	lastTwo := lastTwoComponents(pkg.importPathShort)
-	if strings.Contains(lastTwo, pkgIdent) {
+	if strings.Contains(lastTwo, pkgIdent) && strings.HasSuffix(lastTwo, pkgIdent) { // e.g. bloom => github.com/willf/bloom, not local bloomdemo
 		return true
 	}
 	if hasHyphenOrUpperASCII(lastTwo) && !hasHyphenOrUpperASCII(pkgIdent) {
@@ -1077,20 +1077,21 @@ func findImportStdlib(shortPkg string, symbols map[string]bool) (importPath stri
 
 		} else {
 			path = stdlib[key]
-		if path == "" {
-			if key == "rand.Read" {
-				continue
+			if path == "" {
+				if key == "rand.Read" {
+					continue
+				}
+				return "", false
 			}
-			return "", false
+			if importPath != "" && importPath != path {
+				// Ambiguous. Symbols pointed to different things.
+				return "", false
+			}
+			importPath = path
 		}
-		if importPath != "" && importPath != path {
-			// Ambiguous. Symbols pointed to different things.
-			return "", false
+		if importPath == "" && shortPkg == "rand" && symbols["Read"] {
+			return "crypto/rand", true
 		}
-		importPath = path
-	}
-	if importPath == "" && shortPkg == "rand" && symbols["Read"] {
-		return "crypto/rand", true
 	}
 	return importPath, importPath != ""
 }
