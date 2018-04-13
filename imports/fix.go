@@ -901,7 +901,7 @@ func findImportGoPath(pkgName string, symbols map[string]bool, filename string) 
 				// If it doesn't have the right
 				// symbols, send nil to mean no match.
 				for symbol := range symbols {
-					if (symbol != "_") && (!exports[symbol]) {
+					if (!matchImportExportsByFuzzy(symbol, exports)) && (!exports[symbol]) {
 						pkg = nil
 						break
 					}
@@ -1066,6 +1066,19 @@ func findImportStdlibByFuzzy(shortPkg string) (importPath string, ok bool) {
 		}
 	}
 	return "", false
+}
+
+func matchImportExportsByFuzzy(symbol string, exports map[string]bool) bool {
+	if !strings.HasSuffix(symbol, "_") {
+		return false
+	}
+	prefix := symbol[0 : len(symbol)-1]
+	for key, _ := range exports {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func findImportStdlib(shortPkg string, symbols map[string]bool) (importPath string, ok bool) {
