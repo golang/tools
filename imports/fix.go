@@ -1059,7 +1059,7 @@ func (fn visitFn) Visit(node ast.Node) ast.Visitor {
 
 // findImportStdlibByFuzzy fuzzy matching pkg path
 func findImportStdlibByFuzzy(shortPkg string) (importPath string, ok bool) {
-	pkgPrefix := fmt.Sprintf("%s.", shortPkg)
+	pkgPrefix := shortPkg[0 : len(shortPkg)-1] // last elem is _
 	for key, value := range stdlib {
 		if strings.HasPrefix(key, pkgPrefix) {
 			return value, true
@@ -1072,8 +1072,8 @@ func findImportStdlib(shortPkg string, symbols map[string]bool) (importPath stri
 	var path string
 	for symbol := range symbols {
 		key := shortPkg + "." + symbol
-		if symbol == "_" {
-			path, _ = findImportStdlibByFuzzy(shortPkg)
+		if strings.HasSuffix(symbol, "_") {
+			path, _ = findImportStdlibByFuzzy(key)
 
 		} else {
 			path = stdlib[key]
@@ -1087,8 +1087,8 @@ func findImportStdlib(shortPkg string, symbols map[string]bool) (importPath stri
 				// Ambiguous. Symbols pointed to different things.
 				return "", false
 			}
-			importPath = path
 		}
+		importPath = path
 		if importPath == "" && shortPkg == "rand" && symbols["Read"] {
 			return "crypto/rand", true
 		}
