@@ -1865,20 +1865,6 @@ function cgAddChild(tree, ul, cgn) {
 	{{if $.PDoc}}
 		<h2 id="pkg-subdirectories">Subdirectories</h2>
 	{{end}}
-	{{if eq $.Dirname "/src"}}
-		<div id="manual-nav">
-			<dl>
-				<dt><a href="#stdlib">Standard library</a></dt>
-				<dt><a href="#other">Other packages</a></dt>
-				<dd><a href="#subrepo">Sub-repositories</a></dd>
-				<dd><a href="#community">Community</a></dd>
-			</dl>
-		</div>
-		<h2 id="stdlib">Standard library</h2>
-		<img alt="" class="gopher" src="/doc/gopher/pkg.png"/>
-	{{end}}
-
-
 	<div class="pkg-dir">
 		<table>
 			<tr>
@@ -1886,42 +1872,149 @@ function cgAddChild(tree, ul, cgn) {
 				<th class="pkg-synopsis">Synopsis</th>
 			</tr>
 
-			{{if not (or (eq $.Dirname "/src") (eq $.Dirname "/src/cmd") $.DirFlat)}}
+			{{if not ((eq $.Dirname "/src/cmd") $.DirFlat)}}
 			<tr>
 				<td colspan="2"><a href="..">..</a></td>
 			</tr>
 			{{end}}
 
 			{{range .List}}
+				<tr>
 				{{if $.DirFlat}}
 					{{if .HasPkg}}
-						<tr>
-							<td class="pkg-name">
-								<a href="{{html .Path}}/{{modeQueryString $.Mode | html}}">{{html .Path}}</a>
-							</td>
-							<td class="pkg-synopsis">
-								{{html .Synopsis}}
-							</td>
-						</tr>
+						<td class="pkg-name">
+							<a href="{{html .Path}}/{{modeQueryString $.Mode | html}}">{{html .Path}}</a>
+						</td>
 					{{end}}
 				{{else}}
-					<tr>
-						<td class="pkg-name" style="padding-left: {{multiply .Depth 20}}px;">
-							<a href="{{html .Path}}/{{modeQueryString $.Mode | html}}">{{html .Name}}</a>
-						</td>
-						<td class="pkg-synopsis">
-							{{html .Synopsis}}
-						</td>
-					</tr>
+					<td class="pkg-name" style="padding-left: {{multiply .Depth 20}}px;">
+						<a href="{{html .Path}}/{{modeQueryString $.Mode | html}}">{{html .Name}}</a>
+					</td>
 				{{end}}
+					<td class="pkg-synopsis">
+						{{html .Synopsis}}
+					</td>
+				</tr>
 			{{end}}
 		</table>
 	</div>
+{{end}}
+`,
 
+	"packageroot.html": `<!--
+	Copyright 2018 The Go Authors. All rights reserved.
+	Use of this source code is governed by a BSD-style
+	license that can be found in the LICENSE file.
+-->
+<!--
+	Note: Static (i.e., not template-generated) href and id
+	attributes start with "pkg-" to make it impossible for
+	them to conflict with generated attributes (some of which
+	correspond to Go identifiers).
+-->
+{{with .PAst}}
+	{{range $filename, $ast := .}}
+		<a href="{{$filename|srcLink|html}}">{{$filename|filename|html}}</a>:<pre>{{node_html $ $ast false}}</pre>
+	{{end}}
+{{end}}
 
-	{{if eq $.Dirname "/src"}}
+{{with .Dirs}}
+	{{/* DirList entries are numbers and strings - no need for FSet */}}
+	{{if $.PDoc}}
+		<h2 id="pkg-subdirectories">Subdirectories</h2>
+	{{end}}
+		<div id="manual-nav">
+			<dl>
+				<dt><a href="#stdlib">Standard library</a></dt>
+				{{if hasThirdParty .List }}
+					<dt><a href="#thirdparty">Third party</a></dt>
+				{{end}}
+				<dt><a href="#other">Other packages</a></dt>
+				<dd><a href="#subrepo">Sub-repositories</a></dd>
+				<dd><a href="#community">Community</a></dd>
+			</dl>
+		</div>
+
+		<div id="stdlib" class="toggleVisible">
+			<div class="collapsed">
+				<h2 class="toggleButton" title="Click to show Standard library section">Standard library ▹</h2>
+			</div>
+			<div class="expanded">
+				<h2 class="toggleButton" title="Click to hide Standard library section">Standard library ▾</h2>
+				<img alt="" class="gopher" src="/doc/gopher/pkg.png"/>
+				<div class="pkg-dir">
+					<table>
+						<tr>
+							<th class="pkg-name">Name</th>
+							<th class="pkg-synopsis">Synopsis</th>
+						</tr>
+
+						{{range .List}}
+							<tr>
+							{{if eq .RootType "GOROOT"}}
+							{{if $.DirFlat}}
+								{{if .HasPkg}}
+										<td class="pkg-name">
+											<a href="{{html .Path}}/{{modeQueryString $.Mode | html}}">{{html .Path}}</a>
+										</td>
+								{{end}}
+							{{else}}
+									<td class="pkg-name" style="padding-left: {{multiply .Depth 20}}px;">
+										<a href="{{html .Path}}/{{modeQueryString $.Mode | html}}">{{html .Name}}</a>
+									</td>
+							{{end}}
+								<td class="pkg-synopsis">
+									{{html .Synopsis}}
+								</td>
+							{{end}}
+							</tr>
+						{{end}}
+					</table>
+				</div> <!-- .pkg-dir -->
+			</div> <!-- .expanded -->
+		</div> <!-- #stdlib .toggleVisible -->
+
+	{{if hasThirdParty .List }}
+		<div id="thirdparty" class="toggleVisible">
+			<div class="collapsed">
+				<h2 class="toggleButton" title="Click to show Third party section">Third party ▹</h2>
+			</div>
+			<div class="expanded">
+				<h2 class="toggleButton" title="Click to hide Third party section">Third party ▾</h2>
+				<div class="pkg-dir">
+					<table>
+						<tr>
+							<th class="pkg-name">Name</th>
+							<th class="pkg-synopsis">Synopsis</th>
+						</tr>
+
+						{{range .List}}
+							<tr>
+								{{if eq .RootType "GOPATH"}}
+								{{if $.DirFlat}}
+									{{if .HasPkg}}
+											<td class="pkg-name">
+												<a href="{{html .Path}}/{{modeQueryString $.Mode | html}}">{{html .Path}}</a>
+											</td>
+									{{end}}
+								{{else}}
+										<td class="pkg-name" style="padding-left: {{multiply .Depth 20}}px;">
+											<a href="{{html .Path}}/{{modeQueryString $.Mode | html}}">{{html .Name}}</a>
+										</td>
+								{{end}}
+									<td class="pkg-synopsis">
+										{{html .Synopsis}}
+									</td>
+								{{end}}
+							</tr>
+						{{end}}
+					</table>
+				</div> <!-- .pkg-dir -->
+			</div> <!-- .expanded -->
+		</div> <!-- #stdlib .toggleVisible -->
+	{{end}}
+
 	<h2 id="other">Other packages</h2>
-
 	<h3 id="subrepo">Sub-repositories</h3>
 	<p>
 	These packages are part of the Go Project but outside the main Go tree.
@@ -1937,6 +2030,9 @@ function cgAddChild(tree, ul, cgn) {
 		<li><a href="//godoc.org/golang.org/x/image">image</a> — additional imaging packages.</li>
 		<li><a href="//godoc.org/golang.org/x/mobile">mobile</a> — experimental support for Go on mobile platforms.</li>
 		<li><a href="//godoc.org/golang.org/x/net">net</a> — additional networking packages.</li>
+		<li><a href="//godoc.org/golang.org/x/perf">perf</a> — packages and tools for performance measurement, storage, and analysis.</li>
+		<li><a href="//godoc.org/golang.org/x/review">review</a> — a tool for working with Gerrit code reviews.</li>
+		<li><a href="//godoc.org/golang.org/x/sync">sync</a> — additional concurrency primitives.</li>
 		<li><a href="//godoc.org/golang.org/x/sys">sys</a> — packages for making system calls.</li>
 		<li><a href="//godoc.org/golang.org/x/text">text</a> — packages for working with text.</li>
 		<li><a href="//godoc.org/golang.org/x/time">time</a> — additional time packages.</li>
@@ -1954,7 +2050,6 @@ function cgAddChild(tree, ul, cgn) {
 		<li><a href="http://go-search.org">Go Search</a> - a code search engine.</li>
 		<li><a href="/wiki/Projects">Projects at the Go Wiki</a> - a curated list of Go projects.</li>
 	</ul>
-	{{end}}
 {{end}}
 `,
 
@@ -2432,6 +2527,7 @@ function PlaygroundOutput(el) {
   //  shareEl - share button element (optional)
   //  shareURLEl - share URL text input element (optional)
   //  shareRedirect - base URL to redirect to on share (optional)
+  //  vetEl - vet button element (optional)
   //  toysEl - toys select element (optional)
   //  enableHistory - enable using HTML5 history API (optional)
   //  transport - playground transport to use (default is HTTPTransport)
@@ -2562,6 +2658,11 @@ function PlaygroundOutput(el) {
       if (running) running.Kill();
       output.removeClass("error").text('Waiting for remote server...');
     }
+    function noError() {
+      lineClear();
+      if (running) running.Kill();
+      output.removeClass("error").text('No errors.');
+    }
     function run() {
       loading();
       running = transport.Run(body(), highlightOutput(PlaygroundOutput(output[0])));
@@ -2584,6 +2685,26 @@ function PlaygroundOutput(el) {
             setBody(data.Body);
             setError("");
           }
+        }
+      });
+    }
+
+    function vet() {
+      loading();
+      var data = {"body": body()};
+      $.ajax("/vet", {
+        data: data,
+        type: "POST",
+        dataType: "json",
+        success: function(data) {
+          if (data.Errors) {
+            setError(data.Errors);
+          } else {
+            noError();
+          }
+        },
+        error: function() {
+          setError('Error communicating with remote server.');
         }
       });
     }
@@ -2635,6 +2756,7 @@ function PlaygroundOutput(el) {
 
     $(opts.runEl).click(run);
     $(opts.fmtEl).click(fmt);
+    $(opts.vetEl).click(vet);
 
     if (opts.shareEl !== null && (opts.shareURLEl !== null || opts.shareRedirect !== null)) {
       if (opts.shareURLEl) {

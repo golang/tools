@@ -14,7 +14,10 @@ import (
 	"os"
 	pathpkg "path"
 	"runtime"
+	"sort"
 	"strings"
+
+	"golang.org/x/tools/godoc/vfs"
 )
 
 // Conventional name for directories containing test data.
@@ -28,6 +31,7 @@ type Directory struct {
 	Name     string       // directory name
 	HasPkg   bool         // true if the directory contains at least one package
 	Synopsis string       // package documentation, if any
+	RootType vfs.RootType // root type of the filesystem containing the directory
 	Dirs     []*Directory // subdirectories
 }
 
@@ -173,6 +177,12 @@ func (b *treeBuilder) newDirTree(fset *token.FileSet, path, name string, depth i
 		}
 	}
 
+	// We need to sort the dirs slice because
+	// it is appended again after reading from dirchs.
+	sort.Slice(dirs, func(i, j int) bool {
+		return dirs[i].Name < dirs[j].Name
+	})
+
 	// if there are no package files and no subdirectories
 	// containing package files, ignore the directory
 	if !hasPkgFiles && len(dirs) == 0 {
@@ -193,6 +203,7 @@ func (b *treeBuilder) newDirTree(fset *token.FileSet, path, name string, depth i
 		Name:     name,
 		HasPkg:   hasPkgFiles && show, // TODO(bradfitz): add proper Hide field?
 		Synopsis: synopsis,
+		RootType: b.c.fs.RootType(path),
 		Dirs:     dirs,
 	}
 }
@@ -291,17 +302,29 @@ func (dir *Directory) lookup(path string) *Directory {
 // are useful for presenting an entry in an indented fashion.
 //
 type DirEntry struct {
-	Depth    int    // >= 0
-	Height   int    // = DirList.MaxHeight - Depth, > 0
-	Path     string // directory path; includes Name, relative to DirList root
-	Name     string // directory name
-	HasPkg   bool   // true if the directory contains at least one package
-	Synopsis string // package documentation, if any
+	Depth    int          // >= 0
+	Height   int          // = DirList.MaxHeight - Depth, > 0
+	Path     string       // directory path; includes Name, relative to DirList root
+	Name     string       // directory name
+	HasPkg   bool         // true if the directory contains at least one package
+	Synopsis string       // package documentation, if any
+	RootType vfs.RootType // root type of the filesystem containing the direntry
 }
 
 type DirList struct {
 	MaxHeight int // directory tree height, > 0
 	List      []DirEntry
+}
+
+// hasThirdParty checks whether a list of directory entries has packages outside
+// the standard library or not.
+func hasThirdParty(list []DirEntry) bool {
+	for _, entry := range list {
+		if entry.RootType == vfs.RootTypeGoPath {
+			return true
+		}
+	}
+	return false
 }
 
 // listing creates a (linear) directory listing from a directory tree.
@@ -352,6 +375,7 @@ func (root *Directory) listing(skipRoot bool, filter func(string) bool) *DirList
 		p.Name = d.Name
 		p.HasPkg = d.HasPkg
 		p.Synopsis = d.Synopsis
+		p.RootType = d.RootType
 		list = append(list, p)
 	}
 
