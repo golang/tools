@@ -90,6 +90,7 @@ func (p *Presentation) initFuncMap() {
 		// formatting of Examples
 		"example_html":   p.example_htmlFunc,
 		"example_text":   p.example_textFunc,
+		"example_text2":  p.example_text2Func,
 		"example_name":   p.example_nameFunc,
 		"example_suffix": p.example_suffixFunc,
 
@@ -588,6 +589,10 @@ func docLinkFunc(s string, ident string) string {
 }
 
 func (p *Presentation) example_textFunc(info *PageInfo, funcName, indent string) string {
+	return example_text2Func(info, funcName, indent, "Example:", "", "")
+}
+
+func (p *Presentation) example_text2Func(info *PageInfo, funcName, indent, title, codePrefix, codeSuffix string) string {
 	if !p.ShowExamples {
 		return ""
 	}
@@ -624,8 +629,13 @@ func (p *Presentation) example_textFunc(info *PageInfo, funcName, indent string)
 		code = strings.Trim(code, "\n")
 
 		buf.WriteString(indent)
-		buf.WriteString("Example:\n")
+		buf.WriteString(title)
+		buf.WriteString("\n")
+		buf.WriteString(codePrefix)
+		buf.WriteString("\n")
 		buf.WriteString(code)
+		buf.WriteString("\n")
+		buf.WriteString(codeSuffix)
 		buf.WriteString("\n\n")
 	}
 	return buf.String()
