@@ -415,12 +415,32 @@ p.link {
   margin-left: 20px;
 }
 
-.pagenumber {
+.footer {
   color: #8c8c8c;
   font-size: 75%;
   position: absolute;
-  bottom: 0px;
-  right: 10px;
+  bottom: 5px;
+  left: 15px;
+  right: 15px; 
+  height: 50px;
+  line-height:50px;
+}
+.footer .segment-0 {
+  min-width:33%;
+  float: left;
+  min-height: 1px;
+}
+.footer .segment-1 {
+  min-width:33%;
+  float: left;
+  text-align: center;
+  min-height: 1px;
+}
+.footer .segment-2 {
+  min-width: 33%;
+  float: right;
+  text-align: right;
+  min-height: 1px;
 }
 
 /* Code */

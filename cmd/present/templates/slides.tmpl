@@ -50,7 +50,7 @@
           <div class="presenter">
             {{range .TextElem}}{{elem $.Template .}}{{end}}
           </div>
-        {{end}}
+        {{end}}        
       </article>
 
   {{range $i, $s := .Sections}}
@@ -62,7 +62,7 @@
       {{else}}
         <h2>{{$s.Title}}</h2>
       {{end}}
-      <span class="pagenumber">{{pagenum $s 1}}</span>
+      {{footer $.Template $s $.Footer 1}}
       </article>
   <!-- end of slide {{$s.Number}} -->
   {{end}}{{/* of Slide block */}}
@@ -104,4 +104,16 @@
 
 {{define "newline"}}
 <br>
+{{end}}
+
+{{define "footer"}}
+{{if $.Footer.Enabled}}
+<div class="footer">
+    {{range $i, $el := $.Footer.Elem}}
+      <div class="segment-{{$i}}">
+          {{elem $.Template $el}}
+      </div>
+    {{end}}
+</div>
+{{end}}
 {{end}}
