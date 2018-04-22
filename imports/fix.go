@@ -899,7 +899,7 @@ func findImportGoPath(pkgName string, symbols map[string]bool, filename string) 
 				// If it doesn't have the right
 				// symbols, send nil to mean no match.
 				for symbol := range symbols {
-					if !exports[symbol] {
+					if (!matchImportExportsByFuzzy(symbol, exports)) && (!exports[symbol]) {
 						pkg = nil
 						break
 					}
@@ -955,7 +955,7 @@ func pkgIsCandidate(filename, pkgIdent string, pkg *pkg) bool {
 	// anyway. There's no reason goimports needs
 	// to be slow just to accomodate that.
 	lastTwo := lastTwoComponents(pkg.importPathShort)
-	if strings.Contains(lastTwo, pkgIdent) {
+	if strings.Contains(lastTwo, pkgIdent) && strings.HasSuffix(lastTwo, pkgIdent) { // e.g. bloom => github.com/willf/bloom, not local bloomdemo
 		return true
 	}
 	if hasHyphenOrUpperASCII(lastTwo) && !hasHyphenOrUpperASCII(pkgIdent) {
@@ -1055,10 +1055,43 @@ func (fn visitFn) Visit(node ast.Node) ast.Visitor {
 	return fn(node)
 }
 
+// findImportStdlibByFuzzy fuzzy matching pkg path
+func findImportStdlibByFuzzy(shortPkg string) (importPath string) {
+	var pkgPrefix string
+
+	if strings.HasSuffix(shortPkg, "_") {
+		pkgPrefix = shortPkg[0 : len(shortPkg)-1] // last elem is _
+	} else {
+		pkgPrefix = shortPkg
+	}
+	for key, value := range stdlib {
+		if strings.HasPrefix(key, pkgPrefix) {
+			return value
+		}
+	}
+	return ""
+}
+
+func matchImportExportsByFuzzy(symbol string, exports map[string]bool) bool {
+	var prefix string
+	if strings.HasSuffix(symbol, "_") {
+		prefix = symbol[0 : len(symbol)-1]
+	} else {
+		prefix = symbol
+	}
+	for key, _ := range exports {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func findImportStdlib(shortPkg string, symbols map[string]bool) (importPath string, ok bool) {
+	var path string
 	for symbol := range symbols {
 		key := shortPkg + "." + symbol
-		path := stdlib[key]
+		path = findImportStdlibByFuzzy(key)
 		if path == "" {
 			if key == "rand.Read" {
 				continue
@@ -1070,9 +1103,9 @@ func findImportStdlib(shortPkg string, symbols map[string]bool) (importPath stri
 			return "", false
 		}
 		importPath = path
-	}
-	if importPath == "" && shortPkg == "rand" && symbols["Read"] {
-		return "crypto/rand", true
+		if importPath == "" && shortPkg == "rand" && symbols["Read"] {
+			return "crypto/rand", true
+		}
 	}
 	return importPath, importPath != ""
 }
