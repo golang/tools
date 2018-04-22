@@ -1058,21 +1058,29 @@ func (fn visitFn) Visit(node ast.Node) ast.Visitor {
 }
 
 // findImportStdlibByFuzzy fuzzy matching pkg path
-func findImportStdlibByFuzzy(shortPkg string) (importPath string, ok bool) {
-	pkgPrefix := shortPkg[0 : len(shortPkg)-1] // last elem is _
+func findImportStdlibByFuzzy(shortPkg string) (importPath string) {
+	var pkgPrefix string
+
+	if strings.HasSuffix(shortPkg, "_") {
+		pkgPrefix = shortPkg[0 : len(shortPkg)-1] // last elem is _
+	} else {
+		pkgPrefix = shortPkg
+	}
 	for key, value := range stdlib {
 		if strings.HasPrefix(key, pkgPrefix) {
-			return value, true
+			return value
 		}
 	}
-	return "", false
+	return ""
 }
 
 func matchImportExportsByFuzzy(symbol string, exports map[string]bool) bool {
-	if !strings.HasSuffix(symbol, "_") {
-		return false
+	var prefix string
+	if strings.HasSuffix(symbol, "_") {
+		prefix = symbol[0 : len(symbol)-1]
+	} else {
+		prefix = symbol
 	}
-	prefix := symbol[0 : len(symbol)-1]
 	for key, _ := range exports {
 		if strings.HasPrefix(key, prefix) {
 			return true
@@ -1085,21 +1093,16 @@ func findImportStdlib(shortPkg string, symbols map[string]bool) (importPath stri
 	var path string
 	for symbol := range symbols {
 		key := shortPkg + "." + symbol
-		if strings.HasSuffix(symbol, "_") {
-			path, _ = findImportStdlibByFuzzy(key)
-
-		} else {
-			path = stdlib[key]
-			if path == "" {
-				if key == "rand.Read" {
-					continue
-				}
-				return "", false
+		path = findImportStdlibByFuzzy(key)
+		if path == "" {
+			if key == "rand.Read" {
+				continue
 			}
-			if importPath != "" && importPath != path {
-				// Ambiguous. Symbols pointed to different things.
-				return "", false
-			}
+			return "", false
+		}
+		if importPath != "" && importPath != path {
+			// Ambiguous. Symbols pointed to different things.
+			return "", false
 		}
 		importPath = path
 		if importPath == "" && shortPkg == "rand" && symbols["Read"] {
