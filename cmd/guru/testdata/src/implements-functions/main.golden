@@ -1,0 +1,8 @@
+-------- @implements FTypeA --------
+func ftypea(s string)
+	implements FTypeA
+
+-------- @implements FTypeB --------
+function type FTypeB
+	is implemented by func ftypeb(i int)
+

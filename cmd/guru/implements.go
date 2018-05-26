@@ -80,12 +80,14 @@ func implements(q *Query) error {
 		// method?
 		if id, ok := path[0].(*ast.Ident); ok {
 			if obj, ok := qpos.info.ObjectOf(id).(*types.Func); ok {
-				recv := obj.Type().(*types.Signature).Recv()
-				if recv == nil {
-					return fmt.Errorf("this function is not a method")
-				}
 				method = obj
-				T = recv.Type()
+				if recv := obj.Type().(*types.Signature).Recv(); recv == nil {
+					// It's a function type, so it's type is itself.
+					T = obj.Type()
+				} else {
+					// It's a method, so the underlying type is the receiver.
+					T = recv.Type()
+				}
 			}
 		}
 
@@ -99,6 +101,15 @@ func implements(q *Query) error {
 	}
 	if T == nil {
 		return fmt.Errorf("not a type, method, or value")
+	}
+
+	if isFunctionType(T) {
+		if isNamedFunctionType(T) {
+			q.Output(lprog.Fset, findFunctionsWhichImplementType(T, lprog.AllPackages, qpos))
+		} else {
+			q.Output(lprog.Fset, findFunctionTypesImplementedByFunction(method, lprog.AllPackages, qpos))
+		}
+		return nil
 	}
 
 	// Find all named types, even local types (which can have
@@ -336,6 +347,14 @@ func makeImplementsTypes(tt []types.Type, fset *token.FileSet) []serial.Implemen
 	return r
 }
 
+func makeImplementsTypesFromFuncs(tt []*types.Func, fset *token.FileSet) []serial.ImplementsType {
+	var r []serial.ImplementsType
+	for _, t := range tt {
+		r = append(r, makeImplementsTypeFromFunc(t, fset))
+	}
+	return r
+}
+
 func makeImplementsType(T types.Type, fset *token.FileSet) serial.ImplementsType {
 	var pos token.Pos
 	if nt, ok := deref(T).(*types.Named); ok { // implementsResult.t may be non-named
@@ -348,6 +367,14 @@ func makeImplementsType(T types.Type, fset *token.FileSet) serial.ImplementsType
 	}
 }
 
+func makeImplementsTypeFromFunc(T *types.Func, fset *token.FileSet) serial.ImplementsType {
+	return serial.ImplementsType{
+		Name: T.FullName(),
+		Pos:  fset.Position(T.Pos()).String(),
+		Kind: "func",
+	}
+}
+
 // typeKind returns a string describing the underlying kind of type,
 // e.g. "slice", "array", "struct".
 func typeKind(T types.Type) string {
@@ -356,9 +383,102 @@ func typeKind(T types.Type) string {
 }
 
 func isInterface(T types.Type) bool { return types.IsInterface(T) }
+func isFunctionType(T types.Type) bool {
+	_, isFunc := T.Underlying().(*types.Signature)
+	return isFunc
+}
+func isNamedFunctionType(T types.Type) bool {
+	if _, isType := T.(*types.Named); !isType {
+		return false
+	}
+	_, isFunc := T.Underlying().(*types.Signature)
+	return isFunc
+}
 
 type typesByString []types.Type
 
 func (p typesByString) Len() int           { return len(p) }
 func (p typesByString) Less(i, j int) bool { return p[i].String() < p[j].String() }
 func (p typesByString) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+
+func findFunctionsWhichImplementType(T types.Type, allPackages map[*types.Package]*loader.PackageInfo, qpos *queryPos) QueryResult {
+	r := functionLookup{
+		qpos: qpos,
+		From: T,
+		To:   []*types.Func{},
+	}
+
+	for _, info := range allPackages {
+		for _, obj := range info.Defs {
+			if fun, ok := obj.(*types.Func); ok {
+				if types.AssignableTo(T, fun.Type()) {
+					r.To = append(r.To, fun)
+				}
+			}
+		}
+	}
+
+	return r
+}
+
+type functionLookup struct {
+	qpos *queryPos
+	From types.Type    `json:"from"`
+	To   []*types.Func `json:"to"`
+}
+
+func (r functionLookup) JSON(fset *token.FileSet) []byte {
+	return toJSON(&serial.Implements{
+		T:            makeImplementsType(r.From, fset),
+		AssignableTo: makeImplementsTypesFromFuncs(r.To, fset),
+	})
+}
+
+func (r functionLookup) PrintPlain(printf printfFunc) {
+	printf(r.qpos, "function type %s", r.qpos.typeString(r.From))
+	for _, to := range r.To {
+		printf(to, "\tis implemented by %s", r.qpos.objectString(to))
+	}
+}
+
+func findFunctionTypesImplementedByFunction(fun *types.Func, allPackages map[*types.Package]*loader.PackageInfo, qpos *queryPos) QueryResult {
+	r := functionTypeLookup{
+		qpos: qpos,
+		From: fun,
+		To:   []types.Type{},
+	}
+
+	for _, info := range allPackages {
+		for _, obj := range info.Defs {
+			if namedType, ok := obj.(*types.TypeName); ok && !isAlias(namedType) {
+				if fsig, ok := namedType.Type().Underlying().(*types.Signature); ok {
+					if types.AssignableTo(fun.Type(), fsig) {
+						r.To = append(r.To, obj.Type())
+					}
+				}
+			}
+		}
+	}
+
+	return r
+}
+
+type functionTypeLookup struct {
+	qpos *queryPos
+	From *types.Func  `json:"from"`
+	To   []types.Type `json:"to"`
+}
+
+func (r functionTypeLookup) JSON(fset *token.FileSet) []byte {
+	return toJSON(&serial.Implements{
+		T:            makeImplementsTypeFromFunc(r.From, fset),
+		AssignableTo: makeImplementsTypes(r.To, fset),
+	})
+}
+
+func (r functionTypeLookup) PrintPlain(printf printfFunc) {
+	printf(r.From, "%s", r.qpos.objectString(r.From))
+	for _, to := range r.To {
+		printf(to, "\timplements %s", r.qpos.typeString(to))
+	}
+}
