@@ -143,7 +143,7 @@ func dirPackageInfoFile(pkgName, srcDir, filename string) (*packageInfo, error) 
 
 		for _, imp := range root.Imports {
 			impInfo := importInfo{Path: strings.Trim(imp.Path.Value, `"`)}
-			name := path.Base(impInfo.Path)
+			name := importPathToName(impInfo.Path, srcDir)
 			if imp.Name != nil {
 				name = strings.Trim(imp.Name.Name, `"`)
 				impInfo.Alias = name
