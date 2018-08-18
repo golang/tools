@@ -25,10 +25,23 @@ func main() {
 	ck(Three, "Three")
 	ck(AnotherOne, "One")
 	ck(127, "Number(127)")
+
+	fstr("One", One, true)
+	fstr("Two", Two, true)
+	fstr("Three", Three, true)
+	fstr("AnotherOne", 0, false)
+	fstr("127", 0, false)
 }
 
 func ck(num Number, str string) {
 	if fmt.Sprint(num) != str {
+		panic("number.go: " + str)
+	}
+}
+
+func fstr(str string, i Number, ok bool) {
+	res, found := NumberFromString(str)
+	if res != i || ok != found {
 		panic("number.go: " + str)
 	}
 }

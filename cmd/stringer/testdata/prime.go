@@ -47,10 +47,36 @@ func main() {
 	ck(p41, "p41")
 	ck(p43, "p43")
 	ck(44, "Prime(44)")
+
+	fstr("p0", 0, false)
+	fstr("p1", 0, false)
+	fstr("p2", p2, true)
+	fstr("p3", p3, true)
+	fstr("p4", 0, false)
+	fstr("p5", p5, true)
+	fstr("p7", p7, true)
+	fstr("p77", 0, false)
+	fstr("p11", p11, true)
+	fstr("p13", p13, true)
+	fstr("p17", p17, true)
+	fstr("p19", p19, true)
+	fstr("p23", p23, true)
+	fstr("p29", p29, true)
+	fstr("p37", p37, true)
+	fstr("p41", p41, true)
+	fstr("p43", p43, true)
+	fstr("p44", 0, false)
 }
 
 func ck(prime Prime, str string) {
 	if fmt.Sprint(prime) != str {
+		panic("prime.go: " + str)
+	}
+}
+
+func fstr(str string, i Prime, ok bool) {
+	res, found := PrimeFromString(str)
+	if res != i || ok != found {
 		panic("prime.go: " + str)
 	}
 }

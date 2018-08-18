@@ -22,10 +22,23 @@ func main() {
 	ck(Two, "Two")
 	ck(3, "Unum2(3)")
 	ck(255, "Unum2(255)")
+
+	fstr("Zero", Zero, true)
+	fstr("One", One, true)
+	fstr("Two", Two, true)
+	fstr("Three", 0, false)
+	fstr("Unum2(255)", 0, false)
 }
 
 func ck(unum Unum2, str string) {
 	if fmt.Sprint(unum) != str {
 		panic("unum.go: " + str)
+	}
+}
+
+func fstr(str string, i Unum2, ok bool) {
+	res, found := Unum2FromString(str)
+	if res != i || ok != found {
+		panic("unum2.go: " + str)
 	}
 }

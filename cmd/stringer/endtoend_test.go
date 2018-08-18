@@ -130,7 +130,7 @@ func stringerCompileAndRun(t *testing.T, dir, stringer, typeName, fileName strin
 	}
 	stringSource := filepath.Join(dir, typeName+"_string.go")
 	// Run stringer in temporary directory.
-	err = run(stringer, "-type", typeName, "-output", stringSource, source)
+	err = run(stringer, "-type", typeName, "-output", stringSource, "-withfromstring", source)
 	if err != nil {
 		t.Fatal(err)
 	}

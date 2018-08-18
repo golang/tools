@@ -29,10 +29,25 @@ func main() {
 	ck(m1, "m1")
 	ck(m2, "m2")
 	ck(3, "Unum(3)")
+
+	fstr("m_3", 0, false)
+	fstr("m_2", m_2, true)
+	fstr("m_1", m_1, true)
+	fstr("m0", m0, true)
+	fstr("m1", m1, true)
+	fstr("m2", m2, true)
+	fstr("m3", 0, false)
 }
 
 func ck(unum Unum, str string) {
 	if fmt.Sprint(unum) != str {
+		panic("unum.go: " + str)
+	}
+}
+
+func fstr(str string, i Unum, ok bool) {
+	res, found := UnumFromString(str)
+	if res != i || ok != found {
 		panic("unum.go: " + str)
 	}
 }

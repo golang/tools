@@ -35,10 +35,31 @@ func main() {
 	ck(10, "Gap(10)")
 	ck(Eleven, "Eleven")
 	ck(12, "Gap(12)")
+
+	fstr("Zero", 0, false)
+	fstr("One", 0, false)
+	fstr("Two", Two, true)
+	fstr("Three", Three, true)
+	fstr("Four", 0, false)
+	fstr("Five", Five, true)
+	fstr("Six", Six, true)
+	fstr("Seven", Seven, true)
+	fstr("Eight", Eight, true)
+	fstr("Nine", Nine, true)
+	fstr("Ten", 0, false)
+	fstr("Eleven", Eleven, true)
+	fstr("Twelve", 0, false)
 }
 
 func ck(gap Gap, str string) {
 	if fmt.Sprint(gap) != str {
+		panic("gap.go: " + str)
+	}
+}
+
+func fstr(str string, i Gap, ok bool) {
+	res, found := GapFromString(str)
+	if res != i || ok != found {
 		panic("gap.go: " + str)
 	}
 }

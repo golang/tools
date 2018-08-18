@@ -78,11 +78,12 @@ import (
 )
 
 var (
-	typeNames   = flag.String("type", "", "comma-separated list of type names; must be set")
-	output      = flag.String("output", "", "output file name; default srcdir/<type>_string.go")
-	trimprefix  = flag.String("trimprefix", "", "trim the `prefix` from the generated constant names")
-	linecomment = flag.Bool("linecomment", false, "use line comment text as printed text when present")
-	buildTags   = flag.String("tags", "", "comma-separated list of build tags to apply")
+	typeNames      = flag.String("type", "", "comma-separated list of type names; must be set")
+	output         = flag.String("output", "", "output file name; default srcdir/<type>_string.go")
+	trimprefix     = flag.String("trimprefix", "", "trim the `prefix` from the generated constant names")
+	linecomment    = flag.Bool("linecomment", false, "use line comment text as printed text when present")
+	withfromstring = flag.Bool("withfromstring", false, "generate FromString method for type")
+	buildTags      = flag.String("tags", "", "comma-separated list of build tags to apply")
 )
 
 // Usage is a replacement usage function for the flags package.
@@ -121,8 +122,9 @@ func main() {
 	// Parse the package once.
 	var dir string
 	g := Generator{
-		trimPrefix:  *trimprefix,
-		lineComment: *linecomment,
+		trimPrefix:     *trimprefix,
+		lineComment:    *linecomment,
+		withFromString: *withfromstring,
 	}
 	if len(args) == 1 && isDirectory(args[0]) {
 		dir = args[0]
@@ -177,8 +179,9 @@ type Generator struct {
 	buf bytes.Buffer // Accumulated output.
 	pkg *Package     // Package we are scanning.
 
-	trimPrefix  string
-	lineComment bool
+	trimPrefix     string
+	lineComment    bool
+	withFromString bool
 }
 
 func (g *Generator) Printf(format string, args ...interface{}) {
@@ -193,8 +196,9 @@ type File struct {
 	typeName string  // Name of the constant type.
 	values   []Value // Accumulator for constant values of that type.
 
-	trimPrefix  string
-	lineComment bool
+	trimPrefix     string
+	lineComment    bool
+	withFromString bool
 }
 
 type Package struct {
@@ -263,10 +267,11 @@ func (g *Generator) parsePackage(directory string, names []string, text interfac
 		}
 		astFiles = append(astFiles, parsedFile)
 		files = append(files, &File{
-			file:        parsedFile,
-			pkg:         g.pkg,
-			trimPrefix:  g.trimPrefix,
-			lineComment: g.lineComment,
+			file:           parsedFile,
+			pkg:            g.pkg,
+			trimPrefix:     g.trimPrefix,
+			lineComment:    g.lineComment,
+			withFromString: g.withFromString,
 		})
 	}
 	if len(astFiles) == 0 {
@@ -312,6 +317,7 @@ func (g *Generator) generate(typeName string) {
 	if len(values) == 0 {
 		log.Fatalf("no values defined for type %s", typeName)
 	}
+
 	runs := splitIntoRuns(values)
 	// The decision of which pattern to use depends on the number of
 	// runs in the numbers. If there's only one, it's easy. For more than
@@ -579,6 +585,7 @@ func (g *Generator) buildOneRun(runs [][]Value, typeName string) {
 	values := runs[0]
 	g.Printf("\n")
 	g.declareIndexAndNameVar(values, typeName)
+
 	// The generated code is simple enough to write as a Printf format.
 	lessThanZero := ""
 	if values[0].signed {
@@ -588,6 +595,11 @@ func (g *Generator) buildOneRun(runs [][]Value, typeName string) {
 		g.Printf(stringOneRun, typeName, usize(len(values)), lessThanZero)
 	} else {
 		g.Printf(stringOneRunWithOffset, typeName, values[0].String(), usize(len(values)), lessThanZero)
+	}
+
+	if g.withFromString {
+		g.Printf("\n")
+		g.Printf(fromStringOneRun, typeName, values[0].String(), usize(len(values)), lessThanZero)
 	}
 }
 
@@ -608,14 +620,28 @@ const stringOneRun = `func (i %[1]s) String() string {
 //	[2]: lowest defined value for type, as a string
 //	[3]: size of index element (8 for uint8 etc.)
 //	[4]: less than zero check (for signed types)
-/*
- */
 const stringOneRunWithOffset = `func (i %[1]s) String() string {
 	i -= %[2]s
 	if %[4]si >= %[1]s(len(_%[1]s_index)-1) {
 		return "%[1]s(" + strconv.FormatInt(int64(i + %[2]s), 10) + ")"
 	}
 	return _%[1]s_name[_%[1]s_index[i] : _%[1]s_index[i+1]]
+}
+`
+
+// Arguments to format are:
+//	[1]: type name
+//	[2]: lowest defined value for type
+//	[3]: size of index element (8 for uint8 etc.)
+//	[4]: less than zero check (for signed types)
+const fromStringOneRun = `func %[1]sFromString(s string) (i %[1]s, ok bool) {
+	for v := range _%[1]s_index {
+		v += %[2]s
+		if s == %[1]s(v).String() {
+			return %[1]s(v), true
+		}
+	}
+	return
 }
 `
 
@@ -643,6 +669,23 @@ func (g *Generator) buildMultipleRuns(runs [][]Value, typeName string) {
 	g.Printf("\t\treturn \"%s(\" + strconv.FormatInt(int64(i), 10) + \")\"\n", typeName)
 	g.Printf("\t}\n")
 	g.Printf("}\n")
+
+	if !g.withFromString {
+		return
+	}
+
+	g.Printf("\n")
+	g.Printf("func %[1]sFromString(s string) (i %[1]s, ok bool) {\n", typeName)
+	g.Printf("\tswitch s {\n")
+	for _, values := range runs {
+		for _, value := range values {
+			g.Printf("\tcase \"%s\":\n", value.name)
+			g.Printf("\t\treturn %s(%d), true\n", typeName, value.value)
+		}
+	}
+	g.Printf("\t}\n")
+	g.Printf("\treturn\n")
+	g.Printf("}\n")
 }
 
 // buildMap handles the case where the space is so sparse a map is a reasonable fallback.
@@ -650,7 +693,7 @@ func (g *Generator) buildMultipleRuns(runs [][]Value, typeName string) {
 func (g *Generator) buildMap(runs [][]Value, typeName string) {
 	g.Printf("\n")
 	g.declareNameVars(runs, typeName, "")
-	g.Printf("\nvar _%s_map = map[%s]string{\n", typeName, typeName)
+	g.Printf("\nvar _%[1]s_map = map[%[1]s]string{\n", typeName)
 	n := 0
 	for _, values := range runs {
 		for _, value := range values {
@@ -660,6 +703,11 @@ func (g *Generator) buildMap(runs [][]Value, typeName string) {
 	}
 	g.Printf("}\n\n")
 	g.Printf(stringMap, typeName)
+
+	if g.withFromString {
+		g.Printf("\n")
+		g.Printf(fromStringMap, typeName)
+	}
 }
 
 // Argument to format is the type name.
@@ -668,5 +716,16 @@ const stringMap = `func (i %[1]s) String() string {
 		return str
 	}
 	return "%[1]s(" + strconv.FormatInt(int64(i), 10) + ")"
+}
+`
+
+// Argument to format is the type name.
+const fromStringMap = `func %[1]sFromString(s string) (i %[1]s, ok bool) { 
+	for k, v := range _%[1]s_map {
+		if s == v {
+			return k, true
+		}
+	}
+	return
 }
 `

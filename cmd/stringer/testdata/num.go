@@ -26,10 +26,25 @@ func main() {
 	ck(m1, "m1")
 	ck(m2, "m2")
 	ck(3, "Num(3)")
+
+	fstr("m_3", 0, false)
+	fstr("m_2", m_2, true)
+	fstr("m_1", m_1, true)
+	fstr("m0", m0, true)
+	fstr("m1", m1, true)
+	fstr("m2", m2, true)
+	fstr("m3", 0, false)
 }
 
 func ck(num Num, str string) {
 	if fmt.Sprint(num) != str {
+		panic("num.go: " + str)
+	}
+}
+
+func fstr(str string, i Num, ok bool) {
+	res, found := NumFromString(str)
+	if res != i || ok != found {
 		panic("num.go: " + str)
 	}
 }
