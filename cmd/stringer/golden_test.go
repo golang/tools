@@ -55,6 +55,8 @@ const (
 `
 
 const day_out = `
+import "strconv"
+
 const _Day_name = "MondayTuesdayWednesdayThursdayFridaySaturdaySunday"
 
 var _Day_index = [...]uint8{0, 6, 13, 22, 30, 36, 44, 50}
@@ -80,6 +82,8 @@ const (
 `
 
 const offset_out = `
+import "strconv"
+
 const _Number_name = "OneTwoThree"
 
 var _Number_index = [...]uint8{0, 3, 6, 11}
@@ -108,6 +112,8 @@ const (
 `
 
 const gap_out = `
+import "strconv"
+
 const (
 	_Gap_name_0 = "TwoThree"
 	_Gap_name_1 = "FiveSixSevenEightNine"
@@ -147,6 +153,8 @@ const (
 `
 
 const num_out = `
+import "strconv"
+
 const _Num_name = "m_2m_1m0m1m2"
 
 var _Num_index = [...]uint8{0, 3, 6, 8, 10, 12}
@@ -175,6 +183,8 @@ const (
 `
 
 const unum_out = `
+import "strconv"
+
 const (
 	_Unum_name_0 = "m0m1m2"
 	_Unum_name_1 = "m_2m_1"
@@ -220,25 +230,37 @@ const (
 `
 
 const prime_out = `
+import (
+	"strconv"
+	"sync"
+)
+
 const _Prime_name = "p2p3p5p7p11p13p17p19p23p29p37p41p43"
 
-var _Prime_map = map[Prime]string{
-	2:  _Prime_name[0:2],
-	3:  _Prime_name[2:4],
-	5:  _Prime_name[4:6],
-	7:  _Prime_name[6:8],
-	11: _Prime_name[8:11],
-	13: _Prime_name[11:14],
-	17: _Prime_name[14:17],
-	19: _Prime_name[17:20],
-	23: _Prime_name[20:23],
-	29: _Prime_name[23:26],
-	31: _Prime_name[26:29],
-	41: _Prime_name[29:32],
-	43: _Prime_name[32:35],
+var _Prime_map map[Prime]string
+
+var populatePrimeMapOnce sync.Once
+
+func populatePrimeMap() {
+	_Prime_map = map[Prime]string{
+		2:  _Prime_name[0:2],
+		3:  _Prime_name[2:4],
+		5:  _Prime_name[4:6],
+		7:  _Prime_name[6:8],
+		11: _Prime_name[8:11],
+		13: _Prime_name[11:14],
+		17: _Prime_name[14:17],
+		19: _Prime_name[17:20],
+		23: _Prime_name[20:23],
+		29: _Prime_name[23:26],
+		31: _Prime_name[26:29],
+		41: _Prime_name[29:32],
+		43: _Prime_name[32:35],
+	}
 }
 
 func (i Prime) String() string {
+	populatePrimeMapOnce.Do(populatePrimeMap)
 	if str, ok := _Prime_map[i]; ok {
 		return str
 	}
@@ -259,6 +281,8 @@ const (
 `
 
 const prefix_out = `
+import "strconv"
+
 const _Type_name = "IntStringFloatRuneByteStructSlice"
 
 var _Type_index = [...]uint8{0, 3, 9, 14, 18, 22, 28, 33}
@@ -289,6 +313,8 @@ const (
 `
 
 const tokens_out = `
+import "strconv"
+
 const _Token_name = "&|+-Ident.SingleBeforeinlineinline general"
 
 var _Token_index = [...]uint8{0, 1, 2, 3, 4, 9, 10, 22, 28, 42}
@@ -320,6 +346,8 @@ const (
 `
 
 const month_out = `
+import "strconv"
+
 const _Month_name = "JanuaryFebruaryMarchAprilMayJuneJulyAugustSeptemberOctoberNovemberDecember"
 
 var _Month_index = [...]uint8{0, 7, 15, 20, 25, 28, 32, 36, 42, 51, 58, 66, 74}
@@ -352,6 +380,8 @@ const (
 `
 
 const mood_out = `
+import "strconv"
+
 const _Mood_name = "NegativeNeutralHappy"
 
 var _Mood_index = [...]uint8{0, 8, 15, 20}
@@ -390,6 +420,8 @@ const (
 `
 
 const fib_out = `
+import "strconv"
+
 const (
 	_Fib_name_0 = "ZeroOneTwoThree"
 	_Fib_name_1 = "Five"
@@ -458,24 +490,36 @@ const (
 `
 
 const hundreds_out = `
+import (
+	"strconv"
+	"sync"
+)
+
 const _Hundred_name = "OneTwoThreeFourFiveSixSevenEightNineTenElevenTwelve"
 
-var _Hundred_map = map[Hundred]string{
-	100:  _Hundred_name[0:3],
-	200:  _Hundred_name[3:6],
-	300:  _Hundred_name[6:11],
-	400:  _Hundred_name[11:15],
-	500:  _Hundred_name[15:19],
-	600:  _Hundred_name[19:22],
-	700:  _Hundred_name[22:27],
-	800:  _Hundred_name[27:32],
-	900:  _Hundred_name[32:36],
-	1000: _Hundred_name[36:39],
-	1100: _Hundred_name[39:45],
-	1200: _Hundred_name[45:51],
+var _Hundred_map map[Hundred]string
+
+var populateHundredMapOnce sync.Once
+
+func populateHundredMap() {
+	_Hundred_map = map[Hundred]string{
+		100:  _Hundred_name[0:3],
+		200:  _Hundred_name[3:6],
+		300:  _Hundred_name[6:11],
+		400:  _Hundred_name[11:15],
+		500:  _Hundred_name[15:19],
+		600:  _Hundred_name[19:22],
+		700:  _Hundred_name[22:27],
+		800:  _Hundred_name[27:32],
+		900:  _Hundred_name[32:36],
+		1000: _Hundred_name[36:39],
+		1100: _Hundred_name[39:45],
+		1200: _Hundred_name[45:51],
+	}
 }
 
 func (i Hundred) String() string {
+	populateHundredMapOnce.Do(populateHundredMap)
 	if str, ok := _Hundred_map[i]; ok {
 		return str
 	}
@@ -483,6 +527,7 @@ func (i Hundred) String() string {
 }
 
 func HundredFromString(s string) (i Hundred, ok bool) {
+	populateHundredMapOnce.Do(populateHundredMap)
 	for k, v := range _Hundred_map {
 		if s == v {
 			return k, true
