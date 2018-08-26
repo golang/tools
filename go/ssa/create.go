@@ -97,6 +97,8 @@ func memberFromObject(pkg *Package, obj types.Object, syntax ast.Node) {
 		}
 		if syntax == nil {
 			fn.Synthetic = "loaded from gc object file"
+		} else {
+			fn.Doc = syntax.(*ast.FuncDecl).Doc
 		}
 
 		pkg.values[obj] = fn
