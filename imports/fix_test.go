@@ -1994,6 +1994,59 @@ func LogSomethingElse() {
 	})
 }
 
+// Tests that sibling files - other files in the same package - can provide an
+// import that may not be the default one otherwise when the package name mismatch
+// the last component of the import path (directory "go-foo" is package "foo")
+func TestSiblingImportsWhenPackageNameMismatch(t *testing.T) {
+
+	// provide is the sibling file that provides the desired import.
+	const provide = `package siblingimporttest
+
+import "local/go-log"
+
+func LogSomething() {
+	log.Print("Something")
+}
+`
+
+	// need is the file being tested that needs the import.
+	const need = `package siblingimporttest
+
+func LogSomethingElse() {
+	log.Print("Something else")
+}
+`
+
+	// want is the expected result file
+	const want = `package siblingimporttest
+
+import "local/go-log"
+
+func LogSomethingElse() {
+	log.Print("Something else")
+}
+`
+
+	const pkg = "siblingimporttest"
+	const siblingFile = pkg + "/needs_import.go"
+	testConfig{
+		gopathFiles: map[string]string{
+			siblingFile:                 need,
+			pkg + "/provides_import.go": provide,
+			"local/go-log/log.go":       "package log\n",
+		},
+	}.test(t, func(t *goimportTest) {
+		buf, err := Process(
+			t.gopath+"/src/"+siblingFile, []byte(need), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(buf) != want {
+			t.Errorf("wrong output.\ngot:\n%q\nwant:\n%q\n", buf, want)
+		}
+	})
+}
+
 func strSet(ss []string) map[string]bool {
 	m := make(map[string]bool)
 	for _, s := range ss {

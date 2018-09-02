@@ -143,7 +143,7 @@ func dirPackageInfoFile(pkgName, srcDir, filename string) (*packageInfo, error) 
 
 		for _, imp := range root.Imports {
 			impInfo := importInfo{Path: strings.Trim(imp.Path.Value, `"`)}
-			name := importPathToName(impInfo.Path, srcDir)
+			name := path.Base(impInfo.Path)
 			if imp.Name != nil {
 				name = strings.Trim(imp.Name.Name, `"`)
 				impInfo.Alias = name
@@ -313,8 +313,19 @@ func fixImports(fset *token.FileSet, f *ast.File, filename string) (added []stri
 
 			if packageInfo != nil {
 				sibling := packageInfo.Imports[pkgName]
+				refs := packageInfo.Refs[pkgName]
+				if sibling.Path == "" && len(refs) > 0 {
+					for _, pkgImp := range packageInfo.Imports {
+						if !pkgIsCandidate(filename, pkgName, &pkg{dir: srcDir, importPathShort: pkgImp.Path}) {
+							continue
+						}
+						if importPathToName(pkgImp.Path, srcDir) == pkgName {
+							sibling = pkgImp
+							break
+						}
+					}
+				}
 				if sibling.Path != "" {
-					refs := packageInfo.Refs[pkgName]
 					for symbol := range symbols {
 						if refs[symbol] {
 							results <- result{ipath: sibling.Path, name: sibling.Alias}
