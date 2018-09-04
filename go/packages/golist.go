@@ -287,8 +287,14 @@ func golistargs(cfg *Config, words []string) []string {
 
 // golist returns the JSON-encoded result of a "go list args..." query.
 func golist(cfg *Config, args []string) (*bytes.Buffer, error) {
+	goBin := "go"
+	for _, e := range cfg.Env {
+		if strings.HasPrefix(e, "GOCMD=") && len(e) > 7 {
+			goBin = filepath.Join(e[7:], "bin", "go")
+		}
+	}
 	out := new(bytes.Buffer)
-	cmd := exec.CommandContext(cfg.Context, "go", args...)
+	cmd := exec.CommandContext(cfg.Context, goBin, args...)
 	cmd.Env = cfg.Env
 	cmd.Dir = cfg.Dir
 	cmd.Stdout = out
