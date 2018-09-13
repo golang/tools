@@ -216,7 +216,7 @@ func (h *handlerServer) GetPageInfo(abspath, relpath string, mode PageInfoMode, 
 		dir = h.c.newDirectory(abspath, 2)
 		timestamp = time.Now()
 	}
-	info.Dirs = dir.listing(true, func(path string) bool { return h.includePath(path, mode) })
+	info.Dirs = dir.listing(mode, true, func(path string) bool { return h.includePath(path, mode) })
 
 	info.DirTime = timestamp
 	info.DirFlat = mode&FlatDir != 0
@@ -361,6 +361,7 @@ const (
 	NoHTML                               // show result in textual form, do not generate HTML
 	FlatDir                              // show directory in a flat (non-indented) manner
 	NoTypeAssoc                          // don't associate consts, vars, and factory functions with types
+	Shallow                              // don't show directories under subdirectories.
 )
 
 // modeNames defines names for each PageInfoMode flag.
@@ -370,6 +371,7 @@ var modeNames = map[string]PageInfoMode{
 	"src":     ShowSource,
 	"text":    NoHTML,
 	"flat":    FlatDir,
+	"shallow": Shallow,
 }
 
 // generate a query string for persisting PageInfoMode between pages.

@@ -332,7 +332,7 @@ func hasThirdParty(list []DirEntry) bool {
 // If filter is set, only the directory entries whose paths match the filter
 // are included.
 //
-func (root *Directory) listing(skipRoot bool, filter func(string) bool) *DirList {
+func (root *Directory) listing(mode PageInfoMode, skipRoot bool, filter func(string) bool) *DirList {
 	if root == nil {
 		return nil
 	}
@@ -362,8 +362,12 @@ func (root *Directory) listing(skipRoot bool, filter func(string) bool) *DirList
 		if filter != nil && !filter(d.Path) {
 			continue
 		}
+		depth := d.Depth - minDepth
+		if mode&Shallow != 0 && depth > 0 {
+			continue
+		}
 		var p DirEntry
-		p.Depth = d.Depth - minDepth
+		p.Depth = depth
 		p.Height = maxHeight - p.Depth
 		// the path is relative to root.Path - remove the root.Path
 		// prefix (the prefix should always be present but avoid
