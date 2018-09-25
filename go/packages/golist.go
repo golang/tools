@@ -290,7 +290,10 @@ func golist(cfg *Config, args []string) (*bytes.Buffer, error) {
 	goBin := "go"
 	for _, e := range cfg.Env {
 		if strings.HasPrefix(e, "GOCMD=") && len(e) > 7 {
-			goBin = filepath.Join(e[7:], "bin", "go")
+			goBin = e[7:]
+			if len(goBin) == 0 {
+				return nil, fmt.Errorf("GOCMD environment variable should not be empty")
+			}
 		}
 	}
 	out := new(bytes.Buffer)
