@@ -289,11 +289,8 @@ func golistargs(cfg *Config, words []string) []string {
 func golist(cfg *Config, args []string) (*bytes.Buffer, error) {
 	goBin := "go"
 	for _, e := range cfg.Env {
-		if strings.HasPrefix(e, "GOCMD=") && len(e) > 7 {
-			goBin = e[7:]
-			if len(goBin) == 0 {
-				return nil, fmt.Errorf("GOCMD environment variable should not be empty")
-			}
+		if strings.HasPrefix(e, "GOCMD=") && len(e) > 6 {
+			goBin = e[6:]
 		}
 	}
 	out := new(bytes.Buffer)
