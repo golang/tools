@@ -250,6 +250,12 @@
   }
 }
 
+/* Styles for full screen mode */
+.slides.fullscreen > article.next, .slides.fullscreen > article.far-next,
+.slides.fullscreen > article.past, .slides.fullscreen > article.far-past {
+  display: none;
+}
+
 /* Styles for slides */
 
 .slides > article {

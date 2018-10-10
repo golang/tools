@@ -40,7 +40,11 @@
 
   <body style='display: none'>
 
+  {{if .FullScreenEnabled}}
+    <section class='slides layout-widescreen fullscreen'>
+  {{else}}
     <section class='slides layout-widescreen'>
+  {{end}}
 
       <article>
         <h1>{{.Title}}</h1>
