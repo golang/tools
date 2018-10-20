@@ -209,7 +209,7 @@ func (p *exporter) obj(obj types.Object) {
 		p.value(obj.Val())
 
 	case *types.TypeName:
-		if obj.IsAlias() {
+		if isAlias(obj) {
 			p.tag(aliasTag)
 			p.pos(obj)
 			p.qualifiedName(obj)
