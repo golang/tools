@@ -105,7 +105,7 @@ IMPLEMENTATION
 The remaining documentation is intended for package maintainers and
 pointer analysis specialists.  Maintainers should have a solid
 understanding of the referenced papers (especially those by H&L and PKH)
-before making making significant changes.
+before making significant changes.
 
 The implementation is similar to that described in (Pearce et al,
 PASTE'04).  Unlike many algorithms which interleave constraint

@@ -581,7 +581,7 @@ func (a linksByStart) Len() int           { return len(a) }
 
 // allPackages returns a new sorted slice of all packages beneath the
 // specified package root directory, e.g. $GOROOT/src or $GOPATH/src.
-// Derived from from go/ssa/stdlib_test.go
+// Derived from go/ssa/stdlib_test.go
 // root must end with os.PathSeparator.
 //
 // TODO(adonovan): use buildutil.AllPackages when the tree thaws.

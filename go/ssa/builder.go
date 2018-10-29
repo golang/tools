@@ -796,9 +796,9 @@ func (b *builder) stmtList(fn *Function, list []ast.Stmt) {
 // returns the effective receiver after applying the implicit field
 // selections of sel.
 //
-// wantAddr requests that the result is an an address.  If
-// !sel.Indirect(), this may require that e be built in addr() mode; it
-// must thus be addressable.
+// wantAddr requests that the result is an address. If !sel.Indirect(),
+// this may require that e be built in addr() mode; it must thus be
+// addressable.
 //
 // escaping is defined as per builder.addr().
 //

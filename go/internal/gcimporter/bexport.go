@@ -57,7 +57,7 @@ const exportVersion = 4
 // If disabled, only named types are tracked, possibly leading to slightly
 // less efficient encoding in rare cases. It also prevents the export of
 // some corner-case type declarations (but those are not handled correctly
-// with with the textual export format either).
+// with the textual export format either).
 // TODO(gri) enable and remove once issues caused by it are fixed
 const trackAllTypes = false
 

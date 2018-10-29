@@ -10,7 +10,7 @@ import (
 )
 
 // GOPATH is the exporter that produces GOPATH layouts.
-// Each "module" is put in it's own GOPATH entry to help test complex cases.
+// Each "module" is put in its own GOPATH entry to help test complex cases.
 // Given the two files
 //     golang.org/repoa#a/a.go
 //     golang.org/repob#b/b.go
