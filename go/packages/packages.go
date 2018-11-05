@@ -417,7 +417,7 @@ func (ld *loader) refine(roots []string, list ...*Package) ([]*Package, error) {
 	}
 	ld.pkgs = make(map[string]*loaderPackage)
 	// first pass, fixup and build the map and roots
-	var initial = make([]*loaderPackage, len(roots))
+	var initialWithGaps = make([]*loaderPackage, len(roots))
 	for _, pkg := range list {
 		rootIndex := -1
 		if i, found := rootMap[pkg.ID]; found {
@@ -433,8 +433,15 @@ func (ld *loader) refine(roots []string, list ...*Package) ([]*Package, error) {
 		}
 		ld.pkgs[lpkg.ID] = lpkg
 		if rootIndex >= 0 {
-			initial[rootIndex] = lpkg
+			initialWithGaps[rootIndex] = lpkg
 			lpkg.initial = true
+		}
+	}
+
+	var initial = make([]*loaderPackage, 0, len(initialWithGaps))
+	for _, lpkg := range initialWithGaps {
+		if lpkg != nil {
+			initial = append(initial, lpkg)
 		}
 	}
 

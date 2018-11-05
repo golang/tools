@@ -1488,6 +1488,26 @@ EOF
 	}
 }
 
+// This test ensures that the refine function works properly in LoadFiles mode
+// when there are packages other than root packages.
+func TestRefineLoadFiles(t *testing.T) { packagestest.TestAll(t, testRefineLoadFiles) }
+func testRefineLoadFiles(t *testing.T, exporter packagestest.Exporter) {
+	exported := packagestest.Export(t, exporter, []packagestest.Module{{
+		Name: "golang.org/fake",
+		Files: map[string]interface{}{
+			"a/a.go":      `package a;`,
+			"a/a_test.go": `package a_test;`,
+		}}})
+	defer exported.Cleanup()
+
+	exported.Config.Mode = packages.LoadFiles
+	exported.Config.Tests = true
+	_, err := packages.Load(exported.Config, "golang.org/fake/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func errorMessages(errors []packages.Error) []string {
 	var msgs []string
 	for _, err := range errors {
