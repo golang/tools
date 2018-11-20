@@ -353,7 +353,7 @@ func describeValue(qpos *queryPos, path []ast.Node) (*describeValueResult, error
 // It does not descend into structs or interfaces.
 func appendNames(names []*types.Named, typ types.Type) []*types.Named {
 	// elemType specifies type that has some element in it
-	// such as array, slice, map, chan, pointer
+	// such as array, slice, chan, pointer
 	type elemType interface {
 		Elem() types.Type
 	}
@@ -362,7 +362,6 @@ func appendNames(names []*types.Named, typ types.Type) []*types.Named {
 	case *types.Named:
 		names = append(names, t)
 	case *types.Map:
-		// for map take key type and value type
 		names = appendNames(names, t.Key())
 		names = appendNames(names, t.Elem())
 	case elemType:
