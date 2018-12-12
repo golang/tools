@@ -18,6 +18,7 @@ import (
 )
 
 func TestCallgraph(t *testing.T) {
+	t.Skip("golang.org/issue/29201")
 	gopath, err := filepath.Abs("testdata")
 	if err != nil {
 		t.Fatal(err)
