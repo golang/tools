@@ -1653,7 +1653,8 @@ var _, _ = bar.X, v1.Y
 }
 
 // Tests that the LocalPrefix option causes imports
-// to be added into a later group (num=3).
+// to be added into a later group (num=3) when Scheme
+// is not set to "stdLocalThirdParty".
 func TestLocalPrefix(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -1766,6 +1767,139 @@ const _ = runtime.GOOS
 	}
 }
 
+// Tests that the Scheme option causes imports
+// to be added into the schema organized groups
+// when "stdLocalThirdParty" is the applied scheme.
+func TestScheme(t *testing.T) {
+	tests := []struct {
+		name        string
+		modules     []packagestest.Module
+		localPrefix string
+		scheme      string
+		src         string
+		want        string
+	}{
+		{
+			name: "one_local_zero_third_party",
+			modules: []packagestest.Module{
+				{
+					Name: "foo.com",
+					Files: fm{
+						"bar/bar.go": "package bar \n const X = 1",
+					},
+				},
+			},
+			localPrefix: "foo.com/",
+			scheme:      "stdLocalThirdParty",
+			src:         "package main \n const Y = bar.X \n const _ = runtime.GOOS",
+			want: `package main
+
+import (
+	"runtime"
+
+	"foo.com/bar"
+)
+
+const Y = bar.X
+const _ = runtime.GOOS
+`,
+		},
+		{
+			name: "one_local_one_third_party",
+			modules: []packagestest.Module{
+				{
+					Name: "foo.com",
+					Files: fm{
+						"foo/foo.go": "package foo \n const X = 1",
+					},
+				},
+				{
+					Name: "bar.org",
+					Files: fm{
+						"bar/bar.go": "package bar \n const X = 1",
+					},
+				},
+			},
+			localPrefix: "foo.com/foo",
+			scheme:      "stdLocalThirdParty",
+			src:         "package main \n const Y = bar.X \n const Z = foo.X \n const _ = runtime.GOOS",
+			want: `package main
+
+import (
+	"runtime"
+
+	"foo.com/foo"
+
+	"bar.org/bar"
+)
+
+const Y = bar.X
+const Z = foo.X
+const _ = runtime.GOOS
+`,
+		},
+		{
+			name: "three_prefixes_one_third_party",
+			modules: []packagestest.Module{
+				{
+					Name:  "example.org/pkg",
+					Files: fm{"pkg.go": "package pkg \n const A = 1"},
+				},
+				{
+					Name:  "foo.com",
+					Files: fm{"bar/bar.go": "package bar \n const B = 1"},
+				},
+				{
+					Name:  "code.org/r/p",
+					Files: fm{"expproj/expproj.go": "package expproj \n const C = 1"},
+				},
+				{
+					Name:  "foobar.org",
+					Files: fm{"foobar/foobar.go": "package foobar \n const D = 1"},
+				},
+			},
+			localPrefix: "example.org/pkg,foo.com/,code.org",
+			scheme:      "stdLocalThirdParty",
+			src:         "package main \n const W = foobar.D \n const X = pkg.A \n const Y = bar.B \n const Z = expproj.C \n const _ = runtime.GOOS",
+			want: `package main
+
+import (
+	"runtime"
+
+	"code.org/r/p/expproj"
+	"example.org/pkg"
+	"foo.com/bar"
+
+	"foobar.org/foobar"
+)
+
+const W = foobar.D
+const X = pkg.A
+const Y = bar.B
+const Z = expproj.C
+const _ = runtime.GOOS
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testConfig{
+				// The module being processed has to be first so it's the primary module.
+				modules: append([]packagestest.Module{{
+					Name:  "test.com",
+					Files: fm{"t.go": tt.src},
+				}}, tt.modules...),
+			}.test(t, func(t *goimportTest) {
+				defer func(s string) { LocalPrefix = s }(LocalPrefix)
+				LocalPrefix = tt.localPrefix
+				Scheme = tt.scheme
+				t.process("test.com", "t.go", nil, nil, tt.want)
+			})
+		})
+	}
+}
+
 // Tests that "package documentation" files are ignored.
 func TestIgnoreDocumentationPackage(t *testing.T) {
 	const input = `package x
@@ -1865,7 +1999,7 @@ const _ = pkg.X
 			Files: fm{
 				"example/node_modules/pkg/a.go":         "package pkg\nconst X = 1",
 				"otherwise-longer/not_modules/pkg/a.go": "package pkg\nconst X = 1",
-				"x/x.go":                                input,
+				"x/x.go": input,
 			},
 		},
 	}.processTest(t, "foo.com", "x/x.go", nil, nil, want)

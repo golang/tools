@@ -43,12 +43,22 @@ func localPrefixes() []string {
 	return nil
 }
 
+// Scheme is the format in which imports get grouped. Two different options are supported,
+// the "stdThirdPartyLocal" and "stdLocalThirdParty" options. "stdThirdPartyLocal" will order
+// imports by std lib, third party, and finally local pkg groupings. The "stdThirdPartyLocal" is the
+// default scheme. The "stdLocalThirdParty" option will order imports by std lib, local as defined in the local
+// prefix argument above, and finally the 3rd-party packages.
+var Scheme string
+
 // importToGroup is a list of functions which map from an import path to
 // a group number.
 var importToGroup = []func(importPath string) (num int, ok bool){
 	func(importPath string) (num int, ok bool) {
 		for _, p := range localPrefixes() {
 			if strings.HasPrefix(importPath, p) || strings.TrimSuffix(p, "/") == importPath {
+				if LocalPrefix != "" && Scheme == "stdLocalThirdParty" {
+					return 1, true
+				}
 				return 3, true
 			}
 		}
@@ -62,6 +72,9 @@ var importToGroup = []func(importPath string) (num int, ok bool){
 	},
 	func(importPath string) (num int, ok bool) {
 		if strings.Contains(importPath, ".") {
+			if LocalPrefix != "" && Scheme == "stdLocalThirdParty" {
+				return 3, true
+			}
 			return 1, true
 		}
 		return
