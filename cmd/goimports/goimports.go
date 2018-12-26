@@ -48,6 +48,7 @@ var (
 func init() {
 	flag.BoolVar(&options.AllErrors, "e", false, "report all errors (not just the first 10 on different lines)")
 	flag.StringVar(&imports.LocalPrefix, "local", "", "put imports beginning with this string after 3rd-party packages; comma-separated list")
+	flag.BoolVar(&options.IgnoreGrouping, "ungroup", false, "ignore user's custom import grouping")
 }
 
 func report(err error) {

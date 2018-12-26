@@ -36,6 +36,8 @@ type Options struct {
 	TabWidth  int  // Tab width (8 if nil *Options provided)
 
 	FormatOnly bool // Disable the insertion and deletion of imports
+
+	IgnoreGrouping bool // Ignore user's custom import grouping
 }
 
 // Process formats and adjusts imports for the provided file.
@@ -68,7 +70,7 @@ func Process(filename string, src []byte, opt *Options) ([]byte, error) {
 		}
 	}
 
-	sortImports(fileSet, file)
+	sortImports(fileSet, file, opt.IgnoreGrouping)
 	imps := astutil.Imports(fileSet, file)
 	var spacesBefore []string // import paths we need spaces before
 	for _, impSection := range imps {
@@ -85,7 +87,6 @@ func Process(filename string, src []byte, opt *Options) ([]byte, error) {
 			}
 			lastGroup = groupNum
 		}
-
 	}
 
 	printerMode := printer.UseSpaces
