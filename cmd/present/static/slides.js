@@ -468,6 +468,20 @@ function addEventListeners() {
       scaleSmallViewports();
     }, 50);
   });
+
+  // Force reset transform property of section.slides when printing page.
+  var beforePrint = function() {
+    var el = document.querySelector('section.slides');
+    el.style.transform = '';
+  };
+  if (window.matchMedia) {
+    var mediaQueryList = window.matchMedia('print');
+    mediaQueryList.addListener(function(mql) {
+      if (mql.matches) beforePrint();
+    });
+  }
+  window.onbeforeprint = beforePrint;
+
 }
 
 /* Initialization */
