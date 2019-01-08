@@ -1207,19 +1207,19 @@ func TestJSON(t *testing.T) {
 		ID:   "b",
 		Name: "b",
 		Imports: map[string]*packages.Package{
-			"a": &packages.Package{ID: "a"},
+			"a": {ID: "a"},
 		},
 	}, {
 		ID:   "c",
 		Name: "c",
 		Imports: map[string]*packages.Package{
-			"b": &packages.Package{ID: "b"},
+			"b": {ID: "b"},
 		},
 	}, {
 		ID:   "d",
 		Name: "d",
 		Imports: map[string]*packages.Package{
-			"b": &packages.Package{ID: "b"},
+			"b": {ID: "b"},
 		},
 	}} {
 		got := decoded[i]
@@ -1267,12 +1267,13 @@ func srcs(p *packages.Package) []string {
 func cleanPaths(paths []string) []string {
 	result := make([]string, len(paths))
 	for i, src := range paths {
-		// The default location for cache data is a subdirectory named go-build
-		// in the standard user cache directory for the current operating system.
-		if strings.Contains(filepath.ToSlash(src), "/go-build/") {
+		// If the source file doesn't have an extension like .go or .s,
+		// it comes from GOCACHE. The names there aren't predictable.
+		name := filepath.Base(src)
+		if !strings.Contains(name, ".") {
 			result[i] = fmt.Sprintf("%d.go", i) // make cache names predictable
 		} else {
-			result[i] = filepath.Base(src)
+			result[i] = name
 		}
 	}
 	return result
