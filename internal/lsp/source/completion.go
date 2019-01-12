@@ -196,6 +196,11 @@ func selector(sel *ast.SelectorExpr, pos token.Pos, info *types.Info, found find
 
 // lexical finds completions in the lexical environment.
 func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Info, found finder) (items []CompletionItem) {
+	// skip completion inside comment blocks
+	if p, ok := path[0].(*ast.File); ok && isCommentNode(p, pos) {
+		return items
+	}
+
 	var scopes []*types.Scope // scopes[i], where i<len(path), is the possibly nil Scope of path[i].
 	for _, n := range path {
 		switch node := n.(type) {
@@ -245,6 +250,24 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 		}
 	}
 	return items
+}
+
+// isCommentNode returns true if given position matches ast.Comment node
+func isCommentNode(node ast.Node, pos token.Pos) bool {
+	found := false
+	ast.Inspect(node, func(n ast.Node) bool {
+		if n == nil {
+			return false
+		}
+		if n.Pos() <= pos && pos <= n.End() {
+			if _, ok := n.(*ast.Comment); ok {
+				found = true
+				return false
+			}
+		}
+		return true
+	})
+	return found
 }
 
 // complit finds completions for field names inside a composite literal.
