@@ -252,10 +252,10 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 	return items
 }
 
-// isCommentNode returns true if given position matches ast.Comment node
-func isCommentNode(node ast.Node, pos token.Pos) bool {
+// isCommentNode checks if given token position is inside ast.Comment node
+func isCommentNode(root ast.Node, pos token.Pos) bool {
 	found := false
-	ast.Inspect(node, func(n ast.Node) bool {
+	ast.Inspect(root, func(n ast.Node) bool {
 		if n == nil {
 			return false
 		}
