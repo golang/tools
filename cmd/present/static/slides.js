@@ -442,7 +442,7 @@ function handleBodyKeyDown(event) {
 };
 
 function scaleSmallViewports() {
-  var el = document.querySelector('.slides');
+  var el = document.querySelector('section.slides');
   var transform = '';
   var sWidthPx = 1250;
   var sHeightPx = 750;
@@ -471,7 +471,7 @@ function addEventListeners() {
 
   // Force reset transform property of section.slides when printing page.
   var beforePrint = function() {
-    var el = document.querySelector('.slides');
+    var el = document.querySelector('section.slides');
     el.style.transform = '';
   };
   if (window.matchMedia) {
