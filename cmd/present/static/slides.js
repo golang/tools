@@ -471,7 +471,7 @@ function addEventListeners() {
 
   // Force reset transform property of section.slides when printing page.
   var beforePrint = function() {
-    var el = document.querySelector('section.slides');
+    var el = document.querySelector('.slides');
     el.style.transform = '';
   };
   if (window.matchMedia) {
@@ -481,7 +481,6 @@ function addEventListeners() {
     });
   }
   window.onbeforeprint = beforePrint;
-
 }
 
 /* Initialization */
