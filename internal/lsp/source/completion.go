@@ -59,6 +59,7 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 	if path == nil {
 		return nil, "", fmt.Errorf("cannot find node enclosing position")
 	}
+
 	// If the position is not an identifier but immediately follows
 	// an identifier or selector period (as is common when
 	// requesting a completion), use the path to the preceding node.
@@ -69,6 +70,12 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 				path = p // use preceding ident/selector
 			}
 		}
+	}
+
+	// skip completion inside comment blocks
+	// TODO(anjmao) Currently this wont fix completion inside function comments as this need to be fixed inside lexical completion.
+	if p, ok := path[0].(*ast.File); ok && isCommentNode(p, pos) {
+		return items, prefix, nil
 	}
 
 	// Save certain facts about the query position, including the expected type
@@ -196,11 +203,6 @@ func selector(sel *ast.SelectorExpr, pos token.Pos, info *types.Info, found find
 
 // lexical finds completions in the lexical environment.
 func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Info, found finder) (items []CompletionItem) {
-	// skip completion inside comment blocks
-	if p, ok := path[0].(*ast.File); ok && isCommentNode(p, pos) {
-		return items
-	}
-
 	var scopes []*types.Scope // scopes[i], where i<len(path), is the possibly nil Scope of path[i].
 	for _, n := range path {
 		switch node := n.(type) {
@@ -252,9 +254,9 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 	return items
 }
 
-// isCommentNode checks if given token position is inside ast.Comment node
+// isCommentNode checks if given token position is inside ast.Comment node.
 func isCommentNode(root ast.Node, pos token.Pos) bool {
-	found := false
+	var found bool
 	ast.Inspect(root, func(n ast.Node) bool {
 		if n == nil {
 			return false
