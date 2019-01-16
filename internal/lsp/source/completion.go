@@ -73,7 +73,6 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 	}
 
 	// Skip completion inside comment blocks.
-	// TODO(anjmao) Currently this wont fix completion inside function comments as this need to be fixed inside lexical completion.
 	if p, ok := path[0].(*ast.File); ok && isCommentNode(p, pos) {
 		return items, prefix, nil
 	}
