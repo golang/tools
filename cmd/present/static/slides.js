@@ -470,17 +470,18 @@ function addEventListeners() {
   });
 
   // Force reset transform property of section.slides when printing page.
+  // Use both onbeforeprint and matchMedia for compatibility with different browsers.
   var beforePrint = function() {
     var el = document.querySelector('section.slides');
     el.style.transform = '';
   };
+  window.onbeforeprint = beforePrint;
   if (window.matchMedia) {
     var mediaQueryList = window.matchMedia('print');
     mediaQueryList.addListener(function(mql) {
       if (mql.matches) beforePrint();
     });
   }
-  window.onbeforeprint = beforePrint;
 }
 
 /* Initialization */
