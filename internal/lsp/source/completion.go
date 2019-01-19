@@ -75,7 +75,7 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 	// Skip completion inside comment blocks.
 	switch path[0].(type) {
 	case *ast.File, *ast.BlockStmt:
-		if isCompletionInsideComment(file.Comments, pos) {
+		if inComment(pos, file.Comments) {
 			return items, prefix, nil
 		}
 	}
@@ -255,8 +255,8 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 	return items
 }
 
-// isCompletionInsideComment checks if given token position is inside ast.Comment node.
-func isCompletionInsideComment(commentGroups []*ast.CommentGroup, pos token.Pos) bool {
+// inComment checks if given token position is inside ast.Comment node.
+func inComment(pos token.Pos, commentGroups []*ast.CommentGroup) bool {
 	for _, g := range commentGroups {
 		for _, c := range g.List {
 			if c.Pos() <= pos && pos <= c.End() {
