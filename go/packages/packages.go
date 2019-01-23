@@ -768,11 +768,18 @@ var ioLimit = make(chan bool, 20)
 // positions of the resulting ast.Files are not ordered.
 //
 func (ld *loader) parseFiles(filenames []string) ([]*ast.File, []error) {
+	ctx := ld.Config.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	var wg sync.WaitGroup
 	n := len(filenames)
 	parsed := make([]*ast.File, n)
 	errors := make([]error, n)
 	for i, file := range filenames {
+		if ctx.Err() == context.Canceled {
+			break
+		}
 		wg.Add(1)
 		go func(i int, filename string) {
 			ioLimit <- true // wait
