@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"log"
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
@@ -112,6 +113,7 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 	if items, prefix, ok := complit(path, pos, pkg.Types, pkg.TypesInfo, found); ok {
 		return items, prefix, nil
 	}
+
 	switch n := path[0].(type) {
 	case *ast.Ident:
 		// Set the filter prefix.
@@ -136,7 +138,12 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 			}
 		}
 
-		items = append(items, lexical(path, pos, pkg.Types, pkg.TypesInfo, found)...)
+		if inFuncReturn(pos, path) {
+			log.Println("funcValueComplit")
+			items = append(items, funcValueComplit(path, pos, pkg.Types, pkg.TypesInfo, found)...)
+		} else {
+			items = append(items, lexical(path, pos, pkg.Types, pkg.TypesInfo, found)...)
+		}
 
 	// The function name hasn't been typed yet, but the parens are there:
 	//   recv.‸(arg)
@@ -202,6 +209,95 @@ func selector(sel *ast.SelectorExpr, pos token.Pos, info *types.Info, found find
 	return items, nil
 }
 
+// func fn() (string, fmt.)
+// 1  .  0: *ast.Ident {
+// 6  .  1: *ast.SelectorExpr {
+// 12  .  .  Sel: *(obj @ 1)
+// 13  .  }
+// 14  .  2: *ast.Field {
+// 21  .  3: *ast.FieldList {
+// 39  .  4: *ast.FuncDecl {
+
+// func fn() fmt.
+// 1  .  0: *ast.SelectorExpr {
+// 13  .  1: *ast.Field {
+// 20  .  2: *ast.FieldList {
+// 27  .  3: *ast.FuncDecl {
+
+// func fn() []*s
+// 1  .  0: *ast.Ident {
+// 6  .  1: *ast.StarExpr {
+// 10  .  2: *ast.ArrayType {
+// 15  .  3: *ast.Field {
+// 22  .  4: *ast.FieldList {
+// 29  .  5: *ast.FuncDecl {
+
+// func fn() []s
+// 1  .  0: *ast.Ident {
+// 6  .  1: *ast.ArrayType {
+// 11  .  2: *ast.Field {
+// 18  .  3: *ast.FieldList {
+// 25  .  4: *ast.FuncDecl {
+
+// func fn() s
+// 0: *ast.Ident {
+//  1: *ast.Field {
+//  .  2: *ast.FieldList {
+//  .  3: *ast.FuncDecl {
+
+func inFuncReturn(pos token.Pos, path []ast.Node) bool {
+	var foundIdent, foundField, foundFieldList, foundFuncDecl bool
+	for _, n := range path {
+		switch n.(type) {
+		case *ast.Ident:
+			foundIdent = true
+		case *ast.Field:
+			foundField = true
+		case *ast.FieldList:
+			foundFieldList = true
+		case *ast.FuncDecl:
+			foundFuncDecl = true
+		}
+	}
+	return foundIdent && foundField && foundFieldList && foundFuncDecl
+}
+
+// funcValueComplit finds completions inside function return values.
+func funcValueComplit(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Info, found finder) (items []CompletionItem) {
+	var scopes []*types.Scope // scopes[i], where i<len(path), is the possibly nil Scope of path[i].
+	for _, n := range path {
+		switch node := n.(type) {
+		case *ast.FuncDecl:
+			n = node.Type
+		case *ast.FuncLit:
+			n = node.Type
+		}
+		scopes = append(scopes, info.Scopes[n])
+	}
+	scopes = append(scopes, pkg.Scope(), types.Universe)
+
+	// Process scopes innermost first.
+	for _, scope := range scopes {
+		if scope == nil {
+			continue
+		}
+		for _, name := range scope.Names() {
+			declScope, obj := scope.LookupParent(name, pos)
+			if declScope != scope {
+				continue // Name was declared in some enclosing scope, or not at all.
+			}
+
+			switch obj.(type) {
+			case *types.Func, *types.Const, *types.Var, *types.Builtin:
+				continue
+			}
+
+			items = found(obj, stdScore, items)
+		}
+	}
+	return items
+}
+
 // lexical finds completions in the lexical environment.
 func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Info, found finder) (items []CompletionItem) {
 	var scopes []*types.Scope // scopes[i], where i<len(path), is the possibly nil Scope of path[i].
@@ -216,6 +312,9 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 	}
 	scopes = append(scopes, pkg.Scope(), types.Universe)
 
+	// Check if completion is inside func return (e.g. func foo() <>).
+	inFuncReturn := inFuncReturn(pos, path)
+
 	// Process scopes innermost first.
 	for i, scope := range scopes {
 		if scope == nil {
@@ -226,6 +325,14 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 			if declScope != scope {
 				continue // Name was declared in some enclosing scope, or not at all.
 			}
+
+			if inFuncReturn {
+				switch obj.(type) {
+				case *types.Func, *types.Const, *types.Var, *types.Builtin:
+					continue
+				}
+			}
+
 			// If obj's type is invalid, find the AST node that defines the lexical block
 			// containing the declaration of obj. Don't resolve types for packages.
 			if _, ok := obj.(*types.PkgName); !ok && obj.Type() == types.Typ[types.Invalid] {
