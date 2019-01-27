@@ -7,7 +7,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"log"
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
@@ -114,6 +113,8 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 		return items, prefix, nil
 	}
 
+	funcReturn := inFuncReturn(pos, path)
+
 	switch n := path[0].(type) {
 	case *ast.Ident:
 		// Set the filter prefix.
@@ -121,7 +122,7 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 
 		// Is this the Sel part of a selector?
 		if sel, ok := path[1].(*ast.SelectorExpr); ok && sel.Sel == n {
-			items, err = selector(sel, pos, pkg.TypesInfo, found)
+			items, err = selector(sel, pos, pkg.TypesInfo, funcReturn, found)
 			return items, prefix, err
 		}
 		// reject defining identifiers
@@ -138,27 +139,22 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 			}
 		}
 
-		if inFuncReturn(pos, path) {
-			log.Println("funcValueComplit")
-			items = append(items, funcValueComplit(path, pos, pkg.Types, pkg.TypesInfo, found)...)
-		} else {
-			items = append(items, lexical(path, pos, pkg.Types, pkg.TypesInfo, found)...)
-		}
+		items = append(items, lexical(path, pos, pkg.Types, pkg.TypesInfo, funcReturn, found)...)
 
 	// The function name hasn't been typed yet, but the parens are there:
 	//   recv.‸(arg)
 	case *ast.TypeAssertExpr:
 		// Create a fake selector expression.
-		items, err = selector(&ast.SelectorExpr{X: n.X}, pos, pkg.TypesInfo, found)
+		items, err = selector(&ast.SelectorExpr{X: n.X}, pos, pkg.TypesInfo, funcReturn, found)
 		return items, prefix, err
 
 	case *ast.SelectorExpr:
-		items, err = selector(n, pos, pkg.TypesInfo, found)
+		items, err = selector(n, pos, pkg.TypesInfo, funcReturn, found)
 		return items, prefix, err
 
 	default:
 		// fallback to lexical completions
-		return lexical(path, pos, pkg.Types, pkg.TypesInfo, found), "", nil
+		return lexical(path, pos, pkg.Types, pkg.TypesInfo, funcReturn, found), "", nil
 	}
 	return items, prefix, nil
 }
@@ -166,7 +162,7 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 // selector finds completions for
 // the specified selector expression.
 // TODO(rstambler): Set the prefix filter correctly for selectors.
-func selector(sel *ast.SelectorExpr, pos token.Pos, info *types.Info, found finder) (items []CompletionItem, err error) {
+func selector(sel *ast.SelectorExpr, pos token.Pos, info *types.Info, funcReturn bool, found finder) (items []CompletionItem, err error) {
 	// Is sel a qualified identifier?
 	if id, ok := sel.X.(*ast.Ident); ok {
 		if pkgname, ok := info.Uses[id].(*types.PkgName); ok {
@@ -175,7 +171,14 @@ func selector(sel *ast.SelectorExpr, pos token.Pos, info *types.Info, found find
 			scope := pkgname.Imported().Scope()
 			// TODO testcase: bad import
 			for _, name := range scope.Names() {
-				items = found(scope.Lookup(name), stdScore, items)
+				obj := scope.Lookup(name)
+				if funcReturn {
+					switch obj.(type) {
+					case *types.Func, *types.Const, *types.Var:
+						continue
+					}
+				}
+				items = found(obj, stdScore, items)
 			}
 			return items, nil
 		}
@@ -209,48 +212,15 @@ func selector(sel *ast.SelectorExpr, pos token.Pos, info *types.Info, found find
 	return items, nil
 }
 
-// func fn() (string, fmt.)
-// 1  .  0: *ast.Ident {
-// 6  .  1: *ast.SelectorExpr {
-// 12  .  .  Sel: *(obj @ 1)
-// 13  .  }
-// 14  .  2: *ast.Field {
-// 21  .  3: *ast.FieldList {
-// 39  .  4: *ast.FuncDecl {
-
-// func fn() fmt.
-// 1  .  0: *ast.SelectorExpr {
-// 13  .  1: *ast.Field {
-// 20  .  2: *ast.FieldList {
-// 27  .  3: *ast.FuncDecl {
-
-// func fn() []*s
-// 1  .  0: *ast.Ident {
-// 6  .  1: *ast.StarExpr {
-// 10  .  2: *ast.ArrayType {
-// 15  .  3: *ast.Field {
-// 22  .  4: *ast.FieldList {
-// 29  .  5: *ast.FuncDecl {
-
-// func fn() []s
-// 1  .  0: *ast.Ident {
-// 6  .  1: *ast.ArrayType {
-// 11  .  2: *ast.Field {
-// 18  .  3: *ast.FieldList {
-// 25  .  4: *ast.FuncDecl {
-
-// func fn() s
-// 0: *ast.Ident {
-//  1: *ast.Field {
-//  .  2: *ast.FieldList {
-//  .  3: *ast.FuncDecl {
-
+// inFuncReturn checks if given token position is inside function return values declaration (e.g. func foo() <>).
 func inFuncReturn(pos token.Pos, path []ast.Node) bool {
-	var foundIdent, foundField, foundFieldList, foundFuncDecl bool
+	var foundIdent, foundSelectorExpr, foundField, foundFieldList, foundFuncDecl bool
 	for _, n := range path {
 		switch n.(type) {
 		case *ast.Ident:
 			foundIdent = true
+		case *ast.SelectorExpr:
+			foundSelectorExpr = true
 		case *ast.Field:
 			foundField = true
 		case *ast.FieldList:
@@ -259,47 +229,11 @@ func inFuncReturn(pos token.Pos, path []ast.Node) bool {
 			foundFuncDecl = true
 		}
 	}
-	return foundIdent && foundField && foundFieldList && foundFuncDecl
-}
-
-// funcValueComplit finds completions inside function return values.
-func funcValueComplit(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Info, found finder) (items []CompletionItem) {
-	var scopes []*types.Scope // scopes[i], where i<len(path), is the possibly nil Scope of path[i].
-	for _, n := range path {
-		switch node := n.(type) {
-		case *ast.FuncDecl:
-			n = node.Type
-		case *ast.FuncLit:
-			n = node.Type
-		}
-		scopes = append(scopes, info.Scopes[n])
-	}
-	scopes = append(scopes, pkg.Scope(), types.Universe)
-
-	// Process scopes innermost first.
-	for _, scope := range scopes {
-		if scope == nil {
-			continue
-		}
-		for _, name := range scope.Names() {
-			declScope, obj := scope.LookupParent(name, pos)
-			if declScope != scope {
-				continue // Name was declared in some enclosing scope, or not at all.
-			}
-
-			switch obj.(type) {
-			case *types.Func, *types.Const, *types.Var, *types.Builtin:
-				continue
-			}
-
-			items = found(obj, stdScore, items)
-		}
-	}
-	return items
+	return (foundIdent || foundSelectorExpr) && foundField && foundFieldList && foundFuncDecl
 }
 
 // lexical finds completions in the lexical environment.
-func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Info, found finder) (items []CompletionItem) {
+func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Info, funcReturn bool, found finder) (items []CompletionItem) {
 	var scopes []*types.Scope // scopes[i], where i<len(path), is the possibly nil Scope of path[i].
 	for _, n := range path {
 		switch node := n.(type) {
@@ -311,9 +245,6 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 		scopes = append(scopes, info.Scopes[n])
 	}
 	scopes = append(scopes, pkg.Scope(), types.Universe)
-
-	// Check if completion is inside func return (e.g. func foo() <>).
-	inFuncReturn := inFuncReturn(pos, path)
 
 	// Process scopes innermost first.
 	for i, scope := range scopes {
@@ -326,7 +257,7 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 				continue // Name was declared in some enclosing scope, or not at all.
 			}
 
-			if inFuncReturn {
+			if funcReturn {
 				switch obj.(type) {
 				case *types.Func, *types.Const, *types.Var, *types.Builtin:
 					continue
@@ -477,7 +408,7 @@ func complit(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 			// Add lexical completions if the user hasn't typed a key value expression
 			// and if the struct fields are defined in the same package as the user is in.
 			if !hasKeys && structPkg == pkg {
-				items = append(items, lexical(path, pos, pkg, info, found)...)
+				items = append(items, lexical(path, pos, pkg, info, false, found)...)
 			}
 			return items, prefix, true
 		}
@@ -747,6 +678,11 @@ func fieldSelections(T types.Type) (fields []*types.Var) {
 
 func isPointer(T types.Type) bool {
 	_, ok := T.(*types.Pointer)
+	return ok
+}
+
+func isStruct(T types.Type) bool {
+	_, ok := T.(*types.Struct)
 	return ok
 }
 
