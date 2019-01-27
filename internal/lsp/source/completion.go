@@ -87,7 +87,7 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 	sig := enclosingFunction(path, pos, pkg.TypesInfo)
 	pkgStringer := qualifier(file, pkg.Types, pkg.TypesInfo)
 
-	funcReturn := inFuncReturn(pos, path)
+	inReturnOfFuncVal := inReturnOfFunc(pos, path)
 
 	seen := make(map[types.Object]bool)
 	// found adds a candidate completion.
@@ -97,7 +97,7 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 			return items // inaccessible
 		}
 
-		if funcReturn {
+		if inReturnOfFuncVal {
 			switch obj.(type) {
 			case *types.Func, *types.Const, *types.Var, *types.Builtin:
 				return items
@@ -211,8 +211,8 @@ func selector(sel *ast.SelectorExpr, pos token.Pos, info *types.Info, found find
 	return items, nil
 }
 
-// inFuncReturn checks if given token position is inside function return values declaration (e.g. func foo() <>).
-func inFuncReturn(pos token.Pos, path []ast.Node) bool {
+// inReturnOfFunc checks if given token position is inside function return values declaration (e.g. func foo() <>).
+func inReturnOfFunc(pos token.Pos, path []ast.Node) bool {
 	var foundIdent, foundSelectorExpr, foundField, foundFieldList, foundFuncDecl bool
 	for _, n := range path {
 		switch n.(type) {
