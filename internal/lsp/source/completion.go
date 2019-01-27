@@ -681,11 +681,6 @@ func isPointer(T types.Type) bool {
 	return ok
 }
 
-func isStruct(T types.Type) bool {
-	_, ok := T.(*types.Struct)
-	return ok
-}
-
 // deref returns a pointer's element type; otherwise it returns typ.
 func deref(typ types.Type) types.Type {
 	if p, ok := typ.Underlying().(*types.Pointer); ok {

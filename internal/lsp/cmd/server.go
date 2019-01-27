@@ -62,7 +62,6 @@ func (s *Server) Run(ctx context.Context, args ...string) error {
 		out = f
 	}
 	logger := func(direction jsonrpc2.Direction, id *jsonrpc2.ID, elapsed time.Duration, method string, payload *json.RawMessage, err *jsonrpc2.Error) {
-		return
 		const eol = "\r\n\r\n\r\n"
 		if err != nil {
 			fmt.Fprintf(out, "[Error - %v] %s %s%s %v%s", time.Now().Format("3:04:05 PM"),
