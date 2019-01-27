@@ -109,7 +109,6 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 			if typ != nil && matchingTypes(typ, obj.Type()) {
 				weight *= 10.0
 			}
-
 			item := formatCompletion(obj, pkgStringer, weight, func(v *types.Var) bool {
 				return isParameter(sig, v)
 			})
@@ -122,7 +121,6 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 	if items, prefix, ok := complit(path, pos, pkg.Types, pkg.TypesInfo, found); ok {
 		return items, prefix, nil
 	}
-
 	switch n := path[0].(type) {
 	case *ast.Ident:
 		// Set the filter prefix.
@@ -258,7 +256,6 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 			if declScope != scope {
 				continue // Name was declared in some enclosing scope, or not at all.
 			}
-
 			// If obj's type is invalid, find the AST node that defines the lexical block
 			// containing the declaration of obj. Don't resolve types for packages.
 			if _, ok := obj.(*types.PkgName); !ok && obj.Type() == types.Typ[types.Invalid] {
