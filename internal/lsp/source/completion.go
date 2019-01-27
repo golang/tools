@@ -177,8 +177,7 @@ func selector(sel *ast.SelectorExpr, pos token.Pos, info *types.Info, found find
 			scope := pkgname.Imported().Scope()
 			// TODO testcase: bad import
 			for _, name := range scope.Names() {
-				obj := scope.Lookup(name)
-				items = found(obj, stdScore, items)
+				items = found(scope.Lookup(name), stdScore, items)
 			}
 			return items, nil
 		}
