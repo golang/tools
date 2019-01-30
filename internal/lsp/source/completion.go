@@ -99,7 +99,7 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 
 		if inReturnOfFuncVal {
 			switch obj.(type) {
-			case *types.Func, *types.Const, *types.Var, *types.Builtin:
+			case *types.Func, *types.Const, *types.Var, *types.Builtin, *types.Nil:
 				return items
 			}
 		}
@@ -213,22 +213,19 @@ func selector(sel *ast.SelectorExpr, pos token.Pos, info *types.Info, found find
 
 // inReturnOfFunc checks if given token position is inside function return values declaration (e.g. func foo() <>).
 func inReturnOfFunc(pos token.Pos, path []ast.Node) bool {
-	var foundIdent, foundSelectorExpr, foundField, foundFieldList, foundFuncDecl bool
-	for _, n := range path {
-		switch n.(type) {
-		case *ast.Ident:
-			foundIdent = true
-		case *ast.SelectorExpr:
-			foundSelectorExpr = true
-		case *ast.Field:
-			foundField = true
-		case *ast.FieldList:
-			foundFieldList = true
+	for _, p := range path {
+		switch n := p.(type) {
 		case *ast.FuncDecl:
-			foundFuncDecl = true
+			if n.Type == nil || n.Type.Results == nil {
+				return false
+			}
+			if n.Type.Results.Pos() <= pos && pos <= n.Type.Results.End() {
+				return true
+			}
+			return false
 		}
 	}
-	return (foundIdent || foundSelectorExpr) && foundField && foundFieldList && foundFuncDecl
+	return false
 }
 
 // lexical finds completions in the lexical environment.

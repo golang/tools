@@ -1,7 +1,5 @@
 package funcval
 
-/* string */ //@item(string, "string", "", "type")
-
 var (
 	stringT string
 	ss      string
