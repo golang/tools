@@ -86,7 +86,6 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 	typ := expectedType(path, pos, pkg.TypesInfo)
 	sig := enclosingFunction(path, pos, pkg.TypesInfo)
 	pkgStringer := qualifier(file, pkg.Types, pkg.TypesInfo)
-
 	inReturnOfFuncVal := inReturnOfFunc(pos, path)
 
 	seen := make(map[types.Object]bool)
