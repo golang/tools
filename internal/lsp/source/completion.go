@@ -86,7 +86,7 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 	typ := expectedType(path, pos, pkg.TypesInfo)
 	sig := enclosingFunction(path, pos, pkg.TypesInfo)
 	pkgStringer := qualifier(file, pkg.Types, pkg.TypesInfo)
-	inReturnOfFuncVal := inReturnOfFunc(pos, path)
+	preferTypeNames := wantTypeNames(pos, path)
 
 	seen := make(map[types.Object]bool)
 	// found adds a candidate completion.
@@ -96,17 +96,13 @@ func Completion(ctx context.Context, f File, pos token.Pos) (items []CompletionI
 			return items // inaccessible
 		}
 
-		if inReturnOfFuncVal {
-			switch obj.(type) {
-			case *types.Func, *types.Const, *types.Var, *types.Builtin, *types.Nil:
-				return items
-			}
-		}
-
 		if !seen[obj] {
 			seen[obj] = true
 			if typ != nil && matchingTypes(typ, obj.Type()) {
 				weight *= 10.0
+			}
+			if _, ok := obj.(*types.TypeName); !ok && preferTypeNames {
+				weight *= 0.01
 			}
 			item := formatCompletion(obj, pkgStringer, weight, func(v *types.Var) bool {
 				return isParameter(sig, v)
@@ -210,16 +206,27 @@ func selector(sel *ast.SelectorExpr, pos token.Pos, info *types.Info, found find
 	return items, nil
 }
 
-// inReturnOfFunc checks if given token position is inside function return values declaration (e.g. func foo() <>).
-func inReturnOfFunc(pos token.Pos, path []ast.Node) bool {
+// wantTypeNames checks if given token position is inside func receiver, type params
+// or type results (e.g func (<>) foo(<>) (<>) {} ).
+func wantTypeNames(pos token.Pos, path []ast.Node) bool {
 	for _, p := range path {
 		switch n := p.(type) {
 		case *ast.FuncDecl:
-			if n.Type == nil || n.Type.Results == nil {
-				return false
-			}
-			if n.Type.Results.Pos() <= pos && pos <= n.Type.Results.End() {
+			recv := n.Recv
+			if recv != nil && recv.Pos() <= pos && pos <= recv.End() {
 				return true
+			}
+
+			if n.Type != nil {
+				params := n.Type.Params
+				if params != nil && params.Pos() <= pos && pos <= params.End() {
+					return true
+				}
+
+				results := n.Type.Results
+				if results != nil && results.Pos() <= pos && pos <= results.End() {
+					return true
+				}
 			}
 			return false
 		}
