@@ -54,6 +54,6 @@ func (a *app) Run(ctx context.Context, args ...string) error {
 		}
 	}(conn)
 
-	for {
+	select {
 	}
 }
