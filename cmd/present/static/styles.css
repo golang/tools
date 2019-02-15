@@ -423,15 +423,15 @@ p.link {
   left: 15px;
   right: 15px; 
   height: 50px;
-  line-height:50px;
+  line-height: 50px;
 }
 .footer .segment-0 {
-  min-width:33%;
+  min-width: 33%;
   float: left;
   min-height: 1px;
 }
 .footer .segment-1 {
-  min-width:33%;
+  min-width: 33%;
   float: left;
   text-align: center;
   min-height: 1px;
