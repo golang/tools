@@ -50,7 +50,10 @@ func Diagnostics(ctx context.Context, v View, uri URI) (map[string][]Diagnostic,
 	if err != nil {
 		return nil, err
 	}
-	pkg := f.GetPackage()
+	pkg, err := f.GetPackage()
+	if err != nil {
+		return nil, err
+	}
 	// Prepare the reports we will send for this package.
 	reports := make(map[string][]Diagnostic)
 	for _, filename := range pkg.GoFiles {
@@ -79,8 +82,15 @@ func Diagnostics(ctx context.Context, v View, uri URI) (map[string][]Diagnostic,
 		if err != nil {
 			continue
 		}
-		diagTok := diagFile.GetToken()
-		end, err := identifierEnd(diagFile.GetContent(), pos.Line, pos.Column)
+		diagTok, err := diagFile.GetToken()
+		if err != nil {
+			return nil, err
+		}
+		diagFileContent, err := diagFile.GetContent()
+		if err != nil {
+			return nil, err
+		}
+		end, err := identifierEnd(diagFileContent, pos.Line, pos.Column)
 		// Don't set a range if it's anything other than a type error.
 		if err != nil || diag.Kind != packages.TypeError {
 			end = 0

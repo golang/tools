@@ -25,8 +25,14 @@ type ParameterInformation struct {
 }
 
 func SignatureHelp(ctx context.Context, f File, pos token.Pos) (*SignatureInformation, error) {
-	fAST := f.GetAST()
-	pkg := f.GetPackage()
+	fAST, err := f.GetAST()
+	if err != nil {
+		return nil, err
+	}
+	pkg, err := f.GetPackage()
+	if err != nil {
+		return nil, err
+	}
 
 	// Find a call expression surrounding the query position.
 	var callExpr *ast.CallExpr
@@ -104,9 +110,10 @@ func SignatureHelp(ctx context.Context, f File, pos token.Pos) (*SignatureInform
 	if pkg := pkgStringer(obj.Pkg()); pkg != "" {
 		label = pkg + "." + label
 	}
-	return &SignatureInformation{
+	signatureInformation := &SignatureInformation{
 		Label:           label + formatParams(sig.Params(), sig.Variadic(), pkgStringer),
 		Parameters:      paramInfo,
 		ActiveParameter: activeParam,
-	}, nil
+	}
+	return signatureInformation, nil
 }

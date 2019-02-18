@@ -21,7 +21,10 @@ import (
 
 // Format formats a file with a given range.
 func Format(ctx context.Context, f File, rng Range) ([]TextEdit, error) {
-	fAST := f.GetAST()
+	fAST, err := f.GetAST()
+	if err != nil {
+		return nil, err
+	}
 	path, exact := astutil.PathEnclosingInterval(fAST, rng.Start, rng.End)
 	if !exact || len(path) == 0 {
 		return nil, fmt.Errorf("no exact AST node matching the specified range")
@@ -52,21 +55,46 @@ func Format(ctx context.Context, f File, rng Range) ([]TextEdit, error) {
 	if err := format.Node(buf, fset, node); err != nil {
 		return nil, err
 	}
-	return computeTextEdits(rng, f, buf.String()), nil
+	edits, err := computeTextEdits(rng, f, buf.String())
+	if err != nil {
+		return nil, err
+	}
+	return edits, nil
 }
 
 // Imports formats a file using the goimports tool.
 func Imports(ctx context.Context, f File, rng Range) ([]TextEdit, error) {
-	formatted, err := imports.Process(f.GetToken().Name(), f.GetContent(), nil)
+	tok, err := f.GetToken()
 	if err != nil {
 		return nil, err
 	}
-	return computeTextEdits(rng, f, string(formatted)), nil
+	content, err := f.GetContent()
+	if err != nil {
+		return nil, err
+	}
+	formatted, err := imports.Process(tok.Name(), content, nil)
+	if err != nil {
+		return nil, err
+	}
+	edits, err := computeTextEdits(rng, f, string(formatted))
+	if err != nil {
+		return nil, err
+	}
+	return edits, nil
 }
 
-func computeTextEdits(rng Range, file File, formatted string) (edits []TextEdit) {
-	u := strings.SplitAfter(string(file.GetContent()), "\n")
-	tok := file.GetToken()
+func computeTextEdits(rng Range, file File, formatted string) ([]TextEdit, error) {
+	edits := []TextEdit{}
+
+	contents, err := file.GetContent()
+	if err != nil {
+		return nil, err
+	}
+	u := strings.SplitAfter(string(contents), "\n")
+	tok, err := file.GetToken()
+	if err != nil {
+		return nil, err
+	}
 	f := strings.SplitAfter(formatted, "\n")
 	for _, op := range diff.Operations(u, f) {
 		start := lineStart(tok, op.I1+1)
@@ -97,5 +125,5 @@ func computeTextEdits(rng Range, file File, formatted string) (edits []TextEdit)
 			})
 		}
 	}
-	return edits
+	return edits, nil
 }

@@ -27,11 +27,11 @@ type View interface {
 // building blocks for most queries. Users of the source package can abstract
 // the loading of packages into their own caching systems.
 type File interface {
-	GetAST() *ast.File
+	GetAST() (*ast.File, error)
 	GetFileSet() *token.FileSet
-	GetPackage() *packages.Package
-	GetToken() *token.File
-	GetContent() []byte
+	GetPackage() (*packages.Package, error)
+	GetToken() (*token.File, error)
+	GetContent() ([]byte, error)
 }
 
 // Range represents a start and end position.

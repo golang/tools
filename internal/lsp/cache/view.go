@@ -46,6 +46,9 @@ func (v *View) FileSet() *token.FileSet {
 }
 
 func (v *View) GetAnalysisCache() *source.AnalysisCache {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
 	if v.analysisCache == nil {
 		v.analysisCache = source.NewAnalysisCache()
 	}
@@ -91,8 +94,8 @@ func (v *View) SetContent(ctx context.Context, uri source.URI, content []byte) (
 // adds the file to the managed set if needed.
 func (v *View) GetFile(ctx context.Context, uri source.URI) (source.File, error) {
 	v.mu.Lock()
+	defer v.mu.Unlock()
 	f := v.getFile(uri)
-	v.mu.Unlock()
 	return f, nil
 }
 

@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"context"
+	"errors"
 
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
@@ -17,7 +18,10 @@ func formatRange(ctx context.Context, v source.View, uri protocol.DocumentURI, r
 	if err != nil {
 		return nil, err
 	}
-	tok := f.GetToken()
+	tok, err := f.GetToken()
+	if err != nil {
+		return nil, err
+	}
 	var r source.Range
 	if rng == nil {
 		r.Start = tok.Pos(0)
@@ -29,15 +33,26 @@ func formatRange(ctx context.Context, v source.View, uri protocol.DocumentURI, r
 	if err != nil {
 		return nil, err
 	}
-	return toProtocolEdits(f, edits), nil
+
+	protocolEdits, err := toProtocolEdits(f, edits)
+	if err != nil {
+		return nil, err
+	}
+	return protocolEdits, nil
 }
 
-func toProtocolEdits(f source.File, edits []source.TextEdit) []protocol.TextEdit {
+func toProtocolEdits(f source.File, edits []source.TextEdit) ([]protocol.TextEdit, error) {
 	if edits == nil {
-		return nil
+		return nil, errors.New("toProtocolEdits, edits == nil")
 	}
-	tok := f.GetToken()
-	content := f.GetContent()
+	tok, err := f.GetToken()
+	if err != nil {
+		return nil, err
+	}
+	content, err := f.GetContent()
+	if err != nil {
+		return nil, err
+	}
 	// When a file ends with an empty line, the newline character is counted
 	// as part of the previous line. This causes the formatter to insert
 	// another unnecessary newline on each formatting. We handle this case by
@@ -56,5 +71,5 @@ func toProtocolEdits(f source.File, edits []source.TextEdit) []protocol.TextEdit
 			NewText: edit.NewText,
 		}
 	}
-	return result
+	return result, nil
 }

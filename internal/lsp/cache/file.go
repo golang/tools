@@ -25,63 +25,68 @@ type File struct {
 }
 
 // GetContent returns the contents of the file, reading it from file system if needed.
-func (f *File) GetContent() []byte {
+func (f *File) GetContent() ([]byte, error) {
 	f.view.mu.Lock()
 	defer f.view.mu.Unlock()
-	f.read()
-	return f.content
+	if f.content != nil {
+		return f.content, nil
+	}
+	content, err := f.read()
+	if err != nil {
+		return nil, err
+	}
+	f.content = content
+	return f.content, nil
 }
 
 func (f *File) GetFileSet() *token.FileSet {
 	return f.view.Config.Fset
 }
 
-func (f *File) GetToken() *token.File {
+func (f *File) GetToken() (*token.File, error) {
 	f.view.mu.Lock()
 	defer f.view.mu.Unlock()
 	if f.token == nil {
 		if err := f.view.parse(f.URI); err != nil {
-			return nil
+			return nil, err
 		}
 	}
-	return f.token
+	return f.token, nil
 }
 
-func (f *File) GetAST() *ast.File {
+func (f *File) GetAST() (*ast.File, error) {
 	f.view.mu.Lock()
 	defer f.view.mu.Unlock()
 	if f.ast == nil {
 		if err := f.view.parse(f.URI); err != nil {
-			return nil
+			return nil, err
 		}
 	}
-	return f.ast
+	return f.ast, nil
 }
 
-func (f *File) GetPackage() *packages.Package {
+func (f *File) GetPackage() (*packages.Package, error) {
 	f.view.mu.Lock()
 	defer f.view.mu.Unlock()
 	if f.pkg == nil {
 		if err := f.view.parse(f.URI); err != nil {
-			return nil
+			return nil, err
 		}
 	}
-	return f.pkg
+	return f.pkg, nil
 }
 
 // read is the internal part of Read that presumes the lock is already held
-func (f *File) read() {
-	if f.content != nil {
-		return
-	}
+func (f *File) read() ([]byte, error) {
 	// we don't know the content yet, so read it
 	filename, err := f.URI.Filename()
 	if err != nil {
-		return
+		return nil, err
 	}
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return
+		return nil, err
 	}
-	f.content = content
+	// f.content = content
+	return content, nil
 }

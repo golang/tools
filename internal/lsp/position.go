@@ -6,6 +6,7 @@ package lsp
 
 import (
 	"context"
+	"fmt"
 	"go/token"
 	"net/url"
 
@@ -36,18 +37,24 @@ func fromProtocolLocation(ctx context.Context, v *cache.View, loc protocol.Locat
 	if err != nil {
 		return source.Range{}, err
 	}
-	tok := f.GetToken()
+	tok, err := f.GetToken()
+	if err != nil {
+		return source.Range{}, err
+	}
 	return fromProtocolRange(tok, loc.Range), nil
 }
 
 // toProtocolLocation converts from a source range back to a protocol location.
-func toProtocolLocation(fset *token.FileSet, r source.Range) protocol.Location {
+func toProtocolLocation(fset *token.FileSet, r source.Range) (*protocol.Location, error) {
 	tok := fset.File(r.Start)
+	if tok == nil {
+		return nil, fmt.Errorf("cannot get File for position=%+v", r.Start)
+	}
 	uri := source.ToURI(tok.Name())
-	return protocol.Location{
+	return &protocol.Location{
 		URI:   protocol.DocumentURI(uri),
 		Range: toProtocolRange(tok, r),
-	}
+	}, nil
 }
 
 // fromProtocolRange converts a protocol range to a source range.

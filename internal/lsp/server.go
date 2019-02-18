@@ -79,6 +79,10 @@ func (s *server) Initialize(ctx context.Context, params *protocol.InitializePara
 	}
 	s.initialized = true // mark server as initialized now
 
+	if params.Trace != "verbose" {
+		params.Trace = "verbose"
+	}
+
 	// Check if the client supports snippets in completion items.
 	s.snippetsSupported = params.Capabilities.TextDocument.Completion.CompletionItem.SnippetSupport
 	s.signatureHelpEnabled = true
@@ -108,7 +112,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.InitializePara
 		Tests: true,
 	})
 
-	return &protocol.InitializeResult{
+	initializeResult := &protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
 			CodeActionProvider: true,
 			CompletionProvider: protocol.CompletionOptions{
@@ -127,7 +131,9 @@ func (s *server) Initialize(ctx context.Context, params *protocol.InitializePara
 			},
 			TypeDefinitionProvider: true,
 		},
-	}, nil
+	}
+
+	return initializeResult, nil
 }
 
 func (s *server) Initialized(context.Context, *protocol.InitializedParams) error {
@@ -220,7 +226,10 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 	if err != nil {
 		return nil, err
 	}
-	tok := f.GetToken()
+	tok, err := f.GetToken()
+	if err != nil {
+		return nil, err
+	}
 	pos := fromProtocolPosition(tok, params.Position)
 	items, prefix, err := source.Completion(ctx, f, pos)
 	if err != nil {
@@ -245,7 +254,10 @@ func (s *server) Hover(ctx context.Context, params *protocol.TextDocumentPositio
 	if err != nil {
 		return nil, err
 	}
-	tok := f.GetToken()
+	tok, err := f.GetToken()
+	if err != nil {
+		return nil, err
+	}
 	pos := fromProtocolPosition(tok, params.Position)
 	ident, err := source.Identifier(ctx, s.view, f, pos)
 	if err != nil {
@@ -256,13 +268,14 @@ func (s *server) Hover(ctx context.Context, params *protocol.TextDocumentPositio
 		return nil, err
 	}
 	markdown := "```go\n" + content + "\n```"
-	return &protocol.Hover{
+	hover := &protocol.Hover{
 		Contents: protocol.MarkupContent{
 			Kind:  protocol.Markdown,
 			Value: markdown,
 		},
 		Range: toProtocolRange(tok, ident.Range),
-	}, nil
+	}
+	return hover, nil
 }
 
 func (s *server) SignatureHelp(ctx context.Context, params *protocol.TextDocumentPositionParams) (*protocol.SignatureHelp, error) {
@@ -274,7 +287,10 @@ func (s *server) SignatureHelp(ctx context.Context, params *protocol.TextDocumen
 	if err != nil {
 		return nil, err
 	}
-	tok := f.GetToken()
+	tok, err := f.GetToken()
+	if err != nil {
+		return nil, err
+	}
 	pos := fromProtocolPosition(tok, params.Position)
 	info, err := source.SignatureHelp(ctx, f, pos)
 	if err != nil {
@@ -292,13 +308,20 @@ func (s *server) Definition(ctx context.Context, params *protocol.TextDocumentPo
 	if err != nil {
 		return nil, err
 	}
-	tok := f.GetToken()
+	tok, err := f.GetToken()
+	if err != nil {
+		return nil, err
+	}
 	pos := fromProtocolPosition(tok, params.Position)
 	ident, err := source.Identifier(ctx, s.view, f, pos)
 	if err != nil {
 		return nil, err
 	}
-	return []protocol.Location{toProtocolLocation(s.view.FileSet(), ident.Declaration.Range)}, nil
+	protocolLocation, err := toProtocolLocation(s.view.FileSet(), ident.Declaration.Range)
+	if err != nil {
+		return nil, err
+	}
+	return []protocol.Location{*protocolLocation}, nil
 }
 
 func (s *server) TypeDefinition(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.Location, error) {
@@ -310,13 +333,20 @@ func (s *server) TypeDefinition(ctx context.Context, params *protocol.TextDocume
 	if err != nil {
 		return nil, err
 	}
-	tok := f.GetToken()
+	tok, err := f.GetToken()
+	if err != nil {
+		return nil, err
+	}
 	pos := fromProtocolPosition(tok, params.Position)
 	ident, err := source.Identifier(ctx, s.view, f, pos)
 	if err != nil {
 		return nil, err
 	}
-	return []protocol.Location{toProtocolLocation(s.view.FileSet(), ident.Type.Range)}, nil
+	protocolLocation, err := toProtocolLocation(s.view.FileSet(), ident.Type.Range)
+	if err != nil {
+		return nil, err
+	}
+	return []protocol.Location{*protocolLocation}, nil
 }
 
 func (s *server) Implementation(context.Context, *protocol.TextDocumentPositionParams) ([]protocol.Location, error) {

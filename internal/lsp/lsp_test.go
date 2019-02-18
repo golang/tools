@@ -396,7 +396,11 @@ func (f formats) test(t *testing.T, s *server) {
 				})
 			}
 		}
-		split := strings.SplitAfter(string(f.GetContent()), "\n")
+		contents, err := f.GetContent()
+		if err != nil {
+			t.Error(err)
+		}
+		split := strings.SplitAfter(string(contents), "\n")
 		got := strings.Join(diff.ApplyEdits(split, ops), "")
 		if gofmted != got {
 			t.Errorf("format failed for %s: expected '%v', got '%v'", filename, gofmted, got)
@@ -440,6 +444,11 @@ func (d definitions) test(t *testing.T, s *server, typ bool) {
 }
 
 func (d definitions) collect(fset *token.FileSet, src, target packagestest.Range) {
-	loc := toProtocolLocation(fset, source.Range(src))
-	d[loc] = toProtocolLocation(fset, source.Range(target))
+	srcLocation, err := toProtocolLocation(fset, source.Range(src))
+	if err == nil {
+		targetLocation, err := toProtocolLocation(fset, source.Range(target))
+		if err == nil {
+			d[*srcLocation] = *targetLocation
+		}
+	}
 }
