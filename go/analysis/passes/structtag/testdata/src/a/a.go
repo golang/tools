@@ -75,7 +75,7 @@ type DuplicateJSONFields struct {
 	}
 	AnonymousJSON `json:"a"` // want "struct field AnonymousJSON repeats json tag .a. also at a.go:64"
 
-	AnonymousJSONField // want "struct field DuplicateAnonJSON repeats json tag .a. also at a.go:64"
+	AnonymousJSONField
 
 	XML              int `xml:"a"`
 	DuplicateXML     int `xml:"a"` // want "struct field DuplicateXML repeats xml tag .a. also at a.go:80"
@@ -129,5 +129,5 @@ type DuplicateWithAnotherPackage struct {
 
 	// The "also at" position is in a different package and directory. Use
 	// "b.b" instead of "b/b" to match the relative path on Windows easily.
-	DuplicateJSON int `json:"a"` // want "struct field DuplicateJSON repeats json tag .a. also at b.b.go:8"
+	DuplicateJSON int `json:"a"`
 }
