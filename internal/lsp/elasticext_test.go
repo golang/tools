@@ -24,7 +24,7 @@ func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
 	// We hardcode the expected number of test cases to ensure that all tests
 	// are being executed. If a test is added, this number must be changed.
 	const expectedQNameKindCount = 36
-	const expectedPkgLocatorCount = 1
+	const expectedPkgLocatorCount = 2
 
 	files := packagestest.MustCopyFileTree(dir)
 	for fragment, operation := range files {

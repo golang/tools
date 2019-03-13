@@ -26,7 +26,7 @@ func RunElasticServer(ctx context.Context, stream jsonrpc2.Stream, opts ...inter
 // RunElasticServerOnPort starts an LSP server on the given port and does not exit.
 // This function exists for debugging purposes.
 func RunElasticServerOnPort(ctx context.Context, port int, opts ...interface{}) error {
-	return RunElasticServerOnAddress(ctx, fmt.Sprintf(":%v", port))
+	return RunElasticServerOnAddress(ctx, fmt.Sprintf(":%v", port), opts)
 }
 
 // RunElasticServerOnAddress starts an LSP server on the given port and does not exit.
@@ -93,22 +93,7 @@ func (s *elasticserver) EDefinition(ctx context.Context, params *protocol.TextDo
 		return nil, fmt.Errorf("no packages found for the identifier")
 	}
 
-	var pkgLoc protocol.PackageLocator
-	if pkg.Name() != f.GetPackage(ctx).Name {
-		// Handle the case where symbols imported from other packages.
-		var pkgPath string
-
-		for _, p := range f.GetPackage(ctx).Imports {
-			if p.Name == pkg.Name() {
-				pkgPath = p.PkgPath
-				break
-			}
-		}
-
-		pkgLoc = protocol.PackageLocator{Name: pkg.Name(), RepoURI: string(pkgPath)}
-	} else {
-		pkgLoc = protocol.PackageLocator{Name: pkg.Name(), RepoURI: string(f.GetPackage(ctx).PkgPath)}
-	}
+	pkgLoc := protocol.PackageLocator{Name: pkg.Name(), RepoURI: string(pkg.Path())}
 
 	loc := toProtocolLocation(s.view.FileSet(), ident.Declaration.Range)
 
@@ -125,32 +110,32 @@ func getSymbolKind(ident *source.IdentifierInfo) protocol.SymbolKind {
 	declObj := ident.Declaration.Object
 	switch declObj.(type) {
 	case *types.Const:
-		return protocol.ConstantSymbol
+		return protocol.Constant
 	case *types.Var:
 		v, _ := declObj.(*types.Var)
 		if v.IsField() {
-			return protocol.FieldSymbol
+			return protocol.Field
 		}
-		return protocol.VariableSymbol
+		return protocol.Variable
 	case *types.Nil:
-		return protocol.NullSymbol
+		return protocol.Null
 	case *types.PkgName:
-		return protocol.PackageSymbol
+		return protocol.Package
 	case *types.Func:
 		s, _ := declObj.Type().(*types.Signature)
 		if s.Recv() == nil {
-			return protocol.FunctionSymbol
+			return protocol.Function
 		}
-		return protocol.MethodSymbol
+		return protocol.Method
 	case *types.TypeName:
 		tyObj := ident.Type.Object
 		if tyObj != nil {
 			namedTy := tyObj.Type().(*types.Named)
 			switch namedTy.Underlying().(type) {
 			case *types.Struct:
-				return protocol.StructSymbol
+				return protocol.Struct
 			case *types.Interface:
-				return protocol.InterfaceSymbol
+				return protocol.Interface
 			}
 		}
 	}
@@ -168,7 +153,7 @@ func getQName(ctx context.Context, f source.File, ident *source.IdentifierInfo, 
 	declObj := ident.Declaration.Object
 	qname := declObj.Name()
 
-	if kind == protocol.PackageSymbol {
+	if kind == protocol.Package {
 		return qname
 	}
 
@@ -217,12 +202,12 @@ func getQName(ctx context.Context, f source.File, ident *source.IdentifierInfo, 
 
 		case *ast.FuncDecl:
 			f, _ := n.(*ast.FuncDecl)
-			if f.Name != nil && f.Name.Name != qname && (kind == protocol.MethodSymbol || kind == protocol.FunctionSymbol) {
+			if f.Name != nil && f.Name.Name != qname && (kind == protocol.Method || kind == protocol.Function) {
 				qname = f.Name.Name + "." + qname
 			}
 
 			if f.Name != nil {
-				if kind == protocol.MethodSymbol || kind == protocol.FunctionSymbol {
+				if kind == protocol.Method || kind == protocol.Function {
 					if f.Name.Name != qname {
 						qname = f.Name.Name + "." + qname
 					}
