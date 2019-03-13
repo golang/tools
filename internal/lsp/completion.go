@@ -15,14 +15,14 @@ import (
 )
 
 func toProtocolCompletionItems(candidates []source.CompletionItem, prefix string, pos protocol.Position, snippetsSupported, signatureHelpEnabled bool) []protocol.CompletionItem {
-	insertTextFormat := protocol.PlainTextFormat
+	insertTextFormat := protocol.PlainTextTextFormat
 	if snippetsSupported {
 		insertTextFormat = protocol.SnippetTextFormat
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
 		return candidates[i].Score > candidates[j].Score
 	})
-	var items []protocol.CompletionItem
+	items := []protocol.CompletionItem{}
 	for i, candidate := range candidates {
 		// Matching against the label.
 		if !strings.HasPrefix(candidate.Label, prefix) {
@@ -35,8 +35,8 @@ func toProtocolCompletionItems(candidates []source.CompletionItem, prefix string
 		item := protocol.CompletionItem{
 			Label:            candidate.Label,
 			Detail:           candidate.Detail,
-			Kind:             float64(toProtocolCompletionItemKind(candidate.Kind)),
-			InsertTextFormat: insertTextFormat,
+			Kind:             toProtocolCompletionItemKind(candidate.Kind),
+			InsertTextFormat: protocol.PlainTextTextFormat,
 			TextEdit: &protocol.TextEdit{
 				NewText: insertText,
 				Range: protocol.Range{
@@ -105,7 +105,7 @@ func labelToProtocolSnippets(label string, kind source.CompletionItemKind, inser
 			return label, true
 		}
 		// Don't add parameters or parens for the plaintext insert format.
-		if insertTextFormat == protocol.PlainTextFormat {
+		if insertTextFormat == protocol.PlainTextTextFormat {
 			return trimmed, true
 		}
 		// If we do have signature help enabled, the user can see parameters as
