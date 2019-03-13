@@ -120,13 +120,13 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 	}
 	// For debugging purposes only.
 	if s.Address != "" {
-		return lsp.RunServerOnAddress(ctx, s.Address, logger)
+		return lsp.RunElasticServerOnAddress(ctx, s.Address, logger)
 	}
 	if s.Port != 0 {
-		return lsp.RunServerOnPort(ctx, s.Port, logger)
+		return lsp.RunElasticServerOnPort(ctx, s.Port, logger)
 	}
 	stream := jsonrpc2.NewHeaderStream(os.Stdin, os.Stdout)
-	return lsp.RunServer(ctx, stream, logger)
+	return lsp.RunElasticServer(ctx, stream, logger)
 }
 
 func (s *Serve) forward() error {
