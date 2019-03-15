@@ -344,7 +344,7 @@ func elasticServerHandler(server ElasticServer) jsonrpc2.Handler {
 			unhandledError(conn.Reply(ctx, r, resp, err))
 
 		case "textDocument/foldingRange":
-			var params FoldingRangeRequestParam
+			var params FoldingRangeParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, conn, r, err)
 				return
