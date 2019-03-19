@@ -26,7 +26,7 @@ func RunElasticServer(ctx context.Context, stream jsonrpc2.Stream, opts ...inter
 // RunElasticServerOnPort starts an LSP server on the given port and does not exit.
 // This function exists for debugging purposes.
 func RunElasticServerOnPort(ctx context.Context, port int, opts ...interface{}) error {
-	return RunElasticServerOnAddress(ctx, fmt.Sprintf(":%v", port), opts)
+	return RunElasticServerOnAddress(ctx, fmt.Sprintf(":%v", port))
 }
 
 // RunElasticServerOnAddress starts an LSP server on the given port and does not exit.
