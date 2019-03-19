@@ -51,7 +51,7 @@ func RunElasticServerOnAddress(ctx context.Context, addr string, opts ...interfa
 	}
 }
 
-// elasticserver "inherits" from lsp.server and is used to implement the elastic extention for the official go lsp.
+// elasticserver "inherits" from lsp.server and is used to implement the elastic extension for the official go lsp.
 type elasticserver struct {
 	server
 }
@@ -143,11 +143,11 @@ func getSymbolKind(ident *source.IdentifierInfo) protocol.SymbolKind {
 	return protocol.SymbolKind(0)
 }
 
-// getQName returns the qualified name for a position in a file. Qualied name mainly served as the cross repo code
+// getQName returns the qualified name for a position in a file. Qualified name mainly served as the cross repo code
 // search and code intelligence. The qualified name pattern as bellow:
 //  qname = package.name + struct.name* + function.name* | (struct.name + method.name)* + struct.name* + symbol.name
 //
-// TODO(henrywong) It's better to use the scope chain to give a qualifed name for the symbols, however there is no
+// TODO(henrywong) It's better to use the scope chain to give a qualified name for the symbols, however there is no
 // APIs can achieve this goals, just traverse the ast node path for now.
 func getQName(ctx context.Context, f source.File, ident *source.IdentifierInfo, kind protocol.SymbolKind) string {
 	declObj := ident.Declaration.Object
@@ -174,7 +174,7 @@ func getQName(ctx context.Context, f source.File, ident *source.IdentifierInfo, 
 				qname = ts.Name.Name + "." + qname
 			case *ast.Field:
 				// ident is located in a anonymous struct declaration which used to define a field, like struct fields,
-				// function parameters, function named return parameters, add the field name into the qualifed name.
+				// function parameters, function named return parameters, add the field name into the qualified name.
 				field, _ := path[id+2].(*ast.Field)
 				if len(field.Names) != 0 {
 					// If there is a bunch of fields declared with same anonymous struct type, just consider the first field's
@@ -183,8 +183,8 @@ func getQName(ctx context.Context, f source.File, ident *source.IdentifierInfo, 
 				}
 
 			case *ast.ValueSpec:
-				// ident is located in a anonymous struct decalaration which used define a variable, add the variable name into
-				// the qualifed name.
+				// ident is located in a anonymous struct declaration which used define a variable, add the variable name into
+				// the qualified name.
 				vs, _ := path[id+2].(*ast.ValueSpec)
 				if len(vs.Names) != 0 {
 					// If there is a bunch of variables declared with same anonymous struct type, just consider the first

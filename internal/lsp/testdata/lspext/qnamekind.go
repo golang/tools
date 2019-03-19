@@ -105,7 +105,7 @@ func structInAnonyScopes() {
 	}
 }
 
-// Test the local vatiable declared in the method declaration.
+// Test the local variable declared in the method declaration.
 func (c *Circle) method2() {
 	num := 10        //@qnamekind("nu", "edefinition.Circle.method2.num", 13)
 	fmt.Println(num) //@qnamekind("Pri", "fmt.Println", 12)
@@ -117,6 +117,11 @@ func (c *Circle) method3() {
 		x int
 		y int //@qnamekind("y", "edefinition.Circle.method3.Rectangle.y", 8)
 	}
+}
+
+// Test the method whose receiver has a value type.
+func (c Circle) method4() float64 { //@qnamekind("tho", "edefinition.Circle.method4", 6)
+	return c.r
 }
 
 // Test the variable declared in an anonymous functions case#1.
