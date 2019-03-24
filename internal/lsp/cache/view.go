@@ -45,6 +45,9 @@ type View struct {
 
 	// pcache caches type information for the packages of the opened files in a view.
 	pcache *packageCache
+
+	// gcache caches all project's package
+	gcache GlobalCache
 }
 
 type metadataCache struct {

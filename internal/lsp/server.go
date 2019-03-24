@@ -11,6 +11,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"golang.org/x/tools/internal/lsp/project"
 	"net"
 	"os"
 	"sync"
@@ -73,6 +74,8 @@ type server struct {
 
 	viewMu sync.Mutex
 	view   *cache.View
+
+	workspace *project.Workspace
 }
 
 func (s *server) Initialize(ctx context.Context, params *protocol.InitializeParams) (*protocol.InitializeResult, error) {
@@ -114,6 +117,9 @@ func (s *server) Initialize(ctx context.Context, params *protocol.InitializePara
 		},
 		Tests: true,
 	})
+
+	s.workspace = project.New(ctx, s.client, rootPath, s.view)
+	s.workspace.Init()
 
 	return &protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
