@@ -182,7 +182,7 @@ func (v *View) SetCache(cache GlobalCache) {
 }
 
 // Cache get global cache
-func (v *View) Cache() GlobalCache {
+func (v *View) Cache() source.Cache {
 	v.mu.Lock()
 	cache := v.gcache
 	v.mu.Unlock()

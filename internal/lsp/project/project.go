@@ -350,7 +350,7 @@ func (w *Workspace) getContext() context.Context {
 	return w.context
 }
 
-// Search serach package cache
+// Search search package cache
 func (w *Workspace) Search(walkFunc source.WalkFunc) {
 	var ranks []string
 	for _, module := range w.modules {

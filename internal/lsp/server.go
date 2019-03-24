@@ -141,6 +141,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.InitializePara
 					Change:    s.textDocumentSyncKind,
 					OpenClose: true,
 				},
+				ReferencesProvider:true,
 			},
 			TypeDefinitionServerCapabilities: protocol.TypeDefinitionServerCapabilities{
 				TypeDefinitionProvider: true,
@@ -426,8 +427,8 @@ func (s *server) Implementation(context.Context, *protocol.TextDocumentPositionP
 	return nil, notImplemented("Implementation")
 }
 
-func (s *server) References(context.Context, *protocol.ReferenceParams) ([]protocol.Location, error) {
-	return nil, notImplemented("References")
+func (s *server) References(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
+	return s.references(ctx, params)
 }
 
 func (s *server) DocumentHighlight(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.DocumentHighlight, error) {
