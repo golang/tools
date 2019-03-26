@@ -11,7 +11,6 @@ import (
 	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/lsp/source"
 )
 
 func TestLSPExt(t *testing.T) {
@@ -112,7 +111,7 @@ func (qk qnamekinds) test(t *testing.T, s *elasticserver) {
 		var err error
 		locs, err = s.EDefinition(context.Background(), params)
 		if err != nil {
-			t.Fatalf("failed for %s: %v", src, err)
+			t.Fatalf("failed for %v: %v", src, err)
 		}
 		if len(locs) != 1 {
 			t.Errorf("got %d locations for qnamekind, expected 1", len(locs))
@@ -128,9 +127,14 @@ func (qk qnamekinds) test(t *testing.T, s *elasticserver) {
 	}
 }
 
-func (qk qnamekinds) collect(fset *token.FileSet, src packagestest.Range, qname string, kind int64) {
-	loc := toProtocolLocation(fset, source.Range(src))
-	qk[loc] = QNameKindResult{Qname: qname, Kind: kind}
+func (qk qnamekinds) collect(e *packagestest.Exported, fset *token.FileSet, src packagestest.Range, qname string, kind int64) {
+	sSrc, mSrc := testLocation(e, fset, src)
+	lSrc, err := mSrc.Location(sSrc)
+	if err != nil {
+		return
+	}
+
+	qk[lSrc] = QNameKindResult{Qname: qname, Kind: kind}
 }
 
 func (ps pkgs) test(t *testing.T, s *elasticserver) {
@@ -145,7 +149,7 @@ func (ps pkgs) test(t *testing.T, s *elasticserver) {
 		var err error
 		locs, err = s.EDefinition(context.Background(), params)
 		if err != nil {
-			t.Fatalf("failed for %s: %v", src, err)
+			t.Fatalf("failed for %v: %v", src, err)
 		}
 		if len(locs) != 1 {
 			t.Errorf("got %d locations for package locators, expected 1", len(locs))
@@ -161,7 +165,12 @@ func (ps pkgs) test(t *testing.T, s *elasticserver) {
 	}
 }
 
-func (ps pkgs) collect(fset *token.FileSet, src packagestest.Range, pkgname, repouri string) {
-	loc := toProtocolLocation(fset, source.Range(src))
-	ps[loc] = PkgResultTuple{PkgName: pkgname, RepoURI: repouri}
+func (ps pkgs) collect(e *packagestest.Exported, fset *token.FileSet, src packagestest.Range, pkgname, repouri string) {
+	sSrc, mSrc := testLocation(e, fset, src)
+	lSrc, err := mSrc.Location(sSrc)
+	if err != nil {
+		return
+	}
+
+	ps[lSrc] = PkgResultTuple{PkgName: pkgname, RepoURI: repouri}
 }

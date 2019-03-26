@@ -12,6 +12,7 @@ import (
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/span"
 )
 
 // RunElasticServer starts an LSP server on the supplied stream, and waits until the
@@ -58,24 +59,19 @@ type elasticserver struct {
 
 // EDefinition has almost the same functionality with Definition except for the qualified name and symbol kind.
 func (s *elasticserver) EDefinition(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.SymbolLocator, error) {
-	sourceURI, err := fromProtocolURI(params.TextDocument.URI)
+	f, m, err := newColumnMap(ctx, s.view, span.URI(params.TextDocument.URI))
 	if err != nil {
 		return nil, err
 	}
-
-	f, err := s.view.GetFile(ctx, sourceURI)
+	spn, err := m.PointSpan(params.Position)
 	if err != nil {
 		return nil, err
 	}
-	tok := f.GetToken(ctx)
-
-	// Note GetToken may return nil, check the return value before the access. See https://github.com/golang/go/issues/30562
-	if tok == nil {
-		return nil, fmt.Errorf("no token files found for this file")
+	rng, err := spn.Range(m.Converter)
+	if err != nil {
+		return nil, err
 	}
-
-	pos := fromProtocolPosition(tok, params.Position)
-	ident, err := source.Identifier(ctx, s.view, f, pos)
+	ident, err := source.Identifier(ctx, s.view, f, rng.Start)
 	if err != nil {
 		return nil, err
 	}
@@ -84,20 +80,27 @@ func (s *elasticserver) EDefinition(ctx context.Context, params *protocol.TextDo
 	if kind == 0 {
 		return nil, fmt.Errorf("no corresponding symbol kind for '" + ident.Name + "'")
 	}
-
 	qname := getQName(ctx, f, ident, kind)
-
 	// Get the package where the symbol belongs to.
 	pkg := ident.Declaration.Object.Pkg()
 	if pkg == nil {
 		return nil, fmt.Errorf("no packages found for the identifier")
 	}
-
 	pkgLoc := protocol.PackageLocator{Name: pkg.Name(), RepoURI: string(pkg.Path())}
 
-	loc := toProtocolLocation(s.view.FileSet(), ident.Declaration.Range)
-
-	path := strings.TrimPrefix(string(sourceURI), "file://")
+	declSpan, err := ident.Declaration.Range.Span()
+	if err != nil {
+		return nil, err
+	}
+	_, decM, err := newColumnMap(ctx, s.view, declSpan.URI())
+	if err != nil {
+		return nil, err
+	}
+	loc, err := decM.Location(declSpan)
+	if err != nil {
+		return nil, err
+	}
+	path := strings.TrimPrefix(string(params.TextDocument.URI), "file://")
 
 	return []protocol.SymbolLocator{{Qname: qname, Kind: kind, Path: path, Loc: loc, Package: pkgLoc}}, nil
 }
