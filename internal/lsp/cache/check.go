@@ -281,6 +281,8 @@ func (imp *importer) typeCheck(pkgPath string) (*Package, error) {
 		}
 	}
 
+	imp.view.gcache.Put(pkg)
+
 	return pkg, nil
 }
 

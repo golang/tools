@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,6 +68,11 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 		defer f.Close()
 		log.SetOutput(io.MultiWriter(os.Stderr, f))
 		out = f
+	}
+	if s.app.Pprof != "" {
+		go func() {
+			log.Println(http.ListenAndServe(s.app.Pprof, nil))
+		}()
 	}
 	if s.app.Remote != "" {
 		return s.forward()

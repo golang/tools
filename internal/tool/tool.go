@@ -42,6 +42,7 @@ type Profile struct {
 	CPU    string `flag:"profile.cpu" help:"write CPU profile to this file"`
 	Memory string `flag:"profile.mem" help:"write memory profile to this file"`
 	Trace  string `flag:"profile.trace" help:"write trace log to this file"`
+	Pprof  string `flag:"pprof" help:"start a pprof http server"`
 }
 
 // Application is the interface that must be satisfied by an object passed to Main.

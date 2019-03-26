@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/internal/span"
 )
@@ -14,7 +15,7 @@ import (
 type SearchFunc func(walkFunc WalkFunc)
 
 // References find references
-func References(ctx context.Context, search SearchFunc, f File, pos token.Pos) ([]Location, error) {
+func References(ctx context.Context, search SearchFunc, f File, pos token.Pos, includeDeclaration bool) ([]Location, error) {
 	file := f.GetAST(ctx)
 	pkg := f.GetPackage(ctx)
 	if pkg.IsIllTyped() {
@@ -56,7 +57,10 @@ func References(ctx context.Context, search SearchFunc, f File, pos token.Pos) (
 		return nil, err
 	}
 
-	refs = append(refs, &ast.Ident{NamePos: obj.Pos(), Name: obj.Name()})
+	if includeDeclaration {
+		refs = append(refs, &ast.Ident{NamePos: obj.Pos(), Name: obj.Name()})
+	}
+
 	return refStreamAndCollect(f.GetFileSet(ctx), refs, 0), nil
 }
 
@@ -78,10 +82,6 @@ func refStreamAndCollect(fset *token.FileSet, refs []*ast.Ident, limit int) []Lo
 	for i := 0; i < l; i++ {
 		n := refs[i]
 		loc := toLocation(fset, n.Pos(), n.Name)
-		if loc.URI == "" {
-			continue
-		}
-
 		locs = append(locs, loc)
 	}
 
@@ -91,32 +91,15 @@ func refStreamAndCollect(fset *token.FileSet, refs []*ast.Ident, limit int) []Lo
 // toLocation converts a token.Pos range into a lsp.Location. end is
 // exclusive.
 func toLocation(fset *token.FileSet, pos token.Pos, name string) Location {
-	filename := fset.Position(pos).Filename
-	if filename == "" {
-		// for builtin symbol
-		pos = token.Pos(1)
-		filename = fset.File(pos).Name()
-	}
+	start := fset.Position(pos)
+	end := fset.Position(pos + token.Pos(len([]byte(name))))
+	filename := start.Filename
+	spn := span.New(span.FileURI(filename),
+		span.NewPoint(start.Line, start.Column, start.Offset),
+		span.NewPoint(end.Line, end.Column, end.Offset))
 
-	return Location{
-		URI:   string(span.FileURI(filename)),
-		Range: toRange(fset, pos, name),
-	}
+	return Location{Span: spn}
 }
-
-func toRange(fset *token.FileSet, p token.Pos, name string) span.Range {
-	return rangeForNode(fset, fakeNode{p: p, e: p + token.Pos(len([]byte(name)))})
-}
-
-type fakeNode struct{ p, e token.Pos }
-
-func (n fakeNode) Pos() token.Pos { return n.p }
-func (n fakeNode) End() token.Pos { return n.e }
-
-func rangeForNode(fset *token.FileSet, node ast.Node) span.Range {
-	return span.NewRange(fset, node.Pos(), node.End())
-}
-
 
 // findReferences will find all references to obj. It will only return
 // references from packages in pkg.Imports.

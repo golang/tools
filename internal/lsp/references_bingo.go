@@ -31,30 +31,46 @@ func (s *server) doReferences(ctx context.Context,  params *protocol.ReferencePa
 		return nil, err
 	}
 
-	locs, err := source.References(ctx, s.workspace.Search, f, rng.Start)
+	locs, err := source.References(ctx, s.workspace.Search, f, rng.Start, params.Context.IncludeDeclaration)
 	if err != nil {
 		return nil, err
 	}
 
-	return toProtocolLocation(m, locs), nil
+	return toProtocolLocations(m, locs), nil
 }
 
-func toProtocolLocation(m *protocol.ColumnMapper, locs []source.Location) []protocol.Location {
+func toProtocolLocations(m *protocol.ColumnMapper, locs []source.Location) []protocol.Location {
 	if len(locs) == 0 {
 		return []protocol.Location{}
 	}
 
 	var plocs []protocol.Location
 	for _, loc := range locs {
-		span, _ := loc.Range.Span()
-		rng, _ := m.Range(span)
+		rng := toProtocolRange(loc.Span)
 		ploc := protocol.Location{
-			URI: loc.URI,
+			URI: string(loc.Span.URI()),
 			Range: rng,
 		}
 		plocs = append(plocs, ploc)
 	}
 
 	return plocs
+}
+
+func toProtocolRange(spn span.Span) protocol.Range {
+	var rng protocol.Range
+
+	rng.Start = toProtocolPosition(spn.Start())
+	rng.End = toProtocolPosition(spn.End())
+
+	return rng
+}
+
+func toProtocolPosition(point span.Point) protocol.Position {
+	var pos protocol.Position
+	pos.Line = float64(point.Line() - 1)
+	pos.Character = float64(point.Column() - 1)
+
+	return pos
 }
 

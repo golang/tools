@@ -22,7 +22,6 @@ type View interface {
 	GetFile(ctx context.Context, uri span.URI) (File, error)
 	SetContent(ctx context.Context, uri span.URI, content []byte) error
 	FileSet() *token.FileSet
-	Cache() Cache
 }
 
 // File represents a Go source file that has been type-checked. It is the input
@@ -57,7 +56,7 @@ type TextEdit struct {
 	NewText string
 }
 
+// Location the use ident's location
 type Location struct {
-	URI string
-	Range span.Range
+	Span span.Span
 }
