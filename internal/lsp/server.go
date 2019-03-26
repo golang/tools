@@ -142,6 +142,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.InitializePara
 					OpenClose: true,
 				},
 				ReferencesProvider:true,
+				RenameProvider:true,
 			},
 			TypeDefinitionServerCapabilities: protocol.TypeDefinitionServerCapabilities{
 				TypeDefinitionProvider: true,
@@ -531,8 +532,8 @@ func (s *server) OnTypeFormatting(context.Context, *protocol.DocumentOnTypeForma
 	return nil, notImplemented("OnTypeFormatting")
 }
 
-func (s *server) Rename(context.Context, *protocol.RenameParams) ([]protocol.WorkspaceEdit, error) {
-	return nil, notImplemented("Rename")
+func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) ([]protocol.WorkspaceEdit, error) {
+	return s.rename(ctx, params)
 }
 
 func (s *server) FoldingRanges(context.Context, *protocol.FoldingRangeParams) ([]protocol.FoldingRange, error) {
