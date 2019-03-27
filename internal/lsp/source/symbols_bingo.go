@@ -7,7 +7,6 @@ import (
 
 func Symbols(ctx context.Context, view View, search SearchFunc, query string, limit int) []Symbol {
 	var symbols []Symbol
-	lowerQuery := strings.ToLower(query)
 	f := func(pkg Package) bool {
 		if ctx.Err() != nil {
 			return true
@@ -19,7 +18,7 @@ func Symbols(ctx context.Context, view View, search SearchFunc, query string, li
 				if len(symbols) >= limit {
 					return true
 				}
-				if strings.Contains(strings.ToLower(symbol.Name), lowerQuery) {
+				if strings.Contains(symbol.Name, query) {
 					symbols = append(symbols, symbol)
 				}
 			}
