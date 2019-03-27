@@ -532,7 +532,7 @@ func (s *server) OnTypeFormatting(context.Context, *protocol.DocumentOnTypeForma
 	return nil, notImplemented("OnTypeFormatting")
 }
 
-func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) ([]protocol.WorkspaceEdit, error) {
+func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (protocol.WorkspaceEdit, error) {
 	return s.rename(ctx, params)
 }
 

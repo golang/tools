@@ -47,7 +47,7 @@ type Server interface {
 	Formatting(context.Context, *DocumentFormattingParams) ([]TextEdit, error)
 	RangeFormatting(context.Context, *DocumentRangeFormattingParams) ([]TextEdit, error)
 	OnTypeFormatting(context.Context, *DocumentOnTypeFormattingParams) ([]TextEdit, error)
-	Rename(context.Context, *RenameParams) ([]WorkspaceEdit, error)
+	Rename(context.Context, *RenameParams) (WorkspaceEdit, error)
 	FoldingRanges(context.Context, *FoldingRangeParams) ([]FoldingRange, error)
 }
 
@@ -629,10 +629,10 @@ func (s *serverDispatcher) OnTypeFormatting(ctx context.Context, params *Documen
 	return result, nil
 }
 
-func (s *serverDispatcher) Rename(ctx context.Context, params *RenameParams) ([]WorkspaceEdit, error) {
-	var result []WorkspaceEdit
+func (s *serverDispatcher) Rename(ctx context.Context, params *RenameParams) (WorkspaceEdit, error) {
+	var result WorkspaceEdit
 	if err := s.Conn.Call(ctx, "textDocument/rename", params, &result); err != nil {
-		return nil, err
+		return WorkspaceEdit{}, err
 	}
 	return result, nil
 }

@@ -6,7 +6,7 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 )
 
-func (s *server) rename(ctx context.Context, params *protocol.RenameParams) ([]protocol.WorkspaceEdit, error) {
+func (s *server) rename(ctx context.Context, params *protocol.RenameParams) (protocol.WorkspaceEdit, error) {
 	rp := &protocol.ReferenceParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: params.TextDocument,
@@ -19,7 +19,7 @@ func (s *server) rename(ctx context.Context, params *protocol.RenameParams) ([]p
 
 	references, err := s.references(ctx, rp)
 	if err != nil {
-		return []protocol.WorkspaceEdit{}, err
+		return protocol.WorkspaceEdit{}, err
 	}
 
 	result := protocol.WorkspaceEdit{}
@@ -38,5 +38,5 @@ func (s *server) rename(ctx context.Context, params *protocol.RenameParams) ([]p
 		edits = append(edits, edit)
 		(*result.Changes)[string(ref.URI)] = edits
 	}
-	return []protocol.WorkspaceEdit{result}, nil
+	return result, nil
 }
