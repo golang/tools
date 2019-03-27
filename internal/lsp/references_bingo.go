@@ -8,13 +8,13 @@ import (
 )
 
 func (s *server) references(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
-	locs, err := s.doReferences(ctx, params)
+	locations, err := s.doReferences(ctx, params)
 	if err != nil {
 		// fix https://github.com/saibing/bingo/issues/32
 		params.Position.Character--
-		locs, err = s.doReferences(ctx, params)
+		locations, err = s.doReferences(ctx, params)
 	}
-	return locs, err
+	return locations, err
 }
 
 func (s *server) doReferences(ctx context.Context,  params *protocol.ReferenceParams) ([]protocol.Location, error) {
@@ -31,30 +31,30 @@ func (s *server) doReferences(ctx context.Context,  params *protocol.ReferencePa
 		return nil, err
 	}
 
-	locs, err := source.References(ctx, s.workspace.Search, f, rng.Start, params.Context.IncludeDeclaration)
+	locations, err := source.References(ctx, s.workspace.Search, f, rng.Start, params.Context.IncludeDeclaration)
 	if err != nil {
 		return nil, err
 	}
 
-	return toProtocolLocations(m, locs), nil
+	return toProtocolLocations(locations), nil
 }
 
-func toProtocolLocations(m *protocol.ColumnMapper, locs []source.Location) []protocol.Location {
-	if len(locs) == 0 {
+func toProtocolLocations(locations []source.Location) []protocol.Location {
+	if len(locations) == 0 {
 		return []protocol.Location{}
 	}
 
-	var plocs []protocol.Location
-	for _, loc := range locs {
+	var pLocations []protocol.Location
+	for _, loc := range locations {
 		rng := toProtocolRange(loc.Span)
 		ploc := protocol.Location{
 			URI: string(loc.Span.URI()),
 			Range: rng,
 		}
-		plocs = append(plocs, ploc)
+		pLocations = append(pLocations, ploc)
 	}
 
-	return plocs
+	return pLocations
 }
 
 func toProtocolRange(spn span.Span) protocol.Range {

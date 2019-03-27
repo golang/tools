@@ -148,6 +148,9 @@ func (s *server) Initialize(ctx context.Context, params *protocol.InitializePara
 			TypeDefinitionServerCapabilities: protocol.TypeDefinitionServerCapabilities{
 				TypeDefinitionProvider: true,
 			},
+			ImplementationServerCapabilities: protocol.ImplementationServerCapabilities{
+				ImplementationProvider: true,
+			},
 		},
 	}, nil
 }
@@ -425,8 +428,8 @@ func (s *server) TypeDefinition(ctx context.Context, params *protocol.TextDocume
 	return []protocol.Location{loc}, nil
 }
 
-func (s *server) Implementation(context.Context, *protocol.TextDocumentPositionParams) ([]protocol.Location, error) {
-	return nil, notImplemented("Implementation")
+func (s *server) Implementation(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.Location, error) {
+	return s.implementation(ctx, params)
 }
 
 func (s *server) References(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
