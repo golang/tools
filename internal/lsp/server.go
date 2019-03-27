@@ -143,6 +143,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.InitializePara
 				},
 				ReferencesProvider:true,
 				RenameProvider:true,
+				WorkspaceSymbolProvider: true,
 			},
 			TypeDefinitionServerCapabilities: protocol.TypeDefinitionServerCapabilities{
 				TypeDefinitionProvider: true,
@@ -185,8 +186,8 @@ func (s *server) DidChangeWatchedFiles(context.Context, *protocol.DidChangeWatch
 	return notImplemented("DidChangeWatchedFiles")
 }
 
-func (s *server) Symbols(context.Context, *protocol.WorkspaceSymbolParams) ([]protocol.SymbolInformation, error) {
-	return nil, notImplemented("Symbols")
+func (s *server) Symbols(ctx context.Context, params *protocol.WorkspaceSymbolParams) ([]protocol.SymbolInformation, error) {
+	return s.symbols(ctx, params.Query)
 }
 
 func (s *server) ExecuteCommand(context.Context, *protocol.ExecuteCommandParams) (interface{}, error) {

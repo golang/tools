@@ -38,10 +38,13 @@ func DocumentSymbols(ctx context.Context, f File) []Symbol {
 	fset := f.GetFileSet(ctx)
 	file := f.GetAST(ctx)
 	pkg := f.GetPackage(ctx)
+	return getSymbols(fset, file, pkg)
+}
+
+func getSymbols(fset *token.FileSet, file *ast.File, pkg Package) []Symbol {
+	var symbols []Symbol
 	info := pkg.GetTypesInfo()
 	q := qualifier(file, pkg.GetTypes(), info)
-
-	var symbols []Symbol
 	for _, decl := range file.Decls {
 		switch decl := decl.(type) {
 		case *ast.FuncDecl:
