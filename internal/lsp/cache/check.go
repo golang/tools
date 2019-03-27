@@ -99,6 +99,7 @@ func (v *View) checkMetadata(ctx context.Context, f *File) ([]packages.Error, er
 	if v.reparseImports(ctx, f, filename) {
 		cfg := v.Config
 		cfg.Mode = packages.LoadImports
+		cfg.Dir = filepath.Dir(filename)
 		pkgs, err := packages.Load(&cfg, fmt.Sprintf("file=%s", filename))
 		if len(pkgs) == 0 {
 			if err == nil {
