@@ -291,7 +291,7 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 	if err != nil {
 		return nil, err
 	}
-	items, prefix, err := source.Completion(ctx, f, rng.Start)
+	items, prefix, err := source.Completion(ctx, f, rng.Start, s.workspace.Search)
 	if err != nil {
 		return nil, err
 	}
