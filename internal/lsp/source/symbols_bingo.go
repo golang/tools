@@ -18,7 +18,10 @@ func Symbols(ctx context.Context, view View, search SearchFunc, query string, li
 				if len(symbols) >= limit {
 					return true
 				}
+
 				if strings.Contains(symbol.Name, query) {
+					symbols = append(symbols, symbol)
+				} else if strings.Contains(pkg.GetTypes().Name() + "." + symbol.Name, query) {
 					symbols = append(symbols, symbol)
 				}
 			}
