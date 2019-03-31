@@ -21,7 +21,7 @@ func FindComments(pkg Package, fset *token.FileSet, o types.Object, name string)
 			return "", fmt.Errorf("failed to import package %q", v.Imported().Path())
 		}
 
-		return PackageDoc(imp.GetSyntax(), name), nil
+		return packageDoc(imp.GetSyntax(), name), nil
 	}
 
 	// Resolve the object o into its respective ast.Node
@@ -55,9 +55,9 @@ func PullComments(pathNodes []ast.Node) string {
 	return comments
 }
 
-// PackageDoc finds the documentation for the named package from its files or
+// packageDoc finds the documentation for the named package from its files or
 // additional files.
-func PackageDoc(files []*ast.File, pkgName string) string {
+func packageDoc(files []*ast.File, pkgName string) string {
 	for _, f := range files {
 		if f.Name.Name == pkgName {
 			txt := f.Doc.Text()

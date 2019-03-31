@@ -11,10 +11,11 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"golang.org/x/tools/internal/lsp/project"
 	"net"
 	"os"
 	"sync"
+
+	"golang.org/x/tools/internal/lsp/project"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -141,8 +142,8 @@ func (s *server) Initialize(ctx context.Context, params *protocol.InitializePara
 					Change:    s.textDocumentSyncKind,
 					OpenClose: true,
 				},
-				ReferencesProvider:true,
-				RenameProvider:true,
+				ReferencesProvider:      true,
+				RenameProvider:          true,
 				WorkspaceSymbolProvider: true,
 			},
 			TypeDefinitionServerCapabilities: protocol.TypeDefinitionServerCapabilities{
@@ -304,7 +305,12 @@ func (s *server) CompletionResolve(context.Context, *protocol.CompletionItem) (*
 	return nil, notImplemented("CompletionResolve")
 }
 
-func (s *server) Hover(ctx context.Context, params *protocol.TextDocumentPositionParams) (*protocol.Hover, error) {
+type Hover struct {
+	Contents []source.MarkedString `json:"contents"`
+	Range    *protocol.Range       `json:"range,omitempty"`
+}
+
+func (s *server) Hover(ctx context.Context, params *protocol.TextDocumentPositionParams) (interface{}, error) {
 	f, m, err := newColumnMap(ctx, s.view, span.URI(params.TextDocument.URI))
 	if err != nil {
 		return nil, err
@@ -321,11 +327,11 @@ func (s *server) Hover(ctx context.Context, params *protocol.TextDocumentPositio
 	if err != nil {
 		return nil, err
 	}
-	content, err := ident.Hover(ctx, nil)
+	contents, err := ident.CommentHover(ctx, nil, s.view)
 	if err != nil {
 		return nil, err
 	}
-	markdown := "```go\n" + content + "\n```"
+
 	identSpan, err := ident.Range.Span()
 	if err != nil {
 		return nil, err
@@ -334,12 +340,9 @@ func (s *server) Hover(ctx context.Context, params *protocol.TextDocumentPositio
 	if err != nil {
 		return nil, err
 	}
-	return &protocol.Hover{
-		Contents: protocol.MarkupContent{
-			Kind:  protocol.Markdown,
-			Value: markdown,
-		},
-		Range: &rng,
+	return &Hover{
+		Contents: contents,
+		Range:    &rng,
 	}, nil
 }
 

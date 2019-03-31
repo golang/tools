@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/token"
 	"io/ioutil"
+	"log"
 
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
@@ -53,6 +54,7 @@ func (f *File) GetToken(ctx context.Context) *token.File {
 
 	if f.token == nil || len(f.view.contentChanges) > 0 {
 		if _, err := f.view.parse(ctx, f.uri); err != nil {
+			log.Printf("get token failed: %s\n", err)
 			return nil
 		}
 	}
@@ -65,6 +67,7 @@ func (f *File) GetAST(ctx context.Context) *ast.File {
 
 	if f.ast == nil || len(f.view.contentChanges) > 0 {
 		if _, err := f.view.parse(ctx, f.uri); err != nil {
+			log.Printf("get ast file failed: %s\n", err)
 			return nil
 		}
 	}
@@ -78,6 +81,7 @@ func (f *File) GetPackage(ctx context.Context) source.Package {
 	if f.pkg == nil || len(f.view.contentChanges) > 0 {
 		errs, err := f.view.parse(ctx, f.uri)
 		if err != nil {
+			log.Printf("get package failed: %s\n", err)
 			// Create diagnostics for errors if we are able to.
 			if len(errs) > 0 {
 				return &Package{errors: errs}

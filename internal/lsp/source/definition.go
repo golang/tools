@@ -10,6 +10,9 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"path/filepath"
+	"runtime"
+	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/internal/span"
@@ -77,6 +80,29 @@ func identifier(ctx context.Context, v View, f File, pos token.Pos) (*Identifier
 		result.ident = node
 	case *ast.SelectorExpr:
 		result.ident = node.Sel
+	case *ast.TypeSpec:
+		result.ident = node.Name
+	case *ast.CallExpr:
+		if ident, ok := node.Fun.(*ast.Ident); ok {
+			result.ident = ident
+			break
+		}
+		if selExpr, ok := node.Fun.(*ast.SelectorExpr); ok {
+			result.ident = selExpr.Sel
+		}
+	case *ast.BasicLit:
+		if len(path) == 1 {
+			return nil, nil
+		}
+		if node, ok := path[1].(*ast.ImportSpec); ok {
+			if node.Name != nil {
+				result.ident = node.Name
+				break
+			}
+			result.Name = strings.Trim(node.Path.Value, `"`)
+			result.Range = span.NewRange(v.FileSet(), node.Pos(), node.End())
+			return result, nil
+		}
 	}
 	if result.ident == nil {
 		return nil, nil
@@ -132,7 +158,114 @@ func typeToObject(typ types.Type) types.Object {
 func objToRange(ctx context.Context, v View, obj types.Object) (span.Range, error) {
 	p := obj.Pos()
 	if !p.IsValid() {
+		_, o := getBulitinObj(ctx, obj, v)
+		if o != nil {
+			obj = o
+			p = obj.Pos()
+		}
+	}
+	if !p.IsValid() {
 		return span.Range{}, fmt.Errorf("invalid position for %v", obj.Name())
 	}
+
 	return span.NewRange(v.FileSet(), p, p+token.Pos(len(obj.Name()))), nil
+}
+
+func (i IdentifierInfo) CommentHover(ctx context.Context, q types.Qualifier, view View) ([]MarkedString, error) {
+	pkg := i.File.GetPackage(ctx)
+
+	if i.ident == nil && i.Name != "" {
+		imp := pkg.GetImport(i.Name)
+		comments := packageDoc(imp.GetSyntax(), imp.GetTypes().Name())
+		contents := maybeAddComments(comments, []MarkedString{{Language: "go", Value: "package " + i.Name}})
+		return contents, nil
+	}
+
+	if q == nil {
+		fAST := i.File.GetAST(ctx)
+		q = qualifier(fAST, pkg.GetTypes(), pkg.GetTypesInfo())
+	}
+
+	obj := i.Declaration.Object
+	if obj == nil {
+		return packageStatement(i.File.GetPackage(ctx), i.ident), nil
+	}
+
+	isBuiltIn, originObj := obj != nil && !obj.Pos().IsValid(), obj
+	if isBuiltIn {
+		pkg, obj = getBulitinObj(ctx, originObj, view)
+		if obj == nil {
+			return nil, nil
+		}
+	}
+
+	var s string
+	var extra string
+	if f, ok := obj.(*types.Var); ok && f.IsField() {
+		// TODO(sqs): make this be like (T).F not "struct field F string".
+		s = "struct " + obj.String()
+	} else if obj != nil {
+		if typeName, ok := obj.(*types.TypeName); ok {
+			typ := typeName.Type().Underlying()
+			if _, ok := typ.(*types.Struct); ok {
+				s = "type " + typeName.Name() + " struct"
+				if !isBuiltIn {
+					extra = prettyPrintTypesString(types.TypeString(typ, q))
+				} else {
+					extra = prettyPrintTypesString(originObj.String())
+				}
+			}
+			if _, ok := typ.(*types.Interface); ok {
+				s = "type " + typeName.Name() + " interface"
+				extra = prettyPrintTypesString(types.TypeString(typ, q))
+				if !isBuiltIn {
+					extra = prettyPrintTypesString(types.TypeString(typ, q))
+				} else {
+					extra = prettyPrintTypesString(originObj.String())
+				}
+			}
+		} else if _, ok := obj.(*types.PkgName); ok {
+			s = types.ObjectString(obj, q)
+		}
+
+		if s == "" {
+			objectString := types.ObjectString(obj, q)
+			s = prettyPrintTypesString(objectString)
+		}
+
+	} else {
+		typ := pkg.GetTypesInfo().TypeOf(i.ident)
+		if typ != nil {
+			s = types.TypeString(typ, q)
+		}
+	}
+
+	comments, err := FindComments(pkg, i.File.GetFileSet(ctx), obj, i.ident.Name)
+	if err != nil {
+		return nil, err
+	}
+	contents := maybeAddComments(comments, []MarkedString{{Language: "go", Value: s}})
+	if extra != "" {
+		// If we have extra info, ensure it comes after the usually
+		// more useful documentation
+		contents = append(contents, MarkedString{Language: "go", Value: extra})
+	}
+
+	return contents, nil
+}
+
+var builtinFile = filepath.Join(runtime.GOROOT(), "src/builtin.go")
+
+func getBulitinObj(ctx context.Context, obj types.Object, view View) (Package, types.Object) {
+	f, err := view.GetFile(ctx, span.FileURI(builtinFile))
+	if err != nil {
+		return nil, nil
+	}
+
+	pkg := f.GetPackage(ctx)
+	if pkg == nil {
+		return nil, nil
+	}
+	obj = findObject(pkg, obj)
+	return pkg, obj
 }

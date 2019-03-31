@@ -29,7 +29,7 @@ type Server interface {
 	DidClose(context.Context, *DidCloseTextDocumentParams) error
 	Completion(context.Context, *CompletionParams) (*CompletionList, error)
 	CompletionResolve(context.Context, *CompletionItem) (*CompletionItem, error)
-	Hover(context.Context, *TextDocumentPositionParams) (*Hover, error)
+	Hover(context.Context, *TextDocumentPositionParams) (interface{}, error)
 	SignatureHelp(context.Context, *TextDocumentPositionParams) (*SignatureHelp, error)
 	Definition(context.Context, *TextDocumentPositionParams) ([]Location, error)
 	TypeDefinition(context.Context, *TextDocumentPositionParams) ([]Location, error)
@@ -485,7 +485,7 @@ func (s *serverDispatcher) CompletionResolve(ctx context.Context, params *Comple
 	return &result, nil
 }
 
-func (s *serverDispatcher) Hover(ctx context.Context, params *TextDocumentPositionParams) (*Hover, error) {
+func (s *serverDispatcher) Hover(ctx context.Context, params *TextDocumentPositionParams) (interface{}, error) {
 	var result Hover
 	if err := s.Conn.Call(ctx, "textDocument/hover", params, &result); err != nil {
 		return nil, err

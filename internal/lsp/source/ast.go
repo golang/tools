@@ -331,3 +331,16 @@ func tokenFileContainsPos(f *token.File, pos token.Pos) bool {
 	base := f.Base()
 	return base <= p && p < base+f.Size()
 }
+
+func findObject(pkg Package, o types.Object) types.Object {
+	for _, def := range pkg.GetTypesInfo().Defs {
+		if def == nil {
+			continue
+		}
+		if def.Name() == o.Name() {
+			return def
+		}
+	}
+
+	return nil
+}
