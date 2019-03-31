@@ -34,6 +34,7 @@ type IdentifierInfo struct {
 
 	ident            *ast.Ident
 	wasEmbeddedField bool
+	path []ast.Node
 }
 
 // Identifier returns identifier information for a position
@@ -71,6 +72,7 @@ func identifier(ctx context.Context, v View, f File, pos token.Pos) (*Identifier
 	path, _ := astutil.PathEnclosingInterval(fAST, pos, pos)
 	result := &IdentifierInfo{
 		File: f,
+		path: path,
 	}
 	if path == nil {
 		return nil, fmt.Errorf("can't find node enclosing position")
@@ -210,7 +212,11 @@ func (i IdentifierInfo) CommentHover(ctx context.Context, q types.Qualifier, vie
 			if _, ok := typ.(*types.Struct); ok {
 				s = "type " + typeName.Name() + " struct"
 				if !isBuiltIn {
-					extra = prettyPrintTypesString(types.TypeString(typ, q))
+					if len(i.path) > 1 {
+						extra = formatNode(view.FileSet(), i.path[1])
+					} else {
+						extra = prettyPrintTypesString(types.TypeString(typ, q))
+					}
 				} else {
 					extra = prettyPrintTypesString(originObj.String())
 				}

@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"go/ast"
+	"go/format"
+	"go/token"
+	"log"
 	"strings"
 
 	"golang.org/x/tools/internal/lsp/godocmd"
@@ -76,6 +79,16 @@ func maybeAddComments(comments string, contents []MarkedString) []MarkedString {
 	var b bytes.Buffer
 	doc.ToMarkdown(&b, comments, nil)
 	return append(contents, RawMarkedString(b.String()))
+}
+
+// formatNode format ast.Node
+func formatNode(fset *token.FileSet, node ast.Node) string {
+	buf := &bytes.Buffer{}
+	if err := format.Node(buf, fset, node); err != nil {
+		log.Println(err)
+		return ""
+	}
+	return buf.String()
 }
 
 // prettyPrintTypesString is pretty printing specific to the output of
