@@ -254,7 +254,7 @@ func (i IdentifierInfo) CommentHover(ctx context.Context, q types.Qualifier, vie
 	return contents, nil
 }
 
-var builtinFile = filepath.Join(runtime.GOROOT(), "src/builtin.go")
+var builtinFile = filepath.Join(runtime.GOROOT(), "src/builtin/builtin.go")
 
 func getBulitinObj(ctx context.Context, obj types.Object, view View) (Package, types.Object) {
 	f, err := view.GetFile(ctx, span.FileURI(builtinFile))

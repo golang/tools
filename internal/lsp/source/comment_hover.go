@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"go/ast"
-	"golang.org/x/tools/internal/lsp/godocmd"
 	"strings"
+
+	"golang.org/x/tools/internal/lsp/godocmd"
 )
 
 type MarkedString markedString
@@ -49,7 +50,7 @@ func RawMarkedString(s string) MarkedString {
 func packageStatement(pkg Package, ident *ast.Ident) []MarkedString {
 	comments := packageDoc(pkg.GetSyntax(), ident.Name)
 	if pkgName := packageStatementName(pkg.GetSyntax(), ident); pkgName != "" {
-			return maybeAddComments(comments, []MarkedString{{Language: "go", Value: "package " + pkgName}})
+		return maybeAddComments(comments, []MarkedString{{Language: "go", Value: "package " + pkgName}})
 	}
 
 	return nil
@@ -147,5 +148,6 @@ func prettyPrintTypesString(s string) string {
 			b.WriteByte(c)
 		}
 	}
+
 	return b.String()
 }
