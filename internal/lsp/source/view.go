@@ -44,6 +44,7 @@ type Package interface {
 	GetSyntax() []*ast.File
 	GetErrors() []packages.Error
 	GetTypes() *types.Package
+	GetImport(pkgPath string) Package
 	GetTypesInfo() *types.Info
 	IsIllTyped() bool
 	GetActionGraph(ctx context.Context, a *analysis.Analyzer) (*Action, error)
