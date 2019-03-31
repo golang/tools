@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	_ "net/http/pprof"
+
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp"
 	"golang.org/x/tools/internal/tool"
