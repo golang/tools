@@ -14,7 +14,7 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 )
 
-func toProtocolCompletionItems(candidates []source.CompletionItem, prefix string, pos protocol.Position, snippetsSupported, signatureHelpEnabled bool) []protocol.CompletionItem {
+func toProtocolCompletionItems(m *protocol.ColumnMapper, candidates []source.CompletionItem, prefix string, pos protocol.Position, snippetsSupported, signatureHelpEnabled bool) []protocol.CompletionItem {
 	insertTextFormat := protocol.PlainTextTextFormat
 	if snippetsSupported {
 		insertTextFormat = protocol.SnippetTextFormat
@@ -35,6 +35,8 @@ func toProtocolCompletionItems(candidates []source.CompletionItem, prefix string
 		if strings.HasPrefix(insertText, prefix) {
 			insertText = insertText[len(prefix):]
 		}
+
+		edits, _ := toProtocolEdits(m, candidate.AdditionalTextEdits)
 		item := protocol.CompletionItem{
 			Label:  candidate.Label,
 			Detail: candidate.Detail,
@@ -49,9 +51,10 @@ func toProtocolCompletionItems(candidates []source.CompletionItem, prefix string
 			// This is a hack so that the client sorts completion results in the order
 			// according to their score. This can be removed upon the resolution of
 			// https://github.com/Microsoft/language-server-protocol/issues/348.
-			SortText:   fmt.Sprintf("%05d", i),
-			FilterText: insertText,
-			Preselect:  i == 0,
+			SortText:            fmt.Sprintf("%05d", i),
+			FilterText:          insertText,
+			Preselect:           i == 0,
+			AdditionalTextEdits: edits,
 		}
 		// If we are completing a function, we should trigger signature help if possible.
 		if triggerSignatureHelp && signatureHelpEnabled {

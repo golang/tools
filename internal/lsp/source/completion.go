@@ -11,13 +11,16 @@ import (
 	"strings"
 	"unicode"
 
+	"golang.org/x/tools/internal/span"
+
 	"golang.org/x/tools/go/ast/astutil"
 )
 
 type CompletionItem struct {
-	Label, Detail string
-	Kind          CompletionItemKind
-	Score         float64
+	Label, Detail       string
+	Kind                CompletionItemKind
+	Score               float64
+	AdditionalTextEdits []TextEdit
 }
 
 type CompletionItemKind int
@@ -121,7 +124,7 @@ func Completion(ctx context.Context, f File, pos token.Pos, search SearchFunc) (
 	}
 
 	// The position is within a composite literal.
-	if items, prefix, ok := complit(path, pos, pkg.GetTypes(), pkg.GetTypesInfo(), found, cursorIdent, search); ok {
+	if items, prefix, ok := complit(ctx, f, path, pos, pkg.GetTypes(), pkg.GetTypesInfo(), found, cursorIdent, search); ok {
 		return items, prefix, nil
 	}
 	switch n := path[0].(type) {
@@ -148,7 +151,7 @@ func Completion(ctx context.Context, f File, pos token.Pos, search SearchFunc) (
 			}
 		}
 
-		items = append(items, lexical(path, pos, pkg.GetTypes(), pkg.GetTypesInfo(), found, cursorIdent, search)...)
+		items = append(items, lexical(ctx, f, path, pos, pkg.GetTypes(), pkg.GetTypesInfo(), found, cursorIdent, search)...)
 
 	// The function name hasn't been typed yet, but the parens are there:
 	//   recv.‸(arg)
@@ -163,13 +166,13 @@ func Completion(ctx context.Context, f File, pos token.Pos, search SearchFunc) (
 
 	default:
 		// fallback to lexical completions
-		return lexical(path, pos, pkg.GetTypes(), pkg.GetTypesInfo(), found, cursorIdent, search), getPrefix(cursorIdent), nil
+		return lexical(ctx, f, path, pos, pkg.GetTypes(), pkg.GetTypesInfo(), found, cursorIdent, search), getPrefix(cursorIdent), nil
 	}
 	return items, prefix, nil
 }
 
 func getPrefix(cursorIdent string) string {
-	if cursorIdent != "" && cursorIdent[len(cursorIdent) -1] == '.' {
+	if cursorIdent != "" && cursorIdent[len(cursorIdent)-1] == '.' {
 		return ""
 	}
 	return cursorIdent
@@ -267,7 +270,7 @@ func wantTypeNames(pos token.Pos, path []ast.Node) bool {
 }
 
 // lexical finds completions in the lexical environment.
-func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Info, found finder, cursorIdent string, search SearchFunc) (items []CompletionItem) {
+func lexical(ctx context.Context, file File, path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Info, found finder, cursorIdent string, search SearchFunc) (items []CompletionItem) {
 	var scopes []*types.Scope // scopes[i], where i<len(path), is the possibly nil Scope of path[i].
 	for _, n := range path {
 		switch node := n.(type) {
@@ -293,7 +296,7 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 				continue // Name was declared in some enclosing scope, or not at all.
 			}
 
-			if name + "." == cursorIdent && obj.Type() != types.Typ[types.Invalid] {
+			if name+"." == cursorIdent && obj.Type() != types.Typ[types.Invalid] {
 				items = items[0:0]
 
 				objType := obj.Type()
@@ -372,6 +375,10 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 				Kind:   PackageCompletionItem,
 				Score:  score,
 			}
+			edit := getAdditionalTextEdits(ctx, file, path, p.GetTypes().Path())
+			if edit != nil {
+				item.AdditionalTextEdits = append(item.AdditionalTextEdits, *edit)
+			}
 			items = append(items, item)
 			return false
 		}
@@ -408,7 +415,7 @@ func inComment(pos token.Pos, commentGroups []*ast.CommentGroup) bool {
 
 // complit finds completions for field names inside a composite literal.
 // It reports whether the node was handled as part of a composite literal.
-func complit(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Info, found finder, cursorIdent string, search SearchFunc) (items []CompletionItem, prefix string, ok bool) {
+func complit(ctx context.Context, file File, path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Info, found finder, cursorIdent string, search SearchFunc) (items []CompletionItem, prefix string, ok bool) {
 	var lit *ast.CompositeLit
 	prefix = cursorIdent
 	// First, determine if the pos is within a composite literal.
@@ -509,7 +516,7 @@ func complit(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 			// Add lexical completions if the user hasn't typed a key value expression
 			// and if the struct fields are defined in the same package as the user is in.
 			if !hasKeys && structPkg == pkg {
-				items = append(items, lexical(path, pos, pkg, info, found, cursorIdent, search)...)
+				items = append(items, lexical(ctx, file, path, pos, pkg, info, found, cursorIdent, search)...)
 			}
 			return items, prefix, true
 		}
@@ -944,4 +951,45 @@ func offsetForIdent(contents []byte, p token.Position) string {
 
 	log.Printf("file only has %d lines", line+1)
 	return ""
+}
+
+func getAdditionalTextEdits(ctx context.Context, file File, path []ast.Node, pkgPath string) *TextEdit {
+	l := len(path)
+	if l == 0 {
+		return nil
+	}
+
+	f, ok := path[l-1].(*ast.File)
+	if !ok {
+		return nil
+	}
+
+	newText := `"` + pkgPath + `"`
+	for _, imp := range f.Imports {
+		if imp.Path.Value == newText {
+			return nil
+		}
+	}
+
+	l = len(f.Imports)
+	var pos token.Pos
+	if l == 0 {
+		pos = f.Name.NamePos + token.Pos(len(f.Name.Name))
+		newText = "\n\nimport(\n\t" + newText + "\n)"
+	} else {
+		p := f.Imports[l-1].Path
+		pos = p.ValuePos + token.Pos(len(p.Value))
+		newText = "\n\t" + newText
+	}
+
+	point := toPoint(file.GetFileSet(ctx), pos)
+	return &TextEdit{
+		Span:    span.New(file.URI(), point, point),
+		NewText: newText,
+	}
+}
+
+func toPoint(fset *token.FileSet, pos token.Pos) span.Point {
+	p := fset.Position(pos)
+	return span.NewPoint(p.Line, p.Column, p.Offset)
 }

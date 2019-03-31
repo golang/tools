@@ -274,8 +274,7 @@ func (s *server) DidSave(context.Context, *protocol.DidSaveTextDocumentParams) e
 }
 
 func (s *server) DidClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
-	s.setContent(ctx, span.URI(params.TextDocument.URI), nil)
-	return nil
+	return s.setContent(ctx, span.URI(params.TextDocument.URI), nil)
 }
 
 func (s *server) Completion(ctx context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
@@ -297,7 +296,7 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 	}
 	return &protocol.CompletionList{
 		IsIncomplete: false,
-		Items:        toProtocolCompletionItems(items, prefix, params.Position, s.snippetsSupported, s.signatureHelpEnabled),
+		Items:        toProtocolCompletionItems(m, items, prefix, params.Position, s.snippetsSupported, s.signatureHelpEnabled),
 	}, nil
 }
 
