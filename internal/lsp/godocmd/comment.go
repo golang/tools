@@ -349,7 +349,8 @@ func toFormatted(w io.Writer, text string, words map[string]string, opts fmtOpts
 			for _, line := range b.lines {
 				if id == "" {
 					id = anchorID(line)
-					w.Write([]byte(id))
+					// fix https://github.com/saibing/bingo/issues/69
+					//w.Write([]byte(id))
 					w.Write(opts.HeaderBeginEnd)
 				}
 				commentEscape(w, line, true, opts)
