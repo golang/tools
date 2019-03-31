@@ -7,7 +7,7 @@ import (
 	"golang.org/x/tools/internal/span"
 )
 
-func (s *server) symbols(ctx context.Context, query string) ([]protocol.SymbolInformation, error) {
+func (s *Server) symbols(ctx context.Context, query string) ([]protocol.SymbolInformation, error) {
 	symbols := source.Symbols(ctx, s.view, s.workspace.Search, query, 100)
 
 	var symbolInfos []protocol.SymbolInformation

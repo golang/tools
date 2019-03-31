@@ -23,6 +23,7 @@ const (
 	ConstantSymbol
 	FunctionSymbol
 	MethodSymbol
+	InterfaceSymbol
 )
 
 type Symbol struct {
@@ -48,15 +49,21 @@ func getSymbols(fset *token.FileSet, file *ast.File, pkg Package) []Symbol {
 	for _, decl := range file.Decls {
 		switch decl := decl.(type) {
 		case *ast.FuncDecl:
-			symbols = append(symbols, funcSymbol(decl, info.ObjectOf(decl.Name), fset, q))
+			if obj := info.ObjectOf(decl.Name); obj != nil {
+				symbols = append(symbols, funcSymbol(decl, obj, fset, q))
+			}
 		case *ast.GenDecl:
 			for _, spec := range decl.Specs {
 				switch spec := spec.(type) {
 				case *ast.TypeSpec:
-					symbols = append(symbols, typeSymbol(spec, info.ObjectOf(spec.Name), fset, q))
+					if obj := info.ObjectOf(spec.Name); obj != nil {
+						symbols = append(symbols, typeSymbol(spec, obj, fset, q))
+					}
 				case *ast.ValueSpec:
 					for _, name := range spec.Names {
-						symbols = append(symbols, varSymbol(decl, name, info.ObjectOf(name), fset, q))
+						if obj := info.ObjectOf(name); obj != nil {
+							symbols = append(symbols, varSymbol(decl, name, obj, fset, q))
+						}
 					}
 				}
 			}
@@ -102,6 +109,9 @@ func typeSymbol(spec *ast.TypeSpec, obj types.Object, fset *token.FileSet, q typ
 	s := Symbol{
 		Name: obj.Name(),
 		Kind: StructSymbol,
+	}
+	if types.IsInterface(obj.Type()) {
+		s.Kind = InterfaceSymbol
 	}
 	if span, err := nodeSpan(spec, fset); err == nil {
 		s.Span = span

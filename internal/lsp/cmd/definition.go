@@ -50,7 +50,7 @@ Example: show the definition of the identifier at syntax at offset %[1]v in this
 $ gopls definition internal/lsp/cmd/definition.go:%[1]v:%[2]v
 $ gopls definition internal/lsp/cmd/definition.go:#%[3]v
 
-	gopls definition flags are:
+	gopls query definition flags are:
 `, exampleLine, exampleColumn, exampleOffset)
 	f.PrintDefaults()
 }
@@ -61,7 +61,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
 		return tool.CommandLineErrorf("definition expects 1 argument")
 	}
-	view := cache.NewView(&d.query.app.Config)
+	view := cache.NewView("definition_test", span.FileURI(d.query.app.Config.Dir), &d.query.app.Config)
 	from := span.Parse(args[0])
 	f, err := view.GetFile(ctx, from.URI())
 	if err != nil {

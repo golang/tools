@@ -19,17 +19,24 @@ import (
 // Conn is a JSON RPC 2 client server connection.
 // Conn is bidirectional; it does not have a designated server or client end.
 type Conn struct {
-	handle     Handler
-	cancel     Canceler
-	log        Logger
-	stream     Stream
-	done       chan struct{}
-	err        error
-	seq        int64      // must only be accessed using atomic operations
-	pendingMu  sync.Mutex // protects the pending map
-	pending    map[ID]chan *Response
-	handlingMu sync.Mutex // protects the handling map
-	handling   map[ID]handling
+	seq                int64 // must only be accessed using atomic operations
+	Handler            Handler
+	Canceler           Canceler
+	Logger             Logger
+	Capacity           int
+	RejectIfOverloaded bool
+	stream             Stream
+	err                error
+	pendingMu          sync.Mutex // protects the pending map
+	pending            map[ID]chan *Response
+	handlingMu         sync.Mutex // protects the handling map
+	handling           map[ID]handling
+}
+
+type queueEntry struct {
+	ctx context.Context
+	c   *Conn
+	r   *Request
 }
 
 // Handler is an option you can pass to NewConn to handle incoming requests.
@@ -57,68 +64,25 @@ func NewErrorf(code int64, format string, args ...interface{}) *Error {
 	}
 }
 
-// NewConn creates a new connection object that reads and writes messages from
-// the supplied stream and dispatches incoming messages to the supplied handler.
-func NewConn(ctx context.Context, s Stream, options ...interface{}) *Conn {
+// NewConn creates a new connection object around the supplied stream.
+// You must call Run for the connection to be active.
+func NewConn(s Stream) *Conn {
 	conn := &Conn{
 		stream:   s,
-		done:     make(chan struct{}),
 		pending:  make(map[ID]chan *Response),
 		handling: make(map[ID]handling),
 	}
-	for _, opt := range options {
-		switch opt := opt.(type) {
-		case Handler:
-			if conn.handle != nil {
-				panic("Duplicate Handler function in options list")
-			}
-			conn.handle = opt
-		case Canceler:
-			if conn.cancel != nil {
-				panic("Duplicate Canceler function in options list")
-			}
-			conn.cancel = opt
-		case Logger:
-			if conn.log != nil {
-				panic("Duplicate Logger function in options list")
-			}
-			conn.log = opt
-		default:
-			panic(fmt.Errorf("Unknown option type %T in options list", opt))
+	// the default handler reports a method error
+	conn.Handler = func(ctx context.Context, c *Conn, r *Request) {
+		if r.IsNotify() {
+			c.Reply(ctx, r, nil, NewErrorf(CodeMethodNotFound, "method %q not found", r.Method))
 		}
 	}
-	if conn.handle == nil {
-		// the default handler reports a method error
-		conn.handle = func(ctx context.Context, c *Conn, r *Request) {
-			if r.IsNotify() {
-				c.Reply(ctx, r, nil, NewErrorf(CodeMethodNotFound, "method %q not found", r.Method))
-			}
-		}
-	}
-	if conn.cancel == nil {
-		// the default canceller does nothing
-		conn.cancel = func(context.Context, *Conn, *Request) {}
-	}
-	if conn.log == nil {
-		// the default logger does nothing
-		conn.log = func(Direction, *ID, time.Duration, string, *json.RawMessage, *Error) {}
-	}
-	go func() {
-		conn.err = conn.run(ctx)
-		close(conn.done)
-	}()
+	// the default canceller does nothing
+	conn.Canceler = func(context.Context, *Conn, *Request) {}
+	// the default logger does nothing
+	conn.Logger = func(Direction, *ID, time.Duration, string, *json.RawMessage, *Error) {}
 	return conn
-}
-
-// Wait blocks until the connection is terminated, and returns any error that
-// cause the termination.
-func (c *Conn) Wait(ctx context.Context) error {
-	select {
-	case <-c.done:
-		return c.err
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }
 
 // Cancel cancels a pending Call on the server side.
@@ -151,7 +115,7 @@ func (c *Conn) Notify(ctx context.Context, method string, params interface{}) er
 	if err != nil {
 		return fmt.Errorf("marshalling notify request: %v", err)
 	}
-	c.log(Send, nil, -1, request.Method, request.Params, nil)
+	c.Logger(Send, nil, -1, request.Method, request.Params, nil)
 	return c.stream.Write(ctx, data)
 }
 
@@ -189,7 +153,7 @@ func (c *Conn) Call(ctx context.Context, method string, params, result interface
 	}()
 	// now we are ready to send
 	before := time.Now()
-	c.log(Send, request.ID, -1, request.Method, request.Params, nil)
+	c.Logger(Send, request.ID, -1, request.Method, request.Params, nil)
 	if err := c.stream.Write(ctx, data); err != nil {
 		// sending failed, we will never get a response, so don't leave it pending
 		return err
@@ -198,7 +162,7 @@ func (c *Conn) Call(ctx context.Context, method string, params, result interface
 	select {
 	case response := <-rchan:
 		elapsed := time.Since(before)
-		c.log(Send, response.ID, elapsed, request.Method, response.Result, response.Error)
+		c.Logger(Send, response.ID, elapsed, request.Method, response.Result, response.Error)
 		// is it an error response?
 		if response.Error != nil {
 			return response.Error
@@ -212,7 +176,7 @@ func (c *Conn) Call(ctx context.Context, method string, params, result interface
 		return nil
 	case <-ctx.Done():
 		// allow the handler to propagate the cancel
-		c.cancel(ctx, c, request)
+		c.Canceler(ctx, c, request)
 		return ctx.Err()
 	}
 }
@@ -255,7 +219,7 @@ func (c *Conn) Reply(ctx context.Context, req *Request, result interface{}, err 
 	if err != nil {
 		return err
 	}
-	c.log(Send, response.ID, elapsed, req.Method, response.Result, response.Error)
+	c.Logger(Send, response.ID, elapsed, req.Method, response.Result, response.Error)
 	if err = c.stream.Write(ctx, data); err != nil {
 		// TODO(iancottrell): if a stream write fails, we really need to shut down
 		// the whole stream
@@ -281,10 +245,37 @@ type combined struct {
 	Error      *Error           `json:"error,omitempty"`
 }
 
-// Run starts a read loop on the supplied reader.
+func (c *Conn) deliver(ctx context.Context, q chan queueEntry, request *Request) bool {
+	e := queueEntry{ctx: ctx, c: c, r: request}
+	if !c.RejectIfOverloaded {
+		q <- e
+		return true
+	}
+	select {
+	case q <- e:
+		return true
+	default:
+		return false
+	}
+}
+
+// Run blocks until the connection is terminated, and returns any error that
+// caused the termination.
 // It must be called exactly once for each Conn.
 // It returns only when the reader is closed or there is an error in the stream.
-func (c *Conn) run(ctx context.Context) error {
+func (c *Conn) Run(ctx context.Context) error {
+	q := make(chan queueEntry, c.Capacity)
+	defer close(q)
+	// start the queue processor
+	go func() {
+		// TODO: idle notification?
+		for e := range q {
+			if e.ctx.Err() != nil {
+				continue
+			}
+			c.Handler(e.ctx, e.c, e.r)
+		}
+	}()
 	for {
 		// get the data for a message
 		data, err := c.stream.Read(ctx)
@@ -297,7 +288,7 @@ func (c *Conn) run(ctx context.Context) error {
 		if err := json.Unmarshal(data, msg); err != nil {
 			// a badly formed message arrived, log it and continue
 			// we trust the stream to have isolated the error to just this message
-			c.log(Receive, nil, -1, "", nil, NewErrorf(0, "unmarshal failed: %v", err))
+			c.Logger(Receive, nil, -1, "", nil, NewErrorf(0, "unmarshal failed: %v", err))
 			continue
 		}
 		// work out which kind of message we have
@@ -310,11 +301,12 @@ func (c *Conn) run(ctx context.Context) error {
 				ID:     msg.ID,
 			}
 			if request.IsNotify() {
-				c.log(Receive, request.ID, -1, request.Method, request.Params, nil)
-				// we have a Notify, forward to the handler in a go routine
-				c.handle(ctx, c, request)
+				c.Logger(Receive, request.ID, -1, request.Method, request.Params, nil)
+				// we have a Notify, add to the processor queue
+				c.deliver(ctx, q, request)
+				//TODO: log when we drop a message?
 			} else {
-				// we have a Call, forward to the handler in another go routine
+				// we have a Call, add to the processor queue
 				reqCtx, cancelReq := context.WithCancel(ctx)
 				c.handlingMu.Lock()
 				c.handling[*request.ID] = handling{
@@ -323,8 +315,11 @@ func (c *Conn) run(ctx context.Context) error {
 					start:   time.Now(),
 				}
 				c.handlingMu.Unlock()
-				c.log(Receive, request.ID, -1, request.Method, request.Params, nil)
-				c.handle(reqCtx, c, request)
+				c.Logger(Receive, request.ID, -1, request.Method, request.Params, nil)
+				if !c.deliver(reqCtx, q, request) {
+					// queue is full, reject the message by directly replying
+					c.Reply(ctx, request, nil, NewErrorf(CodeServerOverloaded, "no room in queue"))
+				}
 			}
 		case msg.ID != nil:
 			// we have a response, get the pending entry from the map
@@ -343,7 +338,7 @@ func (c *Conn) run(ctx context.Context) error {
 			rchan <- response
 			close(rchan)
 		default:
-			c.log(Receive, nil, -1, "", nil, NewErrorf(0, "message not a call, notify or response, ignoring"))
+			c.Logger(Receive, nil, -1, "", nil, NewErrorf(0, "message not a call, notify or response, ignoring"))
 		}
 	}
 }

@@ -48,6 +48,7 @@ func toProtocolCompletionItems(m *protocol.ColumnMapper, candidates []source.Com
 					End:   pos,
 				},
 			},
+			InsertTextFormat: insertTextFormat,
 			// This is a hack so that the client sorts completion results in the order
 			// according to their score. This can be removed upon the resolution of
 			// https://github.com/Microsoft/language-server-protocol/issues/348.

@@ -7,7 +7,7 @@ import (
 	"golang.org/x/tools/internal/span"
 )
 
-func (s *server) references(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
+func (s *Server) references(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
 	locations, err := s.doReferences(ctx, params)
 	if err != nil {
 		// fix https://github.com/saibing/bingo/issues/32
@@ -17,7 +17,7 @@ func (s *server) references(ctx context.Context, params *protocol.ReferenceParam
 	return locations, err
 }
 
-func (s *server) doReferences(ctx context.Context,  params *protocol.ReferenceParams) ([]protocol.Location, error) {
+func (s *Server) doReferences(ctx context.Context,  params *protocol.ReferenceParams) ([]protocol.Location, error) {
 	f, m, err := newColumnMap(ctx, s.view, span.URI(params.TextDocument.URI))
 	if err != nil {
 		return nil, err

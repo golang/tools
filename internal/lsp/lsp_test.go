@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 
@@ -43,6 +44,7 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 	const expectedDefinitionsCount = 16
 	const expectedTypeDefinitionsCount = 2
 	const expectedHighlightsCount = 2
+	const expectedSymbolsCount = 1
 
 	files := packagestest.MustCopyFileTree(dir)
 	for fragment, operation := range files {
@@ -68,8 +70,8 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 		return parser.ParseFile(fset, filename, src, parser.AllErrors|parser.ParseComments)
 	}
 
-	s := &server{
-		view: cache.NewView(&cfg),
+	s := &Server{
+		view: cache.NewView("lsp_test", span.FileURI(cfg.Dir), &cfg),
 	}
 	// Do a first pass to collect special markers for completion.
 	if err := exported.Expect(map[string]interface{}{
@@ -87,6 +89,7 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 	expectedDefinitions := make(definitions)
 	expectedTypeDefinitions := make(definitions)
 	expectedHighlights := make(highlights)
+	expectedSymbols := make(symbols)
 
 	// Collect any data that needs to be used by subsequent tests.
 	if err := exported.Expect(map[string]interface{}{
@@ -97,6 +100,7 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 		"godef":     expectedDefinitions.collect,
 		"typdef":    expectedTypeDefinitions.collect,
 		"highlight": expectedHighlights.collect,
+		"symbol":    expectedSymbols.collect,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -168,6 +172,16 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 		}
 		expectedHighlights.test(t, s)
 	})
+
+	t.Run("Symbols", func(t *testing.T) {
+		t.Helper()
+		if goVersion111 { // TODO(rstambler): Remove this when we no longer support Go 1.10.
+			if len(expectedSymbols) != expectedSymbolsCount {
+				t.Errorf("got %v symbols expected %v", len(expectedSymbols), expectedSymbolsCount)
+			}
+		}
+		expectedSymbols.test(t, s)
+	})
 }
 
 type diagnostics map[span.URI][]protocol.Diagnostic
@@ -176,6 +190,7 @@ type completions map[token.Position][]token.Pos
 type formats map[string]string
 type definitions map[protocol.Location]protocol.Location
 type highlights map[string][]protocol.Location
+type symbols map[span.URI][]protocol.DocumentSymbol
 
 func (d diagnostics) test(t *testing.T, v source.View) int {
 	count := 0
@@ -270,7 +285,7 @@ Failed:
 	return msg.String()
 }
 
-func (c completions) test(t *testing.T, exported *packagestest.Exported, s *server, items completionItems) {
+func (c completions) test(t *testing.T, exported *packagestest.Exported, s *Server, items completionItems) {
 	for src, itemList := range c {
 		var want []protocol.CompletionItem
 		for _, pos := range itemList {
@@ -391,7 +406,7 @@ Failed:
 	return msg.String()
 }
 
-func (f formats) test(t *testing.T, s *server) {
+func (f formats) test(t *testing.T, s *Server) {
 	ctx := context.Background()
 	for filename, gofmted := range f {
 		uri := span.FileURI(filename)
@@ -429,7 +444,7 @@ func (f formats) collect(pos token.Position) {
 	f[pos.Filename] = stdout.String()
 }
 
-func (d definitions) test(t *testing.T, s *server, typ bool) {
+func (d definitions) test(t *testing.T, s *Server, typ bool) {
 	for src, target := range d {
 		params := &protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{
@@ -480,7 +495,7 @@ func (h highlights) collect(e *packagestest.Exported, fset *token.FileSet, name 
 	h[name] = append(h[name], loc)
 }
 
-func (h highlights) test(t *testing.T, s *server) {
+func (h highlights) test(t *testing.T, s *Server) {
 	for name, locations := range h {
 		params := &protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{
@@ -498,6 +513,70 @@ func (h highlights) test(t *testing.T, s *server) {
 		for i := range highlights {
 			if highlights[i].Range != locations[i].Range {
 				t.Errorf("want %v, got %v\n", locations[i].Range, highlights[i].Range)
+			}
+		}
+	}
+}
+
+func (s symbols) collect(e *packagestest.Exported, fset *token.FileSet, name string, rng span.Range, kind int64) {
+	f := fset.File(rng.Start)
+	if f == nil {
+		return
+	}
+
+	content, err := e.FileContents(f.Name())
+	if err != nil {
+		return
+	}
+
+	spn, err := rng.Span()
+	if err != nil {
+		return
+	}
+
+	m := protocol.NewColumnMapper(spn.URI(), fset, f, content)
+	prng, err := m.Range(spn)
+	if err != nil {
+		return
+	}
+
+	s[spn.URI()] = append(s[spn.URI()], protocol.DocumentSymbol{
+		Name:           name,
+		Kind:           protocol.SymbolKind(kind),
+		SelectionRange: prng,
+	})
+}
+
+func (s symbols) test(t *testing.T, server *Server) {
+	for uri, expectedSymbols := range s {
+		params := &protocol.DocumentSymbolParams{
+			TextDocument: protocol.TextDocumentIdentifier{
+				URI: string(uri),
+			},
+		}
+		symbols, err := server.DocumentSymbol(context.Background(), params)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(symbols) != len(expectedSymbols) {
+			t.Errorf("want %d symbols in %v, got %d", len(expectedSymbols), uri, len(symbols))
+			continue
+		}
+
+		sort.Slice(symbols, func(i, j int) bool { return symbols[i].Name < symbols[j].Name })
+		sort.Slice(expectedSymbols, func(i, j int) bool { return expectedSymbols[i].Name < expectedSymbols[j].Name })
+		for i, w := range expectedSymbols {
+			g := symbols[i]
+			if w.Name != g.Name {
+				t.Errorf("%s: want symbol %q, got %q", uri, w.Name, g.Name)
+				continue
+			}
+			if w.Kind != g.Kind {
+				t.Errorf("%s: want kind %v for %s, got %v", uri, w.Kind, w.Name, g.Kind)
+			}
+			if w.SelectionRange != g.SelectionRange {
+				t.Errorf("%s: want selection range %v for %s, got %v", uri, w.SelectionRange, w.Name, g.SelectionRange)
 			}
 		}
 	}

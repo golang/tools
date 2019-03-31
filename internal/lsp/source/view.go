@@ -46,6 +46,7 @@ type Package interface {
 	GetTypes() *types.Package
 	GetImport(pkgPath string) Package
 	GetTypesInfo() *types.Info
+	GetTypesSizes() types.Sizes
 	IsIllTyped() bool
 	GetActionGraph(ctx context.Context, a *analysis.Analyzer) (*Action, error)
 }
