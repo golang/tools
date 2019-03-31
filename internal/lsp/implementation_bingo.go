@@ -8,7 +8,7 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 )
 
-func (s *server) implementation(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.Location, error) {
+func (s *Server) implementation(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.Location, error) {
 	f, m, err := newColumnMap(ctx, s.view, span.URI(params.TextDocument.URI))
 	if err != nil {
 		return nil, err
