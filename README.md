@@ -1,27 +1,34 @@
-# Go Tools
+# gopls
 
-This subrepository holds the source for various packages and tools that support
-the Go programming language.
+I have ported some features such as references, rename, workspace symbol, implementation of [bingo](https://github.com/saibing/bingo)  to gopls
 
-Some of the tools, `godoc` and `vet` for example, are included in binary Go
-distributions.
+## Install
 
-Others, including the Go `guru` and the test coverage tool, can be fetched with
-`go get`.
+gopls is a go module project, so you need install [Go 1.12 or above](https://golang.google.cn/dl/),
+to  install the `gopls`, please run
 
-Packages include a type-checker for Go and an implementation of the
-Static Single Assignment form (SSA) representation for Go programs.
+```bash
+git clone -b bingo https://github.com/saibing/tools.git
+cd tools/cmd/gopls
+go install
+```
+## Language Client
 
-## Download/Install
+### [vscode-go](https://github.com/Microsoft/vscode-go)
 
-The easiest way to install is to run `go get -u golang.org/x/tools/...`. You can
-also manually git clone the repository to `$GOPATH/src/golang.org/x/tools`.
+```json
+{
+    "go.useLanguageServer": true,
+    "go.alternateTools": {
+        "go-langserver": "gopls"
+    },
+    "go.languageServerExperimentalFeatures": {
+        "format": true,
+        "autoComplete": true
+    }
+}
+```
 
-## Report Issues / Send Patches
+### [coc.nvim](https://github.com/neoclide/coc.nvim)
 
-This repository uses Gerrit for code changes. To learn how to submit changes to
-this repository, see https://golang.org/doc/contribute.html.
-
-The main issue tracker for the tools repository is located at
-https://github.com/golang/go/issues. Prefix your issue with "x/tools/(your
-subdir):" in the subject line, so it is easy to find.
+Please reference [Language server](https://github.com/neoclide/coc.nvim/wiki/Language-servers#go)
