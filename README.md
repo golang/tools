@@ -31,4 +31,15 @@ go install
 
 ### [coc.nvim](https://github.com/neoclide/coc.nvim)
 
-Please reference [Language server](https://github.com/neoclide/coc.nvim/wiki/Language-servers#go)
+```json
+{
+  "languageserver": {
+    "golang": {
+      "command": "gopls",
+      "args": [],
+      "rootPatterns": ["go.mod", ".vim/", ".git/", ".hg/"],
+      "filetypes": ["go"]
+    }
+  }
+}
+```
