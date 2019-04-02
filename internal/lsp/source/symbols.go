@@ -18,12 +18,16 @@ type SymbolKind int
 
 const (
 	PackageSymbol SymbolKind = iota
-	StructSymbol
-	VariableSymbol
-	ConstantSymbol
-	FunctionSymbol
 	MethodSymbol
 	InterfaceSymbol
+	VariableSymbol
+	ConstantSymbol
+	StringSymbol
+	NumberSymbol
+	BooleanSymbol
+	ArraySymbol
+	FunctionSymbol
+	StructSymbol
 )
 
 type Symbol struct {
@@ -105,10 +109,25 @@ func funcSymbol(decl *ast.FuncDecl, obj types.Object, fset *token.FileSet, q typ
 func typeSymbol(spec *ast.TypeSpec, obj types.Object, fset *token.FileSet, q types.Qualifier) Symbol {
 	s := Symbol{
 		Name: obj.Name(),
-		Kind: StructSymbol,
 	}
-	if types.IsInterface(obj.Type()) {
+	switch obj.Type().Underlying().(type) {
+	case *types.Struct:
+		s.Kind = StructSymbol
+	case *types.Interface:
 		s.Kind = InterfaceSymbol
+	case *types.Slice:
+		s.Kind = ArraySymbol
+	case *types.Array:
+		s.Kind = ArraySymbol
+	case *types.Basic:
+		b, _ := obj.Type().Underlying().(*types.Basic)
+		if b.Info()&types.IsNumeric != 0 {
+			s.Kind = NumberSymbol
+		} else if b.Info()&types.IsBoolean != 0 {
+			s.Kind = BooleanSymbol
+		} else if b.Info()&types.IsString != 0 {
+			s.Kind = StringSymbol
+		}
 	}
 	if span, err := nodeSpan(spec, fset); err == nil {
 		s.Span = span

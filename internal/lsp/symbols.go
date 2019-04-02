@@ -31,20 +31,28 @@ func toProtocolDocumentSymbols(m *protocol.ColumnMapper, symbols []source.Symbol
 
 func toProtocolSymbolKind(kind source.SymbolKind) protocol.SymbolKind {
 	switch kind {
-	case source.StructSymbol:
-		return protocol.Struct
 	case source.PackageSymbol:
 		return protocol.Package
-	case source.VariableSymbol:
-		return protocol.Variable
-	case source.ConstantSymbol:
-		return protocol.Constant
-	case source.FunctionSymbol:
-		return protocol.Function
 	case source.MethodSymbol:
 		return protocol.Method
 	case source.InterfaceSymbol:
 		return protocol.Interface
+	case source.VariableSymbol:
+		return protocol.Variable
+	case source.ConstantSymbol:
+		return protocol.Constant
+	case source.StringSymbol:
+		return protocol.String
+	case source.NumberSymbol:
+		return protocol.Number
+	case source.BooleanSymbol:
+		return protocol.Boolean
+	case source.ArraySymbol:
+		return protocol.Array
+	case source.FunctionSymbol:
+		return protocol.Function
+	case source.StructSymbol:
+		return protocol.Struct
 	default:
 		return 0
 	}
