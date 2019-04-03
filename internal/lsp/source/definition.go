@@ -34,7 +34,7 @@ type IdentifierInfo struct {
 
 	ident            *ast.Ident
 	wasEmbeddedField bool
-	path []ast.Node
+	path             []ast.Node
 }
 
 // Identifier returns identifier information for a position

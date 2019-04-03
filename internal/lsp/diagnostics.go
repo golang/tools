@@ -15,7 +15,7 @@ import (
 )
 
 func (s *Server) cacheAndDiagnose(ctx context.Context, uri span.URI, content string) error {
-	view := s.findView(ctx, uri)
+	_, view := s.findView(ctx, uri)
 	if err := view.SetContent(ctx, uri, []byte(content)); err != nil {
 		return err
 	}

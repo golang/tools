@@ -17,11 +17,10 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/tools/internal/lsp/project"
-
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp/cache"
+	"golang.org/x/tools/internal/lsp/project"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/xlog"
@@ -84,13 +83,13 @@ type Server struct {
 
 	textDocumentSyncKind protocol.TextDocumentSyncKind
 
-	views []*cache.View
+	views      []*cache.View
+	workspaces []*project.Workspace
 
 	// undelivered is a cache of any diagnostics that the server
 	// failed to deliver for some reason.
 	undeliveredMu sync.Mutex
 	undelivered   map[span.URI][]source.Diagnostic
-	workspace *project.Workspace
 }
 
 func (s *Server) Run(ctx context.Context) error {
@@ -156,7 +155,7 @@ func (s *Server) Initialize(ctx context.Context, params *protocol.InitializePara
 		if err != nil {
 			return nil, err
 		}
-		s.views = append(s.views, cache.NewView(viewContext, s.log, folder.Name, uri, &packages.Config{
+		view := cache.NewView(viewContext, s.log, folder.Name, uri, &packages.Config{
 			Context: ctx,
 			Dir:     folderPath,
 			Env:     os.Environ(),
@@ -167,11 +166,13 @@ func (s *Server) Initialize(ctx context.Context, params *protocol.InitializePara
 				return parser.ParseFile(fset, filename, src, parser.AllErrors|parser.ParseComments)
 			},
 			Tests: true,
-		}))
-	}
+		})
+		workspace := project.New(ctx, s.client, folderPath, view)
+		workspace.Init()
 
-	s.workspace = project.New(ctx, s.client, rootPath, s.view)
-	s.workspace.Init()
+		s.views = append(s.views, view)
+		s.workspaces = append(s.workspaces, workspace)
+	}
 
 	return &protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
@@ -288,7 +289,7 @@ func (s *Server) applyChanges(ctx context.Context, params *protocol.DidChangeTex
 	}
 
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
+	_, view := s.findView(ctx, uri)
 	file, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return "", jsonrpc2.NewErrorf(jsonrpc2.CodeInternalError, "file not found")
@@ -353,13 +354,13 @@ func (s *Server) DidSave(context.Context, *protocol.DidSaveTextDocumentParams) e
 
 func (s *Server) DidClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
+	_, view := s.findView(ctx, uri)
 	return view.SetContent(ctx, uri, nil)
 }
 
 func (s *Server) Completion(ctx context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
+	index, view := s.findView(ctx, uri)
 	f, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return nil, err
@@ -372,7 +373,7 @@ func (s *Server) Completion(ctx context.Context, params *protocol.CompletionPara
 	if err != nil {
 		return nil, err
 	}
-	items, prefix, err := source.Completion(ctx, f, rng.Start, s.workspace.Search)
+	items, prefix, err := source.Completion(ctx, f, rng.Start, s.workspaces[index].Search)
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +389,7 @@ func (s *Server) CompletionResolve(context.Context, *protocol.CompletionItem) (*
 
 func (s *Server) Hover(ctx context.Context, params *protocol.TextDocumentPositionParams) (*protocol.Hover, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
+	_, view := s.findView(ctx, uri)
 	f, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return nil, err
@@ -405,7 +406,7 @@ func (s *Server) Hover(ctx context.Context, params *protocol.TextDocumentPositio
 	if err != nil {
 		return nil, err
 	}
-	contents, err := ident.CommentHover(ctx, nil, s.view)
+	contents, err := ident.CommentHover(ctx, nil, view)
 	if err != nil {
 		return nil, err
 	}
@@ -418,15 +419,24 @@ func (s *Server) Hover(ctx context.Context, params *protocol.TextDocumentPositio
 	if err != nil {
 		return nil, err
 	}
-	return &Hover{
-		Contents: contents,
-		Range:    &rng,
+
+	contentStrings := make([]string, 0, len(contents))
+	for _, c := range contents {
+		contentStrings = append(contentStrings, c.String())
+	}
+	content := fmt.Sprint(strings.Join(contentStrings, "\n"))
+	return &protocol.Hover{
+		Contents: protocol.MarkupContent{
+			Kind:  protocol.Markdown,
+			Value: content,
+		},
+		Range: &rng,
 	}, nil
 }
 
 func (s *Server) SignatureHelp(ctx context.Context, params *protocol.TextDocumentPositionParams) (*protocol.SignatureHelp, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
+	_, view := s.findView(ctx, uri)
 	f, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return nil, err
@@ -448,7 +458,7 @@ func (s *Server) SignatureHelp(ctx context.Context, params *protocol.TextDocumen
 
 func (s *Server) Definition(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.Location, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
+	_, view := s.findView(ctx, uri)
 	f, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return nil, err
@@ -482,7 +492,7 @@ func (s *Server) Definition(ctx context.Context, params *protocol.TextDocumentPo
 
 func (s *Server) TypeDefinition(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.Location, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
+	_, view := s.findView(ctx, uri)
 	f, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return nil, err
@@ -524,7 +534,7 @@ func (s *Server) Implementation(context.Context, *protocol.TextDocumentPositionP
 
 func (s *Server) DocumentHighlight(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.DocumentHighlight, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
+	_, view := s.findView(ctx, uri)
 	f, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return nil, err
@@ -546,7 +556,7 @@ func (s *Server) DocumentHighlight(ctx context.Context, params *protocol.TextDoc
 
 func (s *Server) DocumentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]protocol.DocumentSymbol, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
+	_, view := s.findView(ctx, uri)
 	f, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return nil, err
@@ -557,7 +567,7 @@ func (s *Server) DocumentSymbol(ctx context.Context, params *protocol.DocumentSy
 
 func (s *Server) CodeAction(ctx context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
+	_, view := s.findView(ctx, uri)
 	_, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return nil, err
@@ -609,14 +619,14 @@ func (s *Server) ColorPresentation(context.Context, *protocol.ColorPresentationP
 
 func (s *Server) Formatting(ctx context.Context, params *protocol.DocumentFormattingParams) ([]protocol.TextEdit, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
+	_, view := s.findView(ctx, uri)
 	spn := span.New(uri, span.Point{}, span.Point{})
 	return formatRange(ctx, view, spn)
 }
 
 func (s *Server) RangeFormatting(ctx context.Context, params *protocol.DocumentRangeFormattingParams) ([]protocol.TextEdit, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
+	_, view := s.findView(ctx, uri)
 	_, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return nil, err
@@ -679,25 +689,27 @@ func notImplemented(method string) *jsonrpc2.Error {
 	return jsonrpc2.NewErrorf(jsonrpc2.CodeMethodNotFound, "method %q not yet implemented", method)
 }
 
-func (s *Server) findView(ctx context.Context, uri span.URI) *cache.View {
+func (s *Server) findView(ctx context.Context, uri span.URI) (int, *cache.View) {
 	// first see if a view already has this file
-	for _, view := range s.views {
+	for i, view := range s.views {
 		if view.FindFile(ctx, uri) != nil {
-			return view
+			return i, view
 		}
 	}
 	var longest *cache.View
-	for _, view := range s.views {
+	index := 0
+	for i, view := range s.views {
 		if longest != nil && len(longest.Folder) > len(view.Folder) {
 			continue
 		}
 		if strings.HasPrefix(string(uri), string(view.Folder)) {
+			index = i
 			longest = view
 		}
 	}
 	if longest != nil {
-		return longest
+		return index, longest
 	}
 	//TODO: are there any more heuristics we can use?
-	return s.views[0]
+	return 0, s.views[0]
 }

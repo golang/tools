@@ -425,7 +425,8 @@ func (f formats) test(t *testing.T, s *Server) {
 			}
 			continue
 		}
-		f, m, err := newColumnMap(ctx, s.findView(ctx, uri), uri)
+		_, view := s.findView(ctx, uri)
+		f, m, err := newColumnMap(ctx, view, uri)
 		if err != nil {
 			t.Error(err)
 		}
