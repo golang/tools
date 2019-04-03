@@ -19,15 +19,24 @@ func formatRange(ctx context.Context, v source.View, s span.Span) ([]protocol.Te
 	if err != nil {
 		return nil, err
 	}
+
+	var wholeFile bool
 	if rng.Start == rng.End {
 		// If we have a single point, assume we want the whole file.
 		tok := f.GetToken(ctx)
 		if tok == nil {
 			return nil, fmt.Errorf("no file information for %s", f.URI())
 		}
+		wholeFile = true
 		rng.End = tok.Pos(tok.Size())
 	}
-	edits, err := source.Format(ctx, f, rng)
+
+	var edits []source.TextEdit
+	if wholeFile {
+		edits, err = source.Imports(ctx, f, rng)
+	} else {
+		edits, err = source.Format(ctx, f, rng)
+	}
 	if err != nil {
 		return nil, err
 	}
