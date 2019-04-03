@@ -13,12 +13,17 @@ import (
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/lsp/xlog"
 	"golang.org/x/tools/internal/span"
 )
 
 type View struct {
 	// mu protects all mutable state of the view.
 	mu sync.Mutex
+
+	// baseCtx is the context handed to NewView. This is the parent of all
+	// background contexts created for this view.
+	baseCtx context.Context
 
 	// backgroundCtx is the current context used by background tasks initiated
 	// by the view.
@@ -27,6 +32,9 @@ type View struct {
 	// cancel is called when all action being performed by the current view
 	// should be stopped.
 	cancel context.CancelFunc
+
+	// the logger to use to communicate back with the client
+	log xlog.Logger
 
 	// Name is the user visible name of this view.
 	Name string
@@ -83,11 +91,13 @@ type entry struct {
 	ready chan struct{} // closed to broadcast ready condition
 }
 
-func NewView(name string, folder span.URI, config *packages.Config) *View {
-	ctx, cancel := context.WithCancel(context.Background())
+func NewView(ctx context.Context, log xlog.Logger, name string, folder span.URI, config *packages.Config) *View {
+	backgroundCtx, cancel := context.WithCancel(ctx)
 	v := &View{
-		backgroundCtx:  ctx,
+		baseCtx:        ctx,
+		backgroundCtx:  backgroundCtx,
 		cancel:         cancel,
+		log:            log,
 		Config:         *config,
 		Name:           name,
 		Folder:         folder,
@@ -119,11 +129,10 @@ func (v *View) FileSet() *token.FileSet {
 func (v *View) SetContent(ctx context.Context, uri span.URI, content []byte) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-
 	// Cancel all still-running previous requests, since they would be
 	// operating on stale data.
 	v.cancel()
-	v.backgroundCtx, v.cancel = context.WithCancel(context.Background())
+	v.backgroundCtx, v.cancel = context.WithCancel(v.baseCtx)
 
 	v.contentChanges[uri] = func() {
 		v.applyContentChange(uri, content)
@@ -166,7 +175,7 @@ func (v *View) applyContentChange(uri span.URI, content []byte) {
 
 	// Remove the package and all of its reverse dependencies from the cache.
 	if f.pkg != nil {
-		v.remove(f.pkg.pkgPath, map[string]bool{})
+		v.remove(f.pkg.pkgPath, map[string]struct{}{})
 	}
 
 	switch {
@@ -185,16 +194,15 @@ func (v *View) applyContentChange(uri span.URI, content []byte) {
 // remove invalidates a package and its reverse dependencies in the view's
 // package cache. It is assumed that the caller has locked both the mutexes
 // of both the mcache and the pcache.
-func (v *View) remove(pkgPath string, seen map[string]bool) {
-	if seen[pkgPath] {
+func (v *View) remove(pkgPath string, seen map[string]struct{}) {
+	if _, ok := seen[pkgPath]; ok {
 		return
 	}
-	seen[pkgPath] = true
-
 	m, ok := v.mcache.packages[pkgPath]
 	if !ok {
 		return
 	}
+	seen[pkgPath] = struct{}{}
 	for parentPkgPath := range m.parents {
 		v.remove(parentPkgPath, seen)
 	}
@@ -206,6 +214,17 @@ func (v *View) remove(pkgPath string, seen map[string]bool) {
 		}
 	}
 	delete(v.pcache.packages, pkgPath)
+}
+
+// FindFile returns the file if the given URI is already a part of the view.
+func (v *View) FindFile(ctx context.Context, uri span.URI) *File {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	f, err := v.findFile(uri)
+	if err != nil {
+		return nil
+	}
+	return f
 }
 
 // GetFile returns a File for the given URI. It will always succeed because it
@@ -284,4 +303,8 @@ func (v *View) mapFile(uri span.URI, f *File) {
 		f.basename = basename(f.filename)
 		v.filesByBase[f.basename] = append(v.filesByBase[f.basename], f)
 	}
+}
+
+func (v *View) Logger() xlog.Logger {
+	return v.log
 }

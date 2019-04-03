@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/lsp/xlog"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -34,6 +35,7 @@ func TestLSP(t *testing.T) {
 }
 
 func testLSP(t *testing.T, exporter packagestest.Exporter) {
+	ctx := context.Background()
 	const dir = "testdata"
 
 	// We hardcode the expected number of test cases to ensure that all tests
@@ -70,8 +72,10 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 		return parser.ParseFile(fset, filename, src, parser.AllErrors|parser.ParseComments)
 	}
 
+	log := xlog.New(xlog.StdSink{})
 	s := &Server{
-		view: cache.NewView("lsp_test", span.FileURI(cfg.Dir), &cfg),
+		views:       []*cache.View{cache.NewView(ctx, log, "lsp_test", span.FileURI(cfg.Dir), &cfg)},
+		undelivered: make(map[span.URI][]source.Diagnostic),
 	}
 	// Do a first pass to collect special markers for completion.
 	if err := exported.Expect(map[string]interface{}{
@@ -117,7 +121,7 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 
 	t.Run("Diagnostics", func(t *testing.T) {
 		t.Helper()
-		diagnosticsCount := expectedDiagnostics.test(t, s.view)
+		diagnosticsCount := expectedDiagnostics.test(t, s.views[0])
 		if goVersion111 { // TODO(rstambler): Remove this when we no longer support Go 1.10.
 			if diagnosticsCount != expectedDiagnosticsCount {
 				t.Errorf("got %v diagnostics expected %v", diagnosticsCount, expectedDiagnosticsCount)
@@ -421,7 +425,7 @@ func (f formats) test(t *testing.T, s *Server) {
 			}
 			continue
 		}
-		f, m, err := newColumnMap(ctx, s.view, uri)
+		f, m, err := newColumnMap(ctx, s.findView(ctx, uri), uri)
 		if err != nil {
 			t.Error(err)
 		}
