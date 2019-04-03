@@ -106,9 +106,6 @@ func (s *elasticserver) EDefinition(ctx context.Context, params *protocol.TextDo
 }
 
 // getSymbolKind get the symbol kind for a single position.
-// TODO(henrywong) Once the upstream implement the ‘textDocument/documentSymbol’, we should reconsider this method.
-//  Like if we cache all the symbols in a document when we handle the document symbol request, we can get the symbol
-//  information from the cache directly.
 func getSymbolKind(ident *source.IdentifierInfo) protocol.SymbolKind {
 	declObj := ident.Declaration.Object
 	switch declObj.(type) {
@@ -131,18 +128,29 @@ func getSymbolKind(ident *source.IdentifierInfo) protocol.SymbolKind {
 		}
 		return protocol.Method
 	case *types.TypeName:
-		tyObj := ident.Type.Object
-		if tyObj != nil {
-			namedTy := tyObj.Type().(*types.Named)
-			switch namedTy.Underlying().(type) {
-			case *types.Struct:
-				return protocol.Struct
-			case *types.Interface:
-				return protocol.Interface
+		switch declObj.Type().Underlying().(type) {
+		case *types.Struct:
+			return protocol.Struct
+		case *types.Interface:
+			return protocol.Interface
+		case *types.Slice:
+			return protocol.Array
+		case *types.Array:
+			return protocol.Array
+		case *types.Basic:
+			b, _ := declObj.Type().Underlying().(*types.Basic)
+			if b.Info()&types.IsNumeric != 0 {
+				return protocol.Number
+			} else if b.Info()&types.IsBoolean != 0 {
+				return protocol.Boolean
+			} else if b.Info()&types.IsString != 0 {
+				return protocol.String
 			}
 		}
 	}
 
+	// TODO(henrywong) For now, server use 0 represent the unknown symbol kind, however this is not a good pratice, see
+	//  https://github.com/Microsoft/language-server-protocol/issues/129.
 	return protocol.SymbolKind(0)
 }
 

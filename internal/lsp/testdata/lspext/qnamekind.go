@@ -193,3 +193,33 @@ func func11(lhs int, rhs int) (sum int) { //@qnamekind("su", "edefinition.func11
 	sum = lhs + rhs
 	return
 }
+
+type struct_alias = Circle //@qnamekind("str", "edefinition.struct_alias", 23)
+type struct_tydef Circle   //@qnamekind("tydef", "edefinition.struct_tydef", 23)
+
+type interface_alias = Shape //@qnamekind("interface_alias", "edefinition.interface_alias", 11)
+type interface_tydef Shape   //@qnamekind("interface_tydef", "edefinition.interface_tydef", 11)
+
+type int_basic_alias = int //@qnamekind("int_basic_alias", "edefinition.int_basic_alias", 16)
+type int_tydef int         //@qnamekind("int_tydef", "edefinition.int_tydef", 16)
+
+type float_basic_alias = float64 //@qnamekind("float_basic_alias", "edefinition.float_basic_alias", 16)
+type float_basic_tydef float64   //@qnamekind("float_basic_tydef", "edefinition.float_basic_tydef", 16)
+
+type bool_basic_alias = bool //@qnamekind("bool_basic_alias", "edefinition.bool_basic_alias", 17)
+type bool_basic_tydef bool   //@qnamekind("bool_basic_tydef", "edefinition.bool_basic_tydef", 17)
+
+type string_basic_alias = string //@qnamekind("string_basic_alias", "edefinition.string_basic_alias", 15)
+type string_basic_tydef string   //@qnamekind("string_basic_tydef", "edefinition.string_basic_tydef", 15)
+
+type int_slice_alias = []int //@qnamekind("int_slice_alias", "edefinition.int_slice_alias", 18)
+type int_slice_tydef = []int //@qnamekind("int_slice_tydef", "edefinition.int_slice_tydef", 18)
+
+type string_slice_alias = []string //@qnamekind("ing_slice_alias", "edefinition.string_slice_alias", 18)
+type string_slice_tydef = []string //@qnamekind("string_slice_tydef", "edefinition.string_slice_tydef", 18)
+
+type int_array_alias = []int //@qnamekind("int_ar", "edefinition.int_array_alias", 18)
+type int_array_tydef = []int //@qnamekind("t_array_tydef", "edefinition.int_array_tydef", 18)
+
+type string_array_alias = []string //@qnamekind("string_ar", "edefinition.string_array_alias", 18)
+type string_array_tydef = []string //@qnamekind("ray_tydef", "edefinition.string_array_tydef", 18)
