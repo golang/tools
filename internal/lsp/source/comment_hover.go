@@ -3,14 +3,17 @@ package source
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"go/ast"
 	"go/format"
 	"go/token"
 	"log"
 	"strings"
 
-	"golang.org/x/tools/internal/lsp/godocmd"
+	doc "golang.org/x/tools/internal/lsp/godocmd"
 )
+
+const markupFormat = "```%s\n%s\n```"
 
 type MarkedString markedString
 
@@ -42,6 +45,13 @@ func (m MarkedString) MarshalJSON() ([]byte, error) {
 		return json.Marshal(m.Value)
 	}
 	return json.Marshal((markedString)(m))
+}
+
+func (m MarkedString) String() string {
+	if m.isRawString {
+		return m.Value
+	}
+	return fmt.Sprintf(markupFormat, m.Language, m.Value)
 }
 
 // RawMarkedString returns a MarkedString consisting of only a raw
