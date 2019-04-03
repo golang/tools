@@ -4,10 +4,11 @@ import (
 	"context"
 	"go/ast"
 	"go/token"
-	"golang.org/x/tools/internal/span"
 	"log"
 	"strings"
 	"unicode"
+
+	"golang.org/x/tools/internal/span"
 )
 
 type CompletionHelper struct {
@@ -19,7 +20,7 @@ type CompletionHelper struct {
 }
 
 func newCompletionHelper(ctx context.Context, file File, path []ast.Node, search SearchFunc) *CompletionHelper {
-	return &CompletionHelper{ctx: ctx, file: file, path: path, search:search}
+	return &CompletionHelper{ctx: ctx, file: file, path: path, search: search}
 }
 
 func (c *CompletionHelper) GetAdditionalTextEdits(pkgPath string) *TextEdit {
@@ -84,7 +85,7 @@ func (c *CompletionHelper) ScopeVisit(pkgPath, prefix string, found finder) (ite
 			for _, name := range scope.Names() {
 				l := len(items)
 				items = found(scope.Lookup(name), score, items)
-				if len(items) == l + 1 && edit != nil {
+				if len(items) == l+1 && edit != nil {
 					items[l].AdditionalTextEdits = append(items[l].AdditionalTextEdits, *edit)
 				}
 			}
@@ -97,33 +98,94 @@ func (c *CompletionHelper) ScopeVisit(pkgPath, prefix string, found finder) (ite
 }
 
 func (c *CompletionHelper) PackageVisit(prefix string) (items []CompletionItem) {
-	score := stdScore * 2
-	f := func(p Package) bool {
-		if !strings.HasPrefix(p.GetTypes().Name(), prefix) {
-			return false
-		}
+	seen := map[string]struct{}{}
 
-		item := CompletionItem{
-			Label:  p.GetTypes().Name(),
-			Detail: p.GetTypes().Path(),
-			Kind:   PackageCompletionItem,
-			Score:  score,
+	items = c.stdModuleVisit(prefix, items, seen)
+
+	f := func(p Package) bool {
+		item := c.createCompletionItem(p.GetTypes().Name(), p.GetTypes().Path(), prefix, seen)
+		if item != nil {
+			items = append(items, *item)
 		}
-		edit := c.GetAdditionalTextEdits(p.GetTypes().Path())
-		if edit != nil {
-			item.AdditionalTextEdits = append(item.AdditionalTextEdits, *edit)
-		}
-		items = append(items, item)
 		return false
 	}
-
 	c.search(f)
 
 	return items
 }
 
-func toPoint(fset *token.FileSet, pos token.Pos) span.Point {
-	p := fset.Position(pos)
+var stdModuleMap = map[string]string{
+	"archive/zip": "zip",
+	"archive/tar": "tar",
+	"bufio":       "bufio",
+	"bytes":       "bytes",
+	"context":     "context",
+	"errors":      "errors",
+	"fmt":         "fmt",
+	"io":          "io",
+	"io/ioutil":   "ioutil",
+	"go/ast":      "ast",
+	"go/token":    "token",
+	"math":        "math",
+	"math/rand":   "rand",
+	"net/http":    "http",
+
+	"os":        "os",
+	"os/signal": "signal",
+	"os/exec":   "exec",
+
+	"path":          "path",
+	"path/filepath": "filepath",
+
+	"regexp":        "regexp",
+	"runtime/pprof": "pprof",
+
+	"sort":    "sort",
+	"strconv": "strconv",
+	"strings": "strings",
+
+	"time":   "time",
+	"unsafe": "unsafe",
+}
+
+func (c *CompletionHelper) stdModuleVisit(prefix string, items []CompletionItem, seen map[string]struct{}) []CompletionItem {
+	for path, name := range stdModuleMap {
+		item := c.createCompletionItem(name, path, prefix, seen)
+		if item != nil {
+			items = append(items, *item)
+		}
+	}
+	return items
+}
+
+func (c *CompletionHelper) createCompletionItem(pkgName string, pkgPath string, prefix string, seen map[string]struct{}) *CompletionItem {
+	if _, ok := seen[pkgPath]; ok {
+		return nil
+	}
+	seen[pkgName] = struct{}{}
+
+	if !strings.HasPrefix(pkgName, prefix) {
+		return nil
+	}
+
+	score := stdScore * 2
+
+	item := &CompletionItem{
+		Label:  pkgName,
+		Detail: pkgPath,
+		Kind:   PackageCompletionItem,
+		Score:  score,
+	}
+	edit := c.GetAdditionalTextEdits(pkgPath)
+	if edit != nil {
+		item.AdditionalTextEdits = append(item.AdditionalTextEdits, *edit)
+	}
+
+	return item
+}
+
+func toPoint(fSet *token.FileSet, pos token.Pos) span.Point {
+	p := fSet.Position(pos)
 	return span.NewPoint(p.Line, p.Column, p.Offset)
 }
 
