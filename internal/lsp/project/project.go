@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -21,40 +19,11 @@ import (
 )
 
 const (
-	goext           = ".go"
-	gomod           = "go.mod"
-	vendor          = "vendor"
-	gopathEnv       = "GOPATH"
-	go111module     = "GO111MODULE"
-	emacsLockPrefix = ".#"
+	modExt    = "go.mod"
+	vendorDir = "vendor"
 )
 
-var (
-	goroot  = getGoRoot()
-	gopaths = getGoPaths()
-)
-
-func getGoRoot() string {
-	root := runtime.GOROOT()
-	root = filepath.ToSlash(filepath.Join(root, "src"))
-	return root
-}
-
-func getGoPaths() []string {
-	gopath := os.Getenv(gopathEnv)
-	if gopath == "" {
-		gopath = filepath.Join(os.Getenv("HOME"), "go")
-	}
-
-	paths := strings.Split(gopath, string(os.PathListSeparator))
-	return paths
-}
-
-// FindPackageFunc matches the signature of loader.Config.FindPackage, except
-// also takes a context.Context.
-type FindPackageFunc func(project *Workspace, importPath string) (source.Package, error)
-
-// Workspace workspace struct
+// Workspace the go project w information
 type Workspace struct {
 	context  context.Context
 	client   protocol.Client
@@ -64,56 +33,34 @@ type Workspace struct {
 	cache    cache.GlobalCache
 }
 
+// New create a w for a w folder
 func New(ctx context.Context, client protocol.Client, rootPath string, view *cache.View) *Workspace {
-	p := &Workspace{
+	return &Workspace{
 		context:  ctx,
 		client:   client,
 		view:     view,
 		rootPath: rootPath,
 	}
-	return p
 }
 
-func (w *Workspace) notify(err error) {
-	if err != nil {
-		w.notifyLog(fmt.Sprintf("notify: %s\n", err))
-	}
-}
-
-// Init init workspace
+// Init init w
 func (w *Workspace) Init() {
 	w.cache = cache.NewCache()
 	w.view.SetCache(w.cache)
 	go w.buildCache()
 }
 
-// Init init workspace
+// Init init w
 func (w *Workspace) buildCache() {
 	start := time.Now()
 	defer func() {
-		elapsedTime := time.Since(start) / time.Second
-		msg := fmt.Sprintf("load %s successfully! elapsed time: %d seconds.", w.rootPath, elapsedTime)
+		elapsed := time.Since(start) / time.Second
+		msg := fmt.Sprintf("load %s successfully! elapsed time: %d seconds.", w.rootPath, elapsed)
 		w.notifyInfo(msg)
 	}()
 
 	err := w.createModuleCache()
 	w.notify(err)
-}
-
-func (w *Workspace) getImportPath() string {
-	for _, path := range gopaths {
-		path = filepath.ToSlash(path)
-		srcDir := filepath.Join(path, "src")
-		if strings.HasPrefix(w.rootPath, srcDir) && w.rootPath != srcDir {
-			return filepath.ToSlash(w.rootPath[len(srcDir)+1:])
-		}
-	}
-
-	return ""
-}
-
-func (w *Workspace) isUnderGoRoot() bool {
-	return strings.HasPrefix(w.rootPath, goroot)
 }
 
 func (w *Workspace) createModuleCache() error {
@@ -153,7 +100,7 @@ func (w *Workspace) createGoPath() error {
 func (w *Workspace) findGoModFiles() []string {
 	var modFiles []string
 	walkFunc := func(path string, name string) {
-		if name == gomod {
+		if name == modExt {
 			fullPath := filepath.Join(path, name)
 			modFiles = append(modFiles, fullPath)
 			w.notifyLog(fullPath)
@@ -165,7 +112,7 @@ func (w *Workspace) findGoModFiles() []string {
 	return modFiles
 }
 
-var defaultExcludeDir = []string{".git", ".svn", ".hg", ".vscode", ".idea", "node_modules", vendor}
+var defaultExcludeDir = []string{".git", ".svn", ".hg", ".vscode", ".idea", "node_modules", vendorDir}
 
 func isExclude(dir string) bool {
 	for _, d := range defaultExcludeDir {
@@ -220,6 +167,12 @@ func (w *Workspace) rebuildCache(eventName string) {
 				w.notifyError(err.Error())
 			}
 		}
+	}
+}
+
+func (w *Workspace) notify(err error) {
+	if err != nil {
+		w.notifyLog(fmt.Sprintf("notify: %s\n", err))
 	}
 }
 

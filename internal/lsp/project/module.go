@@ -7,27 +7,25 @@ import (
 
 type module struct {
 	mu          sync.RWMutex
-	workspace   *Workspace
+	w           *Workspace
 	rootPath    string
-	modulePath  string
-	underGoRoot bool
 }
 
-func newModule(workspace *Workspace, rootPath string) *module {
-	return &module{workspace: workspace, rootPath: rootPath}
+func newModule(w *Workspace, rootPath string) *module {
+	return &module{w: w, rootPath: rootPath}
 }
 
 func (m *module) buildCache() error {
-	cfg := m.workspace.view.Config
+	cfg := m.w.view.Config
 	cfg.Dir = m.rootPath
 	cfg.Mode = packages.LoadAllSyntax
 	pattern := cfg.Dir + "/..."
 
-	pkgs, err := packages.Load(&cfg, pattern)
+	pkgList, err := packages.Load(&cfg, pattern)
 	if err != nil {
 		return err
 	}
 
-	m.workspace.setCache(pkgs)
+	m.w.setCache(pkgList)
 	return nil
 }
