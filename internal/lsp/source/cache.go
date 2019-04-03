@@ -4,7 +4,7 @@ package source
 type WalkFunc func(p Package) bool
 
 type Cache interface {
-	Walk(walkFunc WalkFunc, ranks []string)
+	Walk(walkFunc WalkFunc)
 }
 
 

@@ -2,8 +2,6 @@ package cache
 
 import (
 	"os"
-	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -81,53 +79,18 @@ func (c *globalCache) get(pkgPath string) *Package {
 }
 
 // Walk walk the global package cache
-func (c *globalCache) Walk(walkFunc source.WalkFunc, ranks []string) {
-	var pkgPaths []string
-	for id := range c.pathMap {
-		pkgPaths = append(pkgPaths, id)
-	}
-
-	getRank := func(id string) int {
-		var i int
-		for i = 0; i < len(ranks); i++ {
-			if strings.HasPrefix(id, ranks[i]) {
-				return i
-			}
-		}
-
-		if strings.Contains(id, ".") {
-			return i
-		}
-
-		return i + 1
-	}
-
-	sort.Slice(pkgPaths, func(i, j int) bool {
-		r1 := getRank(pkgPaths[i])
-		r2 := getRank(pkgPaths[j])
-		if r1 < r2 {
-			return true
-		}
-
-		if r1 == r2 {
-			return pkgPaths[i] <= pkgPaths[j]
-		}
-
-		return false
-	})
-
-	c.walk(pkgPaths, walkFunc)
+func (c *globalCache) Walk(walkFunc source.WalkFunc) {
+	c.walk(walkFunc)
 }
 
-func (c *globalCache) walk(pkgPaths []string, walkFunc source.WalkFunc) {
-	for _, pkgPath := range pkgPaths {
-		pkg := c.Get(pkgPath)
-		if walkFunc(pkg) {
+func (c *globalCache) walk(walkFunc source.WalkFunc) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, pkg := range c.pathMap {
+		if walkFunc(pkg.pkg) {
 			return
 		}
 	}
-
-	return
 }
 
 func (c *globalCache) Add(pkg *packages.Package) {
