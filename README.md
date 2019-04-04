@@ -25,6 +25,9 @@ go install
     "go.languageServerExperimentalFeatures": {
         "format": true,
         "autoComplete": true
+    },
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": true
     }
 }
 ```
