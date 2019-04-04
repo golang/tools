@@ -72,6 +72,7 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 	log := xlog.New(xlog.StdSink{})
 	view := cache.NewView(ctx, log, "lsp_test", span.FileURI(cfg.Dir), &cfg)
 	view.SetCache(cache.NewCache())
+	source.DisableGlobalCompletion = true
 	workspace := project.New(ctx, nil, cfg.Dir, view)
 	workspace.Init()
 	s := &Server{

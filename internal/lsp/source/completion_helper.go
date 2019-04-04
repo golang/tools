@@ -11,6 +11,8 @@ import (
 	"golang.org/x/tools/internal/span"
 )
 
+var DisableGlobalCompletion bool
+
 type CompletionHelper struct {
 	ctx         context.Context
 	file        File
@@ -294,6 +296,10 @@ var stdModuleMap = map[string]string{
 }
 
 func (c *CompletionHelper) stdModuleVisit(prefix string, items []CompletionItem, seen map[string]struct{}) []CompletionItem {
+	if DisableGlobalCompletion {
+		return items
+	}
+
 	for path, name := range stdModuleMap {
 		item := c.createCompletionItem(name, path, prefix, seen)
 		if item != nil {
