@@ -9,13 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/tools/internal/lsp/protocol"
-
-	"golang.org/x/tools/internal/lsp/cache"
-
-	"golang.org/x/tools/internal/lsp/source"
-
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/lsp/cache"
+	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/lsp/source"
 )
 
 const (
@@ -23,7 +20,7 @@ const (
 	vendorDir = "vendor"
 )
 
-// Workspace the go project w information
+// Workspace holds the go project workspace information
 type Workspace struct {
 	context  context.Context
 	client   protocol.Client
@@ -33,7 +30,7 @@ type Workspace struct {
 	cache    cache.GlobalCache
 }
 
-// New create a w for a w folder
+// New creates a workspace for a workspace folder
 func New(ctx context.Context, client protocol.Client, rootPath string, view *cache.View) *Workspace {
 	return &Workspace{
 		context:  ctx,
@@ -43,14 +40,13 @@ func New(ctx context.Context, client protocol.Client, rootPath string, view *cac
 	}
 }
 
-// Init init w
+// Init inits workspace
 func (w *Workspace) Init() {
 	w.cache = cache.NewCache()
 	w.view.SetCache(w.cache)
 	go w.buildCache()
 }
 
-// Init init w
 func (w *Workspace) buildCache() {
 	start := time.Now()
 	defer func() {
@@ -178,16 +174,25 @@ func (w *Workspace) notify(err error) {
 
 // NotifyError notify error to lsp client
 func (w *Workspace) notifyError(message string) {
+	if w.client == nil {
+		return
+	}
 	_ = w.client.ShowMessage(w.context, &protocol.ShowMessageParams{Type: protocol.Error, Message: message})
 }
 
 // NotifyInfo notify info to lsp client
 func (w *Workspace) notifyInfo(message string) {
+	if w.client == nil {
+		return
+	}
 	_ = w.client.ShowMessage(w.context, &protocol.ShowMessageParams{Type: protocol.Info, Message: message})
 }
 
 // NotifyLog notify log to lsp client
 func (w *Workspace) notifyLog(message string) {
+	if w.client == nil {
+		return
+	}
 	_ = w.client.LogMessage(w.context, &protocol.LogMessageParams{Type: protocol.Info, Message: message})
 }
 

@@ -64,6 +64,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	}
 	log := xlog.New(xlog.StdSink{})
 	view := cache.NewView(ctx, log, "definition_test", span.FileURI(d.query.app.Config.Dir), &d.query.app.Config)
+	view.SetCache(cache.NewCache())
 	from := span.Parse(args[0])
 	f, err := view.GetFile(ctx, from.URI())
 	if err != nil {
