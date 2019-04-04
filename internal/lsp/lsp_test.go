@@ -20,15 +20,12 @@ import (
 
 	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/lsp/cache"
+	"golang.org/x/tools/internal/lsp/project"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/xlog"
 	"golang.org/x/tools/internal/span"
 )
-
-// TODO(rstambler): Remove this once Go 1.12 is released as we end support for
-// versions of Go <= 1.10.
-var goVersion111 = true
 
 func TestLSP(t *testing.T) {
 	packagestest.TestAll(t, testLSP)
@@ -73,8 +70,12 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 	}
 
 	log := xlog.New(xlog.StdSink{})
+	view := cache.NewView(ctx, log, "lsp_test", span.FileURI(cfg.Dir), &cfg)
+	workspace := project.New(ctx, nil, cfg.Dir, view)
+	workspace.Init()
 	s := &Server{
-		views:       []*cache.View{cache.NewView(ctx, log, "lsp_test", span.FileURI(cfg.Dir), &cfg)},
+		views:       []*cache.View{view},
+		workspaces:  []*project.Workspace{workspace},
 		undelivered: make(map[span.URI][]source.Diagnostic),
 	}
 	// Do a first pass to collect special markers for completion.
@@ -111,22 +112,12 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 
 	t.Run("Completion", func(t *testing.T) {
 		t.Helper()
-		if goVersion111 { // TODO(rstambler): Remove this when we no longer support Go 1.10.
-			if len(expectedCompletions) != expectedCompletionsCount {
-				t.Errorf("got %v completions expected %v", len(expectedCompletions), expectedCompletionsCount)
-			}
-		}
 		expectedCompletions.test(t, exported, s, completionItems)
 	})
 
 	t.Run("Diagnostics", func(t *testing.T) {
 		t.Helper()
-		diagnosticsCount := expectedDiagnostics.test(t, s.views[0])
-		if goVersion111 { // TODO(rstambler): Remove this when we no longer support Go 1.10.
-			if diagnosticsCount != expectedDiagnosticsCount {
-				t.Errorf("got %v diagnostics expected %v", diagnosticsCount, expectedDiagnosticsCount)
-			}
-		}
+		expectedDiagnostics.test(t, s.views[0])
 	})
 
 	t.Run("Format", func(t *testing.T) {
@@ -139,51 +130,26 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 			}
 		}
 		t.Helper()
-		if goVersion111 { // TODO(rstambler): Remove this when we no longer support Go 1.10.
-			if len(expectedFormat) != expectedFormatCount {
-				t.Errorf("got %v formats expected %v", len(expectedFormat), expectedFormatCount)
-			}
-		}
 		expectedFormat.test(t, s)
 	})
 
 	t.Run("Definitions", func(t *testing.T) {
 		t.Helper()
-		if goVersion111 { // TODO(rstambler): Remove this when we no longer support Go 1.10.
-			if len(expectedDefinitions) != expectedDefinitionsCount {
-				t.Errorf("got %v definitions expected %v", len(expectedDefinitions), expectedDefinitionsCount)
-			}
-		}
 		expectedDefinitions.test(t, s, false)
 	})
 
 	t.Run("TypeDefinitions", func(t *testing.T) {
 		t.Helper()
-		if goVersion111 { // TODO(rstambler): Remove this when we no longer support Go 1.10.
-			if len(expectedTypeDefinitions) != expectedTypeDefinitionsCount {
-				t.Errorf("got %v type definitions expected %v", len(expectedTypeDefinitions), expectedTypeDefinitionsCount)
-			}
-		}
 		expectedTypeDefinitions.test(t, s, true)
 	})
 
 	t.Run("Highlights", func(t *testing.T) {
 		t.Helper()
-		if goVersion111 { // TODO(rstambler): Remove this when we no longer support Go 1.10.
-			if len(expectedHighlights) != expectedHighlightsCount {
-				t.Errorf("got %v highlights expected %v", len(expectedHighlights), expectedHighlightsCount)
-			}
-		}
 		expectedHighlights.test(t, s)
 	})
 
 	t.Run("Symbols", func(t *testing.T) {
 		t.Helper()
-		if goVersion111 { // TODO(rstambler): Remove this when we no longer support Go 1.10.
-			if len(expectedSymbols) != expectedSymbolsCount {
-				t.Errorf("got %v symbols expected %v", len(expectedSymbols), expectedSymbolsCount)
-			}
-		}
 		expectedSymbols.test(t, s)
 	})
 }
