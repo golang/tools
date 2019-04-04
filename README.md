@@ -12,6 +12,7 @@ git clone -b bingo https://github.com/saibing/tools.git
 cd tools/cmd/gopls
 go install
 ```
+
 ## Language Client
 
 ### [vscode-go](https://github.com/Microsoft/vscode-go)
