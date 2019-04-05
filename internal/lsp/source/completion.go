@@ -273,31 +273,11 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 				continue // Name was declared in some enclosing scope, or not at all.
 			}
 
-			if name+"." == helper.CursorIdent() && obj.Type() != types.Typ[types.Invalid] {
-				items = items[0:0]
-
-				objType := obj.Type()
-				// methods of T
-				mset := types.NewMethodSet(objType)
-				for i := 0; i < mset.Len(); i++ {
-					items = found(mset.At(i).Obj(), score, items)
-				}
-
-				// methods of *T
-				if !types.IsInterface(obj.Type()) && !isPointer(objType) {
-					mset := types.NewMethodSet(types.NewPointer(objType))
-					for i := 0; i < mset.Len(); i++ {
-						items = found(mset.At(i).Obj(), score, items)
-					}
-				}
-
-				// fields of T
-				for _, f := range fieldSelections(objType) {
-					items = found(f, score, items)
-				}
-
-				return
+			closureItems := helper.Closure(obj, found, score)
+			if len(closureItems) > 0 {
+				return closureItems
 			}
+
 			// If obj's type is invalid, find the AST node that defines the lexical block
 			// containing the declaration of obj. Don't resolve types for packages.
 			if _, ok := obj.(*types.PkgName); !ok && obj.Type() == types.Typ[types.Invalid] {

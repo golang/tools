@@ -8,6 +8,8 @@ import (
 	"strings"
 	"unicode"
 
+	"go/types"
+
 	"golang.org/x/tools/internal/span"
 )
 
@@ -331,6 +333,34 @@ func (c *CompletionHelper) createCompletionItem(pkgName string, pkgPath string, 
 	}
 
 	return item
+}
+
+func (c *CompletionHelper) Closure(obj types.Object, found finder, score float64) (items []CompletionItem) {
+	if obj.Name()+"." == c.CursorIdent() && obj.Type() != types.Typ[types.Invalid] {
+		objType := obj.Type()
+		// methods of T
+		mset := types.NewMethodSet(objType)
+		for i := 0; i < mset.Len(); i++ {
+			items = found(mset.At(i).Obj(), score, items)
+		}
+
+		// methods of *T
+		if !types.IsInterface(obj.Type()) && !isPointer(objType) {
+			mset := types.NewMethodSet(types.NewPointer(objType))
+			for i := 0; i < mset.Len(); i++ {
+				items = found(mset.At(i).Obj(), score, items)
+			}
+		}
+
+		// fields of T
+		for _, f := range fieldSelections(objType) {
+			items = found(f, score, items)
+		}
+
+		return
+	}
+
+	return
 }
 
 func toPoint(fSet *token.FileSet, pos token.Pos) span.Point {
