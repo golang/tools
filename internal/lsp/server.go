@@ -76,7 +76,9 @@ type Server struct {
 	initializedMu sync.Mutex
 	initialized   bool // set once the server has received "initialize" request
 
-	signatureHelpEnabled          bool
+	// Configurations.
+	// TODO(rstambler): Separate these into their own struct?
+	usePlaceholders               bool
 	snippetsSupported             bool
 	configurationSupported        bool
 	dynamicConfigurationSupported bool
@@ -104,36 +106,14 @@ func (s *Server) Initialize(ctx context.Context, params *protocol.InitializePara
 	}
 	s.initialized = true // mark server as initialized now
 
-	// Check if the client supports snippets in completion items.
-	if x, ok := params.Capabilities["textDocument"].(map[string]interface{}); ok {
-		if x, ok := x["completion"].(map[string]interface{}); ok {
-			if x, ok := x["completionItem"].(map[string]interface{}); ok {
-				if x, ok := x["snippetSupport"].(bool); ok {
-					s.snippetsSupported = x
-				}
-			}
-		}
-	}
-	// Check if the client supports configuration messages.
-	if x, ok := params.Capabilities["workspace"].(map[string]interface{}); ok {
-		if x, ok := x["configuration"].(bool); ok {
-			s.configurationSupported = x
-		}
-		if x, ok := x["didChangeConfiguration"].(map[string]interface{}); ok {
-			if x, ok := x["dynamicRegistration"].(bool); ok {
-				s.dynamicConfigurationSupported = x
-			}
-		}
-	}
-
-	s.signatureHelpEnabled = true
-
 	// TODO(rstambler): Change this default to protocol.Incremental (or add a
 	// flag). Disabled for now to simplify debugging.
 	s.textDocumentSyncKind = protocol.Full
 
-	//We need a "detached" context so it does not get timeout cancelled.
-	//TODO(iancottrell): Do we need to copy any values across?
+	s.setClientCapabilities(params.Capabilities)
+
+	// We need a "detached" context so it does not get timeout cancelled.
+	// TODO(iancottrell): Do we need to copy any values across?
 	viewContext := context.Background()
 	folders := params.WorkspaceFolders
 	if len(folders) == 0 {
@@ -206,6 +186,30 @@ func (s *Server) Initialize(ctx context.Context, params *protocol.InitializePara
 			},
 		},
 	}, nil
+}
+
+func (s *Server) setClientCapabilities(caps protocol.ClientCapabilities) {
+	// Check if the client supports snippets in completion items.
+	if x, ok := caps["textDocument"].(map[string]interface{}); ok {
+		if x, ok := x["completion"].(map[string]interface{}); ok {
+			if x, ok := x["completionItem"].(map[string]interface{}); ok {
+				if x, ok := x["snippetSupport"].(bool); ok {
+					s.snippetsSupported = x
+				}
+			}
+		}
+	}
+	// Check if the client supports configuration messages.
+	if x, ok := caps["workspace"].(map[string]interface{}); ok {
+		if x, ok := x["configuration"].(bool); ok {
+			s.configurationSupported = x
+		}
+		if x, ok := x["didChangeConfiguration"].(map[string]interface{}); ok {
+			if x, ok := x["dynamicRegistration"].(bool); ok {
+				s.dynamicConfigurationSupported = x
+			}
+		}
+	}
 }
 
 func (s *Server) Initialized(ctx context.Context, params *protocol.InitializedParams) error {
@@ -359,28 +363,7 @@ func (s *Server) DidClose(ctx context.Context, params *protocol.DidCloseTextDocu
 }
 
 func (s *Server) Completion(ctx context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
-	uri := span.NewURI(params.TextDocument.URI)
-	index, view := s.findView(ctx, uri)
-	f, m, err := newColumnMap(ctx, view, uri)
-	if err != nil {
-		return nil, err
-	}
-	spn, err := m.PointSpan(params.Position)
-	if err != nil {
-		return nil, err
-	}
-	rng, err := spn.Range(m.Converter)
-	if err != nil {
-		return nil, err
-	}
-	items, prefix, err := source.Completion(ctx, f, rng.Start, s.workspaces[index].Search)
-	if err != nil {
-		return nil, err
-	}
-	return &protocol.CompletionList{
-		IsIncomplete: false,
-		Items:        toProtocolCompletionItems(m, items, prefix, params.Position, s.snippetsSupported, s.signatureHelpEnabled),
-	}, nil
+	return s.completion(ctx, params)
 }
 
 func (s *Server) CompletionResolve(context.Context, *protocol.CompletionItem) (*protocol.CompletionItem, error) {
@@ -659,16 +642,19 @@ func (s *Server) processConfig(view *cache.View, config interface{}) error {
 	if !ok {
 		return fmt.Errorf("invalid config gopls type %T", config)
 	}
-	env := c["env"]
-	if env == nil {
-		return nil
+	// Get the environment for the go/packages config.
+	if env := c["env"]; env != nil {
+		menv, ok := env.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("invalid config gopls.env type %T", env)
+		}
+		for k, v := range menv {
+			view.Config.Env = applyEnv(view.Config.Env, k, v)
+		}
 	}
-	menv, ok := env.(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("invalid config gopls.env type %T", env)
-	}
-	for k, v := range menv {
-		view.Config.Env = applyEnv(view.Config.Env, k, v)
+	// Check if placeholders are enabled.
+	if usePlaceholders, ok := c["usePlaceholders"].(bool); ok {
+		s.usePlaceholders = usePlaceholders
 	}
 	return nil
 }
