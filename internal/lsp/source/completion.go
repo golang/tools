@@ -7,8 +7,9 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"golang.org/x/tools/go/ast/astutil"
 	"strings"
+
+	"golang.org/x/tools/go/ast/astutil"
 )
 
 type CompletionItem struct {
@@ -258,6 +259,7 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 	}
 	scopes = append(scopes, pkg.Scope(), types.Universe)
 
+	seen := map[string]struct{}{}
 	// Process scopes innermost first.
 	for i, scope := range scopes {
 		if scope == nil {
@@ -313,6 +315,11 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 					}
 				}
 			}
+
+			if pobj, ok := obj.(*types.PkgName); ok {
+				seen[pobj.Imported().Path()] = struct{}{}
+			}
+
 			// Rank builtins significantly lower than other results.
 			if scope == types.Universe {
 				score *= 0.1
@@ -324,7 +331,7 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 	ident := helper.CursorIdent()
 	if ident == "" {
 		if id, ok := path[0].(*ast.Ident); ok {
-			items = append(items, helper.PackageVisit(id.Name)...)
+			items = append(items, helper.PackageVisit(id.Name, seen)...)
 		}
 		return items
 	}
@@ -333,7 +340,7 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 	if ident[l-1] == '.' {
 		items = helper.ScopeVisit(pkg.Path(), ident[:l-1], found)
 	} else {
-		items = append(items, helper.PackageVisit(ident)...)
+		items = append(items, helper.PackageVisit(ident, seen)...)
 	}
 	return items
 }

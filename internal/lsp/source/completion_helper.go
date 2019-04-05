@@ -99,9 +99,7 @@ func (c *CompletionHelper) ScopeVisit(pkgPath, prefix string, found finder) (ite
 	return items
 }
 
-func (c *CompletionHelper) PackageVisit(prefix string) (items []CompletionItem) {
-	seen := map[string]struct{}{}
-
+func (c *CompletionHelper) PackageVisit(prefix string, seen map[string]struct{}) (items []CompletionItem) {
 	items = c.stdModuleVisit(prefix, items, seen)
 
 	f := func(p Package) bool {
