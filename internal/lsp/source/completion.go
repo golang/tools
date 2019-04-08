@@ -297,7 +297,11 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 			}
 
 			if pobj, ok := obj.(*types.PkgName); ok {
-				seen[pobj.Imported().Path()] = struct{}{}
+				pkgPath := pobj.Imported().Path()
+				if _, ok := seen[pkgPath]; ok {
+					continue
+				}
+				seen[pkgPath] = struct{}{}
 			}
 
 			// Rank builtins significantly lower than other results.

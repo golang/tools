@@ -83,6 +83,10 @@ func (c *CompletionHelper) CursorIdent() string {
 func (c *CompletionHelper) ScopeVisit(pkgPath, prefix string, found finder) (items []CompletionItem) {
 	score := stdScore * 2
 	f := func(p Package) bool {
+		if c.canNotAccess(p.GetTypes().Path()) {
+			return false
+		}
+
 		if p.GetTypes().Name() == prefix && p.GetTypes().Path() != pkgPath {
 			edit := c.GetAdditionalTextEdits(p.GetTypes().Path())
 			scope := p.GetTypes().Scope()
@@ -114,6 +118,29 @@ func (c *CompletionHelper) PackageVisit(prefix string, seen map[string]struct{})
 	c.search(f)
 
 	return items
+}
+
+const internalPkg = "internal"
+
+func (c *CompletionHelper) canNotAccess(pkgPath string) bool {
+	pos := strings.Index(pkgPath, internalPkg)
+	if pos == -1 {
+		return false
+	}
+
+	// "internal/xxx"
+	if pos == 0 {
+		return true
+	}
+
+	pkg := c.file.GetPackage(c.ctx)
+	if pkg == nil {
+		return false
+	}
+
+	// "xxx/internal/xxx"
+	dir := pkgPath[:pos-1]
+	return !strings.HasPrefix(pkg.GetTypes().Path(), dir)
 }
 
 var stdModuleMap = map[string]string{
@@ -310,6 +337,10 @@ func (c *CompletionHelper) stdModuleVisit(prefix string, items []CompletionItem,
 }
 
 func (c *CompletionHelper) createCompletionItem(pkgName string, pkgPath string, prefix string, seen map[string]struct{}) *CompletionItem {
+	if c.canNotAccess(pkgPath) {
+		return nil
+	}
+
 	if _, ok := seen[pkgPath]; ok {
 		return nil
 	}
