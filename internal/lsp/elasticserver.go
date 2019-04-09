@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"golang.org/x/tools/internal/lsp/xlog"
 	"net"
 	"strings"
 
@@ -15,25 +16,32 @@ import (
 	"golang.org/x/tools/internal/span"
 )
 
-// RunElasticServer starts an LSP server on the supplied stream, and waits until the
+// NewClientElasticServer
+func NewClientElasticServer(client protocol.Client) *ElasticServer {
+	return &ElasticServer{
+		Server: Server{
+			client: client,
+			log:    xlog.New(protocol.NewLogger(client))},
+	}
+}
+
+// NewElasticServer starts an LSP server on the supplied stream, and waits until the
 // stream is closed.
-func RunElasticServer(ctx context.Context, stream jsonrpc2.Stream, opts ...interface{}) error {
-	s := &elasticserver{}
-	conn, client := protocol.RunElasticServer(ctx, stream, s, opts...)
-	s.client = client
-	return conn.Wait(ctx)
+func NewElasticServer(stream jsonrpc2.Stream) *ElasticServer {
+	s := &ElasticServer{}
+	s.Conn, s.client, s.log = protocol.NewElasticServer(stream, s)
+	return s
 }
 
 // RunElasticServerOnPort starts an LSP server on the given port and does not exit.
 // This function exists for debugging purposes.
-func RunElasticServerOnPort(ctx context.Context, port int, opts ...interface{}) error {
-	return RunElasticServerOnAddress(ctx, fmt.Sprintf(":%v", port))
+func RunElasticServerOnPort(ctx context.Context, port int, h func(s *ElasticServer)) error {
+	return RunElasticServerOnAddress(ctx, fmt.Sprintf(":%v", port), h)
 }
 
 // RunElasticServerOnAddress starts an LSP server on the given port and does not exit.
 // This function exists for debugging purposes.
-func RunElasticServerOnAddress(ctx context.Context, addr string, opts ...interface{}) error {
-	s := &elasticserver{}
+func RunElasticServerOnAddress(ctx context.Context, addr string, h func(s *ElasticServer)) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -44,22 +52,27 @@ func RunElasticServerOnAddress(ctx context.Context, addr string, opts ...interfa
 			return err
 		}
 		stream := jsonrpc2.NewHeaderStream(conn, conn)
-		go func() {
-			conn, client := protocol.RunElasticServer(ctx, stream, s, opts...)
-			s.client = client
-			conn.Wait(ctx)
-		}()
+		s := NewElasticServer(stream)
+		h(s)
+
+		go s.Run(ctx)
 	}
 }
 
-// elasticserver "inherits" from lsp.server and is used to implement the elastic extension for the official go lsp.
-type elasticserver struct {
-	server
+// ElasticServer "inherits" from lsp.server and is used to implement the elastic extension for the official go lsp.
+type ElasticServer struct {
+	Server
+}
+
+func (s *ElasticServer) RunElasticServer(ctx context.Context) error {
+	return s.Conn.Run(ctx)
 }
 
 // EDefinition has almost the same functionality with Definition except for the qualified name and symbol kind.
-func (s *elasticserver) EDefinition(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.SymbolLocator, error) {
-	f, m, err := newColumnMap(ctx, s.view, span.URI(params.TextDocument.URI))
+func (s *ElasticServer) EDefinition(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.SymbolLocator, error) {
+	uri := span.NewURI(params.TextDocument.URI)
+	view := s.findView(ctx, uri)
+	f, m, err := newColumnMap(ctx, view, span.URI(params.TextDocument.URI))
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +84,7 @@ func (s *elasticserver) EDefinition(ctx context.Context, params *protocol.TextDo
 	if err != nil {
 		return nil, err
 	}
-	ident, err := source.Identifier(ctx, s.view, f, rng.Start)
+	ident, err := source.Identifier(ctx, view, f, rng.Start)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +105,7 @@ func (s *elasticserver) EDefinition(ctx context.Context, params *protocol.TextDo
 	if err != nil {
 		return nil, err
 	}
-	_, decM, err := newColumnMap(ctx, s.view, declSpan.URI())
+	_, decM, err := newColumnMap(ctx, view, declSpan.URI())
 	if err != nil {
 		return nil, err
 	}

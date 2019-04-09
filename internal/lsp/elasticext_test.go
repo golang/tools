@@ -5,6 +5,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"golang.org/x/tools/internal/lsp/xlog"
+	"golang.org/x/tools/internal/span"
 	"strings"
 	"testing"
 
@@ -18,6 +20,7 @@ func TestLSPExt(t *testing.T) {
 }
 
 func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
+	ctx := context.Background()
 	const dir = "testdata"
 
 	// We hardcode the expected number of test cases to ensure that all tests
@@ -49,10 +52,11 @@ func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
 		return parser.ParseFile(fset, filename, src, parser.AllErrors|parser.ParseComments)
 	}
 
-	s := &server{
-		view: cache.NewView(&cfg),
+	log := xlog.New(xlog.StdSink{})
+	s := &Server{
+		views: []*cache.View{cache.NewView(ctx, log, "elasticext_test", span.FileURI(cfg.Dir), &cfg)},
 	}
-	es := &elasticserver{*s}
+	es := &ElasticServer{*s}
 
 	expectedQNameKinds := make(qnamekinds)
 	expectedPkgLocators := make(pkgs)
@@ -99,7 +103,7 @@ type PkgResultTuple struct {
 type qnamekinds map[protocol.Location]QNameKindResult
 type pkgs map[protocol.Location]PkgResultTuple
 
-func (qk qnamekinds) test(t *testing.T, s *elasticserver) {
+func (qk qnamekinds) test(t *testing.T, s *ElasticServer) {
 	for src, target := range qk {
 		params := &protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{
@@ -137,7 +141,7 @@ func (qk qnamekinds) collect(e *packagestest.Exported, fset *token.FileSet, src 
 	qk[lSrc] = QNameKindResult{Qname: qname, Kind: kind}
 }
 
-func (ps pkgs) test(t *testing.T, s *elasticserver) {
+func (ps pkgs) test(t *testing.T, s *ElasticServer) {
 	for src, target := range ps {
 		params := &protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{
