@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/lsp/xlog"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -19,9 +20,10 @@ import (
 // package. The view provides access to files and their contents, so the source
 // package does not directly access the file system.
 type View interface {
+	Logger() xlog.Logger
+	FileSet() *token.FileSet
 	GetFile(ctx context.Context, uri span.URI) (File, error)
 	SetContent(ctx context.Context, uri span.URI, content []byte) error
-	FileSet() *token.FileSet
 }
 
 // File represents a Go source file that has been type-checked. It is the input
@@ -45,6 +47,7 @@ type Package interface {
 	GetErrors() []packages.Error
 	GetTypes() *types.Package
 	GetTypesInfo() *types.Info
+	GetTypesSizes() types.Sizes
 	IsIllTyped() bool
 	GetActionGraph(ctx context.Context, a *analysis.Analyzer) (*Action, error)
 }

@@ -7,17 +7,23 @@ package cache
 import (
 	"context"
 	"go/token"
+	"go/types"
 	"os"
 	"sync"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/lsp/xlog"
 	"golang.org/x/tools/internal/span"
 )
 
 type View struct {
 	// mu protects all mutable state of the view.
 	mu sync.Mutex
+
+	// baseCtx is the context handed to NewView. This is the parent of all
+	// background contexts created for this view.
+	baseCtx context.Context
 
 	// backgroundCtx is the current context used by background tasks initiated
 	// by the view.
@@ -26,6 +32,15 @@ type View struct {
 	// cancel is called when all action being performed by the current view
 	// should be stopped.
 	cancel context.CancelFunc
+
+	// the logger to use to communicate back with the client
+	log xlog.Logger
+
+	// Name is the user visible name of this view.
+	Name string
+
+	// Folder is the root of this view.
+	Folder span.URI
 
 	// Config is the configuration used for the view's interaction with the
 	// go/packages API. It is shared across all views.
@@ -58,6 +73,7 @@ type metadataCache struct {
 type metadata struct {
 	id, pkgPath, name string
 	files             []string
+	typesSizes        types.Sizes
 	parents, children map[string]bool
 }
 
@@ -72,13 +88,16 @@ type entry struct {
 	ready chan struct{} // closed to broadcast ready condition
 }
 
-func NewView(config *packages.Config) *View {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	return &View{
-		backgroundCtx:  ctx,
+func NewView(ctx context.Context, log xlog.Logger, name string, folder span.URI, config *packages.Config) *View {
+	backgroundCtx, cancel := context.WithCancel(ctx)
+	v := &View{
+		baseCtx:        ctx,
+		backgroundCtx:  backgroundCtx,
 		cancel:         cancel,
+		log:            log,
 		Config:         *config,
+		Name:           name,
+		Folder:         folder,
 		filesByURI:     make(map[span.URI]*File),
 		filesByBase:    make(map[string][]*File),
 		contentChanges: make(map[span.URI]func()),
@@ -89,6 +108,7 @@ func NewView(config *packages.Config) *View {
 			packages: make(map[string]*entry),
 		},
 	}
+	return v
 }
 
 func (v *View) BackgroundContext() context.Context {
@@ -106,11 +126,10 @@ func (v *View) FileSet() *token.FileSet {
 func (v *View) SetContent(ctx context.Context, uri span.URI, content []byte) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-
 	// Cancel all still-running previous requests, since they would be
 	// operating on stale data.
 	v.cancel()
-	v.backgroundCtx, v.cancel = context.WithCancel(context.Background())
+	v.backgroundCtx, v.cancel = context.WithCancel(v.baseCtx)
 
 	v.contentChanges[uri] = func() {
 		v.applyContentChange(uri, content)
@@ -153,7 +172,7 @@ func (v *View) applyContentChange(uri span.URI, content []byte) {
 
 	// Remove the package and all of its reverse dependencies from the cache.
 	if f.pkg != nil {
-		v.remove(f.pkg.pkgPath)
+		v.remove(f.pkg.pkgPath, map[string]struct{}{})
 	}
 
 	switch {
@@ -172,22 +191,37 @@ func (v *View) applyContentChange(uri span.URI, content []byte) {
 // remove invalidates a package and its reverse dependencies in the view's
 // package cache. It is assumed that the caller has locked both the mutexes
 // of both the mcache and the pcache.
-func (v *View) remove(pkgPath string) {
+func (v *View) remove(pkgPath string, seen map[string]struct{}) {
+	if _, ok := seen[pkgPath]; ok {
+		return
+	}
 	m, ok := v.mcache.packages[pkgPath]
 	if !ok {
 		return
 	}
+	seen[pkgPath] = struct{}{}
 	for parentPkgPath := range m.parents {
-		v.remove(parentPkgPath)
+		v.remove(parentPkgPath, seen)
 	}
 	// All of the files in the package may also be holding a pointer to the
 	// invalidated package.
 	for _, filename := range m.files {
-		if f := v.findFile(span.FileURI(filename)); f != nil {
+		if f, _ := v.findFile(span.FileURI(filename)); f != nil {
 			f.pkg = nil
 		}
 	}
 	delete(v.pcache.packages, pkgPath)
+}
+
+// FindFile returns the file if the given URI is already a part of the view.
+func (v *View) FindFile(ctx context.Context, uri span.URI) *File {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	f, err := v.findFile(uri)
+	if err != nil {
+		return nil
+	}
+	return f
 }
 
 // GetFile returns a File for the given URI. It will always succeed because it
@@ -205,7 +239,9 @@ func (v *View) GetFile(ctx context.Context, uri span.URI) (source.File, error) {
 
 // getFile is the unlocked internal implementation of GetFile.
 func (v *View) getFile(uri span.URI) (*File, error) {
-	if f := v.findFile(uri); f != nil {
+	if f, err := v.findFile(uri); err != nil {
+		return nil, err
+	} else if f != nil {
 		return f, nil
 	}
 	filename, err := uri.Filename()
@@ -220,34 +256,41 @@ func (v *View) getFile(uri span.URI) (*File, error) {
 	return f, nil
 }
 
-func (v *View) findFile(uri span.URI) *File {
+// findFile checks the cache for any file matching the given uri.
+//
+// An error is only returned for an irreparable failure, for example, if the
+// filename in question does not exist.
+func (v *View) findFile(uri span.URI) (*File, error) {
 	if f := v.filesByURI[uri]; f != nil {
 		// a perfect match
-		return f
+		return f, nil
 	}
 	// no exact match stored, time to do some real work
 	// check for any files with the same basename
 	fname, err := uri.Filename()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	basename := basename(fname)
 	if candidates := v.filesByBase[basename]; candidates != nil {
 		pathStat, err := os.Stat(fname)
-		if err != nil {
-			return nil
+		if os.IsNotExist(err) {
+			return nil, err
+		} else if err != nil {
+			return nil, nil // the file may exist, return without an error
 		}
 		for _, c := range candidates {
 			if cStat, err := os.Stat(c.filename); err == nil {
 				if os.SameFile(pathStat, cStat) {
 					// same file, map it
 					v.mapFile(uri, c)
-					return c
+					return c, nil
 				}
 			}
 		}
 	}
-	return nil
+	// no file with a matching name was found, it wasn't in our cache
+	return nil, nil
 }
 
 func (v *View) mapFile(uri span.URI, f *File) {
@@ -257,4 +300,8 @@ func (v *View) mapFile(uri span.URI, f *File) {
 		f.basename = basename(f.filename)
 		v.filesByBase[f.basename] = append(v.filesByBase[f.basename], f)
 	}
+}
+
+func (v *View) Logger() xlog.Logger {
+	return v.log
 }

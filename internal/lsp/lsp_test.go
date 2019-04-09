@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/lsp/xlog"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -34,6 +35,7 @@ func TestLSP(t *testing.T) {
 }
 
 func testLSP(t *testing.T, exporter packagestest.Exporter) {
+	ctx := context.Background()
 	const dir = "testdata"
 
 	// We hardcode the expected number of test cases to ensure that all tests
@@ -70,8 +72,10 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 		return parser.ParseFile(fset, filename, src, parser.AllErrors|parser.ParseComments)
 	}
 
-	s := &server{
-		view: cache.NewView(&cfg),
+	log := xlog.New(xlog.StdSink{})
+	s := &Server{
+		views:       []*cache.View{cache.NewView(ctx, log, "lsp_test", span.FileURI(cfg.Dir), &cfg)},
+		undelivered: make(map[span.URI][]source.Diagnostic),
 	}
 	// Do a first pass to collect special markers for completion.
 	if err := exported.Expect(map[string]interface{}{
@@ -117,7 +121,7 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 
 	t.Run("Diagnostics", func(t *testing.T) {
 		t.Helper()
-		diagnosticsCount := expectedDiagnostics.test(t, s.view)
+		diagnosticsCount := expectedDiagnostics.test(t, s.views[0])
 		if goVersion111 { // TODO(rstambler): Remove this when we no longer support Go 1.10.
 			if diagnosticsCount != expectedDiagnosticsCount {
 				t.Errorf("got %v diagnostics expected %v", diagnosticsCount, expectedDiagnosticsCount)
@@ -285,7 +289,7 @@ Failed:
 	return msg.String()
 }
 
-func (c completions) test(t *testing.T, exported *packagestest.Exported, s *server, items completionItems) {
+func (c completions) test(t *testing.T, exported *packagestest.Exported, s *Server, items completionItems) {
 	for src, itemList := range c {
 		var want []protocol.CompletionItem
 		for _, pos := range itemList {
@@ -406,7 +410,7 @@ Failed:
 	return msg.String()
 }
 
-func (f formats) test(t *testing.T, s *server) {
+func (f formats) test(t *testing.T, s *Server) {
 	ctx := context.Background()
 	for filename, gofmted := range f {
 		uri := span.FileURI(filename)
@@ -421,7 +425,7 @@ func (f formats) test(t *testing.T, s *server) {
 			}
 			continue
 		}
-		f, m, err := newColumnMap(ctx, s.view, uri)
+		f, m, err := newColumnMap(ctx, s.findView(ctx, uri), uri)
 		if err != nil {
 			t.Error(err)
 		}
@@ -444,7 +448,7 @@ func (f formats) collect(pos token.Position) {
 	f[pos.Filename] = stdout.String()
 }
 
-func (d definitions) test(t *testing.T, s *server, typ bool) {
+func (d definitions) test(t *testing.T, s *Server, typ bool) {
 	for src, target := range d {
 		params := &protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{
@@ -495,7 +499,7 @@ func (h highlights) collect(e *packagestest.Exported, fset *token.FileSet, name 
 	h[name] = append(h[name], loc)
 }
 
-func (h highlights) test(t *testing.T, s *server) {
+func (h highlights) test(t *testing.T, s *Server) {
 	for name, locations := range h {
 		params := &protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{
@@ -547,7 +551,7 @@ func (s symbols) collect(e *packagestest.Exported, fset *token.FileSet, name str
 	})
 }
 
-func (s symbols) test(t *testing.T, server *server) {
+func (s symbols) test(t *testing.T, server *Server) {
 	for uri, expectedSymbols := range s {
 		params := &protocol.DocumentSymbolParams{
 			TextDocument: protocol.TextDocumentIdentifier{
