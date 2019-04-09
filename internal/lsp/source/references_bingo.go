@@ -177,7 +177,8 @@ func sameObj(x, y types.Object) bool {
 		x.Pkg().Path() == y.Pkg().Path() &&
 		x.Name() == y.Name() &&
 		x.Exported() &&
-		y.Exported() {
+		y.Exported() &&
+		x.Type().String() == y.Type().String() {
 		// enable find the xtest pakcage's uses, but this will product some duplicate results
 		return true
 	}
