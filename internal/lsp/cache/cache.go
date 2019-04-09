@@ -138,7 +138,11 @@ func (pkg *Package) addImport(p *Package) {
 }
 
 func (pkg *Package) GetImport(pkgPath string) source.Package {
-	return pkg.imports[pkgPath]
+	if p, ok := pkg.imports[pkgPath]; ok {
+		return p
+	}
+
+	return nil
 }
 
 // SetCache set a global cache into view
@@ -146,12 +150,4 @@ func (v *View) SetCache(cache GlobalCache) {
 	v.mu.Lock()
 	v.gcache = cache
 	v.mu.Unlock()
-}
-
-// Cache get global cache
-func (v *View) Cache() GlobalCache {
-	v.mu.Lock()
-	cache := v.gcache
-	v.mu.Unlock()
-	return cache
 }
