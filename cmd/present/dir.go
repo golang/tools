@@ -5,12 +5,15 @@
 package main
 
 import (
+	"fmt"
 	"html/template"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -22,6 +25,72 @@ func init() {
 	http.HandleFunc("/", dirHandler)
 }
 
+func repository(name string) string {
+	const repo = "github.com/"
+	if !strings.HasPrefix(name, repo) {
+		return ""
+	}
+	name = strings.TrimRight(name, "/")
+	cnt := 1
+	var i int
+	for i = len(repo); i < len(name); i++ {
+		if name[i] == '/' {
+			cnt++
+			if cnt == 3 {
+				break
+			}
+		}
+	}
+	if cnt < 2 {
+		return ""
+	}
+	return name[:i]
+}
+
+func sync(name string) error {
+	repo := repository(name)
+	if repo == "" {
+		return nil
+	}
+	fi, err := os.Stat(repo)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return gitClone(repo)
+		}
+		return err
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf(name, "exists but not dir")
+	}
+	return gitPull(repo)
+}
+
+func gitClone(repo string) error {
+	dir := path.Dir(repo)
+	log.Println("mkdir -p", dir)
+	err := os.MkdirAll(dir, 0755)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("git", "clone", fmt.Sprintf("https://%s.git", repo))
+	cmd.Dir = dir
+	log.Println("cd", dir)
+	log.Println(cmd.Args)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func gitPull(repo string) error {
+	cmd := exec.Command("git", "pull")
+	cmd.Dir = repo
+	log.Println("cd", repo)
+	log.Println(cmd.Args)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 // dirHandler serves a directory listing for the requested path, rooted at *contentPath.
 func dirHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/favicon.ico" {
@@ -29,6 +98,10 @@ func dirHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := filepath.Join(*contentPath, r.URL.Path)
+	if err := sync(name); err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 	if isDoc(name) {
 		err := renderDoc(w, name)
 		if err != nil {
