@@ -78,6 +78,17 @@ func (c *globalCache) get(pkgPath string) *Package {
 	return p.pkg
 }
 
+func (c *globalCache) getGlobalPackage(pkgPath string) *globalPackage {
+	c.mu.RLock()
+	p := c.pathMap[pkgPath]
+	c.mu.RUnlock()
+	if p == nil {
+		return nil
+	}
+
+	return p
+}
+
 // Walk walk the global package cache
 func (c *globalCache) Walk(walkFunc source.WalkFunc) {
 	c.walk(walkFunc)
@@ -98,7 +109,7 @@ func (c *globalCache) Add(pkg *packages.Package) {
 }
 
 func (c *globalCache) recursiveAdd(pkg *packages.Package, parent *Package) {
-	if p, _ := c.pathMap[pkg.PkgPath]; p != nil {
+	if p := c.getGlobalPackage(pkg.PkgPath); p != nil {
 		if parent != nil {
 			parent.addImport(p.pkg)
 		}
