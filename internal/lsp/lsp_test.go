@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/lsp/cache"
+	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/project"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
@@ -40,7 +41,7 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 	const expectedCompletionsCount = 64
 	const expectedDiagnosticsCount = 16
 	const expectedFormatCount = 4
-	const expectedDefinitionsCount = 16
+	const expectedDefinitionsCount = 17
 	const expectedTypeDefinitionsCount = 2
 	const expectedHighlightsCount = 2
 	const expectedSymbolsCount = 1
@@ -117,12 +118,18 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 
 	t.Run("Completion", func(t *testing.T) {
 		t.Helper()
+		if len(expectedCompletions) != expectedCompletionsCount {
+			t.Errorf("got %v completions expected %v", len(expectedCompletions), expectedCompletionsCount)
+		}
 		expectedCompletions.test(t, exported, s, completionItems)
 	})
 
 	t.Run("Diagnostics", func(t *testing.T) {
 		t.Helper()
-		expectedDiagnostics.test(t, s.views[0])
+		diagnosticsCount := expectedDiagnostics.test(t, s.views[0])
+		if diagnosticsCount != expectedDiagnosticsCount {
+			t.Errorf("got %v diagnostics expected %v", diagnosticsCount, expectedDiagnosticsCount)
+		}
 	})
 
 	t.Run("Format", func(t *testing.T) {
@@ -135,30 +142,40 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 			}
 		}
 		t.Helper()
+		if len(expectedFormat) != expectedFormatCount {
+			t.Errorf("got %v formats expected %v", len(expectedFormat), expectedFormatCount)
+		}
 		expectedFormat.test(t, s)
 	})
 
 	t.Run("Definitions", func(t *testing.T) {
 		t.Helper()
+		if len(expectedDefinitions) != expectedDefinitionsCount {
+			t.Errorf("got %v definitions expected %v", len(expectedDefinitions), expectedDefinitionsCount)
+		}
 		expectedDefinitions.test(t, s, false)
 	})
 
 	t.Run("TypeDefinitions", func(t *testing.T) {
 		t.Helper()
+		if len(expectedTypeDefinitions) != expectedTypeDefinitionsCount {
+			t.Errorf("got %v type definitions expected %v", len(expectedTypeDefinitions), expectedTypeDefinitionsCount)
+		}
 		expectedTypeDefinitions.test(t, s, true)
 	})
 
 	t.Run("Highlights", func(t *testing.T) {
 		t.Helper()
+		if len(expectedHighlights) != expectedHighlightsCount {
+			t.Errorf("got %v highlights expected %v", len(expectedHighlights), expectedHighlightsCount)
+		}
 		expectedHighlights.test(t, s)
 	})
 
 	t.Run("Symbols", func(t *testing.T) {
 		t.Helper()
-		if goVersion111 { // TODO(rstambler): Remove this when we no longer support Go 1.10.
-			if len(expectedSymbols.m) != expectedSymbolsCount {
-				t.Errorf("got %v symbols expected %v", len(expectedSymbols.m), expectedSymbolsCount)
-			}
+		if len(expectedSymbols.m) != expectedSymbolsCount {
+			t.Errorf("got %v symbols expected %v", len(expectedSymbols.m), expectedSymbolsCount)
 		}
 		expectedSymbols.test(t, s)
 	})
@@ -405,17 +422,18 @@ func (f formats) test(t *testing.T, s *Server) {
 			continue
 		}
 		_, view := s.findView(ctx, uri)
-		f, m, err := newColumnMap(ctx, view, uri)
+		_, m, err := newColumnMap(ctx, view, uri)
 		if err != nil {
 			t.Error(err)
 		}
-		buf, err := applyEdits(m, f.GetContent(context.Background()), edits)
+		sedits, err := FromProtocolEdits(m, edits)
 		if err != nil {
 			t.Error(err)
 		}
-		got := string(buf)
+		ops := source.EditsToDiff(sedits)
+		got := strings.Join(diff.ApplyEdits(diff.SplitLines(string(m.Content)), ops), "")
 		if gofmted != got {
-			t.Errorf("format failed for %s: expected '%v', got '%v'", filename, gofmted, got)
+			t.Errorf("format failed for %s, expected:\n%v\ngot:\n%v", filename, gofmted, got)
 		}
 	}
 }
@@ -553,11 +571,8 @@ func (s symbols) test(t *testing.T, server *Server) {
 			continue
 		}
 
-		sort.Slice(symbols, func(i, j int) bool { return symbols[i].Name < symbols[j].Name })
-		sort.Slice(expectedSymbols, func(i, j int) bool { return expectedSymbols[i].Name < expectedSymbols[j].Name })
 		for i := range expectedSymbols {
 			children := s.children[expectedSymbols[i].Name]
-			sort.Slice(children, func(i, j int) bool { return children[i].Name < children[j].Name })
 			expectedSymbols[i].Children = children
 		}
 		if diff := diffSymbols(uri, expectedSymbols, symbols); diff != "" {
@@ -567,30 +582,38 @@ func (s symbols) test(t *testing.T, server *Server) {
 }
 
 func diffSymbols(uri span.URI, want, got []protocol.DocumentSymbol) string {
+	sort.Slice(want, func(i, j int) bool { return want[i].Name < want[j].Name })
+	sort.Slice(got, func(i, j int) bool { return got[i].Name < got[j].Name })
 	if len(got) != len(want) {
-		goto Failed
+		return summarizeSymbols(-1, want, got, "different lengths got %v want %v", len(got), len(want))
 	}
 	for i, w := range want {
 		g := got[i]
 		if w.Name != g.Name {
-			goto Failed
+			return summarizeSymbols(i, want, got, "incorrect name got %v want %v", g.Name, w.Name)
 		}
 		if w.Kind != g.Kind {
-			goto Failed
+			return summarizeSymbols(i, want, got, "incorrect kind got %v want %v", g.Kind, w.Kind)
 		}
 		if w.SelectionRange != g.SelectionRange {
-			goto Failed
+			return summarizeSymbols(i, want, got, "incorrect span got %v want %v", g.SelectionRange, w.SelectionRange)
 		}
-		sort.Slice(g.Children, func(i, j int) bool { return g.Children[i].Name < g.Children[j].Name })
 		if msg := diffSymbols(uri, w.Children, g.Children); msg != "" {
 			return fmt.Sprintf("children of %s: %s", w.Name, msg)
 		}
 	}
 	return ""
+}
 
-Failed:
+func summarizeSymbols(i int, want []protocol.DocumentSymbol, got []protocol.DocumentSymbol, reason string, args ...interface{}) string {
 	msg := &bytes.Buffer{}
-	fmt.Fprintf(msg, "document symbols failed for %s:\nexpected:\n", uri)
+	fmt.Fprint(msg, "document symbols failed")
+	if i >= 0 {
+		fmt.Fprintf(msg, " at %d", i)
+	}
+	fmt.Fprint(msg, " because of ")
+	fmt.Fprintf(msg, reason, args...)
+	fmt.Fprint(msg, ":\nexpected:\n")
 	for _, s := range want {
 		fmt.Fprintf(msg, "  %v %v %v\n", s.Name, s.Kind, s.SelectionRange)
 	}
@@ -651,27 +674,4 @@ func TestBytesOffset(t *testing.T) {
 			t.Errorf("want %d for %q(Line:%d,Character:%d), but got %d", test.want, test.text, int(test.pos.Line), int(test.pos.Character), got.Offset())
 		}
 	}
-}
-
-func applyEdits(m *protocol.ColumnMapper, content []byte, edits []protocol.TextEdit) ([]byte, error) {
-	prev := 0
-	result := make([]byte, 0, len(content))
-	for _, edit := range edits {
-		spn, err := m.RangeSpan(edit.Range)
-		if err != nil {
-			return nil, err
-		}
-		offset := spn.Start().Offset()
-		if offset > prev {
-			result = append(result, content[prev:offset]...)
-		}
-		if len(edit.NewText) > 0 {
-			result = append(result, []byte(edit.NewText)...)
-		}
-		prev = spn.End().Offset()
-	}
-	if prev < len(content) {
-		result = append(result, content[prev:]...)
-	}
-	return result, nil
 }

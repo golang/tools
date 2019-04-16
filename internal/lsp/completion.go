@@ -61,7 +61,7 @@ func toProtocolCompletionItems(m *protocol.ColumnMapper, candidates []source.Com
 			insertText = insertText[len(prefix):]
 		}
 
-		edits, _ := toProtocolEdits(m, candidate.AdditionalTextEdits)
+		edits, _ := ToProtocolEdits(m, candidate.AdditionalTextEdits)
 		item := protocol.CompletionItem{
 			Label:  candidate.Label,
 			Detail: candidate.Detail,
