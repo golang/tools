@@ -921,6 +921,87 @@ func testOverlay(t *testing.T, exporter packagestest.Exporter) {
 	}
 }
 
+func TestNewPackagesInOverlay(t *testing.T) { packagestest.TestAll(t, testNewPackagesInOverlay) }
+func testNewPackagesInOverlay(t *testing.T, exporter packagestest.Exporter) {
+	exported := packagestest.Export(t, exporter, []packagestest.Module{{
+		Name: "golang.org/fake",
+		Files: map[string]interface{}{
+			"a/a.go": `package a; import "golang.org/fake/b"; const A = "a" + b.B`,
+			"b/b.go": `package b; import "golang.org/fake/c"; const B = "b" + c.C`,
+			"c/c.go": `package c; const C = "c"`,
+			"d/d.go": `package d; const D = "d"`,
+		}}})
+	defer exported.Cleanup()
+
+	dir := filepath.Dir(filepath.Dir(exported.File("golang.org/fake", "a/a.go")))
+
+	for i, test := range []struct {
+		overlay map[string][]byte
+		want    string // expected value of e.E
+	}{
+		// Overlay with one file.
+		{map[string][]byte{
+			filepath.Join(dir, "e", "e.go"): []byte(`package e; import "golang.org/fake/a"; const E = "e" + a.A`)},
+			`"eabc"`},
+		// Overlay with multiple files in the same package.
+		{map[string][]byte{
+			filepath.Join(dir, "e", "e.go"):      []byte(`package e; import "golang.org/fake/a"; const E = "e" + a.A + underscore`),
+			filepath.Join(dir, "e", "e_util.go"): []byte(`package e; const underscore = "_"`),
+		},
+			`"eabc_"`},
+		// Overlay with multiple files in different packages.
+		{map[string][]byte{
+			filepath.Join(dir, "e", "e.go"):      []byte(`package e; import "golang.org/fake/f"; const E = "e" + f.F + underscore`),
+			filepath.Join(dir, "e", "e_util.go"): []byte(`package e; const underscore = "_"`),
+			filepath.Join(dir, "f", "f.go"):      []byte(`package f; const F = "f"`),
+		},
+			`"ef_"`},
+		{map[string][]byte{
+			filepath.Join(dir, "e", "e.go"):      []byte(`package e; import "golang.org/fake/f"; const E = "e" + f.F + underscore`),
+			filepath.Join(dir, "e", "e_util.go"): []byte(`package e; const underscore = "_"`),
+			filepath.Join(dir, "f", "f.go"):      []byte(`package f; import "golang.org/fake/g"; const F = "f" + g.G`),
+			filepath.Join(dir, "g", "g.go"):      []byte(`package g; const G = "g"`),
+		},
+			`"efg_"`},
+		{map[string][]byte{
+			filepath.Join(dir, "e", "e.go"):      []byte(`package e; import "golang.org/fake/f"; import "golang.org/fake/h"; const E = "e" + f.F + h.H + underscore`),
+			filepath.Join(dir, "e", "e_util.go"): []byte(`package e; const underscore = "_"`),
+			filepath.Join(dir, "f", "f.go"):      []byte(`package f; import "golang.org/fake/g"; const F = "f" + g.G`),
+			filepath.Join(dir, "g", "g.go"):      []byte(`package g; const G = "g"`),
+			filepath.Join(dir, "h", "h.go"):      []byte(`package h; const H = "h"`),
+		},
+			`"efgh_"`},
+		{map[string][]byte{
+			filepath.Join(dir, "e", "e.go"):      []byte(`package e; import "golang.org/fake/f"; const E = "e" + f.F + underscore`),
+			filepath.Join(dir, "e", "e_util.go"): []byte(`package e; const underscore = "_"`),
+			filepath.Join(dir, "f", "f.go"):      []byte(`package f; import "golang.org/fake/g"; const F = "f" + g.G`),
+			filepath.Join(dir, "g", "g.go"):      []byte(`package g; import "golang.org/fake/h"; const G = "g" + h.H`),
+			filepath.Join(dir, "h", "h.go"):      []byte(`package h; const H = "h"`),
+		},
+			`"efgh_"`},
+	} {
+		exported.Config.Overlay = test.overlay
+		exported.Config.Mode = packages.LoadAllSyntax
+		initial, err := packages.Load(exported.Config, "golang.org/fake/e")
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+
+		// Check value of e.E.
+		e := initial[0]
+		eE := constant(e, "E")
+		if eE == nil {
+			t.Errorf("%d. e.E: got nil", i)
+			continue
+		}
+		got := eE.Val().String()
+		if got != test.want {
+			t.Errorf("%d. e.E: got %s, want %s", i, got, test.want)
+		}
+	}
+}
+
 func TestLoadAllSyntaxImportErrors(t *testing.T) {
 	packagestest.TestAll(t, testLoadAllSyntaxImportErrors)
 }
@@ -1726,9 +1807,14 @@ func testReturnErrorWhenUsingNonGoFiles(t *testing.T, exporter packagestest.Expo
 		}}})
 	defer exported.Cleanup()
 	config := packages.Config{}
+	want := "named files must be .go files"
 	pkgs, err := packages.Load(&config, "a/a.go", "b/b.c")
 	if err != nil {
-		t.Fatal(err)
+		// Check if the error returned is the one we expected.
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("want error message: %s, got: %s", want, err.Error())
+		}
+		return
 	}
 	if len(pkgs) != 1 || pkgs[0].PkgPath != "command-line-arguments" {
 		t.Fatalf("packages.Load: want [command-line-arguments], got %v", pkgs)
@@ -1737,7 +1823,6 @@ func testReturnErrorWhenUsingNonGoFiles(t *testing.T, exporter packagestest.Expo
 		t.Fatalf("result of Load: want package with one error, got: %+v", pkgs[0])
 	}
 	got := pkgs[0].Errors[0].Error()
-	want := "named files must be .go files"
 	if !strings.Contains(got, want) {
 		t.Fatalf("want error message: %s, got: %s", want, got)
 	}

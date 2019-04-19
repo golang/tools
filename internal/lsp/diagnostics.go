@@ -6,7 +6,6 @@ package lsp
 
 import (
 	"context"
-	"sort"
 
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/protocol"
@@ -22,11 +21,13 @@ func (s *Server) cacheAndDiagnose(ctx context.Context, uri span.URI, content str
 	go func() {
 		ctx := view.BackgroundContext()
 		if ctx.Err() != nil {
+			s.log.Errorf(ctx, "canceling diagnostics for %s: %v", uri, ctx.Err())
 			return
 		}
 		reports, err := source.Diagnostics(ctx, view, uri)
 		if err != nil {
-			return // handle error?
+			s.log.Errorf(ctx, "failed to compute diagnostics for %s: %v", uri, err)
+			return
 		}
 
 		s.undeliveredMu.Lock()
@@ -74,10 +75,6 @@ func toProtocolDiagnostics(ctx context.Context, v source.View, diagnostics []sou
 		if err != nil {
 			return nil, err
 		}
-		src := diag.Source
-		if src == "" {
-			src = "LSP"
-		}
 		var severity protocol.DiagnosticSeverity
 		switch diag.Severity {
 		case source.SeverityError:
@@ -93,20 +90,8 @@ func toProtocolDiagnostics(ctx context.Context, v source.View, diagnostics []sou
 			Message:  diag.Message,
 			Range:    rng,
 			Severity: severity,
-			Source:   src,
+			Source:   diag.Source,
 		})
 	}
 	return reports, nil
-}
-
-func sorted(d []protocol.Diagnostic) {
-	sort.Slice(d, func(i int, j int) bool {
-		if d[i].Range.Start.Line == d[j].Range.Start.Line {
-			if d[i].Range.Start.Character == d[j].Range.Start.Character {
-				return d[i].Message < d[j].Message
-			}
-			return d[i].Range.Start.Character < d[j].Range.Start.Character
-		}
-		return d[i].Range.Start.Line < d[j].Range.Start.Line
-	})
 }
