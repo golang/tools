@@ -318,7 +318,9 @@ func (c *Conn) Run(ctx context.Context) error {
 				c.Logger(Receive, request.ID, -1, request.Method, request.Params, nil)
 				if !c.deliver(reqCtx, q, request) {
 					// queue is full, reject the message by directly replying
-					c.Reply(ctx, request, nil, NewErrorf(CodeServerOverloaded, "no room in queue"))
+					if err := c.Reply(ctx, request, nil, NewErrorf(CodeServerOverloaded, "no room in queue")); err != nil {
+						return err
+					}
 				}
 			}
 		case msg.ID != nil:
