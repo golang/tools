@@ -33,20 +33,16 @@ func (s *Server) completion(ctx context.Context, params *protocol.CompletionPara
 	}
 	items, prefix, err := source.Completion(ctx, f, rng.Start, s.workspaces[index].Search)
 	if err != nil {
-		s.log.Infof(ctx, "no completions found for %s:%v:%v", uri, int(params.Position.Line), int(params.Position.Character))
+		s.log.Infof(ctx, "no completions found for %s:%v:%v: %v", uri, int(params.Position.Line), int(params.Position.Character), err)
 		items = []source.CompletionItem{}
 	}
 	return &protocol.CompletionList{
 		IsIncomplete: false,
-		Items:        toProtocolCompletionItems(m, items, prefix, params.Position, s.snippetsSupported, s.usePlaceholders),
+		Items:        toProtocolCompletionItems(m, items, prefix, params.Position, s.insertTextFormat, s.usePlaceholders),
 	}, nil
 }
 
-func toProtocolCompletionItems(m *protocol.ColumnMapper, candidates []source.CompletionItem, prefix string, pos protocol.Position, snippetsSupported, usePlaceholders bool) []protocol.CompletionItem {
-	insertTextFormat := protocol.PlainTextTextFormat
-	if snippetsSupported {
-		insertTextFormat = protocol.SnippetTextFormat
-	}
+func toProtocolCompletionItems(m *protocol.ColumnMapper, candidates []source.CompletionItem, prefix string, pos protocol.Position, insertTextFormat protocol.InsertTextFormat, usePlaceholders bool) []protocol.CompletionItem {
 	sort.SliceStable(candidates, func(i, j int) bool {
 		return candidates[i].Score > candidates[j].Score
 	})
@@ -81,6 +77,15 @@ func toProtocolCompletionItems(m *protocol.ColumnMapper, candidates []source.Com
 			FilterText:          insertText,
 			Preselect:           i == 0,
 			AdditionalTextEdits: edits,
+		}
+		// Trigger signature help for any function or method completion.
+		// This is helpful even if a function does not have parameters,
+		// since we show return types as well.
+		switch item.Kind {
+		case protocol.FunctionCompletion, protocol.MethodCompletion:
+			item.Command = &protocol.Command{
+				Command: "editor.action.triggerParameterHints",
+			}
 		}
 		items = append(items, item)
 	}
@@ -153,8 +158,7 @@ func labelToInsertText(label string, kind source.CompletionItemKind, insertTextF
 			if i != 0 {
 				b.WriteString(", ")
 			}
-			p = strings.Split(strings.Trim(p, " "), " ")[0]
-			fmt.Fprintf(b, "${%v:%v}", i+1, r.Replace(p))
+			fmt.Fprintf(b, "${%v:%v}", i+1, r.Replace(strings.TrimSpace(p)))
 		}
 		b.WriteByte(')')
 		return b.String()

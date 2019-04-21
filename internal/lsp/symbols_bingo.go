@@ -8,7 +8,7 @@ import (
 	"golang.org/x/tools/internal/span"
 )
 
-func (s *Server) symbols(ctx context.Context, query string) ([]protocol.SymbolInformation, error) {
+func (s *Server) symbol(ctx context.Context, query string) ([]protocol.SymbolInformation, error) {
 	var symbolInfos []protocol.SymbolInformation
 	for i := range s.views {
 		symbols := source.Symbols(ctx, s.views[i], s.workspaces[i].Search, query, 100)

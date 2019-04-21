@@ -29,6 +29,7 @@ type IdentifierInfo struct {
 	}
 	Declaration struct {
 		Range  span.Range
+		Node   ast.Decl
 		Object types.Object
 	}
 
@@ -51,15 +52,6 @@ func Identifier(ctx context.Context, v View, f File, pos token.Pos) (*Identifier
 		err = fmt.Errorf("no identifier found")
 	}
 	return result, err
-}
-
-func (i *IdentifierInfo) Hover(ctx context.Context, q types.Qualifier) (string, error) {
-	if q == nil {
-		fAST := i.File.GetAST(ctx)
-		pkg := i.File.GetPackage(ctx)
-		q = qualifier(fAST, pkg.GetTypes(), pkg.GetTypesInfo())
-	}
-	return types.ObjectString(i.Declaration.Object, q), nil
 }
 
 // identifier checks a single position for a potential identifier.
@@ -112,6 +104,7 @@ func identifier(ctx context.Context, v View, f File, pos token.Pos) (*Identifier
 	for _, n := range path[1:] {
 		if field, ok := n.(*ast.Field); ok {
 			result.wasEmbeddedField = len(field.Names) == 0
+			break
 		}
 	}
 	result.Name = result.ident.Name
@@ -124,13 +117,16 @@ func identifier(ctx context.Context, v View, f File, pos token.Pos) (*Identifier
 		// The original position was on the embedded field declaration, so we
 		// try to dig out the type and jump to that instead.
 		if v, ok := result.Declaration.Object.(*types.Var); ok {
-			if n, ok := v.Type().(*types.Named); ok {
-				result.Declaration.Object = n.Obj()
+			if typObj := typeToObject(v.Type()); typObj != nil {
+				result.Declaration.Object = typObj
 			}
 		}
 	}
 	var err error
 	if result.Declaration.Range, err = objToRange(ctx, v, result.Declaration.Object); err != nil {
+		return nil, err
+	}
+	if result.Declaration.Node, err = objToNode(ctx, v, result.Declaration.Object, result.Declaration.Range); err != nil {
 		return nil, err
 	}
 	typ := pkg.GetTypesInfo().TypeOf(result.ident)
@@ -278,4 +274,31 @@ func getBulitinObj(ctx context.Context, obj types.Object, view View) (Package, t
 	}
 	obj = findObject(pkg, obj)
 	return pkg, obj
+}
+
+func objToNode(ctx context.Context, v View, obj types.Object, rng span.Range) (ast.Decl, error) {
+	s, err := rng.Span()
+	if err != nil {
+		return nil, err
+	}
+	declFile, err := v.GetFile(ctx, s.URI())
+	if err != nil {
+		return nil, err
+	}
+	declAST := declFile.GetAST(ctx)
+	path, _ := astutil.PathEnclosingInterval(declAST, rng.Start, rng.End)
+	if path == nil {
+		return nil, fmt.Errorf("no path for range %v", rng)
+	}
+	// TODO(rstambler): Support other node types.
+	// For now, we only associate an ast.Node for type declarations.
+	switch obj.Type().(type) {
+	case *types.Named, *types.Struct, *types.Interface:
+		for _, node := range path {
+			if node, ok := node.(*ast.GenDecl); ok && node.Tok == token.TYPE {
+				return node, nil
+			}
+		}
+	}
+	return nil, nil // didn't find a node, but no error
 }
