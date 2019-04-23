@@ -71,20 +71,16 @@ func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
 
 	t.Run("QNameKind", func(t *testing.T) {
 		t.Helper()
-		if goVersion111 {
-			if len(expectedQNameKinds) != expectedQNameKindCount {
-				t.Errorf("got %v qnamekinds expected %v", len(expectedQNameKinds), expectedQNameKindCount)
-			}
+		if len(expectedQNameKinds) != expectedQNameKindCount {
+			t.Errorf("got %v qnamekinds expected %v", len(expectedQNameKinds), expectedQNameKindCount)
 		}
 		expectedQNameKinds.test(t, es)
 	})
 
 	t.Run("PKG", func(t *testing.T) {
 		t.Helper()
-		if goVersion111 {
-			if len(expectedPkgLocators) != expectedPkgLocatorCount {
-				t.Errorf("got %v pkgs expected %v", len(expectedPkgLocators), expectedPkgLocatorCount)
-			}
+		if len(expectedPkgLocators) != expectedPkgLocatorCount {
+			t.Errorf("got %v pkgs expected %v", len(expectedPkgLocators), expectedPkgLocatorCount)
 		}
 		expectedPkgLocators.test(t, es)
 	})

@@ -108,7 +108,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 				sendParseError(ctx, log, conn, r, err)
 				return
 			}
-			resp, err := server.Symbols(ctx, &params)
+			resp, err := server.Symbol(ctx, &params)
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
