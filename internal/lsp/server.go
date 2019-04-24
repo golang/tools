@@ -244,8 +244,8 @@ func (s *Server) Rename(ctx context.Context, params *protocol.RenameParams) (pro
 	return s.rename(ctx, params)
 }
 
-func (s *Server) FoldingRanges(context.Context, *protocol.FoldingRangeParams) ([]protocol.FoldingRange, error) {
-	return nil, notImplemented("FoldingRanges")
+func (s *Server) FoldingRange(context.Context, *protocol.FoldingRangeParams) ([]protocol.FoldingRange, error) {
+	return nil, notImplemented("FoldingRange")
 }
 
 func notImplemented(method string) *jsonrpc2.Error {

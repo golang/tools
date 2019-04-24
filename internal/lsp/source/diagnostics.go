@@ -98,16 +98,19 @@ func Diagnostics(ctx context.Context, v View, uri span.URI) (map[span.URI][]Diag
 		}
 	}
 	if len(diags) > 0 {
+		v.Logger().Debugf(ctx, "found parse or type-checking errors for %s, returning", uri)
 		return reports, nil
 	}
+
+	v.Logger().Debugf(ctx, "running `go vet` analyses for %s", uri)
+
 	// Type checking and parsing succeeded. Run analyses.
-	runAnalyses(ctx, v, pkg, func(a *analysis.Analyzer, diag analysis.Diagnostic) {
+	runAnalyses(ctx, v, pkg, func(a *analysis.Analyzer, diag analysis.Diagnostic) error {
 		r := span.NewRange(v.FileSet(), diag.Pos, 0)
 		s, err := r.Span()
 		if err != nil {
-			//TODO: we could not process the diag.Pos, and thus have no valid span
-			//we don't have anywhere to put this error though
-			v.Logger().Errorf(ctx, "%v", err)
+			// The diagnostic has an invalid position, so we don't have a valid span.
+			return err
 		}
 		category := a.Name
 		if diag.Category != "" {
@@ -119,7 +122,10 @@ func Diagnostics(ctx context.Context, v View, uri span.URI) (map[span.URI][]Diag
 			Message:  diag.Message,
 			Severity: SeverityWarning,
 		})
+		return nil
 	})
+
+	v.Logger().Debugf(ctx, "completed reporting `go vet` analyses for %s", uri)
 
 	return reports, nil
 }
@@ -168,8 +174,8 @@ func singleDiagnostic(uri span.URI, format string, a ...interface{}) map[span.UR
 	}
 }
 
-func runAnalyses(ctx context.Context, v View, pkg Package, report func(a *analysis.Analyzer, diag analysis.Diagnostic)) error {
-	// the traditional vet suite:
+func runAnalyses(ctx context.Context, v View, pkg Package, report func(a *analysis.Analyzer, diag analysis.Diagnostic) error) error {
+	// The traditional vet suite:
 	analyzers := []*analysis.Analyzer{
 		asmdecl.Analyzer,
 		assign.Analyzer,
@@ -195,7 +201,12 @@ func runAnalyses(ctx context.Context, v View, pkg Package, report func(a *analys
 		unusedresult.Analyzer,
 	}
 
-	roots := analyze(ctx, v, []Package{pkg}, analyzers)
+	roots, err := analyze(ctx, v, []Package{pkg}, analyzers)
+	if err != nil {
+		return err
+	}
+
+	v.Logger().Debugf(ctx, "analyses have completed for %s", pkg.GetTypes().Path())
 
 	// Report diagnostics and errors from root analyzers.
 	for _, r := range roots {
@@ -205,9 +216,10 @@ func runAnalyses(ctx context.Context, v View, pkg Package, report func(a *analys
 				// which isn't super useful...
 				return r.err
 			}
-			report(r.Analyzer, diag)
+			if err := report(r.Analyzer, diag); err != nil {
+				return err
+			}
 		}
 	}
-
 	return nil
 }
