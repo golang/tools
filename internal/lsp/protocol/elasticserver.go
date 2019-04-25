@@ -527,7 +527,7 @@ func collectMetadata(metadata *RepoMeta) error {
 		for i, name := range folderUncovered[0] {
 			same := true
 			for _, folder := range folderUncovered[1:] {
-				if len(folder) < i || folder[i] != name {
+				if len(folder) <= i || folder[i] != name {
 					same = false
 					break DONE
 				}
