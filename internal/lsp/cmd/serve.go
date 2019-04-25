@@ -85,7 +85,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 		return lsp.RunElasticServerOnPort(ctx, s.Port, run)
 	}
 	stream := jsonrpc2.NewHeaderStream(os.Stdin, os.Stdout)
-	srv := lsp.NewServer(stream)
+	srv := lsp.NewElasticServer(stream)
 	srv.Conn.Logger = logger(s.Trace, out)
 	return srv.Conn.Run(ctx)
 }
