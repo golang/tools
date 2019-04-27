@@ -91,10 +91,9 @@ func (f *File) GetPackage(ctx context.Context) source.Package {
 	f.view.mu.Lock()
 	defer f.view.mu.Unlock()
 	if f.pkg == nil || len(f.view.contentChanges) > 0 {
-		errs, err := f.view.parse(ctx, f)
-		if err != nil {
-			log.Printf("get package failed: %s\n", err)
+		if errs, err := f.view.parse(ctx, f); err != nil {
 			// Create diagnostics for errors if we are able to.
+			log.Printf("get package failed: %s\n", err)
 			if len(errs) > 0 {
 				return &Package{errors: errs}
 			}

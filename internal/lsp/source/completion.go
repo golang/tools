@@ -63,30 +63,20 @@ func Completion(ctx context.Context, f File, pos token.Pos, search SearchFunc) (
 	}
 
 	helper := newCompletionHelper(ctx, f, path, search)
-	// If the position is not an identifier but immediately follows
-	// an identifier or selector period (as is common when
-	// requesting a completion), use the path to the preceding node.
-	if _, ok := path[0].(*ast.Ident); !ok {
-		if p, _ := astutil.PathEnclosingInterval(file, pos-1, pos-1); p != nil {
-			switch p[0].(type) {
-			case *ast.Ident, *ast.SelectorExpr:
-				path = p // use preceding ident/selector
-			default:
-				helper.initCursorIdent(pos)
-			}
-		}
+	switch path[0].(type) {
+	case *ast.Ident, *ast.SelectorExpr:
+	default:
+		helper.initCursorIdent(pos)
 	}
 
-	// Skip completion inside comment blocks or string literals.
-	switch lit := path[0].(type) {
-	case *ast.File, *ast.BlockStmt:
-		if inComment(pos, file.Comments) {
-			return items, prefix, nil
-		}
-	case *ast.BasicLit:
-		if lit.Kind == token.STRING {
-			return items, prefix, nil
-		}
+	// Skip completion inside comments.
+	if inComment(pos, file.Comments) {
+		return items, prefix, nil
+	}
+
+	// Skip completion inside any kind of literal.
+	if _, ok := path[0].(*ast.BasicLit); ok {
+		return items, prefix, nil
 	}
 
 	// Save certain facts about the query position, including the expected type
@@ -263,7 +253,10 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 	}
 	scopes = append(scopes, pkg.Scope(), types.Universe)
 
-	seen := map[string]struct{}{}
+	// Track seen variables to avoid showing completions for shadowed variables.
+	// This works since we look at scopes from innermost to outermost.
+	seen := make(map[string]struct{})
+
 	// Process scopes innermost first.
 	for i, scope := range scopes {
 		if scope == nil {
@@ -312,7 +305,11 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 			if scope == types.Universe {
 				score *= 0.1
 			}
-			items = found(obj, score, items)
+			// If we haven't already added a candidate for an object with this name.
+			if _, ok := seen[obj.Name()]; !ok {
+				seen[obj.Name()] = struct{}{}
+				items = found(obj, score, items)
+			}
 		}
 	}
 
@@ -336,10 +333,8 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 // inComment checks if given token position is inside ast.Comment node.
 func inComment(pos token.Pos, commentGroups []*ast.CommentGroup) bool {
 	for _, g := range commentGroups {
-		for _, c := range g.List {
-			if c.Pos() <= pos && pos <= c.End() {
-				return true
-			}
+		if g.Pos() <= pos && pos <= g.End() {
+			return true
 		}
 	}
 	return false
