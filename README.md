@@ -27,8 +27,16 @@ go install
         "format": true,
         "autoComplete": true
     },
-    "editor.codeActionsOnSave": {
-        "source.organizeImports": true
+    "[go]": {
+        "editor.snippetSuggestions": "none",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": true
+        },
+    },
+    "gopls": {
+        "usePlaceholders": true,
+        "enhancedHover": true
     }
 }
 ```
