@@ -293,14 +293,6 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 				}
 			}
 
-			if pobj, ok := obj.(*types.PkgName); ok {
-				pkgPath := pobj.Imported().Path()
-				if _, ok := seen[pkgPath]; ok {
-					continue
-				}
-				seen[pkgPath] = struct{}{}
-			}
-
 			// Rank builtins significantly lower than other results.
 			if scope == types.Universe {
 				score *= 0.1
@@ -309,6 +301,11 @@ func lexical(path []ast.Node, pos token.Pos, pkg *types.Package, info *types.Inf
 			if _, ok := seen[obj.Name()]; !ok {
 				seen[obj.Name()] = struct{}{}
 				items = found(obj, score, items)
+
+				if p, ok := obj.(*types.PkgName); ok {
+					pkgPath := p.Imported().Path()
+					seen[pkgPath] = struct{}{}
+				}
 			}
 		}
 	}

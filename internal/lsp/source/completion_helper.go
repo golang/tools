@@ -82,6 +82,7 @@ func (c *CompletionHelper) CursorIdent() string {
 
 func (c *CompletionHelper) ScopeVisit(pkgPath, prefix string, found finder) (items []CompletionItem) {
 	score := stdScore * 2
+
 	f := func(p Package) bool {
 		if c.canNotAccess(p.GetTypes().Path()) {
 			return false
@@ -344,7 +345,7 @@ func (c *CompletionHelper) createCompletionItem(pkgName string, pkgPath string, 
 	if _, ok := seen[pkgPath]; ok {
 		return nil
 	}
-	seen[pkgName] = struct{}{}
+	seen[pkgPath] = struct{}{}
 
 	if !strings.HasPrefix(pkgName, prefix) {
 		return nil
