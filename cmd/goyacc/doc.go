@@ -52,6 +52,12 @@ returns a yyParser conforming to the following interface:
 Parse runs the parser; the top-level call yyParse(yylex) is equivalent
 to yyNewParser().Parse(yylex).
 
+The receiver for Parse(yylex) is of type yyParserImpl. It is possible
+to add fields to this struct by use of the "%param" command, each
+invocation adding a single field (thus performing an idiomatic
+equivalent of Bison's %param command). The receiver can be referenced
+within the parser as yyrcvr.
+
 Lookahead can be called during grammar actions to read (but not consume)
 the value of the current lookahead token, as returned by yylex.Lex.
 If there is no current lookahead token (because the parser has not called Lex

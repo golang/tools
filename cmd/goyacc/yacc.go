@@ -125,6 +125,7 @@ const (
 	TYPENAME
 	UNION
 	ERROR
+	PARAM
 )
 
 const ENDFILE = 0
@@ -153,6 +154,8 @@ var stderr *bufio.Writer
 var ftable *bufio.Writer    // y.go file
 var fcode = &bytes.Buffer{} // saved code
 var foutput *bufio.Writer   // y.output file
+
+var param string // extra parameter for ParserImpl emulating %param
 
 var fmtImported bool // output file has recorded an import of "fmt"
 
@@ -322,6 +325,7 @@ var resrv = []Resrv{
 	{"union", UNION},
 	{"struct", UNION},
 	{"error", ERROR},
+	{"param", PARAM},
 }
 
 type Error struct {
@@ -477,6 +481,9 @@ outer:
 
 		case UNION:
 			cpyunion()
+
+		case PARAM:
+			cpyparam()
 
 		case LEFT, BINARY, RIGHT, TERM:
 			// nonzero means new prec. and assoc.
@@ -1082,6 +1089,27 @@ out:
 		}
 	}
 	fmt.Fprintf(ftable, "\n\n")
+}
+
+//
+// add an extra user specified parameter to the ParserImpl struct
+//
+func cpyparam() {
+	param += "\t"
+out:
+	for {
+		c := getrune(finput)
+		switch c {
+		case '\n':
+			lineno++
+			break out
+		case '\r', EOF:
+			break out
+		default:
+			param += string(c)
+		}
+	}
+	param += "\n"
 }
 
 //
@@ -2952,6 +2980,10 @@ func others() {
 		fmt.Fprintf(ftable, "\n//line yaccpar:1\n")
 	}
 
+	// Insert the extra parameter if present into the $$ParserImpl struct,
+	// delete the line if not
+	yaccpar = strings.Replace(yaccpar, prefix+"Param\n", param, 1)
+
 	parts := strings.SplitN(yaccpar, prefix+"run()", 2)
 	fmt.Fprintf(ftable, "%v", parts[0])
 	ftable.Write(fcode.Bytes())
@@ -3280,6 +3312,7 @@ type $$ParserImpl struct {
 	lval  $$SymType
 	stack [$$InitialStackSize]$$SymType
 	char  int
+$$Param
 }
 
 func (p *$$ParserImpl) Lookahead() int {
