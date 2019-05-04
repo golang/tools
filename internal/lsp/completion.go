@@ -5,7 +5,6 @@
 package lsp
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"sort"
@@ -52,12 +51,26 @@ func toProtocolCompletionItems(m *protocol.ColumnMapper, candidates []source.Com
 		if !strings.HasPrefix(candidate.Label, prefix) {
 			continue
 		}
-		insertText := labelToInsertText(candidate.Label, candidate.Kind, insertTextFormat, usePlaceholders)
+		insertText := candidate.InsertText
+		if insertTextFormat == protocol.SnippetTextFormat {
+			if usePlaceholders && candidate.PlaceholderSnippet != nil {
+				insertText = candidate.PlaceholderSnippet.String()
+			} else if candidate.Snippet != nil {
+				insertText = candidate.Snippet.String()
+			}
+		}
+		// If the user has already typed some part of the completion candidate,
+		// don't insert that portion of the text.
 		if strings.HasPrefix(insertText, prefix) {
 			insertText = insertText[len(prefix):]
 		}
 
 		edits, _ := ToProtocolEdits(m, candidate.AdditionalTextEdits)
+		// Don't filter on text that might have snippets in it.
+		filterText := candidate.InsertText
+		if strings.HasPrefix(filterText, prefix) {
+			filterText = filterText[len(prefix):]
+		}
 		item := protocol.CompletionItem{
 			Label:  candidate.Label,
 			Detail: candidate.Detail,
@@ -73,9 +86,10 @@ func toProtocolCompletionItems(m *protocol.ColumnMapper, candidates []source.Com
 			// This is a hack so that the client sorts completion results in the order
 			// according to their score. This can be removed upon the resolution of
 			// https://github.com/Microsoft/language-server-protocol/issues/348.
-			SortText:            fmt.Sprintf("%05d", i),
-			FilterText:          insertText,
-			Preselect:           i == 0,
+			SortText:   fmt.Sprintf("%05d", i),
+			FilterText: filterText,
+			Preselect:  i == 0,
+
 			AdditionalTextEdits: edits,
 		}
 		// Trigger signature help for any function or method completion.
@@ -115,54 +129,4 @@ func toProtocolCompletionItemKind(kind source.CompletionItemKind) protocol.Compl
 	default:
 		return protocol.TextCompletion
 	}
-}
-
-func labelToInsertText(label string, kind source.CompletionItemKind, insertTextFormat protocol.InsertTextFormat, usePlaceholders bool) string {
-	switch kind {
-	case source.ConstantCompletionItem:
-		// The label for constants is of the format "<identifier> = <value>".
-		// We should not insert the " = <value>" part of the label.
-		if i := strings.Index(label, " ="); i >= 0 {
-			return label[:i]
-		}
-	case source.FunctionCompletionItem, source.MethodCompletionItem:
-		var trimmed, params string
-		if i := strings.Index(label, "("); i >= 0 {
-			trimmed = label[:i]
-			params = strings.Trim(label[i:], "()")
-		}
-		if params == "" || trimmed == "" {
-			return label
-		}
-		// Don't add parameters or parens for the plaintext insert format.
-		if insertTextFormat == protocol.PlainTextTextFormat {
-			return trimmed
-		}
-		// If we don't want to use placeholders, just add 2 parentheses with
-		// the cursor in the middle.
-		if !usePlaceholders {
-			return trimmed + "($1)"
-		}
-		// If signature help is not enabled, we should give the user parameters
-		// that they can tab through. The insert text format follows the
-		// specification defined by Microsoft for LSP. The "$", "}, and "\"
-		// characters should be escaped.
-		r := strings.NewReplacer(
-			`\`, `\\`,
-			`}`, `\}`,
-			`$`, `\$`,
-		)
-		b := bytes.NewBufferString(trimmed)
-		b.WriteByte('(')
-		for i, p := range strings.Split(params, ",") {
-			if i != 0 {
-				b.WriteString(", ")
-			}
-			fmt.Fprintf(b, "${%v:%v}", i+1, r.Replace(strings.TrimSpace(p)))
-		}
-		b.WriteByte(')')
-		return b.String()
-
-	}
-	return label
 }

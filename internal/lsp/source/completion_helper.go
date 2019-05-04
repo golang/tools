@@ -1,7 +1,6 @@
 package source
 
 import (
-	"context"
 	"go/ast"
 	"go/token"
 	"log"
@@ -15,19 +14,7 @@ import (
 
 var DisableGlobalCompletion bool
 
-type CompletionHelper struct {
-	ctx         context.Context
-	file        File
-	path        []ast.Node
-	cursorIdent string
-	search      SearchFunc
-}
-
-func newCompletionHelper(ctx context.Context, file File, path []ast.Node, search SearchFunc) *CompletionHelper {
-	return &CompletionHelper{ctx: ctx, file: file, path: path, search: search}
-}
-
-func (c *CompletionHelper) GetAdditionalTextEdits(pkgPath string) *TextEdit {
+func (c *completer) getAdditionalTextEdits(pkgPath string) *TextEdit {
 	l := len(c.path)
 	if l == 0 {
 		return nil
@@ -63,24 +50,24 @@ func (c *CompletionHelper) GetAdditionalTextEdits(pkgPath string) *TextEdit {
 	}
 }
 
-func (c *CompletionHelper) initCursorIdent(pos token.Pos) {
-	contents := c.file.GetContent(c.ctx)
-	tok := c.file.GetToken(c.ctx)
-	c.cursorIdent = offsetForIdent(contents, tok.Position(pos))
-}
-
-func (c *CompletionHelper) Prefix() string {
-	if c.cursorIdent != "" && c.cursorIdent[len(c.cursorIdent)-1] == '.' {
-		return ""
+func (c *completer) init() {
+	switch c.path[0].(type) {
+	case *ast.Ident, *ast.SelectorExpr:
+	default:
+		contents := c.file.GetContent(c.ctx)
+		tok := c.file.GetToken(c.ctx)
+		c.cursorIdent = offsetForIdent(contents, tok.Position(c.pos))
 	}
-	return c.cursorIdent
 }
 
-func (c *CompletionHelper) CursorIdent() string {
-	return c.cursorIdent
+func (c *completer) initPrefix() {
+	if c.cursorIdent != "" && c.cursorIdent[len(c.cursorIdent)-1] == '.' {
+		c.prefix = ""
+	}
+	c.prefix = c.cursorIdent
 }
 
-func (c *CompletionHelper) ScopeVisit(pkgPath, prefix string, found finder) (items []CompletionItem) {
+func (c *completer) scopeVisit(pkgPath, prefix string) {
 	score := stdScore * 2
 
 	f := func(p Package) bool {
@@ -89,13 +76,13 @@ func (c *CompletionHelper) ScopeVisit(pkgPath, prefix string, found finder) (ite
 		}
 
 		if p.GetTypes().Name() == prefix && p.GetTypes().Path() != pkgPath {
-			edit := c.GetAdditionalTextEdits(p.GetTypes().Path())
+			edit := c.getAdditionalTextEdits(p.GetTypes().Path())
 			scope := p.GetTypes().Scope()
 			for _, name := range scope.Names() {
-				l := len(items)
-				items = found(scope.Lookup(name), score, items)
-				if len(items) == l+1 && edit != nil {
-					items[l].AdditionalTextEdits = append(items[l].AdditionalTextEdits, *edit)
+				l := len(c.items)
+				c.found(scope.Lookup(name), score)
+				if len(c.items) == l+1 && edit != nil {
+					c.items[l].AdditionalTextEdits = append(c.items[l].AdditionalTextEdits, *edit)
 				}
 			}
 		}
@@ -103,27 +90,24 @@ func (c *CompletionHelper) ScopeVisit(pkgPath, prefix string, found finder) (ite
 	}
 
 	c.search(f)
-	return items
 }
 
-func (c *CompletionHelper) PackageVisit(prefix string, seen map[string]struct{}) (items []CompletionItem) {
-	items = c.stdModuleVisit(prefix, items, seen)
+func (c *completer) packageVisit(prefix string, seen map[string]struct{}) {
+	c.stdModuleVisit(prefix, seen)
 
 	f := func(p Package) bool {
 		item := c.createCompletionItem(p.GetTypes().Name(), p.GetTypes().Path(), prefix, seen)
 		if item != nil {
-			items = append(items, *item)
+			c.items = append(c.items, *item)
 		}
 		return false
 	}
 	c.search(f)
-
-	return items
 }
 
 const internalPkg = "internal"
 
-func (c *CompletionHelper) canNotAccess(pkgPath string) bool {
+func (c *completer) canNotAccess(pkgPath string) bool {
 	pos := strings.Index(pkgPath, internalPkg)
 	if pos == -1 {
 		return false
@@ -323,21 +307,20 @@ var stdModuleMap = map[string]string{
 	"unsafe": "unsafe",
 }
 
-func (c *CompletionHelper) stdModuleVisit(prefix string, items []CompletionItem, seen map[string]struct{}) []CompletionItem {
+func (c *completer) stdModuleVisit(prefix string, seen map[string]struct{}) {
 	if DisableGlobalCompletion {
-		return items
+		return
 	}
 
 	for path, name := range stdModuleMap {
 		item := c.createCompletionItem(name, path, prefix, seen)
 		if item != nil {
-			items = append(items, *item)
+			c.items = append(c.items, *item)
 		}
 	}
-	return items
 }
 
-func (c *CompletionHelper) createCompletionItem(pkgName string, pkgPath string, prefix string, seen map[string]struct{}) *CompletionItem {
+func (c *completer) createCompletionItem(pkgName string, pkgPath string, prefix string, seen map[string]struct{}) *CompletionItem {
 	if c.canNotAccess(pkgPath) {
 		return nil
 	}
@@ -359,7 +342,7 @@ func (c *CompletionHelper) createCompletionItem(pkgName string, pkgPath string, 
 		Kind:   PackageCompletionItem,
 		Score:  score,
 	}
-	edit := c.GetAdditionalTextEdits(pkgPath)
+	edit := c.getAdditionalTextEdits(pkgPath)
 	if edit != nil {
 		item.AdditionalTextEdits = append(item.AdditionalTextEdits, *edit)
 	}
@@ -367,32 +350,54 @@ func (c *CompletionHelper) createCompletionItem(pkgName string, pkgPath string, 
 	return item
 }
 
-func (c *CompletionHelper) Closure(obj types.Object, found finder, score float64) (items []CompletionItem) {
-	if obj.Name()+"." == c.CursorIdent() && obj.Type() != types.Typ[types.Invalid] {
+func (c *completer) closure(obj types.Object, score float64) bool {
+	items := c.items
+	c.items = c.items[0:0]
+	if obj.Name()+"." == c.cursorIdent && obj.Type() != types.Typ[types.Invalid] {
 		objType := obj.Type()
 		// methods of T
 		mset := types.NewMethodSet(objType)
 		for i := 0; i < mset.Len(); i++ {
-			items = found(mset.At(i).Obj(), score, items)
+			c.found(mset.At(i).Obj(), score)
 		}
 
 		// methods of *T
 		if !types.IsInterface(obj.Type()) && !isPointer(objType) {
 			mset := types.NewMethodSet(types.NewPointer(objType))
 			for i := 0; i < mset.Len(); i++ {
-				items = found(mset.At(i).Obj(), score, items)
+				c.found(mset.At(i).Obj(), score)
 			}
 		}
 
 		// fields of T
 		for _, f := range fieldSelections(objType) {
-			items = found(f, score, items)
+			c.found(f, score)
 		}
+	}
 
+	if len(c.items) > 0 {
+		return true
+	}
+
+	c.items = items
+	return false
+}
+
+func (c *completer) globalCompletion(seen map[string]struct{}) {
+	ident := c.cursorIdent
+	if ident == "" {
+		if id, ok := c.path[0].(*ast.Ident); ok {
+			c.packageVisit(id.Name, seen)
+		}
 		return
 	}
 
-	return
+	l := len(ident)
+	if ident[l-1] == '.' {
+		c.scopeVisit(c.types.Path(), ident[:l-1])
+	} else {
+		c.packageVisit(ident, seen)
+	}
 }
 
 func toPoint(fSet *token.FileSet, pos token.Pos) span.Point {
