@@ -1,6 +1,7 @@
 package protocol
 
 type PackageLocator struct {
+	Version string `json:",omitempty"`
 	Name    string
 	RepoURI string `json:"uri"`
 }
@@ -12,6 +13,7 @@ type SymbolLocator struct {
 
 	Kind SymbolKind
 
+	// The file path relative to the repo root URI of the specified symbol.
 	Path string
 
 	// A concrete location at which the definition is located.
