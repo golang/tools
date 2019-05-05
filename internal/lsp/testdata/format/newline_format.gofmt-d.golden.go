@@ -1,0 +1,7 @@
+--- format/newline_format.go.orig
++++ format/newline_format.go
+@@ -1,2 +1,2 @@
+ package format //@format("package")
+-func _() {}
+\ No newline at end of file
++func _()       {}

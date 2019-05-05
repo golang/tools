@@ -5,168 +5,60 @@
 package cmd_test
 
 import (
+	"bytes"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/tools/go/packages/packagestest"
-	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/lsp/cmd"
+	"golang.org/x/tools/internal/lsp/tests"
 )
 
-// We hardcode the expected number of test cases to ensure that all tests
-// are being executed. If a test is added, this number must be changed.
-const (
-	expectedCompletionsCount = 65
-	expectedDiagnosticsCount = 16
-	expectedFormatCount      = 4
-)
+var isRace = false
+
+type runner struct {
+	data *tests.Data
+	app  *cmd.Application
+}
 
 func TestCommandLine(t *testing.T) {
 	packagestest.TestAll(t, testCommandLine)
 }
 
 func testCommandLine(t *testing.T, exporter packagestest.Exporter) {
-	const dir = "../testdata"
+	data := tests.Load(t, exporter, "../testdata")
+	defer data.Exported.Cleanup()
 
-	files := packagestest.MustCopyFileTree(dir)
-	overlays := map[string][]byte{}
-	for fragment, operation := range files {
-		if trimmed := strings.TrimSuffix(fragment, ".in"); trimmed != fragment {
-			delete(files, fragment)
-			files[trimmed] = operation
-		}
-		const overlay = ".overlay"
-		if index := strings.Index(fragment, overlay); index >= 0 {
-			delete(files, fragment)
-			partial := fragment[:index] + fragment[index+len(overlay):]
-			contents, err := ioutil.ReadFile(filepath.Join(dir, fragment))
-			if err != nil {
-				t.Fatal(err)
-			}
-			overlays[partial] = contents
-		}
-	}
-	modules := []packagestest.Module{
-		{
-			Name:    "golang.org/x/tools/internal/lsp",
-			Files:   files,
-			Overlay: overlays,
+	r := &runner{
+		data: data,
+		app: &cmd.Application{
+			Config: *data.Exported.Config,
 		},
 	}
-	exported := packagestest.Export(t, exporter, modules)
-	defer exported.Cleanup()
-
-	// Do a first pass to collect special markers for completion.
-	if err := exported.Expect(map[string]interface{}{
-		"item": func(name string, r packagestest.Range, _, _ string) {
-			exported.Mark(name, r)
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	expectedDiagnostics := make(diagnostics)
-	completionItems := make(completionItems)
-	expectedCompletions := make(completions)
-	expectedFormat := make(formats)
-	expectedDefinitions := make(definitions)
-	expectedTypeDefinitions := make(definitions)
-
-	// Collect any data that needs to be used by subsequent tests.
-	if err := exported.Expect(map[string]interface{}{
-		"diag":       expectedDiagnostics.collect,
-		"item":       completionItems.collect,
-		"complete":   expectedCompletions.collect,
-		"format":     expectedFormat.collect,
-		"godef":      expectedDefinitions.godef,
-		"definition": expectedDefinitions.definition,
-		"typdef":     expectedTypeDefinitions.typdef,
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Run("Completion", func(t *testing.T) {
-		t.Helper()
-		expectedCompletions.test(t, exported, completionItems)
-	})
-
-	t.Run("Diagnostics", func(t *testing.T) {
-		t.Helper()
-		expectedDiagnostics.test(t, exported)
-	})
-
-	t.Run("Format", func(t *testing.T) {
-		t.Helper()
-		expectedFormat.test(t, exported)
-	})
-
-	t.Run("Definitions", func(t *testing.T) {
-		t.Helper()
-		expectedDefinitions.testDefinitions(t, exported)
-	})
-
-	t.Run("TypeDefinitions", func(t *testing.T) {
-		t.Helper()
-		expectedTypeDefinitions.testTypeDefinitions(t, exported)
-	})
+	tests.Run(t, r, data)
 }
 
-type completionItems map[span.Range]*source.CompletionItem
-type completions map[span.Span][]span.Span
-type formats map[span.URI]span.Span
-
-func (l completionItems) collect(spn span.Range, label, detail, kind string) {
-	var k source.CompletionItemKind
-	switch kind {
-	case "struct":
-		k = source.StructCompletionItem
-	case "func":
-		k = source.FunctionCompletionItem
-	case "var":
-		k = source.VariableCompletionItem
-	case "type":
-		k = source.TypeCompletionItem
-	case "field":
-		k = source.FieldCompletionItem
-	case "interface":
-		k = source.InterfaceCompletionItem
-	case "const":
-		k = source.ConstantCompletionItem
-	case "method":
-		k = source.MethodCompletionItem
-	case "package":
-		k = source.PackageCompletionItem
-	}
-	l[spn] = &source.CompletionItem{
-		Label:  label,
-		Detail: detail,
-		Kind:   k,
-	}
-}
-
-func (l completions) collect(src span.Span, expected []span.Span) {
-	l[src] = expected
-}
-
-func (l completions) test(t *testing.T, e *packagestest.Exported, items completionItems) {
-	if len(l) != expectedCompletionsCount {
-		t.Errorf("got %v completions expected %v", len(l), expectedCompletionsCount)
-	}
+func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests.CompletionSnippets, items tests.CompletionItems) {
 	//TODO: add command line completions tests when it works
 }
 
-func (l formats) collect(src span.Span) {
-	l[src.URI()] = src
+func (r *runner) Highlight(t *testing.T, data tests.Highlights) {
+	//TODO: add command line highlight tests when it works
+}
+func (r *runner) Symbol(t *testing.T, data tests.Symbols) {
+	//TODO: add command line symbol tests when it works
 }
 
-func (l formats) test(t *testing.T, e *packagestest.Exported) {
-	if len(l) != expectedFormatCount {
-		t.Errorf("got %v formats expected %v", len(l), expectedFormatCount)
-	}
-	//TODO: add command line formatting tests when it works
+func (r *runner) Signature(t *testing.T, data tests.Signatures) {
+	//TODO: add command line signature tests when it works
+}
+
+func (r *runner) Link(t *testing.T, data tests.Links) {
+	//TODO: add command line link tests when it works
 }
 
 func captureStdOut(t testing.TB, f func()) string {
@@ -187,5 +79,67 @@ func captureStdOut(t testing.TB, f func()) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return strings.TrimSpace(string(data))
+	return string(data)
+}
+
+// normalizePaths replaces all paths present in s with just the fragment portion
+// this is used to make golden files not depend on the temporary paths of the files
+func (r *runner) normalizePaths(s string) string {
+	type entry struct {
+		path  string
+		index int
+	}
+	match := make([]entry, len(r.data.Exported.Modules))
+	// collect the initial state of all the matchers
+	for i, m := range r.data.Exported.Modules {
+		// any random file will do, we collect the first one only
+		for f := range m.Files {
+			path := strings.TrimSuffix(r.data.Exported.File(m.Name, f), f)
+			index := strings.Index(s, path)
+			match[i] = entry{path, index}
+			break
+		}
+	}
+	// result should be the same or shorter than the input
+	buf := bytes.NewBuffer(make([]byte, 0, len(s)))
+	last := 0
+	for {
+		// find the nearest path match to the start of the buffer
+		next := -1
+		nearest := len(s)
+		for i, c := range match {
+			if c.index >= 0 && nearest > c.index {
+				nearest = c.index
+				next = i
+			}
+		}
+		// if there are no matches, we copy the rest of the string and are done
+		if next < 0 {
+			buf.WriteString(s[last:])
+			return buf.String()
+		}
+		// we have a match
+		n := &match[next]
+		// copy up to the start of the match
+		buf.WriteString(s[last:n.index])
+		// skip over the non fragment prefix
+		last = n.index + len(n.path)
+		// now try to convert the fragment part
+		for last < len(s) {
+			r, size := utf8.DecodeRuneInString(s[last:])
+			if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '/' {
+				buf.WriteRune(r)
+			} else if r == '\\' {
+				buf.WriteRune('/')
+			} else {
+				break
+			}
+			last += size
+		}
+		// see what the next match for this path is
+		n.index = strings.Index(s[last:], n.path)
+		if n.index >= 0 {
+			n.index += last
+		}
+	}
 }

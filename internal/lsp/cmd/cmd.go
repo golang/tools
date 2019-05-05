@@ -114,8 +114,9 @@ func (app *Application) Run(ctx context.Context, args ...string) error {
 func (app *Application) commands() []tool.Application {
 	return []tool.Application{
 		&app.Serve,
-		&query{app: app},
 		&check{app: app},
+		&format{app: app},
+		&query{app: app},
 	}
 }
 
@@ -145,9 +146,6 @@ func (app *Application) connect(ctx context.Context, client cmdClient) (protocol
 		stream := jsonrpc2.NewHeaderStream(conn, conn)
 		var jc *jsonrpc2.Conn
 		jc, server, _ = protocol.NewClient(stream, client)
-		if err != nil {
-			return nil, err
-		}
 		go jc.Run(ctx)
 	}
 
@@ -192,7 +190,7 @@ func (c *baseClient) LogMessage(ctx context.Context, p *protocol.LogMessageParam
 	}
 	return nil
 }
-func (c *baseClient) Telemetry(ctx context.Context, t interface{}) error { return nil }
+func (c *baseClient) Event(ctx context.Context, t *interface{}) error { return nil }
 func (c *baseClient) RegisterCapability(ctx context.Context, p *protocol.RegistrationParams) error {
 	return nil
 }
@@ -220,8 +218,8 @@ func (c *baseClient) Configuration(ctx context.Context, p *protocol.Configuratio
 	}
 	return results, nil
 }
-func (c *baseClient) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEditParams) (bool, error) {
-	return false, nil
+func (c *baseClient) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResponse, error) {
+	return &protocol.ApplyWorkspaceEditResponse{Applied: false, FailureReason: "not implemented"}, nil
 }
 func (c *baseClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishDiagnosticsParams) error {
 	return nil

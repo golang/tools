@@ -18,6 +18,7 @@ func (s *Server) cacheAndDiagnose(ctx context.Context, uri span.URI, content str
 	if err := view.SetContent(ctx, uri, []byte(content)); err != nil {
 		return err
 	}
+
 	go func() {
 		ctx := view.BackgroundContext()
 		if ctx.Err() != nil {

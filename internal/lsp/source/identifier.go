@@ -54,6 +54,9 @@ func Identifier(ctx context.Context, v View, f File, pos token.Pos) (*Identifier
 func identifier(ctx context.Context, v View, f File, pos token.Pos) (*IdentifierInfo, error) {
 	fAST := f.GetAST(ctx)
 	pkg := f.GetPackage(ctx)
+	if pkg == nil {
+		return nil, fmt.Errorf("no package for %s", f.URI())
+	}
 	if pkg.IsIllTyped() {
 		return nil, fmt.Errorf("package for %s is ill typed", f.URI())
 	}
@@ -76,6 +79,7 @@ func identifier(ctx context.Context, v View, f File, pos token.Pos) (*Identifier
 	for _, n := range path[1:] {
 		if field, ok := n.(*ast.Field); ok {
 			result.wasEmbeddedField = len(field.Names) == 0
+			break
 		}
 	}
 	result.Name = result.ident.Name
@@ -88,8 +92,8 @@ func identifier(ctx context.Context, v View, f File, pos token.Pos) (*Identifier
 		// The original position was on the embedded field declaration, so we
 		// try to dig out the type and jump to that instead.
 		if v, ok := result.Declaration.Object.(*types.Var); ok {
-			if n, ok := v.Type().(*types.Named); ok {
-				result.Declaration.Object = n.Obj()
+			if typObj := typeToObject(v.Type()); typObj != nil {
+				result.Declaration.Object = typObj
 			}
 		}
 	}
@@ -150,15 +154,20 @@ func objToNode(ctx context.Context, v View, obj types.Object, rng span.Range) (a
 	if path == nil {
 		return nil, fmt.Errorf("no path for range %v", rng)
 	}
-	// TODO(rstambler): Support other node types.
-	// For now, we only associate an ast.Node for type declarations.
-	switch obj.Type().(type) {
-	case *types.Named, *types.Struct, *types.Interface:
-		for _, node := range path {
-			if node, ok := node.(*ast.GenDecl); ok && node.Tok == token.TYPE {
+	for _, node := range path {
+		switch node := node.(type) {
+		case *ast.GenDecl:
+			// Type names, fields, and methods.
+			switch obj.(type) {
+			case *types.TypeName, *types.Var, *types.Const, *types.Func:
+				return node, nil
+			}
+		case *ast.FuncDecl:
+			// Function signatures.
+			if _, ok := obj.(*types.Func); ok {
 				return node, nil
 			}
 		}
 	}
-	return nil, nil // didn't find a node, but no error
+	return nil, nil // didn't find a node, but don't fail
 }

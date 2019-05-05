@@ -7,6 +7,7 @@ package span
 import (
 	"encoding/json"
 	"fmt"
+	"path"
 )
 
 // Span represents a source code range in standardized form.
@@ -167,7 +168,9 @@ func (s Span) Format(f fmt.State, c rune) {
 	// we should always have a uri, simplify if it is file format
 	//TODO: make sure the end of the uri is unambiguous
 	uri := string(s.v.URI)
-	if !fullForm {
+	if c == 'f' {
+		uri = path.Base(uri)
+	} else if !fullForm {
 		if filename, err := s.v.URI.Filename(); err == nil {
 			uri = filename
 		}
@@ -246,7 +249,7 @@ func (s *Span) update(c Converter, withPos, withOffset bool) error {
 			return err
 		}
 	}
-	if withOffset && !s.HasOffset() {
+	if withOffset && (!s.HasOffset() || (s.v.End.hasPosition() && !s.v.End.hasOffset())) {
 		if err := s.v.Start.updateOffset(c); err != nil {
 			return err
 		}
