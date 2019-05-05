@@ -339,6 +339,7 @@ func (c *completer) createCompletionItem(pkgName string, pkgPath string, prefix 
 	item := &CompletionItem{
 		Label:  pkgName,
 		Detail: pkgPath,
+		InsertText: pkgName,
 		Kind:   PackageCompletionItem,
 		Score:  score,
 	}
