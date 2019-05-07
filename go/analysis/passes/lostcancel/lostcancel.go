@@ -66,6 +66,15 @@ func run(pass *analysis.Pass) (interface{}, error) {
 }
 
 func runFunc(pass *analysis.Pass, node ast.Node) {
+	// Try to find scope of function node
+	var funcScope *types.Scope
+	switch v := node.(type) {
+	case *ast.FuncLit:
+		funcScope = pass.TypesInfo.Scopes[v.Type]
+	case *ast.FuncDecl:
+		funcScope = pass.TypesInfo.Scopes[v.Type]
+	}
+
 	// Maps each cancel variable to its defining ValueSpec/AssignStmt.
 	cancelvars := make(map[*types.Var]ast.Node)
 
@@ -114,7 +123,11 @@ func runFunc(pass *analysis.Pass, node ast.Node) {
 					"the cancel function returned by context.%s should be called, not discarded, to avoid a context leak",
 					n.(*ast.SelectorExpr).Sel.Name)
 			} else if v, ok := pass.TypesInfo.Uses[id].(*types.Var); ok {
-				cancelvars[v] = stmt
+				// If the cancel variable is defined outside function scope,
+				// do not analyze it.
+				if funcScope == nil || funcScope.Contains(v.Pos()) {
+					cancelvars[v] = stmt
+				}
 			} else if v, ok := pass.TypesInfo.Defs[id].(*types.Var); ok {
 				cancelvars[v] = stmt
 			}

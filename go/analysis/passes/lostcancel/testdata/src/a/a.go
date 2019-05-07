@@ -171,3 +171,14 @@ var _ = func() (ctx context.Context, cancel func()) {
 	ctx, cancel = context.WithCancel(bg)
 	return
 }
+
+// Test for Go issue 31856.
+func _() {
+	var cancel func()
+
+	func() {
+		_, cancel = context.WithCancel(bg)
+	}()
+
+	cancel()
+}
