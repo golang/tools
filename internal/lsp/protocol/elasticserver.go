@@ -21,49 +21,6 @@ type ElasticServer interface {
 func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handler {
 	return func(ctx context.Context, conn *jsonrpc2.Conn, r *jsonrpc2.Request) {
 		switch r.Method {
-		case "initialize":
-			var params InitializeParams
-			if err := json.Unmarshal(*r.Params, &params); err != nil {
-				sendParseError(ctx, log, conn, r, err)
-				return
-			}
-			if err := manageDeps(&params); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-			resp, err := server.Initialize(ctx, &params)
-			if err := conn.Reply(ctx, r, resp, err); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-		case "initialized":
-			var params InitializedParams
-			if err := json.Unmarshal(*r.Params, &params); err != nil {
-				sendParseError(ctx, log, conn, r, err)
-				return
-			}
-			if err := server.Initialized(ctx, &params); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-		case "shutdown":
-			if r.Params != nil {
-				conn.Reply(ctx, r, nil, jsonrpc2.NewErrorf(jsonrpc2.CodeInvalidParams, "Expected no params"))
-				return
-			}
-			if err := server.Shutdown(ctx); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-		case "exit":
-			if r.Params != nil {
-				conn.Reply(ctx, r, nil, jsonrpc2.NewErrorf(jsonrpc2.CodeInvalidParams, "Expected no params"))
-				return
-			}
-			if err := server.Exit(ctx); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
 		case "$/cancelRequest":
 			var params CancelParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
@@ -71,8 +28,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 				return
 			}
 			conn.Cancel(params.ID)
-
-		case "workspace/didChangeWorkspaceFolders":
+		case "workspace/didChangeWorkspaceFolders": // notif
 			var params DidChangeWorkspaceFoldersParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -81,8 +37,20 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := server.DidChangeWorkspaceFolders(ctx, &params); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "workspace/didChangeConfiguration":
+		case "initialized": // notif
+			var params InitializedParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			if err := server.Initialized(ctx, &params); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "exit": // notif
+			if err := server.Exit(ctx); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "workspace/didChangeConfiguration": // notif
 			var params DidChangeConfigurationParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -91,40 +59,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := server.DidChangeConfiguration(ctx, &params); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "workspace/didChangeWatchedFiles":
-			var params DidChangeWatchedFilesParams
-			if err := json.Unmarshal(*r.Params, &params); err != nil {
-				sendParseError(ctx, log, conn, r, err)
-				return
-			}
-			if err := server.DidChangeWatchedFiles(ctx, &params); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-		case "workspace/symbol":
-			var params WorkspaceSymbolParams
-			if err := json.Unmarshal(*r.Params, &params); err != nil {
-				sendParseError(ctx, log, conn, r, err)
-				return
-			}
-			resp, err := server.Symbol(ctx, &params)
-			if err := conn.Reply(ctx, r, resp, err); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-		case "workspace/executeCommand":
-			var params ExecuteCommandParams
-			if err := json.Unmarshal(*r.Params, &params); err != nil {
-				sendParseError(ctx, log, conn, r, err)
-				return
-			}
-			resp, err := server.ExecuteCommand(ctx, &params)
-			if err := conn.Reply(ctx, r, resp, err); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-		case "textDocument/didOpen":
+		case "textDocument/didOpen": // notif
 			var params DidOpenTextDocumentParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -133,8 +68,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := server.DidOpen(ctx, &params); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/didChange":
+		case "textDocument/didChange": // notif
 			var params DidChangeTextDocumentParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -143,8 +77,25 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := server.DidChange(ctx, &params); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/willSave":
+		case "textDocument/didClose": // notif
+			var params DidCloseTextDocumentParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			if err := server.DidClose(ctx, &params); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "textDocument/didSave": // notif
+			var params DidSaveTextDocumentParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			if err := server.DidSave(ctx, &params); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "textDocument/willSave": // notif
 			var params WillSaveTextDocumentParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -153,8 +104,125 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := server.WillSave(ctx, &params); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/willSaveWaitUntil":
+		case "workspace/didChangeWatchedFiles": // notif
+			var params DidChangeWatchedFilesParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			if err := server.DidChangeWatchedFiles(ctx, &params); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "$/setTraceNotification": // notif
+			var params SetTraceParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			if err := server.SetTraceNotification(ctx, &params); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "$/logTraceNotification": // notif
+			var params LogTraceParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			if err := server.LogTraceNotification(ctx, &params); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "textDocument/implementation": // req
+			var params TextDocumentPositionParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			resp, err := server.Implementation(ctx, &params)
+			if err := conn.Reply(ctx, r, resp, err); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "textDocument/typeDefinition": // req
+			var params TextDocumentPositionParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			resp, err := server.TypeDefinition(ctx, &params)
+			if err := conn.Reply(ctx, r, resp, err); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "textDocument/documentColor": // req
+			var params DocumentColorParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			resp, err := server.DocumentColor(ctx, &params)
+			if err := conn.Reply(ctx, r, resp, err); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "textDocument/colorPresentation": // req
+			var params ColorPresentationParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			resp, err := server.ColorPresentation(ctx, &params)
+			if err := conn.Reply(ctx, r, resp, err); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "textDocument/foldingRange": // req
+			var params FoldingRangeParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			resp, err := server.FoldingRange(ctx, &params)
+			if err := conn.Reply(ctx, r, resp, err); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "textDocument/declaration": // req
+			var params TextDocumentPositionParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			resp, err := server.Declaration(ctx, &params)
+			if err := conn.Reply(ctx, r, resp, err); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "textDocument/selectionRange": // req
+			var params SelectionRangeParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			resp, err := server.SelectionRange(ctx, &params)
+			if err := conn.Reply(ctx, r, resp, err); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "initialize": // req
+			var params InitializeParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			if err := manageDeps(&params); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+			resp, err := server.Initialize(ctx, &params)
+			if err := conn.Reply(ctx, r, resp, err); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "shutdown": // req
+			if r.Params != nil {
+				conn.Reply(ctx, r, nil, jsonrpc2.NewErrorf(jsonrpc2.CodeInvalidParams, "Expected no params"))
+				return
+			}
+			if err := server.Shutdown(ctx); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "textDocument/willSaveWaitUntil": // req
 			var params WillSaveTextDocumentParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -164,28 +232,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/didSave":
-			var params DidSaveTextDocumentParams
-			if err := json.Unmarshal(*r.Params, &params); err != nil {
-				sendParseError(ctx, log, conn, r, err)
-				return
-			}
-			if err := server.DidSave(ctx, &params); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-		case "textDocument/didClose":
-			var params DidCloseTextDocumentParams
-			if err := json.Unmarshal(*r.Params, &params); err != nil {
-				sendParseError(ctx, log, conn, r, err)
-				return
-			}
-			if err := server.DidClose(ctx, &params); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-		case "textDocument/completion":
+		case "textDocument/completion": // req
 			var params CompletionParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -195,19 +242,17 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "completionItem/resolve":
+		case "completionItem/resolve": // req
 			var params CompletionItem
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
 				return
 			}
-			resp, err := server.CompletionResolve(ctx, &params)
+			resp, err := server.Resolve(ctx, &params)
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/hover":
+		case "textDocument/hover": // req
 			var params TextDocumentPositionParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -217,8 +262,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/signatureHelp":
+		case "textDocument/signatureHelp": // req
 			var params TextDocumentPositionParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -228,8 +272,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/definition":
+		case "textDocument/definition": // req
 			var params TextDocumentPositionParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -239,7 +282,6 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
 		case "textDocument/edefinition":
 			var params TextDocumentPositionParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
@@ -250,30 +292,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/typeDefinition":
-			var params TextDocumentPositionParams
-			if err := json.Unmarshal(*r.Params, &params); err != nil {
-				sendParseError(ctx, log, conn, r, err)
-				return
-			}
-			resp, err := server.TypeDefinition(ctx, &params)
-			if err := conn.Reply(ctx, r, resp, err); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-		case "textDocument/implementation":
-			var params TextDocumentPositionParams
-			if err := json.Unmarshal(*r.Params, &params); err != nil {
-				sendParseError(ctx, log, conn, r, err)
-				return
-			}
-			resp, err := server.Implementation(ctx, &params)
-			if err := conn.Reply(ctx, r, resp, err); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-		case "textDocument/references":
+		case "textDocument/references": // req
 			var params ReferenceParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -283,8 +302,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/documentHighlight":
+		case "textDocument/documentHighlight": // req
 			var params TextDocumentPositionParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -294,8 +312,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/documentSymbol":
+		case "textDocument/documentSymbol": // req
 			var params DocumentSymbolParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -305,8 +322,17 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/codeAction":
+		case "workspace/symbol": // req
+			var params WorkspaceSymbolParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			resp, err := server.Symbol(ctx, &params)
+			if err := conn.Reply(ctx, r, resp, err); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "textDocument/codeAction": // req
 			var params CodeActionParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -316,8 +342,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/codeLens":
+		case "textDocument/codeLens": // req
 			var params CodeLensParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -327,63 +352,17 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "codeLens/resolve":
+		case "codeLens/resolve": // req
 			var params CodeLens
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
 				return
 			}
-			resp, err := server.CodeLensResolve(ctx, &params)
+			resp, err := server.ResolveCodeLens(ctx, &params)
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/documentLink":
-			var params DocumentLinkParams
-			if err := json.Unmarshal(*r.Params, &params); err != nil {
-				sendParseError(ctx, log, conn, r, err)
-				return
-			}
-			resp, err := server.DocumentLink(ctx, &params)
-			if err := conn.Reply(ctx, r, resp, err); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-		case "documentLink/resolve":
-			var params DocumentLink
-			if err := json.Unmarshal(*r.Params, &params); err != nil {
-				sendParseError(ctx, log, conn, r, err)
-				return
-			}
-			resp, err := server.DocumentLinkResolve(ctx, &params)
-			if err := conn.Reply(ctx, r, resp, err); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-		case "textDocument/documentColor":
-			var params DocumentColorParams
-			if err := json.Unmarshal(*r.Params, &params); err != nil {
-				sendParseError(ctx, log, conn, r, err)
-				return
-			}
-			resp, err := server.DocumentColor(ctx, &params)
-			if err := conn.Reply(ctx, r, resp, err); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-		case "textDocument/colorPresentation":
-			var params ColorPresentationParams
-			if err := json.Unmarshal(*r.Params, &params); err != nil {
-				sendParseError(ctx, log, conn, r, err)
-				return
-			}
-			resp, err := server.ColorPresentation(ctx, &params)
-			if err := conn.Reply(ctx, r, resp, err); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
-
-		case "textDocument/formatting":
+		case "textDocument/formatting": // req
 			var params DocumentFormattingParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -393,8 +372,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/rangeFormatting":
+		case "textDocument/rangeFormatting": // req
 			var params DocumentRangeFormattingParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -404,8 +382,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/onTypeFormatting":
+		case "textDocument/onTypeFormatting": // req
 			var params DocumentOnTypeFormattingParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -415,8 +392,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/rename":
+		case "textDocument/rename": // req
 			var params RenameParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
@@ -426,17 +402,47 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-
-		case "textDocument/foldingRange":
-			var params FoldingRangeParams
+		case "textDocument/prepareRename": // req
+			var params TextDocumentPositionParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
 				return
 			}
-			resp, err := server.FoldingRanges(ctx, &params)
+			resp, err := server.PrepareRename(ctx, &params)
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
+		case "textDocument/documentLink": // req
+			var params DocumentLinkParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			resp, err := server.DocumentLink(ctx, &params)
+			if err := conn.Reply(ctx, r, resp, err); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "documentLink/resolve": // req
+			var params DocumentLink
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			resp, err := server.ResolveDocumentLink(ctx, &params)
+			if err := conn.Reply(ctx, r, resp, err); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "workspace/executeCommand": // req
+			var params ExecuteCommandParams
+			if err := json.Unmarshal(*r.Params, &params); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+			resp, err := server.ExecuteCommand(ctx, &params)
+			if err := conn.Reply(ctx, r, resp, err); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+
 		default:
 			if r.IsNotify() {
 				conn.Reply(ctx, r, nil, jsonrpc2.NewErrorf(jsonrpc2.CodeMethodNotFound, "method %q not found", r.Method))

@@ -249,3 +249,17 @@ func (ps pkgs) collect(e *packagestest.Exported, fset *token.FileSet, src packag
 
 	ps[lSrc] = PkgResultTuple{PkgName: pkgname, RepoURI: repouri}
 }
+
+func testLocation(e *packagestest.Exported, fset *token.FileSet, rng packagestest.Range) (span.Span, *protocol.ColumnMapper) {
+	spn, err := span.NewRange(fset, rng.Start, rng.End).Span()
+	if err != nil {
+		return spn, nil
+	}
+	f := fset.File(rng.Start)
+	content, err := e.FileContents(f.Name())
+	if err != nil {
+		return spn, nil
+	}
+	m := protocol.NewColumnMapper(spn.URI(), fset, f, content)
+	return spn, m
+}
