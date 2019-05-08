@@ -182,3 +182,11 @@ func _() {
 
 	cancel()
 }
+
+var cancel1 func()
+
+// Same as above, but for package-level cancel variable.
+func _() {
+	// We assume that other uses of cancel1 exist.
+	_, cancel1 = context.WithCancel(bg)
+}
