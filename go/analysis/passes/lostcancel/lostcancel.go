@@ -45,6 +45,8 @@ var contextPackage = "context"
 // control-flow path from the call to a return statement and that path
 // does not "use" the cancel function.  Any reference to the variable
 // counts as a use, even within a nested function literal.
+// If the variable's scope is larger than the function
+// containing the assignment, we assume that other uses exist.
 //
 // checkLostCancel analyzes a single named or literal function.
 func run(pass *analysis.Pass) (interface{}, error) {
@@ -66,7 +68,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 }
 
 func runFunc(pass *analysis.Pass, node ast.Node) {
-	// Try to find scope of function node
+	// Find scope of function node
 	var funcScope *types.Scope
 	switch v := node.(type) {
 	case *ast.FuncLit:
@@ -125,7 +127,7 @@ func runFunc(pass *analysis.Pass, node ast.Node) {
 			} else if v, ok := pass.TypesInfo.Uses[id].(*types.Var); ok {
 				// If the cancel variable is defined outside function scope,
 				// do not analyze it.
-				if funcScope == nil || funcScope.Contains(v.Pos()) {
+				if funcScope.Contains(v.Pos()) {
 					cancelvars[v] = stmt
 				}
 			} else if v, ok := pass.TypesInfo.Defs[id].(*types.Var); ok {
