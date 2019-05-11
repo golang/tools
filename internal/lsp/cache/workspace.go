@@ -1,4 +1,4 @@
-package project
+package cache
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 )
@@ -23,27 +22,26 @@ const (
 // Workspace holds the go project workspace information
 type Workspace struct {
 	context  context.Context
+	config   *packages.Config
 	client   protocol.Client
-	view     *cache.View
 	rootPath string
 	modules  []*module
-	cache    cache.GlobalCache
+	cache    GlobalCache
 }
 
-// New creates a workspace for a workspace folder
-func New(ctx context.Context, client protocol.Client, rootPath string, view *cache.View) *Workspace {
+// NewWorkspace creates a workspace for a workspace folder
+func NewWorkspace(client protocol.Client, config *packages.Config) *Workspace {
 	return &Workspace{
-		context:  ctx,
+		context:  config.Context,
 		client:   client,
-		view:     view,
-		rootPath: rootPath,
+		config:   config,
+		rootPath: config.Dir,
 	}
 }
 
 // Init inits workspace
 func (w *Workspace) Init() {
-	w.cache = cache.NewCache()
-	w.view.SetCache(w.cache)
+	w.cache = NewCache()
 	go w.buildCache()
 }
 
@@ -206,6 +204,9 @@ func (w *Workspace) getContext() context.Context {
 
 // Search search package cache
 func (w *Workspace) Search(walkFunc source.WalkFunc) {
+	if w == nil {
+		return
+	}
 	w.cache.Walk(walkFunc)
 }
 
@@ -213,4 +214,11 @@ func (w *Workspace) setCache(pkgs []*packages.Package) {
 	for _, pkg := range pkgs {
 		w.cache.Add(pkg)
 	}
+}
+
+func (w *Workspace) Put(pkg *Package) {
+	if w == nil {
+		return
+	}
+	w.cache.Put(pkg)
 }

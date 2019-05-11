@@ -66,8 +66,8 @@ type View struct {
 	// pcache caches type information for the packages of the opened files in a view.
 	pcache *packageCache
 
-	// gcache caches all project's package
-	gcache GlobalCache
+	// workspace
+	space *Workspace
 	// builtinPkg is the AST package used to resolve builtin types.
 	builtinPkg *ast.Package
 }
@@ -128,6 +128,16 @@ func (v *View) BackgroundContext() context.Context {
 
 func (v *View) BuiltinPackage() *ast.Package {
 	return v.builtinPkg
+}
+
+func (v *View) Space() *Workspace {
+	return v.space
+}
+
+func (v *View) SetSpace(space *Workspace) {
+	v.mu.Lock()
+	v.space = space
+	v.mu.Unlock()
 }
 
 func builtinPkg(cfg packages.Config) *ast.Package {

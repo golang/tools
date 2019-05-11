@@ -7,40 +7,11 @@ package lsp
 import (
 	"context"
 	"fmt"
-	"strings"
 
-	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 )
-
-// findView returns the view corresponding to the given URI.
-// If the file is not already associated with a view, pick one using some heuristics.
-func (s *Server) findView(ctx context.Context, uri span.URI) (int, *cache.View) {
-	// first see if a view already has this file
-	for i, view := range s.views {
-		if view.FindFile(ctx, uri) != nil {
-			return i, view
-		}
-	}
-	var longest *cache.View
-	index := 0
-	for i, view := range s.views {
-		if longest != nil && len(longest.Folder) > len(view.Folder) {
-			continue
-		}
-		if strings.HasPrefix(string(uri), string(view.Folder)) {
-			index = i
-			longest = view
-		}
-	}
-	if longest != nil {
-		return index, longest
-	}
-	//TODO: are there any more heuristics we can use?
-	return 0, s.views[0]
-}
 
 func newColumnMap(ctx context.Context, v source.View, uri span.URI) (source.File, *protocol.ColumnMapper, error) {
 	f, err := v.GetFile(ctx, uri)

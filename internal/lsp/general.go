@@ -7,17 +7,12 @@ package lsp
 import (
 	"context"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path"
 	"strings"
 
-	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp/cache"
-	"golang.org/x/tools/internal/lsp/project"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
 )
@@ -30,15 +25,16 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 	}
 	s.isInitialized = true // mark server as initialized now
 
-	// TODO(rstambler): Change this default to protocol.Incremental (or add a
-	// flag). Disabled for now to simplify debugging.
+	// TODO(iancottrell): Change this default to protocol.Incremental and remove the option
 	s.textDocumentSyncKind = protocol.Full
+	if opts, ok := params.InitializationOptions.(map[string]interface{}); ok {
+		if opt, ok := opts["incrementalSync"].(bool); ok && opt {
+			s.textDocumentSyncKind = protocol.Incremental
+		}
+	}
 
 	s.setClientCapabilities(params.Capabilities)
 
-	// We need a "detached" context so it does not get timeout cancelled.
-	// TODO(iancottrell): Do we need to copy any values across?
-	viewContext := context.Background()
 	folders := params.WorkspaceFolders
 	if len(folders) == 0 {
 		if params.RootURI != "" {
@@ -53,28 +49,11 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 			return nil, fmt.Errorf("single file mode not supported yet")
 		}
 	}
-	for i, folder := range folders {
-		uri := span.NewURI(folder.URI)
-		folderPath, err := uri.Filename()
-		if err != nil {
+
+	for _, folder := range folders {
+		if err := s.addView(ctx, folder.Name, span.NewURI(folder.URI)); err != nil {
 			return nil, err
 		}
-		s.views = append(s.views, cache.NewView(viewContext, s.log, folder.Name, uri, &packages.Config{
-			Context: ctx,
-			Dir:     folderPath,
-			Env:     os.Environ(),
-			Mode:    packages.LoadImports,
-			Fset:    token.NewFileSet(),
-			Overlay: make(map[string][]byte),
-			ParseFile: func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
-				return parser.ParseFile(fset, filename, src, parser.AllErrors|parser.ParseComments)
-			},
-			Tests: true,
-		}))
-
-		workspace := project.New(ctx, s.client, folderPath, s.views[i])
-		workspace.Init()
-		s.workspaces = append(s.workspaces, workspace)
 	}
 
 	return &protocol.InitializeResult{
@@ -103,6 +82,20 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 			},
 			WorkspaceSymbolProvider: true,
 			ImplementationProvider:  true,
+			Workspace: &struct {
+				WorkspaceFolders *struct {
+					Supported           bool   "json:\"supported,omitempty\""
+					ChangeNotifications string "json:\"changeNotifications,omitempty\""
+				} "json:\"workspaceFolders,omitempty\""
+			}{
+				WorkspaceFolders: &struct {
+					Supported           bool   "json:\"supported,omitempty\""
+					ChangeNotifications string "json:\"changeNotifications,omitempty\""
+				}{
+					Supported:           true,
+					ChangeNotifications: "workspace/didChangeWorkspaceFolders",
+				},
+			},
 		},
 	}, nil
 }
@@ -131,6 +124,9 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 				Registrations: []protocol.Registration{{
 					ID:     "workspace/didChangeConfiguration",
 					Method: "workspace/didChangeConfiguration",
+				}, {
+					ID:     "workspace/didChangeWorkspaceFolders",
+					Method: "workspace/didChangeWorkspaceFolders",
 				}},
 			})
 		}

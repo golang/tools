@@ -11,7 +11,7 @@ import (
 func (s *Server) symbol(ctx context.Context, query string) ([]protocol.SymbolInformation, error) {
 	var symbolInfos []protocol.SymbolInformation
 	for i := range s.views {
-		symbols := source.Symbols(ctx, s.views[i], s.workspaces[i].Search, query, 100)
+		symbols := source.Symbols(ctx, s.views[i], s.views[i].Space().Search, query, 100)
 
 		for _, symbol := range symbols {
 			symbolInfos = append(symbolInfos, toProtocolSymbolInformation(symbol))

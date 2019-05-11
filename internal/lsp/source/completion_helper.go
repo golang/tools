@@ -12,8 +12,6 @@ import (
 	"golang.org/x/tools/internal/span"
 )
 
-var DisableGlobalCompletion bool
-
 func (c *completer) getAdditionalTextEdits(pkgPath string) *TextEdit {
 	l := len(c.path)
 	if l == 0 {
@@ -68,6 +66,10 @@ func (c *completer) initPrefix() {
 }
 
 func (c *completer) scopeVisit(pkgPath, prefix string) {
+	if c.search == nil {
+		return
+	}
+
 	score := stdScore * 2
 
 	f := func(p Package) bool {
@@ -93,6 +95,10 @@ func (c *completer) scopeVisit(pkgPath, prefix string) {
 }
 
 func (c *completer) packageVisit(prefix string, seen map[string]struct{}) {
+	if c.search == nil {
+		return
+	}
+
 	c.stdModuleVisit(prefix, seen)
 
 	f := func(p Package) bool {
@@ -102,6 +108,7 @@ func (c *completer) packageVisit(prefix string, seen map[string]struct{}) {
 		}
 		return false
 	}
+
 	c.search(f)
 }
 
@@ -308,10 +315,6 @@ var stdModuleMap = map[string]string{
 }
 
 func (c *completer) stdModuleVisit(prefix string, seen map[string]struct{}) {
-	if DisableGlobalCompletion {
-		return
-	}
-
 	for path, name := range stdModuleMap {
 		item := c.createCompletionItem(name, path, prefix, seen)
 		if item != nil {
@@ -337,11 +340,11 @@ func (c *completer) createCompletionItem(pkgName string, pkgPath string, prefix 
 	score := stdScore * 2
 
 	item := &CompletionItem{
-		Label:  pkgName,
-		Detail: pkgPath,
+		Label:      pkgName,
+		Detail:     pkgPath,
 		InsertText: pkgName,
-		Kind:   PackageCompletionItem,
-		Score:  score,
+		Kind:       PackageCompletionItem,
+		Score:      score,
 	}
 	edit := c.getAdditionalTextEdits(pkgPath)
 	if edit != nil {

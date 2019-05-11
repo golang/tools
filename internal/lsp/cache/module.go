@@ -1,14 +1,15 @@
-package project
+package cache
 
 import (
-	"golang.org/x/tools/go/packages"
 	"sync"
+
+	"golang.org/x/tools/go/packages"
 )
 
 type module struct {
-	mu          sync.RWMutex
-	w           *Workspace
-	rootPath    string
+	mu       sync.RWMutex
+	w        *Workspace
+	rootPath string
 }
 
 func newModule(w *Workspace, rootPath string) *module {
@@ -16,7 +17,7 @@ func newModule(w *Workspace, rootPath string) *module {
 }
 
 func (m *module) buildCache() error {
-	cfg := m.w.view.Config
+	cfg := *m.w.config
 	cfg.Dir = m.rootPath
 	cfg.Mode = packages.LoadAllSyntax
 	pattern := cfg.Dir + "/..."

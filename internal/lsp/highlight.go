@@ -14,7 +14,7 @@ import (
 
 func (s *Server) documentHighlight(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.DocumentHighlight, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	_, view := s.findView(ctx, uri)
+	view := s.findView(ctx, uri)
 	f, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return nil, err

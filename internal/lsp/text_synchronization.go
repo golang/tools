@@ -49,7 +49,7 @@ func (s *Server) applyChanges(ctx context.Context, params *protocol.DidChangeTex
 	}
 
 	uri := span.NewURI(params.TextDocument.URI)
-	_, view := s.findView(ctx, uri)
+	view := s.findView(ctx, uri)
 	file, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return "", jsonrpc2.NewErrorf(jsonrpc2.CodeInternalError, "file not found")
@@ -64,7 +64,7 @@ func (s *Server) applyChanges(ctx context.Context, params *protocol.DidChangeTex
 			return "", jsonrpc2.NewErrorf(jsonrpc2.CodeInternalError, "invalid range for content change")
 		}
 		start, end := spn.Start().Offset(), spn.End().Offset()
-		if end <= start {
+		if end < start {
 			return "", jsonrpc2.NewErrorf(jsonrpc2.CodeInternalError, "invalid range for content change")
 		}
 		var buf bytes.Buffer
@@ -82,6 +82,6 @@ func (s *Server) didSave(ctx context.Context, params *protocol.DidSaveTextDocume
 
 func (s *Server) didClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
 	uri := span.NewURI(params.TextDocument.URI)
-	_, view := s.findView(ctx, uri)
+	view := s.findView(ctx, uri)
 	return view.SetContent(ctx, uri, nil)
 }

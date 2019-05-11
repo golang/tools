@@ -5,9 +5,7 @@
 package cmd_test
 
 import (
-	"bytes"
 	"context"
-	"io/ioutil"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -33,13 +31,11 @@ func (r *runner) Format(t *testing.T, data tests.Formats) {
 				t.Fatal(err)
 			}
 			args := append(mode, filename)
-			expect := string(r.data.Golden(tag, filename, func(golden string) error {
+			expect := string(r.data.Golden(tag, filename, func() ([]byte, error) {
 				cmd := exec.Command("gofmt", args...)
-				buf := &bytes.Buffer{}
-				cmd.Stdout = buf
-				cmd.Run() // ignore error, sometimes we have intentionally ungofmt-able files
-				contents := r.normalizePaths(fixFileHeader(buf.String()))
-				return ioutil.WriteFile(golden, []byte(contents), 0666)
+				contents, _ := cmd.Output() // ignore error, sometimes we have intentionally ungofmt-able files
+				contents = []byte(normalizePaths(r.data, fixFileHeader(string(contents))))
+				return contents, nil
 			}))
 			if expect == "" {
 				//TODO: our error handling differs, for now just skip unformattable files
@@ -48,9 +44,9 @@ func (r *runner) Format(t *testing.T, data tests.Formats) {
 			app := &cmd.Application{}
 			app.Config = r.data.Config
 			got := captureStdOut(t, func() {
-				tool.Main(context.Background(), app, append([]string{"format"}, args...))
+				tool.Main(context.Background(), app, append([]string{"-remote=internal", "format"}, args...))
 			})
-			got = r.normalizePaths(got)
+			got = normalizePaths(r.data, got)
 			// check the first two lines are the expected file header
 			if expect != got {
 				t.Errorf("format failed with %#v expected:\n%s\ngot:\n%s", args, expect, got)

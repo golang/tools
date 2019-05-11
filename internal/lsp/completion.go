@@ -17,7 +17,7 @@ import (
 
 func (s *Server) completion(ctx context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	index, view := s.findView(ctx, uri)
+	view := s.findView(ctx, uri)
 	f, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return nil, err
@@ -30,7 +30,7 @@ func (s *Server) completion(ctx context.Context, params *protocol.CompletionPara
 	if err != nil {
 		return nil, err
 	}
-	items, prefix, err := source.Completion(ctx, f, rng.Start, s.workspaces[index].Search)
+	items, prefix, err := source.Completion(ctx, f, rng.Start, view.Space().Search)
 	if err != nil {
 		s.log.Infof(ctx, "no completions found for %s:%v:%v: %v", uri, int(params.Position.Line), int(params.Position.Character), err)
 		items = []source.CompletionItem{}

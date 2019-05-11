@@ -22,6 +22,12 @@
 //	-compileflags 'list'
 //		Pass the space-separated list of flags to the compilation.
 //
+//	-link exe
+//		Use exe as the path to the cmd/link binary.
+//
+//	-linkflags 'list'
+//		Pass the space-separated list of flags to the linker.
+//
 //	-count n
 //		Run each benchmark n times (default 1).
 //
@@ -90,6 +96,7 @@ import (
 var (
 	goroot   string
 	compiler string
+	linker   string
 	runRE    *regexp.Regexp
 	is6g     bool
 )
@@ -100,6 +107,8 @@ var (
 	flagObj            = flag.Bool("obj", false, "report object file stats")
 	flagCompiler       = flag.String("compile", "", "use `exe` as the cmd/compile binary")
 	flagCompilerFlags  = flag.String("compileflags", "", "additional `flags` to pass to compile")
+	flagLinker         = flag.String("link", "", "use `exe` as the cmd/link binary")
+	flagLinkerFlags    = flag.String("linkflags", "", "additional `flags` to pass to link")
 	flagRun            = flag.String("run", "", "run benchmarks matching `regexp`")
 	flagCount          = flag.Int("count", 1, "run benchmarks `n` times")
 	flagCpuprofile     = flag.String("cpuprofile", "", "write CPU profile to `file`")
@@ -109,24 +118,31 @@ var (
 	flagShort          = flag.Bool("short", false, "skip long-running benchmarks")
 )
 
-var tests = []struct {
+type test struct {
 	name string
-	dir  string
-	long bool
-}{
-	{"BenchmarkTemplate", "html/template", false},
-	{"BenchmarkUnicode", "unicode", false},
-	{"BenchmarkGoTypes", "go/types", false},
-	{"BenchmarkCompiler", "cmd/compile/internal/gc", false},
-	{"BenchmarkSSA", "cmd/compile/internal/ssa", false},
-	{"BenchmarkFlate", "compress/flate", false},
-	{"BenchmarkGoParser", "go/parser", false},
-	{"BenchmarkReflect", "reflect", false},
-	{"BenchmarkTar", "archive/tar", false},
-	{"BenchmarkXML", "encoding/xml", false},
-	{"BenchmarkStdCmd", "", true},
-	{"BenchmarkHelloSize", "", false},
-	{"BenchmarkCmdGoSize", "", true},
+	r    runner
+}
+
+type runner interface {
+	long() bool
+	run(name string, count int) error
+}
+
+var tests = []test{
+	{"BenchmarkTemplate", compile{"html/template"}},
+	{"BenchmarkUnicode", compile{"unicode"}},
+	{"BenchmarkGoTypes", compile{"go/types"}},
+	{"BenchmarkCompiler", compile{"cmd/compile/internal/gc"}},
+	{"BenchmarkSSA", compile{"cmd/compile/internal/ssa"}},
+	{"BenchmarkFlate", compile{"compress/flate"}},
+	{"BenchmarkGoParser", compile{"go/parser"}},
+	{"BenchmarkReflect", compile{"reflect"}},
+	{"BenchmarkTar", compile{"archive/tar"}},
+	{"BenchmarkXML", compile{"encoding/xml"}},
+	{"BenchmarkLinkCompiler", link{"cmd/compile"}},
+	{"BenchmarkStdCmd", goBuild{[]string{"std", "cmd"}}},
+	{"BenchmarkHelloSize", size{"$GOROOT/test/helloworld.go", false}},
+	{"BenchmarkCmdGoSize", size{"cmd/go", true}},
 }
 
 func usage() {
@@ -154,16 +170,23 @@ func main() {
 
 	compiler = *flagCompiler
 	if compiler == "" {
-		out, err := exec.Command(*flagGoCmd, "tool", "-n", "compile").CombinedOutput()
-		if err != nil {
-			out, err = exec.Command(*flagGoCmd, "tool", "-n", "6g").CombinedOutput()
+		var foundTool string
+		foundTool, compiler = toolPath("compile", "6g")
+		if foundTool == "6g" {
 			is6g = true
-			if err != nil {
-				out, err = exec.Command(*flagGoCmd, "tool", "-n", "compile").CombinedOutput()
-				log.Fatalf("go tool -n compiler: %v\n%s", err, out)
-			}
 		}
-		compiler = strings.TrimSpace(string(out))
+	}
+
+	linker = *flagLinker
+	if linker == "" && !is6g { // TODO: Support 6l
+		_, linker = toolPath("link")
+	}
+
+	if is6g {
+		*flagMemprofilerate = -1
+		*flagAlloc = false
+		*flagCpuprofile = ""
+		*flagMemprofile = ""
 	}
 
 	if *flagRun != "" {
@@ -174,67 +197,117 @@ func main() {
 		runRE = r
 	}
 
-	for i := 0; i < *flagCount; i++ {
-		if *flagPackage != "" {
-			runBuild("BenchmarkPkg", *flagPackage, i)
-			continue
+	if *flagPackage != "" {
+		tests = []test{
+			{"BenchmarkPkg", compile{*flagPackage}},
+			{"BenchmarkPkgLink", link{*flagPackage}},
 		}
+		runRE = nil
+	}
+
+	for i := 0; i < *flagCount; i++ {
 		for _, tt := range tests {
-			if tt.long && *flagShort {
+			if tt.r.long() && *flagShort {
 				continue
 			}
 			if runRE == nil || runRE.MatchString(tt.name) {
-				runBuild(tt.name, tt.dir, i)
+				if err := tt.r.run(tt.name, i); err != nil {
+					log.Printf("%s: %v", tt.name, err)
+				}
 			}
 		}
 	}
 }
 
-func runCmd(name string, cmd *exec.Cmd) {
+func toolPath(names ...string) (found, path string) {
+	var out1 []byte
+	var err1 error
+	for i, name := range names {
+		out, err := exec.Command(*flagGoCmd, "tool", "-n", name).CombinedOutput()
+		if err == nil {
+			return name, strings.TrimSpace(string(out))
+		}
+		if i == 0 {
+			out1, err1 = out, err
+		}
+	}
+	log.Fatalf("go tool -n %s: %v\n%s", names[0], err1, out1)
+	return "", ""
+}
+
+type Pkg struct {
+	Dir     string
+	GoFiles []string
+}
+
+func goList(dir string) (*Pkg, error) {
+	var pkg Pkg
+	out, err := exec.Command(*flagGoCmd, "list", "-json", dir).Output()
+	if err != nil {
+		return nil, fmt.Errorf("go list -json %s: %v\n", dir, err)
+	}
+	if err := json.Unmarshal(out, &pkg); err != nil {
+		return nil, fmt.Errorf("go list -json %s: unmarshal: %v", dir, err)
+	}
+	return &pkg, nil
+}
+
+func runCmd(name string, cmd *exec.Cmd) error {
 	start := time.Now()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("%v: %v\n%s", name, err, out)
-		return
+		return fmt.Errorf("%v\n%s", err, out)
 	}
 	fmt.Printf("%s 1 %d ns/op\n", name, time.Since(start).Nanoseconds())
+	return nil
 }
 
-func runStdCmd() {
+type goBuild struct{ pkgs []string }
+
+func (goBuild) long() bool { return true }
+
+func (r goBuild) run(name string, count int) error {
 	args := []string{"build", "-a"}
 	if *flagCompilerFlags != "" {
 		args = append(args, "-gcflags", *flagCompilerFlags)
 	}
-	args = append(args, "std", "cmd")
+	args = append(args, r.pkgs...)
 	cmd := exec.Command(*flagGoCmd, args...)
 	cmd.Dir = filepath.Join(goroot, "src")
-	runCmd("BenchmarkStdCmd", cmd)
+	return runCmd(name, cmd)
 }
 
-// path is either a path to a file ("$GOROOT/test/helloworld.go") or a package path ("cmd/go").
-func runSize(name, path string) {
-	cmd := exec.Command(*flagGoCmd, "build", "-o", "_compilebenchout_", path)
+type size struct {
+	// path is either a path to a file ("$GOROOT/test/helloworld.go") or a package path ("cmd/go").
+	path   string
+	isLong bool
+}
+
+func (r size) long() bool { return r.isLong }
+
+func (r size) run(name string, count int) error {
+	if strings.HasPrefix(r.path, "$GOROOT/") {
+		r.path = goroot + "/" + r.path[len("$GOROOT/"):]
+	}
+
+	cmd := exec.Command(*flagGoCmd, "build", "-o", "_compilebenchout_", r.path)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		log.Print(err)
-		return
+		return err
 	}
 	defer os.Remove("_compilebenchout_")
 	info, err := os.Stat("_compilebenchout_")
 	if err != nil {
-		log.Print(err)
-		return
+		return err
 	}
 	out, err := exec.Command("size", "_compilebenchout_").CombinedOutput()
 	if err != nil {
-		log.Printf("size: %v\n%s", err, out)
-		return
+		return fmt.Errorf("size: %v\n%s", err, out)
 	}
 	lines := strings.Split(string(out), "\n")
 	if len(lines) < 2 {
-		log.Printf("not enough output from size: %s", out)
-		return
+		return fmt.Errorf("not enough output from size: %s", out)
 	}
 	f := strings.Fields(lines[1])
 	if strings.HasPrefix(lines[0], "__TEXT") && len(f) >= 2 { // OS X
@@ -242,131 +315,31 @@ func runSize(name, path string) {
 	} else if strings.Contains(lines[0], "bss") && len(f) >= 3 {
 		fmt.Printf("%s 1 %s text-bytes %s data-bytes %s bss-bytes %v exe-bytes\n", name, f[0], f[1], f[2], info.Size())
 	}
+	return nil
 }
 
-func runBuild(name, dir string, count int) {
-	switch name {
-	case "BenchmarkStdCmd":
-		runStdCmd()
-		return
-	case "BenchmarkCmdGoSize":
-		runSize("BenchmarkCmdGoSize", "cmd/go")
-		return
-	case "BenchmarkHelloSize":
-		runSize("BenchmarkHelloSize", filepath.Join(goroot, "test/helloworld.go"))
-		return
-	}
+type compile struct{ dir string }
 
+func (compile) long() bool { return false }
+
+func (c compile) run(name string, count int) error {
 	// Make sure dependencies needed by go tool compile are installed to GOROOT/pkg.
-	out, err := exec.Command(*flagGoCmd, "build", "-i", dir).CombinedOutput()
+	out, err := exec.Command(*flagGoCmd, "build", "-i", c.dir).CombinedOutput()
 	if err != nil {
-		log.Printf("go build -i %s: %v\n%s", dir, err, out)
-		return
+		return fmt.Errorf("go build -i %s: %v\n%s", c.dir, err, out)
 	}
 
 	// Find dir and source file list.
-	var pkg struct {
-		Dir     string
-		GoFiles []string
-	}
-	out, err = exec.Command(*flagGoCmd, "list", "-json", dir).Output()
+	pkg, err := goList(c.dir)
 	if err != nil {
-		log.Printf("go list -json %s: %v\n", dir, err)
-		return
-	}
-	if err := json.Unmarshal(out, &pkg); err != nil {
-		log.Printf("go list -json %s: unmarshal: %v", dir, err)
-		return
+		return err
 	}
 
 	args := []string{"-o", "_compilebench_.o"}
-	if is6g {
-		*flagMemprofilerate = -1
-		*flagAlloc = false
-		*flagCpuprofile = ""
-		*flagMemprofile = ""
-	}
-	if *flagMemprofilerate >= 0 {
-		args = append(args, "-memprofilerate", fmt.Sprint(*flagMemprofilerate))
-	}
 	args = append(args, strings.Fields(*flagCompilerFlags)...)
-	if *flagAlloc || *flagCpuprofile != "" || *flagMemprofile != "" {
-		if *flagAlloc || *flagMemprofile != "" {
-			args = append(args, "-memprofile", "_compilebench_.memprof")
-		}
-		if *flagCpuprofile != "" {
-			args = append(args, "-cpuprofile", "_compilebench_.cpuprof")
-		}
-	}
 	args = append(args, pkg.GoFiles...)
-	cmd := exec.Command(compiler, args...)
-	cmd.Dir = pkg.Dir
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	start := time.Now()
-	err = cmd.Run()
-	if err != nil {
-		log.Printf("%v: %v", name, err)
-		return
-	}
-	end := time.Now()
-
-	var allocs, allocbytes int64
-	if *flagAlloc || *flagMemprofile != "" {
-		out, err := ioutil.ReadFile(pkg.Dir + "/_compilebench_.memprof")
-		if err != nil {
-			log.Print("cannot find memory profile after compilation")
-		}
-		for _, line := range strings.Split(string(out), "\n") {
-			f := strings.Fields(line)
-			if len(f) < 4 || f[0] != "#" || f[2] != "=" {
-				continue
-			}
-			val, err := strconv.ParseInt(f[3], 0, 64)
-			if err != nil {
-				continue
-			}
-			switch f[1] {
-			case "TotalAlloc":
-				allocbytes = val
-			case "Mallocs":
-				allocs = val
-			}
-		}
-
-		if *flagMemprofile != "" {
-			outpath := *flagMemprofile
-			if *flagCount != 1 {
-				outpath = fmt.Sprintf("%s_%d", outpath, count)
-			}
-			if err := ioutil.WriteFile(outpath, out, 0666); err != nil {
-				log.Print(err)
-			}
-		}
-		os.Remove(pkg.Dir + "/_compilebench_.memprof")
-	}
-
-	if *flagCpuprofile != "" {
-		out, err := ioutil.ReadFile(pkg.Dir + "/_compilebench_.cpuprof")
-		if err != nil {
-			log.Print(err)
-		}
-		outpath := *flagCpuprofile
-		if *flagCount != 1 {
-			outpath = fmt.Sprintf("%s_%d", outpath, count)
-		}
-		if err := ioutil.WriteFile(outpath, out, 0666); err != nil {
-			log.Print(err)
-		}
-		os.Remove(pkg.Dir + "/_compilebench_.cpuprof")
-	}
-
-	wallns := end.Sub(start).Nanoseconds()
-	userns := cmd.ProcessState.UserTime().Nanoseconds()
-
-	fmt.Printf("%s 1 %d ns/op %d user-ns/op", name, wallns, userns)
-	if *flagAlloc {
-		fmt.Printf(" %d B/op %d allocs/op", allocbytes, allocs)
+	if err := runBuildCmd(name, count, pkg.Dir, compiler, args); err != nil {
+		return err
 	}
 
 	opath := pkg.Dir + "/_compilebench_.o"
@@ -385,4 +358,147 @@ func runBuild(name, dir string, count int) {
 	fmt.Println()
 
 	os.Remove(opath)
+	return nil
+}
+
+type link struct{ dir string }
+
+func (link) long() bool { return false }
+
+func (r link) run(name string, count int) error {
+	if linker == "" {
+		// No linker. Skip the test.
+		return nil
+	}
+
+	// Build dependencies.
+	out, err := exec.Command(*flagGoCmd, "build", "-i", "-o", "/dev/null", r.dir).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("go build -i %s: %v\n%s", r.dir, err, out)
+	}
+
+	// Build the main package.
+	pkg, err := goList(r.dir)
+	if err != nil {
+		return err
+	}
+	args := []string{"-o", "_compilebench_.o"}
+	args = append(args, pkg.GoFiles...)
+	cmd := exec.Command(compiler, args...)
+	cmd.Dir = pkg.Dir
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
+	if err != nil {
+		return fmt.Errorf("compiling: %v", err)
+	}
+	defer os.Remove(pkg.Dir + "/_compilebench_.o")
+
+	// Link the main package.
+	args = []string{"-o", "_compilebench_.exe"}
+	args = append(args, strings.Fields(*flagLinkerFlags)...)
+	args = append(args, "_compilebench_.o")
+	if err := runBuildCmd(name, count, pkg.Dir, linker, args); err != nil {
+		return err
+	}
+	fmt.Println()
+	defer os.Remove(pkg.Dir + "/_compilebench_.exe")
+
+	return err
+}
+
+// runBuildCmd runs "tool args..." in dir, measures standard build
+// tool metrics, and prints a benchmark line. The caller may print
+// additional metrics and then must print a newline.
+//
+// This assumes tool accepts standard build tool flags like
+// -memprofilerate, -memprofile, and -cpuprofile.
+func runBuildCmd(name string, count int, dir, tool string, args []string) error {
+	var preArgs []string
+	if *flagMemprofilerate >= 0 {
+		preArgs = append(preArgs, "-memprofilerate", fmt.Sprint(*flagMemprofilerate))
+	}
+	if *flagAlloc || *flagCpuprofile != "" || *flagMemprofile != "" {
+		if *flagAlloc || *flagMemprofile != "" {
+			preArgs = append(preArgs, "-memprofile", "_compilebench_.memprof")
+		}
+		if *flagCpuprofile != "" {
+			preArgs = append(preArgs, "-cpuprofile", "_compilebench_.cpuprof")
+		}
+	}
+	cmd := exec.Command(tool, append(preArgs, args...)...)
+	cmd.Dir = dir
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	start := time.Now()
+	err := cmd.Run()
+	if err != nil {
+		return err
+	}
+	end := time.Now()
+
+	haveAllocs := false
+	var allocs, allocbytes int64
+	if *flagAlloc || *flagMemprofile != "" {
+		out, err := ioutil.ReadFile(dir + "/_compilebench_.memprof")
+		if err != nil {
+			log.Print("cannot find memory profile after compilation")
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			f := strings.Fields(line)
+			if len(f) < 4 || f[0] != "#" || f[2] != "=" {
+				continue
+			}
+			val, err := strconv.ParseInt(f[3], 0, 64)
+			if err != nil {
+				continue
+			}
+			haveAllocs = true
+			switch f[1] {
+			case "TotalAlloc":
+				allocbytes = val
+			case "Mallocs":
+				allocs = val
+			}
+		}
+		if !haveAllocs {
+			log.Println("missing stats in memprof (golang.org/issue/18641)")
+		}
+
+		if *flagMemprofile != "" {
+			outpath := *flagMemprofile
+			if *flagCount != 1 {
+				outpath = fmt.Sprintf("%s_%d", outpath, count)
+			}
+			if err := ioutil.WriteFile(outpath, out, 0666); err != nil {
+				log.Print(err)
+			}
+		}
+		os.Remove(dir + "/_compilebench_.memprof")
+	}
+
+	if *flagCpuprofile != "" {
+		out, err := ioutil.ReadFile(dir + "/_compilebench_.cpuprof")
+		if err != nil {
+			log.Print(err)
+		}
+		outpath := *flagCpuprofile
+		if *flagCount != 1 {
+			outpath = fmt.Sprintf("%s_%d", outpath, count)
+		}
+		if err := ioutil.WriteFile(outpath, out, 0666); err != nil {
+			log.Print(err)
+		}
+		os.Remove(dir + "/_compilebench_.cpuprof")
+	}
+
+	wallns := end.Sub(start).Nanoseconds()
+	userns := cmd.ProcessState.UserTime().Nanoseconds()
+
+	fmt.Printf("%s 1 %d ns/op %d user-ns/op", name, wallns, userns)
+	if haveAllocs {
+		fmt.Printf(" %d B/op %d allocs/op", allocbytes, allocs)
+	}
+
+	return nil
 }

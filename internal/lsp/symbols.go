@@ -14,7 +14,7 @@ import (
 
 func (s *Server) documentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]protocol.DocumentSymbol, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	_, view := s.findView(ctx, uri)
+	view := s.findView(ctx, uri)
 	f, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return nil, err

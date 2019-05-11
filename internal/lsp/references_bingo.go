@@ -34,7 +34,7 @@ func (s *Server) doReferences(ctx context.Context, params *protocol.ReferencePar
 			return nil, err
 		}
 
-		locs, err := source.References(ctx, s.workspaces[i].Search, f, rng.Start, params.Context.IncludeDeclaration)
+		locs, err := source.References(ctx, s.views[i].Space().Search, f, rng.Start, params.Context.IncludeDeclaration)
 		if err != nil {
 			return nil, err
 		}

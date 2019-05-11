@@ -24,7 +24,7 @@ func (s *Server) implementation(ctx context.Context, params *protocol.TextDocume
 			return nil, err
 		}
 
-		locs, err := source.Implementation(ctx, s.workspaces[i].Search, f, rng.Start)
+		locs, err := source.Implementation(ctx, s.views[i].Space().Search, f, rng.Start)
 		if err != nil {
 			return nil, err
 		}

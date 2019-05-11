@@ -16,7 +16,7 @@ import (
 
 func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	_, view := s.findView(ctx, uri)
+	view := s.findView(ctx, uri)
 	_, m, err := newColumnMap(ctx, view, uri)
 	if err != nil {
 		return nil, err
