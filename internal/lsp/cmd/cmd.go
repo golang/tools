@@ -47,6 +47,9 @@ type Application struct {
 
 	// Support for remote lsp server
 	Remote string `flag:"remote" help:"*EXPERIMENTAL* - forward all commands to a remote lsp"`
+
+	// Enable verbose logging
+	Verbose bool `flag:"v" help:"Verbose output"`
 }
 
 // Name implements tool.Application returning the binary name.
@@ -115,9 +118,11 @@ func (app *Application) Run(ctx context.Context, args ...string) error {
 func (app *Application) commands() []tool.Application {
 	return []tool.Application{
 		&app.Serve,
+		&bug{},
 		&check{app: app},
 		&format{app: app},
 		&query{app: app},
+		&version{app: app},
 	}
 }
 
@@ -225,11 +230,17 @@ func (c *cmdClient) LogMessage(ctx context.Context, p *protocol.LogMessageParams
 	case protocol.Warning:
 		log.Print("Warning:", p.Message)
 	case protocol.Info:
-		log.Print("Info:", p.Message)
+		if c.app.Verbose {
+			log.Print("Info:", p.Message)
+		}
 	case protocol.Log:
-		log.Print("Log:", p.Message)
+		if c.app.Verbose {
+			log.Print("Log:", p.Message)
+		}
 	default:
-		log.Print(p.Message)
+		if c.app.Verbose {
+			log.Print(p.Message)
+		}
 	}
 	return nil
 }
