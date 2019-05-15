@@ -1,6 +1,8 @@
 package fmt
 
-func Sprint(args ...interface{}) string
+func Sprint(args ...interface{}) string {
+	panic("Sprintf is not supported")
+}
 
 func Print(args ...interface{}) {
 	for i, arg := range args {
