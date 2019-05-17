@@ -13,6 +13,10 @@ import (
 	"golang.org/x/tools/internal/span"
 )
 
+func (s *Server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
+	return s.cacheAndDiagnose(ctx, span.NewURI(params.TextDocument.URI), []byte(params.TextDocument.Text))
+}
+
 func (s *Server) didChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
 	if len(params.ContentChanges) < 1 {
 		return jsonrpc2.NewErrorf(jsonrpc2.CodeInternalError, "no content changes provided")
@@ -34,7 +38,19 @@ func (s *Server) didChange(ctx context.Context, params *protocol.DidChangeTextDo
 		}
 		text = change.Text
 	}
-	return s.cacheAndDiagnose(ctx, span.NewURI(params.TextDocument.URI), text)
+	return s.cacheAndDiagnose(ctx, span.NewURI(params.TextDocument.URI), []byte(text))
+}
+
+func (s *Server) cacheAndDiagnose(ctx context.Context, uri span.URI, content []byte) error {
+	view := s.session.ViewOf(uri)
+	if err := view.SetContent(ctx, uri, content); err != nil {
+		return err
+	}
+	go func() {
+		ctx := view.BackgroundContext()
+		s.Diagnostics(ctx, view, uri)
+	}()
+	return nil
 }
 
 func (s *Server) applyChanges(ctx context.Context, params *protocol.DidChangeTextDocumentParams) (string, error) {
@@ -48,8 +64,8 @@ func (s *Server) applyChanges(ctx context.Context, params *protocol.DidChangeTex
 	}
 
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
-	file, m, err := newColumnMap(ctx, view, uri)
+	view := s.session.ViewOf(uri)
+	file, m, err := getSourceFile(ctx, view, uri)
 	if err != nil {
 		return "", jsonrpc2.NewErrorf(jsonrpc2.CodeInternalError, "file not found")
 	}
@@ -81,6 +97,6 @@ func (s *Server) didSave(ctx context.Context, params *protocol.DidSaveTextDocume
 
 func (s *Server) didClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
+	view := s.session.ViewOf(uri)
 	return view.SetContent(ctx, uri, nil)
 }

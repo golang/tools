@@ -20,26 +20,34 @@ func (s *Server) references(ctx context.Context, params *protocol.ReferenceParam
 
 func (s *Server) doReferences(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
 	var locations []source.Location
-	for i := range s.views {
-		f, m, err := newColumnMap(ctx, s.views[i], span.URI(params.TextDocument.URI))
+
+	f := func(view source.View) error {
+		f, m, err := getGoFile(ctx, view, span.URI(params.TextDocument.URI))
 		if err != nil {
-			return nil, err
+			return err
 		}
 		spn, err := m.PointSpan(params.Position)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		rng, err := spn.Range(m.Converter)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		locs, err := source.References(ctx, s.views[i].Space().Search, f, rng.Start, params.Context.IncludeDeclaration)
+		locs, err := source.References(ctx, view.Search(), f, rng.Start, params.Context.IncludeDeclaration)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		locations = append(locations, locs...)
+		return nil
 	}
+
+	err := walkSession(s.session, f)
+	if err != nil {
+		return nil, err
+	}
+
 	return toProtocolLocations(locations), nil
 }
 

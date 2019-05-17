@@ -60,9 +60,9 @@ func (c *completer) init() {
 
 func (c *completer) initPrefix() {
 	if c.cursorIdent != "" && c.cursorIdent[len(c.cursorIdent)-1] == '.' {
-		c.prefix = ""
+		c.prefix = Prefix{}
 	}
-	c.prefix = c.cursorIdent
+	c.prefix = Prefix{content: c.cursorIdent}
 }
 
 func (c *completer) scopeVisit(pkgPath, prefix string) {

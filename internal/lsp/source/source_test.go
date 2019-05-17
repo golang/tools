@@ -27,19 +27,19 @@ func TestSource(t *testing.T) {
 }
 
 type runner struct {
-	view *cache.View
+	view source.View
 	data *tests.Data
 }
 
 func testSource(t *testing.T, exporter packagestest.Exporter) {
-	ctx := context.Background()
-
 	data := tests.Load(t, exporter, "../testdata")
 	defer data.Exported.Cleanup()
 
 	log := xlog.New(xlog.StdSink{})
+	cache := cache.New()
+	session := cache.NewSession(log)
 	r := &runner{
-		view: cache.NewView(ctx, log, "source_test", span.FileURI(data.Config.Dir), &data.Config),
+		view: session.NewView("source_test", span.FileURI(data.Config.Dir), &data.Config),
 		data: data,
 	}
 	tests.Run(t, r, data)
@@ -133,9 +133,9 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 		if err != nil {
 			t.Fatalf("failed for %v: %v", src, err)
 		}
-		tok := f.GetToken(ctx)
+		tok := f.(source.GoFile).GetToken(ctx)
 		pos := tok.Pos(src.Start().Offset())
-		list, prefix, err := source.Completion(ctx, f, pos, nil)
+		list, prefix, err := source.Completion(ctx, f.(source.GoFile), pos, nil)
 		if err != nil {
 			t.Fatalf("failed for %v: %v", src, err)
 		}
@@ -145,8 +145,10 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			if !wantBuiltins && isBuiltin(item) {
 				continue
 			}
-			if !strings.HasPrefix(item.Label, prefix) {
-				continue //TODO: why is this needed?
+			// We let the client do fuzzy matching, so we return all possible candidates.
+			// To simplify testing, filter results with prefixes that don't match exactly.
+			if !strings.HasPrefix(item.Label, prefix.Content()) {
+				continue
 			}
 			got = append(got, item)
 		}
@@ -154,6 +156,7 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			t.Errorf("%s: %s", src, diff)
 		}
 	}
+<<<<<<< HEAD
 	// Make sure we don't crash completing the first position in file set.
 	uri := span.FileURI(r.view.FileSet().File(1).Name())
 	f, err := r.view.GetFile(ctx, uri)
@@ -166,47 +169,41 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 }
 
 func (r *runner) checkCompletionSnippets(ctx context.Context, t *testing.T, data tests.CompletionSnippets, items tests.CompletionItems) {
+=======
+>>>>>>> bffc5affc6df36a7c1fee87811e47b69912e721f
 	for _, usePlaceholders := range []bool{true, false} {
-		for src, want := range data {
+		for src, want := range snippets {
 			f, err := r.view.GetFile(ctx, src.URI())
 			if err != nil {
 				t.Fatalf("failed for %v: %v", src, err)
 			}
 			tok := f.GetToken(ctx)
 			pos := tok.Pos(src.Start().Offset())
+<<<<<<< HEAD
 			list, prefix, err := source.Completion(ctx, f, pos, nil)
+=======
+			list, _, err := source.Completion(ctx, f.(source.GoFile), pos)
+>>>>>>> bffc5affc6df36a7c1fee87811e47b69912e721f
 			if err != nil {
 				t.Fatalf("failed for %v: %v", src, err)
 			}
-
-			wantCompletion := items[want.CompletionItem]
-			var gotItem *source.CompletionItem
+			wantItem := items[want.CompletionItem]
+			var got *source.CompletionItem
 			for _, item := range list {
-				if item.Label == wantCompletion.Label {
-					gotItem = &item
+				if item.Label == wantItem.Label {
+					got = &item
 					break
 				}
 			}
-
-			if gotItem == nil {
-				t.Fatalf("%s: couldn't find completion matching %q", src.URI(), wantCompletion.Label)
+			if got == nil {
+				t.Fatalf("%s: couldn't find completion matching %q", src.URI(), wantItem.Label)
 			}
-
-			var expected string
+			expected := want.PlainSnippet
 			if usePlaceholders {
-				expected = prefix + want.PlaceholderSnippet
-			} else {
-				expected = prefix + want.PlainSnippet
+				expected = want.PlaceholderSnippet
 			}
-			insertText := gotItem.InsertText
-			if usePlaceholders && gotItem.PlaceholderSnippet != nil {
-				insertText = gotItem.PlaceholderSnippet.String()
-			} else if gotItem.Snippet != nil {
-				insertText = gotItem.Snippet.String()
-			}
-
-			if expected != insertText {
-				t.Errorf("%s: expected snippet %q, got %q", src, expected, insertText)
+			if actual := got.Snippet(usePlaceholders); expected != actual {
+				t.Errorf("%s: expected placeholder snippet %q, got %q", src, expected, actual)
 			}
 		}
 	}
@@ -295,7 +292,7 @@ func (r *runner) Format(t *testing.T, data tests.Formats) {
 		if err != nil {
 			t.Fatalf("failed for %v: %v", spn, err)
 		}
-		edits, err := source.Format(ctx, f, rng)
+		edits, err := source.Format(ctx, f.(source.GoFile), rng)
 		if err != nil {
 			if gofmted != "" {
 				t.Error(err)
@@ -319,11 +316,11 @@ func (r *runner) Definition(t *testing.T, data tests.Definitions) {
 		}
 		tok := f.GetToken(ctx)
 		pos := tok.Pos(d.Src.Start().Offset())
-		ident, err := source.Identifier(ctx, r.view, f, pos)
+		ident, err := source.Identifier(ctx, r.view, f.(source.GoFile), pos)
 		if err != nil {
 			t.Fatalf("failed for %v: %v", d.Src, err)
 		}
-		hover, err := ident.Hover(ctx, nil, false, false)
+		hover, err := ident.Hover(ctx, nil, false, true)
 		if err != nil {
 			t.Fatalf("failed for %v: %v", d.Src, err)
 		}
@@ -331,11 +328,6 @@ func (r *runner) Definition(t *testing.T, data tests.Definitions) {
 		if d.IsType {
 			rng = ident.Type.Range
 			hover = ""
-		}
-		if def, err := rng.Span(); err != nil {
-			t.Fatalf("failed for %v: %v", rng, err)
-		} else if def != d.Def {
-			t.Errorf("for %v got %v want %v", d.Src, def, d.Def)
 		}
 		if hover != "" {
 			tag := fmt.Sprintf("%s-hover", d.Name)
@@ -349,6 +341,14 @@ func (r *runner) Definition(t *testing.T, data tests.Definitions) {
 			if hover != expectHover {
 				t.Errorf("for %v got %q want %q", d.Src, hover, expectHover)
 			}
+		} else if !d.OnlyHover {
+			if def, err := rng.Span(); err != nil {
+				t.Fatalf("failed for %v: %v", rng, err)
+			} else if def != d.Def {
+				t.Errorf("for %v got %v want %v", d.Src, def, d.Def)
+			}
+		} else {
+			t.Errorf("no tests ran for %s", d.Src.URI())
 		}
 	}
 }
@@ -363,7 +363,7 @@ func (r *runner) Highlight(t *testing.T, data tests.Highlights) {
 		}
 		tok := f.GetToken(ctx)
 		pos := tok.Pos(src.Start().Offset())
-		highlights := source.Highlight(ctx, f, pos)
+		highlights := source.Highlight(ctx, f.(source.GoFile), pos)
 		if len(highlights) != len(locations) {
 			t.Fatalf("got %d highlights for %s, expected %d", len(highlights), name, len(locations))
 		}
@@ -382,7 +382,7 @@ func (r *runner) Symbol(t *testing.T, data tests.Symbols) {
 		if err != nil {
 			t.Fatalf("failed for %v: %v", uri, err)
 		}
-		symbols := source.DocumentSymbols(ctx, f)
+		symbols := source.DocumentSymbols(ctx, f.(source.GoFile))
 
 		if len(symbols) != len(expectedSymbols) {
 			t.Errorf("want %d top-level symbols in %v, got %d", len(expectedSymbols), uri, len(symbols))
@@ -437,7 +437,7 @@ func summarizeSymbols(i int, want []source.Symbol, got []source.Symbol, reason s
 	return msg.String()
 }
 
-func (r *runner) Signature(t *testing.T, data tests.Signatures) {
+func (r *runner) SignatureHelp(t *testing.T, data tests.Signatures) {
 	ctx := context.Background()
 	for spn, expectedSignatures := range data {
 		f, err := r.view.GetFile(ctx, spn.URI())
@@ -446,7 +446,7 @@ func (r *runner) Signature(t *testing.T, data tests.Signatures) {
 		}
 		tok := f.GetToken(ctx)
 		pos := tok.Pos(spn.Start().Offset())
-		gotSignature, err := source.SignatureHelp(ctx, f, pos)
+		gotSignature, err := source.SignatureHelp(ctx, f.(source.GoFile), pos)
 		if err != nil {
 			t.Fatalf("failed for %v: %v", spn, err)
 		}

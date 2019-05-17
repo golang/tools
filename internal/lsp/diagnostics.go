@@ -7,32 +7,19 @@ package lsp
 import (
 	"context"
 
-	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 )
 
-func (s *Server) cacheAndDiagnose(ctx context.Context, uri span.URI, content string) error {
-	view := s.findView(ctx, uri)
-	if err := view.SetContent(ctx, uri, []byte(content)); err != nil {
-		return err
-	}
-	go func() {
-		ctx := view.BackgroundContext()
-		s.Diagnostics(ctx, view, uri)
-	}()
-	return nil
-}
-
-func (s *Server) Diagnostics(ctx context.Context, view *cache.View, uri span.URI) {
+func (s *Server) Diagnostics(ctx context.Context, view source.View, uri span.URI) {
 	if ctx.Err() != nil {
-		s.log.Errorf(ctx, "canceling diagnostics for %s: %v", uri, ctx.Err())
+		s.session.Logger().Errorf(ctx, "canceling diagnostics for %s: %v", uri, ctx.Err())
 		return
 	}
 	reports, err := source.Diagnostics(ctx, view, uri)
 	if err != nil {
-		s.log.Errorf(ctx, "failed to compute diagnostics for %s: %v", uri, err)
+		s.session.Logger().Errorf(ctx, "failed to compute diagnostics for %s: %v", uri, err)
 		return
 	}
 
@@ -60,7 +47,7 @@ func (s *Server) Diagnostics(ctx context.Context, view *cache.View, uri span.URI
 	}
 }
 
-func (s *Server) publishDiagnostics(ctx context.Context, view *cache.View, uri span.URI, diagnostics []source.Diagnostic) error {
+func (s *Server) publishDiagnostics(ctx context.Context, view source.View, uri span.URI, diagnostics []source.Diagnostic) error {
 	protocolDiagnostics, err := toProtocolDiagnostics(ctx, view, diagnostics)
 	if err != nil {
 		return err
@@ -75,7 +62,7 @@ func (s *Server) publishDiagnostics(ctx context.Context, view *cache.View, uri s
 func toProtocolDiagnostics(ctx context.Context, v source.View, diagnostics []source.Diagnostic) ([]protocol.Diagnostic, error) {
 	reports := []protocol.Diagnostic{}
 	for _, diag := range diagnostics {
-		_, m, err := newColumnMap(ctx, v, diag.Span.URI())
+		_, m, err := getSourceFile(ctx, v, diag.Span.URI())
 		if err != nil {
 			return nil, err
 		}

@@ -15,14 +15,14 @@ import (
 
 func (s *Server) formatting(ctx context.Context, params *protocol.DocumentFormattingParams) ([]protocol.TextEdit, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
+	view := s.session.ViewOf(uri)
 	spn := span.New(uri, span.Point{}, span.Point{})
 	return formatRange(ctx, view, spn)
 }
 
 // formatRange formats a document with a given range.
 func formatRange(ctx context.Context, v source.View, s span.Span) ([]protocol.TextEdit, error) {
-	f, m, err := newColumnMap(ctx, v, s.URI())
+	f, m, err := getGoFile(ctx, v, s.URI())
 	if err != nil {
 		return nil, err
 	}

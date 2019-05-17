@@ -37,9 +37,7 @@ func testCommandLine(t *testing.T, exporter packagestest.Exporter) {
 	r := &runner{
 		exporter: exporter,
 		data:     data,
-		app: &cmd.Application{
-			Config: *data.Exported.Config,
-		},
+		app:      cmd.New(data.Exported.Config),
 	}
 	tests.Run(t, r, data)
 }
@@ -55,7 +53,7 @@ func (r *runner) Symbol(t *testing.T, data tests.Symbols) {
 	//TODO: add command line symbol tests when it works
 }
 
-func (r *runner) Signature(t *testing.T, data tests.Signatures) {
+func (r *runner) SignatureHelp(t *testing.T, data tests.Signatures) {
 	//TODO: add command line signature tests when it works
 }
 

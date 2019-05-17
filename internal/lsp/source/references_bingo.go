@@ -15,7 +15,7 @@ import (
 type SearchFunc func(walkFunc WalkFunc)
 
 // References find references
-func References(ctx context.Context, search SearchFunc, f File, pos token.Pos, includeDeclaration bool) ([]Location, error) {
+func References(ctx context.Context, search SearchFunc, f GoFile, pos token.Pos, includeDeclaration bool) ([]Location, error) {
 	file := f.GetAST(ctx)
 	pkg := f.GetPackage(ctx)
 	if pkg.IsIllTyped() {

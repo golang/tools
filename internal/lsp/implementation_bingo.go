@@ -10,25 +10,45 @@ import (
 
 func (s *Server) implementation(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.Location, error) {
 	var locations []source.Location
-	for i := range s.views {
-		f, m, err := newColumnMap(ctx, s.views[i], span.URI(params.TextDocument.URI))
+
+	f := func(view source.View) error {
+		f, m, err := getGoFile(ctx, view, span.URI(params.TextDocument.URI))
 		if err != nil {
-			return nil, err
+			return err
 		}
 		spn, err := m.PointSpan(params.Position)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		rng, err := spn.Range(m.Converter)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		locs, err := source.Implementation(ctx, s.views[i].Space().Search, f, rng.Start)
+		locs, err := source.Implementation(ctx, view.Search(), f, rng.Start)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		locations = append(locations, locs...)
+		return nil
 	}
+
+	err := walkSession(s.session, f)
+	if err != nil {
+		return nil, err
+	}
+
 	return toProtocolLocations(locations), nil
+}
+
+type viewWalkFunc func(v source.View) error
+
+func walkSession(session source.Session, f viewWalkFunc) error {
+	for _, view := range session.Views() {
+		err := f(view)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

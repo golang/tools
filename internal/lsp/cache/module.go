@@ -17,7 +17,7 @@ func newModule(w *Workspace, rootPath string) *module {
 }
 
 func (m *module) buildCache() error {
-	cfg := *m.w.config
+	cfg := m.w.config
 	cfg.Dir = m.rootPath
 	cfg.Mode = packages.LoadAllSyntax
 	pattern := cfg.Dir + "/..."

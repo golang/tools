@@ -13,7 +13,7 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 )
 
-func Implementation(ctx context.Context, search SearchFunc, f File, pos token.Pos) ([]Location, error) {
+func Implementation(ctx context.Context, search SearchFunc, f GoFile, pos token.Pos) ([]Location, error) {
 	file := f.GetAST(ctx)
 	pkg := f.GetPackage(ctx)
 	if pkg.IsIllTyped() {

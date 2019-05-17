@@ -3,7 +3,7 @@ package source
 // WalkFunc walk function
 type WalkFunc func(p Package) bool
 
-type Cache interface {
+type ICache interface {
 	Walk(walkFunc WalkFunc)
 }
 

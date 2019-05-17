@@ -18,33 +18,77 @@ import (
 	"golang.org/x/tools/internal/span"
 )
 
-// View abstracts the underlying architecture of the package using the source
-// package. The view provides access to files and their contents, so the source
+// Cache abstracts the core logic of dealing with the environment from the
+// higher level logic that processes the information to produce results.
+// The cache provides access to files and their contents, so the source
 // package does not directly access the file system.
-type View interface {
+// A single cache is intended to be process wide, and is the primary point of
+// sharing between all consumers.
+// A cache may have many active sessions at any given time.
+type Cache interface {
+	// NewSession creates a new Session manager and returns it.
+	NewSession(log xlog.Logger) Session
+}
+
+// Session represents a single connection from a client.
+// This is the level at which things like open files are maintained on behalf
+// of the client.
+// A session may have many active views at any given time.
+type Session interface {
+	// NewView creates a new View and returns it.
+	NewView(name string, folder span.URI, config *packages.Config) View
+
+	// Cache returns the cache that created this session.
+	Cache() Cache
+
+	// Returns the logger in use for this session.
 	Logger() xlog.Logger
+
+	View(name string) View
+	ViewOf(uri span.URI) View
+	Views() []View
+
+	Shutdown(ctx context.Context)
+}
+
+// View represents a single workspace.
+// This is the level at which we maintain configuration like working directory
+// and build tags.
+type View interface {
+	// Session returns the session that created this view.
+	Session() Session
+	Name() string
+	Folder() span.URI
 	FileSet() *token.FileSet
 	BuiltinPackage() *ast.Package
 	GetFile(ctx context.Context, uri span.URI) (File, error)
 	SetContent(ctx context.Context, uri span.URI, content []byte) error
+	BackgroundContext() context.Context
+	Config() packages.Config
+	SetEnv([]string)
+	Shutdown(ctx context.Context)
+	Ignore(span.URI) bool
+	Search() SearchFunc
 }
 
-// File represents a Go source file that has been type-checked. It is the input
-// to most of the exported functions in this package, as it wraps up the
-// building blocks for most queries. Users of the source package can abstract
-// the loading of packages into their own caching systems.
+// File represents a source file of any type.
 type File interface {
 	URI() span.URI
 	View() View
-	GetAST(ctx context.Context) *ast.File
-	GetFileSet(ctx context.Context) *token.FileSet
-	GetPackage(ctx context.Context) Package
-	GetToken(ctx context.Context) *token.File
 	GetContent(ctx context.Context) []byte
+	GetFileSet(ctx context.Context) *token.FileSet
+	GetToken(ctx context.Context) *token.File
+}
+
+// GoFile represents a Go source file that has been type-checked.
+type GoFile interface {
+	File
+	GetAST(ctx context.Context) *ast.File
+	GetPackage(ctx context.Context) Package
 
 	// GetActiveReverseDeps returns the active files belonging to the reverse
 	// dependencies of this file's package.
-	GetActiveReverseDeps(ctx context.Context) []File
+	GetActiveReverseDeps(ctx context.Context) []GoFile
 }
 
 // Package represents a Go package that has been type-checked. It maintains

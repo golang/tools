@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 )
 
@@ -21,19 +19,17 @@ const (
 
 // Workspace holds the go project workspace information
 type Workspace struct {
-	context  context.Context
-	config   *packages.Config
-	client   protocol.Client
+	config   packages.Config
+	session  *session
 	rootPath string
 	modules  []*module
 	cache    GlobalCache
 }
 
-// NewWorkspace creates a workspace for a workspace folder
-func NewWorkspace(client protocol.Client, config *packages.Config) *Workspace {
+// newWorkspace creates a workspace for a workspace folder
+func newWorkspace(session *session, config packages.Config) *Workspace {
 	return &Workspace{
-		context:  config.Context,
-		client:   client,
+		session:  session,
 		config:   config,
 		rootPath: config.Dir,
 	}
@@ -172,34 +168,21 @@ func (w *Workspace) notify(err error) {
 
 // NotifyError notify error to lsp client
 func (w *Workspace) notifyError(message string) {
-	if w.client == nil {
-		return
-	}
-	_ = w.client.ShowMessage(w.context, &protocol.ShowMessageParams{Type: protocol.Error, Message: message})
+	w.session.log.Errorf(w.config.Context, "%s", message)
 }
 
 // NotifyInfo notify info to lsp client
 func (w *Workspace) notifyInfo(message string) {
-	if w.client == nil {
-		return
-	}
-	_ = w.client.ShowMessage(w.context, &protocol.ShowMessageParams{Type: protocol.Info, Message: message})
+	w.session.log.Infof(w.config.Context, "%s", message)
 }
 
 // NotifyLog notify log to lsp client
 func (w *Workspace) notifyLog(message string) {
-	if w.client == nil {
-		return
-	}
-	_ = w.client.LogMessage(w.context, &protocol.LogMessageParams{Type: protocol.Info, Message: message})
+	w.session.log.Debugf(w.config.Context, "%s", message)
 }
 
 func (w *Workspace) root() string {
 	return w.rootPath
-}
-
-func (w *Workspace) getContext() context.Context {
-	return w.context
 }
 
 // Search search package cache
@@ -216,7 +199,7 @@ func (w *Workspace) setCache(pkgs []*packages.Package) {
 	}
 }
 
-func (w *Workspace) Put(pkg *Package) {
+func (w *Workspace) Put(pkg *pkg) {
 	if w == nil {
 		return
 	}

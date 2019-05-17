@@ -28,15 +28,15 @@ import (
 // We hardcode the expected number of test cases to ensure that all tests
 // are being executed. If a test is added, this number must be changed.
 const (
-	ExpectedCompletionsCount       = 97
+	ExpectedCompletionsCount       = 121
+	ExpectedCompletionSnippetCount = 13
 	ExpectedDiagnosticsCount       = 17
 	ExpectedFormatCount            = 5
-	ExpectedDefinitionsCount       = 33
+	ExpectedDefinitionsCount       = 35
 	ExpectedTypeDefinitionsCount   = 2
 	ExpectedHighlightsCount        = 2
 	ExpectedSymbolsCount           = 1
-	ExpectedSignaturesCount        = 19
-	ExpectedCompletionSnippetCount = 9
+	ExpectedSignaturesCount        = 20
 	ExpectedLinksCount             = 2
 )
 
@@ -89,15 +89,16 @@ type Tests interface {
 	Definition(*testing.T, Definitions)
 	Highlight(*testing.T, Highlights)
 	Symbol(*testing.T, Symbols)
-	Signature(*testing.T, Signatures)
+	SignatureHelp(*testing.T, Signatures)
 	Link(*testing.T, Links)
 }
 
 type Definition struct {
-	Name   string
-	Src    span.Span
-	IsType bool
-	Def    span.Span
+	Name      string
+	Src       span.Span
+	IsType    bool
+	OnlyHover bool
+	Def       span.Span
 }
 
 type CompletionSnippet struct {
@@ -203,6 +204,7 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 		"format":    data.collectFormats,
 		"godef":     data.collectDefinitions,
 		"typdef":    data.collectTypeDefinitions,
+		"hover":     data.collectHoverDefinitions,
 		"highlight": data.collectHighlights,
 		"symbol":    data.collectSymbols,
 		"signature": data.collectSignatures,
@@ -217,9 +219,10 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 			symbols[i].Children = children
 		}
 	}
-	// run a second pass to collect names for some entries.
+	// Collect names for the entries that require golden files.
 	if err := data.Exported.Expect(map[string]interface{}{
 		"godef": data.collectDefinitionNames,
+		"hover": data.collectDefinitionNames,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +270,7 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		tests.Format(t, data.Formats)
 	})
 
-	t.Run("Definitions", func(t *testing.T) {
+	t.Run("Definition", func(t *testing.T) {
 		t.Helper()
 		if len(data.Definitions) != ExpectedDefinitionsCount {
 			t.Errorf("got %v definitions expected %v", len(data.Definitions), ExpectedDefinitionsCount)
@@ -275,7 +278,7 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		tests.Definition(t, data.Definitions)
 	})
 
-	t.Run("Highlights", func(t *testing.T) {
+	t.Run("Highlight", func(t *testing.T) {
 		t.Helper()
 		if len(data.Highlights) != ExpectedHighlightsCount {
 			t.Errorf("got %v highlights expected %v", len(data.Highlights), ExpectedHighlightsCount)
@@ -291,15 +294,15 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		tests.Symbol(t, data.Symbols)
 	})
 
-	t.Run("Signatures", func(t *testing.T) {
+	t.Run("SignatureHelp", func(t *testing.T) {
 		t.Helper()
 		if len(data.Signatures) != ExpectedSignaturesCount {
 			t.Errorf("got %v signatures expected %v", len(data.Signatures), ExpectedSignaturesCount)
 		}
-		tests.Signature(t, data.Signatures)
+		tests.SignatureHelp(t, data.Signatures)
 	})
 
-	t.Run("Links", func(t *testing.T) {
+	t.Run("Link", func(t *testing.T) {
 		t.Helper()
 		linksCount := 0
 		for _, want := range data.Links {
@@ -417,6 +420,14 @@ func (data *Data) collectDefinitions(src, target span.Span) {
 	data.Definitions[src] = Definition{
 		Src: src,
 		Def: target,
+	}
+}
+
+func (data *Data) collectHoverDefinitions(src, target span.Span) {
+	data.Definitions[src] = Definition{
+		Src:       src,
+		Def:       target,
+		OnlyHover: true,
 	}
 }
 

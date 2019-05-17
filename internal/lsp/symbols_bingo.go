@@ -10,14 +10,18 @@ import (
 
 func (s *Server) symbol(ctx context.Context, query string) ([]protocol.SymbolInformation, error) {
 	var symbolInfos []protocol.SymbolInformation
-	for i := range s.views {
-		symbols := source.Symbols(ctx, s.views[i], s.views[i].Space().Search, query, 100)
 
+	f := func(view source.View) error {
+		symbols := source.Symbols(ctx, view, view.Search(), query, 100)
 		for _, symbol := range symbols {
 			symbolInfos = append(symbolInfos, toProtocolSymbolInformation(symbol))
 		}
+
+		return nil
 	}
-	return symbolInfos, nil
+
+	err := walkSession(s.session, f)
+	return symbolInfos, err
 }
 
 func toProtocolSymbolInformation(symbol source.Symbol) protocol.SymbolInformation {
