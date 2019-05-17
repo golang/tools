@@ -295,12 +295,7 @@ func (r *runner) Format(t *testing.T, data tests.Formats) {
 			}
 			continue
 		}
-<<<<<<< HEAD
-		view := r.server.findView(ctx, uri)
-		_, m, err := newColumnMap(ctx, view, uri)
-=======
 		_, m, err := getSourceFile(ctx, r.server.session.ViewOf(uri), uri)
->>>>>>> bffc5affc6df36a7c1fee87811e47b69912e721f
 		if err != nil {
 			t.Error(err)
 		}
