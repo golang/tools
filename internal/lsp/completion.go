@@ -30,29 +30,33 @@ func (s *Server) completion(ctx context.Context, params *protocol.CompletionPara
 	if err != nil {
 		return nil, err
 	}
-	items, prefix, err := source.Completion(ctx, f, rng.Start, view.Search())
+	items, surrounding, err := source.Completion(ctx, f, rng.Start, view.Search())
 	if err != nil {
 		s.session.Logger().Infof(ctx, "no completions found for %s:%v:%v: %v", uri, int(params.Position.Line), int(params.Position.Character), err)
 	}
 	// We might need to adjust the position to account for the prefix.
-	prefixRng := protocol.Range{
+	insertionRng := protocol.Range{
 		Start: params.Position,
 		End:   params.Position,
 	}
-	if prefix.Pos().IsValid() {
-		spn, err := span.NewRange(view.FileSet(), prefix.Pos(), 0).Span()
+	var prefix string
+	if surrounding != nil {
+		prefix = surrounding.Prefix()
+		spn, err := surrounding.Range.Span()
 		if err != nil {
-			s.session.Logger().Infof(ctx, "failed to get span for prefix position: %s:%v:%v: %v", uri, int(params.Position.Line), int(params.Position.Character), err)
-		}
-		if prefixPos, err := m.Position(spn.Start()); err == nil {
-			prefixRng.End = prefixPos
+			s.session.Logger().Infof(ctx, "failed to get span for surrounding position: %s:%v:%v: %v", uri, int(params.Position.Line), int(params.Position.Character), err)
 		} else {
-			s.session.Logger().Infof(ctx, "failed to convert prefix position: %s:%v:%v: %v", uri, int(params.Position.Line), int(params.Position.Character), err)
+			rng, err := m.Range(spn)
+			if err != nil {
+				s.session.Logger().Infof(ctx, "failed to convert surrounding position: %s:%v:%v: %v", uri, int(params.Position.Line), int(params.Position.Character), err)
+			} else {
+				insertionRng = rng
+			}
 		}
 	}
 	return &protocol.CompletionList{
 		IsIncomplete: false,
-		Items:        toProtocolCompletionItems(m, items, prefix.Content(), prefixRng, s.insertTextFormat, s.usePlaceholders),
+		Items:        toProtocolCompletionItems(m, items, prefix, insertionRng, s.insertTextFormat, s.usePlaceholders),
 	}, nil
 }
 
@@ -72,7 +76,7 @@ func toProtocolCompletionItems(m *protocol.ColumnMapper, candidates []source.Com
 		}
 
 		edits, _ := ToProtocolEdits(m, candidate.AdditionalTextEdits)
-		
+
 		item := protocol.CompletionItem{
 			Label:  candidate.Label,
 			Detail: candidate.Detail,

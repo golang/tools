@@ -135,7 +135,7 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 		}
 		tok := f.(source.GoFile).GetToken(ctx)
 		pos := tok.Pos(src.Start().Offset())
-		list, prefix, err := source.Completion(ctx, f.(source.GoFile), pos, nil)
+		list, surrounding, err := source.Completion(ctx, f.(source.GoFile), pos, nil)
 		if err != nil {
 			t.Fatalf("failed for %v: %v", src, err)
 		}
@@ -145,9 +145,13 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			if !wantBuiltins && isBuiltin(item) {
 				continue
 			}
+			var prefix string
+			if surrounding != nil {
+				prefix = surrounding.Prefix()
+			}
 			// We let the client do fuzzy matching, so we return all possible candidates.
 			// To simplify testing, filter results with prefixes that don't match exactly.
-			if !strings.HasPrefix(item.Label, prefix.Content()) {
+			if !strings.HasPrefix(item.Label, prefix) {
 				continue
 			}
 			got = append(got, item)
@@ -156,21 +160,6 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			t.Errorf("%s: %s", src, diff)
 		}
 	}
-<<<<<<< HEAD
-	// Make sure we don't crash completing the first position in file set.
-	uri := span.FileURI(r.view.FileSet().File(1).Name())
-	f, err := r.view.GetFile(ctx, uri)
-	if err != nil {
-		t.Fatalf("failed for %v: %v", uri, err)
-	}
-	source.Completion(ctx, f, 1, nil)
-
-	r.checkCompletionSnippets(ctx, t, snippets, items)
-}
-
-func (r *runner) checkCompletionSnippets(ctx context.Context, t *testing.T, data tests.CompletionSnippets, items tests.CompletionItems) {
-=======
->>>>>>> bffc5affc6df36a7c1fee87811e47b69912e721f
 	for _, usePlaceholders := range []bool{true, false} {
 		for src, want := range snippets {
 			f, err := r.view.GetFile(ctx, src.URI())
@@ -179,11 +168,7 @@ func (r *runner) checkCompletionSnippets(ctx context.Context, t *testing.T, data
 			}
 			tok := f.GetToken(ctx)
 			pos := tok.Pos(src.Start().Offset())
-<<<<<<< HEAD
-			list, prefix, err := source.Completion(ctx, f, pos, nil)
-=======
-			list, _, err := source.Completion(ctx, f.(source.GoFile), pos)
->>>>>>> bffc5affc6df36a7c1fee87811e47b69912e721f
+			list, _, err := source.Completion(ctx, f.(source.GoFile), pos, nil)
 			if err != nil {
 				t.Fatalf("failed for %v: %v", src, err)
 			}
