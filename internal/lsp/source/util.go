@@ -1,3 +1,7 @@
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package source
 
 import (
@@ -96,6 +100,18 @@ func resolveInvalid(obj types.Object, node ast.Node, info *types.Info) types.Obj
 		}
 	})
 	return formatResult(resultExpr)
+}
+
+func lookupBuiltinDecl(v View, name string) interface{} {
+	builtinPkg := v.BuiltinPackage()
+	if builtinPkg == nil || builtinPkg.Scope == nil {
+		return nil
+	}
+	obj := builtinPkg.Scope.Lookup(name)
+	if obj == nil {
+		return nil
+	}
+	return obj.Decl
 }
 
 func isPointer(T types.Type) bool {

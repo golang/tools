@@ -6,6 +6,7 @@ package lsp
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"golang.org/x/tools/internal/lsp/protocol"
@@ -14,13 +15,17 @@ import (
 
 func (s *Server) documentLink(ctx context.Context, params *protocol.DocumentLinkParams) ([]protocol.DocumentLink, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
-	f, m, err := newColumnMap(ctx, view, uri)
+	view := s.session.ViewOf(uri)
+	f, m, err := getGoFile(ctx, view, uri)
 	if err != nil {
 		return nil, err
 	}
 	// find the import block
 	ast := f.GetAST(ctx)
+	if ast == nil {
+		return nil, fmt.Errorf("no AST for %v", uri)
+	}
+
 	var result []protocol.DocumentLink
 	for _, imp := range ast.Imports {
 		spn, err := span.NewRange(f.GetFileSet(ctx), imp.Pos(), imp.End()).Span()

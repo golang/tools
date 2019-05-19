@@ -12,9 +12,9 @@ import (
 	"go/token"
 	"io/ioutil"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 
@@ -22,28 +22,29 @@ import (
 	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/txtar"
 )
 
 // We hardcode the expected number of test cases to ensure that all tests
 // are being executed. If a test is added, this number must be changed.
 const (
-	ExpectedCompletionsCount       = 85
+	ExpectedCompletionsCount       = 121
+	ExpectedCompletionSnippetCount = 14
 	ExpectedDiagnosticsCount       = 17
 	ExpectedFormatCount            = 5
-	ExpectedDefinitionsCount       = 21
+	ExpectedDefinitionsCount       = 35
 	ExpectedTypeDefinitionsCount   = 2
 	ExpectedHighlightsCount        = 2
 	ExpectedSymbolsCount           = 1
-	ExpectedSignaturesCount        = 19
-	ExpectedCompletionSnippetCount = 9
+	ExpectedSignaturesCount        = 20
 	ExpectedLinksCount             = 2
 )
 
 const (
-	overlayFile = ".overlay"
-	goldenFile  = ".golden"
-	inFile      = ".in"
-	testModule  = "golang.org/x/tools/internal/lsp"
+	overlayFileSuffix = ".overlay"
+	goldenFileSuffix  = ".golden"
+	inFileSuffix      = ".in"
+	testModule        = "golang.org/x/tools/internal/lsp"
 )
 
 var updateGolden = flag.Bool("golden", false, "Update golden files")
@@ -78,6 +79,7 @@ type Data struct {
 	t         testing.TB
 	fragments map[string]string
 	dir       string
+	golden    map[string]*Golden
 }
 
 type Tests interface {
@@ -87,16 +89,16 @@ type Tests interface {
 	Definition(*testing.T, Definitions)
 	Highlight(*testing.T, Highlights)
 	Symbol(*testing.T, Symbols)
-	Signature(*testing.T, Signatures)
+	SignatureHelp(*testing.T, Signatures)
 	Link(*testing.T, Links)
 }
 
 type Definition struct {
-	Src    span.Span
-	IsType bool
-	Flags  string
-	Def    span.Span
-	Match  string
+	Name      string
+	Src       span.Span
+	IsType    bool
+	OnlyHover bool
+	Def       span.Span
 }
 
 type CompletionSnippet struct {
@@ -108,6 +110,12 @@ type CompletionSnippet struct {
 type Link struct {
 	Src    span.Span
 	Target string
+}
+
+type Golden struct {
+	Filename string
+	Archive  *txtar.Archive
+	Modified bool
 }
 
 func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
@@ -128,19 +136,29 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 		t:         t,
 		dir:       dir,
 		fragments: map[string]string{},
+		golden:    map[string]*Golden{},
 	}
 
 	files := packagestest.MustCopyFileTree(dir)
 	overlays := map[string][]byte{}
 	for fragment, operation := range files {
-		if strings.Contains(fragment, goldenFile) {
+		if trimmed := strings.TrimSuffix(fragment, goldenFileSuffix); trimmed != fragment {
 			delete(files, fragment)
-		} else if trimmed := strings.TrimSuffix(fragment, inFile); trimmed != fragment {
+			goldFile := filepath.Join(dir, fragment)
+			archive, err := txtar.ParseFile(goldFile)
+			if err != nil {
+				t.Fatalf("could not read golden file %v: %v", fragment, err)
+			}
+			data.golden[trimmed] = &Golden{
+				Filename: goldFile,
+				Archive:  archive,
+			}
+		} else if trimmed := strings.TrimSuffix(fragment, inFileSuffix); trimmed != fragment {
 			delete(files, fragment)
 			files[trimmed] = operation
-		} else if index := strings.Index(fragment, overlayFile); index >= 0 {
+		} else if index := strings.Index(fragment, overlayFileSuffix); index >= 0 {
 			delete(files, fragment)
-			partial := fragment[:index] + fragment[index+len(overlayFile):]
+			partial := fragment[:index] + fragment[index+len(overlayFileSuffix):]
 			contents, err := ioutil.ReadFile(filepath.Join(dir, fragment))
 			if err != nil {
 				t.Fatal(err)
@@ -186,6 +204,7 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 		"format":    data.collectFormats,
 		"godef":     data.collectDefinitions,
 		"typdef":    data.collectTypeDefinitions,
+		"hover":     data.collectHoverDefinitions,
 		"highlight": data.collectHighlights,
 		"symbol":    data.collectSymbols,
 		"signature": data.collectSignatures,
@@ -199,6 +218,13 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 			children := data.symbolsChildren[symbols[i].Name]
 			symbols[i].Children = children
 		}
+	}
+	// Collect names for the entries that require golden files.
+	if err := data.Exported.Expect(map[string]interface{}{
+		"godef": data.collectDefinitionNames,
+		"hover": data.collectDefinitionNames,
+	}); err != nil {
+		t.Fatal(err)
 	}
 	return data
 }
@@ -244,7 +270,7 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		tests.Format(t, data.Formats)
 	})
 
-	t.Run("Definitions", func(t *testing.T) {
+	t.Run("Definition", func(t *testing.T) {
 		t.Helper()
 		if len(data.Definitions) != ExpectedDefinitionsCount {
 			t.Errorf("got %v definitions expected %v", len(data.Definitions), ExpectedDefinitionsCount)
@@ -252,7 +278,7 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		tests.Definition(t, data.Definitions)
 	})
 
-	t.Run("Highlights", func(t *testing.T) {
+	t.Run("Highlight", func(t *testing.T) {
 		t.Helper()
 		if len(data.Highlights) != ExpectedHighlightsCount {
 			t.Errorf("got %v highlights expected %v", len(data.Highlights), ExpectedHighlightsCount)
@@ -268,15 +294,15 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		tests.Symbol(t, data.Symbols)
 	})
 
-	t.Run("Signatures", func(t *testing.T) {
+	t.Run("SignatureHelp", func(t *testing.T) {
 		t.Helper()
 		if len(data.Signatures) != ExpectedSignaturesCount {
 			t.Errorf("got %v signatures expected %v", len(data.Signatures), ExpectedSignaturesCount)
 		}
-		tests.Signature(t, data.Signatures)
+		tests.SignatureHelp(t, data.Signatures)
 	})
 
-	t.Run("Links", func(t *testing.T) {
+	t.Run("Link", func(t *testing.T) {
 		t.Helper()
 		linksCount := 0
 		for _, want := range data.Links {
@@ -287,9 +313,23 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		}
 		tests.Link(t, data.Links)
 	})
+
+	if *updateGolden {
+		for _, golden := range data.golden {
+			if !golden.Modified {
+				continue
+			}
+			sort.Slice(golden.Archive.Files, func(i, j int) bool {
+				return golden.Archive.Files[i].Name < golden.Archive.Files[j].Name
+			})
+			if err := ioutil.WriteFile(golden.Filename, txtar.Format(golden.Archive), 0666); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 }
 
-func (data *Data) Golden(tag string, target string, update func(golden string) error) []byte {
+func (data *Data) Golden(tag string, target string, update func() ([]byte, error)) []byte {
 	data.t.Helper()
 	fragment, found := data.fragments[target]
 	if !found {
@@ -298,24 +338,44 @@ func (data *Data) Golden(tag string, target string, update func(golden string) e
 		}
 		fragment = target
 	}
-	dir, file := path.Split(fragment)
-	prefix, suffix := file, ""
-	// we deliberately use the first . not the last
-	if dot := strings.IndexRune(file, '.'); dot >= 0 {
-		prefix = file[:dot]
-		suffix = file[dot:]
+	golden := data.golden[fragment]
+	if golden == nil {
+		if !*updateGolden {
+			data.t.Fatalf("could not find golden file %v: %v", fragment, tag)
+		}
+		golden = &Golden{
+			Filename: filepath.Join(data.dir, fragment+goldenFileSuffix),
+			Archive:  &txtar.Archive{},
+			Modified: true,
+		}
+		data.golden[fragment] = golden
 	}
-	golden := path.Join(data.dir, dir, prefix) + "." + tag + goldenFile + suffix
-	if *updateGolden {
-		if err := update(golden); err != nil {
-			data.t.Fatalf("could not update golden file %v: %v", golden, err)
+	var file *txtar.File
+	for i := range golden.Archive.Files {
+		f := &golden.Archive.Files[i]
+		if f.Name == tag {
+			file = f
+			break
 		}
 	}
-	contents, err := ioutil.ReadFile(golden)
-	if err != nil {
-		data.t.Fatalf("could not read golden file %v: %v", golden, err)
+	if *updateGolden {
+		if file == nil {
+			golden.Archive.Files = append(golden.Archive.Files, txtar.File{
+				Name: tag,
+			})
+			file = &golden.Archive.Files[len(golden.Archive.Files)-1]
+		}
+		contents, err := update()
+		if err != nil {
+			data.t.Fatalf("could not update golden file %v: %v", fragment, err)
+		}
+		file.Data = append(contents, '\n') // add trailing \n for txtar
+		golden.Modified = true
 	}
-	return contents
+	if file == nil {
+		data.t.Fatalf("could not find golden contents %v: %v", fragment, tag)
+	}
+	return file.Data[:len(file.Data)-1] // drop the trailing \n
 }
 
 func (data *Data) collectDiagnostics(spn span.Span, msgSource, msg string) {
@@ -363,12 +423,26 @@ func (data *Data) collectDefinitions(src, target span.Span) {
 	}
 }
 
+func (data *Data) collectHoverDefinitions(src, target span.Span) {
+	data.Definitions[src] = Definition{
+		Src:       src,
+		Def:       target,
+		OnlyHover: true,
+	}
+}
+
 func (data *Data) collectTypeDefinitions(src, target span.Span) {
 	data.Definitions[src] = Definition{
 		Src:    src,
 		Def:    target,
 		IsType: true,
 	}
+}
+
+func (data *Data) collectDefinitionNames(src span.Span, name string) {
+	d := data.Definitions[src]
+	d.Name = name
+	data.Definitions[src] = d
 }
 
 func (data *Data) collectHighlights(name string, rng span.Span) {

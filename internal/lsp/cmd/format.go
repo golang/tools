@@ -50,37 +50,39 @@ func (f *format) Run(ctx context.Context, args ...string) error {
 		// no files, so no results
 		return nil
 	}
-	client := &baseClient{}
 	// now we ready to kick things off
-	server, err := f.app.connect(ctx, client)
+	conn, err := f.app.connect(ctx)
 	if err != nil {
 		return err
 	}
+	defer conn.terminate(ctx)
 	for _, arg := range args {
 		spn := span.Parse(arg)
-		m, err := client.AddFile(ctx, spn.URI())
-		if err != nil {
-			return err
+		file := conn.AddFile(ctx, spn.URI())
+		if file.err != nil {
+			return file.err
 		}
 		filename, _ := spn.URI().Filename() // this cannot fail, already checked in AddFile above
-		loc, err := m.Location(spn)
+		loc, err := file.mapper.Location(spn)
 		if err != nil {
 			return err
 		}
-		p := protocol.DocumentRangeFormattingParams{
-			TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
-			Range:        loc.Range,
+		if loc.Range.Start != loc.Range.End {
+			return fmt.Errorf("only full file formatting supported")
 		}
-		edits, err := server.RangeFormatting(ctx, &p)
+		p := protocol.DocumentFormattingParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
+		}
+		edits, err := conn.Formatting(ctx, &p)
 		if err != nil {
 			return fmt.Errorf("%v: %v", spn, err)
 		}
-		sedits, err := lsp.FromProtocolEdits(m, edits)
+		sedits, err := lsp.FromProtocolEdits(file.mapper, edits)
 		if err != nil {
 			return fmt.Errorf("%v: %v", spn, err)
 		}
 		ops := source.EditsToDiff(sedits)
-		lines := diff.SplitLines(string(m.Content))
+		lines := diff.SplitLines(string(file.mapper.Content))
 		formatted := strings.Join(diff.ApplyEdits(lines, ops), "")
 		printIt := true
 		if f.List {

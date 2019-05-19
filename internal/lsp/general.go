@@ -5,19 +5,16 @@
 package lsp
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path"
 	"strings"
 
-	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/jsonrpc2"
-	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -29,15 +26,16 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 	}
 	s.isInitialized = true // mark server as initialized now
 
-	// TODO(rstambler): Change this default to protocol.Incremental (or add a
-	// flag). Disabled for now to simplify debugging.
+	// TODO(iancottrell): Change this default to protocol.Incremental and remove the option
 	s.textDocumentSyncKind = protocol.Full
+	if opts, ok := params.InitializationOptions.(map[string]interface{}); ok {
+		if opt, ok := opts["incrementalSync"].(bool); ok && opt {
+			s.textDocumentSyncKind = protocol.Incremental
+		}
+	}
 
 	s.setClientCapabilities(params.Capabilities)
 
-	// We need a "detached" context so it does not get timeout cancelled.
-	// TODO(iancottrell): Do we need to copy any values across?
-	viewContext := context.Background()
 	folders := params.WorkspaceFolders
 	if len(folders) == 0 {
 		if params.RootURI != "" {
@@ -52,24 +50,11 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 			return nil, fmt.Errorf("single file mode not supported yet")
 		}
 	}
+
 	for _, folder := range folders {
-		uri := span.NewURI(folder.URI)
-		folderPath, err := uri.Filename()
-		if err != nil {
+		if err := s.addView(ctx, folder.Name, span.NewURI(folder.URI)); err != nil {
 			return nil, err
 		}
-		s.views = append(s.views, cache.NewView(viewContext, s.log, folder.Name, uri, &packages.Config{
-			Context: ctx,
-			Dir:     folderPath,
-			Env:     os.Environ(),
-			Mode:    packages.LoadImports,
-			Fset:    token.NewFileSet(),
-			Overlay: make(map[string][]byte),
-			ParseFile: func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
-				return parser.ParseFile(fset, filename, src, parser.AllErrors|parser.ParseComments)
-			},
-			Tests: true,
-		}))
 	}
 
 	return &protocol.InitializeResult{
@@ -78,13 +63,12 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 			CompletionProvider: &protocol.CompletionOptions{
 				TriggerCharacters: []string{"."},
 			},
-			DefinitionProvider:              true,
-			DocumentFormattingProvider:      true,
-			DocumentRangeFormattingProvider: true,
-			DocumentSymbolProvider:          true,
-			HoverProvider:                   true,
-			DocumentHighlightProvider:       true,
-			DocumentLinkProvider:            &protocol.DocumentLinkOptions{},
+			DefinitionProvider:         true,
+			DocumentFormattingProvider: true,
+			DocumentSymbolProvider:     true,
+			HoverProvider:              true,
+			DocumentHighlightProvider:  true,
+			DocumentLinkProvider:       &protocol.DocumentLinkOptions{},
 			SignatureHelpProvider: &protocol.SignatureHelpOptions{
 				TriggerCharacters: []string{"(", ","},
 			},
@@ -93,6 +77,20 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 				OpenClose: true,
 			},
 			TypeDefinitionProvider: true,
+			Workspace: &struct {
+				WorkspaceFolders *struct {
+					Supported           bool   "json:\"supported,omitempty\""
+					ChangeNotifications string "json:\"changeNotifications,omitempty\""
+				} "json:\"workspaceFolders,omitempty\""
+			}{
+				WorkspaceFolders: &struct {
+					Supported           bool   "json:\"supported,omitempty\""
+					ChangeNotifications string "json:\"changeNotifications,omitempty\""
+				}{
+					Supported:           true,
+					ChangeNotifications: "workspace/didChangeWorkspaceFolders",
+				},
+			},
 		},
 	}, nil
 }
@@ -121,13 +119,16 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 				Registrations: []protocol.Registration{{
 					ID:     "workspace/didChangeConfiguration",
 					Method: "workspace/didChangeConfiguration",
+				}, {
+					ID:     "workspace/didChangeWorkspaceFolders",
+					Method: "workspace/didChangeWorkspaceFolders",
 				}},
 			})
 		}
-		for _, view := range s.views {
+		for _, view := range s.session.Views() {
 			config, err := s.client.Configuration(ctx, &protocol.ConfigurationParams{
 				Items: []protocol.ConfigurationItem{{
-					ScopeURI: protocol.NewURI(view.Folder),
+					ScopeURI: protocol.NewURI(view.Folder()),
 					Section:  "gopls",
 				}},
 			})
@@ -139,10 +140,13 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 			}
 		}
 	}
+	buf := &bytes.Buffer{}
+	PrintVersionInfo(buf, true, false)
+	s.session.Logger().Infof(ctx, "%s", buf)
 	return nil
 }
 
-func (s *Server) processConfig(view *cache.View, config interface{}) error {
+func (s *Server) processConfig(view source.View, config interface{}) error {
 	// TODO: We should probably store and process more of the config.
 	if config == nil {
 		return nil // ignore error if you don't have a config
@@ -158,16 +162,16 @@ func (s *Server) processConfig(view *cache.View, config interface{}) error {
 			return fmt.Errorf("invalid config gopls.env type %T", env)
 		}
 		for k, v := range menv {
-			view.Config.Env = applyEnv(view.Config.Env, k, v)
+			view.SetEnv(applyEnv(view.Config().Env, k, v))
 		}
 	}
 	// Check if placeholders are enabled.
 	if usePlaceholders, ok := c["usePlaceholders"].(bool); ok {
 		s.usePlaceholders = usePlaceholders
 	}
-	// Check if enhancedHover is enabled.
-	if enhancedHover, ok := c["enhancedHover"].(bool); ok {
-		s.enhancedHover = enhancedHover
+	// Check if user has disabled documentation on hover.
+	if noDocsOnHover, ok := c["noDocsOnHover"].(bool); ok {
+		s.noDocsOnHover = noDocsOnHover
 	}
 	return nil
 }
@@ -185,12 +189,13 @@ func applyEnv(env []string, k string, v interface{}) []string {
 }
 
 func (s *Server) shutdown(ctx context.Context) error {
-	// TODO(rstambler): Cancel contexts here?
 	s.initializedMu.Lock()
 	defer s.initializedMu.Unlock()
 	if !s.isInitialized {
 		return jsonrpc2.NewErrorf(jsonrpc2.CodeInvalidRequest, "server not initialized")
 	}
+	// drop all the active views
+	s.session.Shutdown(ctx)
 	s.isInitialized = false
 	return nil
 }

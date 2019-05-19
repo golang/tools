@@ -17,8 +17,8 @@ import (
 
 func (s *Server) completion(ctx context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
-	f, m, err := newColumnMap(ctx, view, uri)
+	view := s.session.ViewOf(uri)
+	f, m, err := getGoFile(ctx, view, uri)
 	if err != nil {
 		return nil, err
 	}
@@ -30,22 +30,41 @@ func (s *Server) completion(ctx context.Context, params *protocol.CompletionPara
 	if err != nil {
 		return nil, err
 	}
-	items, prefix, err := source.Completion(ctx, f, rng.Start)
+	items, surrounding, err := source.Completion(ctx, f, rng.Start)
 	if err != nil {
-		s.log.Infof(ctx, "no completions found for %s:%v:%v: %v", uri, int(params.Position.Line), int(params.Position.Character), err)
-		items = []source.CompletionItem{}
+		s.session.Logger().Infof(ctx, "no completions found for %s:%v:%v: %v", uri, int(params.Position.Line), int(params.Position.Character), err)
+	}
+	// We might need to adjust the position to account for the prefix.
+	insertionRng := protocol.Range{
+		Start: params.Position,
+		End:   params.Position,
+	}
+	var prefix string
+	if surrounding != nil {
+		prefix = surrounding.Prefix()
+		spn, err := surrounding.Range.Span()
+		if err != nil {
+			s.session.Logger().Infof(ctx, "failed to get span for surrounding position: %s:%v:%v: %v", uri, int(params.Position.Line), int(params.Position.Character), err)
+		} else {
+			rng, err := m.Range(spn)
+			if err != nil {
+				s.session.Logger().Infof(ctx, "failed to convert surrounding position: %s:%v:%v: %v", uri, int(params.Position.Line), int(params.Position.Character), err)
+			} else {
+				insertionRng = rng
+			}
+		}
 	}
 	return &protocol.CompletionList{
 		IsIncomplete: false,
-		Items:        toProtocolCompletionItems(items, prefix, params.Position, s.insertTextFormat, s.usePlaceholders),
+		Items:        toProtocolCompletionItems(items, prefix, insertionRng, s.insertTextFormat, s.usePlaceholders),
 	}, nil
 }
 
-func toProtocolCompletionItems(candidates []source.CompletionItem, prefix string, pos protocol.Position, insertTextFormat protocol.InsertTextFormat, usePlaceholders bool) []protocol.CompletionItem {
+func toProtocolCompletionItems(candidates []source.CompletionItem, prefix string, rng protocol.Range, insertTextFormat protocol.InsertTextFormat, usePlaceholders bool) []protocol.CompletionItem {
 	sort.SliceStable(candidates, func(i, j int) bool {
 		return candidates[i].Score > candidates[j].Score
 	})
-	items := []protocol.CompletionItem{}
+	items := make([]protocol.CompletionItem, 0, len(candidates))
 	for i, candidate := range candidates {
 		// Match against the label.
 		if !strings.HasPrefix(candidate.Label, prefix) {
@@ -53,21 +72,7 @@ func toProtocolCompletionItems(candidates []source.CompletionItem, prefix string
 		}
 		insertText := candidate.InsertText
 		if insertTextFormat == protocol.SnippetTextFormat {
-			if usePlaceholders && candidate.PlaceholderSnippet != nil {
-				insertText = candidate.PlaceholderSnippet.String()
-			} else if candidate.Snippet != nil {
-				insertText = candidate.Snippet.String()
-			}
-		}
-		// If the user has already typed some part of the completion candidate,
-		// don't insert that portion of the text.
-		if strings.HasPrefix(insertText, prefix) {
-			insertText = insertText[len(prefix):]
-		}
-		// Don't filter on text that might have snippets in it.
-		filterText := candidate.InsertText
-		if strings.HasPrefix(filterText, prefix) {
-			filterText = filterText[len(prefix):]
+			insertText = candidate.Snippet(usePlaceholders)
 		}
 		item := protocol.CompletionItem{
 			Label:  candidate.Label,
@@ -75,17 +80,14 @@ func toProtocolCompletionItems(candidates []source.CompletionItem, prefix string
 			Kind:   toProtocolCompletionItemKind(candidate.Kind),
 			TextEdit: &protocol.TextEdit{
 				NewText: insertText,
-				Range: protocol.Range{
-					Start: pos,
-					End:   pos,
-				},
+				Range:   rng,
 			},
 			InsertTextFormat: insertTextFormat,
 			// This is a hack so that the client sorts completion results in the order
 			// according to their score. This can be removed upon the resolution of
 			// https://github.com/Microsoft/language-server-protocol/issues/348.
 			SortText:   fmt.Sprintf("%05d", i),
-			FilterText: filterText,
+			FilterText: candidate.InsertText,
 			Preselect:  i == 0,
 		}
 		// Trigger signature help for any function or method completion.

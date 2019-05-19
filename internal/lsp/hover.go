@@ -15,8 +15,8 @@ import (
 
 func (s *Server) hover(ctx context.Context, params *protocol.TextDocumentPositionParams) (*protocol.Hover, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
-	f, m, err := newColumnMap(ctx, view, uri)
+	view := s.session.ViewOf(uri)
+	f, m, err := getGoFile(ctx, view, uri)
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +32,7 @@ func (s *Server) hover(ctx context.Context, params *protocol.TextDocumentPositio
 	if err != nil {
 		return nil, err
 	}
-	hover, err := ident.Hover(ctx, nil, s.enhancedHover, s.preferredContentFormat == protocol.Markdown)
+	hover, err := ident.Hover(ctx, nil, s.preferredContentFormat == protocol.Markdown, !s.noDocsOnHover)
 	if err != nil {
 		return nil, err
 	}
