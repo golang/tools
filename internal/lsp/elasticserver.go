@@ -21,17 +21,18 @@ import (
 )
 
 // NewClientElasticServer
-func NewClientElasticServer(client protocol.Client) *ElasticServer {
+func NewClientElasticServer(cache source.Cache, client protocol.Client) *ElasticServer {
 	return &ElasticServer{
 		Server: Server{
-			client: client,
-			log:    xlog.New(protocol.NewLogger(client))},
+			client:  client,
+			session: cache.NewSession(xlog.New(protocol.NewLogger(client))),
+		},
 	}
 }
 
 // NewElasticServer starts an LSP server on the supplied stream, and waits until the
 // stream is closed.
-func NewElasticServer(stream jsonrpc2.Stream) *ElasticServer {
+func NewElasticServer(cache source.Cache, stream jsonrpc2.Stream) *ElasticServer {
 	goPath := ""
 	goRoot := ""
 	for _, v := range os.Environ() {
@@ -48,19 +49,22 @@ func NewElasticServer(stream jsonrpc2.Stream) *ElasticServer {
 		DepsPath: depsPath,
 		GoRoot:   goRoot,
 	}
-	s.Conn, s.client, s.log = protocol.NewElasticServer(stream, s)
+
+	var log xlog.Logger
+	s.Conn, s.client, log = protocol.NewElasticServer(stream, s)
+	s.session = cache.NewSession(log)
 	return s
 }
 
 // RunElasticServerOnPort starts an LSP server on the given port and does not exit.
 // This function exists for debugging purposes.
-func RunElasticServerOnPort(ctx context.Context, port int, h func(s *ElasticServer)) error {
-	return RunElasticServerOnAddress(ctx, fmt.Sprintf(":%v", port), h)
+func RunElasticServerOnPort(ctx context.Context, cache source.Cache, port int, h func(s *ElasticServer)) error {
+	return RunElasticServerOnAddress(ctx, cache, fmt.Sprintf(":%v", port), h)
 }
 
 // RunElasticServerOnAddress starts an LSP server on the given port and does not exit.
 // This function exists for debugging purposes.
-func RunElasticServerOnAddress(ctx context.Context, addr string, h func(s *ElasticServer)) error {
+func RunElasticServerOnAddress(ctx context.Context, cache source.Cache, addr string, h func(s *ElasticServer)) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -71,7 +75,7 @@ func RunElasticServerOnAddress(ctx context.Context, addr string, h func(s *Elast
 			return err
 		}
 		stream := jsonrpc2.NewHeaderStream(conn, conn)
-		s := NewElasticServer(stream)
+		s := NewElasticServer(cache, stream)
 		h(s)
 
 		go s.Run(ctx)
@@ -92,8 +96,8 @@ func (s *ElasticServer) RunElasticServer(ctx context.Context) error {
 // EDefinition has almost the same functionality with Definition except for the qualified name and symbol kind.
 func (s *ElasticServer) EDefinition(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.SymbolLocator, error) {
 	uri := span.NewURI(params.TextDocument.URI)
-	view := s.findView(ctx, uri)
-	f, m, err := newColumnMap(ctx, view, span.URI(params.TextDocument.URI))
+	view := s.session.ViewOf(uri)
+	f, m, err := getGoFile(ctx, view, uri)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +124,7 @@ func (s *ElasticServer) EDefinition(ctx context.Context, params *protocol.TextDo
 	if err != nil {
 		return nil, err
 	}
-	_, decM, err := newColumnMap(ctx, view, declSpan.URI())
+	_, decM, err := getSourceFile(ctx, view, declSpan.URI())
 	if err != nil {
 		return nil, err
 	}
@@ -130,8 +134,8 @@ func (s *ElasticServer) EDefinition(ctx context.Context, params *protocol.TextDo
 	}
 
 	path := strings.TrimPrefix(loc.URI, "file://")
-	pkgLoc := collectPkgMetadata(ident, &view.Config, s, path)
-	path = normalizePath(path, &view.Config, &pkgLoc, s.DepsPath)
+	pkgLoc := collectPkgMetadata(ident, view.Config(), s, path)
+	path = normalizePath(path, view.Config(), &pkgLoc, s.DepsPath)
 	loc.URI = normalizeLoc(loc.URI, s.DepsPath, &pkgLoc, path)
 
 	return []protocol.SymbolLocator{{Qname: qname, Kind: kind, Path: path, Loc: loc, Package: pkgLoc}}, nil
@@ -192,7 +196,7 @@ func getSymbolKind(ident *source.IdentifierInfo) protocol.SymbolKind {
 //
 // TODO(henrywong) It's better to use the scope chain to give a qualified name for the symbols, however there is no
 // APIs can achieve this goals, just traverse the ast node path for now.
-func getQName(ctx context.Context, f source.File, ident *source.IdentifierInfo, kind protocol.SymbolKind) string {
+func getQName(ctx context.Context, f source.GoFile, ident *source.IdentifierInfo, kind protocol.SymbolKind) string {
 	declObj := ident.Declaration.Object
 	qname := declObj.Name()
 
@@ -290,7 +294,7 @@ func getQName(ctx context.Context, f source.File, ident *source.IdentifierInfo, 
 }
 
 // collectPackageMetadata collects metadata for the packages where the specified symbols located.
-func collectPkgMetadata(ident *source.IdentifierInfo, cfg *packages.Config, s *ElasticServer, loc string) protocol.PackageLocator {
+func collectPkgMetadata(ident *source.IdentifierInfo, cfg packages.Config, s *ElasticServer, loc string) protocol.PackageLocator {
 	pkgLoc := protocol.PackageLocator{
 		Version: "",
 		Name:    "",
@@ -322,7 +326,7 @@ func collectPkgMetadata(ident *source.IdentifierInfo, cfg *packages.Config, s *E
 
 // getPkgVersion collects the version information for a specified package, the version information will be one of the
 // two forms semver format and prefix of a commit hash.
-func getPkgVersion(s *ElasticServer, cfg *packages.Config, pkgLoc *protocol.PackageLocator, loc string) {
+func getPkgVersion(s *ElasticServer, cfg packages.Config, pkgLoc *protocol.PackageLocator, loc string) {
 	rev := getPkgVersionFast(strings.TrimPrefix(loc, filepath.Join(s.DepsPath, cfg.Dir)))
 	if rev == "" {
 		if err := getPkgVersionSlow(); err != nil {
@@ -378,7 +382,7 @@ func normalizeLoc(loc string, depsPath string, pkgLoc *protocol.PackageLocator, 
 
 // normalizePath trims the workspace folder prefix to get the file path in project. Remove the revision embedded in the
 // path if it exists.
-func normalizePath(path string, cfg *packages.Config, pkgLoc *protocol.PackageLocator, depsPath string) string {
+func normalizePath(path string, cfg packages.Config, pkgLoc *protocol.PackageLocator, depsPath string) string {
 	if strings.HasPrefix(path, cfg.Dir) {
 		path = strings.TrimPrefix(path, cfg.Dir)
 	} else {

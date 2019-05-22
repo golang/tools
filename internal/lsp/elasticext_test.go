@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/xlog"
 	"golang.org/x/tools/internal/span"
 	"os"
@@ -21,8 +22,9 @@ func TestLSPExt(t *testing.T) {
 	packagestest.TestAll(t, testLSPExt)
 }
 
+const extViewName = "lspext_test"
+
 func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
-	ctx := context.Background()
 	const dir = "testdata"
 
 	// We hardcode the expected number of test cases to ensure that all tests
@@ -55,8 +57,12 @@ func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
 	}
 
 	log := xlog.New(xlog.StdSink{})
+	cache := cache.New()
+	session := cache.NewSession(log)
+	session.NewView(extViewName, span.FileURI(cfg.Dir), &cfg)
 	s := &Server{
-		views: []*cache.View{cache.NewView(ctx, log, "elasticext_test", span.FileURI(cfg.Dir), &cfg)},
+		session:     session,
+		undelivered: make(map[span.URI][]source.Diagnostic),
 	}
 	goPath := ""
 	goRoot := ""
@@ -146,7 +152,7 @@ func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
 				path = filepath.Join(cfg.Dir, v.Path)
 			}
 			pkgLoc := protocol.PackageLocator{RepoURI: v.RepoURI}
-			pathGot := normalizePath(path, &cfg, &pkgLoc, es.DepsPath)
+			pathGot := normalizePath(path, cfg, &pkgLoc, es.DepsPath)
 			if pathGot != v.PathWant {
 				t.Errorf("got %v expected %v", pathGot, v.PathWant)
 			}
@@ -260,6 +266,6 @@ func testLocation(e *packagestest.Exported, fset *token.FileSet, rng packagestes
 	if err != nil {
 		return spn, nil
 	}
-	m := protocol.NewColumnMapper(spn.URI(), fset, f, content)
+	m := protocol.NewColumnMapper(spn.URI(), f.Name(), fset, f, content)
 	return spn, m
 }
