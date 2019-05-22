@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"context"
+
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/lsp/source"
 )
@@ -19,7 +21,6 @@ const (
 
 // Workspace holds the go project workspace information
 type Workspace struct {
-	config   packages.Config
 	session  *session
 	rootPath string
 	modules  []*module
@@ -27,11 +28,10 @@ type Workspace struct {
 }
 
 // newWorkspace creates a workspace for a workspace folder
-func newWorkspace(session *session, config packages.Config) *Workspace {
+func newWorkspace(session *session, root string) *Workspace {
 	return &Workspace{
 		session:  session,
-		config:   config,
-		rootPath: config.Dir,
+		rootPath: root,
 	}
 }
 
@@ -168,17 +168,17 @@ func (w *Workspace) notify(err error) {
 
 // NotifyError notify error to lsp client
 func (w *Workspace) notifyError(message string) {
-	w.session.log.Errorf(w.config.Context, "%s", message)
+	w.session.log.Errorf(context.Background(), "%s", message)
 }
 
 // NotifyInfo notify info to lsp client
 func (w *Workspace) notifyInfo(message string) {
-	w.session.log.Infof(w.config.Context, "%s", message)
+	w.session.log.Infof(context.Background(), "%s", message)
 }
 
 // NotifyLog notify log to lsp client
 func (w *Workspace) notifyLog(message string) {
-	w.session.log.Debugf(w.config.Context, "%s", message)
+	w.session.log.Debugf(context.Background(), "%s", message)
 }
 
 func (w *Workspace) root() string {

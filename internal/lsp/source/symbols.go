@@ -41,9 +41,15 @@ type Symbol struct {
 }
 
 func DocumentSymbols(ctx context.Context, f GoFile) []Symbol {
-	fset := f.GetFileSet(ctx)
+	fset := f.FileSet()
 	file := f.GetAST(ctx)
+	if file == nil {
+		return nil
+	}
 	pkg := f.GetPackage(ctx)
+	if pkg == nil || pkg.IsIllTyped() {
+		return nil
+	}
 	return getSymbols(fset, file, pkg)
 }
 

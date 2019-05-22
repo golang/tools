@@ -57,19 +57,22 @@ func Identifier(ctx context.Context, v View, f GoFile, pos token.Pos) (*Identifi
 
 // identifier checks a single position for a potential identifier.
 func identifier(ctx context.Context, v View, f GoFile, pos token.Pos) (*IdentifierInfo, error) {
-	fAST := f.GetAST(ctx)
+	file := f.GetAST(ctx)
+	if file == nil {
+		return nil, fmt.Errorf("no AST for %s", f.URI())
+	}
 	pkg := f.GetPackage(ctx)
 	if pkg == nil || pkg.IsIllTyped() {
 		return nil, fmt.Errorf("package for %s is ill typed", f.URI())
 	}
 
-	path, _ := astutil.PathEnclosingInterval(fAST, pos, pos)
+	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
 	if path == nil {
 		return nil, fmt.Errorf("can't find node enclosing position")
 	}
 
 	// Handle import specs separately, as there is no formal position for a package declaration.
-	if result, err := importSpec(f, fAST, pkg, pos); result != nil || err != nil {
+	if result, err := importSpec(f, file, pkg, pos); result != nil || err != nil {
 		return result, err
 	}
 
@@ -103,7 +106,7 @@ func identifier(ctx context.Context, v View, f GoFile, pos token.Pos) (*Identifi
 				break
 			}
 			result.Name = strings.Trim(node.Path.Value, `"`)
-			result.Range = span.NewRange(v.FileSet(), node.Pos(), node.End())
+			result.Range = span.NewRange(f.FileSet(), node.Pos(), node.End())
 			return result, nil
 		}
 	}
@@ -117,7 +120,7 @@ func identifier(ctx context.Context, v View, f GoFile, pos token.Pos) (*Identifi
 		}
 	}
 	result.Name = result.ident.Name
-	result.Range = span.NewRange(v.FileSet(), result.ident.Pos(), result.ident.End())
+	result.Range = span.NewRange(f.FileSet(), result.ident.Pos(), result.ident.End())
 	result.Declaration.Object = pkg.GetTypesInfo().ObjectOf(result.ident)
 	if result.Declaration.Object == nil {
 		return nil, fmt.Errorf("no object for ident %v", result.Name)
@@ -132,7 +135,7 @@ func identifier(ctx context.Context, v View, f GoFile, pos token.Pos) (*Identifi
 			return nil, fmt.Errorf("no declaration for %s", result.Name)
 		}
 		result.Declaration.Node = decl
-		if result.Declaration.Range, err = posToRange(ctx, v.FileSet(), result.Name, decl.Pos()); err != nil {
+		if result.Declaration.Range, err = posToRange(ctx, f.FileSet(), result.Name, decl.Pos()); err != nil {
 			return nil, err
 		}
 		return result, nil
@@ -148,7 +151,7 @@ func identifier(ctx context.Context, v View, f GoFile, pos token.Pos) (*Identifi
 		}
 	}
 
-	if result.Declaration.Range, err = objToRange(ctx, v.FileSet(), result.Declaration.Object); err != nil {
+	if result.Declaration.Range, err = objToRange(ctx, f.FileSet(), result.Declaration.Object); err != nil {
 		return nil, err
 	}
 	if result.Declaration.Node, err = objToNode(ctx, v, result.Declaration.Object, result.Declaration.Range); err != nil {
@@ -164,7 +167,7 @@ func identifier(ctx context.Context, v View, f GoFile, pos token.Pos) (*Identifi
 		if hasErrorType(result.Type.Object) {
 			return result, nil
 		}
-		if result.Type.Range, err = objToRange(ctx, v.FileSet(), result.Type.Object); err != nil {
+		if result.Type.Range, err = objToRange(ctx, f.FileSet(), result.Type.Object); err != nil {
 			return nil, err
 		}
 	}
@@ -237,7 +240,7 @@ func (i IdentifierInfo) CommentHover(ctx context.Context, q types.Qualifier, vie
 				s = "type " + typeName.Name() + " struct"
 				if !isBuiltIn {
 					if len(i.path) > 1 {
-						extra = formatNode(view.FileSet(), i.path[1])
+						extra = formatNode(i.File.FileSet(), i.path[1])
 					} else {
 						extra = prettyPrintTypesString(types.TypeString(typ, q))
 					}
@@ -270,7 +273,7 @@ func (i IdentifierInfo) CommentHover(ctx context.Context, q types.Qualifier, vie
 		}
 	}
 
-	comments, err := FindComments(pkg, i.File.GetFileSet(ctx), obj, i.ident.Name)
+	comments, err := FindComments(pkg, i.File.FileSet(), obj, i.ident.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -351,7 +354,7 @@ func importSpec(f GoFile, fAST *ast.File, pkg Package, pos token.Pos) (*Identifi
 		result := &IdentifierInfo{
 			File:  f,
 			Name:  importPath,
-			Range: span.NewRange(f.View().FileSet(), imp.Pos(), imp.End()),
+			Range: span.NewRange(f.FileSet(), imp.Pos(), imp.End()),
 		}
 		// Consider the "declaration" of an import spec to be the imported package.
 		importedPkg := pkg.GetImport(importPath)
@@ -371,7 +374,7 @@ func importSpec(f GoFile, fAST *ast.File, pkg Package, pos token.Pos) (*Identifi
 		if dest == nil {
 			return nil, fmt.Errorf("package %q has no files", importPath)
 		}
-		result.Declaration.Range = span.NewRange(f.View().FileSet(), dest.Name.Pos(), dest.Name.End())
+		result.Declaration.Range = span.NewRange(f.FileSet(), dest.Name.Pos(), dest.Name.End())
 		return result, nil
 	}
 	return nil, nil

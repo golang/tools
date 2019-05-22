@@ -61,7 +61,7 @@ func References(ctx context.Context, search SearchFunc, f GoFile, pos token.Pos,
 		refs = append(refs, &ast.Ident{NamePos: obj.Pos(), Name: obj.Name()})
 	}
 
-	return refStreamAndCollect(f.GetFileSet(ctx), refs, 0), nil
+	return refStreamAndCollect(f.FileSet(), refs, 0), nil
 }
 
 // refStreamAndCollect returns all refs read in from chan until it is

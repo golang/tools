@@ -9,7 +9,6 @@ import (
 	"go/ast"
 	"go/token"
 	"io/ioutil"
-	"log"
 	"path/filepath"
 	"strings"
 
@@ -81,8 +80,8 @@ func (f *fileBase) GetContent(ctx context.Context) []byte {
 	return f.content
 }
 
-func (f *fileBase) GetFileSet(ctx context.Context) *token.FileSet {
-	return f.view.config.Fset
+func (f *fileBase) FileSet() *token.FileSet {
+	return f.view.Session().Cache().FileSet()
 }
 
 func (f *goFile) GetToken(ctx context.Context) *token.File {
@@ -90,7 +89,8 @@ func (f *goFile) GetToken(ctx context.Context) *token.File {
 	defer f.view.mu.Unlock()
 	if f.token == nil || len(f.view.contentChanges) > 0 {
 		if _, err := f.view.parse(ctx, f); err != nil {
-			log.Printf("get token failed: %s\n", err)
+			f.View().Session().Logger().Errorf(ctx, "unable to check package for %s: %v", f.URI(), err)
+			return nil
 		}
 	}
 	return f.token
@@ -102,7 +102,7 @@ func (f *goFile) GetAST(ctx context.Context) *ast.File {
 
 	if f.ast == nil || len(f.view.contentChanges) > 0 {
 		if _, err := f.view.parse(ctx, f); err != nil {
-			log.Printf("get ast file failed: %s\n", err)
+			f.View().Session().Logger().Errorf(ctx, "unable to check package for %s: %v", f.URI(), err)
 			return nil
 		}
 	}
@@ -115,8 +115,9 @@ func (f *goFile) GetPackage(ctx context.Context) source.Package {
 
 	if f.pkg == nil || len(f.view.contentChanges) > 0 {
 		if errs, err := f.view.parse(ctx, f); err != nil {
+			f.View().Session().Logger().Errorf(ctx, "unable to check package for %s: %v", f.URI(), err)
+
 			// Create diagnostics for errors if we are able to.
-			log.Printf("get package failed: %s\n", err)
 			if len(errs) > 0 {
 				return &pkg{errors: errs}
 			}
@@ -143,7 +144,9 @@ func (f *fileBase) read(ctx context.Context) {
 		}
 	}
 	// We might have the content saved in an overlay.
-	if content, ok := f.view.config.Overlay[f.filename()]; ok {
+	f.view.session.overlayMu.Lock()
+	defer f.view.session.overlayMu.Unlock()
+	if content, ok := f.view.session.overlays[f.URI()]; ok {
 		f.content = content
 		return
 	}

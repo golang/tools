@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func Symbols(ctx context.Context, view View, search SearchFunc, query string, limit int) []Symbol {
+func Symbols(ctx context.Context, view View, query string, limit int) []Symbol {
 	var symbols []Symbol
 	f := func(pkg Package) bool {
 		if ctx.Err() != nil {
@@ -21,7 +21,7 @@ func Symbols(ctx context.Context, view View, search SearchFunc, query string, li
 
 				if strings.Contains(symbol.Name, query) {
 					symbols = append(symbols, symbol)
-				} else if strings.Contains(pkg.GetTypes().Name() + "." + symbol.Name, query) {
+				} else if strings.Contains(pkg.GetTypes().Name()+"."+symbol.Name, query) {
 					symbols = append(symbols, symbol)
 				}
 			}
@@ -29,6 +29,6 @@ func Symbols(ctx context.Context, view View, search SearchFunc, query string, li
 
 		return false
 	}
-	search(f)
+	view.Search()(f)
 	return symbols
 }

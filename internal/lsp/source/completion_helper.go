@@ -41,7 +41,7 @@ func (c *completer) getAdditionalTextEdits(pkgPath string) *TextEdit {
 		newText = "\n\t" + newText
 	}
 
-	point := toPoint(c.file.GetFileSet(c.ctx), pos)
+	point := toPoint(c.file.FileSet(), pos)
 	return &TextEdit{
 		Span:    span.New(c.file.URI(), point, point),
 		NewText: newText,

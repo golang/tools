@@ -17,12 +17,13 @@ func newModule(w *Workspace, rootPath string) *module {
 }
 
 func (m *module) buildCache() error {
-	cfg := m.w.config
-	cfg.Dir = m.rootPath
-	cfg.Mode = packages.LoadAllSyntax
-	pattern := cfg.Dir + "/..."
+	cfg := packages.Config{
+		Dir:  m.rootPath,
+		Fset: m.w.session.cache.FileSet(),
+		Mode: packages.LoadAllSyntax,
+	}
 
-	pkgList, err := packages.Load(&cfg, pattern)
+	pkgList, err := packages.Load(&cfg, cfg.Dir+"/...")
 	if err != nil {
 		return err
 	}

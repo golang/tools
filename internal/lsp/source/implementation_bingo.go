@@ -155,7 +155,7 @@ func implements(ctx context.Context, search SearchFunc, pkg Package, f File, pat
 			seen[obj] = struct{}{}
 		}
 
-		loc := toLocation(f.GetFileSet(ctx), obj.Pos(), obj.Name())
+		loc := toLocation(f.FileSet(), obj.Pos(), obj.Name())
 		return &loc
 	}
 

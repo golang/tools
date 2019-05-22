@@ -12,7 +12,7 @@ func (s *Server) symbol(ctx context.Context, query string) ([]protocol.SymbolInf
 	var symbolInfos []protocol.SymbolInformation
 
 	f := func(view source.View) error {
-		symbols := source.Symbols(ctx, view, view.Search(), query, 100)
+		symbols := source.Symbols(ctx, view, query, 100)
 		for _, symbol := range symbols {
 			symbolInfos = append(symbolInfos, toProtocolSymbolInformation(symbol))
 		}
