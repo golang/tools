@@ -52,9 +52,9 @@ func (c *completer) init() {
 	switch c.path[0].(type) {
 	case *ast.Ident, *ast.SelectorExpr:
 	default:
-		contents := c.file.GetContent(c.ctx)
+		content := c.file.Content(c.ctx)
 		tok := c.file.GetToken(c.ctx)
-		c.cursorIdent = offsetForIdent(contents, tok.Position(c.pos))
+		c.cursorIdent = offsetForIdent(content.Data, tok.Position(c.pos))
 	}
 }
 

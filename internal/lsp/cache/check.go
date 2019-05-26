@@ -319,7 +319,7 @@ func (imp *importer) cachePackage(ctx context.Context, pkg *pkg, meta *metadata)
 		pkg.imports[importPath] = importPkg
 	}
 
-	v.space.Put(pkg)
+	imp.view.space.Put(pkg)
 }
 
 func (v *view) appendPkgError(pkg *pkg, err error) {
