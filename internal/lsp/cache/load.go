@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"go/parser"
+	"strings"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/span"
@@ -38,11 +39,11 @@ func (v *view) loadParseTypecheck(ctx context.Context, f *goFile) ([]packages.Er
 		fset: f.FileSet(),
 	}
 	// Start prefetching direct imports.
-	for importPath := range f.meta.children {
-		go imp.Import(importPath)
+	for pkgKey := range f.meta.children {
+		go imp.Import(pkgKey.path)
 	}
 	// Type-check package.
-	pkg, err := imp.getPkg(f.meta.pkgPath)
+	pkg, err := imp.getPkg(f.meta.key)
 	if pkg == nil || pkg.IsIllTyped() {
 		return nil, err
 	}
@@ -113,16 +114,20 @@ func (v *view) reparseImports(ctx context.Context, f *goFile, filename string) b
 }
 
 func (v *view) link(ctx context.Context, pkgPath string, pkg *packages.Package, parent *metadata) *metadata {
-	m, ok := v.mcache.packages[pkgPath]
+	isTest := isTestPkg(pkg)
+	key := pkgKey{path: pkgPath, isTest: isTest}
+
+	m, ok := v.mcache.packages[key]
 	if !ok {
 		m = &metadata{
 			pkgPath:    pkgPath,
 			id:         pkg.ID,
+			key:        key,
 			typesSizes: pkg.TypesSizes,
-			parents:    make(map[string]bool),
-			children:   make(map[string]bool),
+			parents:    make(map[pkgKey]bool),
+			children:   make(map[pkgKey]bool),
 		}
-		v.mcache.packages[pkgPath] = m
+		v.mcache.packages[key] = m
 	}
 	// Reset any field that could have changed across calls to packages.Load.
 	m.name = pkg.Name
@@ -134,27 +139,42 @@ func (v *view) link(ctx context.Context, pkgPath string, pkg *packages.Package, 
 				v.Session().Logger().Errorf(ctx, "not a go file: %v", f.URI())
 				continue
 			}
+			// If meta isn't this file's primary package, don't associate them.
+			if !m.ownsFile(f.filename()) {
+				continue
+			}
 			gof.meta = m
 		}
 	}
 	// Connect the import graph.
 	if parent != nil {
-		m.parents[parent.pkgPath] = true
-		parent.children[pkgPath] = true
+		m.parents[parent.key] = true
+		parent.children[key] = true
 	}
 	for importPath, importPkg := range pkg.Imports {
-		if _, ok := m.children[importPath]; !ok {
+		if _, ok := m.children[pkgKey{path: importPath, isTest: false}]; !ok {
 			v.link(ctx, importPath, importPkg, m)
 		}
 	}
 	// Clear out any imports that have been removed.
-	for importPath := range m.children {
-		if _, ok := pkg.Imports[importPath]; !ok {
-			delete(m.children, importPath)
-			if child, ok := v.mcache.packages[importPath]; ok {
-				delete(child.parents, pkgPath)
+	for pkgKey := range m.children {
+		if _, ok := pkg.Imports[pkgKey.path]; !ok {
+			delete(m.children, pkgKey)
+			if child, ok := v.mcache.packages[pkgKey]; ok {
+				delete(child.parents, pkgKey)
 			}
 		}
 	}
 	return m
+}
+
+// isTestPkg reports whether pkg represents a package with both code and test
+// files.
+func isTestPkg(pkg *packages.Package) bool {
+	for _, file := range pkg.CompiledGoFiles {
+		if strings.HasSuffix(file, "_test.go") {
+			return true
+		}
+	}
+	return false
 }

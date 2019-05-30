@@ -262,7 +262,7 @@ func Completion(ctx context.Context, f GoFile, pos token.Pos) ([]CompletionItem,
 		enclosingCompositeLiteral: clInfo,
 	}
 
-	// Set the filter surrounding.
+	// Record the identifer surrounding the position.
 	if ident, ok := path[0].(*ast.Ident); ok {
 		c.setSurrounding(ident)
 	}
@@ -314,7 +314,7 @@ func Completion(ctx context.Context, f GoFile, pos token.Pos) ([]CompletionItem,
 	case *ast.SelectorExpr:
 		// The go parser inserts a phantom "_" Sel node when the selector is
 		// not followed by an identifier or a "(". The "_" isn't actually in
-		// the text, so don't think it is our surrounding.
+		// the text, so don't mistake it for our surrounding.
 		// TODO: Find a way to differentiate between phantom "_" and real "_",
 		//       perhaps by checking if "_" is present in file contents.
 		if n.Sel.Name != "_" || c.pos != n.Sel.Pos() {

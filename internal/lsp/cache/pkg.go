@@ -19,6 +19,7 @@ import (
 // pkg contains the type information needed by the source package.
 type pkg struct {
 	id, pkgPath string
+	key         pkgKey
 	files       []string
 	syntax      []*ast.File
 	errors      []packages.Error

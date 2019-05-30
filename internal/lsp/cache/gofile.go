@@ -82,7 +82,7 @@ func (f *goFile) GetActiveReverseDeps(ctx context.Context) []source.GoFile {
 
 	seen := make(map[string]struct{}) // visited packages
 	results := make(map[*goFile]struct{})
-	f.view.reverseDeps(ctx, seen, results, pkg.PkgPath())
+	f.view.reverseDeps(ctx, seen, results, pkgKey{path: pkg.PkgPath(), isTest: false})
 
 	var files []source.GoFile
 	for rd := range results {
@@ -98,12 +98,12 @@ func (f *goFile) GetActiveReverseDeps(ctx context.Context) []source.GoFile {
 	return files
 }
 
-func (v *view) reverseDeps(ctx context.Context, seen map[string]struct{}, results map[*goFile]struct{}, pkgPath string) {
-	if _, ok := seen[pkgPath]; ok {
+func (v *view) reverseDeps(ctx context.Context, seen map[string]struct{}, results map[*goFile]struct{}, key pkgKey) {
+	if _, ok := seen[key.path]; ok {
 		return
 	}
-	seen[pkgPath] = struct{}{}
-	m, ok := v.mcache.packages[pkgPath]
+	seen[key.path] = struct{}{}
+	m, ok := v.mcache.packages[key]
 	if !ok {
 		return
 	}
@@ -113,7 +113,7 @@ func (v *view) reverseDeps(ctx context.Context, seen map[string]struct{}, result
 			results[f.(*goFile)] = struct{}{}
 		}
 	}
-	for parentPkgPath := range m.parents {
-		v.reverseDeps(ctx, seen, results, parentPkgPath)
+	for parentKey := range m.parents {
+		v.reverseDeps(ctx, seen, results, parentKey)
 	}
 }

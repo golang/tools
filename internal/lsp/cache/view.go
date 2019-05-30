@@ -12,6 +12,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"golang.org/x/tools/go/packages"
@@ -71,21 +72,36 @@ type view struct {
 	ignoredURIs map[span.URI]struct{}
 }
 
+type pkgKey struct {
+	path   string
+	isTest bool
+}
+
 type metadataCache struct {
 	mu       sync.Mutex
-	packages map[string]*metadata
+	packages map[pkgKey]*metadata
 }
 
 type metadata struct {
 	id, pkgPath, name string
+	key               pkgKey
 	files             []string
 	typesSizes        types.Sizes
-	parents, children map[string]bool
+	parents, children map[pkgKey]bool
+}
+
+// ownsFile reports whether m is filename's primary package.
+// This affects whether filename will be associated to m in caches.
+func (m *metadata) ownsFile(filename string) bool {
+	if m.key.isTest && !strings.HasSuffix(filename, "_test.go") {
+		return false
+	}
+	return true
 }
 
 type packageCache struct {
 	mu       sync.Mutex
-	packages map[string]*entry
+	packages map[pkgKey]*entry
 }
 
 type entry struct {
@@ -246,7 +262,7 @@ func (f *goFile) invalidate() {
 
 	// Remove the package and all of its reverse dependencies from the cache.
 	if f.pkg != nil {
-		f.view.remove(f.pkg.pkgPath, map[string]struct{}{})
+		f.view.remove(f.pkg.key, map[string]struct{}{})
 	}
 	f.fc = nil
 }
@@ -254,28 +270,30 @@ func (f *goFile) invalidate() {
 // remove invalidates a package and its reverse dependencies in the view's
 // package cache. It is assumed that the caller has locked both the mutexes
 // of both the mcache and the pcache.
-func (v *view) remove(pkgPath string, seen map[string]struct{}) {
-	if _, ok := seen[pkgPath]; ok {
+func (v *view) remove(key pkgKey, seen map[string]struct{}) {
+	if _, ok := seen[key.path]; ok {
 		return
 	}
-	m, ok := v.mcache.packages[pkgPath]
+	m, ok := v.mcache.packages[key]
 	if !ok {
 		return
 	}
-	seen[pkgPath] = struct{}{}
-	for parentPkgPath := range m.parents {
-		v.remove(parentPkgPath, seen)
+	seen[key.path] = struct{}{}
+	for parentKey := range m.parents {
+		v.remove(parentKey, seen)
 	}
 	// All of the files in the package may also be holding a pointer to the
 	// invalidated package.
 	for _, filename := range m.files {
 		if f, _ := v.findFile(span.FileURI(filename)); f != nil {
-			if gof, ok := f.(*goFile); ok {
+			// Only invalidate the file's package if its key matches
+			// since a file can belong to multiple packages.
+			if gof, ok := f.(*goFile); ok && gof.pkg != nil && gof.pkg.key == key {
 				gof.pkg = nil
 			}
 		}
 	}
-	delete(v.pcache.packages, pkgPath)
+	delete(v.pcache.packages, key)
 }
 
 // FindFile returns the file if the given URI is already a part of the view.

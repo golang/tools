@@ -29,19 +29,19 @@ type importer struct {
 }
 
 func (imp *importer) Import(pkgPath string) (*types.Package, error) {
-	pkg, err := imp.getPkg(pkgPath)
+	pkg, err := imp.getPkg(pkgKey{path: pkgPath, isTest: false})
 	if err != nil {
 		return nil, err
 	}
 	return pkg.types, nil
 }
 
-func (imp *importer) getPkg(pkgPath string) (*pkg, error) {
-	if _, ok := imp.seen[pkgPath]; ok {
+func (imp *importer) getPkg(key pkgKey) (*pkg, error) {
+	if _, ok := imp.seen[key.path]; ok {
 		return nil, fmt.Errorf("circular import detected")
 	}
 	imp.view.pcache.mu.Lock()
-	e, ok := imp.view.pcache.packages[pkgPath]
+	e, ok := imp.view.pcache.packages[key]
 	if ok {
 		// cache hit
 		imp.view.pcache.mu.Unlock()
@@ -50,12 +50,12 @@ func (imp *importer) getPkg(pkgPath string) (*pkg, error) {
 	} else {
 		// cache miss
 		e = &entry{ready: make(chan struct{})}
-		imp.view.pcache.packages[pkgPath] = e
+		imp.view.pcache.packages[key] = e
 		imp.view.pcache.mu.Unlock()
 
 		// This goroutine becomes responsible for populating
 		// the entry and broadcasting its readiness.
-		e.pkg, e.err = imp.typeCheck(pkgPath)
+		e.pkg, e.err = imp.typeCheck(key)
 		close(e.ready)
 	}
 	if e.err != nil {
@@ -64,10 +64,10 @@ func (imp *importer) getPkg(pkgPath string) (*pkg, error) {
 	return e.pkg, nil
 }
 
-func (imp *importer) typeCheck(pkgPath string) (*pkg, error) {
-	meta, ok := imp.view.mcache.packages[pkgPath]
+func (imp *importer) typeCheck(key pkgKey) (*pkg, error) {
+	meta, ok := imp.view.mcache.packages[key]
 	if !ok {
-		return nil, fmt.Errorf("no metadata for %v", pkgPath)
+		return nil, fmt.Errorf("no metadata for %v", key.path)
 	}
 	// Use the default type information for the unsafe package.
 	var typ *types.Package
@@ -79,6 +79,7 @@ func (imp *importer) typeCheck(pkgPath string) (*pkg, error) {
 	pkg := &pkg{
 		id:         meta.id,
 		pkgPath:    meta.pkgPath,
+		key:        key,
 		files:      meta.files,
 		imports:    make(map[string]*pkg),
 		types:      typ,
@@ -107,7 +108,7 @@ func (imp *importer) typeCheck(pkgPath string) (*pkg, error) {
 	for k, v := range imp.seen {
 		seen[k] = v
 	}
-	seen[pkgPath] = struct{}{}
+	seen[key.path] = struct{}{}
 
 	cfg := &types.Config{
 		Error: appendError,
@@ -129,7 +130,6 @@ func (imp *importer) typeCheck(pkgPath string) (*pkg, error) {
 
 func (imp *importer) cachePackage(ctx context.Context, pkg *pkg, meta *metadata) {
 	for _, file := range pkg.GetSyntax() {
-		// TODO: If a file is in multiple packages, which package do we store?
 		if !file.Pos().IsValid() {
 			imp.view.Session().Logger().Errorf(ctx, "invalid position for file %v", file.Name)
 			continue
@@ -150,21 +150,28 @@ func (imp *importer) cachePackage(ctx context.Context, pkg *pkg, meta *metadata)
 			imp.view.Session().Logger().Errorf(ctx, "not a go file: %v", f.URI())
 			continue
 		}
+
 		gof.token = tok
 		gof.ast = file
 		gof.imports = gof.ast.Imports
+
+		// Don't cache pkg if it isn't gof's primary package.
+		if !meta.ownsFile(gof.filename()) {
+			continue
+		}
+
 		gof.pkg = pkg
 	}
 
 	// Set imports of package to correspond to cached packages.
 	// We lock the package cache, but we shouldn't get any inconsistencies
 	// because we are still holding the lock on the view.
-	for importPath := range meta.children {
-		importPkg, err := imp.getPkg(importPath)
+	for pkgKey := range meta.children {
+		importPkg, err := imp.getPkg(pkgKey)
 		if err != nil {
 			continue
 		}
-		pkg.imports[importPath] = importPkg
+		pkg.imports[pkgKey.path] = importPkg
 	}
 }
 
