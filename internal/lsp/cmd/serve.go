@@ -78,16 +78,11 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 		return s.forward()
 	}
 
-	// For debugging purposes only.
-	run := func(srv *lsp.Server) {
-		srv.Conn.Logger = logger(s.Trace, out)
-		go srv.Conn.Run(ctx)
-	}
 	if s.Address != "" {
-		return lsp.RunServerOnAddress(ctx, s.app.cache, s.Address, run)
+		return lsp.RunServerOnAddress(ctx, s.app.cache, s.Address, logger(s.Trace, out))
 	}
 	if s.Port != 0 {
-		return lsp.RunServerOnPort(ctx, s.app.cache, s.Port, run)
+		return lsp.RunServerOnPort(ctx, s.app.cache, s.Port, logger(s.Trace, out))
 	}
 	stream := jsonrpc2.NewHeaderStream(os.Stdin, os.Stdout)
 	srv := lsp.NewServer(s.app.cache, stream)

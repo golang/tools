@@ -37,13 +37,13 @@ func NewServer(cache source.Cache, stream jsonrpc2.Stream) *Server {
 
 // RunServerOnPort starts an LSP server on the given port and does not exit.
 // This function exists for debugging purposes.
-func RunServerOnPort(ctx context.Context, cache source.Cache, port int, h func(s *Server)) error {
-	return RunServerOnAddress(ctx, cache, fmt.Sprintf(":%v", port), h)
+func RunServerOnPort(ctx context.Context, cache source.Cache, port int, logger jsonrpc2.Logger) error {
+	return RunServerOnAddress(ctx, cache, fmt.Sprintf(":%v", port), logger)
 }
 
-// RunServerOnPort starts an LSP server on the given port and does not exit.
+// RunServerOnAddress starts an LSP server on the given port and does not exit.
 // This function exists for debugging purposes.
-func RunServerOnAddress(ctx context.Context, cache source.Cache, addr string, h func(s *Server)) error {
+func RunServerOnAddress(ctx context.Context, cache source.Cache, addr string, logger jsonrpc2.Logger) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -55,8 +55,8 @@ func RunServerOnAddress(ctx context.Context, cache source.Cache, addr string, h 
 		}
 		stream := jsonrpc2.NewHeaderStream(conn, conn)
 		s := NewServer(cache, stream)
-		h(s)
-		go s.Run(ctx)
+		s.Conn.Logger = logger
+		s.Run(ctx)
 	}
 }
 
