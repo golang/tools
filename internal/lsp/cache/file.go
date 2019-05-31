@@ -54,6 +54,7 @@ func (f *fileBase) View() source.View {
 func (f *fileBase) Content(ctx context.Context) *source.FileContent {
 	f.view.mu.Lock()
 	defer f.view.mu.Unlock()
+
 	f.read(ctx)
 	return f.fc
 }
@@ -85,9 +86,4 @@ func (f *fileBase) read(ctx context.Context) {
 	}
 	// We don't know the content yet, so read it.
 	f.fc = f.view.Session().ReadFile(f.URI())
-}
-
-// isPopulated returns true if all of the computed fields of the file are set.
-func (f *goFile) isPopulated() bool {
-	return f.ast != nil && f.token != nil && f.pkg != nil && f.meta != nil && f.imports != nil
 }

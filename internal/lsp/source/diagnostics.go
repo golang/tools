@@ -56,7 +56,7 @@ func Diagnostics(ctx context.Context, v View, f GoFile) (map[span.URI][]Diagnost
 	if pkg == nil {
 		return singleDiagnostic(f.URI(), "%s is not part of a package", f.URI()), nil
 	}
-	// Prepare the reports we will send for this package.
+	// Prepare the reports we will send for the files in this package.
 	reports := make(map[span.URI][]Diagnostic)
 	for _, filename := range pkg.GetFilenames() {
 		uri := span.FileURI(filename)
@@ -66,7 +66,7 @@ func Diagnostics(ctx context.Context, v View, f GoFile) (map[span.URI][]Diagnost
 		reports[uri] = []Diagnostic{}
 	}
 
-	// Prepare reports for package errors
+	// Prepare any additional reports for the errors in this package.
 	for _, pkgErr := range pkg.GetErrors() {
 		reports[packageErrorSpan(pkgErr).URI()] = []Diagnostic{}
 	}
@@ -133,7 +133,7 @@ func diagnostics(ctx context.Context, v View, pkg Package, reports map[span.URI]
 func analyses(ctx context.Context, v View, pkg Package, reports map[span.URI][]Diagnostic) error {
 	// Type checking and parsing succeeded. Run analyses.
 	if err := runAnalyses(ctx, v, pkg, func(a *analysis.Analyzer, diag analysis.Diagnostic) error {
-		r := span.NewRange(v.Session().Cache().FileSet(), diag.Pos, 0)
+		r := span.NewRange(v.Session().Cache().FileSet(), diag.Pos, diag.End)
 		s, err := r.Span()
 		if err != nil {
 			// The diagnostic has an invalid position, so we don't have a valid span.
