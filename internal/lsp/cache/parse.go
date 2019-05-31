@@ -60,11 +60,10 @@ func (imp *importer) parseFiles(filenames []string) ([]*ast.File, []error) {
 
 		wg.Add(1)
 		go func(i int, filename string) {
-			defer wg.Done()
-
 			ioLimit <- true // wait
 			defer func() {
 				<-ioLimit // signal done
+				wg.Done()
 			}()
 
 			if gof.ast != nil { // already have an ast
@@ -79,7 +78,7 @@ func (imp *importer) parseFiles(filenames []string) ([]*ast.File, []error) {
 			}
 
 			src := gof.fc.Data
-			if len(src) == 0 { // no source
+			if src == nil { // no source
 				parsed[i], errors[i] = nil, fmt.Errorf("No source for %v", filename)
 				return
 			}
