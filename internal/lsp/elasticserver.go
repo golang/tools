@@ -77,8 +77,6 @@ func RunElasticServerOnAddress(ctx context.Context, cache source.Cache, addr str
 		stream := jsonrpc2.NewHeaderStream(conn, conn)
 		s := NewElasticServer(cache, stream)
 		h(s)
-
-		go s.Run(ctx)
 	}
 }
 
