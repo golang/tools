@@ -18,19 +18,29 @@ import (
 	"golang.org/x/tools/internal/span"
 )
 
-// FileContents is returned from FileSystem implementation to represent the
-// contents of a file.
-type FileContent struct {
-	URI   span.URI
-	Data  []byte
-	Error error
-	Hash  string
+// FileIdentity uniquely identifies a file at a version from a FileSystem.
+type FileIdentity struct {
+	URI     span.URI
+	Version string
+}
+
+// FileHandle represents a handle to a specific version of a single file from
+// a specific file system.
+type FileHandle interface {
+	// FileSystem returns the file system this handle was acquired from.
+	FileSystem() FileSystem
+	// Return the Identity for the file.
+	Identity() FileIdentity
+	// Read reads the contents of a file and returns it along with its hash
+	// value.
+	// If the file is not available, retruns a nil slice and an error.
+	Read(ctx context.Context) ([]byte, string, error)
 }
 
 // FileSystem is the interface to something that provides file contents.
 type FileSystem interface {
-	// ReadFile reads the contents of a file and returns it.
-	ReadFile(uri span.URI) *FileContent
+	// GetFile returns a handle for the specified file.
+	GetFile(uri span.URI) FileHandle
 }
 
 // Cache abstracts the core logic of dealing with the environment from the
@@ -129,6 +139,9 @@ type View interface {
 	// SetEnv is used to adjust the environment applied to the view.
 	SetEnv([]string)
 
+	// SetBuildFlags is used to adjust the build flags applied to the view.
+	SetBuildFlags([]string)
+
 	// Shutdown closes this view, and detaches it from it's session.
 	Shutdown(ctx context.Context)
 
@@ -143,7 +156,7 @@ type View interface {
 type File interface {
 	URI() span.URI
 	View() View
-	Content(ctx context.Context) *FileContent
+	Handle(ctx context.Context) FileHandle
 	FileSet() *token.FileSet
 	GetToken(ctx context.Context) *token.File
 }
@@ -151,7 +164,15 @@ type File interface {
 // GoFile represents a Go source file that has been type-checked.
 type GoFile interface {
 	File
+
+	// GetAnyAST returns an AST that may or may not contain function bodies.
+	// It should be used in scenarios where function bodies are not necessary.
+	GetAnyAST(ctx context.Context) *ast.File
+
+	// GetAST returns the full AST for the file.
 	GetAST(ctx context.Context) *ast.File
+
+	// GetPackage returns the package that this file belongs to.
 	GetPackage(ctx context.Context) Package
 
 	// GetActiveReverseDeps returns the active files belonging to the reverse

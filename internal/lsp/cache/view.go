@@ -16,12 +16,14 @@ import (
 	"sync"
 
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 )
 
 type view struct {
 	session *session
+	id      string
 
 	// mu protects all mutable state of the view.
 	mu sync.Mutex
@@ -47,17 +49,13 @@ type view struct {
 	// env is the environment to use when invoking underlying tools.
 	env []string
 
+	// buildFlags is the build flags to use when invoking underlying tools.
+	buildFlags []string
+
 	// keep track of files by uri and by basename, a single file may be mapped
 	// to multiple uris, and the same basename may map to multiple files
 	filesByURI  map[span.URI]viewFile
 	filesByBase map[string][]viewFile
-
-	// contentChanges saves the content changes for a given state of the view.
-	// When type information is requested by the view, all of the dirty changes
-	// are applied, potentially invalidating some data in the caches. The
-	// closures  in the dirty slice assume that their caller is holding the
-	// view's mutex.
-	contentChanges map[span.URI]func()
 
 	// mcache caches metadata for the packages of the opened files in a view.
 	mcache *metadataCache
@@ -120,9 +118,10 @@ func (v *view) buildConfig() *packages.Config {
 		folderPath = ""
 	}
 	return &packages.Config{
-		Context: v.backgroundCtx,
-		Dir:     folderPath,
-		Env:     v.env,
+		Context:    v.backgroundCtx,
+		Dir:        folderPath,
+		Env:        v.env,
+		BuildFlags: v.buildFlags,
 		Mode: packages.NeedName |
 			packages.NeedFiles |
 			packages.NeedCompiledGoFiles |
@@ -149,6 +148,12 @@ func (v *view) SetEnv(env []string) {
 	v.env = env
 }
 
+func (v *view) SetBuildFlags(buildFlags []string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.buildFlags = buildFlags
+}
+
 func (v *view) Shutdown(ctx context.Context) {
 	v.session.removeView(ctx, v)
 }
@@ -160,6 +165,7 @@ func (v *view) shutdown(context.Context) {
 		v.cancel()
 		v.cancel = nil
 	}
+	debug.DropView(debugView{v})
 }
 
 // Ignore checks if the given URI is a URI we ignore.
@@ -177,15 +183,13 @@ func (v *view) BackgroundContext() context.Context {
 }
 
 func (v *view) BuiltinPackage() *ast.Package {
-	if v.builtinPkg == nil {
-		v.buildBuiltinPkg()
-	}
 	return v.builtinPkg
 }
 
+// buildBuiltinPkg builds the view's builtin package.
+// It assumes that the view is not active yet,
+// i.e. it has not been added to the session's list of views.
 func (v *view) buildBuiltinPkg() {
-	v.mu.Lock()
-	defer v.mu.Unlock()
 	cfg := *v.buildConfig()
 	pkgs, _ := packages.Load(&cfg, "builtin")
 	if len(pkgs) != 1 {
@@ -216,34 +220,17 @@ func (v *view) SetContent(ctx context.Context, uri span.URI, content []byte) err
 	v.cancel()
 	v.backgroundCtx, v.cancel = context.WithCancel(v.baseCtx)
 
-	v.contentChanges[uri] = func() {
-		v.session.SetOverlay(uri, content)
-	}
+	v.session.SetOverlay(uri, content)
 
 	return nil
 }
 
-// applyContentChanges applies all of the changed content stored in the view.
-// It is assumed that the caller has locked both the view's and the mcache's
-// mutexes.
-func (v *view) applyContentChanges(ctx context.Context) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
+// invalidateContent invalidates the content of a Go file,
+// including any position and type information that depends on it.
+func (f *goFile) invalidateContent() {
+	f.view.pcache.mu.Lock()
+	defer f.view.pcache.mu.Unlock()
 
-	v.pcache.mu.Lock()
-	defer v.pcache.mu.Unlock()
-
-	for uri, change := range v.contentChanges {
-		change()
-		delete(v.contentChanges, uri)
-	}
-
-	return nil
-}
-
-func (f *goFile) invalidate() {
-	// TODO(rstambler): Should we recompute these here?
 	f.ast = nil
 	f.token = nil
 
@@ -251,7 +238,22 @@ func (f *goFile) invalidate() {
 	if f.pkg != nil {
 		f.view.remove(f.pkg.pkgPath, map[string]struct{}{})
 	}
-	f.fc = nil
+	f.handle = nil
+}
+
+// invalidateAST invalidates the AST of a Go file,
+// including any position and type information that depends on it.
+func (f *goFile) invalidateAST() {
+	f.view.pcache.mu.Lock()
+	defer f.view.pcache.mu.Unlock()
+
+	f.ast = nil
+	f.token = nil
+
+	// Remove the package and all of its reverse dependencies from the cache.
+	if f.pkg != nil {
+		f.view.remove(f.pkg.pkgPath, map[string]struct{}{})
+	}
 }
 
 // remove invalidates a package and its reverse dependencies in the view's
@@ -326,7 +328,7 @@ func (v *view) getFile(uri span.URI) (viewFile, error) {
 			},
 		}
 		v.session.filesWatchMap.Watch(uri, func() {
-			f.(*goFile).invalidate()
+			f.(*goFile).invalidateContent()
 		})
 	case ".mod":
 		f = &modFile{
@@ -406,3 +408,8 @@ func (v *view) Search() source.SearchFunc {
 func (v *view) FileSet() *token.FileSet {
 	return v.session.cache.fset
 }
+
+type debugView struct{ *view }
+
+func (v debugView) ID() string             { return v.id }
+func (v debugView) Session() debug.Session { return debugSession{v.session} }

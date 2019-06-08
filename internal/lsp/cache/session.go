@@ -8,9 +8,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
+	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/xlog"
 	"golang.org/x/tools/internal/span"
@@ -18,6 +22,7 @@ import (
 
 type session struct {
 	cache *cache
+	id    string
 	// the logger to use to communicate back with the client
 	log xlog.Logger
 
@@ -26,10 +31,17 @@ type session struct {
 	viewMap map[span.URI]source.View
 
 	overlayMu sync.Mutex
-	overlays  map[span.URI]*source.FileContent
+	overlays  map[span.URI]*overlay
 
 	openFiles     sync.Map
 	filesWatchMap *WatchMap
+}
+
+type overlay struct {
+	session *session
+	uri     span.URI
+	data    []byte
+	hash    string
 }
 
 func (s *session) Shutdown(ctx context.Context) {
@@ -40,6 +52,7 @@ func (s *session) Shutdown(ctx context.Context) {
 	}
 	s.views = nil
 	s.viewMap = nil
+	debug.DropSession(debugSession{s})
 }
 
 func (s *session) Cache() source.Cache {
@@ -47,21 +60,22 @@ func (s *session) Cache() source.Cache {
 }
 
 func (s *session) NewView(name string, folder span.URI) source.View {
+	index := atomic.AddInt64(&viewIndex, 1)
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 	ctx := context.Background()
 	backgroundCtx, cancel := context.WithCancel(ctx)
 	v := &view{
-		session:        s,
-		baseCtx:        ctx,
-		backgroundCtx:  backgroundCtx,
-		cancel:         cancel,
-		name:           name,
-		env:            os.Environ(),
-		folder:         folder,
-		filesByURI:     make(map[span.URI]viewFile),
-		filesByBase:    make(map[string][]viewFile),
-		contentChanges: make(map[span.URI]func()),
+		session:       s,
+		id:            strconv.FormatInt(index, 10),
+		baseCtx:       ctx,
+		backgroundCtx: backgroundCtx,
+		cancel:        cancel,
+		name:          name,
+		env:           os.Environ(),
+		folder:        folder,
+		filesByURI:    make(map[span.URI]viewFile),
+		filesByBase:   make(map[string][]viewFile),
 		mcache: &metadataCache{
 			packages: make(map[string]*metadata),
 		},
@@ -70,6 +84,10 @@ func (s *session) NewView(name string, folder span.URI) source.View {
 		},
 		ignoredURIs: make(map[span.URI]struct{}),
 	}
+	// Preemptively build the builtin package,
+	// so we immediately add builtin.go to the list of ignored files.
+	v.buildBuiltinPkg()
+
 	s.views = append(s.views, v)
 	// we always need to drop the view map
 	s.viewMap = make(map[span.URI]source.View)
@@ -78,6 +96,7 @@ func (s *session) NewView(name string, folder span.URI) source.View {
 	v.space = newWorkspace(s, root)
 	v.space.Init()
 
+	debug.AddView(debugView{v})
 	return v
 }
 
@@ -178,12 +197,12 @@ func (s *session) IsOpen(uri span.URI) bool {
 	return open
 }
 
-func (s *session) ReadFile(uri span.URI) *source.FileContent {
+func (s *session) GetFile(uri span.URI) source.FileHandle {
 	if overlay := s.readOverlay(uri); overlay != nil {
 		return overlay
 	}
 	// Fall back to the cache-level file system.
-	return s.Cache().ReadFile(uri)
+	return s.Cache().GetFile(uri)
 }
 
 func (s *session) SetOverlay(uri span.URI, data []byte) {
@@ -197,14 +216,15 @@ func (s *session) SetOverlay(uri span.URI, data []byte) {
 		delete(s.overlays, uri)
 		return
 	}
-	s.overlays[uri] = &source.FileContent{
-		URI:  uri,
-		Data: data,
-		Hash: hashContents(data),
+	s.overlays[uri] = &overlay{
+		session: s,
+		uri:     uri,
+		data:    data,
+		hash:    hashContents(data),
 	}
 }
 
-func (s *session) readOverlay(uri span.URI) *source.FileContent {
+func (s *session) readOverlay(uri span.URI) *overlay {
 	s.overlayMu.Lock()
 	defer s.overlayMu.Unlock()
 
@@ -221,12 +241,79 @@ func (s *session) buildOverlay() map[string][]byte {
 
 	overlays := make(map[string][]byte)
 	for uri, overlay := range s.overlays {
-		if overlay.Error != nil {
-			continue
-		}
 		if filename, err := uri.Filename(); err == nil {
-			overlays[filename] = overlay.Data
+			overlays[filename] = overlay.data
 		}
 	}
 	return overlays
+}
+
+func (o *overlay) FileSystem() source.FileSystem {
+	return o.session
+}
+
+func (o *overlay) Identity() source.FileIdentity {
+	return source.FileIdentity{
+		URI:     o.uri,
+		Version: o.hash,
+	}
+}
+
+func (o *overlay) Read(ctx context.Context) ([]byte, string, error) {
+	return o.data, o.hash, nil
+}
+
+type debugSession struct{ *session }
+
+func (s debugSession) ID() string         { return s.id }
+func (s debugSession) Cache() debug.Cache { return debugCache{s.cache} }
+func (s debugSession) Files() []*debug.File {
+	var files []*debug.File
+	seen := make(map[span.URI]*debug.File)
+	s.openFiles.Range(func(key interface{}, value interface{}) bool {
+		uri, ok := key.(span.URI)
+		if ok {
+			f := &debug.File{Session: s, URI: uri}
+			seen[uri] = f
+			files = append(files, f)
+		}
+		return true
+	})
+	s.overlayMu.Lock()
+	defer s.overlayMu.Unlock()
+	for _, overlay := range s.overlays {
+		f, ok := seen[overlay.uri]
+		if !ok {
+			f = &debug.File{Session: s, URI: overlay.uri}
+			seen[overlay.uri] = f
+			files = append(files, f)
+		}
+		f.Data = string(overlay.data)
+		f.Error = nil
+		f.Hash = overlay.hash
+	}
+	sort.Slice(files, func(i int, j int) bool {
+		return files[i].URI < files[j].URI
+	})
+	return files
+}
+
+func (s debugSession) File(hash string) *debug.File {
+	s.overlayMu.Lock()
+	defer s.overlayMu.Unlock()
+	for _, overlay := range s.overlays {
+		if overlay.hash == hash {
+			return &debug.File{
+				Session: s,
+				URI:     overlay.uri,
+				Data:    string(overlay.data),
+				Error:   nil,
+				Hash:    overlay.hash,
+			}
+		}
+	}
+	return &debug.File{
+		Session: s,
+		Hash:    hash,
+	}
 }

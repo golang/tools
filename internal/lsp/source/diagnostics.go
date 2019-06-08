@@ -59,16 +59,12 @@ func Diagnostics(ctx context.Context, v View, f GoFile) (map[span.URI][]Diagnost
 	// Prepare the reports we will send for the files in this package.
 	reports := make(map[span.URI][]Diagnostic)
 	for _, filename := range pkg.GetFilenames() {
-		uri := span.FileURI(filename)
-		if v.Ignore(uri) {
-			continue
-		}
-		reports[uri] = []Diagnostic{}
+		addReport(v, reports, span.FileURI(filename), nil)
 	}
 
 	// Prepare any additional reports for the errors in this package.
 	for _, pkgErr := range pkg.GetErrors() {
-		reports[packageErrorSpan(pkgErr).URI()] = []Diagnostic{}
+		addReport(v, reports, packageErrorSpan(pkgErr).URI(), nil)
 	}
 
 	// Run diagnostics for the package that this URI belongs to.
@@ -85,7 +81,7 @@ func Diagnostics(ctx context.Context, v View, f GoFile) (map[span.URI][]Diagnost
 			continue
 		}
 		for _, filename := range pkg.GetFilenames() {
-			reports[span.FileURI(filename)] = []Diagnostic{}
+			addReport(v, reports, span.FileURI(filename), nil)
 		}
 		diagnostics(ctx, v, pkg, reports)
 	}
@@ -143,7 +139,7 @@ func analyses(ctx context.Context, v View, pkg Package, reports map[span.URI][]D
 		if diag.Category != "" {
 			category += "." + category
 		}
-		reports[s.URI()] = append(reports[s.URI()], Diagnostic{
+		addReport(v, reports, s.URI(), &Diagnostic{
 			Source:   category,
 			Span:     s,
 			Message:  diag.Message,
@@ -154,6 +150,17 @@ func analyses(ctx context.Context, v View, pkg Package, reports map[span.URI][]D
 		return err
 	}
 	return nil
+}
+
+func addReport(v View, reports map[span.URI][]Diagnostic, uri span.URI, diagnostic *Diagnostic) {
+	if v.Ignore(uri) {
+		return
+	}
+	if diagnostic == nil {
+		reports[uri] = []Diagnostic{}
+	} else {
+		reports[uri] = append(reports[uri], *diagnostic)
+	}
 }
 
 // parseDiagnosticMessage attempts to parse a standard error message by stripping off the trailing error message.
@@ -195,8 +202,8 @@ func pointToSpan(ctx context.Context, v View, spn span.Span) span.Span {
 		v.Session().Logger().Errorf(ctx, "Could not find tokens for diagnostic: %v", spn.URI())
 		return spn
 	}
-	fc := diagFile.Content(ctx)
-	if fc.Error != nil {
+	data, _, err := diagFile.Handle(ctx).Read(ctx)
+	if err != nil {
 		v.Session().Logger().Errorf(ctx, "Could not find content for diagnostic: %v", spn.URI())
 		return spn
 	}
@@ -209,7 +216,7 @@ func pointToSpan(ctx context.Context, v View, spn span.Span) span.Span {
 	}
 	start := s.Start()
 	offset := start.Offset()
-	width := bytes.IndexAny(fc.Data[offset:], " \n,():;[]")
+	width := bytes.IndexAny(data[offset:], " \n,():;[]")
 	if width <= 0 {
 		return spn
 	}

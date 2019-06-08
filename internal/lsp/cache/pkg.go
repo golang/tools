@@ -20,7 +20,7 @@ import (
 type pkg struct {
 	id, pkgPath string
 	files       []string
-	syntax      []*ast.File
+	syntax      []*astFile
 	errors      []packages.Error
 	imports     map[string]*pkg
 	types       *types.Package
@@ -137,7 +137,11 @@ func (pkg *pkg) GetFilenames() []string {
 }
 
 func (pkg *pkg) GetSyntax() []*ast.File {
-	return pkg.syntax
+	syntax := make([]*ast.File, len(pkg.syntax))
+	for i := range pkg.syntax {
+		syntax[i] = pkg.syntax[i].file
+	}
+	return syntax
 }
 
 func (pkg *pkg) GetErrors() []packages.Error {
@@ -161,5 +165,9 @@ func (pkg *pkg) IsIllTyped() bool {
 }
 
 func (pkg *pkg) GetImport(pkgPath string) source.Package {
-	return pkg.imports[pkgPath]
+	if imp := pkg.imports[pkgPath]; imp != nil {
+		return imp
+	}
+	// Don't return a nil pointer because that still satisfies the interface.
+	return nil
 }

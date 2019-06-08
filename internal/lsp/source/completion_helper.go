@@ -52,9 +52,12 @@ func (c *completer) init() {
 	switch c.path[0].(type) {
 	case *ast.Ident, *ast.SelectorExpr:
 	default:
-		content := c.file.Content(c.ctx)
+		content, _, err := c.file.View().Session().GetFile(c.file.URI()).Read(c.ctx)
+		if err != nil {
+			c.file.View().Session().Logger().Errorf(c.ctx, "read file %s content failed: %s", c.file.URI(), err)
+		}
 		tok := c.file.GetToken(c.ctx)
-		c.cursorIdent = offsetForIdent(content.Data, tok.Position(c.pos))
+		c.cursorIdent = offsetForIdent(content, tok.Position(c.pos))
 	}
 }
 

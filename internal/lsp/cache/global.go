@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"go/ast"
 	"sync"
 
 	"golang.org/x/tools/go/packages"
@@ -118,12 +119,21 @@ func newPackage(p *packages.Package) *pkg {
 		id:        p.ID,
 		pkgPath:   p.PkgPath,
 		files:     p.CompiledGoFiles,
-		syntax:    p.Syntax,
+		syntax:    createAstFiles(p.Syntax),
 		errors:    p.Errors,
 		types:     p.Types,
 		typesInfo: p.TypesInfo,
 		imports:   make(map[string]*pkg),
 	}
+}
+
+func createAstFiles(files []*ast.File) []*astFile {
+	astFiles := make([]*astFile, len(files))
+	for i, file := range files {
+		astFiles[i] = &astFile{file: file}
+	}
+
+	return astFiles
 }
 
 // addImport add import package

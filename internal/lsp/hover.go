@@ -7,7 +7,6 @@ package lsp
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
@@ -33,12 +32,10 @@ func (s *Server) hover(ctx context.Context, params *protocol.TextDocumentPositio
 	if err != nil {
 		return nil, err
 	}
-
-	contents, err := ident.CommentHover(ctx, nil, view)
+	hover, err := ident.Hover(ctx, s.preferredContentFormat == protocol.Markdown, !s.noDocsOnHover)
 	if err != nil {
 		return nil, err
 	}
-
 	identSpan, err := ident.Range.Span()
 	if err != nil {
 		return nil, err
@@ -47,16 +44,10 @@ func (s *Server) hover(ctx context.Context, params *protocol.TextDocumentPositio
 	if err != nil {
 		return nil, err
 	}
-
-	contentStrings := make([]string, 0, len(contents))
-	for _, c := range contents {
-		contentStrings = append(contentStrings, c.String())
-	}
-	content := fmt.Sprint(strings.Join(contentStrings, "\n"))
 	return &protocol.Hover{
 		Contents: protocol.MarkupContent{
-			Kind:  protocol.Markdown,
-			Value: content,
+			Kind:  s.preferredContentFormat,
+			Value: hover,
 		},
 		Range: &rng,
 	}, nil
