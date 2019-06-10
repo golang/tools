@@ -91,6 +91,51 @@ func (s *ElasticServer) RunElasticServer(ctx context.Context) error {
 	return s.Conn.Run(ctx)
 }
 
+// ElasticDocumentSymbol is the override version of the 'Server.DocumentSymbol', which provides the
+// DetailSymbolInformation construction and 'DocumentSymbol' flatten.
+func (s *ElasticServer) ElasticDocumentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams, full bool, pkgLocator *protocol.PackageLocator) (symsInfo []protocol.SymbolInformation,
+	detailSyms []protocol.DetailSymbolInformation,
+	err error) {
+	docSyms, err := (*Server).DocumentSymbol(&s.Server, ctx, params)
+	var flattenDocumentSymbol func(*[]protocol.DocumentSymbol, string, string)
+	// Note: The reason why we construct the qname during the flatten process is that we can't construct the qname
+	// through the 'SymbolInformation.ContainerName' because of the possibilities of the 'ContainerName' collision.
+	flattenDocumentSymbol = func(symbols *[]protocol.DocumentSymbol, prefix string, container string) {
+		for _, symbol := range *symbols {
+			sym := protocol.SymbolInformation{
+				Name:          symbol.Name,
+				Kind:          symbol.Kind,
+				Deprecated:    symbol.Deprecated,
+				ContainerName: container,
+				Location: protocol.Location{
+					URI:   params.TextDocument.URI,
+					Range: symbol.SelectionRange,
+				},
+			}
+			symsInfo = append(symsInfo, sym)
+			var qnamePrefix string
+			if full {
+				if prefix != "" {
+					qnamePrefix = prefix + "." + symbol.Name
+				} else {
+					qnamePrefix = symbol.Name
+				}
+				detailSyms = append(detailSyms, protocol.DetailSymbolInformation{
+					Symbol:  sym,
+					Qname:   pkgLocator.Name + "." + qnamePrefix,
+					Package: *pkgLocator,
+				})
+			}
+			if len(symbol.Children) > 0 {
+				flattenDocumentSymbol(&symbol.Children, qnamePrefix, symbol.Name)
+			}
+		}
+	}
+
+	flattenDocumentSymbol(&docSyms, "", "")
+	return
+}
+
 // EDefinition has almost the same functionality with Definition except for the qualified name and symbol kind.
 func (s *ElasticServer) EDefinition(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.SymbolLocator, error) {
 	uri := span.NewURI(params.TextDocument.URI)
@@ -132,11 +177,40 @@ func (s *ElasticServer) EDefinition(ctx context.Context, params *protocol.TextDo
 	}
 
 	path := strings.TrimPrefix(loc.URI, "file://")
-	pkgLoc := collectPkgMetadata(ident, view.Config(), s, path)
+	pkgLoc := collectPkgMetadata(ident.Declaration.Object.Pkg(), view.Config(), s, path)
 	path = normalizePath(path, view.Config(), &pkgLoc, s.DepsPath)
 	loc.URI = normalizeLoc(loc.URI, s.DepsPath, &pkgLoc, path)
 
 	return []protocol.SymbolLocator{{Qname: qname, Kind: kind, Path: path, Loc: loc, Package: pkgLoc}}, nil
+}
+
+// Full collects the symbols defined in the current file and the references.
+func (s *ElasticServer) Full(ctx context.Context, fullParams *protocol.FullParams) (protocol.FullResponse, error) {
+	params := protocol.DocumentSymbolParams{TextDocument: fullParams.TextDocument}
+	var fullResponse protocol.FullResponse
+	uri := span.NewURI(fullParams.TextDocument.URI)
+	view := s.session.ViewOf(uri)
+	f, _, err := getGoFile(ctx, view, uri)
+	if err != nil {
+		return fullResponse, err
+	}
+	path, _ := f.URI().Filename()
+	pkgLocator := collectPkgMetadata(f.GetPackage(ctx).GetTypes(), view.Config(), s, path)
+
+	_, detailSyms, err := s.ElasticDocumentSymbol(ctx, &params, true, &pkgLocator)
+	if err != nil {
+		return fullResponse, err
+	}
+	fullResponse.Symbols = detailSyms
+
+	references := []protocol.Reference{}
+	fullResponse.References = references
+	// TODO(henrywong) We won't collect the references for now because of the performance issue. Once the 'References'
+	//  option is true, we will implement the references collecting feature.
+	if !fullParams.Reference {
+		return fullResponse, nil
+	}
+	return fullResponse, nil
 }
 
 // getSymbolKind get the symbol kind for a single position.
@@ -292,34 +366,31 @@ func getQName(ctx context.Context, f source.GoFile, ident *source.IdentifierInfo
 }
 
 // collectPackageMetadata collects metadata for the packages where the specified symbols located.
-func collectPkgMetadata(ident *source.IdentifierInfo, cfg packages.Config, s *ElasticServer, loc string) protocol.PackageLocator {
-	pkgLoc := protocol.PackageLocator{
+func collectPkgMetadata(pkg *types.Package, cfg packages.Config, s *ElasticServer, loc string) protocol.PackageLocator {
+	pkgLocator := protocol.PackageLocator{
 		Version: "",
 		Name:    "",
 		RepoURI: "",
 	}
 	// Get the package where the symbol belongs to.
-	pkg := ident.Declaration.Object.Pkg()
 	if pkg == nil {
-		return pkgLoc
+		return pkgLocator
 	}
-	pkgLoc.Name = pkg.Name()
-	pkgLoc.RepoURI = pkg.Path()
+	pkgLocator.Name = pkg.Name()
+	pkgLocator.RepoURI = pkg.Path()
 
 	// If the location is inside the current project or the location from standard library, there is no need to resolve
 	// the revision.
 	if strings.HasPrefix(loc, cfg.Dir) || strings.HasPrefix(loc, s.GoRoot) {
-		return pkgLoc
+		return pkgLocator
 	}
 
-	if _, err := ident.File.URI().Filename(); err == nil {
-		getPkgVersion(s, cfg, &pkgLoc, loc)
-	}
+	getPkgVersion(s, cfg, &pkgLocator, loc)
 	repoRoot, err := vcs.RepoRootForImportPath(pkg.Path(), false)
 	if err == nil {
-		pkgLoc.RepoURI = repoRoot.Root
+		pkgLocator.RepoURI = repoRoot.Root
 	}
-	return pkgLoc
+	return pkgLocator
 }
 
 // getPkgVersion collects the version information for a specified package, the version information will be one of the

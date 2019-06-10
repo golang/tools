@@ -31,6 +31,7 @@ func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
 	// are being executed. If a test is added, this number must be changed.
 	const expectedQNameKindCount = 57
 	const expectedPkgLocatorCount = 2
+	const expectedFullSymbolCount = 14
 
 	files := packagestest.MustCopyFileTree(dir)
 	for fragment, operation := range files {
@@ -77,13 +78,15 @@ func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
 	depsPath := filepath.Join(filepath.Join(goPath, "pkg"), "mod")
 	es := &ElasticServer{*s, depsPath, goRoot}
 
-	expectedQNameKinds := make(qnamekinds)
-	expectedPkgLocators := make(pkgs)
+	expectedQNameKinds := make(QnameKindMap)
+	expectedPkgLocators := make(PkgMap)
+	expectedFullSymbol := make(FullSymMap)
 
 	// Collect any data that needs to be used by subsequent tests.
 	if err := exported.Expect(map[string]interface{}{
 		"packagelocator": expectedPkgLocators.collect,
 		"qnamekind":      expectedQNameKinds.collect,
+		"fullsym":        expectedFullSymbol.collect,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +98,6 @@ func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
 		}
 		expectedQNameKinds.test(t, es)
 	})
-
 	t.Run("PKG", func(t *testing.T) {
 		t.Helper()
 		if len(expectedPkgLocators) != expectedPkgLocatorCount {
@@ -158,6 +160,13 @@ func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
 			}
 		}
 	})
+	t.Run("Full", func(t *testing.T) {
+		t.Helper()
+		if len(expectedFullSymbol) != expectedFullSymbolCount {
+			t.Errorf("got %v full symbols expected %v", len(expectedFullSymbol), expectedFullSymbolCount)
+		}
+		expectedFullSymbol.test(t, es)
+	})
 }
 
 type QNameKindResult struct {
@@ -177,10 +186,25 @@ type NormalizeTuple struct {
 	LocatedDeps bool
 }
 
-type qnamekinds map[protocol.Location]QNameKindResult
-type pkgs map[protocol.Location]PkgResultTuple
+type PackageLocator struct {
+	Version string
+	Name    string
+	RepoURI string
+}
+type DetailSymInfo struct {
+	Name          string
+	Kind          int64
+	ContainerName string
 
-func (qk qnamekinds) test(t *testing.T, s *ElasticServer) {
+	Qname  string
+	PkgLoc PackageLocator
+}
+
+type QnameKindMap map[protocol.Location]QNameKindResult
+type PkgMap map[protocol.Location]PkgResultTuple
+type FullSymMap map[protocol.Location]DetailSymInfo
+
+func (qk QnameKindMap) test(t *testing.T, s *ElasticServer) {
 	for src, target := range qk {
 		params := &protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{
@@ -188,27 +212,27 @@ func (qk qnamekinds) test(t *testing.T, s *ElasticServer) {
 			},
 			Position: src.Range.Start,
 		}
-		var locs []protocol.SymbolLocator
+		var symLocators []protocol.SymbolLocator
 		var err error
-		locs, err = s.EDefinition(context.Background(), params)
+		symLocators, err = s.EDefinition(context.Background(), params)
 		if err != nil {
 			t.Fatalf("failed for %v: %v", src, err)
 		}
-		if len(locs) != 1 {
-			t.Errorf("got %d locations for qnamekind, expected 1", len(locs))
+		if len(symLocators) != 1 {
+			t.Errorf("got %d locations for qnamekind, expected 1", len(symLocators))
 		}
 
-		if locs[0].Qname != target.Qname {
-			t.Errorf("Qname: for %v got %v want %v", src, locs[0].Qname, target.Qname)
+		if symLocators[0].Qname != target.Qname {
+			t.Errorf("Qname: for %v got %v want %v", src, symLocators[0].Qname, target.Qname)
 		}
 
-		if locs[0].Kind != protocol.SymbolKind(target.Kind) {
-			t.Errorf("Kind: for %v got %v want %v", src, locs[0].Kind, target.Kind)
+		if symLocators[0].Kind != protocol.SymbolKind(target.Kind) {
+			t.Errorf("Kind: for %v got %v want %v", src, symLocators[0].Kind, target.Kind)
 		}
 	}
 }
 
-func (qk qnamekinds) collect(e *packagestest.Exported, fset *token.FileSet, src packagestest.Range, qname string, kind int64) {
+func (qk QnameKindMap) collect(e *packagestest.Exported, fset *token.FileSet, src packagestest.Range, qname string, kind int64) {
 	sSrc, mSrc := testLocation(e, fset, src)
 	lSrc, err := mSrc.Location(sSrc)
 	if err != nil {
@@ -218,7 +242,7 @@ func (qk qnamekinds) collect(e *packagestest.Exported, fset *token.FileSet, src 
 	qk[lSrc] = QNameKindResult{Qname: qname, Kind: kind}
 }
 
-func (ps pkgs) test(t *testing.T, s *ElasticServer) {
+func (ps PkgMap) test(t *testing.T, s *ElasticServer) {
 	for src, target := range ps {
 		params := &protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{
@@ -226,27 +250,27 @@ func (ps pkgs) test(t *testing.T, s *ElasticServer) {
 			},
 			Position: src.Range.Start,
 		}
-		var locs []protocol.SymbolLocator
+		var symLocators []protocol.SymbolLocator
 		var err error
-		locs, err = s.EDefinition(context.Background(), params)
+		symLocators, err = s.EDefinition(context.Background(), params)
 		if err != nil {
 			t.Fatalf("failed for %v: %v", src, err)
 		}
-		if len(locs) != 1 {
-			t.Errorf("got %d locations for package locators, expected 1", len(locs))
+		if len(symLocators) != 1 {
+			t.Errorf("got %d locations for package locators, expected 1", len(symLocators))
 		}
 
-		if locs[0].Package.Name != target.PkgName {
-			t.Errorf("PkgName: for %v got %v want %v", src, locs[0].Package.Name, target.PkgName)
+		if symLocators[0].Package.Name != target.PkgName {
+			t.Errorf("PkgName: for %v got %v want %v", src, symLocators[0].Package.Name, target.PkgName)
 		}
 
-		if locs[0].Package.RepoURI != target.RepoURI {
-			t.Errorf("PkgRepoURI: for %v got %v want %v", src, locs[0].Package.RepoURI, target.RepoURI)
+		if symLocators[0].Package.RepoURI != target.RepoURI {
+			t.Errorf("PkgRepoURI: for %v got %v want %v", src, symLocators[0].Package.RepoURI, target.RepoURI)
 		}
 	}
 }
 
-func (ps pkgs) collect(e *packagestest.Exported, fset *token.FileSet, src packagestest.Range, pkgname, repouri string) {
+func (ps PkgMap) collect(e *packagestest.Exported, fset *token.FileSet, src packagestest.Range, pkgname, repouri string) {
 	sSrc, mSrc := testLocation(e, fset, src)
 	lSrc, err := mSrc.Location(sSrc)
 	if err != nil {
@@ -254,6 +278,83 @@ func (ps pkgs) collect(e *packagestest.Exported, fset *token.FileSet, src packag
 	}
 
 	ps[lSrc] = PkgResultTuple{PkgName: pkgname, RepoURI: repouri}
+}
+
+func (fs FullSymMap) test(t *testing.T, s *ElasticServer) {
+	if len(fs) == 0 {
+		return
+	}
+
+	var result protocol.FullResponse
+	// For now, we just test only source file.
+	for src, _ := range fs {
+		params := &protocol.FullParams{
+			TextDocument: protocol.TextDocumentIdentifier{
+				URI: src.URI,
+			},
+			Reference: false,
+		}
+		var err error
+		result, err = s.Full(context.Background(), params)
+		if err != nil {
+			t.Fatalf("failed for %v: %v", src, err)
+		}
+		break
+	}
+
+	var resultsMap map[float64]protocol.DetailSymbolInformation
+	resultsMap = make(map[float64]protocol.DetailSymbolInformation)
+	// Rearrange the results so we can compare them with test data more easily.
+	for _, result := range result.Symbols {
+		resultsMap[result.Symbol.Location.Range.Start.Line] = result
+	}
+
+	var dataMap map[float64]DetailSymInfo
+	dataMap = make(map[float64]DetailSymInfo)
+	// Rearrange the collected data.
+	for src, data := range fs {
+		dataMap[src.Range.Start.Line] = data
+	}
+
+	for index, _ := range resultsMap {
+		data, ok := dataMap[index]
+		if !ok {
+			t.Errorf("Full Symbol: got unexpected result %v at %v", resultsMap[index], index)
+			continue
+		}
+
+		if data.Name != resultsMap[index].Symbol.Name {
+			t.Errorf("Full Symbol Name: for line %v got %v want %v", index, resultsMap[index].Symbol.Name, dataMap[index].Name)
+		}
+		if protocol.SymbolKind(data.Kind) != resultsMap[index].Symbol.Kind {
+			t.Errorf("Full Symbol Kind: for line %v got %v want %v", index, resultsMap[index].Symbol.Kind, protocol.SymbolKind(dataMap[index].Kind))
+		}
+		if data.ContainerName != resultsMap[index].Symbol.ContainerName {
+			t.Errorf("Full Symbol Container Name: for line %v got %v want %v", index, resultsMap[index].Symbol.ContainerName, dataMap[index].ContainerName)
+		}
+		if data.Qname != resultsMap[index].Qname {
+			t.Errorf("Full Symbol Qname: for line %v got %v want %v", index, resultsMap[index].Qname, dataMap[index].Qname)
+		}
+		if data.PkgLoc.Name != resultsMap[index].Package.Name {
+			t.Errorf("Full Pkg Name: for line %v got %v want %v", index, resultsMap[index].Package.Name, dataMap[index].PkgLoc.Name)
+		}
+		if data.PkgLoc.Version != resultsMap[index].Package.Version {
+			t.Errorf("Full Pkg Version: for line %v got %v want %v", index, resultsMap[index].Package.Version, dataMap[index].PkgLoc.Version)
+		}
+		if data.PkgLoc.RepoURI != resultsMap[index].Package.RepoURI {
+			t.Errorf("Full Pkg RepoURI: for line %v got %v want %v", index, resultsMap[index].Package.RepoURI, dataMap[index].PkgLoc.RepoURI)
+		}
+	}
+}
+
+func (fs FullSymMap) collect(e *packagestest.Exported, fset *token.FileSet, src packagestest.Range, name string, kind int64, containerName, qname, version, pkgName, repoURI string) {
+	sSrc, mSrc := testLocation(e, fset, src)
+	lSrc, err := mSrc.Location(sSrc)
+	if err != nil {
+		return
+	}
+
+	fs[lSrc] = DetailSymInfo{Name: name, Kind: kind, ContainerName: containerName, Qname: qname, PkgLoc: PackageLocator{Version: version, Name: pkgName, RepoURI: repoURI}}
 }
 
 func testLocation(e *packagestest.Exported, fset *token.FileSet, rng packagestest.Range) (span.Span, *protocol.ColumnMapper) {

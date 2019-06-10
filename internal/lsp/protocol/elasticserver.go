@@ -16,6 +16,8 @@ import (
 type ElasticServer interface {
 	Server
 	EDefinition(context.Context, *TextDocumentPositionParams) ([]SymbolLocator, error)
+	Full(context.Context, *FullParams) (FullResponse, error)
+	ElasticDocumentSymbol(context.Context, *DocumentSymbolParams, bool, *PackageLocator) ([]SymbolInformation, []DetailSymbolInformation, error)
 }
 
 func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handler {
@@ -318,7 +320,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 				sendParseError(ctx, log, conn, r, err)
 				return
 			}
-			resp, err := server.DocumentSymbol(ctx, &params)
+			resp, _, err := server.ElasticDocumentSymbol(ctx, &params, false, nil)
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
@@ -369,6 +371,17 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 				return
 			}
 			resp, err := server.Formatting(ctx, &params)
+			if err := conn.Reply(ctx, r, resp, err); err != nil {
+				log.Errorf(ctx, "%v", err)
+			}
+		case "textDocument/full": // req
+			var fullParams FullParams
+			if err := json.Unmarshal(*r.Params, &fullParams); err != nil {
+				sendParseError(ctx, log, conn, r, err)
+				return
+			}
+
+			resp, err := server.Full(ctx, &fullParams)
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
