@@ -14,8 +14,10 @@ import (
 	"golang.org/x/tools/internal/lsp/xlog"
 	"golang.org/x/tools/internal/semver"
 	"golang.org/x/tools/internal/span"
+	"io/ioutil"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -211,6 +213,40 @@ func (s *ElasticServer) Full(ctx context.Context, fullParams *protocol.FullParam
 		return fullResponse, nil
 	}
 	return fullResponse, nil
+}
+
+type RepoMeta struct {
+	rootURI       span.URI
+	moduleFolders []string
+}
+
+// manageDeps will explore the repo and give a whole picture of it. Besides that, manageDeps will try its best to
+// convert the repo to modules. The core functions of deps downloading and deps management will be assumed by
+// the package 'cache'.
+func (s ElasticServer) ManageDeps(params *protocol.InitializeParams) error {
+	metadata := &RepoMeta{}
+	if params.RootURI != "" {
+		metadata.rootURI = span.NewURI(params.RootURI)
+	}
+	if err := collectRepoMetadata(metadata); err != nil {
+		return err
+	}
+	var folders []protocol.WorkspaceFolder
+	// Convert the module folders to the workspace folders.
+	for _, folder := range metadata.moduleFolders {
+		uri := span.NewURI(folder)
+		notExists := true
+		for _, wf := range params.WorkspaceFolders {
+			if filepath.Clean(string(uri)) == filepath.Clean(wf.URI) {
+				notExists = false
+			}
+		}
+		if notExists {
+			folders = append(folders, protocol.WorkspaceFolder{URI: string(uri), Name: filepath.Base(folder)})
+		}
+	}
+	params.WorkspaceFolders = append(params.WorkspaceFolders, folders...)
+	return nil
 }
 
 // getSymbolKind get the symbol kind for a single position.
@@ -464,4 +500,119 @@ func normalizePath(path string, cfg packages.Config, pkgLoc *protocol.PackageLoc
 		}
 	}
 	return strings.TrimPrefix(path, string(filepath.Separator))
+}
+
+// collectRepoMetadata explores the repo to collects the meta information of the repo. And create a new 'go.mod' if
+// necessary to cover all the source files.
+func collectRepoMetadata(metadata *RepoMeta) error {
+	rootPath, _ := metadata.rootURI.Filename()
+
+	// Collect 'go.mod' and record them as workspace folders.
+	if err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
+		if info.Name()[0] == '.' {
+			return filepath.SkipDir
+		} else if info.Name() == "go.mod" {
+			dir := filepath.Dir(path)
+			metadata.moduleFolders = append(metadata.moduleFolders, dir)
+		}
+
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	folderUncovered, folderNeedMod, err := collectUncoveredSrc(rootPath)
+	if err != nil {
+		return nil
+	}
+	// If folders need to be covered exist, a new 'go.mod' will be created manually.
+	if len(folderUncovered) > 0 {
+		longestPrefix := string(filepath.Separator)
+		// Compute the longest common prefix of the folders which need to be covered by 'go.mod'.
+	DONE:
+		for i, name := range folderUncovered[0] {
+			same := true
+			for _, folder := range folderUncovered[1:] {
+				if len(folder) <= i || folder[i] != name {
+					same = false
+					break DONE
+				}
+			}
+			if same {
+				longestPrefix = filepath.Join(longestPrefix, name)
+			}
+		}
+		folderNeedMod = append(folderNeedMod, filepath.Clean(longestPrefix))
+	}
+
+	for _, path := range folderNeedMod {
+		cmd := exec.Command("go", "mod", "init", path)
+		cmd.Dir = path
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+		metadata.moduleFolders = append(metadata.moduleFolders, path)
+	}
+	return nil
+}
+
+var DependencyControlSystem = []string{
+	"GLOCKFILE",
+	"Godeps/Godeps.json",
+	"Gopkg.lock",
+	"dependencies.tsv",
+	"glide.lock",
+	"vendor.conf",
+	"vendor.yml",
+	"vendor/manifest",
+	"vendor/vendor.json",
+}
+
+// existDepControlFile determines if dependence control files exist in the specified folder.
+func existDepControlFile(dir string) bool {
+	for _, name := range DependencyControlSystem {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// collectUncoveredSrc explores the rootPath recursively, collects
+//  - folders need to be covered, which we will create a module to cover all these folders.
+//  - folders need to create a module.
+func collectUncoveredSrc(path string) ([][]string, []string, error) {
+	var folderUncovered [][]string
+	var folderNeedMod []string
+	if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
+		return nil, nil, nil
+	}
+	// Given that we have to respect the original dependency control data, if there is a dependency control file, we
+	// we will create a 'go.mod' accordingly.
+	if existDepControlFile(path) {
+		folderNeedMod = append(folderNeedMod, path)
+		return nil, folderNeedMod, nil
+	}
+	// If there are remaining '.go' source files under the current folder, that means they will not be covered by
+	// any 'go.mod'.
+	shouldBeCovered := false
+	fileInfo, err := ioutil.ReadDir(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, info := range fileInfo {
+		if !shouldBeCovered && filepath.Ext(info.Name()) == ".go" && !strings.HasSuffix(info.Name(), "_test.go") {
+			shouldBeCovered = true
+		}
+		if info.IsDir() && info.Name()[0] != '.' {
+			uncovered, mod, e := collectUncoveredSrc(filepath.Join(path, info.Name()))
+			folderNeedMod = append(folderNeedMod, mod...)
+			folderUncovered = append(folderUncovered, uncovered...)
+			err = e
+		}
+	}
+	if shouldBeCovered {
+		folderUncovered = append(folderUncovered, strings.Split(path, string(filepath.Separator)))
+	}
+	return folderUncovered, folderNeedMod, err
 }
