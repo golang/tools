@@ -89,7 +89,9 @@ func (imp *importer) parseFiles(filenames []string, ignoreFuncBodies bool) ([]*a
 			// We don't have a cached AST for this file, so we read its content and parse it.
 			src, _, err := gof.Handle(imp.ctx).Read(imp.ctx)
 			if err != nil {
-				setFatalErr(err)
+				// Don't treat this as a fatal error since we will get "file does not exist"
+				// after a file is deleted.
+				parsed[i], errors[i] = nil, err
 				return
 			}
 			if src == nil {
