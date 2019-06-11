@@ -51,53 +51,37 @@ const (
 	SeverityError
 )
 
-func Diagnostics(ctx context.Context, v View, uri span.URI) (map[span.URI][]Diagnostic, error) {
-	f, err := v.GetFile(ctx, uri)
-	if err != nil {
-		return singleDiagnostic(uri, "no file found for %s", uri), nil
-	}
-	gof, ok := f.(GoFile)
-	if !ok {
-		return singleDiagnostic(uri, "%s is not a go file", uri), nil
-	}
-	pkg := gof.GetPackage(ctx)
+func Diagnostics(ctx context.Context, v View, f GoFile, disabledAnalyses map[string]struct{}) (map[span.URI][]Diagnostic, error) {
+	pkg := f.GetPackage(ctx)
 	if pkg == nil {
-		return singleDiagnostic(uri, "%s is not part of a package", uri), nil
+		return singleDiagnostic(f.URI(), "%s is not part of a package", f.URI()), nil
 	}
-	// Prepare the reports we will send for this package.
+	// Prepare the reports we will send for the files in this package.
 	reports := make(map[span.URI][]Diagnostic)
 	for _, filename := range pkg.GetFilenames() {
-		uri := span.FileURI(filename)
-		if v.Ignore(uri) {
-			continue
-		}
-		reports[uri] = []Diagnostic{}
+		addReport(v, reports, span.FileURI(filename), nil)
 	}
 
-	// Prepare reports for package errors
+	// Prepare any additional reports for the errors in this package.
 	for _, pkgErr := range pkg.GetErrors() {
-		reports[packageErrorSpan(pkgErr).URI()] = []Diagnostic{}
+		addReport(v, reports, packageErrorSpan(pkgErr).URI(), nil)
 	}
 
 	// Run diagnostics for the package that this URI belongs to.
 	if !diagnostics(ctx, v, pkg, reports) {
 		// If we don't have any list, parse, or type errors, run analyses.
-		if err := analyses(ctx, v, pkg, reports); err != nil {
-			return singleDiagnostic(uri, "failed to run analyses for %s: %v", uri, err), nil
+		if err := analyses(ctx, v, pkg, disabledAnalyses, reports); err != nil {
+			v.Session().Logger().Errorf(ctx, "failed to run analyses for %s: %v", f.URI(), err)
 		}
 	}
 	// Updates to the diagnostics for this package may need to be propagated.
-	for _, f := range gof.GetActiveReverseDeps(ctx) {
-		if f == nil {
-			v.Session().Logger().Errorf(ctx, "nil file in reverse active dependencies for %s", f.URI())
-			continue
-		}
+	for _, f := range f.GetActiveReverseDeps(ctx) {
 		pkg := f.GetPackage(ctx)
 		if pkg == nil {
 			continue
 		}
 		for _, filename := range pkg.GetFilenames() {
-			reports[span.FileURI(filename)] = []Diagnostic{}
+			addReport(v, reports, span.FileURI(filename), nil)
 		}
 		diagnostics(ctx, v, pkg, reports)
 	}
@@ -142,10 +126,10 @@ func diagnostics(ctx context.Context, v View, pkg Package, reports map[span.URI]
 	return len(diags) != 0
 }
 
-func analyses(ctx context.Context, v View, pkg Package, reports map[span.URI][]Diagnostic) error {
+func analyses(ctx context.Context, v View, pkg Package, disabledAnalyses map[string]struct{}, reports map[span.URI][]Diagnostic) error {
 	// Type checking and parsing succeeded. Run analyses.
-	if err := runAnalyses(ctx, v, pkg, func(a *analysis.Analyzer, diag analysis.Diagnostic) error {
-		r := span.NewRange(v.FileSet(), diag.Pos, 0)
+	if err := runAnalyses(ctx, v, pkg, disabledAnalyses, func(a *analysis.Analyzer, diag analysis.Diagnostic) error {
+		r := span.NewRange(v.Session().Cache().FileSet(), diag.Pos, diag.End)
 		s, err := r.Span()
 		if err != nil {
 			// The diagnostic has an invalid position, so we don't have a valid span.
@@ -155,7 +139,7 @@ func analyses(ctx context.Context, v View, pkg Package, reports map[span.URI][]D
 		if diag.Category != "" {
 			category += "." + category
 		}
-		reports[s.URI()] = append(reports[s.URI()], Diagnostic{
+		addReport(v, reports, s.URI(), &Diagnostic{
 			Source:   category,
 			Span:     s,
 			Message:  diag.Message,
@@ -166,6 +150,17 @@ func analyses(ctx context.Context, v View, pkg Package, reports map[span.URI][]D
 		return err
 	}
 	return nil
+}
+
+func addReport(v View, reports map[span.URI][]Diagnostic, uri span.URI, diagnostic *Diagnostic) {
+	if v.Ignore(uri) {
+		return
+	}
+	if diagnostic == nil {
+		reports[uri] = []Diagnostic{}
+	} else {
+		reports[uri] = append(reports[uri], *diagnostic)
+	}
 }
 
 // parseDiagnosticMessage attempts to parse a standard error message by stripping off the trailing error message.
@@ -187,7 +182,6 @@ func packageErrorSpan(pkgErr packages.Error) span.Span {
 	if pkgErr.Pos == "" {
 		return parseDiagnosticMessage(pkgErr.Msg)
 	}
-
 	return span.Parse(pkgErr.Pos)
 }
 
@@ -208,12 +202,12 @@ func pointToSpan(ctx context.Context, v View, spn span.Span) span.Span {
 		v.Session().Logger().Errorf(ctx, "Could not find tokens for diagnostic: %v", spn.URI())
 		return spn
 	}
-	content := diagFile.GetContent(ctx)
-	if content == nil {
+	data, _, err := diagFile.Handle(ctx).Read(ctx)
+	if err != nil {
 		v.Session().Logger().Errorf(ctx, "Could not find content for diagnostic: %v", spn.URI())
 		return spn
 	}
-	c := span.NewTokenConverter(diagFile.GetFileSet(ctx), tok)
+	c := span.NewTokenConverter(diagFile.FileSet(), tok)
 	s, err := spn.WithOffset(c)
 	//we just don't bother producing an error if this failed
 	if err != nil {
@@ -222,7 +216,7 @@ func pointToSpan(ctx context.Context, v View, spn span.Span) span.Span {
 	}
 	start := s.Start()
 	offset := start.Offset()
-	width := bytes.IndexAny(content[offset:], " \n,():;[]")
+	width := bytes.IndexAny(data[offset:], " \n,():;[]")
 	if width <= 0 {
 		return spn
 	}
@@ -240,9 +234,10 @@ func singleDiagnostic(uri span.URI, format string, a ...interface{}) map[span.UR
 	}
 }
 
-func runAnalyses(ctx context.Context, v View, pkg Package, report func(a *analysis.Analyzer, diag analysis.Diagnostic) error) error {
+func runAnalyses(ctx context.Context, v View, pkg Package, disabledAnalyses map[string]struct{}, report func(a *analysis.Analyzer, diag analysis.Diagnostic) error) error {
 	// The traditional vet suite:
-	analyzers := []*analysis.Analyzer{
+	var analyzers []*analysis.Analyzer
+	for _, a := range []*analysis.Analyzer{
 		asmdecl.Analyzer,
 		assign.Analyzer,
 		atomic.Analyzer,
@@ -265,6 +260,11 @@ func runAnalyses(ctx context.Context, v View, pkg Package, report func(a *analys
 		unreachable.Analyzer,
 		unsafeptr.Analyzer,
 		unusedresult.Analyzer,
+	} {
+		if _, ok := disabledAnalyses[a.Name]; ok {
+			continue
+		}
+		analyzers = append(analyzers, a)
 	}
 
 	roots, err := analyze(ctx, v, []Package{pkg}, analyzers)

@@ -189,7 +189,7 @@ func (c *completer) setSurrounding(ident *ast.Ident) {
 
 	c.surrounding = &Selection{
 		Content: ident.Name,
-		Range:   span.NewRange(c.view.FileSet(), ident.Pos(), ident.End()),
+		Range:   span.NewRange(c.view.Session().Cache().FileSet(), ident.Pos(), ident.End()),
 		Cursor:  c.pos,
 	}
 }
@@ -222,6 +222,9 @@ func (c *completer) found(obj types.Object, weight float64) {
 // may tolerate imperfect matches as valid completion results, since users may make typos.
 func Completion(ctx context.Context, f GoFile, pos token.Pos) ([]CompletionItem, *Selection, error) {
 	file := f.GetAST(ctx)
+	if file == nil {
+		return nil, nil, fmt.Errorf("no AST for %s", f.URI())
+	}
 	pkg := f.GetPackage(ctx)
 	if pkg == nil || pkg.IsIllTyped() {
 		return nil, nil, fmt.Errorf("package for %s is ill typed", f.URI())
@@ -309,7 +312,14 @@ func Completion(ctx context.Context, f GoFile, pos token.Pos) ([]CompletionItem,
 		}
 
 	case *ast.SelectorExpr:
-		c.setSurrounding(n.Sel)
+		// The go parser inserts a phantom "_" Sel node when the selector is
+		// not followed by an identifier or a "(". The "_" isn't actually in
+		// the text, so don't think it is our surrounding.
+		// TODO: Find a way to differentiate between phantom "_" and real "_",
+		//       perhaps by checking if "_" is present in file contents.
+		if n.Sel.Name != "_" || c.pos != n.Sel.Pos() {
+			c.setSurrounding(n.Sel)
+		}
 
 		if err := c.selector(n); err != nil {
 			return nil, nil, err

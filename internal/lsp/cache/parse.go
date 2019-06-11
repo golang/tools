@@ -11,7 +11,6 @@ import (
 	"go/parser"
 	"go/scanner"
 	"go/token"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +18,10 @@ import (
 
 	"golang.org/x/tools/internal/span"
 )
+
+func parseFile(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
+	return parser.ParseFile(fset, filename, src, parser.AllErrors|parser.ParseComments)
+}
 
 // We use a counting semaphore to limit
 // the number of parallel I/O calls per process.
@@ -31,66 +34,70 @@ var ioLimit = make(chan bool, 20)
 // Because files are scanned in parallel, the token.Pos
 // positions of the resulting ast.Files are not ordered.
 //
-func (imp *importer) parseFiles(filenames []string) ([]*ast.File, []error) {
+func (imp *importer) parseFiles(filenames []string, ignoreFuncBodies bool) ([]*astFile, []error) {
 	var wg sync.WaitGroup
 	n := len(filenames)
-	parsed := make([]*ast.File, n)
+	parsed := make([]*astFile, n)
 	errors := make([]error, n)
 	for i, filename := range filenames {
-		if imp.view.config.Context.Err() != nil {
-			parsed[i] = nil
-			errors[i] = imp.view.config.Context.Err()
+		if imp.ctx.Err() != nil {
+			parsed[i], errors[i] = nil, imp.ctx.Err()
 			continue
 		}
-
 		// First, check if we have already cached an AST for this file.
 		f, err := imp.view.findFile(span.FileURI(filename))
-		if err != nil {
+		if err != nil || f == nil {
 			parsed[i], errors[i] = nil, err
+			continue
 		}
-		var fAST *ast.File
-		if f != nil {
-			if gof, ok := f.(*goFile); ok {
-				fAST = gof.ast
-			}
+		gof, ok := f.(*goFile)
+		if !ok {
+			parsed[i], errors[i] = nil, fmt.Errorf("non-Go file in parse call: %v", filename)
+			continue
 		}
-
 		wg.Add(1)
 		go func(i int, filename string) {
 			ioLimit <- true // wait
+			defer func() {
+				<-ioLimit // signal done
+				wg.Done()
+			}()
 
-			if fAST != nil {
-				parsed[i], errors[i] = fAST, nil
-			} else {
-				// We don't have a cached AST for this file.
-				var src []byte
-				// Check for an available overlay.
-				for f, contents := range imp.view.config.Overlay {
-					if sameFile(f, filename) {
-						src = contents
-					}
-				}
-				var err error
-				// We don't have an overlay, so we must read the file's contents.
-				if src == nil {
-					src, err = ioutil.ReadFile(filename)
-				}
-				if err != nil {
-					parsed[i], errors[i] = nil, err
-				} else {
-					// ParseFile may return both an AST and an error.
-					parsed[i], errors[i] = imp.view.config.ParseFile(imp.view.config.Fset, filename, src)
-
-					// Fix any badly parsed parts of the AST.
-					if file := parsed[i]; file != nil {
-						tok := imp.view.config.Fset.File(file.Pos())
-						imp.view.fix(imp.ctx, parsed[i], tok, src)
-					}
-				}
+			// If we already have a cached AST, reuse it.
+			// If the AST is trimmed, only use it if we are ignoring function bodies.
+			if gof.ast != nil && gof.ast.isTrimmed == ignoreFuncBodies {
+				parsed[i], errors[i] = gof.ast, gof.ast.err
+				return
 			}
 
-			<-ioLimit // signal
-			wg.Done()
+			// We don't have a cached AST for this file, so we read its content and parse it.
+			data, _, err := gof.Handle(imp.ctx).Read(imp.ctx)
+			if err != nil {
+				parsed[i], errors[i] = nil, err
+				return
+			}
+			src := data
+			if src == nil {
+				parsed[i], errors[i] = nil, fmt.Errorf("no source for %v", filename)
+				return
+			}
+
+			// ParseFile may return a partial AST and an error.
+			f, err := parseFile(imp.fset, filename, src)
+			parsed[i], errors[i] = &astFile{
+				file:      f,
+				err:       err,
+				isTrimmed: ignoreFuncBodies,
+			}, err
+
+			if ignoreFuncBodies {
+				trimAST(f)
+			}
+			// Fix any badly parsed parts of the AST.
+			if f != nil {
+				tok := imp.fset.File(f.Pos())
+				imp.view.fix(imp.ctx, f, tok, src)
+			}
 		}(i, filename)
 	}
 	wg.Wait()
@@ -140,8 +147,44 @@ func sameFile(x, y string) bool {
 	return false
 }
 
-// fix inspects and potentially modifies any *ast.BadStmts or *ast.BadExprs in the AST.
+// trimAST clears any part of the AST not relevant to type checking
+// expressions at pos.
+func trimAST(file *ast.File) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		if n == nil {
+			return false
+		}
+		switch n := n.(type) {
+		case *ast.FuncDecl:
+			n.Body = nil
+		case *ast.BlockStmt:
+			n.List = nil
+		case *ast.CaseClause:
+			n.Body = nil
+		case *ast.CommClause:
+			n.Body = nil
+		case *ast.CompositeLit:
+			// Leave elts in place for [...]T
+			// array literals, because they can
+			// affect the expression's type.
+			if !isEllipsisArray(n.Type) {
+				n.Elts = nil
+			}
+		}
+		return true
+	})
+}
 
+func isEllipsisArray(n ast.Expr) bool {
+	at, ok := n.(*ast.ArrayType)
+	if !ok {
+		return false
+	}
+	_, ok = at.Len.(*ast.Ellipsis)
+	return ok
+}
+
+// fix inspects and potentially modifies any *ast.BadStmts or *ast.BadExprs in the AST.
 // We attempt to modify the AST such that we can type-check it more effectively.
 func (v *view) fix(ctx context.Context, file *ast.File, tok *token.File, src []byte) {
 	var parent ast.Node

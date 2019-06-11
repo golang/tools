@@ -11,9 +11,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/ioutil"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -32,9 +30,11 @@ const (
 	ExpectedCompletionSnippetCount = 14
 	ExpectedDiagnosticsCount       = 17
 	ExpectedFormatCount            = 5
+	ExpectedImportCount            = 2
 	ExpectedDefinitionsCount       = 35
 	ExpectedTypeDefinitionsCount   = 2
 	ExpectedHighlightsCount        = 2
+	ExpectedReferencesCount        = 2
 	ExpectedSymbolsCount           = 1
 	ExpectedSignaturesCount        = 20
 	ExpectedLinksCount             = 2
@@ -54,8 +54,10 @@ type CompletionItems map[token.Pos]*source.CompletionItem
 type Completions map[span.Span][]token.Pos
 type CompletionSnippets map[span.Span]CompletionSnippet
 type Formats []span.Span
+type Imports []span.Span
 type Definitions map[span.Span]Definition
 type Highlights map[string][]span.Span
+type References map[span.Span][]span.Span
 type Symbols map[span.URI][]source.Symbol
 type SymbolsChildren map[string][]source.Symbol
 type Signatures map[span.Span]source.SignatureInformation
@@ -69,8 +71,10 @@ type Data struct {
 	Completions        Completions
 	CompletionSnippets CompletionSnippets
 	Formats            Formats
+	Imports            Imports
 	Definitions        Definitions
 	Highlights         Highlights
+	References         References
 	Symbols            Symbols
 	symbolsChildren    SymbolsChildren
 	Signatures         Signatures
@@ -86,8 +90,10 @@ type Tests interface {
 	Diagnostics(*testing.T, Diagnostics)
 	Completion(*testing.T, Completions, CompletionSnippets, CompletionItems)
 	Format(*testing.T, Formats)
+	Import(*testing.T, Imports)
 	Definition(*testing.T, Definitions)
 	Highlight(*testing.T, Highlights)
+	Reference(*testing.T, References)
 	Symbol(*testing.T, Symbols)
 	SignatureHelp(*testing.T, Signatures)
 	Link(*testing.T, Links)
@@ -128,6 +134,7 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 		CompletionSnippets: make(CompletionSnippets),
 		Definitions:        make(Definitions),
 		Highlights:         make(Highlights),
+		References:         make(References),
 		Symbols:            make(Symbols),
 		symbolsChildren:    make(SymbolsChildren),
 		Signatures:         make(Signatures),
@@ -202,10 +209,12 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 		"item":      data.collectCompletionItems,
 		"complete":  data.collectCompletions,
 		"format":    data.collectFormats,
+		"import":    data.collectImports,
 		"godef":     data.collectDefinitions,
 		"typdef":    data.collectTypeDefinitions,
 		"hover":     data.collectHoverDefinitions,
 		"highlight": data.collectHighlights,
+		"refs":      data.collectReferences,
 		"symbol":    data.collectSymbols,
 		"signature": data.collectSignatures,
 		"snippet":   data.collectCompletionSnippets,
@@ -256,18 +265,18 @@ func Run(t *testing.T, tests Tests, data *Data) {
 
 	t.Run("Format", func(t *testing.T) {
 		t.Helper()
-		if _, err := exec.LookPath("gofmt"); err != nil {
-			switch runtime.GOOS {
-			case "android":
-				t.Skip("gofmt is not installed")
-			default:
-				t.Fatal(err)
-			}
-		}
 		if len(data.Formats) != ExpectedFormatCount {
 			t.Errorf("got %v formats expected %v", len(data.Formats), ExpectedFormatCount)
 		}
 		tests.Format(t, data.Formats)
+	})
+
+	t.Run("Import", func(t *testing.T) {
+		t.Helper()
+		if len(data.Imports) != ExpectedImportCount {
+			t.Errorf("got %v imports expected %v", len(data.Imports), ExpectedImportCount)
+		}
+		tests.Import(t, data.Imports)
 	})
 
 	t.Run("Definition", func(t *testing.T) {
@@ -284,6 +293,14 @@ func Run(t *testing.T, tests Tests, data *Data) {
 			t.Errorf("got %v highlights expected %v", len(data.Highlights), ExpectedHighlightsCount)
 		}
 		tests.Highlight(t, data.Highlights)
+	})
+
+	t.Run("References", func(t *testing.T) {
+		t.Helper()
+		if len(data.References) != ExpectedReferencesCount {
+			t.Errorf("got %v references expected %v", len(data.References), ExpectedReferencesCount)
+		}
+		tests.Reference(t, data.References)
 	})
 
 	t.Run("Symbols", func(t *testing.T) {
@@ -416,6 +433,10 @@ func (data *Data) collectFormats(spn span.Span) {
 	data.Formats = append(data.Formats, spn)
 }
 
+func (data *Data) collectImports(spn span.Span) {
+	data.Imports = append(data.Imports, spn)
+}
+
 func (data *Data) collectDefinitions(src, target span.Span) {
 	data.Definitions[src] = Definition{
 		Src: src,
@@ -447,6 +468,10 @@ func (data *Data) collectDefinitionNames(src span.Span, name string) {
 
 func (data *Data) collectHighlights(name string, rng span.Span) {
 	data.Highlights[name] = append(data.Highlights[name], rng)
+}
+
+func (data *Data) collectReferences(src span.Span, expected []span.Span) {
+	data.References[src] = expected
 }
 
 func (data *Data) collectSymbols(name string, spn span.Span, kind string, parentName string) {

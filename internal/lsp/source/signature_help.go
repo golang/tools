@@ -15,9 +15,9 @@ import (
 )
 
 type SignatureInformation struct {
-	Label           string
-	Parameters      []ParameterInformation
-	ActiveParameter int
+	Label, Documentation string
+	Parameters           []ParameterInformation
+	ActiveParameter      int
 }
 
 type ParameterInformation struct {
@@ -25,7 +25,10 @@ type ParameterInformation struct {
 }
 
 func SignatureHelp(ctx context.Context, f GoFile, pos token.Pos) (*SignatureInformation, error) {
-	fAST := f.GetAST(ctx)
+	file := f.GetAST(ctx)
+	if file == nil {
+		return nil, fmt.Errorf("no AST for %s", f.URI())
+	}
 	pkg := f.GetPackage(ctx)
 	if pkg == nil || pkg.IsIllTyped() {
 		return nil, fmt.Errorf("package for %s is ill typed", f.URI())
@@ -33,7 +36,7 @@ func SignatureHelp(ctx context.Context, f GoFile, pos token.Pos) (*SignatureInfo
 
 	// Find a call expression surrounding the query position.
 	var callExpr *ast.CallExpr
-	path, _ := astutil.PathEnclosingInterval(fAST, pos, pos)
+	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
 	if path == nil {
 		return nil, fmt.Errorf("cannot find node enclosing position")
 	}
@@ -74,18 +77,39 @@ func SignatureHelp(ctx context.Context, f GoFile, pos token.Pos) (*SignatureInfo
 		return nil, fmt.Errorf("cannot find signature for Fun %[1]T (%[1]v)", callExpr.Fun)
 	}
 
-	qf := qualifier(fAST, pkg.GetTypes(), pkg.GetTypesInfo())
+	qf := qualifier(file, pkg.GetTypes(), pkg.GetTypesInfo())
 	params := formatParams(sig.Params(), sig.Variadic(), qf)
 	results, writeResultParens := formatResults(sig.Results(), qf)
 	activeParam := activeParameter(callExpr, sig.Params().Len(), sig.Variadic(), pos)
 
-	var name string
+	var (
+		name    string
+		comment *ast.CommentGroup
+	)
 	if obj != nil {
+		rng, err := objToRange(ctx, f.FileSet(), obj)
+		if err != nil {
+			return nil, err
+		}
+		node, err := objToNode(ctx, f.View(), pkg.GetTypes(), obj, rng)
+		if err != nil {
+			return nil, err
+		}
+		decl := &declaration{
+			obj:  obj,
+			rng:  rng,
+			node: node,
+		}
+		d, err := decl.hover(ctx)
+		if err != nil {
+			return nil, err
+		}
 		name = obj.Name()
+		comment = d.comment
 	} else {
 		name = "func"
 	}
-	return signatureInformation(name, params, results, writeResultParens, activeParam), nil
+	return signatureInformation(name, comment, params, results, writeResultParens, activeParam), nil
 }
 
 func builtinSignature(ctx context.Context, v View, callExpr *ast.CallExpr, name string, pos token.Pos) (*SignatureInformation, error) {
@@ -108,10 +132,10 @@ func builtinSignature(ctx context.Context, v View, callExpr *ast.CallExpr, name 
 		}
 	}
 	activeParam := activeParameter(callExpr, numParams, variadic, pos)
-	return signatureInformation(name, params, results, writeResultParens, activeParam), nil
+	return signatureInformation(name, nil, params, results, writeResultParens, activeParam), nil
 }
 
-func signatureInformation(name string, params, results []string, writeResultParens bool, activeParam int) *SignatureInformation {
+func signatureInformation(name string, comment *ast.CommentGroup, params, results []string, writeResultParens bool, activeParam int) *SignatureInformation {
 	paramInfo := make([]ParameterInformation, 0, len(params))
 	for _, p := range params {
 		paramInfo = append(paramInfo, ParameterInformation{Label: p})
@@ -123,6 +147,7 @@ func signatureInformation(name string, params, results []string, writeResultPare
 	}
 	return &SignatureInformation{
 		Label:           label,
+		Documentation:   formatDocumentation(comment),
 		Parameters:      paramInfo,
 		ActiveParameter: activeParam,
 	}

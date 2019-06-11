@@ -18,6 +18,31 @@ import (
 	"golang.org/x/tools/internal/span"
 )
 
+// FileIdentity uniquely identifies a file at a version from a FileSystem.
+type FileIdentity struct {
+	URI     span.URI
+	Version string
+}
+
+// FileHandle represents a handle to a specific version of a single file from
+// a specific file system.
+type FileHandle interface {
+	// FileSystem returns the file system this handle was acquired from.
+	FileSystem() FileSystem
+	// Return the Identity for the file.
+	Identity() FileIdentity
+	// Read reads the contents of a file and returns it along with its hash
+	// value.
+	// If the file is not available, retruns a nil slice and an error.
+	Read(ctx context.Context) ([]byte, string, error)
+}
+
+// FileSystem is the interface to something that provides file contents.
+type FileSystem interface {
+	// GetFile returns a handle for the specified file.
+	GetFile(uri span.URI) FileHandle
+}
+
 // Cache abstracts the core logic of dealing with the environment from the
 // higher level logic that processes the information to produce results.
 // The cache provides access to files and their contents, so the source
@@ -26,8 +51,14 @@ import (
 // sharing between all consumers.
 // A cache may have many active sessions at any given time.
 type Cache interface {
+	// A FileSystem that reads file contents from external storage.
+	FileSystem
+
 	// NewSession creates a new Session manager and returns it.
 	NewSession(log xlog.Logger) Session
+
+	// FileSet returns the shared fileset used by all files in the system.
+	FileSet() *token.FileSet
 }
 
 // Session represents a single connection from a client.
@@ -36,7 +67,7 @@ type Cache interface {
 // A session may have many active views at any given time.
 type Session interface {
 	// NewView creates a new View and returns it.
-	NewView(name string, folder span.URI, config *packages.Config) View
+	NewView(name string, folder span.URI) View
 
 	// Cache returns the cache that created this session.
 	Cache() Cache
@@ -44,11 +75,36 @@ type Session interface {
 	// Returns the logger in use for this session.
 	Logger() xlog.Logger
 
+	// View returns a view with a mathing name, if the session has one.
 	View(name string) View
+
+	// ViewOf returns a view corresponding to the given URI.
 	ViewOf(uri span.URI) View
+
+	// Views returns the set of active views built by this session.
 	Views() []View
 
+	// Shutdown the session and all views it has created.
 	Shutdown(ctx context.Context)
+
+	// A FileSystem prefers the contents from overlays, and falls back to the
+	// content from the underlying cache if no overlay is present.
+	FileSystem
+
+	// DidOpen is invoked each time a file is opened in the editor.
+	DidOpen(uri span.URI)
+
+	// DidSave is invoked each time an open file is saved in the editor.
+	DidSave(uri span.URI)
+
+	// DidClose is invoked each time an open file is closed in the editor.
+	DidClose(uri span.URI)
+
+	// IsOpen can be called to check if the editor has a file currently open.
+	IsOpen(uri span.URI) bool
+
+	// Called to set the effective contents of a file from this session.
+	SetOverlay(uri span.URI, data []byte)
 }
 
 // View represents a single workspace.
@@ -57,16 +113,39 @@ type Session interface {
 type View interface {
 	// Session returns the session that created this view.
 	Session() Session
+
+	// Name returns the name this view was constructed with.
 	Name() string
+
+	// Folder returns the root folder for this view.
 	Folder() span.URI
-	FileSet() *token.FileSet
+
+	// BuiltinPackage returns the ast for the special "builtin" package.
 	BuiltinPackage() *ast.Package
+
+	// GetFile returns the file object for a given uri.
 	GetFile(ctx context.Context, uri span.URI) (File, error)
+
+	// Called to set the effective contents of a file from this view.
 	SetContent(ctx context.Context, uri span.URI, content []byte) error
+
+	// BackgroundContext returns a context used for all background processing
+	// on behalf of this view.
 	BackgroundContext() context.Context
-	Config() packages.Config
+
+	// Env returns the current set of environment overrides on this view.
+	Env() []string
+
+	// SetEnv is used to adjust the environment applied to the view.
 	SetEnv([]string)
+
+	// SetBuildFlags is used to adjust the build flags applied to the view.
+	SetBuildFlags([]string)
+
+	// Shutdown closes this view, and detaches it from it's session.
 	Shutdown(ctx context.Context)
+
+	// Ignore returns true if this file should be ignored by this view.
 	Ignore(span.URI) bool
 }
 
@@ -74,20 +153,36 @@ type View interface {
 type File interface {
 	URI() span.URI
 	View() View
-	GetContent(ctx context.Context) []byte
-	GetFileSet(ctx context.Context) *token.FileSet
+	Handle(ctx context.Context) FileHandle
+	FileSet() *token.FileSet
 	GetToken(ctx context.Context) *token.File
 }
 
 // GoFile represents a Go source file that has been type-checked.
 type GoFile interface {
 	File
+
+	// GetAnyAST returns an AST that may or may not contain function bodies.
+	// It should be used in scenarios where function bodies are not necessary.
+	GetAnyAST(ctx context.Context) *ast.File
+
+	// GetAST returns the full AST for the file.
 	GetAST(ctx context.Context) *ast.File
+
+	// GetPackage returns the package that this file belongs to.
 	GetPackage(ctx context.Context) Package
 
 	// GetActiveReverseDeps returns the active files belonging to the reverse
 	// dependencies of this file's package.
 	GetActiveReverseDeps(ctx context.Context) []GoFile
+}
+
+type ModFile interface {
+	File
+}
+
+type SumFile interface {
+	File
 }
 
 // Package represents a Go package that has been type-checked. It maintains

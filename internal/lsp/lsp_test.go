@@ -42,7 +42,11 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 	log := xlog.New(xlog.StdSink{})
 	cache := cache.New()
 	session := cache.NewSession(log)
-	session.NewView(viewName, span.FileURI(data.Config.Dir), &data.Config)
+	view := session.NewView(viewName, span.FileURI(data.Config.Dir))
+	view.SetEnv(data.Config.Env)
+	for filename, content := range data.Config.Overlay {
+		session.SetOverlay(span.FileURI(filename), content)
+	}
 	r := &runner{
 		server: &Server{
 			session:     session,
@@ -56,7 +60,15 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 func (r *runner) Diagnostics(t *testing.T, data tests.Diagnostics) {
 	v := r.server.session.View(viewName)
 	for uri, want := range data {
-		results, err := source.Diagnostics(context.Background(), v, uri)
+		f, err := v.GetFile(context.Background(), uri)
+		if err != nil {
+			t.Fatalf("no file for %s: %v", f, err)
+		}
+		gof, ok := f.(source.GoFile)
+		if !ok {
+			t.Fatalf("%s is not a Go file: %v", uri, err)
+		}
+		results, err := source.Diagnostics(context.Background(), v, gof, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -122,11 +134,11 @@ func summarizeDiagnostics(i int, want []source.Diagnostic, got []source.Diagnost
 	fmt.Fprintf(msg, reason, args...)
 	fmt.Fprint(msg, ":\nexpected:\n")
 	for _, d := range want {
-		fmt.Fprintf(msg, "  %v\n", d)
+		fmt.Fprintf(msg, "  %v: %s\n", d.Span, d.Message)
 	}
 	fmt.Fprintf(msg, "got:\n")
 	for _, d := range got {
-		fmt.Fprintf(msg, "  %v\n", d)
+		fmt.Fprintf(msg, "  %v: %s\n", d.Span, d.Message)
 	}
 	return msg.String()
 }
@@ -273,10 +285,7 @@ func (r *runner) Format(t *testing.T, data tests.Formats) {
 	ctx := context.Background()
 	for _, spn := range data {
 		uri := spn.URI()
-		filename, err := uri.Filename()
-		if err != nil {
-			t.Fatal(err)
-		}
+		filename := uri.Filename()
 		gofmted := string(r.data.Golden("gofmt", filename, func() ([]byte, error) {
 			cmd := exec.Command("gofmt", filename)
 			out, _ := cmd.Output() // ignore error, sometimes we have intentionally ungofmt-able files
@@ -306,6 +315,50 @@ func (r *runner) Format(t *testing.T, data tests.Formats) {
 		got := strings.Join(diff.ApplyEdits(diff.SplitLines(string(m.Content)), ops), "")
 		if gofmted != got {
 			t.Errorf("format failed for %s, expected:\n%v\ngot:\n%v", filename, gofmted, got)
+		}
+	}
+}
+
+func (r *runner) Import(t *testing.T, data tests.Imports) {
+	ctx := context.Background()
+	for _, spn := range data {
+		uri := spn.URI()
+		filename := uri.Filename()
+		goimported := string(r.data.Golden("goimports", filename, func() ([]byte, error) {
+			cmd := exec.Command("goimports", filename)
+			out, _ := cmd.Output() // ignore error, sometimes we have intentionally ungofmt-able files
+			return out, nil
+		}))
+
+		actions, err := r.server.CodeAction(context.Background(), &protocol.CodeActionParams{
+			TextDocument: protocol.TextDocumentIdentifier{
+				URI: protocol.NewURI(uri),
+			},
+		})
+		if err != nil {
+			if goimported != "" {
+				t.Error(err)
+			}
+			continue
+		}
+		_, m, err := getSourceFile(ctx, r.server.session.ViewOf(uri), uri)
+		if err != nil {
+			t.Error(err)
+		}
+		var edits []protocol.TextEdit
+		for _, a := range actions {
+			if a.Title == "Organize Imports" {
+				edits = (*a.Edit.Changes)[string(uri)]
+			}
+		}
+		sedits, err := FromProtocolEdits(m, edits)
+		if err != nil {
+			t.Error(err)
+		}
+		ops := source.EditsToDiff(sedits)
+		got := strings.Join(diff.ApplyEdits(diff.SplitLines(string(m.Content)), ops), "")
+		if goimported != got {
+			t.Errorf("import failed for %s, expected:\n%v\ngot:\n%v", filename, goimported, got)
 		}
 	}
 }
@@ -343,11 +396,7 @@ func (r *runner) Definition(t *testing.T, data tests.Definitions) {
 		}
 		if hover != nil {
 			tag := fmt.Sprintf("%s-hover", d.Name)
-			filename, err := d.Src.URI().Filename()
-			if err != nil {
-				t.Fatalf("failed for %v: %v", d.Def, err)
-			}
-			expectHover := string(r.data.Golden(tag, filename, func() ([]byte, error) {
+			expectHover := string(r.data.Golden(tag, d.Src.URI().Filename(), func() ([]byte, error) {
 				return []byte(hover.Contents.Value), nil
 			}))
 			if hover.Contents.Value != expectHover {
@@ -396,6 +445,48 @@ func (r *runner) Highlight(t *testing.T, data tests.Highlights) {
 				t.Fatalf("failed for %v: %v", highlights[i], err)
 			} else if h != locations[i] {
 				t.Errorf("want %v, got %v\n", locations[i], h)
+			}
+		}
+	}
+}
+
+func (r *runner) Reference(t *testing.T, data tests.References) {
+	for src, itemList := range data {
+		sm, err := r.mapper(src.URI())
+		if err != nil {
+			t.Fatal(err)
+		}
+		loc, err := sm.Location(src)
+		if err != nil {
+			t.Fatalf("failed for %v: %v", src, err)
+		}
+
+		want := make(map[protocol.Location]bool)
+		for _, pos := range itemList {
+			loc, err := sm.Location(pos)
+			if err != nil {
+				t.Fatalf("failed for %v: %v", src, err)
+			}
+			want[loc] = true
+		}
+
+		params := &protocol.ReferenceParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
+				Position:     loc.Range.Start,
+			},
+		}
+		got, err := r.server.References(context.Background(), params)
+		if err != nil {
+			t.Fatalf("failed for %v: %v", src, err)
+		}
+
+		if len(got) != len(itemList) {
+			t.Errorf("references failed: different lengths got %v want %v", len(got), len(itemList))
+		}
+		for _, loc := range got {
+			if !want[loc] {
+				t.Errorf("references failed: incorrect references got %v want %v", got, want)
 			}
 		}
 	}
@@ -574,10 +665,7 @@ func (r *runner) Link(t *testing.T, data tests.Links) {
 }
 
 func (r *runner) mapper(uri span.URI) (*protocol.ColumnMapper, error) {
-	filename, err := uri.Filename()
-	if err != nil {
-		return nil, err
-	}
+	filename := uri.Filename()
 	fset := r.data.Exported.ExpectFileSet
 	var f *token.File
 	fset.Iterate(func(check *token.File) bool {

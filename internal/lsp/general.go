@@ -10,9 +10,9 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"strings"
 
 	"golang.org/x/tools/internal/jsonrpc2"
+	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
@@ -69,6 +69,7 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 			HoverProvider:              true,
 			DocumentHighlightProvider:  true,
 			DocumentLinkProvider:       &protocol.DocumentLinkOptions{},
+			ReferencesProvider:         true,
 			SignatureHelpProvider: &protocol.SignatureHelpOptions{
 				TriggerCharacters: []string{"(", ","},
 			},
@@ -141,7 +142,7 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 		}
 	}
 	buf := &bytes.Buffer{}
-	PrintVersionInfo(buf, true, false)
+	debug.PrintVersionInfo(buf, true, debug.PlainText)
 	s.session.Logger().Infof(ctx, "%s", buf)
 	return nil
 }
@@ -161,9 +162,23 @@ func (s *Server) processConfig(view source.View, config interface{}) error {
 		if !ok {
 			return fmt.Errorf("invalid config gopls.env type %T", env)
 		}
+		env := view.Env()
 		for k, v := range menv {
-			view.SetEnv(applyEnv(view.Config().Env, k, v))
+			env = append(env, fmt.Sprintf("%s=%s", k, v))
 		}
+		view.SetEnv(env)
+	}
+	// Get the build flags for the go/packages config.
+	if buildFlags := c["buildFlags"]; buildFlags != nil {
+		iflags, ok := buildFlags.([]interface{})
+		if !ok {
+			return fmt.Errorf("invalid config gopls.buildFlags type %T", buildFlags)
+		}
+		flags := make([]string, 0, len(iflags))
+		for _, flag := range iflags {
+			flags = append(flags, fmt.Sprintf("%s", flag))
+		}
+		view.SetBuildFlags(flags)
 	}
 	// Check if placeholders are enabled.
 	if usePlaceholders, ok := c["usePlaceholders"].(bool); ok {
@@ -173,19 +188,16 @@ func (s *Server) processConfig(view source.View, config interface{}) error {
 	if noDocsOnHover, ok := c["noDocsOnHover"].(bool); ok {
 		s.noDocsOnHover = noDocsOnHover
 	}
-	return nil
-}
-
-func applyEnv(env []string, k string, v interface{}) []string {
-	prefix := k + "="
-	value := prefix + fmt.Sprint(v)
-	for i, s := range env {
-		if strings.HasPrefix(s, prefix) {
-			env[i] = value
-			return env
+	// Check if the user has explicitly disabled any analyses.
+	if disabledAnalyses, ok := c["experimentalDisabledAnalyses"].([]interface{}); ok {
+		s.disabledAnalyses = make(map[string]struct{})
+		for _, a := range disabledAnalyses {
+			if a, ok := a.(string); ok {
+				s.disabledAnalyses[a] = struct{}{}
+			}
 		}
 	}
-	return append(env, value)
+	return nil
 }
 
 func (s *Server) shutdown(ctx context.Context) error {
