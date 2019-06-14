@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/vcs"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp/protocol"
@@ -159,13 +159,14 @@ func (s *ElasticServer) EDefinition(ctx context.Context, params *protocol.TextDo
 		return nil, err
 	}
 
-	kind := getSymbolKind(ident)
+	declObj := getDeclObj(ctx, f, rng.Start)
+	kind := getSymbolKind(declObj)
 	if kind == 0 {
 		return nil, fmt.Errorf("no corresponding symbol kind for '" + ident.Name + "'")
 	}
-	qname := getQName(ctx, f, ident, kind)
+	qname := getQName(ctx, f, declObj, ident, kind)
 
-	declSpan, err := ident.Declaration.Range.Span()
+	declSpan, err := ident.DeclarationRange().Span()
 	if err != nil {
 		return nil, err
 	}
@@ -179,25 +180,31 @@ func (s *ElasticServer) EDefinition(ctx context.Context, params *protocol.TextDo
 	}
 
 	path := strings.TrimPrefix(loc.URI, "file://")
-	pkgLoc := collectPkgMetadata(ident.Declaration.Object.Pkg(), view.Config(), s, path)
-	path = normalizePath(path, view.Config(), &pkgLoc, s.DepsPath)
-	loc.URI = normalizeLoc(loc.URI, s.DepsPath, &pkgLoc, path)
+	pkgLocator, scheme := collectPkgMetadata(declObj.Pkg(), view.Folder().Filename(), s, path)
+	path = normalizePath(path, view.Folder().Filename(), strings.TrimPrefix(pkgLocator.RepoURI, scheme), s.DepsPath)
+	loc.URI = normalizeLoc(loc.URI, s.DepsPath, &pkgLocator, path)
 
-	return []protocol.SymbolLocator{{Qname: qname, Kind: kind, Path: path, Loc: loc, Package: pkgLoc}}, nil
+	return []protocol.SymbolLocator{{Qname: qname, Kind: kind, Path: path, Loc: loc, Package: pkgLocator}}, nil
 }
 
 // Full collects the symbols defined in the current file and the references.
 func (s *ElasticServer) Full(ctx context.Context, fullParams *protocol.FullParams) (protocol.FullResponse, error) {
 	params := protocol.DocumentSymbolParams{TextDocument: fullParams.TextDocument}
-	var fullResponse protocol.FullResponse
+	fullResponse := protocol.FullResponse{
+		Symbols:    []protocol.DetailSymbolInformation{},
+		References: []protocol.Reference{},
+	}
 	uri := span.NewURI(fullParams.TextDocument.URI)
 	view := s.session.ViewOf(uri)
 	f, _, err := getGoFile(ctx, view, uri)
 	if err != nil {
 		return fullResponse, err
 	}
-	path, _ := f.URI().Filename()
-	pkgLocator := collectPkgMetadata(f.GetPackage(ctx).GetTypes(), view.Config(), s, path)
+	path := f.URI().Filename()
+	if f.GetPackage(ctx) == nil {
+		return fullResponse, err
+	}
+	pkgLocator, _ := collectPkgMetadata(f.GetPackage(ctx).GetTypes(), view.Folder().Filename(), s, path)
 
 	_, detailSyms, err := s.ElasticDocumentSymbol(ctx, &params, true, &pkgLocator)
 	if err != nil {
@@ -205,8 +212,6 @@ func (s *ElasticServer) Full(ctx context.Context, fullParams *protocol.FullParam
 	}
 	fullResponse.Symbols = detailSyms
 
-	references := []protocol.Reference{}
-	fullResponse.References = references
 	// TODO(henrywong) We won't collect the references for now because of the performance issue. Once the 'References'
 	//  option is true, we will implement the references collecting feature.
 	if !fullParams.Reference {
@@ -250,8 +255,7 @@ func (s ElasticServer) ManageDeps(params *protocol.InitializeParams) error {
 }
 
 // getSymbolKind get the symbol kind for a single position.
-func getSymbolKind(ident *source.IdentifierInfo) protocol.SymbolKind {
-	declObj := ident.Declaration.Object
+func getSymbolKind(declObj types.Object) protocol.SymbolKind {
 	switch declObj.(type) {
 	case *types.Const:
 		return protocol.Constant
@@ -304,19 +308,15 @@ func getSymbolKind(ident *source.IdentifierInfo) protocol.SymbolKind {
 //
 // TODO(henrywong) It's better to use the scope chain to give a qualified name for the symbols, however there is no
 // APIs can achieve this goals, just traverse the ast node path for now.
-func getQName(ctx context.Context, f source.GoFile, ident *source.IdentifierInfo, kind protocol.SymbolKind) string {
-	declObj := ident.Declaration.Object
+func getQName(ctx context.Context, f source.GoFile, declObj types.Object, ident *source.IdentifierInfo, kind protocol.SymbolKind) string {
 	qname := declObj.Name()
-
 	if kind == protocol.Package {
 		return qname
 	}
-
 	// Get the file where the symbol definition located.
 	fAST := f.GetAST(ctx)
 	pos := declObj.Pos()
 	path, _ := astutil.PathEnclosingInterval(fAST, pos, pos)
-
 	// TODO(henrywong) Should we put a check here for the case of only one node?
 	for id, n := range path[1:] {
 		switch n.(type) {
@@ -398,11 +398,15 @@ func getQName(ctx context.Context, f source.GoFile, ident *source.IdentifierInfo
 			}
 		}
 	}
+	if declObj.Pkg() == nil {
+		return qname
+	}
 	return declObj.Pkg().Name() + "." + qname
 }
 
-// collectPackageMetadata collects metadata for the packages where the specified symbols located.
-func collectPkgMetadata(pkg *types.Package, cfg packages.Config, s *ElasticServer, loc string) protocol.PackageLocator {
+// collectPackageMetadata collects metadata for the packages where the specified symbols located and the scheme, i.e.
+// URL prefix, of the repository which the packages belong to.
+func collectPkgMetadata(pkg *types.Package, dir string, s *ElasticServer, loc string) (protocol.PackageLocator, string) {
 	pkgLocator := protocol.PackageLocator{
 		Version: "",
 		Name:    "",
@@ -410,29 +414,31 @@ func collectPkgMetadata(pkg *types.Package, cfg packages.Config, s *ElasticServe
 	}
 	// Get the package where the symbol belongs to.
 	if pkg == nil {
-		return pkgLocator
+		return pkgLocator, ""
 	}
 	pkgLocator.Name = pkg.Name()
 	pkgLocator.RepoURI = pkg.Path()
 
 	// If the location is inside the current project or the location from standard library, there is no need to resolve
 	// the revision.
-	if strings.HasPrefix(loc, cfg.Dir) || strings.HasPrefix(loc, s.GoRoot) {
-		return pkgLocator
+	if strings.HasPrefix(loc, dir) || strings.HasPrefix(loc, s.GoRoot) {
+		return pkgLocator, ""
 	}
 
-	getPkgVersion(s, cfg, &pkgLocator, loc)
+	getPkgVersion(s, dir, &pkgLocator, loc)
 	repoRoot, err := vcs.RepoRootForImportPath(pkg.Path(), false)
 	if err == nil {
-		pkgLocator.RepoURI = repoRoot.Root
+		pkgLocator.RepoURI = repoRoot.Repo
+		return pkgLocator, strings.TrimSuffix(repoRoot.Repo, repoRoot.Root)
 	}
-	return pkgLocator
+
+	return pkgLocator, ""
 }
 
 // getPkgVersion collects the version information for a specified package, the version information will be one of the
 // two forms semver format and prefix of a commit hash.
-func getPkgVersion(s *ElasticServer, cfg packages.Config, pkgLoc *protocol.PackageLocator, loc string) {
-	rev := getPkgVersionFast(strings.TrimPrefix(loc, filepath.Join(s.DepsPath, cfg.Dir)))
+func getPkgVersion(s *ElasticServer, dir string, pkgLoc *protocol.PackageLocator, loc string) {
+	rev := getPkgVersionFast(strings.TrimPrefix(loc, filepath.Join(s.DepsPath, dir)))
 	if rev == "" {
 		if err := getPkgVersionSlow(); err != nil {
 			return
@@ -476,22 +482,24 @@ func getPkgVersionFast(loc string) string {
 	return validVersion[0]
 }
 
-func normalizeLoc(loc string, depsPath string, pkgLoc *protocol.PackageLocator, path string) string {
+// normalizeLoc concatenates repository URL, package version and file path to get a complete location URL for the
+// location located in the dependencies.
+func normalizeLoc(loc string, depsPath string, pkgLocator *protocol.PackageLocator, path string) string {
 	loc = strings.TrimPrefix(loc, "file://")
 	if strings.HasPrefix(loc, depsPath) {
-		strs := []string{pkgLoc.RepoURI, "blob", pkgLoc.Version, path}
-		return filepath.Join(strs...)
+		strs := []string{"blob", pkgLocator.Version, path}
+		return pkgLocator.RepoURI + string(filepath.Separator) + filepath.Join(strs...)
 	}
 	return "file://" + loc
 }
 
 // normalizePath trims the workspace folder prefix to get the file path in project. Remove the revision embedded in the
 // path if it exists.
-func normalizePath(path string, cfg packages.Config, pkgLoc *protocol.PackageLocator, depsPath string) string {
-	if strings.HasPrefix(path, cfg.Dir) {
-		path = strings.TrimPrefix(path, cfg.Dir)
+func normalizePath(path, dir, repoURI, depsPath string) string {
+	if strings.HasPrefix(path, dir) {
+		path = strings.TrimPrefix(path, dir)
 	} else {
-		path = strings.TrimPrefix(path, filepath.Join(depsPath, pkgLoc.RepoURI))
+		path = strings.TrimPrefix(path, filepath.Join(depsPath, repoURI))
 		rev := getPkgVersionFast(path)
 		if rev != "" {
 			strs := strings.Split(path, rev)
@@ -505,17 +513,17 @@ func normalizePath(path string, cfg packages.Config, pkgLoc *protocol.PackageLoc
 // collectRepoMetadata explores the repo to collects the meta information of the repo. And create a new 'go.mod' if
 // necessary to cover all the source files.
 func collectRepoMetadata(metadata *RepoMeta) error {
-	rootPath, _ := metadata.rootURI.Filename()
+	rootPath := metadata.rootURI.Filename()
 
 	// Collect 'go.mod' and record them as workspace folders.
 	if err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
-		if info.Name()[0] == '.' {
+		dir := filepath.Dir(path)
+		if dir[0] == '.' {
 			return filepath.SkipDir
 		} else if info.Name() == "go.mod" {
 			dir := filepath.Dir(path)
 			metadata.moduleFolders = append(metadata.moduleFolders, dir)
 		}
-
 		return nil
 	}); err != nil {
 		return err
@@ -615,4 +623,20 @@ func collectUncoveredSrc(path string) ([][]string, []string, error) {
 		folderUncovered = append(folderUncovered, strings.Split(path, string(filepath.Separator)))
 	}
 	return folderUncovered, folderNeedMod, err
+}
+
+// TODO(henrywong) Upstream has made the declaration object of the selected symbol as a private field, so we have to
+//  construct the declaration object by ourselves. Given that upstream has trimmed the ast of the dependencies to reduce
+//  the usage of the memory, this construction will parse the AST of the dependent source file for every call and bring
+//  neglect overhead.
+func getDeclObj(ctx context.Context, f source.GoFile, pos token.Pos) types.Object {
+	var astIdent *ast.Ident
+	astPath, _ := astutil.PathEnclosingInterval(f.GetAST(ctx), pos, pos)
+	switch node := astPath[0].(type) {
+	case *ast.Ident:
+		astIdent = node
+	case *ast.SelectorExpr:
+		astIdent = node.Sel
+	}
+	return f.GetPackage(ctx).GetTypesInfo().ObjectOf(astIdent)
 }

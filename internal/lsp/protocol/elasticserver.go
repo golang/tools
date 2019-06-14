@@ -188,16 +188,6 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := conn.Reply(ctx, r, resp, err); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
-		case "textDocument/selectionRange": // req
-			var params SelectionRangeParams
-			if err := json.Unmarshal(*r.Params, &params); err != nil {
-				sendParseError(ctx, log, conn, r, err)
-				return
-			}
-			resp, err := server.SelectionRange(ctx, &params)
-			if err := conn.Reply(ctx, r, resp, err); err != nil {
-				log.Errorf(ctx, "%v", err)
-			}
 		case "initialize": // req
 			var params InitializeParams
 			if err := json.Unmarshal(*r.Params, &params); err != nil {

@@ -60,7 +60,8 @@ func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
 	log := xlog.New(xlog.StdSink{})
 	cache := cache.New()
 	session := cache.NewSession(log)
-	session.NewView(extViewName, span.FileURI(cfg.Dir), &cfg)
+	view := session.NewView(extViewName, span.FileURI(cfg.Dir))
+	view.SetEnv(cfg.Env)
 	s := &Server{
 		session:     session,
 		undelivered: make(map[span.URI][]source.Diagnostic),
@@ -154,7 +155,7 @@ func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
 				path = filepath.Join(cfg.Dir, v.Path)
 			}
 			pkgLoc := protocol.PackageLocator{RepoURI: v.RepoURI}
-			pathGot := normalizePath(path, cfg, &pkgLoc, es.DepsPath)
+			pathGot := normalizePath(path, cfg.Dir, pkgLoc.RepoURI, es.DepsPath)
 			if pathGot != v.PathWant {
 				t.Errorf("got %v expected %v", pathGot, v.PathWant)
 			}

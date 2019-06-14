@@ -84,13 +84,13 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 		go srv.Conn.Run(ctx)
 	}
 	if s.Address != "" {
-		return lsp.RunElasticServerOnAddress(ctx, s.app.Cache, s.Address, run)
+		return lsp.RunElasticServerOnAddress(ctx, s.app.cache, s.Address, run)
 	}
 	if s.Port != 0 {
-		return lsp.RunElasticServerOnPort(ctx, s.app.Cache, s.Port, run)
+		return lsp.RunElasticServerOnPort(ctx, s.app.cache, s.Port, run)
 	}
 	stream := jsonrpc2.NewHeaderStream(os.Stdin, os.Stdout)
-	srv := lsp.NewElasticServer(s.app.Cache, stream)
+	srv := lsp.NewElasticServer(s.app.cache, stream)
 	srv.Conn.Logger = logger(s.Trace, out)
 	return srv.Conn.Run(ctx)
 }
