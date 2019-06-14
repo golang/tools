@@ -191,6 +191,10 @@ func (w *walker) walk(path string, typ os.FileMode) error {
 	}
 	if typ == os.ModeSymlink {
 		base := filepath.Base(path)
+		if strings.HasPrefix(base, "bazel-") {
+			// Bazel symlinks, usually to tmp folders.
+			return filepath.SkipDir
+		}
 		if strings.HasPrefix(base, ".#") {
 			// Emacs noise.
 			return nil
