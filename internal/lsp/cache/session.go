@@ -42,6 +42,10 @@ type overlay struct {
 	uri     span.URI
 	data    []byte
 	hash    string
+
+	// onDisk is true if a file has been saved on disk,
+	// and therefore does not need to be part of the overlay sent to go/packages.
+	onDisk bool
 }
 
 func (s *session) Shutdown(ctx context.Context) {
@@ -77,10 +81,11 @@ func (s *session) NewView(name string, folder span.URI) source.View {
 		filesByURI:    make(map[span.URI]viewFile),
 		filesByBase:   make(map[string][]viewFile),
 		mcache: &metadataCache{
-			packages: make(map[string]*metadata),
+			packages: make(map[packageID]*metadata),
+			ids:      make(map[packagePath]packageID),
 		},
 		pcache: &packageCache{
-			packages: make(map[string]*entry),
+			packages: make(map[packageID]*entry),
 		},
 		ignoredURIs: make(map[span.URI]struct{}),
 	}
@@ -92,7 +97,7 @@ func (s *session) NewView(name string, folder span.URI) source.View {
 	// we always need to drop the view map
 	s.viewMap = make(map[span.URI]source.View)
 
-	root, _ := folder.Filename()
+	root := folder.Filename()
 	v.space = newWorkspace(s, root)
 	v.space.Init()
 
@@ -186,6 +191,12 @@ func (s *session) DidOpen(uri span.URI) {
 }
 
 func (s *session) DidSave(uri span.URI) {
+	s.overlayMu.Lock()
+	defer s.overlayMu.Unlock()
+
+	if overlay, ok := s.overlays[uri]; ok {
+		overlay.onDisk = true
+	}
 }
 
 func (s *session) DidClose(uri span.URI) {
@@ -241,9 +252,10 @@ func (s *session) buildOverlay() map[string][]byte {
 
 	overlays := make(map[string][]byte)
 	for uri, overlay := range s.overlays {
-		if filename, err := uri.Filename(); err == nil {
-			overlays[filename] = overlay.data
+		if overlay.onDisk {
+			continue
 		}
+		overlays[uri.Filename()] = overlay.data
 	}
 	return overlays
 }

@@ -16,108 +16,140 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/span"
 )
 
-func parseFile(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
-	return parser.ParseFile(fset, filename, src, parser.AllErrors|parser.ParseComments)
+// Limits the number of parallel parser calls per process.
+var parseLimit = make(chan bool, 20)
+
+// parseKey uniquely identifies a parsed Go file.
+type parseKey struct {
+	file source.FileIdentity
+	mode source.ParseMode
 }
 
-// We use a counting semaphore to limit
-// the number of parallel I/O calls per process.
-var ioLimit = make(chan bool, 20)
+type parseGoHandle struct {
+	handle *memoize.Handle
+	file   source.FileHandle
+	mode   source.ParseMode
+}
+
+type parseGoData struct {
+	memoize.NoCopy
+
+	ast *ast.File
+	err error
+}
+
+func (c *cache) ParseGoHandle(fh source.FileHandle, mode source.ParseMode) source.ParseGoHandle {
+	key := parseKey{
+		file: fh.Identity(),
+		mode: mode,
+	}
+	h := c.store.Bind(key, func(ctx context.Context) interface{} {
+		data := &parseGoData{}
+		data.ast, data.err = parseGo(ctx, c, fh, mode)
+		return data
+	})
+	return &parseGoHandle{
+		handle: h,
+	}
+}
+
+func (h *parseGoHandle) File() source.FileHandle {
+	return h.file
+}
+
+func (h *parseGoHandle) Mode() source.ParseMode {
+	return h.mode
+}
+
+func (h *parseGoHandle) Parse(ctx context.Context) (*ast.File, error) {
+	v := h.handle.Get(ctx)
+	if v == nil {
+		return nil, ctx.Err()
+	}
+	data := v.(*parseGoData)
+	return data.ast, data.err
+}
+
+func parseGo(ctx context.Context, c *cache, fh source.FileHandle, mode source.ParseMode) (*ast.File, error) {
+	buf, _, err := fh.Read(ctx)
+	if err != nil {
+		return nil, err
+	}
+	parseLimit <- true
+	defer func() { <-parseLimit }()
+	parserMode := parser.AllErrors | parser.ParseComments
+	if mode == source.ParseHeader {
+		parserMode = parser.ImportsOnly
+	}
+	ast, err := parser.ParseFile(c.fset, fh.Identity().URI.Filename(), buf, parserMode)
+	if ast != nil {
+		if mode == source.ParseExported {
+			trimAST(ast)
+		}
+		// Fix any badly parsed parts of the AST.
+		tok := c.fset.File(ast.Pos())
+		if err := fix(ctx, ast, tok, buf); err != nil {
+			//TODO: we should do something with the error, but we have no access to a logger in here
+		}
+	}
+	return ast, err
+}
 
 // parseFiles reads and parses the Go source files and returns the ASTs
-// of the ones that could be at least partially parsed, along with a
-// list of I/O and parse errors encountered.
+// of the ones that could be at least partially parsed, along with a list
+// parse errors encountered, and a fatal error that prevented parsing.
 //
 // Because files are scanned in parallel, the token.Pos
 // positions of the resulting ast.Files are not ordered.
-//
-func (imp *importer) parseFiles(filenames []string, ignoreFuncBodies bool) ([]*astFile, []error) {
-	var wg sync.WaitGroup
-	n := len(filenames)
-	parsed := make([]*astFile, n)
-	errors := make([]error, n)
+func (imp *importer) parseFiles(filenames []string, ignoreFuncBodies bool) (map[string]*astFile, []error, error) {
+	var (
+		wg     sync.WaitGroup
+		n      = len(filenames)
+		parsed = make([]*astFile, n)
+		errors = make([]error, n)
+	)
+	// TODO: change this function to return the handles
 	for i, filename := range filenames {
-		if imp.ctx.Err() != nil {
-			parsed[i] = nil
-			errors[i] = imp.ctx.Err()
-			continue
+		if err := imp.ctx.Err(); err != nil {
+			return nil, nil, err
 		}
-
-		// First, check if we have already cached an AST for this file.
-		f, err := imp.view.findFile(span.FileURI(filename))
-		if err != nil || f == nil {
-			parsed[i], errors[i] = nil, err
-			continue
+		// get a file handle
+		fh := imp.view.session.GetFile(span.FileURI(filename))
+		// now get a parser
+		mode := source.ParseFull
+		if ignoreFuncBodies {
+			mode = source.ParseExported
 		}
-		gof, ok := f.(*goFile)
-		if !ok {
-			parsed[i], errors[i] = nil, fmt.Errorf("non-Go file in parse call: %v", filename)
-			continue
-		}
-
+		ph := imp.view.session.cache.ParseGoHandle(fh, mode)
+		// now read and parse in parallel
 		wg.Add(1)
 		go func(i int, filename string) {
-			ioLimit <- true // wait
-			defer func() {
-				<-ioLimit // signal done
-				wg.Done()
-			}()
-
-			// If we already have a cached AST, reuse it.
-			// If the AST is trimmed, only use it if we are ignoring function bodies.
-			if gof.astIsTrimmed() && ignoreFuncBodies {
-				parsed[i], errors[i] = gof.ast, nil
-				return
-			} else if gof.ast != nil && !gof.ast.isTrimmed && !ignoreFuncBodies {
-				parsed[i], errors[i] = gof.ast, nil
-				return
-			}
-
-			// We don't have a cached AST for this file, so we read its content and parse it.
-			data, _, err := gof.Handle(imp.ctx).Read(imp.ctx)
-			if err != nil {
-				return
-			}
-			src := data
-			if src == nil {
-				parsed[i], errors[i] = nil, fmt.Errorf("no source for %v", filename)
-				return
-			}
-
+			defer wg.Done()
 			// ParseFile may return a partial AST and an error.
-			f, err := parseFile(imp.fset, filename, src)
-
-			if ignoreFuncBodies {
-				trimAST(f)
-			}
-
-			// Fix any badly parsed parts of the AST.
-			if f != nil {
-				tok := imp.fset.File(f.Pos())
-				imp.view.fix(imp.ctx, f, tok, src)
-			}
-
-			parsed[i] = &astFile{f, ignoreFuncBodies}
-			errors[i] = err
-
+			f, err := ph.Parse(imp.ctx)
+			parsed[i], errors[i] = &astFile{
+				file:      f,
+				err:       err,
+				isTrimmed: ignoreFuncBodies,
+			}, err
 		}(i, filename)
 	}
 	wg.Wait()
 
-	// Eliminate nils, preserving order.
-	var o int
-	for _, f := range parsed {
-		if f != nil {
-			parsed[o] = f
-			o++
+	parsedByFilename := make(map[string]*astFile)
+
+	for i, f := range parsed {
+		if f.file != nil {
+			parsedByFilename[filenames[i]] = f
 		}
 	}
-	parsed = parsed[:o]
 
-	o = 0
+	var o int
 	for _, err := range errors {
 		if err != nil {
 			errors[o] = err
@@ -126,7 +158,7 @@ func (imp *importer) parseFiles(filenames []string, ignoreFuncBodies bool) ([]*a
 	}
 	errors = errors[:o]
 
-	return parsed, errors
+	return parsedByFilename, errors, nil
 }
 
 // sameFile returns true if x and y have the same basename and denote
@@ -191,16 +223,17 @@ func isEllipsisArray(n ast.Expr) bool {
 
 // fix inspects and potentially modifies any *ast.BadStmts or *ast.BadExprs in the AST.
 // We attempt to modify the AST such that we can type-check it more effectively.
-func (v *view) fix(ctx context.Context, file *ast.File, tok *token.File, src []byte) {
+func fix(ctx context.Context, file *ast.File, tok *token.File, src []byte) error {
 	var parent ast.Node
+	var err error
 	ast.Inspect(file, func(n ast.Node) bool {
 		if n == nil {
 			return false
 		}
 		switch n := n.(type) {
 		case *ast.BadStmt:
-			if err := v.parseDeferOrGoStmt(n, parent, tok, src); err != nil {
-				v.Session().Logger().Debugf(ctx, "unable to parse defer or go from *ast.BadStmt: %v", err)
+			if err := parseDeferOrGoStmt(n, parent, tok, src); err != nil {
+				err = fmt.Errorf("unable to parse defer or go from *ast.BadStmt: %v", err)
 			}
 			return false
 		default:
@@ -208,6 +241,7 @@ func (v *view) fix(ctx context.Context, file *ast.File, tok *token.File, src []b
 			return true
 		}
 	})
+	return err
 }
 
 // parseDeferOrGoStmt tries to parse an *ast.BadStmt into a defer or a go statement.
@@ -217,7 +251,7 @@ func (v *view) fix(ctx context.Context, file *ast.File, tok *token.File, src []b
 // this statement entirely, and we can't use the type information when completing.
 // Here, we try to generate a fake *ast.DeferStmt or *ast.GoStmt to put into the AST,
 // instead of the *ast.BadStmt.
-func (v *view) parseDeferOrGoStmt(bad *ast.BadStmt, parent ast.Node, tok *token.File, src []byte) error {
+func parseDeferOrGoStmt(bad *ast.BadStmt, parent ast.Node, tok *token.File, src []byte) error {
 	// Check if we have a bad statement containing either a "go" or "defer".
 	s := &scanner.Scanner{}
 	s.Init(tok, src, nil, 0)
@@ -282,7 +316,7 @@ FindTo:
 	}
 	// parser.ParseExpr returns undefined positions.
 	// Adjust them for the current file.
-	v.offsetPositions(expr, from-1)
+	offsetPositions(expr, from-1)
 
 	// Package the expression into a fake *ast.CallExpr and re-insert into the function.
 	call := &ast.CallExpr{
@@ -310,7 +344,7 @@ FindTo:
 
 // offsetPositions applies an offset to the positions in an ast.Node.
 // TODO(rstambler): Add more cases here as they become necessary.
-func (v *view) offsetPositions(expr ast.Expr, offset token.Pos) {
+func offsetPositions(expr ast.Expr, offset token.Pos) {
 	ast.Inspect(expr, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.Ident:

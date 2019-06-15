@@ -79,6 +79,7 @@ type Server struct {
 	configurationSupported        bool
 	dynamicConfigurationSupported bool
 	preferredContentFormat        protocol.MarkupKind
+	disabledAnalyses              map[string]struct{}
 
 	textDocumentSyncKind protocol.TextDocumentSyncKind
 
@@ -183,7 +184,7 @@ func (s *Server) TypeDefinition(ctx context.Context, params *protocol.TextDocume
 }
 
 func (s *Server) References(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
-	return s.references(ctx, params)
+	return s.referencesBingo(ctx, params)
 }
 
 func (s *Server) Implementation(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.Location, error) {

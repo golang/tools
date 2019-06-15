@@ -22,6 +22,7 @@ type goFile struct {
 
 type astFile struct {
 	file      *ast.File
+	err       error // parse errors
 	isTrimmed bool
 }
 
@@ -111,7 +112,7 @@ func unexpectedAST(ctx context.Context, f *goFile) bool {
 // isDirty is true if the file needs to be type-checked.
 // It assumes that the file's view's mutex is held by the caller.
 func (f *goFile) isDirty() bool {
-	return f.meta == nil || f.token == nil || f.ast == nil || f.pkg == nil
+	return f.meta == nil || len(f.meta.missingImports) > 0 || f.token == nil || f.ast == nil || f.pkg == nil
 }
 
 func (f *goFile) astIsTrimmed() bool {
@@ -130,9 +131,9 @@ func (f *goFile) GetActiveReverseDeps(ctx context.Context) []source.GoFile {
 	f.view.mcache.mu.Lock()
 	defer f.view.mcache.mu.Unlock()
 
-	seen := make(map[string]struct{}) // visited packages
+	seen := make(map[packageID]struct{}) // visited packages
 	results := make(map[*goFile]struct{})
-	f.view.reverseDeps(ctx, seen, results, pkg.PkgPath())
+	f.view.reverseDeps(ctx, seen, results, packageID(pkg.ID()))
 
 	var files []source.GoFile
 	for rd := range results {
@@ -148,12 +149,12 @@ func (f *goFile) GetActiveReverseDeps(ctx context.Context) []source.GoFile {
 	return files
 }
 
-func (v *view) reverseDeps(ctx context.Context, seen map[string]struct{}, results map[*goFile]struct{}, pkgPath string) {
-	if _, ok := seen[pkgPath]; ok {
+func (v *view) reverseDeps(ctx context.Context, seen map[packageID]struct{}, results map[*goFile]struct{}, id packageID) {
+	if _, ok := seen[id]; ok {
 		return
 	}
-	seen[pkgPath] = struct{}{}
-	m, ok := v.mcache.packages[pkgPath]
+	seen[id] = struct{}{}
+	m, ok := v.mcache.packages[id]
 	if !ok {
 		return
 	}
@@ -163,7 +164,7 @@ func (v *view) reverseDeps(ctx context.Context, seen map[string]struct{}, result
 			results[f.(*goFile)] = struct{}{}
 		}
 	}
-	for parentPkgPath := range m.parents {
-		v.reverseDeps(ctx, seen, results, parentPkgPath)
+	for parentID := range m.parents {
+		v.reverseDeps(ctx, seen, results, parentID)
 	}
 }

@@ -69,7 +69,7 @@ func (r *runner) Diagnostics(t *testing.T, data tests.Diagnostics) {
 		if !ok {
 			t.Fatalf("%s is not a Go file: %v", uri, err)
 		}
-		results, err := source.Diagnostics(context.Background(), v, gof)
+		results, err := source.Diagnostics(context.Background(), v, gof, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -286,10 +286,7 @@ func (r *runner) Format(t *testing.T, data tests.Formats) {
 	ctx := context.Background()
 	for _, spn := range data {
 		uri := spn.URI()
-		filename, err := uri.Filename()
-		if err != nil {
-			t.Fatal(err)
-		}
+		filename := uri.Filename()
 		gofmted := string(r.data.Golden("gofmt", filename, func() ([]byte, error) {
 			cmd := exec.Command("gofmt", filename)
 			out, _ := cmd.Output() // ignore error, sometimes we have intentionally ungofmt-able files
@@ -327,10 +324,7 @@ func (r *runner) Import(t *testing.T, data tests.Imports) {
 	ctx := context.Background()
 	for _, spn := range data {
 		uri := spn.URI()
-		filename, err := uri.Filename()
-		if err != nil {
-			t.Fatal(err)
-		}
+		filename := uri.Filename()
 		goimported := string(r.data.Golden("goimports", filename, func() ([]byte, error) {
 			cmd := exec.Command("goimports", filename)
 			out, _ := cmd.Output() // ignore error, sometimes we have intentionally ungofmt-able files
@@ -403,11 +397,7 @@ func (r *runner) Definition(t *testing.T, data tests.Definitions) {
 		}
 		if hover != nil {
 			tag := fmt.Sprintf("%s-hover", d.Name)
-			filename, err := d.Src.URI().Filename()
-			if err != nil {
-				t.Fatalf("failed for %v: %v", d.Def, err)
-			}
-			expectHover := string(r.data.Golden(tag, filename, func() ([]byte, error) {
+			expectHover := string(r.data.Golden(tag, d.Src.URI().Filename(), func() ([]byte, error) {
 				return []byte(hover.Contents.Value), nil
 			}))
 			if hover.Contents.Value != expectHover {
@@ -456,6 +446,48 @@ func (r *runner) Highlight(t *testing.T, data tests.Highlights) {
 				t.Fatalf("failed for %v: %v", highlights[i], err)
 			} else if h != locations[i] {
 				t.Errorf("want %v, got %v\n", locations[i], h)
+			}
+		}
+	}
+}
+
+func (r *runner) Reference(t *testing.T, data tests.References) {
+	for src, itemList := range data {
+		sm, err := r.mapper(src.URI())
+		if err != nil {
+			t.Fatal(err)
+		}
+		loc, err := sm.Location(src)
+		if err != nil {
+			t.Fatalf("failed for %v: %v", src, err)
+		}
+
+		want := make(map[protocol.Location]bool)
+		for _, pos := range itemList {
+			loc, err := sm.Location(pos)
+			if err != nil {
+				t.Fatalf("failed for %v: %v", src, err)
+			}
+			want[loc] = true
+		}
+
+		params := &protocol.ReferenceParams{
+			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
+				Position:     loc.Range.Start,
+			},
+		}
+		got, err := r.server.References(context.Background(), params)
+		if err != nil {
+			t.Fatalf("failed for %v: %v", src, err)
+		}
+
+		if len(got) != len(itemList) {
+			t.Errorf("references failed: different lengths got %v want %v", len(got), len(itemList))
+		}
+		for _, loc := range got {
+			if !want[loc] {
+				t.Errorf("references failed: incorrect references got %v want %v", got, want)
 			}
 		}
 	}
@@ -634,10 +666,7 @@ func (r *runner) Link(t *testing.T, data tests.Links) {
 }
 
 func (r *runner) mapper(uri span.URI) (*protocol.ColumnMapper, error) {
-	filename, err := uri.Filename()
-	if err != nil {
-		return nil, err
-	}
+	filename := uri.Filename()
 	fset := r.data.Exported.ExpectFileSet
 	var f *token.File
 	fset.Iterate(func(check *token.File) bool {

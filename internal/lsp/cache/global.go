@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"go/ast"
 	"sync"
 
 	"golang.org/x/tools/go/packages"
@@ -116,21 +115,21 @@ func (c *globalCache) recursiveAdd(pkg *packages.Package, parent *pkg) {
 // newPackage new package
 func newPackage(p *packages.Package) *pkg {
 	return &pkg{
-		id:        p.ID,
-		pkgPath:   p.PkgPath,
+		id:        packageID(p.ID),
+		pkgPath:   packagePath(p.PkgPath),
 		files:     p.CompiledGoFiles,
-		syntax:    createAstFiles(p.Syntax),
+		syntax:    createAstFiles(p),
 		errors:    p.Errors,
 		types:     p.Types,
 		typesInfo: p.TypesInfo,
-		imports:   make(map[string]*pkg),
+		imports:   make(map[packagePath]*pkg),
 	}
 }
 
-func createAstFiles(files []*ast.File) []*astFile {
-	astFiles := make([]*astFile, len(files))
-	for i, file := range files {
-		astFiles[i] = &astFile{file: file}
+func createAstFiles(p *packages.Package) map[string]*astFile {
+	astFiles := map[string]*astFile{}
+	for i, file := range p.Syntax {
+		astFiles[p.CompiledGoFiles[i]] = &astFile{file: file}
 	}
 
 	return astFiles

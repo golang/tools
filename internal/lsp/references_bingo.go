@@ -8,7 +8,7 @@ import (
 	"golang.org/x/tools/internal/span"
 )
 
-func (s *Server) references(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
+func (s *Server) referencesBingo(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
 	locations, err := s.doReferences(ctx, params)
 	if err != nil {
 		// fix https://github.com/saibing/bingo/issues/32
