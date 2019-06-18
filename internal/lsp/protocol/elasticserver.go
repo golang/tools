@@ -12,7 +12,7 @@ type ElasticServer interface {
 	EDefinition(context.Context, *TextDocumentPositionParams) ([]SymbolLocator, error)
 	Full(context.Context, *FullParams) (FullResponse, error)
 	ElasticDocumentSymbol(context.Context, *DocumentSymbolParams, bool, *PackageLocator) ([]SymbolInformation, []DetailSymbolInformation, error)
-	ManageDeps(params *InitializeParams) error
+	ManageDeps(folders *[]WorkspaceFolder) error
 }
 
 func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handler {
@@ -30,6 +30,9 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 			if err := json.Unmarshal(*r.Params, &params); err != nil {
 				sendParseError(ctx, log, conn, r, err)
 				return
+			}
+			if err := server.ManageDeps(&params.Event.Added); err != nil {
+				log.Errorf(ctx, "%v", err)
 			}
 			if err := server.DidChangeWorkspaceFolders(ctx, &params); err != nil {
 				log.Errorf(ctx, "%v", err)
@@ -194,7 +197,7 @@ func elasticServerHandler(log xlog.Logger, server ElasticServer) jsonrpc2.Handle
 				sendParseError(ctx, log, conn, r, err)
 				return
 			}
-			if err := server.ManageDeps(&params); err != nil {
+			if err := server.ManageDeps(&params.WorkspaceFolders); err != nil {
 				log.Errorf(ctx, "%v", err)
 			}
 			resp, err := server.Initialize(ctx, &params)

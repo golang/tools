@@ -220,37 +220,41 @@ func (s *ElasticServer) Full(ctx context.Context, fullParams *protocol.FullParam
 	return fullResponse, nil
 }
 
-type RepoMeta struct {
-	rootURI       span.URI
+type WorkspaceFolderMeta struct {
+	URI           span.URI
 	moduleFolders []string
 }
 
-// manageDeps will explore the repo and give a whole picture of it. Besides that, manageDeps will try its best to
-// convert the repo to modules. The core functions of deps downloading and deps management will be assumed by
-// the package 'cache'.
-func (s ElasticServer) ManageDeps(params *protocol.InitializeParams) error {
-	metadata := &RepoMeta{}
-	if params.RootURI != "" {
-		metadata.rootURI = span.NewURI(params.RootURI)
-	}
-	if err := collectRepoMetadata(metadata); err != nil {
-		return err
-	}
-	var folders []protocol.WorkspaceFolder
-	// Convert the module folders to the workspace folders.
-	for _, folder := range metadata.moduleFolders {
-		uri := span.NewURI(folder)
-		notExists := true
-		for _, wf := range params.WorkspaceFolders {
-			if filepath.Clean(string(uri)) == filepath.Clean(wf.URI) {
-				notExists = false
+// manageDeps will explore the workspace folders sent from the client and give a whole picture of them. Besides that,
+// manageDeps will try its best to convert the folders to modules. The core functions, like deps downloading and deps
+// management, will be implemented in the package 'cache'.
+func (s ElasticServer) ManageDeps(folders *[]protocol.WorkspaceFolder) error {
+	// Note: For the upstream go langserver, granularity of the workspace folders is repository. But for the elastic go
+	// language server, there are repositories contain multiple modules. In order to handle the modules separately, we
+	// consider different modules as different workspace folders, so we can manage the dependency of different modules
+	// separately.
+	for _, folder := range *folders {
+		metadata := &WorkspaceFolderMeta{}
+		if folder.URI != "" {
+			metadata.URI = span.NewURI(folder.URI)
+		}
+		if err := collectWorkspaceFolderMetadata(metadata); err != nil {
+			return err
+		}
+		// Convert the module folders to the workspace folders.
+		for _, folder := range metadata.moduleFolders {
+			uri := span.NewURI(folder)
+			notExists := true
+			for _, wf := range *folders {
+				if filepath.Clean(string(uri)) == filepath.Clean(wf.URI) {
+					notExists = false
+				}
+			}
+			if notExists {
+				*folders = append(*folders, protocol.WorkspaceFolder{URI: string(uri), Name: filepath.Base(folder)})
 			}
 		}
-		if notExists {
-			folders = append(folders, protocol.WorkspaceFolder{URI: string(uri), Name: filepath.Base(folder)})
-		}
 	}
-	params.WorkspaceFolders = append(params.WorkspaceFolders, folders...)
 	return nil
 }
 
@@ -510,11 +514,10 @@ func normalizePath(path, dir, repoURI, depsPath string) string {
 	return strings.TrimPrefix(path, string(filepath.Separator))
 }
 
-// collectRepoMetadata explores the repo to collects the meta information of the repo. And create a new 'go.mod' if
-// necessary to cover all the source files.
-func collectRepoMetadata(metadata *RepoMeta) error {
-	rootPath := metadata.rootURI.Filename()
-
+// collectWorkspaceFolderMetadata explores the workspace folder to collects the meta information of the folder. And
+// create a new 'go.mod' if necessary to cover all the source files.
+func collectWorkspaceFolderMetadata(metadata *WorkspaceFolderMeta) error {
+	rootPath := metadata.URI.Filename()
 	// Collect 'go.mod' and record them as workspace folders.
 	if err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
 		dir := filepath.Dir(path)
@@ -528,7 +531,6 @@ func collectRepoMetadata(metadata *RepoMeta) error {
 	}); err != nil {
 		return err
 	}
-
 	folderUncovered, folderNeedMod, err := collectUncoveredSrc(rootPath)
 	if err != nil {
 		return nil
@@ -576,7 +578,7 @@ var DependencyControlSystem = []string{
 	"vendor/vendor.json",
 }
 
-// existDepControlFile determines if dependence control files exist in the specified folder.
+// existDepControlFile determines if dependency control files exist in the specified folder.
 func existDepControlFile(dir string) bool {
 	for _, name := range DependencyControlSystem {
 		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
