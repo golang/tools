@@ -240,7 +240,7 @@ func (s *Server) OnTypeFormatting(context.Context, *protocol.DocumentOnTypeForma
 }
 
 func (s *Server) Rename(ctx context.Context, params *protocol.RenameParams) (*protocol.WorkspaceEdit, error) {
-	return s.rename(ctx, params)
+	return s.rename_bingo(ctx, params)
 }
 
 func (s *Server) Declaration(context.Context, *protocol.TextDocumentPositionParams) ([]protocol.DeclarationLink, error) {

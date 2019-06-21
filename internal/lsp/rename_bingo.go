@@ -6,7 +6,7 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 )
 
-func (s *Server) rename(ctx context.Context, params *protocol.RenameParams) (*protocol.WorkspaceEdit, error) {
+func (s *Server) rename_bingo(ctx context.Context, params *protocol.RenameParams) (*protocol.WorkspaceEdit, error) {
 	rp := &protocol.ReferenceParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: params.TextDocument,
