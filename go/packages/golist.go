@@ -158,7 +158,7 @@ extractQueries:
 		}
 	}
 
-	modifiedPkgs, needPkgs, err := processGolistOverlay(cfg, response.dr)
+	modifiedPkgs, needPkgs, err := processGolistOverlay(cfg, response)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +209,7 @@ func addNeededOverlayPackages(cfg *Config, driver driver, response *responseDedu
 	for _, pkg := range dr.Packages {
 		response.addPackage(pkg)
 	}
-	_, needPkgs, err := processGolistOverlay(cfg, response.dr)
+	_, needPkgs, err := processGolistOverlay(cfg, response)
 	if err != nil {
 		return err
 	}
@@ -229,7 +229,13 @@ func runContainsQueries(cfg *Config, driver driver, response *responseDeduper, q
 		}
 		dirResponse, err := driver(cfg, pattern)
 		if err != nil {
-			return err
+			// Couldn't find a package for the directory. Try to load the file as an ad-hoc package.
+			var queryErr error
+			dirResponse, err = driver(cfg, query)
+			if queryErr != nil {
+				// Return the original error if the attempt to fall back failed.
+				return err
+			}
 		}
 		isRoot := make(map[string]bool, len(dirResponse.Roots))
 		for _, root := range dirResponse.Roots {
@@ -693,7 +699,7 @@ func golistDriver(cfg *Config, words ...string) (*driverResponse, error) {
 		if p.Error != nil {
 			pkg.Errors = append(pkg.Errors, Error{
 				Pos: p.Error.Pos,
-				Msg: p.Error.Err,
+				Msg: strings.TrimSpace(p.Error.Err), // Trim to work around golang.org/issue/32363.
 			})
 		}
 

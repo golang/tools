@@ -184,8 +184,6 @@ func implements(ctx context.Context, search SearchFunc, pkg Package, f File, pat
 	return locs, nil
 }
 
-func isInterface(T types.Type) bool { return types.IsInterface(T) }
-
 type typesByString []types.Type
 
 func (p typesByString) Len() int           { return len(p) }

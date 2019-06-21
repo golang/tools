@@ -69,18 +69,19 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 			HoverProvider:              true,
 			DocumentHighlightProvider:  true,
 			DocumentLinkProvider:       &protocol.DocumentLinkOptions{},
+			ReferencesProvider:         true,
+			RenameProvider:             true,
 			SignatureHelpProvider: &protocol.SignatureHelpOptions{
 				TriggerCharacters: []string{"(", ","},
 			},
 			TextDocumentSync: &protocol.TextDocumentSyncOptions{
 				Change:    s.textDocumentSyncKind,
 				OpenClose: true,
+				Save: &protocol.SaveOptions{
+					IncludeText: false,
+				},
 			},
-			TypeDefinitionProvider: true,
-			ReferencesProvider:     true,
-			RenameProvider: &protocol.RenameOptions{
-				PrepareProvider: false,
-			},
+			TypeDefinitionProvider:  true,
 			WorkspaceSymbolProvider: true,
 			ImplementationProvider:  true,
 			Workspace: &struct {

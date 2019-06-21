@@ -5,8 +5,9 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"golang.org/x/tools/go/ast/astutil"
 	"reflect"
+
+	"golang.org/x/tools/go/ast/astutil"
 )
 
 type action int
@@ -82,11 +83,11 @@ func findInterestingNode(pkg Package, path []ast.Node) ([]ast.Node, action) {
 			return path, actionStmt
 
 		case *ast.ArrayType,
-		*ast.StructType,
-		*ast.FuncType,
-		*ast.InterfaceType,
-		*ast.MapType,
-		*ast.ChanType:
+			*ast.StructType,
+			*ast.FuncType,
+			*ast.InterfaceType,
+			*ast.MapType,
+			*ast.ChanType:
 			return path, actionType
 
 		case *ast.Comment, *ast.CommentGroup, *ast.File, *ast.KeyValueExpr, *ast.CommClause:
@@ -271,7 +272,7 @@ func getObjectPathNode(pkg Package, fset *token.FileSet, o types.Object) (nodes 
 }
 
 func getPathNodes(pkg Package, fset *token.FileSet, start, end token.Pos) ([]ast.Node, error) {
-	nodes, _ := pathEnclosingInterval(pkg, fset, start, end)
+	nodes, _ := astPathEnclosingInterval(pkg, fset, start, end)
 	if len(nodes) == 0 {
 		s := fset.Position(start)
 		return nodes, fmt.Errorf("no node found at %s offset %d", s, s.Offset)
@@ -297,7 +298,7 @@ func fetchIdentFromPathNodes(fset *token.FileSet, nodes []ast.Node) (*ast.Ident,
 //
 // The zero value is returned if not found.
 //
-func pathEnclosingInterval(pkg Package, fset *token.FileSet, start, end token.Pos) (path []ast.Node, exact bool) {
+func astPathEnclosingInterval(pkg Package, fset *token.FileSet, start, end token.Pos) (path []ast.Node, exact bool) {
 	path, exact = doEnclosingInterval(pkg, fset, start, end)
 	return
 }
@@ -323,13 +324,6 @@ func doEnclosingInterval(pkg Package, fset *token.FileSet, start, end token.Pos)
 	}
 
 	return nil, false
-}
-
-// TODO(adonovan): make this a method: func (*token.File) Contains(token.Pos)
-func tokenFileContainsPos(f *token.File, pos token.Pos) bool {
-	p := int(pos)
-	base := f.Base()
-	return base <= p && p < base+f.Size()
 }
 
 func findObject(pkg Package, o types.Object) types.Object {

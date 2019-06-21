@@ -12,7 +12,7 @@ import (
 	"golang.org/x/tools/internal/span"
 )
 
-func (s *Server) references(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
+func (s *Server) rename(ctx context.Context, params *protocol.RenameParams) (*protocol.WorkspaceEdit, error) {
 	uri := span.NewURI(params.TextDocument.URI)
 	view := s.session.ViewOf(uri)
 	f, m, err := getGoFile(ctx, view, uri)
@@ -28,33 +28,23 @@ func (s *Server) references(ctx context.Context, params *protocol.ReferenceParam
 		return nil, err
 	}
 
-	// Find all references to the identifier at the position.
-	ident, err := source.Identifier(ctx, view, f, rng.Start)
-	if err != nil {
-		return nil, err
-	}
-	references, err := ident.References(ctx)
+	edits, err := source.Rename(ctx, view, f, rng.Start, params.NewName)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get the location of each reference to return as the result.
-	locations := make([]protocol.Location, 0, len(references))
-	for _, ref := range references {
-		refSpan, err := ref.Range.Span()
+	changes := make(map[string][]protocol.TextEdit)
+	for uri, textEdits := range edits {
+		_, m, err := getGoFile(ctx, view, uri)
 		if err != nil {
 			return nil, err
 		}
-		_, refM, err := getSourceFile(ctx, view, refSpan.URI())
+		protocolEdits, err := ToProtocolEdits(m, textEdits)
 		if err != nil {
 			return nil, err
 		}
-		loc, err := refM.Location(refSpan)
-		if err != nil {
-			return nil, err
-		}
-
-		locations = append(locations, loc)
+		changes[string(uri)] = protocolEdits
 	}
-	return locations, nil
+
+	return &protocol.WorkspaceEdit{Changes: &changes}, nil
 }
