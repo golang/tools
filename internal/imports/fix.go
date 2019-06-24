@@ -46,7 +46,7 @@ var importToGroup = []func(env *ProcessEnv, importPath string) (num int, ok bool
 		return
 	},
 	func(_ *ProcessEnv, importPath string) (num int, ok bool) {
-		if strings.HasPrefix(importPath, "appengine") {
+		if strings.HasPrefix(importPath, "gitlab.com/innotechx/") || strings.HasPrefix(importPath, "gitlab.innotechx.com/shm/") {
 			return 2, true
 		}
 		return
