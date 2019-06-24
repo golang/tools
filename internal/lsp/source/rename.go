@@ -91,7 +91,10 @@ func Rename(ctx context.Context, view View, f GoFile, pos token.Pos, newName str
 func (r *renamer) update(ctx context.Context, view View) (map[span.URI][]TextEdit, error) {
 	result := make(map[span.URI][]TextEdit)
 
-	docRegexp := regexp.MustCompile(`\b` + r.from + `\b`)
+	docRegexp, err := regexp.Compile(`\b` + r.from + `\b`)
+	if err != nil {
+		return nil, err
+	}
 	for _, ref := range r.refs {
 		refSpan, err := ref.Range.Span()
 		if err != nil {
