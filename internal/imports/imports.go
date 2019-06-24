@@ -49,6 +49,7 @@ func Process(filename string, src []byte, opt *Options) ([]byte, error) {
 		}
 		src = b
 	}
+	src = removeImportBlankLine(src)
 
 	fileSet := token.NewFileSet()
 	file, adjust, err := parse(fileSet, filename, src, opt)
@@ -103,12 +104,55 @@ func Process(filename string, src []byte, opt *Options) ([]byte, error) {
 			return nil, err
 		}
 	}
-
 	out, err = format.Source(out)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+var blankReg = regexp.MustCompile(`^\s*$[\r\n]*|[\r\n]+\s+\z`)
+
+var importReg = regexp.MustCompile(`\s*import\s+\(`)
+
+func removeImportBlankLine(src []byte) []byte {
+	reader := bufio.NewReader(bytes.NewReader(src))
+	var (
+		result      []byte
+		isPrefix    bool
+		line        []byte
+		temp        []byte
+		hasReplaced bool
+		replaceOn   bool
+		err         error
+	)
+	for {
+		if isPrefix {
+			temp, isPrefix, err = reader.ReadLine()
+			line = append(line, temp...)
+		} else {
+			line, isPrefix, err = reader.ReadLine()
+		}
+		if err == io.EOF {
+			break
+		}
+		if isPrefix {
+			continue
+		}
+		if !hasReplaced && importReg.Match(src) {
+			replaceOn = true
+			hasReplaced = true
+		}
+		if replaceOn && string(line) == ")" {
+			replaceOn = false
+		}
+		if replaceOn && string(line) == "" {
+			continue
+		}
+		result = append(result, line...)
+		result = append(result, '\n')
+	}
+	return result
 }
 
 // parse parses src, which was read from filename,

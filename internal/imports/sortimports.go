@@ -23,7 +23,6 @@ func sortImports(env *ProcessEnv, fset *token.FileSet, f *ast.File) {
 			// Imports are always first.
 			break
 		}
-
 		if len(d.Specs) == 0 {
 			// Empty import block, remove it.
 			f.Decls = append(f.Decls[:i], f.Decls[i+1:]...)
