@@ -13,7 +13,7 @@ func Symbols(ctx context.Context, view View, query string, limit int) []Symbol {
 		}
 
 		for _, file := range pkg.GetSyntax() {
-			astSymbols := getSymbols(view.FileSet(), file, pkg)
+			astSymbols, _ := getSymbols(view.FileSet(), file, pkg)
 			for _, symbol := range astSymbols {
 				if len(symbols) >= limit {
 					return true

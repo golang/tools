@@ -58,6 +58,7 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 	tests.Run(t, r, data)
 }
 
+// TODO: Actually test the LSP diagnostics function in this test.
 func (r *runner) Diagnostics(t *testing.T, data tests.Diagnostics) {
 	v := r.server.session.View(viewName)
 	for uri, want := range data {
@@ -470,7 +471,6 @@ func (r *runner) Reference(t *testing.T, data tests.References) {
 			}
 			want[loc] = true
 		}
-
 		params := &protocol.ReferenceParams{
 			TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 				TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},

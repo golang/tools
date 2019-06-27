@@ -11,14 +11,9 @@ import (
 	"go/parser"
 	"go/scanner"
 	"go/token"
-	"os"
-	"path/filepath"
-	"strings"
-	"sync"
 
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/memoize"
-	"golang.org/x/tools/internal/span"
 )
 
 // Limits the number of parallel parser calls per process.
@@ -55,6 +50,8 @@ func (c *cache) ParseGoHandle(fh source.FileHandle, mode source.ParseMode) sourc
 	})
 	return &parseGoHandle{
 		handle: h,
+		file:   fh,
+		mode:   mode,
 	}
 }
 
@@ -94,94 +91,13 @@ func parseGo(ctx context.Context, c *cache, fh source.FileHandle, mode source.Pa
 		// Fix any badly parsed parts of the AST.
 		tok := c.fset.File(ast.Pos())
 		if err := fix(ctx, ast, tok, buf); err != nil {
-			//TODO: we should do something with the error, but we have no access to a logger in here
+			// TODO: Do something with the error (need access to a logger in here).
 		}
+	}
+	if ast == nil {
+		return nil, err
 	}
 	return ast, err
-}
-
-// parseFiles reads and parses the Go source files and returns the ASTs
-// of the ones that could be at least partially parsed, along with a list
-// parse errors encountered, and a fatal error that prevented parsing.
-//
-// Because files are scanned in parallel, the token.Pos
-// positions of the resulting ast.Files are not ordered.
-func (imp *importer) parseFiles(filenames []string, ignoreFuncBodies bool) (map[string]*astFile, []error, error) {
-	var (
-		wg     sync.WaitGroup
-		n      = len(filenames)
-		parsed = make([]*astFile, n)
-		errors = make([]error, n)
-	)
-	// TODO: change this function to return the handles
-	for i, filename := range filenames {
-		if err := imp.ctx.Err(); err != nil {
-			return nil, nil, err
-		}
-		// get a file handle
-		fh := imp.view.session.GetFile(span.FileURI(filename))
-		// now get a parser
-		mode := source.ParseFull
-		if ignoreFuncBodies {
-			mode = source.ParseExported
-		}
-		ph := imp.view.session.cache.ParseGoHandle(fh, mode)
-		// now read and parse in parallel
-		wg.Add(1)
-		go func(i int, filename string) {
-			defer wg.Done()
-			// ParseFile may return a partial AST and an error.
-			f, err := ph.Parse(imp.ctx)
-			parsed[i], errors[i] = &astFile{
-				file:      f,
-				err:       err,
-				isTrimmed: ignoreFuncBodies,
-			}, err
-		}(i, filename)
-	}
-	wg.Wait()
-
-	parsedByFilename := make(map[string]*astFile)
-
-	for i, f := range parsed {
-		if f.file != nil {
-			parsedByFilename[filenames[i]] = f
-		}
-	}
-
-	var o int
-	for _, err := range errors {
-		if err != nil {
-			errors[o] = err
-			o++
-		}
-	}
-	errors = errors[:o]
-
-	return parsedByFilename, errors, nil
-}
-
-// sameFile returns true if x and y have the same basename and denote
-// the same file.
-//
-func sameFile(x, y string) bool {
-	if x == y {
-		// It could be the case that y doesn't exist.
-		// For instance, it may be an overlay file that
-		// hasn't been written to disk. To handle that case
-		// let x == y through. (We added the exact absolute path
-		// string to the CompiledGoFiles list, so the unwritten
-		// overlay case implies x==y.)
-		return true
-	}
-	if strings.EqualFold(filepath.Base(x), filepath.Base(y)) { // (optimisation)
-		if xi, err := os.Stat(x); err == nil {
-			if yi, err := os.Stat(y); err == nil {
-				return os.SameFile(xi, yi)
-			}
-		}
-	}
-	return false
 }
 
 // trimAST clears any part of the AST not relevant to type checking

@@ -22,8 +22,7 @@ type pkg struct {
 	id      packageID
 	pkgPath packagePath
 
-	files      []string
-	syntax     map[string]*astFile
+	files      []*astFile
 	errors     []packages.Error
 	imports    map[packagePath]*pkg
 	types      *types.Package
@@ -38,7 +37,7 @@ type pkg struct {
 	analyses map[*analysis.Analyzer]*analysisEntry
 
 	diagMu      sync.Mutex
-	diagnostics []analysis.Diagnostic
+	diagnostics []source.Diagnostic
 }
 
 // packageID is a type that abstracts a package ID.
@@ -124,8 +123,8 @@ func (pkg *pkg) GetActionGraph(ctx context.Context, a *analysis.Analyzer) (*sour
 			}
 			sort.Strings(importPaths) // for determinism
 			for _, importPath := range importPaths {
-				dep, ok := pkg.imports[packagePath(importPath)]
-				if !ok {
+				dep := pkg.GetImport(importPath)
+				if dep == nil {
 					continue
 				}
 				act, err := dep.GetActionGraph(ctx, a)
@@ -149,13 +148,19 @@ func (pkg *pkg) PkgPath() string {
 }
 
 func (pkg *pkg) GetFilenames() []string {
-	return pkg.files
+	filenames := make([]string, 0, len(pkg.files))
+	for _, f := range pkg.files {
+		filenames = append(filenames, f.uri.Filename())
+	}
+	return filenames
 }
 
 func (pkg *pkg) GetSyntax() []*ast.File {
-	syntax := make([]*ast.File, 0, len(pkg.syntax))
-	for _, astFile := range pkg.syntax {
-		syntax = append(syntax, astFile.file)
+	var syntax []*ast.File
+	for _, f := range pkg.files {
+		if f.file != nil {
+			syntax = append(syntax, f.file)
+		}
 	}
 	return syntax
 }
@@ -188,13 +193,13 @@ func (pkg *pkg) GetImport(pkgPath string) source.Package {
 	return nil
 }
 
-func (pkg *pkg) SetDiagnostics(diags []analysis.Diagnostic) {
+func (pkg *pkg) SetDiagnostics(diags []source.Diagnostic) {
 	pkg.diagMu.Lock()
 	defer pkg.diagMu.Unlock()
 	pkg.diagnostics = diags
 }
 
-func (pkg *pkg) GetDiagnostics() []analysis.Diagnostic {
+func (pkg *pkg) GetDiagnostics() []source.Diagnostic {
 	pkg.diagMu.Lock()
 	defer pkg.diagMu.Unlock()
 	return pkg.diagnostics

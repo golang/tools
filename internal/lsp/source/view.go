@@ -30,8 +30,11 @@ type FileHandle interface {
 	// FileSystem returns the file system this handle was acquired from.
 	FileSystem() FileSystem
 
-	// Return the Identity for the file.
+	// Identity returns the FileIdentity for the file.
 	Identity() FileIdentity
+
+	// Kind returns the FileKind for the file.
+	Kind() FileKind
 
 	// Read reads the contents of a file and returns it along with its hash value.
 	// If the file is not available, returns a nil slice and an error.
@@ -43,6 +46,16 @@ type FileSystem interface {
 	// GetFile returns a handle for the specified file.
 	GetFile(uri span.URI) FileHandle
 }
+
+// FileKind describes the kind of the file in question.
+// It can be one of Go, mod, or sum.
+type FileKind int
+
+const (
+	Go = FileKind(iota)
+	Mod
+	Sum
+)
 
 // TokenHandle represents a handle to the *token.File for a file.
 type TokenHandle interface {
@@ -141,7 +154,7 @@ type Session interface {
 	FileSystem
 
 	// DidOpen is invoked each time a file is opened in the editor.
-	DidOpen(uri span.URI)
+	DidOpen(ctx context.Context, uri span.URI)
 
 	// DidSave is invoked each time an open file is saved in the editor.
 	DidSave(uri span.URI)
@@ -224,6 +237,9 @@ type GoFile interface {
 	// GetPackage returns the package that this file belongs to.
 	GetPackage(ctx context.Context) Package
 
+	// GetPackages returns all of the packages that this file belongs to.
+	GetPackages(ctx context.Context) []Package
+
 	// GetActiveReverseDeps returns the active files belonging to the reverse
 	// dependencies of this file's package.
 	GetActiveReverseDeps(ctx context.Context) []GoFile
@@ -251,8 +267,8 @@ type Package interface {
 	IsIllTyped() bool
 	GetActionGraph(ctx context.Context, a *analysis.Analyzer) (*Action, error)
 	GetImport(pkgPath string) Package
-	GetDiagnostics() []analysis.Diagnostic
-	SetDiagnostics(diags []analysis.Diagnostic)
+	GetDiagnostics() []Diagnostic
+	SetDiagnostics(diags []Diagnostic)
 }
 
 // TextEdit represents a change to a section of a document.

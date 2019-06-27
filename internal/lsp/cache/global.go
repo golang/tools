@@ -117,8 +117,7 @@ func newPackage(p *packages.Package) *pkg {
 	return &pkg{
 		id:        packageID(p.ID),
 		pkgPath:   packagePath(p.PkgPath),
-		files:     p.CompiledGoFiles,
-		syntax:    createAstFiles(p),
+		files:     createAstFiles(p),
 		errors:    p.Errors,
 		types:     p.Types,
 		typesInfo: p.TypesInfo,
@@ -126,10 +125,10 @@ func newPackage(p *packages.Package) *pkg {
 	}
 }
 
-func createAstFiles(p *packages.Package) map[string]*astFile {
-	astFiles := map[string]*astFile{}
-	for i, file := range p.Syntax {
-		astFiles[p.CompiledGoFiles[i]] = &astFile{file: file}
+func createAstFiles(p *packages.Package) []*astFile {
+	var astFiles []*astFile
+	for _, file := range p.Syntax {
+		astFiles = append(astFiles, &astFile{file: file})
 	}
 
 	return astFiles

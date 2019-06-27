@@ -6,7 +6,6 @@ package lsp
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"golang.org/x/tools/internal/lsp/protocol"
@@ -17,7 +16,7 @@ import (
 func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
 	uri := span.NewURI(params.TextDocument.URI)
 	view := s.session.ViewOf(uri)
-	_, m, err := getSourceFile(ctx, view, uri)
+	gof, m, err := getGoFile(ctx, view, uri)
 	if err != nil {
 		return nil, err
 	}
@@ -58,26 +57,33 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 				},
 			})
 		}
+		diags := gof.GetPackage(ctx).GetDiagnostics()
+		for _, diag := range diags {
+			pdiag, err := toProtocolDiagnostic(ctx, view, diag)
+			if err != nil {
+				return nil, err
+			}
+			for _, ca := range diag.SuggestedFixes {
+				codeActions = append(codeActions, protocol.CodeAction{
+					Title: ca.Title,
+					Kind:  protocol.QuickFix, // TODO(matloob): Be more accurate about these?
+					Edit: &protocol.WorkspaceEdit{
+						Changes: &map[string][]protocol.TextEdit{
+							string(spn.URI()): edits,
+						},
+					},
+					Diagnostics: []protocol.Diagnostic{pdiag},
+				})
+			}
+		}
 	}
 	return codeActions, nil
 }
 
-func organizeImports(ctx context.Context, v source.View, s span.Span) ([]protocol.TextEdit, error) {
-	f, m, err := getGoFile(ctx, v, s.URI())
+func organizeImports(ctx context.Context, view source.View, s span.Span) ([]protocol.TextEdit, error) {
+	f, m, rng, err := spanToRange(ctx, view, s)
 	if err != nil {
 		return nil, err
-	}
-	rng, err := s.Range(m.Converter)
-	if err != nil {
-		return nil, err
-	}
-	if rng.Start == rng.End {
-		// If we have a single point, assume we want the whole file.
-		tok := f.GetToken(ctx)
-		if tok == nil {
-			return nil, fmt.Errorf("no file information for %s", f.URI())
-		}
-		rng.End = tok.Pos(tok.Size())
 	}
 	edits, err := source.Imports(ctx, f, rng)
 	if err != nil {
