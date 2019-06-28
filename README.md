@@ -9,7 +9,7 @@ to  install the `gopls`, please run
 
 ```bash
 git clone -b bingo https://github.com/saibing/tools.git
-cd tools/cmd/gopls
+cd tools/gopls
 go install
 ```
 

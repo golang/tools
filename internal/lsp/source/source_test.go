@@ -146,9 +146,15 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			t.Fatalf("failed to get token for %v", src)
 		}
 		pos := tok.Pos(src.Start().Offset())
-		list, surrounding, err := source.Completion(ctx, r.view, f.(source.GoFile), pos, nil)
+		list, surrounding, err := source.Completion(ctx, r.view, f.(source.GoFile), pos, source.CompletionOptions{
+			DeepComplete: strings.Contains(string(src.URI()), "deepcomplete"),
+		}, nil)
 		if err != nil {
 			t.Fatalf("failed for %v: %v", src, err)
+		}
+		var prefix string
+		if surrounding != nil {
+			prefix = strings.ToLower(surrounding.Prefix())
 		}
 		wantBuiltins := strings.Contains(string(src.URI()), "builtins")
 		var got []source.CompletionItem
@@ -156,13 +162,9 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			if !wantBuiltins && isBuiltin(item) {
 				continue
 			}
-			var prefix string
-			if surrounding != nil {
-				prefix = surrounding.Prefix()
-			}
 			// We let the client do fuzzy matching, so we return all possible candidates.
 			// To simplify testing, filter results with prefixes that don't match exactly.
-			if !strings.HasPrefix(item.Label, prefix) {
+			if !strings.HasPrefix(strings.ToLower(item.Label), prefix) {
 				continue
 			}
 			got = append(got, item)
@@ -179,11 +181,10 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			}
 			tok := f.GetToken(ctx)
 			pos := tok.Pos(src.Start().Offset())
-<<<<<<< HEAD
-			list, _, err := source.Completion(ctx, f.(source.GoFile), pos, nil)
-=======
-			list, _, err := source.Completion(ctx, r.view, f.(source.GoFile), pos)
->>>>>>> 47ea21585cd7cbaa6078713a14b5f9a116791382
+
+			list, _, err := source.Completion(ctx, r.view, f.(source.GoFile), pos, source.CompletionOptions{
+				DeepComplete: strings.Contains(string(src.URI()), "deepcomplete"),
+			}, nil)
 			if err != nil {
 				t.Fatalf("failed for %v: %v", src, err)
 			}
@@ -231,12 +232,28 @@ func isBuiltin(item source.CompletionItem) bool {
 // diffCompletionItems prints the diff between expected and actual completion
 // test results.
 func diffCompletionItems(t *testing.T, spn span.Span, want []source.CompletionItem, got []source.CompletionItem) string {
-	if len(got) != len(want) {
-		return summarizeCompletionItems(-1, want, got, "different lengths got %v want %v", len(got), len(want))
-	}
 	sort.SliceStable(got, func(i, j int) bool {
 		return got[i].Score > got[j].Score
 	})
+
+	// duplicate the lsp/completion logic to limit deep candidates to keep expected
+	// list short
+	var idx, seenDeepCompletions int
+	for _, item := range got {
+		if item.Depth > 0 {
+			if seenDeepCompletions >= 3 {
+				continue
+			}
+			seenDeepCompletions++
+		}
+		got[idx] = item
+		idx++
+	}
+	got = got[:idx]
+
+	if len(got) != len(want) {
+		return summarizeCompletionItems(-1, want, got, "different lengths got %v want %v", len(got), len(want))
+	}
 	for i, w := range want {
 		g := got[i]
 		if w.Label != g.Label {

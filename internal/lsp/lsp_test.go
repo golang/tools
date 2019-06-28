@@ -146,11 +146,15 @@ func summarizeDiagnostics(i int, want []source.Diagnostic, got []source.Diagnost
 }
 
 func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests.CompletionSnippets, items tests.CompletionItems) {
+	defer func() { r.server.useDeepCompletions = false }()
+
 	for src, itemList := range data {
 		var want []source.CompletionItem
 		for _, pos := range itemList {
 			want = append(want, *items[pos])
 		}
+
+		r.server.useDeepCompletions = strings.Contains(string(src.URI()), "deepcomplete")
 
 		list := r.runCompletion(t, src)
 
@@ -179,6 +183,8 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 		r.server.usePlaceholders = usePlaceholders
 
 		for src, want := range snippets {
+			r.server.useDeepCompletions = strings.Contains(string(src.URI()), "deepcomplete")
+
 			list := r.runCompletion(t, src)
 
 			wantItem := items[want.CompletionItem]
