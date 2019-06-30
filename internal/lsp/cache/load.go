@@ -21,7 +21,7 @@ func (v *view) loadParseTypecheck(ctx context.Context, f *goFile) ([]packages.Er
 	// don't ignore function bodies.
 	if f.astIsTrimmed() {
 		v.pcache.mu.Lock()
-		f.invalidateAST()
+		f.invalidateAST(ctx)
 		v.pcache.mu.Unlock()
 	}
 
@@ -75,28 +75,20 @@ func sameSet(x, y map[packagePath]struct{}) bool {
 // checkMetadata determines if we should run go/packages.Load for this file.
 // If yes, update the metadata for the file and its package.
 func (v *view) checkMetadata(ctx context.Context, f *goFile) (map[packageID]*metadata, []packages.Error, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	// Save the metadata's current missing imports, if any.
-	originalMissingImports := f.missingImports
-
-	if !v.parseImports(ctx, f) {
+	filename, ok := v.runGopackages(ctx, f)
+	if !ok {
 		return f.meta, nil, nil
 	}
 
-	// Reset the file's metadata and type information if we are re-running `go list`.
-	for k := range f.meta {
-		delete(f.meta, k)
-	}
-	for k := range f.pkgs {
-		delete(f.pkgs, k)
+	// Check if the context has been canceled before calling packages.Load.
+	if ctx.Err() != nil {
+		return nil, nil, ctx.Err()
 	}
 
-	pkgs, err := packages.Load(v.buildConfig(), fmt.Sprintf("file=%s", f.filename()))
+	pkgs, err := packages.Load(v.buildConfig(), fmt.Sprintf("file=%s", filename))
 	if len(pkgs) == 0 {
 		if err == nil {
-			err = fmt.Errorf("go/packages.Load: no packages found for %s", f.filename())
+			err = fmt.Errorf("go/packages.Load: no packages found for %s", filename)
 		}
 		// Return this error as a diagnostic to the user.
 		return nil, []packages.Error{
@@ -106,11 +98,8 @@ func (v *view) checkMetadata(ctx context.Context, f *goFile) (map[packageID]*met
 			},
 		}, err
 	}
-
-	// Clear missing imports.
-	for k := range f.missingImports {
-		delete(f.missingImports, k)
-	}
+	// Track missing imports as we look at the package's errors.
+	missingImports := make(map[packagePath]struct{})
 	for _, pkg := range pkgs {
 		// If the package comes back with errors from `go list`,
 		// don't bother type-checking it.
@@ -120,57 +109,91 @@ func (v *view) checkMetadata(ctx context.Context, f *goFile) (map[packageID]*met
 		for importPath, importPkg := range pkg.Imports {
 			// If we encounter a package we cannot import, mark it as missing.
 			if importPkg.PkgPath != "unsafe" && len(importPkg.CompiledGoFiles) == 0 {
-				if f.missingImports == nil {
-					f.missingImports = make(map[packagePath]struct{})
-				}
-				f.missingImports[packagePath(importPath)] = struct{}{}
+				missingImports[packagePath(importPath)] = struct{}{}
 			}
 		}
 		// Build the import graph for this package.
-		v.link(ctx, packagePath(pkg.PkgPath), pkg, nil)
+		if err := v.link(ctx, packagePath(pkg.PkgPath), pkg, nil); err != nil {
+			return nil, nil, err
+		}
 	}
+	m, err := validateMetadata(ctx, missingImports, f)
+	if err != nil {
+		return nil, nil, err
+	}
+	return m, nil, nil
+}
+
+func validateMetadata(ctx context.Context, missingImports map[packagePath]struct{}, f *goFile) (map[packageID]*metadata, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	// If `go list` failed to get data for the file in question (this should never happen).
 	if len(f.meta) == 0 {
-		return nil, nil, fmt.Errorf("loadParseTypecheck: no metadata found for %v", f.filename())
+		return nil, fmt.Errorf("loadParseTypecheck: no metadata found for %v", f.filename())
 	}
 
-	// If we have already seen these missing imports before, and we still have type information,
+	// If we have already seen these missing imports before, and we have type information,
 	// there is no need to continue.
-	if sameSet(originalMissingImports, f.missingImports) && len(f.pkgs) != 0 {
-		return nil, nil, nil
+	if sameSet(missingImports, f.missingImports) && len(f.pkgs) != 0 {
+		return nil, nil
 	}
-
-	return f.meta, nil, nil
+	// Otherwise, update the missing imports map.
+	f.missingImports = missingImports
+	return f.meta, nil
 }
 
 // reparseImports reparses a file's package and import declarations to
 // determine if they have changed.
-func (v *view) parseImports(ctx context.Context, f *goFile) bool {
+func (v *view) runGopackages(ctx context.Context, f *goFile) (filename string, result bool) {
+	f.mu.Lock()
+	defer func() {
+		// Clear metadata if we are intending to re-run go/packages.
+		if result {
+			// Reset the file's metadata and type information if we are re-running `go list`.
+			for k := range f.meta {
+				delete(f.meta, k)
+			}
+			for k := range f.pkgs {
+				delete(f.pkgs, k)
+			}
+		}
+
+		defer f.mu.Unlock()
+	}()
+
 	if len(f.meta) == 0 || len(f.missingImports) > 0 {
-		return true
+		return f.filename(), true
 	}
 	// Get file content in case we don't already have it.
 	parsed, _ := v.session.cache.ParseGoHandle(f.Handle(ctx), source.ParseHeader).Parse(ctx)
 	if parsed == nil {
-		return true
+		return f.filename(), true
 	}
-	// TODO: Add support for re-running `go list` when the package name changes.
-
-	// If the package's imports have changed, re-run `go list`.
-	if len(f.imports) != len(parsed.Imports) {
-		return true
-	}
-
-	for i, importSpec := range f.imports {
-		if importSpec.Path.Value != parsed.Imports[i].Path.Value {
-			return true
+	// Check if the package's name has changed, by checking if this is a filename
+	// we already know about, and if so, check if its package name has changed.
+	for _, m := range f.meta {
+		for _, filename := range m.files {
+			if filename == f.URI().Filename() {
+				if m.name != parsed.Name.Name {
+					return f.filename(), true
+				}
+			}
 		}
 	}
-	return false
+	// If the package's imports have changed, re-run `go list`.
+	if len(f.imports) != len(parsed.Imports) {
+		return f.filename(), true
+	}
+	for i, importSpec := range f.imports {
+		if importSpec.Path.Value != parsed.Imports[i].Path.Value {
+			return f.filename(), true
+		}
+	}
+	return f.filename(), false
 }
 
-func (v *view) link(ctx context.Context, pkgPath packagePath, pkg *packages.Package, parent *metadata) *metadata {
+func (v *view) link(ctx context.Context, pkgPath packagePath, pkg *packages.Package, parent *metadata) error {
 	id := packageID(pkg.ID)
 	m, ok := v.mcache.packages[id]
 
@@ -178,7 +201,7 @@ func (v *view) link(ctx context.Context, pkgPath packagePath, pkg *packages.Pack
 	// so relevant packages get parsed and type-checked again.
 	if ok && !filenamesIdentical(m.files, pkg.CompiledGoFiles) {
 		v.pcache.mu.Lock()
-		v.remove(id, make(map[packageID]struct{}))
+		v.remove(ctx, id, make(map[packageID]struct{}))
 		v.pcache.mu.Unlock()
 	}
 
@@ -198,16 +221,18 @@ func (v *view) link(ctx context.Context, pkgPath packagePath, pkg *packages.Pack
 	m.name = pkg.Name
 	m.files = pkg.CompiledGoFiles
 	for _, filename := range m.files {
-		if f, _ := v.getFile(span.FileURI(filename)); f != nil {
-			if gof, ok := f.(*goFile); ok {
-				if gof.meta == nil {
-					gof.meta = make(map[packageID]*metadata)
-				}
-				gof.meta[m.id] = m
-			} else {
-				v.Session().Logger().Errorf(ctx, "not a Go file: %s", f.URI())
-			}
+		f, err := v.getFile(ctx, span.FileURI(filename))
+		if err != nil {
+			return err
 		}
+		gof, ok := f.(*goFile)
+		if !ok {
+			return fmt.Errorf("not a Go file: %s", f.URI())
+		}
+		if gof.meta == nil {
+			gof.meta = make(map[packageID]*metadata)
+		}
+		gof.meta[m.id] = m
 	}
 	// Connect the import graph.
 	if parent != nil {
@@ -215,8 +240,15 @@ func (v *view) link(ctx context.Context, pkgPath packagePath, pkg *packages.Pack
 		parent.children[id] = true
 	}
 	for importPath, importPkg := range pkg.Imports {
+		importPkgPath := packagePath(importPath)
+		if importPkgPath == pkgPath {
+			v.session.log.Errorf(ctx, "cycle detected in %s", importPath)
+			return nil
+		}
 		if _, ok := m.children[packageID(importPkg.ID)]; !ok {
-			v.link(ctx, packagePath(importPath), importPkg, m)
+			if err := v.link(ctx, importPkgPath, importPkg, m); err != nil {
+				return err
+			}
 		}
 	}
 	// Clear out any imports that have been removed.
@@ -232,7 +264,7 @@ func (v *view) link(ctx context.Context, pkgPath packagePath, pkg *packages.Pack
 		delete(m.children, importID)
 		delete(child.parents, id)
 	}
-	return m
+	return nil
 }
 
 // filenamesIdentical reports whether two sets of file names are identical.
