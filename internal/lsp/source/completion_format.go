@@ -16,21 +16,32 @@ import (
 	"golang.org/x/tools/internal/lsp/snippet"
 )
 
-// formatCompletion creates a completion item for a given types.Object.
-func (c *completer) item(obj types.Object, score float64) CompletionItem {
+// formatCompletion creates a completion item for a given candidate.
+func (c *completer) item(cand candidate) CompletionItem {
+	obj := cand.obj
+
 	// Handle builtin types separately.
 	if obj.Parent() == types.Universe {
-		return c.formatBuiltin(obj, score)
+		return c.formatBuiltin(cand)
 	}
 
 	var (
-		label              = obj.Name()
+		label              = c.deepState.chainString(obj.Name())
 		detail             = types.TypeString(obj.Type(), c.qf)
 		insert             = label
 		kind               CompletionItemKind
 		plainSnippet       *snippet.Builder
 		placeholderSnippet *snippet.Builder
 	)
+
+	// expandFuncCall mutates the completion label, detail, and snippets
+	// to that of an invocation of sig.
+	expandFuncCall := func(sig *types.Signature) {
+		params := formatParams(sig.Params(), sig.Variadic(), c.qf)
+		plainSnippet, placeholderSnippet = c.functionCallSnippets(label, params)
+		results, writeParens := formatResults(sig.Results(), c.qf)
+		label, detail = formatFunction(label, params, results, writeParens)
+	}
 
 	switch obj := obj.(type) {
 	case *types.TypeName:
@@ -49,23 +60,28 @@ func (c *completer) item(obj types.Object, score float64) CompletionItem {
 		} else {
 			kind = VariableCompletionItem
 		}
+
+		if sig, ok := obj.Type().Underlying().(*types.Signature); ok && cand.expandFuncCall {
+			expandFuncCall(sig)
+		}
 	case *types.Func:
-		sig, ok := obj.Type().(*types.Signature)
+		sig, ok := obj.Type().Underlying().(*types.Signature)
 		if !ok {
 			break
 		}
-		params := formatParams(sig.Params(), sig.Variadic(), c.qf)
-		results, writeParens := formatResults(sig.Results(), c.qf)
-		label, detail = formatFunction(obj.Name(), params, results, writeParens)
-		plainSnippet, placeholderSnippet = c.functionCallSnippets(obj.Name(), params)
 		kind = FunctionCompletionItem
-		if sig.Recv() != nil {
+		if sig != nil && sig.Recv() != nil {
 			kind = MethodCompletionItem
+		}
+
+		if cand.expandFuncCall {
+			expandFuncCall(sig)
 		}
 	case *types.PkgName:
 		kind = PackageCompletionItem
-		detail = fmt.Sprintf("\"%s\"", obj.Imported().Path())
+		detail = fmt.Sprintf("%q", obj.Imported().Path())
 	}
+
 	detail = strings.TrimPrefix(detail, "untyped ")
 
 	return CompletionItem{
@@ -73,7 +89,8 @@ func (c *completer) item(obj types.Object, score float64) CompletionItem {
 		InsertText:         insert,
 		Detail:             detail,
 		Kind:               kind,
-		Score:              score,
+		Score:              cand.score,
+		Depth:              len(c.deepState.chain),
 		plainSnippet:       plainSnippet,
 		placeholderSnippet: placeholderSnippet,
 	}
@@ -93,11 +110,13 @@ func (c *completer) isParameter(v *types.Var) bool {
 	return false
 }
 
-func (c *completer) formatBuiltin(obj types.Object, score float64) CompletionItem {
+func (c *completer) formatBuiltin(cand candidate) CompletionItem {
+	obj := cand.obj
+
 	item := CompletionItem{
 		Label:      obj.Name(),
 		InsertText: obj.Name(),
-		Score:      score,
+		Score:      cand.score,
 	}
 	switch obj.(type) {
 	case *types.Const:

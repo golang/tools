@@ -38,18 +38,20 @@ func fieldSelections(T types.Type) (fields []*types.Var) {
 	// selections that match more than one field/method.
 	// types.NewSelectionSet should do that for us.
 
-	seen := make(map[types.Type]bool) // for termination on recursive types
+	seen := make(map[*types.Var]bool) // for termination on recursive types
+
 	var visit func(T types.Type)
 	visit = func(T types.Type) {
-		if !seen[T] {
-			seen[T] = true
-			if T, ok := deref(T).Underlying().(*types.Struct); ok {
-				for i := 0; i < T.NumFields(); i++ {
-					f := T.Field(i)
-					fields = append(fields, f)
-					if f.Anonymous() {
-						visit(f.Type())
-					}
+		if T, ok := deref(T).Underlying().(*types.Struct); ok {
+			for i := 0; i < T.NumFields(); i++ {
+				f := T.Field(i)
+				if seen[f] {
+					continue
+				}
+				seen[f] = true
+				fields = append(fields, f)
+				if f.Anonymous() {
+					visit(f.Type())
 				}
 			}
 		}
@@ -74,7 +76,7 @@ func resolveInvalid(obj types.Object, node ast.Node, info *types.Info) types.Obj
 		default:
 			return nil
 		}
-		typ := types.NewNamed(types.NewTypeName(token.NoPos, obj.Pkg(), typename, nil), nil, nil)
+		typ := types.NewNamed(types.NewTypeName(token.NoPos, obj.Pkg(), typename, nil), types.Typ[types.Invalid], nil)
 		return types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), typ)
 	}
 	var resultExpr ast.Expr
@@ -125,6 +127,37 @@ func deref(typ types.Type) types.Type {
 		return p.Elem()
 	}
 	return typ
+}
+
+func isTypeName(obj types.Object) bool {
+	_, ok := obj.(*types.TypeName)
+	return ok
+}
+
+func isFunc(obj types.Object) bool {
+	_, ok := obj.(*types.Func)
+	return ok
+}
+
+// typeConversion returns the type being converted to if call is a type
+// conversion expression.
+func typeConversion(call *ast.CallExpr, info *types.Info) types.Type {
+	var ident *ast.Ident
+	switch expr := call.Fun.(type) {
+	case *ast.Ident:
+		ident = expr
+	case *ast.SelectorExpr:
+		ident = expr.Sel
+	default:
+		return nil
+	}
+
+	// Type conversion (e.g. "float64(foo)").
+	if fun, _ := info.ObjectOf(ident).(*types.TypeName); fun != nil {
+		return fun.Type()
+	}
+
+	return nil
 }
 
 func formatParams(tup *types.Tuple, variadic bool, qf types.Qualifier) []string {

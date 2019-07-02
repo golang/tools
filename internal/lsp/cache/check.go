@@ -11,9 +11,11 @@ import (
 	"go/scanner"
 	"go/token"
 	"go/types"
+	"sync"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -22,29 +24,34 @@ type importer struct {
 
 	// seen maintains the set of previously imported packages.
 	// If we have seen a package that is already in this map, we have a circular import.
-	seen map[string]struct{}
+	seen map[packageID]struct{}
 
 	// topLevelPkgID is the ID of the package from which type-checking began.
-	topLevelPkgID string
+	topLevelPkgID packageID
 
 	ctx  context.Context
 	fset *token.FileSet
 }
 
 func (imp *importer) Import(pkgPath string) (*types.Package, error) {
-	pkg, err := imp.getPkg(pkgPath)
+	id, ok := imp.view.mcache.ids[packagePath(pkgPath)]
+	if !ok {
+		return nil, fmt.Errorf("no known ID for %s", pkgPath)
+	}
+	pkg, err := imp.getPkg(id)
 	if err != nil {
 		return nil, err
 	}
 	return pkg.types, nil
 }
 
-func (imp *importer) getPkg(pkgPath string) (*pkg, error) {
-	if _, ok := imp.seen[pkgPath]; ok {
+func (imp *importer) getPkg(id packageID) (*pkg, error) {
+	if _, ok := imp.seen[id]; ok {
 		return nil, fmt.Errorf("circular import detected")
 	}
 	imp.view.pcache.mu.Lock()
-	e, ok := imp.view.pcache.packages[pkgPath]
+	e, ok := imp.view.pcache.packages[id]
+
 	if ok {
 		// cache hit
 		imp.view.pcache.mu.Unlock()
@@ -53,38 +60,41 @@ func (imp *importer) getPkg(pkgPath string) (*pkg, error) {
 	} else {
 		// cache miss
 		e = &entry{ready: make(chan struct{})}
-		imp.view.pcache.packages[pkgPath] = e
+		imp.view.pcache.packages[id] = e
 		imp.view.pcache.mu.Unlock()
 
 		// This goroutine becomes responsible for populating
 		// the entry and broadcasting its readiness.
-		e.pkg, e.err = imp.typeCheck(pkgPath)
+		e.pkg, e.err = imp.typeCheck(id)
 		close(e.ready)
 	}
+
 	if e.err != nil {
+		// If the import had been previously canceled, and that error cached, try again.
+		if e.err == context.Canceled && imp.ctx.Err() == nil {
+			imp.view.pcache.mu.Lock()
+			// Clear out canceled cache entry if it is still there.
+			if imp.view.pcache.packages[id] == e {
+				delete(imp.view.pcache.packages, id)
+			}
+			imp.view.pcache.mu.Unlock()
+			return imp.getPkg(id)
+		}
 		return nil, e.err
 	}
+
 	return e.pkg, nil
 }
 
-func (imp *importer) typeCheck(pkgPath string) (*pkg, error) {
-	meta, ok := imp.view.mcache.packages[pkgPath]
+func (imp *importer) typeCheck(id packageID) (*pkg, error) {
+	meta, ok := imp.view.mcache.packages[id]
 	if !ok {
-		return nil, fmt.Errorf("no metadata for %v", pkgPath)
-	}
-	// Use the default type information for the unsafe package.
-	var typ *types.Package
-	if meta.pkgPath == "unsafe" {
-		typ = types.Unsafe
-	} else {
-		typ = types.NewPackage(meta.pkgPath, meta.name)
+		return nil, fmt.Errorf("no metadata for %v", id)
 	}
 	pkg := &pkg{
 		id:         meta.id,
 		pkgPath:    meta.pkgPath,
-		files:      meta.files,
-		imports:    make(map[string]*pkg),
-		types:      typ,
+		imports:    make(map[packagePath]*pkg),
 		typesSizes: meta.typesSizes,
 		typesInfo: &types.Info{
 			Types:      make(map[ast.Expr]types.TypeAndValue),
@@ -96,30 +106,73 @@ func (imp *importer) typeCheck(pkgPath string) (*pkg, error) {
 		},
 		analyses: make(map[*analysis.Analyzer]*analysisEntry),
 	}
-	appendError := func(err error) {
-		imp.view.appendPkgError(pkg, err)
-	}
 
 	// Ignore function bodies for any dependency packages.
-	ignoreFuncBodies := imp.topLevelPkgID != pkg.id
-
-	// Don't type-check function bodies if we are not in the top-level package.
-	files, errs := imp.parseFiles(meta.files, ignoreFuncBodies)
-	for _, err := range errs {
-		appendError(err)
+	mode := source.ParseFull
+	if imp.topLevelPkgID != pkg.id {
+		mode = source.ParseExported
 	}
-	pkg.syntax = files
+	var (
+		files []*astFile
+		phs   []source.ParseGoHandle
+		wg    sync.WaitGroup
+	)
+	for _, filename := range meta.files {
+		uri := span.FileURI(filename)
+		f, err := imp.view.getFile(imp.ctx, uri)
+		if err != nil {
+			continue
+		}
+		ph := imp.view.session.cache.ParseGoHandle(f.Handle(imp.ctx), mode)
+		phs = append(phs, ph)
+		files = append(files, &astFile{
+			uri:       ph.File().Identity().URI,
+			isTrimmed: mode == source.ParseExported,
+			ph:        ph,
+		})
+	}
+	for i, ph := range phs {
+		wg.Add(1)
+		go func(i int, ph source.ParseGoHandle) {
+			defer wg.Done()
+
+			files[i].file, files[i].err = ph.Parse(imp.ctx)
+		}(i, ph)
+	}
+	wg.Wait()
+
+	for _, f := range files {
+		pkg.files = append(pkg.files, f)
+
+		if f.err != nil {
+			if f.err == context.Canceled {
+				return nil, f.err
+			}
+			imp.view.session.cache.appendPkgError(pkg, f.err)
+		}
+	}
+
+	// Use the default type information for the unsafe package.
+	if meta.pkgPath == "unsafe" {
+		pkg.types = types.Unsafe
+	} else if len(files) == 0 { // not the unsafe package, no parsed files
+		return nil, fmt.Errorf("no parsed files for package %s", pkg.pkgPath)
+	} else {
+		pkg.types = types.NewPackage(string(meta.pkgPath), meta.name)
+	}
 
 	// Handle circular imports by copying previously seen imports.
-	seen := make(map[string]struct{})
+	seen := make(map[packageID]struct{})
 	for k, v := range imp.seen {
 		seen[k] = v
 	}
-	seen[pkgPath] = struct{}{}
+	seen[id] = struct{}{}
 
 	cfg := &types.Config{
-		Error:            appendError,
-		IgnoreFuncBodies: ignoreFuncBodies,
+		Error: func(err error) {
+			imp.view.session.cache.appendPkgError(pkg, err)
+		},
+		IgnoreFuncBodies: mode == source.ParseExported,
 		Importer: &importer{
 			view:          imp.view,
 			ctx:           imp.ctx,
@@ -129,41 +182,31 @@ func (imp *importer) typeCheck(pkgPath string) (*pkg, error) {
 		},
 	}
 	check := types.NewChecker(cfg, imp.fset, pkg.types, pkg.typesInfo)
+
+	// Ignore type-checking errors.
 	check.Files(pkg.GetSyntax())
 
 	// Add every file in this package to our cache.
-	imp.cachePackage(imp.ctx, pkg, meta)
+	if err := imp.cachePackage(imp.ctx, pkg, meta, mode); err != nil {
+		return nil, err
+	}
 
 	return pkg, nil
 }
 
-func (imp *importer) cachePackage(ctx context.Context, pkg *pkg, meta *metadata) {
-	for _, fAST := range pkg.syntax {
-		// TODO: If a file is in multiple packages, which package do we store?
-		if !fAST.file.Pos().IsValid() {
-			imp.view.Session().Logger().Errorf(ctx, "invalid position for file %v", fAST.file.Name)
-			continue
-		}
-		tok := imp.view.Session().Cache().FileSet().File(fAST.file.Pos())
-		if tok == nil {
-			imp.view.Session().Logger().Errorf(ctx, "no token.File for %v", fAST.file.Name)
-			continue
-		}
-		fURI := span.FileURI(tok.Name())
-		f, err := imp.view.getFile(fURI)
+func (imp *importer) cachePackage(ctx context.Context, pkg *pkg, meta *metadata, mode source.ParseMode) error {
+	for _, file := range pkg.files {
+		f, err := imp.view.getFile(ctx, file.uri)
 		if err != nil {
-			imp.view.Session().Logger().Errorf(ctx, "no file: %v", err)
-			continue
+			return fmt.Errorf("no such file %s: %v", file.uri, err)
 		}
 		gof, ok := f.(*goFile)
 		if !ok {
-			imp.view.Session().Logger().Errorf(ctx, "%v is not a Go file", f.URI())
-			continue
+			return fmt.Errorf("non Go file %s", file.uri)
 		}
-		gof.token = tok
-		gof.ast = fAST
-		gof.imports = fAST.file.Imports
-		gof.pkg = pkg
+		if err := imp.cachePerFile(gof, file, pkg); err != nil {
+			return fmt.Errorf("failed to cache file %s: %v", gof.URI(), err)
+		}
 	}
 
 	// Set imports of package to correspond to cached packages.
@@ -174,11 +217,45 @@ func (imp *importer) cachePackage(ctx context.Context, pkg *pkg, meta *metadata)
 		if err != nil {
 			continue
 		}
-		pkg.imports[importPath] = importPkg
+		pkg.imports[importPkg.pkgPath] = importPkg
 	}
+
+	return nil
 }
 
-func (v *view) appendPkgError(pkg *pkg, err error) {
+func (imp *importer) cachePerFile(gof *goFile, file *astFile, p *pkg) error {
+	gof.mu.Lock()
+	defer gof.mu.Unlock()
+
+	// Set the package even if we failed to parse the file.
+	if gof.pkgs == nil {
+		gof.pkgs = make(map[packageID]*pkg)
+	}
+	gof.pkgs[p.id] = p
+
+	// Get the AST for the file.
+	gof.ast = file
+	if gof.ast == nil {
+		return fmt.Errorf("no AST information for %s", file.uri)
+	}
+	if gof.ast.file == nil {
+		return fmt.Errorf("no AST for %s", file.uri)
+	}
+	// Get the *token.File directly from the AST.
+	pos := gof.ast.file.Pos()
+	if !pos.IsValid() {
+		return fmt.Errorf("AST for %s has an invalid position", file.uri)
+	}
+	tok := imp.view.session.cache.FileSet().File(pos)
+	if tok == nil {
+		return fmt.Errorf("no *token.File for %s", file.uri)
+	}
+	gof.token = tok
+	gof.imports = gof.ast.file.Imports
+	return nil
+}
+
+func (c *cache) appendPkgError(pkg *pkg, err error) {
 	if err == nil {
 		return
 	}
@@ -201,7 +278,7 @@ func (v *view) appendPkgError(pkg *pkg, err error) {
 		}
 	case types.Error:
 		errs = append(errs, packages.Error{
-			Pos:  v.Session().Cache().FileSet().Position(err.Pos).String(),
+			Pos:  c.FileSet().Position(err.Pos).String(),
 			Msg:  err.Msg,
 			Kind: packages.TypeError,
 		})

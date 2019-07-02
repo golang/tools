@@ -26,12 +26,17 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 	}
 	s.isInitialized = true // mark server as initialized now
 
-	// TODO(iancottrell): Change this default to protocol.Incremental and remove the option
-	s.textDocumentSyncKind = protocol.Full
+	// TODO: Remove the option once we are certain there are no issues here.
+	s.textDocumentSyncKind = protocol.Incremental
 	if opts, ok := params.InitializationOptions.(map[string]interface{}); ok {
-		if opt, ok := opts["incrementalSync"].(bool); ok && opt {
-			s.textDocumentSyncKind = protocol.Incremental
+		if opt, ok := opts["noIncrementalSync"].(bool); ok && opt {
+			s.textDocumentSyncKind = protocol.Full
 		}
+	}
+
+	s.supportedCodeActions = map[protocol.CodeActionKind]bool{
+		protocol.SourceOrganizeImports: true,
+		protocol.QuickFix:              true,
 	}
 
 	s.setClientCapabilities(params.Capabilities)
@@ -70,12 +75,16 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 			DocumentHighlightProvider:  true,
 			DocumentLinkProvider:       &protocol.DocumentLinkOptions{},
 			ReferencesProvider:         true,
+			RenameProvider:             true,
 			SignatureHelpProvider: &protocol.SignatureHelpOptions{
 				TriggerCharacters: []string{"(", ","},
 			},
 			TextDocumentSync: &protocol.TextDocumentSyncOptions{
 				Change:    s.textDocumentSyncKind,
 				OpenClose: true,
+				Save: &protocol.SaveOptions{
+					IncludeText: false,
+				},
 			},
 			TypeDefinitionProvider: true,
 			Workspace: &struct {
@@ -184,9 +193,13 @@ func (s *Server) processConfig(view source.View, config interface{}) error {
 	if usePlaceholders, ok := c["usePlaceholders"].(bool); ok {
 		s.usePlaceholders = usePlaceholders
 	}
-	// Check if user has disabled documentation on hover.
+	// Check if the user has disabled documentation on hover.
 	if noDocsOnHover, ok := c["noDocsOnHover"].(bool); ok {
 		s.noDocsOnHover = noDocsOnHover
+	}
+	// Check if the user wants to see suggested fixes from go/analysis.
+	if wantSuggestedFixes, ok := c["wantSuggestedFixes"].(bool); ok {
+		s.wantSuggestedFixes = wantSuggestedFixes
 	}
 	// Check if the user has explicitly disabled any analyses.
 	if disabledAnalyses, ok := c["experimentalDisabledAnalyses"].([]interface{}); ok {
@@ -196,6 +209,10 @@ func (s *Server) processConfig(view source.View, config interface{}) error {
 				s.disabledAnalyses[a] = struct{}{}
 			}
 		}
+	}
+	// Check if deep completions are enabled.
+	if useDeepCompletions, ok := c["useDeepCompletions"].(bool); ok {
+		s.useDeepCompletions = useDeepCompletions
 	}
 	return nil
 }

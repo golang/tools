@@ -29,11 +29,15 @@ type FileIdentity struct {
 type FileHandle interface {
 	// FileSystem returns the file system this handle was acquired from.
 	FileSystem() FileSystem
-	// Return the Identity for the file.
+
+	// Identity returns the FileIdentity for the file.
 	Identity() FileIdentity
-	// Read reads the contents of a file and returns it along with its hash
-	// value.
-	// If the file is not available, retruns a nil slice and an error.
+
+	// Kind returns the FileKind for the file.
+	Kind() FileKind
+
+	// Read reads the contents of a file and returns it along with its hash value.
+	// If the file is not available, returns a nil slice and an error.
 	Read(ctx context.Context) ([]byte, string, error)
 }
 
@@ -42,6 +46,58 @@ type FileSystem interface {
 	// GetFile returns a handle for the specified file.
 	GetFile(uri span.URI) FileHandle
 }
+
+// FileKind describes the kind of the file in question.
+// It can be one of Go, mod, or sum.
+type FileKind int
+
+const (
+	Go = FileKind(iota)
+	Mod
+	Sum
+)
+
+// TokenHandle represents a handle to the *token.File for a file.
+type TokenHandle interface {
+	// File returns a file handle for which to get the *token.File.
+	File() FileHandle
+
+	// Token returns the *token.File for the file.
+	Token(ctx context.Context) (*token.File, error)
+}
+
+// ParseGoHandle represents a handle to the AST for a file.
+type ParseGoHandle interface {
+	// File returns a file handle for which to get the AST.
+	File() FileHandle
+
+	// Mode returns the parse mode of this handle.
+	Mode() ParseMode
+
+	// Parse returns the parsed AST for the file.
+	// If the file is not available, returns nil and an error.
+	Parse(ctx context.Context) (*ast.File, error)
+}
+
+// ParseMode controls the content of the AST produced when parsing a source file.
+type ParseMode int
+
+const (
+	// ParseHeader specifies that the main package declaration and imports are needed.
+	// This is the mode used when attempting to examine the package graph structure.
+	ParseHeader = ParseMode(iota)
+
+	// ParseExported specifies that the public symbols are needed, but things like
+	// private symbols and function bodies are not.
+	// This mode is used for things where a package is being consumed only as a
+	// dependency.
+	ParseExported
+
+	// ParseFull specifies the full AST is needed.
+	// This is used for files of direct interest where the entire contents must
+	// be considered.
+	ParseFull
+)
 
 // Cache abstracts the core logic of dealing with the environment from the
 // higher level logic that processes the information to produce results.
@@ -59,6 +115,12 @@ type Cache interface {
 
 	// FileSet returns the shared fileset used by all files in the system.
 	FileSet() *token.FileSet
+
+	// Token returns a TokenHandle for the given file handle.
+	TokenHandle(FileHandle) TokenHandle
+
+	// ParseGo returns a ParseGoHandle for the given file handle.
+	ParseGoHandle(FileHandle, ParseMode) ParseGoHandle
 }
 
 // Session represents a single connection from a client.
@@ -92,7 +154,7 @@ type Session interface {
 	FileSystem
 
 	// DidOpen is invoked each time a file is opened in the editor.
-	DidOpen(uri span.URI)
+	DidOpen(ctx context.Context, uri span.URI, text []byte)
 
 	// DidSave is invoked each time an open file is saved in the editor.
 	DidSave(uri span.URI)
@@ -147,6 +209,8 @@ type View interface {
 
 	// Ignore returns true if this file should be ignored by this view.
 	Ignore(span.URI) bool
+
+	Config() *packages.Config
 }
 
 // File represents a source file of any type.
@@ -172,6 +236,9 @@ type GoFile interface {
 	// GetPackage returns the package that this file belongs to.
 	GetPackage(ctx context.Context) Package
 
+	// GetPackages returns all of the packages that this file belongs to.
+	GetPackages(ctx context.Context) []Package
+
 	// GetActiveReverseDeps returns the active files belonging to the reverse
 	// dependencies of this file's package.
 	GetActiveReverseDeps(ctx context.Context) []GoFile
@@ -188,6 +255,7 @@ type SumFile interface {
 // Package represents a Go package that has been type-checked. It maintains
 // only the relevant fields of a *go/packages.Package.
 type Package interface {
+	ID() string
 	PkgPath() string
 	GetFilenames() []string
 	GetSyntax() []*ast.File
@@ -198,6 +266,8 @@ type Package interface {
 	IsIllTyped() bool
 	GetActionGraph(ctx context.Context, a *analysis.Analyzer) (*Action, error)
 	GetImport(pkgPath string) Package
+	GetDiagnostics() []Diagnostic
+	SetDiagnostics(diags []Diagnostic)
 }
 
 // TextEdit represents a change to a section of a document.

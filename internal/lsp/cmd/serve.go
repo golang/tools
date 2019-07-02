@@ -81,7 +81,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 	// For debugging purposes only.
 	run := func(srv *lsp.ElasticServer) {
 		srv.Conn.Logger = logger(s.Trace, out)
-		go srv.Conn.Run(ctx)
+		go srv.Run(ctx)
 	}
 	if s.Address != "" {
 		return lsp.RunElasticServerOnAddress(ctx, s.app.cache, s.Address, run)
@@ -92,7 +92,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 	stream := jsonrpc2.NewHeaderStream(os.Stdin, os.Stdout)
 	srv := lsp.NewElasticServer(s.app.cache, stream)
 	srv.Conn.Logger = logger(s.Trace, out)
-	return srv.Conn.Run(ctx)
+	return srv.Run(ctx)
 }
 
 func (s *Serve) forward() error {

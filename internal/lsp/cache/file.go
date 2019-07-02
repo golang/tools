@@ -28,11 +28,14 @@ type viewFile interface {
 type fileBase struct {
 	uris  []span.URI
 	fname string
+	kind  source.FileKind
 
-	view     *view
+	view *view
+
 	handleMu sync.Mutex
 	handle   source.FileHandle
-	token    *token.File
+
+	token *token.File
 }
 
 func basename(filename string) string {

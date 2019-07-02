@@ -146,9 +146,15 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			t.Fatalf("failed to get token for %v", src)
 		}
 		pos := tok.Pos(src.Start().Offset())
-		list, surrounding, err := source.Completion(ctx, f.(source.GoFile), pos)
+		list, surrounding, err := source.Completion(ctx, r.view, f.(source.GoFile), pos, source.CompletionOptions{
+			DeepComplete: strings.Contains(string(src.URI()), "deepcomplete"),
+		})
 		if err != nil {
 			t.Fatalf("failed for %v: %v", src, err)
+		}
+		var prefix string
+		if surrounding != nil {
+			prefix = strings.ToLower(surrounding.Prefix())
 		}
 		wantBuiltins := strings.Contains(string(src.URI()), "builtins")
 		var got []source.CompletionItem
@@ -156,13 +162,9 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			if !wantBuiltins && isBuiltin(item) {
 				continue
 			}
-			var prefix string
-			if surrounding != nil {
-				prefix = surrounding.Prefix()
-			}
 			// We let the client do fuzzy matching, so we return all possible candidates.
 			// To simplify testing, filter results with prefixes that don't match exactly.
-			if !strings.HasPrefix(item.Label, prefix) {
+			if !strings.HasPrefix(strings.ToLower(item.Label), prefix) {
 				continue
 			}
 			got = append(got, item)
@@ -179,7 +181,9 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			}
 			tok := f.GetToken(ctx)
 			pos := tok.Pos(src.Start().Offset())
-			list, _, err := source.Completion(ctx, f.(source.GoFile), pos)
+			list, _, err := source.Completion(ctx, r.view, f.(source.GoFile), pos, source.CompletionOptions{
+				DeepComplete: strings.Contains(string(src.URI()), "deepcomplete"),
+			})
 			if err != nil {
 				t.Fatalf("failed for %v: %v", src, err)
 			}
@@ -227,12 +231,28 @@ func isBuiltin(item source.CompletionItem) bool {
 // diffCompletionItems prints the diff between expected and actual completion
 // test results.
 func diffCompletionItems(t *testing.T, spn span.Span, want []source.CompletionItem, got []source.CompletionItem) string {
-	if len(got) != len(want) {
-		return summarizeCompletionItems(-1, want, got, "different lengths got %v want %v", len(got), len(want))
-	}
 	sort.SliceStable(got, func(i, j int) bool {
 		return got[i].Score > got[j].Score
 	})
+
+	// duplicate the lsp/completion logic to limit deep candidates to keep expected
+	// list short
+	var idx, seenDeepCompletions int
+	for _, item := range got {
+		if item.Depth > 0 {
+			if seenDeepCompletions >= 3 {
+				continue
+			}
+			seenDeepCompletions++
+		}
+		got[idx] = item
+		idx++
+	}
+	got = got[:idx]
+
+	if len(got) != len(want) {
+		return summarizeCompletionItems(-1, want, got, "different lengths got %v want %v", len(got), len(want))
+	}
 	for i, w := range want {
 		g := got[i]
 		if w.Label != g.Label {
@@ -323,7 +343,7 @@ func (r *runner) Import(t *testing.T, data tests.Imports) {
 		if err != nil {
 			t.Fatalf("failed for %v: %v", spn, err)
 		}
-		edits, err := source.Imports(ctx, f.(source.GoFile), rng)
+		edits, err := source.Imports(ctx, r.view, f.(source.GoFile), rng)
 		if err != nil {
 			if goimported != "" {
 				t.Error(err)
@@ -395,9 +415,12 @@ func (r *runner) Highlight(t *testing.T, data tests.Highlights) {
 		}
 		tok := f.GetToken(ctx)
 		pos := tok.Pos(src.Start().Offset())
-		highlights := source.Highlight(ctx, f.(source.GoFile), pos)
+		highlights, err := source.Highlight(ctx, f.(source.GoFile), pos)
+		if err != nil {
+			t.Errorf("highlight failed for %s: %v", src.URI(), err)
+		}
 		if len(highlights) != len(locations) {
-			t.Fatalf("got %d highlights for %s, expected %d", len(highlights), name, len(locations))
+			t.Errorf("got %d highlights for %s, expected %d", len(highlights), name, len(locations))
 		}
 		for i, h := range highlights {
 			if h != locations[i] {
@@ -427,24 +450,103 @@ func (r *runner) Reference(t *testing.T, data tests.References) {
 			want[pos] = true
 		}
 
-		got, err := ident.References(ctx)
+		refs, err := ident.References(ctx)
 		if err != nil {
 			t.Fatalf("failed for %v: %v", src, err)
 		}
 
-		if len(got) != len(itemList) {
-			t.Errorf("references failed: different lengths got %v want %v", len(got), len(itemList))
-		}
-		for _, refInfo := range got {
+		got := make(map[span.Span]bool)
+		for _, refInfo := range refs {
 			refSpan, err := refInfo.Range.Span()
 			if err != nil {
 				t.Errorf("failed for %v item %v: %v", src, refInfo.Name, err)
 			}
-			if !want[refSpan] {
+			got[refSpan] = true
+		}
+
+		if len(got) != len(want) {
+			t.Errorf("references failed: different lengths got %v want %v", len(got), len(want))
+		}
+
+		for spn, _ := range got {
+			if !want[spn] {
 				t.Errorf("references failed: incorrect references got %v want locations %v", got, want)
 			}
 		}
 	}
+}
+
+func (r *runner) Rename(t *testing.T, data tests.Renames) {
+	ctx := context.Background()
+	for spn, newText := range data {
+		f, err := r.view.GetFile(ctx, spn.URI())
+		if err != nil {
+			t.Fatalf("failed for %v: %v", spn, err)
+		}
+		tok := f.GetToken(ctx)
+		pos := tok.Pos(spn.Start().Offset())
+
+		ident, err := source.Identifier(context.Background(), r.view, f.(source.GoFile), pos)
+		if err != nil {
+			t.Error(err)
+		}
+		changes, err := ident.Rename(context.Background(), newText)
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+
+		if len(changes) != 1 { // Renames must only affect a single file in these tests.
+			t.Errorf("rename failed for %s, edited %d files, wanted 1 file", newText, len(changes))
+			continue
+		}
+
+		edits := changes[spn.URI()]
+		if edits == nil {
+			t.Errorf("rename failed for %s, did not edit %s", newText, spn.URI())
+			continue
+		}
+		data, _, err := f.Handle(ctx).Read(ctx)
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+
+		got := applyEdits(string(data), edits)
+		tag := fmt.Sprintf("%s-rename", newText)
+		gorenamed := string(r.data.Golden(tag, spn.URI().Filename(), func() ([]byte, error) {
+			return []byte(got), nil
+		}))
+
+		if gorenamed != got {
+			t.Errorf("rename failed for %s, expected:\n%v\ngot:\n%v", newText, gorenamed, got)
+		}
+	}
+}
+
+func applyEdits(contents string, edits []source.TextEdit) string {
+	res := contents
+	sortSourceTextEdits(edits)
+
+	// Apply the edits from the end of the file forward
+	// to preserve the offsets
+	for i := len(edits) - 1; i >= 0; i-- {
+		edit := edits[i]
+		start := edit.Span.Start().Offset()
+		end := edit.Span.End().Offset()
+		tmp := res[0:start] + edit.NewText
+		res = tmp + res[end:]
+	}
+	return res
+}
+
+func sortSourceTextEdits(d []source.TextEdit) {
+	sort.Slice(d, func(i int, j int) bool {
+		if r := span.Compare(d[i].Span, d[j].Span); r != 0 {
+			return r < 0
+		}
+		return d[i].NewText < d[j].NewText
+	})
 }
 
 func (r *runner) Symbol(t *testing.T, data tests.Symbols) {
@@ -454,8 +556,10 @@ func (r *runner) Symbol(t *testing.T, data tests.Symbols) {
 		if err != nil {
 			t.Fatalf("failed for %v: %v", uri, err)
 		}
-		symbols := source.DocumentSymbols(ctx, f.(source.GoFile))
-
+		symbols, err := source.DocumentSymbols(ctx, f.(source.GoFile))
+		if err != nil {
+			t.Errorf("symbols failed for %s: %v", uri, err)
+		}
 		if len(symbols) != len(expectedSymbols) {
 			t.Errorf("want %d top-level symbols in %v, got %d", len(expectedSymbols), uri, len(symbols))
 			continue

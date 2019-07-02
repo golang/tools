@@ -6,9 +6,9 @@ package cache
 
 import (
 	"context"
-	"fmt"
 	"go/ast"
 	"go/parser"
+	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
@@ -70,24 +70,23 @@ type view struct {
 }
 
 type metadataCache struct {
-	mu       sync.Mutex
-	packages map[string]*metadata
+	mu       sync.Mutex // guards both maps
+	packages map[packageID]*metadata
+	ids      map[packagePath]packageID
 }
 
 type metadata struct {
-	id, pkgPath, name string
+	id                packageID
+	pkgPath           packagePath
+	name              string
 	files             []string
 	typesSizes        types.Sizes
-	parents, children map[string]bool
-
-	// missingImports is the set of unresolved imports for this package.
-	// It contains any packages with `go list` errors.
-	missingImports map[string]struct{}
+	parents, children map[packageID]bool
 }
 
 type packageCache struct {
 	mu       sync.Mutex
-	packages map[string]*entry
+	packages map[packageID]*entry
 }
 
 type entry struct {
@@ -112,10 +111,9 @@ func (v *view) Folder() span.URI {
 
 // Config returns the configuration used for the view's interaction with the
 // go/packages API. It is shared across all views.
-func (v *view) buildConfig() *packages.Config {
-	//TODO:should we cache the config and/or overlay somewhere?
+func (v *view) Config() *packages.Config {
+	// TODO: Should we cache the config and/or overlay somewhere?
 	return &packages.Config{
-		Context:    v.backgroundCtx,
 		Dir:        v.folder.Filename(),
 		Env:        v.env,
 		BuildFlags: v.buildFlags,
@@ -125,10 +123,12 @@ func (v *view) buildConfig() *packages.Config {
 			packages.NeedImports |
 			packages.NeedDeps |
 			packages.NeedTypesSizes,
-		Fset:      v.session.cache.fset,
-		Overlay:   v.session.buildOverlay(),
-		ParseFile: parseFile,
-		Tests:     true,
+		Fset:    v.session.cache.fset,
+		Overlay: v.session.buildOverlay(),
+		ParseFile: func(*token.FileSet, string, []byte) (*ast.File, error) {
+			panic("go/packages must not be used to parse files")
+		},
+		Tests: true,
 	}
 }
 
@@ -187,7 +187,7 @@ func (v *view) BuiltinPackage() *ast.Package {
 // It assumes that the view is not active yet,
 // i.e. it has not been added to the session's list of views.
 func (v *view) buildBuiltinPkg() {
-	cfg := *v.buildConfig()
+	cfg := *v.Config()
 	pkgs, _ := packages.Load(&cfg, "builtin")
 	if len(pkgs) != 1 {
 		v.builtinPkg, _ = ast.NewPackage(cfg.Fset, nil, nil, nil)
@@ -224,60 +224,71 @@ func (v *view) SetContent(ctx context.Context, uri span.URI, content []byte) err
 
 // invalidateContent invalidates the content of a Go file,
 // including any position and type information that depends on it.
-func (f *goFile) invalidateContent() {
+func (f *goFile) invalidateContent(ctx context.Context) {
+	f.handleMu.Lock()
+	defer f.handleMu.Unlock()
+
+	f.view.mcache.mu.Lock()
+	defer f.view.mcache.mu.Unlock()
+
 	f.view.pcache.mu.Lock()
 	defer f.view.pcache.mu.Unlock()
 
-	f.ast = nil
-	f.token = nil
-
-	// Remove the package and all of its reverse dependencies from the cache.
-	if f.pkg != nil {
-		f.view.remove(f.pkg.pkgPath, map[string]struct{}{})
-	}
+	f.invalidateAST(ctx)
 	f.handle = nil
 }
 
 // invalidateAST invalidates the AST of a Go file,
 // including any position and type information that depends on it.
-func (f *goFile) invalidateAST() {
-	f.view.pcache.mu.Lock()
-	defer f.view.pcache.mu.Unlock()
-
+func (f *goFile) invalidateAST(ctx context.Context) {
+	f.mu.Lock()
 	f.ast = nil
 	f.token = nil
+	pkgs := f.pkgs
+	f.mu.Unlock()
 
 	// Remove the package and all of its reverse dependencies from the cache.
-	if f.pkg != nil {
-		f.view.remove(f.pkg.pkgPath, map[string]struct{}{})
+	for id, pkg := range pkgs {
+		if pkg != nil {
+			f.view.remove(ctx, id, map[packageID]struct{}{})
+		}
 	}
 }
 
 // remove invalidates a package and its reverse dependencies in the view's
 // package cache. It is assumed that the caller has locked both the mutexes
 // of both the mcache and the pcache.
-func (v *view) remove(pkgPath string, seen map[string]struct{}) {
-	if _, ok := seen[pkgPath]; ok {
+func (v *view) remove(ctx context.Context, id packageID, seen map[packageID]struct{}) {
+	if _, ok := seen[id]; ok {
 		return
 	}
-	m, ok := v.mcache.packages[pkgPath]
+	m, ok := v.mcache.packages[id]
 	if !ok {
 		return
 	}
-	seen[pkgPath] = struct{}{}
-	for parentPkgPath := range m.parents {
-		v.remove(parentPkgPath, seen)
+	seen[id] = struct{}{}
+	for parentID := range m.parents {
+		v.remove(ctx, parentID, seen)
 	}
 	// All of the files in the package may also be holding a pointer to the
 	// invalidated package.
 	for _, filename := range m.files {
-		if f, _ := v.findFile(span.FileURI(filename)); f != nil {
-			if gof, ok := f.(*goFile); ok {
-				gof.pkg = nil
-			}
+		f, err := v.findFile(span.FileURI(filename))
+		if err != nil {
+			v.session.log.Errorf(ctx, "cannot find file %s: %v", f.URI(), err)
+			continue
 		}
+		gof, ok := f.(*goFile)
+		if !ok {
+			v.session.log.Errorf(ctx, "non-Go file %v", f.URI())
+			continue
+		}
+		gof.mu.Lock()
+		delete(gof.pkgs, id)
+		gof.mu.Unlock()
 	}
-	delete(v.pcache.packages, pkgPath)
+	delete(v.pcache.packages, id)
+	return
 }
 
 // FindFile returns the file if the given URI is already a part of the view.
@@ -297,15 +308,11 @@ func (v *view) GetFile(ctx context.Context, uri span.URI) (source.File, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	return v.getFile(uri)
+	return v.getFile(ctx, uri)
 }
 
 // getFile is the unlocked internal implementation of GetFile.
-func (v *view) getFile(uri span.URI) (viewFile, error) {
+func (v *view) getFile(ctx context.Context, uri span.URI) (viewFile, error) {
 	if f, err := v.findFile(uri); err != nil {
 		return nil, err
 	} else if f != nil {
@@ -314,21 +321,12 @@ func (v *view) getFile(uri span.URI) (viewFile, error) {
 	filename := uri.Filename()
 	var f viewFile
 	switch ext := filepath.Ext(filename); ext {
-	case ".go":
-		f = &goFile{
-			fileBase: fileBase{
-				view:  v,
-				fname: filename,
-			},
-		}
-		v.session.filesWatchMap.Watch(uri, func() {
-			f.(*goFile).invalidateContent()
-		})
 	case ".mod":
 		f = &modFile{
 			fileBase: fileBase{
 				view:  v,
 				fname: filename,
+				kind:  source.Mod,
 			},
 		}
 	case ".sum":
@@ -336,10 +334,25 @@ func (v *view) getFile(uri span.URI) (viewFile, error) {
 			fileBase: fileBase{
 				view:  v,
 				fname: filename,
+				kind:  source.Sum,
 			},
 		}
 	default:
-		return nil, fmt.Errorf("unsupported file extension: %s", ext)
+		// Assume that all other files are Go files, regardless of extension.
+		f = &goFile{
+			fileBase: fileBase{
+				view:  v,
+				fname: filename,
+				kind:  source.Go,
+			},
+		}
+		v.session.filesWatchMap.Watch(uri, func() {
+			gof, ok := f.(*goFile)
+			if !ok {
+				return
+			}
+			gof.invalidateContent(ctx)
+		})
 	}
 	v.mapFile(uri, f)
 	return f, nil

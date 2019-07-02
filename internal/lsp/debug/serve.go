@@ -12,12 +12,14 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	_ "net/http/pprof" // pull in the standard pprof handlers
 	"path"
 	"runtime"
 	"strconv"
 	"sync"
 
+	"golang.org/x/tools/internal/lsp/telemetry"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -56,17 +58,6 @@ var (
 		Views    []View
 	}{}
 )
-
-func init() {
-	http.HandleFunc("/", Render(mainTmpl, func(*http.Request) interface{} { return data }))
-	http.HandleFunc("/debug/", Render(debugTmpl, nil))
-	http.HandleFunc("/cache/", Render(cacheTmpl, getCache))
-	http.HandleFunc("/session/", Render(sessionTmpl, getSession))
-	http.HandleFunc("/view/", Render(viewTmpl, getView))
-	http.HandleFunc("/file/", Render(fileTmpl, getFile))
-	http.HandleFunc("/info", Render(infoTmpl, getInfo))
-	http.HandleFunc("/memory", Render(memoryTmpl, getMemory))
-}
 
 // AddCache adds a cache to the set being served
 func AddCache(cache Cache) {
@@ -223,7 +214,22 @@ func Serve(ctx context.Context, addr string) error {
 	}
 	log.Printf("Debug serving on port: %d", listener.Addr().(*net.TCPAddr).Port)
 	go func() {
-		if err := http.Serve(listener, nil); err != nil {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", Render(mainTmpl, func(*http.Request) interface{} { return data }))
+		mux.HandleFunc("/debug/", Render(debugTmpl, nil))
+		telemetry.Handle(mux)
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		mux.HandleFunc("/cache/", Render(cacheTmpl, getCache))
+		mux.HandleFunc("/session/", Render(sessionTmpl, getSession))
+		mux.HandleFunc("/view/", Render(viewTmpl, getView))
+		mux.HandleFunc("/file/", Render(fileTmpl, getFile))
+		mux.HandleFunc("/info", Render(infoTmpl, getInfo))
+		mux.HandleFunc("/memory", Render(memoryTmpl, getMemory))
+		if err := http.Serve(listener, mux); err != nil {
 			log.Printf("Debug server failed with %v", err)
 			return
 		}
@@ -350,6 +356,8 @@ var debugTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{define "title"}}GoPls Debug pages{{end}}
 {{define "body"}}
 <a href="/debug/pprof">Profiling</a>
+<a href="/debug/rpcz">RPCz</a>
+<a href="/debug/tracez">Tracez</a>
 {{end}}
 `))
 

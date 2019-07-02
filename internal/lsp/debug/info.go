@@ -19,6 +19,9 @@ const (
 	HTML
 )
 
+// Version is a manually-updated mechanism for tracking versions.
+var Version = "v0.1.1"
+
 // This writes the version and environment information to a writer.
 func PrintVersionInfo(w io.Writer, verbose bool, mode PrintMode) {
 	if !verbose {
