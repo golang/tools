@@ -51,6 +51,10 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 		server: &Server{
 			session:     session,
 			undelivered: make(map[span.URI][]source.Diagnostic),
+			supportedCodeActions: map[protocol.CodeActionKind]bool{
+				protocol.SourceOrganizeImports: true,
+				protocol.QuickFix:              true,
+			},
 		},
 		data: data,
 	}
@@ -471,7 +475,11 @@ func (r *runner) Reference(t *testing.T, data tests.References) {
 
 		want := make(map[protocol.Location]bool)
 		for _, pos := range itemList {
-			loc, err := sm.Location(pos)
+			m, err := r.mapper(pos.URI())
+			if err != nil {
+				t.Fatal(err)
+			}
+			loc, err := m.Location(pos)
 			if err != nil {
 				t.Fatalf("failed for %v: %v", src, err)
 			}
@@ -488,12 +496,12 @@ func (r *runner) Reference(t *testing.T, data tests.References) {
 			t.Fatalf("failed for %v: %v", src, err)
 		}
 
-		if len(got) != len(itemList) {
-			t.Errorf("references failed: different lengths got %v want %v", len(got), len(itemList))
+		if len(got) != len(want) {
+			t.Errorf("references failed: different lengths got %v want %v", len(got), len(want))
 		}
 		for _, loc := range got {
 			if !want[loc] {
-				t.Errorf("references failed: incorrect references got %v want %v", got, want)
+				t.Errorf("references failed: incorrect references got %v want %v", loc, want)
 			}
 		}
 	}
@@ -674,16 +682,25 @@ func (r *runner) SignatureHelp(t *testing.T, data tests.Signatures) {
 			Position: loc.Range.Start,
 		})
 		if err != nil {
-			t.Fatal(err)
+			// Only fail if we got an error we did not expect.
+			if expectedSignatures != nil {
+				t.Fatal(err)
+			}
+			continue
 		}
-
+		if expectedSignatures == nil {
+			if gotSignatures != nil {
+				t.Errorf("expected no signature, got %v", gotSignatures)
+			}
+			continue
+		}
 		if diff := diffSignatures(spn, expectedSignatures, gotSignatures); diff != "" {
 			t.Error(diff)
 		}
 	}
 }
 
-func diffSignatures(spn span.Span, want source.SignatureInformation, got *protocol.SignatureHelp) string {
+func diffSignatures(spn span.Span, want *source.SignatureInformation, got *protocol.SignatureHelp) string {
 	decorate := func(f string, args ...interface{}) string {
 		return fmt.Sprintf("Invalid signature at %s: %s", spn, fmt.Sprintf(f, args...))
 	}

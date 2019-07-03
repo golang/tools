@@ -154,7 +154,7 @@ type Session interface {
 	FileSystem
 
 	// DidOpen is invoked each time a file is opened in the editor.
-	DidOpen(ctx context.Context, uri span.URI)
+	DidOpen(ctx context.Context, uri span.URI, text []byte)
 
 	// DidSave is invoked each time an open file is saved in the editor.
 	DidSave(uri span.URI)
@@ -209,9 +209,12 @@ type View interface {
 
 	// Ignore returns true if this file should be ignored by this view.
 	Ignore(span.URI) bool
+	
 	Search() SearchFunc
 
 	FileSet() *token.FileSet
+
+	Config() *packages.Config
 }
 
 // File represents a source file of any type.
