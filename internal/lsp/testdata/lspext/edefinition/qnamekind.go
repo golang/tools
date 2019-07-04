@@ -51,7 +51,7 @@ func func1() int { //@qnamekind("c1", "edefinition.func1", 12)
 }
 
 // Test method declaration and field access.
-func (c *Circle) method1() { //edefinition("method1", "edefinition.Circle.method1", 6)
+func (c *Circle) method1() { //@qnamekind("method1", "edefinition.Circle.method1", 6)
 	fmt.Print(c.r) //@qnamekind("fmt", "fmt", 4),qnamekind("Pri", "fmt.Print", 12)
 
 	fmt.Print(c.Node.x) //@qnamekind("No", "edefinition.Circle.Node", 8)
@@ -168,7 +168,7 @@ func func8(pair struct {
 }
 
 // Test the field symbol in an anonymous type case#3
-func func9(x int, y int) (pair struct { //@edefinition("x", "edefinition.func9.x", 13)
+func func9(x int, y int) (pair struct { //@qnamekind("x", "edefinition.func9.x", 13)
 	x int //@qnamekind("x", "edefinition.func9.pair.x", 8)
 	y int
 }) {

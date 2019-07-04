@@ -29,7 +29,7 @@ func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
 
 	// We hardcode the expected number of test cases to ensure that all tests
 	// are being executed. If a test is added, this number must be changed.
-	const expectedQNameKindCount = 57
+	const expectedQNameKindCount = 59
 	const expectedPkgLocatorCount = 2
 	const expectedFullSymbolCount = 14
 
@@ -285,7 +285,6 @@ func (fs FullSymMap) test(t *testing.T, s *ElasticServer) {
 	if len(fs) == 0 {
 		return
 	}
-
 	var result protocol.FullResponse
 	// For now, we just test only source file.
 	for src, _ := range fs {
