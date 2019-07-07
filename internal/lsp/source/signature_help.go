@@ -12,6 +12,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/internal/lsp/telemetry/trace"
 )
 
 type SignatureInformation struct {
@@ -25,6 +26,8 @@ type ParameterInformation struct {
 }
 
 func SignatureHelp(ctx context.Context, f GoFile, pos token.Pos) (*SignatureInformation, error) {
+	ctx, ts := trace.StartSpan(ctx, "source.SignatureHelp")
+	defer ts.End()
 	file := f.GetAST(ctx)
 	if file == nil {
 		return nil, fmt.Errorf("no AST for %s", f.URI())
@@ -149,14 +152,11 @@ func signatureInformation(name string, comment *ast.CommentGroup, params, result
 	for _, p := range params {
 		paramInfo = append(paramInfo, ParameterInformation{Label: p})
 	}
-	label, detail := formatFunction(name, params, results, writeResultParens)
-	// Show return values of the function in the label.
-	if detail != "" {
-		label += " " + detail
-	}
+	label := name + formatFunction(params, results, writeResultParens)
 	return &SignatureInformation{
-		Label:           label,
-		Documentation:   formatDocumentation(comment),
+		Label: label,
+		// TODO: Should we have the HoverKind apply to signature information as well?
+		Documentation:   formatDocumentation(SynopsisDocumentation, comment),
 		Parameters:      paramInfo,
 		ActiveParameter: activeParam,
 	}

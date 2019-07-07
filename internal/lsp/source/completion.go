@@ -12,7 +12,9 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/internal/lsp/fuzzy"
 	"golang.org/x/tools/internal/lsp/snippet"
+	"golang.org/x/tools/internal/lsp/telemetry/trace"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -153,6 +155,9 @@ type completer struct {
 	search      SearchFunc
 	// deepState contains the current state of our deep completion search.
 	deepState deepCompletionState
+
+	// matcher does fuzzy matching of the candidates for the surrounding prefix.
+	matcher *fuzzy.Matcher
 }
 
 type compLitInfo struct {
@@ -191,15 +196,16 @@ func (c *completer) setSurrounding(ident *ast.Ident) {
 	if c.surrounding != nil {
 		return
 	}
-
 	if !(ident.Pos() <= c.pos && c.pos <= ident.End()) {
 		return
 	}
-
 	c.surrounding = &Selection{
 		Content: ident.Name,
 		Range:   span.NewRange(c.view.Session().Cache().FileSet(), ident.Pos(), ident.End()),
 		Cursor:  c.pos,
+	}
+	if c.surrounding.Prefix() != "" {
+		c.matcher = fuzzy.NewMatcher(c.surrounding.Prefix(), fuzzy.Symbol)
 	}
 }
 
@@ -268,6 +274,8 @@ type CompletionOptions struct {
 // the client to score the quality of the completion. For instance, some clients
 // may tolerate imperfect matches as valid completion results, since users may make typos.
 func Completion(ctx context.Context, view View, f GoFile, pos token.Pos, opts CompletionOptions, search SearchFunc) ([]CompletionItem, *Selection, error) {
+	ctx, ts := trace.StartSpan(ctx, "source.Completion")
+	defer ts.End()
 	file := f.GetAST(ctx)
 	if file == nil {
 		return nil, nil, fmt.Errorf("no AST for %s", f.URI())
@@ -1058,14 +1066,28 @@ func (c *completer) matchingType(cand *candidate) bool {
 	// are invoked by default.
 	cand.expandFuncCall = isFunc(cand.obj)
 
-	typeMatches := func(actual types.Type) bool {
+	typeMatches := func(candType types.Type) bool {
 		// Take into account any type modifiers on the expected type.
-		actual = c.expectedType.applyTypeModifiers(actual)
+		candType = c.expectedType.applyTypeModifiers(candType)
 
 		if c.expectedType.objType != nil {
+			wantType := types.Default(c.expectedType.objType)
+
+			// Handle untyped values specially since AssignableTo gives false negatives
+			// for them (see https://golang.org/issue/32146).
+			if candBasic, ok := candType.(*types.Basic); ok && candBasic.Info()&types.IsUntyped > 0 {
+				if wantBasic, ok := wantType.Underlying().(*types.Basic); ok {
+					// Check that their constant kind (bool|int|float|complex|string) matches.
+					// This doesn't take into account the constant value, so there will be some
+					// false positives due to integer sign and overflow.
+					return candBasic.Info()&types.IsConstType == wantBasic.Info()&types.IsConstType
+				}
+				return false
+			}
+
 			// AssignableTo covers the case where the types are equal, but also handles
 			// cases like assigning a concrete type to an interface type.
-			return types.AssignableTo(types.Default(actual), types.Default(c.expectedType.objType))
+			return types.AssignableTo(candType, wantType)
 		}
 
 		return false
