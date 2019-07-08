@@ -72,7 +72,7 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 				TriggerCharacters: []string{"."},
 			},
 			DefinitionProvider:         true,
-			DocumentFormattingProvider: true,
+			DocumentFormattingProvider: !(s.configurationSupported && s.dynamicConfigurationSupported),
 			DocumentSymbolProvider:     true,
 			HoverProvider:              true,
 			DocumentHighlightProvider:  true,
@@ -129,13 +129,20 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 	if s.configurationSupported {
 		if s.dynamicConfigurationSupported {
 			s.client.RegisterCapability(ctx, &protocol.RegistrationParams{
-				Registrations: []protocol.Registration{{
-					ID:     "workspace/didChangeConfiguration",
-					Method: "workspace/didChangeConfiguration",
-				}, {
-					ID:     "workspace/didChangeWorkspaceFolders",
-					Method: "workspace/didChangeWorkspaceFolders",
-				}},
+				Registrations: []protocol.Registration{
+					{
+						ID:     "workspace/didChangeConfiguration",
+						Method: "workspace/didChangeConfiguration",
+					},
+					{
+						ID:     "workspace/didChangeWorkspaceFolders",
+						Method: "workspace/didChangeWorkspaceFolders",
+					},
+					{
+						ID:     "textDocument/formatting",
+						Method: "textDocument/formatting",
+					},
+				},
 			})
 		}
 		for _, view := range s.session.Views() {
