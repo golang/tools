@@ -462,8 +462,8 @@ func newLoader(cfg *Config) *loader {
 	return ld
 }
 
-// refine connects the supplied packages into a graph and then adds type and
-// and syntax information as requested by the LoadMode.
+// refine connects the supplied packages into a graph and then adds
+// type and syntax information as requested by the LoadMode.
 func (ld *loader) refine(roots []string, list ...*Package) ([]*Package, error) {
 	rootMap := make(map[string]int, len(roots))
 	for i, root := range roots {

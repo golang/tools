@@ -75,7 +75,7 @@ Supported queries:
   sccs
 	all strongly connected components (one per line)
   scc <label>
-	the set of nodes nodes strongly connected to the specified one
+	the set of nodes strongly connected to the specified one
 
 Example usage:
 

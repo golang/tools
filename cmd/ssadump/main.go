@@ -30,7 +30,7 @@ var (
 	runFlag = flag.Bool("run", false, "interpret the SSA program")
 
 	interpFlag = flag.String("interp", "", `Options controlling the SSA test interpreter.
-The value is a sequence of zero or more more of these letters:
+The value is a sequence of zero or more of these letters:
 R	disable [R]ecover() from panic; show interpreter crash instead.
 T	[T]race execution of the program.  Best for single-threaded programs!
 `)

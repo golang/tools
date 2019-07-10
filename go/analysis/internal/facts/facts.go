@@ -131,8 +131,8 @@ type gobFact struct {
 
 // Decode decodes all the facts relevant to the analysis of package pkg.
 // The read function reads serialized fact data from an external source
-// for one of of pkg's direct imports. The empty file is a valid
-// encoding of an empty fact set.
+// for one of pkg's direct imports. The empty file is a valid encoding
+// of an empty fact set.
 //
 // It is the caller's responsibility to call gob.Register on all
 // necessary fact types.
