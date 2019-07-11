@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"go/token"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -511,6 +512,8 @@ func (r *runner) Reference(t *testing.T, data tests.References) {
 func (r *runner) Rename(t *testing.T, data tests.Renames) {
 	ctx := context.Background()
 	for spn, newText := range data {
+		tag := fmt.Sprintf("%s-rename", newText)
+
 		uri := spn.URI()
 		filename := uri.Filename()
 		sm, err := r.mapper(uri)
@@ -530,40 +533,50 @@ func (r *runner) Rename(t *testing.T, data tests.Renames) {
 			NewName:  newText,
 		})
 		if err != nil {
-			t.Error(err)
+			renamed := string(r.data.Golden(tag, filename, func() ([]byte, error) {
+				return []byte(err.Error()), nil
+			}))
+			if err.Error() != renamed {
+				t.Errorf("rename failed for %s, expected:\n%v\ngot:\n%v\n", newText, renamed, err)
+			}
 			continue
 		}
 
-		_, m, err := getSourceFile(ctx, r.server.session.ViewOf(uri), uri)
-		if err != nil {
-			t.Error(err)
+		var res []string
+		for uri, edits := range *workspaceEdits.Changes {
+			spnURI := span.URI(uri)
+			_, m, err := getSourceFile(ctx, r.server.session.ViewOf(span.URI(spnURI)), spnURI)
+			if err != nil {
+				t.Error(err)
+			}
+
+			sedits, err := FromProtocolEdits(m, edits)
+			if err != nil {
+				t.Error(err)
+			}
+
+			filename := filepath.Base(m.URI.Filename())
+			contents := applyEdits(string(m.Content), sedits)
+			res = append(res, fmt.Sprintf("%s:\n%s", filename, contents))
 		}
 
-		changes := *workspaceEdits.Changes
-		if len(changes) != 1 { // Renames must only affect a single file in these tests.
-			t.Errorf("rename failed for %s, edited %d files, wanted 1 file", newText, len(*workspaceEdits.Changes))
-			continue
+		// Sort on filename
+		sort.Strings(res)
+
+		var got string
+		for i, val := range res {
+			if i != 0 {
+				got += "\n"
+			}
+			got += val
 		}
 
-		edits := changes[string(uri)]
-		if edits == nil {
-			t.Errorf("rename failed for %s, did not edit %s", newText, filename)
-			continue
-		}
-		sedits, err := FromProtocolEdits(m, edits)
-		if err != nil {
-			t.Error(err)
-		}
-
-		got := applyEdits(string(m.Content), sedits)
-
-		tag := fmt.Sprintf("%s-rename", newText)
-		gorenamed := string(r.data.Golden(tag, filename, func() ([]byte, error) {
+		renamed := string(r.data.Golden(tag, filename, func() ([]byte, error) {
 			return []byte(got), nil
 		}))
 
-		if gorenamed != got {
-			t.Errorf("rename failed for %s, expected:\n%v\ngot:\n%v", newText, gorenamed, got)
+		if renamed != got {
+			t.Errorf("rename failed for %s, expected:\n%v\ngot:\n%v", newText, renamed, got)
 		}
 	}
 }
@@ -808,10 +821,10 @@ func TestBytesOffset(t *testing.T) {
 		{text: `a𐐀b`, pos: protocol.Position{Line: 0, Character: 4}, want: 6},
 		{text: `a𐐀b`, pos: protocol.Position{Line: 0, Character: 5}, want: -1},
 		{text: "aaa\nbbb\n", pos: protocol.Position{Line: 0, Character: 3}, want: 3},
-		{text: "aaa\nbbb\n", pos: protocol.Position{Line: 0, Character: 4}, want: -1},
+		{text: "aaa\nbbb\n", pos: protocol.Position{Line: 0, Character: 4}, want: 3},
 		{text: "aaa\nbbb\n", pos: protocol.Position{Line: 1, Character: 0}, want: 4},
 		{text: "aaa\nbbb\n", pos: protocol.Position{Line: 1, Character: 3}, want: 7},
-		{text: "aaa\nbbb\n", pos: protocol.Position{Line: 1, Character: 4}, want: -1},
+		{text: "aaa\nbbb\n", pos: protocol.Position{Line: 1, Character: 4}, want: 7},
 		{text: "aaa\nbbb\n", pos: protocol.Position{Line: 2, Character: 0}, want: 8},
 		{text: "aaa\nbbb\n", pos: protocol.Position{Line: 2, Character: 1}, want: -1},
 		{text: "aaa\nbbb\n\n", pos: protocol.Position{Line: 2, Character: 0}, want: 8},

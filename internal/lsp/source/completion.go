@@ -67,6 +67,8 @@ type CompletionItem struct {
 	placeholderSnippet *snippet.Builder
 
 	AdditionalTextEdits []TextEdit
+	// Documentation is the documentation for the completion item.
+	Documentation string
 }
 
 // Snippet is a convenience function that determines the snippet that should be
@@ -117,6 +119,7 @@ type completer struct {
 	types *types.Package
 	info  *types.Info
 	qf    types.Qualifier
+	opts  CompletionOptions
 
 	// view is the View associated with this completion request.
 	view View
@@ -211,9 +214,9 @@ func (c *completer) setSurrounding(ident *ast.Ident) {
 
 // found adds a candidate completion. We will also search through the object's
 // members for more candidates.
-func (c *completer) found(obj types.Object, score float64) {
+func (c *completer) found(obj types.Object, score float64) error {
 	if obj.Pkg() != nil && obj.Pkg() != c.types && !obj.Exported() {
-		return // inaccessible
+		return fmt.Errorf("%s is inaccessible from %s", obj.Name(), c.types.Path())
 	}
 
 	if c.inDeepCompletion() {
@@ -222,13 +225,13 @@ func (c *completer) found(obj types.Object, score float64) {
 		// "bar.Baz" even though "Baz" is represented the same types.Object in both.
 		for _, seenObj := range c.deepState.chain {
 			if seenObj == obj {
-				return
+				return nil
 			}
 		}
 	} else {
 		// At the top level, dedupe by object.
 		if c.seen[obj] {
-			return
+			return nil
 		}
 		c.seen[obj] = true
 	}
@@ -244,10 +247,14 @@ func (c *completer) found(obj types.Object, score float64) {
 
 	// Favor shallow matches by lowering weight according to depth.
 	cand.score -= stdScore * float64(len(c.deepState.chain))
-
-	c.items = append(c.items, c.item(cand))
+	item, err := c.item(cand)
+	if err != nil {
+		return err
+	}
+	c.items = append(c.items, item)
 
 	c.deepSearch(obj)
+	return nil
 }
 
 // candidate represents a completion candidate.
@@ -264,7 +271,8 @@ type candidate struct {
 }
 
 type CompletionOptions struct {
-	DeepComplete bool
+	DeepComplete     bool
+	WantDocumentaton bool
 }
 
 // Completion returns a list of possible candidates for completion, given a
@@ -318,6 +326,7 @@ func Completion(ctx context.Context, view View, f GoFile, pos token.Pos, opts Co
 		enclosingCompositeLiteral: clInfo,
 		file:                      f,
 		search:                    search,
+		opts:                      opts,
 	}
 
 	c.deepState.enabled = opts.DeepComplete

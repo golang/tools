@@ -128,7 +128,7 @@ func findReferences(ctx context.Context, search SearchFunc, pkg Package, queryOb
 		}
 
 		for id, obj := range pkg.GetTypesInfo().Uses {
-			if sameObj(queryObj, obj) {
+			if bingoSameObj(queryObj, obj) {
 				refs = append(refs, id)
 			}
 		}
@@ -167,7 +167,7 @@ func imported(pkg Package, defPkgPath string, seen map[string]bool) bool {
 
 // same reports whether x and y are identical, or both are PkgNames
 // that import the same Package.
-func sameObj(x, y types.Object) bool {
+func bingoSameObj(x, y types.Object) bool {
 	if x == y {
 		return true
 	}

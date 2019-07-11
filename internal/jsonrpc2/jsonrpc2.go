@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"golang.org/x/tools/internal/lsp/telemetry"
-	"golang.org/x/tools/internal/lsp/telemetry/stats"
 	"golang.org/x/tools/internal/lsp/telemetry/tag"
 	"golang.org/x/tools/internal/lsp/telemetry/trace"
 )
@@ -81,17 +80,11 @@ type Handler func(context.Context, *Request)
 type Canceler func(context.Context, *Conn, ID)
 
 type rpcStats struct {
-	server   bool
-	method   string
-	span     trace.Span
-	start    time.Time
-	received int64
-	sent     int64
+	server bool
+	method string
+	span   trace.Span
+	start  time.Time
 }
-
-type statsKeyType string
-
-const rpcStatsKey = statsKeyType("rpcStatsKey")
 
 func start(ctx context.Context, server bool, method string, id *ID) (context.Context, *rpcStats) {
 	if method == "" {
@@ -102,40 +95,28 @@ func start(ctx context.Context, server bool, method string, id *ID) (context.Con
 		method: method,
 		start:  time.Now(),
 	}
-	ctx = context.WithValue(ctx, rpcStatsKey, s)
-	tags := make([]tag.Mutator, 0, 4)
-	tags = append(tags, tag.Upsert(telemetry.KeyMethod, method))
 	mode := telemetry.Outbound
-	spanKind := trace.SpanKindClient
 	if server {
-		spanKind = trace.SpanKindServer
 		mode = telemetry.Inbound
 	}
-	tags = append(tags, tag.Upsert(telemetry.KeyRPCDirection, mode))
-	if id != nil {
-		tags = append(tags, tag.Upsert(telemetry.KeyRPCID, id.String()))
-	}
-	ctx, s.span = trace.StartSpan(ctx, method, trace.WithSpanKind(spanKind))
-	ctx, _ = tag.New(ctx, tags...)
-	stats.Record(ctx, telemetry.Started.M(1))
+	ctx, s.span = trace.StartSpan(ctx, method,
+		tag.Tag{Key: telemetry.Method, Value: method},
+		tag.Tag{Key: telemetry.RPCDirection, Value: mode},
+		tag.Tag{Key: telemetry.RPCID, Value: id},
+	)
+	telemetry.Started.Record(ctx, 1)
 	return ctx, s
 }
 
 func (s *rpcStats) end(ctx context.Context, err *error) {
 	if err != nil && *err != nil {
-		ctx, _ = tag.New(ctx, tag.Upsert(telemetry.KeyStatus, "ERROR"))
+		ctx = telemetry.StatusCode.With(ctx, "ERROR")
 	} else {
-		ctx, _ = tag.New(ctx, tag.Upsert(telemetry.KeyStatus, "OK"))
+		ctx = telemetry.StatusCode.With(ctx, "OK")
 	}
 	elapsedTime := time.Since(s.start)
 	latencyMillis := float64(elapsedTime) / float64(time.Millisecond)
-
-	stats.Record(ctx,
-		telemetry.ReceivedBytes.M(s.received),
-		telemetry.SentBytes.M(s.sent),
-		telemetry.Latency.M(latencyMillis),
-	)
-
+	telemetry.Latency.Record(ctx, latencyMillis)
 	s.span.End()
 }
 
@@ -204,7 +185,7 @@ func (c *Conn) Notify(ctx context.Context, method string, params interface{}) (e
 	}
 	c.Logger(Send, nil, -1, request.Method, request.Params, nil)
 	n, err := c.stream.Write(ctx, data)
-	rpcStats.sent += n
+	telemetry.SentBytes.Record(ctx, n)
 	return err
 }
 
@@ -246,7 +227,7 @@ func (c *Conn) Call(ctx context.Context, method string, params, result interface
 	before := time.Now()
 	c.Logger(Send, request.ID, -1, request.Method, request.Params, nil)
 	n, err := c.stream.Write(ctx, data)
-	rpcStats.sent += n
+	telemetry.SentBytes.Record(ctx, n)
 	if err != nil {
 		// sending failed, we will never get a response, so don't leave it pending
 		return err
@@ -309,7 +290,7 @@ func (r *Request) Reply(ctx context.Context, result interface{}, err error) erro
 	if r.IsNotify() {
 		return fmt.Errorf("reply not invoked with a valid call")
 	}
-	ctx, st := trace.StartSpan(ctx, r.Method+":reply", trace.WithSpanKind(trace.SpanKindClient))
+	ctx, st := trace.StartSpan(ctx, r.Method+":reply")
 	defer st.End()
 
 	// reply ends the handling phase of a call, so if we are not yet
@@ -341,13 +322,7 @@ func (r *Request) Reply(ctx context.Context, result interface{}, err error) erro
 	}
 	r.conn.Logger(Send, response.ID, elapsed, r.Method, response.Result, response.Error)
 	n, err := r.conn.stream.Write(ctx, data)
-
-	v := ctx.Value(rpcStatsKey)
-	if v != nil {
-		v.(*rpcStats).sent += n
-	} else {
-		panic("no stats available in reply")
-	}
+	telemetry.SentBytes.Record(ctx, n)
 
 	if err != nil {
 		// TODO(iancottrell): if a stream write fails, we really need to shut down
@@ -412,7 +387,7 @@ func (c *Conn) Run(ctx context.Context) error {
 			// if method is set it must be a request
 			reqCtx, cancelReq := context.WithCancel(ctx)
 			reqCtx, rpcStats := start(reqCtx, true, msg.Method, msg.ID)
-			rpcStats.received += n
+			telemetry.ReceivedBytes.Record(ctx, n)
 			thisRequest := nextRequest
 			nextRequest = make(chan struct{})
 			req := &Request{
