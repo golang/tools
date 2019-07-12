@@ -60,7 +60,7 @@ func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
 	log := xlog.New(xlog.StdSink{})
 	cache := cache.New()
 	session := cache.NewSession(log)
-	view := session.NewView(extViewName, span.FileURI(cfg.Dir))
+	view := session.NewView(cfg.Context, extViewName, span.FileURI(cfg.Dir))
 	view.SetEnv(cfg.Env)
 	s := &Server{
 		session:     session,
