@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/internal/lsp/telemetry/trace"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -62,6 +63,8 @@ func Identifier(ctx context.Context, view View, f GoFile, pos token.Pos) (*Ident
 
 // identifier checks a single position for a potential identifier.
 func identifier(ctx context.Context, view View, f GoFile, pos token.Pos) (*IdentifierInfo, error) {
+	ctx, done := trace.StartSpan(ctx, "source.identifier")
+	defer done()
 	file := f.GetAST(ctx)
 	if file == nil {
 		return nil, fmt.Errorf("no AST for %s", f.URI())
@@ -71,7 +74,7 @@ func identifier(ctx context.Context, view View, f GoFile, pos token.Pos) (*Ident
 		return nil, fmt.Errorf("pkg for %s is ill-typed", f.URI())
 	}
 	// Handle import specs separately, as there is no formal position for a package declaration.
-	if result, err := importSpec(ctx, f, file, pkg, pos); result != nil || err != nil {
+	if result, err := importSpec(f, file, pkg, pos); result != nil || err != nil {
 		return result, err
 	}
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
@@ -264,7 +267,7 @@ func objToNode(ctx context.Context, view View, originPkg *types.Package, obj typ
 }
 
 // importSpec handles positions inside of an *ast.ImportSpec.
-func importSpec(ctx context.Context, f GoFile, fAST *ast.File, pkg Package, pos token.Pos) (*IdentifierInfo, error) {
+func importSpec(f GoFile, fAST *ast.File, pkg Package, pos token.Pos) (*IdentifierInfo, error) {
 	var imp *ast.ImportSpec
 	for _, spec := range fAST.Imports {
 		if spec.Pos() <= pos && pos < spec.End() {
@@ -303,6 +306,7 @@ func importSpec(ctx context.Context, f GoFile, fAST *ast.File, pkg Package, pos 
 		return nil, fmt.Errorf("package %q has no files", importPath)
 	}
 	result.decl.rng = span.NewRange(f.FileSet(), dest.Name.Pos(), dest.Name.End())
+	result.decl.node = imp
 	return result, nil
 }
 

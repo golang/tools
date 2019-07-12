@@ -12,6 +12,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/internal/lsp/telemetry/trace"
 )
 
 type SignatureInformation struct {
@@ -25,6 +26,8 @@ type ParameterInformation struct {
 }
 
 func SignatureHelp(ctx context.Context, f GoFile, pos token.Pos) (*SignatureInformation, error) {
+	ctx, done := trace.StartSpan(ctx, "source.SignatureHelp")
+	defer done()
 	file := f.GetAST(ctx)
 	if file == nil {
 		return nil, fmt.Errorf("no AST for %s", f.URI())
@@ -40,10 +43,19 @@ func SignatureHelp(ctx context.Context, f GoFile, pos token.Pos) (*SignatureInfo
 	if path == nil {
 		return nil, fmt.Errorf("cannot find node enclosing position")
 	}
+FindCall:
 	for _, node := range path {
-		if c, ok := node.(*ast.CallExpr); ok && pos >= c.Lparen && pos <= c.Rparen {
-			callExpr = c
-			break
+		switch node := node.(type) {
+		case *ast.CallExpr:
+			if pos >= node.Lparen && pos <= node.Rparen {
+				callExpr = node
+				break FindCall
+			}
+		case *ast.FuncLit, *ast.FuncType:
+			// The user is within an anonymous function,
+			// which may be the parameter to the *ast.CallExpr.
+			// Don't show signature help in this case.
+			return nil, fmt.Errorf("no signature help within a function declaration")
 		}
 	}
 	if callExpr == nil || callExpr.Fun == nil {
@@ -140,14 +152,11 @@ func signatureInformation(name string, comment *ast.CommentGroup, params, result
 	for _, p := range params {
 		paramInfo = append(paramInfo, ParameterInformation{Label: p})
 	}
-	label, detail := formatFunction(name, params, results, writeResultParens)
-	// Show return values of the function in the label.
-	if detail != "" {
-		label += " " + detail
-	}
+	label := name + formatFunction(params, results, writeResultParens)
 	return &SignatureInformation{
-		Label:           label,
-		Documentation:   formatDocumentation(comment),
+		Label: label,
+		// TODO: Should we have the HoverKind apply to signature information as well?
+		Documentation:   formatDocumentation(comment, SynopsisDocumentation),
 		Parameters:      paramInfo,
 		ActiveParameter: activeParam,
 	}

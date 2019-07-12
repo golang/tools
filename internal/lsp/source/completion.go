@@ -12,7 +12,9 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/internal/lsp/fuzzy"
 	"golang.org/x/tools/internal/lsp/snippet"
+	"golang.org/x/tools/internal/lsp/telemetry/trace"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -63,6 +65,9 @@ type CompletionItem struct {
 	//     foo(${1:a int}, ${2: b int}, ${3: c int})
 	//
 	placeholderSnippet *snippet.Builder
+
+	// Documentation is the documentation for the completion item.
+	Documentation string
 }
 
 // Snippet is a convenience function that determines the snippet that should be
@@ -113,6 +118,7 @@ type completer struct {
 	types *types.Package
 	info  *types.Info
 	qf    types.Qualifier
+	opts  CompletionOptions
 
 	// view is the View associated with this completion request.
 	view View
@@ -148,6 +154,9 @@ type completer struct {
 
 	// deepState contains the current state of our deep completion search.
 	deepState deepCompletionState
+
+	// matcher does fuzzy matching of the candidates for the surrounding prefix.
+	matcher *fuzzy.Matcher
 }
 
 type compLitInfo struct {
@@ -186,23 +195,24 @@ func (c *completer) setSurrounding(ident *ast.Ident) {
 	if c.surrounding != nil {
 		return
 	}
-
 	if !(ident.Pos() <= c.pos && c.pos <= ident.End()) {
 		return
 	}
-
 	c.surrounding = &Selection{
 		Content: ident.Name,
 		Range:   span.NewRange(c.view.Session().Cache().FileSet(), ident.Pos(), ident.End()),
 		Cursor:  c.pos,
 	}
+	if c.surrounding.Prefix() != "" {
+		c.matcher = fuzzy.NewMatcher(c.surrounding.Prefix(), fuzzy.Symbol)
+	}
 }
 
 // found adds a candidate completion. We will also search through the object's
 // members for more candidates.
-func (c *completer) found(obj types.Object, score float64) {
+func (c *completer) found(obj types.Object, score float64) error {
 	if obj.Pkg() != nil && obj.Pkg() != c.types && !obj.Exported() {
-		return // inaccessible
+		return fmt.Errorf("%s is inaccessible from %s", obj.Name(), c.types.Path())
 	}
 
 	if c.inDeepCompletion() {
@@ -211,13 +221,13 @@ func (c *completer) found(obj types.Object, score float64) {
 		// "bar.Baz" even though "Baz" is represented the same types.Object in both.
 		for _, seenObj := range c.deepState.chain {
 			if seenObj == obj {
-				return
+				return nil
 			}
 		}
 	} else {
 		// At the top level, dedupe by object.
 		if c.seen[obj] {
-			return
+			return nil
 		}
 		c.seen[obj] = true
 	}
@@ -233,10 +243,14 @@ func (c *completer) found(obj types.Object, score float64) {
 
 	// Favor shallow matches by lowering weight according to depth.
 	cand.score -= stdScore * float64(len(c.deepState.chain))
-
-	c.items = append(c.items, c.item(cand))
+	item, err := c.item(cand)
+	if err != nil {
+		return err
+	}
+	c.items = append(c.items, item)
 
 	c.deepSearch(obj)
+	return nil
 }
 
 // candidate represents a completion candidate.
@@ -253,7 +267,8 @@ type candidate struct {
 }
 
 type CompletionOptions struct {
-	DeepComplete bool
+	DeepComplete     bool
+	WantDocumentaton bool
 }
 
 // Completion returns a list of possible candidates for completion, given a
@@ -263,6 +278,8 @@ type CompletionOptions struct {
 // the client to score the quality of the completion. For instance, some clients
 // may tolerate imperfect matches as valid completion results, since users may make typos.
 func Completion(ctx context.Context, view View, f GoFile, pos token.Pos, opts CompletionOptions) ([]CompletionItem, *Selection, error) {
+	ctx, done := trace.StartSpan(ctx, "source.Completion")
+	defer done()
 	file := f.GetAST(ctx)
 	if file == nil {
 		return nil, nil, fmt.Errorf("no AST for %s", f.URI())
@@ -302,6 +319,7 @@ func Completion(ctx context.Context, view View, f GoFile, pos token.Pos, opts Co
 		seen:                      make(map[types.Object]bool),
 		enclosingFunction:         enclosingFunction(path, pos, pkg.GetTypesInfo()),
 		enclosingCompositeLiteral: clInfo,
+		opts:                      opts,
 	}
 
 	c.deepState.enabled = opts.DeepComplete
@@ -1028,14 +1046,28 @@ func (c *completer) matchingType(cand *candidate) bool {
 	// are invoked by default.
 	cand.expandFuncCall = isFunc(cand.obj)
 
-	typeMatches := func(actual types.Type) bool {
+	typeMatches := func(candType types.Type) bool {
 		// Take into account any type modifiers on the expected type.
-		actual = c.expectedType.applyTypeModifiers(actual)
+		candType = c.expectedType.applyTypeModifiers(candType)
 
 		if c.expectedType.objType != nil {
+			wantType := types.Default(c.expectedType.objType)
+
+			// Handle untyped values specially since AssignableTo gives false negatives
+			// for them (see https://golang.org/issue/32146).
+			if candBasic, ok := candType.(*types.Basic); ok && candBasic.Info()&types.IsUntyped > 0 {
+				if wantBasic, ok := wantType.Underlying().(*types.Basic); ok {
+					// Check that their constant kind (bool|int|float|complex|string) matches.
+					// This doesn't take into account the constant value, so there will be some
+					// false positives due to integer sign and overflow.
+					return candBasic.Info()&types.IsConstType == wantBasic.Info()&types.IsConstType
+				}
+				return false
+			}
+
 			// AssignableTo covers the case where the types are equal, but also handles
 			// cases like assigning a concrete type to an interface type.
-			return types.AssignableTo(types.Default(actual), types.Default(c.expectedType.objType))
+			return types.AssignableTo(candType, wantType)
 		}
 
 		return false

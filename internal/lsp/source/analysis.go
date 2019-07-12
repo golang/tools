@@ -20,9 +20,12 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/internal/lsp/telemetry/trace"
 )
 
 func analyze(ctx context.Context, v View, pkgs []Package, analyzers []*analysis.Analyzer) ([]*Action, error) {
+	ctx, done := trace.StartSpan(ctx, "source.analyze")
+	defer done()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}

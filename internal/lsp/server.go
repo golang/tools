@@ -71,8 +71,9 @@ type Server struct {
 	// Configurations.
 	// TODO(rstambler): Separate these into their own struct?
 	usePlaceholders               bool
-	noDocsOnHover                 bool
+	hoverKind                     source.HoverKind
 	useDeepCompletions            bool
+	wantCompletionDocumentation   bool
 	insertTextFormat              protocol.InsertTextFormat
 	configurationSupported        bool
 	dynamicConfigurationSupported bool
@@ -164,8 +165,8 @@ func (s *Server) Completion(ctx context.Context, params *protocol.CompletionPara
 	return s.completion(ctx, params)
 }
 
-func (s *Server) CompletionResolve(context.Context, *protocol.CompletionItem) (*protocol.CompletionItem, error) {
-	return nil, notImplemented("CompletionResolve")
+func (s *Server) Resolve(ctx context.Context, item *protocol.CompletionItem) (*protocol.CompletionItem, error) {
+	return nil, notImplemented("completionItem/resolve")
 }
 
 func (s *Server) Hover(ctx context.Context, params *protocol.TextDocumentPositionParams) (*protocol.Hover, error) {
@@ -260,13 +261,14 @@ func (s *Server) PrepareRename(context.Context, *protocol.TextDocumentPositionPa
 	return nil, notImplemented("PrepareRename")
 }
 
-func (s *Server) Resolve(context.Context, *protocol.CompletionItem) (*protocol.CompletionItem, error) {
-	return nil, notImplemented("Resolve")
-}
-
 func (s *Server) SetTraceNotification(context.Context, *protocol.SetTraceParams) error {
 	return notImplemented("SetTraceNotification")
 }
+
+func (s *Server) SelectionRange(context.Context, *protocol.SelectionRangeParams) ([]protocol.SelectionRange, error) {
+	return nil, notImplemented("SelectionRange")
+}
+
 func notImplemented(method string) *jsonrpc2.Error {
 	return jsonrpc2.NewErrorf(jsonrpc2.CodeMethodNotFound, "method %q not yet implemented", method)
 }
