@@ -15,23 +15,35 @@ import (
 
 type DocumentUri = string
 
-const defaultMessageBufferSize = 20
-const defaultRejectIfOverloaded = false
+type canceller struct{ jsonrpc2.EmptyHandler }
 
-func canceller(ctx context.Context, conn *jsonrpc2.Conn, id jsonrpc2.ID) {
+type clientHandler struct {
+	canceller
+	log    xlog.Logger
+	client Client
+}
+
+type serverHandler struct {
+	canceller
+	log    xlog.Logger
+	server Server
+}
+
+func (canceller) Cancel(ctx context.Context, conn *jsonrpc2.Conn, id jsonrpc2.ID, cancelled bool) bool {
+	if cancelled {
+		return false
+	}
 	ctx = xcontext.Detach(ctx)
 	ctx, done := trace.StartSpan(ctx, "protocol.canceller")
 	defer done()
 	conn.Notify(ctx, "$/cancelRequest", &CancelParams{ID: id})
+	return true
 }
 
 func NewClient(stream jsonrpc2.Stream, client Client) (*jsonrpc2.Conn, Server, xlog.Logger) {
 	log := xlog.New(NewLogger(client))
 	conn := jsonrpc2.NewConn(stream)
-	conn.Capacity = defaultMessageBufferSize
-	conn.RejectIfOverloaded = defaultRejectIfOverloaded
-	conn.Handler = clientHandler(log, client)
-	conn.Canceler = jsonrpc2.Canceler(canceller)
+	conn.AddHandler(&clientHandler{log: log, client: client})
 	return conn, &serverDispatcher{Conn: conn}, log
 }
 
@@ -39,10 +51,7 @@ func NewServer(stream jsonrpc2.Stream, server Server) (*jsonrpc2.Conn, Client, x
 	conn := jsonrpc2.NewConn(stream)
 	client := &clientDispatcher{Conn: conn}
 	log := xlog.New(NewLogger(client))
-	conn.Capacity = defaultMessageBufferSize
-	conn.RejectIfOverloaded = defaultRejectIfOverloaded
-	conn.Handler = serverHandler(log, server)
-	conn.Canceler = jsonrpc2.Canceler(canceller)
+	conn.AddHandler(&serverHandler{log: log, server: server})
 	return conn, client, log
 }
 
