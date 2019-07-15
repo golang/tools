@@ -111,8 +111,6 @@ func Process(filename string, src []byte, opt *Options) ([]byte, error) {
 	return out, nil
 }
 
-var blankReg = regexp.MustCompile(`^\s*$[\r\n]*|[\r\n]+\s+\z`)
-
 var importReg = regexp.MustCompile(`\s*import\s+\(`)
 
 func removeImportBlankLine(src []byte) []byte {
@@ -139,7 +137,7 @@ func removeImportBlankLine(src []byte) []byte {
 		if isPrefix {
 			continue
 		}
-		if !hasReplaced && importReg.Match(src) {
+		if !hasReplaced && importReg.Match(line) {
 			replaceOn = true
 			hasReplaced = true
 		}
