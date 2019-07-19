@@ -54,9 +54,13 @@ func (c *completer) init() {
 	default:
 		content, _, err := c.file.View().Session().GetFile(c.file.URI()).Read(c.ctx)
 		if err != nil {
-			c.file.View().Session().Logger().Errorf(c.ctx, "read file %s content failed: %s", c.file.URI(), err)
+			//c.file.View().Session().Errorf(c.ctx, "read file %s content failed: %s", c.file.URI(), err)
+			return
 		}
-		tok := c.file.GetToken(c.ctx)
+		tok, err := c.file.GetToken(c.ctx)
+		if err != nil {
+			return
+		}
 		c.cursorIdent = offsetForIdent(content, tok.Position(c.pos))
 	}
 }

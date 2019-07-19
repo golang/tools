@@ -22,7 +22,7 @@ type pkg struct {
 	id      packageID
 	pkgPath packagePath
 
-	files      []*astFile
+	files      []source.ParseGoHandle
 	errors     []packages.Error
 	imports    map[packagePath]*pkg
 	types      *types.Package
@@ -38,6 +38,8 @@ type pkg struct {
 
 	diagMu      sync.Mutex
 	diagnostics []source.Diagnostic
+
+	astFiles []*ast.File
 }
 
 // packageID is a type that abstracts a package ID.
@@ -149,17 +151,22 @@ func (pkg *pkg) PkgPath() string {
 
 func (pkg *pkg) GetFilenames() []string {
 	filenames := make([]string, 0, len(pkg.files))
-	for _, f := range pkg.files {
-		filenames = append(filenames, f.uri.Filename())
+	for _, ph := range pkg.files {
+		filenames = append(filenames, ph.File().Identity().URI.Filename())
 	}
 	return filenames
 }
 
-func (pkg *pkg) GetSyntax() []*ast.File {
+func (pkg *pkg) GetSyntax(ctx context.Context) []*ast.File {
+	if len(pkg.astFiles) > 0 {
+		return pkg.astFiles
+	}
+
 	var syntax []*ast.File
-	for _, f := range pkg.files {
-		if f.file != nil {
-			syntax = append(syntax, f.file)
+	for _, ph := range pkg.files {
+		file, _ := ph.Parse(ctx)
+		if file != nil {
+			syntax = append(syntax, file)
 		}
 	}
 	return syntax

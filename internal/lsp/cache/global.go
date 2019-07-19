@@ -117,21 +117,12 @@ func newPackage(p *packages.Package) *pkg {
 	return &pkg{
 		id:        packageID(p.ID),
 		pkgPath:   packagePath(p.PkgPath),
-		files:     createAstFiles(p),
+		astFiles:  p.Syntax,
 		errors:    p.Errors,
 		types:     p.Types,
 		typesInfo: p.TypesInfo,
 		imports:   make(map[packagePath]*pkg),
 	}
-}
-
-func createAstFiles(p *packages.Package) []*astFile {
-	var astFiles []*astFile
-	for _, file := range p.Syntax {
-		astFiles = append(astFiles, &astFile{file: file})
-	}
-
-	return astFiles
 }
 
 // addImport add import package

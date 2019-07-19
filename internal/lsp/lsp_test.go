@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/tests"
-	"golang.org/x/tools/internal/lsp/xlog"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -42,9 +41,8 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 	data := tests.Load(t, exporter, "testdata")
 	defer data.Exported.Cleanup()
 
-	log := xlog.New(xlog.StdSink{})
 	cache := cache.New()
-	session := cache.NewSession(log)
+	session := cache.NewSession(ctx)
 	view := session.NewView(ctx, viewName, span.FileURI(data.Config.Dir))
 	view.SetEnv(data.Config.Env)
 	for filename, content := range data.Config.Overlay {
@@ -583,7 +581,6 @@ func (r *runner) Rename(t *testing.T, data tests.Renames) {
 
 func applyEdits(contents string, edits []source.TextEdit) string {
 	res := contents
-	sortSourceTextEdits(edits)
 
 	// Apply the edits from the end of the file forward
 	// to preserve the offsets
@@ -595,15 +592,6 @@ func applyEdits(contents string, edits []source.TextEdit) string {
 		res = tmp + res[end:]
 	}
 	return res
-}
-
-func sortSourceTextEdits(d []source.TextEdit) {
-	sort.Slice(d, func(i int, j int) bool {
-		if r := span.Compare(d[i].Span, d[j].Span); r != 0 {
-			return r < 0
-		}
-		return d[i].NewText < d[j].NewText
-	})
 }
 
 func (r *runner) Symbol(t *testing.T, data tests.Symbols) {

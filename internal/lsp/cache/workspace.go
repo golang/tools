@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/lsp/telemetry/log"
 )
 
 const (
@@ -28,9 +29,9 @@ type Workspace struct {
 }
 
 // newWorkspace creates a workspace for a workspace folder
-func newWorkspace(session *session, root string) *Workspace {
+func newWorkspace(s *session, root string) *Workspace {
 	return &Workspace{
-		session:  session,
+		session:  s,
 		rootPath: root,
 	}
 }
@@ -168,17 +169,17 @@ func (w *Workspace) notify(err error) {
 
 // NotifyError notify error to lsp client
 func (w *Workspace) notifyError(message string) {
-	w.session.log.Errorf(context.Background(), "%s", message)
+	log.Print(context.Background(), message)
 }
 
 // NotifyInfo notify info to lsp client
 func (w *Workspace) notifyInfo(message string) {
-	w.session.log.Infof(context.Background(), "%s", message)
+	log.Print(context.Background(), message)
 }
 
 // NotifyLog notify log to lsp client
 func (w *Workspace) notifyLog(message string) {
-	w.session.log.Debugf(context.Background(), "%s", message)
+	log.Print(context.Background(), message)
 }
 
 func (w *Workspace) root() string {

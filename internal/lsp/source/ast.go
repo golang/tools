@@ -1,13 +1,8 @@
 package source
 
 import (
-	"fmt"
 	"go/ast"
-	"go/token"
 	"go/types"
-	"reflect"
-
-	"golang.org/x/tools/go/ast/astutil"
 )
 
 type action int
@@ -229,112 +224,4 @@ func findInterestingNode(pkg Package, path []ast.Node) ([]ast.Node, action) {
 
 func isAlias(obj *types.TypeName) bool {
 	return obj.IsAlias()
-}
-
-type InvalidNodeError struct {
-	Node ast.Node
-	msg  string
-}
-
-func (e *InvalidNodeError) Error() string {
-	return e.msg
-}
-
-func newInvalidNodeError(fset *token.FileSet, node ast.Node) *InvalidNodeError {
-	lineCol := func(p token.Pos) string {
-		pp := fset.Position(p)
-		return fmt.Sprintf("%d:%d", pp.Line, pp.Column)
-	}
-	return &InvalidNodeError{
-		Node: node,
-		msg: fmt.Sprintf("invalid node: %s (%s-%s)",
-			reflect.TypeOf(node).Elem(), lineCol(node.Pos()), lineCol(node.End())),
-	}
-}
-
-func getObjectPathNode(pkg Package, fset *token.FileSet, o types.Object) (nodes []ast.Node, ident *ast.Ident, err error) {
-	nodes, _ = getPathNodes(pkg, fset, o.Pos(), o.Pos())
-	if len(nodes) == 0 {
-		ip := pkg.GetImport(o.Pkg().Path())
-		if ip == nil {
-			return nil, nil,
-				fmt.Errorf("import package %s of package %s does not exist", o.Pkg().Path(), pkg.GetTypes().Path())
-		}
-
-		nodes, err = getPathNodes(ip, fset, o.Pos(), o.Pos())
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	ident, err = fetchIdentFromPathNodes(fset, nodes)
-	return
-}
-
-func getPathNodes(pkg Package, fset *token.FileSet, start, end token.Pos) ([]ast.Node, error) {
-	nodes, _ := astPathEnclosingInterval(pkg, fset, start, end)
-	if len(nodes) == 0 {
-		s := fset.Position(start)
-		return nodes, fmt.Errorf("no node found at %s offset %d", s, s.Offset)
-	}
-
-	return nodes, nil
-}
-
-func fetchIdentFromPathNodes(fset *token.FileSet, nodes []ast.Node) (*ast.Ident, error) {
-	firstNode := nodes[0]
-	switch node := firstNode.(type) {
-	case *ast.Ident:
-		return node, nil
-	default:
-		return nil, newInvalidNodeError(fset, firstNode)
-	}
-}
-
-// pathEnclosingInterval returns the PackageInfo and ast.Node that
-// contain source interval [start, end), and all the node's ancestors
-// up to the AST root.  It searches all ast.Files of all packages in prog.
-// exact is defined as for astutil.pathEnclosingInterval.
-//
-// The zero value is returned if not found.
-//
-func astPathEnclosingInterval(pkg Package, fset *token.FileSet, start, end token.Pos) (path []ast.Node, exact bool) {
-	path, exact = doEnclosingInterval(pkg, fset, start, end)
-	return
-}
-
-func doEnclosingInterval(pkg Package, fset *token.FileSet, start, end token.Pos) ([]ast.Node, bool) {
-	if pkg == nil || pkg.GetSyntax() == nil {
-		return nil, false
-	}
-
-	for _, f := range pkg.GetSyntax() {
-		if f.Pos() == token.NoPos {
-			// This can happen if the parser saw
-			// too many errors and bailed out.
-			// (Use parser.AllErrors to prevent that.)
-			continue
-		}
-		if !tokenFileContainsPos(fset.File(f.Pos()), start) {
-			continue
-		}
-		if path, exact := astutil.PathEnclosingInterval(f, start, end); path != nil {
-			return path, exact
-		}
-	}
-
-	return nil, false
-}
-
-func findObject(pkg Package, o types.Object) types.Object {
-	for _, def := range pkg.GetTypesInfo().Defs {
-		if def == nil {
-			continue
-		}
-		if def.Name() == o.Name() {
-			return def
-		}
-	}
-
-	return nil
 }

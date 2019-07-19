@@ -10,12 +10,12 @@ import (
 	"context"
 	"fmt"
 	"go/format"
-	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/diff"
+	"golang.org/x/tools/internal/lsp/telemetry/log"
 	"golang.org/x/tools/internal/lsp/telemetry/trace"
 	"golang.org/x/tools/internal/span"
 )
@@ -24,9 +24,10 @@ import (
 func Format(ctx context.Context, f GoFile, rng span.Range) ([]TextEdit, error) {
 	ctx, done := trace.StartSpan(ctx, "source.Format")
 	defer done()
-	file := f.GetAST(ctx)
+
+	file, err := f.GetAST(ctx, ParseFull)
 	if file == nil {
-		return nil, fmt.Errorf("no AST for %s", f.URI())
+		return nil, err
 	}
 	pkg := f.GetPackage(ctx)
 	if hasListErrors(pkg.GetErrors()) || hasParseErrors(pkg.GetErrors()) {
@@ -66,8 +67,18 @@ func Imports(ctx context.Context, view View, f GoFile, rng span.Range) ([]TextEd
 	if hasListErrors(pkg.GetErrors()) {
 		return nil, fmt.Errorf("%s has list errors, not running goimports", f.URI())
 	}
+
+	if resolver, ok := view.ProcessEnv(ctx).GetResolver().(*imports.ModuleResolver); ok && resolver.Initialized {
+		// TODO(suzmue): only reset this state when necessary (eg when the go.mod files of this
+		// module or modules with replace directive changes).
+		resolver.Initialized = false
+		resolver.Main = nil
+		resolver.ModsByModPath = nil
+		resolver.ModsByDir = nil
+		resolver.ModCachePkgs = nil
+	}
 	options := &imports.Options{
-		Env: buildProcessEnv(ctx, view),
+		Env: view.ProcessEnv(ctx),
 		// Defaults.
 		AllErrors:  true,
 		Comments:   true,
@@ -101,43 +112,12 @@ func hasListErrors(errors []packages.Error) bool {
 	return false
 }
 
-func buildProcessEnv(ctx context.Context, view View) *imports.ProcessEnv {
-	cfg := view.Config()
-	env := &imports.ProcessEnv{
-		WorkingDir: cfg.Dir,
-		Logf: func(format string, v ...interface{}) {
-			view.Session().Logger().Infof(ctx, format, v...)
-		},
-	}
-	for _, kv := range cfg.Env {
-		split := strings.Split(kv, "=")
-		if len(split) < 2 {
-			continue
-		}
-		switch split[0] {
-		case "GOPATH":
-			env.GOPATH = split[1]
-		case "GOROOT":
-			env.GOROOT = split[1]
-		case "GO111MODULE":
-			env.GO111MODULE = split[1]
-		case "GOPROXY":
-			env.GOROOT = split[1]
-		case "GOFLAGS":
-			env.GOFLAGS = split[1]
-		case "GOSUMDB":
-			env.GOSUMDB = split[1]
-		}
-	}
-	return env
-}
-
 func computeTextEdits(ctx context.Context, file File, formatted string) (edits []TextEdit) {
 	ctx, done := trace.StartSpan(ctx, "source.computeTextEdits")
 	defer done()
 	data, _, err := file.Handle(ctx).Read(ctx)
 	if err != nil {
-		file.View().Session().Logger().Errorf(ctx, "Cannot compute text edits: %v", err)
+		log.Error(ctx, "Cannot compute text edits", err)
 		return nil
 	}
 	u := diff.SplitLines(string(data))

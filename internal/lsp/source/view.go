@@ -9,12 +9,13 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/diff"
-	"golang.org/x/tools/internal/lsp/xlog"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -111,7 +112,7 @@ type Cache interface {
 	FileSystem
 
 	// NewSession creates a new Session manager and returns it.
-	NewSession(log xlog.Logger) Session
+	NewSession(ctx context.Context) Session
 
 	// FileSet returns the shared fileset used by all files in the system.
 	FileSet() *token.FileSet
@@ -133,9 +134,6 @@ type Session interface {
 
 	// Cache returns the cache that created this session.
 	Cache() Cache
-
-	// Returns the logger in use for this session.
-	Logger() xlog.Logger
 
 	// View returns a view with a mathing name, if the session has one.
 	View(name string) View
@@ -214,7 +212,16 @@ type View interface {
 
 	FileSet() *token.FileSet
 
-	Config() *packages.Config
+	Config(ctx context.Context) *packages.Config
+
+	// Process returns the process for this view.
+	// Note: this contains cached module and filesystem state, which must
+	// be invalidated after a 'go.mod' change.
+	//
+	// TODO(suzmue): the state cached in the process env is specific to each view,
+	// however, there is state that can be shared between views that is not currently
+	// cached, like the module cache.
+	ProcessEnv(ctx context.Context) *imports.ProcessEnv
 }
 
 // File represents a source file of any type.
@@ -223,19 +230,15 @@ type File interface {
 	View() View
 	Handle(ctx context.Context) FileHandle
 	FileSet() *token.FileSet
-	GetToken(ctx context.Context) *token.File
+	GetToken(ctx context.Context) (*token.File, error)
 }
 
 // GoFile represents a Go source file that has been type-checked.
 type GoFile interface {
 	File
 
-	// GetAnyAST returns an AST that may or may not contain function bodies.
-	// It should be used in scenarios where function bodies are not necessary.
-	GetAnyAST(ctx context.Context) *ast.File
-
 	// GetAST returns the full AST for the file.
-	GetAST(ctx context.Context) *ast.File
+	GetAST(ctx context.Context, mode ParseMode) (*ast.File, error)
 
 	// GetPackage returns the package that this file belongs to.
 	GetPackage(ctx context.Context) Package
@@ -262,7 +265,7 @@ type Package interface {
 	ID() string
 	PkgPath() string
 	GetFilenames() []string
-	GetSyntax() []*ast.File
+	GetSyntax(context.Context) []*ast.File
 	GetErrors() []packages.Error
 	GetTypes() *types.Package
 	GetTypesInfo() *types.Info
@@ -330,4 +333,11 @@ func EditsToDiff(edits []TextEdit) []*diff.Op {
 		}
 	}
 	return ops
+}
+
+func sortTextEdits(d []TextEdit) {
+	// Use a stable sort to maintain the order of edits inserted at the same position.
+	sort.SliceStable(d, func(i int, j int) bool {
+		return span.Compare(d[i].Span, d[j].Span) < 0
+	})
 }

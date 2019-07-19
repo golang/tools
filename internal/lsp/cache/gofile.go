@@ -6,11 +6,14 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
 	"go/token"
 	"sync"
 
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/lsp/telemetry"
+	"golang.org/x/tools/internal/lsp/telemetry/log"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -33,7 +36,6 @@ type goFile struct {
 
 	imports []*ast.ImportSpec
 
-	ast  *astFile
 	pkgs map[packageID]*pkg
 	meta map[packageID]*metadata
 }
@@ -46,71 +48,53 @@ type astFile struct {
 	isTrimmed bool
 }
 
-func (f *goFile) GetToken(ctx context.Context) *token.File {
-	f.view.mu.Lock()
-	defer f.view.mu.Unlock()
-
-	if f.isDirty() || f.astIsTrimmed() {
-		if _, err := f.view.loadParseTypecheck(ctx, f); err != nil {
-			f.View().Session().Logger().Errorf(ctx, "unable to check package for %s: %v", f.URI(), err)
-			return nil
-		}
+func (f *goFile) GetToken(ctx context.Context) (*token.File, error) {
+	file, err := f.GetAST(ctx, source.ParseFull)
+	if file == nil {
+		return nil, err
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	if unexpectedAST(ctx, f) {
-		return nil
-	}
-	return f.token
+	return f.view.session.cache.fset.File(file.Pos()), nil
 }
 
-func (f *goFile) GetAnyAST(ctx context.Context) *ast.File {
+func (f *goFile) GetAST(ctx context.Context, mode source.ParseMode) (*ast.File, error) {
 	f.view.mu.Lock()
 	defer f.view.mu.Unlock()
+	ctx = telemetry.File.With(ctx, f.URI())
 
-	if f.isDirty() {
+	if f.isDirty(ctx) || f.wrongParseMode(ctx, mode) {
 		if _, err := f.view.loadParseTypecheck(ctx, f); err != nil {
-			f.View().Session().Logger().Errorf(ctx, "unable to check package for %s: %v", f.URI(), err)
-			return nil
+			return nil, fmt.Errorf("GetAST: unable to check package for %s: %v", f.URI(), err)
 		}
 	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	if f.ast == nil {
-		return nil
-	}
-	return f.ast.file
-}
-
-func (f *goFile) GetAST(ctx context.Context) *ast.File {
-	f.view.mu.Lock()
-	defer f.view.mu.Unlock()
-
-	if f.isDirty() || f.astIsTrimmed() {
-		if _, err := f.view.loadParseTypecheck(ctx, f); err != nil {
-			f.View().Session().Logger().Errorf(ctx, "unable to check package for %s: %v", f.URI(), err)
-			return nil
+	fh := f.Handle(ctx)
+	// Check for a cached AST first, in case getting a trimmed version would actually cause a re-parse.
+	for _, m := range []source.ParseMode{
+		source.ParseHeader,
+		source.ParseExported,
+		source.ParseFull,
+	} {
+		if m < mode {
+			continue
+		}
+		if v, ok := f.view.session.cache.store.Cached(parseKey{
+			file: fh.Identity(),
+			mode: m,
+		}).(*parseGoData); ok {
+			return v.ast, v.err
 		}
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	if unexpectedAST(ctx, f) {
-		return nil
-	}
-	return f.ast.file
+	ph := f.view.session.cache.ParseGoHandle(fh, mode)
+	return ph.Parse(ctx)
 }
 
 func (f *goFile) GetPackages(ctx context.Context) []source.Package {
 	f.view.mu.Lock()
 	defer f.view.mu.Unlock()
+	ctx = telemetry.File.With(ctx, f.URI())
 
-	if f.isDirty() || f.astIsTrimmed() {
+	if f.isDirty(ctx) || f.wrongParseMode(ctx, source.ParseFull) {
 		if errs, err := f.view.loadParseTypecheck(ctx, f); err != nil {
-			f.View().Session().Logger().Errorf(ctx, "unable to check package for %s: %v", f.URI(), err)
+			log.Error(ctx, "unable to check package", err, telemetry.File)
 
 			// Create diagnostics for errors if we are able to.
 			if len(errs) > 0 {
@@ -123,9 +107,6 @@ func (f *goFile) GetPackages(ctx context.Context) []source.Package {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if unexpectedAST(ctx, f) {
-		return nil
-	}
 	var pkgs []source.Package
 	for _, pkg := range f.pkgs {
 		pkgs = append(pkgs, pkg)
@@ -148,23 +129,24 @@ func (f *goFile) GetPackage(ctx context.Context) source.Package {
 	return result
 }
 
-func unexpectedAST(ctx context.Context, f *goFile) bool {
-	// If the AST comes back nil, something has gone wrong.
-	if f.ast == nil {
-		f.View().Session().Logger().Errorf(ctx, "expected full AST for %s, returned nil", f.URI())
-		return true
-	}
-	// If the AST comes back trimmed, something has gone wrong.
-	if f.ast.isTrimmed {
-		f.View().Session().Logger().Errorf(ctx, "expected full AST for %s, returned trimmed", f.URI())
-		return true
+func (f *goFile) wrongParseMode(ctx context.Context, mode source.ParseMode) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	fh := f.Handle(ctx)
+	for _, pkg := range f.pkgs {
+		for _, ph := range pkg.files {
+			if fh.Identity() == ph.File().Identity() {
+				return ph.Mode() < mode
+			}
+		}
 	}
 	return false
 }
 
 // isDirty is true if the file needs to be type-checked.
 // It assumes that the file's view's mutex is held by the caller.
-func (f *goFile) isDirty() bool {
+func (f *goFile) isDirty(ctx context.Context) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -184,14 +166,16 @@ func (f *goFile) isDirty() bool {
 	if len(f.missingImports) > 0 {
 		return true
 	}
-	return f.token == nil || f.ast == nil
-}
-
-func (f *goFile) astIsTrimmed() bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	return f.ast != nil && f.ast.isTrimmed
+	fh := f.Handle(ctx)
+	for _, pkg := range f.pkgs {
+		for _, file := range pkg.files {
+			// There is a type-checked package for the current file handle.
+			if file.File().Identity() == fh.Identity() {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (f *goFile) GetActiveReverseDeps(ctx context.Context) []source.GoFile {

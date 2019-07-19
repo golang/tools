@@ -14,7 +14,10 @@ import (
 )
 
 func Implementation(ctx context.Context, search SearchFunc, f GoFile, pos token.Pos) ([]Location, error) {
-	file := f.GetAST(ctx)
+	file, err := f.GetAST(ctx, ParseFull)
+	if err != nil {
+		return nil, err
+	}
 	pkg := f.GetPackage(ctx)
 	if pkg.IsIllTyped() {
 		return nil, fmt.Errorf("package for %s is ill typed", f.URI())
