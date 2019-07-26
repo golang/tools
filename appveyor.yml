@@ -1,0 +1,53 @@
+version: 1.0.{build}
+build:
+  verbosity: detailed
+image: Visual Studio 2017
+stack: go 1.12.x
+platform:
+  - x64
+  - x86
+
+notifications:
+  - provider: GitHubPullRequest
+    on_build_failure: true
+
+clone_folder: c:\gopath\src\golang.org\x\tools
+
+environment:
+  GOPATH: c:\gopath
+  GO111MODULE: off
+  GOPROXY: "https://proxy.golang.org"
+  github_access_token:
+    secure: h4ICNdm1D4g1klCMU6lQ7t92lwIrzo2HHzqc9MJpZdibgfNNFNGwywHWyBa0KPpL
+  github_email:
+    secure: h0I1jhHT32GpepMnqGjwM+Fjyhf+WYtr5D1J+IkSdgg=
+
+
+build_script:
+  - go get golang.org/x/sync/errgroup
+  # TODO(henrywong) For now, there are problems about the windows test.
+  # - go test ./internal/lsp -v
+  - go build -o go-langserver-windows-%platform% c:\gopath\src\golang.org\x\tools\cmd\gopls
+  - if %platform%==x64 curl -o ../go1.12.7.windows-%platform%.zip https://dl.google.com/go/go1.12.7.windows-amd64.zip
+  - if %platform%==x86 curl -o ../go1.12.7.windows-%platform%.zip https://dl.google.com/go/go1.12.7.windows-386.zip
+  - 7z x ../go1.12.7.windows-%platform%.zip -o..
+  - mkdir go-langserver-windows
+  - 7z a -r ./go-langserver-windows/go-langserver-windows-%platform%.zip go-langserver-windows-%platform% ../go
+
+artifacts:
+  - path: go-langserver-windows\*.zip
+    name: go1.12.7.windows-%platform%.zip
+
+deploy:
+  - provider: GitHub
+    tag: $(APPVEYOR_REPO_TAG_NAME)
+    release: $(APPVEYOR_REPO_TAG_NAME)
+    description: $(APPVEYOR_REPO_TAG_NAME)
+    auth_token:
+      secure: h4ICNdm1D4g1klCMU6lQ7t92lwIrzo2HHzqc9MJpZdibgfNNFNGwywHWyBa0KPpL
+    draft: false
+    force_update: true
+    prerelease: false
+    on:
+      APPVEYOR_REPO_TAG: true # deploy on tag push only
+

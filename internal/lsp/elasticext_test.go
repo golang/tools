@@ -287,7 +287,7 @@ func (fs FullSymMap) test(t *testing.T, s *ElasticServer) {
 	}
 	var result protocol.FullResponse
 	// For now, we just test only source file.
-	for src, _ := range fs {
+	for src := range fs {
 		params := &protocol.FullParams{
 			TextDocument: protocol.TextDocumentIdentifier{
 				URI: src.URI,
