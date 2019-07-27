@@ -31,7 +31,15 @@ func Format(ctx context.Context, f GoFile, rng span.Range) ([]TextEdit, error) {
 	}
 	pkg := f.GetPackage(ctx)
 	if hasListErrors(pkg.GetErrors()) || hasParseErrors(pkg.GetErrors()) {
-		return nil, fmt.Errorf("%s has parse errors, not formatting", f.URI())
+		// Even if this package has list or parse errors, this file may not
+		// have any parse errors and can still be formatted. Using format.Node
+		// on an ast with errors may result in code being added or removed.
+		// Attempt to format the source of this file instead.
+		formatted, err := formatSource(ctx, f)
+		if err != nil {
+			return nil, err
+		}
+		return computeTextEdits(ctx, f, string(formatted)), nil
 	}
 	path, exact := astutil.PathEnclosingInterval(file, rng.Start, rng.End)
 	if !exact || len(path) == 0 {
@@ -52,6 +60,16 @@ func Format(ctx context.Context, f GoFile, rng span.Range) ([]TextEdit, error) {
 	return computeTextEdits(ctx, f, buf.String()), nil
 }
 
+func formatSource(ctx context.Context, file File) ([]byte, error) {
+	ctx, done := trace.StartSpan(ctx, "source.formatSource")
+	defer done()
+	data, _, err := file.Handle(ctx).Read(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return format.Source(data)
+}
+
 // Imports formats a file using the goimports tool.
 func Imports(ctx context.Context, view View, f GoFile, rng span.Range) ([]TextEdit, error) {
 	ctx, done := trace.StartSpan(ctx, "source.Imports")
@@ -68,17 +86,7 @@ func Imports(ctx context.Context, view View, f GoFile, rng span.Range) ([]TextEd
 		return nil, fmt.Errorf("%s has list errors, not running goimports", f.URI())
 	}
 
-	if resolver, ok := view.ProcessEnv(ctx).GetResolver().(*imports.ModuleResolver); ok && resolver.Initialized {
-		// TODO(suzmue): only reset this state when necessary (eg when the go.mod files of this
-		// module or modules with replace directive changes).
-		resolver.Initialized = false
-		resolver.Main = nil
-		resolver.ModsByModPath = nil
-		resolver.ModsByDir = nil
-		resolver.ModCachePkgs = nil
-	}
 	options := &imports.Options{
-		Env: view.ProcessEnv(ctx),
 		// Defaults.
 		AllErrors:  true,
 		Comments:   true,
@@ -87,10 +95,16 @@ func Imports(ctx context.Context, view View, f GoFile, rng span.Range) ([]TextEd
 		TabIndent:  true,
 		TabWidth:   8,
 	}
-	formatted, err := imports.Process(f.URI().Filename(), data, options)
+	var formatted []byte
+	importFn := func(opts *imports.Options) error {
+		formatted, err = imports.Process(f.URI().Filename(), data, opts)
+		return err
+	}
+	err = view.RunProcessEnvFunc(ctx, importFn, options)
 	if err != nil {
 		return nil, err
 	}
+
 	return computeTextEdits(ctx, f, string(formatted)), nil
 }
 
