@@ -19,7 +19,6 @@ import (
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/tests"
-	"golang.org/x/tools/internal/lsp/xlog"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -38,9 +37,8 @@ func testSource(t *testing.T, exporter packagestest.Exporter) {
 	data := tests.Load(t, exporter, "../testdata")
 	defer data.Exported.Cleanup()
 
-	log := xlog.New(xlog.StdSink{})
 	cache := cache.New()
-	session := cache.NewSession(log)
+	session := cache.NewSession(ctx)
 	r := &runner{
 		view: session.NewView(ctx, "source_test", span.FileURI(data.Config.Dir)),
 		data: data,
@@ -145,9 +143,9 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 		if err != nil {
 			t.Fatalf("failed for %v: %v", src, err)
 		}
-		tok := f.(source.GoFile).GetToken(ctx)
-		if tok == nil {
-			t.Fatalf("failed to get token for %v", src)
+		tok, err := f.(source.GoFile).GetToken(ctx)
+		if err != nil {
+			t.Fatalf("failed to get token for %s: %v", src.URI(), err)
 		}
 		pos := tok.Pos(src.Start().Offset())
 		list, surrounding, err := source.Completion(ctx, r.view, f.(source.GoFile), pos, source.CompletionOptions{
@@ -183,7 +181,10 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			if err != nil {
 				t.Fatalf("failed for %v: %v", src, err)
 			}
-			tok := f.GetToken(ctx)
+			tok, err := f.(source.GoFile).GetToken(ctx)
+			if err != nil {
+				t.Fatalf("failed to get token for %s: %v", src.URI(), err)
+			}
 			pos := tok.Pos(src.Start().Offset())
 			list, _, err := source.Completion(ctx, r.view, f.(source.GoFile), pos, source.CompletionOptions{
 				DeepComplete: strings.Contains(string(src.URI()), "deepcomplete"),
@@ -305,7 +306,11 @@ func (r *runner) Format(t *testing.T, data tests.Formats) {
 		if err != nil {
 			t.Fatalf("failed for %v: %v", spn, err)
 		}
-		rng, err := spn.Range(span.NewTokenConverter(f.FileSet(), f.GetToken(ctx)))
+		tok, err := f.(source.GoFile).GetToken(ctx)
+		if err != nil {
+			t.Fatalf("failed to get token for %s: %v", spn.URI(), err)
+		}
+		rng, err := spn.Range(span.NewTokenConverter(f.FileSet(), tok))
 		if err != nil {
 			t.Fatalf("failed for %v: %v", spn, err)
 		}
@@ -343,7 +348,11 @@ func (r *runner) Import(t *testing.T, data tests.Imports) {
 		if err != nil {
 			t.Fatalf("failed for %v: %v", spn, err)
 		}
-		rng, err := spn.Range(span.NewTokenConverter(f.FileSet(), f.GetToken(ctx)))
+		tok, err := f.(source.GoFile).GetToken(ctx)
+		if err != nil {
+			t.Fatalf("failed to get token for %s: %v", spn.URI(), err)
+		}
+		rng, err := spn.Range(span.NewTokenConverter(f.FileSet(), tok))
 		if err != nil {
 			t.Fatalf("failed for %v: %v", spn, err)
 		}
@@ -374,7 +383,10 @@ func (r *runner) Definition(t *testing.T, data tests.Definitions) {
 		if err != nil {
 			t.Fatalf("failed for %v: %v", d.Src, err)
 		}
-		tok := f.GetToken(ctx)
+		tok, err := f.(source.GoFile).GetToken(ctx)
+		if err != nil {
+			t.Fatalf("failed to get token for %s: %v", d.Src.URI(), err)
+		}
 		pos := tok.Pos(d.Src.Start().Offset())
 		ident, err := source.Identifier(ctx, r.view, f.(source.GoFile), pos)
 		if err != nil {
@@ -417,7 +429,10 @@ func (r *runner) Highlight(t *testing.T, data tests.Highlights) {
 		if err != nil {
 			t.Fatalf("failed for %v: %v", src, err)
 		}
-		tok := f.GetToken(ctx)
+		tok, err := f.(source.GoFile).GetToken(ctx)
+		if err != nil {
+			t.Fatalf("failed to get token for %s: %v", src.URI(), err)
+		}
 		pos := tok.Pos(src.Start().Offset())
 		highlights, err := source.Highlight(ctx, f.(source.GoFile), pos)
 		if err != nil {
@@ -441,8 +456,10 @@ func (r *runner) Reference(t *testing.T, data tests.References) {
 		if err != nil {
 			t.Fatalf("failed for %v: %v", src, err)
 		}
-
-		tok := f.GetToken(ctx)
+		tok, err := f.(source.GoFile).GetToken(ctx)
+		if err != nil {
+			t.Fatalf("failed to get token for %s: %v", src.URI(), err)
+		}
 		pos := tok.Pos(src.Start().Offset())
 		ident, err := source.Identifier(ctx, r.view, f.(source.GoFile), pos)
 		if err != nil {
@@ -489,12 +506,16 @@ func (r *runner) Rename(t *testing.T, data tests.Renames) {
 		if err != nil {
 			t.Fatalf("failed for %v: %v", spn, err)
 		}
-		tok := f.GetToken(ctx)
+		tok, err := f.(source.GoFile).GetToken(ctx)
+		if err != nil {
+			t.Fatalf("failed to get token for %s: %v", spn.URI(), err)
+		}
 		pos := tok.Pos(spn.Start().Offset())
 
 		ident, err := source.Identifier(r.ctx, r.view, f.(source.GoFile), pos)
 		if err != nil {
 			t.Error(err)
+			continue
 		}
 		changes, err := ident.Rename(r.ctx, newText)
 		if err != nil {
@@ -547,7 +568,6 @@ func (r *runner) Rename(t *testing.T, data tests.Renames) {
 
 func applyEdits(contents string, edits []source.TextEdit) string {
 	res := contents
-	sortSourceTextEdits(edits)
 
 	// Apply the edits from the end of the file forward
 	// to preserve the offsets
@@ -559,15 +579,6 @@ func applyEdits(contents string, edits []source.TextEdit) string {
 		res = tmp + res[end:]
 	}
 	return res
-}
-
-func sortSourceTextEdits(d []source.TextEdit) {
-	sort.Slice(d, func(i int, j int) bool {
-		if r := span.Compare(d[i].Span, d[j].Span); r != 0 {
-			return r < 0
-		}
-		return d[i].NewText < d[j].NewText
-	})
 }
 
 func (r *runner) Symbol(t *testing.T, data tests.Symbols) {
@@ -641,7 +652,10 @@ func (r *runner) SignatureHelp(t *testing.T, data tests.Signatures) {
 		if err != nil {
 			t.Fatalf("failed for %v: %v", spn, err)
 		}
-		tok := f.GetToken(ctx)
+		tok, err := f.(source.GoFile).GetToken(ctx)
+		if err != nil {
+			t.Fatalf("failed to get token for %s: %v", spn.URI(), err)
+		}
 		pos := tok.Pos(spn.Start().Offset())
 		gotSignature, err := source.SignatureHelp(ctx, f.(source.GoFile), pos)
 		if err != nil {

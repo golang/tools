@@ -16,7 +16,9 @@ import (
 
 	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/lsp/xlog"
+	"golang.org/x/tools/internal/lsp/telemetry"
+	"golang.org/x/tools/internal/lsp/telemetry/log"
+	"golang.org/x/tools/internal/lsp/telemetry/trace"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
 )
@@ -24,8 +26,6 @@ import (
 type session struct {
 	cache *cache
 	id    string
-	// the logger to use to communicate back with the client
-	log xlog.Logger
 
 	viewMu  sync.Mutex
 	views   []*view
@@ -69,12 +69,14 @@ func (s *session) NewView(ctx context.Context, name string, folder span.URI) sou
 	index := atomic.AddInt64(&viewIndex, 1)
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
-	ctx = xcontext.Detach(ctx)
-	backgroundCtx, cancel := context.WithCancel(ctx)
+	// We want a true background context and not a detatched context here
+	// the spans need to be unrelated and no tag values should pollute it.
+	baseCtx := trace.Detach(xcontext.Detach(ctx))
+	backgroundCtx, cancel := context.WithCancel(baseCtx)
 	v := &view{
 		session:       s,
 		id:            strconv.FormatInt(index, 10),
-		baseCtx:       ctx,
+		baseCtx:       baseCtx,
 		backgroundCtx: backgroundCtx,
 		cancel:        cancel,
 		name:          name,
@@ -93,7 +95,7 @@ func (s *session) NewView(ctx context.Context, name string, folder span.URI) sou
 	}
 	// Preemptively build the builtin package,
 	// so we immediately add builtin.go to the list of ignored files.
-	v.buildBuiltinPkg()
+	v.buildBuiltinPkg(ctx)
 
 	s.views = append(s.views, v)
 	// we always need to drop the view map
@@ -179,11 +181,9 @@ func (s *session) removeView(ctx context.Context, view *view) error {
 	return fmt.Errorf("view %s for %v not found", view.Name(), view.Folder())
 }
 
-func (s *session) Logger() xlog.Logger {
-	return s.log
-}
-
-func (s *session) DidOpen(ctx context.Context, uri span.URI, text []byte) {
+// TODO: Propagate the language ID through to the view.
+func (s *session) DidOpen(ctx context.Context, uri span.URI, _ source.FileKind, text []byte) {
+	ctx = telemetry.File.With(ctx, uri)
 	// Mark the file as open.
 	s.openFiles.Store(uri, true)
 
@@ -198,12 +198,12 @@ func (s *session) DidOpen(ctx context.Context, uri span.URI, text []byte) {
 		if strings.HasPrefix(string(uri), string(view.Folder())) {
 			f, err := view.GetFile(ctx, uri)
 			if err != nil {
-				s.log.Errorf(ctx, "error getting file for %s", uri)
+				log.Error(ctx, "error getting file", nil, telemetry.File)
 				return
 			}
 			gof, ok := f.(*goFile)
 			if !ok {
-				s.log.Errorf(ctx, "%s is not a Go file", uri)
+				log.Error(ctx, "not a Go file", nil, telemetry.File)
 				return
 			}
 			// Mark file as open.
@@ -275,7 +275,7 @@ func (s *session) openOverlay(ctx context.Context, uri span.URI, data []byte) {
 	}
 	_, hash, err := s.cache.GetFile(uri).Read(ctx)
 	if err != nil {
-		s.log.Errorf(ctx, "failed to read %s: %v", uri, err)
+		log.Error(ctx, "failed to read", err, telemetry.File)
 		return
 	}
 	if hash == s.overlays[uri].hash {

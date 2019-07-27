@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/lsp/source"
@@ -28,7 +29,7 @@ const (
 	ExpectedCompletionsCount       = 144
 	ExpectedCompletionSnippetCount = 15
 	ExpectedDiagnosticsCount       = 17
-	ExpectedFormatCount            = 5
+	ExpectedFormatCount            = 6
 	ExpectedImportCount            = 2
 	ExpectedDefinitionsCount       = 38
 	ExpectedTypeDefinitionsCount   = 2
@@ -37,7 +38,7 @@ const (
 	ExpectedRenamesCount           = 16
 	ExpectedSymbolsCount           = 1
 	ExpectedSignaturesCount        = 21
-	ExpectedLinksCount             = 2
+	ExpectedLinksCount             = 4
 )
 
 const (
@@ -117,8 +118,9 @@ type CompletionSnippet struct {
 }
 
 type Link struct {
-	Src    span.Span
-	Target string
+	Src          span.Span
+	Target       string
+	NotePosition token.Position
 }
 
 type Golden struct {
@@ -193,10 +195,12 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 		filename := data.Exported.File(testModule, fragment)
 		data.fragments[filename] = fragment
 	}
+	data.Exported.Config.Logf = t.Logf
 
 	// Merge the exported.Config with the view.Config.
 	data.Config = *data.Exported.Config
 	data.Config.Fset = token.NewFileSet()
+	data.Config.Logf = t.Logf
 	data.Config.Context = Context(nil)
 	data.Config.ParseFile = func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
 		panic("ParseFile should not be called")
@@ -527,10 +531,12 @@ func (data *Data) collectCompletionSnippets(spn span.Span, item token.Pos, plain
 	}
 }
 
-func (data *Data) collectLinks(spn span.Span, link string) {
+func (data *Data) collectLinks(spn span.Span, link string, note *expect.Note, fset *token.FileSet) {
+	position := fset.Position(note.Pos)
 	uri := spn.URI()
 	data.Links[uri] = append(data.Links[uri], Link{
-		Src:    spn,
-		Target: link,
+		Src:          spn,
+		Target:       link,
+		NotePosition: position,
 	})
 }

@@ -6,17 +6,22 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/lsp/telemetry"
+	"golang.org/x/tools/internal/lsp/telemetry/log"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -47,6 +52,10 @@ type view struct {
 
 	// env is the environment to use when invoking underlying tools.
 	env []string
+
+	// process is the process env for this view.
+	// Note: this contains cached module and filesystem state.
+	processEnv *imports.ProcessEnv
 
 	// buildFlags is the build flags to use when invoking underlying tools.
 	buildFlags []string
@@ -111,7 +120,7 @@ func (v *view) Folder() span.URI {
 
 // Config returns the configuration used for the view's interaction with the
 // go/packages API. It is shared across all views.
-func (v *view) Config() *packages.Config {
+func (v *view) Config(ctx context.Context) *packages.Config {
 	// TODO: Should we cache the config and/or overlay somewhere?
 	return &packages.Config{
 		Dir:        v.folder.Filename(),
@@ -128,8 +137,52 @@ func (v *view) Config() *packages.Config {
 		ParseFile: func(*token.FileSet, string, []byte) (*ast.File, error) {
 			panic("go/packages must not be used to parse files")
 		},
+		Logf: func(format string, args ...interface{}) {
+			log.Print(ctx, fmt.Sprintf(format, args...))
+		},
 		Tests: true,
 	}
+}
+
+func (v *view) ProcessEnv(ctx context.Context) *imports.ProcessEnv {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	if v.processEnv == nil {
+		v.processEnv = v.buildProcessEnv(ctx)
+	}
+	return v.processEnv
+}
+
+func (v *view) buildProcessEnv(ctx context.Context) *imports.ProcessEnv {
+	cfg := v.Config(ctx)
+	env := &imports.ProcessEnv{
+		WorkingDir: cfg.Dir,
+		Logf: func(format string, args ...interface{}) {
+			log.Print(ctx, fmt.Sprintf(format, args...))
+		},
+	}
+	for _, kv := range cfg.Env {
+		split := strings.Split(kv, "=")
+		if len(split) < 2 {
+			continue
+		}
+		switch split[0] {
+		case "GOPATH":
+			env.GOPATH = split[1]
+		case "GOROOT":
+			env.GOROOT = split[1]
+		case "GO111MODULE":
+			env.GO111MODULE = split[1]
+		case "GOPROXY":
+			env.GOROOT = split[1]
+		case "GOFLAGS":
+			env.GOFLAGS = split[1]
+		case "GOSUMDB":
+			env.GOSUMDB = split[1]
+		}
+	}
+	return env
 }
 
 func (v *view) Env() []string {
@@ -143,6 +196,7 @@ func (v *view) SetEnv(env []string) {
 	defer v.mu.Unlock()
 	//TODO: this should invalidate the entire view
 	v.env = env
+	v.processEnv = nil // recompute process env
 }
 
 func (v *view) SetBuildFlags(buildFlags []string) {
@@ -186,9 +240,12 @@ func (v *view) BuiltinPackage() *ast.Package {
 // buildBuiltinPkg builds the view's builtin package.
 // It assumes that the view is not active yet,
 // i.e. it has not been added to the session's list of views.
-func (v *view) buildBuiltinPkg() {
-	cfg := *v.Config()
-	pkgs, _ := packages.Load(&cfg, "builtin")
+func (v *view) buildBuiltinPkg(ctx context.Context) {
+	cfg := *v.Config(ctx)
+	pkgs, err := packages.Load(&cfg, "builtin")
+	if err != nil {
+		log.Error(ctx, "error getting package metadata for \"builtin\" package", err)
+	}
 	if len(pkgs) != 1 {
 		v.builtinPkg, _ = ast.NewPackage(cfg.Fset, nil, nil, nil)
 		return
@@ -244,8 +301,6 @@ func (f *goFile) invalidateContent(ctx context.Context) {
 // including any position and type information that depends on it.
 func (f *goFile) invalidateAST(ctx context.Context) {
 	f.mu.Lock()
-	f.ast = nil
-	f.token = nil
 	pkgs := f.pkgs
 	f.mu.Unlock()
 
@@ -277,15 +332,25 @@ func (v *view) remove(ctx context.Context, id packageID, seen map[packageID]stru
 	for _, filename := range m.files {
 		f, err := v.findFile(span.FileURI(filename))
 		if err != nil {
-			v.session.log.Errorf(ctx, "cannot find file %s: %v", f.URI(), err)
+			log.Error(ctx, "cannot find file", err, telemetry.File.Of(f.URI()))
 			continue
 		}
 		gof, ok := f.(*goFile)
 		if !ok {
-			v.session.log.Errorf(ctx, "non-Go file %v", f.URI())
+			log.Error(ctx, "non-Go file", nil, telemetry.File.Of(f.URI()))
 			continue
 		}
 		gof.mu.Lock()
+		if pkg, ok := gof.pkgs[id]; ok {
+			// TODO: Ultimately, we shouldn't need this.
+			// Preemptively delete all of the cached keys if we are invalidating a package.
+			for _, ph := range pkg.files {
+				v.session.cache.store.Delete(parseKey{
+					file: ph.File().Identity(),
+					mode: ph.Mode(),
+				})
+			}
+		}
 		delete(gof.pkgs, id)
 		gof.mu.Unlock()
 	}

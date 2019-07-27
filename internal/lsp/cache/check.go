@@ -16,6 +16,8 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/lsp/telemetry"
+	"golang.org/x/tools/internal/lsp/telemetry/log"
 	"golang.org/x/tools/internal/lsp/telemetry/trace"
 	"golang.org/x/tools/internal/span"
 )
@@ -68,18 +70,22 @@ func (imp *importer) getPkg(ctx context.Context, id packageID) (*pkg, error) {
 		// This goroutine becomes responsible for populating
 		// the entry and broadcasting its readiness.
 		e.pkg, e.err = imp.typeCheck(ctx, id)
+		if e.err != nil {
+			// Don't cache failed packages. If we didn't successfully cache the package
+			// in each file, then this pcache entry won't get invalidated as those files
+			// change.
+			imp.view.pcache.mu.Lock()
+			if imp.view.pcache.packages[id] == e {
+				delete(imp.view.pcache.packages, id)
+			}
+			imp.view.pcache.mu.Unlock()
+		}
 		close(e.ready)
 	}
 
 	if e.err != nil {
 		// If the import had been previously canceled, and that error cached, try again.
 		if e.err == context.Canceled && ctx.Err() == nil {
-			imp.view.pcache.mu.Lock()
-			// Clear out canceled cache entry if it is still there.
-			if imp.view.pcache.packages[id] == e {
-				delete(imp.view.pcache.packages, id)
-			}
-			imp.view.pcache.mu.Unlock()
 			return imp.getPkg(ctx, id)
 		}
 		return nil, e.err
@@ -117,42 +123,42 @@ func (imp *importer) typeCheck(ctx context.Context, id packageID) (*pkg, error) 
 		mode = source.ParseExported
 	}
 	var (
-		files []*astFile
-		phs   []source.ParseGoHandle
-		wg    sync.WaitGroup
+		files  = make([]*ast.File, len(meta.files))
+		errors = make([]error, len(meta.files))
+		wg     sync.WaitGroup
 	)
 	for _, filename := range meta.files {
 		uri := span.FileURI(filename)
 		f, err := imp.view.getFile(ctx, uri)
 		if err != nil {
+			log.Error(ctx, "unable to get file", err, telemetry.File.Of(f.URI()))
 			continue
 		}
-		ph := imp.view.session.cache.ParseGoHandle(f.Handle(ctx), mode)
-		phs = append(phs, ph)
-		files = append(files, &astFile{
-			uri:       ph.File().Identity().URI,
-			isTrimmed: mode == source.ParseExported,
-			ph:        ph,
-		})
+		pkg.files = append(pkg.files, imp.view.session.cache.ParseGoHandle(f.Handle(ctx), mode))
 	}
-	for i, ph := range phs {
+	for i, ph := range pkg.files {
 		wg.Add(1)
 		go func(i int, ph source.ParseGoHandle) {
 			defer wg.Done()
 
-			files[i].file, files[i].err = ph.Parse(ctx)
+			files[i], errors[i] = ph.Parse(ctx)
 		}(i, ph)
 	}
 	wg.Wait()
 
+	var i int
 	for _, f := range files {
-		pkg.files = append(pkg.files, f)
-
-		if f.err != nil {
-			if f.err == context.Canceled {
-				return nil, f.err
-			}
-			imp.view.session.cache.appendPkgError(pkg, f.err)
+		if f != nil {
+			files[i] = f
+			i++
+		}
+	}
+	for _, err := range errors {
+		if err == context.Canceled {
+			return nil, err
+		}
+		if err != nil {
+			imp.view.session.cache.appendPkgError(pkg, err)
 		}
 	}
 
@@ -188,7 +194,7 @@ func (imp *importer) typeCheck(ctx context.Context, id packageID) (*pkg, error) 
 	check := types.NewChecker(cfg, imp.fset, pkg.types, pkg.typesInfo)
 
 	// Ignore type-checking errors.
-	check.Files(pkg.GetSyntax())
+	check.Files(files)
 
 	// Add every file in this package to our cache.
 	if err := imp.cachePackage(ctx, pkg, meta, mode); err != nil {
@@ -199,16 +205,17 @@ func (imp *importer) typeCheck(ctx context.Context, id packageID) (*pkg, error) 
 }
 
 func (imp *importer) cachePackage(ctx context.Context, pkg *pkg, meta *metadata, mode source.ParseMode) error {
-	for _, file := range pkg.files {
-		f, err := imp.view.getFile(ctx, file.uri)
+	for _, ph := range pkg.files {
+		uri := ph.File().Identity().URI
+		f, err := imp.view.getFile(ctx, uri)
 		if err != nil {
-			return fmt.Errorf("no such file %s: %v", file.uri, err)
+			return fmt.Errorf("no such file %s: %v", uri, err)
 		}
 		gof, ok := f.(*goFile)
 		if !ok {
-			return fmt.Errorf("non Go file %s", file.uri)
+			return fmt.Errorf("non Go file %s", uri)
 		}
-		if err := imp.cachePerFile(gof, file, pkg); err != nil {
+		if err := imp.cachePerFile(gof, ph, pkg); err != nil {
 			return fmt.Errorf("failed to cache file %s: %v", gof.URI(), err)
 		}
 	}
@@ -227,7 +234,7 @@ func (imp *importer) cachePackage(ctx context.Context, pkg *pkg, meta *metadata,
 	return nil
 }
 
-func (imp *importer) cachePerFile(gof *goFile, file *astFile, p *pkg) error {
+func (imp *importer) cachePerFile(gof *goFile, ph source.ParseGoHandle, p *pkg) error {
 	gof.mu.Lock()
 	defer gof.mu.Unlock()
 
@@ -237,25 +244,11 @@ func (imp *importer) cachePerFile(gof *goFile, file *astFile, p *pkg) error {
 	}
 	gof.pkgs[p.id] = p
 
-	// Get the AST for the file.
-	gof.ast = file
-	if gof.ast == nil {
-		return fmt.Errorf("no AST information for %s", file.uri)
+	file, err := ph.Parse(imp.ctx)
+	if file == nil {
+		return fmt.Errorf("no AST for %s: %v", ph.File().Identity().URI, err)
 	}
-	if gof.ast.file == nil {
-		return fmt.Errorf("no AST for %s", file.uri)
-	}
-	// Get the *token.File directly from the AST.
-	pos := gof.ast.file.Pos()
-	if !pos.IsValid() {
-		return fmt.Errorf("AST for %s has an invalid position", file.uri)
-	}
-	tok := imp.view.session.cache.FileSet().File(pos)
-	if tok == nil {
-		return fmt.Errorf("no *token.File for %s", file.uri)
-	}
-	gof.token = tok
-	gof.imports = gof.ast.file.Imports
+	gof.imports = file.Imports
 	return nil
 }
 
