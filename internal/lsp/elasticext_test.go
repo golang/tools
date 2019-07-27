@@ -6,7 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/lsp/xlog"
+	"golang.org/x/tools/internal/lsp/tests"
 	"golang.org/x/tools/internal/span"
 	"os"
 	"path/filepath"
@@ -25,6 +25,7 @@ func TestLSPExt(t *testing.T) {
 const extViewName = "lspext_test"
 
 func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
+	ctx := tests.Context(t)
 	const dir = "testdata"
 
 	// We hardcode the expected number of test cases to ensure that all tests
@@ -57,9 +58,8 @@ func testLSPExt(t *testing.T, exporter packagestest.Exporter) {
 		return parser.ParseFile(fset, filename, src, parser.AllErrors|parser.ParseComments)
 	}
 
-	log := xlog.New(xlog.StdSink{})
 	cache := cache.New()
-	session := cache.NewSession(log)
+	session := cache.NewSession(ctx)
 	view := session.NewView(cfg.Context, extViewName, span.FileURI(cfg.Dir))
 	view.SetEnv(cfg.Env)
 	s := &Server{

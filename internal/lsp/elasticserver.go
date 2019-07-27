@@ -11,7 +11,6 @@ import (
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/lsp/xlog"
 	"golang.org/x/tools/internal/semver"
 	"golang.org/x/tools/internal/span"
 	"io/ioutil"
@@ -23,18 +22,18 @@ import (
 )
 
 // NewClientElasticServer
-func NewClientElasticServer(cache source.Cache, client protocol.Client) *ElasticServer {
+func NewClientElasticServer(ctx context.Context, cache source.Cache, client protocol.Client) *ElasticServer {
 	return &ElasticServer{
 		Server: Server{
 			client:  client,
-			session: cache.NewSession(xlog.New(protocol.NewLogger(client))),
+			session: cache.NewSession(ctx),
 		},
 	}
 }
 
 // NewElasticServer starts an LSP server on the supplied stream, and waits until the
 // stream is closed.
-func NewElasticServer(cache source.Cache, stream jsonrpc2.Stream) *ElasticServer {
+func NewElasticServer(ctx context.Context, cache source.Cache, stream jsonrpc2.Stream) *ElasticServer {
 	goPath := ""
 	goRoot := ""
 	for _, v := range os.Environ() {
@@ -52,21 +51,20 @@ func NewElasticServer(cache source.Cache, stream jsonrpc2.Stream) *ElasticServer
 		GoRoot:   goRoot,
 	}
 
-	var log xlog.Logger
-	s.Conn, s.client, log = protocol.NewElasticServer(stream, s)
-	s.session = cache.NewSession(log)
+	ctx, s.Conn, s.client = protocol.NewElasticServer(ctx, stream, s)
+	s.session = cache.NewSession(ctx)
 	return s
 }
 
 // RunElasticServerOnPort starts an LSP server on the given port and does not exit.
 // This function exists for debugging purposes.
-func RunElasticServerOnPort(ctx context.Context, cache source.Cache, port int, h func(s *ElasticServer)) error {
+func RunElasticServerOnPort(ctx context.Context, cache source.Cache, port int, h func(ctx context.Context, s *ElasticServer)) error {
 	return RunElasticServerOnAddress(ctx, cache, fmt.Sprintf(":%v", port), h)
 }
 
 // RunElasticServerOnAddress starts an LSP server on the given port and does not exit.
 // This function exists for debugging purposes.
-func RunElasticServerOnAddress(ctx context.Context, cache source.Cache, addr string, h func(s *ElasticServer)) error {
+func RunElasticServerOnAddress(ctx context.Context, cache source.Cache, addr string, h func(ctx context.Context, s *ElasticServer)) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -76,9 +74,7 @@ func RunElasticServerOnAddress(ctx context.Context, cache source.Cache, addr str
 		if err != nil {
 			return err
 		}
-		stream := jsonrpc2.NewHeaderStream(conn, conn)
-		s := NewElasticServer(cache, stream)
-		h(s)
+		h(ctx, NewElasticServer(ctx, cache, jsonrpc2.NewHeaderStream(conn, conn)))
 	}
 }
 
@@ -318,7 +314,10 @@ func getQName(ctx context.Context, f source.GoFile, declObj types.Object, ident 
 		return qname
 	}
 	// Get the file where the symbol definition located.
-	fAST := f.GetAST(ctx)
+	fAST, _ := f.GetAST(ctx, source.ParseFull)
+	if fAST == nil {
+		return ""
+	}
 	pos := declObj.Pos()
 	path, _ := astutil.PathEnclosingInterval(fAST, pos, pos)
 	// TODO(henrywong) Should we put a check here for the case of only one node?
@@ -633,7 +632,11 @@ func collectUncoveredSrc(path string) ([][]string, []string, error) {
 //  neglect overhead.
 func getDeclObj(ctx context.Context, f source.GoFile, pos token.Pos) types.Object {
 	var astIdent *ast.Ident
-	astPath, _ := astutil.PathEnclosingInterval(f.GetAST(ctx), pos, pos)
+	file, _ := f.GetAST(ctx, source.ParseFull)
+	if file == nil {
+		return nil
+	}
+	astPath, _ := astutil.PathEnclosingInterval(file, pos, pos)
 	switch node := astPath[0].(type) {
 	case *ast.Ident:
 		astIdent = node
