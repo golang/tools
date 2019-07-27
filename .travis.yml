@@ -40,7 +40,7 @@ matrix:
       deploy:
         provider: releases
         skip_cleanup: true
-        github_token: $GITHUB_TOKEN
+        api_key: $GITHUB_TOKEN
         verbose: true
         file: $GOPATH/src/golang.org/x/tools/build/*
         file_glob: true
@@ -64,7 +64,7 @@ matrix:
       deploy:
         provider: releases
         skip_cleanup: true
-        github_token: $GITHUB_TOKEN
+        api_key: $GITHUB_TOKEN
         verbose: true
         file: $GOPATH/src/golang.org/x/tools/build/*
         file_glob: true
@@ -88,7 +88,7 @@ matrix:
       deploy:
         provider: releases
         skip_cleanup: true
-        github_token: $GITHUB_TOKEN
+        api_key: $GITHUB_TOKEN
         verbose: true
         file: $GOPATH/src/golang.org/x/tools/build/*
         file_glob: true
