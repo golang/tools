@@ -27,12 +27,14 @@ build_script:
   - go get golang.org/x/sync/errgroup
   # TODO(henrywong) For now, there are problems about the windows test.
   # - go test ./internal/lsp -v
-  - go build -o go-langserver-windows-%platform% c:\gopath\src\golang.org\x\tools\cmd\gopls
-  - if %platform%==x64 curl -o ../go1.12.7.windows-%platform%.zip https://dl.google.com/go/go1.12.7.windows-amd64.zip
-  - if %platform%==x86 curl -o ../go1.12.7.windows-%platform%.zip https://dl.google.com/go/go1.12.7.windows-386.zip
-  - 7z x ../go1.12.7.windows-%platform%.zip -o..
   - mkdir go-langserver-windows
-  - 7z a -r ./go-langserver-windows/go-langserver-windows-%platform%.zip go-langserver-windows-%platform% ../go
+  - cd go-langserver-windows
+  - go build -o go-langserver-windows-%platform% c:\gopath\src\golang.org\x\tools\cmd\gopls
+  - if %platform%==x64 curl -o go1.12.7.windows-%platform%.zip https://dl.google.com/go/go1.12.7.windows-amd64.zip
+  - if %platform%==x86 curl -o go1.12.7.windows-%platform%.zip https://dl.google.com/go/go1.12.7.windows-386.zip
+  - 7z x go1.12.7.windows-%platform%.zip -o.
+  - 7z a -r go-langserver-windows-%platform%.zip go-langserver-windows-%platform% go
+  - rm go1.12.7.windows-%platform%.zip
 
 artifacts:
   - path: go-langserver-windows\*.zip

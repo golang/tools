@@ -32,18 +32,18 @@ matrix:
       os: linux
       script:
         - go test ./internal/lsp
-        - go build -o ../go-langserver-linux-amd64 $GOPATH/src/golang.org/x/tools/cmd/gopls
-        - curl -o ../go1.12.7.linux-amd64.tar.gz https://dl.google.com/go/go1.12.7.linux-amd64.tar.gz
-        - tar xzf ../go1.12.7.linux-amd64.tar.gz -C ../
         - mkdir build
-        - tar -zcf ./build/go-langserver-linux-amd64.tar.gz ../go-langserver-linux-amd64 ../go
+        - cd build
+        - go build -o go-langserver-linux-amd64 $GOPATH/src/golang.org/x/tools/cmd/gopls
+        - curl -o go1.12.7.linux-amd64.tar.gz https://dl.google.com/go/go1.12.7.linux-amd64.tar.gz
+        - tar xzf go1.12.7.linux-amd64.tar.gz
+        - tar -zcf go-langserver-linux-amd64.tar.gz go-langserver-linux-amd64 go
       deploy:
         provider: releases
         skip_cleanup: true
         api_key: $GITHUB_TOKEN
         verbose: true
-        file: $GOPATH/src/golang.org/x/tools/build/*
-        file_glob: true
+        file: $GOPATH/src/golang.org/x/tools/build/go-langserver-linux-amd64.tar.gz
         name: $TRAVIS_TAG
         draft: false
         prerelease: false
@@ -56,18 +56,18 @@ matrix:
       os: linux
       script:
         - go test ./internal/lsp
-        - go build -o ../go-langserver-linux-386 $GOPATH/src/golang.org/x/tools/cmd/gopls
-        - curl -o ../go1.12.7.linux-386.tar.gz https://dl.google.com/go/go1.12.7.linux-386.tar.gz
-        - tar xzf ../go1.12.7.linux-386.tar.gz -C ../
         - mkdir build
-        - tar -zcf ./build/go-langserver-linux-386.tar.gz ../go-langserver-linux-386 ../go
+        - cd build
+        - go build -o go-langserver-linux-386 $GOPATH/src/golang.org/x/tools/cmd/gopls
+        - curl -o go1.12.7.linux-386.tar.gz https://dl.google.com/go/go1.12.7.linux-386.tar.gz
+        - tar xzf go1.12.7.linux-386.tar.gz
+        - tar -zcf go-langserver-linux-386.tar.gz go-langserver-linux-386 go
       deploy:
         provider: releases
         skip_cleanup: true
         api_key: $GITHUB_TOKEN
         verbose: true
-        file: $GOPATH/src/golang.org/x/tools/build/*
-        file_glob: true
+        file: $GOPATH/src/golang.org/x/tools/build/go-langserver-linux-386.tar.gz
         name: $TRAVIS_TAG
         draft: false
         prerelease: false
@@ -80,17 +80,18 @@ matrix:
       os: osx
       script:
         - go test ./internal/lsp
-        - go build -o ../go-langserver-darwin-amd64 $GOPATH/src/golang.org/x/tools/cmd/gopls
-        - curl -o ../go1.12.7.darwin-amd64.tar.gz https://dl.google.com/go/go1.12.7.darwin-amd64.tar.gz
-        - tar xzf ../go1.12.7.darwin-amd64.tar.gz -C ../
         - mkdir build
-        - tar -zcf ./build/go-langserver-darwin-amd64.tar.gz ../go-langserver-darwin-amd64 ../go
+        - cd build
+        - go build -o go-langserver-darwin-amd64 $GOPATH/src/golang.org/x/tools/cmd/gopls
+        - curl -o go1.12.7.darwin-amd64.tar.gz https://dl.google.com/go/go1.12.7.darwin-amd64.tar.gz
+        - tar xzf go1.12.7.darwin-amd64.tar.gz
+        - tar -zcf go-langserver-darwin-amd64.tar.gz go-langserver-darwin-amd64 go
       deploy:
         provider: releases
         skip_cleanup: true
         api_key: $GITHUB_TOKEN
         verbose: true
-        file: $GOPATH/src/golang.org/x/tools/build/*
+        file: $GOPATH/src/golang.org/x/tools/build/go-langserver-darwin-amd64.tar.gz
         file_glob: true
         name: $TRAVIS_TAG
         draft: false
