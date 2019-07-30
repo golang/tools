@@ -29,12 +29,12 @@ build_script:
   # - go test ./internal/lsp -v
   - mkdir go-langserver-windows
   - cd go-langserver-windows
-  - go build -o go-langserver-windows-%platform% c:\gopath\src\golang.org\x\tools\cmd\gopls
+  - go build -o go-langserver c:\gopath\src\golang.org\x\tools\cmd\gopls
   - if %platform%==x64 curl -o go1.12.7.windows-%platform%.zip https://dl.google.com/go/go1.12.7.windows-amd64.zip
   - if %platform%==x86 curl -o go1.12.7.windows-%platform%.zip https://dl.google.com/go/go1.12.7.windows-386.zip
   - 7z x go1.12.7.windows-%platform%.zip -o.
   - ps: Remove-Item -LiteralPath "./go/test" -Force -Recurse
-  - 7z a -r go-langserver-windows-%platform%.zip go-langserver-windows-%platform% go
+  - 7z a -r go-langserver-windows-%platform%.zip go-langserver go
   - rm go1.12.7.windows-%platform%.zip
 
 artifacts:

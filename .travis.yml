@@ -34,10 +34,10 @@ matrix:
         - go test ./internal/lsp
         - mkdir build
         - cd build
-        - go build -o go-langserver-linux-amd64 $GOPATH/src/golang.org/x/tools/cmd/gopls
+        - go build -o go-langserver $GOPATH/src/golang.org/x/tools/cmd/gopls
         - curl -o go1.12.7.linux-amd64.tar.gz https://dl.google.com/go/go1.12.7.linux-amd64.tar.gz
         - tar xzf go1.12.7.linux-amd64.tar.gz
-        - tar -zcf go-langserver-linux-amd64.tar.gz go-langserver-linux-amd64 go
+        - tar -zcf go-langserver-linux-amd64.tar.gz go-langserver go
       deploy:
         provider: releases
         skip_cleanup: true
@@ -58,10 +58,10 @@ matrix:
         - go test ./internal/lsp
         - mkdir build
         - cd build
-        - go build -o go-langserver-linux-386 $GOPATH/src/golang.org/x/tools/cmd/gopls
+        - go build -o go-langserver $GOPATH/src/golang.org/x/tools/cmd/gopls
         - curl -o go1.12.7.linux-386.tar.gz https://dl.google.com/go/go1.12.7.linux-386.tar.gz
         - tar xzf go1.12.7.linux-386.tar.gz
-        - tar -zcf go-langserver-linux-386.tar.gz go-langserver-linux-386 go
+        - tar -zcf go-langserver-linux-386.tar.gz go-langserver go
       deploy:
         provider: releases
         skip_cleanup: true
@@ -82,10 +82,10 @@ matrix:
         - go test ./internal/lsp
         - mkdir build
         - cd build
-        - go build -o go-langserver-darwin-amd64 $GOPATH/src/golang.org/x/tools/cmd/gopls
+        - go build -o go-langserver $GOPATH/src/golang.org/x/tools/cmd/gopls
         - curl -o go1.12.7.darwin-amd64.tar.gz https://dl.google.com/go/go1.12.7.darwin-amd64.tar.gz
         - tar xzf go1.12.7.darwin-amd64.tar.gz
-        - tar -zcf go-langserver-darwin-amd64.tar.gz go-langserver-darwin-amd64 go
+        - tar -zcf go-langserver-darwin-amd64.tar.gz go-langserver go
       deploy:
         provider: releases
         skip_cleanup: true
