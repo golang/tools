@@ -37,6 +37,7 @@ matrix:
         - go build -o go-langserver $GOPATH/src/golang.org/x/tools/cmd/gopls
         - curl -o go1.12.7.linux-amd64.tar.gz https://dl.google.com/go/go1.12.7.linux-amd64.tar.gz
         - tar xzf go1.12.7.linux-amd64.tar.gz
+        - rm -rf ./go/test
         - tar -zcf go-langserver-linux-amd64.tar.gz go-langserver go
       deploy:
         provider: releases
@@ -61,6 +62,7 @@ matrix:
         - go build -o go-langserver $GOPATH/src/golang.org/x/tools/cmd/gopls
         - curl -o go1.12.7.linux-386.tar.gz https://dl.google.com/go/go1.12.7.linux-386.tar.gz
         - tar xzf go1.12.7.linux-386.tar.gz
+        - rm -rf ./go/test
         - tar -zcf go-langserver-linux-386.tar.gz go-langserver go
       deploy:
         provider: releases
@@ -85,6 +87,7 @@ matrix:
         - go build -o go-langserver $GOPATH/src/golang.org/x/tools/cmd/gopls
         - curl -o go1.12.7.darwin-amd64.tar.gz https://dl.google.com/go/go1.12.7.darwin-amd64.tar.gz
         - tar xzf go1.12.7.darwin-amd64.tar.gz
+        - rm -rf ./go/test
         - tar -zcf go-langserver-darwin-amd64.tar.gz go-langserver go
       deploy:
         provider: releases
