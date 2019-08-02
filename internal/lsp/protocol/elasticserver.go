@@ -11,7 +11,6 @@ type ElasticServer interface {
 	Server
 	EDefinition(context.Context, *TextDocumentPositionParams) ([]SymbolLocator, error)
 	Full(context.Context, *FullParams) (FullResponse, error)
-	ElasticDocumentSymbol(context.Context, *DocumentSymbolParams, bool, *PackageLocator) ([]SymbolInformation, []DetailSymbolInformation, error)
 	ManageDeps(folders *[]WorkspaceFolder) error
 }
 
@@ -346,7 +345,7 @@ func (h elasticServerHandler) Deliver(ctx context.Context, r *jsonrpc2.Request, 
 			sendParseError(ctx, r, err)
 			return true
 		}
-		resp, _, err := h.server.ElasticDocumentSymbol(ctx, &params, false, nil)
+		resp, err := h.server.DocumentSymbol(ctx, &params)
 		if err := r.Reply(ctx, resp, err); err != nil {
 			log.Error(ctx, "", err)
 		}

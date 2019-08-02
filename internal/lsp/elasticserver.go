@@ -89,51 +89,6 @@ func (s *ElasticServer) RunElasticServer(ctx context.Context) error {
 	return s.Conn.Run(ctx)
 }
 
-// ElasticDocumentSymbol is the override version of the 'Server.DocumentSymbol', which provides the
-// DetailSymbolInformation construction and 'DocumentSymbol' flatten.
-func (s *ElasticServer) ElasticDocumentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams, full bool, pkgLocator *protocol.PackageLocator) (symsInfo []protocol.SymbolInformation,
-	detailSyms []protocol.DetailSymbolInformation,
-	err error) {
-	docSyms, err := (*Server).DocumentSymbol(&s.Server, ctx, params)
-	var flattenDocumentSymbol func(*[]protocol.DocumentSymbol, string, string)
-	// Note: The reason why we construct the qname during the flatten process is that we can't construct the qname
-	// through the 'SymbolInformation.ContainerName' because of the possibilities of the 'ContainerName' collision.
-	flattenDocumentSymbol = func(symbols *[]protocol.DocumentSymbol, prefix string, container string) {
-		for _, symbol := range *symbols {
-			sym := protocol.SymbolInformation{
-				Name:          symbol.Name,
-				Kind:          symbol.Kind,
-				Deprecated:    symbol.Deprecated,
-				ContainerName: container,
-				Location: protocol.Location{
-					URI:   params.TextDocument.URI,
-					Range: symbol.SelectionRange,
-				},
-			}
-			symsInfo = append(symsInfo, sym)
-			var qnamePrefix string
-			if full {
-				if prefix != "" {
-					qnamePrefix = prefix + "." + symbol.Name
-				} else {
-					qnamePrefix = symbol.Name
-				}
-				detailSyms = append(detailSyms, protocol.DetailSymbolInformation{
-					Symbol:  sym,
-					Qname:   pkgLocator.Name + "." + qnamePrefix,
-					Package: *pkgLocator,
-				})
-			}
-			if len(symbol.Children) > 0 {
-				flattenDocumentSymbol(&symbol.Children, qnamePrefix, symbol.Name)
-			}
-		}
-	}
-
-	flattenDocumentSymbol(&docSyms, "", "")
-	return
-}
-
 // EDefinition has almost the same functionality with Definition except for the qualified name and symbol kind.
 func (s *ElasticServer) EDefinition(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.SymbolLocator, error) {
 	uri := span.NewURI(params.TextDocument.URI)
@@ -160,7 +115,7 @@ func (s *ElasticServer) EDefinition(ctx context.Context, params *protocol.TextDo
 	if kind == 0 {
 		return nil, fmt.Errorf("no corresponding symbol kind for '" + ident.Name + "'")
 	}
-	qname := getQName(ctx, f, declObj, ident, kind)
+	qname := getQName(ctx, f, declObj, kind)
 
 	declSpan, err := ident.DeclarationRange().Span()
 	if err != nil {
@@ -202,7 +157,7 @@ func (s *ElasticServer) Full(ctx context.Context, fullParams *protocol.FullParam
 	}
 	pkgLocator, _ := collectPkgMetadata(f.GetPackage(ctx).GetTypes(), view.Folder().Filename(), s, path)
 
-	_, detailSyms, err := s.ElasticDocumentSymbol(ctx, &params, true, &pkgLocator)
+	detailSyms, err := constructDetailSymbol(s, ctx, &params, &pkgLocator)
 	if err != nil {
 		return fullResponse, err
 	}
@@ -308,7 +263,7 @@ func getSymbolKind(declObj types.Object) protocol.SymbolKind {
 //
 // TODO(henrywong) It's better to use the scope chain to give a qualified name for the symbols, however there is no
 // APIs can achieve this goals, just traverse the ast node path for now.
-func getQName(ctx context.Context, f source.GoFile, declObj types.Object, ident *source.IdentifierInfo, kind protocol.SymbolKind) string {
+func getQName(ctx context.Context, f source.GoFile, declObj types.Object, kind protocol.SymbolKind) string {
 	qname := declObj.Name()
 	if kind == protocol.Package {
 		return qname
@@ -644,4 +599,43 @@ func getDeclObj(ctx context.Context, f source.GoFile, pos token.Pos) types.Objec
 		astIdent = node.Sel
 	}
 	return f.GetPackage(ctx).GetTypesInfo().ObjectOf(astIdent)
+}
+
+func constructDetailSymbol(s *ElasticServer, ctx context.Context, params *protocol.DocumentSymbolParams, pkgLocator *protocol.PackageLocator) (detailSyms []protocol.DetailSymbolInformation, err error) {
+	docSyms, err := (*Server).DocumentSymbol(&s.Server, ctx, params)
+
+	var flattenDocumentSymbol func(*[]protocol.DocumentSymbol, string, string)
+	// Note: The reason why we construct the qname during the flatten process is that we can't construct the qname
+	// through the 'SymbolInformation.ContainerName' because of the possibilities of the 'ContainerName' collision.
+	flattenDocumentSymbol = func(symbols *[]protocol.DocumentSymbol, prefix string, container string) {
+		for _, symbol := range *symbols {
+			sym := protocol.SymbolInformation{
+				Name:          symbol.Name,
+				Kind:          symbol.Kind,
+				Deprecated:    symbol.Deprecated,
+				ContainerName: container,
+				Location: protocol.Location{
+					URI:   params.TextDocument.URI,
+					Range: symbol.SelectionRange,
+				},
+			}
+			var qnamePrefix string
+			if prefix != "" {
+				qnamePrefix = prefix + "." + symbol.Name
+			} else {
+				qnamePrefix = symbol.Name
+			}
+			detailSyms = append(detailSyms, protocol.DetailSymbolInformation{
+				Symbol:  sym,
+				Qname:   pkgLocator.Name + "." + qnamePrefix,
+				Package: *pkgLocator,
+			})
+			if len(symbol.Children) > 0 {
+				flattenDocumentSymbol(&symbol.Children, qnamePrefix, symbol.Name)
+			}
+		}
+	}
+
+	flattenDocumentSymbol(&docSyms, "", "")
+	return
 }
