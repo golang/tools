@@ -13,12 +13,13 @@ import (
 	"go/token"
 
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/lsp/telemetry"
 	"golang.org/x/tools/internal/lsp/telemetry/trace"
 	"golang.org/x/tools/internal/memoize"
 )
 
 // Limits the number of parallel parser calls per process.
-var parseLimit = make(chan bool, 20)
+var parseLimit = make(chan struct{}, 20)
 
 // parseKey uniquely identifies a parsed Go file.
 type parseKey struct {
@@ -74,13 +75,13 @@ func (h *parseGoHandle) Parse(ctx context.Context) (*ast.File, error) {
 }
 
 func parseGo(ctx context.Context, c *cache, fh source.FileHandle, mode source.ParseMode) (*ast.File, error) {
-	ctx, done := trace.StartSpan(ctx, "cache.parseGo")
+	ctx, done := trace.StartSpan(ctx, "cache.parseGo", telemetry.File.Of(fh.Identity().URI.Filename()))
 	defer done()
 	buf, _, err := fh.Read(ctx)
 	if err != nil {
 		return nil, err
 	}
-	parseLimit <- true
+	parseLimit <- struct{}{}
 	defer func() { <-parseLimit }()
 	parserMode := parser.AllErrors | parser.ParseComments
 	if mode == source.ParseHeader {
@@ -140,8 +141,8 @@ func isEllipsisArray(n ast.Expr) bool {
 	return ok
 }
 
-// fix inspects and potentially modifies any *ast.BadStmts or *ast.BadExprs in the AST.
-// We attempt to modify the AST such that we can type-check it more effectively.
+// fix inspects the AST and potentially modifies any *ast.BadStmts so that it can be
+// type-checked more effectively.
 func fix(ctx context.Context, file *ast.File, tok *token.File, src []byte) error {
 	var parent ast.Node
 	var err error
@@ -207,7 +208,7 @@ func parseDeferOrGoStmt(bad *ast.BadStmt, parent ast.Node, tok *token.File, src 
 	var to, curr token.Pos
 FindTo:
 	for {
-		curr, tkn, lit = s.Scan()
+		curr, tkn, _ = s.Scan()
 		// TODO(rstambler): This still needs more handling to work correctly.
 		// We encounter a specific issue with code that looks like this:
 		//

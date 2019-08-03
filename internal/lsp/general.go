@@ -21,12 +21,15 @@ import (
 )
 
 func (s *Server) initialize(ctx context.Context, params *protocol.InitializeParams) (*protocol.InitializeResult, error) {
-	s.initializedMu.Lock()
-	defer s.initializedMu.Unlock()
-	if s.isInitialized {
+	s.stateMu.Lock()
+	state := s.state
+	s.stateMu.Unlock()
+	if state >= serverInitializing {
 		return nil, jsonrpc2.NewErrorf(jsonrpc2.CodeInvalidRequest, "server already initialized")
 	}
-	s.isInitialized = true // mark server as initialized now
+	s.stateMu.Lock()
+	s.state = serverInitializing
+	s.stateMu.Unlock()
 
 	// TODO: Remove the option once we are certain there are no issues here.
 	s.textDocumentSyncKind = protocol.Incremental
@@ -129,6 +132,10 @@ func (s *Server) setClientCapabilities(caps protocol.ClientCapabilities) {
 }
 
 func (s *Server) initialized(ctx context.Context, params *protocol.InitializedParams) error {
+	s.stateMu.Lock()
+	s.state = serverInitialized
+	s.stateMu.Unlock()
+
 	if s.configurationSupported {
 		if s.dynamicConfigurationSupported {
 			s.client.RegisterCapability(ctx, &protocol.RegistrationParams{
@@ -142,16 +149,7 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 			})
 		}
 		for _, view := range s.session.Views() {
-			config, err := s.client.Configuration(ctx, &protocol.ConfigurationParams{
-				Items: []protocol.ConfigurationItem{{
-					ScopeURI: protocol.NewURI(view.Folder()),
-					Section:  "gopls",
-				}},
-			})
-			if err != nil {
-				return err
-			}
-			if err := s.processConfig(ctx, view, config[0]); err != nil {
+			if err := s.fetchConfig(ctx, view); err != nil {
 				return err
 			}
 		}
@@ -159,6 +157,28 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 	buf := &bytes.Buffer{}
 	debug.PrintVersionInfo(buf, true, debug.PlainText)
 	log.Print(ctx, buf.String())
+	return nil
+}
+
+func (s *Server) fetchConfig(ctx context.Context, view source.View) error {
+	configs, err := s.client.Configuration(ctx, &protocol.ConfigurationParams{
+		Items: []protocol.ConfigurationItem{{
+			ScopeURI: protocol.NewURI(view.Folder()),
+			Section:  "gopls",
+		}, {
+			ScopeURI: protocol.NewURI(view.Folder()),
+			Section:  view.Name(),
+		},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	for _, config := range configs {
+		if err := s.processConfig(ctx, view, config); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -238,19 +258,21 @@ func (s *Server) processConfig(ctx context.Context, view source.View, config int
 }
 
 func (s *Server) shutdown(ctx context.Context) error {
-	s.initializedMu.Lock()
-	defer s.initializedMu.Unlock()
-	if !s.isInitialized {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if s.state < serverInitialized {
 		return jsonrpc2.NewErrorf(jsonrpc2.CodeInvalidRequest, "server not initialized")
 	}
 	// drop all the active views
 	s.session.Shutdown(ctx)
-	s.isInitialized = false
+	s.state = serverShutDown
 	return nil
 }
 
 func (s *Server) exit(ctx context.Context) error {
-	if s.isInitialized {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if s.state != serverShutDown {
 		os.Exit(1)
 	}
 	os.Exit(0)
