@@ -229,7 +229,10 @@ func (v *view) link(ctx context.Context, pkgPath packagePath, pkg *packages.Pack
 	}
 	// Reset any field that could have changed across calls to packages.Load.
 	m.name = pkg.Name
-	m.files = pkg.CompiledGoFiles
+
+	// TODO: saibing  pkg.CompiledGoFiles does not include cgo files.
+	//m.files = pkg.CompiledGoFiles
+	m.files = pkg.GoFiles
 	for _, filename := range m.files {
 		f, err := v.getFile(ctx, span.FileURI(filename))
 		if err != nil {
