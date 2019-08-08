@@ -45,7 +45,7 @@ matrix:
         api_key: $GITHUB_TOKEN
         verbose: true
         file: $GOPATH/src/golang.org/x/tools/build/go-langserver-linux-amd64.tar.gz
-        name: $MY_TAG
+        name: $TRAVIS_TAG
         draft: false
         prerelease: false
         overwrite: true
@@ -108,7 +108,7 @@ matrix:
         verbose: true
         file: $GOPATH/src/golang.org/x/tools/build/go-langserver-darwin-amd64.tar.gz
         file_glob: true
-        name: $MY_TAG
+        name: $TRAVIS_TAG
         draft: false
         prerelease: false
         overwrite: true
