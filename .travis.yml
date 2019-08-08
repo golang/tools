@@ -21,7 +21,6 @@ git:
 env:
   - GO111MODULE=off GOPROXY=https://proxy.golang.org
 
-
 before_install:
   - go get golang.org/x/sync/errgroup
 
@@ -39,13 +38,14 @@ matrix:
         - tar xzf go1.12.7.linux-amd64.tar.gz
         - rm -rf ./go/test
         - tar -zcf go-langserver-linux-amd64.tar.gz go-langserver go
+
       deploy:
         provider: releases
         skip_cleanup: true
         api_key: $GITHUB_TOKEN
         verbose: true
         file: $GOPATH/src/golang.org/x/tools/build/go-langserver-linux-amd64.tar.gz
-        name: $TRAVIS_TAG
+        name: $MY_TAG
         draft: false
         prerelease: false
         overwrite: true
@@ -64,19 +64,31 @@ matrix:
         - tar xzf go1.12.7.linux-386.tar.gz
         - rm -rf ./go/test
         - tar -zcf go-langserver-linux-386.tar.gz go-langserver go
+
+      before_deploy:
+        - git config --local user.name "henry wong"
+        - git config --local user.email "liushuai.wang@elastic.co"
+        - export MY_TAG=$(git rev-parse --short HEAD);
+        - if [ $TRAVIS_BRANCH == 'master' ]; then
+          git tag $MY_TAG;
+          fi
+        - if [ $TRAVIS_BRANCH != 'master' ]; then
+          git tag $TRAVIS_BRANCH-$MY_TAG;
+          fi
+
       deploy:
         provider: releases
         skip_cleanup: true
         api_key: $GITHUB_TOKEN
         verbose: true
         file: $GOPATH/src/golang.org/x/tools/build/go-langserver-linux-386.tar.gz
-        name: $TRAVIS_TAG
+        name: $MY_TAG
         draft: false
         prerelease: false
         overwrite: true
         on:
           all_branches: true
-          tags: true
+          MY_TAG: true
 
     - name: Unit Tests & Package | OSX
       os: osx
@@ -96,7 +108,7 @@ matrix:
         verbose: true
         file: $GOPATH/src/golang.org/x/tools/build/go-langserver-darwin-amd64.tar.gz
         file_glob: true
-        name: $TRAVIS_TAG
+        name: $MY_TAG
         draft: false
         prerelease: false
         overwrite: true
