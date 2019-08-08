@@ -22,7 +22,7 @@ func (e Event) Format(f fmt.State, r rune) {
 	}
 	fmt.Fprint(f, e.Message)
 	if e.Error != nil {
-		fmt.Fprintf(f, ": %v", e.Error)
+		fmt.Fprintf(f, ": %+v", e.Error)
 	}
 	for _, tag := range e.Tags {
 		fmt.Fprintf(f, "\n\t%v = %v", tag.Key, tag.Value)
