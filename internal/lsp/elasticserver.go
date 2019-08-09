@@ -105,7 +105,7 @@ func (s *ElasticServer) EDefinition(ctx context.Context, params *protocol.TextDo
 	if err != nil {
 		return nil, err
 	}
-	ident, err := source.Identifier(ctx, view, f, rng.Start)
+	ident, err := source.Identifier(ctx, f, rng.Start)
 	if err != nil {
 		return nil, err
 	}

@@ -25,6 +25,7 @@ environment:
 
 build_script:
   - go get golang.org/x/sync/errgroup
+  - go get golang.org/x/xerrors
   # TODO(henrywong) For now, there are problems about the windows test.
   # - go test ./internal/lsp -v
   - mkdir go-langserver-windows
