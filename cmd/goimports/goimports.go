@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/pprof"
 	"strings"
@@ -140,6 +141,25 @@ func processFile(filename string, in io.Reader, out io.Writer, argType argumentT
 			target = filepath.Join(*srcdir, filepath.Base(filename))
 		}
 	}
+
+	// remove empty line from import block
+	content := string(src)
+	// match import block
+	importReg := regexp.MustCompile(`import\s*\(([\s\S]*?)\)`)
+	// match empty line
+	emptyLineReg := regexp.MustCompile(`\s*?\n\s*`)
+	// record replace old & new string
+	replaceString := make([][]string, 0)
+	// find all match import block, record removed empty line
+	for _, s := range importReg.FindAllStringSubmatch(content, -1) {
+		newImport := fmt.Sprintf("import"+"(\n%s\n)", emptyLineReg.ReplaceAllString(s[1], "\n"))
+		replaceString = append(replaceString, []string{s[0], newImport})
+	}
+	// replace
+	for _, rs := range replaceString {
+		content = strings.Replace(content, rs[0], rs[1], -1)
+	}
+	src = []byte(content)
 
 	res, err := imports.Process(target, src, opt)
 	if err != nil {
