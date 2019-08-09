@@ -8,7 +8,6 @@ package source
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"go/format"
 
 	"golang.org/x/tools/go/ast/astutil"
@@ -18,6 +17,7 @@ import (
 	"golang.org/x/tools/internal/lsp/telemetry/log"
 	"golang.org/x/tools/internal/lsp/telemetry/trace"
 	"golang.org/x/tools/internal/span"
+	errors "golang.org/x/xerrors"
 )
 
 // Format formats a file with a given range.
@@ -30,7 +30,7 @@ func Format(ctx context.Context, f GoFile, rng span.Range) ([]TextEdit, error) {
 		return nil, err
 	}
 	pkg := f.GetPackage(ctx)
-	if hasListErrors(pkg.GetErrors()) || hasParseErrors(pkg.GetErrors()) {
+	if hasListErrors(pkg.GetErrors()) || hasParseErrors(pkg, f.URI()) {
 		// Even if this package has list or parse errors, this file may not
 		// have any parse errors and can still be formatted. Using format.Node
 		// on an ast with errors may result in code being added or removed.
@@ -43,7 +43,7 @@ func Format(ctx context.Context, f GoFile, rng span.Range) ([]TextEdit, error) {
 	}
 	path, exact := astutil.PathEnclosingInterval(file, rng.Start, rng.End)
 	if !exact || len(path) == 0 {
-		return nil, fmt.Errorf("no exact AST node matching the specified range")
+		return nil, errors.Errorf("no exact AST node matching the specified range")
 	}
 	node := path[0]
 
@@ -80,10 +80,10 @@ func Imports(ctx context.Context, view View, f GoFile, rng span.Range) ([]TextEd
 	}
 	pkg := f.GetPackage(ctx)
 	if pkg == nil || pkg.IsIllTyped() {
-		return nil, fmt.Errorf("no package for file %s", f.URI())
+		return nil, errors.Errorf("no package for file %s", f.URI())
 	}
 	if hasListErrors(pkg.GetErrors()) {
-		return nil, fmt.Errorf("%s has list errors, not running goimports", f.URI())
+		return nil, errors.Errorf("%s has list errors, not running goimports", f.URI())
 	}
 
 	options := &imports.Options{
@@ -104,7 +104,6 @@ func Imports(ctx context.Context, view View, f GoFile, rng span.Range) ([]TextEd
 	if err != nil {
 		return nil, err
 	}
-
 	return computeTextEdits(ctx, f, string(formatted)), nil
 }
 
@@ -126,10 +125,10 @@ func AllImportsFixes(ctx context.Context, view View, f GoFile, rng span.Range) (
 	}
 	pkg := f.GetPackage(ctx)
 	if pkg == nil || pkg.IsIllTyped() {
-		return nil, nil, fmt.Errorf("no package for file %s", f.URI())
+		return nil, nil, errors.Errorf("no package for file %s", f.URI())
 	}
 	if hasListErrors(pkg.GetErrors()) {
-		return nil, nil, fmt.Errorf("%s has list errors, not running goimports", f.URI())
+		return nil, nil, errors.Errorf("%s has list errors, not running goimports", f.URI())
 	}
 
 	options := &imports.Options{
@@ -174,9 +173,11 @@ func AllImportsFixes(ctx context.Context, view View, f GoFile, rng span.Range) (
 	return edits, editsPerFix, nil
 }
 
-func hasParseErrors(errors []packages.Error) bool {
-	for _, err := range errors {
-		if err.Kind == packages.ParseError {
+// hasParseErrors returns true if the given file has parse errors.
+func hasParseErrors(pkg Package, uri span.URI) bool {
+	for _, err := range pkg.GetErrors() {
+		spn := packagesErrorSpan(err)
+		if spn.URI() == uri && err.Kind == packages.ParseError {
 			return true
 		}
 	}
