@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-docker build --rm -f ".ci/DockerfileTest" -t code-go-langserver-ci .ci
+docker build --rm -f ".ci/Dockerfile" -t code-go-langserver-ci .ci
 
 
 docker run  \
