@@ -78,9 +78,15 @@ func (c *globalCache) Walk(walkFunc source.WalkFunc) {
 }
 
 func (c *globalCache) walk(walkFunc source.WalkFunc) {
+	var pkgs []*globalPackage
+
 	c.mu.RLock()
-	defer c.mu.RUnlock()
 	for _, pkg := range c.pathMap {
+		pkgs = append(pkgs, pkg)
+	}
+	c.mu.RUnlock()
+
+	for _, pkg := range pkgs {
 		if walkFunc(pkg.pkg) {
 			return
 		}
