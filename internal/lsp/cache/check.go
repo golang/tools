@@ -220,7 +220,6 @@ func (imp *importer) cachePackage(ctx context.Context, pkg *pkg, meta *metadata,
 		if err := imp.cachePerFile(gof, ph, pkg); err != nil {
 			return errors.Errorf("failed to cache file %s: %v", gof.URI(), err)
 		}
-		imp.view.space.Put(pkg)
 	}
 
 	// Set imports of package to correspond to cached packages.
@@ -233,6 +232,8 @@ func (imp *importer) cachePackage(ctx context.Context, pkg *pkg, meta *metadata,
 		}
 		pkg.imports[importPkg.pkgPath] = importPkg
 	}
+	
+	imp.view.space.Put(pkg)
 
 	return nil
 }
