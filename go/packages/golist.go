@@ -460,7 +460,7 @@ func getSizes(cfg *Config) (types.Sizes, error) {
 // roots selects the appropriate paths to walk based on the passed-in configuration,
 // particularly the environment and the presence of a go.mod in cfg.Dir's parents.
 func roots(cfg *Config) ([]gopathwalk.Root, string, error) {
-	stdout, err := invokeGo(cfg, "env", "GOROOT", "GOPATH", "GOMOD")
+	stdout, err := invokeGoCached(cfg, "env", "GOROOT", "GOPATH", "GOMOD")
 	if err != nil {
 		return nil, "", err
 	}
@@ -614,7 +614,7 @@ func golistDriver(cfg *Config, rootsDirs func() map[string]string, words ...stri
 
 	// Run "go list" for complete
 	// information on the specified packages.
-	buf, err := invokeGo(cfg, golistargs(cfg, words)...)
+	buf, err := invokeGoCached(cfg, golistargs(cfg, words)...)
 	if err != nil {
 		return nil, err
 	}
@@ -810,6 +810,32 @@ func golistargs(cfg *Config, words []string) []string {
 	return fullargs
 }
 
+
+type Result struct {
+	buf []byte
+	err error
+}
+var m = make(map[string]Result);
+
+func invokeGoCached(cfg *Config, args ...string) (*bytes.Buffer, error) {
+	key := strings.Join(args,"_");
+	var buf *bytes.Buffer
+	var err error
+
+	if val, ok := m[key]; ok {
+		buf = bytes.NewBuffer(val.buf)
+		err = val.err
+		//do something here
+		return buf, err
+	} else {
+		buf, err = invokeGo(cfg, args...)
+		m[key] = Result{buf.Bytes(), err}
+	}
+	return buf, err
+}
+
+var total int64 = 0
+
 // invokeGo returns the stdout of a go command invocation.
 func invokeGo(cfg *Config, args ...string) (*bytes.Buffer, error) {
 	stdout := new(bytes.Buffer)
@@ -825,7 +851,10 @@ func invokeGo(cfg *Config, args ...string) (*bytes.Buffer, error) {
 	cmd.Dir = cfg.Dir
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+
 	defer func(start time.Time) {
+		total += time.Since(start).Nanoseconds()
+		cfg.Logf("%lld", total)
 		cfg.Logf("%s for %v, stderr: <<%s>>\n", time.Since(start), cmdDebugStr(cmd, args...), stderr)
 	}(time.Now())
 
