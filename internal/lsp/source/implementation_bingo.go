@@ -18,7 +18,12 @@ func Implementation(ctx context.Context, search SearchFunc, f GoFile, pos token.
 	if err != nil {
 		return nil, err
 	}
-	pkg := f.GetPackage(ctx)
+
+	pkg, err := f.GetPackage(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	if pkg.IsIllTyped() {
 		return nil, fmt.Errorf("package for %s is ill typed", f.URI())
 	}

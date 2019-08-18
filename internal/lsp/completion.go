@@ -8,19 +8,22 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/lsp/telemetry/log"
-	"golang.org/x/tools/internal/lsp/telemetry/tag"
 	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/telemetry/log"
+	"golang.org/x/tools/internal/telemetry/tag"
 )
 
 func (s *Server) completion(ctx context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
 	uri := span.NewURI(params.TextDocument.URI)
 	view := s.session.ViewOf(uri)
-	f, m, err := getGoFile(ctx, view, uri)
+	f, err := getGoFile(ctx, view, uri)
+	if err != nil {
+		return nil, err
+	}
+	m, err := getMapper(ctx, f)
 	if err != nil {
 		return nil, err
 	}
@@ -33,14 +36,18 @@ func (s *Server) completion(ctx context.Context, params *protocol.CompletionPara
 		return nil, err
 	}
 	candidates, surrounding, err := source.Completion(ctx, view, f, rng.Start, source.CompletionOptions{
-		DeepComplete:     s.useDeepCompletions,
-		WantDocumentaton: s.wantCompletionDocumentation,
+		DeepComplete:          s.useDeepCompletions,
+		WantDocumentaton:      s.wantCompletionDocumentation,
+		WantFullDocumentation: s.hoverKind == fullDocumentation,
+		WantUnimported:        s.wantUnimportedCompletions,
 	}, view.Search())
 	if err != nil {
 		log.Print(ctx, "no completions found", tag.Of("At", rng), tag.Of("Failure", err))
 	}
 	return &protocol.CompletionList{
-		IsIncomplete: false,
+		// When using deep completions/fuzzy matching, report results as incomplete so
+		// client fetches updated completions after every key stroke.
+		IsIncomplete: s.useDeepCompletions,
 		Items:        s.toProtocolCompletionItems(ctx, view, m, candidates, params.Position, surrounding),
 	}, nil
 }
@@ -59,9 +66,7 @@ func (s *Server) toProtocolCompletionItems(ctx context.Context, view source.View
 		Start: pos,
 		End:   pos,
 	}
-	var prefix string
 	if surrounding != nil {
-		prefix = strings.ToLower(surrounding.Prefix())
 		spn, err := surrounding.Range.Span()
 		if err != nil {
 			log.Print(ctx, "failed to get span for surrounding position: %s:%v:%v: %v", tag.Of("Position", pos), tag.Of("Failure", err))
@@ -75,14 +80,12 @@ func (s *Server) toProtocolCompletionItems(ctx context.Context, view source.View
 		}
 	}
 
-	var numDeepCompletionsSeen int
+	var (
+		items                  = make([]protocol.CompletionItem, 0, len(candidates))
+		numDeepCompletionsSeen int
+	)
 
-	items := make([]protocol.CompletionItem, 0, len(candidates))
 	for i, candidate := range candidates {
-		// Match against the label (case-insensitive).
-		if !strings.HasPrefix(strings.ToLower(candidate.Label), prefix) {
-			continue
-		}
 		// Limit the number of deep completions to not overwhelm the user in cases
 		// with dozens of deep completion matches.
 		if candidate.Depth > 0 {
@@ -98,9 +101,11 @@ func (s *Server) toProtocolCompletionItems(ctx context.Context, view source.View
 		if s.insertTextFormat == protocol.SnippetTextFormat {
 			insertText = candidate.Snippet(s.usePlaceholders)
 		}
-
-		edits, _ := ToProtocolEdits(m, candidate.AdditionalTextEdits)
-
+		addlEdits, err := ToProtocolEdits(m, candidate.AdditionalTextEdits)
+		if err != nil {
+			log.Error(ctx, "failed to convert to protocol edits", err)
+			continue
+		}
 		item := protocol.CompletionItem{
 			Label:  candidate.Label,
 			Detail: candidate.Detail,
@@ -109,15 +114,15 @@ func (s *Server) toProtocolCompletionItems(ctx context.Context, view source.View
 				NewText: insertText,
 				Range:   insertionRange,
 			},
-			InsertTextFormat: s.insertTextFormat,
+			InsertTextFormat:    s.insertTextFormat,
+			AdditionalTextEdits: addlEdits,
 			// This is a hack so that the client sorts completion results in the order
 			// according to their score. This can be removed upon the resolution of
 			// https://github.com/Microsoft/language-server-protocol/issues/348.
-			SortText:            fmt.Sprintf("%05d", i),
-			FilterText:          candidate.InsertText,
-			Preselect:           i == 0,
-			Documentation:       candidate.Documentation,
-			AdditionalTextEdits: edits,
+			SortText:      fmt.Sprintf("%05d", i),
+			FilterText:    candidate.InsertText,
+			Preselect:     i == 0,
+			Documentation: candidate.Documentation,
 		}
 		// Trigger signature help for any function or method completion.
 		// This is helpful even if a function does not have parameters,

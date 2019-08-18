@@ -14,10 +14,13 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/lsp/source"
+	errors "golang.org/x/xerrors"
 )
 
 // pkg contains the type information needed by the source package.
 type pkg struct {
+	view *view
+
 	// ID and package path have their own types to avoid being used interchangeably.
 	id      packageID
 	pkgPath packagePath
@@ -55,10 +58,6 @@ type analysisEntry struct {
 }
 
 func (pkg *pkg) GetActionGraph(ctx context.Context, a *analysis.Analyzer) (*source.Action, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
 	pkg.mu.Lock()
 	e, ok := pkg.analyses[a]
 	if ok {
@@ -75,7 +74,7 @@ func (pkg *pkg) GetActionGraph(ctx context.Context, a *analysis.Analyzer) (*sour
 				return pkg.GetActionGraph(ctx, a)
 			}
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, errors.Errorf("GetActionGraph: %v", ctx.Err())
 		}
 	} else {
 		// cache miss
@@ -125,9 +124,9 @@ func (pkg *pkg) GetActionGraph(ctx context.Context, a *analysis.Analyzer) (*sour
 			}
 			sort.Strings(importPaths) // for determinism
 			for _, importPath := range importPaths {
-				dep := pkg.GetImport(importPath)
-				if dep == nil {
-					continue
+				dep, err := pkg.GetImport(ctx, importPath)
+				if err != nil {
+					return nil, err
 				}
 				act, err := dep.GetActionGraph(ctx, a)
 				if err != nil {
@@ -149,12 +148,8 @@ func (pkg *pkg) PkgPath() string {
 	return string(pkg.pkgPath)
 }
 
-func (pkg *pkg) GetFilenames() []string {
-	filenames := make([]string, 0, len(pkg.files))
-	for _, ph := range pkg.files {
-		filenames = append(filenames, ph.File().Identity().URI.Filename())
-	}
-	return filenames
+func (pkg *pkg) GetHandles() []source.ParseGoHandle {
+	return pkg.files
 }
 
 func (pkg *pkg) GetSyntax(ctx context.Context) []*ast.File {
@@ -164,7 +159,7 @@ func (pkg *pkg) GetSyntax(ctx context.Context) []*ast.File {
 
 	var syntax []*ast.File
 	for _, ph := range pkg.files {
-		file, _ := ph.Parse(ctx)
+		file, _ := ph.Cached(ctx)
 		if file != nil {
 			syntax = append(syntax, file)
 		}
@@ -190,14 +185,6 @@ func (pkg *pkg) GetTypesSizes() types.Sizes {
 
 func (pkg *pkg) IsIllTyped() bool {
 	return pkg.types == nil && pkg.typesInfo == nil
-}
-
-func (pkg *pkg) GetImport(pkgPath string) source.Package {
-	if imp := pkg.imports[packagePath(pkgPath)]; imp != nil {
-		return imp
-	}
-	// Don't return a nil pointer because that still satisfies the interface.
-	return nil
 }
 
 func (pkg *pkg) SetDiagnostics(diags []source.Diagnostic) {

@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/lsp/telemetry/log"
+	"golang.org/x/tools/internal/telemetry/log"
 )
 
 const (

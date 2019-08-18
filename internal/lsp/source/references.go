@@ -9,8 +9,8 @@ import (
 	"go/ast"
 	"go/types"
 
-	"golang.org/x/tools/internal/lsp/telemetry/trace"
 	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/telemetry/trace"
 	errors "golang.org/x/xerrors"
 )
 
@@ -36,11 +36,11 @@ func (i *IdentifierInfo) References(ctx context.Context) ([]*ReferenceInfo, erro
 		return nil, errors.Errorf("no references for an import spec")
 	}
 
-	pkgs := i.File.GetPackages(ctx)
+	pkgs, err := i.File.GetPackages(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for _, pkg := range pkgs {
-		if pkg == nil || pkg.IsIllTyped() {
-			return nil, errors.Errorf("package for %s is ill typed", i.File.URI())
-		}
 		info := pkg.GetTypesInfo()
 		if info == nil {
 			return nil, errors.Errorf("package %s has no types info", pkg.PkgPath())

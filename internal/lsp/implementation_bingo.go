@@ -12,10 +12,16 @@ func (s *Server) implementation(ctx context.Context, params *protocol.TextDocume
 	var locations []source.Location
 
 	f := func(view source.View) error {
-		f, m, err := getGoFile(ctx, view, span.URI(params.TextDocument.URI))
+		f, err := getGoFile(ctx, view, span.URI(params.TextDocument.URI))
 		if err != nil {
 			return err
 		}
+
+		m, err := getMapper(ctx, f)
+		if err != nil {
+			return err
+		}
+
 		spn, err := m.PointSpan(params.Position)
 		if err != nil {
 			return err

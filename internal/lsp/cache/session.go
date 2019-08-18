@@ -7,6 +7,7 @@ package cache
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,9 +17,9 @@ import (
 	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/telemetry"
-	"golang.org/x/tools/internal/lsp/telemetry/log"
-	"golang.org/x/tools/internal/lsp/telemetry/trace"
 	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/telemetry/log"
+	"golang.org/x/tools/internal/telemetry/trace"
 	"golang.org/x/tools/internal/xcontext"
 	errors "golang.org/x/xerrors"
 )
@@ -48,6 +49,9 @@ type overlay struct {
 	// sameContentOnDisk is true if a file has been saved on disk,
 	// and therefore does not need to be part of the overlay sent to go/packages.
 	sameContentOnDisk bool
+
+	// unchanged is true if a file has not yet been edited.
+	unchanged bool
 }
 
 func (s *session) Shutdown(ctx context.Context) {
@@ -87,9 +91,6 @@ func (s *session) NewView(ctx context.Context, name string, folder span.URI) sou
 		mcache: &metadataCache{
 			packages: make(map[packageID]*metadata),
 			ids:      make(map[packagePath]packageID),
-		},
-		pcache: &packageCache{
-			packages: make(map[packageID]*entry),
 		},
 		ignoredURIs: make(map[span.URI]struct{}),
 	}
@@ -189,6 +190,17 @@ func (s *session) removeView(ctx context.Context, view *view) error {
 // TODO: Propagate the language ID through to the view.
 func (s *session) DidOpen(ctx context.Context, uri span.URI, _ source.FileKind, text []byte) {
 	ctx = telemetry.File.With(ctx, uri)
+
+	// Files with _ prefixes are ignored.
+	if strings.HasPrefix(filepath.Base(uri.Filename()), "_") {
+		for _, view := range s.views {
+			view.ignoredURIsMu.Lock()
+			view.ignoredURIs[uri] = struct{}{}
+			view.ignoredURIsMu.Unlock()
+		}
+		return
+	}
+
 	// Mark the file as open.
 	s.openFiles.Store(uri, true)
 
@@ -245,7 +257,7 @@ func (s *session) GetFile(uri span.URI) source.FileHandle {
 	return s.Cache().GetFile(uri)
 }
 
-func (s *session) SetOverlay(uri span.URI, data []byte) {
+func (s *session) SetOverlay(uri span.URI, data []byte) bool {
 	s.overlayMu.Lock()
 	defer func() {
 		s.overlayMu.Unlock()
@@ -254,14 +266,20 @@ func (s *session) SetOverlay(uri span.URI, data []byte) {
 
 	if data == nil {
 		delete(s.overlays, uri)
-		return
+		return false
 	}
+
+	o := s.overlays[uri]
+	firstChange := o != nil && o.unchanged
+
 	s.overlays[uri] = &overlay{
-		session: s,
-		uri:     uri,
-		data:    data,
-		hash:    hashContents(data),
+		session:   s,
+		uri:       uri,
+		data:      data,
+		hash:      hashContents(data),
+		unchanged: o == nil,
 	}
+	return firstChange
 }
 
 // openOverlay adds the file content to the overlay.
@@ -273,10 +291,11 @@ func (s *session) openOverlay(ctx context.Context, uri span.URI, data []byte) {
 		s.filesWatchMap.Notify(uri)
 	}()
 	s.overlays[uri] = &overlay{
-		session: s,
-		uri:     uri,
-		data:    data,
-		hash:    hashContents(data),
+		session:   s,
+		uri:       uri,
+		data:      data,
+		hash:      hashContents(data),
+		unchanged: true,
 	}
 	_, hash, err := s.cache.GetFile(uri).Read(ctx)
 	if err != nil {

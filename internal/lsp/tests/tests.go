@@ -5,8 +5,10 @@
 package tests
 
 import (
+	"bytes"
 	"context"
 	"flag"
+	"fmt"
 	"go/ast"
 	"go/token"
 	"io/ioutil"
@@ -18,6 +20,7 @@ import (
 	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/packages/packagestest"
+	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/txtar"
@@ -26,7 +29,7 @@ import (
 // We hardcode the expected number of test cases to ensure that all tests
 // are being executed. If a test is added, this number must be changed.
 const (
-	ExpectedCompletionsCount       = 144
+	ExpectedCompletionsCount       = 146
 	ExpectedCompletionSnippetCount = 15
 	ExpectedDiagnosticsCount       = 21
 	ExpectedFormatCount            = 6
@@ -35,7 +38,7 @@ const (
 	ExpectedTypeDefinitionsCount   = 2
 	ExpectedHighlightsCount        = 2
 	ExpectedReferencesCount        = 5
-	ExpectedRenamesCount           = 16
+	ExpectedRenamesCount           = 17
 	ExpectedSymbolsCount           = 1
 	ExpectedSignaturesCount        = 21
 	ExpectedLinksCount             = 4
@@ -195,12 +198,12 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 		filename := data.Exported.File(testModule, fragment)
 		data.fragments[filename] = fragment
 	}
-	data.Exported.Config.Logf = t.Logf
+	data.Exported.Config.Logf = nil
 
 	// Merge the exported.Config with the view.Config.
 	data.Config = *data.Exported.Config
 	data.Config.Fset = token.NewFileSet()
-	data.Config.Logf = t.Logf
+	data.Config.Logf = nil
 	data.Config.Context = Context(nil)
 	data.Config.ParseFile = func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
 		panic("ParseFile should not be called")
@@ -208,7 +211,7 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 
 	// Do a first pass to collect special markers for completion.
 	if err := data.Exported.Expect(map[string]interface{}{
-		"item": func(name string, r packagestest.Range, _, _ string) {
+		"item": func(name string, r packagestest.Range, _ []string) {
 			data.Exported.Mark(name, r)
 		},
 	}); err != nil {
@@ -424,8 +427,20 @@ func (data *Data) collectDiagnostics(spn span.Span, msgSource, msg string) {
 	if strings.Contains(string(spn.URI()), "analyzer") {
 		severity = source.SeverityWarning
 	}
+	// This is not the correct way to do this,
+	// but it seems excessive to do the full conversion here.
 	want := source.Diagnostic{
-		Span:     spn,
+		URI: spn.URI(),
+		Range: protocol.Range{
+			Start: protocol.Position{
+				Line:      float64(spn.Start().Line()) - 1,
+				Character: float64(spn.Start().Column()) - 1,
+			},
+			End: protocol.Position{
+				Line:      float64(spn.End().Line()) - 1,
+				Character: float64(spn.End().Column()) - 1,
+			},
+		},
 		Severity: severity,
 		Source:   msgSource,
 		Message:  msg,
@@ -433,15 +448,103 @@ func (data *Data) collectDiagnostics(spn span.Span, msgSource, msg string) {
 	data.Diagnostics[spn.URI()] = append(data.Diagnostics[spn.URI()], want)
 }
 
+// diffDiagnostics prints the diff between expected and actual diagnostics test
+// results.
+func DiffDiagnostics(uri span.URI, want, got []source.Diagnostic) string {
+	sortDiagnostics(want)
+	sortDiagnostics(got)
+
+	if len(got) != len(want) {
+		return summarizeDiagnostics(-1, want, got, "different lengths got %v want %v", len(got), len(want))
+	}
+	for i, w := range want {
+		g := got[i]
+		if w.Message != g.Message {
+			return summarizeDiagnostics(i, want, got, "incorrect Message got %v want %v", g.Message, w.Message)
+		}
+		if protocol.ComparePosition(w.Range.Start, g.Range.Start) != 0 {
+			return summarizeDiagnostics(i, want, got, "incorrect Start got %v want %v", g.Range.Start, w.Range.Start)
+		}
+		// Special case for diagnostics on parse errors.
+		if strings.Contains(string(uri), "noparse") {
+			if protocol.ComparePosition(g.Range.Start, g.Range.End) != 0 || protocol.ComparePosition(w.Range.Start, g.Range.End) != 0 {
+				return summarizeDiagnostics(i, want, got, "incorrect End got %v want %v", g.Range.End, w.Range.Start)
+			}
+		} else if !protocol.IsPoint(g.Range) { // Accept any 'want' range if the diagnostic returns a zero-length range.
+			if protocol.ComparePosition(w.Range.End, g.Range.End) != 0 {
+				return summarizeDiagnostics(i, want, got, "incorrect End got %v want %v", g.Range.End, w.Range.End)
+			}
+		}
+		if w.Severity != g.Severity {
+			return summarizeDiagnostics(i, want, got, "incorrect Severity got %v want %v", g.Severity, w.Severity)
+		}
+		if w.Source != g.Source {
+			return summarizeDiagnostics(i, want, got, "incorrect Source got %v want %v", g.Source, w.Source)
+		}
+	}
+	return ""
+}
+
+func sortDiagnostics(d []source.Diagnostic) {
+	sort.Slice(d, func(i int, j int) bool {
+		return compareDiagnostic(d[i], d[j]) < 0
+	})
+}
+
+func compareDiagnostic(a, b source.Diagnostic) int {
+	if r := span.CompareURI(a.URI, b.URI); r != 0 {
+		return r
+	}
+	if r := protocol.CompareRange(a.Range, b.Range); r != 0 {
+		return r
+	}
+	if a.Message < b.Message {
+		return -1
+	}
+	if a.Message == b.Message {
+		return 0
+	} else {
+		return 1
+	}
+}
+
+func summarizeDiagnostics(i int, want []source.Diagnostic, got []source.Diagnostic, reason string, args ...interface{}) string {
+	msg := &bytes.Buffer{}
+	fmt.Fprint(msg, "diagnostics failed")
+	if i >= 0 {
+		fmt.Fprintf(msg, " at %d", i)
+	}
+	fmt.Fprint(msg, " because of ")
+	fmt.Fprintf(msg, reason, args...)
+	fmt.Fprint(msg, ":\nexpected:\n")
+	for _, d := range want {
+		fmt.Fprintf(msg, "  %s:%v: %s\n", d.URI, d.Range, d.Message)
+	}
+	fmt.Fprintf(msg, "got:\n")
+	for _, d := range got {
+		fmt.Fprintf(msg, "  %s:%v: %s\n", d.URI, d.Range, d.Message)
+	}
+	return msg.String()
+}
+
 func (data *Data) collectCompletions(src span.Span, expected []token.Pos) {
 	data.Completions[src] = expected
 }
 
-func (data *Data) collectCompletionItems(pos token.Pos, label, detail, kind string) {
+func (data *Data) collectCompletionItems(pos token.Pos, args []string) {
+	if len(args) < 3 {
+		return
+	}
+	label, detail, kind := args[0], args[1], args[2]
+	var documentation string
+	if len(args) == 4 {
+		documentation = args[3]
+	}
 	data.CompletionItems[pos] = &source.CompletionItem{
-		Label:  label,
-		Detail: detail,
-		Kind:   source.ParseCompletionItemKind(kind),
+		Label:         label,
+		Detail:        detail,
+		Kind:          source.ParseCompletionItemKind(kind),
+		Documentation: documentation,
 	}
 }
 

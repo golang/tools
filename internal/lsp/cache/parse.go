@@ -5,6 +5,7 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"go/ast"
 	"go/parser"
@@ -13,13 +14,14 @@ import (
 
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/telemetry"
-	"golang.org/x/tools/internal/lsp/telemetry/trace"
 	"golang.org/x/tools/internal/memoize"
+	"golang.org/x/tools/internal/telemetry/log"
+	"golang.org/x/tools/internal/telemetry/trace"
 	errors "golang.org/x/xerrors"
 )
 
-// Limits the number of parallel file reads per process.
-var ioLimit = make(chan struct{}, 20)
+// Limits the number of parallel parser calls per process.
+var parseLimit = make(chan struct{}, 20)
 
 // parseKey uniquely identifies a parsed Go file.
 type parseKey struct {
@@ -68,23 +70,46 @@ func (h *parseGoHandle) Mode() source.ParseMode {
 func (h *parseGoHandle) Parse(ctx context.Context) (*ast.File, error) {
 	v := h.handle.Get(ctx)
 	if v == nil {
-		return nil, ctx.Err()
+		return nil, errors.Errorf("Parse: %v", ctx.Err())
 	}
 	data := v.(*parseGoData)
 	return data.ast, data.err
+}
+
+func (h *parseGoHandle) Cached(ctx context.Context) (*ast.File, error) {
+	v := h.handle.Cached()
+	if v == nil {
+		return nil, errors.Errorf("no cached value for %s", h.file.Identity().URI)
+	}
+	data := v.(*parseGoData)
+	return data.ast, data.err
+}
+
+func hashParseKey(ph source.ParseGoHandle) string {
+	b := bytes.NewBuffer(nil)
+	b.WriteString(ph.File().Identity().String())
+	b.WriteString(string(ph.Mode()))
+	return hashContents(b.Bytes())
+}
+
+func hashParseKeys(phs []source.ParseGoHandle) string {
+	b := bytes.NewBuffer(nil)
+	for _, ph := range phs {
+		b.WriteString(hashParseKey(ph))
+	}
+	return hashContents(b.Bytes())
 }
 
 func parseGo(ctx context.Context, c *cache, fh source.FileHandle, mode source.ParseMode) (*ast.File, error) {
 	ctx, done := trace.StartSpan(ctx, "cache.parseGo", telemetry.File.Of(fh.Identity().URI.Filename()))
 	defer done()
 
-	ioLimit <- struct{}{}
 	buf, _, err := fh.Read(ctx)
-	<-ioLimit // Make sure to release the token, even when an error is returned.
 	if err != nil {
 		return nil, err
 	}
-
+	parseLimit <- struct{}{}
+	defer func() { <-parseLimit }()
 	parserMode := parser.AllErrors | parser.ParseComments
 	if mode == source.ParseHeader {
 		parserMode = parser.ImportsOnly | parser.ParseComments
@@ -97,7 +122,7 @@ func parseGo(ctx context.Context, c *cache, fh source.FileHandle, mode source.Pa
 		// Fix any badly parsed parts of the AST.
 		tok := c.fset.File(ast.Pos())
 		if err := fix(ctx, ast, tok, buf); err != nil {
-			// TODO: Do something with the error (need access to a logger in here).
+			log.Error(ctx, "failed to fix AST", err)
 		}
 	}
 	if ast == nil {

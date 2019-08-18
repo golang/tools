@@ -7,11 +7,12 @@ package source
 import (
 	"context"
 	"go/ast"
+	"go/doc"
 	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/internal/lsp/telemetry/trace"
+	"golang.org/x/tools/internal/telemetry/trace"
 	errors "golang.org/x/xerrors"
 )
 
@@ -33,11 +34,10 @@ func SignatureHelp(ctx context.Context, f GoFile, pos token.Pos) (*SignatureInfo
 	if file == nil {
 		return nil, err
 	}
-	pkg := f.GetPackage(ctx)
-	if pkg == nil || pkg.IsIllTyped() {
-		return nil, errors.Errorf("package for %s is ill typed", f.URI())
+	pkg, err := f.GetPackage(ctx)
+	if err != nil {
+		return nil, err
 	}
-
 	// Find a call expression surrounding the query position.
 	var callExpr *ast.CallExpr
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
@@ -154,10 +154,13 @@ func signatureInformation(name string, comment *ast.CommentGroup, params, result
 		paramInfo = append(paramInfo, ParameterInformation{Label: p})
 	}
 	label := name + formatFunction(params, results, writeResultParens)
+	var c string
+	if comment != nil {
+		c = doc.Synopsis(comment.Text())
+	}
 	return &SignatureInformation{
-		Label: label,
-		// TODO: Should we have the HoverKind apply to signature information as well?
-		Documentation:   formatDocumentation(comment, SynopsisDocumentation),
+		Label:           label,
+		Documentation:   c,
 		Parameters:      paramInfo,
 		ActiveParameter: activeParam,
 	}

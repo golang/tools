@@ -15,9 +15,9 @@ import (
 	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/lsp/telemetry/log"
-	"golang.org/x/tools/internal/lsp/telemetry/tag"
 	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/telemetry/log"
+	"golang.org/x/tools/internal/telemetry/tag"
 	errors "golang.org/x/xerrors"
 )
 
@@ -41,7 +41,7 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 	}
 
 	// Default to using synopsis as a default for hover information.
-	s.hoverKind = source.SynopsisDocumentation
+	s.hoverKind = synopsisDocumentation
 
 	s.supportedCodeActions = map[source.FileKind]map[protocol.CodeActionKind]bool{
 		source.Go: {
@@ -232,13 +232,15 @@ func (s *Server) processConfig(ctx context.Context, view source.View, config int
 	if hoverKind, ok := c["hoverKind"].(string); ok {
 		switch hoverKind {
 		case "NoDocumentation":
-			s.hoverKind = source.NoDocumentation
+			s.hoverKind = noDocumentation
 		case "SingleLine":
-			s.hoverKind = source.SingleLine
+			s.hoverKind = singleLine
 		case "SynopsisDocumentation":
-			s.hoverKind = source.SynopsisDocumentation
+			s.hoverKind = synopsisDocumentation
 		case "FullDocumentation":
-			s.hoverKind = source.FullDocumentation
+			s.hoverKind = fullDocumentation
+		case "Structured":
+			s.hoverKind = structured
 		default:
 			log.Error(ctx, "unsupported hover kind", nil, tag.Of("HoverKind", hoverKind))
 			// The default value is already be set to synopsis.
@@ -260,6 +262,10 @@ func (s *Server) processConfig(ctx context.Context, view source.View, config int
 	// Check if deep completions are enabled.
 	if useDeepCompletions, ok := c["useDeepCompletions"].(bool); ok {
 		s.useDeepCompletions = useDeepCompletions
+	}
+	// Check if want unimported package completions.
+	if wantUnimportedCompletions, ok := c["wantUnimportedCompletions"].(bool); ok {
+		s.wantUnimportedCompletions = wantUnimportedCompletions
 	}
 	return nil
 }

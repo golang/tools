@@ -11,8 +11,8 @@ import (
 	"go/token"
 	"go/types"
 
-	"golang.org/x/tools/internal/lsp/telemetry/trace"
 	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/telemetry/trace"
 	errors "golang.org/x/xerrors"
 )
 
@@ -50,9 +50,9 @@ func DocumentSymbols(ctx context.Context, f GoFile) ([]Symbol, error) {
 	if file == nil {
 		return nil, err
 	}
-	pkg := f.GetPackage(ctx)
-	if pkg == nil || pkg.IsIllTyped() {
-		return nil, errors.Errorf("no package for %s", f.URI())
+	pkg, err := f.GetPackage(ctx)
+	if err != nil {
+		return nil, err
 	}
 	return getSymbols(fset, file, pkg)
 }

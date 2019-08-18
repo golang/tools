@@ -41,9 +41,9 @@ func (c *completer) getAdditionalTextEdits(pkgPath string) *TextEdit {
 		newText = "\n\t" + newText
 	}
 
-	point := toPoint(c.file.FileSet(), pos)
+	point := toPoint(c.goFile.FileSet(), pos)
 	return &TextEdit{
-		Span:    span.New(c.file.URI(), point, point),
+		Span:    span.New(c.goFile.URI(), point, point),
 		NewText: newText,
 	}
 }
@@ -52,12 +52,12 @@ func (c *completer) init() {
 	switch c.path[0].(type) {
 	case *ast.Ident, *ast.SelectorExpr:
 	default:
-		content, _, err := c.file.View().Session().GetFile(c.file.URI()).Read(c.ctx)
+		content, _, err := c.goFile.View().Session().GetFile(c.goFile.URI()).Read(c.ctx)
 		if err != nil {
 			//c.file.View().Session().Errorf(c.ctx, "read file %s content failed: %s", c.file.URI(), err)
 			return
 		}
-		tok, err := c.file.GetToken(c.ctx)
+		tok, err := c.goFile.GetToken(c.ctx)
 		if err != nil {
 			return
 		}
@@ -89,7 +89,7 @@ func (c *completer) scopeVisit(pkgPath, prefix string) {
 			scope := p.GetTypes().Scope()
 			for _, name := range scope.Names() {
 				l := len(c.items)
-				c.found(scope.Lookup(name), score)
+				c.found(scope.Lookup(name), score, nil)
 				if len(c.items) == l+1 && edit != nil {
 					c.items[l].AdditionalTextEdits = append(c.items[l].AdditionalTextEdits, *edit)
 				}
@@ -132,8 +132,8 @@ func (c *completer) canNotAccess(pkgPath string) bool {
 		return true
 	}
 
-	pkg := c.file.GetPackage(c.ctx)
-	if pkg == nil {
+	pkg, err := c.goFile.GetPackage(c.ctx)
+	if err != nil || pkg == nil {
 		return false
 	}
 
@@ -369,20 +369,20 @@ func (c *completer) closure(obj types.Object, score float64) bool {
 		// methods of T
 		mset := types.NewMethodSet(objType)
 		for i := 0; i < mset.Len(); i++ {
-			c.found(mset.At(i).Obj(), score)
+			c.found(mset.At(i).Obj(), score, nil)
 		}
 
 		// methods of *T
 		if !types.IsInterface(obj.Type()) && !isPointer(objType) {
 			mset := types.NewMethodSet(types.NewPointer(objType))
 			for i := 0; i < mset.Len(); i++ {
-				c.found(mset.At(i).Obj(), score)
+				c.found(mset.At(i).Obj(), score, nil)
 			}
 		}
 
 		// fields of T
 		for _, f := range fieldSelections(objType) {
-			c.found(f, score)
+			c.found(f, score, nil)
 		}
 	}
 

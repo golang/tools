@@ -14,9 +14,9 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/diff"
-	"golang.org/x/tools/internal/lsp/telemetry/log"
-	"golang.org/x/tools/internal/lsp/telemetry/trace"
 	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/telemetry/log"
+	"golang.org/x/tools/internal/telemetry/trace"
 	errors "golang.org/x/xerrors"
 )
 
@@ -29,7 +29,10 @@ func Format(ctx context.Context, f GoFile, rng span.Range) ([]TextEdit, error) {
 	if file == nil {
 		return nil, err
 	}
-	pkg := f.GetPackage(ctx)
+	pkg, err := f.GetPackage(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if hasListErrors(pkg.GetErrors()) || hasParseErrors(pkg, f.URI()) {
 		// Even if this package has list or parse errors, this file may not
 		// have any parse errors and can still be formatted. Using format.Node
@@ -78,9 +81,9 @@ func Imports(ctx context.Context, view View, f GoFile, rng span.Range) ([]TextEd
 	if err != nil {
 		return nil, err
 	}
-	pkg := f.GetPackage(ctx)
-	if pkg == nil || pkg.IsIllTyped() {
-		return nil, errors.Errorf("no package for file %s", f.URI())
+	pkg, err := f.GetPackage(ctx)
+	if err != nil {
+		return nil, err
 	}
 	if hasListErrors(pkg.GetErrors()) {
 		return nil, errors.Errorf("%s has list errors, not running goimports", f.URI())
@@ -123,14 +126,13 @@ func AllImportsFixes(ctx context.Context, view View, f GoFile, rng span.Range) (
 	if err != nil {
 		return nil, nil, err
 	}
-	pkg := f.GetPackage(ctx)
-	if pkg == nil || pkg.IsIllTyped() {
-		return nil, nil, errors.Errorf("no package for file %s", f.URI())
+	pkg, err := f.GetPackage(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
 	if hasListErrors(pkg.GetErrors()) {
 		return nil, nil, errors.Errorf("%s has list errors, not running goimports", f.URI())
 	}
-
 	options := &imports.Options{
 		// Defaults.
 		AllErrors:  true,
@@ -171,6 +173,35 @@ func AllImportsFixes(ctx context.Context, view View, f GoFile, rng span.Range) (
 	}
 
 	return edits, editsPerFix, nil
+}
+
+// AllImportsFixes formats f for each possible fix to the imports.
+// In addition to returning the result of applying all edits,
+// it returns a list of fixes that could be applied to the file, with the
+// corresponding TextEdits that would be needed to apply that fix.
+func CandidateImports(ctx context.Context, view View, filename string) (pkgs []imports.ImportFix, err error) {
+	ctx, done := trace.StartSpan(ctx, "source.CandidateImports")
+	defer done()
+
+	options := &imports.Options{
+		// Defaults.
+		AllErrors:  true,
+		Comments:   true,
+		Fragment:   true,
+		FormatOnly: false,
+		TabIndent:  true,
+		TabWidth:   8,
+	}
+	importFn := func(opts *imports.Options) error {
+		pkgs, err = imports.GetAllCandidates(filename, opts)
+		return err
+	}
+	err = view.RunProcessEnvFunc(ctx, importFn, options)
+	if err != nil {
+		return nil, err
+	}
+
+	return pkgs, nil
 }
 
 // hasParseErrors returns true if the given file has parse errors.

@@ -59,7 +59,7 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 				},
 				source.Mod: {},
 				source.Sum: {}},
-			hoverKind: source.SynopsisDocumentation,
+			hoverKind: synopsisDocumentation,
 		},
 		data: data,
 		ctx:  ctx,
@@ -92,78 +92,20 @@ func (r *runner) Diagnostics(t *testing.T, data tests.Diagnostics) {
 			}
 			continue
 		}
-		if diff := diffDiagnostics(uri, want, got); diff != "" {
+		if diff := tests.DiffDiagnostics(uri, want, got); diff != "" {
 			t.Error(diff)
 		}
 	}
 }
 
-func sortDiagnostics(d []source.Diagnostic) {
-	sort.Slice(d, func(i int, j int) bool {
-		if r := span.Compare(d[i].Span, d[j].Span); r != 0 {
-			return r < 0
-		}
-		return d[i].Message < d[j].Message
-	})
-}
-
-// diffDiagnostics prints the diff between expected and actual diagnostics test
-// results.
-func diffDiagnostics(uri span.URI, want, got []source.Diagnostic) string {
-	sortDiagnostics(want)
-	sortDiagnostics(got)
-	if len(got) != len(want) {
-		return summarizeDiagnostics(-1, want, got, "different lengths got %v want %v", len(got), len(want))
-	}
-	for i, w := range want {
-		g := got[i]
-		if w.Message != g.Message {
-			return summarizeDiagnostics(i, want, got, "incorrect Message got %v want %v", g.Message, w.Message)
-		}
-		if span.ComparePoint(w.Start(), g.Start()) != 0 {
-			return summarizeDiagnostics(i, want, got, "incorrect Start got %v want %v", g.Start(), w.Start())
-		}
-		// Special case for diagnostics on parse errors.
-		if strings.Contains(string(uri), "noparse") {
-			if span.ComparePoint(g.Start(), g.End()) != 0 || span.ComparePoint(w.Start(), g.End()) != 0 {
-				return summarizeDiagnostics(i, want, got, "incorrect End got %v want %v", g.End(), w.Start())
-			}
-		} else if !g.IsPoint() { // Accept any 'want' range if the diagnostic returns a zero-length range.
-			if span.ComparePoint(w.End(), g.End()) != 0 {
-				return summarizeDiagnostics(i, want, got, "incorrect End got %v want %v", g.End(), w.End())
-			}
-		}
-		if w.Severity != g.Severity {
-			return summarizeDiagnostics(i, want, got, "incorrect Severity got %v want %v", g.Severity, w.Severity)
-		}
-		if w.Source != g.Source {
-			return summarizeDiagnostics(i, want, got, "incorrect Source got %v want %v", g.Source, w.Source)
-		}
-	}
-	return ""
-}
-
-func summarizeDiagnostics(i int, want []source.Diagnostic, got []source.Diagnostic, reason string, args ...interface{}) string {
-	msg := &bytes.Buffer{}
-	fmt.Fprint(msg, "diagnostics failed")
-	if i >= 0 {
-		fmt.Fprintf(msg, " at %d", i)
-	}
-	fmt.Fprint(msg, " because of ")
-	fmt.Fprintf(msg, reason, args...)
-	fmt.Fprint(msg, ":\nexpected:\n")
-	for _, d := range want {
-		fmt.Fprintf(msg, "  %v: %s\n", d.Span, d.Message)
-	}
-	fmt.Fprintf(msg, "got:\n")
-	for _, d := range got {
-		fmt.Fprintf(msg, "  %v: %s\n", d.Span, d.Message)
-	}
-	return msg.String()
-}
-
 func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests.CompletionSnippets, items tests.CompletionItems) {
-	defer func() { r.server.useDeepCompletions = false }()
+	defer func() {
+		r.server.useDeepCompletions = false
+		r.server.wantUnimportedCompletions = false
+		r.server.wantCompletionDocumentation = false
+	}()
+
+	r.server.wantCompletionDocumentation = true
 
 	for src, itemList := range data {
 		var want []source.CompletionItem
@@ -172,6 +114,7 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 		}
 
 		r.server.useDeepCompletions = strings.Contains(string(src.URI()), "deepcomplete")
+		r.server.wantUnimportedCompletions = strings.Contains(string(src.URI()), "unimported")
 
 		list := r.runCompletion(t, src)
 
@@ -201,6 +144,7 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 
 		for src, want := range snippets {
 			r.server.useDeepCompletions = strings.Contains(string(src.URI()), "deepcomplete")
+			r.server.wantUnimportedCompletions = strings.Contains(string(src.URI()), "unimported")
 
 			list := r.runCompletion(t, src)
 
@@ -280,6 +224,11 @@ func diffCompletionItems(t *testing.T, spn span.Span, want []source.CompletionIt
 		if w.Detail != g.Detail {
 			return summarizeCompletionItems(i, want, got, "incorrect Detail got %v want %v", g.Detail, w.Detail)
 		}
+		if w.Documentation != "" && !strings.HasPrefix(w.Documentation, "@") {
+			if w.Documentation != g.Documentation {
+				return summarizeCompletionItems(i, want, got, "incorrect Documentation got %v want %v", g.Documentation, w.Documentation)
+			}
+		}
 		if wkind := toProtocolCompletionItemKind(w.Kind); wkind != g.Kind {
 			return summarizeCompletionItems(i, want, got, "incorrect Kind got %v want %v", g.Kind, wkind)
 		}
@@ -327,9 +276,13 @@ func (r *runner) Format(t *testing.T, data tests.Formats) {
 			}
 			continue
 		}
-		_, m, err := getSourceFile(r.ctx, r.server.session.ViewOf(uri), uri)
+		f, err := getGoFile(r.ctx, r.server.session.ViewOf(uri), uri)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
+		}
+		m, err := getMapper(r.ctx, f)
+		if err != nil {
+			t.Fatal(err)
 		}
 		sedits, err := FromProtocolEdits(m, edits)
 		if err != nil {
@@ -364,9 +317,13 @@ func (r *runner) Import(t *testing.T, data tests.Imports) {
 			}
 			continue
 		}
-		_, m, err := getSourceFile(r.ctx, r.server.session.ViewOf(uri), uri)
+		f, err := getGoFile(r.ctx, r.server.session.ViewOf(uri), uri)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
+		}
+		m, err := getMapper(r.ctx, f)
+		if err != nil {
+			t.Fatal(err)
 		}
 		var edits []protocol.TextEdit
 		for _, a := range actions {
@@ -553,9 +510,13 @@ func (r *runner) Rename(t *testing.T, data tests.Renames) {
 		var res []string
 		for uri, edits := range *workspaceEdits.Changes {
 			spnURI := span.URI(uri)
-			_, m, err := getSourceFile(r.ctx, r.server.session.ViewOf(span.URI(spnURI)), spnURI)
+			f, err := getGoFile(r.ctx, r.server.session.ViewOf(spnURI), spnURI)
 			if err != nil {
-				t.Error(err)
+				t.Fatal(err)
+			}
+			m, err := getMapper(r.ctx, f)
+			if err != nil {
+				t.Fatal(err)
 			}
 
 			sedits, err := FromProtocolEdits(m, edits)
