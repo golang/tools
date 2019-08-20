@@ -22,19 +22,23 @@ type Golden struct {
 	name        string
 	trimPrefix  string
 	lineComment bool
+	toLower     bool
+	toUpper     bool
 	input       string // input; the package clause is provided when running the test.
 	output      string // exected output.
 }
 
 var golden = []Golden{
-	{"day", "", false, day_in, day_out},
-	{"offset", "", false, offset_in, offset_out},
-	{"gap", "", false, gap_in, gap_out},
-	{"num", "", false, num_in, num_out},
-	{"unum", "", false, unum_in, unum_out},
-	{"prime", "", false, prime_in, prime_out},
-	{"prefix", "Type", false, prefix_in, prefix_out},
-	{"tokens", "", true, tokens_in, tokens_out},
+	{"day", "", false, false, false, day_in, day_out},
+	{"offset", "", false, false, false, offset_in, offset_out},
+	{"gap", "", false, false, false, gap_in, gap_out},
+	{"num", "", false, false, false, num_in, num_out},
+	{"unum", "", false, false, false, unum_in, unum_out},
+	{"prime", "", false, false, false, prime_in, prime_out},
+	{"prefix", "Type", false, false, false, prefix_in, prefix_out},
+	{"tokens", "", true, false, false, tokens_in, tokens_out},
+	{"to-lower", "", false, true, false, toLower_in, toLower_out},
+	{"to-upper", "", false, false, true, toUpper_in, toUpper_out},
 }
 
 // Each example starts with "type XXX [u]int", with a single space separating them.
@@ -397,6 +401,80 @@ func (i Token) String() string {
 }
 `
 
+const toLower_in = `type Day int
+const (
+	Monday Day = iota
+	Tuesday
+	Wednesday
+	Thursday
+	Friday
+	Saturday
+	Sunday
+)
+`
+
+const toLower_out = `func _() {
+	// An "invalid array index" compiler error signifies that the constant values have changed.
+	// Re-run the stringer command to generate them again.
+	var x [1]struct{}
+	_ = x[Monday-0]
+	_ = x[Tuesday-1]
+	_ = x[Wednesday-2]
+	_ = x[Thursday-3]
+	_ = x[Friday-4]
+	_ = x[Saturday-5]
+	_ = x[Sunday-6]
+}
+
+const _Day_name = "mondaytuesdaywednesdaythursdayfridaysaturdaysunday"
+
+var _Day_index = [...]uint8{0, 6, 13, 22, 30, 36, 44, 50}
+
+func (i Day) String() string {
+	if i < 0 || i >= Day(len(_Day_index)-1) {
+		return "Day(" + strconv.FormatInt(int64(i), 10) + ")"
+	}
+	return _Day_name[_Day_index[i]:_Day_index[i+1]]
+}
+`
+
+const toUpper_in = `type Day int
+const (
+	Monday Day = iota
+	Tuesday
+	Wednesday
+	Thursday
+	Friday
+	Saturday
+	Sunday
+)
+`
+
+const toUpper_out = `func _() {
+	// An "invalid array index" compiler error signifies that the constant values have changed.
+	// Re-run the stringer command to generate them again.
+	var x [1]struct{}
+	_ = x[Monday-0]
+	_ = x[Tuesday-1]
+	_ = x[Wednesday-2]
+	_ = x[Thursday-3]
+	_ = x[Friday-4]
+	_ = x[Saturday-5]
+	_ = x[Sunday-6]
+}
+
+const _Day_name = "MONDAYTUESDAYWEDNESDAYTHURSDAYFRIDAYSATURDAYSUNDAY"
+
+var _Day_index = [...]uint8{0, 6, 13, 22, 30, 36, 44, 50}
+
+func (i Day) String() string {
+	if i < 0 || i >= Day(len(_Day_index)-1) {
+		return "Day(" + strconv.FormatInt(int64(i), 10) + ")"
+	}
+	return _Day_name[_Day_index[i]:_Day_index[i+1]]
+}
+`
+
 func TestGolden(t *testing.T) {
 	dir, err := ioutil.TempDir("", "stringer")
 	if err != nil {
@@ -408,6 +486,8 @@ func TestGolden(t *testing.T) {
 		g := Generator{
 			trimPrefix:  test.trimPrefix,
 			lineComment: test.lineComment,
+			toLower:     test.toLower,
+			toUpper:     test.toUpper,
 		}
 		input := "package test\n" + test.input
 		file := test.name + ".go"

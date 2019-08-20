@@ -83,6 +83,8 @@ var (
 	trimprefix  = flag.String("trimprefix", "", "trim the `prefix` from the generated constant names")
 	linecomment = flag.Bool("linecomment", false, "use line comment text as printed text when present")
 	buildTags   = flag.String("tags", "", "comma-separated list of build tags to apply")
+	toLower     = flag.Bool("tolower", false, "convert the generated constant names to lower case")
+	toUpper     = flag.Bool("toupper", false, "convert the generated constant names to upper case")
 )
 
 // Usage is a replacement usage function for the flags package.
@@ -123,6 +125,8 @@ func main() {
 	g := Generator{
 		trimPrefix:  *trimprefix,
 		lineComment: *linecomment,
+		toLower:     *toLower,
+		toUpper:     *toUpper,
 	}
 	// TODO(suzmue): accept other patterns for packages (directories, list of files, import paths, etc).
 	if len(args) == 1 && isDirectory(args[0]) {
@@ -180,6 +184,8 @@ type Generator struct {
 
 	trimPrefix  string
 	lineComment bool
+	toLower     bool
+	toUpper     bool
 }
 
 func (g *Generator) Printf(format string, args ...interface{}) {
@@ -196,6 +202,8 @@ type File struct {
 
 	trimPrefix  string
 	lineComment bool
+	toLower     bool
+	toUpper     bool
 }
 
 type Package struct {
@@ -238,6 +246,8 @@ func (g *Generator) addPackage(pkg *packages.Package) {
 			pkg:         g.pkg,
 			trimPrefix:  g.trimPrefix,
 			lineComment: g.lineComment,
+			toLower:     g.toLower,
+			toUpper:     g.toUpper,
 		}
 	}
 }
@@ -455,6 +465,11 @@ func (f *File) genDecl(node ast.Node) bool {
 				v.name = strings.TrimSpace(c.Text())
 			} else {
 				v.name = strings.TrimPrefix(v.originalName, f.trimPrefix)
+			}
+			if f.toLower {
+				v.name = strings.ToLower(v.name)
+			} else if f.toUpper {
+				v.name = strings.ToUpper(v.name)
 			}
 			f.values = append(f.values, v)
 		}
