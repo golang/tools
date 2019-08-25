@@ -11,9 +11,10 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/span"
 )
 
-func Implementation(ctx context.Context, search SearchFunc, f GoFile, pos token.Pos) ([]Location, error) {
+func Implementation(ctx context.Context, search SearchFunc, f GoFile, pos token.Pos) ([]*ReferenceInfo, error) {
 	file, err := f.GetAST(ctx, ParseFull)
 	if err != nil {
 		return nil, err
@@ -39,7 +40,7 @@ func Implementation(ctx context.Context, search SearchFunc, f GoFile, pos token.
 
 // Adapted from golang.org/x/tools/cmd/guru (Copyright (c) 2013 The Go Authors). All rights
 // reserved. See NOTICE for full license.
-func implements(ctx context.Context, search SearchFunc, pkg Package, f File, path []ast.Node, action action) ([]Location, error) {
+func implements(ctx context.Context, search SearchFunc, pkg Package, f File, path []ast.Node, action action) ([]*ReferenceInfo, error) {
 	var method *types.Func
 	var T types.Type // selected type (receiver if method != nil)
 
@@ -141,7 +142,7 @@ func implements(ctx context.Context, search SearchFunc, pkg Package, f File, pat
 	sort.Sort(typesByString(fromPtr))
 
 	seen := map[types.Object]struct{}{}
-	toLocation := func(t types.Type, method *types.Func) *Location {
+	toRerfenceInfo := func(t types.Type, method *types.Func) *ReferenceInfo {
 		var obj types.Object
 		if method == nil {
 			// t is a type
@@ -163,33 +164,39 @@ func implements(ctx context.Context, search SearchFunc, pkg Package, f File, pat
 			seen[obj] = struct{}{}
 		}
 
-		loc := toLocation(f.FileSet(), obj.Pos(), obj.Name())
-		return &loc
+		rng := span.NewRange(f.FileSet(), obj.Pos(), obj.Pos()+token.Pos(len([]byte(obj.Name()))))
+		return &ReferenceInfo{
+			Name:          obj.Name(),
+			Range:         rng,
+			obj:           obj,
+			pkg:           pkg,
+			isDeclaration: false,
+		}
 	}
 
-	locs := make([]Location, 0, len(to)+len(from)+len(fromPtr))
+	refers := make([]*ReferenceInfo, 0, len(to)+len(from)+len(fromPtr))
 	for _, t := range to {
-		loc := toLocation(t, method)
-		if loc == nil {
+		refer := toRerfenceInfo(t, method)
+		if refer == nil {
 			continue
 		}
-		locs = append(locs, *loc)
+		refers = append(refers, refer)
 	}
 	for _, t := range from {
-		loc := toLocation(t, method)
-		if loc == nil {
+		refer := toRerfenceInfo(t, method)
+		if refer == nil {
 			continue
 		}
-		locs = append(locs, *loc)
+		refers = append(refers, refer)
 	}
 	for _, t := range fromPtr {
-		loc := toLocation(t, method)
-		if loc == nil {
+		refer := toRerfenceInfo(t, method)
+		if refer == nil {
 			continue
 		}
-		locs = append(locs, *loc)
+		refers = append(refers, refer)
 	}
-	return locs, nil
+	return refers, nil
 }
 
 type typesByString []types.Type

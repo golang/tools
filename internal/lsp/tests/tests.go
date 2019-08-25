@@ -34,11 +34,11 @@ const (
 	ExpectedDiagnosticsCount       = 21
 	ExpectedFormatCount            = 6
 	ExpectedImportCount            = 2
-	ExpectedDefinitionsCount       = 38
+	ExpectedDefinitionsCount       = 39
 	ExpectedTypeDefinitionsCount   = 2
 	ExpectedHighlightsCount        = 2
 	ExpectedReferencesCount        = 5
-	ExpectedRenamesCount           = 17
+	ExpectedRenamesCount           = 20
 	ExpectedSymbolsCount           = 1
 	ExpectedSignaturesCount        = 21
 	ExpectedLinksCount             = 4

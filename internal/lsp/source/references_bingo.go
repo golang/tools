@@ -15,7 +15,7 @@ import (
 type SearchFunc func(walkFunc WalkFunc)
 
 // References find references
-func References(ctx context.Context, search SearchFunc, f GoFile, pos token.Pos, includeDeclaration bool) ([]Location, error) {
+func References(ctx context.Context, search SearchFunc, f GoFile, pos token.Pos, includeDeclaration bool) ([]*ReferenceInfo, error) {
 	file, err := f.GetAST(ctx, ParseFull)
 	if err != nil {
 		return nil, err
@@ -66,16 +66,19 @@ func References(ctx context.Context, search SearchFunc, f GoFile, pos token.Pos,
 	}
 
 	if includeDeclaration {
-		refs = append(refs, &ast.Ident{NamePos: obj.Pos(), Name: obj.Name()})
+		refs = append(refs, &ReferIdent{
+			ident:         &ast.Ident{NamePos: obj.Pos(), Name: obj.Name()},
+			isDeclaration: false,
+		})
 	}
 
-	return refStreamAndCollect(f.FileSet(), refs, 0), nil
+	return refStreamAndCollect(pkg, f.FileSet(), obj, refs, 0), nil
 }
 
 // refStreamAndCollect returns all refs read in from chan until it is
 // closed. While it is reading, it will also occasionally stream out updates of
 // the refs received so far.
-func refStreamAndCollect(fset *token.FileSet, refs []*ast.Ident, limit int) []Location {
+func refStreamAndCollect(pkg Package, fset *token.FileSet, obj types.Object, refs []*ReferIdent, limit int) []*ReferenceInfo {
 	if limit == 0 {
 		// If we don't have a limit, just set it to a value we should never exceed
 		limit = len(refs)
@@ -86,34 +89,34 @@ func refStreamAndCollect(fset *token.FileSet, refs []*ast.Ident, limit int) []Lo
 		l = limit
 	}
 
-	var locs []Location
+	var refers []*ReferenceInfo
 	for i := 0; i < l; i++ {
 		n := refs[i]
-		loc := toLocation(fset, n.Pos(), n.Name)
-		locs = append(locs, loc)
+		rng := span.NewRange(fset, n.ident.Pos(), n.ident.Pos()+token.Pos(len([]byte(n.ident.Name))))
+		refer := &ReferenceInfo{
+			Name:          n.ident.Name,
+			Range:         rng,
+			ident:         n.ident,
+			obj:           obj,
+			pkg:           pkg,
+			isDeclaration: n.isDeclaration,
+		}
+		refers = append(refers, refer)
 	}
 
-	return locs
+	return refers
 }
 
-// toLocation converts a token.Pos range into a lsp.Location. end is
-// exclusive.
-func toLocation(fset *token.FileSet, pos token.Pos, name string) Location {
-	start := fset.Position(pos)
-	end := fset.Position(pos + token.Pos(len([]byte(name))))
-	filename := start.Filename
-	spn := span.New(span.FileURI(filename),
-		span.NewPoint(start.Line, start.Column, start.Offset),
-		span.NewPoint(end.Line, end.Column, end.Offset))
-
-	return Location{Span: spn}
+type ReferIdent struct {
+	ident         *ast.Ident
+	isDeclaration bool
 }
 
 // findReferences will find all references to obj. It will only return
 // references from packages in pkg.Imports.
-func findReferences(ctx context.Context, search SearchFunc, pkg Package, queryObj types.Object) ([]*ast.Ident, error) {
+func findReferences(ctx context.Context, search SearchFunc, pkg Package, queryObj types.Object) ([]*ReferIdent, error) {
 	// Bail out early if the context is canceled
-	var refs []*ast.Ident
+	var refs []*ReferIdent
 	var defPkgPath string
 	if queryObj.Pkg() != nil {
 		defPkgPath = queryObj.Pkg().Path()
@@ -137,7 +140,7 @@ func findReferences(ctx context.Context, search SearchFunc, pkg Package, queryOb
 
 		for id, obj := range pkg.GetTypesInfo().Uses {
 			if bingoSameObj(queryObj, obj) {
-				refs = append(refs, id)
+				refs = append(refs, &ReferIdent{ident: id, isDeclaration: false})
 			}
 		}
 

@@ -13,6 +13,7 @@ import (
 	"go/types"
 	"strings"
 
+	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/snippet"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/log"
@@ -25,17 +26,17 @@ func (c *completer) item(cand candidate) (CompletionItem, error) {
 
 	// Handle builtin types separately.
 	if obj.Parent() == types.Universe {
-		return c.formatBuiltin(cand)
+		return c.formatBuiltin(cand), nil
 	}
 
 	var (
-		label              = c.deepState.chainString(obj.Name())
+		label              = cand.name
 		detail             = types.TypeString(obj.Type(), c.qf)
 		insert             = label
 		kind               CompletionItemKind
 		plainSnippet       *snippet.Builder
 		placeholderSnippet *snippet.Builder
-		addlEdits          []TextEdit
+		protocolEdits      []protocol.TextEdit
 	)
 
 	// expandFuncCall mutates the completion label, detail, and snippets
@@ -89,18 +90,22 @@ func (c *completer) item(cand candidate) (CompletionItem, error) {
 	// If this candidate needs an additional import statement,
 	// add the additional text edits needed.
 	if cand.imp != nil {
-		edit, err := AddNamedImport(c.view.Session().Cache().FileSet(), c.file, cand.imp.Name, cand.imp.ImportPath)
+		edit, err := addNamedImport(c.view.Session().Cache().FileSet(), c.file, cand.imp.Name, cand.imp.ImportPath)
 		if err != nil {
 			return CompletionItem{}, err
 		}
-		addlEdits = append(addlEdits, edit...)
+		addlEdits, err := ToProtocolEdits(c.mapper, edit)
+		if err != nil {
+			return CompletionItem{}, err
+		}
+		protocolEdits = append(protocolEdits, addlEdits...)
 	}
 
 	detail = strings.TrimPrefix(detail, "untyped ")
 	item := CompletionItem{
 		Label:               label,
 		InsertText:          insert,
-		AdditionalTextEdits: addlEdits,
+		AdditionalTextEdits: protocolEdits,
 		Detail:              detail,
 		Kind:                kind,
 		Score:               cand.score,
@@ -171,7 +176,7 @@ func (c *completer) isParameter(v *types.Var) bool {
 	return false
 }
 
-func (c *completer) formatBuiltin(cand candidate) (CompletionItem, error) {
+func (c *completer) formatBuiltin(cand candidate) CompletionItem {
 	obj := cand.obj
 	item := CompletionItem{
 		Label:      obj.Name(),
@@ -201,7 +206,7 @@ func (c *completer) formatBuiltin(cand candidate) (CompletionItem, error) {
 	case *types.Nil:
 		item.Kind = VariableCompletionItem
 	}
-	return item, nil
+	return item
 }
 
 var replacer = strings.NewReplacer(

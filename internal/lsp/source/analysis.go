@@ -28,7 +28,7 @@ func analyze(ctx context.Context, v View, cphs []CheckPackageHandle, analyzers [
 	defer done()
 
 	if ctx.Err() != nil {
-		return nil, errors.Errorf("analyze: %v", ctx.Err())
+		return nil, ctx.Err()
 	}
 
 	// Build nodes for initial packages.
@@ -168,7 +168,7 @@ func (act *Action) execOnce(ctx context.Context, fset *token.FileSet) error {
 	}
 	act.pass = pass
 
-	if act.Pkg.IsIllTyped() && !pass.Analyzer.RunDespiteErrors {
+	if act.Pkg.IsIllTyped() {
 		act.err = errors.Errorf("analysis skipped due to errors in package: %v", act.Pkg.GetErrors())
 	} else {
 		act.result, act.err = pass.Analyzer.Run(pass)

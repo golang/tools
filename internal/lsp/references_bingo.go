@@ -18,9 +18,7 @@ func (s *Server) referencesBingo(ctx context.Context, params *protocol.Reference
 	return locations, err
 }
 
-func (s *Server) doReferences(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
-	var locations []source.Location
-
+func (s *Server) doReferences(ctx context.Context, params *protocol.ReferenceParams) (locations []protocol.Location, err error) {
 	f := func(view source.View) error {
 		f, err := getGoFile(ctx, view, span.URI(params.TextDocument.URI))
 		if err != nil {
@@ -41,38 +39,53 @@ func (s *Server) doReferences(ctx context.Context, params *protocol.ReferencePar
 			return err
 		}
 
-		locs, err := source.References(ctx, view.Search(), f, rng.Start, params.Context.IncludeDeclaration)
+		refers, err := source.References(ctx, view.Search(), f, rng.Start, params.Context.IncludeDeclaration)
 		if err != nil {
 			return err
 		}
+
+		locs, err := toProtocolLocations(ctx, view, refers)
+		if err != nil {
+			return err
+		}
+
 		locations = append(locations, locs...)
 		return nil
 	}
 
-	err := walkSession(s.session, f)
-	if err != nil {
-		return nil, err
-	}
-
-	return toProtocolLocations(locations), nil
+	err = walkSession(s.session, f)
+	return
 }
 
-func toProtocolLocations(locations []source.Location) []protocol.Location {
-	if len(locations) == 0 {
-		return []protocol.Location{}
-	}
-
-	var pLocations []protocol.Location
-	for _, loc := range locations {
-		rng := toProtocolRange(loc.Span)
-		ploc := protocol.Location{
-			URI:   string(loc.Span.URI()),
-			Range: rng,
+func toProtocolLocations(ctx context.Context, view source.View, references []*source.ReferenceInfo) ([]protocol.Location, error) {
+	// Get the location of each reference to return as the result.
+	locations := make([]protocol.Location, 0, len(references))
+	seen := make(map[span.Span]bool)
+	for _, ref := range references {
+		refSpan, err := ref.Range.Span()
+		if err != nil {
+			return nil, err
 		}
-		pLocations = append(pLocations, ploc)
-	}
+		if seen[refSpan] {
+			continue // already added this location
+		}
+		seen[refSpan] = true
 
-	return pLocations
+		refFile, err := getGoFile(ctx, view, refSpan.URI())
+		if err != nil {
+			return nil, err
+		}
+		refM, err := getMapper(ctx, refFile)
+		if err != nil {
+			return nil, err
+		}
+		loc, err := refM.Location(refSpan)
+		if err != nil {
+			return nil, err
+		}
+		locations = append(locations, loc)
+	}
+	return locations, nil
 }
 
 func toProtocolRange(spn span.Span) protocol.Range {

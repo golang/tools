@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/fuzzy"
+	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/tests"
 	"golang.org/x/tools/internal/span"
@@ -87,14 +88,12 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 		if err != nil {
 			t.Fatalf("failed for %v: %v", src, err)
 		}
-		tok, err := f.(source.GoFile).GetToken(ctx)
-		if err != nil {
-			t.Fatalf("failed to get token for %s: %v", src.URI(), err)
-		}
-		pos := tok.Pos(src.Start().Offset())
 		deepComplete := strings.Contains(string(src.URI()), "deepcomplete")
 		unimported := strings.Contains(string(src.URI()), "unimported")
-		list, surrounding, err := source.Completion(ctx, r.view, f.(source.GoFile), pos, source.CompletionOptions{
+		list, surrounding, err := source.Completion(ctx, r.view, f.(source.GoFile), protocol.Position{
+			Line:      float64(src.Start().Line() - 1),
+			Character: float64(src.Start().Column() - 1),
+		}, source.CompletionOptions{
 			DeepComplete:     deepComplete,
 			WantDocumentaton: true,
 			WantUnimported:   unimported,
@@ -144,13 +143,10 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			if err != nil {
 				t.Fatalf("failed for %v: %v", src, err)
 			}
-			tok, err := f.(source.GoFile).GetToken(ctx)
-			if err != nil {
-				t.Fatalf("failed to get token for %s: %v", src.URI(), err)
-			}
-			pos := tok.Pos(src.Start().Offset())
-
-			list, _, err := source.Completion(ctx, r.view, f.(source.GoFile), pos, source.CompletionOptions{
+			list, _, err := source.Completion(ctx, r.view, f.(source.GoFile), protocol.Position{
+				Line:      float64(src.Start().Line() - 1),
+				Character: float64(src.Start().Column() - 1),
+			}, source.CompletionOptions{
 				DeepComplete: strings.Contains(string(src.URI()), "deepcomplete"),
 			}, nil)
 			if err != nil {
@@ -290,13 +286,12 @@ func (r *runner) Format(t *testing.T, data tests.Formats) {
 			}
 			continue
 		}
-		ops := source.EditsToDiff(edits)
 		data, _, err := f.Handle(ctx).Read(ctx)
 		if err != nil {
 			t.Error(err)
 			continue
 		}
-		got := strings.Join(diff.ApplyEdits(diff.SplitLines(string(data)), ops), "")
+		got := diff.ApplyEdits(string(data), edits)
 		if gofmted != got {
 			t.Errorf("format failed for %s, expected:\n%v\ngot:\n%v", filename, gofmted, got)
 		}
@@ -332,13 +327,12 @@ func (r *runner) Import(t *testing.T, data tests.Imports) {
 			}
 			continue
 		}
-		ops := source.EditsToDiff(edits)
 		data, _, err := f.Handle(ctx).Read(ctx)
 		if err != nil {
 			t.Error(err)
 			continue
 		}
-		got := strings.Join(diff.ApplyEdits(diff.SplitLines(string(data)), ops), "")
+		got := diff.ApplyEdits(string(data), edits)
 		if goimported != got {
 			t.Errorf("import failed for %s, expected:\n%v\ngot:\n%v", filename, goimported, got)
 		}
@@ -539,7 +533,7 @@ func (r *runner) Rename(t *testing.T, data tests.Renames) {
 	}
 }
 
-func applyEdits(contents string, edits []source.TextEdit) string {
+func applyEdits(contents string, edits []diff.TextEdit) string {
 	res := contents
 
 	// Apply the edits from the end of the file forward

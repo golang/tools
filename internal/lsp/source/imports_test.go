@@ -7,8 +7,9 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"log"
 	"testing"
+
+	"golang.org/x/tools/internal/lsp/diff"
 )
 
 var fset = token.NewFileSet()
@@ -85,10 +86,36 @@ import (
 		},
 	},
 	{
-		name: "package statement comments",
+		// Issue 33721: add import statement after package declaration preceded by comments.
+		name: "issue 33721 package statement comments before",
 		pkg:  "os",
-		in: `// This is a comment
-package main // This too`,
+		in: `// Here is a comment before
+package main
+`,
+		want: []importInfo{
+			importInfo{
+				name: "",
+				path: "os",
+			},
+		},
+	},
+	{
+		name: "package statement comments same line",
+		pkg:  "os",
+		in: `package main // Here is a comment after
+`,
+		want: []importInfo{
+			importInfo{
+				name: "",
+				path: "os",
+			},
+		},
+	},
+	{
+		name: "package statement comments before and after",
+		pkg:  "os",
+		in: `// Here is a comment before
+package main // Here is a comment after`,
 		want: []importInfo{
 			importInfo{
 				name: "",
@@ -100,7 +127,7 @@ package main // This too`,
 		name: "package statement multiline comments",
 		pkg:  "os",
 		in: `package main /* This is a multiline comment
-and it extends 
+and it extends
 further down*/`,
 		want: []importInfo{
 			importInfo{
@@ -112,7 +139,7 @@ further down*/`,
 	{
 		name: "import c",
 		pkg:  "os",
-		in: `package main 
+		in: `package main
 
 import "C"
 `,
@@ -130,7 +157,7 @@ import "C"
 	{
 		name: "existing imports",
 		pkg:  "os",
-		in: `package main 
+		in: `package main
 
 import "io"
 `,
@@ -148,7 +175,7 @@ import "io"
 	{
 		name: "existing imports with comment",
 		pkg:  "os",
-		in: `package main 
+		in: `package main
 
 import "io" // A comment
 `,
@@ -166,7 +193,7 @@ import "io" // A comment
 	{
 		name: "existing imports multiline comment",
 		pkg:  "os",
-		in: `package main 
+		in: `package main
 
 import "io" /* A comment
 that
@@ -187,7 +214,7 @@ extends */
 		name:       "renamed import",
 		renamedPkg: "o",
 		pkg:        "os",
-		in: `package main 
+		in: `package main
 `,
 		want: []importInfo{
 			importInfo{
@@ -203,7 +230,7 @@ func TestAddImport(t *testing.T) {
 		file := parse(t, test.name, test.in)
 		var before bytes.Buffer
 		ast.Fprint(&before, fset, file, nil)
-		edits, err := AddNamedImport(fset, file, test.renamedPkg, test.pkg)
+		edits, err := addNamedImport(fset, file, test.renamedPkg, test.pkg)
 		if err != nil && !test.unchanged {
 			t.Errorf("error adding import: %s", err)
 			continue
@@ -217,7 +244,7 @@ func TestAddImport(t *testing.T) {
 
 		// AddNamedImport should be idempotent. Verify that by calling it again,
 		// expecting no change to the AST, and the returned added value to always be false.
-		edits, err = AddNamedImport(fset, gotFile, test.renamedPkg, test.pkg)
+		edits, err = addNamedImport(fset, gotFile, test.renamedPkg, test.pkg)
 		if err != nil && !test.unchanged {
 			t.Errorf("error adding import: %s", err)
 			continue
@@ -236,17 +263,16 @@ func TestDoubleAddNamedImport(t *testing.T) {
 	in := "package main\n"
 	file := parse(t, name, in)
 	// Add a named import
-	edits, err := AddNamedImport(fset, file, "o", "os")
+	edits, err := addNamedImport(fset, file, "o", "os")
 	if err != nil {
 		t.Errorf("error adding import: %s", err)
 		return
 	}
 	got := applyEdits(in, edits)
-	log.Println(got)
 	gotFile := parse(t, name, got)
 
 	// Add a second named import
-	edits, err = AddNamedImport(fset, gotFile, "i", "io")
+	edits, err = addNamedImport(fset, gotFile, "i", "io")
 	if err != nil {
 		t.Errorf("error adding import: %s", err)
 		return
@@ -290,7 +316,7 @@ func compareImports(t *testing.T, prefix string, got []*ast.ImportSpec, want []i
 	}
 }
 
-func applyEdits(contents string, edits []TextEdit) string {
+func applyEdits(contents string, edits []diff.TextEdit) string {
 	res := contents
 
 	// Apply the edits from the end of the file forward

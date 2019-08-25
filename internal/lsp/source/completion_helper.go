@@ -3,16 +3,16 @@ package source
 import (
 	"go/ast"
 	"go/token"
+	"go/types"
 	"log"
 	"strings"
 	"unicode"
 
-	"go/types"
-
+	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
 )
 
-func (c *completer) getAdditionalTextEdits(pkgPath string) *TextEdit {
+func (c *completer) getAdditionalTextEdits(pkgPath string) *protocol.TextEdit {
 	l := len(c.path)
 	if l == 0 {
 		return nil
@@ -41,9 +41,20 @@ func (c *completer) getAdditionalTextEdits(pkgPath string) *TextEdit {
 		newText = "\n\t" + newText
 	}
 
+	pkg, err := c.goFile.GetPackage(c.ctx)
+	if err != nil {
+		return nil
+	}
+
 	point := toPoint(c.goFile.FileSet(), pos)
-	return &TextEdit{
-		Span:    span.New(c.goFile.URI(), point, point),
+	spn := span.New(c.goFile.URI(), point, point)
+	rng, err := spanToRange(c.ctx, c.view, pkg, spn, false)
+	if err != nil {
+		return nil
+	}
+
+	return &protocol.TextEdit{
+		Range:   rng,
 		NewText: newText,
 	}
 }
@@ -69,7 +80,7 @@ func (c *completer) initPrefix() {
 	if c.cursorIdent != "" && c.cursorIdent[len(c.cursorIdent)-1] == '.' {
 		c.surrounding = &Selection{}
 	}
-	c.surrounding = &Selection{Content: c.cursorIdent}
+	c.surrounding = &Selection{content: c.cursorIdent}
 }
 
 func (c *completer) scopeVisit(pkgPath, prefix string) {

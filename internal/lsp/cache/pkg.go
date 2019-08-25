@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/lsp/source"
-	errors "golang.org/x/xerrors"
 )
 
 // pkg contains the type information needed by the source package.
@@ -74,7 +73,7 @@ func (pkg *pkg) GetActionGraph(ctx context.Context, a *analysis.Analyzer) (*sour
 				return pkg.GetActionGraph(ctx, a)
 			}
 		case <-ctx.Done():
-			return nil, errors.Errorf("GetActionGraph: %v", ctx.Err())
+			return nil, ctx.Err()
 		}
 	} else {
 		// cache miss
@@ -184,7 +183,7 @@ func (pkg *pkg) GetTypesSizes() types.Sizes {
 }
 
 func (pkg *pkg) IsIllTyped() bool {
-	return pkg.types == nil && pkg.typesInfo == nil
+	return pkg.types == nil || pkg.typesInfo == nil || pkg.typesSizes == nil
 }
 
 func (pkg *pkg) SetDiagnostics(diags []source.Diagnostic) {

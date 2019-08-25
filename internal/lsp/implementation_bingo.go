@@ -8,9 +8,7 @@ import (
 	"golang.org/x/tools/internal/span"
 )
 
-func (s *Server) implementation(ctx context.Context, params *protocol.TextDocumentPositionParams) ([]protocol.Location, error) {
-	var locations []source.Location
-
+func (s *Server) implementation(ctx context.Context, params *protocol.TextDocumentPositionParams) (locations []protocol.Location, err error) {
 	f := func(view source.View) error {
 		f, err := getGoFile(ctx, view, span.URI(params.TextDocument.URI))
 		if err != nil {
@@ -31,20 +29,22 @@ func (s *Server) implementation(ctx context.Context, params *protocol.TextDocume
 			return err
 		}
 
-		locs, err := source.Implementation(ctx, view.Search(), f, rng.Start)
+		refers, err := source.Implementation(ctx, view.Search(), f, rng.Start)
 		if err != nil {
 			return err
 		}
+
+		locs, err := toProtocolLocations(ctx, view, refers)
+		if err != nil {
+			return err
+		}
+
 		locations = append(locations, locs...)
 		return nil
 	}
 
-	err := walkSession(s.session, f)
-	if err != nil {
-		return nil, err
-	}
-
-	return toProtocolLocations(locations), nil
+	err = walkSession(s.session, f)
+	return
 }
 
 type viewWalkFunc func(v source.View) error

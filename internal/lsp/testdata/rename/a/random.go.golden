@@ -4,8 +4,8 @@ package a
 
 import (
 	lg "log"
-	"fmt"
-	f2 "fmt"
+	"fmt" //@rename("fmt", "fmty")
+	f2 "fmt" //@rename("f2", "f2name"),rename("fmt","f2y")
 )
 
 func Random() int {
@@ -43,14 +43,104 @@ func sw() {
 	}
 }
 
+-- f2name-rename --
+random.go:
+package a
+
+import (
+	lg "log"
+	"fmt" //@rename("fmt", "fmty")
+	f2name "fmt" //@rename("f2", "f2name"),rename("fmt","f2y")
+)
+
+func Random() int {
+	y := 6 + 7
+	return y
+}
+
+func Random2(y int) int { //@rename("y", "z")
+	return y
+}
+
+type Pos struct {
+	x, y int
+}
+
+func (p *Pos) Sum() int {
+	return p.x + p.y //@rename("x", "myX")
+}
+
+func _() {
+	var p Pos   //@rename("p", "pos")
+	_ = p.Sum() //@rename("Sum", "GetSum")
+}
+
+func sw() {
+	var x interface{}
+
+	switch y := x.(type) { //@rename("y", "y0")
+	case int:
+		fmt.Printf("%d", y) //@rename("y", "y1"),rename("fmt", "format")
+	case string:
+		lg.Printf("%s", y) //@rename("y", "y2"),rename("lg","log")
+	default:
+		f2name.Printf("%v", y) //@rename("y", "y3"),rename("f2","fmt2")
+	}
+}
+
+-- f2y-rename --
+random.go:
+package a
+
+import (
+	lg "log"
+	"fmt" //@rename("fmt", "fmty")
+	f2y "fmt" //@rename("f2", "f2name"),rename("fmt","f2y")
+)
+
+func Random() int {
+	y := 6 + 7
+	return y
+}
+
+func Random2(y int) int { //@rename("y", "z")
+	return y
+}
+
+type Pos struct {
+	x, y int
+}
+
+func (p *Pos) Sum() int {
+	return p.x + p.y //@rename("x", "myX")
+}
+
+func _() {
+	var p Pos   //@rename("p", "pos")
+	_ = p.Sum() //@rename("Sum", "GetSum")
+}
+
+func sw() {
+	var x interface{}
+
+	switch y := x.(type) { //@rename("y", "y0")
+	case int:
+		fmt.Printf("%d", y) //@rename("y", "y1"),rename("fmt", "format")
+	case string:
+		lg.Printf("%s", y) //@rename("y", "y2"),rename("lg","log")
+	default:
+		f2y.Printf("%v", y) //@rename("y", "y3"),rename("f2","fmt2")
+	}
+}
+
 -- fmt2-rename --
 random.go:
 package a
 
 import (
 	lg "log"
-	"fmt"
-	fmt2 "fmt"
+	"fmt" //@rename("fmt", "fmty")
+	fmt2 "fmt" //@rename("f2", "f2name"),rename("fmt","f2y")
 )
 
 func Random() int {
@@ -88,14 +178,59 @@ func sw() {
 	}
 }
 
+-- fmty-rename --
+random.go:
+package a
+
+import (
+	lg "log"
+	fmty "fmt" //@rename("fmt", "fmty")
+	f2 "fmt" //@rename("f2", "f2name"),rename("fmt","f2y")
+)
+
+func Random() int {
+	y := 6 + 7
+	return y
+}
+
+func Random2(y int) int { //@rename("y", "z")
+	return y
+}
+
+type Pos struct {
+	x, y int
+}
+
+func (p *Pos) Sum() int {
+	return p.x + p.y //@rename("x", "myX")
+}
+
+func _() {
+	var p Pos   //@rename("p", "pos")
+	_ = p.Sum() //@rename("Sum", "GetSum")
+}
+
+func sw() {
+	var x interface{}
+
+	switch y := x.(type) { //@rename("y", "y0")
+	case int:
+		fmty.Printf("%d", y) //@rename("y", "y1"),rename("fmt", "format")
+	case string:
+		lg.Printf("%s", y) //@rename("y", "y2"),rename("lg","log")
+	default:
+		f2.Printf("%v", y) //@rename("y", "y3"),rename("f2","fmt2")
+	}
+}
+
 -- format-rename --
 random.go:
 package a
 
 import (
 	lg "log"
-	format "fmt"
-	f2 "fmt"
+	format "fmt" //@rename("fmt", "fmty")
+	f2 "fmt" //@rename("f2", "f2name"),rename("fmt","f2y")
 )
 
 func Random() int {
@@ -139,8 +274,8 @@ package a
 
 import (
 	"log"
-	"fmt"
-	f2 "fmt"
+	"fmt" //@rename("fmt", "fmty")
+	f2 "fmt" //@rename("f2", "f2name"),rename("fmt","f2y")
 )
 
 func Random() int {
@@ -184,8 +319,8 @@ package a
 
 import (
 	lg "log"
-	"fmt"
-	f2 "fmt"
+	"fmt" //@rename("fmt", "fmty")
+	f2 "fmt" //@rename("f2", "f2name"),rename("fmt","f2y")
 )
 
 func Random() int {
@@ -229,8 +364,8 @@ package a
 
 import (
 	lg "log"
-	"fmt"
-	f2 "fmt"
+	"fmt" //@rename("fmt", "fmty")
+	f2 "fmt" //@rename("f2", "f2name"),rename("fmt","f2y")
 )
 
 func Random() int {
@@ -274,8 +409,8 @@ package a
 
 import (
 	lg "log"
-	"fmt"
-	f2 "fmt"
+	"fmt" //@rename("fmt", "fmty")
+	f2 "fmt" //@rename("f2", "f2name"),rename("fmt","f2y")
 )
 
 func Random() int {
@@ -319,8 +454,8 @@ package a
 
 import (
 	lg "log"
-	"fmt"
-	f2 "fmt"
+	"fmt" //@rename("fmt", "fmty")
+	f2 "fmt" //@rename("f2", "f2name"),rename("fmt","f2y")
 )
 
 func Random() int {
@@ -364,8 +499,8 @@ package a
 
 import (
 	lg "log"
-	"fmt"
-	f2 "fmt"
+	"fmt" //@rename("fmt", "fmty")
+	f2 "fmt" //@rename("f2", "f2name"),rename("fmt","f2y")
 )
 
 func Random() int {
@@ -409,8 +544,8 @@ package a
 
 import (
 	lg "log"
-	"fmt"
-	f2 "fmt"
+	"fmt" //@rename("fmt", "fmty")
+	f2 "fmt" //@rename("f2", "f2name"),rename("fmt","f2y")
 )
 
 func Random() int {
@@ -454,8 +589,8 @@ package a
 
 import (
 	lg "log"
-	"fmt"
-	f2 "fmt"
+	"fmt" //@rename("fmt", "fmty")
+	f2 "fmt" //@rename("f2", "f2name"),rename("fmt","f2y")
 )
 
 func Random() int {
