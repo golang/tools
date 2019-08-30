@@ -38,6 +38,9 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 		if opt, ok := opts["noIncrementalSync"].(bool); ok && opt {
 			s.textDocumentSyncKind = protocol.Full
 		}
+
+		// Check if user has enabled watching for file changes.
+		s.watchFileChanges, _ = opts["watchFileChanges"].(bool)
 	}
 
 	// Default to using synopsis as a default for hover information.
@@ -74,20 +77,42 @@ func (s *Server) initialize(ctx context.Context, params *protocol.InitializePara
 			return nil, err
 		}
 	}
+
+	var codeActionProvider interface{}
+	if len(params.Capabilities.TextDocument.CodeAction.CodeActionLiteralSupport.CodeActionKind.ValueSet) > 0 {
+		// If the client has specified CodeActionLiteralSupport,
+		// send the code actions we support.
+		//
+		// Using CodeActionOptions is only valid if codeActionLiteralSupport is set.
+		codeActionProvider = &protocol.CodeActionOptions{
+			CodeActionKinds: s.getSupportedCodeActions(),
+		}
+	} else {
+		codeActionProvider = true
+	}
+	var renameOpts interface{}
+	if params.Capabilities.TextDocument.Rename.PrepareSupport {
+		renameOpts = &protocol.RenameOptions{
+			PrepareProvider: true,
+		}
+	} else {
+		renameOpts = true
+	}
 	return &protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
-			CodeActionProvider: true,
+			CodeActionProvider: codeActionProvider,
 			CompletionProvider: &protocol.CompletionOptions{
 				TriggerCharacters: []string{"."},
 			},
 			DefinitionProvider:         true,
 			DocumentFormattingProvider: true,
 			DocumentSymbolProvider:     true,
+			FoldingRangeProvider:       true,
 			HoverProvider:              true,
 			DocumentHighlightProvider:  true,
 			DocumentLinkProvider:       &protocol.DocumentLinkOptions{},
 			ReferencesProvider:         true,
-			RenameProvider:             true,
+			RenameProvider:             renameOpts,
 			SignatureHelpProvider: &protocol.SignatureHelpOptions{
 				TriggerCharacters: []string{"(", ","},
 			},
@@ -128,6 +153,7 @@ func (s *Server) setClientCapabilities(caps protocol.ClientCapabilities) {
 	// Check if the client supports configuration messages.
 	s.configurationSupported = caps.Workspace.Configuration
 	s.dynamicConfigurationSupported = caps.Workspace.DidChangeConfiguration.DynamicRegistration
+	s.dynamicWatchedFilesSupported = caps.Workspace.DidChangeWatchedFiles.DynamicRegistration
 
 	// Check which types of content format are supported by this client.
 	s.preferredContentFormat = protocol.PlainText
@@ -141,18 +167,40 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 	s.state = serverInitialized
 	s.stateMu.Unlock()
 
-	if s.configurationSupported {
-		if s.dynamicConfigurationSupported {
-			s.client.RegisterCapability(ctx, &protocol.RegistrationParams{
-				Registrations: []protocol.Registration{{
-					ID:     "workspace/didChangeConfiguration",
-					Method: "workspace/didChangeConfiguration",
-				}, {
-					ID:     "workspace/didChangeWorkspaceFolders",
-					Method: "workspace/didChangeWorkspaceFolders",
+	var registrations []protocol.Registration
+	if s.configurationSupported && s.dynamicConfigurationSupported {
+		registrations = append(registrations,
+			protocol.Registration{
+				ID:     "workspace/didChangeConfiguration",
+				Method: "workspace/didChangeConfiguration",
+			},
+			protocol.Registration{
+				ID:     "workspace/didChangeWorkspaceFolders",
+				Method: "workspace/didChangeWorkspaceFolders",
+			},
+		)
+	}
+
+	if s.watchFileChanges && s.dynamicWatchedFilesSupported {
+		registrations = append(registrations, protocol.Registration{
+			ID:     "workspace/didChangeWatchedFiles",
+			Method: "workspace/didChangeWatchedFiles",
+			RegisterOptions: protocol.DidChangeWatchedFilesRegistrationOptions{
+				Watchers: []protocol.FileSystemWatcher{{
+					GlobPattern: "**/*.go",
+					Kind:        float64(protocol.WatchChange),
 				}},
-			})
-		}
+			},
+		})
+	}
+
+	if len(registrations) > 0 {
+		s.client.RegisterCapability(ctx, &protocol.RegistrationParams{
+			Registrations: registrations,
+		})
+	}
+
+	if s.configurationSupported {
 		for _, view := range s.session.Views() {
 			if err := s.fetchConfig(ctx, view); err != nil {
 				return err
@@ -192,10 +240,12 @@ func (s *Server) processConfig(ctx context.Context, view source.View, config int
 	if config == nil {
 		return nil // ignore error if you don't have a config
 	}
+
 	c, ok := config.(map[string]interface{})
 	if !ok {
 		return errors.Errorf("invalid config gopls type %T", config)
 	}
+
 	// Get the environment for the go/packages config.
 	if env := c["env"]; env != nil {
 		menv, ok := env.(map[string]interface{})
@@ -208,6 +258,7 @@ func (s *Server) processConfig(ctx context.Context, view source.View, config int
 		}
 		view.SetEnv(env)
 	}
+
 	// Get the build flags for the go/packages config.
 	if buildFlags := c["buildFlags"]; buildFlags != nil {
 		iflags, ok := buildFlags.([]interface{})
@@ -220,6 +271,7 @@ func (s *Server) processConfig(ctx context.Context, view source.View, config int
 		}
 		view.SetBuildFlags(flags)
 	}
+
 	// Check if the user wants documentation in completion items.
 	if wantCompletionDocumentation, ok := c["wantCompletionDocumentation"].(bool); ok {
 		s.wantCompletionDocumentation = wantCompletionDocumentation
@@ -246,10 +298,12 @@ func (s *Server) processConfig(ctx context.Context, view source.View, config int
 			// The default value is already be set to synopsis.
 		}
 	}
+
 	// Check if the user wants to see suggested fixes from go/analysis.
 	if wantSuggestedFixes, ok := c["wantSuggestedFixes"].(bool); ok {
 		s.wantSuggestedFixes = wantSuggestedFixes
 	}
+
 	// Check if the user has explicitly disabled any analyses.
 	if disabledAnalyses, ok := c["experimentalDisabledAnalyses"].([]interface{}); ok {
 		s.disabledAnalyses = make(map[string]struct{})
@@ -259,14 +313,17 @@ func (s *Server) processConfig(ctx context.Context, view source.View, config int
 			}
 		}
 	}
+
 	// Check if deep completions are enabled.
 	if useDeepCompletions, ok := c["useDeepCompletions"].(bool); ok {
 		s.useDeepCompletions = useDeepCompletions
 	}
+
 	// Check if want unimported package completions.
 	if wantUnimportedCompletions, ok := c["wantUnimportedCompletions"].(bool); ok {
 		s.wantUnimportedCompletions = wantUnimportedCompletions
 	}
+
 	return nil
 }
 

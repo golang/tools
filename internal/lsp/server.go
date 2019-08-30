@@ -81,11 +81,13 @@ type Server struct {
 	usePlaceholders               bool
 	hoverKind                     hoverKind
 	useDeepCompletions            bool
+	watchFileChanges              bool
 	wantCompletionDocumentation   bool
 	wantUnimportedCompletions     bool
 	insertTextFormat              protocol.InsertTextFormat
 	configurationSupported        bool
 	dynamicConfigurationSupported bool
+	dynamicWatchedFilesSupported  bool
 	preferredContentFormat        protocol.MarkupKind
 	disabledAnalyses              map[string]struct{}
 	wantSuggestedFixes            bool
@@ -130,8 +132,8 @@ func (s *Server) DidChangeConfiguration(context.Context, *protocol.DidChangeConf
 	return notImplemented("DidChangeConfiguration")
 }
 
-func (s *Server) DidChangeWatchedFiles(context.Context, *protocol.DidChangeWatchedFilesParams) error {
-	return notImplemented("DidChangeWatchedFiles")
+func (s *Server) DidChangeWatchedFiles(ctx context.Context, params *protocol.DidChangeWatchedFilesParams) error {
+	return s.didChangeWatchedFiles(ctx, params)
 }
 
 func (s *Server) Symbol(ctx context.Context, params *protocol.WorkspaceSymbolParams) ([]protocol.SymbolInformation, error) {
@@ -258,16 +260,17 @@ func (s *Server) Declaration(context.Context, *protocol.TextDocumentPositionPara
 	return nil, notImplemented("Declaration")
 }
 
-func (s *Server) FoldingRange(context.Context, *protocol.FoldingRangeParams) ([]protocol.FoldingRange, error) {
-	return nil, notImplemented("FoldingRange")
+func (s *Server) FoldingRange(ctx context.Context, params *protocol.FoldingRangeParams) ([]protocol.FoldingRange, error) {
+	return s.foldingRange(ctx, params)
 }
 
 func (s *Server) LogTraceNotification(context.Context, *protocol.LogTraceParams) error {
 	return notImplemented("LogtraceNotification")
 }
 
-func (s *Server) PrepareRename(context.Context, *protocol.TextDocumentPositionParams) (*protocol.Range, error) {
-	return nil, notImplemented("PrepareRename")
+func (s *Server) PrepareRename(ctx context.Context, params *protocol.TextDocumentPositionParams) (*protocol.Range, error) {
+	// TODO(suzmue): support sending placeholder text.
+	return s.prepareRename(ctx, params)
 }
 
 func (s *Server) SetTraceNotification(context.Context, *protocol.SetTraceParams) error {

@@ -36,9 +36,11 @@ const (
 	ExpectedImportCount            = 2
 	ExpectedDefinitionsCount       = 39
 	ExpectedTypeDefinitionsCount   = 2
+	ExpectedFoldingRangesCount     = 1
 	ExpectedHighlightsCount        = 2
 	ExpectedReferencesCount        = 5
 	ExpectedRenamesCount           = 20
+	ExpectedPrepareRenamesCount    = 8
 	ExpectedSymbolsCount           = 1
 	ExpectedSignaturesCount        = 21
 	ExpectedLinksCount             = 4
@@ -57,12 +59,14 @@ type Diagnostics map[span.URI][]source.Diagnostic
 type CompletionItems map[token.Pos]*source.CompletionItem
 type Completions map[span.Span][]token.Pos
 type CompletionSnippets map[span.Span]CompletionSnippet
+type FoldingRanges []span.Span
 type Formats []span.Span
 type Imports []span.Span
 type Definitions map[span.Span]Definition
 type Highlights map[string][]span.Span
 type References map[span.Span][]span.Span
 type Renames map[span.Span]string
+type PrepareRenames map[span.Span]*source.PrepareItem
 type Symbols map[span.URI][]source.Symbol
 type SymbolsChildren map[string][]source.Symbol
 type Signatures map[span.Span]*source.SignatureInformation
@@ -75,12 +79,14 @@ type Data struct {
 	CompletionItems    CompletionItems
 	Completions        Completions
 	CompletionSnippets CompletionSnippets
+	FoldingRanges      FoldingRanges
 	Formats            Formats
 	Imports            Imports
 	Definitions        Definitions
 	Highlights         Highlights
 	References         References
 	Renames            Renames
+	PrepareRenames     PrepareRenames
 	Symbols            Symbols
 	symbolsChildren    SymbolsChildren
 	Signatures         Signatures
@@ -95,12 +101,14 @@ type Data struct {
 type Tests interface {
 	Diagnostics(*testing.T, Diagnostics)
 	Completion(*testing.T, Completions, CompletionSnippets, CompletionItems)
+	FoldingRange(*testing.T, FoldingRanges)
 	Format(*testing.T, Formats)
 	Import(*testing.T, Imports)
 	Definition(*testing.T, Definitions)
 	Highlight(*testing.T, Highlights)
 	Reference(*testing.T, References)
 	Rename(*testing.T, Renames)
+	PrepareRename(*testing.T, PrepareRenames)
 	Symbol(*testing.T, Symbols)
 	SignatureHelp(*testing.T, Signatures)
 	Link(*testing.T, Links)
@@ -108,10 +116,9 @@ type Tests interface {
 
 type Definition struct {
 	Name      string
-	Src       span.Span
 	IsType    bool
 	OnlyHover bool
-	Def       span.Span
+	Src, Def  span.Span
 }
 
 type CompletionSnippet struct {
@@ -148,6 +155,7 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 		Highlights:         make(Highlights),
 		References:         make(References),
 		Renames:            make(Renames),
+		PrepareRenames:     make(PrepareRenames),
 		Symbols:            make(Symbols),
 		symbolsChildren:    make(SymbolsChildren),
 		Signatures:         make(Signatures),
@@ -223,6 +231,7 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 		"diag":      data.collectDiagnostics,
 		"item":      data.collectCompletionItems,
 		"complete":  data.collectCompletions,
+		"fold":      data.collectFoldingRanges,
 		"format":    data.collectFormats,
 		"import":    data.collectImports,
 		"godef":     data.collectDefinitions,
@@ -231,6 +240,7 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 		"highlight": data.collectHighlights,
 		"refs":      data.collectReferences,
 		"rename":    data.collectRenames,
+		"prepare":   data.collectPrepareRenames,
 		"symbol":    data.collectSymbols,
 		"signature": data.collectSignatures,
 		"snippet":   data.collectCompletionSnippets,
@@ -279,6 +289,14 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		tests.Diagnostics(t, data.Diagnostics)
 	})
 
+	t.Run("FoldingRange", func(t *testing.T) {
+		t.Helper()
+		if len(data.FoldingRanges) != ExpectedFoldingRangesCount {
+			t.Errorf("got %v folding ranges expected %v", len(data.FoldingRanges), ExpectedFoldingRangesCount)
+		}
+		tests.FoldingRange(t, data.FoldingRanges)
+	})
+
 	t.Run("Format", func(t *testing.T) {
 		t.Helper()
 		if len(data.Formats) != ExpectedFormatCount {
@@ -325,6 +343,15 @@ func Run(t *testing.T, tests Tests, data *Data) {
 			t.Errorf("got %v renames expected %v", len(data.Renames), ExpectedRenamesCount)
 		}
 		tests.Rename(t, data.Renames)
+	})
+
+	t.Run("PrepareRenames", func(t *testing.T) {
+		t.Helper()
+		if len(data.PrepareRenames) != ExpectedPrepareRenamesCount {
+			t.Errorf("got %v prepare renames expected %v", len(data.PrepareRenames), ExpectedPrepareRenamesCount)
+		}
+
+		tests.PrepareRename(t, data.PrepareRenames)
 	})
 
 	t.Run("Symbols", func(t *testing.T) {
@@ -548,6 +575,10 @@ func (data *Data) collectCompletionItems(pos token.Pos, args []string) {
 	}
 }
 
+func (data *Data) collectFoldingRanges(spn span.Span) {
+	data.FoldingRanges = append(data.FoldingRanges, spn)
+}
+
 func (data *Data) collectFormats(spn span.Span) {
 	data.Formats = append(data.Formats, spn)
 }
@@ -595,6 +626,19 @@ func (data *Data) collectReferences(src span.Span, expected []span.Span) {
 
 func (data *Data) collectRenames(src span.Span, newText string) {
 	data.Renames[src] = newText
+}
+
+func (data *Data) collectPrepareRenames(src span.Span, rng span.Range, placeholder string) {
+	if int(rng.End-rng.Start) != len(placeholder) {
+		// If the length of the placeholder and the length of the range do not match,
+		// make the range just be the start.
+		rng = span.NewRange(rng.FileSet, rng.Start, rng.Start)
+	}
+
+	data.PrepareRenames[src] = &source.PrepareItem{
+		Range: rng,
+		Text:  placeholder,
+	}
 }
 
 func (data *Data) collectSymbols(name string, spn span.Span, kind string, parentName string) {

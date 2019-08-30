@@ -7,6 +7,7 @@ package cmd_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -17,6 +18,15 @@ import (
 	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/lsp/tests"
 )
+
+func TestMain(m *testing.M) {
+	if os.Getenv("GO_BUILDER_NAME") == "linux-arm" {
+		fmt.Fprintf(os.Stderr, "skipping test: linux-arm builder lacks sufficient memory (https://golang.org/issue/32834)\n")
+		os.Exit(0)
+	}
+
+	os.Exit(m.Run())
+}
 
 type runner struct {
 	exporter packagestest.Exporter
@@ -44,6 +54,10 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 	//TODO: add command line completions tests when it works
 }
 
+func (r *runner) FoldingRange(t *testing.T, data tests.FoldingRanges) {
+	//TODO: add command line folding range tests when it works
+}
+
 func (r *runner) Highlight(t *testing.T, data tests.Highlights) {
 	//TODO: add command line highlight tests when it works
 }
@@ -54,6 +68,10 @@ func (r *runner) Reference(t *testing.T, data tests.References) {
 
 func (r *runner) Rename(t *testing.T, data tests.Renames) {
 	//TODO: add command line rename tests when it works
+}
+
+func (r *runner) PrepareRename(t *testing.T, data tests.PrepareRenames) {
+	//TODO: add command line prepare rename tests when it works
 }
 
 func (r *runner) Symbol(t *testing.T, data tests.Symbols) {
