@@ -62,7 +62,7 @@ func toProtocolLocations(ctx context.Context, view source.View, references []*so
 	locations := make([]protocol.Location, 0, len(references))
 	seen := make(map[span.Span]bool)
 	for _, ref := range references {
-		refSpan, err := ref.Range.Span()
+		refSpan, err := ref.Span()
 		if err != nil {
 			return nil, err
 		}

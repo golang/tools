@@ -167,7 +167,7 @@ func implements(ctx context.Context, search SearchFunc, pkg Package, f File, pat
 		rng := span.NewRange(f.FileSet(), obj.Pos(), obj.Pos()+token.Pos(len([]byte(obj.Name()))))
 		return &ReferenceInfo{
 			Name:          obj.Name(),
-			Range:         rng,
+			mappedRange:   mappedRange{spanRange: rng},
 			obj:           obj,
 			pkg:           pkg,
 			isDeclaration: false,

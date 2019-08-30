@@ -125,7 +125,7 @@ func identifier(ctx context.Context, view View, f GoFile, pkg Package, file *ast
 				break
 			}
 			result.Name = strings.Trim(node.Path.Value, `"`)
-			result.Range = span.NewRange(f.FileSet(), node.Pos(), node.End())
+			result.mappedRange = mappedRange{spanRange: span.NewRange(f.FileSet(), node.Pos(), node.End())}
 			return result, nil
 		}
 	}

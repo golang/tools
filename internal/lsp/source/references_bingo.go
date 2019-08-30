@@ -95,7 +95,7 @@ func refStreamAndCollect(pkg Package, fset *token.FileSet, obj types.Object, ref
 		rng := span.NewRange(fset, n.ident.Pos(), n.ident.Pos()+token.Pos(len([]byte(n.ident.Name))))
 		refer := &ReferenceInfo{
 			Name:          n.ident.Name,
-			Range:         rng,
+			mappedRange:   mappedRange{spanRange: rng},
 			ident:         n.ident,
 			obj:           obj,
 			pkg:           pkg,
