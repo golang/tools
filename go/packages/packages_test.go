@@ -24,14 +24,11 @@ import (
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/packages/packagestest"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestMain(m *testing.M) {
-	if os.Getenv("GO_BUILDER_NAME") == "linux-arm" {
-		fmt.Fprintf(os.Stderr, "skipping test: linux-arm builder lacks sufficient memory (https://golang.org/issue/32834)\n")
-		os.Exit(0)
-	}
-
+	testenv.ExitIfSmallMachine()
 	os.Exit(m.Run())
 }
 
@@ -55,6 +52,8 @@ func TestMain(m *testing.M) {
 
 // The zero-value of Config has LoadFiles mode.
 func TestLoadZeroConfig(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+
 	initial, err := packages.Load(nil, "hash")
 	if err != nil {
 		t.Fatal(err)
@@ -1020,6 +1019,8 @@ func testNewPackagesInOverlay(t *testing.T, exporter packagestest.Exporter) {
 }
 
 func TestAdHocOverlays(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+
 	// This test doesn't use packagestest because we are testing ad-hoc packages,
 	// which are outside of $GOPATH and outside of a module.
 	tmp, err := ioutil.TempDir("", "a")
@@ -1063,6 +1064,8 @@ const A = 1
 // TestOverlayModFileChanges tests the behavior resulting from having files from
 // multiple modules in overlays.
 func TestOverlayModFileChanges(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+
 	// Create two unrelated modules in a temporary directory.
 	tmp, err := ioutil.TempDir("", "tmp")
 	if err != nil {
@@ -2116,8 +2119,8 @@ func testAdHocContains(t *testing.T, exporter packagestest.Exporter) {
 	}
 }
 
-func TestNoCcompiler(t *testing.T) { packagestest.TestAll(t, testNoCcompiler) }
-func testNoCcompiler(t *testing.T, exporter packagestest.Exporter) {
+func TestCgoNoCcompiler(t *testing.T) { packagestest.TestAll(t, testCgoNoCcompiler) }
+func testCgoNoCcompiler(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
 		Files: map[string]interface{}{
@@ -2132,6 +2135,7 @@ const A = http.MethodGet
 	exported.Config.Env = append(exported.Config.Env, "CGO_ENABLED=1", "CC=doesnotexist")
 	exported.Config.Mode = packages.LoadAllSyntax
 	initial, err := packages.Load(exported.Config, "golang.org/fake/a")
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2146,7 +2150,32 @@ const A = http.MethodGet
 	if got != "\"GET\"" {
 		t.Errorf("a.A: got %s, want %s", got, "\"GET\"")
 	}
+}
 
+func TestIssue32814(t *testing.T) { packagestest.TestAll(t, testIssue32814) }
+func testIssue32814(t *testing.T, exporter packagestest.Exporter) {
+	exported := packagestest.Export(t, exporter, []packagestest.Module{{
+		Name:  "golang.org/fake",
+		Files: map[string]interface{}{}}})
+	defer exported.Cleanup()
+
+	exported.Config.Mode = packages.NeedName | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedTypesSizes
+	pkgs, err := packages.Load(exported.Config, "fmt")
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(pkgs) != 1 && pkgs[0].PkgPath != "fmt" {
+		t.Fatalf("packages.Load: want [fmt], got %v", pkgs)
+	}
+	pkg := pkgs[0]
+	if len(pkg.Errors) != 0 {
+		t.Fatalf("Errors for fmt pkg: got %v, want none", pkg.Errors)
+	}
+	if !pkg.Types.Complete() {
+		t.Fatalf("Types.Complete() for fmt pkg: got %v, want true", pkgs[0].Types.Complete())
+	}
 }
 
 func errorMessages(errors []packages.Error) []string {

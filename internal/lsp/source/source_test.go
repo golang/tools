@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -22,7 +23,13 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/tests"
 	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/testenv"
 )
+
+func TestMain(m *testing.M) {
+	testenv.ExitIfSmallMachine()
+	os.Exit(m.Run())
+}
 
 func TestSource(t *testing.T) {
 	packagestest.TestAll(t, testSource)
@@ -89,14 +96,16 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			t.Fatalf("failed for %v: %v", src, err)
 		}
 		deepComplete := strings.Contains(string(src.URI()), "deepcomplete")
+		fuzzyMatch := strings.Contains(string(src.URI()), "fuzzymatch")
 		unimported := strings.Contains(string(src.URI()), "unimported")
 		list, surrounding, err := source.Completion(ctx, r.view, f.(source.GoFile), protocol.Position{
 			Line:      float64(src.Start().Line() - 1),
 			Character: float64(src.Start().Column() - 1),
 		}, source.CompletionOptions{
-			DeepComplete:     deepComplete,
-			WantDocumentaton: true,
-			WantUnimported:   unimported,
+			WantDeepCompletion: deepComplete,
+			WantFuzzyMatching:  fuzzyMatch,
+			WantDocumentaton:   true,
+			WantUnimported:     unimported,
 		}, nil)
 		if err != nil {
 			t.Fatalf("failed for %v: %v", src, err)
@@ -121,7 +130,7 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			// If deep completion is enabled, we need to use the fuzzy matcher to match
 			// the code's behvaior.
 			if deepComplete {
-				if fuzzyMatcher != nil && fuzzyMatcher.Score(item.Label) <= 0 {
+				if fuzzyMatcher != nil && fuzzyMatcher.Score(item.Label) < 0 {
 					continue
 				}
 			} else {
@@ -143,12 +152,19 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			if err != nil {
 				t.Fatalf("failed for %v: %v", src, err)
 			}
+
 			list, _, err := source.Completion(ctx, r.view, f.(source.GoFile), protocol.Position{
 				Line:      float64(src.Start().Line() - 1),
 				Character: float64(src.Start().Column() - 1),
 			}, source.CompletionOptions{
+<<<<<<< HEAD
 				DeepComplete: strings.Contains(string(src.URI()), "deepcomplete"),
 			}, nil)
+=======
+				WantDeepCompletion: strings.Contains(string(src.URI()), "deepcomplete"),
+				WantFuzzyMatching:  strings.Contains(string(src.URI()), "fuzzymatch"),
+			})
+>>>>>>> 573d9926052aeaeb5fbebcd3cf10d994c9c6d4f5
 			if err != nil {
 				t.Fatalf("failed for %v: %v", src, err)
 			}
