@@ -614,6 +614,7 @@ func getAllCandidates(filename string, env *ProcessEnv) ([]ImportFix, error) {
 type ProcessEnv struct {
 	LocalPrefix string
 	Debug       bool
+	RepairGroup bool
 
 	// If non-empty, these will be used instead of the
 	// process-wide values.
