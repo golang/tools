@@ -27,17 +27,16 @@ func (s *Server) documentLink(ctx context.Context, params *protocol.DocumentLink
 	if err != nil {
 		return nil, err
 	}
-	fh := f.Handle(ctx)
-	data, _, err := fh.Read(ctx)
+	data, _, err := f.Handle(ctx).Read(ctx)
 	if err != nil {
 		return nil, err
 	}
-	file, err := view.Session().Cache().ParseGoHandle(fh, source.ParseFull).Parse(ctx)
+	file, err := f.GetAST(ctx, source.ParseFull)
 	if file == nil {
 		return nil, err
 	}
 	tok := view.Session().Cache().FileSet().File(file.Pos())
-	m := protocol.NewColumnMapper(f.URI(), f.URI().Filename(), view.Session().Cache().FileSet(), tok, data)
+	m := protocol.NewColumnMapper(f.URI(), f.URI().Filename(), f.FileSet(), tok, data)
 
 	var links []protocol.DocumentLink
 	ast.Inspect(file, func(node ast.Node) bool {
@@ -88,30 +87,55 @@ func (s *Server) documentLink(ctx context.Context, params *protocol.DocumentLink
 func findLinksInString(src string, pos token.Pos, view source.View, mapper *protocol.ColumnMapper) ([]protocol.DocumentLink, error) {
 	var links []protocol.DocumentLink
 	re, err := getURLRegexp()
+	reNoProt, errNoProt := getURLNoProtocolRegexp()
 	if err != nil {
 		return nil, errors.Errorf("cannot create regexp for links: %s", err.Error())
 	}
-	for _, urlIndex := range re.FindAllIndex([]byte(src), -1) {
-		start := urlIndex[0]
-		end := urlIndex[1]
-		startPos := token.Pos(int(pos) + start)
-		endPos := token.Pos(int(pos) + end)
-		target := src[start:end]
-		l, err := toProtocolLink(view, mapper, target, startPos, endPos)
-		if err != nil {
-			return nil, err
+	if errNoProt != nil {
+		return nil, errors.Errorf("cannot create regexp no protocol for links: %s", errNoProt.Error())
+	}
+	indexUrl := re.FindAllIndex([]byte(src), -1)
+	indexUrlNoProt := reNoProt.FindAllIndex([]byte(src), -1)
+	if indexUrl != nil {
+		for _, urlIndex := range indexUrl {
+			start := urlIndex[0]
+			end := urlIndex[1]
+			startPos := token.Pos(int(pos) + start)
+			endPos := token.Pos(int(pos) + end)
+			target := src[start:end]
+			l, err := toProtocolLink(view, mapper, target, startPos, endPos)
+			if err != nil {
+				return nil, err
+			}
+			links = append(links, l)
 		}
-		links = append(links, l)
+	} else if indexUrlNoProt != nil {
+		for _, urlIndex := range indexUrlNoProt {
+			start := urlIndex[0]
+			end := urlIndex[1]
+			startPos := token.Pos(int(pos) + start)
+			endPos := token.Pos(int(pos) + end)
+			target := src[start:end]
+			l, err := toProtocolLink(view, mapper, target, startPos, endPos)
+			if err != nil {
+				return nil, err
+			}
+			links = append(links, l)
+		}
 	}
 	return links, nil
 }
 
 const urlRegexpString = "(http|ftp|https)://([\\w_-]+(?:(?:\\.[\\w_-]+)+))([\\w.,@?^=%&:/~+#-]*[\\w@?^=%&/~+#-])?"
+const urlNoProtocolRegexpString = "([\\w_-]+(?:(?:\\.[\\w_-]+)+))([\\w.,@?^=%&:/~+#-]*[\\w@?^=%&/~+#-])?"
 
 var (
-	urlRegexp  *regexp.Regexp
-	regexpOnce sync.Once
-	regexpErr  error
+	urlRegexp            *regexp.Regexp
+	regexpOnce           sync.Once
+	regexpErr            error
+	urlNoProtocolRegexp  *regexp.Regexp
+	regexpNoProtocolOnce sync.Once
+	regexpNoProtocolErr  error
 )
 
 func getURLRegexp() (*regexp.Regexp, error) {
@@ -119,6 +143,13 @@ func getURLRegexp() (*regexp.Regexp, error) {
 		urlRegexp, regexpErr = regexp.Compile(urlRegexpString)
 	})
 	return urlRegexp, regexpErr
+}
+
+func getURLNoProtocolRegexp() (*regexp.Regexp, error) {
+	regexpNoProtocolOnce.Do(func() {
+		urlNoProtocolRegexp, regexpNoProtocolErr = regexp.Compile(urlNoProtocolRegexpString)
+	})
+	return urlNoProtocolRegexp, regexpNoProtocolErr
 }
 
 func toProtocolLink(view source.View, mapper *protocol.ColumnMapper, target string, start, end token.Pos) (protocol.DocumentLink, error) {
