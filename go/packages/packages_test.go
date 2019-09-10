@@ -2261,6 +2261,44 @@ func testLoadWithNeedDeps(t *testing.T, exporter packagestest.Exporter) {
 	}
 }
 
+func TestImpliedLoadMode(t *testing.T) {
+	packagestest.TestAll(t, testImpliedLoadMode)
+}
+func testImpliedLoadMode(t *testing.T, exporter packagestest.Exporter) {
+	exported := packagestest.Export(t, exporter, []packagestest.Module{{
+		Name: "golang.org/fake",
+		Files: map[string]interface{}{
+			"a/a.go": `package a; import _ "golang.org/fake/b"`,
+			"b/b.go": `package b`,
+		}}})
+	defer exported.Cleanup()
+
+	exported.Config.Mode = packages.NeedTypes | packages.NeedTypesInfo
+	pkgs, err := packages.Load(exported.Config, "golang.org/fake/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkgs) != 1 {
+		t.Fatalf("Expected 1 package, got %d", len(pkgs))
+	}
+
+	pkg := pkgs[0]
+	if pkg.IllTyped {
+		t.Fatalf("Loaded package is ill typed: %v", pkg.Errors)
+	}
+
+	// Check that packages.NeedTypesInfo worked well.
+	if !pkg.Types.Complete() {
+		t.Fatalf("Loaded package types are incomplete")
+	}
+
+	// Check that implied packages.NeedImports by packages.NeedTypesInfo
+	// didn't add Imports.
+	if len(pkg.Imports) != 0 {
+		t.Fatalf("Package imports weren't requested but were returned: %v", pkg.Imports)
+	}
+}
+
 func errorMessages(errors []packages.Error) []string {
 	var msgs []string
 	for _, err := range errors {
