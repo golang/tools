@@ -32,7 +32,7 @@ func TestLoadImportsC(t *testing.T) {
 	testenv.NeedsGoPackages(t)
 
 	cfg := &packages.Config{
-		Mode:  packages.LoadImports,
+		Mode:  packages.NeedName | packages.NeedImports | packages.NeedDeps,
 		Tests: true,
 	}
 	initial, err := packages.Load(cfg, "syscall", "net")
