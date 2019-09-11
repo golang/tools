@@ -386,8 +386,10 @@ func (c *Conn) Run(runCtx context.Context) error {
 				Error:  msg.Error,
 				ID:     msg.ID,
 			}
-			rchan <- response
-			close(rchan)
+			if rchan != nil {
+				rchan <- response
+				close(rchan)
+			}
 		default:
 			for _, h := range c.handlers {
 				h.Error(runCtx, fmt.Errorf("message not a call, notify or response, ignoring"))
