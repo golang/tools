@@ -415,7 +415,7 @@ type loader struct {
 	parseCacheMu sync.Mutex
 	exportMu     sync.Mutex // enforces mutual exclusion of exportdata operations
 
-	// Config.Mode contains the implied mode (see implyLoadMode).
+	// Config.Mode contains the implied mode (see impliedLoadMode).
 	// Implied mode contains all the fields we need the data for.
 	// In requestedMode there are the actually requested fields.
 	// We'll zero them out before returning packages to the user.
@@ -463,6 +463,10 @@ func newLoader(cfg *Config) *loader {
 		}
 	}
 
+	// Save the actually requested fields. We'll zero them out before returning packages to the user.
+	ld.requestedMode = ld.Mode
+	ld.Mode = impliedLoadMode(ld.Mode)
+
 	if ld.Mode&NeedTypes != 0 {
 		if ld.Fset == nil {
 			ld.Fset = token.NewFileSet()
@@ -478,9 +482,6 @@ func newLoader(cfg *Config) *loader {
 		}
 	}
 
-	// Save the actually requested fields. We'll zero them out before returning packages to the user.
-	ld.requestedMode = ld.Mode
-	ld.implyLoadMode()
 	return ld
 }
 
@@ -1080,23 +1081,23 @@ func (ld *loader) loadFromExportData(lpkg *loaderPackage) (*types.Package, error
 	return tpkg, nil
 }
 
-// implyLoadMode adds dependencies for choosed LoadMode in ld.Mode
-func (ld *loader) implyLoadMode() {
-	if ld.Mode&NeedTypesInfo != 0 && ld.Mode&NeedImports == 0 {
+// impliedLoadMode returns loadMode with it's dependencies
+func impliedLoadMode(loadMode LoadMode) LoadMode {
+	if loadMode&NeedTypesInfo != 0 && loadMode&NeedImports == 0 {
 		// If NeedTypesInfo, go/packages needs to do typechecking itself so it can
 		// associate type info with the AST. To do so, we need the export data
 		// for dependencies, which means we need to ask for the direct dependencies.
 		// NeedImports is used to ask for the direct dependencies.
-		ld.Mode |= NeedImports
-		ld.Logf("Added load mode dependency of NeedTypesInfo: NeedImports")
+		loadMode |= NeedImports
 	}
 
-	if ld.Mode&NeedDeps != 0 && ld.Mode&NeedImports == 0 {
+	if loadMode&NeedDeps != 0 && loadMode&NeedImports == 0 {
 		// With NeedDeps we need to load at least direct dependencies.
 		// NeedImports is used to ask for the direct dependencies.
-		ld.Mode |= NeedImports
-		ld.Logf("Added load mode dependency of NeedDeps: NeedImports")
+		loadMode |= NeedImports
 	}
+
+	return loadMode
 }
 
 func usesExportData(cfg *Config) bool {
