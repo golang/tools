@@ -53,9 +53,6 @@ type view struct {
 	// Folder is the root of this view.
 	folder span.URI
 
-	// env is the environment to use when invoking underlying tools.
-	env []string
-
 	// process is the process env for this view.
 	// Note: this contains cached module and filesystem state.
 	//
@@ -68,9 +65,6 @@ type view struct {
 	// by processEnvs resolver.
 	// TODO(suzmue): These versions may not actually be on disk.
 	modFileVersions map[string]string
-
-	// buildFlags is the build flags to use when invoking underlying tools.
-	buildFlags []string
 
 	// keep track of files by uri and by basename, a single file may be mapped
 	// to multiple uris, and the same basename may map to multiple files
@@ -91,7 +85,6 @@ type view struct {
 type metadataCache struct {
 	mu       sync.Mutex // guards both maps
 	packages map[packageID]*metadata
-	ids      map[packagePath]packageID
 }
 
 type metadata struct {
@@ -130,8 +123,8 @@ func (v *view) Config(ctx context.Context) *packages.Config {
 	// TODO: Should we cache the config and/or overlay somewhere?
 	return &packages.Config{
 		Dir:        v.folder.Filename(),
-		Env:        v.env,
-		BuildFlags: v.buildFlags,
+		Env:        v.options.Env,
+		BuildFlags: v.options.BuildFlags,
 		Mode: packages.NeedName |
 			packages.NeedFiles |
 			packages.NeedCompiledGoFiles |
@@ -262,26 +255,6 @@ func (v *view) fileVersion(filename string) string {
 	return f.Identity().Version
 }
 
-func (v *view) Env() []string {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	return v.env
-}
-
-func (v *view) SetEnv(env []string) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	//TODO: this should invalidate the entire view
-	v.env = env
-	v.processEnv = nil // recompute process env
-}
-
-func (v *view) SetBuildFlags(buildFlags []string) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	v.buildFlags = buildFlags
-}
-
 func (v *view) Shutdown(ctx context.Context) {
 	v.session.removeView(ctx, v)
 }
@@ -391,6 +364,31 @@ func (f *goFile) invalidateContent(ctx context.Context) {
 	f.handle = nil
 }
 
+// invalidateMeta invalides package metadata for all files in f's
+// package. This forces f's package's metadata to be reloaded next
+// time the package is checked.
+func (f *goFile) invalidateMeta(ctx context.Context) {
+	pkgs, err := f.GetPackages(ctx)
+	if err != nil {
+		log.Error(ctx, "invalidateMeta: GetPackages", err, telemetry.File.Of(f.URI()))
+		return
+	}
+
+	for _, pkg := range pkgs {
+		for _, pgh := range pkg.GetHandles() {
+			uri := pgh.File().Identity().URI
+			if gof, _ := f.view.FindFile(ctx, uri).(*goFile); gof != nil {
+				gof.mu.Lock()
+				gof.meta = nil
+				gof.mu.Unlock()
+			}
+		}
+		f.view.mcache.mu.Lock()
+		delete(f.view.mcache.packages, packageID(pkg.ID()))
+		f.view.mcache.mu.Unlock()
+	}
+}
+
 // remove invalidates a package and its reverse dependencies in the view's
 // package cache. It is assumed that the caller has locked both the mutexes
 // of both the mcache and the pcache.
@@ -424,6 +422,7 @@ func (v *view) remove(ctx context.Context, id packageID, seen map[packageID]stru
 		if cph, ok := gof.pkgs[id]; ok {
 			// Delete the package handle from the store.
 			v.session.cache.store.Delete(checkPackageKey{
+				id:     cph.ID(),
 				files:  hashParseKeys(cph.Files()),
 				config: hashConfig(cph.Config()),
 			})

@@ -6,7 +6,6 @@ package cache
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -15,6 +14,7 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/tools/internal/lsp/debug"
+	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/telemetry"
 	"golang.org/x/tools/internal/span"
@@ -79,28 +79,27 @@ func (s *session) Cache() source.Cache {
 	return s.cache
 }
 
-func (s *session) NewView(ctx context.Context, name string, folder span.URI) source.View {
+func (s *session) NewView(ctx context.Context, name string, folder span.URI, options source.ViewOptions) source.View {
 	index := atomic.AddInt64(&viewIndex, 1)
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
-	// We want a true background context and not a detatched context here
+	// We want a true background context and not a detached context here
 	// the spans need to be unrelated and no tag values should pollute it.
 	baseCtx := trace.Detach(xcontext.Detach(ctx))
 	backgroundCtx, cancel := context.WithCancel(baseCtx)
 	v := &view{
 		session:       s,
 		id:            strconv.FormatInt(index, 10),
+		options:       options,
 		baseCtx:       baseCtx,
 		backgroundCtx: backgroundCtx,
 		cancel:        cancel,
 		name:          name,
-		env:           os.Environ(),
 		folder:        folder,
 		filesByURI:    make(map[span.URI]viewFile),
 		filesByBase:   make(map[string][]viewFile),
 		mcache: &metadataCache{
 			packages: make(map[packageID]*metadata),
-			ids:      make(map[packagePath]packageID),
 		},
 		ignoredURIs: make(map[span.URI]struct{}),
 	}
@@ -337,8 +336,15 @@ func (s *session) buildOverlay() map[string][]byte {
 	return overlays
 }
 
-func (s *session) DidChangeOutOfBand(uri span.URI) {
-	s.filesWatchMap.Notify(uri)
+func (s *session) DidChangeOutOfBand(ctx context.Context, f source.GoFile, changeType protocol.FileChangeType) {
+	if changeType == protocol.Deleted {
+		// After a deletion we must invalidate the package's metadata to
+		// force a go/packages invocation to refresh the package's file
+		// list.
+		f.(*goFile).invalidateMeta(ctx)
+	}
+
+	s.filesWatchMap.Notify(f.URI())
 }
 
 func (o *overlay) FileSystem() source.FileSystem {

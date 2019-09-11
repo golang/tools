@@ -50,11 +50,6 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 
 	cache := cache.New()
 	session := cache.NewSession(ctx)
-	view := session.NewView(ctx, viewName, span.FileURI(data.Config.Dir))
-	view.SetEnv(data.Config.Env)
-	for filename, content := range data.Config.Overlay {
-		session.SetOverlay(span.FileURI(filename), content)
-	}
 	options := session.Options()
 	options.SupportedCodeActions = map[source.FileKind]map[protocol.CodeActionKind]bool{
 		source.Go: {
@@ -66,6 +61,12 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 	}
 	options.HoverKind = source.SynopsisDocumentation
 	session.SetOptions(options)
+	vo := options.DefaultViewOptions
+	vo.Env = data.Config.Env
+	session.NewView(ctx, viewName, span.FileURI(data.Config.Dir), vo)
+	for filename, content := range data.Config.Overlay {
+		session.SetOverlay(span.FileURI(filename), content)
+	}
 
 	r := &runner{
 		server: &Server{
@@ -150,15 +151,13 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			}
 		}
 	}
-
 	modified.InsertTextFormat = protocol.SnippetTextFormat
 	for _, usePlaceholders := range []bool{true, false} {
-		modified.UsePlaceholders = usePlaceholders
-
 		for src, want := range snippets {
 			modified.Completion.Deep = strings.Contains(string(src.URI()), "deepcomplete")
 			modified.Completion.FuzzyMatching = strings.Contains(string(src.URI()), "fuzzymatch")
 			modified.Completion.Unimported = strings.Contains(string(src.URI()), "unimported")
+			modified.Completion.Placeholders = usePlaceholders
 			r.server.session.SetOptions(modified)
 
 			list := r.runCompletion(t, src)

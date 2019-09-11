@@ -48,12 +48,14 @@ func testSource(t *testing.T, exporter packagestest.Exporter) {
 
 	cache := cache.New()
 	session := cache.NewSession(ctx)
+	options := session.Options()
+	vo := options.DefaultViewOptions
+	vo.Env = data.Config.Env
 	r := &runner{
-		view: session.NewView(ctx, "source_test", span.FileURI(data.Config.Dir)),
+		view: session.NewView(ctx, "source_test", span.FileURI(data.Config.Dir), vo),
 		data: data,
 		ctx:  ctx,
 	}
-	r.view.SetEnv(data.Config.Env)
 	for filename, content := range data.Config.Overlay {
 		session.SetOverlay(span.FileURI(filename), content)
 	}
@@ -167,6 +169,7 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 				Documentation: true,
 				Deep:          strings.Contains(string(src.URI()), "deepcomplete"),
 				FuzzyMatching: strings.Contains(string(src.URI()), "fuzzymatch"),
+				Placeholders:  usePlaceholders,
 			})
 			if err != nil {
 				t.Fatalf("failed for %v: %v", src, err)
@@ -186,8 +189,18 @@ func (r *runner) Completion(t *testing.T, data tests.Completions, snippets tests
 			if usePlaceholders {
 				expected = want.PlaceholderSnippet
 			}
-			if actual := got.Snippet(usePlaceholders); expected != actual {
-				t.Errorf("%s: expected placeholder snippet %q, got %q", src, expected, actual)
+			if expected == "" {
+				if got != nil {
+					t.Fatalf("%s:%d: expected no matching snippet", src.URI(), src.Start().Line())
+				}
+			} else {
+				if got == nil {
+					t.Fatalf("%s:%d: couldn't find completion matching %q", src.URI(), src.Start().Line(), wantItem.Label)
+				}
+				actual := got.Snippet()
+				if expected != actual {
+					t.Errorf("%s: expected placeholder snippet %q, got %q", src, expected, actual)
+				}
 			}
 		}
 	}

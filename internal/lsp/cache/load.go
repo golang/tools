@@ -278,7 +278,6 @@ func (v *view) link(ctx context.Context, g *importGraph) error {
 
 	// Add the metadata to the cache.
 	v.mcache.packages[m.id] = m
-	v.mcache.ids[g.pkgPath] = m.id
 
 	// Connect the import graph.
 	if g.parent != nil {
@@ -302,7 +301,7 @@ func (v *view) link(ctx context.Context, g *importGraph) error {
 				parent:         m,
 				missingImports: g.missingImports,
 			}); err != nil {
-				log.Error(ctx, "error in dependecny", err)
+				log.Error(ctx, "error in dependency", err)
 			}
 		}
 	}
@@ -320,21 +319,4 @@ func (v *view) link(ctx context.Context, g *importGraph) error {
 		delete(child.parents, m.id)
 	}
 	return nil
-}
-
-func identicalFileHandles(old, new []source.ParseGoHandle) bool {
-	if len(old) != len(new) {
-		return false
-	}
-	oldByIdentity := make(map[string]struct{}, len(old))
-	for _, ph := range old {
-		oldByIdentity[hashParseKey(ph)] = struct{}{}
-	}
-	for _, ph := range new {
-		if _, found := oldByIdentity[hashParseKey(ph)]; !found {
-			return false
-		}
-		delete(oldByIdentity, hashParseKey(ph))
-	}
-	return len(oldByIdentity) == 0
 }

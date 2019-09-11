@@ -7,7 +7,6 @@ package lsp
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"path"
 
@@ -17,7 +16,6 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/log"
-	"golang.org/x/tools/internal/telemetry/tag"
 	errors "golang.org/x/xerrors"
 )
 
@@ -35,35 +33,14 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitia) (
 	options := s.session.Options()
 	defer func() { s.session.SetOptions(options) }()
 
-	// TODO: Remove the option once we are certain there are no issues here.
-	options.TextDocumentSyncKind = protocol.Incremental
-	if opts, ok := params.InitializationOptions.(map[string]interface{}); ok {
-		if opt, ok := opts["noIncrementalSync"].(bool); ok && opt {
-			options.TextDocumentSyncKind = protocol.Full
-		}
+	//TODO: handle the options results
+	source.SetOptions(&options, params.InitializationOptions)
+	options.ForClientCapabilities(params.Capabilities)
 
-		// Check if user has enabled watching for file changes.
-		setBool(&options.WatchFileChanges, opts, "watchFileChanges")
-	}
-
-	// Default to using synopsis as a default for hover information.
-	options.HoverKind = source.SynopsisDocumentation
-
-	options.SupportedCodeActions = map[source.FileKind]map[protocol.CodeActionKind]bool{
-		source.Go: {
-			protocol.SourceOrganizeImports: true,
-			protocol.QuickFix:              true,
-		},
-		source.Mod: {},
-		source.Sum: {},
-	}
-
-	s.setClientCapabilities(&options, params.Capabilities)
-
-	folders := params.WorkspaceFolders
-	if len(folders) == 0 {
+	s.pendingFolders = params.WorkspaceFolders
+	if len(s.pendingFolders) == 0 {
 		if params.RootURI != "" {
-			folders = []protocol.WorkspaceFolder{{
+			s.pendingFolders = []protocol.WorkspaceFolder{{
 				URI:  params.RootURI,
 				Name: path.Base(params.RootURI),
 			}}
@@ -72,12 +49,6 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitia) (
 			//TODO(iancottrell): not sure how to do single file mode yet
 			//issue: golang.org/issue/31168
 			return nil, errors.Errorf("single file mode not supported yet")
-		}
-	}
-
-	for _, folder := range folders {
-		if err := s.addView(ctx, folder.Name, span.NewURI(folder.URI)); err != nil {
-			return nil, err
 		}
 	}
 
@@ -146,27 +117,6 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitia) (
 	}, nil
 }
 
-func (s *Server) setClientCapabilities(o *source.SessionOptions, caps protocol.ClientCapabilities) {
-	// Check if the client supports snippets in completion items.
-	o.InsertTextFormat = protocol.PlainTextTextFormat
-	if caps.TextDocument.Completion.CompletionItem != nil &&
-		caps.TextDocument.Completion.CompletionItem.SnippetSupport {
-		o.InsertTextFormat = protocol.SnippetTextFormat
-	}
-	// Check if the client supports configuration messages.
-	o.ConfigurationSupported = caps.Workspace.Configuration
-	o.DynamicConfigurationSupported = caps.Workspace.DidChangeConfiguration.DynamicRegistration
-	o.DynamicWatchedFilesSupported = caps.Workspace.DidChangeWatchedFiles.DynamicRegistration
-
-	// Check which types of content format are supported by this client.
-	o.PreferredContentFormat = protocol.PlainText
-	if len(caps.TextDocument.Hover.ContentFormat) > 0 {
-		o.PreferredContentFormat = caps.TextDocument.Hover.ContentFormat[0]
-	}
-	// Check if the client supports only line folding.
-	o.LineFoldingOnly = caps.TextDocument.FoldingRange.LineFoldingOnly
-}
-
 func (s *Server) initialized(ctx context.Context, params *protocol.InitializedParams) error {
 	s.stateMu.Lock()
 	s.state = serverInitialized
@@ -208,28 +158,32 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 		})
 	}
 
-	if options.ConfigurationSupported {
-		for _, view := range s.session.Views() {
-			if err := s.fetchConfig(ctx, view, &options); err != nil {
-				return err
-			}
-		}
-	}
 	buf := &bytes.Buffer{}
 	debug.PrintVersionInfo(buf, true, debug.PlainText)
 	log.Print(ctx, buf.String())
+
+	for _, folder := range s.pendingFolders {
+		if err := s.addView(ctx, folder.Name, span.NewURI(folder.URI)); err != nil {
+			return err
+		}
+	}
+	s.pendingFolders = nil
+
 	return nil
 }
 
-func (s *Server) fetchConfig(ctx context.Context, view source.View, options *source.SessionOptions) error {
+func (s *Server) fetchConfig(ctx context.Context, name string, folder span.URI, vo *source.ViewOptions) error {
+	if !s.session.Options().ConfigurationSupported {
+		return nil
+	}
 	v := protocol.ParamConfig{
 		protocol.ConfigurationParams{
 			Items: []protocol.ConfigurationItem{{
-				ScopeURI: protocol.NewURI(view.Folder()),
+				ScopeURI: protocol.NewURI(folder),
 				Section:  "gopls",
 			}, {
-				ScopeURI: protocol.NewURI(view.Folder()),
-				Section:  view.Name(),
+				ScopeURI: protocol.NewURI(folder),
+				Section:  name,
 			},
 			},
 		}, protocol.PartialResultParams{},
@@ -239,91 +193,9 @@ func (s *Server) fetchConfig(ctx context.Context, view source.View, options *sou
 		return err
 	}
 	for _, config := range configs {
-		if err := s.processConfig(ctx, view, options, config); err != nil {
-			return err
-		}
+		//TODO: handle the options results
+		source.SetOptions(vo, config)
 	}
-	return nil
-}
-
-func (s *Server) processConfig(ctx context.Context, view source.View, options *source.SessionOptions, config interface{}) error {
-	// TODO: We should probably store and process more of the config.
-	if config == nil {
-		return nil // ignore error if you don't have a config
-	}
-
-	c, ok := config.(map[string]interface{})
-	if !ok {
-		return errors.Errorf("invalid config gopls type %T", config)
-	}
-
-	// Get the environment for the go/packages config.
-	if env := c["env"]; env != nil {
-		menv, ok := env.(map[string]interface{})
-		if !ok {
-			return errors.Errorf("invalid config gopls.env type %T", env)
-		}
-		env := view.Env()
-		for k, v := range menv {
-			env = append(env, fmt.Sprintf("%s=%s", k, v))
-		}
-		view.SetEnv(env)
-	}
-
-	// Get the build flags for the go/packages config.
-	if buildFlags := c["buildFlags"]; buildFlags != nil {
-		iflags, ok := buildFlags.([]interface{})
-		if !ok {
-			return errors.Errorf("invalid config gopls.buildFlags type %T", buildFlags)
-		}
-		flags := make([]string, 0, len(iflags))
-		for _, flag := range iflags {
-			flags = append(flags, fmt.Sprintf("%s", flag))
-		}
-		view.SetBuildFlags(flags)
-	}
-
-	// Set the hover kind.
-	if hoverKind, ok := c["hoverKind"].(string); ok {
-		switch hoverKind {
-		case "NoDocumentation":
-			options.HoverKind = source.NoDocumentation
-		case "SingleLine":
-			options.HoverKind = source.SingleLine
-		case "SynopsisDocumentation":
-			options.HoverKind = source.SynopsisDocumentation
-		case "FullDocumentation":
-			options.HoverKind = source.FullDocumentation
-		case "Structured":
-			options.HoverKind = source.Structured
-		default:
-			log.Error(ctx, "unsupported hover kind", nil, tag.Of("HoverKind", hoverKind))
-			// The default value is already be set to synopsis.
-		}
-	}
-
-	// Check if the user has explicitly disabled any analyses.
-	if disabledAnalyses, ok := c["experimentalDisabledAnalyses"].([]interface{}); ok {
-		options.DisabledAnalyses = make(map[string]struct{})
-		for _, a := range disabledAnalyses {
-			if a, ok := a.(string); ok {
-				options.DisabledAnalyses[a] = struct{}{}
-			}
-		}
-	}
-
-	// Set completion options. For now, we allow disabling of completion documentation,
-	// deep completion, and fuzzy matching.
-	setBool(&options.Completion.Documentation, c, "wantCompletionDocumentation")
-	setNotBool(&options.Completion.Deep, c, "disableDeepCompletion")
-	setNotBool(&options.Completion.FuzzyMatching, c, "disableFuzzyMatching")
-
-	// Unimported package completion is still experimental, so not enabled by default.
-	setBool(&options.Completion.Unimported, c, "wantUnimportedCompletions")
-
-	// If the user wants placeholders for autocompletion results.
-	setBool(&options.UsePlaceholders, c, "usePlaceholders")
-
 	return nil
 }
 

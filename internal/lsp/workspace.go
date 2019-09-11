@@ -31,14 +31,15 @@ func (s *Server) changeFolders(ctx context.Context, event protocol.WorkspaceFold
 }
 
 func (s *Server) addView(ctx context.Context, name string, uri span.URI) error {
-	view := s.session.NewView(ctx, name, uri)
 	s.stateMu.Lock()
 	state := s.state
 	s.stateMu.Unlock()
-	options := s.session.Options()
-	defer func() { s.session.SetOptions(options) }()
-	if state >= serverInitialized {
-		s.fetchConfig(ctx, view, &options)
+	if state < serverInitialized {
+		return errors.Errorf("addView called before server initialized")
 	}
+
+	viewOptions := s.session.Options().DefaultViewOptions
+	s.fetchConfig(ctx, name, uri, &viewOptions)
+	s.session.NewView(ctx, name, uri, viewOptions)
 	return nil
 }

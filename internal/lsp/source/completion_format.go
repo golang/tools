@@ -30,20 +30,19 @@ func (c *completer) item(cand candidate) (CompletionItem, error) {
 	}
 
 	var (
-		label              = cand.name
-		detail             = types.TypeString(obj.Type(), c.qf)
-		insert             = label
-		kind               CompletionItemKind
-		plainSnippet       *snippet.Builder
-		placeholderSnippet *snippet.Builder
-		protocolEdits      []protocol.TextEdit
+		label         = cand.name
+		detail        = types.TypeString(obj.Type(), c.qf)
+		insert        = label
+		kind          CompletionItemKind
+		snip          *snippet.Builder
+		protocolEdits []protocol.TextEdit
 	)
 
-	// expandFuncCall mutates the completion label, detail, and snippets
+	// expandFuncCall mutates the completion label, detail, and snippet
 	// to that of an invocation of sig.
 	expandFuncCall := func(sig *types.Signature) {
 		params := formatParams(sig.Params(), sig.Variadic(), c.qf)
-		plainSnippet, placeholderSnippet = c.functionCallSnippets(label, params)
+		snip = c.functionCallSnippet(label, params)
 		results, writeParens := formatResults(sig.Results(), c.qf)
 		detail = "func" + formatFunction(params, results, writeParens)
 	}
@@ -59,7 +58,7 @@ func (c *completer) item(cand candidate) (CompletionItem, error) {
 		}
 		if obj.IsField() {
 			kind = FieldCompletionItem
-			plainSnippet, placeholderSnippet = c.structFieldSnippets(label, detail)
+			snip = c.structFieldSnippet(label, detail)
 		} else if c.isParameter(obj) {
 			kind = ParameterCompletionItem
 		} else {
@@ -110,54 +109,32 @@ func (c *completer) item(cand candidate) (CompletionItem, error) {
 		Kind:                kind,
 		Score:               cand.score,
 		Depth:               len(c.deepState.chain),
-		plainSnippet:        plainSnippet,
-		placeholderSnippet:  placeholderSnippet,
+		snippet:             snip,
 	}
 	// If the user doesn't want documentation for completion items.
 	if !c.opts.Documentation {
 		return item, nil
 	}
-	declRange, err := objToMappedRange(c.ctx, c.view, obj)
-	if err != nil {
-		return item, nil
-	}
-	pos := c.view.Session().Cache().FileSet().Position(declRange.spanRange.Start)
+	pos := c.view.Session().Cache().FileSet().Position(obj.Pos())
+
+	// We ignore errors here, because some types, like "unsafe" or "error",
+	// may not have valid positions that we can use to get documentation.
 	if !pos.IsValid() {
 		return item, nil
 	}
+
 	uri := span.FileURI(pos.Filename)
-	f, err := c.view.GetFile(c.ctx, uri)
+	_, file, pkg, err := c.pkg.FindFile(c.ctx, uri, obj.Pos())
 	if err != nil {
-		return item, nil
+		return CompletionItem{}, err
 	}
-	gof, ok := f.(GoFile)
-	if !ok {
-		return item, nil
-	}
-	pkg, err := gof.GetCachedPackage(c.ctx)
+	ident, err := findIdentifier(c.ctx, c.view, []Package{pkg}, file, obj.Pos())
 	if err != nil {
-		return item, nil
-	}
-	var ph ParseGoHandle
-	for _, h := range pkg.GetHandles() {
-		if h.File().Identity().URI == gof.URI() {
-			ph = h
-		}
-	}
-	if ph == nil {
-		return item, nil
-	}
-	file, _ := ph.Cached(c.ctx)
-	if file == nil {
-		return item, nil
-	}
-	ident, err := findIdentifier(c.ctx, c.view, gof, pkg, file, declRange.spanRange.Start)
-	if err != nil {
-		return item, nil
+		return CompletionItem{}, err
 	}
 	hover, err := ident.Hover(c.ctx)
 	if err != nil {
-		return item, nil
+		return CompletionItem{}, err
 	}
 	item.Documentation = hover.Synopsis
 	if c.opts.FullDocumentation {
@@ -200,7 +177,7 @@ func (c *completer) formatBuiltin(cand candidate) CompletionItem {
 		results, writeResultParens := formatFieldList(c.ctx, c.view, decl.Type.Results)
 		item.Label = obj.Name()
 		item.Detail = "func" + formatFunction(params, results, writeResultParens)
-		item.plainSnippet, item.placeholderSnippet = c.functionCallSnippets(obj.Name(), params)
+		item.snippet = c.functionCallSnippet(obj.Name(), params)
 	case *types.TypeName:
 		if types.IsInterface(obj.Type()) {
 			item.Kind = InterfaceCompletionItem

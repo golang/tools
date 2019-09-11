@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/imports"
+	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -108,6 +109,9 @@ const (
 // CheckPackageHandle represents a handle to a specific version of a package.
 // It is uniquely defined by the file handles that make up the package.
 type CheckPackageHandle interface {
+	// ID returns the ID of the package associated with the CheckPackageHandle.
+	ID() string
+
 	// ParseGoHandle returns a ParseGoHandle for which to get the package.
 	Files() []ParseGoHandle
 
@@ -151,7 +155,7 @@ type Cache interface {
 // A session may have many active views at any given time.
 type Session interface {
 	// NewView creates a new View and returns it.
-	NewView(ctx context.Context, name string, folder span.URI) View
+	NewView(ctx context.Context, name string, folder span.URI, options ViewOptions) View
 
 	// Cache returns the cache that created this session.
 	Cache() Cache
@@ -189,7 +193,7 @@ type Session interface {
 
 	// DidChangeOutOfBand is called when a file under the root folder
 	// changes. The file is not necessarily open in the editor.
-	DidChangeOutOfBand(uri span.URI)
+	DidChangeOutOfBand(ctx context.Context, f GoFile, change protocol.FileChangeType)
 
 	// Options returns a copy of the SessionOptions for this session.
 	Options() SessionOptions
@@ -228,15 +232,6 @@ type View interface {
 	// BackgroundContext returns a context used for all background processing
 	// on behalf of this view.
 	BackgroundContext() context.Context
-
-	// Env returns the current set of environment overrides on this view.
-	Env() []string
-
-	// SetEnv is used to adjust the environment applied to the view.
-	SetEnv([]string)
-
-	// SetBuildFlags is used to adjust the build flags applied to the view.
-	SetBuildFlags([]string)
 
 	// Shutdown closes this view, and detaches it from it's session.
 	Shutdown(ctx context.Context)
@@ -279,10 +274,10 @@ type GoFile interface {
 	// GetPackages returns the CheckPackageHandles of the packages that this file belongs to.
 	GetCheckPackageHandles(ctx context.Context) ([]CheckPackageHandle, error)
 
-	// GetPackage returns the CheckPackageHandle for the package that this file belongs to.
+	// GetPackage returns the Package that this file belongs to.
 	GetPackage(ctx context.Context) (Package, error)
 
-	// GetPackages returns the CheckPackageHandles of the packages that this file belongs to.
+	// GetPackages returns the Packages that this file belongs to.
 	GetPackages(ctx context.Context) ([]Package, error)
 
 	// GetActiveReverseDeps returns the active files belonging to the reverse
@@ -318,4 +313,8 @@ type Package interface {
 
 	// GetActionGraph returns the action graph for the given package.
 	GetActionGraph(ctx context.Context, a *analysis.Analyzer) (*Action, error)
+
+	// FindFile returns the AST and type information for a file that may
+	// belong to or be part of a dependency of the given package.
+	FindFile(ctx context.Context, uri span.URI, pos token.Pos) (ParseGoHandle, *ast.File, Package, error)
 }
