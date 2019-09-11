@@ -126,8 +126,8 @@ func findLinksInString(src string, pos token.Pos, view source.View, mapper *prot
 	return links, nil
 }
 
-const urlRegexpString = "(http|ftp|https)://([\\w_-]+(?:(?:\\.[\\w_-]+)+))([\\w.,@?^=%&:/~+#-]*[\\w@?^=%&/~+#-])?"
 const urlNoProtocolRegexpString = "([\\w_-]+(?:(?:\\.[\\w_-]+)+))([\\w.,@?^=%&:/~+#-]*[\\w@?^=%&/~+#-])?"
+const urlRegexpString = "(http|ftp|https)://" + urlNoProtocolRegexpString
 
 var (
 	urlRegexp            *regexp.Regexp
