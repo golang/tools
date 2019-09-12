@@ -116,7 +116,7 @@ func findLinksInString(src string, pos token.Pos, view source.View, mapper *prot
 			end := urlIndex[1]
 			startPos := token.Pos(int(pos) + start)
 			endPos := token.Pos(int(pos) + end)
-			target := src[start:end]
+			target := "https://" + src[start:end]
 			l, err := toProtocolLink(view, mapper, target, startPos, endPos)
 			if err != nil {
 				return nil, err

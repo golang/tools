@@ -14,7 +14,7 @@ var (
 // Foo function
 func Foo() string {
 	/*https://example.com/comment */ //@link("https://example.com/comment","https://example.com/comment")
-	/*example.com/comment */ //@link("example.com/comment","example.com/comment")
+	/*example.com/comment */                    //@link("example.com/comment","https://example.com/comment")
 	url := "https://example.com/string_literal" //@link("https://example.com/string_literal","https://example.com/string_literal")
 	return url
 }
