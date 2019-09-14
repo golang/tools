@@ -20,7 +20,7 @@ import (
 )
 
 func (s *Server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
-	uri := span.NewURI(params.TextDocument.URI)
+	uri := span.URI(params.TextDocument.URI)
 	text := []byte(params.TextDocument.Text)
 
 	// Confirm that the file's language ID is related to Go.
