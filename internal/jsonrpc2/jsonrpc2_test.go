@@ -92,6 +92,32 @@ func TestHeaderCall(t *testing.T) {
 	}
 }
 
+func TestResultsNoPendingID(t *testing.T) {
+	ctx := context.Background()
+	result := `{"jsonrpc":"2.0","result":["test"],"id":1}`
+
+	aR, bW := io.Pipe()
+	bR, aW := io.Pipe()
+
+	stream := jsonrpc2.NewStream(aR, aW)
+	run(ctx, t, false, bR, bW)
+
+	ch := make(chan int)
+
+	go func() {
+		stream.Write(ctx, []byte(result))
+		stream.Write(ctx, []byte(result))
+
+		ch <- 0
+	}()
+
+	select {
+	case <-ch:
+	case <-time.After(time.Second * 1):
+		t.Fatalf("NoPendingID Blocking")
+	}
+}
+
 func prepare(ctx context.Context, t *testing.T, withHeaders bool) (*jsonrpc2.Conn, *jsonrpc2.Conn) {
 	aR, bW := io.Pipe()
 	bR, aW := io.Pipe()
