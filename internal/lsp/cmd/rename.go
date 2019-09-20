@@ -92,7 +92,7 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 	for _, u := range keys {
 		edits := (*we.Changes)[u]
 		uri := span.NewURI(u)
-		cmdFile := conn.Client.getFile(ctx, uri)
+		cmdFile := conn.AddFile(ctx, uri)
 		filename := cmdFile.uri.Filename()
 
 		// convert LSP-style edits to []diff.TextEdit cuz Spans are handy
