@@ -69,6 +69,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		}
 	}
 
+	pass.ExportPackageFact(new(foundFact))
+
 	return nil, nil
 }
 

@@ -1,4 +1,4 @@
-package main
+package main // want package:"found"
 
 func main() {
 	println("hi") // want "call of println"

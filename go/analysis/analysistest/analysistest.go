@@ -277,6 +277,13 @@ func check(t Testing, gopath string, pass *analysis.Pass, diagnostics []analysis
 		objects = append(objects, obj)
 	}
 	sort.Slice(objects, func(i, j int) bool {
+		// Package facts are keyed by nil.
+		if objects[i] == nil {
+			return true
+		}
+		if objects[j] == nil {
+			return false
+		}
 		return objects[i].Pos() < objects[j].Pos()
 	})
 	for _, obj := range objects {
