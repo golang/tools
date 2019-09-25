@@ -14,8 +14,77 @@ import (
 	"regexp"
 	"strings"
 
+	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
+	errors "golang.org/x/xerrors"
 )
+
+type mappedRange struct {
+	spanRange span.Range
+	m         *protocol.ColumnMapper
+
+	// protocolRange is the result of converting the spanRange using the mapper.
+	// It is computed on-demand.
+	protocolRange *protocol.Range
+}
+
+func (s mappedRange) Range() (protocol.Range, error) {
+	if s.protocolRange == nil {
+		spn, err := s.spanRange.Span()
+		if err != nil {
+			return protocol.Range{}, err
+		}
+		prng, err := s.m.Range(spn)
+		if err != nil {
+			return protocol.Range{}, err
+		}
+		s.protocolRange = &prng
+	}
+	return *s.protocolRange, nil
+}
+
+func (s mappedRange) Span() (span.Span, error) {
+	return s.spanRange.Span()
+}
+
+func (s mappedRange) URI() span.URI {
+	return s.m.URI
+}
+
+// NarrowestCheckPackageHandle picks the "narrowest" package for a given file.
+//
+// By "narrowest" package, we mean the package with the fewest number of files
+// that includes the given file. This solves the problem of test variants,
+// as the test will have more files than the non-test package.
+func NarrowestCheckPackageHandle(handles []CheckPackageHandle) CheckPackageHandle {
+	if len(handles) < 1 {
+		return nil
+	}
+	result := handles[0]
+	for _, handle := range handles[1:] {
+		if result == nil || len(handle.Files()) < len(result.Files()) {
+			result = handle
+		}
+	}
+	return result
+}
+
+// WidestCheckPackageHandle returns the CheckPackageHandle containing the most files.
+//
+// This is useful for something like diagnostics, where we'd prefer to offer diagnostics
+// for as many files as possible.
+func WidestCheckPackageHandle(handles []CheckPackageHandle) CheckPackageHandle {
+	if len(handles) < 1 {
+		return nil
+	}
+	result := handles[0]
+	for _, handle := range handles[1:] {
+		if result == nil || len(handle.Files()) > len(result.Files()) {
+			result = handle
+		}
+	}
+	return result
+}
 
 func IsGenerated(ctx context.Context, view View, uri span.URI) bool {
 	f, err := view.GetFile(ctx, uri)
@@ -23,8 +92,8 @@ func IsGenerated(ctx context.Context, view View, uri span.URI) bool {
 		return false
 	}
 	ph := view.Session().Cache().ParseGoHandle(f.Handle(ctx), ParseHeader)
-	parsed, err := ph.Parse(ctx)
-	if parsed == nil {
+	parsed, _, _, err := ph.Parse(ctx)
+	if err != nil {
 		return false
 	}
 	tok := view.Session().Cache().FileSet().File(parsed.Pos())
@@ -42,6 +111,72 @@ func IsGenerated(ctx context.Context, view View, uri span.URI) bool {
 		}
 	}
 	return false
+}
+
+func nodeToProtocolRange(ctx context.Context, view View, m *protocol.ColumnMapper, n ast.Node) (protocol.Range, error) {
+	mrng, err := nodeToMappedRange(ctx, view, m, n)
+	if err != nil {
+		return protocol.Range{}, err
+	}
+	return mrng.Range()
+}
+
+func objToMappedRange(ctx context.Context, view View, pkg Package, obj types.Object) (mappedRange, error) {
+	if pkgName, ok := obj.(*types.PkgName); ok {
+		// An imported Go package has a package-local, unqualified name.
+		// When the name matches the imported package name, there is no
+		// identifier in the import spec with the local package name.
+		//
+		// For example:
+		// 		import "go/ast" 	// name "ast" matches package name
+		// 		import a "go/ast"  	// name "a" does not match package name
+		//
+		// When the identifier does not appear in the source, have the range
+		// of the object be the point at the beginning of the declaration.
+		if pkgName.Imported().Name() == pkgName.Name() {
+			return nameToMappedRange(ctx, view, pkg, obj.Pos(), "")
+		}
+	}
+	return nameToMappedRange(ctx, view, pkg, obj.Pos(), obj.Name())
+}
+
+func nameToMappedRange(ctx context.Context, view View, pkg Package, pos token.Pos, name string) (mappedRange, error) {
+	return posToMappedRange(ctx, view, pkg, pos, pos+token.Pos(len(name)))
+}
+
+func nodeToMappedRange(ctx context.Context, view View, m *protocol.ColumnMapper, n ast.Node) (mappedRange, error) {
+	return posToRange(ctx, view, m, n.Pos(), n.End())
+}
+
+func posToMappedRange(ctx context.Context, view View, pkg Package, pos, end token.Pos) (mappedRange, error) {
+	m, err := posToMapper(ctx, view, pkg, pos)
+	if err != nil {
+		return mappedRange{}, err
+	}
+	return posToRange(ctx, view, m, pos, end)
+}
+
+func posToRange(ctx context.Context, view View, m *protocol.ColumnMapper, pos, end token.Pos) (mappedRange, error) {
+	if !pos.IsValid() {
+		return mappedRange{}, errors.Errorf("invalid position for %v", pos)
+	}
+	if !end.IsValid() {
+		return mappedRange{}, errors.Errorf("invalid position for %v", end)
+	}
+	return mappedRange{
+		m:         m,
+		spanRange: span.NewRange(view.Session().Cache().FileSet(), pos, end),
+	}, nil
+}
+
+func posToMapper(ctx context.Context, view View, pkg Package, pos token.Pos) (*protocol.ColumnMapper, error) {
+	posn := view.Session().Cache().FileSet().Position(pos)
+	ph, _, err := pkg.FindFile(ctx, span.FileURI(posn.Filename))
+	if err != nil {
+		return nil, err
+	}
+	_, m, _, err := ph.Cached(ctx)
+	return m, err
 }
 
 // Matches cgo generated comment as well as the proposed standard:
@@ -171,18 +306,6 @@ func resolveInvalid(obj types.Object, node ast.Node, info *types.Info) types.Obj
 	return formatResult(resultExpr)
 }
 
-func lookupBuiltinDecl(v View, name string) interface{} {
-	builtinPkg := v.BuiltinPackage()
-	if builtinPkg == nil || builtinPkg.Scope == nil {
-		return nil
-	}
-	obj := builtinPkg.Scope.Lookup(name)
-	if obj == nil {
-		return nil
-	}
-	return obj.Decl
-}
-
 func isPointer(T types.Type) bool {
 	_, ok := T.(*types.Pointer)
 	return ok
@@ -204,6 +327,11 @@ func isTypeName(obj types.Object) bool {
 func isFunc(obj types.Object) bool {
 	_, ok := obj.(*types.Func)
 	return ok
+}
+
+func isEmptyInterface(T types.Type) bool {
+	intf, _ := T.(*types.Interface)
+	return intf != nil && intf.NumMethods() == 0
 }
 
 // typeConversion returns the type being converted to if call is a type

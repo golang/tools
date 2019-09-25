@@ -1,24 +1,67 @@
 package source
 
 import (
-	"go/token"
+	"context"
+
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
 )
 
-func getCodeActions(fset *token.FileSet, diag analysis.Diagnostic) ([]SuggestedFixes, error) {
-	var cas []SuggestedFixes
+type SuggestedFix struct {
+	Title string
+	Edits map[span.URI][]protocol.TextEdit
+}
+
+func suggestedFixes(ctx context.Context, view View, pkg Package, diag analysis.Diagnostic) ([]SuggestedFix, error) {
+	var fixes []SuggestedFix
 	for _, fix := range diag.SuggestedFixes {
-		var ca SuggestedFixes
-		ca.Title = fix.Message
-		for _, te := range fix.TextEdits {
-			span, err := span.NewRange(fset, te.Pos, te.End).Span()
+		edits := make(map[span.URI][]protocol.TextEdit)
+		for _, e := range fix.TextEdits {
+			posn := view.Session().Cache().FileSet().Position(e.Pos)
+			uri := span.FileURI(posn.Filename)
+			ph, _, err := pkg.FindFile(ctx, uri)
 			if err != nil {
 				return nil, err
 			}
-			ca.Edits = append(ca.Edits, TextEdit{span, string(te.NewText)})
+			_, m, _, err := ph.Cached(ctx)
+			if err != nil {
+				return nil, err
+			}
+			mrng, err := posToRange(ctx, view, m, e.Pos, e.End)
+			if err != nil {
+				return nil, err
+			}
+			rng, err := mrng.Range()
+			if err != nil {
+				return nil, err
+			}
+			edits[uri] = append(edits[uri], protocol.TextEdit{
+				Range:   rng,
+				NewText: string(e.NewText),
+			})
 		}
-		cas = append(cas, ca)
+		fixes = append(fixes, SuggestedFix{
+			Title: fix.Message,
+			Edits: edits,
+		})
 	}
-	return cas, nil
+	return fixes, nil
+}
+
+// onlyDeletions returns true if all of the suggested fixes are deletions.
+func onlyDeletions(fixes []SuggestedFix) bool {
+	for _, fix := range fixes {
+		for _, edits := range fix.Edits {
+			for _, edit := range edits {
+				if edit.NewText != "" {
+					return false
+				}
+				if protocol.ComparePosition(edit.Range.Start, edit.Range.End) == 0 {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }

@@ -7,6 +7,7 @@ package imports
 import (
 	"flag"
 	"fmt"
+	"go/build"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -372,7 +373,37 @@ func foo() {
 }
 `,
 	},
+	// Merge import blocks, even when no additions are required.
+	{
+		name: "merge_import_blocks_no_fix",
+		in: `package foo
 
+import (
+	"fmt"
+)
+import "os"
+
+import (
+	"rsc.io/p"
+)
+
+var _, _ = os.Args, fmt.Println
+var _, _ = snappy.ErrCorrupt, p.P
+`,
+		out: `package foo
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/golang/snappy"
+	"rsc.io/p"
+)
+
+var _, _ = os.Args, fmt.Println
+var _, _ = snappy.ErrCorrupt, p.P
+`,
+	},
 	// Delete existing empty import block
 	{
 		name: "delete_empty_import_block",
@@ -1508,6 +1539,39 @@ func TestFindStdlib(t *testing.T) {
 	}
 }
 
+// https://golang.org/issue/31814
+func TestStdlibNotPrefixed(t *testing.T) {
+	const input = `package p
+var _ = bytes.Buffer
+`
+	const want = `package p
+
+import "bytes"
+
+var _ = bytes.Buffer
+`
+	// Force a scan of the stdlib.
+	savedStdlib := stdlib
+	defer func() { stdlib = savedStdlib }()
+	stdlib = map[string]map[string]bool{}
+
+	testConfig{
+		module: packagestest.Module{
+			Name: "ignored.com",
+		},
+	}.test(t, func(t *goimportTest) {
+		// Run in GOROOT/src so that the std module shows up in go list -m all.
+		t.env.WorkingDir = filepath.Join(t.env.GOROOT, "src")
+		got, err := t.processNonModule(filepath.Join(t.env.GOROOT, "src/x.go"), []byte(input), nil)
+		if err != nil {
+			t.Fatalf("Process() = %v", err)
+		}
+		if string(got) != want {
+			t.Errorf("Got:\n%s\nWant:\n%s", got, want)
+		}
+	})
+}
+
 type testConfig struct {
 	gopathOnly             bool
 	goPackagesIncompatible bool
@@ -1578,6 +1642,11 @@ func (c testConfig) test(t *testing.T, fn func(*goimportTest)) {
 					Debug:           *testDebug,
 				},
 				exported: exported,
+			}
+			if it.env.GOROOT == "" {
+				// packagestest clears out GOROOT to work around https://golang.org/issue/32849,
+				// which isn't relevant here. Fill it back in so we can find the standard library.
+				it.env.GOROOT = build.Default.GOROOT
 			}
 			fn(it)
 		})
@@ -2438,4 +2507,35 @@ var _ = bytes.Buffer{}
 			Files: fm{"foo.go": input},
 		},
 	}.processTest(t, "foo.com", "foo.go", nil, nil, want)
+}
+
+// TestStdLibGetCandidates tests that get packages finds std library packages
+// with correct priorities.
+func TestStdLibGetCandidates(t *testing.T) {
+	want := []struct {
+		wantName string
+		wantPkg  string
+	}{
+		{"bytes", "bytes"},
+		{"rand", "crypto/rand"},
+		{"rand", "math/rand"},
+		{"http", "net/http"},
+	}
+
+	got, err := GetAllCandidates("", nil)
+	if err != nil {
+		t.Fatalf("Process() = %v", err)
+	}
+	wantIdx := 0
+	for _, fix := range got {
+		if wantIdx >= len(want) {
+			break
+		}
+		if want[wantIdx].wantName == fix.IdentName && want[wantIdx].wantPkg == fix.StmtInfo.ImportPath && "" == fix.StmtInfo.Name {
+			wantIdx++
+		}
+	}
+	if wantIdx < len(want) {
+		t.Errorf("expected to find candidate with path: %q, name: %q next in ordered scan of results`", want[wantIdx].wantPkg, want[wantIdx].wantName)
+	}
 }

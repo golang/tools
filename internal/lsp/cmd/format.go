@@ -9,9 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"strings"
 
-	"golang.org/x/tools/internal/lsp"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
@@ -78,13 +76,11 @@ func (f *format) Run(ctx context.Context, args ...string) error {
 		if err != nil {
 			return errors.Errorf("%v: %v", spn, err)
 		}
-		sedits, err := lsp.FromProtocolEdits(file.mapper, edits)
+		sedits, err := source.FromProtocolEdits(file.mapper, edits)
 		if err != nil {
 			return errors.Errorf("%v: %v", spn, err)
 		}
-		ops := source.EditsToDiff(sedits)
-		lines := diff.SplitLines(string(file.mapper.Content))
-		formatted := strings.Join(diff.ApplyEdits(lines, ops), "")
+		formatted := diff.ApplyEdits(string(file.mapper.Content), sedits)
 		printIt := true
 		if f.List {
 			printIt = false
@@ -100,7 +96,7 @@ func (f *format) Run(ctx context.Context, args ...string) error {
 		}
 		if f.Diff {
 			printIt = false
-			u := diff.ToUnified(filename+".orig", filename, lines, ops)
+			u := diff.ToUnified(filename+".orig", filename, string(file.mapper.Content), sedits)
 			fmt.Print(u)
 		}
 		if printIt {
