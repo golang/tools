@@ -1,4 +1,4 @@
-package lsp
+package source
 
 import (
 	"bytes"
@@ -15,7 +15,9 @@ const (
 )
 
 var (
-	markdownEscape       = regexp.MustCompile(`([\\\x60*{}[\]()#+\-.!_>~|\n"$%&'\/:;<=?@^])`)
+	markdownEscape    = regexp.MustCompile(`([\\\x60*{}[\]()#+\-.!_>~|"$%&'\/:;<=?@^])`)
+	undoNewlineEscape = strings.NewReplacer(`\\n`, `\n`)
+
 	unicodeQuoteReplacer = strings.NewReplacer("``", ulquo, "''", urquo)
 )
 
@@ -26,7 +28,6 @@ func commentEscape(w io.Writer, text string, nice bool) {
 		text = convertQuotes(text)
 	}
 	text = escapeRegex(text)
-
 	w.Write([]byte(text))
 }
 
@@ -36,6 +37,7 @@ func convertQuotes(text string) string {
 
 func escapeRegex(text string) string {
 	text = markdownEscape.ReplaceAllString(text, `\$1`)
+	text = undoNewlineEscape.Replace(text)
 	return text
 }
 
@@ -326,7 +328,7 @@ func blocks(text string) []block {
 	return out
 }
 
-// ToMarkdown converts comment text to formatted markdown.
+// CommentToMarkdown converts comment text to formatted markdown.
 // The comment was prepared by DocReader,
 // so it is known not to have leading, trailing blank lines
 // nor to have trailing spaces at the end of lines.
@@ -345,7 +347,7 @@ func blocks(text string) []block {
 // Go identifiers that appear in the words map are italicized; if the corresponding
 // map value is not the empty string, it is considered a URL and the word is converted
 // into a link.
-func ToMarkdown(w io.Writer, text string, words map[string]string) {
+func CommentToMarkdown(w io.Writer, text string, words map[string]string) {
 	isFirstLine := true
 	for _, b := range blocks(text) {
 		switch b.op {
@@ -392,6 +394,6 @@ func ToMarkdown(w io.Writer, text string, words map[string]string) {
 // ToMarkdownString is similair to ToMarkdown except that it returns a string
 func ToMarkdownString(text string, words map[string]string) string {
 	buf := &bytes.Buffer{}
-	ToMarkdown(buf, text, words)
-	return string(buf.Bytes())
+	CommentToMarkdown(buf, text, words)
+	return buf.String()
 }

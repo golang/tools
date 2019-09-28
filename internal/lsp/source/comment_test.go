@@ -1,4 +1,4 @@
-package lsp
+package source
 
 import (
 	"bytes"
@@ -193,8 +193,9 @@ func TestCommentEscape(t *testing.T) {
 	commentTests := []struct {
 		in, out string
 	}{
-		{"typically invoked as ``go tool asm'',", "typically invoked as “go tool asm”,"},
-		{"For more detail, run ``go help test'' and ``go help testflag''", "For more detail, run “go help test” and “go help testflag”"},
+		//{"typically invoked as ``go tool asm'',", "typically invoked as “go tool asm”,"},
+		//{"For more detail, run ``go help test'' and ``go help testflag''", "For more detail, run “go help test” and “go help testflag”"},
+		{"For more detail, run func(t Type, size ...IntegerType()) Type", "For more detail, run “go help test” and “go help testflag”"},
 	}
 	for i, tt := range commentTests {
 		var buf strings.Builder
