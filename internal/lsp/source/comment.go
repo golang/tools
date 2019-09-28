@@ -15,8 +15,7 @@ const (
 )
 
 var (
-	markdownEscape    = regexp.MustCompile(`([\\\x60*{}[\]()#+\-.!_>~|"$%&'\/:;<=?@^])`)
-	undoNewlineEscape = strings.NewReplacer(`\\n`, `\n`)
+	markdownEscape = regexp.MustCompile(`([\\\x60*{}[\]()#+\-.!_>~|"$%&'\/:;<=?@^])`)
 
 	unicodeQuoteReplacer = strings.NewReplacer("``", ulquo, "''", urquo)
 )
@@ -36,9 +35,7 @@ func convertQuotes(text string) string {
 }
 
 func escapeRegex(text string) string {
-	text = markdownEscape.ReplaceAllString(text, `\$1`)
-	text = undoNewlineEscape.Replace(text)
-	return text
+	return markdownEscape.ReplaceAllString(text, `\$1`)
 }
 
 const (
