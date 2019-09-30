@@ -10,23 +10,6 @@ import (
 )
 
 func TestDataToMetricDescriptor(t *testing.T) {
-	intData := &metric.Int64Data{
-		Info: &metric.Scalar{
-			Name:        "int",
-			Description: "int metric",
-			Keys:        []interface{}{"hello"},
-		},
-		IsGauge: true,
-	}
-	floatData := &metric.Float64Data{
-		Info: &metric.Scalar{
-			Name:        "float",
-			Description: "float metric",
-			Keys:        []interface{}{"world"},
-		},
-		IsGauge: false,
-	}
-
 	tests := []struct {
 		name string
 		data telemetry.MetricData
@@ -39,7 +22,14 @@ func TestDataToMetricDescriptor(t *testing.T) {
 		},
 		{
 			"Int64Data gauge",
-			intData,
+			&metric.Int64Data{
+				Info: &metric.Scalar{
+					Name:        "int",
+					Description: "int metric",
+					Keys:        []interface{}{"hello"},
+				},
+				IsGauge: true,
+			},
 			&wire.MetricDescriptor{
 				Name:        "int",
 				Description: "int metric",
@@ -53,7 +43,14 @@ func TestDataToMetricDescriptor(t *testing.T) {
 		},
 		{
 			"Float64Data cumulative",
-			floatData,
+			&metric.Float64Data{
+				Info: &metric.Scalar{
+					Name:        "float",
+					Description: "float metric",
+					Keys:        []interface{}{"world"},
+				},
+				IsGauge: false,
+			},
 			&wire.MetricDescriptor{
 				Name:        "float",
 				Description: "float metric",
@@ -78,16 +75,6 @@ func TestDataToMetricDescriptor(t *testing.T) {
 }
 
 func TestGetDescription(t *testing.T) {
-	intData := &metric.Int64Data{
-		Info: &metric.Scalar{
-			Description: "int metric",
-		},
-	}
-	floatData := &metric.Float64Data{
-		Info: &metric.Scalar{
-			Description: "float metric",
-		},
-	}
 	tests := []struct {
 		name string
 		data telemetry.MetricData
@@ -100,12 +87,20 @@ func TestGetDescription(t *testing.T) {
 		},
 		{
 			"Int64Data description",
-			intData,
+			&metric.Int64Data{
+				Info: &metric.Scalar{
+					Description: "int metric",
+				},
+			},
 			"int metric",
 		},
 		{
 			"Float64Data description",
-			floatData,
+			&metric.Float64Data{
+				Info: &metric.Scalar{
+					Description: "float metric",
+				},
+			},
 			"float metric",
 		},
 	}
@@ -122,21 +117,6 @@ func TestGetDescription(t *testing.T) {
 }
 
 func TestGetLabelKeys(t *testing.T) {
-	intData := &metric.Int64Data{
-		Info: &metric.Scalar{
-			Keys: []interface{}{
-				"hello",
-			},
-		},
-	}
-	floatData := &metric.Float64Data{
-		Info: &metric.Scalar{
-			Keys: []interface{}{
-				"world",
-			},
-		},
-	}
-
 	tests := []struct {
 		name string
 		data telemetry.MetricData
@@ -149,7 +129,13 @@ func TestGetLabelKeys(t *testing.T) {
 		},
 		{
 			"Int64Data label keys",
-			intData,
+			&metric.Int64Data{
+				Info: &metric.Scalar{
+					Keys: []interface{}{
+						"hello",
+					},
+				},
+			},
 			[]*wire.LabelKey{
 				&wire.LabelKey{
 					Key: "hello",
@@ -158,7 +144,13 @@ func TestGetLabelKeys(t *testing.T) {
 		},
 		{
 			"Float64Data label keys",
-			floatData,
+			&metric.Float64Data{
+				Info: &metric.Scalar{
+					Keys: []interface{}{
+						"world",
+					},
+				},
+			},
 			[]*wire.LabelKey{
 				&wire.LabelKey{
 					Key: "world",
