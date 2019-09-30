@@ -141,7 +141,7 @@ func infoKeysToLabelKeys(infoKeys []interface{}) []*wire.LabelKey {
 	return labelKeys
 }
 
-//tagsToLabelValues returns an array of *wire.LabelValues containing the
+// tagsToLabelValues returns an array of *wire.LabelValues containing the
 // string values of the elements of tagKeys.
 func tagsToLabelValues(tags []telemetry.Tag) []*wire.LabelValue {
 	labelValues := make([]*wire.LabelValue, 0, len(tags))

@@ -206,7 +206,7 @@ func convertMetric(data telemetry.MetricData) *wire.Metric {
 	descriptor := dataToMetricDescriptor(data)
 	timeseries := dataToTimeseries(data)
 
-	//TODO: handle Histogram metrics
+	// TODO: handle Histogram metrics
 	return &wire.Metric{
 		MetricDescriptor: descriptor,
 		Timeseries:       timeseries,
