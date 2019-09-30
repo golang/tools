@@ -251,7 +251,6 @@ func TestDataToTimeseries(t *testing.T) {
 }
 
 func TestDataToPoints(t *testing.T) {
-
 	int64Data := &metric.Int64Data{
 		Rows: []int64{
 			0,
@@ -336,7 +335,6 @@ func TestDataToPoints(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestInfoKeysToLabelKeys(t *testing.T) {
