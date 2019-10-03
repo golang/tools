@@ -9,6 +9,82 @@ import (
 	"unicode/utf8"
 )
 
+// This file is mostly a clone of src/go/doc/comment.go but this has been adapted to
+// output markdown. Notable changes are diferent escape regex and using markdown
+// formatting instead of html.
+
+// ToMarkdownString is similair to ToMarkdown except that it returns a string
+func ToMarkdownString(text string) string {
+	buf := &bytes.Buffer{}
+	commentToMarkdown(buf, text)
+	return buf.String()
+}
+
+var (
+	mdNewline   = []byte("\n")
+	mdHeader    = []byte("### ")
+	mdIndent    = []byte("&nbsp;&nbsp;&nbsp;&nbsp;")
+	mdLinkStart = []byte("[")
+	mdLinkDiv   = []byte("](")
+	mdLinkEnd   = []byte(")")
+)
+
+// commentToMarkdown converts comment text to formatted markdown.
+// The comment was prepared by DocReader,
+// so it is known not to have leading, trailing blank lines
+// nor to have trailing spaces at the end of lines.
+// The comment markers have already been removed.
+//
+// Each line is converted into a markdown line and empty lines are just converted to
+// newlines. Heading are prefixed with `### ` to make it a markdown heading.
+//
+// A span of indented lines retains a 4 space prefix block, with the common indent
+// prefix removed unless empty, in which case it will be converted to a newline.
+//
+// URLs in the comment text are converted into links.
+func commentToMarkdown(w io.Writer, text string) {
+	isFirstLine := true
+	for _, b := range blocks(text) {
+		switch b.op {
+		case opPara:
+			if !isFirstLine {
+				w.Write(mdNewline)
+			}
+
+			for _, line := range b.lines {
+				emphasize(w, line, true)
+			}
+		case opHead:
+			if !isFirstLine {
+				w.Write(mdNewline)
+			}
+			w.Write(mdNewline)
+
+			for _, line := range b.lines {
+				w.Write(mdHeader)
+				commentEscape(w, line, true)
+				w.Write(mdNewline)
+			}
+		case opPre:
+			if !isFirstLine {
+				w.Write(mdNewline)
+			}
+			w.Write(mdNewline)
+
+			for _, line := range b.lines {
+				if isBlank(line) {
+					w.Write(mdNewline)
+				} else {
+					w.Write(mdIndent)
+					w.Write([]byte(line))
+					w.Write(mdNewline)
+				}
+			}
+		}
+		isFirstLine = false
+	}
+}
+
 const (
 	ulquo = "“"
 	urquo = "”"
@@ -63,7 +139,7 @@ var (
 	urlReplacer = strings.NewReplacer(`(`, `\(`, `)`, `\)`)
 )
 
-func emphasize(w io.Writer, line string, words map[string]string, nice bool) {
+func emphasize(w io.Writer, line string, nice bool) {
 	for {
 		m := matchRx.FindStringSubmatchIndex(line)
 		if m == nil {
@@ -98,35 +174,19 @@ func emphasize(w io.Writer, line string, words map[string]string, nice bool) {
 		}
 
 		// analyze match
-		url := ""
-		italics := false
-		if words != nil {
-			url, italics = words[match]
-		}
-		if m[2] >= 0 {
-			// match against first parenthesized sub-regexp; must be match against urlRx
-			if !italics {
-				// no alternative URL in words list, use match instead
-				url = match
-			}
-			italics = false // don't italicize URLs
-		}
+		url := match
 
 		// write match
 		if len(url) > 0 {
-			w.Write([]byte(`[`))
+			w.Write(mdLinkStart)
 		}
-		if italics {
-			w.Write([]byte(`*`))
-		}
-		commentEscape(w, match, nice)
-		if italics {
-			w.Write([]byte(`*`))
-		}
+
+		commentEscape(w, url, nice)
+
 		if len(url) > 0 {
-			w.Write([]byte(`](`))
+			w.Write(mdLinkDiv)
 			w.Write([]byte(urlReplacer.Replace(url)))
-			w.Write([]byte(")"))
+			w.Write(mdLinkEnd)
 		}
 
 		// advance
@@ -323,74 +383,4 @@ func blocks(text string) []block {
 	close()
 
 	return out
-}
-
-// CommentToMarkdown converts comment text to formatted markdown.
-// The comment was prepared by DocReader,
-// so it is known not to have leading, trailing blank lines
-// nor to have trailing spaces at the end of lines.
-// The comment markers have already been removed.
-//
-// Each line is converted into a markdown line and empty lines are just converted to
-// newlines. Heading are prefixed with `### ` to make it a markdown heading.
-//
-// A span of indented lines retains a 4 space prefix block, with the common indent
-// prefix removed unless empty, in which case it will be converted to a newline.
-//
-// URLs in the comment text are converted into links; if the URL also appears
-// in the words map, the link is taken from the map (if the corresponding map
-// value is the empty string, the URL is not converted into a link).
-//
-// Go identifiers that appear in the words map are italicized; if the corresponding
-// map value is not the empty string, it is considered a URL and the word is converted
-// into a link.
-func CommentToMarkdown(w io.Writer, text string, words map[string]string) {
-	isFirstLine := true
-	for _, b := range blocks(text) {
-		switch b.op {
-		case opPara:
-			if !isFirstLine {
-				w.Write([]byte("\n"))
-			}
-
-			for _, line := range b.lines {
-				emphasize(w, line, words, true)
-			}
-		case opHead:
-			if !isFirstLine {
-				w.Write([]byte("\n"))
-			}
-			w.Write([]byte("\n"))
-
-			for _, line := range b.lines {
-				w.Write([]byte("### "))
-				commentEscape(w, line, true)
-				w.Write([]byte("\n"))
-			}
-		case opPre:
-			if !isFirstLine {
-				w.Write([]byte("\n"))
-			}
-			w.Write([]byte("\n"))
-
-			for _, line := range b.lines {
-				if isBlank(line) {
-					w.Write([]byte("\n"))
-				} else {
-					w.Write([]byte("    "))
-					w.Write([]byte(line))
-					w.Write([]byte("\n"))
-				}
-			}
-		}
-		isFirstLine = false
-	}
-
-}
-
-// ToMarkdownString is similair to ToMarkdown except that it returns a string
-func ToMarkdownString(text string, words map[string]string) string {
-	buf := &bytes.Buffer{}
-	CommentToMarkdown(buf, text, words)
-	return buf.String()
 }

@@ -181,7 +181,7 @@ var emphasizeTests = []struct {
 func TestEmphasize(t *testing.T) {
 	for i, tt := range emphasizeTests {
 		var buf bytes.Buffer
-		emphasize(&buf, tt.in, nil, true)
+		emphasize(&buf, tt.in, true)
 		out := buf.String()
 		if out != tt.out {
 			t.Errorf("#%d: mismatch\nhave: %v\nwant: %v", i, out, tt.out)
