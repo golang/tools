@@ -34,7 +34,9 @@ func TestFromStringLiterals(t *testing.T) {
 func main() {
 	println("hello") // want "call of println"
 	print("goodbye") // not a call of println
-}`,
+}
+
+func println(s string) {} // want println:"found"`,
 			},
 		},
 	} {
