@@ -9,10 +9,6 @@ import (
 	"unicode/utf8"
 )
 
-// This file is mostly a clone of src/go/doc/comment.go but this has been adapted to
-// output markdown. Notable changes are different escape regex and using markdown
-// formatting instead of html.
-
 // CommentToMarkdown converts comment text to formatted markdown.
 // The comment was prepared by DocReader,
 // so it is known not to have leading, trailing blank lines
@@ -113,35 +109,6 @@ func escapeRegex(text string) string {
 	return markdownEscape.ReplaceAllString(text, `\$1`)
 }
 
-// Everything from here on is a copy of go/doc/comment.go with one exception
-// of emphasize where the writing part has been modified with a comment
-// stating so.
-
-const (
-	// Regexp for Go identifiers
-	identRx = `[\pL_][\pL_0-9]*`
-
-	// Regexp for URLs
-	// Match parens, and check later for balance - see #5043, #22285
-	// Match .,:;?! within path, but not at end - see #18139, #16565
-	// This excludes some rare yet valid urls ending in common punctuation
-	// in order to allow sentences ending in URLs.
-
-	// protocol (required) e.g. http
-	protoPart = `(https?|ftp|file|gopher|mailto|nntp)`
-	// host (required) e.g. www.example.com or [::1]:8080
-	hostPart = `([a-zA-Z0-9_@\-.\[\]:]+)`
-	// path+query+fragment (optional) e.g. /path/index.html?q=foo#bar
-	pathPart = `([.,:;?!]*[a-zA-Z0-9$'()*+&#=@~_/\-\[\]%])*`
-
-	urlRx = protoPart + `://` + hostPart + pathPart
-)
-
-var (
-	matchRx     = regexp.MustCompile(`(` + urlRx + `)|(` + identRx + `)`)
-	urlReplacer = strings.NewReplacer(`(`, `\(`, `)`, `\)`)
-)
-
 func emphasize(w io.Writer, line string, nice bool) {
 	for {
 		m := matchRx.FindStringSubmatchIndex(line)
@@ -203,6 +170,33 @@ func emphasize(w io.Writer, line string, nice bool) {
 	}
 	commentEscape(w, line, nice)
 }
+
+// Everything from here on is a copy of go/doc/comment.go
+
+const (
+	// Regexp for Go identifiers
+	identRx = `[\pL_][\pL_0-9]*`
+
+	// Regexp for URLs
+	// Match parens, and check later for balance - see #5043, #22285
+	// Match .,:;?! within path, but not at end - see #18139, #16565
+	// This excludes some rare yet valid urls ending in common punctuation
+	// in order to allow sentences ending in URLs.
+
+	// protocol (required) e.g. http
+	protoPart = `(https?|ftp|file|gopher|mailto|nntp)`
+	// host (required) e.g. www.example.com or [::1]:8080
+	hostPart = `([a-zA-Z0-9_@\-.\[\]:]+)`
+	// path+query+fragment (optional) e.g. /path/index.html?q=foo#bar
+	pathPart = `([.,:;?!]*[a-zA-Z0-9$'()*+&#=@~_/\-\[\]%])*`
+
+	urlRx = protoPart + `://` + hostPart + pathPart
+)
+
+var (
+	matchRx     = regexp.MustCompile(`(` + urlRx + `)|(` + identRx + `)`)
+	urlReplacer = strings.NewReplacer(`(`, `\(`, `)`, `\)`)
+)
 
 func indentLen(s string) int {
 	i := 0
