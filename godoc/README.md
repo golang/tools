@@ -1,4 +1,4 @@
-# godoc
+# godoc [![GoDoc](https://godoc.org/golang.org/x/tools/godoc?status.svg)](https://godoc.org/golang.org/x/tools/godoc)
 
 This directory contains most of the code for running a godoc server. The
 executable lives at golang.org/x/tools/cmd/godoc.
