@@ -7,6 +7,9 @@ import (
 	"testing"
 )
 
+// This file is a copy of go/doc/comment_test.go with the exception for
+// the test cases for TestEmphasize and TestCommentEscape
+
 var headingTests = []struct {
 	line string
 	ok   bool
@@ -90,20 +93,34 @@ Para 6.
 			{opPre, []string{"pre\n", "pre2\n"}},
 		},
 		text: `.   Para 1. Para 1 line 2.
+
 .   Para 2.
+
+
 .   Section
+
 .   Para 3.
+
 $	pre
 $	pre1
+
 .   Para 4.
+
 $	pre
 $	pre1
+
 $	pre2
+
 .   Para 5.
+
 $	pre
+
+
 $	pre1
 $	pre2
+
 .   Para 6.
+
 $	pre
 $	pre2
 `,
@@ -147,6 +164,8 @@ func TestBlocks(t *testing.T) {
 	}
 }
 
+// This has been modified from go/doc to use markdown links instead of html ones
+// and use markdown escaping instead oh html
 var emphasizeTests = []struct {
 	in, out string
 }{
@@ -190,13 +209,12 @@ func TestEmphasize(t *testing.T) {
 }
 
 func TestCommentEscape(t *testing.T) {
+	//ldquo -> ulquo and rdquo -> urquo
 	commentTests := []struct {
 		in, out string
 	}{
-		//{"typically invoked as ``go tool asm'',", "typically invoked as “go tool asm”,"},
-		//{"For more detail, run ``go help test'' and ``go help testflag''", "For more detail, run “go help test” and “go help testflag”"},
-		{"For more detail, run func(t Type, size ...IntegerType()) Type", "For more detail, run “go help test” and “go help testflag”"},
-	}
+		{"typically invoked as ``go tool asm'',", "typically invoked as " + ulquo + "go tool asm" + urquo + ","},
+		{"For more detail, run ``go help test'' and ``go help testflag''", "For more detail, run " + ulquo + "go help test" + urquo + " and " + ulquo + "go help testflag" + urquo}}
 	for i, tt := range commentTests {
 		var buf strings.Builder
 		commentEscape(&buf, tt.in, true)

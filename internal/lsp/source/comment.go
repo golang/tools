@@ -10,11 +10,23 @@ import (
 )
 
 // This file is mostly a clone of src/go/doc/comment.go but this has been adapted to
-// output markdown. Notable changes are diferent escape regex and using markdown
+// output markdown. Notable changes are different escape regex and using markdown
 // formatting instead of html.
 
-// ToMarkdownString is similair to ToMarkdown except that it returns a string
-func ToMarkdownString(text string) string {
+// CommentToMarkdown converts comment text to formatted markdown.
+// The comment was prepared by DocReader,
+// so it is known not to have leading, trailing blank lines
+// nor to have trailing spaces at the end of lines.
+// The comment markers have already been removed.
+//
+// Each line is converted into a markdown line and empty lines are just converted to
+// newlines. Heading are prefixed with `### ` to make it a markdown heading.
+//
+// A span of indented lines retains a 4 space prefix block, with the common indent
+// prefix removed unless empty, in which case it will be converted to a newline.
+//
+// URLs in the comment text are converted into links.
+func CommentToMarkdown(text string) string {
 	buf := &bytes.Buffer{}
 	commentToMarkdown(buf, text)
 	return buf.String()
@@ -29,19 +41,6 @@ var (
 	mdLinkEnd   = []byte(")")
 )
 
-// commentToMarkdown converts comment text to formatted markdown.
-// The comment was prepared by DocReader,
-// so it is known not to have leading, trailing blank lines
-// nor to have trailing spaces at the end of lines.
-// The comment markers have already been removed.
-//
-// Each line is converted into a markdown line and empty lines are just converted to
-// newlines. Heading are prefixed with `### ` to make it a markdown heading.
-//
-// A span of indented lines retains a 4 space prefix block, with the common indent
-// prefix removed unless empty, in which case it will be converted to a newline.
-//
-// URLs in the comment text are converted into links.
 func commentToMarkdown(w io.Writer, text string) {
 	isFirstLine := true
 	for _, b := range blocks(text) {
@@ -114,6 +113,10 @@ func escapeRegex(text string) string {
 	return markdownEscape.ReplaceAllString(text, `\$1`)
 }
 
+// Everything from here on is a copy of go/doc/comment.go with one exception
+// of emphasize where the writing part has been modified with a comment
+// stating so.
+
 const (
 	// Regexp for Go identifiers
 	identRx = `[\pL_][\pL_0-9]*`
@@ -173,15 +176,21 @@ func emphasize(w io.Writer, line string, nice bool) {
 			}
 		}
 
+		// Following code has been modified from go/doc since words is always
+		// nil. All html formatting has also been transformed into markdown formatting
+
 		// analyze match
-		url := match
+		url := ""
+		if m[2] >= 0 {
+			url = match
+		}
 
 		// write match
 		if len(url) > 0 {
 			w.Write(mdLinkStart)
 		}
 
-		commentEscape(w, url, nice)
+		commentEscape(w, match, nice)
 
 		if len(url) > 0 {
 			w.Write(mdLinkDiv)
