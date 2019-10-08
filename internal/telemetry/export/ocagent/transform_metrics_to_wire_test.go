@@ -230,11 +230,111 @@ func TestDataToTimeseries(t *testing.T) {
 			nil,
 			nil,
 		},
+		{
+			"Int64Data",
+			&metric.Int64Data{
+				Rows: []int64{
+					1,
+					2,
+					3,
+				},
+			},
+			[]*wire.TimeSeries{
+				&wire.TimeSeries{
+					Points: []*wire.Point{
+						&wire.Point{
+							Value: wire.PointInt64Value{Int64Value: 1},
+						},
+					},
+				},
+				&wire.TimeSeries{
+					Points: []*wire.Point{
+						&wire.Point{
+							Value: wire.PointInt64Value{Int64Value: 2},
+						},
+					},
+				},
+				&wire.TimeSeries{
+					Points: []*wire.Point{
+						&wire.Point{
+							Value: wire.PointInt64Value{Int64Value: 3},
+						},
+					},
+				},
+			},
+		},
+		{
+			"Float64Data",
+			&metric.Float64Data{
+				Rows: []float64{
+					1.5,
+					4.5,
+				},
+			},
+			[]*wire.TimeSeries{
+				&wire.TimeSeries{
+					Points: []*wire.Point{
+						&wire.Point{
+							Value: wire.PointDoubleValue{DoubleValue: 1.5},
+						},
+					},
+				},
+				&wire.TimeSeries{
+					Points: []*wire.Point{
+						&wire.Point{
+							Value: wire.PointDoubleValue{DoubleValue: 4.5},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := dataToTimeseries(tt.data)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("Got:\n%s\nWant:\n%s", marshaled(got), marshaled(tt.want))
+			}
+		})
+	}
+}
+
+func TestNumRows(t *testing.T) {
+	tests := []struct {
+		name string
+		data telemetry.MetricData
+		want int
+	}{
+		{
+			"nil data",
+			nil,
+			0,
+		},
+		{
+			"1 row Int64Data",
+			&metric.Int64Data{
+				Rows: []int64{
+					0,
+				},
+			},
+			1,
+		},
+		{
+			"2 row Float64Data",
+			&metric.Float64Data{
+				Rows: []float64{
+					0,
+					1.0,
+				},
+			},
+			2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := numRows(tt.data)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("Got:\n%s\nWant:\n%s", marshaled(got), marshaled(tt.want))
 			}
@@ -375,70 +475,6 @@ func TestInfoKeysToLabelKeys(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := infoKeysToLabelKeys(tt.infoKeys)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("Got:\n%s\nWant:\n%s", marshaled(got), marshaled(tt.want))
-			}
-		})
-	}
-}
-
-func TestTagsToLabelValues(t *testing.T) {
-	tests := []struct {
-		name string
-		tags []telemetry.Tag
-		want []*wire.LabelValue
-	}{
-		{
-			"empty tagKeys",
-			[]telemetry.Tag{},
-			[]*wire.LabelValue{},
-		},
-		{
-			"empty string tagKey",
-			[]telemetry.Tag{
-				telemetry.Tag{Value: ""},
-			},
-			[]*wire.LabelValue{
-				&wire.LabelValue{
-					Value:    "",
-					HasValue: true,
-				},
-			},
-		},
-		{
-			"non-empty string tagKey",
-			[]telemetry.Tag{
-				telemetry.Tag{Value: "hello"},
-			},
-			[]*wire.LabelValue{
-				&wire.LabelValue{
-					Value:    "hello",
-					HasValue: true,
-				},
-			},
-		},
-		{
-			"multiple element tagKey",
-			[]telemetry.Tag{
-				telemetry.Tag{Value: "hello"},
-				telemetry.Tag{Value: "world"},
-			},
-			[]*wire.LabelValue{
-				&wire.LabelValue{
-					Value:    "hello",
-					HasValue: true,
-				},
-				&wire.LabelValue{
-					Value:    "world",
-					HasValue: true,
-				},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tagsToLabelValues(tt.tags)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("Got:\n%s\nWant:\n%s", marshaled(got), marshaled(tt.want))
 			}

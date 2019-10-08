@@ -58,10 +58,6 @@ func getLabelKeys(data telemetry.MetricData) []*wire.LabelKey {
 // dataToMetricDescriptorType returns a wire.MetricDescriptor_Type based on the
 // underlying type of data.
 func dataToMetricDescriptorType(data telemetry.MetricData) wire.MetricDescriptor_Type {
-	if data == nil {
-		return wire.MetricDescriptor_UNSPECIFIED
-	}
-
 	switch d := data.(type) {
 	case *metric.Int64Data:
 		if d.IsGauge {
@@ -86,19 +82,30 @@ func dataToTimeseries(data telemetry.MetricData) []*wire.TimeSeries {
 		return nil
 	}
 
-	timeseries := make([]*wire.TimeSeries, 0, len(data.Groups()))
+	numRows := numRows(data)
+	timeseries := make([]*wire.TimeSeries, 0, numRows)
 
-	for groups, i := data.Groups(), 0; i < len(groups); i++ {
-		group := groups[i]
-		points := dataToPoints(data, i)
+	for i := 0; i < numRows; i++ {
 		timeseries = append(timeseries, &wire.TimeSeries{
 			// TODO: attach StartTimestamp
-			LabelValues: tagsToLabelValues(group),
-			Points:      points,
+			// TODO: labels?
+			Points: dataToPoints(data, i),
 		})
 	}
 
 	return timeseries
+}
+
+// numRows returns the number of rows in data.
+func numRows(data telemetry.MetricData) int {
+	switch d := data.(type) {
+	case *metric.Int64Data:
+		return len(d.Rows)
+	case *metric.Float64Data:
+		return len(d.Rows)
+	}
+
+	return 0
 }
 
 // dataToPoints returns an array of *wire.Points based on the point(s)
@@ -139,18 +146,4 @@ func infoKeysToLabelKeys(infoKeys []interface{}) []*wire.LabelKey {
 	}
 
 	return labelKeys
-}
-
-// tagsToLabelValues returns an array of *wire.LabelValues containing the
-// string values of the elements of tagKeys.
-func tagsToLabelValues(tags []telemetry.Tag) []*wire.LabelValue {
-	labelValues := make([]*wire.LabelValue, 0, len(tags))
-	for _, tagKey := range tags {
-		labelValues = append(labelValues, &wire.LabelValue{
-			Value:    fmt.Sprintf("%v", tagKey.Value),
-			HasValue: true,
-		})
-	}
-
-	return labelValues
 }
