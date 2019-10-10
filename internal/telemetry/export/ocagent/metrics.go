@@ -41,7 +41,7 @@ func getDescription(data telemetry.MetricData) string {
 	return ""
 }
 
-// getLabelKeys returns an array of *wire.LabelKeys based on the keys
+// getLabelKeys returns a slice of *wire.LabelKeys based on the keys
 // in data.
 func getLabelKeys(data telemetry.MetricData) []*wire.LabelKey {
 	switch d := data.(type) {
@@ -75,7 +75,7 @@ func dataToMetricDescriptorType(data telemetry.MetricData) wire.MetricDescriptor
 	return wire.MetricDescriptor_UNSPECIFIED
 }
 
-// dataToTimeseries returns an array of *wire.TimeSeries based on the
+// dataToTimeseries returns a slice of *wire.TimeSeries based on the
 // points in data.
 func dataToTimeseries(data telemetry.MetricData) []*wire.TimeSeries {
 	if data == nil {
