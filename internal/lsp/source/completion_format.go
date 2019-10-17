@@ -15,10 +15,8 @@ import (
 
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/snippet"
-	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/log"
 	"golang.org/x/tools/internal/telemetry/tag"
-	errors "golang.org/x/xerrors"
 )
 
 // formatCompletion creates a completion item for a given candidate.
@@ -58,6 +56,7 @@ func (c *completer) item(cand candidate) (CompletionItem, error) {
 			detail = "struct{...}" // for anonymous structs
 		}
 		if obj.IsField() {
+			detail = c.formatFieldType(obj)
 			kind = protocol.FieldCompletion
 			snip = c.structFieldSnippet(label, detail)
 		} else {
@@ -117,27 +116,13 @@ func (c *completer) item(cand candidate) (CompletionItem, error) {
 	if !c.opts.Documentation {
 		return item, nil
 	}
-	pos := c.view.Session().Cache().FileSet().Position(obj.Pos())
-
-	// We ignore errors here, because some types, like "unsafe" or "error",
-	// may not have valid positions that we can use to get documentation.
-	if !pos.IsValid() {
-		return item, nil
-	}
-	uri := span.FileURI(pos.Filename)
-	ph, pkg, err := c.pkg.FindFile(c.ctx, uri)
+	ident, err := c.findIdentifier(obj)
 	if err != nil {
-		return CompletionItem{}, err
-	}
-	file, _, _, err := ph.Cached(c.ctx)
-	if err != nil {
-		return CompletionItem{}, err
-	}
-	if !(file.Pos() <= obj.Pos() && obj.Pos() <= file.End()) {
-		return CompletionItem{}, errors.Errorf("no file for %s", obj.Name())
-	}
-	ident, err := findIdentifier(c.ctx, c.view, c.snapshot, pkg, file, obj.Pos())
-	if err != nil {
+		// We ignore ErrFindPos, because some types, like "unsafe" or "error",
+		// may not have valid positions that we can use to get documentation.
+		if _, ok := err.(ErrFindPos); ok {
+			return item, nil
+		}
 		return CompletionItem{}, err
 	}
 	hover, err := ident.Hover(c.ctx)

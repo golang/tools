@@ -5,8 +5,10 @@
 package source
 
 import (
+	"bytes"
 	"context"
 	"go/ast"
+	"go/printer"
 	"go/token"
 	"go/types"
 	"strings"
@@ -370,6 +372,21 @@ type candidate struct {
 	// imp is the import that needs to be added to this package in order
 	// for this candidate to be valid. nil if no import needed.
 	imp *imports.ImportInfo
+}
+
+// ErrFindPos is an error that informs the user they can not find
+// identifier because can not find the pos.
+// Some types like "unsafe" or "error" may not have valid positions
+type ErrFindPos struct {
+	objStr string
+}
+
+func (e ErrFindPos) Error() string {
+	msg := "can not find pos"
+	if e.objStr != "" {
+		msg += " of " + e.objStr
+	}
+	return msg
 }
 
 // ErrIsDefinition is an error that informs the user they got no
@@ -1336,4 +1353,39 @@ func (c *completer) matchingTypeName(cand *candidate) bool {
 
 	// Default to saying any type name is a match.
 	return true
+}
+
+func (c *completer) findIdentifier(obj types.Object) (*IdentifierInfo, error) {
+	pos := c.view.Session().Cache().FileSet().Position(obj.Pos())
+	if !pos.IsValid() {
+		return nil, ErrFindPos{obj.Name()}
+	}
+	uri := span.FileURI(pos.Filename)
+	ph, pkg, err := c.pkg.FindFile(c.ctx, uri)
+	if err != nil {
+		return nil, err
+	}
+	file, _, _, err := ph.Cached(c.ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !(file.Pos() <= obj.Pos() && obj.Pos() <= file.End()) {
+		return nil, errors.Errorf("no file for %s", obj.Name())
+	}
+	return findIdentifier(c.ctx, c.view, c.snapshot, pkg, file, obj.Pos())
+}
+
+func (c *completer) formatFieldType(obj types.Object) string {
+	ident, err := c.findIdentifier(obj)
+	if err != nil {
+		return types.TypeString(obj.Type(), c.qf)
+	}
+	if f, ok := ident.ident.Obj.Decl.(*ast.Field); ok {
+		var typeNameBuf bytes.Buffer
+		if err := printer.Fprint(&typeNameBuf, c.view.Session().Cache().FileSet(), f.Type); err != nil {
+			return types.TypeString(obj.Type(), c.qf)
+		}
+		return typeNameBuf.String()
+	}
+	return types.TypeString(obj.Type(), c.qf)
 }
