@@ -116,13 +116,14 @@ func (c *completer) item(cand candidate) (CompletionItem, error) {
 	if !c.opts.Documentation {
 		return item, nil
 	}
-	ident, err := c.findIdentifier(obj)
+	pos := c.view.Session().Cache().FileSet().Position(obj.Pos())
+	// We ignore ErrFindPos, because some types, like "unsafe" or "error",
+	// may not have valid positions that we can use to get documentation.
+	if !pos.IsValid() {
+		return item, nil
+	}
+	ident, err := c.findIdentifier(obj, pos)
 	if err != nil {
-		// We ignore ErrFindPos, because some types, like "unsafe" or "error",
-		// may not have valid positions that we can use to get documentation.
-		if _, ok := err.(ErrFindPos); ok {
-			return item, nil
-		}
 		return CompletionItem{}, err
 	}
 	hover, err := ident.Hover(c.ctx)

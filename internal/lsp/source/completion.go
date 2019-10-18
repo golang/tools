@@ -374,21 +374,6 @@ type candidate struct {
 	imp *imports.ImportInfo
 }
 
-// ErrFindPos is an error that informs the user they can not find
-// identifier because can not find the pos.
-// Some types like "unsafe" or "error" may not have valid positions
-type ErrFindPos struct {
-	objStr string
-}
-
-func (e ErrFindPos) Error() string {
-	msg := "can not find pos"
-	if e.objStr != "" {
-		msg += " of " + e.objStr
-	}
-	return msg
-}
-
 // ErrIsDefinition is an error that informs the user they got no
 // completions because they tried to complete the name of a new object
 // being defined.
@@ -1355,10 +1340,9 @@ func (c *completer) matchingTypeName(cand *candidate) bool {
 	return true
 }
 
-func (c *completer) findIdentifier(obj types.Object) (*IdentifierInfo, error) {
-	pos := c.view.Session().Cache().FileSet().Position(obj.Pos())
+func (c *completer) findIdentifier(obj types.Object, pos token.Position) (*IdentifierInfo, error) {
 	if !pos.IsValid() {
-		return nil, ErrFindPos{obj.Name()}
+		return nil, errors.Errorf("invalid postion for %s", obj)
 	}
 	uri := span.FileURI(pos.Filename)
 	ph, pkg, err := c.pkg.FindFile(c.ctx, uri)
@@ -1376,7 +1360,8 @@ func (c *completer) findIdentifier(obj types.Object) (*IdentifierInfo, error) {
 }
 
 func (c *completer) formatFieldType(obj types.Object) string {
-	ident, err := c.findIdentifier(obj)
+	pos := c.view.Session().Cache().FileSet().Position(obj.Pos())
+	ident, err := c.findIdentifier(obj, pos)
 	if err != nil {
 		return types.TypeString(obj.Type(), c.qf)
 	}
