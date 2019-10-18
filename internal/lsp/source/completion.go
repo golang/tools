@@ -1374,3 +1374,23 @@ func (c *completer) formatFieldType(obj types.Object) string {
 	}
 	return types.TypeString(obj.Type(), c.qf)
 }
+
+func (c *completer) formatParams(tup *types.Tuple, variadic bool) []string {
+	params := make([]string, 0, tup.Len())
+	for i := 0; i < tup.Len(); i++ {
+		el := tup.At(i)
+		typ := c.formatFieldType(el)
+
+		// Handle a variadic parameter (can only be the final parameter).
+		if variadic && i == tup.Len()-1 {
+			typ = strings.Replace(typ, "[]", "...", 1)
+		}
+
+		if el.Name() == "" {
+			params = append(params, typ)
+		} else {
+			params = append(params, el.Name()+" "+typ)
+		}
+	}
+	return params
+}
