@@ -54,9 +54,10 @@ func (c *completer) item(cand candidate) (CompletionItem, error) {
 	case *types.Var:
 		if _, ok := obj.Type().(*types.Struct); ok {
 			detail = "struct{...}" // for anonymous structs
+		} else if obj.IsField() {
+			detail = c.formatFieldType(obj)
 		}
 		if obj.IsField() {
-			detail = c.formatFieldType(obj)
 			kind = protocol.FieldCompletion
 			snip = c.structFieldSnippet(label, detail)
 		} else {
