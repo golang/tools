@@ -354,6 +354,16 @@ func adHocPackage(cfg *Config, driver driver, pattern, query string) (*driverRes
 	if err != nil {
 		return nil, err
 	}
+	// If we get nothing back from `go list`, try to make this file into its own ad-hoc package.
+	if len(dirResponse.Packages) == 0 && err == nil {
+		dirResponse.Packages = append(dirResponse.Packages, &Package{
+			ID:              "command-line-arguments",
+			PkgPath:         query,
+			GoFiles:         []string{query},
+			CompiledGoFiles: []string{query},
+		})
+		dirResponse.Roots = append(dirResponse.Roots, "command-line-arguments")
+	}
 	// Special case to handle issue #33482:
 	// If this is a file= query for ad-hoc packages where the file only exists on an overlay,
 	// and exists outside of a module, add the file in for the package.
@@ -1057,6 +1067,10 @@ func invokeGo(cfg *Config, args ...string) (*bytes.Buffer, error) {
 		// status if there's a dependency on a package that doesn't exist. But it should return
 		// a zero exit status and set an error on that package.
 		if len(stderr.String()) > 0 && strings.Contains(stderr.String(), "no Go files in") {
+			// Don't clobber stdout if `go list` actually returned something.
+			if len(stdout.String()) > 0 {
+				return stdout, nil
+			}
 			// try to extract package name from string
 			stderrStr := stderr.String()
 			var importPath string
