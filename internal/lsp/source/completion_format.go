@@ -118,7 +118,7 @@ func (c *completer) item(cand candidate) (CompletionItem, error) {
 		return item, nil
 	}
 	pos := c.view.Session().Cache().FileSet().Position(obj.Pos())
-	// We ignore ErrFindPos, because some types, like "unsafe" or "error",
+	// We ignore errors here, because some types, like "unsafe" or "error",
 	// may not have valid positions that we can use to get documentation.
 	if !pos.IsValid() {
 		return item, nil
