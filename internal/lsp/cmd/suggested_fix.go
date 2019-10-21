@@ -82,7 +82,7 @@ func (s *suggestedfix) Run(ctx context.Context, args ...string) error {
 	}
 	actions, err := conn.CodeAction(ctx, &p)
 	if err != nil {
-		return err
+		return errors.Errorf("%v: %v", spn, err)
 	}
 	var edits []protocol.TextEdit
 	for _, a := range actions {
