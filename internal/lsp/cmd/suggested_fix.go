@@ -22,6 +22,7 @@ import (
 type suggestedfix struct {
 	Diff  bool `flag:"d" help:"display diffs instead of rewriting files"`
 	Write bool `flag:"w" help:"write result to (source) file instead of stdout"`
+	All   bool `flag:"a" help:"apply all fixes, not just preferred fixes"`
 
 	app *Application
 }
@@ -31,7 +32,7 @@ func (s *suggestedfix) Usage() string     { return "<filename>" }
 func (s *suggestedfix) ShortHelp() string { return "apply suggested fixes" }
 func (s *suggestedfix) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprintf(f.Output(), `
-Example: apply all suggested fixes for this file:
+Example: apply suggested fixes for this file:
 
   $ gopls suggestedfix -w internal/lsp/cmd/check.go
 
@@ -82,11 +83,13 @@ func (s *suggestedfix) Run(ctx context.Context, args ...string) error {
 	}
 	actions, err := conn.CodeAction(ctx, &p)
 	if err != nil {
-		return errors.Errorf("%v: %v", spn, err)
+		return errors.Errorf("%v: %v", from, err)
 	}
 	var edits []protocol.TextEdit
 	for _, a := range actions {
-		edits = (*a.Edit.Changes)[string(uri)]
+		if a.IsPreferred || s.All {
+			edits = (*a.Edit.Changes)[string(uri)]
+		}
 	}
 
 	sedits, err := source.FromProtocolEdits(file.mapper, edits)
