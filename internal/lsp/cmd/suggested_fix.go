@@ -18,7 +18,7 @@ import (
 	errors "golang.org/x/xerrors"
 )
 
-// suggestedfix implements the suggestedfix verb for gopls.
+// suggestedfix implements the fix verb for gopls.
 type suggestedfix struct {
 	Diff  bool `flag:"d" help:"display diffs instead of rewriting files"`
 	Write bool `flag:"w" help:"write result to (source) file instead of stdout"`
@@ -27,16 +27,16 @@ type suggestedfix struct {
 	app *Application
 }
 
-func (s *suggestedfix) Name() string      { return "suggestedfix" }
+func (s *suggestedfix) Name() string      { return "fix" }
 func (s *suggestedfix) Usage() string     { return "<filename>" }
 func (s *suggestedfix) ShortHelp() string { return "apply suggested fixes" }
 func (s *suggestedfix) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprintf(f.Output(), `
 Example: apply suggested fixes for this file:
 
-  $ gopls suggestedfix -w internal/lsp/cmd/check.go
+  $ gopls fix -w internal/lsp/cmd/check.go
 
-gopls suggestedfix flags are:
+gopls fix flags are:
 `)
 	f.PrintDefaults()
 }
@@ -47,7 +47,7 @@ gopls suggestedfix flags are:
 // - otherwise, prints the new versions to stdout.
 func (s *suggestedfix) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
-		return tool.CommandLineErrorf("suggestedfix expects 1 argument")
+		return tool.CommandLineErrorf("fix expects 1 argument")
 	}
 	conn, err := s.app.connect(ctx)
 	if err != nil {

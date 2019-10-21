@@ -14,7 +14,7 @@ import (
 func (r *runner) SuggestedFix(t *testing.T, spn span.Span) {
 	uri := spn.URI()
 	filename := uri.Filename()
-	args := []string{"suggestedfix", "-a", filename}
+	args := []string{"fix", "-a", filename}
 	app := cmd.New("gopls-test", r.data.Config.Dir, r.data.Exported.Config.Env, r.options)
 	got := CaptureStdOut(t, func() {
 		_ = tool.Run(r.ctx, app, args)
