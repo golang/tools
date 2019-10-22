@@ -35,6 +35,8 @@ Much of this information is filled in for you if you use `gopls bug` to file the
 
 For VSCode users, the gopls log can be found by going to `"View: Debug Console" -> "Output" -> "Tasks" -> "gopls"`. For other editors, you may have to directly pass a `-logfile` flag to gopls.
 
+For vim-go users, the easiest way to troubleshoot is to add `let g:go_debug = ['shell-commands', 'lsp']` to your vimrc, then try to capture the log or shell command that exposes the problem.
+
 To increase the level of detail in your logs, start `gopls` with the `-rpc.trace` flag. To start a debug server that will allow you to see profiles and memory usage, start `gopls` with `serve --debug=localhost:6060`.
 
 If you are unsure of how to pass a flag to `gopls` through your editor, please see the [documentation for your editor](user.md#editors).
