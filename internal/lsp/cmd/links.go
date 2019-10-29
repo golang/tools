@@ -1,6 +1,7 @@
 // Copyright 2019 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
+
 package cmd
 
 import (
@@ -16,15 +17,9 @@ import (
 	errors "golang.org/x/xerrors"
 )
 
-// A CmdLink is the output for JSON
-type CmdLink struct {
-	Range protocol.Range `json:"range"` // location of the link
-	URI   string         `json:"uri"`   // the uri of the link
-}
-
 // links implements the links verb for gopls.
 type links struct {
-	JSON bool `flag:"json" help:"emit location range and uri in JSON format"`
+	JSON bool `flag:"json" help:"emit document links in JSON format"`
 
 	app *Application
 }
@@ -62,7 +57,7 @@ func (l *links) Run(ctx context.Context, args ...string) error {
 	if file.err != nil {
 		return file.err
 	}
-	gotLinks, err := conn.DocumentLink(ctx, &protocol.DocumentLinkParams{
+	results, err := conn.DocumentLink(ctx, &protocol.DocumentLinkParams{
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: protocol.NewURI(uri),
 		},
@@ -70,24 +65,13 @@ func (l *links) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return errors.Errorf("%v: %v", from, err)
 	}
-	result := make([]CmdLink, len(gotLinks))
-	for _, v := range gotLinks {
-		result = append(result, CmdLink{
-			Range: v.Range,
-			URI:   v.Target,
-		})
-	}
 	if l.JSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "\t")
-		return enc.Encode(result)
+		return enc.Encode(results)
 	}
-	uniques := make(map[string]struct{})
-	for _, link := range gotLinks {
-		uniques[link.Target] = struct{}{}
-	}
-	for k := range uniques {
-		fmt.Println(k)
+	for _, v := range results {
+		fmt.Println(v.Target)
 	}
 	return nil
 }
