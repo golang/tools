@@ -5,44 +5,32 @@
 package cmdtest
 
 import (
-	"reflect"
-	"sort"
-	"strings"
+	"encoding/json"
 	"testing"
 
 	"golang.org/x/tools/internal/lsp/cmd"
+	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/tests"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/tool"
 )
 
 func (r *runner) Link(t *testing.T, uri span.URI, wantLinks []tests.Link) {
-	filename := uri.Filename()
-	args := []string{"links", filename}
+	m, err := r.data.Mapper(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"links", "-json", uri.Filename()}
 	app := cmd.New("gopls-test", r.data.Config.Dir, r.data.Exported.Config.Env, r.options)
-	got := CaptureStdOut(t, func() {
+	out := CaptureStdOut(t, func() {
 		_ = tool.Run(r.ctx, app, args)
 	})
-	got = strings.Trim(got, "\n") // remove extra new line
-	gotStrings := strings.Split(got, "\n")
-	// The files that are checked include `expect.Note`'s which also include expected links.
-	// For cmd testing we cannot ignore these comments so we get duplicates. So hence we select only the uniques.
-	uniques := make(map[string]struct{})
-	for _, v := range gotStrings {
-		uniques[v] = struct{}{}
+	var got []protocol.DocumentLink
+	err = json.Unmarshal([]byte(out), &got)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var result []string
-	for k := range uniques {
-		result = append(result, k)
-	}
-	sort.Strings(result)
-
-	var wantStrings []string
-	for _, v := range wantLinks {
-		wantStrings = append(wantStrings, v.Target)
-	}
-	sort.Strings(wantStrings)
-	if !reflect.DeepEqual(result, wantStrings) {
-		t.Errorf("links not equal for %s, expected:\n%v\ngot:\n%v", filename, wantStrings, result)
+	if diff := tests.DiffLinks(m, wantLinks, got); diff != "" {
+		t.Error(diff)
 	}
 }
