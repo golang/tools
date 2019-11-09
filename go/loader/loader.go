@@ -192,6 +192,8 @@ type PackageInfo struct {
 	errorFunc func(error)
 }
 
+func (info *PackageInfo) Dir() string { return info.dir }
+
 func (info *PackageInfo) String() string { return info.Pkg.Path() }
 
 func (info *PackageInfo) appendError(err error) {
