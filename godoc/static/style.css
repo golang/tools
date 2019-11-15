@@ -6,12 +6,17 @@ body {
 	text-align: center;
 	color: #222;
 }
+
 #tooltip {
-    background: rgb(234, 233, 233);
+    background: rgb(251, 251, 251);
     border: 1px solid rgb(118, 115, 115);
 	padding: 3px 10px;
 	font-size: 1.1rem;
 }
+.tooltipmoved {
+	transform: translate(0,-100%); 
+}
+
 textarea {
 	/* Inherit text color from body avoiding illegible text in the case where the
  	* user has inverted the browsers custom text and background colors. */

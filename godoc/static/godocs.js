@@ -10,19 +10,26 @@
  *  + Bind links to foldable sections (bindToggleLinks)
  */
 
+
 (function () {
-    var ID = "tooltip", CLS_ON = "tooltip_ON", FOLLOW = true,
-    DATA = "_tooltip", OFFSET_X = 20, OFFSET_Y = 10,
+    var ID = "tooltip", CLS_ON = "tooltip_ON", FOLLOW = false,
+    DATA = "_tooltip", OFFSET_X = -10, OFFSET_Y = -3,
     showAt = function (e) {
-        var ntop = e.pageY + OFFSET_Y, nleft = e.pageX + OFFSET_X;
+        var boxRect = e.target.getBoundingClientRect()
+        var top = boxRect.top + this.pageYOffset
+        var left = boxRect.left  + this.pageXOffset
+        var ntop = top + OFFSET_Y, nleft = left + OFFSET_X;
+        
         $("#" + ID).html($(e.target).data(DATA)).css({
             position: "absolute", top: ntop, left: nleft
         }).show();
     };
-    $(document).on("mouseenter", "*[title]", function (e) {
-        $(this).data(DATA, $(this).attr("title"));
+    $(document).on("mouseenter", "a[title]", function (e) {
+        var titletext = $(this).attr("title")
+        if (titletext == "") {return;}
+        $(this).data(DATA, titletext);
         $(this).removeAttr("title").addClass(CLS_ON);
-        $("<div id='" + ID + "' />").appendTo("body");
+        $("<div id='" + ID + "' class='tooltipmoved' />").appendTo("body");
         showAt(e);
     });
     $(document).on("mouseleave", "." + CLS_ON, function (e) {
