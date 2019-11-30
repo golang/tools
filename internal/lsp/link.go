@@ -88,35 +88,32 @@ func (s *Server) documentLink(ctx context.Context, params *protocol.DocumentLink
 func findLinksInString(src string, pos token.Pos, view source.View, mapper *protocol.ColumnMapper) ([]protocol.DocumentLink, error) {
 	var links []protocol.DocumentLink
 	re, err := getURLRegexp()
-	reNoProt, errNoProt := getURLNoProtocolRegexp()
 	if err != nil {
 		return nil, errors.Errorf("cannot create regexp for links: %s", err.Error())
 	}
-	if errNoProt != nil {
-		return nil, errors.Errorf("cannot create regexp no protocol for links: %s", errNoProt.Error())
-	}
 	indexUrl := re.FindAllIndex([]byte(src), -1)
-	indexUrlNoProt := reNoProt.FindAllIndex([]byte(src), -1)
+	matches := re.FindStringSubmatch(src)
 	if indexUrl != nil {
-		for _, urlIndex := range indexUrl {
-			start := urlIndex[0]
-			end := urlIndex[1]
-			startPos := token.Pos(int(pos) + start)
-			endPos := token.Pos(int(pos) + end)
-			target := src[start:end]
-			l, err := toProtocolLink(view, mapper, target, startPos, endPos)
-			if err != nil {
-				return nil, err
+		var protocol string
+		for i, name := range re.SubexpNames() {
+                        if i >= len(matches) {
+				break
 			}
-			links = append(links, l)
+			if name == "protocol" {
+				protocol = matches[i]
+			}
 		}
-	} else if indexUrlNoProt != nil {
-		for _, urlIndex := range indexUrlNoProt {
+		for _, urlIndex := range indexUrl {
+			var target string
 			start := urlIndex[0]
 			end := urlIndex[1]
 			startPos := token.Pos(int(pos) + start)
 			endPos := token.Pos(int(pos) + end)
-			target := "https://" + src[start:end]
+			if protocol != "" {
+				target = src[start:end]
+			}else {
+				target = "https://" + src[start:end]
+			}
 			l, err := toProtocolLink(view, mapper, target, startPos, endPos)
 			if err != nil {
 				return nil, err
@@ -127,8 +124,7 @@ func findLinksInString(src string, pos token.Pos, view source.View, mapper *prot
 	return links, nil
 }
 
-const urlNoProtocolRegexpString = "([\\w_-]+(?:(?:\\.[\\w_-]+)+))([\\w.,@?^=%&:/~+#-]*[\\w@?^=%&/~+#-])?"
-const urlRegexpString = "(http|ftp|https)://" + urlNoProtocolRegexpString
+const urlRegexpString = "(?P<protocol>(http|ftp|https)://)?([\\w_-]+(?:(?:\\.[\\w_-]+)+))([\\w.,@?^=%&:/~+#-]*[\\w@?^=%&/~+#-])?"
 
 var (
 	urlRegexp            *regexp.Regexp
@@ -144,13 +140,6 @@ func getURLRegexp() (*regexp.Regexp, error) {
 		urlRegexp, regexpErr = regexp.Compile(urlRegexpString)
 	})
 	return urlRegexp, regexpErr
-}
-
-func getURLNoProtocolRegexp() (*regexp.Regexp, error) {
-	regexpNoProtocolOnce.Do(func() {
-		urlNoProtocolRegexp, regexpNoProtocolErr = regexp.Compile(urlNoProtocolRegexpString)
-	})
-	return urlNoProtocolRegexp, regexpNoProtocolErr
 }
 
 func toProtocolLink(view source.View, mapper *protocol.ColumnMapper, target string, start, end token.Pos) (protocol.DocumentLink, error) {
