@@ -44,7 +44,7 @@ const (
 	ExpectedPrepareRenamesCount    = 8
 	ExpectedSymbolsCount           = 1
 	ExpectedSignaturesCount        = 21
-	ExpectedLinksCount             = 5
+	ExpectedLinksCount             = 4
 )
 
 const (
