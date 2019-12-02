@@ -93,33 +93,29 @@ func findLinksInString(src string, pos token.Pos, view source.View, mapper *prot
 	}
 	indexUrl := re.FindAllIndex([]byte(src), -1)
 	matches := re.FindStringSubmatch(src)
-	if indexUrl != nil {
-		var protocol string
-		for i, name := range re.SubexpNames() {
-                        if i >= len(matches) {
-				break
-			}
-			if name == "protocol" {
-				protocol = matches[i]
-			}
+	var protocol string
+	for i, name := range re.SubexpNames() {
+		if i >= len(matches) {
+			break
 		}
-		for _, urlIndex := range indexUrl {
-			var target string
-			start := urlIndex[0]
-			end := urlIndex[1]
-			startPos := token.Pos(int(pos) + start)
-			endPos := token.Pos(int(pos) + end)
-			if protocol != "" {
-				target = src[start:end]
-			}else {
-				target = "https://" + src[start:end]
-			}
-			l, err := toProtocolLink(view, mapper, target, startPos, endPos)
-			if err != nil {
-				return nil, err
-			}
-			links = append(links, l)
+		if name == "protocol" {
+			protocol = matches[i]
 		}
+	}
+	for _, urlIndex := range indexUrl {
+		var target string
+		start := urlIndex[0]
+		end := urlIndex[1]
+		startPos := token.Pos(int(pos) + start)
+		endPos := token.Pos(int(pos) + end)
+		if protocol != "" {
+			target = src[start:end]
+		}
+		l, err := toProtocolLink(view, mapper, target, startPos, endPos)
+		if err != nil {
+			return nil, err
+		}
+		links = append(links, l)
 	}
 	return links, nil
 }
@@ -127,12 +123,9 @@ func findLinksInString(src string, pos token.Pos, view source.View, mapper *prot
 const urlRegexpString = "(?P<protocol>(http|ftp|https)://)?([\\w_-]+(?:(?:\\.[\\w_-]+)+))([\\w.,@?^=%&:/~+#-]*[\\w@?^=%&/~+#-])?"
 
 var (
-	urlRegexp            *regexp.Regexp
-	regexpOnce           sync.Once
-	regexpErr            error
-	urlNoProtocolRegexp  *regexp.Regexp
-	regexpNoProtocolOnce sync.Once
-	regexpNoProtocolErr  error
+	urlRegexp  *regexp.Regexp
+	regexpOnce sync.Once
+	regexpErr  error
 )
 
 func getURLRegexp() (*regexp.Regexp, error) {
