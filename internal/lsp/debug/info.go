@@ -21,7 +21,7 @@ const (
 )
 
 // Version is a manually-updated mechanism for tracking versions.
-var Version = "0.2.0"
+var Version = "0.2.2"
 
 // This writes the version and environment information to a writer.
 func PrintVersionInfo(w io.Writer, verbose bool, mode PrintMode) {
