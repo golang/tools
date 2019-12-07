@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/internal/lsp/telemetry"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/log"
-	errors "golang.org/x/xerrors"
 )
 
 func sourceError(ctx context.Context, fset *token.FileSet, pkg *pkg, e interface{}) (*source.Error, error) {
@@ -58,7 +57,7 @@ func sourceError(ctx context.Context, fset *token.FileSet, pkg *pkg, e interface
 	case scanner.ErrorList:
 		// The first parser error is likely the root cause of the problem.
 		if e.Len() <= 0 {
-			return nil, errors.Errorf("no errors in %v", e)
+			return nil, fmt.Errorf("no errors in %v", e)
 		}
 		msg = e[0].Msg
 		kind = source.ParseError
@@ -213,7 +212,7 @@ func scannerErrorRange(ctx context.Context, fset *token.FileSet, pkg *pkg, posn 
 	}
 	tok := fset.File(file.Pos())
 	if tok == nil {
-		return span.Span{}, errors.Errorf("no token.File for %s", ph.File().Identity().URI)
+		return span.Span{}, fmt.Errorf("no token.File for %s", ph.File().Identity().URI)
 	}
 	pos := tok.Pos(posn.Offset)
 	return span.NewRange(fset, pos, pos).Span()

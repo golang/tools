@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/log"
 	"golang.org/x/tools/internal/telemetry/trace"
-	errors "golang.org/x/xerrors"
 )
 
 type Diagnostic struct {
@@ -208,7 +207,7 @@ func addReports(ctx context.Context, reports map[FileIdentity][]Diagnostic, snap
 		return nil
 	}
 	if _, ok := reports[fileID]; !ok {
-		return errors.Errorf("diagnostics for unexpected file %s", fileID.URI)
+		return fmt.Errorf("diagnostics for unexpected file %s", fileID.URI)
 	}
 	for _, diag := range diagnostics {
 		if diag == nil {

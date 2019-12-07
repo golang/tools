@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/telemetry/trace"
-	errors "golang.org/x/xerrors"
 )
 
 type SignatureInformation struct {
@@ -52,7 +51,7 @@ func SignatureHelp(ctx context.Context, snapshot Snapshot, f File, pos protocol.
 	var callExpr *ast.CallExpr
 	path, _ := astutil.PathEnclosingInterval(file, rng.Start, rng.Start)
 	if path == nil {
-		return nil, errors.Errorf("cannot find node enclosing position")
+		return nil, fmt.Errorf("cannot find node enclosing position")
 	}
 FindCall:
 	for _, node := range path {
@@ -66,11 +65,11 @@ FindCall:
 			// The user is within an anonymous function,
 			// which may be the parameter to the *ast.CallExpr.
 			// Don't show signature help in this case.
-			return nil, errors.Errorf("no signature help within a function declaration")
+			return nil, fmt.Errorf("no signature help within a function declaration")
 		}
 	}
 	if callExpr == nil || callExpr.Fun == nil {
-		return nil, errors.Errorf("cannot find an enclosing function")
+		return nil, fmt.Errorf("cannot find an enclosing function")
 	}
 
 	// Get the object representing the function, if available.
@@ -92,12 +91,12 @@ FindCall:
 	// Get the type information for the function being called.
 	sigType := pkg.GetTypesInfo().TypeOf(callExpr.Fun)
 	if sigType == nil {
-		return nil, errors.Errorf("cannot get type for Fun %[1]T (%[1]v)", callExpr.Fun)
+		return nil, fmt.Errorf("cannot get type for Fun %[1]T (%[1]v)", callExpr.Fun)
 	}
 
 	sig, _ := sigType.Underlying().(*types.Signature)
 	if sig == nil {
-		return nil, errors.Errorf("cannot find signature for Fun %[1]T (%[1]v)", callExpr.Fun)
+		return nil, fmt.Errorf("cannot find signature for Fun %[1]T (%[1]v)", callExpr.Fun)
 	}
 
 	qf := qualifier(file, pkg.GetTypes(), pkg.GetTypesInfo())
@@ -138,11 +137,11 @@ FindCall:
 func builtinSignature(ctx context.Context, v View, callExpr *ast.CallExpr, name string, pos token.Pos) (*SignatureInformation, error) {
 	obj := v.BuiltinPackage().Lookup(name)
 	if obj == nil {
-		return nil, errors.Errorf("no object for %s", name)
+		return nil, fmt.Errorf("no object for %s", name)
 	}
 	decl, ok := obj.Decl.(*ast.FuncDecl)
 	if !ok {
-		return nil, errors.Errorf("no function declaration for builtin: %s", name)
+		return nil, fmt.Errorf("no function declaration for builtin: %s", name)
 	}
 	params, _ := formatFieldList(ctx, v, decl.Type.Params)
 	results, writeResultParens := formatFieldList(ctx, v, decl.Type.Results)

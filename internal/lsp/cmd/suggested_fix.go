@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/tool"
-	errors "golang.org/x/xerrors"
 )
 
 // suggestedfix implements the fix verb for gopls.
@@ -67,7 +66,7 @@ func (s *suggestedfix) Run(ctx context.Context, args ...string) error {
 	select {
 	case <-file.hasDiagnostics:
 	case <-time.After(30 * time.Second):
-		return errors.Errorf("timed out waiting for results from %v", file.uri)
+		return fmt.Errorf("timed out waiting for results from %v", file.uri)
 	}
 
 	file.diagnosticsMu.Lock()
@@ -84,7 +83,7 @@ func (s *suggestedfix) Run(ctx context.Context, args ...string) error {
 	}
 	actions, err := conn.CodeAction(ctx, &p)
 	if err != nil {
-		return errors.Errorf("%v: %v", from, err)
+		return fmt.Errorf("%v: %v", from, err)
 	}
 	var edits []protocol.TextEdit
 	for _, a := range actions {
@@ -100,7 +99,7 @@ func (s *suggestedfix) Run(ctx context.Context, args ...string) error {
 
 	sedits, err := source.FromProtocolEdits(file.mapper, edits)
 	if err != nil {
-		return errors.Errorf("%v: %v", edits, err)
+		return fmt.Errorf("%v: %v", edits, err)
 	}
 	newContent := diff.ApplyEdits(string(file.mapper.Content), sedits)
 

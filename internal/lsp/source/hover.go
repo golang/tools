@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"golang.org/x/tools/internal/telemetry/trace"
-	errors "golang.org/x/xerrors"
 )
 
 type HoverInformation struct {
@@ -142,7 +141,7 @@ func formatGenDecl(node *ast.GenDecl, obj types.Object, typ types.Type) (*HoverI
 		}
 	}
 	if spec == nil {
-		return nil, errors.Errorf("no spec for node %v at position %v", node, obj.Pos())
+		return nil, fmt.Errorf("no spec for node %v at position %v", node, obj.Pos())
 	}
 	// If we have a field or method.
 	switch obj.(type) {
@@ -163,7 +162,7 @@ func formatGenDecl(node *ast.GenDecl, obj types.Object, typ types.Type) (*HoverI
 	case *ast.ImportSpec:
 		return &HoverInformation{source: spec, comment: spec.Doc}, nil
 	}
-	return nil, errors.Errorf("unable to format spec %v (%T)", spec, spec)
+	return nil, fmt.Errorf("unable to format spec %v (%T)", spec, spec)
 }
 
 func formatVar(node ast.Spec, obj types.Object, decl *ast.GenDecl) *HoverInformation {

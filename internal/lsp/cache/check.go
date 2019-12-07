@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/log"
 	"golang.org/x/tools/internal/telemetry/trace"
-	errors "golang.org/x/xerrors"
 )
 
 // packageHandle implements source.CheckPackageHandle.
@@ -108,7 +107,7 @@ func (s *snapshot) packageHandle(ctx context.Context, id packageID, mode source.
 func (s *snapshot) buildKey(ctx context.Context, id packageID, mode source.ParseMode) (*packageHandle, map[packagePath]*packageHandle, error) {
 	m := s.getMetadata(id)
 	if m == nil {
-		return nil, nil, errors.Errorf("no metadata for %s", id)
+		return nil, nil, fmt.Errorf("no metadata for %s", id)
 	}
 	goFiles, err := s.parseGoHandles(ctx, m.goFiles, mode)
 	if err != nil {
@@ -184,7 +183,7 @@ func (ph *packageHandle) Check(ctx context.Context) (source.Package, error) {
 func (ph *packageHandle) check(ctx context.Context) (*pkg, error) {
 	v := ph.handle.Get(ctx)
 	if v == nil {
-		return nil, errors.Errorf("no package for %s", ph.m.id)
+		return nil, fmt.Errorf("no package for %s", ph.m.id)
 	}
 	data := v.(*packageData)
 	return data.pkg, data.err
@@ -213,7 +212,7 @@ func (ph *packageHandle) Cached() (source.Package, error) {
 func (ph *packageHandle) cached() (*pkg, error) {
 	v := ph.handle.Cached()
 	if v == nil {
-		return nil, errors.Errorf("no cached type information for %s", ph.m.pkgPath)
+		return nil, fmt.Errorf("no cached type information for %s", ph.m.pkgPath)
 	}
 	data := v.(*packageData)
 	return data.pkg, data.err
@@ -299,7 +298,7 @@ func typeCheck(ctx context.Context, fset *token.FileSet, m *metadata, mode sourc
 	if pkg.pkgPath == "unsafe" {
 		pkg.types = types.Unsafe
 	} else if len(files) == 0 { // not the unsafe package, no parsed files
-		return nil, errors.Errorf("no parsed files for package %s, expected: %s", pkg.pkgPath, pkg.compiledGoFiles)
+		return nil, fmt.Errorf("no parsed files for package %s, expected: %s", pkg.pkgPath, pkg.compiledGoFiles)
 	} else {
 		pkg.types = types.NewPackage(string(m.pkgPath), m.name)
 	}
@@ -311,7 +310,7 @@ func typeCheck(ctx context.Context, fset *token.FileSet, m *metadata, mode sourc
 		Importer: importerFunc(func(pkgPath string) (*types.Package, error) {
 			dep := deps[packagePath(pkgPath)]
 			if dep == nil {
-				return nil, errors.Errorf("no package for import %s", pkgPath)
+				return nil, fmt.Errorf("no package for import %s", pkgPath)
 			}
 			depPkg, err := dep.check(ctx)
 			if err != nil {

@@ -1,11 +1,10 @@
 package source
 
 import (
+	"fmt"
 	"go/ast"
 
 	"golang.org/x/tools/internal/lsp/protocol"
-
-	errors "golang.org/x/xerrors"
 )
 
 const (
@@ -40,7 +39,7 @@ const (
 func (c *completer) keyword() error {
 	if _, ok := c.path[0].(*ast.Ident); !ok {
 		// TODO(golang/go#34009): Support keyword completion in any context
-		return errors.Errorf("keywords are currently only recommended for identifiers")
+		return fmt.Errorf("keywords are currently only recommended for identifiers")
 	}
 	// Track which keywords we've already determined are in a valid scope
 	// Use score to order keywords by how close we are to where they are useful

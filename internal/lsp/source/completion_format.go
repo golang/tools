@@ -20,7 +20,6 @@ import (
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/log"
 	"golang.org/x/tools/internal/telemetry/tag"
-	errors "golang.org/x/xerrors"
 )
 
 // formatCompletion creates a completion item for a given candidate.
@@ -194,7 +193,7 @@ func (c *completer) importEdits(imp *importInfo) ([]protocol.TextEdit, error) {
 		}
 	}
 	if ph == nil {
-		return nil, errors.Errorf("building import completion for %v: no ParseGoHandle for %s", imp.importPath, c.filename)
+		return nil, fmt.Errorf("building import completion for %v: no ParseGoHandle for %s", imp.importPath, c.filename)
 	}
 
 	return computeOneImportFixEdits(c.ctx, c.snapshot.View(), ph, &imports.ImportFix{

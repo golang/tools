@@ -6,6 +6,7 @@ package source
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -16,7 +17,6 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/trace"
-	errors "golang.org/x/xerrors"
 )
 
 // IdentifierInfo holds information about an identifier in Go source.
@@ -105,7 +105,7 @@ func identifier(s Snapshot, pkg Package, file *ast.File, pos token.Pos) (*Identi
 	}
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
 	if path == nil {
-		return nil, errors.Errorf("can't find node enclosing position")
+		return nil, fmt.Errorf("can't find node enclosing position")
 	}
 	view := s.View()
 	uri := span.FileURI(view.Session().Cache().FileSet().Position(pos).Filename)
@@ -150,7 +150,7 @@ func identifier(s Snapshot, pkg Package, file *ast.File, pos token.Pos) (*Identi
 			result.Declaration.wasImplicit = true
 		} else {
 			// Probably a type error.
-			return nil, errors.Errorf("no object for ident %v", result.Name)
+			return nil, fmt.Errorf("no object for ident %v", result.Name)
 		}
 	}
 
@@ -162,7 +162,7 @@ func identifier(s Snapshot, pkg Package, file *ast.File, pos token.Pos) (*Identi
 		}
 		decl, ok := obj.Decl.(ast.Node)
 		if !ok {
-			return nil, errors.Errorf("no declaration for %s", result.Name)
+			return nil, fmt.Errorf("no declaration for %s", result.Name)
 		}
 		result.Declaration.node = decl
 		if result.Declaration.mappedRange, err = nameToMappedRange(view, pkg, decl.Pos(), result.Name); err != nil {
@@ -248,7 +248,7 @@ func objToNode(v View, pkg Package, obj types.Object) (ast.Decl, error) {
 	}
 	path, _ := astutil.PathEnclosingInterval(declAST, obj.Pos(), obj.Pos())
 	if path == nil {
-		return nil, errors.Errorf("no path for object %v", obj.Name())
+		return nil, fmt.Errorf("no path for object %v", obj.Name())
 	}
 	for _, node := range path {
 		switch node := node.(type) {
@@ -281,7 +281,7 @@ func importSpec(s Snapshot, pkg Package, file *ast.File, pos token.Pos) (*Identi
 	}
 	importPath, err := strconv.Unquote(imp.Path.Value)
 	if err != nil {
-		return nil, errors.Errorf("import path not quoted: %s (%v)", imp.Path.Value, err)
+		return nil, fmt.Errorf("import path not quoted: %s (%v)", imp.Path.Value, err)
 	}
 	uri := span.FileURI(s.View().Session().Cache().FileSet().Position(pos).Filename)
 	var ph ParseGoHandle
@@ -305,7 +305,7 @@ func importSpec(s Snapshot, pkg Package, file *ast.File, pos token.Pos) (*Identi
 		return nil, err
 	}
 	if importedPkg.GetSyntax() == nil {
-		return nil, errors.Errorf("no syntax for for %q", importPath)
+		return nil, fmt.Errorf("no syntax for for %q", importPath)
 	}
 	// Heuristic: Jump to the longest (most "interesting") file of the package.
 	var dest *ast.File
@@ -315,7 +315,7 @@ func importSpec(s Snapshot, pkg Package, file *ast.File, pos token.Pos) (*Identi
 		}
 	}
 	if dest == nil {
-		return nil, errors.Errorf("package %q has no files", importPath)
+		return nil, fmt.Errorf("package %q has no files", importPath)
 	}
 	if result.Declaration.mappedRange, err = posToMappedRange(s.View(), pkg, dest.Pos(), dest.End()); err != nil {
 		return nil, err

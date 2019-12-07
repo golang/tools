@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/internal/telemetry/log"
 	"golang.org/x/tools/internal/telemetry/tag"
 	"golang.org/x/tools/internal/telemetry/trace"
-	errors "golang.org/x/xerrors"
 )
 
 type metadata struct {
@@ -60,12 +59,12 @@ func (s *snapshot) load(ctx context.Context, scope source.Scope) ([]*metadata, e
 	// If the context was canceled, return early.
 	// Otherwise, we might be type-checking an incomplete result.
 	if err == context.Canceled {
-		return nil, errors.Errorf("no metadata for %s: %v", uri, err)
+		return nil, fmt.Errorf("no metadata for %s: %v", uri, err)
 	}
 	log.Print(ctx, "go/packages.Load", tag.Of("packages", len(pkgs)))
 	if len(pkgs) == 0 {
 		if err == nil {
-			err = errors.Errorf("no packages found for query %s", query)
+			err = fmt.Errorf("no packages found for query %s", query)
 		}
 	}
 	if err != nil {
@@ -132,7 +131,7 @@ func (s *snapshot) updateMetadata(ctx context.Context, uri source.Scope, pkgs []
 	s.clearAndRebuildImportGraph()
 
 	if len(results) == 0 {
-		return nil, errors.Errorf("no metadata for %s", uri)
+		return nil, fmt.Errorf("no metadata for %s", uri)
 	}
 	return results, nil
 }
@@ -140,7 +139,7 @@ func (s *snapshot) updateMetadata(ctx context.Context, uri source.Scope, pkgs []
 func (s *snapshot) updateImports(ctx context.Context, pkgPath packagePath, pkg *packages.Package, cfg *packages.Config, seen map[packageID]struct{}) error {
 	id := packageID(pkg.ID)
 	if _, ok := seen[id]; ok {
-		return errors.Errorf("import cycle detected: %q", id)
+		return fmt.Errorf("import cycle detected: %q", id)
 	}
 	// Recreate the metadata rather than reusing it to avoid locking.
 	m := &metadata{

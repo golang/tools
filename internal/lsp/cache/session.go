@@ -6,6 +6,7 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -20,7 +21,6 @@ import (
 	"golang.org/x/tools/internal/telemetry/log"
 	"golang.org/x/tools/internal/telemetry/trace"
 	"golang.org/x/tools/internal/xcontext"
-	errors "golang.org/x/xerrors"
 )
 
 type session struct {
@@ -210,7 +210,7 @@ func (s *session) Views() []source.View {
 // viewMu must be held when calling this method.
 func (s *session) bestView(uri span.URI) (source.View, error) {
 	if len(s.views) == 0 {
-		return nil, errors.Errorf("no views in the session")
+		return nil, fmt.Errorf("no views in the session")
 	}
 	// we need to find the best view for this file
 	var longest source.View
@@ -276,7 +276,7 @@ func (s *session) dropView(ctx context.Context, view *view) (int, error) {
 			return i, nil
 		}
 	}
-	return -1, errors.Errorf("view %s for %v not found", view.Name(), view.Folder())
+	return -1, fmt.Errorf("view %s for %v not found", view.Name(), view.Folder())
 }
 
 // TODO: Propagate the language ID through to the view.

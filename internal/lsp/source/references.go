@@ -6,6 +6,7 @@ package source
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
 	"go/types"
 
@@ -13,7 +14,6 @@ import (
 	"golang.org/x/tools/internal/lsp/telemetry"
 	"golang.org/x/tools/internal/telemetry/log"
 	"golang.org/x/tools/internal/telemetry/trace"
-	errors "golang.org/x/xerrors"
 )
 
 // ReferenceInfo holds information about reference to an identifier in Go source.
@@ -34,11 +34,11 @@ func (i *IdentifierInfo) References(ctx context.Context) ([]*ReferenceInfo, erro
 
 	// If the object declaration is nil, assume it is an import spec and do not look for references.
 	if i.Declaration.obj == nil {
-		return nil, errors.Errorf("no references for an import spec")
+		return nil, fmt.Errorf("no references for an import spec")
 	}
 	info := i.pkg.GetTypesInfo()
 	if info == nil {
-		return nil, errors.Errorf("package %s has no types info", i.pkg.PkgPath())
+		return nil, fmt.Errorf("package %s has no types info", i.pkg.PkgPath())
 	}
 	var searchpkgs []Package
 	if i.Declaration.obj.Exported() {

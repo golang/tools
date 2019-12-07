@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
 
@@ -10,7 +11,6 @@ import (
 	"golang.org/x/tools/internal/lsp/telemetry"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/log"
-	errors "golang.org/x/xerrors"
 )
 
 type snapshot struct {
@@ -94,7 +94,7 @@ func (s *snapshot) PackageHandles(ctx context.Context, fh source.FileHandle) ([]
 		phs = results
 	}
 	if len(phs) == 0 {
-		return nil, errors.Errorf("no CheckPackageHandles for %s", fh.Identity().URI)
+		return nil, fmt.Errorf("no CheckPackageHandles for %s", fh.Identity().URI)
 	}
 
 	return phs, nil
@@ -127,21 +127,21 @@ func (s *snapshot) PackageHandle(ctx context.Context, id string) (source.Package
 
 	m := s.getMetadata(packageID(id))
 	if m == nil {
-		return nil, errors.Errorf("no known metadata for %s", id)
+		return nil, fmt.Errorf("no known metadata for %s", id)
 	}
 	// Determine if we need to type-check the package.
 	phs, load, check := s.shouldCheck([]*metadata{m})
 	if load {
-		return nil, errors.Errorf("outdated metadata for %s, needs re-load", id)
+		return nil, fmt.Errorf("outdated metadata for %s, needs re-load", id)
 	}
 	if check {
 		return s.packageHandle(ctx, m.id, source.ParseFull)
 	}
 	if len(phs) == 0 {
-		return nil, errors.Errorf("no check package handle for %s", id)
+		return nil, fmt.Errorf("no check package handle for %s", id)
 	}
 	if len(phs) > 1 {
-		return nil, errors.Errorf("multiple check package handles for a single id: %s", id)
+		return nil, fmt.Errorf("multiple check package handles for a single id: %s", id)
 	}
 	return phs[0], nil
 }

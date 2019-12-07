@@ -20,7 +20,6 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/trace"
-	errors "golang.org/x/xerrors"
 )
 
 // Format formats a file with a given range.
@@ -36,7 +35,7 @@ func Format(ctx context.Context, snapshot Snapshot, f File) ([]protocol.TextEdit
 	// Be extra careful that the file's ParseMode is correct,
 	// otherwise we might replace the user's code with a trimmed AST.
 	if pgh.Mode() != ParseFull {
-		return nil, errors.Errorf("%s was parsed in the incorrect mode", pgh.File().Identity().URI)
+		return nil, fmt.Errorf("%s was parsed in the incorrect mode", pgh.File().Identity().URI)
 	}
 	file, m, _, err := pgh.Parse(ctx)
 	if err != nil {
@@ -93,10 +92,10 @@ func AllImportsFixes(ctx context.Context, snapshot Snapshot, f File) (allFixEdit
 
 	pkg, pgh, err := getParsedFile(ctx, snapshot, f, NarrowestCheckPackageHandle)
 	if err != nil {
-		return nil, nil, errors.Errorf("getting file for AllImportsFixes: %v", err)
+		return nil, nil, fmt.Errorf("getting file for AllImportsFixes: %v", err)
 	}
 	if hasListErrors(pkg) {
-		return nil, nil, errors.Errorf("%s has list errors, not running goimports", f.URI())
+		return nil, nil, fmt.Errorf("%s has list errors, not running goimports", f.URI())
 	}
 	options := &imports.Options{
 		// Defaults.
@@ -112,7 +111,7 @@ func AllImportsFixes(ctx context.Context, snapshot Snapshot, f File) (allFixEdit
 		return err
 	}, options)
 	if err != nil {
-		return nil, nil, errors.Errorf("computing fix edits: %v", err)
+		return nil, nil, fmt.Errorf("computing fix edits: %v", err)
 	}
 
 	return allFixEdits, editsPerFix, nil
@@ -224,7 +223,7 @@ func computeFixEdits(view View, ph ParseGoHandle, options *imports.Options, orig
 		var ok bool
 		right, ok = trimToFirstNonImport(fixedFset, fixedAST, fixedData, err)
 		if !ok {
-			return nil, errors.Errorf("error %v detected in the import block", err)
+			return nil, fmt.Errorf("error %v detected in the import block", err)
 		}
 		// We're now working with a prefix of the original file, so we can
 		// use the original converter, and there is no offset on the edits.

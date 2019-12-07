@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -11,7 +12,6 @@ import (
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
 )
 
 // TestCapabilities does some minimal validation of the server's adherence to the LSP.
@@ -107,11 +107,11 @@ func validateCapabilities(result *protocol.InitializeResult) error {
 	// If the client sends "false" for RenameProvider.PrepareSupport,
 	// the server must respond with a boolean.
 	if v, ok := result.Capabilities.RenameProvider.(bool); !ok {
-		return errors.Errorf("RenameProvider must be a boolean if PrepareSupport is false (got %T)", v)
+		return fmt.Errorf("RenameProvider must be a boolean if PrepareSupport is false (got %T)", v)
 	}
 	// The same goes for CodeActionKind.ValueSet.
 	if v, ok := result.Capabilities.CodeActionProvider.(bool); !ok {
-		return errors.Errorf("CodeActionSupport must be a boolean if CodeActionKind.ValueSet has length 0 (got %T)", v)
+		return fmt.Errorf("CodeActionSupport must be a boolean if CodeActionKind.ValueSet has length 0 (got %T)", v)
 	}
 	return nil
 }

@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/log"
-	errors "golang.org/x/xerrors"
 )
 
 func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitialize) (*protocol.InitializeResult, error) {
@@ -48,7 +47,7 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 		} else {
 			// No folders and no root--we are in single file mode.
 			// TODO: https://golang.org/issue/34160.
-			return nil, errors.Errorf("gopls does not yet support editing a single file. Please open a directory.")
+			return nil, fmt.Errorf("gopls does not yet support editing a single file. Please open a directory.")
 		}
 	}
 

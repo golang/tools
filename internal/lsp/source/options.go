@@ -37,7 +37,6 @@ import (
 	"golang.org/x/tools/internal/lsp/diff/myers"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/telemetry/tag"
-	errors "golang.org/x/xerrors"
 )
 
 var (
@@ -180,7 +179,7 @@ func SetOptions(options *Options, opts interface{}) OptionResults {
 	default:
 		results = append(results, OptionResult{
 			Value: opts,
-			Error: errors.Errorf("Invalid options type %T", opts),
+			Error: fmt.Errorf("Invalid options type %T", opts),
 		})
 	}
 	return results
@@ -333,7 +332,7 @@ func (o *Options) set(name string, value interface{}) OptionResult {
 }
 
 func (r *OptionResult) errorf(msg string, values ...interface{}) {
-	r.Error = errors.Errorf(msg, values...)
+	r.Error = fmt.Errorf(msg, values...)
 }
 
 func (r *OptionResult) asBool() (bool, bool) {

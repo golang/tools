@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/snippet"
 	"golang.org/x/tools/internal/telemetry/trace"
-	errors "golang.org/x/xerrors"
 )
 
 type CompletionItem struct {
@@ -415,7 +414,7 @@ func Completion(ctx context.Context, snapshot Snapshot, f File, pos protocol.Pos
 	// Find the path to the position before pos.
 	path, _ := astutil.PathEnclosingInterval(file, rng.Start-1, rng.Start-1)
 	if path == nil {
-		return nil, nil, errors.Errorf("cannot find node enclosing position")
+		return nil, nil, fmt.Errorf("cannot find node enclosing position")
 	}
 	// Skip completion inside comments.
 	for _, g := range file.Comments {

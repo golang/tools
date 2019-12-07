@@ -6,13 +6,13 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
 	"go/types"
 
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
 )
 
 // pkg contains the type information needed by the source package.
@@ -60,7 +60,7 @@ func (p *pkg) File(uri span.URI) (source.ParseGoHandle, error) {
 			return ph, nil
 		}
 	}
-	return nil, errors.Errorf("no ParseGoHandle for %s", uri)
+	return nil, fmt.Errorf("no ParseGoHandle for %s", uri)
 }
 
 func (p *pkg) GetSyntax() []*ast.File {
@@ -99,7 +99,7 @@ func (p *pkg) GetImport(pkgPath string) (source.Package, error) {
 		return imp, nil
 	}
 	// Don't return a nil pointer because that still satisfies the interface.
-	return nil, errors.Errorf("no imported package for %s", pkgPath)
+	return nil, fmt.Errorf("no imported package for %s", pkgPath)
 }
 
 func (p *pkg) Imports() []source.Package {
@@ -113,7 +113,7 @@ func (p *pkg) Imports() []source.Package {
 func (s *snapshot) FindAnalysisError(ctx context.Context, pkgID, analyzerName, msg string, rng protocol.Range) (*source.Error, error) {
 	analyzer, ok := s.View().Options().Analyzers[analyzerName]
 	if !ok {
-		return nil, errors.Errorf("unexpected analyzer: %s", analyzerName)
+		return nil, fmt.Errorf("unexpected analyzer: %s", analyzerName)
 	}
 	act, err := s.actionHandle(ctx, packageID(pkgID), source.ParseFull, analyzer)
 	if err != nil {
@@ -135,5 +135,5 @@ func (s *snapshot) FindAnalysisError(ctx context.Context, pkgID, analyzerName, m
 		}
 		return err, nil
 	}
-	return nil, errors.Errorf("no matching diagnostic for %s:%v", pkgID, analyzerName)
+	return nil, fmt.Errorf("no matching diagnostic for %s:%v", pkgID, analyzerName)
 }

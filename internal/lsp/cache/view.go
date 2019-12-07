@@ -26,7 +26,6 @@ import (
 	"golang.org/x/tools/internal/telemetry/log"
 	"golang.org/x/tools/internal/telemetry/tag"
 	"golang.org/x/tools/internal/xcontext"
-	errors "golang.org/x/xerrors"
 )
 
 type view struct {
@@ -435,7 +434,7 @@ func (v *view) mapFile(uri span.URI, f viewFile) {
 func (v *view) FindPosInPackage(searchpkg source.Package, pos token.Pos) (*ast.File, source.Package, error) {
 	tok := v.session.cache.fset.File(pos)
 	if tok == nil {
-		return nil, nil, errors.Errorf("no file for pos in package %s", searchpkg.ID())
+		return nil, nil, fmt.Errorf("no file for pos in package %s", searchpkg.ID())
 	}
 	uri := span.FileURI(tok.Name())
 
@@ -491,7 +490,7 @@ func (v *view) findIgnoredFile(uri span.URI) (source.ParseGoHandle, source.Packa
 			return h, nil, nil
 		}
 	}
-	return nil, nil, errors.Errorf("no ignored file for %s", uri)
+	return nil, nil, fmt.Errorf("no ignored file for %s", uri)
 }
 
 func findFileInPackage(pkg source.Package, uri span.URI) (source.ParseGoHandle, source.Package, error) {
@@ -512,7 +511,7 @@ func findFileInPackage(pkg source.Package, uri span.URI) (source.ParseGoHandle, 
 			}
 		}
 	}
-	return nil, nil, errors.Errorf("no file for %s in package %s", uri, pkg.ID())
+	return nil, nil, fmt.Errorf("no file for %s in package %s", uri, pkg.ID())
 }
 
 type debugView struct{ *view }

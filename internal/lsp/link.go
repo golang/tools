@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/log"
 	"golang.org/x/tools/internal/telemetry/tag"
-	errors "golang.org/x/xerrors"
 )
 
 func (s *Server) documentLink(ctx context.Context, params *protocol.DocumentLinkParams) ([]protocol.DocumentLink, error) {
@@ -89,7 +88,7 @@ func findLinksInString(src string, pos token.Pos, view source.View, mapper *prot
 	var links []protocol.DocumentLink
 	re, err := getURLRegexp()
 	if err != nil {
-		return nil, errors.Errorf("cannot create regexp for links: %s", err.Error())
+		return nil, fmt.Errorf("cannot create regexp for links: %s", err.Error())
 	}
 	indexUrl := re.FindAllIndex([]byte(src), -1)
 	for _, urlIndex := range indexUrl {

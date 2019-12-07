@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/telemetry/log"
 	"golang.org/x/tools/internal/telemetry/trace"
-	errors "golang.org/x/xerrors"
 )
 
 func Highlight(ctx context.Context, snapshot Snapshot, f File, pos protocol.Position) ([]protocol.Range, error) {
@@ -39,7 +38,7 @@ func Highlight(ctx context.Context, snapshot Snapshot, f File, pos protocol.Posi
 	}
 	path, _ := astutil.PathEnclosingInterval(file, rng.Start, rng.Start)
 	if len(path) == 0 {
-		return nil, errors.Errorf("no enclosing position found for %v:%v", int(pos.Line), int(pos.Character))
+		return nil, fmt.Errorf("no enclosing position found for %v:%v", int(pos.Line), int(pos.Character))
 	}
 	switch path[0].(type) {
 	case *ast.ReturnStmt, *ast.FuncDecl, *ast.FuncType, *ast.BasicLit:
@@ -215,7 +214,7 @@ func highlightIdentifiers(ctx context.Context, snapshot Snapshot, m *protocol.Co
 	result := make(map[protocol.Range]bool)
 	id, ok := path[0].(*ast.Ident)
 	if !ok {
-		return nil, errors.Errorf("highlightIdentifiers called with an ast.Node of type %T", id)
+		return nil, fmt.Errorf("highlightIdentifiers called with an ast.Node of type %T", id)
 	}
 	// Check if ident is inside return or func decl.
 	if toAdd, err := highlightFuncControlFlow(ctx, snapshot, m, path); toAdd != nil && err == nil {

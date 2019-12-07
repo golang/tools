@@ -7,6 +7,7 @@ package cache
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/scanner"
@@ -20,7 +21,6 @@ import (
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/log"
 	"golang.org/x/tools/internal/telemetry/trace"
-	errors "golang.org/x/xerrors"
 )
 
 // Limits the number of parallel parser calls per process.
@@ -80,7 +80,7 @@ func (pgh *parseGoHandle) Mode() source.ParseMode {
 func (pgh *parseGoHandle) Parse(ctx context.Context) (*ast.File, *protocol.ColumnMapper, error, error) {
 	v := pgh.handle.Get(ctx)
 	if v == nil {
-		return nil, nil, nil, errors.Errorf("no parsed file for %s", pgh.File().Identity().URI)
+		return nil, nil, nil, fmt.Errorf("no parsed file for %s", pgh.File().Identity().URI)
 	}
 	data := v.(*parseGoData)
 	return data.ast, data.mapper, data.parseError, data.err
@@ -89,7 +89,7 @@ func (pgh *parseGoHandle) Parse(ctx context.Context) (*ast.File, *protocol.Colum
 func (pgh *parseGoHandle) Cached() (*ast.File, *protocol.ColumnMapper, error, error) {
 	v := pgh.handle.Cached()
 	if v == nil {
-		return nil, nil, nil, errors.Errorf("no cached AST for %s", pgh.file.Identity().URI)
+		return nil, nil, nil, fmt.Errorf("no cached AST for %s", pgh.file.Identity().URI)
 	}
 	data := v.(*parseGoData)
 	return data.ast, data.mapper, data.parseError, data.err
@@ -130,7 +130,7 @@ func parseGo(ctx context.Context, fset *token.FileSet, fh source.FileHandle, mod
 		// Fix any badly parsed parts of the AST.
 		tok = fset.File(file.Pos())
 		if tok == nil {
-			return nil, nil, nil, errors.Errorf("successfully parsed but no token.File for %s (%v)", fh.Identity().URI, parseError)
+			return nil, nil, nil, fmt.Errorf("successfully parsed but no token.File for %s (%v)", fh.Identity().URI, parseError)
 		}
 		if mode == source.ParseExported {
 			trimAST(file)
@@ -144,7 +144,7 @@ func parseGo(ctx context.Context, fset *token.FileSet, fh source.FileHandle, mod
 		// the parse errors are the actual errors.
 		err := parseError
 		if err == nil {
-			err = errors.Errorf("no AST for %s", fh.Identity().URI)
+			err = fmt.Errorf("no AST for %s", fh.Identity().URI)
 		}
 		return nil, nil, parseError, err
 	}
@@ -229,7 +229,7 @@ func fix(ctx context.Context, n ast.Node, tok *token.File, src []byte) error {
 				// Recursively fix in our fixed node.
 				err = fix(ctx, parent, tok, src)
 			} else {
-				err = errors.Errorf("unable to parse defer or go from *ast.BadStmt: %v", err)
+				err = fmt.Errorf("unable to parse defer or go from *ast.BadStmt: %v", err)
 			}
 			return false
 		case *ast.BadExpr:
@@ -399,7 +399,7 @@ func fixArrayType(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte
 	to := bad.End()
 
 	if !from.IsValid() || !to.IsValid() {
-		return errors.Errorf("invalid BadExpr from/to: %d/%d", from, to)
+		return fmt.Errorf("invalid BadExpr from/to: %d/%d", from, to)
 	}
 
 	exprBytes := make([]byte, 0, int(to-from)+3)
@@ -425,16 +425,16 @@ func fixArrayType(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte
 
 	cl, _ := expr.(*ast.CompositeLit)
 	if cl == nil {
-		return errors.Errorf("expr not compLit (%T)", expr)
+		return fmt.Errorf("expr not compLit (%T)", expr)
 	}
 
 	at, _ := cl.Type.(*ast.ArrayType)
 	if at == nil {
-		return errors.Errorf("compLit type not array (%T)", cl.Type)
+		return fmt.Errorf("compLit type not array (%T)", cl.Type)
 	}
 
 	if !replaceNode(parent, bad, at) {
-		return errors.Errorf("couldn't replace array type")
+		return fmt.Errorf("couldn't replace array type")
 	}
 
 	return nil
@@ -458,7 +458,7 @@ func fixDeferOrGoStmt(bad *ast.BadStmt, parent ast.Node, tok *token.File, src []
 	)
 	for {
 		if tkn == token.EOF {
-			return errors.Errorf("reached the end of the file")
+			return fmt.Errorf("reached the end of the file")
 		}
 		if pos >= bad.From {
 			break
@@ -477,7 +477,7 @@ func fixDeferOrGoStmt(bad *ast.BadStmt, parent ast.Node, tok *token.File, src []
 			Go: pos,
 		}
 	default:
-		return errors.Errorf("no defer or go statement found")
+		return fmt.Errorf("no defer or go statement found")
 	}
 
 	var (
@@ -545,11 +545,11 @@ FindTo:
 	}
 
 	if !from.IsValid() || tok.Offset(from) >= len(src) {
-		return errors.Errorf("invalid from position")
+		return fmt.Errorf("invalid from position")
 	}
 
 	if !to.IsValid() || tok.Offset(to) >= len(src) {
-		return errors.Errorf("invalid to position %d", to)
+		return fmt.Errorf("invalid to position %d", to)
 	}
 
 	// Insert any phantom selectors needed to prevent dangling "." from messing
@@ -588,7 +588,7 @@ FindTo:
 	}
 
 	if !replaceNode(parent, bad, stmt) {
-		return errors.Errorf("couldn't replace CallExpr")
+		return fmt.Errorf("couldn't replace CallExpr")
 	}
 
 	return nil
@@ -608,22 +608,22 @@ func parseExpr(pos token.Pos, src []byte) (ast.Expr, error) {
 	// best-effort behavior, whereas ParseExpr fails hard on any error.
 	fakeFile, err := parser.ParseFile(token.NewFileSet(), "", fileSrc, 0)
 	if fakeFile == nil {
-		return nil, errors.Errorf("error reading fake file source: %v", err)
+		return nil, fmt.Errorf("error reading fake file source: %v", err)
 	}
 
 	// Extract our expression node from inside the fake file.
 	if len(fakeFile.Decls) == 0 {
-		return nil, errors.Errorf("error parsing fake file: %v", err)
+		return nil, fmt.Errorf("error parsing fake file: %v", err)
 	}
 
 	fakeDecl, _ := fakeFile.Decls[0].(*ast.FuncDecl)
 	if fakeDecl == nil || len(fakeDecl.Body.List) == 0 {
-		return nil, errors.Errorf("no statement in %s: %v", src, err)
+		return nil, fmt.Errorf("no statement in %s: %v", src, err)
 	}
 
 	exprStmt, ok := fakeDecl.Body.List[0].(*ast.ExprStmt)
 	if !ok {
-		return nil, errors.Errorf("no expr in %s: %v", src, err)
+		return nil, fmt.Errorf("no expr in %s: %v", src, err)
 	}
 
 	expr := exprStmt.X

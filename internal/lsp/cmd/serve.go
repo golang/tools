@@ -24,7 +24,6 @@ import (
 	"golang.org/x/tools/internal/lsp/telemetry"
 	"golang.org/x/tools/internal/telemetry/trace"
 	"golang.org/x/tools/internal/tool"
-	errors "golang.org/x/xerrors"
 )
 
 // Serve is a struct that exposes the configurable parts of the LSP server as
@@ -69,7 +68,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 		}
 		f, err := os.Create(filename)
 		if err != nil {
-			return errors.Errorf("Unable to create log file: %v", err)
+			return fmt.Errorf("Unable to create log file: %v", err)
 		}
 		defer f.Close()
 		log.SetOutput(io.MultiWriter(os.Stderr, f))

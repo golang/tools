@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/internal/lsp/telemetry"
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/telemetry/log"
-	errors "golang.org/x/xerrors"
 )
 
 func (s *snapshot) Analyze(ctx context.Context, id string, analyzers []*analysis.Analyzer) ([]*source.Error, error) {
@@ -81,10 +80,10 @@ func (s *snapshot) actionHandle(ctx context.Context, id packageID, mode source.P
 	}
 	ph := s.getPackage(id, mode)
 	if ph == nil {
-		return nil, errors.Errorf("no CheckPackageHandle for %s:%v", id, mode == source.ParseExported)
+		return nil, fmt.Errorf("no CheckPackageHandle for %s:%v", id, mode == source.ParseExported)
 	}
 	if len(ph.key) == 0 {
-		return nil, errors.Errorf("no key for CheckPackageHandle %s", id)
+		return nil, fmt.Errorf("no key for CheckPackageHandle %s", id)
 	}
 	pkg, err := ph.check(ctx)
 	if err != nil {
@@ -151,10 +150,10 @@ func (act *actionHandle) analyze(ctx context.Context) ([]*source.Error, interfac
 	}
 	data, ok := v.(*actionData)
 	if !ok {
-		return nil, nil, errors.Errorf("unexpected type for %s:%s", act.pkg.ID(), act.analyzer.Name)
+		return nil, nil, fmt.Errorf("unexpected type for %s:%s", act.pkg.ID(), act.analyzer.Name)
 	}
 	if data == nil {
-		return nil, nil, errors.Errorf("unexpected nil analysis for %s:%s", act.pkg.ID(), act.analyzer.Name)
+		return nil, nil, fmt.Errorf("unexpected nil analysis for %s:%s", act.pkg.ID(), act.analyzer.Name)
 	}
 	return data.diagnostics, data.result, data.err
 }
@@ -177,11 +176,11 @@ func execAll(ctx context.Context, fset *token.FileSet, actions []*actionHandle) 
 		g.Go(func() error {
 			v := act.handle.Get(ctx)
 			if v == nil {
-				return errors.Errorf("no analyses for %s", act.pkg.ID())
+				return fmt.Errorf("no analyses for %s", act.pkg.ID())
 			}
 			data, ok := v.(*actionData)
 			if !ok {
-				return errors.Errorf("unexpected type for %s: %T", act, v)
+				return fmt.Errorf("unexpected type for %s: %T", act, v)
 			}
 
 			mu.Lock()
@@ -202,7 +201,7 @@ func runAnalysis(ctx context.Context, fset *token.FileSet, analyzer *analysis.An
 	defer func() {
 		if r := recover(); r != nil {
 			log.Print(ctx, fmt.Sprintf("analysis panicked: %s", r), telemetry.Package.Of(pkg.PkgPath))
-			data.err = errors.Errorf("analysis %s for package %s panicked: %v", analyzer.Name, pkg.PkgPath())
+			data.err = fmt.Errorf("analysis %s for package %s panicked: %v", analyzer.Name, pkg.PkgPath())
 		}
 	}()
 
@@ -311,13 +310,13 @@ func runAnalysis(ctx context.Context, fset *token.FileSet, analyzer *analysis.An
 	}
 
 	if pkg.IsIllTyped() {
-		data.err = errors.Errorf("analysis skipped due to errors in package: %v", pkg.GetErrors())
+		data.err = fmt.Errorf("analysis skipped due to errors in package: %v", pkg.GetErrors())
 		return data
 	}
 	data.result, data.err = pass.Analyzer.Run(pass)
 	if data.err == nil {
 		if got, want := reflect.TypeOf(data.result), pass.Analyzer.ResultType; got != want {
-			data.err = errors.Errorf(
+			data.err = fmt.Errorf(
 				"internal error: on package %s, analyzer %s returned a result of type %v, but declared ResultType %v",
 				pass.Pkg.Path(), pass.Analyzer, got, want)
 			return data

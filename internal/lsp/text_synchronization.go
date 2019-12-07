@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/telemetry"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
 )
 
 func (s *Server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
@@ -77,7 +76,7 @@ func (s *Server) didModifyFile(ctx context.Context, c source.FileModification) e
 	case source.Open:
 		kind := source.DetectLanguage(c.LanguageID, c.URI.Filename())
 		if kind == source.UnknownKind {
-			return errors.Errorf("didModifyFile: unknown file kind for %s", c.URI)
+			return fmt.Errorf("didModifyFile: unknown file kind for %s", c.URI)
 		}
 		if err := s.session.DidOpen(ctx, c.URI, kind, c.Version, c.Text); err != nil {
 			return err
@@ -129,7 +128,7 @@ func (s *Server) changedText(ctx context.Context, uri span.URI, changes []protoc
 
 	// We only accept an incremental change if that's what the server expects.
 	if s.session.Options().TextDocumentSyncKind == protocol.Full {
-		return nil, errors.Errorf("expected a full content change, received incremental changes for %s", uri)
+		return nil, fmt.Errorf("expected a full content change, received incremental changes for %s", uri)
 	}
 
 	return s.applyIncrementalChanges(ctx, uri, changes)

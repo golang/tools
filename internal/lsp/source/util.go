@@ -18,7 +18,6 @@ import (
 
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
 )
 
 type mappedRange struct {
@@ -92,7 +91,7 @@ func getParsedFile(ctx context.Context, snapshot Snapshot, f File, selectPackage
 // as the test will have more files than the non-test package.
 func NarrowestCheckPackageHandle(handles []PackageHandle) (PackageHandle, error) {
 	if len(handles) < 1 {
-		return nil, errors.Errorf("no CheckPackageHandles")
+		return nil, fmt.Errorf("no CheckPackageHandles")
 	}
 	result := handles[0]
 	for _, handle := range handles[1:] {
@@ -101,7 +100,7 @@ func NarrowestCheckPackageHandle(handles []PackageHandle) (PackageHandle, error)
 		}
 	}
 	if result == nil {
-		return nil, errors.Errorf("nil CheckPackageHandles have been returned")
+		return nil, fmt.Errorf("nil CheckPackageHandles have been returned")
 	}
 	return result, nil
 }
@@ -112,7 +111,7 @@ func NarrowestCheckPackageHandle(handles []PackageHandle) (PackageHandle, error)
 // for as many files as possible.
 func WidestCheckPackageHandle(handles []PackageHandle) (PackageHandle, error) {
 	if len(handles) < 1 {
-		return nil, errors.Errorf("no CheckPackageHandles")
+		return nil, fmt.Errorf("no CheckPackageHandles")
 	}
 	result := handles[0]
 	for _, handle := range handles[1:] {
@@ -121,7 +120,7 @@ func WidestCheckPackageHandle(handles []PackageHandle) (PackageHandle, error) {
 		}
 	}
 	if result == nil {
-		return nil, errors.Errorf("nil CheckPackageHandles have been returned")
+		return nil, fmt.Errorf("nil CheckPackageHandles have been returned")
 	}
 	return result, nil
 }
@@ -199,10 +198,10 @@ func posToMappedRange(v View, pkg Package, pos, end token.Pos) (mappedRange, err
 
 func posToRange(view View, m *protocol.ColumnMapper, pos, end token.Pos) (mappedRange, error) {
 	if !pos.IsValid() {
-		return mappedRange{}, errors.Errorf("invalid position for %v", pos)
+		return mappedRange{}, fmt.Errorf("invalid position for %v", pos)
 	}
 	if !end.IsValid() {
-		return mappedRange{}, errors.Errorf("invalid position for %v", end)
+		return mappedRange{}, fmt.Errorf("invalid position for %v", end)
 	}
 	return newMappedRange(view.Session().Cache().FileSet(), m, pos, end), nil
 }
@@ -467,11 +466,11 @@ func formatFieldType(s Snapshot, srcpkg Package, obj types.Object, qf types.Qual
 		return "", err
 	}
 	if i := ident.ident; i == nil || i.Obj == nil || i.Obj.Decl == nil {
-		return "", errors.Errorf("no object for ident %v", i.Name)
+		return "", fmt.Errorf("no object for ident %v", i.Name)
 	}
 	f, ok := ident.ident.Obj.Decl.(*ast.Field)
 	if !ok {
-		return "", errors.Errorf("ident %s is not a field type", ident.Name)
+		return "", fmt.Errorf("ident %s is not a field type", ident.Name)
 	}
 	var typeNameBuf bytes.Buffer
 	fset := s.View().Session().Cache().FileSet()

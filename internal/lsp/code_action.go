@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/internal/lsp/telemetry"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/log"
-	errors "golang.org/x/xerrors"
 )
 
 func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
@@ -50,7 +49,7 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 		}
 	}
 	if len(wanted) == 0 {
-		return nil, errors.Errorf("no supported code action to execute for %s, wanted %v", uri, params.Context.Only)
+		return nil, fmt.Errorf("no supported code action to execute for %s, wanted %v", uri, params.Context.Only)
 	}
 
 	var codeActions []protocol.CodeAction
