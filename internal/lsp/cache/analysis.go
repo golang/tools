@@ -201,7 +201,7 @@ func runAnalysis(ctx context.Context, fset *token.FileSet, analyzer *analysis.An
 	defer func() {
 		if r := recover(); r != nil {
 			log.Print(ctx, fmt.Sprintf("analysis panicked: %s", r), telemetry.Package.Of(pkg.PkgPath))
-			data.err = fmt.Errorf("analysis %s for package %s panicked: %v", analyzer.Name, pkg.PkgPath())
+			data.err = fmt.Errorf("analysis %s for package %s panicked: %v", analyzer.Name, pkg.PkgPath(), r)
 		}
 	}()
 

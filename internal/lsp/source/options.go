@@ -266,7 +266,7 @@ func (o *Options) set(name string, value interface{}) OptionResult {
 		case "Structured":
 			o.HoverKind = Structured
 		default:
-			result.errorf("Unsupported hover kind", tag.Of("HoverKind", hoverKind))
+			result.errorf("Unsupported hover kind: %v", tag.Of("HoverKind", hoverKind))
 		}
 
 	case "linkTarget":
