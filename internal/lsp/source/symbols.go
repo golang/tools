@@ -20,7 +20,7 @@ func DocumentSymbols(ctx context.Context, snapshot Snapshot, f File) ([]protocol
 
 	pkg, pgh, err := getParsedFile(ctx, snapshot, f, NarrowestCheckPackageHandle)
 	if err != nil {
-		return nil, fmt.Errorf("getting file for DocumentSymbols: %v", err)
+		return nil, fmt.Errorf("getting file for DocumentSymbols: %w", err)
 	}
 	file, m, _, err := pgh.Cached()
 	if err != nil {

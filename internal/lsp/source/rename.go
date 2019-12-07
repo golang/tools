@@ -7,6 +7,7 @@ package source
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -143,7 +144,7 @@ func (i *IdentifierInfo) Rename(ctx context.Context, newName string) (map[span.U
 		}
 	}
 	if r.hadConflicts {
-		return nil, fmt.Errorf(r.errors)
+		return nil, errors.New(r.errors)
 	}
 
 	changes, err := r.update()
@@ -185,7 +186,7 @@ func (i *IdentifierInfo) Rename(ctx context.Context, newName string) (map[span.U
 func (i *IdentifierInfo) getPkgName(ctx context.Context) (*IdentifierInfo, error) {
 	ph, err := i.pkg.File(i.URI())
 	if err != nil {
-		return nil, fmt.Errorf("finding file for identifier %v: %v", i.Name, err)
+		return nil, fmt.Errorf("finding file for identifier %v: %w", i.Name, err)
 	}
 	file, _, _, err := ph.Cached()
 	if err != nil {

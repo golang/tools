@@ -64,7 +64,7 @@ func Identifier(ctx context.Context, snapshot Snapshot, f File, pos protocol.Pos
 
 	pkg, pgh, err := getParsedFile(ctx, snapshot, f, WidestCheckPackageHandle)
 	if err != nil {
-		return nil, fmt.Errorf("getting file for Identifier: %v", err)
+		return nil, fmt.Errorf("getting file for Identifier: %w", err)
 	}
 	file, m, _, err := pgh.Cached()
 	if err != nil {
@@ -281,7 +281,7 @@ func importSpec(s Snapshot, pkg Package, file *ast.File, pos token.Pos) (*Identi
 	}
 	importPath, err := strconv.Unquote(imp.Path.Value)
 	if err != nil {
-		return nil, fmt.Errorf("import path not quoted: %s (%v)", imp.Path.Value, err)
+		return nil, fmt.Errorf("import path (%s) not quoted: %w", imp.Path.Value, err)
 	}
 	uri := span.FileURI(s.View().Session().Cache().FileSet().Position(pos).Filename)
 	var ph ParseGoHandle

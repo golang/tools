@@ -88,7 +88,7 @@ func findLinksInString(src string, pos token.Pos, view source.View, mapper *prot
 	var links []protocol.DocumentLink
 	re, err := getURLRegexp()
 	if err != nil {
-		return nil, fmt.Errorf("cannot create regexp for links: %s", err.Error())
+		return nil, fmt.Errorf("cannot create regexp for links: %w", err)
 	}
 	indexUrl := re.FindAllIndex([]byte(src), -1)
 	for _, urlIndex := range indexUrl {
@@ -97,8 +97,8 @@ func findLinksInString(src string, pos token.Pos, view source.View, mapper *prot
 		end := urlIndex[1]
 		startPos := token.Pos(int(pos) + start)
 		endPos := token.Pos(int(pos) + end)
-	        target = src[start:end]
-	        l, err := toProtocolLink(view, mapper, target, startPos, endPos)
+		target = src[start:end]
+		l, err := toProtocolLink(view, mapper, target, startPos, endPos)
 		if err != nil {
 			return nil, err
 		}

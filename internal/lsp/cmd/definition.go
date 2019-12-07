@@ -82,7 +82,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	}
 	locs, err := conn.Definition(ctx, &p)
 	if err != nil {
-		return fmt.Errorf("%v: %v", from, err)
+		return fmt.Errorf("%v: %w", from, err)
 	}
 
 	if len(locs) == 0 {
@@ -93,18 +93,18 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	}
 	hover, err := conn.Hover(ctx, &q)
 	if err != nil {
-		return fmt.Errorf("%v: %v", from, err)
+		return fmt.Errorf("%v: %w", from, err)
 	}
 	if hover == nil {
 		return fmt.Errorf("%v: not an identifier", from)
 	}
 	file = conn.AddFile(ctx, span.NewURI(locs[0].URI))
 	if file.err != nil {
-		return fmt.Errorf("%v: %v", from, file.err)
+		return fmt.Errorf("%v: %w", from, file.err)
 	}
 	definition, err := file.mapper.Span(locs[0])
 	if err != nil {
-		return fmt.Errorf("%v: %v", from, err)
+		return fmt.Errorf("%v: %w", from, err)
 	}
 	description := strings.TrimSpace(hover.Contents.Value)
 	var result interface{}

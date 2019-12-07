@@ -29,7 +29,7 @@ func Format(ctx context.Context, snapshot Snapshot, f File) ([]protocol.TextEdit
 
 	pkg, pgh, err := getParsedFile(ctx, snapshot, f, NarrowestCheckPackageHandle)
 	if err != nil {
-		return nil, fmt.Errorf("getting file for Format: %v", err)
+		return nil, fmt.Errorf("getting file for Format: %w", err)
 	}
 
 	// Be extra careful that the file's ParseMode is correct,
@@ -92,7 +92,7 @@ func AllImportsFixes(ctx context.Context, snapshot Snapshot, f File) (allFixEdit
 
 	pkg, pgh, err := getParsedFile(ctx, snapshot, f, NarrowestCheckPackageHandle)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting file for AllImportsFixes: %v", err)
+		return nil, nil, fmt.Errorf("getting file for AllImportsFixes: %w", err)
 	}
 	if hasListErrors(pkg) {
 		return nil, nil, fmt.Errorf("%s has list errors, not running goimports", f.URI())
@@ -111,7 +111,7 @@ func AllImportsFixes(ctx context.Context, snapshot Snapshot, f File) (allFixEdit
 		return err
 	}, options)
 	if err != nil {
-		return nil, nil, fmt.Errorf("computing fix edits: %v", err)
+		return nil, nil, fmt.Errorf("computing fix edits: %w", err)
 	}
 
 	return allFixEdits, editsPerFix, nil
@@ -223,7 +223,7 @@ func computeFixEdits(view View, ph ParseGoHandle, options *imports.Options, orig
 		var ok bool
 		right, ok = trimToFirstNonImport(fixedFset, fixedAST, fixedData, err)
 		if !ok {
-			return nil, fmt.Errorf("error %v detected in the import block", err)
+			return nil, fmt.Errorf("error detected in the import block: %w", err)
 		}
 		// We're now working with a prefix of the original file, so we can
 		// use the original converter, and there is no offset on the edits.

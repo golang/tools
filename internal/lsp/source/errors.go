@@ -92,7 +92,7 @@ func invokeGo(ctx context.Context, dir string, env []string, args ...string) (*b
 		if _, ok := err.(*exec.ExitError); !ok {
 			// Catastrophic error:
 			// - context cancellation
-			return nil, fmt.Errorf("couldn't exec 'go %v': %s %T", args, err, err)
+			return nil, fmt.Errorf("couldn't exec 'go %v': %w %T", args, err, err)
 		}
 	}
 	return stdout, nil

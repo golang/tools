@@ -62,7 +62,7 @@ func (l *links) Run(ctx context.Context, args ...string) error {
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("%v: %v", from, err)
+		return fmt.Errorf("%v: %w", from, err)
 	}
 	if l.JSON {
 		enc := json.NewEncoder(os.Stdout)

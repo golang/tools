@@ -65,7 +65,7 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("%v: %v", from, err)
+		return fmt.Errorf("%v: %w", from, err)
 	}
 	var edits []protocol.TextEdit
 	for _, a := range actions {
@@ -80,7 +80,7 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 	}
 	sedits, err := source.FromProtocolEdits(file.mapper, edits)
 	if err != nil {
-		return fmt.Errorf("%v: %v", edits, err)
+		return fmt.Errorf("%v: %w", edits, err)
 	}
 	newContent := diff.ApplyEdits(string(file.mapper.Content), sedits)
 

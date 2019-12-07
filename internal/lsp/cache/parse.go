@@ -229,7 +229,7 @@ func fix(ctx context.Context, n ast.Node, tok *token.File, src []byte) error {
 				// Recursively fix in our fixed node.
 				err = fix(ctx, parent, tok, src)
 			} else {
-				err = fmt.Errorf("unable to parse defer or go from *ast.BadStmt: %v", err)
+				err = fmt.Errorf("unable to parse defer or go from *ast.BadStmt: %w", err)
 			}
 			return false
 		case *ast.BadExpr:
@@ -608,22 +608,22 @@ func parseExpr(pos token.Pos, src []byte) (ast.Expr, error) {
 	// best-effort behavior, whereas ParseExpr fails hard on any error.
 	fakeFile, err := parser.ParseFile(token.NewFileSet(), "", fileSrc, 0)
 	if fakeFile == nil {
-		return nil, fmt.Errorf("error reading fake file source: %v", err)
+		return nil, fmt.Errorf("error reading fake file source: %w", err)
 	}
 
 	// Extract our expression node from inside the fake file.
 	if len(fakeFile.Decls) == 0 {
-		return nil, fmt.Errorf("error parsing fake file: %v", err)
+		return nil, fmt.Errorf("error parsing fake file: %w", err)
 	}
 
 	fakeDecl, _ := fakeFile.Decls[0].(*ast.FuncDecl)
 	if fakeDecl == nil || len(fakeDecl.Body.List) == 0 {
-		return nil, fmt.Errorf("no statement in %s: %v", src, err)
+		return nil, fmt.Errorf("no statement in %s: %w", src, err)
 	}
 
 	exprStmt, ok := fakeDecl.Body.List[0].(*ast.ExprStmt)
 	if !ok {
-		return nil, fmt.Errorf("no expr in %s: %v", src, err)
+		return nil, fmt.Errorf("no expr in %s: %w", src, err)
 	}
 
 	expr := exprStmt.X

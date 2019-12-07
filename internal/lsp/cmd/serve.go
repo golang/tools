@@ -68,7 +68,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 		}
 		f, err := os.Create(filename)
 		if err != nil {
-			return fmt.Errorf("Unable to create log file: %v", err)
+			return fmt.Errorf("Unable to create log file: %w", err)
 		}
 		defer f.Close()
 		log.SetOutput(io.MultiWriter(os.Stderr, f))

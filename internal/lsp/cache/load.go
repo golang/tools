@@ -59,7 +59,7 @@ func (s *snapshot) load(ctx context.Context, scope source.Scope) ([]*metadata, e
 	// If the context was canceled, return early.
 	// Otherwise, we might be type-checking an incomplete result.
 	if err == context.Canceled {
-		return nil, fmt.Errorf("no metadata for %s: %v", uri, err)
+		return nil, fmt.Errorf("no metadata for %s: %w", uri, err)
 	}
 	log.Print(ctx, "go/packages.Load", tag.Of("packages", len(pkgs)))
 	if len(pkgs) == 0 {

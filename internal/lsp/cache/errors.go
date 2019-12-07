@@ -57,7 +57,7 @@ func sourceError(ctx context.Context, fset *token.FileSet, pkg *pkg, e interface
 	case scanner.ErrorList:
 		// The first parser error is likely the root cause of the problem.
 		if e.Len() <= 0 {
-			return nil, fmt.Errorf("no errors in %v", e)
+			return nil, fmt.Errorf("no errors in %w", e)
 		}
 		msg = e[0].Msg
 		kind = source.ParseError
@@ -97,7 +97,7 @@ func sourceError(ctx context.Context, fset *token.FileSet, pkg *pkg, e interface
 	}
 	ph, err := pkg.File(spn.URI())
 	if err != nil {
-		return nil, fmt.Errorf("finding file for error %q: %v", msg, err)
+		return nil, fmt.Errorf("finding file for error %q: %w", msg, err)
 	}
 	return &source.Error{
 		File:           ph.File().Identity(),

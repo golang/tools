@@ -358,7 +358,7 @@ func (c *cmdClient) getFile(ctx context.Context, uri span.URI) *cmdFile {
 		fname := uri.Filename()
 		content, err := ioutil.ReadFile(fname)
 		if err != nil {
-			file.err = fmt.Errorf("getFile: %v: %v", uri, err)
+			file.err = fmt.Errorf("getFile: %v: %w", uri, err)
 			return file
 		}
 		f := c.fset.AddFile(fname, -1, len(content))
@@ -398,7 +398,7 @@ func (c *connection) AddFile(ctx context.Context, uri span.URI) *cmdFile {
 		},
 	}
 	if err := c.Server.DidOpen(ctx, p); err != nil {
-		file.err = fmt.Errorf("%v: %v", uri, err)
+		file.err = fmt.Errorf("%v: %w", uri, err)
 	}
 	return file
 }

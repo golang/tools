@@ -73,11 +73,11 @@ func (c *format) Run(ctx context.Context, args ...string) error {
 		}
 		edits, err := conn.Formatting(ctx, &p)
 		if err != nil {
-			return fmt.Errorf("%v: %v", spn, err)
+			return fmt.Errorf("%v: %w", spn, err)
 		}
 		sedits, err := source.FromProtocolEdits(file.mapper, edits)
 		if err != nil {
-			return fmt.Errorf("%v: %v", spn, err)
+			return fmt.Errorf("%v: %w", spn, err)
 		}
 		formatted := diff.ApplyEdits(string(file.mapper.Content), sedits)
 		printIt := true

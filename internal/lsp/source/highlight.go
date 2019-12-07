@@ -22,7 +22,7 @@ func Highlight(ctx context.Context, snapshot Snapshot, f File, pos protocol.Posi
 
 	pkg, pgh, err := getParsedFile(ctx, snapshot, f, WidestCheckPackageHandle)
 	if err != nil {
-		return nil, fmt.Errorf("getting file for Highlight: %v", err)
+		return nil, fmt.Errorf("getting file for Highlight: %w", err)
 	}
 	file, m, _, err := pgh.Parse(ctx)
 	if err != nil {

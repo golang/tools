@@ -68,7 +68,7 @@ func getDiffOutput(a, b string) (string, error) {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); !ok {
-			return "", fmt.Errorf("failed to run diff -u %v %v: %v\n%v", fileA.Name(), fileB.Name(), err, string(out))
+			return "", fmt.Errorf("failed to run diff -u %v %v: %w\n%v", fileA.Name(), fileB.Name(), err, string(out))
 		}
 	}
 	diff := string(out)
