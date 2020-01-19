@@ -510,14 +510,16 @@ type hashmapIter struct {
 }
 
 func (it *hashmapIter) next() tuple {
-	if !it.ok {
-		return []value{false, nil, nil}
-	}
-	if it.cur == nil {
+	for {
+		if it.cur != nil {
+			k, v := it.cur.key, it.cur.value
+			it.cur = it.cur.next
+			return []value{true, k, v}
+		}
 		it.ok = it.iter.Next()
+		if !it.ok {
+			return []value{false, nil, nil}
+		}
 		it.cur = it.iter.Value().Interface().(*entry)
 	}
-	k, v := it.cur.key, it.cur.value
-	it.cur = it.cur.next
-	return []value{true, k, v}
 }
