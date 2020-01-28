@@ -58,6 +58,42 @@ func sortImports(env *ProcessEnv, fset *token.FileSet, f *ast.File) {
 	}
 }
 
+// removeBlankLines removes all blank lines in imports
+func removeBlankLines(env *ProcessEnv, fset *token.FileSet, f *ast.File) {
+	if len(f.Decls) == 0 {
+		return
+	}
+
+	d, ok := f.Decls[0].(*ast.GenDecl)
+	if !ok || d.Tok != token.IMPORT {
+		// Not an import declaration, so we're done.
+		// Imports are always first.
+		return
+	}
+
+	if len(d.Specs) == 0 {
+		return
+	}
+
+	if !d.Lparen.IsValid() {
+		// Not a block: sorted by default.
+		return
+	}
+
+	for i, s := range d.Specs {
+		if i == 0 {
+			continue
+		}
+
+		p := s.Pos()
+		line := fset.Position(s.Pos()).Line
+		lastLine := fset.Position(d.Specs[i-1].End()).Line
+		for previousLine := line - 1; previousLine > lastLine; previousLine-- {
+			fset.File(p).MergeLine(previousLine)
+		}
+	}
+}
+
 // mergeImports merges all the import declarations into the first one.
 // Taken from golang.org/x/tools/ast/astutil.
 func mergeImports(env *ProcessEnv, fset *token.FileSet, f *ast.File) {
