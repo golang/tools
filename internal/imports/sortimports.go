@@ -89,7 +89,22 @@ func removeBlankLines(env *ProcessEnv, fset *token.FileSet, f *ast.File) {
 		line := fset.Position(s.Pos()).Line
 		lastLine := fset.Position(d.Specs[i-1].End()).Line
 		for previousLine := line - 1; previousLine > lastLine; previousLine-- {
-			fset.File(p).MergeLine(previousLine)
+			noComment := true
+			for _, c := range f.Comments {
+				commentLine := fset.Position(c.Pos()).Line
+				if commentLine < previousLine {
+					continue
+				}
+				if commentLine > previousLine {
+					break
+				}
+				noComment = false
+			}
+
+			// Exclude comment line
+			if noComment {
+				fset.File(p).MergeLine(previousLine)
+			}
 		}
 	}
 }
