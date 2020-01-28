@@ -21,7 +21,7 @@ const (
 )
 
 // Version is a manually-updated mechanism for tracking versions.
-var Version = "master"
+var Version = "v0.3.0-pre2"
 
 // PrintServerInfo writes HTML debug info to w for the Instance s.
 func PrintServerInfo(w io.Writer, s Instance) {
