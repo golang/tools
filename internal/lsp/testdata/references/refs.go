@@ -27,3 +27,7 @@ type e struct {
 func _() {
 	_ = e{}.i //@mark(embeddedIUse, "i")
 }
+
+const (
+	foo = iota //@refs("iota")
+)
