@@ -2159,18 +2159,15 @@ func testReturnErrorForContextCanceled(t *testing.T, exporter packagestest.Expor
 	exported.Config.Context = slowCtx
 	pkgs, err := packages.Load(exported.Config, "golang.org/fake/a")
 	if err != nil {
-		t.Fatal(err)
-	}
-	// flaky test, because of timings
-	// sometimes Load returns early with err "signal: killed" when tested under Module
-	want := packages.ContextCancelError
-	if len(pkgs) > 0 {
-		errKind := pkgs[0].Errors[0].Kind
-		if want != errKind {
-			t.Fatalf("want error kind: %v, got: %v", want, errKind)
+		if !strings.Contains(err.Error(), "signal: killed") {
+			t.Fatal(err)
 		}
-	} else {
-		t.Fatal("unexpected no packages returned")
+		return
+	}
+	want := packages.ContextCancelError
+	errKind := pkgs[0].Errors[0].Kind
+	if want != errKind {
+		t.Fatalf("want error kind: %v, got: %v", want, errKind)
 	}
 }
 
