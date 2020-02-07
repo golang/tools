@@ -2121,6 +2121,59 @@ func testReturnErrorForUnexpectedDirectoryLayout(t *testing.T, exporter packages
 	}
 }
 
+func TestReturnErrorForContextCanceled(t *testing.T) {
+	packagestest.TestAll(t, testReturnErrorForContextCanceled)
+}
+
+type slowContext struct {
+	context.Context
+	delay time.Duration
+}
+
+func (ctx slowContext) Err() error {
+	time.Sleep(ctx.delay)
+	return ctx.Context.Err()
+}
+
+func testReturnErrorForContextCanceled(t *testing.T, exporter packagestest.Exporter) {
+	exported := packagestest.Export(t, exporter, []packagestest.Module{{
+		Name: "golang.org/fake",
+		Files: map[string]interface{}{
+			"a/a.go": `package a; const A = "a" `,
+		}}})
+	defer exported.Cleanup()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// we need to slow a Load function to be able to test ctx cancellation
+	// in the middle of loading packages
+	slowCtx := slowContext{ctx, 10 * time.Millisecond}
+
+	go func() {
+		// should have delay before canceling
+		// otherwise returns early with 'signal killed'
+		time.Sleep(8 * time.Millisecond)
+		cancel()
+	}()
+
+	exported.Config.Mode = packages.LoadAllSyntax
+	exported.Config.Context = slowCtx
+	pkgs, err := packages.Load(exported.Config, "golang.org/fake/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// flaky test, because of timings
+	// sometimes Load returns early with err "signal: killed" when tested under Module
+	want := packages.ContextCancelError
+	if len(pkgs) > 0 {
+		errKind := pkgs[0].Errors[0].Kind
+		if want != errKind {
+			t.Fatalf("want error kind: %v, got: %v", want, errKind)
+		}
+	} else {
+		t.Fatal("unexpected no packages returned")
+	}
+}
+
 func TestMissingDependency(t *testing.T) { packagestest.TestAll(t, testMissingDependency) }
 func testMissingDependency(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{

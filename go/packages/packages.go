@@ -324,6 +324,7 @@ const (
 	ListError
 	ParseError
 	TypeError
+	ContextCancelError
 )
 
 func (err Error) Error() string {
@@ -781,14 +782,23 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 
 		default:
 			// unexpected impoverished error from parser?
+			errKind := UnknownError
+
+			// check if err from context
+			if ld.Context.Err() != nil {
+				errKind = ContextCancelError
+			}
+
 			errs = append(errs, Error{
 				Pos:  "-",
 				Msg:  err.Error(),
-				Kind: UnknownError,
+				Kind: errKind,
 			})
 
-			// If you see this error message, please file a bug.
-			log.Printf("internal error: error %q (%T) without position", err, err)
+			if errKind == UnknownError {
+				// If you see this error message, please file a bug.
+				log.Printf("internal error: error %q (%T) without position", err, err)
+			}
 		}
 
 		lpkg.Errors = append(lpkg.Errors, errs...)
