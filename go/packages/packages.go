@@ -647,18 +647,15 @@ func (ld *loader) refine(roots []string, list ...*Package) ([]*Package, error) {
 		}
 		wg.Wait()
 	}
-
+	// check is context still valid
+	if ld.Context.Err() != nil {
+		return nil, ld.Context.Err()
+	}
 	result := make([]*Package, len(initial))
 	for i, lpkg := range initial {
 		result[i] = lpkg.Package
 	}
 	for i := range ld.pkgs {
-		// return err on loading canceled by context
-		numErrs := len(ld.pkgs[i].Errors)
-		if numErrs > 0 &&
-			ld.pkgs[i].Errors[numErrs-1].Kind == ContextCancelError {
-			return nil, context.Canceled
-		}
 		// Clear all unrequested fields, for extra de-Hyrum-ization.
 		if ld.requestedMode&NeedName == 0 {
 			ld.pkgs[i].Name = ""
