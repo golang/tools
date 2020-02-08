@@ -2157,18 +2157,14 @@ func testReturnErrorForContextCanceled(t *testing.T, exporter packagestest.Expor
 
 	exported.Config.Mode = packages.LoadAllSyntax
 	exported.Config.Context = slowCtx
-	pkgs, err := packages.Load(exported.Config, "golang.org/fake/a")
-	if err != nil {
-		if !strings.Contains(err.Error(), "signal: killed") {
-			t.Fatal(err)
-		}
+	_, err := packages.Load(exported.Config, "golang.org/fake/a")
+	if err == nil {
+		t.Fatal("expected error got nil")
+	}
+	if err == context.Canceled || strings.Contains(err.Error(), "signal: killed") {
 		return
 	}
-	want := packages.ContextCancelError
-	errKind := pkgs[0].Errors[0].Kind
-	if want != errKind {
-		t.Fatalf("want error kind: %v, got: %v", want, errKind)
-	}
+	t.Fatalf("unexpected error %v", err)
 }
 
 func TestMissingDependency(t *testing.T) { packagestest.TestAll(t, testMissingDependency) }
