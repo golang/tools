@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package initflagparse defines an Analyzer that checks for invalid
-// conversions of uintptr to unsafe.Pointer.
+// usages of flag.Parse during package initialization
 package initflagparse
 
 import (
