@@ -371,6 +371,9 @@ func typeCheck(ctx context.Context, fset *token.FileSet, m *metadata, mode sourc
 			if err != nil {
 				return nil, err
 			}
+			if !depPkg.IsValidImportFor(string(pkg.pkgPath)) {
+				return nil, errors.Errorf("invalid use of internal package %s", pkgPath)
+			}
 			pkg.imports[depPkg.pkgPath] = depPkg
 			return depPkg.types, nil
 		}),

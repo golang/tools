@@ -8,6 +8,7 @@ import (
 	"context"
 	"go/ast"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
@@ -97,6 +98,19 @@ func (p *pkg) GetTypesSizes() types.Sizes {
 
 func (p *pkg) IsIllTyped() bool {
 	return p.types == nil || p.typesInfo == nil || p.typesSizes == nil
+}
+
+func (p *pkg) IsValidImportFor(parentPkgPath string) bool {
+	importPath := p.PkgPath()
+
+	pkgRootIndex := strings.Index(importPath, "/internal")
+	if pkgRootIndex != -1 && parentPkgPath != "command-line-arguments" {
+		if !strings.HasPrefix(parentPkgPath, importPath[0:pkgRootIndex]) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (p *pkg) ForTest() string {
