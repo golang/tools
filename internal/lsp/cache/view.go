@@ -370,8 +370,9 @@ func (v *view) refreshProcessEnv() {
 
 func (v *view) buildProcessEnv(ctx context.Context) (*imports.ProcessEnv, error) {
 	cfg := v.Config(ctx)
-	env := &imports.ProcessEnv{
+	processEnv := &imports.ProcessEnv{
 		WorkingDir: cfg.Dir,
+		BuildFlags: cfg.BuildFlags,
 		Logf: func(format string, args ...interface{}) {
 			log.Print(ctx, fmt.Sprintf(format, args...))
 		},
@@ -385,26 +386,20 @@ func (v *view) buildProcessEnv(ctx context.Context) (*imports.ProcessEnv, error)
 		}
 		switch split[0] {
 		case "GOPATH":
-			env.GOPATH = split[1]
+			processEnv.GOPATH = split[1]
 		case "GOROOT":
-			env.GOROOT = split[1]
+			processEnv.GOROOT = split[1]
 		case "GO111MODULE":
-			env.GO111MODULE = split[1]
+			processEnv.GO111MODULE = split[1]
 		case "GOPROXY":
-			env.GOPROXY = split[1]
+			processEnv.GOPROXY = split[1]
 		case "GOFLAGS":
-			env.GOFLAGS = split[1]
+			processEnv.GOFLAGS = split[1]
 		case "GOSUMDB":
-			env.GOSUMDB = split[1]
+			processEnv.GOSUMDB = split[1]
 		}
 	}
-	if len(cfg.BuildFlags) > 0 {
-		if env.GOFLAGS != "" {
-			env.GOFLAGS += " "
-		}
-		env.GOFLAGS += strings.Join(cfg.BuildFlags, " ")
-	}
-	return env, nil
+	return processEnv, nil
 }
 
 func (v *view) fileVersion(filename string) string {
