@@ -647,7 +647,7 @@ func (ld *loader) refine(roots []string, list ...*Package) ([]*Package, error) {
 		}
 		wg.Wait()
 	}
-	// check is context still valid
+	// Return early if the context has been canceled.
 	if ld.Context.Err() != nil {
 		return nil, ld.Context.Err()
 	}
