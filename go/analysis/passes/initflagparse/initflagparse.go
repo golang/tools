@@ -60,7 +60,7 @@ func checkForFlagParse(pass *analysis.Pass, x ast.Node) {
 		}
 
 		if ok && module.Name == "flag" && fun.Sel.Name == "Parse" {
-			pass.ReportRangef(x, "flag.Parse usage during module initialization")
+			pass.ReportRangef(x, "flag.Parse during package initialization")
 			return false
 		}
 		return true
