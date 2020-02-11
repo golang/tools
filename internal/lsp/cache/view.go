@@ -408,6 +408,10 @@ func (v *view) fileVersion(filename string) string {
 	return fh.Identity().String()
 }
 
+func (v *view) contains(uri span.URI) bool {
+	return strings.HasPrefix(string(uri), string(v.folder))
+}
+
 func (v *view) mapFile(uri span.URI, f *fileBase) {
 	v.filesByURI[uri] = f
 	if f.addURI(uri) == 1 {
