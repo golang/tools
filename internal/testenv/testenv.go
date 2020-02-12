@@ -69,9 +69,14 @@ func hasTool(tool string) error {
 				checkGoGoroot.err = err
 				return
 			}
-			GOROOT := strings.TrimSpace(string(out))
-			if GOROOT != runtime.GOROOT() {
-				checkGoGoroot.err = fmt.Errorf("'go env GOROOT' does not match runtime.GOROOT:\n\tgo env: %s\n\tGOROOT: %s", GOROOT, runtime.GOROOT())
+			toolGoRoot := strings.TrimSpace(string(out))
+			selfGoRoot := runtime.GOROOT()
+			if selfGoRoot == "GOROOT" {
+				// under 'bazel test'
+				selfGoRoot = os.Getenv("GOROOT")
+			}
+			if len(selfGoroot) > 0 && toolGoRoot != selfGoRoot {
+				checkGoGoroot.err = fmt.Errorf("'go env GOROOT' does not match runtime.GOROOT:\n\tgo env: %s\n\tGOROOT: %s", toolGoRoot, selfGoRoot)
 			}
 		})
 		if checkGoGoroot.err != nil {
