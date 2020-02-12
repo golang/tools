@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -69,9 +70,18 @@ func hasTool(tool string) error {
 				checkGoGoroot.err = err
 				return
 			}
-			GOROOT := strings.TrimSpace(string(out))
-			if GOROOT != runtime.GOROOT() {
-				checkGoGoroot.err = fmt.Errorf("'go env GOROOT' does not match runtime.GOROOT:\n\tgo env: %s\n\tGOROOT: %s", GOROOT, runtime.GOROOT())
+			goEnvRoot, err := filepath.Abs(string(out))
+			if err != nil {
+				checkGoGoroot.err = err
+				return
+			}
+			runtimeRoot, err := filepath.Abs(runtime.GOROOT())
+			if err != nil {
+				checkGoGoroot.err = err
+				return
+			}
+			if goEnvRoot != runtimeRoot {
+				checkGoGoroot.err = fmt.Errorf("'go env GOROOT' does not match runtime.GOROOT:\n\tgo env: %s\n\tGOROOT: %s", goEnvRoot, runtimeRoot)
 			}
 		})
 		if checkGoGoroot.err != nil {
