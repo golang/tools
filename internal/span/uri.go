@@ -58,7 +58,7 @@ func NewURI(s string) URI {
 		// Handle microsoft/vscode#75027 by making it a special case.
 		// On Windows, VS Code sends file URIs that look like file:///C%3A/x/y/z.
 		// Replace the %3A so that the URI looks like: file:///C:/x/y/z.
-		if strings.ToLower(s[i+2:i+5]) == "%3a" {
+		if len(s) >= i+5 && strings.ToLower(s[i+2:i+5]) == "%3a" {
 			s = s[:i+2] + ":" + s[i+5:]
 		}
 		// File URIs from Windows may have lowercase drive letters.

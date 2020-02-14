@@ -71,6 +71,16 @@ func TestURI(t *testing.T) {
 			wantFile: `/path/to/%p%ercent%/per%cent.go`,
 			wantURI:  span.URI(`file:///path/to/%25p%25ercent%25/per%25cent.go`),
 		},
+		{
+			path:     `file:///C%3A/`,
+			wantFile: `C:/`,
+			wantURI:  span.URI(`file:///C:/`),
+		},
+		{
+			path:     `file:///`,
+			wantFile: `/`,
+			wantURI:  span.URI(`file:///`),
+		},
 	} {
 		got := span.NewURI(test.path)
 		if got != test.wantURI {
