@@ -54,6 +54,19 @@ func (ph *packageHandle) packageKey() packageKey {
 	}
 }
 
+func (ph *packageHandle) IsValidImportFor(parentPkgPath string) bool {
+	importPath := string(ph.m.pkgPath)
+
+	pkgRootIndex := strings.Index(importPath, "/internal")
+	if pkgRootIndex != -1 && parentPkgPath != "command-line-arguments" {
+		if !strings.HasPrefix(parentPkgPath, importPath[0:pkgRootIndex]) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // packageData contains the data produced by type-checking a package.
 type packageData struct {
 	memoize.NoCopy
@@ -367,12 +380,12 @@ func typeCheck(ctx context.Context, fset *token.FileSet, m *metadata, mode sourc
 			if dep == nil {
 				return nil, errors.Errorf("no package for import %s", pkgPath)
 			}
+			if !dep.IsValidImportFor(string(pkg.pkgPath)) {
+				return nil, errors.Errorf("invalid use of internal package %s", pkgPath)
+			}
 			depPkg, err := dep.check(ctx)
 			if err != nil {
 				return nil, err
-			}
-			if !depPkg.IsValidImportFor(string(pkg.pkgPath)) {
-				return nil, errors.Errorf("invalid use of internal package %s", pkgPath)
 			}
 			pkg.imports[depPkg.pkgPath] = depPkg
 			return depPkg.types, nil
