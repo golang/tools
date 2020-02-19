@@ -57,7 +57,7 @@ func (ph *packageHandle) packageKey() packageKey {
 func (ph *packageHandle) isValidImportFor(parentPkgPath string) bool {
 	importPath := string(ph.m.pkgPath)
 
-	pkgRootIndex := strings.Index(importPath, "/internal")
+	pkgRootIndex := strings.Index(importPath, "/internal/")
 	if pkgRootIndex != -1 && parentPkgPath != "command-line-arguments" {
 		if !strings.HasPrefix(parentPkgPath, importPath[0:pkgRootIndex]) {
 			return false
