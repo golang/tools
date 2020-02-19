@@ -54,7 +54,7 @@ func (ph *packageHandle) packageKey() packageKey {
 	}
 }
 
-func (ph *packageHandle) IsValidImportFor(parentPkgPath string) bool {
+func (ph *packageHandle) isValidImportFor(parentPkgPath string) bool {
 	importPath := string(ph.m.pkgPath)
 
 	pkgRootIndex := strings.Index(importPath, "/internal")
@@ -380,7 +380,7 @@ func typeCheck(ctx context.Context, fset *token.FileSet, m *metadata, mode sourc
 			if dep == nil {
 				return nil, errors.Errorf("no package for import %s", pkgPath)
 			}
-			if !dep.IsValidImportFor(pkg.PkgPath()) {
+			if !dep.isValidImportFor(pkg.PkgPath()) {
 				return nil, errors.Errorf("invalid use of internal package %s", pkgPath)
 			}
 			depPkg, err := dep.check(ctx)
