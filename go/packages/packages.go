@@ -324,7 +324,6 @@ const (
 	ListError
 	ParseError
 	TypeError
-	ContextCancelError
 )
 
 func (err Error) Error() string {
@@ -647,10 +646,7 @@ func (ld *loader) refine(roots []string, list ...*Package) ([]*Package, error) {
 		}
 		wg.Wait()
 	}
-	// Return early if the context has been canceled.
-	if ld.Context.Err() != nil {
-		return nil, ld.Context.Err()
-	}
+
 	result := make([]*Package, len(initial))
 	for i, lpkg := range initial {
 		result[i] = lpkg.Package
@@ -785,20 +781,13 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 
 		default:
 			// unexpected impoverished error from parser?
-			errKind := UnknownError
-
-			// check if err from context
-			if ld.Context.Err() != nil {
-				errKind = ContextCancelError
-			}
-
 			errs = append(errs, Error{
 				Pos:  "-",
 				Msg:  err.Error(),
-				Kind: errKind,
+				Kind: UnknownError,
 			})
 
-			if errKind == UnknownError {
+			if ld.Context.Err() == nil {
 				// If you see this error message, please file a bug.
 				log.Printf("internal error: error %q (%T) without position", err, err)
 			}
