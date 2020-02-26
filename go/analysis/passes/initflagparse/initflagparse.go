@@ -8,16 +8,17 @@ package initflagparse
 
 import (
 	"go/ast"
+	"go/types"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-const Doc = `check for usage of flag.Parse during modules init
+const Doc = `check for calls to flag.Parse within packages init
 
-The initflagparse analyzer reports incorrect uses of flag.Parse during
-the init of the modules.`
+The initflagparse analyzer reports incorrect calls to flag.Parse within
+the init of the packages.`
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "initflagparse",
@@ -59,8 +60,18 @@ func checkForFlagParse(pass *analysis.Pass, x ast.Node) {
 			return true
 		}
 
-		if ok && module.Name == "flag" && fun.Sel.Name == "Parse" {
-			pass.ReportRangef(x, "flag.Parse during package initialization")
+		obj := pass.TypesInfo.ObjectOf(module)
+		if obj == nil {
+			return true
+		}
+
+		pkgObj, ok := obj.(*types.PkgName)
+		if !ok || pkgObj.Imported() == nil {
+			return true
+		}
+
+		if ok && obj != nil && pkgObj.Imported().Name() == "flag" && fun.Sel.Name == "Parse" {
+			pass.ReportRangef(x, "flag.Parse call within package initialization")
 			return false
 		}
 		return true

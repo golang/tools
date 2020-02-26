@@ -2,20 +2,20 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package a
+package b
 
-import "flag"
+import x "flag"
 
 func init() {
-	flag.Parse() // want `flag.Parse call within package initialization`
+	x.Parse() // want `flag.Parse call within package initialization`
 }
 
 type Test struct{}
 
 func (_ *Test) init() {
-	flag.Parse()
+	x.Parse()
 }
 
 func main() {
-	flag.Parse()
+	x.Parse()
 }
