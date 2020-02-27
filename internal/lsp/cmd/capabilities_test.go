@@ -10,7 +10,6 @@ import (
 	"golang.org/x/tools/internal/lsp"
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/span"
 	errors "golang.org/x/xerrors"
 )
 
@@ -36,11 +35,11 @@ func TestCapabilities(t *testing.T) {
 	defer c.terminate(ctx)
 
 	params := &protocol.ParamInitialize{}
-	params.RootURI = string(span.FileURI(c.Client.app.wd))
+	params.RootURI = protocol.URIFromPath(c.Client.app.wd)
 	params.Capabilities.Workspace.Configuration = true
 
 	// Send an initialize request to the server.
-	ctx, c.Server = lsp.NewClientServer(ctx, cache.New(app.options).NewSession(), c.Client)
+	c.Server = lsp.NewServer(cache.New(app.options, nil).NewSession(), c.Client)
 	result, err := c.Server.Initialize(ctx, params)
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +54,7 @@ func TestCapabilities(t *testing.T) {
 	}
 
 	// Open the file on the server side.
-	uri := protocol.NewURI(span.FileURI(tmpFile))
+	uri := protocol.URIFromPath(tmpFile)
 	if err := c.Server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
 		TextDocument: protocol.TextDocumentItem{
 			URI:        uri,

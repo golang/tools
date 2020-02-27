@@ -18,8 +18,8 @@ import (
 	"sync"
 	"testing"
 
+	"golang.org/x/mod/module"
 	"golang.org/x/tools/internal/gopathwalk"
-	"golang.org/x/tools/internal/module"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
 )
@@ -231,10 +231,10 @@ import _ "rsc.io/sampler"
 	mt.assertModuleFoundInDir("rsc.io/sampler", "sampler", `pkg.*mod.*/sampler@.*$`)
 
 	// Populate vendor/ and clear out the mod cache so we can't cheat.
-	if _, err := mt.env.invokeGo("mod", "vendor"); err != nil {
+	if _, err := mt.env.invokeGo(context.Background(), "mod", "vendor"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := mt.env.invokeGo("clean", "-modcache"); err != nil {
+	if _, err := mt.env.invokeGo(context.Background(), "clean", "-modcache"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -259,7 +259,7 @@ import _ "rsc.io/sampler"
 	defer mt.cleanup()
 
 	// Populate vendor/.
-	if _, err := mt.env.invokeGo("mod", "vendor"); err != nil {
+	if _, err := mt.env.invokeGo(context.Background(), "mod", "vendor"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -686,7 +686,7 @@ func setup(t *testing.T, main, wd string) *modTest {
 		t.Fatalf("checking if go.mod exists: %v", err)
 	}
 	if err == nil {
-		if _, err := env.invokeGo("mod", "download"); err != nil {
+		if _, err := env.invokeGo(context.Background(), "mod", "download"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -739,7 +739,7 @@ func writeProxyModule(base, arPath string) error {
 	i := strings.LastIndex(arName, "_v")
 	ver := strings.TrimSuffix(arName[i+1:], ".txt")
 	modDir := strings.Replace(arName[:i], "_", "/", -1)
-	modPath, err := module.DecodePath(modDir)
+	modPath, err := module.UnescapePath(modDir)
 	if err != nil {
 		return err
 	}
@@ -868,7 +868,7 @@ import _ "rsc.io/quote"
 `, "")
 	defer mt.cleanup()
 
-	if _, err := mt.env.invokeGo("mod", "download", "rsc.io/quote/v2@v2.0.1"); err != nil {
+	if _, err := mt.env.invokeGo(context.Background(), "mod", "download", "rsc.io/quote/v2@v2.0.1"); err != nil {
 		t.Fatal(err)
 	}
 

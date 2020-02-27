@@ -9,26 +9,14 @@ import (
 
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
 )
 
 func (s *Server) references(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
-	uri := span.NewURI(params.TextDocument.URI)
-	view, err := s.session.ViewOf(uri)
-	if err != nil {
+	snapshot, fh, ok, err := s.beginFileRequest(params.TextDocument.URI, source.Go)
+	if !ok {
 		return nil, err
 	}
-	snapshot := view.Snapshot()
-	fh, err := snapshot.GetFile(uri)
-	if err != nil {
-		return nil, err
-	}
-	// Find all references to the identifier at the position.
-	if fh.Identity().Kind != source.Go {
-		return nil, nil
-	}
-
-	references, err := source.References(ctx, view.Snapshot(), fh, params.Position, params.Context.IncludeDeclaration)
+	references, err := source.References(ctx, snapshot, fh, params.Position, params.Context.IncludeDeclaration)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +29,7 @@ func (s *Server) references(ctx context.Context, params *protocol.ReferenceParam
 		}
 
 		locations = append(locations, protocol.Location{
-			URI:   protocol.NewURI(ref.URI()),
+			URI:   protocol.URIFromSpanURI(ref.URI()),
 			Range: refRange,
 		})
 	}

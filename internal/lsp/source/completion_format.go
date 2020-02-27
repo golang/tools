@@ -134,8 +134,10 @@ func (c *completer) item(cand candidate) (CompletionItem, error) {
 	var prefixOp string
 	if cand.takeAddress {
 		prefixOp = "&"
-	} else if cand.makePointer || cand.dereference {
+	} else if cand.makePointer {
 		prefixOp = "*"
+	} else if cand.dereference > 0 {
+		prefixOp = strings.Repeat("*", cand.dereference)
 	}
 
 	if prefixOp != "" {
@@ -177,7 +179,7 @@ func (c *completer) item(cand candidate) (CompletionItem, error) {
 	if !pos.IsValid() {
 		return item, nil
 	}
-	uri := span.FileURI(pos.Filename)
+	uri := span.URIFromPath(pos.Filename)
 
 	// Find the source file of the candidate, starting from a package
 	// that should have it in its dependencies.
@@ -211,7 +213,7 @@ func (c *completer) importEdits(imp *importInfo) ([]protocol.TextEdit, error) {
 		return nil, nil
 	}
 
-	uri := span.FileURI(c.filename)
+	uri := span.URIFromPath(c.filename)
 	var ph ParseGoHandle
 	for _, h := range c.pkg.CompiledGoFiles() {
 		if h.File().Identity().URI == uri {

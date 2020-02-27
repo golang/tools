@@ -22,11 +22,10 @@ import (
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp"
 	"golang.org/x/tools/internal/lsp/cache"
+	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/export"
-	"golang.org/x/tools/internal/telemetry/export/ocagent"
 	"golang.org/x/tools/internal/tool"
 	"golang.org/x/tools/internal/xcontext"
 	errors "golang.org/x/xerrors"
@@ -58,7 +57,7 @@ type Application struct {
 	env []string
 
 	// Support for remote lsp server
-	Remote string `flag:"remote" help:"*EXPERIMENTAL* - forward all commands to a remote lsp"`
+	Remote string `flag:"remote" help:"*EXPERIMENTAL* - forward all commands to a remote lsp specified by this flag. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. If 'auto', or prefixed by 'auto', the remote address is automatically resolved based on the executing environment. Otherwise, TCP is used."`
 
 	// Enable verbose logging
 	Verbose bool `flag:"v" help:"verbose output"`
@@ -69,6 +68,8 @@ type Application struct {
 	// PrepareOptions is called to update the options when a new view is built.
 	// It is primarily to allow the behavior of gopls to be modified by hooks.
 	PrepareOptions func(*source.Options)
+
+	debug *debug.Instance
 }
 
 // New returns a new Application ready to run.
@@ -130,10 +131,7 @@ gopls flags are:
 // If no arguments are passed it will invoke the server sub command, as a
 // temporary measure for compatibility.
 func (app *Application) Run(ctx context.Context, args ...string) error {
-	ocConfig := ocagent.Discover()
-	//TODO: we should not need to adjust the discovered configuration
-	ocConfig.Address = app.OCAgent
-	export.AddExporters(ocagent.Connect(ocConfig))
+	app.debug = debug.NewInstance(app.wd, app.OCAgent)
 	app.Serve.app = app
 	if len(args) == 0 {
 		return tool.Run(ctx, &app.Serve, args)
@@ -174,6 +172,7 @@ func (app *Application) featureCommands() []tool.Application {
 		&implementation{app: app},
 		&imports{app: app},
 		&links{app: app},
+		&prepareRename{app: app},
 		&query{app: app},
 		&references{app: app},
 		&rename{app: app},
@@ -189,54 +188,54 @@ var (
 )
 
 func (app *Application) connect(ctx context.Context) (*connection, error) {
-	switch app.Remote {
-	case "":
+	switch {
+	case app.Remote == "":
 		connection := newConnection(app)
-		ctx, connection.Server = lsp.NewClientServer(ctx, cache.New(app.options).NewSession(), connection.Client)
+		connection.Server = lsp.NewServer(cache.New(app.options, nil).NewSession(), connection.Client)
+		ctx = protocol.WithClient(ctx, connection.Client)
 		return connection, connection.initialize(ctx, app.options)
-	case "internal":
+	case strings.HasPrefix(app.Remote, "internal@"):
 		internalMu.Lock()
 		defer internalMu.Unlock()
 		if c := internalConnections[app.wd]; c != nil {
 			return c, nil
 		}
-		connection := newConnection(app)
+		remote := app.Remote[len("internal@"):]
 		ctx := xcontext.Detach(ctx) //TODO:a way of shutting down the internal server
-		cr, sw, _ := os.Pipe()
-		sr, cw, _ := os.Pipe()
-		var jc *jsonrpc2.Conn
-		ctx, jc, connection.Server = protocol.NewClient(ctx, jsonrpc2.NewHeaderStream(cr, cw), connection.Client)
-		go jc.Run(ctx)
-		go func() {
-			ctx, srv := lsp.NewServer(ctx, cache.New(app.options).NewSession(), jsonrpc2.NewHeaderStream(sr, sw))
-			srv.Run(ctx)
-		}()
-		if err := connection.initialize(ctx, app.options); err != nil {
+		connection, err := app.connectRemote(ctx, remote)
+		if err != nil {
 			return nil, err
 		}
 		internalConnections[app.wd] = connection
 		return connection, nil
 	default:
-		connection := newConnection(app)
-		conn, err := net.Dial("tcp", app.Remote)
-		if err != nil {
-			return nil, err
-		}
-		stream := jsonrpc2.NewHeaderStream(conn, conn)
-		var jc *jsonrpc2.Conn
-		ctx, jc, connection.Server = protocol.NewClient(ctx, stream, connection.Client)
-		go jc.Run(ctx)
-		return connection, connection.initialize(ctx, app.options)
+		return app.connectRemote(ctx, app.Remote)
 	}
+}
+
+func (app *Application) connectRemote(ctx context.Context, remote string) (*connection, error) {
+	connection := newConnection(app)
+	conn, err := net.Dial("tcp", remote)
+	if err != nil {
+		return nil, err
+	}
+	stream := jsonrpc2.NewHeaderStream(conn, conn)
+	cc := jsonrpc2.NewConn(stream)
+	connection.Server = protocol.ServerDispatcher(cc)
+	cc.AddHandler(protocol.ClientHandler(connection.Client))
+	cc.AddHandler(protocol.Canceller{})
+	ctx = protocol.WithClient(ctx, connection.Client)
+	go cc.Run(ctx)
+	return connection, connection.initialize(ctx, app.options)
 }
 
 func (c *connection) initialize(ctx context.Context, options func(*source.Options)) error {
 	params := &protocol.ParamInitialize{}
-	params.RootURI = string(span.FileURI(c.Client.app.wd))
+	params.RootURI = protocol.URIFromPath(c.Client.app.wd)
 	params.Capabilities.Workspace.Configuration = true
 
 	// Make sure to respect configured options when sending initialize request.
-	opts := source.DefaultOptions
+	opts := source.DefaultOptions()
 	if options != nil {
 		options(&opts)
 	}
@@ -286,6 +285,15 @@ func newConnection(app *Application) *connection {
 			files: make(map[span.URI]*cmdFile),
 		},
 	}
+}
+
+// fileURI converts a DocumentURI to a file:// span.URI, panicking if it's not a file.
+func fileURI(uri protocol.DocumentURI) span.URI {
+	sURI := uri.SpanURI()
+	if !sURI.IsFile() {
+		panic(fmt.Sprintf("%q is not a file URI", uri))
+	}
+	return sURI
 }
 
 func (c *cmdClient) ShowMessage(ctx context.Context, p *protocol.ShowMessageParams) error { return nil }
@@ -368,8 +376,7 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 	c.filesMu.Lock()
 	defer c.filesMu.Unlock()
 
-	uri := span.URI(p.URI)
-	file := c.getFile(ctx, uri)
+	file := c.getFile(ctx, fileURI(p.URI))
 	file.diagnostics = p.Diagnostics
 	return nil
 }
@@ -419,7 +426,7 @@ func (c *connection) AddFile(ctx context.Context, uri span.URI) *cmdFile {
 	file.added = true
 	p := &protocol.DidOpenTextDocumentParams{
 		TextDocument: protocol.TextDocumentItem{
-			URI:        protocol.NewURI(uri),
+			URI:        protocol.URIFromSpanURI(uri),
 			LanguageID: source.DetectLanguage("", file.uri.Filename()).String(),
 			Version:    1,
 			Text:       string(file.mapper.Content),
@@ -446,7 +453,7 @@ func (c *connection) diagnoseFiles(ctx context.Context, files []span.URI) error 
 }
 
 func (c *connection) terminate(ctx context.Context) {
-	if c.Client.app.Remote == "internal" {
+	if strings.HasPrefix(c.Client.app.Remote, "internal@") {
 		// internal connections need to be left alive for the next test
 		return
 	}

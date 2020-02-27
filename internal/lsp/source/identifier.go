@@ -48,15 +48,15 @@ type Declaration struct {
 
 // Identifier returns identifier information for a position
 // in a file, accounting for a potentially incomplete selector.
-func Identifier(ctx context.Context, snapshot Snapshot, fh FileHandle, pos protocol.Position, selectPackage PackagePolicy) (*IdentifierInfo, error) {
+func Identifier(ctx context.Context, snapshot Snapshot, fh FileHandle, pos protocol.Position) (*IdentifierInfo, error) {
 	ctx, done := trace.StartSpan(ctx, "source.Identifier")
 	defer done()
 
-	pkg, pgh, err := getParsedFile(ctx, snapshot, fh, selectPackage)
+	pkg, pgh, err := getParsedFile(ctx, snapshot, fh, NarrowestPackageHandle)
 	if err != nil {
 		return nil, fmt.Errorf("getting file for Identifier: %v", err)
 	}
-	file, m, _, err := pgh.Cached()
+	file, _, m, _, err := pgh.Cached()
 	if err != nil {
 		return nil, err
 	}

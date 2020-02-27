@@ -109,7 +109,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	if hover == nil {
 		return errors.Errorf("%v: not an identifier", from)
 	}
-	file = conn.AddFile(ctx, span.NewURI(locs[0].URI))
+	file = conn.AddFile(ctx, fileURI(locs[0].URI))
 	if file.err != nil {
 		return errors.Errorf("%v: %v", from, file.err)
 	}
@@ -133,9 +133,6 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 		}
 	default:
 		return errors.Errorf("unknown emulation for definition: %s", d.query.Emulate)
-	}
-	if err != nil {
-		return err
 	}
 	if d.query.JSON {
 		enc := json.NewEncoder(os.Stdout)

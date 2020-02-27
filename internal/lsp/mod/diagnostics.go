@@ -8,7 +8,10 @@ package mod
 
 import (
 	"context"
+	"fmt"
+	"regexp"
 
+	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/telemetry"
@@ -16,13 +19,13 @@ import (
 	"golang.org/x/tools/internal/telemetry/trace"
 )
 
-func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[source.FileIdentity][]source.Diagnostic, error) {
+func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[source.FileIdentity][]source.Diagnostic, map[string]*modfile.Require, error) {
 	// TODO: We will want to support diagnostics for go.mod files even when the -modfile flag is turned off.
 	realURI, tempURI := snapshot.View().ModFiles()
 
 	// Check the case when the tempModfile flag is turned off.
 	if realURI == "" || tempURI == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	ctx, done := trace.StartSpan(ctx, "mod.Diagnostics", telemetry.File.Of(realURI))
@@ -30,11 +33,15 @@ func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[source.File
 
 	realfh, err := snapshot.GetFile(realURI)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	_, _, _, parseErrors, err := snapshot.ModTidyHandle(ctx, realfh).Tidy(ctx)
+	mth, err := snapshot.ModTidyHandle(ctx, realfh)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	_, _, missingDeps, parseErrors, err := mth.Tidy(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	reports := map[source.FileIdentity][]source.Diagnostic{
@@ -54,11 +61,15 @@ func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[source.File
 		}
 		reports[realfh.Identity()] = append(reports[realfh.Identity()], diag)
 	}
-	return reports, nil
+	return reports, missingDeps, nil
 }
 
 func SuggestedFixes(ctx context.Context, snapshot source.Snapshot, realfh source.FileHandle, diags []protocol.Diagnostic) []protocol.CodeAction {
-	_, _, _, parseErrors, err := snapshot.ModTidyHandle(ctx, realfh).Tidy(ctx)
+	mth, err := snapshot.ModTidyHandle(ctx, realfh)
+	if err != nil {
+		return nil
+	}
+	_, _, _, parseErrors, err := mth.Tidy(ctx)
 	if err != nil {
 		return nil
 	}
@@ -94,7 +105,7 @@ func SuggestedFixes(ctx context.Context, snapshot source.Snapshot, realfh source
 						TextDocument: protocol.VersionedTextDocumentIdentifier{
 							Version: fh.Identity().Version,
 							TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-								URI: protocol.NewURI(fh.Identity().URI),
+								URI: protocol.URIFromSpanURI(fh.Identity().URI),
 							},
 						},
 						Edits: edits,
@@ -105,6 +116,89 @@ func SuggestedFixes(ctx context.Context, snapshot source.Snapshot, realfh source
 		}
 	}
 	return actions
+}
+
+func SuggestedGoFixes(ctx context.Context, snapshot source.Snapshot, gofh source.FileHandle, diags []protocol.Diagnostic) ([]protocol.CodeAction, error) {
+	// TODO: We will want to support diagnostics for go.mod files even when the -modfile flag is turned off.
+	realURI, tempURI := snapshot.View().ModFiles()
+
+	// Check the case when the tempModfile flag is turned off.
+	if realURI == "" || tempURI == "" {
+		return nil, nil
+	}
+
+	ctx, done := trace.StartSpan(ctx, "mod.SuggestedGoFixes", telemetry.File.Of(realURI))
+	defer done()
+
+	realfh, err := snapshot.GetFile(realURI)
+	if err != nil {
+		return nil, err
+	}
+	mth, err := snapshot.ModTidyHandle(ctx, realfh)
+	if err != nil {
+		return nil, err
+	}
+	realFile, realMapper, missingDeps, _, err := mth.Tidy(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Get the contents of the go.mod file before we make any changes.
+	oldContents, _, err := realfh.Read(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var actions []protocol.CodeAction
+	for _, diag := range diags {
+		re := regexp.MustCompile(`(.+) is not in your go.mod file`)
+		matches := re.FindStringSubmatch(diag.Message)
+		if len(matches) != 2 {
+			continue
+		}
+		req := missingDeps[matches[1]]
+		if req == nil {
+			continue
+		}
+		// Calculate the quick fix edits that need to be made to the go.mod file.
+		if err := realFile.AddRequire(req.Mod.Path, req.Mod.Version); err != nil {
+			return nil, err
+		}
+		realFile.Cleanup()
+		newContents, err := realFile.Format()
+		if err != nil {
+			return nil, err
+		}
+		// Reset the *modfile.File back to before we added the dependency.
+		if err := realFile.DropRequire(req.Mod.Path); err != nil {
+			return nil, err
+		}
+		// Calculate the edits to be made due to the change.
+		diff := snapshot.View().Options().ComputeEdits(realfh.Identity().URI, string(oldContents), string(newContents))
+		edits, err := source.ToProtocolEdits(realMapper, diff)
+		if err != nil {
+			return nil, err
+		}
+		action := protocol.CodeAction{
+			Title:       fmt.Sprintf("Add %s to go.mod", req.Mod.Path),
+			Kind:        protocol.QuickFix,
+			Diagnostics: []protocol.Diagnostic{diag},
+			Edit: protocol.WorkspaceEdit{
+				DocumentChanges: []protocol.TextDocumentEdit{
+					{
+						TextDocument: protocol.VersionedTextDocumentIdentifier{
+							Version: realfh.Identity().Version,
+							TextDocumentIdentifier: protocol.TextDocumentIdentifier{
+								URI: protocol.URIFromSpanURI(realfh.Identity().URI),
+							},
+						},
+						Edits: edits,
+					},
+				},
+			},
+		}
+		actions = append(actions, action)
+	}
+	return actions, nil
 }
 
 func sameDiagnostic(d protocol.Diagnostic, e source.Error) bool {

@@ -44,6 +44,32 @@ type HoverInformation struct {
 	comment *ast.CommentGroup
 }
 
+func Hover(ctx context.Context, snapshot Snapshot, fh FileHandle, position protocol.Position) (*protocol.Hover, error) {
+	ident, err := Identifier(ctx, snapshot, fh, position)
+	if err != nil {
+		return nil, nil
+	}
+	h, err := ident.Hover(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rng, err := ident.Range()
+	if err != nil {
+		return nil, err
+	}
+	hover, err := FormatHover(h, snapshot.View().Options())
+	if err != nil {
+		return nil, err
+	}
+	return &protocol.Hover{
+		Contents: protocol.MarkupContent{
+			Kind:  snapshot.View().Options().PreferredContentFormat,
+			Value: hover,
+		},
+		Range: rng,
+	}, nil
+}
+
 func (i *IdentifierInfo) Hover(ctx context.Context) (*HoverInformation, error) {
 	ctx, done := trace.StartSpan(ctx, "source.Hover")
 	defer done()
@@ -81,9 +107,21 @@ func (i *IdentifierInfo) linkAndSymbolName() (string, string) {
 	}
 	switch obj := obj.(type) {
 	case *types.PkgName:
-		return obj.Imported().Path(), obj.Name()
+		path := obj.Imported().Path()
+		if mod, version, ok := moduleAtVersion(path, i); ok {
+			path = strings.Replace(path, mod, mod+"@"+version, 1)
+		}
+		return path, obj.Name()
 	case *types.Builtin:
 		return fmt.Sprintf("builtin#%s", obj.Name()), obj.Name()
+	}
+	// Check if the identifier is test-only (and is therefore not part of a
+	// package's API). This is true if the request originated in a test package,
+	// and if the declaration is also found in the same test package.
+	if i.pkg != nil && obj.Pkg() != nil && i.pkg.ForTest() != "" {
+		if _, pkg, _ := FindFileInPackage(i.pkg, i.Declaration.URI()); i.pkg == pkg {
+			return "", ""
+		}
 	}
 	// Don't return links for other unexported types.
 	if !obj.Exported() {
@@ -120,13 +158,35 @@ func (i *IdentifierInfo) linkAndSymbolName() (string, string) {
 			}
 		}
 	}
+	path := obj.Pkg().Path()
+	if mod, version, ok := moduleAtVersion(path, i); ok {
+		path = strings.Replace(path, mod, mod+"@"+version, 1)
+	}
 	if rTypeName != "" {
-		link := fmt.Sprintf("%s#%s.%s", obj.Pkg().Path(), rTypeName, obj.Name())
+		link := fmt.Sprintf("%s#%s.%s", path, rTypeName, obj.Name())
 		symbol := fmt.Sprintf("(%s.%s).%s", obj.Pkg().Name(), rTypeName, obj.Name())
 		return link, symbol
 	}
 	// For most cases, the link is "package/path#symbol".
-	return fmt.Sprintf("%s#%s", obj.Pkg().Path(), obj.Name()), fmt.Sprintf("%s.%s", obj.Pkg().Name(), obj.Name())
+	return fmt.Sprintf("%s#%s", path, obj.Name()), fmt.Sprintf("%s.%s", obj.Pkg().Name(), obj.Name())
+}
+
+func moduleAtVersion(path string, i *IdentifierInfo) (string, string, bool) {
+	if strings.ToLower(i.Snapshot.View().Options().LinkTarget) != "pkg.go.dev" {
+		return "", "", false
+	}
+	impPkg, err := i.pkg.GetImport(path)
+	if err != nil {
+		return "", "", false
+	}
+	if impPkg.Module() == nil {
+		return "", "", false
+	}
+	version, modpath := impPkg.Module().Version, impPkg.Module().Path
+	if modpath == "" || version == "" {
+		return "", "", false
+	}
+	return modpath, version, true
 }
 
 // objectString is a wrapper around the types.ObjectString function.

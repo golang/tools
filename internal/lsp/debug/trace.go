@@ -17,7 +17,7 @@ import (
 	"golang.org/x/tools/internal/telemetry"
 )
 
-var traceTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
+var traceTmpl = template.Must(template.Must(baseTemplate.Clone()).Parse(`
 {{define "title"}}Trace Information{{end}}
 {{define "body"}}
 	{{range .Traces}}<a href="/trace/{{.Name}}">{{.Name}}</a> last: {{.Last.Duration}}, longest: {{.Longest.Duration}}<br>{{end}}
@@ -129,12 +129,6 @@ func (t *traces) FinishSpan(ctx context.Context, span *telemetry.Span) {
 		fillOffsets(td, td.Start)
 	}
 }
-
-func (t *traces) Log(ctx context.Context, event telemetry.Event) {}
-
-func (t *traces) Metric(ctx context.Context, data telemetry.MetricData) {}
-
-func (t *traces) Flush() {}
 
 func (t *traces) getData(req *http.Request) interface{} {
 	if len(t.sets) == 0 {

@@ -15,25 +15,19 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/telemetry"
-	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/telemetry/log"
 	errors "golang.org/x/xerrors"
 )
 
 func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
-	uri := span.NewURI(params.TextDocument.URI)
-	view, err := s.session.ViewOf(uri)
-	if err != nil {
+	snapshot, fh, ok, err := s.beginFileRequest(params.TextDocument.URI, source.UnknownKind)
+	if !ok {
 		return nil, err
 	}
-	snapshot := view.Snapshot()
-	fh, err := snapshot.GetFile(uri)
-	if err != nil {
-		return nil, err
-	}
+	uri := fh.Identity().URI
 
 	// Determine the supported actions for this file kind.
-	supportedCodeActions, ok := view.Options().SupportedCodeActions[fh.Identity().Kind]
+	supportedCodeActions, ok := snapshot.View().Options().SupportedCodeActions[fh.Identity().Kind]
 	if !ok {
 		return nil, fmt.Errorf("no supported code actions for %v file kind", fh.Identity().Kind)
 	}
@@ -56,6 +50,9 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 	var codeActions []protocol.CodeAction
 	switch fh.Identity().Kind {
 	case source.Mod:
+		if diagnostics := params.Context.Diagnostics; len(diagnostics) > 0 {
+			codeActions = append(codeActions, mod.SuggestedFixes(ctx, snapshot, fh, diagnostics)...)
+		}
 		if !wanted[protocol.SourceOrganizeImports] {
 			codeActions = append(codeActions, protocol.CodeAction{
 				Title: "Tidy",
@@ -66,9 +63,6 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 					Arguments: []interface{}{fh.Identity().URI},
 				},
 			})
-		}
-		if diagnostics := params.Context.Diagnostics; len(diagnostics) > 0 {
-			codeActions = append(codeActions, mod.SuggestedFixes(ctx, snapshot, fh, diagnostics)...)
 		}
 	case source.Go:
 		edits, editsPerFix, err := source.AllImportsFixes(ctx, snapshot, fh)
@@ -100,6 +94,13 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 						})
 					}
 				}
+			}
+			actions, err := mod.SuggestedGoFixes(ctx, snapshot, fh, diagnostics)
+			if err != nil {
+				log.Error(ctx, "quick fixes failed", err, telemetry.File.Of(uri))
+			}
+			if len(actions) > 0 {
+				codeActions = append(codeActions, actions...)
 			}
 		}
 		if wanted[protocol.SourceOrganizeImports] && len(edits) > 0 {
@@ -250,7 +251,7 @@ func documentChanges(fh source.FileHandle, edits []protocol.TextEdit) []protocol
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
 				Version: fh.Identity().Version,
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-					URI: protocol.NewURI(fh.Identity().URI),
+					URI: protocol.URIFromSpanURI(fh.Identity().URI),
 				},
 			},
 			Edits: edits,

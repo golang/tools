@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/span"
 	errors "golang.org/x/xerrors"
 )
@@ -18,14 +19,15 @@ import (
 // pkg contains the type information needed by the source package.
 type pkg struct {
 	// ID and package path have their own types to avoid being used interchangeably.
-	id      packageID
-	pkgPath packagePath
-	mode    source.ParseMode
-
+	id              packageID
+	pkgPath         packagePath
+	mode            source.ParseMode
+	forTest         packagePath
 	goFiles         []source.ParseGoHandle
 	compiledGoFiles []source.ParseGoHandle
 	errors          []*source.Error
 	imports         map[packagePath]*pkg
+	module          *packagesinternal.Module
 	types           *types.Package
 	typesInfo       *types.Info
 	typesSizes      types.Sizes
@@ -71,7 +73,7 @@ func (p *pkg) File(uri span.URI) (source.ParseGoHandle, error) {
 func (p *pkg) GetSyntax() []*ast.File {
 	var syntax []*ast.File
 	for _, ph := range p.compiledGoFiles {
-		file, _, _, err := ph.Cached()
+		file, _, _, _, err := ph.Cached()
 		if err == nil {
 			syntax = append(syntax, file)
 		}
@@ -99,6 +101,10 @@ func (p *pkg) IsIllTyped() bool {
 	return p.types == nil || p.typesInfo == nil || p.typesSizes == nil
 }
 
+func (p *pkg) ForTest() string {
+	return string(p.forTest)
+}
+
 func (p *pkg) GetImport(pkgPath string) (source.Package, error) {
 	if imp := p.imports[packagePath(pkgPath)]; imp != nil {
 		return imp, nil
@@ -115,12 +121,16 @@ func (p *pkg) Imports() []source.Package {
 	return result
 }
 
+func (p *pkg) Module() *packagesinternal.Module {
+	return p.module
+}
+
 func (s *snapshot) FindAnalysisError(ctx context.Context, pkgID, analyzerName, msg string, rng protocol.Range) (*source.Error, error) {
 	analyzer, ok := s.View().Options().Analyzers[analyzerName]
 	if !ok {
 		return nil, errors.Errorf("unexpected analyzer: %s", analyzerName)
 	}
-	act, err := s.actionHandle(ctx, packageID(pkgID), source.ParseFull, analyzer)
+	act, err := s.actionHandle(ctx, packageID(pkgID), analyzer)
 	if err != nil {
 		return nil, err
 	}

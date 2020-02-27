@@ -5,7 +5,6 @@
 package source_test
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -45,39 +44,44 @@ type runner struct {
 func testSource(t *testing.T, exporter packagestest.Exporter) {
 	ctx := tests.Context(t)
 	data := tests.Load(t, exporter, "../testdata")
-	defer data.Exported.Cleanup()
+	for _, datum := range data {
+		defer datum.Exported.Cleanup()
 
-	cache := cache.New(nil)
-	session := cache.NewSession()
-	options := tests.DefaultOptions()
-	options.Env = data.Config.Env
-	view, _, err := session.NewView(ctx, "source_test", span.FileURI(data.Config.Dir), options)
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := &runner{
-		view: view,
-		data: data,
-		ctx:  ctx,
-	}
-	var modifications []source.FileModification
-	for filename, content := range data.Config.Overlay {
-		kind := source.DetectLanguage("", filename)
-		if kind != source.Go {
-			continue
+		cache := cache.New(nil, nil)
+		session := cache.NewSession()
+		options := tests.DefaultOptions()
+		options.Env = datum.Config.Env
+		view, _, err := session.NewView(ctx, "source_test", span.URIFromPath(datum.Config.Dir), options)
+		if err != nil {
+			t.Fatal(err)
 		}
-		modifications = append(modifications, source.FileModification{
-			URI:        span.FileURI(filename),
-			Action:     source.Open,
-			Version:    -1,
-			Text:       content,
-			LanguageID: "go",
+		r := &runner{
+			view: view,
+			data: datum,
+			ctx:  ctx,
+		}
+		var modifications []source.FileModification
+		for filename, content := range datum.Config.Overlay {
+			kind := source.DetectLanguage("", filename)
+			if kind != source.Go {
+				continue
+			}
+			modifications = append(modifications, source.FileModification{
+				URI:        span.URIFromPath(filename),
+				Action:     source.Open,
+				Version:    -1,
+				Text:       content,
+				LanguageID: "go",
+			})
+		}
+		if _, err := session.DidModifyFiles(ctx, modifications); err != nil {
+			t.Fatal(err)
+		}
+		t.Run(datum.Folder, func(t *testing.T) {
+			t.Helper()
+			tests.Run(t, r, datum)
 		})
 	}
-	if _, err := session.DidModifyFiles(ctx, modifications); err != nil {
-		t.Fatal(err)
-	}
-	tests.Run(t, r, data)
 }
 
 func (r *runner) Diagnostics(t *testing.T, uri span.URI, want []source.Diagnostic) {
@@ -115,9 +119,7 @@ func (r *runner) Completion(t *testing.T, src span.Span, test tests.Completion, 
 			opts.InsertTextFormat = protocol.SnippetTextFormat
 		}
 	})
-	if !strings.Contains(string(src.URI()), "builtins") {
-		got = tests.FilterBuiltins(got)
-	}
+	got = tests.FilterBuiltins(src, got)
 	if diff := tests.DiffCompletionItems(want, got); diff != "" {
 		t.Errorf("%s: %s", src, diff)
 	}
@@ -144,9 +146,7 @@ func (r *runner) UnimportedCompletion(t *testing.T, src span.Span, test tests.Co
 		want = append(want, tests.ToProtocolCompletionItem(*items[pos]))
 	}
 	_, got := r.callCompletion(t, src, func(opts *source.Options) {})
-	if !strings.Contains(string(src.URI()), "builtins") {
-		got = tests.FilterBuiltins(got)
-	}
+	got = tests.FilterBuiltins(src, got)
 	if diff := tests.CheckCompletionOrder(want, got, false); diff != "" {
 		t.Errorf("%s: %s", src, diff)
 	}
@@ -162,9 +162,7 @@ func (r *runner) DeepCompletion(t *testing.T, src span.Span, test tests.Completi
 		opts.Matcher = source.CaseInsensitive
 		opts.UnimportedCompletion = false
 	})
-	if !strings.Contains(string(src.URI()), "builtins") {
-		list = tests.FilterBuiltins(list)
-	}
+	list = tests.FilterBuiltins(src, list)
 	fuzzyMatcher := fuzzy.NewMatcher(prefix)
 	var got []protocol.CompletionItem
 	for _, item := range list {
@@ -188,9 +186,7 @@ func (r *runner) FuzzyCompletion(t *testing.T, src span.Span, test tests.Complet
 		opts.Matcher = source.Fuzzy
 		opts.UnimportedCompletion = false
 	})
-	if !strings.Contains(string(src.URI()), "builtins") {
-		got = tests.FilterBuiltins(got)
-	}
+	got = tests.FilterBuiltins(src, got)
 	if msg := tests.DiffCompletionItems(want, got); msg != "" {
 		t.Errorf("%s: %s", src, msg)
 	}
@@ -205,9 +201,7 @@ func (r *runner) CaseSensitiveCompletion(t *testing.T, src span.Span, test tests
 		opts.Matcher = source.CaseSensitive
 		opts.UnimportedCompletion = false
 	})
-	if !strings.Contains(string(src.URI()), "builtins") {
-		list = tests.FilterBuiltins(list)
-	}
+	list = tests.FilterBuiltins(src, list)
 	if diff := tests.DiffCompletionItems(want, list); diff != "" {
 		t.Errorf("%s: %s", src, diff)
 	}
@@ -484,7 +478,7 @@ func (r *runner) Definition(t *testing.T, spn span.Span, d tests.Definition) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ident, err := source.Identifier(r.ctx, r.view.Snapshot(), fh, srcRng.Start, source.WidestPackageHandle)
+	ident, err := source.Identifier(r.ctx, r.view.Snapshot(), fh, srcRng.Start)
 	if err != nil {
 		t.Fatalf("failed for %v: %v", d.Src, err)
 	}
@@ -553,7 +547,7 @@ func (r *runner) Implementation(t *testing.T, spn span.Span, impls []span.Span) 
 	}
 	var results []span.Span
 	for i := range locs {
-		locURI := span.NewURI(locs[i].URI)
+		locURI := locs[i].URI.SpanURI()
 		lm, err := r.data.Mapper(locURI)
 		if err != nil {
 			t.Fatal(err)
@@ -768,7 +762,7 @@ func (r *runner) PrepareRename(t *testing.T, src span.Span, want *source.Prepare
 		}
 		return
 	}
-	if want.Text == "" && item != nil {
+	if want.Text == "" {
 		t.Errorf("prepare rename failed for %v: expected nil, got %v", src, item)
 		return
 	}
@@ -798,55 +792,73 @@ func (r *runner) Symbols(t *testing.T, uri span.URI, expectedSymbols []protocol.
 		t.Errorf("want %d top-level symbols in %v, got %d", len(expectedSymbols), uri, len(symbols))
 		return
 	}
-	if diff := r.diffSymbols(t, uri, expectedSymbols, symbols); diff != "" {
+	if diff := tests.DiffSymbols(t, uri, expectedSymbols, symbols); diff != "" {
 		t.Error(diff)
 	}
 }
 
-func (r *runner) diffSymbols(t *testing.T, uri span.URI, want, got []protocol.DocumentSymbol) string {
-	sort.Slice(want, func(i, j int) bool { return want[i].Name < want[j].Name })
-	sort.Slice(got, func(i, j int) bool { return got[i].Name < got[j].Name })
-	if len(got) != len(want) {
-		return summarizeSymbols(t, -1, want, got, "different lengths got %v want %v", len(got), len(want))
+func (r *runner) WorkspaceSymbols(t *testing.T, query string, expectedSymbols []protocol.SymbolInformation, dirs map[string]struct{}) {
+	got := r.callWorkspaceSymbols(t, query, func(opts *source.Options) {
+		opts.Matcher = source.CaseInsensitive
+	})
+	got = tests.FilterWorkspaceSymbols(got, dirs)
+	if len(got) != len(expectedSymbols) {
+		t.Errorf("want %d symbols, got %d", len(expectedSymbols), len(got))
+		return
 	}
-	for i, w := range want {
-		g := got[i]
-		if w.Name != g.Name {
-			return summarizeSymbols(t, i, want, got, "incorrect name got %v want %v", g.Name, w.Name)
-		}
-		if w.Kind != g.Kind {
-			return summarizeSymbols(t, i, want, got, "incorrect kind got %v want %v", g.Kind, w.Kind)
-		}
-		if protocol.CompareRange(w.SelectionRange, g.SelectionRange) != 0 {
-			return summarizeSymbols(t, i, want, got, "incorrect span got %v want %v", g.SelectionRange, w.SelectionRange)
-		}
-		if msg := r.diffSymbols(t, uri, w.Children, g.Children); msg != "" {
-			return fmt.Sprintf("children of %s: %s", w.Name, msg)
-		}
+	if diff := tests.DiffWorkspaceSymbols(expectedSymbols, got); diff != "" {
+		t.Error(diff)
 	}
-	return ""
 }
 
-func summarizeSymbols(t *testing.T, i int, want, got []protocol.DocumentSymbol, reason string, args ...interface{}) string {
-	msg := &bytes.Buffer{}
-	fmt.Fprint(msg, "document symbols failed")
-	if i >= 0 {
-		fmt.Fprintf(msg, " at %d", i)
+func (r *runner) FuzzyWorkspaceSymbols(t *testing.T, query string, expectedSymbols []protocol.SymbolInformation, dirs map[string]struct{}) {
+	got := r.callWorkspaceSymbols(t, query, func(opts *source.Options) {
+		opts.Matcher = source.Fuzzy
+	})
+	got = tests.FilterWorkspaceSymbols(got, dirs)
+	if len(got) != len(expectedSymbols) {
+		t.Errorf("want %d symbols, got %d", len(expectedSymbols), len(got))
+		return
 	}
-	fmt.Fprint(msg, " because of ")
-	fmt.Fprintf(msg, reason, args...)
-	fmt.Fprint(msg, ":\nexpected:\n")
-	for _, s := range want {
-		fmt.Fprintf(msg, "  %v %v %v\n", s.Name, s.Kind, s.SelectionRange)
+	if diff := tests.DiffWorkspaceSymbols(expectedSymbols, got); diff != "" {
+		t.Error(diff)
 	}
-	fmt.Fprintf(msg, "got:\n")
-	for _, s := range got {
-		fmt.Fprintf(msg, "  %v %v %v\n", s.Name, s.Kind, s.SelectionRange)
-	}
-	return msg.String()
 }
 
-func (r *runner) SignatureHelp(t *testing.T, spn span.Span, expectedSignature *source.SignatureInformation) {
+func (r *runner) CaseSensitiveWorkspaceSymbols(t *testing.T, query string, expectedSymbols []protocol.SymbolInformation, dirs map[string]struct{}) {
+	got := r.callWorkspaceSymbols(t, query, func(opts *source.Options) {
+		opts.Matcher = source.CaseSensitive
+	})
+	got = tests.FilterWorkspaceSymbols(got, dirs)
+	if len(got) != len(expectedSymbols) {
+		t.Errorf("want %d symbols, got %d", len(expectedSymbols), len(got))
+		return
+	}
+	if diff := tests.DiffWorkspaceSymbols(expectedSymbols, got); diff != "" {
+		t.Error(diff)
+	}
+}
+
+func (r *runner) callWorkspaceSymbols(t *testing.T, query string, options func(*source.Options)) []protocol.SymbolInformation {
+	t.Helper()
+
+	original := r.view.Options()
+	modified := original
+	options(&modified)
+	view, err := r.view.SetOptions(r.ctx, modified)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.view.SetOptions(r.ctx, original)
+
+	got, err := source.WorkspaceSymbols(r.ctx, []source.View{view}, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func (r *runner) SignatureHelp(t *testing.T, spn span.Span, want *protocol.SignatureHelp) {
 	_, rng, err := spanToRange(r.data, spn)
 	if err != nil {
 		t.Fatal(err)
@@ -855,46 +867,34 @@ func (r *runner) SignatureHelp(t *testing.T, spn span.Span, expectedSignature *s
 	if err != nil {
 		t.Fatal(err)
 	}
-	gotSignature, err := source.SignatureHelp(r.ctx, r.view.Snapshot(), fh, rng.Start)
+	gotSignature, gotActiveParameter, err := source.SignatureHelp(r.ctx, r.view.Snapshot(), fh, rng.Start)
 	if err != nil {
 		// Only fail if we got an error we did not expect.
-		if expectedSignature != nil {
+		if want != nil {
 			t.Fatalf("failed for %v: %v", spn, err)
-		}
-	}
-	if expectedSignature == nil {
-		if gotSignature != nil {
-			t.Errorf("expected no signature, got %v", gotSignature)
 		}
 		return
 	}
-	if diff := diffSignatures(spn, expectedSignature, gotSignature); diff != "" {
+	if gotSignature == nil {
+		if want != nil {
+			t.Fatalf("got nil signature, but expected %v", want)
+		}
+		return
+	}
+	got := &protocol.SignatureHelp{
+		Signatures:      []protocol.SignatureInformation{*gotSignature},
+		ActiveParameter: float64(gotActiveParameter),
+	}
+	if diff := tests.DiffSignatures(spn, got, want); diff != "" {
 		t.Error(diff)
 	}
 }
 
-func diffSignatures(spn span.Span, want *source.SignatureInformation, got *source.SignatureInformation) string {
-	decorate := func(f string, args ...interface{}) string {
-		return fmt.Sprintf("Invalid signature at %s: %s", spn, fmt.Sprintf(f, args...))
-	}
-	if want.ActiveParameter != got.ActiveParameter {
-		return decorate("wanted active parameter of %d, got %d", want.ActiveParameter, got.ActiveParameter)
-	}
-	if want.Label != got.Label {
-		return decorate("wanted label %q, got %q", want.Label, got.Label)
-	}
-	var paramParts []string
-	for _, p := range got.Parameters {
-		paramParts = append(paramParts, p.Label)
-	}
-	paramsStr := strings.Join(paramParts, ", ")
-	if !strings.Contains(got.Label, paramsStr) {
-		return decorate("expected signature %q to contain params %q", got.Label, paramsStr)
-	}
-	return ""
+func (r *runner) Link(t *testing.T, uri span.URI, wantLinks []tests.Link) {
+	// This is a pure LSP feature, no source level functionality to be tested.
 }
 
-func (r *runner) Link(t *testing.T, uri span.URI, wantLinks []tests.Link) {
+func (r *runner) CodeLens(t *testing.T, spn span.Span, want []protocol.CodeLens) {
 	// This is a pure LSP feature, no source level functionality to be tested.
 }
 

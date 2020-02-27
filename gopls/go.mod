@@ -6,7 +6,7 @@ require (
 	github.com/sergi/go-diff v1.0.0
 	github.com/stretchr/testify v1.4.0 // indirect
 	golang.org/x/tools v0.0.0-20200212213342-7a21e308cf6c
-	honnef.co/go/tools v0.0.1-2019.2.3
+	honnef.co/go/tools v0.0.1-2020.1.3
 	mvdan.cc/xurls/v2 v2.1.0
 )
 

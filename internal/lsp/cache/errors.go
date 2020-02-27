@@ -177,11 +177,11 @@ func toSourceErrorKind(kind packages.ErrorKind) source.ErrorKind {
 
 func typeErrorRange(ctx context.Context, fset *token.FileSet, pkg *pkg, pos token.Pos) (span.Span, error) {
 	posn := fset.Position(pos)
-	ph, _, err := findFileInPackage(pkg, span.FileURI(posn.Filename))
+	ph, _, err := source.FindFileInPackage(pkg, span.URIFromPath(posn.Filename))
 	if err != nil {
 		return span.Span{}, err
 	}
-	_, m, _, err := ph.Cached()
+	_, _, m, _, err := ph.Cached()
 	if err != nil {
 		return span.Span{}, err
 	}
@@ -213,11 +213,11 @@ func typeErrorRange(ctx context.Context, fset *token.FileSet, pkg *pkg, pos toke
 }
 
 func scannerErrorRange(ctx context.Context, fset *token.FileSet, pkg *pkg, posn token.Position) (span.Span, error) {
-	ph, _, err := findFileInPackage(pkg, span.FileURI(posn.Filename))
+	ph, _, err := source.FindFileInPackage(pkg, span.URIFromPath(posn.Filename))
 	if err != nil {
 		return span.Span{}, err
 	}
-	file, _, _, err := ph.Cached()
+	file, _, _, _, err := ph.Cached()
 	if err != nil {
 		return span.Span{}, err
 	}
@@ -232,36 +232,15 @@ func scannerErrorRange(ctx context.Context, fset *token.FileSet, pkg *pkg, posn 
 // spanToRange converts a span.Span to a protocol.Range,
 // assuming that the span belongs to the package whose diagnostics are being computed.
 func spanToRange(ctx context.Context, pkg *pkg, spn span.Span) (protocol.Range, error) {
-	ph, _, err := findFileInPackage(pkg, spn.URI())
+	ph, _, err := source.FindFileInPackage(pkg, spn.URI())
 	if err != nil {
 		return protocol.Range{}, err
 	}
-	_, m, _, err := ph.Cached()
+	_, _, m, _, err := ph.Cached()
 	if err != nil {
 		return protocol.Range{}, err
 	}
 	return m.Range(spn)
-}
-
-func findFileInPackage(pkg source.Package, uri span.URI) (source.ParseGoHandle, source.Package, error) {
-	queue := []source.Package{pkg}
-	seen := make(map[string]bool)
-
-	for len(queue) > 0 {
-		pkg := queue[0]
-		queue = queue[1:]
-		seen[pkg.ID()] = true
-
-		if f, err := pkg.File(uri); err == nil {
-			return f, pkg, nil
-		}
-		for _, dep := range pkg.Imports() {
-			if !seen[dep.ID()] {
-				queue = append(queue, dep)
-			}
-		}
-	}
-	return nil, nil, errors.Errorf("no file for %s in package %s", uri, pkg.ID())
 }
 
 // parseGoListError attempts to parse a standard `go list` error message
@@ -297,7 +276,7 @@ func parseGoListImportCycleError(ctx context.Context, fset *token.FileSet, e pac
 	// Imports have quotation marks around them.
 	circImp := strconv.Quote(importList[1])
 	for _, ph := range pkg.compiledGoFiles {
-		fh, _, _, err := ph.Parse(ctx)
+		fh, _, _, _, err := ph.Parse(ctx)
 		if err != nil {
 			continue
 		}

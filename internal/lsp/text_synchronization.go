@@ -17,9 +17,14 @@ import (
 )
 
 func (s *Server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
+	uri := params.TextDocument.URI.SpanURI()
+	if !uri.IsFile() {
+		return nil
+	}
+
 	_, err := s.didModifyFiles(ctx, []source.FileModification{
 		{
-			URI:        span.NewURI(params.TextDocument.URI),
+			URI:        uri,
 			Action:     source.Open,
 			Version:    params.TextDocument.Version,
 			Text:       []byte(params.TextDocument.Text),
@@ -30,7 +35,11 @@ func (s *Server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 }
 
 func (s *Server) didChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
-	uri := span.NewURI(params.TextDocument.URI)
+	uri := params.TextDocument.URI.SpanURI()
+	if !uri.IsFile() {
+		return nil
+	}
+
 	text, err := s.changedText(ctx, uri, params.ContentChanges)
 	if err != nil {
 		return err
@@ -64,27 +73,56 @@ func (s *Server) didChange(ctx context.Context, params *protocol.DidChangeTextDo
 
 func (s *Server) didChangeWatchedFiles(ctx context.Context, params *protocol.DidChangeWatchedFilesParams) error {
 	var modifications []source.FileModification
+	deletions := make(map[span.URI]struct{})
 	for _, change := range params.Changes {
-		uri := span.NewURI(change.URI)
-
-		// Do nothing if the file is open in the editor.
-		// The editor is the source of truth.
-		if s.session.IsOpen(uri) {
+		uri := change.URI.SpanURI()
+		if !uri.IsFile() {
 			continue
 		}
+		action := changeTypeToFileAction(change.Type)
 		modifications = append(modifications, source.FileModification{
 			URI:    uri,
-			Action: changeTypeToFileAction(change.Type),
+			Action: action,
 			OnDisk: true,
 		})
+		// Keep track of deleted files so that we can clear their diagnostics.
+		// A file might be re-created after deletion, so only mark files that
+		// have truly been deleted.
+		switch action {
+		case source.Delete:
+			deletions[uri] = struct{}{}
+		case source.Close:
+		default:
+			delete(deletions, uri)
+		}
 	}
-	_, err := s.didModifyFiles(ctx, modifications)
-	return err
+	snapshots, err := s.didModifyFiles(ctx, modifications)
+	if err != nil {
+		return err
+	}
+	// Clear the diagnostics for any deleted files.
+	for uri := range deletions {
+		if snapshot := snapshots[uri]; snapshot == nil || snapshot.IsOpen(uri) {
+			continue
+		}
+		if err := s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
+			URI:         protocol.URIFromSpanURI(uri),
+			Diagnostics: []protocol.Diagnostic{},
+			Version:     0,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Server) didSave(ctx context.Context, params *protocol.DidSaveTextDocumentParams) error {
+	uri := params.TextDocument.URI.SpanURI()
+	if !uri.IsFile() {
+		return nil
+	}
 	c := source.FileModification{
-		URI:     span.NewURI(params.TextDocument.URI),
+		URI:     uri,
 		Action:  source.Save,
 		Version: params.TextDocument.Version,
 	}
@@ -96,15 +134,38 @@ func (s *Server) didSave(ctx context.Context, params *protocol.DidSaveTextDocume
 }
 
 func (s *Server) didClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
-	_, err := s.didModifyFiles(ctx, []source.FileModification{
+	uri := params.TextDocument.URI.SpanURI()
+	if !uri.IsFile() {
+		return nil
+	}
+	snapshots, err := s.didModifyFiles(ctx, []source.FileModification{
 		{
-			URI:     span.NewURI(params.TextDocument.URI),
+			URI:     uri,
 			Action:  source.Close,
 			Version: -1,
 			Text:    nil,
 		},
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	snapshot := snapshots[uri]
+	if snapshot == nil {
+		return errors.Errorf("no snapshot for %s", uri)
+	}
+	fh, err := snapshot.GetFile(uri)
+	if err != nil {
+		return err
+	}
+	// If a file has been closed and is not on disk, clear its diagnostics.
+	if _, _, err := fh.Read(ctx); err != nil {
+		return s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
+			URI:         protocol.URIFromSpanURI(uri),
+			Diagnostics: []protocol.Diagnostic{},
+			Version:     0,
+		})
+	}
+	return nil
 }
 
 func (s *Server) didModifyFiles(ctx context.Context, modifications []source.FileModification) (map[span.URI]source.Snapshot, error) {
@@ -147,11 +208,15 @@ func (s *Server) didModifyFiles(ctx context.Context, modifications []source.File
 			if err != nil {
 				return nil, err
 			}
-			// If a modification comes in for a go.mod file,
-			// and the view was never properly initialized,
-			// try to recreate the associated view.
+			// If a modification comes in for the view's go.mod file and the view
+			// was never properly initialized, or the view does not have
+			// a go.mod file, try to recreate the associated view.
 			switch fh.Identity().Kind {
 			case source.Mod:
+				modfile, _ := snapshot.View().ModFiles()
+				if modfile != "" || fh.Identity().URI != modfile {
+					continue
+				}
 				newSnapshot, err := snapshot.View().Rebuild(ctx)
 				if err != nil {
 					return nil, err

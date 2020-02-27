@@ -27,7 +27,7 @@ func (s *snapshot) Analyze(ctx context.Context, id string, analyzers []*analysis
 	var roots []*actionHandle
 
 	for _, a := range analyzers {
-		ah, err := s.actionHandle(ctx, packageID(id), source.ParseFull, a)
+		ah, err := s.actionHandle(ctx, packageID(id), a)
 		if err != nil {
 			return nil, err
 		}
@@ -49,6 +49,8 @@ func (s *snapshot) Analyze(ctx context.Context, id string, analyzers []*analysis
 	}
 	return results, nil
 }
+
+type actionHandleKey string
 
 // An action represents one unit of analysis work: the application of
 // one analysis to one package. Actions form a DAG, both within a
@@ -79,14 +81,14 @@ type packageFactKey struct {
 	typ reflect.Type
 }
 
-func (s *snapshot) actionHandle(ctx context.Context, id packageID, mode source.ParseMode, a *analysis.Analyzer) (*actionHandle, error) {
-	act := s.getActionHandle(id, mode, a)
+func (s *snapshot) actionHandle(ctx context.Context, id packageID, a *analysis.Analyzer) (*actionHandle, error) {
+	ph := s.getPackage(id, source.ParseFull)
+	if ph == nil {
+		return nil, errors.Errorf("no PackageHandle for %s", id)
+	}
+	act := s.getActionHandle(id, ph.mode, a)
 	if act != nil {
 		return act, nil
-	}
-	ph := s.getPackage(id, mode)
-	if ph == nil {
-		return nil, errors.Errorf("no PackageHandle for %s:%v", id, mode == source.ParseExported)
 	}
 	if len(ph.key) == 0 {
 		return nil, errors.Errorf("no key for PackageHandle %s", id)
@@ -102,7 +104,7 @@ func (s *snapshot) actionHandle(ctx context.Context, id packageID, mode source.P
 	var deps []*actionHandle
 	// Add a dependency on each required analyzers.
 	for _, req := range a.Requires {
-		reqActionHandle, err := s.actionHandle(ctx, id, mode, req)
+		reqActionHandle, err := s.actionHandle(ctx, id, req)
 		if err != nil {
 			return nil, err
 		}
@@ -122,7 +124,7 @@ func (s *snapshot) actionHandle(ctx context.Context, id packageID, mode source.P
 			}
 			sort.Strings(importIDs) // for determinism
 			for _, importID := range importIDs {
-				depActionHandle, err := s.actionHandle(ctx, packageID(importID), source.ParseExported, a)
+				depActionHandle, err := s.actionHandle(ctx, packageID(importID), a)
 				if err != nil {
 					return nil, err
 				}
@@ -164,8 +166,8 @@ func (act *actionHandle) analyze(ctx context.Context) ([]*source.Error, interfac
 	return data.diagnostics, data.result, data.err
 }
 
-func buildActionKey(a *analysis.Analyzer, ph *packageHandle) string {
-	return hashContents([]byte(fmt.Sprintf("%p %s", a, string(ph.key))))
+func buildActionKey(a *analysis.Analyzer, ph *packageHandle) actionHandleKey {
+	return actionHandleKey(hashContents([]byte(fmt.Sprintf("%p %s", a, string(ph.key)))))
 }
 
 func (act *actionHandle) String() string {
