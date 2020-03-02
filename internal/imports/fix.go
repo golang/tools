@@ -747,6 +747,7 @@ func getPackageExports(ctx context.Context, wrapped func(PackageExport), searchP
 type ProcessEnv struct {
 	LocalPrefix string
 	Debug       bool
+	RepairGroup bool
 
 	BuildFlags []string
 
