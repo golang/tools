@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -73,6 +74,7 @@ type Doc struct {
 	TitleNotes []string
 	Sections   []Section
 	Tags       []string
+	Footer
 }
 
 // Author represents the person who wrote and/or is presenting the document.
@@ -91,6 +93,18 @@ func (p *Author) TextElem() (elems []Elem) {
 		elems = append(elems, el)
 	}
 	return
+}
+
+// Footer represents a footer to display for each slide
+type Footer struct {
+	Elem    []Elem
+	Enabled bool
+	Omit    []int
+}
+
+// PageNum represents the slide page number
+type PageNum struct {
+	Text
 }
 
 // Section represents a section of a document (such as a presentation slide)
@@ -168,6 +182,31 @@ func renderElem(t *template.Template, e Elem) (template.HTML, error) {
 	return execTemplate(t, e.TemplateName(), data)
 }
 
+// renderFooter implements the footer template function, used to render
+// the section's footer.
+func renderFooter(t *template.Template, section Section, footer Footer, offset int) (template.HTML, error) {
+	pageNum := pageNum(section, offset)
+	for i, el := range footer.Elem {
+		if e, ok := el.(PageNum); ok {
+			e.Text.Lines[0] = strconv.Itoa(pageNum)
+			footer.Elem[i] = e
+		}
+	}
+
+	for _, omit := range footer.Omit {
+		if omit == pageNum {
+			footer.Enabled = false
+			break
+		}
+	}
+
+	data := struct {
+		Footer
+		Template *template.Template
+	}{footer, t}
+	return execTemplate(t, "footer", data)
+}
+
 // pageNum derives a page number from a section.
 func pageNum(s Section, offset int) int {
 	if len(s.Number) == 0 {
@@ -179,6 +218,7 @@ func pageNum(s Section, offset int) int {
 func init() {
 	funcs["elem"] = renderElem
 	funcs["pagenum"] = pageNum
+	funcs["footer"] = renderFooter
 }
 
 // execTemplate is a helper to execute a template and return the output as a
@@ -458,12 +498,48 @@ func parseHeader(doc *Doc, lines *Lines) error {
 			continue
 		}
 		const tagPrefix = "Tags:"
+		const footerPrefix = "Footer:"
+		const footerOmitPrefix = "FooterOmit:"
 		if strings.HasPrefix(text, tagPrefix) {
 			tags := strings.Split(text[len(tagPrefix):], ",")
 			for i := range tags {
 				tags[i] = strings.TrimSpace(tags[i])
 			}
 			doc.Tags = append(doc.Tags, tags...)
+		} else if strings.HasPrefix(text, footerPrefix) {
+			var el Elem
+			footerSegments := strings.Split(text[len(footerPrefix):], "|")
+			if len(footerSegments) != 3 {
+				return fmt.Errorf("footer line requires 3 segments separated by a pipe but got %d: %s", len(footerSegments), text)
+			}
+			doc.Footer.Enabled = true
+			for i := range footerSegments {
+				text := strings.TrimSpace(footerSegments[i])
+				switch {
+				case strings.HasPrefix(text, ".image"):
+					e, err := parseImage(nil, "", 0, text)
+					if err != nil {
+						return err
+					}
+					el = e
+				case (text == "[#]"):
+					el = PageNum{
+						Text{Lines: []string{text}},
+					}
+				default:
+					el = Text{Lines: []string{text}}
+				}
+				doc.Footer.Elem = append(doc.Footer.Elem, el)
+			}
+		} else if strings.HasPrefix(text, footerOmitPrefix) {
+			omit := strings.Split(text[len(footerOmitPrefix):], ",")
+			for i := range omit {
+				pageNum, err := strconv.Atoi(strings.TrimSpace(omit[i]))
+				if err != nil {
+					return fmt.Errorf("invalid page number %q: %q", strings.TrimSpace(omit[i]), text)
+				}
+				doc.Footer.Omit = append(doc.Footer.Omit, pageNum)
+			}
 		} else if t, ok := parseTime(text); ok {
 			doc.Time = t
 		} else if doc.Subtitle == "" {

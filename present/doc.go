@@ -12,6 +12,8 @@ line is the title, so the header looks like
 	Subtitle of document
 	15:04 2 Jan 2006
 	Tags: foo, bar, baz
+	Footer: Go Rules! | .image image.png | [#]
+	FooterOmit: 3, 7
 	<blank line>
 	Author Name
 	Job title, Company
@@ -19,7 +21,7 @@ line is the title, so the header looks like
 	http://url/
 	@twitter_name
 
-The subtitle, date, and tags lines are optional.
+The subtitle, date, tags and footer lines are optional.
 
 The date line may be written without a time:
 	2 Jan 2006
@@ -27,6 +29,13 @@ In this case, the time will be interpreted as 10am UTC on that date.
 
 The tags line is a comma-separated list of tags that may be used to categorize
 the document.
+
+The footer line is a pipe (|) list of three segments that can be used to add a footer
+for each slide. The justifications are left, center, and right.
+Use [#] to denote the slide number and .image to add an image.
+
+The footer omit line is a comma-separated list of slide numbers that can be used
+to turn off the footer for a specific slide.
 
 The author section may contain a mixture of text, twitter names, and links.
 For slide presentations, only the plain text lines will be displayed on the
