@@ -895,21 +895,36 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, state *formatState) (o
 		pass.ReportRangef(call, "%s format %s has arg %s of wrong type %s", state.name, state.format, analysisutil.Format(pass.Fset, arg), typeString)
 		return false
 	}
-	if v.typ&argString != 0 && v.verb != 'T' && !bytes.Contains(state.flags, []byte{'#'}) && recursiveStringer(pass, arg) {
-		pass.ReportRangef(call, "%s format %s with arg %s causes recursive String method call", state.name, state.format, analysisutil.Format(pass.Fset, arg))
-		return false
+	if v.typ&argString != 0 && v.verb != 'T' && !bytes.Contains(state.flags, []byte{'#'}) {
+		if recursiveStringer(pass, arg) {
+			pass.ReportRangef(call, "%s format %s with arg %s causes recursive String method call", state.name, state.format, analysisutil.Format(pass.Fset, arg))
+			return false
+		}
+		if recursiveError(pass, arg) {
+			pass.ReportRangef(call, "%s format %s with arg %s causes recursive Error method call", state.name, state.format, analysisutil.Format(pass.Fset, arg))
+			return false
+		}
 	}
 	return true
 }
 
-// recursiveStringer reports whether the argument e is a potential
-// recursive call to stringer, such as t and &t in these examples:
+func recursiveStringer(pass *analysis.Pass, e ast.Expr) bool {
+	return recursiveStringerKind("String", pass, e)
+}
+
+func recursiveError(pass *analysis.Pass, e ast.Expr) bool {
+	return recursiveStringerKind("Error", pass, e)
+}
+
+// recursiveStringerKind reports whether the argument e is a potential
+// recursive call to stringer or error, such as t and &t in these examples:
 //
 // 	func (t *T) String() string { printf("%s",  t) }
-// 	func (t  T) String() string { printf("%s",  t) }
+// 	func (t  T) Error() string { printf("%s",  t) }
 // 	func (t  T) String() string { printf("%s", &t) }
 //
-func recursiveStringer(pass *analysis.Pass, e ast.Expr) bool {
+// The `kind` argument must be either "String" or "Error".
+func recursiveStringerKind(kind string, pass *analysis.Pass, e ast.Expr) bool {
 	typ := pass.TypesInfo.Types[e].Type
 
 	// It's unlikely to be a recursive stringer if it has a Format method.
@@ -918,7 +933,7 @@ func recursiveStringer(pass *analysis.Pass, e ast.Expr) bool {
 	}
 
 	// Does e allow e.String()?
-	obj, _, _ := types.LookupFieldOrMethod(typ, false, pass.Pkg, "String")
+	obj, _, _ := types.LookupFieldOrMethod(typ, false, pass.Pkg, kind)
 	stringMethod, ok := obj.(*types.Func)
 	if !ok {
 		return false
@@ -1067,6 +1082,9 @@ func checkPrint(pass *analysis.Pass, call *ast.CallExpr, fn *types.Func) {
 		}
 		if recursiveStringer(pass, arg) {
 			pass.ReportRangef(call, "%s arg %s causes recursive call to String method", fn.Name(), analysisutil.Format(pass.Fset, arg))
+		}
+		if recursiveError(pass, arg) {
+			pass.ReportRangef(call, "%s arg %s causes recursive call to Error method", fn.Name(), analysisutil.Format(pass.Fset, arg))
 		}
 	}
 }
