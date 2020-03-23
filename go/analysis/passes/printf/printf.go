@@ -905,7 +905,7 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, state *formatState) (o
 }
 
 // recursiveStringer reports whether the argument e is a potential
-// recursive call to stringer or error, such as t and &t in these examples:
+// recursive call to stringer or is an error, such as t and &t in these examples:
 //
 // 	func (t *T) String() string { printf("%s",  t) }
 // 	func (t  T) Error() string { printf("%s",  t) }
