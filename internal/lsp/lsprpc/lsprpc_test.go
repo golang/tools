@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/debug"
@@ -54,7 +55,7 @@ func TestClientLogging(t *testing.T) {
 	ts := servertest.NewPipeServer(ctx, ss)
 	defer ts.Close()
 	cc := ts.Connect(ctx)
-	cc.AddHandler(protocol.ClientHandler(client))
+	go cc.Run(ctx, protocol.ClientHandler(client, jsonrpc2.MethodNotFound))
 
 	protocol.ServerDispatcher(cc).DidOpen(ctx, &protocol.DidOpenTextDocumentParams{})
 
@@ -127,7 +128,11 @@ func TestRequestCancellation(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.serverType, func(t *testing.T) {
 			cc := test.ts.Connect(baseCtx)
-			cc.AddHandler(protocol.Canceller{})
+			sd := protocol.ServerDispatcher(cc)
+			go cc.Run(baseCtx,
+				protocol.Handlers(
+					jsonrpc2.MethodNotFound))
+
 			ctx := context.Background()
 			ctx1, cancel1 := context.WithCancel(ctx)
 			var (
@@ -137,11 +142,11 @@ func TestRequestCancellation(t *testing.T) {
 			wg.Add(2)
 			go func() {
 				defer wg.Done()
-				_, err1 = protocol.ServerDispatcher(cc).Hover(ctx1, &protocol.HoverParams{})
+				_, err1 = sd.Hover(ctx1, &protocol.HoverParams{})
 			}()
 			go func() {
 				defer wg.Done()
-				_, err2 = protocol.ServerDispatcher(cc).Resolve(ctx, &protocol.CompletionItem{})
+				_, err2 = sd.Resolve(ctx, &protocol.CompletionItem{})
 			}()
 			// Wait for the Hover request to start.
 			<-server.started
@@ -153,7 +158,7 @@ func TestRequestCancellation(t *testing.T) {
 			if err2 != nil {
 				t.Errorf("uncancelled Hover(): err: %v", err2)
 			}
-			if _, err := protocol.ServerDispatcher(cc).Resolve(ctx, &protocol.CompletionItem{}); err != nil {
+			if _, err := sd.Resolve(ctx, &protocol.CompletionItem{}); err != nil {
 				t.Errorf("subsequent Hover(): %v", err)
 			}
 		})

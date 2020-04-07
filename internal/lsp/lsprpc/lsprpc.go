@@ -134,18 +134,17 @@ func (s *StreamServer) ServeStream(ctx context.Context, stream jsonrpc2.Stream) 
 			event.Error(ctx, "error shutting down", err)
 		}
 	}()
-	conn.AddHandler(protocol.ServerHandler(server))
-	conn.AddHandler(protocol.Canceller{})
 	executable, err := os.Executable()
 	if err != nil {
 		log.Printf("error getting gopls path: %v", err)
 		executable = ""
 	}
-	conn.AddHandler(&handshaker{
-		client:    dc,
-		goplsPath: executable,
-	})
-	return conn.Run(protocol.WithClient(ctx, client))
+	ctx = protocol.WithClient(ctx, client)
+	return conn.Run(ctx,
+		protocol.Handlers(
+			handshaker(dc, executable,
+				protocol.ServerHandler(server,
+					jsonrpc2.MethodNotFound))))
 }
 
 // A Forwarder is a jsonrpc2.StreamServer that handles an LSP stream by
@@ -235,7 +234,7 @@ func QueryServerState(ctx context.Context, network, address string) (*ServerStat
 		return nil, fmt.Errorf("dialing remote: %v", err)
 	}
 	serverConn := jsonrpc2.NewConn(jsonrpc2.NewHeaderStream(netConn, netConn))
-	go serverConn.Run(ctx)
+	go serverConn.Run(ctx, jsonrpc2.MethodNotFound)
 	var state ServerState
 	if err := serverConn.Call(ctx, sessionsMethod, nil, &state); err != nil {
 		return nil, fmt.Errorf("querying server state: %v", err)
@@ -257,14 +256,12 @@ func (f *Forwarder) ServeStream(ctx context.Context, stream jsonrpc2.Stream) err
 	server := protocol.ServerDispatcher(serverConn)
 
 	// Forward between connections.
-	serverConn.AddHandler(protocol.ClientHandler(client))
-	serverConn.AddHandler(protocol.Canceller{})
-	clientConn.AddHandler(protocol.ServerHandler(server))
-	clientConn.AddHandler(protocol.Canceller{})
-	clientConn.AddHandler(forwarderHandler{})
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		return serverConn.Run(ctx)
+		return serverConn.Run(ctx,
+			protocol.Handlers(
+				protocol.ClientHandler(client,
+					jsonrpc2.MethodNotFound)))
 	})
 	// Don't run the clientConn yet, so that we can complete the handshake before
 	// processing any client messages.
@@ -302,7 +299,11 @@ func (f *Forwarder) ServeStream(ctx context.Context, stream jsonrpc2.Stream) err
 		})
 	}
 	g.Go(func() error {
-		return clientConn.Run(ctx)
+		return clientConn.Run(ctx,
+			protocol.Handlers(
+				forwarderHandler(
+					protocol.ServerHandler(server,
+						jsonrpc2.MethodNotFound))))
 	})
 
 	return g.Wait()
@@ -414,28 +415,19 @@ func OverrideExitFuncsForTest() func() {
 // forwarderHandler intercepts 'exit' messages to prevent the shared gopls
 // instance from exiting. In the future it may also intercept 'shutdown' to
 // provide more graceful shutdown of the client connection.
-type forwarderHandler struct {
-	jsonrpc2.EmptyHandler
-}
-
-func (forwarderHandler) Deliver(ctx context.Context, r *jsonrpc2.Request, delivered bool) bool {
-	// TODO(golang.org/issues/34111): we should more gracefully disconnect here,
-	// once that process exists.
-	if r.Method == "exit" {
-		ForwarderExitFunc(0)
-		// Still return true here to prevent the message from being delivered: in
-		// tests, ForwarderExitFunc may be overridden to something that doesn't
-		// exit the process.
-		return true
+func forwarderHandler(handler jsonrpc2.Handler) jsonrpc2.Handler {
+	return func(ctx context.Context, r *jsonrpc2.Request) error {
+		// TODO(golang.org/issues/34111): we should more gracefully disconnect here,
+		// once that process exists.
+		if r.Method == "exit" {
+			ForwarderExitFunc(0)
+			// reply nil here to consume the message: in
+			// tests, ForwarderExitFunc may be overridden to something that doesn't
+			// exit the process.
+			return r.Reply(ctx, nil, nil)
+		}
+		return handler(ctx, r)
 	}
-	return false
-}
-
-type handshaker struct {
-	jsonrpc2.EmptyHandler
-	client    *debugClient
-	instance  *debug.Instance
-	goplsPath string
 }
 
 // A handshakeRequest identifies a client to the LSP server.
@@ -493,55 +485,51 @@ const (
 	sessionsMethod  = "gopls/sessions"
 )
 
-func (h *handshaker) Deliver(ctx context.Context, r *jsonrpc2.Request, delivered bool) bool {
-	switch r.Method {
-	case handshakeMethod:
-		var req handshakeRequest
-		if err := json.Unmarshal(*r.Params, &req); err != nil {
-			sendError(ctx, r, err)
-			return true
-		}
-		h.client.debugAddress = req.DebugAddr
-		h.client.logfile = req.Logfile
-		h.client.serverID = req.ServerID
-		h.client.goplsPath = req.GoplsPath
-		resp := handshakeResponse{
-			ClientID:  h.client.id,
-			SessionID: cache.DebugSession{Session: h.client.session}.ID(),
-			GoplsPath: h.goplsPath,
-		}
-		if di := debug.GetInstance(ctx); di != nil {
-			resp.Logfile = di.Logfile
-			resp.DebugAddr = di.ListenedDebugAddress
-		}
-
-		if err := r.Reply(ctx, resp, nil); err != nil {
-			event.Error(ctx, "replying to handshake", err)
-		}
-		return true
-	case sessionsMethod:
-		resp := ServerState{
-			GoplsPath:       h.goplsPath,
-			CurrentClientID: h.client.ID(),
-		}
-		if di := debug.GetInstance(ctx); di != nil {
-			resp.Logfile = di.Logfile
-			resp.DebugAddr = di.ListenedDebugAddress
-			for _, c := range di.State.Clients() {
-				resp.Clients = append(resp.Clients, ClientSession{
-					ClientID:  c.ID(),
-					SessionID: c.Session().ID(),
-					Logfile:   c.Logfile(),
-					DebugAddr: c.DebugAddress(),
-				})
+func handshaker(client *debugClient, goplsPath string, handler jsonrpc2.Handler) jsonrpc2.Handler {
+	return func(ctx context.Context, r *jsonrpc2.Request) error {
+		switch r.Method {
+		case handshakeMethod:
+			var req handshakeRequest
+			if err := json.Unmarshal(*r.Params, &req); err != nil {
+				sendError(ctx, r, err)
+				return nil
 			}
+			client.debugAddress = req.DebugAddr
+			client.logfile = req.Logfile
+			client.serverID = req.ServerID
+			client.goplsPath = req.GoplsPath
+			resp := handshakeResponse{
+				ClientID:  client.id,
+				SessionID: cache.DebugSession{Session: client.session}.ID(),
+				GoplsPath: goplsPath,
+			}
+			if di := debug.GetInstance(ctx); di != nil {
+				resp.Logfile = di.Logfile
+				resp.DebugAddr = di.ListenedDebugAddress
+			}
+
+			return r.Reply(ctx, resp, nil)
+		case sessionsMethod:
+			resp := ServerState{
+				GoplsPath:       goplsPath,
+				CurrentClientID: client.ID(),
+			}
+			if di := debug.GetInstance(ctx); di != nil {
+				resp.Logfile = di.Logfile
+				resp.DebugAddr = di.ListenedDebugAddress
+				for _, c := range di.State.Clients() {
+					resp.Clients = append(resp.Clients, ClientSession{
+						ClientID:  c.ID(),
+						SessionID: c.Session().ID(),
+						Logfile:   c.Logfile(),
+						DebugAddr: c.DebugAddress(),
+					})
+				}
+			}
+			return r.Reply(ctx, resp, nil)
 		}
-		if err := r.Reply(ctx, resp, nil); err != nil {
-			event.Error(ctx, "replying to sessions request", err)
-		}
-		return true
+		return handler(ctx, r)
 	}
-	return false
 }
 
 func sendError(ctx context.Context, req *jsonrpc2.Request, err error) {
