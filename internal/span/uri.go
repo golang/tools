@@ -82,7 +82,7 @@ func URIFromURI(s string) URI {
 	return URI(u.String())
 }
 
-var invalidPercentEncodingRE = regexp.MustCompile(`(%[^0-9a-fA-F][0-9a-fA-F])|(%[0-9a-fA-F][^0-9a-fA-F])|(%[^0-9a-fA-F][^0-9a-fA-F])`)
+var invalidPercentEncodingRE = regexp.MustCompile(`(%[^0-9a-fA-F])`)
 
 func stripInvalidPercentEncoding(s string) string {
 	matches := invalidPercentEncodingRE.FindAllString(s, -1)
