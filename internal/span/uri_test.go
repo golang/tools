@@ -98,6 +98,11 @@ func TestURIFromURI(t *testing.T) {
 			wantFile: `/`,
 			wantURI:  span.URI(`file:///`),
 		},
+		{
+			inputURI: `file:///bazel-out/darwin_amd64_stripped/go_default_test%/testmain.go`,
+			wantFile: `/bazel-out/darwin_amd64_stripped/go_default_test%/testmain.go`,
+			wantURI:  span.URI(`file:///bazel-out/darwin_amd64_stripped/go_default_test%25/testmain.go`),
+		},
 	} {
 		got := span.URIFromURI(test.inputURI)
 		if got != test.wantURI {

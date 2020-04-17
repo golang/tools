@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"unicode"
@@ -61,7 +62,7 @@ func URIFromURI(s string) URI {
 	// Bazel uses % in its temporary paths which is not a valid URI.
 	// Therefore url.PathUnescape will panic.
 	// See https://github.com/golang/go/issues/37984
-	s = url.PathEscape(s)
+	s = stripInvalidPercentEncoding(s)
 
 	// Even though the input is a URI, it may not be in canonical form. VS Code
 	// in particular over-escapes :, @, etc. Unescape and re-encode to canonicalize.
@@ -79,6 +80,16 @@ func URIFromURI(s string) URI {
 	}
 	u := url.URL{Scheme: fileScheme, Path: path}
 	return URI(u.String())
+}
+
+var invalidPercentEncodingRE = regexp.MustCompile(`(%[^0-9a-fA-F][0-9a-fA-F])|(%[0-9a-fA-F][^0-9a-fA-F])|(%[^0-9a-fA-F][^0-9a-fA-F])`)
+
+func stripInvalidPercentEncoding(s string) string {
+	matches := invalidPercentEncodingRE.FindAllString(s, -1)
+	for _, match := range matches {
+		s = invalidPercentEncodingRE.ReplaceAllString(s, "%25"+match[1:])
+	}
+	return s
 }
 
 func CompareURI(a, b URI) int {
