@@ -58,11 +58,11 @@ func URIFromURI(s string) URI {
 		return URI(s)
 	}
 
-	// Bazel uses % in its temporary paths which is not a valid URI. 
+	// Bazel uses % in its temporary paths which is not a valid URI.
 	// Therefore url.PathUnescape will panic.
 	// See https://github.com/golang/go/issues/37984
 	s = url.PathEscape(s)
-	
+
 	// Even though the input is a URI, it may not be in canonical form. VS Code
 	// in particular over-escapes :, @, etc. Unescape and re-encode to canonicalize.
 	path, err := url.PathUnescape(s[len("file://"):])
