@@ -87,7 +87,7 @@ var invalidPercentEncodingRE = regexp.MustCompile(`(%[^0-9a-fA-F][0-9a-fA-F])|(%
 func stripInvalidPercentEncoding(s string) string {
 	matches := invalidPercentEncodingRE.FindAllString(s, -1)
 	for _, match := range matches {
-		s = invalidPercentEncodingRE.ReplaceAllString(s, "%25"+match[1:])
+		s = strings.ReplaceAll(s, match, "%25"+match[1:])
 	}
 	return s
 }
