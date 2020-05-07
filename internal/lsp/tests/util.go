@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/internal/lsp/diff"
+	"golang.org/x/tools/internal/lsp/diff/myers"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
@@ -163,7 +165,7 @@ func summarizeWorkspaceSymbols(i int, want, got []protocol.SymbolInformation, re
 
 // DiffDiagnostics prints the diff between expected and actual diagnostics test
 // results.
-func DiffDiagnostics(uri span.URI, want, got []source.Diagnostic) string {
+func DiffDiagnostics(uri span.URI, want, got []*source.Diagnostic) string {
 	source.SortDiagnostics(want)
 	source.SortDiagnostics(got)
 
@@ -197,7 +199,7 @@ func DiffDiagnostics(uri span.URI, want, got []source.Diagnostic) string {
 	return ""
 }
 
-func summarizeDiagnostics(i int, uri span.URI, want, got []source.Diagnostic, reason string, args ...interface{}) string {
+func summarizeDiagnostics(i int, uri span.URI, want, got []*source.Diagnostic, reason string, args ...interface{}) string {
 	msg := &bytes.Buffer{}
 	fmt.Fprint(msg, "diagnostics failed")
 	if i >= 0 {
@@ -279,36 +281,32 @@ func summarizeCodeLens(i int, uri span.URI, want, got []protocol.CodeLens, reaso
 
 func DiffSignatures(spn span.Span, want, got *protocol.SignatureHelp) string {
 	decorate := func(f string, args ...interface{}) string {
-		return fmt.Sprintf("Invalid signature at %s: %s", spn, fmt.Sprintf(f, args...))
+		return fmt.Sprintf("invalid signature at %s: %s", spn, fmt.Sprintf(f, args...))
 	}
-
 	if len(got.Signatures) != 1 {
 		return decorate("wanted 1 signature, got %d", len(got.Signatures))
 	}
-
 	if got.ActiveSignature != 0 {
 		return decorate("wanted active signature of 0, got %d", int(got.ActiveSignature))
 	}
-
 	if want.ActiveParameter != got.ActiveParameter {
 		return decorate("wanted active parameter of %d, got %d", want.ActiveParameter, int(got.ActiveParameter))
 	}
-
-	gotSig := got.Signatures[int(got.ActiveSignature)]
-
-	if want.Signatures[0].Label != got.Signatures[0].Label {
-		return decorate("wanted label %q, got %q", want.Signatures[0].Label, got.Signatures[0].Label)
+	g := got.Signatures[0]
+	w := want.Signatures[0]
+	if w.Label != g.Label {
+		wLabel := w.Label + "\n"
+		d := myers.ComputeEdits("", wLabel, g.Label+"\n")
+		return decorate("mismatched labels:\n%q", diff.ToUnified("want", "got", wLabel, d))
 	}
-
 	var paramParts []string
-	for _, p := range gotSig.Parameters {
+	for _, p := range g.Parameters {
 		paramParts = append(paramParts, p.Label)
 	}
 	paramsStr := strings.Join(paramParts, ", ")
-	if !strings.Contains(gotSig.Label, paramsStr) {
-		return decorate("expected signature %q to contain params %q", gotSig.Label, paramsStr)
+	if !strings.Contains(g.Label, paramsStr) {
+		return decorate("expected signature %q to contain params %q", g.Label, paramsStr)
 	}
-
 	return ""
 }
 
@@ -518,4 +516,15 @@ func EnableAllAnalyzers(snapshot source.Snapshot, opts *source.Options) {
 			opts.UserEnabledAnalyses[a.Analyzer.Name] = true
 		}
 	}
+}
+
+func Diff(want, got string) string {
+	if want == got {
+		return ""
+	}
+	// Add newlines to avoid newline messages in diff.
+	want += "\n"
+	got += "\n"
+	d := myers.ComputeEdits("", want, got)
+	return fmt.Sprintf("%q", diff.ToUnified("want", "got", want, d))
 }

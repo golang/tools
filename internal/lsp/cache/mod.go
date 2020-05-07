@@ -15,13 +15,14 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/memoize"
+	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/event"
 	errors "golang.org/x/xerrors"
 )
 
@@ -144,7 +145,7 @@ func (s *snapshot) ModHandle(ctx context.Context, fh source.FileHandle) source.M
 		view:      folder,
 	}
 	h := s.view.session.cache.store.Bind(key, func(ctx context.Context) interface{} {
-		ctx, done := event.StartSpan(ctx, "cache.ModHandle", tag.URI.Of(uri))
+		ctx, done := event.Start(ctx, "cache.ModHandle", tag.URI.Of(uri))
 		defer done()
 
 		contents, _, err := fh.Read(ctx)
@@ -220,7 +221,7 @@ func goModWhy(ctx context.Context, cfg *packages.Config, folder string, data *mo
 	for _, req := range data.origParsedFile.Require {
 		inv.Args = append(inv.Args, req.Mod.Path)
 	}
-	stdout, err := inv.Run(ctx)
+	stdout, err := packagesinternal.GetGoCmdRunner(cfg).Run(ctx, inv)
 	if err != nil {
 		return err
 	}
@@ -247,7 +248,7 @@ func dependencyUpgrades(ctx context.Context, cfg *packages.Config, folder string
 		Env:        cfg.Env,
 		WorkingDir: folder,
 	}
-	stdout, err := inv.Run(ctx)
+	stdout, err := packagesinternal.GetGoCmdRunner(cfg).Run(ctx, inv)
 	if err != nil {
 		return err
 	}
@@ -288,6 +289,7 @@ func (s *snapshot) ModTidyHandle(ctx context.Context, realfh source.FileHandle) 
 	cfg := s.Config(ctx)
 	options := s.View().Options()
 	folder := s.View().Folder().Filename()
+	gocmdRunner := s.view.gocmdRunner
 
 	wsPackages, err := s.WorkspacePackages(ctx)
 	if ctx.Err() != nil {
@@ -317,7 +319,7 @@ func (s *snapshot) ModTidyHandle(ctx context.Context, realfh source.FileHandle) 
 			return &modData{}
 		}
 
-		ctx, done := event.StartSpan(ctx, "cache.ModTidyHandle", tag.URI.Of(realURI))
+		ctx, done := event.Start(ctx, "cache.ModTidyHandle", tag.URI.Of(realURI))
 		defer done()
 
 		realContents, _, err := realfh.Read(ctx)
@@ -358,12 +360,9 @@ func (s *snapshot) ModTidyHandle(ctx context.Context, realfh source.FileHandle) 
 			Env:        cfg.Env,
 			WorkingDir: folder,
 		}
-		if _, err := inv.Run(ctx); err != nil {
-			// Ignore concurrency errors here.
-			if !modConcurrencyError.MatchString(err.Error()) {
-				return &modData{
-					err: err,
-				}
+		if _, err := gocmdRunner.Run(ctx, inv); err != nil {
+			return &modData{
+				err: err,
 			}
 		}
 

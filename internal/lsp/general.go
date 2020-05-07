@@ -12,26 +12,26 @@ import (
 	"os"
 	"path"
 
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/event"
 )
 
 func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitialize) (*protocol.InitializeResult, error) {
 	s.stateMu.Lock()
 	if s.state >= serverInitializing {
 		defer s.stateMu.Unlock()
-		return nil, jsonrpc2.NewErrorf(jsonrpc2.CodeInvalidRequest, "initialize called while server in %v state", s.state)
+		return nil, fmt.Errorf("%w: initialize called while server in %v state", jsonrpc2.ErrInvalidRequest, s.state)
 	}
 	s.state = serverInitializing
 	s.stateMu.Unlock()
 
 	s.supportsWorkDoneProgress = params.Capabilities.Window.WorkDoneProgress
-	s.inProgress = map[string]func(){}
+	s.inProgress = map[string]*WorkDone{}
 
 	options := s.session.Options()
 	defer func() { s.session.SetOptions(options) }()
@@ -73,6 +73,10 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 			PrepareProvider: r.PrepareSupport,
 		}
 	}
+
+	goplsVer := &bytes.Buffer{}
+	debug.PrintVersionInfo(ctx, goplsVer, true, debug.PlainText)
+
 	return &protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
 			CodeActionProvider: codeActionProvider,
@@ -111,6 +115,13 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 				},
 			},
 		},
+		ServerInfo: struct {
+			Name    string `json:"name"`
+			Version string `json:"version,omitempty"`
+		}{
+			Name:    "gopls",
+			Version: goplsVer.String(),
+		},
 	}, nil
 }
 
@@ -118,7 +129,7 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 	s.stateMu.Lock()
 	if s.state >= serverInitialized {
 		defer s.stateMu.Unlock()
-		return jsonrpc2.NewErrorf(jsonrpc2.CodeInvalidRequest, "initalized called while server in %v state", s.state)
+		return fmt.Errorf("%w: initalized called while server in %v state", jsonrpc2.ErrInvalidRequest, s.state)
 	}
 	s.state = serverInitialized
 	s.stateMu.Unlock()
@@ -159,9 +170,10 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 		})
 	}
 
+	// TODO: this event logging may be unnecessary. The version info is included in the initialize response.
 	buf := &bytes.Buffer{}
 	debug.PrintVersionInfo(ctx, buf, true, debug.PlainText)
-	event.Print(ctx, buf.String())
+	event.Log(ctx, buf.String())
 
 	s.addFolders(ctx, s.pendingFolders)
 	s.pendingFolders = nil
@@ -186,7 +198,7 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 			event.Error(ctx, "failed to write environment", err, tag.Directory.Of(view.Folder()))
 			continue
 		}
-		event.Print(ctx, buf.String())
+		event.Log(ctx, buf.String())
 
 		// Diagnose the newly created view.
 		go s.diagnoseDetached(snapshot)
@@ -282,7 +294,7 @@ func (s *Server) shutdown(ctx context.Context) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	if s.state < serverInitialized {
-		event.Print(ctx, "server shutdown without initialization")
+		event.Log(ctx, "server shutdown without initialization")
 	}
 	if s.state != serverShutDown {
 		// drop all the active views

@@ -22,29 +22,29 @@ import (
 type Stream interface {
 	// Read gets the next message from the stream.
 	// It is never called concurrently.
-	Read(context.Context) ([]byte, int64, error)
+	Read(context.Context) (Message, int64, error)
 	// Write sends a message to the stream.
 	// It must be safe for concurrent use.
-	Write(context.Context, []byte) (int64, error)
+	Write(context.Context, Message) (int64, error)
 }
 
-// NewStream returns a Stream built on top of an io.Reader and io.Writer
+// NewRawStream returns a Stream built on top of an io.Reader and io.Writer.
 // The messages are sent with no wrapping, and rely on json decode consistency
 // to determine message boundaries.
-func NewStream(in io.Reader, out io.Writer) Stream {
-	return &plainStream{
+func NewRawStream(in io.Reader, out io.Writer) Stream {
+	return &rawStream{
 		in:  json.NewDecoder(in),
 		out: out,
 	}
 }
 
-type plainStream struct {
+type rawStream struct {
 	in    *json.Decoder
 	outMu sync.Mutex
 	out   io.Writer
 }
 
-func (s *plainStream) Read(ctx context.Context) ([]byte, int64, error) {
+func (s *rawStream) Read(ctx context.Context) (Message, int64, error) {
 	select {
 	case <-ctx.Done():
 		return nil, 0, ctx.Err()
@@ -52,19 +52,21 @@ func (s *plainStream) Read(ctx context.Context) ([]byte, int64, error) {
 	}
 	var raw json.RawMessage
 	if err := s.in.Decode(&raw); err != nil {
-		if err == io.EOF {
-			return nil, 0, ErrDisconnected
-		}
 		return nil, 0, err
 	}
-	return raw, int64(len(raw)), nil
+	msg, err := DecodeMessage(raw)
+	return msg, int64(len(raw)), err
 }
 
-func (s *plainStream) Write(ctx context.Context, data []byte) (int64, error) {
+func (s *rawStream) Write(ctx context.Context, msg Message) (int64, error) {
 	select {
 	case <-ctx.Done():
 		return 0, ctx.Err()
 	default:
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return 0, fmt.Errorf("marshaling message: %v", err)
 	}
 	s.outMu.Lock()
 	n, err := s.out.Write(data)
@@ -72,7 +74,7 @@ func (s *plainStream) Write(ctx context.Context, data []byte) (int64, error) {
 	return int64(n), err
 }
 
-// NewHeaderStream returns a Stream built on top of an io.Reader and io.Writer
+// NewHeaderStream returns a Stream built on top of an io.Reader and io.Writer.
 // The messages are sent with HTTP content length and MIME type headers.
 // This is the format used by LSP and others.
 func NewHeaderStream(in io.Reader, out io.Writer) Stream {
@@ -88,7 +90,7 @@ type headerStream struct {
 	out   io.Writer
 }
 
-func (s *headerStream) Read(ctx context.Context) ([]byte, int64, error) {
+func (s *headerStream) Read(ctx context.Context) (Message, int64, error) {
 	select {
 	case <-ctx.Done():
 		return nil, 0, ctx.Err()
@@ -99,12 +101,8 @@ func (s *headerStream) Read(ctx context.Context) ([]byte, int64, error) {
 	for {
 		line, err := s.in.ReadString('\n')
 		total += int64(len(line))
-		if err == io.EOF {
-			// A normal disconnection will terminate with EOF before the next header.
-			return nil, total, ErrDisconnected
-		}
 		if err != nil {
-			return nil, total, fmt.Errorf("failed reading header line %q", err)
+			return nil, total, fmt.Errorf("failed reading header line: %w", err)
 		}
 		line = strings.TrimSpace(line)
 		// check we have a header line
@@ -136,14 +134,19 @@ func (s *headerStream) Read(ctx context.Context) ([]byte, int64, error) {
 		return nil, total, err
 	}
 	total += length
-	return data, total, nil
+	msg, err := DecodeMessage(data)
+	return msg, total, err
 }
 
-func (s *headerStream) Write(ctx context.Context, data []byte) (int64, error) {
+func (s *headerStream) Write(ctx context.Context, msg Message) (int64, error) {
 	select {
 	case <-ctx.Done():
 		return 0, ctx.Err()
 	default:
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return 0, fmt.Errorf("marshaling message: %v", err)
 	}
 	s.outMu.Lock()
 	defer s.outMu.Unlock()

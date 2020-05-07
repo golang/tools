@@ -9,75 +9,64 @@ import (
 	"fmt"
 	"sync"
 
-	"golang.org/x/tools/internal/telemetry/event"
+	"golang.org/x/tools/internal/event"
 )
 
 // Handler is invoked to handle incoming requests.
-// If the request returns false from IsNotify then the Handler must eventually
-// call Reply on the Conn with the supplied request.
-// The handler should return ErrNotHandled if it could not handle the request.
-type Handler func(context.Context, *Request) error
+// The Replier sends a reply to the request and must be called exactly once.
+type Handler func(ctx context.Context, reply Replier, req Request) error
 
-// Direction is used to indicate to a logger whether the logged message was being
-// sent or received.
-type Direction bool
-
-const (
-	// Send indicates the message is outgoing.
-	Send = Direction(true)
-	// Receive indicates the message is incoming.
-	Receive = Direction(false)
-)
-
-func (d Direction) String() string {
-	switch d {
-	case Send:
-		return "send"
-	case Receive:
-		return "receive"
-	default:
-		panic("unreachable")
-	}
-}
+// Replier is passed to handlers to allow them to reply to the request.
+// If err is set then result will be ignored.
+type Replier func(ctx context.Context, result interface{}, err error) error
 
 // MethodNotFound is a Handler that replies to all call requests with the
 // standard method not found response.
 // This should normally be the final handler in a chain.
-func MethodNotFound(ctx context.Context, r *Request) error {
-	return r.Reply(ctx, nil, NewErrorf(CodeMethodNotFound, "method %q not found", r.Method))
+func MethodNotFound(ctx context.Context, reply Replier, req Request) error {
+	return reply(ctx, nil, fmt.Errorf("%w: %q", ErrMethodNotFound, req.Method()))
 }
 
-// MustReply creates a Handler that panics if the wrapped handler does
+// MustReplyHandler creates a Handler that panics if the wrapped handler does
 // not call Reply for every request that it is passed.
-func MustReply(handler Handler) Handler {
-	return func(ctx context.Context, req *Request) error {
-		err := handler(ctx, req)
-		if req.done != nil {
-			panic(fmt.Errorf("request %q was never replied to", req.Method))
+func MustReplyHandler(handler Handler) Handler {
+	return func(ctx context.Context, reply Replier, req Request) error {
+		called := false
+		err := handler(ctx, func(ctx context.Context, result interface{}, err error) error {
+			if called {
+				panic(fmt.Errorf("request %q replied to more than once", req.Method()))
+			}
+			called = true
+			return reply(ctx, result, err)
+		}, req)
+		if !called {
+			panic(fmt.Errorf("request %q was never replied to", req.Method()))
 		}
 		return err
 	}
 }
 
-// CancelHandler returns a handler that supports cancellation, and a canceller
+// CancelHandler returns a handler that supports cancellation, and a function
 // that can be used to trigger canceling in progress requests.
-func CancelHandler(handler Handler) (Handler, Canceller) {
+func CancelHandler(handler Handler) (Handler, func(id ID)) {
 	var mu sync.Mutex
 	handling := make(map[ID]context.CancelFunc)
-	wrapped := func(ctx context.Context, req *Request) error {
-		if req.ID != nil {
+	wrapped := func(ctx context.Context, reply Replier, req Request) error {
+		if call, ok := req.(*Call); ok {
 			cancelCtx, cancel := context.WithCancel(ctx)
 			ctx = cancelCtx
 			mu.Lock()
-			handling[*req.ID] = cancel
+			handling[call.ID()] = cancel
 			mu.Unlock()
-			req.OnReply(func() {
+			innerReply := reply
+			reply = func(ctx context.Context, result interface{}, err error) error {
 				mu.Lock()
-				delete(handling, *req.ID)
+				delete(handling, call.ID())
 				mu.Unlock()
-			})
+				return innerReply(ctx, result, err)
+			}
 		}
-		return handler(ctx, req)
+		return handler(ctx, reply, req)
 	}
 	return wrapped, func(id ID) {
 		mu.Lock()
@@ -98,16 +87,20 @@ func CancelHandler(handler Handler) (Handler, Canceller) {
 func AsyncHandler(handler Handler) Handler {
 	nextRequest := make(chan struct{})
 	close(nextRequest)
-	return func(ctx context.Context, req *Request) error {
+	return func(ctx context.Context, reply Replier, req Request) error {
 		waitForPrevious := nextRequest
 		nextRequest = make(chan struct{})
 		unlockNext := nextRequest
-		req.OnReply(func() { close(unlockNext) })
-		_, queueDone := event.StartSpan(ctx, "queued")
+		innerReply := reply
+		reply = func(ctx context.Context, result interface{}, err error) error {
+			close(unlockNext)
+			return innerReply(ctx, result, err)
+		}
+		_, queueDone := event.Start(ctx, "queued")
 		go func() {
 			<-waitForPrevious
 			queueDone()
-			if err := handler(ctx, req); err != nil {
+			if err := handler(ctx, reply, req); err != nil {
 				event.Error(ctx, "jsonrpc2 async message delivery failed", err)
 			}
 		}()

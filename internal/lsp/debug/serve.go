@@ -26,14 +26,17 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/event/core"
+	"golang.org/x/tools/internal/event/export"
+	"golang.org/x/tools/internal/event/export/metric"
+	"golang.org/x/tools/internal/event/export/ocagent"
+	"golang.org/x/tools/internal/event/export/prometheus"
+	"golang.org/x/tools/internal/event/keys"
+	"golang.org/x/tools/internal/event/label"
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/event"
-	"golang.org/x/tools/internal/telemetry/export"
-	"golang.org/x/tools/internal/telemetry/export/metric"
-	"golang.org/x/tools/internal/telemetry/export/ocagent"
-	"golang.org/x/tools/internal/telemetry/export/prometheus"
 	"golang.org/x/xerrors"
 )
 
@@ -432,7 +435,7 @@ func (i *Instance) SetLogFile(logfile string) (func(), error) {
 		}
 		f, err := os.Create(logfile)
 		if err != nil {
-			return nil, fmt.Errorf("unable to create log file: %v", err)
+			return nil, fmt.Errorf("unable to create log file: %w", err)
 		}
 		closeLog = func() {
 			defer f.Close()
@@ -461,7 +464,7 @@ func (i *Instance) Serve(ctx context.Context) error {
 	if strings.HasSuffix(i.DebugAddress, ":0") {
 		log.Printf("debug server listening on port %d", port)
 	}
-	event.Print(ctx, "Debug serving", tag.Port.Of(port))
+	event.Log(ctx, "Debug serving", tag.Port.Of(port))
 	go func() {
 		mux := http.NewServeMux()
 		mux.HandleFunc("/", render(mainTmpl, func(*http.Request) interface{} { return i }))
@@ -492,7 +495,7 @@ func (i *Instance) Serve(ctx context.Context) error {
 			event.Error(ctx, "Debug server failed", err)
 			return
 		}
-		event.Print(ctx, "Debug server finished")
+		event.Log(ctx, "Debug server finished")
 	}()
 	return nil
 }
@@ -510,7 +513,7 @@ func (i *Instance) MonitorMemory(ctx context.Context) {
 				continue
 			}
 			i.writeMemoryDebug(nextThresholdGiB)
-			event.Print(ctx, fmt.Sprintf("Wrote memory usage debug info to %v", os.TempDir()))
+			event.Log(ctx, fmt.Sprintf("Wrote memory usage debug info to %v", os.TempDir()))
 			nextThresholdGiB++
 		}
 	}()
@@ -542,12 +545,12 @@ func (i *Instance) writeMemoryDebug(threshold uint64) error {
 }
 
 func makeGlobalExporter(stderr io.Writer) event.Exporter {
-	return func(ctx context.Context, ev event.Event, tags event.TagMap) context.Context {
+	return func(ctx context.Context, ev core.Event, lm label.Map) context.Context {
 		i := GetInstance(ctx)
 
-		if ev.IsLog() {
+		if event.IsLog(ev) {
 			// Don't log context cancellation errors.
-			if err := event.Err.Get(ev); xerrors.Is(err, context.Canceled) {
+			if err := keys.Err.Get(ev); xerrors.Is(err, context.Canceled) {
 				return ctx
 			}
 			// Make sure any log messages without an instance go to stderr.
@@ -555,27 +558,27 @@ func makeGlobalExporter(stderr io.Writer) event.Exporter {
 				fmt.Fprintf(stderr, "%v\n", ev)
 			}
 		}
-		ctx = protocol.LogEvent(ctx, ev, tags)
+		ctx = protocol.LogEvent(ctx, ev, lm)
 		if i == nil {
 			return ctx
 		}
-		return i.exporter(ctx, ev, tags)
+		return i.exporter(ctx, ev, lm)
 	}
 }
 
 func makeInstanceExporter(i *Instance) event.Exporter {
-	exporter := func(ctx context.Context, ev event.Event, tags event.TagMap) context.Context {
+	exporter := func(ctx context.Context, ev core.Event, lm label.Map) context.Context {
 		if i.ocagent != nil {
-			ctx = i.ocagent.ProcessEvent(ctx, ev, tags)
+			ctx = i.ocagent.ProcessEvent(ctx, ev, lm)
 		}
 		if i.prometheus != nil {
-			ctx = i.prometheus.ProcessEvent(ctx, ev, tags)
+			ctx = i.prometheus.ProcessEvent(ctx, ev, lm)
 		}
 		if i.rpcs != nil {
-			ctx = i.rpcs.ProcessEvent(ctx, ev, tags)
+			ctx = i.rpcs.ProcessEvent(ctx, ev, lm)
 		}
 		if i.traces != nil {
-			ctx = i.traces.ProcessEvent(ctx, ev, tags)
+			ctx = i.traces.ProcessEvent(ctx, ev, lm)
 		}
 		return ctx
 	}

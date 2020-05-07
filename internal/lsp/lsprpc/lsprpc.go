@@ -18,12 +18,12 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp"
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/telemetry/event"
 )
 
 // AutoNetwork is the pseudo network type used to signal that gopls should use
@@ -225,19 +225,19 @@ func QueryServerState(ctx context.Context, network, address string) (*ServerStat
 	if network == AutoNetwork {
 		gp, err := os.Executable()
 		if err != nil {
-			return nil, fmt.Errorf("getting gopls path: %v", err)
+			return nil, fmt.Errorf("getting gopls path: %w", err)
 		}
 		network, address = autoNetworkAddress(gp, address)
 	}
 	netConn, err := net.DialTimeout(network, address, 5*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("dialing remote: %v", err)
+		return nil, fmt.Errorf("dialing remote: %w", err)
 	}
 	serverConn := jsonrpc2.NewConn(jsonrpc2.NewHeaderStream(netConn, netConn))
 	go serverConn.Run(ctx, jsonrpc2.MethodNotFound)
 	var state ServerState
-	if err := serverConn.Call(ctx, sessionsMethod, nil, &state); err != nil {
-		return nil, fmt.Errorf("querying server state: %v", err)
+	if err := protocol.Call(ctx, serverConn, sessionsMethod, nil, &state); err != nil {
+		return nil, fmt.Errorf("querying server state: %w", err)
 	}
 	return &state, nil
 }
@@ -250,7 +250,7 @@ func (f *Forwarder) ServeStream(ctx context.Context, stream jsonrpc2.Stream) err
 
 	netConn, err := f.connectToRemote(ctx)
 	if err != nil {
-		return fmt.Errorf("forwarder: connecting to remote: %v", err)
+		return fmt.Errorf("forwarder: connecting to remote: %w", err)
 	}
 	serverConn := jsonrpc2.NewConn(jsonrpc2.NewHeaderStream(netConn, netConn))
 	server := protocol.ServerDispatcher(serverConn)
@@ -281,7 +281,7 @@ func (f *Forwarder) ServeStream(ctx context.Context, stream jsonrpc2.Stream) err
 		hreq.Logfile = di.Logfile
 		hreq.DebugAddr = di.ListenedDebugAddress
 	}
-	if err := serverConn.Call(ctx, handshakeMethod, hreq, &hresp); err != nil {
+	if err := protocol.Call(ctx, serverConn, handshakeMethod, hreq, &hresp); err != nil {
 		event.Error(ctx, "forwarder: gopls handshake failed", err)
 	}
 	if hresp.GoplsPath != f.goplsPath {
@@ -328,7 +328,7 @@ func (f *Forwarder) connectToRemote(ctx context.Context) (net.Conn, error) {
 	if err != nil {
 		// If the ownership check itself failed, we fail open but log an error to
 		// the user.
-		event.Error(ctx, "unable to check daemon socket owner, failing open: %v", err)
+		event.Error(ctx, "unable to check daemon socket owner, failing open", err)
 	} else if !ok {
 		// We succesfully checked that the socket is not owned by us, we fail
 		// closed.
@@ -353,7 +353,7 @@ func (f *Forwarder) connectToRemote(ctx context.Context) (net.Conn, error) {
 			// instances are simultaneously starting up.
 			if _, err := os.Stat(address); err == nil {
 				if err := os.Remove(address); err != nil {
-					return nil, fmt.Errorf("removing remote socket file: %v", err)
+					return nil, fmt.Errorf("removing remote socket file: %w", err)
 				}
 			}
 		}
@@ -366,7 +366,7 @@ func (f *Forwarder) connectToRemote(ctx context.Context) (net.Conn, error) {
 			args = append(args, "-debug", f.remoteDebug)
 		}
 		if err := startRemote(f.goplsPath, args...); err != nil {
-			return nil, fmt.Errorf("startRemote(%q, %v): %v", f.goplsPath, args, err)
+			return nil, fmt.Errorf("startRemote(%q, %v): %w", f.goplsPath, args, err)
 		}
 	}
 
@@ -378,14 +378,14 @@ func (f *Forwarder) connectToRemote(ctx context.Context) (net.Conn, error) {
 		if err == nil {
 			return netConn, nil
 		}
-		event.Print(ctx, fmt.Sprintf("failed attempt #%d to connect to remote: %v\n", retry+2, err))
+		event.Log(ctx, fmt.Sprintf("failed attempt #%d to connect to remote: %v\n", retry+2, err))
 		// In case our failure was a fast-failure, ensure we wait at least
 		// f.dialTimeout before trying again.
 		if retry != f.retries-1 {
 			time.Sleep(f.dialTimeout - time.Since(startDial))
 		}
 	}
-	return nil, fmt.Errorf("dialing remote: %v", err)
+	return nil, fmt.Errorf("dialing remote: %w", err)
 }
 
 // ForwarderExitFunc is used to exit the forwarder process. It is mutable for
@@ -416,17 +416,17 @@ func OverrideExitFuncsForTest() func() {
 // instance from exiting. In the future it may also intercept 'shutdown' to
 // provide more graceful shutdown of the client connection.
 func forwarderHandler(handler jsonrpc2.Handler) jsonrpc2.Handler {
-	return func(ctx context.Context, r *jsonrpc2.Request) error {
+	return func(ctx context.Context, reply jsonrpc2.Replier, r jsonrpc2.Request) error {
 		// TODO(golang.org/issues/34111): we should more gracefully disconnect here,
 		// once that process exists.
-		if r.Method == "exit" {
+		if r.Method() == "exit" {
 			ForwarderExitFunc(0)
 			// reply nil here to consume the message: in
 			// tests, ForwarderExitFunc may be overridden to something that doesn't
 			// exit the process.
-			return r.Reply(ctx, nil, nil)
+			return reply(ctx, nil, nil)
 		}
-		return handler(ctx, r)
+		return handler(ctx, reply, r)
 	}
 }
 
@@ -486,12 +486,12 @@ const (
 )
 
 func handshaker(client *debugClient, goplsPath string, handler jsonrpc2.Handler) jsonrpc2.Handler {
-	return func(ctx context.Context, r *jsonrpc2.Request) error {
-		switch r.Method {
+	return func(ctx context.Context, reply jsonrpc2.Replier, r jsonrpc2.Request) error {
+		switch r.Method() {
 		case handshakeMethod:
 			var req handshakeRequest
-			if err := json.Unmarshal(*r.Params, &req); err != nil {
-				sendError(ctx, r, err)
+			if err := json.Unmarshal(r.Params(), &req); err != nil {
+				sendError(ctx, reply, err)
 				return nil
 			}
 			client.debugAddress = req.DebugAddr
@@ -508,7 +508,7 @@ func handshaker(client *debugClient, goplsPath string, handler jsonrpc2.Handler)
 				resp.DebugAddr = di.ListenedDebugAddress
 			}
 
-			return r.Reply(ctx, resp, nil)
+			return reply(ctx, resp, nil)
 		case sessionsMethod:
 			resp := ServerState{
 				GoplsPath:       goplsPath,
@@ -526,17 +526,15 @@ func handshaker(client *debugClient, goplsPath string, handler jsonrpc2.Handler)
 					})
 				}
 			}
-			return r.Reply(ctx, resp, nil)
+			return reply(ctx, resp, nil)
 		}
-		return handler(ctx, r)
+		return handler(ctx, reply, r)
 	}
 }
 
-func sendError(ctx context.Context, req *jsonrpc2.Request, err error) {
-	if _, ok := err.(*jsonrpc2.Error); !ok {
-		err = jsonrpc2.NewErrorf(jsonrpc2.CodeParseError, "%v", err)
-	}
-	if err := req.Reply(ctx, nil, err); err != nil {
+func sendError(ctx context.Context, reply jsonrpc2.Replier, err error) {
+	err = fmt.Errorf("%w: %v", jsonrpc2.ErrParse, err)
+	if err := reply(ctx, nil, err); err != nil {
 		event.Error(ctx, "", err)
 	}
 }

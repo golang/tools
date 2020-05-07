@@ -9,10 +9,10 @@ import (
 	"io/ioutil"
 	"os"
 
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/event"
 	errors "golang.org/x/xerrors"
 )
 
@@ -48,7 +48,7 @@ func (h *nativeFileHandle) Identity() source.FileIdentity {
 }
 
 func (h *nativeFileHandle) Read(ctx context.Context) ([]byte, string, error) {
-	ctx, done := event.StartSpan(ctx, "cache.nativeFileHandle.Read", tag.File.Of(h.identity.URI.Filename()))
+	ctx, done := event.Start(ctx, "cache.nativeFileHandle.Read", tag.File.Of(h.identity.URI.Filename()))
 	_ = ctx
 	defer done()
 

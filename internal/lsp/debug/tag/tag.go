@@ -6,40 +6,40 @@
 package tag
 
 import (
-	"golang.org/x/tools/internal/telemetry/event"
+	"golang.org/x/tools/internal/event/keys"
 )
 
 var (
-	// create the tag keys we use
-	Method        = event.NewStringKey("method", "")
-	StatusCode    = event.NewStringKey("status.code", "")
-	StatusMessage = event.NewStringKey("status.message", "")
-	RPCID         = event.NewStringKey("id", "")
-	RPCDirection  = event.NewStringKey("direction", "")
-	File          = event.NewStringKey("file", "")
-	Directory     = event.NewKey("directory", "")
-	URI           = event.NewKey("URI", "")
-	Package       = event.NewStringKey("package", "")
-	PackagePath   = event.NewStringKey("package_path", "")
-	Query         = event.NewKey("query", "")
-	Snapshot      = event.NewUInt64Key("snapshot", "")
-	Operation     = event.NewStringKey("operation", "")
+	// create the label keys we use
+	Method        = keys.NewString("method", "")
+	StatusCode    = keys.NewString("status.code", "")
+	StatusMessage = keys.NewString("status.message", "")
+	RPCID         = keys.NewString("id", "")
+	RPCDirection  = keys.NewString("direction", "")
+	File          = keys.NewString("file", "")
+	Directory     = keys.New("directory", "")
+	URI           = keys.New("URI", "")
+	Package       = keys.NewString("package", "")
+	PackagePath   = keys.NewString("package_path", "")
+	Query         = keys.New("query", "")
+	Snapshot      = keys.NewUInt64("snapshot", "")
+	Operation     = keys.NewString("operation", "")
 
-	Position     = event.NewKey("position", "")
-	Category     = event.NewStringKey("category", "")
-	PackageCount = event.NewIntKey("packages", "")
-	Files        = event.NewKey("files", "")
-	Port         = event.NewIntKey("port", "")
-	Type         = event.NewKey("type", "")
-	HoverKind    = event.NewStringKey("hoverkind", "")
+	Position     = keys.New("position", "")
+	Category     = keys.NewString("category", "")
+	PackageCount = keys.NewInt("packages", "")
+	Files        = keys.New("files", "")
+	Port         = keys.NewInt("port", "")
+	Type         = keys.New("type", "")
+	HoverKind    = keys.NewString("hoverkind", "")
 )
 
 var (
 	// create the stats we measure
-	Started       = event.NewInt64Key("started", "Count of started RPCs.")
-	ReceivedBytes = event.NewInt64Key("received_bytes", "Bytes received.")            //, unit.Bytes)
-	SentBytes     = event.NewInt64Key("sent_bytes", "Bytes sent.")                    //, unit.Bytes)
-	Latency       = event.NewFloat64Key("latency_ms", "Elapsed time in milliseconds") //, unit.Milliseconds)
+	Started       = keys.NewInt64("started", "Count of started RPCs.")
+	ReceivedBytes = keys.NewInt64("received_bytes", "Bytes received.")            //, unit.Bytes)
+	SentBytes     = keys.NewInt64("sent_bytes", "Bytes sent.")                    //, unit.Bytes)
+	Latency       = keys.NewFloat64("latency_ms", "Elapsed time in milliseconds") //, unit.Milliseconds)
 )
 
 const (

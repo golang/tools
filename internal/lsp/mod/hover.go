@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/event"
 )
 
 func Hover(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, position protocol.Position) (*protocol.Hover, error) {
@@ -20,7 +20,7 @@ func Hover(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, 
 	if realURI == "" || fh.Identity().URI != realURI {
 		return nil, nil
 	}
-	ctx, done := event.StartSpan(ctx, "mod.Hover")
+	ctx, done := event.Start(ctx, "mod.Hover")
 	defer done()
 
 	file, m, why, err := snapshot.ModHandle(ctx, fh).Why(ctx)

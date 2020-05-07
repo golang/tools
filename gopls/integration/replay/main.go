@@ -8,7 +8,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -139,99 +138,48 @@ func main() {
 	}
 }
 
-func msgType(c *p.Combined) parse.MsgType {
-	// Method, Params, ID => request
-	// Method, Params, no-ID => notification
-	// Error => error response
-	// Result, ID => response
-	if c.Error != nil {
-		return parse.ReportErr
-	}
-	if c.Params != nil && c.ID != nil {
-		// $/cancel could be either, cope someday
-		if parse.FromServer(c.Method) {
-			return parse.SvRequest
-		}
-		return parse.ClRequest
-	}
-	if c.Params != nil {
-		// we're receiving it, so it must be ToClient
-		return parse.ToClient
-	}
-	if c.Result == nil {
-		if c.ID != nil {
-			return parse.ClResponse
-		}
-		log.Printf("%+v", *c)
-		panic("couldn't determine direction")
-	}
-	// we've received it, so it must be ClResponse
-	return parse.ClResponse
-}
-
 func send(ctx context.Context, l *parse.Logmsg, stream jsonrpc2.Stream, id *jsonrpc2.ID) {
-	x, err := json.Marshal(l.Body)
-	if err != nil {
-		log.Fatal(err)
-	}
-	y := json.RawMessage(x)
 	if id == nil {
 		// need to use the number version of ID
 		n, err := strconv.Atoi(l.ID)
 		if err != nil {
 			n = 0
 		}
-		id = &jsonrpc2.ID{Number: int64(n)}
+		nid := jsonrpc2.NewIntID(int64(n))
+		id = &nid
 	}
-	var r interface{}
+	var msg jsonrpc2.Message
+	var err error
 	switch l.Type {
 	case parse.ClRequest:
-		r = jsonrpc2.WireRequest{
-			ID:     id,
-			Method: l.Method,
-			Params: &y,
-		}
+		msg, err = jsonrpc2.NewCall(*id, l.Method, l.Body)
 	case parse.SvResponse:
-		r = jsonrpc2.WireResponse{
-			ID:     id,
-			Result: &y,
-		}
+		msg, err = jsonrpc2.NewResponse(*id, l.Body, nil)
 	case parse.ToServer:
-		r = jsonrpc2.WireRequest{
-			Method: l.Method,
-			Params: &y,
-		}
+		msg, err = jsonrpc2.NewNotification(l.Method, l.Body)
 	default:
 		log.Fatalf("sending %s", l.Type)
 	}
-	data, err := json.Marshal(r)
 	if err != nil {
 		log.Fatal(err)
 	}
-	stream.Write(ctx, data)
+	stream.Write(ctx, msg)
 }
 
-func strID(x *jsonrpc2.ID) string {
-	if x.Name != "" {
-		log.Printf("strID returns %s", x.Name)
-		return x.Name
-	}
-	return strconv.Itoa(int(x.Number))
-}
-
-func respond(ctx context.Context, c *p.Combined, stream jsonrpc2.Stream) {
+func respond(ctx context.Context, c *jsonrpc2.Call, stream jsonrpc2.Stream) {
 	// c is a server request
 	// pick out the id, and look for the response in msgs
-	id := strID(c.ID)
+	id := c.ID()
+	idstr := fmt.Sprint(id)
 	for _, l := range msgs {
-		if l.ID == id && l.Type == parse.SvResponse {
+		if l.ID == idstr && l.Type == parse.SvResponse {
 			// check that the methods match?
 			// need to send back the same ID we got.
-			send(ctx, l, stream, c.ID)
+			send(ctx, l, stream, &id)
 			return
 		}
 	}
-	log.Fatalf("no response found %q %+v %+v", c.Method, c.ID, c)
+	log.Fatalf("no response found %q %+v %+v", c.Method(), c.ID(), c)
 }
 
 func findgopls() string {
@@ -280,17 +228,13 @@ func mimic(ctx context.Context) {
 		log.Fatal(err)
 	}
 	stream := jsonrpc2.NewHeaderStream(fromServer, toServer)
-	rchan := make(chan *p.Combined, 10) // do we need buffering?
+	rchan := make(chan jsonrpc2.Message, 10) // do we need buffering?
 	rdr := func() {
 		for {
-			buf, _, err := stream.Read(ctx)
+			msg, _, err := stream.Read(ctx)
 			if err != nil {
 				rchan <- nil // close it instead?
 				return
-			}
-			msg := &p.Combined{}
-			if err := json.Unmarshal(buf, msg); err != nil {
-				log.Fatal(err)
 			}
 			rchan <- msg
 		}
@@ -313,27 +257,26 @@ big:
 			}
 		done:
 			for {
-				x := <-rchan
-				if x == nil {
+				msg := <-rchan
+				if msg == nil {
 					break big
 				}
 				// if it's svrequest, do something
 				// if it's clresponse or reporterr, add to seenids, and if it
 				// is l.id, break out of the loop, and continue the outer loop
-				switch mt := msgType(x); mt {
-				case parse.SvRequest:
-					respond(ctx, x, stream)
-					continue done // still waiting
-				case parse.ClResponse, parse.ReportErr:
-					id := strID(x.ID)
+
+				switch msg := msg.(type) {
+				case *jsonrpc2.Call:
+					if parse.FromServer(msg.Method()) {
+						respond(ctx, msg, stream)
+						continue done // still waiting
+					}
+				case *jsonrpc2.Response:
+					id := fmt.Sprint(msg.ID())
 					seenids[id] = true
 					if id == l.ID {
 						break done
 					}
-				case parse.ToClient:
-					continue
-				default:
-					log.Fatalf("%s", mt)
 				}
 			}
 		case parse.SvRequest: // not ours to send

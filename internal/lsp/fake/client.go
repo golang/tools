@@ -10,13 +10,24 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 )
 
-// Client is an adapter that converts a *Client into an LSP Client.
+// Client is an adapter that converts an *Editor into an LSP Client. It mosly
+// delegates functionality to hooks that can be configured by tests.
 type Client struct {
 	*Editor
 
 	// Hooks for testing. Add additional hooks here as needed for testing.
-	onLogMessage  func(context.Context, *protocol.LogMessageParams) error
-	onDiagnostics func(context.Context, *protocol.PublishDiagnosticsParams) error
+	onLogMessage             func(context.Context, *protocol.LogMessageParams) error
+	onDiagnostics            func(context.Context, *protocol.PublishDiagnosticsParams) error
+	onWorkDoneProgressCreate func(context.Context, *protocol.WorkDoneProgressCreateParams) error
+	onProgress               func(context.Context, *protocol.ProgressParams) error
+	onShowMessage            func(context.Context, *protocol.ShowMessageParams) error
+}
+
+// OnShowMessage sets the hook to run when the editor receives a showMessage notification
+func (c *Client) OnShowMessage(hook func(context.Context, *protocol.ShowMessageParams) error) {
+	c.mu.Lock()
+	c.onShowMessage = hook
+	c.mu.Unlock()
 }
 
 // OnLogMessage sets the hook to run when the editor receives a log message.
@@ -34,10 +45,25 @@ func (c *Client) OnDiagnostics(hook func(context.Context, *protocol.PublishDiagn
 	c.mu.Unlock()
 }
 
+func (c *Client) OnWorkDoneProgressCreate(hook func(context.Context, *protocol.WorkDoneProgressCreateParams) error) {
+	c.mu.Lock()
+	c.onWorkDoneProgressCreate = hook
+	c.mu.Unlock()
+}
+
+func (c *Client) OnProgress(hook func(context.Context, *protocol.ProgressParams) error) {
+	c.mu.Lock()
+	c.onProgress = hook
+	c.mu.Unlock()
+}
+
 func (c *Client) ShowMessage(ctx context.Context, params *protocol.ShowMessageParams) error {
 	c.mu.Lock()
 	c.lastMessage = params
 	c.mu.Unlock()
+	if c.onShowMessage != nil {
+		return c.onShowMessage(ctx, params)
+	}
 	return nil
 }
 
@@ -78,8 +104,15 @@ func (c *Client) WorkspaceFolders(context.Context) ([]protocol.WorkspaceFolder, 
 	return []protocol.WorkspaceFolder{}, nil
 }
 
-func (c *Client) Configuration(context.Context, *protocol.ParamConfiguration) ([]interface{}, error) {
-	return []interface{}{c.configuration()}, nil
+func (c *Client) Configuration(_ context.Context, p *protocol.ParamConfiguration) ([]interface{}, error) {
+	results := make([]interface{}, len(p.Items))
+	for i, item := range p.Items {
+		if item.Section != "gopls" {
+			continue
+		}
+		results[i] = c.configuration()
+	}
+	return results, nil
 }
 
 func (c *Client) RegisterCapability(context.Context, *protocol.RegistrationParams) error {
@@ -90,11 +123,23 @@ func (c *Client) UnregisterCapability(context.Context, *protocol.UnregistrationP
 	return nil
 }
 
-func (c *Client) Progress(context.Context, *protocol.ProgressParams) error {
+func (c *Client) Progress(ctx context.Context, params *protocol.ProgressParams) error {
+	c.mu.Lock()
+	onProgress := c.onProgress
+	c.mu.Unlock()
+	if onProgress != nil {
+		return onProgress(ctx, params)
+	}
 	return nil
 }
 
-func (c *Client) WorkDoneProgressCreate(context.Context, *protocol.WorkDoneProgressCreateParams) error {
+func (c *Client) WorkDoneProgressCreate(ctx context.Context, params *protocol.WorkDoneProgressCreateParams) error {
+	c.mu.Lock()
+	onCreate := c.onWorkDoneProgressCreate
+	c.mu.Unlock()
+	if onCreate != nil {
+		return onCreate(ctx, params)
+	}
 	return nil
 }
 
@@ -105,7 +150,7 @@ func (c *Client) ApplyEdit(ctx context.Context, params *protocol.ApplyWorkspaceE
 		return &protocol.ApplyWorkspaceEditResponse{FailureReason: "Edit.Changes is unsupported"}, nil
 	}
 	for _, change := range params.Edit.DocumentChanges {
-		path := c.ws.URIToPath(change.TextDocument.URI)
+		path := c.sandbox.Workdir.URIToPath(change.TextDocument.URI)
 		edits := convertEdits(change.Edits)
 		c.EditBuffer(ctx, path, edits)
 	}

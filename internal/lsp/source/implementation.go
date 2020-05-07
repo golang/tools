@@ -12,12 +12,12 @@ import (
 	"go/token"
 	"go/types"
 
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/telemetry/event"
 )
 
 func Implementation(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position) ([]protocol.Location, error) {
-	ctx, done := event.StartSpan(ctx, "source.Implementation")
+	ctx, done := event.Start(ctx, "source.Implementation")
 	defer done()
 
 	impls, err := implementations(ctx, s, f, pp)

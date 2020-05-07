@@ -151,6 +151,7 @@ func (e *Exported) getNotes() error {
 	if err != nil {
 		return fmt.Errorf("unable to load packages for directories %s: %v", dirs, err)
 	}
+	seen := make(map[token.Position]struct{})
 	for _, pkg := range pkgs {
 		for _, filename := range pkg.GoFiles {
 			content, err := e.FileContents(filename)
@@ -161,7 +162,14 @@ func (e *Exported) getNotes() error {
 			if err != nil {
 				return fmt.Errorf("failed to extract expectations: %v", err)
 			}
-			notes = append(notes, l...)
+			for _, note := range l {
+				pos := e.ExpectFileSet.Position(note.Pos)
+				if _, ok := seen[pos]; ok {
+					continue
+				}
+				notes = append(notes, note)
+				seen[pos] = struct{}{}
+			}
 		}
 	}
 	if _, ok := e.written[e.primary]; !ok {

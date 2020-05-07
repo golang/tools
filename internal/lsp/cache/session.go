@@ -11,10 +11,11 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/event"
 	"golang.org/x/tools/internal/xcontext"
 	errors "golang.org/x/xerrors"
 )
@@ -133,6 +134,7 @@ func (s *Session) createView(ctx context.Context, name string, folder span.URI, 
 			modHandles:        make(map[span.URI]*modHandle),
 		},
 		ignoredURIs: make(map[span.URI]struct{}),
+		gocmdRunner: &gocommand.Runner{},
 	}
 	v.snapshot.view = v
 

@@ -5,11 +5,9 @@
 package cache
 
 import (
-	"context"
 	"go/ast"
 	"go/types"
 
-	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/span"
@@ -23,8 +21,8 @@ type pkg struct {
 	pkgPath         packagePath
 	mode            source.ParseMode
 	forTest         packagePath
-	goFiles         []source.ParseGoHandle
-	compiledGoFiles []source.ParseGoHandle
+	goFiles         []*parseGoHandle
+	compiledGoFiles []*parseGoHandle
 	errors          []*source.Error
 	imports         map[packagePath]*pkg
 	module          *packagesinternal.Module
@@ -54,7 +52,11 @@ func (p *pkg) PkgPath() string {
 }
 
 func (p *pkg) CompiledGoFiles() []source.ParseGoHandle {
-	return p.compiledGoFiles
+	var files []source.ParseGoHandle
+	for _, f := range p.compiledGoFiles {
+		files = append(files, f)
+	}
+	return files
 }
 
 func (p *pkg) File(uri span.URI) (source.ParseGoHandle, error) {
@@ -124,47 +126,4 @@ func (p *pkg) Imports() []source.Package {
 
 func (p *pkg) Module() *packagesinternal.Module {
 	return p.module
-}
-
-func (s *snapshot) FindAnalysisError(ctx context.Context, pkgID, analyzerName, msg string, rng protocol.Range) (*source.Error, *source.Analyzer, error) {
-	analyzer := findAnalyzer(s, analyzerName)
-	if analyzer.Analyzer == nil {
-		return nil, nil, errors.Errorf("unexpected analyzer: %s", analyzerName)
-	}
-	if !analyzer.Enabled(s) {
-		return nil, nil, errors.Errorf("disabled analyzer: %s", analyzerName)
-	}
-	act, err := s.actionHandle(ctx, packageID(pkgID), analyzer.Analyzer)
-	if err != nil {
-		return nil, nil, err
-	}
-	errs, _, err := act.analyze(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, err := range errs {
-		if err.Category != analyzer.Analyzer.Name {
-			continue
-		}
-		if err.Message != msg {
-			continue
-		}
-		if protocol.CompareRange(err.Range, rng) != 0 {
-			continue
-		}
-		return err, &analyzer, nil
-	}
-	return nil, nil, errors.Errorf("no matching diagnostic for %s:%v", pkgID, analyzerName)
-}
-
-func findAnalyzer(s *snapshot, analyzerName string) source.Analyzer {
-	checked := s.View().Options().DefaultAnalyzers
-	if a, ok := checked[analyzerName]; ok {
-		return a
-	}
-	checked = s.View().Options().TypeErrorAnalyzers
-	if a, ok := checked[analyzerName]; ok {
-		return a
-	}
-	return source.Analyzer{}
 }

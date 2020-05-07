@@ -13,9 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/event/core"
+	"golang.org/x/tools/internal/event/export"
+	"golang.org/x/tools/internal/event/label"
 	"golang.org/x/tools/internal/lsp/debug/tag"
-	"golang.org/x/tools/internal/telemetry/event"
-	"golang.org/x/tools/internal/telemetry/export"
 )
 
 var rpcTmpl = template.Must(template.Must(baseTemplate.Clone()).Parse(`
@@ -77,22 +79,22 @@ type rpcCodeBucket struct {
 	Count int64
 }
 
-func (r *rpcs) ProcessEvent(ctx context.Context, ev event.Event, tagMap event.TagMap) context.Context {
+func (r *rpcs) ProcessEvent(ctx context.Context, ev core.Event, lm label.Map) context.Context {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	switch {
-	case ev.IsStartSpan():
+	case event.IsStart(ev):
 		if _, stats := r.getRPCSpan(ctx, ev); stats != nil {
 			stats.Started++
 		}
-	case ev.IsEndSpan():
+	case event.IsEnd(ev):
 		span, stats := r.getRPCSpan(ctx, ev)
 		if stats != nil {
 			endRPC(ctx, ev, span, stats)
 		}
-	case ev.IsRecord():
-		sent := byteUnits(tag.SentBytes.Get(tagMap))
-		rec := byteUnits(tag.ReceivedBytes.Get(tagMap))
+	case event.IsMetric(ev):
+		sent := byteUnits(tag.SentBytes.Get(lm))
+		rec := byteUnits(tag.ReceivedBytes.Get(lm))
 		if sent != 0 || rec != 0 {
 			if _, stats := r.getRPCSpan(ctx, ev); stats != nil {
 				stats.Sent += sent
@@ -103,7 +105,7 @@ func (r *rpcs) ProcessEvent(ctx context.Context, ev event.Event, tagMap event.Ta
 	return ctx
 }
 
-func endRPC(ctx context.Context, ev event.Event, span *export.Span, stats *rpcStats) {
+func endRPC(ctx context.Context, ev core.Event, span *export.Span, stats *rpcStats) {
 	// update the basic counts
 	stats.Completed++
 
@@ -127,7 +129,7 @@ func endRPC(ctx context.Context, ev event.Event, span *export.Span, stats *rpcSt
 	}
 
 	// calculate latency if this was an rpc span
-	elapsedTime := span.Finish().At.Sub(span.Start().At)
+	elapsedTime := span.Finish().At().Sub(span.Start().At())
 	latencyMillis := timeUnits(elapsedTime) / timeUnits(time.Millisecond)
 	if stats.Latency.Count == 0 {
 		stats.Latency.Min = latencyMillis
@@ -150,7 +152,7 @@ func endRPC(ctx context.Context, ev event.Event, span *export.Span, stats *rpcSt
 	}
 }
 
-func (r *rpcs) getRPCSpan(ctx context.Context, ev event.Event) (*export.Span, *rpcStats) {
+func (r *rpcs) getRPCSpan(ctx context.Context, ev core.Event) (*export.Span, *rpcStats) {
 	// get the span
 	span := export.GetSpan(ctx)
 	if span == nil {
@@ -161,13 +163,13 @@ func (r *rpcs) getRPCSpan(ctx context.Context, ev event.Event) (*export.Span, *r
 	return span, r.getRPCStats(span.Start())
 }
 
-func (r *rpcs) getRPCStats(tagMap event.TagMap) *rpcStats {
-	method := tag.Method.Get(tagMap)
+func (r *rpcs) getRPCStats(lm label.Map) *rpcStats {
+	method := tag.Method.Get(lm)
 	if method == "" {
 		return nil
 	}
 	set := &r.Inbound
-	if tag.RPCDirection.Get(tagMap) != tag.Inbound {
+	if tag.RPCDirection.Get(lm) != tag.Inbound {
 		set = &r.Outbound
 	}
 	// get the record for this method

@@ -31,8 +31,12 @@ type Snapshot interface {
 	// Config returns the configuration for the view.
 	Config(ctx context.Context) *packages.Config
 
-	// GetFile returns the file object for a given URI, initializing it
-	// if it is not already part of the view.
+	// FindFile returns the FileHandle for the given URI, if it is already
+	// in the given snapshot.
+	FindFile(uri span.URI) FileHandle
+
+	// GetFile returns the FileHandle for a given URI, initializing it
+	// if it is not already part of the snapshot.
 	GetFile(uri span.URI) (FileHandle, error)
 
 	// IsOpen returns whether the editor currently has a file open.
@@ -42,11 +46,7 @@ type Snapshot interface {
 	IsSaved(uri span.URI) bool
 
 	// Analyze runs the analyses for the given package at this snapshot.
-	Analyze(ctx context.Context, id string, analyzers []*analysis.Analyzer) ([]*Error, error)
-
-	// FindAnalysisError returns the analysis error represented by the diagnostic.
-	// This is used to get the SuggestedFixes associated with that error.
-	FindAnalysisError(ctx context.Context, pkgID, analyzerName, msg string, rng protocol.Range) (*Error, *Analyzer, error)
+	Analyze(ctx context.Context, pkgID string, analyzers ...*analysis.Analyzer) ([]*Error, error)
 
 	// ModTidyHandle returns a ModTidyHandle for the given go.mod file handle.
 	// This function can have no data or error if there is no modfile detected.
@@ -372,6 +372,11 @@ type Analyzer struct {
 	// If this is true, then we can apply the suggested fixes
 	// as part of a source.FixAll codeaction.
 	HighConfidence bool
+
+	// FixesError is only set for type-error analyzers.
+	// It reports true if the message provided indicates an error that could be
+	// fixed by the analyzer.
+	FixesError func(msg string) bool
 }
 
 func (a Analyzer) Enabled(snapshot Snapshot) bool {

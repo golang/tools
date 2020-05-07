@@ -81,14 +81,14 @@ type Server struct {
 	// to determine if the client can support progress notifications
 	supportsWorkDoneProgress bool
 	inProgressMu             sync.Mutex
-	inProgress               map[string]func()
+	inProgress               map[string]*WorkDone
 }
 
 // sentDiagnostics is used to cache diagnostics that have been sent for a given file.
 type sentDiagnostics struct {
 	version      float64
 	identifier   string
-	sorted       []source.Diagnostic
+	sorted       []*source.Diagnostic
 	withAnalysis bool
 	snapshotID   uint64
 }
@@ -146,22 +146,31 @@ func (s *Server) workDoneProgressCancel(ctx context.Context, params *protocol.Wo
 	}
 	s.inProgressMu.Lock()
 	defer s.inProgressMu.Unlock()
-	cancel, ok := s.inProgress[token]
+	wd, ok := s.inProgress[token]
 	if !ok {
 		return errors.Errorf("token %q not found in progress", token)
 	}
-	cancel()
+	if wd.cancel == nil {
+		return errors.Errorf("work %q is not cancellable", token)
+	}
+	wd.cancel()
 	return nil
 }
 
-func (s *Server) clearInProgress(token string) {
+func (s *Server) addInProgress(wd *WorkDone) {
+	s.inProgressMu.Lock()
+	s.inProgress[wd.token] = wd
+	s.inProgressMu.Unlock()
+}
+
+func (s *Server) removeInProgress(token string) {
 	s.inProgressMu.Lock()
 	delete(s.inProgress, token)
 	s.inProgressMu.Unlock()
 }
 
-func notImplemented(method string) *jsonrpc2.Error {
-	return jsonrpc2.NewErrorf(jsonrpc2.CodeMethodNotFound, "method %q not yet implemented", method)
+func notImplemented(method string) error {
+	return fmt.Errorf("%w: %q not yet implemented", jsonrpc2.ErrMethodNotFound, method)
 }
 
 //go:generate helper/helper -d protocol/tsserver.go -o server_gen.go -u .

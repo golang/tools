@@ -15,8 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/tools/internal/telemetry/event"
-	"golang.org/x/tools/internal/telemetry/export"
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/event/core"
+	"golang.org/x/tools/internal/event/export"
+	"golang.org/x/tools/internal/event/label"
 )
 
 var traceTmpl = template.Must(template.Must(baseTemplate.Clone()).Parse(`
@@ -73,7 +75,7 @@ type traceEvent struct {
 	Tags   string
 }
 
-func (t *traces) ProcessEvent(ctx context.Context, ev event.Event, tags event.TagMap) context.Context {
+func (t *traces) ProcessEvent(ctx context.Context, ev core.Event, lm label.Map) context.Context {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	span := export.GetSpan(ctx)
@@ -82,7 +84,7 @@ func (t *traces) ProcessEvent(ctx context.Context, ev event.Event, tags event.Ta
 	}
 
 	switch {
-	case ev.IsStartSpan():
+	case event.IsStart(ev):
 		if t.sets == nil {
 			t.sets = make(map[string]*traceSet)
 			t.unfinished = make(map[export.SpanContext]*traceData)
@@ -93,8 +95,8 @@ func (t *traces) ProcessEvent(ctx context.Context, ev event.Event, tags event.Ta
 			SpanID:   span.ID.SpanID,
 			ParentID: span.ParentID,
 			Name:     span.Name,
-			Start:    span.Start().At,
-			Tags:     renderTags(span.Start().Tags()),
+			Start:    span.Start().At(),
+			Tags:     renderLabels(span.Start()),
 		}
 		t.unfinished[span.ID] = td
 		// and wire up parents if we have them
@@ -109,7 +111,7 @@ func (t *traces) ProcessEvent(ctx context.Context, ev event.Event, tags event.Ta
 		}
 		parent.Children = append(parent.Children, td)
 
-	case ev.IsEndSpan():
+	case event.IsEnd(ev):
 		// finishing, must be already in the map
 		td, found := t.unfinished[span.ID]
 		if !found {
@@ -117,14 +119,14 @@ func (t *traces) ProcessEvent(ctx context.Context, ev event.Event, tags event.Ta
 		}
 		delete(t.unfinished, span.ID)
 
-		td.Finish = span.Finish().At
-		td.Duration = span.Finish().At.Sub(span.Start().At)
+		td.Finish = span.Finish().At()
+		td.Duration = span.Finish().At().Sub(span.Start().At())
 		events := span.Events()
 		td.Events = make([]traceEvent, len(events))
 		for i, event := range events {
 			td.Events[i] = traceEvent{
-				Time: event.At,
-				Tags: renderTags(event.Tags()),
+				Time: event.At(),
+				Tags: renderLabels(event),
 			}
 		}
 
@@ -170,10 +172,12 @@ func fillOffsets(td *traceData, start time.Time) {
 	}
 }
 
-func renderTags(tags event.TagIterator) string {
+func renderLabels(labels label.List) string {
 	buf := &bytes.Buffer{}
-	for ; tags.Valid(); tags.Advance() {
-		fmt.Fprintf(buf, "%v ", tags.Tag())
+	for index := 0; labels.Valid(index); index++ {
+		if l := labels.Label(index); l.Valid() {
+			fmt.Fprintf(buf, "%v ", l)
+		}
 	}
 	return buf.String()
 }

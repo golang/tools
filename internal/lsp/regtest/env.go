@@ -2,228 +2,21 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package regtest provides an environment for writing regression tests.
 package regtest
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"os/exec"
-	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
-	"golang.org/x/tools/internal/lsp/cache"
-	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/fake"
-	"golang.org/x/tools/internal/lsp/lsprpc"
 	"golang.org/x/tools/internal/lsp/protocol"
 )
-
-// EnvMode is a bitmask that defines in which execution environments a test
-// should run.
-type EnvMode int
-
-const (
-	// Singleton mode uses a separate cache for each test.
-	Singleton EnvMode = 1 << iota
-	// Shared mode uses a Shared cache.
-	Shared
-	// Forwarded forwards connections to an in-process gopls instance.
-	Forwarded
-	// SeparateProcess runs a separate gopls process, and forwards connections to
-	// it.
-	SeparateProcess
-	// NormalModes runs tests in all modes.
-	NormalModes = Singleton | Forwarded
-)
-
-// A Runner runs tests in gopls execution environments, as specified by its
-// modes. For modes that share state (for example, a shared cache or common
-// remote), any tests that execute on the same Runner will share the same
-// state.
-type Runner struct {
-	defaultModes EnvMode
-	timeout      time.Duration
-	goplsPath    string
-
-	mu        sync.Mutex
-	ts        *servertest.TCPServer
-	socketDir string
-}
-
-// NewTestRunner creates a Runner with its shared state initialized, ready to
-// run tests.
-func NewTestRunner(modes EnvMode, testTimeout time.Duration, goplsPath string) *Runner {
-	return &Runner{
-		defaultModes: modes,
-		timeout:      testTimeout,
-		goplsPath:    goplsPath,
-	}
-}
-
-// Modes returns the bitmask of environment modes this runner is configured to
-// test.
-func (r *Runner) Modes() EnvMode {
-	return r.defaultModes
-}
-
-// getTestServer gets the test server instance to connect to, or creates one if
-// it doesn't exist.
-func (r *Runner) getTestServer() *servertest.TCPServer {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.ts == nil {
-		ctx := context.Background()
-		ctx = debug.WithInstance(ctx, "", "")
-		ss := lsprpc.NewStreamServer(cache.New(ctx, nil))
-		r.ts = servertest.NewTCPServer(context.Background(), ss)
-	}
-	return r.ts
-}
-
-// runTestAsGoplsEnvvar triggers TestMain to run gopls instead of running
-// tests. It's a trick to allow tests to find a binary to use to start a gopls
-// subprocess.
-const runTestAsGoplsEnvvar = "_GOPLS_TEST_BINARY_RUN_AS_GOPLS"
-
-func (r *Runner) getRemoteSocket(t *testing.T) string {
-	t.Helper()
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	const daemonFile = "gopls-test-daemon"
-	if r.socketDir != "" {
-		return filepath.Join(r.socketDir, daemonFile)
-	}
-
-	if r.goplsPath == "" {
-		t.Fatal("cannot run tests with a separate process unless a path to a gopls binary is configured")
-	}
-	var err error
-	r.socketDir, err = ioutil.TempDir("", "gopls-regtests")
-	if err != nil {
-		t.Fatalf("creating tempdir: %v", err)
-	}
-	socket := filepath.Join(r.socketDir, daemonFile)
-	args := []string{"serve", "-listen", "unix;" + socket, "-listen.timeout", "10s"}
-	cmd := exec.Command(r.goplsPath, args...)
-	cmd.Env = append(os.Environ(), runTestAsGoplsEnvvar+"=true")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	go func() {
-		if err := cmd.Run(); err != nil {
-			panic(fmt.Sprintf("error running external gopls: %v\nstderr:\n%s", err, stderr.String()))
-		}
-	}()
-	return socket
-}
-
-// Close cleans up resource that have been allocated to this workspace.
-func (r *Runner) Close() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.ts != nil {
-		r.ts.Close()
-	}
-	if r.socketDir != "" {
-		os.RemoveAll(r.socketDir)
-	}
-	return nil
-}
-
-// Run executes the test function in the default configured gopls execution
-// modes. For each a test run, a new workspace is created containing the
-// un-txtared files specified by filedata.
-func (r *Runner) Run(t *testing.T, filedata string, test func(e *Env)) {
-	t.Helper()
-	r.RunInMode(r.defaultModes, t, filedata, test)
-}
-
-// RunInMode runs the test in the execution modes specified by the modes bitmask.
-func (r *Runner) RunInMode(modes EnvMode, t *testing.T, filedata string, test func(e *Env)) {
-	t.Helper()
-	tests := []struct {
-		name         string
-		mode         EnvMode
-		getConnector func(context.Context, *testing.T) (servertest.Connector, func())
-	}{
-		{"singleton", Singleton, r.singletonEnv},
-		{"shared", Shared, r.sharedEnv},
-		{"forwarded", Forwarded, r.forwardedEnv},
-		{"separate_process", SeparateProcess, r.separateProcessEnv},
-	}
-
-	for _, tc := range tests {
-		tc := tc
-		if modes&tc.mode == 0 {
-			continue
-		}
-		t.Run(tc.name, func(t *testing.T) {
-			t.Helper()
-			ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
-			defer cancel()
-			ws, err := fake.NewWorkspace("lsprpc", []byte(filedata))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer ws.Close()
-			ts, cleanup := tc.getConnector(ctx, t)
-			defer cleanup()
-			env := NewEnv(ctx, t, ws, ts)
-			defer func() {
-				if err := env.E.Shutdown(ctx); err != nil {
-					panic(err)
-				}
-			}()
-			test(env)
-		})
-	}
-}
-
-func (r *Runner) singletonEnv(ctx context.Context, t *testing.T) (servertest.Connector, func()) {
-	ctx = debug.WithInstance(ctx, "", "")
-	ss := lsprpc.NewStreamServer(cache.New(ctx, nil))
-	ts := servertest.NewPipeServer(ctx, ss)
-	cleanup := func() {
-		ts.Close()
-	}
-	return ts, cleanup
-}
-
-func (r *Runner) sharedEnv(ctx context.Context, t *testing.T) (servertest.Connector, func()) {
-	return r.getTestServer(), func() {}
-}
-
-func (r *Runner) forwardedEnv(ctx context.Context, t *testing.T) (servertest.Connector, func()) {
-	ctx = debug.WithInstance(ctx, "", "")
-	ts := r.getTestServer()
-	forwarder := lsprpc.NewForwarder("tcp", ts.Addr)
-	ts2 := servertest.NewPipeServer(ctx, forwarder)
-	cleanup := func() {
-		ts2.Close()
-	}
-	return ts2, cleanup
-}
-
-func (r *Runner) separateProcessEnv(ctx context.Context, t *testing.T) (servertest.Connector, func()) {
-	ctx = debug.WithInstance(ctx, "", "")
-	socket := r.getRemoteSocket(t)
-	// TODO(rfindley): can we use the autostart behavior here, instead of
-	// pre-starting the remote?
-	forwarder := lsprpc.NewForwarder("unix", socket)
-	ts2 := servertest.NewPipeServer(ctx, forwarder)
-	cleanup := func() {
-		ts2.Close()
-	}
-	return ts2, cleanup
-}
 
 // Env holds an initialized fake Editor, Workspace, and Server, which may be
 // used for writing tests. It also provides adapter methods that call t.Fatal
@@ -233,50 +26,108 @@ type Env struct {
 	T   *testing.T
 	Ctx context.Context
 
-	// Most tests should not need to access the workspace, editor, server, or
+	// Most tests should not need to access the scratch area, editor, server, or
 	// connection, but they are available if needed.
-	W      *fake.Workspace
-	E      *fake.Editor
-	Server servertest.Connector
-	Conn   *jsonrpc2.Conn
+	Sandbox *fake.Sandbox
+	Editor  *fake.Editor
+	Server  servertest.Connector
+	Conn    *jsonrpc2.Conn
 
 	// mu guards the fields below, for the purpose of checking conditions on
 	// every change to diagnostics.
 	mu sync.Mutex
 	// For simplicity, each waiter gets a unique ID.
-	nextWaiterID    int
-	lastDiagnostics map[string]*protocol.PublishDiagnosticsParams
-	waiters         map[int]*diagnosticCondition
+	nextWaiterID int
+	state        State
+	waiters      map[int]*condition
 }
 
-// A diagnosticCondition is satisfied when all expectations are simultaneously
+// State encapsulates the server state TODO: explain more
+type State struct {
+	// diagnostics are a map of relative path->diagnostics params
+	diagnostics map[string]*protocol.PublishDiagnosticsParams
+	logs        []*protocol.LogMessageParams
+	showMessage []*protocol.ShowMessageParams
+	// outstandingWork is a map of token->work summary. All tokens are assumed to
+	// be string, though the spec allows for numeric tokens as well.  When work
+	// completes, it is deleted from this map.
+	outstandingWork map[string]*workProgress
+	completedWork   map[string]int
+}
+
+type workProgress struct {
+	title   string
+	percent float64
+}
+
+func (s State) String() string {
+	var b strings.Builder
+	b.WriteString("#### log messages (see RPC logs for full text):\n")
+	for _, msg := range s.logs {
+		summary := fmt.Sprintf("%v: %q", msg.Type, msg.Message)
+		if len(summary) > 60 {
+			summary = summary[:57] + "..."
+		}
+		// Some logs are quite long, and since they should be reproduced in the RPC
+		// logs on any failure we include here just a short summary.
+		fmt.Fprint(&b, "\t"+summary+"\n")
+	}
+	b.WriteString("\n")
+	b.WriteString("#### diagnostics:\n")
+	for name, params := range s.diagnostics {
+		fmt.Fprintf(&b, "\t%s (version %d):\n", name, int(params.Version))
+		for _, d := range params.Diagnostics {
+			fmt.Fprintf(&b, "\t\t(%d, %d): %s\n", int(d.Range.Start.Line), int(d.Range.Start.Character), d.Message)
+		}
+	}
+	b.WriteString("\n")
+	b.WriteString("#### outstanding work:\n")
+	for token, state := range s.outstandingWork {
+		name := state.title
+		if name == "" {
+			name = fmt.Sprintf("!NO NAME(token: %s)", token)
+		}
+		fmt.Fprintf(&b, "\t%s: %.2f", name, state.percent)
+	}
+	return b.String()
+}
+
+// A condition is satisfied when all expectations are simultaneously
 // met. At that point, the 'met' channel is closed. On any failure, err is set
 // and the failed channel is closed.
-type diagnosticCondition struct {
-	expectations []DiagnosticExpectation
-	met          chan struct{}
+type condition struct {
+	expectations []Expectation
+	verdict      chan Verdict
 }
 
-// NewEnv creates a new test environment using the given workspace and gopls
-// server.
-func NewEnv(ctx context.Context, t *testing.T, ws *fake.Workspace, ts servertest.Connector) *Env {
+// NewEnv creates a new test environment using the given scratch environment
+// and gopls server.
+func NewEnv(ctx context.Context, t *testing.T, scratch *fake.Sandbox, ts servertest.Connector) *Env {
 	t.Helper()
 	conn := ts.Connect(ctx)
-	editor, err := fake.NewConnectedEditor(ctx, ws, conn)
+	editor, err := fake.NewEditor(scratch).Connect(ctx, conn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	env := &Env{
-		T:               t,
-		Ctx:             ctx,
-		W:               ws,
-		E:               editor,
-		Server:          ts,
-		Conn:            conn,
-		lastDiagnostics: make(map[string]*protocol.PublishDiagnosticsParams),
-		waiters:         make(map[int]*diagnosticCondition),
+		T:       t,
+		Ctx:     ctx,
+		Sandbox: scratch,
+		Editor:  editor,
+		Server:  ts,
+		Conn:    conn,
+		state: State{
+			diagnostics:     make(map[string]*protocol.PublishDiagnosticsParams),
+			outstandingWork: make(map[string]*workProgress),
+			completedWork:   make(map[string]int),
+		},
+		waiters: make(map[int]*condition),
 	}
-	env.E.Client().OnDiagnostics(env.onDiagnostics)
+	env.Editor.Client().OnDiagnostics(env.onDiagnostics)
+	env.Editor.Client().OnLogMessage(env.onLogMessage)
+	env.Editor.Client().OnWorkDoneProgressCreate(env.onWorkDoneProgressCreate)
+	env.Editor.Client().OnProgress(env.onProgress)
+	env.Editor.Client().OnShowMessage(env.onShowMessage)
 	return env
 }
 
@@ -284,90 +135,374 @@ func (e *Env) onDiagnostics(_ context.Context, d *protocol.PublishDiagnosticsPar
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	pth := e.W.URIToPath(d.URI)
-	e.lastDiagnostics[pth] = d
-
-	for id, condition := range e.waiters {
-		if meetsExpectations(e.lastDiagnostics, condition.expectations) {
-			delete(e.waiters, id)
-			close(condition.met)
-		}
-	}
+	pth := e.Sandbox.Workdir.URIToPath(d.URI)
+	e.state.diagnostics[pth] = d
+	e.checkConditionsLocked()
 	return nil
 }
 
-// ExpectDiagnostics asserts that the current diagnostics in the editor match
-// the given expectations. It is intended to be used together with Env.Await to
-// allow waiting on simpler diagnostic expectations (for example,
-// AnyDiagnosticsACurrenttVersion), followed by more detailed expectations
-// tested by ExpectDiagnostics.
+func (e *Env) onShowMessage(_ context.Context, m *protocol.ShowMessageParams) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.state.showMessage = append(e.state.showMessage, m)
+	e.checkConditionsLocked()
+	return nil
+}
+
+func (e *Env) onLogMessage(_ context.Context, m *protocol.LogMessageParams) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.state.logs = append(e.state.logs, m)
+	e.checkConditionsLocked()
+	return nil
+}
+
+func (e *Env) onWorkDoneProgressCreate(_ context.Context, m *protocol.WorkDoneProgressCreateParams) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	token := m.Token.(string)
+	e.state.outstandingWork[token] = &workProgress{}
+	return nil
+}
+
+func (e *Env) onProgress(_ context.Context, m *protocol.ProgressParams) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	token := m.Token.(string)
+	work, ok := e.state.outstandingWork[token]
+	if !ok {
+		panic(fmt.Sprintf("got progress report for unknown report %s: %v", token, m))
+	}
+	v := m.Value.(map[string]interface{})
+	switch kind := v["kind"]; kind {
+	case "begin":
+		work.title = v["title"].(string)
+	case "report":
+		if pct, ok := v["percentage"]; ok {
+			work.percent = pct.(float64)
+		}
+	case "end":
+		title := e.state.outstandingWork[token].title
+		e.state.completedWork[title] = e.state.completedWork[title] + 1
+		delete(e.state.outstandingWork, token)
+	}
+	e.checkConditionsLocked()
+	return nil
+}
+
+func (e *Env) checkConditionsLocked() {
+	for id, condition := range e.waiters {
+		if v, _, _ := checkExpectations(e.state, condition.expectations); v != Unmet {
+			delete(e.waiters, id)
+			condition.verdict <- v
+		}
+	}
+}
+
+// ExpectNow asserts that the current state of the editor matches the given
+// expectations.
 //
-// For example:
+// It can be used together with Env.Await to allow waiting on
+// simple expectations, followed by more detailed expectations tested by
+// ExpectNow. For example:
+//
 //  env.RegexpReplace("foo.go", "a", "x")
 //  env.Await(env.AnyDiagnosticAtCurrentVersion("foo.go"))
-//  env.ExpectDiagnostics(env.DiagnosticAtRegexp("foo.go", "x"))
+//  env.ExpectNow(env.DiagnosticAtRegexp("foo.go", "x"))
 //
 // This has the advantage of not timing out if the diagnostic received for
 // "foo.go" does not match the expectation: instead it fails early.
-func (e *Env) ExpectDiagnostics(expectations ...DiagnosticExpectation) {
+func (e *Env) ExpectNow(expectations ...Expectation) {
 	e.T.Helper()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if !meetsExpectations(e.lastDiagnostics, expectations) {
-		e.T.Fatalf("diagnostic are unmet:\n%s\nlast diagnostics:\n%s", summarizeExpectations(expectations), formatDiagnostics(e.lastDiagnostics))
+	if verdict, summary, _ := checkExpectations(e.state, expectations); verdict != Met {
+		e.T.Fatalf("expectations unmet:\n%s\ncurrent state:\n%v", summary, e.state)
 	}
 }
 
-func meetsExpectations(m map[string]*protocol.PublishDiagnosticsParams, expectations []DiagnosticExpectation) bool {
+// checkExpectations reports whether s meets all expectations.
+func checkExpectations(s State, expectations []Expectation) (Verdict, string, []interface{}) {
+	finalVerdict := Met
+	var metBy []interface{}
+	var summary strings.Builder
 	for _, e := range expectations {
-		diags, ok := m[e.Path]
-		if !ok {
-			return false
+		v, mb := e.Check(s)
+		if v == Met {
+			metBy = append(metBy, mb)
 		}
-		if !e.IsMet(diags) {
-			return false
+		if v > finalVerdict {
+			finalVerdict = v
+		}
+		summary.WriteString(fmt.Sprintf("\t%v: %s\n", v, e.Description()))
+	}
+	return finalVerdict, summary.String(), metBy
+}
+
+// An Expectation asserts that the state of the editor at a point in time
+// matches an expected condition. This is used for signaling in tests when
+// certain conditions in the editor are met.
+type Expectation interface {
+	// Check determines whether the state of the editor satisfies the
+	// expectation, returning the results that met the condition.
+	Check(State) (Verdict, interface{})
+	// Description is a human-readable description of the expectation.
+	Description() string
+}
+
+// A Verdict is the result of checking an expectation against the current
+// editor state.
+type Verdict int
+
+// Order matters for the following constants: verdicts are sorted in order of
+// decisiveness.
+const (
+	// Met indicates that an expectation is satisfied by the current state.
+	Met Verdict = iota
+	// Unmet indicates that an expectation is not currently met, but could be met
+	// in the future.
+	Unmet
+	// Unmeetable indicates that an expectation cannot be satisfied in the
+	// future.
+	Unmeetable
+)
+
+// OnceMet returns an Expectation that, once the precondition is met, asserts
+// that mustMeet is met.
+func OnceMet(precondition Expectation, mustMeet Expectation) *SimpleExpectation {
+	check := func(s State) (Verdict, interface{}) {
+		switch pre, _ := precondition.Check(s); pre {
+		case Unmeetable:
+			return Unmeetable, nil
+		case Met:
+			verdict, metBy := mustMeet.Check(s)
+			if verdict != Met {
+				return Unmeetable, metBy
+			}
+			return Met, metBy
+		default:
+			return Unmet, nil
 		}
 	}
-	return true
+	return &SimpleExpectation{
+		check:       check,
+		description: fmt.Sprintf("once %q is met, must have %q", precondition.Description(), mustMeet.Description()),
+	}
+}
+
+func (v Verdict) String() string {
+	switch v {
+	case Met:
+		return "Met"
+	case Unmet:
+		return "Unmet"
+	case Unmeetable:
+		return "Unmeetable"
+	}
+	return fmt.Sprintf("unrecognized verdict %d", v)
+}
+
+// SimpleExpectation holds an arbitrary check func, and implements the Expectation interface.
+type SimpleExpectation struct {
+	check       func(State) (Verdict, interface{})
+	description string
+}
+
+// Check invokes e.check.
+func (e SimpleExpectation) Check(s State) (Verdict, interface{}) {
+	return e.check(s)
+}
+
+// Description returns e.descriptin.
+func (e SimpleExpectation) Description() string {
+	return e.description
+}
+
+// NoOutstandingWork asserts that there is no work initiated using the LSP
+// $/progress API that has not completed.
+func NoOutstandingWork() SimpleExpectation {
+	check := func(s State) (Verdict, interface{}) {
+		if len(s.outstandingWork) == 0 {
+			return Met, nil
+		}
+		return Unmet, nil
+	}
+	return SimpleExpectation{
+		check:       check,
+		description: "no outstanding work",
+	}
+}
+
+// EmptyShowMessage asserts that the editor has not received a ShowMessage.
+func EmptyShowMessage(title string) SimpleExpectation {
+	check := func(s State) (Verdict, interface{}) {
+		if len(s.showMessage) == 0 {
+			return Met, title
+		}
+		return Unmeetable, nil
+	}
+	return SimpleExpectation{
+		check:       check,
+		description: "no ShowMessage received",
+	}
+}
+
+// SomeShowMessage asserts that the editor has received a ShowMessage.
+func SomeShowMessage(title string) SimpleExpectation {
+	check := func(s State) (Verdict, interface{}) {
+		if len(s.showMessage) > 0 {
+			return Met, title
+		}
+		return Unmet, nil
+	}
+	return SimpleExpectation{
+		check:       check,
+		description: "received ShowMessage",
+	}
+}
+
+// CompletedWork expects a work item to have been completed >= atLeast times.
+//
+// Since the Progress API doesn't include any hidden metadata, we must use the
+// progress notification title to identify the work we expect to be completed.
+func CompletedWork(title string, atLeast int) SimpleExpectation {
+	check := func(s State) (Verdict, interface{}) {
+		if s.completedWork[title] >= atLeast {
+			return Met, title
+		}
+		return Unmet, nil
+	}
+	return SimpleExpectation{
+		check:       check,
+		description: fmt.Sprintf("completed work %q at least %d time(s)", title, atLeast),
+	}
+}
+
+// LogExpectation is an expectation on the log messages received by the editor
+// from gopls.
+type LogExpectation struct {
+	check       func([]*protocol.LogMessageParams) (Verdict, interface{})
+	description string
+}
+
+// Check implements the Expectation interface.
+func (e LogExpectation) Check(s State) (Verdict, interface{}) {
+	return e.check(s.logs)
+}
+
+// Description implements the Expectation interface.
+func (e LogExpectation) Description() string {
+	return e.description
+}
+
+// NoErrorLogs asserts that the client has not received any log messages of
+// error severity.
+func NoErrorLogs() LogExpectation {
+	check := func(msgs []*protocol.LogMessageParams) (Verdict, interface{}) {
+		for _, msg := range msgs {
+			if msg.Type == protocol.Error {
+				return Unmeetable, nil
+			}
+		}
+		return Met, nil
+	}
+	return LogExpectation{
+		check:       check,
+		description: "no errors have been logged",
+	}
+}
+
+// LogMatching asserts that the client has received a log message
+// matching of type typ matching the regexp re.
+func LogMatching(typ protocol.MessageType, re string) LogExpectation {
+	rec, err := regexp.Compile(re)
+	if err != nil {
+		panic(err)
+	}
+	check := func(msgs []*protocol.LogMessageParams) (Verdict, interface{}) {
+		for _, msg := range msgs {
+			if msg.Type == typ && rec.Match([]byte(msg.Message)) {
+				return Met, msg
+			}
+		}
+		return Unmet, nil
+	}
+	return LogExpectation{
+		check:       check,
+		description: fmt.Sprintf("log message matching %q", re),
+	}
 }
 
 // A DiagnosticExpectation is a condition that must be met by the current set
-// of diagnostics.
+// of diagnostics for a file.
 type DiagnosticExpectation struct {
 	// IsMet determines whether the diagnostics for this file version satisfy our
 	// expectation.
-	IsMet func(*protocol.PublishDiagnosticsParams) bool
+	isMet func(*protocol.PublishDiagnosticsParams) bool
 	// Description is a human-readable description of the diagnostic expectation.
-	Description string
-	// Path is the workspace-relative path to the file being asserted on.
-	Path string
+	description string
+	// Path is the scratch workdir-relative path to the file being asserted on.
+	path string
 }
 
-// EmptyDiagnostics asserts that diagnostics are empty for the
-// workspace-relative path name.
-func EmptyDiagnostics(name string) DiagnosticExpectation {
-	isMet := func(diags *protocol.PublishDiagnosticsParams) bool {
-		return len(diags.Diagnostics) == 0
+// Check implements the Expectation interface.
+func (e DiagnosticExpectation) Check(s State) (Verdict, interface{}) {
+	if diags, ok := s.diagnostics[e.path]; ok && e.isMet(diags) {
+		return Met, diags
 	}
-	return DiagnosticExpectation{
-		IsMet:       isMet,
-		Description: "empty diagnostics",
-		Path:        name,
+	return Unmet, nil
+}
+
+// Description implements the Expectation interface.
+func (e DiagnosticExpectation) Description() string {
+	return fmt.Sprintf("%s: %s", e.path, e.description)
+}
+
+// EmptyDiagnostics asserts that empty diagnostics are sent for the
+// workspace-relative path name.
+func EmptyDiagnostics(name string) Expectation {
+	check := func(s State) (Verdict, interface{}) {
+		if diags := s.diagnostics[name]; diags != nil && len(diags.Diagnostics) == 0 {
+			return Met, nil
+		}
+		return Unmet, nil
+	}
+	return SimpleExpectation{
+		check:       check,
+		description: "empty diagnostics",
+	}
+}
+
+// NoDiagnostics asserts that no diagnostics are sent for the
+// workspace-relative path name.
+func NoDiagnostics(name string) Expectation {
+	check := func(s State) (Verdict, interface{}) {
+		if _, ok := s.diagnostics[name]; !ok {
+			return Met, nil
+		}
+		return Unmet, nil
+	}
+	return SimpleExpectation{
+		check:       check,
+		description: "empty diagnostics",
 	}
 }
 
 // AnyDiagnosticAtCurrentVersion asserts that there is a diagnostic report for
 // the current edited version of the buffer corresponding to the given
-// workspace-relative pathname.
+// workdir-relative pathname.
 func (e *Env) AnyDiagnosticAtCurrentVersion(name string) DiagnosticExpectation {
-	version := e.E.BufferVersion(name)
+	version := e.Editor.BufferVersion(name)
 	isMet := func(diags *protocol.PublishDiagnosticsParams) bool {
 		return int(diags.Version) == version
 	}
 	return DiagnosticExpectation{
-		IsMet:       isMet,
-		Description: fmt.Sprintf("any diagnostics at version %d", version),
-		Path:        name,
+		isMet:       isMet,
+		description: fmt.Sprintf("any diagnostics at version %d", version),
+		path:        name,
 	}
 }
 
@@ -377,12 +512,12 @@ func (e *Env) AnyDiagnosticAtCurrentVersion(name string) DiagnosticExpectation {
 func (e *Env) DiagnosticAtRegexp(name, re string) DiagnosticExpectation {
 	pos := e.RegexpSearch(name, re)
 	expectation := DiagnosticAt(name, pos.Line, pos.Column)
-	expectation.Description += fmt.Sprintf(" (location of %q)", re)
+	expectation.description += fmt.Sprintf(" (location of %q)", re)
 	return expectation
 }
 
 // DiagnosticAt asserts that there is a diagnostic entry at the position
-// specified by line and col, for the workspace-relative path name.
+// specified by line and col, for the workdir-relative path name.
 func DiagnosticAt(name string, line, col int) DiagnosticExpectation {
 	isMet := func(diags *protocol.PublishDiagnosticsParams) bool {
 		for _, d := range diags.Diagnostics {
@@ -393,65 +528,53 @@ func DiagnosticAt(name string, line, col int) DiagnosticExpectation {
 		return false
 	}
 	return DiagnosticExpectation{
-		IsMet:       isMet,
-		Description: fmt.Sprintf("diagnostic at {line:%d, column:%d}", line, col),
-		Path:        name,
+		isMet:       isMet,
+		description: fmt.Sprintf("diagnostic at {line:%d, column:%d}", line, col),
+		path:        name,
 	}
 }
 
-// Await waits for all diagnostic expectations to simultaneously be met. It
-// should only be called from the main test goroutine.
-func (e *Env) Await(expectations ...DiagnosticExpectation) {
-	// NOTE: in the future this mechanism extend beyond just diagnostics, for
-	// example by modifying IsMet to be a func(*Env) boo.  However, that would
-	// require careful checking of conditions around every state change, so for
-	// now we just limit the scope to diagnostic conditions.
-
+// Await waits for all expectations to simultaneously be met. It should only be
+// called from the main test goroutine.
+func (e *Env) Await(expectations ...Expectation) []interface{} {
 	e.T.Helper()
 	e.mu.Lock()
 	// Before adding the waiter, we check if the condition is currently met or
 	// failed to avoid a race where the condition was realized before Await was
 	// called.
-	if meetsExpectations(e.lastDiagnostics, expectations) {
+	switch verdict, summary, metBy := checkExpectations(e.state, expectations); verdict {
+	case Met:
 		e.mu.Unlock()
-		return
+		return metBy
+	case Unmeetable:
+		e.mu.Unlock()
+		e.T.Fatalf("unmeetable expectations:\n%s\nstate:\n%v", summary, e.state)
 	}
-	cond := &diagnosticCondition{
+	cond := &condition{
 		expectations: expectations,
-		met:          make(chan struct{}),
+		verdict:      make(chan Verdict),
 	}
 	e.waiters[e.nextWaiterID] = cond
 	e.nextWaiterID++
 	e.mu.Unlock()
 
+	var err error
 	select {
 	case <-e.Ctx.Done():
-		// Debugging an unmet expectation can be tricky, so we put some effort into
-		// nicely formatting the failure.
-		summary := summarizeExpectations(expectations)
-		e.mu.Lock()
-		diagString := formatDiagnostics(e.lastDiagnostics)
-		e.mu.Unlock()
-		e.T.Fatalf("waiting on:\n\t%s\nerr: %v\ndiagnostics:\n%s", summary, e.Ctx.Err(), diagString)
-	case <-cond.met:
-	}
-}
-
-func summarizeExpectations(expectations []DiagnosticExpectation) string {
-	var descs []string
-	for _, e := range expectations {
-		descs = append(descs, fmt.Sprintf("%s: %s", e.Path, e.Description))
-	}
-	return strings.Join(descs, "\n\t")
-}
-
-func formatDiagnostics(diags map[string]*protocol.PublishDiagnosticsParams) string {
-	var b strings.Builder
-	for name, params := range diags {
-		b.WriteString(fmt.Sprintf("\t%s (version %d):\n", name, int(params.Version)))
-		for _, d := range params.Diagnostics {
-			b.WriteString(fmt.Sprintf("\t\t(%d, %d): %s\n", int(d.Range.Start.Line), int(d.Range.Start.Character), d.Message))
+		err = e.Ctx.Err()
+	case v := <-cond.verdict:
+		if v != Met {
+			err = fmt.Errorf("condition has final verdict %v", v)
 		}
 	}
-	return b.String()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	_, summary, metBy := checkExpectations(e.state, expectations)
+
+	// Debugging an unmet expectation can be tricky, so we put some effort into
+	// nicely formatting the failure.
+	if err != nil {
+		e.T.Fatalf("waiting on:\n%s\nerr:%v\n\nstate:\n%v", summary, err, e.state)
+	}
+	return metBy
 }

@@ -20,11 +20,11 @@ import (
 	"time"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/fuzzy"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/snippet"
-	"golang.org/x/tools/internal/telemetry/event"
 	errors "golang.org/x/xerrors"
 )
 
@@ -425,14 +425,14 @@ func (e ErrIsDefinition) Error() string {
 // the client to score the quality of the completion. For instance, some clients
 // may tolerate imperfect matches as valid completion results, since users may make typos.
 func Completion(ctx context.Context, snapshot Snapshot, fh FileHandle, protoPos protocol.Position) ([]CompletionItem, *Selection, error) {
-	ctx, done := event.StartSpan(ctx, "source.Completion")
+	ctx, done := event.Start(ctx, "source.Completion")
 	defer done()
 
 	startTime := time.Now()
 
 	pkg, pgh, err := getParsedFile(ctx, snapshot, fh, NarrowestPackageHandle)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting file for Completion: %v", err)
+		return nil, nil, fmt.Errorf("getting file for Completion: %w", err)
 	}
 	file, src, m, _, err := pgh.Cached()
 	if err != nil {
@@ -682,8 +682,8 @@ func (c *completer) emptySwitchStmt() bool {
 	}
 }
 
-// populateCommentCompletions yields completions for an exported
-// variable immediately preceding comment.
+// populateCommentCompletions yields completions for exported
+// symbols immediately preceding comment.
 func (c *completer) populateCommentCompletions(ctx context.Context, comment *ast.CommentGroup) {
 
 	// Using the comment position find the line after
@@ -694,33 +694,72 @@ func (c *completer) populateCommentCompletions(ctx context.Context, comment *ast
 	}
 
 	line := file.Line(comment.Pos())
+	if file.LineCount() < line+1 {
+		return
+	}
+
 	nextLinePos := file.LineStart(line + 1)
 	if !nextLinePos.IsValid() {
 		return
 	}
 
-	// Using the next line pos, grab and parse the exported variable on that line
+	// Using the next line pos, grab and parse the exported symbol on that line
 	for _, n := range c.file.Decls {
 		if n.Pos() != nextLinePos {
 			continue
 		}
 		switch node := n.(type) {
+		// handle const, vars, and types
 		case *ast.GenDecl:
-			if node.Tok != token.VAR {
-				return
-			}
 			for _, spec := range node.Specs {
-				if value, ok := spec.(*ast.ValueSpec); ok {
-					for _, name := range value.Names {
-						if name.Name == "_" || !name.IsExported() {
+				switch spec.(type) {
+				case *ast.ValueSpec:
+					valueSpec, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for _, name := range valueSpec.Names {
+						if name.String() == "_" || !name.IsExported() {
 							continue
 						}
 
-						exportedVar := c.pkg.GetTypesInfo().ObjectOf(name)
-						c.found(ctx, candidate{obj: exportedVar, score: stdScore})
+						obj := c.pkg.GetTypesInfo().ObjectOf(name)
+						c.found(ctx, candidate{obj: obj, score: stdScore})
 					}
+				case *ast.TypeSpec:
+					typeSpec, ok := spec.(*ast.TypeSpec)
+					if !ok {
+						continue
+					}
+
+					if typeSpec.Name.String() == "_" || !typeSpec.Name.IsExported() {
+						continue
+					}
+
+					obj := c.pkg.GetTypesInfo().ObjectOf(typeSpec.Name)
+					c.found(ctx, candidate{obj: obj, score: stdScore})
 				}
 			}
+		// handle functions
+		case *ast.FuncDecl:
+			if node.Name.String() == "_" || !node.Name.IsExported() {
+				continue
+			}
+
+			obj := c.pkg.GetTypesInfo().ObjectOf(node.Name)
+
+			// We don't want expandFuncCall inside comments. We add this directly to the
+			// completions list because using c.found sets expandFuncCall to true by default
+			item, err := c.item(ctx, candidate{
+				obj:            obj,
+				name:           obj.Name(),
+				expandFuncCall: false,
+				score:          stdScore,
+			})
+			if err != nil {
+				continue
+			}
+			c.items = append(c.items, item)
 		}
 	}
 }
@@ -804,7 +843,7 @@ func (c *completer) unimportedMembers(ctx context.Context, id *ast.Ident) error 
 		if imports.ImportPathToAssumedName(path) != pkg.GetTypes().Name() {
 			imp.name = pkg.GetTypes().Name()
 		}
-		c.packageMembers(ctx, pkg.GetTypes(), stdScore+.01*float64(relevance), imp)
+		c.packageMembers(ctx, pkg.GetTypes(), stdScore+.1*float64(relevance), imp)
 		if len(c.items) >= unimportedMemberTarget {
 			return nil
 		}
@@ -824,7 +863,7 @@ func (c *completer) unimportedMembers(ctx context.Context, id *ast.Ident) error 
 		// Continue with untyped proposals.
 		pkg := types.NewPackage(pkgExport.Fix.StmtInfo.ImportPath, pkgExport.Fix.IdentName)
 		for _, export := range pkgExport.Exports {
-			score := stdScore + 0.01*float64(pkgExport.Fix.Relevance)
+			score := stdScore + 0.1*float64(pkgExport.Fix.Relevance)
 			c.found(ctx, candidate{
 				obj:   types.NewVar(0, pkg, export, nil),
 				score: score,
@@ -1734,8 +1773,7 @@ func (ci candidateInference) applyTypeNameModifiers(typ types.Type) types.Type {
 // matchesVariadic returns true if we are completing a variadic
 // parameter and candType is a compatible slice type.
 func (ci candidateInference) matchesVariadic(candType types.Type) bool {
-	return ci.variadicType != nil && types.AssignableTo(ci.objType, candType)
-
+	return ci.variadicType != nil && types.AssignableTo(candType, ci.objType)
 }
 
 // findSwitchStmt returns an *ast.CaseClause's corresponding *ast.SwitchStmt or

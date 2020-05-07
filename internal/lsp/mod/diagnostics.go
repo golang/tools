@@ -10,13 +10,13 @@ import (
 	"context"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/telemetry/event"
 )
 
-func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[source.FileIdentity][]source.Diagnostic, map[string]*modfile.Require, error) {
+func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[source.FileIdentity][]*source.Diagnostic, map[string]*modfile.Require, error) {
 	// TODO: We will want to support diagnostics for go.mod files even when the -modfile flag is turned off.
 	realURI, tempURI := snapshot.View().ModFiles()
 
@@ -24,7 +24,7 @@ func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[source.File
 	if realURI == "" || tempURI == "" {
 		return nil, nil, nil
 	}
-	ctx, done := event.StartSpan(ctx, "mod.Diagnostics", tag.URI.Of(realURI))
+	ctx, done := event.Start(ctx, "mod.Diagnostics", tag.URI.Of(realURI))
 	defer done()
 
 	realfh, err := snapshot.GetFile(realURI)
@@ -39,15 +39,14 @@ func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[source.File
 	if err != nil {
 		return nil, nil, err
 	}
-	reports := map[source.FileIdentity][]source.Diagnostic{
+	reports := map[source.FileIdentity][]*source.Diagnostic{
 		realfh.Identity(): {},
 	}
 	for _, e := range parseErrors {
-		diag := source.Diagnostic{
-			Message:        e.Message,
-			Range:          e.Range,
-			SuggestedFixes: e.SuggestedFixes,
-			Source:         e.Category,
+		diag := &source.Diagnostic{
+			Message: e.Message,
+			Range:   e.Range,
+			Source:  e.Category,
 		}
 		if e.Category == "syntax" {
 			diag.Severity = protocol.SeverityError
@@ -59,16 +58,15 @@ func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[source.File
 	return reports, missingDeps, nil
 }
 
-func SuggestedFixes(ctx context.Context, snapshot source.Snapshot, realfh source.FileHandle, diags []protocol.Diagnostic) []protocol.CodeAction {
+func SuggestedFixes(ctx context.Context, snapshot source.Snapshot, realfh source.FileHandle, diags []protocol.Diagnostic) ([]protocol.CodeAction, error) {
 	mth, err := snapshot.ModTidyHandle(ctx, realfh)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	_, _, _, parseErrors, err := mth.Tidy(ctx)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-
 	errorsMap := make(map[string][]source.Error)
 	for _, e := range parseErrors {
 		if errorsMap[e.Message] == nil {
@@ -76,7 +74,6 @@ func SuggestedFixes(ctx context.Context, snapshot source.Snapshot, realfh source
 		}
 		errorsMap[e.Message] = append(errorsMap[e.Message], e)
 	}
-
 	var actions []protocol.CodeAction
 	for _, diag := range diags {
 		for _, e := range errorsMap[diag.Message] {
@@ -93,8 +90,7 @@ func SuggestedFixes(ctx context.Context, snapshot source.Snapshot, realfh source
 				for uri, edits := range fix.Edits {
 					fh, err := snapshot.GetFile(uri)
 					if err != nil {
-						event.Error(ctx, "no file", err, tag.URI.Of(uri))
-						continue
+						return nil, err
 					}
 					action.Edit.DocumentChanges = append(action.Edit.DocumentChanges, protocol.TextDocumentEdit{
 						TextDocument: protocol.VersionedTextDocumentIdentifier{
@@ -110,7 +106,7 @@ func SuggestedFixes(ctx context.Context, snapshot source.Snapshot, realfh source
 			}
 		}
 	}
-	return actions
+	return actions, nil
 }
 
 func SuggestedGoFixes(ctx context.Context, snapshot source.Snapshot) (map[string]protocol.TextDocumentEdit, error) {
@@ -121,7 +117,7 @@ func SuggestedGoFixes(ctx context.Context, snapshot source.Snapshot) (map[string
 		return nil, nil
 	}
 
-	ctx, done := event.StartSpan(ctx, "mod.SuggestedGoFixes", tag.URI.Of(realURI))
+	ctx, done := event.Start(ctx, "mod.SuggestedGoFixes", tag.URI.Of(realURI))
 	defer done()
 
 	realfh, err := snapshot.GetFile(realURI)

@@ -10,17 +10,17 @@ import (
 	"go/ast"
 	"go/types"
 
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/telemetry/event"
 )
 
 func DocumentSymbols(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.DocumentSymbol, error) {
-	ctx, done := event.StartSpan(ctx, "source.DocumentSymbols")
+	ctx, done := event.Start(ctx, "source.DocumentSymbols")
 	defer done()
 
 	pkg, pgh, err := getParsedFile(ctx, snapshot, fh, NarrowestPackageHandle)
 	if err != nil {
-		return nil, fmt.Errorf("getting file for DocumentSymbols: %v", err)
+		return nil, fmt.Errorf("getting file for DocumentSymbols: %w", err)
 	}
 	file, _, _, _, err := pgh.Cached()
 	if err != nil {
@@ -112,11 +112,11 @@ func funcSymbol(view View, pkg Package, decl *ast.FuncDecl, obj types.Object, q 
 	return s, nil
 }
 
-func typeSymbol(view View, pkg Package, info *types.Info, spec *ast.TypeSpec, obj types.Object, q types.Qualifier) (protocol.DocumentSymbol, error) {
+func typeSymbol(view View, pkg Package, info *types.Info, spec *ast.TypeSpec, obj types.Object, qf types.Qualifier) (protocol.DocumentSymbol, error) {
 	s := protocol.DocumentSymbol{
 		Name: obj.Name(),
 	}
-	s.Detail, _ = formatType(obj.Type(), q)
+	s.Detail, _ = formatType(obj.Type(), qf)
 	s.Kind = typeToKind(obj.Type())
 
 	var err error
@@ -137,7 +137,7 @@ func typeSymbol(view View, pkg Package, info *types.Info, spec *ast.TypeSpec, ob
 				Name: f.Name(),
 				Kind: protocol.Field,
 			}
-			child.Detail, _ = formatType(f.Type(), q)
+			child.Detail, _ = formatType(f.Type(), qf)
 
 			spanNode, selectionNode := nodesForStructField(i, st)
 			if span, err := nodeToProtocolRange(view, pkg, spanNode); err == nil {
@@ -189,7 +189,7 @@ func typeSymbol(view View, pkg Package, info *types.Info, spec *ast.TypeSpec, ob
 			}
 
 			child := protocol.DocumentSymbol{
-				Name: types.TypeString(embedded, q),
+				Name: types.TypeString(embedded, qf),
 			}
 			child.Kind = typeToKind(embedded)
 			var spanNode, selectionNode ast.Node

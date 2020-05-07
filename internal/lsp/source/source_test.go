@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/diff"
+	"golang.org/x/tools/internal/lsp/diff/myers"
 	"golang.org/x/tools/internal/lsp/fuzzy"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
@@ -88,7 +89,7 @@ func testSource(t *testing.T, exporter packagestest.Exporter) {
 	}
 }
 
-func (r *runner) Diagnostics(t *testing.T, uri span.URI, want []source.Diagnostic) {
+func (r *runner) Diagnostics(t *testing.T, uri span.URI, want []*source.Diagnostic) {
 	snapshot := r.view.Snapshot()
 
 	fileID, got, err := source.FileDiagnostics(r.ctx, snapshot, uri)
@@ -133,6 +134,7 @@ func (r *runner) CompletionSnippet(t *testing.T, src span.Span, expected tests.C
 	_, list := r.callCompletion(t, src, func(opts *source.Options) {
 		opts.Placeholders = placeholders
 		opts.DeepCompletion = true
+		opts.UnimportedCompletion = false
 	})
 	got := tests.FindItem(list, *items[expected.CompletionItem])
 	want := expected.PlainSnippet
@@ -467,7 +469,8 @@ func (r *runner) Import(t *testing.T, spn span.Span) {
 		return []byte(got), nil
 	}))
 	if want != got {
-		t.Errorf("import failed for %s, expected:\n%v\ngot:\n%v", spn.URI().Filename(), want, got)
+		d := myers.ComputeEdits(spn.URI(), want, got)
+		t.Errorf("import failed for %s: %s", spn.URI().Filename(), diff.ToUnified("want", "got", want, d))
 	}
 }
 

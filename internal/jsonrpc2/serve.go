@@ -7,10 +7,11 @@ package jsonrpc2
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"time"
+
+	"golang.org/x/tools/internal/event"
 )
 
 // NOTE: This file provides an experimental API for serving multiple remote
@@ -61,6 +62,8 @@ func ListenAndServe(ctx context.Context, network, addr string, server StreamServ
 // the provided server. If idleTimeout is non-zero, ListenAndServe exits after
 // there are no clients for this duration, otherwise it exits only on error.
 func Serve(ctx context.Context, ln net.Listener, server StreamServer, idleTimeout time.Duration) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	// Max duration: ~290 years; surely that's long enough.
 	const forever = 1<<63 - 1
 	if idleTimeout <= 0 {
@@ -76,7 +79,10 @@ func Serve(ctx context.Context, ln net.Listener, server StreamServer, idleTimeou
 		for {
 			nc, err := ln.Accept()
 			if err != nil {
-				doneListening <- fmt.Errorf("Accept(): %v", err)
+				select {
+				case doneListening <- fmt.Errorf("Accept(): %v", err):
+				case <-ctx.Done():
+				}
 				return
 			}
 			newConns <- nc
@@ -96,7 +102,7 @@ func Serve(ctx context.Context, ln net.Listener, server StreamServer, idleTimeou
 		case err := <-doneListening:
 			return err
 		case err := <-closedConns:
-			log.Printf("closed a connection with error: %v", err)
+			event.Error(ctx, "closed a connection", err)
 			activeConns--
 			if activeConns == 0 {
 				connTimer.Reset(idleTimeout)

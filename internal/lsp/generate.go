@@ -7,28 +7,24 @@ package lsp
 import (
 	"context"
 	"io"
-	"math/rand"
-	"strconv"
 
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/telemetry/event"
 	"golang.org/x/xerrors"
 )
+
+// GenerateWorkDoneTitle is the title used in progress reporting for go
+// generate commands. It is exported for testing purposes.
+const GenerateWorkDoneTitle = "generate"
 
 func (s *Server) runGenerate(ctx context.Context, dir string, recursive bool) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	token := strconv.FormatInt(rand.Int63(), 10)
-	s.inProgressMu.Lock()
-	s.inProgress[token] = cancel
-	s.inProgressMu.Unlock()
-	defer s.clearInProgress(token)
-
 	er := &eventWriter{ctx: ctx}
-	wc := s.newProgressWriter(ctx, cancel, token)
+	wc := s.newProgressWriter(ctx, cancel)
 	defer wc.Close()
 	args := []string{"-x"}
 	if recursive {
@@ -43,7 +39,7 @@ func (s *Server) runGenerate(ctx context.Context, dir string, recursive bool) {
 	stderr := io.MultiWriter(er, wc)
 	err := inv.RunPiped(ctx, er, stderr)
 	if err != nil {
-		event.Error(ctx, "generate: command error: %v", err, tag.Directory.Of(dir))
+		event.Error(ctx, "generate: command error", err, tag.Directory.Of(dir))
 		if !xerrors.Is(err, context.Canceled) {
 			s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
 				Type:    protocol.Error,
@@ -61,25 +57,21 @@ type eventWriter struct {
 }
 
 func (ew *eventWriter) Write(p []byte) (n int, err error) {
-	event.Print(ew.ctx, string(p), tag.Operation.Of("generate"))
+	event.Log(ew.ctx, string(p), tag.Operation.Of("generate"))
 	return len(p), nil
 }
 
 // newProgressWriter returns an io.WriterCloser that can be used
 // to report progress on the "go generate" command based on the
 // client capabilities.
-func (s *Server) newProgressWriter(ctx context.Context, cancel func(), token string) io.WriteCloser {
-	var wc interface {
-		io.WriteCloser
-		start()
-	}
+func (s *Server) newProgressWriter(ctx context.Context, cancel func()) io.WriteCloser {
 	if s.supportsWorkDoneProgress {
-		wc = &workDoneWriter{ctx, token, s.client}
-	} else {
-		wc = &messageWriter{ctx, cancel, s.client}
+		wd := s.StartWork(ctx, GenerateWorkDoneTitle, "running go generate", cancel)
+		return &workDoneWriter{ctx, wd}
 	}
-	wc.start()
-	return wc
+	mw := &messageWriter{ctx, cancel, s.client}
+	mw.start()
+	return mw
 }
 
 // messageWriter implements progressWriter
@@ -126,58 +118,19 @@ func (lw *messageWriter) Close() error {
 	})
 }
 
-// workDoneWriter implements progressWriter
-// that will send $/progress notifications
-// to the client. Request cancellations
-// happens separately through the
-// window/workDoneProgress/cancel request
-// in which case the given context will be rendered
-// done.
+// workDoneWriter implements progressWriter by sending $/progress notifications
+// to the client. Request cancellations happens separately through the
+// window/workDoneProgress/cancel request, in which case the given context will
+// be rendered done.
 type workDoneWriter struct {
-	ctx    context.Context
-	token  string
-	client protocol.Client
+	ctx context.Context
+	wd  *WorkDone
 }
 
 func (wdw *workDoneWriter) Write(p []byte) (n int, err error) {
-	return len(p), wdw.client.Progress(wdw.ctx, &protocol.ProgressParams{
-		Token: wdw.token,
-		Value: &protocol.WorkDoneProgressReport{
-			Kind:        "report",
-			Cancellable: true,
-			Message:     string(p),
-		},
-	})
-}
-
-func (wdw *workDoneWriter) start() {
-	err := wdw.client.WorkDoneProgressCreate(wdw.ctx, &protocol.WorkDoneProgressCreateParams{
-		Token: wdw.token,
-	})
-	if err != nil {
-		event.Error(wdw.ctx, "generate progress create", err)
-		return
-	}
-	err = wdw.client.Progress(wdw.ctx, &protocol.ProgressParams{
-		Token: wdw.token,
-		Value: &protocol.WorkDoneProgressBegin{
-			Kind:        "begin",
-			Cancellable: true,
-			Message:     "running go generate",
-			Title:       "generate",
-		},
-	})
-	if err != nil {
-		event.Error(wdw.ctx, "generate progress begin", err)
-	}
+	return len(p), wdw.wd.Progress(wdw.ctx, string(p), 0)
 }
 
 func (wdw *workDoneWriter) Close() error {
-	return wdw.client.Progress(wdw.ctx, &protocol.ProgressParams{
-		Token: wdw.token,
-		Value: protocol.WorkDoneProgressEnd{
-			Kind:    "end",
-			Message: "finished",
-		},
-	})
+	return wdw.wd.End(wdw.ctx, "finished")
 }

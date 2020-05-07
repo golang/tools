@@ -12,11 +12,11 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/event"
 	errors "golang.org/x/xerrors"
 )
 
@@ -80,11 +80,11 @@ func (s *snapshot) load(ctx context.Context, scopes ...interface{}) error {
 	}
 	sort.Strings(query) // for determinism
 
-	ctx, done := event.StartSpan(ctx, "cache.view.load", tag.Query.Of(query))
+	ctx, done := event.Start(ctx, "cache.view.load", tag.Query.Of(query))
 	defer done()
 
 	cfg := s.Config(ctx)
-	pkgs, err := s.view.loadPackages(cfg, query...)
+	pkgs, err := packages.Load(cfg, query...)
 
 	// If the context was canceled, return early. Otherwise, we might be
 	// type-checking an incomplete result. Check the context directly,
@@ -92,14 +92,17 @@ func (s *snapshot) load(ctx context.Context, scopes ...interface{}) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-
-	event.Print(ctx, "go/packages.Load", tag.Snapshot.Of(s.ID()), tag.Directory.Of(cfg.Dir), tag.Query.Of(query), tag.PackageCount.Of(len(pkgs)))
+	if err != nil {
+		event.Error(ctx, "go/packages.Load", err, tag.Snapshot.Of(s.ID()), tag.Directory.Of(cfg.Dir), tag.Query.Of(query), tag.PackageCount.Of(len(pkgs)))
+	} else {
+		event.Log(ctx, "go/packages.Load", tag.Snapshot.Of(s.ID()), tag.Directory.Of(cfg.Dir), tag.Query.Of(query), tag.PackageCount.Of(len(pkgs)))
+	}
 	if len(pkgs) == 0 {
 		return err
 	}
 	for _, pkg := range pkgs {
 		if !containsDir || s.view.Options().VerboseOutput {
-			event.Print(ctx, "go/packages.Load", tag.Snapshot.Of(s.ID()), tag.PackagePath.Of(pkg.PkgPath), tag.Files.Of(pkg.CompiledGoFiles))
+			event.Log(ctx, "go/packages.Load", tag.Snapshot.Of(s.ID()), tag.PackagePath.Of(pkg.PkgPath), tag.Files.Of(pkg.CompiledGoFiles))
 		}
 		// Ignore packages with no sources, since we will never be able to
 		// correctly invalidate that metadata.

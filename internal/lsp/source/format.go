@@ -14,17 +14,17 @@ import (
 	"go/scanner"
 	"go/token"
 
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/event"
 	errors "golang.org/x/xerrors"
 )
 
 // Format formats a file with a given range.
 func Format(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.TextEdit, error) {
-	ctx, done := event.StartSpan(ctx, "source.Format")
+	ctx, done := event.Start(ctx, "source.Format")
 	defer done()
 
 	pgh := snapshot.View().Session().Cache().ParseGoHandle(fh, ParseFull)
@@ -57,7 +57,7 @@ func Format(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.T
 }
 
 func formatSource(ctx context.Context, fh FileHandle) ([]byte, error) {
-	ctx, done := event.StartSpan(ctx, "source.formatSource")
+	ctx, done := event.Start(ctx, "source.formatSource")
 	defer done()
 
 	data, _, err := fh.Read(ctx)
@@ -77,7 +77,7 @@ type ImportFix struct {
 // it returns a list of fixes that could be applied to the file, with the
 // corresponding TextEdits that would be needed to apply that fix.
 func AllImportsFixes(ctx context.Context, snapshot Snapshot, fh FileHandle) (allFixEdits []protocol.TextEdit, editsPerFix []*ImportFix, err error) {
-	ctx, done := event.StartSpan(ctx, "source.AllImportsFixes")
+	ctx, done := event.Start(ctx, "source.AllImportsFixes")
 	defer done()
 
 	pgh := snapshot.View().Session().Cache().ParseGoHandle(fh, ParseFull)
@@ -175,6 +175,15 @@ func computeFixEdits(view View, ph ParseGoHandle, options *imports.Options, orig
 	// just those sections against each other, then shift the resulting
 	// edits to the right lines in the original file.
 	left, right := origImports, fixedImports
+
+	// If there is no diff, return early, as there's no need to compute edits.
+	// imports.ApplyFixes also formats the file, and this way we avoid
+	// unnecessary formatting, which may cause further issues if we can't
+	// find an import block on which to anchor the diffs.
+	if len(left) == 0 && len(right) == 0 {
+		return nil, nil
+	}
+
 	converter := span.NewContentConverter(filename, origImports)
 	offset := origImportOffset
 
@@ -245,9 +254,12 @@ func trimToImports(fset *token.FileSet, f *ast.File, src []byte) ([]byte, int) {
 	if nextLine := fset.Position(end).Line + 1; tok.LineCount() >= nextLine {
 		end = fset.File(f.Pos()).LineStart(nextLine)
 	}
+	if start > end {
+		return nil, 0
+	}
 
 	startLineOffset := fset.Position(start).Line - 1 // lines are 1-indexed.
-	return src[fset.Position(firstImport.Pos()).Offset:fset.Position(end).Offset], startLineOffset
+	return src[fset.Position(start).Offset:fset.Position(end).Offset], startLineOffset
 }
 
 // trimToFirstNonImport returns src from the beginning to the first non-import
@@ -290,7 +302,7 @@ func trimToFirstNonImport(fset *token.FileSet, f *ast.File, src []byte, err erro
 }
 
 func computeTextEdits(ctx context.Context, view View, fh FileHandle, m *protocol.ColumnMapper, formatted string) ([]protocol.TextEdit, error) {
-	ctx, done := event.StartSpan(ctx, "source.computeTextEdits")
+	ctx, done := event.Start(ctx, "source.computeTextEdits")
 	defer done()
 
 	data, _, err := fh.Read(ctx)

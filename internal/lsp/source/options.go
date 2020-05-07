@@ -203,11 +203,16 @@ func (o Options) AddDefaultAnalyzer(a *analysis.Analyzer) {
 	o.DefaultAnalyzers[a.Name] = Analyzer{Analyzer: a, enabled: true}
 }
 
+// ExperimentalOptions defines configuration for features under active
+// development. WARNING: This configuration will be changed in the future. It
+// only exists while these features are under development.
 type ExperimentalOptions struct {
-	// WARNING: This configuration will be changed in the future.
-	// It only exists while this feature is under development.
-	// Disable use of the -modfile flag in Go 1.14.
+	// TempModfile controls the use of the -modfile flag in Go 1.14.
 	TempModfile bool
+
+	// VerboseWorkDoneProgress controls whether the LSP server should send
+	// progress reports for all work done outside the scope of an RPC.
+	VerboseWorkDoneProgress bool
 }
 
 type DebuggingOptions struct {
@@ -416,6 +421,9 @@ func (o *Options) set(name string, value interface{}) OptionResult {
 	case "verboseOutput":
 		result.setBool(&o.VerboseOutput)
 
+	case "verboseWorkDoneProgress":
+		result.setBool(&o.VerboseWorkDoneProgress)
+
 	case "tempModfile":
 		result.setBool(&o.TempModfile)
 
@@ -497,10 +505,27 @@ func (r *OptionResult) setBool(b *bool) {
 
 func typeErrorAnalyzers() map[string]Analyzer {
 	return map[string]Analyzer{
-		fillreturns.Analyzer.Name:    {Analyzer: fillreturns.Analyzer, enabled: false},
-		nonewvars.Analyzer.Name:      {Analyzer: nonewvars.Analyzer, enabled: false},
-		noresultvalues.Analyzer.Name: {Analyzer: noresultvalues.Analyzer, enabled: false},
-		undeclaredname.Analyzer.Name: {Analyzer: undeclaredname.Analyzer, enabled: false},
+		fillreturns.Analyzer.Name: {
+			Analyzer:       fillreturns.Analyzer,
+			enabled:        true,
+			FixesError:     fillreturns.FixesError,
+			HighConfidence: true,
+		},
+		nonewvars.Analyzer.Name: {
+			Analyzer:   nonewvars.Analyzer,
+			enabled:    true,
+			FixesError: nonewvars.FixesError,
+		},
+		noresultvalues.Analyzer.Name: {
+			Analyzer:   noresultvalues.Analyzer,
+			enabled:    true,
+			FixesError: noresultvalues.FixesError,
+		},
+		undeclaredname.Analyzer.Name: {
+			Analyzer:   undeclaredname.Analyzer,
+			enabled:    true,
+			FixesError: undeclaredname.FixesError,
+		},
 	}
 }
 
