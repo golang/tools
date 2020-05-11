@@ -7,6 +7,7 @@
 package testenv
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -76,6 +77,17 @@ func hasTool(tool string) error {
 		})
 		if checkGoGoroot.err != nil {
 			return checkGoGoroot.err
+		}
+
+	case "diff":
+		// Check that diff is the GNU version, needed for the -u argument and
+		// to report missing newlines at the end of files.
+		out, err := exec.Command(tool, "-version").Output()
+		if err != nil {
+			return err
+		}
+		if !bytes.Contains(out, []byte("GNU diffutils")) {
+			return fmt.Errorf("diff is not the GNU version")
 		}
 	}
 
@@ -178,8 +190,12 @@ func NeedsGoPackagesEnv(t Testing, env []string) {
 //
 // It should be called from within a TestMain function.
 func ExitIfSmallMachine() {
-	if os.Getenv("GO_BUILDER_NAME") == "linux-arm" {
+	switch os.Getenv("GO_BUILDER_NAME") {
+	case "linux-arm":
 		fmt.Fprintln(os.Stderr, "skipping test: linux-arm builder lacks sufficient memory (https://golang.org/issue/32834)")
+		os.Exit(0)
+	case "plan9-arm":
+		fmt.Fprintln(os.Stderr, "skipping test: plan9-arm builder lacks sufficient memory (https://golang.org/issue/38772)")
 		os.Exit(0)
 	}
 }

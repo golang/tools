@@ -185,6 +185,9 @@ type Session interface {
 	// It returns the resulting snapshots, a guaranteed one per view.
 	DidModifyFiles(ctx context.Context, changes []FileModification) ([]Snapshot, error)
 
+	// UnsavedFiles returns a slice of open but unsaved files in the session.
+	UnsavedFiles() []span.URI
+
 	// Options returns a copy of the SessionOptions for this session.
 	Options() Options
 
@@ -357,9 +360,13 @@ func (fileID FileIdentity) String() string {
 type FileKind int
 
 const (
+	// Go is a normal go source file.
 	Go = FileKind(iota)
+	// Mod is a go.mod file.
 	Mod
+	// Sum is a go.sum file.
 	Sum
+	// UnknownKind is a file type we don't know about.
 	UnknownKind
 )
 

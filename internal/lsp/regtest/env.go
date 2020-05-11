@@ -102,18 +102,13 @@ type condition struct {
 
 // NewEnv creates a new test environment using the given scratch environment
 // and gopls server.
-func NewEnv(ctx context.Context, t *testing.T, scratch *fake.Sandbox, ts servertest.Connector) *Env {
+func NewEnv(ctx context.Context, t *testing.T, scratch *fake.Sandbox, ts servertest.Connector, editorConfig fake.EditorConfig) *Env {
 	t.Helper()
 	conn := ts.Connect(ctx)
-	editor, err := fake.NewEditor(scratch).Connect(ctx, conn)
-	if err != nil {
-		t.Fatal(err)
-	}
 	env := &Env{
 		T:       t,
 		Ctx:     ctx,
 		Sandbox: scratch,
-		Editor:  editor,
 		Server:  ts,
 		Conn:    conn,
 		state: State{
@@ -123,11 +118,18 @@ func NewEnv(ctx context.Context, t *testing.T, scratch *fake.Sandbox, ts servert
 		},
 		waiters: make(map[int]*condition),
 	}
-	env.Editor.Client().OnDiagnostics(env.onDiagnostics)
-	env.Editor.Client().OnLogMessage(env.onLogMessage)
-	env.Editor.Client().OnWorkDoneProgressCreate(env.onWorkDoneProgressCreate)
-	env.Editor.Client().OnProgress(env.onProgress)
-	env.Editor.Client().OnShowMessage(env.onShowMessage)
+	hooks := fake.ClientHooks{
+		OnDiagnostics:            env.onDiagnostics,
+		OnLogMessage:             env.onLogMessage,
+		OnWorkDoneProgressCreate: env.onWorkDoneProgressCreate,
+		OnProgress:               env.onProgress,
+		OnShowMessage:            env.onShowMessage,
+	}
+	editor, err := fake.NewEditor(scratch, editorConfig).Connect(ctx, conn, hooks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.Editor = editor
 	return env
 }
 

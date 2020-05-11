@@ -20,8 +20,10 @@ import (
 // Editor is a fake editor client.  It keeps track of client state and can be
 // used for writing LSP tests.
 type Editor struct {
-	// server, client, and sandbox are concurrency safe and written only at
-	// construction, so do not require synchronization.
+	Config EditorConfig
+
+	// server, client, and sandbox are concurrency safe and written only
+	// at construction time, so do not require synchronization.
 	server  protocol.Server
 	client  *Client
 	sandbox *Sandbox
@@ -30,11 +32,7 @@ type Editor struct {
 	// locking.
 	mu sync.Mutex
 	// Editor state.
-	buffers     map[string]buffer
-	lastMessage *protocol.ShowMessageParams
-	logs        []*protocol.LogMessageParams
-	diagnostics *protocol.PublishDiagnosticsParams
-	events      []interface{}
+	buffers map[string]buffer
 	// Capabilities / Options
 	serverCapabilities protocol.ServerCapabilities
 }
@@ -49,11 +47,30 @@ func (b buffer) text() string {
 	return strings.Join(b.content, "\n")
 }
 
+// EditorConfig configures the editor's LSP session. This is similar to
+// source.UserOptions, but we use a separate type here so that we expose only
+// that configuration which we support.
+//
+// The zero value for EditorConfig should correspond to its defaults.
+type EditorConfig struct {
+	Env []string
+
+	// CodeLens is a map defining whether codelens are enabled, keyed by the
+	// codeLens command. CodeLens which are not present in this map are left in
+	// their default state.
+	CodeLens map[string]bool
+
+	// SymbolMatcher is the config associated with the "symbolMatcher" gopls
+	// config option.
+	SymbolMatcher *string
+}
+
 // NewEditor Creates a new Editor.
-func NewEditor(ws *Sandbox) *Editor {
+func NewEditor(ws *Sandbox, config EditorConfig) *Editor {
 	return &Editor{
 		buffers: make(map[string]buffer),
 		sandbox: ws,
+		Config:  config,
 	}
 }
 
@@ -63,9 +80,9 @@ func NewEditor(ws *Sandbox) *Editor {
 //
 // It returns the editor, so that it may be called as follows:
 //   editor, err := NewEditor(s).Connect(ctx, conn)
-func (e *Editor) Connect(ctx context.Context, conn *jsonrpc2.Conn) (*Editor, error) {
+func (e *Editor) Connect(ctx context.Context, conn *jsonrpc2.Conn, hooks ClientHooks) (*Editor, error) {
 	e.server = protocol.ServerDispatcher(conn)
-	e.client = &Client{Editor: e}
+	e.client = &Client{editor: e, hooks: hooks}
 	go conn.Run(ctx,
 		protocol.Handlers(
 			protocol.ClientHandler(e.client,
@@ -105,15 +122,28 @@ func (e *Editor) Client() *Client {
 }
 
 func (e *Editor) configuration() map[string]interface{} {
+	config := map[string]interface{}{
+		"verboseWorkDoneProgress": true,
+	}
+
+	envvars := e.sandbox.GoEnv()
+	envvars = append(envvars, e.Config.Env...)
 	env := map[string]interface{}{}
-	for _, value := range e.sandbox.GoEnv() {
+	for _, value := range envvars {
 		kv := strings.SplitN(value, "=", 2)
 		env[kv[0]] = kv[1]
 	}
-	return map[string]interface{}{
-		"env":                     env,
-		"verboseWorkDoneProgress": true,
+	config["env"] = env
+
+	if e.Config.CodeLens != nil {
+		config["codelens"] = e.Config.CodeLens
 	}
+
+	if e.Config.SymbolMatcher != nil {
+		config["symbolMatcher"] = *e.Config.SymbolMatcher
+	}
+
+	return config
 }
 
 func (e *Editor) initialize(ctx context.Context) error {
@@ -235,14 +265,18 @@ func (e *Editor) CloseBuffer(ctx context.Context, path string) error {
 
 	if e.server != nil {
 		if err := e.server.DidClose(ctx, &protocol.DidCloseTextDocumentParams{
-			TextDocument: protocol.TextDocumentIdentifier{
-				URI: e.sandbox.Workdir.URI(path),
-			},
+			TextDocument: e.textDocumentIdentifier(path),
 		}); err != nil {
 			return fmt.Errorf("DidClose: %w", err)
 		}
 	}
 	return nil
+}
+
+func (e *Editor) textDocumentIdentifier(path string) protocol.TextDocumentIdentifier {
+	return protocol.TextDocumentIdentifier{
+		URI: e.sandbox.Workdir.URI(path),
+	}
 }
 
 // SaveBuffer writes the content of the buffer specified by the given path to
@@ -269,9 +303,7 @@ func (e *Editor) SaveBuffer(ctx context.Context, path string) error {
 	}
 	e.mu.Unlock()
 
-	docID := protocol.TextDocumentIdentifier{
-		URI: e.sandbox.Workdir.URI(buf.path),
-	}
+	docID := e.textDocumentIdentifier(buf.path)
 	if e.server != nil {
 		if err := e.server.WillSave(ctx, &protocol.WillSaveTextDocumentParams{
 			TextDocument: docID,
@@ -456,10 +488,8 @@ func (e *Editor) editBufferLocked(ctx context.Context, path string, edits []Edit
 	}
 	params := &protocol.DidChangeTextDocumentParams{
 		TextDocument: protocol.VersionedTextDocumentIdentifier{
-			Version: float64(buf.version),
-			TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-				URI: e.sandbox.Workdir.URI(buf.path),
-			},
+			Version:                float64(buf.version),
+			TextDocumentIdentifier: e.textDocumentIdentifier(buf.path),
 		},
 		ContentChanges: evts,
 	}
@@ -613,4 +643,25 @@ func (e *Editor) RunGenerate(ctx context.Context, dir string) error {
 	// Await this state change, but here we must delegate that responsibility to
 	// the caller.
 	return nil
+}
+
+// CodeLens execute a codelens request on the server.
+func (e *Editor) CodeLens(ctx context.Context, path string) ([]protocol.CodeLens, error) {
+	if e.server == nil {
+		return nil, nil
+	}
+	e.mu.Lock()
+	_, ok := e.buffers[path]
+	e.mu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("buffer %q is not open", path)
+	}
+	params := &protocol.CodeLensParams{
+		TextDocument: e.textDocumentIdentifier(path),
+	}
+	lens, err := e.server.CodeLens(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	return lens, nil
 }
