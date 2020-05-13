@@ -584,7 +584,7 @@ func typeErrorAnalyzers() map[string]Analyzer {
 			Analyzer:       fillreturns.Analyzer,
 			enabled:        true,
 			FixesError:     fillreturns.FixesError,
-			HighConfidence: true,
+			HighConfidence: false,
 		},
 		nonewvars.Analyzer.Name: {
 			Analyzer:   nonewvars.Analyzer,
