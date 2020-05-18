@@ -16,6 +16,13 @@ import (
 )
 
 func (s *Server) completion(ctx context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r == "unreachable" {
+				event.Log(ctx, "panicked due to go2")
+			}
+		}
+	}()
 	snapshot, fh, ok, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.UnknownKind)
 	if !ok {
 		return nil, err

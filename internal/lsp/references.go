@@ -7,11 +7,20 @@ package lsp
 import (
 	"context"
 
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 )
 
 func (s *Server) references(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r == "unreachable" {
+				event.Log(ctx, "panicked due to go2")
+			}
+		}
+	}()
+
 	snapshot, fh, ok, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.Go)
 	if !ok {
 		return nil, err

@@ -14,6 +14,14 @@ import (
 )
 
 func (s *Server) signatureHelp(ctx context.Context, params *protocol.SignatureHelpParams) (*protocol.SignatureHelp, error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r == "unreachable" {
+				event.Log(ctx, "panicked due to go2")
+			}
+		}
+	}()
+
 	snapshot, fh, ok, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.Go)
 	if !ok {
 		return nil, err

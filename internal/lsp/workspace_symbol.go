@@ -13,6 +13,14 @@ import (
 )
 
 func (s *Server) symbol(ctx context.Context, params *protocol.WorkspaceSymbolParams) ([]protocol.SymbolInformation, error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r == "unreachable" {
+				event.Log(ctx, "panicked due to go2")
+			}
+		}
+	}()
+
 	ctx, done := event.Start(ctx, "lsp.Server.symbol")
 	defer done()
 
