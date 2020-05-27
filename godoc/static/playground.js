@@ -247,6 +247,14 @@ function PlaygroundOutput(el) {
 		if (write.Kind == 'end') {
 			m = '\nProgram exited' + (m?(': '+m):'.');
 		}
+		
+                // ^L clears the screen.
+		var s = m.split('\x0c');
+		if (s.length > 1) {
+			el.innerHTML = '';
+			m = s.pop();
+		}
+
 
 		if (m.indexOf('IMAGE:') === 0) {
 			// TODO(adg): buffer all writes before creating image
@@ -257,12 +265,6 @@ function PlaygroundOutput(el) {
 			return;
 		}
 
-		// ^L clears the screen.
-		var s = m.split('\x0c');
-		if (s.length > 1) {
-			el.innerHTML = '';
-			m = s.pop();
-		}
 
 		m = m.replace(/&/g, '&amp;');
 		m = m.replace(/</g, '&lt;');
