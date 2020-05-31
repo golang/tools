@@ -934,6 +934,103 @@ const A = 1
 	}
 }
 
+// TestLoadModuleErrors tests the behavior resulting from having a
+// module that is unparsable. Or is unmodifiable due to -mod=readonly
+// being set.
+func TestLoadModuleErrors(t *testing.T) { packagestest.TestAll(t, testLoadModuleErrors) }
+func testLoadModuleErrors(t *testing.T, exporter packagestest.Exporter) {
+	testenv.NeedsTool(t, "go")
+
+	exported := packagestest.Export(t, exporter, []packagestest.Module{
+		{
+			Name: "golang.org/fake",
+			Files: map[string]interface{}{
+				"main.go": `package main
+				import "golang.org/x/xerrors"
+				func main() {
+					_ = errors.New("")
+				}
+				`},
+		},
+	})
+	defer exported.Cleanup()
+	exported.Config.Mode = packages.LoadImports
+	mainFile := exported.File("golang.org/fake", "main.go")
+
+	// write empty go.mod file.
+	if err := ioutil.WriteFile(filepath.Join(exported.Temp(), "fake", "go.mod"), []byte(`
+	`), 0775); err != nil {
+		t.Fatal(err)
+	}
+
+	wantErrMsg := "go: cannot determine module path for source directory"
+
+	// packages load should fail when go.mod is empty.
+	_, err := packages.Load(exported.Config, fmt.Sprintf("file=%s", mainFile))
+	if exporter.Name() == "Modules" {
+		if err == nil {
+			t.Errorf("expected error message %s, got nil", wantErrMsg)
+		} else if !strings.Contains(err.Error(), wantErrMsg) {
+			t.Errorf("expected error message %s, got %s", wantErrMsg, err)
+		}
+	}
+
+	// Set readonly mode. Packages load below should fail because readonly is set.
+	exported.Config.Env = append(os.Environ(), "GOFLAGS=-mod=readonly")
+
+	// write valid go.mod file.
+	if err := ioutil.WriteFile(filepath.Join(exported.Temp(), "fake", "go.mod"), []byte(`module golang.org/fake
+
+	require (
+		golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7
+	)
+	`), 0775); err != nil {
+		t.Fatal(err)
+	}
+
+	// write invalid go.sum file.
+	if err := ioutil.WriteFile(filepath.Join(exported.Temp(), "fake", "go.sum"), []byte(`
+	`), 0775); err != nil {
+		t.Fatal(err)
+	}
+
+	wantErrMsg = "go: updates to go.sum needed, disabled by -mod=readonly"
+
+	// packages load should fail when go.sum is invalid.
+	_, err = packages.Load(exported.Config, fmt.Sprintf("file=%s", mainFile))
+	if err == nil {
+		t.Errorf("expected error message %s, got nil", wantErrMsg)
+	} else if !strings.Contains(err.Error(), wantErrMsg) {
+		t.Errorf("expected error message %s, got %s", wantErrMsg, err)
+	}
+
+	// write invalid go.mod file with module missing.
+	if err := ioutil.WriteFile(filepath.Join(exported.Temp(), "fake", "go.mod"), []byte(`module golang.org/fake
+
+	require (
+	)
+	`), 0775); err != nil {
+		t.Fatal(err)
+	}
+
+	// write valid go.sum file.
+	if err := ioutil.WriteFile(filepath.Join(exported.Temp(), "fake", "go.sum"), []byte(`
+	golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+	`), 0775); err != nil {
+		t.Fatal(err)
+	}
+
+	wantErrMsg = "main.go:2:12: cannot find module providing package golang.org/x/xerrors: import lookup disabled by -mod=readonly"
+
+	// packages load should fail when go.mod is invalid.
+	_, err = packages.Load(exported.Config, fmt.Sprintf("file=%s", mainFile))
+	if err == nil {
+		t.Errorf("expected error message %s, got nil", wantErrMsg)
+	} else if !strings.Contains(err.Error(), wantErrMsg) {
+		t.Errorf("expected error message %s, got %s", wantErrMsg, err)
+	}
+}
+
 func TestLoadAllSyntaxImportErrors(t *testing.T) {
 	packagestest.TestAll(t, testLoadAllSyntaxImportErrors)
 }

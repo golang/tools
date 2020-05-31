@@ -447,6 +447,14 @@ func (state *golistState) createDriverResponse(words ...string) (*driverResponse
 			return nil, fmt.Errorf("package missing import path: %+v", p)
 		}
 
+		// Unable to remedy invalid go module due to readonly mode.
+		if p.Error != nil && strings.Contains(p.Error.Err, "disabled by -mod=readonly") {
+			return nil, Error{
+				Pos: p.Error.Pos,
+				Msg: p.Error.Err,
+			}
+		}
+
 		// Work around https://golang.org/issue/33157:
 		// go list -e, when given an absolute path, will find the package contained at
 		// that directory. But when no package exists there, it will return a fake package
@@ -866,6 +874,16 @@ func (state *golistState) invokeGo(verb string, args ...string) (*bytes.Buffer, 
 			output := fmt.Sprintf(`{"ImportPath": %q,"Incomplete": true,"Error": {"Pos": "","Err": %q}}`,
 				importPath, strings.Trim(stderrStr, "\n"))
 			return bytes.NewBufferString(output), nil
+		}
+
+		// Unable to remedy invalid go module due to readonly mode.
+		if len(stderr.String()) > 0 && strings.Contains(stderr.String(), "disabled by -mod=readonly") {
+			return nil, fmt.Errorf("%s", stderr.String())
+		}
+
+		// Unable to read go module due to go module not existing or parsable.
+		if len(stderr.String()) > 0 && strings.Contains(stderr.String(), "cannot determine module path") {
+			return nil, fmt.Errorf("%s", stderr.String())
 		}
 
 		// Export mode entails a build.
