@@ -65,6 +65,7 @@ var TestData = func() string {
 // Testing is an abstraction of a *testing.T.
 type Testing interface {
 	Errorf(format string, args ...interface{})
+	Skipf(format string, args ...interface{})
 }
 
 // RunWithSuggestedFixes behaves like Run, but additionally verifies suggested fixes.
@@ -183,7 +184,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 						want := string(bytes.TrimRight(vf.Data, "\n")) + "\n"
 						formatted, err := format.Source([]byte(out))
 						if err != nil {
-							continue
+							t.Skipf("Could not format edited file %s. Error: %s. Continuing nevertheless\n", file.Name(), err)
 						}
 						if want != string(formatted) {
 							d := myers.ComputeEdits("", want, string(formatted))
@@ -209,6 +210,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 
 			formatted, err := format.Source([]byte(out))
 			if err != nil {
+				t.Errorf("Could not format edited file %s. Error: %s", file.Name(), err)
 				continue
 			}
 			if want != string(formatted) {
