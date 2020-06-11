@@ -25,13 +25,12 @@ func TestMain(m *testing.M) {
 }
 
 func TestCommandLine(t *testing.T) {
-	packagestest.TestAll(t, testCommandLine)
-}
-
-func testCommandLine(t *testing.T, exporter packagestest.Exporter) {
-	data := tests.Load(t, exporter, "../testdata")
-	defer data.Exported.Cleanup()
-	tests.Run(t, cmdtest.NewRunner(exporter, data, tests.Context(t), nil), data)
+	packagestest.TestAll(t,
+		cmdtest.TestCommandLine(
+			"../testdata",
+			nil,
+		),
+	)
 }
 
 func TestDefinitionHelpExample(t *testing.T) {
@@ -45,6 +44,8 @@ func TestDefinitionHelpExample(t *testing.T) {
 		t.Errorf("could not get wd: %v", err)
 		return
 	}
+	ctx := tests.Context(t)
+	ts := cmdtest.NewTestServer(ctx, nil)
 	thisFile := filepath.Join(dir, "definition.go")
 	baseArgs := []string{"query", "definition"}
 	expect := regexp.MustCompile(`(?s)^[\w/\\:_-]+flag[/\\]flag.go:\d+:\d+-\d+: defined here as FlagSet struct {.*}$`)
@@ -52,7 +53,7 @@ func TestDefinitionHelpExample(t *testing.T) {
 		fmt.Sprintf("%v:%v:%v", thisFile, cmd.ExampleLine, cmd.ExampleColumn),
 		fmt.Sprintf("%v:#%v", thisFile, cmd.ExampleOffset)} {
 		args := append(baseArgs, query)
-		r := cmdtest.NewRunner(nil, nil, tests.Context(t), nil)
+		r := cmdtest.NewRunner(nil, nil, ctx, ts.Addr, nil)
 		got, _ := r.NormalizeGoplsCmd(t, args...)
 		if !expect.MatchString(got) {
 			t.Errorf("test with %v\nexpected:\n%s\ngot:\n%s", args, expect, got)

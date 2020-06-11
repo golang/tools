@@ -18,15 +18,15 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp"
 	"golang.org/x/tools/internal/lsp/cache"
+	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/export"
-	"golang.org/x/tools/internal/telemetry/export/ocagent"
 	"golang.org/x/tools/internal/tool"
 	"golang.org/x/tools/internal/xcontext"
 	errors "golang.org/x/xerrors"
@@ -58,7 +58,7 @@ type Application struct {
 	env []string
 
 	// Support for remote lsp server
-	Remote string `flag:"remote" help:"*EXPERIMENTAL* - forward all commands to a remote lsp"`
+	Remote string `flag:"remote" help:"forward all commands to a remote lsp specified by this flag. With no special prefix, this is assumed to be a TCP address. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. If 'auto', or prefixed by 'auto;', the remote address is automatically resolved based on the executing environment."`
 
 	// Enable verbose logging
 	Verbose bool `flag:"v" help:"verbose output"`
@@ -71,7 +71,7 @@ type Application struct {
 	PrepareOptions func(*source.Options)
 }
 
-// Returns a new Application ready to run.
+// New returns a new Application ready to run.
 func New(name, wd string, env []string, options func(*source.Options)) *Application {
 	if wd == "" {
 		wd, _ = os.Getwd()
@@ -82,6 +82,11 @@ func New(name, wd string, env []string, options func(*source.Options)) *Applicat
 		wd:      wd,
 		env:     env,
 		OCAgent: "off", //TODO: Remove this line to default the exporter to on
+
+		Serve: Serve{
+			RemoteListenTimeout: 1 * time.Minute,
+			RemoteLogfile:       "auto",
+		},
 	}
 	return app
 }
@@ -130,10 +135,7 @@ gopls flags are:
 // If no arguments are passed it will invoke the server sub command, as a
 // temporary measure for compatibility.
 func (app *Application) Run(ctx context.Context, args ...string) error {
-	ocConfig := ocagent.Discover()
-	//TODO: we should not need to adjust the discovered configuration
-	ocConfig.Address = app.OCAgent
-	export.AddExporters(ocagent.Connect(ocConfig))
+	ctx = debug.WithInstance(ctx, app.wd, app.OCAgent)
 	app.Serve.app = app
 	if len(args) == 0 {
 		return tool.Run(ctx, &app.Serve, args)
@@ -168,18 +170,21 @@ func (app *Application) mainCommands() []tool.Application {
 func (app *Application) featureCommands() []tool.Application {
 	return []tool.Application{
 		&check{app: app},
+		&definition{app: app},
 		&foldingRanges{app: app},
 		&format{app: app},
 		&highlight{app: app},
 		&implementation{app: app},
 		&imports{app: app},
+		&inspect{app: app},
 		&links{app: app},
-		&query{app: app},
+		&prepareRename{app: app},
 		&references{app: app},
 		&rename{app: app},
 		&signature{app: app},
 		&suggestedfix{app: app},
 		&symbols{app: app},
+		&workspaceSymbol{app: app},
 	}
 }
 
@@ -189,61 +194,76 @@ var (
 )
 
 func (app *Application) connect(ctx context.Context) (*connection, error) {
-	switch app.Remote {
-	case "":
+	switch {
+	case app.Remote == "":
 		connection := newConnection(app)
-		ctx, connection.Server = lsp.NewClientServer(ctx, cache.New(app.options), connection.Client)
+		connection.Server = lsp.NewServer(cache.New(ctx, app.options).NewSession(ctx), connection.Client)
+		ctx = protocol.WithClient(ctx, connection.Client)
 		return connection, connection.initialize(ctx, app.options)
-	case "internal":
+	case strings.HasPrefix(app.Remote, "internal@"):
 		internalMu.Lock()
 		defer internalMu.Unlock()
-		if c := internalConnections[app.wd]; c != nil {
+		opts := source.DefaultOptions()
+		if app.options != nil {
+			app.options(&opts)
+		}
+		key := fmt.Sprintf("%s %v", app.wd, opts)
+		if c := internalConnections[key]; c != nil {
 			return c, nil
 		}
-		connection := newConnection(app)
+		remote := app.Remote[len("internal@"):]
 		ctx := xcontext.Detach(ctx) //TODO:a way of shutting down the internal server
-		cr, sw, _ := os.Pipe()
-		sr, cw, _ := os.Pipe()
-		var jc *jsonrpc2.Conn
-		ctx, jc, connection.Server = protocol.NewClient(ctx, jsonrpc2.NewHeaderStream(cr, cw), connection.Client)
-		go jc.Run(ctx)
-		go func() {
-			ctx, srv := lsp.NewServer(ctx, cache.New(app.options), jsonrpc2.NewHeaderStream(sr, sw))
-			srv.Run(ctx)
-		}()
-		if err := connection.initialize(ctx, app.options); err != nil {
-			return nil, err
-		}
-		internalConnections[app.wd] = connection
-		return connection, nil
-	default:
-		connection := newConnection(app)
-		conn, err := net.Dial("tcp", app.Remote)
+		connection, err := app.connectRemote(ctx, remote)
 		if err != nil {
 			return nil, err
 		}
-		stream := jsonrpc2.NewHeaderStream(conn, conn)
-		var jc *jsonrpc2.Conn
-		ctx, jc, connection.Server = protocol.NewClient(ctx, stream, connection.Client)
-		go jc.Run(ctx)
-		return connection, connection.initialize(ctx, app.options)
+		internalConnections[key] = connection
+		return connection, nil
+	default:
+		return app.connectRemote(ctx, app.Remote)
 	}
+}
+
+func (app *Application) connectRemote(ctx context.Context, remote string) (*connection, error) {
+	connection := newConnection(app)
+	conn, err := net.Dial("tcp", remote)
+	if err != nil {
+		return nil, err
+	}
+	stream := jsonrpc2.NewHeaderStream(conn)
+	cc := jsonrpc2.NewConn(stream)
+	connection.Server = protocol.ServerDispatcher(cc)
+	ctx = protocol.WithClient(ctx, connection.Client)
+	cc.Go(ctx,
+		protocol.Handlers(
+			protocol.ClientHandler(connection.Client,
+				jsonrpc2.MethodNotFound)))
+	return connection, connection.initialize(ctx, app.options)
+}
+
+var matcherString = map[source.SymbolMatcher]string{
+	source.SymbolFuzzy:           "fuzzy",
+	source.SymbolCaseSensitive:   "caseSensitive",
+	source.SymbolCaseInsensitive: "default",
 }
 
 func (c *connection) initialize(ctx context.Context, options func(*source.Options)) error {
 	params := &protocol.ParamInitialize{}
-	params.RootURI = string(span.FileURI(c.Client.app.wd))
+	params.RootURI = protocol.URIFromPath(c.Client.app.wd)
 	params.Capabilities.Workspace.Configuration = true
 
 	// Make sure to respect configured options when sending initialize request.
-	opts := source.DefaultOptions
+	opts := source.DefaultOptions()
 	if options != nil {
 		options(&opts)
 	}
 	params.Capabilities.TextDocument.Hover = protocol.HoverClientCapabilities{
 		ContentFormat: []protocol.MarkupKind{opts.PreferredContentFormat},
 	}
-
+	params.Capabilities.TextDocument.DocumentSymbol.HierarchicalDocumentSymbolSupport = opts.HierarchicalDocumentSymbolSupport
+	params.InitializationOptions = map[string]interface{}{
+		"symbolMatcher": matcherString[opts.SymbolMatcher],
+	}
 	if _, err := c.Server.Initialize(ctx, params); err != nil {
 		return err
 	}
@@ -263,18 +283,19 @@ type cmdClient struct {
 	app  *Application
 	fset *token.FileSet
 
+	diagnosticsMu   sync.Mutex
+	diagnosticsDone chan struct{}
+
 	filesMu sync.Mutex
 	files   map[span.URI]*cmdFile
 }
 
 type cmdFile struct {
-	uri            span.URI
-	mapper         *protocol.ColumnMapper
-	err            error
-	added          bool
-	hasDiagnostics chan struct{}
-	diagnosticsMu  sync.Mutex
-	diagnostics    []protocol.Diagnostic
+	uri         span.URI
+	mapper      *protocol.ColumnMapper
+	err         error
+	added       bool
+	diagnostics []protocol.Diagnostic
 }
 
 func newConnection(app *Application) *connection {
@@ -285,6 +306,15 @@ func newConnection(app *Application) *connection {
 			files: make(map[span.URI]*cmdFile),
 		},
 	}
+}
+
+// fileURI converts a DocumentURI to a file:// span.URI, panicking if it's not a file.
+func fileURI(uri protocol.DocumentURI) span.URI {
+	sURI := uri.SpanURI()
+	if !sURI.IsFile() {
+		panic(fmt.Sprintf("%q is not a file URI", uri))
+	}
+	return sURI
 }
 
 func (c *cmdClient) ShowMessage(ctx context.Context, p *protocol.ShowMessageParams) error { return nil }
@@ -344,8 +374,13 @@ func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfigur
 			env[l[0]] = l[1]
 		}
 		results[i] = map[string]interface{}{
-			"env":     env,
-			"go-diff": true,
+			"env": env,
+			"analyses": map[string]bool{
+				"fillreturns":    true,
+				"nonewvars":      true,
+				"noresultvalues": true,
+				"undeclaredname": true,
+			},
 		}
 	}
 	return results, nil
@@ -356,6 +391,9 @@ func (c *cmdClient) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEdi
 }
 
 func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishDiagnosticsParams) error {
+	if p.URI == "gopls://diagnostics-done" {
+		close(c.diagnosticsDone)
+	}
 	// Don't worry about diagnostics without versions.
 	if p.Version == 0 {
 		return nil
@@ -364,17 +402,16 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 	c.filesMu.Lock()
 	defer c.filesMu.Unlock()
 
-	uri := span.URI(p.URI)
-	file := c.getFile(ctx, uri)
-
-	file.diagnosticsMu.Lock()
-	defer file.diagnosticsMu.Unlock()
-
-	hadDiagnostics := file.diagnostics != nil
+	file := c.getFile(ctx, fileURI(p.URI))
 	file.diagnostics = p.Diagnostics
-	if !hadDiagnostics {
-		close(file.hasDiagnostics)
-	}
+	return nil
+}
+
+func (c *cmdClient) Progress(context.Context, *protocol.ProgressParams) error {
+	return nil
+}
+
+func (c *cmdClient) WorkDoneProgressCreate(context.Context, *protocol.WorkDoneProgressCreateParams) error {
 	return nil
 }
 
@@ -382,8 +419,7 @@ func (c *cmdClient) getFile(ctx context.Context, uri span.URI) *cmdFile {
 	file, found := c.files[uri]
 	if !found || file.err != nil {
 		file = &cmdFile{
-			uri:            uri,
-			hasDiagnostics: make(chan struct{}),
+			uri: uri,
 		}
 		c.files[uri] = file
 	}
@@ -406,18 +442,6 @@ func (c *cmdClient) getFile(ctx context.Context, uri span.URI) *cmdFile {
 	return file
 }
 
-func (file *cmdFile) waitForDiagnostics(ctx context.Context) ([]protocol.Diagnostic, error) {
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-file.hasDiagnostics:
-	}
-
-	file.diagnosticsMu.Lock()
-	defer file.diagnosticsMu.Unlock()
-	return file.diagnostics, nil
-}
-
 func (c *connection) AddFile(ctx context.Context, uri span.URI) *cmdFile {
 	c.Client.filesMu.Lock()
 	defer c.Client.filesMu.Unlock()
@@ -436,7 +460,7 @@ func (c *connection) AddFile(ctx context.Context, uri span.URI) *cmdFile {
 	file.added = true
 	p := &protocol.DidOpenTextDocumentParams{
 		TextDocument: protocol.TextDocumentItem{
-			URI:        protocol.NewURI(uri),
+			URI:        protocol.URIFromSpanURI(uri),
 			LanguageID: source.DetectLanguage("", file.uri.Filename()).String(),
 			Version:    1,
 			Text:       string(file.mapper.Content),
@@ -448,8 +472,22 @@ func (c *connection) AddFile(ctx context.Context, uri span.URI) *cmdFile {
 	return file
 }
 
+func (c *connection) diagnoseFiles(ctx context.Context, files []span.URI) error {
+	var untypedFiles []interface{}
+	for _, file := range files {
+		untypedFiles = append(untypedFiles, string(file))
+	}
+	c.Client.diagnosticsMu.Lock()
+	defer c.Client.diagnosticsMu.Unlock()
+
+	c.Client.diagnosticsDone = make(chan struct{})
+	_, err := c.Server.NonstandardRequest(ctx, "gopls/diagnoseFiles", map[string]interface{}{"files": untypedFiles})
+	<-c.Client.diagnosticsDone
+	return err
+}
+
 func (c *connection) terminate(ctx context.Context) {
-	if c.Client.app.Remote == "internal" {
+	if strings.HasPrefix(c.Client.app.Remote, "internal@") {
 		// internal connections need to be left alive for the next test
 		return
 	}

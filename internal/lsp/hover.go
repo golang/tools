@@ -7,46 +7,21 @@ package lsp
 import (
 	"context"
 
+	"golang.org/x/tools/internal/lsp/mod"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
 )
 
 func (s *Server) hover(ctx context.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
-	uri := span.NewURI(params.TextDocument.URI)
-	view, err := s.session.ViewOf(uri)
-	if err != nil {
+	snapshot, fh, ok, err := s.beginFileRequest(params.TextDocument.URI, source.UnknownKind)
+	if !ok {
 		return nil, err
 	}
-	snapshot := view.Snapshot()
-	fh, err := snapshot.GetFile(ctx, uri)
-	if err != nil {
-		return nil, err
+	switch fh.Identity().Kind {
+	case source.Mod:
+		return mod.Hover(ctx, snapshot, fh, params.Position)
+	case source.Go:
+		return source.Hover(ctx, snapshot, fh, params.Position)
 	}
-	if fh.Identity().Kind != source.Go {
-		return nil, nil
-	}
-	ident, err := source.Identifier(ctx, snapshot, fh, params.Position, source.WidestCheckPackageHandle)
-	if err != nil {
-		return nil, nil
-	}
-	h, err := ident.Hover(ctx)
-	if err != nil {
-		return nil, err
-	}
-	rng, err := ident.Range()
-	if err != nil {
-		return nil, err
-	}
-	hover, err := source.FormatHover(h, view.Options())
-	if err != nil {
-		return nil, err
-	}
-	return &protocol.Hover{
-		Contents: protocol.MarkupContent{
-			Kind:  view.Options().PreferredContentFormat,
-			Value: hover,
-		},
-		Range: rng,
-	}, nil
+	return nil, nil
 }

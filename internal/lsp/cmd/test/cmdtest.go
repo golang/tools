@@ -9,15 +9,21 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"golang.org/x/tools/go/packages/packagestest"
+	"golang.org/x/tools/internal/jsonrpc2/servertest"
+	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/cmd"
+	"golang.org/x/tools/internal/lsp/debug"
+	"golang.org/x/tools/internal/lsp/lsprpc"
+	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/tests"
 	"golang.org/x/tools/internal/span"
@@ -30,6 +36,7 @@ type runner struct {
 	ctx         context.Context
 	options     func(*source.Options)
 	normalizers []normalizer
+	remote      string
 }
 
 type normalizer struct {
@@ -39,13 +46,39 @@ type normalizer struct {
 	fragment string
 }
 
-func NewRunner(exporter packagestest.Exporter, data *tests.Data, ctx context.Context, options func(*source.Options)) *runner {
+func TestCommandLine(testdata string, options func(*source.Options)) func(*testing.T, packagestest.Exporter) {
+	return func(t *testing.T, exporter packagestest.Exporter) {
+		if stat, err := os.Stat(testdata); err != nil || !stat.IsDir() {
+			t.Skip("testdata directory not present")
+		}
+		ctx := tests.Context(t)
+		ts := NewTestServer(ctx, options)
+		data := tests.Load(t, exporter, testdata)
+		for _, datum := range data {
+			defer datum.Exported.Cleanup()
+			t.Run(tests.FormatFolderName(datum.Folder), func(t *testing.T) {
+				t.Helper()
+				tests.Run(t, NewRunner(exporter, datum, ctx, ts.Addr, options), datum)
+			})
+		}
+	}
+}
+
+func NewTestServer(ctx context.Context, options func(*source.Options)) *servertest.TCPServer {
+	ctx = debug.WithInstance(ctx, "", "")
+	cache := cache.New(ctx, options)
+	ss := lsprpc.NewStreamServer(cache)
+	return servertest.NewTCPServer(ctx, ss, nil)
+}
+
+func NewRunner(exporter packagestest.Exporter, data *tests.Data, ctx context.Context, remote string, options func(*source.Options)) *runner {
 	r := &runner{
 		exporter:    exporter,
 		data:        data,
 		ctx:         ctx,
 		options:     options,
 		normalizers: make([]normalizer, 0, len(data.Exported.Modules)),
+		remote:      remote,
 	}
 	// build the path normalizing patterns
 	for _, m := range data.Exported.Modules {
@@ -65,6 +98,10 @@ func NewRunner(exporter packagestest.Exporter, data *tests.Data, ctx context.Con
 		}
 	}
 	return r
+}
+
+func (r *runner) CodeLens(t *testing.T, uri span.URI, want []protocol.CodeLens) {
+	//TODO: add command line completions tests when it works
 }
 
 func (r *runner) Completion(t *testing.T, src span.Span, test tests.Completion, items tests.CompletionItems) {
@@ -95,11 +132,7 @@ func (r *runner) RankCompletion(t *testing.T, src span.Span, test tests.Completi
 	//TODO: add command line completions tests when it works
 }
 
-func (r *runner) PrepareRename(t *testing.T, src span.Span, want *source.PrepareItem) {
-	//TODO: add command line prepare rename tests when it works
-}
-
-func (r *runner) RunGoplsCmd(t testing.TB, args ...string) (string, string) {
+func (r *runner) runGoplsCmd(t testing.TB, args ...string) (string, string) {
 	rStdout, wStdout, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -110,38 +143,38 @@ func (r *runner) RunGoplsCmd(t testing.TB, args ...string) (string, string) {
 		t.Fatal(err)
 	}
 	oldStderr := os.Stderr
-	defer func() {
-		os.Stdout = oldStdout
-		os.Stderr = oldStderr
-		wStdout.Close()
-		rStdout.Close()
-		wStderr.Close()
-		rStderr.Close()
+	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		io.Copy(stdout, rStdout)
+		wg.Done()
 	}()
-	os.Stdout = wStdout
-	os.Stderr = wStderr
+	go func() {
+		io.Copy(stderr, rStderr)
+		wg.Done()
+	}()
+	os.Stdout, os.Stderr = wStdout, wStderr
 	app := cmd.New("gopls-test", r.data.Config.Dir, r.data.Exported.Config.Env, r.options)
+	remote := r.remote
 	err = tool.Run(tests.Context(t),
 		app,
-		append([]string{"-remote=internal"}, args...))
+		append([]string{fmt.Sprintf("-remote=internal@%s", remote)}, args...))
 	if err != nil {
 		fmt.Fprint(os.Stderr, err)
 	}
 	wStdout.Close()
 	wStderr.Close()
-	stdout, err := ioutil.ReadAll(rStdout)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stderr, err := ioutil.ReadAll(rStderr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(stdout), string(stderr)
+	wg.Wait()
+	os.Stdout, os.Stderr = oldStdout, oldStderr
+	rStdout.Close()
+	rStderr.Close()
+	return stdout.String(), stderr.String()
 }
 
+// NormalizeGoplsCmd runs the gopls command and normalizes its output.
 func (r *runner) NormalizeGoplsCmd(t testing.TB, args ...string) (string, string) {
-	stdout, stderr := r.RunGoplsCmd(t, args...)
+	stdout, stderr := r.runGoplsCmd(t, args...)
 	return r.Normalize(stdout), r.Normalize(stderr)
 }
 

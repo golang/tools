@@ -71,13 +71,9 @@ func (r *references) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	if len(locations) == 0 {
-		return tool.CommandLineErrorf("%v: not an identifier", from)
-	}
-
 	var spans []string
 	for _, l := range locations {
-		f := conn.AddFile(ctx, span.NewURI(l.URI))
+		f := conn.AddFile(ctx, fileURI(l.URI))
 		// convert location to span for user-friendly 1-indexed line
 		// and column numbers
 		span, err := f.mapper.Span(l)

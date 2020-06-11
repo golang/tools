@@ -6,88 +6,81 @@ package source
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/telemetry/log"
-	"golang.org/x/tools/internal/telemetry/trace"
-	errors "golang.org/x/xerrors"
 )
 
 func Implementation(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position) ([]protocol.Location, error) {
-	ctx, done := trace.StartSpan(ctx, "source.Implementation")
+	ctx, done := event.Start(ctx, "source.Implementation")
 	defer done()
 
 	impls, err := implementations(ctx, s, f, pp)
 	if err != nil {
 		return nil, err
 	}
-
 	var locations []protocol.Location
 	for _, impl := range impls {
 		if impl.pkg == nil || len(impl.pkg.CompiledGoFiles()) == 0 {
 			continue
 		}
-
 		rng, err := objToMappedRange(s.View(), impl.pkg, impl.obj)
 		if err != nil {
-			log.Error(ctx, "Error getting range for object", err)
-			continue
+			return nil, err
 		}
-
 		pr, err := rng.Range()
 		if err != nil {
-			log.Error(ctx, "Error getting protocol range for object", err)
-			continue
+			return nil, err
 		}
-
 		locations = append(locations, protocol.Location{
-			URI:   protocol.NewURI(rng.URI()),
+			URI:   protocol.URIFromSpanURI(rng.URI()),
 			Range: pr,
 		})
 	}
 	return locations, nil
 }
 
-var ErrNotAnInterface = errors.New("not an interface or interface method")
+var ErrNotAType = errors.New("not a type name or method")
 
-func implementations(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position) ([]implementation, error) {
-
+// implementations returns the concrete implementations of the specified
+// interface, or the interfaces implemented by the specified concrete type.
+func implementations(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position) ([]qualifiedObject, error) {
 	var (
-		impls []implementation
+		impls []qualifiedObject
 		seen  = make(map[token.Position]bool)
 		fset  = s.View().Session().Cache().FileSet()
 	)
 
-	objs, err := objectsAtProtocolPos(ctx, s, f, pp)
+	qos, err := qualifiedObjsAtProtocolPos(ctx, s, f, pp)
 	if err != nil {
 		return nil, err
 	}
-
-	for _, obj := range objs {
+	for _, qo := range qos {
 		var (
-			T      *types.Interface
-			method *types.Func
+			queryType   types.Type
+			queryMethod *types.Func
 		)
 
-		switch obj := obj.(type) {
+		switch obj := qo.obj.(type) {
 		case *types.Func:
-			method = obj
+			queryMethod = obj
 			if recv := obj.Type().(*types.Signature).Recv(); recv != nil {
-				T, _ = recv.Type().Underlying().(*types.Interface)
+				queryType = ensurePointer(recv.Type())
 			}
 		case *types.TypeName:
-			T, _ = obj.Type().Underlying().(*types.Interface)
+			queryType = ensurePointer(obj.Type())
 		}
 
-		if T == nil {
-			return nil, ErrNotAnInterface
+		if queryType == nil {
+			return nil, ErrNotAType
 		}
 
-		if T.NumMethods() == 0 {
+		if types.NewMethodSet(queryType).Len() == 0 {
 			return nil, nil
 		}
 
@@ -97,13 +90,16 @@ func implementations(ctx context.Context, s Snapshot, f FileHandle, pp protocol.
 			allNamed []*types.Named
 			pkgs     = make(map[*types.Package]Package)
 		)
-		for _, ph := range s.KnownPackages(ctx) {
+		knownPkgs, err := s.KnownPackages(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, ph := range knownPkgs {
 			pkg, err := ph.Check(ctx)
 			if err != nil {
 				return nil, err
 			}
 			pkgs[pkg.GetTypes()] = pkg
-
 			info := pkg.GetTypesInfo()
 			for _, obj := range info.Defs {
 				obj, ok := obj.(*types.TypeName)
@@ -112,42 +108,48 @@ func implementations(ctx context.Context, s Snapshot, f FileHandle, pp protocol.
 				if !ok || obj.IsAlias() {
 					continue
 				}
-				named, ok := obj.Type().(*types.Named)
-				// We skip interface types since we only want concrete
-				// implementations.
-				if !ok || isInterface(named) {
-					continue
+				if named, ok := obj.Type().(*types.Named); ok {
+					allNamed = append(allNamed, named)
 				}
-				allNamed = append(allNamed, named)
 			}
 		}
 
-		// Find all the named types that implement our interface.
-		for _, U := range allNamed {
-			var concrete types.Type = U
-			if !types.AssignableTo(concrete, T) {
-				// We also accept T if *T implements our interface.
-				concrete = types.NewPointer(concrete)
-				if !types.AssignableTo(concrete, T) {
+		// Find all the named types that match our query.
+		for _, named := range allNamed {
+			var (
+				candObj  types.Object = named.Obj()
+				candType              = ensurePointer(named)
+			)
+
+			if !concreteImplementsIntf(candType, queryType) {
+				continue
+			}
+
+			ms := types.NewMethodSet(candType)
+			if ms.Len() == 0 {
+				// Skip empty interfaces.
+				continue
+			}
+
+			// If client queried a method, look up corresponding candType method.
+			if queryMethod != nil {
+				sel := ms.Lookup(queryMethod.Pkg(), queryMethod.Name())
+				if sel == nil {
 					continue
 				}
+				candObj = sel.Obj()
 			}
 
-			var obj types.Object = U.Obj()
-			if method != nil {
-				obj = types.NewMethodSet(concrete).Lookup(method.Pkg(), method.Name()).Obj()
-			}
-
-			pos := fset.Position(obj.Pos())
-			if obj == method || seen[pos] {
+			pos := fset.Position(candObj.Pos())
+			if candObj == queryMethod || seen[pos] {
 				continue
 			}
 
 			seen[pos] = true
 
-			impls = append(impls, implementation{
-				obj: obj,
-				pkg: pkgs[obj.Pkg()],
+			impls = append(impls, qualifiedObject{
+				obj: candObj,
+				pkg: pkgs[candObj.Pkg()],
 			})
 		}
 	}
@@ -155,52 +157,131 @@ func implementations(ctx context.Context, s Snapshot, f FileHandle, pp protocol.
 	return impls, nil
 }
 
-type implementation struct {
-	// obj is the implementation, either a *types.TypeName or *types.Func.
+// concreteImplementsIntf returns true if a is an interface type implemented by
+// concrete type b, or vice versa.
+func concreteImplementsIntf(a, b types.Type) bool {
+	aIsIntf, bIsIntf := isInterface(a), isInterface(b)
+
+	// Make sure exactly one is an interface type.
+	if aIsIntf == bIsIntf {
+		return false
+	}
+
+	// Rearrange if needed so "a" is the concrete type.
+	if aIsIntf {
+		a, b = b, a
+	}
+
+	return types.AssignableTo(a, b)
+}
+
+// ensurePointer wraps T in a *types.Pointer if T is a named, non-interface
+// type. This is useful to make sure you consider a named type's full method
+// set.
+func ensurePointer(T types.Type) types.Type {
+	if _, ok := T.(*types.Named); ok && !isInterface(T) {
+		return types.NewPointer(T)
+	}
+
+	return T
+}
+
+type qualifiedObject struct {
 	obj types.Object
 
 	// pkg is the Package that contains obj's definition.
 	pkg Package
+
+	// node is the *ast.Ident or *ast.ImportSpec we followed to find obj, if any.
+	node ast.Node
+
+	// sourcePkg is the Package that contains node, if any.
+	sourcePkg Package
 }
 
-// objectsAtProtocolPos returns all the type.Objects referenced at the given position.
-// An object will be returned for every package that the file belongs to.
-func objectsAtProtocolPos(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position) ([]types.Object, error) {
-	phs, err := s.PackageHandles(ctx, f)
+var errBuiltin = errors.New("builtin object")
+
+// qualifiedObjsAtProtocolPos returns info for all the type.Objects
+// referenced at the given position. An object will be returned for
+// every package that the file belongs to.
+func qualifiedObjsAtProtocolPos(ctx context.Context, s Snapshot, fh FileHandle, pp protocol.Position) ([]qualifiedObject, error) {
+	phs, err := s.PackageHandles(ctx, fh)
 	if err != nil {
 		return nil, err
 	}
-
-	var objs []types.Object
-
 	// Check all the packages that the file belongs to.
+	var qualifiedObjs []qualifiedObject
 	for _, ph := range phs {
-		pkg, err := ph.Check(ctx)
+		searchpkg, err := ph.Check(ctx)
 		if err != nil {
 			return nil, err
 		}
-
-		astFile, pos, err := getASTFile(pkg, f, pp)
+		astFile, pos, err := getASTFile(searchpkg, fh, pp)
 		if err != nil {
 			return nil, err
 		}
-
-		path := pathEnclosingIdent(astFile, pos)
-		if len(path) == 0 {
+		path := pathEnclosingObjNode(astFile, pos)
+		if path == nil {
 			return nil, ErrNoIdentFound
 		}
-
-		ident := path[len(path)-1].(*ast.Ident)
-
-		obj := pkg.GetTypesInfo().ObjectOf(ident)
-		if obj == nil {
-			return nil, fmt.Errorf("no object for %q", ident.Name)
+		var objs []types.Object
+		switch leaf := path[0].(type) {
+		case *ast.Ident:
+			// If leaf represents an implicit type switch object or the type
+			// switch "assign" variable, expand to all of the type switch's
+			// implicit objects.
+			if implicits := typeSwitchImplicits(searchpkg, path); len(implicits) > 0 {
+				objs = append(objs, implicits...)
+			} else {
+				obj := searchpkg.GetTypesInfo().ObjectOf(leaf)
+				if obj == nil {
+					return nil, fmt.Errorf("no object for %q", leaf.Name)
+				}
+				objs = append(objs, obj)
+			}
+		case *ast.ImportSpec:
+			// Look up the implicit *types.PkgName.
+			obj := searchpkg.GetTypesInfo().Implicits[leaf]
+			if obj == nil {
+				return nil, fmt.Errorf("no object for import %q", importPath(leaf))
+			}
+			objs = append(objs, obj)
 		}
-
-		objs = append(objs, obj)
+		// Get all of the transitive dependencies of the search package.
+		pkgs := make(map[*types.Package]Package)
+		var addPkg func(pkg Package)
+		addPkg = func(pkg Package) {
+			pkgs[pkg.GetTypes()] = pkg
+			for _, imp := range pkg.Imports() {
+				if _, ok := pkgs[imp.GetTypes()]; !ok {
+					addPkg(imp)
+				}
+			}
+		}
+		addPkg(searchpkg)
+		for _, obj := range objs {
+			if obj.Parent() == types.Universe {
+				return nil, fmt.Errorf("%w %q", errBuiltin, obj.Name())
+			}
+			pkg, ok := pkgs[obj.Pkg()]
+			if !ok {
+				event.Error(ctx, fmt.Sprintf("no package for obj %s: %v", obj, obj.Pkg()), err)
+				continue
+			}
+			qualifiedObjs = append(qualifiedObjs, qualifiedObject{
+				obj:       obj,
+				pkg:       pkg,
+				sourcePkg: searchpkg,
+				node:      path[0],
+			})
+		}
 	}
-
-	return objs, nil
+	// Return an error if no objects were found since callers will assume that
+	// the slice has at least 1 element.
+	if len(qualifiedObjs) == 0 {
+		return nil, fmt.Errorf("no object found")
+	}
+	return qualifiedObjs, nil
 }
 
 func getASTFile(pkg Package, f FileHandle, pos protocol.Position) (*ast.File, token.Pos, error) {
@@ -208,29 +289,26 @@ func getASTFile(pkg Package, f FileHandle, pos protocol.Position) (*ast.File, to
 	if err != nil {
 		return nil, 0, err
 	}
-
-	file, m, _, err := pgh.Cached()
+	file, _, m, _, err := pgh.Cached()
 	if err != nil {
 		return nil, 0, err
 	}
-
 	spn, err := m.PointSpan(pos)
 	if err != nil {
 		return nil, 0, err
 	}
-
 	rng, err := spn.Range(m.Converter)
 	if err != nil {
 		return nil, 0, err
 	}
-
 	return file, rng.Start, nil
 }
 
-// pathEnclosingIdent returns the ast path to the node that contains pos.
-// It is similar to astutil.PathEnclosingInterval, but simpler, and it
-// matches *ast.Ident nodes if pos is equal to node.End().
-func pathEnclosingIdent(f *ast.File, pos token.Pos) []ast.Node {
+// pathEnclosingObjNode returns the AST path to the object-defining
+// node associated with pos. "Object-defining" means either an
+// *ast.Ident mapped directly to a types.Object or an ast.Node mapped
+// implicitly to a types.Object.
+func pathEnclosingObjNode(f *ast.File, pos token.Pos) []ast.Node {
 	var (
 		path  []ast.Node
 		found bool
@@ -246,15 +324,48 @@ func pathEnclosingIdent(f *ast.File, pos token.Pos) []ast.Node {
 			return false
 		}
 
+		path = append(path, n)
+
 		switch n := n.(type) {
 		case *ast.Ident:
+			// Include the position directly after identifier. This handles
+			// the common case where the cursor is right after the
+			// identifier the user is currently typing. Previously we
+			// handled this by calling astutil.PathEnclosingInterval twice,
+			// once for "pos" and once for "pos-1".
 			found = n.Pos() <= pos && pos <= n.End()
+		case *ast.ImportSpec:
+			if n.Path.Pos() <= pos && pos < n.Path.End() {
+				found = true
+				// If import spec has a name, add name to path even though
+				// position isn't in the name.
+				if n.Name != nil {
+					path = append(path, n.Name)
+				}
+			}
+		case *ast.StarExpr:
+			// Follow star expressions to the inner identifier.
+			if pos == n.Star {
+				pos = n.X.Pos()
+			}
+		case *ast.SelectorExpr:
+			// If pos is on the ".", move it into the selector.
+			if pos == n.X.End() {
+				pos = n.Sel.Pos()
+			}
 		}
-
-		path = append(path, n)
 
 		return !found
 	})
+
+	if len(path) == 0 {
+		return nil
+	}
+
+	// Reverse path so leaf is first element.
+	for i := 0; i < len(path)/2; i++ {
+		path[i], path[len(path)-1-i] = path[len(path)-1-i], path[i]
+	}
 
 	return path
 }

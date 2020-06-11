@@ -5,39 +5,38 @@
 package source
 
 import (
+	"context"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"strings"
 	"unicode"
 
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/snippet"
-	"golang.org/x/tools/internal/telemetry/log"
 )
 
 // literal generates composite literal, function literal, and make()
 // completion items.
-func (c *completer) literal(literalType types.Type, imp *importInfo) {
-	if !c.opts.Literal {
+func (c *completer) literal(ctx context.Context, literalType types.Type, imp *importInfo) {
+	if !c.opts.literal {
 		return
 	}
 
-	expType := c.expectedType.objType
+	expType := c.inference.objType
 
-	if c.expectedType.variadic {
+	if c.inference.variadicType != nil {
 		// Don't offer literal slice candidates for variadic arguments.
 		// For example, don't offer "[]interface{}{}" in "fmt.Print(<>)".
-		if c.expectedType.matchesVariadic(literalType) {
+		if c.inference.matchesVariadic(literalType) {
 			return
 		}
 
 		// Otherwise, consider our expected type to be the variadic
 		// element type, not the slice type.
-		if slice, ok := expType.(*types.Slice); ok {
-			expType = slice.Elem()
-		}
+		expType = c.inference.variadicType
 	}
 
 	// Avoid literal candidates if the expected type is an empty
@@ -65,9 +64,16 @@ func (c *completer) literal(literalType types.Type, imp *importInfo) {
 
 	// Check if an object of type literalType would match our expected type.
 	cand := candidate{
-		obj:         c.fakeObj(literalType),
-		addressable: true,
+		obj: c.fakeObj(literalType),
 	}
+
+	switch literalType.Underlying().(type) {
+	// These literal types are addressable (e.g. "&[]int{}"), others are
+	// not (e.g. can't do "&(func(){})").
+	case *types.Struct, *types.Array, *types.Slice, *types.Map:
+		cand.addressable = true
+	}
+
 	if !c.matchingCandidate(&cand) {
 		return
 	}
@@ -96,9 +102,9 @@ func (c *completer) literal(literalType types.Type, imp *importInfo) {
 		matchName = types.TypeString(t.Elem(), qf)
 	}
 
-	addlEdits, err := c.importEdits(imp)
+	addlEdits, err := c.importEdits(ctx, imp)
 	if err != nil {
-		log.Error(c.ctx, "error adding import for literal candidate", err)
+		event.Error(ctx, "error adding import for literal candidate", err)
 		return
 	}
 
@@ -109,9 +115,9 @@ func (c *completer) literal(literalType types.Type, imp *importInfo) {
 				// If we are in a selector we must place the "&" before the selector.
 				// For example, "foo.B<>" must complete to "&foo.Bar{}", not
 				// "foo.&Bar{}".
-				edits, err := referenceEdit(c.snapshot.View().Session().Cache().FileSet(), c.mapper, sel)
+				edits, err := prependEdit(c.snapshot.View().Session().Cache().FileSet(), c.mapper, sel, "&")
 				if err != nil {
-					log.Error(c.ctx, "error making edit for literal pointer completion", err)
+					event.Error(ctx, "error making edit for literal pointer completion", err)
 					return
 				}
 				addlEdits = append(addlEdits, edits...)
@@ -166,9 +172,9 @@ func (c *completer) literal(literalType types.Type, imp *importInfo) {
 	}
 }
 
-// referenceEdit produces text edits that prepend a "&" operator to the
-// specified node.
-func referenceEdit(fset *token.FileSet, m *protocol.ColumnMapper, node ast.Node) ([]protocol.TextEdit, error) {
+// prependEdit produces text edits that preprend the specified prefix
+// to the specified node.
+func prependEdit(fset *token.FileSet, m *protocol.ColumnMapper, node ast.Node, prefix string) ([]protocol.TextEdit, error) {
 	rng := newMappedRange(fset, m, node.Pos(), node.Pos())
 	spn, err := rng.Span()
 	if err != nil {
@@ -176,7 +182,7 @@ func referenceEdit(fset *token.FileSet, m *protocol.ColumnMapper, node ast.Node)
 	}
 	return ToProtocolEdits(m, []diff.TextEdit{{
 		Span:    spn,
-		NewText: "&",
+		NewText: prefix,
 	}})
 }
 
@@ -206,7 +212,7 @@ func (c *completer) functionLiteral(sig *types.Signature, matchScore float64) {
 			// Our parameter names are guesses, so they must be placeholders
 			// for easy correction. If placeholders are disabled, don't
 			// offer the completion.
-			if !c.opts.Placeholders {
+			if !c.opts.placeholders {
 				return
 			}
 
@@ -360,7 +366,7 @@ func (c *completer) makeCall(typeName string, secondArg string, matchScore float
 	if secondArg != "" {
 		snip.WriteText(", ")
 		snip.WritePlaceholder(func(b *snippet.Builder) {
-			if c.opts.Placeholders {
+			if c.opts.placeholders {
 				b.WriteText(secondArg)
 			}
 		})

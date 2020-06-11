@@ -7,111 +7,90 @@ package debug
 import (
 	"bytes"
 	"context"
-	"go/token"
+	"fmt"
 	"html/template"
-	stdlog "log"
+	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/pprof"
-	_ "net/http/pprof" // pull in the standard pprof handlers
+	"os"
 	"path"
+	"path/filepath"
 	"runtime"
+	rpprof "runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
-	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/export"
-	"golang.org/x/tools/internal/telemetry/export/prometheus"
-	"golang.org/x/tools/internal/telemetry/log"
-	"golang.org/x/tools/internal/telemetry/tag"
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/event/core"
+	"golang.org/x/tools/internal/event/export"
+	"golang.org/x/tools/internal/event/export/metric"
+	"golang.org/x/tools/internal/event/export/ocagent"
+	"golang.org/x/tools/internal/event/export/prometheus"
+	"golang.org/x/tools/internal/event/keys"
+	"golang.org/x/tools/internal/event/label"
+	"golang.org/x/tools/internal/lsp/cache"
+	"golang.org/x/tools/internal/lsp/debug/tag"
+	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/xerrors"
 )
 
-type Cache interface {
-	ID() string
-	FileSet() *token.FileSet
+type instanceKeyType int
+
+const instanceKey = instanceKeyType(0)
+
+// An Instance holds all debug information associated with a gopls instance.
+type Instance struct {
+	Logfile              string
+	StartTime            time.Time
+	ServerAddress        string
+	DebugAddress         string
+	ListenedDebugAddress string
+	Workdir              string
+	OCAgentConfig        string
+
+	LogWriter io.Writer
+
+	exporter event.Exporter
+
+	ocagent    *ocagent.Exporter
+	prometheus *prometheus.Exporter
+	rpcs       *rpcs
+	traces     *traces
+	State      *State
 }
 
-type Session interface {
-	ID() string
-	Cache() Cache
-	Files() []*File
-	File(hash string) *File
+// State holds debugging information related to the server state.
+type State struct {
+	mu      sync.Mutex
+	clients []*Client
+	servers []*Server
 }
 
-type View interface {
-	ID() string
-	Name() string
-	Folder() span.URI
-	Session() Session
-}
-
-type File struct {
-	Session Session
-	URI     span.URI
-	Data    string
-	Error   error
-	Hash    string
-}
-
-var (
-	mu   sync.Mutex
-	data = struct {
-		Caches   []Cache
-		Sessions []Session
-		Views    []View
-	}{}
-)
-
-// AddCache adds a cache to the set being served
-func AddCache(cache Cache) {
-	mu.Lock()
-	defer mu.Unlock()
-	data.Caches = append(data.Caches, cache)
-}
-
-// DropCache drops a cache from the set being served
-func DropCache(cache Cache) {
-	mu.Lock()
-	defer mu.Unlock()
-	//find and remove the cache
-	if i, _ := findCache(cache.ID()); i >= 0 {
-		copy(data.Caches[i:], data.Caches[i+1:])
-		data.Caches[len(data.Caches)-1] = nil
-		data.Caches = data.Caches[:len(data.Caches)-1]
-	}
-}
-
-func findCache(id string) (int, Cache) {
-	for i, c := range data.Caches {
-		if c.ID() == id {
-			return i, c
+// Caches returns the set of Cache objects currently being served.
+func (st *State) Caches() []*cache.Cache {
+	var caches []*cache.Cache
+	seen := make(map[string]struct{})
+	for _, client := range st.Clients() {
+		cache, ok := client.Session.Cache().(*cache.Cache)
+		if !ok {
+			continue
 		}
-	}
-	return -1, nil
-}
-
-func getCache(r *http.Request) interface{} {
-	mu.Lock()
-	defer mu.Unlock()
-	id := path.Base(r.URL.Path)
-	result := struct {
-		Cache
-		Sessions []Session
-	}{}
-	_, result.Cache = findCache(id)
-
-	// now find all the views that belong to this session
-	for _, v := range data.Sessions {
-		if v.Cache().ID() == id {
-			result.Sessions = append(result.Sessions, v)
+		if _, found := seen[cache.ID()]; found {
+			continue
 		}
+		seen[cache.ID()] = struct{}{}
+		caches = append(caches, cache)
 	}
-	return result
+	return caches
 }
 
-func findSession(id string) Session {
-	for _, c := range data.Sessions {
+// Cache returns the Cache that matches the supplied id.
+func (st *State) Cache(id string) *cache.Cache {
+	for _, c := range st.Caches() {
 		if c.ID() == id {
 			return c
 		}
@@ -119,53 +98,182 @@ func findSession(id string) Session {
 	return nil
 }
 
-func getSession(r *http.Request) interface{} {
-	mu.Lock()
-	defer mu.Unlock()
-	id := path.Base(r.URL.Path)
-	result := struct {
-		Session
-		Views []View
-	}{
-		Session: findSession(id),
+// Sessions returns the set of Session objects currently being served.
+func (st *State) Sessions() []*cache.Session {
+	var sessions []*cache.Session
+	for _, client := range st.Clients() {
+		sessions = append(sessions, client.Session)
 	}
-	// now find all the views that belong to this session
-	for _, v := range data.Views {
-		if v.Session().ID() == id {
-			result.Views = append(result.Views, v)
-		}
-	}
-	return result
+	return sessions
 }
 
-func findView(id string) View {
-	for _, c := range data.Views {
-		if c.ID() == id {
+// Session returns the Session that matches the supplied id.
+func (st *State) Session(id string) *cache.Session {
+	for _, s := range st.Sessions() {
+		if s.ID() == id {
+			return s
+		}
+	}
+	return nil
+}
+
+// Views returns the set of View objects currently being served.
+func (st *State) Views() []*cache.View {
+	var views []*cache.View
+	for _, s := range st.Sessions() {
+		for _, v := range s.Views() {
+			if cv, ok := v.(*cache.View); ok {
+				views = append(views, cv)
+			}
+		}
+	}
+	return views
+}
+
+// View returns the View that matches the supplied id.
+func (st *State) View(id string) *cache.View {
+	for _, v := range st.Views() {
+		if v.ID() == id {
+			return v
+		}
+	}
+	return nil
+}
+
+// Clients returns the set of Clients currently being served.
+func (st *State) Clients() []*Client {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	clients := make([]*Client, len(st.clients))
+	copy(clients, st.clients)
+	return clients
+}
+
+// Servers returns the set of Servers the instance is currently connected to.
+func (st *State) Servers() []*Server {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	servers := make([]*Server, len(st.servers))
+	copy(servers, st.servers)
+	return servers
+}
+
+// A Client is an incoming connection from a remote client.
+type Client struct {
+	ID           string
+	Session      *cache.Session
+	DebugAddress string
+	Logfile      string
+	GoplsPath    string
+	ServerID     string
+}
+
+// A Server is an outgoing connection to a remote LSP server.
+type Server struct {
+	ID           string
+	DebugAddress string
+	Logfile      string
+	GoplsPath    string
+	ClientID     string
+}
+
+// AddClient adds a client to the set being served.
+func (st *State) AddClient(client *Client) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.clients = append(st.clients, client)
+}
+
+// DropClient removes a client from the set being served.
+func (st *State) DropClient(id string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for i, c := range st.clients {
+		if c.ID == id {
+			copy(st.clients[i:], st.clients[i+1:])
+			st.clients[len(st.clients)-1] = nil
+			st.clients = st.clients[:len(st.clients)-1]
+			return
+		}
+	}
+}
+
+// AddServer adds a server to the set being queried. In practice, there should
+// be at most one remote server.
+func (st *State) AddServer(server *Server) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.servers = append(st.servers, server)
+}
+
+// DropServer drops a server from the set being queried.
+func (st *State) DropServer(id string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for i, s := range st.servers {
+		if s.ID == id {
+			copy(st.servers[i:], st.servers[i+1:])
+			st.servers[len(st.servers)-1] = nil
+			st.servers = st.servers[:len(st.servers)-1]
+			return
+		}
+	}
+}
+
+func (i *Instance) getCache(r *http.Request) interface{} {
+	return i.State.Cache(path.Base(r.URL.Path))
+}
+
+func (i *Instance) getSession(r *http.Request) interface{} {
+	return i.State.Session(path.Base(r.URL.Path))
+}
+
+func (i Instance) getClient(r *http.Request) interface{} {
+	i.State.mu.Lock()
+	defer i.State.mu.Unlock()
+	id := path.Base(r.URL.Path)
+	for _, c := range i.State.clients {
+		if c.ID == id {
 			return c
 		}
 	}
 	return nil
 }
 
-func getView(r *http.Request) interface{} {
-	mu.Lock()
-	defer mu.Unlock()
+func (i Instance) getServer(r *http.Request) interface{} {
+	i.State.mu.Lock()
+	defer i.State.mu.Unlock()
 	id := path.Base(r.URL.Path)
-	return findView(id)
+	for _, s := range i.State.servers {
+		if s.ID == id {
+			return s
+		}
+	}
+	return nil
 }
 
-func getFile(r *http.Request) interface{} {
-	mu.Lock()
-	defer mu.Unlock()
-	hash := path.Base(r.URL.Path)
+func (i Instance) getView(r *http.Request) interface{} {
+	return i.State.View(path.Base(r.URL.Path))
+}
+
+func (i *Instance) getFile(r *http.Request) interface{} {
+	identifier := path.Base(r.URL.Path)
 	sid := path.Base(path.Dir(r.URL.Path))
-	session := findSession(sid)
-	return session.File(hash)
+	s := i.State.Session(sid)
+	if s == nil {
+		return nil
+	}
+	for _, o := range s.Overlays() {
+		if o.Identity().Identifier == identifier {
+			return o
+		}
+	}
+	return nil
 }
 
-func getInfo(r *http.Request) interface{} {
+func (i *Instance) getInfo(r *http.Request) interface{} {
 	buf := &bytes.Buffer{}
-	PrintVersionInfo(buf, true, HTML)
+	i.PrintServerInfo(r.Context(), buf)
 	return template.HTML(buf.String())
 }
 
@@ -175,92 +283,224 @@ func getMemory(r *http.Request) interface{} {
 	return m
 }
 
-// AddSession adds a session to the set being served
-func AddSession(session Session) {
-	mu.Lock()
-	defer mu.Unlock()
-	data.Sessions = append(data.Sessions, session)
+func init() {
+	event.SetExporter(makeGlobalExporter(os.Stderr))
 }
 
-// DropSession drops a session from the set being served
-func DropSession(session Session) {
-	mu.Lock()
-	defer mu.Unlock()
-	//find and remove the session
+func GetInstance(ctx context.Context) *Instance {
+	if ctx == nil {
+		return nil
+	}
+	v := ctx.Value(instanceKey)
+	if v == nil {
+		return nil
+	}
+	return v.(*Instance)
 }
 
-// AddView adds a view to the set being served
-func AddView(view View) {
-	mu.Lock()
-	defer mu.Unlock()
-	data.Views = append(data.Views, view)
+// WithInstance creates debug instance ready for use using the supplied
+// configuration and stores it in the returned context.
+func WithInstance(ctx context.Context, workdir, agent string) context.Context {
+	i := &Instance{
+		StartTime:     time.Now(),
+		Workdir:       workdir,
+		OCAgentConfig: agent,
+	}
+	i.LogWriter = os.Stderr
+	ocConfig := ocagent.Discover()
+	//TODO: we should not need to adjust the discovered configuration
+	ocConfig.Address = i.OCAgentConfig
+	i.ocagent = ocagent.Connect(ocConfig)
+	i.prometheus = prometheus.New()
+	i.rpcs = &rpcs{}
+	i.traces = &traces{}
+	i.State = &State{}
+	i.exporter = makeInstanceExporter(i)
+	return context.WithValue(ctx, instanceKey, i)
 }
 
-// DropView drops a view from the set being served
-func DropView(view View) {
-	mu.Lock()
-	defer mu.Unlock()
-	//find and remove the view
+// SetLogFile sets the logfile for use with this instance.
+func (i *Instance) SetLogFile(logfile string) (func(), error) {
+	// TODO: probably a better solution for deferring closure to the caller would
+	// be for the debug instance to itself be closed, but this fixes the
+	// immediate bug of logs not being captured.
+	closeLog := func() {}
+	if logfile != "" {
+		if logfile == "auto" {
+			logfile = filepath.Join(os.TempDir(), fmt.Sprintf("gopls-%d.log", os.Getpid()))
+		}
+		f, err := os.Create(logfile)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create log file: %w", err)
+		}
+		closeLog = func() {
+			defer f.Close()
+		}
+		log.SetOutput(io.MultiWriter(os.Stderr, f))
+		i.LogWriter = f
+	}
+	i.Logfile = logfile
+	return closeLog, nil
 }
 
 // Serve starts and runs a debug server in the background.
 // It also logs the port the server starts on, to allow for :0 auto assigned
 // ports.
-func Serve(ctx context.Context, addr string) error {
-	mu.Lock()
-	defer mu.Unlock()
-	if addr == "" {
+func (i *Instance) Serve(ctx context.Context) error {
+	if i.DebugAddress == "" {
 		return nil
 	}
-	listener, err := net.Listen("tcp", addr)
+	listener, err := net.Listen("tcp", i.DebugAddress)
 	if err != nil {
 		return err
 	}
+	i.ListenedDebugAddress = listener.Addr().String()
 
 	port := listener.Addr().(*net.TCPAddr).Port
-	if strings.HasSuffix(addr, ":0") {
-		stdlog.Printf("debug server listening on port %d", port)
+	if strings.HasSuffix(i.DebugAddress, ":0") {
+		log.Printf("debug server listening on port %d", port)
 	}
-	log.Print(ctx, "Debug serving", tag.Of("Port", port))
-	prometheus := prometheus.New()
-	rpcs := &rpcs{}
-	traces := &traces{}
-	export.AddExporters(prometheus, rpcs, traces)
+	event.Log(ctx, "Debug serving", tag.Port.Of(port))
 	go func() {
 		mux := http.NewServeMux()
-		mux.HandleFunc("/", Render(mainTmpl, func(*http.Request) interface{} { return data }))
-		mux.HandleFunc("/debug/", Render(debugTmpl, nil))
+		mux.HandleFunc("/", render(mainTmpl, func(*http.Request) interface{} { return i }))
+		mux.HandleFunc("/debug/", render(debugTmpl, nil))
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
 		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-		mux.HandleFunc("/metrics/", prometheus.Serve)
-		mux.HandleFunc("/rpc/", Render(rpcTmpl, rpcs.getData))
-		mux.HandleFunc("/trace/", Render(traceTmpl, traces.getData))
-		mux.HandleFunc("/cache/", Render(cacheTmpl, getCache))
-		mux.HandleFunc("/session/", Render(sessionTmpl, getSession))
-		mux.HandleFunc("/view/", Render(viewTmpl, getView))
-		mux.HandleFunc("/file/", Render(fileTmpl, getFile))
-		mux.HandleFunc("/info", Render(infoTmpl, getInfo))
-		mux.HandleFunc("/memory", Render(memoryTmpl, getMemory))
+		if i.prometheus != nil {
+			mux.HandleFunc("/metrics/", i.prometheus.Serve)
+		}
+		if i.rpcs != nil {
+			mux.HandleFunc("/rpc/", render(rpcTmpl, i.rpcs.getData))
+		}
+		if i.traces != nil {
+			mux.HandleFunc("/trace/", render(traceTmpl, i.traces.getData))
+		}
+		mux.HandleFunc("/cache/", render(cacheTmpl, i.getCache))
+		mux.HandleFunc("/session/", render(sessionTmpl, i.getSession))
+		mux.HandleFunc("/view/", render(viewTmpl, i.getView))
+		mux.HandleFunc("/client/", render(clientTmpl, i.getClient))
+		mux.HandleFunc("/server/", render(serverTmpl, i.getServer))
+		mux.HandleFunc("/file/", render(fileTmpl, i.getFile))
+		mux.HandleFunc("/info", render(infoTmpl, i.getInfo))
+		mux.HandleFunc("/memory", render(memoryTmpl, getMemory))
 		if err := http.Serve(listener, mux); err != nil {
-			log.Error(ctx, "Debug server failed", err)
+			event.Error(ctx, "Debug server failed", err)
 			return
 		}
-		log.Print(ctx, "Debug server finished")
+		event.Log(ctx, "Debug server finished")
 	}()
 	return nil
 }
 
-func Render(tmpl *template.Template, fun func(*http.Request) interface{}) func(http.ResponseWriter, *http.Request) {
+// MonitorMemory starts recording memory statistics each second.
+func (i *Instance) MonitorMemory(ctx context.Context) {
+	tick := time.NewTicker(time.Second)
+	nextThresholdGiB := uint64(1)
+	go func() {
+		for {
+			<-tick.C
+			var mem runtime.MemStats
+			runtime.ReadMemStats(&mem)
+			if mem.HeapAlloc < nextThresholdGiB*1<<30 {
+				continue
+			}
+			i.writeMemoryDebug(nextThresholdGiB)
+			event.Log(ctx, fmt.Sprintf("Wrote memory usage debug info to %v", os.TempDir()))
+			nextThresholdGiB++
+		}
+	}()
+}
+
+func (i *Instance) writeMemoryDebug(threshold uint64) error {
+	fname := func(t string) string {
+		return fmt.Sprintf("gopls.%d-%dGiB-%s", os.Getpid(), threshold, t)
+	}
+
+	f, err := os.Create(filepath.Join(os.TempDir(), fname("heap.pb.gz")))
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := rpprof.Lookup("heap").WriteTo(f, 0); err != nil {
+		return err
+	}
+
+	f, err = os.Create(filepath.Join(os.TempDir(), fname("goroutines.txt")))
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := rpprof.Lookup("goroutine").WriteTo(f, 1); err != nil {
+		return err
+	}
+	return nil
+}
+
+func makeGlobalExporter(stderr io.Writer) event.Exporter {
+	p := export.Printer{}
+	var pMu sync.Mutex
+	return func(ctx context.Context, ev core.Event, lm label.Map) context.Context {
+		i := GetInstance(ctx)
+
+		if event.IsLog(ev) {
+			// Don't log context cancellation errors.
+			if err := keys.Err.Get(ev); xerrors.Is(err, context.Canceled) {
+				return ctx
+			}
+			// Make sure any log messages without an instance go to stderr.
+			if i == nil {
+				pMu.Lock()
+				p.WriteEvent(stderr, ev, lm)
+				pMu.Unlock()
+			}
+		}
+		ctx = protocol.LogEvent(ctx, ev, lm)
+		if i == nil {
+			return ctx
+		}
+		return i.exporter(ctx, ev, lm)
+	}
+}
+
+func makeInstanceExporter(i *Instance) event.Exporter {
+	exporter := func(ctx context.Context, ev core.Event, lm label.Map) context.Context {
+		if i.ocagent != nil {
+			ctx = i.ocagent.ProcessEvent(ctx, ev, lm)
+		}
+		if i.prometheus != nil {
+			ctx = i.prometheus.ProcessEvent(ctx, ev, lm)
+		}
+		if i.rpcs != nil {
+			ctx = i.rpcs.ProcessEvent(ctx, ev, lm)
+		}
+		if i.traces != nil {
+			ctx = i.traces.ProcessEvent(ctx, ev, lm)
+		}
+		return ctx
+	}
+	metrics := metric.Config{}
+	registerMetrics(&metrics)
+	exporter = metrics.Exporter(exporter)
+	exporter = export.Spans(exporter)
+	exporter = export.Labels(exporter)
+	return exporter
+}
+
+type dataFunc func(*http.Request) interface{}
+
+func render(tmpl *template.Template, fun dataFunc) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var data interface{}
 		if fun != nil {
 			data = fun(r)
 		}
 		if err := tmpl.Execute(w, data); err != nil {
-			log.Error(context.Background(), "", err)
+			event.Error(context.Background(), "", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
 }
@@ -281,7 +521,11 @@ func fuint32(v uint32) string {
 	return commas(strconv.FormatUint(uint64(v), 10))
 }
 
-var BaseTemplate = template.Must(template.New("").Parse(`
+func fcontent(v []byte) string {
+	return string(v)
+}
+
+var baseTemplate = template.Must(template.New("").Parse(`
 <html>
 <head>
 <title>{{template "title" .}}</title>
@@ -316,34 +560,61 @@ Unknown page
 </html>
 
 {{define "cachelink"}}<a href="/cache/{{.}}">Cache {{.}}</a>{{end}}
+{{define "clientlink"}}<a href="/client/{{.}}">Client {{.}}</a>{{end}}
+{{define "serverlink"}}<a href="/server/{{.}}">Server {{.}}</a>{{end}}
 {{define "sessionlink"}}<a href="/session/{{.}}">Session {{.}}</a>{{end}}
 {{define "viewlink"}}<a href="/view/{{.}}">View {{.}}</a>{{end}}
-{{define "filelink"}}<a href="/file/{{.Session.ID}}/{{.Hash}}">{{.URI}}</a>{{end}}
+{{define "filelink"}}<a href="/file/{{.SessionID}}/{{.Identifier}}">{{.URI}}</a>{{end}}
 `)).Funcs(template.FuncMap{
-	"fuint64": fuint64,
-	"fuint32": fuint32,
+	"fuint64":  fuint64,
+	"fuint32":  fuint32,
+	"fcontent": fcontent,
+	"localAddress": func(s string) string {
+		// Try to translate loopback addresses to localhost, both for cosmetics and
+		// because unspecified ipv6 addresses can break links on Windows.
+		//
+		// TODO(rfindley): In the future, it would be better not to assume the
+		// server is running on localhost, and instead construct this address using
+		// the remote host.
+		host, port, err := net.SplitHostPort(s)
+		if err != nil {
+			return s
+		}
+		ip := net.ParseIP(host)
+		if ip == nil {
+			return s
+		}
+		if ip.IsLoopback() || ip.IsUnspecified() {
+			return "localhost:" + port
+		}
+		return s
+	},
 })
 
-var mainTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
+var mainTmpl = template.Must(template.Must(baseTemplate.Clone()).Parse(`
 {{define "title"}}GoPls server information{{end}}
 {{define "body"}}
 <h2>Caches</h2>
-<ul>{{range .Caches}}<li>{{template "cachelink" .ID}}</li>{{end}}</ul>
+<ul>{{range .State.Caches}}<li>{{template "cachelink" .ID}}</li>{{end}}</ul>
 <h2>Sessions</h2>
-<ul>{{range .Sessions}}<li>{{template "sessionlink" .ID}} from {{template "cachelink" .Cache.ID}}</li>{{end}}</ul>
+<ul>{{range .State.Sessions}}<li>{{template "sessionlink" .ID}} from {{template "cachelink" .Cache.ID}}</li>{{end}}</ul>
 <h2>Views</h2>
-<ul>{{range .Views}}<li>{{.Name}} is {{template "viewlink" .ID}} from {{template "sessionlink" .Session.ID}} in {{.Folder}}</li>{{end}}</ul>
+<ul>{{range .State.Views}}<li>{{.Name}} is {{template "viewlink" .ID}} from {{template "sessionlink" .Session.ID}} in {{.Folder}}</li>{{end}}</ul>
+<h2>Clients</h2>
+<ul>{{range .State.Clients}}<li>{{template "clientlink" .ID}}</li>{{end}}</ul>
+<h2>Servers</h2>
+<ul>{{range .State.Servers}}<li>{{template "serverlink" .ID}}</li>{{end}}</ul>
 {{end}}
 `))
 
-var infoTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
+var infoTmpl = template.Must(template.Must(baseTemplate.Clone()).Parse(`
 {{define "title"}}GoPls version information{{end}}
 {{define "body"}}
 {{.}}
 {{end}}
 `))
 
-var memoryTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
+var memoryTmpl = template.Must(template.Must(baseTemplate.Clone()).Parse(`
 {{define "title"}}GoPls memory usage{{end}}
 {{define "head"}}<meta http-equiv="refresh" content="5">{{end}}
 {{define "body"}}
@@ -373,51 +644,75 @@ var memoryTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{end}}
 `))
 
-var debugTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
+var debugTmpl = template.Must(template.Must(baseTemplate.Clone()).Parse(`
 {{define "title"}}GoPls Debug pages{{end}}
 {{define "body"}}
 <a href="/debug/pprof">Profiling</a>
 {{end}}
 `))
 
-var cacheTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
+var cacheTmpl = template.Must(template.Must(baseTemplate.Clone()).Parse(`
 {{define "title"}}Cache {{.ID}}{{end}}
 {{define "body"}}
 <h2>Sessions</h2>
 <ul>{{range .Sessions}}<li>{{template "sessionlink" .ID}}</li>{{end}}</ul>
+<h2>memoize.Store entries</h2>
+<ul>{{range $k,$v := .MemStats}}<li>{{$k}} - {{$v}}</li>{{end}}</ul>
 {{end}}
 `))
 
-var sessionTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
+var clientTmpl = template.Must(template.Must(baseTemplate.Clone()).Parse(`
+{{define "title"}}Client {{.ID}}{{end}}
+{{define "body"}}
+Using session: <b>{{template "sessionlink" .Session.ID}}</b><br>
+{{if .DebugAddress}}Debug this client at: <a href="http://{{localAddress .DebugAddress}}">{{localAddress .DebugAddress}}</a><br>{{end}}
+Logfile: {{.Logfile}}<br>
+Gopls Path: {{.GoplsPath}}<br>
+{{end}}
+`))
+
+var serverTmpl = template.Must(template.Must(baseTemplate.Clone()).Parse(`
+{{define "title"}}Server {{.ID}}{{end}}
+{{define "body"}}
+{{if .DebugAddress}}Debug this server at: <a href="http://{{localAddress .DebugAddress}}">{{localAddress .DebugAddress}}</a><br>{{end}}
+Logfile: {{.Logfile}}<br>
+Gopls Path: {{.GoplsPath}}<br>
+{{end}}
+`))
+
+var sessionTmpl = template.Must(template.Must(baseTemplate.Clone()).Parse(`
 {{define "title"}}Session {{.ID}}{{end}}
 {{define "body"}}
 From: <b>{{template "cachelink" .Cache.ID}}</b><br>
 <h2>Views</h2>
 <ul>{{range .Views}}<li>{{.Name}} is {{template "viewlink" .ID}} in {{.Folder}}</li>{{end}}</ul>
-<h2>Files</h2>
-<ul>{{range .Files}}<li>{{template "filelink" .}}</li>{{end}}</ul>
+<h2>Overlays</h2>
+<ul>{{range .Overlays}}<li>{{template "filelink" .Identity}}</li>{{end}}</ul>
 {{end}}
 `))
 
-var viewTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
+var viewTmpl = template.Must(template.Must(baseTemplate.Clone()).Parse(`
 {{define "title"}}View {{.ID}}{{end}}
 {{define "body"}}
 Name: <b>{{.Name}}</b><br>
 Folder: <b>{{.Folder}}</b><br>
 From: <b>{{template "sessionlink" .Session.ID}}</b><br>
 <h2>Environment</h2>
-<ul>{{range .Env}}<li>{{.}}</li>{{end}}</ul>
+<ul>{{range .Options.Env}}<li>{{.}}</li>{{end}}</ul>
 {{end}}
 `))
 
-var fileTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
-{{define "title"}}File {{.Hash}}{{end}}
+var fileTmpl = template.Must(template.Must(baseTemplate.Clone()).Parse(`
+{{define "title"}}Overlay {{.Identity.Identifier}}{{end}}
 {{define "body"}}
-From: <b>{{template "sessionlink" .Session.ID}}</b><br>
-URI: <b>{{.URI}}</b><br>
-Hash: <b>{{.Hash}}</b><br>
-Error: <b>{{.Error}}</b><br>
+{{with .Identity}}
+	From: <b>{{template "sessionlink" .SessionID}}</b><br>
+	URI: <b>{{.URI}}</b><br>
+	Identifier: <b>{{.Identifier}}</b><br>
+	Version: <b>{{.Version}}</b><br>
+	Kind: <b>{{.Kind}}</b><br>
+{{end}}
 <h3>Contents</h3>
-<pre>{{.Data}}</pre>
+<pre>{{fcontent .Data}}</pre>
 {{end}}
 `))

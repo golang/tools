@@ -7,29 +7,32 @@ package lsp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp/debug"
+	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/log"
-	errors "golang.org/x/xerrors"
 )
 
 func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitialize) (*protocol.InitializeResult, error) {
 	s.stateMu.Lock()
-	state := s.state
-	s.stateMu.Unlock()
-	if state >= serverInitializing {
-		return nil, jsonrpc2.NewErrorf(jsonrpc2.CodeInvalidRequest, "server already initialized")
+	if s.state >= serverInitializing {
+		defer s.stateMu.Unlock()
+		return nil, fmt.Errorf("%w: initialize called while server in %v state", jsonrpc2.ErrInvalidRequest, s.state)
 	}
-	s.stateMu.Lock()
 	s.state = serverInitializing
 	s.stateMu.Unlock()
+
+	s.supportsWorkDoneProgress = params.Capabilities.Window.WorkDoneProgress
+	s.inProgress = map[string]*WorkDone{}
 
 	options := s.session.Options()
 	defer func() { s.session.SetOptions(options) }()
@@ -38,17 +41,20 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 	source.SetOptions(&options, params.InitializationOptions)
 	options.ForClientCapabilities(params.Capabilities)
 
+	if !params.RootURI.SpanURI().IsFile() {
+		return nil, fmt.Errorf("unsupported URI scheme: %v (gopls only supports file URIs)", params.RootURI)
+	}
 	s.pendingFolders = params.WorkspaceFolders
 	if len(s.pendingFolders) == 0 {
 		if params.RootURI != "" {
 			s.pendingFolders = []protocol.WorkspaceFolder{{
-				URI:  params.RootURI,
-				Name: path.Base(params.RootURI),
+				URI:  string(params.RootURI),
+				Name: path.Base(params.RootURI.SpanURI().Filename()),
 			}}
 		} else {
 			// No folders and no root--we are in single file mode.
 			// TODO: https://golang.org/issue/34160.
-			return nil, errors.Errorf("gopls does not yet support editing a single file. Please open a directory.")
+			return nil, errors.New("gopls does not yet support editing a single file. Please open a directory.")
 		}
 	}
 
@@ -68,6 +74,10 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 			PrepareProvider: r.PrepareSupport,
 		}
 	}
+
+	goplsVer := &bytes.Buffer{}
+	debug.PrintVersionInfo(ctx, goplsVer, true, debug.PlainText)
+
 	return &protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
 			CodeActionProvider: codeActionProvider,
@@ -79,6 +89,7 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 			ImplementationProvider:     true,
 			DocumentFormattingProvider: true,
 			DocumentSymbolProvider:     true,
+			WorkspaceSymbolProvider:    true,
 			ExecuteCommandProvider: protocol.ExecuteCommandOptions{
 				Commands: options.SupportedCommands,
 			},
@@ -105,11 +116,22 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 				},
 			},
 		},
+		ServerInfo: struct {
+			Name    string `json:"name"`
+			Version string `json:"version,omitempty"`
+		}{
+			Name:    "gopls",
+			Version: goplsVer.String(),
+		},
 	}, nil
 }
 
 func (s *Server) initialized(ctx context.Context, params *protocol.InitializedParams) error {
 	s.stateMu.Lock()
+	if s.state >= serverInitialized {
+		defer s.stateMu.Unlock()
+		return fmt.Errorf("%w: initalized called while server in %v state", jsonrpc2.ErrInvalidRequest, s.state)
+	}
 	s.state = serverInitialized
 	s.stateMu.Unlock()
 
@@ -149,9 +171,10 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 		})
 	}
 
+	// TODO: this event logging may be unnecessary. The version info is included in the initialize response.
 	buf := &bytes.Buffer{}
-	debug.PrintVersionInfo(buf, true, debug.PlainText)
-	log.Print(ctx, buf.String())
+	debug.PrintVersionInfo(ctx, buf, true, debug.PlainText)
+	event.Log(ctx, buf.String())
 
 	s.addFolders(ctx, s.pendingFolders)
 	s.pendingFolders = nil
@@ -164,13 +187,22 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 	viewErrors := make(map[span.URI]error)
 
 	for _, folder := range folders {
-		uri := span.NewURI(folder.URI)
-		_, snapshot, err := s.addView(ctx, folder.Name, span.NewURI(folder.URI))
+		uri := span.URIFromURI(folder.URI)
+		view, snapshot, err := s.addView(ctx, folder.Name, uri)
 		if err != nil {
 			viewErrors[uri] = err
 			continue
 		}
-		go s.diagnoseSnapshot(snapshot)
+		// Print each view's environment.
+		buf := &bytes.Buffer{}
+		if err := view.WriteEnv(ctx, buf); err != nil {
+			event.Error(ctx, "failed to write environment", err, tag.Directory.Of(view.Folder()))
+			continue
+		}
+		event.Log(ctx, buf.String())
+
+		// Diagnose the newly created view.
+		go s.diagnoseDetached(snapshot)
 	}
 	if len(viewErrors) > 0 {
 		errMsg := fmt.Sprintf("Error loading workspace folders (expected %v, got %v)\n", len(folders), len(s.session.Views())-originalViews)
@@ -191,10 +223,10 @@ func (s *Server) fetchConfig(ctx context.Context, name string, folder span.URI, 
 	v := protocol.ParamConfiguration{
 		ConfigurationParams: protocol.ConfigurationParams{
 			Items: []protocol.ConfigurationItem{{
-				ScopeURI: protocol.NewURI(folder),
+				ScopeURI: string(folder),
 				Section:  "gopls",
 			}, {
-				ScopeURI: protocol.NewURI(folder),
+				ScopeURI: string(folder),
 				Section:  fmt.Sprintf("gopls-%s", name),
 			}},
 		},
@@ -233,36 +265,56 @@ func (s *Server) fetchConfig(ctx context.Context, name string, folder span.URI, 
 	return nil
 }
 
+// beginFileRequest checks preconditions for a file-oriented request and routes
+// it to a snapshot.
+// We don't want to return errors for benign conditions like wrong file type,
+// so callers should do if !ok { return err } rather than if err != nil.
+func (s *Server) beginFileRequest(pURI protocol.DocumentURI, expectKind source.FileKind) (source.Snapshot, source.FileHandle, bool, error) {
+	uri := pURI.SpanURI()
+	if !uri.IsFile() {
+		// Not a file URI. Stop processing the request, but don't return an error.
+		return nil, nil, false, nil
+	}
+	view, err := s.session.ViewOf(uri)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	snapshot := view.Snapshot()
+	fh, err := snapshot.GetFile(uri)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if expectKind != source.UnknownKind && fh.Identity().Kind != expectKind {
+		// Wrong kind of file. Nothing to do.
+		return nil, nil, false, nil
+	}
+	return snapshot, fh, true, nil
+}
+
 func (s *Server) shutdown(ctx context.Context) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	if s.state < serverInitialized {
-		return jsonrpc2.NewErrorf(jsonrpc2.CodeInvalidRequest, "server not initialized")
+		event.Log(ctx, "server shutdown without initialization")
 	}
-	// drop all the active views
-	s.session.Shutdown(ctx)
-	s.state = serverShutDown
+	if s.state != serverShutDown {
+		// drop all the active views
+		s.session.Shutdown(ctx)
+		s.state = serverShutDown
+	}
 	return nil
 }
 
 func (s *Server) exit(ctx context.Context) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
+	//TODO: would be nice to have a better way to find the conn close method
+	s.client.(io.Closer).Close()
 	if s.state != serverShutDown {
+		//TODO: we shoud be able to do better than this
 		os.Exit(1)
 	}
-	os.Exit(0)
+	// we don't terminate the process on a normal exit, we just allow it to
+	// close naturally if needed after the connection is closed.
 	return nil
-}
-
-func setBool(b *bool, m map[string]interface{}, name string) {
-	if v, ok := m[name].(bool); ok {
-		*b = v
-	}
-}
-
-func setNotBool(b *bool, m map[string]interface{}, name string) {
-	if v, ok := m[name].(bool); ok {
-		*b = !v
-	}
 }

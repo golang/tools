@@ -9,23 +9,24 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/telemetry/log"
-	"golang.org/x/tools/internal/telemetry/trace"
 	errors "golang.org/x/xerrors"
 )
 
 func Highlight(ctx context.Context, snapshot Snapshot, fh FileHandle, pos protocol.Position) ([]protocol.Range, error) {
-	ctx, done := trace.StartSpan(ctx, "source.Highlight")
+	ctx, done := event.Start(ctx, "source.Highlight")
 	defer done()
 
-	pkg, pgh, err := getParsedFile(ctx, snapshot, fh, WidestCheckPackageHandle)
+	pkg, pgh, err := getParsedFile(ctx, snapshot, fh, WidestPackageHandle)
 	if err != nil {
-		return nil, fmt.Errorf("getting file for Highlight: %v", err)
+		return nil, fmt.Errorf("getting file for Highlight: %w", err)
 	}
-	file, m, _, err := pgh.Parse(ctx)
+	file, _, m, _, err := pgh.Parse(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +40,7 @@ func Highlight(ctx context.Context, snapshot Snapshot, fh FileHandle, pos protoc
 	}
 	path, _ := astutil.PathEnclosingInterval(file, rng.Start, rng.Start)
 	if len(path) == 0 {
-		return nil, errors.Errorf("no enclosing position found for %v:%v", int(pos.Line), int(pos.Character))
+		return nil, fmt.Errorf("no enclosing position found for %v:%v", int(pos.Line), int(pos.Character))
 	}
 	// If start==end for astutil.PathEnclosingInterval, the 1-char interval following start is used instead.
 	// As a result, we might not get an exact match so we should check the 1-char interval to the left of the
@@ -53,23 +54,46 @@ func Highlight(ctx context.Context, snapshot Snapshot, fh FileHandle, pos protoc
 		}
 	}
 
-	switch path[0].(type) {
-	case *ast.ReturnStmt, *ast.FuncDecl, *ast.FuncType, *ast.BasicLit:
-		return highlightFuncControlFlow(ctx, snapshot, m, path)
+	switch node := path[0].(type) {
+	case *ast.BasicLit:
+		if len(path) > 1 {
+			if _, ok := path[1].(*ast.ImportSpec); ok {
+				return highlightImportUses(ctx, snapshot.View(), pkg, path)
+			}
+		}
+		return highlightFuncControlFlow(ctx, snapshot.View(), pkg, path)
+	case *ast.ReturnStmt, *ast.FuncDecl, *ast.FuncType:
+		return highlightFuncControlFlow(ctx, snapshot.View(), pkg, path)
 	case *ast.Ident:
-		return highlightIdentifiers(ctx, snapshot, m, path, pkg)
-	case *ast.BranchStmt, *ast.ForStmt, *ast.RangeStmt:
-		return highlightLoopControlFlow(ctx, snapshot, m, path)
+		return highlightIdentifiers(ctx, snapshot.View(), pkg, path)
+	case *ast.ForStmt, *ast.RangeStmt:
+		return highlightLoopControlFlow(ctx, snapshot.View(), pkg, path)
+	case *ast.BranchStmt:
+		// BREAK can exit a loop, switch or select, while CONTINUE exit a loop so
+		// these need to be handled separately. They can also be embedded in any
+		// other loop/switch/select if they have a label. TODO: add support for
+		// GOTO and FALLTHROUGH as well.
+		if node.Label != nil {
+			return highlightLabeledFlow(ctx, snapshot.View(), pkg, node)
+		}
+		switch node.Tok {
+		case token.BREAK:
+			return highlightUnlabeledBreakFlow(ctx, snapshot.View(), pkg, path)
+		case token.CONTINUE:
+			return highlightLoopControlFlow(ctx, snapshot.View(), pkg, path)
+		}
 	}
+
 	// If the cursor is in an unidentified area, return empty results.
 	return nil, nil
 }
 
-func highlightFuncControlFlow(ctx context.Context, snapshot Snapshot, m *protocol.ColumnMapper, path []ast.Node) ([]protocol.Range, error) {
+func highlightFuncControlFlow(ctx context.Context, view View, pkg Package, path []ast.Node) ([]protocol.Range, error) {
 	var enclosingFunc ast.Node
 	var returnStmt *ast.ReturnStmt
 	var resultsList *ast.FieldList
 	inReturnList := false
+
 Outer:
 	// Reverse walk the path till we get to the func block.
 	for i, n := range path {
@@ -137,16 +161,15 @@ Outer:
 	result := make(map[protocol.Range]bool)
 	// Highlight the correct argument in the function declaration return types.
 	if resultsList != nil && -1 < index && index < len(resultsList.List) {
-		rng, err := nodeToProtocolRange(ctx, snapshot.View(), m, resultsList.List[index])
+		rng, err := nodeToProtocolRange(view, pkg, resultsList.List[index])
 		if err != nil {
-			log.Error(ctx, "Error getting range for node", err)
-		} else {
-			result[rng] = true
+			return nil, err
 		}
+		result[rng] = true
 	}
 	// Add the "func" part of the func declaration.
 	if highlightAllReturnsAndFunc {
-		funcStmt, err := posToRange(snapshot.View(), m, enclosingFunc.Pos(), enclosingFunc.Pos()+token.Pos(len("func")))
+		funcStmt, err := posToMappedRange(view, pkg, enclosingFunc.Pos(), enclosingFunc.Pos()+token.Pos(len("func")))
 		if err != nil {
 			return nil, err
 		}
@@ -174,12 +197,12 @@ Outer:
 				toAdd = n.Results[index]
 			}
 			if toAdd != nil {
-				rng, err := nodeToProtocolRange(ctx, snapshot.View(), m, toAdd)
+				rng, err := nodeToProtocolRange(view, pkg, toAdd)
 				if err != nil {
-					log.Error(ctx, "Error getting range for node", err)
-				} else {
-					result[rng] = true
+					event.Error(ctx, "Error getting range for node", err)
+					return false
 				}
+				result[rng] = true
 				return false
 			}
 		}
@@ -188,24 +211,73 @@ Outer:
 	return rangeMapToSlice(result), nil
 }
 
-func highlightLoopControlFlow(ctx context.Context, snapshot Snapshot, m *protocol.ColumnMapper, path []ast.Node) ([]protocol.Range, error) {
-	var loop ast.Node
-Outer:
-	// Reverse walk the path till we get to the for loop.
+func highlightUnlabeledBreakFlow(ctx context.Context, view View, pkg Package, path []ast.Node) ([]protocol.Range, error) {
+	// Reverse walk the path until we find closest loop, select or switch.
 	for _, n := range path {
 		switch n.(type) {
 		case *ast.ForStmt, *ast.RangeStmt:
-			loop = n
-			break Outer
+			return highlightLoopControlFlow(ctx, view, pkg, path)
+		// TODO: add highlight when breaking a select or switch.
+		case *ast.SelectStmt, *ast.SwitchStmt:
+			return nil, nil
+		}
+	}
+	return nil, nil
+}
+
+func highlightLabeledFlow(ctx context.Context, view View, pkg Package, node *ast.BranchStmt) ([]protocol.Range, error) {
+	obj := node.Label.Obj
+	if obj == nil || obj.Decl == nil {
+		return nil, nil
+	}
+
+	label, ok := obj.Decl.(*ast.LabeledStmt)
+	if !ok {
+		return nil, nil
+	}
+
+	switch label.Stmt.(type) {
+	case *ast.ForStmt, *ast.RangeStmt:
+		return highlightLoopControlFlow(ctx, view, pkg, []ast.Node{label.Stmt, label})
+	}
+
+	return nil, nil
+}
+
+func highlightLoopControlFlow(ctx context.Context, view View, pkg Package, path []ast.Node) ([]protocol.Range, error) {
+	labelFor := func(path []ast.Node) *ast.Ident {
+		if len(path) > 1 {
+			if n, ok := path[1].(*ast.LabeledStmt); ok {
+				return n.Label
+			}
+		}
+		return nil
+	}
+
+	var loop ast.Node
+	var loopLabel *ast.Ident
+	stmtLabel := labelFor(path)
+Outer:
+	// Reverse walk the path till we get to the for loop.
+	for i := range path {
+		switch n := path[i].(type) {
+		case *ast.ForStmt, *ast.RangeStmt:
+			loopLabel = labelFor(path[i:])
+
+			if stmtLabel == nil || loopLabel == stmtLabel {
+				loop = n
+				break Outer
+			}
 		}
 	}
 	// Cursor is not in a for loop.
 	if loop == nil {
 		return nil, nil
 	}
+
 	result := make(map[protocol.Range]bool)
 	// Add the for statement.
-	forStmt, err := posToRange(snapshot.View(), m, loop.Pos(), loop.Pos()+token.Pos(len("for")))
+	forStmt, err := posToMappedRange(view, pkg, loop.Pos(), loop.Pos()+token.Pos(len("for")))
 	if err != nil {
 		return nil, err
 	}
@@ -215,34 +287,139 @@ Outer:
 	}
 	result[rng] = true
 
+	// Traverse AST to find branch statements within the same for-loop.
 	ast.Inspect(loop, func(n ast.Node) bool {
-		// Don't traverse any other for loops.
 		switch n.(type) {
 		case *ast.ForStmt, *ast.RangeStmt:
 			return loop == n
+		case *ast.SwitchStmt, *ast.SelectStmt:
+			return false
 		}
-		// Add all branch statements in same scope as the identified one.
-		if n, ok := n.(*ast.BranchStmt); ok {
-			rng, err := nodeToProtocolRange(ctx, snapshot.View(), m, n)
+
+		b, ok := n.(*ast.BranchStmt)
+		if !ok {
+			return true
+		}
+
+		if b.Label == nil || labelDecl(b.Label) == loopLabel {
+			rng, err := nodeToProtocolRange(view, pkg, b)
 			if err != nil {
-				log.Error(ctx, "Error getting range for node", err)
+				event.Error(ctx, "Error getting range for node", err)
 				return false
 			}
 			result[rng] = true
 		}
 		return true
 	})
+
+	// Find continue statements in the same loop or switches/selects.
+	ast.Inspect(loop, func(n ast.Node) bool {
+		switch n.(type) {
+		case *ast.ForStmt, *ast.RangeStmt:
+			return loop == n
+		}
+
+		if n, ok := n.(*ast.BranchStmt); ok && n.Tok == token.CONTINUE {
+			rng, err := nodeToProtocolRange(view, pkg, n)
+			if err != nil {
+				event.Error(ctx, "Error getting range for node", err)
+				return false
+			}
+			result[rng] = true
+		}
+		return true
+	})
+
+	// We don't need to check other for loops if we aren't looking for labeled statements.
+	if loopLabel == nil {
+		return rangeMapToSlice(result), nil
+	}
+
+	// Find labeled branch statements in any loop
+	ast.Inspect(loop, func(n ast.Node) bool {
+		b, ok := n.(*ast.BranchStmt)
+		if !ok {
+			return true
+		}
+
+		// Statment with labels that matches the loop.
+		if b.Label != nil && labelDecl(b.Label) == loopLabel {
+			rng, err := nodeToProtocolRange(view, pkg, b)
+			if err != nil {
+				event.Error(ctx, "Error getting range for node", err)
+				return false
+			}
+			result[rng] = true
+		}
+
+		return true
+	})
+
 	return rangeMapToSlice(result), nil
 }
 
-func highlightIdentifiers(ctx context.Context, snapshot Snapshot, m *protocol.ColumnMapper, path []ast.Node, pkg Package) ([]protocol.Range, error) {
+func labelDecl(n *ast.Ident) *ast.Ident {
+	if n == nil {
+		return nil
+	}
+	if n.Obj == nil {
+		return nil
+	}
+	if n.Obj.Decl == nil {
+		return nil
+	}
+	stmt, ok := n.Obj.Decl.(*ast.LabeledStmt)
+	if !ok {
+		return nil
+	}
+
+	return stmt.Label
+}
+
+func highlightImportUses(ctx context.Context, view View, pkg Package, path []ast.Node) ([]protocol.Range, error) {
+	result := make(map[protocol.Range]bool)
+	basicLit, ok := path[0].(*ast.BasicLit)
+	if !ok {
+		return nil, errors.Errorf("highlightImportUses called with an ast.Node of type %T", basicLit)
+	}
+
+	ast.Inspect(path[len(path)-1], func(node ast.Node) bool {
+		if imp, ok := node.(*ast.ImportSpec); ok && imp.Path == basicLit {
+			if rng, err := nodeToProtocolRange(view, pkg, node); err == nil {
+				result[rng] = true
+				return false
+			}
+		}
+		n, ok := node.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		obj, ok := pkg.GetTypesInfo().ObjectOf(n).(*types.PkgName)
+		if !ok {
+			return true
+		}
+		if !strings.Contains(basicLit.Value, obj.Name()) {
+			return true
+		}
+		rng, err := nodeToProtocolRange(view, pkg, n)
+		if err != nil {
+			event.Error(ctx, "Error getting range for node", err)
+			return false
+		}
+		result[rng] = true
+		return false
+	})
+	return rangeMapToSlice(result), nil
+}
+
+func highlightIdentifiers(ctx context.Context, view View, pkg Package, path []ast.Node) ([]protocol.Range, error) {
 	result := make(map[protocol.Range]bool)
 	id, ok := path[0].(*ast.Ident)
 	if !ok {
 		return nil, errors.Errorf("highlightIdentifiers called with an ast.Node of type %T", id)
 	}
 	// Check if ident is inside return or func decl.
-	if toAdd, err := highlightFuncControlFlow(ctx, snapshot, m, path); toAdd != nil && err == nil {
+	if toAdd, err := highlightFuncControlFlow(ctx, view, pkg, path); toAdd != nil && err == nil {
 		for _, r := range toAdd {
 			result[r] = true
 		}
@@ -251,7 +428,13 @@ func highlightIdentifiers(ctx context.Context, snapshot Snapshot, m *protocol.Co
 	// TODO: maybe check if ident is a reserved word, if true then don't continue and return results.
 
 	idObj := pkg.GetTypesInfo().ObjectOf(id)
+	pkgObj, isImported := idObj.(*types.PkgName)
 	ast.Inspect(path[len(path)-1], func(node ast.Node) bool {
+		if imp, ok := node.(*ast.ImportSpec); ok && isImported {
+			if rng, err := highlightImport(view, pkg, pkgObj, imp); rng != nil && err == nil {
+				result[*rng] = true
+			}
+		}
 		n, ok := node.(*ast.Ident)
 		if !ok {
 			return true
@@ -262,14 +445,29 @@ func highlightIdentifiers(ctx context.Context, snapshot Snapshot, m *protocol.Co
 		if nObj := pkg.GetTypesInfo().ObjectOf(n); nObj != idObj {
 			return false
 		}
-		if rng, err := nodeToProtocolRange(ctx, snapshot.View(), m, n); err == nil {
-			result[rng] = true
-		} else {
-			log.Error(ctx, "Error getting range for node", err)
+		rng, err := nodeToProtocolRange(view, pkg, n)
+		if err != nil {
+			event.Error(ctx, "Error getting range for node", err)
+			return false
 		}
+		result[rng] = true
 		return false
 	})
 	return rangeMapToSlice(result), nil
+}
+
+func highlightImport(view View, pkg Package, obj *types.PkgName, imp *ast.ImportSpec) (*protocol.Range, error) {
+	if imp.Name != nil || imp.Path == nil {
+		return nil, nil
+	}
+	if !strings.Contains(imp.Path.Value, obj.Name()) {
+		return nil, nil
+	}
+	rng, err := nodeToProtocolRange(view, pkg, imp.Path)
+	if err != nil {
+		return nil, err
+	}
+	return &rng, nil
 }
 
 func rangeMapToSlice(rangeMap map[protocol.Range]bool) []protocol.Range {

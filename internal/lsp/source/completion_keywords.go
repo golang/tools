@@ -4,8 +4,6 @@ import (
 	"go/ast"
 
 	"golang.org/x/tools/internal/lsp/protocol"
-
-	errors "golang.org/x/xerrors"
 )
 
 const (
@@ -36,22 +34,62 @@ const (
 	VAR         = "var"
 )
 
-// keyword looks at the current scope of an *ast.Ident and recommends keywords
-func (c *completer) keyword() error {
-	keywordScore := float64(0.9)
-	if _, ok := c.path[0].(*ast.Ident); !ok {
-		// TODO(golang/go#34009): Support keyword completion in any context
-		return errors.Errorf("keywords are currently only recommended for identifiers")
-	}
-	// Track which keywords we've already determined are in a valid scope
-	// Use score to order keywords by how close we are to where they are useful
-	valid := make(map[string]float64)
+// addKeywordCompletions offers keyword candidates appropriate at the position.
+func (c *completer) addKeywordCompletions() {
+	seen := make(map[string]bool)
 
-	// only suggest keywords at the begnning of a statement
-	switch c.path[1].(type) {
-	case *ast.BlockStmt, *ast.CommClause, *ast.CaseClause, *ast.ExprStmt:
+	if c.wantTypeName() {
+		// If we expect a type name, include "interface", "struct",
+		// "func", "chan", and "map".
+
+		// "interface" and "struct" are more common declaring named types.
+		// Give them a higher score if we are in a type declaration.
+		structIntf, funcChanMap := stdScore, highScore
+		if len(c.path) > 1 {
+			if _, namedDecl := c.path[1].(*ast.TypeSpec); namedDecl {
+				structIntf, funcChanMap = highScore, stdScore
+			}
+		}
+
+		c.addKeywordItems(seen, structIntf, STRUCT, INTERFACE)
+		c.addKeywordItems(seen, funcChanMap, FUNC, CHAN, MAP)
+	}
+
+	// If we are at the file scope, only offer decl keywords. We don't
+	// get *ast.Idents at the file scope because non-keyword identifiers
+	// turn into *ast.BadDecl, not *ast.Ident.
+	if len(c.path) == 1 || isASTFile(c.path[1]) {
+		c.addKeywordItems(seen, stdScore, TYPE, CONST, VAR, FUNC, IMPORT)
+		return
+	} else if _, ok := c.path[0].(*ast.Ident); !ok {
+		// Otherwise only offer keywords if the client is completing an identifier.
+		return
+	}
+
+	if len(c.path) > 2 {
+		// Offer "range" if we are in ast.ForStmt.Init. This is what the
+		// AST looks like before "range" is typed, e.g. "for i := r<>".
+		if loop, ok := c.path[2].(*ast.ForStmt); ok && nodeContains(loop.Init, c.pos) {
+			c.addKeywordItems(seen, stdScore, RANGE)
+		}
+	}
+
+	// Only suggest keywords if we are beginning a statement.
+	switch n := c.path[1].(type) {
+	case *ast.BlockStmt, *ast.ExprStmt:
+		// OK - our ident must be at beginning of statement.
+	case *ast.CommClause:
+		// Make sure we aren't in the Comm statement.
+		if !n.Colon.IsValid() || c.pos <= n.Colon {
+			return
+		}
+	case *ast.CaseClause:
+		// Make sure we aren't in the case List.
+		if !n.Colon.IsValid() || c.pos <= n.Colon {
+			return
+		}
 	default:
-		return nil
+		return
 	}
 
 	// Filter out keywords depending on scope
@@ -62,7 +100,7 @@ func (c *completer) keyword() error {
 		case *ast.CaseClause:
 			// only recommend "fallthrough" and "break" within the bodies of a case clause
 			if c.pos > node.Colon {
-				valid[BREAK] = keywordScore
+				c.addKeywordItems(seen, stdScore, BREAK)
 				// "fallthrough" is only valid in switch statements.
 				// A case clause is always nested within a block statement in a switch statement,
 				// that block statement is nested within either a TypeSwitchStmt or a SwitchStmt.
@@ -70,45 +108,42 @@ func (c *completer) keyword() error {
 					continue
 				}
 				if _, ok := path[i+2].(*ast.SwitchStmt); ok {
-					valid[FALLTHROUGH] = keywordScore
+					c.addKeywordItems(seen, stdScore, FALLTHROUGH)
 				}
 			}
 		case *ast.CommClause:
 			if c.pos > node.Colon {
-				valid[BREAK] = keywordScore
+				c.addKeywordItems(seen, stdScore, BREAK)
 			}
 		case *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.SwitchStmt:
-			valid[CASE] = keywordScore + lowScore
-			valid[DEFAULT] = keywordScore + lowScore
-		case *ast.ForStmt:
-			valid[BREAK] = keywordScore
-			valid[CONTINUE] = keywordScore
+			c.addKeywordItems(seen, stdScore, CASE, DEFAULT)
+		case *ast.ForStmt, *ast.RangeStmt:
+			c.addKeywordItems(seen, stdScore, BREAK, CONTINUE)
 		// This is a bit weak, functions allow for many keywords
 		case *ast.FuncDecl:
 			if node.Body != nil && c.pos > node.Body.Lbrace {
-				valid[DEFER] = keywordScore - lowScore
-				valid[RETURN] = keywordScore - lowScore
-				valid[FOR] = keywordScore - lowScore
-				valid[GO] = keywordScore - lowScore
-				valid[SWITCH] = keywordScore - lowScore
-				valid[SELECT] = keywordScore - lowScore
-				valid[IF] = keywordScore - lowScore
-				valid[ELSE] = keywordScore - lowScore
-				valid[VAR] = keywordScore - lowScore
-				valid[CONST] = keywordScore - lowScore
+				c.addKeywordItems(seen, stdScore, DEFER, RETURN, FOR, GO, SWITCH, SELECT, IF, ELSE, VAR, CONST, GOTO, TYPE)
 			}
 		}
 	}
+}
 
-	for ident, score := range valid {
-		if c.matcher.Score(ident) > 0 {
+// addKeywordItems dedupes and adds completion items for the specified
+// keywords with the specified score.
+func (c *completer) addKeywordItems(seen map[string]bool, score float64, kws ...string) {
+	for _, kw := range kws {
+		if seen[kw] {
+			continue
+		}
+		seen[kw] = true
+
+		if matchScore := c.matcher.Score(kw); matchScore > 0 {
 			c.items = append(c.items, CompletionItem{
-				Label:      ident,
+				Label:      kw,
 				Kind:       protocol.KeywordCompletion,
-				InsertText: ident,
-				Score:      score,
+				InsertText: kw,
+				Score:      score * float64(matchScore),
 			})
 		}
 	}
-	return nil
 }

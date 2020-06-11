@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.11
-
 package gcimporter
 
 import (
@@ -11,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/internal/testenv"
 )
 
 var importedObjectTests = []struct {
@@ -25,7 +25,7 @@ var importedObjectTests = []struct {
 	{"math.Pi", "const Pi untyped float"},
 	{"math.Sin", "func Sin(x float64) float64"},
 	{"go/ast.NotNilFilter", "func NotNilFilter(_ string, v reflect.Value) bool"},
-	{"go/internal/gcimporter.BImportData", "func BImportData(fset *go/token.FileSet, imports map[string]*go/types.Package, data []byte, path string) (_ int, pkg *go/types.Package, err error)"},
+	{"go/internal/gcimporter.FindPkg", "func FindPkg(path string, srcDir string) (filename string, id string)"},
 
 	// interfaces
 	{"context.Context", "type Context interface{Deadline() (deadline time.Time, ok bool); Done() <-chan struct{}; Err() error; Value(key interface{}) interface{}}"},
@@ -38,6 +38,7 @@ var importedObjectTests = []struct {
 }
 
 func TestImportedTypes(t *testing.T) {
+	testenv.NeedsGo1Point(t, 11)
 	skipSpecialPlatforms(t)
 
 	// This package only handles gc export data.
@@ -112,6 +113,7 @@ func verifyInterfaceMethodRecvs(t *testing.T, named *types.Named, level int) {
 	}
 }
 func TestIssue25301(t *testing.T) {
+	testenv.NeedsGo1Point(t, 11)
 	skipSpecialPlatforms(t)
 
 	// This package only handles gc export data.

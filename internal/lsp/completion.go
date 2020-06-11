@@ -7,40 +7,29 @@ package lsp
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/log"
-	"golang.org/x/tools/internal/telemetry/tag"
 )
 
 func (s *Server) completion(ctx context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
-	uri := span.NewURI(params.TextDocument.URI)
-	view, err := s.session.ViewOf(uri)
-	if err != nil {
-		return nil, err
-	}
-	snapshot := view.Snapshot()
-	options := view.Options()
-	fh, err := snapshot.GetFile(ctx, uri)
-	if err != nil {
+	snapshot, fh, ok, err := s.beginFileRequest(params.TextDocument.URI, source.UnknownKind)
+	if !ok {
 		return nil, err
 	}
 	var candidates []source.CompletionItem
 	var surrounding *source.Selection
 	switch fh.Identity().Kind {
 	case source.Go:
-		options.Completion.FullDocumentation = options.HoverKind == source.FullDocumentation
-		candidates, surrounding, err = source.Completion(ctx, snapshot, fh, params.Position, options.Completion)
+		candidates, surrounding, err = source.Completion(ctx, snapshot, fh, params.Position)
 	case source.Mod:
 		candidates, surrounding = nil, nil
 	}
-
 	if err != nil {
-		log.Print(ctx, "no completions found", tag.Of("At", params.Position), tag.Of("Failure", err))
+		event.Error(ctx, "no completions found", err, tag.Position.Of(params.Position))
 	}
 	if candidates == nil {
 		return &protocol.CompletionList{
@@ -52,23 +41,17 @@ func (s *Server) completion(ctx context.Context, params *protocol.CompletionPara
 	if err != nil {
 		return nil, err
 	}
-	// Sort the candidates by score, then label, since that is not supported by LSP yet.
-	sort.SliceStable(candidates, func(i, j int) bool {
-		if candidates[i].Score != candidates[j].Score {
-			return candidates[i].Score > candidates[j].Score
-		}
-		return candidates[i].Label < candidates[j].Label
-	})
 
 	// When using deep completions/fuzzy matching, report results as incomplete so
 	// client fetches updated completions after every key stroke.
-	incompleteResults := options.Completion.Deep || options.Completion.FuzzyMatching
+	options := snapshot.View().Options()
+	incompleteResults := options.DeepCompletion || options.Matcher == source.Fuzzy
 
 	items := toProtocolCompletionItems(candidates, rng, options)
 
-	if incompleteResults && len(items) > 1 {
-		for i := range items[1:] {
-			// Give all the candidaites the same filterText to trick VSCode
+	if incompleteResults {
+		for i := 1; i < len(items); i++ {
+			// Give all the candidates the same filterText to trick VSCode
 			// into not reordering our candidates. All the candidates will
 			// appear to be equally good matches, so VSCode's fuzzy
 			// matching/ranking just maintains the natural "sortText"
@@ -94,7 +77,7 @@ func toProtocolCompletionItems(candidates []source.CompletionItem, rng protocol.
 		// Limit the number of deep completions to not overwhelm the user in cases
 		// with dozens of deep completion matches.
 		if candidate.Depth > 0 {
-			if !options.Completion.Deep {
+			if !options.DeepCompletion {
 				continue
 			}
 			if numDeepCompletionsSeen >= source.MaxDeepCompletions {
@@ -128,21 +111,12 @@ func toProtocolCompletionItems(candidates []source.CompletionItem, rng protocol.
 			// https://github.com/Microsoft/language-server-protocol/issues/348.
 			SortText: fmt.Sprintf("%05d", i),
 
-			// Trim address operator (VSCode doesn't like weird characters
-			// in filterText).
-			FilterText: strings.TrimLeft(candidate.InsertText, "&"),
+			// Trim operators (VSCode doesn't like weird characters in
+			// filterText).
+			FilterText: strings.TrimLeft(candidate.InsertText, "&*"),
 
 			Preselect:     i == 0,
 			Documentation: candidate.Documentation,
-		}
-		// Trigger signature help for any function or method completion.
-		// This is helpful even if a function does not have parameters,
-		// since we show return types as well.
-		switch item.Kind {
-		case protocol.FunctionCompletion, protocol.MethodCompletion:
-			item.Command = &protocol.Command{
-				Command: "editor.action.triggerParameterHints",
-			}
 		}
 		items = append(items, item)
 	}

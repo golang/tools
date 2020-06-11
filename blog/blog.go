@@ -65,12 +65,13 @@ type Doc struct {
 
 // Server implements an http.Handler that serves blog articles.
 type Server struct {
-	cfg      Config
-	docs     []*Doc
-	tags     []string
-	docPaths map[string]*Doc // key is path without BasePath.
-	docTags  map[string][]*Doc
-	template struct {
+	cfg       Config
+	docs      []*Doc
+	redirects map[string]string
+	tags      []string
+	docPaths  map[string]*Doc // key is path without BasePath.
+	docTags   map[string][]*Doc
+	template  struct {
 		home, index, article, doc *template.Template
 	}
 	atomFeed []byte // pre-rendered Atom feed
@@ -118,7 +119,8 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 
 	// Load content.
-	err = s.loadDocs(filepath.Clean(cfg.ContentPath))
+	content := filepath.Clean(cfg.ContentPath)
+	err = s.loadDocs(content)
 	if err != nil {
 		return nil, err
 	}
@@ -157,6 +159,9 @@ func authors(authors []present.Author) string {
 	for i, a := range authors {
 		if i > 0 {
 			if i == last {
+				if len(authors) > 2 {
+					b.WriteString(",")
+				}
 				b.WriteString(" and ")
 			} else {
 				b.WriteString(", ")
@@ -191,6 +196,7 @@ func (s *Server) loadDocs(root string) error {
 		if err != nil {
 			return err
 		}
+
 		if filepath.Ext(p) != ext {
 			return nil
 		}
@@ -227,10 +233,25 @@ func (s *Server) loadDocs(root string) error {
 	// Pull out doc paths and tags and put in reverse-associating maps.
 	s.docPaths = make(map[string]*Doc)
 	s.docTags = make(map[string][]*Doc)
+	s.redirects = make(map[string]string)
 	for _, d := range s.docs {
 		s.docPaths[strings.TrimPrefix(d.Path, s.cfg.BasePath)] = d
 		for _, t := range d.Tags {
 			s.docTags[t] = append(s.docTags[t], d)
+		}
+	}
+	for _, d := range s.docs {
+		for _, old := range d.OldURL {
+			if !strings.HasPrefix(old, "/") {
+				old = "/" + old
+			}
+			if _, ok := s.docPaths[old]; ok {
+				return fmt.Errorf("redirect %s -> %s conflicts with document %s", old, d.Path, old)
+			}
+			if new, ok := s.redirects[old]; ok {
+				return fmt.Errorf("redirect %s -> %s conflicts with redirect %s -> %s", old, d.Path, old, new)
+			}
+			s.redirects[old] = d.Path
 		}
 	}
 
@@ -294,9 +315,21 @@ func (s *Server) renderAtomFeed() error {
 		if i >= s.cfg.FeedArticles {
 			break
 		}
+
+		// Use original article path as ID in atom feed
+		// to avoid articles being treated as new when renamed.
+		idPath := doc.Path
+		if len(doc.OldURL) > 0 {
+			old := doc.OldURL[0]
+			if !strings.HasPrefix(old, "/") {
+				old = "/" + old
+			}
+			idPath = old
+		}
+
 		e := &atom.Entry{
 			Title: doc.Title,
-			ID:    feed.ID + doc.Path,
+			ID:    feed.ID + idPath,
 			Link: []atom.Link{{
 				Rel:  "alternate",
 				Href: doc.Permalink,
@@ -425,6 +458,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Write(s.jsonFeed)
 		return
 	default:
+		if redir, ok := s.redirects[p]; ok {
+			http.Redirect(w, r, redir, http.StatusMovedPermanently)
+			return
+		}
 		doc, ok := s.docPaths[p]
 		if !ok {
 			// Not a doc; try to just serve static content.

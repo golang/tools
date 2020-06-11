@@ -13,46 +13,36 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/telemetry/trace"
 	errors "golang.org/x/xerrors"
 )
 
-type SignatureInformation struct {
-	Label, Documentation string
-	Parameters           []ParameterInformation
-	ActiveParameter      int
-}
-
-type ParameterInformation struct {
-	Label string
-}
-
-func SignatureHelp(ctx context.Context, snapshot Snapshot, fh FileHandle, pos protocol.Position) (*SignatureInformation, error) {
-	ctx, done := trace.StartSpan(ctx, "source.SignatureHelp")
+func SignatureHelp(ctx context.Context, snapshot Snapshot, fh FileHandle, pos protocol.Position) (*protocol.SignatureInformation, int, error) {
+	ctx, done := event.Start(ctx, "source.SignatureHelp")
 	defer done()
 
-	pkg, pgh, err := getParsedFile(ctx, snapshot, fh, NarrowestCheckPackageHandle)
+	pkg, pgh, err := getParsedFile(ctx, snapshot, fh, NarrowestPackageHandle)
 	if err != nil {
-		return nil, fmt.Errorf("getting file for SignatureHelp: %v", err)
+		return nil, 0, fmt.Errorf("getting file for SignatureHelp: %w", err)
 	}
-	file, m, _, err := pgh.Cached()
+	file, _, m, _, err := pgh.Cached()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	spn, err := m.PointSpan(pos)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	rng, err := spn.Range(m.Converter)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	// Find a call expression surrounding the query position.
 	var callExpr *ast.CallExpr
 	path, _ := astutil.PathEnclosingInterval(file, rng.Start, rng.Start)
 	if path == nil {
-		return nil, errors.Errorf("cannot find node enclosing position")
+		return nil, 0, errors.Errorf("cannot find node enclosing position")
 	}
 FindCall:
 	for _, node := range path {
@@ -66,12 +56,14 @@ FindCall:
 			// The user is within an anonymous function,
 			// which may be the parameter to the *ast.CallExpr.
 			// Don't show signature help in this case.
-			return nil, errors.Errorf("no signature help within a function declaration")
+			return nil, 0, errors.Errorf("no signature help within a function declaration")
 		}
 	}
 	if callExpr == nil || callExpr.Fun == nil {
-		return nil, errors.Errorf("cannot find an enclosing function")
+		return nil, 0, errors.Errorf("cannot find an enclosing function")
 	}
+
+	qf := qualifier(file, pkg.GetTypes(), pkg.GetTypesInfo())
 
 	// Get the object representing the function, if available.
 	// There is no object in certain cases such as calling a function returned by
@@ -92,17 +84,14 @@ FindCall:
 	// Get the type information for the function being called.
 	sigType := pkg.GetTypesInfo().TypeOf(callExpr.Fun)
 	if sigType == nil {
-		return nil, errors.Errorf("cannot get type for Fun %[1]T (%[1]v)", callExpr.Fun)
+		return nil, 0, errors.Errorf("cannot get type for Fun %[1]T (%[1]v)", callExpr.Fun)
 	}
 
 	sig, _ := sigType.Underlying().(*types.Signature)
 	if sig == nil {
-		return nil, errors.Errorf("cannot find signature for Fun %[1]T (%[1]v)", callExpr.Fun)
+		return nil, 0, errors.Errorf("cannot find signature for Fun %[1]T (%[1]v)", callExpr.Fun)
 	}
 
-	qf := qualifier(file, pkg.GetTypes(), pkg.GetTypesInfo())
-	params := formatParams(snapshot, pkg, sig, qf)
-	results, writeResultParens := formatResults(sig.Results(), qf)
 	activeParam := activeParameter(callExpr, sig.Params().Len(), sig.Variadic(), rng.Start)
 
 	var (
@@ -112,78 +101,68 @@ FindCall:
 	if obj != nil {
 		node, err := objToNode(snapshot.View(), pkg, obj)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		rng, err := objToMappedRange(snapshot.View(), pkg, obj)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
-		decl := &Declaration{
-			obj:         obj,
-			mappedRange: rng,
-			node:        node,
+		decl := Declaration{
+			obj:  obj,
+			node: node,
 		}
-		d, err := decl.hover(ctx)
+		decl.MappedRange = append(decl.MappedRange, rng)
+		d, err := hover(ctx, snapshot.View().Session().Cache().FileSet(), pkg, decl)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		name = obj.Name()
 		comment = d.comment
 	} else {
 		name = "func"
 	}
-	return signatureInformation(name, comment, params, results, writeResultParens, activeParam), nil
+	s, err := newSignature(ctx, snapshot, pkg, file, name, sig, comment, qf)
+	if err != nil {
+		return nil, 0, err
+	}
+	paramInfo := make([]protocol.ParameterInformation, 0, len(s.params))
+	for _, p := range s.params {
+		paramInfo = append(paramInfo, protocol.ParameterInformation{Label: p})
+	}
+	return &protocol.SignatureInformation{
+		Label:         name + s.format(),
+		Documentation: doc.Synopsis(s.doc),
+		Parameters:    paramInfo,
+	}, activeParam, nil
 }
 
-func builtinSignature(ctx context.Context, v View, callExpr *ast.CallExpr, name string, pos token.Pos) (*SignatureInformation, error) {
-	obj := v.BuiltinPackage().Lookup(name)
-	if obj == nil {
-		return nil, errors.Errorf("no object for %s", name)
+func builtinSignature(ctx context.Context, view View, callExpr *ast.CallExpr, name string, pos token.Pos) (*protocol.SignatureInformation, int, error) {
+	sig, err := newBuiltinSignature(ctx, view, name)
+	if err != nil {
+		return nil, 0, err
 	}
-	decl, ok := obj.Decl.(*ast.FuncDecl)
-	if !ok {
-		return nil, errors.Errorf("no function declaration for builtin: %s", name)
+	paramInfo := make([]protocol.ParameterInformation, 0, len(sig.params))
+	for _, p := range sig.params {
+		paramInfo = append(paramInfo, protocol.ParameterInformation{Label: p})
 	}
-	params, _ := formatFieldList(ctx, v, decl.Type.Params)
-	results, writeResultParens := formatFieldList(ctx, v, decl.Type.Results)
+	activeParam := activeParameter(callExpr, len(sig.params), sig.variadic, pos)
+	return &protocol.SignatureInformation{
+		Label:         sig.name + sig.format(),
+		Documentation: doc.Synopsis(sig.doc),
+		Parameters:    paramInfo,
+	}, activeParam, nil
 
-	var (
-		numParams int
-		variadic  bool
-	)
-	if decl.Type.Params.List != nil {
-		numParams = len(decl.Type.Params.List)
-		lastParam := decl.Type.Params.List[numParams-1]
-		if _, ok := lastParam.Type.(*ast.Ellipsis); ok {
-			variadic = true
-		}
-	}
-	activeParam := activeParameter(callExpr, numParams, variadic, pos)
-	return signatureInformation(name, nil, params, results, writeResultParens, activeParam), nil
 }
 
-func signatureInformation(name string, comment *ast.CommentGroup, params, results []string, writeResultParens bool, activeParam int) *SignatureInformation {
-	paramInfo := make([]ParameterInformation, 0, len(params))
-	for _, p := range params {
-		paramInfo = append(paramInfo, ParameterInformation{Label: p})
+func activeParameter(callExpr *ast.CallExpr, numParams int, variadic bool, pos token.Pos) (activeParam int) {
+	if len(callExpr.Args) == 0 {
+		return 0
 	}
-	label := name + formatFunction(params, results, writeResultParens)
-	var c string
-	if comment != nil {
-		c = doc.Synopsis(comment.Text())
+	// First, check if the position is even in the range of the arguments.
+	start, end := callExpr.Lparen, callExpr.Rparen
+	if !(start <= pos && pos <= end) {
+		return 0
 	}
-	return &SignatureInformation{
-		Label:           label,
-		Documentation:   c,
-		Parameters:      paramInfo,
-		ActiveParameter: activeParam,
-	}
-}
-
-func activeParameter(callExpr *ast.CallExpr, numParams int, variadic bool, pos token.Pos) int {
-	// Determine the query position relative to the number of parameters in the function.
-	var activeParam int
-	var start, end token.Pos
 	for _, expr := range callExpr.Args {
 		if start == token.NoPos {
 			start = expr.Pos()
@@ -192,7 +171,6 @@ func activeParameter(callExpr *ast.CallExpr, numParams int, variadic bool, pos t
 		if start <= pos && pos <= end {
 			break
 		}
-
 		// Don't advance the active parameter for the last parameter of a variadic function.
 		if !variadic || activeParam < numParams-1 {
 			activeParam++

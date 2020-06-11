@@ -4,13 +4,17 @@
 
 # govim requires a more recent version of vim than is available in most
 # distros, so we build from their base image.
-FROM govim/govim:go1.13.5_vim_v8.1.2414_v1
+FROM govim/govim:latest-vim
 
-# Get a copy of govim in order to run its integration tests. We use a pinned
-# version so that this build is repeatable, and so that we're not sensitive to
-# test breakages in govim.
+# We use a pinned version of govim so that this build is repeatable, and so
+# that we're not sensitive to test breakages in govim.
 # TODO(findleyr): Once a version of govim has been tagged containing
 # https://github.com/govim/govim/pull/629, switch this to @latest.
 ENV GOPROXY=https://proxy.golang.org GOPATH=/go VIM_FLAVOR=vim
-WORKDIR /src/mod
-RUN go mod init mod && go get -t github.com/govim/govim@v0.0.27-0.20191220164001-63ce556bb69e
+WORKDIR /src
+
+# Clone govim. In order to use the go command for resolving latest, we download
+# a redundant copy of govim to the build cache using `go mod download`.
+RUN GOVIM_VERSION=$(go mod download -json github.com/govim/govim@latest | jq -r .Version) && \
+    git clone https://github.com/govim/govim /src/govim && cd /src/govim && \
+    git checkout $GOVIM_VERSION

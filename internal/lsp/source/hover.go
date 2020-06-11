@@ -11,11 +11,12 @@ import (
 	"go/ast"
 	"go/doc"
 	"go/format"
+	"go/token"
 	"go/types"
 	"strings"
 
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/telemetry/trace"
 	errors "golang.org/x/xerrors"
 )
 
@@ -44,11 +45,39 @@ type HoverInformation struct {
 	comment *ast.CommentGroup
 }
 
+func Hover(ctx context.Context, snapshot Snapshot, fh FileHandle, position protocol.Position) (*protocol.Hover, error) {
+	ident, err := Identifier(ctx, snapshot, fh, position)
+	if err != nil {
+		return nil, nil
+	}
+	h, err := ident.Hover(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rng, err := ident.Range()
+	if err != nil {
+		return nil, err
+	}
+	isPrivate := h.Link != "" && snapshot.View().IsGoPrivatePath(h.Link)
+	hover, err := FormatHover(h, snapshot.View().Options(), isPrivate)
+	if err != nil {
+		return nil, err
+	}
+	return &protocol.Hover{
+		Contents: protocol.MarkupContent{
+			Kind:  snapshot.View().Options().PreferredContentFormat,
+			Value: hover,
+		},
+		Range: rng,
+	}, nil
+}
+
 func (i *IdentifierInfo) Hover(ctx context.Context) (*HoverInformation, error) {
-	ctx, done := trace.StartSpan(ctx, "source.Hover")
+	ctx, done := event.Start(ctx, "source.Hover")
 	defer done()
 
-	h, err := i.Declaration.hover(ctx)
+	fset := i.Snapshot.View().Session().Cache().FileSet()
+	h, err := hover(ctx, fset, i.pkg, i.Declaration)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +85,7 @@ func (i *IdentifierInfo) Hover(ctx context.Context) (*HoverInformation, error) {
 	switch x := h.source.(type) {
 	case ast.Node:
 		var b strings.Builder
-		if err := format.Node(&b, i.Snapshot.View().Session().Cache().FileSet(), x); err != nil {
+		if err := format.Node(&b, fset, x); err != nil {
 			return nil, err
 		}
 		h.Signature = b.String()
@@ -81,9 +110,21 @@ func (i *IdentifierInfo) linkAndSymbolName() (string, string) {
 	}
 	switch obj := obj.(type) {
 	case *types.PkgName:
-		return obj.Imported().Path(), obj.Name()
+		path := obj.Imported().Path()
+		if mod, version, ok := moduleAtVersion(path, i); ok {
+			path = strings.Replace(path, mod, mod+"@"+version, 1)
+		}
+		return path, obj.Name()
 	case *types.Builtin:
 		return fmt.Sprintf("builtin#%s", obj.Name()), obj.Name()
+	}
+	// Check if the identifier is test-only (and is therefore not part of a
+	// package's API). This is true if the request originated in a test package,
+	// and if the declaration is also found in the same test package.
+	if i.pkg != nil && obj.Pkg() != nil && i.pkg.ForTest() != "" {
+		if _, pkg, _ := FindFileInPackage(i.pkg, i.Declaration.MappedRange[0].URI()); i.pkg == pkg {
+			return "", ""
+		}
 	}
 	// Don't return links for other unexported types.
 	if !obj.Exported() {
@@ -120,13 +161,35 @@ func (i *IdentifierInfo) linkAndSymbolName() (string, string) {
 			}
 		}
 	}
+	path := obj.Pkg().Path()
+	if mod, version, ok := moduleAtVersion(path, i); ok {
+		path = strings.Replace(path, mod, mod+"@"+version, 1)
+	}
 	if rTypeName != "" {
-		link := fmt.Sprintf("%s#%s.%s", obj.Pkg().Path(), rTypeName, obj.Name())
+		link := fmt.Sprintf("%s#%s.%s", path, rTypeName, obj.Name())
 		symbol := fmt.Sprintf("(%s.%s).%s", obj.Pkg().Name(), rTypeName, obj.Name())
 		return link, symbol
 	}
 	// For most cases, the link is "package/path#symbol".
-	return fmt.Sprintf("%s#%s", obj.Pkg().Path(), obj.Name()), fmt.Sprintf("%s.%s", obj.Pkg().Name(), obj.Name())
+	return fmt.Sprintf("%s#%s", path, obj.Name()), fmt.Sprintf("%s.%s", obj.Pkg().Name(), obj.Name())
+}
+
+func moduleAtVersion(path string, i *IdentifierInfo) (string, string, bool) {
+	if strings.ToLower(i.Snapshot.View().Options().LinkTarget) != "pkg.go.dev" {
+		return "", "", false
+	}
+	impPkg, err := i.pkg.GetImport(path)
+	if err != nil {
+		return "", "", false
+	}
+	if impPkg.Module() == nil {
+		return "", "", false
+	}
+	version, modpath := impPkg.Module().Version, impPkg.Module().Path
+	if modpath == "" || version == "" {
+		return "", "", false
+	}
+	return modpath, version, true
 }
 
 // objectString is a wrapper around the types.ObjectString function.
@@ -140,13 +203,35 @@ func objectString(obj types.Object, qf types.Qualifier) string {
 	return str
 }
 
-func (d Declaration) hover(ctx context.Context) (*HoverInformation, error) {
-	_, done := trace.StartSpan(ctx, "source.hover")
+func hover(ctx context.Context, fset *token.FileSet, pkg Package, d Declaration) (*HoverInformation, error) {
+	_, done := event.Start(ctx, "source.hover")
 	defer done()
 
 	obj := d.obj
 	switch node := d.node.(type) {
+	case *ast.Ident:
+		// The package declaration.
+		for _, f := range pkg.GetSyntax() {
+			if f.Name == node {
+				return &HoverInformation{comment: f.Doc}, nil
+			}
+		}
 	case *ast.ImportSpec:
+		// Try to find the package documentation for an imported package.
+		if pkgName, ok := obj.(*types.PkgName); ok {
+			imp, err := pkg.GetImport(pkgName.Imported().Path())
+			if err != nil {
+				return nil, err
+			}
+			// Assume that only one file will contain package documentation,
+			// so pick the first file that has a doc comment.
+			var doc *ast.CommentGroup
+			for _, file := range imp.GetSyntax() {
+				if file.Doc != nil {
+					return &HoverInformation{source: obj, comment: doc}, nil
+				}
+			}
+		}
 		return &HoverInformation{source: node}, nil
 	case *ast.GenDecl:
 		switch obj := obj.(type) {
@@ -221,7 +306,14 @@ func formatVar(node ast.Spec, obj types.Object, decl *ast.GenDecl) *HoverInforma
 			fieldList = t.Methods
 		}
 	case *ast.ValueSpec:
-		return &HoverInformation{source: obj, comment: spec.Doc}
+		comment := spec.Doc
+		if comment == nil {
+			comment = decl.Doc
+		}
+		if comment == nil {
+			comment = spec.Comment
+		}
+		return &HoverInformation{source: obj, comment: comment}
 	}
 	// If we have a struct or interface declaration,
 	// we need to match the object to the corresponding field or method.
@@ -231,24 +323,20 @@ func formatVar(node ast.Spec, obj types.Object, decl *ast.GenDecl) *HoverInforma
 			if field.Pos() <= obj.Pos() && obj.Pos() <= field.End() {
 				if field.Doc.Text() != "" {
 					return &HoverInformation{source: obj, comment: field.Doc}
-				} else if field.Comment.Text() != "" {
-					return &HoverInformation{source: obj, comment: field.Comment}
 				}
+				return &HoverInformation{source: obj, comment: field.Comment}
 			}
 		}
 	}
-	// If we have a package level variable that does have a
-	// comment group attached to it but not in the ast.spec.
-	if decl.Doc.Text() != "" {
-		return &HoverInformation{source: obj, comment: decl.Doc}
-	}
-
-	// If we weren't able to find documentation for the object.
-	return &HoverInformation{source: obj}
+	return &HoverInformation{source: obj, comment: decl.Doc}
 }
 
-func FormatHover(h *HoverInformation, options Options) (string, error) {
-	signature := formatSignature(h.Signature, options)
+func FormatHover(h *HoverInformation, options Options, isPrivate bool) (string, error) {
+	signature := h.Signature
+	if signature != "" && options.PreferredContentFormat == protocol.Markdown {
+		signature = fmt.Sprintf("```go\n%s\n```", signature)
+	}
+
 	switch options.HoverKind {
 	case SingleLine:
 		return h.SingleLine, nil
@@ -261,7 +349,10 @@ func FormatHover(h *HoverInformation, options Options) (string, error) {
 		}
 		return string(b), nil
 	}
-	link := formatLink(h, options)
+	var link string
+	if !isPrivate {
+		link = formatLink(h, options)
+	}
 	switch options.HoverKind {
 	case SynopsisDocumentation:
 		doc := formatDoc(h.Synopsis, options)
@@ -287,14 +378,6 @@ func formatLink(h *HoverInformation, options Options) string {
 		return plainLink
 	}
 }
-
-func formatSignature(signature string, options Options) string {
-	if options.PreferredContentFormat == protocol.Markdown {
-		signature = fmt.Sprintf("```go\n%s\n```", signature)
-	}
-	return signature
-}
-
 func formatDoc(doc string, options Options) string {
 	if options.PreferredContentFormat == protocol.Markdown {
 		return CommentToMarkdown(doc)

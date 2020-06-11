@@ -12,7 +12,7 @@ describe more basic and optional trouble shooting steps
 
 1. Make sure your `gopls` is [up to date](user.md#installing).
 1. Check the [known issues](status.md#known-issues).
-1. [Report the issue](file-an-issue).
+1. [Report the issue](#file-an-issue).
 
 ## File an issue
 
@@ -33,9 +33,35 @@ Much of this information is filled in for you if you use `gopls bug` to file the
 
 ### Capturing logs
 
-For VSCode users, the gopls log can be found by going to `"View: Debug Console" -> "Output" -> "Tasks" -> "gopls"`. For other editors, you may have to directly pass a `-logfile` flag to gopls.
+#### VS Code
 
-To increase the level of detail in your logs, start `gopls` with the `-rpc.trace` flag. To start a debug server that will allow you to see profiles and memory usage, start `gopls` with `serve --debug=localhost:6060`.
+For VSCode users, the gopls log can be found by navigating to `View` -> `Output` (or `Ctrl+K Ctrl+H`). There will be a drop-down menu titled `Tasks` in the top-right corner. Select the `gopls` item, which will contain the `gopls` logs.
+
+To increase the level of detail in your logs, add the following to your VS Code settings:
+
+```json5
+"go.languageServerFlags": [
+  "-rpc.trace"
+]
+```
+
+To start a debug server that will allow you to see profiles and memory usage, add the following to your VS Code settings:
+
+```json5
+"go.languageServerFlags": [
+  "serve",
+  "-rpc.trace",
+  "--debug=localhost:6060",
+],
+```
+
+You will then be able to view debug information by navigating to `localhost:6060`.
+
+#### Other editors
+
+For other editors, you may have to directly pass a `-logfile` flag to gopls.
+
+To increase the level of detail in your logs, start `gopls` with the `-rpc.trace` flag. To start a debug server that will allow you to see profiles and memory usage, start `gopls` with `serve --debug=localhost:6060`. You will then be able to view debug information by navigating to `localhost:6060`.
 
 If you are unsure of how to pass a flag to `gopls` through your editor, please see the [documentation for your editor](user.md#editors).
 

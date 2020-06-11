@@ -8,16 +8,19 @@ import (
 	"context"
 	"fmt"
 	"html/template"
-	"log"
 	"net/http"
 	"sort"
+	"sync"
+	"time"
 
-	tlm "golang.org/x/tools/internal/lsp/telemetry"
-	"golang.org/x/tools/internal/telemetry"
-	"golang.org/x/tools/internal/telemetry/metric"
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/event/core"
+	"golang.org/x/tools/internal/event/export"
+	"golang.org/x/tools/internal/event/label"
+	"golang.org/x/tools/internal/lsp/debug/tag"
 )
 
-var rpcTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
+var rpcTmpl = template.Must(template.Must(baseTemplate.Clone()).Parse(`
 {{define "title"}}RPC Information{{end}}
 {{define "body"}}
 	<H2>Inbound</H2>
@@ -30,10 +33,10 @@ var rpcTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 		<b>{{.Method}}</b> {{.Started}} <a href="/trace/{{.Method}}">traces</a> ({{.InProgress}} in progress)
 		<br>
 		<i>Latency</i> {{with .Latency}}{{.Mean}} ({{.Min}}<{{.Max}}){{end}}
-		<i>By bucket</i> 0s {{range .Latency.Values}}<b>{{.Count}}</b> {{.Limit}} {{end}}
+		<i>By bucket</i> 0s {{range .Latency.Values}}{{if gt .Count 0}}<b>{{.Count}}</b> {{.Limit}} {{end}}{{end}}
 		<br>
-		<i>Received</i> {{with .Received}}{{.Mean}} ({{.Min}}<{{.Max}}){{end}}
-		<i>Sent</i> {{with .Sent}}{{.Mean}} ({{.Min}}<{{.Max}}){{end}}
+		<i>Received</i> {{.Received}} (avg. {{.ReceivedMean}})
+		<i>Sent</i> {{.Sent}} (avg. {{.SentMean}})
 		<br>
 		<i>Result codes</i> {{range .Codes}}{{.Key}}={{.Count}} {{end}}
 		</P>
@@ -42,25 +45,25 @@ var rpcTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 `))
 
 type rpcs struct {
-	Inbound  []*rpcStats
-	Outbound []*rpcStats
+	mu       sync.Mutex
+	Inbound  []*rpcStats // stats for incoming lsp rpcs sorted by method name
+	Outbound []*rpcStats // stats for outgoing lsp rpcs sorted by method name
 }
 
 type rpcStats struct {
-	Method     string
-	Started    int64
-	Completed  int64
-	InProgress int64
-	Latency    rpcTimeHistogram
-	Received   rpcBytesHistogram
-	Sent       rpcBytesHistogram
-	Codes      []*rpcCodeBucket
+	Method    string
+	Started   int64
+	Completed int64
+
+	Latency  rpcTimeHistogram
+	Received byteUnits
+	Sent     byteUnits
+	Codes    []*rpcCodeBucket
 }
 
 type rpcTimeHistogram struct {
 	Sum    timeUnits
 	Count  int64
-	Mean   timeUnits
 	Min    timeUnits
 	Max    timeUnits
 	Values []rpcTimeBucket
@@ -71,119 +74,139 @@ type rpcTimeBucket struct {
 	Count int64
 }
 
-type rpcBytesHistogram struct {
-	Sum    byteUnits
-	Count  int64
-	Mean   byteUnits
-	Min    byteUnits
-	Max    byteUnits
-	Values []rpcBytesBucket
-}
-
-type rpcBytesBucket struct {
-	Limit byteUnits
-	Count int64
-}
-
 type rpcCodeBucket struct {
 	Key   string
 	Count int64
 }
 
-func (r *rpcs) StartSpan(ctx context.Context, span *telemetry.Span)  {}
-func (r *rpcs) FinishSpan(ctx context.Context, span *telemetry.Span) {}
-func (r *rpcs) Log(ctx context.Context, event telemetry.Event)       {}
-func (r *rpcs) Flush()                                               {}
-
-func (r *rpcs) Metric(ctx context.Context, data telemetry.MetricData) {
-	for i, group := range data.Groups() {
-		set := &r.Inbound
-		if group.Get(tlm.RPCDirection) == tlm.Outbound {
-			set = &r.Outbound
+func (r *rpcs) ProcessEvent(ctx context.Context, ev core.Event, lm label.Map) context.Context {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	switch {
+	case event.IsStart(ev):
+		if _, stats := r.getRPCSpan(ctx, ev); stats != nil {
+			stats.Started++
 		}
-		method, ok := group.Get(tlm.Method).(string)
-		if !ok {
-			log.Printf("Not a method... %v", group)
-			continue
+	case event.IsEnd(ev):
+		span, stats := r.getRPCSpan(ctx, ev)
+		if stats != nil {
+			endRPC(ctx, ev, span, stats)
 		}
-		index := sort.Search(len(*set), func(i int) bool {
-			return (*set)[i].Method >= method
-		})
-		if index >= len(*set) || (*set)[index].Method != method {
-			old := *set
-			*set = make([]*rpcStats, len(old)+1)
-			copy(*set, old[:index])
-			copy((*set)[index+1:], old[index:])
-			(*set)[index] = &rpcStats{Method: method}
-		}
-		stats := (*set)[index]
-		switch data.Handle() {
-		case started:
-			stats.Started = data.(*metric.Int64Data).Rows[i]
-		case completed:
-			status, ok := group.Get(tlm.StatusCode).(string)
-			if !ok {
-				log.Printf("Not status... %v", group)
-				continue
+	case event.IsMetric(ev):
+		sent := byteUnits(tag.SentBytes.Get(lm))
+		rec := byteUnits(tag.ReceivedBytes.Get(lm))
+		if sent != 0 || rec != 0 {
+			if _, stats := r.getRPCSpan(ctx, ev); stats != nil {
+				stats.Sent += sent
+				stats.Received += rec
 			}
-			var b *rpcCodeBucket
-			for c, entry := range stats.Codes {
-				if entry.Key == status {
-					b = stats.Codes[c]
-					break
-				}
-			}
-			if b == nil {
-				b = &rpcCodeBucket{Key: status}
-				stats.Codes = append(stats.Codes, b)
-				sort.Slice(stats.Codes, func(i int, j int) bool {
-					return stats.Codes[i].Key < stats.Codes[j].Key
-				})
-			}
-			b.Count = data.(*metric.Int64Data).Rows[i]
-		case latency:
-			data := data.(*metric.HistogramFloat64Data)
-			row := data.Rows[i]
-			stats.Latency.Count = row.Count
-			stats.Latency.Sum = timeUnits(row.Sum)
-			stats.Latency.Min = timeUnits(row.Min)
-			stats.Latency.Max = timeUnits(row.Max)
-			stats.Latency.Mean = timeUnits(row.Sum) / timeUnits(row.Count)
-			stats.Latency.Values = make([]rpcTimeBucket, len(data.Info.Buckets))
-			last := int64(0)
-			for i, b := range data.Info.Buckets {
-				stats.Latency.Values[i].Limit = timeUnits(b)
-				stats.Latency.Values[i].Count = row.Values[i] - last
-				last = row.Values[i]
-			}
-		case sentBytes:
-			data := data.(*metric.HistogramInt64Data)
-			row := data.Rows[i]
-			stats.Sent.Count = row.Count
-			stats.Sent.Sum = byteUnits(row.Sum)
-			stats.Sent.Min = byteUnits(row.Min)
-			stats.Sent.Max = byteUnits(row.Max)
-			stats.Sent.Mean = byteUnits(row.Sum) / byteUnits(row.Count)
-		case receivedBytes:
-			data := data.(*metric.HistogramInt64Data)
-			row := data.Rows[i]
-			stats.Received.Count = row.Count
-			stats.Received.Sum = byteUnits(row.Sum)
-			stats.Sent.Min = byteUnits(row.Min)
-			stats.Sent.Max = byteUnits(row.Max)
-			stats.Received.Mean = byteUnits(row.Sum) / byteUnits(row.Count)
 		}
 	}
+	return ctx
+}
 
-	for _, set := range [][]*rpcStats{r.Inbound, r.Outbound} {
-		for _, stats := range set {
-			stats.Completed = 0
-			for _, b := range stats.Codes {
-				stats.Completed += b.Count
+func endRPC(ctx context.Context, ev core.Event, span *export.Span, stats *rpcStats) {
+	// update the basic counts
+	stats.Completed++
+
+	// get and record the status code
+	if status := getStatusCode(span); status != "" {
+		var b *rpcCodeBucket
+		for c, entry := range stats.Codes {
+			if entry.Key == status {
+				b = stats.Codes[c]
+				break
 			}
-			stats.InProgress = stats.Started - stats.Completed
+		}
+		if b == nil {
+			b = &rpcCodeBucket{Key: status}
+			stats.Codes = append(stats.Codes, b)
+			sort.Slice(stats.Codes, func(i int, j int) bool {
+				return stats.Codes[i].Key < stats.Codes[j].Key
+			})
+		}
+		b.Count++
+	}
+
+	// calculate latency if this was an rpc span
+	elapsedTime := span.Finish().At().Sub(span.Start().At())
+	latencyMillis := timeUnits(elapsedTime) / timeUnits(time.Millisecond)
+	if stats.Latency.Count == 0 {
+		stats.Latency.Min = latencyMillis
+		stats.Latency.Max = latencyMillis
+	} else {
+		if stats.Latency.Min > latencyMillis {
+			stats.Latency.Min = latencyMillis
+		}
+		if stats.Latency.Max < latencyMillis {
+			stats.Latency.Max = latencyMillis
 		}
 	}
+	stats.Latency.Count++
+	stats.Latency.Sum += latencyMillis
+	for i := range stats.Latency.Values {
+		if stats.Latency.Values[i].Limit > latencyMillis {
+			stats.Latency.Values[i].Count++
+			break
+		}
+	}
+}
+
+func (r *rpcs) getRPCSpan(ctx context.Context, ev core.Event) (*export.Span, *rpcStats) {
+	// get the span
+	span := export.GetSpan(ctx)
+	if span == nil {
+		return nil, nil
+	}
+	// use the span start event look up the correct stats block
+	// we do this because it prevents us matching a sub span
+	return span, r.getRPCStats(span.Start())
+}
+
+func (r *rpcs) getRPCStats(lm label.Map) *rpcStats {
+	method := tag.Method.Get(lm)
+	if method == "" {
+		return nil
+	}
+	set := &r.Inbound
+	if tag.RPCDirection.Get(lm) != tag.Inbound {
+		set = &r.Outbound
+	}
+	// get the record for this method
+	index := sort.Search(len(*set), func(i int) bool {
+		return (*set)[i].Method >= method
+	})
+
+	if index < len(*set) && (*set)[index].Method == method {
+		return (*set)[index]
+	}
+
+	old := *set
+	*set = make([]*rpcStats, len(old)+1)
+	copy(*set, old[:index])
+	copy((*set)[index+1:], old[index:])
+	stats := &rpcStats{Method: method}
+	stats.Latency.Values = make([]rpcTimeBucket, len(millisecondsDistribution))
+	for i, m := range millisecondsDistribution {
+		stats.Latency.Values[i].Limit = timeUnits(m)
+	}
+	(*set)[index] = stats
+	return stats
+}
+
+func (s *rpcStats) InProgress() int64       { return s.Started - s.Completed }
+func (s *rpcStats) SentMean() byteUnits     { return s.Sent / byteUnits(s.Started) }
+func (s *rpcStats) ReceivedMean() byteUnits { return s.Received / byteUnits(s.Started) }
+
+func (h *rpcTimeHistogram) Mean() timeUnits { return h.Sum / timeUnits(h.Count) }
+
+func getStatusCode(span *export.Span) string {
+	for _, ev := range span.Events() {
+		if status := tag.StatusCode.Get(ev); status != "" {
+			return status
+		}
+	}
+	return ""
 }
 
 func (r *rpcs) getData(req *http.Request) interface{} {

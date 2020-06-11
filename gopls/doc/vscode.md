@@ -5,18 +5,26 @@ Use the [VSCode-Go] plugin, with the following configuration:
 ```json5
 "go.useLanguageServer": true,
 "[go]": {
-    "editor.snippetSuggestions": "none",
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
         "source.organizeImports": true,
-    }
+    },
+    // Optional: Disable snippets, as they conflict with completion ranking.
+    "editor.snippetSuggestions": "none",
+},
+"[go.mod]": {
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": true,
+    },
 },
 "gopls": {
-    "usePlaceholders": true, // add parameter placeholders when completing a function
+     // Add parameter placeholders when completing a function.
+    "usePlaceholders": true,
 
-    // Experimental settings
-    "completeUnimported": true, // autocomplete unimported packages
-    "deepCompletion": true,     // enable deep completion
+    // If true, enable additional analyses with staticcheck.
+    // Warning: This will significantly increase memory usage.
+    "staticcheck": false,
 }
 ```
 
@@ -42,7 +50,17 @@ To enable more detailed debug information, add the following to your VSCode sett
 
 See the section on [command line](command-line.md) arguments for more information about what these do, along with other things like `--logfile=auto` that you might want to use.
 
-You can disable features through the `"go.languageServerExperimentalFeatures"` section of the config. An example of a feature you may want to disable is `"documentLink"`, which opens [`godoc.org`](https://godoc.org) links when you click on import statements in your file.
+You can disable features through the `"go.languageServerExperimentalFeatures"` section of the config. An example of a feature you may want to disable is `"documentLink"`, which opens [`pkg.go.dev`](https://pkg.go.dev) links when you click on import statements in your file.
+
+### Build tags
+
+build tags will not be picked from `go.buildTags` configuration section, instead they should be specified as part of the`GOFLAGS` environment variable:
+
+```json5
+"go.toolsEnvVars": {
+    "GOFLAGS": "-tags=<yourtag>"
+}
+```
 
 
 [VSCode-Go]: https://github.com/microsoft/vscode-go

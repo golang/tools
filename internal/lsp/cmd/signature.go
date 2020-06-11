@@ -59,7 +59,7 @@ func (r *signature) Run(ctx context.Context, args ...string) error {
 
 	tdpp := protocol.TextDocumentPositionParams{
 		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.NewURI(from.URI()),
+			URI: protocol.URIFromSpanURI(from.URI()),
 		},
 		Position: loc.Range.Start,
 	}
@@ -72,7 +72,7 @@ func (r *signature) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 
-	if len(s.Signatures) == 0 {
+	if s == nil || len(s.Signatures) == 0 {
 		return tool.CommandLineErrorf("%v: not a function", from)
 	}
 

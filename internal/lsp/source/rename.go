@@ -7,7 +7,6 @@ package source
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"go/ast"
 	"go/format"
 	"go/token"
@@ -15,10 +14,10 @@ import (
 	"regexp"
 
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/trace"
 	"golang.org/x/tools/refactor/satisfy"
 	errors "golang.org/x/xerrors"
 )
@@ -42,93 +41,65 @@ type PrepareItem struct {
 	Text  string
 }
 
-func (i *IdentifierInfo) PrepareRename(ctx context.Context) (*PrepareItem, error) {
-	ctx, done := trace.StartSpan(ctx, "source.PrepareRename")
+func PrepareRename(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position) (*PrepareItem, error) {
+	ctx, done := event.Start(ctx, "source.PrepareRename")
 	defer done()
 
-	// TODO(rstambler): We should handle this in a better way.
-	// If the object declaration is nil, assume it is an import spec.
-	if i.Declaration.obj == nil {
-		// Find the corresponding package name for this import spec
-		// and rename that instead.
-		ident, err := i.getPkgName(ctx)
-		if err != nil {
-			return nil, err
-		}
-		rng, err := ident.mappedRange.Range()
-		if err != nil {
-			return nil, err
-		}
-		// We're not really renaming the import path.
-		rng.End = rng.Start
-		return &PrepareItem{
-			Range: rng,
-			Text:  ident.Name,
-		}, nil
-	}
-
-	// Do not rename builtin identifiers.
-	if i.Declaration.obj.Parent() == types.Universe {
-		return nil, errors.Errorf("cannot rename builtin %q", i.Name)
-	}
-	rng, err := i.mappedRange.Range()
+	qos, err := qualifiedObjsAtProtocolPos(ctx, s, f, pp)
 	if err != nil {
 		return nil, err
 	}
+	node, obj, pkg := qos[0].node, qos[0].obj, qos[0].sourcePkg
+	mr, err := posToMappedRange(s.View(), pkg, node.Pos(), node.End())
+	if err != nil {
+		return nil, err
+	}
+	rng, err := mr.Range()
+	if err != nil {
+		return nil, err
+	}
+	if _, isImport := node.(*ast.ImportSpec); isImport {
+		// We're not really renaming the import path.
+		rng.End = rng.Start
+	}
 	return &PrepareItem{
 		Range: rng,
-		Text:  i.Name,
+		Text:  obj.Name(),
 	}, nil
 }
 
 // Rename returns a map of TextEdits for each file modified when renaming a given identifier within a package.
-func (i *IdentifierInfo) Rename(ctx context.Context, newName string) (map[span.URI][]protocol.TextEdit, error) {
-	ctx, done := trace.StartSpan(ctx, "source.Rename")
+func Rename(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position, newName string) (map[span.URI][]protocol.TextEdit, error) {
+	ctx, done := event.Start(ctx, "source.Rename")
 	defer done()
 
-	// TODO(rstambler): We should handle this in a better way.
-	// If the object declaration is nil, assume it is an import spec.
-	if i.Declaration.obj == nil {
-		// Find the corresponding package name for this import spec
-		// and rename that instead.
-		ident, err := i.getPkgName(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return ident.Rename(ctx, newName)
-	}
-	if i.Name == newName {
-		return nil, errors.Errorf("old and new names are the same: %s", newName)
-	}
-	if !isValidIdentifier(newName) {
-		return nil, errors.Errorf("invalid identifier to rename: %q", i.Name)
-	}
-	// Do not rename builtin identifiers.
-	if i.Declaration.obj.Parent() == types.Universe {
-		return nil, errors.Errorf("cannot rename builtin %q", i.Name)
-	}
-	if i.pkg == nil || i.pkg.IsIllTyped() {
-		return nil, errors.Errorf("package for %s is ill typed", i.URI())
-	}
-	// Do not rename identifiers declared in another package.
-	if i.pkg.GetTypes() != i.Declaration.obj.Pkg() {
-		return nil, errors.Errorf("failed to rename because %q is declared in package %q", i.Name, i.Declaration.obj.Pkg().Name())
-	}
-
-	refs, err := i.References(ctx)
+	qos, err := qualifiedObjsAtProtocolPos(ctx, s, f, pp)
 	if err != nil {
 		return nil, err
 	}
 
-	// Make sure to add the declaration of the identifier.
-	refs = append(refs, i.DeclarationReferenceInfo())
+	obj := qos[0].obj
+	pkg := qos[0].pkg
 
+	if obj.Name() == newName {
+		return nil, errors.Errorf("old and new names are the same: %s", newName)
+	}
+	if !isValidIdentifier(newName) {
+		return nil, errors.Errorf("invalid identifier to rename: %q", newName)
+	}
+	if pkg == nil || pkg.IsIllTyped() {
+		return nil, errors.Errorf("package for %s is ill typed", f.Identity().URI)
+	}
+	refs, err := references(ctx, s, qos, true)
+	if err != nil {
+		return nil, err
+	}
 	r := renamer{
 		ctx:          ctx,
-		fset:         i.Snapshot.View().Session().Cache().FileSet(),
+		fset:         s.View().Session().Cache().FileSet(),
 		refs:         refs,
 		objsToUpdate: make(map[types.Object]bool),
-		from:         i.Name,
+		from:         obj.Name(),
 		to:           newName,
 		packages:     make(map[*types.Package]Package),
 	}
@@ -155,7 +126,7 @@ func (i *IdentifierInfo) Rename(ctx context.Context, newName string) (map[span.U
 	for uri, edits := range changes {
 		// These edits should really be associated with FileHandles for maximal correctness.
 		// For now, this is good enough.
-		fh, err := i.Snapshot.GetFile(ctx, uri)
+		fh, err := s.GetFile(uri)
 		if err != nil {
 			return nil, err
 		}
@@ -178,66 +149,6 @@ func (i *IdentifierInfo) Rename(ctx context.Context, newName string) (map[span.U
 		result[uri] = protocolEdits
 	}
 	return result, nil
-}
-
-// getPkgName gets the pkg name associated with an identifier representing
-// the import path in an import spec.
-func (i *IdentifierInfo) getPkgName(ctx context.Context) (*IdentifierInfo, error) {
-	ph, err := i.pkg.File(i.URI())
-	if err != nil {
-		return nil, fmt.Errorf("finding file for identifier %v: %v", i.Name, err)
-	}
-	file, _, _, err := ph.Cached()
-	if err != nil {
-		return nil, err
-	}
-	var namePos token.Pos
-	for _, spec := range file.Imports {
-		if spec.Path.Pos() == i.spanRange.Start {
-			namePos = spec.Pos()
-			break
-		}
-	}
-	if !namePos.IsValid() {
-		return nil, errors.Errorf("import spec not found for %q", i.Name)
-	}
-	// Look for the object defined at NamePos.
-	for _, obj := range i.pkg.GetTypesInfo().Defs {
-		pkgName, ok := obj.(*types.PkgName)
-		if ok && pkgName.Pos() == namePos {
-			return getPkgNameIdentifier(ctx, i, pkgName)
-		}
-	}
-	for _, obj := range i.pkg.GetTypesInfo().Implicits {
-		pkgName, ok := obj.(*types.PkgName)
-		if ok && pkgName.Pos() == namePos {
-			return getPkgNameIdentifier(ctx, i, pkgName)
-		}
-	}
-	return nil, errors.Errorf("no package name for %q", i.Name)
-}
-
-// getPkgNameIdentifier returns an IdentifierInfo representing pkgName.
-// pkgName must be in the same package and file as ident.
-func getPkgNameIdentifier(ctx context.Context, ident *IdentifierInfo, pkgName *types.PkgName) (*IdentifierInfo, error) {
-	decl := Declaration{
-		obj: pkgName,
-	}
-	var err error
-	if decl.mappedRange, err = objToMappedRange(ident.Snapshot.View(), ident.pkg, decl.obj); err != nil {
-		return nil, err
-	}
-	if decl.node, err = objToNode(ident.Snapshot.View(), ident.pkg, decl.obj); err != nil {
-		return nil, err
-	}
-	return &IdentifierInfo{
-		Snapshot:    ident.Snapshot,
-		Name:        pkgName.Name(),
-		mappedRange: decl.mappedRange,
-		Declaration: decl,
-		pkg:         ident.pkg,
-		qf:          ident.qf,
-	}, nil
 }
 
 // Rename all references to the identifier.
@@ -308,7 +219,7 @@ func (r *renamer) update() (map[span.URI][]diff.TextEdit, error) {
 
 // docComment returns the doc for an identifier.
 func (r *renamer) docComment(pkg Package, id *ast.Ident) *ast.CommentGroup {
-	_, nodes, _ := pathEnclosingInterval(r.ctx, r.fset, pkg, id.Pos(), id.End())
+	_, nodes, _ := pathEnclosingInterval(r.fset, pkg, id.Pos(), id.End())
 	for _, node := range nodes {
 		switch decl := node.(type) {
 		case *ast.FuncDecl:
@@ -339,7 +250,7 @@ func (r *renamer) docComment(pkg Package, id *ast.Ident) *ast.CommentGroup {
 func (r *renamer) updatePkgName(pkgName *types.PkgName) (*diff.TextEdit, error) {
 	// Modify ImportSpec syntax to add or remove the Name as needed.
 	pkg := r.packages[pkgName.Pkg()]
-	_, path, _ := pathEnclosingInterval(r.ctx, r.fset, pkg, pkgName.Pos(), pkgName.Pos())
+	_, path, _ := pathEnclosingInterval(r.fset, pkg, pkgName.Pos(), pkgName.Pos())
 	if len(path) < 2 {
 		return nil, errors.Errorf("no path enclosing interval for %s", pkgName.Name())
 	}

@@ -9,54 +9,40 @@ import (
 
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
 )
 
 func (s *Server) definition(ctx context.Context, params *protocol.DefinitionParams) ([]protocol.Location, error) {
-	uri := span.NewURI(params.TextDocument.URI)
-	view, err := s.session.ViewOf(uri)
+	snapshot, fh, ok, err := s.beginFileRequest(params.TextDocument.URI, source.Go)
+	if !ok {
+		return nil, err
+	}
+	ident, err := source.Identifier(ctx, snapshot, fh, params.Position)
 	if err != nil {
 		return nil, err
 	}
-	snapshot := view.Snapshot()
-	fh, err := snapshot.GetFile(ctx, uri)
-	if err != nil {
-		return nil, err
-	}
-	if fh.Identity().Kind != source.Go {
-		return nil, nil
-	}
-	ident, err := source.Identifier(ctx, snapshot, fh, params.Position, source.WidestCheckPackageHandle)
-	if err != nil {
-		return nil, err
-	}
-	decRange, err := ident.Declaration.Range()
-	if err != nil {
-		return nil, err
-	}
-	return []protocol.Location{
-		{
-			URI:   protocol.NewURI(ident.Declaration.URI()),
+
+	var locations []protocol.Location
+	for _, ref := range ident.Declaration.MappedRange {
+		decRange, err := ref.Range()
+		if err != nil {
+			return nil, err
+		}
+
+		locations = append(locations, protocol.Location{
+			URI:   protocol.URIFromSpanURI(ref.URI()),
 			Range: decRange,
-		},
-	}, nil
+		})
+	}
+
+	return locations, nil
 }
 
 func (s *Server) typeDefinition(ctx context.Context, params *protocol.TypeDefinitionParams) ([]protocol.Location, error) {
-	uri := span.NewURI(params.TextDocument.URI)
-	view, err := s.session.ViewOf(uri)
-	if err != nil {
+	snapshot, fh, ok, err := s.beginFileRequest(params.TextDocument.URI, source.Go)
+	if !ok {
 		return nil, err
 	}
-	snapshot := view.Snapshot()
-	fh, err := snapshot.GetFile(ctx, uri)
-	if err != nil {
-		return nil, err
-	}
-	if fh.Identity().Kind != source.Go {
-		return nil, nil
-	}
-	ident, err := source.Identifier(ctx, snapshot, fh, params.Position, source.WidestCheckPackageHandle)
+	ident, err := source.Identifier(ctx, snapshot, fh, params.Position)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +52,7 @@ func (s *Server) typeDefinition(ctx context.Context, params *protocol.TypeDefini
 	}
 	return []protocol.Location{
 		{
-			URI:   protocol.NewURI(ident.Type.URI()),
+			URI:   protocol.URIFromSpanURI(ident.Type.URI()),
 			Range: identRange,
 		},
 	}, nil

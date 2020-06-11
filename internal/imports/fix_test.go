@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/packages/packagestest"
+	"golang.org/x/tools/internal/gocommand"
 )
 
 var testDebug = flag.Bool("debug", false, "enable debug output")
@@ -845,7 +846,6 @@ import (
 var _ = fmt.Sprintf
 `,
 	},
-
 	{
 		name: "import_grouping_not_path_dependent_no_groups",
 		in: `package main
@@ -1577,6 +1577,27 @@ var _ = bytes.Buffer
 	})
 }
 
+func TestStdlibSelfImports(t *testing.T) {
+	const input = `package ecdsa
+
+var _ = ecdsa.GenerateKey
+`
+
+	testConfig{
+		module: packagestest.Module{
+			Name: "ignored.com",
+		},
+	}.test(t, func(t *goimportTest) {
+		got, err := t.processNonModule(filepath.Join(t.env.GOROOT, "src/crypto/ecdsa/foo.go"), []byte(input), nil)
+		if err != nil {
+			t.Fatalf("Process() = %v", err)
+		}
+		if string(got) != input {
+			t.Errorf("Got:\n%s\nWant:\n%s", got, input)
+		}
+	})
+}
+
 type testConfig struct {
 	gopathOnly bool
 	module     packagestest.Module
@@ -1617,10 +1638,12 @@ func (c testConfig) test(t *testing.T, fn func(*goimportTest)) {
 					GO111MODULE: env["GO111MODULE"],
 					GOSUMDB:     env["GOSUMDB"],
 					WorkingDir:  exported.Config.Dir,
-					Debug:       *testDebug,
-					Logf:        log.Printf,
+					GocmdRunner: &gocommand.Runner{},
 				},
 				exported: exported,
+			}
+			if *testDebug {
+				it.env.Logf = log.Printf
 			}
 			if it.env.GOROOT == "" {
 				// packagestest clears out GOROOT to work around https://golang.org/issue/32849,
@@ -1660,8 +1683,7 @@ func (t *goimportTest) processNonModule(file string, contents []byte, opts *Opti
 		opts = &Options{Comments: true, TabIndent: true, TabWidth: 8}
 	}
 	// ProcessEnv is not safe for concurrent use. Make a copy.
-	env := *t.env
-	opts.Env = &env
+	opts.Env = t.env.CopyConfig()
 	return Process(file, contents, opts)
 }
 
@@ -2489,6 +2511,40 @@ var _ = bytes.Buffer{}
 	}.processTest(t, "foo.com", "foo.go", nil, nil, want)
 }
 
+// Tests that an external test package will import the package under test if it
+// also uses symbols exported only in test files.
+// https://golang.org/issues/29979
+func TestExternalTest(t *testing.T) {
+	const input = `package a_test
+func TestX() {
+	a.X()
+	a.Y()
+}
+`
+	const want = `package a_test
+
+import "foo.com/a"
+
+func TestX() {
+	a.X()
+	a.Y()
+}
+`
+
+	testConfig{
+		modules: []packagestest.Module{
+			{
+				Name: "foo.com/a",
+				Files: fm{
+					"a.go":           "package a\n func X() {}",
+					"export_test.go": "package a\n func Y() {}",
+					"a_test.go":      input,
+				},
+			},
+		},
+	}.processTest(t, "foo.com/a", "a_test.go", nil, nil, want)
+}
+
 // TestStdLibGetCandidates tests that get packages finds std library packages
 // with correct priorities.
 func TestGetCandidates(t *testing.T) {
@@ -2507,12 +2563,12 @@ func TestGetCandidates(t *testing.T) {
 	testConfig{
 		modules: []packagestest.Module{
 			{
-				Name:  "foo.com",
-				Files: fm{"foo/foo.go": "package foo\n"},
-			},
-			{
 				Name:  "bar.com",
 				Files: fm{"bar/bar.go": "package bar\n"},
+			},
+			{
+				Name:  "foo.com",
+				Files: fm{"foo/foo.go": "package foo\n"},
 			},
 		},
 	}.test(t, func(t *goimportTest) {
@@ -2632,10 +2688,43 @@ func _() {
 				defer wg.Done()
 				_, err := t.process("foo.com", "p/first.go", nil, nil)
 				if err != nil {
-					t.Fatal(err)
+					t.Error(err)
 				}
 			}()
 		}
 		wg.Wait()
 	})
+}
+
+func TestNonlocalDot(t *testing.T) {
+	const input = `package main
+import (
+	"fmt"
+)
+var _, _ = fmt.Sprintf, dot.Dot
+`
+	const want = `package main
+
+import (
+	"fmt"
+	"noninternet/dot.v1/dot"
+)
+
+var _, _ = fmt.Sprintf, dot.Dot
+`
+	testConfig{
+		modules: []packagestest.Module{
+			{
+				Name:  "golang.org/fake",
+				Files: fm{"x.go": input},
+			},
+			{
+				Name: "noninternet/dot.v1",
+				Files: fm{
+					"dot/dot.go": "package dot\nfunc Dot(){}\n",
+				},
+			},
+		},
+		gopathOnly: true, // our modules testing setup doesn't allow modules without dots.
+	}.processTest(t, "golang.org/fake", "x.go", nil, nil, want)
 }

@@ -10,10 +10,11 @@ import * as ts from 'typescript';
 let dir = process.env['HOME'];
 const srcDir = '/vscode-languageserver-node'
 export const fnames = [
-  `${dir}${srcDir}/protocol/src/protocol.ts`,
-  `${dir}${srcDir}/types/src/main.ts`, `${dir}${srcDir}/jsonrpc/src/main.ts`
+  //`${dir}${srcDir}/protocol/src/protocol.ts`, // why isn't this main.ts?
+  `${dir}/${srcDir}/protocol/src/main.ts`, `${dir}${srcDir}/types/src/main.ts`,
+  `${dir}${srcDir}/jsonrpc/src/main.ts`
 ];
-export const gitHash = '635ab1fe6f8c57ce9402e573d007f24d6d290fd3';
+export const gitHash = '151b520c995ee3d76729b5c46258ab273d989726'
 let outFname = 'tsprotocol.go';
 let fda: number, fdb: number, fde: number;  // file descriptors
 
@@ -107,7 +108,8 @@ export function constName(nm: string, type: string): string {
     ['SignatureHelpTriggerKind', 'Sig'], ['CompletionItemTag', 'Compl']
   ])  // typeName->prefix
   let suff = new Map<string, string>([
-    ['CompletionItemKind', 'Completion'], ['InsertTextFormat', 'TextFormat']
+    ['CompletionItemKind', 'Completion'], ['InsertTextFormat', 'TextFormat'],
+    ['SymbolTag', 'Symbol']
   ])
   let ans = nm;
   if (pref.get(type)) ans = pref.get(type) + ans;
