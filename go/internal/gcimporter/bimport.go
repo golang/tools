@@ -399,19 +399,19 @@ func (t *dddSlice) String() string         { return "..." + t.elem.String() }
 // Implement the go2-dev go/types.Type interface, to allow x/tools to compile
 // with the go2 prototype. See https://blog.golang.org/generics-next-step.
 func (t *dddSlice) Under() types.Type           { return t }
-func (t *dddSlice) Basic() *types.Basic         { panic("unimplemented") }
-func (t *dddSlice) Array() *types.Array         { panic("unimplemented") }
-func (t *dddSlice) Slice() *types.Slice         { panic("unimplemented") }
-func (t *dddSlice) Struct() *types.Struct       { panic("unimplemented") }
-func (t *dddSlice) Pointer() *types.Pointer     { panic("unimplemented") }
-func (t *dddSlice) Tuple() *types.Tuple         { panic("unimplemented") }
-func (t *dddSlice) Signature() *types.Signature { panic("unimplemented") }
-func (t *dddSlice) Sum() *types.Sum             { panic("unimplemented") }
-func (t *dddSlice) Interface() *types.Interface { panic("unimplemented") }
-func (t *dddSlice) Map() *types.Map             { panic("unimplemented") }
-func (t *dddSlice) Chan() *types.Chan           { panic("unimplemented") }
-func (t *dddSlice) Named() *types.Named         { panic("unimplemented") }
-func (t *dddSlice) TypeParam() *types.TypeParam { panic("unimplemented") }
+func (t *dddSlice) Basic() *types.Basic         { panic("unreachable") }
+func (t *dddSlice) Array() *types.Array         { panic("unreachable") }
+func (t *dddSlice) Slice() *types.Slice         { panic("unreachable") }
+func (t *dddSlice) Struct() *types.Struct       { panic("unreachable") }
+func (t *dddSlice) Pointer() *types.Pointer     { panic("unreachable") }
+func (t *dddSlice) Tuple() *types.Tuple         { panic("unreachable") }
+func (t *dddSlice) Signature() *types.Signature { panic("unreachable") }
+func (t *dddSlice) Sum() *types.Sum             { panic("unreachable") }
+func (t *dddSlice) Interface() *types.Interface { panic("unreachable") }
+func (t *dddSlice) Map() *types.Map             { panic("unreachable") }
+func (t *dddSlice) Chan() *types.Chan           { panic("unreachable") }
+func (t *dddSlice) Named() *types.Named         { panic("unreachable") }
+func (t *dddSlice) TypeParam() *types.TypeParam { panic("unreachable") }
 
 // parent is the package which declared the type; parent == nil means
 // the package currently imported. The parent package is needed for
@@ -1058,16 +1058,16 @@ func (t anyType) String() string         { return "any" }
 // Implement the go2-dev go/types.Type interface, to allow x/tools to compile
 // with the go2 prototype. See https://blog.golang.org/generics-next-step.
 func (t anyType) Under() types.Type           { return t }
-func (t anyType) Basic() *types.Basic         { panic("unimplemented") }
-func (t anyType) Array() *types.Array         { panic("unimplemented") }
-func (t anyType) Slice() *types.Slice         { panic("unimplemented") }
-func (t anyType) Struct() *types.Struct       { panic("unimplemented") }
-func (t anyType) Pointer() *types.Pointer     { panic("unimplemented") }
-func (t anyType) Tuple() *types.Tuple         { panic("unimplemented") }
-func (t anyType) Signature() *types.Signature { panic("unimplemented") }
-func (t anyType) Sum() *types.Sum             { panic("unimplemented") }
-func (t anyType) Interface() *types.Interface { panic("unimplemented") }
-func (t anyType) Map() *types.Map             { panic("unimplemented") }
-func (t anyType) Chan() *types.Chan           { panic("unimplemented") }
-func (t anyType) Named() *types.Named         { panic("unimplemented") }
-func (t anyType) TypeParam() *types.TypeParam { panic("unimplemented") }
+func (t anyType) Basic() *types.Basic         { panic("unreachable") }
+func (t anyType) Array() *types.Array         { panic("unreachable") }
+func (t anyType) Slice() *types.Slice         { panic("unreachable") }
+func (t anyType) Struct() *types.Struct       { panic("unreachable") }
+func (t anyType) Pointer() *types.Pointer     { panic("unreachable") }
+func (t anyType) Tuple() *types.Tuple         { panic("unreachable") }
+func (t anyType) Signature() *types.Signature { panic("unreachable") }
+func (t anyType) Sum() *types.Sum             { panic("unreachable") }
+func (t anyType) Interface() *types.Interface { panic("unreachable") }
+func (t anyType) Map() *types.Map             { panic("unreachable") }
+func (t anyType) Chan() *types.Chan           { panic("unreachable") }
+func (t anyType) Named() *types.Named         { panic("unreachable") }
+func (t anyType) TypeParam() *types.TypeParam { panic("unreachable") }
