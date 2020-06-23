@@ -5,14 +5,18 @@
 package regtest
 
 import (
+	"errors"
+	"io"
+	"testing"
+
 	"golang.org/x/tools/internal/lsp"
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
 )
 
-// RemoveFileFromWorkspace deletes a file on disk but does nothing in the
+// RemoveWorkspaceFile deletes a file on disk but does nothing in the
 // editor. It calls t.Fatal on any error.
-func (e *Env) RemoveFileFromWorkspace(name string) {
+func (e *Env) RemoveWorkspaceFile(name string) {
 	e.T.Helper()
 	if err := e.Sandbox.Workdir.RemoveFile(e.Ctx, name); err != nil {
 		e.T.Fatal(err)
@@ -28,6 +32,15 @@ func (e *Env) ReadWorkspaceFile(name string) string {
 		e.T.Fatal(err)
 	}
 	return content
+}
+
+// WriteWorkspaceFile writes a file to disk but does nothing in the editor.
+// It calls t.Fatal on any error.
+func (e *Env) WriteWorkspaceFile(name, content string) {
+	e.T.Helper()
+	if err := e.Sandbox.Workdir.WriteFile(e.Ctx, name, content); err != nil {
+		e.T.Fatal(err)
+	}
 }
 
 // OpenFile opens a file in the editor, calling t.Fatal on any error.
@@ -106,6 +119,16 @@ func (e *Env) GoToDefinition(name string, pos fake.Pos) (string, fake.Pos) {
 	return n, p
 }
 
+// Symbol returns symbols matching query
+func (e *Env) Symbol(query string) []fake.SymbolInformation {
+	e.T.Helper()
+	r, err := e.Editor.Symbol(e.Ctx, query)
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	return r
+}
+
 // FormatBuffer formats the editor buffer, calling t.Fatal on any error.
 func (e *Env) FormatBuffer(name string) {
 	e.T.Helper()
@@ -131,15 +154,36 @@ func (e *Env) ApplyQuickFixes(path string, diagnostics []protocol.Diagnostic) {
 	}
 }
 
+// Hover in the editor, calling t.Fatal on any error.
+func (e *Env) Hover(name string, pos fake.Pos) (*protocol.MarkupContent, fake.Pos) {
+	e.T.Helper()
+	c, p, err := e.Editor.Hover(e.Ctx, name, pos)
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	return c, p
+}
+
+func (e *Env) DocumentLink(name string) []protocol.DocumentLink {
+	e.T.Helper()
+	links, err := e.Editor.DocumentLink(e.Ctx, name)
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	return links
+}
+
+func checkIsFatal(t *testing.T, err error) {
+	t.Helper()
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatal(err)
+	}
+}
+
 // CloseEditor shuts down the editor, calling t.Fatal on any error.
 func (e *Env) CloseEditor() {
 	e.T.Helper()
-	if err := e.Editor.Shutdown(e.Ctx); err != nil {
-		e.T.Fatal(err)
-	}
-	if err := e.Editor.Exit(e.Ctx); err != nil {
-		e.T.Fatal(err)
-	}
+	checkIsFatal(e.T, e.Editor.Close(e.Ctx))
 }
 
 // RunGenerate runs go:generate on the given dir, calling t.Fatal on any error.
@@ -176,4 +220,30 @@ func (e *Env) CodeLens(path string) []protocol.CodeLens {
 		e.T.Fatal(err)
 	}
 	return lens
+}
+
+// CodeAction calls testDocument/codeAction for the given path, and calls
+// t.Fatal if there are errors.
+func (e *Env) CodeAction(path string) []protocol.CodeAction {
+	e.T.Helper()
+	actions, err := e.Editor.CodeAction(e.Ctx, path)
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	return actions
+}
+
+// ChangeEnv modifies the editor environment and reconfigures the LSP client.
+// TODO: extend this to "ChangeConfiguration", once we refactor the way editor
+// configuration is defined.
+func (e *Env) ChangeEnv(envvars ...string) {
+	e.T.Helper()
+	// TODO: to be correct, this should probably be synchronized, but right now
+	// configuration is only ever modified synchronously in a regtest, so this
+	// correctness can wait for the previously mentioned refactoring.
+	e.Editor.Config.Env = append(e.Editor.Config.Env, envvars...)
+	var params protocol.DidChangeConfigurationParams
+	if err := e.Editor.Server.DidChangeConfiguration(e.Ctx, &params); err != nil {
+		e.T.Fatal(err)
+	}
 }

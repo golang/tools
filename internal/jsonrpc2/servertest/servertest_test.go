@@ -24,9 +24,9 @@ func TestTestServer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	server := jsonrpc2.HandlerServer(fakeHandler)
-	tcpTS := NewTCPServer(ctx, server)
+	tcpTS := NewTCPServer(ctx, server, nil)
 	defer tcpTS.Close()
-	pipeTS := NewPipeServer(ctx, server)
+	pipeTS := NewPipeServer(ctx, server, nil)
 	defer pipeTS.Close()
 
 	tests := []struct {
@@ -40,7 +40,7 @@ func TestTestServer(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			conn := test.connector.Connect(ctx)
-			go conn.Run(ctx, jsonrpc2.MethodNotFound)
+			conn.Go(ctx, jsonrpc2.MethodNotFound)
 			var got msg
 			if _, err := conn.Call(ctx, "ping", &msg{"ping"}, &got); err != nil {
 				t.Fatal(err)

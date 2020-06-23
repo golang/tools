@@ -38,6 +38,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/unsafeptr"
 	"golang.org/x/tools/go/analysis/passes/unusedresult"
 	"golang.org/x/tools/internal/lsp/analysis/fillreturns"
+	"golang.org/x/tools/internal/lsp/analysis/fillstruct"
 	"golang.org/x/tools/internal/lsp/analysis/nonewvars"
 	"golang.org/x/tools/internal/lsp/analysis/noresultvalues"
 	"golang.org/x/tools/internal/lsp/analysis/simplifycompositelit"
@@ -53,12 +54,23 @@ import (
 )
 
 const (
+	// CommandGenerate is a gopls command to run `go test` for a specific test function.
+	CommandTest = "test"
+
 	// CommandGenerate is a gopls command to run `go generate` for a directory.
 	CommandGenerate = "generate"
+
 	// CommandTidy is a gopls command to run `go mod tidy` for a module.
 	CommandTidy = "tidy"
+
+	// CommandVendor is a gopls command to run `go mod vendor` for a module.
+	CommandVendor = "vendor"
+
 	// CommandUpgradeDependency is a gopls command to upgrade a dependency.
-	CommandUpgradeDependency = "upgrade.dependency"
+	CommandUpgradeDependency = "upgrade_dependency"
+
+	// CommandRegenerateCfgo is a gopls command to regenerate cgo definitions.
+	CommandRegenerateCgo = "regenerate_cgo"
 )
 
 // DefaultOptions is the options that are used for Gopls execution independent
@@ -81,6 +93,7 @@ func DefaultOptions() Options {
 					protocol.SourceFixAll:          true,
 					protocol.SourceOrganizeImports: true,
 					protocol.QuickFix:              true,
+					protocol.RefactorRewrite:       true,
 				},
 				Mod: {
 					protocol.SourceOrganizeImports: true,
@@ -88,9 +101,11 @@ func DefaultOptions() Options {
 				Sum: {},
 			},
 			SupportedCommands: []string{
-				CommandTidy,              // for go.mod files
-				CommandUpgradeDependency, // for go.mod dependency upgrades
-				CommandGenerate,          // for "go generate" commands
+				CommandTest,
+				CommandTidy,
+				CommandUpgradeDependency,
+				CommandGenerate,
+				CommandRegenerateCgo,
 			},
 		},
 		UserOptions: UserOptions{
@@ -105,20 +120,23 @@ func DefaultOptions() Options {
 			EnabledCodeLens: map[string]bool{
 				CommandGenerate:          true,
 				CommandUpgradeDependency: true,
+				CommandRegenerateCgo:     true,
 			},
 		},
 		DebuggingOptions: DebuggingOptions{
-			CompletionBudget: 100 * time.Millisecond,
+			CompletionBudget:   100 * time.Millisecond,
+			LiteralCompletions: true,
 		},
 		ExperimentalOptions: ExperimentalOptions{
 			TempModfile: true,
 		},
 		Hooks: Hooks{
-			ComputeEdits:       myers.ComputeEdits,
-			URLRegexp:          regexp.MustCompile(`(http|ftp|https)://([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?`),
-			DefaultAnalyzers:   defaultAnalyzers(),
-			TypeErrorAnalyzers: typeErrorAnalyzers(),
-			GoDiff:             true,
+			ComputeEdits:         myers.ComputeEdits,
+			URLRegexp:            regexp.MustCompile(`(http|ftp|https)://([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?`),
+			DefaultAnalyzers:     defaultAnalyzers(),
+			TypeErrorAnalyzers:   typeErrorAnalyzers(),
+			ConvenienceAnalyzers: convenienceAnalyzers(),
+			GoDiff:               true,
 		},
 	}
 }
@@ -227,11 +245,12 @@ type completionOptions struct {
 // Hooks contains configuration that is provided to the Gopls command by the
 // main package.
 type Hooks struct {
-	GoDiff             bool
-	ComputeEdits       diff.ComputeEdits
-	URLRegexp          *regexp.Regexp
-	DefaultAnalyzers   map[string]Analyzer
-	TypeErrorAnalyzers map[string]Analyzer
+	GoDiff               bool
+	ComputeEdits         diff.ComputeEdits
+	URLRegexp            *regexp.Regexp
+	DefaultAnalyzers     map[string]Analyzer
+	TypeErrorAnalyzers   map[string]Analyzer
+	ConvenienceAnalyzers map[string]Analyzer
 }
 
 func (o Options) AddDefaultAnalyzer(a *analysis.Analyzer) {
@@ -261,6 +280,11 @@ type DebuggingOptions struct {
 	// dynamically reduce the search scope to ensure we return timely
 	// results. Zero means unlimited.
 	CompletionBudget time.Duration
+
+	// LiteralCompletions controls whether literal candidates such as
+	// "&someStruct{}" are offered. Tests disable this flag to simplify
+	// their expected values.
+	LiteralCompletions bool
 }
 
 type Matcher int
@@ -604,6 +628,15 @@ func typeErrorAnalyzers() map[string]Analyzer {
 	}
 }
 
+func convenienceAnalyzers() map[string]Analyzer {
+	return map[string]Analyzer{
+		fillstruct.Analyzer.Name: {
+			Analyzer: fillstruct.Analyzer,
+			enabled:  true,
+		},
+	}
+}
+
 func defaultAnalyzers() map[string]Analyzer {
 	return map[string]Analyzer{
 		// The traditional vet suite:
@@ -631,7 +664,7 @@ func defaultAnalyzers() map[string]Analyzer {
 		unsafeptr.Analyzer.Name:    {Analyzer: unsafeptr.Analyzer, enabled: true},
 		unusedresult.Analyzer.Name: {Analyzer: unusedresult.Analyzer, enabled: true},
 
-		// Non-vet analyzers
+		// Non-vet analyzers:
 		deepequalerrors.Analyzer.Name:  {Analyzer: deepequalerrors.Analyzer, enabled: true},
 		sortslice.Analyzer.Name:        {Analyzer: sortslice.Analyzer, enabled: true},
 		testinggoroutine.Analyzer.Name: {Analyzer: testinggoroutine.Analyzer, enabled: true},

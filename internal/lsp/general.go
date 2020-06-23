@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 
@@ -268,7 +269,7 @@ func (s *Server) fetchConfig(ctx context.Context, name string, folder span.URI, 
 // it to a snapshot.
 // We don't want to return errors for benign conditions like wrong file type,
 // so callers should do if !ok { return err } rather than if err != nil.
-func (s *Server) beginFileRequest(pURI protocol.DocumentURI, expectKind source.FileKind) (source.Snapshot, source.FileHandle, bool, error) {
+func (s *Server) beginFileRequest(ctx context.Context, pURI protocol.DocumentURI, expectKind source.FileKind) (source.Snapshot, source.FileHandle, bool, error) {
 	uri := pURI.SpanURI()
 	if !uri.IsFile() {
 		// Not a file URI. Stop processing the request, but don't return an error.
@@ -279,11 +280,11 @@ func (s *Server) beginFileRequest(pURI protocol.DocumentURI, expectKind source.F
 		return nil, nil, false, err
 	}
 	snapshot := view.Snapshot()
-	fh, err := snapshot.GetFile(uri)
+	fh, err := snapshot.GetFile(ctx, uri)
 	if err != nil {
 		return nil, nil, false, err
 	}
-	if expectKind != source.UnknownKind && fh.Identity().Kind != expectKind {
+	if expectKind != source.UnknownKind && fh.Kind() != expectKind {
 		// Wrong kind of file. Nothing to do.
 		return nil, nil, false, nil
 	}
@@ -304,16 +305,18 @@ func (s *Server) shutdown(ctx context.Context) error {
 	return nil
 }
 
-// ServerExitFunc is used to exit when requested by the client. It is mutable
-// for testing purposes.
-var ServerExitFunc = os.Exit
-
 func (s *Server) exit(ctx context.Context) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
+
+	// TODO: We need a better way to find the conn close method.
+	s.client.(io.Closer).Close()
+
 	if s.state != serverShutDown {
-		ServerExitFunc(1)
+		// TODO: We should be able to do better than this.
+		os.Exit(1)
 	}
-	ServerExitFunc(0)
+	// we don't terminate the process on a normal exit, we just allow it to
+	// close naturally if needed after the connection is closed.
 	return nil
 }

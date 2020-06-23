@@ -25,11 +25,11 @@ import (
 )
 
 func (s *Server) documentLink(ctx context.Context, params *protocol.DocumentLinkParams) (links []protocol.DocumentLink, err error) {
-	snapshot, fh, ok, err := s.beginFileRequest(params.TextDocument.URI, source.UnknownKind)
+	snapshot, fh, ok, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.UnknownKind)
 	if !ok {
 		return nil, err
 	}
-	switch fh.Identity().Kind {
+	switch fh.Kind() {
 	case source.Mod:
 		links, err = modLinks(ctx, snapshot, fh)
 	case source.Go:
@@ -37,7 +37,7 @@ func (s *Server) documentLink(ctx context.Context, params *protocol.DocumentLink
 	}
 	// Don't return errors for document links.
 	if err != nil {
-		event.Error(ctx, "failed to compute document links", err, tag.URI.Of(fh.Identity().URI))
+		event.Error(ctx, "failed to compute document links", err, tag.URI.Of(fh.URI()))
 		return nil, nil
 	}
 	return links, nil
@@ -46,12 +46,20 @@ func (s *Server) documentLink(ctx context.Context, params *protocol.DocumentLink
 func modLinks(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle) ([]protocol.DocumentLink, error) {
 	view := snapshot.View()
 
-	file, m, err := snapshot.ModHandle(ctx, fh).Parse(ctx)
+	pmh, err := snapshot.ParseModHandle(ctx, fh)
+	if err != nil {
+		return nil, err
+	}
+	file, m, _, err := pmh.Parse(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var links []protocol.DocumentLink
 	for _, req := range file.Require {
+		// See golang/go#36998: don't link to modules matching GOPRIVATE.
+		if snapshot.View().IsGoPrivatePath(req.Mod.Path) {
+			continue
+		}
 		dep := []byte(req.Mod.Path)
 		s, e := req.Syntax.Start.Byte, req.Syntax.End.Byte
 		i := bytes.Index(m.Content[s:e], dep)
@@ -100,7 +108,8 @@ func goLinks(ctx context.Context, view source.View, fh source.FileHandle) ([]pro
 	if err != nil {
 		return nil, err
 	}
-	file, _, m, _, err := view.Session().Cache().ParseGoHandle(fh, source.ParseFull).Parse(ctx)
+	pgh := view.Session().Cache().ParseGoHandle(ctx, fh, source.ParseFull)
+	file, _, m, _, err := pgh.Parse(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +134,10 @@ func goLinks(ctx context.Context, view source.View, fh source.FileHandle) ([]pro
 		// For import specs, provide a link to a documentation website, like https://pkg.go.dev.
 		target, err := strconv.Unquote(imp.Path.Value)
 		if err != nil {
+			continue
+		}
+		// See golang/go#36998: don't link to modules matching GOPRIVATE.
+		if view.IsGoPrivatePath(target) {
 			continue
 		}
 		if mod, version, ok := moduleAtVersion(ctx, target, ph); ok && strings.ToLower(view.Options().LinkTarget) == "pkg.go.dev" {

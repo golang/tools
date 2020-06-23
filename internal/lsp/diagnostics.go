@@ -6,6 +6,7 @@ package lsp
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -69,12 +70,16 @@ func (s *Server) diagnose(ctx context.Context, snapshot source.Snapshot, alwaysA
 	// Ensure that the reports returned from mod.Diagnostics are only related
 	// to the go.mod file for the module.
 	if len(reports) > 1 {
-		panic("unexpected reports from mod.Diagnostics")
+		panic(fmt.Sprintf("expected 1 report from mod.Diagnostics, got %v: %v", len(reports), reports))
 	}
-	modURI, _ := snapshot.View().ModFiles()
+	modURI := snapshot.View().ModFile()
 	for id, diags := range reports {
+		if id.URI == "" {
+			event.Error(ctx, "missing URI for module diagnostics", fmt.Errorf("empty URI"), tag.Directory.Of(snapshot.View().Folder().Filename()))
+			continue
+		}
 		if id.URI != modURI {
-			panic("unexpected reports from mod.Diagnostics")
+			panic(fmt.Sprintf("expected module diagnostics report for %q, got %q", modURI, id.URI))
 		}
 		key := diagnosticKey{
 			id: id,
@@ -84,7 +89,26 @@ func (s *Server) diagnose(ctx context.Context, snapshot source.Snapshot, alwaysA
 
 	// Diagnose all of the packages in the workspace.
 	wsPackages, err := snapshot.WorkspacePackages(ctx)
-	if err != nil {
+	if err == source.InconsistentVendoring {
+		item, err := s.client.ShowMessageRequest(ctx, &protocol.ShowMessageRequestParams{
+			Type: protocol.Error,
+			Message: `Inconsistent vendoring detected. Please re-run "go mod vendor".
+See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
+			Actions: []protocol.MessageActionItem{
+				{Title: "go mod vendor"},
+			},
+		})
+		if item == nil || err != nil {
+			return nil, nil
+		}
+		if err := s.directGoModCommand(ctx, protocol.URIFromSpanURI(modURI), "mod", []string{"vendor"}...); err != nil {
+			return nil, &protocol.ShowMessageParams{
+				Type:    protocol.Error,
+				Message: fmt.Sprintf(`"go mod vendor" failed with %v`, err),
+			}
+		}
+		return nil, nil
+	} else if err != nil {
 		event.Error(ctx, "failed to load workspace packages, skipping diagnostics", err, tag.Snapshot.Of(snapshot.ID()), tag.Directory.Of(snapshot.View().Folder()))
 		return nil, nil
 	}
@@ -95,8 +119,8 @@ func (s *Server) diagnose(ctx context.Context, snapshot source.Snapshot, alwaysA
 			defer wg.Done()
 			// Only run analyses for packages with open files.
 			withAnalyses := alwaysAnalyze
-			for _, fh := range ph.CompiledGoFiles() {
-				if snapshot.IsOpen(fh.File().Identity().URI) {
+			for _, pgh := range ph.CompiledGoFiles() {
+				if snapshot.IsOpen(pgh.File().URI()) {
 					withAnalyses = true
 				}
 			}

@@ -13,7 +13,6 @@ import (
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
-	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
@@ -27,8 +26,8 @@ type Session struct {
 	options source.Options
 
 	viewMu  sync.Mutex
-	views   []*view
-	viewMap map[span.URI]*view
+	views   []*View
+	viewMap map[span.URI]*View
 
 	overlayMu sync.Mutex
 	overlays  map[span.URI]*overlay
@@ -47,8 +46,8 @@ type overlay struct {
 	saved bool
 }
 
-func (o *overlay) FileSystem() source.FileSystem {
-	return o.session
+func (o *overlay) Read() ([]byte, error) {
+	return o.text, nil
 }
 
 func (o *overlay) Identity() source.FileIdentity {
@@ -60,9 +59,25 @@ func (o *overlay) Identity() source.FileIdentity {
 		Kind:       o.kind,
 	}
 }
-func (o *overlay) Read(ctx context.Context) ([]byte, string, error) {
-	return o.text, o.hash, nil
+
+func (o *overlay) Kind() source.FileKind {
+	return o.kind
 }
+
+func (o *overlay) URI() span.URI {
+	return o.uri
+}
+
+func (o *overlay) Version() float64 {
+	return o.version
+}
+
+func (o *overlay) Session() source.Session { return o.session }
+func (o *overlay) Saved() bool             { return o.saved }
+func (o *overlay) Data() []byte            { return o.text }
+
+func (s *Session) ID() string     { return s.id }
+func (s *Session) String() string { return s.id }
 
 func (s *Session) Options() source.Options {
 	return s.options
@@ -80,9 +95,7 @@ func (s *Session) Shutdown(ctx context.Context) {
 	}
 	s.views = nil
 	s.viewMap = nil
-	if di := debug.GetInstance(ctx); di != nil {
-		di.State.DropSession(DebugSession{s})
-	}
+	event.Log(ctx, "Shutdown session", KeyShutdownSession.Of(s))
 }
 
 func (s *Session) Cache() source.Cache {
@@ -98,18 +111,18 @@ func (s *Session) NewView(ctx context.Context, name string, folder span.URI, opt
 	}
 	s.views = append(s.views, v)
 	// we always need to drop the view map
-	s.viewMap = make(map[span.URI]*view)
+	s.viewMap = make(map[span.URI]*View)
 	return v, snapshot, nil
 }
 
-func (s *Session) createView(ctx context.Context, name string, folder span.URI, options source.Options, snapshotID uint64) (*view, *snapshot, error) {
+func (s *Session) createView(ctx context.Context, name string, folder span.URI, options source.Options, snapshotID uint64) (*View, *snapshot, error) {
 	index := atomic.AddInt64(&viewIndex, 1)
 	// We want a true background context and not a detached context here
 	// the spans need to be unrelated and no tag values should pollute it.
 	baseCtx := event.Detach(xcontext.Detach(ctx))
 	backgroundCtx, cancel := context.WithCancel(baseCtx)
 
-	v := &view{
+	v := &View{
 		session:       s,
 		initialized:   make(chan struct{}),
 		id:            strconv.FormatInt(index, 10),
@@ -131,9 +144,8 @@ func (s *Session) createView(ctx context.Context, name string, folder span.URI, 
 			actions:           make(map[actionKey]*actionHandle),
 			workspacePackages: make(map[packageID]packagePath),
 			unloadableFiles:   make(map[span.URI]struct{}),
-			modHandles:        make(map[span.URI]*modHandle),
+			parseModHandles:   make(map[span.URI]*parseModHandle),
 		},
-		ignoredURIs: make(map[span.URI]struct{}),
 		gocmdRunner: &gocommand.Runner{},
 	}
 	v.snapshot.view = v
@@ -147,11 +159,9 @@ func (s *Session) createView(ctx context.Context, name string, folder span.URI, 
 	}
 
 	// Initialize the view without blocking.
-	go v.initialize(xcontext.Detach(ctx), v.snapshot)
-
-	if di := debug.GetInstance(ctx); di != nil {
-		di.State.AddView(debugView{v})
-	}
+	initCtx, initCancel := context.WithCancel(xcontext.Detach(ctx))
+	v.initCancel = initCancel
+	go v.initialize(initCtx, v.snapshot)
 	return v, v.snapshot, nil
 }
 
@@ -173,7 +183,7 @@ func (s *Session) ViewOf(uri span.URI) (source.View, error) {
 	return s.viewOf(uri)
 }
 
-func (s *Session) viewOf(uri span.URI) (*view, error) {
+func (s *Session) viewOf(uri span.URI) (*View, error) {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 
@@ -190,11 +200,11 @@ func (s *Session) viewOf(uri span.URI) (*view, error) {
 	return v, nil
 }
 
-func (s *Session) viewsOf(uri span.URI) []*view {
+func (s *Session) viewsOf(uri span.URI) []*View {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 
-	var views []*view
+	var views []*View
 	for _, view := range s.views {
 		if strings.HasPrefix(string(uri), string(view.Folder())) {
 			views = append(views, view)
@@ -215,12 +225,12 @@ func (s *Session) Views() []source.View {
 
 // bestView finds the best view to associate a given URI with.
 // viewMu must be held when calling this method.
-func (s *Session) bestView(uri span.URI) (*view, error) {
+func (s *Session) bestView(uri span.URI) (*View, error) {
 	if len(s.views) == 0 {
 		return nil, errors.Errorf("no views in the session")
 	}
 	// we need to find the best view for this file
-	var longest *view
+	var longest *View
 	for _, view := range s.views {
 		if longest != nil && len(longest.Folder()) > len(view.Folder()) {
 			continue
@@ -236,7 +246,7 @@ func (s *Session) bestView(uri span.URI) (*view, error) {
 	return s.views[0], nil
 }
 
-func (s *Session) removeView(ctx context.Context, view *view) error {
+func (s *Session) removeView(ctx context.Context, view *View) error {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 	i, err := s.dropView(ctx, view)
@@ -251,7 +261,7 @@ func (s *Session) removeView(ctx context.Context, view *view) error {
 	return nil
 }
 
-func (s *Session) updateView(ctx context.Context, view *view, options source.Options) (*view, *snapshot, error) {
+func (s *Session) updateView(ctx context.Context, view *View, options source.Options) (*View, *snapshot, error) {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 	i, err := s.dropView(ctx, view)
@@ -276,9 +286,9 @@ func (s *Session) updateView(ctx context.Context, view *view, options source.Opt
 	return v, snapshot, nil
 }
 
-func (s *Session) dropView(ctx context.Context, v *view) (int, error) {
+func (s *Session) dropView(ctx context.Context, v *View) (int, error) {
 	// we always need to drop the view map
-	s.viewMap = make(map[span.URI]*view)
+	s.viewMap = make(map[span.URI]*View)
 	for i := range s.views {
 		if v == s.views[i] {
 			// we found the view, drop it and return the index it was found at
@@ -291,13 +301,17 @@ func (s *Session) dropView(ctx context.Context, v *view) (int, error) {
 }
 
 func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModification) ([]source.Snapshot, error) {
-	views := make(map[*view]map[span.URI]source.FileHandle)
+	views := make(map[*View]map[span.URI]source.FileHandle)
 
 	overlays, err := s.updateOverlays(ctx, changes)
 	if err != nil {
 		return nil, err
 	}
+	forceReloadMetadata := false
 	for _, c := range changes {
+		if c.Action == source.InvalidateMetadata {
+			forceReloadMetadata = true
+		}
 		// Do nothing if the file is open in the editor and we receive
 		// an on-disk action. The editor is the source of truth.
 		if s.isOpen(c.URI) && c.OnDisk {
@@ -306,9 +320,6 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 		// Look through all of the session's views, invalidating the file for
 		// all of the views to which it is known.
 		for _, view := range s.views {
-			if view.Ignore(c.URI) {
-				return nil, errors.Errorf("ignored file %v", c.URI)
-			}
 			// Don't propagate changes that are outside of the view's scope
 			// or knowledge.
 			if !view.relevantChange(c) {
@@ -324,13 +335,17 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 			if o, ok := overlays[c.URI]; ok {
 				views[view][c.URI] = o
 			} else {
-				views[view][c.URI] = s.cache.GetFile(c.URI)
+				fh, err := s.cache.getFile(ctx, c.URI)
+				if err != nil {
+					return nil, err
+				}
+				views[view][c.URI] = fh
 			}
 		}
 	}
 	var snapshots []source.Snapshot
 	for view, uris := range views {
-		snapshots = append(snapshots, view.invalidateContent(ctx, uris))
+		snapshots = append(snapshots, view.invalidateContent(ctx, uris, forceReloadMetadata))
 	}
 	return snapshots, nil
 }
@@ -348,8 +363,8 @@ func (s *Session) updateOverlays(ctx context.Context, changes []source.FileModif
 	defer s.overlayMu.Unlock()
 
 	for _, c := range changes {
-		// Don't update overlays for on-disk changes.
-		if c.OnDisk {
+		// Don't update overlays for on-disk changes or metadata invalidations.
+		if c.OnDisk || c.Action == source.InvalidateMetadata {
 			continue
 		}
 
@@ -385,8 +400,12 @@ func (s *Session) updateOverlays(ctx context.Context, changes []source.FileModif
 		var sameContentOnDisk bool
 		switch c.Action {
 		case source.Open:
-			_, h, err := s.cache.GetFile(c.URI).Read(ctx)
-			sameContentOnDisk = (err == nil && h == hash)
+			fh, err := s.cache.getFile(ctx, c.URI)
+			if err != nil {
+				return nil, err
+			}
+			_, readErr := fh.Read()
+			sameContentOnDisk = (readErr == nil && fh.Identity().Identifier == hash)
 		case source.Save:
 			// Make sure the version and content (if present) is the same.
 			if o.version != c.Version {
@@ -419,13 +438,12 @@ func (s *Session) updateOverlays(ctx context.Context, changes []source.FileModif
 	return overlays, nil
 }
 
-// GetFile implements the source.FileSystem interface.
-func (s *Session) GetFile(uri span.URI) source.FileHandle {
+func (s *Session) GetFile(ctx context.Context, uri span.URI) (source.FileHandle, error) {
 	if overlay := s.readOverlay(uri); overlay != nil {
-		return overlay
+		return overlay, nil
 	}
 	// Fall back to the cache-level file system.
-	return s.cache.GetFile(uri)
+	return s.cache.getFile(ctx, uri)
 }
 
 func (s *Session) readOverlay(uri span.URI) *overlay {
@@ -438,15 +456,13 @@ func (s *Session) readOverlay(uri span.URI) *overlay {
 	return nil
 }
 
-func (s *Session) UnsavedFiles() []span.URI {
+func (s *Session) Overlays() []source.Overlay {
 	s.overlayMu.Lock()
 	defer s.overlayMu.Unlock()
 
-	var unsaved []span.URI
-	for uri, overlay := range s.overlays {
-		if !overlay.saved {
-			unsaved = append(unsaved, uri)
-		}
+	overlays := make([]source.Overlay, 0, len(s.overlays))
+	for _, overlay := range s.overlays {
+		overlays = append(overlays, overlay)
 	}
-	return unsaved
+	return overlays
 }

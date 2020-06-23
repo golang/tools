@@ -13,16 +13,14 @@ import (
 	"time"
 
 	"golang.org/x/tools/internal/lsp/cmd"
-	"golang.org/x/tools/internal/lsp/lsprpc"
 	"golang.org/x/tools/internal/tool"
 )
 
 var (
 	runSubprocessTests       = flag.Bool("enable_gopls_subprocess_tests", false, "run regtests against a gopls subprocess")
-	goplsBinaryPath          = flag.String("gopls_test_binary", "", "path to the gopls binary for use as a remote, for use with the -gopls_subprocess_testmode flag")
-	alwaysPrintLogs          = flag.Bool("regtest_print_rpc_logs", false, "whether to always print RPC logs")
+	goplsBinaryPath          = flag.String("gopls_test_binary", "", "path to the gopls binary for use as a remote, for use with the -enable_gopls_subprocess_tests flag")
 	regtestTimeout           = flag.Duration("regtest_timeout", 60*time.Second, "default timeout for each regtest")
-	printGoroutinesOnFailure = flag.Bool("regtest_print_goroutines", false, "whether to print goroutine info on failure")
+	printGoroutinesOnFailure = flag.Bool("regtest_print_goroutines", false, "whether to print goroutines info on failure")
 )
 
 var runner *Runner
@@ -33,13 +31,10 @@ func TestMain(m *testing.M) {
 		tool.Main(context.Background(), cmd.New("gopls", "", nil, nil), os.Args[1:])
 		os.Exit(0)
 	}
-	resetExitFuncs := lsprpc.OverrideExitFuncsForTest()
-	defer resetExitFuncs()
 
 	runner = &Runner{
 		DefaultModes:             NormalModes,
 		Timeout:                  *regtestTimeout,
-		AlwaysPrintLogs:          *alwaysPrintLogs,
 		PrintGoroutinesOnFailure: *printGoroutinesOnFailure,
 	}
 	if *runSubprocessTests {

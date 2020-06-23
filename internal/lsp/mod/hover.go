@@ -15,28 +15,35 @@ import (
 )
 
 func Hover(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, position protocol.Position) (*protocol.Hover, error) {
-	realURI, _ := snapshot.View().ModFiles()
-	// Only get hover information on the go.mod for the view.
-	if realURI == "" || fh.Identity().URI != realURI {
+	uri := snapshot.View().ModFile()
+
+	// For now, we only provide hover information for the view's go.mod file.
+	if uri == "" || fh.URI() != uri {
 		return nil, nil
 	}
+
 	ctx, done := event.Start(ctx, "mod.Hover")
 	defer done()
 
-	file, m, why, err := snapshot.ModHandle(ctx, fh).Why(ctx)
+	// Get the position of the cursor.
+	pmh, err := snapshot.ParseModHandle(ctx, fh)
+	if err != nil {
+		return nil, fmt.Errorf("getting modfile handle: %w", err)
+	}
+	file, m, _, err := pmh.Parse(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// Get the position of the cursor.
 	spn, err := m.PointSpan(position)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("computing cursor position: %w", err)
 	}
 	hoverRng, err := spn.Range(m.Converter)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("computing hover range: %w", err)
 	}
 
+	// Confirm that the cursor is at the position of a require statement.
 	var req *modfile.Require
 	var startPos, endPos int
 	for _, r := range file.Require {
@@ -54,13 +61,29 @@ func Hover(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, 
 			break
 		}
 	}
-	if req == nil || why == nil {
+
+	// The cursor position is not on a require statement.
+	if req == nil {
+		return nil, nil
+	}
+
+	// Get the `go mod why` results for the given file.
+	mwh, err := snapshot.ModWhyHandle(ctx)
+	if err != nil {
+		return nil, err
+	}
+	why, err := mwh.Why(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("running go mod why: %w", err)
+	}
+	if why == nil {
 		return nil, nil
 	}
 	explanation, ok := why[req.Mod.Path]
 	if !ok {
 		return nil, nil
 	}
+
 	// Get the range to highlight for the hover.
 	line, col, err := m.Converter.ToPosition(startPos)
 	if err != nil {
@@ -74,13 +97,14 @@ func Hover(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, 
 	}
 	end := span.NewPoint(line, col, endPos)
 
-	spn = span.New(fh.Identity().URI, start, end)
+	spn = span.New(fh.URI(), start, end)
 	rng, err := m.Range(spn)
 	if err != nil {
 		return nil, err
 	}
 	options := snapshot.View().Options()
-	explanation = formatExplanation(explanation, req, options)
+	isPrivate := snapshot.View().IsGoPrivatePath(req.Mod.Path)
+	explanation = formatExplanation(explanation, req, options, isPrivate)
 	return &protocol.Hover{
 		Contents: protocol.MarkupContent{
 			Kind:  options.PreferredContentFormat,
@@ -90,7 +114,7 @@ func Hover(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, 
 	}, nil
 }
 
-func formatExplanation(text string, req *modfile.Require, options source.Options) string {
+func formatExplanation(text string, req *modfile.Require, options source.Options, isPrivate bool) string {
 	text = strings.TrimSuffix(text, "\n")
 	splt := strings.Split(text, "\n")
 	length := len(splt)
@@ -112,16 +136,17 @@ func formatExplanation(text string, req *modfile.Require, options source.Options
 		return b.String()
 	}
 
-	imp := splt[length-1]
-	target := imp
-	if strings.ToLower(options.LinkTarget) == "pkg.go.dev" {
-		target = strings.Replace(target, req.Mod.Path, req.Mod.String(), 1)
+	imp := splt[length-1] // import path
+	reference := imp
+	// See golang/go#36998: don't link to modules matching GOPRIVATE.
+	if !isPrivate && options.PreferredContentFormat == protocol.Markdown {
+		target := imp
+		if strings.ToLower(options.LinkTarget) == "pkg.go.dev" {
+			target = strings.Replace(target, req.Mod.Path, req.Mod.String(), 1)
+		}
+		reference = fmt.Sprintf("[%s](https://%s/%s)", imp, options.LinkTarget, target)
 	}
-	target = fmt.Sprintf("https://%s/%s", options.LinkTarget, target)
-
-	b.WriteString("This module is necessary because ")
-	msg := fmt.Sprintf("[%s](%s) is imported in", imp, target)
-	b.WriteString(msg)
+	b.WriteString("This module is necessary because " + reference + " is imported in")
 
 	// If the explanation is 3 lines, then it is of the form:
 	// # golang.org/x/tools

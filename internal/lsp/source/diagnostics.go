@@ -42,6 +42,14 @@ type RelatedInformation struct {
 }
 
 func Diagnostics(ctx context.Context, snapshot Snapshot, ph PackageHandle, missingModules map[string]*modfile.Require, withAnalysis bool) (map[FileIdentity][]*Diagnostic, bool, error) {
+	onlyIgnoredFiles := true
+	for _, pgh := range ph.CompiledGoFiles() {
+		onlyIgnoredFiles = onlyIgnoredFiles && snapshot.View().IgnoredFile(pgh.File().URI())
+	}
+	if onlyIgnoredFiles {
+		return nil, false, nil
+	}
+
 	// If we are missing dependencies, it may because the user's workspace is
 	// not correctly configured. Report errors, if possible.
 	var warn bool
@@ -83,10 +91,10 @@ func Diagnostics(ctx context.Context, snapshot Snapshot, ph PackageHandle, missi
 
 	// Prepare the reports we will send for the files in this package.
 	reports := make(map[FileIdentity][]*Diagnostic)
-	for _, fh := range pkg.CompiledGoFiles() {
-		clearReports(snapshot, reports, fh.File().Identity().URI)
+	for _, pgh := range pkg.CompiledGoFiles() {
+		clearReports(ctx, snapshot, reports, pgh.File().URI())
 		if len(missing) > 0 {
-			if err := missingModulesDiagnostics(ctx, snapshot, reports, missing, fh.File().Identity().URI); err != nil {
+			if err := missingModulesDiagnostics(ctx, snapshot, reports, missing, pgh.File().URI()); err != nil {
 				return nil, warn, err
 			}
 		}
@@ -99,13 +107,13 @@ func Diagnostics(ctx context.Context, snapshot Snapshot, ph PackageHandle, missi
 		}
 		// If no file is associated with the error, pick an open file from the package.
 		if e.URI.Filename() == "" {
-			for _, ph := range pkg.CompiledGoFiles() {
-				if snapshot.IsOpen(ph.File().Identity().URI) {
-					e.URI = ph.File().Identity().URI
+			for _, pgh := range pkg.CompiledGoFiles() {
+				if snapshot.IsOpen(pgh.File().URI()) {
+					e.URI = pgh.File().URI()
 				}
 			}
 		}
-		clearReports(snapshot, reports, e.URI)
+		clearReports(ctx, snapshot, reports, e.URI)
 	}
 	// Run diagnostics for the package that this URI belongs to.
 	hadDiagnostics, hadTypeErrors, err := diagnostics(ctx, snapshot, reports, pkg, len(ph.MissingDependencies()) > 0)
@@ -121,10 +129,7 @@ func Diagnostics(ctx context.Context, snapshot Snapshot, ph PackageHandle, missi
 		return nil, warn, ctx.Err()
 	}
 	// If we don't have any list or parse errors, run analyses.
-	analyzers := snapshot.View().Options().DefaultAnalyzers
-	if hadTypeErrors {
-		analyzers = snapshot.View().Options().TypeErrorAnalyzers
-	}
+	analyzers := pickAnalyzers(snapshot, hadTypeErrors)
 	if err := analyses(ctx, snapshot, reports, ph, analyzers); err != nil {
 		event.Error(ctx, "analyses failed", err, tag.Snapshot.Of(snapshot.ID()), tag.Package.Of(ph.ID()))
 		if ctx.Err() != nil {
@@ -134,8 +139,28 @@ func Diagnostics(ctx context.Context, snapshot Snapshot, ph PackageHandle, missi
 	return reports, warn, nil
 }
 
+func pickAnalyzers(snapshot Snapshot, hadTypeErrors bool) map[string]Analyzer {
+	analyzers := make(map[string]Analyzer)
+
+	// Always run convenience analyzers.
+	for k, v := range snapshot.View().Options().ConvenienceAnalyzers {
+		analyzers[k] = v
+	}
+	// If we had type errors, only run type error analyzers.
+	if hadTypeErrors {
+		for k, v := range snapshot.View().Options().TypeErrorAnalyzers {
+			analyzers[k] = v
+		}
+		return analyzers
+	}
+	for k, v := range snapshot.View().Options().DefaultAnalyzers {
+		analyzers[k] = v
+	}
+	return analyzers
+}
+
 func FileDiagnostics(ctx context.Context, snapshot Snapshot, uri span.URI) (FileIdentity, []*Diagnostic, error) {
-	fh, err := snapshot.GetFile(uri)
+	fh, err := snapshot.GetFile(ctx, uri)
 	if err != nil {
 		return FileIdentity{}, nil, err
 	}
@@ -205,7 +230,7 @@ func diagnostics(ctx context.Context, snapshot Snapshot, reports map[FileIdentit
 		} else if len(set.typeErrors) > 0 {
 			hasTypeErrors = true
 		}
-		if err := addReports(snapshot, reports, uri, diags...); err != nil {
+		if err := addReports(ctx, snapshot, reports, uri, diags...); err != nil {
 			return false, false, err
 		}
 	}
@@ -213,14 +238,15 @@ func diagnostics(ctx context.Context, snapshot Snapshot, reports map[FileIdentit
 }
 
 func missingModulesDiagnostics(ctx context.Context, snapshot Snapshot, reports map[FileIdentity][]*Diagnostic, missingModules map[string]*modfile.Require, uri span.URI) error {
-	if snapshot.View().Ignore(uri) || len(missingModules) == 0 {
+	if len(missingModules) == 0 {
 		return nil
 	}
-	fh, err := snapshot.GetFile(uri)
+	fh, err := snapshot.GetFile(ctx, uri)
 	if err != nil {
 		return err
 	}
-	file, _, m, _, err := snapshot.View().Session().Cache().ParseGoHandle(fh, ParseHeader).Parse(ctx)
+	pgh := snapshot.View().Session().Cache().ParseGoHandle(ctx, fh, ParseHeader)
+	file, _, m, _, err := pgh.Parse(ctx)
 	if err != nil {
 		return err
 	}
@@ -282,6 +308,13 @@ func analyses(ctx context.Context, snapshot Snapshot, reports map[FileIdentity][
 
 	// Report diagnostics and errors from root analyzers.
 	for _, e := range analysisErrors {
+		// If the diagnostic comes from a "convenience" analyzer, it is not
+		// meant to provide diagnostics, but rather only suggested fixes.
+		// Skip these types of errors in diagnostics; we will use their
+		// suggested fixes when providing code actions.
+		if isConvenienceAnalyzer(e.Category) {
+			continue
+		}
 		// This is a bit of a hack, but clients > 3.15 will be able to grey out unnecessary code.
 		// If we are deleting code as part of all of our suggested fixes, assume that this is dead code.
 		// TODO(golang/go#34508): Return these codes from the diagnostics themselves.
@@ -289,7 +322,7 @@ func analyses(ctx context.Context, snapshot Snapshot, reports map[FileIdentity][
 		if onlyDeletions(e.SuggestedFixes) {
 			tags = append(tags, protocol.Unnecessary)
 		}
-		if err := addReports(snapshot, reports, e.URI, &Diagnostic{
+		if err := addReports(ctx, snapshot, reports, e.URI, &Diagnostic{
 			Range:    e.Range,
 			Message:  e.Message,
 			Source:   e.Category,
@@ -303,10 +336,7 @@ func analyses(ctx context.Context, snapshot Snapshot, reports map[FileIdentity][
 	return nil
 }
 
-func clearReports(snapshot Snapshot, reports map[FileIdentity][]*Diagnostic, uri span.URI) {
-	if snapshot.View().Ignore(uri) {
-		return
-	}
+func clearReports(ctx context.Context, snapshot Snapshot, reports map[FileIdentity][]*Diagnostic, uri span.URI) {
 	fh := snapshot.FindFile(uri)
 	if fh == nil {
 		return
@@ -314,16 +344,12 @@ func clearReports(snapshot Snapshot, reports map[FileIdentity][]*Diagnostic, uri
 	reports[fh.Identity()] = []*Diagnostic{}
 }
 
-func addReports(snapshot Snapshot, reports map[FileIdentity][]*Diagnostic, uri span.URI, diagnostics ...*Diagnostic) error {
-	if snapshot.View().Ignore(uri) {
-		return nil
-	}
+func addReports(ctx context.Context, snapshot Snapshot, reports map[FileIdentity][]*Diagnostic, uri span.URI, diagnostics ...*Diagnostic) error {
 	fh := snapshot.FindFile(uri)
 	if fh == nil {
 		return nil
 	}
-	identity := fh.Identity()
-	existingDiagnostics, ok := reports[identity]
+	existingDiagnostics, ok := reports[fh.Identity()]
 	if !ok {
 		return fmt.Errorf("diagnostics for unexpected file %s", uri)
 	}
@@ -337,7 +363,7 @@ func addReports(snapshot Snapshot, reports map[FileIdentity][]*Diagnostic, uri s
 				if d1.Message != d2.Message {
 					continue
 				}
-				reports[identity][i].Tags = append(reports[identity][i].Tags, d1.Tags...)
+				reports[fh.Identity()][i].Tags = append(reports[fh.Identity()][i].Tags, d1.Tags...)
 			}
 			return nil
 		}
@@ -371,6 +397,15 @@ func hasUndeclaredErrors(pkg Package) bool {
 			continue
 		}
 		if strings.Contains(err.Message, "undeclared name:") {
+			return true
+		}
+	}
+	return false
+}
+
+func isConvenienceAnalyzer(category string) bool {
+	for _, a := range DefaultOptions().ConvenienceAnalyzers {
+		if category == a.Analyzer.Name {
 			return true
 		}
 	}

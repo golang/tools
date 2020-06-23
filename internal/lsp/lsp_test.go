@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/packages/packagestest"
@@ -55,25 +54,21 @@ func testLSP(t *testing.T, exporter packagestest.Exporter) {
 		options := tests.DefaultOptions()
 		session.SetOptions(options)
 		options.Env = datum.Config.Env
-		v, snapshot, err := session.NewView(ctx, datum.Config.Dir, span.URIFromPath(datum.Config.Dir), options)
+		view, snapshot, err := session.NewView(ctx, datum.Config.Dir, span.URIFromPath(datum.Config.Dir), options)
 		if err != nil {
 			t.Fatal(err)
 		}
 
+		defer view.Shutdown(ctx)
+
 		// Enable type error analyses for tests.
 		// TODO(golang/go#38212): Delete this once they are enabled by default.
 		tests.EnableAllAnalyzers(snapshot, &options)
-		v.SetOptions(ctx, options)
+		view.SetOptions(ctx, options)
 
-		// Check to see if the -modfile flag is available, this is basically a check
-		// to see if the go version >= 1.14. Otherwise, the modfile specific tests
-		// will always fail if this flag is not available.
-		for _, flag := range v.Snapshot().Config(ctx).BuildFlags {
-			if strings.Contains(flag, "-modfile=") {
-				datum.ModfileFlagAvailable = true
-				break
-			}
-		}
+		// Only run the -modfile specific tests in module mode with Go 1.14 or above.
+		datum.ModfileFlagAvailable = view.ModFile() != "" && testenv.Go1Point() >= 14
+
 		var modifications []source.FileModification
 		for filename, content := range datum.Config.Overlay {
 			kind := source.DetectLanguage("", filename)
@@ -392,18 +387,15 @@ func (r *runner) SuggestedFix(t *testing.T, spn span.Span, actionKinds []string)
 			r.diagnostics[key.id.URI] = diags
 		}
 	}
-	var diag *source.Diagnostic
+	var diagnostics []protocol.Diagnostic
 	for _, d := range r.diagnostics[uri] {
 		// Compare the start positions rather than the entire range because
 		// some diagnostics have a range with the same start and end position (8:1-8:1).
 		// The current marker functionality prevents us from having a range of 0 length.
 		if protocol.ComparePosition(d.Range.Start, rng.Start) == 0 {
-			diag = d
+			diagnostics = append(diagnostics, toProtocolDiagnostics([]*source.Diagnostic{d})...)
 			break
 		}
-	}
-	if diag == nil {
-		t.Fatalf("could not get any suggested fixes for %v", spn)
 	}
 	codeActionKinds := []protocol.CodeActionKind{}
 	for _, k := range actionKinds {
@@ -413,28 +405,30 @@ func (r *runner) SuggestedFix(t *testing.T, spn span.Span, actionKinds []string)
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: protocol.URIFromSpanURI(uri),
 		},
+		Range: rng,
 		Context: protocol.CodeActionContext{
 			Only:        codeActionKinds,
-			Diagnostics: toProtocolDiagnostics([]*source.Diagnostic{diag}),
+			Diagnostics: diagnostics,
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// TODO: This test should probably be able to handle multiple code actions.
-	if len(actions) == 0 {
-		t.Fatal("no code actions returned")
+	// Hack: We assume that we only get one code action per range.
+	// TODO(rstambler): Support multiple code actions per test.
+	if len(actions) == 0 || len(actions) > 1 {
+		t.Fatalf("unexpected number of code actions, want 1, got %v", len(actions))
 	}
 	res, err := applyWorkspaceEdits(r, actions[0].Edit)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for u, got := range res {
-		fixed := string(r.data.Golden("suggestedfix_"+tests.SpanName(spn), u.Filename(), func() ([]byte, error) {
+		want := string(r.data.Golden("suggestedfix_"+tests.SpanName(spn), u.Filename(), func() ([]byte, error) {
 			return []byte(got), nil
 		}))
-		if fixed != got {
-			t.Errorf("suggested fixes failed for %s, expected:\n%#v\ngot:\n%#v", u.Filename(), fixed, got)
+		if want != got {
+			t.Errorf("suggested fixes failed for %s:\n%s", u.Filename(), tests.Diff(want, got))
 		}
 	}
 }

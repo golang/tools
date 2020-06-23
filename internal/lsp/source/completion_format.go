@@ -166,6 +166,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 		Score:               cand.score,
 		Depth:               len(c.deepState.chain),
 		snippet:             snip,
+		obj:                 obj,
 	}
 	// If the user doesn't want documentation for completion items.
 	if !c.opts.documentation {
@@ -194,7 +195,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 	if err != nil {
 		return item, nil
 	}
-	hover, err := ident.Hover(ctx)
+	hover, err := HoverIdentifier(ctx, ident)
 	if err != nil {
 		event.Error(ctx, "failed to find Hover", err, tag.URI.Of(uri))
 		return item, nil
@@ -215,7 +216,7 @@ func (c *completer) importEdits(ctx context.Context, imp *importInfo) ([]protoco
 	uri := span.URIFromPath(c.filename)
 	var ph ParseGoHandle
 	for _, h := range c.pkg.CompiledGoFiles() {
-		if h.File().Identity().URI == uri {
+		if h.File().URI() == uri {
 			ph = h
 		}
 	}

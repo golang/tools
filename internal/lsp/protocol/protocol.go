@@ -21,16 +21,60 @@ var (
 
 // ClientDispatcher returns a Client that dispatches LSP requests across the
 // given jsonrpc2 connection.
-func ClientDispatcher(conn *jsonrpc2.Conn) Client {
+func ClientDispatcher(conn jsonrpc2.Conn) Client {
 	return &clientDispatcher{Conn: conn}
+}
+
+type clientDispatcher struct {
+	jsonrpc2.Conn
 }
 
 // ServerDispatcher returns a Server that dispatches LSP requests across the
 // given jsonrpc2 connection.
-func ServerDispatcher(conn *jsonrpc2.Conn) Server {
+func ServerDispatcher(conn jsonrpc2.Conn) Server {
 	return &serverDispatcher{Conn: conn}
 }
 
+type serverDispatcher struct {
+	jsonrpc2.Conn
+}
+
+func ClientHandler(client Client, handler jsonrpc2.Handler) jsonrpc2.Handler {
+	return func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
+		if ctx.Err() != nil {
+			ctx := xcontext.Detach(ctx)
+			return reply(ctx, nil, RequestCancelledError)
+		}
+		handled, err := clientDispatch(ctx, client, reply, req)
+		if handled || err != nil {
+			return err
+		}
+		return handler(ctx, reply, req)
+	}
+}
+
+func ServerHandler(server Server, handler jsonrpc2.Handler) jsonrpc2.Handler {
+	return func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
+		if ctx.Err() != nil {
+			ctx := xcontext.Detach(ctx)
+			return reply(ctx, nil, RequestCancelledError)
+		}
+		handled, err := serverDispatch(ctx, server, reply, req)
+		if handled || err != nil {
+			return err
+		}
+		//TODO: This code is wrong, it ignores handler and assumes non standard
+		// request handles everything
+		// non standard request should just be a layered handler.
+		var params interface{}
+		if err := json.Unmarshal(req.Params(), &params); err != nil {
+			return sendParseError(ctx, reply, err)
+		}
+		resp, err := server.NonstandardRequest(ctx, req.Method(), params)
+		return reply(ctx, resp, err)
+
+	}
+}
 func Handlers(handler jsonrpc2.Handler) jsonrpc2.Handler {
 	return CancelHandler(
 		jsonrpc2.AsyncHandler(
@@ -72,7 +116,7 @@ func CancelHandler(handler jsonrpc2.Handler) jsonrpc2.Handler {
 	}
 }
 
-func Call(ctx context.Context, conn *jsonrpc2.Conn, method string, params interface{}, result interface{}) error {
+func Call(ctx context.Context, conn jsonrpc2.Conn, method string, params interface{}, result interface{}) error {
 	id, err := conn.Call(ctx, method, params, result)
 	if ctx.Err() != nil {
 		cancelCall(ctx, conn, id)
@@ -80,7 +124,7 @@ func Call(ctx context.Context, conn *jsonrpc2.Conn, method string, params interf
 	return err
 }
 
-func cancelCall(ctx context.Context, conn *jsonrpc2.Conn, id jsonrpc2.ID) {
+func cancelCall(ctx context.Context, conn jsonrpc2.Conn, id jsonrpc2.ID) {
 	ctx = xcontext.Detach(ctx)
 	ctx, done := event.Start(ctx, "protocol.canceller")
 	defer done()

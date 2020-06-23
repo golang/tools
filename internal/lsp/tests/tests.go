@@ -16,7 +16,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,6 +29,7 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
 )
 
@@ -216,12 +216,15 @@ func DefaultOptions() source.Options {
 		source.Go: {
 			protocol.SourceOrganizeImports: true,
 			protocol.QuickFix:              true,
+			protocol.RefactorRewrite:       true,
+			protocol.SourceFixAll:          true,
 		},
 		source.Mod: {
 			protocol.SourceOrganizeImports: true,
 		},
 		source.Sum: {},
 	}
+	o.UserOptions.EnabledCodeLens[source.CommandTest] = true
 	o.HoverKind = source.SynopsisDocumentation
 	o.InsertTextFormat = protocol.SnippetTextFormat
 	o.CompletionBudget = time.Minute
@@ -229,7 +232,9 @@ func DefaultOptions() source.Options {
 	return o
 }
 
-var haveCgo = false
+var (
+	go115 = false
+)
 
 // Load creates the folder structure required when testing with modules.
 // The directory structure of a test needs to look like the example below:
@@ -449,8 +454,11 @@ func Run(t *testing.T, tests Tests, data *Data) {
 			for i, e := range exp {
 				t.Run(SpanName(src)+"_"+strconv.Itoa(i), func(t *testing.T) {
 					t.Helper()
-					if (!haveCgo || runtime.GOOS == "android") && strings.Contains(t.Name(), "cgo") {
-						t.Skip("test requires cgo, not supported")
+					if strings.Contains(t.Name(), "cgo") {
+						testenv.NeedsTool(t, "cgo")
+					}
+					if !go115 && strings.Contains(t.Name(), "declarecgo") {
+						t.Skip("test requires Go 1.15")
 					}
 					test(t, src, e, data.CompletionItems)
 				})
@@ -607,8 +615,11 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		for spn, d := range data.Definitions {
 			t.Run(SpanName(spn), func(t *testing.T) {
 				t.Helper()
-				if (!haveCgo || runtime.GOOS == "android") && strings.Contains(t.Name(), "cgo") {
-					t.Skip("test requires cgo, not supported")
+				if strings.Contains(t.Name(), "cgo") {
+					testenv.NeedsTool(t, "cgo")
+				}
+				if !go115 && strings.Contains(t.Name(), "declarecgo") {
+					t.Skip("test requires Go 1.15")
 				}
 				tests.Definition(t, spn, d)
 			})
@@ -808,7 +819,7 @@ func checkData(t *testing.T, data *Data) {
 	}))
 	got := buf.String()
 	if want != got {
-		t.Errorf("test summary does not match, want\n%s\ngot:\n%s", want, got)
+		t.Errorf("test summary does not match: %v", Diff(want, got))
 	}
 }
 
@@ -877,6 +888,7 @@ func (data *Data) Golden(tag string, target string, update func() ([]byte, error
 		}
 		file.Data = append(contents, '\n') // add trailing \n for txtar
 		golden.Modified = true
+
 	}
 	if file == nil {
 		data.t.Fatalf("could not find golden contents %v: %v", fragment, tag)

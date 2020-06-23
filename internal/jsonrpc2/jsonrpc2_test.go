@@ -7,17 +7,16 @@ package jsonrpc2_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
-	"io"
+	"net"
 	"path"
 	"reflect"
-	"sync"
 	"testing"
 
 	"golang.org/x/tools/internal/event/export/eventtest"
 	"golang.org/x/tools/internal/jsonrpc2"
+	"golang.org/x/tools/internal/stack/stacktest"
 )
 
 var logRPC = flag.Bool("logrpc", false, "Enable jsonrpc2 communication logging")
@@ -62,6 +61,7 @@ func (test *callTest) verifyResults(t *testing.T, results interface{}) {
 }
 
 func TestCall(t *testing.T) {
+	stacktest.NoLeak(t)
 	ctx := eventtest.NewContext(context.Background(), t)
 	for _, headers := range []bool{false, true} {
 		name := "Plain"
@@ -90,46 +90,28 @@ func TestCall(t *testing.T) {
 	}
 }
 
-func prepare(ctx context.Context, t *testing.T, withHeaders bool) (*jsonrpc2.Conn, *jsonrpc2.Conn, func()) {
+func prepare(ctx context.Context, t *testing.T, withHeaders bool) (jsonrpc2.Conn, jsonrpc2.Conn, func()) {
 	// make a wait group that can be used to wait for the system to shut down
-	wg := &sync.WaitGroup{}
-	aR, bW := io.Pipe()
-	bR, aW := io.Pipe()
-	a := run(ctx, t, withHeaders, aR, aW, wg)
-	b := run(ctx, t, withHeaders, bR, bW, wg)
+	aPipe, bPipe := net.Pipe()
+	a := run(ctx, withHeaders, aPipe)
+	b := run(ctx, withHeaders, bPipe)
 	return a, b, func() {
-		// we close the main writer, this should cascade through the server and
-		// cause normal shutdown of the entire chain
-		aW.Close()
-		// this should then wait for that entire cascade,
-		wg.Wait()
+		a.Close()
+		b.Close()
+		<-a.Done()
+		<-b.Done()
 	}
 }
 
-func run(ctx context.Context, t *testing.T, withHeaders bool, r io.ReadCloser, w io.WriteCloser, wg *sync.WaitGroup) *jsonrpc2.Conn {
+func run(ctx context.Context, withHeaders bool, nc net.Conn) jsonrpc2.Conn {
 	var stream jsonrpc2.Stream
 	if withHeaders {
-		stream = jsonrpc2.NewHeaderStream(r, w)
+		stream = jsonrpc2.NewHeaderStream(nc)
 	} else {
-		stream = jsonrpc2.NewRawStream(r, w)
+		stream = jsonrpc2.NewRawStream(nc)
 	}
 	conn := jsonrpc2.NewConn(stream)
-	wg.Add(1)
-	go func() {
-		defer func() {
-			// this will happen when Run returns, which means at least one of the
-			// streams has already been closed
-			// we close both streams anyway, this may be redundant but is safe
-			r.Close()
-			w.Close()
-			// and then signal that this connection is done
-			wg.Done()
-		}()
-		err := conn.Run(ctx, testHandler(*logRPC))
-		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) {
-			t.Errorf("Stream failed: %v", err)
-		}
-	}()
+	conn.Go(ctx, testHandler(*logRPC))
 	return conn
 }
 

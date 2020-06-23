@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build !windows
+// +build !windows,!plan9
 
 package regtest
 
 import (
-	"fmt"
 	"testing"
 
 	"golang.org/x/tools/internal/lsp/fake"
@@ -31,6 +30,6 @@ func _() {
 			t.Fatal(err)
 		}
 	}, WithEditorConfig(fake.EditorConfig{
-		Env: []string{fmt.Sprintf("GOPATH=:/path/to/gopath")},
+		Env: []string{"GOPATH=:/path/to/gopath"},
 	}))
 }

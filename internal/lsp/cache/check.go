@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/typesinternal"
 	errors "golang.org/x/xerrors"
 )
 
@@ -155,11 +156,11 @@ func (s *snapshot) buildKey(ctx context.Context, id packageID, mode source.Parse
 		deps[depHandle.m.pkgPath] = depHandle
 		depKeys = append(depKeys, depHandle.key)
 	}
-	ph.key = checkPackageKey(ph.m.id, ph.compiledGoFiles, m.config, depKeys)
+	ph.key = checkPackageKey(ctx, ph.m.id, ph.compiledGoFiles, m.config, depKeys)
 	return ph, deps, nil
 }
 
-func checkPackageKey(id packageID, pghs []*parseGoHandle, cfg *packages.Config, deps []packageHandleKey) packageHandleKey {
+func checkPackageKey(ctx context.Context, id packageID, pghs []*parseGoHandle, cfg *packages.Config, deps []packageHandleKey) packageHandleKey {
 	var depBytes []byte
 	for _, dep := range deps {
 		depBytes = append(depBytes, []byte(dep)...)
@@ -253,15 +254,15 @@ func (ph *packageHandle) cached() (*pkg, error) {
 }
 
 func (s *snapshot) parseGoHandles(ctx context.Context, files []span.URI, mode source.ParseMode) ([]*parseGoHandle, error) {
-	phs := make([]*parseGoHandle, 0, len(files))
+	pghs := make([]*parseGoHandle, 0, len(files))
 	for _, uri := range files {
-		fh, err := s.GetFile(uri)
+		fh, err := s.GetFile(ctx, uri)
 		if err != nil {
 			return nil, err
 		}
-		phs = append(phs, s.view.session.cache.parseGoHandle(fh, mode))
+		pghs = append(pghs, s.view.session.cache.parseGoHandle(ctx, fh, mode))
 	}
-	return phs, nil
+	return pghs, nil
 }
 
 func typeCheck(ctx context.Context, fset *token.FileSet, m *metadata, mode source.ParseMode, goFiles, compiledGoFiles []*parseGoHandle, deps map[packagePath]*packageHandle) (*pkg, error) {
@@ -368,25 +369,7 @@ func typeCheck(ctx context.Context, fset *token.FileSet, m *metadata, mode sourc
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			dep := deps[packagePath(pkgPath)]
-			if dep == nil {
-				// We may be in GOPATH mode, in which case we need to check vendor dirs.
-				searchDir := path.Dir(pkg.PkgPath())
-				for {
-					vdir := packagePath(path.Join(searchDir, "vendor", pkgPath))
-					if vdep := deps[vdir]; vdep != nil {
-						dep = vdep
-						break
-					}
-
-					// Search until Dir doesn't take us anywhere new, e.g. "." or "/".
-					next := path.Dir(searchDir)
-					if searchDir == next {
-						break
-					}
-					searchDir = next
-				}
-			}
+			dep := resolveImportPath(pkgPath, pkg, deps)
 			if dep == nil {
 				return nil, errors.Errorf("no package for import %s", pkgPath)
 			}
@@ -401,6 +384,10 @@ func typeCheck(ctx context.Context, fset *token.FileSet, m *metadata, mode sourc
 			return depPkg.types, nil
 		}),
 	}
+	// We want to type check cgo code if go/types supports it.
+	// We passed typecheckCgo to go/packages when we Loaded.
+	typesinternal.SetUsesCgo(cfg)
+
 	check := types.NewChecker(cfg, fset, pkg.types, pkg.typesInfo)
 
 	// Type checking errors are handled via the config, so ignore them here.
@@ -426,6 +413,41 @@ func typeCheck(ctx context.Context, fset *token.FileSet, m *metadata, mode sourc
 		}
 	}
 	return pkg, nil
+}
+
+// resolveImportPath resolves an import path in pkg to a package from deps.
+// It should produce the same results as resolveImportPath:
+// https://cs.opensource.google/go/go/+/master:src/cmd/go/internal/load/pkg.go;drc=641918ee09cb44d282a30ee8b66f99a0b63eaef9;l=990.
+func resolveImportPath(importPath string, pkg *pkg, deps map[packagePath]*packageHandle) *packageHandle {
+	if dep := deps[packagePath(importPath)]; dep != nil {
+		return dep
+	}
+	// We may be in GOPATH mode, in which case we need to check vendor dirs.
+	searchDir := path.Dir(pkg.PkgPath())
+	for {
+		vdir := packagePath(path.Join(searchDir, "vendor", importPath))
+		if vdep := deps[vdir]; vdep != nil {
+			return vdep
+		}
+
+		// Search until Dir doesn't take us anywhere new, e.g. "." or "/".
+		next := path.Dir(searchDir)
+		if searchDir == next {
+			break
+		}
+		searchDir = next
+	}
+
+	// Vendor didn't work. Let's try minimal module compatibility mode.
+	// In MMC, the packagePath is the canonical (.../vN/...) path, which
+	// is hard to calculate. But the go command has already resolved the ID
+	// to the non-versioned path, and we can take advantage of that.
+	for _, dep := range deps {
+		if dep.ID() == importPath {
+			return dep
+		}
+	}
+	return nil
 }
 
 func isValidImport(pkgPath, importPkgPath packagePath) bool {

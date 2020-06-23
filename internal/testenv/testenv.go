@@ -9,6 +9,7 @@ package testenv
 import (
 	"bytes"
 	"fmt"
+	"go/build"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -40,6 +41,17 @@ var checkGoGoroot struct {
 }
 
 func hasTool(tool string) error {
+	if tool == "cgo" {
+		enabled, err := cgoEnabled(false)
+		if err != nil {
+			return fmt.Errorf("checking cgo: %v", err)
+		}
+		if !enabled {
+			return fmt.Errorf("cgo not enabled")
+		}
+		return nil
+	}
+
 	_, err := exec.LookPath(tool)
 	if err != nil {
 		return err
@@ -94,6 +106,19 @@ func hasTool(tool string) error {
 	return nil
 }
 
+func cgoEnabled(bypassEnvironment bool) (bool, error) {
+	cmd := exec.Command("go", "env", "CGO_ENABLED")
+	if bypassEnvironment {
+		cmd.Env = append(append([]string(nil), os.Environ()...), "CGO_ENABLED=")
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, err
+	}
+	enabled := strings.TrimSpace(string(out))
+	return enabled == "1", nil
+}
+
 func allowMissingTool(tool string) bool {
 	if runtime.GOOS == "android" {
 		// Android builds generally run tests on a separate machine from the build,
@@ -102,6 +127,15 @@ func allowMissingTool(tool string) bool {
 	}
 
 	switch tool {
+	case "cgo":
+		if strings.HasSuffix(os.Getenv("GO_BUILDER_NAME"), "-nocgo") {
+			// Explicitly disabled on -nocgo builders.
+			return true
+		}
+		if enabled, err := cgoEnabled(true); err == nil && !enabled {
+			// No platform support.
+			return true
+		}
 	case "go":
 		if os.Getenv("GO_BUILDER_NAME") == "illumos-amd64-joyent" {
 			// Work around a misconfigured builder (see https://golang.org/issue/33950).
@@ -125,6 +159,7 @@ func allowMissingTool(tool string) bool {
 }
 
 // NeedsTool skips t if the named tool is not present in the path.
+// As a special case, "cgo" means "go" is present and can compile cgo programs.
 func NeedsTool(t Testing, tool string) {
 	if t, ok := t.(helperer); ok {
 		t.Helper()
@@ -185,6 +220,27 @@ func NeedsGoPackagesEnv(t Testing, env []string) {
 	NeedsGoPackages(t)
 }
 
+// NeedsGoBuild skips t if the current system can't build programs with ``go build''
+// and then run them with os.StartProcess or exec.Command.
+// android, and darwin/arm systems don't have the userspace go build needs to run,
+// and js/wasm doesn't support running subprocesses.
+func NeedsGoBuild(t Testing) {
+	if t, ok := t.(helperer); ok {
+		t.Helper()
+	}
+
+	NeedsTool(t, "go")
+
+	switch runtime.GOOS {
+	case "android", "js":
+		t.Skipf("skipping test: %v can't build and run Go binaries", runtime.GOOS)
+	case "darwin":
+		if strings.HasPrefix(runtime.GOARCH, "arm") {
+			t.Skipf("skipping test: darwin/arm can't build and run Go binaries")
+		}
+	}
+}
+
 // ExitIfSmallMachine emits a helpful diagnostic and calls os.Exit(0) if the
 // current machine is a builder known to have scarce resources.
 //
@@ -197,5 +253,39 @@ func ExitIfSmallMachine() {
 	case "plan9-arm":
 		fmt.Fprintln(os.Stderr, "skipping test: plan9-arm builder lacks sufficient memory (https://golang.org/issue/38772)")
 		os.Exit(0)
+	}
+}
+
+// Go1Point returns the x in Go 1.x.
+func Go1Point() int {
+	for i := len(build.Default.ReleaseTags) - 1; i >= 0; i-- {
+		var version int
+		if _, err := fmt.Sscanf(build.Default.ReleaseTags[i], "go1.%d", &version); err != nil {
+			continue
+		}
+		return version
+	}
+	panic("bad release tags")
+}
+
+// NeedsGo1Point skips t if the Go version used to run the test is older than
+// 1.x.
+func NeedsGo1Point(t Testing, x int) {
+	if t, ok := t.(helperer); ok {
+		t.Helper()
+	}
+	if Go1Point() < x {
+		t.Skipf("running Go version %q is version 1.%d, older than required 1.%d", runtime.Version(), Go1Point(), x)
+	}
+}
+
+// SkipAfterGo1Point skips t if the Go version used to run the test is newer than
+// 1.x.
+func SkipAfterGo1Point(t Testing, x int) {
+	if t, ok := t.(helperer); ok {
+		t.Helper()
+	}
+	if Go1Point() > x {
+		t.Skipf("running Go version %q is version 1.%d, newer than maximum 1.%d", runtime.Version(), Go1Point(), x)
 	}
 }

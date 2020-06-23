@@ -5,14 +5,18 @@
 package regtest
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"os"
 	"testing"
+	"time"
 
 	"golang.org/x/tools/internal/lsp"
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/tests"
+	"golang.org/x/tools/internal/testenv"
 )
 
 // Use mod.com for all go.mod files due to golang/go#35230.
@@ -127,7 +131,7 @@ func TestDiagnosticClearingOnDelete_Issue37049(t *testing.T) {
 	runner.Run(t, badPackage, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")
 		env.Await(env.DiagnosticAtRegexp("a.go", "a = 1"), env.DiagnosticAtRegexp("b.go", "a = 2"))
-		env.RemoveFileFromWorkspace("b.go")
+		env.RemoveWorkspaceFile("b.go")
 
 		env.Await(EmptyDiagnostics("a.go"), EmptyDiagnostics("b.go"))
 	})
@@ -172,6 +176,52 @@ const a = http.MethodGet
 		env.Await(
 			EmptyDiagnostics("c/c.go"),
 		)
+	})
+}
+
+// Tests golang/go#38878: good a.go, bad a_test.go, remove a_test.go but its errors remain
+// If the file is open in the editor, this is working as intended
+// If the file is not open in the editor, the errors go away
+const test38878 = `
+-- go.mod --
+module foo
+
+-- a.go --
+package x
+
+func f() {}
+
+-- a_test.go --
+package x
+
+import "testing"
+
+func TestA(t *testing.T) {
+	f(3)
+}
+`
+
+func TestRmTest38878Close(t *testing.T) {
+	runner.Run(t, test38878, func(t *testing.T, env *Env) {
+		env.OpenFile("a_test.go")
+		env.Await(DiagnosticAt("a_test.go", 5, 3))
+		env.CloseBuffer("a_test.go")
+		env.RemoveWorkspaceFile("a_test.go")
+		// diagnostics go away
+		env.Await(EmptyDiagnostics("a_test.go"))
+	})
+}
+func TestRmTest38878(t *testing.T) {
+	log.SetFlags(log.Lshortfile)
+	runner.Run(t, test38878, func(t *testing.T, env *Env) {
+		env.OpenFile("a_test.go")
+		env.Await(DiagnosticAt("a_test.go", 5, 3))
+		env.Sandbox.Workdir.RemoveFile(context.Background(), "a_test.go")
+		// diagnostics remain after giving gopls a chance to do something
+		// (there is not yet a better way to decide gopls isn't going
+		// to do anything)
+		time.Sleep(time.Second)
+		env.Await(DiagnosticAt("a_test.go", 5, 3))
 	})
 }
 
@@ -293,8 +343,10 @@ func main() {}
 			// package renaming was fully processed. Therefore, in order for this
 			// test to actually exercise the bug, we must wait until that work has
 			// completed.
-			NoDiagnostics("a.go"),
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
+			OnceMet(
+				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
+				NoDiagnostics("a.go"),
+			),
 		)
 	})
 }
@@ -473,7 +525,13 @@ func f() {
 `
 	runner.Run(t, noModule, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")
-		env.Await(NoDiagnostics("a.go"), EmptyShowMessage(""))
+		env.Await(
+			OnceMet(
+				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1),
+				NoDiagnostics("a.go"),
+			),
+			EmptyShowMessage(""),
+		)
 		// introduce an error, expect no Show Message
 		env.RegexpReplace("a.go", "func", "fun")
 		env.Await(env.DiagnosticAtRegexp("a.go", "fun"), EmptyShowMessage(""))
@@ -514,8 +572,293 @@ func main() {
 		}
 		badFile := fmt.Sprintf("%s/found packages main (main.go) and x (x.go) in %s/src/x", dir, env.Sandbox.GOPATH())
 		env.Await(
-			EmptyDiagnostics("x/main.go"),
+			OnceMet(
+				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
+				EmptyDiagnostics("x/main.go"),
+			),
 			NoDiagnostics(badFile),
 		)
 	}, InGOPATH())
+}
+
+const ardanLabsProxy = `
+-- github.com/ardanlabs/conf@v1.2.3/go.mod --
+module github.com/ardanlabs/conf
+
+go 1.12
+-- github.com/ardanlabs/conf@v1.2.3/conf.go --
+package conf
+
+var ErrHelpWanted error
+`
+
+// Test for golang/go#38211.
+func Test_Issue38211(t *testing.T) {
+	testenv.NeedsGo1Point(t, 14)
+	const ardanLabs = `
+-- go.mod --
+module mod.com
+
+go 1.14
+-- main.go --
+package main
+
+import "github.com/ardanlabs/conf"
+
+func main() {
+	_ = conf.ErrHelpWanted
+}
+`
+	runner.Run(t, ardanLabs, func(t *testing.T, env *Env) {
+		// Expect a diagnostic with a suggested fix to add
+		// "github.com/ardanlabs/conf" to the go.mod file.
+		env.OpenFile("go.mod")
+		env.OpenFile("main.go")
+		metBy := env.Await(
+			env.DiagnosticAtRegexp("main.go", `"github.com/ardanlabs/conf"`),
+		)
+		d, ok := metBy[0].(*protocol.PublishDiagnosticsParams)
+		if !ok {
+			t.Fatalf("unexpected type for metBy (%T)", metBy)
+		}
+		env.ApplyQuickFixes("main.go", d.Diagnostics)
+		env.SaveBuffer("go.mod")
+		env.Await(
+			EmptyDiagnostics("main.go"),
+		)
+		// Comment out the line that depends on conf and expect a
+		// diagnostic and a fix to remove the import.
+		env.RegexpReplace("main.go", "_ = conf.ErrHelpWanted", "//_ = conf.ErrHelpWanted")
+		env.Await(
+			env.DiagnosticAtRegexp("main.go", `"github.com/ardanlabs/conf"`),
+		)
+		env.SaveBuffer("main.go")
+		// Expect a diagnostic and fix to remove the dependency in the go.mod.
+		metBy = env.Await(
+			EmptyDiagnostics("main.go"),
+			env.DiagnosticAtRegexp("go.mod", "require github.com/ardanlabs/conf"),
+		)
+		d, ok = metBy[1].(*protocol.PublishDiagnosticsParams)
+		if !ok {
+			t.Fatalf("unexpected type for metBy (%T)", metBy)
+		}
+		env.ApplyQuickFixes("go.mod", d.Diagnostics)
+		env.SaveBuffer("go.mod")
+		env.Await(
+			EmptyDiagnostics("go.mod"),
+		)
+		// Uncomment the lines and expect a new diagnostic for the import.
+		env.RegexpReplace("main.go", "//_ = conf.ErrHelpWanted", "_ = conf.ErrHelpWanted")
+		env.SaveBuffer("main.go")
+		env.Await(
+			env.DiagnosticAtRegexp("main.go", `"github.com/ardanlabs/conf"`),
+		)
+	}, WithProxy(ardanLabsProxy))
+}
+
+// Test for golang/go#38207.
+func TestNewModule_Issue38207(t *testing.T) {
+	testenv.NeedsGo1Point(t, 14)
+	const emptyFile = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- main.go --
+`
+	runner.Run(t, emptyFile, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.OpenFile("go.mod")
+		env.EditBuffer("main.go", fake.NewEdit(0, 0, 0, 0, `package main
+
+import "github.com/ardanlabs/conf"
+
+func main() {
+	_ = conf.ErrHelpWanted
+}
+`))
+		env.SaveBuffer("main.go")
+		metBy := env.Await(
+			env.DiagnosticAtRegexp("main.go", `"github.com/ardanlabs/conf"`),
+		)
+		d, ok := metBy[0].(*protocol.PublishDiagnosticsParams)
+		if !ok {
+			t.Fatalf("unexpected type for diagnostics (%T)", d)
+		}
+		env.ApplyQuickFixes("main.go", d.Diagnostics)
+		env.Await(
+			EmptyDiagnostics("main.go"),
+		)
+	}, WithProxy(ardanLabsProxy))
+}
+
+// Test for golang/go#36960.
+func TestNewFileBadImports_Issue36960(t *testing.T) {
+	testenv.NeedsGo1Point(t, 14)
+	const simplePackage = `
+-- go.mod --
+module mod.com
+
+go 1.14
+-- a/a1.go --
+package a
+
+import "fmt"
+
+func _() {
+	fmt.Println("hi")
+}
+`
+	runner.Run(t, simplePackage, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a1.go")
+		env.CreateBuffer("a/a2.go", ``)
+		if err := env.Editor.SaveBufferWithoutActions(env.Ctx, "a/a2.go"); err != nil {
+			t.Fatal(err)
+		}
+		env.Await(
+			OnceMet(
+				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidSave), 1),
+				NoDiagnostics("a/a1.go"),
+			),
+		)
+		env.EditBuffer("a/a2.go", fake.NewEdit(0, 0, 0, 0, `package a`))
+		env.Await(
+			OnceMet(
+				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
+				NoDiagnostics("a/a1.go"),
+			),
+		)
+	})
+}
+
+// This test tries to replicate the workflow of a user creating a new x test.
+// It also tests golang/go#39315.
+func TestManuallyCreatingXTest(t *testing.T) {
+	// Only for 1.15 because of golang/go#37971.
+	testenv.NeedsGo1Point(t, 15)
+
+	// Create a package that already has a test variant (in-package test).
+	const testVariant = `
+-- go.mod --
+module mod.com
+
+go 1.15
+-- hello/hello.go --
+package hello
+
+func Hello() {
+	var x int
+}
+-- hello/hello_test.go --
+package hello
+
+import "testing"
+
+func TestHello(t *testing.T) {
+	var x int
+	Hello()
+}
+`
+	runner.Run(t, testVariant, func(t *testing.T, env *Env) {
+		// Open the file, triggering the workspace load.
+		// There are errors in the code to ensure all is working as expected.
+		env.OpenFile("hello/hello.go")
+		env.Await(
+			env.DiagnosticAtRegexp("hello/hello.go", "x"),
+			env.DiagnosticAtRegexp("hello/hello_test.go", "x"),
+		)
+
+		// Create an empty file with the intention of making it an x test.
+		// This resembles a typical flow in an editor like VS Code, in which
+		// a user would create an empty file and add content, saving
+		// intermittently.
+		// TODO(rstambler): There might be more edge cases here, as file
+		// content can be added incrementally.
+		env.CreateBuffer("hello/hello_x_test.go", ``)
+
+		// Save the empty file (no actions since formatting will fail).
+		env.Editor.SaveBufferWithoutActions(env.Ctx, "hello/hello_x_test.go")
+
+		// Add the content. The missing import is for the package under test.
+		env.EditBuffer("hello/hello_x_test.go", fake.NewEdit(0, 0, 0, 0, `package hello_test
+
+import (
+	"testing"
+)
+
+func TestHello(t *testing.T) {
+	hello.Hello()
+}
+`))
+		// Expect a diagnostic for the missing import. Save, which should
+		// trigger import organization. The diagnostic should clear.
+		env.Await(
+			env.DiagnosticAtRegexp("hello/hello_x_test.go", "hello.Hello"),
+		)
+		env.SaveBuffer("hello/hello_x_test.go")
+		env.Await(
+			EmptyDiagnostics("hello/hello_x_test.go"),
+		)
+	})
+}
+
+func TestIgnoredFiles(t *testing.T) {
+	const ws = `
+-- go.mod --
+module mod.com
+
+go 1.15
+-- _foo/x.go --
+package x
+
+var _ = foo.Bar
+`
+	runner.Run(t, ws, func(t *testing.T, env *Env) {
+		env.OpenFile("_foo/x.go")
+		env.Await(
+			OnceMet(
+				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1),
+				NoDiagnostics("_foo/x.go"),
+			))
+	})
+}
+
+// Partially reproduces golang/go#38977, moving a file between packages.
+// It also gets hit by some go command bug fixed in 1.15, but we don't
+// care about that so much here.
+func TestDeletePackage(t *testing.T) {
+	const ws = `
+-- go.mod --
+module mod.com
+
+go 1.15
+-- a/a.go --
+package a
+
+const A = 1
+
+-- b/b.go --
+package b
+
+import "mod.com/a"
+
+const B = a.A
+
+-- c/c.go --
+package c
+
+import "mod.com/a"
+
+const C = a.A
+`
+	runner.Run(t, ws, func(t *testing.T, env *Env) {
+		env.OpenFile("b/b.go")
+		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1))
+		// Delete c/c.go, the only file in package c.
+		env.RemoveWorkspaceFile("c/c.go")
+
+		// We should still get diagnostics for files that exist.
+		env.RegexpReplace("b/b.go", `a.A`, "a.Nonexistant")
+		env.Await(env.DiagnosticAtRegexp("b/b.go", `Nonexistant`))
+	})
 }

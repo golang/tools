@@ -17,32 +17,33 @@ import (
 )
 
 func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[source.FileIdentity][]*source.Diagnostic, map[string]*modfile.Require, error) {
-	// TODO: We will want to support diagnostics for go.mod files even when the -modfile flag is turned off.
-	realURI, tempURI := snapshot.View().ModFiles()
-
-	// Check the case when the tempModfile flag is turned off.
-	if realURI == "" || tempURI == "" {
+	uri := snapshot.View().ModFile()
+	if uri == "" {
 		return nil, nil, nil
 	}
-	ctx, done := event.Start(ctx, "mod.Diagnostics", tag.URI.Of(realURI))
+
+	ctx, done := event.Start(ctx, "mod.Diagnostics", tag.URI.Of(uri))
 	defer done()
 
-	realfh, err := snapshot.GetFile(realURI)
+	fh, err := snapshot.GetFile(ctx, uri)
 	if err != nil {
 		return nil, nil, err
 	}
-	mth, err := snapshot.ModTidyHandle(ctx, realfh)
+	mth, err := snapshot.ModTidyHandle(ctx)
+	if err == source.ErrTmpModfileUnsupported {
+		return nil, nil, nil
+	}
 	if err != nil {
 		return nil, nil, err
 	}
-	_, _, missingDeps, parseErrors, err := mth.Tidy(ctx)
+	missingDeps, diagnostics, err := mth.Tidy(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	reports := map[source.FileIdentity][]*source.Diagnostic{
-		realfh.Identity(): {},
+		fh.Identity(): {},
 	}
-	for _, e := range parseErrors {
+	for _, e := range diagnostics {
 		diag := &source.Diagnostic{
 			Message: e.Message,
 			Range:   e.Range,
@@ -53,22 +54,25 @@ func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[source.File
 		} else {
 			diag.Severity = protocol.SeverityWarning
 		}
-		reports[realfh.Identity()] = append(reports[realfh.Identity()], diag)
+		reports[fh.Identity()] = append(reports[fh.Identity()], diag)
 	}
 	return reports, missingDeps, nil
 }
 
-func SuggestedFixes(ctx context.Context, snapshot source.Snapshot, realfh source.FileHandle, diags []protocol.Diagnostic) ([]protocol.CodeAction, error) {
-	mth, err := snapshot.ModTidyHandle(ctx, realfh)
+func SuggestedFixes(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, diags []protocol.Diagnostic) ([]protocol.CodeAction, error) {
+	mth, err := snapshot.ModTidyHandle(ctx)
+	if err == source.ErrTmpModfileUnsupported {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	_, _, _, parseErrors, err := mth.Tidy(ctx)
+	_, diagnostics, err := mth.Tidy(ctx)
 	if err != nil {
 		return nil, err
 	}
 	errorsMap := make(map[string][]source.Error)
-	for _, e := range parseErrors {
+	for _, e := range diagnostics {
 		if errorsMap[e.Message] == nil {
 			errorsMap[e.Message] = []source.Error{}
 		}
@@ -88,15 +92,15 @@ func SuggestedFixes(ctx context.Context, snapshot source.Snapshot, realfh source
 					Edit:        protocol.WorkspaceEdit{},
 				}
 				for uri, edits := range fix.Edits {
-					fh, err := snapshot.GetFile(uri)
+					fh, err := snapshot.GetFile(ctx, uri)
 					if err != nil {
 						return nil, err
 					}
 					action.Edit.DocumentChanges = append(action.Edit.DocumentChanges, protocol.TextDocumentEdit{
 						TextDocument: protocol.VersionedTextDocumentIdentifier{
-							Version: fh.Identity().Version,
+							Version: fh.Version(),
 							TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-								URI: protocol.URIFromSpanURI(fh.Identity().URI),
+								URI: protocol.URIFromSpanURI(fh.URI()),
 							},
 						},
 						Edits: edits,
@@ -110,62 +114,70 @@ func SuggestedFixes(ctx context.Context, snapshot source.Snapshot, realfh source
 }
 
 func SuggestedGoFixes(ctx context.Context, snapshot source.Snapshot) (map[string]protocol.TextDocumentEdit, error) {
-	// TODO(rstambler): Support diagnostics for go.mod files even when the
-	// -modfile flag is turned off.
-	realURI, tempURI := snapshot.View().ModFiles()
-	if realURI == "" || tempURI == "" {
+	uri := snapshot.View().ModFile()
+	if uri == "" {
 		return nil, nil
 	}
-
-	ctx, done := event.Start(ctx, "mod.SuggestedGoFixes", tag.URI.Of(realURI))
+	ctx, done := event.Start(ctx, "mod.SuggestedGoFixes", tag.URI.Of(uri))
 	defer done()
 
-	realfh, err := snapshot.GetFile(realURI)
+	fh, err := snapshot.GetFile(ctx, uri)
 	if err != nil {
 		return nil, err
 	}
-	mth, err := snapshot.ModTidyHandle(ctx, realfh)
+	mth, err := snapshot.ModTidyHandle(ctx)
+	if err == source.ErrTmpModfileUnsupported {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	realFile, realMapper, missingDeps, _, err := mth.Tidy(ctx)
+	missingDeps, _, err := mth.Tidy(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if len(missingDeps) == 0 {
 		return nil, nil
 	}
+	pmh, err := snapshot.ParseModHandle(ctx, fh)
+	if err != nil {
+		return nil, err
+	}
+	file, m, _, err := pmh.Parse(ctx)
+	if err != nil {
+		return nil, err
+	}
 	// Get the contents of the go.mod file before we make any changes.
-	oldContents, _, err := realfh.Read(ctx)
+	oldContents, err := fh.Read()
 	if err != nil {
 		return nil, err
 	}
 	textDocumentEdits := make(map[string]protocol.TextDocumentEdit)
 	for dep, req := range missingDeps {
 		// Calculate the quick fix edits that need to be made to the go.mod file.
-		if err := realFile.AddRequire(req.Mod.Path, req.Mod.Version); err != nil {
+		if err := file.AddRequire(req.Mod.Path, req.Mod.Version); err != nil {
 			return nil, err
 		}
-		realFile.Cleanup()
-		newContents, err := realFile.Format()
+		file.Cleanup()
+		newContents, err := file.Format()
 		if err != nil {
 			return nil, err
 		}
 		// Reset the *modfile.File back to before we added the dependency.
-		if err := realFile.DropRequire(req.Mod.Path); err != nil {
+		if err := file.DropRequire(req.Mod.Path); err != nil {
 			return nil, err
 		}
 		// Calculate the edits to be made due to the change.
-		diff := snapshot.View().Options().ComputeEdits(realfh.Identity().URI, string(oldContents), string(newContents))
-		edits, err := source.ToProtocolEdits(realMapper, diff)
+		diff := snapshot.View().Options().ComputeEdits(fh.URI(), string(oldContents), string(newContents))
+		edits, err := source.ToProtocolEdits(m, diff)
 		if err != nil {
 			return nil, err
 		}
 		textDocumentEdits[dep] = protocol.TextDocumentEdit{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
-				Version: realfh.Identity().Version,
+				Version: fh.Version(),
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-					URI: protocol.URIFromSpanURI(realfh.Identity().URI),
+					URI: protocol.URIFromSpanURI(fh.URI()),
 				},
 			},
 			Edits: edits,

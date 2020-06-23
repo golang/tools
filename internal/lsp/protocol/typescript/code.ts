@@ -196,7 +196,8 @@ function genTypes(node: ts.Node) {
   if (ts.isExpressionStatement(node) || ts.isFunctionDeclaration(node) ||
     ts.isImportDeclaration(node) || ts.isVariableStatement(node) ||
     ts.isExportDeclaration(node) || ts.isEmptyStatement(node) ||
-    node.kind == ts.SyntaxKind.EndOfFileToken) {
+    ts.isExportAssignment(node) || ts.isImportEqualsDeclaration(node) ||
+    ts.isBlock(node) || node.kind == ts.SyntaxKind.EndOfFileToken) {
     return;
   }
   if (ts.isInterfaceDeclaration(node)) {
@@ -214,7 +215,7 @@ function genTypes(node: ts.Node) {
         // and InitializeResult: [custom: string]: any;]
         return
       } else
-        throw new Error(`unexpected ${strKind(t)}`)
+        throw new Error(`217 unexpected ${strKind(t)}`)
     };
     v.members.forEach(f);
     if (mems.length == 0 && !v.heritageClauses &&
@@ -334,7 +335,7 @@ function genTypes(node: ts.Node) {
       throw new Error(`Class dup ${loc(c.me)} and ${loc(data.get(c.name).me)}`);
     data.set(c.name, c);
   } else {
-    throw new Error(`unexpected ${strKind(node)} ${loc(node)} `)
+    throw new Error(`338 unexpected ${strKind(node)} ${loc(node)} `)
   }
 }
 
@@ -347,8 +348,6 @@ function dataMerge(a: Data, b: Data): Data {
   }
   const ax = `(${a.statements.length},${a.properties.length})`
   const bx = `(${b.statements.length},${b.properties.length})`
-  // console.log(`397
-  // ${a.name}${ax}${bx}\n${a.me.getText()}\n${b.me.getText()}\n`)
   switch (a.name) {
     case 'InitializeError':
     case 'MessageType':
@@ -358,13 +357,14 @@ function dataMerge(a: Data, b: Data): Data {
       // want the Module
       return a.statements.length > 0 ? a : b;
     case 'CancellationToken':
+    case 'CancellationStrategy':
       // want the Interface
       return a.properties.length > 0 ? a : b;
     case 'TextDocumentContentChangeEvent':  // almost the same
       return a;
   }
   console.log(
-    `${strKind(a.me)} ${strKind(b.me)} ${a.name} ${loc(a.me)} ${loc(b.me)}`)
+    `367 ${strKind(a.me)} ${strKind(b.me)} ${a.name} ${loc(a.me)} ${loc(b.me)}`)
   throw new Error(`Fix dataMerge for ${a.name}`)
 }
 
@@ -676,6 +676,7 @@ function goUnionType(n: ts.UnionTypeNode, nm: string): string {
       if (a == 'BooleanKeyword') {  // usually want bool
         if (nm == 'codeActionProvider') return `interface{} ${help}`;
         if (nm == 'renameProvider') return `interface{} ${help}`;
+        if (nm == 'save') return `${goType(n.types[1], '680')} ${help}`;
         return `${goType(n.types[0], 'b')} ${help}`
       }
       if (b == 'ArrayType') return `${goType(n.types[1], 'c')} ${help}`;
@@ -687,7 +688,7 @@ function goUnionType(n: ts.UnionTypeNode, nm: string): string {
       if (a == 'TypeLiteral' && nm == 'TextDocumentContentChangeEvent') {
         return `${goType(n.types[0], nm)}`
       }
-      throw new Error(`724 ${a} ${b} ${n.getText()} ${loc(n)}`);
+      throw new Error(`691 ${a} ${b} ${n.getText()} ${loc(n)}`);
     case 3:
       const aa = strKind(n.types[0])
       const bb = strKind(n.types[1])
@@ -726,7 +727,7 @@ function goUnionType(n: ts.UnionTypeNode, nm: string): string {
   // Result will be interface{} with a comment
   let isLiteral = true;
   let literal = 'string';
-  let res = `interface{ } /* `
+  let res = `interface{} /* `
   n.types.forEach((v: ts.TypeNode, i: number) => {
     // might get an interface inside:
     //  (Command | CodeAction)[] | null
@@ -908,7 +909,7 @@ let server: side = {
 
 // commonly used output
 const notNil = `if len(r.Params()) > 0 {
-  return reply(ctx, nil, fmt.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
+  return true, reply(ctx, nil, fmt.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
 }`;
 
 // Go code for notifications. Side is client or server, m is the request
@@ -924,12 +925,13 @@ function goNot(side: side, m: string) {
   if (a != '' && a != 'void') {
     case1 = `var params ${a}
     if err := json.Unmarshal(r.Params(), &params); err != nil {
-      return sendParseError(ctx, reply, err)
+      return true, sendParseError(ctx, reply, err)
     }
     err:= ${side.name}.${nm}(ctx, &params)
-    return reply(ctx, nil, err)`
+    return true, reply(ctx, nil, err)`
   } else {
-    case1 = `return ${side.name}.${nm}(ctx)`;
+    case1 = `err := ${side.name}.${nm}(ctx)
+    return true, reply(ctx, nil, err)`;
   }
   side.cases.push(`${caseHdr}\n${case1}`);
 
@@ -959,7 +961,7 @@ function goReq(side: side, m: string) {
     if (extraTypes.has('Param' + nm)) a = 'Param' + nm
     case1 = `var params ${a}
     if err := json.Unmarshal(r.Params(), &params); err != nil {
-      return sendParseError(ctx, reply, err)
+      return true, sendParseError(ctx, reply, err)
     }`;
   }
   const arg2 = a == '' ? '' : ', &params';
@@ -968,10 +970,10 @@ function goReq(side: side, m: string) {
   }`;
   if (b != '' && b != 'void') {
     case2 = `resp, err := ${side.name}.${nm}(ctx${arg2})
-    return reply(ctx, resp, err)`;
+    return true, reply(ctx, resp, err)`;
   } else {  // response is nil
     case2 = `err := ${side.name}.${nm}(ctx${arg2})
-    return reply(ctx, nil, err)`
+    return true, reply(ctx, nil, err)`
   }
 
   side.cases.push(`${caseHdr}\n${case1}\n${case2}`);
@@ -1074,30 +1076,20 @@ function output(side: side) {
           "fmt"
 
           "golang.org/x/tools/internal/jsonrpc2"
-          "golang.org/x/tools/internal/xcontext"
         )
         `);
   const a = side.name[0].toUpperCase() + side.name.substring(1)
   f(`type ${a} interface {`);
   side.methods.forEach((v) => {f(v)});
   f('}\n');
-  f(`func ${a}Handler(${side.name} ${a}, handler jsonrpc2.Handler) jsonrpc2.Handler {
-        return func(ctx context.Context, reply jsonrpc2.Replier, r jsonrpc2.Request) error {
-            if ctx.Err() != nil {
-              ctx := xcontext.Detach(ctx)
-              return reply(ctx, nil, RequestCancelledError)
-            }
-            switch r.Method() {`);
+  f(`func ${side.name}Dispatch(ctx context.Context, ${side.name} ${a}, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
+          switch r.Method() {`);
   side.cases.forEach((v) => {f(v)});
   f(`
-          }
+        default:
+          return false, nil
         }
       }`);
-  f(`
-        type ${side.name}Dispatcher struct {
-          *jsonrpc2.Conn
-        }
-        `);
   side.calls.forEach((v) => {f(v)});
 }
 
@@ -1114,16 +1106,6 @@ function nonstandardRequests() {
       return result, nil
     }
   `)
-  client.cases.push(`default:
-    return handler(ctx, reply, r)`)
-  server.cases.push(`default:
-  var params interface{}
-  if err := json.Unmarshal(r.Params(), &params); err != nil {
-    return sendParseError(ctx, reply, err)
-  }
-  resp, err := server.NonstandardRequest(ctx, r.Method(), params)
-  return reply(ctx, resp, err)
-`)
 }
 
 // ----- remember it's a scripting language

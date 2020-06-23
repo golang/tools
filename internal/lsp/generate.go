@@ -9,64 +9,66 @@ import (
 	"io"
 
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/xerrors"
+	"golang.org/x/tools/internal/span"
+	errors "golang.org/x/xerrors"
 )
 
 // GenerateWorkDoneTitle is the title used in progress reporting for go
 // generate commands. It is exported for testing purposes.
 const GenerateWorkDoneTitle = "generate"
 
-func (s *Server) runGenerate(ctx context.Context, dir string, recursive bool) {
+func (s *Server) runGenerate(ctx context.Context, dir string, recursive bool) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	er := &eventWriter{ctx: ctx}
-	wc := s.newProgressWriter(ctx, cancel)
+	er := &eventWriter{ctx: ctx, operation: "generate"}
+	wc := s.newProgressWriter(ctx, GenerateWorkDoneTitle, "running go generate", cancel)
 	defer wc.Close()
 	args := []string{"-x"}
 	if recursive {
 		args = append(args, "./...")
 	}
-	inv := &gocommand.Invocation{
-		Verb:       "generate",
-		Args:       args,
-		Env:        s.session.Options().Env,
-		WorkingDir: dir,
-	}
+
 	stderr := io.MultiWriter(er, wc)
-	err := inv.RunPiped(ctx, er, stderr)
+	uri := span.URIFromPath(dir)
+	view, err := s.session.ViewOf(uri)
 	if err != nil {
-		event.Error(ctx, "generate: command error", err, tag.Directory.Of(dir))
-		if !xerrors.Is(err, context.Canceled) {
-			s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
-				Type:    protocol.Error,
-				Message: "go generate exited with an error, check gopls logs",
-			})
-		}
+		return err
 	}
+	snapshot := view.Snapshot()
+	if err := snapshot.RunGoCommandPiped(ctx, "generate", args, er, stderr); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		event.Error(ctx, "generate: command error", err, tag.Directory.Of(dir))
+		return s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+			Type:    protocol.Error,
+			Message: "go generate exited with an error, check gopls logs",
+		})
+	}
+	return nil
 }
 
 // eventWriter writes every incoming []byte to
 // event.Print with the operation=generate tag
 // to distinguish its logs from others.
 type eventWriter struct {
-	ctx context.Context
+	ctx       context.Context
+	operation string
 }
 
 func (ew *eventWriter) Write(p []byte) (n int, err error) {
-	event.Log(ew.ctx, string(p), tag.Operation.Of("generate"))
+	event.Log(ew.ctx, string(p), tag.Operation.Of(ew.operation))
 	return len(p), nil
 }
 
 // newProgressWriter returns an io.WriterCloser that can be used
-// to report progress on the "go generate" command based on the
-// client capabilities.
-func (s *Server) newProgressWriter(ctx context.Context, cancel func()) io.WriteCloser {
+// to report progress on a command based on the client capabilities.
+func (s *Server) newProgressWriter(ctx context.Context, title, message string, cancel func()) io.WriteCloser {
 	if s.supportsWorkDoneProgress {
-		wd := s.StartWork(ctx, GenerateWorkDoneTitle, "running go generate", cancel)
+		wd := s.StartWork(ctx, title, message, cancel)
 		return &workDoneWriter{ctx, wd}
 	}
 	mw := &messageWriter{ctx, cancel, s.client}

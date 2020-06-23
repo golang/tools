@@ -64,7 +64,7 @@ type Application struct {
 	Verbose bool `flag:"v" help:"verbose output"`
 
 	// Control ocagent export of telemetry
-	OCAgent string `flag:"ocagent" help:"the address of the ocagent, or off"`
+	OCAgent string `flag:"ocagent" help:"the address of the ocagent (e.g. http://localhost:55678), or off"`
 
 	// PrepareOptions is called to update the options when a new view is built.
 	// It is primarily to allow the behavior of gopls to be modified by hooks.
@@ -224,17 +224,26 @@ func (app *Application) connect(ctx context.Context) (*connection, error) {
 	}
 }
 
+// CloseTestConnections terminates shared connections used in command tests. It
+// should only be called from tests.
+func CloseTestConnections(ctx context.Context) {
+	for _, c := range internalConnections {
+		c.Shutdown(ctx)
+		c.Exit(ctx)
+	}
+}
+
 func (app *Application) connectRemote(ctx context.Context, remote string) (*connection, error) {
 	connection := newConnection(app)
 	conn, err := net.Dial("tcp", remote)
 	if err != nil {
 		return nil, err
 	}
-	stream := jsonrpc2.NewHeaderStream(conn, conn)
+	stream := jsonrpc2.NewHeaderStream(conn)
 	cc := jsonrpc2.NewConn(stream)
 	connection.Server = protocol.ServerDispatcher(cc)
 	ctx = protocol.WithClient(ctx, connection.Client)
-	go cc.Run(ctx,
+	cc.Go(ctx,
 		protocol.Handlers(
 			protocol.ClientHandler(connection.Client,
 				jsonrpc2.MethodNotFound)))
@@ -495,4 +504,9 @@ func (c *connection) terminate(ctx context.Context) {
 	c.Shutdown(ctx)
 	//TODO: right now calling exit terminates the process, we should rethink that
 	//server.Exit(ctx)
+}
+
+// Implement io.Closer.
+func (c *cmdClient) Close() error {
+	return nil
 }

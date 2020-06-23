@@ -80,7 +80,7 @@ func getParsedFile(ctx context.Context, snapshot Snapshot, fh FileHandle, select
 	if err != nil {
 		return nil, nil, err
 	}
-	pgh, err := pkg.File(fh.Identity().URI)
+	pgh, err := pkg.File(fh.URI())
 	return pkg, pgh, err
 }
 
@@ -142,11 +142,11 @@ func SpecificPackageHandle(desiredID string) PackagePolicy {
 }
 
 func IsGenerated(ctx context.Context, snapshot Snapshot, uri span.URI) bool {
-	fh, err := snapshot.GetFile(uri)
+	fh, err := snapshot.GetFile(ctx, uri)
 	if err != nil {
 		return false
 	}
-	ph := snapshot.View().Session().Cache().ParseGoHandle(fh, ParseHeader)
+	ph := snapshot.View().Session().Cache().ParseGoHandle(ctx, fh, ParseHeader)
 	parsed, _, _, _, err := ph.Parse(ctx)
 	if err != nil {
 		return false
@@ -536,17 +536,7 @@ func findPosInPackage(v View, searchpkg Package, pos token.Pos) (*ast.File, Pack
 	}
 	uri := span.URIFromPath(tok.Name())
 
-	var (
-		ph  ParseGoHandle
-		pkg Package
-		err error
-	)
-	// Special case for ignored files.
-	if v.Ignore(uri) {
-		ph, err = findIgnoredFile(v, uri)
-	} else {
-		ph, pkg, err = FindFileInPackage(searchpkg, uri)
-	}
+	ph, pkg, err := FindFileInPackage(searchpkg, uri)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -555,22 +545,13 @@ func findPosInPackage(v View, searchpkg Package, pos token.Pos) (*ast.File, Pack
 		return nil, nil, err
 	}
 	if !(file.Pos() <= pos && pos <= file.End()) {
-		return nil, nil, fmt.Errorf("pos %v, apparently in file %q, is not between %v and %v", pos, ph.File().Identity().URI, file.Pos(), file.End())
+		return nil, nil, fmt.Errorf("pos %v, apparently in file %q, is not between %v and %v", pos, ph.File().URI(), file.Pos(), file.End())
 	}
 	return file, pkg, nil
 }
 
 func findMapperInPackage(v View, searchpkg Package, uri span.URI) (*protocol.ColumnMapper, error) {
-	var (
-		ph  ParseGoHandle
-		err error
-	)
-	// Special case for ignored files.
-	if v.Ignore(uri) {
-		ph, err = findIgnoredFile(v, uri)
-	} else {
-		ph, _, err = FindFileInPackage(searchpkg, uri)
-	}
+	ph, _, err := FindFileInPackage(searchpkg, uri)
 	if err != nil {
 		return nil, err
 	}
@@ -579,14 +560,6 @@ func findMapperInPackage(v View, searchpkg Package, uri span.URI) (*protocol.Col
 		return nil, err
 	}
 	return m, nil
-}
-
-func findIgnoredFile(v View, uri span.URI) (ParseGoHandle, error) {
-	fh, err := v.Snapshot().GetFile(uri)
-	if err != nil {
-		return nil, err
-	}
-	return v.Session().Cache().ParseGoHandle(fh, ParseFull), nil
 }
 
 // FindFileInPackage finds uri in pkg or its dependencies.

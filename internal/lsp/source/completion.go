@@ -78,6 +78,10 @@ type CompletionItem struct {
 
 	// Documentation is the documentation for the completion item.
 	Documentation string
+
+	// obj is the object from which this candidate was derived, if any.
+	// obj is for internal use only.
+	obj types.Object
 }
 
 // Snippet is a convenience returns the snippet if available, otherwise
@@ -487,7 +491,7 @@ func Completion(ctx context.Context, snapshot Snapshot, fh FileHandle, protoPos 
 		pkg:                       pkg,
 		snapshot:                  snapshot,
 		qf:                        qualifier(file, pkg.GetTypes(), pkg.GetTypesInfo()),
-		filename:                  fh.Identity().URI.Filename(),
+		filename:                  fh.URI().Filename(),
 		file:                      file,
 		path:                      path,
 		pos:                       pos,
@@ -501,7 +505,7 @@ func Completion(ctx context.Context, snapshot Snapshot, fh FileHandle, protoPos 
 			documentation:     opts.CompletionDocumentation,
 			fullDocumentation: opts.HoverKind == FullDocumentation,
 			placeholders:      opts.Placeholders,
-			literal:           opts.InsertTextFormat == protocol.SnippetTextFormat,
+			literal:           opts.LiteralCompletions && opts.InsertTextFormat == protocol.SnippetTextFormat,
 			budget:            opts.CompletionBudget,
 		},
 		// default to a matcher that always matches
@@ -553,10 +557,6 @@ func Completion(ctx context.Context, snapshot Snapshot, fh FileHandle, protoPos 
 		return c.items, c.getSurrounding(), nil
 	}
 
-	// Statement candidates offer an entire statement in certain
-	// contexts, as opposed to a single object.
-	c.addStatementCandidates()
-
 	if c.emptySwitchStmt() {
 		// Empty switch statements only admit "default" and "case" keywords.
 		c.addKeywordItems(map[string]bool{}, highScore, CASE, DEFAULT)
@@ -570,9 +570,20 @@ func Completion(ctx context.Context, snapshot Snapshot, fh FileHandle, protoPos 
 			if err := c.selector(ctx, sel); err != nil {
 				return nil, nil, err
 			}
-			return c.items, c.getSurrounding(), nil
-		}
-		if err := c.lexical(ctx); err != nil {
+		} else if obj, ok := pkg.GetTypesInfo().Defs[n]; ok {
+			// reject defining identifiers
+
+			if v, ok := obj.(*types.Var); ok && v.IsField() && v.Embedded() {
+				// An anonymous field is also a reference to a type.
+			} else {
+				objStr := ""
+				if obj != nil {
+					qual := types.RelativeTo(pkg.GetTypes())
+					objStr = types.ObjectString(obj, qual)
+				}
+				return nil, nil, ErrIsDefinition{objStr: objStr}
+			}
+		} else if err := c.lexical(ctx); err != nil {
 			return nil, nil, err
 		}
 	// The function name hasn't been typed yet, but the parens are there:
@@ -598,6 +609,12 @@ func Completion(ctx context.Context, snapshot Snapshot, fh FileHandle, protoPos 
 			return nil, nil, err
 		}
 	}
+
+	// Statement candidates offer an entire statement in certain
+	// contexts, as opposed to a single object. Add statement candidates
+	// last because they depend on other candidates having already been
+	// collected.
+	c.addStatementCandidates()
 
 	return c.items, c.getSurrounding(), nil
 }
@@ -714,31 +731,20 @@ func (c *completer) populateCommentCompletions(ctx context.Context, comment *ast
 		// handle const, vars, and types
 		case *ast.GenDecl:
 			for _, spec := range node.Specs {
-				switch spec.(type) {
+				switch spec := spec.(type) {
 				case *ast.ValueSpec:
-					valueSpec, ok := spec.(*ast.ValueSpec)
-					if !ok {
-						continue
-					}
-					for _, name := range valueSpec.Names {
+					for _, name := range spec.Names {
 						if name.String() == "_" || !name.IsExported() {
 							continue
 						}
-
 						obj := c.pkg.GetTypesInfo().ObjectOf(name)
 						c.found(ctx, candidate{obj: obj, score: stdScore})
 					}
 				case *ast.TypeSpec:
-					typeSpec, ok := spec.(*ast.TypeSpec)
-					if !ok {
+					if spec.Name.String() == "_" || !spec.Name.IsExported() {
 						continue
 					}
-
-					if typeSpec.Name.String() == "_" || !typeSpec.Name.IsExported() {
-						continue
-					}
-
-					obj := c.pkg.GetTypesInfo().ObjectOf(typeSpec.Name)
+					obj := c.pkg.GetTypesInfo().ObjectOf(spec.Name)
 					c.found(ctx, candidate{obj: obj, score: stdScore})
 				}
 			}
@@ -832,8 +838,11 @@ func (c *completer) unimportedMembers(ctx context.Context, id *ast.Ident) error 
 			return nil
 		})
 	}
+	sort.Slice(paths, func(i, j int) bool {
+		return relevances[paths[i]] > relevances[paths[j]]
+	})
 
-	for path, relevance := range relevances {
+	for _, path := range paths {
 		pkg := known[path]
 		if pkg.GetTypes().Name() != id.Name {
 			continue
@@ -845,7 +854,7 @@ func (c *completer) unimportedMembers(ctx context.Context, id *ast.Ident) error 
 		if imports.ImportPathToAssumedName(path) != pkg.GetTypes().Name() {
 			imp.name = pkg.GetTypes().Name()
 		}
-		c.packageMembers(ctx, pkg.GetTypes(), stdScore+.1*float64(relevance), imp)
+		c.packageMembers(ctx, pkg.GetTypes(), unimportedScore(relevances[path]), imp)
 		if len(c.items) >= unimportedMemberTarget {
 			return nil
 		}
@@ -865,7 +874,7 @@ func (c *completer) unimportedMembers(ctx context.Context, id *ast.Ident) error 
 		// Continue with untyped proposals.
 		pkg := types.NewPackage(pkgExport.Fix.StmtInfo.ImportPath, pkgExport.Fix.IdentName)
 		for _, export := range pkgExport.Exports {
-			score := stdScore + 0.1*float64(pkgExport.Fix.Relevance)
+			score := unimportedScore(pkgExport.Fix.Relevance)
 			c.found(ctx, candidate{
 				obj:   types.NewVar(0, pkg, export, nil),
 				score: score,
@@ -882,6 +891,12 @@ func (c *completer) unimportedMembers(ctx context.Context, id *ast.Ident) error 
 	return c.snapshot.View().RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
 		return imports.GetPackageExports(ctx, add, id.Name, c.filename, c.pkg.GetTypes().Name(), opts)
 	})
+}
+
+// unimportedScore returns a score for an unimported package that is generally
+// lower than other candidates.
+func unimportedScore(relevance int) float64 {
+	return (stdScore + .1*float64(relevance)) / 2
 }
 
 func (c *completer) packageMembers(ctx context.Context, pkg *types.Package, score float64, imp *importInfo) {
@@ -1090,15 +1105,15 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 	if c.surrounding != nil {
 		prefix = c.surrounding.Prefix()
 	}
-	initialItemCount := len(c.items)
+	count := 0
 
 	known, err := c.snapshot.CachedImportPaths(ctx)
 	if err != nil {
 		return err
 	}
 	var paths []string
-	for path := range known {
-		if !strings.HasPrefix(path, prefix) {
+	for path, pkg := range known {
+		if !strings.HasPrefix(pkg.GetTypes().Name(), prefix) {
 			continue
 		}
 		paths = append(paths, path)
@@ -1111,9 +1126,15 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 			return nil
 		})
 	}
+	sort.Slice(paths, func(i, j int) bool {
+		return relevances[paths[i]] > relevances[paths[j]]
+	})
 
-	for path, relevance := range relevances {
+	for _, path := range paths {
 		pkg := known[path]
+		if _, ok := seen[pkg.GetTypes().Name()]; ok {
+			continue
+		}
 		imp := &importInfo{
 			importPath: path,
 			pkg:        pkg,
@@ -1121,15 +1142,15 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		if imports.ImportPathToAssumedName(path) != pkg.GetTypes().Name() {
 			imp.name = pkg.GetTypes().Name()
 		}
-		score := 0.01 * float64(relevance)
-		c.found(ctx, candidate{
-			obj:   types.NewPkgName(0, nil, pkg.GetTypes().Name(), pkg.GetTypes()),
-			score: score,
-			imp:   imp,
-		})
-		if len(c.items)-initialItemCount >= maxUnimportedPackageNames {
+		if count >= maxUnimportedPackageNames {
 			return nil
 		}
+		c.found(ctx, candidate{
+			obj:   types.NewPkgName(0, nil, pkg.GetTypes().Name(), pkg.GetTypes()),
+			score: unimportedScore(relevances[path]),
+			imp:   imp,
+		})
+		count++
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -1142,13 +1163,14 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		if _, ok := seen[pkg.IdentName]; ok {
 			return
 		}
+		if _, ok := relevances[pkg.StmtInfo.ImportPath]; ok {
+			return
+		}
 
-		if len(c.items)-initialItemCount >= maxUnimportedPackageNames {
+		if count >= maxUnimportedPackageNames {
 			cancel()
 			return
 		}
-		// Rank unimported packages significantly lower than other results.
-		score := 0.01 * float64(pkg.Relevance)
 
 		// Do not add the unimported packages to seen, since we can have
 		// multiple packages of the same name as completion suggestions, since
@@ -1156,12 +1178,13 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		obj := types.NewPkgName(0, nil, pkg.IdentName, types.NewPackage(pkg.StmtInfo.ImportPath, pkg.IdentName))
 		c.found(ctx, candidate{
 			obj:   obj,
-			score: score,
+			score: unimportedScore(pkg.Relevance),
 			imp: &importInfo{
 				importPath: pkg.StmtInfo.ImportPath,
 				name:       pkg.StmtInfo.Name,
 			},
 		})
+		count++
 	}
 	return c.snapshot.View().RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
 		return imports.GetAllCandidates(ctx, add, prefix, c.filename, c.pkg.GetTypes().Name(), opts)
