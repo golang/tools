@@ -141,7 +141,9 @@ gopls flags are:
 // If no arguments are passed it will invoke the server sub command, as a
 // temporary measure for compatibility.
 func (app *Application) Run(ctx context.Context, args ...string) error {
-	ctx = debug.WithInstance(ctx, app.wd, app.OCAgent)
+	if app.Serve.Debug != "" {
+		ctx = debug.WithInstance(ctx, app.wd, app.OCAgent)
+	}
 	app.Serve.app = app
 	if len(args) == 0 {
 		return tool.Run(ctx, &app.Serve, args)
