@@ -74,7 +74,7 @@ func Validate(analyzers []*Analyzer) error {
 				if c != grey {
 					continue
 				}
-				b.WriteRune(' ')
+				b.WriteByte(' ')
 				b.WriteString(a.String())
 			}
 			return errors.New(b.String())
