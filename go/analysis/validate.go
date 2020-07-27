@@ -1,8 +1,10 @@
 package analysis
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"unicode"
 )
 
@@ -66,7 +68,16 @@ func Validate(analyzers []*Analyzer) error {
 			color[a] = black
 		}
 		if color[a] == grey {
-			return fmt.Errorf("cycle involving %s detected", a.Name)
+			var b strings.Builder
+			b.WriteString("cycle detected involving the following analyzers:")
+			for a, c := range color {
+				if c != grey {
+					continue
+				}
+				b.WriteRune(' ')
+				b.WriteString(a.String())
+			}
+			return errors.New(b.String())
 		}
 
 		return nil
