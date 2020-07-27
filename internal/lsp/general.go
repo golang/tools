@@ -7,11 +7,11 @@ package lsp
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path"
+	"sync"
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -41,7 +41,7 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 	source.SetOptions(&options, params.InitializationOptions)
 	options.ForClientCapabilities(params.Capabilities)
 
-	if !params.RootURI.SpanURI().IsFile() {
+	if params.RootURI != "" && !params.RootURI.SpanURI().IsFile() {
 		return nil, fmt.Errorf("unsupported URI scheme: %v (gopls only supports file URIs)", params.RootURI)
 	}
 	s.pendingFolders = params.WorkspaceFolders
@@ -51,10 +51,6 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 				URI:  string(params.RootURI),
 				Name: path.Base(params.RootURI.SpanURI().Filename()),
 			}}
-		} else {
-			// No folders and no root--we are in single file mode.
-			// TODO: https://golang.org/issue/34160.
-			return nil, errors.New("gopls does not yet support editing a single file. Please open a directory.")
 		}
 	}
 
@@ -152,40 +148,59 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 		)
 	}
 
-	if options.DynamicWatchedFilesSupported {
-		registrations = append(registrations, protocol.Registration{
-			ID:     "workspace/didChangeWatchedFiles",
-			Method: "workspace/didChangeWatchedFiles",
-			RegisterOptions: protocol.DidChangeWatchedFilesRegistrationOptions{
-				Watchers: []protocol.FileSystemWatcher{{
-					GlobPattern: "**/*.go",
-					Kind:        float64(protocol.WatchChange + protocol.WatchDelete + protocol.WatchCreate),
-				}},
-			},
-		})
-	}
-
-	if len(registrations) > 0 {
-		s.client.RegisterCapability(ctx, &protocol.RegistrationParams{
-			Registrations: registrations,
-		})
-	}
-
-	// TODO: this event logging may be unnecessary. The version info is included in the initialize response.
+	// TODO: this event logging may be unnecessary.
+	// The version info is included in the initialize response.
 	buf := &bytes.Buffer{}
 	debug.PrintVersionInfo(ctx, buf, true, debug.PlainText)
 	event.Log(ctx, buf.String())
 
-	s.addFolders(ctx, s.pendingFolders)
+	if err := s.addFolders(ctx, s.pendingFolders); err != nil {
+		return err
+	}
 	s.pendingFolders = nil
 
+	if options.DynamicWatchedFilesSupported {
+		for _, view := range s.session.Views() {
+			dirs, err := view.WorkspaceDirectories(ctx)
+			if err != nil {
+				return err
+			}
+			for _, dir := range dirs {
+				registrations = append(registrations, protocol.Registration{
+					ID:     "workspace/didChangeWatchedFiles",
+					Method: "workspace/didChangeWatchedFiles",
+					RegisterOptions: protocol.DidChangeWatchedFilesRegistrationOptions{
+						Watchers: []protocol.FileSystemWatcher{{
+							GlobPattern: fmt.Sprintf("%s/**/*.{go,mod,sum}", dir),
+							Kind:        float64(protocol.WatchChange + protocol.WatchDelete + protocol.WatchCreate),
+						}},
+					},
+				})
+			}
+		}
+		if len(registrations) > 0 {
+			s.client.RegisterCapability(ctx, &protocol.RegistrationParams{
+				Registrations: registrations,
+			})
+		}
+	}
 	return nil
 }
 
-func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFolder) {
+func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFolder) error {
 	originalViews := len(s.session.Views())
 	viewErrors := make(map[span.URI]error)
 
+	var wg sync.WaitGroup
+	if s.session.Options().VerboseWorkDoneProgress {
+		work := s.StartWork(ctx, DiagnosticWorkTitle(FromInitialWorkspaceLoad), "Calculating diagnostics for initial workspace load...", nil)
+		defer func() {
+			go func() {
+				wg.Wait()
+				work.End(ctx, "Done.")
+			}()
+		}()
+	}
 	for _, folder := range folders {
 		uri := span.URIFromURI(folder.URI)
 		view, snapshot, err := s.addView(ctx, folder.Name, uri)
@@ -196,24 +211,29 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 		// Print each view's environment.
 		buf := &bytes.Buffer{}
 		if err := view.WriteEnv(ctx, buf); err != nil {
-			event.Error(ctx, "failed to write environment", err, tag.Directory.Of(view.Folder()))
+			event.Error(ctx, "failed to write environment", err, tag.Directory.Of(view.Folder().Filename()))
 			continue
 		}
 		event.Log(ctx, buf.String())
 
 		// Diagnose the newly created view.
-		go s.diagnoseDetached(snapshot)
+		wg.Add(1)
+		go func() {
+			s.diagnoseDetached(snapshot)
+			wg.Done()
+		}()
 	}
 	if len(viewErrors) > 0 {
 		errMsg := fmt.Sprintf("Error loading workspace folders (expected %v, got %v)\n", len(folders), len(s.session.Views())-originalViews)
 		for uri, err := range viewErrors {
 			errMsg += fmt.Sprintf("failed to load view for %s: %v\n", uri, err)
 		}
-		s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+		return s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
 			Type:    protocol.Error,
 			Message: errMsg,
 		})
 	}
+	return nil
 }
 
 func (s *Server) fetchConfig(ctx context.Context, name string, folder span.URI, o *source.Options) error {
@@ -233,32 +253,38 @@ func (s *Server) fetchConfig(ctx context.Context, name string, folder span.URI, 
 	}
 	configs, err := s.client.Configuration(ctx, &v)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get workspace configuration from client (%s): %v", folder, err)
 	}
 	for _, config := range configs {
 		results := source.SetOptions(o, config)
 		for _, result := range results {
 			if result.Error != nil {
-				s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+				if err := s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
 					Type:    protocol.Error,
 					Message: result.Error.Error(),
-				})
+				}); err != nil {
+					return err
+				}
 			}
 			switch result.State {
 			case source.OptionUnexpected:
-				s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+				if err := s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
 					Type:    protocol.Error,
 					Message: fmt.Sprintf("unexpected config %s", result.Name),
-				})
+				}); err != nil {
+					return err
+				}
 			case source.OptionDeprecated:
 				msg := fmt.Sprintf("config %s is deprecated", result.Name)
 				if result.Replacement != "" {
 					msg = fmt.Sprintf("%s, use %s instead", msg, result.Replacement)
 				}
-				s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+				if err := s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
 					Type:    protocol.Warning,
 					Message: msg,
-				})
+				}); err != nil {
+					return err
+				}
 			}
 		}
 	}

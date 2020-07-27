@@ -8,6 +8,7 @@ package source
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -18,7 +19,6 @@ import (
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/protocol"
-	errors "golang.org/x/xerrors"
 )
 
 // Format formats a file with a given range.
@@ -43,16 +43,27 @@ func Format(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.T
 	}
 
 	fset := snapshot.View().Session().Cache().FileSet()
-	buf := &bytes.Buffer{}
 
 	// format.Node changes slightly from one release to another, so the version
 	// of Go used to build the LSP server will determine how it formats code.
 	// This should be acceptable for all users, who likely be prompted to rebuild
 	// the LSP server on each Go release.
+	buf := &bytes.Buffer{}
 	if err := format.Node(buf, fset, file); err != nil {
 		return nil, err
 	}
-	return computeTextEdits(ctx, snapshot.View(), pgh.File(), m, buf.String())
+	formatted := buf.String()
+
+	// Apply additional formatting, if any is supported. Currently, the only
+	// supported additional formatter is gofumpt.
+	if format := snapshot.View().Options().Hooks.GofumptFormat; snapshot.View().Options().Gofumpt && format != nil {
+		b, err := format(ctx, buf.Bytes())
+		if err != nil {
+			return nil, err
+		}
+		formatted = string(b)
+	}
+	return computeTextEdits(ctx, snapshot.View(), pgh.File(), m, formatted)
 }
 
 func formatSource(ctx context.Context, fh FileHandle) ([]byte, error) {
@@ -84,7 +95,7 @@ func AllImportsFixes(ctx context.Context, snapshot Snapshot, fh FileHandle) (all
 		allFixEdits, editsPerFix, err = computeImportEdits(ctx, snapshot.View(), pgh, opts)
 		return err
 	}); err != nil {
-		return nil, nil, errors.Errorf("computing fix edits: %v", err)
+		return nil, nil, fmt.Errorf("AllImportsFixes: %v", err)
 	}
 	return allFixEdits, editsPerFix, nil
 }
@@ -140,6 +151,7 @@ func computeOneImportFixEdits(ctx context.Context, view View, ph ParseGoHandle, 
 	}
 
 	options := &imports.Options{
+		LocalPrefix: view.Options().LocalPrefix,
 		// Defaults.
 		AllErrors:  true,
 		Comments:   true,
@@ -202,6 +214,9 @@ func importPrefix(src []byte) string {
 	}
 	if importEnd == 0 {
 		importEnd = pkgEnd
+		if importEnd > len(src) {
+			importEnd-- // pkgEnd is off by 1 because Pos is 1-based
+		}
 	}
 	for _, c := range f.Comments {
 		if int(c.End()) > importEnd {

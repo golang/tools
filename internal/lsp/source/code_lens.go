@@ -14,31 +14,25 @@ import (
 	"strings"
 
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/span"
 )
 
-type lensFunc func(context.Context, Snapshot, FileHandle, *ast.File, *protocol.ColumnMapper) ([]protocol.CodeLens, error)
+type lensFunc func(context.Context, Snapshot, FileHandle) ([]protocol.CodeLens, error)
 
 var lensFuncs = map[string]lensFunc{
-	CommandGenerate:      goGenerateCodeLens,
-	CommandTest:          runTestCodeLens,
-	CommandRegenerateCgo: regenerateCgoLens,
+	CommandGenerate.Name:      goGenerateCodeLens,
+	CommandTest.Name:          runTestCodeLens,
+	CommandRegenerateCgo.Name: regenerateCgoLens,
 }
 
 // CodeLens computes code lens for Go source code.
 func CodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.CodeLens, error) {
-	pgh := snapshot.View().Session().Cache().ParseGoHandle(ctx, fh, ParseFull)
-	f, _, m, _, err := pgh.Parse(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var result []protocol.CodeLens
 	for lens, lf := range lensFuncs {
 		if !snapshot.View().Options().EnabledCodeLens[lens] {
 			continue
 		}
-		added, err := lf(ctx, snapshot, fh, f, m)
-
+		added, err := lf(ctx, snapshot, fh)
 		if err != nil {
 			return nil, err
 		}
@@ -47,52 +41,72 @@ func CodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol
 	return result, nil
 }
 
-func runTestCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle, f *ast.File, m *protocol.ColumnMapper) ([]protocol.CodeLens, error) {
-	codeLens := make([]protocol.CodeLens, 0)
+var (
+	testRe      = regexp.MustCompile("^Test[^a-z]")
+	benchmarkRe = regexp.MustCompile("^Benchmark[^a-z]")
+)
 
-	pkg, _, err := getParsedFile(ctx, snapshot, fh, WidestPackageHandle)
-	if err != nil {
-		return nil, err
-	}
+func runTestCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.CodeLens, error) {
+	codeLens := make([]protocol.CodeLens, 0)
 
 	if !strings.HasSuffix(fh.URI().Filename(), "_test.go") {
 		return nil, nil
 	}
-
-	for _, d := range f.Decls {
+	pkg, pgh, err := getParsedFile(ctx, snapshot, fh, WidestPackageHandle)
+	if err != nil {
+		return nil, err
+	}
+	file, _, m, _, err := pgh.Cached()
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range file.Decls {
 		fn, ok := d.(*ast.FuncDecl)
 		if !ok {
 			continue
 		}
+		fset := snapshot.View().Session().Cache().FileSet()
+		rng, err := newMappedRange(fset, m, d.Pos(), d.Pos()).Range()
+		if err != nil {
+			return nil, err
+		}
 
-		if isTestFunc(fn, pkg) {
-			fset := snapshot.View().Session().Cache().FileSet()
-			rng, err := newMappedRange(fset, m, d.Pos(), d.Pos()).Range()
+		if matchTestFunc(fn, pkg, testRe, "T") {
+			jsonArgs, err := MarshalArgs(fh.URI(), "-run", fn.Name.Name)
 			if err != nil {
 				return nil, err
 			}
-
-			uri := fh.URI()
 			codeLens = append(codeLens, protocol.CodeLens{
 				Range: rng,
 				Command: protocol.Command{
 					Title:     "run test",
-					Command:   "test",
-					Arguments: []interface{}{fn.Name.Name, uri},
+					Command:   CommandTest.Name,
+					Arguments: jsonArgs,
+				},
+			})
+		}
+
+		if matchTestFunc(fn, pkg, benchmarkRe, "B") {
+			jsonArgs, err := MarshalArgs(fh.URI(), "-bench", fn.Name.Name)
+			if err != nil {
+				return nil, err
+			}
+			codeLens = append(codeLens, protocol.CodeLens{
+				Range: rng,
+				Command: protocol.Command{
+					Title:     "run benchmark",
+					Command:   CommandTest.Name,
+					Arguments: jsonArgs,
 				},
 			})
 		}
 	}
-
 	return codeLens, nil
 }
 
-var testRe = regexp.MustCompile("^Test[^a-z]")
-var benchmarkRe = regexp.MustCompile("^Benchmark[^a-z]")
-
-func isTestFunc(fn *ast.FuncDecl, pkg Package) bool {
-	// Make sure that the function name matches either a test or benchmark function.
-	if !(testRe.MatchString(fn.Name.Name) || benchmarkRe.MatchString(fn.Name.Name)) {
+func matchTestFunc(fn *ast.FuncDecl, pkg Package, nameRe *regexp.Regexp, paramID string) bool {
+	// Make sure that the function name matches a test function.
+	if !nameRe.MatchString(fn.Name.Name) {
 		return false
 	}
 	info := pkg.GetTypesInfo()
@@ -107,14 +121,12 @@ func isTestFunc(fn *ast.FuncDecl, pkg Package) bool {
 	if !ok {
 		return false
 	}
-
 	// Test functions should have only one parameter.
 	if sig.Params().Len() != 1 {
 		return false
 	}
 
-	// Check the type of the only parameter to confirm that it is *testing.T
-	// or *testing.B.
+	// Check the type of the only parameter
 	paramTyp, ok := sig.Params().At(0).Type().(*types.Pointer)
 	if !ok {
 		return false
@@ -127,13 +139,17 @@ func isTestFunc(fn *ast.FuncDecl, pkg Package) bool {
 	if namedObj.Pkg().Path() != "testing" {
 		return false
 	}
-	paramName := namedObj.Id()
-	return paramName == "T" || paramName == "B"
+	return namedObj.Id() == paramID
 }
 
-func goGenerateCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle, f *ast.File, m *protocol.ColumnMapper) ([]protocol.CodeLens, error) {
+func goGenerateCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.CodeLens, error) {
+	pgh := snapshot.View().Session().Cache().ParseGoHandle(ctx, fh, ParseFull)
+	file, _, m, _, err := pgh.Parse(ctx)
+	if err != nil {
+		return nil, err
+	}
 	const ggDirective = "//go:generate"
-	for _, c := range f.Comments {
+	for _, c := range file.Comments {
 		for _, l := range c.List {
 			if !strings.HasPrefix(l.Text, ggDirective) {
 				continue
@@ -143,22 +159,30 @@ func goGenerateCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle, f
 			if err != nil {
 				return nil, err
 			}
-			dir := filepath.Dir(fh.URI().Filename())
+			dir := span.URIFromPath(filepath.Dir(fh.URI().Filename()))
+			nonRecursiveArgs, err := MarshalArgs(dir, false)
+			if err != nil {
+				return nil, err
+			}
+			recursiveArgs, err := MarshalArgs(dir, true)
+			if err != nil {
+				return nil, err
+			}
 			return []protocol.CodeLens{
 				{
 					Range: rng,
 					Command: protocol.Command{
 						Title:     "run go generate",
-						Command:   CommandGenerate,
-						Arguments: []interface{}{dir, false},
+						Command:   CommandGenerate.Name,
+						Arguments: nonRecursiveArgs,
 					},
 				},
 				{
 					Range: rng,
 					Command: protocol.Command{
 						Title:     "run go generate ./...",
-						Command:   CommandGenerate,
-						Arguments: []interface{}{dir, true},
+						Command:   CommandGenerate.Name,
+						Arguments: recursiveArgs,
 					},
 				},
 			}, nil
@@ -168,9 +192,14 @@ func goGenerateCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle, f
 	return nil, nil
 }
 
-func regenerateCgoLens(ctx context.Context, snapshot Snapshot, fh FileHandle, f *ast.File, m *protocol.ColumnMapper) ([]protocol.CodeLens, error) {
+func regenerateCgoLens(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.CodeLens, error) {
+	pgh := snapshot.View().Session().Cache().ParseGoHandle(ctx, fh, ParseFull)
+	file, _, m, _, err := pgh.Parse(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var c *ast.ImportSpec
-	for _, imp := range f.Imports {
+	for _, imp := range file.Imports {
 		if imp.Path.Value == `"C"` {
 			c = imp
 		}
@@ -183,13 +212,17 @@ func regenerateCgoLens(ctx context.Context, snapshot Snapshot, fh FileHandle, f 
 	if err != nil {
 		return nil, err
 	}
+	jsonArgs, err := MarshalArgs(fh.URI())
+	if err != nil {
+		return nil, err
+	}
 	return []protocol.CodeLens{
 		{
 			Range: rng,
 			Command: protocol.Command{
 				Title:     "regenerate cgo definitions",
-				Command:   CommandRegenerateCgo,
-				Arguments: []interface{}{fh.URI()},
+				Command:   CommandRegenerateCgo.Name,
+				Arguments: jsonArgs,
 			},
 		},
 	}, nil

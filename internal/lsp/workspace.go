@@ -23,8 +23,7 @@ func (s *Server) didChangeWorkspaceFolders(ctx context.Context, params *protocol
 			return errors.Errorf("view %s for %v not found", folder.Name, folder.URI)
 		}
 	}
-	s.addFolders(ctx, event.Added)
-	return nil
+	return s.addFolders(ctx, event.Added)
 }
 
 func (s *Server) addView(ctx context.Context, name string, uri span.URI) (source.View, source.Snapshot, error) {
@@ -45,7 +44,7 @@ func (s *Server) addView(ctx context.Context, name string, uri span.URI) (source
 func (s *Server) didChangeConfiguration(ctx context.Context, changed interface{}) error {
 	// go through all the views getting the config
 	for _, view := range s.session.Views() {
-		options := s.session.Options()
+		options := view.Options()
 		if err := s.fetchConfig(ctx, view.Name(), view.Folder(), &options); err != nil {
 			return err
 		}

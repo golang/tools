@@ -8,6 +8,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -19,11 +20,28 @@ import (
 var (
 	runSubprocessTests       = flag.Bool("enable_gopls_subprocess_tests", false, "run regtests against a gopls subprocess")
 	goplsBinaryPath          = flag.String("gopls_test_binary", "", "path to the gopls binary for use as a remote, for use with the -enable_gopls_subprocess_tests flag")
-	regtestTimeout           = flag.Duration("regtest_timeout", 60*time.Second, "default timeout for each regtest")
+	regtestTimeout           = flag.Duration("regtest_timeout", 20*time.Second, "default timeout for each regtest")
+	skipCleanup              = flag.Bool("regtest_skip_cleanup", false, "whether to skip cleaning up temp directories")
 	printGoroutinesOnFailure = flag.Bool("regtest_print_goroutines", false, "whether to print goroutines info on failure")
 )
 
 var runner *Runner
+
+func run(t *testing.T, files string, f TestFunc) {
+	runner.Run(t, files, f)
+}
+
+func withOptions(opts ...RunOption) configuredRunner {
+	return configuredRunner{opts: opts}
+}
+
+type configuredRunner struct {
+	opts []RunOption
+}
+
+func (r configuredRunner) run(t *testing.T, files string, f TestFunc) {
+	runner.Run(t, files, f, r.opts...)
+}
 
 func TestMain(m *testing.M) {
 	flag.Parse()
@@ -36,6 +54,7 @@ func TestMain(m *testing.M) {
 		DefaultModes:             NormalModes,
 		Timeout:                  *regtestTimeout,
 		PrintGoroutinesOnFailure: *printGoroutinesOnFailure,
+		SkipCleanup:              *skipCleanup,
 	}
 	if *runSubprocessTests {
 		goplsPath := *goplsBinaryPath
@@ -49,8 +68,16 @@ func TestMain(m *testing.M) {
 		runner.DefaultModes = NormalModes | SeparateProcess
 		runner.GoplsPath = goplsPath
 	}
+	dir, err := ioutil.TempDir("", "gopls-regtest-")
+	if err != nil {
+		panic(fmt.Errorf("creating regtest temp directory: %v", err))
+	}
+	runner.TempDir = dir
 
 	code := m.Run()
-	runner.Close()
+	if err := runner.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "closing test runner: %v\n", err)
+		os.Exit(1)
+	}
 	os.Exit(code)
 }

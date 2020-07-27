@@ -635,6 +635,39 @@ func (state *golistState) createDriverResponse(words ...string) (*driverResponse
 			pkg.CompiledGoFiles = pkg.GoFiles
 		}
 
+		// Temporary work-around for golang/go#39986. Parse filenames out of
+		// error messages. This happens if there are unrecoverable syntax
+		// errors in the source, so we can't match on a specific error message.
+		if err := p.Error; err != nil && len(err.ImportStack) == 0 && len(pkg.CompiledGoFiles) == 0 {
+			addFilenameFromPos := func(pos string) bool {
+				split := strings.Split(pos, ":")
+				if len(split) < 1 {
+					return false
+				}
+				filename := strings.TrimSpace(split[0])
+				if filename == "" {
+					return false
+				}
+				if !filepath.IsAbs(filename) {
+					filename = filepath.Join(state.cfg.Dir, filename)
+				}
+				info, _ := os.Stat(filename)
+				if info == nil {
+					return false
+				}
+				pkg.CompiledGoFiles = append(pkg.CompiledGoFiles, filename)
+				pkg.GoFiles = append(pkg.GoFiles, filename)
+				return true
+			}
+			found := addFilenameFromPos(err.Pos)
+			// In some cases, go list only reports the error position in the
+			// error text, not the error position. One such case is when the
+			// file's package name is a keyword (see golang.org/issue/39763).
+			if !found {
+				addFilenameFromPos(err.Err)
+			}
+		}
+
 		if p.Error != nil {
 			msg := strings.TrimSpace(p.Error.Err) // Trim to work around golang.org/issue/32363.
 			// Address golang.org/issue/35964 by appending import stack to error message.

@@ -755,6 +755,9 @@ func (c *completer) populateCommentCompletions(ctx context.Context, comment *ast
 			}
 
 			obj := c.pkg.GetTypesInfo().ObjectOf(node.Name)
+			if obj == nil || obj.Pkg() != nil && obj.Pkg() != c.pkg.GetTypes() {
+				continue
+			}
 
 			// We don't want expandFuncCall inside comments. We add this directly to the
 			// completions list because using c.found sets expandFuncCall to true by default
@@ -833,10 +836,13 @@ func (c *completer) unimportedMembers(ctx context.Context, id *ast.Ident) error 
 
 	var relevances map[string]int
 	if len(paths) != 0 {
-		c.snapshot.View().RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
-			relevances = imports.ScoreImportPaths(ctx, opts.Env, paths)
-			return nil
-		})
+		if err := c.snapshot.View().RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
+			var err error
+			relevances, err = imports.ScoreImportPaths(ctx, opts.Env, paths)
+			return err
+		}); err != nil {
+			return err
+		}
 	}
 	sort.Slice(paths, func(i, j int) bool {
 		return relevances[paths[i]] > relevances[paths[j]]
@@ -889,7 +895,7 @@ func (c *completer) unimportedMembers(ctx context.Context, id *ast.Ident) error 
 		}
 	}
 	return c.snapshot.View().RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
-		return imports.GetPackageExports(ctx, add, id.Name, c.filename, c.pkg.GetTypes().Name(), opts)
+		return imports.GetPackageExports(ctx, add, id.Name, c.filename, c.pkg.GetTypes().Name(), opts.Env)
 	})
 }
 
@@ -949,21 +955,7 @@ func (c *completer) methodsAndFields(ctx context.Context, typ types.Type, addres
 
 // lexical finds completions in the lexical environment.
 func (c *completer) lexical(ctx context.Context) error {
-	var scopes []*types.Scope // scopes[i], where i<len(path), is the possibly nil Scope of path[i].
-	for _, n := range c.path {
-		// Include *FuncType scope if pos is inside the function body.
-		switch node := n.(type) {
-		case *ast.FuncDecl:
-			if node.Body != nil && nodeContains(node.Body, c.pos) {
-				n = node.Type
-			}
-		case *ast.FuncLit:
-			if node.Body != nil && nodeContains(node.Body, c.pos) {
-				n = node.Type
-			}
-		}
-		scopes = append(scopes, c.pkg.GetTypesInfo().Scopes[n])
-	}
+	scopes := collectScopes(c.pkg.GetTypesInfo(), c.path, c.pos)
 	scopes = append(scopes, c.pkg.GetTypes().Scope(), types.Universe)
 
 	var (
@@ -1100,6 +1092,26 @@ func (c *completer) lexical(ctx context.Context) error {
 	return nil
 }
 
+func collectScopes(info *types.Info, path []ast.Node, pos token.Pos) []*types.Scope {
+	// scopes[i], where i<len(path), is the possibly nil Scope of path[i].
+	var scopes []*types.Scope
+	for _, n := range path {
+		// Include *FuncType scope if pos is inside the function body.
+		switch node := n.(type) {
+		case *ast.FuncDecl:
+			if node.Body != nil && nodeContains(node.Body, pos) {
+				n = node.Type
+			}
+		case *ast.FuncLit:
+			if node.Body != nil && nodeContains(node.Body, pos) {
+				n = node.Type
+			}
+		}
+		scopes = append(scopes, info.Scopes[n])
+	}
+	return scopes
+}
+
 func (c *completer) unimportedPackages(ctx context.Context, seen map[string]struct{}) error {
 	var prefix string
 	if c.surrounding != nil {
@@ -1121,10 +1133,13 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 
 	var relevances map[string]int
 	if len(paths) != 0 {
-		c.snapshot.View().RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
-			relevances = imports.ScoreImportPaths(ctx, opts.Env, paths)
-			return nil
-		})
+		if err := c.snapshot.View().RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
+			var err error
+			relevances, err = imports.ScoreImportPaths(ctx, opts.Env, paths)
+			return err
+		}); err != nil {
+			return err
+		}
 	}
 	sort.Slice(paths, func(i, j int) bool {
 		return relevances[paths[i]] > relevances[paths[j]]
@@ -1187,7 +1202,7 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		count++
 	}
 	return c.snapshot.View().RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
-		return imports.GetAllCandidates(ctx, add, prefix, c.filename, c.pkg.GetTypes().Name(), opts)
+		return imports.GetAllCandidates(ctx, add, prefix, c.filename, c.pkg.GetTypes().Name(), opts.Env)
 	})
 }
 

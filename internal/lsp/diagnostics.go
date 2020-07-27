@@ -6,6 +6,7 @@ package lsp
 
 import (
 	"context"
+	"crypto/sha1"
 	"fmt"
 	"strings"
 	"sync"
@@ -16,9 +17,12 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/xcontext"
+	"golang.org/x/xerrors"
 )
 
-type diagnosticKey struct {
+// idWithAnalysis is used to track if the diagnostics for a given file were
+// computed with analyses.
+type idWithAnalysis struct {
 	id           source.FileIdentity
 	withAnalysis bool
 }
@@ -28,7 +32,7 @@ func (s *Server) diagnoseDetached(snapshot source.Snapshot) {
 	ctx = xcontext.Detach(ctx)
 	reports, shows := s.diagnose(ctx, snapshot, false)
 	if shows != nil {
-		// If a view has been created or the configuration changed, warn the user
+		// If a view has been created or the configuration changed, warn the user.
 		s.client.ShowMessage(ctx, shows)
 	}
 	s.publishReports(ctx, snapshot, reports)
@@ -36,14 +40,15 @@ func (s *Server) diagnoseDetached(snapshot source.Snapshot) {
 
 func (s *Server) diagnoseSnapshot(snapshot source.Snapshot) {
 	ctx := snapshot.View().BackgroundContext()
-	// Ignore possible workspace configuration warnings in the normal flow
+
+	// Ignore possible workspace configuration warnings in the normal flow.
 	reports, _ := s.diagnose(ctx, snapshot, false)
 	s.publishReports(ctx, snapshot, reports)
 }
 
 // diagnose is a helper function for running diagnostics with a given context.
 // Do not call it directly.
-func (s *Server) diagnose(ctx context.Context, snapshot source.Snapshot, alwaysAnalyze bool) (map[diagnosticKey][]*source.Diagnostic, *protocol.ShowMessageParams) {
+func (s *Server) diagnose(ctx context.Context, snapshot source.Snapshot, alwaysAnalyze bool) (map[idWithAnalysis]map[string]*source.Diagnostic, *protocol.ShowMessageParams) {
 	ctx, done := event.Start(ctx, "lsp:background-worker")
 	defer done()
 
@@ -55,104 +60,122 @@ func (s *Server) diagnose(ctx context.Context, snapshot source.Snapshot, alwaysA
 	}
 	defer func() { <-s.diagnosticsSema }()
 
-	allReports := make(map[diagnosticKey][]*source.Diagnostic)
 	var reportsMu sync.Mutex
-	var wg sync.WaitGroup
+	reports := map[idWithAnalysis]map[string]*source.Diagnostic{}
 
-	// Diagnose the go.mod file.
-	reports, missingModules, err := mod.Diagnostics(ctx, snapshot)
-	if err != nil {
-		event.Error(ctx, "warning: diagnose go.mod", err, tag.Directory.Of(snapshot.View().Folder().Filename()))
-	}
+	// First, diagnose the go.mod file.
+	modReports, modErr := mod.Diagnostics(ctx, snapshot)
 	if ctx.Err() != nil {
 		return nil, nil
 	}
-	// Ensure that the reports returned from mod.Diagnostics are only related
-	// to the go.mod file for the module.
-	if len(reports) > 1 {
-		panic(fmt.Sprintf("expected 1 report from mod.Diagnostics, got %v: %v", len(reports), reports))
+	if modErr != nil {
+		event.Error(ctx, "warning: diagnose go.mod", modErr, tag.Directory.Of(snapshot.View().Folder().Filename()))
 	}
-	modURI := snapshot.View().ModFile()
-	for id, diags := range reports {
+	for id, diags := range modReports {
 		if id.URI == "" {
 			event.Error(ctx, "missing URI for module diagnostics", fmt.Errorf("empty URI"), tag.Directory.Of(snapshot.View().Folder().Filename()))
 			continue
 		}
-		if id.URI != modURI {
-			panic(fmt.Sprintf("expected module diagnostics report for %q, got %q", modURI, id.URI))
+		key := idWithAnalysis{
+			id:           id,
+			withAnalysis: true, // treat go.mod diagnostics like analyses
 		}
-		key := diagnosticKey{
-			id: id,
+		if _, ok := reports[key]; !ok {
+			reports[key] = map[string]*source.Diagnostic{}
 		}
-		allReports[key] = diags
+		for _, d := range diags {
+			reports[key][diagnosticKey(d)] = d
+		}
 	}
 
 	// Diagnose all of the packages in the workspace.
 	wsPackages, err := snapshot.WorkspacePackages(ctx)
-	if err == source.InconsistentVendoring {
-		item, err := s.client.ShowMessageRequest(ctx, &protocol.ShowMessageRequestParams{
-			Type: protocol.Error,
-			Message: `Inconsistent vendoring detected. Please re-run "go mod vendor".
-See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
-			Actions: []protocol.MessageActionItem{
-				{Title: "go mod vendor"},
-			},
-		})
-		if item == nil || err != nil {
+	if err != nil {
+		// Try constructing a more helpful error message out of this error.
+		if s.handleFatalErrors(ctx, snapshot, modErr, err) {
 			return nil, nil
 		}
-		if err := s.directGoModCommand(ctx, protocol.URIFromSpanURI(modURI), "mod", []string{"vendor"}...); err != nil {
-			return nil, &protocol.ShowMessageParams{
-				Type:    protocol.Error,
-				Message: fmt.Sprintf(`"go mod vendor" failed with %v`, err),
-			}
+		msg := `The code in the workspace failed to compile (see the error message below).
+If you believe this is a mistake, please file an issue: https://github.com/golang/go/issues/new.`
+		event.Error(ctx, msg, err, tag.Snapshot.Of(snapshot.ID()), tag.Directory.Of(snapshot.View().Folder()))
+		if err := s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+			Type:    protocol.Error,
+			Message: fmt.Sprintf("%s\n%v", msg, err),
+		}); err != nil {
+			event.Error(ctx, "ShowMessage failed", err, tag.Directory.Of(snapshot.View().Folder().Filename()))
 		}
 		return nil, nil
-	} else if err != nil {
-		event.Error(ctx, "failed to load workspace packages, skipping diagnostics", err, tag.Snapshot.Of(snapshot.ID()), tag.Directory.Of(snapshot.View().Folder()))
-		return nil, nil
 	}
-	var shows *protocol.ShowMessageParams
+	var (
+		showMsg *protocol.ShowMessageParams
+		wg      sync.WaitGroup
+	)
 	for _, ph := range wsPackages {
 		wg.Add(1)
 		go func(ph source.PackageHandle) {
 			defer wg.Done()
+
 			// Only run analyses for packages with open files.
-			withAnalyses := alwaysAnalyze
+			withAnalysis := alwaysAnalyze
 			for _, pgh := range ph.CompiledGoFiles() {
 				if snapshot.IsOpen(pgh.File().URI()) {
-					withAnalyses = true
+					withAnalysis = true
+					break
 				}
 			}
-			reports, warn, err := source.Diagnostics(ctx, snapshot, ph, missingModules, withAnalyses)
+
+			pkgReports, warn, err := source.Diagnostics(ctx, snapshot, ph, withAnalysis)
+
 			// Check if might want to warn the user about their build configuration.
 			// Our caller decides whether to send the message.
 			if warn && !snapshot.View().ValidBuildConfiguration() {
-				shows = &protocol.ShowMessageParams{
+				showMsg = &protocol.ShowMessageParams{
 					Type:    protocol.Warning,
-					Message: `You are neither in a module nor in your GOPATH. If you are using modules, please open your editor at the directory containing the go.mod. If you believe this warning is incorrect, please file an issue: https://github.com/golang/go/issues/new.`,
+					Message: `You are neither in a module nor in your GOPATH. If you are using modules, please open your editor to a directory in your module. If you believe this warning is incorrect, please file an issue: https://github.com/golang/go/issues/new.`,
 				}
 			}
 			if err != nil {
 				event.Error(ctx, "warning: diagnose package", err, tag.Snapshot.Of(snapshot.ID()), tag.Package.Of(ph.ID()))
 				return
 			}
+
+			// Add all reports to the global map, checking for duplciates.
 			reportsMu.Lock()
-			for id, diags := range reports {
-				key := diagnosticKey{
+			for id, diags := range pkgReports {
+				key := idWithAnalysis{
 					id:           id,
-					withAnalysis: withAnalyses,
+					withAnalysis: withAnalysis,
 				}
-				allReports[key] = diags
+				if _, ok := reports[key]; !ok {
+					reports[key] = map[string]*source.Diagnostic{}
+				}
+				for _, d := range diags {
+					reports[key][diagnosticKey(d)] = d
+				}
 			}
 			reportsMu.Unlock()
 		}(ph)
 	}
 	wg.Wait()
-	return allReports, shows
+	return reports, showMsg
 }
 
-func (s *Server) publishReports(ctx context.Context, snapshot source.Snapshot, reports map[diagnosticKey][]*source.Diagnostic) {
+// diagnosticKey creates a unique identifier for a given diagnostic, since we
+// cannot use source.Diagnostics as map keys. This is used to de-duplicate
+// diagnostics.
+func diagnosticKey(d *source.Diagnostic) string {
+	var tags, related string
+	for _, t := range d.Tags {
+		tags += fmt.Sprintf("%s", t)
+	}
+	for _, r := range d.Related {
+		related += fmt.Sprintf("%s%s%s", r.URI, r.Message, r.Range)
+	}
+	key := fmt.Sprintf("%s%s%s%s%s%s", d.Message, d.Range, d.Severity, d.Source, tags, related)
+	return fmt.Sprintf("%x", sha1.Sum([]byte(key)))
+}
+
+func (s *Server) publishReports(ctx context.Context, snapshot source.Snapshot, reports map[idWithAnalysis]map[string]*source.Diagnostic) {
 	// Check for context cancellation before publishing diagnostics.
 	if ctx.Err() != nil {
 		return
@@ -161,12 +184,16 @@ func (s *Server) publishReports(ctx context.Context, snapshot source.Snapshot, r
 	s.deliveredMu.Lock()
 	defer s.deliveredMu.Unlock()
 
-	for key, diagnostics := range reports {
+	for key, diagnosticsMap := range reports {
 		// Don't deliver diagnostics if the context has already been canceled.
 		if ctx.Err() != nil {
 			break
 		}
 		// Pre-sort diagnostics to avoid extra work when we compare them.
+		var diagnostics []*source.Diagnostic
+		for _, d := range diagnosticsMap {
+			diagnostics = append(diagnostics, d)
+		}
 		source.SortDiagnostics(diagnostics)
 		toSend := sentDiagnostics{
 			version:      key.id.Version,
@@ -253,4 +280,65 @@ func toProtocolDiagnostics(diagnostics []*source.Diagnostic) []protocol.Diagnost
 		})
 	}
 	return reports
+}
+
+func (s *Server) handleFatalErrors(ctx context.Context, snapshot source.Snapshot, modErr, loadErr error) bool {
+	modURI := snapshot.View().ModFile()
+
+	// We currently only have workarounds for errors associated with modules.
+	if modURI == "" {
+		return false
+	}
+
+	switch loadErr {
+	case source.InconsistentVendoring:
+		item, err := s.client.ShowMessageRequest(ctx, &protocol.ShowMessageRequestParams{
+			Type: protocol.Error,
+			Message: `Inconsistent vendoring detected. Please re-run "go mod vendor".
+See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
+			Actions: []protocol.MessageActionItem{
+				{Title: "go mod vendor"},
+			},
+		})
+		// If the user closes the pop-up, don't show them further errors.
+		if item == nil {
+			return true
+		}
+		if err != nil {
+			event.Error(ctx, "go mod vendor ShowMessageRequest failed", err, tag.Directory.Of(snapshot.View().Folder().Filename()))
+			return true
+		}
+		if err := s.directGoModCommand(ctx, protocol.URIFromSpanURI(modURI), "mod", []string{"vendor"}...); err != nil {
+			if err := s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+				Type:    protocol.Error,
+				Message: fmt.Sprintf(`"go mod vendor" failed with %v`, err),
+			}); err != nil {
+				if err != nil {
+					event.Error(ctx, "go mod vendor ShowMessage failed", err, tag.Directory.Of(snapshot.View().Folder().Filename()))
+				}
+			}
+		}
+		return true
+	}
+	// If there is a go.mod-related error, as well as a workspace load error,
+	// there is likely an issue with the go.mod file. Try to parse the error
+	// message and create a diagnostic.
+	if modErr == nil {
+		return false
+	}
+	if xerrors.Is(loadErr, source.PackagesLoadError) {
+		fh, err := snapshot.GetFile(ctx, modURI)
+		if err != nil {
+			return false
+		}
+		diag, err := mod.ExtractGoCommandError(ctx, snapshot, fh, loadErr)
+		if err != nil {
+			return false
+		}
+		s.publishReports(ctx, snapshot, map[idWithAnalysis]map[string]*source.Diagnostic{
+			{id: fh.Identity()}: {diagnosticKey(diag): diag},
+		})
+		return true
+	}
+	return false
 }

@@ -105,13 +105,13 @@ type condition struct {
 
 // NewEnv creates a new test environment using the given scratch environment
 // and gopls server.
-func NewEnv(ctx context.Context, t *testing.T, scratch *fake.Sandbox, ts servertest.Connector, editorConfig fake.EditorConfig) *Env {
+func NewEnv(ctx context.Context, t *testing.T, sandbox *fake.Sandbox, ts servertest.Connector, editorConfig fake.EditorConfig, withHooks bool) *Env {
 	t.Helper()
 	conn := ts.Connect(ctx)
 	env := &Env{
 		T:       t,
 		Ctx:     ctx,
-		Sandbox: scratch,
+		Sandbox: sandbox,
 		Server:  ts,
 		state: State{
 			diagnostics:     make(map[string]*protocol.PublishDiagnosticsParams),
@@ -120,15 +120,18 @@ func NewEnv(ctx context.Context, t *testing.T, scratch *fake.Sandbox, ts servert
 		},
 		waiters: make(map[int]*condition),
 	}
-	hooks := fake.ClientHooks{
-		OnDiagnostics:            env.onDiagnostics,
-		OnLogMessage:             env.onLogMessage,
-		OnWorkDoneProgressCreate: env.onWorkDoneProgressCreate,
-		OnProgress:               env.onProgress,
-		OnShowMessage:            env.onShowMessage,
-		OnShowMessageRequest:     env.onShowMessageRequest,
+	var hooks fake.ClientHooks
+	if withHooks {
+		hooks = fake.ClientHooks{
+			OnDiagnostics:            env.onDiagnostics,
+			OnLogMessage:             env.onLogMessage,
+			OnWorkDoneProgressCreate: env.onWorkDoneProgressCreate,
+			OnProgress:               env.onProgress,
+			OnShowMessage:            env.onShowMessage,
+			OnShowMessageRequest:     env.onShowMessageRequest,
+		}
 	}
-	editor, err := fake.NewEditor(scratch, editorConfig).Connect(ctx, conn, hooks)
+	editor, err := fake.NewEditor(sandbox, editorConfig).Connect(ctx, conn, hooks)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,11 +367,13 @@ func EmptyShowMessage(title string) SimpleExpectation {
 	}
 }
 
-// SomeShowMessage asserts that the editor has received a ShowMessage.
+// SomeShowMessage asserts that the editor has received a ShowMessage with the given title.
 func SomeShowMessage(title string) SimpleExpectation {
 	check := func(s State) (Verdict, interface{}) {
-		if len(s.showMessage) > 0 {
-			return Met, title
+		for _, m := range s.showMessage {
+			if strings.Contains(m.Message, title) {
+				return Met, m
+			}
 		}
 		return Unmet, nil
 	}
@@ -438,22 +443,11 @@ func (e LogExpectation) Description() string {
 // NoErrorLogs asserts that the client has not received any log messages of
 // error severity.
 func NoErrorLogs() LogExpectation {
-	check := func(msgs []*protocol.LogMessageParams) (Verdict, interface{}) {
-		for _, msg := range msgs {
-			if msg.Type == protocol.Error {
-				return Unmeetable, nil
-			}
-		}
-		return Met, nil
-	}
-	return LogExpectation{
-		check:       check,
-		description: "no errors have been logged",
-	}
+	return NoLogMatching(protocol.Error, "")
 }
 
 // LogMatching asserts that the client has received a log message
-// matching of type typ matching the regexp re.
+// of type typ matching the regexp re.
 func LogMatching(typ protocol.MessageType, re string) LogExpectation {
 	rec, err := regexp.Compile(re)
 	if err != nil {
@@ -470,6 +464,35 @@ func LogMatching(typ protocol.MessageType, re string) LogExpectation {
 	return LogExpectation{
 		check:       check,
 		description: fmt.Sprintf("log message matching %q", re),
+	}
+}
+
+// NoLogMatching asserts that the client has not received a log message
+// of type typ matching the regexp re. If re is an empty string, any log
+// message is considered a match.
+func NoLogMatching(typ protocol.MessageType, re string) LogExpectation {
+	var r *regexp.Regexp
+	if re != "" {
+		var err error
+		r, err = regexp.Compile(re)
+		if err != nil {
+			panic(err)
+		}
+	}
+	check := func(msgs []*protocol.LogMessageParams) (Verdict, interface{}) {
+		for _, msg := range msgs {
+			if msg.Type != typ {
+				continue
+			}
+			if r == nil || r.Match([]byte(msg.Message)) {
+				return Unmeetable, nil
+			}
+		}
+		return Met, nil
+	}
+	return LogExpectation{
+		check:       check,
+		description: fmt.Sprintf("no log message matching %q", re),
 	}
 }
 

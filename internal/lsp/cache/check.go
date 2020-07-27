@@ -92,8 +92,10 @@ func (s *snapshot) buildPackageHandle(ctx context.Context, id packageID, mode so
 				dep.check(ctx)
 			}(dep)
 		}
+
 		data := &packageData{}
 		data.pkg, data.err = typeCheck(ctx, fset, m, mode, goFiles, compiledGoFiles, deps)
+
 		return data
 	})
 	ph.handle = h
@@ -190,12 +192,16 @@ func (ph *packageHandle) Check(ctx context.Context) (source.Package, error) {
 }
 
 func (ph *packageHandle) check(ctx context.Context) (*pkg, error) {
-	v := ph.handle.Get(ctx)
-	if v == nil {
-		return nil, ctx.Err()
+	v, err := ph.handle.Get(ctx)
+	if err != nil {
+		return nil, err
 	}
 	data := v.(*packageData)
 	return data.pkg, data.err
+}
+
+func (ph *packageHandle) ID() string {
+	return string(ph.m.id)
 }
 
 func (ph *packageHandle) CompiledGoFiles() []source.ParseGoHandle {
@@ -206,38 +212,12 @@ func (ph *packageHandle) CompiledGoFiles() []source.ParseGoHandle {
 	return files
 }
 
-func (ph *packageHandle) ID() string {
-	return string(ph.m.id)
-}
-
 func (ph *packageHandle) MissingDependencies() []string {
 	var md []string
 	for i := range ph.m.missingDeps {
 		md = append(md, string(i))
 	}
 	return md
-}
-
-func hashImports(ctx context.Context, wsPackages []source.PackageHandle) (string, error) {
-	results := make(map[string]bool)
-	var imports []string
-	for _, ph := range wsPackages {
-		// Check package since we do not always invalidate the metadata.
-		pkg, err := ph.Check(ctx)
-		if err != nil {
-			return "", err
-		}
-		for _, path := range pkg.Imports() {
-			imp := path.PkgPath()
-			if _, ok := results[imp]; !ok {
-				results[imp] = true
-				imports = append(imports, imp)
-			}
-		}
-	}
-	sort.Strings(imports)
-	hashed := strings.Join(imports, ",")
-	return hashContents([]byte(hashed)), nil
 }
 
 func (ph *packageHandle) Cached() (source.Package, error) {
@@ -276,6 +256,7 @@ func typeCheck(ctx context.Context, fset *token.FileSet, m *metadata, mode sourc
 
 	pkg := &pkg{
 		id:              m.id,
+		name:            m.name,
 		pkgPath:         m.pkgPath,
 		mode:            mode,
 		goFiles:         goFiles,
@@ -350,9 +331,22 @@ func typeCheck(ctx context.Context, fset *token.FileSet, m *metadata, mode sourc
 		// race to Unsafe.completed.
 		return pkg, nil
 	} else if len(files) == 0 { // not the unsafe package, no parsed files
+		// Try to attach errors messages to the file as much as possible.
+		var found bool
+		for _, e := range rawErrors {
+			srcErr, err := sourceError(ctx, fset, pkg, e)
+			if err != nil {
+				continue
+			}
+			found = true
+			pkg.errors = append(pkg.errors, srcErr)
+		}
+		if found {
+			return pkg, nil
+		}
 		return nil, errors.Errorf("no parsed files for package %s, expected: %s, errors: %v, list errors: %v", pkg.pkgPath, pkg.compiledGoFiles, actualErrors, rawErrors)
 	} else {
-		pkg.types = types.NewPackage(string(m.pkgPath), m.name)
+		pkg.types = types.NewPackage(string(m.pkgPath), string(m.name))
 	}
 
 	cfg := &types.Config{
@@ -412,6 +406,7 @@ func typeCheck(ctx context.Context, fset *token.FileSet, m *metadata, mode sourc
 			}
 		}
 	}
+
 	return pkg, nil
 }
 

@@ -12,6 +12,7 @@ import (
 	"go/token"
 	"go/types"
 	"regexp"
+	"strings"
 
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/event"
@@ -102,6 +103,19 @@ func Rename(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position,
 		from:         obj.Name(),
 		to:           newName,
 		packages:     make(map[*types.Package]Package),
+	}
+
+	// A renaming initiated at an interface method indicates the
+	// intention to rename abstract and concrete methods as needed
+	// to preserve assignability.
+	for _, ref := range refs {
+		if obj, ok := ref.obj.(*types.Func); ok {
+			recv := obj.Type().(*types.Signature).Recv()
+			if recv != nil && isInterface(recv.Type().Underlying()) {
+				r.changeMethods = true
+				break
+			}
+		}
 	}
 	for _, from := range refs {
 		r.packages[from.pkg.GetTypes()] = from.pkg
@@ -199,17 +213,28 @@ func (r *renamer) update() (map[span.URI][]diff.TextEdit, error) {
 		}
 
 		// Perform the rename in doc comments declared in the original package.
+		// go/parser strips out \r\n returns from the comment text, so go
+		// line-by-line through the comment text to get the correct positions.
 		for _, comment := range doc.List {
-			for _, locs := range docRegexp.FindAllStringIndex(comment.Text, -1) {
-				rng := span.NewRange(r.fset, comment.Pos()+token.Pos(locs[0]), comment.Pos()+token.Pos(locs[1]))
-				spn, err := rng.Span()
-				if err != nil {
-					return nil, err
+			lines := strings.Split(comment.Text, "\n")
+			tok := r.fset.File(comment.Pos())
+			commentLine := tok.Position(comment.Pos()).Line
+			for i, line := range lines {
+				lineStart := comment.Pos()
+				if i > 0 {
+					lineStart = tok.LineStart(commentLine + i)
 				}
-				result[spn.URI()] = append(result[spn.URI()], diff.TextEdit{
-					Span:    spn,
-					NewText: r.to,
-				})
+				for _, locs := range docRegexp.FindAllIndex([]byte(line), -1) {
+					rng := span.NewRange(r.fset, lineStart+token.Pos(locs[0]), lineStart+token.Pos(locs[1]))
+					spn, err := rng.Span()
+					if err != nil {
+						return nil, err
+					}
+					result[spn.URI()] = append(result[spn.URI()], diff.TextEdit{
+						Span:    spn,
+						NewText: r.to,
+					})
+				}
 			}
 		}
 	}

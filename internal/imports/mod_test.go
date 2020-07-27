@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"context"
 	"fmt"
-	"go/build"
 	"io/ioutil"
 	"log"
 	"os"
@@ -240,7 +239,7 @@ import _ "rsc.io/sampler"
 
 	// Clear out the resolver's cache, since we've changed the environment.
 	mt.resolver = newModuleResolver(mt.env)
-	mt.env.GOFLAGS = "-mod=vendor"
+	mt.env.Env["GOFLAGS"] = "-mod=vendor"
 	mt.assertModuleFoundInDir("rsc.io/sampler", "sampler", `/vendor/`)
 }
 
@@ -686,18 +685,18 @@ func setup(t *testing.T, main, wd string) *modTest {
 	}
 
 	env := &ProcessEnv{
-		GOROOT:      build.Default.GOROOT,
-		GOPATH:      filepath.Join(dir, "gopath"),
-		GO111MODULE: "on",
-		GOPROXY:     proxydir.ToURL(proxyDir),
-		GOSUMDB:     "off",
+		Env: map[string]string{
+			"GOPATH":      filepath.Join(dir, "gopath"),
+			"GO111MODULE": "on",
+			"GOSUMDB":     "off",
+			"GOPROXY":     proxydir.ToURL(proxyDir),
+		},
 		WorkingDir:  filepath.Join(mainDir, wd),
 		GocmdRunner: &gocommand.Runner{},
 	}
 	if *testDebug {
 		env.Logf = log.Printf
 	}
-
 	// go mod download gets mad if we don't have a go.mod, so make sure we do.
 	_, err = os.Stat(filepath.Join(mainDir, "go.mod"))
 	if err != nil && !os.IsNotExist(err) {
@@ -709,10 +708,14 @@ func setup(t *testing.T, main, wd string) *modTest {
 		}
 	}
 
+	resolver, err := env.GetResolver()
+	if err != nil {
+		t.Fatal(err)
+	}
 	return &modTest{
 		T:        t,
 		env:      env,
-		resolver: newModuleResolver(env),
+		resolver: resolver.(*ModuleResolver),
 		cleanup:  func() { removeDir(dir) },
 	}
 }
@@ -838,7 +841,7 @@ package x
 import _ "rsc.io/quote"
 `, "")
 	defer mt.cleanup()
-	want := filepath.Join(mt.resolver.env.GOPATH, "pkg/mod", "rsc.io/quote@v1.5.2")
+	want := filepath.Join(mt.resolver.env.gopath(), "pkg/mod", "rsc.io/quote@v1.5.2")
 
 	found := mt.assertScanFinds("rsc.io/quote", "quote")
 	modDir, _ := mt.resolver.modInfo(found.dir)
@@ -864,14 +867,18 @@ func TestInvalidModCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := &ProcessEnv{
-		GOROOT:      build.Default.GOROOT,
-		GOPATH:      filepath.Join(dir, "gopath"),
-		GO111MODULE: "on",
-		GOSUMDB:     "off",
+		Env: map[string]string{
+			"GOPATH":      filepath.Join(dir, "gopath"),
+			"GO111MODULE": "on",
+			"GOSUMDB":     "off",
+		},
 		GocmdRunner: &gocommand.Runner{},
 		WorkingDir:  dir,
 	}
-	resolver := newModuleResolver(env)
+	resolver, err := env.GetResolver()
+	if err != nil {
+		t.Fatal(err)
+	}
 	scanToSlice(resolver, nil)
 }
 
@@ -920,7 +927,7 @@ import _ "rsc.io/quote"
 			}
 		}
 	}
-	if err := getAllCandidates(context.Background(), add, "", "foo.go", "foo", mt.env); err != nil {
+	if err := GetAllCandidates(context.Background(), add, "", "foo.go", "foo", mt.env); err != nil {
 		t.Fatalf("getAllCandidates() = %v", err)
 	}
 	sort.Slice(got, func(i, j int) bool {
@@ -938,16 +945,18 @@ import _ "rsc.io/quote"
 func BenchmarkScanModCache(b *testing.B) {
 	testenv.NeedsGo1Point(b, 11)
 	env := &ProcessEnv{
-		GOPATH:      build.Default.GOPATH,
-		GOROOT:      build.Default.GOROOT,
 		GocmdRunner: &gocommand.Runner{},
 		Logf:        log.Printf,
 	}
 	exclude := []gopathwalk.RootType{gopathwalk.RootGOROOT}
-	scanToSlice(env.GetResolver(), exclude)
+	resolver, err := env.GetResolver()
+	if err != nil {
+		b.Fatal(err)
+	}
+	scanToSlice(resolver, exclude)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		scanToSlice(env.GetResolver(), exclude)
-		env.GetResolver().(*ModuleResolver).ClearForNewScan()
+		scanToSlice(resolver, exclude)
+		resolver.(*ModuleResolver).ClearForNewScan()
 	}
 }

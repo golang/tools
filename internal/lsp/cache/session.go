@@ -6,6 +6,7 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
+	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
@@ -31,6 +33,9 @@ type Session struct {
 
 	overlayMu sync.Mutex
 	overlays  map[span.URI]*overlay
+
+	// gocmdRunner guards go command calls from concurrency errors.
+	gocmdRunner *gocommand.Runner
 }
 
 type overlay struct {
@@ -123,17 +128,19 @@ func (s *Session) createView(ctx context.Context, name string, folder span.URI, 
 	backgroundCtx, cancel := context.WithCancel(baseCtx)
 
 	v := &View{
-		session:       s,
-		initialized:   make(chan struct{}),
-		id:            strconv.FormatInt(index, 10),
-		options:       options,
-		baseCtx:       baseCtx,
-		backgroundCtx: backgroundCtx,
-		cancel:        cancel,
-		name:          name,
-		folder:        folder,
-		filesByURI:    make(map[span.URI]*fileBase),
-		filesByBase:   make(map[string][]*fileBase),
+		session:            s,
+		initialized:        make(chan struct{}),
+		initializationSema: make(chan struct{}, 1),
+		initializeOnce:     &sync.Once{},
+		id:                 strconv.FormatInt(index, 10),
+		options:            options,
+		baseCtx:            baseCtx,
+		backgroundCtx:      backgroundCtx,
+		cancel:             cancel,
+		name:               name,
+		folder:             folder,
+		filesByURI:         make(map[span.URI]*fileBase),
+		filesByBase:        make(map[string][]*fileBase),
 		snapshot: &snapshot{
 			id:                snapshotID,
 			packages:          make(map[packageKey]*packageHandle),
@@ -146,7 +153,6 @@ func (s *Session) createView(ctx context.Context, name string, folder span.URI, 
 			unloadableFiles:   make(map[span.URI]struct{}),
 			parseModHandles:   make(map[span.URI]*parseModHandle),
 		},
-		gocmdRunner: &gocommand.Runner{},
 	}
 	v.snapshot.view = v
 
@@ -158,10 +164,17 @@ func (s *Session) createView(ctx context.Context, name string, folder span.URI, 
 		return nil, nil, err
 	}
 
+	// We have v.goEnv now.
+	v.processEnv = &imports.ProcessEnv{
+		GocmdRunner: s.gocmdRunner,
+		WorkingDir:  folder.Filename(),
+		Env:         v.goEnv,
+	}
+
 	// Initialize the view without blocking.
 	initCtx, initCancel := context.WithCancel(xcontext.Detach(ctx))
-	v.initCancel = initCancel
-	go v.initialize(initCtx, v.snapshot)
+	v.initCancelFirstAttempt = initCancel
+	go v.initialize(initCtx, v.snapshot, true)
 	return v, v.snapshot, nil
 }
 
@@ -242,6 +255,12 @@ func (s *Session) bestView(uri span.URI) (*View, error) {
 	if longest != nil {
 		return longest, nil
 	}
+	// Try our best to return a view that knows the file.
+	for _, view := range s.views {
+		if view.knownFile(uri) {
+			return view, nil
+		}
+	}
 	// TODO: are there any more heuristics we can use?
 	return s.views[0], nil
 }
@@ -307,15 +326,10 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 	if err != nil {
 		return nil, err
 	}
-	forceReloadMetadata := false
+	var forceReloadMetadata bool
 	for _, c := range changes {
 		if c.Action == source.InvalidateMetadata {
 			forceReloadMetadata = true
-		}
-		// Do nothing if the file is open in the editor and we receive
-		// an on-disk action. The editor is the source of truth.
-		if s.isOpen(c.URI) && c.OnDisk {
-			continue
 		}
 		// Look through all of the session's views, invalidating the file for
 		// all of the views to which it is known.
@@ -332,14 +346,26 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 			if _, ok := views[view]; !ok {
 				views[view] = make(map[span.URI]source.FileHandle)
 			}
-			if o, ok := overlays[c.URI]; ok {
-				views[view][c.URI] = o
+			var (
+				fh  source.FileHandle
+				ok  bool
+				err error
+			)
+			if fh, ok = overlays[c.URI]; ok {
+				views[view][c.URI] = fh
 			} else {
-				fh, err := s.cache.getFile(ctx, c.URI)
+				fh, err = s.cache.getFile(ctx, c.URI)
 				if err != nil {
 					return nil, err
 				}
 				views[view][c.URI] = fh
+			}
+			// If the file change is to a go.mod file, and initialization for
+			// the view has previously failed, we should attempt to retry.
+			// TODO(rstambler): We can use unsaved contents with -modfile, so
+			// maybe we should do that and retry on any change?
+			if fh.Kind() == source.Mod && (c.OnDisk || c.Action == source.Save) {
+				view.maybeReinitialize()
 			}
 		}
 	}
@@ -363,12 +389,19 @@ func (s *Session) updateOverlays(ctx context.Context, changes []source.FileModif
 	defer s.overlayMu.Unlock()
 
 	for _, c := range changes {
-		// Don't update overlays for on-disk changes or metadata invalidations.
-		if c.OnDisk || c.Action == source.InvalidateMetadata {
+		// Don't update overlays for metadata invalidations.
+		if c.Action == source.InvalidateMetadata {
 			continue
 		}
 
 		o, ok := s.overlays[c.URI]
+
+		// If the file is not opened in an overlay and the change is on disk,
+		// there's no need to update an overlay. If there is an overlay, we
+		// may need to update the overlay's saved value.
+		if !ok && c.OnDisk {
+			continue
+		}
 
 		// Determine the file kind on open, otherwise, assume it has been cached.
 		var kind source.FileKind
@@ -391,35 +424,47 @@ func (s *Session) updateOverlays(ctx context.Context, changes []source.FileModif
 			continue
 		}
 
-		// If the file is on disk, check if its content is the same as the overlay.
+		// If the file is on disk, check if its content is the same as in the
+		// overlay. Saves and on-disk file changes don't come with the file's
+		// content.
 		text := c.Text
-		if text == nil {
+		if text == nil && (c.Action == source.Save || c.OnDisk) {
+			if !ok {
+				return nil, fmt.Errorf("no known content for overlay for %s", c.Action)
+			}
 			text = o.text
+		}
+		// On-disk changes don't come with versions.
+		version := c.Version
+		if c.OnDisk {
+			version = o.version
 		}
 		hash := hashContents(text)
 		var sameContentOnDisk bool
 		switch c.Action {
-		case source.Open:
-			fh, err := s.cache.getFile(ctx, c.URI)
-			if err != nil {
-				return nil, err
-			}
-			_, readErr := fh.Read()
-			sameContentOnDisk = (readErr == nil && fh.Identity().Identifier == hash)
+		case source.Delete:
+			// Do nothing. sameContentOnDisk should be false.
 		case source.Save:
 			// Make sure the version and content (if present) is the same.
-			if o.version != c.Version {
+			if o.version != version {
 				return nil, errors.Errorf("updateOverlays: saving %s at version %v, currently at %v", c.URI, c.Version, o.version)
 			}
 			if c.Text != nil && o.hash != hash {
 				return nil, errors.Errorf("updateOverlays: overlay %s changed on save", c.URI)
 			}
 			sameContentOnDisk = true
+		default:
+			fh, err := s.cache.getFile(ctx, c.URI)
+			if err != nil {
+				return nil, err
+			}
+			_, readErr := fh.Read()
+			sameContentOnDisk = (readErr == nil && fh.Identity().Identifier == hash)
 		}
 		o = &overlay{
 			session: s,
 			uri:     c.URI,
-			version: c.Version,
+			version: version,
 			text:    text,
 			kind:    kind,
 			hash:    hash,
@@ -428,7 +473,8 @@ func (s *Session) updateOverlays(ctx context.Context, changes []source.FileModif
 		s.overlays[c.URI] = o
 	}
 
-	// Get the overlays for each change while the session's overlay map is locked.
+	// Get the overlays for each change while the session's overlay map is
+	// locked.
 	overlays := make(map[span.URI]*overlay)
 	for _, c := range changes {
 		if o, ok := s.overlays[c.URI]; ok {

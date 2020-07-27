@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/memoize"
@@ -59,6 +60,10 @@ type fileHandle struct {
 	err   error
 }
 
+func (c *Cache) GetFile(ctx context.Context, uri span.URI) (source.FileHandle, error) {
+	return c.getFile(ctx, uri)
+}
+
 func (c *Cache) getFile(ctx context.Context, uri span.URI) (*fileHandle, error) {
 	var modTime time.Time
 	if fi, err := os.Stat(uri.Filename()); err == nil {
@@ -72,9 +77,9 @@ func (c *Cache) getFile(ctx context.Context, uri span.URI) (*fileHandle, error) 
 	h := c.store.Bind(key, func(ctx context.Context) interface{} {
 		return readFile(ctx, uri, modTime)
 	})
-	v := h.Get(ctx)
-	if v == nil {
-		return nil, ctx.Err()
+	v, err := h.Get(ctx)
+	if err != nil {
+		return nil, err
 	}
 	return v.(*fileHandle), nil
 }
@@ -112,10 +117,11 @@ func readFile(ctx context.Context, uri span.URI, origTime time.Time) *fileHandle
 func (c *Cache) NewSession(ctx context.Context) *Session {
 	index := atomic.AddInt64(&sessionIndex, 1)
 	s := &Session{
-		cache:    c,
-		id:       strconv.FormatInt(index, 10),
-		options:  source.DefaultOptions(),
-		overlays: make(map[span.URI]*overlay),
+		cache:       c,
+		id:          strconv.FormatInt(index, 10),
+		options:     source.DefaultOptions(),
+		overlays:    make(map[span.URI]*overlay),
+		gocmdRunner: &gocommand.Runner{},
 	}
 	event.Log(ctx, "New session", KeyCreateSession.Of(s))
 	return s
@@ -234,6 +240,9 @@ func (c *Cache) PackageStats(withNames bool) template.HTML {
 }
 
 func astCost(f *ast.File) int64 {
+	if f == nil {
+		return 0
+	}
 	var count int64
 	ast.Inspect(f, func(n ast.Node) bool {
 		count += 32 // nodes are pretty small.

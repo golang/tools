@@ -8,7 +8,11 @@
 package hooks // import "golang.org/x/tools/gopls/internal/hooks"
 
 import (
+	"context"
+	"regexp"
+
 	"golang.org/x/tools/internal/lsp/source"
+	"mvdan.cc/gofumpt/format"
 	"mvdan.cc/xurls/v2"
 )
 
@@ -16,6 +20,16 @@ func Options(options *source.Options) {
 	if options.GoDiff {
 		options.ComputeEdits = ComputeEdits
 	}
-	options.URLRegexp = xurls.Relaxed()
+	options.URLRegexp = urlRegexp()
+	options.GofumptFormat = func(ctx context.Context, src []byte) ([]byte, error) {
+		return format.Source(src, format.Options{})
+	}
 	updateAnalyzers(options)
+}
+
+func urlRegexp() *regexp.Regexp {
+	// Ensure links are matched as full words, not anywhere.
+	re := regexp.MustCompile(`\b(` + xurls.Relaxed().String() + `)\b`)
+	re.Longest()
+	return re
 }

@@ -97,3 +97,13 @@ type pointerBuiltinStruct struct {
 }
 
 var _ = pointerBuiltinStruct{} // want ""
+<<<<<<< HEAD
+=======
+
+var _ = []ast.BasicLit{
+	{}, // want ""
+}
+
+var _ = []ast.BasicLit{{}, // want ""
+}
+>>>>>>> master

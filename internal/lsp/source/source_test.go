@@ -474,8 +474,6 @@ func (r *runner) Import(t *testing.T, spn span.Span) {
 	}
 }
 
-func (r *runner) SuggestedFix(t *testing.T, spn span.Span, actionKinds []string) {}
-
 func (r *runner) Definition(t *testing.T, spn span.Span, d tests.Definition) {
 	_, srcRng, err := spanToRange(r.data, d.Src)
 	if err != nil {
@@ -516,7 +514,7 @@ func (r *runner) Definition(t *testing.T, spn span.Span, d tests.Definition) {
 			return []byte(hover), nil
 		}))
 		if hover != expectHover {
-			t.Errorf("for %v got %q want %q", d.Src, hover, expectHover)
+			t.Errorf("hover for %s failed:\n%s", d.Src, tests.Diff(expectHover, hover))
 		}
 	}
 	if !d.OnlyHover {
@@ -817,7 +815,7 @@ func (r *runner) CaseSensitiveWorkspaceSymbols(t *testing.T, query string, expec
 
 func (r *runner) callWorkspaceSymbols(t *testing.T, query string, matcher source.SymbolMatcher, dirs map[string]struct{}, expectedSymbols []protocol.SymbolInformation) {
 	t.Helper()
-	got, err := source.WorkspaceSymbols(r.ctx, matcher, []source.View{r.view}, query)
+	got, err := source.WorkspaceSymbols(r.ctx, matcher, source.PackageQualifiedSymbols, []source.View{r.view}, query)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -858,14 +856,15 @@ func (r *runner) SignatureHelp(t *testing.T, spn span.Span, want *protocol.Signa
 		Signatures:      []protocol.SignatureInformation{*gotSignature},
 		ActiveParameter: float64(gotActiveParameter),
 	}
-	if diff := tests.DiffSignatures(spn, got, want); diff != "" {
+	if diff := tests.DiffSignatures(spn, want, got); diff != "" {
 		t.Error(diff)
 	}
 }
 
-func (r *runner) Link(t *testing.T, uri span.URI, wantLinks []tests.Link) {
-	// This is a pure LSP feature, no source level functionality to be tested.
-}
+// These are pure LSP features, no source level functionality to be tested.
+func (r *runner) Link(t *testing.T, uri span.URI, wantLinks []tests.Link)         {}
+func (r *runner) SuggestedFix(t *testing.T, spn span.Span, actionKinds []string)  {}
+func (r *runner) FunctionExtraction(t *testing.T, start span.Span, end span.Span) {}
 
 func (r *runner) CodeLens(t *testing.T, uri span.URI, want []protocol.CodeLens) {
 	fh, err := r.view.Snapshot().GetFile(r.ctx, uri)

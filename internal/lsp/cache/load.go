@@ -23,7 +23,7 @@ import (
 type metadata struct {
 	id              packageID
 	pkgPath         packagePath
-	name            string
+	name            packageName
 	goFiles         []span.URI
 	compiledGoFiles []span.URI
 	forTest         packagePath
@@ -58,7 +58,7 @@ func (s *snapshot) load(ctx context.Context, scopes ...interface{}) error {
 			// Simplify the query if it will be run in the requested directory.
 			// This ensures compatibility with Go 1.12 that doesn't allow
 			// <directory>/... in GOPATH mode.
-			if s.view.folder.Filename() == filename {
+			if s.view.root.Filename() == filename {
 				q = "./..."
 			}
 			query = append(query, q)
@@ -124,7 +124,7 @@ func (s *snapshot) load(ctx context.Context, scopes ...interface{}) error {
 		event.Log(ctx, "go/packages.Load", tag.Snapshot.Of(s.ID()), tag.Directory.Of(cfg.Dir), tag.Query.Of(query), tag.PackageCount.Of(len(pkgs)))
 	}
 	if len(pkgs) == 0 {
-		return err
+		return errors.Errorf("%v: %w", err, source.PackagesLoadError)
 	}
 
 	for _, pkg := range pkgs {
@@ -171,7 +171,7 @@ func (s *snapshot) setMetadata(ctx context.Context, pkgPath packagePath, pkg *pa
 	m := &metadata{
 		id:         id,
 		pkgPath:    pkgPath,
-		name:       pkg.Name,
+		name:       packageName(pkg.Name),
 		forTest:    packagePath(packagesinternal.GetForTest(pkg)),
 		typesSizes: pkg.TypesSizes,
 		errors:     pkg.Errors,

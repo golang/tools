@@ -28,16 +28,22 @@ type parseKey struct {
 	mode source.ParseMode
 }
 
+// astCacheKey is similar to parseKey, but is a distinct type because
+// it is used to key a different value within the same map.
+type astCacheKey parseKey
+
 type parseGoHandle struct {
-	handle *memoize.Handle
-	file   source.FileHandle
-	mode   source.ParseMode
+	handle         *memoize.Handle
+	file           source.FileHandle
+	mode           source.ParseMode
+	astCacheHandle *memoize.Handle
 }
 
 type parseGoData struct {
 	memoize.NoCopy
 
 	ast    *ast.File
+	tok    *token.File
 	mapper *protocol.ColumnMapper
 
 	// Source code used to build the AST. It may be different from the
@@ -63,10 +69,14 @@ func (c *Cache) parseGoHandle(ctx context.Context, fh source.FileHandle, mode so
 	h := c.store.Bind(key, func(ctx context.Context) interface{} {
 		return parseGo(ctx, fset, fh, mode)
 	})
+
 	return &parseGoHandle{
 		handle: h,
 		file:   fh,
 		mode:   mode,
+		astCacheHandle: c.store.Bind(astCacheKey(key), func(ctx context.Context) interface{} {
+			return buildASTCache(ctx, h)
+		}),
 	}
 }
 
@@ -91,7 +101,10 @@ func (pgh *parseGoHandle) Parse(ctx context.Context) (*ast.File, []byte, *protoc
 }
 
 func (pgh *parseGoHandle) parse(ctx context.Context) (*parseGoData, error) {
-	v := pgh.handle.Get(ctx)
+	v, err := pgh.handle.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
 	data, ok := v.(*parseGoData)
 	if !ok {
 		return nil, errors.Errorf("no parsed file for %s", pgh.File().URI())
@@ -100,12 +113,147 @@ func (pgh *parseGoHandle) parse(ctx context.Context) (*parseGoData, error) {
 }
 
 func (pgh *parseGoHandle) Cached() (*ast.File, []byte, *protocol.ColumnMapper, error, error) {
+	data, err := pgh.cached()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return data.ast, data.src, data.mapper, data.parseError, data.err
+}
+
+func (pgh *parseGoHandle) cached() (*parseGoData, error) {
 	v := pgh.handle.Cached()
 	if v == nil {
-		return nil, nil, nil, nil, errors.Errorf("no cached AST for %s", pgh.file.URI())
+		return nil, errors.Errorf("no cached AST for %s", pgh.file.URI())
 	}
 	data := v.(*parseGoData)
-	return data.ast, data.src, data.mapper, data.parseError, data.err
+	return data, nil
+}
+
+func (pgh *parseGoHandle) PosToDecl(ctx context.Context) (map[token.Pos]ast.Decl, error) {
+	v, err := pgh.astCacheHandle.Get(ctx)
+	if err != nil || v == nil {
+		return nil, err
+	}
+
+	data := v.(*astCacheData)
+	if data.err != nil {
+		return nil, data.err
+	}
+
+	return data.posToDecl, nil
+}
+
+func (pgh *parseGoHandle) PosToField(ctx context.Context) (map[token.Pos]*ast.Field, error) {
+	v, err := pgh.astCacheHandle.Get(ctx)
+	if err != nil || v == nil {
+		return nil, err
+	}
+
+	data := v.(*astCacheData)
+	if data.err != nil {
+		return nil, data.err
+	}
+
+	return data.posToField, nil
+}
+
+type astCacheData struct {
+	memoize.NoCopy
+
+	err error
+
+	posToDecl  map[token.Pos]ast.Decl
+	posToField map[token.Pos]*ast.Field
+}
+
+// buildASTCache builds caches to aid in quickly going from the typed
+// world to the syntactic world.
+func buildASTCache(ctx context.Context, parseHandle *memoize.Handle) *astCacheData {
+	var (
+		// path contains all ancestors, including n.
+		path []ast.Node
+		// decls contains all ancestors that are decls.
+		decls []ast.Decl
+	)
+
+	v, err := parseHandle.Get(ctx)
+	if err != nil || v == nil || v.(*parseGoData).ast == nil {
+		return &astCacheData{err: err}
+	}
+
+	data := &astCacheData{
+		posToDecl:  make(map[token.Pos]ast.Decl),
+		posToField: make(map[token.Pos]*ast.Field),
+	}
+
+	ast.Inspect(v.(*parseGoData).ast, func(n ast.Node) bool {
+		if n == nil {
+			lastP := path[len(path)-1]
+			path = path[:len(path)-1]
+			if len(decls) > 0 && decls[len(decls)-1] == lastP {
+				decls = decls[:len(decls)-1]
+			}
+			return false
+		}
+
+		path = append(path, n)
+
+		switch n := n.(type) {
+		case *ast.Field:
+			addField := func(f ast.Node) {
+				if f.Pos().IsValid() {
+					data.posToField[f.Pos()] = n
+					if len(decls) > 0 {
+						data.posToDecl[f.Pos()] = decls[len(decls)-1]
+					}
+				}
+			}
+
+			// Add mapping for *ast.Field itself. This handles embedded
+			// fields which have no associated *ast.Ident name.
+			addField(n)
+
+			// Add mapping for each field name since you can have
+			// multiple names for the same type expression.
+			for _, name := range n.Names {
+				addField(name)
+			}
+
+			// Also map "X" in "...X" to the containing *ast.Field. This
+			// makes it easy to format variadic signature params
+			// properly.
+			if elips, ok := n.Type.(*ast.Ellipsis); ok && elips.Elt != nil {
+				addField(elips.Elt)
+			}
+		case *ast.FuncDecl:
+			decls = append(decls, n)
+
+			if n.Name != nil && n.Name.Pos().IsValid() {
+				data.posToDecl[n.Name.Pos()] = n
+			}
+		case *ast.GenDecl:
+			decls = append(decls, n)
+
+			for _, spec := range n.Specs {
+				switch spec := spec.(type) {
+				case *ast.TypeSpec:
+					if spec.Name != nil && spec.Name.Pos().IsValid() {
+						data.posToDecl[spec.Name.Pos()] = n
+					}
+				case *ast.ValueSpec:
+					for _, id := range spec.Names {
+						if id != nil && id.Pos().IsValid() {
+							data.posToDecl[id.Pos()] = n
+						}
+					}
+				}
+			}
+		}
+
+		return true
+	})
+
+	return data
 }
 
 func hashParseKeys(pghs []*parseGoHandle) string {
@@ -139,7 +287,19 @@ func parseGo(ctx context.Context, fset *token.FileSet, fh source.FileHandle, mod
 	if file != nil {
 		tok = fset.File(file.Pos())
 		if tok == nil {
-			return &parseGoData{err: errors.Errorf("successfully parsed but no token.File for %s (%v)", fh.URI(), parseError)}
+			tok = fset.AddFile(fh.URI().Filename(), -1, len(buf))
+			tok.SetLinesForContent(buf)
+			return &parseGoData{
+				ast: file,
+				src: buf,
+				tok: tok,
+				mapper: &protocol.ColumnMapper{
+					URI:       fh.URI(),
+					Content:   buf,
+					Converter: span.NewTokenConverter(fset, tok),
+				},
+				parseError: parseError,
+			}
 		}
 
 		// Fix any badly parsed parts of the AST.
@@ -180,6 +340,7 @@ func parseGo(ctx context.Context, fset *token.FileSet, fh source.FileHandle, mod
 	return &parseGoData{
 		src:        buf,
 		ast:        file,
+		tok:        tok,
 		mapper:     m,
 		parseError: parseError,
 		fixed:      fixed,

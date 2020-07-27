@@ -9,12 +9,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/span"
 )
 
 // Editor is a fake editor client.  It keeps track of client state and can be
@@ -28,6 +31,7 @@ type Editor struct {
 	serverConn jsonrpc2.Conn
 	client     *Client
 	sandbox    *Sandbox
+	defaultEnv map[string]string
 
 	// Since this editor is intended just for testing, we use very coarse
 	// locking.
@@ -54,7 +58,7 @@ func (b buffer) text() string {
 //
 // The zero value for EditorConfig should correspond to its defaults.
 type EditorConfig struct {
-	Env []string
+	Env map[string]string
 
 	// CodeLens is a map defining whether codelens are enabled, keyed by the
 	// codeLens command. CodeLens which are not present in this map are left in
@@ -64,14 +68,24 @@ type EditorConfig struct {
 	// SymbolMatcher is the config associated with the "symbolMatcher" gopls
 	// config option.
 	SymbolMatcher *string
+
+	// WithoutWorkspaceFolders is used to simulate opening a single file in the
+	// editor, without a workspace root. In that case, the client sends neither
+	// workspace folders nor a root URI.
+	WithoutWorkspaceFolders bool
+
+	// EditorRootPath specifies the root path of the workspace folder used when
+	// initializing gopls in the sandbox. If empty, the Workdir is used.
+	EditorRootPath string
 }
 
 // NewEditor Creates a new Editor.
-func NewEditor(ws *Sandbox, config EditorConfig) *Editor {
+func NewEditor(sandbox *Sandbox, config EditorConfig) *Editor {
 	return &Editor{
-		buffers: make(map[string]buffer),
-		sandbox: ws,
-		Config:  config,
+		buffers:    make(map[string]buffer),
+		sandbox:    sandbox,
+		defaultEnv: sandbox.GoEnv(),
+		Config:     config,
 	}
 }
 
@@ -89,7 +103,7 @@ func (e *Editor) Connect(ctx context.Context, conn jsonrpc2.Conn, hooks ClientHo
 		protocol.Handlers(
 			protocol.ClientHandler(e.client,
 				jsonrpc2.MethodNotFound)))
-	if err := e.initialize(ctx); err != nil {
+	if err := e.initialize(ctx, e.Config.WithoutWorkspaceFolders, e.Config.EditorRootPath); err != nil {
 		return nil, err
 	}
 	e.sandbox.Workdir.AddWatcher(e.onFileChanges)
@@ -141,19 +155,22 @@ func (e *Editor) Client() *Client {
 	return e.client
 }
 
+func (e *Editor) overlayEnv() map[string]string {
+	env := make(map[string]string)
+	for k, v := range e.defaultEnv {
+		env[k] = v
+	}
+	for k, v := range e.Config.Env {
+		env[k] = v
+	}
+	return env
+}
+
 func (e *Editor) configuration() map[string]interface{} {
 	config := map[string]interface{}{
 		"verboseWorkDoneProgress": true,
+		"env":                     e.overlayEnv(),
 	}
-
-	envvars := e.sandbox.GoEnv()
-	envvars = append(envvars, e.Config.Env...)
-	env := map[string]interface{}{}
-	for _, value := range envvars {
-		kv := strings.SplitN(value, "=", 2)
-		env[kv[0]] = kv[1]
-	}
-	config["env"] = env
 
 	if e.Config.CodeLens != nil {
 		config["codelens"] = e.Config.CodeLens
@@ -166,11 +183,20 @@ func (e *Editor) configuration() map[string]interface{} {
 	return config
 }
 
-func (e *Editor) initialize(ctx context.Context) error {
+func (e *Editor) initialize(ctx context.Context, withoutWorkspaceFolders bool, editorRootPath string) error {
 	params := &protocol.ParamInitialize{}
 	params.ClientInfo.Name = "fakeclient"
 	params.ClientInfo.Version = "v1.0.0"
-	params.RootURI = e.sandbox.Workdir.RootURI()
+	if !withoutWorkspaceFolders {
+		rootURI := e.sandbox.Workdir.RootURI()
+		if editorRootPath != "" {
+			rootURI = toURI(e.sandbox.Workdir.filePath(editorRootPath))
+		}
+		params.WorkspaceFolders = []protocol.WorkspaceFolder{{
+			URI:  string(rootURI),
+			Name: filepath.Base(rootURI.SpanURI().Filename()),
+		}}
+	}
 	params.Capabilities.Workspace.Configuration = true
 	params.Capabilities.Window.WorkDoneProgress = true
 	// TODO: set client capabilities
@@ -214,6 +240,12 @@ func (e *Editor) OpenFile(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
+	return e.OpenFileWithContent(ctx, path, content)
+}
+
+// OpenFileWithContent creates a buffer for the given workdir-relative file
+// with the given contents.
+func (e *Editor) OpenFileWithContent(ctx context.Context, path, content string) error {
 	buf := newBuffer(path, content)
 	e.mu.Lock()
 	e.buffers[path] = buf
@@ -583,15 +615,20 @@ func (e *Editor) Symbol(ctx context.Context, query string) ([]SymbolInformation,
 
 // OrganizeImports requests and performs the source.organizeImports codeAction.
 func (e *Editor) OrganizeImports(ctx context.Context, path string) error {
-	return e.codeAction(ctx, path, nil, protocol.SourceOrganizeImports)
+	return e.codeAction(ctx, path, nil, nil, protocol.SourceOrganizeImports)
+}
+
+// RefactorRewrite requests and performs the source.refactorRewrite codeAction.
+func (e *Editor) RefactorRewrite(ctx context.Context, path string, rng *protocol.Range) error {
+	return e.codeAction(ctx, path, rng, nil, protocol.RefactorRewrite)
 }
 
 // ApplyQuickFixes requests and performs the quickfix codeAction.
-func (e *Editor) ApplyQuickFixes(ctx context.Context, path string, diagnostics []protocol.Diagnostic) error {
-	return e.codeAction(ctx, path, diagnostics, protocol.QuickFix, protocol.SourceFixAll)
+func (e *Editor) ApplyQuickFixes(ctx context.Context, path string, rng *protocol.Range, diagnostics []protocol.Diagnostic) error {
+	return e.codeAction(ctx, path, rng, diagnostics, protocol.QuickFix, protocol.SourceFixAll)
 }
 
-func (e *Editor) codeAction(ctx context.Context, path string, diagnostics []protocol.Diagnostic, only ...protocol.CodeActionKind) error {
+func (e *Editor) codeAction(ctx context.Context, path string, rng *protocol.Range, diagnostics []protocol.Diagnostic, only ...protocol.CodeActionKind) error {
 	if e.Server == nil {
 		return nil
 	}
@@ -601,12 +638,13 @@ func (e *Editor) codeAction(ctx context.Context, path string, diagnostics []prot
 	if diagnostics != nil {
 		params.Context.Diagnostics = diagnostics
 	}
+	if rng != nil {
+		params.Range = *rng
+	}
 	actions, err := e.Server.CodeAction(ctx, params)
 	if err != nil {
 		return fmt.Errorf("textDocument/codeAction: %w", err)
 	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
 	for _, action := range actions {
 		var match bool
 		for _, o := range only {
@@ -625,8 +663,18 @@ func (e *Editor) codeAction(ctx context.Context, path string, diagnostics []prot
 				continue
 			}
 			edits := convertEdits(change.Edits)
-			if err := e.editBufferLocked(ctx, path, edits); err != nil {
+			if err := e.EditBuffer(ctx, path, edits); err != nil {
 				return fmt.Errorf("editing buffer %q: %w", path, err)
+			}
+		}
+		// Execute any commands. The specification says that commands are
+		// executed after edits are applied.
+		if action.Command != nil {
+			if _, err := e.Server.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
+				Command:   action.Command.Command,
+				Arguments: action.Command.Arguments,
+			}); err != nil {
+				return err
 			}
 		}
 	}
@@ -686,9 +734,13 @@ func (e *Editor) RunGenerate(ctx context.Context, dir string) error {
 		return nil
 	}
 	absDir := e.sandbox.Workdir.filePath(dir)
+	jsonArgs, err := source.MarshalArgs(span.URIFromPath(absDir), false)
+	if err != nil {
+		return err
+	}
 	params := &protocol.ExecuteCommandParams{
-		Command:   "generate",
-		Arguments: []interface{}{absDir, false},
+		Command:   source.CommandGenerate.Name,
+		Arguments: jsonArgs,
 	}
 	if _, err := e.Server.ExecuteCommand(ctx, params); err != nil {
 		return fmt.Errorf("running generate: %v", err)
@@ -700,7 +752,7 @@ func (e *Editor) RunGenerate(ctx context.Context, dir string) error {
 	return nil
 }
 
-// CodeLens execute a codelens request on the server.
+// CodeLens executes a codelens request on the server.
 func (e *Editor) CodeLens(ctx context.Context, path string) ([]protocol.CodeLens, error) {
 	if e.Server == nil {
 		return nil, nil
@@ -721,8 +773,35 @@ func (e *Editor) CodeLens(ctx context.Context, path string) ([]protocol.CodeLens
 	return lens, nil
 }
 
+// References executes a reference request on the server.
+func (e *Editor) References(ctx context.Context, path string, pos Pos) ([]protocol.Location, error) {
+	if e.Server == nil {
+		return nil, nil
+	}
+	e.mu.Lock()
+	_, ok := e.buffers[path]
+	e.mu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("buffer %q is not open", path)
+	}
+	params := &protocol.ReferenceParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: e.textDocumentIdentifier(path),
+			Position:     pos.toProtocolPosition(),
+		},
+		Context: protocol.ReferenceContext{
+			IncludeDeclaration: true,
+		},
+	}
+	locations, err := e.Server.References(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	return locations, nil
+}
+
 // CodeAction executes a codeAction request on the server.
-func (e *Editor) CodeAction(ctx context.Context, path string) ([]protocol.CodeAction, error) {
+func (e *Editor) CodeAction(ctx context.Context, path string, rng *protocol.Range) ([]protocol.CodeAction, error) {
 	if e.Server == nil {
 		return nil, nil
 	}
@@ -734,6 +813,9 @@ func (e *Editor) CodeAction(ctx context.Context, path string) ([]protocol.CodeAc
 	}
 	params := &protocol.CodeActionParams{
 		TextDocument: e.textDocumentIdentifier(path),
+	}
+	if rng != nil {
+		params.Range = *rng
 	}
 	lens, err := e.Server.CodeAction(ctx, params)
 	if err != nil {

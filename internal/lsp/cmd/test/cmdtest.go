@@ -68,7 +68,7 @@ func TestCommandLine(testdata string, options func(*source.Options)) func(*testi
 func NewTestServer(ctx context.Context, options func(*source.Options)) *servertest.TCPServer {
 	ctx = debug.WithInstance(ctx, "", "")
 	cache := cache.New(ctx, options)
-	ss := lsprpc.NewStreamServer(cache)
+	ss := lsprpc.NewStreamServer(cache, false)
 	return servertest.NewTCPServer(ctx, ss, nil)
 }
 
@@ -131,6 +131,10 @@ func (r *runner) CaseSensitiveCompletion(t *testing.T, src span.Span, test tests
 
 func (r *runner) RankCompletion(t *testing.T, src span.Span, test tests.Completion, items tests.CompletionItems) {
 	//TODO: add command line completions tests when it works
+}
+
+func (r *runner) FunctionExtraction(t *testing.T, start span.Span, end span.Span) {
+	//TODO: function extraction not supported on command line
 }
 
 func (r *runner) runGoplsCmd(t testing.TB, args ...string) (string, string) {

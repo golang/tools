@@ -62,7 +62,7 @@ const Hello = "Hello"
 		}
 
 		// Then change the environment to make these links private.
-		env.ChangeEnv("GOPRIVATE=import.test")
+		env.ChangeEnv(map[string]string{"GOPRIVATE": "import.test"})
 
 		// Finally, verify that the links are gone.
 		content, _ = env.Hover("main.go", env.RegexpSearch("main.go", "pkg.Hello"))
@@ -81,5 +81,5 @@ const Hello = "Hello"
 		if len(links) != 0 {
 			t.Errorf("documentLink: got %d document links for go.mod, want 0\nlinks: %v", len(links), links)
 		}
-	}, WithProxy(proxy))
+	}, WithProxyFiles(proxy))
 }

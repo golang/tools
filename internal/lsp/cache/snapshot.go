@@ -107,10 +107,10 @@ func (s *snapshot) config(ctx context.Context) *packages.Config {
 	s.view.optionsMu.Unlock()
 
 	cfg := &packages.Config{
-		Env:        env,
-		Dir:        s.view.folder.Filename(),
 		Context:    ctx,
-		BuildFlags: buildFlags,
+		Dir:        s.view.root.Filename(),
+		Env:        append([]string{}, env...),
+		BuildFlags: append([]string{}, buildFlags...),
 		Mode: packages.NeedName |
 			packages.NeedFiles |
 			packages.NeedCompiledGoFiles |
@@ -134,7 +134,7 @@ func (s *snapshot) config(ctx context.Context) *packages.Config {
 	if typesinternal.SetUsesCgo(&types.Config{}) {
 		cfg.Mode |= packages.LoadMode(packagesinternal.TypecheckCgo)
 	}
-	packagesinternal.SetGoCmdRunner(cfg, s.view.gocmdRunner)
+	packagesinternal.SetGoCmdRunner(cfg, s.view.session.gocmdRunner)
 
 	return cfg
 }
@@ -615,6 +615,7 @@ func (s *snapshot) isWorkspacePackage(id packageID) (packagePath, bool) {
 	scope, ok := s.workspacePackages[id]
 	return scope, ok
 }
+
 func (s *snapshot) FindFile(uri span.URI) source.FileHandle {
 	f, err := s.view.getFile(uri)
 	if err != nil {
@@ -883,10 +884,15 @@ func (s *snapshot) clone(ctx context.Context, withoutURIs map[span.URI]source.Fi
 		// TODO(heschi): figure out the locking model and use transitiveReverseDeps?
 		var addRevDeps func(packageID)
 		addRevDeps = func(id packageID) {
-			if _, seen := transitiveIDs[id]; seen {
+			current, seen := transitiveIDs[id]
+			newInvalidateMetadata := current || invalidateMetadata
+
+			// If we've already seen this ID, and the value of invalidate
+			// metadata has not changed, we can return early.
+			if seen && current == newInvalidateMetadata {
 				return
 			}
-			transitiveIDs[id] = invalidateMetadata
+			transitiveIDs[id] = newInvalidateMetadata
 			for _, rid := range s.getImportedByLocked(id) {
 				addRevDeps(rid)
 			}

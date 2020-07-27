@@ -41,7 +41,7 @@ const (
 		},
 		{
 			label:        "generate disabled",
-			enabled:      map[string]bool{source.CommandGenerate: false},
+			enabled:      map[string]bool{source.CommandGenerate.Name: false},
 			wantCodeLens: false,
 		},
 	}
@@ -122,7 +122,7 @@ func main() {
 		if before == after {
 			t.Fatalf("go.mod file was unchanged by upgrade command")
 		}
-	}, WithProxy(proxyWithLatest))
+	}, WithProxyFiles(proxyWithLatest))
 }
 
 func TestRegenerateCgo(t *testing.T) {
@@ -158,7 +158,7 @@ func Foo() {
 		lenses := env.CodeLens("cgo.go")
 		var lens protocol.CodeLens
 		for _, l := range lenses {
-			if l.Command.Command == source.CommandRegenerateCgo {
+			if l.Command.Command == source.CommandRegenerateCgo.Name {
 				lens = l
 			}
 		}

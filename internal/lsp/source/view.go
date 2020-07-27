@@ -177,6 +177,10 @@ type View interface {
 	// IgnoredFile reports if a file would be ignored by a `go list` of the whole
 	// workspace.
 	IgnoredFile(uri span.URI) bool
+
+	// WorkspaceDirectories returns any directory known by the view. For views
+	// within a module, this is the module root and any replace targets.
+	WorkspaceDirectories(ctx context.Context) ([]string, error)
 }
 
 type BuiltinPackage interface {
@@ -270,6 +274,27 @@ const (
 	InvalidateMetadata
 )
 
+func (a FileAction) String() string {
+	switch a {
+	case Open:
+		return "Open"
+	case Change:
+		return "Change"
+	case Close:
+		return "Close"
+	case Save:
+		return "Save"
+	case Create:
+		return "Create"
+	case Delete:
+		return "Delete"
+	case InvalidateMetadata:
+		return "InvalidateMetadata"
+	default:
+		return "Unknown"
+	}
+}
+
 // Cache abstracts the core logic of dealing with the environment from the
 // higher level logic that processes the information to produce results.
 // The cache provides access to files and their contents, so the source
@@ -280,6 +305,9 @@ const (
 type Cache interface {
 	// FileSet returns the shared fileset used by all files in the system.
 	FileSet() *token.FileSet
+
+	// GetFile returns a file handle for the given URI.
+	GetFile(ctx context.Context, uri span.URI) (FileHandle, error)
 
 	// ParseGoHandle returns a ParseGoHandle for the given file handle.
 	ParseGoHandle(ctx context.Context, fh FileHandle, mode ParseMode) ParseGoHandle
@@ -299,6 +327,17 @@ type ParseGoHandle interface {
 
 	// Cached returns the AST for this handle, if it has already been stored.
 	Cached() (file *ast.File, src []byte, m *protocol.ColumnMapper, parseErr error, err error)
+
+	// PosToField is a cache of *ast.Fields by token.Pos. This allows us
+	// to quickly find corresponding *ast.Field node given a *types.Var.
+	// We must refer to the AST to render type aliases properly when
+	// formatting signatures and other types.
+	PosToField(context.Context) (map[token.Pos]*ast.Field, error)
+
+	// PosToDecl maps certain objects' positions to their surrounding
+	// ast.Decl. This mapping is used when building the documentation
+	// string for the objects.
+	PosToDecl(context.Context) (map[token.Pos]ast.Decl, error)
 }
 
 type ParseModHandle interface {
@@ -326,8 +365,14 @@ type ModWhyHandle interface {
 }
 
 type ModTidyHandle interface {
+	// Mod is the ParseModHandle associated with the go.mod file being tidied.
+	ParseModHandle() ParseModHandle
+
 	// Tidy returns the results of `go mod tidy` for the module.
-	Tidy(ctx context.Context) (map[string]*modfile.Require, []Error, error)
+	Tidy(ctx context.Context) ([]Error, error)
+
+	// TidiedContent is the content of the tidied go.mod file.
+	TidiedContent(ctx context.Context) ([]byte, error)
 }
 
 var ErrTmpModfileUnsupported = errors.New("-modfile is unsupported for this Go version")
@@ -415,6 +460,12 @@ type Analyzer struct {
 	Analyzer *analysis.Analyzer
 	enabled  bool
 
+	// Command is the name of the command used to invoke the suggested fixes
+	// for the analyzer. It is non-nil if we expect this analyzer to provide
+	// its fix separately from its diagnostics. That is, we should apply the
+	// analyzer's suggested fixes through a Command, not a TextEdit.
+	Command *Command
+
 	// If this is true, then we can apply the suggested fixes
 	// as part of a source.FixAll codeaction.
 	HighConfidence bool
@@ -436,6 +487,7 @@ func (a Analyzer) Enabled(snapshot Snapshot) bool {
 // only the relevant fields of a *go/packages.Package.
 type Package interface {
 	ID() string
+	Name() string
 	PkgPath() string
 	CompiledGoFiles() []ParseGoHandle
 	File(uri span.URI) (ParseGoHandle, error)
@@ -468,6 +520,7 @@ const (
 	ListError
 	ParseError
 	TypeError
+	ModTidyError
 	Analysis
 )
 
@@ -475,4 +528,7 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("%s:%s: %s", e.URI, e.Range, e.Message)
 }
 
-var InconsistentVendoring = errors.New("inconsistent vendoring")
+var (
+	InconsistentVendoring = errors.New("inconsistent vendoring")
+	PackagesLoadError     = errors.New("packages.Load error")
+)

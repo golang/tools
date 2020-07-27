@@ -11,34 +11,25 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
-	"go/printer"
 	"go/token"
 	"go/types"
 	"log"
-	"strings"
 	"unicode"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/span"
 )
 
-const Doc = `suggested input for incomplete struct initializations
+const Doc = `note incomplete struct initializations
 
-This analyzer provides the appropriate zero values for all
-uninitialized fields of an empty struct. For example, given the following struct:
-	type Foo struct {
-		ID   int64
-		Name string
-	}
-the initialization
-	var _ = Foo{}
-will turn into
-	var _ = Foo{
-		ID: 0,
-		Name: "",
-	}
+This analyzer provides diagnostics for any struct literals that do not have
+any fields initialized. Because the suggested fix for this analysis is
+expensive to compute, callers should compute it separately, using the
+SuggestedFix function below.
 `
 
 var Analyzer = &analysis.Analyzer{
@@ -95,32 +86,12 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 		fieldCount := obj.NumFields()
+
 		// Skip any struct that is already populated or that has no fields.
 		if fieldCount == 0 || fieldCount == len(expr.Elts) {
 			return
 		}
-
-		var name string
-		switch typ := expr.Type.(type) {
-		case *ast.Ident:
-			name = typ.Name
-		case *ast.SelectorExpr:
-			name = fmt.Sprintf("%s.%s", typ.X, typ.Sel.Name)
-		default:
-			log.Printf("anonymous structs are not yet supported: (%T)", expr.Type)
-			return
-		}
-
-		// Use a new fileset to build up a token.File for the new composite
-		// literal. We need one line for foo{, one line for }, and one line for
-		// each field we're going to set. format.Node only cares about line
-		// numbers, so we don't need to set columns, and each line can be
-		// 1 byte long.
-		fset := token.NewFileSet()
-		tok := fset.AddFile("", -1, fieldCount+2)
-
-		line := 2 // account for 1-based lines and the left brace
-		var elts []ast.Expr
+		var fillable bool
 		for i := 0; i < fieldCount; i++ {
 			field := obj.Field(i)
 
@@ -128,99 +99,167 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			if field.Pkg() != nil && field.Pkg() != pass.Pkg && !field.Exported() {
 				continue
 			}
-
-			value := populateValue(pass.Fset, file, pass.Pkg, field.Type())
-			if value == nil {
-				continue
-			}
-
-			tok.AddLine(line - 1) // add 1 byte per line
-			if line > tok.LineCount() {
-				panic(fmt.Sprintf("invalid line number %v (of %v) for fillstruct %s", line, tok.LineCount(), name))
-			}
-			pos := tok.LineStart(line)
-
-			kv := &ast.KeyValueExpr{
-				Key: &ast.Ident{
-					NamePos: pos,
-					Name:    field.Name(),
-				},
-				Colon: pos,
-				Value: value,
-			}
-			elts = append(elts, kv)
-			line++
+			fillable = true
 		}
-
-		// If all of the struct's fields are unexported, we have nothing to do.
-		if len(elts) == 0 {
+		if !fillable {
 			return
 		}
-
-		// Add the final line for the right brace. Offset is the number of
-		// bytes already added plus 1.
-		tok.AddLine(len(elts) + 1)
-		line = len(elts) + 2
-		if line > tok.LineCount() {
-			panic(fmt.Sprintf("invalid line number %v (of %v) for fillstruct %s", line, tok.LineCount(), name))
-		}
-
-		cl := &ast.CompositeLit{
-			Type:   expr.Type,
-			Lbrace: tok.LineStart(1),
-			Elts:   elts,
-			Rbrace: tok.LineStart(line),
-		}
-
-		// Print the AST to get the the original source code.
-		var b bytes.Buffer
-		if err := printer.Fprint(&b, pass.Fset, file); err != nil {
-			log.Printf("failed to print original file: %s", err)
-			return
-		}
-
-		// Find the line on which the composite literal is declared.
-		split := strings.Split(b.String(), "\n")
-		lineNumber := pass.Fset.Position(expr.Type.Pos()).Line
-		firstLine := split[lineNumber-1] // lines are 1-indexed
-
-		// Trim the whitespace from the left of the line, and use the index
-		// to get the amount of whitespace on the left.
-		trimmed := strings.TrimLeftFunc(firstLine, unicode.IsSpace)
-		index := strings.Index(firstLine, trimmed)
-		whitespace := firstLine[:index]
-
-		var newExpr bytes.Buffer
-		if err := format.Node(&newExpr, fset, cl); err != nil {
-			log.Printf("failed to format %s: %v", cl.Type, err)
-			return
-		}
-		split = strings.Split(newExpr.String(), "\n")
-		var newText strings.Builder
-		for i, s := range split {
-			// Don't add the extra indentation to the first line.
-			if i != 0 {
-				newText.WriteString(whitespace)
-			}
-			newText.WriteString(s)
-			if i < len(split)-1 {
-				newText.WriteByte('\n')
-			}
+		var name string
+		switch typ := expr.Type.(type) {
+		case *ast.Ident:
+			name = typ.Name
+		case *ast.SelectorExpr:
+			name = fmt.Sprintf("%s.%s", typ.X, typ.Sel.Name)
+		default:
+			name = "anonymous struct"
 		}
 		pass.Report(analysis.Diagnostic{
-			Pos: expr.Lbrace,
-			End: expr.Rbrace,
-			SuggestedFixes: []analysis.SuggestedFix{{
-				Message: fmt.Sprintf("Fill %s with default values", name),
-				TextEdits: []analysis.TextEdit{{
-					Pos:     expr.Pos(),
-					End:     expr.End(),
-					NewText: []byte(newText.String()),
-				}},
-			}},
+			Message: fmt.Sprintf("Fill %s with default values", name),
+			Pos:     expr.Lbrace,
+			End:     expr.Rbrace,
 		})
 	})
 	return nil, nil
+}
+
+func SuggestedFix(fset *token.FileSet, rng span.Range, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
+	pos := rng.Start // don't use the end
+
+	// TODO(rstambler): Using ast.Inspect would probably be more efficient than
+	// calling PathEnclosingInterval. Switch this approach.
+	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
+	if len(path) == 0 {
+		return nil, fmt.Errorf("no enclosing ast.Node")
+	}
+	var expr *ast.CompositeLit
+	for _, n := range path {
+		if node, ok := n.(*ast.CompositeLit); ok {
+			expr = node
+			break
+		}
+	}
+	if info == nil {
+		return nil, fmt.Errorf("nil types.Info")
+	}
+	typ := info.TypeOf(expr)
+	if typ == nil {
+		return nil, fmt.Errorf("no composite literal")
+	}
+
+	// Find reference to the type declaration of the struct being initialized.
+	for {
+		p, ok := typ.Underlying().(*types.Pointer)
+		if !ok {
+			break
+		}
+		typ = p.Elem()
+	}
+	typ = typ.Underlying()
+
+	obj, ok := typ.(*types.Struct)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type %v (%T), expected *types.Struct", typ, typ)
+	}
+	fieldCount := obj.NumFields()
+
+	// Use a new fileset to build up a token.File for the new composite
+	// literal. We need one line for foo{, one line for }, and one line for
+	// each field we're going to set. format.Node only cares about line
+	// numbers, so we don't need to set columns, and each line can be
+	// 1 byte long.
+	fakeFset := token.NewFileSet()
+	tok := fakeFset.AddFile("", -1, fieldCount+2)
+
+	line := 2 // account for 1-based lines and the left brace
+	var elts []ast.Expr
+	for i := 0; i < fieldCount; i++ {
+		field := obj.Field(i)
+
+		// Ignore fields that are not accessible in the current package.
+		if field.Pkg() != nil && field.Pkg() != pkg && !field.Exported() {
+			continue
+		}
+
+		value := populateValue(fset, file, pkg, field.Type())
+		if value == nil {
+			continue
+		}
+
+		tok.AddLine(line - 1) // add 1 byte per line
+		if line > tok.LineCount() {
+			panic(fmt.Sprintf("invalid line number %v (of %v) for fillstruct", line, tok.LineCount()))
+		}
+		pos := tok.LineStart(line)
+
+		kv := &ast.KeyValueExpr{
+			Key: &ast.Ident{
+				NamePos: pos,
+				Name:    field.Name(),
+			},
+			Colon: pos,
+			Value: value,
+		}
+		elts = append(elts, kv)
+		line++
+	}
+
+	// If all of the struct's fields are unexported, we have nothing to do.
+	if len(elts) == 0 {
+		return nil, fmt.Errorf("no elements to fill")
+	}
+
+	// Add the final line for the right brace. Offset is the number of
+	// bytes already added plus 1.
+	tok.AddLine(len(elts) + 1)
+	line = len(elts) + 2
+	if line > tok.LineCount() {
+		panic(fmt.Sprintf("invalid line number %v (of %v) for fillstruct", line, tok.LineCount()))
+	}
+
+	cl := &ast.CompositeLit{
+		Type:   expr.Type,
+		Lbrace: tok.LineStart(1),
+		Elts:   elts,
+		Rbrace: tok.LineStart(line),
+	}
+
+	// Find the line on which the composite literal is declared.
+	split := bytes.Split(content, []byte("\n"))
+	lineNumber := fset.Position(expr.Lbrace).Line
+	firstLine := split[lineNumber-1] // lines are 1-indexed
+
+	// Trim the whitespace from the left of the line, and use the index
+	// to get the amount of whitespace on the left.
+	trimmed := bytes.TrimLeftFunc(firstLine, unicode.IsSpace)
+	index := bytes.Index(firstLine, trimmed)
+	whitespace := firstLine[:index]
+
+	var newExpr bytes.Buffer
+	if err := format.Node(&newExpr, fakeFset, cl); err != nil {
+		log.Printf("failed to format %s: %v", cl.Type, err)
+		return nil, err
+	}
+	split = bytes.Split(newExpr.Bytes(), []byte("\n"))
+	newText := bytes.NewBuffer(nil)
+	for i, s := range split {
+		// Don't add the extra indentation to the first line.
+		if i != 0 {
+			newText.Write(whitespace)
+		}
+		newText.Write(s)
+		if i < len(split)-1 {
+			newText.WriteByte('\n')
+		}
+	}
+	return &analysis.SuggestedFix{
+		TextEdits: []analysis.TextEdit{
+			{
+				Pos:     expr.Pos(),
+				End:     expr.End(),
+				NewText: newText.Bytes(),
+			},
+		},
+	}, nil
 }
 
 // populateValue constructs an expression to fill the value of a struct field.
@@ -279,7 +318,8 @@ func populateValue(fset *token.FileSet, f *ast.File, pkg *types.Package, typ typ
 			Type: &ast.ArrayType{
 				Elt: a,
 				Len: &ast.BasicLit{
-					Kind: token.INT, Value: fmt.Sprintf("%v", u.Len())},
+					Kind: token.INT, Value: fmt.Sprintf("%v", u.Len()),
+				},
 			},
 		}
 	case *types.Chan:
