@@ -436,8 +436,12 @@ func missingModuleErrors(ctx context.Context, fset *token.FileSet, modMapper *pr
 	for _, pkg := range pkgs {
 		missingPkgs := map[string]*modfile.Require{}
 		for _, imp := range pkg.Imports() {
-			if req, ok := missingMods[imp.PkgPath()]; ok {
+			found := func(req *modfile.Require) {
 				missingPkgs[imp.PkgPath()] = req
+				matchedMissingMods[req] = struct{}{}
+			}
+			if req, ok := missingMods[imp.PkgPath()]; ok {
+				found(req)
 				break
 			}
 			// If the import is a package of the dependency, then add the
@@ -457,8 +461,7 @@ func missingModuleErrors(ctx context.Context, fset *token.FileSet, modMapper *pr
 				}
 			}
 			if req, ok := missingMods[match]; ok {
-				missingPkgs[imp.PkgPath()] = req
-				matchedMissingMods[req] = struct{}{}
+				found(req)
 			}
 		}
 		if len(missingPkgs) > 0 {
