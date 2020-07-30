@@ -9,38 +9,38 @@ import (
 	"testing"
 )
 
-var (
-	dependsOnSelf = &Analyzer{
-		Name: "dependsOnSelf",
-		Doc:  "this analyzer depends on itself",
-	}
-	inCycleA = &Analyzer{
-		Name: "inCycleA",
-		Doc:  "this analyzer depends on inCycleB",
-	}
-	inCycleB = &Analyzer{
-		Name: "inCycleB",
-		Doc:  "this analyzer depends on inCycleA",
-	}
-	pointsToCycle = &Analyzer{
-		Name: "pointsToCycle",
-		Doc:  "this analyzer depends on inCycleA",
-	}
-	notInCycleA = &Analyzer{
-		Name: "notInCycleA",
-		Doc:  "this analyzer depends on notInCycleB and notInCycleC",
-	}
-	notInCycleB = &Analyzer{
-		Name: "notInCycleB",
-		Doc:  "this analyzer depends on notInCycleC",
-	}
-	notInCycleC = &Analyzer{
-		Name: "notInCycleC",
-		Doc:  "this analyzer has no dependencies",
-	}
-)
+func TestValidate(t *testing.T) {
+	var (
+		dependsOnSelf = &Analyzer{
+			Name: "dependsOnSelf",
+			Doc:  "this analyzer depends on itself",
+		}
+		inCycleA = &Analyzer{
+			Name: "inCycleA",
+			Doc:  "this analyzer depends on inCycleB",
+		}
+		inCycleB = &Analyzer{
+			Name: "inCycleB",
+			Doc:  "this analyzer depends on inCycleA",
+		}
+		pointsToCycle = &Analyzer{
+			Name: "pointsToCycle",
+			Doc:  "this analyzer depends on inCycleA",
+		}
+		notInCycleA = &Analyzer{
+			Name: "notInCycleA",
+			Doc:  "this analyzer depends on notInCycleB and notInCycleC",
+		}
+		notInCycleB = &Analyzer{
+			Name: "notInCycleB",
+			Doc:  "this analyzer depends on notInCycleC",
+		}
+		notInCycleC = &Analyzer{
+			Name: "notInCycleC",
+			Doc:  "this analyzer has no dependencies",
+		}
+	)
 
-func init() {
 	dependsOnSelf.Requires = append(dependsOnSelf.Requires, dependsOnSelf)
 	inCycleA.Requires = append(inCycleA.Requires, inCycleB)
 	inCycleB.Requires = append(inCycleB.Requires, inCycleA)
@@ -48,9 +48,7 @@ func init() {
 	notInCycleA.Requires = append(notInCycleA.Requires, notInCycleB, notInCycleC)
 	notInCycleB.Requires = append(notInCycleB.Requires, notInCycleC)
 	notInCycleC.Requires = []*Analyzer{}
-}
 
-func TestValidate(t *testing.T) {
 	cases := []struct {
 		analyzers     []*Analyzer
 		wantErr       bool
@@ -77,6 +75,7 @@ func TestValidate(t *testing.T) {
 			[]string{},
 		},
 	}
+
 	for _, c := range cases {
 		got := Validate(c.analyzers)
 
