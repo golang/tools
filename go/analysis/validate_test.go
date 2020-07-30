@@ -7,6 +7,8 @@ package analysis
 import (
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestValidate(t *testing.T) {
@@ -21,7 +23,7 @@ func TestValidate(t *testing.T) {
 		}
 		inCycleB = &Analyzer{
 			Name: "inCycleB",
-			Doc:  "this analyzer depends on inCycleA",
+			Doc:  "this analyzer depends on inCycleA and notInCycleA",
 		}
 		pointsToCycle = &Analyzer{
 			Name: "pointsToCycle",
@@ -43,36 +45,36 @@ func TestValidate(t *testing.T) {
 
 	dependsOnSelf.Requires = append(dependsOnSelf.Requires, dependsOnSelf)
 	inCycleA.Requires = append(inCycleA.Requires, inCycleB)
-	inCycleB.Requires = append(inCycleB.Requires, inCycleA)
+	inCycleB.Requires = append(inCycleB.Requires, inCycleA, notInCycleA)
 	pointsToCycle.Requires = append(pointsToCycle.Requires, inCycleA)
 	notInCycleA.Requires = append(notInCycleA.Requires, notInCycleB, notInCycleC)
 	notInCycleB.Requires = append(notInCycleB.Requires, notInCycleC)
 	notInCycleC.Requires = []*Analyzer{}
 
 	cases := []struct {
-		analyzers     []*Analyzer
-		wantErr       bool
-		errSubstrings []string
+		analyzers        []*Analyzer
+		wantErr          bool
+		analyzersInCycle map[string]bool
 	}{
 		{
 			[]*Analyzer{dependsOnSelf},
 			true,
-			[]string{"cycle detected involving", "dependsOnSelf"},
+			map[string]bool{"dependsOnSelf": true},
 		},
 		{
 			[]*Analyzer{inCycleA, inCycleB},
 			true,
-			[]string{"cycle detected involving", "inCycleA", "inCycleB"},
+			map[string]bool{"inCycleA": true, "inCycleB": true},
 		},
 		{
 			[]*Analyzer{pointsToCycle},
 			true,
-			[]string{"cycle detected involving", "inCycleA", "inCycleB", "pointsToCycle"},
+			map[string]bool{"inCycleA": true, "inCycleB": true},
 		},
 		{
 			[]*Analyzer{notInCycleA},
 			false,
-			[]string{},
+			map[string]bool{},
 		},
 	}
 
@@ -90,11 +92,18 @@ func TestValidate(t *testing.T) {
 			t.Errorf("expected error while validating analyzers %v, but got nil", c.analyzers)
 		}
 
-		err := got.Error()
-		for _, e := range c.errSubstrings {
-			if !strings.Contains(err, e) {
-				t.Errorf("error string %s does not contain expected substring %s", err, e)
-			}
+		want := &CycleInRequiresGraphError{AnalyzerNames: c.analyzersInCycle}
+		if diff := cmp.Diff(got, want); diff != "" {
+			t.Errorf("error %v does not contain expected analyzers, want %v (diff -want, +got): %v", got, want, diff)
 		}
+	}
+}
+
+func TestCycleInRequiresGraphErrorMessage(t *testing.T) {
+	err := CycleInRequiresGraphError{}
+	errMsg := err.Error()
+	wantSubstring := "cycle detected"
+	if !strings.Contains(errMsg, wantSubstring) {
+		t.Errorf("error string %s does not contain expected substring %q", errMsg, wantSubstring)
 	}
 }

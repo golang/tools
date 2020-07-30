@@ -3,6 +3,7 @@ module golang.org/x/tools
 go 1.11
 
 require (
+	github.com/google/go-cmp v0.5.1
 	github.com/yuin/goldmark v1.1.32
 	golang.org/x/mod v0.3.0
 	golang.org/x/net v0.0.0-20200625001655-4c5254603344
