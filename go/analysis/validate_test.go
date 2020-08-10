@@ -7,8 +7,6 @@ package analysis
 import (
 	"strings"
 	"testing"
-
-	"github.com/google/go-cmp/cmp"
 )
 
 func TestValidate(t *testing.T) {
@@ -92,9 +90,20 @@ func TestValidate(t *testing.T) {
 			t.Errorf("expected error while validating analyzers %v, but got nil", c.analyzers)
 		}
 
-		want := &CycleInRequiresGraphError{AnalyzerNames: c.analyzersInCycle}
-		if diff := cmp.Diff(got, want); diff != "" {
-			t.Errorf("error %v does not contain expected analyzers, want %v (diff -want, +got): %v", got, want, diff)
+		err, ok := got.(*CycleInRequiresGraphError)
+		if !ok {
+			t.Errorf("want CycleInRequiresGraphError, got %T", err)
+		}
+
+		for a := range c.analyzersInCycle {
+			if !err.AnalyzerNames[a] {
+				t.Errorf("analyzer %s should be in cycle", a)
+			}
+		}
+		for a := range err.AnalyzerNames {
+			if !c.analyzersInCycle[a] {
+				t.Errorf("analyzer %s should not be in cycle", a)
+			}
 		}
 	}
 }
