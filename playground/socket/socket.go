@@ -359,7 +359,6 @@ func (p *process) start(body string, opt *Options) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(path)
 
 	out := "prog"
 	if runtime.GOOS == "windows" {
