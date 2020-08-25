@@ -105,6 +105,7 @@ func DefaultOptions() Options {
 				CommandToggleDetails.Name:     false,
 			},
 			ExpandWorkspaceToModule: true,
+			LocalPrefix: "dilfish.dev",
 		},
 		DebuggingOptions: DebuggingOptions{
 			CompletionBudget:   100 * time.Millisecond,
