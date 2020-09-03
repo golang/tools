@@ -30,14 +30,6 @@ Use the [VSCode-Go] plugin, with the following configuration:
 
 VSCode will complain about the `"gopls"` settings, but they will still work. Once we have a consistent set of settings, we will make the changes in the VSCode plugin necessary to remove the errors.
 
-If you encounter problems with import organization, please try setting a higher code action timeout (any value greater than 750ms), for example:
-
-```json5
-"[go]": {
-  "editor.codeActionsOnSaveTimeout": 3000
-}
-```
-
 To enable more detailed debug information, add the following to your VSCode settings:
 
 ```json5
