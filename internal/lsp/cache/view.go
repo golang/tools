@@ -16,6 +16,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -252,10 +253,30 @@ func (v *View) Options() source.Options {
 
 func minorOptionsChange(a, b source.Options) bool {
 	// Check if any of the settings that modify our understanding of files have been changed
-	if !reflect.DeepEqual(a.Env, b.Env) {
+	mapEnv := func(env []string) map[string]string {
+		m := make(map[string]string, len(env))
+		for _, x := range env {
+			split := strings.SplitN(x, "=", 2)
+			if len(split) != 2 {
+				continue
+			}
+			m[split[0]] = split[1]
+
+		}
+		return m
+	}
+	aEnv := mapEnv(a.Env)
+	bEnv := mapEnv(b.Env)
+	if !reflect.DeepEqual(aEnv, bEnv) {
 		return false
 	}
-	if !reflect.DeepEqual(a.BuildFlags, b.BuildFlags) {
+	aBuildFlags := make([]string, len(a.BuildFlags))
+	bBuildFlags := make([]string, len(b.BuildFlags))
+	copy(aBuildFlags, a.BuildFlags)
+	copy(bBuildFlags, b.BuildFlags)
+	sort.Strings(aBuildFlags)
+	sort.Strings(bBuildFlags)
+	if !reflect.DeepEqual(aBuildFlags, bBuildFlags) {
 		return false
 	}
 	// the rest of the options are benign
