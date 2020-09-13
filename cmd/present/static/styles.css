@@ -316,11 +316,8 @@ h1 {
 }
 
 h2 {
-  font-size: 45px;
-  line-height: 45px;
-
-  position: absolute;
-  bottom: 150px;
+  font-size: 34px;
+  line-height: 36px;
 
   padding: 0;
   margin: 0;
@@ -550,4 +547,12 @@ figcaption {
   -o-border-radius: 10px;
   -moz-border-radius: 10px;
   -webkit-border-radius: 10px;
+}
+
+.title {
+  font-size: 45px;
+  line-height: 45px;
+
+  position: absolute;
+  bottom: 150px;
 }

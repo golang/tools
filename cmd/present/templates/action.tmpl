@@ -4,7 +4,7 @@ It determines how the formatting actions are rendered.
 */}
 
 {{define "section"}}
-  <h{{ .Level}} id="TOC_{{.FormattedNumber}}">{{.FormattedNumber}} {{.Title}}</h{{ .Level}}>
+  <h{{.Level}} id="TOC_{{.FormattedNumber}}">{{.FormattedNumber}} {{.Title}}</h{{.Level}}>
   {{range .Elem}}{{elem $.Template .}}{{end}}
 {{end}}
 
