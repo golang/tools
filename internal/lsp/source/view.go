@@ -12,10 +12,11 @@ import (
 	"go/token"
 	"go/types"
 	"io"
+	"strings"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
@@ -39,6 +40,9 @@ type Snapshot interface {
 	// GetFile returns the FileHandle for a given URI, initializing it
 	// if it is not already part of the snapshot.
 	GetFile(ctx context.Context, uri span.URI) (VersionedFileHandle, error)
+
+	// AwaitInitialized waits until the snapshot's view is initialized.
+	AwaitInitialized(ctx context.Context)
 
 	// IsOpen returns whether the editor currently has a file open.
 	IsOpen(uri span.URI) bool
@@ -91,6 +95,10 @@ type Snapshot interface {
 	// the given go.mod file.
 	ModTidy(ctx context.Context, fh FileHandle) (*TidiedModule, error)
 
+	// BuildWorkspaceModFile builds the contents of mod file to be used for
+	// multi-module workspace.
+	BuildWorkspaceModFile(ctx context.Context) (*modfile.File, error)
+
 	// BuiltinPackage returns information about the special builtin package.
 	BuiltinPackage(ctx context.Context) (*BuiltinPackage, error)
 
@@ -142,9 +150,6 @@ type View interface {
 	// Shutdown closes this view, and detaches it from its session.
 	Shutdown(ctx context.Context)
 
-	// AwaitInitialized waits until a view is initialized
-	AwaitInitialized(ctx context.Context)
-
 	// WriteEnv writes the view-specific environment to the io.Writer.
 	WriteEnv(ctx context.Context, w io.Writer) error
 
@@ -153,13 +158,13 @@ type View interface {
 	RunProcessEnvFunc(ctx context.Context, fn func(*imports.Options) error) error
 
 	// Options returns a copy of the Options for this view.
-	Options() Options
+	Options() *Options
 
 	// SetOptions sets the options of this view to new values.
 	// Calling this may cause the view to be invalidated and a replacement view
 	// added to the session. If so the new view will be returned, otherwise the
 	// original one will be.
-	SetOptions(context.Context, Options) (View, error)
+	SetOptions(context.Context, *Options) (View, error)
 
 	// Snapshot returns the current snapshot for the view.
 	Snapshot(ctx context.Context) (Snapshot, func())
@@ -222,7 +227,7 @@ type TidiedModule struct {
 // A session may have many active views at any given time.
 type Session interface {
 	// NewView creates a new View, returning it and its first snapshot.
-	NewView(ctx context.Context, name string, folder span.URI, options Options) (View, Snapshot, func(), error)
+	NewView(ctx context.Context, name string, folder span.URI, options *Options) (View, Snapshot, func(), error)
 
 	// Cache returns the cache that created this session, for debugging only.
 	Cache() interface{}
@@ -250,10 +255,10 @@ type Session interface {
 	Overlays() []Overlay
 
 	// Options returns a copy of the SessionOptions for this session.
-	Options() Options
+	Options() *Options
 
 	// SetOptions sets the options of this session to new values.
-	SetOptions(Options)
+	SetOptions(*Options)
 }
 
 // Overlay is the type for a file held in memory on a session.
@@ -400,6 +405,10 @@ type FileIdentity struct {
 	Kind FileKind
 }
 
+func (id FileIdentity) String() string {
+	return fmt.Sprintf("%s%s%s", id.URI, id.Hash, id.Kind)
+}
+
 // FileKind describes the kind of the file in question.
 // It can be one of Go, mod, or sum.
 type FileKind int
@@ -445,11 +454,11 @@ type Analyzer struct {
 func (a Analyzer) IsEnabled(view View) bool {
 	// Staticcheck analyzers can only be enabled when staticcheck is on.
 	if _, ok := view.Options().StaticcheckAnalyzers[a.Analyzer.Name]; ok {
-		if !view.Options().StaticCheck {
+		if !view.Options().Staticcheck {
 			return false
 		}
 	}
-	if enabled, ok := view.Options().UserEnabledAnalyses[a.Analyzer.Name]; ok {
+	if enabled, ok := view.Options().Analyses[a.Analyzer.Name]; ok {
 		return enabled
 	}
 	return a.Enabled
@@ -473,7 +482,18 @@ type Package interface {
 	GetImport(pkgPath string) (Package, error)
 	MissingDependencies() []string
 	Imports() []Package
-	Module() *packages.Module
+	Version() *module.Version
+}
+
+type ErrorList []*Error
+
+func (err *ErrorList) Error() string {
+	var b strings.Builder
+	b.WriteString("source error list:")
+	for _, e := range *err {
+		b.WriteString(fmt.Sprintf("\n\t%s", e))
+	}
+	return b.String()
 }
 
 type Error struct {
@@ -508,3 +528,9 @@ var (
 	InconsistentVendoring = errors.New("inconsistent vendoring")
 	PackagesLoadError     = errors.New("packages.Load error")
 )
+
+// WorkspaceModuleVersion is the nonexistent pseudoversion used in the
+// construction of the workspace module. It is exported so that we can make
+// sure not to show this version to end users in error messages, to avoid
+// confusion.
+const WorkspaceModuleVersion = "v0.0.0-goplsworkspace"

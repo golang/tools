@@ -7,7 +7,6 @@ package regtest
 import (
 	"testing"
 
-	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/tests"
@@ -48,13 +47,15 @@ const (
 	}
 	for _, test := range tests {
 		t.Run(test.label, func(t *testing.T) {
-			runner.Run(t, workspace, func(t *testing.T, env *Env) {
+			withOptions(
+				EditorConfig{CodeLens: test.enabled},
+			).run(t, workspace, func(t *testing.T, env *Env) {
 				env.OpenFile("lib.go")
 				lens := env.CodeLens("lib.go")
 				if gotCodeLens := len(lens) > 0; gotCodeLens != test.wantCodeLens {
 					t.Errorf("got codeLens: %t, want %t", gotCodeLens, test.wantCodeLens)
 				}
-			}, WithEditorConfig(fake.EditorConfig{CodeLens: test.enabled}))
+			})
 		})
 	}
 }
@@ -68,7 +69,7 @@ func TestUpdateCodelens(t *testing.T) {
 -- golang.org/x/hello@v1.3.3/go.mod --
 module golang.org/x/hello
 
-go 1.14
+go 1.12
 -- golang.org/x/hello@v1.3.3/hi/hi.go --
 package hi
 
@@ -76,7 +77,7 @@ var Goodbye error
 	-- golang.org/x/hello@v1.2.3/go.mod --
 module golang.org/x/hello
 
-go 1.14
+go 1.12
 -- golang.org/x/hello@v1.2.3/hi/hi.go --
 package hi
 
@@ -87,9 +88,12 @@ var Goodbye error
 -- go.mod --
 module mod.com
 
-go 1.14
+go 1.12
 
 require golang.org/x/hello v1.2.3
+-- go.sum --
+golang.org/x/hello v1.2.3 h1:jOtNXLsiCuLzU6KM3wRHidpc29IxcKpofHZiOW1hYKA=
+golang.org/x/hello v1.2.3/go.mod h1:X79D30QqR94cGK8aIhQNhCZLq4mIr5Gimj5qekF08rY=
 -- main.go --
 package main
 
@@ -123,7 +127,7 @@ func main() {
 		got := env.ReadWorkspaceFile("go.mod")
 		const wantGoMod = `module mod.com
 
-go 1.14
+go 1.12
 
 require golang.org/x/hello v1.3.3
 `

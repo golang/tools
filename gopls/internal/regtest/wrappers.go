@@ -98,6 +98,21 @@ func (e *Env) EditBuffer(name string, edits ...fake.Edit) {
 	}
 }
 
+// RegexpRange returns the range of the first match for re in the buffer
+// specified by name, calling t.Fatal on any error. It first searches for the
+// position in open buffers, then in workspace files.
+func (e *Env) RegexpRange(name, re string) (fake.Pos, fake.Pos) {
+	e.T.Helper()
+	start, end, err := e.Editor.RegexpRange(name, re)
+	if err == fake.ErrUnknownBuffer {
+		start, end, err = e.Sandbox.Workdir.RegexpRange(name, re)
+	}
+	if err != nil {
+		e.T.Fatalf("RegexpRange: %v, %v", name, err)
+	}
+	return start, end
+}
+
 // RegexpSearch returns the starting position of the first match for re in the
 // buffer specified by name, calling t.Fatal on any error. It first searches
 // for the position in open buffers, then in workspace files.
@@ -253,6 +268,16 @@ func (e *Env) References(path string, pos fake.Pos) []protocol.Location {
 		e.T.Fatal(err)
 	}
 	return locations
+}
+
+// Completion executes a completion request on the server.
+func (e *Env) Completion(path string, pos fake.Pos) *protocol.CompletionList {
+	e.T.Helper()
+	completions, err := e.Editor.Completion(e.Ctx, path, pos)
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	return completions
 }
 
 // CodeAction calls testDocument/codeAction for the given path, and calls

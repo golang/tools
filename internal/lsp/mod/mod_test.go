@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/internal/lsp/cache"
+	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/tests"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/testenv"
@@ -27,9 +28,10 @@ func TestModfileRemainsUnchanged(t *testing.T) {
 	ctx := tests.Context(t)
 	cache := cache.New(ctx, nil)
 	session := cache.NewSession(ctx)
-	options := tests.DefaultOptions()
+	options := source.DefaultOptions().Clone()
+	tests.DefaultOptions(options)
 	options.TempModfile = true
-	options.Env = append(os.Environ(), "GOPACKAGESDRIVER=off", "GOROOT=")
+	options.Env = []string{"GOPACKAGESDRIVER=off", "GOROOT="}
 
 	// Make sure to copy the test directory to a temporary directory so we do not
 	// modify the test code or add go.sum files when we run the tests.

@@ -185,7 +185,7 @@ func _() {
 }
 `
 	runner.Run(t, missing, func(t *testing.T, env *Env) {
-		t.Skipf("the initial workspace load fails and never retries")
+		t.Skip("the initial workspace load fails and never retries")
 
 		env.Await(
 			env.DiagnosticAtRegexp("a/a.go", "\"mod.com/c\""),
@@ -309,9 +309,7 @@ func _() {
 	// Add the new method before the implementation. Expect diagnostics.
 	t.Run("method before implementation", func(t *testing.T) {
 		runner.Run(t, pkg, func(t *testing.T, env *Env) {
-			env.Await(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromInitialWorkspaceLoad), 1),
-			)
+			env.Await(InitialWorkspaceLoad)
 			env.WriteWorkspaceFile("b/b.go", newMethod)
 			env.Await(
 				OnceMet(
@@ -328,9 +326,7 @@ func _() {
 	// Add the new implementation before the new method. Expect no diagnostics.
 	t.Run("implementation before method", func(t *testing.T) {
 		runner.Run(t, pkg, func(t *testing.T, env *Env) {
-			env.Await(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromInitialWorkspaceLoad), 1),
-			)
+			env.Await(InitialWorkspaceLoad)
 			env.WriteWorkspaceFile("a/a.go", implementation)
 			env.Await(
 				OnceMet(
@@ -347,9 +343,7 @@ func _() {
 	// Add both simultaneously. Expect no diagnostics.
 	t.Run("implementation and method simultaneously", func(t *testing.T) {
 		runner.Run(t, pkg, func(t *testing.T, env *Env) {
-			env.Await(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromInitialWorkspaceLoad), 1),
-			)
+			env.Await(InitialWorkspaceLoad)
 			env.WriteWorkspaceFiles(map[string]string{
 				"a/a.go": implementation,
 				"b/b.go": newMethod,
@@ -386,7 +380,12 @@ package a
 		runner.Run(t, pkg, func(t *testing.T, env *Env) {
 			env.OpenFile("a/a.go")
 			env.OpenFile("a/a_unneeded.go")
-			env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 2))
+			env.Await(
+				OnceMet(
+					CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 2),
+					LogMatching(protocol.Info, "a_unneeded.go", 1),
+				),
+			)
 
 			// Close and delete the open file, mimicking what an editor would do.
 			env.CloseBuffer("a/a_unneeded.go")
@@ -397,7 +396,13 @@ package a
 			)
 			env.SaveBuffer("a/a.go")
 			env.Await(
-				NoLogMatching(protocol.Info, "a_unneeded.go"),
+				OnceMet(
+					CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidSave), 1),
+					// There should only be one log message containing
+					// a_unneeded.go, from the initial workspace load, which we
+					// check for earlier. If there are more, there's a bug.
+					LogMatching(protocol.Info, "a_unneeded.go", 1),
+				),
 				EmptyDiagnostics("a/a.go"),
 			)
 		})
@@ -407,18 +412,29 @@ package a
 		runner.Run(t, pkg, func(t *testing.T, env *Env) {
 			env.OpenFile("a/a.go")
 			env.OpenFile("a/a_unneeded.go")
-			env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 2))
+			env.Await(
+				OnceMet(
+					CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 2),
+					LogMatching(protocol.Info, "a_unneeded.go", 1),
+				),
+			)
 
 			// Delete and then close the file.
-			env.CloseBuffer("a/a_unneeded.go")
 			env.RemoveWorkspaceFile("a/a_unneeded.go")
+			env.CloseBuffer("a/a_unneeded.go")
 			env.RegexpReplace("a/a.go", "var _ int", "fmt.Println(\"\")")
 			env.Await(
 				env.DiagnosticAtRegexp("a/a.go", "fmt"),
 			)
 			env.SaveBuffer("a/a.go")
 			env.Await(
-				NoLogMatching(protocol.Info, "a_unneeded.go"),
+				OnceMet(
+					CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidSave), 1),
+					// There should only be one log message containing
+					// a_unneeded.go, from the initial workspace load, which we
+					// check for earlier. If there are more, there's a bug.
+					LogMatching(protocol.Info, "a_unneeded.go", 1),
+				),
 				EmptyDiagnostics("a/a.go"),
 			)
 		})
@@ -457,9 +473,7 @@ package a
 func _() {}
 `
 	runner.Run(t, pkg, func(t *testing.T, env *Env) {
-		env.Await(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromInitialWorkspaceLoad), 1),
-		)
+		env.Await(InitialWorkspaceLoad)
 		env.ChangeFilesOnDisk([]fake.FileEvent{
 			{
 				Path: "a/a3.go",
@@ -546,9 +560,7 @@ func main() {
 }
 `
 	withOptions(WithProxyFiles(proxy)).run(t, mod, func(t *testing.T, env *Env) {
-		env.Await(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromInitialWorkspaceLoad), 1),
-		)
+		env.Await(InitialWorkspaceLoad)
 		env.WriteWorkspaceFiles(map[string]string{
 			"go.mod": `module mod.com
 
@@ -574,9 +586,9 @@ func main() {
 	})
 }
 
-// Reproduces golang/go#37069.
+// Reproduces golang/go#40340.
 func TestSwitchFromGOPATHToModules(t *testing.T) {
-	t.Skipf("golang/go#37069 is not yet resolved.")
+	t.Skip("golang/go#40340 is not yet resolved.")
 
 	const files = `
 -- foo/blah/blah.go --
@@ -596,7 +608,7 @@ func main() {
 		env.OpenFile("foo/main.go")
 		env.Await(
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromInitialWorkspaceLoad), 1),
+				InitialWorkspaceLoad,
 				env.DiagnosticAtRegexp("foo/main.go", `"blah"`),
 			),
 		)
@@ -614,6 +626,90 @@ func main() {
 			OnceMet(
 				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
 				NoDiagnostics("foo/main.go"),
+			),
+		)
+	})
+}
+
+func TestNewSymbolInTestVariant(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- a/a.go --
+package a
+
+func bob() {}
+-- a/a_test.go --
+package a
+
+import "testing"
+
+func TestBob(t *testing.T) {
+	bob()
+}
+`
+	run(t, files, func(t *testing.T, env *Env) {
+		env.Await(InitialWorkspaceLoad)
+		// Add a new symbol to the package under test and use it in the test
+		// variant. Expect no diagnostics.
+		env.WriteWorkspaceFiles(map[string]string{
+			"a/a.go": `package a
+
+func bob() {}
+func george() {}
+`,
+			"a/a_test.go": `package a
+
+import "testing"
+
+func TestAll(t *testing.T) {
+	bob()
+	george()
+}
+`,
+		})
+		env.Await(
+			OnceMet(
+				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1),
+				NoDiagnostics("a/a.go"),
+			),
+			OnceMet(
+				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1),
+				NoDiagnostics("a/a_test.go"),
+			),
+		)
+		// Now, add a new file to the test variant and use its symbol in the
+		// original test file. Expect no diagnostics.
+		env.WriteWorkspaceFiles(map[string]string{
+			"a/a_test.go": `package a
+
+import "testing"
+
+func TestAll(t *testing.T) {
+	bob()
+	george()
+	hi()
+}
+`,
+			"a/a2_test.go": `package a
+
+import "testing"
+
+func hi() {}
+
+func TestSomething(t *testing.T) {}
+`,
+		})
+		env.Await(
+			OnceMet(
+				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 2),
+				NoDiagnostics("a/a_test.go"),
+			),
+			OnceMet(
+				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 2),
+				NoDiagnostics("a/a2_test.go"),
 			),
 		)
 	})

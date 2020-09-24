@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/mod/module"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/debug/tag"
@@ -32,7 +33,7 @@ type packageHandle struct {
 
 	goFiles, compiledGoFiles []*parseGoHandle
 
-	// mode is the mode the the files were parsed in.
+	// mode is the mode the files were parsed in.
 	mode source.ParseMode
 
 	// m is the metadata associated with the package.
@@ -176,8 +177,7 @@ func checkPackageKey(ctx context.Context, id packageID, pghs []*parseGoHandle, c
 		b.WriteString(string(dep))
 	}
 	for _, cgf := range pghs {
-		b.WriteString(string(cgf.file.URI()))
-		b.WriteString(cgf.file.FileIdentity().Hash)
+		b.WriteString(cgf.file.FileIdentity().String())
 	}
 	return packageHandleKey(hashContents(b.Bytes()))
 }
@@ -256,7 +256,6 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 		mode:            mode,
 		goFiles:         make([]*source.ParsedGoFile, len(m.goFiles)),
 		compiledGoFiles: make([]*source.ParsedGoFile, len(m.compiledGoFiles)),
-		module:          m.module,
 		imports:         make(map[packagePath]*pkg),
 		typesSizes:      m.typesSizes,
 		typesInfo: &types.Info{
@@ -267,6 +266,18 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 			Selections: make(map[*ast.SelectorExpr]*types.Selection),
 			Scopes:     make(map[ast.Node]*types.Scope),
 		},
+	}
+	// If this is a replaced module in the workspace, the version is
+	// meaningless, and we don't want clients to access it.
+	if m.module != nil {
+		version := m.module.Version
+		if version == source.WorkspaceModuleVersion {
+			version = ""
+		}
+		pkg.version = &module.Version{
+			Path:    m.module.Path,
+			Version: version,
+		}
 	}
 	var (
 		files        = make([]*ast.File, len(m.compiledGoFiles))

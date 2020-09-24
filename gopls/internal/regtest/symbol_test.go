@@ -7,7 +7,6 @@ package regtest
 import (
 	"testing"
 
-	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
 )
 
@@ -42,6 +41,23 @@ type myStruct struct { // struct type
 
 type myInterface interface { // interface
 	DoSomeCoolStuff() string // interface method
+}
+
+type embed struct {
+	myStruct
+
+	nestedStruct struct {
+		nestedField int
+
+		nestedStruct2 struct {
+			int
+		}
+	}
+
+	nestedInterface interface {
+		myInterface
+		nestedMethod()
+	}
 }
 -- p/p.go --
 package p
@@ -173,6 +189,62 @@ var caseSensitiveSymbolChecks = map[string]*expSymbolInformation{
 			},
 		},
 	},
+
+	"embed.myStruct": {
+		Name: pString("main.embed.myStruct"),
+		Kind: pKind(protocol.Field),
+		Location: &expLocation{
+			Path: pString("main.go"),
+			Range: &expRange{
+				Start: &expPos{
+					Line:   pInt(28),
+					Column: pInt(1),
+				},
+			},
+		},
+	},
+
+	"nestedStruct2.int": {
+		Name: pString("main.embed.nestedStruct.nestedStruct2.int"),
+		Kind: pKind(protocol.Field),
+		Location: &expLocation{
+			Path: pString("main.go"),
+			Range: &expRange{
+				Start: &expPos{
+					Line:   pInt(34),
+					Column: pInt(3),
+				},
+			},
+		},
+	},
+
+	"nestedInterface.myInterface": {
+		Name: pString("main.embed.nestedInterface.myInterface"),
+		Kind: pKind(protocol.Interface),
+		Location: &expLocation{
+			Path: pString("main.go"),
+			Range: &expRange{
+				Start: &expPos{
+					Line:   pInt(39),
+					Column: pInt(2),
+				},
+			},
+		},
+	},
+
+	"nestedInterface.nestedMethod": {
+		Name: pString("main.embed.nestedInterface.nestedMethod"),
+		Kind: pKind(protocol.Method),
+		Location: &expLocation{
+			Path: pString("main.go"),
+			Range: &expRange{
+				Start: &expPos{
+					Line:   pInt(40),
+					Column: pInt(2),
+				},
+			},
+		},
+	},
 }
 
 var caseInsensitiveSymbolChecks = map[string]*expSymbolInformation{
@@ -193,10 +265,9 @@ func TestSymbolPos(t *testing.T) {
 
 func checkChecks(t *testing.T, matcher string, checks map[string]*expSymbolInformation) {
 	t.Helper()
-	opts := []RunOption{
-		WithEditorConfig(fake.EditorConfig{SymbolMatcher: &matcher}),
-	}
-	runner.Run(t, symbolSetup, func(t *testing.T, env *Env) {
+	withOptions(
+		EditorConfig{SymbolMatcher: &matcher},
+	).run(t, symbolSetup, func(t *testing.T, env *Env) {
 		t.Run(matcher, func(t *testing.T) {
 			for query, exp := range checks {
 				t.Run(query, func(t *testing.T) {
@@ -207,5 +278,5 @@ func checkChecks(t *testing.T, matcher string, checks map[string]*expSymbolInfor
 				})
 			}
 		})
-	}, opts...)
+	})
 }

@@ -73,7 +73,6 @@ func packageCompletionSurrounding(ctx context.Context, fset *token.FileSet, fh s
 	if err != nil {
 		return nil, err
 	}
-
 	// If the file lacks a package declaration, the parser will return an empty
 	// AST. As a work-around, try to parse an expression from the file contents.
 	expr, _ := parser.ParseExprFrom(fset, fh.URI().Filename(), src, parser.Mode(0))
@@ -205,7 +204,7 @@ func (c *completer) packageNameCompletions(ctx context.Context, fileURI span.URI
 }
 
 // packageSuggestions returns a list of packages from workspace packages that
-// have the given prefix and are used in the the same directory as the given
+// have the given prefix and are used in the same directory as the given
 // file. This also includes test packages for these packages (<pkg>_test) and
 // the directory name itself.
 func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI span.URI, prefix string) ([]candidate, error) {

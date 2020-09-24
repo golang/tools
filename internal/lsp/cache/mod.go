@@ -196,6 +196,9 @@ func (mwh *modWhyHandle) why(ctx context.Context, snapshot *snapshot) (map[strin
 }
 
 func (s *snapshot) ModWhy(ctx context.Context, fh source.FileHandle) (map[string]string, error) {
+	if fh.Kind() != source.Mod {
+		return nil, fmt.Errorf("%s is not a go.mod file", fh.URI())
+	}
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
@@ -208,7 +211,7 @@ func (s *snapshot) ModWhy(ctx context.Context, fh source.FileHandle) (map[string
 		sessionID: s.view.session.id,
 		cfg:       hashConfig(cfg),
 		mod:       fh.FileIdentity(),
-		view:      s.view.root.Filename(),
+		view:      s.view.rootURI.Filename(),
 		verb:      why,
 	}
 	h := s.generation.Bind(key, func(ctx context.Context, arg memoize.Arg) interface{} {
@@ -230,7 +233,7 @@ func (s *snapshot) ModWhy(ctx context.Context, fh source.FileHandle) (map[string
 		for _, req := range pm.File.Require {
 			args = append(args, req.Mod.Path)
 		}
-		stdout, err := snapshot.RunGoCommand(ctx, "mod", args)
+		stdout, err := snapshot.runGoCommandWithConfig(ctx, cfg, "mod", args)
 		if err != nil {
 			return &modWhyData{err: err}
 		}
@@ -285,6 +288,9 @@ type moduleUpgrade struct {
 }
 
 func (s *snapshot) ModUpgrade(ctx context.Context, fh source.FileHandle) (map[string]string, error) {
+	if fh.Kind() != source.Mod {
+		return nil, fmt.Errorf("%s is not a go.mod file", fh.URI())
+	}
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
@@ -297,7 +303,7 @@ func (s *snapshot) ModUpgrade(ctx context.Context, fh source.FileHandle) (map[st
 		sessionID: s.view.session.id,
 		cfg:       hashConfig(cfg),
 		mod:       fh.FileIdentity(),
-		view:      s.view.root.Filename(),
+		view:      s.view.rootURI.Filename(),
 		verb:      upgrade,
 	}
 	h := s.generation.Bind(key, func(ctx context.Context, arg memoize.Arg) interface{} {
@@ -318,12 +324,12 @@ func (s *snapshot) ModUpgrade(ctx context.Context, fh source.FileHandle) (map[st
 		// Run "go list -mod readonly -u -m all" to be able to see which deps can be
 		// upgraded without modifying mod file.
 		args := []string{"-u", "-m", "-json", "all"}
-		if !snapshot.view.tmpMod || containsVendor(fh.URI()) {
+		if s.view.workspaceMode&tempModfile == 0 || containsVendor(fh.URI()) {
 			// Use -mod=readonly if the module contains a vendor directory
 			// (see golang/go#38711).
 			args = append([]string{"-mod", "readonly"}, args...)
 		}
-		stdout, err := snapshot.RunGoCommand(ctx, "list", args)
+		stdout, err := snapshot.runGoCommandWithConfig(ctx, cfg, "list", args)
 		if err != nil {
 			return &modUpgradeData{err: err}
 		}

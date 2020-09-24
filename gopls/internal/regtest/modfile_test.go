@@ -5,6 +5,7 @@
 package regtest
 
 import (
+	"strings"
 	"testing"
 
 	"golang.org/x/tools/internal/lsp"
@@ -74,7 +75,7 @@ func main() {
 
 	// Reproduce golang/go#40269 by deleting and recreating main.go.
 	t.Run("delete main.go", func(t *testing.T) {
-		t.Skipf("This test will be flaky until golang/go#40269 is resolved.")
+		t.Skip("This test will be flaky until golang/go#40269 is resolved.")
 
 		withOptions(WithProxyFiles(proxy)).run(t, untidyModule, func(t *testing.T, env *Env) {
 			goModContent := env.ReadWorkspaceFile("go.mod")
@@ -97,6 +98,54 @@ func main() {
 				t.Fatalf("go.mod changed on disk:\n%s", tests.Diff(goModContent, got))
 			}
 		})
+	})
+}
+
+// Tests that multiple missing dependencies gives good single fixes.
+func TestMissingDependencyFixes(t *testing.T) {
+	testenv.NeedsGo1Point(t, 14)
+	const mod = `
+-- go.mod --
+module mod.com
+
+go 1.12
+
+-- main.go --
+package main
+
+import "example.com/blah"
+import "random.org/blah"
+
+var _, _ = blah.Name, hello.Name
+`
+
+	const want = `module mod.com
+
+go 1.12
+
+require random.org v1.2.3
+`
+
+	withOptions(WithProxyFiles(proxy)).run(t, mod, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		var d protocol.PublishDiagnosticsParams
+		env.Await(
+			OnceMet(
+				env.DiagnosticAtRegexp("main.go", `"random.org/blah"`),
+				ReadDiagnostics("main.go", &d),
+			),
+		)
+		var randomDiag protocol.Diagnostic
+		for _, diag := range d.Diagnostics {
+			if strings.Contains(diag.Message, "random.org") {
+				randomDiag = diag
+			}
+		}
+		env.OpenFile("go.mod")
+		env.ApplyQuickFixes("main.go", []protocol.Diagnostic{randomDiag})
+		if got := env.Editor.BufferText("go.mod"); got != want {
+			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(want, got))
+		}
 	})
 }
 
@@ -126,21 +175,58 @@ require example.com v1.2.3
 `
 	runner.Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
-		d := env.Await(
-			env.DiagnosticAtRegexp("go.mod", "// indirect"),
+		var d protocol.PublishDiagnosticsParams
+		env.Await(
+			OnceMet(
+				env.DiagnosticAtRegexp("go.mod", "// indirect"),
+				ReadDiagnostics("go.mod", &d),
+			),
 		)
-		if len(d) == 0 {
-			t.Fatalf("no diagnostics")
-		}
-		params, ok := d[0].(*protocol.PublishDiagnosticsParams)
-		if !ok {
-			t.Fatalf("expected diagnostic of type PublishDiagnosticParams, got %T", d[0])
-		}
-		env.ApplyQuickFixes("go.mod", params.Diagnostics)
+		env.ApplyQuickFixes("go.mod", d.Diagnostics)
 		if got := env.Editor.BufferText("go.mod"); got != want {
 			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(want, got))
 		}
 	}, WithProxyFiles(proxy))
+}
+
+func TestUnusedDiag(t *testing.T) {
+	testenv.NeedsGo1Point(t, 14)
+
+	const proxy = `
+-- example.com@v1.0.0/x.go --
+package pkg
+const X = 1
+`
+	const files = `
+-- go.mod --
+module mod.com
+go 1.14
+require example.com v1.0.0
+
+-- main.go --
+package main
+func main() {}
+`
+
+	const want = `module mod.com
+
+go 1.14
+`
+
+	withOptions(WithProxyFiles(proxy)).run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("go.mod")
+		var d protocol.PublishDiagnosticsParams
+		env.Await(
+			OnceMet(
+				env.DiagnosticAtRegexp("go.mod", `require example.com`),
+				ReadDiagnostics("go.mod", &d),
+			),
+		)
+		env.ApplyQuickFixes("go.mod", d.Diagnostics)
+		if got := env.Editor.BufferText("go.mod"); got != want {
+			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(want, got))
+		}
+	})
 }
 
 // Test to reproduce golang/go#39041. It adds a new require to a go.mod file
@@ -184,17 +270,14 @@ func _() {
 	runner.Run(t, repro, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
 		env.OpenFile("main.go")
-		d := env.Await(
-			env.DiagnosticAtRegexp("main.go", `"github.com/esimov/caire"`),
+		var d protocol.PublishDiagnosticsParams
+		env.Await(
+			OnceMet(
+				env.DiagnosticAtRegexp("main.go", `"github.com/esimov/caire"`),
+				ReadDiagnostics("main.go", &d),
+			),
 		)
-		if len(d) == 0 {
-			t.Fatalf("no diagnostics")
-		}
-		params, ok := d[0].(*protocol.PublishDiagnosticsParams)
-		if !ok {
-			t.Fatalf("expected diagnostic of type PublishDiagnosticParams, got %T", d[0])
-		}
-		env.ApplyQuickFixes("main.go", params.Diagnostics)
+		env.ApplyQuickFixes("main.go", d.Diagnostics)
 		want := `module mod.com
 
 go 1.14
@@ -235,7 +318,7 @@ go 1.12
 `
 	runner.Run(t, mod, func(t *testing.T, env *Env) {
 		env.Await(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromInitialWorkspaceLoad), 1),
+			InitialWorkspaceLoad,
 			env.DiagnosticAtRegexp("go.mod", "require"),
 		)
 		env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"tidy"})
@@ -308,14 +391,13 @@ func main() {
 	runner.Run(t, pkg, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.OpenFile("go.mod")
-		metBy := env.Await(
-			DiagnosticAt("go.mod", 0, 0),
-			NoDiagnostics("main.go"),
+		var d protocol.PublishDiagnosticsParams
+		env.Await(
+			OnceMet(
+				DiagnosticAt("go.mod", 0, 0),
+				ReadDiagnostics("go.mod", &d),
+			),
 		)
-		d, ok := metBy[0].(*protocol.PublishDiagnosticsParams)
-		if !ok {
-			t.Fatalf("unexpected type for metBy (%T)", metBy)
-		}
 		env.ApplyQuickFixes("main.go", d.Diagnostics)
 		const want = `module mod.com
 
@@ -354,9 +436,7 @@ func main() {
 	// Start from a bad state/bad IWL, and confirm that we recover.
 	t.Run("bad", func(t *testing.T) {
 		runner.Run(t, unknown, func(t *testing.T, env *Env) {
-			env.Await(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromInitialWorkspaceLoad), 1),
-			)
+			env.Await(InitialWorkspaceLoad)
 			env.OpenFile("go.mod")
 			env.Await(
 				env.DiagnosticAtRegexp("go.mod", "example.com v1.2.2"),

@@ -89,16 +89,13 @@ func (s *Server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 			return err
 		}
 	}
-
-	return s.didModifyFiles(ctx, []source.FileModification{
-		{
-			URI:        uri,
-			Action:     source.Open,
-			Version:    params.TextDocument.Version,
-			Text:       []byte(params.TextDocument.Text),
-			LanguageID: params.TextDocument.LanguageID,
-		},
-	}, FromDidOpen)
+	return s.didModifyFiles(ctx, []source.FileModification{{
+		URI:        uri,
+		Action:     source.Open,
+		Version:    params.TextDocument.Version,
+		Text:       []byte(params.TextDocument.Text),
+		LanguageID: params.TextDocument.LanguageID,
+	}}, FromDidOpen)
 }
 
 func (s *Server) didChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
@@ -280,10 +277,10 @@ func (s *Server) didModifyFiles(ctx context.Context, modifications []source.File
 			}
 		}
 		diagnosticWG.Add(1)
-		go func(snapshot source.Snapshot) {
+		go func(snapshot source.Snapshot, uris []span.URI) {
 			defer diagnosticWG.Done()
 			s.diagnoseSnapshot(snapshot)
-		}(snapshot)
+		}(snapshot, uris)
 	}
 
 	go func() {

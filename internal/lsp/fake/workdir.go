@@ -5,6 +5,7 @@
 package fake
 
 import (
+	"bytes"
 	"context"
 	"io/ioutil"
 	"os"
@@ -44,10 +45,11 @@ func NewWorkdir(dir string) *Workdir {
 	return &Workdir{workdir: dir}
 }
 
-func (w *Workdir) WriteInitialFiles(txt string) error {
+func (w *Workdir) writeInitialFiles(txt string) error {
 	files := unpackTxt(txt)
 	for name, data := range files {
-		if err := w.writeFileData(name, string(data)); err != nil {
+		data = bytes.ReplaceAll(data, []byte("$SANDBOX_WORKDIR"), []byte(w.workdir))
+		if err := w.writeFileData(name, data); err != nil {
 			return errors.Errorf("writing to workdir: %w", err)
 		}
 	}
@@ -113,6 +115,14 @@ func (w *Workdir) ReadFile(path string) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+func (w *Workdir) RegexpRange(path, re string) (Pos, Pos, error) {
+	content, err := w.ReadFile(path)
+	if err != nil {
+		return Pos{}, Pos{}, err
+	}
+	return regexpRange(content, re)
 }
 
 // RegexpSearch searches the file corresponding to path for the first position
@@ -213,7 +223,7 @@ func (w *Workdir) writeFile(ctx context.Context, path, content string) (FileEven
 	} else {
 		changeType = protocol.Changed
 	}
-	if err := w.writeFileData(path, content); err != nil {
+	if err := w.writeFileData(path, []byte(content)); err != nil {
 		return FileEvent{}, err
 	}
 	return FileEvent{
@@ -225,7 +235,7 @@ func (w *Workdir) writeFile(ctx context.Context, path, content string) (FileEven
 	}, nil
 }
 
-func (w *Workdir) writeFileData(path string, content string) error {
+func (w *Workdir) writeFileData(path string, content []byte) error {
 	fp := w.filePath(path)
 	if err := os.MkdirAll(filepath.Dir(fp), 0755); err != nil {
 		return errors.Errorf("creating nested directory: %w", err)

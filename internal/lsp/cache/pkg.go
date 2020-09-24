@@ -8,7 +8,7 @@ import (
 	"go/ast"
 	"go/types"
 
-	"golang.org/x/tools/go/packages"
+	"golang.org/x/mod/module"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	errors "golang.org/x/xerrors"
@@ -22,7 +22,7 @@ type pkg struct {
 	compiledGoFiles []*source.ParsedGoFile
 	errors          []*source.Error
 	imports         map[packagePath]*pkg
-	module          *packages.Module
+	version         *module.Version
 	typeErrors      []types.Error
 	types           *types.Package
 	typesInfo       *types.Info
@@ -41,9 +41,10 @@ type (
 
 // Declare explicit types for files and directories to distinguish between the two.
 type (
-	fileURI       span.URI
-	directoryURI  span.URI
-	viewLoadScope span.URI
+	fileURI         span.URI
+	directoryURI    span.URI
+	moduleLoadScope string
+	viewLoadScope   span.URI
 )
 
 func (p *pkg) ID() string {
@@ -132,6 +133,6 @@ func (p *pkg) Imports() []source.Package {
 	return result
 }
 
-func (p *pkg) Module() *packages.Module {
-	return p.module
+func (p *pkg) Version() *module.Version {
+	return p.version
 }

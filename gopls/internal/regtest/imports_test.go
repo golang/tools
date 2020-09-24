@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/internal/lsp"
-	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -144,9 +142,9 @@ var _, _ = x.X, y.Y
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(modcache)
-	editorConfig := fake.EditorConfig{Env: map[string]string{"GOMODCACHE": modcache}}
+	editorConfig := EditorConfig{Env: map[string]string{"GOMODCACHE": modcache}}
 	withOptions(
-		WithEditorConfig(editorConfig),
+		editorConfig,
 		WithProxyFiles(proxy),
 	).run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
@@ -191,17 +189,15 @@ func TestA(t *testing.T) {
 }
 `
 	run(t, pkg, func(t *testing.T, env *Env) {
-		env.Await(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromInitialWorkspaceLoad), 1),
-		)
+		env.Await(InitialWorkspaceLoad)
 		env.OpenFile("a/a.go")
-		metBy := env.Await(
-			env.DiagnosticAtRegexp("a/a.go", "os.Stat"),
+		var d protocol.PublishDiagnosticsParams
+		env.Await(
+			OnceMet(
+				env.DiagnosticAtRegexp("a/a.go", "os.Stat"),
+				ReadDiagnostics("a/a.go", &d),
+			),
 		)
-		d, ok := metBy[0].(*protocol.PublishDiagnosticsParams)
-		if !ok {
-			t.Fatalf("expected *protocol.PublishDiagnosticsParams, got %v (%T)", d, d)
-		}
 		env.ApplyQuickFixes("a/a.go", d.Diagnostics)
 		env.Await(
 			EmptyDiagnostics("a/a.go"),

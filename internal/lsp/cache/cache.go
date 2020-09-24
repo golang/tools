@@ -66,7 +66,10 @@ func (c *Cache) GetFile(ctx context.Context, uri span.URI) (source.FileHandle, e
 func (c *Cache) getFile(ctx context.Context, uri span.URI) (*fileHandle, error) {
 	fi, statErr := os.Stat(uri.Filename())
 	if statErr != nil {
-		return &fileHandle{err: statErr}, nil
+		return &fileHandle{
+			err: statErr,
+			uri: uri,
+		}, nil
 	}
 
 	c.fileMu.Lock()
@@ -115,10 +118,14 @@ func readFile(ctx context.Context, uri span.URI, modTime time.Time) *fileHandle 
 
 func (c *Cache) NewSession(ctx context.Context) *Session {
 	index := atomic.AddInt64(&sessionIndex, 1)
+	options := source.DefaultOptions().Clone()
+	if c.options != nil {
+		c.options(options)
+	}
 	s := &Session{
 		cache:       c,
 		id:          strconv.FormatInt(index, 10),
-		options:     source.DefaultOptions(),
+		options:     options,
 		overlays:    make(map[span.URI]*overlay),
 		gocmdRunner: &gocommand.Runner{},
 	}
