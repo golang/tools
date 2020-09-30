@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp/debug"
-	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
@@ -147,12 +146,6 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 	options := s.session.Options()
 	defer func() { s.session.SetOptions(options) }()
 
-	// TODO: this event logging may be unnecessary.
-	// The version info is included in the initialize response.
-	buf := &bytes.Buffer{}
-	debug.PrintVersionInfo(ctx, buf, true, debug.PlainText)
-	event.Log(ctx, buf.String())
-
 	if err := s.addFolders(ctx, s.pendingFolders); err != nil {
 		return err
 	}
@@ -199,7 +192,7 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 			continue
 		}
 		work := s.progress.start(ctx, "Setting up workspace", "Loading packages...", nil, nil)
-		view, snapshot, release, err := s.addView(ctx, folder.Name, uri)
+		snapshot, release, err := s.addView(ctx, folder.Name, uri)
 		if err != nil {
 			viewErrors[uri] = err
 			work.end(fmt.Sprintf("Error loading packages: %s", err))
@@ -219,8 +212,8 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 
 		// Print each view's environment.
 		buf := &bytes.Buffer{}
-		if err := view.WriteEnv(ctx, buf); err != nil {
-			event.Error(ctx, "failed to write environment", err, tag.Directory.Of(view.Folder().Filename()))
+		if err := snapshot.View().WriteEnv(ctx, buf); err != nil {
+			viewErrors[uri] = err
 			continue
 		}
 		event.Log(ctx, buf.String())
