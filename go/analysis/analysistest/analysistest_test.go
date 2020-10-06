@@ -141,3 +141,7 @@ type errorfunc func(string)
 func (f errorfunc) Errorf(format string, args ...interface{}) {
 	f(fmt.Sprintf(format, args...))
 }
+
+func (f errorfunc) Skipf(format string, args ...interface{}) {
+	f(fmt.Sprintf(format, args...))
+}
