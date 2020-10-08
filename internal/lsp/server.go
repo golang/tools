@@ -116,6 +116,9 @@ func (s *Server) workDoneProgressCancel(ctx context.Context, params *protocol.Wo
 func (s *Server) nonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {
 	paramMap := params.(map[string]interface{})
 	if method == "gopls/diagnoseFiles" {
+		defer s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
+			URI: "gopls://diagnostics-done",
+		})
 		for _, file := range paramMap["files"].([]interface{}) {
 			snapshot, fh, ok, release, err := s.beginFileRequest(ctx, protocol.DocumentURI(file.(string)), source.UnknownKind)
 			defer release()
@@ -134,11 +137,6 @@ func (s *Server) nonstandardRequest(ctx context.Context, method string, params i
 			}); err != nil {
 				return nil, err
 			}
-		}
-		if err := s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
-			URI: "gopls://diagnostics-done",
-		}); err != nil {
-			return nil, err
 		}
 		return struct{}{}, nil
 	}
