@@ -312,16 +312,9 @@ package main
 func main() {
 	fmt.Println(blah.Name)
 `
-	const want = `module mod.com
-
-go 1.12
-`
 	runner.Run(t, mod, func(t *testing.T, env *Env) {
-		env.Await(
-			InitialWorkspaceLoad,
-			env.DiagnosticAtRegexp("go.mod", "require"),
-		)
-		env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"tidy"})
+		env.Await(env.DiagnosticAtRegexp("go.mod", "require"))
+		env.RunGoCommand("mod", "tidy")
 		env.Await(
 			EmptyDiagnostics("go.mod"),
 		)
@@ -436,7 +429,6 @@ func main() {
 	// Start from a bad state/bad IWL, and confirm that we recover.
 	t.Run("bad", func(t *testing.T) {
 		runner.Run(t, unknown, func(t *testing.T, env *Env) {
-			env.Await(InitialWorkspaceLoad)
 			env.OpenFile("go.mod")
 			env.Await(
 				env.DiagnosticAtRegexp("go.mod", "example.com v1.2.2"),
@@ -570,6 +562,119 @@ func main() {
 		env.OpenFile("go.mod")
 		env.Await(
 			env.DiagnosticAtRegexp("go.mod", "require example.com v1.2.3"),
+		)
+	})
+}
+
+// A copy of govim's config_set_env_goflags_mod_readonly test.
+func TestGovimModReadonly(t *testing.T) {
+	const mod = `
+-- go.mod --
+module mod.com
+
+go 1.13
+-- main.go --
+package main
+
+import "example.com/blah"
+
+func main() {
+	println(blah.Name)
+}
+`
+	withOptions(
+		EditorConfig{
+			Env: map[string]string{
+				"GOFLAGS": "-mod=readonly",
+			},
+		},
+		WithProxyFiles(proxy),
+		WithModes(WithoutExperiments),
+	).run(t, mod, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		original := env.ReadWorkspaceFile("go.mod")
+		env.Await(
+			env.DiagnosticAtRegexp("main.go", `"example.com/blah"`),
+		)
+		got := env.ReadWorkspaceFile("go.mod")
+		if got != original {
+			t.Fatalf("go.mod file modified:\n%s", tests.Diff(original, got))
+		}
+		env.RunGoCommand("get", "example.com/blah@v1.2.3")
+		env.RunGoCommand("mod", "tidy")
+		env.Await(
+			EmptyDiagnostics("main.go"),
+		)
+	})
+}
+
+func TestMultiModuleModDiagnostics(t *testing.T) {
+	testenv.NeedsGo1Point(t, 14)
+
+	const mod = `
+-- a/go.mod --
+module mod.com
+
+go 1.14
+
+require (
+	example.com v1.2.3
+)
+-- a/main.go --
+package main
+
+func main() {}
+-- b/go.mod --
+module mod.com
+
+go 1.14
+-- b/main.go --
+package main
+
+import "example.com/blah"
+
+func main() {
+	blah.SaySomething()
+}
+`
+	withOptions(
+		WithProxyFiles(workspaceProxy),
+		WithModes(Experimental),
+	).run(t, mod, func(t *testing.T, env *Env) {
+		env.Await(
+			env.DiagnosticAtRegexp("a/go.mod", "example.com v1.2.3"),
+			env.DiagnosticAtRegexp("b/go.mod", "module mod.com"),
+		)
+	})
+}
+
+func TestModTidyWithBuildTags(t *testing.T) {
+	testenv.NeedsGo1Point(t, 14)
+
+	const mod = `
+-- go.mod --
+module mod.com
+
+go 1.14
+-- main.go --
+// +build bob
+
+package main
+
+import "example.com/blah"
+
+func main() {
+	blah.SaySomething()
+}
+`
+	withOptions(
+		WithProxyFiles(workspaceProxy),
+		EditorConfig{
+			BuildFlags: []string{"-tags", "bob"},
+		},
+	).run(t, mod, func(t *testing.T, env *Env) {
+		env.Await(
+			env.DiagnosticAtRegexp("main.go", `"example.com/blah"`),
 		)
 	})
 }

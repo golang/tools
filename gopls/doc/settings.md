@@ -17,6 +17,9 @@ In VSCode, this would be a section in your `settings.json` file that might look 
 
 Below is the list of settings that are officially supported for `gopls`.
 
+To enable all experimental features, use **allExperiments: `true`**. You will
+still be able to independently override specific experimental features.
+
 <!-- BEGIN User: DO NOT MANUALLY EDIT THIS SECTION -->
 ### **buildFlags** *[]string*
 buildFlags is the set of flags passed on to the build system when invoked.
@@ -25,11 +28,11 @@ The most common use is to set `-tags`.
 
 
 Default: `[]`.
-### **env** *[]string*
+### **env** *map[string]string*
 env adds environment variables to external commands run by `gopls`, most notably `go list`.
 
 
-Default: `[]`.
+Default: `{}`.
 ### **hoverKind** *enum*
 hoverKind controls the information that appears in the hover text.
 SingleLine and Structured are intended for use only by authors of editor plugins.
@@ -38,7 +41,11 @@ Must be one of:
  * `"FullDocumentation"`
  * `"NoDocumentation"`
  * `"SingleLine"`
- * `"Structured"`
+ * `"Structured"` is an experimental setting that returns a structured hover format.
+This format separates the signature from the documentation, so that the client
+can do more manipulation of these fields.\
+This should only be used by clients that support this behavior.
+
  * `"SynopsisDocumentation"`
 
 
@@ -95,20 +102,15 @@ Example Usage:
 
 Default: `{}`.
 ### **codelens** *map[string]bool*
-overrides the enabled/disabled state of various code lenses. Currently, we
-support several code lenses:
-
-* `generate`: run `go generate` as specified by a `//go:generate` directive.
-* `upgrade_dependency`: upgrade a dependency listed in a `go.mod` file.
-* `test`: run `go test -run` for a test func.
-* `gc_details`: Show the gc compiler's choices for inline analysis and escaping.
+codelens overrides the enabled/disabled state of code lenses. See the "Code Lenses"
+section of settings.md for the list of supported lenses.
 
 Example Usage:
 ```json5
 "gopls": {
 ...
   "codelens": {
-    "generate": false,  // Don't run `go generate`.
+    "generate": false,  // Don't show the `go generate` lens.
     "gc_details": true  // Show a code lens toggling the display of gc's choices.
   }
 ...
@@ -128,7 +130,7 @@ completeUnimported enables completion for packages that you do not currently imp
 
 Default: `true`.
 ### **deepCompletion** *bool*
-deepCompletion If true, this turns on the ability to return completions from deep inside relevant entities, rather than just the locally accessible ones.
+deepCompletion enables the ability to return completions from deep inside relevant entities, rather than just the locally accessible ones.
 
 Consider this example:
 
@@ -187,12 +189,29 @@ Must be one of:
 
 Default: `"Fuzzy"`.
 ### **symbolStyle** *enum*
-symbolStyle specifies what style of symbols to return in symbol requests.
+symbolStyle controls how symbols are qualified in symbol responses.
+
+Example Usage:
+```json5
+"gopls": {
+...
+  "symbolStyle": "dynamic",
+...
+}
+```
 Must be one of:
 
- * `"Dynamic"`
- * `"Full"`
- * `"Package"`
+ * `"Dynamic"` uses whichever qualifier results in the highest scoring
+match for the given symbol query. Here a "qualifier" is any "/" or "."
+delimited suffix of the fully qualified symbol. i.e. "to/pkg.Foo.Field" or
+just "Foo.Field".
+
+ * `"Full"` is fully qualified symbols, i.e.
+"path/to/pkg.Foo.Field".
+
+ * `"Package"` is package qualified symbols i.e.
+"pkg.Foo.Field".
+
 
 
 Default: `"Package"`.
@@ -223,6 +242,12 @@ progress reports for all work done outside the scope of an RPC.
 
 
 Default: `false`.
+### **semanticTokens** *bool*
+semanticTokens controls whether the LSP server will send
+semantic tokens to the client.
+
+
+Default: `false`.
 ### **expandWorkspaceToModule** *bool*
 expandWorkspaceToModule instructs `gopls` to expand the scope of the workspace to include the
 modules containing the workspace folders. Set this to false to avoid loading
@@ -236,4 +261,95 @@ for multi-module workspaces.
 
 
 Default: `false`.
+### **experimentalDiagnosticsDelay** *time.Duration*
+experimentalDiagnosticsDelay controls the amount of time that gopls waits
+after the most recent file modification before computing deep diagnostics.
+Simple diagnostics (parsing and type-checking) are always run immediately
+on recently modified packages.
+
+This option must be set to a valid duration string, for example `"250ms"`.
+
+
+Default: `"0s"`.
+### **experimentalPackageCacheKey** *bool*
+experimentalPackageCacheKey controls whether to use a coarser cache key
+for package type information to increase cache hits. This setting removes
+the user's environment, build flags, and working directory from the cache
+key, which should be a safe change as all relevant inputs into the type
+checking pass are already hashed into the key. This is temporarily guarded
+by an experiment because caching behavior is subtle and difficult to
+comprehensively test.
+
+
+Default: `false`.
 <!-- END Experimental: DO NOT MANUALLY EDIT THIS SECTION -->
+
+## Debugging
+
+The below settings are for use in debugging `gopls`. Like the experimental options, they may be deprecated or changed in the future.
+
+<!-- BEGIN Debugging: DO NOT MANUALLY EDIT THIS SECTION -->
+### **verboseOutput** *bool*
+verboseOutput enables additional debug logging.
+
+
+Default: `false`.
+### **completionBudget** *time.Duration*
+completionBudget is the soft latency goal for completion requests. Most
+requests finish in a couple milliseconds, but in some cases deep
+completions can take much longer. As we use up our budget we
+dynamically reduce the search scope to ensure we return timely
+results. Zero means unlimited.
+
+
+Default: `"100ms"`.
+<!-- END Debugging: DO NOT MANUALLY EDIT THIS SECTION -->
+
+## Code Lenses
+
+These are the code lenses that `gopls` currently supports. They can be enabled and disabled using the `codeLenses` setting, documented above. The names and features are subject to change.
+
+<!-- BEGIN Lenses: DO NOT MANUALLY EDIT THIS SECTION -->
+### **Run go generate**
+Identifier: `generate`
+
+generate runs `go generate` for a given directory.
+
+
+### **Regenerate cgo**
+Identifier: `regenerate_cgo`
+
+regenerate_cgo regenerates cgo definitions.
+
+
+### **Run test(s)**
+Identifier: `test`
+
+test runs `go test` for a specific test function.
+
+
+### **Run go mod tidy**
+Identifier: `tidy`
+
+tidy runs `go mod tidy` for a module.
+
+
+### **Upgrade dependency**
+Identifier: `upgrade_dependency`
+
+upgrade_dependency upgrades a dependency.
+
+
+### **Run go mod vendor**
+Identifier: `vendor`
+
+vendor runs `go mod vendor` for a module.
+
+
+### **Toggle gc_details**
+Identifier: `gc_details`
+
+gc_details controls calculation of gc annotations.
+
+
+<!-- END Lenses: DO NOT MANUALLY EDIT THIS SECTION -->

@@ -59,15 +59,13 @@ func TestDiagnosticErrorInEditedFile(t *testing.T) {
 	})
 }
 
-const onlyMod = `
+func TestMissingImportDiagsClearOnFirstFile(t *testing.T) {
+	const onlyMod = `
 -- go.mod --
 module mod.com
 
 go 1.12
 `
-
-func TestMissingImportDiagsClearOnFirstFile(t *testing.T) {
-	t.Parallel()
 	runner.Run(t, onlyMod, func(t *testing.T, env *Env) {
 		env.CreateBuffer("main.go", `package main
 
@@ -85,12 +83,11 @@ func m() {
 	})
 }
 
-const brokenFile = `package main
+func TestDiagnosticErrorInNewFile(t *testing.T) {
+	const brokenFile = `package main
 
 const Foo = "abc
 `
-
-func TestDiagnosticErrorInNewFile(t *testing.T) {
 	runner.Run(t, brokenFile, func(t *testing.T, env *Env) {
 		env.CreateBuffer("broken.go", brokenFile)
 		env.Await(env.DiagnosticAtRegexp("broken.go", "\"abc"))
@@ -273,6 +270,21 @@ func Hello() {
 	})
 	t.Run("initialized", func(t *testing.T) {
 		runner.Run(t, noMod, func(t *testing.T, env *Env) {
+			env.Await(
+				env.DiagnosticAtRegexp("main.go", `"mod.com/bob"`),
+			)
+			env.RunGoCommand("mod", "init", "mod.com")
+			env.Await(
+				EmptyDiagnostics("main.go"),
+				env.DiagnosticAtRegexp("bob/bob.go", "x"),
+			)
+		})
+	})
+
+	t.Run("without workspace module", func(t *testing.T) {
+		withOptions(
+			WithModes(WithoutExperiments),
+		).run(t, noMod, func(t *testing.T, env *Env) {
 			env.Await(
 				env.DiagnosticAtRegexp("main.go", `"mod.com/bob"`),
 			)
@@ -850,7 +862,6 @@ func TestCreateOnlyXTest(t *testing.T) {
 	-- foo/bar_test.go --
 	`
 	run(t, mod, func(t *testing.T, env *Env) {
-		env.Await(InitialWorkspaceLoad)
 		env.OpenFile("foo/bar_test.go")
 		env.EditBuffer("foo/bar_test.go", fake.NewEdit(0, 0, 0, 0, `package foo
 	`))
@@ -879,7 +890,6 @@ package foo
 package foo_
 `
 	run(t, mod, func(t *testing.T, env *Env) {
-		env.Await(InitialWorkspaceLoad)
 		env.OpenFile("foo/bar_test.go")
 		env.RegexpReplace("foo/bar_test.go", "package foo_", "package foo_test")
 		env.SaveBuffer("foo/bar_test.go")
@@ -994,7 +1004,7 @@ go 1.12
 		env.WriteWorkspaceFile(name, "")
 		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1))
 
-		env.OpenFileWithContent(name, "\n")
+		env.CreateBuffer(name, "\n")
 		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1))
 
 		env.EditBuffer(name, fake.NewEdit(1, 0, 1, 0, content))
@@ -1104,7 +1114,6 @@ func Foo() {
 	runner.Run(t, basic, func(t *testing.T, env *Env) {
 		testenv.NeedsGo1Point(t, 15)
 
-		env.Await(InitialWorkspaceLoad)
 		env.WriteWorkspaceFile("foo/foo_test.go", `package main
 
 func main() {
@@ -1133,8 +1142,7 @@ package main
 func main() {}
 `
 	runner.Run(t, basic, func(t *testing.T, env *Env) {
-		env.Await(InitialWorkspaceLoad)
-		env.Editor.OpenFileWithContent(env.Ctx, "foo.go", `package main`)
+		env.Editor.CreateBuffer(env.Ctx, "foo.go", `package main`)
 		env.Await(
 			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1),
 		)
@@ -1292,7 +1300,6 @@ func main() {}
 		log.SetFlags(log.Lshortfile)
 		env.OpenFile("main.go")
 		env.OpenFile("other.go")
-		env.Await(InitialWorkspaceLoad)
 		x := env.DiagnosticsFor("main.go")
 		if x == nil {
 			t.Fatalf("expected 1 diagnostic, got none")
@@ -1341,7 +1348,6 @@ func _() {
 }
 `
 	run(t, files, func(t *testing.T, env *Env) {
-		env.Await(InitialWorkspaceLoad)
 		env.OpenFile("a/a.go")
 		env.Await(
 			env.DiagnosticAtRegexp("a/a.go", "x"),
@@ -1349,6 +1355,100 @@ func _() {
 		env.OpenFile("a/a_ignore.go")
 		env.Await(
 			DiagnosticAt("a/a_ignore.go", 2, 8),
+		)
+	})
+}
+
+func TestEnableAllExperiments(t *testing.T) {
+	const mod = `
+-- go.mod --
+module mod.com
+
+-- main.go --
+package main
+
+import "bytes"
+
+func b(c bytes.Buffer) {
+	_ = 1
+}
+`
+	withOptions(
+		EditorConfig{
+			AllExperiments: true,
+		},
+	).run(t, mod, func(t *testing.T, env *Env) {
+		// Confirm that the setting doesn't cause any warnings.
+		env.Await(NoShowMessage())
+	})
+}
+
+func TestSwig(t *testing.T) {
+	t.Skipf("skipped until golang/go#37098 is resolved")
+
+	const mod = `
+-- go.mod --
+module mod.com
+-- pkg/simple/export_swig.go --
+package simple
+
+func ExportSimple(x, y int) int {
+	return Gcd(x, y)
+}
+-- pkg/simple/simple.swigcxx --
+%module simple
+
+%inline %{
+extern int gcd(int x, int y)
+{
+  int g;
+  g = y;
+  while (x > 0) {
+    g = x;
+    x = y % x;
+    y = g;
+  }
+  return g;
+}
+%}
+-- main.go --
+package a
+
+func main() {
+	var x int
+}
+`
+	run(t, mod, func(t *testing.T, env *Env) {
+		env.Await(
+			OnceMet(
+				InitialWorkspaceLoad,
+				NoDiagnosticWithMessage("illegal character U+0023 '#'"),
+			),
+		)
+	})
+}
+
+// When foo_test.go is opened, gopls will object to the borked package name.
+// This test asserts that when the package name is fixed, gopls will soon after
+// have no more complaints about it.
+// https://github.com/golang/go/issues/41061
+func TestRenamePackage(t *testing.T) {
+	t.Skip("Waiting for the fix that makes this pass: https://github.com/golang/go/issues/41061")
+
+	const contents = `
+-- go.mod --
+module mod.com
+-- foo.go --
+package foo
+-- foo_test.go --
+package foo_`
+
+	runner.Run(t, contents, func(t *testing.T, env *Env) {
+		env.OpenFile("foo_test.go")
+		env.RegexpReplace("foo_test.go", "foo_", "foo_test")
+		env.SaveBuffer("foo_test.go")
+		env.Await(
+			EmptyDiagnostics("foo_test.go"),
 		)
 	})
 }

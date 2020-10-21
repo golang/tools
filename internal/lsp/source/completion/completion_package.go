@@ -41,7 +41,7 @@ func packageClauseCompletions(ctx context.Context, snapshot source.Snapshot, fh 
 		return nil, nil, err
 	}
 
-	surrounding, err := packageCompletionSurrounding(ctx, snapshot.FileSet(), fh, pgf, rng.Start)
+	surrounding, err := packageCompletionSurrounding(snapshot.FileSet(), fh, pgf, rng.Start)
 	if err != nil {
 		return nil, nil, errors.Errorf("invalid position for package completion: %w", err)
 	}
@@ -68,7 +68,7 @@ func packageClauseCompletions(ctx context.Context, snapshot source.Snapshot, fh 
 // packageCompletionSurrounding returns surrounding for package completion if a
 // package completions can be suggested at a given position. A valid location
 // for package completion is above any declarations or import statements.
-func packageCompletionSurrounding(ctx context.Context, fset *token.FileSet, fh source.FileHandle, pgf *source.ParsedGoFile, pos token.Pos) (*Selection, error) {
+func packageCompletionSurrounding(fset *token.FileSet, fh source.FileHandle, pgf *source.ParsedGoFile, pos token.Pos) (*Selection, error) {
 	src, err := fh.Read()
 	if err != nil {
 		return nil, err
@@ -189,6 +189,8 @@ func (c *completer) packageNameCompletions(ctx context.Context, fileURI span.URI
 		return errors.New("cursor is not in package name identifier")
 	}
 
+	c.completionContext.packageCompletion = true
+
 	prefix := name.Name[:cursor]
 	packageSuggestions, err := packageSuggestions(ctx, c.snapshot, fileURI, prefix)
 	if err != nil {
@@ -196,9 +198,7 @@ func (c *completer) packageNameCompletions(ctx context.Context, fileURI span.URI
 	}
 
 	for _, pkg := range packageSuggestions {
-		if item, err := c.item(ctx, pkg); err == nil {
-			c.items = append(c.items, item)
-		}
+		c.deepState.enqueue(pkg)
 	}
 	return nil
 }
@@ -220,7 +220,7 @@ func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI s
 
 	toCandidate := func(name string, score float64) candidate {
 		obj := types.NewPkgName(0, nil, name, types.NewPackage("", name))
-		return candidate{obj: obj, name: name, score: score}
+		return candidate{obj: obj, name: name, detail: name, score: score}
 	}
 
 	matcher := fuzzy.NewMatcher(prefix)
@@ -229,7 +229,7 @@ func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI s
 	// support multiple package suggestions since gopls is build system agnostic.
 	var packages []candidate
 	for _, pkg := range workspacePackages {
-		if pkg.Name() == "main" {
+		if pkg.Name() == "main" || pkg.Name() == "" {
 			continue
 		}
 		if _, ok := seenPkgs[pkg.Name()]; ok {

@@ -155,8 +155,9 @@ type completer struct {
 	qf       types.Qualifier
 	opts     *completionOptions
 
-	// triggerCharacter is the character that triggered this request, if any.
-	triggerCharacter string
+	// completionContext contains information about the trigger for this
+	// completion request.
+	completionContext completionContext
 
 	// fh is a handle to the file associated with this completion request.
 	fh source.FileHandle
@@ -259,6 +260,21 @@ type methodSetKey struct {
 	addressable bool
 }
 
+type completionContext struct {
+	// triggerCharacter is the character used to trigger completion at current
+	// position, if any.
+	triggerCharacter string
+
+	// triggerKind is information about how a completion was triggered.
+	triggerKind protocol.CompletionTriggerKind
+
+	// commentCompletion is true if we are completing a comment.
+	commentCompletion bool
+
+	// packageCompletion is true if we are completing a package name.
+	packageCompletion bool
+}
+
 // A Selection represents the cursor position and surrounding identifier.
 type Selection struct {
 	content string
@@ -337,6 +353,10 @@ type candidate struct {
 	// name is the deep object name path, e.g. "foo.bar"
 	name string
 
+	// detail is additional information about this item. If not specified,
+	// defaults to type string for the object.
+	detail string
+
 	// path holds the path from the search root (excluding the candidate
 	// itself) for a deep candidate.
 	path []types.Object
@@ -394,7 +414,7 @@ func (e ErrIsDefinition) Error() string {
 // The selection is computed based on the preceding identifier and can be used by
 // the client to score the quality of the completion. For instance, some clients
 // may tolerate imperfect matches as valid completion results, since users may make typos.
-func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, protoPos protocol.Position, triggerCharacter string) ([]CompletionItem, *Selection, error) {
+func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, protoPos protocol.Position, protoContext protocol.CompletionContext) ([]CompletionItem, *Selection, error) {
 	ctx, done := event.Start(ctx, "completion.Completion")
 	defer done()
 
@@ -469,10 +489,13 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 
 	opts := snapshot.View().Options()
 	c := &completer{
-		pkg:                       pkg,
-		snapshot:                  snapshot,
-		qf:                        source.Qualifier(pgf.File, pkg.GetTypes(), pkg.GetTypesInfo()),
-		triggerCharacter:          triggerCharacter,
+		pkg:      pkg,
+		snapshot: snapshot,
+		qf:       source.Qualifier(pgf.File, pkg.GetTypes(), pkg.GetTypesInfo()),
+		completionContext: completionContext{
+			triggerCharacter: protoContext.TriggerCharacter,
+			triggerKind:      protoContext.TriggerKind,
+		},
 		fh:                        fh,
 		filename:                  fh.URI().Filename(),
 		file:                      pgf.File,
@@ -504,7 +527,13 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 	if c.opts.budget == 0 {
 		ctx, cancel = context.WithCancel(ctx)
 	} else {
-		ctx, cancel = context.WithDeadline(ctx, c.startTime.Add(c.opts.budget))
+		// timeoutDuration is the completion budget remaining. If less than
+		// 10ms, set to 10ms
+		timeoutDuration := time.Until(c.startTime.Add(c.opts.budget))
+		if timeoutDuration < 10*time.Millisecond {
+			timeoutDuration = 10 * time.Millisecond
+		}
+		ctx, cancel = context.WithTimeout(ctx, timeoutDuration)
 	}
 	defer cancel()
 
@@ -524,7 +553,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 	c.deepState.searchQueue = nil
 
 	for _, callback := range c.completionCallbacks {
-		if err := c.snapshot.View().RunProcessEnvFunc(ctx, callback); err != nil {
+		if err := c.snapshot.RunProcessEnvFunc(ctx, callback); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -556,9 +585,6 @@ func (c *completer) collectCompletions(ctx context.Context) error {
 	// Inside comments, offer completions for the name of the relevant symbol.
 	for _, comment := range c.file.Comments {
 		if comment.Pos() < c.pos && c.pos <= comment.End() {
-			// Deep completion doesn't work properly in comments since we don't
-			// have a type object to complete further.
-			c.deepState.enabled = false
 			c.populateCommentCompletions(ctx, comment)
 			return nil
 		}
@@ -575,7 +601,7 @@ func (c *completer) collectCompletions(ctx context.Context) error {
 	}
 
 	if lt := c.wantLabelCompletion(); lt != labelNone {
-		c.labels(ctx, lt)
+		c.labels(lt)
 		return nil
 	}
 
@@ -703,6 +729,9 @@ func (c *completer) emptySwitchStmt() bool {
 // (i.e. "golang.org/x/"). The user is meant to accept completion suggestions
 // until they reach a complete import path.
 func (c *completer) populateImportCompletions(ctx context.Context, searchImport *ast.ImportSpec) error {
+	// deepSearch is not valuable for import completions.
+	c.deepState.enabled = false
+
 	importPath := searchImport.Path.Value
 
 	// Extract the text between the quotes (if any) in an import spec.
@@ -786,7 +815,7 @@ func (c *completer) populateImportCompletions(ctx context.Context, searchImport 
 			name = pkgToConsider
 		}
 
-		score := float64(pkg.Relevance)
+		score := pkg.Relevance
 		if len(pkgDirList)-1 == depth {
 			score *= highScore
 		} else {
@@ -804,15 +833,13 @@ func (c *completer) populateImportCompletions(ctx context.Context, searchImport 
 		mu.Lock()
 		defer mu.Unlock()
 
-		obj := types.NewPkgName(0, nil, pkg.IdentName, types.NewPackage(pkgToConsider, pkg.IdentName))
-		cand := candidate{obj: obj, name: namePrefix + name + nameSuffix, score: score}
-		// We use c.item here to be able to manually update the detail for a
-		// candidate. deepSearch doesn't give us access to the completion item,
-		// so we don't enqueue the item here.
-		if item, err := c.item(ctx, cand); err == nil {
-			item.Detail = fmt.Sprintf("%q", pkgToConsider)
-			c.items = append(c.items, item)
-		}
+		name = namePrefix + name + nameSuffix
+		obj := types.NewPkgName(0, nil, name, types.NewPackage(pkgToConsider, name))
+		c.deepState.enqueue(candidate{
+			obj:    obj,
+			detail: fmt.Sprintf("%q", pkgToConsider),
+			score:  score,
+		})
 	}
 
 	c.completionCallbacks = append(c.completionCallbacks, func(opts *imports.Options) error {
@@ -825,7 +852,7 @@ func (c *completer) populateImportCompletions(ctx context.Context, searchImport 
 func (c *completer) populateCommentCompletions(ctx context.Context, comment *ast.CommentGroup) {
 	// If the completion was triggered by a period, ignore it. These types of
 	// completions will not be useful in comments.
-	if c.triggerCharacter == "." {
+	if c.completionContext.triggerCharacter == "." {
 		return
 	}
 
@@ -834,6 +861,15 @@ func (c *completer) populateCommentCompletions(ctx context.Context, comment *ast
 	if file == nil {
 		return
 	}
+
+	// Deep completion doesn't work properly in comments since we don't
+	// have a type object to complete further.
+	c.deepState.enabled = false
+	c.completionContext.commentCompletion = true
+
+	// Documentation isn't useful in comments, since it might end up being the
+	// comment itself.
+	c.opts.documentation = false
 
 	commentLine := file.Line(comment.End())
 
@@ -886,13 +922,7 @@ func (c *completer) populateCommentCompletions(ctx context.Context, comment *ast
 						score = highScore
 					}
 
-					// we use c.item in addFieldItems so we have to use c.item
-					// here to ensure scoring order is maintained. deepSearch
-					// manipulates the score so we can't enqueue the item
-					// directly.
-					if item, err := c.item(ctx, candidate{obj: obj, name: obj.Name(), score: score}); err == nil {
-						c.items = append(c.items, item)
-					}
+					c.deepState.enqueue(candidate{obj: obj, score: score})
 				}
 			}
 		// handle functions
@@ -920,15 +950,7 @@ func (c *completer) populateCommentCompletions(ctx context.Context, comment *ast
 						}
 						for i := 0; i < recvStruct.NumFields(); i++ {
 							field := recvStruct.Field(i)
-							// we use c.item in addFieldItems so we have to
-							// use c.item here to ensure scoring order is
-							// maintained. deepSearch manipulates the score so
-							// we can't enqueue the items directly.
-							item, err := c.item(ctx, candidate{obj: field, name: field.Name(), score: lowScore})
-							if err != nil {
-								continue
-							}
-							c.items = append(c.items, item)
+							c.deepState.enqueue(candidate{obj: field, score: lowScore})
 						}
 					}
 				}
@@ -943,18 +965,7 @@ func (c *completer) populateCommentCompletions(ctx context.Context, comment *ast
 				continue
 			}
 
-			// We don't want to expandFuncCall inside comments. deepSearch
-			// doesn't respect this setting so we don't enqueue the item here.
-			item, err := c.item(ctx, candidate{
-				obj:            obj,
-				name:           obj.Name(),
-				expandFuncCall: false,
-				score:          highScore,
-			})
-			if err != nil {
-				continue
-			}
-			c.items = append(c.items, item)
+			c.deepState.enqueue(candidate{obj: obj, score: highScore})
 		}
 	}
 }
@@ -1024,17 +1035,7 @@ func (c *completer) addFieldItems(ctx context.Context, fields *ast.FieldList) {
 				score = highScore
 			}
 
-			cand := candidate{
-				obj:            obj,
-				name:           obj.Name(),
-				expandFuncCall: false,
-				score:          score,
-			}
-			// We don't want to expandFuncCall inside comments. deepSearch
-			// doesn't respect this setting so we don't enqueue the item here.
-			if item, err := c.item(ctx, cand); err == nil {
-				c.items = append(c.items, item)
-			}
+			c.deepState.enqueue(candidate{obj: obj, score: score})
 		}
 	}
 }
@@ -1049,7 +1050,7 @@ func (c *completer) wantStructFieldCompletions() bool {
 }
 
 func (c *completer) wantTypeName() bool {
-	return c.inference.typeName.wantTypeName
+	return !c.completionContext.commentCompletion && c.inference.typeName.wantTypeName
 }
 
 // See https://golang.org/issue/36001. Unimported completions are expensive.
@@ -1065,7 +1066,7 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	// Is sel a qualified identifier?
 	if id, ok := sel.X.(*ast.Ident); ok {
 		if pkgName, ok := c.pkg.GetTypesInfo().Uses[id].(*types.PkgName); ok {
-			candidates := c.packageMembers(ctx, pkgName.Imported(), stdScore, nil)
+			candidates := c.packageMembers(pkgName.Imported(), stdScore, nil)
 			for _, cand := range candidates {
 				c.deepState.enqueue(cand)
 			}
@@ -1076,7 +1077,7 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	// Invariant: sel is a true selector.
 	tv, ok := c.pkg.GetTypesInfo().Types[sel.X]
 	if ok {
-		candidates := c.methodsAndFields(ctx, tv.Type, tv.Addressable(), nil)
+		candidates := c.methodsAndFields(tv.Type, tv.Addressable(), nil)
 		for _, cand := range candidates {
 			c.deepState.enqueue(cand)
 		}
@@ -1107,9 +1108,9 @@ func (c *completer) unimportedMembers(ctx context.Context, id *ast.Ident) error 
 		paths = append(paths, path)
 	}
 
-	var relevances map[string]int
+	var relevances map[string]float64
 	if len(paths) != 0 {
-		if err := c.snapshot.View().RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
+		if err := c.snapshot.RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
 			var err error
 			relevances, err = imports.ScoreImportPaths(ctx, opts.Env, paths)
 			return err
@@ -1133,7 +1134,7 @@ func (c *completer) unimportedMembers(ctx context.Context, id *ast.Ident) error 
 		if imports.ImportPathToAssumedName(path) != pkg.GetTypes().Name() {
 			imp.name = pkg.GetTypes().Name()
 		}
-		candidates := c.packageMembers(ctx, pkg.GetTypes(), unimportedScore(relevances[path]), imp)
+		candidates := c.packageMembers(pkg.GetTypes(), unimportedScore(relevances[path]), imp)
 		for _, cand := range candidates {
 			c.deepState.enqueue(cand)
 		}
@@ -1179,11 +1180,11 @@ func (c *completer) unimportedMembers(ctx context.Context, id *ast.Ident) error 
 
 // unimportedScore returns a score for an unimported package that is generally
 // lower than other candidates.
-func unimportedScore(relevance int) float64 {
-	return (stdScore + .1*float64(relevance)) / 2
+func unimportedScore(relevance float64) float64 {
+	return (stdScore + .1*relevance) / 2
 }
 
-func (c *completer) packageMembers(ctx context.Context, pkg *types.Package, score float64, imp *importInfo) []candidate {
+func (c *completer) packageMembers(pkg *types.Package, score float64, imp *importInfo) []candidate {
 	var candidates []candidate
 	scope := pkg.Scope()
 	for _, name := range scope.Names() {
@@ -1198,7 +1199,7 @@ func (c *completer) packageMembers(ctx context.Context, pkg *types.Package, scor
 	return candidates
 }
 
-func (c *completer) methodsAndFields(ctx context.Context, typ types.Type, addressable bool, imp *importInfo) []candidate {
+func (c *completer) methodsAndFields(typ types.Type, addressable bool, imp *importInfo) []candidate {
 	mset := c.methodSetCache[methodSetKey{typ, addressable}]
 	if mset == nil {
 		if addressable && !types.IsInterface(typ) && !isPointer(typ) {
@@ -1403,9 +1404,9 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		paths = append(paths, path)
 	}
 
-	var relevances map[string]int
+	var relevances map[string]float64
 	if len(paths) != 0 {
-		if err := c.snapshot.View().RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
+		if err := c.snapshot.RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
 			var err error
 			relevances, err = imports.ScoreImportPaths(ctx, opts.Env, paths)
 			return err
@@ -2419,6 +2420,10 @@ func (c *candidate) anyCandType(f func(t types.Type, addressable bool) bool) boo
 // matchingCandidate reports whether cand matches our type inferences.
 // It mutates cand's score in certain cases.
 func (c *completer) matchingCandidate(cand *candidate) bool {
+	if c.completionContext.commentCompletion {
+		return false
+	}
+
 	if isTypeName(cand.obj) {
 		return c.matchingTypeName(cand)
 	} else if c.wantTypeName() {

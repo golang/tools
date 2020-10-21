@@ -5,7 +5,6 @@
 package source
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"go/ast"
@@ -33,13 +32,25 @@ type Snapshot interface {
 	// Fileset returns the Fileset used to parse all the Go files in this snapshot.
 	FileSet() *token.FileSet
 
+	// ValidBuildConfiguration returns true if there is some error in the
+	// user's workspace. In particular, if they are both outside of a module
+	// and their GOPATH.
+	ValidBuildConfiguration() bool
+
+	// WriteEnv writes the view-specific environment to the io.Writer.
+	WriteEnv(ctx context.Context, w io.Writer) error
+
 	// FindFile returns the FileHandle for the given URI, if it is already
 	// in the given snapshot.
 	FindFile(uri span.URI) VersionedFileHandle
 
-	// GetFile returns the FileHandle for a given URI, initializing it
-	// if it is not already part of the snapshot.
-	GetFile(ctx context.Context, uri span.URI) (VersionedFileHandle, error)
+	// GetVersionedFile returns the VersionedFileHandle for a given URI,
+	// initializing it if it is not already part of the snapshot.
+	GetVersionedFile(ctx context.Context, uri span.URI) (VersionedFileHandle, error)
+
+	// GetFile returns the FileHandle for a given URI, initializing it if it is
+	// not already part of the snapshot.
+	GetFile(ctx context.Context, uri span.URI) (FileHandle, error)
 
 	// AwaitInitialized waits until the snapshot's view is initialized.
 	AwaitInitialized(ctx context.Context)
@@ -47,8 +58,9 @@ type Snapshot interface {
 	// IsOpen returns whether the editor currently has a file open.
 	IsOpen(uri span.URI) bool
 
-	// IsSaved returns whether the contents are saved on disk or not.
-	IsSaved(uri span.URI) bool
+	// IgnoredFile reports if a file would be ignored by a `go list` of the whole
+	// workspace.
+	IgnoredFile(uri span.URI) bool
 
 	// ParseGo returns the parsed AST for the file.
 	// If the file is not available, returns nil and an error.
@@ -70,15 +82,22 @@ type Snapshot interface {
 
 	// RunGoCommandPiped runs the given `go` command in the view, using the
 	// provided stdout and stderr. It will use the -modfile flag, if possible.
-	RunGoCommandPiped(ctx context.Context, verb string, args []string, stdout, stderr io.Writer) error
-
-	// RunGoCommand runs the given `go` command in the view. It will use the
-	// -modfile flag, if possible.
-	RunGoCommand(ctx context.Context, verb string, args []string) (*bytes.Buffer, error)
+	// If the provided working directory is empty, the snapshot's root folder
+	// will be used as the working directory.
+	RunGoCommandPiped(ctx context.Context, wd, verb string, args []string, stdout, stderr io.Writer) error
 
 	// RunGoCommandDirect runs the given `go` command, never using the
-	// -modfile flag.
-	RunGoCommandDirect(ctx context.Context, verb string, args []string) error
+	// -modfile flag. If the provided working directory is empty, the
+	// snapshot's root folder will be used as the working directory.
+	RunGoCommandDirect(ctx context.Context, wd, verb string, args []string) error
+
+	// RunProcessEnvFunc runs fn with the process env for this snapshot's view.
+	// Note: the process env contains cached module and filesystem state.
+	RunProcessEnvFunc(ctx context.Context, fn func(*imports.Options) error) error
+
+	// ModFiles are the go.mod files enclosed in the snapshot's view and known
+	// to the snapshot.
+	ModFiles() []span.URI
 
 	// ParseMod is used to parse go.mod files.
 	ParseMod(ctx context.Context, fh FileHandle) (*ParsedModule, error)
@@ -94,6 +113,9 @@ type Snapshot interface {
 	// ModTidy returns the results of `go mod tidy` for the module specified by
 	// the given go.mod file.
 	ModTidy(ctx context.Context, fh FileHandle) (*TidiedModule, error)
+
+	// GoModForFile returns the URI of the go.mod file for the given URI.
+	GoModForFile(ctx context.Context, uri span.URI) span.URI
 
 	// BuildWorkspaceModFile builds the contents of mod file to be used for
 	// multi-module workspace.
@@ -152,17 +174,11 @@ const (
 // This is the level at which we maintain configuration like working directory
 // and build tags.
 type View interface {
-	// Session returns the session that created this view.
-	Session() Session
-
 	// Name returns the name this view was constructed with.
 	Name() string
 
-	// Folder returns the root folder for this view.
+	// Folder returns the folder with which this view was created.
 	Folder() span.URI
-
-	// ModFile is the go.mod file at the root of this view. It may not exist.
-	ModFile() span.URI
 
 	// BackgroundContext returns a context used for all background processing
 	// on behalf of this view.
@@ -170,13 +186,6 @@ type View interface {
 
 	// Shutdown closes this view, and detaches it from its session.
 	Shutdown(ctx context.Context)
-
-	// WriteEnv writes the view-specific environment to the io.Writer.
-	WriteEnv(ctx context.Context, w io.Writer) error
-
-	// RunProcessEnvFunc runs fn with the process env for this snapshot's view.
-	// Note: the process env contains cached module and filesystem state.
-	RunProcessEnvFunc(ctx context.Context, fn func(*imports.Options) error) error
 
 	// Options returns a copy of the Options for this view.
 	Options() *Options
@@ -193,18 +202,17 @@ type View interface {
 	// Rebuild rebuilds the current view, replacing the original view in its session.
 	Rebuild(ctx context.Context) (Snapshot, func(), error)
 
-	// InvalidBuildConfiguration returns true if there is some error in the
-	// user's workspace. In particular, if they are both outside of a module
-	// and their GOPATH.
-	ValidBuildConfiguration() bool
-
 	// IsGoPrivatePath reports whether target is a private import path, as identified
 	// by the GOPRIVATE environment variable.
 	IsGoPrivatePath(path string) bool
+}
 
-	// IgnoredFile reports if a file would be ignored by a `go list` of the whole
-	// workspace.
-	IgnoredFile(uri span.URI) bool
+// A FileSource maps uris to FileHandles. This abstraction exists both for
+// testability, and so that algorithms can be run equally on session and
+// snapshot files.
+type FileSource interface {
+	// GetFile returns the FileHandle for a given URI.
+	GetFile(ctx context.Context, uri span.URI) (FileHandle, error)
 }
 
 type BuiltinPackage struct {
@@ -270,7 +278,7 @@ type Session interface {
 
 	// DidModifyFile reports a file modification to the session. It returns the
 	// resulting snapshots, a guaranteed one per view.
-	DidModifyFiles(ctx context.Context, changes []FileModification) ([]Snapshot, []func(), []span.URI, error)
+	DidModifyFiles(ctx context.Context, changes []FileModification) (map[span.URI]View, map[View]Snapshot, []func(), []span.URI, error)
 
 	// Overlays returns a slice of file overlays for the session.
 	Overlays() []Overlay
@@ -343,6 +351,11 @@ func (a FileAction) String() string {
 }
 
 var ErrTmpModfileUnsupported = errors.New("-modfile is unsupported for this Go version")
+var ErrNoModOnDisk = errors.New("go.mod file is not on disk")
+
+func IsNonFatalGoModError(err error) bool {
+	return err == ErrTmpModfileUnsupported || err == ErrNoModOnDisk
+}
 
 // ParseMode controls the content of the AST produced when parsing a source file.
 type ParseMode int
@@ -406,9 +419,8 @@ type FileHandle interface {
 	URI() span.URI
 	Kind() FileKind
 
-	// Identity returns a FileIdentity for the file, even if there was an error
-	// reading it.
-	// It is a fatal error to call Identity on a file that has not yet been read.
+	// FileIdentity returns a FileIdentity for the file, even if there was an
+	// error reading it.
 	FileIdentity() FileIdentity
 	// Read reads the contents of a file.
 	// If the file is not available, returns a nil slice and an error.
@@ -550,8 +562,17 @@ var (
 	PackagesLoadError     = errors.New("packages.Load error")
 )
 
-// WorkspaceModuleVersion is the nonexistent pseudoversion used in the
+// WorkspaceModuleVersion is the nonexistent pseudoversion suffix used in the
 // construction of the workspace module. It is exported so that we can make
 // sure not to show this version to end users in error messages, to avoid
 // confusion.
-const WorkspaceModuleVersion = "v0.0.0-goplsworkspace"
+// The major version is not included, as that depends on the module path.
+const workspaceModuleVersion = ".0.0-goplsworkspace"
+
+func IsWorkspaceModuleVersion(version string) bool {
+	return strings.HasSuffix(version, workspaceModuleVersion)
+}
+
+func WorkspaceModuleVersion(majorVersion string) string {
+	return majorVersion + workspaceModuleVersion
+}

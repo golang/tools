@@ -26,10 +26,12 @@ func NewServer(session source.Session, client protocol.Client) *Server {
 		delivered:            make(map[span.URI]sentDiagnostics),
 		gcOptimizatonDetails: make(map[span.URI]struct{}),
 		watchedDirectories:   make(map[span.URI]struct{}),
+		changedFiles:         make(map[span.URI]struct{}),
 		session:              session,
 		client:               client,
 		diagnosticsSema:      make(chan struct{}, concurrentAnalyses),
 		progress:             newProgressTracker(client),
+		debouncer:            newDebouncer(),
 	}
 }
 
@@ -65,6 +67,9 @@ type Server struct {
 
 	session source.Session
 
+	// notifications generated before serverInitialized
+	notifications []*protocol.ShowMessageParams
+
 	// changedFiles tracks files for which there has been a textDocument/didChange.
 	changedFilesMu sync.Mutex
 	changedFiles   map[span.URI]struct{}
@@ -94,6 +99,9 @@ type Server struct {
 	diagnosticsSema chan struct{}
 
 	progress *progressTracker
+
+	// debouncer is used for debouncing diagnostics.
+	debouncer *debouncer
 }
 
 // sentDiagnostics is used to cache diagnostics that have been sent for a given file.

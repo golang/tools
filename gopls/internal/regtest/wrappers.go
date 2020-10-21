@@ -67,13 +67,6 @@ func (e *Env) OpenFile(name string) {
 	}
 }
 
-func (e *Env) OpenFileWithContent(name, content string) {
-	e.T.Helper()
-	if err := e.Editor.OpenFileWithContent(e.Ctx, name, content); err != nil {
-		e.T.Fatal(err)
-	}
-}
-
 // CreateBuffer creates a buffer in the editor, calling t.Fatal on any error.
 func (e *Env) CreateBuffer(name string, content string) {
 	e.T.Helper()
@@ -239,6 +232,14 @@ func (e *Env) RunGenerate(dir string) {
 	e.CheckForFileChanges()
 }
 
+// RunGoCommand runs the given command in the sandbox's default working
+// directory.
+func (e *Env) RunGoCommand(verb string, args ...string) {
+	if err := e.Sandbox.RunGoCommand(e.Ctx, "", verb, args); err != nil {
+		e.T.Fatal(err)
+	}
+}
+
 // CheckForFileChanges triggers a manual poll of the workspace for any file
 // changes since creation, or since last polling. It is a workaround for the
 // lack of true file watching support in the fake workspace.
@@ -267,15 +268,15 @@ func (e *Env) ExecuteCodeLensCommand(path string, cmd *source.Command) {
 	var lens protocol.CodeLens
 	var found bool
 	for _, l := range lenses {
-		if l.Command.Command == cmd.Name {
+		if l.Command.Command == cmd.ID() {
 			lens = l
 			found = true
 		}
 	}
 	if !found {
-		e.T.Fatalf("found no command with the title %s", cmd.Name)
+		e.T.Fatalf("found no command with the ID %s", cmd.ID())
 	}
-	if _, err := e.Editor.Server.ExecuteCommand(e.Ctx, &protocol.ExecuteCommandParams{
+	if _, err := e.Editor.ExecuteCommand(e.Ctx, &protocol.ExecuteCommandParams{
 		Command:   lens.Command.Command,
 		Arguments: lens.Command.Arguments,
 	}); err != nil {

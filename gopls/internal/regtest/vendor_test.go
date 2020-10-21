@@ -38,7 +38,11 @@ func _() {
 	var q int // hardcode a diagnostic
 }
 `
-	runner.Run(t, pkgThatUsesVendoring, func(t *testing.T, env *Env) {
+	// TODO(rstambler): Remove this when golang/go#41819 is resolved.
+	withOptions(
+		WithModes(WithoutExperiments),
+		WithProxyFiles(basicProxy),
+	).run(t, pkgThatUsesVendoring, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a1.go")
 		env.Await(
 			// The editor should pop up a message suggesting that the user
@@ -58,5 +62,5 @@ func _() {
 				DiagnosticAt("a/a1.go", 6, 5),
 			),
 		)
-	}, WithProxyFiles(basicProxy))
+	})
 }

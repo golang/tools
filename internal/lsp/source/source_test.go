@@ -14,7 +14,6 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/diff/myers"
@@ -34,7 +33,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestSource(t *testing.T) {
-	packagestest.TestAll(t, testSource)
+	tests.RunTests(t, "../testdata", true, testSource)
 }
 
 type runner struct {
@@ -44,16 +43,14 @@ type runner struct {
 	ctx      context.Context
 }
 
-func testSource(t *testing.T, exporter packagestest.Exporter) {
+func testSource(t *testing.T, datum *tests.Data) {
 	ctx := tests.Context(t)
-	datum := tests.Load(t, exporter, "../testdata")
-	defer datum.Exported.Cleanup()
 
 	cache := cache.New(ctx, nil)
 	session := cache.NewSession(ctx)
 	options := source.DefaultOptions().Clone()
 	tests.DefaultOptions(options)
-	options.Env = datum.Config.Env
+	options.SetEnvSlice(datum.Config.Env)
 	view, _, release, err := session.NewView(ctx, "source_test", span.URIFromPath(datum.Config.Dir), options)
 	release()
 	if err != nil {
@@ -304,7 +301,7 @@ func (r *runner) callCompletion(t *testing.T, src span.Span, options func(*sourc
 	list, surrounding, err := completion.Completion(r.ctx, r.snapshot, fh, protocol.Position{
 		Line:      float64(src.Start().Line() - 1),
 		Character: float64(src.Start().Column() - 1),
-	}, "")
+	}, protocol.CompletionContext{})
 	if err != nil && !errors.As(err, &completion.ErrIsDefinition{}) {
 		t.Fatalf("failed for %v: %v", src, err)
 	}
@@ -501,6 +498,10 @@ func (r *runner) Format(t *testing.T, spn span.Span) {
 	if gofmted != got {
 		t.Errorf("format failed for %s, expected:\n%v\ngot:\n%v", spn.URI().Filename(), gofmted, got)
 	}
+}
+
+func (r *runner) SemanticTokens(t *testing.T, spn span.Span) {
+	t.Skip("nothing to test in source")
 }
 
 func (r *runner) Import(t *testing.T, spn span.Span) {

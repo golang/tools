@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/lsprpc"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/lsp/source"
 )
 
 // Mode is a bitmask that defines for which execution modes a test should run.
@@ -43,9 +44,16 @@ const (
 	Forwarded
 	// SeparateProcess forwards connection to a shared separate gopls process.
 	SeparateProcess
+	// Experimental enables all of the experimental configurations that are
+	// being developed. Currently, it enables the workspace module.
+	Experimental
+	// WithoutExperiments are the modes that run without experimental features,
+	// like the workspace module. These should be used for tests that only work
+	// in the default modes.
+	WithoutExperiments = Singleton | Forwarded
 	// NormalModes are the global default execution modes, when unmodified by
 	// test flags or by individual test options.
-	NormalModes = Singleton | Forwarded
+	NormalModes = Singleton | Experimental
 )
 
 // A Runner runs tests in gopls execution environments, as specified by its
@@ -218,6 +226,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 		{"singleton", Singleton, singletonServer},
 		{"forwarded", Forwarded, r.forwardedServer},
 		{"separate_process", SeparateProcess, r.separateProcessServer},
+		{"experimental_workspace_module", Experimental, experimentalWorkspaceModule},
 	}
 
 	for _, tc := range tests {
@@ -281,6 +290,8 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 				}
 				env.CloseEditor()
 			}()
+			// Always await the initial workspace load.
+			env.Await(InitialWorkspaceLoad)
 			test(t, env)
 		})
 	}
@@ -288,17 +299,29 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 
 type loggingFramer struct {
 	mu      sync.Mutex
-	buffers []*bytes.Buffer
+	buffers []*safeBuffer
+}
+
+// safeBuffer is a threadsafe buffer for logs.
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
 }
 
 func (s *loggingFramer) framer(f jsonrpc2.Framer) jsonrpc2.Framer {
 	return func(nc net.Conn) jsonrpc2.Stream {
 		s.mu.Lock()
-		var buf bytes.Buffer
-		s.buffers = append(s.buffers, &buf)
+		buf := &safeBuffer{buf: bytes.Buffer{}}
+		s.buffers = append(s.buffers, buf)
 		s.mu.Unlock()
 		stream := f(nc)
-		return protocol.LoggingStream(stream, &buf)
+		return protocol.LoggingStream(stream, buf)
 	}
 }
 
@@ -308,15 +331,23 @@ func (s *loggingFramer) printBuffers(testname string, w io.Writer) {
 
 	for i, buf := range s.buffers {
 		fmt.Fprintf(os.Stderr, "#### Start Gopls Test Logs %d of %d for %q\n", i+1, len(s.buffers), testname)
-		// Re-buffer buf to avoid a data rate (io.Copy mutates src).
-		writeBuf := bytes.NewBuffer(buf.Bytes())
-		io.Copy(w, writeBuf)
+		buf.mu.Lock()
+		io.Copy(w, &buf.buf)
+		buf.mu.Unlock()
 		fmt.Fprintf(os.Stderr, "#### End Gopls Test Logs %d of %d for %q\n", i+1, len(s.buffers), testname)
 	}
 }
 
 func singletonServer(ctx context.Context, t *testing.T) jsonrpc2.StreamServer {
 	return lsprpc.NewStreamServer(cache.New(ctx, hooks.Options), false)
+}
+
+func experimentalWorkspaceModule(ctx context.Context, t *testing.T) jsonrpc2.StreamServer {
+	options := func(o *source.Options) {
+		hooks.Options(o)
+		o.ExperimentalWorkspaceModule = true
+	}
+	return lsprpc.NewStreamServer(cache.New(ctx, options), false)
 }
 
 func (r *Runner) forwardedServer(ctx context.Context, t *testing.T) jsonrpc2.StreamServer {

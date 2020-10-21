@@ -58,6 +58,7 @@ type RankCompletions map[span.Span][]Completion
 type FoldingRanges []span.Span
 type Formats []span.Span
 type Imports []span.Span
+type SemanticTokens []span.Span
 type SuggestedFixes map[span.Span][]string
 type FunctionExtractions map[span.Span]span.Span
 type Definitions map[span.Span]Definition
@@ -90,6 +91,7 @@ type Data struct {
 	FoldingRanges                 FoldingRanges
 	Formats                       Formats
 	Imports                       Imports
+	SemanticTokens                SemanticTokens
 	SuggestedFixes                SuggestedFixes
 	FunctionExtractions           FunctionExtractions
 	Definitions                   Definitions
@@ -111,6 +113,7 @@ type Data struct {
 	fragments map[string]string
 	dir       string
 	golden    map[string]*Golden
+	mode      string
 
 	ModfileFlagAvailable bool
 
@@ -132,6 +135,7 @@ type Tests interface {
 	FoldingRanges(*testing.T, span.Span)
 	Format(*testing.T, span.Span)
 	Import(*testing.T, span.Span)
+	SemanticTokens(*testing.T, span.Span)
 	SuggestedFix(*testing.T, span.Span, []string)
 	FunctionExtraction(*testing.T, span.Span, span.Span)
 	Definition(*testing.T, span.Span, Definition)
@@ -240,9 +244,29 @@ func DefaultOptions(o *source.Options) {
 	o.CompletionBudget = time.Minute
 	o.HierarchicalDocumentSymbolSupport = true
 	o.ExperimentalWorkspaceModule = true
+	o.SemanticTokens = true
 }
 
-func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
+func RunTests(t *testing.T, dataDir string, includeMultiModule bool, f func(*testing.T, *Data)) {
+	t.Helper()
+	modes := []string{"Modules", "GOPATH"}
+	if includeMultiModule {
+		modes = append(modes, "MultiModule")
+	}
+	for _, mode := range modes {
+		t.Run(mode, func(t *testing.T) {
+			t.Helper()
+			if mode == "MultiModule" {
+				// Some bug in 1.12 breaks reading markers, and it's not worth figuring out.
+				testenv.NeedsGo1Point(t, 13)
+			}
+			datum := load(t, mode, dataDir)
+			f(t, datum)
+		})
+	}
+}
+
+func load(t testing.TB, mode string, dir string) *Data {
 	t.Helper()
 
 	datum := &Data{
@@ -278,6 +302,7 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 		dir:       dir,
 		fragments: map[string]string{},
 		golden:    map[string]*Golden{},
+		mode:      mode,
 		mappers:   map[span.URI]*protocol.ColumnMapper{},
 	}
 
@@ -330,8 +355,40 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 			Files:   files,
 			Overlay: overlays,
 		},
-	} // Add exampleModule to provide tests with another pkg.
-	datum.Exported = packagestest.Export(t, exporter, modules)
+	}
+	switch mode {
+	case "Modules":
+		datum.Exported = packagestest.Export(t, packagestest.Modules, modules)
+	case "GOPATH":
+		datum.Exported = packagestest.Export(t, packagestest.GOPATH, modules)
+	case "MultiModule":
+		files := map[string]interface{}{}
+		for k, v := range modules[0].Files {
+			files[filepath.Join("testmodule", k)] = v
+		}
+		modules[0].Files = files
+
+		overlays := map[string][]byte{}
+		for k, v := range modules[0].Overlay {
+			overlays[filepath.Join("testmodule", k)] = v
+		}
+		modules[0].Overlay = overlays
+
+		golden := map[string]*Golden{}
+		for k, v := range datum.golden {
+			if k == summaryFile {
+				golden[k] = v
+			} else {
+				golden[filepath.Join("testmodule", k)] = v
+			}
+		}
+		datum.golden = golden
+
+		datum.Exported = packagestest.Export(t, packagestest.Modules, modules)
+	default:
+		panic("unknown mode " + mode)
+	}
+
 	for _, m := range modules {
 		for fragment := range m.Files {
 			filename := datum.Exported.File(m.Name, fragment)
@@ -378,6 +435,7 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 		"fold":            datum.collectFoldingRanges,
 		"format":          datum.collectFormats,
 		"import":          datum.collectImports,
+		"semantic":        datum.collectSemanticTokens,
 		"godef":           datum.collectDefinitions,
 		"implementations": datum.collectImplementations,
 		"typdef":          datum.collectTypeDefinitions,
@@ -412,6 +470,12 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if mode == "MultiModule" {
+		if err := os.Rename(filepath.Join(datum.Config.Dir, "go.mod"), filepath.Join(datum.Config.Dir, "testmodule/go.mod")); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	return datum
 }
 
@@ -426,6 +490,11 @@ func Run(t *testing.T, tests Tests, data *Data) {
 			for i, e := range exp {
 				t.Run(SpanName(src)+"_"+strconv.Itoa(i), func(t *testing.T) {
 					t.Helper()
+					if strings.Contains(t.Name(), "complit") || strings.Contains(t.Name(), "UnimportedCompletion") {
+						if data.mode == "MultiModule" {
+							t.Skip("Unimported completions are broken in multi-module mode")
+						}
+					}
 					if strings.Contains(t.Name(), "cgo") {
 						testenv.NeedsTool(t, "cgo")
 					}
@@ -574,6 +643,16 @@ func Run(t *testing.T, tests Tests, data *Data) {
 			t.Run(uriName(spn.URI()), func(t *testing.T) {
 				t.Helper()
 				tests.Import(t, spn)
+			})
+		}
+	})
+
+	t.Run("SemanticTokens", func(t *testing.T) {
+		t.Helper()
+		for _, spn := range data.SemanticTokens {
+			t.Run(uriName(spn.URI()), func(t *testing.T) {
+				t.Helper()
+				tests.SemanticTokens(t, spn)
 			})
 		}
 	})
@@ -796,6 +875,7 @@ func checkData(t *testing.T, data *Data) {
 	fmt.Fprintf(buf, "FoldingRangesCount = %v\n", len(data.FoldingRanges))
 	fmt.Fprintf(buf, "FormatCount = %v\n", len(data.Formats))
 	fmt.Fprintf(buf, "ImportCount = %v\n", len(data.Imports))
+	fmt.Fprintf(buf, "SemanticTokenCount = %v\n", len(data.SemanticTokens))
 	fmt.Fprintf(buf, "SuggestedFixCount = %v\n", len(data.SuggestedFixes))
 	fmt.Fprintf(buf, "FunctionExtractionCount = %v\n", len(data.FunctionExtractions))
 	fmt.Fprintf(buf, "DefinitionsCount = %v\n", definitionCount)
@@ -890,6 +970,9 @@ func (data *Data) Golden(tag string, target string, update func() ([]byte, error
 	}
 	if file == nil {
 		data.t.Fatalf("could not find golden contents %v: %v", fragment, tag)
+	}
+	if len(file.Data) == 0 {
+		return file.Data
 	}
 	return file.Data[:len(file.Data)-1] // drop the trailing \n
 }
@@ -1011,6 +1094,10 @@ func (data *Data) collectFormats(spn span.Span) {
 
 func (data *Data) collectImports(spn span.Span) {
 	data.Imports = append(data.Imports, spn)
+}
+
+func (data *Data) collectSemanticTokens(spn span.Span) {
+	data.SemanticTokens = append(data.SemanticTokens, spn)
 }
 
 func (data *Data) collectSuggestedFixes(spn span.Span, actionKind string) {

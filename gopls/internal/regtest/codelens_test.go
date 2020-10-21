@@ -50,7 +50,9 @@ const (
 	for _, test := range tests {
 		t.Run(test.label, func(t *testing.T) {
 			withOptions(
-				EditorConfig{CodeLens: test.enabled},
+				EditorConfig{
+					CodeLens: test.enabled,
+				},
 			).run(t, workspace, func(t *testing.T, env *Env) {
 				env.OpenFile("lib.go")
 				lens := env.CodeLens("lib.go")
@@ -119,7 +121,7 @@ func main() {
 		if found.Command.Command == "" {
 			t.Fatalf("did not find lens %q, got %v", want, lenses)
 		}
-		if _, err := env.Editor.Server.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
+		if _, err := env.Editor.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
 			Command:   found.Command.Command,
 			Arguments: found.Command.Arguments,
 		}); err != nil {
@@ -251,9 +253,11 @@ func main() {
 }
 `
 	withOptions(
-		EditorConfig{CodeLens: map[string]bool{"gc_details": true}},
+		EditorConfig{
+			CodeLens: map[string]bool{
+				"gc_details": true,
+			}},
 	).run(t, mod, func(t *testing.T, env *Env) {
-		env.Await(InitialWorkspaceLoad)
 		env.OpenFile("main.go")
 		env.ExecuteCodeLensCommand("main.go", source.CommandToggleDetails)
 		d := &protocol.PublishDiagnosticsParams{}

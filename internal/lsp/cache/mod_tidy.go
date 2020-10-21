@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"go/ast"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -55,11 +56,18 @@ func (s *snapshot) ModTidy(ctx context.Context, fh source.FileHandle) (*source.T
 	if fh.Kind() != source.Mod {
 		return nil, fmt.Errorf("%s is not a go.mod file", fh.URI())
 	}
-	if s.view.workspaceMode&tempModfile == 0 {
+	if s.workspaceMode()&tempModfile == 0 {
 		return nil, source.ErrTmpModfileUnsupported
 	}
 	if handle := s.getModTidyHandle(fh.URI()); handle != nil {
 		return handle.tidy(ctx, s)
+	}
+	// If the file handle is an overlay, it may not be written to disk.
+	// The go.mod file has to be on disk for `go mod tidy` to work.
+	if _, ok := fh.(*overlay); ok {
+		if info, _ := os.Stat(fh.URI().Filename()); info == nil {
+			return nil, source.ErrNoModOnDisk
+		}
 	}
 	workspacePkgs, err := s.WorkspacePackages(ctx)
 	if err != nil {
@@ -75,7 +83,7 @@ func (s *snapshot) ModTidy(ctx context.Context, fh source.FileHandle) (*source.T
 	s.mu.Unlock()
 
 	// Make sure to use the module root in the configuration.
-	cfg := s.configWithDir(ctx, filepath.Dir(fh.URI().Filename()))
+	cfg := s.config(ctx, filepath.Dir(fh.URI().Filename()))
 	key := modTidyKey{
 		sessionID:       s.view.session.id,
 		view:            s.view.folder.Filename(),
@@ -106,6 +114,9 @@ func (s *snapshot) ModTidy(ctx context.Context, fh source.FileHandle) (*source.T
 				err: err,
 			}
 		}
+		// Get a new config to avoid races, since it may be modified by
+		// goCommandInvocation.
+		cfg := s.config(ctx, filepath.Dir(fh.URI().Filename()))
 		tmpURI, runner, inv, cleanup, err := snapshot.goCommandInvocation(ctx, cfg, true, "mod", []string{"tidy"})
 		if err != nil {
 			return &modTidyData{err: err}

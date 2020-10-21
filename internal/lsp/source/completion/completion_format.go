@@ -17,11 +17,24 @@ import (
 	"golang.org/x/tools/internal/lsp/snippet"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
+	errors "golang.org/x/xerrors"
 )
 
-// formatCompletion creates a completion item for a given candidate.
+// item formats a candidate to a CompletionItem.
 func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, error) {
 	obj := cand.obj
+
+	// if the object isn't a valid match against the surrounding, return early.
+	matchScore := c.matcher.Score(cand.name)
+	if matchScore <= 0 {
+		return CompletionItem{}, errors.New("not a surrounding match")
+	}
+	cand.score *= float64(matchScore)
+
+	// Ignore deep candidates that wont be in the MaxDeepCompletions anyway.
+	if len(cand.path) != 0 && !c.deepState.isHighScore(cand.score) {
+		return CompletionItem{}, errors.New("not a high scoring candidate")
+	}
 
 	// Handle builtin types separately.
 	if obj.Parent() == types.Universe {
@@ -42,14 +55,10 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 
 	// expandFuncCall mutates the completion label, detail, and snippet
 	// to that of an invocation of sig.
-	expandFuncCall := func(sig *types.Signature) error {
-		s, err := source.NewSignature(ctx, c.snapshot, c.pkg, c.file, "", sig, nil, c.qf)
-		if err != nil {
-			return err
-		}
+	expandFuncCall := func(sig *types.Signature) {
+		s := source.NewSignature(ctx, c.snapshot, c.pkg, sig, nil, c.qf)
 		snip = c.functionCallSnippet(label, s.Params())
 		detail = "func" + s.Format()
-		return nil
 	}
 
 	switch obj := obj.(type) {
@@ -61,7 +70,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 		if _, ok := obj.Type().(*types.Struct); ok {
 			detail = "struct{...}" // for anonymous structs
 		} else if obj.IsField() {
-			detail = source.FormatVarType(ctx, c.snapshot, c.pkg, c.file, obj, c.qf)
+			detail = source.FormatVarType(ctx, c.snapshot, c.pkg, obj, c.qf)
 		}
 		if obj.IsField() {
 			kind = protocol.FieldCompletion
@@ -74,9 +83,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 		}
 
 		if sig, ok := obj.Type().Underlying().(*types.Signature); ok && cand.expandFuncCall {
-			if err := expandFuncCall(sig); err != nil {
-				return CompletionItem{}, err
-			}
+			expandFuncCall(sig)
 		}
 	case *types.Func:
 		sig, ok := obj.Type().Underlying().(*types.Signature)
@@ -89,9 +96,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 		}
 
 		if cand.expandFuncCall {
-			if err := expandFuncCall(sig); err != nil {
-				return CompletionItem{}, err
-			}
+			expandFuncCall(sig)
 		}
 	case *types.PkgName:
 		kind = protocol.ModuleCompletion
@@ -104,7 +109,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 	// If this candidate needs an additional import statement,
 	// add the additional text edits needed.
 	if cand.imp != nil {
-		addlEdits, err := c.importEdits(ctx, cand.imp)
+		addlEdits, err := c.importEdits(cand.imp)
 		if err != nil {
 			return CompletionItem{}, err
 		}
@@ -153,6 +158,10 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 	}
 
 	detail = strings.TrimPrefix(detail, "untyped ")
+	// override computed detail with provided detail, if something is provided.
+	if cand.detail != "" {
+		detail = cand.detail
+	}
 	item := CompletionItem{
 		Label:               label,
 		InsertText:          insert,
@@ -198,7 +207,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 		return item, nil
 	}
 
-	hover, err := source.HoverInfo(pkg, obj, decl)
+	hover, err := source.HoverInfo(ctx, pkg, obj, decl)
 	if err != nil {
 		event.Error(ctx, "failed to find Hover", err, tag.URI.Of(uri))
 		return item, nil
@@ -207,11 +216,12 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 	if c.opts.fullDocumentation {
 		item.Documentation = hover.FullDocumentation
 	}
+
 	return item, nil
 }
 
 // importEdits produces the text edits necessary to add the given import to the current file.
-func (c *completer) importEdits(ctx context.Context, imp *importInfo) ([]protocol.TextEdit, error) {
+func (c *completer) importEdits(imp *importInfo) ([]protocol.TextEdit, error) {
 	if imp == nil {
 		return nil, nil
 	}
@@ -221,7 +231,7 @@ func (c *completer) importEdits(ctx context.Context, imp *importInfo) ([]protoco
 		return nil, err
 	}
 
-	return source.ComputeOneImportFixEdits(ctx, c.snapshot, pgf, &imports.ImportFix{
+	return source.ComputeOneImportFixEdits(c.snapshot, pgf, &imports.ImportFix{
 		StmtInfo: imports.ImportInfo{
 			ImportPath: imp.importPath,
 			Name:       imp.name,

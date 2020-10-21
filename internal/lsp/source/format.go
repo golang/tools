@@ -93,8 +93,8 @@ func AllImportsFixes(ctx context.Context, snapshot Snapshot, fh FileHandle) (all
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := snapshot.View().RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
-		allFixEdits, editsPerFix, err = computeImportEdits(ctx, snapshot, pgf, opts)
+	if err := snapshot.RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
+		allFixEdits, editsPerFix, err = computeImportEdits(snapshot, pgf, opts)
 		return err
 	}); err != nil {
 		return nil, nil, fmt.Errorf("AllImportsFixes: %v", err)
@@ -104,7 +104,7 @@ func AllImportsFixes(ctx context.Context, snapshot Snapshot, fh FileHandle) (all
 
 // computeImportEdits computes a set of edits that perform one or all of the
 // necessary import fixes.
-func computeImportEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*ImportFix, err error) {
+func computeImportEdits(snapshot Snapshot, pgf *ParsedGoFile, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*ImportFix, err error) {
 	filename := pgf.URI.Filename()
 
 	// Build up basic information about the original file.
@@ -134,7 +134,7 @@ func computeImportEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFil
 }
 
 // ComputeOneImportFixEdits returns text edits for a single import fix.
-func ComputeOneImportFixEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile, fix *imports.ImportFix) ([]protocol.TextEdit, error) {
+func ComputeOneImportFixEdits(snapshot Snapshot, pgf *ParsedGoFile, fix *imports.ImportFix) ([]protocol.TextEdit, error) {
 	options := &imports.Options{
 		LocalPrefix: snapshot.View().Options().Local,
 		// Defaults.

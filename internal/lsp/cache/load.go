@@ -23,6 +23,7 @@ import (
 	errors "golang.org/x/xerrors"
 )
 
+// metadata holds package metadata extracted from a call to packages.Load.
 type metadata struct {
 	id              packageID
 	pkgPath         packagePath
@@ -40,6 +41,8 @@ type metadata struct {
 	config *packages.Config
 }
 
+// load calls packages.Load for the given scopes, updating package metadata,
+// import graph, and mapped files with the result.
 func (s *snapshot) load(ctx context.Context, scopes ...interface{}) error {
 	var query []string
 	var containsDir bool // for logging
@@ -54,23 +57,19 @@ func (s *snapshot) load(ctx context.Context, scopes ...interface{}) error {
 			// go list and should already be GOPATH-vendorized when appropriate.
 			query = append(query, string(scope))
 		case fileURI:
-			query = append(query, fmt.Sprintf("file=%s", span.URI(scope).Filename()))
-		case directoryURI:
-			filename := span.URI(scope).Filename()
-			q := fmt.Sprintf("%s/...", filename)
-			// Simplify the query if it will be run in the requested directory.
-			// This ensures compatibility with Go 1.12 that doesn't allow
-			// <directory>/... in GOPATH mode.
-			if s.view.rootURI.Filename() == filename {
-				q = "./..."
+			uri := span.URI(scope)
+			// Don't try to load a file that doesn't exist.
+			fh := s.FindFile(uri)
+			if fh == nil || fh.Kind() != source.Go {
+				continue
 			}
-			query = append(query, q)
+			query = append(query, fmt.Sprintf("file=%s", uri.Filename()))
 		case moduleLoadScope:
 			query = append(query, fmt.Sprintf("%s/...", scope))
 		case viewLoadScope:
 			// If we are outside of GOPATH, a module, or some other known
 			// build system, don't load subdirectories.
-			if !s.view.hasValidBuildConfiguration {
+			if !s.ValidBuildConfiguration() {
 				query = append(query, "./")
 			} else {
 				query = append(query, "./...")
@@ -79,36 +78,26 @@ func (s *snapshot) load(ctx context.Context, scopes ...interface{}) error {
 			panic(fmt.Sprintf("unknown scope type %T", scope))
 		}
 		switch scope.(type) {
-		case directoryURI, viewLoadScope:
+		case viewLoadScope:
 			containsDir = true
 		}
+	}
+	if len(query) == 0 {
+		return nil
 	}
 	sort.Strings(query) // for determinism
 
 	ctx, done := event.Start(ctx, "cache.view.load", tag.Query.Of(query))
 	defer done()
 
-	cfg := s.config(ctx)
-
 	cleanup := func() {}
+	wdir := s.view.rootURI.Filename()
 
-	var modFH, sumFH source.FileHandle
-	var err error
-	if s.view.modURI != "" {
-		modFH, err = s.GetFile(ctx, s.view.modURI)
-		if err != nil {
-			return err
-		}
-	}
-	if s.view.sumURI != "" {
-		sumFH, err = s.GetFile(ctx, s.view.sumURI)
-		if err != nil {
-			return err
-		}
-	}
-
+	var modFile string
+	var modURI span.URI
+	var modContent []byte
 	switch {
-	case s.view.workspaceMode&usesWorkspaceModule != 0:
+	case s.workspaceMode()&usesWorkspaceModule != 0:
 		var (
 			tmpDir span.URI
 			err    error
@@ -117,22 +106,53 @@ func (s *snapshot) load(ctx context.Context, scopes ...interface{}) error {
 		if err != nil {
 			return err
 		}
-		cfg.Dir = tmpDir.Filename()
-	case s.view.workspaceMode&tempModfile != 0:
+		wdir = tmpDir.Filename()
+		modURI = span.URIFromPath(filepath.Join(wdir, "go.mod"))
+		modContent, err = ioutil.ReadFile(modURI.Filename())
+		if err != nil {
+			return err
+		}
+	case s.workspaceMode()&tempModfile != 0:
+		// -modfile is unsupported when there are > 1 modules in the workspace.
+		if len(s.modules) != 1 {
+			panic(fmt.Sprintf("unsupported use of -modfile, expected 1 module, got %v", len(s.modules)))
+		}
+		var mod *moduleRoot
+		for _, m := range s.modules { // range to access the only element
+			mod = m
+		}
+		modURI = mod.modURI
+		modFH, err := s.GetFile(ctx, mod.modURI)
+		if err != nil {
+			return err
+		}
+		modContent, err = modFH.Read()
+		if err != nil {
+			return err
+		}
+		var sumFH source.FileHandle
+		if mod.sumURI != "" {
+			sumFH, err = s.GetFile(ctx, mod.sumURI)
+			if err != nil {
+				return err
+			}
+		}
 		var tmpURI span.URI
 		tmpURI, cleanup, err = tempModFile(modFH, sumFH)
 		if err != nil {
 			return err
 		}
-		cfg.BuildFlags = append(cfg.BuildFlags, fmt.Sprintf("-modfile=%s", tmpURI.Filename()))
+		modFile = tmpURI.Filename()
 	}
 
-	modMod, err := s.view.needsModEqualsMod(ctx, modFH)
+	cfg := s.config(ctx, wdir)
+	packagesinternal.SetModFile(cfg, modFile)
+	modMod, err := s.needsModEqualsMod(ctx, modURI, modContent)
 	if err != nil {
 		return err
 	}
 	if modMod {
-		cfg.BuildFlags = append([]string{"-mod=mod"}, cfg.BuildFlags...)
+		packagesinternal.SetModFlag(cfg, "mod")
 	}
 
 	pkgs, err := packages.Load(cfg, query...)
@@ -155,7 +175,12 @@ func (s *snapshot) load(ctx context.Context, scopes ...interface{}) error {
 		event.Log(ctx, "go/packages.Load", tag.Snapshot.Of(s.ID()), tag.Directory.Of(cfg.Dir), tag.Query.Of(query), tag.PackageCount.Of(len(pkgs)))
 	}
 	if len(pkgs) == 0 {
-		if err == nil {
+		if err != nil {
+			// Try to extract the error into a diagnostic.
+			if srcErrs := s.parseLoadError(ctx, err); srcErrs != nil {
+				return srcErrs
+			}
+		} else {
 			err = fmt.Errorf("no packages returned")
 		}
 		return errors.Errorf("%v: %w", err, source.PackagesLoadError)
@@ -195,11 +220,30 @@ func (s *snapshot) load(ctx context.Context, scopes ...interface{}) error {
 	return nil
 }
 
+func (s *snapshot) parseLoadError(ctx context.Context, loadErr error) *source.ErrorList {
+	var srcErrs *source.ErrorList
+	for _, uri := range s.ModFiles() {
+		fh, err := s.GetFile(ctx, uri)
+		if err != nil {
+			continue
+		}
+		srcErr := extractGoCommandError(ctx, s, fh, loadErr)
+		if srcErr == nil {
+			continue
+		}
+		if srcErrs == nil {
+			srcErrs = &source.ErrorList{}
+		}
+		*srcErrs = append(*srcErrs, srcErr)
+	}
+	return srcErrs
+}
+
 // tempWorkspaceModule creates a temporary directory for use with
 // packages.Loads that occur from within the workspace module.
 func (s *snapshot) tempWorkspaceModule(ctx context.Context) (_ span.URI, cleanup func(), err error) {
 	cleanup = func() {}
-	if s.view.workspaceMode&usesWorkspaceModule == 0 {
+	if s.workspaceMode()&usesWorkspaceModule == 0 {
 		return "", cleanup, nil
 	}
 	wsModuleHandle, err := s.getWorkspaceModuleHandle(ctx)
@@ -231,6 +275,9 @@ func (s *snapshot) tempWorkspaceModule(ctx context.Context) (_ span.URI, cleanup
 	return span.URIFromPath(filepath.Dir(filename)), cleanup, nil
 }
 
+// setMetadata extracts metadata from pkg and records it in s. It
+// recurses through pkg.Imports to ensure that metadata exists for all
+// dependencies.
 func (s *snapshot) setMetadata(ctx context.Context, pkgPath packagePath, pkg *packages.Package, cfg *packages.Config, seen map[packageID]struct{}) (*metadata, error) {
 	id := packageID(pkg.ID)
 	if _, ok := seen[id]; ok {
@@ -259,6 +306,7 @@ func (s *snapshot) setMetadata(ctx context.Context, pkgPath packagePath, pkg *pa
 		s.addID(uri, m.id)
 	}
 
+	// TODO(rstambler): is this still necessary?
 	copied := map[packageID]struct{}{
 		id: {},
 	}

@@ -20,7 +20,8 @@ import (
 )
 
 type Command struct {
-	Name, Title string
+	Title string
+	Name  string
 
 	// Synchronous controls whether the command executes synchronously within the
 	// ExecuteCommand request (applying suggested fixes is always synchronous).
@@ -34,6 +35,15 @@ type Command struct {
 	// suggestedFixFn is an optional field to generate the edits that the
 	// command produces for the given inputs.
 	suggestedFixFn SuggestedFixFunc
+}
+
+// CommandPrefix is the prefix of all command names gopls uses externally.
+const CommandPrefix = "gopls."
+
+// ID adds the CommandPrefix to the command name, in order to avoid
+// collisions with other language servers.
+func (c Command) ID() string {
+	return CommandPrefix + c.Name
 }
 
 type AppliesFunc func(fset *token.FileSet, rng span.Range, src []byte, file *ast.File, pkg *types.Package, info *types.Info) bool
@@ -109,6 +119,7 @@ var (
 	// values.
 	CommandFillStruct = &Command{
 		Name:           "fill_struct",
+		Title:          "Fill struct",
 		suggestedFixFn: fillstruct.SuggestedFix,
 	}
 
@@ -116,6 +127,7 @@ var (
 	// name.
 	CommandUndeclaredName = &Command{
 		Name:           "undeclared_name",
+		Title:          "Undeclared name",
 		suggestedFixFn: undeclaredname.SuggestedFix,
 	}
 

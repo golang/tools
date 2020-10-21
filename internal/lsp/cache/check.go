@@ -144,7 +144,7 @@ func (s *snapshot) buildKey(ctx context.Context, id packageID, mode source.Parse
 	for _, depID := range depList {
 		depHandle, err := s.buildPackageHandle(ctx, depID, s.workspaceParseMode(depID))
 		if err != nil {
-			event.Error(ctx, "no dep handle", err, tag.Package.Of(string(depID)))
+			event.Error(ctx, fmt.Sprintf("%s: no dep handle for %s", id, depID), err, tag.Snapshot.Of(s.id))
 			if ctx.Err() != nil {
 				return nil, nil, ctx.Err()
 			}
@@ -156,7 +156,8 @@ func (s *snapshot) buildKey(ctx context.Context, id packageID, mode source.Parse
 		deps[depHandle.m.pkgPath] = depHandle
 		depKeys = append(depKeys, depHandle.key)
 	}
-	ph.key = checkPackageKey(ctx, ph.m.id, compiledGoFiles, m.config, depKeys, mode)
+	experimentalKey := s.View().Options().ExperimentalPackageCacheKey
+	ph.key = checkPackageKey(ctx, ph.m.id, compiledGoFiles, m.config, depKeys, mode, experimentalKey)
 	return ph, deps, nil
 }
 
@@ -168,10 +169,16 @@ func (s *snapshot) workspaceParseMode(id packageID) source.ParseMode {
 	}
 }
 
-func checkPackageKey(ctx context.Context, id packageID, pghs []*parseGoHandle, cfg *packages.Config, deps []packageHandleKey, mode source.ParseMode) packageHandleKey {
+func checkPackageKey(ctx context.Context, id packageID, pghs []*parseGoHandle, cfg *packages.Config, deps []packageHandleKey, mode source.ParseMode, experimentalKey bool) packageHandleKey {
 	b := bytes.NewBuffer(nil)
 	b.WriteString(string(id))
-	b.WriteString(hashConfig(cfg))
+	if !experimentalKey {
+		// cfg was used to produce the other hashed inputs (package ID, parsed Go
+		// files, and deps). It should not otherwise affect the inputs to the type
+		// checker, so this experiment omits it. This should increase cache hits on
+		// the daemon as cfg contains the environment and working directory.
+		b.WriteString(hashConfig(cfg))
+	}
 	b.WriteByte(byte(mode))
 	for _, dep := range deps {
 		b.WriteString(string(dep))
@@ -271,7 +278,7 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 	// meaningless, and we don't want clients to access it.
 	if m.module != nil {
 		version := m.module.Version
-		if version == source.WorkspaceModuleVersion {
+		if source.IsWorkspaceModuleVersion(version) {
 			version = ""
 		}
 		pkg.version = &module.Version{
@@ -366,7 +373,7 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 		if found {
 			return pkg, nil
 		}
-		return nil, errors.Errorf("no parsed files for package %s, expected: %s, list errors: %v", pkg.m.pkgPath, pkg.compiledGoFiles, rawErrors)
+		return nil, errors.Errorf("no parsed files for package %s, expected: %v, list errors: %v", pkg.m.pkgPath, pkg.compiledGoFiles, rawErrors)
 	} else {
 		pkg.types = types.NewPackage(string(m.pkgPath), string(m.name))
 	}

@@ -10,6 +10,7 @@ import (
 	"golang.org/x/tools/internal/lsp"
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestEditFile(t *testing.T) {
@@ -309,7 +310,6 @@ func _() {
 	// Add the new method before the implementation. Expect diagnostics.
 	t.Run("method before implementation", func(t *testing.T) {
 		runner.Run(t, pkg, func(t *testing.T, env *Env) {
-			env.Await(InitialWorkspaceLoad)
 			env.WriteWorkspaceFile("b/b.go", newMethod)
 			env.Await(
 				OnceMet(
@@ -326,7 +326,6 @@ func _() {
 	// Add the new implementation before the new method. Expect no diagnostics.
 	t.Run("implementation before method", func(t *testing.T) {
 		runner.Run(t, pkg, func(t *testing.T, env *Env) {
-			env.Await(InitialWorkspaceLoad)
 			env.WriteWorkspaceFile("a/a.go", implementation)
 			env.Await(
 				OnceMet(
@@ -343,7 +342,6 @@ func _() {
 	// Add both simultaneously. Expect no diagnostics.
 	t.Run("implementation and method simultaneously", func(t *testing.T) {
 		runner.Run(t, pkg, func(t *testing.T, env *Env) {
-			env.Await(InitialWorkspaceLoad)
 			env.WriteWorkspaceFiles(map[string]string{
 				"a/a.go": implementation,
 				"b/b.go": newMethod,
@@ -473,7 +471,6 @@ package a
 func _() {}
 `
 	runner.Run(t, pkg, func(t *testing.T, env *Env) {
-		env.Await(InitialWorkspaceLoad)
 		env.ChangeFilesOnDisk([]fake.FileEvent{
 			{
 				Path: "a/a3.go",
@@ -560,7 +557,6 @@ func main() {
 }
 `
 	withOptions(WithProxyFiles(proxy)).run(t, mod, func(t *testing.T, env *Env) {
-		env.Await(InitialWorkspaceLoad)
 		env.WriteWorkspaceFiles(map[string]string{
 			"go.mod": `module mod.com
 
@@ -588,7 +584,7 @@ func main() {
 
 // Reproduces golang/go#40340.
 func TestSwitchFromGOPATHToModules(t *testing.T) {
-	t.Skip("golang/go#40340 is not yet resolved.")
+	testenv.NeedsGo1Point(t, 13)
 
 	const files = `
 -- foo/blah/blah.go --
@@ -604,29 +600,64 @@ func main() {
 	_ = blah.Name
 }
 `
-	withOptions(InGOPATH()).run(t, files, func(t *testing.T, env *Env) {
+	withOptions(
+		InGOPATH(),
+		WithModes(Experimental), // module is in a subdirectory
+	).run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("foo/main.go")
-		env.Await(
-			OnceMet(
-				InitialWorkspaceLoad,
-				env.DiagnosticAtRegexp("foo/main.go", `"blah"`),
-			),
-		)
+		env.Await(env.DiagnosticAtRegexp("foo/main.go", `"blah"`))
 		if err := env.Sandbox.RunGoCommand(env.Ctx, "foo", "mod", []string{"init", "mod.com"}); err != nil {
 			t.Fatal(err)
 		}
 		env.Await(
 			OnceMet(
 				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1),
-				env.DiagnosticAtRegexp("foo/main.go", `"blah`),
+				env.DiagnosticAtRegexp("foo/main.go", `"blah"`),
 			),
 		)
 		env.RegexpReplace("foo/main.go", `"blah"`, `"mod.com/blah"`)
 		env.Await(
+			EmptyDiagnostics("foo/main.go"),
+		)
+	})
+}
+
+// Reproduces golang/go#40487.
+func TestSwitchFromModulesToGOPATH(t *testing.T) {
+	testenv.NeedsGo1Point(t, 13)
+
+	const files = `
+-- foo/go.mod --
+module mod.com
+
+go 1.14
+-- foo/blah/blah.go --
+package blah
+
+const Name = ""
+-- foo/main.go --
+package main
+
+import "mod.com/blah"
+
+func main() {
+	_ = blah.Name
+}
+`
+	withOptions(
+		InGOPATH(),
+	).run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("foo/main.go")
+		env.RemoveWorkspaceFile("foo/go.mod")
+		env.Await(
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
-				NoDiagnostics("foo/main.go"),
+				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1),
+				env.DiagnosticAtRegexp("foo/main.go", `"mod.com/blah"`),
 			),
+		)
+		env.RegexpReplace("foo/main.go", `"mod.com/blah"`, `"foo/blah"`)
+		env.Await(
+			EmptyDiagnostics("foo/main.go"),
 		)
 	})
 }
@@ -651,7 +682,6 @@ func TestBob(t *testing.T) {
 }
 `
 	run(t, files, func(t *testing.T, env *Env) {
-		env.Await(InitialWorkspaceLoad)
 		// Add a new symbol to the package under test and use it in the test
 		// variant. Expect no diagnostics.
 		env.WriteWorkspaceFiles(map[string]string{

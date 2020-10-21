@@ -11,7 +11,6 @@ import (
 	"go/ast"
 	"go/doc"
 	"go/format"
-	"go/token"
 	"go/types"
 	"strings"
 
@@ -46,6 +45,10 @@ type HoverInformation struct {
 
 	source  interface{}
 	comment *ast.CommentGroup
+
+	// isTypeName reports whether the identifier is a type name. In such cases,
+	// the hover has the prefix "type ".
+	isType bool
 }
 
 func Hover(ctx context.Context, snapshot Snapshot, fh FileHandle, position protocol.Position) (*protocol.Hover, error) {
@@ -83,7 +86,7 @@ func HoverIdentifier(ctx context.Context, i *IdentifierInfo) (*HoverInformation,
 	defer done()
 
 	fset := i.Snapshot.FileSet()
-	h, err := hover(ctx, fset, i.pkg, i.Declaration)
+	h, err := HoverInfo(ctx, i.pkg, i.Declaration.obj, i.Declaration.node)
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +98,9 @@ func HoverIdentifier(ctx context.Context, i *IdentifierInfo) (*HoverInformation,
 			return nil, err
 		}
 		h.Signature = b.String()
+		if h.isType {
+			h.Signature = "type " + h.Signature
+		}
 	case types.Object:
 		// If the variable is implicitly declared in a type switch, we need to
 		// manually generate its object string.
@@ -222,16 +228,9 @@ func objectString(obj types.Object, qf types.Qualifier) string {
 	return str
 }
 
-func hover(ctx context.Context, fset *token.FileSet, pkg Package, d Declaration) (*HoverInformation, error) {
-	_, done := event.Start(ctx, "source.hover")
-	defer done()
-
-	return HoverInfo(pkg, d.obj, d.node)
-}
-
 // HoverInfo returns a HoverInformation struct for an ast node and its type
 // object.
-func HoverInfo(pkg Package, obj types.Object, node ast.Node) (*HoverInformation, error) {
+func HoverInfo(ctx context.Context, pkg Package, obj types.Object, node ast.Node) (*HoverInformation, error) {
 	var info *HoverInformation
 
 	switch node := node.(type) {
@@ -267,6 +266,7 @@ func HoverInfo(pkg Package, obj types.Object, node ast.Node) (*HoverInformation,
 			if err != nil {
 				return nil, err
 			}
+			_, info.isType = obj.(*types.TypeName)
 		}
 	case *ast.TypeSpec:
 		if obj.Parent() == types.Universe {

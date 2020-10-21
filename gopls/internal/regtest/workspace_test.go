@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"golang.org/x/tools/internal/lsp"
+	"golang.org/x/tools/internal/lsp/fake"
+	"golang.org/x/tools/internal/testenv"
 )
 
 const workspaceProxy = `
@@ -140,7 +142,6 @@ func TestClearAnalysisDiagnostics(t *testing.T) {
 // replace target is added to the go.mod.
 func TestWatchReplaceTargets(t *testing.T) {
 	withOptions(WithProxyFiles(workspaceProxy), WithRootPath("pkg")).run(t, workspaceModule, func(t *testing.T, env *Env) {
-		env.Await(InitialWorkspaceLoad)
 		// Add a replace directive and expect the files that gopls is watching
 		// to change.
 		dir := env.Sandbox.Workdir.URI("goodbye").SpanURI().Filename()
@@ -197,8 +198,8 @@ func Hello() int {
 `
 	withOptions(
 		WithProxyFiles(workspaceModuleProxy),
+		WithModes(Experimental),
 	).run(t, multiModule, func(t *testing.T, env *Env) {
-		env.Await(InitialWorkspaceLoad)
 		env.Await(
 			env.DiagnosticAtRegexp("moda/a/a.go", "x"),
 			env.DiagnosticAtRegexp("modb/b/b.go", "x"),
@@ -239,8 +240,8 @@ func Hello() int {
 `
 	withOptions(
 		WithProxyFiles(workspaceModuleProxy),
+		WithModes(Experimental),
 	).run(t, multiModule, func(t *testing.T, env *Env) {
-		env.Await(InitialWorkspaceLoad)
 		env.OpenFile("moda/a/a.go")
 
 		original, _ := env.GoToDefinition("moda/a/a.go", env.RegexpSearch("moda/a/a.go", "Hello"))
@@ -260,8 +261,8 @@ func Hello() int {
 	})
 }
 
-// This change tests that the version of the module used changes after it has
-// been added to the workspace.
+// Tests that the version of the module used changes after it has been added
+// to the workspace.
 func TestCreateModule_Interdependent(t *testing.T) {
 	const multiModule = `
 -- moda/a/go.mod --
@@ -282,14 +283,15 @@ func main() {
 }
 `
 	withOptions(
+		WithModes(Experimental),
 		WithProxyFiles(workspaceModuleProxy),
 	).run(t, multiModule, func(t *testing.T, env *Env) {
-		env.Await(InitialWorkspaceLoad)
 		env.OpenFile("moda/a/a.go")
 		original, _ := env.GoToDefinition("moda/a/a.go", env.RegexpSearch("moda/a/a.go", "Hello"))
 		if want := "b.com@v1.2.3/b/b.go"; !strings.HasSuffix(original, want) {
 			t.Errorf("expected %s, got %v", want, original)
 		}
+		env.CloseBuffer(original)
 		env.WriteWorkspaceFiles(map[string]string{
 			"modb/go.mod": "module b.com",
 			"modb/b/b.go": `package b
@@ -342,8 +344,10 @@ func Hello() int {
 	var x int
 }
 `
-	run(t, multiModule, func(t *testing.T, env *Env) {
-		env.Await(InitialWorkspaceLoad)
+	withOptions(
+		WithProxyFiles(workspaceModuleProxy),
+		WithModes(Experimental),
+	).run(t, multiModule, func(t *testing.T, env *Env) {
 		env.OpenFile("modb/go.mod")
 		env.Await(
 			OnceMet(
@@ -355,6 +359,155 @@ func Hello() int {
 		env.Editor.SaveBufferWithoutActions(env.Ctx, "modb/go.mod")
 		env.Await(
 			env.DiagnosticAtRegexp("modb/b/b.go", "x"),
+		)
+	})
+}
+
+func TestUseGoplsMod(t *testing.T) {
+	const multiModule = `
+-- moda/a/go.mod --
+module a.com
+
+require b.com v1.2.3
+
+-- moda/a/a.go --
+package a
+
+import (
+	"b.com/b"
+)
+
+func main() {
+	var x int
+	_ = b.Hello()
+}
+-- modb/go.mod --
+module b.com
+
+-- modb/b/b.go --
+package b
+
+func Hello() int {
+	var x int
+}
+-- gopls.mod --
+module gopls-workspace
+
+require (
+	a.com v0.0.0-goplsworkspace
+	b.com v1.2.3
+)
+
+replace a.com => $SANDBOX_WORKDIR/moda/a
+`
+	withOptions(
+		WithProxyFiles(workspaceModuleProxy),
+		WithModes(Experimental),
+	).run(t, multiModule, func(t *testing.T, env *Env) {
+		env.OpenFile("moda/a/a.go")
+		original, _ := env.GoToDefinition("moda/a/a.go", env.RegexpSearch("moda/a/a.go", "Hello"))
+		if want := "b.com@v1.2.3/b/b.go"; !strings.HasSuffix(original, want) {
+			t.Errorf("expected %s, got %v", want, original)
+		}
+		workdir := env.Sandbox.Workdir.RootURI().SpanURI().Filename()
+		env.WriteWorkspaceFile("gopls.mod", fmt.Sprintf(`module gopls-workspace
+
+require (
+	a.com v0.0.0-goplsworkspace
+	b.com v0.0.0-goplsworkspace
+)
+
+replace a.com => %s/moda/a
+replace b.com => %s/modb
+`, workdir, workdir))
+		env.Await(
+			OnceMet(
+				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1),
+				env.DiagnosticAtRegexp("modb/b/b.go", "x"),
+			),
+		)
+		newLocation, _ := env.GoToDefinition("moda/a/a.go", env.RegexpSearch("moda/a/a.go", "Hello"))
+		if want := "modb/b/b.go"; !strings.HasSuffix(newLocation, want) {
+			t.Errorf("expected %s, got %v", want, newLocation)
+		}
+	})
+}
+
+func TestNonWorkspaceFileCreation(t *testing.T) {
+	testenv.NeedsGo1Point(t, 13)
+
+	const files = `
+-- go.mod --
+module mod.com
+
+-- x.go --
+package x
+`
+
+	const code = `
+package foo
+import "fmt"
+var _ = fmt.Printf
+`
+	run(t, files, func(t *testing.T, env *Env) {
+		env.CreateBuffer("/tmp/foo.go", "")
+		env.EditBuffer("/tmp/foo.go", fake.NewEdit(0, 0, 0, 0, code))
+		env.GoToDefinition("/tmp/foo.go", env.RegexpSearch("/tmp/foo.go", `Printf`))
+	})
+}
+
+func TestMultiModuleV2(t *testing.T) {
+	const multiModule = `
+-- moda/a/go.mod --
+module a.com
+
+require b.com/v2 v2.0.0
+-- moda/a/a.go --
+package a
+
+import (
+	"b.com/v2/b"
+)
+
+func main() {
+	var x int
+	_ = b.Hi()
+}
+-- modb/go.mod --
+module b.com
+
+-- modb/b/b.go --
+package b
+
+func Hello() int {
+	var x int
+}
+-- modb/v2/go.mod --
+module b.com/v2
+
+-- modb/v2/b/b.go --
+package b
+
+func Hi() int {
+	var x int
+}
+-- modc/go.mod --
+module gopkg.in/yaml.v1 // test gopkg.in versions
+-- modc/main.go --
+package main
+
+func main() {
+	var x int
+}
+`
+	withOptions(
+		WithModes(Experimental),
+	).run(t, multiModule, func(t *testing.T, env *Env) {
+		env.Await(
+			env.DiagnosticAtRegexp("moda/a/a.go", "x"),
+			env.DiagnosticAtRegexp("modb/b/b.go", "x"),
+			env.DiagnosticAtRegexp("modb/v2/b/b.go", "x"),
+			env.DiagnosticAtRegexp("modc/main.go", "x"),
 		)
 	})
 }
