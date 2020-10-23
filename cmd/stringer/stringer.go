@@ -63,6 +63,15 @@
 //	PillAspirin // Aspirin
 //
 // to suppress it in the output.
+//
+// Without the -linecomment flag, regular line comment will be searched for a sequence, mocking struct tag, at any part of the
+// comment, in the following form (notice required `):
+//
+//	// `stringer:"[<name>],[fn]"`
+//
+// where <name> is a name to generate and fn is one of the following: "title", "de(un)title", "lower", "upper".
+// Absent <name> means to use default constant name and pass it through the function, if any. If <name> is provided,
+// it will still be passed through the function for consistency. To completely suppress any output, provide `stringer:""`.
 package main // import "golang.org/x/tools/cmd/stringer"
 
 import (
@@ -74,14 +83,17 @@ import (
 	"go/format"
 	"go/token"
 	"go/types"
+	"golang.org/x/tools/go/packages"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
-	"golang.org/x/tools/go/packages"
+	"unicode"
+	"unicode/utf8"
 )
 
 var (
@@ -458,12 +470,68 @@ func (f *File) genDecl(node ast.Node) bool {
 				signed:       info&types.IsUnsigned == 0,
 				str:          value.String(),
 			}
-			if c := vspec.Comment; f.lineComment && c != nil && len(c.List) == 1 {
-				v.name = strings.TrimSpace(c.Text())
-			} else {
+			if !useComments(vspec.Comment, f, &v) {
 				v.name = strings.TrimPrefix(v.originalName, f.trimPrefix)
 			}
 			f.values = append(f.values, v)
+		}
+	}
+	return false
+}
+
+// useComments takes the vspec's comment and modifies v.name if lineComment flag is set or there's a `stringer:"[<name>],[<fn>]"`
+// sequence found anywhere in the comment. This will modify v.name according to its directive, substituting the name (if provided) and passing
+// the value through function fn which is one of: "title", "de(un)title", "lower", "upper". `stringer:""` yields empty name.
+func useComments(c *ast.CommentGroup, f *File, v *Value) bool {
+	if c != nil {
+		if f.lineComment && len(c.List) == 1 {
+			v.name = strings.TrimSpace(c.Text())
+			return true
+		} else {
+			// Lookup a comment portion between `stringer:" and ` that would compile as reflect.StructTag
+			comment := c.Text()
+			idx := strings.Index(comment, `stringer:"`)
+			if idx >= 0 {
+				comment := comment[idx:]
+				idx = strings.Index(comment, "`")
+				if idx >= 0 {
+					comment = comment[:idx]
+					tag := reflect.StructTag(comment)
+					if st, ok := tag.Lookup("stringer"); ok {
+						st = strings.TrimSpace(st)
+						split := strings.Split(st, ",")
+						switch {
+						case len(split) == 1:
+							v.name = split[0] // This allows an empty value
+							return true
+						case len(split) > 1:
+							if len(split[0]) == 0 {
+								v.name = v.originalName // Empty value means original
+							} else {
+								v.name = split[0]
+							}
+							switch split[1] {
+							case "title":
+								v.name = strings.Title(v.name)
+								return true
+							case "detitle", "untitle":
+								// We only care about first rune
+								r, size := utf8.DecodeRuneInString(v.name)
+								if size > 0 {
+									v.name = string(unicode.ToLower(r)) + v.name[size:]
+								}
+								return true
+							case "lower":
+								v.name = strings.ToLower(v.name)
+								return true
+							case "upper":
+								v.name = strings.ToUpper(v.name)
+								return true
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 	return false
