@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/debug/tag"
+	"golang.org/x/tools/internal/lsp/mod"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
@@ -68,16 +69,6 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 				return nil, err
 			}
 			codeActions = append(codeActions, modQuickFixes...)
-		}
-		if wanted[protocol.SourceOrganizeImports] {
-			action, err := goModTidy(ctx, snapshot, fh)
-			if source.IsNonFatalGoModError(err) {
-				return nil, nil
-			}
-			if err != nil {
-				return nil, err
-			}
-			codeActions = append(codeActions, *action)
 		}
 	case source.Go:
 		// Don't suggest fixes for generated files, since they are generally
@@ -486,12 +477,12 @@ func moduleQuickFixes(ctx context.Context, snapshot source.Snapshot, fh source.V
 			return nil, err
 		}
 	}
-	tidied, err := snapshot.ModTidy(ctx, modFH)
+	errors, err := mod.ErrorsForMod(ctx, snapshot, modFH)
 	if err != nil {
 		return nil, err
 	}
 	var quickFixes []protocol.CodeAction
-	for _, e := range tidied.Errors {
+	for _, e := range errors {
 		var diag *protocol.Diagnostic
 		for _, d := range diagnostics {
 			if sameDiagnostic(d, e) {
@@ -508,6 +499,7 @@ func moduleQuickFixes(ctx context.Context, snapshot source.Snapshot, fh source.V
 				Kind:        protocol.QuickFix,
 				Diagnostics: []protocol.Diagnostic{*diag},
 				Edit:        protocol.WorkspaceEdit{},
+				Command:     fix.Command,
 			}
 			for uri, edits := range fix.Edits {
 				if uri != modFH.URI() {
@@ -523,6 +515,13 @@ func moduleQuickFixes(ctx context.Context, snapshot source.Snapshot, fh source.V
 					Edits: edits,
 				})
 			}
+			if fix.Command != nil {
+				action.Command = &protocol.Command{
+					Command:   fix.Command.Command,
+					Title:     fix.Command.Title,
+					Arguments: fix.Command.Arguments,
+				}
+			}
 			quickFixes = append(quickFixes, action)
 		}
 	}
@@ -531,38 +530,6 @@ func moduleQuickFixes(ctx context.Context, snapshot source.Snapshot, fh source.V
 
 func sameDiagnostic(d protocol.Diagnostic, e source.Error) bool {
 	return d.Message == e.Message && protocol.CompareRange(d.Range, e.Range) == 0 && d.Source == e.Category
-}
-
-func goModTidy(ctx context.Context, snapshot source.Snapshot, fh source.VersionedFileHandle) (*protocol.CodeAction, error) {
-	tidied, err := snapshot.ModTidy(ctx, fh)
-	if err != nil {
-		return nil, err
-	}
-	left, err := fh.Read()
-	if err != nil {
-		return nil, err
-	}
-	right := tidied.TidiedContent
-	edits := snapshot.View().Options().ComputeEdits(fh.URI(), string(left), string(right))
-	protocolEdits, err := source.ToProtocolEdits(tidied.Parsed.Mapper, edits)
-	if err != nil {
-		return nil, err
-	}
-	return &protocol.CodeAction{
-		Title: "Tidy",
-		Kind:  protocol.SourceOrganizeImports,
-		Edit: protocol.WorkspaceEdit{
-			DocumentChanges: []protocol.TextDocumentEdit{{
-				TextDocument: protocol.VersionedTextDocumentIdentifier{
-					Version: fh.Version(),
-					TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-						URI: protocol.URIFromSpanURI(fh.URI()),
-					},
-				},
-				Edits: protocolEdits,
-			}},
-		},
-	}, err
 }
 
 func goTest(ctx context.Context, snapshot source.Snapshot, uri span.URI, rng protocol.Range) ([]protocol.CodeAction, error) {

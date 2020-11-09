@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/internal/lsp"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/tests"
@@ -109,26 +110,9 @@ func main() {
 `
 	runner.Run(t, shouldUpdateDep, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
-		lenses := env.CodeLens("go.mod")
-		want := "Upgrade dependency to v1.3.3"
-		var found protocol.CodeLens
-		for _, lens := range lenses {
-			if lens.Command.Title == want {
-				found = lens
-				break
-			}
-		}
-		if found.Command.Command == "" {
-			t.Fatalf("did not find lens %q, got %v", want, lenses)
-		}
-		if _, err := env.Editor.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
-			Command:   found.Command.Command,
-			Arguments: found.Command.Arguments,
-		}); err != nil {
-			t.Fatal(err)
-		}
-		env.Await(NoOutstandingWork())
-		got := env.ReadWorkspaceFile("go.mod")
+		env.ExecuteCodeLensCommand("go.mod", source.CommandUpgradeDependency)
+		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1))
+		got := env.Editor.BufferText("go.mod")
 		const wantGoMod = `module mod.com
 
 go 1.12
@@ -182,8 +166,8 @@ func main() {
 	runner.Run(t, shouldRemoveDep, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
 		env.ExecuteCodeLensCommand("go.mod", source.CommandTidy)
-		env.Await(NoOutstandingWork())
-		got := env.ReadWorkspaceFile("go.mod")
+		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1))
+		got := env.Editor.BufferText("go.mod")
 		const wantGoMod = `module mod.com
 
 go 1.14

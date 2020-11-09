@@ -26,7 +26,7 @@ func (s *Server) didChangeWorkspaceFolders(ctx context.Context, params *protocol
 	return s.addFolders(ctx, event.Added)
 }
 
-func (s *Server) addView(ctx context.Context, name string, uri span.URI) (source.Snapshot, func(), error) {
+func (s *Server) addView(ctx context.Context, name string, uri, tempWorkspace span.URI) (source.Snapshot, func(), error) {
 	s.stateMu.Lock()
 	state := s.state
 	s.stateMu.Unlock()
@@ -37,7 +37,7 @@ func (s *Server) addView(ctx context.Context, name string, uri span.URI) (source
 	if err := s.fetchConfig(ctx, name, uri, options); err != nil {
 		return nil, func() {}, err
 	}
-	_, snapshot, release, err := s.session.NewView(ctx, name, uri, options)
+	_, snapshot, release, err := s.session.NewView(ctx, name, uri, tempWorkspace, options)
 	return snapshot, release, err
 }
 
@@ -91,9 +91,15 @@ func (s *Server) didChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 	return nil
 }
 
+// This is a work-around for
+// https://github.com/microsoft/language-server-protocol/issues/1107. Once
+// https://golang.org/cl/266497 has been released for ~1 month, we can probably
+// remove this function and use the only correct method name, which is
+// "textDocument/semanticTokens".
 func semanticTokenRegistrations() []protocol.Registration {
 	var registrations []protocol.Registration
 	for _, method := range []string{
+		"textDocument/semanticTokens",
 		"textDocument/semanticTokens/full",
 		"textDocument/semanticTokens/full/delta",
 		"textDocument/semanticTokens/range",
@@ -105,8 +111,8 @@ func semanticTokenRegistrations() []protocol.Registration {
 				Legend: protocol.SemanticTokensLegend{
 					// TODO(pjw): trim these to what we use (and an unused one
 					// at position 0 of TokTypes, to catch typos)
-					TokenTypes:     SemanticMemo.tokTypes,
-					TokenModifiers: SemanticMemo.tokMods,
+					TokenTypes:     SemanticTypes(),
+					TokenModifiers: SemanticModifiers(),
 				},
 			},
 		})

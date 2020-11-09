@@ -5,6 +5,7 @@
 package source
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"go/ast"
@@ -16,6 +17,7 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
@@ -80,16 +82,13 @@ type Snapshot interface {
 	// Analyze runs the analyses for the given package at this snapshot.
 	Analyze(ctx context.Context, pkgID string, analyzers ...*analysis.Analyzer) ([]*Error, error)
 
-	// RunGoCommandPiped runs the given `go` command in the view, using the
-	// provided stdout and stderr. It will use the -modfile flag, if possible.
-	// If the provided working directory is empty, the snapshot's root folder
-	// will be used as the working directory.
-	RunGoCommandPiped(ctx context.Context, wd, verb string, args []string, stdout, stderr io.Writer) error
+	// RunGoCommandPiped runs the given `go` command, writing its output
+	// to stdout and stderr. Verb, Args, and WorkingDir must be specified.
+	RunGoCommandPiped(ctx context.Context, mode InvocationMode, inv *gocommand.Invocation, stdout, stderr io.Writer) error
 
-	// RunGoCommandDirect runs the given `go` command, never using the
-	// -modfile flag. If the provided working directory is empty, the
-	// snapshot's root folder will be used as the working directory.
-	RunGoCommandDirect(ctx context.Context, wd, verb string, args []string) error
+	// RunGoCommandDirect runs the given `go` command. Verb, Args, and
+	// WorkingDir must be specified.
+	RunGoCommandDirect(ctx context.Context, mode InvocationMode, inv *gocommand.Invocation) (*bytes.Buffer, error)
 
 	// RunProcessEnvFunc runs fn with the process env for this snapshot's view.
 	// Note: the process env contains cached module and filesystem state.
@@ -116,10 +115,6 @@ type Snapshot interface {
 
 	// GoModForFile returns the URI of the go.mod file for the given URI.
 	GoModForFile(ctx context.Context, uri span.URI) span.URI
-
-	// BuildWorkspaceModFile builds the contents of mod file to be used for
-	// multi-module workspace.
-	BuildWorkspaceModFile(ctx context.Context) (*modfile.File, error)
 
 	// BuiltinPackage returns information about the special builtin package.
 	BuiltinPackage(ctx context.Context) (*BuiltinPackage, error)
@@ -168,6 +163,24 @@ const (
 	// This is useful for something like diagnostics, where we'd prefer to
 	// offer diagnostics for as many files as possible.
 	WidestPackage
+)
+
+// InvocationMode represents the goal of a particular go command invocation.
+type InvocationMode int
+
+const (
+	// Normal is appropriate for commands that might be run by a user and don't
+	// deliberately modify go.mod files, e.g. `go test`.
+	Normal = iota
+	// UpdateUserModFile is for commands that intend to update the user's real
+	// go.mod file, e.g. `go mod tidy` in response to a user's request to tidy.
+	UpdateUserModFile
+	// WriteTemporaryModFile is for commands that need information from a
+	// modified version of the user's go.mod file, e.g. `go mod tidy` used to
+	// generate diagnostics.
+	WriteTemporaryModFile
+	// ForTypeChecking is for packages.Load.
+	ForTypeChecking
 )
 
 // View represents a single workspace.
@@ -256,7 +269,7 @@ type TidiedModule struct {
 // A session may have many active views at any given time.
 type Session interface {
 	// NewView creates a new View, returning it and its first snapshot.
-	NewView(ctx context.Context, name string, folder span.URI, options *Options) (View, Snapshot, func(), error)
+	NewView(ctx context.Context, name string, folder, tempWorkspaceDir span.URI, options *Options) (View, Snapshot, func(), error)
 
 	// Cache returns the cache that created this session, for debugging only.
 	Cache() interface{}
@@ -529,14 +542,19 @@ func (err *ErrorList) Error() string {
 	return b.String()
 }
 
+// An Error corresponds to an LSP Diagnostic.
+// https://microsoft.github.io/language-server-protocol/specification#diagnostic
 type Error struct {
-	URI            span.URI
-	Range          protocol.Range
-	Kind           ErrorKind
-	Message        string
-	Category       string // only used by analysis errors so far
+	URI      span.URI
+	Range    protocol.Range
+	Kind     ErrorKind
+	Message  string
+	Category string // only used by analysis errors so far
+	Related  []RelatedInformation
+
+	// SuggestedFixes is used to generate quick fixes for a CodeAction request.
+	// It isn't part of the Diagnostic type.
 	SuggestedFixes []SuggestedFix
-	Related        []RelatedInformation
 }
 
 // GoModTidy is the source for a diagnostic computed by running `go mod tidy`.
@@ -558,8 +576,7 @@ func (e *Error) Error() string {
 }
 
 var (
-	InconsistentVendoring = errors.New("inconsistent vendoring")
-	PackagesLoadError     = errors.New("packages.Load error")
+	PackagesLoadError = errors.New("packages.Load error")
 )
 
 // WorkspaceModuleVersion is the nonexistent pseudoversion suffix used in the

@@ -141,9 +141,8 @@ require random.org v1.2.3
 				randomDiag = diag
 			}
 		}
-		env.OpenFile("go.mod")
 		env.ApplyQuickFixes("main.go", []protocol.Diagnostic{randomDiag})
-		if got := env.Editor.BufferText("go.mod"); got != want {
+		if got := env.ReadWorkspaceFile("go.mod"); got != want {
 			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(want, got))
 		}
 	})
@@ -223,7 +222,7 @@ go 1.14
 			),
 		)
 		env.ApplyQuickFixes("go.mod", d.Diagnostics)
-		if got := env.Editor.BufferText("go.mod"); got != want {
+		if got := env.ReadWorkspaceFile("go.mod"); got != want {
 			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(want, got))
 		}
 	})
@@ -268,7 +267,6 @@ func _() {
     caire.RemoveTempImage()
 }`
 	runner.Run(t, repro, func(t *testing.T, env *Env) {
-		env.OpenFile("go.mod")
 		env.OpenFile("main.go")
 		var d protocol.PublishDiagnosticsParams
 		env.Await(
@@ -287,7 +285,7 @@ require (
 	google.golang.org/protobuf v1.20.0
 )
 `
-		if got := env.Editor.BufferText("go.mod"); got != want {
+		if got := env.ReadWorkspaceFile("go.mod"); got != want {
 			t.Fatalf("TestNewDepWithUnusedDep failed:\n%s", tests.Diff(want, got))
 		}
 	}, WithProxyFiles(proxy))
@@ -321,12 +319,12 @@ func main() {
 	}, WithProxyFiles(proxy))
 }
 
+// Tests golang/go#39784: a missing indirect dependency, necessary
+// due to blah@v2.0.0's incomplete go.mod file.
 func TestBadlyVersionedModule(t *testing.T) {
 	testenv.NeedsGo1Point(t, 14)
 
-	const badModule = `
--- example.com/blah/@v/list --
-v1.0.0
+	const proxy = `
 -- example.com/blah/@v/v1.0.0.mod --
 module example.com
 
@@ -335,17 +333,6 @@ go 1.12
 package blah
 
 const Name = "Blah"
--- example.com/blah@v1.0.0/blah_test.go --
-package blah_test
-
-import (
-	"testing"
-)
-
-func TestBlah(t *testing.T) {}
-
--- example.com/blah/v2/@v/list --
-v2.0.0
 -- example.com/blah/v2/@v/v2.0.0.mod --
 module example.com
 
@@ -353,35 +340,26 @@ go 1.12
 -- example.com/blah/v2@v2.0.0/blah.go --
 package blah
 
+import "example.com/blah"
+
+var _ = blah.Name
 const Name = "Blah"
--- example.com/blah/v2@v2.0.0/blah_test.go --
-package blah_test
-
-import (
-	"testing"
-
-	"example.com/blah"
-)
-
-func TestBlah(t *testing.T) {}
 `
-	const pkg = `
+	const files = `
 -- go.mod --
 module mod.com
 
-require (
-	example.com/blah/v2 v2.0.0
-)
+go 1.12
+
+require example.com/blah/v2 v2.0.0
 -- main.go --
 package main
 
 import "example.com/blah/v2"
 
-func main() {
-	println(blah.Name)
-}
+var _ = blah.Name
 `
-	runner.Run(t, pkg, func(t *testing.T, env *Env) {
+	withOptions(WithProxyFiles(proxy)).run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.OpenFile("go.mod")
 		var d protocol.PublishDiagnosticsParams
@@ -394,15 +372,18 @@ func main() {
 		env.ApplyQuickFixes("main.go", d.Diagnostics)
 		const want = `module mod.com
 
+go 1.12
+
 require (
-	example.com/blah v1.0.0
+	example.com/blah v1.0.0 // indirect
 	example.com/blah/v2 v2.0.0
 )
 `
+		env.Await(EmptyDiagnostics("go.mod"))
 		if got := env.Editor.BufferText("go.mod"); got != want {
 			t.Fatalf("suggested fixes failed:\n%s", tests.Diff(want, got))
 		}
-	}, WithProxyFiles(badModule))
+	})
 }
 
 // Reproduces golang/go#38232.
@@ -476,44 +457,6 @@ func main() {
 				env.DiagnosticAtRegexp("main.go", "x = "),
 			)
 		}, WithProxyFiles(proxy))
-	})
-}
-
-func TestTidyOnSave(t *testing.T) {
-	testenv.NeedsGo1Point(t, 14)
-
-	const untidyModule = `
--- go.mod --
-module mod.com
-
-go 1.14
-
-require random.org v1.2.3
--- main.go --
-package main
-
-import "example.com/blah"
-
-func main() {
-	fmt.Println(blah.Name)
-}
-`
-	withOptions(WithProxyFiles(proxy)).run(t, untidyModule, func(t *testing.T, env *Env) {
-		env.OpenFile("go.mod")
-		env.Await(
-			env.DiagnosticAtRegexp("main.go", `"example.com/blah"`),
-			env.DiagnosticAtRegexp("go.mod", `require random.org v1.2.3`),
-		)
-		env.SaveBuffer("go.mod")
-		const want = `module mod.com
-
-go 1.14
-
-require example.com v1.2.3
-`
-		if got := env.ReadWorkspaceFile("go.mod"); got != want {
-			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(want, got))
-		}
 	})
 }
 

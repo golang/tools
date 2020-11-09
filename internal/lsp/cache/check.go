@@ -99,7 +99,7 @@ func (s *snapshot) buildPackageHandle(ctx context.Context, id packageID, mode so
 		wg.Wait()
 
 		return data
-	})
+	}, nil)
 	ph.handle = h
 
 	// Cache the handle in the snapshot. If a package handle has already
@@ -187,6 +187,19 @@ func checkPackageKey(ctx context.Context, id packageID, pghs []*parseGoHandle, c
 		b.WriteString(cgf.file.FileIdentity().String())
 	}
 	return packageHandleKey(hashContents(b.Bytes()))
+}
+
+// hashEnv returns a hash of the snapshot's configuration.
+func hashEnv(s *snapshot) string {
+	s.view.optionsMu.Lock()
+	env := s.view.options.EnvSlice()
+	s.view.optionsMu.Unlock()
+
+	b := &bytes.Buffer{}
+	for _, e := range env {
+		b.WriteString(e)
+	}
+	return hashContents(b.Bytes())
 }
 
 // hashConfig returns the hash for the *packages.Config.

@@ -49,7 +49,7 @@ func testLSP(t *testing.T, datum *tests.Data) {
 	tests.DefaultOptions(options)
 	session.SetOptions(options)
 	options.SetEnvSlice(datum.Config.Env)
-	view, snapshot, release, err := session.NewView(ctx, datum.Config.Dir, span.URIFromPath(datum.Config.Dir), options)
+	view, snapshot, release, err := session.NewView(ctx, datum.Config.Dir, span.URIFromPath(datum.Config.Dir), "", options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,8 +391,6 @@ func (r *runner) Format(t *testing.T, spn span.Span) {
 }
 
 func (r *runner) SemanticTokens(t *testing.T, spn span.Span) {
-	// no client, so use default
-	rememberToks(SemanticTypes(), SemanticModifiers())
 	uri := spn.URI()
 	filename := uri.Filename()
 	// this is called solely for coverage in semantic.go
@@ -1161,7 +1159,7 @@ func (r *runner) collectDiagnostics(view source.View) {
 
 	// Always run diagnostics with analysis.
 	reports, _ := r.server.diagnose(r.ctx, snapshot, true)
-	r.server.publishReports(r.ctx, snapshot, reports)
+	r.server.publishReports(r.ctx, snapshot, reports, false)
 	for uri, sent := range r.server.delivered {
 		var diagnostics []*source.Diagnostic
 		for _, d := range sent.sorted {

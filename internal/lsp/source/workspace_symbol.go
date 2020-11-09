@@ -25,13 +25,13 @@ import (
 // sent in response to a client.
 const maxSymbols = 100
 
-// WorkspaceSymbols matches symbols across views using the given query,
-// according to the SymbolMatcher matcher.
+// WorkspaceSymbols matches symbols across all views using the given query,
+// according to the match semantics parameterized by matcherType and style.
 //
 // The workspace symbol method is defined in the spec as follows:
 //
-//  > The workspace symbol request is sent from the client to the server to
-//  > list project-wide symbols matching the query string.
+//   The workspace symbol request is sent from the client to the server to
+//   list project-wide symbols matching the query string.
 //
 // It is unclear what "project-wide" means here, but given the parameters of
 // workspace/symbol do not include any workspace identifier, then it has to be
@@ -64,9 +64,9 @@ type matcherFunc func(name string) float64
 type symbolizer func(name string, pkg Package, m matcherFunc) (string, float64)
 
 func fullyQualifiedSymbolMatch(name string, pkg Package, matcher matcherFunc) (string, float64) {
-	fullyQualified := pkg.PkgPath() + "." + name
-	if matcher(fullyQualified) > 0 {
-		return fullyQualified, 1
+	_, score := dynamicSymbolMatch(name, pkg, matcher)
+	if score > 0 {
+		return pkg.PkgPath() + "." + name, score
 	}
 	return "", 0
 }

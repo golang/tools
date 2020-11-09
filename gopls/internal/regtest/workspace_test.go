@@ -6,6 +6,9 @@ package regtest
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -158,6 +161,16 @@ replace random.org => %s
 }
 
 const workspaceModuleProxy = `
+-- example.com@v1.2.3/go.mod --
+module example.com
+
+go 1.12
+-- example.com@v1.2.3/blah/blah.go --
+package blah
+
+func SaySomething() {
+	fmt.Println("something")
+}
 -- b.com@v1.2.3/go.mod --
 module b.com
 
@@ -364,6 +377,9 @@ func Hello() int {
 }
 
 func TestUseGoplsMod(t *testing.T) {
+	// This test validates certain functionality related to using a gopls.mod
+	// file to specify workspace modules.
+	testenv.NeedsGo1Point(t, 14)
 	const multiModule = `
 -- moda/a/go.mod --
 module a.com
@@ -384,6 +400,7 @@ func main() {
 -- modb/go.mod --
 module b.com
 
+require example.com v1.2.3
 -- modb/b/b.go --
 package b
 
@@ -404,12 +421,18 @@ replace a.com => $SANDBOX_WORKDIR/moda/a
 		WithProxyFiles(workspaceModuleProxy),
 		WithModes(Experimental),
 	).run(t, multiModule, func(t *testing.T, env *Env) {
+		// Initially, the gopls.mod should cause only the a.com module to be
+		// loaded. Validate this by jumping to a definition in b.com and ensuring
+		// that we go to the module cache.
 		env.OpenFile("moda/a/a.go")
-		original, _ := env.GoToDefinition("moda/a/a.go", env.RegexpSearch("moda/a/a.go", "Hello"))
-		if want := "b.com@v1.2.3/b/b.go"; !strings.HasSuffix(original, want) {
-			t.Errorf("expected %s, got %v", want, original)
+		location, _ := env.GoToDefinition("moda/a/a.go", env.RegexpSearch("moda/a/a.go", "Hello"))
+		if want := "b.com@v1.2.3/b/b.go"; !strings.HasSuffix(location, want) {
+			t.Errorf("expected %s, got %v", want, location)
 		}
 		workdir := env.Sandbox.Workdir.RootURI().SpanURI().Filename()
+
+		// Now, modify the gopls.mod file on disk to activate the b.com module in
+		// the workspace.
 		env.WriteWorkspaceFile("gopls.mod", fmt.Sprintf(`module gopls-workspace
 
 require (
@@ -426,9 +449,41 @@ replace b.com => %s/modb
 				env.DiagnosticAtRegexp("modb/b/b.go", "x"),
 			),
 		)
-		newLocation, _ := env.GoToDefinition("moda/a/a.go", env.RegexpSearch("moda/a/a.go", "Hello"))
-		if want := "modb/b/b.go"; !strings.HasSuffix(newLocation, want) {
-			t.Errorf("expected %s, got %v", want, newLocation)
+		env.OpenFile("modb/go.mod")
+		// Check that go.mod diagnostics picked up the newly active mod file.
+		env.Await(env.DiagnosticAtRegexp("modb/go.mod", `require example.com v1.2.3`))
+		// ...and that jumping to definition now goes to b.com in the workspace.
+		location, _ = env.GoToDefinition("moda/a/a.go", env.RegexpSearch("moda/a/a.go", "Hello"))
+		if want := "modb/b/b.go"; !strings.HasSuffix(location, want) {
+			t.Errorf("expected %s, got %v", want, location)
+		}
+
+		// Now, let's modify the gopls.mod *overlay* (not on disk), and verify that
+		// this change is also picked up.
+		env.OpenFile("gopls.mod")
+		env.SetBufferContent("gopls.mod", fmt.Sprintf(`module gopls-workspace
+
+require (
+	a.com v0.0.0-goplsworkspace
+)
+
+replace a.com => %s/moda/a
+`, workdir))
+		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1))
+		// TODO: diagnostics are not being cleared from the old go.mod location,
+		// because it's not treated as a 'deleted' file. Uncomment this after
+		// fixing.
+		/*
+			env.Await(OnceMet(
+				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
+				EmptyDiagnostics("modb/go.mod"),
+			))
+		*/
+
+		// Just as before, check that we now jump to the module cache.
+		location, _ = env.GoToDefinition("moda/a/a.go", env.RegexpSearch("moda/a/a.go", "Hello"))
+		if want := "b.com@v1.2.3/b/b.go"; !strings.HasSuffix(location, want) {
+			t.Errorf("expected %s, got %v", want, location)
 		}
 	})
 }
@@ -509,5 +564,67 @@ func main() {
 			env.DiagnosticAtRegexp("modb/v2/b/b.go", "x"),
 			env.DiagnosticAtRegexp("modc/main.go", "x"),
 		)
+	})
+}
+
+func TestWorkspaceDirAccess(t *testing.T) {
+	const multiModule = `
+-- moda/a/go.mod --
+module a.com
+
+-- moda/a/a.go --
+package main
+
+func main() {
+	fmt.Println("Hello")
+}
+-- modb/go.mod --
+module b.com
+-- modb/b/b.go --
+package main
+
+func main() {
+	fmt.Println("World")
+}
+`
+	withOptions(
+		WithModes(Experimental),
+		SendPID(),
+	).run(t, multiModule, func(t *testing.T, env *Env) {
+		pid := os.Getpid()
+		// Don't factor this out of Server.addFolders. vscode-go expects this
+		// directory.
+		modPath := filepath.Join(os.TempDir(), fmt.Sprintf("gopls-%d.workspace", pid), "go.mod")
+		gotb, err := ioutil.ReadFile(modPath)
+		if err != nil {
+			t.Fatalf("reading expected workspace modfile: %v", err)
+		}
+		got := string(gotb)
+		for _, want := range []string{"a.com v0.0.0-goplsworkspace", "b.com v0.0.0-goplsworkspace"} {
+			if !strings.Contains(got, want) {
+				// want before got here, since the go.mod is multi-line
+				t.Fatalf("workspace go.mod missing %q. got:\n%s", want, got)
+			}
+		}
+		workdir := env.Sandbox.Workdir.RootURI().SpanURI().Filename()
+		env.WriteWorkspaceFile("gopls.mod", fmt.Sprintf(`
+				module gopls-workspace
+
+				require (
+					a.com v0.0.0-goplsworkspace
+				)
+
+				replace a.com => %s/moda/a
+				`, workdir))
+		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1))
+		gotb, err = ioutil.ReadFile(modPath)
+		if err != nil {
+			t.Fatalf("reading expected workspace modfile: %v", err)
+		}
+		got = string(gotb)
+		want := "b.com v0.0.0-goplsworkspace"
+		if strings.Contains(got, want) {
+			t.Fatalf("workspace go.mod contains unexpected %q. got:\n%s", want, got)
+		}
 	})
 }

@@ -19,11 +19,11 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/memoize"
-	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/span"
 	errors "golang.org/x/xerrors"
 )
@@ -88,7 +88,7 @@ func (s *snapshot) ParseMod(ctx context.Context, modFH source.FileHandle) (*sour
 			}
 		}
 		return data
-	})
+	}, nil)
 
 	pmh := &parseModHandle{handle: h}
 	s.mu.Lock()
@@ -98,24 +98,26 @@ func (s *snapshot) ParseMod(ctx context.Context, modFH source.FileHandle) (*sour
 	return pmh.parse(ctx, s)
 }
 
-func (s *snapshot) sumFH(ctx context.Context, modFH source.FileHandle) (source.FileHandle, error) {
+// goSum reads the go.sum file for the go.mod file at modURI, if it exists. If
+// it doesn't exist, it returns nil.
+func (s *snapshot) goSum(ctx context.Context, modURI span.URI) []byte {
 	// Get the go.sum file, either from the snapshot or directly from the
 	// cache. Avoid (*snapshot).GetFile here, as we don't want to add
 	// nonexistent file handles to the snapshot if the file does not exist.
-	sumURI := span.URIFromPath(sumFilename(modFH.URI()))
+	sumURI := span.URIFromPath(sumFilename(modURI))
 	var sumFH source.FileHandle = s.FindFile(sumURI)
 	if sumFH == nil {
 		var err error
 		sumFH, err = s.view.session.cache.getFile(ctx, sumURI)
 		if err != nil {
-			return nil, err
+			return nil
 		}
 	}
-	_, err := sumFH.Read()
+	content, err := sumFH.Read()
 	if err != nil {
-		return nil, err
+		return nil
 	}
-	return sumFH, nil
+	return content
 }
 
 func sumFilename(modURI span.URI) string {
@@ -165,7 +167,7 @@ func extractModParseErrors(uri span.URI, m *protocol.ColumnMapper, parseErr erro
 // modKey is uniquely identifies cached data for `go mod why` or dependencies
 // to upgrade.
 type modKey struct {
-	sessionID, cfg, view string
+	sessionID, env, view string
 	mod                  source.FileIdentity
 	verb                 modAction
 }
@@ -202,17 +204,12 @@ func (s *snapshot) ModWhy(ctx context.Context, fh source.FileHandle) (map[string
 	if fh.Kind() != source.Mod {
 		return nil, fmt.Errorf("%s is not a go.mod file", fh.URI())
 	}
-	if err := s.awaitLoaded(ctx); err != nil {
-		return nil, err
-	}
 	if handle := s.getModWhyHandle(fh.URI()); handle != nil {
 		return handle.why(ctx, s)
 	}
-	// Make sure to use the module root as the working directory.
-	cfg := s.config(ctx, filepath.Dir(fh.URI().Filename()))
 	key := modKey{
 		sessionID: s.view.session.id,
-		cfg:       hashConfig(cfg),
+		env:       hashEnv(s),
 		mod:       fh.FileIdentity(),
 		view:      s.view.rootURI.Filename(),
 		verb:      why,
@@ -232,11 +229,15 @@ func (s *snapshot) ModWhy(ctx context.Context, fh source.FileHandle) (map[string
 			return &modWhyData{}
 		}
 		// Run `go mod why` on all the dependencies.
-		args := []string{"why", "-m"}
-		for _, req := range pm.File.Require {
-			args = append(args, req.Mod.Path)
+		inv := &gocommand.Invocation{
+			Verb:       "mod",
+			Args:       []string{"why", "-m"},
+			WorkingDir: filepath.Dir(fh.URI().Filename()),
 		}
-		stdout, err := snapshot.runGoCommandWithConfig(ctx, cfg, "mod", args)
+		for _, req := range pm.File.Require {
+			inv.Args = append(inv.Args, req.Mod.Path)
+		}
+		stdout, err := snapshot.RunGoCommandDirect(ctx, source.Normal, inv)
 		if err != nil {
 			return &modWhyData{err: err}
 		}
@@ -251,7 +252,7 @@ func (s *snapshot) ModWhy(ctx context.Context, fh source.FileHandle) (map[string
 			why[req.Mod.Path] = whyList[i]
 		}
 		return &modWhyData{why: why}
-	})
+	}, nil)
 
 	mwh := &modWhyHandle{handle: h}
 	s.mu.Lock()
@@ -294,17 +295,12 @@ func (s *snapshot) ModUpgrade(ctx context.Context, fh source.FileHandle) (map[st
 	if fh.Kind() != source.Mod {
 		return nil, fmt.Errorf("%s is not a go.mod file", fh.URI())
 	}
-	if err := s.awaitLoaded(ctx); err != nil {
-		return nil, err
-	}
 	if handle := s.getModUpgradeHandle(fh.URI()); handle != nil {
 		return handle.upgrades(ctx, s)
 	}
-	// Use the module root as the working directory.
-	cfg := s.config(ctx, filepath.Dir(fh.URI().Filename()))
 	key := modKey{
 		sessionID: s.view.session.id,
-		cfg:       hashConfig(cfg),
+		env:       hashEnv(s),
 		mod:       fh.FileIdentity(),
 		view:      s.view.rootURI.Filename(),
 		verb:      upgrade,
@@ -326,13 +322,17 @@ func (s *snapshot) ModUpgrade(ctx context.Context, fh source.FileHandle) (map[st
 		}
 		// Run "go list -mod readonly -u -m all" to be able to see which deps can be
 		// upgraded without modifying mod file.
-		args := []string{"-u", "-m", "-json", "all"}
+		inv := &gocommand.Invocation{
+			Verb:       "list",
+			Args:       []string{"-u", "-m", "-json", "all"},
+			WorkingDir: filepath.Dir(fh.URI().Filename()),
+		}
 		if s.workspaceMode()&tempModfile == 0 || containsVendor(fh.URI()) {
 			// Use -mod=readonly if the module contains a vendor directory
 			// (see golang/go#38711).
-			packagesinternal.SetModFlag(cfg, "readonly")
+			inv.ModFlag = "readonly"
 		}
-		stdout, err := snapshot.runGoCommandWithConfig(ctx, cfg, "list", args)
+		stdout, err := snapshot.RunGoCommandDirect(ctx, source.Normal, inv)
 		if err != nil {
 			return &modUpgradeData{err: err}
 		}
@@ -360,7 +360,7 @@ func (s *snapshot) ModUpgrade(ctx context.Context, fh source.FileHandle) (map[st
 		return &modUpgradeData{
 			upgrades: upgrades,
 		}
-	})
+	}, nil)
 	muh := &modUpgradeHandle{handle: h}
 	s.mu.Lock()
 	s.modUpgradeHandles[fh.URI()] = muh

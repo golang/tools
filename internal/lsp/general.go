@@ -7,6 +7,7 @@ package lsp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -33,6 +34,7 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 	s.state = serverInitializing
 	s.stateMu.Unlock()
 
+	s.clientPID = int(params.ProcessID)
 	s.progress.supportsWorkDoneProgress = params.Capabilities.Window.WorkDoneProgress
 
 	options := s.session.Options()
@@ -82,12 +84,10 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 		}
 	}
 
-	if st := params.Capabilities.TextDocument.SemanticTokens; st != nil {
-		rememberToks(st.TokenTypes, st.TokenModifiers)
+	goplsVersion, err := json.Marshal(debug.VersionInfo())
+	if err != nil {
+		return nil, err
 	}
-
-	goplsVer := &bytes.Buffer{}
-	debug.PrintVersionInfo(ctx, goplsVer, true, debug.PlainText)
 
 	return &protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
@@ -133,7 +133,7 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 			Version string `json:"version,omitempty"`
 		}{
 			Name:    "gopls",
-			Version: goplsVer.String(),
+			Version: string(goplsVersion),
 		},
 	}, nil
 }
@@ -199,6 +199,8 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 		}()
 	}
 	dirsToWatch := map[span.URI]struct{}{}
+	// Only one view gets to have a workspace.
+	assignedWorkspace := false
 	for _, folder := range folders {
 		uri := span.URIFromURI(folder.URI)
 		// Ignore non-file URIs.
@@ -206,7 +208,22 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 			continue
 		}
 		work := s.progress.start(ctx, "Setting up workspace", "Loading packages...", nil, nil)
-		snapshot, release, err := s.addView(ctx, folder.Name, uri)
+		var workspaceURI span.URI = ""
+		if !assignedWorkspace && s.clientPID != 0 {
+			// For quick-and-dirty testing, set the temp workspace file to
+			// $TMPDIR/gopls-<client PID>.workspace.
+			//
+			// This has a couple limitations:
+			//  + If there are multiple workspace roots, only the first one gets
+			//    written to this dir (and the client has no way to know precisely
+			//    which one).
+			//  + If a single client PID spawns multiple gopls sessions, they will
+			//    clobber eachother's temp workspace.
+			wsdir := filepath.Join(os.TempDir(), fmt.Sprintf("gopls-%d.workspace", s.clientPID))
+			workspaceURI = span.URIFromPath(wsdir)
+			assignedWorkspace = true
+		}
+		snapshot, release, err := s.addView(ctx, folder.Name, uri, workspaceURI)
 		if err != nil {
 			viewErrors[uri] = err
 			work.end(fmt.Sprintf("Error loading packages: %s", err))
@@ -351,13 +368,20 @@ func (s *Server) registerWatchedDirectoriesLocked(ctx context.Context, dirs map[
 	}}
 	for dir := range dirs {
 		filename := dir.Filename()
+
 		// If the directory is within a workspace folder, we're already
 		// watching it via the relative path above.
+		var matched bool
 		for _, view := range s.session.Views() {
-			if isSubdirectory(view.Folder().Filename(), filename) {
-				continue
+			if source.InDir(view.Folder().Filename(), filename) {
+				matched = true
+				break
 			}
 		}
+		if matched {
+			continue
+		}
+
 		// If microsoft/vscode#100870 is resolved before
 		// microsoft/vscode#104387, we will need a work-around for Windows
 		// drive letter casing.

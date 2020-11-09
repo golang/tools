@@ -23,9 +23,8 @@ type Command struct {
 	Title string
 	Name  string
 
-	// Synchronous controls whether the command executes synchronously within the
-	// ExecuteCommand request (applying suggested fixes is always synchronous).
-	Synchronous bool
+	// Async controls whether the command executes asynchronously.
+	Async bool
 
 	// appliesFn is an optional field to indicate whether or not a command can
 	// be applied to the given inputs. If it returns false, we should not
@@ -64,7 +63,9 @@ var Commands = []*Command{
 	CommandTest,
 	CommandTidy,
 	CommandUndeclaredName,
+	CommandAddDependency,
 	CommandUpgradeDependency,
+	CommandRemoveDependency,
 	CommandVendor,
 	CommandExtractVariable,
 	CommandExtractFunction,
@@ -77,6 +78,7 @@ var (
 	CommandTest = &Command{
 		Name:  "test",
 		Title: "Run test(s)",
+		Async: true,
 	}
 
 	// CommandGenerate runs `go generate` for a given directory.
@@ -97,10 +99,22 @@ var (
 		Title: "Run go mod vendor",
 	}
 
+	// CommandAddDependency adds a dependency.
+	CommandAddDependency = &Command{
+		Name:  "add_dependency",
+		Title: "Add dependency",
+	}
+
 	// CommandUpgradeDependency upgrades a dependency.
 	CommandUpgradeDependency = &Command{
 		Name:  "upgrade_dependency",
 		Title: "Upgrade dependency",
+	}
+
+	// CommandRemoveDependency removes a dependency.
+	CommandRemoveDependency = &Command{
+		Name:  "remove_dependency",
+		Title: "Remove dependency",
 	}
 
 	// CommandRegenerateCgo regenerates cgo definitions.
@@ -155,9 +169,8 @@ var (
 
 	// CommandGenerateGoplsMod (re)generates the gopls.mod file.
 	CommandGenerateGoplsMod = &Command{
-		Name:        "generate_gopls_mod",
-		Title:       "Generate gopls.mod",
-		Synchronous: true,
+		Name:  "generate_gopls_mod",
+		Title: "Generate gopls.mod",
 	}
 )
 
