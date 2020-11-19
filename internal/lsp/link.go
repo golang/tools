@@ -67,7 +67,7 @@ func modLinks(ctx context.Context, snapshot source.Snapshot, fh source.FileHandl
 		// Shift the start position to the location of the
 		// dependency within the require statement.
 		start, end := token.Pos(s+i), token.Pos(s+i+len(dep))
-		target := fmt.Sprintf("https://%s/mod/%s", snapshot.View().Options().LinkTarget, req.Mod.String())
+		target := source.BuildLink(snapshot.View().Options().LinkTarget, "mod/"+req.Mod.String(), "")
 		l, err := toProtocolLink(snapshot, pm.Mapper, target, start, end, source.Mod)
 		if err != nil {
 			return nil, err
@@ -100,11 +100,7 @@ func modLinks(ctx context.Context, snapshot source.Snapshot, fh source.FileHandl
 func goLinks(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle) ([]protocol.DocumentLink, error) {
 	view := snapshot.View()
 	// We don't actually need type information, so any typecheck mode is fine.
-	pkgs, err := snapshot.PackagesForFile(ctx, fh.URI(), source.TypecheckWorkspace)
-	if err != nil {
-		return nil, err
-	}
-	pkg, err := source.WidestPackage(pkgs)
+	pkg, err := snapshot.PackageForFile(ctx, fh.URI(), source.TypecheckWorkspace, source.WidestPackage)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +143,7 @@ func goLinks(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle
 			// Account for the quotation marks in the positions.
 			start := imp.Path.Pos() + 1
 			end := imp.Path.End() - 1
-			target = fmt.Sprintf("https://%s/%s", view.Options().LinkTarget, target)
+			target = source.BuildLink(view.Options().LinkTarget, target, "")
 			l, err := toProtocolLink(snapshot, pgf.Mapper, target, start, end, source.Go)
 			if err != nil {
 				return nil, err
@@ -179,10 +175,10 @@ func moduleAtVersion(ctx context.Context, snapshot source.Snapshot, target strin
 	if err != nil {
 		return "", "", false
 	}
-	if impPkg.Module() == nil {
+	if impPkg.Version() == nil {
 		return "", "", false
 	}
-	version, modpath := impPkg.Module().Version, impPkg.Module().Path
+	version, modpath := impPkg.Version().Version, impPkg.Version().Path
 	if modpath == "" || version == "" {
 		return "", "", false
 	}

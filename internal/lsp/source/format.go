@@ -14,6 +14,7 @@ import (
 	"go/parser"
 	"go/token"
 	"strings"
+	"text/scanner"
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
@@ -93,8 +94,8 @@ func AllImportsFixes(ctx context.Context, snapshot Snapshot, fh FileHandle) (all
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := snapshot.View().RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
-		allFixEdits, editsPerFix, err = computeImportEdits(ctx, snapshot, pgf, opts)
+	if err := snapshot.RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
+		allFixEdits, editsPerFix, err = computeImportEdits(snapshot, pgf, opts)
 		return err
 	}); err != nil {
 		return nil, nil, fmt.Errorf("AllImportsFixes: %v", err)
@@ -104,7 +105,7 @@ func AllImportsFixes(ctx context.Context, snapshot Snapshot, fh FileHandle) (all
 
 // computeImportEdits computes a set of edits that perform one or all of the
 // necessary import fixes.
-func computeImportEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*ImportFix, err error) {
+func computeImportEdits(snapshot Snapshot, pgf *ParsedGoFile, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*ImportFix, err error) {
 	filename := pgf.URI.Filename()
 
 	// Build up basic information about the original file.
@@ -134,9 +135,9 @@ func computeImportEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFil
 }
 
 // ComputeOneImportFixEdits returns text edits for a single import fix.
-func ComputeOneImportFixEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile, fix *imports.ImportFix) ([]protocol.TextEdit, error) {
+func ComputeOneImportFixEdits(snapshot Snapshot, pgf *ParsedGoFile, fix *imports.ImportFix) ([]protocol.TextEdit, error) {
 	options := &imports.Options{
-		LocalPrefix: snapshot.View().Options().LocalPrefix,
+		LocalPrefix: snapshot.View().Options().Local,
 		// Defaults.
 		AllErrors:  true,
 		Comments:   true,
@@ -228,12 +229,17 @@ func importPrefix(src []byte) string {
 	}
 	for _, c := range f.Comments {
 		if end := tok.Offset(c.End()); end > importEnd {
-			// Work-around golang/go#41197: For multi-line comments add +2 to
-			// the offset. The end position does not account for the */ at the
-			// end.
+			startLine := tok.Position(c.Pos()).Line
 			endLine := tok.Position(c.End()).Line
-			if end+2 <= tok.Size() && tok.Position(tok.Pos(end+2)).Line == endLine {
-				end += 2
+
+			// Work around golang/go#41197 by checking if the comment might
+			// contain "\r", and if so, find the actual end position of the
+			// comment by scanning the content of the file.
+			startOffset := tok.Offset(c.Pos())
+			if startLine != endLine && bytes.Contains(src[startOffset:], []byte("\r")) {
+				if commentEnd := scanForCommentEnd(tok, src[startOffset:]); commentEnd > 0 {
+					end = startOffset + commentEnd
+				}
 			}
 			importEnd = maybeAdjustToLineEnd(tok.Pos(end), true)
 		}
@@ -242,6 +248,20 @@ func importPrefix(src []byte) string {
 		importEnd = len(src)
 	}
 	return string(src[:importEnd])
+}
+
+// scanForCommentEnd returns the offset of the end of the multi-line comment
+// at the start of the given byte slice.
+func scanForCommentEnd(tok *token.File, src []byte) int {
+	var s scanner.Scanner
+	s.Init(bytes.NewReader(src))
+	s.Mode ^= scanner.SkipComments
+
+	t := s.Scan()
+	if t == scanner.Comment {
+		return s.Pos().Offset
+	}
+	return 0
 }
 
 func computeTextEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile, formatted string) ([]protocol.TextEdit, error) {

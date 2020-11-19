@@ -89,16 +89,13 @@ func (s *Server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 			return err
 		}
 	}
-
-	return s.didModifyFiles(ctx, []source.FileModification{
-		{
-			URI:        uri,
-			Action:     source.Open,
-			Version:    params.TextDocument.Version,
-			Text:       []byte(params.TextDocument.Text),
-			LanguageID: params.TextDocument.LanguageID,
-		},
-	}, FromDidOpen)
+	return s.didModifyFiles(ctx, []source.FileModification{{
+		URI:        uri,
+		Action:     source.Open,
+		Version:    params.TextDocument.Version,
+		Text:       []byte(params.TextDocument.Text),
+		LanguageID: params.TextDocument.LanguageID,
+	}}, FromDidOpen)
 }
 
 func (s *Server) didChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
@@ -189,11 +186,12 @@ func (s *Server) didModifyFiles(ctx context.Context, modifications []source.File
 			}()
 		}()
 	}
-	snapshots, releases, deletions, err := s.session.DidModifyFiles(ctx, modifications)
+	views, snapshots, releases, deletions, err := s.session.DidModifyFiles(ctx, modifications)
 	if err != nil {
 		return err
 	}
 
+	// Clear out diagnostics for deleted files.
 	for _, uri := range deletions {
 		if err := s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
 			URI:         protocol.URIFromSpanURI(uri),
@@ -203,43 +201,15 @@ func (s *Server) didModifyFiles(ctx context.Context, modifications []source.File
 			return err
 		}
 	}
-	snapshotByURI := make(map[span.URI]source.Snapshot)
-	for _, c := range modifications {
-		snapshotByURI[c.URI] = nil
-	}
-	// Avoid diagnosing the same snapshot twice.
-	snapshotSet := make(map[source.Snapshot][]span.URI)
-	for uri := range snapshotByURI {
-		view, err := s.session.ViewOf(uri)
-		if err != nil {
-			return err
-		}
-		var snapshot source.Snapshot
-		for _, s := range snapshots {
-			if s.View() == view {
-				if snapshot != nil {
-					return errors.Errorf("duplicate snapshots for the same view")
-				}
-				snapshot = s
-			}
-		}
-		// If the file isn't in any known views (for example, if it's in a dependency),
-		// we may not have a snapshot to map it to. As a result, we won't try to
-		// diagnose it. TODO(rstambler): Figure out how to handle this better.
-		if snapshot == nil {
-			continue
-		}
-		snapshotSet[snapshot] = append(snapshotSet[snapshot], uri)
-		snapshotByURI[uri] = snapshot
-	}
 
+	// Check if the user is trying to modify a generated file.
 	for _, mod := range modifications {
 		if mod.OnDisk || mod.Action != source.Change {
 			continue
 		}
-		snapshot, ok := snapshotByURI[mod.URI]
-		if !ok {
-			continue
+		snapshot := snapshots[views[mod.URI]]
+		if snapshot == nil {
+			panic("no snapshot assigned for file " + mod.URI)
 		}
 		// Ideally, we should be able to specify that a generated file should be opened as read-only.
 		// Tell the user that they should not be editing a generated file.
@@ -253,37 +223,21 @@ func (s *Server) didModifyFiles(ctx context.Context, modifications []source.File
 		}
 	}
 
-	for snapshot, uris := range snapshotSet {
-		// If a modification comes in for the view's go.mod file and the view
-		// was never properly initialized, or the view does not have
-		// a go.mod file, try to recreate the associated view.
-		if modfile := snapshot.View().ModFile(); modfile == "" {
-			for _, uri := range uris {
-				// Don't rebuild the view until the go.mod is on disk.
-				if !snapshot.IsSaved(uri) {
-					continue
-				}
-				fh, err := snapshot.GetFile(ctx, uri)
-				if err != nil {
-					return err
-				}
-				switch fh.Kind() {
-				case source.Mod:
-					newSnapshot, release, err := snapshot.View().Rebuild(ctx)
-					releases = append(releases, release)
-					if err != nil {
-						return err
-					}
-					// Update the snapshot to the rebuilt one.
-					snapshot = newSnapshot
-				}
-			}
+	// Group files by best view and diagnose them.
+	viewURIs := map[source.View][]span.URI{}
+	for uri, view := range views {
+		viewURIs[view] = append(viewURIs[view], uri)
+	}
+	for view, uris := range viewURIs {
+		snapshot := snapshots[view]
+		if snapshot == nil {
+			panic(fmt.Sprintf("no snapshot assigned for files %v", uris))
 		}
 		diagnosticWG.Add(1)
-		go func(snapshot source.Snapshot) {
+		go func(snapshot source.Snapshot, uris []span.URI) {
 			defer diagnosticWG.Done()
-			s.diagnoseSnapshot(snapshot)
-		}(snapshot)
+			s.diagnoseSnapshot(snapshot, uris, cause == FromDidChangeWatchedFiles)
+		}(snapshot, uris)
 	}
 
 	go func() {
@@ -292,6 +246,7 @@ func (s *Server) didModifyFiles(ctx context.Context, modifications []source.File
 			release()
 		}
 	}()
+
 	// After any file modifications, we need to update our watched files,
 	// in case something changed. Compute the new set of directories to watch,
 	// and if it differs from the current set, send updated registrations.
@@ -311,9 +266,6 @@ func (s *Server) wasFirstChange(uri span.URI) bool {
 	s.changedFilesMu.Lock()
 	defer s.changedFilesMu.Unlock()
 
-	if s.changedFiles == nil {
-		s.changedFiles = make(map[span.URI]struct{})
-	}
 	_, ok := s.changedFiles[uri]
 	return !ok
 }

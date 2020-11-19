@@ -23,13 +23,15 @@ const concurrentAnalyses = 1
 // messages on on the supplied stream.
 func NewServer(session source.Session, client protocol.Client) *Server {
 	return &Server{
-		delivered:            make(map[span.URI]sentDiagnostics),
-		gcOptimizatonDetails: make(map[span.URI]struct{}),
-		watchedDirectories:   make(map[span.URI]struct{}),
-		session:              session,
-		client:               client,
-		diagnosticsSema:      make(chan struct{}, concurrentAnalyses),
-		progress:             newProgressTracker(client),
+		delivered:             make(map[span.URI]sentDiagnostics),
+		gcOptimizationDetails: make(map[span.URI]struct{}),
+		watchedDirectories:    make(map[span.URI]struct{}),
+		changedFiles:          make(map[span.URI]struct{}),
+		session:               session,
+		client:                client,
+		diagnosticsSema:       make(chan struct{}, concurrentAnalyses),
+		progress:              newProgressTracker(client),
+		debouncer:             newDebouncer(),
 	}
 }
 
@@ -63,7 +65,11 @@ type Server struct {
 	stateMu sync.Mutex
 	state   serverState
 
-	session source.Session
+	session   source.Session
+	clientPID int
+
+	// notifications generated before serverInitialized
+	notifications []*protocol.ShowMessageParams
 
 	// changedFiles tracks files for which there has been a textDocument/didChange.
 	changedFilesMu sync.Mutex
@@ -88,20 +94,33 @@ type Server struct {
 	// optimization details to be included in the diagnostics. The key is the
 	// directory of the package.
 	gcOptimizationDetailsMu sync.Mutex
-	gcOptimizatonDetails    map[span.URI]struct{}
+	gcOptimizationDetails   map[span.URI]struct{}
 
-	// diagnosticsSema limits the concurrency of diagnostics runs, which can be expensive.
+	// diagnosticsSema limits the concurrency of diagnostics runs, which can be
+	// expensive.
 	diagnosticsSema chan struct{}
 
 	progress *progressTracker
+
+	// debouncer is used for debouncing diagnostics.
+	debouncer *debouncer
+
+	// When the workspace fails to load, we show its status through a progress
+	// report with an error message.
+	criticalErrorStatusMu sync.Mutex
+	criticalErrorStatus   *workDone
 }
 
 // sentDiagnostics is used to cache diagnostics that have been sent for a given file.
 type sentDiagnostics struct {
-	id           source.VersionedFileIdentity
-	sorted       []*source.Diagnostic
-	withAnalysis bool
-	snapshotID   uint64
+	id              source.VersionedFileIdentity
+	sorted          []*source.Diagnostic
+	includeAnalysis bool
+	snapshotID      uint64
+}
+
+func (s *Server) workDoneProgressCancel(ctx context.Context, params *protocol.WorkDoneProgressCancelParams) error {
+	return s.progress.cancel(ctx, params.Token)
 }
 
 func (s *Server) nonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {

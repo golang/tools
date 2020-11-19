@@ -16,10 +16,16 @@ import (
 )
 
 func Hover(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, position protocol.Position) (*protocol.Hover, error) {
-	uri := snapshot.View().ModFile()
+	var found bool
+	for _, uri := range snapshot.ModFiles() {
+		if fh.URI() == uri {
+			found = true
+			break
+		}
+	}
 
-	// For now, we only provide hover information for the view's go.mod file.
-	if uri == "" || fh.URI() != uri {
+	// We only provide hover information for the view's go.mod files.
+	if !found {
 		return nil, nil
 	}
 
@@ -104,7 +110,7 @@ func Hover(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, 
 	}, nil
 }
 
-func formatExplanation(text string, req *modfile.Require, options source.Options, isPrivate bool) string {
+func formatExplanation(text string, req *modfile.Require, options *source.Options, isPrivate bool) string {
 	text = strings.TrimSuffix(text, "\n")
 	splt := strings.Split(text, "\n")
 	length := len(splt)
@@ -134,7 +140,7 @@ func formatExplanation(text string, req *modfile.Require, options source.Options
 		if strings.ToLower(options.LinkTarget) == "pkg.go.dev" {
 			target = strings.Replace(target, req.Mod.Path, req.Mod.String(), 1)
 		}
-		reference = fmt.Sprintf("[%s](https://%s/%s)", imp, options.LinkTarget, target)
+		reference = fmt.Sprintf("[%s](%s)", imp, source.BuildLink(options.LinkTarget, target, ""))
 	}
 	b.WriteString("This module is necessary because " + reference + " is imported in")
 

@@ -9,9 +9,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"strings"
-
-	"golang.org/x/tools/internal/gocommand"
 )
 
 type PrintMode int
@@ -25,6 +24,71 @@ const (
 // Version is a manually-updated mechanism for tracking versions.
 var Version = "master"
 
+// ServerVersion is the format used by gopls to report its version to the
+// client. This format is structured so that the client can parse it easily.
+type ServerVersion struct {
+	Module
+	Deps []*Module `json:"deps,omitempty"`
+}
+
+type Module struct {
+	ModuleVersion
+	Replace *ModuleVersion `json:"replace,omitempty"`
+}
+
+type ModuleVersion struct {
+	Path    string `json:"path,omitempty"`
+	Version string `json:"version,omitempty"`
+	Sum     string `json:"sum,omitempty"`
+}
+
+// VersionInfo returns the build info for the gopls process. If it was not
+// built in module mode, we return a GOPATH-specific message with the
+// hardcoded version.
+func VersionInfo() *ServerVersion {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		return getVersion(info)
+	}
+	path := "gopls, built in GOPATH mode"
+	return &ServerVersion{
+		Module: Module{
+			ModuleVersion: ModuleVersion{
+				Path:    path,
+				Version: Version,
+			},
+		},
+	}
+}
+
+func getVersion(info *debug.BuildInfo) *ServerVersion {
+	serverVersion := ServerVersion{
+		Module: Module{
+			ModuleVersion: ModuleVersion{
+				Path:    info.Main.Path,
+				Version: info.Main.Version,
+				Sum:     info.Main.Sum,
+			},
+		},
+	}
+	for _, d := range info.Deps {
+		m := &Module{
+			ModuleVersion: ModuleVersion{
+				Path:    d.Path,
+				Version: d.Version,
+				Sum:     d.Sum,
+			},
+		}
+		if d.Replace != nil {
+			m.Replace = &ModuleVersion{
+				Path:    d.Replace.Path,
+				Version: d.Replace.Version,
+			}
+		}
+		serverVersion.Deps = append(serverVersion.Deps, m)
+	}
+	return &serverVersion
+}
+
 // PrintServerInfo writes HTML debug info to w for the Instance.
 func (i *Instance) PrintServerInfo(ctx context.Context, w io.Writer) {
 	section(w, HTML, "Server Instance", func() {
@@ -35,29 +99,22 @@ func (i *Instance) PrintServerInfo(ctx context.Context, w io.Writer) {
 		fmt.Fprintf(w, "Debug address: %s\n", i.DebugAddress)
 	})
 	PrintVersionInfo(ctx, w, true, HTML)
+	section(w, HTML, "Command Line", func() {
+		fmt.Fprintf(w, "<a href=/debug/pprof/cmdline>cmdline</a>")
+	})
 }
 
 // PrintVersionInfo writes version information to w, using the output format
 // specified by mode. verbose controls whether additional information is
 // written, including section headers.
 func PrintVersionInfo(ctx context.Context, w io.Writer, verbose bool, mode PrintMode) {
+	info := VersionInfo()
 	if !verbose {
-		printBuildInfo(w, false, mode)
+		printBuildInfo(w, info, false, mode)
 		return
 	}
 	section(w, mode, "Build info", func() {
-		printBuildInfo(w, true, mode)
-	})
-	fmt.Fprint(w, "\n")
-	section(w, mode, "Go info", func() {
-		gocmdRunner := &gocommand.Runner{}
-		version, err := gocmdRunner.Run(ctx, gocommand.Invocation{
-			Verb: "version",
-		})
-		if err != nil {
-			panic(err)
-		}
-		fmt.Fprintln(w, version.String())
+		printBuildInfo(w, info, true, mode)
 	})
 }
 
@@ -76,4 +133,26 @@ func section(w io.Writer, mode PrintMode, title string, body func()) {
 		body()
 		fmt.Fprint(w, "</pre>\n")
 	}
+}
+
+func printBuildInfo(w io.Writer, info *ServerVersion, verbose bool, mode PrintMode) {
+	fmt.Fprintf(w, "%v %v\n", info.Path, Version)
+	printModuleInfo(w, &info.Module, mode)
+	if !verbose {
+		return
+	}
+	for _, dep := range info.Deps {
+		printModuleInfo(w, dep, mode)
+	}
+}
+
+func printModuleInfo(w io.Writer, m *Module, mode PrintMode) {
+	fmt.Fprintf(w, "    %s@%s", m.Path, m.Version)
+	if m.Sum != "" {
+		fmt.Fprintf(w, " %s", m.Sum)
+	}
+	if m.Replace != nil {
+		fmt.Fprintf(w, " => %v", m.Replace.Path)
+	}
+	fmt.Fprintf(w, "\n")
 }

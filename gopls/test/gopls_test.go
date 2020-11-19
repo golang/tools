@@ -8,10 +8,10 @@ import (
 	"os"
 	"testing"
 
-	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/gopls/internal/hooks"
 	cmdtest "golang.org/x/tools/internal/lsp/cmd/test"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/lsp/tests"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -21,16 +21,12 @@ func TestMain(m *testing.M) {
 }
 
 func TestCommandLine(t *testing.T) {
-	packagestest.TestAll(t,
-		cmdtest.TestCommandLine(
-			"../../internal/lsp/testdata",
-			commandLineOptions,
-		),
-	)
+	cmdtest.TestCommandLine(t, "../../internal/lsp/testdata", commandLineOptions)
 }
 
 func commandLineOptions(options *source.Options) {
-	options.StaticCheck = true
+	options.Staticcheck = true
 	options.GoDiff = false
+	tests.DefaultOptions(options)
 	hooks.Options(options)
 }

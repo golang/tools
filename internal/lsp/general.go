@@ -7,18 +7,17 @@ package lsp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp/debug"
-	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
@@ -34,12 +33,13 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 	s.state = serverInitializing
 	s.stateMu.Unlock()
 
+	s.clientPID = int(params.ProcessID)
 	s.progress.supportsWorkDoneProgress = params.Capabilities.Window.WorkDoneProgress
 
 	options := s.session.Options()
 	defer func() { s.session.SetOptions(options) }()
 
-	if err := s.handleOptionResults(ctx, source.SetOptions(&options, params.InitializationOptions)); err != nil {
+	if err := s.handleOptionResults(ctx, source.SetOptions(options, params.InitializationOptions)); err != nil {
 		return nil, err
 	}
 	options.ForClientCapabilities(params.Capabilities)
@@ -83,8 +83,10 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 		}
 	}
 
-	goplsVer := &bytes.Buffer{}
-	debug.PrintVersionInfo(ctx, goplsVer, true, debug.PlainText)
+	goplsVersion, err := json.Marshal(debug.VersionInfo())
+	if err != nil {
+		return nil, err
+	}
 
 	return &protocol.InitializeResult{
 		Capabilities: protocol.ServerCapabilities{
@@ -130,7 +132,7 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 			Version string `json:"version,omitempty"`
 		}{
 			Name:    "gopls",
-			Version: goplsVer.String(),
+			Version: string(goplsVersion),
 		},
 	}, nil
 }
@@ -144,14 +146,13 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 	s.state = serverInitialized
 	s.stateMu.Unlock()
 
+	for _, not := range s.notifications {
+		s.client.ShowMessage(ctx, not)
+	}
+	s.notifications = nil
+
 	options := s.session.Options()
 	defer func() { s.session.SetOptions(options) }()
-
-	// TODO: this event logging may be unnecessary.
-	// The version info is included in the initialize response.
-	buf := &bytes.Buffer{}
-	debug.PrintVersionInfo(ctx, buf, true, debug.PlainText)
-	event.Log(ctx, buf.String())
 
 	if err := s.addFolders(ctx, s.pendingFolders); err != nil {
 		return err
@@ -159,17 +160,21 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 	s.pendingFolders = nil
 
 	if options.ConfigurationSupported && options.DynamicConfigurationSupported {
-		if err := s.client.RegisterCapability(ctx, &protocol.RegistrationParams{
-			Registrations: []protocol.Registration{
-				{
-					ID:     "workspace/didChangeConfiguration",
-					Method: "workspace/didChangeConfiguration",
-				},
-				{
-					ID:     "workspace/didChangeWorkspaceFolders",
-					Method: "workspace/didChangeWorkspaceFolders",
-				},
+		registrations := []protocol.Registration{
+			{
+				ID:     "workspace/didChangeConfiguration",
+				Method: "workspace/didChangeConfiguration",
 			},
+			{
+				ID:     "workspace/didChangeWorkspaceFolders",
+				Method: "workspace/didChangeWorkspaceFolders",
+			},
+		}
+		if options.SemanticTokens {
+			registrations = append(registrations, semanticTokenRegistration())
+		}
+		if err := s.client.RegisterCapability(ctx, &protocol.RegistrationParams{
+			Registrations: registrations,
 		}); err != nil {
 			return err
 		}
@@ -192,6 +197,8 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 		}()
 	}
 	dirsToWatch := map[span.URI]struct{}{}
+	// Only one view gets to have a workspace.
+	assignedWorkspace := false
 	for _, folder := range folders {
 		uri := span.URIFromURI(folder.URI)
 		// Ignore non-file URIs.
@@ -199,14 +206,32 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 			continue
 		}
 		work := s.progress.start(ctx, "Setting up workspace", "Loading packages...", nil, nil)
-		view, snapshot, release, err := s.addView(ctx, folder.Name, uri)
+		var workspaceURI span.URI = ""
+		if !assignedWorkspace && s.clientPID != 0 {
+			// For quick-and-dirty testing, set the temp workspace file to
+			// $TMPDIR/gopls-<client PID>.workspace.
+			//
+			// This has a couple limitations:
+			//  + If there are multiple workspace roots, only the first one gets
+			//    written to this dir (and the client has no way to know precisely
+			//    which one).
+			//  + If a single client PID spawns multiple gopls sessions, they will
+			//    clobber eachother's temp workspace.
+			wsdir := filepath.Join(os.TempDir(), fmt.Sprintf("gopls-%d.workspace", s.clientPID))
+			workspaceURI = span.URIFromPath(wsdir)
+			assignedWorkspace = true
+		}
+		snapshot, release, err := s.addView(ctx, folder.Name, uri, workspaceURI)
 		if err != nil {
 			viewErrors[uri] = err
 			work.end(fmt.Sprintf("Error loading packages: %s", err))
 			continue
 		}
+		var swg sync.WaitGroup
+		swg.Add(1)
 		go func() {
-			view.AwaitInitialized(ctx)
+			defer swg.Done()
+			snapshot.AwaitInitialized(ctx)
 			work.end("Finished loading packages.")
 		}()
 
@@ -216,8 +241,8 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 
 		// Print each view's environment.
 		buf := &bytes.Buffer{}
-		if err := view.WriteEnv(ctx, buf); err != nil {
-			event.Error(ctx, "failed to write environment", err, tag.Directory.Of(view.Folder().Filename()))
+		if err := snapshot.WriteEnv(ctx, buf); err != nil {
+			viewErrors[uri] = err
 			continue
 		}
 		event.Log(ctx, buf.String())
@@ -226,6 +251,7 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 		wg.Add(1)
 		go func() {
 			s.diagnoseDetached(snapshot)
+			swg.Wait()
 			release()
 			wg.Done()
 		}()
@@ -254,7 +280,7 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 // with the previously registered set of directories. If the set of directories
 // has changed, we unregister and re-register for file watching notifications.
 // updatedSnapshots is the set of snapshots that have been updated.
-func (s *Server) updateWatchedDirectories(ctx context.Context, updatedSnapshots []source.Snapshot) error {
+func (s *Server) updateWatchedDirectories(ctx context.Context, updatedSnapshots map[source.View]source.Snapshot) error {
 	dirsToWatch := map[span.URI]struct{}{}
 	seenViews := map[source.View]struct{}{}
 
@@ -340,13 +366,20 @@ func (s *Server) registerWatchedDirectoriesLocked(ctx context.Context, dirs map[
 	}}
 	for dir := range dirs {
 		filename := dir.Filename()
+
 		// If the directory is within a workspace folder, we're already
 		// watching it via the relative path above.
+		var matched bool
 		for _, view := range s.session.Views() {
-			if isSubdirectory(view.Folder().Filename(), filename) {
-				continue
+			if source.InDir(view.Folder().Filename(), filename) {
+				matched = true
+				break
 			}
 		}
+		if matched {
+			continue
+		}
+
 		// If microsoft/vscode#100870 is resolved before
 		// microsoft/vscode#104387, we will need a work-around for Windows
 		// drive letter casing.
@@ -374,27 +407,18 @@ func (s *Server) registerWatchedDirectoriesLocked(ctx context.Context, dirs map[
 	return nil
 }
 
-func isSubdirectory(root, leaf string) bool {
-	rel, err := filepath.Rel(root, leaf)
-	return err == nil && !strings.HasPrefix(rel, "..")
-}
-
 func (s *Server) fetchConfig(ctx context.Context, name string, folder span.URI, o *source.Options) error {
 	if !s.session.Options().ConfigurationSupported {
 		return nil
 	}
-	v := protocol.ParamConfiguration{
+	configs, err := s.client.Configuration(ctx, &protocol.ParamConfiguration{
 		ConfigurationParams: protocol.ConfigurationParams{
 			Items: []protocol.ConfigurationItem{{
 				ScopeURI: string(folder),
 				Section:  "gopls",
-			}, {
-				ScopeURI: string(folder),
-				Section:  fmt.Sprintf("gopls-%s", name),
 			}},
 		},
-	}
-	configs, err := s.client.Configuration(ctx, &v)
+	})
 	if err != nil {
 		return fmt.Errorf("failed to get workspace configuration from client (%s): %v", folder, err)
 	}
@@ -406,22 +430,34 @@ func (s *Server) fetchConfig(ctx context.Context, name string, folder span.URI, 
 	return nil
 }
 
+func (s *Server) eventuallyShowMessage(ctx context.Context, msg *protocol.ShowMessageParams) error {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if s.state == serverInitialized {
+		return s.client.ShowMessage(ctx, msg)
+	}
+	s.notifications = append(s.notifications, msg)
+	return nil
+}
+
 func (s *Server) handleOptionResults(ctx context.Context, results source.OptionResults) error {
 	for _, result := range results {
 		if result.Error != nil {
-			if err := s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+			msg := &protocol.ShowMessageParams{
 				Type:    protocol.Error,
 				Message: result.Error.Error(),
-			}); err != nil {
+			}
+			if err := s.eventuallyShowMessage(ctx, msg); err != nil {
 				return err
 			}
 		}
 		switch result.State {
 		case source.OptionUnexpected:
-			if err := s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+			msg := &protocol.ShowMessageParams{
 				Type:    protocol.Error,
 				Message: fmt.Sprintf("unexpected gopls setting %q", result.Name),
-			}); err != nil {
+			}
+			if err := s.eventuallyShowMessage(ctx, msg); err != nil {
 				return err
 			}
 		case source.OptionDeprecated:
@@ -429,7 +465,7 @@ func (s *Server) handleOptionResults(ctx context.Context, results source.OptionR
 			if result.Replacement != "" {
 				msg = fmt.Sprintf("%s, use %q instead", msg, result.Replacement)
 			}
-			if err := s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+			if err := s.eventuallyShowMessage(ctx, &protocol.ShowMessageParams{
 				Type:    protocol.Warning,
 				Message: msg,
 			}); err != nil {
@@ -455,7 +491,7 @@ func (s *Server) beginFileRequest(ctx context.Context, pURI protocol.DocumentURI
 		return nil, nil, false, func() {}, err
 	}
 	snapshot, release := view.Snapshot(ctx)
-	fh, err := snapshot.GetFile(ctx, uri)
+	fh, err := snapshot.GetVersionedFile(ctx, uri)
 	if err != nil {
 		release()
 		return nil, nil, false, func() {}, err

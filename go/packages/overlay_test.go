@@ -87,6 +87,9 @@ func testOverlayChangesBothPackageNames(t *testing.T, exporter packagestest.Expo
 		{"fake [fake.test]", "foox", 2},
 		{"fake.test", "main", 1},
 	}
+	if len(initial) != 3 {
+		t.Fatalf("expected 3 packages, got %v", len(initial))
+	}
 	for i := 0; i < 3; i++ {
 		if ok := checkPkg(t, initial[i], want[i].id, want[i].name, want[i].count); !ok {
 			t.Errorf("%d: got {%s %s %d}, expected %v", i, initial[i].ID,
@@ -102,7 +105,8 @@ func TestOverlayChangesTestPackageName(t *testing.T) {
 	packagestest.TestAll(t, testOverlayChangesTestPackageName)
 }
 func testOverlayChangesTestPackageName(t *testing.T, exporter packagestest.Exporter) {
-	log.SetFlags(log.Lshortfile)
+	testenv.NeedsGo1Point(t, 16)
+
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "fake",
 		Files: map[string]interface{}{
@@ -127,9 +131,12 @@ func testOverlayChangesTestPackageName(t *testing.T, exporter packagestest.Expor
 		id, name string
 		count    int
 	}{
-		{"fake", "foo", 0},
+		{"fake", "foox", 0},
 		{"fake [fake.test]", "foox", 1},
 		{"fake.test", "main", 1},
+	}
+	if len(initial) != 3 {
+		t.Fatalf("expected 3 packages, got %v", len(initial))
 	}
 	for i := 0; i < 3; i++ {
 		if ok := checkPkg(t, initial[i], want[i].id, want[i].name, want[i].count); !ok {
@@ -329,6 +336,9 @@ func testOverlayDeps(t *testing.T, exporter packagestest.Exporter) {
 
 	// Find package golang.org/fake/c
 	sort.Slice(pkgs, func(i, j int) bool { return pkgs[i].ID < pkgs[j].ID })
+	if len(pkgs) != 2 {
+		t.Fatalf("expected 2 packages, got %v", len(pkgs))
+	}
 	pkgc := pkgs[0]
 	if pkgc.ID != "golang.org/fake/c" {
 		t.Errorf("expected first package in sorted list to be \"golang.org/fake/c\", got %v", pkgc.ID)
@@ -804,6 +814,9 @@ func testInvalidFilesBeforeOverlayContains(t *testing.T, exporter packagestest.E
 				if err != nil {
 					t.Fatal(err)
 				}
+				if len(initial) != 1 {
+					t.Fatalf("expected 1 packages, got %v", len(initial))
+				}
 				pkg := initial[0]
 				if pkg.ID != tt.wantID {
 					t.Fatalf("expected package ID %q, got %q", tt.wantID, pkg.ID)
@@ -861,5 +874,225 @@ func testInvalidXTestInGOPATH(t *testing.T, exporter packagestest.Exporter) {
 	pkg := initial[0]
 	if len(pkg.CompiledGoFiles) != 2 {
 		t.Fatalf("expected at least 2 CompiledGoFiles for %s, got %v", pkg.PkgPath, len(pkg.CompiledGoFiles))
+	}
+}
+
+// Reproduces golang/go#40685.
+func TestAddImportInOverlay(t *testing.T) {
+	packagestest.TestAll(t, testAddImportInOverlay)
+}
+func testAddImportInOverlay(t *testing.T, exporter packagestest.Exporter) {
+	exported := packagestest.Export(t, exporter, []packagestest.Module{
+		{
+			Name: "golang.org/fake",
+			Files: map[string]interface{}{
+				"a/a.go": `package a
+
+import (
+	"fmt"
+)
+
+func _() {
+	fmt.Println("")
+	os.Stat("")
+}`,
+				"a/a_test.go": `package a
+
+import (
+	"os"
+	"testing"
+)
+
+func TestA(t *testing.T) {
+	os.Stat("")
+}`,
+			},
+		},
+	})
+	defer exported.Cleanup()
+
+	exported.Config.Mode = everythingMode
+	exported.Config.Tests = true
+
+	dir := filepath.Dir(exported.File("golang.org/fake", "a/a.go"))
+	exported.Config.Overlay = map[string][]byte{
+		filepath.Join(dir, "a.go"): []byte(`package a
+
+import (
+	"fmt"
+	"os"
+)
+
+func _() {
+	fmt.Println("")
+	os.Stat("")
+}
+`),
+	}
+	initial, err := packages.Load(exported.Config, "golang.org/fake/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg := initial[0]
+	var foundOs bool
+	for _, imp := range pkg.Imports {
+		if imp.PkgPath == "os" {
+			foundOs = true
+			break
+		}
+	}
+	if !foundOs {
+		t.Fatalf(`expected import "os", found none: %v`, pkg.Imports)
+	}
+}
+
+// Tests that overlays are applied for different kinds of load patterns.
+func TestLoadDifferentPatterns(t *testing.T) {
+	packagestest.TestAll(t, testLoadDifferentPatterns)
+}
+func testLoadDifferentPatterns(t *testing.T, exporter packagestest.Exporter) {
+	exported := packagestest.Export(t, exporter, []packagestest.Module{
+		{
+			Name: "golang.org/fake",
+			Files: map[string]interface{}{
+				"foo.txt": "placeholder",
+				"b/b.go": `package b
+import "golang.org/fake/a"
+func _() {
+	a.Hi()
+}
+`,
+			},
+		},
+	})
+	defer exported.Cleanup()
+
+	exported.Config.Mode = everythingMode
+	exported.Config.Tests = true
+
+	dir := filepath.Dir(exported.File("golang.org/fake", "foo.txt"))
+	exported.Config.Overlay = map[string][]byte{
+		filepath.Join(dir, "a", "a.go"): []byte(`package a
+import "fmt"
+func Hi() {
+	fmt.Println("")
+}
+`),
+	}
+	for _, tc := range []struct {
+		pattern string
+	}{
+		{"golang.org/fake/a"},
+		{"golang.org/fake/..."},
+		{fmt.Sprintf("file=%s", filepath.Join(dir, "a", "a.go"))},
+	} {
+		t.Run(tc.pattern, func(t *testing.T) {
+			initial, err := packages.Load(exported.Config, tc.pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var match *packages.Package
+			for _, pkg := range initial {
+				if pkg.PkgPath == "golang.org/fake/a" {
+					match = pkg
+					break
+				}
+			}
+			if match == nil {
+				t.Fatalf(`expected package path "golang.org/fake/a", got none`)
+			}
+			if match.PkgPath != "golang.org/fake/a" {
+				t.Fatalf(`expected package path "golang.org/fake/a", got %q`, match.PkgPath)
+			}
+			if _, ok := match.Imports["fmt"]; !ok {
+				t.Fatalf(`expected import "fmt", got none`)
+			}
+		})
+	}
+
+	// Now, load "golang.org/fake/b" and confirm that "golang.org/fake/a" is
+	// not returned as a root.
+	initial, err := packages.Load(exported.Config, "golang.org/fake/b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(initial) > 1 {
+		t.Fatalf("expected 1 package, got %v", initial)
+	}
+	pkg := initial[0]
+	if pkg.PkgPath != "golang.org/fake/b" {
+		t.Fatalf(`expected package path "golang.org/fake/b", got %q`, pkg.PkgPath)
+	}
+	if _, ok := pkg.Imports["golang.org/fake/a"]; !ok {
+		t.Fatalf(`expected import "golang.org/fake/a", got none`)
+	}
+}
+
+// Tests that overlays are applied for a replaced module.
+// This does not use go/packagestest because it needs to write a replace
+// directive with an absolute path in one of the module's go.mod files.
+func TestOverlaysInReplace(t *testing.T) {
+	// Create module b.com in a temporary directory. Do not add any Go files
+	// on disk.
+	tmpPkgs, err := ioutil.TempDir("", "modules")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpPkgs)
+
+	dirB := filepath.Join(tmpPkgs, "b")
+	if err := os.Mkdir(dirB, 0775); err != nil {
+		t.Fatal(err)
+	}
+	if err := ioutil.WriteFile(filepath.Join(dirB, "go.mod"), []byte(fmt.Sprintf("module %s.com", dirB)), 0775); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dirB, "inner"), 0775); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a separate module that requires and replaces b.com.
+	tmpWorkspace, err := ioutil.TempDir("", "workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpWorkspace)
+	goModContent := fmt.Sprintf(`module workspace.com
+
+require (
+	b.com v0.0.0-00010101000000-000000000000
+)
+
+replace (
+	b.com => %s
+)
+`, dirB)
+	if err := ioutil.WriteFile(filepath.Join(tmpWorkspace, "go.mod"), []byte(goModContent), 0775); err != nil {
+		t.Fatal(err)
+	}
+
+	// Add Go files for b.com/inner in an overlay and try loading it from the
+	// workspace.com module.
+	config := &packages.Config{
+		Dir:  tmpWorkspace,
+		Mode: packages.LoadAllSyntax,
+		Logf: t.Logf,
+		Overlay: map[string][]byte{
+			filepath.Join(dirB, "inner", "b.go"): []byte(`package inner; import "fmt"; func _() { fmt.Println("");`),
+		},
+	}
+	initial, err := packages.Load(config, "b.com/...")
+	if err != nil {
+		t.Error(err)
+	}
+	if len(initial) != 1 {
+		t.Fatalf(`expected 1 package, got %v`, len(initial))
+	}
+	pkg := initial[0]
+	if pkg.PkgPath != "b.com/inner" {
+		t.Fatalf(`expected package path "b.com/inner", got %q`, pkg.PkgPath)
+	}
+	if _, ok := pkg.Imports["fmt"]; !ok {
+		t.Fatalf(`expected import "fmt", got none`)
 	}
 }

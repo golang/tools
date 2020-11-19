@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/lsprpc"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/lsp/source"
 )
 
 // Mode is a bitmask that defines for which execution modes a test should run.
@@ -38,14 +39,20 @@ const (
 	// and communicates over pipes to mimic the gopls sidecar execution mode,
 	// which communicates over stdin/stderr.
 	Singleton Mode = 1 << iota
-
 	// Forwarded forwards connections to a shared in-process gopls instance.
 	Forwarded
 	// SeparateProcess forwards connection to a shared separate gopls process.
 	SeparateProcess
+	// Experimental enables all of the experimental configurations that are
+	// being developed. Currently, it enables the workspace module.
+	Experimental
+	// WithoutExperiments are the modes that run without experimental features,
+	// like the workspace module. These should be used for tests that only work
+	// in the default modes.
+	WithoutExperiments = Singleton | Forwarded
 	// NormalModes are the global default execution modes, when unmodified by
 	// test flags or by individual test options.
-	NormalModes = Singleton | Forwarded
+	NormalModes = Singleton | Experimental
 )
 
 // A Runner runs tests in gopls execution environments, as specified by its
@@ -69,13 +76,14 @@ type Runner struct {
 }
 
 type runConfig struct {
-	editor    fake.EditorConfig
-	sandbox   fake.SandboxConfig
-	modes     Mode
-	timeout   time.Duration
-	debugAddr string
-	skipLogs  bool
-	skipHooks bool
+	editor      fake.EditorConfig
+	sandbox     fake.SandboxConfig
+	modes       Mode
+	timeout     time.Duration
+	debugAddr   string
+	skipLogs    bool
+	skipHooks   bool
+	nestWorkdir bool
 }
 
 func (r *Runner) defaultConfig() *runConfig {
@@ -117,11 +125,17 @@ func WithModes(modes Mode) RunOption {
 	})
 }
 
-// WithEditorConfig configures the editor's LSP session.
-func WithEditorConfig(config fake.EditorConfig) RunOption {
+func SendPID() RunOption {
 	return optionSetter(func(opts *runConfig) {
-		opts.editor = config
+		opts.editor.SendPID = true
 	})
+}
+
+// EditorConfig is a RunOption option that configured the regtest editor.
+type EditorConfig fake.EditorConfig
+
+func (c EditorConfig) set(opts *runConfig) {
+	opts.editor = fake.EditorConfig(c)
 }
 
 // WithoutWorkspaceFolders prevents workspace folders from being sent as part
@@ -139,7 +153,7 @@ func WithoutWorkspaceFolders() RunOption {
 // tests need to check other cases.
 func WithRootPath(path string) RunOption {
 	return optionSetter(func(opts *runConfig) {
-		opts.editor.EditorRootPath = path
+		opts.editor.WorkspaceRoot = path
 	})
 }
 
@@ -195,10 +209,18 @@ func WithGOPROXY(goproxy string) RunOption {
 	})
 }
 
-// WithLimitWorkspaceScope sets the LimitWorkspaceScope configuration.
-func WithLimitWorkspaceScope() RunOption {
+// LimitWorkspaceScope sets the LimitWorkspaceScope configuration.
+func LimitWorkspaceScope() RunOption {
 	return optionSetter(func(opts *runConfig) {
 		opts.editor.LimitWorkspaceScope = true
+	})
+}
+
+// NestWorkdir inserts the sandbox working directory in a subdirectory of the
+// editor workspace.
+func NestWorkdir() RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.nestWorkdir = true
 	})
 }
 
@@ -218,6 +240,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 		{"singleton", Singleton, singletonServer},
 		{"forwarded", Forwarded, r.forwardedServer},
 		{"separate_process", SeparateProcess, r.separateProcessServer},
+		{"experimental_workspace_module", Experimental, experimentalWorkspaceModule},
 	}
 
 	for _, tc := range tests {
@@ -247,15 +270,24 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 				di.MonitorMemory(ctx)
 			}
 
-			tempDir := filepath.Join(r.TempDir, filepath.FromSlash(t.Name()))
-			if err := os.MkdirAll(tempDir, 0755); err != nil {
+			rootDir := filepath.Join(r.TempDir, filepath.FromSlash(t.Name()))
+			if err := os.MkdirAll(rootDir, 0755); err != nil {
 				t.Fatal(err)
 			}
+			if config.nestWorkdir {
+				config.sandbox.Workdir = "work/nested"
+			}
 			config.sandbox.Files = files
-			config.sandbox.RootDir = tempDir
+			config.sandbox.RootDir = rootDir
 			sandbox, err := fake.NewSandbox(&config.sandbox)
 			if err != nil {
 				t.Fatal(err)
+			}
+			workdir := sandbox.Workdir.RootURI().SpanURI().Filename()
+			if config.nestWorkdir {
+				// Now that we know the actual workdir, set our workspace to be the
+				// parent directory.
+				config.editor.WorkspaceRoot = filepath.Clean(filepath.Join(workdir, ".."))
 			}
 			// Deferring the closure of ws until the end of the entire test suite
 			// has, in testing, given the LSP server time to properly shutdown and
@@ -281,24 +313,44 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 				}
 				env.CloseEditor()
 			}()
+			// Always await the initial workspace load.
+			env.Await(InitialWorkspaceLoad)
 			test(t, env)
 		})
 	}
 }
 
 type loggingFramer struct {
-	mu      sync.Mutex
-	buffers []*bytes.Buffer
+	mu  sync.Mutex
+	buf *safeBuffer
+}
+
+// safeBuffer is a threadsafe buffer for logs.
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
 }
 
 func (s *loggingFramer) framer(f jsonrpc2.Framer) jsonrpc2.Framer {
 	return func(nc net.Conn) jsonrpc2.Stream {
 		s.mu.Lock()
-		var buf bytes.Buffer
-		s.buffers = append(s.buffers, &buf)
+		framed := false
+		if s.buf == nil {
+			s.buf = &safeBuffer{buf: bytes.Buffer{}}
+			framed = true
+		}
 		s.mu.Unlock()
 		stream := f(nc)
-		return protocol.LoggingStream(stream, &buf)
+		if framed {
+			return protocol.LoggingStream(stream, s.buf)
+		}
+		return stream
 	}
 }
 
@@ -306,17 +358,26 @@ func (s *loggingFramer) printBuffers(testname string, w io.Writer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for i, buf := range s.buffers {
-		fmt.Fprintf(os.Stderr, "#### Start Gopls Test Logs %d of %d for %q\n", i+1, len(s.buffers), testname)
-		// Re-buffer buf to avoid a data rate (io.Copy mutates src).
-		writeBuf := bytes.NewBuffer(buf.Bytes())
-		io.Copy(w, writeBuf)
-		fmt.Fprintf(os.Stderr, "#### End Gopls Test Logs %d of %d for %q\n", i+1, len(s.buffers), testname)
+	if s.buf == nil {
+		return
 	}
+	fmt.Fprintf(os.Stderr, "#### Start Gopls Test Logs for %q\n", testname)
+	s.buf.mu.Lock()
+	io.Copy(w, &s.buf.buf)
+	s.buf.mu.Unlock()
+	fmt.Fprintf(os.Stderr, "#### End Gopls Test Logs for %q\n", testname)
 }
 
 func singletonServer(ctx context.Context, t *testing.T) jsonrpc2.StreamServer {
 	return lsprpc.NewStreamServer(cache.New(ctx, hooks.Options), false)
+}
+
+func experimentalWorkspaceModule(ctx context.Context, t *testing.T) jsonrpc2.StreamServer {
+	options := func(o *source.Options) {
+		hooks.Options(o)
+		o.ExperimentalWorkspaceModule = true
+	}
+	return lsprpc.NewStreamServer(cache.New(ctx, options), false)
 }
 
 func (r *Runner) forwardedServer(ctx context.Context, t *testing.T) jsonrpc2.StreamServer {

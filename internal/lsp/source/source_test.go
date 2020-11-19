@@ -14,7 +14,6 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/diff/myers"
@@ -34,7 +33,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestSource(t *testing.T) {
-	packagestest.TestAll(t, testSource)
+	tests.RunTests(t, "../testdata", true, testSource)
 }
 
 type runner struct {
@@ -44,57 +43,51 @@ type runner struct {
 	ctx      context.Context
 }
 
-func testSource(t *testing.T, exporter packagestest.Exporter) {
+func testSource(t *testing.T, datum *tests.Data) {
 	ctx := tests.Context(t)
-	data := tests.Load(t, exporter, "../testdata")
-	for _, datum := range data {
-		defer datum.Exported.Cleanup()
 
-		cache := cache.New(ctx, nil)
-		session := cache.NewSession(ctx)
-		options := tests.DefaultOptions()
-		options.Env = datum.Config.Env
-		view, _, release, err := session.NewView(ctx, "source_test", span.URIFromPath(datum.Config.Dir), options)
-		release()
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer view.Shutdown(ctx)
+	cache := cache.New(ctx, nil)
+	session := cache.NewSession(ctx)
+	options := source.DefaultOptions().Clone()
+	tests.DefaultOptions(options)
+	options.SetEnvSlice(datum.Config.Env)
+	view, _, release, err := session.NewView(ctx, "source_test", span.URIFromPath(datum.Config.Dir), "", options)
+	release()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Shutdown(ctx)
 
-		// Enable type error analyses for tests.
-		// TODO(golang/go#38212): Delete this once they are enabled by default.
-		tests.EnableAllAnalyzers(view, &options)
-		view.SetOptions(ctx, options)
-		var modifications []source.FileModification
-		for filename, content := range datum.Config.Overlay {
-			kind := source.DetectLanguage("", filename)
-			if kind != source.Go {
-				continue
-			}
-			modifications = append(modifications, source.FileModification{
-				URI:        span.URIFromPath(filename),
-				Action:     source.Open,
-				Version:    -1,
-				Text:       content,
-				LanguageID: "go",
-			})
+	// Enable type error analyses for tests.
+	// TODO(golang/go#38212): Delete this once they are enabled by default.
+	tests.EnableAllAnalyzers(view, options)
+	view.SetOptions(ctx, options)
+	var modifications []source.FileModification
+	for filename, content := range datum.Config.Overlay {
+		kind := source.DetectLanguage("", filename)
+		if kind != source.Go {
+			continue
 		}
-		if err := session.ModifyFiles(ctx, modifications); err != nil {
-			t.Fatal(err)
-		}
-		snapshot, release := view.Snapshot(ctx)
-		defer release()
-		r := &runner{
-			view:     view,
-			snapshot: snapshot,
-			data:     datum,
-			ctx:      ctx,
-		}
-		t.Run(tests.FormatFolderName(datum.Folder), func(t *testing.T) {
-			t.Helper()
-			tests.Run(t, r, datum)
+		modifications = append(modifications, source.FileModification{
+			URI:        span.URIFromPath(filename),
+			Action:     source.Open,
+			Version:    -1,
+			Text:       content,
+			LanguageID: "go",
 		})
 	}
+	if err := session.ModifyFiles(ctx, modifications); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, release := view.Snapshot(ctx)
+	defer release()
+	r := &runner{
+		view:     view,
+		snapshot: snapshot,
+		data:     datum,
+		ctx:      ctx,
+	}
+	tests.Run(t, r, datum)
 }
 
 func (r *runner) CallHierarchy(t *testing.T, spn span.Span, expectedCalls *tests.CallHierarchyResult) {
@@ -179,7 +172,7 @@ func (r *runner) Completion(t *testing.T, src span.Span, test tests.Completion, 
 	_, got := r.callCompletion(t, src, func(opts *source.Options) {
 		opts.Matcher = source.CaseInsensitive
 		opts.DeepCompletion = false
-		opts.UnimportedCompletion = false
+		opts.CompleteUnimported = false
 		opts.InsertTextFormat = protocol.SnippetTextFormat
 		if !strings.Contains(string(src.URI()), "literal") {
 			opts.LiteralCompletions = false
@@ -193,9 +186,9 @@ func (r *runner) Completion(t *testing.T, src span.Span, test tests.Completion, 
 
 func (r *runner) CompletionSnippet(t *testing.T, src span.Span, expected tests.CompletionSnippet, placeholders bool, items tests.CompletionItems) {
 	_, list := r.callCompletion(t, src, func(opts *source.Options) {
-		opts.Placeholders = placeholders
+		opts.UsePlaceholders = placeholders
 		opts.DeepCompletion = true
-		opts.UnimportedCompletion = false
+		opts.CompleteUnimported = false
 	})
 	got := tests.FindItem(list, *items[expected.CompletionItem])
 	want := expected.PlainSnippet
@@ -227,7 +220,7 @@ func (r *runner) DeepCompletion(t *testing.T, src span.Span, test tests.Completi
 	prefix, list := r.callCompletion(t, src, func(opts *source.Options) {
 		opts.DeepCompletion = true
 		opts.Matcher = source.CaseInsensitive
-		opts.UnimportedCompletion = false
+		opts.CompleteUnimported = false
 	})
 	list = tests.FilterBuiltins(src, list)
 	fuzzyMatcher := fuzzy.NewMatcher(prefix)
@@ -251,7 +244,7 @@ func (r *runner) FuzzyCompletion(t *testing.T, src span.Span, test tests.Complet
 	_, got := r.callCompletion(t, src, func(opts *source.Options) {
 		opts.DeepCompletion = true
 		opts.Matcher = source.Fuzzy
-		opts.UnimportedCompletion = false
+		opts.CompleteUnimported = false
 	})
 	got = tests.FilterBuiltins(src, got)
 	if msg := tests.DiffCompletionItems(want, got); msg != "" {
@@ -266,7 +259,7 @@ func (r *runner) CaseSensitiveCompletion(t *testing.T, src span.Span, test tests
 	}
 	_, list := r.callCompletion(t, src, func(opts *source.Options) {
 		opts.Matcher = source.CaseSensitive
-		opts.UnimportedCompletion = false
+		opts.CompleteUnimported = false
 	})
 	list = tests.FilterBuiltins(src, list)
 	if diff := tests.DiffCompletionItems(want, list); diff != "" {
@@ -294,8 +287,8 @@ func (r *runner) callCompletion(t *testing.T, src span.Span, options func(*sourc
 		t.Fatal(err)
 	}
 	original := r.view.Options()
-	modified := original
-	options(&modified)
+	modified := original.Clone()
+	options(modified)
 	newView, err := r.view.SetOptions(r.ctx, modified)
 	if newView != r.view {
 		t.Fatalf("options change unexpectedly created new view")
@@ -308,7 +301,7 @@ func (r *runner) callCompletion(t *testing.T, src span.Span, options func(*sourc
 	list, surrounding, err := completion.Completion(r.ctx, r.snapshot, fh, protocol.Position{
 		Line:      float64(src.Start().Line() - 1),
 		Character: float64(src.Start().Column() - 1),
-	}, "")
+	}, protocol.CompletionContext{})
 	if err != nil && !errors.As(err, &completion.ErrIsDefinition{}) {
 		t.Fatalf("failed for %v: %v", src, err)
 	}
@@ -505,6 +498,10 @@ func (r *runner) Format(t *testing.T, spn span.Span) {
 	if gofmted != got {
 		t.Errorf("format failed for %s, expected:\n%v\ngot:\n%v", spn.URI().Filename(), gofmted, got)
 	}
+}
+
+func (r *runner) SemanticTokens(t *testing.T, spn span.Span) {
+	t.Skip("nothing to test in source")
 }
 
 func (r *runner) Import(t *testing.T, spn span.Span) {

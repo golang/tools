@@ -114,7 +114,7 @@ The package... arguments specify a list of packages
 in the style of the go tool; see "go help packages".
 Hint: use "all" or "..." to match the entire workspace.
 
-For details, see http://godoc.org/golang.org/x/tools/cmd/fiximports.
+For details, see https://pkg.go.dev/golang.org/x/tools/cmd/fiximports
 
 Flags:
   -n:	       dry run: show changes, but don't apply them
@@ -266,7 +266,7 @@ func fiximports(packages ...string) bool {
 
 					// TODO(adonovan): should we make an HTTP request to
 					// see if there's an HTTP redirect, a "go-import" meta tag,
-					// or an import comment in the the latest revision?
+					// or an import comment in the latest revision?
 					// It would duplicate a lot of logic from "go get".
 				}
 				break

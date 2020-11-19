@@ -16,15 +16,16 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
-	"time"
 
+	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/semver"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/keys"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
-	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/span"
@@ -37,7 +38,7 @@ type View struct {
 	id      string
 
 	optionsMu sync.Mutex
-	options   source.Options
+	options   *source.Options
 
 	// mu protects most mutable state of the view.
 	mu sync.Mutex
@@ -60,71 +61,42 @@ type View struct {
 	// folder is the folder with which this view was constructed.
 	folder span.URI
 
-	// root is the root directory of this view. If we are in GOPATH mode, this
-	// is just the folder. If we are in module mode, this is the module root.
-	root span.URI
-
-	// importsMu guards imports-related state, particularly the ProcessEnv.
-	importsMu sync.Mutex
-
-	// processEnv is the process env for this view.
-	// Some of its fields can be changed dynamically by modifications to
-	// the view's options. These fields are repopulated for every use.
-	// Note: this contains cached module and filesystem state.
-	//
-	// TODO(suzmue): the state cached in the process env is specific to each view,
-	// however, there is state that can be shared between views that is not currently
-	// cached, like the module cache.
-	processEnv              *imports.ProcessEnv
-	cleanupProcessEnv       func()
-	cacheRefreshDuration    time.Duration
-	cacheRefreshTimer       *time.Timer
-	cachedModFileIdentifier string
-	cachedBuildFlags        []string
+	importsState *importsState
 
 	// keep track of files by uri and by basename, a single file may be mapped
 	// to multiple uris, and the same basename may map to multiple files
 	filesByURI  map[span.URI]*fileBase
 	filesByBase map[string][]*fileBase
 
+	// initCancelFirstAttempt can be used to terminate the view's first
+	// attempt at initialization.
+	initCancelFirstAttempt context.CancelFunc
+
 	snapshotMu sync.Mutex
 	snapshot   *snapshot
 
-	// initialized is closed when the view has been fully initialized. On
-	// initialization, the view's workspace packages are loaded. All of the
-	// fields below are set as part of initialization. If we failed to load, we
-	// only retry if the go.mod file changes, to avoid too many go/packages
-	// calls.
-	//
-	// When the view is created, initializeOnce is non-nil, initialized is
-	// open, and initCancelFirstAttempt can be used to terminate
-	// initialization. Once initialization completes, initializedErr may be set
-	// and initializeOnce becomes nil. If initializedErr is non-nil,
-	// initialization may be retried (depending on how files are changed). To
-	// indicate that initialization should be retried, initializeOnce will be
-	// set. The next time a caller requests workspace packages, the
-	// initialization will retry.
-	initialized            chan struct{}
-	initCancelFirstAttempt context.CancelFunc
+	// initialWorkspaceLoad is closed when the first workspace initialization has
+	// completed. If we failed to load, we only retry if the go.mod file changes,
+	// to avoid too many go/packages calls.
+	initialWorkspaceLoad chan struct{}
 
-	// initializationSema is used as a mutex to guard initializeOnce and
-	// initializedErr, which will be updated after each attempt to initialize
+	// initializationSema is used limit concurrent initialization of snapshots in
 	// the view. We use a channel instead of a mutex to avoid blocking when a
 	// context is canceled.
 	initializationSema chan struct{}
-	initializeOnce     *sync.Once
-	initializedErr     error
 
-	// True if the view is either in GOPATH, a module, or some other
-	// non go command build system.
-	hasValidBuildConfiguration bool
+	// workspaceInformation tracks various details about this view's
+	// environment variables, go version, and use of modules.
+	workspaceInformation
 
-	// The real go.mod and go.sum files that are attributed to a view.
-	modURI, sumURI span.URI
+	// tempWorkspace is a temporary directory dedicated to holding the latest
+	// version of the workspace go.mod file. (TODO: also go.sum file)
+	tempWorkspace span.URI
+}
 
-	// True if this view runs go commands using temporary mod files.
-	// Only possible with Go versions 1.14 and above.
-	tmpMod bool
+type workspaceInformation struct {
+	// The Go version in use: X in Go 1.X.
+	goversion int
 
 	// hasGopackagesDriver is true if the user has a value set for the
 	// GOPACKAGESDRIVER environment variable or a gopackagesdriver binary on
@@ -132,12 +104,36 @@ type View struct {
 	hasGopackagesDriver bool
 
 	// `go env` variables that need to be tracked by gopls.
-	gocache, gomodcache, gopath, goprivate string
+	environmentVariables
+
+	// The value of GO111MODULE we want to run with.
+	go111module string
 
 	// goEnv is the `go env` output collected when a view is created.
 	// It includes the values of the environment variables above.
 	goEnv map[string]string
+
+	// rootURI is the rootURI directory of this view. If we are in GOPATH mode, this
+	// is just the folder. If we are in module mode, this is the module rootURI.
+	rootURI span.URI
 }
+
+type environmentVariables struct {
+	gocache, gopath, goprivate, gomodcache string
+}
+
+type workspaceMode int
+
+const (
+	moduleMode workspaceMode = 1 << iota
+
+	// tempModfile indicates whether or not the -modfile flag should be used.
+	tempModfile
+
+	// usesWorkspaceModule indicates support for the experimental workspace module
+	// feature.
+	usesWorkspaceModule
+)
 
 type builtinPackageHandle struct {
 	handle *memoize.Handle
@@ -172,18 +168,10 @@ func (f *fileBase) addURI(uri span.URI) int {
 
 func (v *View) ID() string { return v.id }
 
-func (v *View) ValidBuildConfiguration() bool {
-	return v.hasValidBuildConfiguration
-}
-
-func (v *View) ModFile() span.URI {
-	return v.modURI
-}
-
 // tempModFile creates a temporary go.mod file based on the contents of the
 // given go.mod file. It is the caller's responsibility to clean up the files
 // when they are done using them.
-func tempModFile(modFh, sumFH source.FileHandle) (tmpURI span.URI, cleanup func(), err error) {
+func tempModFile(modFh source.FileHandle, gosum []byte) (tmpURI span.URI, cleanup func(), err error) {
 	filenameHash := hashContents([]byte(modFh.URI().Filename()))
 	tmpMod, err := ioutil.TempFile("", fmt.Sprintf("go.%s.*.mod", filenameHash))
 	if err != nil {
@@ -217,12 +205,8 @@ func tempModFile(modFh, sumFH source.FileHandle) (tmpURI span.URI, cleanup func(
 	}()
 
 	// Create an analogous go.sum, if one exists.
-	if sumFH != nil {
-		sumContents, err := sumFH.Read()
-		if err != nil {
-			return "", cleanup, err
-		}
-		if err := ioutil.WriteFile(tmpSumName, sumContents, 0655); err != nil {
+	if gosum != nil {
+		if err := ioutil.WriteFile(tmpSumName, gosum, 0655); err != nil {
 			return "", cleanup, err
 		}
 	}
@@ -230,39 +214,38 @@ func tempModFile(modFh, sumFH source.FileHandle) (tmpURI span.URI, cleanup func(
 	return tmpURI, cleanup, nil
 }
 
-func (v *View) Session() source.Session {
-	return v.session
-}
-
 // Name returns the user visible name of this view.
 func (v *View) Name() string {
 	return v.name
 }
 
-// Folder returns the root of this view.
+// Folder returns the folder at the base of this view.
 func (v *View) Folder() span.URI {
 	return v.folder
 }
 
-func (v *View) Options() source.Options {
+func (v *View) Options() *source.Options {
 	v.optionsMu.Lock()
 	defer v.optionsMu.Unlock()
 	return v.options
 }
 
-func minorOptionsChange(a, b source.Options) bool {
+func minorOptionsChange(a, b *source.Options) bool {
 	// Check if any of the settings that modify our understanding of files have been changed
 	if !reflect.DeepEqual(a.Env, b.Env) {
 		return false
 	}
-	if !reflect.DeepEqual(a.BuildFlags, b.BuildFlags) {
-		return false
-	}
+	aBuildFlags := make([]string, len(a.BuildFlags))
+	bBuildFlags := make([]string, len(b.BuildFlags))
+	copy(aBuildFlags, a.BuildFlags)
+	copy(bBuildFlags, b.BuildFlags)
+	sort.Strings(aBuildFlags)
+	sort.Strings(bBuildFlags)
 	// the rest of the options are benign
-	return true
+	return reflect.DeepEqual(aBuildFlags, bBuildFlags)
 }
 
-func (v *View) SetOptions(ctx context.Context, options source.Options) (source.View, error) {
+func (v *View) SetOptions(ctx context.Context, options *source.Options) (source.View, error) {
 	// no need to rebuild the view if the options were not materially changed
 	v.optionsMu.Lock()
 	if minorOptionsChange(v.options, options) {
@@ -284,13 +267,14 @@ func (v *View) Rebuild(ctx context.Context) (source.Snapshot, func(), error) {
 	return snapshot, release, nil
 }
 
-func (v *View) WriteEnv(ctx context.Context, w io.Writer) error {
-	v.optionsMu.Lock()
-	env, buildFlags := v.envLocked()
-	v.optionsMu.Unlock()
+func (s *snapshot) WriteEnv(ctx context.Context, w io.Writer) error {
+	s.view.optionsMu.Lock()
+	env := s.view.options.EnvSlice()
+	buildFlags := append([]string{}, s.view.options.BuildFlags...)
+	s.view.optionsMu.Unlock()
 
 	fullEnv := make(map[string]string)
-	for k, v := range v.goEnv {
+	for k, v := range s.view.goEnv {
 		fullEnv[k] = v
 	}
 	for _, v := range env {
@@ -301,163 +285,38 @@ func (v *View) WriteEnv(ctx context.Context, w io.Writer) error {
 		if _, ok := fullEnv[s[0]]; ok {
 			fullEnv[s[0]] = s[1]
 		}
-
 	}
-	fmt.Fprintf(w, "go env for %v\n(root %s)\n(valid build configuration = %v)\n(build flags: %v)\n",
-		v.folder.Filename(), v.root.Filename(), v.hasValidBuildConfiguration, buildFlags)
+	goVersion, err := s.view.session.gocmdRunner.Run(ctx, gocommand.Invocation{
+		Verb:       "version",
+		Env:        env,
+		WorkingDir: s.view.rootURI.Filename(),
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(w, `go env for %v
+(root %s)
+(go version %s)
+(valid build configuration = %v)
+(build flags: %v)
+`,
+		s.view.folder.Filename(),
+		s.view.rootURI.Filename(),
+		strings.TrimRight(goVersion.String(), "\n"),
+		s.ValidBuildConfiguration(),
+		buildFlags)
 	for k, v := range fullEnv {
 		fmt.Fprintf(w, "%s=%s\n", k, v)
 	}
 	return nil
 }
 
-func (v *View) RunProcessEnvFunc(ctx context.Context, fn func(*imports.Options) error) error {
-	v.importsMu.Lock()
-	defer v.importsMu.Unlock()
-
-	// Use temporary go.mod files, but always go to disk for the contents.
-	// Rebuilding the cache is expensive, and we don't want to do it for
-	// transient changes.
-	var modFH, sumFH source.FileHandle
-	var modFileIdentifier string
-	var err error
-	if v.modURI != "" {
-		modFH, err = v.session.cache.getFile(ctx, v.modURI)
-		if err != nil {
-			return err
-		}
-		modFileIdentifier = modFH.FileIdentity().Hash
-	}
-	if v.sumURI != "" {
-		sumFH, err = v.session.cache.getFile(ctx, v.sumURI)
-		if err != nil {
-			return err
-		}
-	}
-	// v.goEnv is immutable -- changes make a new view. Options can change.
-	// We can't compare build flags directly because we may add -modfile.
-	v.optionsMu.Lock()
-	localPrefix := v.options.LocalPrefix
-	currentBuildFlags := v.options.BuildFlags
-	changed := !reflect.DeepEqual(currentBuildFlags, v.cachedBuildFlags) ||
-		v.options.VerboseOutput != (v.processEnv.Logf != nil) ||
-		modFileIdentifier != v.cachedModFileIdentifier
-	v.optionsMu.Unlock()
-
-	// If anything relevant to imports has changed, clear caches and
-	// update the processEnv. Clearing caches blocks on any background
-	// scans.
-	if changed {
-		// As a special case, skip cleanup the first time -- we haven't fully
-		// initialized the environment yet and calling GetResolver will do
-		// unnecessary work and potentially mess up the go.mod file.
-		if v.cleanupProcessEnv != nil {
-			if resolver, err := v.processEnv.GetResolver(); err == nil {
-				resolver.(*imports.ModuleResolver).ClearForNewMod()
-			}
-			v.cleanupProcessEnv()
-		}
-		v.cachedModFileIdentifier = modFileIdentifier
-		v.cachedBuildFlags = currentBuildFlags
-		v.cleanupProcessEnv, err = v.populateProcessEnv(ctx, modFH, sumFH)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Run the user function.
-	opts := &imports.Options{
-		// Defaults.
-		AllErrors:   true,
-		Comments:    true,
-		Fragment:    true,
-		FormatOnly:  false,
-		TabIndent:   true,
-		TabWidth:    8,
-		Env:         v.processEnv,
-		LocalPrefix: localPrefix,
-	}
-
-	if err := fn(opts); err != nil {
-		return err
-	}
-
-	if v.cacheRefreshTimer == nil {
-		// Don't refresh more than twice per minute.
-		delay := 30 * time.Second
-		// Don't spend more than a couple percent of the time refreshing.
-		if adaptive := 50 * v.cacheRefreshDuration; adaptive > delay {
-			delay = adaptive
-		}
-		v.cacheRefreshTimer = time.AfterFunc(delay, v.refreshProcessEnv)
-	}
-
-	return nil
-}
-
-func (v *View) refreshProcessEnv() {
-	start := time.Now()
-
-	v.importsMu.Lock()
-	env := v.processEnv
-	if resolver, err := v.processEnv.GetResolver(); err == nil {
-		resolver.ClearForNewScan()
-	}
-	v.importsMu.Unlock()
-
-	// We don't have a context handy to use for logging, so use the stdlib for now.
-	event.Log(v.baseCtx, "background imports cache refresh starting")
-	if err := imports.PrimeCache(context.Background(), env); err == nil {
-		event.Log(v.baseCtx, fmt.Sprintf("background refresh finished after %v", time.Since(start)))
-	} else {
-		event.Log(v.baseCtx, fmt.Sprintf("background refresh finished after %v", time.Since(start)), keys.Err.Of(err))
-	}
-	v.importsMu.Lock()
-	v.cacheRefreshDuration = time.Since(start)
-	v.cacheRefreshTimer = nil
-	v.importsMu.Unlock()
-}
-
-// populateProcessEnv sets the dynamically configurable fields for the view's
-// process environment. Assumes that the caller is holding the s.view.importsMu.
-func (v *View) populateProcessEnv(ctx context.Context, modFH, sumFH source.FileHandle) (cleanup func(), err error) {
-	cleanup = func() {}
-	pe := v.processEnv
-
-	v.optionsMu.Lock()
-	pe.BuildFlags = append([]string(nil), v.options.BuildFlags...)
-	if v.options.VerboseOutput {
-		pe.Logf = func(format string, args ...interface{}) {
-			event.Log(ctx, fmt.Sprintf(format, args...))
-		}
-	} else {
-		pe.Logf = nil
-	}
-	v.optionsMu.Unlock()
-
-	// Add -modfile to the build flags, if we are using it.
-	if v.tmpMod && modFH != nil {
-		var tmpURI span.URI
-		tmpURI, cleanup, err = tempModFile(modFH, sumFH)
-		if err != nil {
-			return nil, err
-		}
-		pe.BuildFlags = append(pe.BuildFlags, fmt.Sprintf("-modfile=%s", tmpURI.Filename()))
-	}
-
-	return cleanup, nil
-}
-
-// envLocked returns the environment and build flags for the current view.
-// It assumes that the caller is holding the view's optionsMu.
-func (v *View) envLocked() ([]string, []string) {
-	env := append([]string{}, v.options.Env...)
-	buildFlags := append([]string{}, v.options.BuildFlags...)
-	return env, buildFlags
+func (s *snapshot) RunProcessEnvFunc(ctx context.Context, fn func(*imports.Options) error) error {
+	return s.view.importsState.runProcessEnvFunc(ctx, s, fn)
 }
 
 func (v *View) contains(uri span.URI) bool {
-	return strings.HasPrefix(string(uri), string(v.root))
+	return strings.HasPrefix(string(uri), string(v.rootURI))
 }
 
 func (v *View) mapFile(uri span.URI, f *fileBase) {
@@ -552,6 +411,8 @@ func (v *View) Shutdown(ctx context.Context) {
 	v.session.removeView(ctx, v)
 }
 
+// TODO(rFindley): probably some of this should also be one in View.Shutdown
+// above?
 func (v *View) shutdown(ctx context.Context) {
 	// Cancel the initial workspace load if it is still running.
 	v.initCancelFirstAttempt()
@@ -565,6 +426,16 @@ func (v *View) shutdown(ctx context.Context) {
 	v.snapshotMu.Lock()
 	go v.snapshot.generation.Destroy()
 	v.snapshotMu.Unlock()
+	v.importsState.destroy()
+	if v.tempWorkspace != "" {
+		if err := os.RemoveAll(v.tempWorkspace.Filename()); err != nil {
+			event.Error(ctx, "removing temp workspace", err)
+		}
+	}
+}
+
+func (v *View) Session() *Session {
+	return v.session
 }
 
 func (v *View) BackgroundContext() context.Context {
@@ -574,18 +445,19 @@ func (v *View) BackgroundContext() context.Context {
 	return v.backgroundCtx
 }
 
-func (v *View) IgnoredFile(uri span.URI) bool {
+func (s *snapshot) IgnoredFile(uri span.URI) bool {
 	filename := uri.Filename()
 	var prefixes []string
-	if v.modURI == "" {
-		for _, entry := range filepath.SplitList(v.gopath) {
+	if len(s.workspace.activeModFiles()) == 0 {
+		for _, entry := range filepath.SplitList(s.view.gopath) {
 			prefixes = append(prefixes, filepath.Join(entry, "src"))
 		}
 	} else {
-		mainMod := filepath.Dir(v.modURI.Filename())
-		prefixes = []string{mainMod, v.gomodcache}
+		prefixes = append(prefixes, s.view.gomodcache)
+		for m := range s.workspace.activeModFiles() {
+			prefixes = append(prefixes, dirURI(m).Filename())
+		}
 	}
-
 	for _, prefix := range prefixes {
 		if strings.HasPrefix(filename, prefix) {
 			return checkIgnored(filename[len(prefix):])
@@ -610,66 +482,90 @@ func checkIgnored(suffix string) bool {
 }
 
 func (v *View) Snapshot(ctx context.Context) (source.Snapshot, func()) {
-	s := v.getSnapshot()
-	return s, s.generation.Acquire(ctx)
+	return v.getSnapshot(ctx)
 }
 
-func (v *View) getSnapshot() *snapshot {
+func (v *View) getSnapshot(ctx context.Context) (*snapshot, func()) {
 	v.snapshotMu.Lock()
 	defer v.snapshotMu.Unlock()
-
-	return v.snapshot
+	return v.snapshot, v.snapshot.generation.Acquire(ctx)
 }
 
-func (v *View) initialize(ctx context.Context, s *snapshot, firstAttempt bool) {
+func (s *snapshot) initialize(ctx context.Context, firstAttempt bool) {
 	select {
 	case <-ctx.Done():
 		return
-	case v.initializationSema <- struct{}{}:
+	case s.view.initializationSema <- struct{}{}:
 	}
 
 	defer func() {
-		<-v.initializationSema
+		<-s.view.initializationSema
 	}()
 
-	if v.initializeOnce == nil {
+	if s.initializeOnce == nil {
 		return
 	}
-	v.initializeOnce.Do(func() {
+	s.initializeOnce.Do(func() {
 		defer func() {
-			v.initializeOnce = nil
+			s.initializeOnce = nil
 			if firstAttempt {
-				close(v.initialized)
+				close(s.view.initialWorkspaceLoad)
 			}
 		}()
 
-		err := s.load(ctx, viewLoadScope("LOAD_VIEW"), packagePath("builtin"))
+		// If we have multiple modules, we need to load them by paths.
+		var scopes []interface{}
+		var modErrors *source.ErrorList
+		addError := func(uri span.URI, err error) {
+			if modErrors == nil {
+				modErrors = &source.ErrorList{}
+			}
+			*modErrors = append(*modErrors, &source.Error{
+				URI:      uri,
+				Category: "compiler",
+				Kind:     source.ListError,
+				Message:  err.Error(),
+			})
+		}
+		for modURI := range s.workspace.activeModFiles() {
+			fh, err := s.GetFile(ctx, modURI)
+			if err != nil {
+				addError(modURI, err)
+				continue
+			}
+			parsed, err := s.ParseMod(ctx, fh)
+			if err != nil {
+				addError(modURI, err)
+				continue
+			}
+			if parsed.File == nil || parsed.File.Module == nil {
+				addError(modURI, fmt.Errorf("no module path for %s", modURI))
+				continue
+			}
+			path := parsed.File.Module.Mod.Path
+			scopes = append(scopes, moduleLoadScope(path))
+		}
+		if len(scopes) == 0 {
+			scopes = append(scopes, viewLoadScope("LOAD_VIEW"))
+		}
+		err := s.load(ctx, append(scopes, packagePath("builtin"))...)
 		if ctx.Err() != nil {
 			return
 		}
 		if err != nil {
 			event.Error(ctx, "initial workspace load failed", err)
+			if modErrors != nil {
+				s.initializedErr = errors.Errorf("errors loading modules: %v: %w", err, modErrors)
+			} else {
+				s.initializedErr = err
+			}
 		}
-		v.initializedErr = err
 	})
-}
-
-// AwaitInitialized waits until a view is initialized
-func (v *View) AwaitInitialized(ctx context.Context) {
-	select {
-	case <-ctx.Done():
-		return
-	case <-v.initialized:
-	}
-	// We typically prefer to run something as intensive as the IWL without
-	// blocking. I'm not sure if there is a way to do that here.
-	v.initialize(ctx, v.getSnapshot(), false)
 }
 
 // invalidateContent invalidates the content of a Go file,
 // including any position and type information that depends on it.
-// It returns true if we were already tracking the given file, false otherwise.
-func (v *View) invalidateContent(ctx context.Context, uris map[span.URI]source.VersionedFileHandle, forceReloadMetadata bool) (source.Snapshot, func()) {
+func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]*fileChange, forceReloadMetadata bool) (source.Snapshot, func()) {
 	// Detach the context so that content invalidation cannot be canceled.
 	ctx = xcontext.Detach(ctx)
 
@@ -678,17 +574,50 @@ func (v *View) invalidateContent(ctx context.Context, uris map[span.URI]source.V
 	v.cancelBackground()
 
 	// Do not clone a snapshot until its view has finished initializing.
-	v.AwaitInitialized(ctx)
+	v.snapshot.AwaitInitialized(ctx)
 
 	// This should be the only time we hold the view's snapshot lock for any period of time.
 	v.snapshotMu.Lock()
 	defer v.snapshotMu.Unlock()
 
 	oldSnapshot := v.snapshot
-	v.snapshot = oldSnapshot.clone(ctx, uris, forceReloadMetadata)
+
+	var workspaceChanged bool
+	v.snapshot, workspaceChanged = oldSnapshot.clone(ctx, changes, forceReloadMetadata)
+	if workspaceChanged && v.tempWorkspace != "" {
+		snap := v.snapshot
+		go func() {
+			wsdir, err := snap.getWorkspaceDir(ctx)
+			if err != nil {
+				event.Error(ctx, "getting workspace dir", err)
+			}
+			if err := copyWorkspace(v.tempWorkspace, wsdir); err != nil {
+				event.Error(ctx, "copying workspace dir", err)
+			}
+		}()
+	}
 	go oldSnapshot.generation.Destroy()
 
 	return v.snapshot, v.snapshot.generation.Acquire(ctx)
+}
+
+func copyWorkspace(dst span.URI, src span.URI) error {
+	srcMod := filepath.Join(src.Filename(), "go.mod")
+	srcf, err := os.Open(srcMod)
+	if err != nil {
+		return errors.Errorf("opening snapshot mod file: %w", err)
+	}
+	defer srcf.Close()
+	dstMod := filepath.Join(dst.Filename(), "go.mod")
+	dstf, err := os.Create(dstMod)
+	if err != nil {
+		return errors.Errorf("truncating view mod file: %w", err)
+	}
+	defer dstf.Close()
+	if _, err := io.Copy(dstf, srcf); err != nil {
+		return errors.Errorf("copying modfiles: %w", err)
+	}
+	return nil
 }
 
 func (v *View) cancelBackground() {
@@ -702,56 +631,99 @@ func (v *View) cancelBackground() {
 	v.backgroundCtx, v.cancel = context.WithCancel(v.baseCtx)
 }
 
-func (v *View) maybeReinitialize() {
-	v.initializationSema <- struct{}{}
-	defer func() {
-		<-v.initializationSema
-	}()
-
-	if v.initializedErr == nil {
-		return
+func (s *Session) getWorkspaceInformation(ctx context.Context, folder span.URI, options *source.Options) (*workspaceInformation, error) {
+	if err := checkPathCase(folder.Filename()); err != nil {
+		return nil, errors.Errorf("invalid workspace configuration: %w", err)
 	}
-	var once sync.Once
-	v.initializeOnce = &once
+	var err error
+	inv := gocommand.Invocation{
+		WorkingDir: folder.Filename(),
+		Env:        options.EnvSlice(),
+	}
+	goversion, err := gocommand.GoVersion(ctx, inv, s.gocmdRunner)
+	if err != nil {
+		return nil, err
+	}
+
+	go111module := os.Getenv("GO111MODULE")
+	if v, ok := options.Env["GO111MODULE"]; ok {
+		go111module = v
+	}
+	// If using 1.16, change the default back to auto. The primary effect of
+	// GO111MODULE=on is to break GOPATH, which we aren't too interested in.
+	if goversion >= 16 && go111module == "" {
+		go111module = "auto"
+	}
+
+	// Make sure to get the `go env` before continuing with initialization.
+	envVars, env, err := s.getGoEnv(ctx, folder.Filename(), append(options.EnvSlice(), "GO111MODULE="+go111module))
+	if err != nil {
+		return nil, err
+	}
+	// The value of GOPACKAGESDRIVER is not returned through the go command.
+	gopackagesdriver := os.Getenv("GOPACKAGESDRIVER")
+	for _, s := range env {
+		split := strings.SplitN(s, "=", 2)
+		if split[0] == "GOPACKAGESDRIVER" {
+			gopackagesdriver = split[1]
+		}
+	}
+	// A user may also have a gopackagesdriver binary on their machine, which
+	// works the same way as setting GOPACKAGESDRIVER.
+	tool, _ := exec.LookPath("gopackagesdriver")
+	hasGopackagesDriver := gopackagesdriver != "off" && (gopackagesdriver != "" || tool != "")
+
+	root := folder
+	if options.ExpandWorkspaceToModule {
+		wsRoot, err := findWorkspaceRoot(ctx, root, s)
+		if err != nil {
+			return nil, err
+		}
+		if wsRoot != "" {
+			root = wsRoot
+		}
+	}
+	return &workspaceInformation{
+		hasGopackagesDriver:  hasGopackagesDriver,
+		go111module:          go111module,
+		goversion:            goversion,
+		rootURI:              root,
+		environmentVariables: envVars,
+		goEnv:                env,
+	}, nil
 }
 
-func (v *View) setBuildInformation(ctx context.Context, folder span.URI, options source.Options) error {
-	if err := checkPathCase(folder.Filename()); err != nil {
-		return errors.Errorf("invalid workspace configuration: %w", err)
+func findWorkspaceRoot(ctx context.Context, folder span.URI, fs source.FileSource) (span.URI, error) {
+	for _, basename := range []string{"gopls.mod", "go.mod"} {
+		dir, err := findRootPattern(ctx, folder, basename, fs)
+		if err != nil {
+			return "", errors.Errorf("finding %s: %w", basename, err)
+		}
+		if dir != "" {
+			return dir, nil
+		}
 	}
-	// Make sure to get the `go env` before continuing with initialization.
-	modFile, err := v.setGoEnv(ctx, options.Env)
-	if err != nil {
-		return err
-	}
-	if modFile == os.DevNull {
-		return nil
-	}
-	v.modURI = span.URIFromPath(modFile)
-	// Set the sumURI, if the go.sum exists.
-	sumFilename := filepath.Join(filepath.Dir(modFile), "go.sum")
-	if stat, _ := os.Stat(sumFilename); stat != nil {
-		v.sumURI = span.URIFromPath(sumFilename)
-	}
+	return "", nil
+}
 
-	if options.ExpandWorkspaceToModule && v.modURI != "" {
-		v.root = span.URIFromPath(filepath.Dir(v.modURI.Filename()))
+func findRootPattern(ctx context.Context, folder span.URI, basename string, fs source.FileSource) (span.URI, error) {
+	dir := folder.Filename()
+	for dir != "" {
+		target := filepath.Join(dir, basename)
+		exists, err := fileExists(ctx, span.URIFromPath(target), fs)
+		if err != nil {
+			return "", err
+		}
+		if exists {
+			return span.URIFromPath(dir), nil
+		}
+		next, _ := filepath.Split(dir)
+		if next == dir {
+			break
+		}
+		dir = next
 	}
-
-	// Now that we have set all required fields,
-	// check if the view has a valid build configuration.
-	v.setBuildConfiguration()
-
-	// The user has disabled the use of the -modfile flag or has no go.mod file.
-	if !options.TempModfile || v.modURI == "" {
-		return nil
-	}
-	if modfileFlag, err := v.modfileFlagExists(ctx, v.Options().Env); err != nil {
-		return err
-	} else if modfileFlag {
-		v.tmpMod = true
-	}
-	return nil
+	return "", nil
 }
 
 // OS-specific path case check, for case-insensitive filesystems.
@@ -761,44 +733,35 @@ func defaultCheckPathCase(path string) error {
 	return nil
 }
 
-func (v *View) setBuildConfiguration() (isValid bool) {
-	defer func() {
-		v.hasValidBuildConfiguration = isValid
-	}()
+func validBuildConfiguration(folder span.URI, ws *workspaceInformation, modFiles map[span.URI]struct{}) bool {
 	// Since we only really understand the `go` command, if the user has a
 	// different GOPACKAGESDRIVER, assume that their configuration is valid.
-	if v.hasGopackagesDriver {
+	if ws.hasGopackagesDriver {
 		return true
 	}
-	// Check if the user is working within a module.
-	if v.modURI != "" {
+	// Check if the user is working within a module or if we have found
+	// multiple modules in the workspace.
+	if len(modFiles) > 0 {
 		return true
 	}
 	// The user may have a multiple directories in their GOPATH.
 	// Check if the workspace is within any of them.
-	for _, gp := range filepath.SplitList(v.gopath) {
-		if isSubdirectory(filepath.Join(gp, "src"), v.folder.Filename()) {
+	for _, gp := range filepath.SplitList(ws.gopath) {
+		if source.InDir(filepath.Join(gp, "src"), folder.Filename()) {
 			return true
 		}
 	}
 	return false
 }
 
-func isSubdirectory(root, leaf string) bool {
-	rel, err := filepath.Rel(root, leaf)
-	return err == nil && !strings.HasPrefix(rel, "..")
-}
-
-// setGoEnv sets the view's various GO* values. It also returns the view's
-// GOMOD value, which need not be cached.
-func (v *View) setGoEnv(ctx context.Context, configEnv []string) (string, error) {
-	var gomod string
+// getGoEnv gets the view's various GO* values.
+func (s *Session) getGoEnv(ctx context.Context, folder string, configEnv []string) (environmentVariables, map[string]string, error) {
+	envVars := environmentVariables{}
 	vars := map[string]*string{
-		"GOCACHE":    &v.gocache,
-		"GOPATH":     &v.gopath,
-		"GOPRIVATE":  &v.goprivate,
-		"GOMODCACHE": &v.gomodcache,
-		"GOMOD":      &gomod,
+		"GOCACHE":    &envVars.gocache,
+		"GOPATH":     &envVars.gopath,
+		"GOPRIVATE":  &envVars.goprivate,
+		"GOMODCACHE": &envVars.gomodcache,
 	}
 	// We can save ~200 ms by requesting only the variables we care about.
 	args := append([]string{"-json"}, imports.RequiredGoEnvVars...)
@@ -810,40 +773,28 @@ func (v *View) setGoEnv(ctx context.Context, configEnv []string) (string, error)
 		Verb:       "env",
 		Args:       args,
 		Env:        configEnv,
-		WorkingDir: v.Folder().Filename(),
+		WorkingDir: folder,
 	}
 	// Don't go through runGoCommand, as we don't need a temporary -modfile to
 	// run `go env`.
-	stdout, err := v.session.gocmdRunner.Run(ctx, inv)
+	stdout, err := s.gocmdRunner.Run(ctx, inv)
 	if err != nil {
-		return "", err
+		return environmentVariables{}, nil, err
 	}
-	if err := json.Unmarshal(stdout.Bytes(), &v.goEnv); err != nil {
-		return "", err
+	env := make(map[string]string)
+	if err := json.Unmarshal(stdout.Bytes(), &env); err != nil {
+		return environmentVariables{}, nil, err
 	}
 
 	for key, ptr := range vars {
-		*ptr = v.goEnv[key]
+		*ptr = env[key]
 	}
 
 	// Old versions of Go don't have GOMODCACHE, so emulate it.
-	if v.gomodcache == "" && v.gopath != "" {
-		v.gomodcache = filepath.Join(filepath.SplitList(v.gopath)[0], "pkg/mod")
+	if envVars.gomodcache == "" && envVars.gopath != "" {
+		envVars.gomodcache = filepath.Join(filepath.SplitList(envVars.gopath)[0], "pkg/mod")
 	}
-
-	// The value of GOPACKAGESDRIVER is not returned through the go command.
-	gopackagesdriver := os.Getenv("GOPACKAGESDRIVER")
-	for _, s := range configEnv {
-		split := strings.SplitN(s, "=", 2)
-		if split[0] == "GOPACKAGESDRIVER" {
-			gopackagesdriver = split[1]
-		}
-	}
-	// A user may also have a gopackagesdriver binary on their machine, which
-	// works the same way as setting GOPACKAGESDRIVER.
-	tool, _ := exec.LookPath("gopackagesdriver")
-	v.hasGopackagesDriver = gopackagesdriver != "off" && (gopackagesdriver != "" || tool != "")
-	return gomod, nil
+	return envVars, env, err
 }
 
 func (v *View) IsGoPrivatePath(target string) bool {
@@ -892,28 +843,36 @@ func globsMatchPath(globs, target string) bool {
 	return false
 }
 
-// This function will return the main go.mod file for this folder if it exists
-// and whether the -modfile flag exists for this version of go.
-func (v *View) modfileFlagExists(ctx context.Context, env []string) (bool, error) {
-	// Check the go version by running "go list" with modules off.
-	// Borrowed from internal/imports/mod.go:620.
-	const format = `{{range context.ReleaseTags}}{{if eq . "go1.14"}}{{.}}{{end}}{{end}}`
-	folder := v.folder.Filename()
-	inv := gocommand.Invocation{
-		Verb:       "list",
-		Args:       []string{"-e", "-f", format},
-		Env:        append(env, "GO111MODULE=off"),
-		WorkingDir: v.root.Filename(),
+var modFlagRegexp = regexp.MustCompile(`-mod[ =](\w+)`)
+
+// TODO(rstambler): Consolidate modURI and modContent back into a FileHandle
+// after we have a version of the workspace go.mod file on disk. Getting a
+// FileHandle from the cache for temporary files is problematic, since we
+// cannot delete it.
+func (s *snapshot) needsModEqualsMod(ctx context.Context, modURI span.URI, modContent []byte) (bool, error) {
+	if s.view.goversion < 16 || s.workspaceMode()&moduleMode == 0 {
+		return false, nil
 	}
-	stdout, err := v.session.gocmdRunner.Run(ctx, inv)
+
+	matches := modFlagRegexp.FindStringSubmatch(s.view.goEnv["GOFLAGS"])
+	var modFlag string
+	if len(matches) != 0 {
+		modFlag = matches[1]
+	}
+	if modFlag != "" {
+		// Don't override an explicit '-mod=vendor' argument.
+		// We do want to override '-mod=readonly': it would break various module code lenses,
+		// and on 1.16 we know -modfile is available, so we won't mess with go.mod anyway.
+		return modFlag == "vendor", nil
+	}
+
+	modFile, err := modfile.Parse(modURI.Filename(), modContent, nil)
 	if err != nil {
 		return false, err
 	}
-	// If the output is not go1.14 or an empty string, then it could be an error.
-	lines := strings.Split(stdout.String(), "\n")
-	if len(lines) < 2 && stdout.String() != "" {
-		event.Error(ctx, "unexpected stdout when checking for go1.14", errors.Errorf("%q", stdout), tag.Directory.Of(folder))
-		return false, nil
+	if fi, err := os.Stat(filepath.Join(s.view.rootURI.Filename(), "vendor")); err != nil || !fi.IsDir() {
+		return true, nil
 	}
-	return lines[0] == "go1.14", nil
+	vendorEnabled := modFile.Go != nil && modFile.Go.Version != "" && semver.Compare("v"+modFile.Go.Version, "v1.14") >= 0
+	return !vendorEnabled, nil
 }

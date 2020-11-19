@@ -20,7 +20,11 @@ import (
 )
 
 type Command struct {
-	Name, Title string
+	Title string
+	Name  string
+
+	// Async controls whether the command executes asynchronously.
+	Async bool
 
 	// appliesFn is an optional field to indicate whether or not a command can
 	// be applied to the given inputs. If it returns false, we should not
@@ -30,6 +34,15 @@ type Command struct {
 	// suggestedFixFn is an optional field to generate the edits that the
 	// command produces for the given inputs.
 	suggestedFixFn SuggestedFixFunc
+}
+
+// CommandPrefix is the prefix of all command names gopls uses externally.
+const CommandPrefix = "gopls."
+
+// ID adds the CommandPrefix to the command name, in order to avoid
+// collisions with other language servers.
+func (c Command) ID() string {
+	return CommandPrefix + c.Name
 }
 
 type AppliesFunc func(fset *token.FileSet, rng span.Range, src []byte, file *ast.File, pkg *types.Package, info *types.Info) bool
@@ -50,11 +63,14 @@ var Commands = []*Command{
 	CommandTest,
 	CommandTidy,
 	CommandUndeclaredName,
+	CommandAddDependency,
 	CommandUpgradeDependency,
+	CommandRemoveDependency,
 	CommandVendor,
 	CommandExtractVariable,
 	CommandExtractFunction,
 	CommandToggleDetails,
+	CommandGenerateGoplsMod,
 }
 
 var (
@@ -62,6 +78,7 @@ var (
 	CommandTest = &Command{
 		Name:  "test",
 		Title: "Run test(s)",
+		Async: true,
 	}
 
 	// CommandGenerate runs `go generate` for a given directory.
@@ -82,10 +99,22 @@ var (
 		Title: "Run go mod vendor",
 	}
 
+	// CommandAddDependency adds a dependency.
+	CommandAddDependency = &Command{
+		Name:  "add_dependency",
+		Title: "Add dependency",
+	}
+
 	// CommandUpgradeDependency upgrades a dependency.
 	CommandUpgradeDependency = &Command{
 		Name:  "upgrade_dependency",
 		Title: "Upgrade dependency",
+	}
+
+	// CommandRemoveDependency removes a dependency.
+	CommandRemoveDependency = &Command{
+		Name:  "remove_dependency",
+		Title: "Remove dependency",
 	}
 
 	// CommandRegenerateCgo regenerates cgo definitions.
@@ -104,6 +133,7 @@ var (
 	// values.
 	CommandFillStruct = &Command{
 		Name:           "fill_struct",
+		Title:          "Fill struct",
 		suggestedFixFn: fillstruct.SuggestedFix,
 	}
 
@@ -111,6 +141,7 @@ var (
 	// name.
 	CommandUndeclaredName = &Command{
 		Name:           "undeclared_name",
+		Title:          "Undeclared name",
 		suggestedFixFn: undeclaredname.SuggestedFix,
 	}
 
@@ -134,6 +165,12 @@ var (
 			_, ok, _ := canExtractFunction(fset, rng, src, file, info)
 			return ok
 		},
+	}
+
+	// CommandGenerateGoplsMod (re)generates the gopls.mod file.
+	CommandGenerateGoplsMod = &Command{
+		Name:  "generate_gopls_mod",
+		Title: "Generate gopls.mod",
 	}
 )
 

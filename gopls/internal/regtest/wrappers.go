@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/lsp/source"
 	errors "golang.org/x/xerrors"
 )
 
@@ -66,13 +67,6 @@ func (e *Env) OpenFile(name string) {
 	}
 }
 
-func (e *Env) OpenFileWithContent(name, content string) {
-	e.T.Helper()
-	if err := e.Editor.OpenFileWithContent(e.Ctx, name, content); err != nil {
-		e.T.Fatal(err)
-	}
-}
-
 // CreateBuffer creates a buffer in the editor, calling t.Fatal on any error.
 func (e *Env) CreateBuffer(name string, content string) {
 	e.T.Helper()
@@ -96,6 +90,28 @@ func (e *Env) EditBuffer(name string, edits ...fake.Edit) {
 	if err := e.Editor.EditBuffer(e.Ctx, name, edits); err != nil {
 		e.T.Fatal(err)
 	}
+}
+
+func (e *Env) SetBufferContent(name string, content string) {
+	e.T.Helper()
+	if err := e.Editor.SetBufferContent(e.Ctx, name, content); err != nil {
+		e.T.Fatal(err)
+	}
+}
+
+// RegexpRange returns the range of the first match for re in the buffer
+// specified by name, calling t.Fatal on any error. It first searches for the
+// position in open buffers, then in workspace files.
+func (e *Env) RegexpRange(name, re string) (fake.Pos, fake.Pos) {
+	e.T.Helper()
+	start, end, err := e.Editor.RegexpRange(name, re)
+	if err == fake.ErrUnknownBuffer {
+		start, end, err = e.Sandbox.Workdir.RegexpRange(name, re)
+	}
+	if err != nil {
+		e.T.Fatalf("RegexpRange: %v, %v", name, err)
+	}
+	return start, end
 }
 
 // RegexpSearch returns the starting position of the first match for re in the
@@ -223,6 +239,14 @@ func (e *Env) RunGenerate(dir string) {
 	e.CheckForFileChanges()
 }
 
+// RunGoCommand runs the given command in the sandbox's default working
+// directory.
+func (e *Env) RunGoCommand(verb string, args ...string) {
+	if err := e.Sandbox.RunGoCommand(e.Ctx, "", verb, args); err != nil {
+		e.T.Fatal(err)
+	}
+}
+
 // CheckForFileChanges triggers a manual poll of the workspace for any file
 // changes since creation, or since last polling. It is a workaround for the
 // lack of true file watching support in the fake workspace.
@@ -244,6 +268,29 @@ func (e *Env) CodeLens(path string) []protocol.CodeLens {
 	return lens
 }
 
+// ExecuteCodeLensCommand executes the command for the code lens matching the
+// given command name.
+func (e *Env) ExecuteCodeLensCommand(path string, cmd *source.Command) {
+	lenses := e.CodeLens(path)
+	var lens protocol.CodeLens
+	var found bool
+	for _, l := range lenses {
+		if l.Command.Command == cmd.ID() {
+			lens = l
+			found = true
+		}
+	}
+	if !found {
+		e.T.Fatalf("found no command with the ID %s", cmd.ID())
+	}
+	if _, err := e.Editor.ExecuteCommand(e.Ctx, &protocol.ExecuteCommandParams{
+		Command:   lens.Command.Command,
+		Arguments: lens.Command.Arguments,
+	}); err != nil {
+		e.T.Fatal(err)
+	}
+}
+
 // References calls textDocument/references for the given path at the given
 // position.
 func (e *Env) References(path string, pos fake.Pos) []protocol.Location {
@@ -255,6 +302,16 @@ func (e *Env) References(path string, pos fake.Pos) []protocol.Location {
 	return locations
 }
 
+// Completion executes a completion request on the server.
+func (e *Env) Completion(path string, pos fake.Pos) *protocol.CompletionList {
+	e.T.Helper()
+	completions, err := e.Editor.Completion(e.Ctx, path, pos)
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	return completions
+}
+
 // CodeAction calls testDocument/codeAction for the given path, and calls
 // t.Fatal if there are errors.
 func (e *Env) CodeAction(path string) []protocol.CodeAction {
@@ -264,6 +321,15 @@ func (e *Env) CodeAction(path string) []protocol.CodeAction {
 		e.T.Fatal(err)
 	}
 	return actions
+}
+
+func (e *Env) changeConfiguration(t *testing.T, config *fake.EditorConfig) {
+	e.Editor.Config = *config
+	if err := e.Editor.Server.DidChangeConfiguration(e.Ctx, &protocol.DidChangeConfigurationParams{
+		// gopls currently ignores the Settings field
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // ChangeEnv modifies the editor environment and reconfigures the LSP client.

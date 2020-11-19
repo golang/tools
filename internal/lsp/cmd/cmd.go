@@ -170,6 +170,7 @@ func (app *Application) mainCommands() []tool.Application {
 		&app.Serve,
 		&version{app: app},
 		&bug{},
+		&apiJSON{},
 	}
 }
 
@@ -188,9 +189,11 @@ func (app *Application) featureCommands() []tool.Application {
 		&prepareRename{app: app},
 		&references{app: app},
 		&rename{app: app},
+		&semtok{app: app},
 		&signature{app: app},
 		&suggestedFix{app: app},
 		&symbols{app: app},
+		&workspace{app: app},
 		&workspaceSymbol{app: app},
 	}
 }
@@ -210,9 +213,9 @@ func (app *Application) connect(ctx context.Context) (*connection, error) {
 	case strings.HasPrefix(app.Remote, "internal@"):
 		internalMu.Lock()
 		defer internalMu.Unlock()
-		opts := source.DefaultOptions()
+		opts := source.DefaultOptions().Clone()
 		if app.options != nil {
-			app.options(&opts)
+			app.options(opts)
 		}
 		key := fmt.Sprintf("%s %v", app.wd, opts)
 		if c := internalConnections[key]; c != nil {
@@ -261,7 +264,7 @@ func (app *Application) connectRemote(ctx context.Context, remote string) (*conn
 var matcherString = map[source.SymbolMatcher]string{
 	source.SymbolFuzzy:           "fuzzy",
 	source.SymbolCaseSensitive:   "caseSensitive",
-	source.SymbolCaseInsensitive: "default",
+	source.SymbolCaseInsensitive: "caseInsensitive",
 }
 
 func (c *connection) initialize(ctx context.Context, options func(*source.Options)) error {
@@ -270,14 +273,20 @@ func (c *connection) initialize(ctx context.Context, options func(*source.Option
 	params.Capabilities.Workspace.Configuration = true
 
 	// Make sure to respect configured options when sending initialize request.
-	opts := source.DefaultOptions()
+	opts := source.DefaultOptions().Clone()
 	if options != nil {
-		options(&opts)
+		options(opts)
 	}
 	params.Capabilities.TextDocument.Hover = protocol.HoverClientCapabilities{
 		ContentFormat: []protocol.MarkupKind{opts.PreferredContentFormat},
 	}
 	params.Capabilities.TextDocument.DocumentSymbol.HierarchicalDocumentSymbolSupport = opts.HierarchicalDocumentSymbolSupport
+	params.Capabilities.TextDocument.SemanticTokens = protocol.SemanticTokensClientCapabilities{}
+	params.Capabilities.TextDocument.SemanticTokens.Formats = []string{"relative"}
+	params.Capabilities.TextDocument.SemanticTokens.Requests.Range = true
+	params.Capabilities.TextDocument.SemanticTokens.Requests.Full = true
+	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = lsp.SemanticTypes()
+	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = lsp.SemanticModifiers()
 	params.InitializationOptions = map[string]interface{}{
 		"symbolMatcher": matcherString[opts.SymbolMatcher],
 	}
@@ -491,6 +500,19 @@ func (c *connection) AddFile(ctx context.Context, uri span.URI) *cmdFile {
 		file.err = errors.Errorf("%v: %v", uri, err)
 	}
 	return file
+}
+
+func (c *connection) semanticTokens(ctx context.Context, file span.URI) (*protocol.SemanticTokens, error) {
+	p := &protocol.SemanticTokensParams{
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: protocol.URIFromSpanURI(file),
+		},
+	}
+	resp, err := c.Server.SemanticTokensFull(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
 func (c *connection) diagnoseFiles(ctx context.Context, files []span.URI) error {

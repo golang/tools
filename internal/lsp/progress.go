@@ -8,6 +8,7 @@ import (
 	"context"
 	"math/rand"
 	"strconv"
+	"strings"
 	"sync"
 
 	"golang.org/x/tools/internal/event"
@@ -162,6 +163,9 @@ func (wd *workDone) doCancel() {
 
 // report reports an update on WorkDone report back to the client.
 func (wd *workDone) report(message string, percentage float64) {
+	if wd == nil {
+		return
+	}
 	wd.cancelMu.Lock()
 	cancelled := wd.cancelled
 	wd.cancelMu.Unlock()
@@ -173,6 +177,7 @@ func (wd *workDone) report(message string, percentage float64) {
 		// to send incremental messages.
 		return
 	}
+	message = strings.TrimSuffix(message, "\n")
 	err := wd.client.Progress(wd.ctx, &protocol.ProgressParams{
 		Token: wd.token,
 		Value: &protocol.WorkDoneProgressReport{
@@ -192,6 +197,9 @@ func (wd *workDone) report(message string, percentage float64) {
 
 // end reports a workdone completion back to the client.
 func (wd *workDone) end(message string) {
+	if wd == nil {
+		return
+	}
 	var err error
 	switch {
 	case wd.err != nil:

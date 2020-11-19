@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"go/types"
 	"io"
@@ -20,6 +19,8 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/event"
@@ -44,6 +45,17 @@ type snapshot struct {
 
 	// builtin pins the AST and package for builtin.go in memory.
 	builtin *builtinPackageHandle
+
+	// The snapshot's initialization state is controlled by the fields below.
+	//
+	// initializeOnce guards snapshot initialization. Each snapshot is
+	// initialized at most once: reinitialization is triggered on later snapshots
+	// by invalidating this field.
+	initializeOnce *sync.Once
+	// initializedErr holds the last error resulting from initialization. If
+	// initialization fails, we only retry when the the workspace modules change,
+	// to avoid too many go/packages calls.
+	initializedErr error
 
 	// mu guards all of the maps in the snapshot.
 	mu sync.Mutex
@@ -77,10 +89,6 @@ type snapshot struct {
 	// when the view is created.
 	workspacePackages map[packageID]packagePath
 
-	// workspaceDirectories are the directories containing workspace packages.
-	// They are the view's root, as well as any replace targets.
-	workspaceDirectories map[span.URI]struct{}
-
 	// unloadableFiles keeps track of files that we've failed to load.
 	unloadableFiles map[span.URI]struct{}
 
@@ -94,6 +102,9 @@ type snapshot struct {
 	modTidyHandles    map[span.URI]*modTidyHandle
 	modUpgradeHandles map[span.URI]*modUpgradeHandle
 	modWhyHandles     map[span.URI]*modWhyHandle
+
+	workspace          *workspace
+	workspaceDirHandle *memoize.Handle
 }
 
 type packageKey struct {
@@ -118,28 +129,76 @@ func (s *snapshot) FileSet() *token.FileSet {
 	return s.view.session.cache.fset
 }
 
-// config returns a *packages.Config with the working directory set to the
-// view's root.
-func (s *snapshot) config(ctx context.Context) *packages.Config {
-	return s.configWithDir(ctx, s.view.root.Filename())
+func (s *snapshot) ModFiles() []span.URI {
+	var uris []span.URI
+	for modURI := range s.workspace.activeModFiles() {
+		uris = append(uris, modURI)
+	}
+	return uris
 }
 
-// configWithDir returns the configuration used for the snapshot's interaction
-// with the go/packages API. It uses the given working directory.
+func (s *snapshot) ValidBuildConfiguration() bool {
+	return validBuildConfiguration(s.view.rootURI, &s.view.workspaceInformation, s.workspace.activeModFiles())
+}
+
+// workspaceMode describes the way in which the snapshot's workspace should
+// be loaded.
+func (s *snapshot) workspaceMode() workspaceMode {
+	var mode workspaceMode
+
+	// If the view has an invalid configuration, don't build the workspace
+	// module.
+	validBuildConfiguration := s.ValidBuildConfiguration()
+	if !validBuildConfiguration {
+		return mode
+	}
+	// If the view is not in a module and contains no modules, but still has a
+	// valid workspace configuration, do not create the workspace module.
+	// It could be using GOPATH or a different build system entirely.
+	if len(s.workspace.activeModFiles()) == 0 && validBuildConfiguration {
+		return mode
+	}
+	mode |= moduleMode
+	options := s.view.Options()
+	// The -modfile flag is available for Go versions >= 1.14.
+	if options.TempModfile && s.view.workspaceInformation.goversion >= 14 {
+		mode |= tempModfile
+	}
+	// If the user is intentionally limiting their workspace scope, don't
+	// enable multi-module workspace mode.
+	// TODO(rstambler): This should only change the calculation of the root,
+	// not the mode.
+	if !options.ExpandWorkspaceToModule {
+		return mode
+	}
+	// The workspace module has been disabled by the user.
+	if !options.ExperimentalWorkspaceModule {
+		return mode
+	}
+	mode |= usesWorkspaceModule
+	return mode
+}
+
+// config returns the configuration used for the snapshot's interaction with
+// the go/packages API. It uses the given working directory.
+//
 // TODO(rstambler): go/packages requires that we do not provide overlays for
 // multiple modules in on config, so buildOverlay needs to filter overlays by
 // module.
-func (s *snapshot) configWithDir(ctx context.Context, dir string) *packages.Config {
+func (s *snapshot) config(ctx context.Context, inv *gocommand.Invocation) *packages.Config {
 	s.view.optionsMu.Lock()
-	env, buildFlags := s.view.envLocked()
 	verboseOutput := s.view.options.VerboseOutput
 	s.view.optionsMu.Unlock()
 
+	// Forcibly disable GOPACKAGESDRIVER. It's incompatible with the
+	// packagesinternal APIs we use, and we really only support the go commmand
+	// anyway.
+	env := append(append([]string{}, inv.Env...), "GOPACKAGESDRIVER=off")
 	cfg := &packages.Config{
 		Context:    ctx,
-		Dir:        dir,
-		Env:        append([]string{}, env...),
-		BuildFlags: append([]string{}, buildFlags...),
+		Dir:        inv.WorkingDir,
+		Env:        env,
+		BuildFlags: inv.BuildFlags,
 		Mode: packages.NeedName |
 			packages.NeedFiles |
 			packages.NeedCompiledGoFiles |
@@ -159,71 +218,112 @@ func (s *snapshot) configWithDir(ctx context.Context, dir string) *packages.Conf
 		},
 		Tests: true,
 	}
+	packagesinternal.SetModFile(cfg, inv.ModFile)
+	packagesinternal.SetModFlag(cfg, inv.ModFlag)
 	// We want to type check cgo code if go/types supports it.
 	if typesinternal.SetUsesCgo(&types.Config{}) {
 		cfg.Mode |= packages.LoadMode(packagesinternal.TypecheckCgo)
 	}
 	packagesinternal.SetGoCmdRunner(cfg, s.view.session.gocmdRunner)
-
 	return cfg
 }
 
-func (s *snapshot) RunGoCommandDirect(ctx context.Context, verb string, args []string) error {
-	_, runner, inv, cleanup, err := s.goCommandInvocation(ctx, false, verb, args)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	_, err = runner.Run(ctx, *inv)
-	return err
-}
-
-func (s *snapshot) RunGoCommand(ctx context.Context, verb string, args []string) (*bytes.Buffer, error) {
-	_, runner, inv, cleanup, err := s.goCommandInvocation(ctx, true, verb, args)
+func (s *snapshot) RunGoCommandDirect(ctx context.Context, mode source.InvocationMode, inv *gocommand.Invocation) (*bytes.Buffer, error) {
+	_, inv, cleanup, err := s.goCommandInvocation(ctx, mode, inv)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
 
-	return runner.Run(ctx, *inv)
+	return s.view.session.gocmdRunner.Run(ctx, *inv)
 }
 
-func (s *snapshot) RunGoCommandPiped(ctx context.Context, verb string, args []string, stdout, stderr io.Writer) error {
-	_, runner, inv, cleanup, err := s.goCommandInvocation(ctx, true, verb, args)
+func (s *snapshot) RunGoCommandPiped(ctx context.Context, mode source.InvocationMode, inv *gocommand.Invocation, stdout, stderr io.Writer) error {
+	_, inv, cleanup, err := s.goCommandInvocation(ctx, mode, inv)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
-	return runner.RunPiped(ctx, *inv, stdout, stderr)
+	return s.view.session.gocmdRunner.RunPiped(ctx, *inv, stdout, stderr)
 }
 
-// Assumes that modURI is only provided when the -modfile flag is enabled.
-func (s *snapshot) goCommandInvocation(ctx context.Context, allowTempModfile bool, verb string, args []string) (tmpURI span.URI, runner *gocommand.Runner, inv *gocommand.Invocation, cleanup func(), err error) {
+func (s *snapshot) goCommandInvocation(ctx context.Context, mode source.InvocationMode, inv *gocommand.Invocation) (tmpURI span.URI, updatedInv *gocommand.Invocation, cleanup func(), err error) {
+	s.view.optionsMu.Lock()
+	inv.Env = append(append(append(os.Environ(), s.view.options.EnvSlice()...), inv.Env...), "GO111MODULE="+s.view.go111module)
+	inv.BuildFlags = append([]string{}, s.view.options.BuildFlags...)
+	s.view.optionsMu.Unlock()
 	cleanup = func() {} // fallback
-	cfg := s.config(ctx)
-	if allowTempModfile && s.view.tmpMod {
-		modFH, err := s.GetFile(ctx, s.view.modURI)
+
+	var modURI span.URI
+	if s.workspaceMode()&moduleMode != 0 {
+		// Select the module context to use.
+		// If we're type checking, we need to use the workspace context, meaning
+		// the main (workspace) module. Otherwise, we should use the module for
+		// the passed-in working dir.
+		if mode == source.LoadWorkspace {
+			if s.workspaceMode()&usesWorkspaceModule == 0 {
+				for m := range s.workspace.activeModFiles() { // range to access the only element
+					modURI = m
+				}
+			} else {
+				var tmpDir span.URI
+				var err error
+				tmpDir, err = s.getWorkspaceDir(ctx)
+				if err != nil {
+					return "", nil, cleanup, err
+				}
+				inv.WorkingDir = tmpDir.Filename()
+				modURI = span.URIFromPath(filepath.Join(tmpDir.Filename(), "go.mod"))
+			}
+		} else {
+			modURI = s.GoModForFile(ctx, span.URIFromPath(inv.WorkingDir))
+		}
+	}
+
+	wantTempMod := mode != source.UpdateUserModFile
+	needTempMod := mode == source.WriteTemporaryModFile
+	tempMod := wantTempMod && s.workspaceMode()&tempModfile != 0
+	if needTempMod && !tempMod {
+		return "", nil, cleanup, source.ErrTmpModfileUnsupported
+	}
+
+	if tempMod {
+		if modURI == "" {
+			return "", nil, cleanup, fmt.Errorf("no go.mod file found in %s", inv.WorkingDir)
+		}
+		modFH, err := s.GetFile(ctx, modURI)
 		if err != nil {
-			return "", nil, nil, cleanup, err
+			return "", nil, cleanup, err
 		}
 		// Use the go.sum if it happens to be available.
-		sumFH, _ := s.sumFH(ctx, modFH)
-
-		tmpURI, cleanup, err = tempModFile(modFH, sumFH)
+		gosum := s.goSum(ctx, modURI)
+		tmpURI, cleanup, err = tempModFile(modFH, gosum)
 		if err != nil {
-			return "", nil, nil, cleanup, err
+			return "", nil, cleanup, err
 		}
-		cfg.BuildFlags = append(cfg.BuildFlags, fmt.Sprintf("-modfile=%s", tmpURI.Filename()))
+		inv.ModFile = tmpURI.Filename()
 	}
-	runner = packagesinternal.GetGoCmdRunner(cfg)
-	return tmpURI, runner, &gocommand.Invocation{
-		Verb:       verb,
-		Args:       args,
-		Env:        cfg.Env,
-		BuildFlags: cfg.BuildFlags,
-		WorkingDir: cfg.Dir,
-	}, cleanup, nil
+
+	var modContent []byte
+	if modURI != "" {
+		modFH, err := s.GetFile(ctx, modURI)
+		if err != nil {
+			return "", nil, cleanup, err
+		}
+		modContent, err = modFH.Read()
+		if err != nil {
+			return "", nil, nil, err
+		}
+	}
+	modMod, err := s.needsModEqualsMod(ctx, modURI, modContent)
+	if err != nil {
+		return "", nil, cleanup, err
+	}
+	if modMod {
+		inv.ModFlag = "mod"
+	}
+
+	return tmpURI, inv, cleanup, nil
 }
 
 func (s *snapshot) buildOverlay() map[string][]byte {
@@ -259,9 +359,64 @@ func hashUnsavedOverlays(files map[span.URI]source.VersionedFileHandle) string {
 func (s *snapshot) PackagesForFile(ctx context.Context, uri span.URI, mode source.TypecheckMode) ([]source.Package, error) {
 	ctx = event.Label(ctx, tag.URI.Of(uri))
 
+	phs, err := s.packageHandlesForFile(ctx, uri, mode)
+	if err != nil {
+		return nil, err
+	}
+	var pkgs []source.Package
+	for _, ph := range phs {
+		pkg, err := ph.check(ctx, s)
+		if err != nil {
+			return nil, err
+		}
+		pkgs = append(pkgs, pkg)
+	}
+	return pkgs, nil
+}
+
+func (s *snapshot) PackageForFile(ctx context.Context, uri span.URI, mode source.TypecheckMode, pkgPolicy source.PackageFilter) (source.Package, error) {
+	ctx = event.Label(ctx, tag.URI.Of(uri))
+
+	phs, err := s.packageHandlesForFile(ctx, uri, mode)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(phs) < 1 {
+		return nil, errors.Errorf("no packages")
+	}
+
+	ph := phs[0]
+	for _, handle := range phs[1:] {
+		switch pkgPolicy {
+		case source.WidestPackage:
+			if ph == nil || len(handle.CompiledGoFiles()) > len(ph.CompiledGoFiles()) {
+				ph = handle
+			}
+		case source.NarrowestPackage:
+			if ph == nil || len(handle.CompiledGoFiles()) < len(ph.CompiledGoFiles()) {
+				ph = handle
+			}
+		}
+	}
+	if ph == nil {
+		return nil, errors.Errorf("no packages in input")
+	}
+
+	return ph.check(ctx, s)
+}
+
+func (s *snapshot) packageHandlesForFile(ctx context.Context, uri span.URI, mode source.TypecheckMode) ([]*packageHandle, error) {
 	// Check if we should reload metadata for the file. We don't invalidate IDs
 	// (though we should), so the IDs will be a better source of truth than the
 	// metadata. If there are no IDs for the file, then we should also reload.
+	fh, err := s.GetFile(ctx, uri)
+	if err != nil {
+		return nil, err
+	}
+	if fh.Kind() != source.Go {
+		return nil, fmt.Errorf("no packages for non-Go file %s", uri)
+	}
 	ids := s.getIDsForURI(uri)
 	reload := len(ids) == 0
 	for _, id := range ids {
@@ -282,7 +437,7 @@ func (s *snapshot) PackagesForFile(ctx context.Context, uri span.URI, mode sourc
 		}
 	}
 	// Get the list of IDs from the snapshot again, in case it has changed.
-	var pkgs []source.Package
+	var phs []*packageHandle
 	for _, id := range s.getIDsForURI(uri) {
 		var parseModes []source.ParseMode
 		switch mode {
@@ -299,22 +454,15 @@ func (s *snapshot) PackagesForFile(ctx context.Context, uri span.URI, mode sourc
 		}
 
 		for _, parseMode := range parseModes {
-			pkg, err := s.checkedPackage(ctx, id, parseMode)
+			ph, err := s.buildPackageHandle(ctx, id, parseMode)
 			if err != nil {
 				return nil, err
 			}
-			pkgs = append(pkgs, pkg)
+			phs = append(phs, ph)
 		}
 	}
-	return pkgs, nil
-}
 
-func (s *snapshot) checkedPackage(ctx context.Context, id packageID, mode source.ParseMode) (*pkg, error) {
-	ph, err := s.buildPackageHandle(ctx, id, mode)
-	if err != nil {
-		return nil, err
-	}
-	return ph.check(ctx, s)
+	return phs, nil
 }
 
 func (s *snapshot) GetReverseDependencies(ctx context.Context, id string) ([]source.Package, error) {
@@ -336,6 +484,14 @@ func (s *snapshot) GetReverseDependencies(ctx context.Context, id string) ([]sou
 		pkgs = append(pkgs, pkg)
 	}
 	return pkgs, nil
+}
+
+func (s *snapshot) checkedPackage(ctx context.Context, id packageID, mode source.ParseMode) (*pkg, error) {
+	ph, err := s.buildPackageHandle(ctx, id, mode)
+	if err != nil {
+		return nil, err
+	}
+	return ph.check(ctx, s)
 }
 
 // transitiveReverseDependencies populates the uris map with file URIs
@@ -449,14 +605,63 @@ func (s *snapshot) workspacePackageIDs() (ids []packageID) {
 }
 
 func (s *snapshot) WorkspaceDirectories(ctx context.Context) []span.URI {
+	return s.workspace.dirs(ctx, s)
+}
+
+// allKnownSubdirs returns all of the subdirectories within the snapshot's
+// workspace directories. None of the workspace directories are included.
+func (s *snapshot) allKnownSubdirs(ctx context.Context) map[span.URI]struct{} {
+	// Don't return results until the snapshot is loaded, otherwise it may not
+	// yet "know" its files.
+	if err := s.awaitLoaded(ctx); err != nil {
+		return nil
+	}
+
+	dirs := s.workspace.dirs(ctx, s)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	var dirs []span.URI
-	for d := range s.workspaceDirectories {
-		dirs = append(dirs, d)
+	seen := make(map[span.URI]struct{})
+	for uri := range s.files {
+		dir := filepath.Dir(uri.Filename())
+		var matched span.URI
+		for _, wsDir := range dirs {
+			// Note: InDir handles symlinks, but InDirLex does not--it's too
+			// expensive to call InDir on every file in the snapshot.
+			if source.InDirLex(wsDir.Filename(), dir) {
+				matched = wsDir
+				break
+			}
+		}
+		// Don't watch any directory outside of the workspace directories.
+		if matched == "" {
+			continue
+		}
+		for {
+			if dir == "" || dir == matched.Filename() {
+				break
+			}
+			uri := span.URIFromPath(dir)
+			if _, ok := seen[uri]; ok {
+				break
+			}
+			seen[uri] = struct{}{}
+			dir = filepath.Dir(dir)
+		}
 	}
-	return dirs
+	return seen
+}
+
+// knownFilesInDir returns the files known to the given snapshot that are in
+// the given directory. It does not respect symlinks.
+func (s *snapshot) knownFilesInDir(ctx context.Context, dir span.URI) []span.URI {
+	var files []span.URI
+	for uri := range s.files {
+		if source.InDirLex(dir.Filename(), uri.Filename()) {
+			files = append(files, uri)
+		}
+	}
+	return files
 }
 
 func (s *snapshot) WorkspacePackages(ctx context.Context) ([]source.Package, error) {
@@ -505,7 +710,7 @@ func (s *snapshot) KnownPackages(ctx context.Context) ([]source.Package, error) 
 func (s *snapshot) CachedImportPaths(ctx context.Context) (map[string]source.Package, error) {
 	// Don't reload workspace package metadata.
 	// This function is meant to only return currently cached information.
-	s.view.AwaitInitialized(ctx)
+	s.AwaitInitialized(ctx)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -528,6 +733,19 @@ func (s *snapshot) CachedImportPaths(ctx context.Context) (map[string]source.Pac
 		}
 	}
 	return results, nil
+}
+
+func (s *snapshot) GoModForFile(ctx context.Context, uri span.URI) span.URI {
+	var match span.URI
+	for modURI := range s.workspace.activeModFiles() {
+		if !source.InDir(dirURI(modURI).Filename(), uri.Filename()) {
+			continue
+		}
+		if len(modURI) > len(match) {
+			match = modURI
+		}
+	}
+	return match
 }
 
 func (s *snapshot) getPackage(id packageID, mode source.ParseMode) *packageHandle {
@@ -642,9 +860,12 @@ func (s *snapshot) FindFile(uri span.URI) source.VersionedFileHandle {
 	return s.files[f.URI()]
 }
 
-// GetFile returns a File for the given URI. It will always succeed because it
-// adds the file to the managed set if needed.
-func (s *snapshot) GetFile(ctx context.Context, uri span.URI) (source.VersionedFileHandle, error) {
+// GetVersionedFile returns a File for the given URI. If the file is unknown it
+// is added to the managed set.
+//
+// GetVersionedFile succeeds even if the file does not exist. A non-nil error return
+// indicates some type of internal error, for example if ctx is cancelled.
+func (s *snapshot) GetVersionedFile(ctx context.Context, uri span.URI) (source.VersionedFileHandle, error) {
 	f, err := s.view.getFile(uri)
 	if err != nil {
 		return nil, err
@@ -652,12 +873,20 @@ func (s *snapshot) GetFile(ctx context.Context, uri span.URI) (source.VersionedF
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.getFileLocked(ctx, f)
+}
 
+// GetFile implements the fileSource interface by wrapping GetVersionedFile.
+func (s *snapshot) GetFile(ctx context.Context, uri span.URI) (source.FileHandle, error) {
+	return s.GetVersionedFile(ctx, uri)
+}
+
+func (s *snapshot) getFileLocked(ctx context.Context, f *fileBase) (source.VersionedFileHandle, error) {
 	if fh, ok := s.files[f.URI()]; ok {
 		return fh, nil
 	}
 
-	fh, err := s.view.session.cache.getFile(ctx, uri)
+	fh, err := s.view.session.cache.getFile(ctx, f.URI())
 	if err != nil {
 		return nil, err
 	}
@@ -674,17 +903,9 @@ func (s *snapshot) IsOpen(uri span.URI) bool {
 	return open
 }
 
-func (s *snapshot) IsSaved(uri span.URI) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	ovl, open := s.files[uri].(*overlay)
-	return !open || ovl.saved
-}
-
 func (s *snapshot) awaitLoaded(ctx context.Context) error {
 	// Do not return results until the snapshot's view has been initialized.
-	s.view.AwaitInitialized(ctx)
+	s.AwaitInitialized(ctx)
 
 	if err := s.reloadWorkspace(ctx); err != nil {
 		return err
@@ -698,16 +919,27 @@ func (s *snapshot) awaitLoaded(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.metadata) == 0 {
-		return s.view.initializedErr
+		return s.initializedErr
 	}
 	return nil
 }
 
+func (s *snapshot) AwaitInitialized(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-s.view.initialWorkspaceLoad:
+	}
+	// We typically prefer to run something as intensive as the IWL without
+	// blocking. I'm not sure if there is a way to do that here.
+	s.initialize(ctx, false)
+}
+
 // reloadWorkspace reloads the metadata for all invalidated workspace packages.
 func (s *snapshot) reloadWorkspace(ctx context.Context) error {
-	// If the view's build configuration is invalid, we cannot reload by package path.
-	// Just reload the directory instead.
-	if !s.view.hasValidBuildConfiguration {
+	// If the view's build configuration is invalid, we cannot reload by
+	// package path. Just reload the directory instead.
+	if !s.ValidBuildConfiguration() {
 		return s.load(ctx, viewLoadScope("LOAD_INVALID_VIEW"))
 	}
 
@@ -785,6 +1017,11 @@ func (s *snapshot) orphanedFileScopes() []interface{} {
 		if !contains(s.view.session.viewsOf(uri), s.view) {
 			continue
 		}
+		// If the file is not open and is in a vendor directory, don't treat it
+		// like a workspace package.
+		if _, ok := fh.(*overlay); !ok && inVendor(uri) {
+			continue
+		}
 		// Don't reload metadata for files we've already deemed unloadable.
 		if _, ok := s.unloadableFiles[uri]; ok {
 			continue
@@ -809,34 +1046,62 @@ func contains(views []*View, view *View) bool {
 	return false
 }
 
+func inVendor(uri span.URI) bool {
+	toSlash := filepath.ToSlash(uri.Filename())
+	if !strings.Contains(toSlash, "/vendor/") {
+		return false
+	}
+	// Only packages in _subdirectories_ of /vendor/ are considered vendored
+	// (/vendor/a/foo.go is vendored, /vendor/foo.go is not).
+	split := strings.Split(toSlash, "/vendor/")
+	if len(split) < 2 {
+		return false
+	}
+	return strings.Contains(split[1], "/")
+}
+
 func generationName(v *View, snapshotID uint64) string {
 	return fmt.Sprintf("v%v/%v", v.id, snapshotID)
 }
 
-func (s *snapshot) clone(ctx context.Context, withoutURIs map[span.URI]source.VersionedFileHandle, forceReloadMetadata bool) *snapshot {
+func (s *snapshot) clone(ctx context.Context, changes map[span.URI]*fileChange, forceReloadMetadata bool) (*snapshot, bool) {
+	// Track some important types of changes.
+	var (
+		vendorChanged  bool
+		modulesChanged bool
+	)
+	newWorkspace, workspaceChanged := s.workspace.invalidate(ctx, changes)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	newGen := s.view.session.cache.store.Generation(generationName(s.view, s.id+1))
 	result := &snapshot{
-		id:                   s.id + 1,
-		generation:           newGen,
-		view:                 s.view,
-		builtin:              s.builtin,
-		ids:                  make(map[span.URI][]packageID),
-		importedBy:           make(map[packageID][]packageID),
-		metadata:             make(map[packageID]*metadata),
-		packages:             make(map[packageKey]*packageHandle),
-		actions:              make(map[actionKey]*actionHandle),
-		files:                make(map[span.URI]source.VersionedFileHandle),
-		goFiles:              make(map[parseKey]*parseGoHandle),
-		workspaceDirectories: make(map[span.URI]struct{}),
-		workspacePackages:    make(map[packageID]packagePath),
-		unloadableFiles:      make(map[span.URI]struct{}),
-		parseModHandles:      make(map[span.URI]*parseModHandle),
-		modTidyHandles:       make(map[span.URI]*modTidyHandle),
-		modUpgradeHandles:    make(map[span.URI]*modUpgradeHandle),
-		modWhyHandles:        make(map[span.URI]*modWhyHandle),
+		id:                s.id + 1,
+		generation:        newGen,
+		view:              s.view,
+		builtin:           s.builtin,
+		initializeOnce:    s.initializeOnce,
+		initializedErr:    s.initializedErr,
+		ids:               make(map[span.URI][]packageID),
+		importedBy:        make(map[packageID][]packageID),
+		metadata:          make(map[packageID]*metadata),
+		packages:          make(map[packageKey]*packageHandle),
+		actions:           make(map[actionKey]*actionHandle),
+		files:             make(map[span.URI]source.VersionedFileHandle),
+		goFiles:           make(map[parseKey]*parseGoHandle),
+		workspacePackages: make(map[packageID]packagePath),
+		unloadableFiles:   make(map[span.URI]struct{}),
+		parseModHandles:   make(map[span.URI]*parseModHandle),
+		modTidyHandles:    make(map[span.URI]*modTidyHandle),
+		modUpgradeHandles: make(map[span.URI]*modUpgradeHandle),
+		modWhyHandles:     make(map[span.URI]*modWhyHandle),
+		workspace:         newWorkspace,
+	}
+
+	if !workspaceChanged && s.workspaceDirHandle != nil {
+		result.workspaceDirHandle = s.workspaceDirHandle
+		newGen.Inherit(s.workspaceDirHandle)
 	}
 
 	if s.builtin != nil {
@@ -847,22 +1112,18 @@ func (s *snapshot) clone(ctx context.Context, withoutURIs map[span.URI]source.Ve
 	for k, v := range s.files {
 		result.files[k] = v
 	}
+
 	// Copy the set of unloadable files.
 	for k, v := range s.unloadableFiles {
 		result.unloadableFiles[k] = v
 	}
 	// Copy all of the modHandles.
 	for k, v := range s.parseModHandles {
-		newGen.Inherit(v.handle)
 		result.parseModHandles[k] = v
-	}
-	// Copy all of the workspace directories. They may be reset later.
-	for k, v := range s.workspaceDirectories {
-		result.workspaceDirectories[k] = v
 	}
 
 	for k, v := range s.goFiles {
-		if _, ok := withoutURIs[k.file.URI]; ok {
+		if _, ok := changes[k.file.URI]; ok {
 			continue
 		}
 		newGen.Inherit(v.handle)
@@ -873,46 +1134,58 @@ func (s *snapshot) clone(ctx context.Context, withoutURIs map[span.URI]source.Ve
 	// Copy all of the go.mod-related handles. They may be invalidated later,
 	// so we inherit them at the end of the function.
 	for k, v := range s.modTidyHandles {
-		if _, ok := withoutURIs[k]; ok {
+		if _, ok := changes[k]; ok {
 			continue
 		}
 		result.modTidyHandles[k] = v
 	}
 	for k, v := range s.modUpgradeHandles {
-		if _, ok := withoutURIs[k]; ok {
+		if _, ok := changes[k]; ok {
 			continue
 		}
 		result.modUpgradeHandles[k] = v
 	}
 	for k, v := range s.modWhyHandles {
-		if _, ok := withoutURIs[k]; ok {
+		if _, ok := changes[k]; ok {
 			continue
 		}
 		result.modWhyHandles[k] = v
 	}
 
-	// transitiveIDs keeps track of transitive reverse dependencies.
-	// If an ID is present in the map, invalidate its types.
-	// If an ID's value is true, invalidate its metadata too.
-	transitiveIDs := make(map[packageID]bool)
-	for withoutURI, currentFH := range withoutURIs {
-		directIDs := map[packageID]struct{}{}
-
-		// Collect all of the package IDs that correspond to the given file.
-		// TODO: if the file has moved into a new package, we should invalidate that too.
-		for _, id := range s.ids[withoutURI] {
-			directIDs[id] = struct{}{}
+	// directIDs keeps track of package IDs that have directly changed.
+	// It maps id->invalidateMetadata.
+	directIDs := map[packageID]bool{}
+	// Invalidate all package metadata if the workspace module has changed.
+	if workspaceChanged {
+		for k := range s.metadata {
+			directIDs[k] = true
 		}
+	}
+
+	for uri, change := range changes {
+		// Maybe reinitialize the view if we see a change in the vendor
+		// directory.
+		if inVendor(uri) {
+			vendorChanged = true
+		}
+
 		// The original FileHandle for this URI is cached on the snapshot.
-		originalFH := s.files[withoutURI]
+		originalFH := s.files[uri]
 
 		// Check if the file's package name or imports have changed,
 		// and if so, invalidate this file's packages' metadata.
-		invalidateMetadata := forceReloadMetadata || s.shouldInvalidateMetadata(ctx, originalFH, currentFH)
+		invalidateMetadata := forceReloadMetadata || s.shouldInvalidateMetadata(ctx, result, originalFH, change.fileHandle)
+
+		// Mark all of the package IDs containing the given file.
+		// TODO: if the file has moved into a new package, we should invalidate that too.
+		filePackages := guessPackagesForURI(uri, s.ids)
+		for _, id := range filePackages {
+			directIDs[id] = directIDs[id] || invalidateMetadata
+		}
 
 		// Invalidate the previous modTidyHandle if any of the files have been
 		// saved or if any of the metadata has been invalidated.
-		if invalidateMetadata || fileWasSaved(originalFH, currentFH) {
+		if invalidateMetadata || fileWasSaved(originalFH, change.fileHandle) {
 			// TODO(rstambler): Only delete mod handles for which the
 			// withoutURI is relevant.
 			for k := range s.modTidyHandles {
@@ -925,74 +1198,49 @@ func (s *snapshot) clone(ctx context.Context, withoutURIs map[span.URI]source.Ve
 				delete(result.modWhyHandles, k)
 			}
 		}
-		if currentFH.Kind() == source.Mod {
-			// If the view's go.mod file's contents have changed, invalidate the
-			// metadata for every known package in the snapshot.
-			if invalidateMetadata {
-				for k := range s.packages {
-					directIDs[k.id] = struct{}{}
-				}
-			}
-
-			delete(result.parseModHandles, withoutURI)
-
-			if currentFH.URI() == s.view.modURI {
-				// The go.mod's replace directives may have changed. We may
-				// need to update our set of workspace directories. Use the new
-				// snapshot, as it can be locked without causing issues.
-				result.workspaceDirectories = result.findWorkspaceDirectories(ctx, currentFH)
+		if isGoMod(uri) {
+			// If the view's go.mod file's contents have changed, invalidate
+			// the metadata for every known package in the snapshot.
+			delete(result.parseModHandles, uri)
+			if _, ok := result.workspace.activeModFiles()[uri]; ok {
+				modulesChanged = true
 			}
 		}
-
-		// If this is a file we don't yet know about,
-		// then we do not yet know what packages it should belong to.
-		// Make a rough estimate of what metadata to invalidate by finding the package IDs
-		// of all of the files in the same directory as this one.
-		// TODO(rstambler): Speed this up by mapping directories to filenames.
-		if len(directIDs) == 0 {
-			if dirStat, err := os.Stat(filepath.Dir(withoutURI.Filename())); err == nil {
-				for uri := range s.files {
-					if fdirStat, err := os.Stat(filepath.Dir(uri.Filename())); err == nil {
-						if os.SameFile(dirStat, fdirStat) {
-							for _, id := range s.ids[uri] {
-								directIDs[id] = struct{}{}
-							}
-						}
-					}
-				}
-			}
-		}
-
-		// Invalidate reverse dependencies too.
-		// TODO(heschi): figure out the locking model and use transitiveReverseDeps?
-		var addRevDeps func(packageID)
-		addRevDeps = func(id packageID) {
-			current, seen := transitiveIDs[id]
-			newInvalidateMetadata := current || invalidateMetadata
-
-			// If we've already seen this ID, and the value of invalidate
-			// metadata has not changed, we can return early.
-			if seen && current == newInvalidateMetadata {
-				return
-			}
-			transitiveIDs[id] = newInvalidateMetadata
-			for _, rid := range s.getImportedByLocked(id) {
-				addRevDeps(rid)
-			}
-		}
-		for id := range directIDs {
-			addRevDeps(id)
-		}
-
 		// Handle the invalidated file; it may have new contents or not exist.
-		if _, err := currentFH.Read(); os.IsNotExist(err) {
-			delete(result.files, withoutURI)
+		if !change.exists {
+			delete(result.files, uri)
 		} else {
-			result.files[withoutURI] = currentFH
+			result.files[uri] = change.fileHandle
 		}
 		// Make sure to remove the changed file from the unloadable set.
-		delete(result.unloadableFiles, withoutURI)
+		delete(result.unloadableFiles, uri)
 	}
+
+	// Invalidate reverse dependencies too.
+	// TODO(heschi): figure out the locking model and use transitiveReverseDeps?
+	// transitiveIDs keeps track of transitive reverse dependencies.
+	// If an ID is present in the map, invalidate its types.
+	// If an ID's value is true, invalidate its metadata too.
+	transitiveIDs := make(map[packageID]bool)
+	var addRevDeps func(packageID, bool)
+	addRevDeps = func(id packageID, invalidateMetadata bool) {
+		current, seen := transitiveIDs[id]
+		newInvalidateMetadata := current || invalidateMetadata
+
+		// If we've already seen this ID, and the value of invalidate
+		// metadata has not changed, we can return early.
+		if seen && current == newInvalidateMetadata {
+			return
+		}
+		transitiveIDs[id] = newInvalidateMetadata
+		for _, rid := range s.getImportedByLocked(id) {
+			addRevDeps(rid, invalidateMetadata)
+		}
+	}
+	for id, invalidateMetadata := range directIDs {
+		addRevDeps(id, invalidateMetadata)
+	}
+
 	// Copy the package type information.
 	for k, v := range s.packages {
 		if _, ok := transitiveIDs[k.id]; ok {
@@ -1030,6 +1278,10 @@ copyIDs:
 	}
 	// Copy the set of initally loaded packages.
 	for id, pkgPath := range s.workspacePackages {
+		// Packages with the id "command-line-arguments" are generated by the
+		// go command when the user is outside of GOPATH and outside of a
+		// module. Do not cache them as workspace packages for longer than
+		// necessary.
 		if id == "command-line-arguments" {
 			if invalidateMetadata, ok := transitiveIDs[id]; invalidateMetadata && ok {
 				continue
@@ -1055,19 +1307,84 @@ copyIDs:
 	}
 
 	// Inherit all of the go.mod-related handles.
-	for _, v := range s.modTidyHandles {
+	for _, v := range result.modTidyHandles {
 		newGen.Inherit(v.handle)
 	}
-	for _, v := range s.modUpgradeHandles {
+	for _, v := range result.modUpgradeHandles {
 		newGen.Inherit(v.handle)
 	}
-	for _, v := range s.modWhyHandles {
+	for _, v := range result.modWhyHandles {
 		newGen.Inherit(v.handle)
 	}
-
+	for _, v := range result.parseModHandles {
+		newGen.Inherit(v.handle)
+	}
 	// Don't bother copying the importedBy graph,
 	// as it changes each time we update metadata.
-	return result
+
+	// If the snapshot's workspace mode has changed, the packages loaded using
+	// the previous mode are no longer relevant, so clear them out.
+	if s.workspaceMode() != result.workspaceMode() {
+		result.workspacePackages = map[packageID]packagePath{}
+	}
+
+	// The snapshot may need to be reinitialized.
+	if modulesChanged || workspaceChanged || vendorChanged {
+		if workspaceChanged || result.initializedErr != nil {
+			result.initializeOnce = &sync.Once{}
+		}
+	}
+	return result, workspaceChanged
+}
+
+// guessPackagesForURI returns all packages related to uri. If we haven't seen this
+// URI before, we guess based on files in the same directory. This is of course
+// incorrect in build systems where packages are not organized by directory.
+func guessPackagesForURI(uri span.URI, known map[span.URI][]packageID) []packageID {
+	packages := known[uri]
+	if len(packages) > 0 {
+		// We've seen this file before.
+		return packages
+	}
+	// This is a file we don't yet know about. Guess relevant packages by
+	// considering files in the same directory.
+
+	// Cache of FileInfo to avoid unnecessary stats for multiple files in the
+	// same directory.
+	stats := make(map[string]struct {
+		os.FileInfo
+		error
+	})
+	getInfo := func(dir string) (os.FileInfo, error) {
+		if res, ok := stats[dir]; ok {
+			return res.FileInfo, res.error
+		}
+		fi, err := os.Stat(dir)
+		stats[dir] = struct {
+			os.FileInfo
+			error
+		}{fi, err}
+		return fi, err
+	}
+	dir := filepath.Dir(uri.Filename())
+	fi, err := getInfo(dir)
+	if err != nil {
+		return nil
+	}
+
+	// Aggregate all possibly relevant package IDs.
+	var found []packageID
+	for knownURI, ids := range known {
+		knownDir := filepath.Dir(knownURI.Filename())
+		knownFI, err := getInfo(knownDir)
+		if err != nil {
+			continue
+		}
+		if os.SameFile(fi, knownFI) {
+			found = append(found, ids...)
+		}
+	}
+	return found
 }
 
 // fileWasSaved reports whether the FileHandle passed in has been saved. It
@@ -1088,45 +1405,38 @@ func fileWasSaved(originalFH, currentFH source.FileHandle) bool {
 
 // shouldInvalidateMetadata reparses a file's package and import declarations to
 // determine if the file requires a metadata reload.
-func (s *snapshot) shouldInvalidateMetadata(ctx context.Context, originalFH, currentFH source.FileHandle) bool {
+func (s *snapshot) shouldInvalidateMetadata(ctx context.Context, newSnapshot *snapshot, originalFH, currentFH source.FileHandle) bool {
 	if originalFH == nil {
-		return currentFH.Kind() == source.Go
+		return true
 	}
 	// If the file hasn't changed, there's no need to reload.
 	if originalFH.FileIdentity() == currentFH.FileIdentity() {
 		return false
 	}
-	// If a go.mod file's contents have changed, always invalidate metadata.
+	// If a go.mod in the workspace has been changed, invalidate metadata.
 	if kind := originalFH.Kind(); kind == source.Mod {
-		return originalFH.URI() == s.view.modURI
+		return source.InDir(filepath.Dir(s.view.rootURI.Filename()), filepath.Dir(originalFH.URI().Filename()))
 	}
-	// Get the original and current parsed files in order to check package name and imports.
-	// Use the direct parsing API to avoid modifying the snapshot we're cloning.
-	parse := func(fh source.FileHandle) (*ast.File, error) {
-		data, err := fh.Read()
-		if err != nil {
-			return nil, err
-		}
-		fset := token.NewFileSet()
-		return parser.ParseFile(fset, fh.URI().Filename(), data, parser.ImportsOnly)
-	}
-	original, originalErr := parse(originalFH)
-	current, currentErr := parse(currentFH)
+	// Get the original and current parsed files in order to check package name
+	// and imports. Use the new snapshot to parse to avoid modifying the
+	// current snapshot.
+	original, originalErr := newSnapshot.ParseGo(ctx, originalFH, source.ParseHeader)
+	current, currentErr := newSnapshot.ParseGo(ctx, currentFH, source.ParseHeader)
 	if originalErr != nil || currentErr != nil {
 		return (originalErr == nil) != (currentErr == nil)
 	}
 	// Check if the package's metadata has changed. The cases handled are:
 	//    1. A package's name has changed
 	//    2. A file's imports have changed
-	if original.Name.Name != current.Name.Name {
+	if original.File.Name.Name != current.File.Name.Name {
 		return true
 	}
 	importSet := make(map[string]struct{})
-	for _, importSpec := range original.Imports {
+	for _, importSpec := range original.File.Imports {
 		importSet[importSpec.Path.Value] = struct{}{}
 	}
 	// If any of the current imports were not in the original imports.
-	for _, importSpec := range current.Imports {
+	for _, importSpec := range current.File.Imports {
 		if _, ok := importSet[importSpec.Path.Value]; ok {
 			continue
 		}
@@ -1148,47 +1458,8 @@ func (s *snapshot) shouldInvalidateMetadata(ctx context.Context, originalFH, cur
 	return false
 }
 
-// findWorkspaceDirectoriesLocked returns all of the directories that are
-// considered to be part of the view's workspace. For GOPATH workspaces, this
-// is just the view's root. For modules-based workspaces, this is the module
-// root and any replace targets. It also returns the parseModHandle for the
-// view's go.mod file if it has one.
-//
-// It assumes that the file handle is the view's go.mod file, if it has one.
-// The caller need not be holding the snapshot's mutex, but it might be.
-func (s *snapshot) findWorkspaceDirectories(ctx context.Context, modFH source.FileHandle) map[span.URI]struct{} {
-	m := map[span.URI]struct{}{
-		s.view.root: {},
-	}
-	// If the view does not have a go.mod file, only the root directory
-	// is known. In GOPATH mode, we should really watch the entire GOPATH,
-	// but that's too expensive.
-	modURI := s.view.modURI
-	if modURI == "" {
-		return m
-	}
-	if modFH == nil {
-		return m
-	}
-	// Ignore parse errors. An invalid go.mod is not fatal.
-	mod, err := s.ParseMod(ctx, modFH)
-	if err != nil {
-		return m
-	}
-	for _, r := range mod.File.Replace {
-		// We may be replacing a module with a different version, not a path
-		// on disk.
-		if r.New.Version != "" {
-			continue
-		}
-		uri := span.URIFromPath(r.New.Path)
-		m[uri] = struct{}{}
-	}
-	return m
-}
-
 func (s *snapshot) BuiltinPackage(ctx context.Context) (*source.BuiltinPackage, error) {
-	s.view.AwaitInitialized(ctx)
+	s.AwaitInitialized(ctx)
 
 	if s.builtin == nil {
 		return nil, errors.Errorf("no builtin package for view %s", s.view.name)
@@ -1233,7 +1504,95 @@ func (s *snapshot) buildBuiltinPackage(ctx context.Context, goFiles []string) er
 				Package:    pkg,
 			},
 		}
-	})
+	}, nil)
 	s.builtin = &builtinPackageHandle{handle: h}
 	return nil
+}
+
+// BuildGoplsMod generates a go.mod file for all modules in the workspace. It
+// bypasses any existing gopls.mod.
+func BuildGoplsMod(ctx context.Context, root span.URI, fs source.FileSource) (*modfile.File, error) {
+	allModules, err := findAllModules(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	return buildWorkspaceModFile(ctx, allModules, fs)
+}
+
+// TODO(rfindley): move this to workspacemodule.go
+func buildWorkspaceModFile(ctx context.Context, modFiles map[span.URI]struct{}, fs source.FileSource) (*modfile.File, error) {
+	file := &modfile.File{}
+	file.AddModuleStmt("gopls-workspace")
+
+	paths := make(map[string]span.URI)
+	for modURI := range modFiles {
+		fh, err := fs.GetFile(ctx, modURI)
+		if err != nil {
+			return nil, err
+		}
+		content, err := fh.Read()
+		if err != nil {
+			return nil, err
+		}
+		parsed, err := modfile.Parse(fh.URI().Filename(), content, nil)
+		if err != nil {
+			return nil, err
+		}
+		if file == nil || parsed.Module == nil {
+			return nil, fmt.Errorf("no module declaration for %s", modURI)
+		}
+		path := parsed.Module.Mod.Path
+		paths[path] = modURI
+		// If the module's path includes a major version, we expect it to have
+		// a matching major version.
+		_, majorVersion, _ := module.SplitPathVersion(path)
+		if majorVersion == "" {
+			majorVersion = "/v0"
+		}
+		majorVersion = strings.TrimLeft(majorVersion, "/.") // handle gopkg.in versions
+		file.AddNewRequire(path, source.WorkspaceModuleVersion(majorVersion), false)
+		if err := file.AddReplace(path, "", dirURI(modURI).Filename(), ""); err != nil {
+			return nil, err
+		}
+	}
+	// Go back through all of the modules to handle any of their replace
+	// statements.
+	for modURI := range modFiles {
+		fh, err := fs.GetFile(ctx, modURI)
+		if err != nil {
+			return nil, err
+		}
+		content, err := fh.Read()
+		if err != nil {
+			return nil, err
+		}
+		parsed, err := modfile.Parse(fh.URI().Filename(), content, nil)
+		if err != nil {
+			return nil, err
+		}
+		// If any of the workspace modules have replace directives, they need
+		// to be reflected in the workspace module.
+		for _, rep := range parsed.Replace {
+			// Don't replace any modules that are in our workspace--we should
+			// always use the version in the workspace.
+			if _, ok := paths[rep.Old.Path]; ok {
+				continue
+			}
+			newPath := rep.New.Path
+			newVersion := rep.New.Version
+			// If a replace points to a module in the workspace, make sure we
+			// direct it to version of the module in the workspace.
+			if m, ok := paths[rep.New.Path]; ok {
+				newPath = dirURI(m).Filename()
+				newVersion = ""
+			} else if rep.New.Version == "" && !filepath.IsAbs(rep.New.Path) {
+				// Make any relative paths absolute.
+				newPath = filepath.Join(dirURI(modURI).Filename(), rep.New.Path)
+			}
+			if err := file.AddReplace(rep.Old.Path, rep.Old.Version, newPath, newVersion); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return file, nil
 }

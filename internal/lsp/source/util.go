@@ -75,62 +75,15 @@ func (s MappedRange) URI() span.URI {
 }
 
 // GetParsedFile is a convenience function that extracts the Package and
-// ParsedGoFile for a File in a Snapshot. selectPackage is typically
-// Narrowest/WidestPackageHandle below.
-func GetParsedFile(ctx context.Context, snapshot Snapshot, fh FileHandle, selectPackage PackagePolicy) (Package, *ParsedGoFile, error) {
-	phs, err := snapshot.PackagesForFile(ctx, fh.URI(), TypecheckWorkspace)
-	if err != nil {
-		return nil, nil, err
-	}
-	pkg, err := selectPackage(phs)
+// ParsedGoFile for a file in a Snapshot. pkgPolicy is one of NarrowestPackage/
+// WidestPackage.
+func GetParsedFile(ctx context.Context, snapshot Snapshot, fh FileHandle, pkgPolicy PackageFilter) (Package, *ParsedGoFile, error) {
+	pkg, err := snapshot.PackageForFile(ctx, fh.URI(), TypecheckWorkspace, pkgPolicy)
 	if err != nil {
 		return nil, nil, err
 	}
 	pgh, err := pkg.File(fh.URI())
 	return pkg, pgh, err
-}
-
-type PackagePolicy func([]Package) (Package, error)
-
-// NarrowestPackage picks the "narrowest" package for a given file.
-//
-// By "narrowest" package, we mean the package with the fewest number of files
-// that includes the given file. This solves the problem of test variants,
-// as the test will have more files than the non-test package.
-func NarrowestPackage(pkgs []Package) (Package, error) {
-	if len(pkgs) < 1 {
-		return nil, errors.Errorf("no packages")
-	}
-	result := pkgs[0]
-	for _, handle := range pkgs[1:] {
-		if result == nil || len(handle.CompiledGoFiles()) < len(result.CompiledGoFiles()) {
-			result = handle
-		}
-	}
-	if result == nil {
-		return nil, errors.Errorf("no packages in input")
-	}
-	return result, nil
-}
-
-// WidestPackage returns the Package containing the most files.
-//
-// This is useful for something like diagnostics, where we'd prefer to offer diagnostics
-// for as many files as possible.
-func WidestPackage(pkgs []Package) (Package, error) {
-	if len(pkgs) < 1 {
-		return nil, errors.Errorf("no packages")
-	}
-	result := pkgs[0]
-	for _, handle := range pkgs[1:] {
-		if result == nil || len(handle.CompiledGoFiles()) > len(result.CompiledGoFiles()) {
-			result = handle
-		}
-	}
-	if result == nil {
-		return nil, errors.Errorf("no packages in input")
-	}
-	return result, nil
 }
 
 func IsGenerated(ctx context.Context, snapshot Snapshot, uri span.URI) bool {
@@ -446,5 +399,114 @@ func Qualifier(f *ast.File, pkg *types.Package, info *types.Info) types.Qualifie
 			return name
 		}
 		return p.Name()
+	}
+}
+
+// isDirective reports whether c is a comment directive.
+//
+// Copied and adapted from go/src/go/ast/ast.go.
+func isDirective(c string) bool {
+	if len(c) < 3 {
+		return false
+	}
+	if c[1] != '/' {
+		return false
+	}
+	//-style comment (no newline at the end)
+	c = c[2:]
+	if len(c) == 0 {
+		// empty line
+		return false
+	}
+	// "//line " is a line directive.
+	// (The // has been removed.)
+	if strings.HasPrefix(c, "line ") {
+		return true
+	}
+
+	// "//[a-z0-9]+:[a-z0-9]"
+	// (The // has been removed.)
+	colon := strings.Index(c, ":")
+	if colon <= 0 || colon+1 >= len(c) {
+		return false
+	}
+	for i := 0; i <= colon+1; i++ {
+		if i == colon {
+			continue
+		}
+		b := c[i]
+		if !('a' <= b && b <= 'z' || '0' <= b && b <= '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// InDir checks whether path is in the file tree rooted at dir.
+// InDir makes some effort to succeed even in the presence of symbolic links.
+//
+// Copied and slightly adjusted from go/src/cmd/go/internal/search/search.go.
+func InDir(dir, path string) bool {
+	if InDirLex(dir, path) {
+		return true
+	}
+	xpath, err := filepath.EvalSymlinks(path)
+	if err != nil || xpath == path {
+		xpath = ""
+	} else {
+		if InDirLex(dir, xpath) {
+			return true
+		}
+	}
+
+	xdir, err := filepath.EvalSymlinks(dir)
+	if err == nil && xdir != dir {
+		if InDirLex(xdir, path) {
+			return true
+		}
+		if xpath != "" {
+			if InDirLex(xdir, xpath) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// InDirLex is like inDir but only checks the lexical form of the file names.
+// It does not consider symbolic links.
+//
+// Copied from go/src/cmd/go/internal/search/search.go.
+func InDirLex(dir, path string) bool {
+	pv := strings.ToUpper(filepath.VolumeName(path))
+	dv := strings.ToUpper(filepath.VolumeName(dir))
+	path = path[len(pv):]
+	dir = dir[len(dv):]
+	switch {
+	default:
+		return false
+	case pv != dv:
+		return false
+	case len(path) == len(dir):
+		if path == dir {
+			return true
+		}
+		return false
+	case dir == "":
+		return path != ""
+	case len(path) > len(dir):
+		if dir[len(dir)-1] == filepath.Separator {
+			if path[:len(dir)] == dir {
+				return path[len(dir):] != ""
+			}
+			return false
+		}
+		if path[len(dir)] == filepath.Separator && path[:len(dir)] == dir {
+			if len(path) == len(dir)+1 {
+				return true
+			}
+			return path[len(dir)+1:] != ""
+		}
+		return false
 	}
 }

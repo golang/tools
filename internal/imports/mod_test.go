@@ -688,6 +688,7 @@ func setup(t *testing.T, main, wd string) *modTest {
 	env := &ProcessEnv{
 		Env: map[string]string{
 			"GOPATH":      filepath.Join(dir, "gopath"),
+			"GOMODCACHE":  "",
 			"GO111MODULE": "on",
 			"GOSUMDB":     "off",
 			"GOPROXY":     proxydir.ToURL(proxyDir),
@@ -890,10 +891,14 @@ func TestGetCandidatesRanking(t *testing.T) {
 module example.com
 
 require rsc.io/quote v1.5.1
+require rsc.io/quote/v3 v3.0.0
 
 -- rpackage/x.go --
 package rpackage
-import _ "rsc.io/quote"
+import (
+	_ "rsc.io/quote"
+	_ "rsc.io/quote/v3"
+)
 `, "")
 	defer mt.cleanup()
 
@@ -902,7 +907,7 @@ import _ "rsc.io/quote"
 	}
 
 	type res struct {
-		relevance  int
+		relevance  float64
 		name, path string
 	}
 	want := []res{
@@ -911,6 +916,8 @@ import _ "rsc.io/quote"
 		{7, "http", "net/http"},
 		// Main module
 		{6, "rpackage", "example.com/rpackage"},
+		// Direct module deps with v2+ major version
+		{5.003, "quote", "rsc.io/quote/v3"},
 		// Direct module deps
 		{5, "quote", "rsc.io/quote"},
 		// Indirect deps

@@ -7,7 +7,6 @@ package source
 import (
 	"context"
 	"go/ast"
-	"go/doc"
 	"go/token"
 	"go/types"
 
@@ -107,7 +106,7 @@ FindCall:
 			node: node,
 		}
 		decl.MappedRange = append(decl.MappedRange, rng)
-		d, err := hover(ctx, snapshot.FileSet(), pkg, decl)
+		d, err := HoverInfo(ctx, pkg, decl.obj, decl.node)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -116,17 +115,14 @@ FindCall:
 	} else {
 		name = "func"
 	}
-	s, err := NewSignature(ctx, snapshot, pkg, pgf.File, name, sig, comment, qf)
-	if err != nil {
-		return nil, 0, err
-	}
+	s := NewSignature(ctx, snapshot, pkg, sig, comment, qf)
 	paramInfo := make([]protocol.ParameterInformation, 0, len(s.params))
 	for _, p := range s.params {
 		paramInfo = append(paramInfo, protocol.ParameterInformation{Label: p})
 	}
 	return &protocol.SignatureInformation{
 		Label:         name + s.Format(),
-		Documentation: doc.Synopsis(s.doc),
+		Documentation: s.doc,
 		Parameters:    paramInfo,
 	}, activeParam, nil
 }
@@ -143,7 +139,7 @@ func builtinSignature(ctx context.Context, snapshot Snapshot, callExpr *ast.Call
 	activeParam := activeParameter(callExpr, len(sig.params), sig.variadic, pos)
 	return &protocol.SignatureInformation{
 		Label:         sig.name + sig.Format(),
-		Documentation: doc.Synopsis(sig.doc),
+		Documentation: sig.doc,
 		Parameters:    paramInfo,
 	}, activeParam, nil
 

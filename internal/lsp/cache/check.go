@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/mod/module"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/debug/tag"
@@ -32,7 +33,7 @@ type packageHandle struct {
 
 	goFiles, compiledGoFiles []*parseGoHandle
 
-	// mode is the mode the the files were parsed in.
+	// mode is the mode the files were parsed in.
 	mode source.ParseMode
 
 	// m is the metadata associated with the package.
@@ -98,7 +99,7 @@ func (s *snapshot) buildPackageHandle(ctx context.Context, id packageID, mode so
 		wg.Wait()
 
 		return data
-	})
+	}, nil)
 	ph.handle = h
 
 	// Cache the handle in the snapshot. If a package handle has already
@@ -143,7 +144,7 @@ func (s *snapshot) buildKey(ctx context.Context, id packageID, mode source.Parse
 	for _, depID := range depList {
 		depHandle, err := s.buildPackageHandle(ctx, depID, s.workspaceParseMode(depID))
 		if err != nil {
-			event.Error(ctx, "no dep handle", err, tag.Package.Of(string(depID)))
+			event.Error(ctx, fmt.Sprintf("%s: no dep handle for %s", id, depID), err, tag.Snapshot.Of(s.id))
 			if ctx.Err() != nil {
 				return nil, nil, ctx.Err()
 			}
@@ -155,7 +156,8 @@ func (s *snapshot) buildKey(ctx context.Context, id packageID, mode source.Parse
 		deps[depHandle.m.pkgPath] = depHandle
 		depKeys = append(depKeys, depHandle.key)
 	}
-	ph.key = checkPackageKey(ctx, ph.m.id, compiledGoFiles, m.config, depKeys, mode)
+	experimentalKey := s.View().Options().ExperimentalPackageCacheKey
+	ph.key = checkPackageKey(ctx, ph.m.id, compiledGoFiles, m.config, depKeys, mode, experimentalKey)
 	return ph, deps, nil
 }
 
@@ -167,19 +169,37 @@ func (s *snapshot) workspaceParseMode(id packageID) source.ParseMode {
 	}
 }
 
-func checkPackageKey(ctx context.Context, id packageID, pghs []*parseGoHandle, cfg *packages.Config, deps []packageHandleKey, mode source.ParseMode) packageHandleKey {
+func checkPackageKey(ctx context.Context, id packageID, pghs []*parseGoHandle, cfg *packages.Config, deps []packageHandleKey, mode source.ParseMode, experimentalKey bool) packageHandleKey {
 	b := bytes.NewBuffer(nil)
 	b.WriteString(string(id))
-	b.WriteString(hashConfig(cfg))
+	if !experimentalKey {
+		// cfg was used to produce the other hashed inputs (package ID, parsed Go
+		// files, and deps). It should not otherwise affect the inputs to the type
+		// checker, so this experiment omits it. This should increase cache hits on
+		// the daemon as cfg contains the environment and working directory.
+		b.WriteString(hashConfig(cfg))
+	}
 	b.WriteByte(byte(mode))
 	for _, dep := range deps {
 		b.WriteString(string(dep))
 	}
 	for _, cgf := range pghs {
-		b.WriteString(string(cgf.file.URI()))
-		b.WriteString(cgf.file.FileIdentity().Hash)
+		b.WriteString(cgf.file.FileIdentity().String())
 	}
 	return packageHandleKey(hashContents(b.Bytes()))
+}
+
+// hashEnv returns a hash of the snapshot's configuration.
+func hashEnv(s *snapshot) string {
+	s.view.optionsMu.Lock()
+	env := s.view.options.EnvSlice()
+	s.view.optionsMu.Unlock()
+
+	b := &bytes.Buffer{}
+	for _, e := range env {
+		b.WriteString(e)
+	}
+	return hashContents(b.Bytes())
 }
 
 // hashConfig returns the hash for the *packages.Config.
@@ -256,7 +276,6 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 		mode:            mode,
 		goFiles:         make([]*source.ParsedGoFile, len(m.goFiles)),
 		compiledGoFiles: make([]*source.ParsedGoFile, len(m.compiledGoFiles)),
-		module:          m.module,
 		imports:         make(map[packagePath]*pkg),
 		typesSizes:      m.typesSizes,
 		typesInfo: &types.Info{
@@ -267,6 +286,18 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 			Selections: make(map[*ast.SelectorExpr]*types.Selection),
 			Scopes:     make(map[ast.Node]*types.Scope),
 		},
+	}
+	// If this is a replaced module in the workspace, the version is
+	// meaningless, and we don't want clients to access it.
+	if m.module != nil {
+		version := m.module.Version
+		if source.IsWorkspaceModuleVersion(version) {
+			version = ""
+		}
+		pkg.version = &module.Version{
+			Path:    m.module.Path,
+			Version: version,
+		}
 	}
 	var (
 		files        = make([]*ast.File, len(m.compiledGoFiles))
@@ -355,7 +386,7 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 		if found {
 			return pkg, nil
 		}
-		return nil, errors.Errorf("no parsed files for package %s, expected: %s, list errors: %v", pkg.m.pkgPath, pkg.compiledGoFiles, rawErrors)
+		return nil, errors.Errorf("no parsed files for package %s, expected: %v, list errors: %v", pkg.m.pkgPath, pkg.compiledGoFiles, rawErrors)
 	} else {
 		pkg.types = types.NewPackage(string(m.pkgPath), string(m.name))
 	}

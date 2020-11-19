@@ -2,8 +2,8 @@ package protocol
 
 // Package protocol contains data types and code for LSP jsonrpcs
 // generated automatically from vscode-languageserver-node
-// commit: 399de64448129835b53c7efe8962de91681d6cde
-// last fetched Wed Aug 26 2020 20:34:24 GMT-0400 (Eastern Daylight Time)
+// commit: 901fd40345060d159f07d234bbc967966a929a34
+// last fetched Mon Oct 26 2020 09:10:42 GMT-0400 (Eastern Daylight Time)
 
 // Code generated (see typescript/README.md) DO NOT EDIT.
 
@@ -39,6 +39,10 @@ type Server interface {
 	PrepareCallHierarchy(context.Context, *CallHierarchyPrepareParams) ([]CallHierarchyItem /*CallHierarchyItem[] | null*/, error)
 	IncomingCalls(context.Context, *CallHierarchyIncomingCallsParams) ([]CallHierarchyIncomingCall /*CallHierarchyIncomingCall[] | null*/, error)
 	OutgoingCalls(context.Context, *CallHierarchyOutgoingCallsParams) ([]CallHierarchyOutgoingCall /*CallHierarchyOutgoingCall[] | null*/, error)
+	SemanticTokensFull(context.Context, *SemanticTokensParams) (*SemanticTokens /*SemanticTokens | null*/, error)
+	SemanticTokensFullDelta(context.Context, *SemanticTokensDeltaParams) (interface{} /* SemanticTokens | SemanticTokensDelta | nil*/, error)
+	SemanticTokensRange(context.Context, *SemanticTokensRangeParams) (*SemanticTokens /*SemanticTokens | null*/, error)
+	SemanticTokensRefresh(context.Context) error
 	Initialize(context.Context, *ParamInitialize) (*InitializeResult, error)
 	Shutdown(context.Context) error
 	WillSaveWaitUntil(context.Context, *WillSaveTextDocumentParams) ([]TextEdit /*TextEdit[] | null*/, error)
@@ -51,6 +55,7 @@ type Server interface {
 	DocumentHighlight(context.Context, *DocumentHighlightParams) ([]DocumentHighlight /*DocumentHighlight[] | null*/, error)
 	DocumentSymbol(context.Context, *DocumentSymbolParams) ([]interface{} /*SymbolInformation[] | DocumentSymbol[] | null*/, error)
 	CodeAction(context.Context, *CodeActionParams) ([]CodeAction /*(Command | CodeAction)[] | null*/, error)
+	ResolveCodeAction(context.Context, *CodeAction) (*CodeAction, error)
 	Symbol(context.Context, *WorkspaceSymbolParams) ([]SymbolInformation /*SymbolInformation[] | null*/, error)
 	CodeLens(context.Context, *CodeLensParams) ([]CodeLens /*CodeLens[] | null*/, error)
 	ResolveCodeLens(context.Context, *CodeLens) (*CodeLens, error)
@@ -60,11 +65,9 @@ type Server interface {
 	RangeFormatting(context.Context, *DocumentRangeFormattingParams) ([]TextEdit /*TextEdit[] | null*/, error)
 	OnTypeFormatting(context.Context, *DocumentOnTypeFormattingParams) ([]TextEdit /*TextEdit[] | null*/, error)
 	Rename(context.Context, *RenameParams) (*WorkspaceEdit /*WorkspaceEdit | null*/, error)
-	PrepareRename(context.Context, *PrepareRenameParams) (*Range /*Range | { range: Range, placeholder: string } | null*/, error)
+	PrepareRename(context.Context, *PrepareRenameParams) (*Range /*Range | { range: Range, placeholder: string } | { defaultBehavior: boolean } | null*/, error)
 	ExecuteCommand(context.Context, *ExecuteCommandParams) (interface{} /*any | null*/, error)
-	SemanticTokensFull(context.Context, *SemanticTokensParams) (*SemanticTokens /*SemanticTokens | null*/, error)
-	SemanticTokensFullDelta(context.Context, *SemanticTokensDeltaParams) (interface{} /* SemanticTokens | SemanticTokensDelta | nil*/, error)
-	SemanticTokensRange(context.Context, *SemanticTokensRangeParams) (*SemanticTokens /*SemanticTokens | null*/, error)
+	Moniker(context.Context, *MonikerParams) ([]Moniker /*Moniker[] | null*/, error)
 	NonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error)
 }
 
@@ -227,6 +230,33 @@ func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, 
 		}
 		resp, err := server.OutgoingCalls(ctx, &params)
 		return true, reply(ctx, resp, err)
+	case "textDocument/semanticTokens/full": // req
+		var params SemanticTokensParams
+		if err := json.Unmarshal(r.Params(), &params); err != nil {
+			return true, sendParseError(ctx, reply, err)
+		}
+		resp, err := server.SemanticTokensFull(ctx, &params)
+		return true, reply(ctx, resp, err)
+	case "textDocument/semanticTokens/full/delta": // req
+		var params SemanticTokensDeltaParams
+		if err := json.Unmarshal(r.Params(), &params); err != nil {
+			return true, sendParseError(ctx, reply, err)
+		}
+		resp, err := server.SemanticTokensFullDelta(ctx, &params)
+		return true, reply(ctx, resp, err)
+	case "textDocument/semanticTokens/range": // req
+		var params SemanticTokensRangeParams
+		if err := json.Unmarshal(r.Params(), &params); err != nil {
+			return true, sendParseError(ctx, reply, err)
+		}
+		resp, err := server.SemanticTokensRange(ctx, &params)
+		return true, reply(ctx, resp, err)
+	case "workspace/semanticTokens/refresh": // req
+		if len(r.Params()) > 0 {
+			return true, reply(ctx, nil, errors.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
+		}
+		err := server.SemanticTokensRefresh(ctx)
+		return true, reply(ctx, nil, err)
 	case "initialize": // req
 		var params ParamInitialize
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
@@ -310,6 +340,13 @@ func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, 
 		}
 		resp, err := server.CodeAction(ctx, &params)
 		return true, reply(ctx, resp, err)
+	case "codeAction/resolve": // req
+		var params CodeAction
+		if err := json.Unmarshal(r.Params(), &params); err != nil {
+			return true, sendParseError(ctx, reply, err)
+		}
+		resp, err := server.ResolveCodeAction(ctx, &params)
+		return true, reply(ctx, resp, err)
 	case "workspace/symbol": // req
 		var params WorkspaceSymbolParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
@@ -387,26 +424,12 @@ func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, 
 		}
 		resp, err := server.ExecuteCommand(ctx, &params)
 		return true, reply(ctx, resp, err)
-	case "textDocument/semanticTokens/full": // req
-		var params SemanticTokensParams
+	case "textDocument/moniker": // req
+		var params MonikerParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
-		resp, err := server.SemanticTokensFull(ctx, &params)
-		return true, reply(ctx, resp, err)
-	case "textDocument/semanticTokens/full/delta": // req
-		var params SemanticTokensDeltaParams
-		if err := json.Unmarshal(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
-		}
-		resp, err := server.SemanticTokensFullDelta(ctx, &params)
-		return true, reply(ctx, resp, err)
-	case "textDocument/semanticTokens/range": // req
-		var params SemanticTokensRangeParams
-		if err := json.Unmarshal(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
-		}
-		resp, err := server.SemanticTokensRange(ctx, &params)
+		resp, err := server.Moniker(ctx, &params)
 		return true, reply(ctx, resp, err)
 
 	default:
@@ -545,6 +568,34 @@ func (s *serverDispatcher) OutgoingCalls(ctx context.Context, params *CallHierar
 	return result, nil
 }
 
+func (s *serverDispatcher) SemanticTokensFull(ctx context.Context, params *SemanticTokensParams) (*SemanticTokens /*SemanticTokens | null*/, error) {
+	var result *SemanticTokens /*SemanticTokens | null*/
+	if err := Call(ctx, s.Conn, "textDocument/semanticTokens/full", params, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *serverDispatcher) SemanticTokensFullDelta(ctx context.Context, params *SemanticTokensDeltaParams) (interface{} /* SemanticTokens | SemanticTokensDelta | nil*/, error) {
+	var result interface{} /* SemanticTokens | SemanticTokensDelta | nil*/
+	if err := Call(ctx, s.Conn, "textDocument/semanticTokens/full/delta", params, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *serverDispatcher) SemanticTokensRange(ctx context.Context, params *SemanticTokensRangeParams) (*SemanticTokens /*SemanticTokens | null*/, error) {
+	var result *SemanticTokens /*SemanticTokens | null*/
+	if err := Call(ctx, s.Conn, "textDocument/semanticTokens/range", params, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *serverDispatcher) SemanticTokensRefresh(ctx context.Context) error {
+	return Call(ctx, s.Conn, "workspace/semanticTokens/refresh", nil, nil)
+}
+
 func (s *serverDispatcher) Initialize(ctx context.Context, params *ParamInitialize) (*InitializeResult, error) {
 	var result *InitializeResult
 	if err := Call(ctx, s.Conn, "initialize", params, &result); err != nil {
@@ -637,6 +688,14 @@ func (s *serverDispatcher) CodeAction(ctx context.Context, params *CodeActionPar
 	return result, nil
 }
 
+func (s *serverDispatcher) ResolveCodeAction(ctx context.Context, params *CodeAction) (*CodeAction, error) {
+	var result *CodeAction
+	if err := Call(ctx, s.Conn, "codeAction/resolve", params, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (s *serverDispatcher) Symbol(ctx context.Context, params *WorkspaceSymbolParams) ([]SymbolInformation /*SymbolInformation[] | null*/, error) {
 	var result []SymbolInformation /*SymbolInformation[] | null*/
 	if err := Call(ctx, s.Conn, "workspace/symbol", params, &result); err != nil {
@@ -709,8 +768,8 @@ func (s *serverDispatcher) Rename(ctx context.Context, params *RenameParams) (*W
 	return result, nil
 }
 
-func (s *serverDispatcher) PrepareRename(ctx context.Context, params *PrepareRenameParams) (*Range /*Range | { range: Range, placeholder: string } | null*/, error) {
-	var result *Range /*Range | { range: Range, placeholder: string } | null*/
+func (s *serverDispatcher) PrepareRename(ctx context.Context, params *PrepareRenameParams) (*Range /*Range | { range: Range, placeholder: string } | { defaultBehavior: boolean } | null*/, error) {
+	var result *Range /*Range | { range: Range, placeholder: string } | { defaultBehavior: boolean } | null*/
 	if err := Call(ctx, s.Conn, "textDocument/prepareRename", params, &result); err != nil {
 		return nil, err
 	}
@@ -725,25 +784,9 @@ func (s *serverDispatcher) ExecuteCommand(ctx context.Context, params *ExecuteCo
 	return result, nil
 }
 
-func (s *serverDispatcher) SemanticTokensFull(ctx context.Context, params *SemanticTokensParams) (*SemanticTokens /*SemanticTokens | null*/, error) {
-	var result *SemanticTokens /*SemanticTokens | null*/
-	if err := Call(ctx, s.Conn, "textDocument/semanticTokens/full", params, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func (s *serverDispatcher) SemanticTokensFullDelta(ctx context.Context, params *SemanticTokensDeltaParams) (interface{} /* SemanticTokens | SemanticTokensDelta | nil*/, error) {
-	var result interface{} /* SemanticTokens | SemanticTokensDelta | nil*/
-	if err := Call(ctx, s.Conn, "textDocument/semanticTokens/full/delta", params, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func (s *serverDispatcher) SemanticTokensRange(ctx context.Context, params *SemanticTokensRangeParams) (*SemanticTokens /*SemanticTokens | null*/, error) {
-	var result *SemanticTokens /*SemanticTokens | null*/
-	if err := Call(ctx, s.Conn, "textDocument/semanticTokens/range", params, &result); err != nil {
+func (s *serverDispatcher) Moniker(ctx context.Context, params *MonikerParams) ([]Moniker /*Moniker[] | null*/, error) {
+	var result []Moniker /*Moniker[] | null*/
+	if err := Call(ctx, s.Conn, "textDocument/moniker", params, &result); err != nil {
 		return nil, err
 	}
 	return result, nil

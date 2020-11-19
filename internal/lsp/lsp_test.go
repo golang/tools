@@ -14,7 +14,6 @@ import (
 	"sort"
 	"testing"
 
-	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/diff/myers"
@@ -31,71 +30,75 @@ func TestMain(m *testing.M) {
 }
 
 func TestLSP(t *testing.T) {
-	packagestest.TestAll(t, testLSP)
+	tests.RunTests(t, "testdata", true, testLSP)
 }
 
 type runner struct {
 	server      *Server
 	data        *tests.Data
-	diagnostics map[span.URI]map[string]*source.Diagnostic
+	diagnostics map[span.URI][]*source.Diagnostic
 	ctx         context.Context
 }
 
-func testLSP(t *testing.T, exporter packagestest.Exporter) {
+func testLSP(t *testing.T, datum *tests.Data) {
 	ctx := tests.Context(t)
-	data := tests.Load(t, exporter, "testdata")
 
-	for _, datum := range data {
-		defer datum.Exported.Cleanup()
+	cache := cache.New(ctx, nil)
+	session := cache.NewSession(ctx)
+	options := source.DefaultOptions().Clone()
+	tests.DefaultOptions(options)
+	session.SetOptions(options)
+	options.SetEnvSlice(datum.Config.Env)
+	view, snapshot, release, err := session.NewView(ctx, datum.Config.Dir, span.URIFromPath(datum.Config.Dir), "", options)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		cache := cache.New(ctx, nil)
-		session := cache.NewSession(ctx)
-		options := tests.DefaultOptions()
-		session.SetOptions(options)
-		options.Env = datum.Config.Env
-		view, _, release, err := session.NewView(ctx, datum.Config.Dir, span.URIFromPath(datum.Config.Dir), options)
-		release()
-		if err != nil {
-			t.Fatal(err)
+	defer view.Shutdown(ctx)
+
+	// Enable type error analyses for tests.
+	// TODO(golang/go#38212): Delete this once they are enabled by default.
+	tests.EnableAllAnalyzers(view, options)
+	view.SetOptions(ctx, options)
+
+	// Only run the -modfile specific tests in module mode with Go 1.14 or above.
+	datum.ModfileFlagAvailable = len(snapshot.ModFiles()) > 0 && testenv.Go1Point() >= 14
+	release()
+
+	var modifications []source.FileModification
+	for filename, content := range datum.Config.Overlay {
+		kind := source.DetectLanguage("", filename)
+		if kind != source.Go {
+			continue
 		}
-
-		defer view.Shutdown(ctx)
-
-		// Enable type error analyses for tests.
-		// TODO(golang/go#38212): Delete this once they are enabled by default.
-		tests.EnableAllAnalyzers(view, &options)
-		view.SetOptions(ctx, options)
-
-		// Only run the -modfile specific tests in module mode with Go 1.14 or above.
-		datum.ModfileFlagAvailable = view.ModFile() != "" && testenv.Go1Point() >= 14
-
-		var modifications []source.FileModification
-		for filename, content := range datum.Config.Overlay {
-			kind := source.DetectLanguage("", filename)
-			if kind != source.Go {
-				continue
-			}
-			modifications = append(modifications, source.FileModification{
-				URI:        span.URIFromPath(filename),
-				Action:     source.Open,
-				Version:    -1,
-				Text:       content,
-				LanguageID: "go",
-			})
-		}
-		if err := session.ModifyFiles(ctx, modifications); err != nil {
-			t.Fatal(err)
-		}
-		r := &runner{
-			server: NewServer(session, nil),
-			data:   datum,
-			ctx:    ctx,
-		}
-		t.Run(tests.FormatFolderName(datum.Folder), func(t *testing.T) {
-			t.Helper()
-			tests.Run(t, r, datum)
+		modifications = append(modifications, source.FileModification{
+			URI:        span.URIFromPath(filename),
+			Action:     source.Open,
+			Version:    -1,
+			Text:       content,
+			LanguageID: "go",
 		})
 	}
+	if err := session.ModifyFiles(ctx, modifications); err != nil {
+		t.Fatal(err)
+	}
+	r := &runner{
+		server: NewServer(session, testClient{}),
+		data:   datum,
+		ctx:    ctx,
+	}
+	tests.Run(t, r, datum)
+}
+
+// testClient stubs any client functions that may be called by LSP functions.
+type testClient struct {
+	protocol.Client
+}
+
+// Trivially implement PublishDiagnostics so that we can call
+// server.publishReports below to de-dup sent diagnostics.
+func (c testClient) PublishDiagnostics(context.Context, *protocol.PublishDiagnosticsParams) error {
+	return nil
 }
 
 func (r *runner) CallHierarchy(t *testing.T, spn span.Span, expectedCalls *tests.CallHierarchyResult) {
@@ -177,21 +180,11 @@ func (r *runner) CodeLens(t *testing.T, uri span.URI, want []protocol.CodeLens) 
 
 func (r *runner) Diagnostics(t *testing.T, uri span.URI, want []*source.Diagnostic) {
 	// Get the diagnostics for this view if we have not done it before.
-	if r.diagnostics == nil {
-		r.diagnostics = make(map[span.URI]map[string]*source.Diagnostic)
-		v := r.server.session.View(r.data.Config.Dir)
-		// Always run diagnostics with analysis.
-		snapshot, release := v.Snapshot(r.ctx)
-		defer release()
-		reports, _ := r.server.diagnose(r.ctx, snapshot, true)
-		for key, diags := range reports {
-			r.diagnostics[key.id.URI] = diags
-		}
-	}
-	var got []*source.Diagnostic
-	for _, d := range r.diagnostics[uri] {
-		got = append(got, d)
-	}
+	v := r.server.session.View(r.data.Config.Dir)
+	r.collectDiagnostics(v)
+	d := r.diagnostics[uri]
+	got := make([]*source.Diagnostic, len(d))
+	copy(got, d)
 	// A special case to test that there are no diagnostics for a file.
 	if len(want) == 1 && want[0].Source == "no_diagnostics" {
 		if len(got) != 0 {
@@ -397,6 +390,39 @@ func (r *runner) Format(t *testing.T, spn span.Span) {
 	}
 }
 
+func (r *runner) SemanticTokens(t *testing.T, spn span.Span) {
+	uri := spn.URI()
+	filename := uri.Filename()
+	// this is called solely for coverage in semantic.go
+	_, err := r.server.semanticTokensFull(r.ctx, &protocol.SemanticTokensParams{
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: protocol.URIFromSpanURI(uri),
+		},
+	})
+	if err != nil {
+		t.Errorf("%v for %s", err, filename)
+	}
+	_, err = r.server.semanticTokensRange(r.ctx, &protocol.SemanticTokensRangeParams{
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: protocol.URIFromSpanURI(uri),
+		},
+		// any legal range. Just to exercise the call.
+		Range: protocol.Range{
+			Start: protocol.Position{
+				Line:      0,
+				Character: 0,
+			},
+			End: protocol.Position{
+				Line:      2,
+				Character: 0,
+			},
+		},
+	})
+	if err != nil {
+		t.Errorf("%v for Range %s", err, filename)
+	}
+}
+
 func (r *runner) Import(t *testing.T, spn span.Span) {
 	uri := spn.URI()
 	filename := uri.Filename()
@@ -439,7 +465,7 @@ func (r *runner) SuggestedFix(t *testing.T, spn span.Span, actionKinds []string)
 	snapshot, release := view.Snapshot(r.ctx)
 	defer release()
 
-	fh, err := snapshot.GetFile(r.ctx, uri)
+	fh, err := snapshot.GetVersionedFile(r.ctx, uri)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,16 +478,7 @@ func (r *runner) SuggestedFix(t *testing.T, spn span.Span, actionKinds []string)
 		t.Fatal(err)
 	}
 	// Get the diagnostics for this view if we have not done it before.
-	if r.diagnostics == nil {
-		r.diagnostics = make(map[span.URI]map[string]*source.Diagnostic)
-		// Always run diagnostics with analysis.
-		snapshot, release := view.Snapshot(r.ctx)
-		defer release()
-		reports, _ := r.server.diagnose(r.ctx, snapshot, true)
-		for key, diags := range reports {
-			r.diagnostics[key.id.URI] = diags
-		}
-	}
+	r.collectDiagnostics(view)
 	var diagnostics []protocol.Diagnostic
 	for _, d := range r.diagnostics[uri] {
 		// Compare the start positions rather than the entire range because
@@ -534,7 +551,7 @@ func (r *runner) SuggestedFix(t *testing.T, spn span.Span, actionKinds []string)
 func commandToEdits(ctx context.Context, snapshot source.Snapshot, fh source.VersionedFileHandle, rng protocol.Range, cmd string) ([]protocol.TextDocumentEdit, error) {
 	var command *source.Command
 	for _, c := range source.Commands {
-		if c.Name == cmd {
+		if c.ID() == cmd {
 			command = c
 			break
 		}
@@ -543,7 +560,7 @@ func commandToEdits(ctx context.Context, snapshot source.Snapshot, fh source.Ver
 		return nil, fmt.Errorf("no known command for %s", cmd)
 	}
 	if !command.Applies(ctx, snapshot, fh, rng) {
-		return nil, fmt.Errorf("cannot apply %v", command.Name)
+		return nil, fmt.Errorf("cannot apply %v", command.ID())
 	}
 	return command.SuggestedFix(ctx, snapshot, fh, rng)
 }
@@ -558,7 +575,7 @@ func (r *runner) FunctionExtraction(t *testing.T, start span.Span, end span.Span
 	snapshot, release := view.Snapshot(r.ctx)
 	defer release()
 
-	fh, err := snapshot.GetFile(r.ctx, uri)
+	fh, err := snapshot.GetVersionedFile(r.ctx, uri)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1128,5 +1145,33 @@ func TestBytesOffset(t *testing.T) {
 		if err == nil && got.Offset() != test.want {
 			t.Errorf("want %d for %q(Line:%d,Character:%d), but got %d", test.want, test.text, int(test.pos.Line), int(test.pos.Character), got.Offset())
 		}
+	}
+}
+
+func (r *runner) collectDiagnostics(view source.View) {
+	if r.diagnostics != nil {
+		return
+	}
+	r.diagnostics = make(map[span.URI][]*source.Diagnostic)
+
+	snapshot, release := view.Snapshot(r.ctx)
+	defer release()
+
+	// Always run diagnostics with analysis.
+	reports, _ := r.server.diagnose(r.ctx, snapshot, true)
+	r.server.publishReports(r.ctx, snapshot, reports, false)
+	for uri, sent := range r.server.delivered {
+		var diagnostics []*source.Diagnostic
+		for _, d := range sent.sorted {
+			diagnostics = append(diagnostics, &source.Diagnostic{
+				Range:    d.Range,
+				Message:  d.Message,
+				Related:  d.Related,
+				Severity: d.Severity,
+				Source:   d.Source,
+				Tags:     d.Tags,
+			})
+		}
+		r.diagnostics[uri] = diagnostics
 	}
 }

@@ -26,26 +26,34 @@ func (s *Server) didChangeWorkspaceFolders(ctx context.Context, params *protocol
 	return s.addFolders(ctx, event.Added)
 }
 
-func (s *Server) addView(ctx context.Context, name string, uri span.URI) (source.View, source.Snapshot, func(), error) {
+func (s *Server) addView(ctx context.Context, name string, uri, tempWorkspace span.URI) (source.Snapshot, func(), error) {
 	s.stateMu.Lock()
 	state := s.state
 	s.stateMu.Unlock()
 	if state < serverInitialized {
-		return nil, nil, func() {}, errors.Errorf("addView called before server initialized")
+		return nil, func() {}, errors.Errorf("addView called before server initialized")
 	}
-
-	options := s.session.Options()
-	if err := s.fetchConfig(ctx, name, uri, &options); err != nil {
-		return nil, nil, func() {}, err
+	options := s.session.Options().Clone()
+	if err := s.fetchConfig(ctx, name, uri, options); err != nil {
+		return nil, func() {}, err
 	}
-	return s.session.NewView(ctx, name, uri, options)
+	_, snapshot, release, err := s.session.NewView(ctx, name, uri, tempWorkspace, options)
+	return snapshot, release, err
 }
 
-func (s *Server) didChangeConfiguration(ctx context.Context, changed interface{}) error {
-	// go through all the views getting the config
+func (s *Server) didChangeConfiguration(ctx context.Context, _ *protocol.DidChangeConfigurationParams) error {
+	// Apply any changes to the session-level settings.
+	options := s.session.Options().Clone()
+	semanticTokensRegistered := options.SemanticTokens
+	if err := s.fetchConfig(ctx, "", "", options); err != nil {
+		return err
+	}
+	s.session.SetOptions(options)
+
+	// Go through each view, getting and updating its configuration.
 	for _, view := range s.session.Views() {
-		options := view.Options()
-		if err := s.fetchConfig(ctx, view.Name(), view.Folder(), &options); err != nil {
+		options := s.session.Options().Clone()
+		if err := s.fetchConfig(ctx, view.Name(), view.Folder(), options); err != nil {
 			return err
 		}
 		view, err := view.SetOptions(ctx, options)
@@ -58,5 +66,42 @@ func (s *Server) didChangeConfiguration(ctx context.Context, changed interface{}
 			s.diagnoseDetached(snapshot)
 		}()
 	}
+
+	// Update any session-specific registrations or unregistrations.
+	if !semanticTokensRegistered && options.SemanticTokens {
+		if err := s.client.RegisterCapability(ctx, &protocol.RegistrationParams{
+			Registrations: []protocol.Registration{semanticTokenRegistration()},
+		}); err != nil {
+			return err
+		}
+	} else if semanticTokensRegistered && !options.SemanticTokens {
+		if err := s.client.UnregisterCapability(ctx, &protocol.UnregistrationParams{
+			Unregisterations: []protocol.Unregistration{
+				{
+					ID:     semanticTokenRegistration().ID,
+					Method: semanticTokenRegistration().Method,
+				},
+			},
+		}); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func semanticTokenRegistration() protocol.Registration {
+	return protocol.Registration{
+		ID:     "textDocument/semanticTokens",
+		Method: "textDocument/semanticTokens",
+		RegisterOptions: &protocol.SemanticTokensOptions{
+			Legend: protocol.SemanticTokensLegend{
+				// TODO(pjw): trim these to what we use (and an unused one
+				// at position 0 of TokTypes, to catch typos)
+				TokenTypes:     SemanticTypes(),
+				TokenModifiers: SemanticModifiers(),
+			},
+			Full:  true,
+			Range: true,
+		},
+	}
 }

@@ -11,7 +11,6 @@ import (
 	"go/ast"
 	"go/doc"
 	"go/format"
-	"go/token"
 	"go/types"
 	"strings"
 
@@ -34,18 +33,27 @@ type HoverInformation struct {
 	// FullDocumentation is the symbol's full documentation.
 	FullDocumentation string `json:"fullDocumentation"`
 
-	// ImportPath is the import path for the package containing the given symbol.
-	ImportPath string
+	// LinkPath is the pkg.go.dev link for the given symbol.
+	// For example, the "go/ast" part of "pkg.go.dev/go/ast#Node".
+	LinkPath string `json:"linkPath"`
 
-	// Link is the pkg.go.dev anchor for the given symbol.
-	// For example, "go/ast#Node".
-	Link string `json:"link"`
+	// LinkAnchor is the pkg.go.dev link anchor for the given symbol.
+	// For example, the "Node" part of "pkg.go.dev/go/ast#Node".
+	LinkAnchor string `json:"linkAnchor"`
 
-	// SymbolName is the types.Object.Name for the given symbol.
-	SymbolName string
+	// importPath is the import path for the package containing the given
+	// symbol.
+	importPath string
+
+	// symbolName is the types.Object.Name for the given symbol.
+	symbolName string
 
 	source  interface{}
 	comment *ast.CommentGroup
+
+	// isTypeName reports whether the identifier is a type name. In such cases,
+	// the hover has the prefix "type ".
+	isType bool
 }
 
 func Hover(ctx context.Context, snapshot Snapshot, fh FileHandle, position protocol.Position) (*protocol.Hover, error) {
@@ -62,8 +70,8 @@ func Hover(ctx context.Context, snapshot Snapshot, fh FileHandle, position proto
 		return nil, err
 	}
 	// See golang/go#36998: don't link to modules matching GOPRIVATE.
-	if snapshot.View().IsGoPrivatePath(h.ImportPath) {
-		h.Link = ""
+	if snapshot.View().IsGoPrivatePath(h.importPath) {
+		h.LinkPath = ""
 	}
 	hover, err := FormatHover(h, snapshot.View().Options())
 	if err != nil {
@@ -83,7 +91,7 @@ func HoverIdentifier(ctx context.Context, i *IdentifierInfo) (*HoverInformation,
 	defer done()
 
 	fset := i.Snapshot.FileSet()
-	h, err := hover(ctx, fset, i.pkg, i.Declaration)
+	h, err := HoverInfo(ctx, i.pkg, i.Declaration.obj, i.Declaration.node)
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +103,9 @@ func HoverIdentifier(ctx context.Context, i *IdentifierInfo) (*HoverInformation,
 			return nil, err
 		}
 		h.Signature = b.String()
+		if h.isType {
+			h.Signature = "type " + h.Signature
+		}
 	case types.Object:
 		// If the variable is implicitly declared in a type switch, we need to
 		// manually generate its object string.
@@ -109,38 +120,37 @@ func HoverIdentifier(ctx context.Context, i *IdentifierInfo) (*HoverInformation,
 	if obj := i.Declaration.obj; obj != nil {
 		h.SingleLine = objectString(obj, i.qf)
 	}
-	h.ImportPath, h.Link, h.SymbolName = pathLinkAndSymbolName(i)
-
-	return h, nil
-}
-
-func pathLinkAndSymbolName(i *IdentifierInfo) (string, string, string) {
 	obj := i.Declaration.obj
 	if obj == nil {
-		return "", "", ""
+		return h, nil
 	}
 	switch obj := obj.(type) {
 	case *types.PkgName:
-		path := obj.Imported().Path()
-		link := path
-		if mod, version, ok := moduleAtVersion(path, i); ok {
-			link = strings.Replace(path, mod, mod+"@"+version, 1)
+		h.importPath = obj.Imported().Path()
+		h.LinkPath = h.importPath
+		h.symbolName = obj.Name()
+		if mod, version, ok := moduleAtVersion(h.LinkPath, i); ok {
+			h.LinkPath = strings.Replace(h.LinkPath, mod, mod+"@"+version, 1)
 		}
-		return path, link, obj.Name()
+		return h, nil
 	case *types.Builtin:
-		return "builtin", fmt.Sprintf("builtin#%s", obj.Name()), obj.Name()
+		h.importPath = "builtin"
+		h.LinkPath = h.importPath
+		h.LinkAnchor = obj.Name()
+		h.symbolName = h.LinkAnchor
+		return h, nil
 	}
 	// Check if the identifier is test-only (and is therefore not part of a
 	// package's API). This is true if the request originated in a test package,
 	// and if the declaration is also found in the same test package.
 	if i.pkg != nil && obj.Pkg() != nil && i.pkg.ForTest() != "" {
 		if _, err := i.pkg.File(i.Declaration.MappedRange[0].URI()); err == nil {
-			return "", "", ""
+			return h, nil
 		}
 	}
 	// Don't return links for other unexported types.
 	if !obj.Exported() {
-		return "", "", ""
+		return h, nil
 	}
 	var rTypeName string
 	switch obj := obj.(type) {
@@ -155,7 +165,7 @@ func pathLinkAndSymbolName(i *IdentifierInfo) (string, string, string) {
 	case *types.Func:
 		typ, ok := obj.Type().(*types.Signature)
 		if !ok {
-			return "", "", ""
+			return h, nil
 		}
 		if r := typ.Recv(); r != nil {
 			switch rtyp := Deref(r.Type()).(type) {
@@ -169,7 +179,7 @@ func pathLinkAndSymbolName(i *IdentifierInfo) (string, string, string) {
 					if named, ok := i.enclosing.(*types.Named); ok && named.Obj().Exported() {
 						rTypeName = named.Obj().Name()
 					} else {
-						return "", "", ""
+						return h, nil
 					}
 				} else {
 					rTypeName = rtyp.Obj().Name()
@@ -177,20 +187,20 @@ func pathLinkAndSymbolName(i *IdentifierInfo) (string, string, string) {
 			}
 		}
 	}
-	path := obj.Pkg().Path()
-	link := path
-	if mod, version, ok := moduleAtVersion(path, i); ok {
-		link = strings.Replace(path, mod, mod+"@"+version, 1)
+	h.importPath = obj.Pkg().Path()
+	h.LinkPath = h.importPath
+	if mod, version, ok := moduleAtVersion(h.LinkPath, i); ok {
+		h.LinkPath = strings.Replace(h.LinkPath, mod, mod+"@"+version, 1)
 	}
 	if rTypeName != "" {
-		link = fmt.Sprintf("%s#%s.%s", link, rTypeName, obj.Name())
-		symbol := fmt.Sprintf("(%s.%s).%s", obj.Pkg().Name(), rTypeName, obj.Name())
-		return path, link, symbol
+		h.LinkAnchor = fmt.Sprintf("%s.%s", rTypeName, obj.Name())
+		h.symbolName = fmt.Sprintf("(%s.%s).%s", obj.Pkg().Name(), rTypeName, obj.Name())
+		return h, nil
 	}
 	// For most cases, the link is "package/path#symbol".
-	link = fmt.Sprintf("%s#%s", link, obj.Name())
-	symbolName := fmt.Sprintf("%s.%s", obj.Pkg().Name(), obj.Name())
-	return path, link, symbolName
+	h.LinkAnchor = obj.Name()
+	h.symbolName = fmt.Sprintf("%s.%s", obj.Pkg().Name(), obj.Name())
+	return h, nil
 }
 
 func moduleAtVersion(path string, i *IdentifierInfo) (string, string, bool) {
@@ -201,10 +211,10 @@ func moduleAtVersion(path string, i *IdentifierInfo) (string, string, bool) {
 	if err != nil {
 		return "", "", false
 	}
-	if impPkg.Module() == nil {
+	if impPkg.Version() == nil {
 		return "", "", false
 	}
-	version, modpath := impPkg.Module().Version, impPkg.Module().Path
+	version, modpath := impPkg.Version().Version, impPkg.Version().Path
 	if modpath == "" || version == "" {
 		return "", "", false
 	}
@@ -222,16 +232,9 @@ func objectString(obj types.Object, qf types.Qualifier) string {
 	return str
 }
 
-func hover(ctx context.Context, fset *token.FileSet, pkg Package, d Declaration) (*HoverInformation, error) {
-	_, done := event.Start(ctx, "source.hover")
-	defer done()
-
-	return HoverInfo(pkg, d.obj, d.node)
-}
-
 // HoverInfo returns a HoverInformation struct for an ast node and its type
 // object.
-func HoverInfo(pkg Package, obj types.Object, node ast.Node) (*HoverInformation, error) {
+func HoverInfo(ctx context.Context, pkg Package, obj types.Object, node ast.Node) (*HoverInformation, error) {
 	var info *HoverInformation
 
 	switch node := node.(type) {
@@ -267,6 +270,7 @@ func HoverInfo(pkg Package, obj types.Object, node ast.Node) (*HoverInformation,
 			if err != nil {
 				return nil, err
 			}
+			_, info.isType = obj.(*types.TypeName)
 		}
 	case *ast.TypeSpec:
 		if obj.Parent() == types.Universe {
@@ -373,7 +377,7 @@ func formatVar(node ast.Spec, obj types.Object, decl *ast.GenDecl) *HoverInforma
 	return &HoverInformation{source: obj, comment: decl.Doc}
 }
 
-func FormatHover(h *HoverInformation, options Options) (string, error) {
+func FormatHover(h *HoverInformation, options *Options) (string, error) {
 	signature := h.Signature
 	if signature != "" && options.PreferredContentFormat == protocol.Markdown {
 		signature = fmt.Sprintf("```go\n%s\n```", signature)
@@ -403,14 +407,14 @@ func FormatHover(h *HoverInformation, options Options) (string, error) {
 	return "", errors.Errorf("no hover for %v", h.source)
 }
 
-func formatLink(h *HoverInformation, options Options) string {
-	if !options.LinksInHover || options.LinkTarget == "" || h.Link == "" {
+func formatLink(h *HoverInformation, options *Options) string {
+	if !options.LinksInHover || options.LinkTarget == "" || h.LinkPath == "" {
 		return ""
 	}
-	plainLink := fmt.Sprintf("https://%s/%s", options.LinkTarget, h.Link)
+	plainLink := BuildLink(options.LinkTarget, h.LinkPath, h.LinkAnchor)
 	switch options.PreferredContentFormat {
 	case protocol.Markdown:
-		return fmt.Sprintf("[`%s` on %s](%s)", h.SymbolName, options.LinkTarget, plainLink)
+		return fmt.Sprintf("[`%s` on %s](%s)", h.symbolName, options.LinkTarget, plainLink)
 	case protocol.PlainText:
 		return ""
 	default:
@@ -418,14 +422,26 @@ func formatLink(h *HoverInformation, options Options) string {
 	}
 }
 
-func formatDoc(doc string, options Options) string {
+// BuildLink constructs a link with the given target, path, and anchor.
+func BuildLink(target, path, anchor string) string {
+	link := fmt.Sprintf("https://%s/%s", target, path)
+	if target == "pkg.go.dev" {
+		link += "?utm_source=gopls"
+	}
+	if anchor == "" {
+		return link
+	}
+	return link + "#" + anchor
+}
+
+func formatDoc(doc string, options *Options) string {
 	if options.PreferredContentFormat == protocol.Markdown {
 		return CommentToMarkdown(doc)
 	}
 	return doc
 }
 
-func formatHover(options Options, x ...string) string {
+func formatHover(options *Options, x ...string) string {
 	var b strings.Builder
 	for i, el := range x {
 		if el != "" {

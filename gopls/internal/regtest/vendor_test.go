@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"golang.org/x/tools/internal/lsp"
+	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -20,6 +22,7 @@ var Goodbye error
 
 func TestInconsistentVendoring(t *testing.T) {
 	testenv.NeedsGo1Point(t, 14)
+
 	const pkgThatUsesVendoring = `
 -- go.mod --
 module mod.com
@@ -38,7 +41,11 @@ func _() {
 	var q int // hardcode a diagnostic
 }
 `
-	runner.Run(t, pkgThatUsesVendoring, func(t *testing.T, env *Env) {
+	// TODO(rstambler): Remove this when golang/go#41819 is resolved.
+	withOptions(
+		WithModes(WithoutExperiments),
+		WithProxyFiles(basicProxy),
+	).run(t, pkgThatUsesVendoring, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a1.go")
 		env.Await(
 			// The editor should pop up a message suggesting that the user
@@ -48,15 +55,21 @@ func _() {
 			// will be executed.
 			OnceMet(
 				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1),
-				ShowMessageRequest("go mod vendor"),
+				env.DiagnosticAtRegexp("go.mod", "module mod.com"),
 			),
 		)
+		// Apply the quickfix associated with the diagnostic.
+		d := &protocol.PublishDiagnosticsParams{}
+		env.Await(ReadDiagnostics("go.mod", d))
+		env.ApplyQuickFixes("go.mod", d.Diagnostics)
+
+		// Check for file changes when the command completes.
+		env.Await(CompletedWork(source.CommandVendor.Title, 1))
 		env.CheckForFileChanges()
+
+		// Confirm that there is no longer any inconsistent vendoring.
 		env.Await(
-			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1),
-				DiagnosticAt("a/a1.go", 6, 5),
-			),
+			DiagnosticAt("a/a1.go", 6, 5),
 		)
-	}, WithProxyFiles(basicProxy))
+	})
 }

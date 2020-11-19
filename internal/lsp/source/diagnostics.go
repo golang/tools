@@ -28,8 +28,9 @@ type Diagnostic struct {
 }
 
 type SuggestedFix struct {
-	Title string
-	Edits map[span.URI][]protocol.TextEdit
+	Title   string
+	Edits   map[span.URI][]protocol.TextEdit
+	Command *protocol.Command
 }
 
 type RelatedInformation struct {
@@ -41,7 +42,7 @@ type RelatedInformation struct {
 func Diagnostics(ctx context.Context, snapshot Snapshot, pkg Package, withAnalysis bool) (map[VersionedFileIdentity][]*Diagnostic, bool, error) {
 	onlyIgnoredFiles := true
 	for _, pgf := range pkg.CompiledGoFiles() {
-		onlyIgnoredFiles = onlyIgnoredFiles && snapshot.View().IgnoredFile(pgf.URI)
+		onlyIgnoredFiles = onlyIgnoredFiles && snapshot.IgnoredFile(pgf.URI)
 	}
 	if onlyIgnoredFiles {
 		return nil, false, nil
@@ -62,7 +63,7 @@ func Diagnostics(ctx context.Context, snapshot Snapshot, pkg Package, withAnalys
 	// Prepare the reports we will send for the files in this package.
 	reports := make(map[VersionedFileIdentity][]*Diagnostic)
 	for _, pgf := range pkg.CompiledGoFiles() {
-		clearReports(ctx, snapshot, reports, pgf.URI)
+		clearReports(snapshot, reports, pgf.URI)
 	}
 	// Prepare any additional reports for the errors in this package.
 	for _, e := range pkg.GetErrors() {
@@ -78,7 +79,7 @@ func Diagnostics(ctx context.Context, snapshot Snapshot, pkg Package, withAnalys
 				}
 			}
 		}
-		clearReports(ctx, snapshot, reports, e.URI)
+		clearReports(snapshot, reports, e.URI)
 	}
 	// Run diagnostics for the package that this URI belongs to.
 	hadDiagnostics, hadTypeErrors, err := diagnostics(ctx, snapshot, reports, pkg, len(pkg.MissingDependencies()) > 0)
@@ -121,11 +122,14 @@ func pickAnalyzers(snapshot Snapshot, hadTypeErrors bool) map[string]Analyzer {
 	for k, v := range snapshot.View().Options().DefaultAnalyzers {
 		analyzers[k] = v
 	}
+	for k, v := range snapshot.View().Options().StaticcheckAnalyzers {
+		analyzers[k] = v
+	}
 	return analyzers
 }
 
 func FileDiagnostics(ctx context.Context, snapshot Snapshot, uri span.URI) (VersionedFileIdentity, []*Diagnostic, error) {
-	fh, err := snapshot.GetFile(ctx, uri)
+	fh, err := snapshot.GetVersionedFile(ctx, uri)
 	if err != nil {
 		return VersionedFileIdentity{}, nil, err
 	}
@@ -192,7 +196,7 @@ func diagnostics(ctx context.Context, snapshot Snapshot, reports map[VersionedFi
 		} else if len(set.typeErrors) > 0 {
 			hasTypeErrors = true
 		}
-		if err := addReports(ctx, snapshot, reports, uri, diags...); err != nil {
+		if err := addReports(snapshot, reports, uri, diags...); err != nil {
 			return false, false, err
 		}
 	}
@@ -202,7 +206,7 @@ func diagnostics(ctx context.Context, snapshot Snapshot, reports map[VersionedFi
 func analyses(ctx context.Context, snapshot Snapshot, reports map[VersionedFileIdentity][]*Diagnostic, pkg Package, analyses map[string]Analyzer) error {
 	var analyzers []*analysis.Analyzer
 	for _, a := range analyses {
-		if !a.Enabled(snapshot.View()) {
+		if !a.IsEnabled(snapshot.View()) {
 			continue
 		}
 		analyzers = append(analyzers, a.Analyzer)
@@ -228,7 +232,7 @@ func analyses(ctx context.Context, snapshot Snapshot, reports map[VersionedFileI
 		if onlyDeletions(e.SuggestedFixes) {
 			tags = append(tags, protocol.Unnecessary)
 		}
-		if err := addReports(ctx, snapshot, reports, e.URI, &Diagnostic{
+		if err := addReports(snapshot, reports, e.URI, &Diagnostic{
 			Range:    e.Range,
 			Message:  e.Message,
 			Source:   e.Category,
@@ -242,7 +246,7 @@ func analyses(ctx context.Context, snapshot Snapshot, reports map[VersionedFileI
 	return nil
 }
 
-func clearReports(ctx context.Context, snapshot Snapshot, reports map[VersionedFileIdentity][]*Diagnostic, uri span.URI) {
+func clearReports(snapshot Snapshot, reports map[VersionedFileIdentity][]*Diagnostic, uri span.URI) {
 	fh := snapshot.FindFile(uri)
 	if fh == nil {
 		return
@@ -250,7 +254,7 @@ func clearReports(ctx context.Context, snapshot Snapshot, reports map[VersionedF
 	reports[fh.VersionedFileIdentity()] = []*Diagnostic{}
 }
 
-func addReports(ctx context.Context, snapshot Snapshot, reports map[VersionedFileIdentity][]*Diagnostic, uri span.URI, diagnostics ...*Diagnostic) error {
+func addReports(snapshot Snapshot, reports map[VersionedFileIdentity][]*Diagnostic, uri span.URI, diagnostics ...*Diagnostic) error {
 	fh := snapshot.FindFile(uri)
 	if fh == nil {
 		return nil

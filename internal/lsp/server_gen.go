@@ -36,8 +36,8 @@ func (s *Server) DidChange(ctx context.Context, params *protocol.DidChangeTextDo
 	return s.didChange(ctx, params)
 }
 
-func (s *Server) DidChangeConfiguration(ctx context.Context, changed *protocol.DidChangeConfigurationParams) error {
-	return s.didChangeConfiguration(ctx, changed)
+func (s *Server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChangeConfigurationParams) error {
+	return s.didChangeConfiguration(ctx, nil)
 }
 
 func (s *Server) DidChangeWatchedFiles(ctx context.Context, params *protocol.DidChangeWatchedFilesParams) error {
@@ -116,6 +116,10 @@ func (s *Server) LogTrace(context.Context, *protocol.LogTraceParams) error {
 	return notImplemented("LogTrace")
 }
 
+func (s *Server) Moniker(context.Context, *protocol.MonikerParams) ([]protocol.Moniker, error) {
+	return nil, notImplemented("Moniker")
+}
+
 func (s *Server) NonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {
 	return s.nonstandardRequest(ctx, method, params)
 }
@@ -152,6 +156,10 @@ func (s *Server) Resolve(context.Context, *protocol.CompletionItem) (*protocol.C
 	return nil, notImplemented("Resolve")
 }
 
+func (s *Server) ResolveCodeAction(context.Context, *protocol.CodeAction) (*protocol.CodeAction, error) {
+	return nil, notImplemented("ResolveCodeAction")
+}
+
 func (s *Server) ResolveCodeLens(context.Context, *protocol.CodeLens) (*protocol.CodeLens, error) {
 	return nil, notImplemented("ResolveCodeLens")
 }
@@ -164,16 +172,20 @@ func (s *Server) SelectionRange(context.Context, *protocol.SelectionRangeParams)
 	return nil, notImplemented("SelectionRange")
 }
 
-func (s *Server) SemanticTokensFull(context.Context, *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
-	return nil, notImplemented("SemanticTokensFull")
+func (s *Server) SemanticTokensFull(ctx context.Context, p *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
+	return s.semanticTokensFull(ctx, p)
 }
 
-func (s *Server) SemanticTokensFullDelta(context.Context, *protocol.SemanticTokensDeltaParams) (interface{}, error) {
-	return nil, notImplemented("SemanticTokensFullDelta")
+func (s *Server) SemanticTokensFullDelta(ctx context.Context, p *protocol.SemanticTokensDeltaParams) (interface{}, error) {
+	return s.semanticTokensFullDelta(ctx, p)
 }
 
-func (s *Server) SemanticTokensRange(context.Context, *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
-	return nil, notImplemented("SemanticTokensRange")
+func (s *Server) SemanticTokensRange(ctx context.Context, p *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
+	return s.semanticTokensRange(ctx, p)
+}
+
+func (s *Server) SemanticTokensRefresh(ctx context.Context) error {
+	return s.semanticTokensRefresh(ctx)
 }
 
 func (s *Server) SetTrace(context.Context, *protocol.SetTraceParams) error {
@@ -205,5 +217,5 @@ func (s *Server) WillSaveWaitUntil(context.Context, *protocol.WillSaveTextDocume
 }
 
 func (s *Server) WorkDoneProgressCancel(ctx context.Context, params *protocol.WorkDoneProgressCancelParams) error {
-	return s.progress.cancel(ctx, params.Token)
+	return s.workDoneProgressCancel(ctx, params)
 }

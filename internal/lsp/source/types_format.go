@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"go/doc"
 	"go/printer"
 	"go/token"
 	"go/types"
@@ -79,8 +80,8 @@ func (s *signature) Params() []string {
 
 // NewBuiltinSignature returns signature for the builtin object with a given
 // name, if a builtin object with the name exists.
-func NewBuiltinSignature(ctx context.Context, snapshot Snapshot, name string) (*signature, error) {
-	builtin, err := snapshot.BuiltinPackage(ctx)
+func NewBuiltinSignature(ctx context.Context, s Snapshot, name string) (*signature, error) {
+	builtin, err := s.BuiltinPackage(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -103,10 +104,17 @@ func NewBuiltinSignature(ctx context.Context, snapshot Snapshot, name string) (*
 			variadic = true
 		}
 	}
-	params, _ := formatFieldList(ctx, snapshot, decl.Type.Params, variadic)
-	results, needResultParens := formatFieldList(ctx, snapshot, decl.Type.Results, false)
+	params, _ := formatFieldList(ctx, s, decl.Type.Params, variadic)
+	results, needResultParens := formatFieldList(ctx, s, decl.Type.Results, false)
+	d := decl.Doc.Text()
+	switch s.View().Options().HoverKind {
+	case SynopsisDocumentation:
+		d = doc.Synopsis(d)
+	case NoDocumentation:
+		d = ""
+	}
 	return &signature{
-		doc:              decl.Doc.Text(),
+		doc:              d,
 		name:             name,
 		needResultParens: needResultParens,
 		params:           params,
@@ -160,11 +168,11 @@ func formatFieldList(ctx context.Context, snapshot Snapshot, list *ast.FieldList
 }
 
 // NewSignature returns formatted signature for a types.Signature struct.
-func NewSignature(ctx context.Context, s Snapshot, pkg Package, file *ast.File, name string, sig *types.Signature, comment *ast.CommentGroup, qf types.Qualifier) (*signature, error) {
+func NewSignature(ctx context.Context, s Snapshot, pkg Package, sig *types.Signature, comment *ast.CommentGroup, qf types.Qualifier) *signature {
 	params := make([]string, 0, sig.Params().Len())
 	for i := 0; i < sig.Params().Len(); i++ {
 		el := sig.Params().At(i)
-		typ := FormatVarType(ctx, s, pkg, file, el, qf)
+		typ := FormatVarType(ctx, s, pkg, el, qf)
 		p := typ
 		if el.Name() != "" {
 			p = el.Name() + " " + typ
@@ -178,7 +186,7 @@ func NewSignature(ctx context.Context, s Snapshot, pkg Package, file *ast.File, 
 			needResultParens = true
 		}
 		el := sig.Results().At(i)
-		typ := FormatVarType(ctx, s, pkg, file, el, qf)
+		typ := FormatVarType(ctx, s, pkg, el, qf)
 		if el.Name() == "" {
 			results = append(results, typ)
 		} else {
@@ -188,23 +196,29 @@ func NewSignature(ctx context.Context, s Snapshot, pkg Package, file *ast.File, 
 			results = append(results, el.Name()+" "+typ)
 		}
 	}
-	var doc string
+	var d string
 	if comment != nil {
-		doc = comment.Text()
+		d = comment.Text()
+	}
+	switch s.View().Options().HoverKind {
+	case SynopsisDocumentation:
+		d = doc.Synopsis(d)
+	case NoDocumentation:
+		d = ""
 	}
 	return &signature{
-		doc:              doc,
+		doc:              d,
 		params:           params,
 		results:          results,
 		variadic:         sig.Variadic(),
 		needResultParens: needResultParens,
-	}, nil
+	}
 }
 
 // FormatVarType formats a *types.Var, accounting for type aliases.
 // To do this, it looks in the AST of the file in which the object is declared.
 // On any errors, it always fallbacks back to types.TypeString.
-func FormatVarType(ctx context.Context, snapshot Snapshot, srcpkg Package, srcfile *ast.File, obj *types.Var, qf types.Qualifier) string {
+func FormatVarType(ctx context.Context, snapshot Snapshot, srcpkg Package, obj *types.Var, qf types.Qualifier) string {
 	pgf, pkg, err := FindPosInPackage(snapshot, srcpkg, obj.Pos())
 	if err != nil {
 		return types.TypeString(obj.Type(), qf)
@@ -224,7 +238,7 @@ func FormatVarType(ctx context.Context, snapshot Snapshot, srcpkg Package, srcfi
 
 	// If the request came from a different package than the one in which the
 	// types are defined, we may need to modify the qualifiers.
-	qualified = qualifyExpr(snapshot.FileSet(), qualified, srcpkg, pkg, srcfile, clonedInfo, qf)
+	qualified = qualifyExpr(qualified, srcpkg, pkg, clonedInfo, qf)
 	fmted := FormatNode(snapshot.FileSet(), qualified)
 	return fmted
 }
@@ -247,7 +261,7 @@ func varType(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile, obj *typ
 }
 
 // qualifyExpr applies the "pkgName." prefix to any *ast.Ident in the expr.
-func qualifyExpr(fset *token.FileSet, expr ast.Expr, srcpkg, pkg Package, file *ast.File, clonedInfo map[token.Pos]*types.PkgName, qf types.Qualifier) ast.Expr {
+func qualifyExpr(expr ast.Expr, srcpkg, pkg Package, clonedInfo map[token.Pos]*types.PkgName, qf types.Qualifier) ast.Expr {
 	ast.Inspect(expr, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.ArrayType, *ast.ChanType, *ast.Ellipsis,

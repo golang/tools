@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"go/ast"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/protocol"
@@ -26,7 +28,7 @@ import (
 
 type modTidyKey struct {
 	sessionID       string
-	cfg             string
+	env             string
 	gomod           source.FileIdentity
 	imports         string
 	unsavedOverlays string
@@ -52,14 +54,24 @@ func (mth *modTidyHandle) tidy(ctx context.Context, snapshot *snapshot) (*source
 }
 
 func (s *snapshot) ModTidy(ctx context.Context, fh source.FileHandle) (*source.TidiedModule, error) {
-	if !s.view.tmpMod {
-		return nil, source.ErrTmpModfileUnsupported
+	if fh.Kind() != source.Mod {
+		return nil, fmt.Errorf("%s is not a go.mod file", fh.URI())
 	}
 	if handle := s.getModTidyHandle(fh.URI()); handle != nil {
 		return handle.tidy(ctx, s)
 	}
+	// If the file handle is an overlay, it may not be written to disk.
+	// The go.mod file has to be on disk for `go mod tidy` to work.
+	if _, ok := fh.(*overlay); ok {
+		if info, _ := os.Stat(fh.URI().Filename()); info == nil {
+			return nil, source.ErrNoModOnDisk
+		}
+	}
 	workspacePkgs, err := s.WorkspacePackages(ctx)
 	if err != nil {
+		if tm, ok := s.parseModErrors(ctx, fh, err); ok {
+			return tm, nil
+		}
 		return nil, err
 	}
 	importHash, err := hashImports(ctx, workspacePkgs)
@@ -71,15 +83,13 @@ func (s *snapshot) ModTidy(ctx context.Context, fh source.FileHandle) (*source.T
 	overlayHash := hashUnsavedOverlays(s.files)
 	s.mu.Unlock()
 
-	// Make sure to use the module root in the configuration.
-	cfg := s.configWithDir(ctx, filepath.Dir(fh.URI().Filename()))
 	key := modTidyKey{
 		sessionID:       s.view.session.id,
-		view:            s.view.root.Filename(),
+		view:            s.view.folder.Filename(),
 		imports:         importHash,
 		unsavedOverlays: overlayHash,
 		gomod:           fh.FileIdentity(),
-		cfg:             hashConfig(cfg),
+		env:             hashEnv(s),
 	}
 	h := s.generation.Bind(key, func(ctx context.Context, arg memoize.Arg) interface{} {
 		ctx, done := event.Start(ctx, "cache.ModTidyHandle", tag.URI.Of(fh.URI()))
@@ -103,14 +113,19 @@ func (s *snapshot) ModTidy(ctx context.Context, fh source.FileHandle) (*source.T
 				err: err,
 			}
 		}
-		tmpURI, runner, inv, cleanup, err := snapshot.goCommandInvocation(ctx, true, "mod", []string{"tidy"})
+		inv := &gocommand.Invocation{
+			Verb:       "mod",
+			Args:       []string{"tidy"},
+			WorkingDir: filepath.Dir(fh.URI().Filename()),
+		}
+		tmpURI, inv, cleanup, err := snapshot.goCommandInvocation(ctx, source.WriteTemporaryModFile, inv)
 		if err != nil {
 			return &modTidyData{err: err}
 		}
 		// Keep the temporary go.mod file around long enough to parse it.
 		defer cleanup()
 
-		if _, err := runner.Run(ctx, *inv); err != nil {
+		if _, err := s.view.session.gocmdRunner.Run(ctx, *inv); err != nil {
 			return &modTidyData{err: err}
 		}
 		// Go directly to disk to get the temporary mod file, since it is
@@ -138,7 +153,7 @@ func (s *snapshot) ModTidy(ctx context.Context, fh source.FileHandle) (*source.T
 				TidiedContent: tempContents,
 			},
 		}
-	})
+	}, nil)
 
 	mth := &modTidyHandle{handle: h}
 	s.mu.Lock()
@@ -146,6 +161,50 @@ func (s *snapshot) ModTidy(ctx context.Context, fh source.FileHandle) (*source.T
 	s.mu.Unlock()
 
 	return mth.tidy(ctx, s)
+}
+
+func (s *snapshot) parseModErrors(ctx context.Context, fh source.FileHandle, err error) (*source.TidiedModule, bool) {
+	if err == nil {
+		return nil, false
+	}
+	switch {
+	// Match on common error messages. This is really hacky, but I'm not sure
+	// of any better way. This can be removed when golang/go#39164 is resolved.
+	case strings.Contains(err.Error(), "inconsistent vendoring"):
+		pmf, err := s.ParseMod(ctx, fh)
+		if err != nil {
+			return nil, false
+		}
+		if pmf.File.Module == nil || pmf.File.Module.Syntax == nil {
+			return nil, false
+		}
+		rng, err := rangeFromPositions(pmf.Mapper, pmf.File.Module.Syntax.Start, pmf.File.Module.Syntax.End)
+		if err != nil {
+			return nil, false
+		}
+		args, err := source.MarshalArgs(protocol.URIFromSpanURI(fh.URI()))
+		if err != nil {
+			return nil, false
+		}
+		return &source.TidiedModule{
+			Parsed: pmf,
+			Errors: []source.Error{{
+				URI:   fh.URI(),
+				Range: rng,
+				Kind:  source.ListError,
+				Message: `Inconsistent vendoring detected. Please re-run "go mod vendor".
+See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
+				SuggestedFixes: []source.SuggestedFix{{
+					Command: &protocol.Command{
+						Command:   source.CommandVendor.ID(),
+						Title:     source.CommandVendor.Title,
+						Arguments: args,
+					},
+				}},
+			}},
+		}, true
+	}
+	return nil, false
 }
 
 func hashImports(ctx context.Context, wsPackages []source.Package) (string, error) {
@@ -294,7 +353,7 @@ func unusedError(m *protocol.ColumnMapper, req *modfile.Require, computeEdits di
 	if err != nil {
 		return source.Error{}, err
 	}
-	edits, err := dropDependency(req, m, computeEdits)
+	args, err := source.MarshalArgs(m.URI, false, []string{req.Mod.Path + "@none"})
 	if err != nil {
 		return source.Error{}, err
 	}
@@ -305,8 +364,10 @@ func unusedError(m *protocol.ColumnMapper, req *modfile.Require, computeEdits di
 		URI:      m.URI,
 		SuggestedFixes: []source.SuggestedFix{{
 			Title: fmt.Sprintf("Remove dependency: %s", req.Mod.Path),
-			Edits: map[span.URI][]protocol.TextEdit{
-				m.URI: edits,
+			Command: &protocol.Command{
+				Title:     source.CommandRemoveDependency.Title,
+				Command:   source.CommandRemoveDependency.ID(),
+				Arguments: args,
 			},
 		}},
 	}, nil
@@ -354,51 +415,35 @@ func directnessError(m *protocol.ColumnMapper, req *modfile.Require, computeEdit
 }
 
 func missingModuleError(snapshot source.Snapshot, pm *source.ParsedModule, req *modfile.Require) (source.Error, error) {
-	start, end := pm.File.Module.Syntax.Span()
-	rng, err := rangeFromPositions(pm.Mapper, start, end)
+	var rng protocol.Range
+	// Default to the start of the file if there is no module declaration.
+	if pm.File != nil && pm.File.Module != nil && pm.File.Module.Syntax != nil {
+		start, end := pm.File.Module.Syntax.Span()
+		var err error
+		rng, err = rangeFromPositions(pm.Mapper, start, end)
+		if err != nil {
+			return source.Error{}, err
+		}
+	}
+	args, err := source.MarshalArgs(pm.Mapper.URI, !req.Indirect, []string{req.Mod.Path + "@" + req.Mod.Version})
 	if err != nil {
 		return source.Error{}, err
-	}
-	edits, err := addRequireFix(pm.Mapper, req, snapshot.View().Options().ComputeEdits)
-	if err != nil {
-		return source.Error{}, err
-	}
-	fix := &source.SuggestedFix{
-		Title: fmt.Sprintf("Add %s to your go.mod file", req.Mod.Path),
-		Edits: map[span.URI][]protocol.TextEdit{
-			pm.Mapper.URI: edits,
-		},
 	}
 	return source.Error{
-		URI:            pm.Mapper.URI,
-		Range:          rng,
-		Message:        fmt.Sprintf("%s is not in your go.mod file", req.Mod.Path),
-		Category:       source.GoModTidy,
-		Kind:           source.ModTidyError,
-		SuggestedFixes: []source.SuggestedFix{*fix},
+		URI:      pm.Mapper.URI,
+		Range:    rng,
+		Message:  fmt.Sprintf("%s is not in your go.mod file", req.Mod.Path),
+		Category: source.GoModTidy,
+		Kind:     source.ModTidyError,
+		SuggestedFixes: []source.SuggestedFix{{
+			Title: fmt.Sprintf("Add %s to your go.mod file", req.Mod.Path),
+			Command: &protocol.Command{
+				Title:     source.CommandAddDependency.Title,
+				Command:   source.CommandAddDependency.ID(),
+				Arguments: args,
+			},
+		}},
 	}, nil
-}
-
-// dropDependency returns the edits to remove the given require from the go.mod
-// file.
-func dropDependency(req *modfile.Require, m *protocol.ColumnMapper, computeEdits diff.ComputeEdits) ([]protocol.TextEdit, error) {
-	// We need a private copy of the parsed go.mod file, since we're going to
-	// modify it.
-	copied, err := modfile.Parse("", m.Content, nil)
-	if err != nil {
-		return nil, err
-	}
-	if err := copied.DropRequire(req.Mod.Path); err != nil {
-		return nil, err
-	}
-	copied.Cleanup()
-	newContent, err := copied.Format()
-	if err != nil {
-		return nil, err
-	}
-	// Calculate the edits to be made due to the change.
-	diff := computeEdits(m.URI, string(m.Content), string(newContent))
-	return source.ToProtocolEdits(m, diff)
 }
 
 // switchDirectness gets the edits needed to change an indirect dependency to
@@ -456,28 +501,6 @@ func missingModuleForImport(snapshot source.Snapshot, m *protocol.ColumnMapper, 
 		Kind:           source.ModTidyError,
 		SuggestedFixes: fixes,
 	}, nil
-}
-
-// addRequireFix creates edits for adding a given require to a go.mod file.
-func addRequireFix(m *protocol.ColumnMapper, req *modfile.Require, computeEdits diff.ComputeEdits) ([]protocol.TextEdit, error) {
-	// We need a private copy of the parsed go.mod file, since we're going to
-	// modify it.
-	copied, err := modfile.Parse("", m.Content, nil)
-	if err != nil {
-		return nil, err
-	}
-	// Calculate the quick fix edits that need to be made to the go.mod file.
-	if err := copied.AddRequire(req.Mod.Path, req.Mod.Version); err != nil {
-		return nil, err
-	}
-	copied.SortBlocks()
-	newContents, err := copied.Format()
-	if err != nil {
-		return nil, err
-	}
-	// Calculate the edits to be made due to the change.
-	diff := computeEdits(m.URI, string(m.Content), string(newContents))
-	return source.ToProtocolEdits(m, diff)
 }
 
 func rangeFromPositions(m *protocol.ColumnMapper, s, e modfile.Position) (protocol.Range, error) {

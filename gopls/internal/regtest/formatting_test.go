@@ -173,9 +173,48 @@ func Hi() {
 }
 `
 		crlf := strings.ReplaceAll(want, "\n", "\r\n")
-		env.OpenFileWithContent("main.go", crlf)
+		env.CreateBuffer("main.go", crlf)
 		env.SaveBuffer("main.go")
 		got := env.Editor.BufferText("main.go")
+		if want != got {
+			t.Errorf("unexpected content after save:\n%s", tests.Diff(want, got))
+		}
+	})
+}
+
+func TestCRLF_42646(t *testing.T) {
+	runner.Run(t, "-- main.go --", func(t *testing.T, env *Env) {
+		want := `package main
+
+import (
+	"fmt"
+)
+
+/*
+func upload(c echo.Context) error {
+	if err := r.ParseForm(); err != nil {
+		fmt.Fprintf(w, "ParseForm() err: %v", err)
+		return
+	}
+	fmt.Fprintf(w, "POST request successful")
+	path_ver := r.FormValue("path_ver")
+	ukclin_ver := r.FormValue("ukclin_ver")
+
+	fmt.Fprintf(w, "Name = %s\n", path_ver)
+	fmt.Fprintf(w, "Address = %s\n", ukclin_ver)
+}
+*/
+
+func main() {
+	const server_port = 8080
+	fmt.Printf("port: %d\n", server_port)
+}
+`
+		crlf := strings.ReplaceAll(want, "\n", "\r\n")
+		env.CreateBuffer("main.go", crlf)
+		env.OrganizeImports("main.go")
+		got := env.Editor.BufferText("main.go")
+		got = strings.ReplaceAll(got, "\r\n", "\n") // convert everything to LF for simplicity
 		if want != got {
 			t.Errorf("unexpected content after save:\n%s", tests.Diff(want, got))
 		}
