@@ -81,9 +81,9 @@ type EditorConfig struct {
 	// workspace folders nor a root URI.
 	WithoutWorkspaceFolders bool
 
-	// EditorRootPath specifies the root path of the workspace folder used when
+	// WorkspaceRoot specifies the root path of the workspace folder used when
 	// initializing gopls in the sandbox. If empty, the Workdir is used.
-	EditorRootPath string
+	WorkspaceRoot string
 
 	// EnableStaticcheck enables staticcheck analyzers.
 	EnableStaticcheck bool
@@ -95,6 +95,8 @@ type EditorConfig struct {
 	// Whether to send the current process ID, for testing data that is joined to
 	// the PID. This can only be set by one test.
 	SendPID bool
+
+	VerboseOutput bool
 }
 
 // NewEditor Creates a new Editor.
@@ -121,7 +123,7 @@ func (e *Editor) Connect(ctx context.Context, conn jsonrpc2.Conn, hooks ClientHo
 		protocol.Handlers(
 			protocol.ClientHandler(e.client,
 				jsonrpc2.MethodNotFound)))
-	if err := e.initialize(ctx, e.Config.WithoutWorkspaceFolders, e.Config.EditorRootPath); err != nil {
+	if err := e.initialize(ctx, e.Config.WithoutWorkspaceFolders, e.Config.WorkspaceRoot); err != nil {
 		return nil, err
 	}
 	e.sandbox.Workdir.AddWatcher(e.onFileChanges)
@@ -210,6 +212,10 @@ func (e *Editor) configuration() map[string]interface{} {
 	}
 	if e.Config.AllExperiments {
 		config["allExperiments"] = true
+	}
+
+	if e.Config.VerboseOutput {
+		config["verboseOutput"] = true
 	}
 
 	// TODO(rFindley): uncomment this if/when diagnostics delay is on by
@@ -391,9 +397,9 @@ func (e *Editor) SaveBuffer(ctx context.Context, path string) error {
 
 func (e *Editor) SaveBufferWithoutActions(ctx context.Context, path string) error {
 	e.mu.Lock()
+	defer e.mu.Unlock()
 	buf, ok := e.buffers[path]
 	if !ok {
-		e.mu.Unlock()
 		return fmt.Errorf(fmt.Sprintf("unknown buffer: %q", path))
 	}
 	content := buf.text()
@@ -402,7 +408,6 @@ func (e *Editor) SaveBufferWithoutActions(ctx context.Context, path string) erro
 	if ok {
 		includeText = syncOptions.Save.IncludeText
 	}
-	e.mu.Unlock()
 
 	docID := e.textDocumentIdentifier(buf.path)
 	if e.Server != nil {
@@ -417,10 +422,8 @@ func (e *Editor) SaveBufferWithoutActions(ctx context.Context, path string) erro
 		return errors.Errorf("writing %q: %w", path, err)
 	}
 
-	e.mu.Lock()
 	buf.dirty = false
 	e.buffers[path] = buf
-	e.mu.Unlock()
 
 	if e.Server != nil {
 		params := &protocol.DidSaveTextDocumentParams{
@@ -806,6 +809,9 @@ func (e *Editor) FormatBuffer(ctx context.Context, path string) error {
 		return fmt.Errorf("before receipt of formatting edits, buffer version changed from %d to %d", version, versionAfter)
 	}
 	edits := convertEdits(resp)
+	if len(edits) == 0 {
+		return nil
+	}
 	return e.editBufferLocked(ctx, path, edits)
 }
 

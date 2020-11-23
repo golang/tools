@@ -116,14 +116,15 @@ func DefaultOptions() *Options {
 					CommandUpgradeDependency.Name: true,
 					CommandVendor.Name:            true,
 				},
-				LinksInHover:            true,
-				CompleteUnimported:      true,
-				CompletionDocumentation: true,
-				DeepCompletion:          true,
-				ImportShortcut:          Both,
-				Matcher:                 Fuzzy,
-				SymbolMatcher:           SymbolFuzzy,
-				SymbolStyle:             PackageQualifiedSymbols,
+				LinksInHover:                true,
+				CompleteUnimported:          true,
+				CompletionDocumentation:     true,
+				DeepCompletion:              true,
+				ImportShortcut:              Both,
+				Matcher:                     Fuzzy,
+				SymbolMatcher:               SymbolFuzzy,
+				SymbolStyle:                 PackageQualifiedSymbols,
+				ExperimentalPackageCacheKey: true,
 			},
 			InternalOptions: InternalOptions{
 				LiteralCompletions: true,
@@ -354,9 +355,12 @@ type ExperimentalOptions struct {
 	// semantic tokens to the client.
 	SemanticTokens bool
 
-	// ExpandWorkspaceToModule instructs `gopls` to expand the scope of the workspace to include the
-	// modules containing the workspace folders. Set this to false to avoid loading
-	// your entire module. This is particularly useful for those working in a monorepo.
+	// ExpandWorkspaceToModule instructs `gopls` to adjust the scope of the
+	// workspace to find the best available module root. `gopls` first looks for
+	// a go.mod file in any parent directory of the workspace folder, expanding
+	// the scope to that directory if it exists. If no viable parent directory is
+	// found, gopls will check if there is exactly one child directory containing
+	// a go.mod file, narrowing the scope to that directory if it exists.
 	ExpandWorkspaceToModule bool
 
 	// ExperimentalWorkspaceModule opts a user into the experimental support
@@ -607,7 +611,6 @@ func (o *Options) AddStaticcheckAnalyzer(a *analysis.Analyzer) {
 // enableAllExperimentMaps.
 func (o *Options) enableAllExperiments() {
 	o.ExperimentalDiagnosticsDelay = 200 * time.Millisecond
-	o.ExperimentalPackageCacheKey = true
 	o.SymbolStyle = DynamicSymbols
 }
 

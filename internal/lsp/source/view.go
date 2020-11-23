@@ -111,7 +111,7 @@ type Snapshot interface {
 
 	// ModTidy returns the results of `go mod tidy` for the module specified by
 	// the given go.mod file.
-	ModTidy(ctx context.Context, fh FileHandle) (*TidiedModule, error)
+	ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule, error)
 
 	// GoModForFile returns the URI of the go.mod file for the given URI.
 	GoModForFile(ctx context.Context, uri span.URI) span.URI
@@ -179,8 +179,9 @@ const (
 	// modified version of the user's go.mod file, e.g. `go mod tidy` used to
 	// generate diagnostics.
 	WriteTemporaryModFile
-	// ForTypeChecking is for packages.Load.
-	ForTypeChecking
+	// LoadWorkspace is for packages.Load, and other operations that should
+	// consider the whole workspace at once.
+	LoadWorkspace
 )
 
 // View represents a single workspace.
@@ -248,6 +249,7 @@ type ParsedGoFile struct {
 
 // A ParsedModule contains the results of parsing a go.mod file.
 type ParsedModule struct {
+	URI         span.URI
 	File        *modfile.File
 	Mapper      *protocol.ColumnMapper
 	ParseErrors []Error
@@ -255,8 +257,6 @@ type ParsedModule struct {
 
 // A TidiedModule contains the results of running `go mod tidy` on a module.
 type TidiedModule struct {
-	// The parsed module, which is guaranteed to have parsed successfully.
-	Parsed *ParsedModule
 	// Diagnostics representing changes made by `go mod tidy`.
 	Errors []Error
 	// The bytes of the go.mod file after it was tidied.
@@ -306,9 +306,6 @@ type Session interface {
 // Overlay is the type for a file held in memory on a session.
 type Overlay interface {
 	VersionedFileHandle
-
-	// Saved returns whether this overlay has been saved to disk.
-	Saved() bool
 }
 
 // FileModification represents a modification to a file.
@@ -438,6 +435,8 @@ type FileHandle interface {
 	// Read reads the contents of a file.
 	// If the file is not available, returns a nil slice and an error.
 	Read() ([]byte, error)
+	// Saved reports whether the file has the same content on disk.
+	Saved() bool
 }
 
 // FileIdentity uniquely identifies a file at a version from a FileSystem.

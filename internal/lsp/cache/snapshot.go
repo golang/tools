@@ -190,10 +190,14 @@ func (s *snapshot) config(ctx context.Context, inv *gocommand.Invocation) *packa
 	verboseOutput := s.view.options.VerboseOutput
 	s.view.optionsMu.Unlock()
 
+	// Forcibly disable GOPACKAGESDRIVER. It's incompatible with the
+	// packagesinternal APIs we use, and we really only support the go commmand
+	// anyway.
+	env := append(append([]string{}, inv.Env...), "GOPACKAGESDRIVER=off")
 	cfg := &packages.Config{
 		Context:    ctx,
 		Dir:        inv.WorkingDir,
-		Env:        inv.Env,
+		Env:        env,
 		BuildFlags: inv.BuildFlags,
 		Mode: packages.NeedName |
 			packages.NeedFiles |
@@ -256,7 +260,7 @@ func (s *snapshot) goCommandInvocation(ctx context.Context, mode source.Invocati
 		// If we're type checking, we need to use the workspace context, meaning
 		// the main (workspace) module. Otherwise, we should use the module for
 		// the passed-in working dir.
-		if mode == source.ForTypeChecking {
+		if mode == source.LoadWorkspace {
 			if s.workspaceMode()&usesWorkspaceModule == 0 {
 				for m := range s.workspace.activeModFiles() { // range to access the only element
 					modURI = m
@@ -602,6 +606,62 @@ func (s *snapshot) workspacePackageIDs() (ids []packageID) {
 
 func (s *snapshot) WorkspaceDirectories(ctx context.Context) []span.URI {
 	return s.workspace.dirs(ctx, s)
+}
+
+// allKnownSubdirs returns all of the subdirectories within the snapshot's
+// workspace directories. None of the workspace directories are included.
+func (s *snapshot) allKnownSubdirs(ctx context.Context) map[span.URI]struct{} {
+	// Don't return results until the snapshot is loaded, otherwise it may not
+	// yet "know" its files.
+	if err := s.awaitLoaded(ctx); err != nil {
+		return nil
+	}
+
+	dirs := s.workspace.dirs(ctx, s)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	seen := make(map[span.URI]struct{})
+	for uri := range s.files {
+		dir := filepath.Dir(uri.Filename())
+		var matched span.URI
+		for _, wsDir := range dirs {
+			// Note: InDir handles symlinks, but InDirLex does not--it's too
+			// expensive to call InDir on every file in the snapshot.
+			if source.InDirLex(wsDir.Filename(), dir) {
+				matched = wsDir
+				break
+			}
+		}
+		// Don't watch any directory outside of the workspace directories.
+		if matched == "" {
+			continue
+		}
+		for {
+			if dir == "" || dir == matched.Filename() {
+				break
+			}
+			uri := span.URIFromPath(dir)
+			if _, ok := seen[uri]; ok {
+				break
+			}
+			seen[uri] = struct{}{}
+			dir = filepath.Dir(dir)
+		}
+	}
+	return seen
+}
+
+// knownFilesInDir returns the files known to the given snapshot that are in
+// the given directory. It does not respect symlinks.
+func (s *snapshot) knownFilesInDir(ctx context.Context, dir span.URI) []span.URI {
+	var files []span.URI
+	for uri := range s.files {
+		if source.InDirLex(dir.Filename(), uri.Filename()) {
+			files = append(files, uri)
+		}
+	}
+	return files
 }
 
 func (s *snapshot) WorkspacePackages(ctx context.Context) ([]source.Package, error) {
@@ -1102,6 +1162,7 @@ func (s *snapshot) clone(ctx context.Context, changes map[span.URI]*fileChange, 
 		}
 	}
 
+	changedPkgNames := map[packageID][]span.URI{}
 	for uri, change := range changes {
 		// Maybe reinitialize the view if we see a change in the vendor
 		// directory.
@@ -1114,12 +1175,18 @@ func (s *snapshot) clone(ctx context.Context, changes map[span.URI]*fileChange, 
 
 		// Check if the file's package name or imports have changed,
 		// and if so, invalidate this file's packages' metadata.
-		invalidateMetadata := forceReloadMetadata || s.shouldInvalidateMetadata(ctx, result, originalFH, change.fileHandle)
+		shouldInvalidateMetadata, pkgNameChanged := s.shouldInvalidateMetadata(ctx, result, originalFH, change.fileHandle)
+		invalidateMetadata := forceReloadMetadata || shouldInvalidateMetadata
 
 		// Mark all of the package IDs containing the given file.
 		// TODO: if the file has moved into a new package, we should invalidate that too.
-		filePackages := guessPackagesForURI(uri, s.ids)
-		for _, id := range filePackages {
+		filePackageIDs := guessPackageIDsForURI(uri, s.ids)
+		if pkgNameChanged {
+			for _, id := range filePackageIDs {
+				changedPkgNames[id] = append(changedPkgNames[id], uri)
+			}
+		}
+		for _, id := range filePackageIDs {
 			directIDs[id] = directIDs[id] || invalidateMetadata
 		}
 
@@ -1243,6 +1310,12 @@ copyIDs:
 			}
 		}
 
+		// If the package name of a file in the package has changed, it's
+		// possible that the package ID may no longer exist.
+		if uris, ok := changedPkgNames[id]; ok && s.shouldDeleteWorkspacePackageID(id, uris) {
+			continue
+		}
+
 		result.workspacePackages[id] = pkgPath
 	}
 
@@ -1277,10 +1350,43 @@ copyIDs:
 	return result, workspaceChanged
 }
 
-// guessPackagesForURI returns all packages related to uri. If we haven't seen this
-// URI before, we guess based on files in the same directory. This is of course
-// incorrect in build systems where packages are not organized by directory.
-func guessPackagesForURI(uri span.URI, known map[span.URI][]packageID) []packageID {
+// shouldDeleteWorkspacePackageID reports whether the given package ID should
+// be removed from the set of workspace packages. If one of the files in the
+// package has changed package names, we check if it is the only file that
+// *only* belongs to this package. For example, in the case of a test variant,
+// confirm that it is the sole file constituting the test variant.
+func (s *snapshot) shouldDeleteWorkspacePackageID(id packageID, changedPkgNames []span.URI) bool {
+	m, ok := s.metadata[id]
+	if !ok {
+		return false
+	}
+	changedPkgName := func(uri span.URI) bool {
+		for _, changed := range changedPkgNames {
+			if uri == changed {
+				return true
+			}
+		}
+		return false
+	}
+	for _, uri := range m.compiledGoFiles {
+		if changedPkgName(uri) {
+			continue
+		}
+		// If there is at least one file remaining that belongs only to this
+		// package, and its package name has not changed, we shouldn't delete
+		// its package ID from the set of workspace packages.
+		if ids := guessPackageIDsForURI(uri, s.ids); len(ids) == 1 && ids[0] == id {
+			return false
+		}
+	}
+	return true
+}
+
+// guessPackageIDsForURI returns all packages related to uri. If we haven't
+// seen this URI before, we guess based on files in the same directory. This
+// is of course incorrect in build systems where packages are not organized by
+// directory.
+func guessPackageIDsForURI(uri span.URI, known map[span.URI][]packageID) []packageID {
 	packages := known[uri]
 	if len(packages) > 0 {
 		// We've seen this file before.
@@ -1345,17 +1451,20 @@ func fileWasSaved(originalFH, currentFH source.FileHandle) bool {
 
 // shouldInvalidateMetadata reparses a file's package and import declarations to
 // determine if the file requires a metadata reload.
-func (s *snapshot) shouldInvalidateMetadata(ctx context.Context, newSnapshot *snapshot, originalFH, currentFH source.FileHandle) bool {
+func (s *snapshot) shouldInvalidateMetadata(ctx context.Context, newSnapshot *snapshot, originalFH, currentFH source.FileHandle) (invalidate, pkgNameChanged bool) {
 	if originalFH == nil {
-		return true
+		return true, false
 	}
 	// If the file hasn't changed, there's no need to reload.
 	if originalFH.FileIdentity() == currentFH.FileIdentity() {
-		return false
+		return false, false
 	}
 	// If a go.mod in the workspace has been changed, invalidate metadata.
 	if kind := originalFH.Kind(); kind == source.Mod {
-		return source.InDir(filepath.Dir(s.view.rootURI.Filename()), filepath.Dir(originalFH.URI().Filename()))
+		if !source.InDir(filepath.Dir(s.view.rootURI.Filename()), originalFH.URI().Filename()) {
+			return false, false
+		}
+		return currentFH.Saved(), false
 	}
 	// Get the original and current parsed files in order to check package name
 	// and imports. Use the new snapshot to parse to avoid modifying the
@@ -1363,13 +1472,13 @@ func (s *snapshot) shouldInvalidateMetadata(ctx context.Context, newSnapshot *sn
 	original, originalErr := newSnapshot.ParseGo(ctx, originalFH, source.ParseHeader)
 	current, currentErr := newSnapshot.ParseGo(ctx, currentFH, source.ParseHeader)
 	if originalErr != nil || currentErr != nil {
-		return (originalErr == nil) != (currentErr == nil)
+		return (originalErr == nil) != (currentErr == nil), false
 	}
 	// Check if the package's metadata has changed. The cases handled are:
 	//    1. A package's name has changed
 	//    2. A file's imports have changed
 	if original.File.Name.Name != current.File.Name.Name {
-		return true
+		return true, true
 	}
 	importSet := make(map[string]struct{})
 	for _, importSpec := range original.File.Imports {
@@ -1393,9 +1502,9 @@ func (s *snapshot) shouldInvalidateMetadata(ctx context.Context, newSnapshot *sn
 		if path[len(path)-1] == '/' {
 			continue
 		}
-		return true
+		return true, false
 	}
-	return false
+	return false, false
 }
 
 func (s *snapshot) BuiltinPackage(ctx context.Context) (*source.BuiltinPackage, error) {
@@ -1452,7 +1561,7 @@ func (s *snapshot) buildBuiltinPackage(ctx context.Context, goFiles []string) er
 // BuildGoplsMod generates a go.mod file for all modules in the workspace. It
 // bypasses any existing gopls.mod.
 func BuildGoplsMod(ctx context.Context, root span.URI, fs source.FileSource) (*modfile.File, error) {
-	allModules, err := findAllModules(ctx, root)
+	allModules, err := findModules(ctx, root, 0, 0)
 	if err != nil {
 		return nil, err
 	}

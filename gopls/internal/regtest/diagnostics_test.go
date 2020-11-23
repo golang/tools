@@ -852,28 +852,29 @@ func TestHello(t *testing.T) {
 
 // Reproduce golang/go#40690.
 func TestCreateOnlyXTest(t *testing.T) {
-	t.Skip("golang/go#40690 is not resolved yet.")
-
 	const mod = `
-	-- go.mod --
-	module mod.com
-	-- foo/foo.go --
-	package foo
-	-- foo/bar_test.go --
-	`
+-- go.mod --
+module mod.com
+-- foo/foo.go --
+package foo
+-- foo/bar_test.go --
+`
 	run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("foo/bar_test.go")
-		env.EditBuffer("foo/bar_test.go", fake.NewEdit(0, 0, 0, 0, `package foo
-	`))
+		env.EditBuffer("foo/bar_test.go", fake.NewEdit(0, 0, 0, 0, "package foo"))
 		env.Await(
 			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
 		)
-		env.RegexpReplace("foo/bar_test.go", "package foo", "package foo_test")
+		env.RegexpReplace("foo/bar_test.go", "package foo", `package foo_test
+
+import "testing"
+
+func TestX(t *testing.T) {
+	var x int
+}
+`)
 		env.Await(
-			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 2),
-				NoErrorLogs(),
-			),
+			env.DiagnosticAtRegexp("foo/bar_test.go", "x"),
 		)
 	})
 }
@@ -1246,7 +1247,7 @@ func main() {
 			env.DiagnosticAtRegexp("main.go", "x"),
 		)
 	})
-	withOptions(WithRootPath("a"), WithLimitWorkspaceScope()).run(t, mod, func(t *testing.T, env *Env) {
+	withOptions(WithRootPath("a"), LimitWorkspaceScope()).run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("a/main.go")
 		env.Await(
 			NoDiagnostics("main.go"),
@@ -1422,7 +1423,7 @@ func main() {
 		env.Await(
 			OnceMet(
 				InitialWorkspaceLoad,
-				NoDiagnosticWithMessage("illegal character U+0023 '#'"),
+				NoDiagnosticWithMessage("", "illegal character U+0023 '#'"),
 			),
 		)
 	})
@@ -1449,6 +1450,68 @@ package foo_`
 		env.SaveBuffer("foo_test.go")
 		env.Await(
 			EmptyDiagnostics("foo_test.go"),
+		)
+	})
+}
+
+// TestProgressBarErrors confirms that critical workspace load errors are shown
+// and updated via progress reports.
+func TestProgressBarErrors(t *testing.T) {
+	testenv.NeedsGo1Point(t, 14)
+
+	const pkg = `
+-- go.mod --
+modul mod.com
+
+go 1.12
+-- main.go --
+package main
+`
+	run(t, pkg, func(t *testing.T, env *Env) {
+		env.OpenFile("go.mod")
+		env.Await(
+			OutstandingWork("Error loading workspace", "unknown directive"),
+		)
+		env.EditBuffer("go.mod", fake.NewEdit(0, 0, 3, 0, `module mod.com
+
+go 1.hello
+`))
+		env.Await(
+			OutstandingWork("Error loading workspace", "invalid go version"),
+		)
+		env.RegexpReplace("go.mod", "go 1.hello", "go 1.12")
+		env.Await(
+			NoOutstandingWork(),
+		)
+	})
+}
+
+func TestDeleteDirectory(t *testing.T) {
+	testenv.NeedsGo1Point(t, 14)
+
+	const mod = `
+-- bob/bob.go --
+package bob
+
+func Hello() {
+	var x int
+}
+-- go.mod --
+module mod.com
+-- main.go --
+package main
+
+import "mod.com/bob"
+
+func main() {
+	bob.Hello()
+}
+`
+	run(t, mod, func(t *testing.T, env *Env) {
+		env.RemoveWorkspaceFile("bob")
+		env.Await(
+			env.DiagnosticAtRegexp("main.go", `"mod.com/bob"`),
+			EmptyDiagnostics("bob/bob.go"),
 		)
 	})
 }
