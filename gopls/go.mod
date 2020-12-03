@@ -10,3 +10,5 @@ require (
 	mvdan.cc/gofumpt v0.0.0-20200927160801-5bfeb2e70dd6
 	mvdan.cc/xurls/v2 v2.2.0
 )
+
+replace golang.org/x/tools => ../
