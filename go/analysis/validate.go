@@ -10,6 +10,7 @@ import (
 // Validate reports an error if any of the analyzers are misconfigured.
 // Checks include:
 // that the name is a valid identifier;
+// that the Doc and Run are not empty;
 // that the Requires graph is acyclic;
 // that analyzer fact types are unique;
 // that each fact type is a pointer.
@@ -40,6 +41,10 @@ func Validate(analyzers []*Analyzer) error {
 
 			if a.Doc == "" {
 				return fmt.Errorf("analyzer %q is undocumented", a)
+			}
+
+			if a.Run == nil {
+				return fmt.Errorf("analyzer %q has nil Run", a)
 			}
 
 			// fact types
