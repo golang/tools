@@ -25,6 +25,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
+	"golang.org/x/tools/internal/lsp/debug/log"
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/memoize"
@@ -993,6 +994,84 @@ func (s *snapshot) isOpenLocked(uri span.URI) bool {
 }
 
 func (s *snapshot) awaitLoaded(ctx context.Context) error {
+	err := s.awaitLoadedAllErrors(ctx)
+
+	// If we still have absolutely no metadata, check if the view failed to
+	// initialize and return any errors.
+	// TODO(rstambler): Should we clear the error after we return it?
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.metadata) == 0 {
+		return err
+	}
+	return nil
+}
+
+func (s *snapshot) GetCriticalError(ctx context.Context) *source.CriticalError {
+	loadErr := s.awaitLoadedAllErrors(ctx)
+
+	// Even if packages didn't fail to load, we still may want to show
+	// additional warnings.
+	if loadErr == nil {
+		wsPkgs, _ := s.WorkspacePackages(ctx)
+		if msg := shouldShowAdHocPackagesWarning(s, wsPkgs); msg != "" {
+			return &source.CriticalError{
+				MainError: fmt.Errorf(msg),
+			}
+		}
+		// Even if workspace packages were returned, there still may be an error
+		// with the user's workspace layout. Workspace packages that only have the
+		// ID "command-line-arguments" are usually a symptom of a bad workspace
+		// configuration.
+		if containsCommandLineArguments(wsPkgs) {
+			return s.workspaceLayoutError(ctx)
+		}
+		return nil
+	}
+
+	if strings.Contains(loadErr.Error(), "cannot find main module") {
+		return s.workspaceLayoutError(ctx)
+	}
+	criticalErr := &source.CriticalError{
+		MainError: loadErr,
+	}
+	// Attempt to place diagnostics in the relevant go.mod files, if any.
+	for _, uri := range s.ModFiles() {
+		fh, err := s.GetFile(ctx, uri)
+		if err != nil {
+			continue
+		}
+		criticalErr.ErrorList = append(criticalErr.ErrorList, s.extractGoCommandErrors(ctx, s, fh, loadErr.Error())...)
+	}
+	return criticalErr
+}
+
+const adHocPackagesWarning = `You are outside of a module and outside of $GOPATH/src.
+If you are using modules, please open your editor to a directory in your module.
+If you believe this warning is incorrect, please file an issue: https://github.com/golang/go/issues/new.`
+
+func shouldShowAdHocPackagesWarning(snapshot source.Snapshot, pkgs []source.Package) string {
+	if snapshot.ValidBuildConfiguration() {
+		return ""
+	}
+	for _, pkg := range pkgs {
+		if len(pkg.MissingDependencies()) > 0 {
+			return adHocPackagesWarning
+		}
+	}
+	return ""
+}
+
+func containsCommandLineArguments(pkgs []source.Package) bool {
+	for _, pkg := range pkgs {
+		if strings.Contains(pkg.ID(), "command-line-arguments") {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *snapshot) awaitLoadedAllErrors(ctx context.Context) error {
 	// Do not return results until the snapshot's view has been initialized.
 	s.AwaitInitialized(ctx)
 
@@ -1002,15 +1081,10 @@ func (s *snapshot) awaitLoaded(ctx context.Context) error {
 	if err := s.reloadOrphanedFiles(ctx); err != nil {
 		return err
 	}
-	// If we still have absolutely no metadata, check if the view failed to
-	// initialize and return any errors.
-	// TODO(rstambler): Should we clear the error after we return it?
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.metadata) == 0 {
-		return s.initializedErr
-	}
-	return nil
+	// TODO(rstambler): Should we be more careful about returning the
+	// initialization error? Is it possible for the initialization error to be
+	// corrected without a successful reinitialization?
+	return s.initializedErr
 }
 
 func (s *snapshot) AwaitInitialized(ctx context.Context) {
@@ -1158,16 +1232,37 @@ func generationName(v *View, snapshotID uint64) string {
 	return fmt.Sprintf("v%v/%v", v.id, snapshotID)
 }
 
+// checkSnapshotLocked verifies that some invariants are preserved on the
+// snapshot.
+func checkSnapshotLocked(ctx context.Context, s *snapshot) {
+	// Check that every go file for a workspace package is identified as
+	// belonging to that workspace package.
+	for wsID := range s.workspacePackages {
+		if m, ok := s.metadata[wsID]; ok {
+			for _, uri := range m.goFiles {
+				found := false
+				for _, id := range s.ids[uri] {
+					if id == wsID {
+						found = true
+						break
+					}
+				}
+				if !found {
+					log.Error.Logf(ctx, "workspace package %v not associated with %v", wsID, uri)
+				}
+			}
+		}
+	}
+}
+
 func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileChange, forceReloadMetadata bool) (*snapshot, bool) {
-	// Track some important types of changes.
-	var (
-		vendorChanged  bool
-		modulesChanged bool
-	)
-	newWorkspace, workspaceChanged := s.workspace.invalidate(ctx, changes)
+	var vendorChanged bool
+	newWorkspace, workspaceChanged, workspaceReload := s.workspace.invalidate(ctx, changes)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	checkSnapshotLocked(ctx, s)
 
 	newGen := s.view.session.cache.store.Generation(generationName(s.view, s.id+1))
 	bgCtx, cancel := context.WithCancel(bgCtx)
@@ -1253,7 +1348,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 	// It maps id->invalidateMetadata.
 	directIDs := map[packageID]bool{}
 	// Invalidate all package metadata if the workspace module has changed.
-	if workspaceChanged {
+	if workspaceReload {
 		for k := range s.metadata {
 			directIDs[k] = true
 		}
@@ -1273,7 +1368,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 		// Check if the file's package name or imports have changed,
 		// and if so, invalidate this file's packages' metadata.
 		shouldInvalidateMetadata, pkgNameChanged := s.shouldInvalidateMetadata(ctx, result, originalFH, change.fileHandle)
-		invalidateMetadata := forceReloadMetadata || shouldInvalidateMetadata
+		invalidateMetadata := forceReloadMetadata || workspaceReload || shouldInvalidateMetadata
 
 		// Mark all of the package IDs containing the given file.
 		// TODO: if the file has moved into a new package, we should invalidate that too.
@@ -1306,9 +1401,6 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 			// If the view's go.mod file's contents have changed, invalidate
 			// the metadata for every known package in the snapshot.
 			delete(result.parseModHandles, uri)
-			if _, ok := result.workspace.getActiveModFiles()[uri]; ok {
-				modulesChanged = true
-			}
 		}
 		// Handle the invalidated file; it may have new contents or not exist.
 		if !change.exists {
@@ -1316,6 +1408,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 		} else {
 			result.files[uri] = change.fileHandle
 		}
+
 		// Make sure to remove the changed file from the unloadable set.
 		delete(result.unloadableFiles, uri)
 	}
@@ -1447,7 +1540,7 @@ copyIDs:
 	}
 
 	// The snapshot may need to be reinitialized.
-	if modulesChanged || workspaceChanged || vendorChanged {
+	if workspaceReload || vendorChanged {
 		if workspaceChanged || result.initializedErr != nil {
 			result.initializeOnce = &sync.Once{}
 		}
@@ -1531,13 +1624,6 @@ func (s *snapshot) shouldInvalidateMetadata(ctx context.Context, newSnapshot *sn
 	// If the file hasn't changed, there's no need to reload.
 	if originalFH.FileIdentity() == currentFH.FileIdentity() {
 		return false, false
-	}
-	// If a go.mod in the workspace has been changed, invalidate metadata.
-	if kind := originalFH.Kind(); kind == source.Mod {
-		if !source.InDir(filepath.Dir(s.view.rootURI.Filename()), originalFH.URI().Filename()) {
-			return false, false
-		}
-		return currentFH.Saved(), false
 	}
 	// Get the original and current parsed files in order to check package name
 	// and imports. Use the new snapshot to parse to avoid modifying the

@@ -71,11 +71,13 @@ func (s *snapshot) ModTidy(ctx context.Context, pm *source.ParsedModule) (*sourc
 			return nil, source.ErrNoModOnDisk
 		}
 	}
+	if criticalErr := s.GetCriticalError(ctx); criticalErr != nil {
+		return &source.TidiedModule{
+			Errors: criticalErr.ErrorList,
+		}, nil
+	}
 	workspacePkgs, err := s.WorkspacePackages(ctx)
 	if err != nil {
-		if tm, ok := s.parseModErrors(ctx, fh, err); ok {
-			return tm, nil
-		}
 		return nil, err
 	}
 	importHash, err := hashImports(ctx, workspacePkgs)
@@ -149,87 +151,77 @@ func (s *snapshot) ModTidy(ctx context.Context, pm *source.ParsedModule) (*sourc
 	return mth.tidy(ctx, s)
 }
 
-func (s *snapshot) parseModErrors(ctx context.Context, fh source.FileHandle, goCommandErr error) (*source.TidiedModule, bool) {
-	if goCommandErr == nil {
-		return nil, false
-	}
-
+func (s *snapshot) parseModError(ctx context.Context, fh source.FileHandle, errText string) *source.Error {
 	// Match on common error messages. This is really hacky, but I'm not sure
 	// of any better way. This can be removed when golang/go#39164 is resolved.
-	errText := goCommandErr.Error()
 	isInconsistentVendor := strings.Contains(errText, "inconsistent vendoring")
 	isGoSumUpdates := strings.Contains(errText, "updates to go.sum needed") || strings.Contains(errText, "missing go.sum entry")
 
 	if !isInconsistentVendor && !isGoSumUpdates {
-		return nil, false
+		return nil
 	}
 
 	pmf, err := s.ParseMod(ctx, fh)
 	if err != nil {
-		return nil, false
+		return nil
 	}
 	if pmf.File.Module == nil || pmf.File.Module.Syntax == nil {
-		return nil, false
+		return nil
 	}
 	rng, err := rangeFromPositions(pmf.Mapper, pmf.File.Module.Syntax.Start, pmf.File.Module.Syntax.End)
 	if err != nil {
-		return nil, false
+		return nil
 	}
 	args, err := source.MarshalArgs(protocol.URIFromSpanURI(fh.URI()))
 	if err != nil {
-		return nil, false
+		return nil
 	}
 
 	switch {
 	case isInconsistentVendor:
-		return &source.TidiedModule{
-			Errors: []*source.Error{{
-				URI:   fh.URI(),
-				Range: rng,
-				Kind:  source.ListError,
-				Message: `Inconsistent vendoring detected. Please re-run "go mod vendor".
+		return &source.Error{
+			URI:   fh.URI(),
+			Range: rng,
+			Kind:  source.ListError,
+			Message: `Inconsistent vendoring detected. Please re-run "go mod vendor".
 See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
-				SuggestedFixes: []source.SuggestedFix{{
-					Title: source.CommandVendor.Title,
-					Command: &protocol.Command{
-						Command:   source.CommandVendor.ID(),
-						Title:     source.CommandVendor.Title,
-						Arguments: args,
-					},
-				}},
-			}},
-		}, true
-
-	case isGoSumUpdates:
-		return &source.TidiedModule{
-			Errors: []*source.Error{{
-				URI:     fh.URI(),
-				Range:   rng,
-				Kind:    source.ListError,
-				Message: `go.sum is out of sync with go.mod. Please update it or run "go mod tidy".`,
-				SuggestedFixes: []source.SuggestedFix{
-					{
-						Title: source.CommandTidy.Title,
-						Command: &protocol.Command{
-							Command:   source.CommandTidy.ID(),
-							Title:     source.CommandTidy.Title,
-							Arguments: args,
-						},
-					},
-					{
-						Title: source.CommandUpdateGoSum.Title,
-						Command: &protocol.Command{
-							Command:   source.CommandUpdateGoSum.ID(),
-							Title:     source.CommandUpdateGoSum.Title,
-							Arguments: args,
-						},
-					},
+			SuggestedFixes: []source.SuggestedFix{{
+				Title: source.CommandVendor.Title,
+				Command: &protocol.Command{
+					Command:   source.CommandVendor.ID(),
+					Title:     source.CommandVendor.Title,
+					Arguments: args,
 				},
 			}},
-		}, true
-	}
+		}
 
-	return nil, false
+	case isGoSumUpdates:
+		return &source.Error{
+			URI:     fh.URI(),
+			Range:   rng,
+			Kind:    source.ListError,
+			Message: `go.sum is out of sync with go.mod. Please update it or run "go mod tidy".`,
+			SuggestedFixes: []source.SuggestedFix{
+				{
+					Title: source.CommandTidy.Title,
+					Command: &protocol.Command{
+						Command:   source.CommandTidy.ID(),
+						Title:     source.CommandTidy.Title,
+						Arguments: args,
+					},
+				},
+				{
+					Title: source.CommandUpdateGoSum.Title,
+					Command: &protocol.Command{
+						Command:   source.CommandUpdateGoSum.ID(),
+						Title:     source.CommandUpdateGoSum.Title,
+						Arguments: args,
+					},
+				},
+			},
+		}
+	}
+	return nil
 }
 
 func hashImports(ctx context.Context, wsPackages []source.Package) (string, error) {
@@ -273,13 +265,6 @@ func modTidyErrors(ctx context.Context, snapshot source.Snapshot, pm *source.Par
 			wrongDirectness[req.Mod.Path] = origReq
 		}
 		delete(unused, req.Mod.Path)
-	}
-	for _, req := range unused {
-		srcErr, err := unusedError(pm.Mapper, req, snapshot.View().Options().ComputeEdits)
-		if err != nil {
-			return nil, err
-		}
-		errors = append(errors, srcErr)
 	}
 	for _, req := range wrongDirectness {
 		// Handle dependencies that are incorrectly labeled indirect and
@@ -380,16 +365,25 @@ func modTidyErrors(ctx context.Context, snapshot source.Snapshot, pm *source.Par
 			}
 		}
 	}
+	// Finally, add errors for any unused dependencies.
+	onlyError := len(errors) == 0 && len(unused) == 1
+	for _, req := range unused {
+		srcErr, err := unusedError(pm.Mapper, req, onlyError, snapshot.View().Options().ComputeEdits)
+		if err != nil {
+			return nil, err
+		}
+		errors = append(errors, srcErr)
+	}
 	return errors, nil
 }
 
 // unusedError returns a source.Error for an unused require.
-func unusedError(m *protocol.ColumnMapper, req *modfile.Require, computeEdits diff.ComputeEdits) (*source.Error, error) {
+func unusedError(m *protocol.ColumnMapper, req *modfile.Require, onlyError bool, computeEdits diff.ComputeEdits) (*source.Error, error) {
 	rng, err := rangeFromPositions(m, req.Syntax.Start, req.Syntax.End)
 	if err != nil {
 		return nil, err
 	}
-	args, err := source.MarshalArgs(m.URI, false, []string{req.Mod.Path + "@none"})
+	args, err := source.MarshalArgs(m.URI, onlyError, req.Mod.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -511,7 +505,10 @@ func switchDirectness(req *modfile.Require, m *protocol.ColumnMapper, computeEdi
 		return nil, err
 	}
 	// Calculate the edits to be made due to the change.
-	diff := computeEdits(m.URI, string(m.Content), string(newContent))
+	diff, err := computeEdits(m.URI, string(m.Content), string(newContent))
+	if err != nil {
+		return nil, err
+	}
 	return source.ToProtocolEdits(m, diff)
 }
 
