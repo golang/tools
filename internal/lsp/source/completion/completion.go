@@ -733,6 +733,10 @@ func (c *completer) emptySwitchStmt() bool {
 // (i.e. "golang.org/x/"). The user is meant to accept completion suggestions
 // until they reach a complete import path.
 func (c *completer) populateImportCompletions(ctx context.Context, searchImport *ast.ImportSpec) error {
+	if !strings.HasPrefix(searchImport.Path.Value, `"`) {
+		return nil
+	}
+
 	// deepSearch is not valuable for import completions.
 	c.deepState.enabled = false
 
@@ -1070,6 +1074,19 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	// Is sel a qualified identifier?
 	if id, ok := sel.X.(*ast.Ident); ok {
 		if pkgName, ok := c.pkg.GetTypesInfo().Uses[id].(*types.PkgName); ok {
+			var pkg source.Package
+			for _, imp := range c.pkg.Imports() {
+				if imp.PkgPath() == pkgName.Imported().Path() {
+					pkg = imp
+				}
+			}
+			// If the package is not imported, try searching for unimported
+			// completions.
+			if pkg == nil && c.opts.unimported {
+				if err := c.unimportedMembers(ctx, id); err != nil {
+					return err
+				}
+			}
 			candidates := c.packageMembers(pkgName.Imported(), stdScore, nil)
 			for _, cand := range candidates {
 				c.deepState.enqueue(cand)

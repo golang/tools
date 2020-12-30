@@ -32,6 +32,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/lostcancel"
 	"golang.org/x/tools/go/analysis/passes/nilfunc"
 	"golang.org/x/tools/go/analysis/passes/printf"
+	"golang.org/x/tools/go/analysis/passes/shadow"
 	"golang.org/x/tools/go/analysis/passes/shift"
 	"golang.org/x/tools/go/analysis/passes/sortslice"
 	"golang.org/x/tools/go/analysis/passes/stdmethods"
@@ -124,6 +125,12 @@ func DefaultOptions() *Options {
 				ExpandWorkspaceToModule:      true,
 				ExperimentalPackageCacheKey:  true,
 				ExperimentalDiagnosticsDelay: 250 * time.Millisecond,
+				Annotations: map[Annotation]bool{
+					Bounds: true,
+					Escape: true,
+					Inline: true,
+					Nil:    true,
+				},
 			},
 			InternalOptions: InternalOptions{
 				LiteralCompletions:      true,
@@ -235,7 +242,7 @@ type UserOptions struct {
 	// ```json5
 	// "gopls": {
 	// ...
-	//   "codelens": {
+	//   "codelenses": {
 	//     "generate": false,  // Don't show the `go generate` lens.
 	//     "gc_details": true  // Show a code lens toggling the display of gc's choices.
 	//   }
@@ -322,13 +329,9 @@ type Hooks struct {
 // only exists while these features are under development.
 type ExperimentalOptions struct {
 
-	// Annotations suppress various kinds of optimization diagnostics
-	// that would be reported by the gc_details command.
-	//  * noNilcheck suppresses display of nilchecks.
-	//  * noEscape suppresses escape choices.
-	//  * noInline suppresses inlining choices.
-	//  * noBounds suppresses bounds checking diagnostics.
-	Annotations map[string]bool
+	// Annotations specifies the various kinds of optimization diagnostics
+	// that should be reported by the gc_details command.
+	Annotations map[Annotation]bool
 
 	// Staticcheck enables additional analyses from staticcheck.io.
 	Staticcheck bool
@@ -582,7 +585,6 @@ func (o *Options) ForClientCapabilities(caps protocol.ClientCapabilities) {
 	o.SemanticMods = caps.TextDocument.SemanticTokens.TokenModifiers
 	// we don't need Requests, as we support full functionality
 	// we don't need Formats, as there is only one, for now
-
 }
 
 func (o *Options) Clone() *Options {
@@ -610,7 +612,6 @@ func (o *Options) Clone() *Options {
 		return dst
 	}
 	result.Analyses = copyStringMap(o.Analyses)
-	result.Annotations = copyStringMap(o.Annotations)
 	result.Codelenses = copyStringMap(o.Codelenses)
 
 	copySlice := func(src []string) []string {
@@ -664,6 +665,9 @@ func (o *Options) set(name string, value interface{}) OptionResult {
 		if !ok {
 			result.errorf("invalid type %T, expect map", value)
 			break
+		}
+		if o.Env == nil {
+			o.Env = make(map[string]string)
 		}
 		for k, v := range menv {
 			o.Env[k] = fmt.Sprint(v)
@@ -759,16 +763,7 @@ func (o *Options) set(name string, value interface{}) OptionResult {
 		result.setBoolMap(&o.Analyses)
 
 	case "annotations":
-		result.setBoolMap(&o.Annotations)
-		for k := range o.Annotations {
-			switch k {
-			case "noEscape", "noNilcheck", "noInline", "noBounds":
-				continue
-			default:
-				result.Name += ":" + k // put mistake(s) in the message
-				result.State = OptionUnexpected
-			}
-		}
+		result.setAnnotationMap(&o.Annotations)
 
 	case "codelenses", "codelens":
 		var lensOverrides map[string]bool
@@ -912,10 +907,55 @@ func (r *OptionResult) setDuration(d *time.Duration) {
 }
 
 func (r *OptionResult) setBoolMap(bm *map[string]bool) {
+	m := r.asBoolMap()
+	*bm = m
+}
+
+func (r *OptionResult) setAnnotationMap(bm *map[Annotation]bool) {
+	all := r.asBoolMap()
+	if all == nil {
+		return
+	}
+	// Default to everything enabled by default.
+	m := make(map[Annotation]bool)
+	for k, enabled := range all {
+		a, err := asOneOf(
+			k,
+			string(Nil),
+			string(Escape),
+			string(Inline),
+			string(Bounds),
+		)
+		if err != nil {
+			// In case of an error, process any legacy values.
+			switch k {
+			case "noEscape":
+				m[Escape] = false
+				r.errorf(`"noEscape" is deprecated, set "Escape: false" instead`)
+			case "noNilcheck":
+				m[Nil] = false
+				r.errorf(`"noNilcheck" is deprecated, set "Nil: false" instead`)
+			case "noInline":
+				m[Inline] = false
+				r.errorf(`"noInline" is deprecated, set "Inline: false" instead`)
+			case "noBounds":
+				m[Bounds] = false
+				r.errorf(`"noBounds" is deprecated, set "Bounds: false" instead`)
+			default:
+				r.errorf(err.Error())
+			}
+			continue
+		}
+		m[Annotation(a)] = enabled
+	}
+	*bm = m
+}
+
+func (r *OptionResult) asBoolMap() map[string]bool {
 	all, ok := r.Value.(map[string]interface{})
 	if !ok {
 		r.errorf("invalid type %T for map[string]bool option", r.Value)
-		return
+		return nil
 	}
 	m := make(map[string]bool)
 	for a, enabled := range all {
@@ -923,10 +963,10 @@ func (r *OptionResult) setBoolMap(bm *map[string]bool) {
 			m[a] = enabled
 		} else {
 			r.errorf("invalid type %T for map key %q", enabled, a)
-			return
+			return m
 		}
 	}
-	*bm = m
+	return m
 }
 
 func (r *OptionResult) asString() (string, bool) {
@@ -943,14 +983,21 @@ func (r *OptionResult) asOneOf(options ...string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	lower := strings.ToLower(s)
+	s, err := asOneOf(s, options...)
+	if err != nil {
+		r.errorf(err.Error())
+	}
+	return s, err == nil
+}
+
+func asOneOf(str string, options ...string) (string, error) {
+	lower := strings.ToLower(str)
 	for _, opt := range options {
 		if strings.ToLower(opt) == lower {
-			return opt, true
+			return opt, nil
 		}
 	}
-	r.errorf("invalid option %q for enum", r.Value)
-	return "", false
+	return "", fmt.Errorf("invalid option %q for enum", str)
 }
 
 func (r *OptionResult) setString(s *string) {
@@ -1054,6 +1101,7 @@ func defaultAnalyzers() map[string]Analyzer {
 		atomicalign.Analyzer.Name:      {Analyzer: atomicalign.Analyzer, Enabled: true},
 		deepequalerrors.Analyzer.Name:  {Analyzer: deepequalerrors.Analyzer, Enabled: true},
 		fieldalignment.Analyzer.Name:   {Analyzer: fieldalignment.Analyzer, Enabled: false},
+		shadow.Analyzer.Name:           {Analyzer: shadow.Analyzer, Enabled: false},
 		sortslice.Analyzer.Name:        {Analyzer: sortslice.Analyzer, Enabled: true},
 		testinggoroutine.Analyzer.Name: {Analyzer: testinggoroutine.Analyzer, Enabled: true},
 		unusedparams.Analyzer.Name:     {Analyzer: unusedparams.Analyzer, Enabled: false},
@@ -1073,9 +1121,10 @@ func urlRegexp() *regexp.Regexp {
 }
 
 type APIJSON struct {
-	Options  map[string][]*OptionJSON
-	Commands []*CommandJSON
-	Lenses   []*LensJSON
+	Options   map[string][]*OptionJSON
+	Commands  []*CommandJSON
+	Lenses    []*LensJSON
+	Analyzers []*AnalyzerJSON
 }
 
 type OptionJSON struct {
@@ -1101,4 +1150,10 @@ type LensJSON struct {
 	Lens  string
 	Title string
 	Doc   string
+}
+
+type AnalyzerJSON struct {
+	Name    string
+	Doc     string
+	Default bool
 }

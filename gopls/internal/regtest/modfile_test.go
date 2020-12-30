@@ -5,6 +5,7 @@
 package regtest
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -68,7 +69,7 @@ func main() {
 				env.DiagnosticAtRegexp("main.go", "\"example.com/blah\""),
 			)
 			if got := env.ReadWorkspaceFile("go.mod"); got != goModContent {
-				t.Fatalf("go.mod changed on disk:\n%s", tests.Diff(goModContent, got))
+				t.Fatalf("go.mod changed on disk:\n%s", tests.Diff(t, goModContent, got))
 			}
 			// Save the buffer, which will format and organize imports.
 			// Confirm that the go.mod file still does not change.
@@ -77,7 +78,7 @@ func main() {
 				env.DiagnosticAtRegexp("main.go", "\"example.com/blah\""),
 			)
 			if got := env.ReadWorkspaceFile("go.mod"); got != goModContent {
-				t.Fatalf("go.mod changed on disk:\n%s", tests.Diff(goModContent, got))
+				t.Fatalf("go.mod changed on disk:\n%s", tests.Diff(t, goModContent, got))
 			}
 		})
 	})
@@ -104,7 +105,7 @@ func main() {
 				env.DiagnosticAtRegexp("main.go", "\"example.com/blah\""),
 			)
 			if got := env.ReadWorkspaceFile("go.mod"); got != goModContent {
-				t.Fatalf("go.mod changed on disk:\n%s", tests.Diff(goModContent, got))
+				t.Fatalf("go.mod changed on disk:\n%s", tests.Diff(t, goModContent, got))
 			}
 		})
 	})
@@ -153,7 +154,7 @@ require example.com v1.2.3
 		}
 		env.ApplyQuickFixes("main.go", []protocol.Diagnostic{goGetDiag})
 		if got := env.ReadWorkspaceFile("go.mod"); got != want {
-			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(want, got))
+			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(t, want, got))
 		}
 	})
 }
@@ -200,7 +201,7 @@ require random.org v1.2.3
 		}
 		env.ApplyQuickFixes("main.go", []protocol.Diagnostic{randomDiag})
 		if got := env.ReadWorkspaceFile("go.mod"); got != want {
-			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(want, got))
+			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(t, want, got))
 		}
 	})
 }
@@ -243,7 +244,7 @@ require example.com v1.2.3
 		)
 		env.ApplyQuickFixes("go.mod", d.Diagnostics)
 		if got := env.Editor.BufferText("go.mod"); got != want {
-			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(want, got))
+			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(t, want, got))
 		}
 	})
 }
@@ -285,7 +286,7 @@ go 1.14
 		)
 		env.ApplyQuickFixes("go.mod", d.Diagnostics)
 		if got := env.ReadWorkspaceFile("go.mod"); got != want {
-			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(want, got))
+			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(t, want, got))
 		}
 	})
 }
@@ -353,7 +354,7 @@ require (
 )
 `
 		if got := env.ReadWorkspaceFile("go.mod"); got != want {
-			t.Fatalf("TestNewDepWithUnusedDep failed:\n%s", tests.Diff(want, got))
+			t.Fatalf("TestNewDepWithUnusedDep failed:\n%s", tests.Diff(t, want, got))
 		}
 	})
 }
@@ -456,7 +457,7 @@ require (
 `
 		env.Await(EmptyDiagnostics("go.mod"))
 		if got := env.Editor.BufferText("go.mod"); got != want {
-			t.Fatalf("suggested fixes failed:\n%s", tests.Diff(want, got))
+			t.Fatalf("suggested fixes failed:\n%s", tests.Diff(t, want, got))
 		}
 	})
 }
@@ -630,7 +631,7 @@ func main() {
 		)
 		got := env.ReadWorkspaceFile("go.mod")
 		if got != original {
-			t.Fatalf("go.mod file modified:\n%s", tests.Diff(original, got))
+			t.Fatalf("go.mod file modified:\n%s", tests.Diff(t, original, got))
 		}
 		env.RunGoCommand("get", "example.com/blah@v1.2.3")
 		env.RunGoCommand("mod", "tidy")
@@ -728,5 +729,267 @@ func main() {}
 		env.Await(
 			env.DiagnosticAtRegexp("go.mod", "modul"),
 		)
+	})
+}
+
+func TestSumUpdateFixesDiagnostics(t *testing.T) {
+	testenv.NeedsGo1Point(t, 14)
+
+	const mod = `
+-- go.mod --
+module mod.com
+
+go 1.12
+
+require (
+	example.com v1.2.3
+)
+-- go.sum --
+-- main.go --
+package main
+
+import (
+	"example.com/blah"
+)
+
+func main() {
+	println(blah.Name)
+}
+`
+	withOptions(
+		Modes(Singleton), // workspace modules don't use -mod=readonly (golang/go#43346)
+		ProxyFiles(workspaceProxy),
+	).run(t, mod, func(t *testing.T, env *Env) {
+		d := &protocol.PublishDiagnosticsParams{}
+		env.OpenFile("go.mod")
+		env.Await(
+			OnceMet(
+				DiagnosticAt("go.mod", 0, 0),
+				ReadDiagnostics("go.mod", d),
+			),
+		)
+		env.ApplyQuickFixes("go.mod", d.Diagnostics)
+		env.Await(
+			EmptyDiagnostics("go.mod"),
+		)
+	})
+}
+
+// This test confirms that editing a go.mod file only causes metadata
+// to be invalidated when it's saved.
+func TestGoModInvalidatesOnSave(t *testing.T) {
+	const mod = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- main.go --
+package main
+
+func main() {
+	hello()
+}
+-- hello.go --
+package main
+
+func hello() {}
+`
+	withOptions(
+		// TODO(rFindley) this doesn't work in multi-module workspace mode, because
+		// it keeps around the last parsing modfile. Update this test to also
+		// exercise the workspace module.
+		Modes(Singleton),
+	).run(t, mod, func(t *testing.T, env *Env) {
+		env.OpenFile("go.mod")
+		env.RegexpReplace("go.mod", "module", "modul")
+		// Confirm that we still have metadata with only on-disk edits.
+		env.OpenFile("main.go")
+		file, _ := env.GoToDefinition("main.go", env.RegexpSearch("main.go", "hello"))
+		if filepath.Base(file) != "hello.go" {
+			t.Fatalf("expected definition in hello.go, got %s", file)
+		}
+		// Confirm that we no longer have metadata when the file is saved.
+		env.SaveBufferWithoutActions("go.mod")
+		_, _, err := env.Editor.GoToDefinition(env.Ctx, "main.go", env.RegexpSearch("main.go", "hello"))
+		if err == nil {
+			t.Fatalf("expected error, got none")
+		}
+	})
+}
+
+func TestRemoveUnusedDependency(t *testing.T) {
+	testenv.NeedsGo1Point(t, 14)
+
+	const proxy = `
+-- hasdep.com@v1.2.3/go.mod --
+module hasdep.com
+
+go 1.12
+
+require example.com v1.2.3
+-- hasdep.com@v1.2.3/a/a.go --
+package a
+-- example.com@v1.2.3/go.mod --
+module example.com
+
+go 1.12
+-- example.com@v1.2.3/blah/blah.go --
+package blah
+
+const Name = "Blah"
+-- random.com@v1.2.3/go.mod --
+module random.com
+
+go 1.12
+-- random.com@v1.2.3/blah/blah.go --
+package blah
+
+const Name = "Blah"
+`
+	t.Run("almost tidied", func(t *testing.T) {
+		const mod = `
+-- go.mod --
+module mod.com
+
+go 1.12
+
+require hasdep.com v1.2.3
+-- go.sum --
+example.com v1.2.3 h1:ihBTGWGjTU3V4ZJ9OmHITkU9WQ4lGdQkMjgyLFk0FaY=
+example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
+hasdep.com v1.2.3 h1:00y+N5oD+SpKoqV1zP2VOPawcW65Zb9NebANY3GSzGI=
+hasdep.com v1.2.3/go.mod h1:ePVZOlez+KZEOejfLPGL2n4i8qiAjrkhQZ4wcImqAes=
+-- main.go --
+package main
+
+func main() {}
+`
+		withOptions(
+			ProxyFiles(proxy),
+		).run(t, mod, func(t *testing.T, env *Env) {
+			d := &protocol.PublishDiagnosticsParams{}
+			env.Await(
+				OnceMet(
+					env.DiagnosticAtRegexp("go.mod", "require hasdep.com v1.2.3"),
+					ReadDiagnostics("go.mod", d),
+				),
+			)
+			const want = `module mod.com
+
+go 1.12
+`
+			env.ApplyQuickFixes("go.mod", d.Diagnostics)
+			if got := env.ReadWorkspaceFile("go.mod"); got != want {
+				t.Fatalf("unexpected content in go.mod:\n%s", tests.Diff(t, want, got))
+			}
+		})
+	})
+
+	t.Run("not tidied", func(t *testing.T) {
+		const mod = `
+-- go.mod --
+module mod.com
+
+go 1.12
+
+require hasdep.com v1.2.3
+require random.com v1.2.3
+-- go.sum --
+example.com v1.2.3 h1:ihBTGWGjTU3V4ZJ9OmHITkU9WQ4lGdQkMjgyLFk0FaY=
+example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
+hasdep.com v1.2.3 h1:00y+N5oD+SpKoqV1zP2VOPawcW65Zb9NebANY3GSzGI=
+hasdep.com v1.2.3/go.mod h1:ePVZOlez+KZEOejfLPGL2n4i8qiAjrkhQZ4wcImqAes=
+random.com v1.2.3 h1:PzYTykzqqH6+qU0dIgh9iPFbfb4Mm8zNBjWWreRKtx0=
+random.com v1.2.3/go.mod h1:8EGj+8a4Hw1clAp8vbaeHAsKE4sbm536FP7nKyXO+qQ=
+-- main.go --
+package main
+
+func main() {}
+`
+		withOptions(
+			ProxyFiles(proxy),
+		).run(t, mod, func(t *testing.T, env *Env) {
+			d := &protocol.PublishDiagnosticsParams{}
+			env.OpenFile("go.mod")
+			pos := env.RegexpSearch("go.mod", "require hasdep.com v1.2.3")
+			env.Await(
+				OnceMet(
+					DiagnosticAt("go.mod", pos.Line, pos.Column),
+					ReadDiagnostics("go.mod", d),
+				),
+			)
+			const want = `module mod.com
+
+go 1.12
+
+require random.com v1.2.3
+`
+			var diagnostics []protocol.Diagnostic
+			for _, d := range d.Diagnostics {
+				if d.Range.Start.Line != float64(pos.Line) {
+					continue
+				}
+				diagnostics = append(diagnostics, d)
+			}
+			env.ApplyQuickFixes("go.mod", diagnostics)
+			if got := env.Editor.BufferText("go.mod"); got != want {
+				t.Fatalf("unexpected content in go.mod:\n%s", tests.Diff(t, want, got))
+			}
+		})
+	})
+}
+
+func TestSumUpdateQuickFix(t *testing.T) {
+	// Error messages changed in 1.16 that changed the diagnostic positions.
+	testenv.NeedsGo1Point(t, 16)
+
+	const mod = `
+-- go.mod --
+module mod.com
+
+go 1.12
+
+require (
+	example.com v1.2.3
+)
+-- go.sum --
+-- main.go --
+package main
+
+import (
+	"example.com/blah"
+)
+
+func main() {
+	blah.Hello()
+}
+`
+	withOptions(
+		ProxyFiles(workspaceProxy),
+		Modes(Singleton),
+	).run(t, mod, func(t *testing.T, env *Env) {
+		env.OpenFile("go.mod")
+		pos := env.RegexpSearch("go.mod", "example.com")
+		params := &protocol.PublishDiagnosticsParams{}
+		env.Await(
+			OnceMet(
+				env.DiagnosticAtRegexp("go.mod", "example.com"),
+				ReadDiagnostics("go.mod", params),
+			),
+		)
+		var diagnostic protocol.Diagnostic
+		for _, d := range params.Diagnostics {
+			if d.Range.Start.Line == float64(pos.Line) {
+				diagnostic = d
+				break
+			}
+		}
+		env.ApplyQuickFixes("go.mod", []protocol.Diagnostic{diagnostic})
+		const want = `example.com v1.2.3 h1:Yryq11hF02fEf2JlOS2eph+ICE2/ceevGV3C9dl5V/c=
+example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
+`
+		if got := env.ReadWorkspaceFile("go.sum"); got != want {
+			t.Fatalf("unexpected go.sum contents:\n%s", tests.Diff(t, want, got))
+		}
 	})
 }
