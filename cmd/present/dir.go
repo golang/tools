@@ -7,6 +7,7 @@ package main
 import (
 	"html/template"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -17,10 +18,6 @@ import (
 
 	"golang.org/x/tools/present"
 )
-
-func init() {
-	http.HandleFunc("/", dirHandler)
-}
 
 // dirHandler serves a directory listing for the requested path, rooted at *contentPath.
 func dirHandler(w http.ResponseWriter, r *http.Request) {
@@ -65,9 +62,9 @@ var (
 	contentTemplate map[string]*template.Template
 )
 
-func initTemplates(base string) error {
+func initTemplates(fs fs.FS) error {
 	// Locate the template file.
-	actionTmpl := filepath.Join(base, "templates/action.tmpl")
+	actionTmpl := "templates/action.tmpl"
 
 	contentTemplate = make(map[string]*template.Template)
 
@@ -75,19 +72,19 @@ func initTemplates(base string) error {
 		".slide":   "slides.tmpl",
 		".article": "article.tmpl",
 	} {
-		contentTmpl = filepath.Join(base, "templates", contentTmpl)
+		contentTmpl = filepath.Join("templates", contentTmpl)
 
 		// Read and parse the input.
 		tmpl := present.Template()
 		tmpl = tmpl.Funcs(template.FuncMap{"playable": playable})
-		if _, err := tmpl.ParseFiles(actionTmpl, contentTmpl); err != nil {
+		if _, err := tmpl.ParseFS(fs, actionTmpl, contentTmpl); err != nil {
 			return err
 		}
 		contentTemplate[ext] = tmpl
 	}
 
 	var err error
-	dirListTemplate, err = template.ParseFiles(filepath.Join(base, "templates/dir.tmpl"))
+	dirListTemplate, err = template.ParseFS(fs, "templates/dir.tmpl")
 	return err
 }
 

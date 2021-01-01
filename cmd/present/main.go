@@ -5,9 +5,10 @@
 package main
 
 import (
+	"embed"
 	"flag"
 	"fmt"
-	"go/build"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -50,16 +51,25 @@ func main() {
 		*contentPath = "./content/"
 	}
 
-	if *basePath == "" {
-		p, err := build.Default.Import(basePkg, "", build.FindOnly)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Couldn't find gopresent files: %v\n", err)
-			fmt.Fprintf(os.Stderr, basePathMessage, basePkg)
-			os.Exit(1)
+	baseFS := func() fs.FS {
+		if *basePath != "" {
+			return os.DirFS(*basePath)
 		}
-		*basePath = p.Dir
-	}
-	err := initTemplates(*basePath)
+		//go:embed base
+		var staticFS embed.FS
+
+		// by default, lets use the embedded files.
+		fs, err := fs.Sub(staticFS, "base")
+		if err != nil {
+			panic(err)
+		}
+
+		return fs
+	}()
+
+	http.HandleFunc("/", dirHandler)
+
+	err := initTemplates(baseFS)
 	if err != nil {
 		log.Fatalf("Failed to parse templates: %v", err)
 	}
@@ -98,8 +108,8 @@ func main() {
 		}
 	}
 
-	initPlayground(*basePath, origin)
-	http.Handle("/static/", http.FileServer(http.Dir(*basePath)))
+	initPlayground(baseFS, origin)
+	http.Handle("/static/", http.FileServer(http.FS(baseFS)))
 
 	if !ln.Addr().(*net.TCPAddr).IP.IsLoopback() &&
 		present.PlayEnabled && !*nativeClient && !*usePlayground {
