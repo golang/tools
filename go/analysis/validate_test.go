@@ -118,6 +118,28 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestValidateEmptyDocOrRun(t *testing.T) {
+	withoutDoc := &Analyzer{
+		Name: "withoutDoc",
+		Run: func(p *Pass) (interface{}, error) {
+			return nil, nil
+		},
+	}
+	err := Validate([]*Analyzer{withoutDoc})
+	if err == nil || !strings.Contains(err.Error(), "is undocumented") {
+		t.Errorf("got unexpected error while validating analyzers withoutDoc: %v", err)
+	}
+
+	withoutRun := &Analyzer{
+		Name: "withoutRun",
+		Doc:  "this analyzer has no Run",
+	}
+	err = Validate([]*Analyzer{withoutRun})
+	if err == nil || !strings.Contains(err.Error(), "has nil Run") {
+		t.Errorf("got unexpected error while validating analyzers withoutRun: %v", err)
+	}
+}
+
 func TestCycleInRequiresGraphErrorMessage(t *testing.T) {
 	err := CycleInRequiresGraphError{}
 	errMsg := err.Error()
