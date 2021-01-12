@@ -1,3 +1,7 @@
+// Copyright 2020 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package cache
 
 import (
@@ -74,7 +78,9 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot
 		// unnecessary work and potentially mess up the go.mod file.
 		if s.cleanupProcessEnv != nil {
 			if resolver, err := s.processEnv.GetResolver(); err == nil {
-				resolver.(*imports.ModuleResolver).ClearForNewMod()
+				if modResolver, ok := resolver.(*imports.ModuleResolver); ok {
+					modResolver.ClearForNewMod()
+				}
 			}
 			s.cleanupProcessEnv()
 		}
