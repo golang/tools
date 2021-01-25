@@ -4,7 +4,7 @@
 
 package composite
 
-// defaultWhitelist is a white list of types in the standard packages
+// DefaultWhitelist is a white list of types in the standard packages
 // that are used with unkeyed literals we deem to be acceptable.
 var DefaultWhitelist = []string{
 	// These image and image/color struct types are frozen. We will never add fields to them.
