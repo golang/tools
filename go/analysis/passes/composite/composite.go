@@ -32,23 +32,31 @@ should be replaced by:
 	err = &net.DNSConfigError{Err: err}
 `
 
-var Analyzer = &analysis.Analyzer{
-	Name:             "composites",
-	Doc:              Doc,
-	Requires:         []*analysis.Analyzer{inspect.Analyzer},
-	RunDespiteErrors: true,
-	Run:              run,
-}
+var Analyzer = NewAnalyzer(DefaultWhitelist)
 
-var whitelist = true
+var whitelistEnabled = true
 
 func init() {
-	Analyzer.Flags.BoolVar(&whitelist, "whitelist", whitelist, "use composite white list; for testing only")
+	Analyzer.Flags.BoolVar(&whitelistEnabled, "whitelist", whitelistEnabled, "use composite white list; for testing only")
+}
+
+func NewAnalyzer(whitelist []string) *analysis.Analyzer {
+	whitemap := make(map[string]bool)
+	for _, typ := range whitelist {
+		whitemap[typ] = true
+	}
+	return &analysis.Analyzer{
+		Name:             "composites",
+		Doc:              Doc,
+		Requires:         []*analysis.Analyzer{inspect.Analyzer},
+		RunDespiteErrors: true,
+		Run:              func(pass *analysis.Pass) (interface{}, error) { return run(pass, whitemap) },
+	}
 }
 
 // runUnkeyedLiteral checks if a composite literal is a struct literal with
 // unkeyed fields.
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass, whitelist map[string]bool) (interface{}, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	nodeFilter := []ast.Node{
@@ -63,7 +71,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 		typeName := typ.String()
-		if whitelist && unkeyedLiteral[typeName] {
+		if whitelistEnabled && whitelist[typeName] {
 			// skip whitelisted types
 			return
 		}
