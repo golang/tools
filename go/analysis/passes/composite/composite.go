@@ -32,31 +32,33 @@ should be replaced by:
 	err = &net.DNSConfigError{Err: err}
 `
 
-var Analyzer = NewAnalyzer(DefaultWhitelist)
-
-var whitelistEnabled = true
-
-func init() {
-	Analyzer.Flags.BoolVar(&whitelistEnabled, "whitelist", whitelistEnabled, "use composite white list; for testing only")
+var Analyzer = &analysis.Analyzer{
+	Name:             "composites",
+	Doc:              Doc,
+	Requires:         []*analysis.Analyzer{inspect.Analyzer},
+	RunDespiteErrors: true,
+	Run:              run,
 }
 
-func NewAnalyzer(whitelist []string) *analysis.Analyzer {
-	whitemap := make(map[string]bool)
-	for _, typ := range whitelist {
-		whitemap[typ] = true
+var whitelist = true
+var unkeyedLiteralSet map[string]bool
+
+func init() {
+	Analyzer.Flags.BoolVar(&whitelist, "whitelist", whitelist, "use composite white list; for testing only")
+
+	unkeyedLiteralSet = make(map[string]bool)
+	for _, typ := range unkeyedLiteral {
+		unkeyedLiteralSet[typ] = true
 	}
-	return &analysis.Analyzer{
-		Name:             "composites",
-		Doc:              Doc,
-		Requires:         []*analysis.Analyzer{inspect.Analyzer},
-		RunDespiteErrors: true,
-		Run:              func(pass *analysis.Pass) (interface{}, error) { return run(pass, whitemap) },
-	}
+}
+
+func DefaultAllowList() []string {
+	return unkeyedLiteral
 }
 
 // runUnkeyedLiteral checks if a composite literal is a struct literal with
 // unkeyed fields.
-func run(pass *analysis.Pass, whitelist map[string]bool) (interface{}, error) {
+func CollectUnkeyed(pass *analysis.Pass, callback func (cl *ast.CompositeLit, typeName string)) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	nodeFilter := []ast.Node{
@@ -68,11 +70,6 @@ func run(pass *analysis.Pass, whitelist map[string]bool) (interface{}, error) {
 		typ := pass.TypesInfo.Types[cl].Type
 		if typ == nil {
 			// cannot determine composite literals' type, skip it
-			return
-		}
-		typeName := typ.String()
-		if whitelistEnabled && whitelist[typeName] {
-			// skip whitelisted types
 			return
 		}
 		under := typ.Underlying()
@@ -105,6 +102,15 @@ func run(pass *analysis.Pass, whitelist map[string]bool) (interface{}, error) {
 			return
 		}
 
+		typeName := typ.String()
+		callback(cl, typeName)
+	})
+}
+func run(pass *analysis.Pass) (interface{}, error) {
+	CollectUnkeyed(pass, func (cl *ast.CompositeLit, typeName string) {
+		if whitelist && unkeyedLiteralSet[typeName] {
+			return
+		}
 		pass.ReportRangef(cl, "%s composite literal uses unkeyed fields", typeName)
 	})
 	return nil, nil
