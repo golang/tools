@@ -93,6 +93,7 @@ type completionOptions struct {
 	unimported        bool
 	documentation     bool
 	fullDocumentation bool
+	autoBraces        bool
 	placeholders      bool
 	literal           bool
 	matcher           source.Matcher
@@ -516,6 +517,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 			unimported:        opts.CompleteUnimported,
 			documentation:     opts.CompletionDocumentation && opts.HoverKind != source.NoDocumentation,
 			fullDocumentation: opts.HoverKind == source.FullDocumentation,
+			autoBraces:        opts.UseAutoBraces,
 			placeholders:      opts.UsePlaceholders,
 			literal:           opts.LiteralCompletions && opts.InsertTextFormat == protocol.SnippetTextFormat,
 			budget:            opts.CompletionBudget,

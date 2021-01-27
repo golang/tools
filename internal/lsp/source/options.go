@@ -127,6 +127,7 @@ func DefaultOptions() *Options {
 					CompletionOptions: CompletionOptions{
 						Matcher:          Fuzzy,
 						CompletionBudget: 100 * time.Millisecond,
+						UseAutoBraces:    true,
 					},
 					Codelenses: map[string]bool{
 						CommandGenerate.Name:          true,
@@ -274,6 +275,10 @@ type UIOptions struct {
 }
 
 type CompletionOptions struct {
+	// UseAutoBraces enables automatically adding `()` to the end of function
+	// calls when auto-completing.
+	UseAutoBraces bool
+
 	// Placeholders enables placeholders for function parameters or struct
 	// fields in completion responses.
 	UsePlaceholders bool
@@ -738,6 +743,8 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		o.DirectoryFilters = filters
 	case "completionDocumentation":
 		result.setBool(&o.CompletionDocumentation)
+	case "useAutoBraces":
+		result.setBool(&o.UseAutoBraces)
 	case "usePlaceholders":
 		result.setBool(&o.UsePlaceholders)
 	case "deepCompletion":
