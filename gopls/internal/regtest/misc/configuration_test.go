@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package regtest
+package misc
 
 import (
 	"testing"
 
-	"golang.org/x/tools/internal/lsp"
+	. "golang.org/x/tools/gopls/internal/regtest"
+
 	"golang.org/x/tools/internal/lsp/fake"
 )
 
@@ -25,16 +26,16 @@ package a
 // NotThisVariable should really start with ThisVariable.
 const ThisVariable = 7
 `
-	run(t, files, func(t *testing.T, env *Env) {
+	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
 		env.Await(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1),
+			env.DoneWithOpen(),
 			NoDiagnostics("a/a.go"),
 		)
 		cfg := &fake.EditorConfig{}
 		*cfg = env.Editor.Config
 		cfg.EnableStaticcheck = true
-		env.changeConfiguration(t, cfg)
+		env.ChangeConfiguration(t, cfg)
 		env.Await(
 			DiagnosticAt("a/a.go", 2, 0),
 		)

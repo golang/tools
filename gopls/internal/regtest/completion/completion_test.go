@@ -2,18 +2,42 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package regtest
+package completion
 
 import (
 	"fmt"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/internal/lsp"
+	. "golang.org/x/tools/gopls/internal/regtest"
+
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/testenv"
 )
+
+func TestMain(m *testing.M) {
+	Main(m)
+}
+
+const proxy = `
+-- example.com@v1.2.3/go.mod --
+module example.com
+
+go 1.12
+-- example.com@v1.2.3/blah/blah.go --
+package blah
+
+const Name = "Blah"
+-- random.org@v1.2.3/go.mod --
+module random.org
+
+go 1.12
+-- random.org@v1.2.3/blah/blah.go --
+package hello
+
+const Name = "Hello"
+`
 
 func TestPackageCompletion(t *testing.T) {
 	testenv.NeedsGo1Point(t, 14)
@@ -124,11 +148,11 @@ pac
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			run(t, files, func(t *testing.T, env *Env) {
+			Run(t, files, func(t *testing.T, env *Env) {
 				if tc.content != nil {
 					env.WriteWorkspaceFile(tc.filename, *tc.content)
 					env.Await(
-						CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1),
+						env.DoneWithChangeWatchedFiles(),
 					)
 				}
 				env.OpenFile(tc.filename)
@@ -181,7 +205,7 @@ package ma
 `
 
 	want := []string{"ma", "ma_test", "main", "math", "math_test"}
-	run(t, files, func(t *testing.T, env *Env) {
+	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("math/add.go")
 		completions := env.Completion("math/add.go", fake.Pos{
 			Line:   0,
@@ -242,31 +266,29 @@ func _() {
 	_ = blah.Hello
 }
 `
-	withOptions(
+	WithOptions(
 		ProxyFiles(proxy),
-	).run(t, mod, func(t *testing.T, env *Env) {
+	).Run(t, mod, func(t *testing.T, env *Env) {
 		// Make sure the dependency is in the module cache and accessible for
 		// unimported completions, and then remove it before proceeding.
 		env.RemoveWorkspaceFile("main2.go")
 		env.RunGoCommand("mod", "tidy")
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 2))
+		env.Await(env.DoneWithChangeWatchedFiles())
 
 		// Trigger unimported completions for the example.com/blah package.
 		env.OpenFile("main.go")
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1))
+		env.Await(env.DoneWithOpen())
 		pos := env.RegexpSearch("main.go", "ah")
 		completions := env.Completion("main.go", pos)
 		if len(completions.Items) == 0 {
 			t.Fatalf("no completion items")
 		}
 		env.AcceptCompletion("main.go", pos, completions.Items[0])
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1))
+		env.Await(env.DoneWithChange())
 
 		// Trigger completions once again for the blah.<> selector.
 		env.RegexpReplace("main.go", "_ = blah", "_ = blah.")
-		env.Await(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 2),
-		)
+		env.Await(env.DoneWithChange())
 		pos = env.RegexpSearch("main.go", "\n}")
 		completions = env.Completion("main.go", pos)
 		if len(completions.Items) != 1 {
@@ -313,7 +335,7 @@ package mainmod
 
 const Name = "mainmod"
 `
-	withOptions(ProxyFiles(proxy)).run(t, files, func(t *testing.T, env *Env) {
+	WithOptions(ProxyFiles(proxy)).Run(t, files, func(t *testing.T, env *Env) {
 		env.CreateBuffer("import.go", "package pkg\nvar _ = mainmod.Name\n")
 		env.SaveBuffer("import.go")
 		content := env.ReadWorkspaceFile("import.go")

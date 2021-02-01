@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
+	"golang.org/x/mod/semver"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/event"
@@ -103,9 +104,8 @@ type snapshot struct {
 	// Preserve go.mod-related handles to avoid garbage-collecting the results
 	// of various calls to the go command. The handles need not refer to only
 	// the view's go.mod file.
-	modTidyHandles    map[span.URI]*modTidyHandle
-	modUpgradeHandles map[span.URI]*modUpgradeHandle
-	modWhyHandles     map[span.URI]*modWhyHandle
+	modTidyHandles map[span.URI]*modTidyHandle
+	modWhyHandles  map[span.URI]*modWhyHandle
 
 	workspace          *workspace
 	workspaceDirHandle *memoize.Handle
@@ -324,12 +324,8 @@ func (s *snapshot) goCommandInvocation(ctx context.Context, flags source.Invocat
 	case source.LoadWorkspace, source.Normal:
 		if vendorEnabled {
 			inv.ModFlag = "vendor"
-		} else if s.workspaceMode()&usesWorkspaceModule == 0 && !allowModfileModificationOption {
+		} else if !allowModfileModificationOption {
 			inv.ModFlag = "readonly"
-		} else {
-			// Temporarily allow updates for multi-module workspace mode:
-			// it doesn't create a go.sum at all. golang/go#42509.
-			inv.ModFlag = mutableModFlag
 		}
 	case source.UpdateUserModFile, source.WriteTemporaryModFile:
 		inv.ModFlag = mutableModFlag
@@ -574,12 +570,6 @@ func (s *snapshot) getModWhyHandle(uri span.URI) *modWhyHandle {
 	return s.modWhyHandles[uri]
 }
 
-func (s *snapshot) getModUpgradeHandle(uri span.URI) *modUpgradeHandle {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.modUpgradeHandles[uri]
-}
-
 func (s *snapshot) getModTidyHandle(uri span.URI) *modTidyHandle {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -717,6 +707,9 @@ func (s *snapshot) allKnownSubdirs(ctx context.Context) map[span.URI]struct{} {
 // the given directory. It does not respect symlinks.
 func (s *snapshot) knownFilesInDir(ctx context.Context, dir span.URI) []span.URI {
 	var files []span.URI
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	for uri := range s.files {
 		if source.InDir(dir.Filename(), uri.Filename()) {
 			files = append(files, uri)
@@ -1009,6 +1002,9 @@ func (s *snapshot) awaitLoaded(ctx context.Context) error {
 
 func (s *snapshot) GetCriticalError(ctx context.Context) *source.CriticalError {
 	loadErr := s.awaitLoadedAllErrors(ctx)
+	if errors.Is(loadErr, context.Canceled) {
+		return nil
+	}
 
 	// Even if packages didn't fail to load, we still may want to show
 	// additional warnings.
@@ -1074,6 +1070,10 @@ func containsCommandLineArguments(pkgs []source.Package) bool {
 func (s *snapshot) awaitLoadedAllErrors(ctx context.Context) error {
 	// Do not return results until the snapshot's view has been initialized.
 	s.AwaitInitialized(ctx)
+
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 
 	if err := s.reloadWorkspace(ctx); err != nil {
 		return err
@@ -1286,7 +1286,6 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 		unloadableFiles:   make(map[span.URI]struct{}),
 		parseModHandles:   make(map[span.URI]*parseModHandle),
 		modTidyHandles:    make(map[span.URI]*modTidyHandle),
-		modUpgradeHandles: make(map[span.URI]*modUpgradeHandle),
 		modWhyHandles:     make(map[span.URI]*modWhyHandle),
 		workspace:         newWorkspace,
 	}
@@ -1330,12 +1329,6 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 			continue
 		}
 		result.modTidyHandles[k] = v
-	}
-	for k, v := range s.modUpgradeHandles {
-		if _, ok := changes[k]; ok {
-			continue
-		}
-		result.modUpgradeHandles[k] = v
 	}
 	for k, v := range s.modWhyHandles {
 		if _, ok := changes[k]; ok {
@@ -1389,9 +1382,6 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 			// withoutURI is relevant.
 			for k := range s.modTidyHandles {
 				delete(result.modTidyHandles, k)
-			}
-			for k := range s.modUpgradeHandles {
-				delete(result.modUpgradeHandles, k)
 			}
 			for k := range s.modWhyHandles {
 				delete(result.modWhyHandles, k)
@@ -1519,9 +1509,6 @@ copyIDs:
 
 	// Inherit all of the go.mod-related handles.
 	for _, v := range result.modTidyHandles {
-		newGen.Inherit(v.handle)
-	}
-	for _, v := range result.modUpgradeHandles {
 		newGen.Inherit(v.handle)
 	}
 	for _, v := range result.modWhyHandles {
@@ -1731,6 +1718,9 @@ func BuildGoplsMod(ctx context.Context, root span.URI, s source.Snapshot) (*modf
 func buildWorkspaceModFile(ctx context.Context, modFiles map[span.URI]struct{}, fs source.FileSource) (*modfile.File, error) {
 	file := &modfile.File{}
 	file.AddModuleStmt("gopls-workspace")
+	// Track the highest Go version, to be set on the workspace module.
+	// Fall back to 1.12 -- old versions insist on having some version.
+	goVersion := "1.12"
 
 	paths := make(map[string]span.URI)
 	for modURI := range modFiles {
@@ -1749,7 +1739,13 @@ func buildWorkspaceModFile(ctx context.Context, modFiles map[span.URI]struct{}, 
 		if file == nil || parsed.Module == nil {
 			return nil, fmt.Errorf("no module declaration for %s", modURI)
 		}
+		if parsed.Go != nil && semver.Compare(goVersion, parsed.Go.Version) < 0 {
+			goVersion = parsed.Go.Version
+		}
 		path := parsed.Module.Mod.Path
+		if _, ok := paths[path]; ok {
+			return nil, fmt.Errorf("found module %q twice in the workspace", path)
+		}
 		paths[path] = modURI
 		// If the module's path includes a major version, we expect it to have
 		// a matching major version.
@@ -1762,6 +1758,9 @@ func buildWorkspaceModFile(ctx context.Context, modFiles map[span.URI]struct{}, 
 		if err := file.AddReplace(path, "", dirURI(modURI).Filename(), ""); err != nil {
 			return nil, err
 		}
+	}
+	if goVersion != "" {
+		file.AddGoStmt(goVersion)
 	}
 	// Go back through all of the modules to handle any of their replace
 	// statements.
@@ -1802,6 +1801,7 @@ func buildWorkspaceModFile(ctx context.Context, modFiles map[span.URI]struct{}, 
 			}
 		}
 	}
+	file.SortBlocks()
 	return file, nil
 }
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package regtest
+package workspace
 
 import (
 	"fmt"
@@ -12,11 +12,16 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/internal/lsp"
+	. "golang.org/x/tools/gopls/internal/regtest"
+
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/testenv"
 )
+
+func TestMain(m *testing.M) {
+	Main(m)
+}
 
 const workspaceProxy = `
 -- example.com@v1.2.3/go.mod --
@@ -117,7 +122,7 @@ func TestReferences(t *testing.T) {
 			if tt.rootPath != "" {
 				opts = append(opts, WorkspaceFolders(tt.rootPath))
 			}
-			withOptions(opts...).run(t, workspaceModule, func(t *testing.T, env *Env) {
+			WithOptions(opts...).Run(t, workspaceModule, func(t *testing.T, env *Env) {
 				f := "pkg/inner/inner.go"
 				env.OpenFile(f)
 				locations := env.References(f, env.RegexpSearch(f, `SaySomething`))
@@ -135,10 +140,10 @@ func TestReferences(t *testing.T) {
 // VS Code, where clicking on a reference result triggers a
 // textDocument/didOpen without a corresponding textDocument/didClose.
 func TestClearAnalysisDiagnostics(t *testing.T) {
-	withOptions(
+	WithOptions(
 		ProxyFiles(workspaceProxy),
 		WorkspaceFolders("pkg/inner"),
-	).run(t, workspaceModule, func(t *testing.T, env *Env) {
+	).Run(t, workspaceModule, func(t *testing.T, env *Env) {
 		env.OpenFile("pkg/main.go")
 		env.Await(
 			env.DiagnosticAtRegexp("pkg/main2.go", "fmt.Print"),
@@ -153,10 +158,10 @@ func TestClearAnalysisDiagnostics(t *testing.T) {
 // This test checks that gopls updates the set of files it watches when a
 // replace target is added to the go.mod.
 func TestWatchReplaceTargets(t *testing.T) {
-	withOptions(
+	WithOptions(
 		ProxyFiles(workspaceProxy),
 		WorkspaceFolders("pkg"),
-	).run(t, workspaceModule, func(t *testing.T, env *Env) {
+	).Run(t, workspaceModule, func(t *testing.T, env *Env) {
 		// Add a replace directive and expect the files that gopls is watching
 		// to change.
 		dir := env.Sandbox.Workdir.URI("goodbye").SpanURI().Filename()
@@ -165,7 +170,7 @@ replace random.org => %s
 `, env.ReadWorkspaceFile("pkg/go.mod"), dir)
 		env.WriteWorkspaceFile("pkg/go.mod", goModWithReplace)
 		env.Await(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1),
+			env.DoneWithChangeWatchedFiles(),
 			UnregistrationMatching("didChangeWatchedFiles"),
 			RegistrationMatching("didChangeWatchedFiles"),
 		)
@@ -199,7 +204,9 @@ func TestAutomaticWorkspaceModule_Interdependent(t *testing.T) {
 module a.com
 
 require b.com v1.2.3
-
+-- moda/a/go.sum --
+b.com v1.2.3 h1:tXrlXP0rnjRpKNmkbLYoWBdq0ikb3C3bKK9//moAWBI=
+b.com v1.2.3/go.mod h1:D+J7pfFBZK5vdIdZEFquR586vKKIkqG7Qjw9AxG5BQ8=
 -- moda/a/a.go --
 package a
 
@@ -221,10 +228,10 @@ func Hello() int {
 	var x int
 }
 `
-	withOptions(
+	WithOptions(
 		ProxyFiles(workspaceModuleProxy),
 		Modes(Experimental),
-	).run(t, multiModule, func(t *testing.T, env *Env) {
+	).Run(t, multiModule, func(t *testing.T, env *Env) {
 		env.Await(
 			env.DiagnosticAtRegexp("moda/a/a.go", "x"),
 			env.DiagnosticAtRegexp("modb/b/b.go", "x"),
@@ -241,7 +248,9 @@ func TestDeleteModule_Interdependent(t *testing.T) {
 module a.com
 
 require b.com v1.2.3
-
+-- moda/a/go.sum --
+b.com v1.2.3 h1:tXrlXP0rnjRpKNmkbLYoWBdq0ikb3C3bKK9//moAWBI=
+b.com v1.2.3/go.mod h1:D+J7pfFBZK5vdIdZEFquR586vKKIkqG7Qjw9AxG5BQ8=
 -- moda/a/a.go --
 package a
 
@@ -263,10 +272,10 @@ func Hello() int {
 	var x int
 }
 `
-	withOptions(
+	WithOptions(
 		ProxyFiles(workspaceModuleProxy),
 		Modes(Experimental),
-	).run(t, multiModule, func(t *testing.T, env *Env) {
+	).Run(t, multiModule, func(t *testing.T, env *Env) {
 		env.OpenFile("moda/a/a.go")
 
 		original, _ := env.GoToDefinition("moda/a/a.go", env.RegexpSearch("moda/a/a.go", "Hello"))
@@ -277,7 +286,7 @@ func Hello() int {
 		env.RemoveWorkspaceFile("modb/b/b.go")
 		env.RemoveWorkspaceFile("modb/go.mod")
 		env.Await(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 2),
+			env.DoneWithChangeWatchedFiles(),
 		)
 		if testenv.Go1Point() < 14 {
 			// On 1.14 and above, the go mod tidy diagnostics accidentally
@@ -306,7 +315,9 @@ func TestCreateModule_Interdependent(t *testing.T) {
 module a.com
 
 require b.com v1.2.3
-
+-- moda/a/go.sum --
+b.com v1.2.3 h1:tXrlXP0rnjRpKNmkbLYoWBdq0ikb3C3bKK9//moAWBI=
+b.com v1.2.3/go.mod h1:D+J7pfFBZK5vdIdZEFquR586vKKIkqG7Qjw9AxG5BQ8=
 -- moda/a/a.go --
 package a
 
@@ -319,10 +330,10 @@ func main() {
 	_ = b.Hello()
 }
 `
-	withOptions(
+	WithOptions(
 		Modes(Experimental),
 		ProxyFiles(workspaceModuleProxy),
-	).run(t, multiModule, func(t *testing.T, env *Env) {
+	).Run(t, multiModule, func(t *testing.T, env *Env) {
 		env.OpenFile("moda/a/a.go")
 		original, _ := env.GoToDefinition("moda/a/a.go", env.RegexpSearch("moda/a/a.go", "Hello"))
 		if want := "b.com@v1.2.3/b/b.go"; !strings.HasSuffix(original, want) {
@@ -340,7 +351,7 @@ func Hello() int {
 		})
 		env.Await(
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1),
+				env.DoneWithChangeWatchedFiles(),
 				env.DiagnosticAtRegexp("modb/b/b.go", "x"),
 			),
 		)
@@ -381,14 +392,14 @@ func Hello() int {
 	var x int
 }
 `
-	withOptions(
+	WithOptions(
 		ProxyFiles(workspaceModuleProxy),
 		Modes(Experimental),
-	).run(t, multiModule, func(t *testing.T, env *Env) {
+	).Run(t, multiModule, func(t *testing.T, env *Env) {
 		env.OpenFile("modb/go.mod")
 		env.Await(
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1),
+				env.DoneWithOpen(),
 				DiagnosticAt("modb/go.mod", 0, 0),
 			),
 		)
@@ -409,7 +420,9 @@ func TestUseGoplsMod(t *testing.T) {
 module a.com
 
 require b.com v1.2.3
-
+-- moda/a/go.sum --
+b.com v1.2.3 h1:tXrlXP0rnjRpKNmkbLYoWBdq0ikb3C3bKK9//moAWBI=
+b.com v1.2.3/go.mod h1:D+J7pfFBZK5vdIdZEFquR586vKKIkqG7Qjw9AxG5BQ8=
 -- moda/a/a.go --
 package a
 
@@ -425,6 +438,9 @@ func main() {
 module b.com
 
 require example.com v1.2.3
+-- modb/go.sum --
+example.com v1.2.3 h1:Yryq11hF02fEf2JlOS2eph+ICE2/ceevGV3C9dl5V/c=
+example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
 -- modb/b/b.go --
 package b
 
@@ -441,10 +457,10 @@ require (
 
 replace a.com => $SANDBOX_WORKDIR/moda/a
 `
-	withOptions(
+	WithOptions(
 		ProxyFiles(workspaceModuleProxy),
 		Modes(Experimental),
-	).run(t, multiModule, func(t *testing.T, env *Env) {
+	).Run(t, multiModule, func(t *testing.T, env *Env) {
 		// Initially, the gopls.mod should cause only the a.com module to be
 		// loaded. Validate this by jumping to a definition in b.com and ensuring
 		// that we go to the module cache.
@@ -472,8 +488,8 @@ replace a.com => $SANDBOX_WORKDIR/moda/a
 		env.WriteWorkspaceFile("gopls.mod", fmt.Sprintf(`module gopls-workspace
 
 require (
-	a.com v0.0.0-goplsworkspace
-	b.com v0.0.0-goplsworkspace
+	a.com v1.9999999.0-goplsworkspace
+	b.com v1.9999999.0-goplsworkspace
 )
 
 replace a.com => %s/moda/a
@@ -488,7 +504,7 @@ replace b.com => %s/modb
 		var d protocol.PublishDiagnosticsParams
 		env.Await(
 			OnceMet(
-				env.DiagnosticAtRegexp("modb/go.mod", `require example.com v1.2.3`),
+				env.DiagnosticAtRegexpWithMessage("modb/go.mod", `require example.com v1.2.3`, "has not been downloaded"),
 				ReadDiagnostics("modb/go.mod", &d),
 			),
 		)
@@ -547,7 +563,7 @@ package foo
 import "fmt"
 var _ = fmt.Printf
 `
-	run(t, files, func(t *testing.T, env *Env) {
+	Run(t, files, func(t *testing.T, env *Env) {
 		env.CreateBuffer("/tmp/foo.go", "")
 		env.EditBuffer("/tmp/foo.go", fake.NewEdit(0, 0, 0, 0, code))
 		env.GoToDefinition("/tmp/foo.go", env.RegexpSearch("/tmp/foo.go", `Printf`))
@@ -598,9 +614,9 @@ func main() {
 	var x int
 }
 `
-	withOptions(
+	WithOptions(
 		Modes(Experimental),
-	).run(t, multiModule, func(t *testing.T, env *Env) {
+	).Run(t, multiModule, func(t *testing.T, env *Env) {
 		env.Await(
 			env.DiagnosticAtRegexp("moda/a/a.go", "x"),
 			env.DiagnosticAtRegexp("modb/b/b.go", "x"),
@@ -630,10 +646,10 @@ func main() {
 	fmt.Println("World")
 }
 `
-	withOptions(
+	WithOptions(
 		Modes(Experimental),
 		SendPID(),
-	).run(t, multiModule, func(t *testing.T, env *Env) {
+	).Run(t, multiModule, func(t *testing.T, env *Env) {
 		pid := os.Getpid()
 		// Don't factor this out of Server.addFolders. vscode-go expects this
 		// directory.
@@ -643,7 +659,7 @@ func main() {
 			t.Fatalf("reading expected workspace modfile: %v", err)
 		}
 		got := string(gotb)
-		for _, want := range []string{"a.com v0.0.0-goplsworkspace", "b.com v0.0.0-goplsworkspace"} {
+		for _, want := range []string{"a.com v1.9999999.0-goplsworkspace", "b.com v1.9999999.0-goplsworkspace"} {
 			if !strings.Contains(got, want) {
 				// want before got here, since the go.mod is multi-line
 				t.Fatalf("workspace go.mod missing %q. got:\n%s", want, got)
@@ -654,18 +670,18 @@ func main() {
 				module gopls-workspace
 
 				require (
-					a.com v0.0.0-goplsworkspace
+					a.com v1.9999999.0-goplsworkspace
 				)
 
 				replace a.com => %s/moda/a
 				`, workdir))
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1))
+		env.Await(env.DoneWithChangeWatchedFiles())
 		gotb, err = ioutil.ReadFile(modPath)
 		if err != nil {
 			t.Fatalf("reading expected workspace modfile: %v", err)
 		}
 		got = string(gotb)
-		want := "b.com v0.0.0-goplsworkspace"
+		want := "b.com v1.9999999.0-goplsworkspace"
 		if strings.Contains(got, want) {
 			t.Fatalf("workspace go.mod contains unexpected %q. got:\n%s", want, got)
 		}
@@ -687,7 +703,7 @@ const _ = Nonexistant
 	cfg := EditorConfig{
 		DirectoryFilters: []string{"-exclude"},
 	}
-	withOptions(cfg).run(t, files, func(t *testing.T, env *Env) {
+	WithOptions(cfg).Run(t, files, func(t *testing.T, env *Env) {
 		env.Await(NoDiagnostics("exclude/x.go"))
 	})
 }
@@ -715,7 +731,7 @@ const X = 1
 	cfg := EditorConfig{
 		DirectoryFilters: []string{"-exclude"},
 	}
-	withOptions(cfg).run(t, files, func(t *testing.T, env *Env) {
+	WithOptions(cfg).Run(t, files, func(t *testing.T, env *Env) {
 		env.Await(
 			NoDiagnostics("exclude/exclude.go"), // filtered out
 			NoDiagnostics("include/include.go"), // successfully builds
@@ -765,7 +781,7 @@ package exclude
 	cfg := EditorConfig{
 		DirectoryFilters: []string{"-exclude"},
 	}
-	withOptions(cfg, Modes(Experimental), ProxyFiles(proxy)).run(t, files, func(t *testing.T, env *Env) {
+	WithOptions(cfg, Modes(Experimental), ProxyFiles(proxy)).Run(t, files, func(t *testing.T, env *Env) {
 		env.Await(env.DiagnosticAtRegexp("include/include.go", `exclude.(X)`))
 	})
 }

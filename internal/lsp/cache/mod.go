@@ -6,14 +6,10 @@ package cache
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"unicode"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
@@ -220,125 +216,6 @@ func (s *snapshot) ModWhy(ctx context.Context, fh source.FileHandle) (map[string
 	return mwh.why(ctx, s)
 }
 
-type modUpgradeHandle struct {
-	handle *memoize.Handle
-}
-
-type modUpgradeData struct {
-	// upgrades maps modules to their latest versions.
-	upgrades map[string]string
-
-	err error
-}
-
-func (muh *modUpgradeHandle) upgrades(ctx context.Context, snapshot *snapshot) (map[string]string, error) {
-	v, err := muh.handle.Get(ctx, snapshot.generation, snapshot)
-	if v == nil {
-		return nil, err
-	}
-	data := v.(*modUpgradeData)
-	return data.upgrades, data.err
-}
-
-// moduleUpgrade describes a module that can be upgraded to a particular
-// version.
-type moduleUpgrade struct {
-	Path   string
-	Update struct {
-		Version string
-	}
-}
-
-func (s *snapshot) ModUpgrade(ctx context.Context, fh source.FileHandle) (map[string]string, error) {
-	if fh.Kind() != source.Mod {
-		return nil, fmt.Errorf("%s is not a go.mod file", fh.URI())
-	}
-	if handle := s.getModUpgradeHandle(fh.URI()); handle != nil {
-		return handle.upgrades(ctx, s)
-	}
-	key := modKey{
-		sessionID: s.view.session.id,
-		env:       hashEnv(s),
-		mod:       fh.FileIdentity(),
-		view:      s.view.rootURI.Filename(),
-		verb:      upgrade,
-	}
-	h := s.generation.Bind(key, func(ctx context.Context, arg memoize.Arg) interface{} {
-		ctx, done := event.Start(ctx, "cache.ModUpgradeHandle", tag.URI.Of(fh.URI()))
-		defer done()
-
-		snapshot := arg.(*snapshot)
-
-		pm, err := snapshot.ParseMod(ctx, fh)
-		if err != nil {
-			return &modUpgradeData{err: err}
-		}
-
-		// No requires to upgrade.
-		if len(pm.File.Require) == 0 {
-			return &modUpgradeData{}
-		}
-		// Run "go list -mod readonly -u -m all" to be able to see which deps can be
-		// upgraded without modifying mod file.
-		inv := &gocommand.Invocation{
-			Verb:       "list",
-			Args:       []string{"-u", "-m", "-json", "all"},
-			WorkingDir: filepath.Dir(fh.URI().Filename()),
-		}
-		if s.workspaceMode()&tempModfile == 0 || containsVendor(fh.URI()) {
-			// Use -mod=readonly if the module contains a vendor directory
-			// (see golang/go#38711).
-			inv.ModFlag = "readonly"
-		}
-		stdout, err := snapshot.RunGoCommandDirect(ctx, source.Normal|source.AllowNetwork, inv)
-		if err != nil {
-			return &modUpgradeData{err: err}
-		}
-		var upgradeList []moduleUpgrade
-		dec := json.NewDecoder(stdout)
-		for {
-			var m moduleUpgrade
-			if err := dec.Decode(&m); err == io.EOF {
-				break
-			} else if err != nil {
-				return &modUpgradeData{err: err}
-			}
-			upgradeList = append(upgradeList, m)
-		}
-		if len(upgradeList) <= 1 {
-			return &modUpgradeData{}
-		}
-		upgrades := make(map[string]string)
-		for _, upgrade := range upgradeList[1:] {
-			if upgrade.Update.Version == "" {
-				continue
-			}
-			upgrades[upgrade.Path] = upgrade.Update.Version
-		}
-		return &modUpgradeData{
-			upgrades: upgrades,
-		}
-	}, nil)
-	muh := &modUpgradeHandle{handle: h}
-	s.mu.Lock()
-	s.modUpgradeHandles[fh.URI()] = muh
-	s.mu.Unlock()
-
-	return muh.upgrades(ctx, s)
-}
-
-// containsVendor reports whether the module has a vendor folder.
-func containsVendor(modURI span.URI) bool {
-	dir := filepath.Dir(modURI.Filename())
-	f, err := os.Stat(filepath.Join(dir, "vendor"))
-	if err != nil {
-		return false
-	}
-	return f.IsDir()
-}
-
-var moduleAtVersionRe = regexp.MustCompile(`^(?P<module>.*)@(?P<version>.*)$`)
-
 // extractGoCommandError tries to parse errors that come from the go command
 // and shape them into go.mod diagnostics.
 func (s *snapshot) extractGoCommandErrors(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, goCmdError string) []*source.Error {
@@ -356,6 +233,8 @@ func (s *snapshot) extractGoCommandErrors(ctx context.Context, snapshot source.S
 	return srcErrs
 }
 
+var moduleVersionInErrorRe = regexp.MustCompile(`[:\s]([+-._~0-9A-Za-z]+)@([+-._~0-9A-Za-z]+)[:\s]`)
+
 // matchErrorToModule attempts to match module version in error messages.
 // Some examples:
 //
@@ -363,99 +242,99 @@ func (s *snapshot) extractGoCommandErrors(ctx context.Context, snapshot source.S
 //    go: github.com/cockroachdb/apd/v2@v2.0.72: reading github.com/cockroachdb/apd/go.mod at revision v2.0.72: unknown revision v2.0.72
 //    go: example.com@v1.2.3 requires\n\trandom.org@v1.2.3: parsing go.mod:\n\tmodule declares its path as: bob.org\n\tbut was required as: random.org
 //
-// We split on colons and whitespace, and attempt to match on something
-// that matches module@version. If we're able to find a match, we try to
-// find anything that matches it in the go.mod file.
+// We search for module@version, starting from the end to find the most
+// relevant module, e.g. random.org@v1.2.3 above. Then we associate the error
+// with a directive that references any of the modules mentioned.
 func (s *snapshot) matchErrorToModule(ctx context.Context, fh source.FileHandle, goCmdError string) *source.Error {
-	var v module.Version
-	fields := strings.FieldsFunc(goCmdError, func(r rune) bool {
-		return unicode.IsSpace(r) || r == ':'
-	})
-	for _, field := range fields {
-		match := moduleAtVersionRe.FindStringSubmatch(field)
-		if match == nil {
-			continue
-		}
-		path, version := match[1], match[2]
-		// Any module versions that come from the workspace module should not
-		// be shown to the user.
-		if source.IsWorkspaceModuleVersion(version) {
-			continue
-		}
-		if err := module.Check(path, version); err != nil {
-			continue
-		}
-		v.Path, v.Version = path, version
-		break
-	}
 	pm, err := s.ParseMod(ctx, fh)
 	if err != nil {
 		return nil
 	}
-	toSourceError := func(line *modfile.Line) *source.Error {
-		rng, err := rangeFromPositions(pm.Mapper, line.Start, line.End)
+
+	var innermost *module.Version
+	var reference *modfile.Line
+	matches := moduleVersionInErrorRe.FindAllStringSubmatch(goCmdError, -1)
+
+outer:
+	for i := len(matches) - 1; i >= 0; i-- {
+		ver := module.Version{Path: matches[i][1], Version: matches[i][2]}
+		// Any module versions that come from the workspace module should not
+		// be shown to the user.
+		if source.IsWorkspaceModuleVersion(ver.Version) {
+			continue
+		}
+		if err := module.Check(ver.Path, ver.Version); err != nil {
+			continue
+		}
+		if innermost == nil {
+			innermost = &ver
+		}
+
+		for _, req := range pm.File.Require {
+			if req.Mod == ver {
+				reference = req.Syntax
+				break outer
+			}
+		}
+		for _, ex := range pm.File.Exclude {
+			if ex.Mod == ver {
+				reference = ex.Syntax
+				break outer
+			}
+		}
+		for _, rep := range pm.File.Replace {
+			if rep.New == ver || rep.Old == ver {
+				reference = rep.Syntax
+				break outer
+			}
+		}
+	}
+
+	if reference == nil {
+		// No match for the module path was found in the go.mod file.
+		// Show the error on the module declaration, if one exists.
+		if pm.File.Module == nil {
+			return nil
+		}
+		reference = pm.File.Module.Syntax
+	}
+
+	rng, err := rangeFromPositions(pm.Mapper, reference.Start, reference.End)
+	if err != nil {
+		return nil
+	}
+	disabledByGOPROXY := strings.Contains(goCmdError, "disabled by GOPROXY=off")
+	shouldAddDep := strings.Contains(goCmdError, "to add it")
+	if innermost != nil && (disabledByGOPROXY || shouldAddDep) {
+		args, err := source.MarshalArgs(fh.URI(), false, []string{fmt.Sprintf("%v@%v", innermost.Path, innermost.Version)})
 		if err != nil {
 			return nil
 		}
-		disabledByGOPROXY := strings.Contains(goCmdError, "disabled by GOPROXY=off")
-		shouldAddDep := strings.Contains(goCmdError, "to add it")
-		if v.Path != "" && (disabledByGOPROXY || shouldAddDep) {
-			args, err := source.MarshalArgs(fh.URI(), false, []string{fmt.Sprintf("%v@%v", v.Path, v.Version)})
-			if err != nil {
-				return nil
-			}
-			msg := goCmdError
-			if disabledByGOPROXY {
-				msg = fmt.Sprintf("%v@%v has not been downloaded", v.Path, v.Version)
-			}
-			return &source.Error{
-				Message: msg,
-				Kind:    source.ListError,
-				Range:   rng,
-				URI:     fh.URI(),
-				SuggestedFixes: []source.SuggestedFix{{
-					Title: fmt.Sprintf("Download %v@%v", v.Path, v.Version),
-					Command: &protocol.Command{
-						Title:     source.CommandAddDependency.Title,
-						Command:   source.CommandAddDependency.ID(),
-						Arguments: args,
-					},
-				}},
-			}
+		msg := goCmdError
+		if disabledByGOPROXY {
+			msg = fmt.Sprintf("%v@%v has not been downloaded", innermost.Path, innermost.Version)
 		}
 		return &source.Error{
-			Message: goCmdError,
+			Message: msg,
+			Kind:    source.ListError,
 			Range:   rng,
 			URI:     fh.URI(),
-			Kind:    source.ListError,
+			SuggestedFixes: []source.SuggestedFix{{
+				Title: fmt.Sprintf("Download %v@%v", innermost.Path, innermost.Version),
+				Command: &protocol.Command{
+					Title:     source.CommandAddDependency.Title,
+					Command:   source.CommandAddDependency.ID(),
+					Arguments: args,
+				},
+			}},
 		}
 	}
-	// Check if there are any require, exclude, or replace statements that
-	// match this module version.
-	for _, req := range pm.File.Require {
-		if req.Mod != v {
-			continue
-		}
-		return toSourceError(req.Syntax)
+	return &source.Error{
+		Message: goCmdError,
+		Range:   rng,
+		URI:     fh.URI(),
+		Kind:    source.ListError,
 	}
-	for _, ex := range pm.File.Exclude {
-		if ex.Mod != v {
-			continue
-		}
-		return toSourceError(ex.Syntax)
-	}
-	for _, rep := range pm.File.Replace {
-		if rep.New != v && rep.Old != v {
-			continue
-		}
-		return toSourceError(rep.Syntax)
-	}
-	// No match for the module path was found in the go.mod file.
-	// Show the error on the module declaration, if one exists.
-	if pm.File.Module == nil {
-		return nil
-	}
-	return toSourceError(pm.File.Module.Syntax)
 }
 
 // errorPositionRe matches errors messages of the form <filename>:<line>:<col>,

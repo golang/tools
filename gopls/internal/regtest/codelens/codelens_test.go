@@ -2,20 +2,25 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package regtest
+package codelens
 
 import (
 	"runtime"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/internal/lsp"
+	. "golang.org/x/tools/gopls/internal/regtest"
+
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/tests"
 	"golang.org/x/tools/internal/testenv"
 )
+
+func TestMain(m *testing.M) {
+	Main(m)
+}
 
 func TestDisablingCodeLens(t *testing.T) {
 	const workspace = `
@@ -53,11 +58,11 @@ const (
 	}
 	for _, test := range tests {
 		t.Run(test.label, func(t *testing.T) {
-			withOptions(
+			WithOptions(
 				EditorConfig{
 					CodeLenses: test.enabled,
 				},
-			).run(t, workspace, func(t *testing.T, env *Env) {
+			).Run(t, workspace, func(t *testing.T, env *Env) {
 				env.OpenFile("lib.go")
 				lens := env.CodeLens("lib.go")
 				if gotCodeLens := len(lens) > 0; gotCodeLens != test.wantCodeLens {
@@ -111,14 +116,22 @@ func main() {
 	_ = hi.Goodbye
 }
 `
+
+	const wantGoMod = `module mod.com
+
+go 1.12
+
+require golang.org/x/hello v1.3.3
+`
+
 	for _, commandTitle := range []string{
 		"Upgrade transitive dependencies",
 		"Upgrade direct dependencies",
 	} {
 		t.Run(commandTitle, func(t *testing.T) {
-			withOptions(
+			WithOptions(
 				ProxyFiles(proxyWithLatest),
-			).run(t, shouldUpdateDep, func(t *testing.T, env *Env) {
+			).Run(t, shouldUpdateDep, func(t *testing.T, env *Env) {
 				env.OpenFile("go.mod")
 				var lens protocol.CodeLens
 				var found bool
@@ -137,20 +150,27 @@ func main() {
 				}); err != nil {
 					t.Fatal(err)
 				}
-				env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1))
-				got := env.Editor.BufferText("go.mod")
-				const wantGoMod = `module mod.com
-
-go 1.12
-
-require golang.org/x/hello v1.3.3
-`
-				if got != wantGoMod {
+				env.Await(env.DoneWithChangeWatchedFiles())
+				if got := env.Editor.BufferText("go.mod"); got != wantGoMod {
 					t.Fatalf("go.mod upgrade failed:\n%s", tests.Diff(t, wantGoMod, got))
 				}
 			})
 		})
 	}
+	t.Run("Upgrade individual dependency", func(t *testing.T) {
+		WithOptions(ProxyFiles(proxyWithLatest)).Run(t, shouldUpdateDep, func(t *testing.T, env *Env) {
+			env.OpenFile("go.mod")
+			env.ExecuteCodeLensCommand("go.mod", source.CommandCheckUpgrades)
+			d := &protocol.PublishDiagnosticsParams{}
+			env.Await(OnceMet(env.DiagnosticAtRegexpWithMessage("go.mod", `require`, "can be upgraded"),
+				ReadDiagnostics("go.mod", d)))
+			env.ApplyQuickFixes("go.mod", d.Diagnostics)
+			env.Await(env.DoneWithChangeWatchedFiles())
+			if got := env.Editor.BufferText("go.mod"); got != wantGoMod {
+				t.Fatalf("go.mod upgrade failed:\n%s", tests.Diff(t, wantGoMod, got))
+			}
+		})
+	})
 }
 
 func TestUnusedDependenciesCodelens(t *testing.T) {
@@ -196,10 +216,10 @@ func main() {
 	_ = hi.Goodbye
 }
 `
-	runner.Run(t, shouldRemoveDep, func(t *testing.T, env *Env) {
+	WithOptions(ProxyFiles(proxy)).Run(t, shouldRemoveDep, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
 		env.ExecuteCodeLensCommand("go.mod", source.CommandTidy)
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1))
+		env.Await(env.DoneWithChangeWatchedFiles())
 		got := env.Editor.BufferText("go.mod")
 		const wantGoMod = `module mod.com
 
@@ -210,7 +230,7 @@ require golang.org/x/hello v1.0.0
 		if got != wantGoMod {
 			t.Fatalf("go.mod tidy failed:\n%s", tests.Diff(t, wantGoMod, got))
 		}
-	}, ProxyFiles(proxy))
+	})
 }
 
 func TestRegenerateCgo(t *testing.T) {
@@ -234,7 +254,7 @@ func Foo() {
 	print(C.fortytwo())
 }
 `
-	runner.Run(t, workspace, func(t *testing.T, env *Env) {
+	Run(t, workspace, func(t *testing.T, env *Env) {
 		// Open the file. We should have a nonexistant symbol.
 		env.OpenFile("cgo.go")
 		env.Await(env.DiagnosticAtRegexp("cgo.go", `C\.(fortytwo)`)) // could not determine kind of name for C.fortytwo
@@ -271,12 +291,12 @@ func main() {
 	fmt.Println(x)
 }
 `
-	withOptions(
+	WithOptions(
 		EditorConfig{
 			CodeLenses: map[string]bool{
 				"gc_details": true,
 			}},
-	).run(t, mod, func(t *testing.T, env *Env) {
+	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.ExecuteCodeLensCommand("main.go", source.CommandToggleDetails)
 		d := &protocol.PublishDiagnosticsParams{}

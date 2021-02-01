@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package regtest
+package diagnostics
 
 import (
 	"context"
@@ -11,12 +11,18 @@ import (
 	"os"
 	"testing"
 
+	. "golang.org/x/tools/gopls/internal/regtest"
+
 	"golang.org/x/tools/internal/lsp"
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/tests"
 	"golang.org/x/tools/internal/testenv"
 )
+
+func TestMain(m *testing.M) {
+	Main(m)
+}
 
 // Use mod.com for all go.mod files due to golang/go#35230.
 const exampleProgram = `
@@ -37,7 +43,7 @@ func TestDiagnosticErrorInEditedFile(t *testing.T) {
 	// This test is very basic: start with a clean Go program, make an error, and
 	// get a diagnostic for that error. However, it also demonstrates how to
 	// combine Expectations to await more complex state in the editor.
-	runner.Run(t, exampleProgram, func(t *testing.T, env *Env) {
+	Run(t, exampleProgram, func(t *testing.T, env *Env) {
 		// Deleting the 'n' at the end of Println should generate a single error
 		// diagnostic.
 		env.OpenFile("main.go")
@@ -46,7 +52,7 @@ func TestDiagnosticErrorInEditedFile(t *testing.T) {
 			// Once we have gotten diagnostics for the change above, we should
 			// satisfy the DiagnosticAtRegexp assertion.
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
+				env.DoneWithChange(),
 				env.DiagnosticAtRegexp("main.go", "Printl"),
 			),
 			// Assert that this test has sent no error logs to the client. This is not
@@ -65,7 +71,7 @@ module mod.com
 
 go 1.12
 `
-	runner.Run(t, onlyMod, func(t *testing.T, env *Env) {
+	Run(t, onlyMod, func(t *testing.T, env *Env) {
 		env.CreateBuffer("main.go", `package main
 
 func m() {
@@ -87,7 +93,7 @@ func TestDiagnosticErrorInNewFile(t *testing.T) {
 
 const Foo = "abc
 `
-	runner.Run(t, brokenFile, func(t *testing.T, env *Env) {
+	Run(t, brokenFile, func(t *testing.T, env *Env) {
 		env.CreateBuffer("broken.go", brokenFile)
 		env.Await(env.DiagnosticAtRegexp("broken.go", "\"abc"))
 	})
@@ -110,7 +116,7 @@ const a = 2
 `
 
 func TestDiagnosticClearingOnEdit(t *testing.T) {
-	runner.Run(t, badPackage, func(t *testing.T, env *Env) {
+	Run(t, badPackage, func(t *testing.T, env *Env) {
 		env.OpenFile("b.go")
 		env.Await(env.DiagnosticAtRegexp("a.go", "a = 1"), env.DiagnosticAtRegexp("b.go", "a = 2"))
 
@@ -124,7 +130,7 @@ func TestDiagnosticClearingOnEdit(t *testing.T) {
 }
 
 func TestDiagnosticClearingOnDelete_Issue37049(t *testing.T) {
-	runner.Run(t, badPackage, func(t *testing.T, env *Env) {
+	Run(t, badPackage, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")
 		env.Await(env.DiagnosticAtRegexp("a.go", "a = 1"), env.DiagnosticAtRegexp("b.go", "a = 2"))
 		env.RemoveWorkspaceFile("b.go")
@@ -134,7 +140,7 @@ func TestDiagnosticClearingOnDelete_Issue37049(t *testing.T) {
 }
 
 func TestDiagnosticClearingOnClose(t *testing.T) {
-	runner.Run(t, badPackage, func(t *testing.T, env *Env) {
+	Run(t, badPackage, func(t *testing.T, env *Env) {
 		env.CreateBuffer("c.go", `package consts
 
 const a = 3`)
@@ -152,7 +158,7 @@ const a = 3`)
 
 // Tests golang/go#37978.
 func TestIssue37978(t *testing.T) {
-	runner.Run(t, exampleProgram, func(t *testing.T, env *Env) {
+	Run(t, exampleProgram, func(t *testing.T, env *Env) {
 		// Create a new workspace-level directory and empty file.
 		env.CreateBuffer("c/c.go", "")
 
@@ -203,7 +209,7 @@ func TestA(t *testing.T) {
 // Tests golang/go#38878: deleting a test file should clear its errors, and
 // not break the workspace.
 func TestDeleteTestVariant(t *testing.T) {
-	runner.Run(t, test38878, func(t *testing.T, env *Env) {
+	Run(t, test38878, func(t *testing.T, env *Env) {
 		env.Await(env.DiagnosticAtRegexp("a_test.go", `f\((3)\)`))
 		env.RemoveWorkspaceFile("a_test.go")
 		env.Await(EmptyDiagnostics("a_test.go"))
@@ -220,12 +226,12 @@ func TestDeleteTestVariant(t *testing.T) {
 // should not clear its errors.
 func TestDeleteTestVariant_DiskOnly(t *testing.T) {
 	log.SetFlags(log.Lshortfile)
-	runner.Run(t, test38878, func(t *testing.T, env *Env) {
+	Run(t, test38878, func(t *testing.T, env *Env) {
 		env.OpenFile("a_test.go")
 		env.Await(DiagnosticAt("a_test.go", 5, 3))
 		env.Sandbox.Workdir.RemoveFile(context.Background(), "a_test.go")
 		env.Await(OnceMet(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1),
+			env.DoneWithChangeWatchedFiles(),
 			DiagnosticAt("a_test.go", 5, 3)))
 	})
 }
@@ -251,7 +257,7 @@ func Hello() {
 `
 
 	t.Run("manual", func(t *testing.T) {
-		runner.Run(t, noMod, func(t *testing.T, env *Env) {
+		Run(t, noMod, func(t *testing.T, env *Env) {
 			env.Await(
 				env.DiagnosticAtRegexp("main.go", `"mod.com/bob"`),
 			)
@@ -276,7 +282,7 @@ func Hello() {
 		})
 	})
 	t.Run("initialized", func(t *testing.T) {
-		runner.Run(t, noMod, func(t *testing.T, env *Env) {
+		Run(t, noMod, func(t *testing.T, env *Env) {
 			env.Await(
 				env.DiagnosticAtRegexp("main.go", `"mod.com/bob"`),
 			)
@@ -289,9 +295,9 @@ func Hello() {
 	})
 
 	t.Run("without workspace module", func(t *testing.T) {
-		withOptions(
+		WithOptions(
 			Modes(Singleton),
-		).run(t, noMod, func(t *testing.T, env *Env) {
+		).Run(t, noMod, func(t *testing.T, env *Env) {
 			env.Await(
 				env.DiagnosticAtRegexp("main.go", `"mod.com/bob"`),
 			)
@@ -339,7 +345,7 @@ func TestHello(t *testing.T) {
 }
 `
 
-	runner.Run(t, testPackage, func(t *testing.T, env *Env) {
+	Run(t, testPackage, func(t *testing.T, env *Env) {
 		env.OpenFile("lib_test.go")
 		env.Await(
 			DiagnosticAt("lib_test.go", 10, 2),
@@ -365,7 +371,7 @@ go 1.12
 package foo
 func main() {}
 `
-	runner.Run(t, packageChange, func(t *testing.T, env *Env) {
+	Run(t, packageChange, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")
 		env.RegexpReplace("a.go", "foo", "foox")
 		env.Await(
@@ -375,7 +381,7 @@ func main() {}
 			// test to actually exercise the bug, we must wait until that work has
 			// completed.
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
+				env.DoneWithChange(),
 				NoDiagnostics("a.go"),
 			),
 		)
@@ -418,17 +424,19 @@ const Answer = 42
 `
 
 func TestResolveDiagnosticWithDownload(t *testing.T) {
-	runner.Run(t, testPackageWithRequire, func(t *testing.T, env *Env) {
+	WithOptions(
+		ProxyFiles(testPackageWithRequireProxy),
+	).Run(t, testPackageWithRequire, func(t *testing.T, env *Env) {
 		env.OpenFile("print.go")
 		// Check that gopackages correctly loaded this dependency. We should get a
 		// diagnostic for the wrong formatting type.
 		// TODO: we should be able to easily also match the diagnostic message.
 		env.Await(env.DiagnosticAtRegexp("print.go", "fmt.Printf"))
-	}, ProxyFiles(testPackageWithRequireProxy))
+	})
 }
 
 func TestMissingDependency(t *testing.T) {
-	runner.Run(t, testPackageWithRequire, func(t *testing.T, env *Env) {
+	Run(t, testPackageWithRequire, func(t *testing.T, env *Env) {
 		env.OpenFile("print.go")
 		env.Await(LogMatching(protocol.Error, "initial workspace load failed", 1))
 	})
@@ -444,7 +452,7 @@ func Hello() {
 	var x int
 }
 `
-	runner.Run(t, adHoc, func(t *testing.T, env *Env) {
+	Run(t, adHoc, func(t *testing.T, env *Env) {
 		env.OpenFile("b/b.go")
 		env.Await(env.DiagnosticAtRegexp("b/b.go", "x"))
 	})
@@ -460,13 +468,13 @@ func _() {
 	fmt.Println("Hello World")
 }
 `
-	withOptions(
+	WithOptions(
 		EditorConfig{
 			Env: map[string]string{
 				"GOPATH":      "",
 				"GO111MODULE": "off",
 			},
-		}).run(t, files, func(t *testing.T, env *Env) {
+		}).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.Await(env.DiagnosticAtRegexp("main.go", "fmt"))
 		env.SaveBuffer("main.go")
@@ -491,7 +499,7 @@ package x
 var X = 0
 `
 	editorConfig := EditorConfig{Env: map[string]string{"GOFLAGS": "-tags=foo"}}
-	withOptions(editorConfig).run(t, files, func(t *testing.T, env *Env) {
+	WithOptions(editorConfig).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.OrganizeImports("main.go")
 		env.Await(EmptyDiagnostics("main.go"))
@@ -516,7 +524,7 @@ func _() {
 	}
 }
 `
-	runner.Run(t, generated, func(t *testing.T, env *Env) {
+	Run(t, generated, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		original := env.ReadWorkspaceFile("main.go")
 		var d protocol.PublishDiagnosticsParams
@@ -549,7 +557,7 @@ func f() {
 	hello.Goodbye()
 }
 `
-	runner.Run(t, noModule, func(t *testing.T, env *Env) {
+	Run(t, noModule, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")
 		env.Await(
 			OutstandingWork(lsp.WorkspaceLoadFailure, "outside of a module"),
@@ -568,13 +576,13 @@ hi mom
 `
 	for _, go111module := range []string{"on", "off", ""} {
 		t.Run(fmt.Sprintf("GO111MODULE_%v", go111module), func(t *testing.T) {
-			withOptions(EditorConfig{
+			WithOptions(EditorConfig{
 				Env: map[string]string{"GO111MODULE": go111module},
-			}).run(t, files, func(t *testing.T, env *Env) {
+			}).Run(t, files, func(t *testing.T, env *Env) {
 				env.OpenFile("hello.txt")
 				env.Await(
 					OnceMet(
-						CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1),
+						env.DoneWithOpen(),
 						NoShowMessage(),
 					),
 				)
@@ -601,7 +609,7 @@ func main() {
 	fmt.Println("")
 }
 `
-	runner.Run(t, collision, func(t *testing.T, env *Env) {
+	WithOptions(InGOPATH()).Run(t, collision, func(t *testing.T, env *Env) {
 		env.OpenFile("x/main.go")
 		env.Await(
 			env.DiagnosticAtRegexp("x/main.go", "fmt.Println"),
@@ -618,12 +626,12 @@ func main() {
 		badFile := fmt.Sprintf("%s/found packages main (main.go) and x (x.go) in %s/src/x", dir, env.Sandbox.GOPATH())
 		env.Await(
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
+				env.DoneWithChange(),
 				EmptyDiagnostics("x/main.go"),
 			),
 			NoDiagnostics(badFile),
 		)
-	}, InGOPATH())
+	})
 }
 
 const ardanLabsProxy = `
@@ -654,9 +662,9 @@ func main() {
 	_ = conf.ErrHelpWanted
 }
 `
-	withOptions(
+	WithOptions(
 		ProxyFiles(ardanLabsProxy),
-	).run(t, ardanLabs, func(t *testing.T, env *Env) {
+	).Run(t, ardanLabs, func(t *testing.T, env *Env) {
 		// Expect a diagnostic with a suggested fix to add
 		// "github.com/ardanlabs/conf" to the go.mod file.
 		env.OpenFile("go.mod")
@@ -712,9 +720,9 @@ module mod.com
 go 1.12
 -- main.go --
 `
-	withOptions(
+	WithOptions(
 		ProxyFiles(ardanLabsProxy),
-	).run(t, emptyFile, func(t *testing.T, env *Env) {
+	).Run(t, emptyFile, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.EditBuffer("main.go", fake.NewEdit(0, 0, 0, 0, `package main
 
@@ -757,22 +765,19 @@ func _() {
 	fmt.Println("hi")
 }
 `
-	runner.Run(t, simplePackage, func(t *testing.T, env *Env) {
+	Run(t, simplePackage, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a1.go")
 		env.CreateBuffer("a/a2.go", ``)
 		env.SaveBufferWithoutActions("a/a2.go")
 		env.Await(
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidSave), 1),
+				env.DoneWithSave(),
 				NoDiagnostics("a/a1.go"),
 			),
 		)
 		env.EditBuffer("a/a2.go", fake.NewEdit(0, 0, 0, 0, `package a`))
 		env.Await(
-			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
-				NoDiagnostics("a/a1.go"),
-			),
+			OnceMet(env.DoneWithChange(), NoDiagnostics("a/a1.go")),
 		)
 	})
 }
@@ -805,7 +810,7 @@ func TestHello(t *testing.T) {
 	Hello()
 }
 `
-	runner.Run(t, testVariant, func(t *testing.T, env *Env) {
+	Run(t, testVariant, func(t *testing.T, env *Env) {
 		// Open the file, triggering the workspace load.
 		// There are errors in the code to ensure all is working as expected.
 		env.OpenFile("hello/hello.go")
@@ -861,12 +866,10 @@ go 1.12
 package foo
 -- foo/bar_test.go --
 `
-	run(t, mod, func(t *testing.T, env *Env) {
+	Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("foo/bar_test.go")
 		env.EditBuffer("foo/bar_test.go", fake.NewEdit(0, 0, 0, 0, "package foo"))
-		env.Await(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
-		)
+		env.Await(env.DoneWithChange())
 		env.RegexpReplace("foo/bar_test.go", "package foo", `package foo_test
 
 import "testing"
@@ -894,17 +897,17 @@ package foo
 -- foo/bar_test.go --
 package foo_
 `
-	run(t, mod, func(t *testing.T, env *Env) {
+	Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("foo/bar_test.go")
 		env.RegexpReplace("foo/bar_test.go", "package foo_", "package foo_test")
 		env.SaveBuffer("foo/bar_test.go")
 		env.Await(
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidSave), 1),
+				env.DoneWithSave(),
 				NoDiagnostics("foo/bar_test.go"),
 			),
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidSave), 1),
+				env.DoneWithSave(),
 				NoDiagnostics("foo/foo.go"),
 			),
 		)
@@ -919,11 +922,11 @@ package x
 -- x_test.go --
 `
 
-	withOptions(InGOPATH()).run(t, files, func(t *testing.T, env *Env) {
+	WithOptions(InGOPATH()).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("x_test.go")
 		env.EditBuffer("x_test.go", fake.NewEdit(0, 0, 0, 0, "pack"))
 		env.Await(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
+			env.DoneWithChange(),
 			NoShowMessage(),
 		)
 	})
@@ -940,11 +943,11 @@ package x
 
 var _ = foo.Bar
 `
-	runner.Run(t, ws, func(t *testing.T, env *Env) {
+	Run(t, ws, func(t *testing.T, env *Env) {
 		env.OpenFile("_foo/x.go")
 		env.Await(
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1),
+				env.DoneWithOpen(),
 				NoDiagnostics("_foo/x.go"),
 			))
 	})
@@ -978,9 +981,9 @@ import "mod.com/a"
 
 const C = a.A
 `
-	runner.Run(t, ws, func(t *testing.T, env *Env) {
+	Run(t, ws, func(t *testing.T, env *Env) {
 		env.OpenFile("b/b.go")
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1))
+		env.Await(env.DoneWithOpen())
 		// Delete c/c.go, the only file in package c.
 		env.RemoveWorkspaceFile("c/c.go")
 
@@ -1007,16 +1010,16 @@ go 1.12
 	// package loads.
 	writeGoVim := func(env *Env, name, content string) {
 		env.WriteWorkspaceFile(name, "")
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1))
+		env.Await(env.DoneWithChangeWatchedFiles())
 
 		env.CreateBuffer(name, "\n")
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1))
+		env.Await(env.DoneWithOpen())
 
 		env.EditBuffer(name, fake.NewEdit(1, 0, 1, 0, content))
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1))
+		env.Await(env.DoneWithChange())
 
 		env.EditBuffer(name, fake.NewEdit(0, 0, 1, 0, ""))
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1))
+		env.Await(env.DoneWithChange())
 	}
 
 	const p = `package p; func DoIt(s string) {};`
@@ -1031,7 +1034,7 @@ func main() {
 	// A simple version of the test that reproduces most of the problems it
 	// exposes.
 	t.Run("short", func(t *testing.T) {
-		runner.Run(t, mod, func(t *testing.T, env *Env) {
+		Run(t, mod, func(t *testing.T, env *Env) {
 			writeGoVim(env, "p/p.go", p)
 			writeGoVim(env, "main.go", main)
 			env.Await(env.DiagnosticAtRegexp("main.go", "5"))
@@ -1040,7 +1043,7 @@ func main() {
 
 	// A full version that replicates the whole flow of the test.
 	t.Run("full", func(t *testing.T) {
-		runner.Run(t, mod, func(t *testing.T, env *Env) {
+		Run(t, mod, func(t *testing.T, env *Env) {
 			writeGoVim(env, "p/p.go", p)
 			writeGoVim(env, "main.go", main)
 			writeGoVim(env, "p/p_test.go", `package p
@@ -1091,10 +1094,10 @@ func _() {
 	var x int
 }
 `
-	withOptions(
+	WithOptions(
 		// Empty workspace folders.
 		WorkspaceFolders(),
-	).run(t, mod, func(t *testing.T, env *Env) {
+	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
 		env.Await(
 			env.DiagnosticAtRegexp("a/a.go", "x"),
@@ -1119,7 +1122,7 @@ func Foo() {
 	fmt.Println("")
 }
 `
-	runner.Run(t, basic, func(t *testing.T, env *Env) {
+	Run(t, basic, func(t *testing.T, env *Env) {
 		testenv.NeedsGo1Point(t, 15)
 
 		env.WriteWorkspaceFile("foo/foo_test.go", `package main
@@ -1131,7 +1134,7 @@ func main() {
 		env.RegexpReplace("foo/foo_test.go", `package main`, `package foo`)
 		env.Await(
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
+				env.DoneWithChange(),
 				NoDiagnostics("foo/foo.go"),
 			),
 		)
@@ -1149,15 +1152,15 @@ package main
 
 func main() {}
 `
-	runner.Run(t, basic, func(t *testing.T, env *Env) {
+	Run(t, basic, func(t *testing.T, env *Env) {
 		env.Editor.CreateBuffer(env.Ctx, "foo.go", `package main`)
 		env.Await(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1),
+			env.DoneWithOpen(),
 		)
 		env.CloseBuffer("foo.go")
 		env.Await(
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidClose), 1),
+				env.DoneWithClose(),
 				NoLogMatching(protocol.Info, "packages=0"),
 			),
 		)
@@ -1174,31 +1177,25 @@ go 1.14
 -- main2.go --
 package main
 `
-	runner.Run(t, basic, func(t *testing.T, env *Env) {
+	Run(t, basic, func(t *testing.T, env *Env) {
 		env.CreateBuffer("main.go", "")
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1))
+		env.Await(env.DoneWithOpen())
 
 		env.SaveBufferWithoutActions("main.go")
-		env.Await(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidSave), 1),
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1),
-		)
+		env.Await(env.DoneWithSave(), env.DoneWithChangeWatchedFiles())
 
 		env.EditBuffer("main.go", fake.NewEdit(0, 0, 0, 0, `package main
 
 func main() {
 }
 `))
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1))
+		env.Await(env.DoneWithChange())
 
 		env.SaveBuffer("main.go")
-		env.Await(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidSave), 2),
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 2),
-		)
+		env.Await(env.DoneWithSave(), env.DoneWithChangeWatchedFiles())
 
 		env.EditBuffer("main.go", fake.NewEdit(0, 0, 4, 0, ""))
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 2))
+		env.Await(env.DoneWithChange())
 
 		env.EditBuffer("main.go", fake.NewEdit(0, 0, 0, 0, `package main
 
@@ -1226,7 +1223,7 @@ package default
 
 func main() {}
 `
-	runner.Run(t, pkgDefault, func(t *testing.T, env *Env) {
+	Run(t, pkgDefault, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.Await(
 			env.DiagnosticAtRegexp("main.go", "default"),
@@ -1252,18 +1249,18 @@ func main() {
 	var x int
 }
 `
-	withOptions(
+	WithOptions(
 		WorkspaceFolders("a"),
-	).run(t, mod, func(t *testing.T, env *Env) {
+	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("a/main.go")
 		env.Await(
 			env.DiagnosticAtRegexp("main.go", "x"),
 		)
 	})
-	withOptions(
+	WithOptions(
 		WorkspaceFolders("a"),
 		LimitWorkspaceScope(),
-	).run(t, mod, func(t *testing.T, env *Env) {
+	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("a/main.go")
 		env.Await(
 			NoDiagnostics("main.go"),
@@ -1292,9 +1289,9 @@ func main() {
 }
 `
 
-	withOptions(
+	WithOptions(
 		EditorConfig{EnableStaticcheck: true},
-	).run(t, files, func(t *testing.T, env *Env) {
+	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		// Staticcheck should generate a diagnostic to simplify this literal.
 		env.Await(env.DiagnosticAtRegexp("main.go", `t{"msg"}`))
@@ -1317,7 +1314,7 @@ func main() {
 package main
 func main() {}
 `
-	runner.Run(t, dir, func(t *testing.T, env *Env) {
+	Run(t, dir, func(t *testing.T, env *Env) {
 		log.SetFlags(log.Lshortfile)
 		env.OpenFile("main.go")
 		env.OpenFile("other.go")
@@ -1368,7 +1365,7 @@ func _() {
 	var x int
 }
 `
-	run(t, files, func(t *testing.T, env *Env) {
+	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
 		env.Await(
 			env.DiagnosticAtRegexp("a/a.go", "x"),
@@ -1395,11 +1392,11 @@ func b(c bytes.Buffer) {
 	_ = 1
 }
 `
-	withOptions(
+	WithOptions(
 		EditorConfig{
 			AllExperiments: true,
 		},
-	).run(t, mod, func(t *testing.T, env *Env) {
+	).Run(t, mod, func(t *testing.T, env *Env) {
 		// Confirm that the setting doesn't cause any warnings.
 		env.Await(NoShowMessage())
 	})
@@ -1442,7 +1439,7 @@ func main() {
 	var x int
 }
 `
-	run(t, mod, func(t *testing.T, env *Env) {
+	Run(t, mod, func(t *testing.T, env *Env) {
 		env.Await(
 			OnceMet(
 				InitialWorkspaceLoad,
@@ -1458,6 +1455,25 @@ func main() {
 // https://github.com/golang/go/issues/41061
 func TestRenamePackage(t *testing.T) {
 	testenv.NeedsGo1Point(t, 16)
+
+	const proxy = `
+-- example.com@v1.2.3/go.mod --
+module example.com
+
+go 1.12
+-- example.com@v1.2.3/blah/blah.go --
+package blah
+
+const Name = "Blah"
+-- random.org@v1.2.3/go.mod --
+module random.org
+
+go 1.12
+-- random.org@v1.2.3/blah/blah.go --
+package hello
+
+const Name = "Hello"
+`
 
 	const contents = `
 -- go.mod --
@@ -1480,17 +1496,17 @@ package foo
 package foo_
 `
 
-	withOptions(
+	WithOptions(
 		ProxyFiles(proxy),
 		InGOPATH(),
-	).run(t, contents, func(t *testing.T, env *Env) {
+	).Run(t, contents, func(t *testing.T, env *Env) {
 		// Simulate typing character by character.
 		env.OpenFile("foo/foo_test.go")
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1))
+		env.Await(env.DoneWithOpen())
 		env.RegexpReplace("foo/foo_test.go", "_", "_t")
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1))
+		env.Await(env.DoneWithChange())
 		env.RegexpReplace("foo/foo_test.go", "_t", "_test")
-		env.Await(CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 2))
+		env.Await(env.DoneWithChange())
 
 		env.Await(
 			EmptyDiagnostics("foo/foo_test.go"),
@@ -1512,7 +1528,7 @@ go 1.12
 -- main.go --
 package main
 `
-	run(t, pkg, func(t *testing.T, env *Env) {
+	Run(t, pkg, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
 		env.Await(
 			OutstandingWork(lsp.WorkspaceLoadFailure, "unknown directive"),
@@ -1556,7 +1572,7 @@ func main() {
 	bob.Hello()
 }
 `
-	run(t, mod, func(t *testing.T, env *Env) {
+	Run(t, mod, func(t *testing.T, env *Env) {
 		env.RemoveWorkspaceFile("bob")
 		env.Await(
 			env.DiagnosticAtRegexp("main.go", `"mod.com/bob"`),
@@ -1598,7 +1614,7 @@ package c
 
 import _ "mod.com/triple/a"
 `
-	run(t, mod, func(t *testing.T, env *Env) {
+	Run(t, mod, func(t *testing.T, env *Env) {
 		env.Await(
 			env.DiagnosticAtRegexpWithMessage("self/self.go", `_ "mod.com/self"`, "import cycle not allowed"),
 			env.DiagnosticAtRegexpWithMessage("double/a/a.go", `_ "mod.com/double/b"`, "import cycle not allowed"),
@@ -1623,20 +1639,20 @@ import (
 )
 `
 	t.Run("module", func(t *testing.T) {
-		run(t, mod, func(t *testing.T, env *Env) {
+		Run(t, mod, func(t *testing.T, env *Env) {
 			env.Await(
 				env.DiagnosticAtRegexpWithMessage("main.go", `"nosuchpkg"`, `could not import nosuchpkg (no required module provides package "nosuchpkg"`),
 			)
 		})
 	})
 	t.Run("GOPATH", func(t *testing.T) {
-		withOptions(
+		WithOptions(
 			InGOPATH(),
 			EditorConfig{
 				Env: map[string]string{"GO111MODULE": "off"},
 			},
 			Modes(Singleton),
-		).run(t, mod, func(t *testing.T, env *Env) {
+		).Run(t, mod, func(t *testing.T, env *Env) {
 			env.Await(
 				env.DiagnosticAtRegexpWithMessage("main.go", `"nosuchpkg"`, `cannot find package "nosuchpkg" in any of`),
 			)
@@ -1661,14 +1677,14 @@ package b
 `
 	for _, go111module := range []string{"on", "auto"} {
 		t.Run("GO111MODULE="+go111module, func(t *testing.T) {
-			withOptions(
+			WithOptions(
 				Modes(Singleton),
 				EditorConfig{
 					Env: map[string]string{
 						"GO111MODULE": go111module,
 					},
 				},
-			).run(t, modules, func(t *testing.T, env *Env) {
+			).Run(t, modules, func(t *testing.T, env *Env) {
 				env.OpenFile("a/a.go")
 				env.OpenFile("b/go.mod")
 				env.Await(
@@ -1682,7 +1698,7 @@ package b
 
 	// Expect no warning if GO111MODULE=auto in a directory in GOPATH.
 	t.Run("GOPATH_GO111MODULE_auto", func(t *testing.T) {
-		withOptions(
+		WithOptions(
 			Modes(Singleton),
 			EditorConfig{
 				Env: map[string]string{
@@ -1690,11 +1706,11 @@ package b
 				},
 			},
 			InGOPATH(),
-		).run(t, modules, func(t *testing.T, env *Env) {
+		).Run(t, modules, func(t *testing.T, env *Env) {
 			env.OpenFile("a/a.go")
 			env.Await(
 				OnceMet(
-					CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1),
+					env.DoneWithOpen(),
 					NoDiagnostics("a/a.go"),
 				),
 				NoOutstandingWork(),
@@ -1747,13 +1763,13 @@ package hello
 
 func helloHelper() {}
 `
-	withOptions(
+	WithOptions(
 		ProxyFiles(proxy),
 		Modes(Singleton),
-	).run(t, nested, func(t *testing.T, env *Env) {
+	).Run(t, nested, func(t *testing.T, env *Env) {
 		// Expect a diagnostic in a nested module.
 		env.OpenFile("nested/hello/hello.go")
-		didOpen := CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1)
+		didOpen := env.DoneWithOpen()
 		env.Await(
 			OnceMet(
 				didOpen,
@@ -1778,12 +1794,12 @@ package main
 
 func main() {}
 `
-	run(t, nomod, func(t *testing.T, env *Env) {
+	Run(t, nomod, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.RegexpReplace("main.go", "{}", "{ var x int; }") // simulate typing
 		env.Await(
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), 1),
+				env.DoneWithChange(),
 				NoLogMatching(protocol.Info, "packages=1"),
 			),
 		)

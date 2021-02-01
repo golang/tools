@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package regtest
+package misc
 
 import (
 	"testing"
 
-	"golang.org/x/tools/internal/lsp"
+	. "golang.org/x/tools/gopls/internal/regtest"
+
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/testenv"
@@ -49,10 +50,10 @@ func _() {
 }
 `
 	// TODO(rstambler): Remove this when golang/go#41819 is resolved.
-	withOptions(
+	WithOptions(
 		Modes(Singleton),
 		ProxyFiles(basicProxy),
-	).run(t, pkgThatUsesVendoring, func(t *testing.T, env *Env) {
+	).Run(t, pkgThatUsesVendoring, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a1.go")
 		env.Await(
 			// The editor should pop up a message suggesting that the user
@@ -61,7 +62,7 @@ func _() {
 			// so once we see the request, we can assume that `go mod vendor`
 			// will be executed.
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), 1),
+				env.DoneWithOpen(),
 				env.DiagnosticAtRegexp("go.mod", "module mod.com"),
 			),
 		)

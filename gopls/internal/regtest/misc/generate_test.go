@@ -6,12 +6,12 @@
 
 // +build !android
 
-package regtest
+package misc
 
 import (
 	"testing"
 
-	"golang.org/x/tools/internal/lsp"
+	. "golang.org/x/tools/gopls/internal/regtest"
 )
 
 func TestGenerateProgress(t *testing.T) {
@@ -40,14 +40,14 @@ func GetAnswer() int {
 //go:generate go run generate.go
 `
 
-	runner.Run(t, generatedWorkspace, func(t *testing.T, env *Env) {
+	Run(t, generatedWorkspace, func(t *testing.T, env *Env) {
 		env.Await(
 			env.DiagnosticAtRegexp("lib/lib.go", "answer"),
 		)
 		env.RunGenerate("./lib")
 		env.Await(
 			OnceMet(
-				CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), 1),
+				env.DoneWithChangeWatchedFiles(),
 				EmptyDiagnostics("lib/lib.go")),
 		)
 	})

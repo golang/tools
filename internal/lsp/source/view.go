@@ -109,10 +109,6 @@ type Snapshot interface {
 	// the given go.mod file.
 	ModWhy(ctx context.Context, fh FileHandle) (map[string]string, error)
 
-	// ModUpgrade returns the possible updates for the module specified by the
-	// given go.mod file.
-	ModUpgrade(ctx context.Context, fh FileHandle) (map[string]string, error)
-
 	// ModTidy returns the results of `go mod tidy` for the module specified by
 	// the given go.mod file.
 	ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule, error)
@@ -231,6 +227,12 @@ type View interface {
 	// IsGoPrivatePath reports whether target is a private import path, as identified
 	// by the GOPRIVATE environment variable.
 	IsGoPrivatePath(path string) bool
+
+	// ModuleUpgrades returns known module upgrades.
+	ModuleUpgrades() map[string]string
+
+	// RegisterModuleUpgrades registers that upgrades exist for the given modules.
+	RegisterModuleUpgrades(upgrades map[string]string)
 }
 
 // A FileSource maps uris to FileHandles. This abstraction exists both for
@@ -596,6 +598,7 @@ const (
 	TypeError
 	ModTidyError
 	Analysis
+	UpgradeNotification
 )
 
 func (e *Error) Error() string {
@@ -614,12 +617,22 @@ var (
 // sure not to show this version to end users in error messages, to avoid
 // confusion.
 // The major version is not included, as that depends on the module path.
-const workspaceModuleVersion = ".0.0-goplsworkspace"
+//
+// If workspace module A is dependent on workspace module B, we need our
+// nonexistant version to be greater than the version A mentions.
+// Otherwise, the go command will try to update to that version. Use a very
+// high minor version to make that more likely.
+const workspaceModuleVersion = ".9999999.0-goplsworkspace"
 
 func IsWorkspaceModuleVersion(version string) bool {
 	return strings.HasSuffix(version, workspaceModuleVersion)
 }
 
 func WorkspaceModuleVersion(majorVersion string) string {
+	// Use the highest compatible major version to avoid unwanted upgrades.
+	// See the comment on workspaceModuleVersion.
+	if majorVersion == "v0" {
+		majorVersion = "v1"
+	}
 	return majorVersion + workspaceModuleVersion
 }

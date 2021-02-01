@@ -19,16 +19,16 @@ contain that single module. Otherwise, you are working with multiple modules.
 
 ### Multiple modules
 
-As of Jan 2020, if you are working with multiple modules, you will need to
-create a "workspace folder" for each module. This means that each module has
-its own scope, and features will not work across modules. We are currently
-working on addressing this limitation--see details about
+As of Jan 2021, if you are working with multiple modules or nested modules, you
+will need to create a "workspace folder" for each module. This means that each
+module has its own scope, and features will not work across modules. We are
+currently working on addressing this limitation--see details about
 [experimental workspace module mode](#experimental-workspace-module-mode)
 below.
 
 In VS Code, you can create a workspace folder by setting up a
 [multi-root workspace](https://code.visualstudio.com/docs/editor/multi-root-workspaces).
-View the [documentation for your editor plugin](user.md#editor) to learn how to
+View the [documentation for your editor plugin](../README.md#editor) to learn how to
 configure a workspace folder in your editor.
 
 #### Workspace module (experimental)
