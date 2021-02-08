@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -31,7 +32,8 @@ var scripts = []string{"jquery.js", "jquery-ui.js", "playground.js", "play.js"}
 // playScript registers an HTTP handler at /play.js that serves all the
 // scripts specified by the variable above, and appends a line that
 // initializes the playground with the specified transport.
-func playScript(root, transport string) {
+// func playScript(root, transport string) {
+func playScript(fs fs.FS, transport string) {
 	modTime := time.Now()
 	var buf bytes.Buffer
 	for _, p := range scripts {
@@ -39,10 +41,18 @@ func playScript(root, transport string) {
 			buf.WriteString(s)
 			continue
 		}
-		b, err := ioutil.ReadFile(filepath.Join(root, "static", p))
+
+		f, err := fs.Open(filepath.Join("static", p))
 		if err != nil {
 			panic(err)
 		}
+		defer f.Close()
+
+		b, err := ioutil.ReadAll(f)
+		if err != nil {
+			panic(err)
+		}
+
 		buf.Write(b)
 	}
 	fmt.Fprintf(&buf, "\ninitPlayground(new %v());\n", transport)
@@ -53,12 +63,13 @@ func playScript(root, transport string) {
 	})
 }
 
-func initPlayground(basepath string, origin *url.URL) {
+// func initPlayground(basepath string, origin *url.URL) {
+func initPlayground(fs fs.FS, origin *url.URL) {
 	if !present.PlayEnabled {
 		return
 	}
 	if *usePlayground {
-		playScript(basepath, "HTTPTransport")
+		playScript(fs, "HTTPTransport")
 		return
 	}
 
@@ -73,7 +84,7 @@ func initPlayground(basepath string, origin *url.URL) {
 			return environ("GOOS=nacl")
 		}
 	}
-	playScript(basepath, "SocketTransport")
+	playScript(fs, "SocketTransport")
 	http.Handle("/socket", socket.NewHandler(origin))
 }
 
