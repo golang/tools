@@ -18,12 +18,13 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/debug/tag"
+	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/memoize"
 	errors "golang.org/x/xerrors"
 )
 
-func (s *snapshot) Analyze(ctx context.Context, id string, analyzers ...*analysis.Analyzer) ([]*source.Error, error) {
+func (s *snapshot) Analyze(ctx context.Context, id string, analyzers ...*analysis.Analyzer) ([]*source.Diagnostic, error) {
 	var roots []*actionHandle
 
 	for _, a := range analyzers {
@@ -39,7 +40,7 @@ func (s *snapshot) Analyze(ctx context.Context, id string, analyzers ...*analysi
 		return nil, ctx.Err()
 	}
 
-	var results []*source.Error
+	var results []*source.Diagnostic
 	for _, ah := range roots {
 		diagnostics, _, err := ah.analyze(ctx, s)
 		if err != nil {
@@ -64,7 +65,7 @@ type actionHandle struct {
 }
 
 type actionData struct {
-	diagnostics  []*source.Error
+	diagnostics  []*source.Diagnostic
 	result       interface{}
 	objectFacts  map[objectFactKey]analysis.Fact
 	packageFacts map[packageFactKey]analysis.Fact
@@ -82,16 +83,16 @@ type packageFactKey struct {
 }
 
 func (s *snapshot) actionHandle(ctx context.Context, id packageID, a *analysis.Analyzer) (*actionHandle, error) {
-	ph := s.getPackage(id, source.ParseFull)
-	if ph == nil {
-		return nil, errors.Errorf("no package for %s", id)
+	ph, err := s.buildPackageHandle(ctx, id, source.ParseFull)
+	if err != nil {
+		return nil, err
 	}
 	act := s.getActionHandle(id, ph.mode, a)
 	if act != nil {
 		return act, nil
 	}
 	if len(ph.key) == 0 {
-		return nil, errors.Errorf("no key for package %s", id)
+		return nil, errors.Errorf("actionHandle: no key for package %s", id)
 	}
 	pkg, err := ph.check(ctx, s)
 	if err != nil {
@@ -150,7 +151,7 @@ func (s *snapshot) actionHandle(ctx context.Context, id packageID, a *analysis.A
 	return act, nil
 }
 
-func (act *actionHandle) analyze(ctx context.Context, snapshot *snapshot) ([]*source.Error, interface{}, error) {
+func (act *actionHandle) analyze(ctx context.Context, snapshot *snapshot) ([]*source.Diagnostic, interface{}, error) {
 	d, err := act.handle.Get(ctx, snapshot.generation, snapshot)
 	if err != nil {
 		return nil, nil, err
@@ -323,7 +324,7 @@ func runAnalysis(ctx context.Context, snapshot *snapshot, analyzer *analysis.Ana
 	analysisinternal.SetTypeErrors(pass, pkg.typeErrors)
 
 	if pkg.IsIllTyped() {
-		data.err = errors.Errorf("analysis skipped due to errors in package: %v", pkg.GetErrors())
+		data.err = errors.Errorf("analysis skipped due to errors in package: %v", pkg.GetDiagnostics())
 		return data
 	}
 	data.result, data.err = pass.Analyzer.Run(pass)
@@ -347,7 +348,7 @@ func runAnalysis(ctx context.Context, snapshot *snapshot, analyzer *analysis.Ana
 	}
 
 	for _, diag := range diagnostics {
-		srcErr, err := sourceError(ctx, snapshot, pkg, diag)
+		srcDiags, err := sourceDiagnostics(ctx, snapshot, pkg, protocol.SeverityWarning, diag)
 		if err != nil {
 			event.Error(ctx, "unable to compute analysis error position", err, tag.Category.Of(diag.Category), tag.Package.Of(pkg.ID()))
 			continue
@@ -356,7 +357,7 @@ func runAnalysis(ctx context.Context, snapshot *snapshot, analyzer *analysis.Ana
 			data.err = ctx.Err()
 			return data
 		}
-		data.diagnostics = append(data.diagnostics, srcErr)
+		data.diagnostics = append(data.diagnostics, srcDiags...)
 	}
 	return data
 }

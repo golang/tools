@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	exec "golang.org/x/sys/execabs"
 	"io"
 	"io/ioutil"
 	"os"
@@ -23,10 +22,12 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"
+	exec "golang.org/x/sys/execabs"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
+	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/span"
@@ -383,24 +384,21 @@ func (v *View) knownFile(uri span.URI) bool {
 	return f != nil && err == nil
 }
 
-// getFile returns a file for the given URI. It will always succeed because it
-// adds the file to the managed set if needed.
-func (v *View) getFile(uri span.URI) (*fileBase, error) {
+// getFile returns a file for the given URI.
+func (v *View) getFile(uri span.URI) *fileBase {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
-	f, err := v.findFile(uri)
-	if err != nil {
-		return nil, err
-	} else if f != nil {
-		return f, nil
+	f, _ := v.findFile(uri)
+	if f != nil {
+		return f
 	}
 	f = &fileBase{
 		view:  v,
 		fname: uri.Filename(),
 	}
 	v.mapFile(uri, f)
-	return f, nil
+	return f
 }
 
 // findFile checks the cache for any file matching the given uri.
@@ -539,12 +537,12 @@ func (s *snapshot) initialize(ctx context.Context, firstAttempt bool) {
 
 		// If we have multiple modules, we need to load them by paths.
 		var scopes []interface{}
-		var modErrors []*source.Error
+		var modDiagnostics []*source.Diagnostic
 		addError := func(uri span.URI, err error) {
-			modErrors = append(modErrors, &source.Error{
+			modDiagnostics = append(modDiagnostics, &source.Diagnostic{
 				URI:      uri,
-				Category: "compiler",
-				Kind:     source.ListError,
+				Severity: protocol.SeverityError,
+				Source:   source.ListError,
 				Message:  err.Error(),
 			})
 		}
@@ -575,13 +573,15 @@ func (s *snapshot) initialize(ctx context.Context, firstAttempt bool) {
 		}
 		if err != nil {
 			event.Error(ctx, "initial workspace load failed", err)
-			if modErrors != nil {
+			if modDiagnostics != nil {
 				s.initializedErr = &source.CriticalError{
-					MainError: errors.Errorf("errors loading modules: %v: %w", err, modErrors),
-					ErrorList: modErrors,
+					MainError: errors.Errorf("errors loading modules: %v: %w", err, modDiagnostics),
+					DiagList:  modDiagnostics,
 				}
 			} else {
-				s.initializedErr = err
+				s.initializedErr = &source.CriticalError{
+					MainError: err,
+				}
 			}
 		} else {
 			// Clear out the initialization error, in case it had been set

@@ -288,18 +288,15 @@ func Hello() int {
 		env.Await(
 			env.DoneWithChangeWatchedFiles(),
 		)
-		if testenv.Go1Point() < 14 {
-			// On 1.14 and above, the go mod tidy diagnostics accidentally
-			// download for us. This is the behavior we actually want.
-			d := protocol.PublishDiagnosticsParams{}
-			env.Await(
-				OnceMet(
-					env.DiagnosticAtRegexpWithMessage("moda/a/go.mod", "require b.com v1.2.3", "b.com@v1.2.3"),
-					ReadDiagnostics("moda/a/go.mod", &d),
-				),
-			)
-			env.ApplyQuickFixes("moda/a/go.mod", d.Diagnostics)
-		}
+
+		d := protocol.PublishDiagnosticsParams{}
+		env.Await(
+			OnceMet(
+				env.DiagnosticAtRegexpWithMessage("moda/a/go.mod", "require b.com v1.2.3", "b.com@v1.2.3 has not been downloaded"),
+				ReadDiagnostics("moda/a/go.mod", &d),
+			),
+		)
+		env.ApplyQuickFixes("moda/a/go.mod", d.Diagnostics)
 		got, _ := env.GoToDefinition("moda/a/a.go", env.RegexpSearch("moda/a/a.go", "Hello"))
 		if want := "b.com@v1.2.3/b/b.go"; !strings.HasSuffix(got, want) {
 			t.Errorf("expected %s, got %v", want, got)
@@ -783,5 +780,63 @@ package exclude
 	}
 	WithOptions(cfg, Modes(Experimental), ProxyFiles(proxy)).Run(t, files, func(t *testing.T, env *Env) {
 		env.Await(env.DiagnosticAtRegexp("include/include.go", `exclude.(X)`))
+	})
+}
+
+// Confirm that a fix for a tidy module will correct all modules in the
+// workspace.
+func TestMultiModule_OneBrokenModule(t *testing.T) {
+	testenv.NeedsGo1Point(t, 15)
+
+	const mod = `
+-- a/go.mod --
+module a.com
+
+go 1.12
+-- a/main.go --
+package main
+-- b/go.mod --
+module b.com
+
+go 1.12
+
+require (
+	example.com v1.2.3
+)
+-- b/go.sum --
+-- b/main.go --
+package b
+
+import "example.com/blah"
+
+func main() {
+	blah.Hello()
+}
+`
+	WithOptions(
+		ProxyFiles(workspaceProxy),
+		Modes(Experimental),
+	).Run(t, mod, func(t *testing.T, env *Env) {
+		params := &protocol.PublishDiagnosticsParams{}
+		env.OpenFile("a/go.mod")
+		env.Await(
+			ReadDiagnostics("a/go.mod", params),
+		)
+		for _, d := range params.Diagnostics {
+			if d.Message != `go.sum is out of sync with go.mod. Please update it by applying the quick fix.` {
+				continue
+			}
+			actions, err := env.Editor.GetQuickFixes(env.Ctx, "a/go.mod", nil, []protocol.Diagnostic{d})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(actions) != 2 {
+				t.Fatalf("expected 2 code actions, got %v", len(actions))
+			}
+			env.ApplyQuickFixes("a/go.mod", []protocol.Diagnostic{d})
+		}
+		env.Await(
+			EmptyDiagnostics("a/go.mod"),
+		)
 	})
 }

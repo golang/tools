@@ -47,9 +47,6 @@ const (
 	// Experimental enables all of the experimental configurations that are
 	// being developed. Currently, it enables the workspace module.
 	Experimental
-	// NormalModes are the global default execution modes, when unmodified by
-	// test flags or by individual test options.
-	NormalModes = Singleton | Experimental
 )
 
 // A Runner runs tests in gopls execution environments, as specified by its
@@ -302,7 +299,6 @@ var longBuilders = map[string]string{
 	"openbsd-386-64":          "golang.org/issues/42789",
 	"openbsd-386-68":          "golang.org/issues/42789",
 	"openbsd-amd64-68":        "golang.org/issues/42789",
-	"linux-arm":               "golang.org/issues/43355",
 	"darwin-amd64-10_12":      "",
 	"freebsd-amd64-race":      "",
 	"illumos-amd64":           "",

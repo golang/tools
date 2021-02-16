@@ -62,18 +62,30 @@ func (r RunMultiple) Run(t *testing.T, files string, f TestFunc) {
 	}
 }
 
+// The regtests run significantly slower on these operating systems, due to (we
+// believe) kernel locking behavior. Only run in singleton mode on these
+// operating system when using -short.
+var slowGOOS = map[string]bool{
+	"darwin":  true,
+	"openbsd": true,
+	"plan9":   true,
+}
+
 func DefaultModes() Mode {
-	if *runSubprocessTests {
-		return NormalModes | SeparateProcess
+	normal := Singleton | Experimental
+	if slowGOOS[runtime.GOOS] && testing.Short() {
+		normal = Singleton
 	}
-	return NormalModes
+	if *runSubprocessTests {
+		return normal | SeparateProcess
+	}
+	return normal
 }
 
 // Main sets up and tears down the shared regtest state.
-//
-// TODO(rFindley): This is probably not necessary, and complicates things now
-//                 that we have multiple regtest suites. Consider removing.
 func Main(m *testing.M) {
+	testenv.ExitIfSmallMachine()
+
 	flag.Parse()
 	if os.Getenv("_GOPLS_TEST_BINARY_RUN_AS_GOPLS") == "true" {
 		tool.Main(context.Background(), cmd.New("gopls", "", nil, nil), os.Args[1:])

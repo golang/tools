@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/lsp/command"
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
@@ -27,25 +28,12 @@ func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[source.Vers
 			return nil, err
 		}
 		reports[fh.VersionedFileIdentity()] = []*source.Diagnostic{}
-		errors, err := ErrorsForMod(ctx, snapshot, fh)
+		diagnostics, err := DiagnosticsForMod(ctx, snapshot, fh)
 		if err != nil {
 			return nil, err
 		}
-		for _, e := range errors {
-			d := &source.Diagnostic{
-				Message: e.Message,
-				Range:   e.Range,
-				Source:  e.Category,
-			}
-			switch {
-			case e.Category == "syntax", e.Kind == source.ListError:
-				d.Severity = protocol.SeverityError
-			case e.Kind == source.UpgradeNotification:
-				d.Severity = protocol.SeverityInformation
-			default:
-				d.Severity = protocol.SeverityWarning
-			}
-			fh, err := snapshot.GetVersionedFile(ctx, e.URI)
+		for _, d := range diagnostics {
+			fh, err := snapshot.GetVersionedFile(ctx, d.URI)
 			if err != nil {
 				return nil, err
 			}
@@ -55,7 +43,7 @@ func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[source.Vers
 	return reports, nil
 }
 
-func ErrorsForMod(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle) ([]*source.Error, error) {
+func DiagnosticsForMod(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle) ([]*source.Diagnostic, error) {
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil {
 		if pm == nil || len(pm.ParseErrors) == 0 {
@@ -64,7 +52,7 @@ func ErrorsForMod(ctx context.Context, snapshot source.Snapshot, fh source.FileH
 		return pm.ParseErrors, nil
 	}
 
-	var errors []*source.Error
+	var diagnostics []*source.Diagnostic
 
 	// Add upgrade quick fixes for individual modules if we know about them.
 	upgrades := snapshot.View().ModuleUpgrades()
@@ -78,34 +66,51 @@ func ErrorsForMod(ctx context.Context, snapshot source.Snapshot, fh source.FileH
 			return nil, err
 		}
 		// Upgrade to the exact version we offer the user, not the most recent.
-		args, err := source.MarshalArgs(fh.URI(), false, []string{req.Mod.Path + "@" + ver})
+		title := fmt.Sprintf("Upgrade to %v", ver)
+		cmd, err := command.NewUpgradeDependencyCommand(title, command.DependencyArgs{
+			URI:        protocol.URIFromSpanURI(fh.URI()),
+			AddRequire: false,
+			GoCmdArgs:  []string{req.Mod.Path + "@" + ver},
+		})
 		if err != nil {
 			return nil, err
 		}
-		errors = append(errors, &source.Error{
-			URI:     fh.URI(),
-			Range:   rng,
-			Kind:    source.UpgradeNotification,
-			Message: fmt.Sprintf("%v can be upgraded", req.Mod.Path),
-			SuggestedFixes: []source.SuggestedFix{{
-				Title: fmt.Sprintf("Upgrade to %v", ver),
-				Command: &protocol.Command{
-					Title:     fmt.Sprintf("Upgrade to %v", ver),
-					Command:   source.CommandUpgradeDependency.ID(),
-					Arguments: args,
-				},
-			}},
+		diagnostics = append(diagnostics, &source.Diagnostic{
+			URI:            fh.URI(),
+			Range:          rng,
+			Severity:       protocol.SeverityInformation,
+			Source:         source.UpgradeNotification,
+			Message:        fmt.Sprintf("%v can be upgraded", req.Mod.Path),
+			SuggestedFixes: []source.SuggestedFix{source.SuggestedFixFromCommand(cmd)},
 		})
 	}
 
-	tidied, err := snapshot.ModTidy(ctx, pm)
+	// Packages in the workspace can contribute diagnostics to go.mod files.
+	wspkgs, err := snapshot.WorkspacePackages(ctx)
+	if err != nil && !source.IsNonFatalGoModError(err) {
+		event.Error(ctx, "diagnosing go.mod", err)
+	}
+	if err == nil {
+		for _, pkg := range wspkgs {
+			for _, diag := range pkg.GetDiagnostics() {
+				if diag.URI == fh.URI() {
+					diagnostics = append(diagnostics, diag)
+				}
+			}
+		}
+	}
 
-	if source.IsNonFatalGoModError(err) {
-		return errors, nil
+	tidied, err := snapshot.ModTidy(ctx, pm)
+	if err != nil && !source.IsNonFatalGoModError(err) {
+		event.Error(ctx, "diagnosing go.mod", err)
 	}
-	if err != nil {
-		return nil, err
+	if err == nil {
+		for _, d := range tidied.Diagnostics {
+			if d.URI != fh.URI() {
+				continue
+			}
+			diagnostics = append(diagnostics, d)
+		}
 	}
-	errors = append(errors, tidied.Errors...)
-	return errors, nil
+	return diagnostics, nil
 }

@@ -26,23 +26,23 @@ import (
 	errors "golang.org/x/xerrors"
 )
 
-func sourceError(ctx context.Context, snapshot *snapshot, pkg *pkg, e interface{}) (*source.Error, error) {
+func sourceDiagnostics(ctx context.Context, snapshot *snapshot, pkg *pkg, severity protocol.DiagnosticSeverity, e interface{}) ([]*source.Diagnostic, error) {
 	fset := snapshot.view.session.cache.fset
 	var (
-		spn           span.Span
-		err           error
-		msg, category string
-		code          typesinternal.ErrorCode
-		kind          source.ErrorKind
-		fixes         []source.SuggestedFix
-		related       []source.RelatedInformation
+		spn     span.Span
+		err     error
+		msg     string
+		code    typesinternal.ErrorCode
+		diagSrc source.DiagnosticSource
+		fixes   []source.SuggestedFix
+		related []source.RelatedInformation
 	)
 	switch e := e.(type) {
 	case packages.Error:
-		kind = toSourceErrorKind(e.Kind)
+		diagSrc = toDiagnosticSource(e.Kind)
 		var ok bool
 		if msg, spn, ok = parseGoListImportCycleError(ctx, snapshot, e, pkg); ok {
-			kind = source.TypeError
+			diagSrc = source.TypeError
 			break
 		}
 		if e.Pos == "" {
@@ -50,18 +50,23 @@ func sourceError(ctx context.Context, snapshot *snapshot, pkg *pkg, e interface{
 
 			// We may not have been able to parse a valid span.
 			if _, err := spanToRange(snapshot, pkg, spn); err != nil {
-				return &source.Error{
-					URI:     spn.URI(),
-					Message: msg,
-					Kind:    kind,
-				}, nil
+				var diags []*source.Diagnostic
+				for _, cgf := range pkg.compiledGoFiles {
+					diags = append(diags, &source.Diagnostic{
+						URI:      cgf.URI,
+						Severity: severity,
+						Source:   diagSrc,
+						Message:  msg,
+					})
+				}
+				return diags, nil
 			}
 		} else {
 			spn = span.Parse(e.Pos)
 		}
 	case *scanner.Error:
 		msg = e.Msg
-		kind = source.ParseError
+		diagSrc = source.ParseError
 		spn, err = scannerErrorRange(snapshot, pkg, e.Pos)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -77,7 +82,7 @@ func sourceError(ctx context.Context, snapshot *snapshot, pkg *pkg, e interface{
 			return nil, errors.Errorf("no errors in %v", e)
 		}
 		msg = e[0].Msg
-		kind = source.ParseError
+		diagSrc = source.ParseError
 		spn, err = scannerErrorRange(snapshot, pkg, e[0].Pos)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -88,7 +93,7 @@ func sourceError(ctx context.Context, snapshot *snapshot, pkg *pkg, e interface{
 		}
 	case types.Error:
 		msg = e.Msg
-		kind = source.TypeError
+		diagSrc = source.TypeError
 		if !e.Pos.IsValid() {
 			return nil, fmt.Errorf("invalid position for type error %v", e)
 		}
@@ -99,7 +104,7 @@ func sourceError(ctx context.Context, snapshot *snapshot, pkg *pkg, e interface{
 	case extendedError:
 		perr := e.primary
 		msg = perr.Msg
-		kind = source.TypeError
+		diagSrc = source.TypeError
 		if !perr.Pos.IsValid() {
 			return nil, fmt.Errorf("invalid position for type error %v", e)
 		}
@@ -128,8 +133,7 @@ func sourceError(ctx context.Context, snapshot *snapshot, pkg *pkg, e interface{
 			return nil, err
 		}
 		msg = e.Message
-		kind = source.Analysis
-		category = e.Category
+		diagSrc = source.AnalyzerErrorKind(e.Category)
 		fixes, err = suggestedAnalysisFixes(snapshot, pkg, e)
 		if err != nil {
 			return nil, err
@@ -145,20 +149,20 @@ func sourceError(ctx context.Context, snapshot *snapshot, pkg *pkg, e interface{
 	if err != nil {
 		return nil, err
 	}
-	se := &source.Error{
+	sd := &source.Diagnostic{
 		URI:            spn.URI(),
 		Range:          rng,
+		Severity:       severity,
+		Source:         diagSrc,
 		Message:        msg,
-		Kind:           kind,
-		Category:       category,
-		SuggestedFixes: fixes,
 		Related:        related,
+		SuggestedFixes: fixes,
 	}
 	if code != 0 {
-		se.Code = code.String()
-		se.CodeHref = typesCodeHref(snapshot, code)
+		sd.Code = code.String()
+		sd.CodeHref = typesCodeHref(snapshot, code)
 	}
-	return se, nil
+	return []*source.Diagnostic{sd}, nil
 }
 
 func typesCodeHref(snapshot *snapshot, code typesinternal.ErrorCode) string {
@@ -212,7 +216,7 @@ func relatedInformation(snapshot *snapshot, pkg *pkg, diag *analysis.Diagnostic)
 	return out, nil
 }
 
-func toSourceErrorKind(kind packages.ErrorKind) source.ErrorKind {
+func toDiagnosticSource(kind packages.ErrorKind) source.DiagnosticSource {
 	switch kind {
 	case packages.ListError:
 		return source.ListError

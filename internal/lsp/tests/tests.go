@@ -26,6 +26,7 @@ import (
 	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/packages/packagestest"
+	"golang.org/x/tools/internal/lsp/command"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/source/completion"
@@ -234,7 +235,7 @@ func DefaultOptions(o *source.Options) {
 		},
 		source.Sum: {},
 	}
-	o.UserOptions.Codelenses[source.CommandTest.Name] = true
+	o.UserOptions.Codelenses[string(command.Test)] = true
 	o.HoverKind = source.SynopsisDocumentation
 	o.InsertTextFormat = protocol.SnippetTextFormat
 	o.CompletionBudget = time.Minute
@@ -1004,7 +1005,7 @@ func (data *Data) collectDiagnostics(spn span.Span, msgSource, msg, msgSeverity 
 	want := &source.Diagnostic{
 		Range:    rng,
 		Severity: severity,
-		Source:   msgSource,
+		Source:   source.DiagnosticSource(msgSource),
 		Message:  msg,
 	}
 	data.Diagnostics[spn.URI()] = append(data.Diagnostics[spn.URI()], want)
@@ -1258,7 +1259,7 @@ func (data *Data) collectSignatures(spn span.Span, signature string, activeParam
 				Label: signature,
 			},
 		},
-		ActiveParameter: float64(activeParam),
+		ActiveParameter: uint32(activeParam),
 	}
 	// Hardcode special case to test the lack of a signature.
 	if signature == "" && activeParam == 0 {

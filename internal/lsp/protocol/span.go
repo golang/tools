@@ -64,8 +64,8 @@ func (m *ColumnMapper) Position(p span.Point) (Position, error) {
 		return Position{}, err
 	}
 	return Position{
-		Line:      float64(p.Line() - 1),
-		Character: float64(chr - 1),
+		Line:      uint32(p.Line() - 1),
+		Character: uint32(chr - 1),
 	}, nil
 }
 
@@ -83,6 +83,14 @@ func (m *ColumnMapper) RangeSpan(r Range) (span.Span, error) {
 		return span.Span{}, err
 	}
 	return span.New(m.URI, start, end).WithAll(m.Converter)
+}
+
+func (m *ColumnMapper) RangeToSpanRange(r Range) (span.Range, error) {
+	spn, err := m.RangeSpan(r)
+	if err != nil {
+		return span.Range{}, err
+	}
+	return spn.Range(m.Converter)
 }
 
 func (m *ColumnMapper) PointSpan(p Position) (span.Span, error) {

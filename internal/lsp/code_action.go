@@ -7,18 +7,19 @@ package lsp
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
+	"golang.org/x/tools/internal/lsp/command"
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/mod"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
+	errors "golang.org/x/xerrors"
 )
 
 func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
@@ -105,15 +106,6 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 				}
 			}
 
-			// Fix unresolved imports with "go get". This is separate from the
-			// goimports fixes because goimports will not remove an import
-			// that appears to be used, even if currently unresolved.
-			actions, err := goGetFixes(ctx, snapshot, fh.URI(), diagnostics)
-			if err != nil {
-				return nil, err
-			}
-			codeActions = append(codeActions, actions...)
-
 			// Send all of the import edits as one code action if the file is
 			// being organized.
 			if wanted[protocol.SourceOrganizeImports] && len(importEdits) > 0 {
@@ -134,6 +126,11 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 			return nil, err
 		}
 		if (wanted[protocol.QuickFix] || wanted[protocol.SourceFixAll]) && len(diagnostics) > 0 {
+			pkgQuickFixes, err := quickFixesForDiagnostics(ctx, snapshot, diagnostics, pkg.GetDiagnostics())
+			if err != nil {
+				return nil, err
+			}
+			codeActions = append(codeActions, pkgQuickFixes...)
 			analysisQuickFixes, highConfidenceEdits, err := analysisFixes(ctx, snapshot, pkg, diagnostics)
 			if err != nil {
 				return nil, err
@@ -262,13 +259,13 @@ func analysisFixes(ctx context.Context, snapshot source.Snapshot, pkg source.Pac
 		sourceFixAllEdits []protocol.TextDocumentEdit
 	)
 	for _, diag := range diagnostics {
-		srcErr, analyzer, ok := findSourceError(ctx, snapshot, pkg.ID(), diag)
+		srcErr, analyzer, ok := findDiagnostic(ctx, snapshot, pkg.ID(), diag)
 		if !ok {
 			continue
 		}
 		// If the suggested fix for the diagnostic is expected to be separate,
 		// see if there are any supported commands available.
-		if analyzer.Command != nil {
+		if analyzer.Fix != "" {
 			action, err := diagnosticToCommandCodeAction(ctx, snapshot, srcErr, &diag, protocol.QuickFix)
 			if err != nil {
 				return nil, nil, err
@@ -300,7 +297,7 @@ func analysisFixes(ctx context.Context, snapshot source.Snapshot, pkg source.Pac
 	return codeActions, sourceFixAllEdits, nil
 }
 
-func findSourceError(ctx context.Context, snapshot source.Snapshot, pkgID string, diag protocol.Diagnostic) (*source.Error, source.Analyzer, bool) {
+func findDiagnostic(ctx context.Context, snapshot source.Snapshot, pkgID string, diag protocol.Diagnostic) (*source.Diagnostic, source.Analyzer, bool) {
 	analyzer := diagnosticToAnalyzer(snapshot, diag.Source, diag.Message)
 	if analyzer == nil {
 		return nil, source.Analyzer{}, false
@@ -316,7 +313,7 @@ func findSourceError(ctx context.Context, snapshot source.Snapshot, pkgID string
 		if protocol.CompareRange(err.Range, diag.Range) != 0 {
 			continue
 		}
-		if err.Category != analyzer.Analyzer.Name {
+		if string(err.Source) != analyzer.Analyzer.Name {
 			continue
 		}
 		// The error matches.
@@ -360,45 +357,13 @@ func diagnosticToAnalyzer(snapshot source.Snapshot, src, msg string) (analyzer *
 	return nil
 }
 
-var importErrorRe = regexp.MustCompile(`could not import ([^\s]+)`)
-
-func goGetFixes(ctx context.Context, snapshot source.Snapshot, uri span.URI, diagnostics []protocol.Diagnostic) ([]protocol.CodeAction, error) {
-	if snapshot.GoModForFile(uri) == "" {
-		// Go get only supports module mode for now.
-		return nil, nil
-	}
-
-	var actions []protocol.CodeAction
-	for _, diag := range diagnostics {
-		matches := importErrorRe.FindStringSubmatch(diag.Message)
-		if len(matches) == 0 {
-			return nil, nil
-		}
-		args, err := source.MarshalArgs(uri, matches[1])
-		if err != nil {
-			return nil, err
-		}
-		actions = append(actions, protocol.CodeAction{
-			Title:       fmt.Sprintf("go get package %v", matches[1]),
-			Diagnostics: []protocol.Diagnostic{diag},
-			Kind:        protocol.QuickFix,
-			Command: &protocol.Command{
-				Title:     source.CommandGoGetPackage.Title,
-				Command:   source.CommandGoGetPackage.ID(),
-				Arguments: args,
-			},
-		})
-	}
-	return actions, nil
-}
-
 func convenienceFixes(ctx context.Context, snapshot source.Snapshot, pkg source.Package, uri span.URI, rng protocol.Range) ([]protocol.CodeAction, error) {
 	var analyzers []*analysis.Analyzer
 	for _, a := range snapshot.View().Options().ConvenienceAnalyzers {
 		if !a.IsEnabled(snapshot.View()) {
 			continue
 		}
-		if a.Command == nil {
+		if a.Fix == "" {
 			event.Error(ctx, "convenienceFixes", fmt.Errorf("no suggested fixes for convenience analyzer %s", a.Analyzer.Name))
 			continue
 		}
@@ -428,33 +393,33 @@ func convenienceFixes(ctx context.Context, snapshot source.Snapshot, pkg source.
 	return codeActions, nil
 }
 
-func diagnosticToCommandCodeAction(ctx context.Context, snapshot source.Snapshot, e *source.Error, d *protocol.Diagnostic, kind protocol.CodeActionKind) (*protocol.CodeAction, error) {
+func diagnosticToCommandCodeAction(ctx context.Context, snapshot source.Snapshot, sd *source.Diagnostic, pd *protocol.Diagnostic, kind protocol.CodeActionKind) (*protocol.CodeAction, error) {
 	// The fix depends on the category of the analyzer. The diagnostic may be
 	// nil, so use the error's category.
-	analyzer := diagnosticToAnalyzer(snapshot, e.Category, e.Message)
+	analyzer := diagnosticToAnalyzer(snapshot, string(sd.Source), sd.Message)
 	if analyzer == nil {
-		return nil, fmt.Errorf("no convenience analyzer for category %s", e.Category)
+		return nil, fmt.Errorf("no convenience analyzer for source %s", sd.Source)
 	}
-	if analyzer.Command == nil {
-		return nil, fmt.Errorf("no command for convenience analyzer %s", analyzer.Analyzer.Name)
+	if analyzer.Fix == "" {
+		return nil, fmt.Errorf("no fix for convenience analyzer %s", analyzer.Analyzer.Name)
 	}
-	jsonArgs, err := source.MarshalArgs(e.URI, e.Range)
+	cmd, err := command.NewApplyFixCommand(sd.Message, command.ApplyFixArgs{
+		URI:   protocol.URIFromSpanURI(sd.URI),
+		Range: sd.Range,
+		Fix:   analyzer.Fix,
+	})
 	if err != nil {
 		return nil, err
 	}
 	var diagnostics []protocol.Diagnostic
-	if d != nil {
-		diagnostics = append(diagnostics, *d)
+	if pd != nil {
+		diagnostics = append(diagnostics, *pd)
 	}
 	return &protocol.CodeAction{
-		Title:       e.Message,
+		Title:       sd.Message,
 		Kind:        kind,
 		Diagnostics: diagnostics,
-		Command: &protocol.Command{
-			Command:   analyzer.Command.ID(),
-			Title:     e.Message,
-			Arguments: jsonArgs,
-		},
+		Command:     &cmd,
 	}, nil
 }
 
@@ -466,25 +431,44 @@ func extractionFixes(ctx context.Context, snapshot source.Snapshot, pkg source.P
 	if err != nil {
 		return nil, err
 	}
-	jsonArgs, err := source.MarshalArgs(uri, rng)
+	_, pgf, err := source.GetParsedFile(ctx, snapshot, fh, source.NarrowestPackage)
+	if err != nil {
+		return nil, errors.Errorf("getting file for Identifier: %w", err)
+	}
+	srng, err := pgf.Mapper.RangeToSpanRange(rng)
 	if err != nil {
 		return nil, err
 	}
-	var actions []protocol.CodeAction
-	for _, command := range []*source.Command{
-		source.CommandExtractFunction,
-		source.CommandExtractVariable,
-	} {
-		if !command.Applies(ctx, snapshot, fh, rng) {
-			continue
+	puri := protocol.URIFromSpanURI(uri)
+	var commands []protocol.Command
+	if _, ok, _ := source.CanExtractFunction(snapshot.FileSet(), srng, pgf.Src, pgf.File); ok {
+		cmd, err := command.NewApplyFixCommand("Extract to function", command.ApplyFixArgs{
+			URI:   puri,
+			Fix:   source.ExtractFunction,
+			Range: rng,
+		})
+		if err != nil {
+			return nil, err
 		}
+		commands = append(commands, cmd)
+	}
+	if _, _, ok, _ := source.CanExtractVariable(srng, pgf.File); ok {
+		cmd, err := command.NewApplyFixCommand("Extract variable", command.ApplyFixArgs{
+			URI:   puri,
+			Fix:   source.ExtractVariable,
+			Range: rng,
+		})
+		if err != nil {
+			return nil, err
+		}
+		commands = append(commands, cmd)
+	}
+	var actions []protocol.CodeAction
+	for _, cmd := range commands {
 		actions = append(actions, protocol.CodeAction{
-			Title: command.Title,
-			Kind:  protocol.RefactorExtract,
-			Command: &protocol.Command{
-				Command:   command.ID(),
-				Arguments: jsonArgs,
-			},
+			Title:   cmd.Title,
+			Kind:    protocol.RefactorExtract,
+			Command: &cmd,
 		})
 	}
 	return actions, nil
@@ -493,7 +477,7 @@ func extractionFixes(ctx context.Context, snapshot source.Snapshot, pkg source.P
 func documentChanges(fh source.VersionedFileHandle, edits []protocol.TextEdit) []protocol.TextDocumentEdit {
 	return []protocol.TextDocumentEdit{
 		{
-			TextDocument: protocol.VersionedTextDocumentIdentifier{
+			TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
 				Version: fh.Version(),
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{
 					URI: protocol.URIFromSpanURI(fh.URI()),
@@ -504,7 +488,7 @@ func documentChanges(fh source.VersionedFileHandle, edits []protocol.TextEdit) [
 	}
 }
 
-func moduleQuickFixes(ctx context.Context, snapshot source.Snapshot, fh source.VersionedFileHandle, diagnostics []protocol.Diagnostic) ([]protocol.CodeAction, error) {
+func moduleQuickFixes(ctx context.Context, snapshot source.Snapshot, fh source.VersionedFileHandle, pdiags []protocol.Diagnostic) ([]protocol.CodeAction, error) {
 	var modFH source.VersionedFileHandle
 	switch fh.Kind() {
 	case source.Mod:
@@ -520,14 +504,18 @@ func moduleQuickFixes(ctx context.Context, snapshot source.Snapshot, fh source.V
 			return nil, err
 		}
 	}
-	errors, err := mod.ErrorsForMod(ctx, snapshot, modFH)
+	diags, err := mod.DiagnosticsForMod(ctx, snapshot, modFH)
 	if err != nil {
 		return nil, err
 	}
+	return quickFixesForDiagnostics(ctx, snapshot, pdiags, diags)
+}
+
+func quickFixesForDiagnostics(ctx context.Context, snapshot source.Snapshot, pdiags []protocol.Diagnostic, sdiags []*source.Diagnostic) ([]protocol.CodeAction, error) {
 	var quickFixes []protocol.CodeAction
-	for _, e := range errors {
+	for _, e := range sdiags {
 		var diag *protocol.Diagnostic
-		for _, d := range diagnostics {
+		for _, d := range pdiags {
 			if sameDiagnostic(d, e) {
 				diag = &d
 				break
@@ -544,15 +532,17 @@ func moduleQuickFixes(ctx context.Context, snapshot source.Snapshot, fh source.V
 				Edit:        protocol.WorkspaceEdit{},
 				Command:     fix.Command,
 			}
+
 			for uri, edits := range fix.Edits {
-				if uri != modFH.URI() {
-					continue
+				fh, err := snapshot.GetVersionedFile(ctx, uri)
+				if err != nil {
+					return nil, err
 				}
 				action.Edit.DocumentChanges = append(action.Edit.DocumentChanges, protocol.TextDocumentEdit{
-					TextDocument: protocol.VersionedTextDocumentIdentifier{
-						Version: modFH.Version(),
+					TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
+						Version: fh.Version(),
 						TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-							URI: protocol.URIFromSpanURI(modFH.URI()),
+							URI: protocol.URIFromSpanURI(uri),
 						},
 					},
 					Edits: edits,
@@ -564,8 +554,8 @@ func moduleQuickFixes(ctx context.Context, snapshot source.Snapshot, fh source.V
 	return quickFixes, nil
 }
 
-func sameDiagnostic(d protocol.Diagnostic, e *source.Error) bool {
-	return d.Message == e.Message && protocol.CompareRange(d.Range, e.Range) == 0 && d.Source == e.Category
+func sameDiagnostic(pd protocol.Diagnostic, sd *source.Diagnostic) bool {
+	return pd.Message == sd.Message && protocol.CompareRange(pd.Range, sd.Range) == 0 && pd.Source == string(sd.Source)
 }
 
 func goTest(ctx context.Context, snapshot source.Snapshot, uri span.URI, rng protocol.Range) ([]protocol.CodeAction, error) {
@@ -596,17 +586,13 @@ func goTest(ctx context.Context, snapshot source.Snapshot, uri span.URI, rng pro
 		return nil, nil
 	}
 
-	jsonArgs, err := source.MarshalArgs(uri, tests, benchmarks)
+	cmd, err := command.NewTestCommand("Run tests and benchmarks", protocol.URIFromSpanURI(uri), tests, benchmarks)
 	if err != nil {
 		return nil, err
 	}
 	return []protocol.CodeAction{{
-		Title: source.CommandTest.Name,
-		Kind:  protocol.GoTest,
-		Command: &protocol.Command{
-			Title:     source.CommandTest.Title,
-			Command:   source.CommandTest.ID(),
-			Arguments: jsonArgs,
-		},
+		Title:   cmd.Title,
+		Kind:    protocol.GoTest,
+		Command: &cmd,
 	}}, nil
 }

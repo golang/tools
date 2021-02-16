@@ -15,8 +15,8 @@ import (
 	"sync"
 
 	"golang.org/x/tools/internal/jsonrpc2"
+	"golang.org/x/tools/internal/lsp/command"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	errors "golang.org/x/xerrors"
 )
@@ -266,7 +266,7 @@ func (e *Editor) initialize(ctx context.Context, workspaceFolders []string) erro
 	// TODO: set client capabilities
 	params.InitializationOptions = e.configuration()
 	if e.Config.SendPID {
-		params.ProcessID = float64(os.Getpid())
+		params.ProcessID = int32(os.Getpid())
 	}
 
 	// This is a bit of a hack, since the fake editor doesn't actually support
@@ -357,7 +357,7 @@ func textDocumentItem(wd *Workdir, buf buffer) protocol.TextDocumentItem {
 	return protocol.TextDocumentItem{
 		URI:        uri,
 		LanguageID: languageID,
-		Version:    float64(buf.version),
+		Version:    int32(buf.version),
 		Text:       buf.text(),
 	}
 }
@@ -467,10 +467,7 @@ func (e *Editor) SaveBufferWithoutActions(ctx context.Context, path string) erro
 
 	if e.Server != nil {
 		params := &protocol.DidSaveTextDocumentParams{
-			TextDocument: protocol.VersionedTextDocumentIdentifier{
-				Version:                float64(buf.version),
-				TextDocumentIdentifier: docID,
-			},
+			TextDocument: docID,
 		}
 		if includeText {
 			params.Text = &content
@@ -667,7 +664,7 @@ func (e *Editor) setBufferContentLocked(ctx context.Context, path string, dirty 
 	}
 	params := &protocol.DidChangeTextDocumentParams{
 		TextDocument: protocol.VersionedTextDocumentIdentifier{
-			Version:                float64(buf.version),
+			Version:                int32(buf.version),
 			TextDocumentIdentifier: e.textDocumentIdentifier(buf.path),
 		},
 		ContentChanges: evts,
@@ -757,22 +754,15 @@ func (e *Editor) ApplyQuickFixes(ctx context.Context, path string, rng *protocol
 	return e.codeAction(ctx, path, rng, diagnostics, protocol.QuickFix, protocol.SourceFixAll)
 }
 
+// GetQuickFixes returns the available quick fix code actions.
+func (e *Editor) GetQuickFixes(ctx context.Context, path string, rng *protocol.Range, diagnostics []protocol.Diagnostic) ([]protocol.CodeAction, error) {
+	return e.getCodeActions(ctx, path, rng, diagnostics, protocol.QuickFix, protocol.SourceFixAll)
+}
+
 func (e *Editor) codeAction(ctx context.Context, path string, rng *protocol.Range, diagnostics []protocol.Diagnostic, only ...protocol.CodeActionKind) error {
-	if e.Server == nil {
-		return nil
-	}
-	params := &protocol.CodeActionParams{}
-	params.TextDocument.URI = e.sandbox.Workdir.URI(path)
-	params.Context.Only = only
-	if diagnostics != nil {
-		params.Context.Diagnostics = diagnostics
-	}
-	if rng != nil {
-		params.Range = *rng
-	}
-	actions, err := e.Server.CodeAction(ctx, params)
+	actions, err := e.getCodeActions(ctx, path, rng, diagnostics, only...)
 	if err != nil {
-		return errors.Errorf("textDocument/codeAction: %w", err)
+		return err
 	}
 	for _, action := range actions {
 		if action.Title == "" {
@@ -790,7 +780,7 @@ func (e *Editor) codeAction(ctx context.Context, path string, rng *protocol.Rang
 		}
 		for _, change := range action.Edit.DocumentChanges {
 			path := e.sandbox.Workdir.URIToPath(change.TextDocument.URI)
-			if float64(e.buffers[path].version) != change.TextDocument.Version {
+			if int32(e.buffers[path].version) != change.TextDocument.Version {
 				// Skip edits for old versions.
 				continue
 			}
@@ -815,6 +805,22 @@ func (e *Editor) codeAction(ctx context.Context, path string, rng *protocol.Rang
 		}
 	}
 	return nil
+}
+
+func (e *Editor) getCodeActions(ctx context.Context, path string, rng *protocol.Range, diagnostics []protocol.Diagnostic, only ...protocol.CodeActionKind) ([]protocol.CodeAction, error) {
+	if e.Server == nil {
+		return nil, nil
+	}
+	params := &protocol.CodeActionParams{}
+	params.TextDocument.URI = e.sandbox.Workdir.URI(path)
+	params.Context.Only = only
+	if diagnostics != nil {
+		params.Context.Diagnostics = diagnostics
+	}
+	if rng != nil {
+		params.Range = *rng
+	}
+	return e.Server.CodeAction(ctx, params)
 }
 
 func (e *Editor) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (interface{}, error) {
@@ -895,18 +901,22 @@ func (e *Editor) checkBufferPosition(path string, pos Pos) error {
 // path. It does not report any resulting file changes as a watched file
 // change, so must be followed by a call to Workdir.CheckForFileChanges once
 // the generate command has completed.
+// TODO(rFindley): this shouldn't be necessary anymore. Delete it.
 func (e *Editor) RunGenerate(ctx context.Context, dir string) error {
 	if e.Server == nil {
 		return nil
 	}
 	absDir := e.sandbox.Workdir.AbsPath(dir)
-	jsonArgs, err := source.MarshalArgs(span.URIFromPath(absDir), false)
+	cmd, err := command.NewGenerateCommand("", command.GenerateArgs{
+		Dir:       protocol.URIFromSpanURI(span.URIFromPath(absDir)),
+		Recursive: false,
+	})
 	if err != nil {
 		return err
 	}
 	params := &protocol.ExecuteCommandParams{
-		Command:   source.CommandGenerate.ID(),
-		Arguments: jsonArgs,
+		Command:   cmd.Command,
+		Arguments: cmd.Arguments,
 	}
 	if _, err := e.ExecuteCommand(ctx, params); err != nil {
 		return fmt.Errorf("running generate: %v", err)

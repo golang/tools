@@ -40,6 +40,7 @@ type runner struct {
 	diagnostics map[span.URI][]*source.Diagnostic
 	ctx         context.Context
 	normalizers []tests.Normalizer
+	editRecv    chan map[span.URI]string
 }
 
 func testLSP(t *testing.T, datum *tests.Data) {
@@ -85,23 +86,34 @@ func testLSP(t *testing.T, datum *tests.Data) {
 		t.Fatal(err)
 	}
 	r := &runner{
-		server:      NewServer(session, testClient{}),
 		data:        datum,
 		ctx:         ctx,
 		normalizers: tests.CollectNormalizers(datum.Exported),
+		editRecv:    make(chan map[span.URI]string, 1),
 	}
+	r.server = NewServer(session, testClient{runner: r})
 	tests.Run(t, r, datum)
 }
 
 // testClient stubs any client functions that may be called by LSP functions.
 type testClient struct {
 	protocol.Client
+	runner *runner
 }
 
 // Trivially implement PublishDiagnostics so that we can call
 // server.publishReports below to de-dup sent diagnostics.
 func (c testClient) PublishDiagnostics(context.Context, *protocol.PublishDiagnosticsParams) error {
 	return nil
+}
+
+func (c testClient) ApplyEdit(ctx context.Context, params *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResponse, error) {
+	res, err := applyTextDocumentEdits(c.runner, params.Edit.DocumentChanges)
+	if err != nil {
+		return nil, err
+	}
+	c.runner.editRecv <- res
+	return &protocol.ApplyWorkspaceEditResponse{Applied: true}, nil
 }
 
 func (r *runner) CallHierarchy(t *testing.T, spn span.Span, expectedCalls *tests.CallHierarchyResult) {
@@ -468,13 +480,6 @@ func (r *runner) SuggestedFix(t *testing.T, spn span.Span, actionKinds []string,
 		t.Fatal(err)
 	}
 
-	snapshot, release := view.Snapshot(r.ctx)
-	defer release()
-
-	fh, err := snapshot.GetVersionedFile(r.ctx, uri)
-	if err != nil {
-		t.Fatal(err)
-	}
 	m, err := r.data.Mapper(uri)
 	if err != nil {
 		t.Fatal(err)
@@ -533,14 +538,14 @@ func (r *runner) SuggestedFix(t *testing.T, spn span.Span, actionKinds []string,
 	}
 	var res map[span.URI]string
 	if cmd := action.Command; cmd != nil {
-		edits, err := commandToEdits(r.ctx, snapshot, fh, rng, action.Command.Command)
+		_, err := r.server.ExecuteCommand(r.ctx, &protocol.ExecuteCommandParams{
+			Command:   action.Command.Command,
+			Arguments: action.Command.Arguments,
+		})
 		if err != nil {
 			t.Fatalf("error converting command %q to edits: %v", action.Command.Command, err)
 		}
-		res, err = applyTextDocumentEdits(r, edits)
-		if err != nil {
-			t.Fatal(err)
-		}
+		res = <-r.editRecv
 	} else {
 		res, err = applyTextDocumentEdits(r, action.Edit.DocumentChanges)
 		if err != nil {
@@ -557,41 +562,8 @@ func (r *runner) SuggestedFix(t *testing.T, spn span.Span, actionKinds []string,
 	}
 }
 
-func commandToEdits(ctx context.Context, snapshot source.Snapshot, fh source.VersionedFileHandle, rng protocol.Range, cmd string) ([]protocol.TextDocumentEdit, error) {
-	var command *source.Command
-	for _, c := range source.Commands {
-		if c.ID() == cmd {
-			command = c
-			break
-		}
-	}
-	if command == nil {
-		return nil, fmt.Errorf("no known command for %s", cmd)
-	}
-	if !command.Applies(ctx, snapshot, fh, rng) {
-		return nil, fmt.Errorf("cannot apply %v", command.ID())
-	}
-	edits, err := command.SuggestedFix(ctx, snapshot, fh, rng)
-	if err != nil {
-		return nil, fmt.Errorf("error calling command.SuggestedFix: %v", err)
-	}
-	return edits, nil
-}
-
 func (r *runner) FunctionExtraction(t *testing.T, start span.Span, end span.Span) {
 	uri := start.URI()
-	view, err := r.server.session.ViewOf(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	snapshot, release := view.Snapshot(r.ctx)
-	defer release()
-
-	fh, err := snapshot.GetVersionedFile(r.ctx, uri)
-	if err != nil {
-		t.Fatal(err)
-	}
 	m, err := r.data.Mapper(uri)
 	if err != nil {
 		t.Fatal(err)
@@ -618,14 +590,14 @@ func (r *runner) FunctionExtraction(t *testing.T, start span.Span, end span.Span
 	if len(actions) == 0 || len(actions) > 1 {
 		t.Fatalf("unexpected number of code actions, want 1, got %v", len(actions))
 	}
-	edits, err := commandToEdits(r.ctx, snapshot, fh, rng, actions[0].Command.Command)
+	_, err = r.server.ExecuteCommand(r.ctx, &protocol.ExecuteCommandParams{
+		Command:   actions[0].Command.Command,
+		Arguments: actions[0].Command.Arguments,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := applyTextDocumentEdits(r, edits)
-	if err != nil {
-		t.Fatal(err)
-	}
+	res := <-r.editRecv
 	for u, got := range res {
 		want := string(r.data.Golden("functionextraction_"+tests.SpanName(spn), u.Filename(), func() ([]byte, error) {
 			return []byte(got), nil
@@ -1178,19 +1150,10 @@ func (r *runner) collectDiagnostics(view source.View) {
 	// Always run diagnostics with analysis.
 	r.server.diagnose(r.ctx, snapshot, true)
 	for uri, reports := range r.server.diagnostics {
-		var diagnostics []*source.Diagnostic
 		for _, report := range reports.reports {
 			for _, d := range report.diags {
-				diagnostics = append(diagnostics, &source.Diagnostic{
-					Range:    d.Range,
-					Message:  d.Message,
-					Related:  d.Related,
-					Severity: d.Severity,
-					Source:   d.Source,
-					Tags:     d.Tags,
-				})
+				r.diagnostics[uri] = append(r.diagnostics[uri], d)
 			}
-			r.diagnostics[uri] = diagnostics
 		}
 	}
 }

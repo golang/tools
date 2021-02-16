@@ -384,46 +384,39 @@ and disabled using the `codelenses` setting, documented above. Their names and
 features are subject to change.
 
 <!-- BEGIN Lenses: DO NOT MANUALLY EDIT THIS SECTION -->
-### **Run go generate**
-
-Identifier: `generate`
-
-generate runs `go generate` for a given directory.
-
-### **Regenerate cgo**
-
-Identifier: `regenerate_cgo`
-
-regenerate_cgo regenerates cgo definitions.
-
-### **Run test(s)**
-
-Identifier: `test`
-
-test runs `go test` for a specific test function.
-
-### **Run go mod tidy**
-
-Identifier: `tidy`
-
-tidy runs `go mod tidy` for a module.
-
-### **Upgrade dependency**
-
-Identifier: `upgrade_dependency`
-
-upgrade_dependency upgrades a dependency.
-
-### **Run go mod vendor**
-
-Identifier: `vendor`
-
-vendor runs `go mod vendor` for a module.
-
 ### **Toggle gc_details**
 
 Identifier: `gc_details`
 
-gc_details controls calculation of gc annotations.
+Toggle the calculation of gc annotations.
+### **Run go generate**
 
+Identifier: `generate`
+
+Runs `go generate` for a given directory.
+### **Regenerate cgo**
+
+Identifier: `regenerate_cgo`
+
+Regenerates cgo definitions.
+### **Run test(s) (legacy)**
+
+Identifier: `test`
+
+Runs `go test` for a specific set of test or benchmark functions.
+### **Run go mod tidy**
+
+Identifier: `tidy`
+
+Runs `go mod tidy` for a module.
+### **Upgrade dependency**
+
+Identifier: `upgrade_dependency`
+
+Upgrades a dependency in the go.mod file for a module.
+### **Run go mod vendor**
+
+Identifier: `vendor`
+
+Runs `go mod vendor` for a module.
 <!-- END Lenses: DO NOT MANUALLY EDIT THIS SECTION -->
