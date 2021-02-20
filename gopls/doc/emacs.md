@@ -121,8 +121,9 @@ project root.
 See [settings] for information about available gopls settings.
 
 LSP server settings are controlled by the `eglot-workspace-configuration`
-variable, which can be set either globally in `.emacs` (as below).
+variable, which can be set either globally in `.emacs` or in a `.dir-locals.el` file in the project root.
 
+`.emacs`:
 ```elisp
 (setq-default eglot-workspace-configuration
     '((:gopls .
@@ -130,8 +131,7 @@ variable, which can be set either globally in `.emacs` (as below).
          (matcher . "CaseSensitive")))))
 ```
 
-or in a `.dir-locals.el` file in the project root.
-
+`.dir-locals.el`:
 ```elisp
 ((nil (eglot-workspace-configuration . ((gopls . ((staticcheck . t)
 						  (matcher . "CaseSensitive")))))))
