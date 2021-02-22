@@ -437,12 +437,6 @@ func (s *snapshot) setMetadata(ctx context.Context, pkgPath packagePath, pkg *pa
 			continue
 		}
 
-		// The package's files are in this view. It may be a workspace package.
-		if strings.Contains(string(uri), "/vendor/") {
-			// Vendored packages are not likely to be interesting to the user.
-			continue
-		}
-
 		switch {
 		case m.forTest == "":
 			// A normal package.
