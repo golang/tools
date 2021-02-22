@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package generate is used to generate command bindings from the gopls command
+// Package gen is used to generate command bindings from the gopls command
 // interface.
-package generate
+package gen
 
 import (
 	"bytes"
@@ -22,6 +22,7 @@ const src = `// Copyright 2021 The Go Authors. All rights reserved.
 
 // Don't include this file during code generation, or it will break the build
 // if existing interface methods have been modified.
+//go:build !generate
 // +build !generate
 
 package command

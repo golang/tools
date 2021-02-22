@@ -6,4 +6,12 @@
 
 package a
 
-// +build toolate // want "build comment must appear before package clause and be followed by a blank line$"
+// want +1 `misplaced \+build comment`
+// +build toolate
+
+// want +1 `misplaced //go:build comment`
+//go:build toolate
+
+var _ = `
+// +build notacomment
+`
