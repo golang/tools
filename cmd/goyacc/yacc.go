@@ -3296,9 +3296,11 @@ func $$NewParser() $$Parser {
 const $$Flag = -1000
 
 func $$Tokname(c int) string {
-	if c >= 1 && c-1 < len($$Toknames) {
-		if $$Toknames[c-1] != "" {
-			return $$Toknames[c-1]
+     offset := $$Private-1
+
+	if c >= offset && c-offset < len($$Toknames) {
+		if $$Toknames[c-offset] != "" {
+			return $$Toknames[c-offset]
 		}
 	}
 	return __yyfmt__.Sprintf("tok-%v", c)
