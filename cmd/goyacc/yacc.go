@@ -3295,6 +3295,7 @@ func $$NewParser() $$Parser {
 
 const $$Flag = -1000
 
+// fix incorrect access check
 func $$Tokname(c int) string {
      offset := $$Private-1
 
