@@ -703,7 +703,7 @@ outer:
 			if firsttok == 0 {
 				firsttok = tokset[i].value
 			}
-			if (lasttok == 0) && (i == ntokens) {
+			if lasttok == 0 && i == ntokens {
 				lasttok = tokset[i].value
 			}
 		}
@@ -3308,7 +3308,6 @@ func $$NewParser() $$Parser {
 
 const $$Flag = -1000
 
-// fix incorrect access check
 func $$Tokname(c int) string {
      offset := $$Private-1
 
