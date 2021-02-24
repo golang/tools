@@ -258,6 +258,8 @@ var nerrors = 0                   // number of errors
 // assigned token type values
 
 var extval = 0
+var firsttok = 0
+var lasttok = 0
 
 // grammar rule information
 
@@ -698,6 +700,12 @@ outer:
 		// non-literals
 		if !tokset[i].noconst {
 			fmt.Fprintf(ftable, "const %v = %v\n", tokset[i].name, tokset[i].value)
+			if firsttok == 0 {
+				firsttok = tokset[i].value
+			}
+			if (lasttok == 0) && (i == ntokens) {
+				lasttok = tokset[i].value
+			}
 		}
 	}
 
@@ -708,6 +716,11 @@ outer:
 		fmt.Fprintf(ftable, "\t%q,\n", tokset[i].name)
 	}
 	fmt.Fprintf(ftable, "}\n")
+
+	fmt.Fprintf(ftable, "\n")
+	fmt.Fprintf(ftable, "var %sFirsttok = %d\n", prefix, firsttok)
+	fmt.Fprintf(ftable, "var %sLasttok = %d\n", prefix, lasttok)
+	fmt.Fprintf(ftable, "\n")
 
 	// put out names of states.
 	// commented out to avoid a huge table just for debugging.
