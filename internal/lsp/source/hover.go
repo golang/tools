@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/doc"
 	"go/format"
 	"go/types"
 	"strings"
+	"time"
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
@@ -382,7 +384,7 @@ func formatVar(node ast.Spec, obj types.Object, decl *ast.GenDecl) *HoverInforma
 }
 
 func FormatHover(h *HoverInformation, options *Options) (string, error) {
-	signature := h.Signature
+	signature := populateSignatureWithExtraInfo(h.Signature, h.source)
 	if signature != "" && options.PreferredContentFormat == protocol.Markdown {
 		signature = fmt.Sprintf("```go\n%s\n```", signature)
 	}
@@ -409,6 +411,19 @@ func FormatHover(h *HoverInformation, options *Options) (string, error) {
 		return formatHover(options, signature, link, doc), nil
 	}
 	return "", errors.Errorf("no hover for %v", h.source)
+}
+
+func populateSignatureWithExtraInfo(signature string, hoverSource interface{}) string {
+	if c, ok := hoverSource.(*types.Const); ok {
+		if c.Type().String() == "time.Duration" {
+			duration, ok := constant.Int64Val(c.Val())
+			if ok {
+				signature += " // " + time.Duration(duration).String()
+			}
+		}
+	}
+
+	return signature
 }
 
 func formatLink(h *HoverInformation, options *Options) string {
