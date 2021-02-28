@@ -234,6 +234,13 @@ func objectString(obj types.Object, qf types.Qualifier) string {
 	switch obj := obj.(type) {
 	case *types.Const:
 		str = fmt.Sprintf("%s = %s", str, obj.Val())
+
+		switch obj.Type().String() {
+		case "time.Duration":
+			if d, ok := constant.Int64Val(obj.Val()); ok {
+				str += " // " + time.Duration(d).String()
+			}
+		}
 	}
 	return str
 }
@@ -384,7 +391,7 @@ func formatVar(node ast.Spec, obj types.Object, decl *ast.GenDecl) *HoverInforma
 }
 
 func FormatHover(h *HoverInformation, options *Options) (string, error) {
-	signature := populateSignatureWithExtraInfo(h.Signature, h.source)
+	signature := h.Signature
 	if signature != "" && options.PreferredContentFormat == protocol.Markdown {
 		signature = fmt.Sprintf("```go\n%s\n```", signature)
 	}
@@ -411,19 +418,6 @@ func FormatHover(h *HoverInformation, options *Options) (string, error) {
 		return formatHover(options, signature, link, doc), nil
 	}
 	return "", errors.Errorf("no hover for %v", h.source)
-}
-
-func populateSignatureWithExtraInfo(signature string, hoverSource interface{}) string {
-	if c, ok := hoverSource.(*types.Const); ok {
-		if c.Type().String() == "time.Duration" {
-			duration, ok := constant.Int64Val(c.Val())
-			if ok {
-				signature += " // " + time.Duration(duration).String()
-			}
-		}
-	}
-
-	return signature
 }
 
 func formatLink(h *HoverInformation, options *Options) string {
