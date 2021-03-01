@@ -3309,7 +3309,10 @@ func $$NewParser() $$Parser {
 const $$Flag = -1000
 
 func $$Tokname(c int) string {
-     offset := $$Private-1
+     offset := 1
+     if c >= $$Private {
+          offset = $$Private-1
+     }
 
 	if c >= offset && c-offset < len($$Toknames) {
 		if $$Toknames[c-offset] != "" {
