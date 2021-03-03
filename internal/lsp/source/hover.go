@@ -235,8 +235,13 @@ func objectString(obj types.Object, qf types.Qualifier) string {
 	case *types.Const:
 		str = fmt.Sprintf("%s = %s", str, obj.Val())
 
-		switch obj.Type().String() {
-		case "time.Duration":
+		// Try to add a formatted duration as an inline comment
+		typ, ok := obj.Type().(*types.Named)
+		if !ok {
+			break
+		}
+		pkg := typ.Obj().Pkg()
+		if pkg.Path() == "time" && pkg.Scope().Lookup("Duration") != nil {
 			if d, ok := constant.Int64Val(obj.Val()); ok {
 				str += " // " + time.Duration(d).String()
 			}
