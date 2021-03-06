@@ -16,5 +16,6 @@ import (
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
+	errorsas.Analyzer.Flags.Set("pkgs", "github.com/lib/errors1,github.com/lib/errors2")
 	analysistest.Run(t, testdata, errorsas.Analyzer, "a")
 }

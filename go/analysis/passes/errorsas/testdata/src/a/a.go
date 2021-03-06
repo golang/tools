@@ -6,7 +6,15 @@
 
 package a
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/lib/errors1"
+	"github.com/lib/errors2"
+	"github.com/lib/errors3"
+	pkgerrors "github.com/pkg/errors"
+	xerrors "golang.org/x/xerrors"
+)
 
 type myError int
 
@@ -40,4 +48,18 @@ func _() {
 	errors.As(nil, f)   // want `second argument to errors.As must be a non-nil pointer to either a type that implements error, or to any interface type`
 	errors.As(nil, &i)  // want `second argument to errors.As must be a non-nil pointer to either a type that implements error, or to any interface type`
 	errors.As(two())
+
+	// Check other default packages
+
+	xerrors.As(nil, nil)   // want `second argument to golang.org/x/xerrors.As must be a non-nil pointer to either a type that implements error, or to any interface type`
+	pkgerrors.As(nil, nil) // want `second argument to github.com/pkg/errors.As must be a non-nil pointer to either a type that implements error, or to any interface type`
+
+	// Check packages passed via -errorsas.pkgs flag
+
+	errors1.As(nil, nil) // want `second argument to github.com/lib/errors1.As must be a non-nil pointer to either a type that implements error, or to any interface type`
+	errors2.As(nil, nil) // want `second argument to github.com/lib/errors2.As must be a non-nil pointer to either a type that implements error, or to any interface type`
+
+	// Ignore package not passed via -errorsas.pkgs flag
+
+	errors3.As(nil, nil)
 }
