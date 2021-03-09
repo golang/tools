@@ -89,6 +89,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	nodeFilter := []ast.Node{
 		(*ast.AssignStmt)(nil),
 		(*ast.GenDecl)(nil),
+		(*ast.RangeStmt)(nil),
 	}
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
 		switch n := n.(type) {
@@ -96,6 +97,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			checkShadowAssignment(pass, spans, n)
 		case *ast.GenDecl:
 			checkShadowDecl(pass, spans, n)
+		case *ast.RangeStmt:
+			checkRangeStmt(pass, spans, n)
 		}
 	})
 	return nil, nil
@@ -148,6 +151,17 @@ func growSpan(spans map[types.Object]span, obj types.Object, pos, end token.Pos)
 		s = span{pos, end}
 	}
 	spans[obj] = s
+}
+
+// checkShadowAssignment checks for shadowing in a for statement declaration.
+func checkRangeStmt(pass *analysis.Pass, spans map[types.Object]span, r *ast.RangeStmt) {
+	for _, expr := range []ast.Expr{r.Key, r.Value} {
+		ident, ok := expr.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		checkShadowing(pass, spans, ident)
+	}
 }
 
 // checkShadowAssignment checks for shadowing in a short variable declaration.
