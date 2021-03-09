@@ -98,3 +98,21 @@ func shadowBlock() {
 	}
 	_ = a
 }
+
+func shadowRangeKey() {
+	var i int
+	total := 0
+	for i := range []int{1, 2, 3} { // want "declaration of .i. shadows declaration at line 103"
+		total += i
+	}
+	_ = i
+}
+
+func shadowRangeValue() {
+	var i int
+	total := 0
+	for _, i := range []int{1, 2, 3} { // want "declaration of .i. shadows declaration at line 112"
+		total += i
+	}
+	_ = i
+}
