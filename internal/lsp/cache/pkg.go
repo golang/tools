@@ -16,17 +16,19 @@ import (
 
 // pkg contains the type information needed by the source package.
 type pkg struct {
-	m               *metadata
-	mode            source.ParseMode
-	goFiles         []*source.ParsedGoFile
-	compiledGoFiles []*source.ParsedGoFile
-	diagnostics     []*source.Diagnostic
-	imports         map[packagePath]*pkg
-	version         *module.Version
-	typeErrors      []types.Error
-	types           *types.Package
-	typesInfo       *types.Info
-	typesSizes      types.Sizes
+	m                    *metadata
+	mode                 source.ParseMode
+	goFiles              []*source.ParsedGoFile
+	compiledGoFiles      []*source.ParsedGoFile
+	diagnostics          []*source.Diagnostic
+	imports              map[packagePath]*pkg
+	version              *module.Version
+	typeErrors           []types.Error
+	types                *types.Package
+	typesInfo            *types.Info
+	typesSizes           types.Sizes
+	hasListOrParseErrors bool
+	hasTypeErrors        bool
 }
 
 // Declare explicit types for package paths, names, and IDs to ensure that we
@@ -82,10 +84,6 @@ func (p *pkg) GetSyntax() []*ast.File {
 		syntax = append(syntax, pgf.File)
 	}
 	return syntax
-}
-
-func (p *pkg) GetDiagnostics() []*source.Diagnostic {
-	return p.diagnostics
 }
 
 func (p *pkg) GetTypes() *types.Package {
@@ -145,4 +143,12 @@ func (p *pkg) Imports() []source.Package {
 
 func (p *pkg) Version() *module.Version {
 	return p.version
+}
+
+func (p *pkg) HasListOrParseErrors() bool {
+	return p.hasListOrParseErrors
+}
+
+func (p *pkg) HasTypeErrors() bool {
+	return p.hasTypeErrors
 }

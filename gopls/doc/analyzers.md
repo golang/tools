@@ -208,6 +208,46 @@ A useless comparison is one like f == nil as opposed to f() == nil.
 
 **Enabled by default.**
 
+## **nilness**
+
+check for redundant or impossible nil comparisons
+
+The nilness checker inspects the control-flow graph of each function in
+a package and reports nil pointer dereferences, degenerate nil
+pointers, and panics with nil values. A degenerate comparison is of the form
+x==nil or x!=nil where x is statically known to be nil or non-nil. These are
+often a mistake, especially in control flow related to errors. Panics with nil
+values are checked because they are not detectable by
+
+	if r := recover(); r != nil {
+
+This check reports conditions such as:
+
+	if f == nil { // impossible condition (f is a function)
+	}
+
+and:
+
+	p := &v
+	...
+	if p != nil { // tautological condition
+	}
+
+and:
+
+	if p == nil {
+		print(*p) // nil dereference
+	}
+
+and:
+
+	if p == nil {
+		panic(p)
+	}
+
+
+**Disabled by default. Enable it by setting `"analyses": {"nilness": true}`.**
+
 ## **printf**
 
 check consistency of Printf format strings and arguments
@@ -467,6 +507,35 @@ calls to certain functions in which the result of the call is ignored.
 The set of functions may be controlled using flags.
 
 **Enabled by default.**
+
+## **unusedwrite**
+
+checks for unused writes
+
+The analyzer reports instances of writes to struct fields and
+arrays that are never read. Specifically, when a struct object
+or an array is copied, its elements are copied implicitly by
+the compiler, and any element write to this copy does nothing
+with the original object.
+
+For example:
+
+	type T struct { x int }
+	func f(input []T) {
+		for i, v := range input {  // v is a copy
+			v.x = i  // unused write to field x
+		}
+	}
+
+Another example is about non-pointer receiver:
+
+	type T struct { x int }
+	func (t T) f() {  // t is a copy
+		t.x = i  // unused write to field x
+	}
+
+
+**Disabled by default. Enable it by setting `"analyses": {"unusedwrite": true}`.**
 
 ## **fillreturns**
 

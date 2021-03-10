@@ -31,6 +31,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/loopclosure"
 	"golang.org/x/tools/go/analysis/passes/lostcancel"
 	"golang.org/x/tools/go/analysis/passes/nilfunc"
+	"golang.org/x/tools/go/analysis/passes/nilness"
 	"golang.org/x/tools/go/analysis/passes/printf"
 	"golang.org/x/tools/go/analysis/passes/shadow"
 	"golang.org/x/tools/go/analysis/passes/shift"
@@ -44,6 +45,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/unreachable"
 	"golang.org/x/tools/go/analysis/passes/unsafeptr"
 	"golang.org/x/tools/go/analysis/passes/unusedresult"
+	"golang.org/x/tools/go/analysis/passes/unusedwrite"
 	"golang.org/x/tools/internal/lsp/analysis/fillreturns"
 	"golang.org/x/tools/internal/lsp/analysis/fillstruct"
 	"golang.org/x/tools/internal/lsp/analysis/nonewvars"
@@ -95,6 +97,7 @@ func DefaultOptions() *Options {
 					},
 					Mod: {
 						protocol.SourceOrganizeImports: true,
+						protocol.QuickFix:              true,
 					},
 					Sum: {},
 				},
@@ -152,7 +155,7 @@ func DefaultOptions() *Options {
 				DefaultAnalyzers:     defaultAnalyzers(),
 				TypeErrorAnalyzers:   typeErrorAnalyzers(),
 				ConvenienceAnalyzers: convenienceAnalyzers(),
-				StaticcheckAnalyzers: map[string]Analyzer{},
+				StaticcheckAnalyzers: map[string]*Analyzer{},
 				GoDiff:               true,
 			},
 		}
@@ -182,6 +185,7 @@ type ClientOptions struct {
 	HierarchicalDocumentSymbolSupport bool
 	SemanticTypes                     []string
 	SemanticMods                      []string
+	RelatedInformationSupported       bool
 }
 
 // ServerOptions holds LSP-specific configuration that is provided by the
@@ -416,10 +420,10 @@ type Hooks struct {
 	ComputeEdits         diff.ComputeEdits
 	URLRegexp            *regexp.Regexp
 	GofumptFormat        func(ctx context.Context, src []byte) ([]byte, error)
-	DefaultAnalyzers     map[string]Analyzer
-	TypeErrorAnalyzers   map[string]Analyzer
-	ConvenienceAnalyzers map[string]Analyzer
-	StaticcheckAnalyzers map[string]Analyzer
+	DefaultAnalyzers     map[string]*Analyzer
+	TypeErrorAnalyzers   map[string]*Analyzer
+	ConvenienceAnalyzers map[string]*Analyzer
+	StaticcheckAnalyzers map[string]*Analyzer
 }
 
 // InternalOptions contains settings that are not intended for use by the
@@ -615,6 +619,9 @@ func (o *Options) ForClientCapabilities(caps protocol.ClientCapabilities) {
 	o.SemanticMods = caps.TextDocument.SemanticTokens.TokenModifiers
 	// we don't need Requests, as we support full functionality
 	// we don't need Formats, as there is only one, for now
+
+	// Check if the client supports diagnostic related information.
+	o.RelatedInformationSupported = caps.TextDocument.PublishDiagnostics.RelatedInformation
 }
 
 func (o *Options) Clone() *Options {
@@ -651,8 +658,8 @@ func (o *Options) Clone() *Options {
 	result.BuildFlags = copySlice(o.BuildFlags)
 	result.DirectoryFilters = copySlice(o.DirectoryFilters)
 
-	copyAnalyzerMap := func(src map[string]Analyzer) map[string]Analyzer {
-		dst := make(map[string]Analyzer)
+	copyAnalyzerMap := func(src map[string]*Analyzer) map[string]*Analyzer {
+		dst := make(map[string]*Analyzer)
 		for k, v := range src {
 			dst[k] = v
 		}
@@ -666,7 +673,7 @@ func (o *Options) Clone() *Options {
 }
 
 func (o *Options) AddStaticcheckAnalyzer(a *analysis.Analyzer) {
-	o.StaticcheckAnalyzers[a.Name] = Analyzer{Analyzer: a, Enabled: true}
+	o.StaticcheckAnalyzers[a.Name] = &Analyzer{Analyzer: a, Enabled: true}
 }
 
 // enableAllExperiments turns on all of the experimental "off-by-default"
@@ -1045,7 +1052,7 @@ func (r *OptionResult) setString(s *string) {
 
 // EnabledAnalyzers returns all of the analyzers enabled for the given
 // snapshot.
-func EnabledAnalyzers(snapshot Snapshot) (analyzers []Analyzer) {
+func EnabledAnalyzers(snapshot Snapshot) (analyzers []*Analyzer) {
 	for _, a := range snapshot.View().Options().DefaultAnalyzers {
 		if a.IsEnabled(snapshot.View()) {
 			analyzers = append(analyzers, a)
@@ -1069,45 +1076,42 @@ func EnabledAnalyzers(snapshot Snapshot) (analyzers []Analyzer) {
 	return analyzers
 }
 
-func typeErrorAnalyzers() map[string]Analyzer {
-	return map[string]Analyzer{
+func typeErrorAnalyzers() map[string]*Analyzer {
+	return map[string]*Analyzer{
 		fillreturns.Analyzer.Name: {
-			Analyzer:       fillreturns.Analyzer,
-			FixesError:     fillreturns.FixesError,
-			HighConfidence: true,
-			Enabled:        true,
+			Analyzer:   fillreturns.Analyzer,
+			ActionKind: protocol.SourceFixAll,
+			Enabled:    true,
 		},
 		nonewvars.Analyzer.Name: {
-			Analyzer:   nonewvars.Analyzer,
-			FixesError: nonewvars.FixesError,
-			Enabled:    true,
+			Analyzer: nonewvars.Analyzer,
+			Enabled:  true,
 		},
 		noresultvalues.Analyzer.Name: {
-			Analyzer:   noresultvalues.Analyzer,
-			FixesError: noresultvalues.FixesError,
-			Enabled:    true,
+			Analyzer: noresultvalues.Analyzer,
+			Enabled:  true,
 		},
 		undeclaredname.Analyzer.Name: {
-			Analyzer:   undeclaredname.Analyzer,
-			FixesError: undeclaredname.FixesError,
-			Fix:        UndeclaredName,
-			Enabled:    true,
-		},
-	}
-}
-
-func convenienceAnalyzers() map[string]Analyzer {
-	return map[string]Analyzer{
-		fillstruct.Analyzer.Name: {
-			Analyzer: fillstruct.Analyzer,
-			Fix:      FillStruct,
+			Analyzer: undeclaredname.Analyzer,
+			Fix:      UndeclaredName,
 			Enabled:  true,
 		},
 	}
 }
 
-func defaultAnalyzers() map[string]Analyzer {
-	return map[string]Analyzer{
+func convenienceAnalyzers() map[string]*Analyzer {
+	return map[string]*Analyzer{
+		fillstruct.Analyzer.Name: {
+			Analyzer:   fillstruct.Analyzer,
+			Fix:        FillStruct,
+			Enabled:    true,
+			ActionKind: protocol.RefactorRewrite,
+		},
+	}
+}
+
+func defaultAnalyzers() map[string]*Analyzer {
+	return map[string]*Analyzer{
 		// The traditional vet suite:
 		asmdecl.Analyzer.Name:       {Analyzer: asmdecl.Analyzer, Enabled: true},
 		assign.Analyzer.Name:        {Analyzer: assign.Analyzer, Enabled: true},
@@ -1138,15 +1142,17 @@ func defaultAnalyzers() map[string]Analyzer {
 		atomicalign.Analyzer.Name:      {Analyzer: atomicalign.Analyzer, Enabled: true},
 		deepequalerrors.Analyzer.Name:  {Analyzer: deepequalerrors.Analyzer, Enabled: true},
 		fieldalignment.Analyzer.Name:   {Analyzer: fieldalignment.Analyzer, Enabled: false},
+		nilness.Analyzer.Name:          {Analyzer: nilness.Analyzer, Enabled: false},
 		shadow.Analyzer.Name:           {Analyzer: shadow.Analyzer, Enabled: false},
 		sortslice.Analyzer.Name:        {Analyzer: sortslice.Analyzer, Enabled: true},
 		testinggoroutine.Analyzer.Name: {Analyzer: testinggoroutine.Analyzer, Enabled: true},
 		unusedparams.Analyzer.Name:     {Analyzer: unusedparams.Analyzer, Enabled: false},
+		unusedwrite.Analyzer.Name:      {Analyzer: unusedwrite.Analyzer, Enabled: false},
 
 		// gofmt -s suite:
-		simplifycompositelit.Analyzer.Name: {Analyzer: simplifycompositelit.Analyzer, Enabled: true, HighConfidence: true},
-		simplifyrange.Analyzer.Name:        {Analyzer: simplifyrange.Analyzer, Enabled: true, HighConfidence: true},
-		simplifyslice.Analyzer.Name:        {Analyzer: simplifyslice.Analyzer, Enabled: true, HighConfidence: true},
+		simplifycompositelit.Analyzer.Name: {Analyzer: simplifycompositelit.Analyzer, Enabled: true, ActionKind: protocol.SourceFixAll},
+		simplifyrange.Analyzer.Name:        {Analyzer: simplifyrange.Analyzer, Enabled: true, ActionKind: protocol.SourceFixAll},
+		simplifyslice.Analyzer.Name:        {Analyzer: simplifyslice.Analyzer, Enabled: true, ActionKind: protocol.SourceFixAll},
 	}
 }
 

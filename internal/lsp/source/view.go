@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"go/scanner"
 	"go/token"
 	"go/types"
 	"io"
@@ -83,8 +84,12 @@ type Snapshot interface {
 	// string for the objects.
 	PosToDecl(ctx context.Context, pgf *ParsedGoFile) (map[token.Pos]ast.Decl, error)
 
+	// DiagnosePackage returns basic diagnostics, including list, parse, and type errors
+	// for pkg, grouped by file.
+	DiagnosePackage(ctx context.Context, pkg Package) (map[span.URI][]*Diagnostic, error)
+
 	// Analyze runs the analyses for the given package at this snapshot.
-	Analyze(ctx context.Context, pkgID string, analyzers ...*analysis.Analyzer) ([]*Diagnostic, error)
+	Analyze(ctx context.Context, pkgID string, analyzers []*Analyzer) ([]*Diagnostic, error)
 
 	// RunGoCommandPiped runs the given `go` command, writing its output
 	// to stdout and stderr. Verb, Args, and WorkingDir must be specified.
@@ -262,7 +267,7 @@ type ParsedGoFile struct {
 	// actual content of the file if we have fixed the AST.
 	Src      []byte
 	Mapper   *protocol.ColumnMapper
-	ParseErr error
+	ParseErr scanner.ErrorList
 }
 
 // A ParsedModule contains the results of parsing a go.mod file.
@@ -515,14 +520,9 @@ type Analyzer struct {
 	// the analyzer's suggested fixes through a Command, not a TextEdit.
 	Fix string
 
-	// If this is true, then we can apply the suggested fixes
-	// as part of a source.FixAll codeaction.
-	HighConfidence bool
-
-	// FixesError is only set for type-error analyzers.
-	// It reports true if the message provided indicates an error that could be
-	// fixed by the analyzer.
-	FixesError func(msg string) bool
+	// ActionKind is the kind of code action this analyzer produces. If
+	// unspecified the type defaults to quickfix.
+	ActionKind protocol.CodeActionKind
 }
 
 func (a Analyzer) IsEnabled(view View) bool {
@@ -547,7 +547,6 @@ type Package interface {
 	CompiledGoFiles() []*ParsedGoFile
 	File(uri span.URI) (*ParsedGoFile, error)
 	GetSyntax() []*ast.File
-	GetDiagnostics() []*Diagnostic
 	GetTypes() *types.Package
 	GetTypesInfo() *types.Info
 	GetTypesSizes() types.Sizes
@@ -557,6 +556,8 @@ type Package interface {
 	MissingDependencies() []string
 	Imports() []Package
 	Version() *module.Version
+	HasListOrParseErrors() bool
+	HasTypeErrors() bool
 }
 
 type CriticalError struct {
@@ -584,9 +585,10 @@ type Diagnostic struct {
 	Tags    []protocol.DiagnosticTag
 	Related []RelatedInformation
 
-	// SuggestedFixes is used to generate quick fixes for a CodeAction request.
-	// It isn't part of the Diagnostic type.
+	// Fields below are used internally to generate quick fixes. They aren't
+	// part of the LSP spec and don't leave the server.
 	SuggestedFixes []SuggestedFix
+	Analyzer       *Analyzer
 }
 
 type DiagnosticSource string

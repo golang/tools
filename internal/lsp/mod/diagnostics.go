@@ -92,11 +92,11 @@ func DiagnosticsForMod(ctx context.Context, snapshot source.Snapshot, fh source.
 	}
 	if err == nil {
 		for _, pkg := range wspkgs {
-			for _, diag := range pkg.GetDiagnostics() {
-				if diag.URI == fh.URI() {
-					diagnostics = append(diagnostics, diag)
-				}
+			pkgDiagnostics, err := snapshot.DiagnosePackage(ctx, pkg)
+			if err != nil {
+				return nil, err
 			}
+			diagnostics = append(diagnostics, pkgDiagnostics[fh.URI()]...)
 		}
 	}
 
