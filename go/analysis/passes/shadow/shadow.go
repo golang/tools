@@ -98,7 +98,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		case *ast.GenDecl:
 			checkShadowDecl(pass, spans, n)
 		case *ast.RangeStmt:
-			checkRangeStmt(pass, spans, n)
+			checkShadowRangeStmt(pass, spans, n)
 		}
 	})
 	return nil, nil
@@ -153,8 +153,8 @@ func growSpan(spans map[types.Object]span, obj types.Object, pos, end token.Pos)
 	spans[obj] = s
 }
 
-// checkShadowAssignment checks for shadowing in a for statement declaration.
-func checkRangeStmt(pass *analysis.Pass, spans map[types.Object]span, r *ast.RangeStmt) {
+// checkShadowRangeStmt checks for shadowing by declaration in a rnage statement
+func checkShadowRangeStmt(pass *analysis.Pass, spans map[types.Object]span, r *ast.RangeStmt) {
 	for _, expr := range []ast.Expr{r.Key, r.Value} {
 		ident, ok := expr.(*ast.Ident)
 		if !ok {
