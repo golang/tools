@@ -7,6 +7,7 @@
 package txtar
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"io/fs"
@@ -25,39 +26,33 @@ func (a *Archive) Open(name string) (fs.File, error) {
 
 	for _, f := range a.Files {
 		if f.Name == name {
-			return &openFile{f, 0}, nil
+			return newOpenFile(f), nil
 		}
 	}
 	var list []fileInfo
 	var dirs = make(map[string]bool)
+	prefix := name + "/"
 	if name == "." {
-		for _, f := range a.Files {
-			i := strings.Index(f.Name, "/")
+		prefix = ""
+	}
+
+	for _, f := range a.Files {
+		if strings.HasPrefix(f.Name, prefix) {
+			felem := f.Name[len(prefix):]
+			i := strings.Index(felem, "/")
 			if i < 0 {
 				list = append(list, fileInfo{f, 0444})
 			} else {
-				dirs[f.Name[:i]] = true
+				dirs[felem[:i]] = true
 			}
-		}
-	} else {
-		prefix := name + "/"
-		for _, f := range a.Files {
-			if strings.HasPrefix(f.Name, prefix) {
-				felem := f.Name[len(prefix):]
-				i := strings.Index(felem, "/")
-				if i < 0 {
-					list = append(list, fileInfo{f, 0444})
-				} else {
-					dirs[f.Name[len(prefix):len(prefix)+i]] = true
-				}
-			}
-		}
-		// If there are no children of the name,
-		// then the directory is treated as not existing.
-		if list == nil && len(dirs) == 0 {
-			return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 		}
 	}
+	// If there are no children of the name,
+	// then the directory is treated as not existing.
+	if len(list) == 0 && len(dirs) == 0 && name != "." {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+	}
+
 	for name := range dirs {
 		list = append(list, fileInfo{File{Name: name}, fs.ModeDir | 0444})
 	}
@@ -92,7 +87,11 @@ var _ fs.File = (*openFile)(nil)
 
 type openFile struct {
 	File
-	offset int64
+	*bytes.Reader
+}
+
+func newOpenFile(f File) *openFile {
+	return &openFile{f, bytes.NewReader(f.Data)}
 }
 
 func (o *openFile) Stat() (fs.FileInfo, error) { return fileInfo{o.File, 0444}, nil }
@@ -100,42 +99,15 @@ func (o *openFile) Stat() (fs.FileInfo, error) { return fileInfo{o.File, 0444}, 
 func (o *openFile) Close() error { return nil }
 
 func (f *openFile) Read(b []byte) (int, error) {
-	if f.offset >= int64(len(f.File.Data)) {
-		return 0, io.EOF
-	}
-	if f.offset < 0 {
-		return 0, &fs.PathError{Op: "read", Path: f.File.Name, Err: fs.ErrInvalid}
-	}
-	n := copy(b, f.File.Data[f.offset:])
-	f.offset += int64(n)
-	return n, nil
+	return f.Reader.Read(b)
 }
 
 func (f *openFile) Seek(offset int64, whence int) (int64, error) {
-	switch whence {
-	case 0:
-		// offset += 0
-	case 1:
-		offset += f.offset
-	case 2:
-		offset += int64(len(f.File.Data))
-	}
-	if offset < 0 || offset > int64(len(f.File.Data)) {
-		return 0, &fs.PathError{Op: "seek", Path: f.File.Name, Err: fs.ErrInvalid}
-	}
-	f.offset = offset
-	return offset, nil
+	return f.Reader.Seek(offset, whence)
 }
 
 func (f *openFile) ReadAt(b []byte, offset int64) (int, error) {
-	if offset < 0 || offset > int64(len(f.File.Data)) {
-		return 0, &fs.PathError{Op: "read", Path: f.File.Name, Err: fs.ErrInvalid}
-	}
-	n := copy(b, f.File.Data[offset:])
-	if n < len(b) {
-		return n, io.EOF
-	}
-	return n, nil
+	return f.Reader.ReadAt(b, offset)
 }
 
 var _ fs.FileInfo = fileInfo{}
