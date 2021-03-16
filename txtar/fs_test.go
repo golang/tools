@@ -5,11 +5,13 @@
 package txtar
 
 import (
+	"io"
 	"io/fs"
 	"sort"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"testing/iotest"
 )
 
 func TestFS(t *testing.T) {
@@ -60,14 +62,46 @@ three
 			}
 			for _, name := range files {
 				for _, f := range a.Files {
-					if f.Name == name {
-						b, err := fs.ReadFile(a, name)
-						if err != nil {
-							t.Fatal(err)
-						}
-						if string(b) != string(f.Data) {
-							t.Fatalf("mismatched contents for %q", name)
-						}
+					if f.Name != name {
+						continue
+					}
+					b, err := fs.ReadFile(a, name)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if string(b) != string(f.Data) {
+						t.Fatalf("mismatched contents for %q", name)
+					}
+					// Be careful with n cases, this open is O(n^3) deep
+					// Do iotest
+					fsfile, err := a.Open(name)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err = iotest.TestReader(fsfile, f.Data); err != nil {
+						t.Fatal(err)
+					}
+					if err = fsfile.Close(); err != nil {
+						t.Fatal(err)
+					}
+					// test io.Copy
+					fsfile, err = a.Open(name)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var buf strings.Builder
+					n, err := io.Copy(&buf, fsfile)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if n != int64(len(f.Data)) {
+						t.Fatalf("bad copy size: %d", n)
+					}
+					if buf.String() != string(f.Data) {
+						t.Fatalf("mismatched contents for io.Copy of %q", name)
+					}
+					if err = fsfile.Close(); err != nil {
+						t.Fatal(err)
 					}
 				}
 			}
