@@ -25,7 +25,9 @@ func (a *Archive) Open(name string) (fs.File, error) {
 	}
 
 	for _, f := range a.Files {
-		if f.Name == name {
+		// In case the txtar has weird filenames
+		cleanName := path.Clean(f.Name)
+		if name == cleanName {
 			return newOpenFile(f), nil
 		}
 	}
@@ -37,14 +39,16 @@ func (a *Archive) Open(name string) (fs.File, error) {
 	}
 
 	for _, f := range a.Files {
-		if strings.HasPrefix(f.Name, prefix) {
-			felem := f.Name[len(prefix):]
-			i := strings.Index(felem, "/")
-			if i < 0 {
-				list = append(list, fileInfo{f, 0444})
-			} else {
-				dirs[felem[:i]] = true
-			}
+		cleanName := path.Clean(f.Name)
+		if !strings.HasPrefix(cleanName, prefix) {
+			continue
+		}
+		felem := cleanName[len(prefix):]
+		i := strings.Index(felem, "/")
+		if i < 0 {
+			list = append(list, fileInfo{f, 0444})
+		} else {
+			dirs[felem[:i]] = true
 		}
 	}
 	// If there are no children of the name,
@@ -72,7 +76,7 @@ func (a *Archive) ReadFile(name string) ([]byte, error) {
 	}
 	prefix := name + "/"
 	for _, f := range a.Files {
-		if f.Name == name {
+		if cleanName := path.Clean(f.Name); name == cleanName {
 			return append(([]byte)(nil), f.Data...), nil
 		}
 		// It's a directory

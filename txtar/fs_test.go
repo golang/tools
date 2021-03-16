@@ -7,6 +7,7 @@ package txtar
 import (
 	"io"
 	"io/fs"
+	"path"
 	"sort"
 	"strings"
 	"testing"
@@ -52,6 +53,16 @@ three
 three
 `,
 			files: "one.txt 2/two.txt 2/3/three.txt 4/four.txt",
+		},
+		{
+			name: "unclean file names",
+			input: `
+-- 1/../one.txt --
+one
+-- 2/sub/../two.txt --
+two
+`,
+			files: "one.txt 2/two.txt",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -113,13 +124,16 @@ three
 			if in, out := normalized(a), normalized(a2); in != out {
 				t.Errorf("From round trip failed: %q != %q", in, out)
 			}
-
 		})
 	}
 }
 
 func normalized(a *Archive) string {
 	a.Comment = nil
+	for i := range a.Files {
+		f := &a.Files[i]
+		f.Name = path.Clean(f.Name)
+	}
 	sort.Slice(a.Files, func(i, j int) bool {
 		return a.Files[i].Name < a.Files[j].Name
 	})
