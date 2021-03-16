@@ -87,52 +87,25 @@ func (a *Archive) ReadFile(name string) ([]byte, error) {
 	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 }
 
-var _ fs.File = (*openFile)(nil)
+var (
+	_ fs.File           = (*openFile)(nil)
+	_ io.ReadSeekCloser = (*openFile)(nil)
+	_ io.ReaderAt       = (*openFile)(nil)
+	_ io.WriterTo       = (*openFile)(nil)
+)
 
 type openFile struct {
-	File
 	*bytes.Reader
+	fileInfo
 }
 
 func newOpenFile(f File) *openFile {
-	return &openFile{f, bytes.NewReader(f.Data)}
+	return &openFile{bytes.NewReader(f.Data), fileInfo{f, 0444}}
 }
 
-func (o *openFile) Stat() (fs.FileInfo, error) { return fileInfo{o.File, 0444}, nil }
+func (o *openFile) Stat() (fs.FileInfo, error) { return o.fileInfo, nil }
 
 func (o *openFile) Close() error { return nil }
-
-func (f *openFile) Read(b []byte) (int, error) {
-	return f.Reader.Read(b)
-}
-
-func (f *openFile) ReadAt(b []byte, offset int64) (int, error) {
-	return f.Reader.ReadAt(b, offset)
-}
-
-func (f *openFile) ReadByte() (byte, error) {
-	return f.Reader.ReadByte()
-}
-
-func (f *openFile) ReadRune() (ch rune, size int, err error) {
-	return f.Reader.ReadRune()
-}
-
-func (f *openFile) Seek(offset int64, whence int) (int64, error) {
-	return f.Reader.Seek(offset, whence)
-}
-
-func (f *openFile) UnreadByte() error {
-	return f.Reader.UnreadByte()
-}
-
-func (f *openFile) UnreadRune() error {
-	return f.Reader.UnreadRune()
-}
-
-func (f *openFile) WriteTo(w io.Writer) (n int64, err error) {
-	return f.Reader.WriteTo(w)
-}
 
 var _ fs.FileInfo = fileInfo{}
 
