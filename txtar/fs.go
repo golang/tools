@@ -31,8 +31,8 @@ func (a *Archive) Open(name string) (fs.File, error) {
 			return newOpenFile(f), nil
 		}
 	}
-	var list []fileInfo
-	var dirs = make(map[string]bool)
+	var entries []fileInfo
+	dirs := make(map[string]bool)
 	prefix := name + "/"
 	if name == "." {
 		prefix = ""
@@ -46,22 +46,23 @@ func (a *Archive) Open(name string) (fs.File, error) {
 		felem := cleanName[len(prefix):]
 		i := strings.Index(felem, "/")
 		if i < 0 {
-			list = append(list, fileInfo{f, 0444})
+			entries = append(entries, newFileInfo(f))
 		} else {
 			dirs[felem[:i]] = true
 		}
 	}
 	// If there are no children of the name,
-	// then the directory is treated as not existing.
-	if len(list) == 0 && len(dirs) == 0 && name != "." {
+	// then the directory is treated as not existing
+	// unless the directory is "."
+	if len(entries) == 0 && len(dirs) == 0 && name != "." {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 	}
 
 	for name := range dirs {
-		list = append(list, fileInfo{File{Name: name}, fs.ModeDir | 0555})
+		entries = append(entries, newDirInfo(name))
 	}
 
-	return &openDir{name, fileInfo{File{Name: name}, fs.ModeDir | 0555}, list, 0}, nil
+	return &openDir{newDirInfo(name), entries, 0}, nil
 }
 
 var _ fs.ReadFileFS = (*Archive)(nil)
@@ -114,6 +115,14 @@ type fileInfo struct {
 	m fs.FileMode
 }
 
+func newFileInfo(f File) fileInfo {
+	return fileInfo{f, 0444}
+}
+
+func newDirInfo(name string) fileInfo {
+	return fileInfo{File{Name: name}, fs.ModeDir | 0555}
+}
+
 func (f fileInfo) Name() string               { return path.Base(f.File.Name) }
 func (f fileInfo) Size() int64                { return int64(len(f.File.Data)) }
 func (f fileInfo) Mode() fs.FileMode          { return f.m }
@@ -124,32 +133,31 @@ func (f fileInfo) Sys() interface{}           { return f.File }
 func (f fileInfo) Info() (fs.FileInfo, error) { return f, nil }
 
 type openDir struct {
-	path string
-	fileInfo
-	entry  []fileInfo
-	offset int
+	dirInfo fileInfo
+	entries []fileInfo
+	offset  int
 }
 
-func (d *openDir) Stat() (fs.FileInfo, error) { return &d.fileInfo, nil }
+func (d *openDir) Stat() (fs.FileInfo, error) { return &d.dirInfo, nil }
 func (d *openDir) Close() error               { return nil }
 func (d *openDir) Read(b []byte) (int, error) {
-	return 0, &fs.PathError{Op: "read", Path: d.path, Err: errors.New("is a directory")}
+	return 0, &fs.PathError{Op: "read", Path: d.dirInfo.File.Name, Err: errors.New("is a directory")}
 }
 
 func (d *openDir) ReadDir(count int) ([]fs.DirEntry, error) {
-	n := len(d.entry) - d.offset
+	n := len(d.entries) - d.offset
 	if count > 0 && n > count {
 		n = count
 	}
 	if n == 0 && count > 0 {
 		return nil, io.EOF
 	}
-	list := make([]fs.DirEntry, n)
-	for i := range list {
-		list[i] = &d.entry[d.offset+i]
+	entries := make([]fs.DirEntry, n)
+	for i := range entries {
+		entries[i] = &d.entries[d.offset+i]
 	}
 	d.offset += n
-	return list, nil
+	return entries, nil
 }
 
 // From constructs an Archive with the contents of fsys and an empty Comment.
