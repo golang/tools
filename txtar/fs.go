@@ -54,10 +54,10 @@ func (a *Archive) Open(name string) (fs.File, error) {
 	}
 
 	for name := range dirs {
-		list = append(list, fileInfo{File{Name: name}, fs.ModeDir | 0444})
+		list = append(list, fileInfo{File{Name: name}, fs.ModeDir | 0555})
 	}
 
-	return &openDir{name, fileInfo{File{Name: name}, fs.ModeDir | 0444}, list, 0}, nil
+	return &openDir{name, fileInfo{File{Name: name}, fs.ModeDir | 0555}, list, 0}, nil
 }
 
 var _ fs.ReadFileFS = (*Archive)(nil)
