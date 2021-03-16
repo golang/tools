@@ -102,12 +102,32 @@ func (f *openFile) Read(b []byte) (int, error) {
 	return f.Reader.Read(b)
 }
 
+func (f *openFile) ReadAt(b []byte, offset int64) (int, error) {
+	return f.Reader.ReadAt(b, offset)
+}
+
+func (f *openFile) ReadByte() (byte, error) {
+	return f.Reader.ReadByte()
+}
+
+func (f *openFile) ReadRune() (ch rune, size int, err error) {
+	return f.Reader.ReadRune()
+}
+
 func (f *openFile) Seek(offset int64, whence int) (int64, error) {
 	return f.Reader.Seek(offset, whence)
 }
 
-func (f *openFile) ReadAt(b []byte, offset int64) (int, error) {
-	return f.Reader.ReadAt(b, offset)
+func (f *openFile) UnreadByte() error {
+	return f.Reader.UnreadByte()
+}
+
+func (f *openFile) UnreadRune() error {
+	return f.Reader.UnreadRune()
+}
+
+func (f *openFile) WriteTo(w io.Writer) (n int64, err error) {
+	return f.Reader.WriteTo(w)
 }
 
 var _ fs.FileInfo = fileInfo{}
