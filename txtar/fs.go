@@ -11,7 +11,6 @@ import (
 	"io"
 	"io/fs"
 	"path"
-	"sort"
 	"strings"
 	"time"
 )
@@ -35,7 +34,7 @@ func (a *Archive) Open(name string) (fs.File, error) {
 		for _, f := range a.Files {
 			i := strings.Index(f.Name, "/")
 			if i < 0 {
-				list = append(list, fileInfo{f, 0666})
+				list = append(list, fileInfo{f, 0444})
 			} else {
 				dirs[f.Name[:i]] = true
 			}
@@ -47,7 +46,7 @@ func (a *Archive) Open(name string) (fs.File, error) {
 				felem := f.Name[len(prefix):]
 				i := strings.Index(felem, "/")
 				if i < 0 {
-					list = append(list, fileInfo{f, 0666})
+					list = append(list, fileInfo{f, 0444})
 				} else {
 					dirs[f.Name[len(prefix):len(prefix)+i]] = true
 				}
@@ -60,13 +59,10 @@ func (a *Archive) Open(name string) (fs.File, error) {
 		}
 	}
 	for name := range dirs {
-		list = append(list, fileInfo{File{Name: name}, fs.ModeDir | 0666})
+		list = append(list, fileInfo{File{Name: name}, fs.ModeDir | 0444})
 	}
-	sort.Slice(list, func(i, j int) bool {
-		return list[i].File.Name < list[j].File.Name
-	})
 
-	return &openDir{name, fileInfo{File{Name: name}, fs.ModeDir | 0666}, list, 0}, nil
+	return &openDir{name, fileInfo{File{Name: name}, fs.ModeDir | 0444}, list, 0}, nil
 }
 
 var _ fs.ReadFileFS = (*Archive)(nil)
@@ -82,7 +78,7 @@ func (a *Archive) ReadFile(name string) ([]byte, error) {
 	prefix := name + "/"
 	for _, f := range a.Files {
 		if f.Name == name {
-			return f.Data, nil
+			return append(([]byte)(nil), f.Data...), nil
 		}
 		// It's a directory
 		if strings.HasPrefix(f.Name, prefix) {
@@ -99,7 +95,7 @@ type openFile struct {
 	offset int64
 }
 
-func (o *openFile) Stat() (fs.FileInfo, error) { return fileInfo{o.File, 0666}, nil }
+func (o *openFile) Stat() (fs.FileInfo, error) { return fileInfo{o.File, 0444}, nil }
 
 func (o *openFile) Close() error { return nil }
 
