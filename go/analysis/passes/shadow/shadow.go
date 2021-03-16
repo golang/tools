@@ -153,7 +153,7 @@ func growSpan(spans map[types.Object]span, obj types.Object, pos, end token.Pos)
 	spans[obj] = s
 }
 
-// checkShadowRangeStmt checks for shadowing by declaration in a rnage statement
+// checkShadowRangeStmt checks for shadowing by declaration in a range statement
 func checkShadowRangeStmt(pass *analysis.Pass, spans map[types.Object]span, r *ast.RangeStmt) {
 	for _, expr := range []ast.Expr{r.Key, r.Value} {
 		ident, ok := expr.(*ast.Ident)
