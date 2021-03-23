@@ -71,6 +71,10 @@ func f3() error {
 	if ch != nil { // want "tautological condition: non-nil != nil"
 		print(0)
 	}
+	slice := make([]string, 0)
+	if slice == nil { // want "impossible condition: non-nil == nil"
+		print(0)
+	}
 	return nil
 }
 

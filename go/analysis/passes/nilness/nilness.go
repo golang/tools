@@ -273,7 +273,8 @@ func nilnessOf(stack []fact, v ssa.Value) nilness {
 		*ssa.MakeClosure,
 		*ssa.MakeInterface,
 		*ssa.MakeMap,
-		*ssa.MakeSlice:
+		*ssa.MakeSlice,
+		*ssa.Slice:
 		return isnonnil
 	case *ssa.Const:
 		if v.IsNil() {
