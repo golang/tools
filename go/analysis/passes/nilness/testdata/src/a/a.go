@@ -71,10 +71,6 @@ func f3() error {
 	if ch != nil { // want "tautological condition: non-nil != nil"
 		print(0)
 	}
-	slice := make([]string, 0)
-	if slice == nil { // want "impossible condition: non-nil == nil"
-		print(0)
-	}
 	return nil
 }
 
@@ -134,7 +130,6 @@ func f9(x interface {
 	b()
 	c()
 }) {
-
 	x.b() // we don't catch this panic because we don't have any facts yet
 	xx := interface {
 		a()
@@ -156,6 +151,22 @@ func f9(x interface {
 	}
 	if unknown() {
 		panic(xxx) // want "panic with nil value"
+	}
+}
+
+func f10() {
+	s0 := make([]string, 0)
+	if s0 == nil { // want "impossible condition: non-nil == nil"
+		print(0)
+	}
+
+	var s1 []string
+	if s1 == nil { // want "tautological condition: nil == nil"
+		print(0)
+	}
+	s2 := s1[:]
+	if s2 == nil { // want "tautological condition: nil == nil"
+		print(0)
 	}
 }
 
