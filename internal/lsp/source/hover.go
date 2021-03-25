@@ -452,8 +452,11 @@ func extractFieldList(specType ast.Expr) *ast.FieldList {
 	case *ast.ArrayType:
 		return extractFieldList(t.Elt)
 	case *ast.MapType:
-		// TODO: should we try to extract a field list from the map key?
-		return extractFieldList(t.Value)
+		// Map value has a greater chance to be a struct
+		if fields := extractFieldList(t.Value); fields != nil {
+			return fields
+		}
+		return extractFieldList(t.Key)
 	case *ast.ChanType:
 		return extractFieldList(t.Value)
 	}

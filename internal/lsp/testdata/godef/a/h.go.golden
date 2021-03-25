@@ -70,6 +70,22 @@ field j int
 ```
 
 j field of nested struct
+-- mapStructKeyX-hover --
+```go
+field x []string
+```
+
+X key field
+-- mapStructKeyY-hover --
+```go
+field y string
+```
+-- mapStructValueX-hover --
+```go
+field x string
+```
+
+X value field
 -- openMethod-hover --
 ```go
 func (interface).open() error

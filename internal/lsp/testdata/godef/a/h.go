@@ -72,6 +72,28 @@ func _() {
 	_ = (<-complex[0].c)["0"][0].i   //@hover("i", complexI)
 	_ = (<-complex[0].c)["0"][0].i.j //@hover("j", complexJ)
 
+	var mapWithStructKey map[struct {
+		// X key field
+		x []string //@mark(mapStructKeyX, "x")
+	}]int
+	for k := range mapWithStructKey {
+		_ = k.x //@hover("x", mapStructKeyX)
+	}
+
+	var mapWithStructKeyAndValue map[struct {
+		// Y key field
+		y string //@mark(mapStructKeyY, "y")
+	}]struct {
+		// X value field
+		x string //@mark(mapStructValueX, "x")
+	}
+	for k, v := range mapWithStructKeyAndValue {
+		// TODO: we don't show docs for y field because both map key and value
+		// are structs. And in this case, we parse only map value
+		_ = k.y //@hover("y", mapStructKeyY)
+		_ = v.x //@hover("x", mapStructValueX)
+	}
+
 	var i []map[string]interface {
 		// open method comment
 		open() error //@mark(openMethod, "open")
