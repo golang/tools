@@ -276,10 +276,11 @@ func nilnessOf(stack []fact, v ssa.Value) nilness {
 		*ssa.MakeSlice:
 		return isnonnil
 	case *ssa.Slice:
-		if cons, ok := v.X.(*ssa.Const); ok && cons.IsNil() {
-			return isnil
+		// unwrap Slice values recursively, to detect if underlying
+		// values have any facts recorded or are otherwise known with regard to nilness.
+		if underlying := nilnessOf(stack, v.X); underlying != unknown {
+			return underlying
 		}
-		return isnonnil
 	case *ssa.Const:
 		if v.IsNil() {
 			return isnil

@@ -164,7 +164,7 @@ func f10() {
 	if s1 == nil { // want "tautological condition: nil == nil"
 		print(0)
 	}
-	s2 := s1[:]
+	s2 := s1[:][:]
 	if s2 == nil { // want "tautological condition: nil == nil"
 		print(0)
 	}
