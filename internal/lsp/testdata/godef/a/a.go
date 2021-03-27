@@ -97,7 +97,6 @@ func _() {
 		d string //@mark(declBlockD, "d"),hover("d", declBlockD)
 	)
 
-	// 4th type declaration block
 	type (
 		e struct { //@mark(declBlockE, "e"),hover("e", declBlockE)
 			f float64
