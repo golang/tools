@@ -77,26 +77,29 @@ func (c *completer) functionCallSnippet(name string, params []string) *snippet.B
 		}
 	}
 	snip := &snippet.Builder{}
-	snip.WriteText(name + "(")
+	snip.WriteText(name)
+	if c.opts.autoBraces {
+		snip.WriteText("(")
 
-	if c.opts.placeholders {
-		// A placeholder snippet turns "someFun<>" into "someFunc(<*i int*>, *s string*)".
-		for i, p := range params {
-			if i > 0 {
-				snip.WriteText(", ")
+		if c.opts.placeholders {
+			// A placeholder snippet turns "someFun<>" into "someFunc(<*i int*>, *s string*)".
+			for i, p := range params {
+				if i > 0 {
+					snip.WriteText(", ")
+				}
+				snip.WritePlaceholder(func(b *snippet.Builder) {
+					b.WriteText(p)
+				})
 			}
-			snip.WritePlaceholder(func(b *snippet.Builder) {
-				b.WriteText(p)
-			})
+		} else {
+			// A plain snippet turns "someFun<>" into "someFunc(<>)".
+			if len(params) > 0 {
+				snip.WritePlaceholder(nil)
+			}
 		}
-	} else {
-		// A plain snippet turns "someFun<>" into "someFunc(<>)".
-		if len(params) > 0 {
-			snip.WritePlaceholder(nil)
-		}
-	}
 
-	snip.WriteText(")")
+		snip.WriteText(")")
+	}
 
 	return snip
 }

@@ -12,6 +12,7 @@ like this:
 
 ```json5
   "gopls": {
+    "ui.completion.useAutoBraces": false,
     "ui.completion.usePlaceholders": true,
      ...
   },
@@ -175,6 +176,15 @@ semantic tokens to the client.
 Default: `false`.
 
 #### Completion
+
+##### **useAutoBraces** *bool*
+
+autoBraces enables automatically adding `()` to the end of function calls.
+Note that this makes gopls behave differently than most other language
+servers, so if you frequently switch between other languages, you will
+likely want to set this false.
+
+Default: `true`.
 
 ##### **usePlaceholders** *bool*
 
