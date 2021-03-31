@@ -66,5 +66,32 @@ symbols, including types, the parser, and the lexer, generated and
 referenced by yacc's generated code.  Setting it to distinct values
 allows multiple grammars to be placed in a single package.
 
+If the -t flag is specified, goyacc will generate a parser compatible
+with bison's token location tracking semantics.  For more details:
+
+https://www.gnu.org/software/bison/manual/html_node/Tracking-Locations.html
+https://www.gnu.org/software/bison/manual/html_node/Token-Locations.html
+
+If this flag is specified, the Lex and Error methods in the Lexer
+interface definition change as follows:
+
+type yyLexer interface {
+        Lex(lval *yySymType, loc *YYLTYPE) int
+        Error(loc *YYLTYPE, s string)
+}
+
+where YYLTYPE is defined as:
+
+type YYLTYPE struct {
+        firstLine   int
+        firstColumn int
+        lastLine    int
+        lastColumn  int
+}
+
+The token tracking structure is stashed inside the yySymType structure.
+This simplifies the changes, since yacc already has to copy the structure
+in question.
+
 */
 package main
