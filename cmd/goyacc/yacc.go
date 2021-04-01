@@ -1306,13 +1306,21 @@ loop:
 			brac++
 
 		case '@':
+			n := 0
 			c2 := getrune(finput)
-			if isdigit(c2) && c2 != '0' {
-				fmt.Fprintf(fcode, "%sDollar[%d].symLoc",
-					prefix, int(c2-'0'))
+			if isdigit(c2) {
+				for isdigit(c2) {
+					n = n*10 + int(c2-'0')
+					c2 = getrune(finput)
+				}
+				ungetrune(finput, c2)
+
+				if n < 1 || n >= max {
+					errorf("Illegal use of @%v", n)
+				}
+
+				fmt.Fprintf(fcode, "%sDollar[%d].symLoc", prefix, n)
 				continue loop
-			} else {
-				errorf("invalid @ syntax")
 			}
 
 		case '$':
