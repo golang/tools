@@ -66,32 +66,44 @@ symbols, including types, the parser, and the lexer, generated and
 referenced by yacc's generated code.  Setting it to distinct values
 allows multiple grammars to be placed in a single package.
 
-If the -t flag is specified, goyacc will generate a parser compatible
-with bison's token location tracking semantics.  For more details:
+goyacc will generate a parser compatible with bison's token location
+tracking semantics.  For more details:
 
 https://www.gnu.org/software/bison/manual/html_node/Tracking-Locations.html
 https://www.gnu.org/software/bison/manual/html_node/Token-Locations.html
 
-If this flag is specified, the Lex and Error methods in the Lexer
-interface definition change as follows:
+The generated Go parser will define two types:
 
-type yyLexer interface {
-        Lex(lval *yySymType, loc *YYLTYPE) int
-        Error(loc *YYLTYPE, s string)
+type yyPos struct {
+        line   int
+        column int
 }
 
-where YYLTYPE is defined as:
-
-type YYLTYPE struct {
-        firstLine   int
-        firstColumn int
-        lastLine    int
-        lastColumn  int
+type yySymLoc struct {
+        pos yyPos
+        end yyPos
 }
 
-The token tracking structure is stashed inside the yySymType structure.
-This simplifies the changes, since yacc already has to copy the structure
-in question.
+The pos field refers to the beginning of the token in question,
+and the end field to the end it.  To avoid having to change the
+definition of the lexer's Error method, just before the parser calls
+the Error method, it will set a global variable, yyErrLoc to the
+address of the problematic token's yySymLoc structure.  Since the
+lexer provides location information to the parser, and in turn is
+provided it, if needed, it's up to the lexer to do so consistently.
+
+As in the above-cited BISON web pages, goyacc will support the use
+of @N, where N is an integer from 1 to 9, and will be expanded in
+the generated parser to the appropriate variable. If an action rule
+wants to print a specific error message, the lexer should be written
+to provide one to the parser.
+
+If goyacc was invoked with an explicit prefix, via the '-p' switch,
+the above types and variables will have the appropriate prefix.
+
+The token tracking structure yySymLoc is stored inside the yySymType
+structure.  This simplifies the changes, since goyacc already has to
+copy the structure in question.
 
 */
 package main
