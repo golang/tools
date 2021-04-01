@@ -1307,12 +1307,12 @@ loop:
 
 		case '@':
 			c2 := getrune(finput)
-			if isdigit(c2) {
+			if isdigit(c2) && c2 != '0' {
 				fmt.Fprintf(fcode, "%sDollar[%d].symLoc",
 					prefix, int(c2-'0'))
 				continue loop
 			} else {
-				errorf("unexpected @")
+				errorf("invalid @ syntax")
 			}
 
 		case '$':
