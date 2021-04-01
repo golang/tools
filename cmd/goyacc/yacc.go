@@ -1321,6 +1321,11 @@ loop:
 
 				fmt.Fprintf(fcode, "%sDollar[%d].symLoc", prefix, n)
 				continue loop
+			} else {
+				ungetrune(finput, c2)
+				if gettok() != NUMBER {
+					errorf("@ must be followed by number")
+				}
 			}
 
 		case '$':
