@@ -22,10 +22,18 @@ func Highlight(ctx context.Context, snapshot Snapshot, fh FileHandle, pos protoc
 	ctx, done := event.Start(ctx, "source.Highlight")
 	defer done()
 
-	pkg, pgf, err := GetParsedFile(ctx, snapshot, fh, WidestPackage)
+	// Don't use GetParsedFile because it extracts a package with TypecheckWorkspace
+	// mode, but we want to support std and 3rd-party packages (see golang/go#43511).
+	// So, we reuse the content of GetParsedFile with TypecheckFull mode.
+	pkg, err := snapshot.PackageForFile(ctx, fh.URI(), TypecheckFull, WidestPackage)
+	if err != nil {
+		return nil, errors.Errorf("getting package for Highlight: %w", err)
+	}
+	pgf, err := pkg.File(fh.URI())
 	if err != nil {
 		return nil, errors.Errorf("getting file for Highlight: %w", err)
 	}
+
 	spn, err := pgf.Mapper.PointSpan(pos)
 	if err != nil {
 		return nil, err
