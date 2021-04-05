@@ -1183,6 +1183,19 @@ import "math/rand"
 var _, _ = rand.Read, rand.NewZipf
 `,
 	},
+	{
+		name: "unused_duplicate_imports_remove",
+		in: `package main
+
+import (
+	"errors"
+
+	"github.com/pkg/errors"
+)
+`,
+		out: `package main
+`,
+	},
 }
 
 func TestSimpleCases(t *testing.T) {
