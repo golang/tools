@@ -236,6 +236,10 @@ func (v *View) Folder() span.URI {
 	return v.folder
 }
 
+func (v *View) TempWorkspace() span.URI {
+	return v.tempWorkspace
+}
+
 func (v *View) Options() *source.Options {
 	v.optionsMu.Lock()
 	defer v.optionsMu.Unlock()
@@ -456,11 +460,6 @@ func (v *View) shutdown(ctx context.Context) {
 	go v.snapshot.generation.Destroy()
 	v.snapshotMu.Unlock()
 	v.importsState.destroy()
-	if v.tempWorkspace != "" {
-		if err := os.RemoveAll(v.tempWorkspace.Filename()); err != nil {
-			event.Error(ctx, "removing temp workspace", err)
-		}
-	}
 }
 
 func (v *View) Session() *Session {
@@ -528,24 +527,30 @@ func (s *snapshot) initialize(ctx context.Context, firstAttempt bool) {
 		return
 	}
 	s.initializeOnce.Do(func() {
-		defer func() {
-			s.initializeOnce = nil
-			if firstAttempt {
-				close(s.view.initialWorkspaceLoad)
-			}
-		}()
+		s.loadWorkspace(ctx, firstAttempt)
+	})
+}
 
-		// If we have multiple modules, we need to load them by paths.
-		var scopes []interface{}
-		var modDiagnostics []*source.Diagnostic
-		addError := func(uri span.URI, err error) {
-			modDiagnostics = append(modDiagnostics, &source.Diagnostic{
-				URI:      uri,
-				Severity: protocol.SeverityError,
-				Source:   source.ListError,
-				Message:  err.Error(),
-			})
+func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) {
+	defer func() {
+		s.initializeOnce = nil
+		if firstAttempt {
+			close(s.view.initialWorkspaceLoad)
 		}
+	}()
+
+	// If we have multiple modules, we need to load them by paths.
+	var scopes []interface{}
+	var modDiagnostics []*source.Diagnostic
+	addError := func(uri span.URI, err error) {
+		modDiagnostics = append(modDiagnostics, &source.Diagnostic{
+			URI:      uri,
+			Severity: protocol.SeverityError,
+			Source:   source.ListError,
+			Message:  err.Error(),
+		})
+	}
+	if len(s.workspace.getActiveModFiles()) > 0 {
 		for modURI := range s.workspace.getActiveModFiles() {
 			fh, err := s.GetFile(ctx, modURI)
 			if err != nil {
@@ -564,31 +569,41 @@ func (s *snapshot) initialize(ctx context.Context, firstAttempt bool) {
 			path := parsed.File.Module.Mod.Path
 			scopes = append(scopes, moduleLoadScope(path))
 		}
-		if len(scopes) == 0 {
-			scopes = append(scopes, viewLoadScope("LOAD_VIEW"))
+	} else {
+		scopes = append(scopes, viewLoadScope("LOAD_VIEW"))
+	}
+	var err error
+	if len(scopes) > 0 {
+		err = s.load(ctx, firstAttempt, append(scopes, packagePath("builtin"))...)
+	}
+	if ctx.Err() != nil {
+		return
+	}
+
+	var criticalErr *source.CriticalError
+	if err != nil {
+		event.Error(ctx, "initial workspace load failed", err)
+		extractedDiags, _ := s.extractGoCommandErrors(ctx, err.Error())
+		criticalErr = &source.CriticalError{
+			MainError: err,
+			DiagList:  append(modDiagnostics, extractedDiags...),
 		}
-		err := s.load(ctx, firstAttempt, append(scopes, packagePath("builtin"))...)
-		if ctx.Err() != nil {
-			return
+	} else if len(modDiagnostics) == 1 {
+		criticalErr = &source.CriticalError{
+			MainError: fmt.Errorf(modDiagnostics[0].Message),
+			DiagList:  modDiagnostics,
 		}
-		if err != nil {
-			event.Error(ctx, "initial workspace load failed", err)
-			extractedDiags, _ := s.extractGoCommandErrors(ctx, err.Error())
-			s.initializedErr = &source.CriticalError{
-				MainError: err,
-				DiagList:  append(modDiagnostics, extractedDiags...),
-			}
-		} else if len(modDiagnostics) != 0 {
-			s.initializedErr = &source.CriticalError{
-				MainError: fmt.Errorf("error loading module names"),
-				DiagList:  modDiagnostics,
-			}
-		} else {
-			// Clear out the initialization error, in case it had been set
-			// previously.
-			s.initializedErr = nil
+	} else if len(modDiagnostics) > 1 {
+		criticalErr = &source.CriticalError{
+			MainError: fmt.Errorf("error loading module names"),
+			DiagList:  modDiagnostics,
 		}
-	})
+	}
+
+	// Lock the snapshot when setting the initialized error.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.initializedErr = criticalErr
 }
 
 // invalidateContent invalidates the content of a Go file,
@@ -614,7 +629,9 @@ func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]*file
 	v.snapshot, workspaceChanged = oldSnapshot.clone(ctx, v.baseCtx, changes, forceReloadMetadata)
 	if workspaceChanged && v.tempWorkspace != "" {
 		snap := v.snapshot
+		release := snap.generation.Acquire(ctx)
 		go func() {
+			defer release()
 			wsdir, err := snap.getWorkspaceDir(ctx)
 			if err != nil {
 				event.Error(ctx, "getting workspace dir", err)
@@ -745,7 +762,7 @@ func findWorkspaceRoot(ctx context.Context, folder span.URI, fs source.FileSourc
 	}
 
 	// ...else we should check if there's exactly one nested module.
-	all, err := findModules(ctx, folder, excludePath, 2)
+	all, err := findModules(folder, excludePath, 2)
 	if err == errExhausted {
 		// Fall-back behavior: if we don't find any modules after searching 10000
 		// files, assume there are none.

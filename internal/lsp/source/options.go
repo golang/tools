@@ -129,8 +129,9 @@ func DefaultOptions() *Options {
 						SymbolStyle:    DynamicSymbols,
 					},
 					CompletionOptions: CompletionOptions{
-						Matcher:          Fuzzy,
-						CompletionBudget: 100 * time.Millisecond,
+						Matcher:                        Fuzzy,
+						CompletionBudget:               100 * time.Millisecond,
+						ExperimentalPostfixCompletions: false,
 					},
 					Codelenses: map[string]bool{
 						string(command.Generate):          true,
@@ -293,6 +294,10 @@ type CompletionOptions struct {
 	// Matcher sets the algorithm that is used when calculating completion
 	// candidates.
 	Matcher Matcher `status:"advanced"`
+
+	// ExperimentalPostfixCompletions enables artifical method snippets
+	// such as "someSlice.sort!".
+	ExperimentalPostfixCompletions bool `status:"experimental"`
 }
 
 type DocumentationOptions struct {
@@ -681,6 +686,7 @@ func (o *Options) AddStaticcheckAnalyzer(a *analysis.Analyzer) {
 // should be enabled in enableAllExperimentMaps.
 func (o *Options) enableAllExperiments() {
 	o.SemanticTokens = true
+	o.ExperimentalPostfixCompletions = true
 }
 
 func (o *Options) enableAllExperimentMaps() {
@@ -851,6 +857,9 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 
 	case "expandWorkspaceToModule":
 		result.setBool(&o.ExpandWorkspaceToModule)
+
+	case "experimentalPostfixCompletions":
+		result.setBool(&o.ExperimentalPostfixCompletions)
 
 	case "experimentalWorkspaceModule":
 		result.setBool(&o.ExperimentalWorkspaceModule)
@@ -1080,7 +1089,7 @@ func typeErrorAnalyzers() map[string]*Analyzer {
 	return map[string]*Analyzer{
 		fillreturns.Analyzer.Name: {
 			Analyzer:   fillreturns.Analyzer,
-			ActionKind: protocol.SourceFixAll,
+			ActionKind: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
 			Enabled:    true,
 		},
 		nonewvars.Analyzer.Name: {
@@ -1105,7 +1114,7 @@ func convenienceAnalyzers() map[string]*Analyzer {
 			Analyzer:   fillstruct.Analyzer,
 			Fix:        FillStruct,
 			Enabled:    true,
-			ActionKind: protocol.RefactorRewrite,
+			ActionKind: []protocol.CodeActionKind{protocol.RefactorRewrite},
 		},
 	}
 }
@@ -1150,9 +1159,21 @@ func defaultAnalyzers() map[string]*Analyzer {
 		unusedwrite.Analyzer.Name:      {Analyzer: unusedwrite.Analyzer, Enabled: false},
 
 		// gofmt -s suite:
-		simplifycompositelit.Analyzer.Name: {Analyzer: simplifycompositelit.Analyzer, Enabled: true, ActionKind: protocol.SourceFixAll},
-		simplifyrange.Analyzer.Name:        {Analyzer: simplifyrange.Analyzer, Enabled: true, ActionKind: protocol.SourceFixAll},
-		simplifyslice.Analyzer.Name:        {Analyzer: simplifyslice.Analyzer, Enabled: true, ActionKind: protocol.SourceFixAll},
+		simplifycompositelit.Analyzer.Name: {
+			Analyzer:   simplifycompositelit.Analyzer,
+			Enabled:    true,
+			ActionKind: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+		},
+		simplifyrange.Analyzer.Name: {
+			Analyzer:   simplifyrange.Analyzer,
+			Enabled:    true,
+			ActionKind: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+		},
+		simplifyslice.Analyzer.Name: {
+			Analyzer:   simplifyslice.Analyzer,
+			Enabled:    true,
+			ActionKind: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+		},
 	}
 }
 

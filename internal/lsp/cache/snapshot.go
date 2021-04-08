@@ -200,14 +200,10 @@ func (s *snapshot) config(ctx context.Context, inv *gocommand.Invocation) *packa
 	verboseOutput := s.view.options.VerboseOutput
 	s.view.optionsMu.Unlock()
 
-	// Forcibly disable GOPACKAGESDRIVER. It's incompatible with the
-	// packagesinternal APIs we use, and we really only support the go command
-	// anyway.
-	env := append(append([]string{}, inv.Env...), "GOPACKAGESDRIVER=off")
 	cfg := &packages.Config{
 		Context:    ctx,
 		Dir:        inv.WorkingDir,
-		Env:        env,
+		Env:        inv.Env,
 		BuildFlags: inv.BuildFlags,
 		Mode: packages.NeedName |
 			packages.NeedFiles |
@@ -761,18 +757,34 @@ func (s *snapshot) knownFilesInDir(ctx context.Context, dir span.URI) []span.URI
 }
 
 func (s *snapshot) WorkspacePackages(ctx context.Context) ([]source.Package, error) {
-	if err := s.awaitLoaded(ctx); err != nil {
+	phs, err := s.workspacePackageHandles(ctx)
+	if err != nil {
 		return nil, err
 	}
 	var pkgs []source.Package
-	for _, pkgID := range s.workspacePackageIDs() {
-		pkg, err := s.checkedPackage(ctx, pkgID, s.workspaceParseMode(pkgID))
+	for _, ph := range phs {
+		pkg, err := ph.check(ctx, s)
 		if err != nil {
 			return nil, err
 		}
 		pkgs = append(pkgs, pkg)
 	}
 	return pkgs, nil
+}
+
+func (s *snapshot) workspacePackageHandles(ctx context.Context) ([]*packageHandle, error) {
+	if err := s.awaitLoaded(ctx); err != nil {
+		return nil, err
+	}
+	var phs []*packageHandle
+	for _, pkgID := range s.workspacePackageIDs() {
+		ph, err := s.buildPackageHandle(ctx, pkgID, s.workspaceParseMode(pkgID))
+		if err != nil {
+			return nil, err
+		}
+		phs = append(phs, ph)
+	}
+	return phs, nil
 }
 
 func (s *snapshot) KnownPackages(ctx context.Context) ([]source.Package, error) {
@@ -1085,7 +1097,7 @@ func shouldShowAdHocPackagesWarning(snapshot source.Snapshot, pkgs []source.Pack
 
 func containsCommandLineArguments(pkgs []source.Package) bool {
 	for _, pkg := range pkgs {
-		if strings.Contains(pkg.ID(), "command-line-arguments") {
+		if isCommandLineArguments(pkg.ID()) {
 			return true
 		}
 	}
@@ -1095,6 +1107,16 @@ func containsCommandLineArguments(pkgs []source.Package) bool {
 func (s *snapshot) awaitLoadedAllErrors(ctx context.Context) *source.CriticalError {
 	// Do not return results until the snapshot's view has been initialized.
 	s.AwaitInitialized(ctx)
+
+	// TODO(rstambler): Should we be more careful about returning the
+	// initialization error? Is it possible for the initialization error to be
+	// corrected without a successful reinitialization?
+	s.mu.Lock()
+	initializedErr := s.initializedErr
+	s.mu.Unlock()
+	if initializedErr != nil {
+		return initializedErr
+	}
 
 	if ctx.Err() != nil {
 		return &source.CriticalError{MainError: ctx.Err()}
@@ -1114,10 +1136,7 @@ func (s *snapshot) awaitLoadedAllErrors(ctx context.Context) *source.CriticalErr
 			DiagList:  diags,
 		}
 	}
-	// TODO(rstambler): Should we be more careful about returning the
-	// initialization error? Is it possible for the initialization error to be
-	// corrected without a successful reinitialization?
-	return s.initializedErr
+	return nil
 }
 
 func (s *snapshot) AwaitInitialized(ctx context.Context) {
@@ -1173,11 +1192,27 @@ func (s *snapshot) reloadOrphanedFiles(ctx context.Context) error {
 	// that exist only in overlays. As a workaround, we search all of the files
 	// available in the snapshot and reload their metadata individually using a
 	// file= query if the metadata is unavailable.
-	scopes := s.orphanedFileScopes()
+	files := s.orphanedFiles()
+
+	// Files without a valid package declaration can't be loaded. Don't try.
+	var scopes []interface{}
+	for _, file := range files {
+		pgf, err := s.ParseGo(ctx, file, source.ParseHeader)
+		if err != nil {
+			continue
+		}
+		if !pgf.File.Package.IsValid() {
+			continue
+		}
+		scopes = append(scopes, fileURI(file.URI()))
+	}
+
 	if len(scopes) == 0 {
 		return nil
 	}
 
+	// The regtests match this exact log message, keep them in sync.
+	event.Log(ctx, "reloadOrphanedFiles reloading", tag.Query.Of(scopes))
 	err := s.load(ctx, false, scopes...)
 
 	// If we failed to load some files, i.e. they have no metadata,
@@ -1203,11 +1238,11 @@ func (s *snapshot) reloadOrphanedFiles(ctx context.Context) error {
 	return nil
 }
 
-func (s *snapshot) orphanedFileScopes() []interface{} {
+func (s *snapshot) orphanedFiles() []source.VersionedFileHandle {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	scopeSet := make(map[span.URI]struct{})
+	var files []source.VersionedFileHandle
 	for uri, fh := range s.files {
 		// Don't try to reload metadata for go.mod files.
 		if fh.Kind() != source.Go {
@@ -1228,14 +1263,10 @@ func (s *snapshot) orphanedFileScopes() []interface{} {
 			continue
 		}
 		if s.getMetadataForURILocked(uri) == nil {
-			scopeSet[uri] = struct{}{}
+			files = append(files, fh)
 		}
 	}
-	var scopes []interface{}
-	for uri := range scopeSet {
-		scopes = append(scopes, fileURI(uri))
-	}
-	return scopes
+	return files
 }
 
 func contains(views []*View, view *View) bool {
@@ -1485,14 +1516,17 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 	}
 	// Copy the URI to package ID mappings, skipping only those URIs whose
 	// metadata will be reloaded in future calls to load.
-copyIDs:
 	for k, ids := range s.ids {
+		var newIDs []packageID
 		for _, id := range ids {
 			if invalidateMetadata, ok := transitiveIDs[id]; invalidateMetadata && ok {
-				continue copyIDs
+				continue
 			}
+			newIDs = append(newIDs, id)
 		}
-		result.ids[k] = ids
+		if len(newIDs) != 0 {
+			result.ids[k] = newIDs
+		}
 	}
 	// Copy the set of initially loaded packages.
 	for id, pkgPath := range s.workspacePackages {
@@ -1767,7 +1801,7 @@ func (s *snapshot) buildBuiltinPackage(ctx context.Context, goFiles []string) er
 // BuildGoplsMod generates a go.mod file for all modules in the workspace. It
 // bypasses any existing gopls.mod.
 func BuildGoplsMod(ctx context.Context, root span.URI, s source.Snapshot) (*modfile.File, error) {
-	allModules, err := findModules(ctx, root, pathExcludedByFilterFunc(s.View().Options()), 0)
+	allModules, err := findModules(root, pathExcludedByFilterFunc(s.View().Options()), 0)
 	if err != nil {
 		return nil, err
 	}

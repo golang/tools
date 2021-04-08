@@ -394,11 +394,15 @@ func (e *encoded) ident(x *ast.Ident) {
 		// nothing to map it to
 	case *types.Nil:
 		// nil is a predeclared identifier
-		e.token(x.Pos(), len("nil"), tokVariable, []string{"readonly"})
+		e.token(x.Pos(), len("nil"), tokVariable, []string{"readonly", "defaultLibrary"})
 	case *types.PkgName:
 		e.token(x.Pos(), len(x.Name), tokNamespace, nil)
 	case *types.TypeName:
-		e.token(x.Pos(), len(x.String()), tokType, nil)
+		var mods []string
+		if _, ok := y.Type().(*types.Basic); ok {
+			mods = []string{"defaultLibrary"}
+		}
+		e.token(x.Pos(), len(x.String()), tokType, mods)
 	case *types.Var:
 		e.token(x.Pos(), len(x.Name), tokVariable, nil)
 	default:
@@ -447,6 +451,15 @@ func (e *encoded) definitionFor(x *ast.Ident) (tokenType, []string) {
 		case *ast.InterfaceType:
 			return tokMember, mods
 		case *ast.TypeSpec:
+			// GenDecl/Typespec/FuncType/FieldList/Field/Ident
+			// (type A func(b uint64)) (err error)
+			// b and err should not be tokType, but tokVaraible
+			// and in GenDecl/TpeSpec/StructType/FieldList/Field/Ident
+			// (type A struct{b uint64})
+			fldm := e.stack[len(e.stack)-2]
+			if _, ok := fldm.(*ast.Field); ok {
+				return tokVariable, mods
+			}
 			return tokType, mods
 		}
 	}

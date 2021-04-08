@@ -55,6 +55,26 @@ func (ph *packageHandle) packageKey() packageKey {
 	}
 }
 
+func (ph *packageHandle) imports(ctx context.Context, s source.Snapshot) (result []string) {
+	for _, pgh := range ph.goFiles {
+		f, err := s.ParseGo(ctx, pgh.file, source.ParseHeader)
+		if err != nil {
+			continue
+		}
+		seen := map[string]struct{}{}
+		for _, impSpec := range f.File.Imports {
+			imp := strings.Trim(impSpec.Path.Value, `"`)
+			if _, ok := seen[imp]; !ok {
+				seen[imp] = struct{}{}
+				result = append(result, imp)
+			}
+		}
+	}
+
+	sort.Strings(result)
+	return result
+}
+
 // packageData contains the data produced by type-checking a package.
 type packageData struct {
 	pkg *pkg
@@ -162,7 +182,7 @@ func (s *snapshot) buildKey(ctx context.Context, id packageID, mode source.Parse
 		depKeys = append(depKeys, depHandle.key)
 	}
 	experimentalKey := s.View().Options().ExperimentalPackageCacheKey
-	ph.key = checkPackageKey(ctx, ph.m.id, compiledGoFiles, m.config, depKeys, mode, experimentalKey)
+	ph.key = checkPackageKey(ph.m.id, compiledGoFiles, m.config, depKeys, mode, experimentalKey)
 	return ph, deps, nil
 }
 
@@ -174,7 +194,7 @@ func (s *snapshot) workspaceParseMode(id packageID) source.ParseMode {
 	}
 }
 
-func checkPackageKey(ctx context.Context, id packageID, pghs []*parseGoHandle, cfg *packages.Config, deps []packageHandleKey, mode source.ParseMode, experimentalKey bool) packageHandleKey {
+func checkPackageKey(id packageID, pghs []*parseGoHandle, cfg *packages.Config, deps []packageHandleKey, mode source.ParseMode, experimentalKey bool) packageHandleKey {
 	b := bytes.NewBuffer(nil)
 	b.WriteString(string(id))
 	if !experimentalKey {
@@ -381,7 +401,7 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 		// Try to attach error messages to the file as much as possible.
 		var found bool
 		for _, e := range m.errors {
-			srcDiags, err := goPackagesErrorDiagnostics(ctx, snapshot, pkg, e)
+			srcDiags, err := goPackagesErrorDiagnostics(snapshot, pkg, e)
 			if err != nil {
 				continue
 			}
@@ -443,7 +463,7 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 	if len(m.errors) != 0 {
 		pkg.hasListOrParseErrors = true
 		for _, e := range m.errors {
-			diags, err := goPackagesErrorDiagnostics(ctx, snapshot, pkg, e)
+			diags, err := goPackagesErrorDiagnostics(snapshot, pkg, e)
 			if err != nil {
 				event.Error(ctx, "unable to compute positions for list errors", err, tag.Package.Of(pkg.ID()))
 				continue
@@ -468,7 +488,7 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 	if len(parseErrors) != 0 {
 		pkg.hasListOrParseErrors = true
 		for _, e := range parseErrors {
-			diags, err := parseErrorDiagnostics(ctx, snapshot, pkg, e)
+			diags, err := parseErrorDiagnostics(snapshot, pkg, e)
 			if err != nil {
 				event.Error(ctx, "unable to compute positions for parse errors", err, tag.Package.Of(pkg.ID()))
 				continue
@@ -486,7 +506,7 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 
 	for _, e := range expandErrors(typeErrors, snapshot.View().Options().RelatedInformationSupported) {
 		pkg.hasTypeErrors = true
-		diags, err := typeErrorDiagnostics(ctx, snapshot, pkg, e)
+		diags, err := typeErrorDiagnostics(snapshot, pkg, e)
 		if err != nil {
 			event.Error(ctx, "unable to compute positions for type errors", err, tag.Package.Of(pkg.ID()))
 			continue
@@ -764,7 +784,7 @@ func isValidImport(pkgPath, importPkgPath packagePath) bool {
 	if i == -1 {
 		return true
 	}
-	if pkgPath == "command-line-arguments" {
+	if isCommandLineArguments(string(pkgPath)) {
 		return true
 	}
 	return strings.HasPrefix(string(pkgPath), string(importPkgPath[:i]))

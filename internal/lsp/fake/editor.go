@@ -275,6 +275,8 @@ func (e *Editor) initialize(ctx context.Context, workspaceFolders []string) erro
 		params.ProcessID = int32(os.Getpid())
 	}
 
+	params.Capabilities.TextDocument.Completion.CompletionItem.SnippetSupport = true
+
 	// This is a bit of a hack, since the fake editor doesn't actually support
 	// watching changed files that match a specific glob pattern. However, the
 	// editor does send didChangeWatchedFiles notifications, so set this to
@@ -1039,7 +1041,7 @@ func (e *Editor) References(ctx context.Context, path string, pos Pos) ([]protoc
 }
 
 // CodeAction executes a codeAction request on the server.
-func (e *Editor) CodeAction(ctx context.Context, path string, rng *protocol.Range) ([]protocol.CodeAction, error) {
+func (e *Editor) CodeAction(ctx context.Context, path string, rng *protocol.Range, diagnostics []protocol.Diagnostic) ([]protocol.CodeAction, error) {
 	if e.Server == nil {
 		return nil, nil
 	}
@@ -1051,6 +1053,9 @@ func (e *Editor) CodeAction(ctx context.Context, path string, rng *protocol.Rang
 	}
 	params := &protocol.CodeActionParams{
 		TextDocument: e.textDocumentIdentifier(path),
+		Context: protocol.CodeActionContext{
+			Diagnostics: diagnostics,
+		},
 	}
 	if rng != nil {
 		params.Range = *rng
@@ -1088,4 +1093,18 @@ func (e *Editor) DocumentLink(ctx context.Context, path string) ([]protocol.Docu
 	params := &protocol.DocumentLinkParams{}
 	params.TextDocument.URI = e.sandbox.Workdir.URI(path)
 	return e.Server.DocumentLink(ctx, params)
+}
+
+func (e *Editor) DocumentHighlight(ctx context.Context, path string, pos Pos) ([]protocol.DocumentHighlight, error) {
+	if e.Server == nil {
+		return nil, nil
+	}
+	if err := e.checkBufferPosition(path, pos); err != nil {
+		return nil, err
+	}
+	params := &protocol.DocumentHighlightParams{}
+	params.TextDocument.URI = e.sandbox.Workdir.URI(path)
+	params.Position = pos.ToProtocolPosition()
+
+	return e.Server.DocumentHighlight(ctx, params)
 }

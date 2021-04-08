@@ -222,6 +222,19 @@ var GeneratedAPIJSON = &APIJSON{
 				Hierarchy: "ui.completion",
 			},
 			{
+				Name: "experimentalPostfixCompletions",
+				Type: "bool",
+				Doc:  "experimentalPostfixCompletions enables artifical method snippets\nsuch as \"someSlice.sort!\".\n",
+				EnumKeys: EnumKeys{
+					ValueType: "",
+					Keys:      nil,
+				},
+				EnumValues: nil,
+				Default:    "false",
+				Status:     "experimental",
+				Hierarchy:  "ui.completion",
+			},
+			{
 				Name: "importShortcut",
 				Type: "enum",
 				Doc:  "importShortcut specifies whether import statements should link to\ndocumentation or go to definitions.\n",
@@ -789,6 +802,12 @@ var GeneratedAPIJSON = &APIJSON{
 			Title:   "Run go mod vendor",
 			Doc:     "Runs `go mod vendor` for a module.",
 			ArgDoc:  "{\n\t// The file URI.\n\t\"URI\": string,\n}",
+		},
+		{
+			Command: "gopls.workspace_metadata",
+			Title:   "",
+			Doc:     "",
+			ArgDoc:  "",
 		},
 	},
 	Lenses: []*LensJSON{
