@@ -326,7 +326,7 @@ func (w *workspace) invalidate(ctx context.Context, changes map[span.URI]*fileCh
 	// here.
 	if result.moduleSource != goplsModWorkspace {
 		for uri, change := range changes {
-			if !isGoMod(uri) || !source.InDir(string(result.root), string(uri)) {
+			if !isGoMod(uri) || !source.InDir(result.root.Filename(), uri.Filename()) {
 				continue
 			}
 			changed = true
