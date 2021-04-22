@@ -1279,7 +1279,7 @@ func contains(views []*View, view *View) bool {
 }
 
 func inVendor(uri span.URI) bool {
-	toSlash := filepath.ToSlash(uri.Filename())
+	toSlash := filepath.ToSlash(string(uri))
 	if !strings.Contains(toSlash, "/vendor/") {
 		return false
 	}
@@ -1548,7 +1548,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 				// For internal tests, we need _test files, not just the normal
 				// ones. External tests only have _test files, but we can check
 				// them anyway.
-				if m.forTest != "" && !strings.HasSuffix(uri.Filename(), "_test.go") {
+				if m.forTest != "" && !strings.HasSuffix(string(uri), "_test.go") {
 					continue
 				}
 				if _, ok := result.files[uri]; ok {
