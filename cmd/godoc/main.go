@@ -190,11 +190,13 @@ func main() {
 		defer rc.Close() // be nice (e.g., -writeIndex mode)
 		fs.Bind("/", zipfs.New(rc, *zipfile), *goroot, vfs.BindReplace)
 	}
+
+	// use default static templates but allow to overload (partially) from a given templateDir
+	fs.Bind("/lib/godoc", mapfs.New(static.Files), "/", vfs.BindReplace)
 	if *templateDir != "" {
 		fs.Bind("/lib/godoc", vfs.OS(*templateDir), "/", vfs.BindBefore)
 		fs.Bind("/favicon.ico", vfs.OS(*templateDir), "/favicon.ico", vfs.BindReplace)
 	} else {
-		fs.Bind("/lib/godoc", mapfs.New(static.Files), "/", vfs.BindReplace)
 		fs.Bind("/favicon.ico", mapfs.New(static.Files), "/favicon.ico", vfs.BindReplace)
 	}
 
