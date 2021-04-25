@@ -329,9 +329,27 @@ func typeToObject(typ types.Type) types.Object {
 		return typeToObject(typ.Elem())
 	case *types.Chan:
 		return typeToObject(typ.Elem())
-	default:
-		return nil
+	case *types.Signature:
+		results := typ.Results()
+
+		switch results.Len() {
+		case 1:
+			return typeToObject(results.At(0).Type()) // func() X
+
+		case 2:
+			switch res := results.At(1).Type().(type) {
+			case *types.Basic:
+				if res.Kind() == types.Bool {
+					return typeToObject(results.At(0).Type()) // func() (X, bool)
+				}
+			case *types.Named:
+				if hasErrorType(res.Obj()) {
+					return typeToObject(results.At(0).Type()) // func() (X, error)
+				}
+			}
+		}
 	}
+	return nil
 }
 
 func hasErrorType(obj types.Object) bool {

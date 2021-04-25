@@ -36,3 +36,26 @@ func _() {
 	s.x.xx.field1 //@typdef("field1", Struct)
 	s.x.xx.field2 //@typdef("field2", Int)
 }
+
+func A() Int { return 0 }
+
+func B() (Int, bool) { return 0, false }
+
+func C() (Struct, error) { return Struct{}, nil }
+
+func _() {
+	A() //@typdef("A", Int)
+	B() //@typdef("B", Int)
+	C() //@typdef("C", Struct)
+
+	f := func() Int { return 0 }
+	f() //@typdef("f", Int)
+}
+
+// https://github.com/golang/go/issues/38589#issuecomment-620350922
+func _() {
+	type myFunc func(int) Int //@item(myFunc, "myFunc", "func", "type")
+
+	var foo myFunc
+	bar := foo() //@typdef("foo", myFunc)
+}
