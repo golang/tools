@@ -1279,13 +1279,12 @@ func contains(views []*View, view *View) bool {
 }
 
 func inVendor(uri span.URI) bool {
-	toSlash := filepath.ToSlash(string(uri))
-	if !strings.Contains(toSlash, "/vendor/") {
+	if !strings.Contains(string(uri), "/vendor/") {
 		return false
 	}
 	// Only packages in _subdirectories_ of /vendor/ are considered vendored
 	// (/vendor/a/foo.go is vendored, /vendor/foo.go is not).
-	split := strings.Split(toSlash, "/vendor/")
+	split := strings.Split(string(uri), "/vendor/")
 	if len(split) < 2 {
 		return false
 	}
