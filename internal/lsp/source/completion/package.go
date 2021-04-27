@@ -224,10 +224,6 @@ func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI s
 
 	// Always try to suggest a main package
 	defer func() {
-		if err != nil {
-			// Just in case
-			return
-		}
 		if score := float64(matcher.Score("main")); score > 0 {
 			packages = append(packages, toCandidate("main", score*lowScore))
 		}
