@@ -228,6 +228,7 @@ Must be one of:
 * `"CaseInsensitive"`
 * `"CaseSensitive"`
 * `"Fuzzy"`
+
 Default: `"Fuzzy"`.
 
 ##### **experimentalPostfixCompletions** *bool*
@@ -319,6 +320,7 @@ can do more manipulation of these fields.\
 This should only be used by clients that support this behavior.
 
 * `"SynopsisDocumentation"`
+
 Default: `"FullDocumentation"`.
 
 ##### **linkTarget** *string*
@@ -351,6 +353,7 @@ Must be one of:
 * `"Both"`
 * `"Definition"`
 * `"Link"`
+
 Default: `"Both"`.
 
 ##### **symbolMatcher** *enum*
@@ -364,6 +367,7 @@ Must be one of:
 * `"CaseInsensitive"`
 * `"CaseSensitive"`
 * `"Fuzzy"`
+
 Default: `"Fuzzy"`.
 
 ##### **symbolStyle** *enum*
