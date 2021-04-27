@@ -344,6 +344,11 @@ func convertDirNameToPkgName(dirName string) string {
 	return buf.String()
 }
 
+// isLetter and isDigit allow only ASCII characters because
+// "Each path element is a non-empty string made of up ASCII letters,
+// ASCII digits, and limited ASCII punctuation"
+// (see https://golang.org/ref/mod#go-mod-file-ident).
+
 func isLetter(ch rune) bool {
 	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z'
 }
