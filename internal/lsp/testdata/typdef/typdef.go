@@ -37,16 +37,20 @@ func _() {
 	s.x.xx.field2 //@typdef("field2", Int)
 }
 
-func A() Int { return 0 }
-
-func B() (Int, bool) { return 0, false }
-
-func C() (Struct, error) { return Struct{}, nil }
+func F1() Int                              { return 0 }
+func F2() (Int, float64)                   { return 0, 0 }
+func F3() (Struct, int, bool, error)       { return Struct{}, 0, false, nil }
+func F4() (**int, Int, bool, *error)       { return nil, Struct{}, false, nil }
+func F5() (int, float64, error, Struct)    { return 0, 0, nil, Struct{} }
+func F6() (int, float64, ***Struct, error) { return 0, 0, nil, nil }
 
 func _() {
-	A() //@typdef("A", Int)
-	B() //@typdef("B", Int)
-	C() //@typdef("C", Struct)
+	F1() //@typdef("F1", Int)
+	F2() //@typdef("F2", Int)
+	F3() //@typdef("F3", Struct)
+	F4() //@typdef("F4", Int)
+	F5() //@typdef("F5", Struct)
+	F6() //@typdef("F6", Struct)
 
 	f := func() Int { return 0 }
 	f() //@typdef("f", Int)
