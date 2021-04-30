@@ -349,8 +349,9 @@ func typeToObject(typ types.Type) types.Object {
 			res = obj
 		}
 		return res
+	default:
+		return nil
 	}
-	return nil
 }
 
 func hasErrorType(obj types.Object) bool {
