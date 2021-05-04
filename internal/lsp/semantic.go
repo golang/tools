@@ -22,6 +22,9 @@ import (
 	errors "golang.org/x/xerrors"
 )
 
+// reject full semantic token requests for large files
+const maxFullFileSize int = 100000
+
 func (s *Server) semanticTokensFull(ctx context.Context, p *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
 	ret, err := s.computeSemanticTokens(ctx, p.TextDocument, nil)
 	return ret, err
@@ -67,6 +70,11 @@ func (s *Server) computeSemanticTokens(ctx context.Context, td protocol.TextDocu
 	}
 	if pgf.ParseErr != nil {
 		return nil, pgf.ParseErr
+	}
+	if rng == nil && len(pgf.Src) > maxFullFileSize {
+		err := fmt.Errorf("semantic tokens: file %s too large for full (%d>%d)",
+			td.URI.SpanURI().Filename(), len(pgf.Src), maxFullFileSize)
+		return nil, err
 	}
 	e := &encoded{
 		ctx:      ctx,
@@ -419,6 +427,18 @@ func (e *encoded) ident(x *ast.Ident) {
 	}
 }
 
+func isDeprecated(n *ast.CommentGroup) bool {
+	if n == nil {
+		return false
+	}
+	for _, c := range n.List {
+		if strings.HasPrefix(c.Text, "// Deprecated") {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *encoded) definitionFor(x *ast.Ident) (tokenType, []string) {
 	mods := []string{"definition"}
 	for i := len(e.stack) - 1; i >= 0; i-- {
@@ -430,6 +450,9 @@ func (e *encoded) definitionFor(x *ast.Ident) (tokenType, []string) {
 			}
 			return "variable", mods
 		case *ast.GenDecl:
+			if isDeprecated(y.Doc) {
+				mods = append(mods, "deprecated")
+			}
 			if y.Tok == token.CONST {
 				mods = append(mods, "readonly")
 			}
@@ -437,6 +460,9 @@ func (e *encoded) definitionFor(x *ast.Ident) (tokenType, []string) {
 		case *ast.FuncDecl:
 			// If x is immediately under a FuncDecl, it is a function or method
 			if i == len(e.stack)-2 {
+				if isDeprecated(y.Doc) {
+					mods = append(mods, "deprecated")
+				}
 				if y.Recv != nil {
 					return tokMember, mods
 				}
@@ -491,7 +517,7 @@ func (e *encoded) init() error {
 	}
 	span, err := e.pgf.Mapper.RangeSpan(*e.rng)
 	if err != nil {
-		return errors.Errorf("range span error for %s", e.pgf.File.Name)
+		return errors.Errorf("range span (%v) error for %s", err, e.pgf.File.Name)
 	}
 	e.end = e.start + token.Pos(span.End().Offset())
 	e.start += token.Pos(span.Start().Offset())

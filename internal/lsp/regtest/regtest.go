@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/internal/lsp/cmd"
+	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/tool"
 )
@@ -83,8 +84,11 @@ func DefaultModes() Mode {
 }
 
 // Main sets up and tears down the shared regtest state.
-func Main(m *testing.M) {
+func Main(m *testing.M, hook func(*source.Options)) {
 	testenv.ExitIfSmallMachine()
+
+	// Disable GOPACKAGESDRIVER, as it can cause spurious test failures.
+	os.Setenv("GOPACKAGESDRIVER", "off")
 
 	flag.Parse()
 	if os.Getenv("_GOPLS_TEST_BINARY_RUN_AS_GOPLS") == "true" {
@@ -97,6 +101,7 @@ func Main(m *testing.M) {
 		Timeout:                  *regtestTimeout,
 		PrintGoroutinesOnFailure: *printGoroutinesOnFailure,
 		SkipCleanup:              *skipCleanup,
+		OptionsHook:              hook,
 	}
 	if *runSubprocessTests {
 		goplsPath := *goplsBinaryPath

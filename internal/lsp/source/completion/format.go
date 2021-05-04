@@ -150,6 +150,11 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 		prefix = typeName + "(" + prefix
 		suffix = ")"
 	}
+
+	if cand.takeSlice {
+		suffix += "[:]"
+	}
+
 	// Add variadic "..." only if snippets if enabled or cand is not a function
 	if cand.variadic && (c.opts.snippets || !cand.expandFuncCall) {
 		suffix += "..."
@@ -237,6 +242,14 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 	item.Documentation = hover.Synopsis
 	if c.opts.fullDocumentation {
 		item.Documentation = hover.FullDocumentation
+	}
+	// The desired pattern is `^// Deprecated`, but the prefix has been removed
+	if strings.HasPrefix(hover.FullDocumentation, "Deprecated") {
+		if c.snapshot.View().Options().CompletionTags {
+			item.Tags = []protocol.CompletionItemTag{protocol.ComplDeprecated}
+		} else if c.snapshot.View().Options().CompletionDeprecated {
+			item.Deprecated = true
+		}
 	}
 
 	return item, nil

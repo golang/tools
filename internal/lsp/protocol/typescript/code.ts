@@ -135,6 +135,7 @@ function setReceives() {
   receives.set('workspace/applyEdit', 'client');
   receives.set('textDocument/publishDiagnostics', 'client');
   receives.set('window/workDoneProgress/create', 'client');
+  receives.set('window/showDocument', 'client');
   receives.set('$/progress', 'client');
   // a small check
   receives.forEach((_, k) => {
@@ -806,6 +807,8 @@ function goType(n: ts.TypeNode | undefined, nm: string): string {
   if (!n) throw new Error(`goType undefined for ${nm}`);
   if (n.getText() == 'T') return 'interface{}';  // should check it's generic
   if (ts.isTypeReferenceNode(n)) {
+    // DocumentDiagnosticReportKind.unChanged (or .new) value is "new" or "unChanged"
+    if (n.getText().startsWith('DocumentDiagnostic')) return 'string';
     switch (n.getText()) {
       case 'integer': return 'int32';
       case 'uinteger': return 'uint32';
@@ -901,8 +904,12 @@ function goUnionType(n: ts.UnionTypeNode, nm: string): string {
       if (a == 'TypeLiteral' && nm == 'TextDocumentContentChangeEvent') {
         return `${goType(n.types[0], nm)}`;
       }
-      console.log(`911 ${n.types[1].getText()} ${loc(n.types[1])}`);
-      throw new Error(`912 ${nm}: a:${a} b:${b} ${n.getText()} ${loc(n)}`);
+      if (a == 'TypeLiteral' && b === 'TypeLiteral') {
+        // DocumentDiagnosticReport
+        // the first one includes the second one
+        return `${goType(n.types[0], '9d')}`;
+      }
+      throw new Error(`911 ${nm}: a:${a}/${goType(n.types[0], '9a')} b:${b}/${goType(n.types[1], '9b')} ${loc(n)}`);
     }
     case 3: {
       const aa = strKind(n.types[0]);
@@ -916,18 +923,20 @@ function goUnionType(n: ts.UnionTypeNode, nm: string): string {
       if (nm == 'textDocument/documentSymbol') {
         return `[]interface{} ${help}`;
       }
-      if (aa == 'TypeReference' && bb == 'ArrayType' && cc == 'NullKeyword') {
+      if (aa == 'TypeReference' && bb == 'ArrayType' && (cc == 'NullKeyword' || cc === 'LiteralType')) {
         return `${goType(n.types[0], 'd')} ${help}`;
       }
       if (aa == 'TypeReference' && bb == aa && cc == 'ArrayType') {
         // should check that this is Hover.Contents
         return `${goType(n.types[0], 'e')} ${help}`;
       }
-      if (aa == 'ArrayType' && bb == 'TypeReference' && cc == 'NullKeyword') {
+      if (aa == 'ArrayType' && bb == 'TypeReference' && (cc == 'NullKeyword' || cc === 'LiteralType')) {
         // check this is nm == 'textDocument/completion'
         return `${goType(n.types[1], 'f')} ${help}`;
       }
       if (aa == 'LiteralType' && bb == aa && cc == aa) return `string ${help}`;
+      // keep this for diagnosing unexpected interface{} results
+      // console.log(`931, interface{} for ${aa}/${goType(n.types[0], 'g')},${bb}/${goType(n.types[1], 'h')},${cc}/${goType(n.types[2], 'i')} ${nm}`);
       break;
     }
     case 4:
@@ -1039,6 +1048,7 @@ function isStructType(te: ts.TypeNode): boolean {
     case 'TypeReference': {
       if (!ts.isTypeReferenceNode(te)) throw new Error(`1047 impossible ${strKind(te)}`);
       const d = seenTypes.get(goName(te.typeName.getText()));
+      if (d === undefined) return false;
       if (d.properties.length > 1) return true;
       // alias or interface with a single property (The alias is Uinteger, which we ignore later)
       if (d.alias) return false;
@@ -1206,6 +1216,14 @@ function goReq(side: side, m: string) {
     if err := json.Unmarshal(r.Params(), &params); err != nil {
       return true, sendParseError(ctx, reply, err)
     }`;
+    if (a === 'ParamInitialize') {
+      case1 = `var params ${a}
+    if err := json.Unmarshal(r.Params(), &params); err != nil {
+      if _, ok := err.(*json.UnmarshalTypeError); !ok {
+        return true, sendParseError(ctx, reply, err)
+      }
+    }`;
+    }
   }
   const arg2 = a == '' ? '' : ', &params';
   // if case2 is not explicitly typed string, typescript makes it a union of strings
@@ -1253,8 +1271,7 @@ function methodName(m: string): string {
     x = prefix + suffix;
   }
   if (seenNames.has(x)) {
-    // Resolve, ResolveCodeLens, ResolveDocumentLink
-    if (!x.startsWith('Resolve')) throw new Error(`expected Resolve, not ${x}`);
+    // various Resolve and Diagnostic
     x += m[0].toUpperCase() + m.substring(1, i);
   }
   seenNames.add(x);

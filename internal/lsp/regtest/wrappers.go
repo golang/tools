@@ -156,7 +156,7 @@ func (e *Env) SaveBufferWithoutActions(name string) {
 }
 
 // GoToDefinition goes to definition in the editor, calling t.Fatal on any
-// error.
+// error. It returns the path and position of the resulting jump.
 func (e *Env) GoToDefinition(name string, pos fake.Pos) (string, fake.Pos) {
 	e.T.Helper()
 	n, p, err := e.Editor.GoToDefinition(e.Ctx, name, pos)
@@ -197,6 +197,14 @@ func (e *Env) OrganizeImports(name string) {
 func (e *Env) ApplyQuickFixes(path string, diagnostics []protocol.Diagnostic) {
 	e.T.Helper()
 	if err := e.Editor.ApplyQuickFixes(e.Ctx, path, nil, diagnostics); err != nil {
+		e.T.Fatal(err)
+	}
+}
+
+// ApplyCodeAction applies the given code action.
+func (e *Env) ApplyCodeAction(action protocol.CodeAction) {
+	e.T.Helper()
+	if err := e.Editor.ApplyCodeAction(e.Ctx, action); err != nil {
 		e.T.Fatal(err)
 	}
 }

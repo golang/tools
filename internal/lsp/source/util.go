@@ -221,13 +221,25 @@ func FormatNode(fset *token.FileSet, n ast.Node) string {
 
 // Deref returns a pointer's element type, traversing as many levels as needed.
 // Otherwise it returns typ.
+//
+// It can return a pointer type for cyclic types (see golang/go#45510).
 func Deref(typ types.Type) types.Type {
+	var seen map[types.Type]struct{}
 	for {
 		p, ok := typ.Underlying().(*types.Pointer)
 		if !ok {
 			return typ
 		}
+		if _, ok := seen[p.Elem()]; ok {
+			return typ
+		}
+
 		typ = p.Elem()
+
+		if seen == nil {
+			seen = make(map[types.Type]struct{})
+		}
+		seen[typ] = struct{}{}
 	}
 }
 

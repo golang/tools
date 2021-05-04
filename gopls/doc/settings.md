@@ -63,11 +63,32 @@ the last filter that applies to a path controls whether it is included.
 The path prefix can be empty, so an initial `-` excludes everything.
 
 Examples:
+
 Exclude node_modules: `-node_modules`
+
 Include only project_a: `-` (exclude everything), `+project_a`
+
 Include only project_a, but not node_modules inside it: `-`, `+project_a`, `-project_a/node_modules`
 
 Default: `[]`.
+
+#### **memoryMode** *enum*
+
+**This setting is experimental and may be deleted.**
+
+memoryMode controls the tradeoff `gopls` makes between memory usage and
+correctness.
+
+Values other than `Normal` are untested and may break in surprising ways.
+
+Must be one of:
+
+* `"DegradeClosed"`: In DegradeClosed mode, `gopls` will collect less information about
+packages without open files. As a result, features like Find
+References and Rename will miss results in such packages.
+
+* `"Normal"`
+Default: `"Normal"`.
 
 #### **expandWorkspaceToModule** *bool*
 

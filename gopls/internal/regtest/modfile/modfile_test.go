@@ -9,7 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	. "golang.org/x/tools/gopls/internal/regtest"
+	"golang.org/x/tools/gopls/internal/hooks"
+	. "golang.org/x/tools/internal/lsp/regtest"
 
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/tests"
@@ -17,7 +18,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	Main(m)
+	Main(m, hooks.Options)
 }
 
 const workspaceProxy = `
@@ -553,8 +554,12 @@ func main() {
 					ReadDiagnostics("a/go.mod", &d),
 				),
 			)
-			env.ApplyQuickFixes("a/go.mod", d.Diagnostics)
-			env.SaveBuffer("a/go.mod") // Save to trigger diagnostics.
+			qfs := env.GetQuickFixes("a/go.mod", d.Diagnostics)
+			if len(qfs) == 0 {
+				t.Fatalf("got 0 code actions to fix %v, wanted at least 1", d.Diagnostics)
+			}
+			env.ApplyCodeAction(qfs[0]) // Arbitrarily pick a single fix to apply. Applying all of them seems to cause trouble in this particular test.
+			env.SaveBuffer("a/go.mod")  // Save to trigger diagnostics.
 			env.Await(
 				EmptyDiagnostics("a/go.mod"),
 				env.DiagnosticAtRegexp("a/main.go", "x = "),

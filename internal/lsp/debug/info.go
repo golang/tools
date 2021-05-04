@@ -26,7 +26,7 @@ const (
 )
 
 // Version is a manually-updated mechanism for tracking versions.
-const Version = "v0.6.10"
+const Version = "v0.6.11"
 
 // ServerVersion is the format used by gopls to report its version to the
 // client. This format is structured so that the client can parse it easily.
@@ -100,7 +100,7 @@ func (i *Instance) PrintServerInfo(ctx context.Context, w io.Writer) {
 		fmt.Fprintf(w, "LogFile: %s\n", i.Logfile)
 		fmt.Fprintf(w, "Working directory: %s\n", i.Workdir)
 		fmt.Fprintf(w, "Address: %s\n", i.ServerAddress)
-		fmt.Fprintf(w, "Debug address: %s\n", i.DebugAddress)
+		fmt.Fprintf(w, "Debug address: %s\n", i.DebugAddress())
 	})
 	PrintVersionInfo(ctx, w, true, HTML)
 	section(w, HTML, "Command Line", func() {

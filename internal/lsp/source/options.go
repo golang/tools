@@ -107,6 +107,7 @@ func DefaultOptions() *Options {
 				BuildOptions: BuildOptions{
 					ExpandWorkspaceToModule:     true,
 					ExperimentalPackageCacheKey: true,
+					MemoryMode:                  ModeNormal,
 				},
 				UIOptions: UIOptions{
 					DiagnosticOptions: DiagnosticOptions{
@@ -187,6 +188,8 @@ type ClientOptions struct {
 	SemanticTypes                     []string
 	SemanticMods                      []string
 	RelatedInformationSupported       bool
+	CompletionTags                    bool
+	CompletionDeprecated              bool
 }
 
 // ServerOptions holds LSP-specific configuration that is provided by the
@@ -213,10 +216,19 @@ type BuildOptions struct {
 	// The path prefix can be empty, so an initial `-` excludes everything.
 	//
 	// Examples:
+	//
 	// Exclude node_modules: `-node_modules`
+	//
 	// Include only project_a: `-` (exclude everything), `+project_a`
+	//
 	// Include only project_a, but not node_modules inside it: `-`, `+project_a`, `-project_a/node_modules`
 	DirectoryFilters []string
+
+	// MemoryMode controls the tradeoff `gopls` makes between memory usage and
+	// correctness.
+	//
+	// Values other than `Normal` are untested and may break in surprising ways.
+	MemoryMode MemoryMode `status:"experimental"`
 
 	// ExpandWorkspaceToModule instructs `gopls` to adjust the scope of the
 	// workspace to find the best available module root. `gopls` first looks for
@@ -547,6 +559,16 @@ const (
 	Structured HoverKind = "Structured"
 )
 
+type MemoryMode string
+
+const (
+	ModeNormal MemoryMode = "Normal"
+	// In DegradeClosed mode, `gopls` will collect less information about
+	// packages without open files. As a result, features like Find
+	// References and Rename will miss results in such packages.
+	ModeDegradeClosed MemoryMode = "DegradeClosed"
+)
+
 type OptionResults []OptionResult
 
 type OptionResult struct {
@@ -627,6 +649,12 @@ func (o *Options) ForClientCapabilities(caps protocol.ClientCapabilities) {
 
 	// Check if the client supports diagnostic related information.
 	o.RelatedInformationSupported = caps.TextDocument.PublishDiagnostics.RelatedInformation
+	// Check if the client completion support incliudes tags (preferred) or deprecation
+	if caps.TextDocument.Completion.CompletionItem.TagSupport.ValueSet != nil {
+		o.CompletionTags = true
+	} else if caps.TextDocument.Completion.CompletionItem.DeprecatedSupport {
+		o.CompletionDeprecated = true
+	}
 }
 
 func (o *Options) Clone() *Options {
@@ -677,8 +705,8 @@ func (o *Options) Clone() *Options {
 	return result
 }
 
-func (o *Options) AddStaticcheckAnalyzer(a *analysis.Analyzer) {
-	o.StaticcheckAnalyzers[a.Name] = &Analyzer{Analyzer: a, Enabled: true}
+func (o *Options) AddStaticcheckAnalyzer(a *analysis.Analyzer, enabled bool) {
+	o.StaticcheckAnalyzers[a.Name] = &Analyzer{Analyzer: a, Enabled: enabled}
 }
 
 // enableAllExperiments turns on all of the experimental "off-by-default"
@@ -747,9 +775,16 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 				result.errorf("invalid filter %q, must start with + or -", filter)
 				return result
 			}
-			filters = append(filters, filepath.FromSlash(filter))
+			filters = append(filters, strings.TrimRight(filepath.FromSlash(filter), "/"))
 		}
 		o.DirectoryFilters = filters
+	case "memoryMode":
+		if s, ok := result.asOneOf(
+			string(ModeNormal),
+			string(ModeDegradeClosed),
+		); ok {
+			o.MemoryMode = MemoryMode(s)
+		}
 	case "completionDocumentation":
 		result.setBool(&o.CompletionDocumentation)
 	case "usePlaceholders":

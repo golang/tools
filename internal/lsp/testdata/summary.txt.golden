@@ -1,8 +1,8 @@
 -- summary --
 CallHierarchyCount = 2
 CodeLensCount = 5
-CompletionsCount = 262
-CompletionSnippetCount = 94
+CompletionsCount = 263
+CompletionSnippetCount = 95
 UnimportedCompletionsCount = 5
 DeepCompletionsCount = 5
 FuzzyCompletionsCount = 8
@@ -14,8 +14,8 @@ FormatCount = 6
 ImportCount = 8
 SemanticTokenCount = 3
 SuggestedFixCount = 40
-FunctionExtractionCount = 13
-DefinitionsCount = 90
+FunctionExtractionCount = 18
+DefinitionsCount = 95
 TypeDefinitionsCount = 10
 HighlightsCount = 69
 ReferencesCount = 25

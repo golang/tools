@@ -45,7 +45,9 @@ type CompletionItem struct {
 	// The insert text does not contain snippets.
 	InsertText string
 
-	Kind protocol.CompletionItemKind
+	Kind       protocol.CompletionItemKind
+	Tags       []protocol.CompletionItemTag
+	Deprecated bool // Deprecated, prefer Tags if available
 
 	// An optional array of additional TextEdits that are applied when
 	// selecting this completion.
@@ -385,6 +387,9 @@ type candidate struct {
 	// dereference is a count of how many times to dereference the candidate obj.
 	// For example, dereference=2 turns "foo" into "**foo" when formatting.
 	dereference int
+
+	// takeSlice is true if obj is an array that should be converted to a slice.
+	takeSlice bool
 
 	// variadic is true if this candidate fills a variadic param and
 	// needs "..." appended.
@@ -1424,6 +1429,13 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 	if c.surrounding != nil {
 		prefix = c.surrounding.Prefix()
 	}
+
+	// Don't suggest unimported packages if we have absolutely nothing
+	// to go on.
+	if prefix == "" {
+		return nil
+	}
+
 	count := 0
 
 	known, err := c.snapshot.CachedImportPaths(ctx)
@@ -1448,8 +1460,15 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 			return err
 		}
 	}
+
 	sort.Slice(paths, func(i, j int) bool {
-		return relevances[paths[i]] > relevances[paths[j]]
+		if relevances[paths[i]] != relevances[paths[j]] {
+			return relevances[paths[i]] > relevances[paths[j]]
+		}
+
+		// Fall back to lexical sort to keep truncated set of candidates
+		// in a consistent order.
+		return paths[i] < paths[j]
 	})
 
 	for _, path := range paths {
@@ -1468,7 +1487,8 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 			return nil
 		}
 		c.deepState.enqueue(candidate{
-			obj:   types.NewPkgName(0, nil, pkg.GetTypes().Name(), pkg.GetTypes()),
+			// Pass an empty *types.Package to disable deep completions.
+			obj:   types.NewPkgName(0, nil, pkg.GetTypes().Name(), types.NewPackage(path, pkg.Name())),
 			score: unimportedScore(relevances[path]),
 			imp:   imp,
 		})
@@ -2447,6 +2467,13 @@ func (c *candidate) anyCandType(f func(t types.Type, addressable bool) bool) boo
 		// Mark the candidate so we know to prepend "&" when formatting.
 		c.takeAddress = true
 		return true
+	}
+
+	if array, ok := objType.Underlying().(*types.Array); ok {
+		if f(types.NewSlice(array.Elem()), false) {
+			c.takeSlice = true
+			return true
+		}
 	}
 
 	return false

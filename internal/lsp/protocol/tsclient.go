@@ -6,8 +6,8 @@ package protocol
 
 // Package protocol contains data types and code for LSP jsonrpcs
 // generated automatically from vscode-languageserver-node
-// commit: dae62de921d25964e8732411ca09e532dde992f5
-// last fetched Thu Feb 04 2021 11:11:02 GMT-0500 (Eastern Standard Time)
+// commit: d58c00bbf8837b9fd0144924db5e7b1c543d839e
+// last fetched Sat Apr 17 2021 08:26:29 GMT-0400 (Eastern Daylight Time)
 
 // Code generated (see typescript/README.md) DO NOT EDIT.
 
@@ -28,6 +28,7 @@ type Client interface {
 	WorkspaceFolders(context.Context) ([]WorkspaceFolder /*WorkspaceFolder[] | null*/, error)
 	Configuration(context.Context, *ParamConfiguration) ([]interface{}, error)
 	WorkDoneProgressCreate(context.Context, *WorkDoneProgressCreateParams) error
+	ShowDocument(context.Context, *ShowDocumentParams) (*ShowDocumentResult, error)
 	RegisterCapability(context.Context, *RegistrationParams) error
 	UnregisterCapability(context.Context, *UnregistrationParams) error
 	ShowMessageRequest(context.Context, *ShowMessageRequestParams) (*MessageActionItem /*MessageActionItem | null*/, error)
@@ -91,6 +92,13 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 		}
 		err := client.WorkDoneProgressCreate(ctx, &params)
 		return true, reply(ctx, nil, err)
+	case "window/showDocument": // req
+		var params ShowDocumentParams
+		if err := json.Unmarshal(r.Params(), &params); err != nil {
+			return true, sendParseError(ctx, reply, err)
+		}
+		resp, err := client.ShowDocument(ctx, &params)
+		return true, reply(ctx, resp, err)
 	case "client/registerCapability": // req
 		var params RegistrationParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
@@ -162,6 +170,14 @@ func (s *clientDispatcher) Configuration(ctx context.Context, params *ParamConfi
 
 func (s *clientDispatcher) WorkDoneProgressCreate(ctx context.Context, params *WorkDoneProgressCreateParams) error {
 	return Call(ctx, s.Conn, "window/workDoneProgress/create", params, nil) // Call, not Notify
+}
+
+func (s *clientDispatcher) ShowDocument(ctx context.Context, params *ShowDocumentParams) (*ShowDocumentResult, error) {
+	var result *ShowDocumentResult
+	if err := Call(ctx, s.Conn, "window/showDocument", params, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (s *clientDispatcher) RegisterCapability(ctx context.Context, params *RegistrationParams) error {

@@ -34,7 +34,7 @@ var GeneratedAPIJSON = &APIJSON{
 			{
 				Name: "directoryFilters",
 				Type: "[]string",
-				Doc:  "directoryFilters can be used to exclude unwanted directories from the\nworkspace. By default, all directories are included. Filters are an\noperator, `+` to include and `-` to exclude, followed by a path prefix\nrelative to the workspace folder. They are evaluated in order, and\nthe last filter that applies to a path controls whether it is included.\nThe path prefix can be empty, so an initial `-` excludes everything.\n\nExamples:\nExclude node_modules: `-node_modules`\nInclude only project_a: `-` (exclude everything), `+project_a`\nInclude only project_a, but not node_modules inside it: `-`, `+project_a`, `-project_a/node_modules`\n",
+				Doc:  "directoryFilters can be used to exclude unwanted directories from the\nworkspace. By default, all directories are included. Filters are an\noperator, `+` to include and `-` to exclude, followed by a path prefix\nrelative to the workspace folder. They are evaluated in order, and\nthe last filter that applies to a path controls whether it is included.\nThe path prefix can be empty, so an initial `-` excludes everything.\n\nExamples:\n\nExclude node_modules: `-node_modules`\n\nInclude only project_a: `-` (exclude everything), `+project_a`\n\nInclude only project_a, but not node_modules inside it: `-`, `+project_a`, `-project_a/node_modules`\n",
 				EnumKeys: EnumKeys{
 					ValueType: "",
 					Keys:      nil,
@@ -43,6 +43,28 @@ var GeneratedAPIJSON = &APIJSON{
 				Default:    "[]",
 				Status:     "",
 				Hierarchy:  "build",
+			},
+			{
+				Name: "memoryMode",
+				Type: "enum",
+				Doc:  "memoryMode controls the tradeoff `gopls` makes between memory usage and\ncorrectness.\n\nValues other than `Normal` are untested and may break in surprising ways.\n",
+				EnumKeys: EnumKeys{
+					ValueType: "",
+					Keys:      nil,
+				},
+				EnumValues: []EnumValue{
+					{
+						Value: "\"DegradeClosed\"",
+						Doc:   "`\"DegradeClosed\"`: In DegradeClosed mode, `gopls` will collect less information about\npackages without open files. As a result, features like Find\nReferences and Rename will miss results in such packages.\n",
+					},
+					{
+						Value: "\"Normal\"",
+						Doc:   "",
+					},
+				},
+				Default:   "\"Normal\"",
+				Status:    "experimental",
+				Hierarchy: "build",
 			},
 			{
 				Name: "expandWorkspaceToModule",
@@ -376,7 +398,7 @@ var GeneratedAPIJSON = &APIJSON{
 						},
 						{
 							Name:    "\"fieldalignment\"",
-							Doc:     "find structs that would take less memory if their fields were sorted\n\nThis analyzer find structs that can be rearranged to take less memory, and provides\na suggested edit with the optimal order.\n",
+							Doc:     "find structs that would use less memory if their fields were sorted\n\nThis analyzer find structs that can be rearranged to use less memory, and provides\na suggested edit with the optimal order.\n\nNote that there are two different diagnostics reported. One checks struct size,\nand the other reports \"pointer bytes\" used. Pointer bytes is how many bytes of the\nobject that the garbage collector has to potentially scan for pointers, for example:\n\n\tstruct { uint32; string }\n\nhave 16 pointer bytes because the garbage collector has to scan up through the string's\ninner pointer.\n\n\tstruct { string; *uint32 }\n\nhas 24 pointer bytes because it has to scan further through the *uint32.\n\n\tstruct { string; uint32 }\n\nhas 8 because it can stop immediately after the string pointer.\n",
 							Default: "false",
 						},
 						{
@@ -768,6 +790,12 @@ var GeneratedAPIJSON = &APIJSON{
 			ArgDoc:  "{\n\t// The test file containing the tests to run.\n\t\"URI\": string,\n\t// Specific test names to run, e.g. TestFoo.\n\t\"Tests\": []string,\n\t// Specific benchmarks to run, e.g. BenchmarkFoo.\n\t\"Benchmarks\": []string,\n}",
 		},
 		{
+			Command: "gopls.start_debugging",
+			Title:   "",
+			Doc:     "",
+			ArgDoc:  "{\n\t// Optional: the address (including port) for the debug server to listen on.\n\t// If not provided, the debug server will bind to \"localhost:0\", and the\n\t// full debug URL will be contained in the result.\n\t// \n\t// If there is more than one gopls instance along the serving path (i.e. you\n\t// are using a daemon), each gopls instance will attempt to start debugging.\n\t// If Addr specifies a port, only the daemon will be able to bind to that\n\t// port, and each intermediate gopls instance will fail to start debugging.\n\t// For this reason it is recommended not to specify a port (or equivalently,\n\t// to specify \":0\").\n\t// \n\t// If the server was already debugging this field has no effect, and the\n\t// result will contain the previously configured debug URL(s).\n\t\"Addr\": string,\n}",
+		},
+		{
 			Command: "gopls.test",
 			Title:   "Run test(s) (legacy)",
 			Doc:     "Runs `go test` for a specific set of test or benchmark functions.",
@@ -905,7 +933,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Name:    "fieldalignment",
-			Doc:     "find structs that would take less memory if their fields were sorted\n\nThis analyzer find structs that can be rearranged to take less memory, and provides\na suggested edit with the optimal order.\n",
+			Doc:     "find structs that would use less memory if their fields were sorted\n\nThis analyzer find structs that can be rearranged to use less memory, and provides\na suggested edit with the optimal order.\n\nNote that there are two different diagnostics reported. One checks struct size,\nand the other reports \"pointer bytes\" used. Pointer bytes is how many bytes of the\nobject that the garbage collector has to potentially scan for pointers, for example:\n\n\tstruct { uint32; string }\n\nhave 16 pointer bytes because the garbage collector has to scan up through the string's\ninner pointer.\n\n\tstruct { string; *uint32 }\n\nhas 24 pointer bytes because it has to scan further through the *uint32.\n\n\tstruct { string; uint32 }\n\nhas 8 because it can stop immediately after the string pointer.\n",
 			Default: false,
 		},
 		{

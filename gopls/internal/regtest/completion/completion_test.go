@@ -9,7 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	. "golang.org/x/tools/gopls/internal/regtest"
+	"golang.org/x/tools/gopls/internal/hooks"
+	. "golang.org/x/tools/internal/lsp/regtest"
 
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
@@ -17,7 +18,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	Main(m)
+	Main(m, hooks.Options)
 }
 
 const proxy = `
@@ -69,6 +70,11 @@ package
 
 -- fruits/testfile3.go --
 pac
+-- 123f_r.u~its-123/testfile.go --
+package
+
+-- .invalid-dir@-name/testfile.go --
+package
 `
 	var (
 		testfile4 = ""
@@ -145,6 +151,21 @@ pac
 			content:       &testfile6,
 			want:          []string{"package apple", "package apple_test", "package fruits", "package fruits_test", "package main"},
 			editRegexp:    `\*\/\n()`,
+		},
+		// Issue golang/go#44680
+		{
+			name:          "package completion for dir name with punctuation",
+			filename:      "123f_r.u~its-123/testfile.go",
+			triggerRegexp: "package()",
+			want:          []string{"package fruits123", "package fruits123_test", "package main"},
+			editRegexp:    "package\n",
+		},
+		{
+			name:          "package completion for invalid dir name",
+			filename:      ".invalid-dir@-name/testfile.go",
+			triggerRegexp: "package()",
+			want:          []string{"package main"},
+			editRegexp:    "package\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -371,6 +392,114 @@ type S struct {
 		diff := compareCompletionResults([]string{"i"}, completions.Items)
 		if diff != "" {
 			t.Fatal(diff)
+		}
+	})
+}
+
+func TestCompletion_Issue45510(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- main.go --
+package main
+
+func _() {
+	type a *a
+	var aaaa1, aaaa2 a
+	var _ a = aaaa
+
+	type b a
+	var bbbb1, bbbb2 b
+	var _ b = bbbb
+}
+
+type (
+	c *d
+	d *e
+	e **c
+)
+
+func _() {
+	var (
+		xxxxc c
+		xxxxd d
+		xxxxe e
+	)
+
+	var _ c = xxxx
+	var _ d = xxxx
+	var _ e = xxxx
+}
+`
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+
+		tests := []struct {
+			re   string
+			want []string
+		}{
+			{`var _ a = aaaa()`, []string{"aaaa1", "aaaa2"}},
+			{`var _ b = bbbb()`, []string{"bbbb1", "bbbb2"}},
+			{`var _ c = xxxx()`, []string{"***xxxxd", "**xxxxe", "xxxxc"}},
+			{`var _ d = xxxx()`, []string{"***xxxxe", "*xxxxc", "xxxxd"}},
+			{`var _ e = xxxx()`, []string{"**xxxxc", "*xxxxd", "xxxxe"}},
+		}
+		for _, tt := range tests {
+			completions := env.Completion("main.go", env.RegexpSearch("main.go", tt.re))
+			diff := compareCompletionResults(tt.want, completions.Items)
+			if diff != "" {
+				t.Errorf("%s: %s", tt.re, diff)
+			}
+		}
+	})
+}
+
+func TestCompletionDeprecation(t *testing.T) {
+	const files = `
+-- go.mod --
+module test.com
+
+go 1.16
+-- prog.go --
+package waste
+// Deprecated, use newFoof
+func fooFunc() bool {
+	return false
+}
+
+// Deprecated
+const badPi = 3.14
+
+func doit() {
+	if fooF
+	panic()
+	x := badP
+}
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("prog.go")
+		pos := env.RegexpSearch("prog.go", "if fooF")
+		pos.Column += len("if fooF")
+		completions := env.Completion("prog.go", pos)
+		diff := compareCompletionResults([]string{"fooFunc"}, completions.Items)
+		if diff != "" {
+			t.Error(diff)
+		}
+		if completions.Items[0].Tags == nil {
+			t.Errorf("expected Tags to show deprecation %#v", diff[0])
+		}
+		pos = env.RegexpSearch("prog.go", "= badP")
+		pos.Column += len("= badP")
+		completions = env.Completion("prog.go", pos)
+		diff = compareCompletionResults([]string{"badPi"}, completions.Items)
+		if diff != "" {
+			t.Error(diff)
+		}
+		if completions.Items[0].Tags == nil {
+			t.Errorf("expected Tags to show deprecation %#v", diff[0])
 		}
 	})
 }

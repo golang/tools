@@ -8,9 +8,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os/exec"
 	"testing"
 
-	. "golang.org/x/tools/gopls/internal/regtest"
+	"golang.org/x/tools/gopls/internal/hooks"
+	. "golang.org/x/tools/internal/lsp/regtest"
 
 	"golang.org/x/tools/internal/lsp"
 	"golang.org/x/tools/internal/lsp/fake"
@@ -19,7 +21,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	Main(m)
+	Main(m, hooks.Options)
 }
 
 // Use mod.com for all go.mod files due to golang/go#35230.
@@ -1380,7 +1382,15 @@ func b(c bytes.Buffer) {
 }
 
 func TestSwig(t *testing.T) {
-	t.Skipf("skipped until golang/go#37098 is resolved")
+	// This is fixed in Go 1.17, but not earlier.
+	testenv.NeedsGo1Point(t, 17)
+
+	if _, err := exec.LookPath("swig"); err != nil {
+		t.Skip("skipping test: swig not available")
+	}
+	if _, err := exec.LookPath("g++"); err != nil {
+		t.Skip("skipping test: g++ not available")
+	}
 
 	const mod = `
 -- go.mod --

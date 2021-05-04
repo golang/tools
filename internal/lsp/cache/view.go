@@ -151,11 +151,6 @@ type builtinPackageHandle struct {
 	handle *memoize.Handle
 }
 
-type builtinPackageData struct {
-	parsed *source.BuiltinPackage
-	err    error
-}
-
 // fileBase holds the common functionality for all files.
 // It is intended to be embedded in the file implementations
 type fileBase struct {
@@ -252,6 +247,9 @@ func minorOptionsChange(a, b *source.Options) bool {
 		return false
 	}
 	if !reflect.DeepEqual(a.DirectoryFilters, b.DirectoryFilters) {
+		return false
+	}
+	if a.MemoryMode != b.MemoryMode {
 		return false
 	}
 	aBuildFlags := make([]string, len(a.BuildFlags))

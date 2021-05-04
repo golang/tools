@@ -185,7 +185,8 @@ func (app *Application) featureCommands() []tool.Application {
 		&highlight{app: app},
 		&implementation{app: app},
 		&imports{app: app},
-		&inspect{app: app},
+		newRemote(app, ""),
+		newRemote(app, "inspect"),
 		&links{app: app},
 		&prepareRename{app: app},
 		&references{app: app},
@@ -194,7 +195,7 @@ func (app *Application) featureCommands() []tool.Application {
 		&signature{app: app},
 		&suggestedFix{app: app},
 		&symbols{app: app},
-		&workspace{app: app},
+		newWorkspace(app),
 		&workspaceSymbol{app: app},
 	}
 }
@@ -246,8 +247,7 @@ func CloseTestConnections(ctx context.Context) {
 
 func (app *Application) connectRemote(ctx context.Context, remote string) (*connection, error) {
 	connection := newConnection(app)
-	network, addr := parseAddr(remote)
-	conn, err := lsprpc.ConnectToRemote(ctx, network, addr)
+	conn, err := lsprpc.ConnectToRemote(ctx, remote)
 	if err != nil {
 		return nil, err
 	}
@@ -443,6 +443,10 @@ func (c *cmdClient) Progress(context.Context, *protocol.ProgressParams) error {
 	return nil
 }
 
+func (c *cmdClient) ShowDocument(context.Context, *protocol.ShowDocumentParams) (*protocol.ShowDocumentResult, error) {
+	return nil, nil
+}
+
 func (c *cmdClient) WorkDoneProgressCreate(context.Context, *protocol.WorkDoneProgressCreateParams) error {
 	return nil
 }
@@ -504,13 +508,9 @@ func (c *connection) AddFile(ctx context.Context, uri span.URI) *cmdFile {
 	return file
 }
 
-func (c *connection) semanticTokens(ctx context.Context, file span.URI) (*protocol.SemanticTokens, error) {
-	p := &protocol.SemanticTokensParams{
-		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(file),
-		},
-	}
-	resp, err := c.Server.SemanticTokensFull(ctx, p)
+func (c *connection) semanticTokens(ctx context.Context, p *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
+	// use range to avoid limits on full
+	resp, err := c.Server.SemanticTokensRange(ctx, p)
 	if err != nil {
 		return nil, err
 	}
