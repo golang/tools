@@ -50,7 +50,12 @@ func commentToMarkdown(w io.Writer, text string) {
 				emphasize(w, line, true)
 			}
 		case opHead:
-			// Header is always a single line.
+			// The header block can consist of only one line.
+			// However, check the number of lines, just in case.
+			if len(b.lines) == 0 {
+				// Skip this block.
+				continue
+			}
 			header := b.lines[0]
 
 			w.Write(mdHeader)
