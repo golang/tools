@@ -359,6 +359,12 @@ linksInHover toggles the presence of links to documentation in hover.
 
 Default: `true`.
 
+##### **keepOriginalLineBreaks** *bool*
+
+keepOriginalLineBreaks can be used to keep the original comment line breaks in hover.
+
+Default: `false`.
+
 #### Navigation
 
 ##### **importShortcut** *enum*

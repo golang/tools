@@ -26,9 +26,9 @@ import (
 // prefix removed unless empty, in which case it will be converted to a newline.
 //
 // URLs in the comment text are converted into links.
-func CommentToMarkdown(text string) string {
+func CommentToMarkdown(text string, keepOriginalLineBreaks bool) string {
 	buf := &bytes.Buffer{}
-	commentToMarkdown(buf, text)
+	commentToMarkdown(buf, text, keepOriginalLineBreaks)
 	return buf.String()
 }
 
@@ -41,12 +41,15 @@ var (
 	mdLinkEnd   = []byte(")")
 )
 
-func commentToMarkdown(w io.Writer, text string) {
+func commentToMarkdown(w io.Writer, text string, keepOriginalLineBreaks bool) {
 	blocks := blocks(text)
 	for i, b := range blocks {
 		switch b.op {
 		case opPara:
-			for _, line := range b.lines {
+			for j, line := range b.lines {
+				if keepOriginalLineBreaks && j < len(b.lines)-1 {
+					line = strings.Replace(line, "\n", "  \n", 1)
+				}
 				emphasize(w, line, true)
 			}
 		case opHead:

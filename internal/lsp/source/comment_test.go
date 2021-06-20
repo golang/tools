@@ -231,7 +231,8 @@ func TestCommentEscape(t *testing.T) {
 
 func TestCommentToMarkdown(t *testing.T) {
 	tests := []struct {
-		in, out string
+		in, out        string
+		keepLineBreaks bool
 	}{
 		{
 			in:  "F declaration.\n",
@@ -355,13 +356,26 @@ F declaration\.
     }
 `,
 		},
+		{
+			in: `
+F declaration. Lorem ipsum dolor sit amet.
+Aenean tempus velit non auctor eleifend.
+Etiam mattis eros at orci mollis molestie.
+`,
+			out: `
+F declaration\. Lorem ipsum dolor sit amet\.  
+Aenean tempus velit non auctor eleifend\.  
+Etiam mattis eros at orci mollis molestie\.
+`,
+			keepLineBreaks: true,
+		},
 	}
 	for i, tt := range tests {
 		// Comments start with new lines for better readability. So, we should trim them.
 		tt.in = strings.TrimPrefix(tt.in, "\n")
 		tt.out = strings.TrimPrefix(tt.out, "\n")
 
-		if out := CommentToMarkdown(tt.in); out != tt.out {
+		if out := CommentToMarkdown(tt.in, tt.keepLineBreaks); out != tt.out {
 			t.Errorf("#%d: mismatch\nhave: %q\nwant: %q", i, out, tt.out)
 		}
 	}
