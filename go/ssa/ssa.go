@@ -102,7 +102,7 @@ type Value interface {
 	// Instruction.
 	//
 	// This is the same as the source name for Parameters,
-	// Builtins, Functions, FreeVars, Globals.
+	// Builtin, Functions, FreeVars, Globals.
 	// For constants, it is a representation of the constant's value
 	// and type.  For all other Values this is the name of the
 	// virtual register defined by the instruction.
@@ -436,8 +436,8 @@ type Global struct {
 
 // A Builtin represents a specific use of a built-in function, e.g. len.
 //
-// Builtins are immutable values.  Builtins do not have addresses.
-// Builtins can only appear in CallCommon.Func.
+// Builtin are immutable values.  Builtin do not have addresses.
+// Builtin can only appear in CallCommon.Func.
 //
 // Name() indicates the function: one of the built-in functions from the
 // Go spec (excluding "make" and "new") or one of these ssa-defined
