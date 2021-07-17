@@ -1,0 +1,30 @@
+-------- @implements FTypeA --------
+{
+	"type": {
+		"name": "implements-functions-json.ftypea",
+		"pos": "testdata/src/implements-functions-json/main.go:14:6",
+		"kind": "func"
+	},
+	"to": [
+		{
+			"name": "implements-functions-json.FTypeA",
+			"pos": "testdata/src/implements-functions-json/main.go:12:6",
+			"kind": "signature"
+		}
+	]
+}
+-------- @implements FTypeB --------
+{
+	"type": {
+		"name": "implements-functions-json.FTypeB",
+		"pos": "testdata/src/implements-functions-json/main.go:17:6",
+		"kind": "signature"
+	},
+	"to": [
+		{
+			"name": "implements-functions-json.ftypeb",
+			"pos": "testdata/src/implements-functions-json/main.go:20:6",
+			"kind": "func"
+		}
+	]
+}
