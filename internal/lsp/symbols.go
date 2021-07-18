@@ -7,39 +7,51 @@ package lsp
 import (
 	"context"
 
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/lsp/telemetry"
-	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/log"
-	"golang.org/x/tools/internal/telemetry/trace"
+	"golang.org/x/tools/internal/lsp/template"
 )
 
-func (s *Server) documentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]protocol.DocumentSymbol, error) {
-	ctx, done := trace.StartSpan(ctx, "lsp.Server.documentSymbol")
+func (s *Server) documentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]interface{}, error) {
+	ctx, done := event.Start(ctx, "lsp.Server.documentSymbol")
 	defer done()
 
-	uri := span.NewURI(params.TextDocument.URI)
-	view, err := s.session.ViewOf(uri)
-	if err != nil {
-		return nil, err
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.UnknownKind)
+	defer release()
+	if !ok {
+		return []interface{}{}, err
 	}
-	snapshot := view.Snapshot()
-	fh, err := snapshot.GetFile(uri)
-	if err != nil {
-		return nil, err
+	var docSymbols []protocol.DocumentSymbol
+	if fh.Kind() == source.Tmpl {
+		docSymbols, err = template.DocumentSymbols(snapshot, fh)
+	} else {
+		docSymbols, err = source.DocumentSymbols(ctx, snapshot, fh)
 	}
-	var symbols []protocol.DocumentSymbol
-	switch fh.Identity().Kind {
-	case source.Go:
-		symbols, err = source.DocumentSymbols(ctx, snapshot, fh)
-	case source.Mod:
-		return []protocol.DocumentSymbol{}, nil
-	}
-
 	if err != nil {
-		log.Error(ctx, "DocumentSymbols failed", err, telemetry.URI.Of(uri))
-		return []protocol.DocumentSymbol{}, nil
+		event.Error(ctx, "DocumentSymbols failed", err, tag.URI.Of(fh.URI()))
+		return []interface{}{}, nil
+	}
+	// Convert the symbols to an interface array.
+	// TODO: Remove this once the lsp deprecates SymbolInformation.
+	symbols := make([]interface{}, len(docSymbols))
+	for i, s := range docSymbols {
+		if snapshot.View().Options().HierarchicalDocumentSymbolSupport {
+			symbols[i] = s
+			continue
+		}
+		// If the client does not support hierarchical document symbols, then
+		// we need to be backwards compatible for now and return SymbolInformation.
+		symbols[i] = protocol.SymbolInformation{
+			Name:       s.Name,
+			Kind:       s.Kind,
+			Deprecated: s.Deprecated,
+			Location: protocol.Location{
+				URI:   params.TextDocument.URI,
+				Range: s.Range,
+			},
+		}
 	}
 	return symbols, nil
 }

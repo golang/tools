@@ -1,39 +1,39 @@
 -- PosSum-definition --
-godef/a/random.go:16:15-18: defined here as [`(a.Pos).Sum` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a#Pos.Sum)
-
-```go
+godef/a/random.go:24:15-18: defined here as ```go
 func (*Pos).Sum() int
 ```
+
+[`(a.Pos).Sum` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a?utm_source=gopls#Pos.Sum)
 -- PosSum-definition-json --
 {
 	"span": {
 		"uri": "file://godef/a/random.go",
 		"start": {
-			"line": 16,
+			"line": 24,
 			"column": 15,
-			"offset": 248
+			"offset": 413
 		},
 		"end": {
-			"line": 16,
+			"line": 24,
 			"column": 18,
-			"offset": 251
+			"offset": 416
 		}
 	},
-	"description": "[`(a.Pos).Sum` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a#Pos.Sum)\n\n```go\nfunc (*Pos).Sum() int\n```"
+	"description": "```go\nfunc (*Pos).Sum() int\n```\n\n[`(a.Pos).Sum` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a?utm_source=gopls#Pos.Sum)"
 }
 
 -- PosSum-hover --
-[`(a.Pos).Sum` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a#Pos.Sum)
-
 ```go
 func (*Pos).Sum() int
 ```
--- PosX-definition --
-godef/a/random.go:13:2-3: defined here as \@mark\(PosX, \"x\"\),mark\(PosY, \"y\"\)
 
-```go
+[`(a.Pos).Sum` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a?utm_source=gopls#Pos.Sum)
+-- PosX-definition --
+godef/a/random.go:13:2-3: defined here as ```go
 field x int
 ```
+
+\@mark\(PosX, \"x\"\),mark\(PosY, \"y\"\)
 -- PosX-definition-json --
 {
 	"span": {
@@ -49,15 +49,15 @@ field x int
 			"offset": 188
 		}
 	},
-	"description": "\\@mark\\(PosX, \\\"x\\\"\\),mark\\(PosY, \\\"y\\\"\\)\n\n```go\nfield x int\n```"
+	"description": "```go\nfield x int\n```\n\n\\@mark\\(PosX, \\\"x\\\"\\),mark\\(PosY, \\\"y\\\"\\)"
 }
 
 -- PosX-hover --
-\@mark\(PosX, \"x\"\),mark\(PosY, \"y\"\)
-
 ```go
 field x int
 ```
+
+\@mark\(PosX, \"x\"\),mark\(PosY, \"y\"\)
 -- RandomParamY-definition --
 godef/a/random.go:8:14-15: defined here as ```go
 var y int
@@ -83,4 +83,30 @@ var y int
 -- RandomParamY-hover --
 ```go
 var y int
+```
+-- TypField-definition --
+godef/a/random.go:17:18-23: defined here as ```go
+field field string
+```
+-- TypField-definition-json --
+{
+	"span": {
+		"uri": "file://godef/a/random.go",
+		"start": {
+			"line": 17,
+			"column": 18,
+			"offset": 292
+		},
+		"end": {
+			"line": 17,
+			"column": 23,
+			"offset": 297
+		}
+	},
+	"description": "```go\nfield field string\n```"
+}
+
+-- TypField-hover --
+```go
+field field string
 ```

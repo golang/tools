@@ -10,14 +10,19 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"runtime/trace"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
-	"golang.org/x/tools/internal/telemetry"
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/event/core"
+	"golang.org/x/tools/internal/event/export"
+	"golang.org/x/tools/internal/event/label"
 )
 
-var traceTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
+var TraceTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{define "title"}}Trace Information{{end}}
 {{define "body"}}
 	{{range .Traces}}<a href="/trace/{{.Name}}">{{.Name}}</a> last: {{.Last.Duration}}, longest: {{.Longest.Duration}}<br>{{end}}
@@ -35,11 +40,12 @@ var traceTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 `))
 
 type traces struct {
+	mu         sync.Mutex
 	sets       map[string]*traceSet
-	unfinished map[telemetry.SpanContext]*traceData
+	unfinished map[export.SpanContext]*traceData
 }
 
-type traceResults struct {
+type TraceResults struct { // exported for testing
 	Traces   []*traceSet
 	Selected *traceSet
 }
@@ -51,9 +57,9 @@ type traceSet struct {
 }
 
 type traceData struct {
-	TraceID  telemetry.TraceID
-	SpanID   telemetry.SpanID
-	ParentID telemetry.SpanID
+	TraceID  export.TraceID
+	SpanID   export.SpanID
+	ParentID export.SpanID
 	Name     string
 	Start    time.Time
 	Finish   time.Time
@@ -70,77 +76,124 @@ type traceEvent struct {
 	Tags   string
 }
 
-func (t *traces) StartSpan(ctx context.Context, span *telemetry.Span) {
-	if t.sets == nil {
-		t.sets = make(map[string]*traceSet)
-		t.unfinished = make(map[telemetry.SpanContext]*traceData)
+func StdTrace(exporter event.Exporter) event.Exporter {
+	return func(ctx context.Context, ev core.Event, lm label.Map) context.Context {
+		span := export.GetSpan(ctx)
+		if span == nil {
+			return exporter(ctx, ev, lm)
+		}
+		switch {
+		case event.IsStart(ev):
+			if span.ParentID.IsValid() {
+				region := trace.StartRegion(ctx, span.Name)
+				ctx = context.WithValue(ctx, traceKey, region)
+			} else {
+				var task *trace.Task
+				ctx, task = trace.NewTask(ctx, span.Name)
+				ctx = context.WithValue(ctx, traceKey, task)
+			}
+			// Log the start event as it may contain useful labels.
+			msg := formatEvent(ctx, ev, lm)
+			trace.Log(ctx, "start", msg)
+		case event.IsLog(ev):
+			category := ""
+			if event.IsError(ev) {
+				category = "error"
+			}
+			msg := formatEvent(ctx, ev, lm)
+			trace.Log(ctx, category, msg)
+		case event.IsEnd(ev):
+			if v := ctx.Value(traceKey); v != nil {
+				v.(interface{ End() }).End()
+			}
+		}
+		return exporter(ctx, ev, lm)
 	}
-	// just starting, add it to the unfinished map
-	td := &traceData{
-		TraceID:  span.ID.TraceID,
-		SpanID:   span.ID.SpanID,
-		ParentID: span.ParentID,
-		Name:     span.Name,
-		Start:    span.Start,
-		Tags:     renderTags(span.Tags),
-	}
-	t.unfinished[span.ID] = td
-	// and wire up parents if we have them
-	if !span.ParentID.IsValid() {
-		return
-	}
-	parentID := telemetry.SpanContext{TraceID: span.ID.TraceID, SpanID: span.ParentID}
-	parent, found := t.unfinished[parentID]
-	if !found {
-		// trace had an invalid parent, so it cannot itself be valid
-		return
-	}
-	parent.Children = append(parent.Children, td)
 }
 
-func (t *traces) FinishSpan(ctx context.Context, span *telemetry.Span) {
-	// finishing, must be already in the map
-	td, found := t.unfinished[span.ID]
-	if !found {
-		return // if this happens we are in a bad place
-	}
-	delete(t.unfinished, span.ID)
+func formatEvent(ctx context.Context, ev core.Event, lm label.Map) string {
+	buf := &bytes.Buffer{}
+	p := export.Printer{}
+	p.WriteEvent(buf, ev, lm)
+	return buf.String()
+}
 
-	td.Finish = span.Finish
-	td.Duration = span.Finish.Sub(span.Start)
-	td.Events = make([]traceEvent, len(span.Events))
-	for i, event := range span.Events {
-		td.Events[i] = traceEvent{
-			Time: event.At,
-			Tags: renderTags(event.Tags),
+func (t *traces) ProcessEvent(ctx context.Context, ev core.Event, lm label.Map) context.Context {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	span := export.GetSpan(ctx)
+	if span == nil {
+		return ctx
+	}
+
+	switch {
+	case event.IsStart(ev):
+		if t.sets == nil {
+			t.sets = make(map[string]*traceSet)
+			t.unfinished = make(map[export.SpanContext]*traceData)
+		}
+		// just starting, add it to the unfinished map
+		td := &traceData{
+			TraceID:  span.ID.TraceID,
+			SpanID:   span.ID.SpanID,
+			ParentID: span.ParentID,
+			Name:     span.Name,
+			Start:    span.Start().At(),
+			Tags:     renderLabels(span.Start()),
+		}
+		t.unfinished[span.ID] = td
+		// and wire up parents if we have them
+		if !span.ParentID.IsValid() {
+			return ctx
+		}
+		parentID := export.SpanContext{TraceID: span.ID.TraceID, SpanID: span.ParentID}
+		parent, found := t.unfinished[parentID]
+		if !found {
+			// trace had an invalid parent, so it cannot itself be valid
+			return ctx
+		}
+		parent.Children = append(parent.Children, td)
+
+	case event.IsEnd(ev):
+		// finishing, must be already in the map
+		td, found := t.unfinished[span.ID]
+		if !found {
+			return ctx // if this happens we are in a bad place
+		}
+		delete(t.unfinished, span.ID)
+
+		td.Finish = span.Finish().At()
+		td.Duration = span.Finish().At().Sub(span.Start().At())
+		events := span.Events()
+		td.Events = make([]traceEvent, len(events))
+		for i, event := range events {
+			td.Events[i] = traceEvent{
+				Time: event.At(),
+				Tags: renderLabels(event),
+			}
+		}
+
+		set, ok := t.sets[span.Name]
+		if !ok {
+			set = &traceSet{Name: span.Name}
+			t.sets[span.Name] = set
+		}
+		set.Last = td
+		if set.Longest == nil || set.Last.Duration > set.Longest.Duration {
+			set.Longest = set.Last
+		}
+		if !td.ParentID.IsValid() {
+			fillOffsets(td, td.Start)
 		}
 	}
-
-	set, ok := t.sets[span.Name]
-	if !ok {
-		set = &traceSet{Name: span.Name}
-		t.sets[span.Name] = set
-	}
-	set.Last = td
-	if set.Longest == nil || set.Last.Duration > set.Longest.Duration {
-		set.Longest = set.Last
-	}
-	if !td.ParentID.IsValid() {
-		fillOffsets(td, td.Start)
-	}
+	return ctx
 }
-
-func (t *traces) Log(ctx context.Context, event telemetry.Event) {}
-
-func (t *traces) Metric(ctx context.Context, data telemetry.MetricData) {}
-
-func (t *traces) Flush() {}
 
 func (t *traces) getData(req *http.Request) interface{} {
 	if len(t.sets) == 0 {
 		return nil
 	}
-	data := traceResults{}
+	data := TraceResults{}
 	data.Traces = make([]*traceSet, 0, len(t.sets))
 	for _, set := range t.sets {
 		data.Traces = append(data.Traces, set)
@@ -162,10 +215,12 @@ func fillOffsets(td *traceData, start time.Time) {
 	}
 }
 
-func renderTags(tags telemetry.TagList) string {
+func renderLabels(labels label.List) string {
 	buf := &bytes.Buffer{}
-	for _, tag := range tags {
-		fmt.Fprintf(buf, "%v=%q ", tag.Key, tag.Value)
+	for index := 0; labels.Valid(index); index++ {
+		if l := labels.Label(index); l.Valid() {
+			fmt.Fprintf(buf, "%v ", l)
+		}
 	}
 	return buf.String()
 }

@@ -89,7 +89,7 @@ func MatchBefore(fset *token.FileSet, readFile ReadFile, end token.Pos, pattern 
 		return token.NoPos, token.NoPos, fmt.Errorf("invalid file: %v", err)
 	}
 	position := f.Position(end)
-	startOffset := f.Offset(lineStart(f, position.Line))
+	startOffset := f.Offset(f.LineStart(position.Line))
 	endOffset := f.Offset(end)
 	line := content[startOffset:endOffset]
 	matchStart, matchEnd := -1, -1
@@ -118,32 +118,9 @@ func MatchBefore(fset *token.FileSet, readFile ReadFile, end token.Pos, pattern 
 	return f.Pos(startOffset + matchStart), f.Pos(startOffset + matchEnd), nil
 }
 
-// this functionality was borrowed from the analysisutil package
-func lineStart(f *token.File, line int) token.Pos {
-	// Use binary search to find the start offset of this line.
-	//
-	// TODO(adonovan): eventually replace this function with the
-	// simpler and more efficient (*go/token.File).LineStart, added
-	// in go1.12.
-
-	min := 0        // inclusive
-	max := f.Size() // exclusive
-	for {
-		offset := (min + max) / 2
-		pos := f.Pos(offset)
-		posn := f.Position(pos)
-		if posn.Line == line {
-			return pos - (token.Pos(posn.Column) - 1)
-		}
-
-		if min+1 >= max {
-			return token.NoPos
-		}
-
-		if posn.Line < line {
-			min = offset
-		} else {
-			max = offset
-		}
+func lineEnd(f *token.File, line int) token.Pos {
+	if line >= f.LineCount() {
+		return token.Pos(f.Base() + f.Size())
 	}
+	return f.LineStart(line + 1)
 }

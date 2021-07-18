@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build !plan9
 // +build !plan9
 
 // The stress utility is intended for catching sporadic failures.
@@ -17,9 +18,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	exec "golang.org/x/sys/execabs"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -113,6 +114,7 @@ func main() {
 		}()
 	}
 	runs, fails := 0, 0
+	start := time.Now()
 	ticker := time.NewTicker(5 * time.Second).C
 	for {
 		select {
@@ -137,7 +139,12 @@ func main() {
 				fmt.Printf("\n%s\n%s\n", f.Name(), out)
 			}
 		case <-ticker:
-			fmt.Printf("%v runs so far, %v failures\n", runs, fails)
+			elapsed := time.Since(start).Truncate(time.Second)
+			var pct string
+			if fails > 0 {
+				pct = fmt.Sprintf(" (%0.2f%%)", 100.0*float64(fails)/float64(runs))
+			}
+			fmt.Printf("%v: %v runs so far, %v failures%s\n", elapsed, runs, fails, pct)
 		}
 	}
 }

@@ -1,6 +1,11 @@
+// Package refs is a package used to test find references.
 package refs
 
 type i int //@mark(typeI, "i"),refs("i", typeI, argI, returnI, embeddedI)
+
+type X struct {
+	Y int //@mark(typeXY, "Y")
+}
 
 func _(_ i) []bool { //@mark(argI, "i")
 	return nil
@@ -27,3 +32,7 @@ type e struct {
 func _() {
 	_ = e{}.i //@mark(embeddedIUse, "i")
 }
+
+const (
+	foo = iota //@refs("iota")
+)

@@ -1,6 +1,6 @@
 // Copyright 2015 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
-// licence that can be found in the LICENSE file.
+// license that can be found in the LICENSE file.
 
 // This file contains the implementation of the 'gomvpkg' command
 // whose main function is in golang.org/x/tools/cmd/gomvpkg.
@@ -18,9 +18,9 @@ import (
 	"go/build"
 	"go/format"
 	"go/token"
+	exec "golang.org/x/sys/execabs"
 	"log"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"

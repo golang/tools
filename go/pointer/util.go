@@ -8,9 +8,9 @@ import (
 	"bytes"
 	"fmt"
 	"go/types"
+	exec "golang.org/x/sys/execabs"
 	"log"
 	"os"
-	"os/exec"
 	"runtime"
 	"time"
 
@@ -277,8 +277,8 @@ func (ns *nodeset) add(n nodeid) bool {
 	return ns.Sparse.Insert(int(n))
 }
 
-func (x *nodeset) addAll(y *nodeset) bool {
-	return x.UnionWith(&y.Sparse)
+func (ns *nodeset) addAll(y *nodeset) bool {
+	return ns.UnionWith(&y.Sparse)
 }
 
 // Profiling & debugging -------------------------------------------------------

@@ -437,7 +437,7 @@ type Global struct {
 // A Builtin represents a specific use of a built-in function, e.g. len.
 //
 // Builtins are immutable values.  Builtins do not have addresses.
-// Builtins can only appear in CallCommon.Func.
+// Builtins can only appear in CallCommon.Value.
 //
 // Name() indicates the function: one of the built-in functions from the
 // Go spec (excluding "make" and "new") or one of these ssa-defined
@@ -615,9 +615,8 @@ type ChangeType struct {
 //    - between pointers and unsafe.Pointer.
 //    - between unsafe.Pointer and uintptr.
 //    - from (Unicode) integer to (UTF-8) string.
+//    - from slice to array pointer.
 // A conversion may imply a type name change also.
-//
-// This operation cannot fail dynamically.
 //
 // Conversions of untyped string/number/bool constants to a specific
 // representation are eliminated during SSA construction.
@@ -1477,6 +1476,8 @@ func (c *NamedConst) Token() token.Token                   { return token.CONST 
 func (c *NamedConst) Object() types.Object                 { return c.object }
 func (c *NamedConst) Package() *Package                    { return c.pkg }
 func (c *NamedConst) RelString(from *types.Package) string { return relString(c, from) }
+
+func (d *DebugRef) Object() types.Object { return d.object }
 
 // Func returns the package-level function of the specified name,
 // or nil if not found.

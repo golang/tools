@@ -7,55 +7,25 @@ package lsp
 import (
 	"context"
 
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/log"
-	"golang.org/x/tools/internal/telemetry/tag"
 )
 
 func (s *Server) signatureHelp(ctx context.Context, params *protocol.SignatureHelpParams) (*protocol.SignatureHelp, error) {
-	uri := span.NewURI(params.TextDocument.URI)
-	view, err := s.session.ViewOf(uri)
-	if err != nil {
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.Go)
+	defer release()
+	if !ok {
 		return nil, err
 	}
-	snapshot := view.Snapshot()
-	fh, err := snapshot.GetFile(uri)
+	info, activeParameter, err := source.SignatureHelp(ctx, snapshot, fh, params.Position)
 	if err != nil {
-		return nil, err
-	}
-	if fh.Identity().Kind != source.Go {
+		event.Error(ctx, "no signature help", err, tag.Position.Of(params.Position))
 		return nil, nil
 	}
-	info, err := source.SignatureHelp(ctx, snapshot, fh, params.Position)
-	if err != nil {
-		log.Print(ctx, "no signature help", tag.Of("At", params.Position), tag.Of("Failure", err))
-		return nil, nil
-	}
-	return toProtocolSignatureHelp(info), nil
-}
-
-func toProtocolSignatureHelp(info *source.SignatureInformation) *protocol.SignatureHelp {
 	return &protocol.SignatureHelp{
-		ActiveParameter: float64(info.ActiveParameter),
-		ActiveSignature: 0, // there is only ever one possible signature
-		Signatures: []protocol.SignatureInformation{
-			{
-				Label:         info.Label,
-				Documentation: info.Documentation,
-				Parameters:    toProtocolParameterInformation(info.Parameters),
-			},
-		},
-	}
-}
-
-func toProtocolParameterInformation(info []source.ParameterInformation) []protocol.ParameterInformation {
-	var result []protocol.ParameterInformation
-	for _, p := range info {
-		result = append(result, protocol.ParameterInformation{
-			Label: p.Label,
-		})
-	}
-	return result
+		Signatures:      []protocol.SignatureInformation{*info},
+		ActiveParameter: uint32(activeParameter),
+	}, nil
 }

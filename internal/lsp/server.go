@@ -8,60 +8,35 @@ package lsp
 import (
 	"context"
 	"fmt"
-	"net"
 	"sync"
 
 	"golang.org/x/tools/internal/jsonrpc2"
+	"golang.org/x/tools/internal/lsp/progress"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
+	errors "golang.org/x/xerrors"
 )
 
-// NewClientServer
-func NewClientServer(ctx context.Context, session source.Session, client protocol.Client) (context.Context, *Server) {
-	ctx = protocol.WithClient(ctx, client)
-	return ctx, &Server{
-		client:    client,
-		session:   session,
-		delivered: make(map[span.URI]sentDiagnostics),
-	}
-}
+const concurrentAnalyses = 1
 
 // NewServer creates an LSP server and binds it to handle incoming client
 // messages on on the supplied stream.
-func NewServer(ctx context.Context, session source.Session, stream jsonrpc2.Stream) (context.Context, *Server) {
-	s := &Server{
-		delivered: make(map[span.URI]sentDiagnostics),
-		session:   session,
+func NewServer(session source.Session, client protocol.ClientCloser) *Server {
+	tracker := progress.NewTracker(client)
+	session.SetProgressTracker(tracker)
+	return &Server{
+		diagnostics:           map[span.URI]*fileReports{},
+		gcOptimizationDetails: make(map[string]struct{}),
+		watchedGlobPatterns:   make(map[string]struct{}),
+		changedFiles:          make(map[span.URI]struct{}),
+		session:               session,
+		client:                client,
+		diagnosticsSema:       make(chan struct{}, concurrentAnalyses),
+		progress:              tracker,
+		diagDebouncer:         newDebouncer(),
+		watchedFileDebouncer:  newDebouncer(),
 	}
-	ctx, s.Conn, s.client = protocol.NewServer(ctx, stream, s)
-	return ctx, s
-}
-
-// RunServerOnPort starts an LSP server on the given port and does not exit.
-// This function exists for debugging purposes.
-func RunServerOnPort(ctx context.Context, cache source.Cache, port int, h func(ctx context.Context, s *Server)) error {
-	return RunServerOnAddress(ctx, cache, fmt.Sprintf(":%v", port), h)
-}
-
-// RunServerOnAddress starts an LSP server on the given address and does not
-// exit. This function exists for debugging purposes.
-func RunServerOnAddress(ctx context.Context, cache source.Cache, addr string, h func(ctx context.Context, s *Server)) error {
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return err
-	}
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			return err
-		}
-		h(NewServer(ctx, cache.NewSession(), jsonrpc2.NewHeaderStream(conn, conn)))
-	}
-}
-
-func (s *Server) Run(ctx context.Context) error {
-	return s.Conn.Run(ctx)
 }
 
 type serverState int
@@ -73,59 +48,103 @@ const (
 	serverShutDown
 )
 
+func (s serverState) String() string {
+	switch s {
+	case serverCreated:
+		return "created"
+	case serverInitializing:
+		return "initializing"
+	case serverInitialized:
+		return "initialized"
+	case serverShutDown:
+		return "shutDown"
+	}
+	return fmt.Sprintf("(unknown state: %d)", int(s))
+}
+
+// Server implements the protocol.Server interface.
 type Server struct {
-	Conn   *jsonrpc2.Conn
-	client protocol.Client
+	client protocol.ClientCloser
 
 	stateMu sync.Mutex
 	state   serverState
+	// notifications generated before serverInitialized
+	notifications []*protocol.ShowMessageParams
 
 	session source.Session
 
+	tempDir string
+
 	// changedFiles tracks files for which there has been a textDocument/didChange.
-	changedFiles map[span.URI]struct{}
+	changedFilesMu sync.Mutex
+	changedFiles   map[span.URI]struct{}
 
 	// folders is only valid between initialize and initialized, and holds the
 	// set of folders to build views for when we are ready
 	pendingFolders []protocol.WorkspaceFolder
 
-	// delivered is a cache of the diagnostics that the server has sent.
-	deliveredMu sync.Mutex
-	delivered   map[span.URI]sentDiagnostics
+	// watchedGlobPatterns is the set of glob patterns that we have requested
+	// the client watch on disk. It will be updated as the set of directories
+	// that the server should watch changes.
+	watchedGlobPatternsMu  sync.Mutex
+	watchedGlobPatterns    map[string]struct{}
+	watchRegistrationCount int
+
+	diagnosticsMu sync.Mutex
+	diagnostics   map[span.URI]*fileReports
+
+	// gcOptimizationDetails describes the packages for which we want
+	// optimization details to be included in the diagnostics. The key is the
+	// ID of the package.
+	gcOptimizationDetailsMu sync.Mutex
+	gcOptimizationDetails   map[string]struct{}
+
+	// diagnosticsSema limits the concurrency of diagnostics runs, which can be
+	// expensive.
+	diagnosticsSema chan struct{}
+
+	progress *progress.Tracker
+
+	// diagDebouncer is used for debouncing diagnostics.
+	diagDebouncer *debouncer
+
+	// watchedFileDebouncer is used for batching didChangeWatchedFiles notifications.
+	watchedFileDebouncer *debouncer
+	fileChangeMu         sync.Mutex
+	pendingOnDiskChanges []*pendingModificationSet
+
+	// When the workspace fails to load, we show its status through a progress
+	// report with an error message.
+	criticalErrorStatusMu sync.Mutex
+	criticalErrorStatus   *progress.WorkDone
 }
 
-// sentDiagnostics is used to cache diagnostics that have been sent for a given file.
-type sentDiagnostics struct {
-	version      float64
-	identifier   string
-	sorted       []source.Diagnostic
-	withAnalysis bool
-	snapshotID   uint64
+type pendingModificationSet struct {
+	diagnoseDone chan struct{}
+	changes      []source.FileModification
 }
 
-func (s *Server) cancelRequest(ctx context.Context, params *protocol.CancelParams) error {
-	return nil
-}
-
-func (s *Server) codeLens(ctx context.Context, params *protocol.CodeLensParams) ([]protocol.CodeLens, error) {
-	return nil, nil
+func (s *Server) workDoneProgressCancel(ctx context.Context, params *protocol.WorkDoneProgressCancelParams) error {
+	return s.progress.Cancel(ctx, params.Token)
 }
 
 func (s *Server) nonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {
-	paramMap := params.(map[string]interface{})
-	if method == "gopls/diagnoseFiles" {
+	switch method {
+	case "gopls/diagnoseFiles":
+		paramMap := params.(map[string]interface{})
 		for _, file := range paramMap["files"].([]interface{}) {
-			uri := span.URI(file.(string))
-			view, err := s.session.ViewOf(uri)
-			if err != nil {
+			snapshot, fh, ok, release, err := s.beginFileRequest(ctx, protocol.DocumentURI(file.(string)), source.UnknownKind)
+			defer release()
+			if !ok {
 				return nil, err
 			}
-			fileID, diagnostics, err := source.FileDiagnostics(ctx, view.Snapshot(), uri)
+
+			fileID, diagnostics, err := source.FileDiagnostics(ctx, snapshot, fh.URI())
 			if err != nil {
 				return nil, err
 			}
 			if err := s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
-				URI:         protocol.NewURI(uri),
+				URI:         protocol.URIFromSpanURI(fh.URI()),
 				Diagnostics: toProtocolDiagnostics(diagnostics),
 				Version:     fileID.Version,
 			}); err != nil {
@@ -142,8 +161,8 @@ func (s *Server) nonstandardRequest(ctx context.Context, method string, params i
 	return nil, notImplemented(method)
 }
 
-func notImplemented(method string) *jsonrpc2.Error {
-	return jsonrpc2.NewErrorf(jsonrpc2.CodeMethodNotFound, "method %q not yet implemented", method)
+func notImplemented(method string) error {
+	return errors.Errorf("%w: %q not yet implemented", jsonrpc2.ErrMethodNotFound, method)
 }
 
 //go:generate helper/helper -d protocol/tsserver.go -o server_gen.go -u .

@@ -1,3 +1,8 @@
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build ignore
 // +build ignore
 
 // mkstdlib generates the zstdlib.go file, containing the Go standard
@@ -14,11 +19,12 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 func mustOpen(name string) io.Reader {
@@ -60,6 +66,9 @@ func main() {
 		mustOpen(api("go1.11.txt")),
 		mustOpen(api("go1.12.txt")),
 		mustOpen(api("go1.13.txt")),
+		mustOpen(api("go1.14.txt")),
+		mustOpen(api("go1.15.txt")),
+		mustOpen(api("go1.16.txt")),
 
 		// The API of the syscall/js package needs to be computed explicitly,
 		// because it's not included in the GOROOT/api/go1.*.txt files at this time.

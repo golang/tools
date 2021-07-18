@@ -15,7 +15,7 @@ import (
 var testdata = []packagestest.Module{{
 	Name: "golang.org/fake1",
 	Files: map[string]interface{}{
-		"a.go": packagestest.Symlink("testdata/a.go"),
+		"a.go": packagestest.Symlink("testdata/a.go"), // broken symlink
 		"b.go": "invalid file contents",
 	},
 	Overlay: map[string][]byte{
@@ -31,6 +31,16 @@ var testdata = []packagestest.Module{{
 	Name: "golang.org/fake2/v2",
 	Files: map[string]interface{}{
 		"other/a.go": "package fake2",
+	},
+}, {
+	Name: "golang.org/fake3@v1.0.0",
+	Files: map[string]interface{}{
+		"other/a.go": "package fake3",
+	},
+}, {
+	Name: "golang.org/fake3@v1.1.0",
+	Files: map[string]interface{}{
+		"other/a.go": "package fake3",
 	},
 }}
 
@@ -72,5 +82,101 @@ func checkContent(expect string) func(t *testing.T, exported *packagestest.Expor
 		} else if string(content) != expect {
 			t.Errorf("Content of %v does not match, got %v expected %v", filename, string(content), expect)
 		}
+	}
+}
+
+func TestGroupFilesByModules(t *testing.T) {
+	for _, tt := range []struct {
+		testdir string
+		want    []packagestest.Module
+	}{
+		{
+			testdir: "testdata/groups/one",
+			want: []packagestest.Module{
+				{
+					Name: "testdata/groups/one",
+					Files: map[string]interface{}{
+						"main.go": true,
+					},
+				},
+				{
+					Name: "example.com/extra",
+					Files: map[string]interface{}{
+						"help.go": true,
+					},
+				},
+			},
+		},
+		{
+			testdir: "testdata/groups/two",
+			want: []packagestest.Module{
+				{
+					Name: "testdata/groups/two",
+					Files: map[string]interface{}{
+						"main.go":           true,
+						"expect/yo.go":      true,
+						"expect/yo_test.go": true,
+					},
+				},
+				{
+					Name: "example.com/extra",
+					Files: map[string]interface{}{
+						"yo.go":        true,
+						"geez/help.go": true,
+					},
+				},
+				{
+					Name: "example.com/extra/v2",
+					Files: map[string]interface{}{
+						"me.go":        true,
+						"geez/help.go": true,
+					},
+				},
+				{
+					Name: "example.com/tempmod",
+					Files: map[string]interface{}{
+						"main.go": true,
+					},
+				},
+				{
+					Name: "example.com/what@v1.0.0",
+					Files: map[string]interface{}{
+						"main.go": true,
+					},
+				},
+				{
+					Name: "example.com/what@v1.1.0",
+					Files: map[string]interface{}{
+						"main.go": true,
+					},
+				},
+			},
+		},
+	} {
+		t.Run(tt.testdir, func(t *testing.T) {
+			got, err := packagestest.GroupFilesByModules(tt.testdir)
+			if err != nil {
+				t.Fatalf("could not group files %v", err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("%s: wanted %d modules but got %d", tt.testdir, len(tt.want), len(got))
+			}
+			for i, w := range tt.want {
+				g := got[i]
+				if filepath.FromSlash(g.Name) != filepath.FromSlash(w.Name) {
+					t.Fatalf("%s: wanted module[%d].Name to be %s but got %s", tt.testdir, i, filepath.FromSlash(w.Name), filepath.FromSlash(g.Name))
+				}
+				for fh := range w.Files {
+					if _, ok := g.Files[fh]; !ok {
+						t.Fatalf("%s, module[%d]: wanted %s but could not find", tt.testdir, i, fh)
+					}
+				}
+				for fh := range g.Files {
+					if _, ok := w.Files[fh]; !ok {
+						t.Fatalf("%s, module[%d]: found unexpected file %s", tt.testdir, i, fh)
+					}
+				}
+			}
+		})
 	}
 }

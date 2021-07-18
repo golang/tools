@@ -6,6 +6,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"sort"
@@ -44,36 +45,71 @@ func (r *symbols) Run(ctx context.Context, args ...string) error {
 	from := span.Parse(args[0])
 	p := protocol.DocumentSymbolParams{
 		TextDocument: protocol.TextDocumentIdentifier{
-			URI: string(from.URI()),
+			URI: protocol.URIFromSpanURI(from.URI()),
 		},
 	}
-
 	symbols, err := conn.DocumentSymbol(ctx, &p)
 	if err != nil {
 		return err
 	}
 	for _, s := range symbols {
-		fmt.Println(symbolToString(s))
-		// Sort children for consistency
-		sort.Slice(s.Children, func(i, j int) bool {
-			return s.Children[i].Name < s.Children[j].Name
-		})
-		for _, c := range s.Children {
-			fmt.Println("\t" + symbolToString(c))
+		if m, ok := s.(map[string]interface{}); ok {
+			s, err = mapToSymbol(m)
+			if err != nil {
+				return err
+			}
+		}
+		switch t := s.(type) {
+		case protocol.DocumentSymbol:
+			printDocumentSymbol(t)
+		case protocol.SymbolInformation:
+			printSymbolInformation(t)
 		}
 	}
-
 	return nil
 }
 
-func symbolToString(symbol protocol.DocumentSymbol) string {
-	r := symbol.SelectionRange
-	// convert ranges to user friendly 1-based positions
-	position := fmt.Sprintf("%v:%v-%v:%v",
+func mapToSymbol(m map[string]interface{}) (interface{}, error) {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, ok := m["selectionRange"]; ok {
+		var s protocol.DocumentSymbol
+		if err := json.Unmarshal(b, &s); err != nil {
+			return nil, err
+		}
+		return s, nil
+	}
+
+	var s protocol.SymbolInformation
+	if err := json.Unmarshal(b, &s); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func printDocumentSymbol(s protocol.DocumentSymbol) {
+	fmt.Printf("%s %s %s\n", s.Name, s.Kind, positionToString(s.SelectionRange))
+	// Sort children for consistency
+	sort.Slice(s.Children, func(i, j int) bool {
+		return s.Children[i].Name < s.Children[j].Name
+	})
+	for _, c := range s.Children {
+		fmt.Printf("\t%s %s %s\n", c.Name, c.Kind, positionToString(c.SelectionRange))
+	}
+}
+
+func printSymbolInformation(s protocol.SymbolInformation) {
+	fmt.Printf("%s %s %s\n", s.Name, s.Kind, positionToString(s.Location.Range))
+}
+
+func positionToString(r protocol.Range) string {
+	return fmt.Sprintf("%v:%v-%v:%v",
 		r.Start.Line+1,
 		r.Start.Character+1,
 		r.End.Line+1,
 		r.End.Character+1,
 	)
-	return fmt.Sprintf("%s %s %s", symbol.Name, symbol.Kind, position)
 }

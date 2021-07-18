@@ -4,11 +4,14 @@
 
 // This is a copy of bexport_test.go for iexport.go.
 
+//go:build go1.11
 // +build go1.11
 
 package gcimporter_test
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/build"
@@ -16,7 +19,9 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"io/ioutil"
 	"math/big"
+	"os"
 	"reflect"
 	"runtime"
 	"sort"
@@ -27,6 +32,35 @@ import (
 	"golang.org/x/tools/go/internal/gcimporter"
 	"golang.org/x/tools/go/loader"
 )
+
+func readExportFile(filename string) ([]byte, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	buf := bufio.NewReader(f)
+	if _, err := gcimporter.FindExportData(buf); err != nil {
+		return nil, err
+	}
+
+	if ch, err := buf.ReadByte(); err != nil {
+		return nil, err
+	} else if ch != 'i' {
+		return nil, fmt.Errorf("unexpected byte: %v", ch)
+	}
+
+	return ioutil.ReadAll(buf)
+}
+
+func iexport(fset *token.FileSet, pkg *types.Package) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := gcimporter.IExportData(&buf, fset, pkg); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
 
 func TestIExportData_stdlib(t *testing.T) {
 	if runtime.Compiler == "gccgo" {
@@ -45,6 +79,9 @@ func TestIExportData_stdlib(t *testing.T) {
 	conf := loader.Config{
 		Build:       &ctxt,
 		AllowErrors: true,
+		TypeChecker: types.Config{
+			Sizes: types.SizesFor(ctxt.Compiler, ctxt.GOARCH),
+		},
 	}
 	for _, path := range buildutil.AllPackages(conf.Build) {
 		conf.Import(path)
@@ -72,63 +109,87 @@ type UnknownType undefined
 	}
 
 	var sorted []*types.Package
-	for pkg := range prog.AllPackages {
-		sorted = append(sorted, pkg)
+	for pkg, info := range prog.AllPackages {
+		if info.Files != nil { // non-empty directory
+			sorted = append(sorted, pkg)
+		}
 	}
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].Path() < sorted[j].Path()
 	})
 
 	for _, pkg := range sorted {
-		info := prog.AllPackages[pkg]
-		if info.Files == nil {
-			continue // empty directory
-		}
-		exportdata, err := gcimporter.IExportData(conf.Fset, pkg)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if exportdata[0] == 'i' {
-			exportdata = exportdata[1:] // trim the 'i' in the header
+		if exportdata, err := iexport(conf.Fset, pkg); err != nil {
+			t.Error(err)
 		} else {
-			t.Fatalf("unexpected first character of export data: %v", exportdata[0])
+			testPkgData(t, conf.Fset, pkg, exportdata)
 		}
 
-		imports := make(map[string]*types.Package)
-		fset2 := token.NewFileSet()
-		n, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
-		if err != nil {
-			t.Errorf("IImportData(%s): %v", pkg.Path(), err)
+		if pkg.Name() == "main" || pkg.Name() == "haserrors" {
+			// skip; no export data
+		} else if bp, err := ctxt.Import(pkg.Path(), "", build.FindOnly); err != nil {
+			t.Log("warning:", err)
+		} else if exportdata, err := readExportFile(bp.PkgObj); err != nil {
+			t.Log("warning:", err)
+		} else {
+			testPkgData(t, conf.Fset, pkg, exportdata)
+		}
+	}
+
+	var bundle bytes.Buffer
+	if err := gcimporter.IExportBundle(&bundle, conf.Fset, sorted); err != nil {
+		t.Fatal(err)
+	}
+	fset2 := token.NewFileSet()
+	imports := make(map[string]*types.Package)
+	pkgs2, err := gcimporter.IImportBundle(fset2, imports, bundle.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i, pkg := range sorted {
+		testPkg(t, conf.Fset, pkg, fset2, pkgs2[i])
+	}
+}
+
+func testPkgData(t *testing.T, fset *token.FileSet, pkg *types.Package, exportdata []byte) {
+	imports := make(map[string]*types.Package)
+	fset2 := token.NewFileSet()
+	_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
+	if err != nil {
+		t.Errorf("IImportData(%s): %v", pkg.Path(), err)
+	}
+
+	testPkg(t, fset, pkg, fset2, pkg2)
+}
+
+func testPkg(t *testing.T, fset *token.FileSet, pkg *types.Package, fset2 *token.FileSet, pkg2 *types.Package) {
+	if _, err := iexport(fset2, pkg2); err != nil {
+		t.Errorf("reexport %q: %v", pkg.Path(), err)
+	}
+
+	// Compare the packages' corresponding members.
+	for _, name := range pkg.Scope().Names() {
+		if !ast.IsExported(name) {
 			continue
 		}
-		if n != len(exportdata) {
-			t.Errorf("IImportData(%s) decoded %d bytes, want %d",
-				pkg.Path(), n, len(exportdata))
+		obj1 := pkg.Scope().Lookup(name)
+		obj2 := pkg2.Scope().Lookup(name)
+		if obj2 == nil {
+			t.Errorf("%s.%s not found, want %s", pkg.Path(), name, obj1)
+			continue
 		}
 
-		// Compare the packages' corresponding members.
-		for _, name := range pkg.Scope().Names() {
-			if !ast.IsExported(name) {
-				continue
-			}
-			obj1 := pkg.Scope().Lookup(name)
-			obj2 := pkg2.Scope().Lookup(name)
-			if obj2 == nil {
-				t.Fatalf("%s.%s not found, want %s", pkg.Path(), name, obj1)
-				continue
-			}
+		fl1 := fileLine(fset, obj1)
+		fl2 := fileLine(fset2, obj2)
+		if fl1 != fl2 {
+			t.Errorf("%s.%s: got posn %s, want %s",
+				pkg.Path(), name, fl2, fl1)
+		}
 
-			fl1 := fileLine(conf.Fset, obj1)
-			fl2 := fileLine(fset2, obj2)
-			if fl1 != fl2 {
-				t.Errorf("%s.%s: got posn %s, want %s",
-					pkg.Path(), name, fl2, fl1)
-			}
-
-			if err := cmpObj(obj1, obj2); err != nil {
-				t.Errorf("%s.%s: %s\ngot:  %s\nwant: %s",
-					pkg.Path(), name, err, obj2, obj1)
-			}
+		if err := cmpObj(obj1, obj2); err != nil {
+			t.Errorf("%s.%s: %s\ngot:  %s\nwant: %s",
+				pkg.Path(), name, err, obj2, obj1)
 		}
 	}
 }
@@ -151,14 +212,9 @@ func TestIExportData_long(t *testing.T) {
 	}
 
 	// export
-	exportdata, err := gcimporter.IExportData(fset1, pkg)
+	exportdata, err := iexport(fset1, pkg)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if exportdata[0] == 'i' {
-		exportdata = exportdata[1:] // trim the 'i' in the header
-	} else {
-		t.Fatalf("unexpected first character of export data: %v", exportdata[0])
 	}
 
 	// import
@@ -199,14 +255,9 @@ func TestIExportData_typealiases(t *testing.T) {
 
 	// export
 	// use a nil fileset here to confirm that it doesn't panic
-	exportdata, err := gcimporter.IExportData(nil, pkg1)
+	exportdata, err := iexport(nil, pkg1)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if exportdata[0] == 'i' {
-		exportdata = exportdata[1:] // trim the 'i' in the header
-	} else {
-		t.Fatalf("unexpected first character of export data: %v", exportdata[0])
 	}
 
 	// import

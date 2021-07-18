@@ -65,13 +65,16 @@ Running the test with verbose output will print:
 package packagestest
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"go/token"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -79,11 +82,16 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/xerrors"
 )
 
 var (
 	skipCleanup = flag.Bool("skip-cleanup", false, "Do not delete the temporary export folders") // for debugging
 )
+
+// ErrUnsupported indicates an error due to an operation not supported on the
+// current platform.
+var ErrUnsupported = errors.New("operation is not supported")
 
 // Module is a representation of a go module.
 type Module struct {
@@ -118,11 +126,12 @@ type Exported struct {
 
 	ExpectFileSet *token.FileSet // The file set used when parsing expectations
 
-	temp    string                       // the temporary directory that was exported to
-	primary string                       // the first non GOROOT module that was exported
-	written map[string]map[string]string // the full set of exported files
-	notes   []*expect.Note               // The list of expectations extracted from go source files
-	markers map[string]span.Range        // The set of markers extracted from go source files
+	Exporter Exporter                     // the exporter used
+	temp     string                       // the temporary directory that was exported to
+	primary  string                       // the first non GOROOT module that was exported
+	written  map[string]map[string]string // the full set of exported files
+	notes    []*expect.Note               // The list of expectations extracted from go source files
+	markers  map[string]span.Range        // The set of markers extracted from go source files
 }
 
 // Exporter implementations are responsible for converting from the generic description of some
@@ -150,6 +159,7 @@ var All []Exporter
 func TestAll(t *testing.T, f func(*testing.T, Exporter)) {
 	t.Helper()
 	for _, e := range All {
+		e := e // in case f calls t.Parallel
 		t.Run(e.Name(), func(t *testing.T) {
 			t.Helper()
 			f(t, e)
@@ -163,6 +173,7 @@ func TestAll(t *testing.T, f func(*testing.T, Exporter)) {
 func BenchmarkAll(b *testing.B, f func(*testing.B, Exporter)) {
 	b.Helper()
 	for _, e := range All {
+		e := e // in case f calls t.Parallel
 		b.Run(e.Name(), func(b *testing.B) {
 			b.Helper()
 			f(b, e)
@@ -179,6 +190,9 @@ func BenchmarkAll(b *testing.B, f func(*testing.B, Exporter)) {
 // The file deletion in the cleanup can be skipped by setting the skip-cleanup
 // flag when invoking the test, allowing the temporary directory to be left for
 // debugging tests.
+//
+// If the Writer for any file within any module returns an error equivalent to
+// ErrUnspported, Export skips the test.
 func Export(t testing.TB, exporter Exporter, modules []Module) *Exported {
 	t.Helper()
 	if exporter == Modules {
@@ -200,6 +214,7 @@ func Export(t testing.TB, exporter Exporter, modules []Module) *Exported {
 			Mode:    packages.LoadImports,
 		},
 		Modules:       modules,
+		Exporter:      exporter,
 		temp:          temp,
 		primary:       modules[0].Name,
 		written:       map[string]map[string]string{},
@@ -211,6 +226,17 @@ func Export(t testing.TB, exporter Exporter, modules []Module) *Exported {
 		}
 	}()
 	for _, module := range modules {
+		// Create all parent directories before individual files. If any file is a
+		// symlink to a directory, that directory must exist before the symlink is
+		// created or else it may be created with the wrong type on Windows.
+		// (See https://golang.org/issue/39183.)
+		for fragment := range module.Files {
+			fullpath := exporter.Filename(exported, module.Name, filepath.FromSlash(fragment))
+			if err := os.MkdirAll(filepath.Dir(fullpath), 0755); err != nil {
+				t.Fatal(err)
+			}
+		}
+
 		for fragment, value := range module.Files {
 			fullpath := exporter.Filename(exported, module.Name, filepath.FromSlash(fragment))
 			written, ok := exported.written[module.Name]
@@ -219,12 +245,12 @@ func Export(t testing.TB, exporter Exporter, modules []Module) *Exported {
 				exported.written[module.Name] = written
 			}
 			written[fragment] = fullpath
-			if err := os.MkdirAll(filepath.Dir(fullpath), 0755); err != nil {
-				t.Fatal(err)
-			}
 			switch value := value.(type) {
 			case Writer:
 				if err := value(fullpath); err != nil {
+					if xerrors.Is(err, ErrUnsupported) {
+						t.Skip(err)
+					}
 					t.Fatal(err)
 				}
 			case string:
@@ -259,26 +285,132 @@ func Script(contents string) Writer {
 // Link returns a Writer that creates a hard link from the specified source to
 // the required file.
 // This is used to link testdata files into the generated testing tree.
+//
+// If hard links to source are not supported on the destination filesystem, the
+// returned Writer returns an error for which errors.Is(_, ErrUnsupported)
+// returns true.
 func Link(source string) Writer {
 	return func(filename string) error {
-		return os.Link(source, filename)
+		linkErr := os.Link(source, filename)
+
+		if linkErr != nil && !builderMustSupportLinks() {
+			// Probe to figure out whether Link failed because the Link operation
+			// isn't supported.
+			if stat, err := openAndStat(source); err == nil {
+				if err := createEmpty(filename, stat.Mode()); err == nil {
+					// Successfully opened the source and created the destination,
+					// but the result is empty and not a hard-link.
+					return &os.PathError{Op: "Link", Path: filename, Err: ErrUnsupported}
+				}
+			}
+		}
+
+		return linkErr
 	}
 }
 
 // Symlink returns a Writer that creates a symlink from the specified source to the
 // required file.
 // This is used to link testdata files into the generated testing tree.
+//
+// If symlinks to source are not supported on the destination filesystem, the
+// returned Writer returns an error for which errors.Is(_, ErrUnsupported)
+// returns true.
 func Symlink(source string) Writer {
 	if !strings.HasPrefix(source, ".") {
-		if abspath, err := filepath.Abs(source); err == nil {
+		if absSource, err := filepath.Abs(source); err == nil {
 			if _, err := os.Stat(source); !os.IsNotExist(err) {
-				source = abspath
+				source = absSource
 			}
 		}
 	}
 	return func(filename string) error {
-		return os.Symlink(source, filename)
+		symlinkErr := os.Symlink(source, filename)
+
+		if symlinkErr != nil && !builderMustSupportLinks() {
+			// Probe to figure out whether Symlink failed because the Symlink
+			// operation isn't supported.
+			fullSource := source
+			if !filepath.IsAbs(source) {
+				// Compute the target path relative to the parent of filename, not the
+				// current working directory.
+				fullSource = filepath.Join(filename, "..", source)
+			}
+			stat, err := openAndStat(fullSource)
+			mode := os.ModePerm
+			if err == nil {
+				mode = stat.Mode()
+			} else if !xerrors.Is(err, os.ErrNotExist) {
+				// We couldn't open the source, but it might exist. We don't expect to be
+				// able to portably create a symlink to a file we can't see.
+				return symlinkErr
+			}
+
+			if err := createEmpty(filename, mode|0644); err == nil {
+				// Successfully opened the source (or verified that it does not exist) and
+				// created the destination, but we couldn't create it as a symlink.
+				// Probably the OS just doesn't support symlinks in this context.
+				return &os.PathError{Op: "Symlink", Path: filename, Err: ErrUnsupported}
+			}
+		}
+
+		return symlinkErr
 	}
+}
+
+// builderMustSupportLinks reports whether we are running on a Go builder
+// that is known to support hard and symbolic links.
+func builderMustSupportLinks() bool {
+	if os.Getenv("GO_BUILDER_NAME") == "" {
+		// Any OS can be configured to mount an exotic filesystem.
+		// Don't make assumptions about what users are running.
+		return false
+	}
+
+	switch runtime.GOOS {
+	case "windows", "plan9":
+		// Some versions of Windows and all versions of plan9 do not support
+		// symlinks by default.
+		return false
+
+	default:
+		// All other platforms should support symlinks by default, and our builders
+		// should not do anything unusual that would violate that.
+		return true
+	}
+}
+
+// openAndStat attempts to open source for reading.
+func openAndStat(source string) (os.FileInfo, error) {
+	src, err := os.Open(source)
+	if err != nil {
+		return nil, err
+	}
+	stat, err := src.Stat()
+	src.Close()
+	if err != nil {
+		return nil, err
+	}
+	return stat, nil
+}
+
+// createEmpty creates an empty file or directory (depending on mode)
+// at dst, with the same permissions as mode.
+func createEmpty(dst string, mode os.FileMode) error {
+	if mode.IsDir() {
+		return os.Mkdir(dst, mode.Perm())
+	}
+
+	f, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode.Perm())
+	if err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(dst) // best-effort
+		return err
+	}
+
+	return nil
 }
 
 // Copy returns a Writer that copies a file from the specified source to the
@@ -295,12 +427,157 @@ func Copy(source string) Writer {
 			// symlinks, devices, etc.)
 			return fmt.Errorf("cannot copy non regular file %s", source)
 		}
-		contents, err := ioutil.ReadFile(source)
+		return copyFile(filename, source, stat.Mode().Perm())
+	}
+}
+
+func copyFile(dest, source string, perm os.FileMode) error {
+	src, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	dst, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(dst, src)
+	if closeErr := dst.Close(); err == nil {
+		err = closeErr
+	}
+	return err
+}
+
+// GroupFilesByModules attempts to map directories to the modules within each directory.
+// This function assumes that the folder is structured in the following way:
+// - dir
+//   - primarymod
+//     - .go files
+//		 - packages
+//		 - go.mod (optional)
+//	 - modules
+// 		 - repoa
+//		   - mod1
+//	       - .go files
+//			   -  packages
+//		  	 - go.mod (optional)
+// It scans the directory tree anchored at root and adds a Copy writer to the
+// map for every file found.
+// This is to enable the common case in tests where you have a full copy of the
+// package in your testdata.
+func GroupFilesByModules(root string) ([]Module, error) {
+	root = filepath.FromSlash(root)
+	primarymodPath := filepath.Join(root, "primarymod")
+
+	_, err := os.Stat(primarymodPath)
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("could not find primarymod folder within %s", root)
+	}
+
+	primarymod := &Module{
+		Name:    root,
+		Files:   make(map[string]interface{}),
+		Overlay: make(map[string][]byte),
+	}
+	mods := map[string]*Module{
+		root: primarymod,
+	}
+	modules := []Module{*primarymod}
+
+	if err := filepath.Walk(primarymodPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		return ioutil.WriteFile(filename, contents, stat.Mode())
+		if info.IsDir() {
+			return nil
+		}
+		fragment, err := filepath.Rel(primarymodPath, path)
+		if err != nil {
+			return err
+		}
+		primarymod.Files[filepath.ToSlash(fragment)] = Copy(path)
+		return nil
+	}); err != nil {
+		return nil, err
 	}
+
+	modulesPath := filepath.Join(root, "modules")
+	if _, err := os.Stat(modulesPath); os.IsNotExist(err) {
+		return modules, nil
+	}
+
+	var currentRepo, currentModule string
+	updateCurrentModule := func(dir string) {
+		if dir == currentModule {
+			return
+		}
+		// Handle the case where we step into a nested directory that is a module
+		// and then step out into the parent which is also a module.
+		// Example:
+		// - repoa
+		//   - moda
+		//     - go.mod
+		//     - v2
+		//       - go.mod
+		//     - what.go
+		//   - modb
+		for dir != root {
+			if mods[dir] != nil {
+				currentModule = dir
+				return
+			}
+			dir = filepath.Dir(dir)
+		}
+	}
+
+	if err := filepath.Walk(modulesPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		enclosingDir := filepath.Dir(path)
+		// If the path is not a directory, then we want to add the path to
+		// the files map of the currentModule.
+		if !info.IsDir() {
+			updateCurrentModule(enclosingDir)
+			fragment, err := filepath.Rel(currentModule, path)
+			if err != nil {
+				return err
+			}
+			mods[currentModule].Files[filepath.ToSlash(fragment)] = Copy(path)
+			return nil
+		}
+		// If the path is a directory and it's enclosing folder is equal to
+		// the modules folder, then the path is a new repo.
+		if enclosingDir == modulesPath {
+			currentRepo = path
+			return nil
+		}
+		// If the path is a directory and it's enclosing folder is not the same
+		// as the current repo and it is not of the form `v1`,`v2`,...
+		// then the path is a folder/package of the current module.
+		if enclosingDir != currentRepo && !versionSuffixRE.MatchString(filepath.Base(path)) {
+			return nil
+		}
+		// If the path is a directory and it's enclosing folder is the current repo
+		// then the path is a new module.
+		module, err := filepath.Rel(modulesPath, path)
+		if err != nil {
+			return err
+		}
+		mods[path] = &Module{
+			Name:    filepath.ToSlash(module),
+			Files:   make(map[string]interface{}),
+			Overlay: make(map[string][]byte),
+		}
+		currentModule = path
+		modules = append(modules, *mods[path])
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return modules, nil
 }
 
 // MustCopyFileTree returns a file set for a module based on a real directory tree.

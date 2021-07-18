@@ -5,7 +5,12 @@
 package godoc
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
+	"text/template"
 
 	"golang.org/x/tools/godoc/vfs/mapfs"
 )
@@ -66,4 +71,60 @@ func F()
 	if got, want := pInfo.PDoc.Funcs[0].Doc, "F doc //line 1 should appear\nline 2 should appear\n"; got != want {
 		t.Errorf("pInfo.PDoc.Funcs[0].Doc = %q; want %q", got, want)
 	}
+}
+
+func testServeBody(t *testing.T, p *Presentation, path, body string) {
+	t.Helper()
+	r := &http.Request{URL: &url.URL{Path: path}}
+	rw := httptest.NewRecorder()
+	p.ServeFile(rw, r)
+	if rw.Code != 200 || !strings.Contains(rw.Body.String(), body) {
+		t.Fatalf("GET %s: expected 200 w/ %q: got %d w/ body:\n%s",
+			path, body, rw.Code, rw.Body)
+	}
+}
+
+func TestRedirectAndMetadata(t *testing.T) {
+	c := NewCorpus(mapfs.New(map[string]string{
+		"doc/y/index.html": "Hello, y.",
+		"doc/x/index.html": `<!--{
+		"Path": "/doc/x/"
+}-->
+
+Hello, x.
+`}))
+	c.updateMetadata()
+	p := &Presentation{
+		Corpus:    c,
+		GodocHTML: template.Must(template.New("").Parse(`{{printf "%s" .Body}}`)),
+	}
+
+	// Test that redirect is sent back correctly.
+	// Used to panic. See golang.org/issue/40665.
+	for _, elem := range []string{"x", "y"} {
+		dir := "/doc/" + elem + "/"
+
+		r := &http.Request{URL: &url.URL{Path: dir + "index.html"}}
+		rw := httptest.NewRecorder()
+		p.ServeFile(rw, r)
+		loc := rw.Result().Header.Get("Location")
+		if rw.Code != 301 || loc != dir {
+			t.Errorf("GET %s: expected 301 -> %q, got %d -> %q", r.URL.Path, dir, rw.Code, loc)
+		}
+
+		testServeBody(t, p, dir, "Hello, "+elem)
+	}
+}
+
+func TestMarkdown(t *testing.T) {
+	p := &Presentation{
+		Corpus: NewCorpus(mapfs.New(map[string]string{
+			"doc/test.md":  "**bold**",
+			"doc/test2.md": `{{"*template*"}}`,
+		})),
+		GodocHTML: template.Must(template.New("").Parse(`{{printf "%s" .Body}}`)),
+	}
+
+	testServeBody(t, p, "/doc/test.html", "<strong>bold</strong>")
+	testServeBody(t, p, "/doc/test2.html", "<em>template</em>")
 }
