@@ -15,7 +15,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"runtime"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,9 +26,13 @@ import (
 	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/packages/packagestest"
+	"golang.org/x/tools/internal/lsp/command"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/lsp/source/completion"
 	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/txtar"
 )
 
@@ -39,10 +43,20 @@ const (
 	testModule        = "golang.org/x/tools/internal/lsp"
 )
 
+var summaryFile = "summary.txt"
+
+func init() {
+	if typeparams.Enabled {
+		summaryFile = "summary_generics.txt"
+	}
+}
+
 var UpdateGolden = flag.Bool("golden", false, "Update golden files")
 
-type Diagnostics map[span.URI][]source.Diagnostic
-type CompletionItems map[token.Pos]*source.CompletionItem
+type CallHierarchy map[span.Span]*CallHierarchyResult
+type CodeLens map[span.URI][]protocol.CodeLens
+type Diagnostics map[span.URI][]*source.Diagnostic
+type CompletionItems map[token.Pos]*completion.CompletionItem
 type Completions map[span.Span][]Completion
 type CompletionSnippets map[span.Span][]CompletionSnippet
 type UnimportedCompletions map[span.Span][]Completion
@@ -53,7 +67,9 @@ type RankCompletions map[span.Span][]Completion
 type FoldingRanges []span.Span
 type Formats []span.Span
 type Imports []span.Span
-type SuggestedFixes []span.Span
+type SemanticTokens []span.Span
+type SuggestedFixes map[span.Span][]string
+type FunctionExtractions map[span.Span]span.Span
 type Definitions map[span.Span]Definition
 type Implementations map[span.Span][]span.Span
 type Highlights map[span.Span][]span.Span
@@ -62,12 +78,17 @@ type Renames map[span.Span]string
 type PrepareRenames map[span.Span]*source.PrepareItem
 type Symbols map[span.URI][]protocol.DocumentSymbol
 type SymbolsChildren map[string][]protocol.DocumentSymbol
-type Signatures map[span.Span]*source.SignatureInformation
+type SymbolInformation map[span.Span]protocol.SymbolInformation
+type WorkspaceSymbols map[WorkspaceSymbolsTestType]map[span.URI][]string
+type Signatures map[span.Span]*protocol.SignatureHelp
 type Links map[span.URI][]Link
+type AddImport map[span.URI]string
 
 type Data struct {
 	Config                   packages.Config
 	Exported                 *packagestest.Exported
+	CallHierarchy            CallHierarchy
+	CodeLens                 CodeLens
 	Diagnostics              Diagnostics
 	CompletionItems          CompletionItems
 	Completions              Completions
@@ -80,7 +101,9 @@ type Data struct {
 	FoldingRanges            FoldingRanges
 	Formats                  Formats
 	Imports                  Imports
+	SemanticTokens           SemanticTokens
 	SuggestedFixes           SuggestedFixes
+	FunctionExtractions      FunctionExtractions
 	Definitions              Definitions
 	Implementations          Implementations
 	Highlights               Highlights
@@ -89,20 +112,28 @@ type Data struct {
 	PrepareRenames           PrepareRenames
 	Symbols                  Symbols
 	symbolsChildren          SymbolsChildren
+	symbolInformation        SymbolInformation
+	WorkspaceSymbols         WorkspaceSymbols
 	Signatures               Signatures
 	Links                    Links
+	AddImport                AddImport
 
 	t         testing.TB
 	fragments map[string]string
 	dir       string
 	golden    map[string]*Golden
+	mode      string
+
+	ModfileFlagAvailable bool
 
 	mappersMu sync.Mutex
 	mappers   map[span.URI]*protocol.ColumnMapper
 }
 
 type Tests interface {
-	Diagnostics(*testing.T, span.URI, []source.Diagnostic)
+	CallHierarchy(*testing.T, span.Span, *CallHierarchyResult)
+	CodeLens(*testing.T, span.URI, []protocol.CodeLens)
+	Diagnostics(*testing.T, span.URI, []*source.Diagnostic)
 	Completion(*testing.T, span.Span, Completion, CompletionItems)
 	CompletionSnippet(*testing.T, span.Span, CompletionSnippet, bool, CompletionItems)
 	UnimportedCompletion(*testing.T, span.Span, Completion, CompletionItems)
@@ -113,7 +144,9 @@ type Tests interface {
 	FoldingRanges(*testing.T, span.Span)
 	Format(*testing.T, span.Span)
 	Import(*testing.T, span.Span)
-	SuggestedFix(*testing.T, span.Span)
+	SemanticTokens(*testing.T, span.Span)
+	SuggestedFix(*testing.T, span.Span, []string, int)
+	FunctionExtraction(*testing.T, span.Span, span.Span)
 	Definition(*testing.T, span.Span, Definition)
 	Implementation(*testing.T, span.Span, []span.Span)
 	Highlight(*testing.T, span.Span, []span.Span)
@@ -121,8 +154,10 @@ type Tests interface {
 	Rename(*testing.T, span.Span, string)
 	PrepareRename(*testing.T, span.Span, *source.PrepareItem)
 	Symbols(*testing.T, span.URI, []protocol.DocumentSymbol)
-	SignatureHelp(*testing.T, span.Span, *source.SignatureInformation)
+	WorkspaceSymbols(*testing.T, span.URI, string, WorkspaceSymbolsTestType)
+	SignatureHelp(*testing.T, span.Span, *protocol.SignatureHelp)
 	Link(*testing.T, span.URI, []Link)
+	AddImport(*testing.T, span.URI, string)
 }
 
 type Definition struct {
@@ -147,11 +182,24 @@ const (
 	// Fuzzy tests deep completion and fuzzy matching.
 	CompletionFuzzy
 
-	// CaseSensitive tests case sensitive completion
+	// CaseSensitive tests case sensitive completion.
 	CompletionCaseSensitive
 
 	// CompletionRank candidates in test must be valid and in the right relative order.
 	CompletionRank
+)
+
+type WorkspaceSymbolsTestType int
+
+const (
+	// Default runs the standard workspace symbols tests.
+	WorkspaceSymbolsDefault = WorkspaceSymbolsTestType(iota)
+
+	// Fuzzy tests workspace symbols with fuzzy matching.
+	WorkspaceSymbolsFuzzy
+
+	// CaseSensitive tests workspace symbols with case sensitive.
+	WorkspaceSymbolsCaseSensitive
 )
 
 type Completion struct {
@@ -162,6 +210,10 @@ type CompletionSnippet struct {
 	CompletionItem     token.Pos
 	PlainSnippet       string
 	PlaceholderSnippet string
+}
+
+type CallHierarchyResult struct {
+	IncomingCalls, OutgoingCalls []protocol.CallHierarchyItem
 }
 
 type Link struct {
@@ -180,30 +232,55 @@ func Context(t testing.TB) context.Context {
 	return context.Background()
 }
 
-func DefaultOptions() source.Options {
-	o := source.DefaultOptions
+func DefaultOptions(o *source.Options) {
 	o.SupportedCodeActions = map[source.FileKind]map[protocol.CodeActionKind]bool{
 		source.Go: {
 			protocol.SourceOrganizeImports: true,
 			protocol.QuickFix:              true,
+			protocol.RefactorRewrite:       true,
+			protocol.RefactorExtract:       true,
+			protocol.SourceFixAll:          true,
 		},
 		source.Mod: {
 			protocol.SourceOrganizeImports: true,
 		},
-		source.Sum: {},
+		source.Sum:  {},
+		source.Tmpl: {},
 	}
+	o.UserOptions.Codelenses[string(command.Test)] = true
 	o.HoverKind = source.SynopsisDocumentation
 	o.InsertTextFormat = protocol.SnippetTextFormat
 	o.CompletionBudget = time.Minute
-	return o
+	o.HierarchicalDocumentSymbolSupport = true
+	o.ExperimentalWorkspaceModule = true
+	o.SemanticTokens = true
 }
 
-var haveCgo = false
+func RunTests(t *testing.T, dataDir string, includeMultiModule bool, f func(*testing.T, *Data)) {
+	t.Helper()
+	modes := []string{"Modules", "GOPATH"}
+	if includeMultiModule {
+		modes = append(modes, "MultiModule")
+	}
+	for _, mode := range modes {
+		t.Run(mode, func(t *testing.T) {
+			t.Helper()
+			if mode == "MultiModule" {
+				// Some bug in 1.12 breaks reading markers, and it's not worth figuring out.
+				testenv.NeedsGo1Point(t, 13)
+			}
+			datum := load(t, mode, dataDir)
+			f(t, datum)
+		})
+	}
+}
 
-func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
+func load(t testing.TB, mode string, dir string) *Data {
 	t.Helper()
 
-	data := &Data{
+	datum := &Data{
+		CallHierarchy:            make(CallHierarchy),
+		CodeLens:                 make(CodeLens),
 		Diagnostics:              make(Diagnostics),
 		CompletionItems:          make(CompletionItems),
 		Completions:              make(Completions),
@@ -219,19 +296,48 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 		References:               make(References),
 		Renames:                  make(Renames),
 		PrepareRenames:           make(PrepareRenames),
+		SuggestedFixes:           make(SuggestedFixes),
+		FunctionExtractions:      make(FunctionExtractions),
 		Symbols:                  make(Symbols),
 		symbolsChildren:          make(SymbolsChildren),
+		symbolInformation:        make(SymbolInformation),
+		WorkspaceSymbols:         make(WorkspaceSymbols),
 		Signatures:               make(Signatures),
 		Links:                    make(Links),
+		AddImport:                make(AddImport),
 
 		t:         t,
 		dir:       dir,
 		fragments: map[string]string{},
 		golden:    map[string]*Golden{},
+		mode:      mode,
 		mappers:   map[span.URI]*protocol.ColumnMapper{},
 	}
 
+	if !*UpdateGolden {
+		summary := filepath.Join(filepath.FromSlash(dir), summaryFile+goldenFileSuffix)
+		if _, err := os.Stat(summary); os.IsNotExist(err) {
+			t.Fatalf("could not find golden file summary.txt in %#v", dir)
+		}
+		archive, err := txtar.ParseFile(summary)
+		if err != nil {
+			t.Fatalf("could not read golden file %v/%v: %v", dir, summary, err)
+		}
+		datum.golden[summaryFile] = &Golden{
+			Filename: summary,
+			Archive:  archive,
+		}
+	}
+
 	files := packagestest.MustCopyFileTree(dir)
+	// Prune test cases that exercise generics.
+	if !typeparams.Enabled {
+		for name := range files {
+			if strings.Contains(name, "_generics") {
+				delete(files, name)
+			}
+		}
+	}
 	overlays := map[string][]byte{}
 	for fragment, operation := range files {
 		if trimmed := strings.TrimSuffix(fragment, goldenFileSuffix); trimmed != fragment {
@@ -241,7 +347,7 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 			if err != nil {
 				t.Fatalf("could not read golden file %v: %v", fragment, err)
 			}
-			data.golden[trimmed] = &Golden{
+			datum.golden[trimmed] = &Golden{
 				Filename: goldFile,
 				Archive:  archive,
 			}
@@ -258,89 +364,136 @@ func Load(t testing.TB, exporter packagestest.Exporter, dir string) *Data {
 			overlays[partial] = contents
 		}
 	}
+
 	modules := []packagestest.Module{
 		{
 			Name:    testModule,
 			Files:   files,
 			Overlay: overlays,
 		},
-		{
-			Name: "example.com/extramodule",
-			Files: map[string]interface{}{
-				"pkg/x.go": "package pkg\n",
-			},
-		},
 	}
-	data.Exported = packagestest.Export(t, exporter, modules)
-	for fragment := range files {
-		filename := data.Exported.File(testModule, fragment)
-		data.fragments[filename] = fragment
+	switch mode {
+	case "Modules":
+		datum.Exported = packagestest.Export(t, packagestest.Modules, modules)
+	case "GOPATH":
+		datum.Exported = packagestest.Export(t, packagestest.GOPATH, modules)
+	case "MultiModule":
+		files := map[string]interface{}{}
+		for k, v := range modules[0].Files {
+			files[filepath.Join("testmodule", k)] = v
+		}
+		modules[0].Files = files
+
+		overlays := map[string][]byte{}
+		for k, v := range modules[0].Overlay {
+			overlays[filepath.Join("testmodule", k)] = v
+		}
+		modules[0].Overlay = overlays
+
+		golden := map[string]*Golden{}
+		for k, v := range datum.golden {
+			if k == summaryFile {
+				golden[k] = v
+			} else {
+				golden[filepath.Join("testmodule", k)] = v
+			}
+		}
+		datum.golden = golden
+
+		datum.Exported = packagestest.Export(t, packagestest.Modules, modules)
+	default:
+		panic("unknown mode " + mode)
+	}
+
+	for _, m := range modules {
+		for fragment := range m.Files {
+			filename := datum.Exported.File(m.Name, fragment)
+			datum.fragments[filename] = fragment
+		}
 	}
 
 	// Turn off go/packages debug logging.
-	data.Exported.Config.Logf = nil
-	data.Config.Logf = nil
+	datum.Exported.Config.Logf = nil
+	datum.Config.Logf = nil
 
 	// Merge the exported.Config with the view.Config.
-	data.Config = *data.Exported.Config
-	data.Config.Fset = token.NewFileSet()
-	data.Config.Context = Context(nil)
-	data.Config.ParseFile = func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
+	datum.Config = *datum.Exported.Config
+	datum.Config.Fset = token.NewFileSet()
+	datum.Config.Context = Context(nil)
+	datum.Config.ParseFile = func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
 		panic("ParseFile should not be called")
 	}
 
-	// Do a first pass to collect special markers for completion.
-	if err := data.Exported.Expect(map[string]interface{}{
+	// Do a first pass to collect special markers for completion and workspace symbols.
+	if err := datum.Exported.Expect(map[string]interface{}{
 		"item": func(name string, r packagestest.Range, _ []string) {
-			data.Exported.Mark(name, r)
+			datum.Exported.Mark(name, r)
+		},
+		"symbol": func(name string, r packagestest.Range, _ []string) {
+			datum.Exported.Mark(name, r)
 		},
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	// Collect any data that needs to be used by subsequent tests.
-	if err := data.Exported.Expect(map[string]interface{}{
-		"diag":            data.collectDiagnostics,
-		"item":            data.collectCompletionItems,
-		"complete":        data.collectCompletions(CompletionDefault),
-		"unimported":      data.collectCompletions(CompletionUnimported),
-		"deep":            data.collectCompletions(CompletionDeep),
-		"fuzzy":           data.collectCompletions(CompletionFuzzy),
-		"casesensitive":   data.collectCompletions(CompletionCaseSensitive),
-		"rank":            data.collectCompletions(CompletionRank),
-		"snippet":         data.collectCompletionSnippets,
-		"fold":            data.collectFoldingRanges,
-		"format":          data.collectFormats,
-		"import":          data.collectImports,
-		"godef":           data.collectDefinitions,
-		"implementations": data.collectImplementations,
-		"typdef":          data.collectTypeDefinitions,
-		"hover":           data.collectHoverDefinitions,
-		"highlight":       data.collectHighlights,
-		"refs":            data.collectReferences,
-		"rename":          data.collectRenames,
-		"prepare":         data.collectPrepareRenames,
-		"symbol":          data.collectSymbols,
-		"signature":       data.collectSignatures,
-		"link":            data.collectLinks,
-		"suggestedfix":    data.collectSuggestedFixes,
+	if err := datum.Exported.Expect(map[string]interface{}{
+		"codelens":        datum.collectCodeLens,
+		"diag":            datum.collectDiagnostics,
+		"item":            datum.collectCompletionItems,
+		"complete":        datum.collectCompletions(CompletionDefault),
+		"unimported":      datum.collectCompletions(CompletionUnimported),
+		"deep":            datum.collectCompletions(CompletionDeep),
+		"fuzzy":           datum.collectCompletions(CompletionFuzzy),
+		"casesensitive":   datum.collectCompletions(CompletionCaseSensitive),
+		"rank":            datum.collectCompletions(CompletionRank),
+		"snippet":         datum.collectCompletionSnippets,
+		"fold":            datum.collectFoldingRanges,
+		"format":          datum.collectFormats,
+		"import":          datum.collectImports,
+		"semantic":        datum.collectSemanticTokens,
+		"godef":           datum.collectDefinitions,
+		"implementations": datum.collectImplementations,
+		"typdef":          datum.collectTypeDefinitions,
+		"hover":           datum.collectHoverDefinitions,
+		"highlight":       datum.collectHighlights,
+		"refs":            datum.collectReferences,
+		"rename":          datum.collectRenames,
+		"prepare":         datum.collectPrepareRenames,
+		"symbol":          datum.collectSymbols,
+		"signature":       datum.collectSignatures,
+		"link":            datum.collectLinks,
+		"suggestedfix":    datum.collectSuggestedFixes,
+		"extractfunc":     datum.collectFunctionExtractions,
+		"incomingcalls":   datum.collectIncomingCalls,
+		"outgoingcalls":   datum.collectOutgoingCalls,
+		"addimport":       datum.collectAddImports,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	for _, symbols := range data.Symbols {
+	for _, symbols := range datum.Symbols {
 		for i := range symbols {
-			children := data.symbolsChildren[symbols[i].Name]
+			children := datum.symbolsChildren[symbols[i].Name]
 			symbols[i].Children = children
 		}
 	}
 	// Collect names for the entries that require golden files.
-	if err := data.Exported.Expect(map[string]interface{}{
-		"godef": data.collectDefinitionNames,
-		"hover": data.collectDefinitionNames,
+	if err := datum.Exported.Expect(map[string]interface{}{
+		"godef":                        datum.collectDefinitionNames,
+		"hover":                        datum.collectDefinitionNames,
+		"workspacesymbol":              datum.collectWorkspaceSymbols(WorkspaceSymbolsDefault),
+		"workspacesymbolfuzzy":         datum.collectWorkspaceSymbols(WorkspaceSymbolsFuzzy),
+		"workspacesymbolcasesensitive": datum.collectWorkspaceSymbols(WorkspaceSymbolsCaseSensitive),
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return data
+	if mode == "MultiModule" {
+		if err := os.Rename(filepath.Join(datum.Config.Dir, "go.mod"), filepath.Join(datum.Config.Dir, "testmodule/go.mod")); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	return datum
 }
 
 func Run(t *testing.T, tests Tests, data *Data) {
@@ -352,10 +505,13 @@ func Run(t *testing.T, tests Tests, data *Data) {
 
 		for src, exp := range cases {
 			for i, e := range exp {
-				t.Run(spanName(src)+"_"+strconv.Itoa(i), func(t *testing.T) {
+				t.Run(SpanName(src)+"_"+strconv.Itoa(i), func(t *testing.T) {
 					t.Helper()
-					if (!haveCgo || runtime.GOOS == "android") && strings.Contains(t.Name(), "cgo") {
-						t.Skip("test requires cgo, not supported")
+					if strings.Contains(t.Name(), "cgo") {
+						testenv.NeedsTool(t, "cgo")
+					}
+					if strings.Contains(t.Name(), "declarecgo") {
+						testenv.NeedsGo1Point(t, 15)
 					}
 					test(t, src, e, data.CompletionItems)
 				})
@@ -363,6 +519,16 @@ func Run(t *testing.T, tests Tests, data *Data) {
 
 		}
 	}
+
+	t.Run("CallHierarchy", func(t *testing.T) {
+		t.Helper()
+		for spn, callHierarchyResult := range data.CallHierarchy {
+			t.Run(SpanName(spn), func(t *testing.T) {
+				t.Helper()
+				tests.CallHierarchy(t, spn, callHierarchyResult)
+			})
+		}
+	})
 
 	t.Run("Completion", func(t *testing.T) {
 		t.Helper()
@@ -374,7 +540,7 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		for _, placeholders := range []bool{true, false} {
 			for src, expecteds := range data.CompletionSnippets {
 				for i, expected := range expecteds {
-					name := spanName(src) + "_" + strconv.Itoa(i+1)
+					name := SpanName(src) + "_" + strconv.Itoa(i+1)
 					if placeholders {
 						name += "_placeholders"
 					}
@@ -413,9 +579,27 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		eachCompletion(t, data.RankCompletions, tests.RankCompletion)
 	})
 
+	t.Run("CodeLens", func(t *testing.T) {
+		t.Helper()
+		for uri, want := range data.CodeLens {
+			// Check if we should skip this URI if the -modfile flag is not available.
+			if shouldSkip(data, uri) {
+				continue
+			}
+			t.Run(uriName(uri), func(t *testing.T) {
+				t.Helper()
+				tests.CodeLens(t, uri, want)
+			})
+		}
+	})
+
 	t.Run("Diagnostics", func(t *testing.T) {
 		t.Helper()
 		for uri, want := range data.Diagnostics {
+			// Check if we should skip this URI if the -modfile flag is not available.
+			if shouldSkip(data, uri) {
+				continue
+			}
 			t.Run(uriName(uri), func(t *testing.T) {
 				t.Helper()
 				tests.Diagnostics(t, uri, want)
@@ -453,12 +637,40 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		}
 	})
 
+	t.Run("SemanticTokens", func(t *testing.T) {
+		t.Helper()
+		for _, spn := range data.SemanticTokens {
+			t.Run(uriName(spn.URI()), func(t *testing.T) {
+				t.Helper()
+				tests.SemanticTokens(t, spn)
+			})
+		}
+	})
+
 	t.Run("SuggestedFix", func(t *testing.T) {
 		t.Helper()
-		for _, spn := range data.SuggestedFixes {
-			t.Run(spanName(spn), func(t *testing.T) {
+		for spn, actionKinds := range data.SuggestedFixes {
+			// Check if we should skip this spn if the -modfile flag is not available.
+			if shouldSkip(data, spn.URI()) {
+				continue
+			}
+			t.Run(SpanName(spn), func(t *testing.T) {
 				t.Helper()
-				tests.SuggestedFix(t, spn)
+				tests.SuggestedFix(t, spn, actionKinds, 1)
+			})
+		}
+	})
+
+	t.Run("FunctionExtraction", func(t *testing.T) {
+		t.Helper()
+		for start, end := range data.FunctionExtractions {
+			// Check if we should skip this spn if the -modfile flag is not available.
+			if shouldSkip(data, start.URI()) {
+				continue
+			}
+			t.Run(SpanName(start), func(t *testing.T) {
+				t.Helper()
+				tests.FunctionExtraction(t, start, end)
 			})
 		}
 	})
@@ -466,10 +678,13 @@ func Run(t *testing.T, tests Tests, data *Data) {
 	t.Run("Definition", func(t *testing.T) {
 		t.Helper()
 		for spn, d := range data.Definitions {
-			t.Run(spanName(spn), func(t *testing.T) {
+			t.Run(SpanName(spn), func(t *testing.T) {
 				t.Helper()
-				if (!haveCgo || runtime.GOOS == "android") && strings.Contains(t.Name(), "cgo") {
-					t.Skip("test requires cgo, not supported")
+				if strings.Contains(t.Name(), "cgo") {
+					testenv.NeedsTool(t, "cgo")
+				}
+				if strings.Contains(t.Name(), "declarecgo") {
+					testenv.NeedsGo1Point(t, 15)
 				}
 				tests.Definition(t, spn, d)
 			})
@@ -479,7 +694,7 @@ func Run(t *testing.T, tests Tests, data *Data) {
 	t.Run("Implementation", func(t *testing.T) {
 		t.Helper()
 		for spn, m := range data.Implementations {
-			t.Run(spanName(spn), func(t *testing.T) {
+			t.Run(SpanName(spn), func(t *testing.T) {
 				t.Helper()
 				tests.Implementation(t, spn, m)
 			})
@@ -489,7 +704,7 @@ func Run(t *testing.T, tests Tests, data *Data) {
 	t.Run("Highlight", func(t *testing.T) {
 		t.Helper()
 		for pos, locations := range data.Highlights {
-			t.Run(spanName(pos), func(t *testing.T) {
+			t.Run(SpanName(pos), func(t *testing.T) {
 				t.Helper()
 				tests.Highlight(t, pos, locations)
 			})
@@ -499,7 +714,7 @@ func Run(t *testing.T, tests Tests, data *Data) {
 	t.Run("References", func(t *testing.T) {
 		t.Helper()
 		for src, itemList := range data.References {
-			t.Run(spanName(src), func(t *testing.T) {
+			t.Run(SpanName(src), func(t *testing.T) {
 				t.Helper()
 				tests.References(t, src, itemList)
 			})
@@ -519,7 +734,7 @@ func Run(t *testing.T, tests Tests, data *Data) {
 	t.Run("PrepareRenames", func(t *testing.T) {
 		t.Helper()
 		for src, want := range data.PrepareRenames {
-			t.Run(spanName(src), func(t *testing.T) {
+			t.Run(SpanName(src), func(t *testing.T) {
 				t.Helper()
 				tests.PrepareRename(t, src, want)
 			})
@@ -536,10 +751,34 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		}
 	})
 
+	t.Run("WorkspaceSymbols", func(t *testing.T) {
+		t.Helper()
+
+		for _, typ := range []WorkspaceSymbolsTestType{
+			WorkspaceSymbolsDefault,
+			WorkspaceSymbolsCaseSensitive,
+			WorkspaceSymbolsFuzzy,
+		} {
+			for uri, cases := range data.WorkspaceSymbols[typ] {
+				for _, query := range cases {
+					name := query
+					if name == "" {
+						name = "EmptyQuery"
+					}
+					t.Run(name, func(t *testing.T) {
+						t.Helper()
+						tests.WorkspaceSymbols(t, uri, query, typ)
+					})
+				}
+			}
+		}
+
+	})
+
 	t.Run("SignatureHelp", func(t *testing.T) {
 		t.Helper()
 		for spn, expectedSignature := range data.Signatures {
-			t.Run(spanName(spn), func(t *testing.T) {
+			t.Run(SpanName(spn), func(t *testing.T) {
 				t.Helper()
 				tests.SignatureHelp(t, spn, expectedSignature)
 			})
@@ -549,9 +788,30 @@ func Run(t *testing.T, tests Tests, data *Data) {
 	t.Run("Link", func(t *testing.T) {
 		t.Helper()
 		for uri, wantLinks := range data.Links {
+			// If we are testing GOPATH, then we do not want links with the versions
+			// attached (pkg.go.dev/repoa/moda@v1.1.0/pkg), unless the file is a
+			// go.mod, then we can skip it altogether.
+			if data.Exported.Exporter == packagestest.GOPATH {
+				if strings.HasSuffix(uri.Filename(), ".mod") {
+					continue
+				}
+				re := regexp.MustCompile(`@v\d+\.\d+\.[\w-]+`)
+				for i, link := range wantLinks {
+					wantLinks[i].Target = re.ReplaceAllString(link.Target, "")
+				}
+			}
 			t.Run(uriName(uri), func(t *testing.T) {
 				t.Helper()
 				tests.Link(t, uri, wantLinks)
+			})
+		}
+	})
+
+	t.Run("AddImport", func(t *testing.T) {
+		t.Helper()
+		for uri, exp := range data.AddImport {
+			t.Run(uriName(uri), func(t *testing.T) {
+				tests.AddImport(t, uri, exp)
 			})
 		}
 	})
@@ -603,6 +863,24 @@ func checkData(t *testing.T, data *Data) {
 		return count
 	}
 
+	countCodeLens := func(c map[span.URI][]protocol.CodeLens) (count int) {
+		for _, want := range c {
+			count += len(want)
+		}
+		return count
+	}
+
+	countWorkspaceSymbols := func(c map[WorkspaceSymbolsTestType]map[span.URI][]string) (count int) {
+		for _, typs := range c {
+			for _, queries := range typs {
+				count += len(queries)
+			}
+		}
+		return count
+	}
+
+	fmt.Fprintf(buf, "CallHierarchyCount = %v\n", len(data.CallHierarchy))
+	fmt.Fprintf(buf, "CodeLensCount = %v\n", countCodeLens(data.CodeLens))
 	fmt.Fprintf(buf, "CompletionsCount = %v\n", countCompletions(data.Completions))
 	fmt.Fprintf(buf, "CompletionSnippetCount = %v\n", snippetCount)
 	fmt.Fprintf(buf, "UnimportedCompletionsCount = %v\n", countCompletions(data.UnimportedCompletions))
@@ -614,7 +892,9 @@ func checkData(t *testing.T, data *Data) {
 	fmt.Fprintf(buf, "FoldingRangesCount = %v\n", len(data.FoldingRanges))
 	fmt.Fprintf(buf, "FormatCount = %v\n", len(data.Formats))
 	fmt.Fprintf(buf, "ImportCount = %v\n", len(data.Imports))
+	fmt.Fprintf(buf, "SemanticTokenCount = %v\n", len(data.SemanticTokens))
 	fmt.Fprintf(buf, "SuggestedFixCount = %v\n", len(data.SuggestedFixes))
+	fmt.Fprintf(buf, "FunctionExtractionCount = %v\n", len(data.FunctionExtractions))
 	fmt.Fprintf(buf, "DefinitionsCount = %v\n", definitionCount)
 	fmt.Fprintf(buf, "TypeDefinitionsCount = %v\n", typeDefinitionCount)
 	fmt.Fprintf(buf, "HighlightsCount = %v\n", len(data.Highlights))
@@ -622,16 +902,17 @@ func checkData(t *testing.T, data *Data) {
 	fmt.Fprintf(buf, "RenamesCount = %v\n", len(data.Renames))
 	fmt.Fprintf(buf, "PrepareRenamesCount = %v\n", len(data.PrepareRenames))
 	fmt.Fprintf(buf, "SymbolsCount = %v\n", len(data.Symbols))
+	fmt.Fprintf(buf, "WorkspaceSymbolsCount = %v\n", countWorkspaceSymbols(data.WorkspaceSymbols))
 	fmt.Fprintf(buf, "SignaturesCount = %v\n", len(data.Signatures))
 	fmt.Fprintf(buf, "LinksCount = %v\n", linksCount)
 	fmt.Fprintf(buf, "ImplementationsCount = %v\n", len(data.Implementations))
 
-	want := string(data.Golden("summary", "summary.txt", func() ([]byte, error) {
+	want := string(data.Golden("summary", summaryFile, func() ([]byte, error) {
 		return buf.Bytes(), nil
 	}))
 	got := buf.String()
 	if want != got {
-		t.Errorf("test summary does not match, want\n%s\ngot:\n%s", want, got)
+		t.Errorf("test summary does not match:\n%s", Diff(t, want, got))
 	}
 }
 
@@ -696,36 +977,66 @@ func (data *Data) Golden(tag string, target string, update func() ([]byte, error
 		}
 		file.Data = append(contents, '\n') // add trailing \n for txtar
 		golden.Modified = true
+
 	}
 	if file == nil {
 		data.t.Fatalf("could not find golden contents %v: %v", fragment, tag)
 	}
+	if len(file.Data) == 0 {
+		return file.Data
+	}
 	return file.Data[:len(file.Data)-1] // drop the trailing \n
 }
 
-func (data *Data) collectDiagnostics(spn span.Span, msgSource, msg string) {
+func (data *Data) collectCodeLens(spn span.Span, title, cmd string) {
+	if _, ok := data.CodeLens[spn.URI()]; !ok {
+		data.CodeLens[spn.URI()] = []protocol.CodeLens{}
+	}
+	m, err := data.Mapper(spn.URI())
+	if err != nil {
+		return
+	}
+	rng, err := m.Range(spn)
+	if err != nil {
+		return
+	}
+	data.CodeLens[spn.URI()] = append(data.CodeLens[spn.URI()], protocol.CodeLens{
+		Range: rng,
+		Command: protocol.Command{
+			Title:   title,
+			Command: cmd,
+		},
+	})
+}
+
+func (data *Data) collectDiagnostics(spn span.Span, msgSource, msg, msgSeverity string) {
 	if _, ok := data.Diagnostics[spn.URI()]; !ok {
-		data.Diagnostics[spn.URI()] = []source.Diagnostic{}
+		data.Diagnostics[spn.URI()] = []*source.Diagnostic{}
+	}
+	m, err := data.Mapper(spn.URI())
+	if err != nil {
+		return
+	}
+	rng, err := m.Range(spn)
+	if err != nil {
+		return
 	}
 	severity := protocol.SeverityError
-	if strings.Contains(string(spn.URI()), "analyzer") {
+	switch msgSeverity {
+	case "error":
+		severity = protocol.SeverityError
+	case "warning":
 		severity = protocol.SeverityWarning
+	case "hint":
+		severity = protocol.SeverityHint
+	case "information":
+		severity = protocol.SeverityInformation
 	}
-	// This is not the correct way to do this,
-	// but it seems excessive to do the full conversion here.
-	want := source.Diagnostic{
-		Range: protocol.Range{
-			Start: protocol.Position{
-				Line:      float64(spn.Start().Line()) - 1,
-				Character: float64(spn.Start().Column()) - 1,
-			},
-			End: protocol.Position{
-				Line:      float64(spn.End().Line()) - 1,
-				Character: float64(spn.End().Column()) - 1,
-			},
-		},
+	// This is not the correct way to do this, but it seems excessive to do the full conversion here.
+	want := &source.Diagnostic{
+		Range:    rng,
 		Severity: severity,
-		Source:   msgSource,
+		Source:   source.DiagnosticSource(msgSource),
 		Message:  msg,
 	}
 	data.Diagnostics[spn.URI()] = append(data.Diagnostics[spn.URI()], want)
@@ -776,7 +1087,7 @@ func (data *Data) collectCompletionItems(pos token.Pos, args []string) {
 	if len(args) == 4 {
 		documentation = args[3]
 	}
-	data.CompletionItems[pos] = &source.CompletionItem{
+	data.CompletionItems[pos] = &completion.CompletionItem{
 		Label:         label,
 		Detail:        detail,
 		Kind:          protocol.ParseCompletionItemKind(kind),
@@ -796,8 +1107,25 @@ func (data *Data) collectImports(spn span.Span) {
 	data.Imports = append(data.Imports, spn)
 }
 
-func (data *Data) collectSuggestedFixes(spn span.Span) {
-	data.SuggestedFixes = append(data.SuggestedFixes, spn)
+func (data *Data) collectAddImports(spn span.Span, imp string) {
+	data.AddImport[spn.URI()] = imp
+}
+
+func (data *Data) collectSemanticTokens(spn span.Span) {
+	data.SemanticTokens = append(data.SemanticTokens, spn)
+}
+
+func (data *Data) collectSuggestedFixes(spn span.Span, actionKind string) {
+	if _, ok := data.SuggestedFixes[spn]; !ok {
+		data.SuggestedFixes[spn] = []string{}
+	}
+	data.SuggestedFixes[spn] = append(data.SuggestedFixes[spn], actionKind)
+}
+
+func (data *Data) collectFunctionExtractions(start span.Span, end span.Span) {
+	if _, ok := data.FunctionExtractions[start]; !ok {
+		data.FunctionExtractions[start] = end
+	}
 }
 
 func (data *Data) collectDefinitions(src, target span.Span) {
@@ -809,6 +1137,55 @@ func (data *Data) collectDefinitions(src, target span.Span) {
 
 func (data *Data) collectImplementations(src span.Span, targets []span.Span) {
 	data.Implementations[src] = targets
+}
+
+func (data *Data) collectIncomingCalls(src span.Span, calls []span.Span) {
+	for _, call := range calls {
+		m, err := data.Mapper(call.URI())
+		if err != nil {
+			data.t.Fatal(err)
+		}
+		rng, err := m.Range(call)
+		if err != nil {
+			data.t.Fatal(err)
+		}
+		// we're only comparing protocol.range
+		if data.CallHierarchy[src] != nil {
+			data.CallHierarchy[src].IncomingCalls = append(data.CallHierarchy[src].IncomingCalls,
+				protocol.CallHierarchyItem{
+					URI:   protocol.DocumentURI(call.URI()),
+					Range: rng,
+				})
+		} else {
+			data.CallHierarchy[src] = &CallHierarchyResult{
+				IncomingCalls: []protocol.CallHierarchyItem{
+					{URI: protocol.DocumentURI(call.URI()), Range: rng},
+				},
+			}
+		}
+	}
+}
+
+func (data *Data) collectOutgoingCalls(src span.Span, calls []span.Span) {
+	if data.CallHierarchy[src] == nil {
+		data.CallHierarchy[src] = &CallHierarchyResult{}
+	}
+	for _, call := range calls {
+		m, err := data.Mapper(call.URI())
+		if err != nil {
+			data.t.Fatal(err)
+		}
+		rng, err := m.Range(call)
+		if err != nil {
+			data.t.Fatal(err)
+		}
+		// we're only comparing protocol.range
+		data.CallHierarchy[src].OutgoingCalls = append(data.CallHierarchy[src].OutgoingCalls,
+			protocol.CallHierarchyItem{
+				URI:   protocol.DocumentURI(call.URI()),
+				Range: rng,
+			})
+	}
 }
 
 func (data *Data) collectHoverDefinitions(src, target span.Span) {
@@ -866,7 +1243,8 @@ func (data *Data) collectPrepareRenames(src span.Span, rng span.Range, placehold
 	}
 }
 
-func (data *Data) collectSymbols(name string, spn span.Span, kind string, parentName string) {
+// collectSymbols is responsible for collecting @symbol annotations.
+func (data *Data) collectSymbols(name string, spn span.Span, kind string, parentName string, siName string) {
 	m, err := data.Mapper(spn.URI())
 	if err != nil {
 		data.t.Fatal(err)
@@ -885,12 +1263,38 @@ func (data *Data) collectSymbols(name string, spn span.Span, kind string, parent
 	} else {
 		data.symbolsChildren[parentName] = append(data.symbolsChildren[parentName], sym)
 	}
+
+	// Reuse @symbol in the workspace symbols tests.
+	si := protocol.SymbolInformation{
+		Name: siName,
+		Kind: sym.Kind,
+		Location: protocol.Location{
+			URI:   protocol.URIFromSpanURI(spn.URI()),
+			Range: sym.SelectionRange,
+		},
+	}
+	data.symbolInformation[spn] = si
+}
+
+func (data *Data) collectWorkspaceSymbols(typ WorkspaceSymbolsTestType) func(*expect.Note, string) {
+	return func(note *expect.Note, query string) {
+		if data.WorkspaceSymbols[typ] == nil {
+			data.WorkspaceSymbols[typ] = make(map[span.URI][]string)
+		}
+		pos := data.Exported.ExpectFileSet.Position(note.Pos)
+		uri := span.URIFromPath(pos.Filename)
+		data.WorkspaceSymbols[typ][uri] = append(data.WorkspaceSymbols[typ][uri], query)
+	}
 }
 
 func (data *Data) collectSignatures(spn span.Span, signature string, activeParam int64) {
-	data.Signatures[spn] = &source.SignatureInformation{
-		Label:           signature,
-		ActiveParameter: int(activeParam),
+	data.Signatures[spn] = &protocol.SignatureHelp{
+		Signatures: []protocol.SignatureInformation{
+			{
+				Label: signature,
+			},
+		},
+		ActiveParameter: uint32(activeParam),
 	}
 	// Hardcode special case to test the lack of a signature.
 	if signature == "" && activeParam == 0 {
@@ -920,7 +1324,7 @@ func uriName(uri span.URI) string {
 	return filepath.Base(strings.TrimSuffix(uri.Filename(), ".go"))
 }
 
-func spanName(spn span.Span) string {
+func SpanName(spn span.Span) string {
 	return fmt.Sprintf("%v_%v_%v", uriName(spn.URI()), spn.Start().Line(), spn.Start().Column())
 }
 
@@ -954,4 +1358,19 @@ func CopyFolderToTempDir(folder string) (string, error) {
 		}
 	}
 	return dst, nil
+}
+
+func shouldSkip(data *Data, uri span.URI) bool {
+	if data.ModfileFlagAvailable {
+		return false
+	}
+	// If the -modfile flag is not available, then we do not want to run
+	// any tests on the go.mod file.
+	if strings.HasSuffix(uri.Filename(), ".mod") {
+		return true
+	}
+	// If the -modfile flag is not available, then we do not want to test any
+	// uri that contains "go mod tidy".
+	m, err := data.Mapper(uri)
+	return err == nil && strings.Contains(string(m.Content), ", \"go mod tidy\",")
 }

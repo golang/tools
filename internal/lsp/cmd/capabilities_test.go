@@ -1,3 +1,7 @@
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package cmd
 
 import (
@@ -10,7 +14,6 @@ import (
 	"golang.org/x/tools/internal/lsp"
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/span"
 	errors "golang.org/x/xerrors"
 )
 
@@ -25,7 +28,7 @@ func TestCapabilities(t *testing.T) {
 	if err := ioutil.WriteFile(tmpFile, []byte(""), 0775); err != nil {
 		t.Fatal(err)
 	}
-	if err := ioutil.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(`module fake`), 0775); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module fake\n\ngo 1.12\n"), 0775); err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
@@ -36,11 +39,11 @@ func TestCapabilities(t *testing.T) {
 	defer c.terminate(ctx)
 
 	params := &protocol.ParamInitialize{}
-	params.RootURI = string(span.FileURI(c.Client.app.wd))
+	params.RootURI = protocol.URIFromPath(c.Client.app.wd)
 	params.Capabilities.Workspace.Configuration = true
 
 	// Send an initialize request to the server.
-	ctx, c.Server = lsp.NewClientServer(ctx, cache.New(app.options).NewSession(), c.Client)
+	c.Server = lsp.NewServer(cache.New(app.options).NewSession(ctx), c.Client)
 	result, err := c.Server.Initialize(ctx, params)
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +58,7 @@ func TestCapabilities(t *testing.T) {
 	}
 
 	// Open the file on the server side.
-	uri := protocol.NewURI(span.FileURI(tmpFile))
+	uri := protocol.URIFromPath(tmpFile)
 	if err := c.Server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
 		TextDocument: protocol.TextDocumentItem{
 			URI:        uri,
@@ -103,11 +106,8 @@ func TestCapabilities(t *testing.T) {
 	}
 
 	if err := c.Server.DidSave(ctx, &protocol.DidSaveTextDocumentParams{
-		TextDocument: protocol.VersionedTextDocumentIdentifier{
-			Version: 2,
-			TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-				URI: uri,
-			},
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: uri,
 		},
 		// LSP specifies that a file can be saved with optional text, so this field must be nil.
 		Text: nil,
@@ -131,15 +131,11 @@ func TestCapabilities(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, item := range list.Items {
-		// We expect the "editor.action.triggerParameterHints" command for functions and methods.
-		if item.Kind == protocol.MethodCompletion || item.Kind == protocol.FunctionCompletion {
-			continue
-		}
 		// All other completion items should have nil commands.
 		// An empty command will be treated as a command with the name '' by VS Code.
 		// This causes VS Code to report errors to users about invalid commands.
 		if item.Command != nil {
-			t.Errorf("unexpected command for non-function completion item")
+			t.Errorf("unexpected command for completion item")
 		}
 		// The item's TextEdit must be a pointer, as VS Code considers TextEdits
 		// that don't contain the cursor position to be invalid.
@@ -147,6 +143,12 @@ func TestCapabilities(t *testing.T) {
 		if _, ok := textEdit.(*protocol.TextEdit); !ok {
 			t.Errorf("textEdit is not a *protocol.TextEdit, instead it is %T", textEdit)
 		}
+	}
+	if err := c.Server.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Server.Exit(ctx); err != nil {
+		t.Fatal(err)
 	}
 }
 

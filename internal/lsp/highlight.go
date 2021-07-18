@@ -7,34 +7,27 @@ package lsp
 import (
 	"context"
 
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/lsp/telemetry"
-	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/log"
+	"golang.org/x/tools/internal/lsp/template"
 )
 
 func (s *Server) documentHighlight(ctx context.Context, params *protocol.DocumentHighlightParams) ([]protocol.DocumentHighlight, error) {
-	uri := span.NewURI(params.TextDocument.URI)
-	view, err := s.session.ViewOf(uri)
-	if err != nil {
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.Go)
+	defer release()
+	if !ok {
 		return nil, err
-	}
-	snapshot := view.Snapshot()
-	fh, err := snapshot.GetFile(uri)
-	if err != nil {
-		return nil, err
-	}
-	var rngs []protocol.Range
-	switch fh.Identity().Kind {
-	case source.Go:
-		rngs, err = source.Highlight(ctx, snapshot, fh, params.Position)
-	case source.Mod:
-		return nil, nil
 	}
 
+	if fh.Kind() == source.Tmpl {
+		return template.Highlight(ctx, snapshot, fh, params.Position)
+	}
+
+	rngs, err := source.Highlight(ctx, snapshot, fh, params.Position)
 	if err != nil {
-		log.Error(ctx, "no highlight", err, telemetry.URI.Of(uri))
+		event.Error(ctx, "no highlight", err, tag.URI.Of(params.TextDocument.URI))
 	}
 	return toProtocolHighlight(rngs), nil
 }

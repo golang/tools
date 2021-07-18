@@ -30,8 +30,6 @@ Example:
   $ # 1-indexed location (:line:column or :#offset) of the target identifier
   $ gopls implementation helper/helper.go:8:6
   $ gopls implementation helper/helper.go:#53
-
-  gopls implementation flags are:
 `)
 	f.PrintDefaults()
 }
@@ -72,7 +70,7 @@ func (i *implementation) Run(ctx context.Context, args ...string) error {
 
 	var spans []string
 	for _, impl := range implementations {
-		f := conn.AddFile(ctx, span.NewURI(impl.URI))
+		f := conn.AddFile(ctx, fileURI(impl.URI))
 		span, err := f.mapper.Span(impl)
 		if err != nil {
 			return err

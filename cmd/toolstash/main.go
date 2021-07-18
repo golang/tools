@@ -1,4 +1,4 @@
-// Copyright 2015 The Go Authors.  All rights reserved.
+// Copyright 2015 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -45,7 +45,7 @@
 // copy of an assembler or compiler and check that they produce identical
 // object files. If not, toolstash reports the mismatch and exits with a failure status.
 // As part of reporting the mismatch, toolstash reinvokes the command with
-// the -S flag and identifies the first divergence in the assembly output.
+// the -S=2 flag and identifies the first divergence in the assembly output.
 // If the command is a Go compiler, toolstash also determines whether the
 // difference is triggered by optimization passes.
 // On failure, toolstash leaves additional information in files named
@@ -127,11 +127,11 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	exec "golang.org/x/sys/execabs"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -275,7 +275,7 @@ func compareTool() {
 		return
 	}
 
-	extra := "-S"
+	extra := "-S=2"
 	switch {
 	default:
 		log.Fatalf("unknown tool %s", tool)

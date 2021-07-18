@@ -19,8 +19,16 @@ type ColumnMapper struct {
 	Content   []byte
 }
 
-func NewURI(uri span.URI) string {
-	return string(uri)
+func URIFromSpanURI(uri span.URI) DocumentURI {
+	return DocumentURI(uri)
+}
+
+func URIFromPath(path string) DocumentURI {
+	return URIFromSpanURI(span.URIFromPath(path))
+}
+
+func (u DocumentURI) SpanURI() span.URI {
+	return span.URIFromURI(string(u))
 }
 
 func (m *ColumnMapper) Location(s span.Span) (Location, error) {
@@ -28,7 +36,7 @@ func (m *ColumnMapper) Location(s span.Span) (Location, error) {
 	if err != nil {
 		return Location{}, err
 	}
-	return Location{URI: NewURI(s.URI()), Range: rng}, nil
+	return Location{URI: URIFromSpanURI(s.URI()), Range: rng}, nil
 }
 
 func (m *ColumnMapper) Range(s span.Span) (Range, error) {
@@ -56,8 +64,8 @@ func (m *ColumnMapper) Position(p span.Point) (Position, error) {
 		return Position{}, err
 	}
 	return Position{
-		Line:      float64(p.Line() - 1),
-		Character: float64(chr - 1),
+		Line:      uint32(p.Line() - 1),
+		Character: uint32(chr - 1),
 	}, nil
 }
 
@@ -75,6 +83,14 @@ func (m *ColumnMapper) RangeSpan(r Range) (span.Span, error) {
 		return span.Span{}, err
 	}
 	return span.New(m.URI, start, end).WithAll(m.Converter)
+}
+
+func (m *ColumnMapper) RangeToSpanRange(r Range) (span.Range, error) {
+	spn, err := m.RangeSpan(r)
+	if err != nil {
+		return span.Range{}, err
+	}
+	return spn.Range(m.Converter)
 }
 
 func (m *ColumnMapper) PointSpan(p Position) (span.Span, error) {
@@ -120,6 +136,14 @@ func ComparePosition(a, b Position) int {
 		return 1
 	}
 	return 0
+}
+
+func Intersect(a, b Range) bool {
+	if a.Start.Line > b.End.Line || a.End.Line < b.Start.Line {
+		return false
+	}
+	return !((a.Start.Line == b.End.Line) && a.Start.Character > b.End.Character ||
+		(a.End.Line == b.Start.Line) && a.End.Character < b.Start.Character)
 }
 
 func (r Range) Format(f fmt.State, _ rune) {

@@ -8,29 +8,104 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"path/filepath"
+	"time"
 
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/xcontext"
 	errors "golang.org/x/xerrors"
 )
 
+// ModificationSource identifies the originating cause of a file modification.
+type ModificationSource int
+
+const (
+	// FromDidOpen is a file modification caused by opening a file.
+	FromDidOpen = ModificationSource(iota)
+
+	// FromDidChange is a file modification caused by changing a file.
+	FromDidChange
+
+	// FromDidChangeWatchedFiles is a file modification caused by a change to a
+	// watched file.
+	FromDidChangeWatchedFiles
+
+	// FromDidSave is a file modification caused by a file save.
+	FromDidSave
+
+	// FromDidClose is a file modification caused by closing a file.
+	FromDidClose
+
+	// FromRegenerateCgo refers to file modifications caused by regenerating
+	// the cgo sources for the workspace.
+	FromRegenerateCgo
+
+	// FromInitialWorkspaceLoad refers to the loading of all packages in the
+	// workspace when the view is first created.
+	FromInitialWorkspaceLoad
+)
+
+func (m ModificationSource) String() string {
+	switch m {
+	case FromDidOpen:
+		return "opened files"
+	case FromDidChange:
+		return "changed files"
+	case FromDidChangeWatchedFiles:
+		return "files changed on disk"
+	case FromDidSave:
+		return "saved files"
+	case FromDidClose:
+		return "close files"
+	case FromRegenerateCgo:
+		return "regenerate cgo"
+	case FromInitialWorkspaceLoad:
+		return "initial workspace load"
+	default:
+		return "unknown file modification"
+	}
+}
+
 func (s *Server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
-	_, err := s.didModifyFiles(ctx, []source.FileModification{
-		{
-			URI:        span.NewURI(params.TextDocument.URI),
-			Action:     source.Open,
-			Version:    params.TextDocument.Version,
-			Text:       []byte(params.TextDocument.Text),
-			LanguageID: params.TextDocument.LanguageID,
-		},
-	})
-	return err
+	uri := params.TextDocument.URI.SpanURI()
+	if !uri.IsFile() {
+		return nil
+	}
+	// There may not be any matching view in the current session. If that's
+	// the case, try creating a new view based on the opened file path.
+	//
+	// TODO(rstambler): This seems like it would continuously add new
+	// views, but it won't because ViewOf only returns an error when there
+	// are no views in the session. I don't know if that logic should go
+	// here, or if we can continue to rely on that implementation detail.
+	if _, err := s.session.ViewOf(uri); err != nil {
+		dir := filepath.Dir(uri.Filename())
+		if err := s.addFolders(ctx, []protocol.WorkspaceFolder{{
+			URI:  string(protocol.URIFromPath(dir)),
+			Name: filepath.Base(dir),
+		}}); err != nil {
+			return err
+		}
+	}
+	return s.didModifyFiles(ctx, []source.FileModification{{
+		URI:        uri,
+		Action:     source.Open,
+		Version:    params.TextDocument.Version,
+		Text:       []byte(params.TextDocument.Text),
+		LanguageID: params.TextDocument.LanguageID,
+	}}, FromDidOpen)
 }
 
 func (s *Server) didChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
-	uri := span.NewURI(params.TextDocument.URI)
+	uri := params.TextDocument.URI.SpanURI()
+	if !uri.IsFile() {
+		return nil
+	}
+
 	text, err := s.changedText(ctx, uri, params.ContentChanges)
 	if err != nil {
 		return err
@@ -41,142 +116,209 @@ func (s *Server) didChange(ctx context.Context, params *protocol.DidChangeTextDo
 		Version: params.TextDocument.Version,
 		Text:    text,
 	}
-	snapshots, err := s.didModifyFiles(ctx, []source.FileModification{c})
+	if err := s.didModifyFiles(ctx, []source.FileModification{c}, FromDidChange); err != nil {
+		return err
+	}
+	return s.warnAboutModifyingGeneratedFiles(ctx, uri)
+}
+
+// warnAboutModifyingGeneratedFiles shows a warning if a user tries to edit a
+// generated file for the first time.
+func (s *Server) warnAboutModifyingGeneratedFiles(ctx context.Context, uri span.URI) error {
+	s.changedFilesMu.Lock()
+	_, ok := s.changedFiles[uri]
+	if !ok {
+		s.changedFiles[uri] = struct{}{}
+	}
+	s.changedFilesMu.Unlock()
+
+	// This file has already been edited before.
+	if ok {
+		return nil
+	}
+
+	// Ideally, we should be able to specify that a generated file should
+	// be opened as read-only. Tell the user that they should not be
+	// editing a generated file.
+	view, err := s.session.ViewOf(uri)
 	if err != nil {
 		return err
 	}
-	snapshot := snapshots[uri]
-	if snapshot == nil {
-		return errors.Errorf("no snapshot for %s", uri)
+	snapshot, release := view.Snapshot(ctx)
+	isGenerated := source.IsGenerated(ctx, snapshot, uri)
+	release()
+
+	if !isGenerated {
+		return nil
 	}
-	// Ideally, we should be able to specify that a generated file should be opened as read-only.
-	// Tell the user that they should not be editing a generated file.
-	if s.wasFirstChange(uri) && source.IsGenerated(ctx, snapshot, uri) {
-		if err := s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
-			Message: fmt.Sprintf("Do not edit this file! %s is a generated file.", uri.Filename()),
-			Type:    protocol.Warning,
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
+	return s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+		Message: fmt.Sprintf("Do not edit this file! %s is a generated file.", uri.Filename()),
+		Type:    protocol.Warning,
+	})
 }
 
 func (s *Server) didChangeWatchedFiles(ctx context.Context, params *protocol.DidChangeWatchedFilesParams) error {
 	var modifications []source.FileModification
 	for _, change := range params.Changes {
-		uri := span.NewURI(change.URI)
-
-		// Do nothing if the file is open in the editor.
-		// The editor is the source of truth.
-		if s.session.IsOpen(uri) {
+		uri := change.URI.SpanURI()
+		if !uri.IsFile() {
 			continue
 		}
+		action := changeTypeToFileAction(change.Type)
 		modifications = append(modifications, source.FileModification{
 			URI:    uri,
-			Action: changeTypeToFileAction(change.Type),
+			Action: action,
 			OnDisk: true,
 		})
 	}
-	_, err := s.didModifyFiles(ctx, modifications)
-	return err
+	return s.didModifyFiles(ctx, modifications, FromDidChangeWatchedFiles)
 }
 
 func (s *Server) didSave(ctx context.Context, params *protocol.DidSaveTextDocumentParams) error {
+	uri := params.TextDocument.URI.SpanURI()
+	if !uri.IsFile() {
+		return nil
+	}
 	c := source.FileModification{
-		URI:     span.NewURI(params.TextDocument.URI),
-		Action:  source.Save,
-		Version: params.TextDocument.Version,
+		URI:    uri,
+		Action: source.Save,
 	}
 	if params.Text != nil {
 		c.Text = []byte(*params.Text)
 	}
-	_, err := s.didModifyFiles(ctx, []source.FileModification{c})
-	return err
+	return s.didModifyFiles(ctx, []source.FileModification{c}, FromDidSave)
 }
 
 func (s *Server) didClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
-	_, err := s.didModifyFiles(ctx, []source.FileModification{
+	uri := params.TextDocument.URI.SpanURI()
+	if !uri.IsFile() {
+		return nil
+	}
+	return s.didModifyFiles(ctx, []source.FileModification{
 		{
-			URI:     span.NewURI(params.TextDocument.URI),
+			URI:     uri,
 			Action:  source.Close,
 			Version: -1,
 			Text:    nil,
 		},
-	})
-	return err
+	}, FromDidClose)
 }
 
-func (s *Server) didModifyFiles(ctx context.Context, modifications []source.FileModification) (map[span.URI]source.Snapshot, error) {
-	snapshots, err := s.session.DidModifyFiles(ctx, modifications)
+func (s *Server) didModifyFiles(ctx context.Context, modifications []source.FileModification, cause ModificationSource) error {
+	diagnoseDone := make(chan struct{})
+	if s.session.Options().VerboseWorkDoneProgress {
+		work := s.progress.Start(ctx, DiagnosticWorkTitle(cause), "Calculating file diagnostics...", nil, nil)
+		defer func() {
+			go func() {
+				<-diagnoseDone
+				work.End("Done.")
+			}()
+		}()
+	}
+
+	onDisk := cause == FromDidChangeWatchedFiles
+	delay := s.session.Options().ExperimentalWatchedFileDelay
+	s.fileChangeMu.Lock()
+	defer s.fileChangeMu.Unlock()
+	if !onDisk || delay == 0 {
+		// No delay: process the modifications immediately.
+		return s.processModifications(ctx, modifications, onDisk, diagnoseDone)
+	}
+	// Debounce and batch up pending modifications from watched files.
+	pending := &pendingModificationSet{
+		diagnoseDone: diagnoseDone,
+		changes:      modifications,
+	}
+	// Invariant: changes appended to s.pendingOnDiskChanges are eventually
+	// handled in the order they arrive. This guarantee is only partially
+	// enforced here. Specifically:
+	//  1. s.fileChangesMu ensures that the append below happens in the order
+	//     notifications were received, so that the changes within each batch are
+	//     ordered properly.
+	//  2. The debounced func below holds s.fileChangesMu while processing all
+	//     changes in s.pendingOnDiskChanges, ensuring that no batches are
+	//     processed out of order.
+	//  3. Session.ExpandModificationsToDirectories and Session.DidModifyFiles
+	//     process changes in order.
+	s.pendingOnDiskChanges = append(s.pendingOnDiskChanges, pending)
+	ctx = xcontext.Detach(ctx)
+	okc := s.watchedFileDebouncer.debounce("", 0, time.After(delay))
+	go func() {
+		if ok := <-okc; !ok {
+			return
+		}
+		s.fileChangeMu.Lock()
+		var allChanges []source.FileModification
+		// For accurate progress notifications, we must notify all goroutines
+		// waiting for the diagnose pass following a didChangeWatchedFiles
+		// notification. This is necessary for regtest assertions.
+		var dones []chan struct{}
+		for _, pending := range s.pendingOnDiskChanges {
+			allChanges = append(allChanges, pending.changes...)
+			dones = append(dones, pending.diagnoseDone)
+		}
+
+		allDone := make(chan struct{})
+		if err := s.processModifications(ctx, allChanges, onDisk, allDone); err != nil {
+			event.Error(ctx, "processing delayed file changes", err)
+		}
+		s.pendingOnDiskChanges = nil
+		s.fileChangeMu.Unlock()
+		<-allDone
+		for _, done := range dones {
+			close(done)
+		}
+	}()
+	return nil
+}
+
+// processModifications update server state to reflect file changes, and
+// triggers diagnostics to run asynchronously. The diagnoseDone channel will be
+// closed once diagnostics complete.
+func (s *Server) processModifications(ctx context.Context, modifications []source.FileModification, onDisk bool, diagnoseDone chan struct{}) error {
+	s.stateMu.Lock()
+	if s.state >= serverShutDown {
+		// This state check does not prevent races below, and exists only to
+		// produce a better error message. The actual race to the cache should be
+		// guarded by Session.viewMu.
+		s.stateMu.Unlock()
+		close(diagnoseDone)
+		return errors.New("server is shut down")
+	}
+	s.stateMu.Unlock()
+	// If the set of changes included directories, expand those directories
+	// to their files.
+	modifications = s.session.ExpandModificationsToDirectories(ctx, modifications)
+
+	snapshots, releases, err := s.session.DidModifyFiles(ctx, modifications)
 	if err != nil {
-		return nil, err
+		close(diagnoseDone)
+		return err
 	}
-	snapshotByURI := make(map[span.URI]source.Snapshot)
-	for _, c := range modifications {
-		snapshotByURI[c.URI] = nil
-	}
-	// Avoid diagnosing the same snapshot twice.
-	snapshotSet := make(map[source.Snapshot][]span.URI)
-	for uri := range snapshotByURI {
-		view, err := s.session.ViewOf(uri)
-		if err != nil {
-			return nil, err
+
+	go func() {
+		s.diagnoseSnapshots(snapshots, onDisk)
+		for _, release := range releases {
+			release()
 		}
-		var snapshot source.Snapshot
-		for _, s := range snapshots {
-			if s.View() == view {
-				if snapshot != nil {
-					return nil, errors.Errorf("duplicate snapshots for the same view")
-				}
-				snapshot = s
-			}
-		}
-		// If the file isn't in any known views (for example, if it's in a dependency),
-		// we may not have a snapshot to map it to. As a result, we won't try to
-		// diagnose it. TODO(rstambler): Figure out how to handle this better.
-		if snapshot == nil {
-			continue
-		}
-		snapshotByURI[uri] = snapshot
-		snapshotSet[snapshot] = append(snapshotSet[snapshot], uri)
-	}
-	for snapshot, uris := range snapshotSet {
-		for _, uri := range uris {
-			fh, err := snapshot.GetFile(uri)
-			if err != nil {
-				return nil, err
-			}
-			// If a modification comes in for a go.mod file,
-			// and the view was never properly initialized,
-			// try to recreate the associated view.
-			switch fh.Identity().Kind {
-			case source.Mod:
-				newSnapshot, err := snapshot.View().Rebuild(ctx)
-				if err != nil {
-					return nil, err
-				}
-				// Update the snapshot to the rebuilt one.
-				snapshot = newSnapshot
-				snapshotByURI[uri] = snapshot
-			}
-		}
-		go s.diagnoseSnapshot(snapshot)
-	}
-	return snapshotByURI, nil
+		close(diagnoseDone)
+	}()
+
+	// After any file modifications, we need to update our watched files,
+	// in case something changed. Compute the new set of directories to watch,
+	// and if it differs from the current set, send updated registrations.
+	return s.updateWatchedDirectories(ctx)
 }
 
-func (s *Server) wasFirstChange(uri span.URI) bool {
-	if s.changedFiles == nil {
-		s.changedFiles = make(map[span.URI]struct{})
-	}
-	_, ok := s.changedFiles[uri]
-	return ok
+// DiagnosticWorkTitle returns the title of the diagnostic work resulting from a
+// file change originating from the given cause.
+func DiagnosticWorkTitle(cause ModificationSource) string {
+	return fmt.Sprintf("diagnosing %v", cause)
 }
 
 func (s *Server) changedText(ctx context.Context, uri span.URI, changes []protocol.TextDocumentContentChangeEvent) ([]byte, error) {
 	if len(changes) == 0 {
-		return nil, jsonrpc2.NewErrorf(jsonrpc2.CodeInternalError, "no content changes provided")
+		return nil, errors.Errorf("%w: no content changes provided", jsonrpc2.ErrInternal)
 	}
 
 	// Check if the client sent the full content of the file.
@@ -188,9 +330,13 @@ func (s *Server) changedText(ctx context.Context, uri span.URI, changes []protoc
 }
 
 func (s *Server) applyIncrementalChanges(ctx context.Context, uri span.URI, changes []protocol.TextDocumentContentChangeEvent) ([]byte, error) {
-	content, _, err := s.session.GetFile(uri).Read(ctx)
+	fh, err := s.session.GetFile(ctx, uri)
 	if err != nil {
-		return nil, jsonrpc2.NewErrorf(jsonrpc2.CodeInternalError, "file not found (%v)", err)
+		return nil, err
+	}
+	content, err := fh.Read()
+	if err != nil {
+		return nil, errors.Errorf("%w: file not found (%v)", jsonrpc2.ErrInternal, err)
 	}
 	for _, change := range changes {
 		// Make sure to update column mapper along with the content.
@@ -201,18 +347,18 @@ func (s *Server) applyIncrementalChanges(ctx context.Context, uri span.URI, chan
 			Content:   content,
 		}
 		if change.Range == nil {
-			return nil, jsonrpc2.NewErrorf(jsonrpc2.CodeInternalError, "unexpected nil range for change")
+			return nil, errors.Errorf("%w: unexpected nil range for change", jsonrpc2.ErrInternal)
 		}
 		spn, err := m.RangeSpan(*change.Range)
 		if err != nil {
 			return nil, err
 		}
 		if !spn.HasOffset() {
-			return nil, jsonrpc2.NewErrorf(jsonrpc2.CodeInternalError, "invalid range for content change")
+			return nil, errors.Errorf("%w: invalid range for content change", jsonrpc2.ErrInternal)
 		}
 		start, end := spn.Start().Offset(), spn.End().Offset()
 		if end < start {
-			return nil, jsonrpc2.NewErrorf(jsonrpc2.CodeInternalError, "invalid range for content change")
+			return nil, errors.Errorf("%w: invalid range for content change", jsonrpc2.ErrInternal)
 		}
 		var buf bytes.Buffer
 		buf.Write(content[:start])

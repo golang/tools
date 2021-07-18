@@ -1,25 +1,25 @@
 -- Lock-hover --
-Lock locks m\.
-
-[`(sync.Mutex).Lock` on pkg.go.dev](https://pkg.go.dev/sync#Mutex.Lock)
-
 ```go
 func (*sync.Mutex).Lock()
 ```
+
+[`(sync.Mutex).Lock` on pkg.go.dev](https://pkg.go.dev/sync?utm_source=gopls#Mutex.Lock)
+
+Lock locks m\.
 -- Name-hover --
-Name returns the object\'s \(package\-local, unqualified\) name\.
-
-[`(types.TypeName).Name` on pkg.go.dev](https://pkg.go.dev/go/types#TypeName.Name)
-
 ```go
 func (*types.object).Name() string
 ```
--- Random-definition --
-godef/a/random.go:3:6-12: defined here as [`a.Random` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a#Random)
 
-```go
+[`(types.TypeName).Name` on pkg.go.dev](https://pkg.go.dev/go/types?utm_source=gopls#TypeName.Name)
+
+Name returns the object\'s \(package\-local, unqualified\) name\.
+-- Random-definition --
+godef/a/random.go:3:6-12: defined here as ```go
 func Random() int
 ```
+
+[`a.Random` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a?utm_source=gopls#Random)
 -- Random-definition-json --
 {
 	"span": {
@@ -35,21 +35,21 @@ func Random() int
 			"offset": 22
 		}
 	},
-	"description": "[`a.Random` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a#Random)\n\n```go\nfunc Random() int\n```"
+	"description": "```go\nfunc Random() int\n```\n\n[`a.Random` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a?utm_source=gopls#Random)"
 }
 
 -- Random-hover --
-[`a.Random` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a#Random)
-
 ```go
 func Random() int
 ```
--- Random2-definition --
-godef/a/random.go:8:6-13: defined here as [`a.Random2` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a#Random2)
 
-```go
+[`a.Random` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a?utm_source=gopls#Random)
+-- Random2-definition --
+godef/a/random.go:8:6-13: defined here as ```go
 func Random2(y int) int
 ```
+
+[`a.Random2` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a?utm_source=gopls#Random2)
 -- Random2-definition-json --
 {
 	"span": {
@@ -65,56 +65,122 @@ func Random2(y int) int
 			"offset": 78
 		}
 	},
-	"description": "[`a.Random2` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a#Random2)\n\n```go\nfunc Random2(y int) int\n```"
+	"description": "```go\nfunc Random2(y int) int\n```\n\n[`a.Random2` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a?utm_source=gopls#Random2)"
 }
 
 -- Random2-hover --
-[`a.Random2` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a#Random2)
-
 ```go
 func Random2(y int) int
 ```
+
+[`a.Random2` on pkg.go.dev](https://pkg.go.dev/golang.org/x/tools/internal/lsp/godef/a?utm_source=gopls#Random2)
+-- aPackage-hover --
+Package a is a package for testing go to definition\.
+-- declBlockA-hover --
+```go
+type a struct {
+	x string
+}
+```
+
+1st type declaration block
+-- declBlockB-hover --
+```go
+type b struct{}
+```
+
+b has a comment
+-- declBlockC-hover --
+```go
+type c struct {
+	f string
+}
+```
+
+c is a struct
+-- declBlockD-hover --
+```go
+type d string
+```
+
+3rd type declaration block
+-- declBlockE-hover --
+```go
+type e struct {
+	f float64
+}
+```
+
+e has a comment
 -- err-definition --
-godef/a/a.go:23:6-9: defined here as ```go
+godef/a/a.go:33:6-9: defined here as ```go
 var err error
 ```
+
+\@err
 -- err-definition-json --
 {
 	"span": {
 		"uri": "file://godef/a/a.go",
 		"start": {
-			"line": 23,
+			"line": 33,
 			"column": 6,
-			"offset": 287
+			"offset": 597
 		},
 		"end": {
-			"line": 23,
+			"line": 33,
 			"column": 9,
-			"offset": 290
+			"offset": 600
 		}
 	},
-	"description": "```go\nvar err error\n```"
+	"description": "```go\nvar err error\n```\n\n\\@err"
 }
 
 -- err-hover --
 ```go
 var err error
 ```
+
+\@err
+-- g-hover --
+```go
+const g untyped int = 1
+```
+
+When I hover on g, I should see this comment\.
+-- h-hover --
+```go
+const h untyped int = 2
+```
+
+Constant block\.
 -- make-hover --
-The make built\-in function allocates and initializes an object of type slice, map, or chan \(only\)\.
-
-[`make` on pkg.go.dev](https://pkg.go.dev/builtin#make)
-
 ```go
 func(t Type, size ...IntegerType) Type
 ```
+
+[`make` on pkg.go.dev](https://pkg.go.dev/builtin?utm_source=gopls#make)
+
+The make built\-in function allocates and initializes an object of type slice, map, or chan \(only\)\.
 -- string-hover --
 ```go
 string
 ```
--- x-hover --
-x is a variable\.
+-- typesImport-hover --
+```go
+package types ("go/types")
+```
 
+[`types` on pkg.go.dev](https://pkg.go.dev/go/types?utm_source=gopls)
+-- x-hover --
 ```go
 var x string
 ```
+
+x is a variable\.
+-- z-hover --
+```go
+var z string
+```
+
+z is a variable too\.

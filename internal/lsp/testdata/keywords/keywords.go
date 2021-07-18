@@ -1,8 +1,20 @@
 package keywords
 
+//@rank("", type),rank("", func),rank("", var),rank("", const),rank("", import)
+
 func _() {
-	var test int
+	var test int //@rank(" //", int, interface)
 	var tChan chan int
+	var _ m //@complete(" //", map)
+	var _ f //@complete(" //", func)
+	var _ c //@complete(" //", chan)
+
+	var _ str //@rank(" //", string, struct)
+
+	type _ int //@rank(" //", interface, int)
+
+	type _ str //@rank(" //", struct, string)
+
 	switch test {
 	case 1: // TODO: trying to complete case here will break because the parser wont return *ast.Ident
 		b //@complete(" //", break)
@@ -14,6 +26,7 @@ func _() {
 	}
 
 	switch test.(type) {
+	case fo: //@complete(":")
 	case int:
 		b //@complete(" //", break)
 	case int32:
@@ -30,7 +43,12 @@ func _() {
 	}
 
 	for index := 0; index < test; index++ {
-		c //@complete(" //", continue, const)
+		c //@complete(" //", const, continue)
+		b //@complete(" //", break)
+	}
+
+	for range []int{} {
+		c //@complete(" //", const, continue)
 		b //@complete(" //", break)
 	}
 
@@ -42,13 +60,14 @@ func _() {
 
 	f //@complete(" //", for)
 	d //@complete(" //", defer)
-	g //@complete(" //", go)
+	g //@rank(" //", go),rank(" //", goto)
 	r //@complete(" //", return)
 	i //@complete(" //", if)
 	e //@complete(" //", else)
 	v //@complete(" //", var)
 	c //@complete(" //", const)
 
+	for i := r //@complete(" //", range)
 }
 
 /* package */ //@item(package, "package", "", "keyword")
@@ -72,3 +91,10 @@ func _() {
 /* return */ //@item(return, "return", "", "keyword")
 /* var */ //@item(var, "var", "", "keyword")
 /* const */ //@item(const, "const", "", "keyword")
+/* goto */ //@item(goto, "goto", "", "keyword")
+/* struct */ //@item(struct, "struct", "", "keyword")
+/* interface */ //@item(interface, "interface", "", "keyword")
+/* map */ //@item(map, "map", "", "keyword")
+/* func */ //@item(func, "func", "", "keyword")
+/* chan */ //@item(chan, "chan", "", "keyword")
+/* range */ //@item(range, "range", "", "keyword")

@@ -1,13 +1,11 @@
 package links
 
 import (
-	"fmt" //@link(`fmt`,"https://pkg.go.dev/fmt")
+	"fmt" //@link(`fmt`,"https://pkg.go.dev/fmt?utm_source=gopls")
 
-	"golang.org/x/tools/internal/lsp/foo" //@link(`golang.org/x/tools/internal/lsp/foo`,`https://pkg.go.dev/golang.org/x/tools/internal/lsp/foo`)
+	"golang.org/x/tools/internal/lsp/foo" //@link(`golang.org/x/tools/internal/lsp/foo`,`https://pkg.go.dev/golang.org/x/tools/internal/lsp/foo?utm_source=gopls`)
 
-	_ "database/sql" //@link(`database/sql`, `https://pkg.go.dev/database/sql`)
-
-	errors "golang.org/x/xerrors" //@link(`golang.org/x/xerrors`, `https://pkg.go.dev/golang.org/x/xerrors`)
+	_ "database/sql" //@link(`database/sql`, `https://pkg.go.dev/database/sql?utm_source=gopls`)
 )
 
 var (

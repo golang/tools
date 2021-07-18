@@ -1,5 +1,7 @@
 # Go Tools
 
+[![PkgGoDev](https://pkg.go.dev/badge/golang.org/x/tools)](https://pkg.go.dev/golang.org/x/tools)
+
 This subrepository holds the source for various packages and tools that support
 the Go programming language.
 
@@ -16,6 +18,15 @@ Static Single Assignment form (SSA) representation for Go programs.
 
 The easiest way to install is to run `go get -u golang.org/x/tools/...`. You can
 also manually git clone the repository to `$GOPATH/src/golang.org/x/tools`.
+
+## JS/CSS Formatting
+
+This repository uses [prettier](https://prettier.io/) to format JS and CSS files.
+
+The version of `prettier` used is 1.18.2.
+
+It is encouraged that all JS and CSS code be run through this before submitting
+a change. However, it is not a strict requirement enforced by CI.
 
 ## Report Issues / Send Patches
 

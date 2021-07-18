@@ -31,15 +31,15 @@ type rename struct {
 }
 
 func (r *rename) Name() string      { return "rename" }
-func (r *rename) Usage() string     { return "<position>" }
+func (r *rename) Usage() string     { return "<position> <new name>" }
 func (r *rename) ShortHelp() string { return "rename selected identifier" }
 func (r *rename) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), `
 Example:
 
   $ # 1-based location (:line:column or :#position) of the thing to change
-  $ gopls rename helper/helper.go:8:6
-  $ gopls rename helper/helper.go:#53
+  $ gopls rename helper/helper.go:8:6 Foo
+  $ gopls rename helper/helper.go:#53 Foo
 
 	gopls rename flags are:
 `)
@@ -81,15 +81,15 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 	var orderedURIs []string
 	edits := map[span.URI][]protocol.TextEdit{}
 	for _, c := range edit.DocumentChanges {
-		uri := span.URI(c.TextDocument.URI)
+		uri := fileURI(c.TextDocument.URI)
 		edits[uri] = append(edits[uri], c.Edits...)
-		orderedURIs = append(orderedURIs, c.TextDocument.URI)
+		orderedURIs = append(orderedURIs, string(uri))
 	}
 	sort.Strings(orderedURIs)
 	changeCount := len(orderedURIs)
 
 	for _, u := range orderedURIs {
-		uri := span.URI(u)
+		uri := span.URIFromURI(u)
 		cmdFile := conn.AddFile(ctx, uri)
 		filename := cmdFile.uri.Filename()
 

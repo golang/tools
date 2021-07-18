@@ -521,6 +521,13 @@ func (p *parser) parseNamedType(nlist []interface{}) types.Type {
 		p.errorf("%v has nil type", obj)
 	}
 
+	if p.tok == scanner.Ident && p.lit == "notinheap" {
+		p.next()
+		// The go/types package has no way of recording that
+		// this type is marked notinheap. Presumably no user
+		// of this package actually cares.
+	}
+
 	// type alias
 	if p.tok == '=' {
 		p.next()
@@ -1025,7 +1032,7 @@ func (p *parser) skipInlineBody() {
 func (p *parser) parseTypes(pkg *types.Package) {
 	maxp1 := p.parseInt()
 	exportedp1 := p.parseInt()
-	p.typeList = make([]types.Type, maxp1, maxp1)
+	p.typeList = make([]types.Type, maxp1)
 
 	type typeOffset struct {
 		offset int

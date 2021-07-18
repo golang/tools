@@ -1,7 +1,8 @@
-// Copyright 2012 The Go Authors.  All rights reserved.
+// Copyright 2012 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build !appengine
 // +build !appengine
 
 // Package socket implements an WebSocket-based playground backend.
@@ -19,6 +20,7 @@ import (
 	"errors"
 	"go/parser"
 	"go/token"
+	exec "golang.org/x/sys/execabs"
 	"io"
 	"io/ioutil"
 	"log"
@@ -26,7 +28,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -359,7 +360,7 @@ func (p *process) start(body string, opt *Options) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(path)
+	p.path = path // to be removed by p.end
 
 	out := "prog"
 	if runtime.GOOS == "windows" {
@@ -385,7 +386,6 @@ func (p *process) start(body string, opt *Options) error {
 	}
 
 	// build x.go, creating x
-	p.path = path // to be removed by p.end
 	args := []string{"go", "build", "-tags", "OMIT"}
 	if opt != nil && opt.Race {
 		p.out <- &Message{

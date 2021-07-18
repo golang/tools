@@ -8,59 +8,69 @@ package source
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"go/ast"
 	"go/format"
 	"go/parser"
-	"go/scanner"
 	"go/token"
+	"strings"
+	"text/scanner"
 
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/span"
-	"golang.org/x/tools/internal/telemetry/trace"
-	errors "golang.org/x/xerrors"
 )
 
 // Format formats a file with a given range.
 func Format(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.TextEdit, error) {
-	ctx, done := trace.StartSpan(ctx, "source.Format")
+	ctx, done := event.Start(ctx, "source.Format")
 	defer done()
 
-	pgh := snapshot.View().Session().Cache().ParseGoHandle(fh, ParseFull)
-	file, m, parseErrors, err := pgh.Parse(ctx)
+	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
 	if err != nil {
 		return nil, err
 	}
 	// Even if this file has parse errors, it might still be possible to format it.
 	// Using format.Node on an AST with errors may result in code being modified.
 	// Attempt to format the source of this file instead.
-	if parseErrors != nil {
-		formatted, err := formatSource(ctx, snapshot, fh)
+	if pgf.ParseErr != nil {
+		formatted, err := formatSource(ctx, fh)
 		if err != nil {
 			return nil, err
 		}
-		return computeTextEdits(ctx, snapshot.View(), pgh.File(), m, string(formatted))
+		return computeTextEdits(ctx, snapshot, pgf, string(formatted))
 	}
 
-	fset := snapshot.View().Session().Cache().FileSet()
-	buf := &bytes.Buffer{}
+	fset := snapshot.FileSet()
 
 	// format.Node changes slightly from one release to another, so the version
 	// of Go used to build the LSP server will determine how it formats code.
 	// This should be acceptable for all users, who likely be prompted to rebuild
 	// the LSP server on each Go release.
-	if err := format.Node(buf, fset, file); err != nil {
+	buf := &bytes.Buffer{}
+	if err := format.Node(buf, fset, pgf.File); err != nil {
 		return nil, err
 	}
-	return computeTextEdits(ctx, snapshot.View(), pgh.File(), m, buf.String())
+	formatted := buf.String()
+
+	// Apply additional formatting, if any is supported. Currently, the only
+	// supported additional formatter is gofumpt.
+	if format := snapshot.View().Options().Hooks.GofumptFormat; snapshot.View().Options().Gofumpt && format != nil {
+		b, err := format(ctx, buf.Bytes())
+		if err != nil {
+			return nil, err
+		}
+		formatted = string(b)
+	}
+	return computeTextEdits(ctx, snapshot, pgf, formatted)
 }
 
-func formatSource(ctx context.Context, s Snapshot, fh FileHandle) ([]byte, error) {
-	ctx, done := trace.StartSpan(ctx, "source.formatSource")
+func formatSource(ctx context.Context, fh FileHandle) ([]byte, error) {
+	_, done := event.Start(ctx, "source.formatSource")
 	defer done()
 
-	data, _, err := fh.Read(ctx)
+	data, err := fh.Read()
 	if err != nil {
 		return nil, err
 	}
@@ -77,49 +87,34 @@ type ImportFix struct {
 // it returns a list of fixes that could be applied to the file, with the
 // corresponding TextEdits that would be needed to apply that fix.
 func AllImportsFixes(ctx context.Context, snapshot Snapshot, fh FileHandle) (allFixEdits []protocol.TextEdit, editsPerFix []*ImportFix, err error) {
-	ctx, done := trace.StartSpan(ctx, "source.AllImportsFixes")
+	ctx, done := event.Start(ctx, "source.AllImportsFixes")
 	defer done()
 
-	pkg, pgh, err := getParsedFile(ctx, snapshot, fh, NarrowestPackageHandle)
+	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
 	if err != nil {
-		return nil, nil, errors.Errorf("getting file for AllImportsFixes: %v", err)
+		return nil, nil, err
 	}
-	if hasListErrors(pkg) {
-		return nil, nil, errors.Errorf("%s has list errors, not running goimports", fh.Identity().URI)
-	}
-	err = snapshot.View().RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
-		allFixEdits, editsPerFix, err = computeImportEdits(ctx, snapshot.View(), pgh, opts)
+	if err := snapshot.RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
+		allFixEdits, editsPerFix, err = computeImportEdits(snapshot, pgf, opts)
 		return err
-	})
-	if err != nil {
-		return nil, nil, errors.Errorf("computing fix edits: %v", err)
+	}); err != nil {
+		return nil, nil, fmt.Errorf("AllImportsFixes: %v", err)
 	}
-
 	return allFixEdits, editsPerFix, nil
 }
 
 // computeImportEdits computes a set of edits that perform one or all of the
 // necessary import fixes.
-func computeImportEdits(ctx context.Context, view View, ph ParseGoHandle, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*ImportFix, err error) {
-	filename := ph.File().Identity().URI.Filename()
+func computeImportEdits(snapshot Snapshot, pgf *ParsedGoFile, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*ImportFix, err error) {
+	filename := pgf.URI.Filename()
 
 	// Build up basic information about the original file.
-	origData, _, err := ph.File().Read(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	origAST, origMapper, _, err := ph.Parse(ctx)
+	allFixes, err := imports.FixImports(filename, pgf.Src, options)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	allFixes, err := imports.FixImports(filename, origData, options)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	origImports, origImportOffset := trimToImports(view.Session().Cache().FileSet(), origAST, origData)
-	allFixEdits, err = computeFixEdits(view, ph, options, origData, origAST, origMapper, origImports, origImportOffset, allFixes)
+	allFixEdits, err = computeFixEdits(snapshot, pgf, options, allFixes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -127,7 +122,7 @@ func computeImportEdits(ctx context.Context, view View, ph ParseGoHandle, option
 	// Apply all of the import fixes to the file.
 	// Add the edits for each fix to the result.
 	for _, fix := range allFixes {
-		edits, err := computeFixEdits(view, ph, options, origData, origAST, origMapper, origImports, origImportOffset, []*imports.ImportFix{fix})
+		edits, err := computeFixEdits(snapshot, pgf, options, []*imports.ImportFix{fix})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -139,18 +134,10 @@ func computeImportEdits(ctx context.Context, view View, ph ParseGoHandle, option
 	return allFixEdits, editsPerFix, nil
 }
 
-func computeOneImportFixEdits(ctx context.Context, view View, ph ParseGoHandle, fix *imports.ImportFix) ([]protocol.TextEdit, error) {
-	origData, _, err := ph.File().Read(ctx)
-	if err != nil {
-		return nil, err
-	}
-	origAST, origMapper, _, err := ph.Parse(ctx)
-	if err != nil {
-		return nil, err
-	}
-	origImports, origImportOffset := trimToImports(view.Session().Cache().FileSet(), origAST, origData)
-
+// ComputeOneImportFixEdits returns text edits for a single import fix.
+func ComputeOneImportFixEdits(snapshot Snapshot, pgf *ParsedGoFile, fix *imports.ImportFix) ([]protocol.TextEdit, error) {
 	options := &imports.Options{
+		LocalPrefix: snapshot.View().Options().Local,
 		// Defaults.
 		AllErrors:  true,
 		Comments:   true,
@@ -159,163 +146,138 @@ func computeOneImportFixEdits(ctx context.Context, view View, ph ParseGoHandle, 
 		TabIndent:  true,
 		TabWidth:   8,
 	}
-	return computeFixEdits(view, ph, options, origData, origAST, origMapper, origImports, origImportOffset, []*imports.ImportFix{fix})
+	return computeFixEdits(snapshot, pgf, options, []*imports.ImportFix{fix})
 }
 
-func computeFixEdits(view View, ph ParseGoHandle, options *imports.Options, origData []byte, origAST *ast.File, origMapper *protocol.ColumnMapper, origImports []byte, origImportOffset int, fixes []*imports.ImportFix) ([]protocol.TextEdit, error) {
-	filename := ph.File().Identity().URI.Filename()
+func computeFixEdits(snapshot Snapshot, pgf *ParsedGoFile, options *imports.Options, fixes []*imports.ImportFix) ([]protocol.TextEdit, error) {
+	// trim the original data to match fixedData
+	left := importPrefix(pgf.Src)
+	extra := !strings.Contains(left, "\n") // one line may have more than imports
+	if extra {
+		left = string(pgf.Src)
+	}
+	if len(left) > 0 && left[len(left)-1] != '\n' {
+		left += "\n"
+	}
 	// Apply the fixes and re-parse the file so that we can locate the
 	// new imports.
-	fixedData, err := imports.ApplyFixes(fixes, filename, origData, options, parser.ImportsOnly)
-	fixedData = append(fixedData, '\n') // ApplyFixes comes out missing the newline, go figure.
+	flags := parser.ImportsOnly
+	if extra {
+		// used all of origData above, use all of it here too
+		flags = 0
+	}
+	fixedData, err := imports.ApplyFixes(fixes, "", pgf.Src, options, flags)
 	if err != nil {
 		return nil, err
 	}
-	fixedFset := token.NewFileSet()
-	fixedAST, err := parser.ParseFile(fixedFset, filename, fixedData, parser.ImportsOnly)
-	// Any error here prevents us from computing the edits.
+	if fixedData == nil || fixedData[len(fixedData)-1] != '\n' {
+		fixedData = append(fixedData, '\n') // ApplyFixes may miss the newline, go figure.
+	}
+	edits, err := snapshot.View().Options().ComputeEdits(pgf.URI, left, string(fixedData))
 	if err != nil {
 		return nil, err
 	}
-	fixedImports, fixedImportsOffset := trimToImports(fixedFset, fixedAST, fixedData)
-
-	// Prepare the diff. If both sides had import statements, we can diff
-	// just those sections against each other, then shift the resulting
-	// edits to the right lines in the original file.
-	left, right := origImports, fixedImports
-	converter := span.NewContentConverter(filename, origImports)
-	offset := origImportOffset
-
-	// If one side or the other has no imports, we won't know where to
-	// anchor the diffs. Instead, use the beginning of the file, up to its
-	// first non-imports decl. We know the imports code will insert
-	// somewhere before that.
-	if origImportOffset == 0 || fixedImportsOffset == 0 {
-		left, _ = trimToFirstNonImport(view.Session().Cache().FileSet(), origAST, origData, nil)
-		fixedData, err = imports.ApplyFixes(fixes, filename, origData, options, 0)
-		if err != nil {
-			return nil, err
-		}
-		// We need the whole file here, not just the ImportsOnly versions we made above.
-		fixedAST, err = parser.ParseFile(fixedFset, filename, fixedData, 0)
-		if fixedAST == nil {
-			return nil, err
-		}
-		var ok bool
-		right, ok = trimToFirstNonImport(fixedFset, fixedAST, fixedData, err)
-		if !ok {
-			return nil, errors.Errorf("error %v detected in the import block", err)
-		}
-		// We're now working with a prefix of the original file, so we can
-		// use the original converter, and there is no offset on the edits.
-		converter = origMapper.Converter
-		offset = 0
-	}
-
-	// Perform the diff and adjust the results for the trimming, if any.
-	edits := view.Options().ComputeEdits(ph.File().Identity().URI, string(left), string(right))
-	for i := range edits {
-		s, err := edits[i].Span.WithPosition(converter)
-		if err != nil {
-			return nil, err
-		}
-		start := span.NewPoint(s.Start().Line()+offset, s.Start().Column(), -1)
-		end := span.NewPoint(s.End().Line()+offset, s.End().Column(), -1)
-		edits[i].Span = span.New(s.URI(), start, end)
-	}
-	return ToProtocolEdits(origMapper, edits)
+	return ToProtocolEdits(pgf.Mapper, edits)
 }
 
-// trimToImports returns a section of the source file that covers all of the
-// import declarations, and the line offset into the file that section starts at.
-func trimToImports(fset *token.FileSet, f *ast.File, src []byte) ([]byte, int) {
-	var firstImport, lastImport ast.Decl
-	for _, decl := range f.Decls {
-		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
-			if firstImport == nil {
-				firstImport = decl
-			}
-			lastImport = decl
-		}
-	}
-
-	if firstImport == nil {
-		return nil, 0
+// importPrefix returns the prefix of the given file content through the final
+// import statement. If there are no imports, the prefix is the package
+// statement and any comment groups below it.
+func importPrefix(src []byte) string {
+	fset := token.NewFileSet()
+	// do as little parsing as possible
+	f, err := parser.ParseFile(fset, "", src, parser.ImportsOnly|parser.ParseComments)
+	if err != nil { // This can happen if 'package' is misspelled
+		return ""
 	}
 	tok := fset.File(f.Pos())
-	start := firstImport.Pos()
-	end := lastImport.End()
-	// The parser will happily feed us nonsense. See golang/go#36610.
-	tokStart, tokEnd := token.Pos(tok.Base()), token.Pos(tok.Base()+tok.Size())
-	if start < tokStart || start > tokEnd || end < tokStart || end > tokEnd {
-		return nil, 0
-	}
-	if nextLine := fset.Position(end).Line + 1; tok.LineCount() >= nextLine {
-		end = fset.File(f.Pos()).LineStart(nextLine)
-	}
-
-	startLineOffset := fset.Position(start).Line - 1 // lines are 1-indexed.
-	return src[fset.Position(firstImport.Pos()).Offset:fset.Position(end).Offset], startLineOffset
-}
-
-// trimToFirstNonImport returns src from the beginning to the first non-import
-// declaration, or the end of the file if there is no such decl.
-func trimToFirstNonImport(fset *token.FileSet, f *ast.File, src []byte, err error) ([]byte, bool) {
-	var firstDecl ast.Decl
-	for _, decl := range f.Decls {
-		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
-			continue
-		}
-		firstDecl = decl
-		break
-	}
-	tok := fset.File(f.Pos())
-	if tok == nil {
-		return nil, false
-	}
-	end := f.End()
-	if firstDecl != nil {
-		if firstDeclLine := fset.Position(firstDecl.Pos()).Line; firstDeclLine > 1 {
-			end = tok.LineStart(firstDeclLine - 1)
-		}
-	}
-	// Any errors in the file must be after the part of the file that we care about.
-	switch err := err.(type) {
-	case *scanner.Error:
-		pos := tok.Pos(err.Pos.Offset)
-		if pos <= end {
-			return nil, false
-		}
-	case scanner.ErrorList:
-		if err.Len() > 0 {
-			pos := tok.Pos(err[0].Pos.Offset)
-			if pos <= end {
-				return nil, false
+	var importEnd int
+	for _, d := range f.Decls {
+		if x, ok := d.(*ast.GenDecl); ok && x.Tok == token.IMPORT {
+			if e := tok.Offset(d.End()); e > importEnd {
+				importEnd = e
 			}
 		}
 	}
-	return src[0:fset.Position(end).Offset], true
-}
 
-func hasListErrors(pkg Package) bool {
-	for _, err := range pkg.GetErrors() {
-		if err.Kind == ListError {
-			return true
+	maybeAdjustToLineEnd := func(pos token.Pos, isCommentNode bool) int {
+		offset := tok.Offset(pos)
+
+		// Don't go past the end of the file.
+		if offset > len(src) {
+			offset = len(src)
+		}
+		// The go/ast package does not account for different line endings, and
+		// specifically, in the text of a comment, it will strip out \r\n line
+		// endings in favor of \n. To account for these differences, we try to
+		// return a position on the next line whenever possible.
+		switch line := tok.Line(tok.Pos(offset)); {
+		case line < tok.LineCount():
+			nextLineOffset := tok.Offset(tok.LineStart(line + 1))
+			// If we found a position that is at the end of a line, move the
+			// offset to the start of the next line.
+			if offset+1 == nextLineOffset {
+				offset = nextLineOffset
+			}
+		case isCommentNode, offset+1 == tok.Size():
+			// If the last line of the file is a comment, or we are at the end
+			// of the file, the prefix is the entire file.
+			offset = len(src)
+		}
+		return offset
+	}
+	if importEnd == 0 {
+		pkgEnd := f.Name.End()
+		importEnd = maybeAdjustToLineEnd(pkgEnd, false)
+	}
+	for _, cgroup := range f.Comments {
+		for _, c := range cgroup.List {
+			if end := tok.Offset(c.End()); end > importEnd {
+				startLine := tok.Position(c.Pos()).Line
+				endLine := tok.Position(c.End()).Line
+
+				// Work around golang/go#41197 by checking if the comment might
+				// contain "\r", and if so, find the actual end position of the
+				// comment by scanning the content of the file.
+				startOffset := tok.Offset(c.Pos())
+				if startLine != endLine && bytes.Contains(src[startOffset:], []byte("\r")) {
+					if commentEnd := scanForCommentEnd(src[startOffset:]); commentEnd > 0 {
+						end = startOffset + commentEnd
+					}
+				}
+				importEnd = maybeAdjustToLineEnd(tok.Pos(end), true)
+			}
 		}
 	}
-	return false
+	if importEnd > len(src) {
+		importEnd = len(src)
+	}
+	return string(src[:importEnd])
 }
 
-func computeTextEdits(ctx context.Context, view View, fh FileHandle, m *protocol.ColumnMapper, formatted string) ([]protocol.TextEdit, error) {
-	ctx, done := trace.StartSpan(ctx, "source.computeTextEdits")
+// scanForCommentEnd returns the offset of the end of the multi-line comment
+// at the start of the given byte slice.
+func scanForCommentEnd(src []byte) int {
+	var s scanner.Scanner
+	s.Init(bytes.NewReader(src))
+	s.Mode ^= scanner.SkipComments
+
+	t := s.Scan()
+	if t == scanner.Comment {
+		return s.Pos().Offset
+	}
+	return 0
+}
+
+func computeTextEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile, formatted string) ([]protocol.TextEdit, error) {
+	_, done := event.Start(ctx, "source.computeTextEdits")
 	defer done()
 
-	data, _, err := fh.Read(ctx)
+	edits, err := snapshot.View().Options().ComputeEdits(pgf.URI, string(pgf.Src), formatted)
 	if err != nil {
 		return nil, err
 	}
-	edits := view.Options().ComputeEdits(fh.Identity().URI, string(data), formatted)
-	return ToProtocolEdits(m, edits)
+	return ToProtocolEdits(pgf.Mapper, edits)
 }
 
 func ToProtocolEdits(m *protocol.ColumnMapper, edits []diff.TextEdit) ([]protocol.TextEdit, error) {

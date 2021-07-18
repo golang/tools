@@ -1,0 +1,16 @@
+-- functionextraction_extract_scope_5_2 --
+package extract
+
+func _() {
+	fn0 := 1
+	newFunction(fn0) //@extractfunc("a", "fn0")
+}
+
+func newFunction(fn0 int) {
+	a := fn0
+}
+
+func fn1() int {
+	return 1
+}
+

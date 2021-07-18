@@ -328,7 +328,6 @@ func (h *handlerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		info.TypeInfoIndex[ti.Name] = i
 	}
 
-	info.GoogleCN = googleCN(r)
 	var body []byte
 	if info.Dirname == "/src" {
 		body = applyTemplate(h.p.PackageRootHTML, "packageRootHTML", info)
@@ -340,7 +339,6 @@ func (h *handlerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Tabtitle: tabtitle,
 		Subtitle: subtitle,
 		Body:     body,
-		GoogleCN: info.GoogleCN,
 		TreeView: hasTreeView,
 	})
 }
@@ -610,7 +608,6 @@ func (p *Presentation) serveTextFile(w http.ResponseWriter, r *http.Request, abs
 		SrcPath:  relpath,
 		Tabtitle: relpath,
 		Body:     buf.Bytes(),
-		GoogleCN: googleCN(r),
 	})
 }
 
@@ -689,13 +686,20 @@ func (p *Presentation) serveDirectory(w http.ResponseWriter, r *http.Request, ab
 		SrcPath:  relpath,
 		Tabtitle: relpath,
 		Body:     applyTemplate(p.DirlistHTML, "dirlistHTML", list),
-		GoogleCN: googleCN(r),
 	})
 }
 
 func (p *Presentation) ServeHTMLDoc(w http.ResponseWriter, r *http.Request, abspath, relpath string) {
 	// get HTML body contents
+	isMarkdown := false
 	src, err := vfs.ReadFile(p.Corpus.fs, abspath)
+	if err != nil && strings.HasSuffix(abspath, ".html") {
+		if md, errMD := vfs.ReadFile(p.Corpus.fs, strings.TrimSuffix(abspath, ".html")+".md"); errMD == nil {
+			src = md
+			isMarkdown = true
+			err = nil
+		}
+	}
 	if err != nil {
 		log.Printf("ReadFile: %s", err)
 		p.ServeError(w, r, relpath, err)
@@ -718,7 +722,6 @@ func (p *Presentation) ServeHTMLDoc(w http.ResponseWriter, r *http.Request, absp
 	page := Page{
 		Title:    meta.Title,
 		Subtitle: meta.Subtitle,
-		GoogleCN: googleCN(r),
 	}
 
 	// evaluate as template if indicated
@@ -738,6 +741,18 @@ func (p *Presentation) ServeHTMLDoc(w http.ResponseWriter, r *http.Request, absp
 		src = buf.Bytes()
 	}
 
+	// Apply markdown as indicated.
+	// (Note template applies before Markdown.)
+	if isMarkdown {
+		html, err := renderMarkdown(src)
+		if err != nil {
+			log.Printf("executing markdown %s: %v", relpath, err)
+			p.ServeError(w, r, relpath, err)
+			return
+		}
+		src = html
+	}
+
 	// if it's the language spec, add tags to EBNF productions
 	if strings.HasSuffix(abspath, "go_spec.html") {
 		var buf bytes.Buffer
@@ -754,9 +769,15 @@ func (p *Presentation) ServeFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Presentation) serveFile(w http.ResponseWriter, r *http.Request) {
-	relpath := r.URL.Path
+	if strings.HasSuffix(r.URL.Path, "/index.html") {
+		// We'll show index.html for the directory.
+		// Use the dir/ version as canonical instead of dir/index.html.
+		http.Redirect(w, r, r.URL.Path[0:len(r.URL.Path)-len("index.html")], http.StatusMovedPermanently)
+		return
+	}
 
 	// Check to see if we need to redirect or serve another file.
+	relpath := r.URL.Path
 	if m := p.Corpus.MetadataFor(relpath); m != nil {
 		if m.Path != relpath {
 			// Redirect to canonical path.
@@ -772,12 +793,6 @@ func (p *Presentation) serveFile(w http.ResponseWriter, r *http.Request) {
 
 	switch pathpkg.Ext(relpath) {
 	case ".html":
-		if strings.HasSuffix(relpath, "/index.html") {
-			// We'll show index.html for the directory.
-			// Use the dir/ version as canonical instead of dir/index.html.
-			http.Redirect(w, r, r.URL.Path[0:len(r.URL.Path)-len("index.html")], http.StatusMovedPermanently)
-			return
-		}
 		p.ServeHTMLDoc(w, r, abspath, relpath)
 		return
 
@@ -797,7 +812,8 @@ func (p *Presentation) serveFile(w http.ResponseWriter, r *http.Request) {
 		if redirect(w, r) {
 			return
 		}
-		if index := pathpkg.Join(abspath, "index.html"); util.IsTextFile(p.Corpus.fs, index) {
+		index := pathpkg.Join(abspath, "index.html")
+		if util.IsTextFile(p.Corpus.fs, index) || util.IsTextFile(p.Corpus.fs, pathpkg.Join(abspath, "index.md")) {
 			p.ServeHTMLDoc(w, r, index, index)
 			return
 		}

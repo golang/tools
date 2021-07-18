@@ -18,8 +18,8 @@ import (
 	errors "golang.org/x/xerrors"
 )
 
-// suggestedfix implements the fix verb for gopls.
-type suggestedfix struct {
+// suggestedFix implements the fix verb for gopls.
+type suggestedFix struct {
 	Diff  bool `flag:"d" help:"display diffs instead of rewriting files"`
 	Write bool `flag:"w" help:"write result to (source) file instead of stdout"`
 	All   bool `flag:"a" help:"apply all fixes, not just preferred fixes"`
@@ -27,10 +27,10 @@ type suggestedfix struct {
 	app *Application
 }
 
-func (s *suggestedfix) Name() string      { return "fix" }
-func (s *suggestedfix) Usage() string     { return "<filename>" }
-func (s *suggestedfix) ShortHelp() string { return "apply suggested fixes" }
-func (s *suggestedfix) DetailedHelp(f *flag.FlagSet) {
+func (s *suggestedFix) Name() string      { return "fix" }
+func (s *suggestedFix) Usage() string     { return "<filename>" }
+func (s *suggestedFix) ShortHelp() string { return "apply suggested fixes" }
+func (s *suggestedFix) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprintf(f.Output(), `
 Example: apply suggested fixes for this file:
 
@@ -45,9 +45,9 @@ gopls fix flags are:
 // - if -w is specified, updates the file in place;
 // - if -d is specified, prints out unified diffs of the changes; or
 // - otherwise, prints the new versions to stdout.
-func (s *suggestedfix) Run(ctx context.Context, args ...string) error {
-	if len(args) != 1 {
-		return tool.CommandLineErrorf("fix expects 1 argument")
+func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
+	if len(args) < 1 {
+		return tool.CommandLineErrorf("fix expects at least 1 argument")
 	}
 	conn, err := s.app.connect(ctx)
 	if err != nil {
@@ -68,14 +68,27 @@ func (s *suggestedfix) Run(ctx context.Context, args ...string) error {
 	conn.Client.filesMu.Lock()
 	defer conn.Client.filesMu.Unlock()
 
+	codeActionKinds := []protocol.CodeActionKind{protocol.QuickFix}
+	if len(args) > 1 {
+		codeActionKinds = []protocol.CodeActionKind{}
+		for _, k := range args[1:] {
+			codeActionKinds = append(codeActionKinds, protocol.CodeActionKind(k))
+		}
+	}
+
+	rng, err := file.mapper.Range(from)
+	if err != nil {
+		return err
+	}
 	p := protocol.CodeActionParams{
 		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.NewURI(uri),
+			URI: protocol.URIFromSpanURI(uri),
 		},
 		Context: protocol.CodeActionContext{
-			Only:        []protocol.CodeActionKind{protocol.QuickFix},
+			Only:        codeActionKinds,
 			Diagnostics: file.diagnostics,
 		},
+		Range: rng,
 	}
 	actions, err := conn.CodeAction(ctx, &p)
 	if err != nil {
@@ -83,12 +96,43 @@ func (s *suggestedfix) Run(ctx context.Context, args ...string) error {
 	}
 	var edits []protocol.TextEdit
 	for _, a := range actions {
+		if a.Command != nil {
+			return fmt.Errorf("ExecuteCommand is not yet supported on the command line")
+		}
 		if !a.IsPreferred && !s.All {
 			continue
 		}
-		for _, c := range a.Edit.DocumentChanges {
-			if c.TextDocument.URI == string(uri) {
-				edits = append(edits, c.Edits...)
+		if !from.HasPosition() {
+			for _, c := range a.Edit.DocumentChanges {
+				if fileURI(c.TextDocument.URI) == uri {
+					edits = append(edits, c.Edits...)
+				}
+			}
+			continue
+		}
+		// If the span passed in has a position, then we need to find
+		// the codeaction that has the same range as the passed in span.
+		for _, diag := range a.Diagnostics {
+			spn, err := file.mapper.RangeSpan(diag.Range)
+			if err != nil {
+				continue
+			}
+			if span.ComparePoint(from.Start(), spn.Start()) == 0 {
+				for _, c := range a.Edit.DocumentChanges {
+					if fileURI(c.TextDocument.URI) == uri {
+						edits = append(edits, c.Edits...)
+					}
+				}
+				break
+			}
+		}
+
+		// If suggested fix is not a diagnostic, still must collect edits.
+		if len(a.Diagnostics) == 0 {
+			for _, c := range a.Edit.DocumentChanges {
+				if fileURI(c.TextDocument.URI) == uri {
+					edits = append(edits, c.Edits...)
+				}
 			}
 		}
 	}

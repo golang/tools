@@ -1,3 +1,7 @@
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package lsp
 
 import (
@@ -5,28 +9,16 @@ import (
 
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
 )
 
 func (s *Server) foldingRange(ctx context.Context, params *protocol.FoldingRangeParams) ([]protocol.FoldingRange, error) {
-	uri := span.NewURI(params.TextDocument.URI)
-	view, err := s.session.ViewOf(uri)
-	if err != nil {
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.Go)
+	defer release()
+	if !ok {
 		return nil, err
-	}
-	snapshot := view.Snapshot()
-	fh, err := snapshot.GetFile(uri)
-	if err != nil {
-		return nil, err
-	}
-	var ranges []*source.FoldingRangeInfo
-	switch fh.Identity().Kind {
-	case source.Go:
-		ranges, err = source.FoldingRange(ctx, snapshot, fh, view.Options().LineFoldingOnly)
-	case source.Mod:
-		ranges = nil
 	}
 
+	ranges, err := source.FoldingRange(ctx, snapshot, fh, snapshot.View().Options().LineFoldingOnly)
 	if err != nil {
 		return nil, err
 	}

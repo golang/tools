@@ -178,7 +178,7 @@ var TestCases = []struct {
 		LineEdits: []diff.TextEdit{{Span: newSpan(2, 4), NewText: "C\n\n"}},
 	},
 	{
-		Name: "mulitple_replace",
+		Name: "multiple_replace",
 		In:   "A\nB\nC\nD\nE\nF\nG\n",
 		Out:  "A\nH\nI\nJ\nE\nF\nK\n",
 		Unified: UnifiedPrefix + `
@@ -222,7 +222,10 @@ func DiffTest(t *testing.T, compute diff.ComputeEdits) {
 	for _, test := range TestCases {
 		t.Run(test.Name, func(t *testing.T) {
 			t.Helper()
-			edits := compute(span.FileURI("/"+test.Name), test.In, test.Out)
+			edits, err := compute(span.URIFromPath("/"+test.Name), test.In, test.Out)
+			if err != nil {
+				t.Fatal(err)
+			}
 			got := diff.ApplyEdits(test.In, edits)
 			unified := fmt.Sprint(diff.ToUnified(FileA, FileB, test.In, edits))
 			if got != test.Out {

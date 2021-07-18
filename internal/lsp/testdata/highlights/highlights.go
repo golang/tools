@@ -4,8 +4,6 @@ import (
 	"fmt"         //@mark(fmtImp, "\"fmt\""),highlight(fmtImp, fmtImp, fmt1, fmt2, fmt3, fmt4)
 	h2 "net/http" //@mark(hImp, "h2"),highlight(hImp, hImp, hUse)
 	"sort"
-
-	"golang.org/x/tools/internal/lsp/protocol"
 )
 
 type F struct{ bar int } //@mark(barDeclaration, "bar"),highlight(barDeclaration, barDeclaration, bar1, bar2, bar3)
@@ -35,12 +33,10 @@ func testFunctions() {
 	Print()                 //@mark(printTest, "Print"),highlight(printTest, printFunc, printTest)
 }
 
-func toProtocolHighlight(rngs []protocol.Range) []protocol.DocumentHighlight { //@mark(doc1, "DocumentHighlight"),mark(docRet1, "[]protocol.DocumentHighlight"),highlight(doc1, docRet1, doc1, doc2, doc3, result)
-	result := make([]protocol.DocumentHighlight, 0, len(rngs)) //@mark(doc2, "DocumentHighlight"),highlight(doc2, doc1, doc2, doc3)
-	kind := protocol.Text
+func toProtocolHighlight(rngs []int) []DocumentHighlight { //@mark(doc1, "DocumentHighlight"),mark(docRet1, "[]DocumentHighlight"),highlight(doc1, docRet1, doc1, doc2, doc3, result)
+	result := make([]DocumentHighlight, 0, len(rngs)) //@mark(doc2, "DocumentHighlight"),highlight(doc2, doc1, doc2, doc3)
 	for _, rng := range rngs {
-		result = append(result, protocol.DocumentHighlight{ //@mark(doc3, "DocumentHighlight"),highlight(doc3, doc1, doc2, doc3)
-			Kind:  kind,
+		result = append(result, DocumentHighlight{ //@mark(doc3, "DocumentHighlight"),highlight(doc3, doc1, doc2, doc3)
 			Range: rng,
 		})
 	}
@@ -74,6 +70,50 @@ func testForLoops() {
 		}
 		if i < 4 {
 			continue //@mark(cont4, "continue"),highlight(cont4, forDecl4, brk4, cont4)
+		}
+	}
+
+Outer:
+	for i := 0; i < 10; i++ { //@mark(forDecl5, "for"),highlight(forDecl5, forDecl5, brk5, brk6, brk8)
+		break //@mark(brk5, "break"),highlight(brk5, forDecl5, brk5, brk6, brk8)
+		for { //@mark(forDecl6, "for"),highlight(forDecl6, forDecl6, cont5)
+			if i == 1 {
+				break Outer //@mark(brk6, "break Outer"),highlight(brk6, forDecl5, brk5, brk6, brk8)
+			}
+			switch i { //@mark(switch1, "switch"),highlight(switch1, switch1, brk7)
+			case 5:
+				break //@mark(brk7, "break"),highlight(brk7, switch1, brk7)
+			case 6:
+				continue //@mark(cont5, "continue"),highlight(cont5, forDecl6, cont5)
+			case 7:
+				break Outer //@mark(brk8, "break Outer"),highlight(brk8, forDecl5, brk5, brk6, brk8)
+			}
+		}
+	}
+}
+
+func testSwitch() {
+	var i, j int
+
+L1:
+	for { //@mark(forDecl7, "for"),highlight(forDecl7, forDecl7, brk10, cont6)
+	L2:
+		switch i { //@mark(switch2, "switch"),highlight(switch2, switch2, brk11, brk12, brk13)
+		case 1:
+			switch j { //@mark(switch3, "switch"),highlight(switch3, switch3, brk9)
+			case 1:
+				break //@mark(brk9, "break"),highlight(brk9, switch3, brk9)
+			case 2:
+				break L1 //@mark(brk10, "break L1"),highlight(brk10, forDecl7, brk10, cont6)
+			case 3:
+				break L2 //@mark(brk11, "break L2"),highlight(brk11, switch2, brk11, brk12, brk13)
+			default:
+				continue //@mark(cont6, "continue"),highlight(cont6, forDecl7, brk10, cont6)
+			}
+		case 2:
+			break //@mark(brk12, "break"),highlight(brk12, switch2, brk11, brk12, brk13)
+		default:
+			break L2 //@mark(brk13, "break L2"),highlight(brk13, switch2, brk11, brk12, brk13)
 		}
 	}
 }

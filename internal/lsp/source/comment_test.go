@@ -1,3 +1,7 @@
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package source
 
 import (
@@ -220,6 +224,144 @@ func TestCommentEscape(t *testing.T) {
 		commentEscape(&buf, tt.in, true)
 		out := buf.String()
 		if out != tt.out {
+			t.Errorf("#%d: mismatch\nhave: %q\nwant: %q", i, out, tt.out)
+		}
+	}
+}
+
+func TestCommentToMarkdown(t *testing.T) {
+	tests := []struct {
+		in, out string
+	}{
+		{
+			in:  "F declaration.\n",
+			out: "F declaration\\.\n",
+		},
+		{
+			in: `
+F declaration. Lorem ipsum dolor sit amet.
+Etiam mattis eros at orci mollis molestie.
+`,
+			out: `
+F declaration\. Lorem ipsum dolor sit amet\.
+Etiam mattis eros at orci mollis molestie\.
+`,
+		},
+		{
+			in: `
+F declaration.
+
+Lorem ipsum dolor sit amet.
+Sed id dui turpis.
+
+
+
+
+Aenean tempus velit non auctor eleifend.
+Aenean efficitur a sem id ultricies.
+
+
+Phasellus efficitur mauris et viverra bibendum.
+`,
+			out: `
+F declaration\.
+
+Lorem ipsum dolor sit amet\.
+Sed id dui turpis\.
+
+Aenean tempus velit non auctor eleifend\.
+Aenean efficitur a sem id ultricies\.
+
+Phasellus efficitur mauris et viverra bibendum\.
+`,
+		},
+		{
+			in: `
+F declaration.
+
+Aenean tempus velit non auctor eleifend.
+
+Section
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+  func foo() {}
+
+
+  func bar() {}
+
+Fusce lorem lacus.
+
+    func foo() {}
+
+    func bar() {}
+
+Maecenas in lobortis lectus.
+
+	func foo() {}
+
+	func bar() {}
+
+Phasellus efficitur mauris et viverra bibendum.
+`,
+			out: `
+F declaration\.
+
+Aenean tempus velit non auctor eleifend\.
+
+### Section
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit\.
+
+    func foo() {}
+
+
+    func bar() {}
+
+Fusce lorem lacus\.
+
+    func foo() {}
+
+    func bar() {}
+
+Maecenas in lobortis lectus\.
+
+    func foo() {}
+
+    func bar() {}
+
+Phasellus efficitur mauris et viverra bibendum\.
+`,
+		},
+		{
+			in: `
+F declaration.
+
+	func foo() {
+		fmt.Println("foo")
+	}
+	func bar() {
+		fmt.Println("bar")
+	}
+`,
+			out: `
+F declaration\.
+
+    func foo() {
+    	fmt.Println("foo")
+    }
+    func bar() {
+    	fmt.Println("bar")
+    }
+`,
+		},
+	}
+	for i, tt := range tests {
+		// Comments start with new lines for better readability. So, we should trim them.
+		tt.in = strings.TrimPrefix(tt.in, "\n")
+		tt.out = strings.TrimPrefix(tt.out, "\n")
+
+		if out := CommentToMarkdown(tt.in); out != tt.out {
 			t.Errorf("#%d: mismatch\nhave: %q\nwant: %q", i, out, tt.out)
 		}
 	}

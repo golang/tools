@@ -6,6 +6,6 @@ import (
 
 func goodbye() {
 	s := "hiiiiiii"
-	s = s //@suggestedfix("s = s")
-	log.Printf(s)
+	s = s //@suggestedfix("s = s", "quickfix")
+	log.Print(s)
 }

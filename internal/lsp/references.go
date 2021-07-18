@@ -9,42 +9,32 @@ import (
 
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/lsp/template"
 )
 
 func (s *Server) references(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
-	uri := span.NewURI(params.TextDocument.URI)
-	view, err := s.session.ViewOf(uri)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.UnknownKind)
+	defer release()
+	if !ok {
+		return nil, err
+	}
+	if fh.Kind() == source.Tmpl {
+		return template.References(ctx, snapshot, fh, params)
+	}
+	references, err := source.References(ctx, snapshot, fh, params.Position, params.Context.IncludeDeclaration)
 	if err != nil {
 		return nil, err
 	}
-	snapshot := view.Snapshot()
-	fh, err := snapshot.GetFile(uri)
-	if err != nil {
-		return nil, err
-	}
-	// Find all references to the identifier at the position.
-	if fh.Identity().Kind != source.Go {
-		return nil, nil
-	}
-
-	references, err := source.References(ctx, view.Snapshot(), fh, params.Position, params.Context.IncludeDeclaration)
-	if err != nil {
-		return nil, err
-	}
-
 	var locations []protocol.Location
 	for _, ref := range references {
 		refRange, err := ref.Range()
 		if err != nil {
 			return nil, err
 		}
-
 		locations = append(locations, protocol.Location{
-			URI:   protocol.NewURI(ref.URI()),
+			URI:   protocol.URIFromSpanURI(ref.URI()),
 			Range: refRange,
 		})
 	}
-
 	return locations, nil
 }
