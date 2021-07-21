@@ -137,6 +137,15 @@ static content by looking for a %q package
 in your Go workspaces (GOPATH).
 
 You may use the -base flag to specify an alternate location.
+
+If you installed this binary in module-aware mode (which is default for
+go versions 1.16 and above) then you may see the following error:
+
+Couldn't find gopresent files: no required module provides package golang.org/x/tools/cmd/present
+
+If so, you may need to specify the module path with the -base flag.
+
+e.g. -base ~/go/pkg/mod/golang.org/x/tools@v0.1.3/cmd/present
 `
 
 const localhostWarning = `
