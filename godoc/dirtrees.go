@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	pathpkg "path"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -332,7 +333,7 @@ func hasThirdParty(list []DirEntry) bool {
 // If filter is set, only the directory entries whose paths match the filter
 // are included.
 //
-func (dir *Directory) listing(skipRoot bool, filter func(string) bool) *DirList {
+func (dir *Directory) listing(skipRoot bool, filter func(DirEntry) bool) *DirList {
 	if dir == nil {
 		return nil
 	}
@@ -356,27 +357,50 @@ func (dir *Directory) listing(skipRoot bool, filter func(string) bool) *DirList 
 		return nil
 	}
 
+	// mark the first GOROOT item
+	foundGoRoot := false
+
 	// create list
 	list := make([]DirEntry, 0, n)
 	for d := range dir.iter(skipRoot) {
-		if filter != nil && !filter(d.Path) {
-			continue
-		}
 		var p DirEntry
 		p.Depth = d.Depth - minDepth
 		p.Height = maxHeight - p.Depth
-		// the path is relative to root.Path - remove the root.Path
-		// prefix (the prefix should always be present but avoid
-		// crashes and check)
-		path := strings.TrimPrefix(d.Path, dir.Path)
-		// remove leading separator if any - path must be relative
-		path = strings.TrimPrefix(path, "/")
-		p.Path = path
+		p.Path = d.Path
 		p.Name = d.Name
 		p.HasPkg = d.HasPkg
 		p.Synopsis = d.Synopsis
 		p.RootType = d.RootType
-		list = append(list, p)
+		if filter == nil || filter(p) {
+			// the path is relative to root.Path - remove the root.Path
+			// prefix (the prefix should always be present but avoid
+			// crashes and check)
+			p.Path = strings.TrimPrefix(p.Path, dir.Path)
+			// remove leading separator if any - path must be relative
+			p.Path = strings.TrimPrefix(p.Path, "/")
+			// test if found first GOROOT item
+			if p.RootType == vfs.RootTypeGoRoot && !foundGoRoot && p.Depth > 0 {
+				// include the GoRoot path prefix as DirEntries to visualize tree in packageroot.html
+				var v DirEntry
+				v.Depth = 0
+				v.Path = p.Path
+				v.HasPkg = false
+				v.Synopsis = ""
+				v.RootType = p.RootType
+				s := strings.Split(filepath.Clean(p.Path), string(os.PathSeparator))
+				for _, c := range s[:len(s)-1] {
+					v.Height = maxHeight - v.Depth
+					v.Name = c
+					// add to list
+					list = append(list, v)
+					v.Depth++
+				}
+			}
+			// if any RootTypeGoRoot mark foundGoRoot
+			foundGoRoot = foundGoRoot || p.RootType == vfs.RootTypeGoRoot
+			// add to list
+			list = append(list, p)
+		}
 	}
 
 	return &DirList{maxHeight, list}

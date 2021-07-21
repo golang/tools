@@ -47,6 +47,9 @@ type Presentation struct {
 	ShowPlayground bool
 	DeclLinks      bool
 
+	// ShowInternalPkg optionally shows the internal packages from GoMod module
+	ShowInternalPkg bool
+
 	// NotesRx optionally specifies a regexp to match
 	// notes to render in the output.
 	NotesRx *regexp.Regexp
@@ -149,6 +152,10 @@ func (p *Presentation) PkgFSRoot() string {
 
 func (p *Presentation) CmdFSRoot() string {
 	return p.cmdHandler.fsRoot
+}
+
+func (p* Presentation) AddPkgExclude(path string) {
+	p.pkgHandler.exclude = append(p.pkgHandler.exclude, path)
 }
 
 // TODO(bradfitz): move this to be a method on Corpus. Just moving code around for now,

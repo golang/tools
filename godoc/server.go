@@ -217,7 +217,7 @@ func (h *handlerServer) GetPageInfo(abspath, relpath string, mode PageInfoMode, 
 		dir = h.c.newDirectory(abspath, 2)
 		timestamp = time.Now()
 	}
-	info.Dirs = dir.listing(true, func(path string) bool { return h.includePath(path, mode) })
+	info.Dirs = dir.listing(true, func(p DirEntry) bool { return h.includePath(p, mode) })
 
 	info.DirTime = timestamp
 	info.DirFlat = mode&FlatDir != 0
@@ -225,21 +225,24 @@ func (h *handlerServer) GetPageInfo(abspath, relpath string, mode PageInfoMode, 
 	return info
 }
 
-func (h *handlerServer) includePath(path string, mode PageInfoMode) (r bool) {
+func (h *handlerServer) includePath(d DirEntry, mode PageInfoMode) (r bool) {
 	// if the path is under one of the exclusion paths, don't list.
+	path := d.Path
 	for _, e := range h.exclude {
 		if strings.HasPrefix(path, e) {
 			return false
 		}
 	}
 
-	// if the path includes 'internal', don't list unless we are in the NoFiltering mode.
+	// if the path includes special symbols, don't list unless we are in the NoFiltering mode.
 	if mode&NoFiltering != 0 {
 		return true
 	}
-	if strings.Contains(path, "internal") || strings.Contains(path, "vendor") {
+	if strings.Contains(path, "internal") || strings.Contains(path, "vendor") || strings.Contains(path, "third_party") {
 		for _, c := range strings.Split(filepath.Clean(path), string(os.PathSeparator)) {
-			if c == "internal" || c == "vendor" {
+			if c == "internal" {
+				return d.RootType == vfs.RootTypeGoRoot && h.p.ShowInternalPkg
+			} else if c == "vendor" || c == "third_party" {
 				return false
 			}
 		}
