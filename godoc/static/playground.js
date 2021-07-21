@@ -343,21 +343,30 @@ function PlaygroundOutput(el) {
 
     // autoindent helpers.
     function insertTabs(n) {
+      var codeTxtArea = code[0];
       // find the selection start and end
-      var start = code[0].selectionStart;
-      var end = code[0].selectionEnd;
-      // split the textarea content into two, and insert n tabs
-      var v = code[0].value;
-      var u = v.substr(0, start);
-      for (var i = 0; i < n; i++) {
-        u += '\t';
+      var start = codeTxtArea.selectionStart;
+      var end = codeTxtArea.selectionEnd;
+      // number of inserted tab characters
+      var tabs = '\t'.repeat(n);
+      // set revised content with support native 'undo' capability
+      if (!codeTxtArea.ownerDocument.execCommand('insertText', false, u)) {
+        //firefox < 20.0.0
+        codeTxtArea.setRangeText(
+            tabs,
+            start || 0,
+            end || 0,
+            'end'
+        );
+        codeTxtArea.dispatchEvent(new InputEvent('input', {
+          data: tabs,
+          inputType: 'insertText',
+          isComposing: false
+        }));
       }
-      u += v.substr(end);
-      // set revised content
-      code[0].value = u;
       // reset caret position after inserted tabs
-      code[0].selectionStart = start + n;
-      code[0].selectionEnd = start + n;
+      codeTxtArea.selectionStart = start + n;
+      codeTxtArea.selectionEnd = start + n;
     }
     function autoindent(el) {
       var curpos = el.selectionStart;
