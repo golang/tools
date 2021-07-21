@@ -40,6 +40,9 @@ Error is equivalent to yyerror in the original yacc.
 Code inside the grammar actions may refer to the variable yylex,
 which holds the yyLexer passed to yyParse.
 
+Code inside the grammar actions may refer to yyrcvr,
+which holds the yyParser.
+
 Clients that need to understand more about the parser state can
 create the parser separately from invoking it. The function yyNewParser
 returns a yyParser conforming to the following interface:
@@ -47,6 +50,10 @@ returns a yyParser conforming to the following interface:
 	type yyParser interface {
 		Parse(yyLex) int
 		Lookahead() int
+		Debug() int
+		ErrorVerbose() bool
+		SetDebug(level int)
+		SetErrorVerbose(verbose bool)
 	}
 
 Parse runs the parser; the top-level call yyParse(yylex) is equivalent
