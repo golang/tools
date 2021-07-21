@@ -88,6 +88,7 @@ packages without open files. As a result, features like Find
 References and Rename will miss results in such packages.
 
 * `"Normal"`
+
 Default: `"Normal"`.
 
 #### **expandWorkspaceToModule** *bool*
@@ -188,7 +189,7 @@ Default: `false`.
 
 codelenses overrides the enabled/disabled state of code lenses. See the
 "Code Lenses" section of the
-[Settings page](https://github.com/golang/tools/blob/master/gopls/doc/settings.md)
+[Settings page](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#code-lenses)
 for the list of supported lenses.
 
 Example Usage:
@@ -248,6 +249,7 @@ Must be one of:
 * `"CaseInsensitive"`
 * `"CaseSensitive"`
 * `"Fuzzy"`
+
 Default: `"Fuzzy"`.
 
 ##### **experimentalPostfixCompletions** *bool*
@@ -353,6 +355,7 @@ can do more manipulation of these fields.\
 This should only be used by clients that support this behavior.
 
 * `"SynopsisDocumentation"`
+
 Default: `"FullDocumentation"`.
 
 ##### **linkTarget** *string*
@@ -385,6 +388,7 @@ Must be one of:
 * `"Both"`
 * `"Definition"`
 * `"Link"`
+
 Default: `"Both"`.
 
 ##### **symbolMatcher** *enum*
@@ -398,6 +402,7 @@ Must be one of:
 * `"CaseInsensitive"`
 * `"CaseSensitive"`
 * `"Fuzzy"`
+
 Default: `"Fuzzy"`.
 
 ##### **symbolStyle** *enum*
