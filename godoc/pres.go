@@ -47,6 +47,9 @@ type Presentation struct {
 	ShowPlayground bool
 	DeclLinks      bool
 
+	// Flag to handle root "/" redirect
+	CustomNav      bool
+
 	// NotesRx optionally specifies a regexp to match
 	// notes to render in the output.
 	NotesRx *regexp.Regexp
