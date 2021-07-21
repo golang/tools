@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"sort"
@@ -45,9 +46,14 @@ func ParseProfiles(fileName string) ([]*Profile, error) {
 		return nil, err
 	}
 	defer pf.Close()
+	return ParseProfilesFromReader(pf)
+}
 
+// ParseProfilesFromReader parses profile data in the specified file and returns a
+// Profile for each source file described therein.
+func ParseProfilesFromReader(rd io.Reader) ([]*Profile, error) {
+	buf := bufio.NewReader(rd)
 	files := make(map[string]*Profile)
-	buf := bufio.NewReader(pf)
 	// First line is "mode: foo", where foo is "set", "count", or "atomic".
 	// Rest of file is in the format
 	//	encoding/base64/base64.go:34.44,37.40 3 1
