@@ -299,6 +299,7 @@ type Function struct {
 	method    *types.Selection // info about provenance of synthetic methods
 	Signature *types.Signature
 	pos       token.Pos
+	Doc       *ast.CommentGroup
 
 	Synthetic string        // provenance of synthetic function; "" for true source functions
 	syntax    ast.Node      // *ast.Func{Decl,Lit}; replaced with simple ast.Node after build, unless debug mode
