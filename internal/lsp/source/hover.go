@@ -566,7 +566,7 @@ func BuildLink(target, path, anchor string) string {
 
 func formatDoc(doc string, options *Options) string {
 	if options.PreferredContentFormat == protocol.Markdown {
-		return CommentToMarkdown(doc)
+		return CommentToMarkdown(doc, options.KeepOriginalLineBreaks)
 	}
 	return doc
 }

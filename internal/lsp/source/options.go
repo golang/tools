@@ -121,9 +121,10 @@ func DefaultOptions() *Options {
 						},
 					},
 					DocumentationOptions: DocumentationOptions{
-						HoverKind:    FullDocumentation,
-						LinkTarget:   "pkg.go.dev",
-						LinksInHover: true,
+						HoverKind:              FullDocumentation,
+						LinkTarget:             "pkg.go.dev",
+						LinksInHover:           true,
+						KeepOriginalLineBreaks: false,
 					},
 					NavigationOptions: NavigationOptions{
 						ImportShortcut: Both,
@@ -339,6 +340,9 @@ type DocumentationOptions struct {
 
 	// LinksInHover toggles the presence of links to documentation in hover.
 	LinksInHover bool
+
+	// KeepOriginalLineBreaks can be used to keep the original comment line breaks in hover.
+	KeepOriginalLineBreaks bool
 }
 
 type FormattingOptions struct {

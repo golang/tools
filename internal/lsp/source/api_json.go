@@ -218,6 +218,19 @@ var GeneratedAPIJSON = &APIJSON{
 				Hierarchy:  "ui.documentation",
 			},
 			{
+				Name: "keepOriginalLineBreaks",
+				Type: "bool",
+				Doc:  "keepOriginalLineBreaks can be used to keep the original comment line breaks in hover.\n",
+				EnumKeys: EnumKeys{
+					ValueType: "",
+					Keys:      nil,
+				},
+				EnumValues: nil,
+				Default:    "false",
+				Status:     "",
+				Hierarchy:  "ui.documentation",
+			},
+			{
 				Name: "usePlaceholders",
 				Type: "bool",
 				Doc:  "placeholders enables placeholders for function parameters or struct\nfields in completion responses.\n",
