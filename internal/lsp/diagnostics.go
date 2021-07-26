@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/debug/log"
@@ -91,14 +92,26 @@ func (s *Server) diagnoseDetached(snapshot source.Snapshot) {
 	s.publishDiagnostics(ctx, true, snapshot)
 }
 
+func (s *Server) diagnoseSnapshots(snapshots map[source.Snapshot][]span.URI, onDisk bool) {
+	var diagnosticWG sync.WaitGroup
+	for snapshot, uris := range snapshots {
+		diagnosticWG.Add(1)
+		go func(snapshot source.Snapshot, uris []span.URI) {
+			defer diagnosticWG.Done()
+			s.diagnoseSnapshot(snapshot, uris, onDisk)
+		}(snapshot, uris)
+	}
+	diagnosticWG.Wait()
+}
+
 func (s *Server) diagnoseSnapshot(snapshot source.Snapshot, changedURIs []span.URI, onDisk bool) {
 	ctx := snapshot.BackgroundContext()
 	ctx, done := event.Start(ctx, "Server.diagnoseSnapshot", tag.Snapshot.Of(snapshot.ID()))
 	defer done()
 
-	delay := snapshot.View().Options().ExperimentalDiagnosticsDelay
+	delay := snapshot.View().Options().DiagnosticsDelay
 	if delay > 0 {
-		// Experimental 2-phase diagnostics.
+		// 2-phase diagnostics.
 		//
 		// The first phase just parses and checks packages that have been
 		// affected by file modifications (no analysis).
@@ -107,10 +120,10 @@ func (s *Server) diagnoseSnapshot(snapshot source.Snapshot, changedURIs []span.U
 		// delay.
 		s.diagnoseChangedFiles(ctx, snapshot, changedURIs, onDisk)
 		s.publishDiagnostics(ctx, false, snapshot)
-		s.debouncer.debounce(snapshot.View().Name(), snapshot.ID(), delay, func() {
+		if ok := <-s.diagDebouncer.debounce(snapshot.View().Name(), snapshot.ID(), time.After(delay)); ok {
 			s.diagnose(ctx, snapshot, false)
 			s.publishDiagnostics(ctx, true, snapshot)
-		})
+		}
 		return
 	}
 
@@ -379,12 +392,12 @@ func (s *Server) showCriticalErrorStatus(ctx context.Context, snapshot source.Sn
 		for _, d := range err.DiagList {
 			s.storeDiagnostics(snapshot, d.URI, modSource, []*source.Diagnostic{d})
 		}
-		errMsg = strings.Replace(err.MainError.Error(), "\n", " ", -1)
+		errMsg = strings.ReplaceAll(err.MainError.Error(), "\n", " ")
 	}
 
 	if s.criticalErrorStatus == nil {
 		if errMsg != "" {
-			s.criticalErrorStatus = s.progress.start(ctx, WorkspaceLoadFailure, errMsg, nil, nil)
+			s.criticalErrorStatus = s.progress.Start(ctx, WorkspaceLoadFailure, errMsg, nil, nil)
 		}
 		return
 	}
@@ -392,10 +405,10 @@ func (s *Server) showCriticalErrorStatus(ctx context.Context, snapshot source.Sn
 	// If an error is already shown to the user, update it or mark it as
 	// resolved.
 	if errMsg == "" {
-		s.criticalErrorStatus.end("Done.")
+		s.criticalErrorStatus.End("Done.")
 		s.criticalErrorStatus = nil
 	} else {
-		s.criticalErrorStatus.report(errMsg, 0)
+		s.criticalErrorStatus.Report(errMsg, 0)
 	}
 }
 

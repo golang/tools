@@ -343,7 +343,7 @@ func (s *snapshot) locateTemplateFiles(ctx context.Context) {
 		if err != nil {
 			return err
 		}
-		if strings.HasSuffix(filepath.Ext(path), "tmpl") && !pathExcludedByFilter(path, s.view.options) &&
+		if strings.HasSuffix(filepath.Ext(path), "tmpl") && !pathExcludedByFilter(path, dir, s.view.gomodcache, s.view.options) &&
 			!fi.IsDir() {
 			k := span.URIFromPath(path)
 			fh, err := s.GetVersionedFile(ctx, k)
@@ -371,7 +371,7 @@ func (v *View) contains(uri span.URI) bool {
 	}
 	// Filters are applied relative to the workspace folder.
 	if inFolder {
-		return !pathExcludedByFilter(strings.TrimPrefix(uri.Filename(), v.folder.Filename()), v.Options())
+		return !pathExcludedByFilter(strings.TrimPrefix(uri.Filename(), v.folder.Filename()), v.rootURI.Filename(), v.gomodcache, v.Options())
 	}
 	return true
 }
@@ -393,12 +393,16 @@ func (v *View) relevantChange(c source.FileModification) bool {
 	if v.knownFile(c.URI) {
 		return true
 	}
-	// The gopls.mod may not be "known" because we first access it through the
-	// session. As a result, treat changes to the view's gopls.mod file as
-	// always relevant, even if they are only on-disk changes.
-	// TODO(rstambler): Make sure the gopls.mod is always known to the view.
-	if c.URI == goplsModURI(v.rootURI) {
-		return true
+	// The go.work/gopls.mod may not be "known" because we first access it
+	// through the session. As a result, treat changes to the view's go.work or
+	// gopls.mod file as always relevant, even if they are only on-disk
+	// changes.
+	// TODO(rstambler): Make sure the go.work/gopls.mod files are always known
+	// to the view.
+	for _, src := range []workspaceSource{goWorkWorkspace, goplsModWorkspace} {
+		if c.URI == uriForSource(v.rootURI, src) {
+			return true
+		}
 	}
 	// If the file is not known to the view, and the change is only on-disk,
 	// we should not invalidate the snapshot. This is necessary because Emacs
@@ -557,6 +561,7 @@ func (s *snapshot) initialize(ctx context.Context, firstAttempt bool) {
 	}
 	s.initializeOnce.Do(func() {
 		s.loadWorkspace(ctx, firstAttempt)
+		s.collectAllKnownSubdirs(ctx)
 	})
 }
 
@@ -602,28 +607,40 @@ func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) {
 	} else {
 		scopes = append(scopes, viewLoadScope("LOAD_VIEW"))
 	}
-	var err error
+
+	// If we're loading anything, ensure we also load builtin.
+	// TODO(rstambler): explain the rationale for this.
 	if len(scopes) > 0 {
-		err = s.load(ctx, firstAttempt, append(scopes, packagePath("builtin"))...)
+		scopes = append(scopes, packagePath("builtin"))
 	}
-	if ctx.Err() != nil {
+	err := s.load(ctx, firstAttempt, scopes...)
+
+	// If the context is canceled on the first attempt, loading has failed
+	// because the go command has timed out--that should be a critical error.
+	if err != nil && !firstAttempt && ctx.Err() != nil {
 		return
 	}
 
 	var criticalErr *source.CriticalError
-	if err != nil {
+	switch {
+	case err != nil && ctx.Err() != nil:
+		event.Error(ctx, fmt.Sprintf("initial workspace load: %v", err), err)
+		criticalErr = &source.CriticalError{
+			MainError: err,
+		}
+	case err != nil:
 		event.Error(ctx, "initial workspace load failed", err)
 		extractedDiags, _ := s.extractGoCommandErrors(ctx, err.Error())
 		criticalErr = &source.CriticalError{
 			MainError: err,
 			DiagList:  append(modDiagnostics, extractedDiags...),
 		}
-	} else if len(modDiagnostics) == 1 {
+	case len(modDiagnostics) == 1:
 		criticalErr = &source.CriticalError{
 			MainError: fmt.Errorf(modDiagnostics[0].Message),
 			DiagList:  modDiagnostics,
 		}
-	} else if len(modDiagnostics) > 1 {
+	case len(modDiagnostics) > 1:
 		criticalErr = &source.CriticalError{
 			MainError: fmt.Errorf("error loading module names"),
 			DiagList:  modDiagnostics,
@@ -642,6 +659,10 @@ func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]*file
 	// Detach the context so that content invalidation cannot be canceled.
 	ctx = xcontext.Detach(ctx)
 
+	// This should be the only time we hold the view's snapshot lock for any period of time.
+	v.snapshotMu.Lock()
+	defer v.snapshotMu.Unlock()
+
 	// Cancel all still-running previous requests, since they would be
 	// operating on stale data.
 	v.snapshot.cancel()
@@ -649,34 +670,41 @@ func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]*file
 	// Do not clone a snapshot until its view has finished initializing.
 	v.snapshot.AwaitInitialized(ctx)
 
-	// This should be the only time we hold the view's snapshot lock for any period of time.
-	v.snapshotMu.Lock()
-	defer v.snapshotMu.Unlock()
-
 	oldSnapshot := v.snapshot
 
 	var workspaceChanged bool
 	v.snapshot, workspaceChanged = oldSnapshot.clone(ctx, v.baseCtx, changes, forceReloadMetadata)
-	if workspaceChanged && v.tempWorkspace != "" {
-		snap := v.snapshot
-		release := snap.generation.Acquire(ctx)
-		go func() {
-			defer release()
-			wsdir, err := snap.getWorkspaceDir(ctx)
-			if err != nil {
-				event.Error(ctx, "getting workspace dir", err)
-			}
-			if err := copyWorkspace(v.tempWorkspace, wsdir); err != nil {
-				event.Error(ctx, "copying workspace dir", err)
-			}
-		}()
+	if workspaceChanged {
+		if err := v.updateWorkspaceLocked(ctx); err != nil {
+			event.Error(ctx, "copying workspace dir", err)
+		}
 	}
 	go oldSnapshot.generation.Destroy()
 
 	return v.snapshot, v.snapshot.generation.Acquire(ctx)
 }
 
-func copyWorkspace(dst span.URI, src span.URI) error {
+func (v *View) updateWorkspace(ctx context.Context) error {
+	if v.tempWorkspace == "" {
+		return nil
+	}
+	v.snapshotMu.Lock()
+	defer v.snapshotMu.Unlock()
+	return v.updateWorkspaceLocked(ctx)
+}
+
+// updateWorkspaceLocked should only be called when v.snapshotMu is held. It
+// guarantees that workspace module content will be copied to v.tempWorkace at
+// some point in the future. We do not guarantee that the temp workspace sees
+// all changes to the workspace module, only that it is eventually consistent
+// with the workspace module of the latest snapshot.
+func (v *View) updateWorkspaceLocked(ctx context.Context) error {
+	release := v.snapshot.generation.Acquire(ctx)
+	defer release()
+	src, err := v.snapshot.getWorkspaceDir(ctx)
+	if err != nil {
+		return err
+	}
 	for _, name := range []string{"go.mod", "go.sum"} {
 		srcname := filepath.Join(src.Filename(), name)
 		srcf, err := os.Open(srcname)
@@ -684,7 +712,7 @@ func copyWorkspace(dst span.URI, src span.URI) error {
 			return errors.Errorf("opening snapshot %s: %w", name, err)
 		}
 		defer srcf.Close()
-		dstname := filepath.Join(dst.Filename(), name)
+		dstname := filepath.Join(v.tempWorkspace.Filename(), name)
 		dstf, err := os.Create(dstname)
 		if err != nil {
 			return errors.Errorf("truncating view %s: %w", name, err)
@@ -774,7 +802,7 @@ func go111moduleForVersion(go111module string, goversion int) go111module {
 func findWorkspaceRoot(ctx context.Context, folder span.URI, fs source.FileSource, excludePath func(string) bool, experimental bool) (span.URI, error) {
 	patterns := []string{"go.mod"}
 	if experimental {
-		patterns = []string{"gopls.mod", "go.mod"}
+		patterns = []string{"go.work", "gopls.mod", "go.mod"}
 	}
 	for _, basename := range patterns {
 		dir, err := findRootPattern(ctx, folder, basename, fs)
@@ -1016,24 +1044,29 @@ func (v *View) allFilesExcluded(pkg *packages.Package) bool {
 		if !strings.HasPrefix(f, folder) {
 			return false
 		}
-		if !pathExcludedByFilter(strings.TrimPrefix(f, folder), opts) {
+		if !pathExcludedByFilter(strings.TrimPrefix(f, folder), v.rootURI.Filename(), v.gomodcache, opts) {
 			return false
 		}
 	}
 	return true
 }
 
-func pathExcludedByFilterFunc(opts *source.Options) func(string) bool {
+func pathExcludedByFilterFunc(root, gomodcache string, opts *source.Options) func(string) bool {
 	return func(path string) bool {
-		return pathExcludedByFilter(path, opts)
+		return pathExcludedByFilter(path, root, gomodcache, opts)
 	}
 }
 
-func pathExcludedByFilter(path string, opts *source.Options) bool {
+func pathExcludedByFilter(path, root, gomodcache string, opts *source.Options) bool {
 	path = strings.TrimPrefix(filepath.ToSlash(path), "/")
+	gomodcache = strings.TrimPrefix(filepath.ToSlash(strings.TrimPrefix(gomodcache, root)), "/")
 
 	excluded := false
-	for _, filter := range opts.DirectoryFilters {
+	filters := opts.DirectoryFilters
+	if gomodcache != "" {
+		filters = append(filters, "-"+gomodcache)
+	}
+	for _, filter := range filters {
 		op, prefix := filter[0], filter[1:]
 		// Non-empty prefixes have to be precise directory matches.
 		if prefix != "" {

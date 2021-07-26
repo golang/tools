@@ -249,7 +249,7 @@ func (c *completer) addCandidate(ctx context.Context, cand *candidate) {
 	}
 
 	// Lower score of method calls so we prefer fields and vars over calls.
-	if cand.expandFuncCall {
+	if cand.hasMod(invoke) {
 		if sig, ok := obj.Type().Underlying().(*types.Signature); ok && sig.Recv() != nil {
 			cand.score *= 0.9
 		}
@@ -258,6 +258,12 @@ func (c *completer) addCandidate(ctx context.Context, cand *candidate) {
 	// Prefer private objects over public ones.
 	if !obj.Exported() && obj.Parent() != types.Universe {
 		cand.score *= 1.1
+	}
+
+	// Slight penalty for index modifier (e.g. changing "foo" to
+	// "foo[]") to curb false positives.
+	if cand.hasMod(index) {
+		cand.score *= 0.9
 	}
 
 	// Favor shallow matches by lowering score according to depth.

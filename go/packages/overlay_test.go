@@ -27,7 +27,7 @@ const (
 )
 
 func TestOverlayChangesPackageName(t *testing.T) {
-	packagestest.TestAll(t, testOverlayChangesPackageName)
+	testAllOrModulesParallel(t, testOverlayChangesPackageName)
 }
 func testOverlayChangesPackageName(t *testing.T, exporter packagestest.Exporter) {
 	log.SetFlags(log.Lshortfile)
@@ -57,7 +57,7 @@ func testOverlayChangesPackageName(t *testing.T, exporter packagestest.Exporter)
 	log.SetFlags(0)
 }
 func TestOverlayChangesBothPackageNames(t *testing.T) {
-	packagestest.TestAll(t, testOverlayChangesBothPackageNames)
+	testAllOrModulesParallel(t, testOverlayChangesBothPackageNames)
 }
 func testOverlayChangesBothPackageNames(t *testing.T, exporter packagestest.Exporter) {
 	log.SetFlags(log.Lshortfile)
@@ -106,7 +106,7 @@ func testOverlayChangesBothPackageNames(t *testing.T, exporter packagestest.Expo
 	log.SetFlags(0)
 }
 func TestOverlayChangesTestPackageName(t *testing.T) {
-	packagestest.TestAll(t, testOverlayChangesTestPackageName)
+	testAllOrModulesParallel(t, testOverlayChangesTestPackageName)
 }
 func testOverlayChangesTestPackageName(t *testing.T, exporter packagestest.Exporter) {
 	testenv.NeedsGo1Point(t, 16)
@@ -163,7 +163,7 @@ func checkPkg(t *testing.T, p *packages.Package, id, name string, syntax int) bo
 }
 
 func TestOverlayXTests(t *testing.T) {
-	packagestest.TestAll(t, testOverlayXTests)
+	testAllOrModulesParallel(t, testOverlayXTests)
 }
 
 // This test checks the behavior of go/packages.Load with an overlaid
@@ -247,7 +247,7 @@ func TestHello(t *testing.T) {
 	}
 }
 
-func TestOverlay(t *testing.T) { packagestest.TestAll(t, testOverlay) }
+func TestOverlay(t *testing.T) { testAllOrModulesParallel(t, testOverlay) }
 func testOverlay(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
@@ -315,7 +315,7 @@ func testOverlay(t *testing.T, exporter packagestest.Exporter) {
 	}
 }
 
-func TestOverlayDeps(t *testing.T) { packagestest.TestAll(t, testOverlayDeps) }
+func TestOverlayDeps(t *testing.T) { testAllOrModulesParallel(t, testOverlayDeps) }
 func testOverlayDeps(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
@@ -364,7 +364,7 @@ func testOverlayDeps(t *testing.T, exporter packagestest.Exporter) {
 
 }
 
-func TestNewPackagesInOverlay(t *testing.T) { packagestest.TestAll(t, testNewPackagesInOverlay) }
+func TestNewPackagesInOverlay(t *testing.T) { testAllOrModulesParallel(t, testNewPackagesInOverlay) }
 func testNewPackagesInOverlay(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{
 		{
@@ -468,7 +468,7 @@ func testNewPackagesInOverlay(t *testing.T, exporter packagestest.Exporter) {
 
 // Test that we can create a package and its test package in an overlay.
 func TestOverlayNewPackageAndTest(t *testing.T) {
-	packagestest.TestAll(t, testOverlayNewPackageAndTest)
+	testAllOrModulesParallel(t, testOverlayNewPackageAndTest)
 }
 func testOverlayNewPackageAndTest(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{
@@ -496,6 +496,7 @@ func testOverlayNewPackageAndTest(t *testing.T, exporter packagestest.Exporter) 
 }
 
 func TestAdHocOverlays(t *testing.T) {
+	t.Parallel()
 	testenv.NeedsTool(t, "go")
 
 	// This test doesn't use packagestest because we are testing ad-hoc packages,
@@ -551,6 +552,7 @@ const A = 1
 // TestOverlayModFileChanges tests the behavior resulting from having files
 // from multiple modules in overlays.
 func TestOverlayModFileChanges(t *testing.T) {
+	t.Parallel()
 	testenv.NeedsTool(t, "go")
 
 	// Create two unrelated modules in a temporary directory.
@@ -620,6 +622,8 @@ func main() {}
 }
 
 func TestOverlayGOPATHVendoring(t *testing.T) {
+	t.Parallel()
+
 	exported := packagestest.Export(t, packagestest.GOPATH, []packagestest.Module{{
 		Name: "golang.org/fake",
 		Files: map[string]interface{}{
@@ -647,7 +651,7 @@ func TestOverlayGOPATHVendoring(t *testing.T) {
 	}
 }
 
-func TestContainsOverlay(t *testing.T) { packagestest.TestAll(t, testContainsOverlay) }
+func TestContainsOverlay(t *testing.T) { testAllOrModulesParallel(t, testContainsOverlay) }
 func testContainsOverlay(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
@@ -676,7 +680,7 @@ func testContainsOverlay(t *testing.T, exporter packagestest.Exporter) {
 	}
 }
 
-func TestContainsOverlayXTest(t *testing.T) { packagestest.TestAll(t, testContainsOverlayXTest) }
+func TestContainsOverlayXTest(t *testing.T) { testAllOrModulesParallel(t, testContainsOverlayXTest) }
 func testContainsOverlayXTest(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
@@ -709,7 +713,7 @@ func testContainsOverlayXTest(t *testing.T, exporter packagestest.Exporter) {
 }
 
 func TestInvalidFilesBeforeOverlay(t *testing.T) {
-	packagestest.TestAll(t, testInvalidFilesBeforeOverlay)
+	testAllOrModulesParallel(t, testInvalidFilesBeforeOverlay)
 }
 
 func testInvalidFilesBeforeOverlay(t *testing.T, exporter packagestest.Exporter) {
@@ -749,7 +753,7 @@ func testInvalidFilesBeforeOverlay(t *testing.T, exporter packagestest.Exporter)
 
 // Tests golang/go#35973, fixed in Go 1.14.
 func TestInvalidFilesBeforeOverlayContains(t *testing.T) {
-	packagestest.TestAll(t, testInvalidFilesBeforeOverlayContains)
+	testAllOrModulesParallel(t, testInvalidFilesBeforeOverlayContains)
 }
 func testInvalidFilesBeforeOverlayContains(t *testing.T, exporter packagestest.Exporter) {
 	testenv.NeedsGo1Point(t, 15)
@@ -856,7 +860,7 @@ func isTestVariant(libID, testID string) bool {
 }
 
 func TestInvalidXTestInGOPATH(t *testing.T) {
-	packagestest.TestAll(t, testInvalidXTestInGOPATH)
+	testAllOrModulesParallel(t, testInvalidXTestInGOPATH)
 }
 func testInvalidXTestInGOPATH(t *testing.T, exporter packagestest.Exporter) {
 	t.Skip("Not fixed yet. See golang.org/issue/40825.")
@@ -889,7 +893,7 @@ func testInvalidXTestInGOPATH(t *testing.T, exporter packagestest.Exporter) {
 
 // Reproduces golang/go#40685.
 func TestAddImportInOverlay(t *testing.T) {
-	packagestest.TestAll(t, testAddImportInOverlay)
+	testAllOrModulesParallel(t, testAddImportInOverlay)
 }
 func testAddImportInOverlay(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{
@@ -958,7 +962,7 @@ func _() {
 
 // Tests that overlays are applied for different kinds of load patterns.
 func TestLoadDifferentPatterns(t *testing.T) {
-	packagestest.TestAll(t, testLoadDifferentPatterns)
+	testAllOrModulesParallel(t, testLoadDifferentPatterns)
 }
 func testLoadDifferentPatterns(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{
@@ -1042,6 +1046,8 @@ func Hi() {
 // This does not use go/packagestest because it needs to write a replace
 // directive with an absolute path in one of the module's go.mod files.
 func TestOverlaysInReplace(t *testing.T) {
+	t.Parallel()
+
 	// Create module b.com in a temporary directory. Do not add any Go files
 	// on disk.
 	tmpPkgs, err := ioutil.TempDir("", "modules")

@@ -112,7 +112,7 @@ func DefaultOptions() *Options {
 				},
 				UIOptions: UIOptions{
 					DiagnosticOptions: DiagnosticOptions{
-						ExperimentalDiagnosticsDelay: 250 * time.Millisecond,
+						DiagnosticsDelay: 250 * time.Millisecond,
 						Annotations: map[Annotation]bool{
 							Bounds: true,
 							Escape: true,
@@ -264,6 +264,12 @@ type BuildOptions struct {
 	// downloads rather than requiring user action. This option will eventually
 	// be removed.
 	AllowImplicitNetworkAccess bool `status:"experimental"`
+
+	// ExperimentalUseInvalidMetadata enables gopls to fall back on outdated
+	// package metadata to provide editor features if the go command fails to
+	// load packages for some reason (like an invalid go.mod file). This will
+	// eventually be the default behavior, and this setting will be removed.
+	ExperimentalUseInvalidMetadata bool `status:"experimental"`
 }
 
 type UIOptions struct {
@@ -371,13 +377,22 @@ type DiagnosticOptions struct {
 	// that should be reported by the gc_details command.
 	Annotations map[Annotation]bool `status:"experimental"`
 
-	// ExperimentalDiagnosticsDelay controls the amount of time that gopls waits
+	// DiagnosticsDelay controls the amount of time that gopls waits
 	// after the most recent file modification before computing deep diagnostics.
 	// Simple diagnostics (parsing and type-checking) are always run immediately
 	// on recently modified packages.
 	//
 	// This option must be set to a valid duration string, for example `"250ms"`.
-	ExperimentalDiagnosticsDelay time.Duration `status:"experimental"`
+	DiagnosticsDelay time.Duration `status:"advanced"`
+
+	// ExperimentalWatchedFileDelay controls the amount of time that gopls waits
+	// for additional workspace/didChangeWatchedFiles notifications to arrive,
+	// before processing all such notifications in a single batch. This is
+	// intended for use by LSP clients that don't support their own batching of
+	// file system notifications.
+	//
+	// This option must be set to a valid duration string, for example `"100ms"`.
+	ExperimentalWatchedFileDelay time.Duration `status:"experimental"`
 }
 
 type NavigationOptions struct {
@@ -606,7 +621,7 @@ func SetOptions(options *Options, opts interface{}) OptionResults {
 		for name, value := range opts {
 			if b, ok := value.(bool); name == "allExperiments" && ok && b {
 				enableExperiments = true
-				options.enableAllExperiments()
+				options.EnableAllExperiments()
 			}
 		}
 		seen := map[string]struct{}{}
@@ -718,13 +733,15 @@ func (o *Options) AddStaticcheckAnalyzer(a *analysis.Analyzer, enabled bool, sev
 	}
 }
 
-// enableAllExperiments turns on all of the experimental "off-by-default"
+// EnableAllExperiments turns on all of the experimental "off-by-default"
 // features offered by gopls. Any experimental features specified in maps
 // should be enabled in enableAllExperimentMaps.
-func (o *Options) enableAllExperiments() {
+func (o *Options) EnableAllExperiments() {
 	o.SemanticTokens = true
 	o.ExperimentalPostfixCompletions = true
 	o.ExperimentalTemplateSupport = true
+	o.ExperimentalUseInvalidMetadata = true
+	o.ExperimentalWatchedFileDelay = 50 * time.Millisecond
 }
 
 func (o *Options) enableAllExperimentMaps() {
@@ -912,8 +929,15 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 	case "experimentalTemplateSupport":
 		result.setBool(&o.ExperimentalTemplateSupport)
 
-	case "experimentalDiagnosticsDelay":
-		result.setDuration(&o.ExperimentalDiagnosticsDelay)
+	case "experimentalDiagnosticsDelay", "diagnosticsDelay":
+		if name == "experimentalDiagnosticsDelay" {
+			result.State = OptionDeprecated
+			result.Replacement = "diagnosticsDelay"
+		}
+		result.setDuration(&o.DiagnosticsDelay)
+
+	case "experimentalWatchedFileDelay":
+		result.setDuration(&o.ExperimentalWatchedFileDelay)
 
 	case "experimentalPackageCacheKey":
 		result.setBool(&o.ExperimentalPackageCacheKey)
@@ -923,6 +947,9 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 
 	case "allowImplicitNetworkAccess":
 		result.setBool(&o.AllowImplicitNetworkAccess)
+
+	case "experimentalUseInvalidMetadata":
+		result.setBool(&o.ExperimentalUseInvalidMetadata)
 
 	case "allExperiments":
 		// This setting should be handled before all of the other options are
@@ -1267,10 +1294,11 @@ type EnumValue struct {
 }
 
 type CommandJSON struct {
-	Command string
-	Title   string
-	Doc     string
-	ArgDoc  string
+	Command   string
+	Title     string
+	Doc       string
+	ArgDoc    string
+	ResultDoc string
 }
 
 type LensJSON struct {

@@ -32,6 +32,7 @@ import (
 	"golang.org/x/tools/internal/lsp/source/completion"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/txtar"
 )
 
@@ -39,9 +40,16 @@ const (
 	overlayFileSuffix = ".overlay"
 	goldenFileSuffix  = ".golden"
 	inFileSuffix      = ".in"
-	summaryFile       = "summary.txt"
 	testModule        = "golang.org/x/tools/internal/lsp"
 )
+
+var summaryFile = "summary.txt"
+
+func init() {
+	if typeparams.Enabled {
+		summaryFile = "summary_generics.txt"
+	}
+}
 
 var UpdateGolden = flag.Bool("golden", false, "Update golden files")
 
@@ -62,6 +70,7 @@ type Imports []span.Span
 type SemanticTokens []span.Span
 type SuggestedFixes map[span.Span][]string
 type FunctionExtractions map[span.Span]span.Span
+type MethodExtractions map[span.Span]span.Span
 type Definitions map[span.Span]Definition
 type Implementations map[span.Span][]span.Span
 type Highlights map[span.Span][]span.Span
@@ -96,6 +105,7 @@ type Data struct {
 	SemanticTokens           SemanticTokens
 	SuggestedFixes           SuggestedFixes
 	FunctionExtractions      FunctionExtractions
+	MethodExtractions        MethodExtractions
 	Definitions              Definitions
 	Implementations          Implementations
 	Highlights               Highlights
@@ -139,6 +149,7 @@ type Tests interface {
 	SemanticTokens(*testing.T, span.Span)
 	SuggestedFix(*testing.T, span.Span, []string, int)
 	FunctionExtraction(*testing.T, span.Span, span.Span)
+	MethodExtraction(*testing.T, span.Span, span.Span)
 	Definition(*testing.T, span.Span, Definition)
 	Implementation(*testing.T, span.Span, []span.Span)
 	Highlight(*testing.T, span.Span, []span.Span)
@@ -290,6 +301,7 @@ func load(t testing.TB, mode string, dir string) *Data {
 		PrepareRenames:           make(PrepareRenames),
 		SuggestedFixes:           make(SuggestedFixes),
 		FunctionExtractions:      make(FunctionExtractions),
+		MethodExtractions:        make(MethodExtractions),
 		Symbols:                  make(Symbols),
 		symbolsChildren:          make(SymbolsChildren),
 		symbolInformation:        make(SymbolInformation),
@@ -322,6 +334,14 @@ func load(t testing.TB, mode string, dir string) *Data {
 	}
 
 	files := packagestest.MustCopyFileTree(dir)
+	// Prune test cases that exercise generics.
+	if !typeparams.Enabled {
+		for name := range files {
+			if strings.Contains(name, "_generics") {
+				delete(files, name)
+			}
+		}
+	}
 	overlays := map[string][]byte{}
 	for fragment, operation := range files {
 		if trimmed := strings.TrimSuffix(fragment, goldenFileSuffix); trimmed != fragment {
@@ -449,6 +469,7 @@ func load(t testing.TB, mode string, dir string) *Data {
 		"link":            datum.collectLinks,
 		"suggestedfix":    datum.collectSuggestedFixes,
 		"extractfunc":     datum.collectFunctionExtractions,
+		"extractmethod":   datum.collectMethodExtractions,
 		"incomingcalls":   datum.collectIncomingCalls,
 		"outgoingcalls":   datum.collectOutgoingCalls,
 		"addimport":       datum.collectAddImports,
@@ -655,6 +676,20 @@ func Run(t *testing.T, tests Tests, data *Data) {
 			t.Run(SpanName(start), func(t *testing.T) {
 				t.Helper()
 				tests.FunctionExtraction(t, start, end)
+			})
+		}
+	})
+
+	t.Run("MethodExtraction", func(t *testing.T) {
+		t.Helper()
+		for start, end := range data.MethodExtractions {
+			// Check if we should skip this spn if the -modfile flag is not available.
+			if shouldSkip(data, start.URI()) {
+				continue
+			}
+			t.Run(SpanName(start), func(t *testing.T) {
+				t.Helper()
+				tests.MethodExtraction(t, start, end)
 			})
 		}
 	})
@@ -879,6 +914,7 @@ func checkData(t *testing.T, data *Data) {
 	fmt.Fprintf(buf, "SemanticTokenCount = %v\n", len(data.SemanticTokens))
 	fmt.Fprintf(buf, "SuggestedFixCount = %v\n", len(data.SuggestedFixes))
 	fmt.Fprintf(buf, "FunctionExtractionCount = %v\n", len(data.FunctionExtractions))
+	fmt.Fprintf(buf, "MethodExtractionCount = %v\n", len(data.MethodExtractions))
 	fmt.Fprintf(buf, "DefinitionsCount = %v\n", definitionCount)
 	fmt.Fprintf(buf, "TypeDefinitionsCount = %v\n", typeDefinitionCount)
 	fmt.Fprintf(buf, "HighlightsCount = %v\n", len(data.Highlights))
@@ -1109,6 +1145,12 @@ func (data *Data) collectSuggestedFixes(spn span.Span, actionKind string) {
 func (data *Data) collectFunctionExtractions(start span.Span, end span.Span) {
 	if _, ok := data.FunctionExtractions[start]; !ok {
 		data.FunctionExtractions[start] = end
+	}
+}
+
+func (data *Data) collectMethodExtractions(start span.Span, end span.Span) {
+	if _, ok := data.MethodExtractions[start]; !ok {
+		data.MethodExtractions[start] = end
 	}
 }
 

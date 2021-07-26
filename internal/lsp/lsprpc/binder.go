@@ -7,14 +7,29 @@ package lsprpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
+	"golang.org/x/tools/internal/event"
 	jsonrpc2_v2 "golang.org/x/tools/internal/jsonrpc2_v2"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/xcontext"
 	errors "golang.org/x/xerrors"
 )
 
+// The BinderFunc type adapts a bind function to implement the jsonrpc2.Binder
+// interface.
+type BinderFunc func(ctx context.Context, conn *jsonrpc2_v2.Connection) (jsonrpc2_v2.ConnectionOptions, error)
+
+func (f BinderFunc) Bind(ctx context.Context, conn *jsonrpc2_v2.Connection) (jsonrpc2_v2.ConnectionOptions, error) {
+	return f(ctx, conn)
+}
+
+// Middleware defines a transformation of jsonrpc2 Binders, that may be
+// composed to build jsonrpc2 servers.
+type Middleware func(jsonrpc2_v2.Binder) jsonrpc2_v2.Binder
+
+// A ServerFunc is used to construct an LSP server for a given client.
 type ServerFunc func(context.Context, protocol.ClientCloser) protocol.Server
-type ClientFunc func(context.Context, protocol.Server) protocol.Client
 
 // ServerBinder binds incoming connections to a new server.
 type ServerBinder struct {
@@ -22,7 +37,7 @@ type ServerBinder struct {
 }
 
 func NewServerBinder(newServer ServerFunc) *ServerBinder {
-	return &ServerBinder{newServer}
+	return &ServerBinder{newServer: newServer}
 }
 
 func (b *ServerBinder) Bind(ctx context.Context, conn *jsonrpc2_v2.Connection) (jsonrpc2_v2.ConnectionOptions, error) {
@@ -71,6 +86,7 @@ func (c *canceler) Preempt(ctx context.Context, req *jsonrpc2_v2.Request) (inter
 
 type ForwardBinder struct {
 	dialer jsonrpc2_v2.Dialer
+	onBind func(*jsonrpc2_v2.Connection)
 }
 
 func NewForwardBinder(dialer jsonrpc2_v2.Dialer) *ForwardBinder {
@@ -86,12 +102,30 @@ func (b *ForwardBinder) Bind(ctx context.Context, conn *jsonrpc2_v2.Connection) 
 	if err != nil {
 		return opts, err
 	}
+	if b.onBind != nil {
+		b.onBind(serverConn)
+	}
 	server := protocol.ServerDispatcherV2(serverConn)
+	preempter := &canceler{
+		conn: conn,
+	}
+	detached := xcontext.Detach(ctx)
+	go func() {
+		conn.Wait()
+		if err := serverConn.Close(); err != nil {
+			event.Log(detached, fmt.Sprintf("closing remote connection: %v", err))
+		}
+	}()
 	return jsonrpc2_v2.ConnectionOptions{
-		Handler: protocol.ServerHandlerV2(server),
+		Handler:   protocol.ServerHandlerV2(server),
+		Preempter: preempter,
 	}, nil
 }
 
+// A ClientFunc is used to construct an LSP client for a given server.
+type ClientFunc func(context.Context, protocol.Server) protocol.Client
+
+// ClientBinder binds an LSP client to an incoming connection.
 type ClientBinder struct {
 	newClient ClientFunc
 }

@@ -18,9 +18,9 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
-	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/command"
 	"golang.org/x/tools/internal/lsp/debug"
+	"golang.org/x/tools/internal/lsp/progress"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
@@ -66,7 +66,7 @@ type commandConfig struct {
 type commandDeps struct {
 	snapshot source.Snapshot            // present if cfg.forURI was set
 	fh       source.VersionedFileHandle // present if cfg.forURI was set
-	work     *workDone                  // present cfg.progress was set
+	work     *progress.WorkDone         // present cfg.progress was set
 }
 
 type commandFunc func(context.Context, commandDeps) error
@@ -91,19 +91,21 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 	}
 	ctx, cancel := context.WithCancel(xcontext.Detach(ctx))
 	if cfg.progress != "" {
-		deps.work = c.s.progress.start(ctx, cfg.progress, "Running...", c.params.WorkDoneToken, cancel)
+		deps.work = c.s.progress.Start(ctx, cfg.progress, "Running...", c.params.WorkDoneToken, cancel)
 	}
 	runcmd := func() error {
 		defer cancel()
 		err := run(ctx, deps)
-		switch {
-		case errors.Is(err, context.Canceled):
-			deps.work.end("canceled")
-		case err != nil:
-			event.Error(ctx, "command error", err)
-			deps.work.end("failed")
-		default:
-			deps.work.end("completed")
+		if deps.work != nil {
+			switch {
+			case errors.Is(err, context.Canceled):
+				deps.work.End("canceled")
+			case err != nil:
+				event.Error(ctx, "command error", err)
+				deps.work.End("failed")
+			default:
+				deps.work.End("completed")
+			}
 		}
 		return err
 	}
@@ -350,7 +352,7 @@ func (c *commandHandler) RunTests(ctx context.Context, args command.RunTestsArgs
 	})
 }
 
-func (c *commandHandler) runTests(ctx context.Context, snapshot source.Snapshot, work *workDone, uri protocol.DocumentURI, tests, benchmarks []string) error {
+func (c *commandHandler) runTests(ctx context.Context, snapshot source.Snapshot, work *progress.WorkDone, uri protocol.DocumentURI, tests, benchmarks []string) error {
 	// TODO: fix the error reporting when this runs async.
 	pkgs, err := snapshot.PackagesForFile(ctx, uri.SpanURI(), source.TypecheckWorkspace)
 	if err != nil {
@@ -363,8 +365,8 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot source.Snapshot,
 
 	// create output
 	buf := &bytes.Buffer{}
-	ew := &eventWriter{ctx: ctx, operation: "test"}
-	out := io.MultiWriter(ew, workDoneWriter{work}, buf)
+	ew := progress.NewEventWriter(ctx, "test")
+	out := io.MultiWriter(ew, progress.NewWorkDoneWriter(work), buf)
 
 	// Run `go test -run Func` on each test.
 	var failedTests int
@@ -436,7 +438,7 @@ func (c *commandHandler) Generate(ctx context.Context, args command.GenerateArgs
 		progress:    title,
 		forURI:      args.Dir,
 	}, func(ctx context.Context, deps commandDeps) error {
-		er := &eventWriter{ctx: ctx, operation: "generate"}
+		er := progress.NewEventWriter(ctx, "generate")
 
 		pattern := "."
 		if args.Recursive {
@@ -447,7 +449,7 @@ func (c *commandHandler) Generate(ctx context.Context, args command.GenerateArgs
 			Args:       []string{"-x", pattern},
 			WorkingDir: args.Dir.SpanURI().Filename(),
 		}
-		stderr := io.MultiWriter(er, workDoneWriter{deps.work})
+		stderr := io.MultiWriter(er, progress.NewWorkDoneWriter(deps.work))
 		if err := deps.snapshot.RunGoCommandPiped(ctx, source.Normal, inv, er, stderr); err != nil {
 			return err
 		}
@@ -647,7 +649,7 @@ func (c *commandHandler) GenerateGoplsMod(ctx context.Context, args command.URIA
 		v := views[0]
 		snapshot, release := v.Snapshot(ctx)
 		defer release()
-		modFile, err := cache.BuildGoplsMod(ctx, snapshot.View().Folder(), snapshot)
+		modFile, err := snapshot.BuildGoplsMod(ctx)
 		if err != nil {
 			return errors.Errorf("getting workspace mod file: %w", err)
 		}

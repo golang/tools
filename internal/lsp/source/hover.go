@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/typeparams"
 	errors "golang.org/x/xerrors"
 )
 
@@ -116,6 +117,16 @@ func HoverIdentifier(ctx context.Context, i *IdentifierInfo) (*HoverInformation,
 			}
 			h.Signature = prefix + h.Signature
 		}
+
+		// Check if the variable is an integer whose value we can present in a more
+		// user-friendly way, i.e. `var hex = 0xe34e` becomes `var hex = 58190`
+		if spec, ok := x.(*ast.ValueSpec); ok && len(spec.Values) > 0 {
+			if lit, ok := spec.Values[0].(*ast.BasicLit); ok && len(spec.Names) > 0 {
+				val := constant.MakeFromLiteral(types.ExprString(lit), lit.Kind, 0)
+				h.Signature = fmt.Sprintf("var %s = %s", spec.Names[0], val)
+			}
+		}
+
 	case types.Object:
 		// If the variable is implicitly declared in a type switch, we need to
 		// manually generate its object string.
@@ -125,10 +136,10 @@ func HoverIdentifier(ctx context.Context, i *IdentifierInfo) (*HoverInformation,
 				break
 			}
 		}
-		h.Signature = objectString(x, i.qf)
+		h.Signature = objectString(x, i.qf, i.Inferred)
 	}
 	if obj := i.Declaration.obj; obj != nil {
-		h.SingleLine = objectString(obj, i.qf)
+		h.SingleLine = objectString(obj, i.qf, nil)
 	}
 	obj := i.Declaration.obj
 	if obj == nil {
@@ -237,7 +248,21 @@ func moduleAtVersion(path string, i *IdentifierInfo) (string, string, bool) {
 
 // objectString is a wrapper around the types.ObjectString function.
 // It handles adding more information to the object string.
-func objectString(obj types.Object, qf types.Qualifier) string {
+func objectString(obj types.Object, qf types.Qualifier, inferred *types.Signature) string {
+	// If the signature type was inferred, prefer the preferred signature with a
+	// comment showing the generic signature.
+	if sig, _ := obj.Type().(*types.Signature); sig != nil && len(typeparams.ForSignature(sig)) > 0 && inferred != nil {
+		obj2 := types.NewFunc(obj.Pos(), obj.Pkg(), obj.Name(), inferred)
+		str := types.ObjectString(obj2, qf)
+		// Try to avoid overly long lines.
+		if len(str) > 60 {
+			str += "\n"
+		} else {
+			str += " "
+		}
+		str += "// " + types.TypeString(sig, qf)
+		return str
+	}
 	str := types.ObjectString(obj, qf)
 	switch obj := obj.(type) {
 	case *types.Const:
@@ -439,6 +464,15 @@ func formatVar(node ast.Spec, obj types.Object, decl *ast.GenDecl) *HoverInforma
 		if comment == nil {
 			comment = spec.Comment
 		}
+
+		// We need the AST nodes for variable declarations of basic literals with
+		// associated values so that we can augment their hover with more information.
+		if _, ok := obj.(*types.Var); ok && spec.Type == nil && len(spec.Values) > 0 {
+			if _, ok := spec.Values[0].(*ast.BasicLit); ok {
+				return &HoverInformation{source: spec, comment: comment}
+			}
+		}
+
 		return &HoverInformation{source: obj, comment: comment}
 	}
 

@@ -59,7 +59,7 @@ func (s *snapshot) parseGoHandle(ctx context.Context, fh source.FileHandle, mode
 	}
 	parseHandle := s.generation.Bind(key, func(ctx context.Context, arg memoize.Arg) interface{} {
 		snapshot := arg.(*snapshot)
-		return parseGo(ctx, snapshot.view.session.cache.fset, fh, mode)
+		return parseGo(ctx, snapshot.FileSet(), fh, mode)
 	}, nil)
 
 	pgh := &parseGoHandle{
@@ -120,8 +120,7 @@ func (s *snapshot) astCacheData(ctx context.Context, spkg source.Package, pos to
 		return nil, err
 	}
 	astHandle := s.generation.Bind(astCacheKey{pkgHandle.key, pgf.URI}, func(ctx context.Context, arg memoize.Arg) interface{} {
-		snapshot := arg.(*snapshot)
-		return buildASTCache(ctx, snapshot, pgf)
+		return buildASTCache(pgf)
 	}, nil)
 
 	d, err := astHandle.Get(ctx, s.generation, s)
@@ -160,7 +159,7 @@ type astCacheData struct {
 
 // buildASTCache builds caches to aid in quickly going from the typed
 // world to the syntactic world.
-func buildASTCache(ctx context.Context, snapshot *snapshot, pgf *source.ParsedGoFile) *astCacheData {
+func buildASTCache(pgf *source.ParsedGoFile) *astCacheData {
 	var (
 		// path contains all ancestors, including n.
 		path []ast.Node
@@ -1071,7 +1070,17 @@ func fixArrayType(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte
 
 	exprBytes := make([]byte, 0, int(to-from)+3)
 	// Avoid doing tok.Offset(to) since that panics if badExpr ends at EOF.
-	exprBytes = append(exprBytes, src[tok.Offset(from):tok.Offset(to-1)+1]...)
+	// It also panics if the position is not in the range of the file, and
+	// badExprs may not necessarily have good positions, so check first.
+	if !inRange(tok, from) {
+		return false
+	}
+	if !inRange(tok, to-1) {
+		return false
+	}
+	fromOffset := tok.Offset(from)
+	toOffset := tok.Offset(to-1) + 1
+	exprBytes = append(exprBytes, src[fromOffset:toOffset]...)
 	exprBytes = bytes.TrimSpace(exprBytes)
 
 	// If our expression ends in "]" (e.g. "[]"), add a phantom selector
@@ -1101,6 +1110,12 @@ func fixArrayType(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte
 	}
 
 	return replaceNode(parent, bad, at)
+}
+
+// inRange reports whether the given position is in the given token.File.
+func inRange(tok *token.File, pos token.Pos) bool {
+	size := tok.Pos(tok.Size())
+	return int(pos) >= tok.Base() && pos <= size
 }
 
 // precedingToken scans src to find the token preceding pos.

@@ -5,74 +5,16 @@
 package vta
 
 import (
-	"go/ast"
-	"go/parser"
+	"fmt"
 	"go/types"
-	"io/ioutil"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/ssa/ssautil"
-
-	"golang.org/x/tools/go/loader"
 )
-
-// want extracts the contents of the first comment
-// section starting with "WANT:\n". The returned
-// content is split into lines without // prefix.
-func want(f *ast.File) []string {
-	for _, c := range f.Comments {
-		text := strings.TrimSpace(c.Text())
-		if t := strings.TrimPrefix(text, "WANT:\n"); t != text {
-			return strings.Split(t, "\n")
-		}
-	}
-	return nil
-}
-
-// testProg returns an ssa representation of a program at
-// `path`, assumed to define package "testdata," and the
-// test want result as list of strings.
-func testProg(path string) (*ssa.Program, []string, error) {
-	content, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	conf := loader.Config{
-		ParserMode: parser.ParseComments,
-	}
-
-	f, err := conf.ParseFile(path, content)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	conf.CreateFromFiles("testdata", f)
-	iprog, err := conf.Load()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	prog := ssautil.CreateProgram(iprog, 0)
-	// Set debug mode to exercise DebugRef instructions.
-	prog.Package(iprog.Created[0].Pkg).SetDebugMode(true)
-	prog.Build()
-	return prog, want(f), nil
-}
-
-func firstRegInstr(f *ssa.Function) ssa.Value {
-	for _, b := range f.Blocks {
-		for _, i := range b.Instrs {
-			if v, ok := i.(ssa.Value); ok {
-				return v
-			}
-		}
-	}
-	return nil
-}
 
 func TestNodeInterface(t *testing.T) {
 	// Since ssa package does not allow explicit creation of ssa
@@ -185,5 +127,78 @@ func TestVtaGraph(t *testing.T) {
 		if sl := len(g.successors(test.n)); sl != test.l {
 			t.Errorf("want %d successors; got %d", test.l, sl)
 		}
+	}
+}
+
+// vtaGraphStr stringifies vtaGraph into a list of strings
+// where each string represents an edge set of the format
+// node -> succ_1, ..., succ_n. succ_1, ..., succ_n are
+// sorted in alphabetical order.
+func vtaGraphStr(g vtaGraph) []string {
+	var vgs []string
+	for n, succ := range g {
+		var succStr []string
+		for s := range succ {
+			succStr = append(succStr, s.String())
+		}
+		sort.Strings(succStr)
+		entry := fmt.Sprintf("%v -> %v", n.String(), strings.Join(succStr, ", "))
+		vgs = append(vgs, entry)
+	}
+	return vgs
+}
+
+// subGraph checks if a graph `g1` is a subgraph of graph `g2`.
+// Assumes that each element in `g1` and `g2` is an edge set
+// for a particular node in a fixed yet arbitrary format.
+func subGraph(g1, g2 []string) bool {
+	m := make(map[string]bool)
+	for _, s := range g2 {
+		m[s] = true
+	}
+
+	for _, s := range g1 {
+		if _, ok := m[s]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func TestVTAGraphConstruction(t *testing.T) {
+	for _, file := range []string{
+		"testdata/store.go",
+		"testdata/phi.go",
+		"testdata/type_conversions.go",
+		"testdata/type_assertions.go",
+		"testdata/fields.go",
+		"testdata/node_uniqueness.go",
+		"testdata/store_load_alias.go",
+		"testdata/phi_alias.go",
+		"testdata/channels.go",
+		"testdata/select.go",
+		"testdata/stores_arrays.go",
+		"testdata/maps.go",
+		"testdata/ranges.go",
+		"testdata/closures.go",
+		"testdata/static_calls.go",
+		"testdata/dynamic_calls.go",
+		"testdata/returns.go",
+		"testdata/panic.go",
+	} {
+		t.Run(file, func(t *testing.T) {
+			prog, want, err := testProg(file)
+			if err != nil {
+				t.Fatalf("couldn't load test file '%s': %s", file, err)
+			}
+			if len(want) == 0 {
+				t.Fatalf("couldn't find want in `%s`", file)
+			}
+
+			g, _ := typePropGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
+			if gs := vtaGraphStr(g); !subGraph(want, gs) {
+				t.Errorf("`%s`: want superset of %v;\n got %v", file, want, gs)
+			}
+		})
 	}
 }

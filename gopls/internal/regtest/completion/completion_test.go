@@ -322,7 +322,6 @@ func _() {
 		env.AcceptCompletion("main.go", pos, item)
 
 		// Await the diagnostics to add example.com/blah to the go.mod file.
-		env.SaveBufferWithoutActions("main.go")
 		env.Await(
 			env.DiagnosticAtRegexp("main.go", `"example.com/blah"`),
 		)
@@ -443,9 +442,9 @@ func _() {
 		}{
 			{`var _ a = aaaa()`, []string{"aaaa1", "aaaa2"}},
 			{`var _ b = bbbb()`, []string{"bbbb1", "bbbb2"}},
-			{`var _ c = xxxx()`, []string{"***xxxxd", "**xxxxe", "xxxxc"}},
-			{`var _ d = xxxx()`, []string{"***xxxxe", "*xxxxc", "xxxxd"}},
-			{`var _ e = xxxx()`, []string{"**xxxxc", "*xxxxd", "xxxxe"}},
+			{`var _ c = xxxx()`, []string{"xxxxc", "xxxxd", "xxxxe"}},
+			{`var _ d = xxxx()`, []string{"xxxxc", "xxxxd", "xxxxe"}},
+			{`var _ e = xxxx()`, []string{"xxxxc", "xxxxd", "xxxxe"}},
 		}
 		for _, tt := range tests {
 			completions := env.Completion("main.go", env.RegexpSearch("main.go", tt.re))
@@ -505,7 +504,6 @@ func doit() {
 }
 
 func TestUnimportedCompletion_VSCodeIssue1489(t *testing.T) {
-	t.Skip("broken due to golang/vscode-go#1489")
 	testenv.NeedsGo1Point(t, 14)
 
 	const src = `
@@ -525,8 +523,7 @@ func main() {
 }
 `
 	WithOptions(
-		WindowsLineEndings,
-		ProxyFiles(proxy),
+		EditorConfig{WindowsLineEndings: true},
 	).Run(t, src, func(t *testing.T, env *Env) {
 		// Trigger unimported completions for the example.com/blah package.
 		env.OpenFile("main.go")
@@ -538,6 +535,10 @@ func main() {
 		}
 		env.AcceptCompletion("main.go", pos, completions.Items[0])
 		env.Await(env.DoneWithChange())
-		t.Log(env.Editor.BufferText("main.go"))
+		got := env.Editor.BufferText("main.go")
+		want := "package main\r\n\r\nimport (\r\n\t\"fmt\"\r\n\t\"math\"\r\n)\r\n\r\nfunc main() {\r\n\tfmt.Println(\"a\")\r\n\tmath.Sqrt(${1:})\r\n}\r\n"
+		if got != want {
+			t.Errorf("unimported completion: got %q, want %q", got, want)
+		}
 	})
 }

@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
+	"golang.org/x/tools/internal/lsp/progress"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
 	errors "golang.org/x/xerrors"
@@ -160,6 +161,10 @@ type Snapshot interface {
 
 	// GetCriticalError returns any critical errors in the workspace.
 	GetCriticalError(ctx context.Context) *CriticalError
+
+	// BuildGoplsMod generates a go.mod file for all modules in the workspace.
+	// It bypasses any existing gopls.mod.
+	BuildGoplsMod(ctx context.Context) (*modfile.File, error)
 }
 
 // PackageFilter sets how a package is filtered out from a set of packages
@@ -345,6 +350,9 @@ type Session interface {
 	// known by the view. For views within a module, this is the module root,
 	// any directory in the module root, and any replace targets.
 	FileWatchingGlobPatterns(ctx context.Context) map[string]struct{}
+
+	// SetProgressTracker sets the progress tracker for the session.
+	SetProgressTracker(tracker *progress.Tracker)
 }
 
 // Overlay is the type for a file held in memory on a session.
@@ -573,6 +581,7 @@ type Package interface {
 	Version() *module.Version
 	HasListOrParseErrors() bool
 	HasTypeErrors() bool
+	ParseMode() ParseMode
 }
 
 type CriticalError struct {

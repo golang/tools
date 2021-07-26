@@ -114,11 +114,10 @@ type EditorConfig struct {
 	// Whether to edit files with windows line endings.
 	WindowsLineEndings bool
 
-	DirectoryFilters []string
-
-	VerboseOutput bool
-
-	ImportShortcut string
+	ImportShortcut                 string
+	DirectoryFilters               []string
+	VerboseOutput                  bool
+	ExperimentalUseInvalidMetadata bool
 }
 
 // NewEditor Creates a new Editor.
@@ -206,9 +205,11 @@ func (e *Editor) Client() *Client {
 func (e *Editor) overlayEnv() map[string]string {
 	env := make(map[string]string)
 	for k, v := range e.defaultEnv {
+		v = strings.ReplaceAll(v, "$SANDBOX_WORKDIR", e.sandbox.Workdir.RootURI().SpanURI().Filename())
 		env[k] = v
 	}
 	for k, v := range e.Config.Env {
+		v = strings.ReplaceAll(v, "$SANDBOX_WORKDIR", e.sandbox.Workdir.RootURI().SpanURI().Filename())
 		env[k] = v
 	}
 	return env
@@ -227,6 +228,9 @@ func (e *Editor) configuration() map[string]interface{} {
 	}
 	if e.Config.DirectoryFilters != nil {
 		config["directoryFilters"] = e.Config.DirectoryFilters
+	}
+	if e.Config.ExperimentalUseInvalidMetadata {
+		config["experimentalUseInvalidMetadata"] = true
 	}
 	if e.Config.CodeLenses != nil {
 		config["codelenses"] = e.Config.CodeLenses
@@ -252,9 +256,7 @@ func (e *Editor) configuration() map[string]interface{} {
 		config["importShortcut"] = e.Config.ImportShortcut
 	}
 
-	// TODO(rFindley): change to the new settings name once it is no longer
-	// designated experimental.
-	config["experimentalDiagnosticsDelay"] = "10ms"
+	config["diagnosticsDelay"] = "10ms"
 
 	// ExperimentalWorkspaceModule is only set as a mode, not a configuration.
 	return config

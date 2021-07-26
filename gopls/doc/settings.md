@@ -154,6 +154,17 @@ be removed.
 
 Default: `false`.
 
+#### **experimentalUseInvalidMetadata** *bool*
+
+**This setting is experimental and may be deleted.**
+
+experimentalUseInvalidMetadata enables gopls to fall back on outdated
+package metadata to provide editor features if the go command fails to
+load packages for some reason (like an invalid go.mod file). This will
+eventually be the default behavior, and this setting will be removed.
+
+Default: `false`.
+
 ### Formatting
 
 #### **local** *string*
@@ -297,11 +308,11 @@ Can contain any of:
 
 Default: `{"bounds":true,"escape":true,"inline":true,"nil":true}`.
 
-##### **experimentalDiagnosticsDelay** *time.Duration*
+##### **diagnosticsDelay** *time.Duration*
 
-**This setting is experimental and may be deleted.**
+**This is an advanced setting and should not be configured by most `gopls` users.**
 
-experimentalDiagnosticsDelay controls the amount of time that gopls waits
+diagnosticsDelay controls the amount of time that gopls waits
 after the most recent file modification before computing deep diagnostics.
 Simple diagnostics (parsing and type-checking) are always run immediately
 on recently modified packages.
@@ -309,6 +320,20 @@ on recently modified packages.
 This option must be set to a valid duration string, for example `"250ms"`.
 
 Default: `"250ms"`.
+
+##### **experimentalWatchedFileDelay** *time.Duration*
+
+**This setting is experimental and may be deleted.**
+
+experimentalWatchedFileDelay controls the amount of time that gopls waits
+for additional workspace/didChangeWatchedFiles notifications to arrive,
+before processing all such notifications in a single batch. This is
+intended for use by LSP clients that don't support their own batching of
+file system notifications.
+
+This option must be set to a valid duration string, for example `"100ms"`.
+
+Default: `"0s"`.
 
 #### Documentation
 
@@ -448,7 +473,7 @@ Runs `go test` for a specific set of test or benchmark functions.
 Identifier: `tidy`
 
 Runs `go mod tidy` for a module.
-### **Upgrade dependency**
+### **Upgrade a dependency**
 
 Identifier: `upgrade_dependency`
 

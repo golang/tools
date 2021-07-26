@@ -29,7 +29,7 @@ type Expectation interface {
 var (
 	// InitialWorkspaceLoad is an expectation that the workspace initial load has
 	// completed. It is verified via workdone reporting.
-	InitialWorkspaceLoad = CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromInitialWorkspaceLoad), 1)
+	InitialWorkspaceLoad = CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromInitialWorkspaceLoad), 1, false)
 )
 
 // A Verdict is the result of checking an expectation against the current
@@ -79,24 +79,30 @@ func (e SimpleExpectation) Description() string {
 
 // OnceMet returns an Expectation that, once the precondition is met, asserts
 // that mustMeet is met.
-func OnceMet(precondition Expectation, mustMeet Expectation) *SimpleExpectation {
+func OnceMet(precondition Expectation, mustMeets ...Expectation) *SimpleExpectation {
 	check := func(s State) Verdict {
 		switch pre := precondition.Check(s); pre {
 		case Unmeetable:
 			return Unmeetable
 		case Met:
-			verdict := mustMeet.Check(s)
-			if verdict != Met {
-				return Unmeetable
+			for _, mustMeet := range mustMeets {
+				verdict := mustMeet.Check(s)
+				if verdict != Met {
+					return Unmeetable
+				}
 			}
 			return Met
 		default:
 			return Unmet
 		}
 	}
+	var descriptions []string
+	for _, mustMeet := range mustMeets {
+		descriptions = append(descriptions, mustMeet.Description())
+	}
 	return &SimpleExpectation{
 		check:       check,
-		description: fmt.Sprintf("once %q is met, must have %q", precondition.Description(), mustMeet.Description()),
+		description: fmt.Sprintf("once %q is met, must have %q", precondition.Description(), strings.Join(descriptions, "\n")),
 	}
 }
 
@@ -190,7 +196,7 @@ func ShowMessageRequest(title string) SimpleExpectation {
 // to be completely processed.
 func (e *Env) DoneWithOpen() Expectation {
 	opens := e.Editor.Stats().DidOpen
-	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), opens)
+	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), opens, true)
 }
 
 // StartedChange expects there to have been i work items started for
@@ -203,28 +209,28 @@ func StartedChange(i uint64) Expectation {
 // editor to be completely processed.
 func (e *Env) DoneWithChange() Expectation {
 	changes := e.Editor.Stats().DidChange
-	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), changes)
+	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), changes, true)
 }
 
 // DoneWithSave expects all didSave notifications currently sent by the editor
 // to be completely processed.
 func (e *Env) DoneWithSave() Expectation {
 	saves := e.Editor.Stats().DidSave
-	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidSave), saves)
+	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidSave), saves, true)
 }
 
 // DoneWithChangeWatchedFiles expects all didChangeWatchedFiles notifications
 // currently sent by the editor to be completely processed.
 func (e *Env) DoneWithChangeWatchedFiles() Expectation {
 	changes := e.Editor.Stats().DidChangeWatchedFiles
-	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), changes)
+	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), changes, true)
 }
 
 // DoneWithClose expects all didClose notifications currently sent by the
 // editor to be completely processed.
 func (e *Env) DoneWithClose() Expectation {
 	changes := e.Editor.Stats().DidClose
-	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidClose), changes)
+	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidClose), changes, true)
 }
 
 // StartedWork expect a work item to have been started >= atLeast times.
@@ -247,16 +253,20 @@ func StartedWork(title string, atLeast uint64) SimpleExpectation {
 //
 // Since the Progress API doesn't include any hidden metadata, we must use the
 // progress notification title to identify the work we expect to be completed.
-func CompletedWork(title string, atLeast uint64) SimpleExpectation {
+func CompletedWork(title string, count uint64, atLeast bool) SimpleExpectation {
 	check := func(s State) Verdict {
-		if s.completedWork[title] >= atLeast {
+		if s.completedWork[title] == count || atLeast && s.completedWork[title] > count {
 			return Met
 		}
 		return Unmet
 	}
+	desc := fmt.Sprintf("completed work %q %v times", title, count)
+	if atLeast {
+		desc = fmt.Sprintf("completed work %q at least %d time(s)", title, count)
+	}
 	return SimpleExpectation{
 		check:       check,
-		description: fmt.Sprintf("completed work %q at least %d time(s)", title, atLeast),
+		description: desc,
 	}
 }
 
@@ -303,7 +313,7 @@ func NoErrorLogs() LogExpectation {
 
 // LogMatching asserts that the client has received a log message
 // of type typ matching the regexp re.
-func LogMatching(typ protocol.MessageType, re string, count int) LogExpectation {
+func LogMatching(typ protocol.MessageType, re string, count int, atLeast bool) LogExpectation {
 	rec, err := regexp.Compile(re)
 	if err != nil {
 		panic(err)
@@ -315,14 +325,19 @@ func LogMatching(typ protocol.MessageType, re string, count int) LogExpectation 
 				found++
 			}
 		}
-		if found == count {
+		// Check for an exact or "at least" match.
+		if found == count || (found >= count && atLeast) {
 			return Met
 		}
 		return Unmet
 	}
+	desc := fmt.Sprintf("log message matching %q expected %v times", re, count)
+	if atLeast {
+		desc = fmt.Sprintf("log message matching %q expected at least %v times", re, count)
+	}
 	return LogExpectation{
 		check:       check,
-		description: fmt.Sprintf("log message matching %q", re),
+		description: desc,
 	}
 }
 
@@ -514,7 +529,24 @@ func EmptyDiagnostics(name string) Expectation {
 	}
 	return SimpleExpectation{
 		check:       check,
-		description: "empty diagnostics",
+		description: fmt.Sprintf("empty diagnostics for %q", name),
+	}
+}
+
+// EmptyOrNoDiagnostics asserts that either no diagnostics are sent for the
+// workspace-relative path name, or empty diagnostics are sent.
+// TODO(rFindley): this subtlety shouldn't be necessary. Gopls should always
+// send at least one diagnostic set for open files.
+func EmptyOrNoDiagnostics(name string) Expectation {
+	check := func(s State) Verdict {
+		if diags := s.diagnostics[name]; diags == nil || len(diags.Diagnostics) == 0 {
+			return Met
+		}
+		return Unmet
+	}
+	return SimpleExpectation{
+		check:       check,
+		description: fmt.Sprintf("empty or no diagnostics for %q", name),
 	}
 }
 

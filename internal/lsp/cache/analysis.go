@@ -26,9 +26,7 @@ import (
 
 func (s *snapshot) Analyze(ctx context.Context, id string, analyzers []*source.Analyzer) ([]*source.Diagnostic, error) {
 	var roots []*actionHandle
-
 	for _, a := range analyzers {
-
 		if !a.IsEnabled(s.view) {
 			continue
 		}
@@ -259,7 +257,7 @@ func runAnalysis(ctx context.Context, snapshot *snapshot, analyzer *analysis.Ana
 	// Run the analysis.
 	pass := &analysis.Pass{
 		Analyzer:   analyzer,
-		Fset:       snapshot.view.session.cache.fset,
+		Fset:       snapshot.FileSet(),
 		Files:      syntax,
 		Pkg:        pkg.GetTypes(),
 		TypesInfo:  pkg.GetTypesInfo(),
