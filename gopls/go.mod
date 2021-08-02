@@ -13,7 +13,7 @@ require (
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
 	golang.org/x/sys v0.0.0-20210510120138-977fb7262007
 	golang.org/x/text v0.3.6 // indirect
-	golang.org/x/tools v0.1.6-0.20210727183237-30540cea7a81
+	golang.org/x/tools v0.1.6-0.20210802203754-9b21a8868e16
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	honnef.co/go/tools v0.2.0
 	mvdan.cc/gofumpt v0.1.1
