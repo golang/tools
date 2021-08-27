@@ -1,8 +1,8 @@
-// Copyright 2018 The Go Authors. All rights reserved.
+// Copyright 2021 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// The setfinerlizer package defines an Analyzer that checks for passing
+// Package setfinalizer defines an Analyzer that checks for passing
 // invalid arguments to runtime.SetFinalizer.
 package setfinalizer
 
@@ -76,7 +76,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		fArg := finalizerSig.Params().At(0)
 		if fArg.Type() == obj.Type {
 			return
-		} else if  fArgP, ok := fArg.Type().Underlying().(*types.Pointer); ok  {
+		} else if fArgP, ok := fArg.Type().Underlying().(*types.Pointer); ok {
 			if objP.Elem() == fArgP.Elem() {
 				return
 			}
