@@ -30,6 +30,8 @@ func _() {
 	runtime.SetFinalizer(&i, nil)
 	runtime.SetFinalizer((*Tint)(&i), nil)
 	runtime.SetFinalizer(Tintptr(&i), nil)
+	eface := (interface{})(&i)
+	runtime.SetFinalizer(eface, nil)
 
 	// check second arg
 	runtime.SetFinalizer(&i, NonFunc{})               // want "runtime\\.SetFinalizer: second argument is a\\.NonFunc, not a function"

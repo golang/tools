@@ -53,8 +53,10 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		}
 		objP, ok := obj.Type.Underlying().(*types.Pointer)
 		if !ok {
-			pass.Reportf(call.Lparen, "runtime.SetFinalizer: first argument is %v, not pointer", obj.Type)
-			return
+			if _, ok := obj.Type.Underlying().(*types.Interface); !ok {
+				pass.Reportf(call.Lparen, "runtime.SetFinalizer: first argument is %v, not pointer", obj.Type)
+				return
+			}
 		}
 
 		finalizer := pass.TypesInfo.Types[call.Args[1]]
@@ -76,7 +78,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		fArg := finalizerSig.Params().At(0)
 		if fArg.Type() == obj.Type {
 			return
-		} else if fArgP, ok := fArg.Type().Underlying().(*types.Pointer); ok {
+		} else if fArgP, ok := fArg.Type().Underlying().(*types.Pointer); objP != nil && ok {
 			if objP.Elem() == fArgP.Elem() {
 				return
 			}
