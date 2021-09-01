@@ -140,13 +140,15 @@ func (s *Session) SetProgressTracker(tracker *progress.Tracker) {
 }
 
 func (s *Session) Shutdown(ctx context.Context) {
+	var views []*View
 	s.viewMu.Lock()
-	defer s.viewMu.Unlock()
-	for _, view := range s.views {
-		view.shutdown(ctx)
-	}
+	views = append(views, s.views...)
 	s.views = nil
 	s.viewMap = nil
+	s.viewMu.Unlock()
+	for _, view := range views {
+		view.shutdown(ctx)
+	}
 	event.Log(ctx, "Shutdown session", KeyShutdownSession.Of(s))
 }
 
@@ -228,13 +230,14 @@ func (s *Session) createView(ctx context.Context, name string, folder, tempWorks
 		initializeOnce:    &sync.Once{},
 		generation:        s.cache.store.Generation(generationName(v, 0)),
 		packages:          make(map[packageKey]*packageHandle),
-		ids:               make(map[span.URI][]packageID),
-		metadata:          make(map[packageID]*knownMetadata),
+		ids:               make(map[span.URI][]PackageID),
+		metadata:          make(map[PackageID]*KnownMetadata),
 		files:             make(map[span.URI]source.VersionedFileHandle),
 		goFiles:           make(map[parseKey]*parseGoHandle),
-		importedBy:        make(map[packageID][]packageID),
+		symbols:           make(map[span.URI]*symbolHandle),
+		importedBy:        make(map[PackageID][]PackageID),
 		actions:           make(map[actionKey]*actionHandle),
-		workspacePackages: make(map[packageID]packagePath),
+		workspacePackages: make(map[PackageID]PackagePath),
 		unloadableFiles:   make(map[span.URI]struct{}),
 		parseModHandles:   make(map[span.URI]*parseModHandle),
 		modTidyHandles:    make(map[span.URI]*modTidyHandle),
