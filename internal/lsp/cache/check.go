@@ -200,6 +200,9 @@ func (s *snapshot) buildKey(ctx context.Context, id PackageID, mode source.Parse
 func (s *snapshot) workspaceParseMode(id PackageID) source.ParseMode {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.view.Options().MemoryMode == source.ModeAll {
+		return source.ParseFull
+	}
 	_, ws := s.workspacePackages[id]
 	if !ws {
 		return source.ParseExported
