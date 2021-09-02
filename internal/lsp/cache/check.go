@@ -202,6 +202,9 @@ func (s *snapshot) workspaceParseMode(id PackageID) source.ParseMode {
 	defer s.mu.Unlock()
 	_, ws := s.workspacePackages[id]
 	if !ws {
+		if s.view.Options().MemoryMode == source.ModeAll {
+			return source.ParseFull
+		}
 		return source.ParseExported
 	}
 	if s.view.Options().MemoryMode == source.ModeNormal {

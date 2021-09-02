@@ -583,6 +583,9 @@ const (
 type MemoryMode string
 
 const (
+	// In All mode, include dependent module all information.
+	ModeAll MemoryMode = "All"
+
 	ModeNormal MemoryMode = "Normal"
 	// In DegradeClosed mode, `gopls` will collect less information about
 	// packages without open files. As a result, features like Find
