@@ -160,8 +160,8 @@ Common errors:
   If you are using GOPATH, select your $GOPATH as your folder.
 * Emacs must have your environment set properly (PATH, GOPATH, etc). You can
   run `M-x getenv <RET> PATH <RET>` to see if your PATH is set in Emacs. If
-  not, you can try starting Emacs from your terminal, using [this
-  package][exec-path-from-shell], or moving your shell config from `.bashrc`
+  not, you can try starting Emacs from your terminal, using the
+  [`exec-path-from-shell`] package, or moving your shell config from `.bashrc`
   into `.profile` and logging out and back in.
 * Make sure only one LSP client mode is installed. (For example, if using
   `lsp-mode`, ensure that you are not _also_ enabling `eglot`.)
