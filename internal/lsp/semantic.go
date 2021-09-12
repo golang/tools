@@ -645,7 +645,7 @@ func (e *encoded) definitionFor(x *ast.Ident) (tokenType, []string) {
 			if x.Name == "_" {
 				return "", nil // not really a variable
 			}
-			return "variable", mods
+			return tokVariable, mods
 		case *ast.GenDecl:
 			if isDeprecated(y.Doc) {
 				mods = append(mods, "deprecated")
@@ -670,6 +670,8 @@ func (e *encoded) definitionFor(x *ast.Ident) (tokenType, []string) {
 				return tokVariable, nil
 			}
 			// if x < ... < FieldList < FuncType < FuncDecl, this is a param
+			return tokParameter, mods
+		case *ast.FuncType:
 			return tokParameter, mods
 		case *ast.InterfaceType:
 			return tokMethod, mods
