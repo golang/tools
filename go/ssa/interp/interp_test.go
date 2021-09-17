@@ -92,7 +92,8 @@ var gorootTestTests = []string{
 	"convT2X.go",
 	"switch.go",
 	"ddd.go",
-	"blank.go", // partly disabled
+	"blank.go",            // partly disabled
+	"fixedbugs/bug261.go", // slice evaluation order
 	"closedchan.go",
 	"divide.go",
 	"rename.go",
