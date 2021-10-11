@@ -177,20 +177,25 @@ lua <<EOF
     if not result or next(result) == nil then return end
     local actions = result[1].result
     if not actions then return end
-    local action = actions[1]
 
-    -- textDocument/codeAction can return either Command[] or CodeAction[]. If it
-    -- is a CodeAction, it can have either an edit, a command or both. Edits
-    -- should be executed first.
-    if action.edit or type(action.command) == "table" then
-      if action.edit then
-        vim.lsp.util.apply_workspace_edit(action.edit)
-      end
-      if type(action.command) == "table" then
-        vim.lsp.buf.execute_command(action.command)
-      end
-    else
-      vim.lsp.buf.execute_command(action)
+    for _, action in ipairs(actions) do
+        -- we need to filter out the `kind = "refactor.rewrite"`,
+        -- for example `fill_struct` which will cause annoying unexpected edits
+        if action.kind == "source.organizeImports" then
+            -- textDocument/codeAction can return either Command[] or CodeAction[]. If it
+            -- is a CodeAction, it can have either an edit, a command or both. Edits
+            -- should be executed first.
+            if action.edit or type(action.command) == "table" then
+                if action.edit then
+                    vim.lsp.util.apply_workspace_edit(action.edit)
+                end
+                if type(action.command) == "table" then
+                    vim.lsp.buf.execute_command(action.command)
+                end
+            else
+                vim.lsp.buf.execute_command(action)
+            end
+        end
     end
   end
 EOF
