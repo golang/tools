@@ -1,6 +1,6 @@
 module golang.org/x/tools/gopls
 
-go 1.17
+go 1.18
 
 require (
 	github.com/BurntSushi/toml v0.4.1 // indirect
@@ -19,3 +19,5 @@ require (
 	mvdan.cc/gofumpt v0.1.1
 	mvdan.cc/xurls/v2 v2.3.0
 )
+
+replace golang.org/x/tools => ../

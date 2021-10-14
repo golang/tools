@@ -70,7 +70,7 @@ Include only project_a: `-` (exclude everything), `+project_a`
 
 Include only project_a, but not node_modules inside it: `-`, `+project_a`, `-project_a/node_modules`
 
-Default: `[]`.
+Default: `["-node_modules"]`.
 
 #### **memoryMode** *enum*
 
@@ -196,7 +196,7 @@ Example Usage:
 ```json5
 "gopls": {
 ...
-  "codelens": {
+  "codelenses": {
     "generate": false,  // Don't show the `go generate` lens.
     "gc_details": true  // Show a code lens toggling the display of gc's choices.
   }
@@ -412,7 +412,7 @@ Example Usage:
 ```json5
 "gopls": {
 ...
-  "symbolStyle": "dynamic",
+  "symbolStyle": "Dynamic",
 ...
 }
 ```

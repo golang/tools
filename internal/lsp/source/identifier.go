@@ -299,7 +299,7 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, pgf *Pa
 		return result, nil
 	}
 
-	result.Inferred = inferredSignature(pkg.GetTypesInfo(), path)
+	result.Inferred = inferredSignature(pkg.GetTypesInfo(), ident)
 
 	result.Type.Object = typeToObject(typ)
 	if result.Type.Object != nil {
@@ -331,7 +331,10 @@ func fullNode(snapshot Snapshot, obj types.Object, pkg Package) (ast.Decl, error
 		fset := snapshot.FileSet()
 		file2, _ := parser.ParseFile(fset, tok.Name(), pgf.Src, parser.AllErrors|parser.ParseComments)
 		if file2 != nil {
-			offset := tok.Offset(obj.Pos())
+			offset, err := Offset(tok, obj.Pos())
+			if err != nil {
+				return nil, err
+			}
 			file = file2
 			tok2 := fset.File(file2.Pos())
 			pos = tok2.Pos(offset)
@@ -347,52 +350,13 @@ func fullNode(snapshot Snapshot, obj types.Object, pkg Package) (ast.Decl, error
 }
 
 // inferredSignature determines the resolved non-generic signature for an
-// identifier with a generic signature that is the operand of an IndexExpr or
-// CallExpr.
+// identifier in an instantiation expression.
 //
 // If no such signature exists, it returns nil.
-func inferredSignature(info *types.Info, path []ast.Node) *types.Signature {
-	if len(path) < 2 {
-		return nil
-	}
-	// There are four ways in which a signature may be resolved:
-	//  1. It has no explicit type arguments, but the CallExpr can be fully
-	//     inferred from function arguments.
-	//  2. It has full type arguments, and the IndexExpr has a non-generic type.
-	//  3. For a partially instantiated IndexExpr representing a function-valued
-	//     expression (i.e. not part of a CallExpr), type arguments may be
-	//     inferred using constraint type inference.
-	//  4. For a partially instantiated IndexExpr that is part of a CallExpr,
-	//     type arguments may be inferred using both constraint type inference
-	//     and function argument inference.
-	//
-	// These branches are handled below.
-	switch n := path[1].(type) {
-	case *ast.CallExpr:
-		_, sig := typeparams.GetInferred(info, n)
-		return sig
-	default:
-		if ix := typeparams.GetIndexExprData(n); ix != nil {
-			e := n.(ast.Expr)
-			// If the IndexExpr is fully instantiated, we consider that 'inference' for
-			// gopls' purposes.
-			sig, _ := info.TypeOf(e).(*types.Signature)
-			if sig != nil && len(typeparams.ForSignature(sig)) == 0 {
-				return sig
-			}
-			_, sig = typeparams.GetInferred(info, e)
-			if sig != nil {
-				return sig
-			}
-			if len(path) >= 2 {
-				if call, _ := path[2].(*ast.CallExpr); call != nil {
-					_, sig := typeparams.GetInferred(info, call)
-					return sig
-				}
-			}
-		}
-	}
-	return nil
+func inferredSignature(info *types.Info, id *ast.Ident) *types.Signature {
+	inst := typeparams.GetInstances(info)[id]
+	sig, _ := inst.Type.(*types.Signature)
+	return sig
 }
 
 func searchForEnclosing(info *types.Info, path []ast.Node) types.Type {

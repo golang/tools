@@ -7,6 +7,7 @@ package source
 import (
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -48,6 +49,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/unusedwrite"
 	"golang.org/x/tools/internal/lsp/analysis/fillreturns"
 	"golang.org/x/tools/internal/lsp/analysis/fillstruct"
+	"golang.org/x/tools/internal/lsp/analysis/infertypeargs"
 	"golang.org/x/tools/internal/lsp/analysis/nonewvars"
 	"golang.org/x/tools/internal/lsp/analysis/noresultvalues"
 	"golang.org/x/tools/internal/lsp/analysis/simplifycompositelit"
@@ -55,6 +57,7 @@ import (
 	"golang.org/x/tools/internal/lsp/analysis/simplifyslice"
 	"golang.org/x/tools/internal/lsp/analysis/undeclaredname"
 	"golang.org/x/tools/internal/lsp/analysis/unusedparams"
+	"golang.org/x/tools/internal/lsp/analysis/useany"
 	"golang.org/x/tools/internal/lsp/command"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/diff/myers"
@@ -69,7 +72,7 @@ var (
 
 // DefaultOptions is the options that are used for Gopls execution independent
 // of any externally provided configuration (LSP initialization, command
-// invokation, etc.).
+// invocation, etc.).
 func DefaultOptions() *Options {
 	optionsOnce.Do(func() {
 		var commands []string
@@ -78,13 +81,14 @@ func DefaultOptions() *Options {
 		}
 		defaultOptions = &Options{
 			ClientOptions: ClientOptions{
-				InsertTextFormat:                  protocol.PlainTextTextFormat,
-				PreferredContentFormat:            protocol.Markdown,
-				ConfigurationSupported:            true,
-				DynamicConfigurationSupported:     true,
-				DynamicWatchedFilesSupported:      true,
-				LineFoldingOnly:                   false,
-				HierarchicalDocumentSymbolSupport: true,
+				InsertTextFormat:                           protocol.PlainTextTextFormat,
+				PreferredContentFormat:                     protocol.Markdown,
+				ConfigurationSupported:                     true,
+				DynamicConfigurationSupported:              true,
+				DynamicRegistrationSemanticTokensSupported: true,
+				DynamicWatchedFilesSupported:               true,
+				LineFoldingOnly:                            false,
+				HierarchicalDocumentSymbolSupport:          true,
 			},
 			ServerOptions: ServerOptions{
 				SupportedCodeActions: map[FileKind]map[protocol.CodeActionKind]bool{
@@ -109,6 +113,7 @@ func DefaultOptions() *Options {
 					ExpandWorkspaceToModule:     true,
 					ExperimentalPackageCacheKey: true,
 					MemoryMode:                  ModeNormal,
+					DirectoryFilters:            []string{"-node_modules"},
 				},
 				UIOptions: UIOptions{
 					DiagnosticOptions: DiagnosticOptions{
@@ -179,18 +184,19 @@ type Options struct {
 // ClientOptions holds LSP-specific configuration that is provided by the
 // client.
 type ClientOptions struct {
-	InsertTextFormat                  protocol.InsertTextFormat
-	ConfigurationSupported            bool
-	DynamicConfigurationSupported     bool
-	DynamicWatchedFilesSupported      bool
-	PreferredContentFormat            protocol.MarkupKind
-	LineFoldingOnly                   bool
-	HierarchicalDocumentSymbolSupport bool
-	SemanticTypes                     []string
-	SemanticMods                      []string
-	RelatedInformationSupported       bool
-	CompletionTags                    bool
-	CompletionDeprecated              bool
+	InsertTextFormat                           protocol.InsertTextFormat
+	ConfigurationSupported                     bool
+	DynamicConfigurationSupported              bool
+	DynamicRegistrationSemanticTokensSupported bool
+	DynamicWatchedFilesSupported               bool
+	PreferredContentFormat                     protocol.MarkupKind
+	LineFoldingOnly                            bool
+	HierarchicalDocumentSymbolSupport          bool
+	SemanticTypes                              []string
+	SemanticMods                               []string
+	RelatedInformationSupported                bool
+	CompletionTags                             bool
+	CompletionDeprecated                       bool
 }
 
 // ServerOptions holds LSP-specific configuration that is provided by the
@@ -288,7 +294,7 @@ type UIOptions struct {
 	// ```json5
 	// "gopls": {
 	// ...
-	//   "codelens": {
+	//   "codelenses": {
 	//     "generate": false,  // Don't show the `go generate` lens.
 	//     "gc_details": true  // Show a code lens toggling the display of gc's choices.
 	//   }
@@ -410,7 +416,7 @@ type NavigationOptions struct {
 	// ```json5
 	// "gopls": {
 	// ...
-	//   "symbolStyle": "dynamic",
+	//   "symbolStyle": "Dynamic",
 	// ...
 	// }
 	// ```
@@ -651,6 +657,7 @@ func (o *Options) ForClientCapabilities(caps protocol.ClientCapabilities) {
 	// Check if the client supports configuration messages.
 	o.ConfigurationSupported = caps.Workspace.Configuration
 	o.DynamicConfigurationSupported = caps.Workspace.DidChangeConfiguration.DynamicRegistration
+	o.DynamicRegistrationSemanticTokensSupported = caps.TextDocument.SemanticTokens.DynamicRegistration
 	o.DynamicWatchedFilesSupported = caps.Workspace.DidChangeWatchedFiles.DynamicRegistration
 
 	// Check which types of content format are supported by this client.
@@ -1234,6 +1241,8 @@ func defaultAnalyzers() map[string]*Analyzer {
 		testinggoroutine.Analyzer.Name: {Analyzer: testinggoroutine.Analyzer, Enabled: true},
 		unusedparams.Analyzer.Name:     {Analyzer: unusedparams.Analyzer, Enabled: false},
 		unusedwrite.Analyzer.Name:      {Analyzer: unusedwrite.Analyzer, Enabled: false},
+		useany.Analyzer.Name:           {Analyzer: useany.Analyzer, Enabled: true},
+		infertypeargs.Analyzer.Name:    {Analyzer: infertypeargs.Analyzer, Enabled: true},
 
 		// gofmt -s suite:
 		simplifycompositelit.Analyzer.Name: {
@@ -1279,6 +1288,69 @@ type OptionJSON struct {
 	Hierarchy  string
 }
 
+func (o *OptionJSON) String() string {
+	return o.Name
+}
+
+func (o *OptionJSON) Write(w io.Writer) {
+	fmt.Fprintf(w, "**%v** *%v*\n\n", o.Name, o.Type)
+	writeStatus(w, o.Status)
+	enumValues := collectEnums(o)
+	fmt.Fprintf(w, "%v%v\nDefault: `%v`.\n\n", o.Doc, enumValues, o.Default)
+}
+
+func writeStatus(section io.Writer, status string) {
+	switch status {
+	case "":
+	case "advanced":
+		fmt.Fprint(section, "**This is an advanced setting and should not be configured by most `gopls` users.**\n\n")
+	case "debug":
+		fmt.Fprint(section, "**This setting is for debugging purposes only.**\n\n")
+	case "experimental":
+		fmt.Fprint(section, "**This setting is experimental and may be deleted.**\n\n")
+	default:
+		fmt.Fprintf(section, "**Status: %s.**\n\n", status)
+	}
+}
+
+var parBreakRE = regexp.MustCompile("\n{2,}")
+
+func collectEnums(opt *OptionJSON) string {
+	var b strings.Builder
+	write := func(name, doc string, index, len int) {
+		if doc != "" {
+			unbroken := parBreakRE.ReplaceAllString(doc, "\\\n")
+			fmt.Fprintf(&b, "* %s", unbroken)
+		} else {
+			fmt.Fprintf(&b, "* `%s`", name)
+		}
+		if index < len-1 {
+			fmt.Fprint(&b, "\n")
+		}
+	}
+	if len(opt.EnumValues) > 0 && opt.Type == "enum" {
+		b.WriteString("\nMust be one of:\n\n")
+		for i, val := range opt.EnumValues {
+			write(val.Value, val.Doc, i, len(opt.EnumValues))
+		}
+	} else if len(opt.EnumKeys.Keys) > 0 && shouldShowEnumKeysInSettings(opt.Name) {
+		b.WriteString("\nCan contain any of:\n\n")
+		for i, val := range opt.EnumKeys.Keys {
+			write(val.Name, val.Doc, i, len(opt.EnumKeys.Keys))
+		}
+	}
+	return b.String()
+}
+
+func shouldShowEnumKeysInSettings(name string) bool {
+	// Both of these fields have too many possible options to print.
+	return !hardcodedEnumKeys(name)
+}
+
+func hardcodedEnumKeys(name string) bool {
+	return name == "analyses" || name == "codelenses"
+}
+
 type EnumKeys struct {
 	ValueType string
 	Keys      []EnumKey
@@ -1303,14 +1375,44 @@ type CommandJSON struct {
 	ResultDoc string
 }
 
+func (c *CommandJSON) String() string {
+	return c.Command
+}
+
+func (c *CommandJSON) Write(w io.Writer) {
+	fmt.Fprintf(w, "### **%v**\nIdentifier: `%v`\n\n%v\n\n", c.Title, c.Command, c.Doc)
+	if c.ArgDoc != "" {
+		fmt.Fprintf(w, "Args:\n\n```\n%s\n```\n\n", c.ArgDoc)
+	}
+	if c.ResultDoc != "" {
+		fmt.Fprintf(w, "Result:\n\n```\n%s\n```\n\n", c.ResultDoc)
+	}
+}
+
 type LensJSON struct {
 	Lens  string
 	Title string
 	Doc   string
 }
 
+func (l *LensJSON) String() string {
+	return l.Title
+}
+
+func (l *LensJSON) Write(w io.Writer) {
+	fmt.Fprintf(w, "%s (%s): %s", l.Title, l.Lens, l.Doc)
+}
+
 type AnalyzerJSON struct {
 	Name    string
 	Doc     string
 	Default bool
+}
+
+func (a *AnalyzerJSON) String() string {
+	return a.Name
+}
+
+func (a *AnalyzerJSON) Write(w io.Writer) {
+	fmt.Fprintf(w, "%s (%s): %v", a.Name, a.Doc, a.Default)
 }

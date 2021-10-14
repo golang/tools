@@ -40,7 +40,7 @@ var GeneratedAPIJSON = &APIJSON{
 					Keys:      nil,
 				},
 				EnumValues: nil,
-				Default:    "[]",
+				Default:    "[\"-node_modules\"]",
 				Status:     "",
 				Hierarchy:  "build",
 			},
@@ -341,7 +341,7 @@ var GeneratedAPIJSON = &APIJSON{
 			{
 				Name: "symbolStyle",
 				Type: "enum",
-				Doc:  "symbolStyle controls how symbols are qualified in symbol responses.\n\nExample Usage:\n\n```json5\n\"gopls\": {\n...\n  \"symbolStyle\": \"dynamic\",\n...\n}\n```\n",
+				Doc:  "symbolStyle controls how symbols are qualified in symbol responses.\n\nExample Usage:\n\n```json5\n\"gopls\": {\n...\n  \"symbolStyle\": \"Dynamic\",\n...\n}\n```\n",
 				EnumKeys: EnumKeys{
 					ValueType: "",
 					Keys:      nil,
@@ -439,6 +439,11 @@ var GeneratedAPIJSON = &APIJSON{
 						{
 							Name:    "\"ifaceassert\"",
 							Doc:     "detect impossible interface-to-interface type assertions\n\nThis checker flags type assertions v.(T) and corresponding type-switch cases\nin which the static type V of v is an interface that cannot possibly implement\nthe target interface T. This occurs when V and T contain methods with the same\nname but different signatures. Example:\n\n\tvar v interface {\n\t\tRead()\n\t}\n\t_ = v.(io.Reader)\n\nThe Read method in v has a different signature than the Read method in\nio.Reader, so this assertion cannot succeed.\n",
+							Default: "true",
+						},
+						{
+							Name:    "\"infertypeargs\"",
+							Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\nfunc f[T any](T) {}\n\nfunc _() {\n\tf[string](\"foo\") // string could be inferred\n}\n",
 							Default: "true",
 						},
 						{
@@ -552,6 +557,11 @@ var GeneratedAPIJSON = &APIJSON{
 							Default: "false",
 						},
 						{
+							Name:    "\"useany\"",
+							Doc:     "check for constraints that could be simplified to \"any\"",
+							Default: "true",
+						},
+						{
 							Name:    "\"fillreturns\"",
 							Doc:     "suggested fixes for \"wrong number of return values (want %d, got %d)\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\nwill turn into\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.\n",
 							Default: "true",
@@ -568,7 +578,7 @@ var GeneratedAPIJSON = &APIJSON{
 						},
 						{
 							Name:    "\"undeclaredname\"",
-							Doc:     "suggested fixes for \"undeclared name: <>\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"undeclared name: <>\". It will insert a new statement:\n\"<> := \".",
+							Doc:     "suggested fixes for \"undeclared name: <>\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"undeclared name: <>\". It will either insert a new statement,\nsuch as:\n\n\"<> := \"\n\nor a new function declaration, such as:\n\nfunc <>(inferred parameters) {\n\tpanic(\"implement me!\")\n}\n",
 							Default: "true",
 						},
 						{
@@ -659,7 +669,7 @@ var GeneratedAPIJSON = &APIJSON{
 			{
 				Name: "codelenses",
 				Type: "map[string]bool",
-				Doc:  "codelenses overrides the enabled/disabled state of code lenses. See the\n\"Code Lenses\" section of the\n[Settings page](https://github.com/golang/tools/blob/master/gopls/doc/settings.md)\nfor the list of supported lenses.\n\nExample Usage:\n\n```json5\n\"gopls\": {\n...\n  \"codelens\": {\n    \"generate\": false,  // Don't show the `go generate` lens.\n    \"gc_details\": true  // Show a code lens toggling the display of gc's choices.\n  }\n...\n}\n```\n",
+				Doc:  "codelenses overrides the enabled/disabled state of code lenses. See the\n\"Code Lenses\" section of the\n[Settings page](https://github.com/golang/tools/blob/master/gopls/doc/settings.md)\nfor the list of supported lenses.\n\nExample Usage:\n\n```json5\n\"gopls\": {\n...\n  \"codelenses\": {\n    \"generate\": false,  // Don't show the `go generate` lens.\n    \"gc_details\": true  // Show a code lens toggling the display of gc's choices.\n  }\n...\n}\n```\n",
 				EnumKeys: EnumKeys{
 					ValueType: "bool",
 					Keys: []EnumKey{
@@ -1010,6 +1020,11 @@ var GeneratedAPIJSON = &APIJSON{
 			Default: true,
 		},
 		{
+			Name:    "infertypeargs",
+			Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\nfunc f[T any](T) {}\n\nfunc _() {\n\tf[string](\"foo\") // string could be inferred\n}\n",
+			Default: true,
+		},
+		{
 			Name:    "loopclosure",
 			Doc:     "check references to loop variables from within nested functions\n\nThis analyzer checks for references to loop variables from within a\nfunction literal inside the loop body. It checks only instances where\nthe function literal is called in a defer or go statement that is the\nlast statement in the loop body, as otherwise we would need whole\nprogram analysis.\n\nFor example:\n\n\tfor i, v := range s {\n\t\tgo func() {\n\t\t\tprintln(i, v) // not what you might expect\n\t\t}()\n\t}\n\nSee: https://golang.org/doc/go_faq.html#closures_and_goroutines",
 			Default: true,
@@ -1120,6 +1135,11 @@ var GeneratedAPIJSON = &APIJSON{
 			Default: false,
 		},
 		{
+			Name:    "useany",
+			Doc:     "check for constraints that could be simplified to \"any\"",
+			Default: true,
+		},
+		{
 			Name:    "fillreturns",
 			Doc:     "suggested fixes for \"wrong number of return values (want %d, got %d)\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\nwill turn into\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.\n",
 			Default: true,
@@ -1136,7 +1156,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Name:    "undeclaredname",
-			Doc:     "suggested fixes for \"undeclared name: <>\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"undeclared name: <>\". It will insert a new statement:\n\"<> := \".",
+			Doc:     "suggested fixes for \"undeclared name: <>\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"undeclared name: <>\". It will either insert a new statement,\nsuch as:\n\n\"<> := \"\n\nor a new function declaration, such as:\n\nfunc <>(inferred parameters) {\n\tpanic(\"implement me!\")\n}\n",
 			Default: true,
 		},
 		{
