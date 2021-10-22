@@ -135,6 +135,7 @@ function setReceives() {
   receives.set('workspace/applyEdit', 'client');
   receives.set('textDocument/publishDiagnostics', 'client');
   receives.set('window/workDoneProgress/create', 'client');
+  receives.set('window/showDocument', 'client');
   receives.set('$/progress', 'client');
   // a small check
   receives.forEach((_, k) => {
@@ -1076,17 +1077,19 @@ function goTypeLiteral(n: ts.TypeLiteralNode, nm: string): string {
       res = res.concat(`${v} ${goName(nx.name.getText())} ${typ}`, json, '\n');
       ans.push(`${v}${goName(nx.name.getText())} ${typ} ${json}\n`);
     } else if (ts.isIndexSignatureDeclaration(nx)) {
+      const comment = nx.getText().replace(/[/]/g, '');
       if (nx.getText() == '[uri: string]: TextEdit[];') {
         res = 'map[string][]TextEdit';
-        ans.push('map[string][]TextEdit');  // this is never used
-        return;
-      }
-      if (nx.getText() == '[id: string /* ChangeAnnotationIdentifier */]: ChangeAnnotation;') {
+      } else if (nx.getText() == '[id: string /* ChangeAnnotationIdentifier */]: ChangeAnnotation;') {
         res = 'map[string]ChangeAnnotationIdentifier';
-        ans.push(res);
-        return;
+      } else if (nx.getText().startsWith('[uri: string')) {
+        res = 'map[string]interface{}';
+      } else {
+        throw new Error(`1088 handle ${nx.getText()} ${loc(nx)}`);
       }
-      throw new Error(`1087 handle ${nx.getText()} ${loc(nx)}`);
+      res += ` /*${comment}*/`;
+      ans.push(res);
+      return;
     } else
       throw new Error(`TypeLiteral had ${strKind(nx)}`);
   };
@@ -1190,7 +1193,7 @@ function goNot(side: side, m: string) {
   const arg3 = a == '' || a == 'void' ? 'nil' : 'params';
   side.calls.push(`
   func (s *${side.name}Dispatcher) ${sig(nm, a, '', true)} {
-    return s.Conn.Notify(ctx, "${m}", ${arg3})
+    return s.sender.Notify(ctx, "${m}", ${arg3})
   }`);
 }
 
@@ -1240,18 +1243,18 @@ function goReq(side: side, m: string) {
   side.cases.push(`${caseHdr}\n${case1}\n${case2}`);
 
   const callHdr = `func (s *${side.name}Dispatcher) ${sig(nm, a, b, true)} {`;
-  let callBody = `return Call(ctx, s.Conn, "${m}", nil, nil)\n}`;
+  let callBody = `return s.sender.Call(ctx, "${m}", nil, nil)\n}`;
   if (b != '' && b != 'void') {
     const p2 = a == '' ? 'nil' : 'params';
     const returnType = indirect(b) ? `*${b}` : b;
     callBody = `var result ${returnType}
-			if err := Call(ctx, s.Conn, "${m}", ${p2}, &result); err != nil {
+			if err := s.sender.Call(ctx, "${m}", ${p2}, &result); err != nil {
 				return nil, err
       }
       return result, nil
     }`;
   } else if (a != '') {
-    callBody = `return Call(ctx, s.Conn, "${m}", params, nil) // Call, not Notify
+    callBody = `return s.sender.Call(ctx, "${m}", params, nil) // Call, not Notify
   }`;
   }
   side.calls.push(`${callHdr}\n${callBody}\n`);
@@ -1358,7 +1361,7 @@ function nonstandardRequests() {
   server.calls.push(
     `func (s *serverDispatcher) NonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {
       var result interface{}
-      if err := Call(ctx, s.Conn, method, params, &result); err != nil {
+      if err := s.sender.Call(ctx, method, params, &result); err != nil {
         return nil, err
       }
       return result, nil

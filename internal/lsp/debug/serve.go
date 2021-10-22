@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 	rpprof "runtime/pprof"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -76,6 +77,45 @@ type State struct {
 	mu      sync.Mutex
 	clients []*Client
 	servers []*Server
+
+	// bugs maps bug description -> formatted event
+	bugs map[string]string
+}
+
+func Bug(ctx context.Context, desc, format string, args ...interface{}) {
+	labels := []label.Label{tag.Bug.Of(desc)}
+	_, file, line, ok := runtime.Caller(1)
+	if ok {
+		labels = append(labels, tag.Callsite.Of(fmt.Sprintf("%s:%d", file, line)))
+	}
+	msg := fmt.Sprintf(format, args...)
+	event.Log(ctx, msg, labels...)
+}
+
+type bug struct {
+	Description, Event string
+}
+
+func (st *State) Bugs() []bug {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	var bugs []bug
+	for k, v := range st.bugs {
+		bugs = append(bugs, bug{k, v})
+	}
+	sort.Slice(bugs, func(i, j int) bool {
+		return bugs[i].Description < bugs[j].Description
+	})
+	return bugs
+}
+
+func (st *State) recordBug(description, event string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.bugs == nil {
+		st.bugs = make(map[string]string)
+	}
+	st.bugs[description] = event
 }
 
 // Caches returns the set of Cache objects currently being served.
@@ -338,7 +378,7 @@ func (i *Instance) AddService(s protocol.Server, session *cache.Session) {
 	stdlog.Printf("unable to find a Client to add the protocol.Server to")
 }
 
-func getMemory(r *http.Request) interface{} {
+func getMemory(_ *http.Request) interface{} {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	return m
@@ -636,6 +676,9 @@ func makeInstanceExporter(i *Instance) event.Exporter {
 				}
 			}
 		}
+		if b := tag.Bug.Get(ev); b != "" {
+			i.State.recordBug(b, fmt.Sprintf("%v", ev))
+		}
 		return ctx
 	}
 	// StdTrace must be above export.Spans below (by convention, export
@@ -748,7 +791,7 @@ Unknown page
 		}
 		return s
 	},
-	"options": func(s *cache.Session) []string {
+	"options": func(s *cache.Session) []sessionOption {
 		return showOptions(s.Options())
 	},
 })
@@ -766,6 +809,8 @@ var MainTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 <ul>{{range .State.Clients}}<li>{{template "clientlink" .Session.ID}}</li>{{end}}</ul>
 <h2>Servers</h2>
 <ul>{{range .State.Servers}}<li>{{template "serverlink" .ID}}</li>{{end}}</ul>
+<h2>Known bugs encountered</h2>
+<dl>{{range .State.Bugs}}<dt>{{.Description}}</dt><dd>{{.Event}}</dd>{{end}}</dl>
 {{end}}
 `))
 
@@ -874,7 +919,11 @@ From: <b>{{template "cachelink" .Cache.ID}}</b><br>
 <h2>Overlays</h2>
 <ul>{{range .Overlays}}<li>{{template "filelink" .}}</li>{{end}}</ul>
 <h2>Options</h2>
-{{range options .}}<p>{{.}}{{end}}
+{{range options .}}
+<p><b>{{.Name}}</b> {{.Type}}</p>
+<p><i>default:</i> {{.Default}}</p>
+{{if ne .Default .Current}}<p><i>current:</i> {{.Current}}</p>{{end}}
+{{end}}
 {{end}}
 `))
 

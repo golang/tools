@@ -6,14 +6,12 @@ package regtest
 
 import (
 	"encoding/json"
-	"io"
 	"path"
 	"testing"
 
 	"golang.org/x/tools/internal/lsp/command"
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
-	errors "golang.org/x/xerrors"
 )
 
 func (e *Env) ChangeFilesOnDisk(events []fake.FileEvent) {
@@ -201,6 +199,14 @@ func (e *Env) ApplyQuickFixes(path string, diagnostics []protocol.Diagnostic) {
 	}
 }
 
+// ApplyCodeAction applies the given code action.
+func (e *Env) ApplyCodeAction(action protocol.CodeAction) {
+	e.T.Helper()
+	if err := e.Editor.ApplyCodeAction(e.Ctx, action); err != nil {
+		e.T.Fatal(err)
+	}
+}
+
 // GetQuickFixes returns the available quick fix code actions.
 func (e *Env) GetQuickFixes(path string, diagnostics []protocol.Diagnostic) []protocol.CodeAction {
 	e.T.Helper()
@@ -239,19 +245,6 @@ func (e *Env) DocumentHighlight(name string, pos fake.Pos) []protocol.DocumentHi
 	return highlights
 }
 
-func checkIsFatal(t *testing.T, err error) {
-	t.Helper()
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) {
-		t.Fatal(err)
-	}
-}
-
-// CloseEditor shuts down the editor, calling t.Fatal on any error.
-func (e *Env) CloseEditor() {
-	e.T.Helper()
-	checkIsFatal(e.T, e.Editor.Close(e.Ctx))
-}
-
 // RunGenerate runs go:generate on the given dir, calling t.Fatal on any error.
 // It waits for the generate command to complete and checks for file changes
 // before returning.
@@ -271,7 +264,7 @@ func (e *Env) RunGenerate(dir string) {
 // directory.
 func (e *Env) RunGoCommand(verb string, args ...string) {
 	e.T.Helper()
-	if err := e.Sandbox.RunGoCommand(e.Ctx, "", verb, args); err != nil {
+	if err := e.Sandbox.RunGoCommand(e.Ctx, "", verb, args, true); err != nil {
 		e.T.Fatal(err)
 	}
 }
@@ -280,7 +273,7 @@ func (e *Env) RunGoCommand(verb string, args ...string) {
 // relative directory of the sandbox.
 func (e *Env) RunGoCommandInDir(dir, verb string, args ...string) {
 	e.T.Helper()
-	if err := e.Sandbox.RunGoCommand(e.Ctx, dir, verb, args); err != nil {
+	if err := e.Sandbox.RunGoCommand(e.Ctx, dir, verb, args, true); err != nil {
 		e.T.Fatal(err)
 	}
 }
@@ -290,7 +283,7 @@ func (e *Env) RunGoCommandInDir(dir, verb string, args ...string) {
 func (e *Env) DumpGoSum(dir string) {
 	e.T.Helper()
 
-	if err := e.Sandbox.RunGoCommand(e.Ctx, dir, "list", []string{"-mod=mod", "..."}); err != nil {
+	if err := e.Sandbox.RunGoCommand(e.Ctx, dir, "list", []string{"-mod=mod", "..."}, true); err != nil {
 		e.T.Fatal(err)
 	}
 	sumFile := path.Join(dir, "/go.sum")
@@ -374,6 +367,13 @@ func (e *Env) References(path string, pos fake.Pos) []protocol.Location {
 		e.T.Fatal(err)
 	}
 	return locations
+}
+
+func (e *Env) Rename(path string, pos fake.Pos, newName string) {
+	e.T.Helper()
+	if err := e.Editor.Rename(e.Ctx, path, pos, newName); err != nil {
+		e.T.Fatal(err)
+	}
 }
 
 // Completion executes a completion request on the server.

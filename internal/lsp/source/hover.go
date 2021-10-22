@@ -14,12 +14,15 @@ import (
 	"go/format"
 	"go/token"
 	"go/types"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"golang.org/x/text/unicode/runenames"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/typeparams"
 	errors "golang.org/x/xerrors"
 )
 
@@ -66,6 +69,9 @@ type HoverInformation struct {
 func Hover(ctx context.Context, snapshot Snapshot, fh FileHandle, position protocol.Position) (*protocol.Hover, error) {
 	ident, err := Identifier(ctx, snapshot, fh, position)
 	if err != nil {
+		if hover, innerErr := hoverRune(ctx, snapshot, fh, position); innerErr == nil {
+			return hover, nil
+		}
 		return nil, nil
 	}
 	h, err := HoverIdentifier(ctx, ident)
@@ -93,12 +99,161 @@ func Hover(ctx context.Context, snapshot Snapshot, fh FileHandle, position proto
 	}, nil
 }
 
+func hoverRune(ctx context.Context, snapshot Snapshot, fh FileHandle, position protocol.Position) (*protocol.Hover, error) {
+	ctx, done := event.Start(ctx, "source.hoverRune")
+	defer done()
+
+	r, mrng, err := findRune(ctx, snapshot, fh, position)
+	if err != nil {
+		return nil, err
+	}
+	rng, err := mrng.Range()
+	if err != nil {
+		return nil, err
+	}
+
+	var desc string
+	runeName := runenames.Name(r)
+	if len(runeName) > 0 && runeName[0] == '<' {
+		// Check if the rune looks like an HTML tag. If so, trim the surrounding <>
+		// characters to work around https://github.com/microsoft/vscode/issues/124042.
+		runeName = strings.TrimRight(runeName[1:], ">")
+	}
+	if strconv.IsPrint(r) {
+		desc = fmt.Sprintf("'%s', U+%04X, %s", string(r), uint32(r), runeName)
+	} else {
+		desc = fmt.Sprintf("U+%04X, %s", uint32(r), runeName)
+	}
+	return &protocol.Hover{
+		Contents: protocol.MarkupContent{
+			Kind:  snapshot.View().Options().PreferredContentFormat,
+			Value: desc,
+		},
+		Range: rng,
+	}, nil
+}
+
+// ErrNoRuneFound is the error returned when no rune is found at a particular position.
+var ErrNoRuneFound = errors.New("no rune found")
+
+// findRune returns rune information for a position in a file.
+func findRune(ctx context.Context, snapshot Snapshot, fh FileHandle, position protocol.Position) (rune, MappedRange, error) {
+	pkg, pgf, err := GetParsedFile(ctx, snapshot, fh, NarrowestPackage)
+	if err != nil {
+		return 0, MappedRange{}, err
+	}
+	spn, err := pgf.Mapper.PointSpan(position)
+	if err != nil {
+		return 0, MappedRange{}, err
+	}
+	rng, err := spn.Range(pgf.Mapper.Converter)
+	if err != nil {
+		return 0, MappedRange{}, err
+	}
+	pos := rng.Start
+
+	// Find the basic literal enclosing the given position, if there is one.
+	var lit *ast.BasicLit
+	var found bool
+	ast.Inspect(pgf.File, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		if n, ok := n.(*ast.BasicLit); ok && pos >= n.Pos() && pos <= n.End() {
+			lit = n
+			found = true
+		}
+		return !found
+	})
+	if !found {
+		return 0, MappedRange{}, ErrNoRuneFound
+	}
+
+	var r rune
+	var start, end token.Pos
+	switch lit.Kind {
+	case token.CHAR:
+		s, err := strconv.Unquote(lit.Value)
+		if err != nil {
+			// If the conversion fails, it's because of an invalid syntax, therefore
+			// there is no rune to be found.
+			return 0, MappedRange{}, ErrNoRuneFound
+		}
+		r, _ = utf8.DecodeRuneInString(s)
+		if r == utf8.RuneError {
+			return 0, MappedRange{}, fmt.Errorf("rune error")
+		}
+		start, end = lit.Pos(), lit.End()
+	case token.INT:
+		// It's an integer, scan only if it is a hex litteral whose bitsize in
+		// ranging from 8 to 32.
+		if !(strings.HasPrefix(lit.Value, "0x") && len(lit.Value[2:]) >= 2 && len(lit.Value[2:]) <= 8) {
+			return 0, MappedRange{}, ErrNoRuneFound
+		}
+		v, err := strconv.ParseUint(lit.Value[2:], 16, 32)
+		if err != nil {
+			return 0, MappedRange{}, err
+		}
+		r = rune(v)
+		if r == utf8.RuneError {
+			return 0, MappedRange{}, fmt.Errorf("rune error")
+		}
+		start, end = lit.Pos(), lit.End()
+	case token.STRING:
+		// It's a string, scan only if it contains a unicode escape sequence under or before the
+		// current cursor position.
+		var found bool
+		litOffset, err := Offset(pgf.Tok, lit.Pos())
+		if err != nil {
+			return 0, MappedRange{}, err
+		}
+		offset, err := Offset(pgf.Tok, pos)
+		if err != nil {
+			return 0, MappedRange{}, err
+		}
+		for i := offset - litOffset; i > 0; i-- {
+			// Start at the cursor position and search backward for the beginning of a rune escape sequence.
+			rr, _ := utf8.DecodeRuneInString(lit.Value[i:])
+			if rr == utf8.RuneError {
+				return 0, MappedRange{}, fmt.Errorf("rune error")
+			}
+			if rr == '\\' {
+				// Got the beginning, decode it.
+				var tail string
+				r, _, tail, err = strconv.UnquoteChar(lit.Value[i:], '"')
+				if err != nil {
+					// If the conversion fails, it's because of an invalid syntax, therefore is no rune to be found.
+					return 0, MappedRange{}, ErrNoRuneFound
+				}
+				// Only the rune escape sequence part of the string has to be highlighted, recompute the range.
+				runeLen := len(lit.Value) - (int(i) + len(tail))
+				start = token.Pos(int(lit.Pos()) + int(i))
+				end = token.Pos(int(start) + runeLen)
+				found = true
+				break
+			}
+		}
+		if !found {
+			// No escape sequence found
+			return 0, MappedRange{}, ErrNoRuneFound
+		}
+	default:
+		return 0, MappedRange{}, ErrNoRuneFound
+	}
+
+	mappedRange, err := posToMappedRange(snapshot, pkg, start, end)
+	if err != nil {
+		return 0, MappedRange{}, err
+	}
+	return r, mappedRange, nil
+}
+
 func HoverIdentifier(ctx context.Context, i *IdentifierInfo) (*HoverInformation, error) {
 	ctx, done := event.Start(ctx, "source.Hover")
 	defer done()
 
 	fset := i.Snapshot.FileSet()
-	h, err := HoverInfo(ctx, i.Snapshot, i.pkg, i.Declaration.obj, i.Declaration.node)
+	h, err := HoverInfo(ctx, i.Snapshot, i.pkg, i.Declaration.obj, i.Declaration.node, i.Declaration.fullDecl)
 	if err != nil {
 		return nil, err
 	}
@@ -117,6 +272,16 @@ func HoverIdentifier(ctx context.Context, i *IdentifierInfo) (*HoverInformation,
 			}
 			h.Signature = prefix + h.Signature
 		}
+
+		// Check if the variable is an integer whose value we can present in a more
+		// user-friendly way, i.e. `var hex = 0xe34e` becomes `var hex = 58190`
+		if spec, ok := x.(*ast.ValueSpec); ok && len(spec.Values) > 0 {
+			if lit, ok := spec.Values[0].(*ast.BasicLit); ok && len(spec.Names) > 0 {
+				val := constant.MakeFromLiteral(types.ExprString(lit), lit.Kind, 0)
+				h.Signature = fmt.Sprintf("var %s = %s", spec.Names[0], val)
+			}
+		}
+
 	case types.Object:
 		// If the variable is implicitly declared in a type switch, we need to
 		// manually generate its object string.
@@ -126,10 +291,10 @@ func HoverIdentifier(ctx context.Context, i *IdentifierInfo) (*HoverInformation,
 				break
 			}
 		}
-		h.Signature = objectString(x, i.qf)
+		h.Signature = objectString(x, i.qf, i.Inferred)
 	}
 	if obj := i.Declaration.obj; obj != nil {
-		h.SingleLine = objectString(obj, i.qf)
+		h.SingleLine = objectString(obj, i.qf, nil)
 	}
 	obj := i.Declaration.obj
 	if obj == nil {
@@ -238,7 +403,21 @@ func moduleAtVersion(path string, i *IdentifierInfo) (string, string, bool) {
 
 // objectString is a wrapper around the types.ObjectString function.
 // It handles adding more information to the object string.
-func objectString(obj types.Object, qf types.Qualifier) string {
+func objectString(obj types.Object, qf types.Qualifier, inferred *types.Signature) string {
+	// If the signature type was inferred, prefer the preferred signature with a
+	// comment showing the generic signature.
+	if sig, _ := obj.Type().(*types.Signature); sig != nil && typeparams.ForSignature(sig).Len() > 0 && inferred != nil {
+		obj2 := types.NewFunc(obj.Pos(), obj.Pkg(), obj.Name(), inferred)
+		str := types.ObjectString(obj2, qf)
+		// Try to avoid overly long lines.
+		if len(str) > 60 {
+			str += "\n"
+		} else {
+			str += " "
+		}
+		str += "// " + types.TypeString(sig, qf)
+		return str
+	}
 	str := types.ObjectString(obj, qf)
 	switch obj := obj.(type) {
 	case *types.Const:
@@ -260,15 +439,28 @@ func objectString(obj types.Object, qf types.Qualifier) string {
 }
 
 // HoverInfo returns a HoverInformation struct for an ast node and its type
-// object.
-func HoverInfo(ctx context.Context, s Snapshot, pkg Package, obj types.Object, node ast.Node) (*HoverInformation, error) {
+// object. node should be the actual node used in type checking, while fullNode
+// could be a separate node with more complete syntactic information.
+func HoverInfo(ctx context.Context, s Snapshot, pkg Package, obj types.Object, pkgNode ast.Node, fullDecl ast.Decl) (*HoverInformation, error) {
 	var info *HoverInformation
+
+	// This is problematic for a number of reasons. We really need to have a more
+	// general mechanism to validate the coherency of AST with type information,
+	// but absent that we must do our best to ensure that we don't use fullNode
+	// when we actually need the node that was type checked.
+	//
+	// pkgNode may be nil, if it was eliminated from the type-checked syntax. In
+	// that case, use fullDecl if available.
+	node := pkgNode
+	if node == nil && fullDecl != nil {
+		node = fullDecl
+	}
 
 	switch node := node.(type) {
 	case *ast.Ident:
 		// The package declaration.
 		for _, f := range pkg.GetSyntax() {
-			if f.Name == node {
+			if f.Name == pkgNode {
 				info = &HoverInformation{comment: f.Doc}
 			}
 		}
@@ -292,8 +484,36 @@ func HoverInfo(ctx context.Context, s Snapshot, pkg Package, obj types.Object, n
 	case *ast.GenDecl:
 		switch obj := obj.(type) {
 		case *types.TypeName, *types.Var, *types.Const, *types.Func:
-			var err error
-			info, err = formatGenDecl(node, obj, obj.Type())
+			// Always use the full declaration here if we have it, because the
+			// dependent code doesn't rely on pointer identity. This is fragile.
+			if d, _ := fullDecl.(*ast.GenDecl); d != nil {
+				node = d
+			}
+			// obj may not have been produced by type checking the AST containing
+			// node, so we need to be careful about using token.Pos.
+			tok := s.FileSet().File(obj.Pos())
+			offset, err := Offset(tok, obj.Pos())
+			if err != nil {
+				return nil, err
+			}
+			tok2 := s.FileSet().File(node.Pos())
+			var spec ast.Spec
+			for _, s := range node.Specs {
+				// Avoid panics by guarding the calls to token.Offset (golang/go#48249).
+				start, err := Offset(tok2, s.Pos())
+				if err != nil {
+					return nil, err
+				}
+				end, err := Offset(tok2, s.End())
+				if err != nil {
+					return nil, err
+				}
+				if start <= offset && offset <= end {
+					spec = s
+					break
+				}
+			}
+			info, err = formatGenDecl(node, spec, obj, obj.Type())
 			if err != nil {
 				return nil, err
 			}
@@ -320,21 +540,12 @@ func HoverInfo(ctx context.Context, s Snapshot, pkg Package, obj types.Object, n
 				break
 			}
 
-			f := s.FileSet().File(obj.Pos())
-			if f == nil {
-				break
-			}
-
-			pgf, err := pkg.File(span.URIFromPath(f.Name()))
-			if err != nil {
-				return nil, err
-			}
-			posToField, err := s.PosToField(ctx, pgf)
+			field, err := s.PosToField(ctx, pkg, obj.Pos())
 			if err != nil {
 				return nil, err
 			}
 
-			if field := posToField[obj.Pos()]; field != nil {
+			if field != nil {
 				comment := field.Doc
 				if comment.Text() == "" {
 					comment = field.Comment
@@ -374,18 +585,11 @@ func isFunctionParam(obj types.Object, node *ast.FuncDecl) bool {
 	return false
 }
 
-func formatGenDecl(node *ast.GenDecl, obj types.Object, typ types.Type) (*HoverInformation, error) {
+func formatGenDecl(node *ast.GenDecl, spec ast.Spec, obj types.Object, typ types.Type) (*HoverInformation, error) {
 	if _, ok := typ.(*types.Named); ok {
 		switch typ.Underlying().(type) {
 		case *types.Interface, *types.Struct:
-			return formatGenDecl(node, obj, typ.Underlying())
-		}
-	}
-	var spec ast.Spec
-	for _, s := range node.Specs {
-		if s.Pos() <= obj.Pos() && obj.Pos() <= s.End() {
-			spec = s
-			break
+			return formatGenDecl(node, spec, obj, typ.Underlying())
 		}
 	}
 	if spec == nil {
@@ -400,25 +604,29 @@ func formatGenDecl(node *ast.GenDecl, obj types.Object, typ types.Type) (*HoverI
 	// Handle types.
 	switch spec := spec.(type) {
 	case *ast.TypeSpec:
-		comment := spec.Doc
-		if comment == nil {
-			comment = node.Doc
-		}
-		if comment == nil {
-			comment = spec.Comment
-		}
-		return &HoverInformation{
-			source:      spec.Type,
-			comment:     comment,
-			typeName:    spec.Name.Name,
-			isTypeAlias: spec.Assign.IsValid(),
-		}, nil
+		return formatTypeSpec(spec, node), nil
 	case *ast.ValueSpec:
 		return &HoverInformation{source: spec, comment: spec.Doc}, nil
 	case *ast.ImportSpec:
 		return &HoverInformation{source: spec, comment: spec.Doc}, nil
 	}
 	return nil, errors.Errorf("unable to format spec %v (%T)", spec, spec)
+}
+
+func formatTypeSpec(spec *ast.TypeSpec, decl *ast.GenDecl) *HoverInformation {
+	comment := spec.Doc
+	if comment == nil && decl != nil {
+		comment = decl.Doc
+	}
+	if comment == nil {
+		comment = spec.Comment
+	}
+	return &HoverInformation{
+		source:      spec.Type,
+		comment:     comment,
+		typeName:    spec.Name.Name,
+		isTypeAlias: spec.Assign.IsValid(),
+	}
 }
 
 func formatVar(node ast.Spec, obj types.Object, decl *ast.GenDecl) *HoverInformation {
@@ -444,6 +652,15 @@ func formatVar(node ast.Spec, obj types.Object, decl *ast.GenDecl) *HoverInforma
 		if comment == nil {
 			comment = spec.Comment
 		}
+
+		// We need the AST nodes for variable declarations of basic literals with
+		// associated values so that we can augment their hover with more information.
+		if _, ok := obj.(*types.Var); ok && spec.Type == nil && len(spec.Values) > 0 {
+			if _, ok := spec.Values[0].(*ast.BasicLit); ok {
+				return &HoverInformation{source: spec, comment: comment}
+			}
+		}
+
 		return &HoverInformation{source: obj, comment: comment}
 	}
 

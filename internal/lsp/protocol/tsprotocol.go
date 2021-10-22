@@ -4,8 +4,8 @@
 
 // Package protocol contains data types and code for LSP jsonrpcs
 // generated automatically from vscode-languageserver-node
-// commit: d58c00bbf8837b9fd0144924db5e7b1c543d839e
-// last fetched Sat Apr 17 2021 08:26:29 GMT-0400 (Eastern Daylight Time)
+// commit: 10b56de150ad67c3c330da8e2df53ebf2cf347c4
+// last fetched Wed Sep 29 2021 12:31:31 GMT-0400 (Eastern Daylight Time)
 package protocol
 
 // Code generated (see typescript/README.md) DO NOT EDIT.
@@ -42,9 +42,11 @@ type ApplyWorkspaceEditParams struct {
 }
 
 /**
- * A response returned from the apply workspace edit request.
+ * The result returned from the apply workspace edit request.
+ *
+ * @since 3.17 renamed from ApplyWorkspaceEditResponse
  */
-type ApplyWorkspaceEditResponse struct {
+type ApplyWorkspaceEditResult struct {
 	/**
 	 * Indicates whether the edit was applied or not.
 	 */
@@ -798,7 +800,7 @@ type CompletionClientCapabilities struct {
 	 * when accepting a completion item that uses multi line
 	 * text in either `insertText` or `textEdit`.
 	 *
-	 * @since 3.16.0
+	 * @since 3.17.0
 	 */
 	InsertTextMode InsertTextMode `json:"insertTextMode,omitempty"`
 	/**
@@ -976,17 +978,15 @@ type CompletionItemKind float64
  */
 type CompletionItemLabelDetails struct {
 	/**
-	 * The parameters without the return type.
+	 * An optional string which is rendered less prominently directly after {@link CompletionItem.label label},
+	 * without any spacing. Should be used for function signatures or type annotations.
 	 */
-	Parameters string `json:"parameters,omitempty"`
+	Detail string `json:"detail,omitempty"`
 	/**
-	 * The fully qualified name, like package name or file path.
+	 * An optional string which is rendered less prominently after {@link CompletionItem.detail}. Should be used
+	 * for fully qualified names or file path.
 	 */
-	Qualifier string `json:"qualifier,omitempty"`
-	/**
-	 * The return-type of a function or type of a property/variable.
-	 */
-	Type string `json:"type,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 /**
@@ -1534,6 +1534,8 @@ type DocumentColorRegistrationOptions struct {
 }
 
 /**
+ * Parameters of the document diagnostic request.
+ *
  * @since 3.17.0 - proposed state
  */
 type DocumentDiagnosticParams struct {
@@ -1555,29 +1557,14 @@ type DocumentDiagnosticParams struct {
 
 /**
  * The result of a document diagnostic pull request. A report can
- * either be a new report containing all diagnostics for the
+ * either be a full report containing all diagnostics for the
  * requested document or a unchanged report indicating that nothing
  * has changed in terms of diagnostics in comparison to the last
  * pull request.
  *
  * @since 3.17.0 - proposed state
  */
-type DocumentDiagnosticReport = struct {
-	/**
-	 * A new document diagnostic report.
-	 */
-	Kind string `json:"kind"`
-	/**
-	 * An optional result id. If provided it will
-	 * be sent on the next diagnostic request for the
-	 * same document.
-	 */
-	ResultID string `json:"resultId,omitempty"`
-	/**
-	 * The actual items.
-	 */
-	Items []Diagnostic `json:"items"`
-}
+type DocumentDiagnosticReport = interface{} /*RelatedFullDocumentDiagnosticReport | RelatedUnchangedDocumentDiagnosticReport*/
 
 /**
  * A document filter denotes a document by different properties like
@@ -2348,6 +2335,28 @@ type FormattingOptions struct {
 }
 
 /**
+ * A diagnostic report with a full set of problems.
+ *
+ * @since 3.17.0 - proposed state
+ */
+type FullDocumentDiagnosticReport struct {
+	/**
+	 * A full document diagnostic report.
+	 */
+	Kind string `json:"kind"`
+	/**
+	 * An optional result id. If provided it will
+	 * be sent on the next diagnostic request for the
+	 * same document.
+	 */
+	ResultID string `json:"resultId,omitempty"`
+	/**
+	 * The actual items.
+	 */
+	Items []Diagnostic `json:"items"`
+}
+
+/**
  * General client capabilities.
  *
  * @since 3.16.0
@@ -2927,6 +2936,23 @@ type PrepareRenameParams struct {
 
 type PrepareSupportDefaultBehavior = interface{}
 
+/**
+ * A previous result id in a workspace pull request.
+ *
+ * @since 3.17.0 - proposed state
+ */
+type PreviousResultID = struct {
+	/**
+	 * The URI for which the client knowns a
+	 * result id.
+	 */
+	URI DocumentURI `json:"uri"`
+	/**
+	 * The value of the previous result id.
+	 */
+	Value string `json:"value"`
+}
+
 type ProgressParams struct {
 	/**
 	 * The progress token provided by the client or server.
@@ -3102,6 +3128,44 @@ type RegularExpressionsClientCapabilities struct {
 	 * The engine's version.
 	 */
 	Version string `json:"version,omitempty"`
+}
+
+/**
+ * A full diagnostic report with a set of related documents.
+ *
+ * @since 3.17.0 - proposed state
+ */
+type RelatedFullDocumentDiagnosticReport struct {
+	/**
+	 * Diagnostics of related documents. This information is useful
+	 * in programming languages where code in a file A can generate
+	 * diagnostics in a file B which A depends on. An example of
+	 * such a language is C/C++ where marco definitions in a file
+	 * a.cpp and result in errors in a header file b.hpp.
+	 *
+	 * @since 3.17.0 - proposed state
+	 */
+	RelatedDocuments map[string]interface{}/*[uri: string ** DocumentUri *]: FullDocumentDiagnosticReport | UnchangedDocumentDiagnosticReport;*/ `json:"relatedDocuments,omitempty"`
+	FullDocumentDiagnosticReport
+}
+
+/**
+ * An unchanged diagnostic report with a set of related documents.
+ *
+ * @since 3.17.0 - proposed state
+ */
+type RelatedUnchangedDocumentDiagnosticReport struct {
+	/**
+	 * Diagnostics of related documents. This information is useful
+	 * in programming languages where code in a file A can generate
+	 * diagnostics in a file B which A depends on. An example of
+	 * such a language is C/C++ where marco definitions in a file
+	 * a.cpp and result in errors in a header file b.hpp.
+	 *
+	 * @since 3.17.0 - proposed state
+	 */
+	RelatedDocuments map[string]interface{}/*[uri: string ** DocumentUri *]: FullDocumentDiagnosticReport | UnchangedDocumentDiagnosticReport;*/ `json:"relatedDocuments,omitempty"`
+	UnchangedDocumentDiagnosticReport
 }
 
 type RenameClientCapabilities struct {
@@ -3630,6 +3694,12 @@ type ServerCapabilities struct {
 	 */
 	MonikerProvider interface{}/* bool | MonikerOptions | MonikerRegistrationOptions*/ `json:"monikerProvider,omitempty"`
 	/**
+	 * The server provides type hierarchy support.
+	 *
+	 * @since 3.17.0 - proposed state
+	 */
+	TypeHierarchyProvider interface{}/* bool | TypeHierarchyOptions | TypeHierarchyRegistrationOptions*/ `json:"typeHierarchyProvider,omitempty"`
+	/**
 	 * Experimental server capabilities.
 	 */
 	Experimental interface{} `json:"experimental,omitempty"`
@@ -4112,6 +4182,12 @@ type TextDocumentClientCapabilities struct {
 	 * @since 3.16.0
 	 */
 	Moniker MonikerClientCapabilities `json:"moniker,omitempty"`
+	/**
+	 * Capabilities specific to the various type hierarchy requests.
+	 *
+	 * @since 3.17.0 - proposed state
+	 */
+	TypeHierarchy TypeHierarchyClientCapabilities `json:"typeHierarchy,omitempty"`
 }
 
 /**
@@ -4330,11 +4406,140 @@ type TypeDefinitionRegistrationOptions struct {
 }
 
 /**
+ * @since 3.17.0 - proposed state
+ */
+type TypeHierarchyClientCapabilities struct {
+	/**
+	 * Whether implementation supports dynamic registration. If this is set to `true`
+	 * the client supports the new `(TextDocumentRegistrationOptions & StaticRegistrationOptions)`
+	 * return value for the corresponding server capability as well.
+	 */
+	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
+}
+
+/**
+ * @since 3.17.0 - proposed state
+ */
+type TypeHierarchyItem struct {
+	/**
+	 * The name of this item.
+	 */
+	Name string `json:"name"`
+	/**
+	 * The kind of this item.
+	 */
+	Kind SymbolKind `json:"kind"`
+	/**
+	 * Tags for this item.
+	 */
+	Tags []SymbolTag `json:"tags,omitempty"`
+	/**
+	 * More detail for this item, e.g. the signature of a function.
+	 */
+	Detail string `json:"detail,omitempty"`
+	/**
+	 * The resource identifier of this item.
+	 */
+	URI DocumentURI `json:"uri"`
+	/**
+	 * The range enclosing this symbol not including leading/trailing whitespace
+	 * but everything else, e.g. comments and code.
+	 */
+	Range Range `json:"range"`
+	/**
+	 * The range that should be selected and revealed when this symbol is being
+	 * picked, e.g. the name of a function. Must be contained by the
+	 * [`range`](#TypeHierarchyItem.range).
+	 */
+	SelectionRange Range `json:"selectionRange"`
+	/**
+	 * A data entry field that is preserved between a type hierarchy prepare and
+	 * supertypes or subtypes requests. It could also be used to identify the
+	 * type hierarchy in the server, helping improve the performance on
+	 * resolving supertypes and subtypes.
+	 */
+	Data interface{} `json:"data,omitempty"`
+}
+
+/**
+ * Type hierarchy options used during static registration.
+ *
+ * @since 3.17.0 - proposed state
+ */
+type TypeHierarchyOptions struct {
+	WorkDoneProgressOptions
+}
+
+/**
+ * The parameter of a `textDocument/prepareTypeHierarchy` request.
+ *
+ * @since 3.17.0 - proposed state
+ */
+type TypeHierarchyPrepareParams struct {
+	TextDocumentPositionParams
+	WorkDoneProgressParams
+}
+
+/**
+ * Type hierarchy options used during static or dynamic registration.
+ *
+ * @since 3.17.0 - proposed state
+ */
+type TypeHierarchyRegistrationOptions struct {
+	TextDocumentRegistrationOptions
+	TypeHierarchyOptions
+	StaticRegistrationOptions
+}
+
+/**
+ * The parameter of a `typeHierarchy/subtypes` request.
+ *
+ * @since 3.17.0 - proposed state
+ */
+type TypeHierarchySubtypesParams struct {
+	Item TypeHierarchyItem `json:"item"`
+	WorkDoneProgressParams
+	PartialResultParams
+}
+
+/**
+ * The parameter of a `typeHierarchy/supertypes` request.
+ *
+ * @since 3.17.0 - proposed state
+ */
+type TypeHierarchySupertypesParams struct {
+	Item TypeHierarchyItem `json:"item"`
+	WorkDoneProgressParams
+	PartialResultParams
+}
+
+/**
  * A tagging type for string properties that are actually URIs
  *
  * @since 3.16.0
  */
 type URI = string
+
+/**
+ * A diagnostic report indicating that the last returned
+ * report is still accurate.
+ *
+ * @since 3.17.0 - proposed state
+ */
+type UnchangedDocumentDiagnosticReport struct {
+	/**
+	 * A document diagnostic report indicating
+	 * no changes to the last result. A server can
+	 * only return `unchanged` if result ids are
+	 * provided.
+	 */
+	Kind string `json:"kind"`
+	/**
+	 * A result id which will be sent on the next
+	 * diagnostic request for the same document.
+	 */
+	ResultID string `json:"resultId"`
+}
 
 /**
  * Moniker uniqueness level to define scope of the moniker.
@@ -4564,6 +4769,11 @@ type WorkspaceClientCapabilities struct {
 	FileOperations FileOperationClientCapabilities `json:"fileOperations,omitempty"`
 }
 
+/**
+ * Parameters of the workspace diagnostic request.
+ *
+ * @since 3.17.0 - proposed state
+ */
 type WorkspaceDiagnosticParams struct {
 	/**
 	 * The additional identifier provided during registration.
@@ -4573,36 +4783,26 @@ type WorkspaceDiagnosticParams struct {
 	 * The currently known diagnostic reports with their
 	 * previous result ids.
 	 */
-	PreviousResultIds []struct {
-		/**
-		 * The URI for which the client knowns a
-		 * result id.
-		 */
-		URI DocumentURI `json:"uri"`
-		/**
-		 * The value of the previous result id.
-		 */
-		Value string `json:"value"`
-	} `json:"previousResultIds"`
+	PreviousResultIds []PreviousResultID `json:"previousResultIds"`
 	WorkDoneProgressParams
 	PartialResultParams
 }
 
+/**
+ * A workspace diagnostic report.
+ *
+ * @since 3.17.0 - proposed state
+ */
 type WorkspaceDiagnosticReport struct {
 	Items []WorkspaceDocumentDiagnosticReport `json:"items"`
 }
 
-type WorkspaceDocumentDiagnosticReport struct {
-	/**
-	 * The URI for which diagnostic information is reported.
-	 */
-	URI DocumentURI `json:"uri"`
-	/**
-	 * The version number for which the diagnostics are reported.
-	 * If the document is not marked as open `null` can be provided.
-	 */
-	Version int32/*integer | null*/ `json:"version"`
-}
+/**
+ * A workspace diagnostic document report.
+ *
+ * @since 3.17.0 - proposed state
+ */
+type WorkspaceDocumentDiagnosticReport = interface{} /*WorkspaceFullDocumentDiagnosticReport | WorkspaceUnchangedDocumentDiagnosticReport*/
 
 /**
  * A workspace edit represents changes to many resources managed in the workspace. The edit
@@ -4622,7 +4822,7 @@ type WorkspaceEdit struct {
 	/**
 	 * Holds changes to existing resources.
 	 */
-	Changes map[string][]TextEdit `json:"changes,omitempty"`
+	Changes map[string][]TextEdit/*[uri: string]: TextEdit[];*/ `json:"changes,omitempty"`
 	/**
 	 * Depending on the client capability `workspace.workspaceEdit.resourceOperations` document changes
 	 * are either an array of `TextDocumentEdit`s to express changes to n different text documents
@@ -4644,7 +4844,7 @@ type WorkspaceEdit struct {
 	 *
 	 * @since 3.16.0
 	 */
-	ChangeAnnotations map[string]ChangeAnnotationIdentifier `json:"changeAnnotations,omitempty"`
+	ChangeAnnotations map[string]ChangeAnnotationIdentifier/*[id: string * ChangeAnnotationIdentifier *]: ChangeAnnotation;*/ `json:"changeAnnotations,omitempty"`
 }
 
 type WorkspaceEditClientCapabilities struct {
@@ -4740,6 +4940,24 @@ type WorkspaceFoldersServerCapabilities struct {
 }
 
 /**
+ * A full document diagnostic report for a workspace diagnostic result.
+ *
+ * @since 3.17.0 - proposed state
+ */
+type WorkspaceFullDocumentDiagnosticReport struct {
+	/**
+	 * The URI for which diagnostic information is reported.
+	 */
+	URI DocumentURI `json:"uri"`
+	/**
+	 * The version number for which the diagnostics are reported.
+	 * If the document is not marked as open `null` can be provided.
+	 */
+	Version int32/*integer | null*/ `json:"version"`
+	FullDocumentDiagnosticReport
+}
+
+/**
  * Client capabilities for a [WorkspaceSymbolRequest](#WorkspaceSymbolRequest).
  */
 type WorkspaceSymbolClientCapabilities struct {
@@ -4795,6 +5013,24 @@ type WorkspaceSymbolParams struct {
 	Query string `json:"query"`
 	WorkDoneProgressParams
 	PartialResultParams
+}
+
+/**
+ * An unchanged document diagnostic report for a workspace diagnostic result.
+ *
+ * @since 3.17.0 - proposed state
+ */
+type WorkspaceUnchangedDocumentDiagnosticReport struct {
+	/**
+	 * The URI for which diagnostic information is reported.
+	 */
+	URI DocumentURI `json:"uri"`
+	/**
+	 * The version number for which the diagnostics are reported.
+	 * If the document is not marked as open `null` can be provided.
+	 */
+	Version int32/*integer | null*/ `json:"version"`
+	UnchangedDocumentDiagnosticReport
 }
 
 const (

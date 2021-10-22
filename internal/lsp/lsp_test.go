@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/internal/lsp/cache"
+	"golang.org/x/tools/internal/lsp/command"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/diff/myers"
 	"golang.org/x/tools/internal/lsp/protocol"
@@ -91,6 +92,7 @@ func testLSP(t *testing.T, datum *tests.Data) {
 		normalizers: tests.CollectNormalizers(datum.Exported),
 		editRecv:    make(chan map[span.URI]string, 1),
 	}
+
 	r.server = NewServer(session, testClient{runner: r})
 	tests.Run(t, r, datum)
 }
@@ -101,19 +103,27 @@ type testClient struct {
 	runner *runner
 }
 
+func (c testClient) Close() error {
+	return nil
+}
+
 // Trivially implement PublishDiagnostics so that we can call
 // server.publishReports below to de-dup sent diagnostics.
 func (c testClient) PublishDiagnostics(context.Context, *protocol.PublishDiagnosticsParams) error {
 	return nil
 }
 
-func (c testClient) ApplyEdit(ctx context.Context, params *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResponse, error) {
+func (c testClient) ShowMessage(context.Context, *protocol.ShowMessageParams) error {
+	return nil
+}
+
+func (c testClient) ApplyEdit(ctx context.Context, params *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResult, error) {
 	res, err := applyTextDocumentEdits(c.runner, params.Edit.DocumentChanges)
 	if err != nil {
 		return nil, err
 	}
 	c.runner.editRecv <- res
-	return &protocol.ApplyWorkspaceEditResponse{Applied: true}, nil
+	return &protocol.ApplyWorkspaceEditResult{Applied: true}, nil
 }
 
 func (r *runner) CallHierarchy(t *testing.T, spn span.Span, expectedCalls *tests.CallHierarchyResult) {
@@ -573,7 +583,7 @@ func (r *runner) FunctionExtraction(t *testing.T, start span.Span, end span.Span
 	if err != nil {
 		t.Fatal(err)
 	}
-	actions, err := r.server.CodeAction(r.ctx, &protocol.CodeActionParams{
+	actionsRaw, err := r.server.CodeAction(r.ctx, &protocol.CodeActionParams{
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: protocol.URIFromSpanURI(uri),
 		},
@@ -584,6 +594,12 @@ func (r *runner) FunctionExtraction(t *testing.T, start span.Span, end span.Span
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	var actions []protocol.CodeAction
+	for _, action := range actionsRaw {
+		if action.Command.Title == "Extract function" {
+			actions = append(actions, action)
+		}
 	}
 	// Hack: We assume that we only get one code action per range.
 	// TODO(rstambler): Support multiple code actions per test.
@@ -604,6 +620,58 @@ func (r *runner) FunctionExtraction(t *testing.T, start span.Span, end span.Span
 		}))
 		if want != got {
 			t.Errorf("function extraction failed for %s:\n%s", u.Filename(), tests.Diff(t, want, got))
+		}
+	}
+}
+
+func (r *runner) MethodExtraction(t *testing.T, start span.Span, end span.Span) {
+	uri := start.URI()
+	m, err := r.data.Mapper(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spn := span.New(start.URI(), start.Start(), end.End())
+	rng, err := m.Range(spn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actionsRaw, err := r.server.CodeAction(r.ctx, &protocol.CodeActionParams{
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: protocol.URIFromSpanURI(uri),
+		},
+		Range: rng,
+		Context: protocol.CodeActionContext{
+			Only: []protocol.CodeActionKind{"refactor.extract"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actions []protocol.CodeAction
+	for _, action := range actionsRaw {
+		if action.Command.Title == "Extract method" {
+			actions = append(actions, action)
+		}
+	}
+	// Hack: We assume that we only get one matching code action per range.
+	// TODO(rstambler): Support multiple code actions per test.
+	if len(actions) == 0 || len(actions) > 1 {
+		t.Fatalf("unexpected number of code actions, want 1, got %v", len(actions))
+	}
+	_, err = r.server.ExecuteCommand(r.ctx, &protocol.ExecuteCommandParams{
+		Command:   actions[0].Command.Command,
+		Arguments: actions[0].Command.Arguments,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := <-r.editRecv
+	for u, got := range res {
+		want := string(r.data.Golden("methodextraction_"+tests.SpanName(spn), u.Filename(), func() ([]byte, error) {
+			return []byte(got), nil
+		}))
+		if want != got {
+			t.Errorf("method extraction failed for %s:\n%s", u.Filename(), tests.Diff(t, want, got))
 		}
 	}
 }
@@ -650,7 +718,7 @@ func (r *runner) Definition(t *testing.T, spn span.Span, d tests.Definition) {
 	didSomething := false
 	if hover != nil {
 		didSomething = true
-		tag := fmt.Sprintf("%s-hover", d.Name)
+		tag := fmt.Sprintf("%s-hoverdef", d.Name)
 		expectHover := string(r.data.Golden(tag, d.Src.URI().Filename(), func() ([]byte, error) {
 			return []byte(hover.Contents.Value), nil
 		}))
@@ -768,6 +836,43 @@ func (r *runner) Highlight(t *testing.T, src span.Span, locations []span.Span) {
 	for i := range results {
 		if results[i] != locations[i] {
 			t.Errorf("want %v, got %v\n", locations[i], results[i])
+		}
+	}
+}
+
+func (r *runner) Hover(t *testing.T, src span.Span, text string) {
+	m, err := r.data.Mapper(src.URI())
+	if err != nil {
+		t.Fatal(err)
+	}
+	loc, err := m.Location(src)
+	if err != nil {
+		t.Fatalf("failed for %v", err)
+	}
+	tdpp := protocol.TextDocumentPositionParams{
+		TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
+		Position:     loc.Range.Start,
+	}
+	params := &protocol.HoverParams{
+		TextDocumentPositionParams: tdpp,
+	}
+	hover, err := r.server.Hover(r.ctx, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text == "" {
+		if hover != nil {
+			t.Errorf("want nil, got %v\n", hover)
+		}
+	} else {
+		if hover == nil {
+			t.Fatalf("want hover result to include %s, but got nil", text)
+		}
+		if got := hover.Contents.Value; got != text {
+			t.Errorf("want %v, got %v\n", text, got)
+		}
+		if want, got := loc.Range, hover.Range; want != got {
+			t.Errorf("want range %v, got %v instead", want, got)
 		}
 	}
 }
@@ -1091,6 +1196,57 @@ func (r *runner) Link(t *testing.T, uri span.URI, wantLinks []tests.Link) {
 	}
 	if diff := tests.DiffLinks(m, wantLinks, got); diff != "" {
 		t.Error(diff)
+	}
+}
+
+func (r *runner) AddImport(t *testing.T, uri span.URI, expectedImport string) {
+	cmd, err := command.NewListKnownPackagesCommand("List Known Packages", command.URIArg{
+		URI: protocol.URIFromSpanURI(uri),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := r.server.executeCommand(r.ctx, &protocol.ExecuteCommandParams{
+		Command:   cmd.Command,
+		Arguments: cmd.Arguments,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := resp.(command.ListKnownPackagesResult)
+	var hasPkg bool
+	for _, p := range res.Packages {
+		if p == expectedImport {
+			hasPkg = true
+			break
+		}
+	}
+	if !hasPkg {
+		t.Fatalf("%s: got %v packages\nwant contains %q", command.ListKnownPackages, res.Packages, expectedImport)
+	}
+	cmd, err = command.NewAddImportCommand("Add Imports", command.AddImportArgs{
+		URI:        protocol.URIFromSpanURI(uri),
+		ImportPath: expectedImport,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = r.server.executeCommand(r.ctx, &protocol.ExecuteCommandParams{
+		Command:   cmd.Command,
+		Arguments: cmd.Arguments,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := (<-r.editRecv)[uri]
+	want := r.data.Golden("addimport", uri.Filename(), func() ([]byte, error) {
+		return []byte(got), nil
+	})
+	if want == nil {
+		t.Fatalf("golden file %q not found", uri.Filename())
+	}
+	if diff := tests.Diff(t, got, string(want)); diff != "" {
+		t.Errorf("%s mismatch\n%s", command.AddImport, diff)
 	}
 }
 

@@ -55,14 +55,19 @@ type CallCounts struct {
 }
 
 type buffer struct {
-	version int
-	path    string
-	lines   []string
-	dirty   bool
+	windowsLineEndings bool
+	version            int
+	path               string
+	lines              []string
+	dirty              bool
 }
 
 func (b buffer) text() string {
-	return strings.Join(b.lines, "\n")
+	eol := "\n"
+	if b.windowsLineEndings {
+		eol = "\r\n"
+	}
+	return strings.Join(b.lines, eol)
 }
 
 // EditorConfig configures the editor's LSP session. This is similar to
@@ -106,11 +111,13 @@ type EditorConfig struct {
 	// the PID. This can only be set by one test.
 	SendPID bool
 
-	DirectoryFilters []string
+	// Whether to edit files with windows line endings.
+	WindowsLineEndings bool
 
-	VerboseOutput bool
-
-	ImportShortcut string
+	ImportShortcut                 string
+	DirectoryFilters               []string
+	VerboseOutput                  bool
+	ExperimentalUseInvalidMetadata bool
 }
 
 // NewEditor Creates a new Editor.
@@ -198,9 +205,11 @@ func (e *Editor) Client() *Client {
 func (e *Editor) overlayEnv() map[string]string {
 	env := make(map[string]string)
 	for k, v := range e.defaultEnv {
+		v = strings.ReplaceAll(v, "$SANDBOX_WORKDIR", e.sandbox.Workdir.RootURI().SpanURI().Filename())
 		env[k] = v
 	}
 	for k, v := range e.Config.Env {
+		v = strings.ReplaceAll(v, "$SANDBOX_WORKDIR", e.sandbox.Workdir.RootURI().SpanURI().Filename())
 		env[k] = v
 	}
 	return env
@@ -219,6 +228,9 @@ func (e *Editor) configuration() map[string]interface{} {
 	}
 	if e.Config.DirectoryFilters != nil {
 		config["directoryFilters"] = e.Config.DirectoryFilters
+	}
+	if e.Config.ExperimentalUseInvalidMetadata {
+		config["experimentalUseInvalidMetadata"] = true
 	}
 	if e.Config.CodeLenses != nil {
 		config["codelenses"] = e.Config.CodeLenses
@@ -244,9 +256,7 @@ func (e *Editor) configuration() map[string]interface{} {
 		config["importShortcut"] = e.Config.ImportShortcut
 	}
 
-	// TODO(rFindley): change to the new settings name once it is no longer
-	// designated experimental.
-	config["experimentalDiagnosticsDelay"] = "10ms"
+	config["diagnosticsDelay"] = "10ms"
 
 	// ExperimentalWorkspaceModule is only set as a mode, not a configuration.
 	return config
@@ -338,11 +348,11 @@ func (e *Editor) onFileChanges(ctx context.Context, evts []FileEvent) {
 					continue // A race with some other operation.
 				}
 				// No need to update if the buffer content hasn't changed.
-				if content == strings.Join(buf.lines, "\n") {
+				if content == buf.text() {
 					continue
 				}
 				// During shutdown, this call will fail. Ignore the error.
-				_ = e.setBufferContentLocked(ctx, evt.Path, false, strings.Split(content, "\n"), nil)
+				_ = e.setBufferContentLocked(ctx, evt.Path, false, lines(content), nil)
 			}
 		}
 		e.Server.DidChangeWatchedFiles(ctx, &protocol.DidChangeWatchedFilesParams{
@@ -383,10 +393,11 @@ func (e *Editor) CreateBuffer(ctx context.Context, path, content string) error {
 
 func (e *Editor) createBuffer(ctx context.Context, path string, dirty bool, content string) error {
 	buf := buffer{
-		version: 1,
-		path:    path,
-		lines:   strings.Split(content, "\n"),
-		dirty:   dirty,
+		windowsLineEndings: e.Config.WindowsLineEndings,
+		version:            1,
+		path:               path,
+		lines:              lines(content),
+		dirty:              dirty,
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -404,6 +415,15 @@ func (e *Editor) createBuffer(ctx context.Context, path string, dirty bool, cont
 		e.callsMu.Unlock()
 	}
 	return nil
+}
+
+// lines returns line-ending agnostic line representation of content.
+func lines(content string) []string {
+	lines := strings.Split(content, "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimSuffix(l, "\r")
+	}
+	return lines
 }
 
 // CloseBuffer removes the current buffer (regardless of whether it is saved).
@@ -528,6 +548,7 @@ var (
 // regexpRange returns the start and end of the first occurrence of either re
 // or its singular subgroup. It returns ErrNoMatch if the regexp doesn't match.
 func regexpRange(content, re string) (Pos, Pos, error) {
+	content = normalizeEOL(content)
 	var start, end int
 	rec, err := regexp.Compile(re)
 	if err != nil {
@@ -556,6 +577,10 @@ func regexpRange(content, re string) (Pos, Pos, error) {
 		return Pos{}, Pos{}, err
 	}
 	return startPos, endPos, nil
+}
+
+func normalizeEOL(content string) string {
+	return strings.Join(lines(content), "\n")
 }
 
 // RegexpRange returns the first range in the buffer bufName matching re. See
@@ -615,7 +640,7 @@ func (e *Editor) EditBuffer(ctx context.Context, path string, edits []Edit) erro
 func (e *Editor) SetBufferContent(ctx context.Context, path, content string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	lines := strings.Split(content, "\n")
+	lines := lines(content)
 	return e.setBufferContentLocked(ctx, path, true, lines, nil)
 }
 
@@ -707,11 +732,35 @@ func (e *Editor) GoToDefinition(ctx context.Context, path string, pos Pos) (stri
 	if err != nil {
 		return "", Pos{}, errors.Errorf("definition: %w", err)
 	}
-	if len(resp) == 0 {
+	return e.extractFirstPathAndPos(ctx, resp)
+}
+
+// GoToTypeDefinition jumps to the type definition of the symbol at the given position
+// in an open buffer.
+func (e *Editor) GoToTypeDefinition(ctx context.Context, path string, pos Pos) (string, Pos, error) {
+	if err := e.checkBufferPosition(path, pos); err != nil {
+		return "", Pos{}, err
+	}
+	params := &protocol.TypeDefinitionParams{}
+	params.TextDocument.URI = e.sandbox.Workdir.URI(path)
+	params.Position = pos.ToProtocolPosition()
+
+	resp, err := e.Server.TypeDefinition(ctx, params)
+	if err != nil {
+		return "", Pos{}, errors.Errorf("type definition: %w", err)
+	}
+	return e.extractFirstPathAndPos(ctx, resp)
+}
+
+// extractFirstPathAndPos returns the path and the position of the first location.
+// It opens the file if needed.
+func (e *Editor) extractFirstPathAndPos(ctx context.Context, locs []protocol.Location) (string, Pos, error) {
+	if len(locs) == 0 {
 		return "", Pos{}, nil
 	}
-	newPath := e.sandbox.Workdir.URIToPath(resp[0].URI)
-	newPos := fromProtocolPosition(resp[0].Range.Start)
+
+	newPath := e.sandbox.Workdir.URIToPath(locs[0].URI)
+	newPos := fromProtocolPosition(locs[0].Range.Start)
 	if !e.HasBuffer(newPath) {
 		if err := e.OpenFile(ctx, newPath); err != nil {
 			return "", Pos{}, errors.Errorf("OpenFile: %w", err)
@@ -754,13 +803,13 @@ func (e *Editor) Symbol(ctx context.Context, query string) ([]SymbolInformation,
 
 // OrganizeImports requests and performs the source.organizeImports codeAction.
 func (e *Editor) OrganizeImports(ctx context.Context, path string) error {
-	_, err := e.codeAction(ctx, path, nil, nil, protocol.SourceOrganizeImports)
+	_, err := e.applyCodeActions(ctx, path, nil, nil, protocol.SourceOrganizeImports)
 	return err
 }
 
 // RefactorRewrite requests and performs the source.refactorRewrite codeAction.
 func (e *Editor) RefactorRewrite(ctx context.Context, path string, rng *protocol.Range) error {
-	applied, err := e.codeAction(ctx, path, rng, nil, protocol.RefactorRewrite)
+	applied, err := e.applyCodeActions(ctx, path, rng, nil, protocol.RefactorRewrite)
 	if applied == 0 {
 		return errors.Errorf("no refactorings were applied")
 	}
@@ -769,11 +818,38 @@ func (e *Editor) RefactorRewrite(ctx context.Context, path string, rng *protocol
 
 // ApplyQuickFixes requests and performs the quickfix codeAction.
 func (e *Editor) ApplyQuickFixes(ctx context.Context, path string, rng *protocol.Range, diagnostics []protocol.Diagnostic) error {
-	applied, err := e.codeAction(ctx, path, rng, diagnostics, protocol.QuickFix, protocol.SourceFixAll)
+	applied, err := e.applyCodeActions(ctx, path, rng, diagnostics, protocol.SourceFixAll, protocol.QuickFix)
 	if applied == 0 {
 		return errors.Errorf("no quick fixes were applied")
 	}
 	return err
+}
+
+// ApplyCodeAction applies the given code action.
+func (e *Editor) ApplyCodeAction(ctx context.Context, action protocol.CodeAction) error {
+	for _, change := range action.Edit.DocumentChanges {
+		path := e.sandbox.Workdir.URIToPath(change.TextDocument.URI)
+		if int32(e.buffers[path].version) != change.TextDocument.Version {
+			// Skip edits for old versions.
+			continue
+		}
+		edits := convertEdits(change.Edits)
+		if err := e.EditBuffer(ctx, path, edits); err != nil {
+			return errors.Errorf("editing buffer %q: %w", path, err)
+		}
+	}
+	// Execute any commands. The specification says that commands are
+	// executed after edits are applied.
+	if action.Command != nil {
+		if _, err := e.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
+			Command:   action.Command.Command,
+			Arguments: action.Command.Arguments,
+		}); err != nil {
+			return err
+		}
+	}
+	// Some commands may edit files on disk.
+	return e.sandbox.Workdir.CheckForFileChanges(ctx)
 }
 
 // GetQuickFixes returns the available quick fix code actions.
@@ -781,7 +857,7 @@ func (e *Editor) GetQuickFixes(ctx context.Context, path string, rng *protocol.R
 	return e.getCodeActions(ctx, path, rng, diagnostics, protocol.QuickFix, protocol.SourceFixAll)
 }
 
-func (e *Editor) codeAction(ctx context.Context, path string, rng *protocol.Range, diagnostics []protocol.Diagnostic, only ...protocol.CodeActionKind) (int, error) {
+func (e *Editor) applyCodeActions(ctx context.Context, path string, rng *protocol.Range, diagnostics []protocol.Diagnostic, only ...protocol.CodeActionKind) (int, error) {
 	actions, err := e.getCodeActions(ctx, path, rng, diagnostics, only...)
 	if err != nil {
 		return 0, err
@@ -802,29 +878,7 @@ func (e *Editor) codeAction(ctx context.Context, path string, rng *protocol.Rang
 			continue
 		}
 		applied++
-		for _, change := range action.Edit.DocumentChanges {
-			path := e.sandbox.Workdir.URIToPath(change.TextDocument.URI)
-			if int32(e.buffers[path].version) != change.TextDocument.Version {
-				// Skip edits for old versions.
-				continue
-			}
-			edits := convertEdits(change.Edits)
-			if err := e.EditBuffer(ctx, path, edits); err != nil {
-				return 0, errors.Errorf("editing buffer %q: %w", path, err)
-			}
-		}
-		// Execute any commands. The specification says that commands are
-		// executed after edits are applied.
-		if action.Command != nil {
-			if _, err := e.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
-				Command:   action.Command.Command,
-				Arguments: action.Command.Arguments,
-			}); err != nil {
-				return 0, err
-			}
-		}
-		// Some commands may edit files on disk.
-		if err := e.sandbox.Workdir.CheckForFileChanges(ctx); err != nil {
+		if err := e.ApplyCodeAction(ctx, action); err != nil {
 			return 0, err
 		}
 	}
@@ -1039,6 +1093,49 @@ func (e *Editor) References(ctx context.Context, path string, pos Pos) ([]protoc
 		return nil, err
 	}
 	return locations, nil
+}
+
+func (e *Editor) Rename(ctx context.Context, path string, pos Pos, newName string) error {
+	if e.Server == nil {
+		return nil
+	}
+	params := &protocol.RenameParams{
+		TextDocument: e.textDocumentIdentifier(path),
+		Position:     pos.ToProtocolPosition(),
+		NewName:      newName,
+	}
+	wsEdits, err := e.Server.Rename(ctx, params)
+	if err != nil {
+		return err
+	}
+	for _, change := range wsEdits.DocumentChanges {
+		if err := e.applyProtocolEdit(ctx, change); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *Editor) applyProtocolEdit(ctx context.Context, change protocol.TextDocumentEdit) error {
+	path := e.sandbox.Workdir.URIToPath(change.TextDocument.URI)
+	if ver := int32(e.BufferVersion(path)); ver != change.TextDocument.Version {
+		return fmt.Errorf("buffer versions for %q do not match: have %d, editing %d", path, ver, change.TextDocument.Version)
+	}
+	if !e.HasBuffer(path) {
+		err := e.OpenFile(ctx, path)
+		if os.IsNotExist(err) {
+			// TODO: it's unclear if this is correct. Here we create the buffer (with
+			// version 1), then apply edits. Perhaps we should apply the edits before
+			// sending the didOpen notification.
+			e.CreateBuffer(ctx, path, "")
+			err = nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+	fakeEdits := convertEdits(change.Edits)
+	return e.EditBuffer(ctx, path, fakeEdits)
 }
 
 // CodeAction executes a codeAction request on the server.

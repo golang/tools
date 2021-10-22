@@ -54,6 +54,9 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 			wanted[only] = supportedCodeActions[only] || explicit[only]
 		}
 	}
+	if len(supportedCodeActions) == 0 {
+		return nil, nil // not an error if there are none supported
+	}
 	if len(wanted) == 0 {
 		return nil, fmt.Errorf("no supported code action to execute for %s, wanted %v", uri, params.Context.Only)
 	}
@@ -286,8 +289,8 @@ func extractionFixes(ctx context.Context, snapshot source.Snapshot, pkg source.P
 	}
 	puri := protocol.URIFromSpanURI(uri)
 	var commands []protocol.Command
-	if _, ok, _ := source.CanExtractFunction(snapshot.FileSet(), srng, pgf.Src, pgf.File); ok {
-		cmd, err := command.NewApplyFixCommand("Extract to function", command.ApplyFixArgs{
+	if _, ok, methodOk, _ := source.CanExtractFunction(snapshot.FileSet(), srng, pgf.Src, pgf.File); ok {
+		cmd, err := command.NewApplyFixCommand("Extract function", command.ApplyFixArgs{
 			URI:   puri,
 			Fix:   source.ExtractFunction,
 			Range: rng,
@@ -296,6 +299,17 @@ func extractionFixes(ctx context.Context, snapshot source.Snapshot, pkg source.P
 			return nil, err
 		}
 		commands = append(commands, cmd)
+		if methodOk {
+			cmd, err := command.NewApplyFixCommand("Extract method", command.ApplyFixArgs{
+				URI:   puri,
+				Fix:   source.ExtractMethod,
+				Range: rng,
+			})
+			if err != nil {
+				return nil, err
+			}
+			commands = append(commands, cmd)
+		}
 	}
 	if _, _, ok, _ := source.CanExtractVariable(srng, pgf.File); ok {
 		cmd, err := command.NewApplyFixCommand("Extract variable", command.ApplyFixArgs{
@@ -309,11 +323,11 @@ func extractionFixes(ctx context.Context, snapshot source.Snapshot, pkg source.P
 		commands = append(commands, cmd)
 	}
 	var actions []protocol.CodeAction
-	for _, cmd := range commands {
+	for i := range commands {
 		actions = append(actions, protocol.CodeAction{
-			Title:   cmd.Title,
+			Title:   commands[i].Title,
 			Kind:    protocol.RefactorExtract,
-			Command: &cmd,
+			Command: &commands[i],
 		})
 	}
 	return actions, nil

@@ -7,7 +7,6 @@ package diagnostics
 import (
 	"context"
 	"fmt"
-	"log"
 	"os/exec"
 	"testing"
 
@@ -147,12 +146,14 @@ const a = 3`)
 		env.Await(
 			env.DiagnosticAtRegexp("a.go", "a = 1"),
 			env.DiagnosticAtRegexp("b.go", "a = 2"),
-			env.DiagnosticAtRegexp("c.go", "a = 3"))
+			env.DiagnosticAtRegexp("c.go", "a = 3"),
+		)
 		env.CloseBuffer("c.go")
 		env.Await(
 			env.DiagnosticAtRegexp("a.go", "a = 1"),
 			env.DiagnosticAtRegexp("b.go", "a = 2"),
-			EmptyDiagnostics("c.go"))
+			EmptyDiagnostics("c.go"),
+		)
 	})
 }
 
@@ -225,7 +226,6 @@ func TestDeleteTestVariant(t *testing.T) {
 // Tests golang/go#38878: deleting a test file on disk while it's still open
 // should not clear its errors.
 func TestDeleteTestVariant_DiskOnly(t *testing.T) {
-	log.SetFlags(log.Lshortfile)
 	Run(t, test38878, func(t *testing.T, env *Env) {
 		env.OpenFile("a_test.go")
 		env.Await(DiagnosticAt("a_test.go", 5, 3))
@@ -301,7 +301,7 @@ func Hello() {
 			env.Await(
 				env.DiagnosticAtRegexp("main.go", `"mod.com/bob"`),
 			)
-			if err := env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"init", "mod.com"}); err != nil {
+			if err := env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"init", "mod.com"}, true); err != nil {
 				t.Fatal(err)
 			}
 			env.Await(
@@ -438,7 +438,7 @@ func TestResolveDiagnosticWithDownload(t *testing.T) {
 func TestMissingDependency(t *testing.T) {
 	Run(t, testPackageWithRequire, func(t *testing.T, env *Env) {
 		env.OpenFile("print.go")
-		env.Await(LogMatching(protocol.Error, "initial workspace load failed", 1))
+		env.Await(LogMatching(protocol.Error, "initial workspace load failed", 1, false))
 	})
 }
 
@@ -1294,7 +1294,6 @@ package main
 func main() {}
 `
 	Run(t, dir, func(t *testing.T, env *Env) {
-		log.SetFlags(log.Lshortfile)
 		env.OpenFile("main.go")
 		env.OpenFile("other.go")
 		x := env.DiagnosticsFor("main.go")
@@ -1569,6 +1568,7 @@ func main() {
 		env.Await(
 			env.DiagnosticAtRegexp("main.go", `"mod.com/bob"`),
 			EmptyDiagnostics("bob/bob.go"),
+			RegistrationMatching("didChangeWatchedFiles"),
 		)
 	})
 }
@@ -1611,6 +1611,42 @@ import _ "mod.com/triple/a"
 			env.DiagnosticAtRegexpWithMessage("self/self.go", `_ "mod.com/self"`, "import cycle not allowed"),
 			env.DiagnosticAtRegexpWithMessage("double/a/a.go", `_ "mod.com/double/b"`, "import cycle not allowed"),
 			env.DiagnosticAtRegexpWithMessage("triple/a/a.go", `_ "mod.com/triple/b"`, "import cycle not allowed"),
+		)
+	})
+}
+
+// Tests golang/go#46667: deleting a problematic import path should resolve
+// import cycle errors.
+func TestResolveImportCycle(t *testing.T) {
+	const mod = `
+-- go.mod --
+module mod.test
+
+go 1.16
+-- a/a.go --
+package a
+
+import "mod.test/b"
+
+const A = b.A
+const B = 2
+-- b/b.go --
+package b
+
+import "mod.test/a"
+
+const A = 1
+const B = a.B
+	`
+	Run(t, mod, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		env.OpenFile("b/b.go")
+		env.Await(env.DiagnosticAtRegexp("a/a.go", `"mod.test/b"`))
+		env.RegexpReplace("b/b.go", `const B = a\.B`, "")
+		env.SaveBuffer("b/b.go")
+		env.Await(
+			EmptyOrNoDiagnostics("a/a.go"),
+			EmptyOrNoDiagnostics("b/b.go"),
 		)
 	})
 }
@@ -1886,29 +1922,214 @@ package main
 	})
 }
 
-// Tests golang/go#45075, a panic in fillreturns breaks diagnostics.
+// Tests golang/go#45075: A panic in fillreturns broke diagnostics.
+// Expect an error log indicating that fillreturns panicked, as well type
+// errors for the broken code.
 func TestFillReturnsPanic(t *testing.T) {
 	// At tip, the panic no longer reproduces.
 	testenv.SkipAfterGo1Point(t, 16)
+
 	const files = `
 -- go.mod --
 module mod.com
 
-go 1.16
+go 1.15
 -- main.go --
 package main
-
 
 func foo() int {
 	return x, nil
 }
-
 `
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.Await(
-			env.DiagnosticAtRegexpWithMessage("main.go", `return x`, "wrong number of return values"),
-			LogMatching(protocol.Error, `.*analysis fillreturns.*panicked.*`, 2),
+			OnceMet(
+				env.DoneWithOpen(),
+				LogMatching(protocol.Error, `.*analysis fillreturns.*panicked.*`, 1, true),
+				env.DiagnosticAtRegexpWithMessage("main.go", `return x`, "wrong number of return values"),
+			),
+		)
+	})
+}
+
+// This test confirms that the view does not reinitialize when a go.mod file is
+// opened.
+func TestNoReinitialize(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- main.go --
+package main
+
+func main() {}
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("go.mod")
+		env.Await(
+			OnceMet(
+				env.DoneWithOpen(),
+				LogMatching(protocol.Info, `.*query=\[builtin mod.com/...\].*`, 1, false),
+			),
+		)
+	})
+}
+
+func TestUseOfInvalidMetadata(t *testing.T) {
+	testenv.NeedsGo1Point(t, 13)
+
+	const mod = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- main.go --
+package main
+
+import (
+	"mod.com/a"
+	//"os"
+)
+
+func _() {
+	a.Hello()
+	os.Getenv("")
+	//var x int
+}
+-- a/a.go --
+package a
+
+func Hello() {}
+`
+	WithOptions(
+		EditorConfig{
+			ExperimentalUseInvalidMetadata: true,
+		},
+		Modes(Singleton),
+	).Run(t, mod, func(t *testing.T, env *Env) {
+		env.OpenFile("go.mod")
+		env.RegexpReplace("go.mod", "module mod.com", "modul mod.com") // break the go.mod file
+		env.SaveBufferWithoutActions("go.mod")
+		env.Await(
+			env.DiagnosticAtRegexp("go.mod", "modul"),
+		)
+		// Confirm that language features work with invalid metadata.
+		env.OpenFile("main.go")
+		file, pos := env.GoToDefinition("main.go", env.RegexpSearch("main.go", "Hello"))
+		wantPos := env.RegexpSearch("a/a.go", "Hello")
+		if file != "a/a.go" && pos != wantPos {
+			t.Fatalf("expected a/a.go:%s, got %s:%s", wantPos, file, pos)
+		}
+		// Confirm that new diagnostics appear with invalid metadata by adding
+		// an unused variable to the body of the function.
+		env.RegexpReplace("main.go", "//var x int", "var x int")
+		env.Await(
+			env.DiagnosticAtRegexp("main.go", "x"),
+		)
+		// Add an import and confirm that we get a diagnostic for it, since the
+		// metadata will not have been updated.
+		env.RegexpReplace("main.go", "//\"os\"", "\"os\"")
+		env.Await(
+			env.DiagnosticAtRegexp("main.go", `"os"`),
+		)
+		// Fix the go.mod file and expect the diagnostic to resolve itself.
+		env.RegexpReplace("go.mod", "modul mod.com", "module mod.com")
+		env.SaveBuffer("go.mod")
+		env.Await(
+			env.DiagnosticAtRegexp("main.go", "x"),
+			env.NoDiagnosticAtRegexp("main.go", `"os"`),
+			EmptyDiagnostics("go.mod"),
+		)
+	})
+}
+
+func TestReloadInvalidMetadata(t *testing.T) {
+	// We only use invalid metadata for Go versions > 1.12.
+	testenv.NeedsGo1Point(t, 13)
+
+	const mod = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- main.go --
+package main
+
+func _() {}
+`
+	WithOptions(
+		EditorConfig{
+			ExperimentalUseInvalidMetadata: true,
+		},
+		// ExperimentalWorkspaceModule has a different failure mode for this
+		// case.
+		Modes(Singleton),
+	).Run(t, mod, func(t *testing.T, env *Env) {
+		env.Await(
+			OnceMet(
+				InitialWorkspaceLoad,
+				CompletedWork("Load", 1, false),
+			),
+		)
+
+		// Break the go.mod file on disk, expecting a reload.
+		env.WriteWorkspaceFile("go.mod", `modul mod.com
+
+go 1.12
+`)
+		env.Await(
+			OnceMet(
+				env.DoneWithChangeWatchedFiles(),
+				env.DiagnosticAtRegexp("go.mod", "modul"),
+				CompletedWork("Load", 1, false),
+			),
+		)
+
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		// The first edit after the go.mod file invalidation should cause a reload.
+		// Any subsequent simple edits should not.
+		content := `package main
+
+func main() {
+	_ = 1
+}
+`
+		env.EditBuffer("main.go", fake.NewEdit(0, 0, 3, 0, content))
+		env.Await(
+			OnceMet(
+				env.DoneWithChange(),
+				CompletedWork("Load", 2, false),
+				NoLogMatching(protocol.Error, "error loading file"),
+			),
+		)
+		env.RegexpReplace("main.go", "_ = 1", "_ = 2")
+		env.Await(
+			OnceMet(
+				env.DoneWithChange(),
+				CompletedWork("Load", 2, false),
+				NoLogMatching(protocol.Error, "error loading file"),
+			),
+		)
+		// Add an import to the main.go file and confirm that it does get
+		// reloaded, but the reload fails, so we see a diagnostic on the new
+		// "fmt" import.
+		env.EditBuffer("main.go", fake.NewEdit(0, 0, 5, 0, `package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("")
+}
+`))
+		env.Await(
+			OnceMet(
+				env.DoneWithChange(),
+				env.DiagnosticAtRegexp("main.go", `"fmt"`),
+				CompletedWork("Load", 3, false),
+			),
 		)
 	})
 }

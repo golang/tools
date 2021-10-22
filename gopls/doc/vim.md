@@ -116,8 +116,8 @@ In vim classic only, use the experimental [`govim`], simply follow the [install 
 
 ## <a href="#neovim" id="neovim">Neovim v0.5.0+</a>
 
-To use the new (still experimental) native LSP client in Neovim, make sure you
-[install][nvim-install] the prerelease v0.5.0 version of Neovim (aka “nightly”),
+To use the new native LSP client in Neovim, make sure you
+[install][nvim-install] Neovim v.0.5.0+,
 the `nvim-lspconfig` configuration helper plugin, and check the
 [`gopls` configuration section][nvim-lspconfig] there.
 
@@ -165,7 +165,7 @@ lua <<EOF
   -- …
 
   function goimports(timeout_ms)
-    local context = { source = { organizeImports = true } }
+    local context = { only = { "source.organizeImports" } }
     vim.validate { context = { context, "t", true } }
 
     local params = vim.lsp.util.make_range_params()

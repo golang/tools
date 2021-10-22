@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/debug/log"
@@ -19,6 +20,7 @@ import (
 	"golang.org/x/tools/internal/lsp/mod"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/lsp/template"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
 	errors "golang.org/x/xerrors"
@@ -90,14 +92,26 @@ func (s *Server) diagnoseDetached(snapshot source.Snapshot) {
 	s.publishDiagnostics(ctx, true, snapshot)
 }
 
+func (s *Server) diagnoseSnapshots(snapshots map[source.Snapshot][]span.URI, onDisk bool) {
+	var diagnosticWG sync.WaitGroup
+	for snapshot, uris := range snapshots {
+		diagnosticWG.Add(1)
+		go func(snapshot source.Snapshot, uris []span.URI) {
+			defer diagnosticWG.Done()
+			s.diagnoseSnapshot(snapshot, uris, onDisk)
+		}(snapshot, uris)
+	}
+	diagnosticWG.Wait()
+}
+
 func (s *Server) diagnoseSnapshot(snapshot source.Snapshot, changedURIs []span.URI, onDisk bool) {
 	ctx := snapshot.BackgroundContext()
 	ctx, done := event.Start(ctx, "Server.diagnoseSnapshot", tag.Snapshot.Of(snapshot.ID()))
 	defer done()
 
-	delay := snapshot.View().Options().ExperimentalDiagnosticsDelay
+	delay := snapshot.View().Options().DiagnosticsDelay
 	if delay > 0 {
-		// Experimental 2-phase diagnostics.
+		// 2-phase diagnostics.
 		//
 		// The first phase just parses and checks packages that have been
 		// affected by file modifications (no analysis).
@@ -106,10 +120,10 @@ func (s *Server) diagnoseSnapshot(snapshot source.Snapshot, changedURIs []span.U
 		// delay.
 		s.diagnoseChangedFiles(ctx, snapshot, changedURIs, onDisk)
 		s.publishDiagnostics(ctx, false, snapshot)
-		s.debouncer.debounce(snapshot.View().Name(), snapshot.ID(), delay, func() {
+		if ok := <-s.diagDebouncer.debounce(snapshot.View().Name(), snapshot.ID(), time.After(delay)); ok {
 			s.diagnose(ctx, snapshot, false)
 			s.publishDiagnostics(ctx, true, snapshot)
-		})
+		}
 		return
 	}
 
@@ -139,7 +153,7 @@ func (s *Server) diagnoseChangedFiles(ctx context.Context, snapshot source.Snaps
 		if snapshot.IsBuiltin(ctx, uri) {
 			continue
 		}
-		pkgs, err := snapshot.PackagesForFile(ctx, uri, source.TypecheckFull)
+		pkgs, err := snapshot.PackagesForFile(ctx, uri, source.TypecheckFull, false)
 		if err != nil {
 			// TODO (findleyr): we should probably do something with the error here,
 			// but as of now this can fail repeatedly if load fails, so can be too
@@ -197,7 +211,7 @@ func (s *Server) diagnose(ctx context.Context, snapshot source.Snapshot, forceAn
 	}
 
 	// Diagnose all of the packages in the workspace.
-	wsPkgs, err := snapshot.WorkspacePackages(ctx)
+	wsPkgs, err := snapshot.ActivePackages(ctx)
 	if s.shouldIgnoreError(ctx, snapshot, err) {
 		return
 	}
@@ -208,6 +222,12 @@ func (s *Server) diagnose(ctx context.Context, snapshot source.Snapshot, forceAn
 	// will still be shown as a ShowMessage. If there is no error, any running
 	// error progress reports will be closed.
 	s.showCriticalErrorStatus(ctx, snapshot, criticalErr)
+
+	// There may be .tmpl files.
+	for _, f := range snapshot.Templates() {
+		diags := template.Diagnose(f)
+		s.storeDiagnostics(snapshot, f.URI(), typeCheckSource, diags)
+	}
 
 	// If there are no workspace packages, there is nothing to diagnose and
 	// there are no orphaned files.
@@ -372,12 +392,12 @@ func (s *Server) showCriticalErrorStatus(ctx context.Context, snapshot source.Sn
 		for _, d := range err.DiagList {
 			s.storeDiagnostics(snapshot, d.URI, modSource, []*source.Diagnostic{d})
 		}
-		errMsg = strings.Replace(err.MainError.Error(), "\n", " ", -1)
+		errMsg = strings.ReplaceAll(err.MainError.Error(), "\n", " ")
 	}
 
 	if s.criticalErrorStatus == nil {
 		if errMsg != "" {
-			s.criticalErrorStatus = s.progress.start(ctx, WorkspaceLoadFailure, errMsg, nil, nil)
+			s.criticalErrorStatus = s.progress.Start(ctx, WorkspaceLoadFailure, errMsg, nil, nil)
 		}
 		return
 	}
@@ -385,10 +405,10 @@ func (s *Server) showCriticalErrorStatus(ctx context.Context, snapshot source.Sn
 	// If an error is already shown to the user, update it or mark it as
 	// resolved.
 	if errMsg == "" {
-		s.criticalErrorStatus.end("Done.")
+		s.criticalErrorStatus.End("Done.")
 		s.criticalErrorStatus = nil
 	} else {
-		s.criticalErrorStatus.report(errMsg, 0)
+		s.criticalErrorStatus.Report(errMsg, 0)
 	}
 }
 
@@ -403,7 +423,7 @@ func (s *Server) checkForOrphanedFile(ctx context.Context, snapshot source.Snaps
 	if snapshot.IsBuiltin(ctx, fh.URI()) {
 		return nil
 	}
-	pkgs, err := snapshot.PackagesForFile(ctx, fh.URI(), source.TypecheckWorkspace)
+	pkgs, err := snapshot.PackagesForFile(ctx, fh.URI(), source.TypecheckWorkspace, false)
 	if len(pkgs) > 0 || err == nil {
 		return nil
 	}
@@ -419,6 +439,10 @@ func (s *Server) checkForOrphanedFile(ctx context.Context, snapshot source.Snaps
 	if err != nil {
 		return nil
 	}
+	// If the file no longer has a name ending in .go, this diagnostic is wrong
+	if filepath.Ext(fh.URI().Filename()) != ".go" {
+		return nil
+	}
 	// TODO(rstambler): We should be able to parse the build tags in the
 	// file and show a more specific error message. For now, put the diagnostic
 	// on the package declaration.
@@ -428,7 +452,7 @@ func (s *Server) checkForOrphanedFile(ctx context.Context, snapshot source.Snaps
 		Severity: protocol.SeverityWarning,
 		Source:   source.ListError,
 		Message: fmt.Sprintf(`No packages found for open file %s: %v.
-If this file contains build tags, try adding "-tags=<build tag>" to your gopls "buildFlag" configuration (see (https://github.com/golang/tools/blob/master/gopls/doc/settings.md#buildflags-string).
+If this file contains build tags, try adding "-tags=<build tag>" to your gopls "buildFlags" configuration (see (https://github.com/golang/tools/blob/master/gopls/doc/settings.md#buildflags-string).
 Otherwise, see the troubleshooting guidelines for help investigating (https://github.com/golang/tools/blob/master/gopls/doc/troubleshooting.md).
 `, fh.URI().Filename(), err),
 	}

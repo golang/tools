@@ -33,20 +33,23 @@ func extractVariable(fset *token.FileSet, rng span.Range, src []byte, file *ast.
 	// TODO: stricter rules for selectorExpr.
 	case *ast.BasicLit, *ast.CompositeLit, *ast.IndexExpr, *ast.SliceExpr,
 		*ast.UnaryExpr, *ast.BinaryExpr, *ast.SelectorExpr:
-		lhsNames = append(lhsNames, generateAvailableIdentifier(expr.Pos(), file, path, info, "x", 0))
+		lhsName, _ := generateAvailableIdentifier(expr.Pos(), file, path, info, "x", 0)
+		lhsNames = append(lhsNames, lhsName)
 	case *ast.CallExpr:
 		tup, ok := info.TypeOf(expr).(*types.Tuple)
 		if !ok {
 			// If the call expression only has one return value, we can treat it the
 			// same as our standard extract variable case.
-			lhsNames = append(lhsNames,
-				generateAvailableIdentifier(expr.Pos(), file, path, info, "x", 0))
+			lhsName, _ := generateAvailableIdentifier(expr.Pos(), file, path, info, "x", 0)
+			lhsNames = append(lhsNames, lhsName)
 			break
 		}
+		idx := 0
 		for i := 0; i < tup.Len(); i++ {
 			// Generate a unique variable for each return value.
-			lhsNames = append(lhsNames,
-				generateAvailableIdentifier(expr.Pos(), file, path, info, "x", i))
+			var lhsName string
+			lhsName, idx = generateAvailableIdentifier(expr.Pos(), file, path, info, "x", idx)
+			lhsNames = append(lhsNames, lhsName)
 		}
 	default:
 		return nil, fmt.Errorf("cannot extract %T", expr)
@@ -60,7 +63,11 @@ func extractVariable(fset *token.FileSet, rng span.Range, src []byte, file *ast.
 	if tok == nil {
 		return nil, fmt.Errorf("no file for pos %v", fset.Position(file.Pos()))
 	}
-	newLineIndent := "\n" + calculateIndentation(src, tok, insertBeforeStmt)
+	indent, err := calculateIndentation(src, tok, insertBeforeStmt)
+	if err != nil {
+		return nil, err
+	}
+	newLineIndent := "\n" + indent
 
 	lhs := strings.Join(lhsNames, ", ")
 	assignStmt := &ast.AssignStmt{
@@ -77,14 +84,14 @@ func extractVariable(fset *token.FileSet, rng span.Range, src []byte, file *ast.
 	return &analysis.SuggestedFix{
 		TextEdits: []analysis.TextEdit{
 			{
-				Pos:     rng.Start,
-				End:     rng.End,
-				NewText: []byte(lhs),
-			},
-			{
 				Pos:     insertBeforeStmt.Pos(),
 				End:     insertBeforeStmt.Pos(),
 				NewText: []byte(assignment),
+			},
+			{
+				Pos:     rng.Start,
+				End:     rng.End,
+				NewText: []byte(lhs),
 			},
 		},
 	}, nil
@@ -125,23 +132,38 @@ func CanExtractVariable(rng span.Range, file *ast.File) (ast.Expr, []ast.Node, b
 // When inserting lines of code, we must ensure that the lines have consistent
 // formatting (i.e. the proper indentation). To do so, we observe the indentation on the
 // line of code on which the insertion occurs.
-func calculateIndentation(content []byte, tok *token.File, insertBeforeStmt ast.Node) string {
+func calculateIndentation(content []byte, tok *token.File, insertBeforeStmt ast.Node) (string, error) {
 	line := tok.Line(insertBeforeStmt.Pos())
-	lineOffset := tok.Offset(tok.LineStart(line))
-	stmtOffset := tok.Offset(insertBeforeStmt.Pos())
-	return string(content[lineOffset:stmtOffset])
+	lineOffset, err := Offset(tok, tok.LineStart(line))
+	if err != nil {
+		return "", err
+	}
+	stmtOffset, err := Offset(tok, insertBeforeStmt.Pos())
+	if err != nil {
+		return "", err
+	}
+	return string(content[lineOffset:stmtOffset]), nil
 }
 
 // generateAvailableIdentifier adjusts the new function name until there are no collisons in scope.
-// Possible collisions include other function and variable names.
-func generateAvailableIdentifier(pos token.Pos, file *ast.File, path []ast.Node, info *types.Info, prefix string, idx int) string {
+// Possible collisions include other function and variable names. Returns the next index to check for prefix.
+func generateAvailableIdentifier(pos token.Pos, file *ast.File, path []ast.Node, info *types.Info, prefix string, idx int) (string, int) {
 	scopes := CollectScopes(info, path, pos)
-	name := prefix + fmt.Sprintf("%d", idx)
-	for file.Scope.Lookup(name) != nil || !isValidName(name, scopes) {
+	return generateIdentifier(idx, prefix, func(name string) bool {
+		return file.Scope.Lookup(name) != nil || !isValidName(name, scopes)
+	})
+}
+
+func generateIdentifier(idx int, prefix string, hasCollision func(string) bool) (string, int) {
+	name := prefix
+	if idx != 0 {
+		name += fmt.Sprintf("%d", idx)
+	}
+	for hasCollision(name) {
 		idx++
 		name = fmt.Sprintf("%v%d", prefix, idx)
 	}
-	return name
+	return name, idx + 1
 }
 
 // isValidName checks for variable collision in scope.
@@ -171,28 +193,42 @@ type returnVariable struct {
 	zeroVal ast.Expr
 }
 
+// extractMethod refactors the selected block of code into a new method.
+func extractMethod(fset *token.FileSet, rng span.Range, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
+	return extractFunctionMethod(fset, rng, src, file, pkg, info, true)
+}
+
 // extractFunction refactors the selected block of code into a new function.
+func extractFunction(fset *token.FileSet, rng span.Range, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
+	return extractFunctionMethod(fset, rng, src, file, pkg, info, false)
+}
+
+// extractFunctionMethod refactors the selected block of code into a new function/method.
 // It also replaces the selected block of code with a call to the extracted
 // function. First, we manually adjust the selection range. We remove trailing
 // and leading whitespace characters to ensure the range is precisely bounded
 // by AST nodes. Next, we determine the variables that will be the parameters
-// and return values of the extracted function. Lastly, we construct the call
-// of the function and insert this call as well as the extracted function into
+// and return values of the extracted function/method. Lastly, we construct the call
+// of the function/method and insert this call as well as the extracted function/method into
 // their proper locations.
-func extractFunction(fset *token.FileSet, rng span.Range, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
-	p, ok, err := CanExtractFunction(fset, rng, src, file)
-	if !ok {
-		return nil, fmt.Errorf("extractFunction: cannot extract %s: %v",
+func extractFunctionMethod(fset *token.FileSet, rng span.Range, src []byte, file *ast.File, pkg *types.Package, info *types.Info, isMethod bool) (*analysis.SuggestedFix, error) {
+	errorPrefix := "extractFunction"
+	if isMethod {
+		errorPrefix = "extractMethod"
+	}
+	p, ok, methodOk, err := CanExtractFunction(fset, rng, src, file)
+	if (!ok && !isMethod) || (!methodOk && isMethod) {
+		return nil, fmt.Errorf("%s: cannot extract %s: %v", errorPrefix,
 			fset.Position(rng.Start), err)
 	}
 	tok, path, rng, outer, start := p.tok, p.path, p.rng, p.outer, p.start
 	fileScope := info.Scopes[file]
 	if fileScope == nil {
-		return nil, fmt.Errorf("extractFunction: file scope is empty")
+		return nil, fmt.Errorf("%s: file scope is empty", errorPrefix)
 	}
 	pkgScope := fileScope.Parent()
 	if pkgScope == nil {
-		return nil, fmt.Errorf("extractFunction: package scope is empty")
+		return nil, fmt.Errorf("%s: package scope is empty", errorPrefix)
 	}
 
 	// A return statement is non-nested if its parent node is equal to the parent node
@@ -227,6 +263,25 @@ func extractFunction(fset *token.FileSet, rng span.Range, src []byte, file *ast.
 	variables, err := collectFreeVars(info, file, fileScope, pkgScope, rng, path[0])
 	if err != nil {
 		return nil, err
+	}
+
+	var (
+		receiverUsed bool
+		receiver     *ast.Field
+		receiverName string
+		receiverObj  types.Object
+	)
+	if isMethod {
+		if outer == nil || outer.Recv == nil || len(outer.Recv.List) == 0 {
+			return nil, fmt.Errorf("%s: cannot extract need method receiver", errorPrefix)
+		}
+		receiver = outer.Recv.List[0]
+		if len(receiver.Names) == 0 || receiver.Names[0] == nil {
+			return nil, fmt.Errorf("%s: cannot extract need method receiver name", errorPrefix)
+		}
+		recvName := receiver.Names[0]
+		receiverName = recvName.Name
+		receiverObj = info.ObjectOf(recvName)
 	}
 
 	var (
@@ -302,6 +357,11 @@ func extractFunction(fset *token.FileSet, rng span.Range, src []byte, file *ast.
 		// extracted function. (1) it must be free (isFree), and (2) its first
 		// use within the selection cannot be its own definition (isDefined).
 		if v.free && !v.defined {
+			// Skip the selector for a method.
+			if isMethod && v.obj == receiverObj {
+				receiverUsed = true
+				continue
+			}
 			params = append(params, identifier)
 			paramTypes = append(paramTypes, &ast.Field{
 				Names: []*ast.Ident{identifier},
@@ -340,8 +400,14 @@ func extractFunction(fset *token.FileSet, rng span.Range, src []byte, file *ast.
 
 	// We put the selection in a constructed file. We can then traverse and edit
 	// the extracted selection without modifying the original AST.
-	startOffset := tok.Offset(rng.Start)
-	endOffset := tok.Offset(rng.End)
+	startOffset, err := Offset(tok, rng.Start)
+	if err != nil {
+		return nil, err
+	}
+	endOffset, err := Offset(tok, rng.End)
+	if err != nil {
+		return nil, err
+	}
 	selection := src[startOffset:endOffset]
 	extractedBlock, err := parseBlockStmt(fset, selection)
 	if err != nil {
@@ -465,9 +531,17 @@ func extractFunction(fset *token.FileSet, rng span.Range, src []byte, file *ast.
 	if canDefine {
 		sym = token.DEFINE
 	}
-	funName := generateAvailableIdentifier(rng.Start, file, path, info, "fn", 0)
+	var name, funName string
+	if isMethod {
+		name = "newMethod"
+		// TODO(suzmue): generate a name that does not conflict for "newMethod".
+		funName = name
+	} else {
+		name = "newFunction"
+		funName, _ = generateAvailableIdentifier(rng.Start, file, path, info, name, 0)
+	}
 	extractedFunCall := generateFuncCall(hasNonNestedReturn, hasReturnValues, params,
-		append(returns, getNames(retVars)...), funName, sym)
+		append(returns, getNames(retVars)...), funName, sym, receiverName)
 
 	// Build the extracted function.
 	newFunc := &ast.FuncDecl{
@@ -477,6 +551,18 @@ func extractFunction(fset *token.FileSet, rng span.Range, src []byte, file *ast.
 			Results: &ast.FieldList{List: append(returnTypes, getDecls(retVars)...)},
 		},
 		Body: extractedBlock,
+	}
+	if isMethod {
+		var names []*ast.Ident
+		if receiverUsed {
+			names = append(names, ast.NewIdent(receiverName))
+		}
+		newFunc.Recv = &ast.FieldList{
+			List: []*ast.Field{{
+				Names: names,
+				Type:  receiver.Type,
+			}},
+		}
 	}
 
 	// Create variable declarations for any identifiers that need to be initialized prior to
@@ -514,11 +600,21 @@ func extractFunction(fset *token.FileSet, rng span.Range, src []byte, file *ast.
 
 	// We're going to replace the whole enclosing function,
 	// so preserve the text before and after the selected block.
-	outerStart := tok.Offset(outer.Pos())
-	outerEnd := tok.Offset(outer.End())
+	outerStart, err := Offset(tok, outer.Pos())
+	if err != nil {
+		return nil, err
+	}
+	outerEnd, err := Offset(tok, outer.End())
+	if err != nil {
+		return nil, err
+	}
 	before := src[outerStart:startOffset]
 	after := src[endOffset:outerEnd]
-	newLineIndent := "\n" + calculateIndentation(src, tok, start)
+	indent, err := calculateIndentation(src, tok, start)
+	if err != nil {
+		return nil, err
+	}
+	newLineIndent := "\n" + indent
 
 	var fullReplacement strings.Builder
 	fullReplacement.Write(before)
@@ -564,8 +660,11 @@ func extractFunction(fset *token.FileSet, rng span.Range, src []byte, file *ast.
 // their cursors for whitespace. To support this use case, we must manually adjust the
 // ranges to match the correct AST node. In this particular example, we would adjust
 // rng.Start forward by one byte, and rng.End backwards by two bytes.
-func adjustRangeForWhitespace(rng span.Range, tok *token.File, content []byte) span.Range {
-	offset := tok.Offset(rng.Start)
+func adjustRangeForWhitespace(rng span.Range, tok *token.File, content []byte) (span.Range, error) {
+	offset, err := Offset(tok, rng.Start)
+	if err != nil {
+		return span.Range{}, err
+	}
 	for offset < len(content) {
 		if !unicode.IsSpace(rune(content[offset])) {
 			break
@@ -576,7 +675,10 @@ func adjustRangeForWhitespace(rng span.Range, tok *token.File, content []byte) s
 	rng.Start = tok.Pos(offset)
 
 	// Move backwards to find a non-whitespace character.
-	offset = tok.Offset(rng.End)
+	offset, err = Offset(tok, rng.End)
+	if err != nil {
+		return span.Range{}, err
+	}
 	for o := offset - 1; 0 <= o && o < len(content); o-- {
 		if !unicode.IsSpace(rune(content[o])) {
 			break
@@ -584,7 +686,7 @@ func adjustRangeForWhitespace(rng span.Range, tok *token.File, content []byte) s
 		offset = o
 	}
 	rng.End = tok.Pos(offset)
-	return rng
+	return rng, nil
 }
 
 // findParent finds the parent AST node of the given target node, if the target is a
@@ -838,24 +940,28 @@ type fnExtractParams struct {
 
 // CanExtractFunction reports whether the code in the given range can be
 // extracted to a function.
-func CanExtractFunction(fset *token.FileSet, rng span.Range, src []byte, file *ast.File) (*fnExtractParams, bool, error) {
+func CanExtractFunction(fset *token.FileSet, rng span.Range, src []byte, file *ast.File) (*fnExtractParams, bool, bool, error) {
 	if rng.Start == rng.End {
-		return nil, false, fmt.Errorf("start and end are equal")
+		return nil, false, false, fmt.Errorf("start and end are equal")
 	}
 	tok := fset.File(file.Pos())
 	if tok == nil {
-		return nil, false, fmt.Errorf("no file for pos %v", fset.Position(file.Pos()))
+		return nil, false, false, fmt.Errorf("no file for pos %v", fset.Position(file.Pos()))
 	}
-	rng = adjustRangeForWhitespace(rng, tok, src)
+	var err error
+	rng, err = adjustRangeForWhitespace(rng, tok, src)
+	if err != nil {
+		return nil, false, false, err
+	}
 	path, _ := astutil.PathEnclosingInterval(file, rng.Start, rng.End)
 	if len(path) == 0 {
-		return nil, false, fmt.Errorf("no path enclosing interval")
+		return nil, false, false, fmt.Errorf("no path enclosing interval")
 	}
 	// Node that encloses the selection must be a statement.
 	// TODO: Support function extraction for an expression.
 	_, ok := path[0].(ast.Stmt)
 	if !ok {
-		return nil, false, fmt.Errorf("node is not a statement")
+		return nil, false, false, fmt.Errorf("node is not a statement")
 	}
 
 	// Find the function declaration that encloses the selection.
@@ -867,7 +973,7 @@ func CanExtractFunction(fset *token.FileSet, rng span.Range, src []byte, file *a
 		}
 	}
 	if outer == nil {
-		return nil, false, fmt.Errorf("no enclosing function")
+		return nil, false, false, fmt.Errorf("no enclosing function")
 	}
 
 	// Find the nodes at the start and end of the selection.
@@ -887,7 +993,17 @@ func CanExtractFunction(fset *token.FileSet, rng span.Range, src []byte, file *a
 		return n.Pos() <= rng.End
 	})
 	if start == nil || end == nil {
-		return nil, false, fmt.Errorf("range does not map to AST nodes")
+		return nil, false, false, fmt.Errorf("range does not map to AST nodes")
+	}
+	// If the region is a blockStmt, use the first and last nodes in the block
+	// statement.
+	// <rng.start>{ ... }<rng.end> => { <rng.start>...<rng.end> }
+	if blockStmt, ok := start.(*ast.BlockStmt); ok {
+		if len(blockStmt.List) == 0 {
+			return nil, false, false, fmt.Errorf("range maps to empty block statement")
+		}
+		start, end = blockStmt.List[0], blockStmt.List[len(blockStmt.List)-1]
+		rng.Start, rng.End = start.Pos(), end.End()
 	}
 	return &fnExtractParams{
 		tok:   tok,
@@ -895,7 +1011,7 @@ func CanExtractFunction(fset *token.FileSet, rng span.Range, src []byte, file *a
 		rng:   rng,
 		outer: outer,
 		start: start,
-	}, true, nil
+	}, true, outer.Recv != nil, nil
 }
 
 // objUsed checks if the object is used within the range. It returns the first
@@ -996,7 +1112,8 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 	var cond *ast.Ident
 	if !hasNonNestedReturns {
 		// Generate information for the added bool value.
-		cond = &ast.Ident{Name: generateAvailableIdentifier(pos, file, path, info, "cond", 0)}
+		name, _ := generateAvailableIdentifier(pos, file, path, info, "shouldReturn", 0)
+		cond = &ast.Ident{Name: name}
 		retVars = append(retVars, &returnVariable{
 			name:    cond,
 			decl:    &ast.Field{Type: ast.NewIdent("bool")},
@@ -1005,7 +1122,8 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 	}
 	// Generate information for the values in the return signature of the enclosing function.
 	if enclosing.Results != nil {
-		for i, field := range enclosing.Results.List {
+		idx := 0
+		for _, field := range enclosing.Results.List {
 			typ := info.TypeOf(field.Type)
 			if typ == nil {
 				return nil, nil, fmt.Errorf(
@@ -1015,9 +1133,11 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 			if expr == nil {
 				return nil, nil, fmt.Errorf("nil AST expression")
 			}
+			var name string
+			name, idx = generateAvailableIdentifier(pos, file,
+				path, info, "returnValue", idx)
 			retVars = append(retVars, &returnVariable{
-				name: ast.NewIdent(generateAvailableIdentifier(pos, file,
-					path, info, "ret", i)),
+				name: ast.NewIdent(name),
 				decl: &ast.Field{Type: expr},
 				zeroVal: analysisinternal.ZeroValue(
 					fset, file, pkg, typ),
@@ -1079,13 +1199,22 @@ func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]
 
 // generateFuncCall constructs a call expression for the extracted function, described by the
 // given parameters and return variables.
-func generateFuncCall(hasNonNestedReturn, hasReturnVals bool, params, returns []ast.Expr, name string, token token.Token) ast.Node {
+func generateFuncCall(hasNonNestedReturn, hasReturnVals bool, params, returns []ast.Expr, name string, token token.Token, selector string) ast.Node {
 	var replace ast.Node
-	if hasReturnVals {
-		callExpr := &ast.CallExpr{
-			Fun:  ast.NewIdent(name),
+	callExpr := &ast.CallExpr{
+		Fun:  ast.NewIdent(name),
+		Args: params,
+	}
+	if selector != "" {
+		callExpr = &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   ast.NewIdent(selector),
+				Sel: ast.NewIdent(name),
+			},
 			Args: params,
 		}
+	}
+	if hasReturnVals {
 		if hasNonNestedReturn {
 			// Create a return statement that returns the result of the function call.
 			replace = &ast.ReturnStmt{
@@ -1101,10 +1230,7 @@ func generateFuncCall(hasNonNestedReturn, hasReturnVals bool, params, returns []
 			}
 		}
 	} else {
-		replace = &ast.CallExpr{
-			Fun:  ast.NewIdent(name),
-			Args: params,
-		}
+		replace = callExpr
 	}
 	return replace
 }

@@ -7,7 +7,6 @@ package fake
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"golang.org/x/tools/internal/lsp/protocol"
 )
@@ -111,27 +110,19 @@ func (c *Client) WorkDoneProgressCreate(ctx context.Context, params *protocol.Wo
 	return nil
 }
 
+func (c *Client) ShowDocument(context.Context, *protocol.ShowDocumentParams) (*protocol.ShowDocumentResult, error) {
+	return nil, nil
+}
+
 // ApplyEdit applies edits sent from the server.
-func (c *Client) ApplyEdit(ctx context.Context, params *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResponse, error) {
+func (c *Client) ApplyEdit(ctx context.Context, params *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResult, error) {
 	if len(params.Edit.Changes) != 0 {
-		return &protocol.ApplyWorkspaceEditResponse{FailureReason: "Edit.Changes is unsupported"}, nil
+		return &protocol.ApplyWorkspaceEditResult{FailureReason: "Edit.Changes is unsupported"}, nil
 	}
 	for _, change := range params.Edit.DocumentChanges {
-		path := c.editor.sandbox.Workdir.URIToPath(change.TextDocument.URI)
-		edits := convertEdits(change.Edits)
-		if !c.editor.HasBuffer(path) {
-			err := c.editor.OpenFile(ctx, path)
-			if os.IsNotExist(err) {
-				c.editor.CreateBuffer(ctx, path, "")
-				err = nil
-			}
-			if err != nil {
-				return nil, err
-			}
-		}
-		if err := c.editor.EditBuffer(ctx, path, edits); err != nil {
+		if err := c.editor.applyProtocolEdit(ctx, change); err != nil {
 			return nil, err
 		}
 	}
-	return &protocol.ApplyWorkspaceEditResponse{Applied: true}, nil
+	return &protocol.ApplyWorkspaceEditResult{Applied: true}, nil
 }

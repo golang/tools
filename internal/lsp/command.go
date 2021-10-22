@@ -18,9 +18,9 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
-	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/command"
 	"golang.org/x/tools/internal/lsp/debug"
+	"golang.org/x/tools/internal/lsp/progress"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
@@ -54,7 +54,7 @@ type commandHandler struct {
 
 // commandConfig configures common command set-up and execution.
 type commandConfig struct {
-	async       bool                 // whether to run the command asynchronously. Async commands cannot return results.
+	async       bool                 // whether to run the command asynchronously. Async commands can only return errors.
 	requireSave bool                 // whether all files must be saved for the command to work
 	progress    string               // title to use for progress reporting. If empty, no progress will be reported.
 	forURI      protocol.DocumentURI // URI to resolve to a snapshot. If unset, snapshot will be nil.
@@ -66,17 +66,21 @@ type commandConfig struct {
 type commandDeps struct {
 	snapshot source.Snapshot            // present if cfg.forURI was set
 	fh       source.VersionedFileHandle // present if cfg.forURI was set
-	work     *workDone                  // present cfg.progress was set
+	work     *progress.WorkDone         // present cfg.progress was set
 }
 
 type commandFunc func(context.Context, commandDeps) error
 
 func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run commandFunc) (err error) {
 	if cfg.requireSave {
+		var unsaved []string
 		for _, overlay := range c.s.session.Overlays() {
 			if !overlay.Saved() {
-				return errors.New("All files must be saved first")
+				unsaved = append(unsaved, overlay.URI().Filename())
 			}
+		}
+		if len(unsaved) > 0 {
+			return errors.Errorf("All files must be saved first (unsaved: %v).", unsaved)
 		}
 	}
 	var deps commandDeps
@@ -91,24 +95,35 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 	}
 	ctx, cancel := context.WithCancel(xcontext.Detach(ctx))
 	if cfg.progress != "" {
-		deps.work = c.s.progress.start(ctx, cfg.progress, "Running...", c.params.WorkDoneToken, cancel)
+		deps.work = c.s.progress.Start(ctx, cfg.progress, "Running...", c.params.WorkDoneToken, cancel)
 	}
 	runcmd := func() error {
 		defer cancel()
 		err := run(ctx, deps)
-		switch {
-		case errors.Is(err, context.Canceled):
-			deps.work.end("canceled")
-		case err != nil:
-			event.Error(ctx, "command error", err)
-			deps.work.end("failed")
-		default:
-			deps.work.end("completed")
+		if deps.work != nil {
+			switch {
+			case errors.Is(err, context.Canceled):
+				deps.work.End("canceled")
+			case err != nil:
+				event.Error(ctx, "command error", err)
+				deps.work.End("failed")
+			default:
+				deps.work.End("completed")
+			}
 		}
 		return err
 	}
 	if cfg.async {
-		go runcmd()
+		go func() {
+			if err := runcmd(); err != nil {
+				if showMessageErr := c.s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+					Type:    protocol.Error,
+					Message: err.Error(),
+				}); showMessageErr != nil {
+					event.Error(ctx, fmt.Sprintf("failed to show message: %q", err.Error()), showMessageErr)
+				}
+			}
+		}()
 		return nil
 	}
 	return runcmd()
@@ -335,22 +350,15 @@ func (c *commandHandler) RunTests(ctx context.Context, args command.RunTestsArgs
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		if err := c.runTests(ctx, deps.snapshot, deps.work, args.URI, args.Tests, args.Benchmarks); err != nil {
-			if err := c.s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
-				Type:    protocol.Error,
-				Message: fmt.Sprintf("Running tests failed: %v", err),
-			}); err != nil {
-				event.Error(ctx, "running tests: failed to show message", err)
-			}
+			return errors.Errorf("running tests failed: %w", err)
 		}
-		// Since we're running asynchronously, any error returned here would be
-		// ignored.
 		return nil
 	})
 }
 
-func (c *commandHandler) runTests(ctx context.Context, snapshot source.Snapshot, work *workDone, uri protocol.DocumentURI, tests, benchmarks []string) error {
+func (c *commandHandler) runTests(ctx context.Context, snapshot source.Snapshot, work *progress.WorkDone, uri protocol.DocumentURI, tests, benchmarks []string) error {
 	// TODO: fix the error reporting when this runs async.
-	pkgs, err := snapshot.PackagesForFile(ctx, uri.SpanURI(), source.TypecheckWorkspace)
+	pkgs, err := snapshot.PackagesForFile(ctx, uri.SpanURI(), source.TypecheckWorkspace, false)
 	if err != nil {
 		return err
 	}
@@ -361,8 +369,8 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot source.Snapshot,
 
 	// create output
 	buf := &bytes.Buffer{}
-	ew := &eventWriter{ctx: ctx, operation: "test"}
-	out := io.MultiWriter(ew, workDoneWriter{work}, buf)
+	ew := progress.NewEventWriter(ctx, "test")
+	out := io.MultiWriter(ew, progress.NewWorkDoneWriter(work), buf)
 
 	// Run `go test -run Func` on each test.
 	var failedTests int
@@ -434,7 +442,7 @@ func (c *commandHandler) Generate(ctx context.Context, args command.GenerateArgs
 		progress:    title,
 		forURI:      args.Dir,
 	}, func(ctx context.Context, deps commandDeps) error {
-		er := &eventWriter{ctx: ctx, operation: "generate"}
+		er := progress.NewEventWriter(ctx, "generate")
 
 		pattern := "."
 		if args.Recursive {
@@ -445,7 +453,7 @@ func (c *commandHandler) Generate(ctx context.Context, args command.GenerateArgs
 			Args:       []string{"-x", pattern},
 			WorkingDir: args.Dir.SpanURI().Filename(),
 		}
-		stderr := io.MultiWriter(er, workDoneWriter{deps.work})
+		stderr := io.MultiWriter(er, progress.NewWorkDoneWriter(deps.work))
 		if err := deps.snapshot.RunGoCommandPiped(ctx, source.Normal, inv, er, stderr); err != nil {
 			return err
 		}
@@ -645,7 +653,7 @@ func (c *commandHandler) GenerateGoplsMod(ctx context.Context, args command.URIA
 		v := views[0]
 		snapshot, release := v.Snapshot(ctx)
 		defer release()
-		modFile, err := cache.BuildGoplsMod(ctx, snapshot.View().Folder(), snapshot)
+		modFile, err := snapshot.BuildGoplsMod(ctx)
 		if err != nil {
 			return errors.Errorf("getting workspace mod file: %w", err)
 		}
@@ -664,26 +672,33 @@ func (c *commandHandler) GenerateGoplsMod(ctx context.Context, args command.URIA
 func (c *commandHandler) ListKnownPackages(ctx context.Context, args command.URIArg) (command.ListKnownPackagesResult, error) {
 	var result command.ListKnownPackagesResult
 	err := c.run(ctx, commandConfig{
-		progress: "Listing packages", // optional, causes a progress report during command execution
-		forURI:   args.URI,           // optional, populates deps.snapshot and deps.fh
+		progress: "Listing packages",
+		forURI:   args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		// Marwan: add implementation here. deps.snapshot and deps.fh are available for use.
-		result.Packages = []string{}
-		return nil
+		var err error
+		result.Packages, err = source.KnownPackages(ctx, deps.snapshot, deps.fh)
+		return err
 	})
 	return result, err
 }
-
-func (c *commandHandler) AddImport(ctx context.Context, args command.AddImportArgs) (command.AddImportResult, error) {
-	var result command.AddImportResult
-	err := c.run(ctx, commandConfig{
+func (c *commandHandler) AddImport(ctx context.Context, args command.AddImportArgs) error {
+	return c.run(ctx, commandConfig{
 		progress: "Adding import",
 		forURI:   args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		result.Edits = nil
+		edits, err := source.AddImport(ctx, deps.snapshot, deps.fh, args.ImportPath)
+		if err != nil {
+			return fmt.Errorf("could not add import: %v", err)
+		}
+		if _, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
+			Edit: protocol.WorkspaceEdit{
+				DocumentChanges: documentChanges(deps.fh, edits),
+			},
+		}); err != nil {
+			return fmt.Errorf("could not apply import edits: %v", err)
+		}
 		return nil
 	})
-	return result, err
 }
 
 func (c *commandHandler) WorkspaceMetadata(ctx context.Context) (command.WorkspaceMetadataResult, error) {

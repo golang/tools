@@ -7,19 +7,26 @@ package source
 import (
 	"context"
 	"fmt"
-	"go/ast"
-	"go/token"
 	"go/types"
+	"runtime"
 	"sort"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/fuzzy"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
 )
+
+// Symbol holds a precomputed symbol value. Note: we avoid using the
+// protocol.SymbolInformation struct here in order to reduce the size of each
+// symbol.
+type Symbol struct {
+	Name  string
+	Kind  protocol.SymbolKind
+	Range protocol.Range
+}
 
 // maxSymbols defines the maximum number of symbol results that should ever be
 // sent in response to a client.
@@ -52,82 +59,80 @@ func WorkspaceSymbols(ctx context.Context, matcherType SymbolMatcher, style Symb
 	return sc.walk(ctx, views)
 }
 
-// A matcherFunc determines the matching score of a symbol.
+// A matcherFunc returns the index and score of a symbol match.
 //
 // See the comment for symbolCollector for more information.
-type matcherFunc func(name string) float64
+type matcherFunc func(chunks []string) (int, float64)
 
-// A symbolizer returns the best symbol match for name with pkg, according to
-// some heuristic.
+// A symbolizer returns the best symbol match for a name with pkg, according to
+// some heuristic. The symbol name is passed as the slice nameParts of logical
+// name pieces. For example, for myType.field the caller can pass either
+// []string{"myType.field"} or []string{"myType.", "field"}.
 //
 // See the comment for symbolCollector for more information.
-type symbolizer func(name string, pkg Package, m matcherFunc) (string, float64)
+type symbolizer func(name string, pkg Metadata, m matcherFunc) ([]string, float64)
 
-func fullyQualifiedSymbolMatch(name string, pkg Package, matcher matcherFunc) (string, float64) {
+func fullyQualifiedSymbolMatch(name string, pkg Metadata, matcher matcherFunc) ([]string, float64) {
 	_, score := dynamicSymbolMatch(name, pkg, matcher)
 	if score > 0 {
-		return pkg.PkgPath() + "." + name, score
+		return []string{pkg.PackagePath(), ".", name}, score
 	}
-	return "", 0
+	return nil, 0
 }
 
-func dynamicSymbolMatch(name string, pkg Package, matcher matcherFunc) (string, float64) {
-	// Prefer any package-qualified match.
-	pkgQualified := pkg.Name() + "." + name
-	if match, score := bestMatch(pkgQualified, matcher); match != "" {
-		return match, score
-	}
-	fullyQualified := pkg.PkgPath() + "." + name
-	if match, score := bestMatch(fullyQualified, matcher); match != "" {
-		return match, score
-	}
-	return "", 0
-}
-
-func packageSymbolMatch(name string, pkg Package, matcher matcherFunc) (string, float64) {
-	qualified := pkg.Name() + "." + name
-	if matcher(qualified) > 0 {
-		return qualified, 1
-	}
-	return "", 0
-}
-
-// bestMatch returns the highest scoring symbol suffix of fullPath, starting
-// from the right and splitting on selectors and path components.
-//
-// e.g. given a symbol path of the form 'host.com/dir/pkg.type.field', we
-// check the match quality of the following:
-//  - field
-//  - type.field
-//  - pkg.type.field
-//  - dir/pkg.type.field
-//  - host.com/dir/pkg.type.field
-//
-// and return the best match, along with its score.
-//
-// This is used to implement the 'dynamic' symbol style.
-func bestMatch(fullPath string, matcher matcherFunc) (string, float64) {
-	pathParts := strings.Split(fullPath, "/")
-	dottedParts := strings.Split(pathParts[len(pathParts)-1], ".")
-
-	var best string
+func dynamicSymbolMatch(name string, pkg Metadata, matcher matcherFunc) ([]string, float64) {
 	var score float64
 
-	for i := 0; i < len(dottedParts); i++ {
-		path := strings.Join(dottedParts[len(dottedParts)-1-i:], ".")
-		if match := matcher(path); match > score {
-			best = path
-			score = match
+	endsInPkgName := strings.HasSuffix(pkg.PackagePath(), pkg.PackageName())
+
+	// If the package path does not end in the package name, we need to check the
+	// package-qualified symbol as an extra pass first.
+	if !endsInPkgName {
+		pkgQualified := []string{pkg.PackageName(), ".", name}
+		idx, score := matcher(pkgQualified)
+		nameStart := len(pkg.PackageName()) + 1
+		if score > 0 {
+			// If our match is contained entirely within the unqualified portion,
+			// just return that.
+			if idx >= nameStart {
+				return []string{name}, score
+			}
+			// Lower the score for matches that include the package name.
+			return pkgQualified, score * 0.8
 		}
 	}
-	for i := 0; i < len(pathParts); i++ {
-		path := strings.Join(pathParts[len(pathParts)-1-i:], "/")
-		if match := matcher(path); match > score {
-			best = path
-			score = match
+
+	// Now try matching the fully qualified symbol.
+	fullyQualified := []string{pkg.PackagePath(), ".", name}
+	idx, score := matcher(fullyQualified)
+
+	// As above, check if we matched just the unqualified symbol name.
+	nameStart := len(pkg.PackagePath()) + 1
+	if idx >= nameStart {
+		return []string{name}, score
+	}
+
+	// If our package path ends in the package name, we'll have skipped the
+	// initial pass above, so check if we matched just the package-qualified
+	// name.
+	if endsInPkgName && idx >= 0 {
+		pkgStart := len(pkg.PackagePath()) - len(pkg.PackageName())
+		if idx >= pkgStart {
+			return []string{pkg.PackageName(), ".", name}, score
 		}
 	}
-	return best, score
+
+	// Our match was not contained within the unqualified or package qualified
+	// symbol. Return the fully qualified symbol but discount the score.
+	return fullyQualified, score * 0.6
+}
+
+func packageSymbolMatch(name string, pkg Metadata, matcher matcherFunc) ([]string, float64) {
+	qualified := []string{pkg.PackageName(), ".", name}
+	if _, s := matcher(qualified); s > 0 {
+		return qualified, s
+	}
+	return nil, 0
 }
 
 // symbolCollector holds context as we walk Packages, gathering symbols that
@@ -141,39 +146,14 @@ func bestMatch(fullPath string, matcher matcherFunc) (string, float64) {
 //    enables the 'symbolStyle' configuration option.
 type symbolCollector struct {
 	// These types parameterize the symbol-matching pass.
-	matcher    matcherFunc
+	matchers   []matcherFunc
 	symbolizer symbolizer
 
-	// current holds metadata for the package we are currently walking.
-	current *pkgView
-	curFile *ParsedGoFile
-
-	res [maxSymbols]symbolInformation
+	seen map[span.URI]bool
+	symbolStore
 }
 
 func newSymbolCollector(matcher SymbolMatcher, style SymbolStyle, query string) *symbolCollector {
-	var m matcherFunc
-	switch matcher {
-	case SymbolFuzzy:
-		m = parseQuery(query)
-	case SymbolCaseSensitive:
-		m = func(s string) float64 {
-			if strings.Contains(s, query) {
-				return 1
-			}
-			return 0
-		}
-	case SymbolCaseInsensitive:
-		q := strings.ToLower(query)
-		m = func(s string) float64 {
-			if strings.Contains(strings.ToLower(s), q) {
-				return 1
-			}
-			return 0
-		}
-	default:
-		panic(fmt.Errorf("unknown symbol matcher: %v", matcher))
-	}
 	var s symbolizer
 	switch style {
 	case DynamicSymbols:
@@ -185,10 +165,33 @@ func newSymbolCollector(matcher SymbolMatcher, style SymbolStyle, query string) 
 	default:
 		panic(fmt.Errorf("unknown symbol style: %v", style))
 	}
-	return &symbolCollector{
-		matcher:    m,
-		symbolizer: s,
+	sc := &symbolCollector{symbolizer: s}
+	sc.matchers = make([]matcherFunc, runtime.GOMAXPROCS(-1))
+	for i := range sc.matchers {
+		sc.matchers[i] = buildMatcher(matcher, query)
 	}
+	return sc
+}
+
+func buildMatcher(matcher SymbolMatcher, query string) matcherFunc {
+	switch matcher {
+	case SymbolFuzzy:
+		return parseQuery(query)
+	case SymbolFastFuzzy:
+		return fuzzy.NewSymbolMatcher(query).Match
+	case SymbolCaseSensitive:
+		return matchExact(query)
+	case SymbolCaseInsensitive:
+		q := strings.ToLower(query)
+		exact := matchExact(q)
+		wrapper := []string{""}
+		return func(chunks []string) (int, float64) {
+			s := strings.Join(chunks, "")
+			wrapper[0] = strings.ToLower(s)
+			return exact(wrapper)
+		}
+	}
+	panic(fmt.Errorf("unknown symbol matcher: %v", matcher))
 }
 
 // parseQuery parses a field-separated symbol query, extracting the special
@@ -206,7 +209,7 @@ func newSymbolCollector(matcher SymbolMatcher, style SymbolStyle, query string) 
 func parseQuery(q string) matcherFunc {
 	fields := strings.Fields(q)
 	if len(fields) == 0 {
-		return func(string) float64 { return 0 }
+		return func([]string) (int, float64) { return -1, 0 }
 	}
 	var funcs []matcherFunc
 	for _, field := range fields {
@@ -214,85 +217,276 @@ func parseQuery(q string) matcherFunc {
 		switch {
 		case strings.HasPrefix(field, "^"):
 			prefix := field[1:]
-			f = smartCase(prefix, func(s string) float64 {
+			f = smartCase(prefix, func(chunks []string) (int, float64) {
+				s := strings.Join(chunks, "")
 				if strings.HasPrefix(s, prefix) {
-					return 1
+					return 0, 1
 				}
-				return 0
+				return -1, 0
 			})
 		case strings.HasPrefix(field, "'"):
 			exact := field[1:]
-			f = smartCase(exact, func(s string) float64 {
-				if strings.Contains(s, exact) {
-					return 1
-				}
-				return 0
-			})
+			f = smartCase(exact, matchExact(exact))
 		case strings.HasSuffix(field, "$"):
 			suffix := field[0 : len(field)-1]
-			f = smartCase(suffix, func(s string) float64 {
+			f = smartCase(suffix, func(chunks []string) (int, float64) {
+				s := strings.Join(chunks, "")
 				if strings.HasSuffix(s, suffix) {
-					return 1
+					return len(s) - len(suffix), 1
 				}
-				return 0
+				return -1, 0
 			})
 		default:
 			fm := fuzzy.NewMatcher(field)
-			f = func(s string) float64 {
-				return float64(fm.Score(s))
+			f = func(chunks []string) (int, float64) {
+				score := float64(fm.ScoreChunks(chunks))
+				ranges := fm.MatchedRanges()
+				if len(ranges) > 0 {
+					return ranges[0], score
+				}
+				return -1, score
 			}
 		}
 		funcs = append(funcs, f)
 	}
+	if len(funcs) == 1 {
+		return funcs[0]
+	}
 	return comboMatcher(funcs).match
+}
+
+func matchExact(exact string) matcherFunc {
+	return func(chunks []string) (int, float64) {
+		s := strings.Join(chunks, "")
+		if idx := strings.LastIndex(s, exact); idx >= 0 {
+			return idx, 1
+		}
+		return -1, 0
+	}
 }
 
 // smartCase returns a matcherFunc that is case-sensitive if q contains any
 // upper-case characters, and case-insensitive otherwise.
 func smartCase(q string, m matcherFunc) matcherFunc {
 	insensitive := strings.ToLower(q) == q
-	return func(s string) float64 {
+	wrapper := []string{""}
+	return func(chunks []string) (int, float64) {
+		s := strings.Join(chunks, "")
 		if insensitive {
 			s = strings.ToLower(s)
 		}
-		return m(s)
+		wrapper[0] = s
+		return m(wrapper)
 	}
 }
 
 type comboMatcher []matcherFunc
 
-func (c comboMatcher) match(s string) float64 {
+func (c comboMatcher) match(chunks []string) (int, float64) {
 	score := 1.0
+	first := 0
 	for _, f := range c {
-		score *= f(s)
+		idx, s := f(chunks)
+		if idx < first {
+			first = idx
+		}
+		score *= s
 	}
-	return score
+	return first, score
 }
 
-// walk walks views, gathers symbols, and returns the results.
-func (sc *symbolCollector) walk(ctx context.Context, views []View) (_ []protocol.SymbolInformation, err error) {
-	toWalk, err := sc.collectPackages(ctx, views)
-	if err != nil {
-		return nil, err
+func (sc *symbolCollector) walk(ctx context.Context, views []View) ([]protocol.SymbolInformation, error) {
+
+	// Use the root view URIs for determining (lexically) whether a uri is in any
+	// open workspace.
+	var roots []string
+	for _, v := range views {
+		roots = append(roots, strings.TrimRight(string(v.Folder()), "/"))
 	}
-	// Make sure we only walk files once (we might see them more than once due to
-	// build constraints).
-	seen := make(map[span.URI]bool)
-	for _, pv := range toWalk {
-		sc.current = pv
-		for _, pgf := range pv.pkg.CompiledGoFiles() {
-			if seen[pgf.URI] {
+
+	results := make(chan *symbolStore)
+	matcherlen := len(sc.matchers)
+	files := make(map[span.URI]symbolFile)
+
+	for _, v := range views {
+		snapshot, release := v.Snapshot(ctx)
+		defer release()
+		psyms, err := snapshot.Symbols(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for uri, syms := range psyms {
+			// Only scan each file once.
+			if _, ok := files[uri]; ok {
 				continue
 			}
-			seen[pgf.URI] = true
-			sc.curFile = pgf
-			sc.walkFilesDecls(pgf.File.Decls)
+			mds, err := snapshot.MetadataForFile(ctx, uri)
+			if err != nil {
+				return nil, err
+			}
+			if len(mds) == 0 {
+				// TODO: should use the bug reporting API
+				continue
+			}
+			files[uri] = symbolFile{uri, mds[0], syms}
+		}
+	}
+
+	var work []symbolFile
+	for _, f := range files {
+		work = append(work, f)
+	}
+
+	// Compute matches concurrently. Each symbolWorker has its own symbolStore,
+	// which we merge at the end.
+	for i, matcher := range sc.matchers {
+		go func(i int, matcher matcherFunc) {
+			w := &symbolWorker{
+				symbolizer: sc.symbolizer,
+				matcher:    matcher,
+				ss:         &symbolStore{},
+				roots:      roots,
+			}
+			for j := i; j < len(work); j += matcherlen {
+				w.matchFile(work[j])
+			}
+			results <- w.ss
+		}(i, matcher)
+	}
+
+	for i := 0; i < matcherlen; i++ {
+		ss := <-results
+		for _, si := range ss.res {
+			sc.store(si)
 		}
 	}
 	return sc.results(), nil
 }
 
-func (sc *symbolCollector) results() []protocol.SymbolInformation {
+// symbolFile holds symbol information for a single file.
+type symbolFile struct {
+	uri  span.URI
+	md   Metadata
+	syms []Symbol
+}
+
+// symbolWorker matches symbols and captures the highest scoring results.
+type symbolWorker struct {
+	symbolizer symbolizer
+	matcher    matcherFunc
+	ss         *symbolStore
+	roots      []string
+}
+
+func (w *symbolWorker) matchFile(i symbolFile) {
+	for _, sym := range i.syms {
+		symbolParts, score := w.symbolizer(sym.Name, i.md, w.matcher)
+
+		// Check if the score is too low before applying any downranking.
+		if w.ss.tooLow(score) {
+			continue
+		}
+
+		// Factors to apply to the match score for the purpose of downranking
+		// results.
+		//
+		// These numbers were crudely calibrated based on trial-and-error using a
+		// small number of sample queries. Adjust as necessary.
+		//
+		// All factors are multiplicative, meaning if more than one applies they are
+		// multiplied together.
+		const (
+			// nonWorkspaceFactor is applied to symbols outside of any active
+			// workspace. Developers are less likely to want to jump to code that they
+			// are not actively working on.
+			nonWorkspaceFactor = 0.5
+			// nonWorkspaceUnexportedFactor is applied to unexported symbols outside of
+			// any active workspace. Since one wouldn't usually jump to unexported
+			// symbols to understand a package API, they are particularly irrelevant.
+			nonWorkspaceUnexportedFactor = 0.5
+			// every field or method nesting level to access the field decreases
+			// the score by a factor of 1.0 - depth*depthFactor, up to a depth of
+			// 3.
+			depthFactor = 0.2
+		)
+
+		startWord := true
+		exported := true
+		depth := 0.0
+		for _, r := range sym.Name {
+			if startWord && !unicode.IsUpper(r) {
+				exported = false
+			}
+			if r == '.' {
+				startWord = true
+				depth++
+			} else {
+				startWord = false
+			}
+		}
+
+		inWorkspace := false
+		for _, root := range w.roots {
+			if strings.HasPrefix(string(i.uri), root) {
+				inWorkspace = true
+				break
+			}
+		}
+
+		// Apply downranking based on workspace position.
+		if !inWorkspace {
+			score *= nonWorkspaceFactor
+			if !exported {
+				score *= nonWorkspaceUnexportedFactor
+			}
+		}
+
+		// Apply downranking based on symbol depth.
+		if depth > 3 {
+			depth = 3
+		}
+		score *= 1.0 - depth*depthFactor
+
+		if w.ss.tooLow(score) {
+			continue
+		}
+
+		si := symbolInformation{
+			score:     score,
+			symbol:    strings.Join(symbolParts, ""),
+			kind:      sym.Kind,
+			uri:       i.uri,
+			rng:       sym.Range,
+			container: i.md.PackagePath(),
+		}
+		w.ss.store(si)
+	}
+}
+
+type symbolStore struct {
+	res [maxSymbols]symbolInformation
+}
+
+// store inserts si into the sorted results, if si has a high enough score.
+func (sc *symbolStore) store(si symbolInformation) {
+	if sc.tooLow(si.score) {
+		return
+	}
+	insertAt := sort.Search(len(sc.res), func(i int) bool {
+		return sc.res[i].score < si.score
+	})
+	if insertAt < len(sc.res)-1 {
+		copy(sc.res[insertAt+1:], sc.res[insertAt:len(sc.res)-1])
+	}
+	sc.res[insertAt] = si
+}
+
+func (sc *symbolStore) tooLow(score float64) bool {
+	return score <= sc.res[len(sc.res)-1].score
+}
+
+func (sc *symbolStore) results() []protocol.SymbolInformation {
 	var res []protocol.SymbolInformation
 	for _, si := range sc.res {
 		if si.score <= 0 {
@@ -301,131 +495,6 @@ func (sc *symbolCollector) results() []protocol.SymbolInformation {
 		res = append(res, si.asProtocolSymbolInformation())
 	}
 	return res
-}
-
-// collectPackages gathers all known packages and sorts for stability.
-func (sc *symbolCollector) collectPackages(ctx context.Context, views []View) ([]*pkgView, error) {
-	var toWalk []*pkgView
-	for _, v := range views {
-		snapshot, release := v.Snapshot(ctx)
-		defer release()
-		knownPkgs, err := snapshot.KnownPackages(ctx)
-		if err != nil {
-			return nil, err
-		}
-		workspacePackages, err := snapshot.WorkspacePackages(ctx)
-		if err != nil {
-			return nil, err
-		}
-		isWorkspacePkg := make(map[Package]bool)
-		for _, wp := range workspacePackages {
-			isWorkspacePkg[wp] = true
-		}
-		for _, pkg := range knownPkgs {
-			toWalk = append(toWalk, &pkgView{
-				pkg:         pkg,
-				isWorkspace: isWorkspacePkg[pkg],
-			})
-		}
-	}
-	// Now sort for stability of results. We order by
-	// (pkgView.isWorkspace, pkgView.p.ID())
-	sort.Slice(toWalk, func(i, j int) bool {
-		lhs := toWalk[i]
-		rhs := toWalk[j]
-		switch {
-		case lhs.isWorkspace == rhs.isWorkspace:
-			return lhs.pkg.ID() < rhs.pkg.ID()
-		case lhs.isWorkspace:
-			return true
-		default:
-			return false
-		}
-	})
-	return toWalk, nil
-}
-
-func (sc *symbolCollector) walkFilesDecls(decls []ast.Decl) {
-	for _, decl := range decls {
-		switch decl := decl.(type) {
-		case *ast.FuncDecl:
-			kind := protocol.Function
-			var recv *ast.Ident
-			if decl.Recv.NumFields() > 0 {
-				kind = protocol.Method
-				recv = unpackRecv(decl.Recv.List[0].Type)
-			}
-			if recv != nil {
-				sc.match(decl.Name.Name, kind, decl.Name, recv)
-			} else {
-				sc.match(decl.Name.Name, kind, decl.Name)
-			}
-		case *ast.GenDecl:
-			for _, spec := range decl.Specs {
-				switch spec := spec.(type) {
-				case *ast.TypeSpec:
-					sc.match(spec.Name.Name, typeToKind(sc.current.pkg.GetTypesInfo().TypeOf(spec.Type)), spec.Name)
-					sc.walkType(spec.Type, spec.Name)
-				case *ast.ValueSpec:
-					for _, name := range spec.Names {
-						kind := protocol.Variable
-						if decl.Tok == token.CONST {
-							kind = protocol.Constant
-						}
-						sc.match(name.Name, kind, name)
-					}
-				}
-			}
-		}
-	}
-}
-
-func unpackRecv(rtyp ast.Expr) *ast.Ident {
-	// Extract the receiver identifier. Lifted from go/types/resolver.go
-L:
-	for {
-		switch t := rtyp.(type) {
-		case *ast.ParenExpr:
-			rtyp = t.X
-		case *ast.StarExpr:
-			rtyp = t.X
-		default:
-			break L
-		}
-	}
-	if name, _ := rtyp.(*ast.Ident); name != nil {
-		return name
-	}
-	return nil
-}
-
-// walkType processes symbols related to a type expression. path is path of
-// nested type identifiers to the type expression.
-func (sc *symbolCollector) walkType(typ ast.Expr, path ...*ast.Ident) {
-	switch st := typ.(type) {
-	case *ast.StructType:
-		for _, field := range st.Fields.List {
-			sc.walkField(field, protocol.Field, protocol.Field, path...)
-		}
-	case *ast.InterfaceType:
-		for _, field := range st.Methods.List {
-			sc.walkField(field, protocol.Interface, protocol.Method, path...)
-		}
-	}
-}
-
-// walkField processes symbols related to the struct field or interface method.
-//
-// unnamedKind and namedKind are the symbol kinds if the field is resp. unnamed
-// or named. path is the path of nested identifiers containing the field.
-func (sc *symbolCollector) walkField(field *ast.Field, unnamedKind, namedKind protocol.SymbolKind, path ...*ast.Ident) {
-	if len(field.Names) == 0 {
-		sc.match(types.ExprString(field.Type), unnamedKind, field, path...)
-	}
-	for _, name := range field.Names {
-		sc.match(name.Name, namedKind, name, path...)
-		sc.walkType(field.Type, append(path, name)...)
-	}
 }
 
 func typeToKind(typ types.Type) protocol.SymbolKind {
@@ -455,130 +524,15 @@ func typeToKind(typ types.Type) protocol.SymbolKind {
 	return protocol.Variable
 }
 
-// match finds matches and gathers the symbol identified by name, kind and node
-// via the symbolCollector's matcher after first de-duping against previously
-// seen symbols.
-//
-// path specifies the identifier path to a nested field or interface method.
-func (sc *symbolCollector) match(name string, kind protocol.SymbolKind, node ast.Node, path ...*ast.Ident) {
-	if !node.Pos().IsValid() || !node.End().IsValid() {
-		return
-	}
-
-	isExported := isExported(name)
-	if len(path) > 0 {
-		var nameBuilder strings.Builder
-		for _, ident := range path {
-			nameBuilder.WriteString(ident.Name)
-			nameBuilder.WriteString(".")
-			if !ident.IsExported() {
-				isExported = false
-			}
-		}
-		nameBuilder.WriteString(name)
-		name = nameBuilder.String()
-	}
-
-	// Factors to apply to the match score for the purpose of downranking
-	// results.
-	//
-	// These numbers were crudely calibrated based on trial-and-error using a
-	// small number of sample queries. Adjust as necessary.
-	//
-	// All factors are multiplicative, meaning if more than one applies they are
-	// multiplied together.
-	const (
-		// nonWorkspaceFactor is applied to symbols outside of any active
-		// workspace. Developers are less likely to want to jump to code that they
-		// are not actively working on.
-		nonWorkspaceFactor = 0.5
-		// nonWorkspaceUnexportedFactor is applied to unexported symbols outside of
-		// any active workspace. Since one wouldn't usually jump to unexported
-		// symbols to understand a package API, they are particularly irrelevant.
-		nonWorkspaceUnexportedFactor = 0.5
-		// fieldFactor is applied to fields and interface methods. One would
-		// typically jump to the type definition first, so ranking fields highly
-		// can be noisy.
-		fieldFactor = 0.5
-	)
-	symbol, score := sc.symbolizer(name, sc.current.pkg, sc.matcher)
-
-	// Downrank symbols outside of the workspace.
-	if !sc.current.isWorkspace {
-		score *= nonWorkspaceFactor
-		if !isExported {
-			score *= nonWorkspaceUnexportedFactor
-		}
-	}
-
-	// Downrank fields.
-	if len(path) > 0 {
-		score *= fieldFactor
-	}
-
-	// Avoid the work below if we know this score will not be sorted into the
-	// results.
-	if score <= sc.res[len(sc.res)-1].score {
-		return
-	}
-
-	rng, err := fileRange(sc.curFile, node.Pos(), node.End())
-	if err != nil {
-		return
-	}
-	si := symbolInformation{
-		score:     score,
-		name:      name,
-		symbol:    symbol,
-		container: sc.current.pkg.PkgPath(),
-		kind:      kind,
-		location: protocol.Location{
-			URI:   protocol.URIFromSpanURI(sc.curFile.URI),
-			Range: rng,
-		},
-	}
-	insertAt := sort.Search(len(sc.res), func(i int) bool {
-		return sc.res[i].score < score
-	})
-	if insertAt < len(sc.res)-1 {
-		copy(sc.res[insertAt+1:], sc.res[insertAt:len(sc.res)-1])
-	}
-	sc.res[insertAt] = si
-}
-
-func fileRange(pgf *ParsedGoFile, start, end token.Pos) (protocol.Range, error) {
-	s, err := span.FileSpan(pgf.Tok, pgf.Mapper.Converter, start, end)
-	if err != nil {
-		return protocol.Range{}, nil
-	}
-	return pgf.Mapper.Range(s)
-}
-
-// isExported reports if a token is exported. Copied from
-// token.IsExported (go1.13+).
-//
-// TODO: replace usage with token.IsExported once go1.12 is no longer
-// supported.
-func isExported(name string) bool {
-	ch, _ := utf8.DecodeRuneInString(name)
-	return unicode.IsUpper(ch)
-}
-
-// pkgView holds information related to a package that we are going to walk.
-type pkgView struct {
-	pkg         Package
-	isWorkspace bool
-}
-
 // symbolInformation is a cut-down version of protocol.SymbolInformation that
 // allows struct values of this type to be used as map keys.
 type symbolInformation struct {
 	score     float64
-	name      string
 	symbol    string
 	container string
 	kind      protocol.SymbolKind
-	location  protocol.Location
+	uri       span.URI
+	rng       protocol.Range
 }
 
 // asProtocolSymbolInformation converts s to a protocol.SymbolInformation value.
@@ -586,9 +540,12 @@ type symbolInformation struct {
 // TODO: work out how to handle tags if/when they are needed.
 func (s symbolInformation) asProtocolSymbolInformation() protocol.SymbolInformation {
 	return protocol.SymbolInformation{
-		Name:          s.symbol,
-		Kind:          s.kind,
-		Location:      s.location,
+		Name: s.symbol,
+		Kind: s.kind,
+		Location: protocol.Location{
+			URI:   protocol.URIFromSpanURI(s.uri),
+			Range: s.rng,
+		},
 		ContainerName: s.container,
 	}
 }

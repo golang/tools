@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	. "golang.org/x/tools/internal/lsp/regtest"
+	"golang.org/x/tools/internal/testenv"
 
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/tests"
@@ -178,4 +179,101 @@ func main() {}
 			})
 		})
 	}
+}
+
+func TestGoToTypeDefinition_Issue38589(t *testing.T) {
+	const mod = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- main.go --
+package main
+
+type Int int
+
+type Struct struct{}
+
+func F1() {}
+func F2() (int, error) { return 0, nil }
+func F3() (**Struct, bool, *Int, error) { return nil, false, nil, nil }
+func F4() (**Struct, bool, *float64, error) { return nil, false, nil, nil }
+
+func main() {}
+`
+
+	for _, tt := range []struct {
+		re         string
+		wantError  bool
+		wantTypeRe string
+	}{
+		{re: `F1`, wantError: true},
+		{re: `F2`, wantError: true},
+		{re: `F3`, wantError: true},
+		{re: `F4`, wantError: false, wantTypeRe: `type (Struct)`},
+	} {
+		t.Run(tt.re, func(t *testing.T) {
+			Run(t, mod, func(t *testing.T, env *Env) {
+				env.OpenFile("main.go")
+
+				_, pos, err := env.Editor.GoToTypeDefinition(env.Ctx, "main.go", env.RegexpSearch("main.go", tt.re))
+				if tt.wantError {
+					if err == nil {
+						t.Fatal("expected error, got nil")
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("expected nil error, got %s", err)
+				}
+
+				typePos := env.RegexpSearch("main.go", tt.wantTypeRe)
+				if pos != typePos {
+					t.Errorf("invalid pos: want %+v, got %+v", typePos, pos)
+				}
+			})
+		})
+	}
+}
+
+// Test for golang/go#47825.
+func TestImportTestVariant(t *testing.T) {
+	testenv.NeedsGo1Point(t, 13)
+
+	const mod = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- client/test/role.go --
+package test
+
+import _ "mod.com/client"
+
+type RoleSetup struct{}
+-- client/client_role_test.go --
+package client_test
+
+import (
+	"testing"
+	_ "mod.com/client"
+	ctest "mod.com/client/test"
+)
+
+func TestClient(t *testing.T) {
+	_ = ctest.RoleSetup{}
+}
+-- client/client_test.go --
+package client
+
+import "testing"
+
+func TestClient(t *testing.T) {}
+-- client.go --
+package client
+`
+	Run(t, mod, func(t *testing.T, env *Env) {
+		env.OpenFile("client/client_role_test.go")
+		env.GoToDefinition("client/client_role_test.go", env.RegexpSearch("client/client_role_test.go", "RoleSetup"))
+	})
 }

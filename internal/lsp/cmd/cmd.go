@@ -418,8 +418,8 @@ func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfigur
 	return results, nil
 }
 
-func (c *cmdClient) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResponse, error) {
-	return &protocol.ApplyWorkspaceEditResponse{Applied: false, FailureReason: "not implemented"}, nil
+func (c *cmdClient) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResult, error) {
+	return &protocol.ApplyWorkspaceEditResult{Applied: false, FailureReason: "not implemented"}, nil
 }
 
 func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishDiagnosticsParams) error {
@@ -441,6 +441,10 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 
 func (c *cmdClient) Progress(context.Context, *protocol.ProgressParams) error {
 	return nil
+}
+
+func (c *cmdClient) ShowDocument(context.Context, *protocol.ShowDocumentParams) (*protocol.ShowDocumentResult, error) {
+	return nil, nil
 }
 
 func (c *cmdClient) WorkDoneProgressCreate(context.Context, *protocol.WorkDoneProgressCreateParams) error {
@@ -523,8 +527,13 @@ func (c *connection) diagnoseFiles(ctx context.Context, files []span.URI) error 
 
 	c.Client.diagnosticsDone = make(chan struct{})
 	_, err := c.Server.NonstandardRequest(ctx, "gopls/diagnoseFiles", map[string]interface{}{"files": untypedFiles})
+	if err != nil {
+		close(c.Client.diagnosticsDone)
+		return err
+	}
+
 	<-c.Client.diagnosticsDone
-	return err
+	return nil
 }
 
 func (c *connection) terminate(ctx context.Context) {

@@ -184,6 +184,22 @@ io.Reader, so this assertion cannot succeed.
 
 **Enabled by default.**
 
+## **infertypeargs**
+
+check for unnecessary type arguments in call expressions
+
+Explicit type arguments may be omitted from call expressions if they can be
+inferred from function arguments, or from other type arguments:
+
+func f[T any](T) {}
+
+func _() {
+	f[string]("foo") // string could be inferred
+}
+
+
+**Enabled by default.**
+
 ## **loopclosure**
 
 check references to loop variables from within nested functions
@@ -554,6 +570,12 @@ Another example is about non-pointer receiver:
 
 **Disabled by default. Enable it by setting `"analyses": {"unusedwrite": true}`.**
 
+## **useany**
+
+check for constraints that could be simplified to "any"
+
+**Enabled by default.**
+
 ## **fillreturns**
 
 suggested fixes for "wrong number of return values (want %d, got %d)"
@@ -606,8 +628,17 @@ will turn into
 suggested fixes for "undeclared name: <>"
 
 This checker provides suggested fixes for type errors of the
-type "undeclared name: <>". It will insert a new statement:
-"<> := ".
+type "undeclared name: <>". It will either insert a new statement,
+such as:
+
+"<> := "
+
+or a new function declaration, such as:
+
+func <>(inferred parameters) {
+	panic("implement me!")
+}
+
 
 **Enabled by default.**
 

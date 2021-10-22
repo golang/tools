@@ -6,6 +6,7 @@ package source
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -33,7 +34,7 @@ func References(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Posit
 	ctx, done := event.Start(ctx, "source.References")
 	defer done()
 
-	qualifiedObjs, err := qualifiedObjsAtProtocolPos(ctx, s, f, pp)
+	qualifiedObjs, err := qualifiedObjsAtProtocolPos(ctx, s, f.URI(), pp)
 	// Don't return references for builtin types.
 	if errors.Is(err, errBuiltin) {
 		return nil, nil
@@ -68,12 +69,16 @@ func references(ctx context.Context, snapshot Snapshot, qos []qualifiedObject, i
 		seen       = make(map[token.Pos]bool)
 	)
 
-	filename := snapshot.FileSet().Position(qos[0].obj.Pos()).Filename
+	pos := qos[0].obj.Pos()
+	if pos == token.NoPos {
+		return nil, fmt.Errorf("no position for %s", qos[0].obj)
+	}
+	filename := snapshot.FileSet().Position(pos).Filename
 	pgf, err := qos[0].pkg.File(span.URIFromPath(filename))
 	if err != nil {
 		return nil, err
 	}
-	declIdent, err := findIdentifier(ctx, snapshot, qos[0].pkg, pgf.File, qos[0].obj.Pos())
+	declIdent, err := findIdentifier(ctx, snapshot, qos[0].pkg, pgf, qos[0].obj.Pos())
 	if err != nil {
 		return nil, err
 	}
