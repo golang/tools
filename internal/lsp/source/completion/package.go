@@ -5,6 +5,7 @@
 package completion
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"go/ast"
@@ -14,7 +15,9 @@ import (
 	"go/types"
 	"path/filepath"
 	"strings"
+	"unicode"
 
+	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/fuzzy"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
@@ -41,7 +44,7 @@ func packageClauseCompletions(ctx context.Context, snapshot source.Snapshot, fh 
 		return nil, nil, err
 	}
 
-	surrounding, err := packageCompletionSurrounding(snapshot.FileSet(), fh, pgf, rng.Start)
+	surrounding, err := packageCompletionSurrounding(ctx, snapshot.FileSet(), pgf, rng.Start)
 	if err != nil {
 		return nil, nil, errors.Errorf("invalid position for package completion: %w", err)
 	}
@@ -68,23 +71,28 @@ func packageClauseCompletions(ctx context.Context, snapshot source.Snapshot, fh 
 // packageCompletionSurrounding returns surrounding for package completion if a
 // package completions can be suggested at a given position. A valid location
 // for package completion is above any declarations or import statements.
-func packageCompletionSurrounding(fset *token.FileSet, fh source.FileHandle, pgf *source.ParsedGoFile, pos token.Pos) (*Selection, error) {
-	src, err := fh.Read()
+func packageCompletionSurrounding(ctx context.Context, fset *token.FileSet, pgf *source.ParsedGoFile, pos token.Pos) (*Selection, error) {
+	// If the file lacks a package declaration, the parser will return an empty
+	// AST. As a work-around, try to parse an expression from the file contents.
+	filename := pgf.URI.Filename()
+	expr, _ := parser.ParseExprFrom(fset, filename, pgf.Src, parser.Mode(0))
+	if expr == nil {
+		return nil, fmt.Errorf("unparseable file (%s)", pgf.URI)
+	}
+	tok := fset.File(expr.Pos())
+	offset, err := source.Offset(pgf.Tok, pos)
 	if err != nil {
 		return nil, err
 	}
-	// If the file lacks a package declaration, the parser will return an empty
-	// AST. As a work-around, try to parse an expression from the file contents.
-	expr, _ := parser.ParseExprFrom(fset, fh.URI().Filename(), src, parser.Mode(0))
-	if expr == nil {
-		return nil, fmt.Errorf("unparseable file (%s)", fh.URI())
+	if offset > tok.Size() {
+		debug.Bug(ctx, "out of bounds cursor", "cursor offset (%d) out of bounds for %s (size: %d)", offset, pgf.URI, tok.Size())
+		return nil, fmt.Errorf("cursor out of bounds")
 	}
-	tok := fset.File(expr.Pos())
-	cursor := tok.Pos(pgf.Tok.Offset(pos))
+	cursor := tok.Pos(offset)
 	m := &protocol.ColumnMapper{
 		URI:       pgf.URI,
-		Content:   src,
-		Converter: span.NewContentConverter(fh.URI().Filename(), src),
+		Content:   pgf.Src,
+		Converter: span.NewContentConverter(filename, pgf.Src),
 	}
 
 	// If we were able to parse out an identifier as the first expression from
@@ -112,7 +120,7 @@ func packageCompletionSurrounding(fset *token.FileSet, fh source.FileHandle, pgf
 	// *ast.BadDecl since it is a keyword. This logic would allow "package" to
 	// appear on any line of the file as long as it's the first code expression
 	// in the file.
-	lines := strings.Split(string(src), "\n")
+	lines := strings.Split(string(pgf.Src), "\n")
 	cursorLine := tok.Line(cursor)
 	if cursorLine <= 0 || cursorLine > len(lines) {
 		return nil, fmt.Errorf("invalid line number")
@@ -148,7 +156,7 @@ func packageCompletionSurrounding(fset *token.FileSet, fh source.FileHandle, pgf
 	}
 
 	// If the cursor is in a comment, don't offer any completions.
-	if cursorInComment(fset, cursor, src) {
+	if cursorInComment(fset, cursor, pgf.Src) {
 		return nil, fmt.Errorf("cursor in comment")
 	}
 
@@ -207,16 +215,11 @@ func (c *completer) packageNameCompletions(ctx context.Context, fileURI span.URI
 // have the given prefix and are used in the same directory as the given
 // file. This also includes test packages for these packages (<pkg>_test) and
 // the directory name itself.
-func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI span.URI, prefix string) ([]candidate, error) {
-	workspacePackages, err := snapshot.WorkspacePackages(ctx)
+func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI span.URI, prefix string) (packages []candidate, err error) {
+	workspacePackages, err := snapshot.ActivePackages(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	dirPath := filepath.Dir(string(fileURI))
-	dirName := filepath.Base(dirPath)
-
-	seenPkgs := make(map[string]struct{})
 
 	toCandidate := func(name string, score float64) candidate {
 		obj := types.NewPkgName(0, nil, name, types.NewPackage("", name))
@@ -225,9 +228,24 @@ func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI s
 
 	matcher := fuzzy.NewMatcher(prefix)
 
+	// Always try to suggest a main package
+	defer func() {
+		if score := float64(matcher.Score("main")); score > 0 {
+			packages = append(packages, toCandidate("main", score*lowScore))
+		}
+	}()
+
+	dirPath := filepath.Dir(fileURI.Filename())
+	dirName := filepath.Base(dirPath)
+	if !isValidDirName(dirName) {
+		return packages, nil
+	}
+	pkgName := convertDirNameToPkgName(dirName)
+
+	seenPkgs := make(map[string]struct{})
+
 	// The `go` command by default only allows one package per directory but we
 	// support multiple package suggestions since gopls is build system agnostic.
-	var packages []candidate
 	for _, pkg := range workspacePackages {
 		if pkg.Name() == "main" || pkg.Name() == "" {
 			continue
@@ -239,7 +257,7 @@ func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI s
 		// Only add packages that are previously used in the current directory.
 		var relevantPkg bool
 		for _, pgf := range pkg.CompiledGoFiles() {
-			if filepath.Dir(string(pgf.URI)) == dirPath {
+			if filepath.Dir(pgf.URI.Filename()) == dirPath {
 				relevantPkg = true
 				break
 			}
@@ -267,20 +285,80 @@ func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI s
 	}
 
 	// Add current directory name as a low relevance suggestion.
-	if _, ok := seenPkgs[dirName]; !ok {
-		if score := float64(matcher.Score(dirName)); score > 0 {
-			packages = append(packages, toCandidate(dirName, score*lowScore))
+	if _, ok := seenPkgs[pkgName]; !ok {
+		if score := float64(matcher.Score(pkgName)); score > 0 {
+			packages = append(packages, toCandidate(pkgName, score*lowScore))
 		}
 
-		testDirName := dirName + "_test"
-		if score := float64(matcher.Score(testDirName)); score > 0 {
-			packages = append(packages, toCandidate(testDirName, score*lowScore))
+		testPkgName := pkgName + "_test"
+		if score := float64(matcher.Score(testPkgName)); score > 0 {
+			packages = append(packages, toCandidate(testPkgName, score*lowScore))
 		}
-	}
-
-	if score := float64(matcher.Score("main")); score > 0 {
-		packages = append(packages, toCandidate("main", score*lowScore))
 	}
 
 	return packages, nil
+}
+
+// isValidDirName checks whether the passed directory name can be used in
+// a package path. Requirements for a package path can be found here:
+// https://golang.org/ref/mod#go-mod-file-ident.
+func isValidDirName(dirName string) bool {
+	if dirName == "" {
+		return false
+	}
+
+	for i, ch := range dirName {
+		if isLetter(ch) || isDigit(ch) {
+			continue
+		}
+		if i == 0 {
+			// Directory name can start only with '_'. '.' is not allowed in module paths.
+			// '-' and '~' are not allowed because elements of package paths must be
+			// safe command-line arguments.
+			if ch == '_' {
+				continue
+			}
+		} else {
+			// Modules path elements can't end with '.'
+			if isAllowedPunctuation(ch) && (i != len(dirName)-1 || ch != '.') {
+				continue
+			}
+		}
+
+		return false
+	}
+	return true
+}
+
+// convertDirNameToPkgName converts a valid directory name to a valid package name.
+// It leaves only letters and digits. All letters are mapped to lower case.
+func convertDirNameToPkgName(dirName string) string {
+	var buf bytes.Buffer
+	for _, ch := range dirName {
+		switch {
+		case isLetter(ch):
+			buf.WriteRune(unicode.ToLower(ch))
+
+		case buf.Len() != 0 && isDigit(ch):
+			buf.WriteRune(ch)
+		}
+	}
+	return buf.String()
+}
+
+// isLetter and isDigit allow only ASCII characters because
+// "Each path element is a non-empty string made of up ASCII letters,
+// ASCII digits, and limited ASCII punctuation"
+// (see https://golang.org/ref/mod#go-mod-file-ident).
+
+func isLetter(ch rune) bool {
+	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z'
+}
+
+func isDigit(ch rune) bool {
+	return '0' <= ch && ch <= '9'
+}
+
+func isAllowedPunctuation(ch rune) bool {
+	return ch == '_' || ch == '-' || ch == '~' || ch == '.'
 }

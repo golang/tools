@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
+	"golang.org/x/tools/internal/lsp/progress"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
 	errors "golang.org/x/xerrors"
@@ -69,6 +70,9 @@ type Snapshot interface {
 	// workspace.
 	IgnoredFile(uri span.URI) bool
 
+	// Templates returns the .tmpl files
+	Templates() map[span.URI]VersionedFileHandle
+
 	// ParseGo returns the parsed AST for the file.
 	// If the file is not available, returns nil and an error.
 	ParseGo(ctx context.Context, fh FileHandle, mode ParseMode) (*ParsedGoFile, error)
@@ -77,12 +81,12 @@ type Snapshot interface {
 	// to quickly find corresponding *ast.Field node given a *types.Var.
 	// We must refer to the AST to render type aliases properly when
 	// formatting signatures and other types.
-	PosToField(ctx context.Context, pgf *ParsedGoFile) (map[token.Pos]*ast.Field, error)
+	PosToField(ctx context.Context, pkg Package, pos token.Pos) (*ast.Field, error)
 
 	// PosToDecl maps certain objects' positions to their surrounding
 	// ast.Decl. This mapping is used when building the documentation
 	// string for the objects.
-	PosToDecl(ctx context.Context, pgf *ParsedGoFile) (map[token.Pos]ast.Decl, error)
+	PosToDecl(ctx context.Context, pkg Package, pos token.Pos) (ast.Decl, error)
 
 	// DiagnosePackage returns basic diagnostics, including list, parse, and type errors
 	// for pkg, grouped by file.
@@ -125,12 +129,15 @@ type Snapshot interface {
 	// GoModForFile returns the URI of the go.mod file for the given URI.
 	GoModForFile(uri span.URI) span.URI
 
-	// BuiltinPackage returns information about the special builtin package.
-	BuiltinPackage(ctx context.Context) (*BuiltinPackage, error)
+	// BuiltinFile returns information about the special builtin package.
+	BuiltinFile(ctx context.Context) (*ParsedGoFile, error)
+
+	// IsBuiltin reports whether uri is part of the builtin package.
+	IsBuiltin(ctx context.Context, uri span.URI) bool
 
 	// PackagesForFile returns the packages that this file belongs to, checked
 	// in mode.
-	PackagesForFile(ctx context.Context, uri span.URI, mode TypecheckMode) ([]Package, error)
+	PackagesForFile(ctx context.Context, uri span.URI, mode TypecheckMode, includeTestVariants bool) ([]Package, error)
 
 	// PackageForFile returns a single package that this file belongs to,
 	// checked in mode and filtered by the package policy.
@@ -149,11 +156,24 @@ type Snapshot interface {
 	// in TypecheckWorkspace mode.
 	KnownPackages(ctx context.Context) ([]Package, error)
 
-	// WorkspacePackages returns the snapshot's top-level packages.
-	WorkspacePackages(ctx context.Context) ([]Package, error)
+	// ActivePackages returns the packages considered 'active' in the workspace.
+	//
+	// In normal memory mode, this is all workspace packages. In degraded memory
+	// mode, this is just the reverse transitive closure of open packages.
+	ActivePackages(ctx context.Context) ([]Package, error)
+
+	// Symbols returns all symbols in the snapshot.
+	Symbols(ctx context.Context) (map[span.URI][]Symbol, error)
+
+	// Metadata returns package metadata associated with the given file URI.
+	MetadataForFile(ctx context.Context, uri span.URI) ([]Metadata, error)
 
 	// GetCriticalError returns any critical errors in the workspace.
 	GetCriticalError(ctx context.Context) *CriticalError
+
+	// BuildGoplsMod generates a go.mod file for all modules in the workspace.
+	// It bypasses any existing gopls.mod.
+	BuildGoplsMod(ctx context.Context) (*modfile.File, error)
 }
 
 // PackageFilter sets how a package is filtered out from a set of packages
@@ -256,11 +276,6 @@ type FileSource interface {
 	GetFile(ctx context.Context, uri span.URI) (FileHandle, error)
 }
 
-type BuiltinPackage struct {
-	Package    *ast.Package
-	ParsedFile *ParsedGoFile
-}
-
 // A ParsedGoFile contains the results of parsing a Go file.
 type ParsedGoFile struct {
 	URI  span.URI
@@ -288,6 +303,15 @@ type TidiedModule struct {
 	Diagnostics []*Diagnostic
 	// The bytes of the go.mod file after it was tidied.
 	TidiedContent []byte
+}
+
+// Metadata represents package metadata retrieved from go/packages.
+type Metadata interface {
+	// PackageName is the package name.
+	PackageName() string
+
+	// PackagePath is the package path.
+	PackagePath() string
 }
 
 // Session represents a single connection from a client.
@@ -344,7 +368,12 @@ type Session interface {
 	// known by the view. For views within a module, this is the module root,
 	// any directory in the module root, and any replace targets.
 	FileWatchingGlobPatterns(ctx context.Context) map[string]struct{}
+
+	// SetProgressTracker sets the progress tracker for the session.
+	SetProgressTracker(tracker *progress.Tracker)
 }
+
+var ErrViewExists = errors.New("view already exists for session")
 
 // Overlay is the type for a file held in memory on a session.
 type Overlay interface {
@@ -418,10 +447,9 @@ const (
 	// This is the mode used when attempting to examine the package graph structure.
 	ParseHeader ParseMode = iota
 
-	// ParseExported specifies that the public symbols are needed, but things like
-	// private symbols and function bodies are not.
-	// This mode is used for things where a package is being consumed only as a
-	// dependency.
+	// ParseExported specifies that the package is used only as a dependency,
+	// and only its exported declarations are needed. More may be included if
+	// necessary to avoid type errors.
 	ParseExported
 
 	// ParseFull specifies the full AST is needed.
@@ -511,6 +539,8 @@ const (
 	Mod
 	// Sum is a go.sum file.
 	Sum
+	// Tmpl is a template file.
+	Tmpl
 )
 
 // Analyzer represents a go/analysis analyzer with some boolean properties
@@ -532,6 +562,10 @@ type Analyzer struct {
 	// ActionKind is the kind of code action this analyzer produces. If
 	// unspecified the type defaults to quickfix.
 	ActionKind []protocol.CodeActionKind
+
+	// Severity is the severity set for diagnostics reported by this
+	// analyzer. If left unset it defaults to Warning.
+	Severity protocol.DiagnosticSeverity
 }
 
 func (a Analyzer) IsEnabled(view View) bool {
@@ -567,6 +601,7 @@ type Package interface {
 	Version() *module.Version
 	HasListOrParseErrors() bool
 	HasTypeErrors() bool
+	ParseMode() ParseMode
 }
 
 type CriticalError struct {

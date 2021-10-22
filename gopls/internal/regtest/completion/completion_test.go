@@ -70,6 +70,11 @@ package
 
 -- fruits/testfile3.go --
 pac
+-- 123f_r.u~its-123/testfile.go --
+package
+
+-- .invalid-dir@-name/testfile.go --
+package
 `
 	var (
 		testfile4 = ""
@@ -146,6 +151,21 @@ pac
 			content:       &testfile6,
 			want:          []string{"package apple", "package apple_test", "package fruits", "package fruits_test", "package main"},
 			editRegexp:    `\*\/\n()`,
+		},
+		// Issue golang/go#44680
+		{
+			name:          "package completion for dir name with punctuation",
+			filename:      "123f_r.u~its-123/testfile.go",
+			triggerRegexp: "package()",
+			want:          []string{"package fruits123", "package fruits123_test", "package main"},
+			editRegexp:    "package\n",
+		},
+		{
+			name:          "package completion for invalid dir name",
+			filename:      ".invalid-dir@-name/testfile.go",
+			triggerRegexp: "package()",
+			want:          []string{"package main"},
+			editRegexp:    "package\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -302,7 +322,6 @@ func _() {
 		env.AcceptCompletion("main.go", pos, item)
 
 		// Await the diagnostics to add example.com/blah to the go.mod file.
-		env.SaveBufferWithoutActions("main.go")
 		env.Await(
 			env.DiagnosticAtRegexp("main.go", `"example.com/blah"`),
 		)
@@ -423,9 +442,9 @@ func _() {
 		}{
 			{`var _ a = aaaa()`, []string{"aaaa1", "aaaa2"}},
 			{`var _ b = bbbb()`, []string{"bbbb1", "bbbb2"}},
-			{`var _ c = xxxx()`, []string{"***xxxxd", "**xxxxe", "xxxxc"}},
-			{`var _ d = xxxx()`, []string{"***xxxxe", "*xxxxc", "xxxxd"}},
-			{`var _ e = xxxx()`, []string{"**xxxxc", "*xxxxd", "xxxxe"}},
+			{`var _ c = xxxx()`, []string{"xxxxc", "xxxxd", "xxxxe"}},
+			{`var _ d = xxxx()`, []string{"xxxxc", "xxxxd", "xxxxe"}},
+			{`var _ e = xxxx()`, []string{"xxxxc", "xxxxd", "xxxxe"}},
 		}
 		for _, tt := range tests {
 			completions := env.Completion("main.go", env.RegexpSearch("main.go", tt.re))
@@ -433,6 +452,93 @@ func _() {
 			if diff != "" {
 				t.Errorf("%s: %s", tt.re, diff)
 			}
+		}
+	})
+}
+
+func TestCompletionDeprecation(t *testing.T) {
+	const files = `
+-- go.mod --
+module test.com
+
+go 1.16
+-- prog.go --
+package waste
+// Deprecated, use newFoof
+func fooFunc() bool {
+	return false
+}
+
+// Deprecated
+const badPi = 3.14
+
+func doit() {
+	if fooF
+	panic()
+	x := badP
+}
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("prog.go")
+		pos := env.RegexpSearch("prog.go", "if fooF")
+		pos.Column += len("if fooF")
+		completions := env.Completion("prog.go", pos)
+		diff := compareCompletionResults([]string{"fooFunc"}, completions.Items)
+		if diff != "" {
+			t.Error(diff)
+		}
+		if completions.Items[0].Tags == nil {
+			t.Errorf("expected Tags to show deprecation %#v", diff[0])
+		}
+		pos = env.RegexpSearch("prog.go", "= badP")
+		pos.Column += len("= badP")
+		completions = env.Completion("prog.go", pos)
+		diff = compareCompletionResults([]string{"badPi"}, completions.Items)
+		if diff != "" {
+			t.Error(diff)
+		}
+		if completions.Items[0].Tags == nil {
+			t.Errorf("expected Tags to show deprecation %#v", diff[0])
+		}
+	})
+}
+
+func TestUnimportedCompletion_VSCodeIssue1489(t *testing.T) {
+	testenv.NeedsGo1Point(t, 14)
+
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.14
+
+-- main.go --
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("a")
+	math.Sqr
+}
+`
+	WithOptions(
+		EditorConfig{WindowsLineEndings: true},
+	).Run(t, src, func(t *testing.T, env *Env) {
+		// Trigger unimported completions for the example.com/blah package.
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		pos := env.RegexpSearch("main.go", "Sqr()")
+		completions := env.Completion("main.go", pos)
+		if len(completions.Items) == 0 {
+			t.Fatalf("no completion items")
+		}
+		env.AcceptCompletion("main.go", pos, completions.Items[0])
+		env.Await(env.DoneWithChange())
+		got := env.Editor.BufferText("main.go")
+		want := "package main\r\n\r\nimport (\r\n\t\"fmt\"\r\n\t\"math\"\r\n)\r\n\r\nfunc main() {\r\n\tfmt.Println(\"a\")\r\n\tmath.Sqrt(${1:})\r\n}\r\n"
+		if got != want {
+			t.Errorf("unimported completion: got %q, want %q", got, want)
 		}
 	})
 }

@@ -1357,6 +1357,31 @@ func conv(t_dst, t_src types.Type, x value) value {
 	panic(fmt.Sprintf("unsupported conversion: %s  -> %s, dynamic type %T", t_src, t_dst, x))
 }
 
+// sliceToArrayPointer converts the value x of type slice to type t_dst
+// a pointer to array and returns the result.
+func sliceToArrayPointer(t_dst, t_src types.Type, x value) value {
+	utSrc := t_src.Underlying()
+	utDst := t_dst.Underlying()
+
+	if _, ok := utSrc.(*types.Slice); ok {
+		if utSrc, ok := utDst.(*types.Pointer); ok {
+			if arr, ok := utSrc.Elem().(*types.Array); ok {
+				x := x.([]value)
+				if arr.Len() > int64(len(x)) {
+					panic("array length is greater than slice length")
+				}
+				if x == nil {
+					return zero(utSrc)
+				}
+				v := value(array(x[:arr.Len()]))
+				return &v
+			}
+		}
+	}
+
+	panic(fmt.Sprintf("unsupported conversion: %s  -> %s, dynamic type %T", t_src, t_dst, x))
+}
+
 // checkInterface checks that the method set of x implements the
 // interface itype.
 // On success it returns "", on failure, an error message.

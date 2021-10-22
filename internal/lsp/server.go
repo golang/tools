@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"golang.org/x/tools/internal/jsonrpc2"
+	"golang.org/x/tools/internal/lsp/progress"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
@@ -21,7 +22,9 @@ const concurrentAnalyses = 1
 
 // NewServer creates an LSP server and binds it to handle incoming client
 // messages on on the supplied stream.
-func NewServer(session source.Session, client protocol.Client) *Server {
+func NewServer(session source.Session, client protocol.ClientCloser) *Server {
+	tracker := progress.NewTracker(client)
+	session.SetProgressTracker(tracker)
 	return &Server{
 		diagnostics:           map[span.URI]*fileReports{},
 		gcOptimizationDetails: make(map[string]struct{}),
@@ -30,8 +33,9 @@ func NewServer(session source.Session, client protocol.Client) *Server {
 		session:               session,
 		client:                client,
 		diagnosticsSema:       make(chan struct{}, concurrentAnalyses),
-		progress:              newProgressTracker(client),
-		debouncer:             newDebouncer(),
+		progress:              tracker,
+		diagDebouncer:         newDebouncer(),
+		watchedFileDebouncer:  newDebouncer(),
 	}
 }
 
@@ -60,7 +64,7 @@ func (s serverState) String() string {
 
 // Server implements the protocol.Server interface.
 type Server struct {
-	client protocol.Client
+	client protocol.ClientCloser
 
 	stateMu sync.Mutex
 	state   serverState
@@ -99,19 +103,29 @@ type Server struct {
 	// expensive.
 	diagnosticsSema chan struct{}
 
-	progress *progressTracker
+	progress *progress.Tracker
 
-	// debouncer is used for debouncing diagnostics.
-	debouncer *debouncer
+	// diagDebouncer is used for debouncing diagnostics.
+	diagDebouncer *debouncer
+
+	// watchedFileDebouncer is used for batching didChangeWatchedFiles notifications.
+	watchedFileDebouncer *debouncer
+	fileChangeMu         sync.Mutex
+	pendingOnDiskChanges []*pendingModificationSet
 
 	// When the workspace fails to load, we show its status through a progress
 	// report with an error message.
 	criticalErrorStatusMu sync.Mutex
-	criticalErrorStatus   *workDone
+	criticalErrorStatus   *progress.WorkDone
+}
+
+type pendingModificationSet struct {
+	diagnoseDone chan struct{}
+	changes      []source.FileModification
 }
 
 func (s *Server) workDoneProgressCancel(ctx context.Context, params *protocol.WorkDoneProgressCancelParams) error {
-	return s.progress.cancel(ctx, params.Token)
+	return s.progress.Cancel(ctx, params.Token)
 }
 
 func (s *Server) nonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {

@@ -51,17 +51,25 @@ func (defaultHandler) Handle(context.Context, *Request) (interface{}, error) {
 	return nil, ErrNotHandled
 }
 
-// async is a small helper for things with an asynchronous result that you can
-// wait for.
-type async struct {
-	ready  chan struct{}
-	errBox chan error
+type HandlerFunc func(ctx context.Context, req *Request) (interface{}, error)
+
+func (f HandlerFunc) Handle(ctx context.Context, req *Request) (interface{}, error) {
+	return f(ctx, req)
 }
 
-func (a *async) init() {
+// async is a small helper for operations with an asynchronous result that you
+// can wait for.
+type async struct {
+	ready  chan struct{} // signals that the operation has completed
+	errBox chan error    // guards the operation result
+}
+
+func newAsync() *async {
+	var a async
 	a.ready = make(chan struct{})
 	a.errBox = make(chan error, 1)
 	a.errBox <- nil
+	return &a
 }
 
 func (a *async) done() {

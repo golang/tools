@@ -78,22 +78,22 @@ type Interface interface {
 	// Checks for module upgrades.
 	CheckUpgrades(context.Context, CheckUpgradesArgs) error
 
-	// AddDependency: Add dependency
+	// AddDependency: Add a dependency
 	//
 	// Adds a dependency to the go.mod file for a module.
 	AddDependency(context.Context, DependencyArgs) error
 
-	// UpgradeDependency: Upgrade dependency
+	// UpgradeDependency: Upgrade a dependency
 	//
 	// Upgrades a dependency in the go.mod file for a module.
 	UpgradeDependency(context.Context, DependencyArgs) error
 
-	// RemoveDependency: Remove dependency
+	// RemoveDependency: Remove a dependency
 	//
 	// Removes a dependency from the go.mod file of a module.
 	RemoveDependency(context.Context, RemoveDependencyArgs) error
 
-	// GoGetPackage: go get package
+	// GoGetPackage: go get a package
 	//
 	// Runs `go get` to fetch a package.
 	GoGetPackage(context.Context, GoGetPackageArgs) error
@@ -115,11 +115,28 @@ type Interface interface {
 	// (Re)generate the gopls.mod file for a workspace.
 	GenerateGoplsMod(context.Context, URIArg) error
 
+	// ListKnownPackages: List known packages
+	//
+	// Retrieve a list of packages that are importable from the given URI.
 	ListKnownPackages(context.Context, URIArg) (ListKnownPackagesResult, error)
 
-	AddImport(context.Context, AddImportArgs) (AddImportResult, error)
+	// AddImport: Add an import
+	//
+	// Ask the server to add an import path to a given Go file.  The method will
+	// call applyEdit on the client so that clients don't have to apply the edit
+	// themselves.
+	AddImport(context.Context, AddImportArgs) error
 
+	// WorkspaceMetadata: Query workspace metadata
+	//
+	// Query the server for information about active workspaces.
 	WorkspaceMetadata(context.Context) (WorkspaceMetadataResult, error)
+
+	// StartDebugging: Start the gopls debug server
+	//
+	// Start the gopls debug server if it isn't running, and return the debug
+	// address.
+	StartDebugging(context.Context, DebuggingArgs) (DebuggingResult, error)
 }
 
 type RunTestsArgs struct {
@@ -194,18 +211,21 @@ type GoGetPackageArgs struct {
 	AddRequire bool
 }
 
-// TODO (Marwan): document :)
-
 type AddImportArgs struct {
+	// ImportPath is the target import path that should
+	// be added to the URI file
 	ImportPath string
-	URI        protocol.DocumentURI
-}
-
-type AddImportResult struct {
-	Edits []protocol.TextDocumentEdit
+	// URI is the file that the ImportPath should be
+	// added to
+	URI protocol.DocumentURI
 }
 
 type ListKnownPackagesResult struct {
+	// Packages is a list of packages relative
+	// to the URIArg passed by the command request.
+	// In other words, it omits paths that are already
+	// imported or cannot be imported due to compiler
+	// restrictions.
 	Packages []string
 }
 
@@ -213,10 +233,44 @@ type WorkspaceMetadataArgs struct {
 }
 
 type WorkspaceMetadataResult struct {
+	// All workspaces for this session.
 	Workspaces []Workspace
 }
 
 type Workspace struct {
-	Name      string
+	// The workspace name.
+	Name string
+	// The workspace module directory.
 	ModuleDir string
+}
+
+type DebuggingArgs struct {
+	// Optional: the address (including port) for the debug server to listen on.
+	// If not provided, the debug server will bind to "localhost:0", and the
+	// full debug URL will be contained in the result.
+	//
+	// If there is more than one gopls instance along the serving path (i.e. you
+	// are using a daemon), each gopls instance will attempt to start debugging.
+	// If Addr specifies a port, only the daemon will be able to bind to that
+	// port, and each intermediate gopls instance will fail to start debugging.
+	// For this reason it is recommended not to specify a port (or equivalently,
+	// to specify ":0").
+	//
+	// If the server was already debugging this field has no effect, and the
+	// result will contain the previously configured debug URL(s).
+	Addr string
+}
+
+type DebuggingResult struct {
+	// The URLs to use to access the debug servers, for all gopls instances in
+	// the serving path. For the common case of a single gopls instance (i.e. no
+	// daemon), this will be exactly one address.
+	//
+	// In the case of one or more gopls instances forwarding the LSP to a daemon,
+	// URLs will contain debug addresses for each server in the serving path, in
+	// serving order. The daemon debug address will be the last entry in the
+	// slice. If any intermediate gopls instance fails to start debugging, no
+	// error will be returned but the debug URL for that server in the URLs slice
+	// will be empty.
+	URLs []string
 }

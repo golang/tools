@@ -14,13 +14,13 @@ import (
 // argument. It attempts to use the AST hints from builtin.go where
 // possible.
 func (c *completer) builtinArgKind(ctx context.Context, obj types.Object, call *ast.CallExpr) objKind {
-	builtin, err := c.snapshot.BuiltinPackage(ctx)
+	builtin, err := c.snapshot.BuiltinFile(ctx)
 	if err != nil {
 		return 0
 	}
 	exprIdx := exprAtPos(c.pos, call.Args)
 
-	builtinObj := builtin.Package.Scope.Lookup(obj.Name())
+	builtinObj := builtin.File.Scope.Lookup(obj.Name())
 	if builtinObj == nil {
 		return 0
 	}
@@ -69,13 +69,25 @@ func (c *completer) builtinArgType(obj types.Object, call *ast.CallExpr, parentI
 
 	switch obj.Name() {
 	case "append":
-		if parentInf.objType == nil {
+		if exprIdx <= 0 {
+			// Infer first append() arg type as apparent return type of
+			// append().
+			inf.objType = parentInf.objType
+			if parentInf.variadic {
+				inf.objType = types.NewSlice(inf.objType)
+			}
 			break
 		}
 
-		inf.objType = parentInf.objType
-
-		if exprIdx <= 0 {
+		// For non-initial append() args, infer slice type from the first
+		// append() arg, or from parent context.
+		if len(call.Args) > 0 {
+			inf.objType = c.pkg.GetTypesInfo().TypeOf(call.Args[0])
+		}
+		if inf.objType == nil {
+			inf.objType = parentInf.objType
+		}
+		if inf.objType == nil {
 			break
 		}
 

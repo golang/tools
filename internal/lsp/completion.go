@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/source/completion"
+	"golang.org/x/tools/internal/lsp/template"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -31,6 +32,13 @@ func (s *Server) completion(ctx context.Context, params *protocol.CompletionPara
 		candidates, surrounding, err = completion.Completion(ctx, snapshot, fh, params.Position, params.Context)
 	case source.Mod:
 		candidates, surrounding = nil, nil
+	case source.Tmpl:
+		var cl *protocol.CompletionList
+		cl, err = template.Completion(ctx, snapshot, fh, params.Position, params.Context)
+		if err != nil {
+			break // use common error handling, candidates==nil
+		}
+		return cl, nil
 	}
 	if err != nil {
 		event.Error(ctx, "no completions found", err, tag.Position.Of(params.Position))
@@ -154,6 +162,8 @@ func toProtocolCompletionItems(candidates []completion.CompletionItem, rng proto
 
 			Preselect:     i == 0,
 			Documentation: candidate.Documentation,
+			Tags:          candidate.Tags,
+			Deprecated:    candidate.Deprecated,
 		}
 		items = append(items, item)
 	}

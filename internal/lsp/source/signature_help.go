@@ -51,7 +51,12 @@ FindCall:
 			// which may be the parameter to the *ast.CallExpr.
 			// Don't show signature help in this case.
 			return nil, 0, errors.Errorf("no signature help within a function declaration")
+		case *ast.BasicLit:
+			if node.Kind == token.STRING {
+				return nil, 0, errors.Errorf("no signature help within a string literal")
+			}
 		}
+
 	}
 	if callExpr == nil || callExpr.Fun == nil {
 		return nil, 0, errors.Errorf("cannot find an enclosing function")
@@ -93,7 +98,11 @@ FindCall:
 		comment *ast.CommentGroup
 	)
 	if obj != nil {
-		node, err := objToDecl(ctx, snapshot, pkg, obj)
+		declPkg, err := FindPackageFromPos(ctx, snapshot, obj.Pos())
+		if err != nil {
+			return nil, 0, err
+		}
+		node, err := snapshot.PosToDecl(ctx, declPkg, obj.Pos())
 		if err != nil {
 			return nil, 0, err
 		}
@@ -106,7 +115,7 @@ FindCall:
 			node: node,
 		}
 		decl.MappedRange = append(decl.MappedRange, rng)
-		d, err := HoverInfo(ctx, snapshot, pkg, decl.obj, decl.node)
+		d, err := HoverInfo(ctx, snapshot, pkg, decl.obj, decl.node, nil)
 		if err != nil {
 			return nil, 0, err
 		}

@@ -5,17 +5,16 @@
 package lsp
 
 import (
-	"sync"
 	"testing"
 	"time"
 )
 
 func TestDebouncer(t *testing.T) {
 	t.Parallel()
+
 	type event struct {
 		key       string
 		order     uint64
-		fired     bool
 		wantFired bool
 	}
 	tests := []struct {
@@ -57,29 +56,24 @@ func TestDebouncer(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(test.label, func(t *testing.T) {
-			t.Parallel()
 			d := newDebouncer()
-			var wg sync.WaitGroup
+
+			delays := make([]chan time.Time, len(test.events))
+			okcs := make([]<-chan bool, len(test.events))
+
+			// Register the events in deterministic order, synchronously.
 			for i, e := range test.events {
-				wg.Add(1)
-				go func(e *event) {
-					d.debounce(e.key, e.order, 500*time.Millisecond, func() {
-						e.fired = true
-					})
-					wg.Done()
-				}(e)
-				// For a bit more fidelity, sleep to try to make things actually
-				// execute in order. This doesn't have to be perfect, but could be done
-				// properly using fake timers.
-				if i < len(test.events)-1 {
-					time.Sleep(10 * time.Millisecond)
-				}
+				delays[i] = make(chan time.Time, 1)
+				okcs[i] = d.debounce(e.key, e.order, delays[i])
 			}
-			wg.Wait()
-			for _, event := range test.events {
-				if event.fired != event.wantFired {
-					t.Errorf("(key: %q, order: %d): fired = %t, want %t",
-						event.key, event.order, event.fired, event.wantFired)
+
+			// Now see which event fired.
+			for i, okc := range okcs {
+				event := test.events[i]
+				delays[i] <- time.Now()
+				fired := <-okc
+				if fired != event.wantFired {
+					t.Errorf("[key: %q, order: %d]: fired = %t, want %t", event.key, event.order, fired, event.wantFired)
 				}
 			}
 		})

@@ -3,7 +3,7 @@ package semantictokens //@ semantic("")
 func f(x ...interface{}) {
 }
 
-func weirⰀd() {
+func weirⰀd() { /*😀*/ // comment
 	const (
 		snil   = nil
 		nil    = true
@@ -17,3 +17,18 @@ func weirⰀd() {
 	)
 	f(cmd, nil, double, iota)
 }
+
+/*
+
+multiline */ /*
+multiline
+*/
+type AA int
+type BB struct {
+	AA
+}
+type CC struct {
+	AA int
+}
+type D func(aa AA) (BB error)
+type E func(AA) BB

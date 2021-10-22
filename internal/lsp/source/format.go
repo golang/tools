@@ -19,7 +19,9 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/diff"
+	"golang.org/x/tools/internal/lsp/lsppos"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/span"
 )
 
 // Format formats a file with a given range.
@@ -151,7 +153,10 @@ func ComputeOneImportFixEdits(snapshot Snapshot, pgf *ParsedGoFile, fix *imports
 
 func computeFixEdits(snapshot Snapshot, pgf *ParsedGoFile, options *imports.Options, fixes []*imports.ImportFix) ([]protocol.TextEdit, error) {
 	// trim the original data to match fixedData
-	left := importPrefix(pgf.Src)
+	left, err := importPrefix(pgf.Src)
+	if err != nil {
+		return nil, err
+	}
 	extra := !strings.Contains(left, "\n") // one line may have more than imports
 	if extra {
 		left = string(pgf.Src)
@@ -177,31 +182,36 @@ func computeFixEdits(snapshot Snapshot, pgf *ParsedGoFile, options *imports.Opti
 	if err != nil {
 		return nil, err
 	}
-	return ToProtocolEdits(pgf.Mapper, edits)
+	return ProtocolEditsFromSource([]byte(left), edits, pgf.Mapper.Converter)
 }
 
 // importPrefix returns the prefix of the given file content through the final
 // import statement. If there are no imports, the prefix is the package
 // statement and any comment groups below it.
-func importPrefix(src []byte) string {
+func importPrefix(src []byte) (string, error) {
 	fset := token.NewFileSet()
 	// do as little parsing as possible
 	f, err := parser.ParseFile(fset, "", src, parser.ImportsOnly|parser.ParseComments)
 	if err != nil { // This can happen if 'package' is misspelled
-		return ""
+		return "", fmt.Errorf("importPrefix: failed to parse: %s", err)
 	}
 	tok := fset.File(f.Pos())
 	var importEnd int
 	for _, d := range f.Decls {
 		if x, ok := d.(*ast.GenDecl); ok && x.Tok == token.IMPORT {
-			if e := tok.Offset(d.End()); e > importEnd {
+			if e, err := Offset(tok, d.End()); err != nil {
+				return "", fmt.Errorf("importPrefix: %s", err)
+			} else if e > importEnd {
 				importEnd = e
 			}
 		}
 	}
 
 	maybeAdjustToLineEnd := func(pos token.Pos, isCommentNode bool) int {
-		offset := tok.Offset(pos)
+		offset, err := Offset(tok, pos)
+		if err != nil {
+			return -1
+		}
 
 		// Don't go past the end of the file.
 		if offset > len(src) {
@@ -213,7 +223,10 @@ func importPrefix(src []byte) string {
 		// return a position on the next line whenever possible.
 		switch line := tok.Line(tok.Pos(offset)); {
 		case line < tok.LineCount():
-			nextLineOffset := tok.Offset(tok.LineStart(line + 1))
+			nextLineOffset, err := Offset(tok, tok.LineStart(line+1))
+			if err != nil {
+				return -1
+			}
 			// If we found a position that is at the end of a line, move the
 			// offset to the start of the next line.
 			if offset+1 == nextLineOffset {
@@ -232,16 +245,21 @@ func importPrefix(src []byte) string {
 	}
 	for _, cgroup := range f.Comments {
 		for _, c := range cgroup.List {
-			if end := tok.Offset(c.End()); end > importEnd {
+			if end, err := Offset(tok, c.End()); err != nil {
+				return "", err
+			} else if end > importEnd {
 				startLine := tok.Position(c.Pos()).Line
 				endLine := tok.Position(c.End()).Line
 
 				// Work around golang/go#41197 by checking if the comment might
 				// contain "\r", and if so, find the actual end position of the
 				// comment by scanning the content of the file.
-				startOffset := tok.Offset(c.Pos())
+				startOffset, err := Offset(tok, c.Pos())
+				if err != nil {
+					return "", err
+				}
 				if startLine != endLine && bytes.Contains(src[startOffset:], []byte("\r")) {
-					if commentEnd := scanForCommentEnd(tok, src[startOffset:]); commentEnd > 0 {
+					if commentEnd := scanForCommentEnd(src[startOffset:]); commentEnd > 0 {
 						end = startOffset + commentEnd
 					}
 				}
@@ -252,12 +270,12 @@ func importPrefix(src []byte) string {
 	if importEnd > len(src) {
 		importEnd = len(src)
 	}
-	return string(src[:importEnd])
+	return string(src[:importEnd]), nil
 }
 
 // scanForCommentEnd returns the offset of the end of the multi-line comment
 // at the start of the given byte slice.
-func scanForCommentEnd(tok *token.File, src []byte) int {
+func scanForCommentEnd(src []byte) int {
 	var s scanner.Scanner
 	s.Init(bytes.NewReader(src))
 	s.Mode ^= scanner.SkipComments
@@ -278,6 +296,37 @@ func computeTextEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile,
 		return nil, err
 	}
 	return ToProtocolEdits(pgf.Mapper, edits)
+}
+
+// ProtocolEditsFromSource converts text edits to LSP edits using the original
+// source.
+func ProtocolEditsFromSource(src []byte, edits []diff.TextEdit, converter span.Converter) ([]protocol.TextEdit, error) {
+	m := lsppos.NewMapper(src)
+	var result []protocol.TextEdit
+	for _, edit := range edits {
+		spn, err := edit.Span.WithOffset(converter)
+		if err != nil {
+			return nil, fmt.Errorf("computing offsets: %v", err)
+		}
+		startLine, startChar := m.Position(spn.Start().Offset())
+		endLine, endChar := m.Position(spn.End().Offset())
+		if startLine < 0 || endLine < 0 {
+			return nil, fmt.Errorf("out of bound span: %v", spn)
+		}
+
+		pstart := protocol.Position{Line: uint32(startLine), Character: uint32(startChar)}
+		pend := protocol.Position{Line: uint32(endLine), Character: uint32(endChar)}
+		if pstart == pend && edit.NewText == "" {
+			// Degenerate case, which may result from a diff tool wanting to delete
+			// '\r' in line endings. Filter it out.
+			continue
+		}
+		result = append(result, protocol.TextEdit{
+			Range:   protocol.Range{Start: pstart, End: pend},
+			NewText: edit.NewText,
+		})
+	}
+	return result, nil
 }
 
 func ToProtocolEdits(m *protocol.ColumnMapper, edits []diff.TextEdit) ([]protocol.TextEdit, error) {

@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 	rpprof "runtime/pprof"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -50,13 +51,11 @@ const (
 
 // An Instance holds all debug information associated with a gopls instance.
 type Instance struct {
-	Logfile              string
-	StartTime            time.Time
-	ServerAddress        string
-	DebugAddress         string
-	ListenedDebugAddress string
-	Workdir              string
-	OCAgentConfig        string
+	Logfile       string
+	StartTime     time.Time
+	ServerAddress string
+	Workdir       string
+	OCAgentConfig string
 
 	LogWriter io.Writer
 
@@ -67,6 +66,10 @@ type Instance struct {
 	rpcs       *Rpcs
 	traces     *traces
 	State      *State
+
+	serveMu              sync.Mutex
+	debugAddress         string
+	listenedDebugAddress string
 }
 
 // State holds debugging information related to the server state.
@@ -74,6 +77,45 @@ type State struct {
 	mu      sync.Mutex
 	clients []*Client
 	servers []*Server
+
+	// bugs maps bug description -> formatted event
+	bugs map[string]string
+}
+
+func Bug(ctx context.Context, desc, format string, args ...interface{}) {
+	labels := []label.Label{tag.Bug.Of(desc)}
+	_, file, line, ok := runtime.Caller(1)
+	if ok {
+		labels = append(labels, tag.Callsite.Of(fmt.Sprintf("%s:%d", file, line)))
+	}
+	msg := fmt.Sprintf(format, args...)
+	event.Log(ctx, msg, labels...)
+}
+
+type bug struct {
+	Description, Event string
+}
+
+func (st *State) Bugs() []bug {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	var bugs []bug
+	for k, v := range st.bugs {
+		bugs = append(bugs, bug{k, v})
+	}
+	sort.Slice(bugs, func(i, j int) bool {
+		return bugs[i].Description < bugs[j].Description
+	})
+	return bugs
+}
+
+func (st *State) recordBug(description, event string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.bugs == nil {
+		st.bugs = make(map[string]string)
+	}
+	st.bugs[description] = event
 }
 
 // Caches returns the set of Cache objects currently being served.
@@ -216,9 +258,20 @@ func (st *State) dropClient(session source.Session) {
 
 // AddServer adds a server to the set being queried. In practice, there should
 // be at most one remote server.
-func (st *State) addServer(server *Server) {
+func (st *State) updateServer(server *Server) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	for i, existing := range st.servers {
+		if existing.ID == server.ID {
+			// Replace, rather than mutate, to avoid a race.
+			newServers := make([]*Server, len(st.servers))
+			copy(newServers, st.servers[:i])
+			newServers[i] = server
+			copy(newServers[i+1:], st.servers[i+1:])
+			st.servers = newServers
+			return
+		}
+	}
 	st.servers = append(st.servers, server)
 }
 
@@ -274,11 +327,11 @@ func (i *Instance) getSession(r *http.Request) interface{} {
 	return i.State.Session(path.Base(r.URL.Path))
 }
 
-func (i Instance) getClient(r *http.Request) interface{} {
+func (i *Instance) getClient(r *http.Request) interface{} {
 	return i.State.Client(path.Base(r.URL.Path))
 }
 
-func (i Instance) getServer(r *http.Request) interface{} {
+func (i *Instance) getServer(r *http.Request) interface{} {
 	i.State.mu.Lock()
 	defer i.State.mu.Unlock()
 	id := path.Base(r.URL.Path)
@@ -290,7 +343,7 @@ func (i Instance) getServer(r *http.Request) interface{} {
 	return nil
 }
 
-func (i Instance) getView(r *http.Request) interface{} {
+func (i *Instance) getView(r *http.Request) interface{} {
 	return i.State.View(path.Base(r.URL.Path))
 }
 
@@ -325,7 +378,7 @@ func (i *Instance) AddService(s protocol.Server, session *cache.Session) {
 	stdlog.Printf("unable to find a Client to add the protocol.Server to")
 }
 
-func getMemory(r *http.Request) interface{} {
+func getMemory(_ *http.Request) interface{} {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	return m
@@ -395,22 +448,31 @@ func (i *Instance) SetLogFile(logfile string, isDaemon bool) (func(), error) {
 	return closeLog, nil
 }
 
-// Serve starts and runs a debug server in the background.
+// Serve starts and runs a debug server in the background on the given addr.
 // It also logs the port the server starts on, to allow for :0 auto assigned
 // ports.
-func (i *Instance) Serve(ctx context.Context) error {
+func (i *Instance) Serve(ctx context.Context, addr string) (string, error) {
 	stdlog.SetFlags(stdlog.Lshortfile)
-	if i.DebugAddress == "" {
-		return nil
+	if addr == "" {
+		return "", nil
 	}
-	listener, err := net.Listen("tcp", i.DebugAddress)
+	i.serveMu.Lock()
+	defer i.serveMu.Unlock()
+
+	if i.listenedDebugAddress != "" {
+		// Already serving. Return the bound address.
+		return i.listenedDebugAddress, nil
+	}
+
+	i.debugAddress = addr
+	listener, err := net.Listen("tcp", i.debugAddress)
 	if err != nil {
-		return err
+		return "", err
 	}
-	i.ListenedDebugAddress = listener.Addr().String()
+	i.listenedDebugAddress = listener.Addr().String()
 
 	port := listener.Addr().(*net.TCPAddr).Port
-	if strings.HasSuffix(i.DebugAddress, ":0") {
+	if strings.HasSuffix(i.debugAddress, ":0") {
 		stdlog.Printf("debug server listening at http://localhost:%d", port)
 	}
 	event.Log(ctx, "Debug serving", tag.Port.Of(port))
@@ -446,7 +508,19 @@ func (i *Instance) Serve(ctx context.Context) error {
 		}
 		event.Log(ctx, "Debug server finished")
 	}()
-	return nil
+	return i.listenedDebugAddress, nil
+}
+
+func (i *Instance) DebugAddress() string {
+	i.serveMu.Lock()
+	defer i.serveMu.Unlock()
+	return i.debugAddress
+}
+
+func (i *Instance) ListenedDebugAddress() string {
+	i.serveMu.Lock()
+	defer i.serveMu.Unlock()
+	return i.listenedDebugAddress
 }
 
 // MonitorMemory starts recording memory statistics each second.
@@ -579,7 +653,7 @@ func makeInstanceExporter(i *Instance) event.Exporter {
 				i.State.addClient(s)
 			}
 			if sid := tag.NewServer.Get(ev); sid != "" {
-				i.State.addServer(&Server{
+				i.State.updateServer(&Server{
 					ID:           sid,
 					Logfile:      tag.Logfile.Get(ev),
 					DebugAddress: tag.DebugAddress.Get(ev),
@@ -601,6 +675,9 @@ func makeInstanceExporter(i *Instance) event.Exporter {
 					c.GoplsPath = tag.GoplsPath.Get(ev)
 				}
 			}
+		}
+		if b := tag.Bug.Get(ev); b != "" {
+			i.State.recordBug(b, fmt.Sprintf("%v", ev))
 		}
 		return ctx
 	}
@@ -714,7 +791,7 @@ Unknown page
 		}
 		return s
 	},
-	"options": func(s *cache.Session) []string {
+	"options": func(s *cache.Session) []sessionOption {
 		return showOptions(s.Options())
 	},
 })
@@ -732,6 +809,8 @@ var MainTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 <ul>{{range .State.Clients}}<li>{{template "clientlink" .Session.ID}}</li>{{end}}</ul>
 <h2>Servers</h2>
 <ul>{{range .State.Servers}}<li>{{template "serverlink" .ID}}</li>{{end}}</ul>
+<h2>Known bugs encountered</h2>
+<dl>{{range .State.Bugs}}<dt>{{.Description}}</dt><dd>{{.Event}}</dd>{{end}}</dl>
 {{end}}
 `))
 
@@ -840,7 +919,11 @@ From: <b>{{template "cachelink" .Cache.ID}}</b><br>
 <h2>Overlays</h2>
 <ul>{{range .Overlays}}<li>{{template "filelink" .}}</li>{{end}}</ul>
 <h2>Options</h2>
-{{range options .}}<p>{{.}}{{end}}
+{{range options .}}
+<p><b>{{.Name}}</b> {{.Type}}</p>
+<p><i>default:</i> {{.Default}}</p>
+{{if ne .Default .Current}}<p><i>current:</i> {{.Current}}</p>{{end}}
+{{end}}
 {{end}}
 `))
 

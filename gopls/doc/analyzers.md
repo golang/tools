@@ -119,10 +119,27 @@ of the second argument is not a pointer to a type implementing error.
 
 ## **fieldalignment**
 
-find structs that would take less memory if their fields were sorted
+find structs that would use less memory if their fields were sorted
 
-This analyzer find structs that can be rearranged to take less memory, and provides
+This analyzer find structs that can be rearranged to use less memory, and provides
 a suggested edit with the optimal order.
+
+Note that there are two different diagnostics reported. One checks struct size,
+and the other reports "pointer bytes" used. Pointer bytes is how many bytes of the
+object that the garbage collector has to potentially scan for pointers, for example:
+
+	struct { uint32; string }
+
+have 16 pointer bytes because the garbage collector has to scan up through the string's
+inner pointer.
+
+	struct { string; *uint32 }
+
+has 24 pointer bytes because it has to scan further through the *uint32.
+
+	struct { string; uint32 }
+
+has 8 because it can stop immediately after the string pointer.
 
 
 **Disabled by default. Enable it by setting `"analyses": {"fieldalignment": true}`.**
@@ -163,6 +180,22 @@ name but different signatures. Example:
 
 The Read method in v has a different signature than the Read method in
 io.Reader, so this assertion cannot succeed.
+
+
+**Enabled by default.**
+
+## **infertypeargs**
+
+check for unnecessary type arguments in call expressions
+
+Explicit type arguments may be omitted from call expressions if they can be
+inferred from function arguments, or from other type arguments:
+
+func f[T any](T) {}
+
+func _() {
+	f[string]("foo") // string could be inferred
+}
 
 
 **Enabled by default.**
@@ -537,6 +570,12 @@ Another example is about non-pointer receiver:
 
 **Disabled by default. Enable it by setting `"analyses": {"unusedwrite": true}`.**
 
+## **useany**
+
+check for constraints that could be simplified to "any"
+
+**Enabled by default.**
+
 ## **fillreturns**
 
 suggested fixes for "wrong number of return values (want %d, got %d)"
@@ -589,8 +628,17 @@ will turn into
 suggested fixes for "undeclared name: <>"
 
 This checker provides suggested fixes for type errors of the
-type "undeclared name: <>". It will insert a new statement:
-"<> := ".
+type "undeclared name: <>". It will either insert a new statement,
+such as:
+
+"<> := "
+
+or a new function declaration, such as:
+
+func <>(inferred parameters) {
+	panic("implement me!")
+}
+
 
 **Enabled by default.**
 

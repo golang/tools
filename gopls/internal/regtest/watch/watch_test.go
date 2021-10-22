@@ -395,7 +395,7 @@ package a
 			env.Await(
 				OnceMet(
 					env.DoneWithOpen(),
-					LogMatching(protocol.Info, "a_unneeded.go", 1),
+					LogMatching(protocol.Info, "a_unneeded.go", 1, false),
 				),
 			)
 
@@ -413,7 +413,7 @@ package a
 					// There should only be one log message containing
 					// a_unneeded.go, from the initial workspace load, which we
 					// check for earlier. If there are more, there's a bug.
-					LogMatching(protocol.Info, "a_unneeded.go", 1),
+					LogMatching(protocol.Info, "a_unneeded.go", 1, false),
 				),
 				EmptyDiagnostics("a/a.go"),
 			)
@@ -429,7 +429,7 @@ package a
 			env.Await(
 				OnceMet(
 					env.DoneWithOpen(),
-					LogMatching(protocol.Info, "a_unneeded.go", 1),
+					LogMatching(protocol.Info, "a_unneeded.go", 1, false),
 				),
 			)
 
@@ -447,7 +447,7 @@ package a
 					// There should only be one log message containing
 					// a_unneeded.go, from the initial workspace load, which we
 					// check for earlier. If there are more, there's a bug.
-					LogMatching(protocol.Info, "a_unneeded.go", 1),
+					LogMatching(protocol.Info, "a_unneeded.go", 1, false),
 				),
 				EmptyDiagnostics("a/a.go"),
 			)
@@ -627,7 +627,7 @@ func main() {
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("foo/main.go")
 		env.Await(env.DiagnosticAtRegexp("foo/main.go", `"blah"`))
-		if err := env.Sandbox.RunGoCommand(env.Ctx, "foo", "mod", []string{"init", "mod.com"}); err != nil {
+		if err := env.Sandbox.RunGoCommand(env.Ctx, "foo", "mod", []string{"init", "mod.com"}, true); err != nil {
 			t.Fatal(err)
 		}
 		env.RegexpReplace("foo/main.go", `"blah"`, `"mod.com/blah"`)

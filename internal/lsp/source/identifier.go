@@ -8,13 +8,17 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"go/types"
 	"sort"
 	"strconv"
 
+	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/typeparams"
 	errors "golang.org/x/xerrors"
 )
 
@@ -29,6 +33,8 @@ type IdentifierInfo struct {
 		Object types.Object
 	}
 
+	Inferred *types.Signature
+
 	Declaration Declaration
 
 	ident *ast.Ident
@@ -41,10 +47,24 @@ type IdentifierInfo struct {
 	qf  types.Qualifier
 }
 
+func (i *IdentifierInfo) IsImport() bool {
+	_, ok := i.Declaration.node.(*ast.ImportSpec)
+	return ok
+}
+
 type Declaration struct {
 	MappedRange []MappedRange
-	node        ast.Node
-	obj         types.Object
+
+	// The typechecked node.
+	node ast.Node
+
+	// Optional: the fully parsed node, to be used for formatting in cases where
+	// node has missing information. This could be the case when node was parsed
+	// in ParseExported mode.
+	fullDecl ast.Decl
+
+	// The typechecked object.
+	obj types.Object
 
 	// typeSwitchImplicit indicates that the declaration is in an implicit
 	// type switch. Its type is the type of the variable on the right-hand
@@ -58,7 +78,7 @@ func Identifier(ctx context.Context, snapshot Snapshot, fh FileHandle, pos proto
 	ctx, done := event.Start(ctx, "source.Identifier")
 	defer done()
 
-	pkgs, err := snapshot.PackagesForFile(ctx, fh.URI(), TypecheckAll)
+	pkgs, err := snapshot.PackagesForFile(ctx, fh.URI(), TypecheckAll, false)
 	if err != nil {
 		return nil, err
 	}
@@ -66,6 +86,10 @@ func Identifier(ctx context.Context, snapshot Snapshot, fh FileHandle, pos proto
 		return nil, fmt.Errorf("no packages for file %v", fh.URI())
 	}
 	sort.Slice(pkgs, func(i, j int) bool {
+		// Prefer packages with a more complete parse mode.
+		if pkgs[i].ParseMode() != pkgs[j].ParseMode() {
+			return pkgs[i].ParseMode() > pkgs[j].ParseMode()
+		}
 		return len(pkgs[i].CompiledGoFiles()) < len(pkgs[j].CompiledGoFiles())
 	})
 	var findErr error
@@ -83,7 +107,7 @@ func Identifier(ctx context.Context, snapshot Snapshot, fh FileHandle, pos proto
 			return nil, err
 		}
 		var ident *IdentifierInfo
-		ident, findErr = findIdentifier(ctx, snapshot, pkg, pgf.File, rng.Start)
+		ident, findErr = findIdentifier(ctx, snapshot, pkg, pgf, rng.Start)
 		if findErr == nil {
 			return ident, nil
 		}
@@ -94,7 +118,8 @@ func Identifier(ctx context.Context, snapshot Snapshot, fh FileHandle, pos proto
 // ErrNoIdentFound is error returned when no identifer is found at a particular position
 var ErrNoIdentFound = errors.New("no identifier found")
 
-func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, file *ast.File, pos token.Pos) (*IdentifierInfo, error) {
+func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, pgf *ParsedGoFile, pos token.Pos) (*IdentifierInfo, error) {
+	file := pgf.File
 	// Handle import specs separately, as there is no formal position for a
 	// package declaration.
 	if result, err := importSpec(snapshot, pkg, file, pos); result != nil || err != nil {
@@ -179,11 +204,11 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, file *a
 
 	// Handle builtins separately.
 	if result.Declaration.obj.Parent() == types.Universe {
-		builtin, err := snapshot.BuiltinPackage(ctx)
+		builtin, err := snapshot.BuiltinFile(ctx)
 		if err != nil {
 			return nil, err
 		}
-		builtinObj := builtin.Package.Scope.Lookup(result.Name)
+		builtinObj := builtin.File.Scope.Lookup(result.Name)
 		if builtinObj == nil {
 			return nil, fmt.Errorf("no builtin object for %s", result.Name)
 		}
@@ -195,7 +220,7 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, file *a
 
 		// The builtin package isn't in the dependency graph, so the usual
 		// utilities won't work here.
-		rng := NewMappedRange(snapshot.FileSet(), builtin.ParsedFile.Mapper, decl.Pos(), decl.Pos()+token.Pos(len(result.Name)))
+		rng := NewMappedRange(snapshot.FileSet(), builtin.Mapper, decl.Pos(), decl.Pos()+token.Pos(len(result.Name)))
 		result.Declaration.MappedRange = append(result.Declaration.MappedRange, rng)
 		return result, nil
 	}
@@ -204,14 +229,14 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, file *a
 	// that this is the builtin Error.
 	if obj := result.Declaration.obj; obj.Parent() == nil && obj.Pkg() == nil && obj.Name() == "Error" {
 		if _, ok := obj.Type().(*types.Signature); ok {
-			builtin, err := snapshot.BuiltinPackage(ctx)
+			builtin, err := snapshot.BuiltinFile(ctx)
 			if err != nil {
 				return nil, err
 			}
 			// Look up "error" and then navigate to its only method.
 			// The Error method does not appear in the builtin package's scope.log.Pri
 			const errorName = "error"
-			builtinObj := builtin.Package.Scope.Lookup(errorName)
+			builtinObj := builtin.File.Scope.Lookup(errorName)
 			if builtinObj == nil {
 				return nil, fmt.Errorf("no builtin object for %s", errorName)
 			}
@@ -236,7 +261,7 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, file *a
 			}
 			name := method.Names[0].Name
 			result.Declaration.node = method
-			rng := NewMappedRange(snapshot.FileSet(), builtin.ParsedFile.Mapper, method.Pos(), method.Pos()+token.Pos(len(name)))
+			rng := NewMappedRange(snapshot.FileSet(), builtin.Mapper, method.Pos(), method.Pos()+token.Pos(len(name)))
 			result.Declaration.MappedRange = append(result.Declaration.MappedRange, rng)
 			return result, nil
 		}
@@ -257,13 +282,24 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, file *a
 	}
 	result.Declaration.MappedRange = append(result.Declaration.MappedRange, rng)
 
-	if result.Declaration.node, err = objToDecl(ctx, snapshot, pkg, result.Declaration.obj); err != nil {
+	declPkg, err := FindPackageFromPos(ctx, snapshot, result.Declaration.obj.Pos())
+	if err != nil {
+		return nil, err
+	}
+	if result.Declaration.node, err = snapshot.PosToDecl(ctx, declPkg, result.Declaration.obj.Pos()); err != nil {
+		return nil, err
+	}
+	// Ensure that we have the full declaration, in case the declaration was
+	// parsed in ParseExported and therefore could be missing information.
+	if result.Declaration.fullDecl, err = fullNode(snapshot, result.Declaration.obj, declPkg); err != nil {
 		return nil, err
 	}
 	typ := pkg.GetTypesInfo().TypeOf(result.ident)
 	if typ == nil {
 		return result, nil
 	}
+
+	result.Inferred = inferredSignature(pkg.GetTypesInfo(), ident)
 
 	result.Type.Object = typeToObject(typ)
 	if result.Type.Object != nil {
@@ -276,6 +312,51 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, file *a
 		}
 	}
 	return result, nil
+}
+
+// fullNode tries to extract the full spec corresponding to obj's declaration.
+// If the package was not parsed in full, the declaration file will be
+// re-parsed to ensure it has complete syntax.
+func fullNode(snapshot Snapshot, obj types.Object, pkg Package) (ast.Decl, error) {
+	// declaration in a different package... make sure we have full AST information.
+	tok := snapshot.FileSet().File(obj.Pos())
+	uri := span.URIFromPath(tok.Name())
+	pgf, err := pkg.File(uri)
+	if err != nil {
+		return nil, err
+	}
+	file := pgf.File
+	pos := obj.Pos()
+	if pgf.Mode != ParseFull {
+		fset := snapshot.FileSet()
+		file2, _ := parser.ParseFile(fset, tok.Name(), pgf.Src, parser.AllErrors|parser.ParseComments)
+		if file2 != nil {
+			offset, err := Offset(tok, obj.Pos())
+			if err != nil {
+				return nil, err
+			}
+			file = file2
+			tok2 := fset.File(file2.Pos())
+			pos = tok2.Pos(offset)
+		}
+	}
+	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
+	for _, n := range path {
+		if decl, ok := n.(ast.Decl); ok {
+			return decl, nil
+		}
+	}
+	return nil, nil
+}
+
+// inferredSignature determines the resolved non-generic signature for an
+// identifier in an instantiation expression.
+//
+// If no such signature exists, it returns nil.
+func inferredSignature(info *types.Info, id *ast.Ident) *types.Signature {
+	inst := typeparams.GetInstances(info)[id]
+	sig, _ := inst.Type.(*types.Signature)
+	return sig
 }
 
 func searchForEnclosing(info *types.Info, path []ast.Node) types.Type {
@@ -329,6 +410,26 @@ func typeToObject(typ types.Type) types.Object {
 		return typeToObject(typ.Elem())
 	case *types.Chan:
 		return typeToObject(typ.Elem())
+	case *types.Signature:
+		// Try to find a return value of a named type. If there's only one
+		// such value, jump to its type definition.
+		var res types.Object
+
+		results := typ.Results()
+		for i := 0; i < results.Len(); i++ {
+			obj := typeToObject(results.At(i).Type())
+			if obj == nil || hasErrorType(obj) {
+				// Skip builtins.
+				continue
+			}
+			if res != nil {
+				// The function/method must have only one return value of a named type.
+				return nil
+			}
+
+			res = obj
+		}
+		return res
 	default:
 		return nil
 	}
@@ -336,18 +437,6 @@ func typeToObject(typ types.Type) types.Object {
 
 func hasErrorType(obj types.Object) bool {
 	return types.IsInterface(obj.Type()) && obj.Pkg() == nil && obj.Name() == "error"
-}
-
-func objToDecl(ctx context.Context, snapshot Snapshot, srcPkg Package, obj types.Object) (ast.Decl, error) {
-	pgf, _, err := FindPosInPackage(snapshot, srcPkg, obj.Pos())
-	if err != nil {
-		return nil, err
-	}
-	posToDecl, err := snapshot.PosToDecl(ctx, pgf)
-	if err != nil {
-		return nil, err
-	}
-	return posToDecl[obj.Pos()], nil
 }
 
 // importSpec handles positions inside of an *ast.ImportSpec.
