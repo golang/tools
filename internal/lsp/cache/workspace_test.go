@@ -269,7 +269,7 @@ replace gopls.test => ../../gopls.test2`, false},
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
 			ctx := context.Background()
-			dir, err := fake.Tempdir(test.initial)
+			dir, err := fake.Tempdir(fake.UnpackTxt(test.initial))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -296,7 +296,7 @@ replace gopls.test => ../../gopls.test2`, false},
 						t.Fatal(err)
 					}
 				}
-				got, gotChanged, gotReload := w.invalidate(ctx, changes)
+				got, gotChanged, gotReload := w.invalidate(ctx, changes, fs)
 				if gotChanged != test.wantChanged {
 					t.Errorf("w.invalidate(): got changed %t, want %t", gotChanged, test.wantChanged)
 				}

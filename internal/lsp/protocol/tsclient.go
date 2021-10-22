@@ -6,8 +6,8 @@ package protocol
 
 // Package protocol contains data types and code for LSP jsonrpcs
 // generated automatically from vscode-languageserver-node
-// commit: d58c00bbf8837b9fd0144924db5e7b1c543d839e
-// last fetched Sat Apr 17 2021 08:26:29 GMT-0400 (Eastern Daylight Time)
+// commit: 10b56de150ad67c3c330da8e2df53ebf2cf347c4
+// last fetched Wed Sep 29 2021 12:31:31 GMT-0400 (Eastern Daylight Time)
 
 // Code generated (see typescript/README.md) DO NOT EDIT.
 
@@ -28,10 +28,11 @@ type Client interface {
 	WorkspaceFolders(context.Context) ([]WorkspaceFolder /*WorkspaceFolder[] | null*/, error)
 	Configuration(context.Context, *ParamConfiguration) ([]interface{}, error)
 	WorkDoneProgressCreate(context.Context, *WorkDoneProgressCreateParams) error
+	ShowDocument(context.Context, *ShowDocumentParams) (*ShowDocumentResult, error)
 	RegisterCapability(context.Context, *RegistrationParams) error
 	UnregisterCapability(context.Context, *UnregistrationParams) error
 	ShowMessageRequest(context.Context, *ShowMessageRequestParams) (*MessageActionItem /*MessageActionItem | null*/, error)
-	ApplyEdit(context.Context, *ApplyWorkspaceEditParams) (*ApplyWorkspaceEditResponse, error)
+	ApplyEdit(context.Context, *ApplyWorkspaceEditParams) (*ApplyWorkspaceEditResult, error)
 }
 
 func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
@@ -91,6 +92,13 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 		}
 		err := client.WorkDoneProgressCreate(ctx, &params)
 		return true, reply(ctx, nil, err)
+	case "window/showDocument": // req
+		var params ShowDocumentParams
+		if err := json.Unmarshal(r.Params(), &params); err != nil {
+			return true, sendParseError(ctx, reply, err)
+		}
+		resp, err := client.ShowDocument(ctx, &params)
+		return true, reply(ctx, resp, err)
 	case "client/registerCapability": // req
 		var params RegistrationParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
@@ -126,27 +134,27 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 }
 
 func (s *clientDispatcher) ShowMessage(ctx context.Context, params *ShowMessageParams) error {
-	return s.Conn.Notify(ctx, "window/showMessage", params)
+	return s.sender.Notify(ctx, "window/showMessage", params)
 }
 
 func (s *clientDispatcher) LogMessage(ctx context.Context, params *LogMessageParams) error {
-	return s.Conn.Notify(ctx, "window/logMessage", params)
+	return s.sender.Notify(ctx, "window/logMessage", params)
 }
 
 func (s *clientDispatcher) Event(ctx context.Context, params *interface{}) error {
-	return s.Conn.Notify(ctx, "telemetry/event", params)
+	return s.sender.Notify(ctx, "telemetry/event", params)
 }
 
 func (s *clientDispatcher) PublishDiagnostics(ctx context.Context, params *PublishDiagnosticsParams) error {
-	return s.Conn.Notify(ctx, "textDocument/publishDiagnostics", params)
+	return s.sender.Notify(ctx, "textDocument/publishDiagnostics", params)
 }
 
 func (s *clientDispatcher) Progress(ctx context.Context, params *ProgressParams) error {
-	return s.Conn.Notify(ctx, "$/progress", params)
+	return s.sender.Notify(ctx, "$/progress", params)
 }
 func (s *clientDispatcher) WorkspaceFolders(ctx context.Context) ([]WorkspaceFolder /*WorkspaceFolder[] | null*/, error) {
 	var result []WorkspaceFolder /*WorkspaceFolder[] | null*/
-	if err := Call(ctx, s.Conn, "workspace/workspaceFolders", nil, &result); err != nil {
+	if err := s.sender.Call(ctx, "workspace/workspaceFolders", nil, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -154,35 +162,43 @@ func (s *clientDispatcher) WorkspaceFolders(ctx context.Context) ([]WorkspaceFol
 
 func (s *clientDispatcher) Configuration(ctx context.Context, params *ParamConfiguration) ([]interface{}, error) {
 	var result []interface{}
-	if err := Call(ctx, s.Conn, "workspace/configuration", params, &result); err != nil {
+	if err := s.sender.Call(ctx, "workspace/configuration", params, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
 func (s *clientDispatcher) WorkDoneProgressCreate(ctx context.Context, params *WorkDoneProgressCreateParams) error {
-	return Call(ctx, s.Conn, "window/workDoneProgress/create", params, nil) // Call, not Notify
+	return s.sender.Call(ctx, "window/workDoneProgress/create", params, nil) // Call, not Notify
 }
 
-func (s *clientDispatcher) RegisterCapability(ctx context.Context, params *RegistrationParams) error {
-	return Call(ctx, s.Conn, "client/registerCapability", params, nil) // Call, not Notify
-}
-
-func (s *clientDispatcher) UnregisterCapability(ctx context.Context, params *UnregistrationParams) error {
-	return Call(ctx, s.Conn, "client/unregisterCapability", params, nil) // Call, not Notify
-}
-
-func (s *clientDispatcher) ShowMessageRequest(ctx context.Context, params *ShowMessageRequestParams) (*MessageActionItem /*MessageActionItem | null*/, error) {
-	var result *MessageActionItem /*MessageActionItem | null*/
-	if err := Call(ctx, s.Conn, "window/showMessageRequest", params, &result); err != nil {
+func (s *clientDispatcher) ShowDocument(ctx context.Context, params *ShowDocumentParams) (*ShowDocumentResult, error) {
+	var result *ShowDocumentResult
+	if err := s.sender.Call(ctx, "window/showDocument", params, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
-func (s *clientDispatcher) ApplyEdit(ctx context.Context, params *ApplyWorkspaceEditParams) (*ApplyWorkspaceEditResponse, error) {
-	var result *ApplyWorkspaceEditResponse
-	if err := Call(ctx, s.Conn, "workspace/applyEdit", params, &result); err != nil {
+func (s *clientDispatcher) RegisterCapability(ctx context.Context, params *RegistrationParams) error {
+	return s.sender.Call(ctx, "client/registerCapability", params, nil) // Call, not Notify
+}
+
+func (s *clientDispatcher) UnregisterCapability(ctx context.Context, params *UnregistrationParams) error {
+	return s.sender.Call(ctx, "client/unregisterCapability", params, nil) // Call, not Notify
+}
+
+func (s *clientDispatcher) ShowMessageRequest(ctx context.Context, params *ShowMessageRequestParams) (*MessageActionItem /*MessageActionItem | null*/, error) {
+	var result *MessageActionItem /*MessageActionItem | null*/
+	if err := s.sender.Call(ctx, "window/showMessageRequest", params, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *clientDispatcher) ApplyEdit(ctx context.Context, params *ApplyWorkspaceEditParams) (*ApplyWorkspaceEditResult, error) {
+	var result *ApplyWorkspaceEditResult
+	if err := s.sender.Call(ctx, "workspace/applyEdit", params, &result); err != nil {
 		return nil, err
 	}
 	return result, nil

@@ -3,15 +3,16 @@ package extract
 
 func _() bool {
 	x := 1
-	cond0, ret0 := fn0(x)
-	if cond0 {
-		return ret0
+	//@mark(exSt2, "if")
+	shouldReturn, returnValue := newFunction(x)
+	if shouldReturn {
+		return returnValue
 	} //@mark(exEn2, "}")
 	return false
 	//@extractfunc(exSt2, exEn2)
 }
 
-func fn0(x int) (bool, bool) {
+func newFunction(x int) (bool, bool) {
 	if x == 0 {
 		return true, true
 	}

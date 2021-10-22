@@ -185,7 +185,8 @@ func (app *Application) featureCommands() []tool.Application {
 		&highlight{app: app},
 		&implementation{app: app},
 		&imports{app: app},
-		&inspect{app: app},
+		newRemote(app, ""),
+		newRemote(app, "inspect"),
 		&links{app: app},
 		&prepareRename{app: app},
 		&references{app: app},
@@ -194,7 +195,7 @@ func (app *Application) featureCommands() []tool.Application {
 		&signature{app: app},
 		&suggestedFix{app: app},
 		&symbols{app: app},
-		&workspace{app: app},
+		newWorkspace(app),
 		&workspaceSymbol{app: app},
 	}
 }
@@ -246,8 +247,7 @@ func CloseTestConnections(ctx context.Context) {
 
 func (app *Application) connectRemote(ctx context.Context, remote string) (*connection, error) {
 	connection := newConnection(app)
-	network, addr := parseAddr(remote)
-	conn, err := lsprpc.ConnectToRemote(ctx, network, addr)
+	conn, err := lsprpc.ConnectToRemote(ctx, remote)
 	if err != nil {
 		return nil, err
 	}
@@ -418,8 +418,8 @@ func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfigur
 	return results, nil
 }
 
-func (c *cmdClient) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResponse, error) {
-	return &protocol.ApplyWorkspaceEditResponse{Applied: false, FailureReason: "not implemented"}, nil
+func (c *cmdClient) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResult, error) {
+	return &protocol.ApplyWorkspaceEditResult{Applied: false, FailureReason: "not implemented"}, nil
 }
 
 func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishDiagnosticsParams) error {
@@ -441,6 +441,10 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 
 func (c *cmdClient) Progress(context.Context, *protocol.ProgressParams) error {
 	return nil
+}
+
+func (c *cmdClient) ShowDocument(context.Context, *protocol.ShowDocumentParams) (*protocol.ShowDocumentResult, error) {
+	return nil, nil
 }
 
 func (c *cmdClient) WorkDoneProgressCreate(context.Context, *protocol.WorkDoneProgressCreateParams) error {
@@ -523,8 +527,13 @@ func (c *connection) diagnoseFiles(ctx context.Context, files []span.URI) error 
 
 	c.Client.diagnosticsDone = make(chan struct{})
 	_, err := c.Server.NonstandardRequest(ctx, "gopls/diagnoseFiles", map[string]interface{}{"files": untypedFiles})
+	if err != nil {
+		close(c.Client.diagnosticsDone)
+		return err
+	}
+
 	<-c.Client.diagnosticsDone
-	return err
+	return nil
 }
 
 func (c *connection) terminate(ctx context.Context) {

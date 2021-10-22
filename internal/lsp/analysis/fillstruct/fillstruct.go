@@ -13,6 +13,7 @@ import (
 	"go/format"
 	"go/token"
 	"go/types"
+	"strings"
 	"unicode"
 
 	"golang.org/x/tools/go/analysis"
@@ -21,6 +22,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/internal/typeparams"
 )
 
 const Doc = `note incomplete struct initializations
@@ -65,6 +67,14 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
+		// Ignore types that have type parameters for now.
+		// TODO: support type params.
+		if typ, ok := typ.(*types.Named); ok {
+			if tparams := typeparams.ForNamed(typ); tparams != nil && tparams.Len() > 0 {
+				return
+			}
+		}
+
 		// Find reference to the type declaration of the struct being initialized.
 		for {
 			p, ok := typ.Underlying().(*types.Pointer)
@@ -87,13 +97,25 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		var fillable bool
+		var fillableFields []string
 		for i := 0; i < fieldCount; i++ {
 			field := obj.Field(i)
 			// Ignore fields that are not accessible in the current package.
 			if field.Pkg() != nil && field.Pkg() != pass.Pkg && !field.Exported() {
 				continue
 			}
+			// Ignore structs containing fields that have type parameters for now.
+			// TODO: support type params.
+			if typ, ok := field.Type().(*types.Named); ok {
+				if tparams := typeparams.ForNamed(typ); tparams != nil && tparams.Len() > 0 {
+					return
+				}
+			}
+			if _, ok := field.Type().(*typeparams.TypeParam); ok {
+				return
+			}
 			fillable = true
+			fillableFields = append(fillableFields, fmt.Sprintf("%s: %s", field.Name(), field.Type().String()))
 		}
 		if !fillable {
 			return
@@ -105,7 +127,21 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		case *ast.SelectorExpr:
 			name = fmt.Sprintf("%s.%s", typ.X, typ.Sel.Name)
 		default:
-			name = "anonymous struct"
+			totalFields := len(fillableFields)
+			maxLen := 20
+			// Find the index to cut off printing of fields.
+			var i, fieldLen int
+			for i = range fillableFields {
+				if fieldLen > maxLen {
+					break
+				}
+				fieldLen += len(fillableFields[i])
+			}
+			fillableFields = fillableFields[:i]
+			if i < totalFields {
+				fillableFields = append(fillableFields, "...")
+			}
+			name = fmt.Sprintf("anonymous struct { %s }", strings.Join(fillableFields, ", "))
 		}
 		pass.Report(analysis.Diagnostic{
 			Message: fmt.Sprintf("Fill %s", name),

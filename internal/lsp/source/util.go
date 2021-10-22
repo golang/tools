@@ -6,6 +6,7 @@ package source
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
 	"go/printer"
 	"go/token"
@@ -168,14 +169,21 @@ func DetectLanguage(langID, filename string) FileKind {
 		return Mod
 	case "go.sum":
 		return Sum
+	case "tmpl":
+		return Tmpl
 	}
 	// Fallback to detecting the language based on the file extension.
-	switch filepath.Ext(filename) {
+	switch ext := filepath.Ext(filename); ext {
 	case ".mod":
 		return Mod
 	case ".sum":
 		return Sum
-	default: // fallback to Go
+	default:
+		if strings.HasSuffix(ext, "tmpl") {
+			// .tmpl, .gotmpl, etc
+			return Tmpl
+		}
+		// It's a Go file, or we shouldn't be seeing it
 		return Go
 	}
 }
@@ -186,6 +194,8 @@ func (k FileKind) String() string {
 		return "go.mod"
 	case Sum:
 		return "go.sum"
+	case Tmpl:
+		return "tmpl"
 	default:
 		return "go"
 	}
@@ -265,20 +275,33 @@ func CompareDiagnostic(a, b *Diagnostic) int {
 	return 1
 }
 
-// FindPosInPackage finds the parsed file for a position in a given search
-// package.
-func FindPosInPackage(snapshot Snapshot, searchpkg Package, pos token.Pos) (*ParsedGoFile, Package, error) {
+// FindPackageFromPos finds the first package containing pos in its
+// type-checked AST.
+func FindPackageFromPos(ctx context.Context, snapshot Snapshot, pos token.Pos) (Package, error) {
 	tok := snapshot.FileSet().File(pos)
 	if tok == nil {
-		return nil, nil, errors.Errorf("no file for pos in package %s", searchpkg.ID())
+		return nil, errors.Errorf("no file for pos %v", pos)
 	}
 	uri := span.URIFromPath(tok.Name())
-
-	pgf, pkg, err := findFileInDeps(searchpkg, uri)
+	pkgs, err := snapshot.PackagesForFile(ctx, uri, TypecheckAll, true)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return pgf, pkg, nil
+	// Only return the package if it actually type-checked the given position.
+	for _, pkg := range pkgs {
+		parsed, err := pkg.File(uri)
+		if err != nil {
+			return nil, err
+		}
+		if parsed == nil {
+			continue
+		}
+		if parsed.Tok.Base() != tok.Base() {
+			continue
+		}
+		return pkg, nil
+	}
+	return nil, errors.Errorf("no package for given file position")
 }
 
 // findFileInDeps finds uri in pkg or its dependencies.
@@ -498,4 +521,40 @@ func inDirLex(dir, path string) bool {
 		}
 		return false
 	}
+}
+
+// IsValidImport returns whether importPkgPath is importable
+// by pkgPath
+func IsValidImport(pkgPath, importPkgPath string) bool {
+	i := strings.LastIndex(string(importPkgPath), "/internal/")
+	if i == -1 {
+		return true
+	}
+	if IsCommandLineArguments(string(pkgPath)) {
+		return true
+	}
+	return strings.HasPrefix(string(pkgPath), string(importPkgPath[:i]))
+}
+
+// IsCommandLineArguments reports whether a given value denotes
+// "command-line-arguments" package, which is a package with an unknown ID
+// created by the go command. It can have a test variant, which is why callers
+// should not check that a value equals "command-line-arguments" directly.
+func IsCommandLineArguments(s string) bool {
+	return strings.Contains(s, "command-line-arguments")
+}
+
+// Offset returns tok.Offset(pos), but it also checks that the pos is in range
+// for the given file.
+func Offset(tok *token.File, pos token.Pos) (int, error) {
+	if !InRange(tok, pos) {
+		return -1, fmt.Errorf("pos %v is not in range for file [%v:%v)", pos, tok.Base(), tok.Base()+tok.Size())
+	}
+	return tok.Offset(pos), nil
+}
+
+// InRange reports whether the given position is in the given token.File.
+func InRange(tok *token.File, pos token.Pos) bool {
+	size := tok.Pos(tok.Size())
+	return int(pos) >= tok.Base() && pos <= size
 }

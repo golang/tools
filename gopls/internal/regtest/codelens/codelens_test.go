@@ -90,7 +90,7 @@ go 1.12
 package hi
 
 var Goodbye error
-	-- golang.org/x/hello@v1.2.3/go.mod --
+-- golang.org/x/hello@v1.2.3/go.mod --
 module golang.org/x/hello
 
 go 1.12
@@ -108,8 +108,8 @@ go 1.14
 
 require golang.org/x/hello v1.2.3
 -- go.sum --
-golang.org/x/hello v1.2.3 h1:jOtNXLsiCuLzU6KM3wRHidpc29IxcKpofHZiOW1hYKA=
-golang.org/x/hello v1.2.3/go.mod h1:X79D30QqR94cGK8aIhQNhCZLq4mIr5Gimj5qekF08rY=
+golang.org/x/hello v1.2.3 h1:7Wesfkx/uBd+eFgPrq0irYj/1XfmbvLV8jZ/W7C2Dwg=
+golang.org/x/hello v1.2.3/go.mod h1:OgtlzsxVMUUdsdQCIDYgaauCTH47B8T8vofouNJfzgY=
 -- main.go --
 package main
 
@@ -166,11 +166,16 @@ require golang.org/x/hello v1.3.3
 				if vendoring {
 					env.RunGoCommand("mod", "vendor")
 				}
+				env.Await(env.DoneWithChangeWatchedFiles())
 				env.OpenFile("go.mod")
 				env.ExecuteCodeLensCommand("go.mod", command.CheckUpgrades)
 				d := &protocol.PublishDiagnosticsParams{}
-				env.Await(OnceMet(env.DiagnosticAtRegexpWithMessage("go.mod", `require`, "can be upgraded"),
-					ReadDiagnostics("go.mod", d)))
+				env.Await(
+					OnceMet(
+						env.DiagnosticAtRegexpWithMessage("go.mod", `require`, "can be upgraded"),
+						ReadDiagnostics("go.mod", d),
+					),
+				)
 				env.ApplyQuickFixes("go.mod", d.Diagnostics)
 				env.Await(env.DoneWithChangeWatchedFiles())
 				if got := env.Editor.BufferText("go.mod"); got != wantGoMod {
@@ -298,8 +303,7 @@ package main
 import "fmt"
 
 func main() {
-	var x string
-	fmt.Println(x)
+	fmt.Println(42)
 }
 `
 	WithOptions(
@@ -315,7 +319,7 @@ func main() {
 		d := &protocol.PublishDiagnosticsParams{}
 		env.Await(
 			OnceMet(
-				DiagnosticAt("main.go", 6, 12),
+				DiagnosticAt("main.go", 5, 13),
 				ReadDiagnostics("main.go", d),
 			),
 		)
@@ -325,12 +329,12 @@ func main() {
 			if d.Severity != protocol.SeverityInformation {
 				t.Fatalf("unexpected diagnostic severity %v, wanted Information", d.Severity)
 			}
-			if strings.Contains(d.Message, "x escapes") {
+			if strings.Contains(d.Message, "42 escapes") {
 				found = true
 			}
 		}
 		if !found {
-			t.Fatalf(`expected to find diagnostic with message "escape(x escapes to heap)", found none`)
+			t.Fatalf(`expected to find diagnostic with message "escape(42 escapes to heap)", found none`)
 		}
 
 		// Editing a buffer should cause gc_details diagnostics to disappear, since
@@ -341,7 +345,7 @@ func main() {
 		// Saving a buffer should re-format back to the original state, and
 		// re-enable the gc_details diagnostics.
 		env.SaveBuffer("main.go")
-		env.Await(DiagnosticAt("main.go", 6, 12))
+		env.Await(DiagnosticAt("main.go", 5, 13))
 
 		// Toggle the GC details code lens again so now it should be off.
 		env.ExecuteCodeLensCommand("main.go", command.GCDetails)

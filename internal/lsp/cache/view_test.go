@@ -66,7 +66,7 @@ module de
 -- f/g/go.mod --
 module fg
 `
-	dir, err := fake.Tempdir(workspace)
+	dir, err := fake.Tempdir(fake.UnpackTxt(workspace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,12 +161,12 @@ func TestFilters(t *testing.T) {
 		opts := &source.Options{}
 		opts.DirectoryFilters = tt.filters
 		for _, inc := range tt.included {
-			if pathExcludedByFilter(inc, opts) {
+			if pathExcludedByFilter(inc, "root", "root/gopath/pkg/mod", opts) {
 				t.Errorf("filters %q excluded %v, wanted included", tt.filters, inc)
 			}
 		}
 		for _, exc := range tt.excluded {
-			if !pathExcludedByFilter(exc, opts) {
+			if !pathExcludedByFilter(exc, "root", "root/gopath/pkg/mod", opts) {
 				t.Errorf("filters %q included %v, wanted excluded", tt.filters, exc)
 			}
 		}

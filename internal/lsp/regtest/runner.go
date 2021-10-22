@@ -29,6 +29,7 @@ import (
 	"golang.org/x/tools/internal/lsp/lsprpc"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/xcontext"
 )
 
 // Mode is a bitmask that defines for which execution modes a test should run.
@@ -44,7 +45,7 @@ const (
 	// SeparateProcess forwards connection to a shared separate gopls process.
 	SeparateProcess
 	// Experimental enables all of the experimental configurations that are
-	// being developed. Currently, it enables the workspace module.
+	// being developed.
 	Experimental
 )
 
@@ -109,7 +110,7 @@ func Timeout(d time.Duration) RunOption {
 // ProxyFiles configures a file proxy using the given txtar-encoded string.
 func ProxyFiles(txt string) RunOption {
 	return optionSetter(func(opts *runConfig) {
-		opts.sandbox.ProxyFiles = txt
+		opts.sandbox.ProxyFiles = fake.UnpackTxt(txt)
 	})
 }
 
@@ -236,7 +237,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 		{"singleton", Singleton, singletonServer},
 		{"forwarded", Forwarded, r.forwardedServer},
 		{"separate_process", SeparateProcess, r.separateProcessServer},
-		{"experimental_workspace_module", Experimental, experimentalWorkspaceModule},
+		{"experimental", Experimental, experimentalServer},
 	}
 
 	for _, tc := range tests {
@@ -261,14 +262,19 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 			ctx = debug.WithInstance(ctx, "", "off")
 			if config.debugAddr != "" {
 				di := debug.GetInstance(ctx)
-				di.DebugAddress = config.debugAddr
-				di.Serve(ctx)
+				di.Serve(ctx, config.debugAddr)
 				di.MonitorMemory(ctx)
 			}
 
 			rootDir := filepath.Join(r.TempDir, filepath.FromSlash(t.Name()))
 			if err := os.MkdirAll(rootDir, 0755); err != nil {
 				t.Fatal(err)
+			}
+			files := fake.UnpackTxt(files)
+			if config.editor.WindowsLineEndings {
+				for name, data := range files {
+					files[name] = bytes.ReplaceAll(data, []byte("\n"), []byte("\r\n"))
+				}
 			}
 			config.sandbox.Files = files
 			config.sandbox.RootDir = rootDir
@@ -298,7 +304,13 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 				if t.Failed() || testing.Verbose() {
 					ls.printBuffers(t.Name(), os.Stderr)
 				}
-				env.CloseEditor()
+				// For tests that failed due to a timeout, don't fail to shutdown
+				// because ctx is done.
+				closeCtx, cancel := context.WithTimeout(xcontext.Detach(ctx), 5*time.Second)
+				defer cancel()
+				if err := env.Editor.Close(closeCtx); err != nil {
+					t.Errorf("closing editor: %v", err)
+				}
 			}()
 			// Always await the initial workspace load.
 			env.Await(InitialWorkspaceLoad)
@@ -386,9 +398,12 @@ func singletonServer(ctx context.Context, t *testing.T, optsHook func(*source.Op
 	return lsprpc.NewStreamServer(cache.New(optsHook), false)
 }
 
-func experimentalWorkspaceModule(_ context.Context, t *testing.T, optsHook func(*source.Options)) jsonrpc2.StreamServer {
+func experimentalServer(_ context.Context, t *testing.T, optsHook func(*source.Options)) jsonrpc2.StreamServer {
 	options := func(o *source.Options) {
 		optsHook(o)
+		o.EnableAllExperiments()
+		// ExperimentalWorkspaceModule is not (as of writing) enabled by
+		// source.Options.EnableAllExperiments, but we want to test it.
 		o.ExperimentalWorkspaceModule = true
 	}
 	return lsprpc.NewStreamServer(cache.New(options), false)
@@ -396,7 +411,7 @@ func experimentalWorkspaceModule(_ context.Context, t *testing.T, optsHook func(
 
 func (r *Runner) forwardedServer(ctx context.Context, t *testing.T, optsHook func(*source.Options)) jsonrpc2.StreamServer {
 	ts := r.getTestServer(optsHook)
-	return lsprpc.NewForwarder("tcp", ts.Addr)
+	return newForwarder("tcp", ts.Addr)
 }
 
 // getTestServer gets the shared test server instance to connect to, or creates
@@ -417,7 +432,16 @@ func (r *Runner) separateProcessServer(ctx context.Context, t *testing.T, optsHo
 	// TODO(rfindley): can we use the autostart behavior here, instead of
 	// pre-starting the remote?
 	socket := r.getRemoteSocket(t)
-	return lsprpc.NewForwarder("unix", socket)
+	return newForwarder("unix", socket)
+}
+
+func newForwarder(network, address string) *lsprpc.Forwarder {
+	server, err := lsprpc.NewForwarder(network+";"+address, nil)
+	if err != nil {
+		// This should never happen, as we are passing an explicit address.
+		panic(fmt.Sprintf("internal error: unable to create forwarder: %v", err))
+	}
+	return server
 }
 
 // runTestAsGoplsEnvvar triggers TestMain to run gopls instead of running

@@ -4,7 +4,8 @@ package extract
 func _() {
 	var b []int
 	var a int
-	a, b = fn0(b) //@mark(exEn8, ")")
+	//@mark(exSt8, "a")
+	a, b = newFunction(b) //@mark(exEn8, ")")
 	b[0] = 1
 	if a == 2 {
 		return
@@ -12,7 +13,7 @@ func _() {
 	//@extractfunc(exSt8, exEn8)
 }
 
-func fn0(b []int) (int, []int) {
+func newFunction(b []int) (int, []int) {
 	a := 2
 	b = []int{}
 	b = append(b, a)

@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -47,7 +46,7 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 		event.Error(ctx, "creating temp dir", err)
 		s.tempDir = ""
 	}
-	s.progress.supportsWorkDoneProgress = params.Capabilities.Window.WorkDoneProgress
+	s.progress.SetSupportsWorkDoneProgress(params.Capabilities.Window.WorkDoneProgress)
 
 	options := s.session.Options()
 	defer func() { s.session.SetOptions(options) }()
@@ -96,7 +95,24 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 		}
 	}
 
-	goplsVersion, err := json.Marshal(debug.VersionInfo())
+	versionInfo := debug.VersionInfo()
+
+	// golang/go#45732: Warn users who've installed sergi/go-diff@v1.2.0, since
+	// it will corrupt the formatting of their files.
+	for _, dep := range versionInfo.Deps {
+		if dep.Path == "github.com/sergi/go-diff" && dep.Version == "v1.2.0" {
+			if err := s.eventuallyShowMessage(ctx, &protocol.ShowMessageParams{
+				Message: `It looks like you have a bad gopls installation.
+Please reinstall gopls by running 'GO111MODULE=on go get golang.org/x/tools/gopls@latest'.
+See https://github.com/golang/go/issues/45732 for more information.`,
+				Type: protocol.Error,
+			}); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	goplsVersion, err := json.Marshal(versionInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -172,20 +188,17 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 	}
 	s.pendingFolders = nil
 
+	var registrations []protocol.Registration
 	if options.ConfigurationSupported && options.DynamicConfigurationSupported {
-		registrations := []protocol.Registration{
-			{
-				ID:     "workspace/didChangeConfiguration",
-				Method: "workspace/didChangeConfiguration",
-			},
-			{
-				ID:     "workspace/didChangeWorkspaceFolders",
-				Method: "workspace/didChangeWorkspaceFolders",
-			},
-		}
-		if options.SemanticTokens {
-			registrations = append(registrations, semanticTokenRegistration())
-		}
+		registrations = append(registrations, protocol.Registration{
+			ID:     "workspace/didChangeConfiguration",
+			Method: "workspace/didChangeConfiguration",
+		})
+	}
+	if options.SemanticTokens && options.DynamicRegistrationSemanticTokensSupported {
+		registrations = append(registrations, semanticTokenRegistration(options.SemanticTypes, options.SemanticMods))
+	}
+	if len(registrations) > 0 {
 		if err := s.client.RegisterCapability(ctx, &protocol.RegistrationParams{
 			Registrations: registrations,
 		}); err != nil {
@@ -201,11 +214,11 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 
 	var wg sync.WaitGroup
 	if s.session.Options().VerboseWorkDoneProgress {
-		work := s.progress.start(ctx, DiagnosticWorkTitle(FromInitialWorkspaceLoad), "Calculating diagnostics for initial workspace load...", nil, nil)
+		work := s.progress.Start(ctx, DiagnosticWorkTitle(FromInitialWorkspaceLoad), "Calculating diagnostics for initial workspace load...", nil, nil)
 		defer func() {
 			go func() {
 				wg.Wait()
-				work.end("Done.")
+				work.End("Done.")
 			}()
 		}()
 	}
@@ -217,11 +230,14 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 		if !uri.IsFile() {
 			continue
 		}
-		work := s.progress.start(ctx, "Setting up workspace", "Loading packages...", nil, nil)
+		work := s.progress.Start(ctx, "Setting up workspace", "Loading packages...", nil, nil)
 		snapshot, release, err := s.addView(ctx, folder.Name, uri)
+		if err == source.ErrViewExists {
+			continue
+		}
 		if err != nil {
 			viewErrors[uri] = err
-			work.end(fmt.Sprintf("Error loading packages: %s", err))
+			work.End(fmt.Sprintf("Error loading packages: %s", err))
 			continue
 		}
 		var swg sync.WaitGroup
@@ -231,7 +247,7 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 			defer swg.Done()
 			defer allFoldersWg.Done()
 			snapshot.AwaitInitialized(ctx)
-			work.end("Finished loading packages.")
+			work.End("Finished loading packages.")
 		}()
 
 		// Print each view's environment.
@@ -481,8 +497,7 @@ func (s *Server) exit(ctx context.Context) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 
-	// TODO: We need a better way to find the conn close method.
-	s.client.(io.Closer).Close()
+	s.client.Close()
 
 	if s.state != serverShutDown {
 		// TODO: We should be able to do better than this.

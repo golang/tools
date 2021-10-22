@@ -6,8 +6,9 @@ package lsprpc
 
 import (
 	"context"
+	"errors"
 	"regexp"
-	"sync"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,14 +22,14 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
-type fakeClient struct {
+type FakeClient struct {
 	protocol.Client
 
-	logs chan string
+	Logs chan string
 }
 
-func (c fakeClient) LogMessage(ctx context.Context, params *protocol.LogMessageParams) error {
-	c.logs <- params.Message
+func (c FakeClient) LogMessage(ctx context.Context, params *protocol.LogMessageParams) error {
+	c.Logs <- params.Message
 	return nil
 }
 
@@ -42,9 +43,9 @@ func (fakeServer) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-type pingServer struct{ fakeServer }
+type PingServer struct{ fakeServer }
 
-func (s pingServer) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
+func (s PingServer) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
 	event.Log(ctx, "ping")
 	return nil
 }
@@ -53,8 +54,8 @@ func TestClientLogging(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	server := pingServer{}
-	client := fakeClient{logs: make(chan string, 10)}
+	server := PingServer{}
+	client := FakeClient{Logs: make(chan string, 10)}
 
 	ctx = debug.WithInstance(ctx, "", "")
 	ss := NewStreamServer(cache.New(nil), false)
@@ -64,10 +65,12 @@ func TestClientLogging(t *testing.T) {
 	cc := ts.Connect(ctx)
 	cc.Go(ctx, protocol.ClientHandler(client, jsonrpc2.MethodNotFound))
 
-	protocol.ServerDispatcher(cc).DidOpen(ctx, &protocol.DidOpenTextDocumentParams{})
+	if err := protocol.ServerDispatcher(cc).DidOpen(ctx, &protocol.DidOpenTextDocumentParams{}); err != nil {
+		t.Errorf("DidOpen: %v", err)
+	}
 
 	select {
-	case got := <-client.logs:
+	case got := <-client.Logs:
 		want := "ping"
 		matched, err := regexp.MatchString(want, got)
 		if err != nil {
@@ -81,26 +84,30 @@ func TestClientLogging(t *testing.T) {
 	}
 }
 
-// waitableServer instruments LSP request so that we can control their timing.
+// WaitableServer instruments LSP request so that we can control their timing.
 // The requests chosen are arbitrary: we simply needed one that blocks, and
 // another that doesn't.
-type waitableServer struct {
+type WaitableServer struct {
 	fakeServer
 
-	started chan struct{}
+	Started   chan struct{}
+	Completed chan error
 }
 
-func (s waitableServer) Hover(ctx context.Context, _ *protocol.HoverParams) (*protocol.Hover, error) {
-	s.started <- struct{}{}
+func (s WaitableServer) Hover(ctx context.Context, _ *protocol.HoverParams) (_ *protocol.Hover, err error) {
+	s.Started <- struct{}{}
+	defer func() {
+		s.Completed <- err
+	}()
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-time.After(200 * time.Millisecond):
+		return nil, errors.New("cancelled hover")
+	case <-time.After(10 * time.Second):
 	}
 	return &protocol.Hover{}, nil
 }
 
-func (s waitableServer) Resolve(_ context.Context, item *protocol.CompletionItem) (*protocol.CompletionItem, error) {
+func (s WaitableServer) Resolve(_ context.Context, item *protocol.CompletionItem) (*protocol.CompletionItem, error) {
 	return item, nil
 }
 
@@ -119,7 +126,10 @@ func setupForwarding(ctx context.Context, t *testing.T, s protocol.Server) (dire
 	tsDirect := servertest.NewTCPServer(serveCtx, ss, nil)
 
 	forwarderCtx := debug.WithInstance(ctx, "", "")
-	forwarder := NewForwarder("tcp", tsDirect.Addr)
+	forwarder, err := NewForwarder("tcp;"+tsDirect.Addr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tsForwarded := servertest.NewPipeServer(forwarderCtx, forwarder, nil)
 	return tsDirect, tsForwarded, func() {
 		checkClose(t, tsDirect.Close)
@@ -129,8 +139,9 @@ func setupForwarding(ctx context.Context, t *testing.T, s protocol.Server) (dire
 
 func TestRequestCancellation(t *testing.T) {
 	ctx := context.Background()
-	server := waitableServer{
-		started: make(chan struct{}),
+	server := WaitableServer{
+		Started:   make(chan struct{}),
+		Completed: make(chan error),
 	}
 	tsDirect, tsForwarded, cleanup := setupForwarding(ctx, t, server)
 	defer cleanup()
@@ -151,32 +162,21 @@ func TestRequestCancellation(t *testing.T) {
 					jsonrpc2.MethodNotFound))
 
 			ctx := context.Background()
-			ctx1, cancel1 := context.WithCancel(ctx)
-			var (
-				err1, err2 error
-				wg         sync.WaitGroup
-			)
-			wg.Add(2)
+			ctx, cancel := context.WithCancel(ctx)
+
+			result := make(chan error)
 			go func() {
-				defer wg.Done()
-				_, err1 = sd.Hover(ctx1, &protocol.HoverParams{})
-			}()
-			go func() {
-				defer wg.Done()
-				_, err2 = sd.Resolve(ctx, &protocol.CompletionItem{})
+				_, err := sd.Hover(ctx, &protocol.HoverParams{})
+				result <- err
 			}()
 			// Wait for the Hover request to start.
-			<-server.started
-			cancel1()
-			wg.Wait()
-			if err1 == nil {
-				t.Errorf("cancelled Hover(): got nil err")
+			<-server.Started
+			cancel()
+			if err := <-result; err == nil {
+				t.Error("nil error for cancelled Hover(), want non-nil")
 			}
-			if err2 != nil {
-				t.Errorf("uncancelled Hover(): err: %v", err2)
-			}
-			if _, err := sd.Resolve(ctx, &protocol.CompletionItem{}); err != nil {
-				t.Errorf("subsequent Hover(): %v", err)
+			if err := <-server.Completed; err == nil || !strings.Contains(err.Error(), "cancelled hover") {
+				t.Errorf("Hover(): unexpected server-side error %v", err)
 			}
 		})
 	}
@@ -197,7 +197,7 @@ func main() {
 }`
 
 func TestDebugInfoLifecycle(t *testing.T) {
-	sb, err := fake.NewSandbox(&fake.SandboxConfig{Files: exampleProgram})
+	sb, err := fake.NewSandbox(&fake.SandboxConfig{Files: fake.UnpackTxt(exampleProgram)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,10 @@ func TestDebugInfoLifecycle(t *testing.T) {
 	ss := NewStreamServer(cache, false)
 	tsBackend := servertest.NewTCPServer(serverCtx, ss, nil)
 
-	forwarder := NewForwarder("tcp", tsBackend.Addr)
+	forwarder, err := NewForwarder("tcp;"+tsBackend.Addr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tsForwarder := servertest.NewPipeServer(clientCtx, forwarder, nil)
 
 	conn1 := tsForwarder.Connect(clientCtx)
@@ -321,5 +324,26 @@ func TestEnvForwarding(t *testing.T) {
 	// Check that the variable present in our user config was not overwritten.
 	if v := env["GONOPROXY"]; v != "example.com" {
 		t.Errorf("GONOPROXY environment variable was overwritten")
+	}
+}
+
+func TestListenParsing(t *testing.T) {
+	tests := []struct {
+		input, wantNetwork, wantAddr string
+	}{
+		{"127.0.0.1:0", "tcp", "127.0.0.1:0"},
+		{"unix;/tmp/sock", "unix", "/tmp/sock"},
+		{"auto", "auto", ""},
+		{"auto;foo", "auto", "foo"},
+	}
+
+	for _, test := range tests {
+		gotNetwork, gotAddr := ParseAddr(test.input)
+		if gotNetwork != test.wantNetwork {
+			t.Errorf("network = %q, want %q", gotNetwork, test.wantNetwork)
+		}
+		if gotAddr != test.wantAddr {
+			t.Errorf("addr = %q, want %q", gotAddr, test.wantAddr)
+		}
 	}
 }

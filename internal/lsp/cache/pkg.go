@@ -6,6 +6,7 @@ package cache
 
 import (
 	"go/ast"
+	"go/scanner"
 	"go/types"
 
 	"golang.org/x/mod/module"
@@ -16,30 +17,20 @@ import (
 
 // pkg contains the type information needed by the source package.
 type pkg struct {
-	m                    *metadata
-	mode                 source.ParseMode
-	goFiles              []*source.ParsedGoFile
-	compiledGoFiles      []*source.ParsedGoFile
-	diagnostics          []*source.Diagnostic
-	imports              map[packagePath]*pkg
-	version              *module.Version
-	typeErrors           []types.Error
-	types                *types.Package
-	typesInfo            *types.Info
-	typesSizes           types.Sizes
-	hasListOrParseErrors bool
-	hasTypeErrors        bool
+	m               *Metadata
+	mode            source.ParseMode
+	goFiles         []*source.ParsedGoFile
+	compiledGoFiles []*source.ParsedGoFile
+	diagnostics     []*source.Diagnostic
+	imports         map[PackagePath]*pkg
+	version         *module.Version
+	parseErrors     []scanner.ErrorList
+	typeErrors      []types.Error
+	types           *types.Package
+	typesInfo       *types.Info
+	typesSizes      types.Sizes
+	hasFixedFiles   bool
 }
-
-// Declare explicit types for package paths, names, and IDs to ensure that we
-// never use an ID where a path belongs, and vice versa. If we confused these,
-// it would result in confusing errors because package IDs often look like
-// package paths.
-type (
-	packageID   string
-	packagePath string
-	packageName string
-)
 
 // Declare explicit types for files and directories to distinguish between the two.
 type (
@@ -49,15 +40,19 @@ type (
 )
 
 func (p *pkg) ID() string {
-	return string(p.m.id)
+	return string(p.m.ID)
 }
 
 func (p *pkg) Name() string {
-	return string(p.m.name)
+	return string(p.m.Name)
 }
 
 func (p *pkg) PkgPath() string {
-	return string(p.m.pkgPath)
+	return string(p.m.PkgPath)
+}
+
+func (p *pkg) ParseMode() source.ParseMode {
+	return p.mode
 }
 
 func (p *pkg) CompiledGoFiles() []*source.ParsedGoFile {
@@ -75,7 +70,7 @@ func (p *pkg) File(uri span.URI) (*source.ParsedGoFile, error) {
 			return gf, nil
 		}
 	}
-	return nil, errors.Errorf("no parsed file for %s in %v", uri, p.m.id)
+	return nil, errors.Errorf("no parsed file for %s in %v", uri, p.m.ID)
 }
 
 func (p *pkg) GetSyntax() []*ast.File {
@@ -103,11 +98,11 @@ func (p *pkg) IsIllTyped() bool {
 }
 
 func (p *pkg) ForTest() string {
-	return string(p.m.forTest)
+	return string(p.m.ForTest)
 }
 
 func (p *pkg) GetImport(pkgPath string) (source.Package, error) {
-	if imp := p.imports[packagePath(pkgPath)]; imp != nil {
+	if imp := p.imports[PackagePath(pkgPath)]; imp != nil {
 		return imp, nil
 	}
 	// Don't return a nil pointer because that still satisfies the interface.
@@ -119,14 +114,14 @@ func (p *pkg) MissingDependencies() []string {
 	// imports via the *types.Package. Only use metadata if p.types is nil.
 	if p.types == nil {
 		var md []string
-		for i := range p.m.missingDeps {
+		for i := range p.m.MissingDeps {
 			md = append(md, string(i))
 		}
 		return md
 	}
 	var md []string
 	for _, pkg := range p.types.Imports() {
-		if _, ok := p.m.missingDeps[packagePath(pkg.Path())]; ok {
+		if _, ok := p.m.MissingDeps[PackagePath(pkg.Path())]; ok {
 			md = append(md, pkg.Path())
 		}
 	}
@@ -146,9 +141,9 @@ func (p *pkg) Version() *module.Version {
 }
 
 func (p *pkg) HasListOrParseErrors() bool {
-	return p.hasListOrParseErrors
+	return len(p.m.Errors) != 0 || len(p.parseErrors) != 0
 }
 
 func (p *pkg) HasTypeErrors() bool {
-	return p.hasTypeErrors
+	return len(p.typeErrors) != 0
 }

@@ -3,12 +3,13 @@ package extract
 
 func _() {
 	var a []int
-	a, b := fn0(a)           //@mark(exEn6, "4")
+	//@mark(exSt6, "a")
+	a, b := newFunction(a)           //@mark(exEn6, "4")
 	//@extractfunc(exSt6, exEn6)
 	a = append(a, b)
 }
 
-func fn0(a []int) ([]int, int) {
+func newFunction(a []int) ([]int, int) {
 	a = append(a, 2)
 	b := 4
 	return a, b
