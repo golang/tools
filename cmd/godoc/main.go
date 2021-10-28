@@ -88,6 +88,9 @@ var (
 
 	// source code notes
 	notesRx = flag.String("notes", "BUG", "regular expression matching note markers to show")
+
+	// show internal packages
+	showInternalPkg = flag.Bool("show_internal_pkg", false, "show internal packages always")
 )
 
 // An httpResponseRecorder is an http.ResponseWriter
@@ -266,6 +269,16 @@ func main() {
 		}
 	}
 
+	var goModRoot *mod
+	if goModFile != "" {
+		// Determine modules root
+		goModRoot, err = getGoModRoot(goModFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to determine the main module: %v", err)
+			os.Exit(1)
+		}
+	}
+
 	var typeAnalysis, pointerAnalysis bool
 	if *analysisFlag != "" {
 		for _, a := range strings.Split(*analysisFlag, ",") {
@@ -282,7 +295,7 @@ func main() {
 
 	var corpus *godoc.Corpus
 	if goModFile != "" {
-		corpus = godoc.NewCorpus(moduleFS{fs})
+		corpus = godoc.NewCorpus(moduleFS{fs, goModRoot})
 	} else {
 		corpus = godoc.NewCorpus(fs)
 	}
@@ -313,9 +326,14 @@ func main() {
 	pres = godoc.NewPresentation(corpus)
 	pres.ShowTimestamps = *showTimestamps
 	pres.ShowPlayground = *showPlayground
+	pres.ShowInternalPkg = *showInternalPkg
 	pres.DeclLinks = *declLinks
 	if *notesRx != "" {
 		pres.NotesRx = regexp.MustCompile(*notesRx)
+	}
+	// if go.mod is present exclude the module's cmd
+	if goModRoot != nil {
+		pres.AddPkgExclude("/src/" + goModRoot.Path + "/cmd")
 	}
 
 	readTemplates(pres)
@@ -496,6 +514,28 @@ func buildList(goMod string) ([]mod, error) {
 	return mods, nil
 }
 
+func getGoModRoot(goMod string) (*mod, error) {
+	if goMod == os.DevNull {
+		// Empty build list.
+		return nil, nil
+	}
+
+	out, err := exec.Command("go", "list", "-m", "-json").Output()
+	if ee := (*exec.ExitError)(nil); xerrors.As(err, &ee) {
+		return nil, fmt.Errorf("go command exited unsuccessfully: %v\n%s", ee.ProcessState.String(), ee.Stderr)
+	} else if err != nil {
+		return nil, err
+	}
+	var m mod
+	dec := json.NewDecoder(bytes.NewReader(out)); ; {
+		err := dec.Decode(&m)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &m, nil
+}
+
 // moduleFS is a vfs.FileSystem wrapper used when godoc is running
 // in module mode. It's needed so that packages inside modules are
 // considered to be third party.
@@ -511,22 +551,21 @@ func buildList(goMod string) ([]mod, error) {
 // general case. It should be replaced by a more direct solution
 // for determining whether a package is third party or not.
 //
-type moduleFS struct{ vfs.FileSystem }
+type moduleFS struct{
+	vfs.FileSystem
+	goModRoot *mod
+}
 
-func (moduleFS) RootType(path string) vfs.RootType {
+func (fs moduleFS) RootType(path string) vfs.RootType {
 	if !strings.HasPrefix(path, "/src/") {
 		return ""
 	}
-	domain := path[len("/src/"):]
-	if i := strings.Index(domain, "/"); i >= 0 {
-		domain = domain[:i]
-	}
-	if !strings.Contains(domain, ".") {
-		// No dot in the first element of import path
+	if fs.goModRoot != nil && strings.HasPrefix(path[len("/src/"):], fs.goModRoot.Path) {
+		// Beginning with the modules root path
 		// suggests this is a package in GOROOT.
 		return vfs.RootTypeGoRoot
 	} else {
-		// A dot in the first element of import path
+		// Not beginning with the modules root path
 		// suggests this is a third party package.
 		return vfs.RootTypeGoPath
 	}
