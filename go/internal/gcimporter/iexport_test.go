@@ -28,10 +28,11 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/internal/gcimporter"
 	"golang.org/x/tools/go/loader"
-	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/typeparams/genericfeatures"
 )
 
 func readExportFile(filename string) ([]byte, error) {
@@ -42,7 +43,7 @@ func readExportFile(filename string) ([]byte, error) {
 	defer f.Close()
 
 	buf := bufio.NewReader(f)
-	if _, err := gcimporter.FindExportData(buf); err != nil {
+	if _, _, err := gcimporter.FindExportData(buf); err != nil {
 		return nil, err
 	}
 
@@ -55,9 +56,9 @@ func readExportFile(filename string) ([]byte, error) {
 	return ioutil.ReadAll(buf)
 }
 
-func iexport(fset *token.FileSet, pkg *types.Package) ([]byte, error) {
+func iexport(fset *token.FileSet, version int, pkg *types.Package) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := gcimporter.IExportData(&buf, fset, pkg); err != nil {
+	if err := gcimporter.IExportCommon(&buf, fset, false, version, []*types.Package{pkg}); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -69,6 +70,8 @@ func isUnifiedBuilder() bool {
 	return os.Getenv("GO_BUILDER_NAME") == "linux-amd64-unified"
 }
 
+const minStdlibPackages = 248
+
 func TestIExportData_stdlib(t *testing.T) {
 	if runtime.Compiler == "gccgo" {
 		t.Skip("gccgo standard library is inaccessible")
@@ -79,6 +82,9 @@ func TestIExportData_stdlib(t *testing.T) {
 	if isRace {
 		t.Skipf("stdlib tests take too long in race mode and flake on builders")
 	}
+	if testing.Short() {
+		t.Skip("skipping RAM hungry test in -short mode")
+	}
 
 	// Load, parse and type-check the program.
 	ctxt := build.Default // copy
@@ -88,17 +94,11 @@ func TestIExportData_stdlib(t *testing.T) {
 		AllowErrors: true,
 		TypeChecker: types.Config{
 			Sizes: types.SizesFor(ctxt.Compiler, ctxt.GOARCH),
+			Error: func(err error) { t.Log(err) },
 		},
 	}
-	// Temporarily skip packages that use generics on the unified builder, to fix
-	// TryBots.
-	//
-	// TODO(#48595): fix this test with GOEXPERIMENT=unified.
-	isUnified := isUnifiedBuilder()
 	for _, path := range buildutil.AllPackages(conf.Build) {
-		if !(isUnified && testenv.UsesGenerics(path)) {
-			conf.Import(path)
-		}
+		conf.Import(path)
 	}
 
 	// Create a package containing type and value errors to ensure
@@ -117,13 +117,19 @@ type UnknownType undefined
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	numPkgs := len(prog.AllPackages)
-	if want := 248; numPkgs < want {
-		t.Errorf("Loaded only %d packages, want at least %d", numPkgs, want)
-	}
-
 	var sorted []*types.Package
+	isUnified := isUnifiedBuilder()
 	for pkg, info := range prog.AllPackages {
+		// Temporarily skip packages that use generics on the unified builder, to
+		// fix TryBots.
+		//
+		// TODO(#48595): fix this test with GOEXPERIMENT=unified.
+		inspect := inspector.New(info.Files)
+		features := genericfeatures.ForPackage(inspect, &info.Info)
+		if isUnified && features != 0 {
+			t.Logf("skipping package %q which uses generics", pkg.Path())
+			continue
+		}
 		if info.Files != nil { // non-empty directory
 			sorted = append(sorted, pkg)
 		}
@@ -132,11 +138,17 @@ type UnknownType undefined
 		return sorted[i].Path() < sorted[j].Path()
 	})
 
+	version := gcimporter.IExportVersion
+	numPkgs := len(sorted)
+	if want := minStdlibPackages; numPkgs < want {
+		t.Errorf("Loaded only %d packages, want at least %d", numPkgs, want)
+	}
+
 	for _, pkg := range sorted {
-		if exportdata, err := iexport(conf.Fset, pkg); err != nil {
+		if exportdata, err := iexport(conf.Fset, version, pkg); err != nil {
 			t.Error(err)
 		} else {
-			testPkgData(t, conf.Fset, pkg, exportdata)
+			testPkgData(t, conf.Fset, version, pkg, exportdata)
 		}
 
 		if pkg.Name() == "main" || pkg.Name() == "haserrors" {
@@ -146,7 +158,7 @@ type UnknownType undefined
 		} else if exportdata, err := readExportFile(bp.PkgObj); err != nil {
 			t.Log("warning:", err)
 		} else {
-			testPkgData(t, conf.Fset, pkg, exportdata)
+			testPkgData(t, conf.Fset, version, pkg, exportdata)
 		}
 	}
 
@@ -162,11 +174,11 @@ type UnknownType undefined
 	}
 
 	for i, pkg := range sorted {
-		testPkg(t, conf.Fset, pkg, fset2, pkgs2[i])
+		testPkg(t, conf.Fset, version, pkg, fset2, pkgs2[i])
 	}
 }
 
-func testPkgData(t *testing.T, fset *token.FileSet, pkg *types.Package, exportdata []byte) {
+func testPkgData(t *testing.T, fset *token.FileSet, version int, pkg *types.Package, exportdata []byte) {
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
 	_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
@@ -174,11 +186,11 @@ func testPkgData(t *testing.T, fset *token.FileSet, pkg *types.Package, exportda
 		t.Errorf("IImportData(%s): %v", pkg.Path(), err)
 	}
 
-	testPkg(t, fset, pkg, fset2, pkg2)
+	testPkg(t, fset, version, pkg, fset2, pkg2)
 }
 
-func testPkg(t *testing.T, fset *token.FileSet, pkg *types.Package, fset2 *token.FileSet, pkg2 *types.Package) {
-	if _, err := iexport(fset2, pkg2); err != nil {
+func testPkg(t *testing.T, fset *token.FileSet, version int, pkg *types.Package, fset2 *token.FileSet, pkg2 *types.Package) {
+	if _, err := iexport(fset2, version, pkg2); err != nil {
 		t.Errorf("reexport %q: %v", pkg.Path(), err)
 	}
 
@@ -226,7 +238,7 @@ func TestIExportData_long(t *testing.T) {
 	}
 
 	// export
-	exportdata, err := iexport(fset1, pkg)
+	exportdata, err := iexport(fset1, gcimporter.IExportVersion, pkg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +281,7 @@ func TestIExportData_typealiases(t *testing.T) {
 
 	// export
 	// use a nil fileset here to confirm that it doesn't panic
-	exportdata, err := iexport(nil, pkg1)
+	exportdata, err := iexport(nil, gcimporter.IExportVersion, pkg1)
 	if err != nil {
 		t.Fatal(err)
 	}

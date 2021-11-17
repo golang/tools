@@ -125,6 +125,16 @@ func IsMethodSet(iface *types.Interface) bool {
 	return iface.IsMethodSet()
 }
 
+// IsImplicit calls iface.IsImplicit().
+func IsImplicit(iface *types.Interface) bool {
+	return iface.IsImplicit()
+}
+
+// MarkImplicit calls iface.MarkImplicit().
+func MarkImplicit(iface *types.Interface) {
+	iface.MarkImplicit()
+}
+
 // ForNamed extracts the (possibly empty) type parameter object list from
 // named.
 func ForNamed(named *types.Named) *TypeParamList {

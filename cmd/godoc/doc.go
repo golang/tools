@@ -52,13 +52,6 @@ The flags are:
 		Go root directory
 	-http=addr
 		HTTP service address (e.g., '127.0.0.1:6060' or just ':6060')
-	-analysis=type,pointer
-		comma-separated list of analyses to perform
-		"type": display identifier resolution, type info, method sets,
-			'implements', and static callees
-		"pointer": display channel peers, callers and dynamic callees
-			(significantly slower)
-		See https://golang.org/lib/godoc/analysis/help.html for details.
 	-templates=""
 		directory containing alternate template files; if set,
 		the directory may provide alternative template files
@@ -115,5 +108,7 @@ see https://golang.org/pkg/testing/#hdr-Examples for the conventions.
 See "Godoc: documenting Go code" for how to write good comments for godoc:
 https://golang.org/doc/articles/godoc_documenting_go_code.html
 
+// Deprecated: godoc cannot select what version of a package is displayed.
+// Instead, use golang.org/x/pkgsite/cmd/pkgsite.
 */
 package main // import "golang.org/x/tools/cmd/godoc"

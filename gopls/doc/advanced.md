@@ -9,7 +9,7 @@ To get a specific version of `gopls` (for example, to test a prerelease
 version), run:
 
 ```sh
-GO111MODULE=on go get golang.org/x/tools/gopls@vX.Y.Z
+GO111MODULE=on go install golang.org/x/tools/gopls@vX.Y.Z
 ```
 
 Where `vX.Y.Z` is the desired version.
@@ -56,14 +56,15 @@ out the `master` branch in the Go repository, or by using
 `golang.org/dl/gotip`:
 
 ```
-$ go get golang.org/dl/gotip
+$ go install golang.org/dl/gotip@latest
 $ gotip download
 ```
 
 For building gopls with type parameter support, it is recommended that you
-build gopls at tip. External APIs are under active development on the
-Go `master` branch, so building gopls at tip minimizes the chances of
-a build failure.
+build gopls at tip. External APIs are under active development on the Go
+`master` branch, so building gopls at tip minimizes the chances of a build
+failure. You will also need to update the `go` directive in your `go.mod`
+file to refer to `go 1.18` to use generics.
 
 Build and install the latest **unstable** version of `gopls` following
 [the instruction](#installing-unreleased-versions).

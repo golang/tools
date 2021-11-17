@@ -159,10 +159,15 @@ func (s *snapshot) ModFiles() []span.URI {
 }
 
 func (s *snapshot) Templates() map[span.URI]source.VersionedFileHandle {
-	if !s.view.options.ExperimentalTemplateSupport {
+	if !s.view.Options().TemplateSupport {
 		return nil
 	}
+
 	ans := map[span.URI]source.VersionedFileHandle{}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	for k, x := range s.files {
 		if strings.HasSuffix(filepath.Ext(k.Filename()), "tmpl") {
 			ans[k] = x
@@ -778,12 +783,15 @@ func (s *snapshot) getWorkspacePkgPath(id PackageID) PackagePath {
 const fileExtensions = "go,mod,sum,work,tmpl"
 
 func (s *snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]struct{} {
+	extensions := fileExtensions
+	for _, ext := range s.View().Options().TemplateExtensions {
+		extensions += "," + ext
+	}
 	// Work-around microsoft/vscode#100870 by making sure that we are,
 	// at least, watching the user's entire workspace. This will still be
 	// applied to every folder in the workspace.
 	patterns := map[string]struct{}{
-		fmt.Sprintf("**/*.{%s}", fileExtensions): {},
-		"**/*.*tmpl":                             {},
+		fmt.Sprintf("**/*.{%s}", extensions): {},
 	}
 	dirs := s.workspace.dirs(ctx, s)
 	for _, dir := range dirs {
@@ -797,7 +805,7 @@ func (s *snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]stru
 		// TODO(rstambler): If microsoft/vscode#3025 is resolved before
 		// microsoft/vscode#101042, we will need a work-around for Windows
 		// drive letter casing.
-		patterns[fmt.Sprintf("%s/**/*.{%s}", dirName, fileExtensions)] = struct{}{}
+		patterns[fmt.Sprintf("%s/**/*.{%s}", dirName, extensions)] = struct{}{}
 	}
 
 	// Some clients do not send notifications for changes to directories that

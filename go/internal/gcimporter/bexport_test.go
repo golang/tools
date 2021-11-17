@@ -15,13 +15,16 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/internal/gcimporter"
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typeparams/genericfeatures"
 )
 
 var isRace = false
@@ -36,6 +39,9 @@ func TestBExportData_stdlib(t *testing.T) {
 	if isRace {
 		t.Skipf("stdlib tests take too long in race mode and flake on builders")
 	}
+	if testing.Short() {
+		t.Skip("skipping RAM hungry test in -short mode")
+	}
 
 	// Load, parse and type-check the program.
 	ctxt := build.Default // copy
@@ -43,6 +49,9 @@ func TestBExportData_stdlib(t *testing.T) {
 	conf := loader.Config{
 		Build:       &ctxt,
 		AllowErrors: true,
+		TypeChecker: types.Config{
+			Error: func(err error) { t.Log(err) },
+		},
 	}
 	for _, path := range buildutil.AllPackages(conf.Build) {
 		conf.Import(path)
@@ -65,14 +74,22 @@ type UnknownType undefined
 	}
 
 	numPkgs := len(prog.AllPackages)
-	if want := 248; numPkgs < want {
+	if want := minStdlibPackages; numPkgs < want {
 		t.Errorf("Loaded only %d packages, want at least %d", numPkgs, want)
 	}
 
+	checked := 0
 	for pkg, info := range prog.AllPackages {
 		if info.Files == nil {
 			continue // empty directory
 		}
+		// Binary export does not support generic code.
+		inspect := inspector.New(info.Files)
+		if genericfeatures.ForPackage(inspect, &info.Info) != 0 {
+			t.Logf("skipping package %q which uses generics", pkg.Path())
+			continue
+		}
+		checked++
 		exportdata, err := gcimporter.BExportData(conf.Fset, pkg)
 		if err != nil {
 			t.Fatal(err)
@@ -114,6 +131,9 @@ type UnknownType undefined
 					pkg.Path(), name, err, obj2, obj1)
 			}
 		}
+	}
+	if want := minStdlibPackages; checked < want {
+		t.Errorf("Checked only %d packages, want at least %d", checked, want)
 	}
 }
 
@@ -200,6 +220,9 @@ func equalType(x, y types.Type) error {
 				return fmt.Errorf("mismatched %s method: %s", xm.Name(), err)
 			}
 		}
+		// Constraints are handled explicitly in the *TypeParam case below, so we
+		// don't yet need to consider embeddeds here.
+		// TODO(rfindley): consider the type set here.
 	case *types.Array:
 		y := y.(*types.Array)
 		if x.Len() != y.Len() {
@@ -238,6 +261,32 @@ func equalType(x, y types.Type) error {
 		}
 		if err := equalTypeArgs(typeparams.NamedTypeArgs(x), typeparams.NamedTypeArgs(y)); err != nil {
 			return fmt.Errorf("type arguments: %s", err)
+		}
+		if x.NumMethods() != y.NumMethods() {
+			return fmt.Errorf("unequal methods: %d vs %d",
+				x.NumMethods(), y.NumMethods())
+		}
+		// Unfortunately method sorting is not canonical, so sort before comparing.
+		var xms, yms []*types.Func
+		for i := 0; i < x.NumMethods(); i++ {
+			xms = append(xms, x.Method(i))
+			yms = append(yms, y.Method(i))
+		}
+		for _, ms := range [][]*types.Func{xms, yms} {
+			sort.Slice(ms, func(i, j int) bool {
+				return ms[i].Name() < ms[j].Name()
+			})
+		}
+		for i, xm := range xms {
+			ym := yms[i]
+			if xm.Name() != ym.Name() {
+				return fmt.Errorf("mismatched %dth method: %s vs %s", i, xm, ym)
+			}
+			// Calling equalType here leads to infinite recursion, so just compare
+			// strings.
+			if sanitizeName(xm.String()) != sanitizeName(ym.String()) {
+				return fmt.Errorf("unequal methods: %s vs %s", x, y)
+			}
 		}
 	case *types.Pointer:
 		y := y.(*types.Pointer)
@@ -315,9 +364,12 @@ func equalType(x, y types.Type) error {
 			return fmt.Errorf("unequal named types: %s vs %s", x, y)
 		}
 		// For now, just compare constraints by type string to short-circuit
-		// cycles.
-		xc := sanitizeName(x.Constraint().String())
-		yc := sanitizeName(y.Constraint().String())
+		// cycles. We have to make interfaces explicit as export data currently
+		// doesn't support marking interfaces as implicit.
+		// TODO(rfindley): remove makeExplicit once export data contains an
+		// implicit bit.
+		xc := sanitizeName(makeExplicit(x.Constraint()).String())
+		yc := sanitizeName(makeExplicit(y.Constraint()).String())
 		if xc != yc {
 			return fmt.Errorf("unequal constraints: %s vs %s", xc, yc)
 		}
@@ -326,6 +378,23 @@ func equalType(x, y types.Type) error {
 		panic(fmt.Sprintf("unexpected %T type", x))
 	}
 	return nil
+}
+
+// makeExplicit returns an explicit version of typ, if typ is an implicit
+// interface. Otherwise it returns typ unmodified.
+func makeExplicit(typ types.Type) types.Type {
+	if iface, _ := typ.(*types.Interface); iface != nil && typeparams.IsImplicit(iface) {
+		var methods []*types.Func
+		for i := 0; i < iface.NumExplicitMethods(); i++ {
+			methods = append(methods, iface.Method(i))
+		}
+		var embeddeds []types.Type
+		for i := 0; i < iface.NumEmbeddeds(); i++ {
+			embeddeds = append(embeddeds, iface.EmbeddedType(i))
+		}
+		return types.NewInterfaceType(methods, embeddeds)
+	}
+	return typ
 }
 
 func equalTypeArgs(x, y *typeparams.TypeList) error {
