@@ -42,6 +42,13 @@ go install golang.org/x/tools/gopls@latest
 **NOTE**: Do not use the `-u` flag, as it will update your dependencies to
 incompatible versions.
 
+If you are not finding the `gopls` executable, you might need to add it to PATH.
+```sh
+// .zshrc
+export GOPATH=$HOME/go
+export PATH=$PATH:$GOROOT/bin:$GOPATH/bin
+```
+
 Learn more in the [advanced installation
 instructions](doc/advanced.md#installing-unreleased-versions).
 
