@@ -288,15 +288,16 @@ func main() {
 `
 
 	Run(t, input, func(t *testing.T, env *Env) {
-		wantErr := `textDocument/formatting: can't format "` + env.Sandbox.Workdir.AbsPath("main.go") + `": file is generated`
+		wantErrSuffix := "file is generated"
 
 		env.OpenFile("main.go")
 		err := env.Editor.FormatBuffer(env.Ctx, "main.go")
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
-		if err.Error() != wantErr {
-			t.Fatalf("expected %q, got %q", wantErr, err.Error())
+		// Check only the suffix because an error contains a dynamic path to main.go
+		if !strings.HasSuffix(err.Error(), wantErrSuffix) {
+			t.Fatalf("unexpected error %q, want suffix %q", err.Error(), wantErrSuffix)
 		}
 	})
 }
