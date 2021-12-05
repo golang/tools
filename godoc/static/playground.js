@@ -205,6 +205,88 @@ function HTTPTransport(enableVet) {
     },
   };
 }
+// New code , insert comment at first of cursor line : '//'
+document.onkeydown = function(e){  
+  if ( (e.ctrlKey||e.metaKey) && e.which == 191) { 
+      var txtArea = document.getElementById('code');
+      var txtValue = txtArea.value;
+      var start = txtArea.selectionStart
+      var newPos = start
+      var end = txtArea.selectionEnd
+      var txtline = txtValue.split('\n')
+      var comment = "//"
+      var startLine = -1
+      var endLine = -1
+      var check = false
+      var len = 0
+      var idx = 0     
+      var newArea = '';       
+      if (start != end){
+        while(!check){
+          if ( idx > txtline.length){
+            idx--
+            startLine = idx
+            endLine = idx
+            check = true
+          }
+          len += txtline[idx].length
+          if ( len >= start && startLine < 0) startLine = idx
+          if ( len >= end ) {
+            endLine = idx
+            check = true
+          }
+          idx++
+          start --
+          end --
+        }
+        for (var i =  startLine ; i <= endLine ; i ++){
+          txtline[i] = "//" + txtline[i]
+        }
+        for (var i = 0 ; i < txtline.length - 1 ; i++){
+          newArea += txtline[i] + '\n'
+        }
+        newArea += txtline[txtline.length-1]
+        txtArea.value = newArea
+        txtArea.selectionStart = newPos + comment.length; 
+        txtArea.selectionEnd = newPos + comment.length * (endLine - startLine); 
+
+      } 
+      else {
+        while(!check){
+          if (idx > txtline.length) {
+            idx--
+            check = true
+          }         
+          len += txtline[idx].length
+          if ( len >= start ) {
+            startLine = idx
+            check = true
+          }
+          idx++
+          start --
+          end --
+        }
+        var commentline = txtline[startLine]
+        var clLen = commentline.length
+        if (commentline.substring(0,2) == "//" ) {
+          newPos -=4
+          txtline[startLine] = commentline.substring(2,clLen)
+        }
+        else {
+          txtline[startLine] = "//" + txtline[startLine]
+        }
+        for (var i = 0 ; i < txtline.length - 1 ; i++){
+          newArea += txtline[i] + '\n'
+        }
+        newArea += txtline[txtline.length-1]
+        txtArea.value = newArea
+        txtArea.selectionStart = newPos + comment.length; 
+        txtArea.selectionEnd = newPos + comment.length;         
+      }
+      txtArea.focus();
+  }
+}
+
 
 function SocketTransport() {
   'use strict';
