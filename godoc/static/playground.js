@@ -206,21 +206,20 @@ function HTTPTransport(enableVet) {
   };
 }
 
-// New code , insert comment at first of cursor line : '//'
+  // New code , insert comment at first of cursor line : '//'
 document.onkeydown = function(e){  
   if ( (e.ctrlKey||e.metaKey) && e.code == 'Slash') { 
     var txtArea = document.getElementById('code');
     var txtline = txtArea.value.split('\n')	    
-    var start = txtArea.selectionStart
-    var end = txtArea.selectionEnd
-    var newStartPos = start
-    var newEndPos = end
+    var start = txtArea.selectionStart // Usage in detecting startline
+    var end = txtArea.selectionEnd // Usage in detecting endLine
+    var len = 0 // Usage in detecting Line
+    var idx = 0 // Usage in detecting Line    
+    var newStartPos = start // Usage in function argument
+    var newEndPos = end // Usage in function argument
     var startLine = -1
     var endLine = -1
-    var check = false
-    var len = 0
-    var idx = 0     
-    var result
+    var check = false // when check both start and end Line, true    
     if (start != end){
       while(!check){
         if ( idx > txtline.length){
@@ -256,7 +255,7 @@ document.onkeydown = function(e){
       }
       endLine = startLine
     }
-    result = Commenting(txtline, startLine, endLine, newStartPos, newEndPos)
+    var result = Commenting(txtline, startLine, endLine, newStartPos, newEndPos)
     txtArea.value = result[0]
     txtArea.selectionStart = result[1]
     txtArea.selectionEnd  = result[2]
@@ -265,42 +264,36 @@ document.onkeydown = function(e){
 }
 function Commenting(code, startLine, endLine, startPos, endPos){
   var alreadyComment = true
-  var newText = ''
-  var firstPos = 0
-  var nonCode = 0
-  var pattern = /\s/g;
+  var newText = '' // return
+  var firstPos = 0 // front pointer of startLine 
+  var nonCode = 0 // num of empty line
+  var whiteSpacePattern = /\s/g; // empty regex
   for ( var i = startLine ; i <= endLine ; i ++){
-    if ( code[i].substring(0,2) != '//' && code[i].replace(pattern, '').length) { 
+    if ( code[i].substring(0,2) != '//' && code[i].replace(whiteSpacePattern, '').length) { 
       alreadyComment = false 
       break
     }
   }
-  if (alreadyComment) {
-    for ( var i = 0 ; i <= endLine; i ++){
-      if (i < startLine) firstPos += code[i].length
+  for ( var i = 0 ; i <= endLine; i ++){
+    if (i < startLine) firstPos += code[i].length
+    else {
+      if (!code[i].replace(whiteSpacePattern, '').length) nonCode ++
       else {
-        if (!code[i].replace(pattern, '').length) nonCode ++
-        else code[i] = code[i].substring(2,code[i].length)
-      }
-    }      
-  }else{
-    for ( var i = 0 ; i <= endLine; i ++){
-      if (i < startLine) firstPos += code[i].length
-      else {
-        if (!code[i].replace(pattern, '').length) nonCode ++
+        if ( alreadyComment) code[i] = code[i].substring(2,code[i].length)
         else code[i] = '//' + code[i]
       }
-      
-    }      
+    }
   }
-  for ( var i = 0 ; i < code.length-1; i ++){
-    newText += code[i]+'\n'
-  }
-  if (firstPos+startLine == startPos ) {
-    startPos += 2 * (2 * alreadyComment - 1) 
+  firstPos += startLine
+  if ( alreadyComment && startPos - firstPos  < 2) {
+    startPos += (2 - (startPos - firstPos ))
   }
   startPos -= 2 * (2 * alreadyComment - 1) 
   endPos -= 2 * (endLine - startLine + 1 - nonCode) * (2 * alreadyComment - 1) 
+  if ( startLine == endLine) endPos = startPos
+  for ( var i = 0 ; i < code.length-1; i ++){
+    newText += code[i]+'\n'
+  }
   newText += code[code.length-1]
   return [newText, startPos, endPos]
 }
