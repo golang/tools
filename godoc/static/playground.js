@@ -205,86 +205,104 @@ function HTTPTransport(enableVet) {
     },
   };
 }
+
 // New code , insert comment at first of cursor line : '//'
 document.onkeydown = function(e){  
-  if ( (e.ctrlKey||e.metaKey) && e.which == 191) { 
-      var txtArea = document.getElementById('code');
-      var txtValue = txtArea.value;
-      var start = txtArea.selectionStart
-      var newPos = start
-      var end = txtArea.selectionEnd
-      var txtline = txtValue.split('\n')
-      var comment = "//"
-      var startLine = -1
-      var endLine = -1
-      var check = false
-      var len = 0
-      var idx = 0     
-      var newArea = '';       
-      if (start != end){
-        while(!check){
-          if ( idx > txtline.length){
-            idx--
-            startLine = idx
-            endLine = idx
-            check = true
-          }
-          len += txtline[idx].length
-          if ( len >= start && startLine < 0) startLine = idx
-          if ( len >= end ) {
-            endLine = idx
-            check = true
-          }
-          idx++
-          start --
-          end --
+  if ( (e.ctrlKey||e.metaKey) && e.code == 'Slash') { 
+    var txtArea = document.getElementById('code');
+    var txtline = txtArea.value.split('\n')	    
+    var start = txtArea.selectionStart
+    var end = txtArea.selectionEnd
+    var newStartPos = start
+    var newEndPos = end
+    var startLine = -1
+    var endLine = -1
+    var check = false
+    var len = 0
+    var idx = 0     
+    var result
+    if (start != end){
+      while(!check){
+        if ( idx > txtline.length){
+          idx --
+          startLine = idx
+          endLine = idx
+          check = true
         }
-        for (var i =  startLine ; i <= endLine ; i ++){
-          txtline[i] = "//" + txtline[i]
+        len += txtline[idx].length
+        if ( len >= start && startLine < 0) startLine = idx
+        if ( len >= end-1 ) {
+          endLine = idx
+          check = true
         }
-        for (var i = 0 ; i < txtline.length - 1 ; i++){
-          newArea += txtline[i] + '\n'
-        }
-        newArea += txtline[txtline.length-1]
-        txtArea.value = newArea
-        txtArea.selectionStart = newPos + comment.length; 
-        txtArea.selectionEnd = newPos + comment.length * (endLine - startLine); 
-
-      } 
-      else {
-        while(!check){
-          if (idx > txtline.length) {
-            idx--
-            check = true
-          }         
-          len += txtline[idx].length
-          if ( len >= start ) {
-            startLine = idx
-            check = true
-          }
-          idx++
-          start --
-          end --
-        }
-        var commentline = txtline[startLine]
-        var clLen = commentline.length
-        if (commentline.substring(0,2) == "//" ) {
-          newPos -=4
-          txtline[startLine] = commentline.substring(2,clLen)
-        }
-        else {
-          txtline[startLine] = "//" + txtline[startLine]
-        }
-        for (var i = 0 ; i < txtline.length - 1 ; i++){
-          newArea += txtline[i] + '\n'
-        }
-        newArea += txtline[txtline.length-1]
-        txtArea.value = newArea
-        txtArea.selectionStart = newPos + comment.length; 
-        txtArea.selectionEnd = newPos + comment.length;         
+        idx++
+        start --
+        end --
       }
-      txtArea.focus();
+    }else{
+      while(!check){
+        if (idx > txtline.length) {
+          idx --
+          check = true
+        }         
+        len += txtline[idx].length
+        if ( len >= start ) {
+          startLine = idx
+          check = true
+        }
+        idx++
+        start --
+        end --
+      }
+      endLine = startLine
+    }
+    result = Commenting(txtline, startLine, endLine, newStartPos, newEndPos)
+    txtArea.value = result[0]
+    txtArea.selectionStart = result[1]
+    txtArea.selectionEnd  = result[2]
+    txtArea.focus()
   }
+}
+function Commenting(code, startLine, endLine, startPos, endPos){
+  var alreadyComment = true
+  var newText = ''
+  var firstPos = 0
+  var nonCode = 0
+  var pattern = /\s/g;
+  for ( var i = startLine ; i <= endLine ; i ++){
+    if ( code[i].substring(0,2) != '//' && code[i].replace(pattern, '').length) { 
+      alreadyComment = false 
+      break
+    }
+  }
+  if (alreadyComment) {
+    for ( var i = 0 ; i <= endLine; i ++){
+      if (i < startLine) firstPos += code[i].length
+      else {
+        if (!code[i].replace(pattern, '').length) nonCode ++
+        else code[i] = code[i].substring(2,code[i].length)
+      }
+    }      
+  }else{
+    for ( var i = 0 ; i <= endLine; i ++){
+      if (i < startLine) firstPos += code[i].length
+      else {
+        if (!code[i].replace(pattern, '').length) nonCode ++
+        else code[i] = '//' + code[i]
+      }
+      
+    }      
+  }
+  for ( var i = 0 ; i < code.length-1; i ++){
+    newText += code[i]+'\n'
+  }
+  if (firstPos+startLine == startPos ) {
+    startPos += 2 * (2 * alreadyComment - 1) 
+  }
+  startPos -= 2 * (2 * alreadyComment - 1) 
+  endPos -= 2 * (endLine - startLine + 1 - nonCode) * (2 * alreadyComment - 1) 
+  newText += code[code.length-1]
+  return [newText, startPos, endPos]
 }
 
 
