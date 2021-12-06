@@ -191,11 +191,11 @@ check for unnecessary type arguments in call expressions
 Explicit type arguments may be omitted from call expressions if they can be
 inferred from function arguments, or from other type arguments:
 
-func f[T any](T) {}
-
-func _() {
-	f[string]("foo") // string could be inferred
-}
+	func f[T any](T) {}
+	
+	func _() {
+		f[string]("foo") // string could be inferred
+	}
 
 
 **Enabled by default.**
@@ -578,7 +578,7 @@ check for constraints that could be simplified to "any"
 
 ## **fillreturns**
 
-suggested fixes for "wrong number of return values (want %d, got %d)"
+suggest fixes for errors due to an incorrect number of return values
 
 This checker provides suggested fixes for type errors of the
 type "wrong number of return values (want %d, got %d)". For example:
