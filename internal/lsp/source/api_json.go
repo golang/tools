@@ -45,19 +45,6 @@ var GeneratedAPIJSON = &APIJSON{
 				Hierarchy:  "build",
 			},
 			{
-				Name: "templateSupport",
-				Type: "bool",
-				Doc:  "templateSupport can be used to turn off support for template files.\n",
-				EnumKeys: EnumKeys{
-					ValueType: "",
-					Keys:      nil,
-				},
-				EnumValues: nil,
-				Default:    "true",
-				Status:     "",
-				Hierarchy:  "build",
-			},
-			{
 				Name: "templateExtensions",
 				Type: "[]string",
 				Doc:  "templateExtensions gives the extensions of file names that are treateed\nas template files. (The extension\nis the part of the file name after the final dot.)\n",
@@ -456,7 +443,7 @@ var GeneratedAPIJSON = &APIJSON{
 						},
 						{
 							Name:    "\"infertypeargs\"",
-							Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\nfunc f[T any](T) {}\n\nfunc _() {\n\tf[string](\"foo\") // string could be inferred\n}\n",
+							Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
 							Default: "true",
 						},
 						{
@@ -576,7 +563,7 @@ var GeneratedAPIJSON = &APIJSON{
 						},
 						{
 							Name:    "\"fillreturns\"",
-							Doc:     "suggested fixes for \"wrong number of return values (want %d, got %d)\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\nwill turn into\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.\n",
+							Doc:     "suggest fixes for errors due to an incorrect number of return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\nwill turn into\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.\n",
 							Default: "true",
 						},
 						{
@@ -1034,7 +1021,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Name:    "infertypeargs",
-			Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\nfunc f[T any](T) {}\n\nfunc _() {\n\tf[string](\"foo\") // string could be inferred\n}\n",
+			Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
 			Default: true,
 		},
 		{
@@ -1154,7 +1141,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Name:    "fillreturns",
-			Doc:     "suggested fixes for \"wrong number of return values (want %d, got %d)\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\nwill turn into\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.\n",
+			Doc:     "suggest fixes for errors due to an incorrect number of return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\nwill turn into\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.\n",
 			Default: true,
 		},
 		{

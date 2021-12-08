@@ -78,7 +78,8 @@ func Foo() error {
 		env.OpenFile("main.go")
 		var d protocol.PublishDiagnosticsParams
 		env.Await(OnceMet(
-			env.DiagnosticAtRegexpWithMessage("main.go", `return`, "wrong number of return values"),
+			// The error message here changed in 1.18; "return values" covers both forms.
+			env.DiagnosticAtRegexpWithMessage("main.go", `return`, "return values"),
 			ReadDiagnostics("main.go", &d),
 		))
 		codeActions := env.CodeAction("main.go", d.Diagnostics)

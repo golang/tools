@@ -62,6 +62,8 @@ type Generation struct {
 	destroyed uint32
 	store     *Store
 	name      string
+	// destroyedBy describes the caller that togged destroyed from 0 to 1.
+	destroyedBy string
 	// wg tracks the reference count of this generation.
 	wg sync.WaitGroup
 }
@@ -69,10 +71,16 @@ type Generation struct {
 // Destroy waits for all operations referencing g to complete, then removes
 // all references to g from cache entries. Cache entries that no longer
 // reference any non-destroyed generation are removed. Destroy must be called
-// exactly once for each generation.
-func (g *Generation) Destroy() {
+// exactly once for each generation, and destroyedBy describes the caller.
+func (g *Generation) Destroy(destroyedBy string) {
 	g.wg.Wait()
-	atomic.StoreUint32(&g.destroyed, 1)
+
+	prevDestroyedBy := g.destroyedBy
+	g.destroyedBy = destroyedBy
+	if ok := atomic.CompareAndSwapUint32(&g.destroyed, 0, 1); !ok {
+		panic("Destroy on generation " + g.name + " already destroyed by " + prevDestroyedBy)
+	}
+
 	g.store.mu.Lock()
 	defer g.store.mu.Unlock()
 	for k, e := range g.store.handles {
@@ -94,13 +102,10 @@ func (g *Generation) Destroy() {
 
 // Acquire creates a new reference to g, and returns a func to release that
 // reference.
-func (g *Generation) Acquire(ctx context.Context) func() {
+func (g *Generation) Acquire() func() {
 	destroyed := atomic.LoadUint32(&g.destroyed)
-	if ctx.Err() != nil {
-		return func() {}
-	}
 	if destroyed != 0 {
-		panic("acquire on destroyed generation " + g.name)
+		panic("acquire on generation " + g.name + " destroyed by " + g.destroyedBy)
 	}
 	g.wg.Add(1)
 	return g.wg.Done
@@ -175,7 +180,7 @@ func (g *Generation) Bind(key interface{}, function Function, cleanup func(inter
 		panic("the function passed to bind must not be nil")
 	}
 	if atomic.LoadUint32(&g.destroyed) != 0 {
-		panic("operation on destroyed generation " + g.name)
+		panic("operation on generation " + g.name + " destroyed by " + g.destroyedBy)
 	}
 	g.store.mu.Lock()
 	defer g.store.mu.Unlock()
@@ -233,7 +238,7 @@ func (s *Store) DebugOnlyIterate(f func(k, v interface{})) {
 func (g *Generation) Inherit(hs ...*Handle) {
 	for _, h := range hs {
 		if atomic.LoadUint32(&g.destroyed) != 0 {
-			panic("inherit on destroyed generation " + g.name)
+			panic("inherit on generation " + g.name + " destroyed by " + g.destroyedBy)
 		}
 
 		h.mu.Lock()
@@ -266,7 +271,7 @@ func (h *Handle) Cached(g *Generation) interface{} {
 // If the value is not yet ready, the underlying function will be invoked.
 // If ctx is cancelled, Get returns nil.
 func (h *Handle) Get(ctx context.Context, g *Generation, arg Arg) (interface{}, error) {
-	release := g.Acquire(ctx)
+	release := g.Acquire()
 	defer release()
 
 	if ctx.Err() != nil {
@@ -311,7 +316,7 @@ func (h *Handle) run(ctx context.Context, g *Generation, arg Arg) (interface{}, 
 	function := h.function // Read under the lock
 
 	// Make sure that the generation isn't destroyed while we're running in it.
-	release := g.Acquire(ctx)
+	release := g.Acquire()
 	go func() {
 		defer release()
 		// Just in case the function does something expensive without checking
