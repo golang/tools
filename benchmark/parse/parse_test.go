@@ -68,8 +68,9 @@ func TestParseLine(t *testing.T) {
 		{
 			line: "BenchmarkBridge	100000000	        19.6 smoots", // unknown unit
 			want: &Benchmark{
-				Name: "BenchmarkBridge",
-				N:    100000000,
+				Name:  "BenchmarkBridge",
+				N:     100000000,
+				Extra: map[string]string{"smoots": "19.6"},
 			},
 		},
 		{

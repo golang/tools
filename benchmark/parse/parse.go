@@ -34,6 +34,9 @@ type Benchmark struct {
 	MBPerS            float64 // MB processed per second
 	Measured          int     // which measurements were recorded
 	Ord               int     // ordinal position within a benchmark run
+
+	// Extra records additional metrics reported by ReportMetric.
+	Extra map[string]string
 }
 
 // ParseLine extracts a Benchmark from a single line of testing.B
@@ -83,6 +86,11 @@ func (b *Benchmark) parseMeasurement(quant string, unit string) {
 			b.AllocsPerOp = i
 			b.Measured |= AllocsPerOp
 		}
+	default:
+		if b.Extra == nil {
+			b.Extra = make(map[string]string, 64)
+		}
+		b.Extra[unit] = quant
 	}
 }
 
@@ -100,6 +108,9 @@ func (b *Benchmark) String() string {
 	}
 	if (b.Measured & AllocsPerOp) != 0 {
 		fmt.Fprintf(buf, " %d allocs/op", b.AllocsPerOp)
+	}
+	for k, v := range b.Extra {
+		fmt.Fprintf(buf, " %s %s", v, k)
 	}
 	return buf.String()
 }
