@@ -3300,6 +3300,7 @@ var yaccpartext = `
 var (
 	$$Debug        = 0
 	$$ErrorVerbose = false
+	$$ErrLoc *$$SymLoc
 )
 
 type $$Lexer interface {
