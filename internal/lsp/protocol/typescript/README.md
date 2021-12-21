@@ -16,14 +16,14 @@ If you want to reproduce the existing files you need to be on a branch with the 
 
 Code is generated and normalized by
 
-`tsc code.ts && node code.js && gofmt -w ts*.go`
+`tsc && node code.js && gofmt -w ts*.go`
 
 (`code.ts` imports `util.ts`.) This generates 3 files in the current directory, `tsprotocol.go`
 containing type definitions, and `tsserver.go`, `tsclient.go` containing API stubs.
 
 ## Notes
 
-1. `go.ts` and `requests.ts` use the Typescript compiler's API, which is [introduced](https://github.com/Microsoft/TypeScript/wiki/Architectural-Overview) in their wiki.
+1. `code.ts` and `util.ts` use the Typescript compiler's API, which is [introduced](https://github.com/Microsoft/TypeScript/wiki/Architectural-Overview) in their wiki.
 2. Because the Typescript and Go type systems are incompatible, `code.ts` and `util.ts` are filled with heuristics and special cases. Therefore they are tied to a specific commit of `vscode-languageserver-node`. The hash code of the commit is included in the header of
 the generated files and stored in the variable `gitHash` in `go.ts`. It is checked (see `git()` in `util.ts`) on every execution.
 3. Generating the `ts*.go` files is only semi-automated. Please file an issue if the released version is too far behind.

@@ -150,16 +150,15 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 		prefix = typeName + "(" + prefix
 		suffix = ")"
 	}
-
-	// Add variadic "..." if we are filling in a variadic param.
-	if cand.variadic {
+	// Add variadic "..." only if snippets if enabled or cand is not a function
+	if cand.variadic && (c.opts.snippets || !cand.expandFuncCall) {
 		suffix += "..."
 	}
 
 	if prefix != "" {
 		// If we are in a selector, add an edit to place prefix before selector.
 		if sel := enclosingSelector(c.path, c.pos); sel != nil {
-			edits, err := prependEdit(c.snapshot.FileSet(), c.mapper, sel, prefix)
+			edits, err := c.editText(sel.Pos(), sel.Pos(), prefix)
 			if err != nil {
 				return CompletionItem{}, err
 			}
@@ -230,7 +229,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 		return item, nil
 	}
 
-	hover, err := source.HoverInfo(ctx, pkg, obj, decl)
+	hover, err := source.HoverInfo(ctx, c.snapshot, pkg, obj, decl)
 	if err != nil {
 		event.Error(ctx, "failed to find Hover", err, tag.URI.Of(uri))
 		return item, nil

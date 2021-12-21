@@ -77,11 +77,11 @@ func (s *snapshot) ModTidy(ctx context.Context, pm *source.ParsedModule) (*sourc
 			Diagnostics: criticalErr.DiagList,
 		}, nil
 	}
-	workspacePkgs, err := s.WorkspacePackages(ctx)
+	workspacePkgs, err := s.workspacePackageHandles(ctx)
 	if err != nil {
 		return nil, err
 	}
-	importHash, err := hashImports(ctx, workspacePkgs)
+	importHash, err := s.hashImports(ctx, workspacePkgs)
 	if err != nil {
 		return nil, err
 	}
@@ -167,18 +167,16 @@ func (s *snapshot) uriToModDecl(ctx context.Context, uri span.URI) (protocol.Ran
 	return rangeFromPositions(pmf.Mapper, pmf.File.Module.Syntax.Start, pmf.File.Module.Syntax.End)
 }
 
-func hashImports(ctx context.Context, wsPackages []source.Package) (string, error) {
-	results := make(map[string]bool)
+func (s *snapshot) hashImports(ctx context.Context, wsPackages []*packageHandle) (string, error) {
+	seen := map[string]struct{}{}
 	var imports []string
-	for _, pkg := range wsPackages {
-		for _, path := range pkg.Imports() {
-			imp := path.PkgPath()
-			if _, ok := results[imp]; !ok {
-				results[imp] = true
+	for _, ph := range wsPackages {
+		for _, imp := range ph.imports(ctx, s) {
+			if _, ok := seen[imp]; !ok {
 				imports = append(imports, imp)
+				seen[imp] = struct{}{}
 			}
 		}
-		imports = append(imports, pkg.MissingDependencies()...)
 	}
 	sort.Strings(imports)
 	hashed := strings.Join(imports, ",")
@@ -188,7 +186,7 @@ func hashImports(ctx context.Context, wsPackages []source.Package) (string, erro
 // modTidyDiagnostics computes the differences between the original and tidied
 // go.mod files to produce diagnostic and suggested fixes. Some diagnostics
 // may appear on the Go files that import packages from missing modules.
-func modTidyDiagnostics(ctx context.Context, snapshot source.Snapshot, pm *source.ParsedModule, ideal *modfile.File, workspacePkgs []source.Package) (diagnostics []*source.Diagnostic, err error) {
+func modTidyDiagnostics(ctx context.Context, snapshot source.Snapshot, pm *source.ParsedModule, ideal *modfile.File, workspacePkgs []*packageHandle) (diagnostics []*source.Diagnostic, err error) {
 	// First, determine which modules are unused and which are missing from the
 	// original go.mod file.
 	var (
@@ -224,7 +222,7 @@ func modTidyDiagnostics(ctx context.Context, snapshot source.Snapshot, pm *sourc
 	// statements in the Go files in which the dependencies are used.
 	missingModuleFixes := map[*modfile.Require][]source.SuggestedFix{}
 	for _, req := range missing {
-		srcDiag, err := missingModuleDiagnostic(snapshot, pm, req)
+		srcDiag, err := missingModuleDiagnostic(pm, req)
 		if err != nil {
 			return nil, err
 		}
@@ -233,17 +231,13 @@ func modTidyDiagnostics(ctx context.Context, snapshot source.Snapshot, pm *sourc
 	}
 	// Add diagnostics for missing modules anywhere they are imported in the
 	// workspace.
-	for _, pkg := range workspacePkgs {
+	for _, ph := range workspacePkgs {
 		missingImports := map[string]*modfile.Require{}
-		var importedPkgs []string
 
 		// If -mod=readonly is not set we may have successfully imported
 		// packages from missing modules. Otherwise they'll be in
 		// MissingDependencies. Combine both.
-		for _, imp := range pkg.Imports() {
-			importedPkgs = append(importedPkgs, imp.PkgPath())
-		}
-		importedPkgs = append(importedPkgs, pkg.MissingDependencies()...)
+		importedPkgs := ph.imports(ctx, snapshot)
 
 		for _, imp := range importedPkgs {
 			if req, ok := missing[imp]; ok {
@@ -274,7 +268,11 @@ func modTidyDiagnostics(ctx context.Context, snapshot source.Snapshot, pm *sourc
 		if len(missingImports) == 0 {
 			continue
 		}
-		for _, pgf := range pkg.CompiledGoFiles() {
+		for _, pgh := range ph.compiledGoFiles {
+			pgf, err := snapshot.ParseGo(ctx, pgh.file, source.ParseHeader)
+			if err != nil {
+				continue
+			}
 			file, m := pgf.File, pgf.Mapper
 			if file == nil || m == nil {
 				continue
@@ -311,7 +309,7 @@ func modTidyDiagnostics(ctx context.Context, snapshot source.Snapshot, pm *sourc
 	// Finally, add errors for any unused dependencies.
 	onlyDiagnostic := len(diagnostics) == 0 && len(unused) == 1
 	for _, req := range unused {
-		srcErr, err := unusedDiagnostic(pm.Mapper, req, onlyDiagnostic, snapshot.View().Options().ComputeEdits)
+		srcErr, err := unusedDiagnostic(pm.Mapper, req, onlyDiagnostic)
 		if err != nil {
 			return nil, err
 		}
@@ -321,7 +319,7 @@ func modTidyDiagnostics(ctx context.Context, snapshot source.Snapshot, pm *sourc
 }
 
 // unusedDiagnostic returns a source.Diagnostic for an unused require.
-func unusedDiagnostic(m *protocol.ColumnMapper, req *modfile.Require, onlyDiagnostic bool, computeEdits diff.ComputeEdits) (*source.Diagnostic, error) {
+func unusedDiagnostic(m *protocol.ColumnMapper, req *modfile.Require, onlyDiagnostic bool) (*source.Diagnostic, error) {
 	rng, err := rangeFromPositions(m, req.Syntax.Start, req.Syntax.End)
 	if err != nil {
 		return nil, err
@@ -341,7 +339,7 @@ func unusedDiagnostic(m *protocol.ColumnMapper, req *modfile.Require, onlyDiagno
 		Severity:       protocol.SeverityWarning,
 		Source:         source.ModTidyError,
 		Message:        fmt.Sprintf("%s is not used in this module", req.Mod.Path),
-		SuggestedFixes: []source.SuggestedFix{source.SuggestedFixFromCommand(cmd)},
+		SuggestedFixes: []source.SuggestedFix{source.SuggestedFixFromCommand(cmd, protocol.QuickFix)},
 	}, nil
 }
 
@@ -383,11 +381,12 @@ func directnessDiagnostic(m *protocol.ColumnMapper, req *modfile.Require, comput
 			Edits: map[span.URI][]protocol.TextEdit{
 				m.URI: edits,
 			},
+			ActionKind: protocol.QuickFix,
 		}},
 	}, nil
 }
 
-func missingModuleDiagnostic(snapshot source.Snapshot, pm *source.ParsedModule, req *modfile.Require) (*source.Diagnostic, error) {
+func missingModuleDiagnostic(pm *source.ParsedModule, req *modfile.Require) (*source.Diagnostic, error) {
 	var rng protocol.Range
 	// Default to the start of the file if there is no module declaration.
 	if pm.File != nil && pm.File.Module != nil && pm.File.Module.Syntax != nil {
@@ -413,7 +412,7 @@ func missingModuleDiagnostic(snapshot source.Snapshot, pm *source.ParsedModule, 
 		Severity:       protocol.SeverityError,
 		Source:         source.ModTidyError,
 		Message:        fmt.Sprintf("%s is not in your go.mod file", req.Mod.Path),
-		SuggestedFixes: []source.SuggestedFix{source.SuggestedFixFromCommand(cmd)},
+		SuggestedFixes: []source.SuggestedFix{source.SuggestedFixFromCommand(cmd, protocol.QuickFix)},
 	}, nil
 }
 

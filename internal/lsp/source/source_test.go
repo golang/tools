@@ -47,7 +47,7 @@ type runner struct {
 func testSource(t *testing.T, datum *tests.Data) {
 	ctx := tests.Context(t)
 
-	cache := cache.New(ctx, nil)
+	cache := cache.New(nil)
 	session := cache.NewSession(ctx)
 	options := source.DefaultOptions().Clone()
 	tests.DefaultOptions(options)
@@ -177,9 +177,8 @@ func (r *runner) Completion(t *testing.T, src span.Span, test tests.Completion, 
 		opts.DeepCompletion = false
 		opts.CompleteUnimported = false
 		opts.InsertTextFormat = protocol.SnippetTextFormat
-		if !strings.Contains(string(src.URI()), "literal") {
-			opts.LiteralCompletions = false
-		}
+		opts.LiteralCompletions = strings.Contains(string(src.URI()), "literal")
+		opts.ExperimentalPostfixCompletions = strings.Contains(string(src.URI()), "postfix")
 	})
 	got = tests.FilterBuiltins(src, got)
 	if diff := tests.DiffCompletionItems(want, got); diff != "" {
@@ -278,6 +277,7 @@ func (r *runner) RankCompletion(t *testing.T, src span.Span, test tests.Completi
 	_, got := r.callCompletion(t, src, func(opts *source.Options) {
 		opts.DeepCompletion = true
 		opts.Matcher = source.Fuzzy
+		opts.ExperimentalPostfixCompletions = true
 	})
 	if msg := tests.CheckCompletionOrder(want, got, true); msg != "" {
 		t.Errorf("%s: %s", src, msg)
@@ -376,8 +376,8 @@ func (r *runner) foldingRanges(t *testing.T, prefix string, uri span.URI, data s
 			return []byte(got), nil
 		}))
 
-		if want != got {
-			t.Errorf("%s: foldingRanges failed for %s, expected:\n%v\ngot:\n%v", tag, uri.Filename(), want, got)
+		if diff := tests.Diff(t, want, got); diff != "" {
+			t.Errorf("%s: foldingRanges failed for %s, diff:\n%v", tag, uri.Filename(), diff)
 		}
 	}
 
@@ -403,8 +403,8 @@ func (r *runner) foldingRanges(t *testing.T, prefix string, uri span.URI, data s
 				return []byte(got), nil
 			}))
 
-			if want != got {
-				t.Errorf("%s: failed for %s, expected:\n%v\ngot:\n%v", tag, uri.Filename(), want, got)
+			if diff := tests.Diff(t, want, got); diff != "" {
+				t.Errorf("%s: failed for %s, diff:\n%v", tag, uri.Filename(), diff)
 			}
 		}
 
@@ -931,6 +931,7 @@ func (r *runner) SignatureHelp(t *testing.T, spn span.Span, want *protocol.Signa
 
 // These are pure LSP features, no source level functionality to be tested.
 func (r *runner) Link(t *testing.T, uri span.URI, wantLinks []tests.Link) {}
+
 func (r *runner) SuggestedFix(t *testing.T, spn span.Span, actionKinds []string, expectedActions int) {
 }
 func (r *runner) FunctionExtraction(t *testing.T, start span.Span, end span.Span) {}

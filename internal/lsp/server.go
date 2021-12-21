@@ -24,7 +24,7 @@ const concurrentAnalyses = 1
 func NewServer(session source.Session, client protocol.Client) *Server {
 	return &Server{
 		diagnostics:           map[span.URI]*fileReports{},
-		gcOptimizationDetails: make(map[span.URI]struct{}),
+		gcOptimizationDetails: make(map[string]struct{}),
 		watchedGlobPatterns:   make(map[string]struct{}),
 		changedFiles:          make(map[span.URI]struct{}),
 		session:               session,
@@ -64,12 +64,12 @@ type Server struct {
 
 	stateMu sync.Mutex
 	state   serverState
-
-	session   source.Session
-	clientPID int
-
 	// notifications generated before serverInitialized
 	notifications []*protocol.ShowMessageParams
+
+	session source.Session
+
+	tempDir string
 
 	// changedFiles tracks files for which there has been a textDocument/didChange.
 	changedFilesMu sync.Mutex
@@ -91,9 +91,9 @@ type Server struct {
 
 	// gcOptimizationDetails describes the packages for which we want
 	// optimization details to be included in the diagnostics. The key is the
-	// directory of the package.
+	// ID of the package.
 	gcOptimizationDetailsMu sync.Mutex
-	gcOptimizationDetails   map[span.URI]struct{}
+	gcOptimizationDetails   map[string]struct{}
 
 	// diagnosticsSema limits the concurrency of diagnostics runs, which can be
 	// expensive.

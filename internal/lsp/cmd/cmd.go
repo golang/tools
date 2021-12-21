@@ -208,7 +208,7 @@ func (app *Application) connect(ctx context.Context) (*connection, error) {
 	switch {
 	case app.Remote == "":
 		connection := newConnection(app)
-		connection.Server = lsp.NewServer(cache.New(ctx, app.options).NewSession(ctx), connection.Client)
+		connection.Server = lsp.NewServer(cache.New(app.options).NewSession(ctx), connection.Client)
 		ctx = protocol.WithClient(ctx, connection.Client)
 		return connection, connection.initialize(ctx, app.options)
 	case strings.HasPrefix(app.Remote, "internal@"):
@@ -218,7 +218,7 @@ func (app *Application) connect(ctx context.Context) (*connection, error) {
 		if app.options != nil {
 			app.options(opts)
 		}
-		key := fmt.Sprintf("%s %v", app.wd, opts)
+		key := fmt.Sprintf("%s %v %v %v", app.wd, opts.PreferredContentFormat, opts.HierarchicalDocumentSymbolSupport, opts.SymbolMatcher)
 		if c := internalConnections[key]; c != nil {
 			return c, nil
 		}
@@ -278,6 +278,7 @@ func (c *connection) initialize(ctx context.Context, options func(*source.Option
 	if options != nil {
 		options(opts)
 	}
+	// If you add an additional option here, you must update the map key in connect.
 	params.Capabilities.TextDocument.Hover = protocol.HoverClientCapabilities{
 		ContentFormat: []protocol.MarkupKind{opts.PreferredContentFormat},
 	}

@@ -9,13 +9,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/doc"
 	"go/format"
+	"go/token"
 	"go/types"
 	"strings"
+	"time"
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/span"
 	errors "golang.org/x/xerrors"
 )
 
@@ -91,7 +95,7 @@ func HoverIdentifier(ctx context.Context, i *IdentifierInfo) (*HoverInformation,
 	defer done()
 
 	fset := i.Snapshot.FileSet()
-	h, err := HoverInfo(ctx, i.pkg, i.Declaration.obj, i.Declaration.node)
+	h, err := HoverInfo(ctx, i.Snapshot, i.pkg, i.Declaration.obj, i.Declaration.node)
 	if err != nil {
 		return nil, err
 	}
@@ -232,13 +236,25 @@ func objectString(obj types.Object, qf types.Qualifier) string {
 	switch obj := obj.(type) {
 	case *types.Const:
 		str = fmt.Sprintf("%s = %s", str, obj.Val())
+
+		// Try to add a formatted duration as an inline comment
+		typ, ok := obj.Type().(*types.Named)
+		if !ok {
+			break
+		}
+		pkg := typ.Obj().Pkg()
+		if pkg.Path() == "time" && typ.Obj().Name() == "Duration" {
+			if d, ok := constant.Int64Val(obj.Val()); ok {
+				str += " // " + time.Duration(d).String()
+			}
+		}
 	}
 	return str
 }
 
 // HoverInfo returns a HoverInformation struct for an ast node and its type
 // object.
-func HoverInfo(ctx context.Context, pkg Package, obj types.Object, node ast.Node) (*HoverInformation, error) {
+func HoverInfo(ctx context.Context, s Snapshot, pkg Package, obj types.Object, node ast.Node) (*HoverInformation, error) {
 	var info *HoverInformation
 
 	switch node := node.(type) {
@@ -290,6 +306,35 @@ func HoverInfo(ctx context.Context, pkg Package, obj types.Object, node ast.Node
 			info = &HoverInformation{source: obj, comment: node.Doc}
 		case *types.Builtin:
 			info = &HoverInformation{source: node.Type, comment: node.Doc}
+		case *types.Var:
+			// Object is a function param or the field of an anonymous struct
+			// declared with ':='. Skip the first one because only fields
+			// can have docs.
+			if isFunctionParam(obj, node) {
+				break
+			}
+
+			f := s.FileSet().File(obj.Pos())
+			if f == nil {
+				break
+			}
+
+			pgf, err := pkg.File(span.URIFromPath(f.Name()))
+			if err != nil {
+				return nil, err
+			}
+			posToField, err := s.PosToField(ctx, pgf)
+			if err != nil {
+				return nil, err
+			}
+
+			if field := posToField[obj.Pos()]; field != nil {
+				comment := field.Doc
+				if comment.Text() == "" {
+					comment = field.Comment
+				}
+				info = &HoverInformation{source: obj, comment: comment}
+			}
 		}
 	}
 
@@ -303,6 +348,24 @@ func HoverInfo(ctx context.Context, pkg Package, obj types.Object, node ast.Node
 	}
 
 	return info, nil
+}
+
+// isFunctionParam returns true if the passed object is either an incoming
+// or an outgoing function param
+func isFunctionParam(obj types.Object, node *ast.FuncDecl) bool {
+	for _, f := range node.Type.Params.List {
+		if f.Pos() == obj.Pos() {
+			return true
+		}
+	}
+	if node.Type.Results != nil {
+		for _, f := range node.Type.Results.List {
+			if f.Pos() == obj.Pos() {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func formatGenDecl(node *ast.GenDecl, obj types.Object, typ types.Type) (*HoverInformation, error) {
@@ -356,6 +419,11 @@ func formatVar(node ast.Spec, obj types.Object, decl *ast.GenDecl) *HoverInforma
 			fieldList = t.Methods
 		}
 	case *ast.ValueSpec:
+		// Try to extract the field list of an anonymous struct
+		if fieldList = extractFieldList(spec.Type); fieldList != nil {
+			break
+		}
+
 		comment := spec.Doc
 		if comment == nil {
 			comment = decl.Doc
@@ -365,20 +433,55 @@ func formatVar(node ast.Spec, obj types.Object, decl *ast.GenDecl) *HoverInforma
 		}
 		return &HoverInformation{source: obj, comment: comment}
 	}
-	// If we have a struct or interface declaration,
-	// we need to match the object to the corresponding field or method.
+
 	if fieldList != nil {
-		for i := 0; i < len(fieldList.List); i++ {
-			field := fieldList.List[i]
-			if field.Pos() <= obj.Pos() && obj.Pos() <= field.End() {
-				if field.Doc.Text() != "" {
-					return &HoverInformation{source: obj, comment: field.Doc}
-				}
-				return &HoverInformation{source: obj, comment: field.Comment}
+		comment := findFieldComment(obj.Pos(), fieldList)
+		return &HoverInformation{source: obj, comment: comment}
+	}
+	return &HoverInformation{source: obj, comment: decl.Doc}
+}
+
+// extractFieldList recursively tries to extract a field list.
+// If it is not found, nil is returned.
+func extractFieldList(specType ast.Expr) *ast.FieldList {
+	switch t := specType.(type) {
+	case *ast.StructType:
+		return t.Fields
+	case *ast.InterfaceType:
+		return t.Methods
+	case *ast.ArrayType:
+		return extractFieldList(t.Elt)
+	case *ast.MapType:
+		// Map value has a greater chance to be a struct
+		if fields := extractFieldList(t.Value); fields != nil {
+			return fields
+		}
+		return extractFieldList(t.Key)
+	case *ast.ChanType:
+		return extractFieldList(t.Value)
+	}
+	return nil
+}
+
+// findFieldComment visits all fields in depth-first order and returns
+// the comment of a field with passed position. If no comment is found,
+// nil is returned.
+func findFieldComment(pos token.Pos, fieldList *ast.FieldList) *ast.CommentGroup {
+	for _, field := range fieldList.List {
+		if field.Pos() == pos {
+			if field.Doc.Text() != "" {
+				return field.Doc
+			}
+			return field.Comment
+		}
+
+		if nestedFieldList := extractFieldList(field.Type); nestedFieldList != nil {
+			if c := findFieldComment(pos, nestedFieldList); c != nil {
+				return c
 			}
 		}
 	}
-	return &HoverInformation{source: obj, comment: decl.Doc}
+	return nil
 }
 
 func FormatHover(h *HoverInformation, options *Options) (string, error) {

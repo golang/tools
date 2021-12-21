@@ -245,53 +245,65 @@ func (s *Server) diagnose(ctx context.Context, snapshot source.Snapshot, forceAn
 func (s *Server) diagnosePkg(ctx context.Context, snapshot source.Snapshot, pkg source.Package, alwaysAnalyze bool) {
 	ctx, done := event.Start(ctx, "Server.diagnosePkg", tag.Snapshot.Of(snapshot.ID()), tag.Package.Of(pkg.ID()))
 	defer done()
+	enableDiagnostics := false
 	includeAnalysis := alwaysAnalyze // only run analyses for packages with open files
-	var gcDetailsDir span.URI        // find the package's optimization details, if available
 	for _, pgf := range pkg.CompiledGoFiles() {
-		if snapshot.IsOpen(pgf.URI) {
-			includeAnalysis = true
+		enableDiagnostics = enableDiagnostics || !snapshot.IgnoredFile(pgf.URI)
+		includeAnalysis = includeAnalysis || snapshot.IsOpen(pgf.URI)
+	}
+	// Don't show any diagnostics on ignored files.
+	if !enableDiagnostics {
+		return
+	}
+
+	pkgDiagnostics, err := snapshot.DiagnosePackage(ctx, pkg)
+	if err != nil {
+		event.Error(ctx, "warning: diagnosing package", err, tag.Snapshot.Of(snapshot.ID()), tag.Package.Of(pkg.ID()))
+		return
+	}
+	for _, cgf := range pkg.CompiledGoFiles() {
+		s.storeDiagnostics(snapshot, cgf.URI, typeCheckSource, pkgDiagnostics[cgf.URI])
+	}
+	if includeAnalysis && !pkg.HasListOrParseErrors() {
+		reports, err := source.Analyze(ctx, snapshot, pkg, false)
+		if err != nil {
+			event.Error(ctx, "warning: analyzing package", err, tag.Snapshot.Of(snapshot.ID()), tag.Package.Of(pkg.ID()))
+			return
 		}
-		if gcDetailsDir == "" {
-			dirURI := span.URIFromPath(filepath.Dir(pgf.URI.Filename()))
-			s.gcOptimizationDetailsMu.Lock()
-			_, ok := s.gcOptimizationDetails[dirURI]
-			s.gcOptimizationDetailsMu.Unlock()
-			if ok {
-				gcDetailsDir = dirURI
-			}
+		for _, cgf := range pkg.CompiledGoFiles() {
+			s.storeDiagnostics(snapshot, cgf.URI, analysisSource, reports[cgf.URI])
 		}
 	}
 
-	typeCheckResults := source.GetTypeCheckDiagnostics(ctx, snapshot, pkg)
-	for uri, diags := range typeCheckResults.Diagnostics {
-		s.storeDiagnostics(snapshot, uri, typeCheckSource, diags)
-	}
-	if includeAnalysis && !typeCheckResults.HasParseOrListErrors {
-		reports, err := source.Analyze(ctx, snapshot, pkg, typeCheckResults)
-		if err != nil {
-			event.Error(ctx, "warning: diagnose package", err, tag.Snapshot.Of(snapshot.ID()), tag.Package.Of(pkg.ID()))
-			return
-		}
-		for uri, diags := range reports {
-			s.storeDiagnostics(snapshot, uri, analysisSource, diags)
-		}
-	}
-	// If gc optimization details are available, add them to the
+	// If gc optimization details are requested, add them to the
 	// diagnostic reports.
-	if gcDetailsDir != "" {
-		gcReports, err := source.GCOptimizationDetails(ctx, snapshot, gcDetailsDir)
+	s.gcOptimizationDetailsMu.Lock()
+	_, enableGCDetails := s.gcOptimizationDetails[pkg.ID()]
+	s.gcOptimizationDetailsMu.Unlock()
+	if enableGCDetails {
+		gcReports, err := source.GCOptimizationDetails(ctx, snapshot, pkg)
 		if err != nil {
 			event.Error(ctx, "warning: gc details", err, tag.Snapshot.Of(snapshot.ID()), tag.Package.Of(pkg.ID()))
 		}
-		for id, diags := range gcReports {
-			fh := snapshot.FindFile(id.URI)
-			// Don't publish gc details for unsaved buffers, since the underlying
-			// logic operates on the file on disk.
-			if fh == nil || !fh.Saved() {
-				continue
+		s.gcOptimizationDetailsMu.Lock()
+		_, enableGCDetails := s.gcOptimizationDetails[pkg.ID()]
+
+		// NOTE(golang/go#44826): hold the gcOptimizationDetails lock, and re-check
+		// whether gc optimization details are enabled, while storing gc_details
+		// results. This ensures that the toggling of GC details and clearing of
+		// diagnostics does not race with storing the results here.
+		if enableGCDetails {
+			for id, diags := range gcReports {
+				fh := snapshot.FindFile(id.URI)
+				// Don't publish gc details for unsaved buffers, since the underlying
+				// logic operates on the file on disk.
+				if fh == nil || !fh.Saved() {
+					continue
+				}
+				s.storeDiagnostics(snapshot, id.URI, gcDetailsSource, diags)
 			}
-			s.storeDiagnostics(snapshot, id.URI, gcDetailsSource, diags)
 		}
+		s.gcOptimizationDetailsMu.Unlock()
 	}
 }
 

@@ -46,7 +46,7 @@ type runner struct {
 func testLSP(t *testing.T, datum *tests.Data) {
 	ctx := tests.Context(t)
 
-	cache := cache.New(ctx, nil)
+	cache := cache.New(nil)
 	session := cache.NewSession(ctx)
 	options := source.DefaultOptions().Clone()
 	tests.DefaultOptions(options)
@@ -521,7 +521,7 @@ func (r *runner) SuggestedFix(t *testing.T, spn span.Span, actionKinds []string,
 		// Hack: We assume that we only get one code action per range.
 		var cmds []string
 		for _, a := range actions {
-			cmds = append(cmds, fmt.Sprintf("%s (%s)", a.Command.Command, a.Title))
+			cmds = append(cmds, fmt.Sprintf("%s (%s)", a.Command, a.Title))
 		}
 		t.Fatalf("unexpected number of code actions, want %d, got %d: %v", expectedActions, len(actions), cmds)
 	}

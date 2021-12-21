@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"testing"
 
 	. "golang.org/x/tools/gopls/internal/regtest"
@@ -573,20 +572,17 @@ hi mom
 			WithOptions(EditorConfig{
 				Env: map[string]string{"GO111MODULE": go111module},
 			}).Run(t, files, func(t *testing.T, env *Env) {
-				env.OpenFile("hello.txt")
 				env.Await(
-					OnceMet(
-						env.DoneWithOpen(),
-						NoShowMessage(),
-					),
+					NoOutstandingWork(),
 				)
 			})
 		})
 	}
 }
 
-// Tests golang/go#38602.
-func TestNonexistentFileDiagnostics_Issue38602(t *testing.T) {
+// Tests the repro case from golang/go#38602. Diagnostics are now handled properly,
+// which blocks type checking.
+func TestConflictingMainPackageErrors(t *testing.T) {
 	const collision = `
 -- x/x.go --
 package x
@@ -603,28 +599,27 @@ func main() {
 	fmt.Println("")
 }
 `
-	WithOptions(InGOPATH()).Run(t, collision, func(t *testing.T, env *Env) {
-		env.OpenFile("x/main.go")
+	WithOptions(
+		InGOPATH(),
+		EditorConfig{
+			Env: map[string]string{
+				"GO111MODULE": "off",
+			},
+		},
+	).Run(t, collision, func(t *testing.T, env *Env) {
+		env.OpenFile("x/x.go")
 		env.Await(
-			env.DiagnosticAtRegexp("x/main.go", "fmt.Println"),
+			env.DiagnosticAtRegexpWithMessage("x/x.go", `^`, "found packages main (main.go) and x (x.go)"),
+			env.DiagnosticAtRegexpWithMessage("x/main.go", `^`, "found packages main (main.go) and x (x.go)"),
 		)
-		env.OrganizeImports("x/main.go")
-		// span.Parse misparses the error message when multiple packages are
-		// defined in the same directory, creating a garbage filename.
-		// Previously, we would send diagnostics for this nonexistent file.
-		// This test checks that we don't send diagnostics for this file.
-		dir, err := os.Getwd()
-		if err != nil {
-			t.Fatal(err)
-		}
-		badFile := fmt.Sprintf("%s/found packages main (main.go) and x (x.go) in %s/src/x", dir, env.Sandbox.GOPATH())
-		env.Await(
-			OnceMet(
+
+		// We don't recover cleanly from the errors without good overlay support.
+		if testenv.Go1Point() >= 16 {
+			env.RegexpReplace("x/x.go", `package x`, `package main`)
+			env.Await(OnceMet(
 				env.DoneWithChange(),
-				EmptyDiagnostics("x/main.go"),
-			),
-			NoDiagnostics(badFile),
-		)
+				env.DiagnosticAtRegexpWithMessage("x/main.go", `fmt`, "undeclared name")))
+		}
 	})
 }
 
@@ -717,15 +712,14 @@ go 1.12
 	WithOptions(
 		ProxyFiles(ardanLabsProxy),
 	).Run(t, emptyFile, func(t *testing.T, env *Env) {
-		env.OpenFile("main.go")
-		env.EditBuffer("main.go", fake.NewEdit(0, 0, 0, 0, `package main
+		env.CreateBuffer("main.go", `package main
 
 import "github.com/ardanlabs/conf"
 
 func main() {
 	_ = conf.ErrHelpWanted
 }
-`))
+`)
 		env.SaveBuffer("main.go")
 		var d protocol.PublishDiagnosticsParams
 		env.Await(
@@ -903,24 +897,6 @@ package foo_
 				env.DoneWithSave(),
 				NoDiagnostics("foo/foo.go"),
 			),
-		)
-	})
-}
-
-// Reproduces golang/go#40825.
-func TestEmptyGOPATHXTest_40825(t *testing.T) {
-	const files = `
--- x.go --
-package x
--- x_test.go --
-`
-
-	WithOptions(InGOPATH()).Run(t, files, func(t *testing.T, env *Env) {
-		env.OpenFile("x_test.go")
-		env.EditBuffer("x_test.go", fake.NewEdit(0, 0, 0, 0, "pack"))
-		env.Await(
-			env.DoneWithChange(),
-			NoShowMessage(),
 		)
 	})
 }
@@ -1116,7 +1092,7 @@ func Foo() {
 }
 `
 	Run(t, basic, func(t *testing.T, env *Env) {
-		testenv.NeedsGo1Point(t, 15)
+		testenv.NeedsGo1Point(t, 16) // We can't recover cleanly from this case without good overlay support.
 
 		env.WriteWorkspaceFile("foo/foo_test.go", `package main
 
@@ -1219,7 +1195,7 @@ func main() {}
 	Run(t, pkgDefault, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.Await(
-			env.DiagnosticAtRegexp("main.go", "default"),
+			env.DiagnosticAtRegexpWithMessage("main.go", "default", "expected 'IDENT'"),
 		)
 	})
 }
@@ -1261,7 +1237,7 @@ func main() {
 	})
 }
 
-func TestStaticcheckDiagnostic(t *testing.T) {
+func TestSimplifyCompositeLitDiagnostic(t *testing.T) {
 	const files = `
 -- go.mod --
 module mod.com
@@ -1286,8 +1262,16 @@ func main() {
 		EditorConfig{EnableStaticcheck: true},
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
-		// Staticcheck should generate a diagnostic to simplify this literal.
-		env.Await(env.DiagnosticAtRegexp("main.go", `t{"msg"}`))
+		var d protocol.PublishDiagnosticsParams
+		env.Await(OnceMet(
+			env.DiagnosticAtRegexpWithMessage("main.go", `t{"msg"}`, "redundant type"),
+			ReadDiagnostics("main.go", &d),
+		))
+		if tags := d.Diagnostics[0].Tags; len(tags) == 0 || tags[0] != protocol.Unnecessary {
+			t.Errorf("wanted Unnecessary tag on diagnostic, got %v", tags)
+		}
+		env.ApplyQuickFixes("main.go", d.Diagnostics)
+		env.Await(EmptyDiagnostics("main.go"))
 	})
 }
 
@@ -1492,6 +1476,11 @@ package foo_
 	WithOptions(
 		ProxyFiles(proxy),
 		InGOPATH(),
+		EditorConfig{
+			Env: map[string]string{
+				"GO111MODULE": "off",
+			},
+		},
 	).Run(t, contents, func(t *testing.T, env *Env) {
 		// Simulate typing character by character.
 		env.OpenFile("foo/foo_test.go")
@@ -1795,6 +1784,121 @@ func main() {}
 				env.DoneWithChange(),
 				NoLogMatching(protocol.Info, "packages=1"),
 			),
+		)
+	})
+}
+
+func TestBuildTagChange(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- foo.go --
+// decoy comment
+// +build hidden
+// decoy comment
+
+package foo
+var Foo = 1
+-- bar.go --
+package foo
+var Bar = Foo
+`
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("foo.go")
+		env.Await(env.DiagnosticAtRegexpWithMessage("bar.go", `Foo`, "undeclared name"))
+		env.RegexpReplace("foo.go", `\+build`, "")
+		env.Await(EmptyDiagnostics("bar.go"))
+	})
+
+}
+
+func TestIssue44736(t *testing.T) {
+	const files = `
+	-- go.mod --
+module blah.com
+
+go 1.16
+-- main.go --
+package main
+
+import "fmt"
+
+func main() {
+	asdf
+	fmt.Printf("This is a test %v")
+	fdas
+}
+-- other.go --
+package main
+
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.OpenFile("other.go")
+		env.Await(
+			env.DiagnosticAtRegexpWithMessage("main.go", "asdf", "undeclared name"),
+			env.DiagnosticAtRegexpWithMessage("main.go", "fdas", "undeclared name"),
+		)
+		env.SetBufferContent("other.go", "package main\n\nasdf")
+		// The new diagnostic in other.go should not suppress diagnostics in main.go.
+		env.Await(
+			OnceMet(
+				env.DiagnosticAtRegexpWithMessage("other.go", "asdf", "expected declaration"),
+				env.DiagnosticAtRegexpWithMessage("main.go", "asdf", "undeclared name"),
+			),
+		)
+	})
+}
+
+func TestInitialization(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.16
+-- main.go --
+package main
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("go.mod")
+		env.Await(env.DoneWithOpen())
+		env.RegexpReplace("go.mod", "module", "modul")
+		env.SaveBufferWithoutActions("go.mod")
+		env.Await(
+			OnceMet(
+				env.DoneWithSave(),
+				NoLogMatching(protocol.Error, "initial workspace load failed"),
+			),
+		)
+	})
+}
+
+// Tests golang/go#45075, a panic in fillreturns breaks diagnostics.
+func TestFillReturnsPanic(t *testing.T) {
+	// At tip, the panic no longer reproduces.
+	testenv.SkipAfterGo1Point(t, 16)
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.16
+-- main.go --
+package main
+
+
+func foo() int {
+	return x, nil
+}
+
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.Await(
+			env.DiagnosticAtRegexpWithMessage("main.go", `return x`, "wrong number of return values"),
+			LogMatching(protocol.Error, `.*analysis fillreturns.*panicked.*`, 2),
 		)
 	})
 }

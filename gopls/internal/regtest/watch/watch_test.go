@@ -370,6 +370,7 @@ func _() {
 // Tests golang/go#38498. Delete a file and then force a reload.
 // Assert that we no longer try to load the file.
 func TestDeleteFiles(t *testing.T) {
+	testenv.NeedsGo1Point(t, 13) // Poor overlay support causes problems on 1.12.
 	const pkg = `
 -- go.mod --
 module mod.com
@@ -616,6 +617,11 @@ func main() {
 `
 	WithOptions(
 		InGOPATH(),
+		EditorConfig{
+			Env: map[string]string{
+				"GO111MODULE": "auto",
+			},
+		},
 		Modes(Experimental), // module is in a subdirectory
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("foo/main.go")
@@ -623,12 +629,6 @@ func main() {
 		if err := env.Sandbox.RunGoCommand(env.Ctx, "foo", "mod", []string{"init", "mod.com"}); err != nil {
 			t.Fatal(err)
 		}
-		env.Await(
-			OnceMet(
-				env.DoneWithChangeWatchedFiles(),
-				env.DiagnosticAtRegexp("foo/main.go", `"blah"`),
-			),
-		)
 		env.RegexpReplace("foo/main.go", `"blah"`, `"mod.com/blah"`)
 		env.Await(
 			EmptyDiagnostics("foo/main.go"),
@@ -660,6 +660,11 @@ func main() {
 `
 	WithOptions(
 		InGOPATH(),
+		EditorConfig{
+			Env: map[string]string{
+				"GO111MODULE": "auto",
+			},
+		},
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("foo/main.go")
 		env.RemoveWorkspaceFile("foo/go.mod")
