@@ -377,7 +377,7 @@ func _() {
 			before: `
 package foo
 
-func foo() []string { 
+func foo() []string {
 	x := "test"
 	return x.split
 }`,
@@ -386,7 +386,7 @@ package foo
 
 import "strings"
 
-func foo() []string { 
+func foo() []string {
 	x := "test"
 	return strings.Split(x, "$0")
 }`,
