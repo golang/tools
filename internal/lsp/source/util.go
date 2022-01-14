@@ -161,7 +161,9 @@ func posToMappedRange(snapshot Snapshot, pkg Package, pos, end token.Pos) (Mappe
 //	https://golang.org/s/generatedcode
 var generatedRx = regexp.MustCompile(`// .*DO NOT EDIT\.?`)
 
-func DetectLanguage(langID, filename string) FileKind {
+// FileKindForLang returns the file kind associated with the given language ID,
+// or UnknownKind if the language ID is not recognized.
+func FileKindForLang(langID string) FileKind {
 	switch langID {
 	case "go":
 		return Go
@@ -169,27 +171,36 @@ func DetectLanguage(langID, filename string) FileKind {
 		return Mod
 	case "go.sum":
 		return Sum
-	case "tmpl":
+	case "tmpl", "gotmpl":
 		return Tmpl
+	default:
+		return UnknownKind
 	}
-	// Fallback to detecting the language based on the file extension.
+}
+
+func DetectLanguage(langID, filename string) FileKind {
+	// use the langID if the client sent it
+	if kind := FileKindForLang(langID); kind != UnknownKind {
+		return kind
+	}
+	// Detect the language based on the file extension.
 	switch ext := filepath.Ext(filename); ext {
 	case ".mod":
 		return Mod
 	case ".sum":
 		return Sum
+	case ".go":
+		return Go
 	default:
-		if strings.HasSuffix(ext, "tmpl") {
-			// .tmpl, .gotmpl, etc
-			return Tmpl
-		}
-		// It's a Go file, or we shouldn't be seeing it
+		// (for instance, before go1.15 cgo files had no extension)
 		return Go
 	}
 }
 
 func (k FileKind) String() string {
 	switch k {
+	case Go:
+		return "go"
 	case Mod:
 		return "go.mod"
 	case Sum:
@@ -197,7 +208,7 @@ func (k FileKind) String() string {
 	case Tmpl:
 		return "tmpl"
 	default:
-		return "go"
+		return fmt.Sprintf("unk%d", k)
 	}
 }
 

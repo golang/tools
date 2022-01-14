@@ -241,6 +241,31 @@ func (v *View) Options() *source.Options {
 	return v.options
 }
 
+func (v *View) FileKind(fh source.FileHandle) source.FileKind {
+	if o, ok := fh.(source.Overlay); ok {
+		if o.Kind() != source.UnknownKind {
+			return o.Kind()
+		}
+	}
+	fext := filepath.Ext(fh.URI().Filename())
+	switch fext {
+	case ".go":
+		return source.Go
+	case ".mod":
+		return source.Mod
+	case ".sum":
+		return source.Sum
+	}
+	exts := v.Options().TemplateExtensions
+	for _, ext := range exts {
+		if fext == ext || fext == "."+ext {
+			return source.Tmpl
+		}
+	}
+	// and now what? This should never happen, but it does for cgo before go1.15
+	return source.Go
+}
+
 func minorOptionsChange(a, b *source.Options) bool {
 	// Check if any of the settings that modify our understanding of files have been changed
 	if !reflect.DeepEqual(a.Env, b.Env) {
@@ -332,7 +357,7 @@ func (s *snapshot) RunProcessEnvFunc(ctx context.Context, fn func(*imports.Optio
 	return s.view.importsState.runProcessEnvFunc(ctx, s, fn)
 }
 
-// separated out from its sole use in locateTemplatFiles for testability
+// separated out from its sole use in locateTemplateFiles for testability
 func fileHasExtension(path string, suffixes []string) bool {
 	ext := filepath.Ext(path)
 	if ext != "" && ext[0] == '.' {
@@ -351,15 +376,25 @@ func (s *snapshot) locateTemplateFiles(ctx context.Context) {
 		return
 	}
 	suffixes := s.view.Options().TemplateExtensions
+
+	// The workspace root may have been expanded to a module, but we should apply
+	// directory filters based on the configured workspace folder.
+	//
+	// TODO(rfindley): we should be more principled about paths outside of the
+	// workspace folder: do we even consider them? Do we support absolute
+	// exclusions? Relative exclusions starting with ..?
 	dir := s.workspace.root.Filename()
+	relativeTo := s.view.folder.Filename()
+
 	searched := 0
 	// Change to WalkDir when we move up to 1.16
 	err := filepath.Walk(dir, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if fileHasExtension(path, suffixes) && !pathExcludedByFilter(path, dir, s.view.gomodcache, s.view.options) &&
-			!fi.IsDir() {
+		relpath := strings.TrimPrefix(path, relativeTo)
+		excluded := pathExcludedByFilter(relpath, dir, s.view.gomodcache, s.view.options)
+		if fileHasExtension(path, suffixes) && !excluded && !fi.IsDir() {
 			k := span.URIFromPath(path)
 			fh, err := s.GetVersionedFile(ctx, k)
 			if err != nil {
@@ -1089,6 +1124,12 @@ func pathExcludedByFilterFunc(root, gomodcache string, opts *source.Options) fun
 	}
 }
 
+// pathExcludedByFilter reports whether the path (relative to the workspace
+// folder) should be excluded by the configured directory filters.
+//
+// TODO(rfindley): passing root and gomodcache here makes it confusing whether
+// path should be absolute or relative, and has already caused at least one
+// bug.
 func pathExcludedByFilter(path, root, gomodcache string, opts *source.Options) bool {
 	path = strings.TrimPrefix(filepath.ToSlash(path), "/")
 	gomodcache = strings.TrimPrefix(filepath.ToSlash(strings.TrimPrefix(gomodcache, root)), "/")

@@ -25,9 +25,8 @@ supported within symbol queries:
 
 Gopls provides some support for Go template files, that is, files that
 are parsed by `text/template` or `html/template`.
-Gopls recognizes template files based on their file extension.
-By default it looks for files ending in `.tmpl` or `.gotmpl`,
-but this list may be configured by the
+Gopls recognizes template files based on their file extension, which may be
+configured by the
 [`templateExtensions`](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#templateextensions-string) setting.
 Making this list empty turns off template support.
 
@@ -43,4 +42,14 @@ it is presented as a diagnostic. (Missing functions do not produce errors.)
 +  **Definitions**: gopls provides jump-to-definition inside templates, though it does not understand scoping (all templates are considered to be in one global scope).
 +  **References**: gopls provides find-references, with the same scoping limitation as definitions.
 + **Completions**: gopls will attempt to suggest completions inside templates.
+
+### Configuring your editor
+
+In addition to configuring `templateExtensions`, you may need to configure your
+editor or LSP client to activate `gopls` for template files. For example, in
+`VS Code` you will need to configure both
+[`files.associations`](https://code.visualstudio.com/docs/languages/identifiers)
+and `build.templateExtensions` (the gopls setting).
+
 <!--TODO(rstambler): Automatically generate a list of supported features.-->
+

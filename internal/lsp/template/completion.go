@@ -26,9 +26,6 @@ type completer struct {
 }
 
 func Completion(ctx context.Context, snapshot source.Snapshot, fh source.VersionedFileHandle, pos protocol.Position, context protocol.CompletionContext) (*protocol.CompletionList, error) {
-	if skipTemplates(snapshot) {
-		return nil, nil
-	}
 	all := New(snapshot.Templates())
 	var start int // the beginning of the Token (completed or not)
 	syms := make(map[string]symbol)
@@ -274,13 +271,17 @@ func weakMatch(choice, pattern string) float64 {
 		from = 2
 	}
 	// check that all the characters of pattern occur as a subsequence of choice
-	for i, j := from, from; j < len(pattern); j++ {
+	i, j := from, from
+	for ; i < len(lower) && j < len(pattern); j++ {
 		if pattern[j] == lower[i] {
 			i++
 			if i >= len(lower) {
 				return 0
 			}
 		}
+	}
+	if j < len(pattern) {
+		return 0
 	}
 	return 1
 }
