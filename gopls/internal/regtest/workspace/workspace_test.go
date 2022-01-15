@@ -14,12 +14,11 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/hooks"
-	. "golang.org/x/tools/internal/lsp/regtest"
-	"golang.org/x/tools/internal/lsp/source"
-
 	"golang.org/x/tools/internal/lsp/command"
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
+	. "golang.org/x/tools/internal/lsp/regtest"
+	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -684,7 +683,7 @@ func Hello() int {
 -- go.work --
 go 1.17
 
-directory (
+use (
 	./moda/a
 )
 `
@@ -717,7 +716,7 @@ directory (
 		env.WriteWorkspaceFile("go.work", `
 go 1.17
 
-directory (
+use (
 	./moda/a
 	./modb
 )
@@ -748,7 +747,7 @@ directory (
 		env.Await(env.DoneWithOpen())
 		env.SetBufferContent("go.work", `go 1.17
 
-directory (
+use (
 	./moda/a
 )`)
 
@@ -1148,7 +1147,7 @@ func main() {}
 		)
 		env.WriteWorkspaceFile("go.work", `go 1.16
 
-directory (
+use (
 	a
 	b
 )

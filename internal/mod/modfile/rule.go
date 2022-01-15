@@ -29,20 +29,21 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
+
 	"golang.org/x/tools/internal/mod/lazyregexp"
 )
 
 // A WorkFile is the parsed, interpreted form of a go.work file.
 type WorkFile struct {
-	Go        *modfile.Go
-	Directory []*Directory
-	Replace   []*modfile.Replace
+	Go      *modfile.Go
+	Use     []*Use
+	Replace []*modfile.Replace
 
 	Syntax *modfile.FileSyntax
 }
 
-// A Directory is a single directory statement.
-type Directory struct {
+// A Use is a single use statement.
+type Use struct {
 	DiskPath   string // TODO(matloob): Replace uses module.Version for new. Do that here?
 	ModulePath string // Module path in the comment.
 	Syntax     *modfile.Line
@@ -99,7 +100,7 @@ func parseToWorkFile(file string, data []byte, fix modfile.VersionFixer, strict 
 					})
 				}
 				continue
-			case "module", "directory", "replace":
+			case "module", "use", "replace":
 				for _, l := range x.Line {
 					f.add(&errs, x, l, x.Token[0], l.Token, fix, strict)
 				}
@@ -169,7 +170,7 @@ func (f *WorkFile) add(errs *modfile.ErrorList, block *modfile.LineBlock, line *
 		f.Go = &modfile.Go{Syntax: line}
 		f.Go.Version = args[0]
 
-	case "directory":
+	case "use":
 		if len(args) != 1 {
 			errorf("usage: %s ../local/directory", verb) // TODO(matloob) better example; most directories will be subdirectories of go.work dir
 			return
@@ -179,7 +180,7 @@ func (f *WorkFile) add(errs *modfile.ErrorList, block *modfile.LineBlock, line *
 			errorf("invalid quoted string: %v", err)
 			return
 		}
-		f.Directory = append(f.Directory, &Directory{
+		f.Use = append(f.Use, &Use{
 			DiskPath: s,
 			Syntax:   line,
 		})

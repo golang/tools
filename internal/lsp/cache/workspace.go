@@ -14,12 +14,13 @@ import (
 	"sync"
 
 	"golang.org/x/mod/modfile"
+	errors "golang.org/x/xerrors"
+
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/source"
 	workfile "golang.org/x/tools/internal/mod/modfile"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
-	errors "golang.org/x/xerrors"
 )
 
 type workspaceSource int
@@ -489,7 +490,7 @@ func parseGoWork(ctx context.Context, root, uri span.URI, contents []byte, fs so
 		return nil, nil, errors.Errorf("parsing go.work: %w", err)
 	}
 	modFiles := make(map[span.URI]struct{})
-	for _, dir := range workFile.Directory {
+	for _, dir := range workFile.Use {
 		// The resulting modfile must use absolute paths, so that it can be
 		// written to a temp directory.
 		dir.DiskPath = absolutePath(root, dir.DiskPath)
