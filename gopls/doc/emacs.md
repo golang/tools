@@ -133,8 +133,8 @@ variable, which can be set either globally in `.emacs` or in a `.dir-locals.el` 
 
 `.dir-locals.el`:
 ```elisp
-((nil (eglot-workspace-configuration . ((gopls . ((staticcheck . t)
-						  (matcher . "CaseSensitive")))))))
+((nil (eglot-workspace-configuration . ((:gopls . ((staticcheck . t)
+                                                   (matcher . "CaseSensitive")))))))
 ```
 
 ### Organizing imports with Eglot
