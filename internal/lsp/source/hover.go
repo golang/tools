@@ -419,8 +419,9 @@ func objectString(obj types.Object, qf types.Qualifier, inferred *types.Signatur
 	if originalValue != nil {
 		switch v := originalValue.(type) {
 		case *ast.BasicLit:
-			// It's useful to show the original and formatted values only for integers because only integers
-			// have multiple ways of initializing: decimal, binary, octal, hex and with underscores.
+			// It's useful to show the original declaration and the value only for integers
+			// because only integers have multiple ways of initializing: decimal, binary,
+			// octal, hex and with underscores.
 			if v.Kind == token.INT {
 				assignment = v.Value
 				comment = constant.MakeFromLiteral(types.ExprString(v), v.Kind, 0).ExactString()
@@ -429,7 +430,7 @@ func objectString(obj types.Object, qf types.Qualifier, inferred *types.Signatur
 		case *ast.BinaryExpr:
 			// Binary expressions with bitwise operators have a greater chance of carrying
 			// important information than expressions with other operators. So, show the original
-			// assignment only for bitwise operators
+			// declaration and the value only for bitwise operators
 			if isBitwiseOperator(v.Op) {
 				x, xOk := v.X.(*ast.BasicLit)
 				y, yOk := v.Y.(*ast.BasicLit)
