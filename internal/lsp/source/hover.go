@@ -64,6 +64,9 @@ type HoverInformation struct {
 	// isTypeAlias indicates whether the identifier is a type alias declaration.
 	// If it is true, the hover will have the prefix "type <typeName> = ".
 	isTypeAlias bool
+	// originalValue is used to show how a constant or variable was originally
+	// declared. For example, "var x int = 0xff" instead of "var x int = 255"
+	originalValue ast.Expr
 }
 
 func Hover(ctx context.Context, snapshot Snapshot, fh FileHandle, position protocol.Position) (*protocol.Hover, error) {
@@ -273,15 +276,6 @@ func HoverIdentifier(ctx context.Context, i *IdentifierInfo) (*HoverInformation,
 			h.Signature = prefix + h.Signature
 		}
 
-		// Check if the variable is an integer whose value we can present in a more
-		// user-friendly way, i.e. `var hex = 0xe34e` becomes `var hex = 58190`
-		if spec, ok := x.(*ast.ValueSpec); ok && len(spec.Values) > 0 {
-			if lit, ok := spec.Values[0].(*ast.BasicLit); ok && len(spec.Names) > 0 {
-				val := constant.MakeFromLiteral(types.ExprString(lit), lit.Kind, 0)
-				h.Signature = fmt.Sprintf("var %s = %s", spec.Names[0], val)
-			}
-		}
-
 	case types.Object:
 		// If the variable is implicitly declared in a type switch, we need to
 		// manually generate its object string.
@@ -291,10 +285,10 @@ func HoverIdentifier(ctx context.Context, i *IdentifierInfo) (*HoverInformation,
 				break
 			}
 		}
-		h.Signature = objectString(x, i.qf, i.Inferred)
+		h.Signature = objectString(x, i.qf, i.Inferred, h.originalValue)
 	}
 	if obj := i.Declaration.obj; obj != nil {
-		h.SingleLine = objectString(obj, i.qf, nil)
+		h.SingleLine = objectString(obj, i.qf, nil, nil)
 	}
 	obj := i.Declaration.obj
 	if obj == nil {
@@ -403,7 +397,7 @@ func moduleAtVersion(path string, i *IdentifierInfo) (string, string, bool) {
 
 // objectString is a wrapper around the types.ObjectString function.
 // It handles adding more information to the object string.
-func objectString(obj types.Object, qf types.Qualifier, inferred *types.Signature) string {
+func objectString(obj types.Object, qf types.Qualifier, inferred *types.Signature, originalValue ast.Expr) string {
 	// If the signature type was inferred, prefer the preferred signature with a
 	// comment showing the generic signature.
 	if sig, _ := obj.Type().(*types.Signature); sig != nil && typeparams.ForSignature(sig).Len() > 0 && inferred != nil {
@@ -418,24 +412,85 @@ func objectString(obj types.Object, qf types.Qualifier, inferred *types.Signatur
 		str += "// " + types.TypeString(sig, qf)
 		return str
 	}
-	str := types.ObjectString(obj, qf)
-	switch obj := obj.(type) {
-	case *types.Const:
-		str = fmt.Sprintf("%s = %s", str, obj.Val())
 
-		// Try to add a formatted duration as an inline comment
-		typ, ok := obj.Type().(*types.Named)
-		if !ok {
-			break
-		}
-		pkg := typ.Obj().Pkg()
-		if pkg.Path() == "time" && typ.Obj().Name() == "Duration" {
-			if d, ok := constant.Int64Val(obj.Val()); ok {
-				str += " // " + time.Duration(d).String()
+	str := types.ObjectString(obj, qf)
+
+	var assignment, comment string
+	if originalValue != nil {
+		switch v := originalValue.(type) {
+		case *ast.BasicLit:
+			// It's useful to show the original and formatted values only for integers because only integers
+			// have multiple ways of initializing: decimal, binary, octal, hex and with underscores.
+			if v.Kind == token.INT {
+				assignment = v.Value
+				comment = constant.MakeFromLiteral(types.ExprString(v), v.Kind, 0).ExactString()
+			}
+
+		case *ast.BinaryExpr:
+			// Binary expressions with bitwise operators have a greater chance of carrying
+			// important information than expressions with other operators. So, show the original
+			// assignment only for bitwise operators
+			if isBitwiseOperator(v.Op) {
+				x, xOk := v.X.(*ast.BasicLit)
+				y, yOk := v.Y.(*ast.BasicLit)
+				if xOk && yOk && x.Kind == token.INT && y.Kind == token.INT {
+					assignment = x.Value + " " + v.Op.String() + " " + y.Value
+
+					xValue := constant.MakeFromLiteral(types.ExprString(x), x.Kind, 0)
+					yValue := constant.MakeFromLiteral(types.ExprString(y), y.Kind, 0)
+					switch v.Op {
+					case token.SHL, token.SHR:
+						s, ok := constant.Uint64Val(yValue)
+						if ok {
+							comment = constant.Shift(xValue, v.Op, uint(s)).ExactString()
+						}
+					default:
+						comment = constant.BinaryOp(xValue, v.Op, yValue).ExactString()
+					}
+				}
 			}
 		}
 	}
+	switch obj := obj.(type) {
+	case *types.Const:
+		if obj.Val().Kind() == constant.Unknown {
+			break
+		}
+
+		if assignment == "" {
+			assignment = obj.Val().String()
+		}
+		if comment == "" {
+			comment = obj.Val().String()
+		}
+
+		// If a constant has type 'time.Duration', show formatted duration as a comment
+		switch typ := obj.Type().(type) {
+		case *types.Named:
+			pkg := typ.Obj().Pkg()
+			if pkg.Path() == "time" && typ.Obj().Name() == "Duration" {
+				if d, ok := constant.Int64Val(obj.Val()); ok {
+					comment = time.Duration(d).String()
+				}
+			}
+		}
+	}
+
+	if assignment != "" {
+		str += " = " + assignment
+		if comment != "" && comment != "unknown" && comment != assignment {
+			str += " // " + comment
+		}
+	}
 	return str
+}
+
+func isBitwiseOperator(op token.Token) bool {
+	switch op {
+	case token.AND, token.OR, token.XOR, token.SHL, token.SHR, token.AND_NOT:
+		return true
+	}
+	return false
 }
 
 // HoverInfo returns a HoverInformation struct for an ast node and its type
@@ -653,15 +708,19 @@ func formatVar(node ast.Spec, obj types.Object, decl *ast.GenDecl) *HoverInforma
 			comment = spec.Comment
 		}
 
-		// We need the AST nodes for variable declarations of basic literals with
-		// associated values so that we can augment their hover with more information.
-		if _, ok := obj.(*types.Var); ok && spec.Type == nil && len(spec.Values) > 0 {
-			if _, ok := spec.Values[0].(*ast.BasicLit); ok {
-				return &HoverInformation{source: spec, comment: comment}
+		var originalValue ast.Expr
+		for i, name := range spec.Names {
+			if obj.Pos() == name.Pos() {
+				if i < len(spec.Values) {
+					switch v := spec.Values[i].(type) {
+					case *ast.BasicLit, *ast.BinaryExpr:
+						originalValue = v
+					}
+				}
+				break
 			}
 		}
-
-		return &HoverInformation{source: obj, comment: comment}
+		return &HoverInformation{source: obj, comment: comment, originalValue: originalValue}
 	}
 
 	if fieldList != nil {

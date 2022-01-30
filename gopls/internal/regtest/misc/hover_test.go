@@ -70,37 +70,6 @@ func main() {
 	})
 }
 
-func TestHoverIntLiteral(t *testing.T) {
-	testenv.NeedsGo1Point(t, 13)
-	const source = `
--- main.go --
-package main
-
-var (
-	bigBin = 0b1001001
-)
-
-var hex = 0xe34e
-
-func main() {
-}
-`
-	Run(t, source, func(t *testing.T, env *Env) {
-		env.OpenFile("main.go")
-		hexExpected := "58190"
-		got, _ := env.Hover("main.go", env.RegexpSearch("main.go", "hex"))
-		if got != nil && !strings.Contains(got.Value, hexExpected) {
-			t.Errorf("Hover: missing expected field '%s'. Got:\n%q", hexExpected, got.Value)
-		}
-
-		binExpected := "73"
-		got, _ = env.Hover("main.go", env.RegexpSearch("main.go", "bigBin"))
-		if got != nil && !strings.Contains(got.Value, binExpected) {
-			t.Errorf("Hover: missing expected field '%s'. Got:\n%q", binExpected, got.Value)
-		}
-	})
-}
-
 // Tests that hovering does not trigger the panic in golang/go#48249.
 func TestPanicInHoverBrokenCode(t *testing.T) {
 	testenv.NeedsGo1Point(t, 13)

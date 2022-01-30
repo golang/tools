@@ -1,0 +1,66 @@
+-- globalVar-hoverdef --
+```go
+var globalVar int = 0xfffff3 // 16777203
+```
+-- hexVar-hoverdef --
+```go
+var hex int = 0xe34e // 58190
+```
+-- binVar-hoverdef --
+```go
+var bin int = 0b1001001 // 73
+```
+-- numberWithUnderscoreVar-hoverdef --
+```go
+var numberWithUnderscore int = 10_000_000_000 // 10000000000
+```
+
+Number with underscore
+-- octalVar-hoverdef --
+```go
+var octal int64 = 0o666 // 438
+```
+-- bitwiseShiftVar-hoverdef --
+```go
+var bitwiseShift int = 10 << 20 // 10485760
+```
+-- bitwiseXorVar-hoverdef --
+```go
+var bitwiseXor int = 0b111 ^ 0b101 // 2
+```
+-- strVar-hoverdef --
+```go
+var str string
+```
+
+No original value
+-- globalConst-hoverdef --
+```go
+const globalConst untyped int = 0xfffff3 // 16777203
+```
+-- hexConst-hoverdef --
+```go
+const hex untyped int = 0xe34e // 58190
+```
+-- binConst-hoverdef --
+```go
+const bin untyped int = 0b1001001 // 73
+```
+-- numberWithUnderscoreConst-hoverdef --
+```go
+const numberWithUnderscore int64 = 10_000_000_000 // 10000000000
+```
+-- octalConst-hoverdef --
+```go
+const octal untyped int = 0o777 // 511
+```
+
+Comment for test
+-- bitwiseConst-hoverdef --
+```go
+const bitwise untyped int = 8 >> 1 // 4
+```
+-- strConst-hoverdef --
+```go
+const str untyped string = "string"
+```
