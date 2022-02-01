@@ -226,7 +226,7 @@ func parseQuery(q string, newMatcher func(string) matcherFunc) matcherFunc {
 	if len(fields) == 0 {
 		return func([]string) (int, float64) { return -1, 0 }
 	}
-	var funcs []matcherFunc
+	var funcs = make([]matcherFunc, 0, len(fields))
 	for _, field := range fields {
 		var f matcherFunc
 		switch {
@@ -305,7 +305,7 @@ func (c comboMatcher) match(chunks []string) (int, float64) {
 func (sc *symbolCollector) walk(ctx context.Context, views []View) ([]protocol.SymbolInformation, error) {
 	// Use the root view URIs for determining (lexically) whether a uri is in any
 	// open workspace.
-	var roots []string
+	var roots = make([]string, 0, len(views))
 	for _, v := range views {
 		roots = append(roots, strings.TrimRight(string(v.Folder()), "/"))
 	}
@@ -347,7 +347,7 @@ func (sc *symbolCollector) walk(ctx context.Context, views []View) ([]protocol.S
 		}
 	}
 
-	var work []symbolFile
+	var work = make([]symbolFile, 0, len(files))
 	for _, f := range files {
 		work = append(work, f)
 	}
