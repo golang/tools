@@ -419,9 +419,10 @@ func objectString(obj types.Object, qf types.Qualifier, inferred *types.Signatur
 	if originalValue != nil {
 		switch v := originalValue.(type) {
 		case *ast.BasicLit:
-			// It's useful to show the original declaration and the value only for integers
-			// because only integers have multiple ways of initializing: decimal, binary,
-			// octal, hex and with underscores.
+			// Show the original declaration and the value for integer literals because
+			// they have multiple ways of initializing: decimal, binary, octal, and so on.
+			// Floating point literals also can be decimal or hexadecimal, but their original
+			// declarations are not so useful.
 			if v.Kind == token.INT {
 				assignment = v.Value
 				comment = constant.MakeFromLiteral(types.ExprString(v), v.Kind, 0).ExactString()
@@ -431,23 +432,25 @@ func objectString(obj types.Object, qf types.Qualifier, inferred *types.Signatur
 			// Binary expressions with bitwise operators have a greater chance of carrying
 			// important information than expressions with other operators. So, show the original
 			// declaration and the value only for bitwise operators
-			if isBitwiseOperator(v.Op) {
-				x, xOk := v.X.(*ast.BasicLit)
-				y, yOk := v.Y.(*ast.BasicLit)
-				if xOk && yOk && x.Kind == token.INT && y.Kind == token.INT {
-					assignment = x.Value + " " + v.Op.String() + " " + y.Value
+			if !isBitwiseOperator(v.Op) {
+				break
+			}
 
-					xValue := constant.MakeFromLiteral(types.ExprString(x), x.Kind, 0)
-					yValue := constant.MakeFromLiteral(types.ExprString(y), y.Kind, 0)
-					switch v.Op {
-					case token.SHL, token.SHR:
-						s, ok := constant.Uint64Val(yValue)
-						if ok {
-							comment = constant.Shift(xValue, v.Op, uint(s)).ExactString()
-						}
-					default:
-						comment = constant.BinaryOp(xValue, v.Op, yValue).ExactString()
+			x, xOk := v.X.(*ast.BasicLit)
+			y, yOk := v.Y.(*ast.BasicLit)
+			if xOk && yOk && x.Kind == token.INT && y.Kind == token.INT {
+				assignment = x.Value + " " + v.Op.String() + " " + y.Value
+
+				xValue := constant.MakeFromLiteral(types.ExprString(x), x.Kind, 0)
+				yValue := constant.MakeFromLiteral(types.ExprString(y), y.Kind, 0)
+				switch v.Op {
+				case token.SHL, token.SHR:
+					s, ok := constant.Uint64Val(yValue)
+					if ok {
+						comment = constant.Shift(xValue, v.Op, uint(s)).ExactString()
 					}
+				default:
+					comment = constant.BinaryOp(xValue, v.Op, yValue).ExactString()
 				}
 			}
 		}
