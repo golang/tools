@@ -20,25 +20,25 @@ import (
 
 // suggestedFix implements the fix verb for gopls.
 type suggestedFix struct {
-	Diff  bool `flag:"d" help:"display diffs instead of rewriting files"`
-	Write bool `flag:"w" help:"write result to (source) file instead of stdout"`
-	All   bool `flag:"a" help:"apply all fixes, not just preferred fixes"`
+	Diff  bool `flag:"d,diff" help:"display diffs instead of rewriting files"`
+	Write bool `flag:"w,write" help:"write result to (source) file instead of stdout"`
+	All   bool `flag:"a,all" help:"apply all fixes, not just preferred fixes"`
 
 	app *Application
 }
 
 func (s *suggestedFix) Name() string      { return "fix" }
-func (s *suggestedFix) Usage() string     { return "<filename>" }
+func (s *suggestedFix) Parent() string    { return s.app.Name() }
+func (s *suggestedFix) Usage() string     { return "[fix-flags] <filename>" }
 func (s *suggestedFix) ShortHelp() string { return "apply suggested fixes" }
 func (s *suggestedFix) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprintf(f.Output(), `
-Example: apply suggested fixes for this file:
+Example: apply suggested fixes for this file
+	$ gopls fix -w internal/lsp/cmd/check.go
 
-  $ gopls fix -w internal/lsp/cmd/check.go
-
-gopls fix flags are:
+fix-flags:
 `)
-	f.PrintDefaults()
+	printFlagDefaults(f)
 }
 
 // Run performs diagnostic checks on the file specified and either;

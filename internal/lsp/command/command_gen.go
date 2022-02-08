@@ -27,6 +27,7 @@ const (
 	Generate          Command = "generate"
 	GenerateGoplsMod  Command = "generate_gopls_mod"
 	GoGetPackage      Command = "go_get_package"
+	ListImports       Command = "list_imports"
 	ListKnownPackages Command = "list_known_packages"
 	RegenerateCgo     Command = "regenerate_cgo"
 	RemoveDependency  Command = "remove_dependency"
@@ -38,7 +39,6 @@ const (
 	UpdateGoSum       Command = "update_go_sum"
 	UpgradeDependency Command = "upgrade_dependency"
 	Vendor            Command = "vendor"
-	WorkspaceMetadata Command = "workspace_metadata"
 )
 
 var Commands = []Command{
@@ -50,6 +50,7 @@ var Commands = []Command{
 	Generate,
 	GenerateGoplsMod,
 	GoGetPackage,
+	ListImports,
 	ListKnownPackages,
 	RegenerateCgo,
 	RemoveDependency,
@@ -61,7 +62,6 @@ var Commands = []Command{
 	UpdateGoSum,
 	UpgradeDependency,
 	Vendor,
-	WorkspaceMetadata,
 }
 
 func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Interface) (interface{}, error) {
@@ -114,6 +114,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.GoGetPackage(ctx, a0)
+	case "gopls.list_imports":
+		var a0 URIArg
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return s.ListImports(ctx, a0)
 	case "gopls.list_known_packages":
 		var a0 URIArg
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -182,8 +188,6 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.Vendor(ctx, a0)
-	case "gopls.workspace_metadata":
-		return s.WorkspaceMetadata(ctx)
 	}
 	return nil, fmt.Errorf("unsupported command %q", params.Command)
 }
@@ -280,6 +284,18 @@ func NewGoGetPackageCommand(title string, a0 GoGetPackageArgs) (protocol.Command
 	return protocol.Command{
 		Title:     title,
 		Command:   "gopls.go_get_package",
+		Arguments: args,
+	}, nil
+}
+
+func NewListImportsCommand(title string, a0 URIArg) (protocol.Command, error) {
+	args, err := MarshalArgs(a0)
+	if err != nil {
+		return protocol.Command{}, err
+	}
+	return protocol.Command{
+		Title:     title,
+		Command:   "gopls.list_imports",
 		Arguments: args,
 	}, nil
 }
@@ -412,18 +428,6 @@ func NewVendorCommand(title string, a0 URIArg) (protocol.Command, error) {
 	return protocol.Command{
 		Title:     title,
 		Command:   "gopls.vendor",
-		Arguments: args,
-	}, nil
-}
-
-func NewWorkspaceMetadataCommand(title string) (protocol.Command, error) {
-	args, err := MarshalArgs()
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
-		Title:     title,
-		Command:   "gopls.workspace_metadata",
 		Arguments: args,
 	}, nil
 }

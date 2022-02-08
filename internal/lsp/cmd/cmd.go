@@ -15,8 +15,11 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"reflect"
+	"sort"
 	"strings"
 	"sync"
+	"text/tabwriter"
 	"time"
 
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -61,10 +64,10 @@ type Application struct {
 	Remote string `flag:"remote" help:"forward all commands to a remote lsp specified by this flag. With no special prefix, this is assumed to be a TCP address. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. If 'auto', or prefixed by 'auto;', the remote address is automatically resolved based on the executing environment."`
 
 	// Verbose enables verbose logging.
-	Verbose bool `flag:"v" help:"verbose output"`
+	Verbose bool `flag:"v,verbose" help:"verbose output"`
 
 	// VeryVerbose enables a higher level of verbosity in logging output.
-	VeryVerbose bool `flag:"vv" help:"very verbose output"`
+	VeryVerbose bool `flag:"vv,veryverbose" help:"very verbose output"`
 
 	// Control ocagent export of telemetry
 	OCAgent string `flag:"ocagent" help:"the address of the ocagent (e.g. http://localhost:55678), or off"`
@@ -94,6 +97,7 @@ func New(name, wd string, env []string, options func(*source.Options)) *Applicat
 			RemoteListenTimeout: 1 * time.Minute,
 		},
 	}
+	app.Serve.app = app
 	return app
 }
 
@@ -101,39 +105,110 @@ func New(name, wd string, env []string, options func(*source.Options)) *Applicat
 func (app *Application) Name() string { return app.name }
 
 // Usage implements tool.Application returning empty extra argument usage.
-func (app *Application) Usage() string { return "<command> [command-flags] [command-args]" }
+func (app *Application) Usage() string { return "" }
 
 // ShortHelp implements tool.Application returning the main binary help.
 func (app *Application) ShortHelp() string {
-	return "The Go Language source tools."
+	return ""
 }
 
 // DetailedHelp implements tool.Application returning the main binary help.
 // This includes the short help for all the sub commands.
 func (app *Application) DetailedHelp(f *flag.FlagSet) {
-	fmt.Fprint(f.Output(), `
-gopls is a Go language server. It is typically used with an editor to provide
-language features. When no command is specified, gopls will default to the 'serve'
-command. The language features can also be accessed via the gopls command-line interface.
+	w := tabwriter.NewWriter(f.Output(), 0, 0, 2, ' ', 0)
+	defer w.Flush()
 
-Available commands are:
+	fmt.Fprint(w, `
+gopls is a Go language server.
+
+It is typically used with an editor to provide language features. When no
+command is specified, gopls will default to the 'serve' command. The language
+features can also be accessed via the gopls command-line interface.
+
+Usage:
+  gopls help [<subject>]
+
+Command:
 `)
-	fmt.Fprint(f.Output(), `
-main:
-`)
+	fmt.Fprint(w, "\nMain\t\n")
 	for _, c := range app.mainCommands() {
-		fmt.Fprintf(f.Output(), "  %s : %v\n", c.Name(), c.ShortHelp())
+		fmt.Fprintf(w, "  %s\t%s\n", c.Name(), c.ShortHelp())
 	}
-	fmt.Fprint(f.Output(), `
-features:
-`)
+	fmt.Fprint(w, "\t\nFeatures\t\n")
 	for _, c := range app.featureCommands() {
-		fmt.Fprintf(f.Output(), "  %s : %v\n", c.Name(), c.ShortHelp())
+		fmt.Fprintf(w, "  %s\t%s\n", c.Name(), c.ShortHelp())
 	}
-	fmt.Fprint(f.Output(), `
-gopls flags are:
-`)
-	f.PrintDefaults()
+	fmt.Fprint(w, "\nflags:\n")
+	printFlagDefaults(f)
+}
+
+// this is a slightly modified version of flag.PrintDefaults to give us control
+func printFlagDefaults(s *flag.FlagSet) {
+	var flags [][]*flag.Flag
+	seen := map[flag.Value]int{}
+	s.VisitAll(func(f *flag.Flag) {
+		if i, ok := seen[f.Value]; !ok {
+			seen[f.Value] = len(flags)
+			flags = append(flags, []*flag.Flag{f})
+		} else {
+			flags[i] = append(flags[i], f)
+		}
+	})
+	for _, entry := range flags {
+		sort.SliceStable(entry, func(i, j int) bool {
+			return len(entry[i].Name) < len(entry[j].Name)
+		})
+		var b strings.Builder
+		for i, f := range entry {
+			switch i {
+			case 0:
+				b.WriteString("  -")
+			default:
+				b.WriteString(",-")
+			}
+			b.WriteString(f.Name)
+		}
+
+		f := entry[0]
+		name, usage := flag.UnquoteUsage(f)
+		if len(name) > 0 {
+			b.WriteString("=")
+			b.WriteString(name)
+		}
+		// Boolean flags of one ASCII letter are so common we
+		// treat them specially, putting their usage on the same line.
+		if b.Len() <= 4 { // space, space, '-', 'x'.
+			b.WriteString("\t")
+		} else {
+			// Four spaces before the tab triggers good alignment
+			// for both 4- and 8-space tab stops.
+			b.WriteString("\n    \t")
+		}
+		b.WriteString(strings.ReplaceAll(usage, "\n", "\n    \t"))
+		if !isZeroValue(f, f.DefValue) {
+			if reflect.TypeOf(f.Value).Elem().Name() == "stringValue" {
+				fmt.Fprintf(&b, " (default %q)", f.DefValue)
+			} else {
+				fmt.Fprintf(&b, " (default %v)", f.DefValue)
+			}
+		}
+		fmt.Fprint(s.Output(), b.String(), "\n")
+	}
+}
+
+// isZeroValue is copied from the flags package
+func isZeroValue(f *flag.Flag, value string) bool {
+	// Build a zero value of the flag's Value type, and see if the
+	// result of calling its String method equals the value passed in.
+	// This works unless the Value type is itself an interface type.
+	typ := reflect.TypeOf(f.Value)
+	var z reflect.Value
+	if typ.Kind() == reflect.Ptr {
+		z = reflect.New(typ.Elem())
+	} else {
+		z = reflect.Zero(typ)
+	}
+	return value == z.Interface().(flag.Value).String()
 }
 
 // Run takes the args after top level flag processing, and invokes the correct
@@ -142,14 +217,15 @@ gopls flags are:
 // temporary measure for compatibility.
 func (app *Application) Run(ctx context.Context, args ...string) error {
 	ctx = debug.WithInstance(ctx, app.wd, app.OCAgent)
-	app.Serve.app = app
 	if len(args) == 0 {
-		return tool.Run(ctx, &app.Serve, args)
+		s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
+		return tool.Run(ctx, s, &app.Serve, args)
 	}
 	command, args := args[0], args[1:]
-	for _, c := range app.commands() {
+	for _, c := range app.Commands() {
 		if c.Name() == command {
-			return tool.Run(ctx, c, args)
+			s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
+			return tool.Run(ctx, s, c, args)
 		}
 	}
 	return tool.CommandLineErrorf("Unknown command %v", command)
@@ -158,7 +234,7 @@ func (app *Application) Run(ctx context.Context, args ...string) error {
 // commands returns the set of commands supported by the gopls tool on the
 // command line.
 // The command is specified by the first non flag argument.
-func (app *Application) commands() []tool.Application {
+func (app *Application) Commands() []tool.Application {
 	var commands []tool.Application
 	commands = append(commands, app.mainCommands()...)
 	commands = append(commands, app.featureCommands()...)
@@ -169,8 +245,8 @@ func (app *Application) mainCommands() []tool.Application {
 	return []tool.Application{
 		&app.Serve,
 		&version{app: app},
-		&bug{},
-		&apiJSON{},
+		&bug{app: app},
+		&apiJSON{app: app},
 		&licenses{app: app},
 	}
 }

@@ -17,25 +17,26 @@ import (
 
 // references implements the references verb for gopls
 type references struct {
-	IncludeDeclaration bool `flag:"d" help:"include the declaration of the specified identifier in the results"`
+	IncludeDeclaration bool `flag:"d,declaration" help:"include the declaration of the specified identifier in the results"`
 
 	app *Application
 }
 
 func (r *references) Name() string      { return "references" }
-func (r *references) Usage() string     { return "<position>" }
+func (r *references) Parent() string    { return r.app.Name() }
+func (r *references) Usage() string     { return "[references-flags] <position>" }
 func (r *references) ShortHelp() string { return "display selected identifier's references" }
 func (r *references) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), `
 Example:
 
-  $ # 1-indexed location (:line:column or :#offset) of the target identifier
-  $ gopls references helper/helper.go:8:6
-  $ gopls references helper/helper.go:#53
+	$ # 1-indexed location (:line:column or :#offset) of the target identifier
+	$ gopls references helper/helper.go:8:6
+	$ gopls references helper/helper.go:#53
 
-  gopls references flags are:
+references-flags:
 `)
-	f.PrintDefaults()
+	printFlagDefaults(f)
 }
 
 func (r *references) Run(ctx context.Context, args ...string) error {

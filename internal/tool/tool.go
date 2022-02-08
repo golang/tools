@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
+	"strings"
 	"time"
 )
 
@@ -28,8 +29,9 @@ import (
 //       (&Application{}).Main("myapp", "non-flag-command-line-arg-help", os.Args[1:])
 //     }
 // It recursively scans the application object for fields with a tag containing
-//     `flag:"flagname" help:"short help text"``
-// uses all those fields to build command line flags.
+//     `flag:"flagnames" help:"short help text"``
+// uses all those fields to build command line flags. It will split flagnames on
+// commas and add a flag per name.
 // It expects the Application type to have a method
 //     Run(context.Context, args...string) error
 // which it invokes only after all command line flag processing has been finished.
@@ -64,6 +66,10 @@ type Application interface {
 	Run(ctx context.Context, args ...string) error
 }
 
+type SubCommand interface {
+	Parent() string
+}
+
 // This is the type returned by CommandLineErrorf, which causes the outer main
 // to trigger printing of the command line help.
 type commandLineError string
@@ -83,13 +89,7 @@ func CommandLineErrorf(message string, args ...interface{}) error {
 // application exits with an exit code of 2.
 func Main(ctx context.Context, app Application, args []string) {
 	s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
-	s.Usage = func() {
-		fmt.Fprint(s.Output(), app.ShortHelp())
-		fmt.Fprintf(s.Output(), "\n\nUsage: %v [flags] %v\n", app.Name(), app.Usage())
-		app.DetailedHelp(s)
-	}
-	addFlags(s, reflect.StructField{}, reflect.ValueOf(app))
-	if err := Run(ctx, app, args); err != nil {
+	if err := Run(ctx, s, app, args); err != nil {
 		fmt.Fprintf(s.Output(), "%s: %v\n", app.Name(), err)
 		if _, printHelp := err.(commandLineError); printHelp {
 			s.Usage()
@@ -101,15 +101,26 @@ func Main(ctx context.Context, app Application, args []string) {
 // Run is the inner loop for Main; invoked by Main, recursively by
 // Run, and by various tests.  It runs the application and returns an
 // error.
-func Run(ctx context.Context, app Application, args []string) error {
-	s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
+func Run(ctx context.Context, s *flag.FlagSet, app Application, args []string) error {
 	s.Usage = func() {
-		fmt.Fprint(s.Output(), app.ShortHelp())
-		fmt.Fprintf(s.Output(), "\n\nUsage: %v [flags] %v\n", app.Name(), app.Usage())
+		if app.ShortHelp() != "" {
+			fmt.Fprintf(s.Output(), "%s\n\nUsage:\n  ", app.ShortHelp())
+			if sub, ok := app.(SubCommand); ok && sub.Parent() != "" {
+				fmt.Fprintf(s.Output(), "%s [flags] %s", sub.Parent(), app.Name())
+			} else {
+				fmt.Fprintf(s.Output(), "%s [flags]", app.Name())
+			}
+			if usage := app.Usage(); usage != "" {
+				fmt.Fprintf(s.Output(), " %s", usage)
+			}
+			fmt.Fprint(s.Output(), "\n")
+		}
 		app.DetailedHelp(s)
 	}
 	p := addFlags(s, reflect.StructField{}, reflect.ValueOf(app))
-	s.Parse(args)
+	if err := s.Parse(args); err != nil {
+		return err
+	}
 
 	if p != nil && p.CPU != "" {
 		f, err := os.Create(p.CPU)
@@ -161,30 +172,44 @@ func addFlags(f *flag.FlagSet, field reflect.StructField, value reflect.Value) *
 		return nil
 	}
 	// now see if is actually a flag
-	flagName, isFlag := field.Tag.Lookup("flag")
+	flagNames, isFlag := field.Tag.Lookup("flag")
 	help := field.Tag.Get("help")
-	if !isFlag {
-		// not a flag, but it might be a struct with flags in it
-		if value.Elem().Kind() != reflect.Struct {
-			return nil
-		}
-		p, _ := value.Interface().(*Profile)
-		// go through all the fields of the struct
-		sv := value.Elem()
-		for i := 0; i < sv.Type().NumField(); i++ {
-			child := sv.Type().Field(i)
-			v := sv.Field(i)
-			// make sure we have a pointer
-			if v.Kind() != reflect.Ptr {
-				v = v.Addr()
-			}
-			// check if that field is a flag or contains flags
-			if fp := addFlags(f, child, v); fp != nil {
-				p = fp
+	if isFlag {
+		nameList := strings.Split(flagNames, ",")
+		// add the main flag
+		addFlag(f, value, nameList[0], help)
+		if len(nameList) > 1 {
+			// and now add any aliases using the same flag value
+			fv := f.Lookup(nameList[0]).Value
+			for _, flagName := range nameList[1:] {
+				f.Var(fv, flagName, help)
 			}
 		}
-		return p
+		return nil
 	}
+	// not a flag, but it might be a struct with flags in it
+	value = resolve(value.Elem())
+	if value.Kind() != reflect.Struct {
+		return nil
+	}
+	p, _ := value.Addr().Interface().(*Profile)
+	// go through all the fields of the struct
+	for i := 0; i < value.Type().NumField(); i++ {
+		child := value.Type().Field(i)
+		v := value.Field(i)
+		// make sure we have a pointer
+		if v.Kind() != reflect.Ptr {
+			v = v.Addr()
+		}
+		// check if that field is a flag or contains flags
+		if fp := addFlags(f, child, v); fp != nil {
+			p = fp
+		}
+	}
+	return p
+}
+
+func addFlag(f *flag.FlagSet, value reflect.Value, flagName string, help string) {
 	switch v := value.Interface().(type) {
 	case flag.Value:
 		f.Var(v, flagName, help)
@@ -207,5 +232,15 @@ func addFlags(f *flag.FlagSet, field reflect.StructField, value reflect.Value) *
 	default:
 		log.Fatalf("Cannot understand flag of type %T", v)
 	}
-	return nil
+}
+
+func resolve(v reflect.Value) reflect.Value {
+	for {
+		switch v.Kind() {
+		case reflect.Interface, reflect.Ptr:
+			v = v.Elem()
+		default:
+			return v
+		}
+	}
 }

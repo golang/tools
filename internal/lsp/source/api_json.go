@@ -185,7 +185,7 @@ var GeneratedAPIJSON = &APIJSON{
 					{Value: "\"FastFuzzy\""},
 					{Value: "\"Fuzzy\""},
 				},
-				Default:   "\"Fuzzy\"",
+				Default:   "\"FastFuzzy\"",
 				Status:    "advanced",
 				Hierarchy: "ui.navigation",
 			},
@@ -623,6 +623,13 @@ var GeneratedAPIJSON = &APIJSON{
 			ArgDoc:  "{\n\t// Any document URI within the relevant module.\n\t\"URI\": string,\n\t// The package to go get.\n\t\"Pkg\": string,\n\t\"AddRequire\": bool,\n}",
 		},
 		{
+			Command:   "gopls.list_imports",
+			Title:     "List imports of a file and its package",
+			Doc:       "Retrieve a list of imports in the given Go file, and the package it\nbelongs to.",
+			ArgDoc:    "{\n\t// The file URI.\n\t\"URI\": string,\n}",
+			ResultDoc: "{\n\t// Imports is a list of imports in the requested file.\n\t\"Imports\": []{\n\t\t\"Path\": string,\n\t\t\"Name\": string,\n\t},\n\t// PackageImports is a list of all imports in the requested file's package.\n\t\"PackageImports\": []{\n\t\t\"Path\": string,\n\t},\n}",
+		},
+		{
 			Command:   "gopls.list_known_packages",
 			Title:     "List known packages",
 			Doc:       "Retrieve a list of packages that are importable from the given URI.",
@@ -689,12 +696,6 @@ var GeneratedAPIJSON = &APIJSON{
 			Title:   "Run go mod vendor",
 			Doc:     "Runs `go mod vendor` for a module.",
 			ArgDoc:  "{\n\t// The file URI.\n\t\"URI\": string,\n}",
-		},
-		{
-			Command:   "gopls.workspace_metadata",
-			Title:     "Query workspace metadata",
-			Doc:       "Query the server for information about active workspaces.",
-			ResultDoc: "{\n\t// All workspaces for this session.\n\t\"Workspaces\": []{\n\t\t\"Name\": string,\n\t\t\"ModuleDir\": string,\n\t},\n}",
 		},
 	},
 	Lenses: []*LensJSON{

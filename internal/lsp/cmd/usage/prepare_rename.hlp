@@ -1,0 +1,10 @@
+test validity of a rename operation at location
+
+Usage:
+  gopls [flags] prepare_rename <position>
+
+Example:
+
+	$ # 1-indexed location (:line:column or :#offset) of the target identifier
+	$ gopls prepare_rename helper/helper.go:8:6
+	$ gopls prepare_rename helper/helper.go:#53

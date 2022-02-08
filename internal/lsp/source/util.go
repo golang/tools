@@ -173,27 +173,10 @@ func FileKindForLang(langID string) FileKind {
 		return Sum
 	case "tmpl", "gotmpl":
 		return Tmpl
+	case "go.work":
+		return Work
 	default:
 		return UnknownKind
-	}
-}
-
-func DetectLanguage(langID, filename string) FileKind {
-	// use the langID if the client sent it
-	if kind := FileKindForLang(langID); kind != UnknownKind {
-		return kind
-	}
-	// Detect the language based on the file extension.
-	switch ext := filepath.Ext(filename); ext {
-	case ".mod":
-		return Mod
-	case ".sum":
-		return Sum
-	case ".go":
-		return Go
-	default:
-		// (for instance, before go1.15 cgo files had no extension)
-		return Go
 	}
 }
 
@@ -207,6 +190,8 @@ func (k FileKind) String() string {
 		return "go.sum"
 	case Tmpl:
 		return "tmpl"
+	case Work:
+		return "go.work"
 	default:
 		return fmt.Sprintf("unk%d", k)
 	}

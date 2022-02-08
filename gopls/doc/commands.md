@@ -142,6 +142,37 @@ Args:
 }
 ```
 
+### **List imports of a file and its package**
+Identifier: `gopls.list_imports`
+
+Retrieve a list of imports in the given Go file, and the package it
+belongs to.
+
+Args:
+
+```
+{
+	// The file URI.
+	"URI": string,
+}
+```
+
+Result:
+
+```
+{
+	// Imports is a list of imports in the requested file.
+	"Imports": []{
+		"Path": string,
+		"Name": string,
+	},
+	// PackageImports is a list of all imports in the requested file's package.
+	"PackageImports": []{
+		"Path": string,
+	},
+}
+```
+
 ### **List known packages**
 Identifier: `gopls.list_known_packages`
 
@@ -347,23 +378,6 @@ Args:
 {
 	// The file URI.
 	"URI": string,
-}
-```
-
-### **Query workspace metadata**
-Identifier: `gopls.workspace_metadata`
-
-Query the server for information about active workspaces.
-
-Result:
-
-```
-{
-	// All workspaces for this session.
-	"Workspaces": []{
-		"Name": string,
-		"ModuleDir": string,
-	},
 }
 ```
 

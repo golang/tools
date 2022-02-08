@@ -19,15 +19,16 @@ import (
 
 // format implements the format verb for gopls.
 type format struct {
-	Diff  bool `flag:"d" help:"display diffs instead of rewriting files"`
-	Write bool `flag:"w" help:"write result to (source) file instead of stdout"`
-	List  bool `flag:"l" help:"list files whose formatting differs from gofmt's"`
+	Diff  bool `flag:"d,diff" help:"display diffs instead of rewriting files"`
+	Write bool `flag:"w,write" help:"write result to (source) file instead of stdout"`
+	List  bool `flag:"l,list" help:"list files whose formatting differs from gofmt's"`
 
 	app *Application
 }
 
 func (c *format) Name() string      { return "format" }
-func (c *format) Usage() string     { return "<filerange>" }
+func (c *format) Parent() string    { return c.app.Name() }
+func (c *format) Usage() string     { return "[format-flags] <filerange>" }
 func (c *format) ShortHelp() string { return "format the code according to the go standard" }
 func (c *format) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), `
@@ -35,11 +36,11 @@ The arguments supplied may be simple file names, or ranges within files.
 
 Example: reformat this file:
 
-  $ gopls format -w internal/lsp/cmd/check.go
+	$ gopls format -w internal/lsp/cmd/check.go
 
-	gopls format flags are:
+format-flags:
 `)
-	f.PrintDefaults()
+	printFlagDefaults(f)
 }
 
 // Run performs the check on the files specified by args and prints the
