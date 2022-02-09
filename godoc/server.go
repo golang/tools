@@ -99,9 +99,13 @@ func (h *handlerServer) GetPageInfo(abspath, relpath string, mode PageInfoMode, 
 	}
 	if goos != "" {
 		ctxt.GOOS = goos
+	} else if env := os.Getenv("GOOS"); env != "" {
+		ctxt.GOOS = env
 	}
 	if goarch != "" {
 		ctxt.GOARCH = goarch
+	} else if env := os.Getenv("GOARCH"); env != "" {
+		ctxt.GOARCH = env
 	}
 
 	pkginfo, err := ctxt.ImportDir(abspath, 0)
