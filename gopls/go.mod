@@ -9,7 +9,7 @@ require (
 	github.com/sergi/go-diff v1.1.0
 	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3
 	golang.org/x/sys v0.0.0-20220114195835-da31bd327af9
-	golang.org/x/tools v0.1.10-0.20220217213854-1c32d8b762ae
+	golang.org/x/tools v0.1.10-0.20220218151557-0d40b49f18b2
 	honnef.co/go/tools v0.2.2
 	mvdan.cc/gofumpt v0.2.1
 	mvdan.cc/xurls/v2 v2.3.0
