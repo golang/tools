@@ -22,8 +22,11 @@ func Options(options *source.Options) {
 		options.ComputeEdits = ComputeEdits
 	}
 	options.URLRegexp = relaxedFullWord
-	options.GofumptFormat = func(ctx context.Context, src []byte) ([]byte, error) {
-		return format.Source(src, format.Options{})
+	options.GofumptFormat = func(ctx context.Context, langVersion, modulePath string, src []byte) ([]byte, error) {
+		return format.Source(src, format.Options{
+			LangVersion: langVersion,
+			ModulePath:  modulePath,
+		})
 	}
 	updateAnalyzers(options)
 }
