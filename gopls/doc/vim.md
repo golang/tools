@@ -7,6 +7,7 @@
 * [vim-lsc](#vimlsc)
 * [coc.nvim](#cocnvim)
 * [govim](#govim)
+* [vim-easycomplete](#vim-easycomplete)
 * [Neovim v0.5.0+](#neovim)
   * [Installation](#neovim-install)
   * [Custom Configuration](#neovim-config)
@@ -120,6 +121,10 @@ autocmd BufWritePre *.go :call CocAction('runCommand', 'editor.action.organizeIm
 ## <a href="#govim" id="govim">govim</a>
 
 In vim classic only, use the experimental [`govim`], simply follow the [install steps][govim-install].
+
+## <a href="#vim-easycomplete" id="vim-easycomplete">vim-easycomplete</a>
+
+In vim and neovim, it's very easy to enable gopls in [vim-easycomplete](https://github.com/jayli/vim-easycomplete) via `:InstallLspServer go` and configure nothing.
 
 ## <a href="#neovim" id="neovim">Neovim v0.5.0+</a>
 
