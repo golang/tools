@@ -187,12 +187,13 @@ func NewIdleListener(timeout time.Duration, wrap Listener) Listener {
 }
 
 type idleListener struct {
-	wrapped    Listener
-	timeout    time.Duration
-	newConns   chan *idleCloser
-	closed     chan struct{}
-	wasTimeout chan struct{}
-	closeOnce  sync.Once
+	wrapped     Listener
+	timeout     time.Duration
+	newConns    chan *idleCloser
+	closed      chan struct{}
+	wasTimeout  chan struct{}
+	closeOnce   sync.Once
+	timeoutOnce sync.Once
 }
 
 type idleCloser struct {
@@ -273,7 +274,7 @@ func (l *idleListener) run() {
 		case <-timeout:
 			// we timed out, only happens when there are no active conns
 			// close the underlying listener, and allow the normal closing process to happen
-			close(l.wasTimeout)
+			l.timeoutOnce.Do(func() { close(l.wasTimeout) })
 			l.wrapped.Close()
 		case <-firstClosed:
 			// a conn closed, remove it from the active list
