@@ -313,6 +313,9 @@ func modTidyDiagnostics(ctx context.Context, snapshot source.Snapshot, pm *sourc
 	// Finally, add errors for any unused dependencies.
 	onlyDiagnostic := len(diagnostics) == 0 && len(unused) == 1
 	for _, req := range unused {
+		if shouldIgnoreUnused(req) {
+			continue
+		}
 		srcErr, err := unusedDiagnostic(pm.Mapper, req, onlyDiagnostic)
 		if err != nil {
 			return nil, err
@@ -320,6 +323,15 @@ func modTidyDiagnostics(ctx context.Context, snapshot source.Snapshot, pm *sourc
 		diagnostics = append(diagnostics, srcErr)
 	}
 	return diagnostics, nil
+}
+
+func shouldIgnoreUnused(req *modfile.Require) bool {
+	for _, comment := range req.Syntax.Comments.Suffix {
+		if strings.Contains(comment.Token, "ignore-unused") {
+			return true
+		}
+	}
+	return false
 }
 
 // unusedDiagnostic returns a source.Diagnostic for an unused require.

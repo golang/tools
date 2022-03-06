@@ -293,15 +293,21 @@ func TestUnusedDiag(t *testing.T) {
 -- example.com@v1.0.0/x.go --
 package pkg
 const X = 1
+-- ignored.com@v1.0.0/x.go --
+package pkg
+const X = 1
 `
 	const files = `
 -- a/go.mod --
 module mod.com
 go 1.14
 require example.com v1.0.0
+require ignored.com v1.0.0 // ignore-unused
 -- a/go.sum --
 example.com v1.0.0 h1:38O7j5rEBajXk+Q5wzLbRN7KqMkSgEiN9NqcM1O2bBM=
 example.com v1.0.0/go.mod h1:vUsPMGpx9ZXXzECCOsOmYCW7npJTwuA16yl89n3Mgls=
+ignored.com v1.0.0 h1:38O7j5rEBajXk+Q5wzLbRN7KqMkSgEiN9NqcM1O2bBM=
+ignored.com v1.0.0/go.mod h1:6AkkVrgFovS0vF13BIgXOmRbcvDiZd8SbcOLkLuqxhw=
 -- a/main.go --
 package main
 func main() {}
@@ -310,6 +316,8 @@ func main() {}
 	const want = `module mod.com
 
 go 1.14
+
+require ignored.com v1.0.0 // ignore-unused
 `
 
 	RunMultiple{
