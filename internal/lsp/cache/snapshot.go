@@ -162,6 +162,10 @@ func (s *snapshot) ModFiles() []span.URI {
 	return uris
 }
 
+func (s *snapshot) WorkFile() span.URI {
+	return s.workspace.workFile
+}
+
 func (s *snapshot) Templates() map[span.URI]source.VersionedFileHandle {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -409,6 +413,8 @@ func (s *snapshot) goCommandInvocation(ctx context.Context, flags source.Invocat
 			}
 		case source.WriteTemporaryModFile:
 			inv.ModFlag = mutableModFlag
+			// -mod must be readonly when using go.work files - see issue #48941
+			inv.Env = append(inv.Env, "GOWORK=off")
 		}
 	}
 

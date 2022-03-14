@@ -796,6 +796,139 @@ use (
 	})
 }
 
+func TestUseGoWorkDiagnosticMissingModule(t *testing.T) {
+	const files = `
+-- go.work --
+go 1.18
+
+use ./foo
+-- bar/go.mod --
+module example.com/bar
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("go.work")
+		env.Await(
+			env.DiagnosticAtRegexpWithMessage("go.work", "use", "directory ./foo does not contain a module"),
+		)
+		// The following tests is a regression test against an issue where we weren't
+		// copying the workFile struct field on workspace when a new one was created in
+		// (*workspace).invalidate. Set the buffer content to a working file so that
+		// invalidate recognizes the workspace to be change and copies over the workspace
+		// struct, and then set the content back to the old contents to make sure
+		// the diagnostic still shows up.
+		env.SetBufferContent("go.work", "go 1.18 \n\n use ./bar\n")
+		env.Await(
+			env.NoDiagnosticAtRegexp("go.work", "use"),
+		)
+		env.SetBufferContent("go.work", "go 1.18 \n\n use ./foo\n")
+		env.Await(
+			env.DiagnosticAtRegexpWithMessage("go.work", "use", "directory ./foo does not contain a module"),
+		)
+	})
+}
+
+func TestUseGoWorkDiagnosticSyntaxError(t *testing.T) {
+	const files = `
+-- go.work --
+go 1.18
+
+usa ./foo
+replace
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("go.work")
+		env.Await(
+			env.DiagnosticAtRegexpWithMessage("go.work", "usa", "unknown directive: usa"),
+			env.DiagnosticAtRegexpWithMessage("go.work", "replace", "usage: replace"),
+		)
+	})
+}
+
+func TestUseGoWorkHover(t *testing.T) {
+	const files = `
+-- go.work --
+go 1.18
+
+use ./foo
+use (
+	./bar
+	./bar/baz
+)
+-- foo/go.mod --
+module example.com/foo
+-- bar/go.mod --
+module example.com/bar
+-- bar/baz/go.mod --
+module example.com/bar/baz
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("go.work")
+
+		tcs := map[string]string{
+			`\./foo`:      "example.com/foo",
+			`(?m)\./bar$`: "example.com/bar",
+			`\./bar/baz`:  "example.com/bar/baz",
+		}
+
+		for hoverRE, want := range tcs {
+			pos := env.RegexpSearch("go.work", hoverRE)
+			got, _ := env.Hover("go.work", pos)
+			if got.Value != want {
+				t.Errorf(`hover on %q: got %q, want %q`, hoverRE, got, want)
+			}
+		}
+	})
+}
+
+func TestExpandToGoWork(t *testing.T) {
+	testenv.NeedsGo1Point(t, 18)
+	const workspace = `
+-- moda/a/go.mod --
+module a.com
+
+require b.com v1.2.3
+-- moda/a/a.go --
+package a
+
+import (
+	"b.com/b"
+)
+
+func main() {
+	var x int
+	_ = b.Hello()
+}
+-- modb/go.mod --
+module b.com
+
+require example.com v1.2.3
+-- modb/b/b.go --
+package b
+
+func Hello() int {
+	var x int
+}
+-- go.work --
+go 1.17
+
+use (
+	./moda/a
+	./modb
+)
+`
+	WithOptions(
+		WorkspaceFolders("moda/a"),
+	).Run(t, workspace, func(t *testing.T, env *Env) {
+		env.OpenFile("moda/a/a.go")
+		env.Await(env.DoneWithOpen())
+		location, _ := env.GoToDefinition("moda/a/a.go", env.RegexpSearch("moda/a/a.go", "Hello"))
+		want := "modb/b/b.go"
+		if !strings.HasSuffix(location, want) {
+			t.Errorf("expected %s, got %v", want, location)
+		}
+	})
+}
+
 func TestNonWorkspaceFileCreation(t *testing.T) {
 	testenv.NeedsGo1Point(t, 13)
 

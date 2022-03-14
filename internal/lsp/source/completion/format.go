@@ -5,7 +5,6 @@
 package completion
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"go/ast"
@@ -65,7 +64,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 		x := cand.obj.(*types.TypeName)
 		if named, ok := x.Type().(*types.Named); ok {
 			tp := typeparams.ForNamed(named)
-			label += string(formatTypeParams(tp))
+			label += source.FormatTypeParams(tp)
 			insert = label // maintain invariant above (label == insert)
 		}
 	}
@@ -131,7 +130,7 @@ Suffixes:
 		case invoke:
 			if sig, ok := funcType.Underlying().(*types.Signature); ok {
 				s := source.NewSignature(ctx, c.snapshot, c.pkg, sig, nil, c.qf)
-				c.functionCallSnippet("", s.Params(), &snip)
+				c.functionCallSnippet("", s.TypeParams(), s.Params(), &snip)
 				if sig.Results().Len() == 1 {
 					funcType = sig.Results().At(0).Type()
 				}
@@ -308,7 +307,7 @@ func (c *completer) formatBuiltin(ctx context.Context, cand candidate) (Completi
 		}
 		item.Detail = "func" + sig.Format()
 		item.snippet = &snippet.Builder{}
-		c.functionCallSnippet(obj.Name(), sig.Params(), item.snippet)
+		c.functionCallSnippet(obj.Name(), sig.TypeParams(), sig.Params(), item.snippet)
 	case *types.TypeName:
 		if types.IsInterface(obj.Type()) {
 			item.Kind = protocol.InterfaceCompletion
@@ -338,20 +337,4 @@ func (c *completer) wantTypeParams() bool {
 		}
 	}
 	return false
-}
-
-func formatTypeParams(tp *typeparams.TypeParamList) []byte {
-	var buf bytes.Buffer
-	if tp == nil || tp.Len() == 0 {
-		return nil
-	}
-	buf.WriteByte('[')
-	for i := 0; i < tp.Len(); i++ {
-		if i > 0 {
-			buf.WriteString(", ")
-		}
-		buf.WriteString(tp.At(i).Obj().Name())
-	}
-	buf.WriteByte(']')
-	return buf.Bytes()
 }

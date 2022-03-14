@@ -12,7 +12,7 @@ require (
 	golang.org/x/tools v0.1.10-0.20220303153236-fa15af63a6f1
 	honnef.co/go/tools v0.2.2
 	mvdan.cc/gofumpt v0.3.0
-	mvdan.cc/xurls/v2 v2.3.0
+	mvdan.cc/xurls/v2 v2.4.0
 )
 
 require (
@@ -22,3 +22,5 @@ require (
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 )
+
+replace golang.org/x/tools => ../
