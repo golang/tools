@@ -158,7 +158,7 @@ var GeneratedAPIJSON = &APIJSON{
 			{
 				Name:      "experimentalPostfixCompletions",
 				Type:      "bool",
-				Doc:       "experimentalPostfixCompletions enables artifical method snippets\nsuch as \"someSlice.sort!\".\n",
+				Doc:       "experimentalPostfixCompletions enables artificial method snippets\nsuch as \"someSlice.sort!\".\n",
 				Default:   "true",
 				Status:    "experimental",
 				Hierarchy: "ui.completion",
@@ -503,7 +503,7 @@ var GeneratedAPIJSON = &APIJSON{
 			{
 				Name: "codelenses",
 				Type: "map[string]bool",
-				Doc:  "codelenses overrides the enabled/disabled state of code lenses. See the\n\"Code Lenses\" section of the\n[Settings page](https://github.com/golang/tools/blob/master/gopls/doc/settings.md)\nfor the list of supported lenses.\n\nExample Usage:\n\n```json5\n\"gopls\": {\n...\n  \"codelenses\": {\n    \"generate\": false,  // Don't show the `go generate` lens.\n    \"gc_details\": true  // Show a code lens toggling the display of gc's choices.\n  }\n...\n}\n```\n",
+				Doc:  "codelenses overrides the enabled/disabled state of code lenses. See the\n\"Code Lenses\" section of the\n[Settings page](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#code-lenses)\nfor the list of supported lenses.\n\nExample Usage:\n\n```json5\n\"gopls\": {\n...\n  \"codelenses\": {\n    \"generate\": false,  // Don't show the `go generate` lens.\n    \"gc_details\": true  // Show a code lens toggling the display of gc's choices.\n  }\n...\n}\n```\n",
 				EnumKeys: EnumKeys{
 					ValueType: "bool",
 					Keys: []EnumKey{
@@ -664,6 +664,13 @@ var GeneratedAPIJSON = &APIJSON{
 			Title:   "Run test(s)",
 			Doc:     "Runs `go test` for a specific set of test or benchmark functions.",
 			ArgDoc:  "{\n\t// The test file containing the tests to run.\n\t\"URI\": string,\n\t// Specific test names to run, e.g. TestFoo.\n\t\"Tests\": []string,\n\t// Specific benchmarks to run, e.g. BenchmarkFoo.\n\t\"Benchmarks\": []string,\n}",
+		},
+		{
+			Command:   "gopls.run_vulncheck_exp",
+			Title:     "Run vulncheck (experimental)",
+			Doc:       "Run vulnerability check (`govulncheck`).",
+			ArgDoc:    "{\n\t// Dir is the directory from which vulncheck will run from.\n\t\"Dir\": string,\n\t// Package pattern. E.g. \"\", \".\", \"./...\".\n\t\"Pattern\": string,\n}",
+			ResultDoc: "{\n\t\"Vuln\": []{\n\t\t\"ID\": string,\n\t\t\"Details\": string,\n\t\t\"Aliases\": []string,\n\t\t\"Symbol\": string,\n\t\t\"PkgPath\": string,\n\t\t\"ModPath\": string,\n\t\t\"URL\": string,\n\t\t\"CurrentVersion\": string,\n\t\t\"FixedVersion\": string,\n\t\t\"CallStacks\": [][]golang.org/x/tools/internal/lsp/command.StackEntry,\n\t},\n}",
 		},
 		{
 			Command:   "gopls.start_debugging",

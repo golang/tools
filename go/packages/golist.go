@@ -393,6 +393,8 @@ type jsonPackage struct {
 	CompiledGoFiles   []string
 	IgnoredGoFiles    []string
 	IgnoredOtherFiles []string
+	EmbedPatterns     []string
+	EmbedFiles        []string
 	CFiles            []string
 	CgoFiles          []string
 	CXXFiles          []string
@@ -565,6 +567,8 @@ func (state *golistState) createDriverResponse(words ...string) (*driverResponse
 			GoFiles:         absJoin(p.Dir, p.GoFiles, p.CgoFiles),
 			CompiledGoFiles: absJoin(p.Dir, p.CompiledGoFiles),
 			OtherFiles:      absJoin(p.Dir, otherFiles(p)...),
+			EmbedFiles:      absJoin(p.Dir, p.EmbedFiles),
+			EmbedPatterns:   absJoin(p.Dir, p.EmbedPatterns),
 			IgnoredFiles:    absJoin(p.Dir, p.IgnoredGoFiles, p.IgnoredOtherFiles),
 			forTest:         p.ForTest,
 			depsErrors:      p.DepsErrors,
@@ -815,7 +819,7 @@ func golistargs(cfg *Config, words []string) []string {
 		fmt.Sprintf("-deps=%t", cfg.Mode&NeedImports != 0),
 		// go list doesn't let you pass -test and -find together,
 		// probably because you'd just get the TestMain.
-		fmt.Sprintf("-find=%t", !cfg.Tests && cfg.Mode&findFlags == 0),
+		fmt.Sprintf("-find=%t", !cfg.Tests && cfg.Mode&findFlags == 0 && !usesExportData(cfg)),
 	}
 	fullargs = append(fullargs, cfg.BuildFlags...)
 	fullargs = append(fullargs, "--")

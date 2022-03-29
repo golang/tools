@@ -2,11 +2,11 @@
 CallHierarchyCount = 2
 CodeLensCount = 5
 CompletionsCount = 266
-CompletionSnippetCount = 109
+CompletionSnippetCount = 110
 UnimportedCompletionsCount = 5
 DeepCompletionsCount = 5
 FuzzyCompletionsCount = 8
-RankedCompletionsCount = 163
+RankedCompletionsCount = 169
 CaseSensitiveCompletionsCount = 4
 DiagnosticsCount = 37
 FoldingRangesCount = 2

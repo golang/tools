@@ -227,7 +227,6 @@ type encoded struct {
 	pgf               *source.ParsedGoFile
 	rng               *protocol.Range
 	ti                *types.Info
-	types             *types.Package
 	pkg               source.Package
 	fset              *token.FileSet
 	// allowed starting and ending token.Pos, set by init
@@ -379,7 +378,7 @@ func (e *encoded) inspector(n ast.Node) bool {
 	case *ast.IncDecStmt:
 		e.token(x.TokPos, len(x.Tok.String()), tokOperator, nil)
 	case *ast.IndexExpr:
-	case *typeparams.IndexListExpr: // accomodate generics
+	case *typeparams.IndexListExpr: // accommodate generics
 	case *ast.InterfaceType:
 		e.token(x.Interface, len("interface"), tokKeyword, nil)
 	case *ast.KeyValueExpr:

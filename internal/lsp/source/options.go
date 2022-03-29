@@ -47,6 +47,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/unsafeptr"
 	"golang.org/x/tools/go/analysis/passes/unusedresult"
 	"golang.org/x/tools/go/analysis/passes/unusedwrite"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/lsp/analysis/fillreturns"
 	"golang.org/x/tools/internal/lsp/analysis/fillstruct"
 	"golang.org/x/tools/internal/lsp/analysis/infertypeargs"
@@ -290,7 +291,7 @@ type UIOptions struct {
 
 	// Codelenses overrides the enabled/disabled state of code lenses. See the
 	// "Code Lenses" section of the
-	// [Settings page](https://github.com/golang/tools/blob/master/gopls/doc/settings.md)
+	// [Settings page](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#code-lenses)
 	// for the list of supported lenses.
 	//
 	// Example Usage:
@@ -328,7 +329,7 @@ type CompletionOptions struct {
 	// candidates.
 	Matcher Matcher `status:"advanced"`
 
-	// ExperimentalPostfixCompletions enables artifical method snippets
+	// ExperimentalPostfixCompletions enables artificial method snippets
 	// such as "someSlice.sort!".
 	ExperimentalPostfixCompletions bool `status:"experimental"`
 }
@@ -476,6 +477,9 @@ type Hooks struct {
 	TypeErrorAnalyzers   map[string]*Analyzer
 	ConvenienceAnalyzers map[string]*Analyzer
 	StaticcheckAnalyzers map[string]*Analyzer
+
+	// Govulncheck is the implementation of the Govulncheck gopls command.
+	Govulncheck func(context.Context, *packages.Config, command.VulncheckArgs) (command.VulncheckResult, error)
 }
 
 // InternalOptions contains settings that are not intended for use by the
@@ -703,6 +707,7 @@ func (o *Options) Clone() *Options {
 			ComputeEdits:  o.ComputeEdits,
 			GofumptFormat: o.GofumptFormat,
 			URLRegexp:     o.URLRegexp,
+			Govulncheck:   o.Govulncheck,
 		},
 		ServerOptions: o.ServerOptions,
 		UserOptions:   o.UserOptions,
@@ -815,7 +820,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		var filters []string
 		for _, ifilter := range ifilters {
 			filter := fmt.Sprint(ifilter)
-			if filter[0] != '+' && filter[0] != '-' {
+			if filter == "" || (filter[0] != '+' && filter[0] != '-') {
 				result.errorf("invalid filter %q, must start with + or -", filter)
 				return result
 			}

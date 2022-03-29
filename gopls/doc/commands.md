@@ -265,6 +265,41 @@ Args:
 }
 ```
 
+### **Run vulncheck (experimental)**
+Identifier: `gopls.run_vulncheck_exp`
+
+Run vulnerability check (`govulncheck`).
+
+Args:
+
+```
+{
+	// Dir is the directory from which vulncheck will run from.
+	"Dir": string,
+	// Package pattern. E.g. "", ".", "./...".
+	"Pattern": string,
+}
+```
+
+Result:
+
+```
+{
+	"Vuln": []{
+		"ID": string,
+		"Details": string,
+		"Aliases": []string,
+		"Symbol": string,
+		"PkgPath": string,
+		"ModPath": string,
+		"URL": string,
+		"CurrentVersion": string,
+		"FixedVersion": string,
+		"CallStacks": [][]golang.org/x/tools/internal/lsp/command.StackEntry,
+	},
+}
+```
+
 ### **Start the gopls debug server**
 Identifier: `gopls.start_debugging`
 
