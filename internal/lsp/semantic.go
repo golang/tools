@@ -828,10 +828,8 @@ func (e *encoded) Data() []uint32 {
 	// each semantic token needs five values
 	// (see Integer Encoding for Tokens in the LSP spec)
 	x := make([]uint32, 5*len(e.items))
-	var (
-		j    int
-		last semItem
-	)
+	var j int
+	var last semItem
 	for i := 0; i < len(e.items); i++ {
 		typ, ok := typeMap[e.items[i].typeStr]
 		if !ok {
