@@ -78,7 +78,7 @@ func emitArith(f *Function, op token.Token, x, y Value, t types.Type, pos token.
 		// There is a runtime panic if y is signed and <0. Instead of inserting a check for y<0
 		// and converting to an unsigned value (like the compiler) leave y as is.
 
-		if b, ok := y.Type().Underlying().(*types.Basic); ok && b.Info()&types.IsUntyped != 0 {
+		if isUntyped(y.Type().Underlying()) {
 			// Untyped conversion:
 			// Spec https://go.dev/ref/spec#Operators:
 			// The right operand in a shift expression must have integer type or be an untyped constant
@@ -214,7 +214,6 @@ func emitConv(f *Function, val Value, typ types.Type) Value {
 			val = emitConv(f, val, types.Default(ut_src))
 		}
 
-		f.Pkg.Prog.needMethodsOf(val.Type())
 		mi := &MakeInterface{X: val}
 		mi.setType(typ)
 		return f.emit(mi)
@@ -373,7 +372,7 @@ func emitTailCall(f *Function, call *Call) {
 // a field; if it is the value of a struct, the result will be the
 // value of a field.
 //
-func emitImplicitSelections(f *Function, v Value, indices []int) Value {
+func emitImplicitSelections(f *Function, v Value, indices []int, pos token.Pos) Value {
 	for _, index := range indices {
 		fld := deref(v.Type()).Underlying().(*types.Struct).Field(index)
 
@@ -382,6 +381,7 @@ func emitImplicitSelections(f *Function, v Value, indices []int) Value {
 				X:     v,
 				Field: index,
 			}
+			instr.setPos(pos)
 			instr.setType(types.NewPointer(fld.Type()))
 			v = f.emit(instr)
 			// Load the field's value iff indirectly embedded.
@@ -393,6 +393,7 @@ func emitImplicitSelections(f *Function, v Value, indices []int) Value {
 				X:     v,
 				Field: index,
 			}
+			instr.setPos(pos)
 			instr.setType(fld.Type())
 			v = f.emit(instr)
 		}

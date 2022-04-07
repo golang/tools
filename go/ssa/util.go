@@ -64,6 +64,12 @@ func recvType(obj *types.Func) types.Type {
 	return obj.Type().(*types.Signature).Recv().Type()
 }
 
+// isUntyped returns true for types that are untyped.
+func isUntyped(typ types.Type) bool {
+	b, ok := typ.(*types.Basic)
+	return ok && b.Info()&types.IsUntyped != 0
+}
+
 // logStack prints the formatted "start" message to stderr and
 // returns a closure that prints the corresponding "end" message.
 // Call using 'defer logStack(...)()' to show builder stack on panic.
@@ -98,6 +104,24 @@ func makeLen(T types.Type) *Builtin {
 		name: "len",
 		sig:  types.NewSignature(nil, lenParams, lenResults, false),
 	}
+}
+
+// nonbasicTypes returns a list containing all of the types T in ts that are non-basic.
+func nonbasicTypes(ts []types.Type) []types.Type {
+	if len(ts) == 0 {
+		return nil
+	}
+	added := make(map[types.Type]bool) // additionally filter duplicates
+	var filtered []types.Type
+	for _, T := range ts {
+		if _, basic := T.(*types.Basic); !basic {
+			if !added[T] {
+				added[T] = true
+				filtered = append(filtered, T)
+			}
+		}
+	}
+	return filtered
 }
 
 // Mapping of a type T to a canonical instance C s.t. types.Indentical(T, C).

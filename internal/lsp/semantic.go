@@ -328,12 +328,17 @@ func (e *encoded) inspector(n ast.Node) bool {
 		e.token(x.Case, len(iam), tokKeyword, nil)
 	case *ast.ChanType:
 		// chan | chan <- | <- chan
-		if x.Arrow == token.NoPos || x.Arrow != x.Begin {
+		switch {
+		case x.Arrow == token.NoPos:
 			e.token(x.Begin, len("chan"), tokKeyword, nil)
-			break
+		case x.Arrow == x.Begin:
+			e.token(x.Arrow, 2, tokOperator, nil)
+			pos := e.findKeyword("chan", x.Begin+2, x.Value.Pos())
+			e.token(pos, len("chan"), tokKeyword, nil)
+		case x.Arrow != x.Begin:
+			e.token(x.Begin, len("chan"), tokKeyword, nil)
+			e.token(x.Arrow, 2, tokOperator, nil)
 		}
-		pos := e.findKeyword("chan", x.Begin+2, x.Value.Pos())
-		e.token(pos, len("chan"), tokKeyword, nil)
 	case *ast.CommClause:
 		iam := len("case")
 		if x.Comm == nil {
@@ -829,19 +834,20 @@ func (e *encoded) Data() []uint32 {
 	// (see Integer Encoding for Tokens in the LSP spec)
 	x := make([]uint32, 5*len(e.items))
 	var j int
+	var last semItem
 	for i := 0; i < len(e.items); i++ {
 		typ, ok := typeMap[e.items[i].typeStr]
 		if !ok {
 			continue // client doesn't want typeStr
 		}
-		if i == 0 {
+		if j == 0 {
 			x[0] = e.items[0].line
 		} else {
-			x[j] = e.items[i].line - e.items[i-1].line
+			x[j] = e.items[i].line - last.line
 		}
 		x[j+1] = e.items[i].start
-		if i > 0 && e.items[i].line == e.items[i-1].line {
-			x[j+1] = e.items[i].start - e.items[i-1].start
+		if j > 0 && x[j] == 0 {
+			x[j+1] = e.items[i].start - last.start
 		}
 		x[j+2] = e.items[i].len
 		x[j+3] = uint32(typ)
@@ -852,6 +858,7 @@ func (e *encoded) Data() []uint32 {
 		}
 		x[j+4] = uint32(mask)
 		j += 5
+		last = e.items[i]
 	}
 	return x[:j]
 }

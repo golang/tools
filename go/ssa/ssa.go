@@ -58,6 +58,7 @@ type Package struct {
 	ninit     int32       // number of init functions
 	info      *types.Info // package type information
 	files     []*ast.File // package ASTs
+	created   creator     // members created as a result of building this package (includes declared functions, wrappers)
 }
 
 // A Member is a member of a Go package, implemented by *NamedConst,
@@ -313,6 +314,7 @@ type Function struct {
 	Recover   *BasicBlock   // optional; control transfers here after recovered panic
 	AnonFuncs []*Function   // anonymous functions directly beneath this one
 	referrers []Instruction // referring instructions (iff Parent() != nil)
+	built     bool          // function has completed both CREATE and BUILD phase.
 
 	// The following fields are set transiently during building,
 	// then cleared.
@@ -795,7 +797,8 @@ type Slice struct {
 // Type() returns a (possibly named) *types.Pointer.
 //
 // Pos() returns the position of the ast.SelectorExpr.Sel for the
-// field, if explicit in the source.
+// field, if explicit in the source. For implicit selections, returns
+// the position of the inducing explicit selection.
 //
 // Example printed form:
 // 	t1 = &t0.name [#1]
@@ -813,7 +816,9 @@ type FieldAddr struct {
 // package-local identifiers and permit compact representations.
 //
 // Pos() returns the position of the ast.SelectorExpr.Sel for the
-// field, if explicit in the source.
+// field, if explicit in the source. For implicit selections, returns
+// the position of the inducing explicit selection.
+
 //
 // Example printed form:
 // 	t1 = t0.name [#1]

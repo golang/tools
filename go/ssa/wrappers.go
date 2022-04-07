@@ -22,6 +22,7 @@ package ssa
 import (
 	"fmt"
 
+	"go/token"
 	"go/types"
 )
 
@@ -42,7 +43,7 @@ import (
 //
 // EXCLUSIVE_LOCKS_REQUIRED(prog.methodsMu)
 //
-func makeWrapper(prog *Program, sel *types.Selection) *Function {
+func makeWrapper(prog *Program, sel *types.Selection, cr *creator) *Function {
 	obj := sel.Obj().(*types.Func)       // the declared function
 	sig := sel.Type().(*types.Signature) // type of this wrapper
 
@@ -74,6 +75,7 @@ func makeWrapper(prog *Program, sel *types.Selection) *Function {
 		pos:       obj.Pos(),
 		info:      nil, // info is not set on wrappers.
 	}
+	cr.Add(fn)
 	fn.startBody()
 	fn.addSpilledParam(recv)
 	createParams(fn, start)
@@ -112,7 +114,7 @@ func makeWrapper(prog *Program, sel *types.Selection) *Function {
 	// Load) in preference to value extraction (Field possibly
 	// preceded by Load).
 
-	v = emitImplicitSelections(fn, v, indices[:len(indices)-1])
+	v = emitImplicitSelections(fn, v, indices[:len(indices)-1], token.NoPos)
 
 	// Invariant: v is a pointer, either
 	//   value of implicit *C field, or
@@ -134,6 +136,7 @@ func makeWrapper(prog *Program, sel *types.Selection) *Function {
 	}
 	emitTailCall(fn, &c)
 	fn.finishBody()
+	fn.done()
 	return fn
 }
 
@@ -175,7 +178,7 @@ func createParams(fn *Function, start int) {
 //
 // EXCLUSIVE_LOCKS_ACQUIRED(meth.Prog.methodsMu)
 //
-func makeBound(prog *Program, obj *types.Func) *Function {
+func makeBound(prog *Program, obj *types.Func, cr *creator) *Function {
 	prog.methodsMu.Lock()
 	defer prog.methodsMu.Unlock()
 	fn, ok := prog.bounds[obj]
@@ -193,6 +196,7 @@ func makeBound(prog *Program, obj *types.Func) *Function {
 			pos:       obj.Pos(),
 			info:      nil, // info is not set on wrappers.
 		}
+		cr.Add(fn)
 
 		fv := &FreeVar{name: "recv", typ: recvType(obj), parent: fn}
 		fn.FreeVars = []*FreeVar{fv}
@@ -212,6 +216,7 @@ func makeBound(prog *Program, obj *types.Func) *Function {
 		}
 		emitTailCall(fn, &c)
 		fn.finishBody()
+		fn.done()
 
 		prog.bounds[obj] = fn
 	}
@@ -243,7 +248,7 @@ func makeBound(prog *Program, obj *types.Func) *Function {
 //
 // EXCLUSIVE_LOCKS_ACQUIRED(meth.Prog.methodsMu)
 //
-func makeThunk(prog *Program, sel *types.Selection) *Function {
+func makeThunk(prog *Program, sel *types.Selection, cr *creator) *Function {
 	if sel.Kind() != types.MethodExpr {
 		panic(sel)
 	}
@@ -263,7 +268,7 @@ func makeThunk(prog *Program, sel *types.Selection) *Function {
 
 	fn, ok := prog.thunks[key]
 	if !ok {
-		fn = makeWrapper(prog, sel)
+		fn = makeWrapper(prog, sel, cr)
 		if fn.Signature.Recv() != nil {
 			panic(fn) // unexpected receiver
 		}

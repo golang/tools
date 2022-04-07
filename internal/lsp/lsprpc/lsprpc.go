@@ -319,7 +319,7 @@ func (f *Forwarder) handler(handler jsonrpc2.Handler) jsonrpc2.Handler {
 // any environment variables output by `go env` and not already present in the
 // request.
 //
-// It returns an error if r is not an initialize requst, or is otherwise
+// It returns an error if r is not an initialize request, or is otherwise
 // malformed.
 func addGoEnvToInitializeRequest(ctx context.Context, r jsonrpc2.Request) (jsonrpc2.Request, error) {
 	var params protocol.ParamInitialize
@@ -347,7 +347,13 @@ func addGoEnvToInitializeRequest(ctx context.Context, r jsonrpc2.Request) (jsonr
 	if err != nil {
 		return nil, err
 	}
+	// We don't want to propagate GOWORK unless explicitly set since that could mess with
+	// path inference during cmd/go invocations, see golang/go#51825.
+	_, goworkSet := os.LookupEnv("GOWORK")
 	for govar, value := range goenv {
+		if govar == "GOWORK" && !goworkSet {
+			continue
+		}
 		env[govar] = value
 	}
 	opts["env"] = env
