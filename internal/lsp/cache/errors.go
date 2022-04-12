@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 
+	errors "golang.org/x/xerrors"
+
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/analysisinternal"
@@ -21,7 +23,6 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/typesinternal"
-	errors "golang.org/x/xerrors"
 )
 
 func goPackagesErrorDiagnostics(snapshot *snapshot, pkg *pkg, e packages.Error) ([]*source.Diagnostic, error) {
