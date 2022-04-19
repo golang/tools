@@ -15,6 +15,7 @@ import (
 	"go/token"
 	"go/types"
 	"math"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -1468,6 +1469,7 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		if !strings.HasPrefix(pkg.GetTypes().Name(), prefix) {
 			continue
 		}
+		// TODO: Check that package is not defined in an excluded dir?
 		paths = append(paths, path)
 	}
 
@@ -1548,9 +1550,25 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		})
 		count++
 	}
+
+	shouldIncludePackage := func(pkgDir, importPathShort, packageName string) bool {
+		// pkgDir is an absolute path. Convert it to a workspace-relative folder.
+		pkgDir = filepath.ToSlash(pkgDir)
+		if !c.snapshot.View().Folder().IsFile() {
+			return true
+		}
+		workspaceDir := filepath.ToSlash(c.snapshot.View().Folder().Filename())
+		workspaceRelativePkgDir := strings.TrimPrefix(pkgDir, workspaceDir)
+		if workspaceRelativePkgDir == pkgDir {
+			// Not in workspace, allow.
+			return true
+		}
+		disallowed := source.FiltersDisallow(workspaceRelativePkgDir, c.snapshot.View().Options().DirectoryFilters)
+		return !disallowed
+	}
 	c.completionCallbacks = append(c.completionCallbacks, func(opts *imports.Options) error {
 		defer cancel()
-		return imports.GetAllCandidates(ctx, add, prefix, c.filename, c.pkg.GetTypes().Name(), opts.Env)
+		return imports.GetFilteredCandidates(ctx, shouldIncludePackage, add, prefix, c.filename, c.pkg.GetTypes().Name(), opts.Env)
 	})
 	return nil
 }
