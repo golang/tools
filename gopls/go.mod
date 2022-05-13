@@ -9,7 +9,7 @@ require (
 	github.com/sergi/go-diff v1.1.0
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4
 	golang.org/x/sys v0.0.0-20220209214540-3681064d5158
-	golang.org/x/tools v0.1.11-0.20220407163324-91bcfb1bdf9c
+	golang.org/x/tools v0.1.11-0.20220513164230-dfee1649af67
 	golang.org/x/vuln v0.0.0-20220503210553-a5481fb0c8be
 	honnef.co/go/tools v0.3.0
 	mvdan.cc/gofumpt v0.3.0
@@ -24,5 +24,3 @@ require (
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 )
-
-replace golang.org/x/tools => ../
