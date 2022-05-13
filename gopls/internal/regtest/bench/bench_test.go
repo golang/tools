@@ -130,7 +130,7 @@ func TestBenchmarkSymbols(t *testing.T) {
 }
 
 var (
-	benchDir     = flag.String("didchange_dir", "", "If set, run benchmarks in this dir. Must also set regtest_bench_file.")
+	benchDir     = flag.String("didchange_dir", "", "If set, run benchmarks in this dir. Must also set didchange_file.")
 	benchFile    = flag.String("didchange_file", "", "The file to modify")
 	benchProfile = flag.String("didchange_cpuprof", "", "file to write cpu profiling data to")
 )
@@ -144,9 +144,9 @@ var (
 // is the path to a workspace root, and -didchange_file is the
 // workspace-relative path to a file to modify. e.g.:
 //
-//  go test -run=TestBenchmarkDidChange \
-//   -didchange_dir=path/to/kubernetes \
-//   -didchange_file=pkg/util/hash/hash.go
+//	go test -run=TestBenchmarkDidChange \
+//	 -didchange_dir=path/to/kubernetes \
+//	 -didchange_file=pkg/util/hash/hash.go
 func TestBenchmarkDidChange(t *testing.T) {
 	if *benchDir == "" {
 		t.Skip("-didchange_dir is not set")

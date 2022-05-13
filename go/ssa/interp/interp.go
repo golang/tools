@@ -51,6 +51,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"strings"
 	"sync/atomic"
 
 	"golang.org/x/tools/go/ssa"
@@ -76,16 +77,16 @@ type methodSet map[string]*ssa.Function
 
 // State shared between all interpreted goroutines.
 type interpreter struct {
-	osArgs             []value              // the value of os.Args
-	prog               *ssa.Program         // the SSA program
-	globals            map[ssa.Value]*value // addresses of global variables (immutable)
-	mode               Mode                 // interpreter options
-	reflectPackage     *ssa.Package         // the fake reflect package
-	errorMethods       methodSet            // the method set of reflect.error, which implements the error interface.
-	rtypeMethods       methodSet            // the method set of rtype, which implements the reflect.Type interface.
-	runtimeErrorString types.Type           // the runtime.errorString type
-	sizes              types.Sizes          // the effective type-sizing function
-	goroutines         int32                // atomically updated
+	osArgs             []value                // the value of os.Args
+	prog               *ssa.Program           // the SSA program
+	globals            map[*ssa.Global]*value // addresses of global variables (immutable)
+	mode               Mode                   // interpreter options
+	reflectPackage     *ssa.Package           // the fake reflect package
+	errorMethods       methodSet              // the method set of reflect.error, which implements the error interface.
+	rtypeMethods       methodSet              // the method set of rtype, which implements the reflect.Type interface.
+	runtimeErrorString types.Type             // the runtime.errorString type
+	sizes              types.Sizes            // the effective type-sizing function
+	goroutines         int32                  // atomically updated
 }
 
 type deferred struct {
@@ -131,7 +132,6 @@ func (fr *frame) get(key ssa.Value) value {
 
 // runDefer runs a deferred call d.
 // It always returns normally, but may set or clear fr.panic.
-//
 func (fr *frame) runDefer(d *deferred) {
 	if fr.i.mode&EnableTracing != 0 {
 		fmt.Fprintf(os.Stderr, "%s: invoking deferred function call\n",
@@ -160,7 +160,6 @@ func (fr *frame) runDefer(d *deferred) {
 //
 // If there was no initial state of panic, or it was recovered from,
 // runDefers returns normally.
-//
 func (fr *frame) runDefers() {
 	for d := fr.defers; d != nil; d = d.tail {
 		fr.runDefer(d)
@@ -429,7 +428,6 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 // prepareCall determines the function value and argument values for a
 // function call in a Call, Go or Defer instruction, performing
 // interface method lookup if needed.
-//
 func prepareCall(fr *frame, call *ssa.CallCommon) (fn value, args []value) {
 	v := fr.get(call.Value)
 	if call.Method == nil {
@@ -458,7 +456,6 @@ func prepareCall(fr *frame, call *ssa.CallCommon) (fn value, args []value) {
 // call interprets a call to a function (function, builtin or closure)
 // fn with arguments args, returning its result.
 // callpos is the position of the callsite.
-//
 func call(i *interpreter, caller *frame, callpos token.Pos, fn value, args []value) value {
 	switch fn := fn.(type) {
 	case *ssa.Function:
@@ -484,7 +481,6 @@ func loc(fset *token.FileSet, pos token.Pos) string {
 // callSSA interprets a call to function fn with arguments args,
 // and lexical environment env, returning its result.
 // callpos is the position of the callsite.
-//
 func callSSA(i *interpreter, caller *frame, callpos token.Pos, fn *ssa.Function, args []value, env []value) value {
 	if i.mode&EnableTracing != 0 {
 		fset := fn.Prog.Fset
@@ -510,7 +506,11 @@ func callSSA(i *interpreter, caller *frame, callpos token.Pos, fn *ssa.Function,
 			return ext(fr, args)
 		}
 		if fn.Blocks == nil {
-			panic("no code for function: " + name)
+			var reason string // empty by default
+			if strings.HasPrefix(fn.Synthetic, "instantiation") {
+				reason = " (interp requires ssa.BuilderMode to include InstantiateGenerics on generics)"
+			}
+			panic("no code for function: " + name + reason)
 		}
 	}
 	fr.env = make(map[ssa.Value]value)
@@ -551,7 +551,6 @@ func callSSA(i *interpreter, caller *frame, callpos token.Pos, fn *ssa.Function,
 // After a recovered panic in a function with NRPs, fr.result is
 // undefined and fr.block contains the block at which to resume
 // control.
-//
 func runFrame(fr *frame) {
 	defer func() {
 		if fr.block == nil {
@@ -644,10 +643,12 @@ func setGlobal(i *interpreter, pkg *ssa.Package, name string, v value) {
 //
 // The SSA program must include the "runtime" package.
 //
+// Type parameterized functions must have been built with
+// InstantiateGenerics in the ssa.BuilderMode to be interpreted.
 func Interpret(mainpkg *ssa.Package, mode Mode, sizes types.Sizes, filename string, args []string) (exitCode int) {
 	i := &interpreter{
 		prog:       mainpkg.Prog,
-		globals:    make(map[ssa.Value]*value),
+		globals:    make(map[*ssa.Global]*value),
 		mode:       mode,
 		sizes:      sizes,
 		goroutines: 1,

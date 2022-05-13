@@ -49,6 +49,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/unusedresult"
 	"golang.org/x/tools/go/analysis/passes/unusedwrite"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/lsp/analysis/embeddirective"
 	"golang.org/x/tools/internal/lsp/analysis/fillreturns"
 	"golang.org/x/tools/internal/lsp/analysis/fillstruct"
 	"golang.org/x/tools/internal/lsp/analysis/infertypeargs"
@@ -65,7 +66,6 @@ import (
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/diff/myers"
 	"golang.org/x/tools/internal/lsp/protocol"
-	errors "golang.org/x/xerrors"
 )
 
 var (
@@ -476,7 +476,10 @@ type Hooks struct {
 	// ComputeEdits is used to compute edits between file versions.
 	ComputeEdits diff.ComputeEdits
 
-	// URLRegexp is used to find urls in comments and strings.
+	// URLRegexp is used to find potential URLs in comments/strings.
+	//
+	// Not all matches are shown to the user: if the matched URL is not detected
+	// as valid, it will be skipped.
 	URLRegexp *regexp.Regexp
 
 	// GofumptFormat allows the gopls module to wire-in a call to
@@ -664,7 +667,7 @@ func SetOptions(options *Options, opts interface{}) OptionResults {
 	default:
 		results = append(results, OptionResult{
 			Value: opts,
-			Error: errors.Errorf("Invalid options type %T", opts),
+			Error: fmt.Errorf("Invalid options type %T", opts),
 		})
 	}
 	return results
@@ -1050,7 +1053,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 
 func (r *OptionResult) errorf(msg string, values ...interface{}) {
 	prefix := fmt.Sprintf("parsing setting %q: ", r.Name)
-	r.Error = errors.Errorf(prefix+msg, values...)
+	r.Error = fmt.Errorf(prefix+msg, values...)
 }
 
 // A SoftError is an error that does not affect the functionality of gopls.
@@ -1306,6 +1309,7 @@ func defaultAnalyzers() map[string]*Analyzer {
 		unusedwrite.Analyzer.Name:      {Analyzer: unusedwrite.Analyzer, Enabled: false},
 		useany.Analyzer.Name:           {Analyzer: useany.Analyzer, Enabled: false},
 		infertypeargs.Analyzer.Name:    {Analyzer: infertypeargs.Analyzer, Enabled: true},
+		embeddirective.Analyzer.Name:   {Analyzer: embeddirective.Analyzer, Enabled: true},
 
 		// gofmt -s suite:
 		simplifycompositelit.Analyzer.Name: {

@@ -30,7 +30,6 @@ import (
 	"golang.org/x/tools/internal/lsp/snippet"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/typeparams"
-	errors "golang.org/x/xerrors"
 )
 
 type CompletionItem struct {
@@ -222,6 +221,12 @@ type completer struct {
 	// startTime is when we started processing this completion request. It does
 	// not include any time the request spent in the queue.
 	startTime time.Time
+
+	// scopes contains all scopes defined by nodes in our path,
+	// including nil values for nodes that don't defined a scope. It
+	// also includes our package scope and the universal scope at the
+	// end.
+	scopes []*types.Scope
 }
 
 // funcInfo holds info about a function object.
@@ -435,7 +440,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 		items, surrounding, innerErr := packageClauseCompletions(ctx, snapshot, fh, protoPos)
 		if innerErr != nil {
 			// return the error for GetParsedFile since it's more relevant in this situation.
-			return nil, nil, errors.Errorf("getting file for Completion: %w (package completions: %v)", err, innerErr)
+			return nil, nil, fmt.Errorf("getting file for Completion: %w (package completions: %v)", err, innerErr)
 		}
 		return items, surrounding, nil
 	}
@@ -451,7 +456,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 	// Find the path to the position before pos.
 	path, _ := astutil.PathEnclosingInterval(pgf.File, rng.Start-1, rng.Start-1)
 	if path == nil {
-		return nil, nil, errors.Errorf("cannot find node enclosing position")
+		return nil, nil, fmt.Errorf("cannot find node enclosing position")
 	}
 
 	pos := rng.Start
@@ -498,6 +503,10 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 		}
 	}
 
+	// Collect all surrounding scopes, innermost first.
+	scopes := source.CollectScopes(pkg.GetTypesInfo(), path, pos)
+	scopes = append(scopes, pkg.GetTypes().Scope(), types.Universe)
+
 	opts := snapshot.View().Options()
 	c := &completer{
 		pkg:      pkg,
@@ -534,6 +543,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 		methodSetCache: make(map[methodSetKey]*types.MethodSet),
 		mapper:         pgf.Mapper,
 		startTime:      startTime,
+		scopes:         scopes,
 	}
 
 	var cancel context.CancelFunc
@@ -1268,9 +1278,6 @@ func (c *completer) methodsAndFields(typ types.Type, addressable bool, imp *impo
 
 // lexical finds completions in the lexical environment.
 func (c *completer) lexical(ctx context.Context) error {
-	scopes := source.CollectScopes(c.pkg.GetTypesInfo(), c.path, c.pos)
-	scopes = append(scopes, c.pkg.GetTypes().Scope(), types.Universe)
-
 	var (
 		builtinIota = types.Universe.Lookup("iota")
 		builtinNil  = types.Universe.Lookup("nil")
@@ -1287,7 +1294,7 @@ func (c *completer) lexical(ctx context.Context) error {
 	seen := make(map[string]struct{})
 
 	// Process scopes innermost first.
-	for i, scope := range scopes {
+	for i, scope := range c.scopes {
 		if scope == nil {
 			continue
 		}
@@ -1408,10 +1415,11 @@ func (c *completer) lexical(ctx context.Context) error {
 	return nil
 }
 
-// injectInferredType manufacters candidates based on the given type.
-// For example, if the type is "[]int", this method makes sure you get
-// candidates "[]int{}" and "[]int" (the latter applies when
-// completing a type name).
+// injectType manufacters candidates based on the given type. This is
+// intended for types not discoverable via lexical search, such as
+// composite and/or generic types. For example, if the type is "[]int",
+// this method makes sure you get candidates "[]int{}" and "[]int"
+// (the latter applies when completing a type name).
 func (c *completer) injectType(ctx context.Context, t types.Type) {
 	if t == nil {
 		return
@@ -1419,11 +1427,12 @@ func (c *completer) injectType(ctx context.Context, t types.Type) {
 
 	t = source.Deref(t)
 
-	// If we have an expected type and it is _not_ a named type,
-	// handle it specially. Non-named types like "[]int" will never be
+	// If we have an expected type and it is _not_ a named type, handle
+	// it specially. Non-named types like "[]int" will never be
 	// considered via a lexical search, so we need to directly inject
-	// them.
-	if _, named := t.(*types.Named); !named {
+	// them. Also allow generic types since lexical search does not
+	// infer instantiated versions of them.
+	if named, _ := t.(*types.Named); named == nil || typeparams.ForNamed(named).Len() > 0 {
 		// If our expected type is "[]int", this will add a literal
 		// candidate of "[]int{}".
 		c.literal(ctx, t, nil)
@@ -2003,46 +2012,23 @@ Nodes:
 					break Nodes
 				}
 
-				if tv, ok := c.pkg.GetTypesInfo().Types[node.Fun]; ok {
-					if sig, ok := tv.Type.(*types.Signature); ok {
-						numParams := sig.Params().Len()
-						if numParams == 0 {
-							return inf
-						}
+				sig, _ := c.pkg.GetTypesInfo().Types[node.Fun].Type.(*types.Signature)
 
-						exprIdx := exprAtPos(c.pos, node.Args)
+				if sig != nil && typeparams.ForSignature(sig).Len() > 0 {
+					// If we are completing a generic func call, re-check the call expression.
+					// This allows type param inference to work in cases like:
+					//
+					// func foo[T any](T) {}
+					// foo[int](<>) // <- get "int" completions instead of "T"
+					//
+					// TODO: remove this after https://go.dev/issue/52503
+					info := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)}
+					types.CheckExpr(c.snapshot.FileSet(), c.pkg.GetTypes(), node.Fun.Pos(), node.Fun, info)
+					sig, _ = info.Types[node.Fun].Type.(*types.Signature)
+				}
 
-						// If we have one or zero arg expressions, we may be
-						// completing to a function call that returns multiple
-						// values, in turn getting passed in to the surrounding
-						// call. Record the assignees so we can favor function
-						// calls that return matching values.
-						if len(node.Args) <= 1 && exprIdx == 0 {
-							for i := 0; i < sig.Params().Len(); i++ {
-								inf.assignees = append(inf.assignees, sig.Params().At(i).Type())
-							}
-
-							// Record that we may be completing into variadic parameters.
-							inf.variadicAssignees = sig.Variadic()
-						}
-
-						// Make sure not to run past the end of expected parameters.
-						if exprIdx >= numParams {
-							inf.objType = sig.Params().At(numParams - 1).Type()
-						} else {
-							inf.objType = sig.Params().At(exprIdx).Type()
-						}
-
-						if sig.Variadic() && exprIdx >= (numParams-1) {
-							// If we are completing a variadic param, deslice the variadic type.
-							inf.objType = deslice(inf.objType)
-							// Record whether we are completing the initial variadic param.
-							inf.variadic = exprIdx == numParams-1 && len(node.Args) <= numParams
-
-							// Check if we can infer object kind from printf verb.
-							inf.objKind |= printfArgKind(c.pkg.GetTypesInfo(), node, exprIdx)
-						}
-					}
+				if sig != nil {
+					inf = c.expectedCallParamType(inf, node, sig)
 				}
 
 				if funIdent, ok := node.Fun.(*ast.Ident); ok {
@@ -2175,6 +2161,55 @@ Nodes:
 				return inf
 			}
 		}
+	}
+
+	return inf
+}
+
+func (c *completer) expectedCallParamType(inf candidateInference, node *ast.CallExpr, sig *types.Signature) candidateInference {
+	numParams := sig.Params().Len()
+	if numParams == 0 {
+		return inf
+	}
+
+	exprIdx := exprAtPos(c.pos, node.Args)
+
+	// If we have one or zero arg expressions, we may be
+	// completing to a function call that returns multiple
+	// values, in turn getting passed in to the surrounding
+	// call. Record the assignees so we can favor function
+	// calls that return matching values.
+	if len(node.Args) <= 1 && exprIdx == 0 {
+		for i := 0; i < sig.Params().Len(); i++ {
+			inf.assignees = append(inf.assignees, sig.Params().At(i).Type())
+		}
+
+		// Record that we may be completing into variadic parameters.
+		inf.variadicAssignees = sig.Variadic()
+	}
+
+	// Make sure not to run past the end of expected parameters.
+	if exprIdx >= numParams {
+		inf.objType = sig.Params().At(numParams - 1).Type()
+	} else {
+		inf.objType = sig.Params().At(exprIdx).Type()
+	}
+
+	if sig.Variadic() && exprIdx >= (numParams-1) {
+		// If we are completing a variadic param, deslice the variadic type.
+		inf.objType = deslice(inf.objType)
+		// Record whether we are completing the initial variadic param.
+		inf.variadic = exprIdx == numParams-1 && len(node.Args) <= numParams
+
+		// Check if we can infer object kind from printf verb.
+		inf.objKind |= printfArgKind(c.pkg.GetTypesInfo(), node, exprIdx)
+	}
+
+	// If our expected type is an uninstantiated generic type param,
+	// swap to the constraint which will do a decent job filtering
+	// candidates.
+	if tp, _ := inf.objType.(*typeparams.TypeParam); tp != nil {
+		inf.objType = tp.Constraint()
 	}
 
 	return inf
@@ -2964,4 +2999,14 @@ func candKind(candType types.Type) objKind {
 	}
 
 	return kind
+}
+
+// innermostScope returns the innermost scope for c.pos.
+func (c *completer) innermostScope() *types.Scope {
+	for _, s := range c.scopes {
+		if s != nil {
+			return s
+		}
+	}
+	return nil
 }

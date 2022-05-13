@@ -71,6 +71,13 @@ const (
 	// NeedTypesSizes adds TypesSizes.
 	NeedTypesSizes
 
+	// needInternalDepsErrors adds the internal deps errors field for use by gopls.
+	needInternalDepsErrors
+
+	// needInternalForTest adds the internal forTest field.
+	// Tests must also be set on the context for this field to be populated.
+	needInternalForTest
+
 	// typecheckCgo enables full support for type checking cgo. Requires Go 1.15+.
 	// Modifies CompiledGoFiles and Types, and has no effect on its own.
 	typecheckCgo
@@ -403,6 +410,8 @@ func init() {
 		config.(*Config).modFlag = value
 	}
 	packagesinternal.TypecheckCgo = int(typecheckCgo)
+	packagesinternal.DepsErrors = int(needInternalDepsErrors)
+	packagesinternal.ForTest = int(needInternalForTest)
 }
 
 // An Error describes a problem with a package's metadata, syntax, or types.
@@ -1079,7 +1088,6 @@ func (ld *loader) parseFile(filename string) (*ast.File, error) {
 //
 // Because files are scanned in parallel, the token.Pos
 // positions of the resulting ast.Files are not ordered.
-//
 func (ld *loader) parseFiles(filenames []string) ([]*ast.File, []error) {
 	var wg sync.WaitGroup
 	n := len(filenames)
@@ -1123,7 +1131,6 @@ func (ld *loader) parseFiles(filenames []string) ([]*ast.File, []error) {
 
 // sameFile returns true if x and y have the same basename and denote
 // the same file.
-//
 func sameFile(x, y string) bool {
 	if x == y {
 		// It could be the case that y doesn't exist.
@@ -1235,6 +1242,11 @@ func (ld *loader) loadFromExportData(lpkg *loaderPackage) (*types.Package, error
 	tpkg, err := gcexportdata.Read(r, ld.Fset, view, lpkg.PkgPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %v", lpkg.ExportFile, err)
+	}
+	if _, ok := view["go.shape"]; ok {
+		// Account for the pseudopackage "go.shape" that gets
+		// created by generic code.
+		viewLen++
 	}
 	if viewLen != len(view) {
 		log.Panicf("golang.org/x/tools/go/packages: unexpected new packages during load of %s", lpkg.PkgPath)

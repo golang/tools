@@ -7,6 +7,7 @@ package source
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/scanner"
@@ -24,7 +25,6 @@ import (
 	"golang.org/x/tools/internal/lsp/progress"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
 )
 
 // Snapshot represents the current state for the given view.
@@ -98,6 +98,10 @@ type Snapshot interface {
 
 	// RunGoCommandPiped runs the given `go` command, writing its output
 	// to stdout and stderr. Verb, Args, and WorkingDir must be specified.
+	//
+	// RunGoCommandPiped runs the command serially using gocommand.RunPiped,
+	// enforcing that this command executes exclusively to other commands on the
+	// server.
 	RunGoCommandPiped(ctx context.Context, mode InvocationFlags, inv *gocommand.Invocation, stdout, stderr io.Writer) error
 
 	// RunGoCommandDirect runs the given `go` command. Verb, Args, and

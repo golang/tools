@@ -154,7 +154,8 @@ func parseBuffer(buf []byte) *Parsed {
 
 // FindLiteralBefore locates the first preceding string literal
 // returning its position and length in buf
-// or returns -1 if there is none. Assume "", rather than ``, for now
+// or returns -1 if there is none.
+// Assume double-quoted string rather than backquoted string for now.
 func (p *Parsed) FindLiteralBefore(pos int) (int, int) {
 	left, right := -1, -1
 	for i := pos - 1; i >= 0; i-- {
@@ -492,14 +493,8 @@ func (wr wrNode) writeNode(n parse.Node, indent string) {
 }
 
 // short prints at most 40 bytes of node.String(), for debugging
-func short(n parse.Node) (ret string) {
-	defer func() {
-		if x := recover(); x != nil {
-			// all because of typed nils
-			ret = "NIL"
-		}
-	}()
-	s := n.String()
+func short(n parse.Node) string {
+	s := fmt.Sprint(n) // recovers from panic
 	if len(s) > 40 {
 		return s[:40] + "..."
 	}

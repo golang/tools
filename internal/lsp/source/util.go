@@ -20,7 +20,6 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
 )
 
 // MappedRange provides mapped protocol.Range for a span.Range, accounting for
@@ -150,15 +149,16 @@ func posToMappedRange(snapshot Snapshot, pkg Package, pos, end token.Pos) (Mappe
 		return MappedRange{}, err
 	}
 	if !pos.IsValid() {
-		return MappedRange{}, errors.Errorf("invalid position for %v", pos)
+		return MappedRange{}, fmt.Errorf("invalid position for %v", pos)
 	}
 	if !end.IsValid() {
-		return MappedRange{}, errors.Errorf("invalid position for %v", end)
+		return MappedRange{}, fmt.Errorf("invalid position for %v", end)
 	}
 	return NewMappedRange(snapshot.FileSet(), pgf.Mapper, pos, end), nil
 }
 
 // Matches cgo generated comment as well as the proposed standard:
+//
 //	https://golang.org/s/generatedcode
 var generatedRx = regexp.MustCompile(`// .*DO NOT EDIT\.?`)
 
@@ -263,13 +263,16 @@ func CompareDiagnostic(a, b *Diagnostic) int {
 	if a.Source < b.Source {
 		return -1
 	}
+	if a.Source > b.Source {
+		return +1
+	}
 	if a.Message < b.Message {
 		return -1
 	}
-	if a.Message == b.Message {
-		return 0
+	if a.Message > b.Message {
+		return +1
 	}
-	return 1
+	return 0
 }
 
 // FindPackageFromPos finds the first package containing pos in its
@@ -277,7 +280,7 @@ func CompareDiagnostic(a, b *Diagnostic) int {
 func FindPackageFromPos(ctx context.Context, snapshot Snapshot, pos token.Pos) (Package, error) {
 	tok := snapshot.FileSet().File(pos)
 	if tok == nil {
-		return nil, errors.Errorf("no file for pos %v", pos)
+		return nil, fmt.Errorf("no file for pos %v", pos)
 	}
 	uri := span.URIFromPath(tok.Name())
 	pkgs, err := snapshot.PackagesForFile(ctx, uri, TypecheckAll, true)
@@ -298,7 +301,7 @@ func FindPackageFromPos(ctx context.Context, snapshot Snapshot, pos token.Pos) (
 		}
 		return pkg, nil
 	}
-	return nil, errors.Errorf("no package for given file position")
+	return nil, fmt.Errorf("no package for given file position")
 }
 
 // findFileInDeps finds uri in pkg or its dependencies.
@@ -320,7 +323,7 @@ func findFileInDeps(pkg Package, uri span.URI) (*ParsedGoFile, Package, error) {
 			}
 		}
 	}
-	return nil, nil, errors.Errorf("no file for %s in package %s", uri, pkg.ID())
+	return nil, nil, fmt.Errorf("no file for %s in package %s", uri, pkg.ID())
 }
 
 // ImportPath returns the unquoted import path of s,
@@ -539,30 +542,6 @@ func IsValidImport(pkgPath, importPkgPath string) bool {
 // should not check that a value equals "command-line-arguments" directly.
 func IsCommandLineArguments(s string) bool {
 	return strings.Contains(s, "command-line-arguments")
-}
-
-// Offset returns tok.Offset(pos), but first checks that the pos is in range
-// for the given file.
-func Offset(tok *token.File, pos token.Pos) (int, error) {
-	if !InRange(tok, pos) {
-		return -1, fmt.Errorf("pos %v is not in range for file [%v:%v)", pos, tok.Base(), tok.Base()+tok.Size())
-	}
-	return tok.Offset(pos), nil
-}
-
-// Pos returns tok.Pos(offset), but first checks that the offset is valid for
-// the given file.
-func Pos(tok *token.File, offset int) (token.Pos, error) {
-	if offset < 0 || offset > tok.Size() {
-		return token.NoPos, fmt.Errorf("offset %v is not in range for file of size %v", offset, tok.Size())
-	}
-	return tok.Pos(offset), nil
-}
-
-// InRange reports whether the given position is in the given token.File.
-func InRange(tok *token.File, pos token.Pos) bool {
-	size := tok.Pos(tok.Size())
-	return int(pos) >= tok.Base() && pos <= size
 }
 
 // LineToRange creates a Range spanning start and end.

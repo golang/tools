@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -39,17 +40,23 @@ func TestBuildPackage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pkg := types.NewPackage("hello", "")
-	ssapkg, _, err := ssautil.BuildPackage(&types.Config{Importer: importer.Default()}, fset, pkg, []*ast.File{f}, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pkg.Name() != "main" {
-		t.Errorf("pkg.Name() = %s, want main", pkg.Name())
-	}
-	if ssapkg.Func("main") == nil {
-		ssapkg.WriteTo(os.Stderr)
-		t.Errorf("ssapkg has no main function")
+	for _, mode := range []ssa.BuilderMode{
+		ssa.SanityCheckFunctions,
+		ssa.InstantiateGenerics | ssa.SanityCheckFunctions,
+	} {
+		pkg := types.NewPackage("hello", "")
+		ssapkg, _, err := ssautil.BuildPackage(&types.Config{Importer: importer.Default()}, fset, pkg, []*ast.File{f}, mode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pkg.Name() != "main" {
+			t.Errorf("pkg.Name() = %s, want main", pkg.Name())
+		}
+		if ssapkg.Func("main") == nil {
+			ssapkg.WriteTo(os.Stderr)
+			t.Errorf("ssapkg has no main function")
+		}
+
 	}
 }
 
@@ -65,19 +72,23 @@ func TestPackages(t *testing.T) {
 		t.Fatal("there were errors")
 	}
 
-	prog, pkgs := ssautil.Packages(initial, 0)
-	bytesNewBuffer := pkgs[0].Func("NewBuffer")
-	bytesNewBuffer.Pkg.Build()
+	for _, mode := range []ssa.BuilderMode{
+		ssa.SanityCheckFunctions,
+		ssa.SanityCheckFunctions | ssa.InstantiateGenerics,
+	} {
+		prog, pkgs := ssautil.Packages(initial, mode)
+		bytesNewBuffer := pkgs[0].Func("NewBuffer")
+		bytesNewBuffer.Pkg.Build()
 
-	// We'll dump the SSA of bytes.NewBuffer because it is small and stable.
-	out := new(bytes.Buffer)
-	bytesNewBuffer.WriteTo(out)
+		// We'll dump the SSA of bytes.NewBuffer because it is small and stable.
+		out := new(bytes.Buffer)
+		bytesNewBuffer.WriteTo(out)
 
-	// For determinism, sanitize the location.
-	location := prog.Fset.Position(bytesNewBuffer.Pos()).String()
-	got := strings.Replace(out.String(), location, "$GOROOT/src/bytes/buffer.go:1", -1)
+		// For determinism, sanitize the location.
+		location := prog.Fset.Position(bytesNewBuffer.Pos()).String()
+		got := strings.Replace(out.String(), location, "$GOROOT/src/bytes/buffer.go:1", -1)
 
-	want := `
+		want := `
 # Name: bytes.NewBuffer
 # Package: bytes
 # Location: $GOROOT/src/bytes/buffer.go:1
@@ -89,8 +100,9 @@ func NewBuffer(buf []byte) *Buffer:
 	return t0
 
 `[1:]
-	if got != want {
-		t.Errorf("bytes.NewBuffer SSA = <<%s>>, want <<%s>>", got, want)
+		if got != want {
+			t.Errorf("bytes.NewBuffer SSA = <<%s>>, want <<%s>>", got, want)
+		}
 	}
 }
 
@@ -102,7 +114,7 @@ func TestBuildPackage_MissingImport(t *testing.T) {
 	}
 
 	pkg := types.NewPackage("bad", "")
-	ssapkg, _, err := ssautil.BuildPackage(new(types.Config), fset, pkg, []*ast.File{f}, 0)
+	ssapkg, _, err := ssautil.BuildPackage(new(types.Config), fset, pkg, []*ast.File{f}, ssa.BuilderMode(0))
 	if err == nil || ssapkg != nil {
 		t.Fatal("BuildPackage succeeded unexpectedly")
 	}
@@ -120,6 +132,6 @@ func TestIssue28106(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prog, _ := ssautil.Packages(pkgs, 0)
+	prog, _ := ssautil.Packages(pkgs, ssa.BuilderMode(0))
 	prog.Build() // no crash
 }

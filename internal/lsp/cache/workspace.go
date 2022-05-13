@@ -6,6 +6,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,7 +19,6 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
-	errors "golang.org/x/xerrors"
 )
 
 // workspaceSource reports how the set of active modules has been derived.
@@ -50,10 +50,10 @@ func (s workspaceSource) String() string {
 // gopls.mod file, to provide support for multi-module workspaces.
 //
 // Specifically, it provides:
-//  - the set of modules contained within in the workspace root considered to
-//    be 'active'
-//  - the workspace modfile, to be used for the go command `-modfile` flag
-//  - the set of workspace directories
+//   - the set of modules contained within in the workspace root considered to
+//     be 'active'
+//   - the workspace modfile, to be used for the go command `-modfile` flag
+//   - the set of workspace directories
 //
 // This type is immutable (or rather, idempotent), so that it may be shared
 // across multiple snapshots.
@@ -491,7 +491,7 @@ func getLegacyModules(ctx context.Context, root span.URI, fs source.FileSource) 
 func parseGoWork(ctx context.Context, root, uri span.URI, contents []byte, fs source.FileSource) (*modfile.File, map[span.URI]struct{}, error) {
 	workFile, err := modfile.ParseWork(uri.Filename(), contents, nil)
 	if err != nil {
-		return nil, nil, errors.Errorf("parsing go.work: %w", err)
+		return nil, nil, fmt.Errorf("parsing go.work: %w", err)
 	}
 	modFiles := make(map[span.URI]struct{})
 	for _, dir := range workFile.Use {
@@ -520,12 +520,12 @@ func parseGoWork(ctx context.Context, root, uri span.URI, contents []byte, fs so
 func parseGoplsMod(root, uri span.URI, contents []byte) (*modfile.File, map[span.URI]struct{}, error) {
 	modFile, err := modfile.Parse(uri.Filename(), contents, nil)
 	if err != nil {
-		return nil, nil, errors.Errorf("parsing gopls.mod: %w", err)
+		return nil, nil, fmt.Errorf("parsing gopls.mod: %w", err)
 	}
 	modFiles := make(map[span.URI]struct{})
 	for _, replace := range modFile.Replace {
 		if replace.New.Version != "" {
-			return nil, nil, errors.Errorf("gopls.mod: replaced module %q@%q must not have version", replace.New.Path, replace.New.Version)
+			return nil, nil, fmt.Errorf("gopls.mod: replaced module %q@%q must not have version", replace.New.Path, replace.New.Version)
 		}
 		// The resulting modfile must use absolute paths, so that it can be
 		// written to a temp directory.

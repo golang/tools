@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -28,7 +29,6 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
-	errors "golang.org/x/xerrors"
 )
 
 func (s *Server) executeCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (interface{}, error) {
@@ -83,7 +83,7 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 			}
 		}
 		if len(unsaved) > 0 {
-			return errors.Errorf("All files must be saved first (unsaved: %v).", unsaved)
+			return fmt.Errorf("All files must be saved first (unsaved: %v).", unsaved)
 		}
 	}
 	var deps commandDeps
@@ -256,11 +256,19 @@ func (c *commandHandler) Vendor(ctx context.Context, args command.URIArg) error 
 		progress:    "Running go mod vendor",
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		_, err := deps.snapshot.RunGoCommandDirect(ctx, source.Normal|source.AllowNetwork, &gocommand.Invocation{
+		// Use RunGoCommandPiped here so that we don't compete with any other go
+		// command invocations. go mod vendor deletes modules.txt before recreating
+		// it, and therefore can run into file locking issues on Windows if that
+		// file is in use by another process, such as go list.
+		//
+		// If golang/go#44119 is resolved, go mod vendor will instead modify
+		// modules.txt in-place. In that case we could theoretically allow this
+		// command to run concurrently.
+		err := deps.snapshot.RunGoCommandPiped(ctx, source.Normal|source.AllowNetwork, &gocommand.Invocation{
 			Verb:       "mod",
 			Args:       []string{"vendor"},
 			WorkingDir: filepath.Dir(args.URI.SpanURI().Filename()),
-		})
+		}, &bytes.Buffer{}, &bytes.Buffer{})
 		return err
 	})
 }
@@ -376,7 +384,7 @@ func (c *commandHandler) RunTests(ctx context.Context, args command.RunTestsArgs
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		if err := c.runTests(ctx, deps.snapshot, deps.work, args.URI, args.Tests, args.Benchmarks); err != nil {
-			return errors.Errorf("running tests failed: %w", err)
+			return fmt.Errorf("running tests failed: %w", err)
 		}
 		return nil
 	})
@@ -681,15 +689,15 @@ func (c *commandHandler) GenerateGoplsMod(ctx context.Context, args command.URIA
 		defer release()
 		modFile, err := snapshot.BuildGoplsMod(ctx)
 		if err != nil {
-			return errors.Errorf("getting workspace mod file: %w", err)
+			return fmt.Errorf("getting workspace mod file: %w", err)
 		}
 		content, err := modFile.Format()
 		if err != nil {
-			return errors.Errorf("formatting mod file: %w", err)
+			return fmt.Errorf("formatting mod file: %w", err)
 		}
 		filename := filepath.Join(snapshot.View().Folder().Filename(), "gopls.mod")
 		if err := ioutil.WriteFile(filename, content, 0644); err != nil {
-			return errors.Errorf("writing mod file: %w", err)
+			return fmt.Errorf("writing mod file: %w", err)
 		}
 		return nil
 	})
@@ -780,7 +788,7 @@ func (c *commandHandler) StartDebugging(ctx context.Context, args command.Debugg
 	}
 	listenedAddr, err := di.Serve(ctx, addr)
 	if err != nil {
-		return result, errors.Errorf("starting debug server: %w", err)
+		return result, fmt.Errorf("starting debug server: %w", err)
 	}
 	result.URLs = []string{"http://" + listenedAddr}
 	return result, nil

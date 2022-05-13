@@ -1189,7 +1189,7 @@ let server: side = {
 
 // commonly used output
 const notNil = `if len(r.Params()) > 0 {
-  return true, reply(ctx, nil, errors.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
+  return true, reply(ctx, nil, fmt.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
 }`;
 
 // Go code for notifications. Side is client or server, m is the request
@@ -1259,7 +1259,10 @@ function goReq(side: side, m: string) {
   }`;
   if (b != '' && b != 'void') {
     case2 = `resp, err := ${side.name}.${nm}(ctx${arg2})
-    return true, reply(ctx, resp, err)`;
+    if err != nil {
+      return true, reply(ctx, nil, err)
+    }
+    return true, reply(ctx, resp, nil)`;
   } else {  // response is nil
     case2 = `err := ${side.name}.${nm}(ctx${arg2})
     return true, reply(ctx, nil, err)`;
@@ -1361,7 +1364,6 @@ function output(side: side) {
           "encoding/json"
 
           "golang.org/x/tools/internal/jsonrpc2"
-          errors "golang.org/x/xerrors"
         )
         `);
   const a = side.name[0].toUpperCase() + side.name.substring(1);

@@ -269,6 +269,11 @@ var GeneratedAPIJSON = &APIJSON{
 							Default: "true",
 						},
 						{
+							Name:    "\"embed\"",
+							Doc:     "check for //go:embed directive import\n\nThis analyzer checks that the embed package is imported when source code contains //go:embed comment directives.\nThe embed package must be imported for //go:embed directives to function.import _ \"embed\".",
+							Default: "true",
+						},
+						{
 							Name:    "\"errorsas\"",
 							Doc:     "report passing non-pointer or non-error values to errors.As\n\nThe errorsas analysis reports calls to errors.As where the type\nof the second argument is not a pointer to a type implementing error.",
 							Default: "true",
@@ -670,7 +675,7 @@ var GeneratedAPIJSON = &APIJSON{
 			Title:     "Run vulncheck (experimental)",
 			Doc:       "Run vulnerability check (`govulncheck`).",
 			ArgDoc:    "{\n\t// Dir is the directory from which vulncheck will run from.\n\t\"Dir\": string,\n\t// Package pattern. E.g. \"\", \".\", \"./...\".\n\t\"Pattern\": string,\n}",
-			ResultDoc: "{\n\t\"Vuln\": []{\n\t\t\"ID\": string,\n\t\t\"Details\": string,\n\t\t\"Aliases\": []string,\n\t\t\"Symbol\": string,\n\t\t\"PkgPath\": string,\n\t\t\"ModPath\": string,\n\t\t\"URL\": string,\n\t\t\"CurrentVersion\": string,\n\t\t\"FixedVersion\": string,\n\t\t\"CallStacks\": [][]golang.org/x/tools/internal/lsp/command.StackEntry,\n\t},\n}",
+			ResultDoc: "{\n\t\"Vuln\": []{\n\t\t\"ID\": string,\n\t\t\"Details\": string,\n\t\t\"Aliases\": []string,\n\t\t\"Symbol\": string,\n\t\t\"PkgPath\": string,\n\t\t\"ModPath\": string,\n\t\t\"URL\": string,\n\t\t\"CurrentVersion\": string,\n\t\t\"FixedVersion\": string,\n\t\t\"CallStacks\": [][]golang.org/x/tools/internal/lsp/command.StackEntry,\n\t\t\"CallStackSummaries\": []string,\n\t},\n}",
 		},
 		{
 			Command:   "gopls.start_debugging",
@@ -802,6 +807,11 @@ var GeneratedAPIJSON = &APIJSON{
 		{
 			Name:    "deepequalerrors",
 			Doc:     "check for calls of reflect.DeepEqual on error values\n\nThe deepequalerrors checker looks for calls of the form:\n\n    reflect.DeepEqual(err1, err2)\n\nwhere err1 and err2 are errors. Using reflect.DeepEqual to compare\nerrors is discouraged.",
+			Default: true,
+		},
+		{
+			Name:    "embed",
+			Doc:     "check for //go:embed directive import\n\nThis analyzer checks that the embed package is imported when source code contains //go:embed comment directives.\nThe embed package must be imported for //go:embed directives to function.import _ \"embed\".",
 			Default: true,
 		},
 		{

@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/typesinternal"
-	errors "golang.org/x/xerrors"
 )
 
 func goPackagesErrorDiagnostics(snapshot *snapshot, pkg *pkg, e packages.Error) ([]*source.Diagnostic, error) {
@@ -75,7 +74,7 @@ func goPackagesErrorDiagnostics(snapshot *snapshot, pkg *pkg, e packages.Error) 
 func parseErrorDiagnostics(snapshot *snapshot, pkg *pkg, errList scanner.ErrorList) ([]*source.Diagnostic, error) {
 	// The first parser error is likely the root cause of the problem.
 	if errList.Len() <= 0 {
-		return nil, errors.Errorf("no errors in %v", errList)
+		return nil, fmt.Errorf("no errors in %v", errList)
 	}
 	e := errList[0]
 	pgf, err := pkg.File(span.URIFromPath(e.Pos.Filename))
@@ -369,8 +368,7 @@ func spanToRange(pkg *pkg, spn span.Span) (protocol.Range, error) {
 // It works only on errors whose message is prefixed by colon,
 // followed by a space (": "). For example:
 //
-//   attributes.go:13:1: expected 'package', found 'type'
-//
+//	attributes.go:13:1: expected 'package', found 'type'
 func parseGoListError(input, wd string) span.Span {
 	input = strings.TrimSpace(input)
 	msgIndex := strings.Index(input, ": ")

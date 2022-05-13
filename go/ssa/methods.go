@@ -9,35 +9,45 @@ package ssa
 import (
 	"fmt"
 	"go/types"
+
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // MethodValue returns the Function implementing method sel, building
 // wrapper methods on demand.  It returns nil if sel denotes an
-// abstract (interface) method.
+// abstract (interface or parameterized) method.
 //
 // Precondition: sel.Kind() == MethodVal.
 //
 // Thread-safe.
 //
 // EXCLUSIVE_LOCKS_ACQUIRED(prog.methodsMu)
-//
 func (prog *Program) MethodValue(sel *types.Selection) *Function {
 	if sel.Kind() != types.MethodVal {
 		panic(fmt.Sprintf("MethodValue(%s) kind != MethodVal", sel))
 	}
 	T := sel.Recv()
 	if isInterface(T) {
-		return nil // abstract method
+		return nil // abstract method (interface)
 	}
 	if prog.mode&LogSource != 0 {
 		defer logStack("MethodValue %s %v", T, sel)()
 	}
 
+	var m *Function
 	b := builder{created: &creator{}}
+
 	prog.methodsMu.Lock()
-	m := prog.addMethod(prog.createMethodSet(T), sel, b.created)
+	// Checks whether a type param is reachable from T.
+	// This is an expensive check. May need to be optimized later.
+	if !prog.parameterized.isParameterized(T) {
+		m = prog.addMethod(prog.createMethodSet(T), sel, b.created)
+	}
 	prog.methodsMu.Unlock()
 
+	if m == nil {
+		return nil // abstract method (generic)
+	}
 	for !b.done() {
 		b.buildCreated()
 		b.needsRuntimeTypes()
@@ -48,7 +58,6 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 // LookupMethod returns the implementation of the method of type T
 // identified by (pkg, name).  It returns nil if the method exists but
 // is abstract, and panics if T has no such method.
-//
 func (prog *Program) LookupMethod(T types.Type, pkg *types.Package, name string) *Function {
 	sel := prog.MethodSets.MethodSet(T).Lookup(pkg, name)
 	if sel == nil {
@@ -57,15 +66,20 @@ func (prog *Program) LookupMethod(T types.Type, pkg *types.Package, name string)
 	return prog.MethodValue(sel)
 }
 
-// methodSet contains the (concrete) methods of a non-interface type.
+// methodSet contains the (concrete) methods of a concrete type (non-interface, non-parameterized).
 type methodSet struct {
 	mapping  map[string]*Function // populated lazily
 	complete bool                 // mapping contains all methods
 }
 
-// Precondition: !isInterface(T).
+// Precondition: T is a concrete type, e.g. !isInterface(T) and not parameterized.
 // EXCLUSIVE_LOCKS_REQUIRED(prog.methodsMu)
 func (prog *Program) createMethodSet(T types.Type) *methodSet {
+	if prog.mode&SanityCheckFunctions != 0 {
+		if isInterface(T) || prog.parameterized.isParameterized(T) {
+			panic("type is interface or parameterized")
+		}
+	}
 	mset, ok := prog.methodSets.At(T).(*methodSet)
 	if !ok {
 		mset = &methodSet{mapping: make(map[string]*Function)}
@@ -75,6 +89,7 @@ func (prog *Program) createMethodSet(T types.Type) *methodSet {
 }
 
 // Adds any created functions to cr.
+// Precondition: T is a concrete type, e.g. !isInterface(T) and not parameterized.
 // EXCLUSIVE_LOCKS_REQUIRED(prog.methodsMu)
 func (prog *Program) addMethod(mset *methodSet, sel *types.Selection, cr *creator) *Function {
 	if sel.Kind() == types.MethodExpr {
@@ -83,6 +98,7 @@ func (prog *Program) addMethod(mset *methodSet, sel *types.Selection, cr *creato
 	id := sel.Obj().Id()
 	fn := mset.mapping[id]
 	if fn == nil {
+		sel := toSelection(sel)
 		obj := sel.Obj().(*types.Func)
 
 		needsPromotion := len(sel.Index()) > 1
@@ -90,7 +106,11 @@ func (prog *Program) addMethod(mset *methodSet, sel *types.Selection, cr *creato
 		if needsPromotion || needsIndirection {
 			fn = makeWrapper(prog, sel, cr)
 		} else {
-			fn = prog.declaredFunc(obj)
+			fn = prog.originFunc(obj)
+			if len(fn._TypeParams) > 0 { // instantiate
+				targs := receiverTypeArgs(obj)
+				fn = prog.instances[fn].lookupOrCreate(targs, cr)
+			}
 		}
 		if fn.Signature.Recv() == nil {
 			panic(fn) // missing receiver
@@ -107,7 +127,6 @@ func (prog *Program) addMethod(mset *methodSet, sel *types.Selection, cr *creato
 // Thread-safe.
 //
 // EXCLUSIVE_LOCKS_ACQUIRED(prog.methodsMu)
-//
 func (prog *Program) RuntimeTypes() []types.Type {
 	prog.methodsMu.Lock()
 	defer prog.methodsMu.Unlock()
@@ -123,7 +142,6 @@ func (prog *Program) RuntimeTypes() []types.Type {
 
 // declaredFunc returns the concrete function/method denoted by obj.
 // Panic ensues if there is none.
-//
 func (prog *Program) declaredFunc(obj *types.Func) *Function {
 	if v := prog.packageLevelMember(obj); v != nil {
 		return v.(*Function)
@@ -142,13 +160,13 @@ func (prog *Program) declaredFunc(obj *types.Func) *Function {
 // Adds any created functions to cr.
 //
 // Precondition: T is not a method signature (*Signature with Recv()!=nil).
+// Precondition: T is not parameterized.
 //
-// Thread-safe.  (Called via emitConv from multiple builder goroutines.)
+// Thread-safe.  (Called via Package.build from multiple builder goroutines.)
 //
 // TODO(adonovan): make this faster.  It accounts for 20% of SSA build time.
 //
 // EXCLUSIVE_LOCKS_ACQUIRED(prog.methodsMu)
-//
 func (prog *Program) needMethodsOf(T types.Type, cr *creator) {
 	prog.methodsMu.Lock()
 	prog.needMethods(T, false, cr)
@@ -156,10 +174,10 @@ func (prog *Program) needMethodsOf(T types.Type, cr *creator) {
 }
 
 // Precondition: T is not a method signature (*Signature with Recv()!=nil).
+// Precondition: T is not parameterized.
 // Recursive case: skip => don't create methods for T.
 //
 // EXCLUSIVE_LOCKS_REQUIRED(prog.methodsMu)
-//
 func (prog *Program) needMethods(T types.Type, skip bool, cr *creator) {
 	// Each package maintains its own set of types it has visited.
 	if prevSkip, ok := prog.runtimeTypes.At(T).(bool); ok {
@@ -241,6 +259,12 @@ func (prog *Program) needMethods(T types.Type, skip bool, cr *creator) {
 		for i, n := 0, t.Len(); i < n; i++ {
 			prog.needMethods(t.At(i).Type(), false, cr)
 		}
+
+	case *typeparams.TypeParam:
+		panic(T) // type parameters are always abstract.
+
+	case *typeparams.Union:
+		// nop
 
 	default:
 		panic(T)
