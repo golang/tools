@@ -7,15 +7,10 @@ package lsp
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"sync/atomic"
 
-	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
 )
 
 func (s *Server) didChangeWorkspaceFolders(ctx context.Context, params *protocol.DidChangeWorkspaceFoldersParams) error {
@@ -25,38 +20,24 @@ func (s *Server) didChangeWorkspaceFolders(ctx context.Context, params *protocol
 		if view != nil {
 			view.Shutdown(ctx)
 		} else {
-			return errors.Errorf("view %s for %v not found", folder.Name, folder.URI)
+			return fmt.Errorf("view %s for %v not found", folder.Name, folder.URI)
 		}
 	}
 	return s.addFolders(ctx, event.Added)
 }
-
-var wsIndex int64
 
 func (s *Server) addView(ctx context.Context, name string, uri span.URI) (source.Snapshot, func(), error) {
 	s.stateMu.Lock()
 	state := s.state
 	s.stateMu.Unlock()
 	if state < serverInitialized {
-		return nil, func() {}, errors.Errorf("addView called before server initialized")
+		return nil, func() {}, fmt.Errorf("addView called before server initialized")
 	}
 	options := s.session.Options().Clone()
 	if err := s.fetchConfig(ctx, name, uri, options); err != nil {
 		return nil, func() {}, err
 	}
-	// Try to assign a persistent temp directory for tracking this view's
-	// temporary workspace.
-	var tempWorkspace span.URI
-	if s.tempDir != "" {
-		index := atomic.AddInt64(&wsIndex, 1)
-		wsDir := filepath.Join(s.tempDir, fmt.Sprintf("workspace.%d", index))
-		if err := os.Mkdir(wsDir, 0700); err == nil {
-			tempWorkspace = span.URIFromPath(wsDir)
-		} else {
-			event.Error(ctx, "making workspace dir", err)
-		}
-	}
-	_, snapshot, release, err := s.session.NewView(ctx, name, uri, tempWorkspace, options)
+	_, snapshot, release, err := s.session.NewView(ctx, name, uri, options)
 	return snapshot, release, err
 }
 

@@ -9,8 +9,8 @@ package hooks // import "golang.org/x/tools/gopls/internal/hooks"
 
 import (
 	"context"
-	"regexp"
 
+	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/lsp/source"
 	"mvdan.cc/gofumpt/format"
 	"mvdan.cc/xurls/v2"
@@ -21,17 +21,14 @@ func Options(options *source.Options) {
 	if options.GoDiff {
 		options.ComputeEdits = ComputeEdits
 	}
-	options.URLRegexp = relaxedFullWord
-	options.GofumptFormat = func(ctx context.Context, src []byte) ([]byte, error) {
-		return format.Source(src, format.Options{})
+	options.URLRegexp = xurls.Relaxed()
+	options.GofumptFormat = func(ctx context.Context, langVersion, modulePath string, src []byte) ([]byte, error) {
+		return format.Source(src, format.Options{
+			LangVersion: langVersion,
+			ModulePath:  modulePath,
+		})
 	}
 	updateAnalyzers(options)
-}
 
-var relaxedFullWord *regexp.Regexp
-
-// Ensure links are matched as full words, not anywhere.
-func init() {
-	relaxedFullWord = regexp.MustCompile(`\b(` + xurls.Relaxed().String() + `)\b`)
-	relaxedFullWord.Longest()
+	options.Govulncheck = vulncheck.Govulncheck
 }

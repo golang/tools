@@ -18,7 +18,7 @@ func TestSetOption(t *testing.T) {
 	}{
 		{
 			name:  "symbolStyle",
-			value: "dynamic",
+			value: "Dynamic",
 			check: func(o Options) bool { return o.SymbolStyle == DynamicSymbols },
 		},
 		{
@@ -44,9 +44,10 @@ func TestSetOption(t *testing.T) {
 			check: func(o Options) bool { return o.CompletionBudget == 2*time.Second },
 		},
 		{
-			name:  "staticcheck",
-			value: true,
-			check: func(o Options) bool { return o.Staticcheck == true },
+			name:      "staticcheck",
+			value:     true,
+			check:     func(o Options) bool { return o.Staticcheck == true },
+			wantError: true, // o.StaticcheckSupported is unset
 		},
 		{
 			name:  "codelenses",

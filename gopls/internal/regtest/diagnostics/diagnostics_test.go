@@ -638,6 +638,8 @@ var ErrHelpWanted error
 
 // Test for golang/go#38211.
 func Test_Issue38211(t *testing.T) {
+	t.Skipf("Skipping flaky test: https://golang.org/issue/44098")
+
 	testenv.NeedsGo1Point(t, 14)
 	const ardanLabs = `
 -- go.mod --
@@ -967,6 +969,8 @@ const C = a.A
 // This is a copy of the scenario_default/quickfix_empty_files.txt test from
 // govim. Reproduces golang/go#39646.
 func TestQuickFixEmptyFiles(t *testing.T) {
+	t.Skip("too flaky: golang/go#48773")
+
 	testenv.NeedsGo1Point(t, 15)
 
 	const mod = `
@@ -1261,7 +1265,11 @@ func main() {
 `
 
 	WithOptions(
-		EditorConfig{EnableStaticcheck: true},
+		EditorConfig{
+			Settings: map[string]interface{}{
+				"staticcheck": true,
+			},
+		},
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		var d protocol.PublishDiagnosticsParams
@@ -1509,6 +1517,7 @@ package foo_
 // TestProgressBarErrors confirms that critical workspace load errors are shown
 // and updated via progress reports.
 func TestProgressBarErrors(t *testing.T) {
+	t.Skip("too flaky: golang/go#46930")
 	testenv.NeedsGo1Point(t, 14)
 
 	const pkg = `
@@ -1641,7 +1650,19 @@ const B = a.B
 	Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
 		env.OpenFile("b/b.go")
-		env.Await(env.DiagnosticAtRegexp("a/a.go", `"mod.test/b"`))
+		env.Await(
+			OnceMet(
+				env.DoneWithOpen(),
+				// The Go command sometimes tells us about only one of the import cycle
+				// errors below. For robustness of this test, succeed if we get either.
+				//
+				// TODO(golang/go#52904): we should get *both* of these errors.
+				AnyOf(
+					env.DiagnosticAtRegexpWithMessage("a/a.go", `"mod.test/b"`, "import cycle"),
+					env.DiagnosticAtRegexpWithMessage("b/b.go", `"mod.test/a"`, "import cycle"),
+				),
+			),
+		)
 		env.RegexpReplace("b/b.go", `const B = a\.B`, "")
 		env.SaveBuffer("b/b.go")
 		env.Await(
@@ -2130,6 +2151,117 @@ func main() {
 				env.DiagnosticAtRegexp("main.go", `"fmt"`),
 				CompletedWork("Load", 3, false),
 			),
+		)
+	})
+}
+
+func TestLangVersion(t *testing.T) {
+	testenv.NeedsGo1Point(t, 18) // Requires types.Config.GoVersion, new in 1.18.
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- main.go --
+package main
+
+const C = 0b10
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.Await(env.DiagnosticAtRegexpWithMessage("main.go", `0b10`, "go1.13 or later"))
+		env.WriteWorkspaceFile("go.mod", "module mod.com \n\ngo 1.13\n")
+		env.Await(EmptyDiagnostics("main.go"))
+	})
+}
+
+func TestNoQuickFixForUndeclaredConstraint(t *testing.T) {
+	testenv.NeedsGo1Point(t, 18)
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.18
+-- main.go --
+package main
+
+func F[T C](_ T) {
+}
+`
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		var d protocol.PublishDiagnosticsParams
+		env.Await(
+			OnceMet(
+				env.DiagnosticAtRegexpWithMessage("main.go", `C`, "undeclared name"),
+				ReadDiagnostics("main.go", &d),
+			),
+		)
+		if fixes := env.GetQuickFixes("main.go", d.Diagnostics); len(fixes) != 0 {
+			t.Errorf("got quick fixes %v, wanted none", fixes)
+		}
+	})
+}
+
+func TestEditGoDirective(t *testing.T) {
+	testenv.NeedsGo1Point(t, 18)
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.16
+-- main.go --
+package main
+
+func F[T any](_ T) {
+}
+`
+	Run(t, files, func(_ *testing.T, env *Env) { // Create a new workspace-level directory and empty file.
+		var d protocol.PublishDiagnosticsParams
+		env.Await(
+			OnceMet(
+				env.DiagnosticAtRegexpWithMessage("main.go", `T any`, "type parameters require"),
+				ReadDiagnostics("main.go", &d),
+			),
+		)
+
+		env.ApplyQuickFixes("main.go", d.Diagnostics)
+
+		env.Await(
+			EmptyDiagnostics("main.go"),
+		)
+	})
+}
+
+func TestEditGoDirectiveWorkspace(t *testing.T) {
+	testenv.NeedsGo1Point(t, 18)
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.16
+-- go.work --
+go 1.18
+
+use .
+-- main.go --
+package main
+
+func F[T any](_ T) {
+}
+`
+	Run(t, files, func(_ *testing.T, env *Env) { // Create a new workspace-level directory and empty file.
+		var d protocol.PublishDiagnosticsParams
+		env.Await(
+			OnceMet(
+				env.DiagnosticAtRegexpWithMessage("main.go", `T any`, "type parameters require"),
+				ReadDiagnostics("main.go", &d),
+			),
+		)
+
+		env.ApplyQuickFixes("main.go", d.Diagnostics)
+
+		env.Await(
+			EmptyDiagnostics("main.go"),
 		)
 	})
 }

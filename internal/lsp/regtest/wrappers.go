@@ -358,6 +358,16 @@ func (e *Env) ExecuteCommand(params *protocol.ExecuteCommandParams, result inter
 	}
 }
 
+// WorkspaceSymbol calls workspace/symbol
+func (e *Env) WorkspaceSymbol(sym string) []protocol.SymbolInformation {
+	e.T.Helper()
+	ans, err := e.Editor.Symbols(e.Ctx, sym)
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	return ans
+}
+
 // References calls textDocument/references for the given path at the given
 // position.
 func (e *Env) References(path string, pos fake.Pos) []protocol.Location {
@@ -367,6 +377,13 @@ func (e *Env) References(path string, pos fake.Pos) []protocol.Location {
 		e.T.Fatal(err)
 	}
 	return locations
+}
+
+func (e *Env) Rename(path string, pos fake.Pos, newName string) {
+	e.T.Helper()
+	if err := e.Editor.Rename(e.Ctx, path, pos, newName); err != nil {
+		e.T.Fatal(err)
+	}
 }
 
 // Completion executes a completion request on the server.

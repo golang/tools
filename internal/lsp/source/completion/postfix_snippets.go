@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/snippet"
 	"golang.org/x/tools/internal/lsp/source"
-	errors "golang.org/x/xerrors"
 )
 
 // Postfix snippets are artificial methods that allow the user to
@@ -174,6 +173,18 @@ for {{.VarName .KeyType "k"}}, {{.VarName .ElemType "v"}} := range {{.X}} {
 	body: `{{if and (eq .Kind "tuple") .StmtOK -}}
 {{.Import "fmt"}}.Println({{.X}})
 {{- end}}`,
+}, {
+	label:   "split",
+	details: "split string",
+	body: `{{if (eq (.TypeName .Type) "string") -}}
+{{.Import "strings"}}.Split({{.X}}, "{{.Cursor}}")
+{{- end}}`,
+}, {
+	label:   "join",
+	details: "join string slice",
+	body: `{{if and (eq .Kind "slice") (eq (.TypeName .ElemType) "string") -}}
+{{.Import "strings"}}.Join({{.X}}, "{{.Cursor}}")
+{{- end}}`,
 }}
 
 // Cursor indicates where the client's cursor should end up after the
@@ -188,7 +199,7 @@ func (a *postfixTmplArgs) Cursor() string {
 func (a *postfixTmplArgs) Import(path string) (string, error) {
 	name, edits, err := a.importIfNeeded(path, a.scope)
 	if err != nil {
-		return "", errors.Errorf("couldn't import %q: %w", path, err)
+		return "", fmt.Errorf("couldn't import %q: %w", path, err)
 	}
 	a.edits = append(a.edits, edits...)
 	return name, nil

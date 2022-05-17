@@ -23,14 +23,17 @@ const (
 	AddImport         Command = "add_import"
 	ApplyFix          Command = "apply_fix"
 	CheckUpgrades     Command = "check_upgrades"
+	EditGoDirective   Command = "edit_go_directive"
 	GCDetails         Command = "gc_details"
 	Generate          Command = "generate"
 	GenerateGoplsMod  Command = "generate_gopls_mod"
 	GoGetPackage      Command = "go_get_package"
+	ListImports       Command = "list_imports"
 	ListKnownPackages Command = "list_known_packages"
 	RegenerateCgo     Command = "regenerate_cgo"
 	RemoveDependency  Command = "remove_dependency"
 	RunTests          Command = "run_tests"
+	RunVulncheckExp   Command = "run_vulncheck_exp"
 	StartDebugging    Command = "start_debugging"
 	Test              Command = "test"
 	Tidy              Command = "tidy"
@@ -38,7 +41,6 @@ const (
 	UpdateGoSum       Command = "update_go_sum"
 	UpgradeDependency Command = "upgrade_dependency"
 	Vendor            Command = "vendor"
-	WorkspaceMetadata Command = "workspace_metadata"
 )
 
 var Commands = []Command{
@@ -46,14 +48,17 @@ var Commands = []Command{
 	AddImport,
 	ApplyFix,
 	CheckUpgrades,
+	EditGoDirective,
 	GCDetails,
 	Generate,
 	GenerateGoplsMod,
 	GoGetPackage,
+	ListImports,
 	ListKnownPackages,
 	RegenerateCgo,
 	RemoveDependency,
 	RunTests,
+	RunVulncheckExp,
 	StartDebugging,
 	Test,
 	Tidy,
@@ -61,7 +66,6 @@ var Commands = []Command{
 	UpdateGoSum,
 	UpgradeDependency,
 	Vendor,
-	WorkspaceMetadata,
 }
 
 func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Interface) (interface{}, error) {
@@ -90,6 +94,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.CheckUpgrades(ctx, a0)
+	case "gopls.edit_go_directive":
+		var a0 EditGoDirectiveArgs
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return nil, s.EditGoDirective(ctx, a0)
 	case "gopls.gc_details":
 		var a0 protocol.DocumentURI
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -114,6 +124,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.GoGetPackage(ctx, a0)
+	case "gopls.list_imports":
+		var a0 URIArg
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return s.ListImports(ctx, a0)
 	case "gopls.list_known_packages":
 		var a0 URIArg
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -138,6 +154,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.RunTests(ctx, a0)
+	case "gopls.run_vulncheck_exp":
+		var a0 VulncheckArgs
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return s.RunVulncheckExp(ctx, a0)
 	case "gopls.start_debugging":
 		var a0 DebuggingArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -182,8 +204,6 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.Vendor(ctx, a0)
-	case "gopls.workspace_metadata":
-		return s.WorkspaceMetadata(ctx)
 	}
 	return nil, fmt.Errorf("unsupported command %q", params.Command)
 }
@@ -236,6 +256,18 @@ func NewCheckUpgradesCommand(title string, a0 CheckUpgradesArgs) (protocol.Comma
 	}, nil
 }
 
+func NewEditGoDirectiveCommand(title string, a0 EditGoDirectiveArgs) (protocol.Command, error) {
+	args, err := MarshalArgs(a0)
+	if err != nil {
+		return protocol.Command{}, err
+	}
+	return protocol.Command{
+		Title:     title,
+		Command:   "gopls.edit_go_directive",
+		Arguments: args,
+	}, nil
+}
+
 func NewGCDetailsCommand(title string, a0 protocol.DocumentURI) (protocol.Command, error) {
 	args, err := MarshalArgs(a0)
 	if err != nil {
@@ -284,6 +316,18 @@ func NewGoGetPackageCommand(title string, a0 GoGetPackageArgs) (protocol.Command
 	}, nil
 }
 
+func NewListImportsCommand(title string, a0 URIArg) (protocol.Command, error) {
+	args, err := MarshalArgs(a0)
+	if err != nil {
+		return protocol.Command{}, err
+	}
+	return protocol.Command{
+		Title:     title,
+		Command:   "gopls.list_imports",
+		Arguments: args,
+	}, nil
+}
+
 func NewListKnownPackagesCommand(title string, a0 URIArg) (protocol.Command, error) {
 	args, err := MarshalArgs(a0)
 	if err != nil {
@@ -328,6 +372,18 @@ func NewRunTestsCommand(title string, a0 RunTestsArgs) (protocol.Command, error)
 	return protocol.Command{
 		Title:     title,
 		Command:   "gopls.run_tests",
+		Arguments: args,
+	}, nil
+}
+
+func NewRunVulncheckExpCommand(title string, a0 VulncheckArgs) (protocol.Command, error) {
+	args, err := MarshalArgs(a0)
+	if err != nil {
+		return protocol.Command{}, err
+	}
+	return protocol.Command{
+		Title:     title,
+		Command:   "gopls.run_vulncheck_exp",
 		Arguments: args,
 	}, nil
 }
@@ -412,18 +468,6 @@ func NewVendorCommand(title string, a0 URIArg) (protocol.Command, error) {
 	return protocol.Command{
 		Title:     title,
 		Command:   "gopls.vendor",
-		Arguments: args,
-	}, nil
-}
-
-func NewWorkspaceMetadataCommand(title string) (protocol.Command, error) {
-	args, err := MarshalArgs()
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
-		Title:     title,
-		Command:   "gopls.workspace_metadata",
 		Arguments: args,
 	}, nil
 }

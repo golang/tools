@@ -168,10 +168,6 @@ func (h *fileHandle) URI() span.URI {
 	return h.uri
 }
 
-func (h *fileHandle) Kind() source.FileKind {
-	return source.DetectLanguage("", h.uri.Filename())
-}
-
 func (h *fileHandle) Hash() string {
 	return h.hash
 }
@@ -180,7 +176,6 @@ func (h *fileHandle) FileIdentity() source.FileIdentity {
 	return source.FileIdentity{
 		URI:  h.uri,
 		Hash: h.hash,
-		Kind: h.Kind(),
 	}
 }
 
@@ -198,7 +193,7 @@ func (c *Cache) ID() string                     { return c.id }
 func (c *Cache) MemStats() map[reflect.Type]int { return c.store.Stats() }
 
 type packageStat struct {
-	id        packageID
+	id        PackageID
 	mode      source.ParseMode
 	file      int64
 	ast       int64
@@ -224,7 +219,7 @@ func (c *Cache) PackageStats(withNames bool) template.HTML {
 				typInfoCost = typesInfoCost(v.pkg.typesInfo)
 			}
 			stat := packageStat{
-				id:        v.pkg.m.id,
+				id:        v.pkg.m.ID,
 				mode:      v.pkg.mode,
 				types:     typsCost,
 				typesInfo: typInfoCost,

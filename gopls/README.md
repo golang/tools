@@ -36,11 +36,8 @@ directory that is both outside of your `GOPATH` and outside of a module (a temp
 directory is fine), and run:
 
 ```sh
-GO111MODULE=on go get golang.org/x/tools/gopls@latest
+go install golang.org/x/tools/gopls@latest
 ```
-
-**NOTE**: Do not use the `-u` flag, as it will update your dependencies to
-incompatible versions.
 
 Learn more in the [advanced installation
 instructions](doc/advanced.md#installing-unreleased-versions).
@@ -72,12 +69,20 @@ If you are having issues with `gopls`, please follow the steps described in the
 
 ## Supported Go versions and build systems
 
-`gopls` follows the [Go Release
-Policy](https://golang.org/doc/devel/release.html#policy), meaning that it
-officially supports the last 2 major Go releases. Per
+`gopls` follows the
+[Go Release Policy](https://golang.org/doc/devel/release.html#policy),
+meaning that it officially supports the last 2 major Go releases. Per
 [issue #39146](golang.org/issues/39146), we attempt to maintain best-effort
 support for the last 4 major Go releases, but this support extends only to not
 breaking the build and avoiding easily fixable regressions.
+
+The following table shows the final gopls version that supports being built at
+a given Go Version. Any more recent Go versions missing from this table can
+still be built with the latest version of gopls.
+
+| Go Version  | Final gopls Version With Support |
+| ----------- | -------------------------------- |
+| Go 1.12     | [gopls@v0.7.5](https://github.com/golang/tools/releases/tag/gopls%2Fv0.7.5) |
 
 Our extended support is enforced via [continuous integration with older Go
 versions](doc/contributing.md#ci). This legacy Go CI may not block releases:
@@ -86,9 +91,11 @@ an older Go version causes irreconcilable CI failures, we may drop support for
 that Go version in CI if it is 3 or 4 Go versions old.
 
 `gopls` currently only supports the `go` command, so if you are using a
-different build system, `gopls` will not work well. Bazel support is currently
-blocked on
-[bazelbuild/rules_go#512](https://github.com/bazelbuild/rules_go/issues/512).
+different build system, `gopls` will not work well. Bazel is not officially
+supported, but Bazel support is in development (see
+[bazelbuild/rules_go#512](https://github.com/bazelbuild/rules_go/issues/512)).
+You can follow [these instructions](https://github.com/bazelbuild/rules_go/wiki/Editor-setup)
+to configure your `gopls` to work with Bazel.
 
 ## Additional information
 

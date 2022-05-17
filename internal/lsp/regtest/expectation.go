@@ -72,7 +72,7 @@ func (e SimpleExpectation) Check(s State) Verdict {
 	return e.check(s)
 }
 
-// Description returns e.descriptin.
+// Description returns e.description.
 func (e SimpleExpectation) Description() string {
 	return e.description
 }
@@ -96,13 +96,37 @@ func OnceMet(precondition Expectation, mustMeets ...Expectation) *SimpleExpectat
 			return Unmet
 		}
 	}
-	var descriptions []string
-	for _, mustMeet := range mustMeets {
-		descriptions = append(descriptions, mustMeet.Description())
-	}
+	description := describeExpectations(mustMeets...)
 	return &SimpleExpectation{
 		check:       check,
-		description: fmt.Sprintf("once %q is met, must have %q", precondition.Description(), strings.Join(descriptions, "\n")),
+		description: fmt.Sprintf("once %q is met, must have:\n%s", precondition.Description(), description),
+	}
+}
+
+func describeExpectations(expectations ...Expectation) string {
+	var descriptions []string
+	for _, e := range expectations {
+		descriptions = append(descriptions, e.Description())
+	}
+	return strings.Join(descriptions, "\n")
+}
+
+// AnyOf returns an expectation that is satisfied when any of the given
+// expectations is met.
+func AnyOf(anyOf ...Expectation) *SimpleExpectation {
+	check := func(s State) Verdict {
+		for _, e := range anyOf {
+			verdict := e.Check(s)
+			if verdict == Met {
+				return Met
+			}
+		}
+		return Unmet
+	}
+	description := describeExpectations(anyOf...)
+	return &SimpleExpectation{
+		check:       check,
+		description: fmt.Sprintf("Any of:\n%s", description),
 	}
 }
 
@@ -152,12 +176,12 @@ func NoShowMessage() SimpleExpectation {
 	}
 }
 
-// ShownMessage asserts that the editor has received a ShownMessage with the
-// given title.
-func ShownMessage(title string) SimpleExpectation {
+// ShownMessage asserts that the editor has received a ShowMessageRequest
+// containing the given substring.
+func ShownMessage(containing string) SimpleExpectation {
 	check := func(s State) Verdict {
 		for _, m := range s.showMessage {
-			if strings.Contains(m.Message, title) {
+			if strings.Contains(m.Message, containing) {
 				return Met
 			}
 		}
@@ -465,6 +489,9 @@ type DiagnosticExpectation struct {
 
 	// path is the scratch workdir-relative path to the file being asserted on.
 	path string
+
+	// optionally, the diagnostic source
+	source string
 }
 
 // Check implements the Expectation interface.
@@ -488,6 +515,9 @@ func (e DiagnosticExpectation) Check(s State) Verdict {
 			if !strings.Contains(d.Message, e.message) {
 				continue
 			}
+		}
+		if e.source != "" && e.source != d.Source {
+			continue
 		}
 		found = true
 		break
@@ -515,7 +545,27 @@ func (e DiagnosticExpectation) Description() string {
 	if e.message != "" {
 		desc += fmt.Sprintf(" with message %q", e.message)
 	}
+	if e.source != "" {
+		desc += fmt.Sprintf(" from source %q", e.source)
+	}
 	return desc
+}
+
+// NoOutstandingDiagnostics asserts that the workspace has no outstanding
+// diagnostic messages.
+func NoOutstandingDiagnostics() Expectation {
+	check := func(s State) Verdict {
+		for _, diags := range s.diagnostics {
+			if len(diags.Diagnostics) > 0 {
+				return Unmet
+			}
+		}
+		return Met
+	}
+	return SimpleExpectation{
+		check:       check,
+		description: "no outstanding diagnostics",
+	}
 }
 
 // EmptyDiagnostics asserts that empty diagnostics are sent for the
@@ -600,6 +650,14 @@ func (e *Env) DiagnosticAtRegexpWithMessage(name, re, msg string) DiagnosticExpe
 	e.T.Helper()
 	pos := e.RegexpSearch(name, re)
 	return DiagnosticExpectation{path: name, pos: &pos, re: re, present: true, message: msg}
+}
+
+// DiagnosticAtRegexpFromSource expects a diagnostic at the first position
+// matching re, from the given source.
+func (e *Env) DiagnosticAtRegexpFromSource(name, re, source string) DiagnosticExpectation {
+	e.T.Helper()
+	pos := e.RegexpSearch(name, re)
+	return DiagnosticExpectation{path: name, pos: &pos, re: re, present: true, source: source}
 }
 
 // DiagnosticAt asserts that there is a diagnostic entry at the position

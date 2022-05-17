@@ -1,0 +1,4 @@
+report a bug in gopls
+
+Usage:
+  gopls [flags] bug

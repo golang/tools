@@ -6,7 +6,10 @@ package completion
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"go/ast"
+	"go/doc"
 	"go/types"
 	"strings"
 
@@ -17,7 +20,12 @@ import (
 	"golang.org/x/tools/internal/lsp/snippet"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
+	"golang.org/x/tools/internal/typeparams"
+)
+
+var (
+	errNoMatch  = errors.New("not a surrounding match")
+	errLowScore = errors.New("not a high scoring candidate")
 )
 
 // item formats a candidate to a CompletionItem.
@@ -27,13 +35,13 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 	// if the object isn't a valid match against the surrounding, return early.
 	matchScore := c.matcher.Score(cand.name)
 	if matchScore <= 0 {
-		return CompletionItem{}, errors.New("not a surrounding match")
+		return CompletionItem{}, errNoMatch
 	}
 	cand.score *= float64(matchScore)
 
 	// Ignore deep candidates that wont be in the MaxDeepCompletions anyway.
 	if len(cand.path) != 0 && !c.deepState.isHighScore(cand.score) {
-		return CompletionItem{}, errors.New("not a high scoring candidate")
+		return CompletionItem{}, errLowScore
 	}
 
 	// Handle builtin types separately.
@@ -51,6 +59,14 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 	)
 	if obj.Type() == nil {
 		detail = ""
+	}
+	if isTypeName(obj) && c.wantTypeParams() {
+		x := cand.obj.(*types.TypeName)
+		if named, ok := x.Type().(*types.Named); ok {
+			tp := typeparams.ForNamed(named)
+			label += source.FormatTypeParams(tp)
+			insert = label // maintain invariant above (label == insert)
+		}
 	}
 
 	snip.WriteText(insert)
@@ -114,7 +130,7 @@ Suffixes:
 		case invoke:
 			if sig, ok := funcType.Underlying().(*types.Signature); ok {
 				s := source.NewSignature(ctx, c.snapshot, c.pkg, sig, nil, c.qf)
-				c.functionCallSnippet("", s.Params(), &snip)
+				c.functionCallSnippet("", s.TypeParams(), s.Params(), &snip)
 				if sig.Results().Len() == 1 {
 					funcType = sig.Results().At(0).Type()
 				}
@@ -143,6 +159,7 @@ Suffixes:
 	// add the additional text edits needed.
 	if cand.imp != nil {
 		addlEdits, err := c.importEdits(cand.imp)
+
 		if err != nil {
 			return CompletionItem{}, err
 		}
@@ -229,17 +246,18 @@ Suffixes:
 	if err != nil {
 		return CompletionItem{}, err
 	}
-	hover, err := source.HoverInfo(ctx, c.snapshot, pkg, obj, decl, nil)
+	hover, err := source.FindHoverContext(ctx, c.snapshot, pkg, obj, decl, nil)
 	if err != nil {
 		event.Error(ctx, "failed to find Hover", err, tag.URI.Of(uri))
 		return item, nil
 	}
-	item.Documentation = hover.Synopsis
 	if c.opts.fullDocumentation {
-		item.Documentation = hover.FullDocumentation
+		item.Documentation = hover.Comment.Text()
+	} else {
+		item.Documentation = doc.Synopsis(hover.Comment.Text())
 	}
 	// The desired pattern is `^// Deprecated`, but the prefix has been removed
-	if strings.HasPrefix(hover.FullDocumentation, "Deprecated") {
+	if strings.HasPrefix(hover.Comment.Text(), "Deprecated") {
 		if c.snapshot.View().Options().CompletionTags {
 			item.Tags = []protocol.CompletionItemTag{protocol.ComplDeprecated}
 		} else if c.snapshot.View().Options().CompletionDeprecated {
@@ -289,7 +307,7 @@ func (c *completer) formatBuiltin(ctx context.Context, cand candidate) (Completi
 		}
 		item.Detail = "func" + sig.Format()
 		item.snippet = &snippet.Builder{}
-		c.functionCallSnippet(obj.Name(), sig.Params(), item.snippet)
+		c.functionCallSnippet(obj.Name(), sig.TypeParams(), sig.Params(), item.snippet)
 	case *types.TypeName:
 		if types.IsInterface(obj.Type()) {
 			item.Kind = protocol.InterfaceCompletion
@@ -300,4 +318,23 @@ func (c *completer) formatBuiltin(ctx context.Context, cand candidate) (Completi
 		item.Kind = protocol.VariableCompletion
 	}
 	return item, nil
+}
+
+// decide if the type params (if any) should be part of the completion
+// which only possible for types.Named and types.Signature
+// (so far, only in receivers, e.g.; func (s *GENERIC[K, V])..., which is a types.Named)
+func (c *completer) wantTypeParams() bool {
+	// Need to be lexically in a receiver, and a child of an IndexListExpr
+	// (but IndexListExpr only exists with go1.18)
+	start := c.path[0].Pos()
+	for i, nd := range c.path {
+		if fd, ok := nd.(*ast.FuncDecl); ok {
+			if i > 0 && fd.Recv != nil && start < fd.Recv.End() {
+				return true
+			} else {
+				return false
+			}
+		}
+	}
+	return false
 }

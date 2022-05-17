@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
 )
 
 func (s *snapshot) Analyze(ctx context.Context, id string, analyzers []*source.Analyzer) ([]*source.Diagnostic, error) {
@@ -30,7 +29,7 @@ func (s *snapshot) Analyze(ctx context.Context, id string, analyzers []*source.A
 		if !a.IsEnabled(s.view) {
 			continue
 		}
-		ah, err := s.actionHandle(ctx, packageID(id), a.Analyzer)
+		ah, err := s.actionHandle(ctx, PackageID(id), a.Analyzer)
 		if err != nil {
 			return nil, err
 		}
@@ -46,7 +45,9 @@ func (s *snapshot) Analyze(ctx context.Context, id string, analyzers []*source.A
 	for _, ah := range roots {
 		diagnostics, _, err := ah.analyze(ctx, s)
 		if err != nil {
-			return nil, err
+			// Keep going if a single analyzer failed.
+			event.Error(ctx, fmt.Sprintf("analyzer %q failed", ah.analyzer.Name), err)
+			continue
 		}
 		results = append(results, diagnostics...)
 	}
@@ -84,7 +85,7 @@ type packageFactKey struct {
 	typ reflect.Type
 }
 
-func (s *snapshot) actionHandle(ctx context.Context, id packageID, a *analysis.Analyzer) (*actionHandle, error) {
+func (s *snapshot) actionHandle(ctx context.Context, id PackageID, a *analysis.Analyzer) (*actionHandle, error) {
 	ph, err := s.buildPackageHandle(ctx, id, source.ParseFull)
 	if err != nil {
 		return nil, err
@@ -94,7 +95,7 @@ func (s *snapshot) actionHandle(ctx context.Context, id packageID, a *analysis.A
 		return act, nil
 	}
 	if len(ph.key) == 0 {
-		return nil, errors.Errorf("actionHandle: no key for package %s", id)
+		return nil, fmt.Errorf("actionHandle: no key for package %s", id)
 	}
 	pkg, err := ph.check(ctx, s)
 	if err != nil {
@@ -121,13 +122,13 @@ func (s *snapshot) actionHandle(ctx context.Context, id packageID, a *analysis.A
 		// An analysis that consumes/produces facts
 		// must run on the package's dependencies too.
 		if len(a.FactTypes) > 0 {
-			importIDs := make([]string, 0, len(ph.m.deps))
-			for _, importID := range ph.m.deps {
+			importIDs := make([]string, 0, len(ph.m.Deps))
+			for _, importID := range ph.m.Deps {
 				importIDs = append(importIDs, string(importID))
 			}
 			sort.Strings(importIDs) // for determinism
 			for _, importID := range importIDs {
-				depActionHandle, err := s.actionHandle(ctx, packageID(importID), a)
+				depActionHandle, err := s.actionHandle(ctx, PackageID(importID), a)
 				if err != nil {
 					return nil, err
 				}
@@ -160,10 +161,10 @@ func (act *actionHandle) analyze(ctx context.Context, snapshot *snapshot) ([]*so
 	}
 	data, ok := d.(*actionData)
 	if !ok {
-		return nil, nil, errors.Errorf("unexpected type for %s:%s", act.pkg.ID(), act.analyzer.Name)
+		return nil, nil, fmt.Errorf("unexpected type for %s:%s", act.pkg.ID(), act.analyzer.Name)
 	}
 	if data == nil {
-		return nil, nil, errors.Errorf("unexpected nil analysis for %s:%s", act.pkg.ID(), act.analyzer.Name)
+		return nil, nil, fmt.Errorf("unexpected nil analysis for %s:%s", act.pkg.ID(), act.analyzer.Name)
 	}
 	return data.diagnostics, data.result, data.err
 }
@@ -190,7 +191,7 @@ func execAll(ctx context.Context, snapshot *snapshot, actions []*actionHandle) (
 			}
 			data, ok := v.(*actionData)
 			if !ok {
-				return errors.Errorf("unexpected type for %s: %T", act, v)
+				return fmt.Errorf("unexpected type for %s: %T", act, v)
 			}
 
 			mu.Lock()
@@ -210,7 +211,7 @@ func runAnalysis(ctx context.Context, snapshot *snapshot, analyzer *analysis.Ana
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			data.err = errors.Errorf("analysis %s for package %s panicked: %v", analyzer.Name, pkg.PkgPath(), r)
+			data.err = fmt.Errorf("analysis %s for package %s panicked: %v", analyzer.Name, pkg.PkgPath(), r)
 		}
 	}()
 
@@ -325,7 +326,7 @@ func runAnalysis(ctx context.Context, snapshot *snapshot, analyzer *analysis.Ana
 	analysisinternal.SetTypeErrors(pass, pkg.typeErrors)
 
 	if pkg.IsIllTyped() {
-		data.err = errors.Errorf("analysis skipped due to errors in package")
+		data.err = fmt.Errorf("analysis skipped due to errors in package")
 		return data
 	}
 	data.result, data.err = pass.Analyzer.Run(pass)
@@ -334,7 +335,7 @@ func runAnalysis(ctx context.Context, snapshot *snapshot, analyzer *analysis.Ana
 	}
 
 	if got, want := reflect.TypeOf(data.result), pass.Analyzer.ResultType; got != want {
-		data.err = errors.Errorf(
+		data.err = fmt.Errorf(
 			"internal error: on package %s, analyzer %s returned a result of type %v, but declared ResultType %v",
 			pass.Pkg.Path(), pass.Analyzer, got, want)
 		return data
@@ -365,7 +366,7 @@ func runAnalysis(ctx context.Context, snapshot *snapshot, analyzer *analysis.Ana
 
 // exportedFrom reports whether obj may be visible to a package that imports pkg.
 // This includes not just the exported members of pkg, but also unexported
-// constants, types, fields, and methods, perhaps belonging to oether packages,
+// constants, types, fields, and methods, perhaps belonging to other packages,
 // that find there way into the API.
 // This is an overapproximation of the more accurate approach used by
 // gc export data, which walks the type graph, but it's much simpler.
@@ -388,7 +389,7 @@ func exportedFrom(obj types.Object, pkg *types.Package) bool {
 func factType(fact analysis.Fact) reflect.Type {
 	t := reflect.TypeOf(fact)
 	if t.Kind() != reflect.Ptr {
-		panic(fmt.Sprintf("invalid Fact type: got %T, want pointer", t))
+		panic(fmt.Sprintf("invalid Fact type: got %T, want pointer", fact))
 	}
 	return t
 }

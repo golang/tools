@@ -33,6 +33,7 @@ var tmpl = []datum{{`
 
 	{`{{block "aaa" foo}}b{{end}}`, 2, []string{"{9,3,aaa,Namespace,true}",
 		"{9,3,aaa,Package,false}", "{14,3,foo,Function,false}", "{19,1,,Constant,false}"}},
+	{"", 0, nil},
 }
 
 func TestSymbols(t *testing.T) {
@@ -54,9 +55,11 @@ func TestSymbols(t *testing.T) {
 }
 
 func TestWordAt(t *testing.T) {
-	want := []string{"", "", "if", "if", "", "$A", "$A", "", "", "B", "", "", "end", "end", "end", "", ""}
-	p := parseBuffer([]byte("{{if $A}}B{{end}}"))
-	for i := 0; i < len(want); i++ {
+	want := []string{"", "", "$A", "$A", "", "", "", "", "", "",
+		"", "", "", "if", "if", "", "$A", "$A", "", "",
+		"B", "", "", "end", "end", "end", "", "", ""}
+	p := parseBuffer([]byte("{{$A := .}}{{if $A}}B{{end}}"))
+	for i := 0; i < len(p.buf); i++ {
 		got := findWordAt(p, i)
 		if got != want[i] {
 			t.Errorf("for %d, got %q, wanted %q", i, got, want[i])
@@ -142,6 +145,20 @@ func TestLineCol(t *testing.T) {
 	}
 }
 
+func TestLineColNL(t *testing.T) {
+	buf := "\n\n\n\n\n"
+	p := parseBuffer([]byte(buf))
+	if p.ParseErr != nil {
+		t.Fatal(p.ParseErr)
+	}
+	for i := 0; i < len(buf); i++ {
+		l, c := p.LineCol(i)
+		if c != 0 || int(l) != i+1 {
+			t.Errorf("got (%d,%d), expected (%d,0)", l, c, i)
+		}
+	}
+}
+
 func TestPos(t *testing.T) {
 	buf := `
 	{{if (foÜx .X.Y)}}{{$A := "hi"}}{{.Z $A}}{{else}}
@@ -188,5 +205,34 @@ func TestUtf16(t *testing.T) {
 	p := parseBuffer([]byte(buf))
 	if p.nonASCII == false {
 		t.Error("expected nonASCII to be true")
+	}
+}
+
+type ttest struct {
+	tmpl      string
+	tokCnt    int
+	elidedCnt int8
+}
+
+func TestQuotes(t *testing.T) {
+	tsts := []ttest{
+		{"{{- /*comment*/ -}}", 1, 0},
+		{"{{/*`\ncomment\n`*/}}", 1, 0},
+		//{"{{foo\nbar}}\n", 1, 0}, // this action spanning lines parses in 1.16
+		{"{{\"{{foo}}{{\"}}", 1, 0},
+		{"{{\n{{- when}}", 1, 1},          // corrected
+		{"{{{{if .}}xx{{\n{{end}}", 2, 2}, // corrected
+	}
+	for _, s := range tsts {
+		p := parseBuffer([]byte(s.tmpl))
+		if len(p.tokens) != s.tokCnt {
+			t.Errorf("%q: got %d tokens, expected %d", s, len(p.tokens), s.tokCnt)
+		}
+		if p.ParseErr != nil {
+			t.Errorf("%q: %v", string(p.buf), p.ParseErr)
+		}
+		if len(p.elided) != int(s.elidedCnt) {
+			t.Errorf("%q: elided %d, expected %d", s, len(p.elided), s.elidedCnt)
+		}
 	}
 }

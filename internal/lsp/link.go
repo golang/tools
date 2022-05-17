@@ -30,7 +30,7 @@ func (s *Server) documentLink(ctx context.Context, params *protocol.DocumentLink
 	if !ok {
 		return nil, err
 	}
-	switch fh.Kind() {
+	switch snapshot.View().FileKind(fh) {
 	case source.Mod:
 		links, err = modLinks(ctx, snapshot, fh)
 	case source.Go:
@@ -137,7 +137,7 @@ func goLinks(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle
 			if view.IsGoPrivatePath(target) {
 				continue
 			}
-			if mod, version, ok := moduleAtVersion(ctx, snapshot, target, pkg); ok && strings.ToLower(view.Options().LinkTarget) == "pkg.go.dev" {
+			if mod, version, ok := moduleAtVersion(target, pkg); ok && strings.ToLower(view.Options().LinkTarget) == "pkg.go.dev" {
 				target = strings.Replace(target, mod, mod+"@"+version, 1)
 			}
 			// Account for the quotation marks in the positions.
@@ -170,7 +170,7 @@ func goLinks(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle
 	return links, nil
 }
 
-func moduleAtVersion(ctx context.Context, snapshot source.Snapshot, target string, pkg source.Package) (string, string, bool) {
+func moduleAtVersion(target string, pkg source.Package) (string, string, bool) {
 	impPkg, err := pkg.GetImport(target)
 	if err != nil {
 		return "", "", false
@@ -183,6 +183,14 @@ func moduleAtVersion(ctx context.Context, snapshot source.Snapshot, target strin
 		return "", "", false
 	}
 	return modpath, version, true
+}
+
+// acceptedSchemes controls the schemes that URLs must have to be shown to the
+// user. Other schemes can't be opened by LSP clients, so linkifying them is
+// distracting. See golang/go#43990.
+var acceptedSchemes = map[string]bool{
+	"http":  true,
+	"https": true,
 }
 
 func findLinksInString(ctx context.Context, snapshot source.Snapshot, src string, pos token.Pos, m *protocol.ColumnMapper, fileKind source.FileKind) ([]protocol.DocumentLink, error) {
@@ -204,6 +212,9 @@ func findLinksInString(ctx context.Context, snapshot source.Snapshot, src string
 		// If the URL has no scheme, use https.
 		if linkURL.Scheme == "" {
 			linkURL.Scheme = "https"
+		}
+		if !acceptedSchemes[linkURL.Scheme] {
+			continue
 		}
 		l, err := toProtocolLink(snapshot, m, linkURL.String(), startPos, endPos, fileKind)
 		if err != nil {

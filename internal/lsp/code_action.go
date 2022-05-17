@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
 )
 
 func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
@@ -30,9 +29,10 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 	uri := fh.URI()
 
 	// Determine the supported actions for this file kind.
-	supportedCodeActions, ok := snapshot.View().Options().SupportedCodeActions[fh.Kind()]
+	kind := snapshot.View().FileKind(fh)
+	supportedCodeActions, ok := snapshot.View().Options().SupportedCodeActions[kind]
 	if !ok {
-		return nil, fmt.Errorf("no supported code actions for %v file kind", fh.Kind())
+		return nil, fmt.Errorf("no supported code actions for %v file kind", kind)
 	}
 
 	// The Only field of the context specifies which code actions the client wants.
@@ -51,7 +51,12 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 	} else {
 		wanted = make(map[protocol.CodeActionKind]bool)
 		for _, only := range params.Context.Only {
-			wanted[only] = supportedCodeActions[only] || explicit[only]
+			for k, v := range supportedCodeActions {
+				if only == k || strings.HasPrefix(string(k), string(only)+".") {
+					wanted[k] = wanted[k] || v
+				}
+			}
+			wanted[only] = wanted[only] || explicit[only]
 		}
 	}
 	if len(supportedCodeActions) == 0 {
@@ -62,7 +67,7 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 	}
 
 	var codeActions []protocol.CodeAction
-	switch fh.Kind() {
+	switch kind {
 	case source.Mod:
 		if diagnostics := params.Context.Diagnostics; len(diagnostics) > 0 {
 			diags, err := mod.DiagnosticsForMod(ctx, snapshot, fh)
@@ -281,7 +286,7 @@ func extractionFixes(ctx context.Context, snapshot source.Snapshot, pkg source.P
 	}
 	_, pgf, err := source.GetParsedFile(ctx, snapshot, fh, source.NarrowestPackage)
 	if err != nil {
-		return nil, errors.Errorf("getting file for Identifier: %w", err)
+		return nil, fmt.Errorf("getting file for Identifier: %w", err)
 	}
 	srng, err := pgf.Mapper.RangeToSpanRange(rng)
 	if err != nil {
@@ -289,8 +294,8 @@ func extractionFixes(ctx context.Context, snapshot source.Snapshot, pkg source.P
 	}
 	puri := protocol.URIFromSpanURI(uri)
 	var commands []protocol.Command
-	if _, ok, _ := source.CanExtractFunction(snapshot.FileSet(), srng, pgf.Src, pgf.File); ok {
-		cmd, err := command.NewApplyFixCommand("Extract to function", command.ApplyFixArgs{
+	if _, ok, methodOk, _ := source.CanExtractFunction(snapshot.FileSet(), srng, pgf.Src, pgf.File); ok {
+		cmd, err := command.NewApplyFixCommand("Extract function", command.ApplyFixArgs{
 			URI:   puri,
 			Fix:   source.ExtractFunction,
 			Range: rng,
@@ -299,6 +304,17 @@ func extractionFixes(ctx context.Context, snapshot source.Snapshot, pkg source.P
 			return nil, err
 		}
 		commands = append(commands, cmd)
+		if methodOk {
+			cmd, err := command.NewApplyFixCommand("Extract method", command.ApplyFixArgs{
+				URI:   puri,
+				Fix:   source.ExtractMethod,
+				Range: rng,
+			})
+			if err != nil {
+				return nil, err
+			}
+			commands = append(commands, cmd)
+		}
 	}
 	if _, _, ok, _ := source.CanExtractVariable(srng, pgf.File); ok {
 		cmd, err := command.NewApplyFixCommand("Extract variable", command.ApplyFixArgs{

@@ -69,11 +69,12 @@ Using digraph with existing Go tools:
 	$ go list -m all | digraph nodes # Operate on the Go package graph.
 
 Show the transitive closure of imports of the digraph tool itself:
+
 	$ go list -f '{{.ImportPath}} {{join .Imports " "}}' ... | digraph forward golang.org/x/tools/cmd/digraph
 
 Show which clothes (see above) must be donned before a jacket:
-	$ digraph reverse jacket
 
+	$ digraph reverse jacket
 */
 package main // import "golang.org/x/tools/cmd/digraph"
 
@@ -121,7 +122,8 @@ The support commands are:
 	allpaths <node> <node>
 		the set of nodes on all paths from the first node to the second
 	sccs
-		all strongly connected components (one per line)
+		all non-trivial strongly connected components, one per line
+		(single-node components are only printed for nodes with self-loops)
 	scc <node>
 		the set of nodes nodes strongly connected to the specified one
 	focus <node>
@@ -157,7 +159,7 @@ func (l nodelist) println(sep string) {
 	fmt.Fprintln(stdout)
 }
 
-type nodeset map[string]bool // TODO(deklerk): change bool to struct to reduce memory footprint
+type nodeset map[string]bool
 
 func (s nodeset) sort() nodelist {
 	nodes := make(nodelist, len(s))
@@ -265,6 +267,9 @@ func (g graph) sccs() []nodeset {
 		if !seen[top] {
 			scc = make(nodeset)
 			rvisit(top)
+			if len(scc) == 1 && !g[top][top] {
+				continue
+			}
 			sccs = append(sccs, scc)
 		}
 	}
@@ -364,7 +369,7 @@ func parse(rd io.Reader) (graph, error) {
 	return g, nil
 }
 
-// Overridable for testing purposes.
+// Overridable for redirection.
 var stdin io.Reader = os.Stdin
 var stdout io.Writer = os.Stdout
 
@@ -484,9 +489,16 @@ func digraph(cmd string, args []string) error {
 		if len(args) != 0 {
 			return fmt.Errorf("usage: digraph sccs")
 		}
+		buf := new(bytes.Buffer)
+		oldStdout := stdout
+		stdout = buf
 		for _, scc := range g.sccs() {
 			scc.sort().println(" ")
 		}
+		lines := strings.SplitAfter(buf.String(), "\n")
+		sort.Strings(lines)
+		stdout = oldStdout
+		io.WriteString(stdout, strings.Join(lines, ""))
 
 	case "scc":
 		if len(args) != 1 {
@@ -546,9 +558,8 @@ func digraph(cmd string, args []string) error {
 // spaces, but Go-style double-quoted string literals are also supported.
 // (This approximates the behaviour of the Bourne shell.)
 //
-//   `one "two three"` -> ["one" "two three"]
-//   `a"\n"b` -> ["a\nb"]
-//
+//	`one "two three"` -> ["one" "two three"]
+//	`a"\n"b` -> ["a\nb"]
 func split(line string) ([]string, error) {
 	var (
 		words   []string
@@ -605,7 +616,6 @@ func split(line string) ([]string, error) {
 // its length is returned.
 //
 // TODO(adonovan): move this into a strconv-like utility package.
-//
 func quotedLength(input string) (n int, ok bool) {
 	var offset int
 

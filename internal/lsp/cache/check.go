@@ -7,11 +7,13 @@ package cache
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/types"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -28,7 +30,6 @@ import (
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
-	errors "golang.org/x/xerrors"
 )
 
 type packageHandleKey string
@@ -42,7 +43,7 @@ type packageHandle struct {
 	mode source.ParseMode
 
 	// m is the metadata associated with the package.
-	m *knownMetadata
+	m *KnownMetadata
 
 	// key is the hashed key for the package.
 	key packageHandleKey
@@ -50,7 +51,7 @@ type packageHandle struct {
 
 func (ph *packageHandle) packageKey() packageKey {
 	return packageKey{
-		id:   ph.m.id,
+		id:   ph.m.ID,
 		mode: ph.mode,
 	}
 }
@@ -85,7 +86,7 @@ type packageData struct {
 // It assumes that the given ID already has metadata available, so it does not
 // attempt to reload missing or invalid metadata. The caller must reload
 // metadata if needed.
-func (s *snapshot) buildPackageHandle(ctx context.Context, id packageID, mode source.ParseMode) (*packageHandle, error) {
+func (s *snapshot) buildPackageHandle(ctx context.Context, id PackageID, mode source.ParseMode) (*packageHandle, error) {
 	if ph := s.getPackage(id, mode); ph != nil {
 		return ph, nil
 	}
@@ -121,7 +122,7 @@ func (s *snapshot) buildPackageHandle(ctx context.Context, id packageID, mode so
 		}
 
 		data := &packageData{}
-		data.pkg, data.err = typeCheck(ctx, snapshot, m.metadata, mode, deps)
+		data.pkg, data.err = typeCheck(ctx, snapshot, m.Metadata, mode, deps)
 		// Make sure that the workers above have finished before we return,
 		// especially in case of cancellation.
 		wg.Wait()
@@ -140,16 +141,16 @@ func (s *snapshot) buildPackageHandle(ctx context.Context, id packageID, mode so
 }
 
 // buildKey computes the key for a given packageHandle.
-func (s *snapshot) buildKey(ctx context.Context, id packageID, mode source.ParseMode) (*packageHandle, map[packagePath]*packageHandle, error) {
+func (s *snapshot) buildKey(ctx context.Context, id PackageID, mode source.ParseMode) (*packageHandle, map[PackagePath]*packageHandle, error) {
 	m := s.getMetadata(id)
 	if m == nil {
-		return nil, nil, errors.Errorf("no metadata for %s", id)
+		return nil, nil, fmt.Errorf("no metadata for %s", id)
 	}
-	goFiles, err := s.parseGoHandles(ctx, m.goFiles, mode)
+	goFiles, err := s.parseGoHandles(ctx, m.GoFiles, mode)
 	if err != nil {
 		return nil, nil, err
 	}
-	compiledGoFiles, err := s.parseGoHandles(ctx, m.compiledGoFiles, mode)
+	compiledGoFiles, err := s.parseGoHandles(ctx, m.CompiledGoFiles, mode)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -160,12 +161,12 @@ func (s *snapshot) buildKey(ctx context.Context, id packageID, mode source.Parse
 		mode:            mode,
 	}
 	// Make sure all of the depList are sorted.
-	depList := append([]packageID{}, m.deps...)
+	depList := append([]PackageID{}, m.Deps...)
 	sort.Slice(depList, func(i, j int) bool {
 		return depList[i] < depList[j]
 	})
 
-	deps := make(map[packagePath]*packageHandle)
+	deps := make(map[PackagePath]*packageHandle)
 
 	// Begin computing the key by getting the depKeys for all dependencies.
 	var depKeys []packageHandleKey
@@ -174,7 +175,7 @@ func (s *snapshot) buildKey(ctx context.Context, id packageID, mode source.Parse
 		// Don't use invalid metadata for dependencies if the top-level
 		// metadata is valid. We only load top-level packages, so if the
 		// top-level is valid, all of its dependencies should be as well.
-		if err != nil || m.valid && !depHandle.m.valid {
+		if err != nil || m.Valid && !depHandle.m.Valid {
 			if err != nil {
 				event.Error(ctx, fmt.Sprintf("%s: no dep handle for %s", id, depID), err, tag.Snapshot.Of(s.id))
 			} else {
@@ -189,15 +190,15 @@ func (s *snapshot) buildKey(ctx context.Context, id packageID, mode source.Parse
 			depKeys = append(depKeys, packageHandleKey(fmt.Sprintf("%s import not found", depID)))
 			continue
 		}
-		deps[depHandle.m.pkgPath] = depHandle
+		deps[depHandle.m.PkgPath] = depHandle
 		depKeys = append(depKeys, depHandle.key)
 	}
 	experimentalKey := s.View().Options().ExperimentalPackageCacheKey
-	ph.key = checkPackageKey(ph.m.id, compiledGoFiles, m.config, depKeys, mode, experimentalKey)
+	ph.key = checkPackageKey(ph.m.ID, compiledGoFiles, m, depKeys, mode, experimentalKey)
 	return ph, deps, nil
 }
 
-func (s *snapshot) workspaceParseMode(id packageID) source.ParseMode {
+func (s *snapshot) workspaceParseMode(id PackageID) source.ParseMode {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, ws := s.workspacePackages[id]
@@ -207,29 +208,24 @@ func (s *snapshot) workspaceParseMode(id packageID) source.ParseMode {
 	if s.view.Options().MemoryMode == source.ModeNormal {
 		return source.ParseFull
 	}
-
-	// Degraded mode. Check for open files.
-	m, ok := s.metadata[id]
-	if !ok {
-		return source.ParseExported
-	}
-	for _, cgf := range m.compiledGoFiles {
-		if s.isOpenLocked(cgf) {
-			return source.ParseFull
-		}
+	if s.isActiveLocked(id, nil) {
+		return source.ParseFull
 	}
 	return source.ParseExported
 }
 
-func checkPackageKey(id packageID, pghs []*parseGoHandle, cfg *packages.Config, deps []packageHandleKey, mode source.ParseMode, experimentalKey bool) packageHandleKey {
+func checkPackageKey(id PackageID, pghs []*parseGoHandle, m *KnownMetadata, deps []packageHandleKey, mode source.ParseMode, experimentalKey bool) packageHandleKey {
 	b := bytes.NewBuffer(nil)
 	b.WriteString(string(id))
+	if m.Module != nil {
+		b.WriteString(m.Module.GoVersion) // go version affects type check errors.
+	}
 	if !experimentalKey {
 		// cfg was used to produce the other hashed inputs (package ID, parsed Go
 		// files, and deps). It should not otherwise affect the inputs to the type
 		// checker, so this experiment omits it. This should increase cache hits on
 		// the daemon as cfg contains the environment and working directory.
-		b.WriteString(hashConfig(cfg))
+		b.WriteString(hashConfig(m.Config))
 	}
 	b.WriteByte(byte(mode))
 	for _, dep := range deps {
@@ -285,17 +281,17 @@ func (ph *packageHandle) check(ctx context.Context, s *snapshot) (*pkg, error) {
 }
 
 func (ph *packageHandle) CompiledGoFiles() []span.URI {
-	return ph.m.compiledGoFiles
+	return ph.m.CompiledGoFiles
 }
 
 func (ph *packageHandle) ID() string {
-	return string(ph.m.id)
+	return string(ph.m.ID)
 }
 
 func (ph *packageHandle) cached(g *memoize.Generation) (*pkg, error) {
 	v := ph.handle.Cached(g)
 	if v == nil {
-		return nil, errors.Errorf("no cached type information for %s", ph.m.pkgPath)
+		return nil, fmt.Errorf("no cached type information for %s", ph.m.PkgPath)
 	}
 	data := v.(*packageData)
 	return data.pkg, data.err
@@ -313,7 +309,7 @@ func (s *snapshot) parseGoHandles(ctx context.Context, files []span.URI, mode so
 	return pghs, nil
 }
 
-func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source.ParseMode, deps map[packagePath]*packageHandle) (*pkg, error) {
+func typeCheck(ctx context.Context, snapshot *snapshot, m *Metadata, mode source.ParseMode, deps map[PackagePath]*packageHandle) (*pkg, error) {
 	var filter *unexportedFilter
 	if mode == source.ParseExported {
 		filter = &unexportedFilter{uses: map[string]bool{}}
@@ -329,7 +325,7 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 		// time keeping those names.
 		missing, unexpected := filter.ProcessErrors(pkg.typeErrors)
 		if len(unexpected) == 0 && len(missing) != 0 {
-			event.Log(ctx, fmt.Sprintf("discovered missing identifiers: %v", missing), tag.Package.Of(string(m.id)))
+			event.Log(ctx, fmt.Sprintf("discovered missing identifiers: %v", missing), tag.Package.Of(string(m.ID)))
 			pkg, err = doTypeCheck(ctx, snapshot, m, mode, deps, filter)
 			if err != nil {
 				return nil, err
@@ -337,7 +333,7 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 			missing, unexpected = filter.ProcessErrors(pkg.typeErrors)
 		}
 		if len(unexpected) != 0 || len(missing) != 0 {
-			event.Log(ctx, fmt.Sprintf("falling back to safe trimming due to type errors: %v or still-missing identifiers: %v", unexpected, missing), tag.Package.Of(string(m.id)))
+			event.Log(ctx, fmt.Sprintf("falling back to safe trimming due to type errors: %v or still-missing identifiers: %v", unexpected, missing), tag.Package.Of(string(m.ID)))
 			pkg, err = doTypeCheck(ctx, snapshot, m, mode, deps, nil)
 			if err != nil {
 				return nil, err
@@ -346,13 +342,13 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 	}
 	// If this is a replaced module in the workspace, the version is
 	// meaningless, and we don't want clients to access it.
-	if m.module != nil {
-		version := m.module.Version
+	if m.Module != nil {
+		version := m.Module.Version
 		if source.IsWorkspaceModuleVersion(version) {
 			version = ""
 		}
 		pkg.version = &module.Version{
-			Path:    m.module.Path,
+			Path:    m.Module.Path,
 			Version: version,
 		}
 	}
@@ -362,7 +358,7 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 		return pkg, nil
 	}
 
-	for _, e := range m.errors {
+	for _, e := range m.Errors {
 		diags, err := goPackagesErrorDiagnostics(snapshot, pkg, e)
 		if err != nil {
 			event.Error(ctx, "unable to compute positions for list errors", err, tag.Package.Of(pkg.ID()))
@@ -428,15 +424,17 @@ func typeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source
 	return pkg, nil
 }
 
-func doTypeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode source.ParseMode, deps map[packagePath]*packageHandle, astFilter *unexportedFilter) (*pkg, error) {
-	ctx, done := event.Start(ctx, "cache.typeCheck", tag.Package.Of(string(m.id)))
+var goVersionRx = regexp.MustCompile(`^go([1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+
+func doTypeCheck(ctx context.Context, snapshot *snapshot, m *Metadata, mode source.ParseMode, deps map[PackagePath]*packageHandle, astFilter *unexportedFilter) (*pkg, error) {
+	ctx, done := event.Start(ctx, "cache.typeCheck", tag.Package.Of(string(m.ID)))
 	defer done()
 
 	pkg := &pkg{
 		m:       m,
 		mode:    mode,
-		imports: make(map[packagePath]*pkg),
-		types:   types.NewPackage(string(m.pkgPath), string(m.name)),
+		imports: make(map[PackagePath]*pkg),
+		types:   types.NewPackage(string(m.PkgPath), string(m.Name)),
 		typesInfo: &types.Info{
 			Types:      make(map[ast.Expr]types.TypeAndValue),
 			Defs:       make(map[*ast.Ident]types.Object),
@@ -445,11 +443,11 @@ func doTypeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode sour
 			Selections: make(map[*ast.SelectorExpr]*types.Selection),
 			Scopes:     make(map[ast.Node]*types.Scope),
 		},
-		typesSizes: m.typesSizes,
+		typesSizes: m.TypesSizes,
 	}
-	typeparams.InitInferred(pkg.typesInfo)
+	typeparams.InitInstanceInfo(pkg.typesInfo)
 
-	for _, gf := range pkg.m.goFiles {
+	for _, gf := range pkg.m.GoFiles {
 		// In the presence of line directives, we may need to report errors in
 		// non-compiled Go files, so we need to register them on the package.
 		// However, we only need to really parse them in ParseFull mode, when
@@ -474,18 +472,18 @@ func doTypeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode sour
 	}
 
 	// Use the default type information for the unsafe package.
-	if m.pkgPath == "unsafe" {
+	if m.PkgPath == "unsafe" {
 		// Don't type check Unsafe: it's unnecessary, and doing so exposes a data
 		// race to Unsafe.completed.
 		pkg.types = types.Unsafe
 		return pkg, nil
 	}
 
-	if len(m.compiledGoFiles) == 0 {
+	if len(m.CompiledGoFiles) == 0 {
 		// No files most likely means go/packages failed. Try to attach error
 		// messages to the file as much as possible.
 		var found bool
-		for _, e := range m.errors {
+		for _, e := range m.Errors {
 			srcDiags, err := goPackagesErrorDiagnostics(snapshot, pkg, e)
 			if err != nil {
 				continue
@@ -496,7 +494,7 @@ func doTypeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode sour
 		if found {
 			return pkg, nil
 		}
-		return nil, errors.Errorf("no parsed files for package %s, expected: %v, errors: %v", pkg.m.pkgPath, pkg.compiledGoFiles, m.errors)
+		return nil, fmt.Errorf("no parsed files for package %s, expected: %v, errors: %v", pkg.m.PkgPath, pkg.compiledGoFiles, m.Errors)
 	}
 
 	cfg := &types.Config{
@@ -512,16 +510,25 @@ func doTypeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode sour
 			if dep == nil {
 				return nil, snapshot.missingPkgError(ctx, pkgPath)
 			}
-			if !source.IsValidImport(string(m.pkgPath), string(dep.m.pkgPath)) {
-				return nil, errors.Errorf("invalid use of internal package %s", pkgPath)
+			if !source.IsValidImport(string(m.PkgPath), string(dep.m.PkgPath)) {
+				return nil, fmt.Errorf("invalid use of internal package %s", pkgPath)
 			}
 			depPkg, err := dep.check(ctx, snapshot)
 			if err != nil {
 				return nil, err
 			}
-			pkg.imports[depPkg.m.pkgPath] = depPkg
+			pkg.imports[depPkg.m.PkgPath] = depPkg
 			return depPkg.types, nil
 		}),
+	}
+	if pkg.m.Module != nil && pkg.m.Module.GoVersion != "" {
+		goVersion := "go" + pkg.m.Module.GoVersion
+		// types.NewChecker panics if GoVersion is invalid. An unparsable mod
+		// file should probably stop us before we get here, but double check
+		// just in case.
+		if goVersionRx.MatchString(goVersion) {
+			typesinternal.SetGoVersion(cfg, goVersion)
+		}
 	}
 
 	if mode != source.ParseFull {
@@ -552,7 +559,7 @@ func doTypeCheck(ctx context.Context, snapshot *snapshot, m *metadata, mode sour
 }
 
 func parseCompiledGoFiles(ctx context.Context, snapshot *snapshot, mode source.ParseMode, pkg *pkg, astFilter *unexportedFilter) error {
-	for _, cgf := range pkg.m.compiledGoFiles {
+	for _, cgf := range pkg.m.CompiledGoFiles {
 		fh, err := snapshot.GetFile(ctx, cgf)
 		if err != nil {
 			return err
@@ -613,7 +620,7 @@ func (s *snapshot) depsErrors(ctx context.Context, pkg *pkg) ([]*source.Diagnost
 		}
 
 		directImporter := depsError.ImportStack[directImporterIdx]
-		if s.isWorkspacePackage(packageID(directImporter)) {
+		if s.isWorkspacePackage(PackageID(directImporter)) {
 			continue
 		}
 		relevantErrors = append(relevantErrors, depsError)
@@ -648,7 +655,7 @@ func (s *snapshot) depsErrors(ctx context.Context, pkg *pkg) ([]*source.Diagnost
 	for _, depErr := range relevantErrors {
 		for i := len(depErr.ImportStack) - 1; i >= 0; i-- {
 			item := depErr.ImportStack[i]
-			if s.isWorkspacePackage(packageID(item)) {
+			if s.isWorkspacePackage(PackageID(item)) {
 				break
 			}
 
@@ -694,11 +701,11 @@ func (s *snapshot) depsErrors(ctx context.Context, pkg *pkg) ([]*source.Diagnost
 	for _, depErr := range relevantErrors {
 		for i := len(depErr.ImportStack) - 1; i >= 0; i-- {
 			item := depErr.ImportStack[i]
-			m := s.getMetadata(packageID(item))
-			if m == nil || m.module == nil {
+			m := s.getMetadata(PackageID(item))
+			if m == nil || m.Module == nil {
 				continue
 			}
-			modVer := module.Version{Path: m.module.Path, Version: m.module.Version}
+			modVer := module.Version{Path: m.Module.Path, Version: m.Module.Version}
 			reference := findModuleReference(pm.File, modVer)
 			if reference == nil {
 				continue
@@ -817,14 +824,14 @@ func expandErrors(errs []types.Error, supportsRelatedInformation bool) []extende
 // resolveImportPath resolves an import path in pkg to a package from deps.
 // It should produce the same results as resolveImportPath:
 // https://cs.opensource.google/go/go/+/master:src/cmd/go/internal/load/pkg.go;drc=641918ee09cb44d282a30ee8b66f99a0b63eaef9;l=990.
-func resolveImportPath(importPath string, pkg *pkg, deps map[packagePath]*packageHandle) *packageHandle {
-	if dep := deps[packagePath(importPath)]; dep != nil {
+func resolveImportPath(importPath string, pkg *pkg, deps map[PackagePath]*packageHandle) *packageHandle {
+	if dep := deps[PackagePath(importPath)]; dep != nil {
 		return dep
 	}
 	// We may be in GOPATH mode, in which case we need to check vendor dirs.
 	searchDir := path.Dir(pkg.PkgPath())
 	for {
-		vdir := packagePath(path.Join(searchDir, "vendor", importPath))
+		vdir := PackagePath(path.Join(searchDir, "vendor", importPath))
 		if vdep := deps[vdir]; vdep != nil {
 			return vdep
 		}

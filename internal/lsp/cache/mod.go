@@ -73,13 +73,13 @@ func (s *snapshot) ParseMod(ctx context.Context, modFH source.FileHandle) (*sour
 				if err != nil {
 					return &parseModData{err: err}
 				}
-				parseErrors = []*source.Diagnostic{{
+				parseErrors = append(parseErrors, &source.Diagnostic{
 					URI:      modFH.URI(),
 					Range:    rng,
 					Severity: protocol.SeverityError,
 					Source:   source.ParseError,
 					Message:  mfErr.Err.Error(),
-				}}
+				})
 			}
 		}
 		return &parseModData{
@@ -99,6 +99,84 @@ func (s *snapshot) ParseMod(ctx context.Context, modFH source.FileHandle) (*sour
 	s.mu.Unlock()
 
 	return pmh.parse(ctx, s)
+}
+
+type parseWorkHandle struct {
+	handle *memoize.Handle
+}
+
+type parseWorkData struct {
+	parsed *source.ParsedWorkFile
+
+	// err is any error encountered while parsing the file.
+	err error
+}
+
+func (mh *parseWorkHandle) parse(ctx context.Context, snapshot *snapshot) (*source.ParsedWorkFile, error) {
+	v, err := mh.handle.Get(ctx, snapshot.generation, snapshot)
+	if err != nil {
+		return nil, err
+	}
+	data := v.(*parseWorkData)
+	return data.parsed, data.err
+}
+
+func (s *snapshot) ParseWork(ctx context.Context, modFH source.FileHandle) (*source.ParsedWorkFile, error) {
+	if handle := s.getParseWorkHandle(modFH.URI()); handle != nil {
+		return handle.parse(ctx, s)
+	}
+	h := s.generation.Bind(modFH.FileIdentity(), func(ctx context.Context, _ memoize.Arg) interface{} {
+		_, done := event.Start(ctx, "cache.ParseModHandle", tag.URI.Of(modFH.URI()))
+		defer done()
+
+		contents, err := modFH.Read()
+		if err != nil {
+			return &parseWorkData{err: err}
+		}
+		m := &protocol.ColumnMapper{
+			URI:       modFH.URI(),
+			Converter: span.NewContentConverter(modFH.URI().Filename(), contents),
+			Content:   contents,
+		}
+		file, parseErr := modfile.ParseWork(modFH.URI().Filename(), contents, nil)
+		// Attempt to convert the error to a standardized parse error.
+		var parseErrors []*source.Diagnostic
+		if parseErr != nil {
+			mfErrList, ok := parseErr.(modfile.ErrorList)
+			if !ok {
+				return &parseWorkData{err: fmt.Errorf("unexpected parse error type %v", parseErr)}
+			}
+			for _, mfErr := range mfErrList {
+				rng, err := rangeFromPositions(m, mfErr.Pos, mfErr.Pos)
+				if err != nil {
+					return &parseWorkData{err: err}
+				}
+				parseErrors = append(parseErrors, &source.Diagnostic{
+					URI:      modFH.URI(),
+					Range:    rng,
+					Severity: protocol.SeverityError,
+					Source:   source.ParseError,
+					Message:  mfErr.Err.Error(),
+				})
+			}
+		}
+		return &parseWorkData{
+			parsed: &source.ParsedWorkFile{
+				URI:         modFH.URI(),
+				Mapper:      m,
+				File:        file,
+				ParseErrors: parseErrors,
+			},
+			err: parseErr,
+		}
+	}, nil)
+
+	pwh := &parseWorkHandle{handle: h}
+	s.mu.Lock()
+	s.parseWorkHandles[modFH.URI()] = pwh
+	s.mu.Unlock()
+
+	return pwh.parse(ctx, s)
 }
 
 // goSum reads the go.sum file for the go.mod file at modURI, if it exists. If
@@ -164,7 +242,7 @@ func (mwh *modWhyHandle) why(ctx context.Context, snapshot *snapshot) (map[strin
 }
 
 func (s *snapshot) ModWhy(ctx context.Context, fh source.FileHandle) (map[string]string, error) {
-	if fh.Kind() != source.Mod {
+	if s.View().FileKind(fh) != source.Mod {
 		return nil, fmt.Errorf("%s is not a go.mod file", fh.URI())
 	}
 	if handle := s.getModWhyHandle(fh.URI()); handle != nil {
@@ -281,9 +359,9 @@ var moduleVersionInErrorRe = regexp.MustCompile(`[:\s]([+-._~0-9A-Za-z]+)@([+-._
 // matchErrorToModule matches a go command error message to a go.mod file.
 // Some examples:
 //
-//    example.com@v1.2.2: reading example.com/@v/v1.2.2.mod: no such file or directory
-//    go: github.com/cockroachdb/apd/v2@v2.0.72: reading github.com/cockroachdb/apd/go.mod at revision v2.0.72: unknown revision v2.0.72
-//    go: example.com@v1.2.3 requires\n\trandom.org@v1.2.3: parsing go.mod:\n\tmodule declares its path as: bob.org\n\tbut was required as: random.org
+//	example.com@v1.2.2: reading example.com/@v/v1.2.2.mod: no such file or directory
+//	go: github.com/cockroachdb/apd/v2@v2.0.72: reading github.com/cockroachdb/apd/go.mod at revision v2.0.72: unknown revision v2.0.72
+//	go: example.com@v1.2.3 requires\n\trandom.org@v1.2.3: parsing go.mod:\n\tmodule declares its path as: bob.org\n\tbut was required as: random.org
 //
 // It returns the location of a reference to the one of the modules and true
 // if one exists. If none is found it returns a fallback location and false.

@@ -4,10 +4,9 @@
 
 // guru: a tool for answering questions about Go source code.
 //
-//    http://golang.org/s/using-guru
+//	http://golang.org/s/using-guru
 //
 // Run with -help flag or help subcommand for usage information.
-//
 package main // import "golang.org/x/tools/cmd/guru"
 
 import (
@@ -105,8 +104,8 @@ Example: describe syntax at offset 530 in this file (an import spec):
 `
 
 func printHelp() {
-	fmt.Fprintln(os.Stderr, helpMessage)
-	fmt.Fprintln(os.Stderr, "Flags:")
+	fmt.Fprint(os.Stderr, helpMessage)
+	fmt.Fprintln(os.Stderr, "\nFlags:")
 	flag.PrintDefaults()
 }
 

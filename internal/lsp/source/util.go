@@ -6,6 +6,7 @@ package source
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
 	"go/printer"
 	"go/token"
@@ -16,9 +17,9 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
 )
 
 // MappedRange provides mapped protocol.Range for a span.Range, accounting for
@@ -148,19 +149,22 @@ func posToMappedRange(snapshot Snapshot, pkg Package, pos, end token.Pos) (Mappe
 		return MappedRange{}, err
 	}
 	if !pos.IsValid() {
-		return MappedRange{}, errors.Errorf("invalid position for %v", pos)
+		return MappedRange{}, fmt.Errorf("invalid position for %v", pos)
 	}
 	if !end.IsValid() {
-		return MappedRange{}, errors.Errorf("invalid position for %v", end)
+		return MappedRange{}, fmt.Errorf("invalid position for %v", end)
 	}
 	return NewMappedRange(snapshot.FileSet(), pgf.Mapper, pos, end), nil
 }
 
 // Matches cgo generated comment as well as the proposed standard:
+//
 //	https://golang.org/s/generatedcode
 var generatedRx = regexp.MustCompile(`// .*DO NOT EDIT\.?`)
 
-func DetectLanguage(langID, filename string) FileKind {
+// FileKindForLang returns the file kind associated with the given language ID,
+// or UnknownKind if the language ID is not recognized.
+func FileKindForLang(langID string) FileKind {
 	switch langID {
 	case "go":
 		return Go
@@ -168,35 +172,29 @@ func DetectLanguage(langID, filename string) FileKind {
 		return Mod
 	case "go.sum":
 		return Sum
-	case "tmpl":
+	case "tmpl", "gotmpl":
 		return Tmpl
-	}
-	// Fallback to detecting the language based on the file extension.
-	switch ext := filepath.Ext(filename); ext {
-	case ".mod":
-		return Mod
-	case ".sum":
-		return Sum
+	case "go.work":
+		return Work
 	default:
-		if strings.HasSuffix(ext, "tmpl") {
-			// .tmpl, .gotmpl, etc
-			return Tmpl
-		}
-		// It's a Go file, or we shouldn't be seeing it
-		return Go
+		return UnknownKind
 	}
 }
 
 func (k FileKind) String() string {
 	switch k {
+	case Go:
+		return "go"
 	case Mod:
 		return "go.mod"
 	case Sum:
 		return "go.sum"
 	case Tmpl:
 		return "tmpl"
+	case Work:
+		return "go.work"
 	default:
-		return "go"
+		return fmt.Sprintf("unk%d", k)
 	}
 }
 
@@ -265,13 +263,16 @@ func CompareDiagnostic(a, b *Diagnostic) int {
 	if a.Source < b.Source {
 		return -1
 	}
+	if a.Source > b.Source {
+		return +1
+	}
 	if a.Message < b.Message {
 		return -1
 	}
-	if a.Message == b.Message {
-		return 0
+	if a.Message > b.Message {
+		return +1
 	}
-	return 1
+	return 0
 }
 
 // FindPackageFromPos finds the first package containing pos in its
@@ -279,12 +280,10 @@ func CompareDiagnostic(a, b *Diagnostic) int {
 func FindPackageFromPos(ctx context.Context, snapshot Snapshot, pos token.Pos) (Package, error) {
 	tok := snapshot.FileSet().File(pos)
 	if tok == nil {
-		return nil, errors.Errorf("no file for pos %v", pos)
+		return nil, fmt.Errorf("no file for pos %v", pos)
 	}
 	uri := span.URIFromPath(tok.Name())
-	// Search all packages: some callers may be working with packages not
-	// type-checked in workspace mode.
-	pkgs, err := snapshot.PackagesForFile(ctx, uri, TypecheckAll)
+	pkgs, err := snapshot.PackagesForFile(ctx, uri, TypecheckAll, true)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +301,7 @@ func FindPackageFromPos(ctx context.Context, snapshot Snapshot, pos token.Pos) (
 		}
 		return pkg, nil
 	}
-	return nil, errors.Errorf("no package for given file position")
+	return nil, fmt.Errorf("no package for given file position")
 }
 
 // findFileInDeps finds uri in pkg or its dependencies.
@@ -324,7 +323,7 @@ func findFileInDeps(pkg Package, uri span.URI) (*ParsedGoFile, Package, error) {
 			}
 		}
 	}
-	return nil, nil, errors.Errorf("no file for %s in package %s", uri, pkg.ID())
+	return nil, nil, fmt.Errorf("no file for %s in package %s", uri, pkg.ID())
 }
 
 // ImportPath returns the unquoted import path of s,
@@ -543,4 +542,24 @@ func IsValidImport(pkgPath, importPkgPath string) bool {
 // should not check that a value equals "command-line-arguments" directly.
 func IsCommandLineArguments(s string) bool {
 	return strings.Contains(s, "command-line-arguments")
+}
+
+// LineToRange creates a Range spanning start and end.
+func LineToRange(m *protocol.ColumnMapper, uri span.URI, start, end modfile.Position) (protocol.Range, error) {
+	return ByteOffsetsToRange(m, uri, start.Byte, end.Byte)
+}
+
+// ByteOffsetsToRange creates a range spanning start and end.
+func ByteOffsetsToRange(m *protocol.ColumnMapper, uri span.URI, start, end int) (protocol.Range, error) {
+	line, col, err := m.Converter.ToPosition(start)
+	if err != nil {
+		return protocol.Range{}, err
+	}
+	s := span.NewPoint(line, col, start)
+	line, col, err = m.Converter.ToPosition(end)
+	if err != nil {
+		return protocol.Range{}, err
+	}
+	e := span.NewPoint(line, col, end)
+	return m.Range(span.New(uri, s, e))
 }

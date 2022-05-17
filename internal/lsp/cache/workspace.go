@@ -6,6 +6,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,19 +17,18 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/source"
-	workfile "golang.org/x/tools/internal/mod/modfile"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
-	errors "golang.org/x/xerrors"
 )
 
+// workspaceSource reports how the set of active modules has been derived.
 type workspaceSource int
 
 const (
-	legacyWorkspace = iota
-	goplsModWorkspace
-	goWorkWorkspace
-	fileSystemWorkspace
+	legacyWorkspace     = iota // non-module or single module mode
+	goplsModWorkspace          // modules provided by a gopls.mod file
+	goWorkWorkspace            // modules provided by a go.work file
+	fileSystemWorkspace        // modules scanned from the filesystem
 )
 
 func (s workspaceSource) String() string {
@@ -50,10 +50,10 @@ func (s workspaceSource) String() string {
 // gopls.mod file, to provide support for multi-module workspaces.
 //
 // Specifically, it provides:
-//  - the set of modules contained within in the workspace root considered to
-//    be 'active'
-//  - the workspace modfile, to be used for the go command `-modfile` flag
-//  - the set of workspace directories
+//   - the set of modules contained within in the workspace root considered to
+//     be 'active'
+//   - the workspace modfile, to be used for the go command `-modfile` flag
+//   - the set of workspace directories
 //
 // This type is immutable (or rather, idempotent), so that it may be shared
 // across multiple snapshots.
@@ -69,9 +69,8 @@ type workspace struct {
 	// In all modes except for legacy, this is equivalent to modFiles.
 	knownModFiles map[span.URI]struct{}
 
-	// go111moduleOff indicates whether GO111MODULE=off has been configured in
-	// the environment.
-	go111moduleOff bool
+	// workFile, if nonEmpty, is the go.work file for the workspace.
+	workFile span.URI
 
 	// The workspace module is lazily re-built once after being invalidated.
 	// buildMu+built guards this reconstruction.
@@ -87,59 +86,60 @@ type workspace struct {
 	wsDirs   map[span.URI]struct{}
 }
 
-func newWorkspace(ctx context.Context, root span.URI, fs source.FileSource, excludePath func(string) bool, go111moduleOff bool, experimental bool) (*workspace, error) {
-	// In experimental mode, the user may have a gopls.mod file that defines
-	// their workspace.
-	if experimental {
-		ws, err := parseExplicitWorkspaceFile(ctx, root, fs, excludePath)
-		if err == nil {
-			return ws, nil
-		}
+// newWorkspace creates a new workspace at the given root directory,
+// determining its module source based on the presence of a gopls.mod or
+// go.work file, and the go111moduleOff and useWsModule settings.
+//
+// If useWsModule is set, the workspace may use a synthetic mod file replacing
+// all modules in the root.
+//
+// If there is no active workspace file (a gopls.mod or go.work), newWorkspace
+// scans the filesystem to find modules.
+func newWorkspace(ctx context.Context, root span.URI, fs source.FileSource, excludePath func(string) bool, go111moduleOff bool, useWsModule bool) (*workspace, error) {
+	ws := &workspace{
+		root:        root,
+		excludePath: excludePath,
 	}
+
+	// The user may have a gopls.mod or go.work file that defines their
+	// workspace.
+	if err := loadExplicitWorkspaceFile(ctx, ws, fs); err == nil {
+		return ws, nil
+	}
+
 	// Otherwise, in all other modes, search for all of the go.mod files in the
 	// workspace.
 	knownModFiles, err := findModules(root, excludePath, 0)
 	if err != nil {
 		return nil, err
 	}
-	// When GO111MODULE=off, there are no active go.mod files.
-	if go111moduleOff {
-		return &workspace{
-			root:           root,
-			excludePath:    excludePath,
-			moduleSource:   legacyWorkspace,
-			knownModFiles:  knownModFiles,
-			go111moduleOff: true,
-		}, nil
-	}
-	// In legacy mode, not all known go.mod files will be considered active.
-	if !experimental {
+	ws.knownModFiles = knownModFiles
+
+	switch {
+	case go111moduleOff:
+		ws.moduleSource = legacyWorkspace
+	case useWsModule:
+		ws.activeModFiles = knownModFiles
+		ws.moduleSource = fileSystemWorkspace
+	default:
+		ws.moduleSource = legacyWorkspace
 		activeModFiles, err := getLegacyModules(ctx, root, fs)
 		if err != nil {
 			return nil, err
 		}
-		return &workspace{
-			root:           root,
-			excludePath:    excludePath,
-			activeModFiles: activeModFiles,
-			knownModFiles:  knownModFiles,
-			moduleSource:   legacyWorkspace,
-		}, nil
+		ws.activeModFiles = activeModFiles
 	}
-	return &workspace{
-		root:           root,
-		excludePath:    excludePath,
-		activeModFiles: knownModFiles,
-		knownModFiles:  knownModFiles,
-		moduleSource:   fileSystemWorkspace,
-	}, nil
+	return ws, nil
 }
 
-func parseExplicitWorkspaceFile(ctx context.Context, root span.URI, fs source.FileSource, excludePath func(string) bool) (*workspace, error) {
+// loadExplicitWorkspaceFile loads workspace information from go.work or
+// gopls.mod files, setting the active modules, mod file, and module source
+// accordingly.
+func loadExplicitWorkspaceFile(ctx context.Context, ws *workspace, fs source.FileSource) error {
 	for _, src := range []workspaceSource{goWorkWorkspace, goplsModWorkspace} {
-		fh, err := fs.GetFile(ctx, uriForSource(root, src))
+		fh, err := fs.GetFile(ctx, uriForSource(ws.root, src))
 		if err != nil {
-			return nil, err
+			return err
 		}
 		contents, err := fh.Read()
 		if err != nil {
@@ -149,23 +149,23 @@ func parseExplicitWorkspaceFile(ctx context.Context, root span.URI, fs source.Fi
 		var activeModFiles map[span.URI]struct{}
 		switch src {
 		case goWorkWorkspace:
-			file, activeModFiles, err = parseGoWork(ctx, root, fh.URI(), contents, fs)
+			file, activeModFiles, err = parseGoWork(ctx, ws.root, fh.URI(), contents, fs)
+			ws.workFile = fh.URI()
 		case goplsModWorkspace:
-			file, activeModFiles, err = parseGoplsMod(root, fh.URI(), contents)
+			file, activeModFiles, err = parseGoplsMod(ws.root, fh.URI(), contents)
 		}
 		if err != nil {
-			return nil, err
+			ws.buildMu.Lock()
+			ws.built = true
+			ws.buildErr = err
+			ws.buildMu.Unlock()
 		}
-		return &workspace{
-			root:           root,
-			excludePath:    excludePath,
-			activeModFiles: activeModFiles,
-			knownModFiles:  activeModFiles,
-			mod:            file,
-			moduleSource:   src,
-		}, nil
+		ws.mod = file
+		ws.activeModFiles = activeModFiles
+		ws.moduleSource = src
+		return nil
 	}
-	return nil, noHardcodedWorkspace
+	return noHardcodedWorkspace
 }
 
 var noHardcodedWorkspace = errors.New("no hardcoded workspace")
@@ -272,7 +272,7 @@ func (w *workspace) dirs(ctx context.Context, fs source.FileSource) []span.URI {
 // reload of metadata (for example, unsaved changes to a go.mod or go.sum
 // file).
 func (w *workspace) invalidate(ctx context.Context, changes map[span.URI]*fileChange, fs source.FileSource) (_ *workspace, changed, reload bool) {
-	// Prevent races to w.modFile or w.wsDirs below, if wmhas not yet been built.
+	// Prevent races to w.modFile or w.wsDirs below, if w has not yet been built.
 	w.buildMu.Lock()
 	defer w.buildMu.Unlock()
 
@@ -282,10 +282,11 @@ func (w *workspace) invalidate(ctx context.Context, changes map[span.URI]*fileCh
 		moduleSource:   w.moduleSource,
 		knownModFiles:  make(map[span.URI]struct{}),
 		activeModFiles: make(map[span.URI]struct{}),
-		go111moduleOff: w.go111moduleOff,
+		workFile:       w.workFile,
 		mod:            w.mod,
 		sum:            w.sum,
 		wsDirs:         w.wsDirs,
+		excludePath:    w.excludePath,
 	}
 	for k, v := range w.knownModFiles {
 		result.knownModFiles[k] = v
@@ -296,90 +297,31 @@ func (w *workspace) invalidate(ctx context.Context, changes map[span.URI]*fileCh
 
 	// First handle changes to the go.work or gopls.mod file. This must be
 	// considered before any changes to go.mod or go.sum files, as these files
-	// determine which modules we care about. In legacy workspace mode we don't
-	// consider the gopls.mod or go.work files.
-	if w.moduleSource != legacyWorkspace {
-		// If go.work/gopls.mod has changed we need to either re-read it if it
-		// exists or walk the filesystem if it has been deleted.
-		// go.work should override the gopls.mod if both exist.
-		for _, src := range []workspaceSource{goplsModWorkspace, goWorkWorkspace} {
-			uri := uriForSource(w.root, src)
-			// File opens/closes are just no-ops.
-			change, ok := changes[uri]
-			if !ok || change.isUnchanged {
-				continue
-			}
-			if change.exists {
-				// Only invalidate if the file if it actually parses.
-				// Otherwise, stick with the current file.
-				var parsedFile *modfile.File
-				var parsedModules map[span.URI]struct{}
-				var err error
-				switch src {
-				case goWorkWorkspace:
-					parsedFile, parsedModules, err = parseGoWork(ctx, w.root, uri, change.content, fs)
-				case goplsModWorkspace:
-					parsedFile, parsedModules, err = parseGoplsMod(w.root, uri, change.content)
-				}
-				if err == nil {
-					changed = true
-					reload = change.fileHandle.Saved()
-					result.mod = parsedFile
-					result.moduleSource = src
-					result.knownModFiles = parsedModules
-					result.activeModFiles = make(map[span.URI]struct{})
-					for k, v := range parsedModules {
-						result.activeModFiles[k] = v
-					}
-				} else {
-					// An unparseable file should not invalidate the workspace:
-					// nothing good could come from changing the workspace in
-					// this case.
-					event.Error(ctx, fmt.Sprintf("parsing %s", filepath.Base(uri.Filename())), err)
-				}
-			} else {
-				// go.work/gopls.mod is deleted. search for modules again.
-				changed = true
-				reload = true
-				result.moduleSource = fileSystemWorkspace
-				// The parsed file is no longer valid.
-				result.mod = nil
-				knownModFiles, err := findModules(w.root, w.excludePath, 0)
-				if err != nil {
-					result.knownModFiles = nil
-					result.activeModFiles = nil
-					event.Error(ctx, "finding file system modules", err)
-				} else {
-					result.knownModFiles = knownModFiles
-					result.activeModFiles = make(map[span.URI]struct{})
-					for k, v := range result.knownModFiles {
-						result.activeModFiles[k] = v
-					}
-				}
-			}
+	// determine which modules we care about. If go.work/gopls.mod has changed
+	// we need to either re-read it if it exists or walk the filesystem if it
+	// has been deleted. go.work should override the gopls.mod if both exist.
+	changed, reload = handleWorkspaceFileChanges(ctx, result, changes, fs)
+	// Next, handle go.mod changes that could affect our workspace.
+	for uri, change := range changes {
+		// Otherwise, we only care about go.mod files in the workspace directory.
+		if change.isUnchanged || !isGoMod(uri) || !source.InDir(result.root.Filename(), uri.Filename()) {
+			continue
 		}
-	}
-
-	// Next, handle go.mod changes that could affect our workspace. If we're
-	// reading our tracked modules from the gopls.mod, there's nothing to do
-	// here.
-	if result.moduleSource != goplsModWorkspace && result.moduleSource != goWorkWorkspace {
-		for uri, change := range changes {
-			if change.isUnchanged || !isGoMod(uri) || !source.InDir(result.root.Filename(), uri.Filename()) {
-				continue
+		changed = true
+		active := result.moduleSource != legacyWorkspace || source.CompareURI(modURI(w.root), uri) == 0
+		reload = reload || (active && change.fileHandle.Saved())
+		// Don't mess with the list of mod files if using go.work or gopls.mod.
+		if result.moduleSource == goplsModWorkspace || result.moduleSource == goWorkWorkspace {
+			continue
+		}
+		if change.exists {
+			result.knownModFiles[uri] = struct{}{}
+			if active {
+				result.activeModFiles[uri] = struct{}{}
 			}
-			changed = true
-			active := result.moduleSource != legacyWorkspace || source.CompareURI(modURI(w.root), uri) == 0
-			reload = reload || (active && change.fileHandle.Saved())
-			if change.exists {
-				result.knownModFiles[uri] = struct{}{}
-				if active {
-					result.activeModFiles[uri] = struct{}{}
-				}
-			} else {
-				delete(result.knownModFiles, uri)
-				delete(result.activeModFiles, uri)
-			}
+		} else {
+			delete(result.knownModFiles, uri)
+			delete(result.activeModFiles, uri)
 		}
 	}
 
@@ -407,6 +349,76 @@ func (w *workspace) invalidate(ctx context.Context, changes map[span.URI]*fileCh
 	return result, changed, reload
 }
 
+// handleWorkspaceFileChanges handles changes related to a go.work or gopls.mod
+// file, updating ws accordingly. ws.root must be set.
+func handleWorkspaceFileChanges(ctx context.Context, ws *workspace, changes map[span.URI]*fileChange, fs source.FileSource) (changed, reload bool) {
+	// If go.work/gopls.mod has changed we need to either re-read it if it
+	// exists or walk the filesystem if it has been deleted.
+	// go.work should override the gopls.mod if both exist.
+	for _, src := range []workspaceSource{goWorkWorkspace, goplsModWorkspace} {
+		uri := uriForSource(ws.root, src)
+		// File opens/closes are just no-ops.
+		change, ok := changes[uri]
+		if !ok {
+			continue
+		}
+		if change.isUnchanged {
+			break
+		}
+		if change.exists {
+			// Only invalidate if the file if it actually parses.
+			// Otherwise, stick with the current file.
+			var parsedFile *modfile.File
+			var parsedModules map[span.URI]struct{}
+			var err error
+			switch src {
+			case goWorkWorkspace:
+				parsedFile, parsedModules, err = parseGoWork(ctx, ws.root, uri, change.content, fs)
+			case goplsModWorkspace:
+				parsedFile, parsedModules, err = parseGoplsMod(ws.root, uri, change.content)
+			}
+			if err != nil {
+				// An unparseable file should not invalidate the workspace:
+				// nothing good could come from changing the workspace in
+				// this case.
+				event.Error(ctx, fmt.Sprintf("parsing %s", filepath.Base(uri.Filename())), err)
+			} else {
+				// only update the modfile if it parsed.
+				changed = true
+				reload = change.fileHandle.Saved()
+				ws.mod = parsedFile
+				ws.moduleSource = src
+				ws.knownModFiles = parsedModules
+				ws.activeModFiles = make(map[span.URI]struct{})
+				for k, v := range parsedModules {
+					ws.activeModFiles[k] = v
+				}
+			}
+			break // We've found an explicit workspace file, so can stop looking.
+		} else {
+			// go.work/gopls.mod is deleted. search for modules again.
+			changed = true
+			reload = true
+			ws.moduleSource = fileSystemWorkspace
+			// The parsed file is no longer valid.
+			ws.mod = nil
+			knownModFiles, err := findModules(ws.root, ws.excludePath, 0)
+			if err != nil {
+				ws.knownModFiles = nil
+				ws.activeModFiles = nil
+				event.Error(ctx, "finding file system modules", err)
+			} else {
+				ws.knownModFiles = knownModFiles
+				ws.activeModFiles = make(map[span.URI]struct{})
+				for k, v := range ws.knownModFiles {
+					ws.activeModFiles[k] = v
+				}
+			}
+		}
+	}
+	return changed, reload
+}
+
 // goplsModURI returns the URI for the gopls.mod file contained in root.
 func uriForSource(root span.URI, src workspaceSource) span.URI {
 	var basename string
@@ -432,7 +444,7 @@ func isGoMod(uri span.URI) bool {
 }
 
 func isGoSum(uri span.URI) bool {
-	return filepath.Base(uri.Filename()) == "go.sum"
+	return filepath.Base(uri.Filename()) == "go.sum" || filepath.Base(uri.Filename()) == "go.work.sum"
 }
 
 // fileExists reports if the file uri exists within source.
@@ -477,26 +489,29 @@ func getLegacyModules(ctx context.Context, root span.URI, fs source.FileSource) 
 }
 
 func parseGoWork(ctx context.Context, root, uri span.URI, contents []byte, fs source.FileSource) (*modfile.File, map[span.URI]struct{}, error) {
-	workFile, err := workfile.ParseWork(uri.Filename(), contents, nil)
+	workFile, err := modfile.ParseWork(uri.Filename(), contents, nil)
 	if err != nil {
-		return nil, nil, errors.Errorf("parsing go.work: %w", err)
+		return nil, nil, fmt.Errorf("parsing go.work: %w", err)
 	}
 	modFiles := make(map[span.URI]struct{})
-	for _, dir := range workFile.Directory {
+	for _, dir := range workFile.Use {
 		// The resulting modfile must use absolute paths, so that it can be
 		// written to a temp directory.
-		dir.DiskPath = absolutePath(root, dir.DiskPath)
-		modURI := span.URIFromPath(filepath.Join(dir.DiskPath, "go.mod"))
+		dir.Path = absolutePath(root, dir.Path)
+		modURI := span.URIFromPath(filepath.Join(dir.Path, "go.mod"))
 		modFiles[modURI] = struct{}{}
 	}
 	modFile, err := buildWorkspaceModFile(ctx, modFiles, fs)
 	if err != nil {
 		return nil, nil, err
 	}
-	if workFile.Go.Version != "" {
-		if err := modFile.AddGoStmt(workFile.Go.Version); err != nil {
-			return nil, nil, err
-		}
+
+	// Require a go directive, per the spec.
+	if workFile.Go == nil || workFile.Go.Version == "" {
+		return nil, nil, fmt.Errorf("go.work has missing or incomplete go directive")
+	}
+	if err := modFile.AddGoStmt(workFile.Go.Version); err != nil {
+		return nil, nil, err
 	}
 
 	return modFile, modFiles, nil
@@ -505,12 +520,12 @@ func parseGoWork(ctx context.Context, root, uri span.URI, contents []byte, fs so
 func parseGoplsMod(root, uri span.URI, contents []byte) (*modfile.File, map[span.URI]struct{}, error) {
 	modFile, err := modfile.Parse(uri.Filename(), contents, nil)
 	if err != nil {
-		return nil, nil, errors.Errorf("parsing gopls.mod: %w", err)
+		return nil, nil, fmt.Errorf("parsing gopls.mod: %w", err)
 	}
 	modFiles := make(map[span.URI]struct{})
 	for _, replace := range modFile.Replace {
 		if replace.New.Version != "" {
-			return nil, nil, errors.Errorf("gopls.mod: replaced module %q@%q must not have version", replace.New.Path, replace.New.Version)
+			return nil, nil, fmt.Errorf("gopls.mod: replaced module %q@%q must not have version", replace.New.Path, replace.New.Version)
 		}
 		// The resulting modfile must use absolute paths, so that it can be
 		// written to a temp directory.

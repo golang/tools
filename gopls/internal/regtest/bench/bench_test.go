@@ -10,7 +10,6 @@ import (
 	"os"
 	"runtime/pprof"
 	"testing"
-	"time"
 
 	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/internal/lsp/fake"
@@ -32,9 +31,9 @@ func benchmarkOptions(dir string) []RunOption {
 		SkipLogs(),
 		// The Debug server only makes sense if running in singleton mode.
 		Modes(Singleton),
-		// Set a generous timeout. Individual tests should control their own
-		// graceful termination.
-		Timeout(20 * time.Minute),
+		// Remove the default timeout. Individual tests should control their
+		// own graceful termination.
+		NoDefaultTimeout(),
 
 		// Use the actual proxy, since we want our builds to succeed.
 		GOPROXY("https://proxy.golang.org"),
@@ -42,9 +41,7 @@ func benchmarkOptions(dir string) []RunOption {
 }
 
 func printBenchmarkResults(result testing.BenchmarkResult) {
-	fmt.Println("Benchmark Statistics:")
-	fmt.Println(result.String())
-	fmt.Println(result.MemString())
+	fmt.Printf("BenchmarkStatistics\t%s\t%s\n", result.String(), result.MemString())
 }
 
 var iwlOptions struct {
@@ -91,7 +88,7 @@ func TestBenchmarkSymbols(t *testing.T) {
 		t.Skip("-symbol_workdir not configured")
 	}
 
-	opts := stressTestOptions(symbolOptions.workdir)
+	opts := benchmarkOptions(symbolOptions.workdir)
 	conf := EditorConfig{}
 	if symbolOptions.matcher != "" {
 		conf.SymbolMatcher = &symbolOptions.matcher
@@ -133,7 +130,7 @@ func TestBenchmarkSymbols(t *testing.T) {
 }
 
 var (
-	benchDir     = flag.String("didchange_dir", "", "If set, run benchmarks in this dir. Must also set regtest_bench_file.")
+	benchDir     = flag.String("didchange_dir", "", "If set, run benchmarks in this dir. Must also set didchange_file.")
 	benchFile    = flag.String("didchange_file", "", "The file to modify")
 	benchProfile = flag.String("didchange_cpuprof", "", "file to write cpu profiling data to")
 )
@@ -147,9 +144,9 @@ var (
 // is the path to a workspace root, and -didchange_file is the
 // workspace-relative path to a file to modify. e.g.:
 //
-//  go test -run=TestBenchmarkDidChange \
-//   -didchange_dir=path/to/kubernetes \
-//   -didchange_file=pkg/util/hash/hash.go
+//	go test -run=TestBenchmarkDidChange \
+//	 -didchange_dir=path/to/kubernetes \
+//	 -didchange_file=pkg/util/hash/hash.go
 func TestBenchmarkDidChange(t *testing.T) {
 	if *benchDir == "" {
 		t.Skip("-didchange_dir is not set")

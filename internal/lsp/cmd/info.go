@@ -17,36 +17,95 @@ import (
 	"golang.org/x/tools/internal/lsp/browser"
 	"golang.org/x/tools/internal/lsp/debug"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/tool"
 )
+
+// help implements the help command.
+type help struct {
+	app *Application
+}
+
+func (h *help) Name() string      { return "help" }
+func (h *help) Parent() string    { return h.app.Name() }
+func (h *help) Usage() string     { return "" }
+func (h *help) ShortHelp() string { return "print usage information for subcommands" }
+func (h *help) DetailedHelp(f *flag.FlagSet) {
+	fmt.Fprint(f.Output(), `
+
+Examples:
+$ gopls help                         # main gopls help message
+$ gopls help remote                  # help on 'remote' command
+$ gopls help remote sessions         # help on 'remote sessions' subcommand
+`)
+	printFlagDefaults(f)
+}
+
+// Run prints help information about a subcommand.
+func (h *help) Run(ctx context.Context, args ...string) error {
+	find := func(cmds []tool.Application, name string) tool.Application {
+		for _, cmd := range cmds {
+			if cmd.Name() == name {
+				return cmd
+			}
+		}
+		return nil
+	}
+
+	// Find the subcommand denoted by args (empty => h.app).
+	var cmd tool.Application = h.app
+	for i, arg := range args {
+		cmd = find(getSubcommands(cmd), arg)
+		if cmd == nil {
+			return tool.CommandLineErrorf(
+				"no such subcommand: %s", strings.Join(args[:i+1], " "))
+		}
+	}
+
+	// 'gopls help cmd subcmd' is equivalent to 'gopls cmd subcmd -h'.
+	// The flag package prints the usage information (defined by tool.Run)
+	// when it sees the -h flag.
+	fs := flag.NewFlagSet(cmd.Name(), flag.ExitOnError)
+	return tool.Run(ctx, fs, h.app, append(args[:len(args):len(args)], "-h"))
+}
 
 // version implements the version command.
 type version struct {
+	JSON bool `flag:"json" help:"outputs in json format."`
+
 	app *Application
 }
 
 func (v *version) Name() string      { return "version" }
+func (v *version) Parent() string    { return v.app.Name() }
 func (v *version) Usage() string     { return "" }
 func (v *version) ShortHelp() string { return "print the gopls version information" }
 func (v *version) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), ``)
-	f.PrintDefaults()
+	printFlagDefaults(f)
 }
 
 // Run prints version information to stdout.
 func (v *version) Run(ctx context.Context, args ...string) error {
-	debug.PrintVersionInfo(ctx, os.Stdout, v.app.verbose(), debug.PlainText)
-	return nil
+	var mode = debug.PlainText
+	if v.JSON {
+		mode = debug.JSON
+	}
+
+	return debug.PrintVersionInfo(ctx, os.Stdout, v.app.verbose(), mode)
 }
 
 // bug implements the bug command.
-type bug struct{}
+type bug struct {
+	app *Application
+}
 
 func (b *bug) Name() string      { return "bug" }
+func (b *bug) Parent() string    { return b.app.Name() }
 func (b *bug) Usage() string     { return "" }
 func (b *bug) ShortHelp() string { return "report a bug in gopls" }
 func (b *bug) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), ``)
-	f.PrintDefaults()
+	printFlagDefaults(f)
 }
 
 const goplsBugPrefix = "x/tools/gopls: <DESCRIBE THE PROBLEM>"
@@ -84,14 +143,17 @@ func (b *bug) Run(ctx context.Context, args ...string) error {
 	return nil
 }
 
-type apiJSON struct{}
+type apiJSON struct {
+	app *Application
+}
 
 func (j *apiJSON) Name() string      { return "api-json" }
+func (j *apiJSON) Parent() string    { return j.app.Name() }
 func (j *apiJSON) Usage() string     { return "" }
 func (j *apiJSON) ShortHelp() string { return "print json describing gopls API" }
 func (j *apiJSON) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), ``)
-	f.PrintDefaults()
+	printFlagDefaults(f)
 }
 
 func (j *apiJSON) Run(ctx context.Context, args ...string) error {
@@ -108,11 +170,12 @@ type licenses struct {
 }
 
 func (l *licenses) Name() string      { return "licenses" }
+func (l *licenses) Parent() string    { return l.app.Name() }
 func (l *licenses) Usage() string     { return "" }
 func (l *licenses) ShortHelp() string { return "print licenses of included software" }
 func (l *licenses) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), ``)
-	f.PrintDefaults()
+	printFlagDefaults(f)
 }
 
 const licensePreamble = `

@@ -18,32 +18,32 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/tool"
-	errors "golang.org/x/xerrors"
 )
 
 // rename implements the rename verb for gopls.
 type rename struct {
-	Diff     bool `flag:"d" help:"display diffs instead of rewriting files"`
-	Write    bool `flag:"w" help:"write result to (source) file instead of stdout"`
+	Diff     bool `flag:"d,diff" help:"display diffs instead of rewriting files"`
+	Write    bool `flag:"w,write" help:"write result to (source) file instead of stdout"`
 	Preserve bool `flag:"preserve" help:"preserve original files"`
 
 	app *Application
 }
 
 func (r *rename) Name() string      { return "rename" }
-func (r *rename) Usage() string     { return "<position> <new name>" }
+func (r *rename) Parent() string    { return r.app.Name() }
+func (r *rename) Usage() string     { return "[rename-flags] <position> <name>" }
 func (r *rename) ShortHelp() string { return "rename selected identifier" }
 func (r *rename) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), `
 Example:
 
-  $ # 1-based location (:line:column or :#position) of the thing to change
-  $ gopls rename helper/helper.go:8:6 Foo
-  $ gopls rename helper/helper.go:#53 Foo
+	$ # 1-based location (:line:column or :#position) of the thing to change
+	$ gopls rename helper/helper.go:8:6 Foo
+	$ gopls rename helper/helper.go:#53 Foo
 
-	gopls rename flags are:
+rename-flags:
 `)
-	f.PrintDefaults()
+	printFlagDefaults(f)
 }
 
 // Run renames the specified identifier and either;
@@ -96,7 +96,7 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 		// convert LSP-style edits to []diff.TextEdit cuz Spans are handy
 		renameEdits, err := source.FromProtocolEdits(cmdFile.mapper, edits[uri])
 		if err != nil {
-			return errors.Errorf("%v: %v", edits, err)
+			return fmt.Errorf("%v: %v", edits, err)
 		}
 		newContent := diff.ApplyEdits(string(cmdFile.mapper.Content), renameEdits)
 
@@ -105,7 +105,7 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 			fmt.Fprintln(os.Stderr, filename)
 			if r.Preserve {
 				if err := os.Rename(filename, filename+".orig"); err != nil {
-					return errors.Errorf("%v: %v", edits, err)
+					return fmt.Errorf("%v: %v", edits, err)
 				}
 			}
 			ioutil.WriteFile(filename, []byte(newContent), 0644)

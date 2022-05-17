@@ -13,13 +13,12 @@ import (
 )
 
 func (s *Server) definition(ctx context.Context, params *protocol.DefinitionParams) ([]protocol.Location, error) {
-	kind := source.DetectLanguage("", params.TextDocument.URI.SpanURI().Filename())
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, kind)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.UnknownKind)
 	defer release()
 	if !ok {
 		return nil, err
 	}
-	if fh.Kind() == source.Tmpl {
+	if snapshot.View().FileKind(fh) == source.Tmpl {
 		return template.Definition(snapshot, fh, params.Position)
 	}
 	ident, err := source.Identifier(ctx, snapshot, fh, params.Position)

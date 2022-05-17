@@ -13,8 +13,10 @@ import (
 	"io/ioutil"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
+	"time"
 
 	exec "golang.org/x/sys/execabs"
 )
@@ -31,10 +33,19 @@ type helperer interface {
 
 // packageMainIsDevel reports whether the module containing package main
 // is a development version (if module information is available).
-//
-// Builds in GOPATH mode and builds that lack module information are assumed to
-// be development versions.
-var packageMainIsDevel = func() bool { return true }
+func packageMainIsDevel() bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		// Most test binaries currently lack build info, but this should become more
+		// permissive once https://golang.org/issue/33976 is fixed.
+		return true
+	}
+
+	// Note: info.Main.Version describes the version of the module containing
+	// package main, not the version of “the main module”.
+	// See https://golang.org/issue/33975.
+	return info.Main.Version == "(devel)"
+}
 
 var checkGoGoroot struct {
 	once sync.Once
@@ -221,24 +232,23 @@ func NeedsGoPackagesEnv(t Testing, env []string) {
 	NeedsGoPackages(t)
 }
 
-// NeedsGoBuild skips t if the current system can't build programs with ``go build''
+// NeedsGoBuild skips t if the current system can't build programs with “go build”
 // and then run them with os.StartProcess or exec.Command.
-// android, and darwin/arm systems don't have the userspace go build needs to run,
+// Android doesn't have the userspace go build needs to run,
 // and js/wasm doesn't support running subprocesses.
 func NeedsGoBuild(t Testing) {
 	if t, ok := t.(helperer); ok {
 		t.Helper()
 	}
 
+	// This logic was derived from internal/testing.HasGoBuild and
+	// may need to be updated as that function evolves.
+
 	NeedsTool(t, "go")
 
 	switch runtime.GOOS {
 	case "android", "js":
 		t.Skipf("skipping test: %v can't build and run Go binaries", runtime.GOOS)
-	case "darwin":
-		if strings.HasPrefix(runtime.GOARCH, "arm") {
-			t.Skipf("skipping test: darwin/arm can't build and run Go binaries")
-		}
 	}
 }
 
@@ -258,6 +268,16 @@ func ExitIfSmallMachine() {
 		// and there is only one of each. We shouldn't waste those scarce resources
 		// running very slow tests.
 		fmt.Fprintf(os.Stderr, "skipping test: %s builder is very slow\n", b)
+	case "dragonfly-amd64":
+		// As of 2021-11-02, this builder is running with GO_TEST_TIMEOUT_SCALE=2,
+		// and seems to have unusually slow disk performance.
+		fmt.Fprintln(os.Stderr, "skipping test: dragonfly-amd64 has slow disk (https://golang.org/issue/45216)")
+	case "linux-riscv64-unmatched":
+		// As of 2021-11-03, this builder is empirically not fast enough to run
+		// gopls tests. Ideally we should make the tests faster in short mode
+		// and/or fix them to not assume arbitrary deadlines.
+		// For now, we'll skip them instead.
+		fmt.Fprintf(os.Stderr, "skipping test: %s builder is too slow (https://golang.org/issue/49321)\n", b)
 	default:
 		return
 	}
@@ -296,4 +316,16 @@ func SkipAfterGo1Point(t Testing, x int) {
 	if Go1Point() > x {
 		t.Skipf("running Go version %q is version 1.%d, newer than maximum 1.%d", runtime.Version(), Go1Point(), x)
 	}
+}
+
+// Deadline returns the deadline of t, if known,
+// using the Deadline method added in Go 1.15.
+func Deadline(t Testing) (time.Time, bool) {
+	td, ok := t.(interface {
+		Deadline() (time.Time, bool)
+	})
+	if !ok {
+		return time.Time{}, false
+	}
+	return td.Deadline()
 }

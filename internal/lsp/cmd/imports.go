@@ -15,29 +15,29 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/tool"
-	errors "golang.org/x/xerrors"
 )
 
 // imports implements the import verb for gopls.
 type imports struct {
-	Diff  bool `flag:"d" help:"display diffs instead of rewriting files"`
-	Write bool `flag:"w" help:"write result to (source) file instead of stdout"`
+	Diff  bool `flag:"d,diff" help:"display diffs instead of rewriting files"`
+	Write bool `flag:"w,write" help:"write result to (source) file instead of stdout"`
 
 	app *Application
 }
 
 func (t *imports) Name() string      { return "imports" }
-func (t *imports) Usage() string     { return "<filename>" }
+func (t *imports) Parent() string    { return t.app.Name() }
+func (t *imports) Usage() string     { return "[imports-flags] <filename>" }
 func (t *imports) ShortHelp() string { return "updates import statements" }
 func (t *imports) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprintf(f.Output(), `
 Example: update imports statements in a file:
 
-  $ gopls imports -w internal/lsp/cmd/check.go
+	$ gopls imports -w internal/lsp/cmd/check.go
 
-gopls imports flags are:
+imports-flags:
 `)
-	f.PrintDefaults()
+	printFlagDefaults(f)
 }
 
 // Run performs diagnostic checks on the file specified and either;
@@ -66,7 +66,7 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 		},
 	})
 	if err != nil {
-		return errors.Errorf("%v: %v", from, err)
+		return fmt.Errorf("%v: %v", from, err)
 	}
 	var edits []protocol.TextEdit
 	for _, a := range actions {
@@ -81,7 +81,7 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 	}
 	sedits, err := source.FromProtocolEdits(file.mapper, edits)
 	if err != nil {
-		return errors.Errorf("%v: %v", edits, err)
+		return fmt.Errorf("%v: %v", edits, err)
 	}
 	newContent := diff.ApplyEdits(string(file.mapper.Content), sedits)
 

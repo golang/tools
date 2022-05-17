@@ -1,0 +1,15 @@
+apply suggested fixes
+
+Usage:
+  gopls [flags] fix [fix-flags] <filename>
+
+Example: apply suggested fixes for this file
+	$ gopls fix -w internal/lsp/cmd/check.go
+
+fix-flags:
+  -a,-all
+    	apply all fixes, not just preferred fixes
+  -d,-diff
+    	display diffs instead of rewriting files
+  -w,-write
+    	write result to (source) file instead of stdout

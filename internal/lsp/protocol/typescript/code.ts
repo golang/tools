@@ -532,6 +532,7 @@ function cleanData() { // middle pass
 function sameType(a: ts.TypeNode, b: ts.TypeNode): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === ts.SyntaxKind.BooleanKeyword) return true;
+  if (a.kind === ts.SyntaxKind.StringKeyword) return true;
   if (ts.isTypeReferenceNode(a) && ts.isTypeReferenceNode(b) &&
     a.typeName.getText() === b.typeName.getText()) return true;
   if (ts.isArrayTypeNode(a) && ts.isArrayTypeNode(b)) return sameType(a.elementType, b.elementType);
@@ -540,7 +541,7 @@ function sameType(a: ts.TypeNode, b: ts.TypeNode): boolean {
     if (a.members.length === 1) return a.members[0].name.getText() === b.members[0].name.getText();
     if (loc(a) === loc(b)) return true;
   }
-  throw new Error(`546 sameType? ${strKind(a)} ${strKind(b)}`);
+  throw new Error(`544 sameType? ${strKind(a)} ${strKind(b)} ${a.getText()}`);
 }
 type CreateMutable<Type> = {
   -readonly [Property in keyof Type]: Type[Property];
@@ -595,12 +596,17 @@ function addToProperties(pm: propMap, tn: ts.TypeNode | undefined, prefix = '') 
       addToProperties(pm, ps.type, name);
     });
   } else if (strKind(tn) === 'TypeLiteral') {
-    if (!ts.isTypeLiteralNode(tn)) new Error(`598 ${strKind(tn)}`);
+    if (!ts.isTypeLiteralNode(tn)) new Error(`599 ${strKind(tn)}`);
     tn.forEachChild((child: ts.Node) => {
-      if (!ts.isPropertySignature(child)) throw new Error(`600 ${strKind(child)}`);
-      const name = `${prefix}.${child.name.getText()}`;
-      propMapSet(pm, name, child);
-      addToProperties(pm, child.type, name);
+      if (ts.isPropertySignature(child)) {
+        const name = `${prefix}.${child.name.getText()}`;
+        propMapSet(pm, name, child);
+        addToProperties(pm, child.type, name);
+      } else if (!ts.isIndexSignatureDeclaration(child)) {
+        // ignoring IndexSignatures, seen as relatedDocument in
+        // RelatedFullDocumentDiagnosticReport
+        throw new Error(`608 ${strKind(child)} ${loc(child)}`);
+      }
     });
   }
 }
@@ -721,6 +727,7 @@ function goInterface(d: Data, nm: string) {
   const f = function (n: ts.ExpressionWithTypeArguments) {
     if (!ts.isIdentifier(n.expression))
       throw new Error(`Interface ${nm} heritage ${strKind(n.expression)} `);
+    if (n.expression.getText() === 'Omit') return;  // Type modification type
     ans = ans.concat(goName(n.expression.getText()), '\n');
   };
   d.as.forEach((n: ts.HeritageClause) => n.types.forEach(f));
@@ -874,9 +881,8 @@ function goUnionType(n: ts.UnionTypeNode, nm: string): string {
       if (a == 'NumberKeyword' && b == 'StringKeyword') {  // ID
         return `interface{} ${help}`;
       }
-      if (b == 'NullKeyword' || n.types[1].getText() === 'null') {
-        // PJW: fix this. it looks like 'null' is now being parsed as LiteralType
-        // and check the other keyword cases
+      // for null, b is not useful (LiternalType)
+      if (n.types[1].getText() === 'null') {
         if (nm == 'textDocument/codeAction') {
           // (Command | CodeAction)[] | null
           return `[]CodeAction ${help}`;
@@ -896,9 +902,11 @@ function goUnionType(n: ts.UnionTypeNode, nm: string): string {
         return `*TextEdit ${help}`;
       }
       if (a == 'TypeReference') {
-        if (nm == 'edits') return `${goType(n.types[0], '715')} ${help}`;
+        if (nm == 'edits') return `${goType(n.types[0], '901')} ${help}`;
         if (a == b) return `interface{} ${help}`;
         if (nm == 'code') return `interface{} ${help}`;
+        if (nm == 'editRange') return `${goType(n.types[0], '904')} ${help}`;
+        if (nm === 'location') return `${goType(n.types[0], '905')} ${help}`;
       }
       if (a == 'StringKeyword') return `string ${help}`;
       if (a == 'TypeLiteral' && nm == 'TextDocumentContentChangeEvent') {
@@ -915,7 +923,8 @@ function goUnionType(n: ts.UnionTypeNode, nm: string): string {
       const aa = strKind(n.types[0]);
       const bb = strKind(n.types[1]);
       const cc = strKind(n.types[2]);
-      if (nm == 'DocumentFilter') {
+      if (nm === 'workspace/symbol') return `${goType(n.types[0], '930')} ${help}`;
+      if (nm == 'DocumentFilter' || nm == 'NotebookDocumentFilter' || nm == 'TextDocumentFilter') {
         // not really a union. the first is enough, up to a missing
         // omitempty but avoid repetitious comments
         return `${goType(n.types[0], 'g')}`;
@@ -941,10 +950,18 @@ function goUnionType(n: ts.UnionTypeNode, nm: string): string {
     }
     case 4:
       if (nm == 'documentChanges') return `TextDocumentEdit ${help} `;
-      if (nm == 'textDocument/prepareRename') return `Range ${help} `;
-    // eslint-disable-next-line no-fallthrough
+      if (nm == 'textDocument/prepareRename') {
+        // these names have to be made unique
+        const genName = `${goName("prepareRename")}${extraTypes.size}Gn`;
+        extraTypes.set(genName, [`Range       Range  \`json:"range"\`
+          Placeholder string \`json:"placeholder"\``]);
+        return `${genName} ${help} `;
+      }
+      break;
+    case 8: // LSPany
+      break;
     default:
-      throw new Error(`goUnionType len=${n.types.length} nm=${nm}`);
+      throw new Error(`957 goUnionType len=${n.types.length} nm=${nm} ${n.getText()}`);
   }
 
   // Result will be interface{} with a comment
@@ -1048,7 +1065,7 @@ function isStructType(te: ts.TypeNode): boolean {
     case 'TypeReference': {
       if (!ts.isTypeReferenceNode(te)) throw new Error(`1047 impossible ${strKind(te)}`);
       const d = seenTypes.get(goName(te.typeName.getText()));
-      if (d === undefined) return false;
+      if (d === undefined || d.properties.length == 0) return false;
       if (d.properties.length > 1) return true;
       // alias or interface with a single property (The alias is Uinteger, which we ignore later)
       if (d.alias) return false;
@@ -1067,6 +1084,10 @@ function goTypeLiteral(n: ts.TypeLiteralNode, nm: string): string {
     if (ts.isPropertySignature(nx)) {
       let json = u.JSON(nx);
       let typ = goType(nx.type, nx.name.getText());
+      // }/*\n*/`json:v` is not legal, the comment is a newline
+      if (typ.includes('\n') && typ.indexOf('*/') === typ.length - 2) {
+        typ = typ.replace(/\n\t*/g, ' ');
+      }
       const v = getComments(nx) || '';
       starred.forEach(([a, b]) => {
         if (a != nm || b != typ.toLowerCase()) return;
@@ -1080,12 +1101,16 @@ function goTypeLiteral(n: ts.TypeLiteralNode, nm: string): string {
       const comment = nx.getText().replace(/[/]/g, '');
       if (nx.getText() == '[uri: string]: TextEdit[];') {
         res = 'map[string][]TextEdit';
-      } else if (nx.getText() == '[id: string /* ChangeAnnotationIdentifier */]: ChangeAnnotation;') {
+      } else if (nx.getText().startsWith('[id: ChangeAnnotationIdentifier]')) {
         res = 'map[string]ChangeAnnotationIdentifier';
       } else if (nx.getText().startsWith('[uri: string')) {
         res = 'map[string]interface{}';
+      } else if (nx.getText().startsWith('[uri: DocumentUri')) {
+        res = 'map[DocumentURI][]TextEdit';
+      } else if (nx.getText().startsWith('[key: string')) {
+        res = 'map[string]interface{}';
       } else {
-        throw new Error(`1088 handle ${nx.getText()} ${loc(nx)}`);
+        throw new Error(`1100 handle ${nx.getText()} ${loc(nx)}`);
       }
       res += ` /*${comment}*/`;
       ans.push(res);
@@ -1164,7 +1189,7 @@ let server: side = {
 
 // commonly used output
 const notNil = `if len(r.Params()) > 0 {
-  return true, reply(ctx, nil, errors.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
+  return true, reply(ctx, nil, fmt.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
 }`;
 
 // Go code for notifications. Side is client or server, m is the request
@@ -1234,7 +1259,10 @@ function goReq(side: side, m: string) {
   }`;
   if (b != '' && b != 'void') {
     case2 = `resp, err := ${side.name}.${nm}(ctx${arg2})
-    return true, reply(ctx, resp, err)`;
+    if err != nil {
+      return true, reply(ctx, nil, err)
+    }
+    return true, reply(ctx, resp, nil)`;
   } else {  // response is nil
     case2 = `err := ${side.name}.${nm}(ctx${arg2})
     return true, reply(ctx, nil, err)`;
@@ -1336,7 +1364,6 @@ function output(side: side) {
           "encoding/json"
 
           "golang.org/x/tools/internal/jsonrpc2"
-          errors "golang.org/x/xerrors"
         )
         `);
   const a = side.name[0].toUpperCase() + side.name.substring(1);

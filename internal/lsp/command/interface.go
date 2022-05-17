@@ -68,6 +68,11 @@ type Interface interface {
 	// Runs `go mod vendor` for a module.
 	Vendor(context.Context, URIArg) error
 
+	// EditGoDirective: Run go mod edit -go=version
+	//
+	// Runs `go mod edit -go=version` for a module.
+	EditGoDirective(context.Context, EditGoDirectiveArgs) error
+
 	// UpdateGoSum: Update go.sum
 	//
 	// Updates the go.sum file for a module.
@@ -120,6 +125,12 @@ type Interface interface {
 	// Retrieve a list of packages that are importable from the given URI.
 	ListKnownPackages(context.Context, URIArg) (ListKnownPackagesResult, error)
 
+	// ListImports: List imports of a file and its package
+	//
+	// Retrieve a list of imports in the given Go file, and the package it
+	// belongs to.
+	ListImports(context.Context, URIArg) (ListImportsResult, error)
+
 	// AddImport: Add an import
 	//
 	// Ask the server to add an import path to a given Go file.  The method will
@@ -127,16 +138,16 @@ type Interface interface {
 	// themselves.
 	AddImport(context.Context, AddImportArgs) error
 
-	// WorkspaceMetadata: Query workspace metadata
-	//
-	// Query the server for information about active workspaces.
-	WorkspaceMetadata(context.Context) (WorkspaceMetadataResult, error)
-
 	// StartDebugging: Start the gopls debug server
 	//
 	// Start the gopls debug server if it isn't running, and return the debug
 	// address.
 	StartDebugging(context.Context, DebuggingArgs) (DebuggingResult, error)
+
+	// RunVulncheckExp: Run vulncheck (experimental)
+	//
+	// Run vulnerability check (`govulncheck`).
+	RunVulncheckExp(context.Context, VulncheckArgs) (VulncheckResult, error)
 }
 
 type RunTestsArgs struct {
@@ -203,6 +214,13 @@ type RemoveDependencyArgs struct {
 	OnlyDiagnostic bool
 }
 
+type EditGoDirectiveArgs struct {
+	// Any document URI within the relevant module.
+	URI protocol.DocumentURI
+	// The version to pass to `go mod edit -go`.
+	Version string
+}
+
 type GoGetPackageArgs struct {
 	// Any document URI within the relevant module.
 	URI protocol.DocumentURI
@@ -227,6 +245,26 @@ type ListKnownPackagesResult struct {
 	// imported or cannot be imported due to compiler
 	// restrictions.
 	Packages []string
+}
+
+type ListImportsResult struct {
+	// Imports is a list of imports in the requested file.
+	Imports []FileImport
+
+	// PackageImports is a list of all imports in the requested file's package.
+	PackageImports []PackageImport
+}
+
+type FileImport struct {
+	// Path is the import path of the import.
+	Path string
+	// Name is the name of the import, e.g. `foo` in `import foo "strings"`.
+	Name string
+}
+
+type PackageImport struct {
+	// Path is the import path of the import.
+	Path string
 }
 
 type WorkspaceMetadataArgs struct {
@@ -273,4 +311,77 @@ type DebuggingResult struct {
 	// error will be returned but the debug URL for that server in the URLs slice
 	// will be empty.
 	URLs []string
+}
+
+type VulncheckArgs struct {
+	// Dir is the directory from which vulncheck will run from.
+	Dir protocol.DocumentURI
+
+	// Package pattern. E.g. "", ".", "./...".
+	Pattern string
+
+	// TODO: Flag []string (flags accepted by govulncheck, e.g., -tests)
+	// TODO: Format string (json, text)
+}
+
+type VulncheckResult struct {
+	Vuln []Vuln
+
+	// TODO: Text string format output?
+}
+
+// CallStack models a trace of function calls starting
+// with a client function or method and ending with a
+// call to a vulnerable symbol.
+type CallStack []StackEntry
+
+// StackEntry models an element of a call stack.
+type StackEntry struct {
+	// See golang.org/x/exp/vulncheck.StackEntry.
+
+	// User-friendly representation of function/method names.
+	// e.g. package.funcName, package.(recvType).methodName, ...
+	Name string
+	URI  protocol.DocumentURI
+	Pos  protocol.Position // Start position. (0-based. Column is always 0)
+}
+
+// Vuln models an osv.Entry and representative call stacks.
+type Vuln struct {
+	// ID is the vulnerability ID (osv.Entry.ID).
+	// https://ossf.github.io/osv-schema/#id-modified-fields
+	ID string
+	// Details is the description of the vulnerability (osv.Entry.Details).
+	// https://ossf.github.io/osv-schema/#summary-details-fields
+	Details string `json:",omitempty"`
+	// Aliases are alternative IDs of the vulnerability.
+	// https://ossf.github.io/osv-schema/#aliases-field
+	Aliases []string `json:",omitempty"`
+
+	// Symbol is the name of the detected vulnerable function or method.
+	Symbol string `json:",omitempty"`
+	// PkgPath is the package path of the detected Symbol.
+	PkgPath string `json:",omitempty"`
+	// ModPath is the module path corresponding to PkgPath.
+	// TODO: how do we specify standard library's vulnerability?
+	ModPath string `json:",omitempty"`
+
+	// URL is the URL for more info about the information.
+	// Either the database specific URL or the one of the URLs
+	// included in osv.Entry.References.
+	URL string `json:",omitempty"`
+
+	// Current is the current module version.
+	CurrentVersion string `json:",omitempty"`
+
+	// Fixed is the minimum module version that contains the fix.
+	FixedVersion string `json:",omitempty"`
+
+	// Example call stacks.
+	CallStacks []CallStack `json:",omitempty"`
+
+	// Short description of each call stack in CallStacks.
+	CallStackSummaries []string `json:",omitempty"`
+
+	// TODO: import graph & module graph.
 }

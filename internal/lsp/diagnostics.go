@@ -7,6 +7,7 @@ package lsp
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,9 +22,9 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/template"
+	"golang.org/x/tools/internal/lsp/work"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
-	errors "golang.org/x/xerrors"
 )
 
 // diagnosticSource differentiates different sources of diagnostics.
@@ -35,6 +36,7 @@ const (
 	analysisSource
 	typeCheckSource
 	orphanedSource
+	workSource
 )
 
 // A diagnosticReport holds results for a single diagnostic source.
@@ -153,7 +155,7 @@ func (s *Server) diagnoseChangedFiles(ctx context.Context, snapshot source.Snaps
 		if snapshot.IsBuiltin(ctx, uri) {
 			continue
 		}
-		pkgs, err := snapshot.PackagesForFile(ctx, uri, source.TypecheckFull)
+		pkgs, err := snapshot.PackagesForFile(ctx, uri, source.TypecheckFull, false)
 		if err != nil {
 			// TODO (findleyr): we should probably do something with the error here,
 			// but as of now this can fail repeatedly if load fails, so can be too
@@ -210,8 +212,25 @@ func (s *Server) diagnose(ctx context.Context, snapshot source.Snapshot, forceAn
 		s.storeDiagnostics(snapshot, id.URI, modSource, diags)
 	}
 
+	// Diagnose the go.work file, if it exists.
+	workReports, workErr := work.Diagnostics(ctx, snapshot)
+	if ctx.Err() != nil {
+		log.Trace.Log(ctx, "diagnose cancelled")
+		return
+	}
+	if workErr != nil {
+		event.Error(ctx, "warning: diagnose go.work", workErr, tag.Directory.Of(snapshot.View().Folder().Filename()), tag.Snapshot.Of(snapshot.ID()))
+	}
+	for id, diags := range workReports {
+		if id.URI == "" {
+			event.Error(ctx, "missing URI for work file diagnostics", fmt.Errorf("empty URI"), tag.Directory.Of(snapshot.View().Folder().Filename()))
+			continue
+		}
+		s.storeDiagnostics(snapshot, id.URI, workSource, diags)
+	}
+
 	// Diagnose all of the packages in the workspace.
-	wsPkgs, err := snapshot.WorkspacePackages(ctx)
+	wsPkgs, err := snapshot.ActivePackages(ctx)
 	if s.shouldIgnoreError(ctx, snapshot, err) {
 		return
 	}
@@ -288,7 +307,11 @@ func (s *Server) diagnosePkg(ctx context.Context, snapshot source.Snapshot, pkg 
 		return
 	}
 	for _, cgf := range pkg.CompiledGoFiles() {
-		s.storeDiagnostics(snapshot, cgf.URI, typeCheckSource, pkgDiagnostics[cgf.URI])
+		// builtin.go exists only for documentation purposes, and is not valid Go code.
+		// Don't report distracting errors
+		if !snapshot.IsBuiltin(ctx, cgf.URI) {
+			s.storeDiagnostics(snapshot, cgf.URI, typeCheckSource, pkgDiagnostics[cgf.URI])
+		}
 	}
 	if includeAnalysis && !pkg.HasListOrParseErrors() {
 		reports, err := source.Analyze(ctx, snapshot, pkg, false)
@@ -416,14 +439,14 @@ func (s *Server) showCriticalErrorStatus(ctx context.Context, snapshot source.Sn
 // If they cannot and the workspace is not otherwise unloaded, it also surfaces
 // a warning, suggesting that the user check the file for build tags.
 func (s *Server) checkForOrphanedFile(ctx context.Context, snapshot source.Snapshot, fh source.VersionedFileHandle) *source.Diagnostic {
-	if fh.Kind() != source.Go {
+	if snapshot.View().FileKind(fh) != source.Go {
 		return nil
 	}
 	// builtin files won't have a package, but they are never orphaned.
 	if snapshot.IsBuiltin(ctx, fh.URI()) {
 		return nil
 	}
-	pkgs, err := snapshot.PackagesForFile(ctx, fh.URI(), source.TypecheckWorkspace)
+	pkgs, err := snapshot.PackagesForFile(ctx, fh.URI(), source.TypecheckWorkspace, false)
 	if len(pkgs) > 0 || err == nil {
 		return nil
 	}
@@ -437,6 +460,10 @@ func (s *Server) checkForOrphanedFile(ctx context.Context, snapshot source.Snaps
 	}
 	rng, err := pgf.Mapper.Range(spn)
 	if err != nil {
+		return nil
+	}
+	// If the file no longer has a name ending in .go, this diagnostic is wrong
+	if filepath.Ext(fh.URI().Filename()) != ".go" {
 		return nil
 	}
 	// TODO(rstambler): We should be able to parse the build tags in the

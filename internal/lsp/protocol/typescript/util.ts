@@ -15,7 +15,7 @@ export const fnames = [
   `${dir}/${srcDir}/protocol/src/browser/main.ts`, `${dir}${srcDir}/types/src/main.ts`,
   `${dir}${srcDir}/jsonrpc/src/node/main.ts`
 ];
-export const gitHash = '092c2afc3ad7e4d2b03fe8ac0deb418ec4276915';
+export const gitHash = '696f9285bf849b73745682fdb1c1feac73eb8772';
 let outFname = 'tsprotocol.go';
 let fda: number, fdb: number, fde: number;  // file descriptors
 
@@ -72,17 +72,17 @@ export function computeHeader(pkgDoc: boolean): string {
 
   `;
   const a =
-    '// Package protocol contains data types and code for LSP jsonrpcs\n' +
+    '// Package protocol contains data types and code for LSP json rpcs\n' +
     '// generated automatically from vscode-languageserver-node\n' +
     `// commit: ${gitHash}\n` +
     `// last fetched ${lastDate}\n`;
   const b = 'package protocol\n';
   const c = '\n// Code generated (see typescript/README.md) DO NOT EDIT.\n\n';
   if (pkgDoc) {
-    return cp + a + b + c;
+    return cp + c + a + b;
   }
   else {
-    return cp + b + a + c;
+    return cp + c+ b + a;
   }
 }
 
@@ -112,7 +112,7 @@ export function constName(nm: string, type: string): string {
   let pref = new Map<string, string>([
     ['DiagnosticSeverity', 'Severity'], ['WatchKind', 'Watch'],
     ['SignatureHelpTriggerKind', 'Sig'], ['CompletionItemTag', 'Compl'],
-    ['Integer', 'INT_'], ['Uinteger', 'UINT_']
+    ['Integer', 'INT_'], ['Uinteger', 'UINT_'], ['CodeActionTriggerKind', 'CodeAction']
   ]);  // typeName->prefix
   let suff = new Map<string, string>([
     ['CompletionItemKind', 'Completion'], ['InsertTextFormat', 'TextFormat'],

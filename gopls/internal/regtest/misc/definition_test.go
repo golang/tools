@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/internal/lsp/protocol"
 	. "golang.org/x/tools/internal/lsp/regtest"
+	"golang.org/x/tools/internal/testenv"
 
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/tests"
@@ -233,4 +235,57 @@ func main() {}
 			})
 		})
 	}
+}
+
+// Test for golang/go#47825.
+func TestImportTestVariant(t *testing.T) {
+	testenv.NeedsGo1Point(t, 13)
+
+	const mod = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- client/test/role.go --
+package test
+
+import _ "mod.com/client"
+
+type RoleSetup struct{}
+-- client/client_role_test.go --
+package client_test
+
+import (
+	"testing"
+	_ "mod.com/client"
+	ctest "mod.com/client/test"
+)
+
+func TestClient(t *testing.T) {
+	_ = ctest.RoleSetup{}
+}
+-- client/client_test.go --
+package client
+
+import "testing"
+
+func TestClient(t *testing.T) {}
+-- client.go --
+package client
+`
+	Run(t, mod, func(t *testing.T, env *Env) {
+		env.OpenFile("client/client_role_test.go")
+		env.GoToDefinition("client/client_role_test.go", env.RegexpSearch("client/client_role_test.go", "RoleSetup"))
+	})
+}
+
+// This test exercises a crashing pattern from golang/go#49223.
+func TestGoToCrashingDefinition_Issue49223(t *testing.T) {
+	Run(t, "", func(t *testing.T, env *Env) {
+		params := &protocol.DefinitionParams{}
+		params.TextDocument.URI = protocol.DocumentURI("fugitive%3A///Users/user/src/mm/ems/.git//0/pkg/domain/treasury/provider.go")
+		params.Position.Character = 18
+		params.Position.Line = 0
+		env.Editor.Server.Definition(env.Ctx, params)
+	})
 }

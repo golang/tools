@@ -13,20 +13,21 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/callgraph/cha"
+	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 )
 
 func TestNodeInterface(t *testing.T) {
 	// Since ssa package does not allow explicit creation of ssa
-	// values, we use the values from the program testdata/simple.go:
+	// values, we use the values from the program testdata/src/simple.go:
 	//   - basic type int
 	//   - struct X with two int fields a and b
 	//   - global variable "gl"
 	//   - "main" function and its
 	//   - first register instruction t0 := *gl
-	prog, _, err := testProg("testdata/simple.go")
+	prog, _, err := testProg("testdata/src/simple.go", ssa.BuilderMode(0))
 	if err != nil {
-		t.Fatalf("couldn't load testdata/simple.go program: %v", err)
+		t.Fatalf("couldn't load testdata/src/simple.go program: %v", err)
 	}
 
 	pkg := prog.AllPackages()[0]
@@ -42,6 +43,8 @@ func TestNodeInterface(t *testing.T) {
 
 	pint := types.NewPointer(bint)
 	i := types.NewInterface(nil, nil)
+
+	voidFunc := main.Signature.Underlying()
 
 	for _, test := range []struct {
 		n node
@@ -59,8 +62,9 @@ func TestNodeInterface(t *testing.T) {
 		{global{val: gl}, "Global(gl)", gl.Type()},
 		{local{val: reg}, "Local(t0)", bint},
 		{indexedLocal{val: reg, typ: X, index: 0}, "Local(t0[0])", X},
-		{function{f: main}, "Function(main)", main.Signature.Underlying()},
+		{function{f: main}, "Function(main)", voidFunc},
 		{nestedPtrInterface{typ: i}, "PtrInterface(interface{})", i},
+		{nestedPtrFunction{typ: voidFunc}, "PtrFunction(func())", voidFunc},
 		{panicArg{}, "Panic", nil},
 		{recoverReturn{}, "Recover", nil},
 	} {
@@ -75,9 +79,9 @@ func TestNodeInterface(t *testing.T) {
 
 func TestVtaGraph(t *testing.T) {
 	// Get the basic type int from a real program.
-	prog, _, err := testProg("testdata/simple.go")
+	prog, _, err := testProg("testdata/src/simple.go", ssa.BuilderMode(0))
 	if err != nil {
-		t.Fatalf("couldn't load testdata/simple.go program: %v", err)
+		t.Fatalf("couldn't load testdata/src/simple.go program: %v", err)
 	}
 
 	glPtrType, ok := prog.AllPackages()[0].Var("gl").Type().(*types.Pointer)
@@ -167,27 +171,28 @@ func subGraph(g1, g2 []string) bool {
 
 func TestVTAGraphConstruction(t *testing.T) {
 	for _, file := range []string{
-		"testdata/store.go",
-		"testdata/phi.go",
-		"testdata/type_conversions.go",
-		"testdata/type_assertions.go",
-		"testdata/fields.go",
-		"testdata/node_uniqueness.go",
-		"testdata/store_load_alias.go",
-		"testdata/phi_alias.go",
-		"testdata/channels.go",
-		"testdata/select.go",
-		"testdata/stores_arrays.go",
-		"testdata/maps.go",
-		"testdata/ranges.go",
-		"testdata/closures.go",
-		"testdata/static_calls.go",
-		"testdata/dynamic_calls.go",
-		"testdata/returns.go",
-		"testdata/panic.go",
+		"testdata/src/store.go",
+		"testdata/src/phi.go",
+		"testdata/src/type_conversions.go",
+		"testdata/src/type_assertions.go",
+		"testdata/src/fields.go",
+		"testdata/src/node_uniqueness.go",
+		"testdata/src/store_load_alias.go",
+		"testdata/src/phi_alias.go",
+		"testdata/src/channels.go",
+		"testdata/src/select.go",
+		"testdata/src/stores_arrays.go",
+		"testdata/src/maps.go",
+		"testdata/src/ranges.go",
+		"testdata/src/closures.go",
+		"testdata/src/function_alias.go",
+		"testdata/src/static_calls.go",
+		"testdata/src/dynamic_calls.go",
+		"testdata/src/returns.go",
+		"testdata/src/panic.go",
 	} {
 		t.Run(file, func(t *testing.T) {
-			prog, want, err := testProg(file)
+			prog, want, err := testProg(file, ssa.BuilderMode(0))
 			if err != nil {
 				t.Fatalf("couldn't load test file '%s': %s", file, err)
 			}

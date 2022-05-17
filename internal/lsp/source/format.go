@@ -19,13 +19,21 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/diff"
+	"golang.org/x/tools/internal/lsp/lsppos"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/lsp/safetoken"
+	"golang.org/x/tools/internal/span"
 )
 
 // Format formats a file with a given range.
 func Format(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.TextEdit, error) {
 	ctx, done := event.Start(ctx, "source.Format")
 	defer done()
+
+	// Generated files shouldn't be edited. So, don't format them
+	if IsGenerated(ctx, snapshot, fh.URI()) {
+		return nil, fmt.Errorf("can't format %q: file is generated", fh.URI().Filename())
+	}
 
 	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
 	if err != nil {
@@ -56,8 +64,24 @@ func Format(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.T
 
 	// Apply additional formatting, if any is supported. Currently, the only
 	// supported additional formatter is gofumpt.
-	if format := snapshot.View().Options().Hooks.GofumptFormat; snapshot.View().Options().Gofumpt && format != nil {
-		b, err := format(ctx, buf.Bytes())
+	if format := snapshot.View().Options().GofumptFormat; snapshot.View().Options().Gofumpt && format != nil {
+		// gofumpt can customize formatting based on language version and module
+		// path, if available.
+		//
+		// Try to derive this information, but fall-back on the default behavior.
+		//
+		// TODO: under which circumstances can we fail to find module information?
+		// Can this, for example, result in inconsistent formatting across saves,
+		// due to pending calls to packages.Load?
+		var langVersion, modulePath string
+		mds, err := snapshot.MetadataForFile(ctx, fh.URI())
+		if err == nil && len(mds) > 0 {
+			if mi := mds[0].ModuleInfo(); mi != nil {
+				langVersion = mi.GoVersion
+				modulePath = mi.Path
+			}
+		}
+		b, err := format(ctx, langVersion, modulePath, buf.Bytes())
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +175,10 @@ func ComputeOneImportFixEdits(snapshot Snapshot, pgf *ParsedGoFile, fix *imports
 
 func computeFixEdits(snapshot Snapshot, pgf *ParsedGoFile, options *imports.Options, fixes []*imports.ImportFix) ([]protocol.TextEdit, error) {
 	// trim the original data to match fixedData
-	left := importPrefix(pgf.Src)
+	left, err := importPrefix(pgf.Src)
+	if err != nil {
+		return nil, err
+	}
 	extra := !strings.Contains(left, "\n") // one line may have more than imports
 	if extra {
 		left = string(pgf.Src)
@@ -177,31 +204,36 @@ func computeFixEdits(snapshot Snapshot, pgf *ParsedGoFile, options *imports.Opti
 	if err != nil {
 		return nil, err
 	}
-	return ToProtocolEdits(pgf.Mapper, edits)
+	return ProtocolEditsFromSource([]byte(left), edits, pgf.Mapper.Converter)
 }
 
 // importPrefix returns the prefix of the given file content through the final
 // import statement. If there are no imports, the prefix is the package
 // statement and any comment groups below it.
-func importPrefix(src []byte) string {
+func importPrefix(src []byte) (string, error) {
 	fset := token.NewFileSet()
 	// do as little parsing as possible
 	f, err := parser.ParseFile(fset, "", src, parser.ImportsOnly|parser.ParseComments)
 	if err != nil { // This can happen if 'package' is misspelled
-		return ""
+		return "", fmt.Errorf("importPrefix: failed to parse: %s", err)
 	}
 	tok := fset.File(f.Pos())
 	var importEnd int
 	for _, d := range f.Decls {
 		if x, ok := d.(*ast.GenDecl); ok && x.Tok == token.IMPORT {
-			if e := tok.Offset(d.End()); e > importEnd {
+			if e, err := safetoken.Offset(tok, d.End()); err != nil {
+				return "", fmt.Errorf("importPrefix: %s", err)
+			} else if e > importEnd {
 				importEnd = e
 			}
 		}
 	}
 
 	maybeAdjustToLineEnd := func(pos token.Pos, isCommentNode bool) int {
-		offset := tok.Offset(pos)
+		offset, err := safetoken.Offset(tok, pos)
+		if err != nil {
+			return -1
+		}
 
 		// Don't go past the end of the file.
 		if offset > len(src) {
@@ -213,7 +245,10 @@ func importPrefix(src []byte) string {
 		// return a position on the next line whenever possible.
 		switch line := tok.Line(tok.Pos(offset)); {
 		case line < tok.LineCount():
-			nextLineOffset := tok.Offset(tok.LineStart(line + 1))
+			nextLineOffset, err := safetoken.Offset(tok, tok.LineStart(line+1))
+			if err != nil {
+				return -1
+			}
 			// If we found a position that is at the end of a line, move the
 			// offset to the start of the next line.
 			if offset+1 == nextLineOffset {
@@ -232,14 +267,19 @@ func importPrefix(src []byte) string {
 	}
 	for _, cgroup := range f.Comments {
 		for _, c := range cgroup.List {
-			if end := tok.Offset(c.End()); end > importEnd {
+			if end, err := safetoken.Offset(tok, c.End()); err != nil {
+				return "", err
+			} else if end > importEnd {
 				startLine := tok.Position(c.Pos()).Line
 				endLine := tok.Position(c.End()).Line
 
 				// Work around golang/go#41197 by checking if the comment might
 				// contain "\r", and if so, find the actual end position of the
 				// comment by scanning the content of the file.
-				startOffset := tok.Offset(c.Pos())
+				startOffset, err := safetoken.Offset(tok, c.Pos())
+				if err != nil {
+					return "", err
+				}
 				if startLine != endLine && bytes.Contains(src[startOffset:], []byte("\r")) {
 					if commentEnd := scanForCommentEnd(src[startOffset:]); commentEnd > 0 {
 						end = startOffset + commentEnd
@@ -252,7 +292,7 @@ func importPrefix(src []byte) string {
 	if importEnd > len(src) {
 		importEnd = len(src)
 	}
-	return string(src[:importEnd])
+	return string(src[:importEnd]), nil
 }
 
 // scanForCommentEnd returns the offset of the end of the multi-line comment
@@ -278,6 +318,34 @@ func computeTextEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile,
 		return nil, err
 	}
 	return ToProtocolEdits(pgf.Mapper, edits)
+}
+
+// ProtocolEditsFromSource converts text edits to LSP edits using the original
+// source.
+func ProtocolEditsFromSource(src []byte, edits []diff.TextEdit, converter span.Converter) ([]protocol.TextEdit, error) {
+	m := lsppos.NewMapper(src)
+	var result []protocol.TextEdit
+	for _, edit := range edits {
+		spn, err := edit.Span.WithOffset(converter)
+		if err != nil {
+			return nil, fmt.Errorf("computing offsets: %v", err)
+		}
+		rng, err := m.Range(spn.Start().Offset(), spn.End().Offset())
+		if err != nil {
+			return nil, err
+		}
+
+		if rng.Start == rng.End && edit.NewText == "" {
+			// Degenerate case, which may result from a diff tool wanting to delete
+			// '\r' in line endings. Filter it out.
+			continue
+		}
+		result = append(result, protocol.TextEdit{
+			Range:   rng,
+			NewText: edit.NewText,
+		})
+	}
+	return result, nil
 }
 
 func ToProtocolEdits(m *protocol.ColumnMapper, edits []diff.TextEdit) ([]protocol.TextEdit, error) {

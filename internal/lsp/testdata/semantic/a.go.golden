@@ -2,7 +2,7 @@
 /*⇒7,keyword,[]*/package /*⇒14,namespace,[]*/semantictokens /*⇒16,comment,[]*///@ semantic("")
 
 /*⇒6,keyword,[]*/import (
-	_ "encoding/utf8"/*⇐4,namespace,[]*/
+	_ "encoding/utf8"
 	/*⇒3,namespace,[]*/utf "encoding/utf8"
 	"fmt"/*⇐3,namespace,[]*/ /*⇒19,comment,[]*///@ semantic("fmt")
 	. "fmt"
@@ -13,8 +13,8 @@
 	/*⇒1,variable,[definition]*/a           = /*⇒3,namespace,[]*/fmt./*⇒5,function,[]*/Print
 	/*⇒1,variable,[definition]*/b  []/*⇒6,type,[defaultLibrary]*/string = []/*⇒6,type,[defaultLibrary]*/string{/*⇒5,string,[]*/"foo"}
 	/*⇒2,variable,[definition]*/c1 /*⇒4,keyword,[]*/chan /*⇒3,type,[defaultLibrary]*/int
-	/*⇒2,variable,[definition]*/c2 <-/*⇒4,keyword,[]*/chan /*⇒3,type,[defaultLibrary]*/int
-	/*⇒2,variable,[definition]*/c3 = /*⇒4,function,[defaultLibrary]*/make([]/*⇒4,keyword,[]*/chan<- /*⇒3,type,[defaultLibrary]*/int)
+	/*⇒2,variable,[definition]*/c2 /*⇒2,operator,[]*/<-/*⇒4,keyword,[]*/chan /*⇒3,type,[defaultLibrary]*/int
+	/*⇒2,variable,[definition]*/c3 = /*⇒4,function,[defaultLibrary]*/make([]/*⇒4,keyword,[]*/chan/*⇒2,operator,[]*/<- /*⇒3,type,[defaultLibrary]*/int)
 	/*⇒1,variable,[definition]*/b  = /*⇒1,type,[]*/A{/*⇒1,variable,[]*/X: /*⇒2,number,[]*/23}
 	/*⇒1,variable,[definition]*/m  /*⇒3,keyword,[]*/map[/*⇒4,type,[defaultLibrary]*/bool][/*⇒1,number,[]*/3]/*⇒1,operator,[]*/*/*⇒7,type,[defaultLibrary]*/float64
 )
@@ -31,12 +31,12 @@
 }
 /*⇒4,keyword,[]*/type /*⇒1,type,[definition]*/B /*⇒9,keyword,[]*/interface {
 	/*⇒1,type,[]*/A
-	/*⇒3,member,[definition]*/sad(/*⇒3,type,[defaultLibrary]*/int) /*⇒4,type,[defaultLibrary]*/bool
+	/*⇒3,method,[definition]*/sad(/*⇒3,type,[defaultLibrary]*/int) /*⇒4,type,[defaultLibrary]*/bool
 }
 
 /*⇒4,keyword,[]*/type /*⇒1,type,[definition]*/F /*⇒3,type,[defaultLibrary]*/int
 
-/*⇒4,keyword,[]*/func (/*⇒1,variable,[]*/a /*⇒1,operator,[]*/*/*⇒1,type,[]*/A) /*⇒1,member,[definition]*/f() /*⇒4,type,[defaultLibrary]*/bool {
+/*⇒4,keyword,[]*/func (/*⇒1,variable,[]*/a /*⇒1,operator,[]*/*/*⇒1,type,[]*/A) /*⇒1,method,[definition]*/f() /*⇒4,type,[defaultLibrary]*/bool {
 	/*⇒3,keyword,[]*/var /*⇒1,variable,[definition]*/z /*⇒6,type,[defaultLibrary]*/string
 	/*⇒1,variable,[definition]*/x /*⇒2,operator,[]*/:= /*⇒5,string,[]*/"foo"
 	/*⇒1,variable,[]*/a(/*⇒1,variable,[]*/x)

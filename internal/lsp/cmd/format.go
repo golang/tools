@@ -14,20 +14,20 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
 )
 
 // format implements the format verb for gopls.
 type format struct {
-	Diff  bool `flag:"d" help:"display diffs instead of rewriting files"`
-	Write bool `flag:"w" help:"write result to (source) file instead of stdout"`
-	List  bool `flag:"l" help:"list files whose formatting differs from gofmt's"`
+	Diff  bool `flag:"d,diff" help:"display diffs instead of rewriting files"`
+	Write bool `flag:"w,write" help:"write result to (source) file instead of stdout"`
+	List  bool `flag:"l,list" help:"list files whose formatting differs from gofmt's"`
 
 	app *Application
 }
 
 func (c *format) Name() string      { return "format" }
-func (c *format) Usage() string     { return "<filerange>" }
+func (c *format) Parent() string    { return c.app.Name() }
+func (c *format) Usage() string     { return "[format-flags] <filerange>" }
 func (c *format) ShortHelp() string { return "format the code according to the go standard" }
 func (c *format) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), `
@@ -35,11 +35,11 @@ The arguments supplied may be simple file names, or ranges within files.
 
 Example: reformat this file:
 
-  $ gopls format -w internal/lsp/cmd/check.go
+	$ gopls format -w internal/lsp/cmd/check.go
 
-	gopls format flags are:
+format-flags:
 `)
-	f.PrintDefaults()
+	printFlagDefaults(f)
 }
 
 // Run performs the check on the files specified by args and prints the
@@ -67,18 +67,18 @@ func (c *format) Run(ctx context.Context, args ...string) error {
 			return err
 		}
 		if loc.Range.Start != loc.Range.End {
-			return errors.Errorf("only full file formatting supported")
+			return fmt.Errorf("only full file formatting supported")
 		}
 		p := protocol.DocumentFormattingParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
 		}
 		edits, err := conn.Formatting(ctx, &p)
 		if err != nil {
-			return errors.Errorf("%v: %v", spn, err)
+			return fmt.Errorf("%v: %v", spn, err)
 		}
 		sedits, err := source.FromProtocolEdits(file.mapper, edits)
 		if err != nil {
-			return errors.Errorf("%v: %v", spn, err)
+			return fmt.Errorf("%v: %v", spn, err)
 		}
 		formatted := diff.ApplyEdits(string(file.mapper.Content), sedits)
 		printIt := true

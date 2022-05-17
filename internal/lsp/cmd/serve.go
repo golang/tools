@@ -6,6 +6,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -20,7 +21,6 @@ import (
 	"golang.org/x/tools/internal/lsp/lsprpc"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/tool"
-	errors "golang.org/x/xerrors"
 )
 
 // Serve is a struct that exposes the configurable parts of the LSP server as
@@ -41,19 +41,21 @@ type Serve struct {
 	app *Application
 }
 
-func (s *Serve) Name() string  { return "serve" }
-func (s *Serve) Usage() string { return "" }
+func (s *Serve) Name() string   { return "serve" }
+func (s *Serve) Parent() string { return s.app.Name() }
+func (s *Serve) Usage() string  { return "[server-flags]" }
 func (s *Serve) ShortHelp() string {
 	return "run a server for Go code using the Language Server Protocol"
 }
 func (s *Serve) DetailedHelp(f *flag.FlagSet) {
-	fmt.Fprint(f.Output(), `
+	fmt.Fprint(f.Output(), `  gopls [flags] [server-flags]
+
 The server communicates using JSONRPC2 on stdin and stdout, and is intended to be run directly as
 a child of an editor process.
 
-gopls server flags are:
+server-flags:
 `)
-	f.PrintDefaults()
+	printFlagDefaults(f)
 }
 
 func (s *Serve) remoteArgs(network, address string) []string {
@@ -96,7 +98,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 		var err error
 		ss, err = lsprpc.NewForwarder(s.app.Remote, s.remoteArgs)
 		if err != nil {
-			return errors.Errorf("creating forwarder: %w", err)
+			return fmt.Errorf("creating forwarder: %w", err)
 		}
 	} else {
 		ss = lsprpc.NewStreamServer(cache.New(s.app.options), isDaemon)

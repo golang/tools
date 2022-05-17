@@ -6,10 +6,12 @@ package template
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"text/template/parse"
 	"unicode/utf8"
 
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 )
@@ -49,10 +51,16 @@ func (p *Parsed) fields(flds []string, x parse.Node) []symbol {
 			lookfor += "." + f // quadratic, but probably ok
 		}
 	default:
-		panic(fmt.Sprintf("%T unexpected in fields()", x))
+		// If these happen they will happen even if gopls is restarted
+		// and the users does the same thing, so it is better not to panic.
+		// context.Background() is used because we don't have access
+		// to any other context. [we could, but it would be complicated]
+		event.Log(context.Background(), fmt.Sprintf("%T unexpected in fields()", x))
+		return nil
 	}
 	if len(lookfor) == 0 {
-		panic(fmt.Sprintf("no strings in fields() %#v", x))
+		event.Log(context.Background(), fmt.Sprintf("no strings in fields() %#v", x))
+		return nil
 	}
 	startsAt := int(x.Position())
 	ix := bytes.Index(p.buf[startsAt:], []byte(lookfor)) // HasPrefix? PJW?
@@ -183,12 +191,9 @@ func (p *Parsed) findSymbols() {
 	pop()
 }
 
-// DocumentSymbols returns a heirarchy of the symbols defined in a template file.
-// (The heirarchy is flat. SymbolInformation might be better.)
+// DocumentSymbols returns a hierarchy of the symbols defined in a template file.
+// (The hierarchy is flat. SymbolInformation might be better.)
 func DocumentSymbols(snapshot source.Snapshot, fh source.FileHandle) ([]protocol.DocumentSymbol, error) {
-	if skipTemplates(snapshot) {
-		return nil, nil
-	}
 	buf, err := fh.Read()
 	if err != nil {
 		return nil, err

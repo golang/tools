@@ -61,7 +61,7 @@ func DiagnosticsForMod(ctx context.Context, snapshot source.Snapshot, fh source.
 		if !ok || req.Mod.Version == ver {
 			continue
 		}
-		rng, err := lineToRange(pm.Mapper, fh.URI(), req.Syntax.Start, req.Syntax.End)
+		rng, err := source.LineToRange(pm.Mapper, fh.URI(), req.Syntax.Start, req.Syntax.End)
 		if err != nil {
 			return nil, err
 		}
@@ -86,7 +86,7 @@ func DiagnosticsForMod(ctx context.Context, snapshot source.Snapshot, fh source.
 	}
 
 	// Packages in the workspace can contribute diagnostics to go.mod files.
-	wspkgs, err := snapshot.WorkspacePackages(ctx)
+	wspkgs, err := snapshot.ActivePackages(ctx)
 	if err != nil && !source.IsNonFatalGoModError(err) {
 		event.Error(ctx, fmt.Sprintf("workspace packages: diagnosing %s", pm.URI), err)
 	}

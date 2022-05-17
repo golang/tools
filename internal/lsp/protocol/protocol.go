@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/internal/jsonrpc2"
 	jsonrpc2_v2 "golang.org/x/tools/internal/jsonrpc2_v2"
 	"golang.org/x/tools/internal/xcontext"
-	errors "golang.org/x/xerrors"
 )
 
 var (
@@ -134,7 +133,11 @@ func ClientHandlerV2(client Client) jsonrpc2_v2.Handler {
 			resErr error
 		)
 		replier := func(_ context.Context, res interface{}, err error) error {
-			result, resErr = res, err
+			if err != nil {
+				resErr = err
+				return nil
+			}
+			result = res
 			return nil
 		}
 		_, err := clientDispatch(ctx, client, replier, req1)
@@ -179,7 +182,11 @@ func ServerHandlerV2(server Server) jsonrpc2_v2.Handler {
 			resErr error
 		)
 		replier := func(_ context.Context, res interface{}, err error) error {
-			result, resErr = res, err
+			if err != nil {
+				resErr = err
+				return nil
+			}
+			result = res
 			return nil
 		}
 		_, err := serverDispatch(ctx, server, replier, req1)
@@ -273,5 +280,5 @@ func cancelCall(ctx context.Context, sender connSender, id jsonrpc2.ID) {
 }
 
 func sendParseError(ctx context.Context, reply jsonrpc2.Replier, err error) error {
-	return reply(ctx, nil, errors.Errorf("%w: %s", jsonrpc2.ErrParse, err))
+	return reply(ctx, nil, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err))
 }

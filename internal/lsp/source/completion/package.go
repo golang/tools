@@ -7,6 +7,7 @@ package completion
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -17,12 +18,12 @@ import (
 	"strings"
 	"unicode"
 
-	"golang.org/x/tools/internal/lsp/debug"
+	"golang.org/x/tools/internal/lsp/bug"
 	"golang.org/x/tools/internal/lsp/fuzzy"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
 )
 
 // packageClauseCompletions offers completions for a package declaration when
@@ -46,7 +47,7 @@ func packageClauseCompletions(ctx context.Context, snapshot source.Snapshot, fh 
 
 	surrounding, err := packageCompletionSurrounding(ctx, snapshot.FileSet(), pgf, rng.Start)
 	if err != nil {
-		return nil, nil, errors.Errorf("invalid position for package completion: %w", err)
+		return nil, nil, fmt.Errorf("invalid position for package completion: %w", err)
 	}
 
 	packageSuggestions, err := packageSuggestions(ctx, snapshot, fh.URI(), "")
@@ -80,12 +81,21 @@ func packageCompletionSurrounding(ctx context.Context, fset *token.FileSet, pgf 
 		return nil, fmt.Errorf("unparseable file (%s)", pgf.URI)
 	}
 	tok := fset.File(expr.Pos())
-	offset := pgf.Tok.Offset(pos)
+	offset, err := safetoken.Offset(pgf.Tok, pos)
+	if err != nil {
+		return nil, err
+	}
 	if offset > tok.Size() {
-		debug.Bug(ctx, "out of bounds cursor", "cursor offset (%d) out of bounds for %s (size: %d)", offset, pgf.URI, tok.Size())
+		// internal bug: we should never get an offset that exceeds the size of our
+		// file.
+		bug.Report("out of bounds cursor", bug.Data{
+			"offset": offset,
+			"URI":    pgf.URI,
+			"size":   tok.Size(),
+		})
 		return nil, fmt.Errorf("cursor out of bounds")
 	}
-	cursor := tok.Pos(pgf.Tok.Offset(pos))
+	cursor := tok.Pos(offset)
 	m := &protocol.ColumnMapper{
 		URI:       pgf.URI,
 		Content:   pgf.Src,
@@ -213,7 +223,7 @@ func (c *completer) packageNameCompletions(ctx context.Context, fileURI span.URI
 // file. This also includes test packages for these packages (<pkg>_test) and
 // the directory name itself.
 func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI span.URI, prefix string) (packages []candidate, err error) {
-	workspacePackages, err := snapshot.WorkspacePackages(ctx)
+	workspacePackages, err := snapshot.ActivePackages(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -2,21 +2,21 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Code generated (see typescript/README.md) DO NOT EDIT.
+
 package protocol
 
-// Package protocol contains data types and code for LSP jsonrpcs
+// Package protocol contains data types and code for LSP json rpcs
 // generated automatically from vscode-languageserver-node
-// commit: 092c2afc3ad7e4d2b03fe8ac0deb418ec4276915
-// last fetched Sat Jul 03 2021 10:17:05 GMT-0700 (Pacific Daylight Time)
-
-// Code generated (see typescript/README.md) DO NOT EDIT.
+// commit: 696f9285bf849b73745682fdb1c1feac73eb8772
+// last fetched Fri Apr 01 2022 10:53:41 GMT-0400 (Eastern Daylight Time)
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"golang.org/x/tools/internal/jsonrpc2"
-	errors "golang.org/x/xerrors"
 )
 
 type Client interface {
@@ -26,13 +26,13 @@ type Client interface {
 	PublishDiagnostics(context.Context, *PublishDiagnosticsParams) error
 	Progress(context.Context, *ProgressParams) error
 	WorkspaceFolders(context.Context) ([]WorkspaceFolder /*WorkspaceFolder[] | null*/, error)
-	Configuration(context.Context, *ParamConfiguration) ([]interface{}, error)
+	Configuration(context.Context, *ParamConfiguration) ([]LSPAny, error)
 	WorkDoneProgressCreate(context.Context, *WorkDoneProgressCreateParams) error
 	ShowDocument(context.Context, *ShowDocumentParams) (*ShowDocumentResult, error)
 	RegisterCapability(context.Context, *RegistrationParams) error
 	UnregisterCapability(context.Context, *UnregistrationParams) error
 	ShowMessageRequest(context.Context, *ShowMessageRequestParams) (*MessageActionItem /*MessageActionItem | null*/, error)
-	ApplyEdit(context.Context, *ApplyWorkspaceEditParams) (*ApplyWorkspaceEditResponse, error)
+	ApplyEdit(context.Context, *ApplyWorkspaceEditParams) (*ApplyWorkspaceEditResult, error)
 }
 
 func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
@@ -74,17 +74,23 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 		return true, reply(ctx, nil, err)
 	case "workspace/workspaceFolders": // req
 		if len(r.Params()) > 0 {
-			return true, reply(ctx, nil, errors.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
+			return true, reply(ctx, nil, fmt.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
 		}
 		resp, err := client.WorkspaceFolders(ctx)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "workspace/configuration": // req
 		var params ParamConfiguration
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := client.Configuration(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "window/workDoneProgress/create": // req
 		var params WorkDoneProgressCreateParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
@@ -98,7 +104,10 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := client.ShowDocument(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "client/registerCapability": // req
 		var params RegistrationParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
@@ -119,14 +128,20 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := client.ShowMessageRequest(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "workspace/applyEdit": // req
 		var params ApplyWorkspaceEditParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := client.ApplyEdit(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 
 	default:
 		return false, nil
@@ -160,8 +175,8 @@ func (s *clientDispatcher) WorkspaceFolders(ctx context.Context) ([]WorkspaceFol
 	return result, nil
 }
 
-func (s *clientDispatcher) Configuration(ctx context.Context, params *ParamConfiguration) ([]interface{}, error) {
-	var result []interface{}
+func (s *clientDispatcher) Configuration(ctx context.Context, params *ParamConfiguration) ([]LSPAny, error) {
+	var result []LSPAny
 	if err := s.sender.Call(ctx, "workspace/configuration", params, &result); err != nil {
 		return nil, err
 	}
@@ -196,8 +211,8 @@ func (s *clientDispatcher) ShowMessageRequest(ctx context.Context, params *ShowM
 	return result, nil
 }
 
-func (s *clientDispatcher) ApplyEdit(ctx context.Context, params *ApplyWorkspaceEditParams) (*ApplyWorkspaceEditResponse, error) {
-	var result *ApplyWorkspaceEditResponse
+func (s *clientDispatcher) ApplyEdit(ctx context.Context, params *ApplyWorkspaceEditParams) (*ApplyWorkspaceEditResult, error) {
+	var result *ApplyWorkspaceEditResult
 	if err := s.sender.Call(ctx, "workspace/applyEdit", params, &result); err != nil {
 		return nil, err
 	}

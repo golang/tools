@@ -6,6 +6,7 @@ package source
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -16,10 +17,11 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/lsp/bug"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/typeparams"
-	errors "golang.org/x/xerrors"
 )
 
 // IdentifierInfo holds information about an identifier in Go source.
@@ -39,9 +41,10 @@ type IdentifierInfo struct {
 
 	ident *ast.Ident
 
-	// enclosing is an expression used to determine the link anchor for an
-	// identifier. If it's a named type, it should be exported.
-	enclosing types.Type
+	// For struct fields or embedded interfaces, enclosing is the object
+	// corresponding to the outer type declaration, if it is exported, for use in
+	// documentation links.
+	enclosing *types.TypeName
 
 	pkg Package
 	qf  types.Qualifier
@@ -57,10 +60,11 @@ type Declaration struct {
 
 	// The typechecked node.
 	node ast.Node
-	// Optional: the fully parsed spec, to be used for formatting in cases where
+
+	// Optional: the fully parsed node, to be used for formatting in cases where
 	// node has missing information. This could be the case when node was parsed
 	// in ParseExported mode.
-	fullSpec ast.Spec
+	fullDecl ast.Decl
 
 	// The typechecked object.
 	obj types.Object
@@ -77,7 +81,7 @@ func Identifier(ctx context.Context, snapshot Snapshot, fh FileHandle, pos proto
 	ctx, done := event.Start(ctx, "source.Identifier")
 	defer done()
 
-	pkgs, err := snapshot.PackagesForFile(ctx, fh.URI(), TypecheckAll)
+	pkgs, err := snapshot.PackagesForFile(ctx, fh.URI(), TypecheckAll, false)
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +99,9 @@ func Identifier(ctx context.Context, snapshot Snapshot, fh FileHandle, pos proto
 	for _, pkg := range pkgs {
 		pgf, err := pkg.File(fh.URI())
 		if err != nil {
+			// We shouldn't get a package from PackagesForFile that doesn't actually
+			// contain the file.
+			bug.Report("missing package file", bug.Data{"pkg": pkg.ID(), "file": fh.URI()})
 			return nil, err
 		}
 		spn, err := pgf.Mapper.PointSpan(pos)
@@ -114,7 +121,7 @@ func Identifier(ctx context.Context, snapshot Snapshot, fh FileHandle, pos proto
 	return nil, findErr
 }
 
-// ErrNoIdentFound is error returned when no identifer is found at a particular position
+// ErrNoIdentFound is error returned when no identifier is found at a particular position
 var ErrNoIdentFound = errors.New("no identifier found")
 
 func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, pgf *ParsedGoFile, pos token.Pos) (*IdentifierInfo, error) {
@@ -197,7 +204,7 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, pgf *Pa
 			result.Declaration.typeSwitchImplicit = typ
 		} else {
 			// Probably a type error.
-			return nil, errors.Errorf("%w for ident %v", errNoObjectFound, result.Name)
+			return nil, fmt.Errorf("%w for ident %v", errNoObjectFound, result.Name)
 		}
 	}
 
@@ -213,9 +220,13 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, pgf *Pa
 		}
 		decl, ok := builtinObj.Decl.(ast.Node)
 		if !ok {
-			return nil, errors.Errorf("no declaration for %s", result.Name)
+			return nil, fmt.Errorf("no declaration for %s", result.Name)
 		}
 		result.Declaration.node = decl
+		if typeSpec, ok := decl.(*ast.TypeSpec); ok {
+			// Find the GenDecl (which has the doc comments) for the TypeSpec.
+			result.Declaration.fullDecl = findGenDecl(builtin.File, typeSpec)
+		}
 
 		// The builtin package isn't in the dependency graph, so the usual
 		// utilities won't work here.
@@ -241,7 +252,7 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, pgf *Pa
 			}
 			decl, ok := builtinObj.Decl.(ast.Node)
 			if !ok {
-				return nil, errors.Errorf("no declaration for %s", errorName)
+				return nil, fmt.Errorf("no declaration for %s", errorName)
 			}
 			spec, ok := decl.(*ast.TypeSpec)
 			if !ok {
@@ -290,8 +301,7 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, pgf *Pa
 	}
 	// Ensure that we have the full declaration, in case the declaration was
 	// parsed in ParseExported and therefore could be missing information.
-	result.Declaration.fullSpec, err = fullSpec(snapshot, result.Declaration.obj, declPkg)
-	if err != nil {
+	if result.Declaration.fullDecl, err = fullNode(snapshot, result.Declaration.obj, declPkg); err != nil {
 		return nil, err
 	}
 	typ := pkg.GetTypesInfo().TypeOf(result.ident)
@@ -299,7 +309,7 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, pgf *Pa
 		return result, nil
 	}
 
-	result.Inferred = inferredSignature(pkg.GetTypesInfo(), path)
+	result.Inferred = inferredSignature(pkg.GetTypesInfo(), ident)
 
 	result.Type.Object = typeToObject(typ)
 	if result.Type.Object != nil {
@@ -314,10 +324,22 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, pgf *Pa
 	return result, nil
 }
 
-// fullSpec tries to extract the full spec corresponding to obj's declaration.
+// findGenDecl determines the parent ast.GenDecl for a given ast.Spec.
+func findGenDecl(f *ast.File, spec ast.Spec) *ast.GenDecl {
+	for _, decl := range f.Decls {
+		if genDecl, ok := decl.(*ast.GenDecl); ok {
+			if genDecl.Pos() <= spec.Pos() && genDecl.End() >= spec.End() {
+				return genDecl
+			}
+		}
+	}
+	return nil
+}
+
+// fullNode tries to extract the full spec corresponding to obj's declaration.
 // If the package was not parsed in full, the declaration file will be
 // re-parsed to ensure it has complete syntax.
-func fullSpec(snapshot Snapshot, obj types.Object, pkg Package) (ast.Spec, error) {
+func fullNode(snapshot Snapshot, obj types.Object, pkg Package) (ast.Decl, error) {
 	// declaration in a different package... make sure we have full AST information.
 	tok := snapshot.FileSet().File(obj.Pos())
 	uri := span.URIFromPath(tok.Name())
@@ -331,68 +353,35 @@ func fullSpec(snapshot Snapshot, obj types.Object, pkg Package) (ast.Spec, error
 		fset := snapshot.FileSet()
 		file2, _ := parser.ParseFile(fset, tok.Name(), pgf.Src, parser.AllErrors|parser.ParseComments)
 		if file2 != nil {
-			offset := tok.Offset(obj.Pos())
+			offset, err := safetoken.Offset(tok, obj.Pos())
+			if err != nil {
+				return nil, err
+			}
 			file = file2
 			tok2 := fset.File(file2.Pos())
 			pos = tok2.Pos(offset)
 		}
 	}
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
-	if len(path) > 1 {
-		if spec, _ := path[1].(*ast.TypeSpec); spec != nil {
-			return spec, nil
+	for _, n := range path {
+		if decl, ok := n.(ast.Decl); ok {
+			return decl, nil
 		}
 	}
 	return nil, nil
 }
 
 // inferredSignature determines the resolved non-generic signature for an
-// identifier with a generic signature that is the operand of an IndexExpr or
-// CallExpr.
+// identifier in an instantiation expression.
 //
 // If no such signature exists, it returns nil.
-func inferredSignature(info *types.Info, path []ast.Node) *types.Signature {
-	if len(path) < 2 {
-		return nil
-	}
-	// There are four ways in which a signature may be resolved:
-	//  1. It has no explicit type arguments, but the CallExpr can be fully
-	//     inferred from function arguments.
-	//  2. It has full type arguments, and the IndexExpr has a non-generic type.
-	//  3. For a partially instantiated IndexExpr representing a function-valued
-	//     expression (i.e. not part of a CallExpr), type arguments may be
-	//     inferred using constraint type inference.
-	//  4. For a partially instantiated IndexExpr that is part of a CallExpr,
-	//     type arguments may be inferred using both constraint type inference
-	//     and function argument inference.
-	//
-	// These branches are handled below.
-	switch n := path[1].(type) {
-	case *ast.CallExpr:
-		_, sig := typeparams.GetInferred(info, n)
-		return sig
-	case *ast.IndexExpr:
-		// If the IndexExpr is fully instantiated, we consider that 'inference' for
-		// gopls' purposes.
-		sig, _ := info.TypeOf(n).(*types.Signature)
-		if sig != nil && len(typeparams.ForSignature(sig)) == 0 {
-			return sig
-		}
-		_, sig = typeparams.GetInferred(info, n)
-		if sig != nil {
-			return sig
-		}
-		if len(path) >= 2 {
-			if call, _ := path[2].(*ast.CallExpr); call != nil {
-				_, sig := typeparams.GetInferred(info, call)
-				return sig
-			}
-		}
-	}
-	return nil
+func inferredSignature(info *types.Info, id *ast.Ident) *types.Signature {
+	inst := typeparams.GetInstances(info)[id]
+	sig, _ := inst.Type.(*types.Signature)
+	return sig
 }
 
-func searchForEnclosing(info *types.Info, path []ast.Node) types.Type {
+func searchForEnclosing(info *types.Info, path []ast.Node) *types.TypeName {
 	for _, n := range path {
 		switch n := n.(type) {
 		case *ast.SelectorExpr:
@@ -400,9 +389,9 @@ func searchForEnclosing(info *types.Info, path []ast.Node) types.Type {
 				recv := Deref(sel.Recv())
 
 				// Keep track of the last exported type seen.
-				var exported types.Type
+				var exported *types.TypeName
 				if named, ok := recv.(*types.Named); ok && named.Obj().Exported() {
-					exported = named
+					exported = named.Obj()
 				}
 				// We don't want the last element, as that's the field or
 				// method itself.
@@ -410,7 +399,7 @@ func searchForEnclosing(info *types.Info, path []ast.Node) types.Type {
 					if r, ok := recv.Underlying().(*types.Struct); ok {
 						recv = Deref(r.Field(index).Type())
 						if named, ok := recv.(*types.Named); ok && named.Obj().Exported() {
-							exported = named
+							exported = named.Obj()
 						}
 					}
 				}
@@ -418,12 +407,16 @@ func searchForEnclosing(info *types.Info, path []ast.Node) types.Type {
 			}
 		case *ast.CompositeLit:
 			if t, ok := info.Types[n]; ok {
-				return t.Type
+				if named, _ := t.Type.(*types.Named); named != nil {
+					return named.Obj()
+				}
 			}
 		case *ast.TypeSpec:
 			if _, ok := n.Type.(*ast.StructType); ok {
 				if t, ok := info.Defs[n.Name]; ok {
-					return t.Type()
+					if tname, _ := t.(*types.TypeName); tname != nil {
+						return tname
+					}
 				}
 			}
 		}
@@ -485,7 +478,7 @@ func importSpec(snapshot Snapshot, pkg Package, file *ast.File, pos token.Pos) (
 	}
 	importPath, err := strconv.Unquote(imp.Path.Value)
 	if err != nil {
-		return nil, errors.Errorf("import path not quoted: %s (%v)", imp.Path.Value, err)
+		return nil, fmt.Errorf("import path not quoted: %s (%v)", imp.Path.Value, err)
 	}
 	result := &IdentifierInfo{
 		Snapshot: snapshot,

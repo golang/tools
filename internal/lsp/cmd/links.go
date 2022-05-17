@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/tool"
-	errors "golang.org/x/xerrors"
 )
 
 // links implements the links verb for gopls.
@@ -25,17 +24,18 @@ type links struct {
 }
 
 func (l *links) Name() string      { return "links" }
-func (l *links) Usage() string     { return "<filename>" }
+func (l *links) Parent() string    { return l.app.Name() }
+func (l *links) Usage() string     { return "[links-flags] <filename>" }
 func (l *links) ShortHelp() string { return "list links in a file" }
 func (l *links) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprintf(f.Output(), `
 Example: list links contained within a file:
 
-  $ gopls links internal/lsp/cmd/check.go
+	$ gopls links internal/lsp/cmd/check.go
 
-gopls links flags are:
+links-flags:
 `)
-	f.PrintDefaults()
+	printFlagDefaults(f)
 }
 
 // Run finds all the links within a document
@@ -63,7 +63,7 @@ func (l *links) Run(ctx context.Context, args ...string) error {
 		},
 	})
 	if err != nil {
-		return errors.Errorf("%v: %v", from, err)
+		return fmt.Errorf("%v: %v", from, err)
 	}
 	if l.JSON {
 		enc := json.NewEncoder(os.Stdout)

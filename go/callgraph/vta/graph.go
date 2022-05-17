@@ -72,7 +72,7 @@ func (mv mapValue) String() string {
 	return fmt.Sprintf("MapValue(%v)", mv.Type())
 }
 
-// sliceElem node for VTA, modeling reachable slice element types.
+// sliceElem node for VTA, modeling reachable slice and array element types.
 type sliceElem struct {
 	typ types.Type
 }
@@ -175,9 +175,10 @@ func (f function) String() string {
 // We merge such constructs into a single node for simplicity and without
 // much precision sacrifice as such variables are rare in practice. Both
 // a and b would be represented as the same PtrInterface(I) node in:
-//   type I interface
-//   var a ***I
-//   var b **I
+//
+//	type I interface
+//	var a ***I
+//	var b **I
 type nestedPtrInterface struct {
 	typ types.Type
 }
@@ -188,6 +189,26 @@ func (l nestedPtrInterface) Type() types.Type {
 
 func (l nestedPtrInterface) String() string {
 	return fmt.Sprintf("PtrInterface(%v)", l.typ)
+}
+
+// nestedPtrFunction node represents all references and dereferences of locals
+// and globals that have a nested pointer to function type. We merge such
+// constructs into a single node for simplicity and without much precision
+// sacrifice as such variables are rare in practice. Both a and b would be
+// represented as the same PtrFunction(func()) node in:
+//
+//	var a *func()
+//	var b **func()
+type nestedPtrFunction struct {
+	typ types.Type
+}
+
+func (p nestedPtrFunction) Type() types.Type {
+	return p.typ
+}
+
+func (p nestedPtrFunction) String() string {
+	return fmt.Sprintf("PtrFunction(%v)", p.typ)
 }
 
 // panicArg models types of all arguments passed to panic.
@@ -346,8 +367,11 @@ func (b *builder) instr(instr ssa.Instruction) {
 		b.rtrn(i)
 	case *ssa.MakeChan, *ssa.MakeMap, *ssa.MakeSlice, *ssa.BinOp,
 		*ssa.Alloc, *ssa.DebugRef, *ssa.Convert, *ssa.Jump, *ssa.If,
-		*ssa.Slice, *ssa.Range, *ssa.RunDefers:
+		*ssa.Slice, *ssa.SliceToArrayPointer, *ssa.Range, *ssa.RunDefers:
 		// No interesting flow here.
+		// Notes on individual instructions:
+		// SliceToArrayPointer: t1 = slice to array pointer *[4]T <- []T (t0)
+		// No interesting flow as sliceArrayElem(t1) == sliceArrayElem(t0).
 		return
 	default:
 		panic(fmt.Sprintf("unsupported instruction %v\n", instr))
@@ -419,7 +443,9 @@ func (b *builder) send(s *ssa.Send) {
 }
 
 // selekt generates flows for select statement
-//   a = select blocking/nonblocking [c_1 <- t_1, c_2 <- t_2, ..., <- o_1, <- o_2, ...]
+//
+//	a = select blocking/nonblocking [c_1 <- t_1, c_2 <- t_2, ..., <- o_1, <- o_2, ...]
+//
 // between receiving channel registers c_i and corresponding input register t_i. Further,
 // flows are generated between o_i and a[2 + i]. Note that a is a tuple register of type
 // <int, bool, r_1, r_2, ...> where the type of r_i is the element type of channel o_i.
@@ -522,8 +548,9 @@ func (b *builder) closure(c *ssa.MakeClosure) {
 // panic creates a flow from arguments to panic instructions to return
 // registers of all recover statements in the program. Introduces a
 // global panic node Panic and
-//  1) for every panic statement p: add p -> Panic
-//  2) for every recover statement r: add Panic -> r (handled in call)
+//  1. for every panic statement p: add p -> Panic
+//  2. for every recover statement r: add Panic -> r (handled in call)
+//
 // TODO(zpavlinovic): improve precision by explicitly modeling how panic
 // values flow from callees to callers and into deferred recover instructions.
 func (b *builder) panic(p *ssa.Panic) {
@@ -551,6 +578,13 @@ func (b *builder) call(c ssa.CallInstruction) {
 }
 
 func addArgumentFlows(b *builder, c ssa.CallInstruction, f *ssa.Function) {
+	// When f has no paremeters (including receiver), there is no type
+	// flow here. Also, f's body and parameters might be missing, such
+	// as when vta is used within the golang.org/x/tools/go/analysis
+	// framework (see github.com/golang/go/issues/50670).
+	if len(f.Params) == 0 {
+		return
+	}
 	cc := c.Common()
 	// When c is an unresolved method call (cc.Method != nil), cc.Value contains
 	// the receiver object rather than cc.Args[0].
@@ -563,6 +597,14 @@ func addArgumentFlows(b *builder, c ssa.CallInstruction, f *ssa.Function) {
 		offset = 1
 	}
 	for i, v := range cc.Args {
+		// Parameters of f might not be available, as in the case
+		// when vta is used within the golang.org/x/tools/go/analysis
+		// framework (see github.com/golang/go/issues/50670).
+		//
+		// TODO: investigate other cases of missing body and parameters
+		if len(f.Params) <= i+offset {
+			return
+		}
 		b.addInFlowAliasEdges(b.nodeFromVal(f.Params[i+offset]), b.nodeFromVal(v))
 	}
 }
@@ -603,7 +645,7 @@ func addReturnFlows(b *builder, r *ssa.Return, site ssa.Value) {
 
 // addInFlowEdge adds s -> d to g if d is node that can have an inflow, i.e., a node
 // that represents an interface or an unresolved function value. Otherwise, there
-// is no interesting type flow so the edge is ommited.
+// is no interesting type flow so the edge is omitted.
 func (b *builder) addInFlowEdge(s, d node) {
 	if hasInFlow(d) {
 		b.graph.addEdge(b.representative(s), b.representative(d))
@@ -612,11 +654,15 @@ func (b *builder) addInFlowEdge(s, d node) {
 
 // Creates const, pointer, global, func, and local nodes based on register instructions.
 func (b *builder) nodeFromVal(val ssa.Value) node {
-	if p, ok := val.Type().(*types.Pointer); ok && !isInterface(p.Elem()) {
+	if p, ok := val.Type().(*types.Pointer); ok && !isInterface(p.Elem()) && !isFunction(p.Elem()) {
 		// Nested pointer to interfaces are modeled as a special
 		// nestedPtrInterface node.
 		if i := interfaceUnderPtr(p.Elem()); i != nil {
 			return nestedPtrInterface{typ: i}
+		}
+		// The same goes for nested function types.
+		if f := functionUnderPtr(p.Elem()); f != nil {
+			return nestedPtrFunction{typ: f}
 		}
 		return pointer{typ: p}
 	}
@@ -635,7 +681,6 @@ func (b *builder) nodeFromVal(val ssa.Value) node {
 	default:
 		panic(fmt.Errorf("unsupported value %v in node creation", val))
 	}
-	return nil
 }
 
 // representative returns a unique representative for node `n`. Since
@@ -662,6 +707,8 @@ func (b *builder) representative(n node) node {
 		return channelElem{typ: t}
 	case nestedPtrInterface:
 		return nestedPtrInterface{typ: t}
+	case nestedPtrFunction:
+		return nestedPtrFunction{typ: t}
 	case field:
 		return field{StructType: canonicalize(i.StructType, &b.canon), index: i.index}
 	case indexedLocal:

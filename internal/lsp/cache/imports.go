@@ -39,7 +39,12 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot
 	// is slightly wasteful, since we'll drop caches a little too often, but
 	// the mod file shouldn't be changing while people are autocompleting.
 	var modFileHash string
-	if snapshot.workspaceMode()&usesWorkspaceModule == 0 {
+	// If we are using 'legacyWorkspace' mode, we can just read the modfile from
+	// the snapshot. Otherwise, we need to get the synthetic workspace mod file.
+	//
+	// TODO(rfindley): we should be able to just always use the synthetic
+	// workspace module, or alternatively use the go.work file.
+	if snapshot.workspace.moduleSource == legacyWorkspace {
 		for m := range snapshot.workspace.getActiveModFiles() { // range to access the only element
 			modFH, err := snapshot.GetFile(ctx, m)
 			if err != nil {
@@ -138,7 +143,7 @@ func (s *importsState) populateProcessEnv(ctx context.Context, snapshot *snapsho
 
 	// Take an extra reference to the snapshot so that its workspace directory
 	// (if any) isn't destroyed while we're using it.
-	release := snapshot.generation.Acquire(ctx)
+	release := snapshot.generation.Acquire()
 	_, inv, cleanupInvocation, err := snapshot.goCommandInvocation(ctx, source.LoadWorkspace, &gocommand.Invocation{
 		WorkingDir: snapshot.view.rootURI.Filename(),
 	})

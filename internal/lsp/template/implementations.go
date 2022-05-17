@@ -29,7 +29,8 @@ func Diagnose(f source.VersionedFileHandle) []*source.Diagnostic {
 	if err != nil {
 		// Is a Diagnostic with no Range useful? event.Error also?
 		msg := fmt.Sprintf("failed to read %s (%v)", f.URI().Filename(), err)
-		d := source.Diagnostic{Message: msg, Severity: protocol.SeverityError, URI: f.URI()}
+		d := source.Diagnostic{Message: msg, Severity: protocol.SeverityError, URI: f.URI(),
+			Source: source.TemplateError}
 		return []*source.Diagnostic{&d}
 	}
 	p := parseBuffer(buf)
@@ -38,7 +39,9 @@ func Diagnose(f source.VersionedFileHandle) []*source.Diagnostic {
 	}
 	unknownError := func(msg string) []*source.Diagnostic {
 		s := fmt.Sprintf("malformed template error %q: %s", p.ParseErr.Error(), msg)
-		d := source.Diagnostic{Message: s, Severity: protocol.SeverityError, Range: p.Range(p.nls[0], 1), URI: f.URI()}
+		d := source.Diagnostic{
+			Message: s, Severity: protocol.SeverityError, Range: p.Range(p.nls[0], 1),
+			URI: f.URI(), Source: source.TemplateError}
 		return []*source.Diagnostic{&d}
 	}
 	// errors look like `template: :40: unexpected "}" in operand`
@@ -54,7 +57,8 @@ func Diagnose(f source.VersionedFileHandle) []*source.Diagnostic {
 		return unknownError(msg)
 	}
 	msg := matches[2]
-	d := source.Diagnostic{Message: msg, Severity: protocol.SeverityError}
+	d := source.Diagnostic{Message: msg, Severity: protocol.SeverityError,
+		Source: source.TemplateError}
 	start := p.nls[lineno-1]
 	if lineno < len(p.nls) {
 		size := p.nls[lineno] - start
@@ -65,18 +69,11 @@ func Diagnose(f source.VersionedFileHandle) []*source.Diagnostic {
 	return []*source.Diagnostic{&d}
 }
 
-func skipTemplates(s source.Snapshot) bool {
-	return !s.View().Options().ExperimentalTemplateSupport
-}
-
 // Definition finds the definitions of the symbol at loc. It
 // does not understand scoping (if any) in templates. This code is
-// for defintions, type definitions, and implementations.
+// for definitions, type definitions, and implementations.
 // Results only for variables and templates.
 func Definition(snapshot source.Snapshot, fh source.VersionedFileHandle, loc protocol.Position) ([]protocol.Location, error) {
-	if skipTemplates(snapshot) {
-		return nil, nil
-	}
 	x, _, err := symAtPosition(fh, loc)
 	if err != nil {
 		return nil, err
@@ -97,9 +94,6 @@ func Definition(snapshot source.Snapshot, fh source.VersionedFileHandle, loc pro
 }
 
 func Hover(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, position protocol.Position) (*protocol.Hover, error) {
-	if skipTemplates(snapshot) {
-		return nil, nil
-	}
 	sym, p, err := symAtPosition(fh, position)
 	if sym == nil || err != nil {
 		return nil, err
@@ -118,6 +112,12 @@ func Hover(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, 
 		ans.Contents.Value = fmt.Sprintf("template %s\n(add definition)", sym.name)
 	case protocol.Namespace:
 		ans.Contents.Value = fmt.Sprintf("template %s defined", sym.name)
+	case protocol.Number:
+		ans.Contents.Value = "number"
+	case protocol.String:
+		ans.Contents.Value = "string"
+	case protocol.Boolean:
+		ans.Contents.Value = "boolean"
 	default:
 		ans.Contents.Value = fmt.Sprintf("oops, sym=%#v", sym)
 	}
@@ -125,9 +125,6 @@ func Hover(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, 
 }
 
 func References(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, params *protocol.ReferenceParams) ([]protocol.Location, error) {
-	if skipTemplates(snapshot) {
-		return nil, nil
-	}
 	sym, _, err := symAtPosition(fh, params.Position)
 	if sym == nil || err != nil || sym.name == "" {
 		return nil, err
@@ -151,9 +148,6 @@ func References(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 }
 
 func SemanticTokens(ctx context.Context, snapshot source.Snapshot, spn span.URI, add func(line, start, len uint32), d func() []uint32) (*protocol.SemanticTokens, error) {
-	if skipTemplates(snapshot) {
-		return nil, nil
-	}
 	fh, err := snapshot.GetFile(ctx, spn)
 	if err != nil {
 		return nil, err
@@ -163,9 +157,7 @@ func SemanticTokens(ctx context.Context, snapshot source.Snapshot, spn span.URI,
 		return nil, err
 	}
 	p := parseBuffer(buf)
-	if p.ParseErr != nil {
-		return nil, p.ParseErr
-	}
+
 	for _, t := range p.Tokens() {
 		if t.Multiline {
 			la, ca := p.LineCol(t.Start)

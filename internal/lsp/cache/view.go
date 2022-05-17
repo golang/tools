@@ -29,10 +29,8 @@ import (
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
-	errors "golang.org/x/xerrors"
 )
 
 type View struct {
@@ -74,7 +72,7 @@ type View struct {
 	initCancelFirstAttempt context.CancelFunc
 
 	snapshotMu sync.Mutex
-	snapshot   *snapshot
+	snapshot   *snapshot // nil after shutdown has been called
 
 	// initialWorkspaceLoad is closed when the first workspace initialization has
 	// completed. If we failed to load, we only retry if the go.mod file changes,
@@ -93,10 +91,6 @@ type View struct {
 	// workspaceInformation tracks various details about this view's
 	// environment variables, go version, and use of modules.
 	workspaceInformation
-
-	// tempWorkspace is a temporary directory dedicated to holding the latest
-	// version of the workspace go.mod file. (TODO: also go.sum file)
-	tempWorkspace span.URI
 }
 
 type workspaceInformation struct {
@@ -141,15 +135,7 @@ const (
 
 	// tempModfile indicates whether or not the -modfile flag should be used.
 	tempModfile
-
-	// usesWorkspaceModule indicates support for the experimental workspace module
-	// feature.
-	usesWorkspaceModule
 )
-
-type builtinPackageHandle struct {
-	handle *memoize.Handle
-}
 
 // fileBase holds the common functionality for all files.
 // It is intended to be embedded in the file implementations
@@ -231,14 +217,37 @@ func (v *View) Folder() span.URI {
 	return v.folder
 }
 
-func (v *View) TempWorkspace() span.URI {
-	return v.tempWorkspace
-}
-
 func (v *View) Options() *source.Options {
 	v.optionsMu.Lock()
 	defer v.optionsMu.Unlock()
 	return v.options
+}
+
+func (v *View) FileKind(fh source.FileHandle) source.FileKind {
+	if o, ok := fh.(source.Overlay); ok {
+		if o.Kind() != source.UnknownKind {
+			return o.Kind()
+		}
+	}
+	fext := filepath.Ext(fh.URI().Filename())
+	switch fext {
+	case ".go":
+		return source.Go
+	case ".mod":
+		return source.Mod
+	case ".sum":
+		return source.Sum
+	case ".work":
+		return source.Work
+	}
+	exts := v.Options().TemplateExtensions
+	for _, ext := range exts {
+		if fext == ext || fext == "."+ext {
+			return source.Tmpl
+		}
+	}
+	// and now what? This should never happen, but it does for cgo before go1.15
+	return source.Go
 }
 
 func minorOptionsChange(a, b *source.Options) bool {
@@ -332,25 +341,49 @@ func (s *snapshot) RunProcessEnvFunc(ctx context.Context, fn func(*imports.Optio
 	return s.view.importsState.runProcessEnvFunc(ctx, s, fn)
 }
 
+// separated out from its sole use in locateTemplateFiles for testability
+func fileHasExtension(path string, suffixes []string) bool {
+	ext := filepath.Ext(path)
+	if ext != "" && ext[0] == '.' {
+		ext = ext[1:]
+	}
+	for _, s := range suffixes {
+		if s != "" && ext == s {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *snapshot) locateTemplateFiles(ctx context.Context) {
-	if !s.view.Options().ExperimentalTemplateSupport {
+	if len(s.view.Options().TemplateExtensions) == 0 {
 		return
 	}
+	suffixes := s.view.Options().TemplateExtensions
+
+	// The workspace root may have been expanded to a module, but we should apply
+	// directory filters based on the configured workspace folder.
+	//
+	// TODO(rfindley): we should be more principled about paths outside of the
+	// workspace folder: do we even consider them? Do we support absolute
+	// exclusions? Relative exclusions starting with ..?
 	dir := s.workspace.root.Filename()
+	relativeTo := s.view.folder.Filename()
+
 	searched := 0
 	// Change to WalkDir when we move up to 1.16
 	err := filepath.Walk(dir, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if strings.HasSuffix(filepath.Ext(path), "tmpl") && !pathExcludedByFilter(path, dir, s.view.gomodcache, s.view.options) &&
-			!fi.IsDir() {
+		relpath := strings.TrimPrefix(path, relativeTo)
+		excluded := pathExcludedByFilter(relpath, dir, s.view.gomodcache, s.view.options)
+		if fileHasExtension(path, suffixes) && !excluded && !fi.IsDir() {
 			k := span.URIFromPath(path)
-			fh, err := s.GetVersionedFile(ctx, k)
+			_, err := s.GetVersionedFile(ctx, k)
 			if err != nil {
 				return nil
 			}
-			s.files[k] = fh
 		}
 		searched++
 		if fileLimit > 0 && searched > fileLimit {
@@ -490,7 +523,10 @@ func (v *View) shutdown(ctx context.Context) {
 	}
 	v.mu.Unlock()
 	v.snapshotMu.Lock()
-	go v.snapshot.generation.Destroy()
+	if v.snapshot != nil {
+		go v.snapshot.generation.Destroy("View.shutdown")
+		v.snapshot = nil
+	}
 	v.snapshotMu.Unlock()
 	v.importsState.destroy()
 }
@@ -520,9 +556,11 @@ func (s *snapshot) IgnoredFile(uri span.URI) bool {
 	return false
 }
 
-// checkIgnored implements go list's exclusion rules. go help list:
-// 		Directory and file names that begin with "." or "_" are ignored
-// 		by the go tool, as are directories named "testdata".
+// checkIgnored implements go list's exclusion rules.
+// Quoting “go help list”:
+//
+//	Directory and file names that begin with "." or "_" are ignored
+//	by the go tool, as are directories named "testdata".
 func checkIgnored(suffix string) bool {
 	for _, component := range strings.Split(suffix, string(filepath.Separator)) {
 		if len(component) == 0 {
@@ -536,13 +574,16 @@ func checkIgnored(suffix string) bool {
 }
 
 func (v *View) Snapshot(ctx context.Context) (source.Snapshot, func()) {
-	return v.getSnapshot(ctx)
+	return v.getSnapshot()
 }
 
-func (v *View) getSnapshot(ctx context.Context) (*snapshot, func()) {
+func (v *View) getSnapshot() (*snapshot, func()) {
 	v.snapshotMu.Lock()
 	defer v.snapshotMu.Unlock()
-	return v.snapshot, v.snapshot.generation.Acquire(ctx)
+	if v.snapshot == nil {
+		panic("getSnapshot called after shutdown")
+	}
+	return v.snapshot, v.snapshot.generation.Acquire()
 }
 
 func (s *snapshot) initialize(ctx context.Context, firstAttempt bool) {
@@ -611,7 +652,7 @@ func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) {
 	// If we're loading anything, ensure we also load builtin.
 	// TODO(rstambler): explain the rationale for this.
 	if len(scopes) > 0 {
-		scopes = append(scopes, packagePath("builtin"))
+		scopes = append(scopes, PackagePath("builtin"))
 	}
 	err := s.load(ctx, firstAttempt, scopes...)
 
@@ -655,6 +696,9 @@ func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) {
 
 // invalidateContent invalidates the content of a Go file,
 // including any position and type information that depends on it.
+//
+// invalidateContent returns a non-nil snapshot for the new content, along with
+// a callback which the caller must invoke to release that snapshot.
 func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]*fileChange, forceReloadMetadata bool) (*snapshot, func()) {
 	// Detach the context so that content invalidation cannot be canceled.
 	ctx = xcontext.Detach(ctx)
@@ -662,6 +706,10 @@ func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]*file
 	// This should be the only time we hold the view's snapshot lock for any period of time.
 	v.snapshotMu.Lock()
 	defer v.snapshotMu.Unlock()
+
+	if v.snapshot == nil {
+		panic("invalidateContent called after shutdown")
+	}
 
 	// Cancel all still-running previous requests, since they would be
 	// operating on stale data.
@@ -672,62 +720,15 @@ func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]*file
 
 	oldSnapshot := v.snapshot
 
-	var workspaceChanged bool
-	v.snapshot, workspaceChanged = oldSnapshot.clone(ctx, v.baseCtx, changes, forceReloadMetadata)
-	if workspaceChanged {
-		if err := v.updateWorkspaceLocked(ctx); err != nil {
-			event.Error(ctx, "copying workspace dir", err)
-		}
-	}
-	go oldSnapshot.generation.Destroy()
+	v.snapshot = oldSnapshot.clone(ctx, v.baseCtx, changes, forceReloadMetadata)
+	go oldSnapshot.generation.Destroy("View.invalidateContent")
 
-	return v.snapshot, v.snapshot.generation.Acquire(ctx)
-}
-
-func (v *View) updateWorkspace(ctx context.Context) error {
-	if v.tempWorkspace == "" {
-		return nil
-	}
-	v.snapshotMu.Lock()
-	defer v.snapshotMu.Unlock()
-	return v.updateWorkspaceLocked(ctx)
-}
-
-// updateWorkspaceLocked should only be called when v.snapshotMu is held. It
-// guarantees that workspace module content will be copied to v.tempWorkace at
-// some point in the future. We do not guarantee that the temp workspace sees
-// all changes to the workspace module, only that it is eventually consistent
-// with the workspace module of the latest snapshot.
-func (v *View) updateWorkspaceLocked(ctx context.Context) error {
-	release := v.snapshot.generation.Acquire(ctx)
-	defer release()
-	src, err := v.snapshot.getWorkspaceDir(ctx)
-	if err != nil {
-		return err
-	}
-	for _, name := range []string{"go.mod", "go.sum"} {
-		srcname := filepath.Join(src.Filename(), name)
-		srcf, err := os.Open(srcname)
-		if err != nil {
-			return errors.Errorf("opening snapshot %s: %w", name, err)
-		}
-		defer srcf.Close()
-		dstname := filepath.Join(v.tempWorkspace.Filename(), name)
-		dstf, err := os.Create(dstname)
-		if err != nil {
-			return errors.Errorf("truncating view %s: %w", name, err)
-		}
-		defer dstf.Close()
-		if _, err := io.Copy(dstf, srcf); err != nil {
-			return errors.Errorf("copying %s: %w", name, err)
-		}
-	}
-	return nil
+	return v.snapshot, v.snapshot.generation.Acquire()
 }
 
 func (s *Session) getWorkspaceInformation(ctx context.Context, folder span.URI, options *source.Options) (*workspaceInformation, error) {
 	if err := checkPathCase(folder.Filename()); err != nil {
-		return nil, errors.Errorf("invalid workspace configuration: %w", err)
+		return nil, fmt.Errorf("invalid workspace folder path: %w; check that the casing of the configured workspace folder path agrees with the casing reported by the operating system", err)
 	}
 	var err error
 	inv := gocommand.Invocation{
@@ -796,18 +797,19 @@ func go111moduleForVersion(go111module string, goversion int) go111module {
 //   - Then, a parent directory containing a go.mod file.
 //   - Then, a child directory containing a go.mod file, if there is exactly
 //     one (non-experimental only).
+//
 // Otherwise, it returns folder.
 // TODO (rFindley): move this to workspace.go
 // TODO (rFindley): simplify this once workspace modules are enabled by default.
 func findWorkspaceRoot(ctx context.Context, folder span.URI, fs source.FileSource, excludePath func(string) bool, experimental bool) (span.URI, error) {
-	patterns := []string{"go.mod"}
+	patterns := []string{"go.work", "go.mod"}
 	if experimental {
 		patterns = []string{"go.work", "gopls.mod", "go.mod"}
 	}
 	for _, basename := range patterns {
 		dir, err := findRootPattern(ctx, folder, basename, fs)
 		if err != nil {
-			return "", errors.Errorf("finding %s: %w", basename, err)
+			return "", fmt.Errorf("finding %s: %w", basename, err)
 		}
 		if dir != "" {
 			return dir, nil
@@ -850,7 +852,8 @@ func findRootPattern(ctx context.Context, folder span.URI, basename string, fs s
 		if exists {
 			return span.URIFromPath(dir), nil
 		}
-		next, _ := filepath.Split(dir)
+		// Trailing separators must be trimmed, otherwise filepath.Split is a noop.
+		next, _ := filepath.Split(strings.TrimRight(dir, string(filepath.Separator)))
 		if next == dir {
 			break
 		}
@@ -904,6 +907,7 @@ func (s *Session) getGoEnv(ctx context.Context, folder string, goversion int, go
 	for k := range vars {
 		args = append(args, k)
 	}
+	args = append(args, "GOWORK")
 
 	inv := gocommand.Invocation{
 		Verb:       "env",
@@ -1057,26 +1061,18 @@ func pathExcludedByFilterFunc(root, gomodcache string, opts *source.Options) fun
 	}
 }
 
+// pathExcludedByFilter reports whether the path (relative to the workspace
+// folder) should be excluded by the configured directory filters.
+//
+// TODO(rfindley): passing root and gomodcache here makes it confusing whether
+// path should be absolute or relative, and has already caused at least one
+// bug.
 func pathExcludedByFilter(path, root, gomodcache string, opts *source.Options) bool {
 	path = strings.TrimPrefix(filepath.ToSlash(path), "/")
 	gomodcache = strings.TrimPrefix(filepath.ToSlash(strings.TrimPrefix(gomodcache, root)), "/")
-
-	excluded := false
 	filters := opts.DirectoryFilters
 	if gomodcache != "" {
 		filters = append(filters, "-"+gomodcache)
 	}
-	for _, filter := range filters {
-		op, prefix := filter[0], filter[1:]
-		// Non-empty prefixes have to be precise directory matches.
-		if prefix != "" {
-			prefix = prefix + "/"
-			path = path + "/"
-		}
-		if !strings.HasPrefix(path, prefix) {
-			continue
-		}
-		excluded = op == '-'
-	}
-	return excluded
+	return source.FiltersDisallow(path, filters)
 }

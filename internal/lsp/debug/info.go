@@ -7,9 +7,11 @@ package debug
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"reflect"
+	"runtime"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -23,6 +25,7 @@ const (
 	PlainText = PrintMode(iota)
 	Markdown
 	HTML
+	JSON
 )
 
 // Version is a manually-updated mechanism for tracking versions.
@@ -31,8 +34,8 @@ const Version = "master"
 // ServerVersion is the format used by gopls to report its version to the
 // client. This format is structured so that the client can parse it easily.
 type ServerVersion struct {
-	Module
-	Deps []*Module `json:"deps,omitempty"`
+	*BuildInfo
+	Version string
 }
 
 type Module struct {
@@ -50,47 +53,24 @@ type ModuleVersion struct {
 // built in module mode, we return a GOPATH-specific message with the
 // hardcoded version.
 func VersionInfo() *ServerVersion {
-	if info, ok := debug.ReadBuildInfo(); ok {
+	if info, ok := readBuildInfo(); ok {
 		return getVersion(info)
 	}
-	path := "gopls, built in GOPATH mode"
+	buildInfo := &BuildInfo{}
+	// go1.17 or earlier, part of s.BuildInfo are embedded fields.
+	buildInfo.Path = "gopls, built in GOPATH mode"
+	buildInfo.GoVersion = runtime.Version()
 	return &ServerVersion{
-		Module: Module{
-			ModuleVersion: ModuleVersion{
-				Path:    path,
-				Version: Version,
-			},
-		},
+		Version:   Version,
+		BuildInfo: buildInfo,
 	}
 }
 
-func getVersion(info *debug.BuildInfo) *ServerVersion {
-	serverVersion := ServerVersion{
-		Module: Module{
-			ModuleVersion: ModuleVersion{
-				Path:    info.Main.Path,
-				Version: info.Main.Version,
-				Sum:     info.Main.Sum,
-			},
-		},
+func getVersion(info *BuildInfo) *ServerVersion {
+	return &ServerVersion{
+		Version:   Version,
+		BuildInfo: info,
 	}
-	for _, d := range info.Deps {
-		m := &Module{
-			ModuleVersion: ModuleVersion{
-				Path:    d.Path,
-				Version: d.Version,
-				Sum:     d.Sum,
-			},
-		}
-		if d.Replace != nil {
-			m.Replace = &ModuleVersion{
-				Path:    d.Replace.Path,
-				Version: d.Replace.Version,
-			}
-		}
-		serverVersion.Deps = append(serverVersion.Deps, m)
-	}
-	return &serverVersion
 }
 
 // PrintServerInfo writes HTML debug info to w for the Instance.
@@ -111,15 +91,29 @@ func (i *Instance) PrintServerInfo(ctx context.Context, w io.Writer) {
 // PrintVersionInfo writes version information to w, using the output format
 // specified by mode. verbose controls whether additional information is
 // written, including section headers.
-func PrintVersionInfo(ctx context.Context, w io.Writer, verbose bool, mode PrintMode) {
+func PrintVersionInfo(_ context.Context, w io.Writer, verbose bool, mode PrintMode) error {
 	info := VersionInfo()
+	if mode == JSON {
+		return printVersionInfoJSON(w, info)
+	}
+
 	if !verbose {
 		printBuildInfo(w, info, false, mode)
-		return
+		return nil
 	}
 	section(w, mode, "Build info", func() {
 		printBuildInfo(w, info, true, mode)
 	})
+	return nil
+}
+
+func printVersionInfoJSON(w io.Writer, info *ServerVersion) error {
+	js, err := json.MarshalIndent(info, "", "\t")
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprint(w, string(js))
+	return err
 }
 
 func section(w io.Writer, mode PrintMode, title string, body func()) {
@@ -141,16 +135,17 @@ func section(w io.Writer, mode PrintMode, title string, body func()) {
 
 func printBuildInfo(w io.Writer, info *ServerVersion, verbose bool, mode PrintMode) {
 	fmt.Fprintf(w, "%v %v\n", info.Path, Version)
-	printModuleInfo(w, &info.Module, mode)
+	printModuleInfo(w, info.Main, mode)
 	if !verbose {
 		return
 	}
 	for _, dep := range info.Deps {
-		printModuleInfo(w, dep, mode)
+		printModuleInfo(w, *dep, mode)
 	}
+	fmt.Fprintf(w, "go: %v\n", info.GoVersion)
 }
 
-func printModuleInfo(w io.Writer, m *Module, mode PrintMode) {
+func printModuleInfo(w io.Writer, m debug.Module, _ PrintMode) {
 	fmt.Fprintf(w, "    %s@%s", m.Path, m.Version)
 	if m.Sum != "" {
 		fmt.Fprintf(w, " %s", m.Sum)
@@ -183,10 +178,15 @@ func swalk(t reflect.Type, ix []int, indent string) {
 	}
 }
 
-func showOptions(o *source.Options) []string {
-	// non-breaking spaces for indenting current and defaults when they are on a separate line
-	const indent = "\u00a0\u00a0\u00a0\u00a0\u00a0"
-	var ans strings.Builder
+type sessionOption struct {
+	Name    string
+	Type    string
+	Current string
+	Default string
+}
+
+func showOptions(o *source.Options) []sessionOption {
+	var out []sessionOption
 	t := reflect.TypeOf(*o)
 	swalk(t, []int{}, "")
 	v := reflect.ValueOf(*o)
@@ -195,17 +195,26 @@ func showOptions(o *source.Options) []string {
 		val := v.FieldByIndex(f.index)
 		def := do.FieldByIndex(f.index)
 		tx := t.FieldByIndex(f.index)
-		prefix := fmt.Sprintf("%s (type is %s): ", tx.Name, tx.Type)
 		is := strVal(val)
 		was := strVal(def)
-		if len(is) < 30 && len(was) < 30 {
-			fmt.Fprintf(&ans, "%s current:%s, default:%s\n", prefix, is, was)
-		} else {
-			fmt.Fprintf(&ans, "%s\n%scurrent:%s\n%sdefault:%s\n", prefix, indent, is, indent, was)
-		}
+		out = append(out, sessionOption{
+			Name:    tx.Name,
+			Type:    tx.Type.String(),
+			Current: is,
+			Default: was,
+		})
 	}
-	return strings.Split(ans.String(), "\n")
+	sort.Slice(out, func(i, j int) bool {
+		rd := out[i].Current == out[i].Default
+		ld := out[j].Current == out[j].Default
+		if rd != ld {
+			return ld
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
 }
+
 func strVal(val reflect.Value) string {
 	switch val.Kind() {
 	case reflect.Bool:
