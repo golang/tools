@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/typesinternal"
-	errors "golang.org/x/xerrors"
 )
 
 func goPackagesErrorDiagnostics(snapshot *snapshot, pkg *pkg, e packages.Error) ([]*source.Diagnostic, error) {
@@ -75,7 +74,7 @@ func goPackagesErrorDiagnostics(snapshot *snapshot, pkg *pkg, e packages.Error) 
 func parseErrorDiagnostics(snapshot *snapshot, pkg *pkg, errList scanner.ErrorList) ([]*source.Diagnostic, error) {
 	// The first parser error is likely the root cause of the problem.
 	if errList.Len() <= 0 {
-		return nil, errors.Errorf("no errors in %v", errList)
+		return nil, fmt.Errorf("no errors in %v", errList)
 	}
 	e := errList[0]
 	pgf, err := pkg.File(span.URIFromPath(e.Pos.Filename))
@@ -101,7 +100,7 @@ func parseErrorDiagnostics(snapshot *snapshot, pkg *pkg, errList scanner.ErrorLi
 }
 
 var importErrorRe = regexp.MustCompile(`could not import ([^\s]+)`)
-var unsupportedFeatureRe = regexp.MustCompile(`.*require go(\d+\.\d+) or later`)
+var unsupportedFeatureRe = regexp.MustCompile(`.*require.* go(\d+\.\d+) or later`)
 
 func typeErrorDiagnostics(snapshot *snapshot, pkg *pkg, e extendedError) ([]*source.Diagnostic, error) {
 	code, spn, err := typeErrorData(snapshot.FileSet(), pkg, e.primary)
@@ -146,12 +145,10 @@ func typeErrorDiagnostics(snapshot *snapshot, pkg *pkg, e extendedError) ([]*sou
 			return nil, err
 		}
 	}
-	if code == typesinternal.UnsupportedFeature {
-		if match := unsupportedFeatureRe.FindStringSubmatch(e.primary.Msg); match != nil {
-			diag.SuggestedFixes, err = editGoDirectiveQuickFix(snapshot, spn.URI(), match[1])
-			if err != nil {
-				return nil, err
-			}
+	if match := unsupportedFeatureRe.FindStringSubmatch(e.primary.Msg); match != nil {
+		diag.SuggestedFixes, err = editGoDirectiveQuickFix(snapshot, spn.URI(), match[1])
+		if err != nil {
+			return nil, err
 		}
 	}
 	return []*source.Diagnostic{diag}, nil
@@ -371,8 +368,7 @@ func spanToRange(pkg *pkg, spn span.Span) (protocol.Range, error) {
 // It works only on errors whose message is prefixed by colon,
 // followed by a space (": "). For example:
 //
-//   attributes.go:13:1: expected 'package', found 'type'
-//
+//	attributes.go:13:1: expected 'package', found 'type'
 func parseGoListError(input, wd string) span.Span {
 	input = strings.TrimSpace(input)
 	msgIndex := strings.Index(input, ": ")

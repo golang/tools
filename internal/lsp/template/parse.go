@@ -9,7 +9,7 @@ package template
 // this may be a bad choice for projects with lots of template files.
 
 // This file contains the parsing code, some debugging printing, and
-// implementations for Diagnose, Definition, HJover, References
+// implementations for Diagnose, Definition, Hover, References
 
 import (
 	"bytes"
@@ -154,7 +154,8 @@ func parseBuffer(buf []byte) *Parsed {
 
 // FindLiteralBefore locates the first preceding string literal
 // returning its position and length in buf
-// or returns -1 if there is none. Assume "", rather than ``, for now
+// or returns -1 if there is none.
+// Assume double-quoted string rather than backquoted string for now.
 func (p *Parsed) FindLiteralBefore(pos int) (int, int) {
 	left, right := -1, -1
 	for i := pos - 1; i >= 0; i-- {
@@ -291,11 +292,12 @@ func (p *Parsed) TokenSize(t Token) (int, error) {
 	return ans, nil
 }
 
-// RuneCount counts runes in a line
+// RuneCount counts runes in line l, from col s to e
+// (e==0 for end of line. called only for multiline tokens)
 func (p *Parsed) RuneCount(l, s, e uint32) uint32 {
 	start := p.nls[l] + 1 + int(s)
-	end := int(e)
-	if e == 0 || int(e) >= p.nls[l+1] {
+	end := p.nls[l] + 1 + int(e)
+	if e == 0 || end > p.nls[l+1] {
 		end = p.nls[l+1]
 	}
 	return uint32(utf8.RuneCount(p.buf[start:end]))
@@ -491,14 +493,8 @@ func (wr wrNode) writeNode(n parse.Node, indent string) {
 }
 
 // short prints at most 40 bytes of node.String(), for debugging
-func short(n parse.Node) (ret string) {
-	defer func() {
-		if x := recover(); x != nil {
-			// all because of typed nils
-			ret = "NIL"
-		}
-	}()
-	s := n.String()
+func short(n parse.Node) string {
+	s := fmt.Sprint(n) // recovers from panic
 	if len(s) > 40 {
 		return s[:40] + "..."
 	}

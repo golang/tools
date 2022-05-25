@@ -6,7 +6,6 @@
 // +build !js,!nacl,!plan9,!solaris,!windows
 
 /*
-
 Splitdwarf uncompresses and copies the DWARF segment of a Mach-O
 executable into the "dSYM" file expected by lldb and ports of gdb
 on OSX.
@@ -17,7 +16,6 @@ Unless a dSYM file name is provided on the command line,
 splitdwarf will place it where the OSX tools expect it, in
 "<osxMachoFile>.dSYM/Contents/Resources/DWARF/<osxMachoFile>",
 creating directories as necessary.
-
 */
 package main // import "golang.org/x/tools/cmd/splitdwarf"
 
@@ -94,7 +92,7 @@ for input_exe need to allow writing.
 	//   IndSym Offset = file offset (within link edit section) of 4-byte indices within symtab.
 	//
 	// Section __TEXT.__symbol_stub1.
-	//   Offset and size (Reserved2) locate and describe a table for thios section.
+	//   Offset and size (Reserved2) locate and describe a table for this section.
 	//   Symbols beginning at IndirectSymIndex (Reserved1) (see LC_DYSYMTAB.IndSymOffset) refer to this table.
 	//   (These table entries are apparently PLTs [Procedure Linkage Table/Trampoline])
 	//

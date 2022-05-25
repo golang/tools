@@ -596,12 +596,17 @@ function addToProperties(pm: propMap, tn: ts.TypeNode | undefined, prefix = '') 
       addToProperties(pm, ps.type, name);
     });
   } else if (strKind(tn) === 'TypeLiteral') {
-    if (!ts.isTypeLiteralNode(tn)) new Error(`598 ${strKind(tn)}`);
+    if (!ts.isTypeLiteralNode(tn)) new Error(`599 ${strKind(tn)}`);
     tn.forEachChild((child: ts.Node) => {
-      if (!ts.isPropertySignature(child)) throw new Error(`600 ${strKind(child)}`);
-      const name = `${prefix}.${child.name.getText()}`;
-      propMapSet(pm, name, child);
-      addToProperties(pm, child.type, name);
+      if (ts.isPropertySignature(child)) {
+        const name = `${prefix}.${child.name.getText()}`;
+        propMapSet(pm, name, child);
+        addToProperties(pm, child.type, name);
+      } else if (!ts.isIndexSignatureDeclaration(child)) {
+        // ignoring IndexSignatures, seen as relatedDocument in
+        // RelatedFullDocumentDiagnosticReport
+        throw new Error(`608 ${strKind(child)} ${loc(child)}`);
+      }
     });
   }
 }
@@ -1184,7 +1189,7 @@ let server: side = {
 
 // commonly used output
 const notNil = `if len(r.Params()) > 0 {
-  return true, reply(ctx, nil, errors.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
+  return true, reply(ctx, nil, fmt.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
 }`;
 
 // Go code for notifications. Side is client or server, m is the request
@@ -1254,7 +1259,10 @@ function goReq(side: side, m: string) {
   }`;
   if (b != '' && b != 'void') {
     case2 = `resp, err := ${side.name}.${nm}(ctx${arg2})
-    return true, reply(ctx, resp, err)`;
+    if err != nil {
+      return true, reply(ctx, nil, err)
+    }
+    return true, reply(ctx, resp, nil)`;
   } else {  // response is nil
     case2 = `err := ${side.name}.${nm}(ctx${arg2})
     return true, reply(ctx, nil, err)`;
@@ -1356,7 +1364,6 @@ function output(side: side) {
           "encoding/json"
 
           "golang.org/x/tools/internal/jsonrpc2"
-          errors "golang.org/x/xerrors"
         )
         `);
   const a = side.name[0].toUpperCase() + side.name.substring(1);

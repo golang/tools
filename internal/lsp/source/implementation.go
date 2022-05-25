@@ -15,8 +15,8 @@ import (
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/span"
-	"golang.org/x/xerrors"
 )
 
 func Implementation(ctx context.Context, snapshot Snapshot, f FileHandle, pp protocol.Position) ([]protocol.Location, error) {
@@ -235,7 +235,7 @@ func qualifiedObjsAtProtocolPos(ctx context.Context, s Snapshot, uri span.URI, p
 	if err != nil {
 		return nil, err
 	}
-	offset, err := Offset(pgf.Tok, rng.Start)
+	offset, err := safetoken.Offset(pgf.Tok, rng.Start)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +296,7 @@ func qualifiedObjsAtLocation(ctx context.Context, s Snapshot, key objSearchKey, 
 			} else {
 				obj := searchpkg.GetTypesInfo().ObjectOf(leaf)
 				if obj == nil {
-					return nil, xerrors.Errorf("%w for %q", errNoObjectFound, leaf.Name)
+					return nil, fmt.Errorf("%w for %q", errNoObjectFound, leaf.Name)
 				}
 				objs = append(objs, obj)
 			}
@@ -304,7 +304,7 @@ func qualifiedObjsAtLocation(ctx context.Context, s Snapshot, key objSearchKey, 
 			// Look up the implicit *types.PkgName.
 			obj := searchpkg.GetTypesInfo().Implicits[leaf]
 			if obj == nil {
-				return nil, xerrors.Errorf("%w for import %q", errNoObjectFound, ImportPath(leaf))
+				return nil, fmt.Errorf("%w for import %q", errNoObjectFound, ImportPath(leaf))
 			}
 			objs = append(objs, obj)
 		}
@@ -322,7 +322,7 @@ func qualifiedObjsAtLocation(ctx context.Context, s Snapshot, key objSearchKey, 
 		addPkg(searchpkg)
 		for _, obj := range objs {
 			if obj.Parent() == types.Universe {
-				return nil, xerrors.Errorf("%q: %w", obj.Name(), errBuiltin)
+				return nil, fmt.Errorf("%q: %w", obj.Name(), errBuiltin)
 			}
 			pkg, ok := pkgs[obj.Pkg()]
 			if !ok {
@@ -353,7 +353,7 @@ func qualifiedObjsAtLocation(ctx context.Context, s Snapshot, key objSearchKey, 
 			for _, pgf := range pkg.CompiledGoFiles() {
 				if pgf.Tok.Base() <= int(pos) && int(pos) <= pgf.Tok.Base()+pgf.Tok.Size() {
 					var err error
-					offset, err = Offset(pgf.Tok, pos)
+					offset, err = safetoken.Offset(pgf.Tok, pos)
 					if err != nil {
 						return nil, err
 					}

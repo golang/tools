@@ -7,6 +7,7 @@ package source
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/constant"
@@ -21,9 +22,10 @@ import (
 
 	"golang.org/x/text/unicode/runenames"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/lsp/bug"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/typeparams"
-	errors "golang.org/x/xerrors"
 )
 
 // HoverContext contains context extracted from the syntax and type information
@@ -32,7 +34,8 @@ import (
 type HoverContext struct {
 	// signatureSource is the object or node use to derive the hover signature.
 	//
-	// TODO(rfindley): can we pre-compute the signature, to avoid this indirection?
+	// It may also hold a precomputed string.
+	// TODO(rfindley): pre-compute all signatures to avoid this indirection.
 	signatureSource interface{}
 
 	// comment is the most relevant comment group associated with the hovered object.
@@ -200,11 +203,11 @@ func findRune(ctx context.Context, snapshot Snapshot, fh FileHandle, position pr
 		// It's a string, scan only if it contains a unicode escape sequence under or before the
 		// current cursor position.
 		var found bool
-		litOffset, err := Offset(pgf.Tok, lit.Pos())
+		litOffset, err := safetoken.Offset(pgf.Tok, lit.Pos())
 		if err != nil {
 			return 0, MappedRange{}, err
 		}
-		offset, err := Offset(pgf.Tok, pos)
+		offset, err := safetoken.Offset(pgf.Tok, pos)
 		if err != nil {
 			return 0, MappedRange{}, err
 		}
@@ -262,6 +265,9 @@ func HoverIdentifier(ctx context.Context, i *IdentifierInfo) (*HoverJSON, error)
 	fset := i.Snapshot.FileSet()
 	// Determine the symbol's signature.
 	switch x := hoverCtx.signatureSource.(type) {
+	case string:
+		h.Signature = x // a pre-computed signature
+
 	case *ast.TypeSpec:
 		x2 := *x
 		// Don't duplicate comments when formatting type specs.
@@ -401,6 +407,15 @@ func linkData(obj types.Object, enclosing *types.TypeName) (name, importPath, an
 		return "", "", ""
 	}
 
+	// golang/go#52211: somehow we get here with a nil obj.Pkg
+	if obj.Pkg() == nil {
+		bug.Report("object with nil pkg", bug.Data{
+			"name": obj.Name(),
+			"type": fmt.Sprintf("%T", obj),
+		})
+		return "", "", ""
+	}
+
 	importPath = obj.Pkg().Path()
 	if recv != nil {
 		anchor = fmt.Sprintf("%s.%s", recv.Name(), obj.Name())
@@ -506,21 +521,25 @@ func FindHoverContext(ctx context.Context, s Snapshot, pkg Package, obj types.Ob
 		}
 	case *ast.ImportSpec:
 		// Try to find the package documentation for an imported package.
-		if pkgName, ok := obj.(*types.PkgName); ok {
-			imp, err := pkg.GetImport(pkgName.Imported().Path())
-			if err != nil {
-				return nil, err
-			}
-			// Assume that only one file will contain package documentation,
-			// so pick the first file that has a doc comment.
-			for _, file := range imp.GetSyntax() {
-				if file.Doc != nil {
-					info = &HoverContext{signatureSource: obj, Comment: file.Doc}
-					break
+		pkgPath, err := strconv.Unquote(node.Path.Value)
+		if err != nil {
+			return nil, err
+		}
+		imp, err := pkg.GetImport(pkgPath)
+		if err != nil {
+			return nil, err
+		}
+		// Assume that only one file will contain package documentation,
+		// so pick the first file that has a doc comment.
+		for _, file := range imp.GetSyntax() {
+			if file.Doc != nil {
+				info = &HoverContext{Comment: file.Doc}
+				if file.Name != nil {
+					info.signatureSource = "package " + file.Name.Name
 				}
+				break
 			}
 		}
-		info = &HoverContext{signatureSource: node}
 	case *ast.GenDecl:
 		switch obj := obj.(type) {
 		case *types.TypeName, *types.Var, *types.Const, *types.Func:
@@ -532,7 +551,7 @@ func FindHoverContext(ctx context.Context, s Snapshot, pkg Package, obj types.Ob
 			// obj may not have been produced by type checking the AST containing
 			// node, so we need to be careful about using token.Pos.
 			tok := s.FileSet().File(obj.Pos())
-			offset, err := Offset(tok, obj.Pos())
+			offset, err := safetoken.Offset(tok, obj.Pos())
 			if err != nil {
 				return nil, err
 			}
@@ -540,7 +559,7 @@ func FindHoverContext(ctx context.Context, s Snapshot, pkg Package, obj types.Ob
 			// fullTok and fullPos are the *token.File and object position in for the
 			// full AST.
 			fullTok := s.FileSet().File(node.Pos())
-			fullPos, err := Pos(fullTok, offset)
+			fullPos, err := safetoken.Pos(fullTok, offset)
 			if err != nil {
 				return nil, err
 			}
@@ -548,11 +567,11 @@ func FindHoverContext(ctx context.Context, s Snapshot, pkg Package, obj types.Ob
 			var spec ast.Spec
 			for _, s := range node.Specs {
 				// Avoid panics by guarding the calls to token.Offset (golang/go#48249).
-				start, err := Offset(fullTok, s.Pos())
+				start, err := safetoken.Offset(fullTok, s.Pos())
 				if err != nil {
 					return nil, err
 				}
-				end, err := Offset(fullTok, s.End())
+				end, err := safetoken.Offset(fullTok, s.End())
 				if err != nil {
 					return nil, err
 				}
@@ -578,7 +597,16 @@ func FindHoverContext(ctx context.Context, s Snapshot, pkg Package, obj types.Ob
 		case *types.Func:
 			info = &HoverContext{signatureSource: obj, Comment: node.Doc}
 		case *types.Builtin:
-			info = &HoverContext{signatureSource: node.Type, Comment: node.Doc}
+			info = &HoverContext{Comment: node.Doc}
+			if sig, err := NewBuiltinSignature(ctx, s, obj.Name()); err == nil {
+				info.signatureSource = "func " + sig.name + sig.Format()
+			} else {
+				// Fall back on the object as a signature source.
+				bug.Report("invalid builtin hover", bug.Data{
+					"err": err.Error(),
+				})
+				info.signatureSource = obj
+			}
 		case *types.Var:
 			// Object is a function param or the field of an anonymous struct
 			// declared with ':='. Skip the first one because only fields
@@ -633,7 +661,7 @@ func isFunctionParam(obj types.Object, node *ast.FuncDecl) bool {
 // given nodes; fullPos is the position of obj in node's AST.
 func hoverGenDecl(node *ast.GenDecl, spec ast.Spec, fullPos token.Pos, obj types.Object) (*HoverContext, error) {
 	if spec == nil {
-		return nil, errors.Errorf("no spec for node %v at position %v", node, fullPos)
+		return nil, fmt.Errorf("no spec for node %v at position %v", node, fullPos)
 	}
 
 	// If we have a field or method.
@@ -650,7 +678,7 @@ func hoverGenDecl(node *ast.GenDecl, spec ast.Spec, fullPos token.Pos, obj types
 	case *ast.ImportSpec:
 		return &HoverContext{signatureSource: spec, Comment: spec.Doc}, nil
 	}
-	return nil, errors.Errorf("unable to format spec %v (%T)", spec, spec)
+	return nil, fmt.Errorf("unable to format spec %v (%T)", spec, spec)
 }
 
 // TODO(rfindley): rename this function.
@@ -773,7 +801,7 @@ func FormatHover(h *HoverJSON, options *Options) (string, error) {
 	doc := formatDoc(h, options)
 
 	var b strings.Builder
-	parts := []string{signature, link, doc}
+	parts := []string{signature, doc, link}
 	for i, el := range parts {
 		if el != "" {
 			b.WriteString(el)

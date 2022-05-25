@@ -7,6 +7,7 @@ package lsp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -19,10 +20,10 @@ import (
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/template"
 	"golang.org/x/tools/internal/typeparams"
-	errors "golang.org/x/xerrors"
 )
 
 // The LSP says that errors for the semantic token requests should only be returned
@@ -42,7 +43,7 @@ func (s *Server) semanticTokensFull(ctx context.Context, p *protocol.SemanticTok
 }
 
 func (s *Server) semanticTokensFullDelta(ctx context.Context, p *protocol.SemanticTokensDeltaParams) (interface{}, error) {
-	return nil, errors.Errorf("implement SemanticTokensFullDelta")
+	return nil, fmt.Errorf("implement SemanticTokensFullDelta")
 }
 
 func (s *Server) semanticTokensRange(ctx context.Context, p *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
@@ -52,7 +53,7 @@ func (s *Server) semanticTokensRange(ctx context.Context, p *protocol.SemanticTo
 
 func (s *Server) semanticTokensRefresh(ctx context.Context) error {
 	// in the code, but not in the protocol spec
-	return errors.Errorf("implement SemanticTokensRefresh")
+	return fmt.Errorf("implement SemanticTokensRefresh")
 }
 
 func (s *Server) computeSemanticTokens(ctx context.Context, td protocol.TextDocumentIdentifier, rng *protocol.Range) (*protocol.SemanticTokens, error) {
@@ -68,7 +69,7 @@ func (s *Server) computeSemanticTokens(ctx context.Context, td protocol.TextDocu
 	if !vv.Options().SemanticTokens {
 		// return an error, so if the option changes
 		// the client won't remember the wrong answer
-		return nil, errors.Errorf("semantictokens are disabled")
+		return nil, fmt.Errorf("semantictokens are disabled")
 	}
 	kind := snapshot.View().FileKind(fh)
 	if kind == source.Tmpl {
@@ -227,7 +228,6 @@ type encoded struct {
 	pgf               *source.ParsedGoFile
 	rng               *protocol.Range
 	ti                *types.Info
-	types             *types.Package
 	pkg               source.Package
 	fset              *token.FileSet
 	// allowed starting and ending token.Pos, set by init
@@ -246,7 +246,7 @@ func (e *encoded) strStack() string {
 	}
 	if len(e.stack) > 0 {
 		loc := e.stack[len(e.stack)-1].Pos()
-		if !source.InRange(e.pgf.Tok, loc) {
+		if !safetoken.InRange(e.pgf.Tok, loc) {
 			msg = append(msg, fmt.Sprintf("invalid position %v for %s", loc, e.pgf.URI))
 		} else if locInRange(e.pgf.Tok, loc) {
 			add := e.pgf.Tok.PositionFor(loc, false)
@@ -269,7 +269,7 @@ func locInRange(f *token.File, loc token.Pos) bool {
 func (e *encoded) srcLine(x ast.Node) string {
 	file := e.pgf.Tok
 	line := file.Line(x.Pos())
-	start, err := source.Offset(file, file.LineStart(line))
+	start, err := safetoken.Offset(file, file.LineStart(line))
 	if err != nil {
 		return ""
 	}
@@ -329,12 +329,17 @@ func (e *encoded) inspector(n ast.Node) bool {
 		e.token(x.Case, len(iam), tokKeyword, nil)
 	case *ast.ChanType:
 		// chan | chan <- | <- chan
-		if x.Arrow == token.NoPos || x.Arrow != x.Begin {
+		switch {
+		case x.Arrow == token.NoPos:
 			e.token(x.Begin, len("chan"), tokKeyword, nil)
-			break
+		case x.Arrow == x.Begin:
+			e.token(x.Arrow, 2, tokOperator, nil)
+			pos := e.findKeyword("chan", x.Begin+2, x.Value.Pos())
+			e.token(pos, len("chan"), tokKeyword, nil)
+		case x.Arrow != x.Begin:
+			e.token(x.Begin, len("chan"), tokKeyword, nil)
+			e.token(x.Arrow, 2, tokOperator, nil)
 		}
-		pos := e.findKeyword("chan", x.Begin+2, x.Value.Pos())
-		e.token(pos, len("chan"), tokKeyword, nil)
 	case *ast.CommClause:
 		iam := len("case")
 		if x.Comm == nil {
@@ -379,7 +384,7 @@ func (e *encoded) inspector(n ast.Node) bool {
 	case *ast.IncDecStmt:
 		e.token(x.TokPos, len(x.Tok.String()), tokOperator, nil)
 	case *ast.IndexExpr:
-	case *typeparams.IndexListExpr: // accomodate generics
+	case *typeparams.IndexListExpr: // accommodate generics
 	case *ast.InterfaceType:
 		e.token(x.Interface, len("interface"), tokKeyword, nil)
 	case *ast.KeyValueExpr:
@@ -810,7 +815,7 @@ func (e *encoded) init() error {
 	}
 	span, err := e.pgf.Mapper.RangeSpan(*e.rng)
 	if err != nil {
-		return errors.Errorf("range span (%w) error for %s", err, e.pgf.File.Name)
+		return fmt.Errorf("range span (%w) error for %s", err, e.pgf.File.Name)
 	}
 	e.end = e.start + token.Pos(span.End().Offset())
 	e.start += token.Pos(span.Start().Offset())
@@ -830,19 +835,20 @@ func (e *encoded) Data() []uint32 {
 	// (see Integer Encoding for Tokens in the LSP spec)
 	x := make([]uint32, 5*len(e.items))
 	var j int
+	var last semItem
 	for i := 0; i < len(e.items); i++ {
 		typ, ok := typeMap[e.items[i].typeStr]
 		if !ok {
 			continue // client doesn't want typeStr
 		}
-		if i == 0 {
+		if j == 0 {
 			x[0] = e.items[0].line
 		} else {
-			x[j] = e.items[i].line - e.items[i-1].line
+			x[j] = e.items[i].line - last.line
 		}
 		x[j+1] = e.items[i].start
-		if i > 0 && e.items[i].line == e.items[i-1].line {
-			x[j+1] = e.items[i].start - e.items[i-1].start
+		if j > 0 && x[j] == 0 {
+			x[j+1] = e.items[i].start - last.start
 		}
 		x[j+2] = e.items[i].len
 		x[j+3] = uint32(typ)
@@ -853,6 +859,7 @@ func (e *encoded) Data() []uint32 {
 		}
 		x[j+4] = uint32(mask)
 		j += 5
+		last = e.items[i]
 	}
 	return x[:j]
 }

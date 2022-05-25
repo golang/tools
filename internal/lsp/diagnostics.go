@@ -7,6 +7,7 @@ package lsp
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,9 +22,9 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/lsp/template"
+	"golang.org/x/tools/internal/lsp/work"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
-	errors "golang.org/x/xerrors"
 )
 
 // diagnosticSource differentiates different sources of diagnostics.
@@ -35,6 +36,7 @@ const (
 	analysisSource
 	typeCheckSource
 	orphanedSource
+	workSource
 )
 
 // A diagnosticReport holds results for a single diagnostic source.
@@ -208,6 +210,23 @@ func (s *Server) diagnose(ctx context.Context, snapshot source.Snapshot, forceAn
 			continue
 		}
 		s.storeDiagnostics(snapshot, id.URI, modSource, diags)
+	}
+
+	// Diagnose the go.work file, if it exists.
+	workReports, workErr := work.Diagnostics(ctx, snapshot)
+	if ctx.Err() != nil {
+		log.Trace.Log(ctx, "diagnose cancelled")
+		return
+	}
+	if workErr != nil {
+		event.Error(ctx, "warning: diagnose go.work", workErr, tag.Directory.Of(snapshot.View().Folder().Filename()), tag.Snapshot.Of(snapshot.ID()))
+	}
+	for id, diags := range workReports {
+		if id.URI == "" {
+			event.Error(ctx, "missing URI for work file diagnostics", fmt.Errorf("empty URI"), tag.Directory.Of(snapshot.View().Folder().Filename()))
+			continue
+		}
+		s.storeDiagnostics(snapshot, id.URI, workSource, diags)
 	}
 
 	// Diagnose all of the packages in the workspace.

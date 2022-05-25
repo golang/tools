@@ -48,7 +48,6 @@ func main() {
 // Build and run the ssadump.go program if you want a standalone tool
 // with similar functionality. It is located at
 // golang.org/x/tools/cmd/ssadump.
-//
 func Example_buildPackage() {
 	// Replace interface{} with any for this test.
 	ssa.SetNormalizeAnyForTesting(true)
@@ -159,7 +158,7 @@ func Example_loadWholeProgram() {
 	}
 
 	// Create SSA packages for well-typed packages and their dependencies.
-	prog, pkgs := ssautil.AllPackages(initial, ssa.PrintPackages)
+	prog, pkgs := ssautil.AllPackages(initial, ssa.PrintPackages|ssa.InstantiateGenerics)
 	_ = pkgs
 
 	// Build SSA code for the whole program.

@@ -39,10 +39,10 @@ func FormatType(typ types.Type, qf types.Qualifier) (detail string, kind protoco
 }
 
 type signature struct {
-	name, doc        string
-	params, results  []string
-	variadic         bool
-	needResultParens bool
+	name, doc                   string
+	typeParams, params, results []string
+	variadic                    bool
+	needResultParens            bool
 }
 
 func (s *signature) Format() string {
@@ -73,6 +73,10 @@ func (s *signature) Format() string {
 		b.WriteByte(')')
 	}
 	return b.String()
+}
+
+func (s *signature) TypeParams() []string {
+	return s.typeParams
 }
 
 func (s *signature) Params() []string {
@@ -168,8 +172,36 @@ func formatFieldList(ctx context.Context, snapshot Snapshot, list *ast.FieldList
 	return result, writeResultParens
 }
 
+// FormatTypeParams turns TypeParamList into its Go representation, such as:
+// [T, Y]. Note that it does not print constraints as this is mainly used for
+// formatting type params in method receivers.
+func FormatTypeParams(tparams *typeparams.TypeParamList) string {
+	if tparams == nil || tparams.Len() == 0 {
+		return ""
+	}
+	var buf bytes.Buffer
+	buf.WriteByte('[')
+	for i := 0; i < tparams.Len(); i++ {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		buf.WriteString(tparams.At(i).Obj().Name())
+	}
+	buf.WriteByte(']')
+	return buf.String()
+}
+
 // NewSignature returns formatted signature for a types.Signature struct.
 func NewSignature(ctx context.Context, s Snapshot, pkg Package, sig *types.Signature, comment *ast.CommentGroup, qf types.Qualifier) *signature {
+	var tparams []string
+	tpList := typeparams.ForSignature(sig)
+	for i := 0; i < tpList.Len(); i++ {
+		tparam := tpList.At(i)
+		// TODO: is it possible to reuse the logic from FormatVarType here?
+		s := tparam.Obj().Name() + " " + tparam.Constraint().String()
+		tparams = append(tparams, s)
+	}
+
 	params := make([]string, 0, sig.Params().Len())
 	for i := 0; i < sig.Params().Len(); i++ {
 		el := sig.Params().At(i)
@@ -180,6 +212,7 @@ func NewSignature(ctx context.Context, s Snapshot, pkg Package, sig *types.Signa
 		}
 		params = append(params, p)
 	}
+
 	var needResultParens bool
 	results := make([]string, 0, sig.Results().Len())
 	for i := 0; i < sig.Results().Len(); i++ {
@@ -209,6 +242,7 @@ func NewSignature(ctx context.Context, s Snapshot, pkg Package, sig *types.Signa
 	}
 	return &signature{
 		doc:              d,
+		typeParams:       tparams,
 		params:           params,
 		results:          results,
 		variadic:         sig.Variadic(),
@@ -218,7 +252,7 @@ func NewSignature(ctx context.Context, s Snapshot, pkg Package, sig *types.Signa
 
 // FormatVarType formats a *types.Var, accounting for type aliases.
 // To do this, it looks in the AST of the file in which the object is declared.
-// On any errors, it always fallbacks back to types.TypeString.
+// On any errors, it always falls back to types.TypeString.
 func FormatVarType(ctx context.Context, snapshot Snapshot, srcpkg Package, obj *types.Var, qf types.Qualifier) string {
 	pkg, err := FindPackageFromPos(ctx, snapshot, obj.Pos())
 	if err != nil {
@@ -270,10 +304,13 @@ func qualifyExpr(expr ast.Expr, srcpkg, pkg Package, clonedInfo map[token.Pos]*t
 		switch n := n.(type) {
 		case *ast.ArrayType, *ast.ChanType, *ast.Ellipsis,
 			*ast.FuncType, *ast.MapType, *ast.ParenExpr,
-			*ast.StarExpr, *ast.StructType:
+			*ast.StarExpr, *ast.StructType, *ast.FieldList, *ast.Field:
 			// These are the only types that are cloned by cloneExpr below,
 			// so these are the only types that we can traverse and potentially
 			// modify. This is not an ideal approach, but it works for now.
+
+			// TODO(rFindley): can we eliminate this filtering entirely? This caused
+			// bugs in the past (golang/go#50539)
 			return true
 		case *ast.SelectorExpr:
 			// We may need to change any selectors in which the X is a package
@@ -306,9 +343,11 @@ func qualifyExpr(expr ast.Expr, srcpkg, pkg Package, clonedInfo map[token.Pos]*t
 // cloneExpr only clones expressions that appear in the parameters or return
 // values of a function declaration. The original expression may be returned
 // to the caller in 2 cases:
-//    (1) The expression has no pointer fields.
-//    (2) The expression cannot appear in an *ast.FuncType, making it
-//        unnecessary to clone.
+//
+//  1. The expression has no pointer fields.
+//  2. The expression cannot appear in an *ast.FuncType, making it
+//     unnecessary to clone.
+//
 // This function also keeps track of selector expressions in which the X is a
 // package name and marks them in a map along with their type information, so
 // that this information can be used when rewriting the expression.

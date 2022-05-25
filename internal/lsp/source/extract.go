@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -134,18 +135,18 @@ func CanExtractVariable(rng span.Range, file *ast.File) (ast.Expr, []ast.Node, b
 // line of code on which the insertion occurs.
 func calculateIndentation(content []byte, tok *token.File, insertBeforeStmt ast.Node) (string, error) {
 	line := tok.Line(insertBeforeStmt.Pos())
-	lineOffset, err := Offset(tok, tok.LineStart(line))
+	lineOffset, err := safetoken.Offset(tok, tok.LineStart(line))
 	if err != nil {
 		return "", err
 	}
-	stmtOffset, err := Offset(tok, insertBeforeStmt.Pos())
+	stmtOffset, err := safetoken.Offset(tok, insertBeforeStmt.Pos())
 	if err != nil {
 		return "", err
 	}
 	return string(content[lineOffset:stmtOffset]), nil
 }
 
-// generateAvailableIdentifier adjusts the new function name until there are no collisons in scope.
+// generateAvailableIdentifier adjusts the new function name until there are no collisions in scope.
 // Possible collisions include other function and variable names. Returns the next index to check for prefix.
 func generateAvailableIdentifier(pos token.Pos, file *ast.File, path []ast.Node, info *types.Info, prefix string, idx int) (string, int) {
 	scopes := CollectScopes(info, path, pos)
@@ -290,7 +291,7 @@ func extractFunctionMethod(fset *token.FileSet, rng span.Range, src []byte, file
 		uninitialized           []types.Object // vars we will need to initialize before the call
 	)
 
-	// Avoid duplicates while traversing vars and uninitialzed.
+	// Avoid duplicates while traversing vars and uninitialized.
 	seenVars := make(map[types.Object]ast.Expr)
 	seenUninitialized := make(map[types.Object]struct{})
 
@@ -400,11 +401,11 @@ func extractFunctionMethod(fset *token.FileSet, rng span.Range, src []byte, file
 
 	// We put the selection in a constructed file. We can then traverse and edit
 	// the extracted selection without modifying the original AST.
-	startOffset, err := Offset(tok, rng.Start)
+	startOffset, err := safetoken.Offset(tok, rng.Start)
 	if err != nil {
 		return nil, err
 	}
-	endOffset, err := Offset(tok, rng.End)
+	endOffset, err := safetoken.Offset(tok, rng.End)
 	if err != nil {
 		return nil, err
 	}
@@ -523,7 +524,7 @@ func extractFunctionMethod(fset *token.FileSet, rng span.Range, src []byte, file
 
 	// Construct the appropriate call to the extracted function.
 	// We must meet two conditions to use ":=" instead of '='. (1) there must be at least
-	// one variable on the lhs that is uninitailized (non-free) prior to the assignment.
+	// one variable on the lhs that is uninitialized (non-free) prior to the assignment.
 	// (2) all of the initialized (free) variables on the lhs must be able to be redefined.
 	sym := token.ASSIGN
 	canDefineCount := len(uninitialized) + canRedefineCount
@@ -567,7 +568,7 @@ func extractFunctionMethod(fset *token.FileSet, rng span.Range, src []byte, file
 
 	// Create variable declarations for any identifiers that need to be initialized prior to
 	// calling the extracted function. We do not manually initialize variables if every return
-	// value is unitialized. We can use := to initialize the variables in this situation.
+	// value is uninitialized. We can use := to initialize the variables in this situation.
 	var declarations []ast.Stmt
 	if canDefineCount != len(returns) {
 		declarations = initializeVars(uninitialized, retVars, seenUninitialized, seenVars)
@@ -600,11 +601,11 @@ func extractFunctionMethod(fset *token.FileSet, rng span.Range, src []byte, file
 
 	// We're going to replace the whole enclosing function,
 	// so preserve the text before and after the selected block.
-	outerStart, err := Offset(tok, outer.Pos())
+	outerStart, err := safetoken.Offset(tok, outer.Pos())
 	if err != nil {
 		return nil, err
 	}
-	outerEnd, err := Offset(tok, outer.End())
+	outerEnd, err := safetoken.Offset(tok, outer.End())
 	if err != nil {
 		return nil, err
 	}
@@ -661,7 +662,7 @@ func extractFunctionMethod(fset *token.FileSet, rng span.Range, src []byte, file
 // ranges to match the correct AST node. In this particular example, we would adjust
 // rng.Start forward by one byte, and rng.End backwards by two bytes.
 func adjustRangeForWhitespace(rng span.Range, tok *token.File, content []byte) (span.Range, error) {
-	offset, err := Offset(tok, rng.Start)
+	offset, err := safetoken.Offset(tok, rng.Start)
 	if err != nil {
 		return span.Range{}, err
 	}
@@ -675,7 +676,7 @@ func adjustRangeForWhitespace(rng span.Range, tok *token.File, content []byte) (
 	rng.Start = tok.Pos(offset)
 
 	// Move backwards to find a non-whitespace character.
-	offset, err = Offset(tok, rng.End)
+	offset, err = safetoken.Offset(tok, rng.End)
 	if err != nil {
 		return span.Range{}, err
 	}

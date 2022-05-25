@@ -2,21 +2,21 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Code generated (see typescript/README.md) DO NOT EDIT.
+
 package protocol
 
-// Package protocol contains data types and code for LSP jsonrpcs
+// Package protocol contains data types and code for LSP json rpcs
 // generated automatically from vscode-languageserver-node
-// commit: f17727af04704c0e2ede73dfdbeb463156e94561
-// last fetched Thu Feb 10 2022 14:34:11 GMT-0700 (Mountain Standard Time)
-
-// Code generated (see typescript/README.md) DO NOT EDIT.
+// commit: 696f9285bf849b73745682fdb1c1feac73eb8772
+// last fetched Fri Apr 01 2022 10:53:41 GMT-0400 (Eastern Daylight Time)
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"golang.org/x/tools/internal/jsonrpc2"
-	errors "golang.org/x/xerrors"
 )
 
 type Server interface {
@@ -36,6 +36,7 @@ type Server interface {
 	DidChangeWatchedFiles(context.Context, *DidChangeWatchedFilesParams) error
 	DidOpenNotebookDocument(context.Context, *DidOpenNotebookDocumentParams) error
 	DidChangeNotebookDocument(context.Context, *DidChangeNotebookDocumentParams) error
+	DidSaveNotebookDocument(context.Context, *DidSaveNotebookDocumentParams) error
 	DidCloseNotebookDocument(context.Context, *DidCloseNotebookDocumentParams) error
 	SetTrace(context.Context, *SetTraceParams) error
 	LogTrace(context.Context, *LogTraceParams) error
@@ -61,13 +62,16 @@ type Server interface {
 	PrepareTypeHierarchy(context.Context, *TypeHierarchyPrepareParams) ([]TypeHierarchyItem /*TypeHierarchyItem[] | null*/, error)
 	Supertypes(context.Context, *TypeHierarchySupertypesParams) ([]TypeHierarchyItem /*TypeHierarchyItem[] | null*/, error)
 	Subtypes(context.Context, *TypeHierarchySubtypesParams) ([]TypeHierarchyItem /*TypeHierarchyItem[] | null*/, error)
-	InlineValues(context.Context, *InlineValuesParams) ([]InlineValue /*InlineValue[] | null*/, error)
-	InlineValuesRefresh(context.Context) error
+	InlineValue(context.Context, *InlineValueParams) ([]InlineValue /*InlineValue[] | null*/, error)
+	InlineValueRefresh(context.Context) error
+	InlayHint(context.Context, *InlayHintParams) ([]InlayHint /*InlayHint[] | null*/, error)
+	Resolve(context.Context, *InlayHint) (*InlayHint, error)
+	InlayHintRefresh(context.Context) error
 	Initialize(context.Context, *ParamInitialize) (*InitializeResult, error)
 	Shutdown(context.Context) error
 	WillSaveWaitUntil(context.Context, *WillSaveTextDocumentParams) ([]TextEdit /*TextEdit[] | null*/, error)
 	Completion(context.Context, *CompletionParams) (*CompletionList /*CompletionItem[] | CompletionList | null*/, error)
-	Resolve(context.Context, *CompletionItem) (*CompletionItem, error)
+	ResolveCompletionItem(context.Context, *CompletionItem) (*CompletionItem, error)
 	Hover(context.Context, *HoverParams) (*Hover /*Hover | null*/, error)
 	SignatureHelp(context.Context, *SignatureHelpParams) (*SignatureHelp /*SignatureHelp | null*/, error)
 	Definition(context.Context, *DefinitionParams) (Definition /*Definition | DefinitionLink[] | null*/, error)
@@ -87,7 +91,7 @@ type Server interface {
 	RangeFormatting(context.Context, *DocumentRangeFormattingParams) ([]TextEdit /*TextEdit[] | null*/, error)
 	OnTypeFormatting(context.Context, *DocumentOnTypeFormattingParams) ([]TextEdit /*TextEdit[] | null*/, error)
 	Rename(context.Context, *RenameParams) (*WorkspaceEdit /*WorkspaceEdit | null*/, error)
-	PrepareRename(context.Context, *PrepareRenameParams) (*PrepareRename2Gn /*Range | { range: Range, placeholder: string } | { defaultBehavior: boolean } | null*/, error)
+	PrepareRename(context.Context, *PrepareRenameParams) (*PrepareRename2Gn /*Range | { range: Range; placeholder: string } | { defaultBehavior: boolean } | null*/, error)
 	ExecuteCommand(context.Context, *ExecuteCommandParams) (interface{} /* LSPAny | void | float64*/, error)
 	Diagnostic(context.Context, *string) (*string, error)
 	DiagnosticWorkspace(context.Context, *WorkspaceDiagnosticParams) (*WorkspaceDiagnosticReport, error)
@@ -205,6 +209,13 @@ func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, 
 		}
 		err := server.DidChangeNotebookDocument(ctx, &params)
 		return true, reply(ctx, nil, err)
+	case "notebookDocument/didSave": // notif
+		var params DidSaveNotebookDocumentParams
+		if err := json.Unmarshal(r.Params(), &params); err != nil {
+			return true, sendParseError(ctx, reply, err)
+		}
+		err := server.DidSaveNotebookDocument(ctx, &params)
+		return true, reply(ctx, nil, err)
 	case "notebookDocument/didClose": // notif
 		var params DidCloseNotebookDocumentParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
@@ -232,94 +243,133 @@ func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, 
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.Implementation(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/typeDefinition": // req
 		var params TypeDefinitionParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.TypeDefinition(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/documentColor": // req
 		var params DocumentColorParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.DocumentColor(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/colorPresentation": // req
 		var params ColorPresentationParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.ColorPresentation(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/foldingRange": // req
 		var params FoldingRangeParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.FoldingRange(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/declaration": // req
 		var params DeclarationParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.Declaration(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/selectionRange": // req
 		var params SelectionRangeParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.SelectionRange(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/prepareCallHierarchy": // req
 		var params CallHierarchyPrepareParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.PrepareCallHierarchy(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "callHierarchy/incomingCalls": // req
 		var params CallHierarchyIncomingCallsParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.IncomingCalls(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "callHierarchy/outgoingCalls": // req
 		var params CallHierarchyOutgoingCallsParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.OutgoingCalls(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/semanticTokens/full": // req
 		var params SemanticTokensParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.SemanticTokensFull(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/semanticTokens/full/delta": // req
 		var params SemanticTokensDeltaParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.SemanticTokensFullDelta(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/semanticTokens/range": // req
 		var params SemanticTokensRangeParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.SemanticTokensRange(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "workspace/semanticTokens/refresh": // req
 		if len(r.Params()) > 0 {
-			return true, reply(ctx, nil, errors.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
+			return true, reply(ctx, nil, fmt.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
 		}
 		err := server.SemanticTokensRefresh(ctx)
 		return true, reply(ctx, nil, err)
@@ -329,68 +379,121 @@ func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, 
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.LinkedEditingRange(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "workspace/willCreateFiles": // req
 		var params CreateFilesParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.WillCreateFiles(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "workspace/willRenameFiles": // req
 		var params RenameFilesParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.WillRenameFiles(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "workspace/willDeleteFiles": // req
 		var params DeleteFilesParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.WillDeleteFiles(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/moniker": // req
 		var params MonikerParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.Moniker(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/prepareTypeHierarchy": // req
 		var params TypeHierarchyPrepareParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.PrepareTypeHierarchy(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "typeHierarchy/supertypes": // req
 		var params TypeHierarchySupertypesParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.Supertypes(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "typeHierarchy/subtypes": // req
 		var params TypeHierarchySubtypesParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.Subtypes(ctx, &params)
-		return true, reply(ctx, resp, err)
-	case "textDocument/inlineValues": // req
-		var params InlineValuesParams
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
+	case "textDocument/inlineValue": // req
+		var params InlineValueParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
-		resp, err := server.InlineValues(ctx, &params)
-		return true, reply(ctx, resp, err)
-	case "workspace/inlineValues/refresh": // req
-		if len(r.Params()) > 0 {
-			return true, reply(ctx, nil, errors.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
+		resp, err := server.InlineValue(ctx, &params)
+		if err != nil {
+			return true, reply(ctx, nil, err)
 		}
-		err := server.InlineValuesRefresh(ctx)
+		return true, reply(ctx, resp, nil)
+	case "workspace/inlineValue/refresh": // req
+		if len(r.Params()) > 0 {
+			return true, reply(ctx, nil, fmt.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
+		}
+		err := server.InlineValueRefresh(ctx)
+		return true, reply(ctx, nil, err)
+	case "textDocument/inlayHint": // req
+		var params InlayHintParams
+		if err := json.Unmarshal(r.Params(), &params); err != nil {
+			return true, sendParseError(ctx, reply, err)
+		}
+		resp, err := server.InlayHint(ctx, &params)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
+	case "inlayHint/resolve": // req
+		var params InlayHint
+		if err := json.Unmarshal(r.Params(), &params); err != nil {
+			return true, sendParseError(ctx, reply, err)
+		}
+		resp, err := server.Resolve(ctx, &params)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
+	case "workspace/inlayHint/refresh": // req
+		if len(r.Params()) > 0 {
+			return true, reply(ctx, nil, fmt.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
+		}
+		err := server.InlayHintRefresh(ctx)
 		return true, reply(ctx, nil, err)
 	case "initialize": // req
 		var params ParamInitialize
@@ -400,10 +503,13 @@ func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, 
 			}
 		}
 		resp, err := server.Initialize(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "shutdown": // req
 		if len(r.Params()) > 0 {
-			return true, reply(ctx, nil, errors.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
+			return true, reply(ctx, nil, fmt.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
 		}
 		err := server.Shutdown(ctx)
 		return true, reply(ctx, nil, err)
@@ -413,108 +519,153 @@ func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, 
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.WillSaveWaitUntil(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/completion": // req
 		var params CompletionParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.Completion(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "completionItem/resolve": // req
 		var params CompletionItem
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
-		resp, err := server.Resolve(ctx, &params)
-		return true, reply(ctx, resp, err)
+		resp, err := server.ResolveCompletionItem(ctx, &params)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/hover": // req
 		var params HoverParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.Hover(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/signatureHelp": // req
 		var params SignatureHelpParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.SignatureHelp(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/definition": // req
 		var params DefinitionParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.Definition(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/references": // req
 		var params ReferenceParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.References(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/documentHighlight": // req
 		var params DocumentHighlightParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.DocumentHighlight(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/documentSymbol": // req
 		var params DocumentSymbolParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.DocumentSymbol(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/codeAction": // req
 		var params CodeActionParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.CodeAction(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "codeAction/resolve": // req
 		var params CodeAction
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.ResolveCodeAction(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "workspace/symbol": // req
 		var params WorkspaceSymbolParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.Symbol(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "workspaceSymbol/resolve": // req
 		var params WorkspaceSymbol
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.ResolveWorkspaceSymbol(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/codeLens": // req
 		var params CodeLensParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.CodeLens(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "codeLens/resolve": // req
 		var params CodeLens
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.ResolveCodeLens(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "workspace/codeLens/refresh": // req
 		if len(r.Params()) > 0 {
-			return true, reply(ctx, nil, errors.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
+			return true, reply(ctx, nil, fmt.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
 		}
 		err := server.CodeLensRefresh(ctx)
 		return true, reply(ctx, nil, err)
@@ -524,73 +675,103 @@ func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, 
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.DocumentLink(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "documentLink/resolve": // req
 		var params DocumentLink
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.ResolveDocumentLink(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/formatting": // req
 		var params DocumentFormattingParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.Formatting(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/rangeFormatting": // req
 		var params DocumentRangeFormattingParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.RangeFormatting(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/onTypeFormatting": // req
 		var params DocumentOnTypeFormattingParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.OnTypeFormatting(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/rename": // req
 		var params RenameParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.Rename(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/prepareRename": // req
 		var params PrepareRenameParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.PrepareRename(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "workspace/executeCommand": // req
 		var params ExecuteCommandParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.ExecuteCommand(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "textDocument/diagnostic": // req
 		var params string
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.Diagnostic(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "workspace/diagnostic": // req
 		var params WorkspaceDiagnosticParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := server.DiagnosticWorkspace(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "workspace/diagnostic/refresh": // req
 		if len(r.Params()) > 0 {
-			return true, reply(ctx, nil, errors.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
+			return true, reply(ctx, nil, fmt.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
 		}
 		err := server.DiagnosticRefresh(ctx)
 		return true, reply(ctx, nil, err)
@@ -662,6 +843,10 @@ func (s *serverDispatcher) DidOpenNotebookDocument(ctx context.Context, params *
 
 func (s *serverDispatcher) DidChangeNotebookDocument(ctx context.Context, params *DidChangeNotebookDocumentParams) error {
 	return s.sender.Notify(ctx, "notebookDocument/didChange", params)
+}
+
+func (s *serverDispatcher) DidSaveNotebookDocument(ctx context.Context, params *DidSaveNotebookDocumentParams) error {
+	return s.sender.Notify(ctx, "notebookDocument/didSave", params)
 }
 
 func (s *serverDispatcher) DidCloseNotebookDocument(ctx context.Context, params *DidCloseNotebookDocumentParams) error {
@@ -847,16 +1032,36 @@ func (s *serverDispatcher) Subtypes(ctx context.Context, params *TypeHierarchySu
 	return result, nil
 }
 
-func (s *serverDispatcher) InlineValues(ctx context.Context, params *InlineValuesParams) ([]InlineValue /*InlineValue[] | null*/, error) {
+func (s *serverDispatcher) InlineValue(ctx context.Context, params *InlineValueParams) ([]InlineValue /*InlineValue[] | null*/, error) {
 	var result []InlineValue /*InlineValue[] | null*/
-	if err := s.sender.Call(ctx, "textDocument/inlineValues", params, &result); err != nil {
+	if err := s.sender.Call(ctx, "textDocument/inlineValue", params, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
-func (s *serverDispatcher) InlineValuesRefresh(ctx context.Context) error {
-	return s.sender.Call(ctx, "workspace/inlineValues/refresh", nil, nil)
+func (s *serverDispatcher) InlineValueRefresh(ctx context.Context) error {
+	return s.sender.Call(ctx, "workspace/inlineValue/refresh", nil, nil)
+}
+
+func (s *serverDispatcher) InlayHint(ctx context.Context, params *InlayHintParams) ([]InlayHint /*InlayHint[] | null*/, error) {
+	var result []InlayHint /*InlayHint[] | null*/
+	if err := s.sender.Call(ctx, "textDocument/inlayHint", params, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *serverDispatcher) Resolve(ctx context.Context, params *InlayHint) (*InlayHint, error) {
+	var result *InlayHint
+	if err := s.sender.Call(ctx, "inlayHint/resolve", params, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *serverDispatcher) InlayHintRefresh(ctx context.Context) error {
+	return s.sender.Call(ctx, "workspace/inlayHint/refresh", nil, nil)
 }
 
 func (s *serverDispatcher) Initialize(ctx context.Context, params *ParamInitialize) (*InitializeResult, error) {
@@ -887,7 +1092,7 @@ func (s *serverDispatcher) Completion(ctx context.Context, params *CompletionPar
 	return result, nil
 }
 
-func (s *serverDispatcher) Resolve(ctx context.Context, params *CompletionItem) (*CompletionItem, error) {
+func (s *serverDispatcher) ResolveCompletionItem(ctx context.Context, params *CompletionItem) (*CompletionItem, error) {
 	var result *CompletionItem
 	if err := s.sender.Call(ctx, "completionItem/resolve", params, &result); err != nil {
 		return nil, err
@@ -1043,8 +1248,8 @@ func (s *serverDispatcher) Rename(ctx context.Context, params *RenameParams) (*W
 	return result, nil
 }
 
-func (s *serverDispatcher) PrepareRename(ctx context.Context, params *PrepareRenameParams) (*PrepareRename2Gn /*Range | { range: Range, placeholder: string } | { defaultBehavior: boolean } | null*/, error) {
-	var result *PrepareRename2Gn /*Range | { range: Range, placeholder: string } | { defaultBehavior: boolean } | null*/
+func (s *serverDispatcher) PrepareRename(ctx context.Context, params *PrepareRenameParams) (*PrepareRename2Gn /*Range | { range: Range; placeholder: string } | { defaultBehavior: boolean } | null*/, error) {
+	var result *PrepareRename2Gn /*Range | { range: Range; placeholder: string } | { defaultBehavior: boolean } | null*/
 	if err := s.sender.Call(ctx, "textDocument/prepareRename", params, &result); err != nil {
 		return nil, err
 	}

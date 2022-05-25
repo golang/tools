@@ -6,6 +6,7 @@ package source
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -17,7 +18,6 @@ import (
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
 )
 
 // PrepareCallHierarchy returns an array of CallHierarchyItem for a file and the position within the file.
@@ -253,7 +253,7 @@ func collectCallExpressions(fset *token.FileSet, mapper *protocol.ColumnMapper, 
 // Calls to the same function are assigned to the same declaration.
 func toProtocolOutgoingCalls(ctx context.Context, snapshot Snapshot, fh FileHandle, callRanges []protocol.Range) ([]protocol.CallHierarchyOutgoingCall, error) {
 	// Multiple calls could be made to the same function, defined by "same declaration
-	// AST node & same idenfitier name" to provide a unique identifier key even when
+	// AST node & same identifier name" to provide a unique identifier key even when
 	// the func is declared in a struct or interface.
 	type key struct {
 		decl ast.Node

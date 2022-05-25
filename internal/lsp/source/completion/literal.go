@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/snippet"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // literal generates composite literal, function literal, and make()
@@ -82,7 +83,7 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 		qf = func(_ *types.Package) string { return "" }
 	}
 
-	typeName := types.TypeString(literalType, qf)
+	snip, typeName := c.typeNameSnippet(literalType, qf)
 
 	// A type name of "[]int" doesn't work very will with the matcher
 	// since "[" isn't a valid identifier prefix. Here we strip off the
@@ -117,18 +118,19 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 			} else {
 				// Otherwise we can stick the "&" directly before the type name.
 				typeName = "&" + typeName
+				snip.PrependText("&")
 			}
 		}
 
 		switch t := literalType.Underlying().(type) {
 		case *types.Struct, *types.Array, *types.Slice, *types.Map:
-			c.compositeLiteral(t, typeName, float64(score), addlEdits)
+			c.compositeLiteral(t, snip.Clone(), typeName, float64(score), addlEdits)
 		case *types.Signature:
 			// Add a literal completion for a signature type that implements
 			// an interface. For example, offer "http.HandlerFunc()" when
 			// expected type is "http.Handler".
 			if source.IsInterface(expType) {
-				c.basicLiteral(t, typeName, float64(score), addlEdits)
+				c.basicLiteral(t, snip.Clone(), typeName, float64(score), addlEdits)
 			}
 		case *types.Basic:
 			// Add a literal completion for basic types that implement our
@@ -136,7 +138,7 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 			// implements http.FileSystem), or are identical to our expected
 			// type (i.e. yielding a type conversion such as "float64()").
 			if source.IsInterface(expType) || types.Identical(expType, literalType) {
-				c.basicLiteral(t, typeName, float64(score), addlEdits)
+				c.basicLiteral(t, snip.Clone(), typeName, float64(score), addlEdits)
 			}
 		}
 	}
@@ -148,11 +150,11 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 		switch literalType.Underlying().(type) {
 		case *types.Slice:
 			// The second argument to "make()" for slices is required, so default to "0".
-			c.makeCall(typeName, "0", float64(score), addlEdits)
+			c.makeCall(snip.Clone(), typeName, "0", float64(score), addlEdits)
 		case *types.Map, *types.Chan:
 			// Maps and channels don't require the second argument, so omit
 			// to keep things simple for now.
-			c.makeCall(typeName, "", float64(score), addlEdits)
+			c.makeCall(snip.Clone(), typeName, "", float64(score), addlEdits)
 		}
 	}
 
@@ -184,12 +186,18 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 	var (
 		paramNames     = make([]string, sig.Params().Len())
 		paramNameCount = make(map[string]int)
+		hasTypeParams  bool
 	)
 	for i := 0; i < sig.Params().Len(); i++ {
 		var (
 			p    = sig.Params().At(i)
 			name = p.Name()
 		)
+
+		if tp, _ := p.Type().(*typeparams.TypeParam); tp != nil && !c.typeParamInScope(tp) {
+			hasTypeParams = true
+		}
+
 		if name == "" {
 			// If the param has no name in the signature, guess a name based
 			// on the type. Use an empty qualifier to ignore the package.
@@ -217,6 +225,14 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 	}
 
 	for i := 0; i < sig.Params().Len(); i++ {
+		if hasTypeParams && !c.opts.placeholders {
+			// If there are type params in the args then the user must
+			// choose the concrete types. If placeholders are disabled just
+			// drop them between the parens and let them fill things in.
+			snip.WritePlaceholder(nil)
+			break
+		}
+
 		if i > 0 {
 			snip.WriteText(", ")
 		}
@@ -252,7 +268,14 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 			if sig.Variadic() && i == sig.Params().Len()-1 {
 				typeStr = strings.Replace(typeStr, "[]", "...", 1)
 			}
-			snip.WriteText(typeStr)
+
+			if tp, _ := p.Type().(*typeparams.TypeParam); tp != nil && !c.typeParamInScope(tp) {
+				snip.WritePlaceholder(func(snip *snippet.Builder) {
+					snip.WriteText(typeStr)
+				})
+			} else {
+				snip.WriteText(typeStr)
+			}
 		}
 	}
 	snip.WriteText(")")
@@ -265,10 +288,24 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 	resultsNeedParens := results.Len() > 1 ||
 		results.Len() == 1 && results.At(0).Name() != ""
 
+	var resultHasTypeParams bool
+	for i := 0; i < results.Len(); i++ {
+		if tp, _ := results.At(i).Type().(*typeparams.TypeParam); tp != nil && !c.typeParamInScope(tp) {
+			resultHasTypeParams = true
+		}
+	}
+
 	if resultsNeedParens {
 		snip.WriteText("(")
 	}
 	for i := 0; i < results.Len(); i++ {
+		if resultHasTypeParams && !c.opts.placeholders {
+			// Leave an empty tabstop if placeholders are disabled and there
+			// are type args that need specificying.
+			snip.WritePlaceholder(nil)
+			break
+		}
+
 		if i > 0 {
 			snip.WriteText(", ")
 		}
@@ -276,7 +313,15 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 		if name := r.Name(); name != "" {
 			snip.WriteText(name + " ")
 		}
-		snip.WriteText(source.FormatVarType(ctx, c.snapshot, c.pkg, r, c.qf))
+
+		text := source.FormatVarType(ctx, c.snapshot, c.pkg, r, c.qf)
+		if tp, _ := r.Type().(*typeparams.TypeParam); tp != nil && !c.typeParamInScope(tp) {
+			snip.WritePlaceholder(func(snip *snippet.Builder) {
+				snip.WriteText(text)
+			})
+		} else {
+			snip.WriteText(text)
+		}
 	}
 	if resultsNeedParens {
 		snip.WriteText(")")
@@ -357,9 +402,8 @@ func abbreviateTypeName(s string) string {
 }
 
 // compositeLiteral adds a composite literal completion item for the given typeName.
-func (c *completer) compositeLiteral(T types.Type, typeName string, matchScore float64, edits []protocol.TextEdit) {
-	snip := &snippet.Builder{}
-	snip.WriteText(typeName + "{")
+func (c *completer) compositeLiteral(T types.Type, snip *snippet.Builder, typeName string, matchScore float64, edits []protocol.TextEdit) {
+	snip.WriteText("{")
 	// Don't put the tab stop inside the composite literal curlies "{}"
 	// for structs that have no accessible fields.
 	if strct, ok := T.(*types.Struct); !ok || fieldsAccessible(strct, c.pkg.GetTypes()) {
@@ -381,14 +425,13 @@ func (c *completer) compositeLiteral(T types.Type, typeName string, matchScore f
 
 // basicLiteral adds a literal completion item for the given basic
 // type name typeName.
-func (c *completer) basicLiteral(T types.Type, typeName string, matchScore float64, edits []protocol.TextEdit) {
+func (c *completer) basicLiteral(T types.Type, snip *snippet.Builder, typeName string, matchScore float64, edits []protocol.TextEdit) {
 	// Never give type conversions like "untyped int()".
 	if isUntyped(T) {
 		return
 	}
 
-	snip := &snippet.Builder{}
-	snip.WriteText(typeName + "(")
+	snip.WriteText("(")
 	snip.WriteFinalTabstop()
 	snip.WriteText(")")
 
@@ -406,11 +449,10 @@ func (c *completer) basicLiteral(T types.Type, typeName string, matchScore float
 }
 
 // makeCall adds a completion item for a "make()" call given a specific type.
-func (c *completer) makeCall(typeName string, secondArg string, matchScore float64, edits []protocol.TextEdit) {
+func (c *completer) makeCall(snip *snippet.Builder, typeName string, secondArg string, matchScore float64, edits []protocol.TextEdit) {
 	// Keep it simple and don't add any placeholders for optional "make()" arguments.
 
-	snip := &snippet.Builder{}
-	snip.WriteText("make(" + typeName)
+	snip.PrependText("make(")
 	if secondArg != "" {
 		snip.WriteText(", ")
 		snip.WritePlaceholder(func(b *snippet.Builder) {
@@ -437,4 +479,90 @@ func (c *completer) makeCall(typeName string, secondArg string, matchScore float
 		AdditionalTextEdits: edits,
 		snippet:             snip,
 	})
+}
+
+// Create a snippet for a type name where type params become placeholders.
+func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) (*snippet.Builder, string) {
+	var (
+		snip     snippet.Builder
+		typeName string
+		named, _ = literalType.(*types.Named)
+	)
+
+	if named != nil && named.Obj() != nil && typeparams.ForNamed(named).Len() > 0 && !c.fullyInstantiated(named) {
+		// We are not "fully instantiated" meaning we have type params that must be specified.
+		if pkg := qf(named.Obj().Pkg()); pkg != "" {
+			typeName = pkg + "."
+		}
+
+		// We do this to get "someType" instead of "someType[T]".
+		typeName += named.Obj().Name()
+		snip.WriteText(typeName + "[")
+
+		if c.opts.placeholders {
+			for i := 0; i < typeparams.ForNamed(named).Len(); i++ {
+				if i > 0 {
+					snip.WriteText(", ")
+				}
+				snip.WritePlaceholder(func(snip *snippet.Builder) {
+					snip.WriteText(types.TypeString(typeparams.ForNamed(named).At(i), qf))
+				})
+			}
+		} else {
+			snip.WritePlaceholder(nil)
+		}
+		snip.WriteText("]")
+		typeName += "[...]"
+	} else {
+		// We don't have unspecified type params so use default type formatting.
+		typeName = types.TypeString(literalType, qf)
+		snip.WriteText(typeName)
+	}
+
+	return &snip, typeName
+}
+
+// fullyInstantiated reports whether all of t's type params have
+// specified type args.
+func (c *completer) fullyInstantiated(t *types.Named) bool {
+	tps := typeparams.ForNamed(t)
+	tas := typeparams.NamedTypeArgs(t)
+
+	if tps.Len() != tas.Len() {
+		return false
+	}
+
+	for i := 0; i < tas.Len(); i++ {
+		switch ta := tas.At(i).(type) {
+		case *typeparams.TypeParam:
+			// A *TypeParam only counts as specified if it is currently in
+			// scope (i.e. we are in a generic definition).
+			if !c.typeParamInScope(ta) {
+				return false
+			}
+		case *types.Named:
+			if !c.fullyInstantiated(ta) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// typeParamInScope returns whether tp's object is in scope at c.pos.
+// This tells you whether you are in a generic definition and can
+// assume tp has been specified.
+func (c *completer) typeParamInScope(tp *typeparams.TypeParam) bool {
+	obj := tp.Obj()
+	if obj == nil {
+		return false
+	}
+
+	scope := c.innermostScope()
+	if scope == nil {
+		return false
+	}
+
+	_, foundObj := scope.LookupParent(obj.Name(), c.pos)
+	return obj == foundObj
 }

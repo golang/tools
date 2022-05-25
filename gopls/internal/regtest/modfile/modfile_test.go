@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/hooks"
+	"golang.org/x/tools/internal/lsp/bug"
 	. "golang.org/x/tools/internal/lsp/regtest"
 
 	"golang.org/x/tools/internal/lsp/protocol"
@@ -19,6 +20,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	bug.PanicOnBugs = true
 	Main(m, hooks.Options)
 }
 
@@ -193,6 +195,62 @@ require example.com v1.2.3
 func TestMissingDependencyFixes(t *testing.T) {
 	testenv.NeedsGo1Point(t, 14)
 	const mod = `
+-- a/go.mod --
+module mod.com
+
+go 1.12
+
+-- a/main.go --
+package main
+
+import "example.com/blah"
+import "random.org/blah"
+
+var _, _ = blah.Name, hello.Name
+`
+
+	const want = `module mod.com
+
+go 1.12
+
+require random.org v1.2.3
+`
+
+	RunMultiple{
+		{"default", WithOptions(ProxyFiles(proxy), WorkspaceFolders("a"))},
+		{"nested", WithOptions(ProxyFiles(proxy))},
+	}.Run(t, mod, func(t *testing.T, env *Env) {
+		env.OpenFile("a/main.go")
+		var d protocol.PublishDiagnosticsParams
+		env.Await(
+			OnceMet(
+				env.DiagnosticAtRegexp("a/main.go", `"random.org/blah"`),
+				ReadDiagnostics("a/main.go", &d),
+			),
+		)
+		var randomDiag protocol.Diagnostic
+		for _, diag := range d.Diagnostics {
+			if strings.Contains(diag.Message, "random.org") {
+				randomDiag = diag
+			}
+		}
+		env.ApplyQuickFixes("a/main.go", []protocol.Diagnostic{randomDiag})
+		if got := env.ReadWorkspaceFile("a/go.mod"); got != want {
+			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(t, want, got))
+		}
+	})
+}
+
+// Tests that multiple missing dependencies gives good single fixes.
+func TestMissingDependencyFixesWithGoWork(t *testing.T) {
+	testenv.NeedsGo1Point(t, 18)
+	const mod = `
+-- go.work --
+go 1.18
+
+use (
+	./a
+)
 -- a/go.mod --
 module mod.com
 
@@ -803,6 +861,8 @@ func main() {}
 }
 
 func TestSumUpdateFixesDiagnostics(t *testing.T) {
+	t.Skipf("Skipping known-flaky test; see https://go.dev/issue/51352.")
+
 	testenv.NeedsGo1Point(t, 14)
 
 	const mod = `

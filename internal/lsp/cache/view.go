@@ -29,10 +29,8 @@ import (
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
-	errors "golang.org/x/xerrors"
 )
 
 type View struct {
@@ -139,10 +137,6 @@ const (
 	tempModfile
 )
 
-type builtinPackageHandle struct {
-	handle *memoize.Handle
-}
-
 // fileBase holds the common functionality for all files.
 // It is intended to be embedded in the file implementations
 type fileBase struct {
@@ -166,33 +160,6 @@ func (f *fileBase) addURI(uri span.URI) int {
 }
 
 func (v *View) ID() string { return v.id }
-
-// TODO(rfindley): factor this out to use server.tempDir, and consolidate logic with tempModFile.
-func tempWorkFile(workFH source.FileHandle) (tmpURI span.URI, cleanup func(), err error) {
-	filenameHash := hashContents([]byte(workFH.URI().Filename()))
-	tmpMod, err := ioutil.TempFile("", fmt.Sprintf("go.%s.*.work", filenameHash))
-	if err != nil {
-		return "", nil, err
-	}
-	defer tmpMod.Close()
-
-	tmpURI = span.URIFromPath(tmpMod.Name())
-
-	content, err := workFH.Read()
-	if err != nil {
-		return "", nil, err
-	}
-
-	if _, err := tmpMod.Write(content); err != nil {
-		return "", nil, err
-	}
-
-	cleanup = func() {
-		_ = os.Remove(tmpURI.Filename())
-	}
-
-	return tmpURI, cleanup, nil
-}
 
 // tempModFile creates a temporary go.mod file based on the contents of the
 // given go.mod file. It is the caller's responsibility to clean up the files
@@ -589,9 +556,11 @@ func (s *snapshot) IgnoredFile(uri span.URI) bool {
 	return false
 }
 
-// checkIgnored implements go list's exclusion rules. go help list:
-// 		Directory and file names that begin with "." or "_" are ignored
-// 		by the go tool, as are directories named "testdata".
+// checkIgnored implements go list's exclusion rules.
+// Quoting “go help list”:
+//
+//	Directory and file names that begin with "." or "_" are ignored
+//	by the go tool, as are directories named "testdata".
 func checkIgnored(suffix string) bool {
 	for _, component := range strings.Split(suffix, string(filepath.Separator)) {
 		if len(component) == 0 {
@@ -759,7 +728,7 @@ func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]*file
 
 func (s *Session) getWorkspaceInformation(ctx context.Context, folder span.URI, options *source.Options) (*workspaceInformation, error) {
 	if err := checkPathCase(folder.Filename()); err != nil {
-		return nil, errors.Errorf("invalid workspace folder path: %w; check that the casing of the configured workspace folder path agrees with the casing reported by the operating system", err)
+		return nil, fmt.Errorf("invalid workspace folder path: %w; check that the casing of the configured workspace folder path agrees with the casing reported by the operating system", err)
 	}
 	var err error
 	inv := gocommand.Invocation{
@@ -828,18 +797,19 @@ func go111moduleForVersion(go111module string, goversion int) go111module {
 //   - Then, a parent directory containing a go.mod file.
 //   - Then, a child directory containing a go.mod file, if there is exactly
 //     one (non-experimental only).
+//
 // Otherwise, it returns folder.
 // TODO (rFindley): move this to workspace.go
 // TODO (rFindley): simplify this once workspace modules are enabled by default.
 func findWorkspaceRoot(ctx context.Context, folder span.URI, fs source.FileSource, excludePath func(string) bool, experimental bool) (span.URI, error) {
-	patterns := []string{"go.mod"}
+	patterns := []string{"go.work", "go.mod"}
 	if experimental {
 		patterns = []string{"go.work", "gopls.mod", "go.mod"}
 	}
 	for _, basename := range patterns {
 		dir, err := findRootPattern(ctx, folder, basename, fs)
 		if err != nil {
-			return "", errors.Errorf("finding %s: %w", basename, err)
+			return "", fmt.Errorf("finding %s: %w", basename, err)
 		}
 		if dir != "" {
 			return dir, nil
@@ -882,7 +852,8 @@ func findRootPattern(ctx context.Context, folder span.URI, basename string, fs s
 		if exists {
 			return span.URIFromPath(dir), nil
 		}
-		next, _ := filepath.Split(dir)
+		// Trailing separators must be trimmed, otherwise filepath.Split is a noop.
+		next, _ := filepath.Split(strings.TrimRight(dir, string(filepath.Separator)))
 		if next == dir {
 			break
 		}

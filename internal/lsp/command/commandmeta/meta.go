@@ -148,7 +148,7 @@ func (l *fieldLoader) loadField(pkg *packages.Package, obj *types.Var, doc, tag 
 		JSONTag: reflect.StructTag(tag).Get("json"),
 	}
 	under := fld.Type.Underlying()
-	// Quick-and-dirty handling for various underyling types.
+	// Quick-and-dirty handling for various underlying types.
 	switch p := under.(type) {
 	case *types.Pointer:
 		under = p.Elem().Underlying()
@@ -214,8 +214,9 @@ func lspName(methodName string) string {
 // Initialisms are grouped as a single word.
 //
 // For example:
-//  "RunTests" -> []string{"Run", "Tests"}
-//  "GCDetails" -> []string{"GC", "Details"}
+//
+//	"RunTests" -> []string{"Run", "Tests"}
+//	"GCDetails" -> []string{"GC", "Details"}
 func splitCamel(s string) []string {
 	var words []string
 	for len(s) > 0 {

@@ -73,13 +73,13 @@ func (s *snapshot) ParseMod(ctx context.Context, modFH source.FileHandle) (*sour
 				if err != nil {
 					return &parseModData{err: err}
 				}
-				parseErrors = []*source.Diagnostic{{
+				parseErrors = append(parseErrors, &source.Diagnostic{
 					URI:      modFH.URI(),
 					Range:    rng,
 					Severity: protocol.SeverityError,
 					Source:   source.ParseError,
 					Message:  mfErr.Err.Error(),
-				}}
+				})
 			}
 		}
 		return &parseModData{
@@ -131,7 +131,7 @@ func (s *snapshot) ParseWork(ctx context.Context, modFH source.FileHandle) (*sou
 
 		contents, err := modFH.Read()
 		if err != nil {
-			return &parseModData{err: err}
+			return &parseWorkData{err: err}
 		}
 		m := &protocol.ColumnMapper{
 			URI:       modFH.URI(),
@@ -144,20 +144,20 @@ func (s *snapshot) ParseWork(ctx context.Context, modFH source.FileHandle) (*sou
 		if parseErr != nil {
 			mfErrList, ok := parseErr.(modfile.ErrorList)
 			if !ok {
-				return &parseModData{err: fmt.Errorf("unexpected parse error type %v", parseErr)}
+				return &parseWorkData{err: fmt.Errorf("unexpected parse error type %v", parseErr)}
 			}
 			for _, mfErr := range mfErrList {
 				rng, err := rangeFromPositions(m, mfErr.Pos, mfErr.Pos)
 				if err != nil {
-					return &parseModData{err: err}
+					return &parseWorkData{err: err}
 				}
-				parseErrors = []*source.Diagnostic{{
+				parseErrors = append(parseErrors, &source.Diagnostic{
 					URI:      modFH.URI(),
 					Range:    rng,
 					Severity: protocol.SeverityError,
 					Source:   source.ParseError,
 					Message:  mfErr.Err.Error(),
-				}}
+				})
 			}
 		}
 		return &parseWorkData{
@@ -359,9 +359,9 @@ var moduleVersionInErrorRe = regexp.MustCompile(`[:\s]([+-._~0-9A-Za-z]+)@([+-._
 // matchErrorToModule matches a go command error message to a go.mod file.
 // Some examples:
 //
-//    example.com@v1.2.2: reading example.com/@v/v1.2.2.mod: no such file or directory
-//    go: github.com/cockroachdb/apd/v2@v2.0.72: reading github.com/cockroachdb/apd/go.mod at revision v2.0.72: unknown revision v2.0.72
-//    go: example.com@v1.2.3 requires\n\trandom.org@v1.2.3: parsing go.mod:\n\tmodule declares its path as: bob.org\n\tbut was required as: random.org
+//	example.com@v1.2.2: reading example.com/@v/v1.2.2.mod: no such file or directory
+//	go: github.com/cockroachdb/apd/v2@v2.0.72: reading github.com/cockroachdb/apd/go.mod at revision v2.0.72: unknown revision v2.0.72
+//	go: example.com@v1.2.3 requires\n\trandom.org@v1.2.3: parsing go.mod:\n\tmodule declares its path as: bob.org\n\tbut was required as: random.org
 //
 // It returns the location of a reference to the one of the modules and true
 // if one exists. If none is found it returns a fallback location and false.

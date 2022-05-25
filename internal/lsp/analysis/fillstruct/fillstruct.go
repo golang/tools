@@ -251,8 +251,8 @@ func SuggestedFix(fset *token.FileSet, rng span.Range, content []byte, file *ast
 				return nil, fmt.Errorf("invalid struct field type: %v", fieldTyp)
 			}
 
-			// Find the identifer whose name is most similar to the name of the field's key.
-			// If we do not find any identifer that matches the pattern, generate a new value.
+			// Find the identifier whose name is most similar to the name of the field's key.
+			// If we do not find any identifier that matches the pattern, generate a new value.
 			// NOTE: We currently match on the name of the field key rather than the field type.
 			value := analysisinternal.FindBestMatch(obj.Field(i).Name(), idents)
 			if value == nil {
@@ -368,6 +368,8 @@ func populateValue(fset *token.FileSet, f *ast.File, pkg *types.Package, typ typ
 			return &ast.Ident{Name: "false"}
 		case u.Info()&types.IsString != 0:
 			return &ast.BasicLit{Kind: token.STRING, Value: `""`}
+		case u.Kind() == types.UnsafePointer:
+			return ast.NewIdent("nil")
 		default:
 			panic("unknown basic type")
 		}

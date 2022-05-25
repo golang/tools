@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/hooks"
+	"golang.org/x/tools/internal/lsp/bug"
 	. "golang.org/x/tools/internal/lsp/regtest"
 
 	"golang.org/x/tools/internal/lsp/fake"
@@ -18,6 +19,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	bug.PanicOnBugs = true
 	Main(m, hooks.Options)
 }
 
@@ -595,6 +597,51 @@ func BenchmarkFoo()
 				for i, it := range completions.Items {
 					t.Errorf("%d got %q %q", i, it.Label, it.Detail)
 				}
+			}
+		}
+	})
+}
+
+func TestGoWorkCompletion(t *testing.T) {
+	const files = `
+-- go.work --
+go 1.18
+
+use ./a
+use ./a/ba
+use ./a/b/
+use ./dir/foo
+use ./dir/foobar/
+-- a/go.mod --
+-- go.mod --
+-- a/bar/go.mod --
+-- a/b/c/d/e/f/go.mod --
+-- dir/bar --
+-- dir/foobar/go.mod --
+`
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("go.work")
+
+		tests := []struct {
+			re   string
+			want []string
+		}{
+			{`use ()\.`, []string{".", "./a", "./a/bar", "./dir/foobar"}},
+			{`use \.()`, []string{"", "/a", "/a/bar", "/dir/foobar"}},
+			{`use \./()`, []string{"a", "a/bar", "dir/foobar"}},
+			{`use ./a()`, []string{"", "/b/c/d/e/f", "/bar"}},
+			{`use ./a/b()`, []string{"/c/d/e/f", "ar"}},
+			{`use ./a/b/()`, []string{`c/d/e/f`}},
+			{`use ./a/ba()`, []string{"r"}},
+			{`use ./dir/foo()`, []string{"bar"}},
+			{`use ./dir/foobar/()`, []string{}},
+		}
+		for _, tt := range tests {
+			completions := env.Completion("go.work", env.RegexpSearch("go.work", tt.re))
+			diff := compareCompletionResults(tt.want, completions.Items)
+			if diff != "" {
+				t.Errorf("%s: %s", tt.re, diff)
 			}
 		}
 	})

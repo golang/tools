@@ -53,7 +53,7 @@ func compile(t *testing.T, dirname, filename, outdirname string) string {
 	}
 	basename := filepath.Base(filename)
 	outname := filepath.Join(outdirname, basename[:len(basename)-2]+"o")
-	cmd := exec.Command("go", "tool", "compile", "-o", outname, filename)
+	cmd := exec.Command("go", "tool", "compile", "-p=p", "-o", outname, filename)
 	cmd.Dir = dirname
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -585,6 +585,37 @@ func TestIssue25301(t *testing.T) {
 	}
 
 	compileAndImportPkg(t, "issue25301")
+}
+
+func TestIssue51836(t *testing.T) {
+	testenv.NeedsGo1Point(t, 18) // requires generics
+
+	// This package only handles gc export data.
+	needsCompiler(t, "gc")
+
+	// On windows, we have to set the -D option for the compiler to avoid having a drive
+	// letter and an illegal ':' in the import path - just skip it (see also issue #3483).
+	if runtime.GOOS == "windows" {
+		t.Skip("avoid dealing with relative paths/drive letters on windows")
+	}
+
+	tmpdir := mktmpdir(t)
+	defer os.RemoveAll(tmpdir)
+	testoutdir := filepath.Join(tmpdir, "testdata")
+
+	dir := filepath.Join("testdata", "issue51836")
+	// Following the pattern of TestIssue13898, aa.go needs to be compiled from
+	// the output directory. We pass the full path to compile() so that we don't
+	// have to copy the file to that directory.
+	bpath, err := filepath.Abs(filepath.Join(dir, "aa.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compile(t, dir, "a.go", testoutdir)
+	compile(t, testoutdir, bpath, testoutdir)
+
+	// import must succeed (test for issue at hand)
+	_ = importPkg(t, "./testdata/aa", tmpdir)
 }
 
 func importPkg(t *testing.T, path, srcDir string) *types.Package {

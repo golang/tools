@@ -9,9 +9,11 @@ import (
 	"go/token"
 	"go/types"
 
+	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // exprAtPos returns the index of the expression containing pos.
@@ -32,12 +34,12 @@ func eachField(T types.Type, fn func(*types.Var)) {
 	// types.NewSelectionSet should do that for us.
 
 	// for termination on recursive types
-	var seen map[*types.Struct]bool
+	var seen typeutil.Map
 
 	var visit func(T types.Type)
 	visit = func(T types.Type) {
 		if T, ok := source.Deref(T).Underlying().(*types.Struct); ok {
-			if seen[T] {
+			if seen.At(T) != nil {
 				return
 			}
 
@@ -45,12 +47,7 @@ func eachField(T types.Type, fn func(*types.Var)) {
 				f := T.Field(i)
 				fn(f)
 				if f.Anonymous() {
-					if seen == nil {
-						// Lazily create "seen" since it is only needed for
-						// embedded structs.
-						seen = make(map[*types.Struct]bool)
-					}
-					seen[T] = true
+					seen.Set(T, true)
 					visit(f.Type())
 				}
 			}
@@ -150,7 +147,7 @@ func isFunc(obj types.Object) bool {
 
 func isEmptyInterface(T types.Type) bool {
 	intf, _ := T.(*types.Interface)
-	return intf != nil && intf.NumMethods() == 0
+	return intf != nil && intf.NumMethods() == 0 && typeparams.IsMethodSet(intf)
 }
 
 func isUntyped(T types.Type) bool {
@@ -259,8 +256,8 @@ func fieldsAccessible(s *types.Struct, p *types.Package) bool {
 // prevStmt returns the statement that precedes the statement containing pos.
 // For example:
 //
-//     foo := 1
-//     bar(1 + 2<>)
+//	foo := 1
+//	bar(1 + 2<>)
 //
 // If "<>" is pos, prevStmt returns "foo := 1"
 func prevStmt(pos token.Pos, path []ast.Node) ast.Stmt {

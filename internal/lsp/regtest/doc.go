@@ -14,19 +14,19 @@
 // user interactions in ordinary Go tests, validate them, and run them in a
 // variety of execution modes (see gopls/doc/daemon.md for more information on
 // execution modes). This is achieved roughly as follows:
-//  + the Runner type starts and connects to a gopls instance for each
-//    configured execution mode.
-//  + the Env type provides a collection of resources to use in writing tests
-//    (for example a temporary working directory and fake text editor)
-//  + user interactions with these resources are scripted using test wrappers
-//    around the API provided by the golang.org/x/tools/internal/lsp/fake
-//    package.
+//   - the Runner type starts and connects to a gopls instance for each
+//     configured execution mode.
+//   - the Env type provides a collection of resources to use in writing tests
+//     (for example a temporary working directory and fake text editor)
+//   - user interactions with these resources are scripted using test wrappers
+//     around the API provided by the golang.org/x/tools/internal/lsp/fake
+//     package.
 //
 // Regressions are expressed in terms of Expectations, which at a high level
 // are conditions that we expect to be met (or not to be met) at some point
 // after performing the interactions in the test. This is necessary because the
 // LSP is by construction asynchronous: both client and server can send
-// eachother notifications without formal acknowledgement that they have been
+// each other notifications without formal acknowledgement that they have been
 // fully processed.
 //
 // Simple Expectations may be combined to match specific conditions reported by

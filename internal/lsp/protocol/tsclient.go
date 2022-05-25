@@ -2,21 +2,21 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Code generated (see typescript/README.md) DO NOT EDIT.
+
 package protocol
 
-// Package protocol contains data types and code for LSP jsonrpcs
+// Package protocol contains data types and code for LSP json rpcs
 // generated automatically from vscode-languageserver-node
-// commit: f17727af04704c0e2ede73dfdbeb463156e94561
-// last fetched Thu Feb 10 2022 14:34:11 GMT-0700 (Mountain Standard Time)
-
-// Code generated (see typescript/README.md) DO NOT EDIT.
+// commit: 696f9285bf849b73745682fdb1c1feac73eb8772
+// last fetched Fri Apr 01 2022 10:53:41 GMT-0400 (Eastern Daylight Time)
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"golang.org/x/tools/internal/jsonrpc2"
-	errors "golang.org/x/xerrors"
 )
 
 type Client interface {
@@ -74,17 +74,23 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 		return true, reply(ctx, nil, err)
 	case "workspace/workspaceFolders": // req
 		if len(r.Params()) > 0 {
-			return true, reply(ctx, nil, errors.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
+			return true, reply(ctx, nil, fmt.Errorf("%w: expected no params", jsonrpc2.ErrInvalidParams))
 		}
 		resp, err := client.WorkspaceFolders(ctx)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "workspace/configuration": // req
 		var params ParamConfiguration
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := client.Configuration(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "window/workDoneProgress/create": // req
 		var params WorkDoneProgressCreateParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
@@ -98,7 +104,10 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := client.ShowDocument(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "client/registerCapability": // req
 		var params RegistrationParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
@@ -119,14 +128,20 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := client.ShowMessageRequest(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 	case "workspace/applyEdit": // req
 		var params ApplyWorkspaceEditParams
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := client.ApplyEdit(ctx, &params)
-		return true, reply(ctx, resp, err)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
 
 	default:
 		return false, nil

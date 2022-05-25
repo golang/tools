@@ -187,7 +187,7 @@ Default: `false`.
 
 codelenses overrides the enabled/disabled state of code lenses. See the
 "Code Lenses" section of the
-[Settings page](https://github.com/golang/tools/blob/master/gopls/doc/settings.md)
+[Settings page](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#code-lenses)
 for the list of supported lenses.
 
 Example Usage:
@@ -254,7 +254,7 @@ Default: `"Fuzzy"`.
 
 **This setting is experimental and may be deleted.**
 
-experimentalPostfixCompletions enables artifical method snippets
+experimentalPostfixCompletions enables artificial method snippets
 such as "someSlice.sort!".
 
 Default: `true`.

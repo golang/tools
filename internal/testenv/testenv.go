@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -32,10 +33,19 @@ type helperer interface {
 
 // packageMainIsDevel reports whether the module containing package main
 // is a development version (if module information is available).
-//
-// Builds in GOPATH mode and builds that lack module information are assumed to
-// be development versions.
-var packageMainIsDevel = func() bool { return true }
+func packageMainIsDevel() bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		// Most test binaries currently lack build info, but this should become more
+		// permissive once https://golang.org/issue/33976 is fixed.
+		return true
+	}
+
+	// Note: info.Main.Version describes the version of the module containing
+	// package main, not the version of “the main module”.
+	// See https://golang.org/issue/33975.
+	return info.Main.Version == "(devel)"
+}
 
 var checkGoGoroot struct {
 	once sync.Once
@@ -222,24 +232,23 @@ func NeedsGoPackagesEnv(t Testing, env []string) {
 	NeedsGoPackages(t)
 }
 
-// NeedsGoBuild skips t if the current system can't build programs with ``go build''
+// NeedsGoBuild skips t if the current system can't build programs with “go build”
 // and then run them with os.StartProcess or exec.Command.
-// android, and darwin/arm systems don't have the userspace go build needs to run,
+// Android doesn't have the userspace go build needs to run,
 // and js/wasm doesn't support running subprocesses.
 func NeedsGoBuild(t Testing) {
 	if t, ok := t.(helperer); ok {
 		t.Helper()
 	}
 
+	// This logic was derived from internal/testing.HasGoBuild and
+	// may need to be updated as that function evolves.
+
 	NeedsTool(t, "go")
 
 	switch runtime.GOOS {
 	case "android", "js":
 		t.Skipf("skipping test: %v can't build and run Go binaries", runtime.GOOS)
-	case "darwin":
-		if strings.HasPrefix(runtime.GOARCH, "arm") {
-			t.Skipf("skipping test: darwin/arm can't build and run Go binaries")
-		}
 	}
 }
 

@@ -20,7 +20,17 @@ func FuzzFunc(f *testing.F) {
 }
 
 func FuzzFuncWithArgs(f *testing.F) {
-	f.Fuzz(func(t *testing.T, i int, b []byte) {}) // OK "arguments in func are allowed"
+	f.Add()                                      // want `wrong number of values in call to \(\*testing.F\)\.Add: 0, fuzz target expects 2`
+	f.Add(1, 2, 3, 4)                            // want `wrong number of values in call to \(\*testing.F\)\.Add: 4, fuzz target expects 2`
+	f.Add(5, 5)                                  // want `mismatched type in call to \(\*testing.F\)\.Add: int, fuzz target expects \[\]byte`
+	f.Add([]byte("hello"), 5)                    // want `mismatched types in call to \(\*testing.F\)\.Add: \[\[\]byte int\], fuzz target expects \[int \[\]byte\]`
+	f.Add(5, []byte("hello"))                    // OK
+	f.Fuzz(func(t *testing.T, i int, b []byte) { // OK "arguments in func are allowed"
+		f.Add(5, []byte("hello"))     // want `fuzz target must not call any \*F methods`
+		f.Name()                      // OK "calls to (*F).Failed and (*F).Name are allowed"
+		f.Failed()                    // OK "calls to (*F).Failed and (*F).Name are allowed"
+		f.Fuzz(func(t *testing.T) {}) // want `fuzz target must not call any \*F methods`
+	})
 }
 
 func FuzzArgFunc(f *testing.F) {
@@ -49,6 +59,10 @@ func FuzzFuncSecondArgNotAllowed(f *testing.F) {
 
 func FuzzFuncSecondArgArrNotAllowed(f *testing.F) {
 	f.Fuzz(func(t *testing.T, i []int) {}) // want "fuzzing arguments can only have the following types: string, bool, float32, float64, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, \\[\\]byte"
+}
+
+func FuzzFuncConsecutiveArgNotAllowed(f *testing.F) {
+	f.Fuzz(func(t *testing.T, i, j string, k complex64) {}) // want "fuzzing arguments can only have the following types: string, bool, float32, float64, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, \\[\\]byte"
 }
 
 func FuzzFuncInner(f *testing.F) {

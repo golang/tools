@@ -9,12 +9,49 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/hooks"
+	"golang.org/x/tools/internal/lsp/bug"
 	"golang.org/x/tools/internal/lsp/protocol"
 	. "golang.org/x/tools/internal/lsp/regtest"
 )
 
 func TestMain(m *testing.M) {
+	bug.PanicOnBugs = true
 	Main(m, hooks.Options)
+}
+
+func TestMultilineTokens(t *testing.T) {
+	// 51731: panic: runtime error: slice bounds out of range [38:3]
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.17
+-- hi.tmpl --
+{{if (foÜx .X.Y)}}😀{{$A := 
+	"hi"
+	}}{{.Z $A}}{{else}}
+{{$A.X 12}}
+{{foo (.X.Y) 23 ($A.Z)}}
+{{end}}
+`
+	WithOptions(
+		EditorConfig{
+			Settings: map[string]interface{}{
+				"templateExtensions": []string{"tmpl"},
+				"semanticTokens":     true,
+			},
+		},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		var p protocol.SemanticTokensParams
+		p.TextDocument.URI = env.Sandbox.Workdir.URI("hi.tmpl")
+		toks, err := env.Editor.Server.SemanticTokensFull(env.Ctx, &p)
+		if err != nil {
+			t.Errorf("semantic token failed: %v", err)
+		}
+		if toks == nil || len(toks.Data) == 0 {
+			t.Errorf("got no semantic tokens")
+		}
+	})
 }
 
 func TestTemplatesFromExtensions(t *testing.T) {
@@ -28,7 +65,6 @@ go 1.12
 Hello {{}} <-- missing body
 {{end}}
 `
-
 	WithOptions(
 		EditorConfig{
 			Settings: map[string]interface{}{
@@ -193,5 +229,4 @@ func shorten(fn protocol.DocumentURI) string {
 	return pieces[j-2] + "/" + pieces[j-1]
 }
 
-// Hover,  SemTok, Diagnose with errors
-// and better coverage
+// Hover needs tests

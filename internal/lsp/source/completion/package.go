@@ -7,6 +7,7 @@ package completion
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -17,12 +18,12 @@ import (
 	"strings"
 	"unicode"
 
-	"golang.org/x/tools/internal/lsp/debug"
+	"golang.org/x/tools/internal/lsp/bug"
 	"golang.org/x/tools/internal/lsp/fuzzy"
 	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/span"
-	errors "golang.org/x/xerrors"
 )
 
 // packageClauseCompletions offers completions for a package declaration when
@@ -46,7 +47,7 @@ func packageClauseCompletions(ctx context.Context, snapshot source.Snapshot, fh 
 
 	surrounding, err := packageCompletionSurrounding(ctx, snapshot.FileSet(), pgf, rng.Start)
 	if err != nil {
-		return nil, nil, errors.Errorf("invalid position for package completion: %w", err)
+		return nil, nil, fmt.Errorf("invalid position for package completion: %w", err)
 	}
 
 	packageSuggestions, err := packageSuggestions(ctx, snapshot, fh.URI(), "")
@@ -80,12 +81,18 @@ func packageCompletionSurrounding(ctx context.Context, fset *token.FileSet, pgf 
 		return nil, fmt.Errorf("unparseable file (%s)", pgf.URI)
 	}
 	tok := fset.File(expr.Pos())
-	offset, err := source.Offset(pgf.Tok, pos)
+	offset, err := safetoken.Offset(pgf.Tok, pos)
 	if err != nil {
 		return nil, err
 	}
 	if offset > tok.Size() {
-		debug.Bug(ctx, "out of bounds cursor", "cursor offset (%d) out of bounds for %s (size: %d)", offset, pgf.URI, tok.Size())
+		// internal bug: we should never get an offset that exceeds the size of our
+		// file.
+		bug.Report("out of bounds cursor", bug.Data{
+			"offset": offset,
+			"URI":    pgf.URI,
+			"size":   tok.Size(),
+		})
 		return nil, fmt.Errorf("cursor out of bounds")
 	}
 	cursor := tok.Pos(offset)
