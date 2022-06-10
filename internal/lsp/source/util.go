@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/internal/lsp/bug"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/span"
 )
@@ -25,45 +26,68 @@ import (
 // MappedRange provides mapped protocol.Range for a span.Range, accounting for
 // UTF-16 code points.
 type MappedRange struct {
-	spanRange span.Range
-	m         *protocol.ColumnMapper
-
-	// protocolRange is the result of converting the spanRange using the mapper.
-	// It is computed on-demand.
-	protocolRange *protocol.Range
+	spanRange span.Range             // the range in the compiled source (package.CompiledGoFiles)
+	m         *protocol.ColumnMapper // a mapper of the edited source (package.GoFiles)
 }
 
 // NewMappedRange returns a MappedRange for the given start and end token.Pos.
+//
+// By convention, start and end are assumed to be positions in the compiled (==
+// type checked) source, whereas the column mapper m maps positions in the
+// user-edited source. Note that these may not be the same, as when using CGo:
+// CompiledGoFiles contains generated files, whose positions (via
+// token.File.Position) point to locations in the edited file -- the file
+// containing `import "C"`.
 func NewMappedRange(fset *token.FileSet, m *protocol.ColumnMapper, start, end token.Pos) MappedRange {
+	if tf := fset.File(start); tf == nil {
+		bug.Report("nil file", nil)
+	} else {
+		mapped := m.TokFile.Name()
+		adjusted := tf.PositionFor(start, true) // adjusted position
+		if adjusted.Filename != mapped {
+			bug.Reportf("mapped file %q does not match start position file %q", mapped, adjusted.Filename)
+		}
+	}
 	return MappedRange{
 		spanRange: span.NewRange(fset, start, end),
 		m:         m,
 	}
 }
 
+// Range returns the LSP range in the edited source.
+//
+// See the documentation of NewMappedRange for information on edited vs
+// compiled source.
 func (s MappedRange) Range() (protocol.Range, error) {
-	if s.protocolRange == nil {
-		spn, err := s.spanRange.Span()
-		if err != nil {
-			return protocol.Range{}, err
-		}
-		prng, err := s.m.Range(spn)
-		if err != nil {
-			return protocol.Range{}, err
-		}
-		s.protocolRange = &prng
+	if s.m == nil {
+		return protocol.Range{}, bug.Errorf("invalid range")
 	}
-	return *s.protocolRange, nil
+	spn, err := s.Span()
+	if err != nil {
+		return protocol.Range{}, err
+	}
+	return s.m.Range(spn)
 }
 
+// Span returns the span corresponding to the mapped range in the edited
+// source.
+//
+// See the documentation of NewMappedRange for information on edited vs
+// compiled source.
 func (s MappedRange) Span() (span.Span, error) {
-	return s.spanRange.Span()
+	// In the past, some code-paths have relied on Span returning an error if s
+	// is the zero value (i.e. s.m is nil). But this should be treated as a bug:
+	// observe that s.URI() would panic in this case.
+	if s.m == nil {
+		return span.Span{}, bug.Errorf("invalid range")
+	}
+	return span.FileSpan(s.spanRange.TokFile, s.m.TokFile, s.spanRange.Start, s.spanRange.End)
 }
 
-func (s MappedRange) SpanRange() span.Range {
-	return s.spanRange
-}
-
+// URI returns the URI of the edited file.
+//
+// See the documentation of NewMappedRange for information on edited vs
+// compiled source.
 func (s MappedRange) URI() span.URI {
 	return s.m.URI
 }
@@ -89,15 +113,11 @@ func IsGenerated(ctx context.Context, snapshot Snapshot, uri span.URI) bool {
 	if err != nil {
 		return false
 	}
-	tok := snapshot.FileSet().File(pgf.File.Pos())
-	if tok == nil {
-		return false
-	}
 	for _, commentGroup := range pgf.File.Comments {
 		for _, comment := range commentGroup.List {
 			if matched := generatedRx.MatchString(comment.Text); matched {
 				// Check if comment is at the beginning of the line in source.
-				if pos := tok.Position(comment.Slash); pos.Column == 1 {
+				if pgf.Tok.Position(comment.Slash).Column == 1 {
 					return true
 				}
 			}
@@ -546,12 +566,12 @@ func LineToRange(m *protocol.ColumnMapper, uri span.URI, start, end modfile.Posi
 
 // ByteOffsetsToRange creates a range spanning start and end.
 func ByteOffsetsToRange(m *protocol.ColumnMapper, uri span.URI, start, end int) (protocol.Range, error) {
-	line, col, err := m.Converter.ToPosition(start)
+	line, col, err := span.ToPosition(m.TokFile, start)
 	if err != nil {
 		return protocol.Range{}, err
 	}
 	s := span.NewPoint(line, col, start)
-	line, col, err = m.Converter.ToPosition(end)
+	line, col, err = span.ToPosition(m.TokFile, end)
 	if err != nil {
 		return protocol.Range{}, err
 	}

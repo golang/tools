@@ -8,14 +8,27 @@ package protocol
 
 import (
 	"fmt"
+	"go/token"
 
 	"golang.org/x/tools/internal/span"
 )
 
+// A ColumnMapper maps between UTF-8 oriented positions (e.g. token.Pos,
+// span.Span) and the UTF-16 oriented positions used by the LSP.
 type ColumnMapper struct {
-	URI       span.URI
-	Converter *span.TokenConverter
-	Content   []byte
+	URI     span.URI
+	TokFile *token.File
+	Content []byte
+}
+
+// NewColumnMapper creates a new column mapper for the given uri and content.
+func NewColumnMapper(uri span.URI, content []byte) *ColumnMapper {
+	tf := span.NewTokenFile(uri.Filename(), content)
+	return &ColumnMapper{
+		URI:     uri,
+		TokFile: tf,
+		Content: content,
+	}
 }
 
 func URIFromSpanURI(uri span.URI) DocumentURI {
@@ -42,7 +55,7 @@ func (m *ColumnMapper) Range(s span.Span) (Range, error) {
 	if span.CompareURI(m.URI, s.URI()) != 0 {
 		return Range{}, fmt.Errorf("column mapper is for file %q instead of %q", m.URI, s.URI())
 	}
-	s, err := s.WithAll(m.Converter)
+	s, err := s.WithAll(m.TokFile)
 	if err != nil {
 		return Range{}, err
 	}
@@ -81,7 +94,7 @@ func (m *ColumnMapper) RangeSpan(r Range) (span.Span, error) {
 	if err != nil {
 		return span.Span{}, err
 	}
-	return span.New(m.URI, start, end).WithAll(m.Converter)
+	return span.New(m.URI, start, end).WithAll(m.TokFile)
 }
 
 func (m *ColumnMapper) RangeToSpanRange(r Range) (span.Range, error) {
@@ -89,20 +102,41 @@ func (m *ColumnMapper) RangeToSpanRange(r Range) (span.Range, error) {
 	if err != nil {
 		return span.Range{}, err
 	}
-	return spn.Range(m.Converter)
+	return spn.Range(m.TokFile)
 }
 
-func (m *ColumnMapper) PointSpan(p Position) (span.Span, error) {
+// Pos returns the token.Pos of p within the mapped file.
+func (m *ColumnMapper) Pos(p Position) (token.Pos, error) {
 	start, err := m.Point(p)
 	if err != nil {
-		return span.Span{}, err
+		return token.NoPos, err
 	}
-	return span.New(m.URI, start, start).WithAll(m.Converter)
+	// TODO: refactor the span package to avoid creating this unnecessary end position.
+	spn, err := span.New(m.URI, start, start).WithAll(m.TokFile)
+	if err != nil {
+		return token.NoPos, err
+	}
+	rng, err := spn.Range(m.TokFile)
+	if err != nil {
+		return token.NoPos, err
+	}
+	return rng.Start, nil
 }
 
+// Offset returns the utf-8 byte offset of p within the mapped file.
+func (m *ColumnMapper) Offset(p Position) (int, error) {
+	start, err := m.Point(p)
+	if err != nil {
+		return 0, err
+	}
+	return start.Offset(), nil
+}
+
+// Point returns a span.Point for p within the mapped file. The resulting point
+// always has an Offset.
 func (m *ColumnMapper) Point(p Position) (span.Point, error) {
 	line := int(p.Line) + 1
-	offset, err := m.Converter.ToOffset(line, 1)
+	offset, err := span.ToOffset(m.TokFile, line, 1)
 	if err != nil {
 		return span.Point{}, err
 	}

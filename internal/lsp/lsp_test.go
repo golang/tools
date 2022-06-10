@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/internal/lsp/bug"
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/command"
 	"golang.org/x/tools/internal/lsp/diff"
@@ -27,6 +28,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	bug.PanicOnBugs = true
 	testenv.ExitIfSmallMachine()
 	os.Exit(m.Run())
 }
@@ -930,6 +932,48 @@ func (r *runner) References(t *testing.T, src span.Span, itemList []span.Span) {
 	}
 }
 
+func (r *runner) InlayHints(t *testing.T, spn span.Span) {
+	uri := spn.URI()
+	filename := uri.Filename()
+
+	hints, err := r.server.InlayHint(r.ctx, &protocol.InlayHintParams{
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: protocol.URIFromSpanURI(uri),
+		},
+		// TODO: add ViewPort
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Map inlay hints to text edits.
+	edits := make([]protocol.TextEdit, len(hints))
+	for i, hint := range hints {
+		edits[i] = protocol.TextEdit{
+			Range:   protocol.Range{Start: *hint.Position, End: *hint.Position},
+			NewText: fmt.Sprintf("<%s>", hint.Label[0].Value),
+		}
+	}
+
+	m, err := r.data.Mapper(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sedits, err := source.FromProtocolEdits(m, edits)
+	if err != nil {
+		t.Error(err)
+	}
+	got := diff.ApplyEdits(string(m.Content), sedits)
+
+	withinlayHints := string(r.data.Golden("inlayHint", filename, func() ([]byte, error) {
+		return []byte(got), nil
+	}))
+
+	if withinlayHints != got {
+		t.Errorf("format failed for %s, expected:\n%v\ngot:\n%v", filename, withinlayHints, got)
+	}
+}
+
 func (r *runner) Rename(t *testing.T, spn span.Span, newText string) {
 	tag := fmt.Sprintf("%s-rename", newText)
 
@@ -1042,12 +1086,7 @@ func applyTextDocumentEdits(r *runner, edits []protocol.TextDocumentEdit) (map[s
 		// If we have already edited this file, we use the edited version (rather than the
 		// file in its original state) so that we preserve our initial changes.
 		if content, ok := res[uri]; ok {
-			m = &protocol.ColumnMapper{
-				URI: uri,
-				Converter: span.NewContentConverter(
-					uri.Filename(), []byte(content)),
-				Content: []byte(content),
-			}
+			m = protocol.NewColumnMapper(uri, []byte(content))
 		} else {
 			var err error
 			if m, err = r.data.Mapper(uri); err != nil {
@@ -1282,12 +1321,7 @@ func TestBytesOffset(t *testing.T) {
 		f := fset.AddFile(fname, -1, len(test.text))
 		f.SetLinesForContent([]byte(test.text))
 		uri := span.URIFromPath(fname)
-		converter := span.NewContentConverter(fname, []byte(test.text))
-		mapper := &protocol.ColumnMapper{
-			URI:       uri,
-			Converter: converter,
-			Content:   []byte(test.text),
-		}
+		mapper := protocol.NewColumnMapper(uri, []byte(test.text))
 		got, err := mapper.Point(test.pos)
 		if err != nil && test.want != -1 {
 			t.Errorf("unexpected error: %v", err)

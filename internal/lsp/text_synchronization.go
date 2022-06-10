@@ -211,7 +211,7 @@ func (s *Server) didModifyFiles(ctx context.Context, modifications []source.File
 		defer func() {
 			go func() {
 				<-diagnoseDone
-				work.End("Done.")
+				work.End(ctx, "Done.")
 			}()
 		}()
 	}
@@ -340,12 +340,7 @@ func (s *Server) applyIncrementalChanges(ctx context.Context, uri span.URI, chan
 	}
 	for _, change := range changes {
 		// Make sure to update column mapper along with the content.
-		converter := span.NewContentConverter(uri.Filename(), content)
-		m := &protocol.ColumnMapper{
-			URI:       uri,
-			Converter: converter,
-			Content:   content,
-		}
+		m := protocol.NewColumnMapper(uri, content)
 		if change.Range == nil {
 			return nil, fmt.Errorf("%w: unexpected nil range for change", jsonrpc2.ErrInternal)
 		}

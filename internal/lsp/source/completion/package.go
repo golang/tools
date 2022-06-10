@@ -28,7 +28,7 @@ import (
 
 // packageClauseCompletions offers completions for a package declaration when
 // one is not present in the given file.
-func packageClauseCompletions(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, pos protocol.Position) ([]CompletionItem, *Selection, error) {
+func packageClauseCompletions(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, position protocol.Position) ([]CompletionItem, *Selection, error) {
 	// We know that the AST for this file will be empty due to the missing
 	// package declaration, but parse it anyway to get a mapper.
 	pgf, err := snapshot.ParseGo(ctx, fh, source.ParseFull)
@@ -36,16 +36,12 @@ func packageClauseCompletions(ctx context.Context, snapshot source.Snapshot, fh 
 		return nil, nil, err
 	}
 
-	cursorSpan, err := pgf.Mapper.PointSpan(pos)
-	if err != nil {
-		return nil, nil, err
-	}
-	rng, err := cursorSpan.Range(pgf.Mapper.Converter)
+	pos, err := pgf.Mapper.Pos(position)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	surrounding, err := packageCompletionSurrounding(ctx, snapshot.FileSet(), pgf, rng.Start)
+	surrounding, err := packageCompletionSurrounding(snapshot.FileSet(), pgf, pos)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid position for package completion: %w", err)
 	}
@@ -72,7 +68,7 @@ func packageClauseCompletions(ctx context.Context, snapshot source.Snapshot, fh 
 // packageCompletionSurrounding returns surrounding for package completion if a
 // package completions can be suggested at a given position. A valid location
 // for package completion is above any declarations or import statements.
-func packageCompletionSurrounding(ctx context.Context, fset *token.FileSet, pgf *source.ParsedGoFile, pos token.Pos) (*Selection, error) {
+func packageCompletionSurrounding(fset *token.FileSet, pgf *source.ParsedGoFile, pos token.Pos) (*Selection, error) {
 	// If the file lacks a package declaration, the parser will return an empty
 	// AST. As a work-around, try to parse an expression from the file contents.
 	filename := pgf.URI.Filename()
@@ -96,11 +92,6 @@ func packageCompletionSurrounding(ctx context.Context, fset *token.FileSet, pgf 
 		return nil, fmt.Errorf("cursor out of bounds")
 	}
 	cursor := tok.Pos(offset)
-	m := &protocol.ColumnMapper{
-		URI:       pgf.URI,
-		Content:   pgf.Src,
-		Converter: span.NewContentConverter(filename, pgf.Src),
-	}
 
 	// If we were able to parse out an identifier as the first expression from
 	// the file, it may be the beginning of a package declaration ("pack ").
@@ -111,9 +102,9 @@ func packageCompletionSurrounding(ctx context.Context, fset *token.FileSet, pgf 
 				return nil, fmt.Errorf("cursor in non-matching ident")
 			}
 			return &Selection{
-				content:     name.Name,
-				cursor:      cursor,
-				MappedRange: source.NewMappedRange(fset, m, name.Pos(), name.End()),
+				content: name.Name,
+				cursor:  cursor,
+				rng:     span.NewRange(fset, name.Pos(), name.End()),
 			}, nil
 		}
 	}
@@ -148,9 +139,9 @@ func packageCompletionSurrounding(ctx context.Context, fset *token.FileSet, pgf 
 			// otherwise fallback to the general case.
 			if cursor >= start && cursor <= end {
 				return &Selection{
-					content:     content,
-					cursor:      cursor,
-					MappedRange: source.NewMappedRange(fset, m, start, end),
+					content: content,
+					cursor:  cursor,
+					rng:     span.NewRange(fset, start, end),
 				}, nil
 			}
 		}
@@ -175,9 +166,9 @@ func packageCompletionSurrounding(ctx context.Context, fset *token.FileSet, pgf 
 	}
 
 	return &Selection{
-		content:     "",
-		cursor:      cursor,
-		MappedRange: source.NewMappedRange(fset, m, start, end),
+		content: "",
+		cursor:  cursor,
+		rng:     span.NewRange(fset, start, end),
 	}, nil
 }
 

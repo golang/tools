@@ -171,12 +171,7 @@ func Rename(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position,
 		if err != nil {
 			return nil, err
 		}
-		converter := span.NewContentConverter(uri.Filename(), data)
-		m := &protocol.ColumnMapper{
-			URI:       uri,
-			Converter: converter,
-			Content:   data,
-		}
+		m := protocol.NewColumnMapper(uri, data)
 		// Sort the edits first.
 		diff.SortTextEdits(edits)
 		protocolEdits, err := ToProtocolEdits(m, edits)
@@ -198,7 +193,7 @@ func (r *renamer) update() (map[span.URI][]diff.TextEdit, error) {
 		return nil, err
 	}
 	for _, ref := range r.refs {
-		refSpan, err := ref.spanRange.Span()
+		refSpan, err := ref.Span()
 		if err != nil {
 			return nil, err
 		}

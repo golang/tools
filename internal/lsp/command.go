@@ -109,12 +109,12 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 		if deps.work != nil {
 			switch {
 			case errors.Is(err, context.Canceled):
-				deps.work.End("canceled")
+				deps.work.End(ctx, "canceled")
 			case err != nil:
 				event.Error(ctx, "command error", err)
-				deps.work.End("failed")
+				deps.work.End(ctx, "failed")
 			default:
-				deps.work.End("completed")
+				deps.work.End(ctx, "completed")
 			}
 		}
 		return err
@@ -579,11 +579,7 @@ func applyFileEdits(ctx context.Context, snapshot source.Snapshot, uri span.URI,
 		return nil, err
 	}
 
-	m := &protocol.ColumnMapper{
-		URI:       fh.URI(),
-		Converter: span.NewContentConverter(fh.URI().Filename(), oldContent),
-		Content:   oldContent,
-	}
+	m := protocol.NewColumnMapper(fh.URI(), oldContent)
 	diff, err := snapshot.View().Options().ComputeEdits(uri, string(oldContent), string(newContent))
 	if err != nil {
 		return nil, err

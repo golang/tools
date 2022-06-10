@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/internal/lsp/bug"
 	"golang.org/x/tools/internal/lsp/cache"
 	"golang.org/x/tools/internal/lsp/diff"
 	"golang.org/x/tools/internal/lsp/diff/myers"
@@ -28,6 +29,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	bug.PanicOnBugs = true
 	testenv.ExitIfSmallMachine()
 	os.Exit(m.Run())
 }
@@ -681,6 +683,10 @@ func (r *runner) Highlight(t *testing.T, src span.Span, locations []span.Span) {
 			t.Errorf("want %v, got %v\n", locations[i], results[i])
 		}
 	}
+}
+
+func (r *runner) InlayHints(t *testing.T, src span.Span) {
+	// TODO(golang/go#53315): add source test
 }
 
 func (r *runner) Hover(t *testing.T, src span.Span, text string) {
