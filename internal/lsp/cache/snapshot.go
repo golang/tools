@@ -860,8 +860,6 @@ func (s *snapshot) getKnownSubdirsPattern(wsDirs []span.URI) string {
 			dirNames = append(dirNames, uri.Filename())
 		}
 		sort.Strings(dirNames)
-		// The double allocation of Sprintf(Join()) accounts for 8%
-		// of DidChange, but specializing doesn't appear to help. :(
 		s.knownSubdirsPatternCache = fmt.Sprintf("{%s}", strings.Join(dirNames, ","))
 	}
 
@@ -941,7 +939,6 @@ func (s *snapshot) addKnownSubdirLocked(uri span.URI, dirs []span.URI) {
 		}
 		s.knownSubdirs[uri] = struct{}{}
 		dir = filepath.Dir(dir)
-		// Change happened, clear the cache.
 		s.knownSubdirsPatternCache = ""
 	}
 }
@@ -955,7 +952,6 @@ func (s *snapshot) removeKnownSubdirLocked(uri span.URI) {
 		}
 		if info, _ := os.Stat(dir); info == nil {
 			delete(s.knownSubdirs, uri)
-			// Change happened, clear the cache.
 			s.knownSubdirsPatternCache = ""
 		}
 		dir = filepath.Dir(dir)
