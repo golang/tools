@@ -848,6 +848,7 @@ func (s *snapshot) getKnownSubdirsPattern(wsDirs []span.URI) string {
 
 	// First, process any pending changes and update the set of known
 	// subdirectories.
+	// It may change list of known subdirs and therefore invalidate the cache.
 	s.applyKnownSubdirsChangesLocked(wsDirs)
 
 	if len(s.knownSubdirs) == 0 {
