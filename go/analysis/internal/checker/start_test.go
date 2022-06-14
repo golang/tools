@@ -55,6 +55,7 @@ package comment
 
 var commentAnalyzer = &analysis.Analyzer{
 	Name:     "comment",
+	Doc:      "comment",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      commentRun,
 }

@@ -140,7 +140,7 @@ func TestVTAPanicMissingDefinitions(t *testing.T) {
 	}
 	for _, r := range res {
 		if r.Err != nil {
-			t.Errorf("want no error for package %v; got %v", r.Pass.Pkg.Path(), r.Err)
+			t.Errorf("want no error for package %v; got %v", r.Action.Package.Types.Path(), r.Err)
 		}
 	}
 }

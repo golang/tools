@@ -7,33 +7,14 @@ package buildtag_test
 import (
 	"testing"
 
-	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/buildtag"
-	"golang.org/x/tools/internal/versions"
 )
 
 func Test(t *testing.T) {
-	analyzer := *buildtag.Analyzer
-	analyzer.Run = func(pass *analysis.Pass) (interface{}, error) {
-		defer func() {
-			// The buildtag pass is unusual in that it checks the IgnoredFiles.
-			// After analysis, add IgnoredFiles to OtherFiles so that
-			// the test harness checks for expected diagnostics in those.
-			// (The test harness shouldn't do this by default because most
-			// passes can't do anything with the IgnoredFiles without type
-			// information, which is unavailable because they are ignored.)
-			var files []string
-			files = append(files, pass.OtherFiles...)
-			files = append(files, pass.IgnoredFiles...)
-			pass.OtherFiles = files
-		}()
-
-		return buildtag.Analyzer.Run(pass)
-	}
-	patterns := []string{"a"}
-	if versions.ConstraintGoVersion != nil {
-		patterns = append(patterns, "b")
-	}
-	analysistest.Run(t, analysistest.TestData(), &analyzer, patterns...)
+	// This test has a dedicated hack in the analysistest package:
+	// Because it cares about IgnoredFiles, which most analyzers
+	// ignore, the test framework will consider expectations in
+	// ignore files too, but only for this analyzer.
+	analysistest.Run(t, analysistest.TestData(), buildtag.Analyzer, "a", "b")
 }

@@ -21,11 +21,11 @@ func Test(t *testing.T) {
 	for _, result := range results {
 		cfgs := result.Result.(*ctrlflow.CFGs)
 
-		for _, decl := range result.Pass.Files[0].Decls {
+		for _, decl := range result.Action.Package.Syntax[0].Decls {
 			if decl, ok := decl.(*ast.FuncDecl); ok && decl.Body != nil {
 				if cfgs.FuncDecl(decl) == nil {
 					t.Errorf("%s: no CFG for func %s",
-						result.Pass.Fset.Position(decl.Pos()), decl.Name.Name)
+						result.Action.Package.Fset.Position(decl.Pos()), decl.Name.Name)
 				}
 			}
 		}
