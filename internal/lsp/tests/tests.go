@@ -787,7 +787,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 	})
 
 	t.Run("InlayHints", func(t *testing.T) {
-		t.Skip("Inlay Hints not yet implemented")
 		t.Helper()
 		for _, src := range data.InlayHints {
 			t.Run(SpanName(src), func(t *testing.T) {
@@ -985,6 +984,7 @@ func checkData(t *testing.T, data *Data) {
 	fmt.Fprintf(buf, "DefinitionsCount = %v\n", definitionCount)
 	fmt.Fprintf(buf, "TypeDefinitionsCount = %v\n", typeDefinitionCount)
 	fmt.Fprintf(buf, "HighlightsCount = %v\n", len(data.Highlights))
+	fmt.Fprintf(buf, "InlayHintsCount = %v\n", len(data.InlayHints))
 	fmt.Fprintf(buf, "ReferencesCount = %v\n", len(data.References))
 	fmt.Fprintf(buf, "RenamesCount = %v\n", len(data.Renames))
 	fmt.Fprintf(buf, "PrepareRenamesCount = %v\n", len(data.PrepareRenames))

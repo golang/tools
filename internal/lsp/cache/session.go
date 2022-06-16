@@ -44,7 +44,7 @@ type overlay struct {
 	session *Session
 	uri     span.URI
 	text    []byte
-	hash    string
+	hash    source.Hash
 	version int32
 	kind    source.FileKind
 
@@ -232,7 +232,7 @@ func (s *Session) createView(ctx context.Context, name string, folder span.URI, 
 		initializeOnce:    &sync.Once{},
 		generation:        s.cache.store.Generation(generationName(v, 0)),
 		packages:          make(map[packageKey]*packageHandle),
-		meta:              NewMetadataGraph(),
+		meta:              &metadataGraph{},
 		files:             make(map[span.URI]source.VersionedFileHandle),
 		goFiles:           newGoFileMap(),
 		symbols:           make(map[span.URI]*symbolHandle),
@@ -637,7 +637,7 @@ func (s *Session) updateOverlays(ctx context.Context, changes []source.FileModif
 		if c.OnDisk || c.Action == source.Save {
 			version = o.version
 		}
-		hash := hashContents(text)
+		hash := source.HashOf(text)
 		var sameContentOnDisk bool
 		switch c.Action {
 		case source.Delete:
