@@ -42,7 +42,7 @@ start:
 		b.add(s)
 		if call, ok := s.X.(*ast.CallExpr); ok && !b.mayReturn(call) {
 			// Calls to panic, os.Exit, etc, never return.
-			b.current = b.newBlock("unreachable.call")
+			b.current = b.newBlock(s.X.Pos(), "unreachable.call")
 		}
 
 	case *ast.DeclStmt:
@@ -65,7 +65,7 @@ start:
 
 	case *ast.ReturnStmt:
 		b.add(s)
-		b.current = b.newBlock("unreachable.return")
+		b.current = b.newBlock(s.Pos(), "unreachable.return")
 
 	case *ast.BranchStmt:
 		b.branchStmt(s)
@@ -77,11 +77,11 @@ start:
 		if s.Init != nil {
 			b.stmt(s.Init)
 		}
-		then := b.newBlock("if.then")
-		done := b.newBlock("if.done")
+		then := b.newBlock(s.Pos(), "if.then")
+		done := b.newBlock(s.Pos(), "if.done")
 		_else := done
 		if s.Else != nil {
-			_else = b.newBlock("if.else")
+			_else = b.newBlock(s.Else.Pos(), "if.else")
 		}
 		b.add(s.Cond)
 		b.ifelse(then, _else)
@@ -159,10 +159,10 @@ func (b *builder) branchStmt(s *ast.BranchStmt) {
 		}
 	}
 	if block == nil {
-		block = b.newBlock("undefined.branch")
+		block = b.newBlock(s.Pos(), "undefined.branch")
 	}
 	b.jump(block)
-	b.current = b.newBlock("unreachable.branch")
+	b.current = b.newBlock(s.Pos(), "unreachable.branch")
 }
 
 func (b *builder) switchStmt(s *ast.SwitchStmt, label *lblock) {
@@ -172,7 +172,7 @@ func (b *builder) switchStmt(s *ast.SwitchStmt, label *lblock) {
 	if s.Tag != nil {
 		b.add(s.Tag)
 	}
-	done := b.newBlock("switch.done")
+	done := b.newBlock(s.Pos(), "switch.done")
 	if label != nil {
 		label._break = done
 	}
@@ -188,13 +188,13 @@ func (b *builder) switchStmt(s *ast.SwitchStmt, label *lblock) {
 	for i, clause := range s.Body.List {
 		body := fallthru
 		if body == nil {
-			body = b.newBlock("switch.body") // first case only
+			body = b.newBlock(clause.Pos(), "switch.body") // first case only
 		}
 
 		// Preallocate body block for the next case.
 		fallthru = done
 		if i+1 < ncases {
-			fallthru = b.newBlock("switch.body")
+			fallthru = b.newBlock(clause.Pos(), "switch.body")
 		}
 
 		cc := clause.(*ast.CaseClause)
@@ -208,7 +208,7 @@ func (b *builder) switchStmt(s *ast.SwitchStmt, label *lblock) {
 
 		var nextCond *Block
 		for _, cond := range cc.List {
-			nextCond = b.newBlock("switch.next")
+			nextCond = b.newBlock(cond.Pos(), "switch.next")
 			b.add(cond) // one half of the tag==cond condition
 			b.ifelse(body, nextCond)
 			b.current = nextCond
@@ -247,7 +247,7 @@ func (b *builder) typeSwitchStmt(s *ast.TypeSwitchStmt, label *lblock) {
 		b.add(s.Assign)
 	}
 
-	done := b.newBlock("typeswitch.done")
+	done := b.newBlock(s.Pos(), "typeswitch.done")
 	if label != nil {
 		label._break = done
 	}
@@ -258,10 +258,10 @@ func (b *builder) typeSwitchStmt(s *ast.TypeSwitchStmt, label *lblock) {
 			default_ = cc
 			continue
 		}
-		body := b.newBlock("typeswitch.body")
+		body := b.newBlock(clause.Pos(), "typeswitch.body")
 		var next *Block
 		for _, casetype := range cc.List {
-			next = b.newBlock("typeswitch.next")
+			next = b.newBlock(casetype.Pos(), "typeswitch.next")
 			// casetype is a type, so don't call b.add(casetype).
 			// This block logically contains a type assertion,
 			// x.(casetype), but it's unclear how to represent x.
@@ -300,7 +300,7 @@ func (b *builder) selectStmt(s *ast.SelectStmt, label *lblock) {
 		}
 	}
 
-	done := b.newBlock("select.done")
+	done := b.newBlock(s.Pos(), "select.done")
 	if label != nil {
 		label._break = done
 	}
@@ -312,8 +312,8 @@ func (b *builder) selectStmt(s *ast.SelectStmt, label *lblock) {
 			defaultBody = &clause.Body
 			continue
 		}
-		body := b.newBlock("select.body")
-		next := b.newBlock("select.next")
+		body := b.newBlock(clause.Pos(), "select.body")
+		next := b.newBlock(clause.Pos(), "select.next")
 		b.ifelse(body, next)
 		b.current = body
 		b.targets = &targets{
@@ -358,15 +358,15 @@ func (b *builder) forStmt(s *ast.ForStmt, label *lblock) {
 	if s.Init != nil {
 		b.stmt(s.Init)
 	}
-	body := b.newBlock("for.body")
-	done := b.newBlock("for.done") // target of 'break'
-	loop := body                   // target of back-edge
+	body := b.newBlock(s.Pos(), "for.body")
+	done := b.newBlock(s.Pos(), "for.done") // target of 'break'
+	loop := body                            // target of back-edge
 	if s.Cond != nil {
-		loop = b.newBlock("for.loop")
+		loop = b.newBlock(s.Cond.Pos(), "for.loop")
 	}
 	cont := loop // target of 'continue'
 	if s.Post != nil {
-		cont = b.newBlock("for.post")
+		cont = b.newBlock(s.Post.Pos(), "for.post")
 	}
 	if label != nil {
 		label._break = done
@@ -414,12 +414,12 @@ func (b *builder) rangeStmt(s *ast.RangeStmt, label *lblock) {
 	// 	jump loop
 	// done:                                   (target of break)
 
-	loop := b.newBlock("range.loop")
+	loop := b.newBlock(s.Pos(), "range.loop")
 	b.jump(loop)
 	b.current = loop
 
-	body := b.newBlock("range.body")
-	done := b.newBlock("range.done")
+	body := b.newBlock(s.Pos(), "range.body")
+	done := b.newBlock(s.Pos(), "range.done")
 	b.ifelse(body, done)
 	b.current = body
 
@@ -464,7 +464,7 @@ type lblock struct {
 func (b *builder) labeledBlock(label *ast.Ident) *lblock {
 	lb := b.lblocks[label.Obj]
 	if lb == nil {
-		lb = &lblock{_goto: b.newBlock(label.Name)}
+		lb = &lblock{_goto: b.newBlock(label.Pos(), label.Name)}
 		if b.lblocks == nil {
 			b.lblocks = make(map[*ast.Object]*lblock)
 		}
@@ -477,9 +477,10 @@ func (b *builder) labeledBlock(label *ast.Ident) *lblock {
 // slice and returns it.
 // It does not automatically become the current block.
 // comment is an optional string for more readable debugging output.
-func (b *builder) newBlock(comment string) *Block {
+func (b *builder) newBlock(pos token.Pos, comment string) *Block {
 	g := b.cfg
 	block := &Block{
+		Pos:     pos,
 		Index:   int32(len(g.Blocks)),
 		comment: comment,
 	}
