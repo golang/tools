@@ -115,10 +115,10 @@ func TestHandleRefCounting(t *testing.T) {
 	cleanup := func(v interface{}) {
 		*(v.(*bool)) = true
 	}
-	h1, release1 := g1.NewHandle("key1", func(context.Context, memoize.Arg) interface{} {
+	h1, release1 := g1.GetHandle("key1", func(context.Context, memoize.Arg) interface{} {
 		return &v1
 	}, nil)
-	h2, release2 := g1.NewHandle("key2", func(context.Context, memoize.Arg) interface{} {
+	h2, release2 := g1.GetHandle("key2", func(context.Context, memoize.Arg) interface{} {
 		return &v2
 	}, cleanup)
 	expectGet(t, h1, g1, &v1)
@@ -129,7 +129,7 @@ func TestHandleRefCounting(t *testing.T) {
 	g1.Destroy("by test")
 	expectGet(t, h2, g2, &v2)
 
-	h2Copy, release2Copy := g2.NewHandle("key2", func(context.Context, memoize.Arg) interface{} {
+	h2Copy, release2Copy := g2.GetHandle("key2", func(context.Context, memoize.Arg) interface{} {
 		return &v1
 	}, nil)
 	if h2 != h2Copy {
@@ -152,7 +152,7 @@ func TestHandleRefCounting(t *testing.T) {
 	release1()
 
 	g3 := s.Generation("g3")
-	h2Copy, release2Copy = g3.NewHandle("key2", func(context.Context, memoize.Arg) interface{} {
+	h2Copy, release2Copy = g3.GetHandle("key2", func(context.Context, memoize.Arg) interface{} {
 		return &v2
 	}, cleanup)
 	if h2 == h2Copy {

@@ -84,9 +84,17 @@ func (g *Generation) Destroy(destroyedBy string) {
 	g.store.mu.Lock()
 	defer g.store.mu.Unlock()
 	for _, e := range g.store.handles {
-		if e.trackGenerations {
-			e.decrementRef(g, g.store)
+		if !e.trackGenerations {
+			continue
 		}
+		e.mu.Lock()
+		if _, ok := e.generations[g]; ok {
+			delete(e.generations, g) // delete even if it's dead, in case of dangling references to the entry.
+			if len(e.generations) == 0 {
+				e.destroy(g.store)
+			}
+		}
+		e.mu.Unlock()
 	}
 	delete(g.store.generations, g)
 }
@@ -153,6 +161,9 @@ type Handle struct {
 	// produced by function.
 	cleanup func(interface{})
 
+	// If trackGenerations is set, this handle tracks generations in which it
+	// is valid, via the generations field. Otherwise, it is explicitly reference
+	// counted via the refCounter field.
 	trackGenerations bool
 	refCounter       int32
 }
@@ -171,27 +182,30 @@ type Handle struct {
 // It is responsibility of the caller to call Inherit on the handler whenever
 // it should still be accessible by a next generation.
 func (g *Generation) Bind(key interface{}, function Function, cleanup func(interface{})) *Handle {
-	return g.newHandle(key, function, cleanup, true)
+	return g.getHandle(key, function, cleanup, true)
 }
 
-// NewHandle returns a handle for the given key and function with similar
+// GetHandle returns a handle for the given key and function with similar
 // properties and behavior as Bind.
 //
 // As in opposite to Bind it returns a release callback which has to be called
 // once this reference to handle is not needed anymore.
-func (g *Generation) NewHandle(key interface{}, function Function, cleanup func(interface{})) (*Handle, func()) {
-	handle := g.newHandle(key, function, cleanup, false)
+func (g *Generation) GetHandle(key interface{}, function Function, cleanup func(interface{})) (*Handle, func()) {
+	handle := g.getHandle(key, function, cleanup, false)
 	store := g.store
 	release := func() {
 		store.mu.Lock()
 		defer store.mu.Unlock()
 
-		handle.decrementRef(nil, store)
+		handle.refCounter--
+		if handle.refCounter == 0 {
+			handle.destroy(store)
+		}
 	}
 	return handle, release
 }
 
-func (g *Generation) newHandle(key interface{}, function Function, cleanup func(interface{}), trackGenerations bool) *Handle {
+func (g *Generation) getHandle(key interface{}, function Function, cleanup func(interface{}), trackGenerations bool) *Handle {
 	// panic early if the function is nil
 	// it would panic later anyway, but in a way that was much harder to debug
 	if function == nil {
@@ -287,31 +301,7 @@ func (h *Handle) incrementRef(g *Generation) {
 	}
 }
 
-func (h *Handle) decrementRef(g *Generation, store *Store) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	if h.trackGenerations {
-		if g == nil {
-			panic("passed nil generation to Handle.decrementRef")
-		}
-		if _, ok := h.generations[g]; ok {
-			delete(h.generations, g) // delete even if it's dead, in case of dangling references to the entry.
-			if len(h.generations) == 0 {
-				h.destroy(store)
-			}
-		}
-	} else {
-		if g != nil {
-			panic(fmt.Sprintf("passed non-generation to Handle.decrementRef: %v", g))
-		}
-		h.refCounter--
-		if h.refCounter == 0 {
-			h.destroy(store)
-		}
-	}
-}
-
+// hasRefLocked reports whether h is valid in generation g. h.mu must be held.
 func (h *Handle) hasRefLocked(g *Generation) bool {
 	if !h.trackGenerations {
 		return true

@@ -12,6 +12,17 @@ import (
 	"sync/atomic"
 )
 
+// Implementation details:
+// * Each value is reference counted by nodes which hold it.
+// * Each node is reference counted by its parent nodes.
+// * Each map is considered a top-level parent node from reference counting perspective.
+// * Each change does always effectivelly produce a new top level node.
+//
+// Functions which operate directly with nodes do have a notation in form of
+// `foo(arg1:+n1, arg2:+n2) (ret1:+n3)`.
+// Each argument is followed by a delta change to its reference counter.
+// In case if no change is expected, the delta will be `-0`.
+
 // Map is an associative mapping from keys to values, both represented as
 // interface{}. Key comparison and iteration order is defined by a
 // client-provided function that implements a strict weak order.
@@ -159,9 +170,9 @@ func (pm *Map) Store(key, value interface{}, release func(key, value interface{}
 // union returns a new tree which is a union of first and second one.
 // If overwrite is set to true, second one would override a value for any duplicate keys.
 //
-// union(left:-0, right:-0) (result:+1)
+// union(first:-0, second:-0) (result:+1)
 // Union borrows both subtrees without affecting their refcount and returns a
-// new reference that the caller is expected to dispose of.
+// new reference that the caller is expected to call decref.
 func union(first, second *mapNode, less func(a, b interface{}) bool, overwrite bool) *mapNode {
 	if first == nil {
 		return second.incref()
@@ -197,7 +208,7 @@ func union(first, second *mapNode, less func(a, b interface{}) bool, overwrite b
 //
 // split(n:-0) (left:+1, mid:+1, right:+1)
 // Split borrows n without affecting its refcount, and returns three
-// new references that that caller is expected to dispose of.
+// new references that that caller is expected to call decref.
 func split(n *mapNode, key interface{}, less func(a, b interface{}) bool) (left, mid, right *mapNode) {
 	if n == nil {
 		return nil, nil, nil
@@ -236,7 +247,7 @@ func (pm *Map) Delete(key interface{}) {
 //
 // merge(left:-0, right:-0) (result:+1)
 // Merge borrows its arguments without affecting their refcount
-// and returns a new reference that the caller is expected to dispose of.
+// and returns a new reference that the caller is expected to call decref.
 func merge(left, right *mapNode) *mapNode {
 	switch {
 	case left == nil:
