@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/event"
@@ -68,14 +70,19 @@ type snapshot struct {
 	builtin span.URI
 
 	// meta holds loaded metadata.
+	//
+	// meta is guarded by mu, but the metadataGraph itself is immutable.
+	// TODO(rfindley): in many places we hold mu while operating on meta, even
+	// though we only need to hold mu while reading the pointer.
 	meta *metadataGraph
 
 	// files maps file URIs to their corresponding FileHandles.
 	// It may invalidated when a file's content changes.
-	files map[span.URI]source.VersionedFileHandle
+	files filesMap
 
 	// goFiles maps a parseKey to its parseGoHandle.
-	goFiles *goFileMap
+	goFiles        goFilesMap
+	parseKeysByURI parseKeysByURIMap
 
 	// TODO(rfindley): consider merging this with files to reduce burden on clone.
 	symbols map[span.URI]*symbolHandle
@@ -131,6 +138,13 @@ type actionKey struct {
 	analyzer *analysis.Analyzer
 }
 
+func (s *snapshot) Destroy(destroyedBy string) {
+	s.generation.Destroy(destroyedBy)
+	s.files.Destroy()
+	s.goFiles.Destroy()
+	s.parseKeysByURI.Destroy()
+}
+
 func (s *snapshot) ID() uint64 {
 	return s.id
 }
@@ -164,11 +178,11 @@ func (s *snapshot) Templates() map[span.URI]source.VersionedFileHandle {
 	defer s.mu.Unlock()
 
 	tmpls := map[span.URI]source.VersionedFileHandle{}
-	for k, fh := range s.files {
+	s.files.Range(func(k span.URI, fh source.VersionedFileHandle) {
 		if s.view.FileKind(fh) == source.Tmpl {
 			tmpls[k] = fh
 		}
-	}
+	})
 	return tmpls
 }
 
@@ -452,27 +466,27 @@ func (s *snapshot) buildOverlay() map[string][]byte {
 	defer s.mu.Unlock()
 
 	overlays := make(map[string][]byte)
-	for uri, fh := range s.files {
+	s.files.Range(func(uri span.URI, fh source.VersionedFileHandle) {
 		overlay, ok := fh.(*overlay)
 		if !ok {
-			continue
+			return
 		}
 		if overlay.saved {
-			continue
+			return
 		}
 		// TODO(rstambler): Make sure not to send overlays outside of the current view.
 		overlays[uri.Filename()] = overlay.text
-	}
+	})
 	return overlays
 }
 
-func hashUnsavedOverlays(files map[span.URI]source.VersionedFileHandle) source.Hash {
+func hashUnsavedOverlays(files filesMap) source.Hash {
 	var unsaved []string
-	for uri, fh := range files {
+	files.Range(func(uri span.URI, fh source.VersionedFileHandle) {
 		if overlay, ok := fh.(*overlay); ok && !overlay.saved {
 			unsaved = append(unsaved, uri.Filename())
 		}
-	}
+	})
 	sort.Strings(unsaved)
 	return source.Hashf("%s", unsaved)
 }
@@ -617,8 +631,10 @@ func (s *snapshot) GetReverseDependencies(ctx context.Context, id string) ([]sou
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
-	ids := make(map[PackageID]struct{})
-	s.transitiveReverseDependencies(PackageID(id), ids)
+	s.mu.Lock()
+	meta := s.meta
+	s.mu.Unlock()
+	ids := meta.reverseTransitiveClosure(s.useInvalidMetadata(), PackageID(id))
 
 	// Make sure to delete the original package ID from the map.
 	delete(ids, PackageID(id))
@@ -642,38 +658,26 @@ func (s *snapshot) checkedPackage(ctx context.Context, id PackageID, mode source
 	return ph.check(ctx, s)
 }
 
-// transitiveReverseDependencies populates the ids map with package IDs
-// belonging to the provided package and its transitive reverse dependencies.
-func (s *snapshot) transitiveReverseDependencies(id PackageID, ids map[PackageID]struct{}) {
-	if _, ok := ids[id]; ok {
-		return
-	}
-	m := s.getMetadata(id)
-	// Only use invalid metadata if we support it.
-	if m == nil || !(m.Valid || s.useInvalidMetadata()) {
-		return
-	}
-	ids[id] = struct{}{}
-	importedBy := s.getImportedBy(id)
-	for _, parentID := range importedBy {
-		s.transitiveReverseDependencies(parentID, ids)
-	}
-}
-
 func (s *snapshot) getGoFile(key parseKey) *parseGoHandle {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.goFiles.get(key)
+	if result, ok := s.goFiles.Get(key); ok {
+		return result
+	}
+	return nil
 }
 
-func (s *snapshot) addGoFile(key parseKey, pgh *parseGoHandle) *parseGoHandle {
+func (s *snapshot) addGoFile(key parseKey, pgh *parseGoHandle, release func()) *parseGoHandle {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	if prev := s.goFiles.get(key); prev != nil {
-		return prev
+	if result, ok := s.goFiles.Get(key); ok {
+		release()
+		return result
 	}
-	s.goFiles.set(key, pgh)
+	s.goFiles.Set(key, pgh, release)
+	keys, _ := s.parseKeysByURI.Get(key.file.URI)
+	keys = append([]parseKey{key}, keys...)
+	s.parseKeysByURI.Set(key.file.URI, keys)
 	return pgh
 }
 
@@ -766,6 +770,8 @@ func (s *snapshot) isActiveLocked(id PackageID, seen map[PackageID]bool) (active
 			return true
 		}
 	}
+	// TODO(rfindley): it looks incorrect that we don't also check GoFiles here.
+	// If a CGo file is open, we want to consider the package active.
 	for _, dep := range m.Deps {
 		if s.isActiveLocked(dep, seen) {
 			return true
@@ -852,9 +858,9 @@ func (s *snapshot) collectAllKnownSubdirs(ctx context.Context) {
 
 	s.knownSubdirs = map[span.URI]struct{}{}
 	s.knownSubdirsPatternCache = ""
-	for uri := range s.files {
+	s.files.Range(func(uri span.URI, fh source.VersionedFileHandle) {
 		s.addKnownSubdirLocked(uri, dirs)
-	}
+	})
 }
 
 func (s *snapshot) getKnownSubdirs(wsDirs []span.URI) []span.URI {
@@ -940,11 +946,11 @@ func (s *snapshot) knownFilesInDir(ctx context.Context, dir span.URI) []span.URI
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for uri := range s.files {
+	s.files.Range(func(uri span.URI, fh source.VersionedFileHandle) {
 		if source.InDir(dir.Filename(), uri.Filename()) {
 			files = append(files, uri)
 		}
-	}
+	})
 	return files
 }
 
@@ -994,28 +1000,36 @@ func (s *snapshot) activePackageHandles(ctx context.Context) ([]*packageHandle, 
 	return phs, nil
 }
 
-func (s *snapshot) Symbols(ctx context.Context) (map[span.URI][]source.Symbol, error) {
-	result := make(map[span.URI][]source.Symbol)
-
-	// Keep going on errors, but log the first failure. Partial symbol results
-	// are better than no symbol results.
-	var firstErr error
-	for uri, f := range s.files {
-		sh := s.buildSymbolHandle(ctx, f)
-		v, err := sh.handle.Get(ctx, s.generation, s)
-		if err != nil {
-			if firstErr == nil {
-				firstErr = err
+// Symbols extracts and returns the symbols for each file in all the snapshot's views.
+func (s *snapshot) Symbols(ctx context.Context) map[span.URI][]source.Symbol {
+	var (
+		group    errgroup.Group
+		nprocs   = 2 * runtime.GOMAXPROCS(-1)  // symbolize is a mix of I/O and CPU
+		iolimit  = make(chan struct{}, nprocs) // I/O limiting counting semaphore
+		resultMu sync.Mutex
+		result   = make(map[span.URI][]source.Symbol)
+	)
+	s.files.Range(func(uri span.URI, f source.VersionedFileHandle) {
+		// TODO(adonovan): upgrade errgroup and use group.SetLimit(nprocs).
+		iolimit <- struct{}{} // acquire token
+		group.Go(func() error {
+			defer func() { <-iolimit }() // release token
+			v, err := s.buildSymbolHandle(ctx, f).handle.Get(ctx, s.generation, s)
+			if err != nil {
+				return err
 			}
-			continue
-		}
-		data := v.(*symbolData)
-		result[uri] = data.symbols
+			resultMu.Lock()
+			result[uri] = v.(*symbolData).symbols
+			resultMu.Unlock()
+			return nil
+		})
+	})
+	// Keep going on errors, but log the first failure.
+	// Partial results are better than no symbol results.
+	if err := group.Wait(); err != nil {
+		event.Error(ctx, "getting snapshot symbols", err)
 	}
-	if firstErr != nil {
-		event.Error(ctx, "getting snapshot symbols", firstErr)
-	}
-	return result, nil
+	return result
 }
 
 func (s *snapshot) MetadataForFile(ctx context.Context, uri span.URI) ([]source.Metadata, error) {
@@ -1126,11 +1140,10 @@ func (s *snapshot) getSymbolHandle(uri span.URI) *symbolHandle {
 	return s.symbols[uri]
 }
 
-func (s *snapshot) addSymbolHandle(sh *symbolHandle) *symbolHandle {
+func (s *snapshot) addSymbolHandle(uri span.URI, sh *symbolHandle) *symbolHandle {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	uri := sh.fh.URI()
 	// If the package handle has already been cached,
 	// return the cached handle instead of overriding it.
 	if sh, ok := s.symbols[uri]; ok {
@@ -1279,10 +1292,7 @@ func (s *snapshot) noValidMetadataForURILocked(uri span.URI) bool {
 func (s *snapshot) noValidMetadataForID(id PackageID) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.noValidMetadataForIDLocked(id)
-}
 
-func (s *snapshot) noValidMetadataForIDLocked(id PackageID) bool {
 	m := s.meta.metadata[id]
 	return m == nil || !m.Valid
 }
@@ -1301,7 +1311,8 @@ func (s *snapshot) FindFile(uri span.URI) source.VersionedFileHandle {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.files[f.URI()]
+	result, _ := s.files.Get(f.URI())
+	return result
 }
 
 // GetVersionedFile returns a File for the given URI. If the file is unknown it
@@ -1323,16 +1334,16 @@ func (s *snapshot) GetFile(ctx context.Context, uri span.URI) (source.FileHandle
 }
 
 func (s *snapshot) getFileLocked(ctx context.Context, f *fileBase) (source.VersionedFileHandle, error) {
-	if fh, ok := s.files[f.URI()]; ok {
+	if fh, ok := s.files.Get(f.URI()); ok {
 		return fh, nil
 	}
 
-	fh, err := s.view.session.cache.getFile(ctx, f.URI())
+	fh, err := s.view.session.cache.getFile(ctx, f.URI()) // read the file
 	if err != nil {
 		return nil, err
 	}
 	closed := &closedFile{fh}
-	s.files[f.URI()] = closed
+	s.files.Set(f.URI(), closed)
 	return closed, nil
 }
 
@@ -1348,16 +1359,17 @@ func (s *snapshot) openFiles() []source.VersionedFileHandle {
 	defer s.mu.Unlock()
 
 	var open []source.VersionedFileHandle
-	for _, fh := range s.files {
+	s.files.Range(func(uri span.URI, fh source.VersionedFileHandle) {
 		if s.isOpenLocked(fh.URI()) {
 			open = append(open, fh)
 		}
-	}
+	})
 	return open
 }
 
 func (s *snapshot) isOpenLocked(uri span.URI) bool {
-	_, open := s.files[uri].(*overlay)
+	fh, _ := s.files.Get(uri)
+	_, open := fh.(*overlay)
 	return open
 }
 
@@ -1585,29 +1597,29 @@ func (s *snapshot) orphanedFiles() []source.VersionedFileHandle {
 	defer s.mu.Unlock()
 
 	var files []source.VersionedFileHandle
-	for uri, fh := range s.files {
+	s.files.Range(func(uri span.URI, fh source.VersionedFileHandle) {
 		// Don't try to reload metadata for go.mod files.
 		if s.view.FileKind(fh) != source.Go {
-			continue
+			return
 		}
 		// If the URI doesn't belong to this view, then it's not in a workspace
 		// package and should not be reloaded directly.
 		if !contains(s.view.session.viewsOf(uri), s.view) {
-			continue
+			return
 		}
 		// If the file is not open and is in a vendor directory, don't treat it
 		// like a workspace package.
 		if _, ok := fh.(*overlay); !ok && inVendor(uri) {
-			continue
+			return
 		}
 		// Don't reload metadata for files we've already deemed unloadable.
 		if _, ok := s.unloadableFiles[uri]; ok {
-			continue
+			return
 		}
 		if s.noValidMetadataForURILocked(uri) {
 			files = append(files, fh)
 		}
-	}
+	})
 	return files
 }
 
@@ -1651,6 +1663,9 @@ func (ac *unappliedChanges) GetFile(ctx context.Context, uri span.URI) (source.F
 }
 
 func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileChange, forceReloadMetadata bool) *snapshot {
+	ctx, done := event.Start(ctx, "snapshot.clone")
+	defer done()
+
 	var vendorChanged bool
 	newWorkspace, workspaceChanged, workspaceReload := s.workspace.invalidate(ctx, changes, &unappliedChanges{
 		originalSnapshot: s,
@@ -1673,8 +1688,9 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 		initializedErr:    s.initializedErr,
 		packages:          make(map[packageKey]*packageHandle, len(s.packages)),
 		actions:           make(map[actionKey]*actionHandle, len(s.actions)),
-		files:             make(map[span.URI]source.VersionedFileHandle, len(s.files)),
-		goFiles:           s.goFiles.clone(),
+		files:             s.files.Clone(),
+		goFiles:           s.goFiles.Clone(),
+		parseKeysByURI:    s.parseKeysByURI.Clone(),
 		symbols:           make(map[span.URI]*symbolHandle, len(s.symbols)),
 		workspacePackages: make(map[PackageID]PackagePath, len(s.workspacePackages)),
 		unloadableFiles:   make(map[span.URI]struct{}, len(s.unloadableFiles)),
@@ -1692,9 +1708,6 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 	}
 
 	// Copy all of the FileHandles.
-	for k, v := range s.files {
-		result.files[k] = v
-	}
 	for k, v := range s.symbols {
 		if change, ok := changes[k]; ok {
 			if change.exists {
@@ -1719,27 +1732,14 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 		result.parseWorkHandles[k] = v
 	}
 
-	// Copy the handles of all Go source files.
-	// There may be tens of thousands of files,
-	// but changes are typically few, so we
-	// use a striped map optimized for this case
-	// and visit its stripes in parallel.
-	var (
-		toDeleteMu sync.Mutex
-		toDelete   []parseKey
-	)
-	s.goFiles.forEachConcurrent(func(k parseKey, v *parseGoHandle) {
-		if changes[k.file.URI] == nil {
-			// no change (common case)
-			newGen.Inherit(v.handle)
-		} else {
-			toDeleteMu.Lock()
-			toDelete = append(toDelete, k)
-			toDeleteMu.Unlock()
+	for uri := range changes {
+		keys, ok := result.parseKeysByURI.Get(uri)
+		if ok {
+			for _, key := range keys {
+				result.goFiles.Delete(key)
+			}
+			result.parseKeysByURI.Delete(uri)
 		}
-	})
-	for _, k := range toDelete {
-		result.goFiles.delete(k)
 	}
 
 	// Copy all of the go.mod-related handles. They may be invalidated later,
@@ -1779,8 +1779,10 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 		}
 	}
 
+	// Compute invalidations based on file changes.
 	changedPkgFiles := map[PackageID]bool{} // packages whose file set may have changed
 	anyImportDeleted := false
+	anyFileOpenedOrClosed := false
 	for uri, change := range changes {
 		// Maybe reinitialize the view if we see a change in the vendor
 		// directory.
@@ -1789,7 +1791,11 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 		}
 
 		// The original FileHandle for this URI is cached on the snapshot.
-		originalFH := s.files[uri]
+		originalFH, _ := s.files.Get(uri)
+		var originalOpen, newOpen bool
+		_, originalOpen = originalFH.(*overlay)
+		_, newOpen = change.fileHandle.(*overlay)
+		anyFileOpenedOrClosed = originalOpen != newOpen
 
 		// If uri is a Go file, check if it has changed in a way that would
 		// invalidate metadata. Note that we can't use s.view.FileKind here,
@@ -1830,9 +1836,9 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 		delete(result.parseWorkHandles, uri)
 		// Handle the invalidated file; it may have new contents or not exist.
 		if !change.exists {
-			delete(result.files, uri)
+			result.files.Delete(uri)
 		} else {
-			result.files[uri] = change.fileHandle
+			result.files.Set(uri, change.fileHandle)
 		}
 
 		// Make sure to remove the changed file from the unloadable set.
@@ -1861,7 +1867,6 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 	}
 
 	// Invalidate reverse dependencies too.
-	// TODO(heschi): figure out the locking model and use transitiveReverseDeps?
 	// idsToInvalidate keeps track of transitive reverse dependencies.
 	// If an ID is present in the map, invalidate its types.
 	// If an ID's value is true, invalidate its metadata too.
@@ -1893,6 +1898,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 		newGen.Inherit(v.handle)
 		result.packages[k] = v
 	}
+
 	// Copy the package analysis information.
 	for k, v := range s.actions {
 		if _, ok := idsToInvalidate[k.pkg.id]; ok {
@@ -1926,27 +1932,6 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 		}
 	}
 
-	// Collect all of the IDs that are reachable from the workspace packages.
-	// Any unreachable IDs will have their metadata deleted outright.
-	reachableID := map[PackageID]bool{}
-	var addForwardDeps func(PackageID)
-	addForwardDeps = func(id PackageID) {
-		if reachableID[id] {
-			return
-		}
-		reachableID[id] = true
-		m, ok := s.meta.metadata[id]
-		if !ok {
-			return
-		}
-		for _, depID := range m.Deps {
-			addForwardDeps(depID)
-		}
-	}
-	for id := range s.workspacePackages {
-		addForwardDeps(id)
-	}
-
 	// Compute which metadata updates are required. We only need to invalidate
 	// packages directly containing the affected file, and only if it changed in
 	// a relevant way.
@@ -1955,12 +1940,6 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 	for k, v := range s.meta.metadata {
 		invalidateMetadata := idsToInvalidate[k]
 		if skipID[k] || (invalidateMetadata && deleteInvalidMetadata) {
-			metadataUpdates[k] = nil
-			continue
-		}
-		// The ID is not reachable from any workspace package, so it should
-		// be deleted.
-		if !reachableID[k] {
 			metadataUpdates[k] = nil
 			continue
 		}
@@ -1978,13 +1957,19 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 		}
 	}
 
+	// Update metadata, if necessary.
 	if len(metadataUpdates) > 0 {
 		result.meta = s.meta.Clone(metadataUpdates)
-		result.workspacePackages = computeWorkspacePackages(result.meta)
 	} else {
 		// No metadata changes. Since metadata is only updated by cloning, it is
 		// safe to re-use the existing metadata here.
 		result.meta = s.meta
+	}
+
+	// Update workspace packages, if necessary.
+	if result.meta != s.meta || anyFileOpenedOrClosed {
+		result.workspacePackages = computeWorkspacePackagesLocked(result, result.meta)
+	} else {
 		result.workspacePackages = s.workspacePackages
 	}
 
@@ -2196,7 +2181,7 @@ func metadataChanges(ctx context.Context, lockedSnapshot *snapshot, oldFH, newFH
 // lockedSnapshot must be locked.
 func peekOrParse(ctx context.Context, lockedSnapshot *snapshot, fh source.FileHandle, mode source.ParseMode) (*source.ParsedGoFile, error) {
 	key := parseKey{file: fh.FileIdentity(), mode: mode}
-	if pgh := lockedSnapshot.goFiles.get(key); pgh != nil {
+	if pgh, ok := lockedSnapshot.goFiles.Get(key); ok {
 		cached := pgh.handle.Cached(lockedSnapshot.generation)
 		if cached != nil {
 			cached := cached.(*parseGoData)
@@ -2483,90 +2468,4 @@ func readGoSum(dst map[module.Version][]string, file string, data []byte) error 
 		dst[mod] = append(dst[mod], f[2])
 	}
 	return nil
-}
-
-// -- goFileMap --
-
-// A goFileMap is conceptually a map[parseKey]*parseGoHandle,
-// optimized for cloning all or nearly all entries.
-type goFileMap struct {
-	// The map is represented as a map of 256 stripes, one per
-	// distinct value of the top 8 bits of key.file.Hash.
-	// Each stripe has an associated boolean indicating whether it
-	// is shared, and thus immutable, and thus must be copied before any update.
-	// (The bits could be packed but it hasn't been worth it yet.)
-	stripes   [256]map[parseKey]*parseGoHandle
-	exclusive [256]bool // exclusive[i] means stripe[i] is not shared and may be safely mutated
-}
-
-// newGoFileMap returns a new empty goFileMap.
-func newGoFileMap() *goFileMap {
-	return new(goFileMap) // all stripes are shared (non-exclusive) nil maps
-}
-
-// clone returns a copy of m.
-// For concurrency, it counts as an update to m.
-func (m *goFileMap) clone() *goFileMap {
-	m.exclusive = [256]bool{} // original and copy are now nonexclusive
-	copy := *m
-	return &copy
-}
-
-// get returns the value for key k.
-func (m *goFileMap) get(k parseKey) *parseGoHandle {
-	return m.stripes[m.hash(k)][k]
-}
-
-// set updates the value for key k to v.
-func (m *goFileMap) set(k parseKey, v *parseGoHandle) {
-	m.unshare(k)[k] = v
-}
-
-// delete deletes the value for key k, if any.
-func (m *goFileMap) delete(k parseKey) {
-	// TODO(adonovan): opt?: skip unshare if k isn't present.
-	delete(m.unshare(k), k)
-}
-
-// forEachConcurrent calls f for each entry in the map.
-// Calls may be concurrent.
-// f must not modify m.
-func (m *goFileMap) forEachConcurrent(f func(parseKey, *parseGoHandle)) {
-	// Visit stripes in parallel chunks.
-	const p = 16 // concurrency level
-	var wg sync.WaitGroup
-	wg.Add(p)
-	for i := 0; i < p; i++ {
-		chunk := m.stripes[i*p : (i+1)*p]
-		go func() {
-			for _, stripe := range chunk {
-				for k, v := range stripe {
-					f(k, v)
-				}
-			}
-			wg.Done()
-		}()
-	}
-	wg.Wait()
-}
-
-// -- internal--
-
-// hash returns 8 bits from the key's file digest.
-func (*goFileMap) hash(k parseKey) byte { return k.file.Hash[0] }
-
-// unshare makes k's stripe exclusive, allocating a copy if needed, and returns it.
-func (m *goFileMap) unshare(k parseKey) map[parseKey]*parseGoHandle {
-	i := m.hash(k)
-	if !m.exclusive[i] {
-		m.exclusive[i] = true
-
-		// Copy the map.
-		copy := make(map[parseKey]*parseGoHandle, len(m.stripes[i]))
-		for k, v := range m.stripes[i] {
-			copy[k] = v
-		}
-		m.stripes[i] = copy
-	}
-	return m.stripes[i]
 }

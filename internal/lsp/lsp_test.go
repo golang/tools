@@ -67,6 +67,9 @@ func testLSP(t *testing.T, datum *tests.Data) {
 	tests.EnableAllAnalyzers(view, options)
 	view.SetOptions(ctx, options)
 
+	// Enable all inlay hints for tests.
+	tests.EnableAllInlayHints(view, options)
+
 	// Only run the -modfile specific tests in module mode with Go 1.14 or above.
 	datum.ModfileFlagAvailable = len(snapshot.ModFiles()) > 0 && testenv.Go1Point() >= 14
 	release()
@@ -940,7 +943,7 @@ func (r *runner) InlayHints(t *testing.T, spn span.Span) {
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: protocol.URIFromSpanURI(uri),
 		},
-		// TODO: add ViewPort
+		// TODO: add Range
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -233,8 +233,9 @@ func (s *Session) createView(ctx context.Context, name string, folder span.URI, 
 		generation:        s.cache.store.Generation(generationName(v, 0)),
 		packages:          make(map[packageKey]*packageHandle),
 		meta:              &metadataGraph{},
-		files:             make(map[span.URI]source.VersionedFileHandle),
-		goFiles:           newGoFileMap(),
+		files:             newFilesMap(),
+		goFiles:           newGoFilesMap(),
+		parseKeysByURI:    newParseKeysByURIMap(),
 		symbols:           make(map[span.URI]*symbolHandle),
 		actions:           make(map[actionKey]*actionHandle),
 		workspacePackages: make(map[PackageID]PackagePath),
@@ -323,6 +324,8 @@ func bestViewForURI(uri span.URI, views []*View) *View {
 		if longest != nil && len(longest.Folder()) > len(view.Folder()) {
 			continue
 		}
+		// TODO(rfindley): this should consider the workspace layout (i.e.
+		// go.work).
 		if view.contains(uri) {
 			longest = view
 		}

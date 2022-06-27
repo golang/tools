@@ -175,7 +175,7 @@ type Snapshot interface {
 	ActivePackages(ctx context.Context) ([]Package, error)
 
 	// Symbols returns all symbols in the snapshot.
-	Symbols(ctx context.Context) (map[span.URI][]Symbol, error)
+	Symbols(ctx context.Context) map[span.URI][]Symbol
 
 	// Metadata returns package metadata associated with the given file URI.
 	MetadataForFile(ctx context.Context, uri span.URI) ([]Metadata, error)
@@ -549,6 +549,11 @@ func Hashf(format string, args ...interface{}) Hash {
 // String returns the digest as a string of hex digits.
 func (h Hash) String() string {
 	return fmt.Sprintf("%64x", [sha256.Size]byte(h))
+}
+
+// Less returns true if the given hash is less than the other.
+func (h Hash) Less(other Hash) bool {
+	return bytes.Compare(h[:], other[:]) < 0
 }
 
 // FileIdentity uniquely identifies a file at a version from a FileSystem.

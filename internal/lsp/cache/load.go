@@ -197,26 +197,36 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...interf
 		}
 		// TODO: once metadata is immutable, we shouldn't have to lock here.
 		s.mu.Lock()
-		err := s.computeMetadataUpdates(ctx, PackagePath(pkg.PkgPath), pkg, cfg, query, updates, nil)
+		err := computeMetadataUpdates(ctx, s.meta, PackagePath(pkg.PkgPath), pkg, cfg, query, updates, nil)
 		s.mu.Unlock()
 		if err != nil {
 			return err
 		}
 	}
 
+	var loadedIDs []PackageID
+	for id := range updates {
+		loadedIDs = append(loadedIDs, id)
+	}
+
 	s.mu.Lock()
+
+	// invalidate the reverse transitive closure of packages that have changed.
+	invalidatedPackages := s.meta.reverseTransitiveClosure(true, loadedIDs...)
 	s.meta = s.meta.Clone(updates)
+
 	// Invalidate any packages we may have associated with this metadata.
 	//
-	// TODO(rfindley): if we didn't already invalidate these in snapshot.clone,
-	// shouldn't we invalidate the reverse transitive closure?
-	for _, m := range updates {
+	// TODO(rfindley): this should not be necessary, as we should have already
+	// invalidated in snapshot.clone.
+	for id := range invalidatedPackages {
 		for _, mode := range []source.ParseMode{source.ParseHeader, source.ParseExported, source.ParseFull} {
-			key := packageKey{mode, m.ID}
+			key := packageKey{mode, id}
 			delete(s.packages, key)
 		}
 	}
-	s.workspacePackages = computeWorkspacePackages(s.meta)
+
+	s.workspacePackages = computeWorkspacePackagesLocked(s, s.meta)
 	s.dumpWorkspace("load")
 	s.mu.Unlock()
 
@@ -253,7 +263,7 @@ func (m *moduleErrorMap) Error() string {
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "%d modules have errors:\n", len(paths))
 	for _, path := range paths {
-		fmt.Fprintf(&buf, "\t%s", m.errs[path][0].Msg)
+		fmt.Fprintf(&buf, "\t%s:%s\n", path, m.errs[path][0].Msg)
 	}
 
 	return buf.String()
@@ -442,26 +452,44 @@ func getWorkspaceDir(ctx context.Context, h *memoize.Handle, g *memoize.Generati
 // computeMetadataUpdates populates the updates map with metadata updates to
 // apply, based on the given pkg. It recurs through pkg.Imports to ensure that
 // metadata exists for all dependencies.
-func (s *snapshot) computeMetadataUpdates(ctx context.Context, pkgPath PackagePath, pkg *packages.Package, cfg *packages.Config, query []string, updates map[PackageID]*KnownMetadata, path []PackageID) error {
+func computeMetadataUpdates(ctx context.Context, g *metadataGraph, pkgPath PackagePath, pkg *packages.Package, cfg *packages.Config, query []string, updates map[PackageID]*KnownMetadata, path []PackageID) error {
 	id := PackageID(pkg.ID)
-	if new := updates[id]; new != nil {
-		return nil
-	}
 	if source.IsCommandLineArguments(pkg.ID) {
 		suffix := ":" + strings.Join(query, ",")
 		id = PackageID(string(id) + suffix)
 		pkgPath = PackagePath(string(pkgPath) + suffix)
 	}
+
+	// If we have valid metadata for this package, don't update. This minimizes
+	// the amount of subsequent invalidation.
+	//
+	// TODO(rfindley): perform a sanity check that metadata matches here. If not,
+	// we have an invalidation bug elsewhere.
+	if existing := g.metadata[id]; existing != nil && existing.Valid {
+		return nil
+	}
+
 	if _, ok := updates[id]; ok {
 		// If we've already seen this dependency, there may be an import cycle, or
 		// we may have reached the same package transitively via distinct paths.
 		// Check the path to confirm.
+
+		// TODO(rfindley): this doesn't look right. Any single piece of new
+		// metadata could theoretically introduce import cycles in the metadata
+		// graph. What's the point of this limited check here (and is it even
+		// possible to get an import cycle in data from go/packages)? Consider
+		// simply returning, so that this function need not return an error.
+		//
+		// We should consider doing a more complete guard against import cycles
+		// elsewhere.
 		for _, prev := range path {
 			if prev == id {
 				return fmt.Errorf("import cycle detected: %q", id)
 			}
 		}
+		return nil
 	}
+
 	// Recreate the metadata rather than reusing it to avoid locking.
 	m := &KnownMetadata{
 		Metadata: &Metadata{
@@ -494,31 +522,24 @@ func (s *snapshot) computeMetadataUpdates(ctx context.Context, pkgPath PackagePa
 		m.Errors = append(m.Errors, err)
 	}
 
-	uris := map[span.URI]struct{}{}
 	for _, filename := range pkg.CompiledGoFiles {
 		uri := span.URIFromPath(filename)
 		m.CompiledGoFiles = append(m.CompiledGoFiles, uri)
-		uris[uri] = struct{}{}
 	}
 	for _, filename := range pkg.GoFiles {
 		uri := span.URIFromPath(filename)
 		m.GoFiles = append(m.GoFiles, uri)
-		uris[uri] = struct{}{}
-	}
-
-	for uri := range uris {
-		// In order for a package to be considered for the workspace, at least one
-		// file must be contained in the workspace and not vendored.
-
-		// The package's files are in this view. It may be a workspace package.
-		// Vendored packages are not likely to be interesting to the user.
-		if !strings.Contains(string(uri), "/vendor/") && s.view.contains(uri) {
-			m.HasWorkspaceFiles = true
-			break
-		}
 	}
 
 	for importPath, importPkg := range pkg.Imports {
+		// TODO(rfindley): in rare cases it is possible that the import package
+		// path is not the same as the package path of the import. That is to say
+		// (quoting adonovan):
+		// "The importPath string is the path by which one package is imported from
+		// another, but that needn't be the same as its internal name (sometimes
+		// called the "package path") used to prefix its linker symbols"
+		//
+		// We should not set this package path on the metadata of the dep.
 		importPkgPath := PackagePath(importPath)
 		importID := PackageID(importPkg.ID)
 
@@ -532,22 +553,109 @@ func (s *snapshot) computeMetadataUpdates(ctx context.Context, pkgPath PackagePa
 			m.MissingDeps[importPkgPath] = struct{}{}
 			continue
 		}
-		if s.noValidMetadataForIDLocked(importID) {
-			if err := s.computeMetadataUpdates(ctx, importPkgPath, importPkg, cfg, query, updates, append(path, id)); err != nil {
-				event.Error(ctx, "error in dependency", err)
-			}
+		if err := computeMetadataUpdates(ctx, g, importPkgPath, importPkg, cfg, query, updates, append(path, id)); err != nil {
+			event.Error(ctx, "error in dependency", err)
 		}
 	}
 
 	return nil
 }
 
-// computeWorkspacePackages computes workspace packages for the given metadata
-// graph.
-func computeWorkspacePackages(meta *metadataGraph) map[PackageID]PackagePath {
+// containsPackageLocked reports whether p is a workspace package for the
+// snapshot s.
+//
+// s.mu must be held while calling this function.
+func containsPackageLocked(s *snapshot, m *Metadata) bool {
+	// In legacy workspace mode, or if a package does not have an associated
+	// module, a package is considered inside the workspace if any of its files
+	// are under the workspace root (and not excluded).
+	//
+	// Otherwise if the package has a module it must be an active module (as
+	// defined by the module root or go.work file) and at least one file must not
+	// be filtered out by directoryFilters.
+	if m.Module != nil && s.workspace.moduleSource != legacyWorkspace {
+		modURI := span.URIFromPath(m.Module.GoMod)
+		_, ok := s.workspace.activeModFiles[modURI]
+		if !ok {
+			return false
+		}
+
+		uris := map[span.URI]struct{}{}
+		for _, uri := range m.CompiledGoFiles {
+			uris[uri] = struct{}{}
+		}
+		for _, uri := range m.GoFiles {
+			uris[uri] = struct{}{}
+		}
+
+		for uri := range uris {
+			// Don't use view.contains here. go.work files may include modules
+			// outside of the workspace folder.
+			if !strings.Contains(string(uri), "/vendor/") && !s.view.filters(uri) {
+				return true
+			}
+		}
+		return false
+	}
+
+	return containsFileInWorkspaceLocked(s, m)
+}
+
+// containsOpenFileLocked reports whether any file referenced by m is open in
+// the snapshot s.
+//
+// s.mu must be held while calling this function.
+func containsOpenFileLocked(s *snapshot, m *KnownMetadata) bool {
+	uris := map[span.URI]struct{}{}
+	for _, uri := range m.CompiledGoFiles {
+		uris[uri] = struct{}{}
+	}
+	for _, uri := range m.GoFiles {
+		uris[uri] = struct{}{}
+	}
+
+	for uri := range uris {
+		if s.isOpenLocked(uri) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsFileInWorkspace reports whether m contains any file inside the
+// workspace of the snapshot s.
+//
+// s.mu must be held while calling this function.
+func containsFileInWorkspaceLocked(s *snapshot, m *Metadata) bool {
+	uris := map[span.URI]struct{}{}
+	for _, uri := range m.CompiledGoFiles {
+		uris[uri] = struct{}{}
+	}
+	for _, uri := range m.GoFiles {
+		uris[uri] = struct{}{}
+	}
+
+	for uri := range uris {
+		// In order for a package to be considered for the workspace, at least one
+		// file must be contained in the workspace and not vendored.
+
+		// The package's files are in this view. It may be a workspace package.
+		// Vendored packages are not likely to be interesting to the user.
+		if !strings.Contains(string(uri), "/vendor/") && s.view.contains(uri) {
+			return true
+		}
+	}
+	return false
+}
+
+// computeWorkspacePackagesLocked computes workspace packages in the snapshot s
+// for the given metadata graph.
+//
+// s.mu must be held while calling this function.
+func computeWorkspacePackagesLocked(s *snapshot, meta *metadataGraph) map[PackageID]PackagePath {
 	workspacePackages := make(map[PackageID]PackagePath)
 	for _, m := range meta.metadata {
-		if !m.HasWorkspaceFiles {
+		if !containsPackageLocked(s, m.Metadata) {
 			continue
 		}
 		if m.PkgFilesChanged {
@@ -565,6 +673,12 @@ func computeWorkspacePackages(meta *metadataGraph) map[PackageID]PackagePath {
 			// If all the files contained in m have a real package, we don't need to
 			// keep m as a workspace package.
 			if allFilesHaveRealPackages(meta, m) {
+				continue
+			}
+
+			// We only care about command-line-arguments packages if they are still
+			// open.
+			if !containsOpenFileLocked(s, m) {
 				continue
 			}
 		}

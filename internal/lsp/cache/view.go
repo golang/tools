@@ -397,16 +397,27 @@ func (s *snapshot) locateTemplateFiles(ctx context.Context) {
 }
 
 func (v *View) contains(uri span.URI) bool {
+	// TODO(rfindley): should we ignore the root here? It is not provided by the
+	// user, and is undefined when go.work is outside the workspace. It would be
+	// better to explicitly consider the set of active modules wherever relevant.
 	inRoot := source.InDir(v.rootURI.Filename(), uri.Filename())
 	inFolder := source.InDir(v.folder.Filename(), uri.Filename())
+
 	if !inRoot && !inFolder {
 		return false
 	}
-	// Filters are applied relative to the workspace folder.
-	if inFolder {
-		return !pathExcludedByFilter(strings.TrimPrefix(uri.Filename(), v.folder.Filename()), v.rootURI.Filename(), v.gomodcache, v.Options())
+
+	return !v.filters(uri)
+}
+
+// filters reports whether uri is filtered by the currently configured
+// directoryFilters.
+func (v *View) filters(uri span.URI) bool {
+	// Only filter relative to the configured root directory.
+	if source.InDirLex(v.folder.Filename(), uri.Filename()) {
+		return pathExcludedByFilter(strings.TrimPrefix(uri.Filename(), v.folder.Filename()), v.rootURI.Filename(), v.gomodcache, v.Options())
 	}
-	return true
+	return false
 }
 
 func (v *View) mapFile(uri span.URI, f *fileBase) {
@@ -524,7 +535,7 @@ func (v *View) shutdown(ctx context.Context) {
 	v.mu.Unlock()
 	v.snapshotMu.Lock()
 	if v.snapshot != nil {
-		go v.snapshot.generation.Destroy("View.shutdown")
+		go v.snapshot.Destroy("View.shutdown")
 		v.snapshot = nil
 	}
 	v.snapshotMu.Unlock()
@@ -721,7 +732,7 @@ func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]*file
 	oldSnapshot := v.snapshot
 
 	v.snapshot = oldSnapshot.clone(ctx, v.baseCtx, changes, forceReloadMetadata)
-	go oldSnapshot.generation.Destroy("View.invalidateContent")
+	go oldSnapshot.Destroy("View.invalidateContent")
 
 	return v.snapshot, v.snapshot.generation.Acquire()
 }
