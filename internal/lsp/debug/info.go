@@ -29,7 +29,7 @@ const (
 )
 
 // Version is a manually-updated mechanism for tracking versions.
-const Version = "v0.9.0-pre.1"
+const Version = "v0.9.0"
 
 // ServerVersion is the format used by gopls to report its version to the
 // client. This format is structured so that the client can parse it easily.
