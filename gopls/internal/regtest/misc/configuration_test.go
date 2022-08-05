@@ -9,7 +9,6 @@ import (
 
 	. "golang.org/x/tools/internal/lsp/regtest"
 
-	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -38,14 +37,13 @@ var FooErr = errors.New("foo")
 		env.OpenFile("a/a.go")
 		env.Await(
 			env.DoneWithOpen(),
-			NoDiagnostics("a/a.go"),
+			EmptyDiagnostics("a/a.go"),
 		)
-		cfg := &fake.EditorConfig{}
-		*cfg = env.Editor.Config
+		cfg := env.Editor.Config()
 		cfg.Settings = map[string]interface{}{
 			"staticcheck": true,
 		}
-		env.ChangeConfiguration(t, cfg)
+		env.ChangeConfiguration(cfg)
 		env.Await(
 			DiagnosticAt("a/a.go", 5, 4),
 		)
@@ -70,11 +68,9 @@ import "errors"
 var FooErr = errors.New("foo")
 `
 
-	WithOptions(EditorConfig{
-		Settings: map[string]interface{}{
-			"staticcheck": true,
-		},
-	}).Run(t, files, func(t *testing.T, env *Env) {
+	WithOptions(
+		Settings{"staticcheck": true},
+	).Run(t, files, func(t *testing.T, env *Env) {
 		env.Await(ShownMessage("staticcheck is not supported"))
 	})
 }

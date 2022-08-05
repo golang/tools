@@ -568,7 +568,9 @@ func (b *builder) panic(p *ssa.Panic) {
 func (b *builder) call(c ssa.CallInstruction) {
 	// When c is r := recover() call register instruction, we add Recover -> r.
 	if bf, ok := c.Common().Value.(*ssa.Builtin); ok && bf.Name() == "recover" {
-		b.addInFlowEdge(recoverReturn{}, b.nodeFromVal(c.(*ssa.Call)))
+		if v, ok := c.(ssa.Value); ok {
+			b.addInFlowEdge(recoverReturn{}, b.nodeFromVal(v))
+		}
 		return
 	}
 
@@ -586,14 +588,14 @@ func addArgumentFlows(b *builder, c ssa.CallInstruction, f *ssa.Function) {
 		return
 	}
 	cc := c.Common()
-	// When c is an unresolved method call (cc.Method != nil), cc.Value contains
-	// the receiver object rather than cc.Args[0].
-	if cc.Method != nil {
-		b.addInFlowAliasEdges(b.nodeFromVal(f.Params[0]), b.nodeFromVal(cc.Value))
-	}
 
 	offset := 0
 	if cc.Method != nil {
+		// We don't add interprocedural flows for receiver objects.
+		// At a call site, the receiver object is interface while the
+		// callee object is concrete. The flow from interface to
+		// concrete type does not make sense. The flow other way around
+		// would bake in information from the initial call graph.
 		offset = 1
 	}
 	for i, v := range cc.Args {
@@ -654,7 +656,7 @@ func (b *builder) addInFlowEdge(s, d node) {
 
 // Creates const, pointer, global, func, and local nodes based on register instructions.
 func (b *builder) nodeFromVal(val ssa.Value) node {
-	if p, ok := val.Type().(*types.Pointer); ok && !isInterface(p.Elem()) && !isFunction(p.Elem()) {
+	if p, ok := val.Type().(*types.Pointer); ok && !types.IsInterface(p.Elem()) && !isFunction(p.Elem()) {
 		// Nested pointer to interfaces are modeled as a special
 		// nestedPtrInterface node.
 		if i := interfaceUnderPtr(p.Elem()); i != nil {
@@ -687,7 +689,9 @@ func (b *builder) nodeFromVal(val ssa.Value) node {
 // semantically equivalent types can have different implementations,
 // this method guarantees the same implementation is always used.
 func (b *builder) representative(n node) node {
-	if !hasInitialTypes(n) {
+	if n.Type() == nil {
+		// panicArg and recoverReturn do not have
+		// types and are unique by definition.
 		return n
 	}
 	t := canonicalize(n.Type(), &b.canon)

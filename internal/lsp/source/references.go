@@ -16,8 +16,8 @@ import (
 	"strconv"
 
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/lsp/bug"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/span"
 )
 
@@ -29,6 +29,18 @@ type ReferenceInfo struct {
 	obj           types.Object
 	pkg           Package
 	isDeclaration bool
+}
+
+// isInPackageName reports whether the file's package name surrounds the
+// given position pp (e.g. "foo" surrounds the cursor in "package foo").
+func isInPackageName(ctx context.Context, s Snapshot, f FileHandle, pgf *ParsedGoFile, pp protocol.Position) (bool, error) {
+	// Find position of the package name declaration
+	cursorPos, err := pgf.Mapper.Pos(pp)
+	if err != nil {
+		return false, err
+	}
+
+	return pgf.File.Name.Pos() <= cursorPos && cursorPos <= pgf.File.Name.End(), nil
 }
 
 // References returns a list of references for a given identifier within the packages
@@ -43,22 +55,13 @@ func References(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Posit
 		return nil, err
 	}
 
-	cursorOffset, err := pgf.Mapper.Offset(pp)
+	packageName := pgf.File.Name.Name // from package decl
+	inPackageName, err := isInPackageName(ctx, s, f, pgf, pp)
 	if err != nil {
 		return nil, err
 	}
 
-	packageNameStart, err := safetoken.Offset(pgf.Tok, pgf.File.Name.Pos())
-	if err != nil {
-		return nil, err
-	}
-
-	packageNameEnd, err := safetoken.Offset(pgf.Tok, pgf.File.Name.End())
-	if err != nil {
-		return nil, err
-	}
-
-	if packageNameStart <= cursorOffset && cursorOffset < packageNameEnd {
+	if inPackageName {
 		renamingPkg, err := s.PackageForFile(ctx, f.URI(), TypecheckAll, NarrowestPackage)
 		if err != nil {
 			return nil, err
@@ -75,8 +78,8 @@ func References(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Posit
 				for _, imp := range f.File.Imports {
 					if path, err := strconv.Unquote(imp.Path.Value); err == nil && path == renamingPkg.PkgPath() {
 						refs = append(refs, &ReferenceInfo{
-							Name:        pgf.File.Name.Name,
-							MappedRange: NewMappedRange(s.FileSet(), f.Mapper, imp.Pos(), imp.End()),
+							Name:        packageName,
+							MappedRange: NewMappedRange(f.Tok, f.Mapper, imp.Pos(), imp.End()),
 						})
 					}
 				}
@@ -86,8 +89,8 @@ func References(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Posit
 		// Find internal references to the package within the package itself
 		for _, f := range renamingPkg.CompiledGoFiles() {
 			refs = append(refs, &ReferenceInfo{
-				Name:        pgf.File.Name.Name,
-				MappedRange: NewMappedRange(s.FileSet(), f.Mapper, f.File.Name.Pos(), f.File.Name.End()),
+				Name:        packageName,
+				MappedRange: NewMappedRange(f.Tok, f.Mapper, f.File.Name.Pos(), f.File.Name.End()),
 			})
 		}
 
@@ -126,7 +129,7 @@ func References(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Posit
 func references(ctx context.Context, snapshot Snapshot, qos []qualifiedObject, includeDeclaration, includeInterfaceRefs, includeEmbeddedRefs bool) ([]*ReferenceInfo, error) {
 	var (
 		references []*ReferenceInfo
-		seen       = make(map[token.Pos]bool)
+		seen       = make(map[positionKey]bool)
 	)
 
 	pos := qos[0].obj.Pos()
@@ -188,10 +191,15 @@ func references(ctx context.Context, snapshot Snapshot, qos []qualifiedObject, i
 						continue
 					}
 				}
-				if seen[ident.Pos()] {
+				key, found := packagePositionKey(pkg, ident.Pos())
+				if !found {
+					bug.Reportf("ident %v (pos: %v) not found in package %v", ident.Name, ident.Pos(), pkg.Name())
 					continue
 				}
-				seen[ident.Pos()] = true
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
 				rng, err := posToMappedRange(snapshot, pkg, ident.Pos(), ident.End())
 				if err != nil {
 					return nil, err

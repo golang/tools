@@ -56,24 +56,7 @@ func hasInFlow(n node) bool {
 		return true
 	}
 
-	return isInterface(t) || isFunction(t)
-}
-
-// hasInitialTypes check if a node can have initial types.
-// Returns true iff `n` is not a panic or recover node as
-// those are artificial.
-func hasInitialTypes(n node) bool {
-	switch n.(type) {
-	case panicArg, recoverReturn:
-		return false
-	default:
-		return true
-	}
-}
-
-func isInterface(t types.Type) bool {
-	_, ok := t.Underlying().(*types.Interface)
-	return ok
+	return types.IsInterface(t) || isFunction(t)
 }
 
 func isFunction(t types.Type) bool {
@@ -98,7 +81,7 @@ func interfaceUnderPtr(t types.Type) types.Type {
 			return nil
 		}
 
-		if isInterface(p.Elem()) {
+		if types.IsInterface(p.Elem()) {
 			return p.Elem()
 		}
 

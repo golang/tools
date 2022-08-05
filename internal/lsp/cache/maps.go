@@ -16,11 +16,14 @@ type filesMap struct {
 	impl *persistent.Map
 }
 
+// uriLessInterface is the < relation for "any" values containing span.URIs.
+func uriLessInterface(a, b interface{}) bool {
+	return a.(span.URI) < b.(span.URI)
+}
+
 func newFilesMap() filesMap {
 	return filesMap{
-		impl: persistent.NewMap(func(a, b interface{}) bool {
-			return a.(span.URI) < b.(span.URI)
-		}),
+		impl: persistent.NewMap(uriLessInterface),
 	}
 }
 
@@ -56,16 +59,8 @@ func (m filesMap) Delete(key span.URI) {
 	m.impl.Delete(key)
 }
 
-type goFilesMap struct {
-	impl *persistent.Map
-}
-
-func newGoFilesMap() goFilesMap {
-	return goFilesMap{
-		impl: persistent.NewMap(func(a, b interface{}) bool {
-			return parseKeyLess(a.(parseKey), b.(parseKey))
-		}),
-	}
+func parseKeyLessInterface(a, b interface{}) bool {
+	return parseKeyLess(a.(parseKey), b.(parseKey))
 }
 
 func parseKeyLess(a, b parseKey) bool {
@@ -78,38 +73,38 @@ func parseKeyLess(a, b parseKey) bool {
 	return a.file.URI < b.file.URI
 }
 
-func (m goFilesMap) Clone() goFilesMap {
-	return goFilesMap{
+type isActivePackageCacheMap struct {
+	impl *persistent.Map
+}
+
+func newIsActivePackageCacheMap() isActivePackageCacheMap {
+	return isActivePackageCacheMap{
+		impl: persistent.NewMap(func(a, b interface{}) bool {
+			return a.(PackageID) < b.(PackageID)
+		}),
+	}
+}
+
+func (m isActivePackageCacheMap) Clone() isActivePackageCacheMap {
+	return isActivePackageCacheMap{
 		impl: m.impl.Clone(),
 	}
 }
 
-func (m goFilesMap) Destroy() {
+func (m isActivePackageCacheMap) Destroy() {
 	m.impl.Destroy()
 }
 
-func (m goFilesMap) Get(key parseKey) (*parseGoHandle, bool) {
+func (m isActivePackageCacheMap) Get(key PackageID) (bool, bool) {
 	value, ok := m.impl.Get(key)
 	if !ok {
-		return nil, false
+		return false, false
 	}
-	return value.(*parseGoHandle), true
+	return value.(bool), true
 }
 
-func (m goFilesMap) Range(do func(key parseKey, value *parseGoHandle)) {
-	m.impl.Range(func(key, value interface{}) {
-		do(key.(parseKey), value.(*parseGoHandle))
-	})
-}
-
-func (m goFilesMap) Set(key parseKey, value *parseGoHandle, release func()) {
-	m.impl.Set(key, value, func(key, value interface{}) {
-		release()
-	})
-}
-
-func (m goFilesMap) Delete(key parseKey) {
-	m.impl.Delete(key)
+func (m isActivePackageCacheMap) Set(key PackageID, value bool) {
+	m.impl.Set(key, value, nil)
 }
 
 type parseKeysByURIMap struct {
@@ -118,9 +113,7 @@ type parseKeysByURIMap struct {
 
 func newParseKeysByURIMap() parseKeysByURIMap {
 	return parseKeysByURIMap{
-		impl: persistent.NewMap(func(a, b interface{}) bool {
-			return a.(span.URI) < b.(span.URI)
-		}),
+		impl: persistent.NewMap(uriLessInterface),
 	}
 }
 
@@ -154,4 +147,70 @@ func (m parseKeysByURIMap) Set(key span.URI, value []parseKey) {
 
 func (m parseKeysByURIMap) Delete(key span.URI) {
 	m.impl.Delete(key)
+}
+
+func packageKeyLessInterface(x, y interface{}) bool {
+	return packageKeyLess(x.(packageKey), y.(packageKey))
+}
+
+func packageKeyLess(x, y packageKey) bool {
+	if x.mode != y.mode {
+		return x.mode < y.mode
+	}
+	return x.id < y.id
+}
+
+type knownDirsSet struct {
+	impl *persistent.Map
+}
+
+func newKnownDirsSet() knownDirsSet {
+	return knownDirsSet{
+		impl: persistent.NewMap(func(a, b interface{}) bool {
+			return a.(span.URI) < b.(span.URI)
+		}),
+	}
+}
+
+func (s knownDirsSet) Clone() knownDirsSet {
+	return knownDirsSet{
+		impl: s.impl.Clone(),
+	}
+}
+
+func (s knownDirsSet) Destroy() {
+	s.impl.Destroy()
+}
+
+func (s knownDirsSet) Contains(key span.URI) bool {
+	_, ok := s.impl.Get(key)
+	return ok
+}
+
+func (s knownDirsSet) Range(do func(key span.URI)) {
+	s.impl.Range(func(key, value interface{}) {
+		do(key.(span.URI))
+	})
+}
+
+func (s knownDirsSet) SetAll(other knownDirsSet) {
+	s.impl.SetAll(other.impl)
+}
+
+func (s knownDirsSet) Insert(key span.URI) {
+	s.impl.Set(key, nil, nil)
+}
+
+func (s knownDirsSet) Remove(key span.URI) {
+	s.impl.Delete(key)
+}
+
+// actionKeyLessInterface is the less-than relation for actionKey
+// values wrapped in an interface.
+func actionKeyLessInterface(a, b interface{}) bool {
+	x, y := a.(actionKey), b.(actionKey)
+	if x.analyzer.Name != y.analyzer.Name {
+		return x.analyzer.Name < y.analyzer.Name
+	}
+	return packageKeyLess(x.pkg, y.pkg)
 }

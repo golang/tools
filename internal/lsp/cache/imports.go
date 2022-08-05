@@ -7,6 +7,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -22,13 +23,14 @@ import (
 type importsState struct {
 	ctx context.Context
 
-	mu                   sync.Mutex
-	processEnv           *imports.ProcessEnv
-	cleanupProcessEnv    func()
-	cacheRefreshDuration time.Duration
-	cacheRefreshTimer    *time.Timer
-	cachedModFileHash    source.Hash
-	cachedBuildFlags     []string
+	mu                     sync.Mutex
+	processEnv             *imports.ProcessEnv
+	cleanupProcessEnv      func()
+	cacheRefreshDuration   time.Duration
+	cacheRefreshTimer      *time.Timer
+	cachedModFileHash      source.Hash
+	cachedBuildFlags       []string
+	cachedDirectoryFilters []string
 }
 
 func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot, fn func(*imports.Options) error) error {
@@ -69,9 +71,11 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot
 	snapshot.view.optionsMu.Lock()
 	localPrefix := snapshot.view.options.Local
 	currentBuildFlags := snapshot.view.options.BuildFlags
+	currentDirectoryFilters := snapshot.view.options.DirectoryFilters
 	changed := !reflect.DeepEqual(currentBuildFlags, s.cachedBuildFlags) ||
 		snapshot.view.options.VerboseOutput != (s.processEnv.Logf != nil) ||
-		modFileHash != s.cachedModFileHash
+		modFileHash != s.cachedModFileHash ||
+		!reflect.DeepEqual(snapshot.view.options.DirectoryFilters, s.cachedDirectoryFilters)
 	snapshot.view.optionsMu.Unlock()
 
 	// If anything relevant to imports has changed, clear caches and
@@ -91,6 +95,7 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot
 		}
 		s.cachedModFileHash = modFileHash
 		s.cachedBuildFlags = currentBuildFlags
+		s.cachedDirectoryFilters = currentDirectoryFilters
 		var err error
 		s.cleanupProcessEnv, err = s.populateProcessEnv(ctx, snapshot)
 		if err != nil {
@@ -141,20 +146,21 @@ func (s *importsState) populateProcessEnv(ctx context.Context, snapshot *snapsho
 		pe.Logf = nil
 	}
 
-	// Take an extra reference to the snapshot so that its workspace directory
-	// (if any) isn't destroyed while we're using it.
-	release := snapshot.generation.Acquire()
+	// Extract invocation details from the snapshot to use with goimports.
+	//
+	// TODO(rfindley): refactor to extract the necessary invocation logic into
+	// separate functions. Using goCommandInvocation is unnecessarily indirect,
+	// and has led to memory leaks in the past, when the snapshot was
+	// unintentionally held past its lifetime.
 	_, inv, cleanupInvocation, err := snapshot.goCommandInvocation(ctx, source.LoadWorkspace, &gocommand.Invocation{
 		WorkingDir: snapshot.view.rootURI.Filename(),
 	})
 	if err != nil {
 		return nil, err
 	}
-	pe.WorkingDir = inv.WorkingDir
+
 	pe.BuildFlags = inv.BuildFlags
-	pe.WorkingDir = inv.WorkingDir
-	pe.ModFile = inv.ModFile
-	pe.ModFlag = inv.ModFlag
+	pe.ModFlag = "readonly" // processEnv operations should not mutate the modfile
 	pe.Env = map[string]string{}
 	for _, kv := range inv.Env {
 		split := strings.SplitN(kv, "=", 2)
@@ -163,11 +169,31 @@ func (s *importsState) populateProcessEnv(ctx context.Context, snapshot *snapsho
 		}
 		pe.Env[split[0]] = split[1]
 	}
+	// We don't actually use the invocation, so clean it up now.
+	cleanupInvocation()
 
-	return func() {
-		cleanupInvocation()
-		release()
-	}, nil
+	// If the snapshot uses a synthetic workspace directory, create a copy for
+	// the lifecycle of the importsState.
+	//
+	// Notably, we cannot use the snapshot invocation working directory, as that
+	// is tied to the lifecycle of the snapshot.
+	//
+	// Otherwise return a no-op cleanup function.
+	cleanup = func() {}
+	if snapshot.usesWorkspaceDir() {
+		tmpDir, err := makeWorkspaceDir(ctx, snapshot.workspace, snapshot)
+		if err != nil {
+			return nil, err
+		}
+		pe.WorkingDir = tmpDir
+		cleanup = func() {
+			os.RemoveAll(tmpDir) // ignore error
+		}
+	} else {
+		pe.WorkingDir = snapshot.view.rootURI.Filename()
+	}
+
+	return cleanup, nil
 }
 
 func (s *importsState) refreshProcessEnv() {

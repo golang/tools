@@ -71,6 +71,15 @@ func TestSimpleMap(t *testing.T) {
 	m1.remove(t, 1)
 	validateRef(t, m1, m2)
 
+	gotAllocs := int(testing.AllocsPerRun(10, func() {
+		m1.impl.Delete(100)
+		m1.impl.Delete(1)
+	}))
+	wantAllocs := 0
+	if gotAllocs != wantAllocs {
+		t.Errorf("wanted %d allocs, got %d", wantAllocs, gotAllocs)
+	}
+
 	for i := 10; i < 14; i++ {
 		m1.set(t, i, i)
 		validateRef(t, m1, m2)
@@ -139,6 +148,31 @@ func TestRandomMap(t *testing.T) {
 	}
 
 	m.destroy()
+	assertSameMap(t, seenEntries, deletedEntries)
+}
+
+func TestUpdate(t *testing.T) {
+	deletedEntries := make(map[mapEntry]struct{})
+	seenEntries := make(map[mapEntry]struct{})
+
+	m1 := &validatedMap{
+		impl: NewMap(func(a, b interface{}) bool {
+			return a.(int) < b.(int)
+		}),
+		expected: make(map[int]int),
+		deleted:  deletedEntries,
+		seen:     seenEntries,
+	}
+	m2 := m1.clone()
+
+	m1.set(t, 1, 1)
+	m1.set(t, 2, 2)
+	m2.set(t, 2, 20)
+	m2.set(t, 3, 3)
+	m1.setAll(t, m2)
+
+	m1.destroy()
+	m2.destroy()
 	assertSameMap(t, seenEntries, deletedEntries)
 }
 
@@ -245,6 +279,14 @@ func validateNode(t *testing.T, node *mapNode, less func(a, b interface{}) bool)
 	validateNode(t, node.right, less)
 }
 
+func (vm *validatedMap) setAll(t *testing.T, other *validatedMap) {
+	vm.impl.SetAll(other.impl)
+	for key, value := range other.expected {
+		vm.expected[key] = value
+	}
+	vm.validate(t)
+}
+
 func (vm *validatedMap) set(t *testing.T, key, value int) {
 	vm.seen[mapEntry{key: key, value: value}] = struct{}{}
 	vm.impl.Set(key, value, func(deletedKey, deletedValue interface{}) {
@@ -297,20 +339,4 @@ func assertSameMap(t *testing.T, map1, map2 interface{}) {
 	if !reflect.DeepEqual(map1, map2) {
 		t.Fatalf("different maps:\n%v\nvs\n%v", map1, map2)
 	}
-}
-
-func isSameMap(map1, map2 reflect.Value) bool {
-	if map1.Len() != map2.Len() {
-		return false
-	}
-	iter := map1.MapRange()
-	for iter.Next() {
-		key := iter.Key()
-		value1 := iter.Value()
-		value2 := map2.MapIndex(key)
-		if value2.IsZero() || !reflect.DeepEqual(value1.Interface(), value2.Interface()) {
-			return false
-		}
-	}
-	return true
 }

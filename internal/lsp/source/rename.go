@@ -49,6 +49,29 @@ type PrepareItem struct {
 // the prepare fails. Probably we could eliminate the redundancy in returning
 // two errors, but for now this is done defensively.
 func PrepareRename(ctx context.Context, snapshot Snapshot, f FileHandle, pp protocol.Position) (_ *PrepareItem, usererr, err error) {
+	fileRenameSupported := false
+	for _, op := range snapshot.View().Options().SupportedResourceOperations {
+		if op == protocol.Rename {
+			fileRenameSupported = true
+			break
+		}
+	}
+
+	// Find position of the package name declaration
+	pgf, err := snapshot.ParseGo(ctx, f, ParseFull)
+	if err != nil {
+		return nil, err, err
+	}
+	inPackageName, err := isInPackageName(ctx, snapshot, f, pgf, pp)
+	if err != nil {
+		return nil, err, err
+	}
+
+	if inPackageName && !fileRenameSupported {
+		err := errors.New("can't rename packages: LSP client does not support file renaming")
+		return nil, err, err
+	}
+
 	ctx, done := event.Start(ctx, "source.PrepareRename")
 	defer done()
 
@@ -94,6 +117,41 @@ func checkRenamable(obj types.Object) error {
 func Rename(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position, newName string) (map[span.URI][]protocol.TextEdit, error) {
 	ctx, done := event.Start(ctx, "source.Rename")
 	defer done()
+
+	pgf, err := s.ParseGo(ctx, f, ParseFull)
+	if err != nil {
+		return nil, err
+	}
+	inPackageName, err := isInPackageName(ctx, s, f, pgf, pp)
+	if err != nil {
+		return nil, err
+	}
+
+	if inPackageName {
+		renamingPkg, err := s.PackageForFile(ctx, f.URI(), TypecheckAll, NarrowestPackage)
+		if err != nil {
+			return nil, err
+		}
+
+		result := make(map[span.URI][]protocol.TextEdit)
+		// Rename internal references to the package in the renaming package
+		// Todo(dle): need more investigation on case when pkg.GoFiles != pkg.CompiledGoFiles if using cgo.
+		for _, f := range renamingPkg.CompiledGoFiles() {
+			pkgNameMappedRange := NewMappedRange(f.Tok, f.Mapper, f.File.Name.Pos(), f.File.Name.End())
+			rng, err := pkgNameMappedRange.Range()
+			if err != nil {
+				return nil, err
+			}
+			result[f.URI] = []protocol.TextEdit{
+				{
+					Range:   rng,
+					NewText: newName,
+				},
+			}
+		}
+
+		return result, nil
+	}
 
 	qos, err := qualifiedObjsAtProtocolPos(ctx, s, f.URI(), pp)
 	if err != nil {
@@ -159,6 +217,7 @@ func Rename(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position,
 	if err != nil {
 		return nil, err
 	}
+
 	result := make(map[span.URI][]protocol.TextEdit)
 	for uri, edits := range changes {
 		// These edits should really be associated with FileHandles for maximal correctness.
@@ -238,15 +297,15 @@ func (r *renamer) update() (map[span.URI][]diff.TextEdit, error) {
 				continue
 			}
 			lines := strings.Split(comment.Text, "\n")
-			tok := r.fset.File(comment.Pos())
-			commentLine := tok.Position(comment.Pos()).Line
+			tokFile := r.fset.File(comment.Pos())
+			commentLine := tokFile.Line(comment.Pos())
 			for i, line := range lines {
 				lineStart := comment.Pos()
 				if i > 0 {
-					lineStart = tok.LineStart(commentLine + i)
+					lineStart = tokFile.LineStart(commentLine + i)
 				}
 				for _, locs := range docRegexp.FindAllIndex([]byte(line), -1) {
-					rng := span.NewRange(r.fset, lineStart+token.Pos(locs[0]), lineStart+token.Pos(locs[1]))
+					rng := span.NewRange(tokFile, lineStart+token.Pos(locs[0]), lineStart+token.Pos(locs[1]))
 					spn, err := rng.Span()
 					if err != nil {
 						return nil, err
@@ -265,7 +324,7 @@ func (r *renamer) update() (map[span.URI][]diff.TextEdit, error) {
 
 // docComment returns the doc for an identifier.
 func (r *renamer) docComment(pkg Package, id *ast.Ident) *ast.CommentGroup {
-	_, nodes, _ := pathEnclosingInterval(r.fset, pkg, id.Pos(), id.End())
+	_, tokFile, nodes, _ := pathEnclosingInterval(r.fset, pkg, id.Pos(), id.End())
 	for _, node := range nodes {
 		switch decl := node.(type) {
 		case *ast.FuncDecl:
@@ -294,25 +353,14 @@ func (r *renamer) docComment(pkg Package, id *ast.Ident) *ast.CommentGroup {
 				return nil
 			}
 
-			var file *ast.File
-			for _, f := range pkg.GetSyntax() {
-				if f.Pos() <= id.Pos() && id.Pos() <= f.End() {
-					file = f
-					break
-				}
-			}
-			if file == nil {
-				return nil
-			}
-
-			identLine := r.fset.Position(id.Pos()).Line
-			for _, comment := range file.Comments {
+			identLine := tokFile.Line(id.Pos())
+			for _, comment := range nodes[len(nodes)-1].(*ast.File).Comments {
 				if comment.Pos() > id.Pos() {
 					// Comment is after the identifier.
 					continue
 				}
 
-				lastCommentLine := r.fset.Position(comment.End()).Line
+				lastCommentLine := tokFile.Line(comment.End())
 				if lastCommentLine+1 == identLine {
 					return comment
 				}
@@ -328,7 +376,7 @@ func (r *renamer) docComment(pkg Package, id *ast.Ident) *ast.CommentGroup {
 func (r *renamer) updatePkgName(pkgName *types.PkgName) (*diff.TextEdit, error) {
 	// Modify ImportSpec syntax to add or remove the Name as needed.
 	pkg := r.packages[pkgName.Pkg()]
-	_, path, _ := pathEnclosingInterval(r.fset, pkg, pkgName.Pos(), pkgName.Pos())
+	_, tokFile, path, _ := pathEnclosingInterval(r.fset, pkg, pkgName.Pos(), pkgName.Pos())
 	if len(path) < 2 {
 		return nil, fmt.Errorf("no path enclosing interval for %s", pkgName.Name())
 	}
@@ -350,7 +398,7 @@ func (r *renamer) updatePkgName(pkgName *types.PkgName) (*diff.TextEdit, error) 
 		EndPos: spec.EndPos,
 	}
 
-	rng := span.NewRange(r.fset, spec.Pos(), spec.End())
+	rng := span.NewRange(tokFile, spec.Pos(), spec.End())
 	spn, err := rng.Span()
 	if err != nil {
 		return nil, err

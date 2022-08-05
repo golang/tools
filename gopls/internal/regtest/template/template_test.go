@@ -35,11 +35,9 @@ go 1.17
 {{end}}
 `
 	WithOptions(
-		EditorConfig{
-			Settings: map[string]interface{}{
-				"templateExtensions": []string{"tmpl"},
-				"semanticTokens":     true,
-			},
+		Settings{
+			"templateExtensions": []string{"tmpl"},
+			"semanticTokens":     true,
 		},
 	).Run(t, files, func(t *testing.T, env *Env) {
 		var p protocol.SemanticTokensParams
@@ -66,16 +64,14 @@ Hello {{}} <-- missing body
 {{end}}
 `
 	WithOptions(
-		EditorConfig{
-			Settings: map[string]interface{}{
-				"templateExtensions": []string{"tmpl"},
-				"semanticTokens":     true,
-			},
+		Settings{
+			"templateExtensions": []string{"tmpl"},
+			"semanticTokens":     true,
 		},
 	).Run(t, files, func(t *testing.T, env *Env) {
 		// TODO: can we move this diagnostic onto {{}}?
 		env.Await(env.DiagnosticAtRegexp("hello.tmpl", "()Hello {{}}"))
-		d := env.DiagnosticsFor("hello.tmpl").Diagnostics // issue 50786: check for Source
+		d := env.Awaiter.DiagnosticsFor("hello.tmpl").Diagnostics // issue 50786: check for Source
 		if len(d) != 1 {
 			t.Errorf("expected 1 diagnostic, got %d", len(d))
 			return
@@ -112,11 +108,9 @@ B {{}} <-- missing body
 `
 
 	WithOptions(
-		EditorConfig{
-			Settings: map[string]interface{}{
-				"templateExtensions": []string{"tmpl"},
-			},
-			DirectoryFilters: []string{"-b"},
+		Settings{
+			"directoryFilters":   []string{"-b"},
+			"templateExtensions": []string{"tmpl"},
 		},
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.Await(
@@ -139,7 +133,7 @@ go 1.12
 		env.Await(
 			OnceMet(
 				env.DoneWithOpen(),
-				NoDiagnostics("hello.tmpl"), // Don't get spurious errors for empty templates.
+				EmptyDiagnostics("hello.tmpl"), // Don't get spurious errors for empty templates.
 			),
 		)
 		env.SetBufferContent("hello.tmpl", "{{range .Planets}}\nHello {{}}\n{{end}}")
@@ -184,10 +178,8 @@ go 1.12
 `
 
 	WithOptions(
-		EditorConfig{
-			Settings: map[string]interface{}{
-				"templateExtensions": []string{"tmpl", "gotmpl"},
-			},
+		Settings{
+			"templateExtensions": []string{"tmpl", "gotmpl"},
 		},
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a.tmpl")

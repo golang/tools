@@ -7,7 +7,6 @@ package workspace
 import (
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
@@ -15,7 +14,6 @@ import (
 	"golang.org/x/tools/internal/lsp/bug"
 	"golang.org/x/tools/internal/lsp/fake"
 	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/testenv"
 
 	. "golang.org/x/tools/internal/lsp/regtest"
@@ -132,38 +130,6 @@ func TestReferences(t *testing.T) {
 				want := 3
 				if got := len(locations); got != want {
 					t.Fatalf("expected %v locations, got %v", want, got)
-				}
-			})
-		})
-	}
-}
-
-// make sure that directory filters work
-func TestFilters(t *testing.T) {
-	for _, tt := range []struct {
-		name, rootPath string
-	}{
-		{
-			name:     "module root",
-			rootPath: "pkg",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			opts := []RunOption{ProxyFiles(workspaceProxy)}
-			if tt.rootPath != "" {
-				opts = append(opts, WorkspaceFolders(tt.rootPath))
-			}
-			f := func(o *source.Options) {
-				o.DirectoryFilters = append(o.DirectoryFilters, "-inner")
-			}
-			opts = append(opts, Options(f))
-			WithOptions(opts...).Run(t, workspaceModule, func(t *testing.T, env *Env) {
-				syms := env.WorkspaceSymbol("Hi")
-				sort.Slice(syms, func(i, j int) bool { return syms[i].ContainerName < syms[j].ContainerName })
-				for i, s := range syms {
-					if strings.Contains(s.ContainerName, "/inner") {
-						t.Errorf("%s %v %s %s %d\n", s.Name, s.Kind, s.ContainerName, tt.name, i)
-					}
 				}
 			})
 		})
@@ -305,10 +271,6 @@ func Hello() {}
 module b.com
 
 go 1.12
--- b.com@v1.2.4/b/b.go --
-package b
-
-func Hello() {}
 `
 	const multiModule = `
 -- go.mod --
@@ -595,21 +557,16 @@ require (
 replace a.com => %s/moda/a
 replace b.com => %s/modb
 `, workdir, workdir))
-		env.Await(env.DoneWithChangeWatchedFiles())
-		// Check that go.mod diagnostics picked up the newly active mod file.
-		// The local version of modb has an extra dependency we need to download.
-		env.OpenFile("modb/go.mod")
-		env.Await(env.DoneWithOpen())
 
-		var d protocol.PublishDiagnosticsParams
+		// As of golang/go#54069, writing a gopls.mod to the workspace triggers a
+		// workspace reload.
 		env.Await(
 			OnceMet(
-				env.DiagnosticAtRegexpWithMessage("modb/go.mod", `require example.com v1.2.3`, "has not been downloaded"),
-				ReadDiagnostics("modb/go.mod", &d),
+				env.DoneWithChangeWatchedFiles(),
+				env.DiagnosticAtRegexp("modb/b/b.go", "x"),
 			),
 		)
-		env.ApplyQuickFixes("modb/go.mod", d.Diagnostics)
-		env.Await(env.DiagnosticAtRegexp("modb/b/b.go", "x"))
+
 		// Jumping to definition should now go to b.com in the workspace.
 		if err := checkHelloLocation("modb/b/b.go"); err != nil {
 			t.Fatal(err)
@@ -736,21 +693,15 @@ use (
 	./modb
 )
 `)
-		env.Await(env.DoneWithChangeWatchedFiles())
-		// Check that go.mod diagnostics picked up the newly active mod file.
-		// The local version of modb has an extra dependency we need to download.
-		env.OpenFile("modb/go.mod")
-		env.Await(env.DoneWithOpen())
 
-		var d protocol.PublishDiagnosticsParams
+		// As of golang/go#54069, writing go.work to the workspace triggers a
+		// workspace reload.
 		env.Await(
 			OnceMet(
-				env.DiagnosticAtRegexpWithMessage("modb/go.mod", `require example.com v1.2.3`, "has not been downloaded"),
-				ReadDiagnostics("modb/go.mod", &d),
+				env.DoneWithChangeWatchedFiles(),
+				env.DiagnosticAtRegexp("modb/b/b.go", "x"),
 			),
 		)
-		env.ApplyQuickFixes("modb/go.mod", d.Diagnostics)
-		env.Await(env.DiagnosticAtRegexp("modb/b/b.go", "x"))
 
 		// Jumping to definition should now go to b.com in the workspace.
 		if err := checkHelloLocation("modb/b/b.go"); err != nil {
@@ -1024,104 +975,6 @@ func main() {
 	})
 }
 
-func TestDirectoryFiltersLoads(t *testing.T) {
-	// exclude, and its error, should be excluded from the workspace.
-	const files = `
--- go.mod --
-module example.com
-
-go 1.12
--- exclude/exclude.go --
-package exclude
-
-const _ = Nonexistant
-`
-	cfg := EditorConfig{
-		DirectoryFilters: []string{"-exclude"},
-	}
-	WithOptions(cfg).Run(t, files, func(t *testing.T, env *Env) {
-		env.Await(NoDiagnostics("exclude/x.go"))
-	})
-}
-
-func TestDirectoryFiltersTransitiveDep(t *testing.T) {
-	// Even though exclude is excluded from the workspace, it should
-	// still be importable as a non-workspace package.
-	const files = `
--- go.mod --
-module example.com
-
-go 1.12
--- include/include.go --
-package include
-import "example.com/exclude"
-
-const _ = exclude.X
--- exclude/exclude.go --
-package exclude
-
-const _ = Nonexistant // should be ignored, since this is a non-workspace package
-const X = 1
-`
-
-	cfg := EditorConfig{
-		DirectoryFilters: []string{"-exclude"},
-	}
-	WithOptions(cfg).Run(t, files, func(t *testing.T, env *Env) {
-		env.Await(
-			NoDiagnostics("exclude/exclude.go"), // filtered out
-			NoDiagnostics("include/include.go"), // successfully builds
-		)
-	})
-}
-
-func TestDirectoryFiltersWorkspaceModules(t *testing.T) {
-	// Define a module include.com which should be in the workspace, plus a
-	// module exclude.com which should be excluded and therefore come from
-	// the proxy.
-	const files = `
--- include/go.mod --
-module include.com
-
-go 1.12
-
-require exclude.com v1.0.0
-
--- include/go.sum --
-exclude.com v1.0.0 h1:Q5QSfDXY5qyNCBeUiWovUGqcLCRZKoTs9XdBeVz+w1I=
-exclude.com v1.0.0/go.mod h1:hFox2uDlNB2s2Jfd9tHlQVfgqUiLVTmh6ZKat4cvnj4=
-
--- include/include.go --
-package include
-
-import "exclude.com"
-
-var _ = exclude.X // satisfied only by the workspace version
--- exclude/go.mod --
-module exclude.com
-
-go 1.12
--- exclude/exclude.go --
-package exclude
-
-const X = 1
-`
-	const proxy = `
--- exclude.com@v1.0.0/go.mod --
-module exclude.com
-
-go 1.12
--- exclude.com@v1.0.0/exclude.go --
-package exclude
-`
-	cfg := EditorConfig{
-		DirectoryFilters: []string{"-exclude"},
-	}
-	WithOptions(cfg, Modes(Experimental), ProxyFiles(proxy)).Run(t, files, func(t *testing.T, env *Env) {
-		env.Await(env.DiagnosticAtRegexp("include/include.go", `exclude.(X)`))
-	})
-}
-
 // Confirm that a fix for a tidy module will correct all modules in the
 // workspace.
 func TestMultiModule_OneBrokenModule(t *testing.T) {
@@ -1204,10 +1057,8 @@ go 1.12
 package main
 `
 	WithOptions(
-		EditorConfig{Env: map[string]string{
-			"GOPATH": filepath.FromSlash("$SANDBOX_WORKDIR/gopath"),
-		}},
-		Modes(Singleton),
+		EnvVars{"GOPATH": filepath.FromSlash("$SANDBOX_WORKDIR/gopath")},
+		Modes(Default),
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.Await(
 			// Confirm that the build configuration is seen as valid,
@@ -1238,7 +1089,7 @@ package main
 func main() {}
 `
 	WithOptions(
-		Modes(Singleton),
+		Modes(Default),
 	).Run(t, nomod, func(t *testing.T, env *Env) {
 		env.OpenFile("a/main.go")
 		env.OpenFile("b/main.go")

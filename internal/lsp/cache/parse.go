@@ -26,7 +26,6 @@ import (
 	"golang.org/x/tools/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/lsp/source"
 	"golang.org/x/tools/internal/memoize"
-	"golang.org/x/tools/internal/span"
 )
 
 // parseKey uniquely identifies a parsed Go file.
@@ -35,233 +34,90 @@ type parseKey struct {
 	mode source.ParseMode
 }
 
-type parseGoHandle struct {
-	handle *memoize.Handle
-	file   source.FileHandle
-	mode   source.ParseMode
-}
+// ParseGo parses the file whose contents are provided by fh, using a cache.
+// The resulting tree may have be fixed up.
+//
+// The parser mode must not be ParseExported: that mode is used during
+// type checking to destructively trim the tree to reduce work,
+// which is not safe for values from a shared cache.
+// TODO(adonovan): opt: shouldn't parseGoImpl do the trimming?
+// Then we can cache the result since it would never change.
+func (s *snapshot) ParseGo(ctx context.Context, fh source.FileHandle, mode source.ParseMode) (*source.ParsedGoFile, error) {
+	if mode == source.ParseExported {
+		panic("only type checking should use Exported")
+	}
 
-type parseGoData struct {
-	parsed *source.ParsedGoFile
-
-	// If true, we adjusted the AST to make it type check better, and
-	// it may not match the source code.
-	fixed bool
-	err   error // any other errors
-}
-
-func (s *snapshot) parseGoHandle(ctx context.Context, fh source.FileHandle, mode source.ParseMode) *parseGoHandle {
 	key := parseKey{
 		file: fh.FileIdentity(),
 		mode: mode,
 	}
-	if pgh := s.getGoFile(key); pgh != nil {
-		return pgh
-	}
-	parseHandle, release := s.generation.GetHandle(key, func(ctx context.Context, arg memoize.Arg) interface{} {
-		snapshot := arg.(*snapshot)
-		return parseGo(ctx, snapshot.FileSet(), fh, mode)
-	})
 
-	pgh := &parseGoHandle{
-		handle: parseHandle,
-		file:   fh,
-		mode:   mode,
-	}
-	return s.addGoFile(key, pgh, release)
-}
+	s.mu.Lock()
+	entry, hit := s.parsedGoFiles.Get(key)
+	s.mu.Unlock()
 
-func (pgh *parseGoHandle) String() string {
-	return pgh.file.URI().Filename()
-}
+	// cache miss?
+	if !hit {
+		handle, release := s.store.Promise(key, func(ctx context.Context, arg interface{}) interface{} {
+			parsed, err := parseGoImpl(ctx, arg.(*snapshot).FileSet(), fh, mode)
+			return parseGoResult{parsed, err}
+		})
 
-func (s *snapshot) ParseGo(ctx context.Context, fh source.FileHandle, mode source.ParseMode) (*source.ParsedGoFile, error) {
-	pgf, _, err := s.parseGo(ctx, fh, mode)
-	return pgf, err
-}
-
-func (s *snapshot) parseGo(ctx context.Context, fh source.FileHandle, mode source.ParseMode) (*source.ParsedGoFile, bool, error) {
-	if mode == source.ParseExported {
-		panic("only type checking should use Exported")
-	}
-	pgh := s.parseGoHandle(ctx, fh, mode)
-	d, err := pgh.handle.Get(ctx, s.generation, s)
-	if err != nil {
-		return nil, false, err
-	}
-	data := d.(*parseGoData)
-	return data.parsed, data.fixed, data.err
-}
-
-// cachedPGF returns the cached ParsedGoFile for the given ParseMode, if it
-// has already been computed. Otherwise, it returns nil.
-func (s *snapshot) cachedPGF(fh source.FileHandle, mode source.ParseMode) *source.ParsedGoFile {
-	key := parseKey{file: fh.FileIdentity(), mode: mode}
-	if pgh := s.getGoFile(key); pgh != nil {
-		cached := pgh.handle.Cached(s.generation)
-		if cached != nil {
-			cached := cached.(*parseGoData)
-			if cached.parsed != nil {
-				return cached.parsed
-			}
+		s.mu.Lock()
+		// Check cache again in case another thread got there first.
+		if prev, ok := s.parsedGoFiles.Get(key); ok {
+			entry = prev
+			release()
+		} else {
+			entry = handle
+			s.parsedGoFiles.Set(key, entry, func(_, _ interface{}) { release() })
 		}
+		s.mu.Unlock()
 	}
-	return nil
-}
 
-type astCacheKey struct {
-	pkg packageHandleKey
-	uri span.URI
-}
-
-func (s *snapshot) astCacheData(ctx context.Context, spkg source.Package, pos token.Pos) (*astCacheData, error) {
-	pkg := spkg.(*pkg)
-	pkgHandle := s.getPackage(pkg.m.ID, pkg.mode)
-	if pkgHandle == nil {
-		return nil, fmt.Errorf("could not reconstruct package handle for %v", pkg.m.ID)
-	}
-	tok := s.FileSet().File(pos)
-	if tok == nil {
-		return nil, fmt.Errorf("no file for pos %v", pos)
-	}
-	pgf, err := pkg.File(span.URIFromPath(tok.Name()))
+	// Await result.
+	v, err := s.awaitPromise(ctx, entry.(*memoize.Promise))
 	if err != nil {
 		return nil, err
 	}
-	astHandle := s.generation.Bind(astCacheKey{pkgHandle.key, pgf.URI}, func(ctx context.Context, arg memoize.Arg) interface{} {
-		return buildASTCache(pgf)
-	}, nil)
-
-	d, err := astHandle.Get(ctx, s.generation, s)
-	if err != nil {
-		return nil, err
-	}
-	data := d.(*astCacheData)
-	if data.err != nil {
-		return nil, data.err
-	}
-	return data, nil
+	res := v.(parseGoResult)
+	return res.parsed, res.err
 }
 
-func (s *snapshot) PosToDecl(ctx context.Context, spkg source.Package, pos token.Pos) (ast.Decl, error) {
-	data, err := s.astCacheData(ctx, spkg, pos)
-	if err != nil {
-		return nil, err
+// peekParseGoLocked peeks at the cache used by ParseGo but does not
+// populate it or wait for other threads to do so. On cache hit, it returns
+// the cache result of parseGoImpl; otherwise it returns (nil, nil).
+func (s *snapshot) peekParseGoLocked(fh source.FileHandle, mode source.ParseMode) (*source.ParsedGoFile, error) {
+	entry, hit := s.parsedGoFiles.Get(parseKey{fh.FileIdentity(), mode})
+	if !hit {
+		return nil, nil // no-one has requested this file
 	}
-	return data.posToDecl[pos], nil
-}
-
-func (s *snapshot) PosToField(ctx context.Context, spkg source.Package, pos token.Pos) (*ast.Field, error) {
-	data, err := s.astCacheData(ctx, spkg, pos)
-	if err != nil {
-		return nil, err
+	v := entry.(*memoize.Promise).Cached()
+	if v == nil {
+		return nil, nil // parsing is still in progress
 	}
-	return data.posToField[pos], nil
+	res := v.(parseGoResult)
+	return res.parsed, res.err
 }
 
-type astCacheData struct {
-	err error
-
-	posToDecl  map[token.Pos]ast.Decl
-	posToField map[token.Pos]*ast.Field
+// parseGoResult holds the result of a call to parseGoImpl.
+type parseGoResult struct {
+	parsed *source.ParsedGoFile
+	err    error
 }
 
-// buildASTCache builds caches to aid in quickly going from the typed
-// world to the syntactic world.
-func buildASTCache(pgf *source.ParsedGoFile) *astCacheData {
-	var (
-		// path contains all ancestors, including n.
-		path []ast.Node
-		// decls contains all ancestors that are decls.
-		decls []ast.Decl
-	)
-
-	data := &astCacheData{
-		posToDecl:  make(map[token.Pos]ast.Decl),
-		posToField: make(map[token.Pos]*ast.Field),
-	}
-
-	ast.Inspect(pgf.File, func(n ast.Node) bool {
-		if n == nil {
-			lastP := path[len(path)-1]
-			path = path[:len(path)-1]
-			if len(decls) > 0 && decls[len(decls)-1] == lastP {
-				decls = decls[:len(decls)-1]
-			}
-			return false
-		}
-
-		path = append(path, n)
-
-		switch n := n.(type) {
-		case *ast.Field:
-			addField := func(f ast.Node) {
-				if f.Pos().IsValid() {
-					data.posToField[f.Pos()] = n
-					if len(decls) > 0 {
-						data.posToDecl[f.Pos()] = decls[len(decls)-1]
-					}
-				}
-			}
-
-			// Add mapping for *ast.Field itself. This handles embedded
-			// fields which have no associated *ast.Ident name.
-			addField(n)
-
-			// Add mapping for each field name since you can have
-			// multiple names for the same type expression.
-			for _, name := range n.Names {
-				addField(name)
-			}
-
-			// Also map "X" in "...X" to the containing *ast.Field. This
-			// makes it easy to format variadic signature params
-			// properly.
-			if elips, ok := n.Type.(*ast.Ellipsis); ok && elips.Elt != nil {
-				addField(elips.Elt)
-			}
-		case *ast.FuncDecl:
-			decls = append(decls, n)
-
-			if n.Name != nil && n.Name.Pos().IsValid() {
-				data.posToDecl[n.Name.Pos()] = n
-			}
-		case *ast.GenDecl:
-			decls = append(decls, n)
-
-			for _, spec := range n.Specs {
-				switch spec := spec.(type) {
-				case *ast.TypeSpec:
-					if spec.Name != nil && spec.Name.Pos().IsValid() {
-						data.posToDecl[spec.Name.Pos()] = n
-					}
-				case *ast.ValueSpec:
-					for _, id := range spec.Names {
-						if id != nil && id.Pos().IsValid() {
-							data.posToDecl[id.Pos()] = n
-						}
-					}
-				}
-			}
-		}
-
-		return true
-	})
-
-	return data
-}
-
-func parseGo(ctx context.Context, fset *token.FileSet, fh source.FileHandle, mode source.ParseMode) *parseGoData {
+// parseGoImpl parses the Go source file whose content is provided by fh.
+func parseGoImpl(ctx context.Context, fset *token.FileSet, fh source.FileHandle, mode source.ParseMode) (*source.ParsedGoFile, error) {
 	ctx, done := event.Start(ctx, "cache.parseGo", tag.File.Of(fh.URI().Filename()))
 	defer done()
 
 	ext := filepath.Ext(fh.URI().Filename())
 	if ext != ".go" && ext != "" { // files generated by cgo have no extension
-		return &parseGoData{err: fmt.Errorf("cannot parse non-Go file %s", fh.URI())}
+		return nil, fmt.Errorf("cannot parse non-Go file %s", fh.URI())
 	}
 	src, err := fh.Read()
 	if err != nil {
-		return &parseGoData{err: err}
+		return nil, err
 	}
 
 	parserMode := parser.AllErrors | parser.ParseComments
@@ -323,22 +179,20 @@ func parseGo(ctx context.Context, fset *token.FileSet, fh source.FileHandle, mod
 		}
 	}
 
-	return &parseGoData{
-		parsed: &source.ParsedGoFile{
-			URI:  fh.URI(),
-			Mode: mode,
-			Src:  src,
-			File: file,
-			Tok:  tok,
-			Mapper: &protocol.ColumnMapper{
-				URI:     fh.URI(),
-				TokFile: tok,
-				Content: src,
-			},
-			ParseErr: parseErr,
+	return &source.ParsedGoFile{
+		URI:   fh.URI(),
+		Mode:  mode,
+		Src:   src,
+		Fixed: fixed,
+		File:  file,
+		Tok:   tok,
+		Mapper: &protocol.ColumnMapper{
+			URI:     fh.URI(),
+			TokFile: tok,
+			Content: src,
 		},
-		fixed: fixed,
-	}
+		ParseErr: parseErr,
+	}, nil
 }
 
 // An unexportedFilter removes as much unexported AST from a set of Files as possible.
@@ -425,6 +279,8 @@ func (f *unexportedFilter) filterSpec(spec ast.Spec) bool {
 		}
 		switch typ := spec.Type.(type) {
 		case *ast.StructType:
+			// In practice this no longer filters anything;
+			// see comment at StructType case in recordUses.
 			f.filterFieldList(typ.Fields)
 		case *ast.InterfaceType:
 			f.filterFieldList(typ.Methods)
@@ -480,9 +336,19 @@ func (f *unexportedFilter) recordUses(file *ast.File) {
 				case *ast.TypeSpec:
 					switch typ := spec.Type.(type) {
 					case *ast.StructType:
-						f.recordFieldUses(false, typ.Fields)
+						// We used to trim unexported fields but this
+						// had observable consequences. For example,
+						// the 'fieldalignment' analyzer would compute
+						// incorrect diagnostics from the size and
+						// offsets, and the UI hover information for
+						// types was inaccurate. So now we keep them.
+						if typ.Fields != nil {
+							for _, field := range typ.Fields.List {
+								f.recordIdents(field.Type)
+							}
+						}
 					case *ast.InterfaceType:
-						f.recordFieldUses(false, typ.Methods)
+						f.recordInterfaceMethodUses(typ.Methods)
 					}
 				}
 			}
@@ -531,37 +397,32 @@ func (f *unexportedFilter) recordIdents(x ast.Expr) {
 }
 
 // recordFuncType records the types mentioned by a function type.
-func (f *unexportedFilter) recordFuncType(x *ast.FuncType) {
-	f.recordFieldUses(true, x.Params)
-	f.recordFieldUses(true, x.Results)
+func (f *unexportedFilter) recordFuncType(fn *ast.FuncType) {
+	// Parameter and result types of retained functions need to be retained.
+	if fn.Params != nil {
+		for _, field := range fn.Params.List {
+			f.recordIdents(field.Type)
+		}
+	}
+	if fn.Results != nil {
+		for _, field := range fn.Results.List {
+			f.recordIdents(field.Type)
+		}
+	}
 }
 
-// recordFieldUses records unexported identifiers used in fields, which may be
-// struct members, interface members, or function parameter/results.
-func (f *unexportedFilter) recordFieldUses(isParams bool, fields *ast.FieldList) {
-	if fields == nil {
-		return
-	}
-	for _, field := range fields.List {
-		if isParams {
-			// Parameter types of retained functions need to be retained.
-			f.recordIdents(field.Type)
-			continue
-		}
-		if ft, ok := field.Type.(*ast.FuncType); ok {
-			// Function declarations in interfaces need all their types retained.
-			f.recordFuncType(ft)
-			continue
-		}
-		if len(field.Names) == 0 {
-			// Embedded fields might contribute exported names.
-			f.recordIdents(field.Type)
-		}
-		for _, name := range field.Names {
-			// We only need normal fields if they're exported.
-			if ast.IsExported(name.Name) {
-				f.recordIdents(field.Type)
-				break
+// recordInterfaceMethodUses records unexported identifiers used in interface methods.
+func (f *unexportedFilter) recordInterfaceMethodUses(methods *ast.FieldList) {
+	if methods != nil {
+		for _, method := range methods.List {
+			if len(method.Names) == 0 {
+				// I, pkg.I, I[T] -- embedded interface:
+				// may contribute exported names.
+				f.recordIdents(method.Type)
+			} else if ft, ok := method.Type.(*ast.FuncType); ok {
+				// f(T) -- ordinary interface method:
+				// needs all its types retained.
+				f.recordFuncType(ft)
 			}
 		}
 	}
@@ -588,32 +449,35 @@ func (f *unexportedFilter) ProcessErrors(errors []types.Error) (map[string]bool,
 }
 
 // trimAST clears any part of the AST not relevant to type checking
-// expressions at pos.
+// the package-level declarations.
 func trimAST(file *ast.File) {
-	ast.Inspect(file, func(n ast.Node) bool {
-		if n == nil {
-			return false
+	// Eliminate bodies of top-level functions, methods, inits.
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok {
+			fn.Body = nil
 		}
+	}
+
+	// Simplify remaining declarations.
+	ast.Inspect(file, func(n ast.Node) bool {
 		switch n := n.(type) {
-		case *ast.FuncDecl:
-			n.Body = nil
-		case *ast.BlockStmt:
-			n.List = nil
-		case *ast.CaseClause:
-			n.Body = nil
-		case *ast.CommClause:
-			n.Body = nil
+		case *ast.FuncLit:
+			// Eliminate bodies of literal functions.
+			// func() { ... } => func() {}
+			n.Body.List = nil
 		case *ast.CompositeLit:
 			// types.Info.Types for long slice/array literals are particularly
-			// expensive. Try to clear them out.
+			// expensive. Try to clear them out: T{e, ..., e} => T{}
 			at, ok := n.Type.(*ast.ArrayType)
 			if !ok {
-				// Composite literal. No harm removing all its fields.
+				// Map or struct literal: no harm removing all its fields.
 				n.Elts = nil
 				break
 			}
+
 			// Removing the elements from an ellipsis array changes its type.
 			// Try to set the length explicitly so we can continue.
+			//  [...]T{e, ..., e} => [3]T[]{}
 			if _, ok := at.Len.(*ast.Ellipsis); ok {
 				length, ok := arrayLength(n)
 				if !ok {

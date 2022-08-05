@@ -249,17 +249,21 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 		}
 		work := s.progress.Start(ctx, "Setting up workspace", "Loading packages...", nil, nil)
 		snapshot, release, err := s.addView(ctx, folder.Name, uri)
-		if err == source.ErrViewExists {
-			continue
-		}
 		if err != nil {
+			if err == source.ErrViewExists {
+				continue
+			}
 			viewErrors[uri] = err
 			work.End(ctx, fmt.Sprintf("Error loading packages: %s", err))
 			continue
 		}
+		// Inv: release() must be called once.
+
 		var swg sync.WaitGroup
 		swg.Add(1)
 		allFoldersWg.Add(1)
+		// TODO(adonovan): this looks fishy. Is AwaitInitialized
+		// supposed to be called once per folder?
 		go func() {
 			defer swg.Done()
 			defer allFoldersWg.Done()
@@ -271,6 +275,7 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 		buf := &bytes.Buffer{}
 		if err := snapshot.WriteEnv(ctx, buf); err != nil {
 			viewErrors[uri] = err
+			release()
 			continue
 		}
 		event.Log(ctx, buf.String())
@@ -474,8 +479,7 @@ func (s *Server) beginFileRequest(ctx context.Context, pURI protocol.DocumentURI
 		release()
 		return nil, nil, false, func() {}, err
 	}
-	kind := snapshot.View().FileKind(fh)
-	if expectKind != source.UnknownKind && kind != expectKind {
+	if expectKind != source.UnknownKind && view.FileKind(fh) != expectKind {
 		// Wrong kind of file. Nothing to do.
 		release()
 		return nil, nil, false, func() {}, nil
@@ -483,6 +487,8 @@ func (s *Server) beginFileRequest(ctx context.Context, pURI protocol.DocumentURI
 	return snapshot, fh, true, release, nil
 }
 
+// shutdown implements the 'shutdown' LSP handler. It releases resources
+// associated with the server and waits for all ongoing work to complete.
 func (s *Server) shutdown(ctx context.Context) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()

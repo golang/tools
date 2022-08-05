@@ -98,20 +98,8 @@ FindCall:
 		if err != nil {
 			return nil, 0, err
 		}
-		node, err := snapshot.PosToDecl(ctx, declPkg, obj.Pos())
-		if err != nil {
-			return nil, 0, err
-		}
-		rng, err := objToMappedRange(snapshot, pkg, obj)
-		if err != nil {
-			return nil, 0, err
-		}
-		decl := Declaration{
-			obj:  obj,
-			node: node,
-		}
-		decl.MappedRange = append(decl.MappedRange, rng)
-		d, err := FindHoverContext(ctx, snapshot, pkg, decl.obj, decl.node, nil)
+		node, _ := FindDeclAndField(declPkg.GetSyntax(), obj.Pos()) // may be nil
+		d, err := FindHoverContext(ctx, snapshot, pkg, obj, node, nil)
 		if err != nil {
 			return nil, 0, err
 		}

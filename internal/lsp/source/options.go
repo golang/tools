@@ -43,6 +43,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/structtag"
 	"golang.org/x/tools/go/analysis/passes/testinggoroutine"
 	"golang.org/x/tools/go/analysis/passes/tests"
+	"golang.org/x/tools/go/analysis/passes/timeformat"
 	"golang.org/x/tools/go/analysis/passes/unmarshal"
 	"golang.org/x/tools/go/analysis/passes/unreachable"
 	"golang.org/x/tools/go/analysis/passes/unsafeptr"
@@ -61,6 +62,7 @@ import (
 	"golang.org/x/tools/internal/lsp/analysis/stubmethods"
 	"golang.org/x/tools/internal/lsp/analysis/undeclaredname"
 	"golang.org/x/tools/internal/lsp/analysis/unusedparams"
+	"golang.org/x/tools/internal/lsp/analysis/unusedvariable"
 	"golang.org/x/tools/internal/lsp/analysis/useany"
 	"golang.org/x/tools/internal/lsp/command"
 	"golang.org/x/tools/internal/lsp/diff"
@@ -153,6 +155,7 @@ func DefaultOptions() *Options {
 						string(command.GCDetails):         false,
 						string(command.UpgradeDependency): true,
 						string(command.Vendor):            true,
+						// TODO(hyangah): enable command.RunVulncheckExp.
 					},
 				},
 			},
@@ -203,6 +206,7 @@ type ClientOptions struct {
 	RelatedInformationSupported                bool
 	CompletionTags                             bool
 	CompletionDeprecated                       bool
+	SupportedResourceOperations                []protocol.ResourceOperationKind
 }
 
 // ServerOptions holds LSP-specific configuration that is provided by the
@@ -314,6 +318,12 @@ type UIOptions struct {
 	// SemanticTokens controls whether the LSP server will send
 	// semantic tokens to the client.
 	SemanticTokens bool `status:"experimental"`
+
+	// NoSemanticString turns off the sending of the semantic token 'string'
+	NoSemanticString bool `status:"experimental"`
+
+	// NoSemanticNumber  turns off the sending of the semantic token 'number'
+	NoSemanticNumber bool `status:"experimental"`
 }
 
 type CompletionOptions struct {
@@ -349,6 +359,9 @@ type DocumentationOptions struct {
 	// * `"pkg.go.dev"`
 	//
 	// If company chooses to use its own `godoc.org`, its address can be used as well.
+	//
+	// Modules matching the GOPRIVATE environment variable will not have
+	// documentation links in hover.
 	LinkTarget string
 
 	// LinksInHover toggles the presence of links to documentation in hover.
@@ -476,7 +489,7 @@ type Hooks struct {
 	// LicensesText holds third party licenses for software used by gopls.
 	LicensesText string
 
-	// TODO(rfindley): is this even necessary?
+	// GoDiff is used in gopls/hooks to get Myers' diff
 	GoDiff bool
 
 	// Whether staticcheck is supported.
@@ -502,7 +515,7 @@ type Hooks struct {
 	StaticcheckAnalyzers map[string]*Analyzer
 
 	// Govulncheck is the implementation of the Govulncheck gopls command.
-	Govulncheck func(context.Context, *packages.Config, command.VulncheckArgs) (command.VulncheckResult, error)
+	Govulncheck func(context.Context, *packages.Config, string) (command.VulncheckResult, error)
 }
 
 // InternalOptions contains settings that are not intended for use by the
@@ -561,6 +574,23 @@ type InternalOptions struct {
 	// on the server.
 	// This option applies only during initialization.
 	ShowBugReports bool
+
+	// NewDiff controls the choice of the new diff implementation.
+	// It can be 'new', 'checked', or 'old' which is the default.
+	// 'checked' computes diffs with both algorithms, checks
+	// that the new algorithm has worked, and write some summary
+	// statistics to a file in os.TmpDir()
+	NewDiff string
+
+	// ChattyDiagnostics controls whether to report file diagnostics for each
+	// file change. If unset, gopls only reports diagnostics when they change, or
+	// when a file is opened or closed.
+	//
+	// TODO(rfindley): is seems that for many clients this should be true by
+	// default. For example, coc.nvim seems to get confused if diagnostics are
+	// not re-published. Switch the default to true after some period of internal
+	// testing.
+	ChattyDiagnostics bool
 }
 
 type ImportShortcut string
@@ -690,6 +720,9 @@ func SetOptions(options *Options, opts interface{}) OptionResults {
 
 func (o *Options) ForClientCapabilities(caps protocol.ClientCapabilities) {
 	// Check if the client supports snippets in completion items.
+	if caps.Workspace.WorkspaceEdit != nil {
+		o.SupportedResourceOperations = caps.Workspace.WorkspaceEdit.ResourceOperations
+	}
 	if c := caps.TextDocument.Completion; c.CompletionItem.SnippetSupport {
 		o.InsertTextFormat = protocol.SnippetTextFormat
 	}
@@ -787,10 +820,10 @@ func (o *Options) AddStaticcheckAnalyzer(a *analysis.Analyzer, enabled bool, sev
 // should be enabled in enableAllExperimentMaps.
 func (o *Options) EnableAllExperiments() {
 	o.SemanticTokens = true
-	o.ExperimentalPostfixCompletions = true
 	o.ExperimentalUseInvalidMetadata = true
 	o.ExperimentalWatchedFileDelay = 50 * time.Millisecond
-	o.SymbolMatcher = SymbolFastFuzzy
+	o.NewDiff = "checked"
+	o.ChattyDiagnostics = true
 }
 
 func (o *Options) enableAllExperimentMaps() {
@@ -800,6 +833,33 @@ func (o *Options) enableAllExperimentMaps() {
 	if _, ok := o.Analyses[unusedparams.Analyzer.Name]; !ok {
 		o.Analyses[unusedparams.Analyzer.Name] = true
 	}
+	if _, ok := o.Analyses[unusedvariable.Analyzer.Name]; !ok {
+		o.Analyses[unusedvariable.Analyzer.Name] = true
+	}
+}
+
+// validateDirectoryFilter validates if the filter string
+// - is not empty
+// - start with either + or -
+// - doesn't contain currently unsupported glob operators: *, ?
+func validateDirectoryFilter(ifilter string) (string, error) {
+	filter := fmt.Sprint(ifilter)
+	if filter == "" || (filter[0] != '+' && filter[0] != '-') {
+		return "", fmt.Errorf("invalid filter %v, must start with + or -", filter)
+	}
+	segs := strings.Split(filter[1:], "/")
+	unsupportedOps := [...]string{"?", "*"}
+	for _, seg := range segs {
+		if seg != "**" {
+			for _, op := range unsupportedOps {
+				if strings.Contains(seg, op) {
+					return "", fmt.Errorf("invalid filter %v, operator %v not supported. If you want to have this operator supported, consider filing an issue.", filter, op)
+				}
+			}
+		}
+	}
+
+	return strings.TrimRight(filepath.FromSlash(filter), "/"), nil
 }
 
 func (o *Options) set(name string, value interface{}, seen map[string]struct{}) OptionResult {
@@ -846,9 +906,9 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		}
 		var filters []string
 		for _, ifilter := range ifilters {
-			filter := fmt.Sprint(ifilter)
-			if filter == "" || (filter[0] != '+' && filter[0] != '-') {
-				result.errorf("invalid filter %q, must start with + or -", filter)
+			filter, err := validateDirectoryFilter(fmt.Sprintf("%v", ifilter))
+			if err != nil {
+				result.errorf(err.Error())
 				return result
 			}
 			filters = append(filters, strings.TrimRight(filepath.FromSlash(filter), "/"))
@@ -980,6 +1040,12 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 	case "semanticTokens":
 		result.setBool(&o.SemanticTokens)
 
+	case "noSemanticString":
+		result.setBool(&o.NoSemanticString)
+
+	case "noSemanticNumber":
+		result.setBool(&o.NoSemanticNumber)
+
 	case "expandWorkspaceToModule":
 		result.setBool(&o.ExpandWorkspaceToModule)
 
@@ -1030,6 +1096,12 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 	case "allExperiments":
 		// This setting should be handled before all of the other options are
 		// processed, so do nothing here.
+
+	case "newDiff":
+		result.setString(&o.NewDiff)
+
+	case "chattyDiagnostics":
+		result.setBool(&o.ChattyDiagnostics)
 
 	// Replaced settings.
 	case "experimentalDisabledAnalyses":
@@ -1270,6 +1342,10 @@ func typeErrorAnalyzers() map[string]*Analyzer {
 			Fix:      UndeclaredName,
 			Enabled:  true,
 		},
+		unusedvariable.Analyzer.Name: {
+			Analyzer: unusedvariable.Analyzer,
+			Enabled:  false,
+		},
 	}
 }
 
@@ -1331,6 +1407,7 @@ func defaultAnalyzers() map[string]*Analyzer {
 		useany.Analyzer.Name:           {Analyzer: useany.Analyzer, Enabled: false},
 		infertypeargs.Analyzer.Name:    {Analyzer: infertypeargs.Analyzer, Enabled: true},
 		embeddirective.Analyzer.Name:   {Analyzer: embeddirective.Analyzer, Enabled: true},
+		timeformat.Analyzer.Name:       {Analyzer: timeformat.Analyzer, Enabled: true},
 
 		// gofmt -s suite:
 		simplifycompositelit.Analyzer.Name: {

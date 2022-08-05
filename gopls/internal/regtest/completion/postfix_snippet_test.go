@@ -9,12 +9,9 @@ import (
 	"testing"
 
 	. "golang.org/x/tools/internal/lsp/regtest"
-	"golang.org/x/tools/internal/lsp/source"
 )
 
 func TestPostfixSnippetCompletion(t *testing.T) {
-	t.Skipf("skipping test due to suspected synchronization bug; see https://go.dev/issue/50707")
-
 	const mod = `
 -- go.mod --
 module mod.com
@@ -268,6 +265,27 @@ for k := range foo {
 `,
 		},
 		{
+			name: "channel_range",
+			before: `
+package foo
+
+func _() {
+	foo := make(chan int)
+	foo.range
+}
+`,
+			after: `
+package foo
+
+func _() {
+	foo := make(chan int)
+	for e := range foo {
+	$0
+}
+}
+`,
+		},
+		{
 			name: "var",
 			before: `
 package foo
@@ -379,7 +397,7 @@ func _() {
 			before: `
 package foo
 
-func foo() []string { 
+func foo() []string {
 	x := "test"
 	return x.split
 }`,
@@ -388,7 +406,7 @@ package foo
 
 import "strings"
 
-func foo() []string { 
+func foo() []string {
 	x := "test"
 	return strings.Split(x, "$0")
 }`,
@@ -414,9 +432,11 @@ func foo() string {
 		},
 	}
 
-	r := WithOptions(Options(func(o *source.Options) {
-		o.ExperimentalPostfixCompletions = true
-	}))
+	r := WithOptions(
+		Settings{
+			"experimentalPostfixCompletions": true,
+		},
+	)
 	r.Run(t, mod, func(t *testing.T, env *Env) {
 		for _, c := range cases {
 			t.Run(c.name, func(t *testing.T) {

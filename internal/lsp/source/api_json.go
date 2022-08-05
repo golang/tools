@@ -116,7 +116,7 @@ var GeneratedAPIJSON = &APIJSON{
 			{
 				Name:      "linkTarget",
 				Type:      "string",
-				Doc:       "linkTarget controls where documentation links go.\nIt might be one of:\n\n* `\"godoc.org\"`\n* `\"pkg.go.dev\"`\n\nIf company chooses to use its own `godoc.org`, its address can be used as well.\n",
+				Doc:       "linkTarget controls where documentation links go.\nIt might be one of:\n\n* `\"godoc.org\"`\n* `\"pkg.go.dev\"`\n\nIf company chooses to use its own `godoc.org`, its address can be used as well.\n\nModules matching the GOPRIVATE environment variable will not have\ndocumentation links in hover.\n",
 				Default:   "\"pkg.go.dev\"",
 				Hierarchy: "ui.documentation",
 			},
@@ -379,6 +379,11 @@ var GeneratedAPIJSON = &APIJSON{
 							Default: "true",
 						},
 						{
+							Name:    "\"timeformat\"",
+							Doc:     "check for calls of (time.Time).Format or time.Parse with 2006-02-01\n\nThe timeformat checker looks for time formats with the 2006-02-01 (yyyy-dd-mm)\nformat. Internationally, \"yyyy-dd-mm\" does not occur in common calendar date\nstandards, and so it is more likely that 2006-01-02 (yyyy-mm-dd) was intended.\n",
+							Default: "true",
+						},
+						{
 							Name:    "\"unmarshal\"",
 							Doc:     "report passing non-pointer or non-interface values to unmarshal\n\nThe unmarshal analysis reports calls to functions such as json.Unmarshal\nin which the argument type is not a pointer or an interface.",
 							Default: "true",
@@ -432,6 +437,11 @@ var GeneratedAPIJSON = &APIJSON{
 							Name:    "\"undeclaredname\"",
 							Doc:     "suggested fixes for \"undeclared name: <>\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"undeclared name: <>\". It will either insert a new statement,\nsuch as:\n\n\"<> := \"\n\nor a new function declaration, such as:\n\nfunc <>(inferred parameters) {\n\tpanic(\"implement me!\")\n}\n",
 							Default: "true",
+						},
+						{
+							Name:    "\"unusedvariable\"",
+							Doc:     "check for unused variables\n\nThe unusedvariable analyzer suggests fixes for unused variables errors.\n",
+							Default: "false",
 						},
 						{
 							Name:    "\"fillstruct\"",
@@ -512,37 +522,37 @@ var GeneratedAPIJSON = &APIJSON{
 				EnumKeys: EnumKeys{Keys: []EnumKey{
 					{
 						Name:    "\"assignVariableTypes\"",
-						Doc:     "Enable/disable inlay hints for variable types in assign statements:\n\n\ti/* int/*, j/* int/* := 0, len(r)-1",
+						Doc:     "Enable/disable inlay hints for variable types in assign statements:\n```go\n\ti/* int*/, j/* int*/ := 0, len(r)-1\n```",
 						Default: "false",
 					},
 					{
 						Name:    "\"compositeLiteralFields\"",
-						Doc:     "Enable/disable inlay hints for composite literal field names:\n\n\t{in: \"Hello, world\", want: \"dlrow ,olleH\"}",
+						Doc:     "Enable/disable inlay hints for composite literal field names:\n```go\n\t{/*in: */\"Hello, world\", /*want: */\"dlrow ,olleH\"}\n```",
 						Default: "false",
 					},
 					{
 						Name:    "\"compositeLiteralTypes\"",
-						Doc:     "Enable/disable inlay hints for composite literal types:\n\n\tfor _, c := range []struct {\n\t\tin, want string\n\t}{\n\t\t/*struct{ in string; want string }*/{\"Hello, world\", \"dlrow ,olleH\"},\n\t}",
+						Doc:     "Enable/disable inlay hints for composite literal types:\n```go\n\tfor _, c := range []struct {\n\t\tin, want string\n\t}{\n\t\t/*struct{ in string; want string }*/{\"Hello, world\", \"dlrow ,olleH\"},\n\t}\n```",
 						Default: "false",
 					},
 					{
 						Name:    "\"constantValues\"",
-						Doc:     "Enable/disable inlay hints for constant values:\n\n\tconst (\n\t\tKindNone   Kind = iota/* = 0*/\n\t\tKindPrint/*  = 1*/\n\t\tKindPrintf/* = 2*/\n\t\tKindErrorf/* = 3*/\n\t)",
+						Doc:     "Enable/disable inlay hints for constant values:\n```go\n\tconst (\n\t\tKindNone   Kind = iota/* = 0*/\n\t\tKindPrint/*  = 1*/\n\t\tKindPrintf/* = 2*/\n\t\tKindErrorf/* = 3*/\n\t)\n```",
 						Default: "false",
 					},
 					{
 						Name:    "\"functionTypeParameters\"",
-						Doc:     "Enable/disable inlay hints for implicit type parameters on generic functions:\n\n\tmyFoo/*[int, string]*/(1, \"hello\")",
+						Doc:     "Enable/disable inlay hints for implicit type parameters on generic functions:\n```go\n\tmyFoo/*[int, string]*/(1, \"hello\")\n```",
 						Default: "false",
 					},
 					{
 						Name:    "\"parameterNames\"",
-						Doc:     "Enable/disable inlay hints for parameter names:\n\n\tparseInt(/* str: */ \"123\", /* radix: */ 8)",
+						Doc:     "Enable/disable inlay hints for parameter names:\n```go\n\tparseInt(/* str: */ \"123\", /* radix: */ 8)\n```",
 						Default: "false",
 					},
 					{
 						Name:    "\"rangeVariableTypes\"",
-						Doc:     "Enable/disable inlay hints for variable types in range statements:\n\n\tfor k/* int*/, v/* string/* := range []string{} {\n\t\tfmt.Println(k, v)\n\t}",
+						Doc:     "Enable/disable inlay hints for variable types in range statements:\n```go\n\tfor k/* int*/, v/* string*/ := range []string{} {\n\t\tfmt.Println(k, v)\n\t}\n```",
 						Default: "false",
 					},
 				}},
@@ -573,6 +583,11 @@ var GeneratedAPIJSON = &APIJSON{
 							Default: "true",
 						},
 						{
+							Name:    "\"run_vulncheck_exp\"",
+							Doc:     "Run vulnerability check (`govulncheck`).",
+							Default: "false",
+						},
+						{
 							Name:    "\"test\"",
 							Doc:     "Runs `go test` for a specific set of test or benchmark functions.",
 							Default: "false",
@@ -601,6 +616,22 @@ var GeneratedAPIJSON = &APIJSON{
 				Name:      "semanticTokens",
 				Type:      "bool",
 				Doc:       "semanticTokens controls whether the LSP server will send\nsemantic tokens to the client.\n",
+				Default:   "false",
+				Status:    "experimental",
+				Hierarchy: "ui",
+			},
+			{
+				Name:      "noSemanticString",
+				Type:      "bool",
+				Doc:       "noSemanticString turns off the sending of the semantic token 'string'\n",
+				Default:   "false",
+				Status:    "experimental",
+				Hierarchy: "ui",
+			},
+			{
+				Name:      "noSemanticNumber",
+				Type:      "bool",
+				Doc:       "noSemanticNumber  turns off the sending of the semantic token 'number'\n",
 				Default:   "false",
 				Status:    "experimental",
 				Hierarchy: "ui",
@@ -716,11 +747,10 @@ var GeneratedAPIJSON = &APIJSON{
 			ArgDoc:  "{\n\t// The test file containing the tests to run.\n\t\"URI\": string,\n\t// Specific test names to run, e.g. TestFoo.\n\t\"Tests\": []string,\n\t// Specific benchmarks to run, e.g. BenchmarkFoo.\n\t\"Benchmarks\": []string,\n}",
 		},
 		{
-			Command:   "gopls.run_vulncheck_exp",
-			Title:     "Run vulncheck (experimental)",
-			Doc:       "Run vulnerability check (`govulncheck`).",
-			ArgDoc:    "{\n\t// Dir is the directory from which vulncheck will run from.\n\t\"Dir\": string,\n\t// Package pattern. E.g. \"\", \".\", \"./...\".\n\t\"Pattern\": string,\n}",
-			ResultDoc: "{\n\t\"Vuln\": []{\n\t\t\"ID\": string,\n\t\t\"Details\": string,\n\t\t\"Aliases\": []string,\n\t\t\"Symbol\": string,\n\t\t\"PkgPath\": string,\n\t\t\"ModPath\": string,\n\t\t\"URL\": string,\n\t\t\"CurrentVersion\": string,\n\t\t\"FixedVersion\": string,\n\t\t\"CallStacks\": [][]golang.org/x/tools/internal/lsp/command.StackEntry,\n\t\t\"CallStackSummaries\": []string,\n\t},\n}",
+			Command: "gopls.run_vulncheck_exp",
+			Title:   "Run vulncheck (experimental)",
+			Doc:     "Run vulnerability check (`govulncheck`).",
+			ArgDoc:  "{\n\t// Any document in the directory from which govulncheck will run.\n\t\"URI\": string,\n\t// Package pattern. E.g. \"\", \".\", \"./...\".\n\t\"Pattern\": string,\n}",
 		},
 		{
 			Command:   "gopls.start_debugging",
@@ -781,6 +811,11 @@ var GeneratedAPIJSON = &APIJSON{
 			Lens:  "regenerate_cgo",
 			Title: "Regenerate cgo",
 			Doc:   "Regenerates cgo definitions.",
+		},
+		{
+			Lens:  "run_vulncheck_exp",
+			Title: "Run vulncheck (experimental)",
+			Doc:   "Run vulnerability check (`govulncheck`).",
 		},
 		{
 			Lens:  "test",
@@ -962,6 +997,11 @@ var GeneratedAPIJSON = &APIJSON{
 			Default: true,
 		},
 		{
+			Name:    "timeformat",
+			Doc:     "check for calls of (time.Time).Format or time.Parse with 2006-02-01\n\nThe timeformat checker looks for time formats with the 2006-02-01 (yyyy-dd-mm)\nformat. Internationally, \"yyyy-dd-mm\" does not occur in common calendar date\nstandards, and so it is more likely that 2006-01-02 (yyyy-mm-dd) was intended.\n",
+			Default: true,
+		},
+		{
 			Name:    "unmarshal",
 			Doc:     "report passing non-pointer or non-interface values to unmarshal\n\nThe unmarshal analysis reports calls to functions such as json.Unmarshal\nin which the argument type is not a pointer or an interface.",
 			Default: true,
@@ -1014,6 +1054,10 @@ var GeneratedAPIJSON = &APIJSON{
 			Default: true,
 		},
 		{
+			Name: "unusedvariable",
+			Doc:  "check for unused variables\n\nThe unusedvariable analyzer suggests fixes for unused variables errors.\n",
+		},
+		{
 			Name:    "fillstruct",
 			Doc:     "note incomplete struct initializations\n\nThis analyzer provides diagnostics for any struct literals that do not have\nany fields initialized. Because the suggested fix for this analysis is\nexpensive to compute, callers should compute it separately, using the\nSuggestedFix function below.\n",
 			Default: true,
@@ -1027,31 +1071,31 @@ var GeneratedAPIJSON = &APIJSON{
 	Hints: []*HintJSON{
 		{
 			Name: "assignVariableTypes",
-			Doc:  "Enable/disable inlay hints for variable types in assign statements:\n\n\ti/* int/*, j/* int/* := 0, len(r)-1",
+			Doc:  "Enable/disable inlay hints for variable types in assign statements:\n```go\n\ti/* int*/, j/* int*/ := 0, len(r)-1\n```",
 		},
 		{
 			Name: "compositeLiteralFields",
-			Doc:  "Enable/disable inlay hints for composite literal field names:\n\n\t{in: \"Hello, world\", want: \"dlrow ,olleH\"}",
+			Doc:  "Enable/disable inlay hints for composite literal field names:\n```go\n\t{/*in: */\"Hello, world\", /*want: */\"dlrow ,olleH\"}\n```",
 		},
 		{
 			Name: "compositeLiteralTypes",
-			Doc:  "Enable/disable inlay hints for composite literal types:\n\n\tfor _, c := range []struct {\n\t\tin, want string\n\t}{\n\t\t/*struct{ in string; want string }*/{\"Hello, world\", \"dlrow ,olleH\"},\n\t}",
+			Doc:  "Enable/disable inlay hints for composite literal types:\n```go\n\tfor _, c := range []struct {\n\t\tin, want string\n\t}{\n\t\t/*struct{ in string; want string }*/{\"Hello, world\", \"dlrow ,olleH\"},\n\t}\n```",
 		},
 		{
 			Name: "constantValues",
-			Doc:  "Enable/disable inlay hints for constant values:\n\n\tconst (\n\t\tKindNone   Kind = iota/* = 0*/\n\t\tKindPrint/*  = 1*/\n\t\tKindPrintf/* = 2*/\n\t\tKindErrorf/* = 3*/\n\t)",
+			Doc:  "Enable/disable inlay hints for constant values:\n```go\n\tconst (\n\t\tKindNone   Kind = iota/* = 0*/\n\t\tKindPrint/*  = 1*/\n\t\tKindPrintf/* = 2*/\n\t\tKindErrorf/* = 3*/\n\t)\n```",
 		},
 		{
 			Name: "functionTypeParameters",
-			Doc:  "Enable/disable inlay hints for implicit type parameters on generic functions:\n\n\tmyFoo/*[int, string]*/(1, \"hello\")",
+			Doc:  "Enable/disable inlay hints for implicit type parameters on generic functions:\n```go\n\tmyFoo/*[int, string]*/(1, \"hello\")\n```",
 		},
 		{
 			Name: "parameterNames",
-			Doc:  "Enable/disable inlay hints for parameter names:\n\n\tparseInt(/* str: */ \"123\", /* radix: */ 8)",
+			Doc:  "Enable/disable inlay hints for parameter names:\n```go\n\tparseInt(/* str: */ \"123\", /* radix: */ 8)\n```",
 		},
 		{
 			Name: "rangeVariableTypes",
-			Doc:  "Enable/disable inlay hints for variable types in range statements:\n\n\tfor k/* int*/, v/* string/* := range []string{} {\n\t\tfmt.Println(k, v)\n\t}",
+			Doc:  "Enable/disable inlay hints for variable types in range statements:\n```go\n\tfor k/* int*/, v/* string*/ := range []string{} {\n\t\tfmt.Println(k, v)\n\t}\n```",
 		},
 	},
 }

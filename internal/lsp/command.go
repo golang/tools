@@ -13,13 +13,13 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/lsp/command"
@@ -691,7 +691,7 @@ func (c *commandHandler) GenerateGoplsMod(ctx context.Context, args command.URIA
 		if err != nil {
 			return fmt.Errorf("formatting mod file: %w", err)
 		}
-		filename := filepath.Join(snapshot.View().Folder().Filename(), "gopls.mod")
+		filename := filepath.Join(v.Folder().Filename(), "gopls.mod")
 		if err := ioutil.WriteFile(filename, content, 0644); err != nil {
 			return fmt.Errorf("writing mod file: %w", err)
 		}
@@ -790,11 +790,26 @@ func (c *commandHandler) StartDebugging(ctx context.Context, args command.Debugg
 	return result, nil
 }
 
-func (c *commandHandler) RunVulncheckExp(ctx context.Context, args command.VulncheckArgs) (result command.VulncheckResult, _ error) {
+// Copy of pkgLoadConfig defined in internal/lsp/cmd/vulncheck.go
+// TODO(hyangah): decide where to define this.
+type pkgLoadConfig struct {
+	// BuildFlags is a list of command-line flags to be passed through to
+	// the build system's query tool.
+	BuildFlags []string
+
+	// If Tests is set, the loader includes related test packages.
+	Tests bool
+}
+
+func (c *commandHandler) RunVulncheckExp(ctx context.Context, args command.VulncheckArgs) error {
+	if args.URI == "" {
+		return errors.New("VulncheckArgs is missing URI field")
+	}
 	err := c.run(ctx, commandConfig{
-		progress:    "Running vulncheck",
+		async:       true, // need to be async to be cancellable
+		progress:    "govulncheck",
 		requireSave: true,
-		forURI:      args.Dir, // Will dir work?
+		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		view := deps.snapshot.View()
 		opts := view.Options()
@@ -802,22 +817,68 @@ func (c *commandHandler) RunVulncheckExp(ctx context.Context, args command.Vulnc
 			return errors.New("vulncheck feature is not available")
 		}
 
-		buildFlags := opts.BuildFlags // XXX: is session.Options equivalent to view.Options?
+		cmd := exec.CommandContext(ctx, os.Args[0], "vulncheck", "-config", args.Pattern)
+		cmd.Dir = filepath.Dir(args.URI.SpanURI().Filename())
+
 		var viewEnv []string
 		if e := opts.EnvSlice(); e != nil {
 			viewEnv = append(os.Environ(), e...)
 		}
-		cfg := &packages.Config{
-			Context:    ctx,
-			Tests:      true, // TODO(hyangah): add a field in args.
-			BuildFlags: buildFlags,
-			Env:        viewEnv,
-			Dir:        args.Dir.SpanURI().Filename(),
-			// TODO(hyangah): configure overlay
+		cmd.Env = viewEnv
+
+		// stdin: gopls vulncheck expects JSON-encoded configuration from STDIN when -config flag is set.
+		var stdin bytes.Buffer
+		cmd.Stdin = &stdin
+
+		if err := json.NewEncoder(&stdin).Encode(pkgLoadConfig{
+			BuildFlags: opts.BuildFlags,
+			// TODO(hyangah): add `tests` flag in command.VulncheckArgs
+		}); err != nil {
+			return fmt.Errorf("failed to pass package load config: %v", err)
 		}
-		var err error
-		result, err = opts.Hooks.Govulncheck(ctx, cfg, args)
-		return err
+
+		// stderr: stream gopls vulncheck's STDERR as progress reports
+		er := progress.NewEventWriter(ctx, "vulncheck")
+		stderr := io.MultiWriter(er, progress.NewWorkDoneWriter(ctx, deps.work))
+		cmd.Stderr = stderr
+		// TODO: can we stream stdout?
+		stdout, err := cmd.Output()
+		if err != nil {
+			return fmt.Errorf("failed to run govulncheck: %v", err)
+		}
+
+		var vulns command.VulncheckResult
+		if err := json.Unmarshal(stdout, &vulns); err != nil {
+			// TODO: for easy debugging, log the failed stdout somewhere?
+			return fmt.Errorf("failed to parse govulncheck output: %v", err)
+		}
+
+		// TODO(jamalc,suzmue): convert the results to diagnostics & code actions.
+		// Or should we just write to a file (*.vulncheck.json) or text format
+		// and send "Show Document" request? If *.vulncheck.json is open,
+		// VSCode Go extension will open its custom editor.
+		set := make(map[string]bool)
+		for _, v := range vulns.Vuln {
+			if len(v.CallStackSummaries) > 0 {
+				set[v.ID] = true
+			}
+		}
+		if len(set) == 0 {
+			return c.s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+				Type:    protocol.Info,
+				Message: "No vulnerabilities found",
+			})
+		}
+
+		list := make([]string, 0, len(set))
+		for k := range set {
+			list = append(list, k)
+		}
+		sort.Strings(list)
+		return c.s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+			Type:    protocol.Warning,
+			Message: fmt.Sprintf("Found %v", strings.Join(list, ", ")),
+		})
 	})
-	return result, err
+	return err
 }

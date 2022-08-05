@@ -308,7 +308,7 @@ func OutstandingWork(title, msg string) SimpleExpectation {
 	}
 	return SimpleExpectation{
 		check:       check,
-		description: fmt.Sprintf("outstanding work: %s", title),
+		description: fmt.Sprintf("outstanding work: %q containing %q", title, msg),
 	}
 }
 
@@ -614,24 +614,6 @@ func NoDiagnostics(name string) Expectation {
 	return SimpleExpectation{
 		check:       check,
 		description: fmt.Sprintf("no diagnostics for %q", name),
-	}
-}
-
-// AnyDiagnosticAtCurrentVersion asserts that there is a diagnostic report for
-// the current edited version of the buffer corresponding to the given
-// workdir-relative pathname.
-func (e *Env) AnyDiagnosticAtCurrentVersion(name string) Expectation {
-	version := e.Editor.BufferVersion(name)
-	check := func(s State) Verdict {
-		diags, ok := s.diagnostics[name]
-		if ok && diags.Version == int32(version) {
-			return Met
-		}
-		return Unmet
-	}
-	return SimpleExpectation{
-		check:       check,
-		description: fmt.Sprintf("any diagnostics at version %d", version),
 	}
 }
 

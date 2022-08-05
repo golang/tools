@@ -173,8 +173,9 @@ type completer struct {
 	// file is the AST of the file associated with this completion request.
 	file *ast.File
 
-	// pos is the position at which the request was triggered.
-	pos token.Pos
+	// (tokFile, pos) is the position at which the request was triggered.
+	tokFile *token.File
+	pos     token.Pos
 
 	// path is the path of AST nodes enclosing the position.
 	path []ast.Node
@@ -325,7 +326,7 @@ func (c *completer) setSurrounding(ident *ast.Ident) {
 		content: ident.Name,
 		cursor:  c.pos,
 		// Overwrite the prefix only.
-		rng: span.NewRange(c.snapshot.FileSet(), ident.Pos(), ident.End()),
+		rng: span.NewRange(c.tokFile, ident.Pos(), ident.End()),
 	}
 
 	c.setMatcherFromPrefix(c.surrounding.Prefix())
@@ -347,7 +348,7 @@ func (c *completer) getSurrounding() *Selection {
 		c.surrounding = &Selection{
 			content: "",
 			cursor:  c.pos,
-			rng:     span.NewRange(c.snapshot.FileSet(), c.pos, c.pos),
+			rng:     span.NewRange(c.tokFile, c.pos, c.pos),
 		}
 	}
 	return c.surrounding
@@ -486,7 +487,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 					qual := types.RelativeTo(pkg.GetTypes())
 					objStr = types.ObjectString(obj, qual)
 				}
-				ans, sel := definition(path, obj, snapshot.FileSet(), fh)
+				ans, sel := definition(path, obj, pgf.Tok, fh)
 				if ans != nil {
 					sort.Slice(ans, func(i, j int) bool {
 						return ans[i].Score > ans[j].Score
@@ -513,6 +514,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 		},
 		fh:                        fh,
 		filename:                  fh.URI().Filename(),
+		tokFile:                   pgf.Tok,
 		file:                      pgf.File,
 		path:                      path,
 		pos:                       pos,
@@ -798,7 +800,7 @@ func (c *completer) populateImportCompletions(ctx context.Context, searchImport 
 	c.surrounding = &Selection{
 		content: content,
 		cursor:  c.pos,
-		rng:     span.NewRange(c.snapshot.FileSet(), start, end),
+		rng:     span.NewRange(c.tokFile, start, end),
 	}
 
 	seenImports := make(map[string]struct{})
@@ -1018,7 +1020,7 @@ func (c *completer) setSurroundingForComment(comments *ast.CommentGroup) {
 	c.surrounding = &Selection{
 		content: cursorComment.Text[start:end],
 		cursor:  c.pos,
-		rng:     span.NewRange(c.snapshot.FileSet(), token.Pos(int(cursorComment.Slash)+start), token.Pos(int(cursorComment.Slash)+end)),
+		rng:     span.NewRange(c.tokFile, token.Pos(int(cursorComment.Slash)+start), token.Pos(int(cursorComment.Slash)+end)),
 	}
 	c.setMatcherFromPrefix(c.surrounding.Prefix())
 }
@@ -2314,7 +2316,7 @@ func (ci candidateInference) applyTypeNameModifiers(typ types.Type) types.Type {
 // matchesVariadic returns true if we are completing a variadic
 // parameter and candType is a compatible slice type.
 func (ci candidateInference) matchesVariadic(candType types.Type) bool {
-	return ci.variadic && ci.objType != nil && types.AssignableTo(candType, types.NewSlice(ci.objType))
+	return ci.variadic && ci.objType != nil && assignableTo(candType, types.NewSlice(ci.objType))
 }
 
 // findSwitchStmt returns an *ast.CaseClause's corresponding *ast.SwitchStmt or
@@ -2640,7 +2642,7 @@ func (ci *candidateInference) candTypeMatches(cand *candidate) bool {
 			return false
 		}
 
-		if ci.convertibleTo != nil && types.ConvertibleTo(candType, ci.convertibleTo) {
+		if ci.convertibleTo != nil && convertibleTo(candType, ci.convertibleTo) {
 			return true
 		}
 
@@ -2728,7 +2730,7 @@ func considerTypeConversion(from, to types.Type, path []types.Object) bool {
 		return false
 	}
 
-	if !types.ConvertibleTo(from, to) {
+	if !convertibleTo(from, to) {
 		return false
 	}
 
@@ -2777,7 +2779,7 @@ func (ci *candidateInference) typeMatches(expType, candType types.Type) bool {
 
 	// AssignableTo covers the case where the types are equal, but also handles
 	// cases like assigning a concrete type to an interface type.
-	return types.AssignableTo(candType, expType)
+	return assignableTo(candType, expType)
 }
 
 // kindMatches reports whether candType's kind matches our expected
@@ -2840,7 +2842,7 @@ func (ci *candidateInference) assigneesMatch(cand *candidate, sig *types.Signatu
 			assignee = ci.assignees[i]
 		}
 
-		if assignee == nil {
+		if assignee == nil || assignee == types.Typ[types.Invalid] {
 			continue
 		}
 
@@ -2894,7 +2896,7 @@ func (c *completer) matchingTypeName(cand *candidate) bool {
 		//
 		// Where our expected type is "[]int", and we expect a type name.
 		if c.inference.objType != nil {
-			return types.AssignableTo(candType, c.inference.objType)
+			return assignableTo(candType, c.inference.objType)
 		}
 
 		// Default to saying any type name is a match.

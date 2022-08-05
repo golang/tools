@@ -8,7 +8,9 @@ import (
 	"context"
 	"fmt"
 	"go/types"
+	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -83,17 +85,19 @@ type matcherFunc func(chunks []string) (int, float64)
 // []string{"myType.field"} or []string{"myType.", "field"}.
 //
 // See the comment for symbolCollector for more information.
-type symbolizer func(name string, pkg Metadata, m matcherFunc) ([]string, float64)
+//
+// The space argument is an empty slice with spare capacity that may be used
+// to allocate the result.
+type symbolizer func(space []string, name string, pkg Metadata, m matcherFunc) ([]string, float64)
 
-func fullyQualifiedSymbolMatch(name string, pkg Metadata, matcher matcherFunc) ([]string, float64) {
-	_, score := dynamicSymbolMatch(name, pkg, matcher)
-	if score > 0 {
-		return []string{pkg.PackagePath(), ".", name}, score
+func fullyQualifiedSymbolMatch(space []string, name string, pkg Metadata, matcher matcherFunc) ([]string, float64) {
+	if _, score := dynamicSymbolMatch(space, name, pkg, matcher); score > 0 {
+		return append(space, pkg.PackagePath(), ".", name), score
 	}
 	return nil, 0
 }
 
-func dynamicSymbolMatch(name string, pkg Metadata, matcher matcherFunc) ([]string, float64) {
+func dynamicSymbolMatch(space []string, name string, pkg Metadata, matcher matcherFunc) ([]string, float64) {
 	var score float64
 
 	endsInPkgName := strings.HasSuffix(pkg.PackagePath(), pkg.PackageName())
@@ -101,14 +105,14 @@ func dynamicSymbolMatch(name string, pkg Metadata, matcher matcherFunc) ([]strin
 	// If the package path does not end in the package name, we need to check the
 	// package-qualified symbol as an extra pass first.
 	if !endsInPkgName {
-		pkgQualified := []string{pkg.PackageName(), ".", name}
+		pkgQualified := append(space, pkg.PackageName(), ".", name)
 		idx, score := matcher(pkgQualified)
 		nameStart := len(pkg.PackageName()) + 1
 		if score > 0 {
 			// If our match is contained entirely within the unqualified portion,
 			// just return that.
 			if idx >= nameStart {
-				return []string{name}, score
+				return append(space, name), score
 			}
 			// Lower the score for matches that include the package name.
 			return pkgQualified, score * 0.8
@@ -116,13 +120,13 @@ func dynamicSymbolMatch(name string, pkg Metadata, matcher matcherFunc) ([]strin
 	}
 
 	// Now try matching the fully qualified symbol.
-	fullyQualified := []string{pkg.PackagePath(), ".", name}
+	fullyQualified := append(space, pkg.PackagePath(), ".", name)
 	idx, score := matcher(fullyQualified)
 
 	// As above, check if we matched just the unqualified symbol name.
 	nameStart := len(pkg.PackagePath()) + 1
 	if idx >= nameStart {
-		return []string{name}, score
+		return append(space, name), score
 	}
 
 	// If our package path ends in the package name, we'll have skipped the
@@ -131,7 +135,7 @@ func dynamicSymbolMatch(name string, pkg Metadata, matcher matcherFunc) ([]strin
 	if endsInPkgName && idx >= 0 {
 		pkgStart := len(pkg.PackagePath()) - len(pkg.PackageName())
 		if idx >= pkgStart {
-			return []string{pkg.PackageName(), ".", name}, score
+			return append(space, pkg.PackageName(), ".", name), score
 		}
 	}
 
@@ -140,8 +144,8 @@ func dynamicSymbolMatch(name string, pkg Metadata, matcher matcherFunc) ([]strin
 	return fullyQualified, score * 0.6
 }
 
-func packageSymbolMatch(name string, pkg Metadata, matcher matcherFunc) ([]string, float64) {
-	qualified := []string{pkg.PackageName(), ".", name}
+func packageSymbolMatch(space []string, name string, pkg Metadata, matcher matcherFunc) ([]string, float64) {
+	qualified := append(space, pkg.PackageName(), ".", name)
 	if _, s := matcher(qualified); s > 0 {
 		return qualified, s
 	}
@@ -303,11 +307,12 @@ func collectSymbols(ctx context.Context, views []View, matcherType SymbolMatcher
 		roots = append(roots, strings.TrimRight(string(v.Folder()), "/"))
 
 		filters := v.Options().DirectoryFilters
+		filterer := NewFilterer(filters)
 		folder := filepath.ToSlash(v.Folder().Filename())
 		for uri, syms := range snapshot.Symbols(ctx) {
 			norm := filepath.ToSlash(uri.Filename())
 			nm := strings.TrimPrefix(norm, folder)
-			if FiltersDisallow(nm, filters) {
+			if filterer.Disallow(nm) {
 				continue
 			}
 			// Only scan each file once.
@@ -356,26 +361,67 @@ func collectSymbols(ctx context.Context, views []View, matcherType SymbolMatcher
 	return unified.results(), nil
 }
 
-// FilterDisallow is code from the body of cache.pathExcludedByFilter in cache/view.go
-// Exporting and using that function would cause an import cycle.
-// Moving it here and exporting it would leave behind view_test.go.
-// (This code is exported and used in the body of cache.pathExcludedByFilter)
-func FiltersDisallow(path string, filters []string) bool {
+type Filterer struct {
+	// Whether a filter is excluded depends on the operator (first char of the raw filter).
+	// Slices filters and excluded then should have the same length.
+	filters  []*regexp.Regexp
+	excluded []bool
+}
+
+// NewFilterer computes regular expression form of all raw filters
+func NewFilterer(rawFilters []string) *Filterer {
+	var f Filterer
+	for _, filter := range rawFilters {
+		filter = path.Clean(filepath.ToSlash(filter))
+		op, prefix := filter[0], filter[1:]
+		// convertFilterToRegexp adds "/" at the end of prefix to handle cases where a filter is a prefix of another filter.
+		// For example, it prevents [+foobar, -foo] from excluding "foobar".
+		f.filters = append(f.filters, convertFilterToRegexp(filepath.ToSlash(prefix)))
+		f.excluded = append(f.excluded, op == '-')
+	}
+
+	return &f
+}
+
+// Disallow return true if the path is excluded from the filterer's filters.
+func (f *Filterer) Disallow(path string) bool {
 	path = strings.TrimPrefix(path, "/")
 	var excluded bool
-	for _, filter := range filters {
-		op, prefix := filter[0], filter[1:]
-		// Non-empty prefixes have to be precise directory matches.
-		if prefix != "" {
-			prefix = prefix + "/"
-			path = path + "/"
+
+	for i, filter := range f.filters {
+		path := path
+		if !strings.HasSuffix(path, "/") {
+			path += "/"
 		}
-		if !strings.HasPrefix(path, prefix) {
+		if !filter.MatchString(path) {
 			continue
 		}
-		excluded = op == '-'
+		excluded = f.excluded[i]
 	}
+
 	return excluded
+}
+
+// convertFilterToRegexp replaces glob-like operator substrings in a string file path to their equivalent regex forms.
+// Supporting glob-like operators:
+//   - **: match zero or more complete path segments
+func convertFilterToRegexp(filter string) *regexp.Regexp {
+	if filter == "" {
+		return regexp.MustCompile(".*")
+	}
+	var ret strings.Builder
+	ret.WriteString("^")
+	segs := strings.Split(filter, "/")
+	for _, seg := range segs {
+		if seg == "**" {
+			ret.WriteString(".*")
+		} else {
+			ret.WriteString(regexp.QuoteMeta(seg))
+		}
+		ret.WriteString("/")
+	}
+
+	return regexp.MustCompile(ret.String())
 }
 
 // symbolFile holds symbol information for a single file.
@@ -387,8 +433,9 @@ type symbolFile struct {
 
 // matchFile scans a symbol file and adds matching symbols to the store.
 func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, roots []string, i symbolFile) {
+	space := make([]string, 0, 3)
 	for _, sym := range i.syms {
-		symbolParts, score := symbolizer(sym.Name, i.md, matcher)
+		symbolParts, score := symbolizer(space, sym.Name, i.md, matcher)
 
 		// Check if the score is too low before applying any downranking.
 		if store.tooLow(score) {

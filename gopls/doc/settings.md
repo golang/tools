@@ -215,6 +215,22 @@ semantic tokens to the client.
 
 Default: `false`.
 
+#### **noSemanticString** *bool*
+
+**This setting is experimental and may be deleted.**
+
+noSemanticString turns off the sending of the semantic token 'string'
+
+Default: `false`.
+
+#### **noSemanticNumber** *bool*
+
+**This setting is experimental and may be deleted.**
+
+noSemanticNumber  turns off the sending of the semantic token 'number'
+
+Default: `false`.
+
 #### Completion
 
 ##### **usePlaceholders** *bool*
@@ -363,6 +379,9 @@ It might be one of:
 
 If company chooses to use its own `godoc.org`, its address can be used as well.
 
+Modules matching the GOPRIVATE environment variable will not have
+documentation links in hover.
+
 Default: `"pkg.go.dev"`.
 
 ##### **linksInHover** *bool*
@@ -452,6 +471,16 @@ Default: `false`.
 
 <!-- END User: DO NOT MANUALLY EDIT THIS SECTION -->
 
+#### **newDiff** *string*
+
+newDiff enables the new diff implementation. If this is "both",
+for now both diffs will be run and statistics will be generateted in
+a file in $TMPDIR. This is a risky setting; help in trying it
+is appreciated. If it is "old" the old implementation is used,
+and if it is "new", just the new implementation is used.
+
+Default: 'old'.
+
 ## Code Lenses
 
 These are the code lenses that `gopls` currently supports. They can be enabled
@@ -474,6 +503,11 @@ Runs `go generate` for a given directory.
 Identifier: `regenerate_cgo`
 
 Regenerates cgo definitions.
+### **Run vulncheck (experimental)**
+
+Identifier: `run_vulncheck_exp`
+
+Run vulnerability check (`govulncheck`).
 ### **Run test(s) (legacy)**
 
 Identifier: `test`

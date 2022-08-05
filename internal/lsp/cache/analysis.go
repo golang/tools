@@ -10,7 +10,6 @@ import (
 	"go/ast"
 	"go/types"
 	"reflect"
-	"sort"
 	"sync"
 
 	"golang.org/x/sync/errgroup"
@@ -24,6 +23,11 @@ import (
 )
 
 func (s *snapshot) Analyze(ctx context.Context, id string, analyzers []*source.Analyzer) ([]*source.Diagnostic, error) {
+	// TODO(adonovan): merge these two loops. There's no need to
+	// construct all the root action handles before beginning
+	// analysis. Operations should be concurrent (though that first
+	// requires buildPackageHandle not to be inefficient when
+	// called in parallel.)
 	var roots []*actionHandle
 	for _, a := range analyzers {
 		if !a.IsEnabled(s.view) {
@@ -54,6 +58,11 @@ func (s *snapshot) Analyze(ctx context.Context, id string, analyzers []*source.A
 	return results, nil
 }
 
+type actionKey struct {
+	pkg      packageKey
+	analyzer *analysis.Analyzer
+}
+
 type actionHandleKey source.Hash
 
 // An action represents one unit of analysis work: the application of
@@ -61,7 +70,7 @@ type actionHandleKey source.Hash
 // package (as different analyzers are applied, either in sequence or
 // parallel), and across packages (as dependencies are analyzed).
 type actionHandle struct {
-	handle *memoize.Handle
+	promise *memoize.Promise
 
 	analyzer *analysis.Analyzer
 	pkg      *pkg
@@ -86,27 +95,41 @@ type packageFactKey struct {
 }
 
 func (s *snapshot) actionHandle(ctx context.Context, id PackageID, a *analysis.Analyzer) (*actionHandle, error) {
-	ph, err := s.buildPackageHandle(ctx, id, source.ParseFull)
-	if err != nil {
-		return nil, err
-	}
-	act := s.getActionHandle(id, ph.mode, a)
-	if act != nil {
-		return act, nil
-	}
-	if len(ph.key) == 0 {
-		return nil, fmt.Errorf("actionHandle: no key for package %s", id)
-	}
-	pkg, err := ph.check(ctx, s)
-	if err != nil {
-		return nil, err
-	}
-	act = &actionHandle{
+	const mode = source.ParseFull
+	key := actionKey{
+		pkg:      packageKey{id: id, mode: mode},
 		analyzer: a,
-		pkg:      pkg,
 	}
+
+	s.mu.Lock()
+	entry, hit := s.actions.Get(key)
+	s.mu.Unlock()
+
+	if hit {
+		return entry.(*actionHandle), nil
+	}
+
+	// TODO(adonovan): opt: this block of code sequentially loads a package
+	// (and all its dependencies), then sequentially creates action handles
+	// for the direct dependencies (whose packages have by then been loaded
+	// as a consequence of ph.check) which does a sequential recursion
+	// down the action graph. Only once all that work is complete do we
+	// put a handle in the cache. As with buildPackageHandle, this does
+	// not exploit the natural parallelism in the problem, and the naive
+	// use of concurrency would lead to an exponential amount of duplicated
+	// work. We should instead use an atomically updated future cache
+	// and a parallel graph traversal.
+	ph, err := s.buildPackageHandle(ctx, id, mode)
+	if err != nil {
+		return nil, err
+	}
+	pkg, err := ph.await(ctx, s)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add a dependency on each required analyzer.
 	var deps []*actionHandle
-	// Add a dependency on each required analyzers.
 	for _, req := range a.Requires {
 		reqActionHandle, err := s.actionHandle(ctx, id, req)
 		if err != nil {
@@ -122,13 +145,8 @@ func (s *snapshot) actionHandle(ctx context.Context, id PackageID, a *analysis.A
 		// An analysis that consumes/produces facts
 		// must run on the package's dependencies too.
 		if len(a.FactTypes) > 0 {
-			importIDs := make([]string, 0, len(ph.m.Deps))
 			for _, importID := range ph.m.Deps {
-				importIDs = append(importIDs, string(importID))
-			}
-			sort.Strings(importIDs) // for determinism
-			for _, importID := range importIDs {
-				depActionHandle, err := s.actionHandle(ctx, PackageID(importID), a)
+				depActionHandle, err := s.actionHandle(ctx, importID, a)
 				if err != nil {
 					return nil, err
 				}
@@ -137,7 +155,7 @@ func (s *snapshot) actionHandle(ctx context.Context, id PackageID, a *analysis.A
 		}
 	}
 
-	h := s.generation.Bind(buildActionKey(a, ph), func(ctx context.Context, arg memoize.Arg) interface{} {
+	promise, release := s.store.Promise(buildActionKey(a, ph), func(ctx context.Context, arg interface{}) interface{} {
 		snapshot := arg.(*snapshot)
 		// Analyze dependencies first.
 		results, err := execAll(ctx, snapshot, deps)
@@ -147,15 +165,30 @@ func (s *snapshot) actionHandle(ctx context.Context, id PackageID, a *analysis.A
 			}
 		}
 		return runAnalysis(ctx, snapshot, a, pkg, results)
-	}, nil)
-	act.handle = h
+	})
 
-	act = s.addActionHandle(act)
-	return act, nil
+	ah := &actionHandle{
+		analyzer: a,
+		pkg:      pkg,
+		promise:  promise,
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Check cache again in case another thread got there first.
+	if result, ok := s.actions.Get(key); ok {
+		release()
+		return result.(*actionHandle), nil
+	}
+
+	s.actions.Set(key, ah, func(_, _ interface{}) { release() })
+
+	return ah, nil
 }
 
 func (act *actionHandle) analyze(ctx context.Context, snapshot *snapshot) ([]*source.Diagnostic, interface{}, error) {
-	d, err := act.handle.Get(ctx, snapshot.generation, snapshot)
+	d, err := snapshot.awaitPromise(ctx, act.promise)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -185,7 +218,7 @@ func execAll(ctx context.Context, snapshot *snapshot, actions []*actionHandle) (
 	for _, act := range actions {
 		act := act
 		g.Go(func() error {
-			v, err := act.handle.Get(ctx, snapshot.generation, snapshot)
+			v, err := snapshot.awaitPromise(ctx, act.promise)
 			if err != nil {
 				return err
 			}

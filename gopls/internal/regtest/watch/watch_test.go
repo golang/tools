@@ -139,7 +139,7 @@ func _() {
 		})
 		env.Await(
 			EmptyDiagnostics("a/a.go"),
-			NoDiagnostics("b/b.go"),
+			EmptyOrNoDiagnostics("b/b.go"),
 		)
 	})
 }
@@ -199,14 +199,12 @@ func _() {
 }
 `
 	Run(t, missing, func(t *testing.T, env *Env) {
-		t.Skip("the initial workspace load fails and never retries")
-
 		env.Await(
 			env.DiagnosticAtRegexp("a/a.go", "\"mod.com/c\""),
 		)
 		env.WriteWorkspaceFile("c/c.go", `package c; func C() {};`)
 		env.Await(
-			EmptyDiagnostics("c/c.go"),
+			EmptyDiagnostics("a/a.go"),
 		)
 	})
 }
@@ -343,12 +341,12 @@ func _() {
 			env.Await(
 				OnceMet(
 					env.DoneWithChangeWatchedFiles(),
-					NoDiagnostics("a/a.go"),
+					EmptyOrNoDiagnostics("a/a.go"),
 				),
 			)
 			env.WriteWorkspaceFile("b/b.go", newMethod)
 			env.Await(
-				NoDiagnostics("a/a.go"),
+				EmptyOrNoDiagnostics("a/a.go"),
 			)
 		})
 	})
@@ -362,9 +360,9 @@ func _() {
 			env.Await(
 				OnceMet(
 					env.DoneWithChangeWatchedFiles(),
-					NoDiagnostics("a/a.go"),
+					EmptyOrNoDiagnostics("a/a.go"),
 				),
-				NoDiagnostics("b/b.go"),
+				EmptyOrNoDiagnostics("b/b.go"),
 			)
 		})
 	})
@@ -389,9 +387,9 @@ func _() {
 package a
 `
 	t.Run("close then delete", func(t *testing.T) {
-		WithOptions(EditorConfig{
-			VerboseOutput: true,
-		}).Run(t, pkg, func(t *testing.T, env *Env) {
+		WithOptions(
+			Settings{"verboseOutput": true},
+		).Run(t, pkg, func(t *testing.T, env *Env) {
 			env.OpenFile("a/a.go")
 			env.OpenFile("a/a_unneeded.go")
 			env.Await(
@@ -424,7 +422,7 @@ package a
 
 	t.Run("delete then close", func(t *testing.T) {
 		WithOptions(
-			EditorConfig{VerboseOutput: true},
+			Settings{"verboseOutput": true},
 		).Run(t, pkg, func(t *testing.T, env *Env) {
 			env.OpenFile("a/a.go")
 			env.OpenFile("a/a_unneeded.go")
@@ -620,11 +618,7 @@ func main() {
 `
 	WithOptions(
 		InGOPATH(),
-		EditorConfig{
-			Env: map[string]string{
-				"GO111MODULE": "auto",
-			},
-		},
+		EnvVars{"GO111MODULE": "auto"},
 		Modes(Experimental), // module is in a subdirectory
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("foo/main.go")
@@ -663,11 +657,7 @@ func main() {
 `
 	WithOptions(
 		InGOPATH(),
-		EditorConfig{
-			Env: map[string]string{
-				"GO111MODULE": "auto",
-			},
-		},
+		EnvVars{"GO111MODULE": "auto"},
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("foo/main.go")
 		env.RemoveWorkspaceFile("foo/go.mod")
@@ -725,11 +715,11 @@ func TestAll(t *testing.T) {
 		env.Await(
 			OnceMet(
 				env.DoneWithChangeWatchedFiles(),
-				NoDiagnostics("a/a.go"),
+				EmptyOrNoDiagnostics("a/a.go"),
 			),
 			OnceMet(
 				env.DoneWithChangeWatchedFiles(),
-				NoDiagnostics("a/a_test.go"),
+				EmptyOrNoDiagnostics("a/a_test.go"),
 			),
 		)
 		// Now, add a new file to the test variant and use its symbol in the
@@ -757,11 +747,11 @@ func TestSomething(t *testing.T) {}
 		env.Await(
 			OnceMet(
 				env.DoneWithChangeWatchedFiles(),
-				NoDiagnostics("a/a_test.go"),
+				EmptyOrNoDiagnostics("a/a_test.go"),
 			),
 			OnceMet(
 				env.DoneWithChangeWatchedFiles(),
-				NoDiagnostics("a/a2_test.go"),
+				EmptyOrNoDiagnostics("a/a2_test.go"),
 			),
 		)
 	})

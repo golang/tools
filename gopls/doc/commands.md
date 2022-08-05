@@ -274,30 +274,10 @@ Args:
 
 ```
 {
-	// Dir is the directory from which vulncheck will run from.
-	"Dir": string,
+	// Any document in the directory from which govulncheck will run.
+	"URI": string,
 	// Package pattern. E.g. "", ".", "./...".
 	"Pattern": string,
-}
-```
-
-Result:
-
-```
-{
-	"Vuln": []{
-		"ID": string,
-		"Details": string,
-		"Aliases": []string,
-		"Symbol": string,
-		"PkgPath": string,
-		"ModPath": string,
-		"URL": string,
-		"CurrentVersion": string,
-		"FixedVersion": string,
-		"CallStacks": [][]golang.org/x/tools/internal/lsp/command.StackEntry,
-		"CallStackSummaries": []string,
-	},
 }
 ```
 

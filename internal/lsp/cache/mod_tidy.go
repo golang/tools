@@ -8,10 +8,10 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"go/token"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -27,146 +27,120 @@ import (
 	"golang.org/x/tools/internal/span"
 )
 
-type modTidyKey struct {
-	sessionID       string
-	env             source.Hash
-	gomod           source.FileIdentity
-	imports         source.Hash
-	unsavedOverlays source.Hash
-	view            string
-}
-
-type modTidyHandle struct {
-	handle *memoize.Handle
-}
-
-type modTidyData struct {
-	tidied *source.TidiedModule
-	err    error
-}
-
-func (mth *modTidyHandle) tidy(ctx context.Context, snapshot *snapshot) (*source.TidiedModule, error) {
-	v, err := mth.handle.Get(ctx, snapshot.generation, snapshot)
-	if err != nil {
-		return nil, err
-	}
-	data := v.(*modTidyData)
-	return data.tidied, data.err
-}
-
+// ModTidy returns the go.mod file that would be obtained by running
+// "go mod tidy". Concurrent requests are combined into a single command.
 func (s *snapshot) ModTidy(ctx context.Context, pm *source.ParsedModule) (*source.TidiedModule, error) {
+	uri := pm.URI
 	if pm.File == nil {
-		return nil, fmt.Errorf("cannot tidy unparseable go.mod file: %v", pm.URI)
-	}
-	if handle := s.getModTidyHandle(pm.URI); handle != nil {
-		return handle.tidy(ctx, s)
-	}
-	fh, err := s.GetFile(ctx, pm.URI)
-	if err != nil {
-		return nil, err
-	}
-	// If the file handle is an overlay, it may not be written to disk.
-	// The go.mod file has to be on disk for `go mod tidy` to work.
-	if _, ok := fh.(*overlay); ok {
-		if info, _ := os.Stat(fh.URI().Filename()); info == nil {
-			return nil, source.ErrNoModOnDisk
-		}
-	}
-	if criticalErr := s.GetCriticalError(ctx); criticalErr != nil {
-		return &source.TidiedModule{
-			Diagnostics: criticalErr.DiagList,
-		}, nil
-	}
-	workspacePkgs, err := s.workspacePackageHandles(ctx)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot tidy unparseable go.mod file: %v", uri)
 	}
 
 	s.mu.Lock()
-	overlayHash := hashUnsavedOverlays(s.files)
+	entry, hit := s.modTidyHandles.Get(uri)
 	s.mu.Unlock()
 
-	key := modTidyKey{
-		sessionID:       s.view.session.id,
-		view:            s.view.folder.Filename(),
-		imports:         s.hashImports(ctx, workspacePkgs),
-		unsavedOverlays: overlayHash,
-		gomod:           fh.FileIdentity(),
-		env:             hashEnv(s),
+	type modTidyResult struct {
+		tidied *source.TidiedModule
+		err    error
 	}
-	h := s.generation.Bind(key, func(ctx context.Context, arg memoize.Arg) interface{} {
-		ctx, done := event.Start(ctx, "cache.ModTidyHandle", tag.URI.Of(fh.URI()))
-		defer done()
 
-		snapshot := arg.(*snapshot)
-		inv := &gocommand.Invocation{
-			Verb:       "mod",
-			Args:       []string{"tidy"},
-			WorkingDir: filepath.Dir(fh.URI().Filename()),
-		}
-		tmpURI, inv, cleanup, err := snapshot.goCommandInvocation(ctx, source.WriteTemporaryModFile, inv)
+	// Cache miss?
+	if !hit {
+		// If the file handle is an overlay, it may not be written to disk.
+		// The go.mod file has to be on disk for `go mod tidy` to work.
+		// TODO(rfindley): is this still true with Go 1.16 overlay support?
+		fh, err := s.GetFile(ctx, pm.URI)
 		if err != nil {
-			return &modTidyData{err: err}
+			return nil, err
 		}
-		// Keep the temporary go.mod file around long enough to parse it.
-		defer cleanup()
-
-		if _, err := s.view.session.gocmdRunner.Run(ctx, *inv); err != nil {
-			return &modTidyData{err: err}
-		}
-		// Go directly to disk to get the temporary mod file, since it is
-		// always on disk.
-		tempContents, err := ioutil.ReadFile(tmpURI.Filename())
-		if err != nil {
-			return &modTidyData{err: err}
-		}
-		ideal, err := modfile.Parse(tmpURI.Filename(), tempContents, nil)
-		if err != nil {
-			// We do not need to worry about the temporary file's parse errors
-			// since it has been "tidied".
-			return &modTidyData{err: err}
-		}
-		// Compare the original and tidied go.mod files to compute errors and
-		// suggested fixes.
-		diagnostics, err := modTidyDiagnostics(ctx, snapshot, pm, ideal, workspacePkgs)
-		if err != nil {
-			return &modTidyData{err: err}
-		}
-		return &modTidyData{
-			tidied: &source.TidiedModule{
-				Diagnostics:   diagnostics,
-				TidiedContent: tempContents,
-			},
-		}
-	}, nil)
-
-	mth := &modTidyHandle{handle: h}
-	s.mu.Lock()
-	s.modTidyHandles[fh.URI()] = mth
-	s.mu.Unlock()
-
-	return mth.tidy(ctx, s)
-}
-
-func (s *snapshot) hashImports(ctx context.Context, wsPackages []*packageHandle) source.Hash {
-	seen := map[string]struct{}{}
-	var imports []string
-	for _, ph := range wsPackages {
-		for _, imp := range ph.imports(ctx, s) {
-			if _, ok := seen[imp]; !ok {
-				imports = append(imports, imp)
-				seen[imp] = struct{}{}
+		if _, ok := fh.(*overlay); ok {
+			if info, _ := os.Stat(uri.Filename()); info == nil {
+				return nil, source.ErrNoModOnDisk
 			}
 		}
+
+		if criticalErr := s.GetCriticalError(ctx); criticalErr != nil {
+			return &source.TidiedModule{
+				Diagnostics: criticalErr.Diagnostics,
+			}, nil
+		}
+
+		if err := s.awaitLoaded(ctx); err != nil {
+			return nil, err
+		}
+
+		handle := memoize.NewPromise("modTidy", func(ctx context.Context, arg interface{}) interface{} {
+			tidied, err := modTidyImpl(ctx, arg.(*snapshot), uri.Filename(), pm)
+			return modTidyResult{tidied, err}
+		})
+
+		entry = handle
+		s.mu.Lock()
+		s.modTidyHandles.Set(uri, entry, nil)
+		s.mu.Unlock()
 	}
-	sort.Strings(imports)
-	return source.Hashf("%s", imports)
+
+	// Await result.
+	v, err := s.awaitPromise(ctx, entry.(*memoize.Promise))
+	if err != nil {
+		return nil, err
+	}
+	res := v.(modTidyResult)
+	return res.tidied, res.err
+}
+
+// modTidyImpl runs "go mod tidy" on a go.mod file.
+func modTidyImpl(ctx context.Context, snapshot *snapshot, filename string, pm *source.ParsedModule) (*source.TidiedModule, error) {
+	ctx, done := event.Start(ctx, "cache.ModTidy", tag.URI.Of(filename))
+	defer done()
+
+	inv := &gocommand.Invocation{
+		Verb:       "mod",
+		Args:       []string{"tidy"},
+		WorkingDir: filepath.Dir(filename),
+	}
+	// TODO(adonovan): ensure that unsaved overlays are passed through to 'go'.
+	tmpURI, inv, cleanup, err := snapshot.goCommandInvocation(ctx, source.WriteTemporaryModFile, inv)
+	if err != nil {
+		return nil, err
+	}
+	// Keep the temporary go.mod file around long enough to parse it.
+	defer cleanup()
+
+	if _, err := snapshot.view.session.gocmdRunner.Run(ctx, *inv); err != nil {
+		return nil, err
+	}
+
+	// Go directly to disk to get the temporary mod file,
+	// since it is always on disk.
+	tempContents, err := ioutil.ReadFile(tmpURI.Filename())
+	if err != nil {
+		return nil, err
+	}
+	ideal, err := modfile.Parse(tmpURI.Filename(), tempContents, nil)
+	if err != nil {
+		// We do not need to worry about the temporary file's parse errors
+		// since it has been "tidied".
+		return nil, err
+	}
+
+	// Compare the original and tidied go.mod files to compute errors and
+	// suggested fixes.
+	diagnostics, err := modTidyDiagnostics(ctx, snapshot, pm, ideal)
+	if err != nil {
+		return nil, err
+	}
+
+	return &source.TidiedModule{
+		Diagnostics:   diagnostics,
+		TidiedContent: tempContents,
+	}, nil
 }
 
 // modTidyDiagnostics computes the differences between the original and tidied
 // go.mod files to produce diagnostic and suggested fixes. Some diagnostics
 // may appear on the Go files that import packages from missing modules.
-func modTidyDiagnostics(ctx context.Context, snapshot source.Snapshot, pm *source.ParsedModule, ideal *modfile.File, workspacePkgs []*packageHandle) (diagnostics []*source.Diagnostic, err error) {
+func modTidyDiagnostics(ctx context.Context, snapshot *snapshot, pm *source.ParsedModule, ideal *modfile.File) (diagnostics []*source.Diagnostic, err error) {
 	// First, determine which modules are unused and which are missing from the
 	// original go.mod file.
 	var (
@@ -215,15 +189,25 @@ func modTidyDiagnostics(ctx context.Context, snapshot source.Snapshot, pm *sourc
 	}
 	// Add diagnostics for missing modules anywhere they are imported in the
 	// workspace.
-	for _, ph := range workspacePkgs {
+	// TODO(adonovan): opt: opportunities for parallelism abound.
+	for _, id := range snapshot.workspacePackageIDs() {
+		m := snapshot.getMetadata(id)
+		if m == nil {
+			return nil, fmt.Errorf("no metadata for %s", id)
+		}
+
+		// Read both lists of files of this package, in parallel.
+		goFiles, compiledGoFiles, err := readGoFiles(ctx, snapshot, m.Metadata)
+		if err != nil {
+			return nil, err
+		}
+
 		missingImports := map[string]*modfile.Require{}
 
 		// If -mod=readonly is not set we may have successfully imported
 		// packages from missing modules. Otherwise they'll be in
 		// MissingDependencies. Combine both.
-		importedPkgs := ph.imports(ctx, snapshot)
-
-		for _, imp := range importedPkgs {
+		for imp := range parseImports(ctx, snapshot, goFiles) {
 			if req, ok := missing[imp]; ok {
 				missingImports[imp] = req
 				break
@@ -252,8 +236,8 @@ func modTidyDiagnostics(ctx context.Context, snapshot source.Snapshot, pm *sourc
 		if len(missingImports) == 0 {
 			continue
 		}
-		for _, pgh := range ph.compiledGoFiles {
-			pgf, err := snapshot.ParseGo(ctx, pgh.file, source.ParseHeader)
+		for _, goFile := range compiledGoFiles {
+			pgf, err := snapshot.ParseGo(ctx, goFile, source.ParseHeader)
 			if err != nil {
 				continue
 			}
@@ -282,7 +266,7 @@ func modTidyDiagnostics(ctx context.Context, snapshot source.Snapshot, pm *sourc
 				if !ok {
 					return nil, fmt.Errorf("no missing module fix for %q (%q)", importPath, req.Mod.Path)
 				}
-				srcErr, err := missingModuleForImport(snapshot, m, imp, req, fixes)
+				srcErr, err := missingModuleForImport(pgf.Tok, m, imp, req, fixes)
 				if err != nil {
 					return nil, err
 				}
@@ -445,11 +429,11 @@ func switchDirectness(req *modfile.Require, m *protocol.ColumnMapper, computeEdi
 
 // missingModuleForImport creates an error for a given import path that comes
 // from a missing module.
-func missingModuleForImport(snapshot source.Snapshot, m *protocol.ColumnMapper, imp *ast.ImportSpec, req *modfile.Require, fixes []source.SuggestedFix) (*source.Diagnostic, error) {
+func missingModuleForImport(file *token.File, m *protocol.ColumnMapper, imp *ast.ImportSpec, req *modfile.Require, fixes []source.SuggestedFix) (*source.Diagnostic, error) {
 	if req.Syntax == nil {
 		return nil, fmt.Errorf("no syntax for %v", req)
 	}
-	spn, err := span.NewRange(snapshot.FileSet(), imp.Path.Pos(), imp.Path.End()).Span()
+	spn, err := span.NewRange(file, imp.Path.Pos(), imp.Path.End()).Span()
 	if err != nil {
 		return nil, err
 	}
@@ -492,4 +476,28 @@ func spanFromPositions(m *protocol.ColumnMapper, s, e modfile.Position) (span.Sp
 		return span.Span{}, err
 	}
 	return span.New(m.URI, start, end), nil
+}
+
+// parseImports parses the headers of the specified files and returns
+// the set of strings that appear in import declarations within
+// GoFiles. Errors are ignored.
+//
+// (We can't simply use ph.m.Metadata.Deps because it contains
+// PackageIDs--not import paths--and is based on CompiledGoFiles,
+// after cgo processing.)
+func parseImports(ctx context.Context, s *snapshot, files []source.FileHandle) map[string]bool {
+	s.mu.Lock() // peekOrParse requires a locked snapshot (!)
+	defer s.mu.Unlock()
+	seen := make(map[string]bool)
+	for _, file := range files {
+		f, err := peekOrParse(ctx, s, file, source.ParseHeader)
+		if err != nil {
+			continue
+		}
+		for _, spec := range f.File.Imports {
+			path, _ := strconv.Unquote(spec.Path.Value)
+			seen[path] = true
+		}
+	}
+	return seen
 }

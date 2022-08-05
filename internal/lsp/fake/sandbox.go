@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/testenv"
@@ -68,6 +70,10 @@ type SandboxConfig struct {
 // If rootDir is non-empty, it will be used as the root of temporary
 // directories created for the sandbox. Otherwise, a new temporary directory
 // will be used as root.
+//
+// TODO(rfindley): the sandbox abstraction doesn't seem to carry its weight.
+// Sandboxes should be composed out of their building-blocks, rather than via a
+// monolithic configuration.
 func NewSandbox(config *SandboxConfig) (_ *Sandbox, err error) {
 	if config == nil {
 		config = new(SandboxConfig)
@@ -157,6 +163,9 @@ func UnpackTxt(txt string) map[string][]byte {
 	dataMap := make(map[string][]byte)
 	archive := txtar.Parse([]byte(txt))
 	for _, f := range archive.Files {
+		if _, ok := dataMap[f.Name]; ok {
+			panic(fmt.Sprintf("found file %q twice", f.Name))
+		}
 		dataMap[f.Name] = f.Data
 	}
 	return dataMap
@@ -266,9 +275,36 @@ func (sb *Sandbox) Close() error {
 	if sb.gopath != "" {
 		goCleanErr = sb.RunGoCommand(context.Background(), "", "clean", []string{"-modcache"}, false)
 	}
-	err := os.RemoveAll(sb.rootdir)
+	err := removeAll(sb.rootdir)
 	if err != nil || goCleanErr != nil {
 		return fmt.Errorf("error(s) cleaning sandbox: cleaning modcache: %v; removing files: %v", goCleanErr, err)
 	}
 	return nil
+}
+
+// removeAll is copied from GOROOT/src/testing/testing.go
+//
+// removeAll is like os.RemoveAll, but retries Windows "Access is denied."
+// errors up to an arbitrary timeout.
+//
+// See https://go.dev/issue/50051 for additional context.
+func removeAll(path string) error {
+	const arbitraryTimeout = 2 * time.Second
+	var (
+		start     time.Time
+		nextSleep = 1 * time.Millisecond
+	)
+	for {
+		err := os.RemoveAll(path)
+		if !isWindowsRetryable(err) {
+			return err
+		}
+		if start.IsZero() {
+			start = time.Now()
+		} else if d := time.Since(start) + nextSleep; d >= arbitraryTimeout {
+			return err
+		}
+		time.Sleep(nextSleep)
+		nextSleep += time.Duration(rand.Int63n(int64(nextSleep)))
+	}
 }

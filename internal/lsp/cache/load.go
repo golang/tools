@@ -7,8 +7,6 @@ package cache
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -24,7 +22,6 @@ import (
 	"golang.org/x/tools/internal/lsp/debug/tag"
 	"golang.org/x/tools/internal/lsp/protocol"
 	"golang.org/x/tools/internal/lsp/source"
-	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/span"
 )
@@ -43,22 +40,10 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...interf
 	var query []string
 	var containsDir bool // for logging
 
-	// Unless the context was canceled, set "shouldLoad" to false for all
-	// of the metadata we attempted to load.
-	defer func() {
-		if errors.Is(err, context.Canceled) {
-			return
-		}
-		s.clearShouldLoad(scopes...)
-	}()
-
 	// Keep track of module query -> module path so that we can later correlate query
 	// errors with errors.
 	moduleQueries := make(map[string]string)
 	for _, scope := range scopes {
-		if !s.shouldLoad(scope) {
-			continue
-		}
 		switch scope := scope.(type) {
 		case PackagePath:
 			if source.IsCommandLineArguments(string(scope)) {
@@ -156,7 +141,8 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...interf
 	}
 
 	moduleErrs := make(map[string][]packages.Error) // module path -> errors
-	updates := make(map[PackageID]*KnownMetadata)
+	filterer := buildFilterer(s.view.rootURI.Filename(), s.view.gomodcache, s.view.Options())
+	newMetadata := make(map[PackageID]*KnownMetadata)
 	for _, pkg := range pkgs {
 		// The Go command returns synthetic list results for module queries that
 		// encountered module errors.
@@ -198,39 +184,56 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...interf
 		}
 		// Skip filtered packages. They may be added anyway if they're
 		// dependencies of non-filtered packages.
-		if s.view.allFilesExcluded(pkg) {
+		//
+		// TODO(rfindley): why exclude metadata arbitrarily here? It should be safe
+		// to capture all metadata.
+		if s.view.allFilesExcluded(pkg, filterer) {
 			continue
 		}
-		// TODO: once metadata is immutable, we shouldn't have to lock here.
-		s.mu.Lock()
-		err := computeMetadataUpdates(ctx, s.meta, PackagePath(pkg.PkgPath), pkg, cfg, query, updates, nil)
-		s.mu.Unlock()
-		if err != nil {
+		if err := buildMetadata(ctx, PackagePath(pkg.PkgPath), pkg, cfg, query, newMetadata, nil); err != nil {
 			return err
 		}
 	}
 
-	var loadedIDs []PackageID
-	for id := range updates {
-		loadedIDs = append(loadedIDs, id)
+	s.mu.Lock()
+
+	// Only update metadata where we don't already have valid metadata.
+	//
+	// We want to preserve an invariant that s.packages.Get(id).m.Metadata
+	// matches s.meta.metadata[id].Metadata. By avoiding overwriting valid
+	// metadata, we minimize the amount of invalidation required to preserve this
+	// invariant.
+	//
+	// TODO(rfindley): perform a sanity check that metadata matches here. If not,
+	// we have an invalidation bug elsewhere.
+	updates := make(map[PackageID]*KnownMetadata)
+	var updatedIDs []PackageID
+	for _, m := range newMetadata {
+		if existing := s.meta.metadata[m.ID]; existing == nil || !existing.Valid {
+			updates[m.ID] = m
+			updatedIDs = append(updatedIDs, m.ID)
+		}
 	}
 
 	event.Log(ctx, fmt.Sprintf("%s: updating metadata for %d packages", eventName, len(updates)))
 
-	s.mu.Lock()
+	// Invalidate the reverse transitive closure of packages that have changed.
+	//
+	// Note that the original metadata is being invalidated here, so we use the
+	// original metadata graph to compute the reverse closure.
+	invalidatedPackages := s.meta.reverseTransitiveClosure(true, updatedIDs...)
 
-	// invalidate the reverse transitive closure of packages that have changed.
-	invalidatedPackages := s.meta.reverseTransitiveClosure(true, loadedIDs...)
 	s.meta = s.meta.Clone(updates)
+	s.resetIsActivePackageLocked()
 
 	// Invalidate any packages we may have associated with this metadata.
 	//
 	// TODO(rfindley): this should not be necessary, as we should have already
 	// invalidated in snapshot.clone.
 	for id := range invalidatedPackages {
-		for _, mode := range []source.ParseMode{source.ParseHeader, source.ParseExported, source.ParseFull} {
+		for _, mode := range source.AllParseModes {
 			key := packageKey{mode, id}
-			delete(s.packages, key)
+			s.packages.Delete(key)
 		}
 	}
 
@@ -307,8 +310,8 @@ You can work with multiple modules by opening each one as a workspace folder.
 Improvements to this workflow will be coming soon, and you can learn more here:
 https://github.com/golang/tools/blob/master/gopls/doc/workspace.md.`
 		return &source.CriticalError{
-			MainError: fmt.Errorf(msg),
-			DiagList:  s.applyCriticalErrorToFiles(ctx, msg, openFiles),
+			MainError:   fmt.Errorf(msg),
+			Diagnostics: s.applyCriticalErrorToFiles(ctx, msg, openFiles),
 		}
 	}
 
@@ -346,7 +349,7 @@ You can learn more here: https://github.com/golang/tools/blob/master/gopls/doc/w
 				MainError: fmt.Errorf(`You are working in a nested module.
 Please open it as a separate workspace folder. Learn more:
 https://github.com/golang/tools/blob/master/gopls/doc/workspace.md.`),
-				DiagList: srcDiags,
+				Diagnostics: srcDiags,
 			}
 		}
 	}
@@ -361,7 +364,7 @@ func (s *snapshot) applyCriticalErrorToFiles(ctx context.Context, msg string, fi
 		switch s.view.FileKind(fh) {
 		case source.Go:
 			if pgf, err := s.ParseGo(ctx, fh, source.ParseHeader); err == nil {
-				pkgDecl := span.NewRange(s.FileSet(), pgf.File.Package, pgf.File.Name.End())
+				pkgDecl := span.NewRange(pgf.Tok, pgf.File.Package, pgf.File.Name.End())
 				if spn, err := pkgDecl.Span(); err == nil {
 					rng, _ = pgf.Mapper.Range(spn)
 				}
@@ -384,83 +387,59 @@ func (s *snapshot) applyCriticalErrorToFiles(ctx context.Context, msg string, fi
 	return srcDiags
 }
 
-type workspaceDirKey string
-
-type workspaceDirData struct {
-	dir string
-	err error
-}
-
-// getWorkspaceDir gets the URI for the workspace directory associated with
-// this snapshot. The workspace directory is a temp directory containing the
-// go.mod file computed from all active modules.
+// getWorkspaceDir returns the URI for the workspace directory
+// associated with this snapshot. The workspace directory is a
+// temporary directory containing the go.mod file computed from all
+// active modules.
 func (s *snapshot) getWorkspaceDir(ctx context.Context) (span.URI, error) {
 	s.mu.Lock()
-	h := s.workspaceDirHandle
+	dir, err := s.workspaceDir, s.workspaceDirErr
 	s.mu.Unlock()
-	if h != nil {
-		return getWorkspaceDir(ctx, h, s.generation)
+	if dir == "" && err == nil { // cache miss
+		dir, err = makeWorkspaceDir(ctx, s.workspace, s)
+		s.mu.Lock()
+		s.workspaceDir, s.workspaceDirErr = dir, err
+		s.mu.Unlock()
 	}
-	file, err := s.workspace.modFile(ctx, s)
+	return span.URIFromPath(dir), err
+}
+
+// makeWorkspaceDir creates a temporary directory containing a go.mod
+// and go.sum file for each module in the workspace.
+// Note: snapshot's mutex must be unlocked for it to satisfy FileSource.
+func makeWorkspaceDir(ctx context.Context, workspace *workspace, fs source.FileSource) (string, error) {
+	file, err := workspace.modFile(ctx, fs)
 	if err != nil {
 		return "", err
 	}
-	hash := sha256.New()
 	modContent, err := file.Format()
 	if err != nil {
 		return "", err
 	}
-	sumContent, err := s.workspace.sumFile(ctx, s)
+	sumContent, err := workspace.sumFile(ctx, fs)
 	if err != nil {
 		return "", err
 	}
-	hash.Write(modContent)
-	hash.Write(sumContent)
-	key := workspaceDirKey(hash.Sum(nil))
-	s.mu.Lock()
-	h = s.generation.Bind(key, func(context.Context, memoize.Arg) interface{} {
-		tmpdir, err := ioutil.TempDir("", "gopls-workspace-mod")
-		if err != nil {
-			return &workspaceDirData{err: err}
-		}
-
-		for name, content := range map[string][]byte{
-			"go.mod": modContent,
-			"go.sum": sumContent,
-		} {
-			filename := filepath.Join(tmpdir, name)
-			if err := ioutil.WriteFile(filename, content, 0644); err != nil {
-				os.RemoveAll(tmpdir)
-				return &workspaceDirData{err: err}
-			}
-		}
-
-		return &workspaceDirData{dir: tmpdir}
-	}, func(v interface{}) {
-		d := v.(*workspaceDirData)
-		if d.dir != "" {
-			if err := os.RemoveAll(d.dir); err != nil {
-				event.Error(context.Background(), "cleaning workspace dir", err)
-			}
-		}
-	})
-	s.workspaceDirHandle = h
-	s.mu.Unlock()
-	return getWorkspaceDir(ctx, h, s.generation)
-}
-
-func getWorkspaceDir(ctx context.Context, h *memoize.Handle, g *memoize.Generation) (span.URI, error) {
-	v, err := h.Get(ctx, g, nil)
+	tmpdir, err := ioutil.TempDir("", "gopls-workspace-mod")
 	if err != nil {
 		return "", err
 	}
-	return span.URIFromPath(v.(*workspaceDirData).dir), nil
+	for name, content := range map[string][]byte{
+		"go.mod": modContent,
+		"go.sum": sumContent,
+	} {
+		if err := ioutil.WriteFile(filepath.Join(tmpdir, name), content, 0644); err != nil {
+			os.RemoveAll(tmpdir) // ignore error
+			return "", err
+		}
+	}
+	return tmpdir, nil
 }
 
-// computeMetadataUpdates populates the updates map with metadata updates to
+// buildMetadata populates the updates map with metadata updates to
 // apply, based on the given pkg. It recurs through pkg.Imports to ensure that
 // metadata exists for all dependencies.
-func computeMetadataUpdates(ctx context.Context, g *metadataGraph, pkgPath PackagePath, pkg *packages.Package, cfg *packages.Config, query []string, updates map[PackageID]*KnownMetadata, path []PackageID) error {
+func buildMetadata(ctx context.Context, pkgPath PackagePath, pkg *packages.Package, cfg *packages.Config, query []string, updates map[PackageID]*KnownMetadata, path []PackageID) error {
 	id := PackageID(pkg.ID)
 	if source.IsCommandLineArguments(pkg.ID) {
 		suffix := ":" + strings.Join(query, ",")
@@ -468,21 +447,12 @@ func computeMetadataUpdates(ctx context.Context, g *metadataGraph, pkgPath Packa
 		pkgPath = PackagePath(string(pkgPath) + suffix)
 	}
 
-	// If we have valid metadata for this package, don't update. This minimizes
-	// the amount of subsequent invalidation.
-	//
-	// TODO(rfindley): perform a sanity check that metadata matches here. If not,
-	// we have an invalidation bug elsewhere.
-	if existing := g.metadata[id]; existing != nil && existing.Valid {
-		return nil
-	}
-
 	if _, ok := updates[id]; ok {
 		// If we've already seen this dependency, there may be an import cycle, or
 		// we may have reached the same package transitively via distinct paths.
 		// Check the path to confirm.
 
-		// TODO(rfindley): this doesn't look right. Any single piece of new
+		// TODO(rfindley): this doesn't look sufficient. Any single piece of new
 		// metadata could theoretically introduce import cycles in the metadata
 		// graph. What's the point of this limited check here (and is it even
 		// possible to get an import cycle in data from go/packages)? Consider
@@ -561,10 +531,11 @@ func computeMetadataUpdates(ctx context.Context, g *metadataGraph, pkgPath Packa
 			m.MissingDeps[importPkgPath] = struct{}{}
 			continue
 		}
-		if err := computeMetadataUpdates(ctx, g, importPkgPath, importPkg, cfg, query, updates, append(path, id)); err != nil {
+		if err := buildMetadata(ctx, importPkgPath, importPkg, cfg, query, updates, append(path, id)); err != nil {
 			event.Error(ctx, "error in dependency", err)
 		}
 	}
+	sort.Slice(m.Deps, func(i, j int) bool { return m.Deps[i] < m.Deps[j] }) // for determinism
 
 	return nil
 }
@@ -596,10 +567,11 @@ func containsPackageLocked(s *snapshot, m *Metadata) bool {
 			uris[uri] = struct{}{}
 		}
 
+		filterFunc := s.view.filterFunc()
 		for uri := range uris {
 			// Don't use view.contains here. go.work files may include modules
 			// outside of the workspace folder.
-			if !strings.Contains(string(uri), "/vendor/") && !s.view.filters(uri) {
+			if !strings.Contains(string(uri), "/vendor/") && !filterFunc(uri) {
 				return true
 			}
 		}
@@ -663,17 +635,13 @@ func containsFileInWorkspaceLocked(s *snapshot, m *Metadata) bool {
 func computeWorkspacePackagesLocked(s *snapshot, meta *metadataGraph) map[PackageID]PackagePath {
 	workspacePackages := make(map[PackageID]PackagePath)
 	for _, m := range meta.metadata {
-		if !containsPackageLocked(s, m.Metadata) {
+		// Don't consider invalid packages to be workspace packages. Doing so can
+		// result in type-checking and diagnosing packages that no longer exist,
+		// which can lead to memory leaks and confusing errors.
+		if !m.Valid {
 			continue
 		}
-		if m.PkgFilesChanged {
-			// If a package name has changed, it's possible that the package no
-			// longer exists. Leaving it as a workspace package can result in
-			// persistent stale diagnostics.
-			//
-			// If there are still valid files in the package, it will be reloaded.
-			//
-			// There may be more precise heuristics.
+		if !containsPackageLocked(s, m.Metadata) {
 			continue
 		}
 

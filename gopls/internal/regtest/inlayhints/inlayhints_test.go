@@ -1,7 +1,7 @@
 // Copyright 2022 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
-package inlayHint
+package inlayhint
 
 import (
 	"testing"
@@ -17,6 +17,7 @@ func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
 	Main(m, hooks.Options)
 }
+
 func TestEnablingInlayHints(t *testing.T) {
 	testenv.NeedsGo1Point(t, 14) // Test fails on 1.13.
 	const workspace = `
@@ -55,10 +56,8 @@ const (
 	for _, test := range tests {
 		t.Run(test.label, func(t *testing.T) {
 			WithOptions(
-				EditorConfig{
-					Settings: map[string]interface{}{
-						"hints": test.enabled,
-					},
+				Settings{
+					"hints": test.enabled,
 				},
 			).Run(t, workspace, func(t *testing.T, env *Env) {
 				env.OpenFile("lib.go")
