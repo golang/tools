@@ -274,7 +274,24 @@ func (s *snapshot) Templates() map[span.URI]source.VersionedFileHandle {
 }
 
 func (s *snapshot) ValidBuildConfiguration() bool {
-	return validBuildConfiguration(s.view.rootURI, &s.view.workspaceInformation, s.workspace.getActiveModFiles())
+	// Since we only really understand the `go` command, if the user has a
+	// different GOPACKAGESDRIVER, assume that their configuration is valid.
+	if s.view.hasGopackagesDriver {
+		return true
+	}
+	// Check if the user is working within a module or if we have found
+	// multiple modules in the workspace.
+	if len(s.workspace.getActiveModFiles()) > 0 {
+		return true
+	}
+	// The user may have a multiple directories in their GOPATH.
+	// Check if the workspace is within any of them.
+	for _, gp := range filepath.SplitList(s.view.gopath) {
+		if source.InDir(filepath.Join(gp, "src"), s.view.rootURI.Filename()) {
+			return true
+		}
+	}
+	return false
 }
 
 // workspaceMode describes the way in which the snapshot's workspace should
@@ -419,6 +436,12 @@ func (s *snapshot) goCommandInvocation(ctx context.Context, flags source.Invocat
 	s.view.optionsMu.Lock()
 	allowModfileModificationOption := s.view.options.AllowModfileModifications
 	allowNetworkOption := s.view.options.AllowImplicitNetworkAccess
+
+	// TODO(rfindley): this is very hard to follow, and may not even be doing the
+	// right thing: should inv.Env really trample view.options? Do we ever invoke
+	// this with a non-empty inv.Env?
+	//
+	// We should refactor to make it clearer that the correct env is being used.
 	inv.Env = append(append(append(os.Environ(), s.view.options.EnvSlice()...), inv.Env...), "GO111MODULE="+s.view.effectiveGo111Module)
 	inv.BuildFlags = append([]string{}, s.view.options.BuildFlags...)
 	s.view.optionsMu.Unlock()
@@ -862,6 +885,10 @@ func (s *snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]stru
 	// applied to every folder in the workspace.
 	patterns := map[string]struct{}{
 		fmt.Sprintf("**/*.{%s}", extensions): {},
+	}
+
+	if s.view.explicitGowork != "" {
+		patterns[s.view.explicitGowork.Filename()] = struct{}{}
 	}
 
 	// Add a pattern for each Go module in the workspace that is not within the view.
@@ -1358,6 +1385,8 @@ func (s *snapshot) GetCriticalError(ctx context.Context) *source.CriticalError {
 		// with the user's workspace layout. Workspace packages that only have the
 		// ID "command-line-arguments" are usually a symptom of a bad workspace
 		// configuration.
+		//
+		// TODO(rfindley): re-evaluate this heuristic.
 		if containsCommandLineArguments(wsPkgs) {
 			return s.workspaceLayoutError(ctx)
 		}

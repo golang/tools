@@ -16,6 +16,10 @@ import (
 // This file holds various tests for UX with respect to broken workspaces.
 //
 // TODO: consolidate other tests here.
+//
+// TODO: write more tests:
+//  - an explicit GOWORK value that doesn't exist
+//  - using modules and/or GOWORK inside of GOPATH?
 
 // Test for golang/go#53933
 func TestBrokenWorkspace_DuplicateModules(t *testing.T) {
@@ -28,8 +32,6 @@ func TestBrokenWorkspace_DuplicateModules(t *testing.T) {
 module example.com/foo
 
 go 1.12
--- example.com/foo@v1.2.3/foo.go --
-package foo
 `
 
 	const src = `
@@ -165,5 +167,85 @@ const F = named.D - 3
 		env.RegexpReplace("go.mod", "mod.testx", "mod.test")
 		env.SaveBuffer("go.mod") // saving triggers a reload
 		env.Await(NoOutstandingDiagnostics())
+	})
+}
+
+func TestMultipleModules_Warning(t *testing.T) {
+	msgForVersion := func(ver int) string {
+		if ver >= 18 {
+			return `gopls was not able to find modules in your workspace.`
+		} else {
+			return `gopls requires a module at the root of your workspace.`
+		}
+	}
+
+	const modules = `
+-- a/go.mod --
+module a.com
+
+go 1.12
+-- a/a.go --
+package a
+-- b/go.mod --
+module b.com
+
+go 1.12
+-- b/b.go --
+package b
+`
+	for _, go111module := range []string{"on", "auto"} {
+		t.Run("GO111MODULE="+go111module, func(t *testing.T) {
+			WithOptions(
+				Modes(Default),
+				EnvVars{"GO111MODULE": go111module},
+			).Run(t, modules, func(t *testing.T, env *Env) {
+				ver := env.GoVersion()
+				msg := msgForVersion(ver)
+				env.OpenFile("a/a.go")
+				env.OpenFile("b/go.mod")
+				env.Await(
+					env.DiagnosticAtRegexp("a/a.go", "package a"),
+					env.DiagnosticAtRegexp("b/go.mod", "module b.com"),
+					OutstandingWork(lsp.WorkspaceLoadFailure, msg),
+				)
+
+				// Changing the workspace folders to the valid modules should resolve
+				// the workspace error.
+				env.ChangeWorkspaceFolders("a", "b")
+				env.Await(NoOutstandingWork())
+
+				env.ChangeWorkspaceFolders(".")
+
+				// TODO(rfindley): when GO111MODULE=auto, we need to open or change a
+				// file here in order to detect a critical error. This is because gopls
+				// has forgotten about a/a.go, and therefor doesn't hit the heuristic
+				// "all packages are command-line-arguments".
+				//
+				// This is broken, and could be fixed by adjusting the heuristic to
+				// account for the scenario where there are *no* workspace packages, or
+				// (better) trying to get workspace packages for each open file. See
+				// also golang/go#54261.
+				env.OpenFile("b/b.go")
+				env.Await(OutstandingWork(lsp.WorkspaceLoadFailure, msg))
+			})
+		})
+	}
+
+	// Expect no warning if GO111MODULE=auto in a directory in GOPATH.
+	t.Run("GOPATH_GO111MODULE_auto", func(t *testing.T) {
+		WithOptions(
+			Modes(Default),
+			EnvVars{"GO111MODULE": "auto"},
+			InGOPATH(),
+		).Run(t, modules, func(t *testing.T, env *Env) {
+			env.OpenFile("a/a.go")
+			env.Await(
+				OnceMet(
+					env.DoneWithOpen(),
+					EmptyDiagnostics("a/a.go"),
+				),
+				NoOutstandingWork(),
+			)
+		})
 	})
 }
