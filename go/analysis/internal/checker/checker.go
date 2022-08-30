@@ -333,10 +333,17 @@ func applyFixes(roots []*action) {
 		left, right *node
 	}
 
+	inserted := make(map[int]*offsetedit)
 	var insert func(tree **node, edit offsetedit) error
 	insert = func(treeptr **node, edit offsetedit) error {
+		if e, ok := inserted[edit.start]; ok {
+			if e.end == e.end && reflect.DeepEqual(e.newText, edit.newText) {
+				return nil
+			}
+		}
 		if *treeptr == nil {
 			*treeptr = &node{edit, nil, nil}
+			inserted[edit.start] = &edit
 			return nil
 		}
 		tree := *treeptr
