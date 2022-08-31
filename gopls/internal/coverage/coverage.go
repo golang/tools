@@ -9,13 +9,13 @@
 // and a coverage report for all the packages under internal/lsp, accumulated by all the tests
 // under gopls.
 //
-// -o controls where the coverage file is written, defaulting to /tmp/cover.out
-// -i coverage-file will generate the report from an existing coverage file
-// -v controls verbosity (0: only report coverage, 1: report as each directory is finished,
-//      2: report on each test, 3: more details, 4: too much)
-// -t tests only tests packages in the given comma-separated list of directories in gopls.
-//      The names should start with ., as in ./internal/regtest/bench
-// -run tests. If set, -run tests is passed on to the go test command.
+//	-o controls where the coverage file is written, defaulting to /tmp/cover.out
+//	-i coverage-file will generate the report from an existing coverage file
+//	-v controls verbosity (0: only report coverage, 1: report as each directory is finished,
+//		2: report on each test, 3: more details, 4: too much)
+//	-t tests only tests packages in the given comma-separated list of directories in gopls.
+//		The names should start with ., as in ./internal/regtest/bench
+//	-run tests. If set, -run tests is passed on to the go test command.
 //
 // Despite gopls' use of goroutines, the counts are almost deterministic.
 package main
