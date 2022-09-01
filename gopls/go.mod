@@ -10,11 +10,13 @@ require (
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4
 	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f
 	golang.org/x/tools v0.1.13-0.20220812184215-3f9b119300de
-	golang.org/x/vuln v0.0.0-20220725105440-4151a5aca1df
+	golang.org/x/vuln v0.0.0-20220901221904-62b0186a1058
 	honnef.co/go/tools v0.3.2
 	mvdan.cc/gofumpt v0.3.1
 	mvdan.cc/xurls/v2 v2.4.0
 )
+
+require golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e // indirect
 
 require (
 	github.com/BurntSushi/toml v1.2.0 // indirect
