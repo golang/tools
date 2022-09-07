@@ -698,6 +698,12 @@ func candidateImportName(pkg *pkg) string {
 // GetAllCandidates calls wrapped for each package whose name starts with
 // searchPrefix, and can be imported from filename with the package name filePkg.
 func GetAllCandidates(ctx context.Context, wrapped func(ImportFix), searchPrefix, filename, filePkg string, env *ProcessEnv) error {
+	return GetFilteredCandidates(ctx, nil, wrapped, searchPrefix, filename, filePkg, env)
+}
+
+// GetFilteredCandidates calls wrapped for each package whose name starts with
+// searchPrefix, and can be imported from filename with the package name filePkg.
+func GetFilteredCandidates(ctx context.Context, shouldScanPackageDir func(pkgDir, importPathShort, packageName string) bool, wrapped func(ImportFix), searchPrefix, filename, filePkg string, env *ProcessEnv) error {
 	callback := &scanCallback{
 		rootFound: func(gopathwalk.Root) bool {
 			return true
@@ -708,8 +714,10 @@ func GetAllCandidates(ctx context.Context, wrapped func(ImportFix), searchPrefix
 			}
 			// Try the assumed package name first, then a simpler path match
 			// in case of packages named vN, which are not uncommon.
-			return strings.HasPrefix(ImportPathToAssumedName(pkg.importPathShort), searchPrefix) ||
-				strings.HasPrefix(path.Base(pkg.importPathShort), searchPrefix)
+			if !strings.HasPrefix(ImportPathToAssumedName(pkg.importPathShort), searchPrefix) && !strings.HasPrefix(path.Base(pkg.importPathShort), searchPrefix) {
+				return false
+			}
+			return shouldScanPackageDir == nil || shouldScanPackageDir(pkg.dir, pkg.importPathShort, pkg.packageName)
 		},
 		packageNameLoaded: func(pkg *pkg) bool {
 			if !strings.HasPrefix(pkg.packageName, searchPrefix) {
