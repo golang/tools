@@ -73,11 +73,14 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				checkTest(pass, fn, "Test")
 			case strings.HasPrefix(fn.Name.Name, "Benchmark"):
 				checkTest(pass, fn, "Benchmark")
-			}
-			// run fuzz tests diagnostics only for 1.18 i.e. when analysisinternal.DiagnoseFuzzTests is turned on.
-			if strings.HasPrefix(fn.Name.Name, "Fuzz") && analysisinternal.DiagnoseFuzzTests {
-				checkTest(pass, fn, "Fuzz")
-				checkFuzz(pass, fn)
+			case strings.HasPrefix(fn.Name.Name, "Fuzz"):
+				// run fuzz tests diagnostics only for 1.18 i.e. when analysisinternal.DiagnoseFuzzTests is turned on.
+				if analysisinternal.DiagnoseFuzzTests {
+					checkTest(pass, fn, "Fuzz")
+					checkFuzz(pass, fn)
+				}
+			default:
+				checkTestHelper(pass, fn)
 			}
 		}
 	}
@@ -313,11 +316,22 @@ func isTestParam(typ ast.Expr, wantType string) bool {
 	}
 	// No easy way of making sure it's a *testing.T or *testing.B:
 	// ensure the name of the type matches.
-	if name, ok := ptr.X.(*ast.Ident); ok {
-		return name.Name == wantType
+	return isTestingSelector(ptr.X, wantType)
+}
+
+func isTestingSelector(typ ast.Expr, names ...string) bool {
+	selExpr, ok := typ.(*ast.SelectorExpr)
+	if !ok {
+		return false
 	}
-	if sel, ok := ptr.X.(*ast.SelectorExpr); ok {
-		return sel.Sel.Name == wantType
+	varPkg, ok := selExpr.X.(*ast.Ident)
+	if !ok || varPkg.Name != "testing" {
+		return false
+	}
+	for _, name := range names {
+		if selExpr.Sel.Name == name {
+			return true
+		}
 	}
 	return false
 }
@@ -483,4 +497,62 @@ func checkTest(pass *analysis.Pass, fn *ast.FuncDecl, prefix string) {
 		// TODO(adonovan): use ReportRangef(fn.Name).
 		pass.Reportf(fn.Pos(), "%s has malformed name: first letter after '%s' must not be lowercase", fn.Name.Name, prefix)
 	}
+}
+
+func checkTestHelper(pass *analysis.Pass, fn *ast.FuncDecl) {
+	if fn.Body == nil {
+		return
+	}
+	params := fn.Type.Params
+	if params == nil {
+		return
+	}
+	var param string
+	for _, f := range params.List {
+		if isTestHelperParam(f.Type) {
+			if len(f.Names) == 0 || f.Names[0].Name == "_" {
+				pass.Reportf(fn.Pos(), "%s has unnamed test helper parameter", fn.Name.Name)
+				return
+			}
+			param = f.Names[0].Name
+			break
+		}
+	}
+	if param == "" {
+		// No test helper parameter.
+		return
+	}
+	if !isFirstStmtHelperCall(fn.Body.List, param) {
+		pass.Reportf(fn.Pos(), "first statement of test helper must be %s.Helper()", param)
+	}
+}
+
+func isTestHelperParam(typ ast.Expr) bool {
+	if starExpr, ok := typ.(*ast.StarExpr); ok {
+		return isTestingSelector(starExpr.X, "T", "B", "F")
+	}
+	return isTestingSelector(typ, "TB")
+}
+
+func isFirstStmtHelperCall(stmts []ast.Stmt, param string) bool {
+	if len(stmts) == 0 {
+		return false
+	}
+	exprStmt, ok := stmts[0].(*ast.ExprStmt)
+	if !ok {
+		return false
+	}
+	callExpr, ok := exprStmt.X.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	selExpr, ok := callExpr.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	recExpr, ok := selExpr.X.(*ast.Ident)
+	if !ok || recExpr.Name != param {
+		return false
+	}
+	return selExpr.Sel.Name == "Helper"
 }
