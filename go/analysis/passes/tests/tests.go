@@ -507,23 +507,15 @@ func checkTestHelper(pass *analysis.Pass, fn *ast.FuncDecl) {
 	if params == nil {
 		return
 	}
-	var param string
 	for _, f := range params.List {
 		if isTestHelperParam(f.Type) {
 			if len(f.Names) == 0 || f.Names[0].Name == "_" {
 				pass.Reportf(fn.Pos(), "%s has unnamed test helper parameter", fn.Name.Name)
-				return
+			} else if param := f.Names[0].Name; !isFirstStmtHelperCall(fn.Body.List, param) {
+				pass.Reportf(fn.Pos(), "first statement of test helper must be %s.Helper()", param)
 			}
-			param = f.Names[0].Name
 			break
 		}
-	}
-	if param == "" {
-		// No test helper parameter.
-		return
-	}
-	if !isFirstStmtHelperCall(fn.Body.List, param) {
-		pass.Reportf(fn.Pos(), "first statement of test helper must be %s.Helper()", param)
 	}
 }
 
@@ -551,8 +543,5 @@ func isFirstStmtHelperCall(stmts []ast.Stmt, param string) bool {
 		return false
 	}
 	recExpr, ok := selExpr.X.(*ast.Ident)
-	if !ok || recExpr.Name != param {
-		return false
-	}
-	return selExpr.Sel.Name == "Helper"
+	return ok && recExpr.Name == param && selExpr.Sel.Name == "Helper"
 }
