@@ -7,10 +7,10 @@ package misc
 import (
 	"testing"
 
-	. "golang.org/x/tools/internal/lsp/regtest"
+	. "golang.org/x/tools/gopls/internal/lsp/regtest"
+	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 
-	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/lsp/tests"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
 // A basic test for fillstruct, now that it uses a command.
@@ -56,7 +56,7 @@ func Foo() {
 }
 `
 		if got := env.Editor.BufferText("main.go"); got != want {
-			t.Fatalf("TestFillStruct failed:\n%s", tests.Diff(t, want, got))
+			t.Fatalf("TestFillStruct failed:\n%s", compare.Text(want, got))
 		}
 	})
 }
@@ -78,7 +78,8 @@ func Foo() error {
 		env.OpenFile("main.go")
 		var d protocol.PublishDiagnosticsParams
 		env.Await(OnceMet(
-			env.DiagnosticAtRegexpWithMessage("main.go", `return`, "wrong number of return values"),
+			// The error message here changed in 1.18; "return values" covers both forms.
+			env.DiagnosticAtRegexpWithMessage("main.go", `return`, "return values"),
 			ReadDiagnostics("main.go", &d),
 		))
 		codeActions := env.CodeAction("main.go", d.Diagnostics)

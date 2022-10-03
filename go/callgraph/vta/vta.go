@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package vta computes the call graph of a Go program using the Variable
-// Type Analysis (VTA) algorithm originally described in ``Practical Virtual
+// Type Analysis (VTA) algorithm originally described in “Practical Virtual
 // Method Call Resolution for Java," Vijay Sundaresan, Laurie Hendren,
 // Chrislain Razafimahefa, Raja Vallée-Rai, Patrick Lam, Etienne Gagnon, and
 // Charles Godin.
@@ -18,22 +18,23 @@
 //
 // A type propagation is a directed, labeled graph. A node can represent
 // one of the following:
-//  - A field of a struct type.
-//  - A local (SSA) variable of a method/function.
-//  - All pointers to a non-interface type.
-//  - The return value of a method.
-//  - All elements in an array.
-//  - All elements in a slice.
-//  - All elements in a map.
-//  - All elements in a channel.
-//  - A global variable.
+//   - A field of a struct type.
+//   - A local (SSA) variable of a method/function.
+//   - All pointers to a non-interface type.
+//   - The return value of a method.
+//   - All elements in an array.
+//   - All elements in a slice.
+//   - All elements in a map.
+//   - All elements in a channel.
+//   - A global variable.
+//
 // In addition, the implementation used in this package introduces
 // a few Go specific kinds of nodes:
-//  - (De)references of nested pointers to interfaces are modeled
-//    as a unique nestedPtrInterface node in the type propagation graph.
-//  - Each function literal is represented as a function node whose
-//    internal value is the (SSA) representation of the function. This
-//    is done to precisely infer flow of higher-order functions.
+//   - (De)references of nested pointers to interfaces are modeled
+//     as a unique nestedPtrInterface node in the type propagation graph.
+//   - Each function literal is represented as a function node whose
+//     internal value is the (SSA) representation of the function. This
+//     is done to precisely infer flow of higher-order functions.
 //
 // Edges in the graph represent flow of types (and function literals) through
 // the program. That is, the model 1) typing constraints that are induced by
@@ -51,7 +52,6 @@
 // it may have. This information is then used to construct the call graph.
 // For each unresolved call site, vta uses the set of types and functions
 // reaching the node representing the call site to create a set of callees.
-
 package vta
 
 import (
@@ -127,14 +127,14 @@ func (c *constructor) callees(call ssa.CallInstruction) []*ssa.Function {
 func resolve(c ssa.CallInstruction, types propTypeMap, cache methodCache) []*ssa.Function {
 	n := local{val: c.Common().Value}
 	var funcs []*ssa.Function
-	for p := range types.propTypes(n) {
+	for _, p := range types.propTypes(n) {
 		funcs = append(funcs, propFunc(p, c, cache)...)
 	}
 	return funcs
 }
 
 // propFunc returns the functions modeled with the propagation type `p`
-// assigned to call site `c`. If no such funciton exists, nil is returned.
+// assigned to call site `c`. If no such function exists, nil is returned.
 func propFunc(p propType, c ssa.CallInstruction, cache methodCache) []*ssa.Function {
 	if p.f != nil {
 		return []*ssa.Function{p.f}

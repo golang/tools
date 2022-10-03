@@ -6,22 +6,20 @@ package codelens
 
 import (
 	"fmt"
-	"runtime"
-	"strings"
 	"testing"
-	"time"
 
 	"golang.org/x/tools/gopls/internal/hooks"
-	. "golang.org/x/tools/internal/lsp/regtest"
+	. "golang.org/x/tools/gopls/internal/lsp/regtest"
+	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
+	"golang.org/x/tools/internal/bug"
 
-	"golang.org/x/tools/internal/lsp/command"
-	"golang.org/x/tools/internal/lsp/fake"
-	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/lsp/tests"
+	"golang.org/x/tools/gopls/internal/lsp/command"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/testenv"
 )
 
 func TestMain(m *testing.M) {
+	bug.PanicOnBugs = true
 	Main(m, hooks.Options)
 }
 
@@ -62,9 +60,7 @@ const (
 	for _, test := range tests {
 		t.Run(test.label, func(t *testing.T) {
 			WithOptions(
-				EditorConfig{
-					CodeLenses: test.enabled,
-				},
+				Settings{"codelenses": test.enabled},
 			).Run(t, workspace, func(t *testing.T, env *Env) {
 				env.OpenFile("lib.go")
 				lens := env.CodeLens("lib.go")
@@ -79,7 +75,8 @@ const (
 // This test confirms the full functionality of the code lenses for updating
 // dependencies in a go.mod file. It checks for the code lens that suggests
 // an update and then executes the command associated with that code lens. A
-// regression test for golang/go#39446.
+// regression test for golang/go#39446. It also checks that these code lenses
+// only affect the diagnostics and contents of the containing go.mod file.
 func TestUpgradeCodelens(t *testing.T) {
 	const proxyWithLatest = `
 -- golang.org/x/hello@v1.3.3/go.mod --
@@ -101,16 +98,23 @@ var Goodbye error
 `
 
 	const shouldUpdateDep = `
--- go.mod --
-module mod.com
+-- go.work --
+go 1.18
+
+use (
+	./a
+	./b
+)
+-- a/go.mod --
+module mod.com/a
 
 go 1.14
 
 require golang.org/x/hello v1.2.3
--- go.sum --
+-- a/go.sum --
 golang.org/x/hello v1.2.3 h1:7Wesfkx/uBd+eFgPrq0irYj/1XfmbvLV8jZ/W7C2Dwg=
 golang.org/x/hello v1.2.3/go.mod h1:OgtlzsxVMUUdsdQCIDYgaauCTH47B8T8vofouNJfzgY=
--- main.go --
+-- a/main.go --
 package main
 
 import "golang.org/x/hello/hi"
@@ -118,13 +122,40 @@ import "golang.org/x/hello/hi"
 func main() {
 	_ = hi.Goodbye
 }
+-- b/go.mod --
+module mod.com/b
+
+go 1.14
+
+require golang.org/x/hello v1.2.3
+-- b/go.sum --
+golang.org/x/hello v1.2.3 h1:7Wesfkx/uBd+eFgPrq0irYj/1XfmbvLV8jZ/W7C2Dwg=
+golang.org/x/hello v1.2.3/go.mod h1:OgtlzsxVMUUdsdQCIDYgaauCTH47B8T8vofouNJfzgY=
+-- b/main.go --
+package main
+
+import (
+	"golang.org/x/hello/hi"
+)
+
+func main() {
+	_ = hi.Goodbye
+}
 `
 
-	const wantGoMod = `module mod.com
+	const wantGoModA = `module mod.com/a
 
 go 1.14
 
 require golang.org/x/hello v1.3.3
+`
+	// Applying the diagnostics or running the codelenses for a/go.mod
+	// should not change the contents of b/go.mod
+	const wantGoModB = `module mod.com/b
+
+go 1.14
+
+require golang.org/x/hello v1.2.3
 `
 
 	for _, commandTitle := range []string{
@@ -135,10 +166,11 @@ require golang.org/x/hello v1.3.3
 			WithOptions(
 				ProxyFiles(proxyWithLatest),
 			).Run(t, shouldUpdateDep, func(t *testing.T, env *Env) {
-				env.OpenFile("go.mod")
+				env.OpenFile("a/go.mod")
+				env.OpenFile("b/go.mod")
 				var lens protocol.CodeLens
 				var found bool
-				for _, l := range env.CodeLens("go.mod") {
+				for _, l := range env.CodeLens("a/go.mod") {
 					if l.Command.Title == commandTitle {
 						lens = l
 						found = true
@@ -154,8 +186,11 @@ require golang.org/x/hello v1.3.3
 					t.Fatal(err)
 				}
 				env.Await(env.DoneWithChangeWatchedFiles())
-				if got := env.Editor.BufferText("go.mod"); got != wantGoMod {
-					t.Fatalf("go.mod upgrade failed:\n%s", tests.Diff(t, wantGoMod, got))
+				if got := env.Editor.BufferText("a/go.mod"); got != wantGoModA {
+					t.Fatalf("a/go.mod upgrade failed:\n%s", compare.Text(wantGoModA, got))
+				}
+				if got := env.Editor.BufferText("b/go.mod"); got != wantGoModB {
+					t.Fatalf("b/go.mod changed unexpectedly:\n%s", compare.Text(wantGoModB, got))
 				}
 			})
 		})
@@ -164,22 +199,38 @@ require golang.org/x/hello v1.3.3
 		t.Run(fmt.Sprintf("Upgrade individual dependency vendoring=%v", vendoring), func(t *testing.T) {
 			WithOptions(ProxyFiles(proxyWithLatest)).Run(t, shouldUpdateDep, func(t *testing.T, env *Env) {
 				if vendoring {
-					env.RunGoCommand("mod", "vendor")
+					env.RunGoCommandInDir("a", "mod", "vendor")
 				}
 				env.Await(env.DoneWithChangeWatchedFiles())
-				env.OpenFile("go.mod")
-				env.ExecuteCodeLensCommand("go.mod", command.CheckUpgrades)
+				env.OpenFile("a/go.mod")
+				env.OpenFile("b/go.mod")
+				env.ExecuteCodeLensCommand("a/go.mod", command.CheckUpgrades)
 				d := &protocol.PublishDiagnosticsParams{}
 				env.Await(
 					OnceMet(
-						env.DiagnosticAtRegexpWithMessage("go.mod", `require`, "can be upgraded"),
-						ReadDiagnostics("go.mod", d),
+						env.DiagnosticAtRegexpWithMessage("a/go.mod", `require`, "can be upgraded"),
+						ReadDiagnostics("a/go.mod", d),
+						// We do not want there to be a diagnostic for b/go.mod,
+						// but there may be some subtlety in timing here, where this
+						// should always succeed, but may not actually test the correct
+						// behavior.
+						env.NoDiagnosticAtRegexp("b/go.mod", `require`),
 					),
 				)
-				env.ApplyQuickFixes("go.mod", d.Diagnostics)
+				// Check for upgrades in b/go.mod and then clear them.
+				env.ExecuteCodeLensCommand("b/go.mod", command.CheckUpgrades)
+				env.Await(env.DiagnosticAtRegexpWithMessage("b/go.mod", `require`, "can be upgraded"))
+				env.ExecuteCodeLensCommand("b/go.mod", command.ResetGoModDiagnostics)
+				env.Await(EmptyDiagnostics("b/go.mod"))
+
+				// Apply the diagnostics to a/go.mod.
+				env.ApplyQuickFixes("a/go.mod", d.Diagnostics)
 				env.Await(env.DoneWithChangeWatchedFiles())
-				if got := env.Editor.BufferText("go.mod"); got != wantGoMod {
-					t.Fatalf("go.mod upgrade failed:\n%s", tests.Diff(t, wantGoMod, got))
+				if got := env.Editor.BufferText("a/go.mod"); got != wantGoModA {
+					t.Fatalf("a/go.mod upgrade failed:\n%s", compare.Text(wantGoModA, got))
+				}
+				if got := env.Editor.BufferText("b/go.mod"); got != wantGoModB {
+					t.Fatalf("b/go.mod changed unexpectedly:\n%s", compare.Text(wantGoModB, got))
 				}
 			})
 		})
@@ -241,7 +292,7 @@ go 1.14
 require golang.org/x/hello v1.0.0
 `
 		if got != wantGoMod {
-			t.Fatalf("go.mod tidy failed:\n%s", tests.Diff(t, wantGoMod, got))
+			t.Fatalf("go.mod tidy failed:\n%s", compare.Text(wantGoMod, got))
 		}
 	})
 }
@@ -283,74 +334,5 @@ func Foo() {
 		// Regenerate cgo, fixing the diagnostic.
 		env.ExecuteCodeLensCommand("cgo.go", command.RegenerateCgo)
 		env.Await(EmptyDiagnostics("cgo.go"))
-	})
-}
-
-func TestGCDetails(t *testing.T) {
-	testenv.NeedsGo1Point(t, 15)
-	if runtime.GOOS == "android" {
-		t.Skipf("the gc details code lens doesn't work on Android")
-	}
-
-	const mod = `
--- go.mod --
-module mod.com
-
-go 1.15
--- main.go --
-package main
-
-import "fmt"
-
-func main() {
-	fmt.Println(42)
-}
-`
-	WithOptions(
-		EditorConfig{
-			CodeLenses: map[string]bool{
-				"gc_details": true,
-			}},
-		// TestGCDetails seems to suffer from poor performance on certain builders. Give it some more time to complete.
-		Timeout(60*time.Second),
-	).Run(t, mod, func(t *testing.T, env *Env) {
-		env.OpenFile("main.go")
-		env.ExecuteCodeLensCommand("main.go", command.GCDetails)
-		d := &protocol.PublishDiagnosticsParams{}
-		env.Await(
-			OnceMet(
-				DiagnosticAt("main.go", 5, 13),
-				ReadDiagnostics("main.go", d),
-			),
-		)
-		// Confirm that the diagnostics come from the gc details code lens.
-		var found bool
-		for _, d := range d.Diagnostics {
-			if d.Severity != protocol.SeverityInformation {
-				t.Fatalf("unexpected diagnostic severity %v, wanted Information", d.Severity)
-			}
-			if strings.Contains(d.Message, "42 escapes") {
-				found = true
-			}
-		}
-		if !found {
-			t.Fatalf(`expected to find diagnostic with message "escape(42 escapes to heap)", found none`)
-		}
-
-		// Editing a buffer should cause gc_details diagnostics to disappear, since
-		// they only apply to saved buffers.
-		env.EditBuffer("main.go", fake.NewEdit(0, 0, 0, 0, "\n\n"))
-		env.Await(EmptyDiagnostics("main.go"))
-
-		// Saving a buffer should re-format back to the original state, and
-		// re-enable the gc_details diagnostics.
-		env.SaveBuffer("main.go")
-		env.Await(DiagnosticAt("main.go", 5, 13))
-
-		// Toggle the GC details code lens again so now it should be off.
-		env.ExecuteCodeLensCommand("main.go", command.GCDetails)
-		env.Await(
-			EmptyDiagnostics("main.go"),
-		)
 	})
 }

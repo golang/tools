@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.16
+// +build go1.16
+
 // Command generate creates API (settings, etc) documentation in JSON and
 // Markdown for machine and human consumption.
 package main
@@ -17,6 +20,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -26,42 +30,65 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/sanity-io/litter"
+	"github.com/jba/printsrc"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/internal/lsp/command"
-	"golang.org/x/tools/internal/lsp/command/commandmeta"
-	"golang.org/x/tools/internal/lsp/mod"
-	"golang.org/x/tools/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/lsp/command"
+	"golang.org/x/tools/gopls/internal/lsp/command/commandmeta"
+	"golang.org/x/tools/gopls/internal/lsp/mod"
+	"golang.org/x/tools/gopls/internal/lsp/source"
 )
 
 func main() {
-	if _, err := doMain("..", true); err != nil {
+	if _, err := doMain(true); err != nil {
 		fmt.Fprintf(os.Stderr, "Generation failed: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func doMain(baseDir string, write bool) (bool, error) {
+func doMain(write bool) (bool, error) {
 	api, err := loadAPI()
 	if err != nil {
 		return false, err
 	}
 
-	if ok, err := rewriteFile(filepath.Join(baseDir, "internal/lsp/source/api_json.go"), api, write, rewriteAPI); !ok || err != nil {
+	sourceDir, err := pkgDir("golang.org/x/tools/gopls/internal/lsp/source")
+	if err != nil {
+		return false, err
+	}
+
+	if ok, err := rewriteFile(filepath.Join(sourceDir, "api_json.go"), api, write, rewriteAPI); !ok || err != nil {
 		return ok, err
 	}
-	if ok, err := rewriteFile(filepath.Join(baseDir, "gopls/doc/settings.md"), api, write, rewriteSettings); !ok || err != nil {
+
+	goplsDir, err := pkgDir("golang.org/x/tools/gopls")
+	if err != nil {
+		return false, err
+	}
+
+	if ok, err := rewriteFile(filepath.Join(goplsDir, "doc", "settings.md"), api, write, rewriteSettings); !ok || err != nil {
 		return ok, err
 	}
-	if ok, err := rewriteFile(filepath.Join(baseDir, "gopls/doc/commands.md"), api, write, rewriteCommands); !ok || err != nil {
+	if ok, err := rewriteFile(filepath.Join(goplsDir, "doc", "commands.md"), api, write, rewriteCommands); !ok || err != nil {
 		return ok, err
 	}
-	if ok, err := rewriteFile(filepath.Join(baseDir, "gopls/doc/analyzers.md"), api, write, rewriteAnalyzers); !ok || err != nil {
+	if ok, err := rewriteFile(filepath.Join(goplsDir, "doc", "analyzers.md"), api, write, rewriteAnalyzers); !ok || err != nil {
+		return ok, err
+	}
+	if ok, err := rewriteFile(filepath.Join(goplsDir, "doc", "inlayHints.md"), api, write, rewriteInlayHints); !ok || err != nil {
 		return ok, err
 	}
 
 	return true, nil
+}
+
+// pkgDir returns the directory corresponding to the import path pkgPath.
+func pkgDir(pkgPath string) (string, error) {
+	out, err := exec.Command("go", "list", "-f", "{{.Dir}}", pkgPath).Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func loadAPI() (*source.APIJSON, error) {
@@ -69,7 +96,7 @@ func loadAPI() (*source.APIJSON, error) {
 		&packages.Config{
 			Mode: packages.NeedTypes | packages.NeedTypesInfo | packages.NeedSyntax | packages.NeedDeps,
 		},
-		"golang.org/x/tools/internal/lsp/source",
+		"golang.org/x/tools/gopls/internal/lsp/source",
 	)
 	if err != nil {
 		return nil, err
@@ -99,6 +126,7 @@ func loadAPI() (*source.APIJSON, error) {
 	} {
 		api.Analyzers = append(api.Analyzers, loadAnalyzers(m)...)
 	}
+	api.Hints = loadHints(source.AllInlayHints)
 	for _, category := range []reflect.Value{
 		reflect.ValueOf(defaults.UserOptions),
 	} {
@@ -141,6 +169,14 @@ func loadAPI() (*source.APIJSON, error) {
 						Name:    fmt.Sprintf("%q", l.Lens),
 						Doc:     l.Doc,
 						Default: def,
+					})
+				}
+			case "hints":
+				for _, a := range api.Hints {
+					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, source.EnumKey{
+						Name:    fmt.Sprintf("%q", a.Name),
+						Doc:     a.Doc,
+						Default: strconv.FormatBool(a.Default),
 					})
 				}
 			}
@@ -431,7 +467,7 @@ func structDoc(fields []*commandmeta.Field, level int) string {
 				fmt.Fprintf(&b, "%s\t// %s\n", indent, line)
 			}
 		}
-		tag := fld.JSONTag
+		tag := strings.Split(fld.JSONTag, ",")[0]
 		if tag == "" {
 			tag = fld.Name
 		}
@@ -485,6 +521,23 @@ func loadAnalyzers(m map[string]*source.Analyzer) []*source.AnalyzerJSON {
 	return json
 }
 
+func loadHints(m map[string]*source.Hint) []*source.HintJSON {
+	var sorted []string
+	for _, h := range m {
+		sorted = append(sorted, h.Name)
+	}
+	sort.Strings(sorted)
+	var json []*source.HintJSON
+	for _, name := range sorted {
+		h := m[name]
+		json = append(json, &source.HintJSON{
+			Name: h.Name,
+			Doc:  h.Doc,
+		})
+	}
+	return json
+}
+
 func lowerFirst(x string) string {
 	if x == "" {
 		return x
@@ -532,24 +585,12 @@ func rewriteFile(file string, api *source.APIJSON, write bool, rewrite func([]by
 }
 
 func rewriteAPI(_ []byte, api *source.APIJSON) ([]byte, error) {
-	buf := bytes.NewBuffer(nil)
-	apiStr := litter.Options{
-		HomePackage: "source",
-	}.Sdump(api)
-	// Massive hack: filter out redundant types from the composite literal.
-	apiStr = strings.ReplaceAll(apiStr, "&OptionJSON", "")
-	apiStr = strings.ReplaceAll(apiStr, ": []*OptionJSON", ":")
-	apiStr = strings.ReplaceAll(apiStr, "&CommandJSON", "")
-	apiStr = strings.ReplaceAll(apiStr, "&LensJSON", "")
-	apiStr = strings.ReplaceAll(apiStr, "&AnalyzerJSON", "")
-	apiStr = strings.ReplaceAll(apiStr, "  EnumValue{", "{")
-	apiStr = strings.ReplaceAll(apiStr, "  EnumKey{", "{")
-	apiBytes, err := format.Source([]byte(apiStr))
-	if err != nil {
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "// Code generated by \"golang.org/x/tools/gopls/doc/generate\"; DO NOT EDIT.\n\npackage source\n\nvar GeneratedAPIJSON = ")
+	if err := printsrc.NewPrinter("golang.org/x/tools/gopls/internal/lsp/source").Fprint(&buf, api); err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(buf, "// Code generated by \"golang.org/x/tools/gopls/doc/generate\"; DO NOT EDIT.\n\npackage source\n\nvar GeneratedAPIJSON = %s\n", apiBytes)
-	return buf.Bytes(), nil
+	return format.Source(buf.Bytes())
 }
 
 type optionsGroup struct {
@@ -706,6 +747,21 @@ func rewriteAnalyzers(doc []byte, api *source.APIJSON) ([]byte, error) {
 		}
 	}
 	return replaceSection(doc, "Analyzers", section.Bytes())
+}
+
+func rewriteInlayHints(doc []byte, api *source.APIJSON) ([]byte, error) {
+	section := bytes.NewBuffer(nil)
+	for _, hint := range api.Hints {
+		fmt.Fprintf(section, "## **%v**\n\n", hint.Name)
+		fmt.Fprintf(section, "%s\n\n", hint.Doc)
+		switch hint.Default {
+		case true:
+			fmt.Fprintf(section, "**Enabled by default.**\n\n")
+		case false:
+			fmt.Fprintf(section, "**Disabled by default. Enable it by setting `\"hints\": {\"%s\": true}`.**\n\n", hint.Name)
+		}
+	}
+	return replaceSection(doc, "Hints", section.Bytes())
 }
 
 func replaceSection(doc []byte, sectionName string, replacement []byte) ([]byte, error) {

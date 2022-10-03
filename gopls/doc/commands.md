@@ -84,6 +84,22 @@ Args:
 }
 ```
 
+### **Run go mod edit -go=version**
+Identifier: `gopls.edit_go_directive`
+
+Runs `go mod edit -go=version` for a module.
+
+Args:
+
+```
+{
+	// Any document URI within the relevant module.
+	"URI": string,
+	// The version to pass to `go mod edit -go`.
+	"Version": string,
+}
+```
+
 ### **Toggle gc_details**
 Identifier: `gopls.gc_details`
 
@@ -139,6 +155,37 @@ Args:
 	// The package to go get.
 	"Pkg": string,
 	"AddRequire": bool,
+}
+```
+
+### **List imports of a file and its package**
+Identifier: `gopls.list_imports`
+
+Retrieve a list of imports in the given Go file, and the package it
+belongs to.
+
+Args:
+
+```
+{
+	// The file URI.
+	"URI": string,
+}
+```
+
+Result:
+
+```
+{
+	// Imports is a list of imports in the requested file.
+	"Imports": []{
+		"Path": string,
+		"Name": string,
+	},
+	// PackageImports is a list of all imports in the requested file's package.
+	"PackageImports": []{
+		"Path": string,
+	},
 }
 ```
 
@@ -200,6 +247,20 @@ Args:
 }
 ```
 
+### **Reset go.mod diagnostics**
+Identifier: `gopls.reset_go_mod_diagnostics`
+
+Reset diagnostics in the go.mod file of a module.
+
+Args:
+
+```
+{
+	// The file URI.
+	"URI": string,
+}
+```
+
 ### **Run test(s)**
 Identifier: `gopls.run_tests`
 
@@ -215,6 +276,22 @@ Args:
 	"Tests": []string,
 	// Specific benchmarks to run, e.g. BenchmarkFoo.
 	"Benchmarks": []string,
+}
+```
+
+### **Run vulncheck (experimental)**
+Identifier: `gopls.run_vulncheck_exp`
+
+Run vulnerability check (`govulncheck`).
+
+Args:
+
+```
+{
+	// Any document in the directory from which govulncheck will run.
+	"URI": string,
+	// Package pattern. E.g. "", ".", "./...".
+	"Pattern": string,
 }
 ```
 
@@ -347,23 +424,6 @@ Args:
 {
 	// The file URI.
 	"URI": string,
-}
-```
-
-### **Query workspace metadata**
-Identifier: `gopls.workspace_metadata`
-
-Query the server for information about active workspaces.
-
-Result:
-
-```
-{
-	// All workspaces for this session.
-	"Workspaces": []{
-		"Name": string,
-		"ModuleDir": string,
-	},
 }
 ```
 

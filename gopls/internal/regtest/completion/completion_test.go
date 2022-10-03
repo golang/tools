@@ -10,14 +10,16 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/hooks"
-	. "golang.org/x/tools/internal/lsp/regtest"
+	. "golang.org/x/tools/gopls/internal/lsp/regtest"
+	"golang.org/x/tools/internal/bug"
 
-	"golang.org/x/tools/internal/lsp/fake"
-	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/lsp/fake"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/testenv"
 )
 
 func TestMain(m *testing.M) {
+	bug.PanicOnBugs = true
 	Main(m, hooks.Options)
 }
 
@@ -248,11 +250,15 @@ func compareCompletionResults(want []string, gotItems []protocol.CompletionItem)
 	var got []string
 	for _, item := range gotItems {
 		got = append(got, item.Label)
+		if item.Label != item.InsertText && item.TextEdit == nil {
+			// Label should be the same as InsertText, if InsertText is to be used
+			return fmt.Sprintf("label not the same as InsertText %#v", item)
+		}
 	}
 
 	for i, v := range got {
 		if v != want[i] {
-			return fmt.Sprintf("completion results are not the same: got %v, want %v", got, want)
+			return fmt.Sprintf("%d completion result not the same: got %q, want %q", i, v, want[i])
 		}
 	}
 
@@ -523,7 +529,7 @@ func main() {
 }
 `
 	WithOptions(
-		EditorConfig{WindowsLineEndings: true},
+		WindowsLineEndings(),
 	).Run(t, src, func(t *testing.T, env *Env) {
 		// Trigger unimported completions for the example.com/blah package.
 		env.OpenFile("main.go")
@@ -539,6 +545,104 @@ func main() {
 		want := "package main\r\n\r\nimport (\r\n\t\"fmt\"\r\n\t\"math\"\r\n)\r\n\r\nfunc main() {\r\n\tfmt.Println(\"a\")\r\n\tmath.Sqrt(${1:})\r\n}\r\n"
 		if got != want {
 			t.Errorf("unimported completion: got %q, want %q", got, want)
+		}
+	})
+}
+
+func TestDefinition(t *testing.T) {
+	stuff := `
+-- go.mod --
+module mod.com
+
+go 1.18
+-- a_test.go --
+package foo
+func T()
+func TestG()
+func TestM()
+func TestMi()
+func Ben()
+func Fuz()
+func Testx()
+func TestMe(t *testing.T)
+func BenchmarkFoo()
+`
+	// All those parentheses are needed for the completion code to see
+	// later lines as being definitions
+	tests := []struct {
+		pat  string
+		want []string
+	}{
+		{"T", []string{"TestXxx(t *testing.T)", "TestMain(m *testing.M)"}},
+		{"TestM", []string{"TestMain(m *testing.M)", "TestM(t *testing.T)"}},
+		{"TestMi", []string{"TestMi(t *testing.T)"}},
+		{"TestG", []string{"TestG(t *testing.T)"}},
+		{"B", []string{"BenchmarkXxx(b *testing.B)"}},
+		{"BenchmarkFoo", []string{"BenchmarkFoo(b *testing.B)"}},
+		{"F", []string{"FuzzXxx(f *testing.F)"}},
+		{"Testx", nil},
+		{"TestMe", []string{"TestMe"}},
+	}
+	fname := "a_test.go"
+	Run(t, stuff, func(t *testing.T, env *Env) {
+		env.OpenFile(fname)
+		env.Await(env.DoneWithOpen())
+		for _, tst := range tests {
+			pos := env.RegexpSearch(fname, tst.pat)
+			pos.Column += len(tst.pat)
+			completions := env.Completion(fname, pos)
+			result := compareCompletionResults(tst.want, completions.Items)
+			if result != "" {
+				t.Errorf("%s failed: %s:%q", tst.pat, result, tst.want)
+				for i, it := range completions.Items {
+					t.Errorf("%d got %q %q", i, it.Label, it.Detail)
+				}
+			}
+		}
+	})
+}
+
+func TestGoWorkCompletion(t *testing.T) {
+	const files = `
+-- go.work --
+go 1.18
+
+use ./a
+use ./a/ba
+use ./a/b/
+use ./dir/foo
+use ./dir/foobar/
+-- a/go.mod --
+-- go.mod --
+-- a/bar/go.mod --
+-- a/b/c/d/e/f/go.mod --
+-- dir/bar --
+-- dir/foobar/go.mod --
+`
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("go.work")
+
+		tests := []struct {
+			re   string
+			want []string
+		}{
+			{`use ()\.`, []string{".", "./a", "./a/bar", "./dir/foobar"}},
+			{`use \.()`, []string{"", "/a", "/a/bar", "/dir/foobar"}},
+			{`use \./()`, []string{"a", "a/bar", "dir/foobar"}},
+			{`use ./a()`, []string{"", "/b/c/d/e/f", "/bar"}},
+			{`use ./a/b()`, []string{"/c/d/e/f", "ar"}},
+			{`use ./a/b/()`, []string{`c/d/e/f`}},
+			{`use ./a/ba()`, []string{"r"}},
+			{`use ./dir/foo()`, []string{"bar"}},
+			{`use ./dir/foobar/()`, []string{}},
+		}
+		for _, tt := range tests {
+			completions := env.Completion("go.work", env.RegexpSearch("go.work", tt.re))
+			diff := compareCompletionResults(tt.want, completions.Items)
+			if diff != "" {
+				t.Errorf("%s: %s", tt.re, diff)
+			}
 		}
 	})
 }

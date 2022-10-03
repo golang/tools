@@ -19,7 +19,6 @@ import (
 // obtain a conservative call-graph of a Go program.
 // It also shows how to compute the points-to set of a variable,
 // in this case, (C).f's ch parameter.
-//
 func Example() {
 	const myprog = `
 package main
@@ -62,7 +61,7 @@ func main() {
 	}
 
 	// Create SSA-form program representation.
-	prog := ssautil.CreateProgram(iprog, 0)
+	prog := ssautil.CreateProgram(iprog, ssa.InstantiateGenerics)
 	mainPkg := prog.Package(iprog.Created[0].Pkg)
 
 	// Build SSA code for bodies of all functions in the whole program.

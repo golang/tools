@@ -17,6 +17,8 @@ import (
 	"go/token"
 	"io"
 	"strconv"
+
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // LinkifyText HTML-escapes source text and writes it to w.
@@ -24,7 +26,6 @@ import (
 // not being declared), are wrapped with HTML links pointing
 // to the respective declaration, if possible. Comments are
 // formatted the same way as with FormatText.
-//
 func LinkifyText(w io.Writer, text []byte, n ast.Node) {
 	links := linksFor(n)
 
@@ -73,7 +74,6 @@ func LinkifyText(w io.Writer, text []byte, n ast.Node) {
 
 // A link describes the (HTML) link information for an identifier.
 // The zero value of a link represents "no link".
-//
 type link struct {
 	path, name string // package path, identifier name
 	isVal      bool   // identifier is defined in a const or var declaration
@@ -81,13 +81,14 @@ type link struct {
 
 // linksFor returns the list of links for the identifiers used
 // by node in the same order as they appear in the source.
-//
 func linksFor(node ast.Node) (links []link) {
 	// linkMap tracks link information for each ast.Ident node. Entries may
 	// be created out of source order (for example, when we visit a parent
 	// definition node). These links are appended to the returned slice when
 	// their ast.Ident nodes are visited.
 	linkMap := make(map[*ast.Ident]link)
+
+	typeParams := make(map[string]bool)
 
 	ast.Inspect(node, func(node ast.Node) bool {
 		switch n := node.(type) {
@@ -105,6 +106,24 @@ func linksFor(node ast.Node) (links []link) {
 			}
 		case *ast.FuncDecl:
 			linkMap[n.Name] = link{}
+			if n.Recv != nil {
+				recv := n.Recv.List[0].Type
+				if r, isstar := recv.(*ast.StarExpr); isstar {
+					recv = r.X
+				}
+				switch x := recv.(type) {
+				case *ast.IndexExpr:
+					if ident, _ := x.Index.(*ast.Ident); ident != nil {
+						typeParams[ident.Name] = true
+					}
+				case *typeparams.IndexListExpr:
+					for _, index := range x.Indices {
+						if ident, _ := index.(*ast.Ident); ident != nil {
+							typeParams[ident.Name] = true
+						}
+					}
+				}
+			}
 		case *ast.TypeSpec:
 			linkMap[n.Name] = link{}
 		case *ast.AssignStmt:
@@ -183,8 +202,26 @@ func linksFor(node ast.Node) (links []link) {
 				links = append(links, l)
 			} else {
 				l := link{name: n.Name}
-				if n.Obj == nil && doc.IsPredeclared(n.Name) {
-					l.path = builtinPkgPath
+				if n.Obj == nil {
+					if doc.IsPredeclared(n.Name) {
+						l.path = builtinPkgPath
+					} else {
+						if typeParams[n.Name] {
+							// If a type parameter was declared then do not generate a link.
+							// Doing this is necessary because type parameter identifiers do not
+							// have their Decl recorded sometimes, see
+							// https://golang.org/issue/50956.
+							l = link{}
+						}
+					}
+				} else {
+					if n.Obj.Kind == ast.Typ {
+						if _, isfield := n.Obj.Decl.(*ast.Field); isfield {
+							// If an identifier is a type declared in a field assume it is a type
+							// parameter and do not generate a link.
+							l = link{}
+						}
+					}
 				}
 				links = append(links, l)
 			}

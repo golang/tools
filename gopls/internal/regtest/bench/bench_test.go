@@ -5,187 +5,273 @@
 package bench
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"os"
-	"runtime/pprof"
+	"os/exec"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"golang.org/x/tools/gopls/internal/hooks"
-	"golang.org/x/tools/internal/lsp/fake"
-	. "golang.org/x/tools/internal/lsp/regtest"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/fake"
+	"golang.org/x/tools/gopls/internal/lsp/lsprpc"
+	"golang.org/x/tools/internal/bug"
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/fakenet"
+	"golang.org/x/tools/internal/jsonrpc2"
+	"golang.org/x/tools/internal/jsonrpc2/servertest"
 
-	"golang.org/x/tools/internal/lsp/protocol"
+	. "golang.org/x/tools/gopls/internal/lsp/regtest"
 )
 
+// This package implements benchmarks that share a common editor session.
+//
+// It is a work-in-progress.
+//
+// Remaining TODO(rfindley):
+//   - add detailed documentation for how to write a benchmark, as a package doc
+//   - add benchmarks for more features
+//   - eliminate flags, and just run benchmarks on with a predefined set of
+//     arguments
+
 func TestMain(m *testing.M) {
-	Main(m, hooks.Options)
+	bug.PanicOnBugs = true
+	event.SetExporter(nil) // don't log to stderr
+	code := doMain(m)
+	os.Exit(code)
 }
 
-func benchmarkOptions(dir string) []RunOption {
-	return []RunOption{
-		// Run in an existing directory, since we're trying to simulate known cases
-		// that cause gopls memory problems.
-		InExistingDir(dir),
-		// Skip logs as they buffer up memory unnaturally.
-		SkipLogs(),
-		// The Debug server only makes sense if running in singleton mode.
-		Modes(Singleton),
-		// Set a generous timeout. Individual tests should control their own
-		// graceful termination.
-		Timeout(20 * time.Minute),
-
-		// Use the actual proxy, since we want our builds to succeed.
-		GOPROXY("https://proxy.golang.org"),
-	}
-}
-
-func printBenchmarkResults(result testing.BenchmarkResult) {
-	fmt.Printf("BenchmarkStatistics\t%s\t%s\n", result.String(), result.MemString())
-}
-
-var iwlOptions struct {
-	workdir string
-}
-
-func init() {
-	flag.StringVar(&iwlOptions.workdir, "iwl_workdir", "", "if set, run IWL benchmark in this directory")
-}
-
-func TestBenchmarkIWL(t *testing.T) {
-	if iwlOptions.workdir == "" {
-		t.Skip("-iwl_workdir not configured")
-	}
-
-	opts := stressTestOptions(iwlOptions.workdir)
-	// Don't skip hooks, so that we can wait for IWL.
-	opts = append(opts, SkipHooks(false))
-
-	results := testing.Benchmark(func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			WithOptions(opts...).Run(t, "", func(t *testing.T, env *Env) {})
-		}
-	})
-
-	printBenchmarkResults(results)
-}
-
-var symbolOptions struct {
-	workdir, query, matcher, style string
-	printResults                   bool
-}
-
-func init() {
-	flag.StringVar(&symbolOptions.workdir, "symbol_workdir", "", "if set, run symbol benchmark in this directory")
-	flag.StringVar(&symbolOptions.query, "symbol_query", "test", "symbol query to use in benchmark")
-	flag.StringVar(&symbolOptions.matcher, "symbol_matcher", "", "symbol matcher to use in benchmark")
-	flag.StringVar(&symbolOptions.style, "symbol_style", "", "symbol style to use in benchmark")
-	flag.BoolVar(&symbolOptions.printResults, "symbol_print_results", false, "whether to print symbol query results")
-}
-
-func TestBenchmarkSymbols(t *testing.T) {
-	if symbolOptions.workdir == "" {
-		t.Skip("-symbol_workdir not configured")
-	}
-
-	opts := benchmarkOptions(symbolOptions.workdir)
-	conf := EditorConfig{}
-	if symbolOptions.matcher != "" {
-		conf.SymbolMatcher = &symbolOptions.matcher
-	}
-	if symbolOptions.style != "" {
-		conf.SymbolStyle = &symbolOptions.style
-	}
-	opts = append(opts, conf)
-
-	WithOptions(opts...).Run(t, "", func(t *testing.T, env *Env) {
-		// We can't Await in this test, since we have disabled hooks. Instead, run
-		// one symbol request to completion to ensure all necessary cache entries
-		// are populated.
-		symbols, err := env.Editor.Server.Symbol(env.Ctx, &protocol.WorkspaceSymbolParams{
-			Query: symbolOptions.query,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if symbolOptions.printResults {
-			fmt.Println("Results:")
-			for i := 0; i < len(symbols); i++ {
-				fmt.Printf("\t%d. %s (%s)\n", i, symbols[i].Name, symbols[i].ContainerName)
-			}
-		}
-
-		results := testing.Benchmark(func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				if _, err := env.Editor.Server.Symbol(env.Ctx, &protocol.WorkspaceSymbolParams{
-					Query: symbolOptions.query,
-				}); err != nil {
-					t.Fatal(err)
+func doMain(m *testing.M) (code int) {
+	defer func() {
+		if editor != nil {
+			if err := editor.Close(context.Background()); err != nil {
+				fmt.Fprintf(os.Stderr, "closing editor: %v", err)
+				if code == 0 {
+					code = 1
 				}
 			}
-		})
-		printBenchmarkResults(results)
-	})
+		}
+		if tempDir != "" {
+			if err := os.RemoveAll(tempDir); err != nil {
+				fmt.Fprintf(os.Stderr, "cleaning temp dir: %v", err)
+				if code == 0 {
+					code = 1
+				}
+			}
+		}
+	}()
+	return m.Run()
 }
 
 var (
-	benchDir     = flag.String("didchange_dir", "", "If set, run benchmarks in this dir. Must also set regtest_bench_file.")
-	benchFile    = flag.String("didchange_file", "", "The file to modify")
-	benchProfile = flag.String("didchange_cpuprof", "", "file to write cpu profiling data to")
+	workdir   = flag.String("workdir", "", "if set, working directory to use for benchmarks; overrides -repo and -commit")
+	repo      = flag.String("repo", "https://go.googlesource.com/tools", "if set (and -workdir is unset), run benchmarks in this repo")
+	file      = flag.String("file", "go/ast/astutil/util.go", "active file, for benchmarks that operate on a file")
+	commitish = flag.String("commit", "gopls/v0.9.0", "if set (and -workdir is unset), run benchmarks at this commit")
+
+	goplsPath   = flag.String("gopls_path", "", "if set, use this gopls for testing; incompatible with -gopls_commit")
+	goplsCommit = flag.String("gopls_commit", "", "if set, install and use gopls at this commit for testing; incompatible with -gopls_path")
+
+	// If non-empty, tempDir is a temporary working dir that was created by this
+	// test suite.
+	//
+	// The sync.Once variables guard various modifications of the temp directory.
+	makeTempDirOnce  sync.Once
+	checkoutRepoOnce sync.Once
+	installGoplsOnce sync.Once
+	tempDir          string
+
+	setupEditorOnce sync.Once
+	sandbox         *fake.Sandbox
+	editor          *fake.Editor
+	awaiter         *Awaiter
 )
 
-// TestBenchmarkDidChange benchmarks modifications of a single file by making
-// synthetic modifications in a comment. It controls pacing by waiting for the
-// server to actually start processing the didChange notification before
-// proceeding. Notably it does not wait for diagnostics to complete.
+// getTempDir returns the temporary directory to use for benchmark files,
+// creating it if necessary.
+func getTempDir() string {
+	makeTempDirOnce.Do(func() {
+		var err error
+		tempDir, err = ioutil.TempDir("", "gopls-bench")
+		if err != nil {
+			log.Fatal(err)
+		}
+	})
+	return tempDir
+}
+
+// benchmarkDir returns the directory to use for benchmarks.
 //
-// Run it by passing -didchange_dir and -didchange_file, where -didchange_dir
-// is the path to a workspace root, and -didchange_file is the
-// workspace-relative path to a file to modify. e.g.:
-//
-//  go test -run=TestBenchmarkDidChange \
-//   -didchange_dir=path/to/kubernetes \
-//   -didchange_file=pkg/util/hash/hash.go
-func TestBenchmarkDidChange(t *testing.T) {
-	if *benchDir == "" {
-		t.Skip("-didchange_dir is not set")
+// If -workdir is set, just use that directory. Otherwise, check out a shallow
+// copy of -repo at the given -commit, and clean up when the test suite exits.
+func benchmarkDir() string {
+	if *workdir != "" {
+		return *workdir
 	}
-	if *benchFile == "" {
-		t.Fatal("-didchange_file must be set if -didchange_dir is set")
+	if *repo == "" {
+		log.Fatal("-repo must be provided if -workdir is unset")
+	}
+	if *commitish == "" {
+		log.Fatal("-commit must be provided if -workdir is unset")
 	}
 
-	opts := benchmarkOptions(*benchDir)
-	WithOptions(opts...).Run(t, "", func(_ *testing.T, env *Env) {
-		env.OpenFile(*benchFile)
-		env.Await(env.DoneWithOpen())
-		// Insert the text we'll be modifying at the top of the file.
-		env.EditBuffer(*benchFile, fake.Edit{Text: "// __REGTEST_PLACEHOLDER_0__\n"})
-		result := testing.Benchmark(func(b *testing.B) {
-			if *benchProfile != "" {
-				profile, err := os.Create(*benchProfile)
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer profile.Close()
-				if err := pprof.StartCPUProfile(profile); err != nil {
-					t.Fatal(err)
-				}
-				defer pprof.StopCPUProfile()
-			}
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				env.EditBuffer(*benchFile, fake.Edit{
-					Start: fake.Pos{Line: 0, Column: 0},
-					End:   fake.Pos{Line: 1, Column: 0},
-					// Increment
-					Text: fmt.Sprintf("// __REGTEST_PLACEHOLDER_%d__\n", i+1),
-				})
-				env.Await(StartedChange(uint64(i + 1)))
-			}
-			b.StopTimer()
-		})
-		printBenchmarkResults(result)
+	dir := filepath.Join(getTempDir(), "repo")
+	checkoutRepoOnce.Do(func() {
+		log.Printf("creating working dir: checking out %s@%s to %s\n", *repo, *commitish, dir)
+		if err := shallowClone(dir, *repo, *commitish); err != nil {
+			log.Fatal(err)
+		}
 	})
+	return dir
+}
+
+// shallowClone performs a shallow clone of repo into dir at the given
+// 'commitish' ref (any commit reference understood by git).
+//
+// The directory dir must not already exist.
+func shallowClone(dir, repo, commitish string) error {
+	if err := os.Mkdir(dir, 0750); err != nil {
+		return fmt.Errorf("creating dir for %s: %v", repo, err)
+	}
+
+	// Set a timeout for git fetch. If this proves flaky, it can be removed.
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	// Use a shallow fetch to download just the relevant commit.
+	shInit := fmt.Sprintf("git init && git fetch --depth=1 %q %q && git checkout FETCH_HEAD", repo, commitish)
+	initCmd := exec.CommandContext(ctx, "/bin/sh", "-c", shInit)
+	initCmd.Dir = dir
+	if output, err := initCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("checking out %s: %v\n%s", repo, err, output)
+	}
+	return nil
+}
+
+// benchmarkEnv returns a shared benchmark environment
+func benchmarkEnv(tb testing.TB) *Env {
+	setupEditorOnce.Do(func() {
+		dir := benchmarkDir()
+
+		var err error
+		sandbox, editor, awaiter, err = connectEditor(dir, fake.EditorConfig{})
+		if err != nil {
+			log.Fatalf("connecting editor: %v", err)
+		}
+
+		if err := awaiter.Await(context.Background(), InitialWorkspaceLoad); err != nil {
+			panic(err)
+		}
+	})
+
+	return &Env{
+		T:       tb,
+		Ctx:     context.Background(),
+		Editor:  editor,
+		Sandbox: sandbox,
+		Awaiter: awaiter,
+	}
+}
+
+// connectEditor connects a fake editor session in the given dir, using the
+// given editor config.
+func connectEditor(dir string, config fake.EditorConfig) (*fake.Sandbox, *fake.Editor, *Awaiter, error) {
+	s, err := fake.NewSandbox(&fake.SandboxConfig{
+		Workdir: dir,
+		GOPROXY: "https://proxy.golang.org",
+	})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	a := NewAwaiter(s.Workdir)
+	ts := getServer()
+	e, err := fake.NewEditor(s, config).Connect(context.Background(), ts, a.Hooks())
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return s, e, a, nil
+}
+
+// getServer returns a server connector that either starts a new in-process
+// server, or starts a separate gopls process.
+func getServer() servertest.Connector {
+	if *goplsPath != "" && *goplsCommit != "" {
+		panic("can't set both -gopls_path and -gopls_commit")
+	}
+	if *goplsPath != "" {
+		return &SidecarServer{*goplsPath}
+	}
+	if *goplsCommit != "" {
+		path := getInstalledGopls()
+		return &SidecarServer{path}
+	}
+	server := lsprpc.NewStreamServer(cache.New(nil, nil, hooks.Options), false)
+	return servertest.NewPipeServer(server, jsonrpc2.NewRawStream)
+}
+
+// getInstalledGopls builds gopls at the given -gopls_commit, returning the
+// path to the gopls binary.
+func getInstalledGopls() string {
+	if *goplsCommit == "" {
+		panic("must provide -gopls_commit")
+	}
+	toolsDir := filepath.Join(getTempDir(), "tools")
+	goplsPath := filepath.Join(toolsDir, "gopls", "gopls")
+
+	installGoplsOnce.Do(func() {
+		log.Printf("installing gopls: checking out x/tools@%s\n", *goplsCommit)
+		if err := shallowClone(toolsDir, "https://go.googlesource.com/tools", *goplsCommit); err != nil {
+			log.Fatal(err)
+		}
+
+		log.Println("installing gopls: building...")
+		bld := exec.Command("go", "build", ".")
+		bld.Dir = filepath.Join(getTempDir(), "tools", "gopls")
+		if output, err := bld.CombinedOutput(); err != nil {
+			log.Fatalf("building gopls: %v\n%s", err, output)
+		}
+
+		// Confirm that the resulting path now exists.
+		if _, err := os.Stat(goplsPath); err != nil {
+			log.Fatalf("os.Stat(%s): %v", goplsPath, err)
+		}
+	})
+	return goplsPath
+}
+
+// A SidecarServer starts (and connects to) a separate gopls process at the
+// given path.
+type SidecarServer struct {
+	goplsPath string
+}
+
+// Connect creates new io.Pipes and binds them to the underlying StreamServer.
+func (s *SidecarServer) Connect(ctx context.Context) jsonrpc2.Conn {
+	cmd := exec.CommandContext(ctx, s.goplsPath, "serve")
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		log.Fatal(err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Fatal(err)
+	}
+	cmd.Stderr = os.Stdout
+	if err := cmd.Start(); err != nil {
+		log.Fatalf("starting gopls: %v", err)
+	}
+
+	go cmd.Wait() // to free resources; error is ignored
+
+	clientStream := jsonrpc2.NewHeaderStream(fakenet.NewConn("stdio", stdout, stdin))
+	clientConn := jsonrpc2.NewConn(clientStream)
+	return clientConn
 }

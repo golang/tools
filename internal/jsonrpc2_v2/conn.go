@@ -13,8 +13,7 @@ import (
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/label"
-	"golang.org/x/tools/internal/lsp/debug/tag"
-	errors "golang.org/x/xerrors"
+	"golang.org/x/tools/internal/event/tag"
 )
 
 // Binder builds a connection configuration.
@@ -22,7 +21,8 @@ import (
 // ConnectionOptions itself implements Binder returning itself unmodified, to
 // allow for the simple cases where no per connection information is needed.
 type Binder interface {
-	// Bind is invoked when creating a new connection.
+	// Bind returns the ConnectionOptions to use when establishing the passed-in
+	// Connection.
 	// The connection is not ready to use when Bind is called.
 	Bind(context.Context, *Connection) (ConnectionOptions, error)
 }
@@ -125,7 +125,7 @@ func newConnection(ctx context.Context, rwc io.ReadWriteCloser, binder Binder) (
 func (c *Connection) Notify(ctx context.Context, method string, params interface{}) error {
 	notify, err := NewNotification(method, params)
 	if err != nil {
-		return errors.Errorf("marshaling notify parameters: %v", err)
+		return fmt.Errorf("marshaling notify parameters: %v", err)
 	}
 	ctx, done := event.Start(ctx, method,
 		tag.Method.Of(method),
@@ -157,7 +157,7 @@ func (c *Connection) Call(ctx context.Context, method string, params interface{}
 	call, err := NewCall(result.id, method, params)
 	if err != nil {
 		//set the result to failed
-		result.resultBox <- asyncResult{err: errors.Errorf("marshaling call parameters: %w", err)}
+		result.resultBox <- asyncResult{err: fmt.Errorf("marshaling call parameters: %w", err)}
 		return result
 	}
 	ctx, endSpan := event.Start(ctx, method,
@@ -234,10 +234,10 @@ func (a *AsyncCall) Await(ctx context.Context, result interface{}) error {
 	return json.Unmarshal(r.result, result)
 }
 
-// Respond deliverers a response to an incoming Call.
-// It is an error to not call this exactly once for any message for which a
-// handler has previously returned ErrAsyncResponse. It is also an error to
-// call this for any other message.
+// Respond delivers a response to an incoming Call.
+//
+// Respond must be called exactly once for any message for which a handler
+// returns ErrAsyncResponse. It must not be called for any other message.
 func (c *Connection) Respond(id ID, result interface{}, rerr error) error {
 	pending := <-c.incomingBox
 	defer func() { c.incomingBox <- pending }()
@@ -321,8 +321,8 @@ func (c *Connection) readIncoming(ctx context.Context, reader Reader, toQueue ch
 			// cancelled by id
 			if msg.IsCall() {
 				pending := <-c.incomingBox
-				c.incomingBox <- pending
 				pending[msg.ID] = entry
+				c.incomingBox <- pending
 			}
 			// send the message to the incoming queue
 			toQueue <- entry
@@ -346,7 +346,7 @@ func (c *Connection) incomingResponse(msg *Response) {
 	}
 }
 
-// manageQueue reads incoming requests, attempts to proccess them with the preempter, or queue them
+// manageQueue reads incoming requests, attempts to process them with the preempter, or queue them
 // up for normal handling.
 func (c *Connection) manageQueue(ctx context.Context, preempter Preempter, fromRead <-chan *incoming, toDeliver chan<- *incoming) {
 	defer close(toDeliver)
@@ -407,7 +407,7 @@ func (c *Connection) deliverMessages(ctx context.Context, handler Handler, fromQ
 		switch {
 		case rerr == ErrNotHandled:
 			// message not handled, report it back to the caller as an error
-			c.reply(entry, nil, errors.Errorf("%w: %q", ErrMethodNotFound, entry.request.Method))
+			c.reply(entry, nil, fmt.Errorf("%w: %q", ErrMethodNotFound, entry.request.Method))
 		case rerr == ErrAsyncResponse:
 			// message handled but the response will come later
 		default:
@@ -439,7 +439,7 @@ func (c *Connection) respond(entry *incoming, result interface{}, rerr error) er
 		// send the response
 		if result == nil && rerr == nil {
 			// call with no response, send an error anyway
-			rerr = errors.Errorf("%w: %q produced no response", ErrInternal, entry.request.Method)
+			rerr = fmt.Errorf("%w: %q produced no response", ErrInternal, entry.request.Method)
 		}
 		var response *Response
 		response, err = NewResponse(entry.request.ID, result, rerr)
@@ -451,11 +451,11 @@ func (c *Connection) respond(entry *incoming, result interface{}, rerr error) er
 		switch {
 		case rerr != nil:
 			// notification failed
-			err = errors.Errorf("%w: %q notification failed: %v", ErrInternal, entry.request.Method, rerr)
+			err = fmt.Errorf("%w: %q notification failed: %v", ErrInternal, entry.request.Method, rerr)
 			rerr = nil
 		case result != nil:
 			//notification produced a response, which is an error
-			err = errors.Errorf("%w: %q produced unwanted response", ErrInternal, entry.request.Method)
+			err = fmt.Errorf("%w: %q produced unwanted response", ErrInternal, entry.request.Method)
 		default:
 			// normal notification finish
 		}

@@ -16,6 +16,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/tools/go/gcexportdata"
 )
@@ -29,7 +30,6 @@ func ExampleRead() {
 		log.Fatalf("can't find export data for fmt")
 	}
 	fmt.Printf("Package path:       %s\n", path)
-	fmt.Printf("Export data:        %s\n", filepath.Base(filename))
 
 	// Open and read the file.
 	f, err := os.Open(filename)
@@ -50,25 +50,37 @@ func ExampleRead() {
 		log.Fatal(err)
 	}
 
-	// Print package information.
+	// We can see all the names in Names.
 	members := pkg.Scope().Names()
-	if members[0] == ".inittask" {
-		// An improvement to init handling in 1.13 added ".inittask". Remove so go >= 1.13 and go < 1.13 both pass.
-		members = members[1:]
+	foundPrintln := false
+	for _, member := range members {
+		if member == "Println" {
+			foundPrintln = true
+			break
+		}
 	}
-	fmt.Printf("Package members:    %s...\n", members[:5])
+	fmt.Print("Package members:    ")
+	if foundPrintln {
+		fmt.Println("Println found")
+	} else {
+		fmt.Println("Println not found")
+	}
+
+	// We can also look up a name directly using Lookup.
 	println := pkg.Scope().Lookup("Println")
+	// go 1.18+ uses the 'any' alias
+	typ := strings.ReplaceAll(println.Type().String(), "interface{}", "any")
+	fmt.Printf("Println type:       %s\n", typ)
 	posn := fset.Position(println.Pos())
-	posn.Line = 123 // make example deterministic
-	fmt.Printf("Println type:       %s\n", println.Type())
+	// make example deterministic
+	posn.Line = 123
 	fmt.Printf("Println location:   %s\n", slashify(posn))
 
 	// Output:
 	//
 	// Package path:       fmt
-	// Export data:        fmt.a
-	// Package members:    [Errorf Formatter Fprint Fprintf Fprintln]...
-	// Println type:       func(a ...interface{}) (n int, err error)
+	// Package members:    Println found
+	// Println type:       func(a ...any) (n int, err error)
 	// Println location:   $GOROOT/src/fmt/print.go:123:1
 }
 

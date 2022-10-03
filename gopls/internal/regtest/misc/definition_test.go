@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/internal/lsp/protocol"
-	. "golang.org/x/tools/internal/lsp/regtest"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	. "golang.org/x/tools/gopls/internal/lsp/regtest"
+	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 	"golang.org/x/tools/internal/testenv"
 
-	"golang.org/x/tools/internal/lsp/fake"
-	"golang.org/x/tools/internal/lsp/tests"
+	"golang.org/x/tools/gopls/internal/lsp/fake"
 )
 
 const internalDefinition = `
@@ -133,7 +133,7 @@ func main() {
 		}
 		want := "```go\nfunc (error).Error() string\n```"
 		if content.Value != want {
-			t.Fatalf("hover failed:\n%s", tests.Diff(t, want, content.Value))
+			t.Fatalf("hover failed:\n%s", compare.Text(want, content.Value))
 		}
 	})
 }
@@ -162,9 +162,7 @@ func main() {}
 	} {
 		t.Run(tt.importShortcut, func(t *testing.T) {
 			WithOptions(
-				EditorConfig{
-					ImportShortcut: tt.importShortcut,
-				},
+				Settings{"importShortcut": tt.importShortcut},
 			).Run(t, mod, func(t *testing.T, env *Env) {
 				env.OpenFile("main.go")
 				file, pos := env.GoToDefinition("main.go", env.RegexpSearch("main.go", `"fmt"`))

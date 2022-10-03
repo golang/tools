@@ -16,7 +16,8 @@ Where `vX.Y.Z` is the desired version.
 
 ### Unstable versions
 
-To update `gopls` to the latest **unstable** version, use:
+To update `gopls` to the latest **unstable** version, use the following
+commands.
 
 ```sh
 # Create an empty go.mod file, only for tracking requirements.
@@ -24,11 +25,8 @@ cd $(mktemp -d)
 go mod init gopls-unstable
 
 # Use 'go get' to add requirements and to ensure they work together.
-go get golang.org/x/tools/gopls@master golang.org/x/tools@master
+go get -d golang.org/x/tools/gopls@master golang.org/x/tools@master
 
-# For go1.17 or older, the above `go get` command will build and
-# install `gopls`. For go1.18+ or tip, run the following command to install
-# using selected versions in go.mod.
 go install golang.org/x/tools/gopls
 ```
 
@@ -46,36 +44,26 @@ editor.
 
 ## Working with generic code
 
-Gopls has experimental support for generic Go, as defined by the type
-parameters proposal ([golang/go#43651](https://golang.org/issues/43651)) and
-type set addendum ([golang/go#45346](https://golang.org/issues/45346)).
-
-To enable this support, you need to build gopls with a version of Go that
-supports type parameters, currently just tip. This can be done by checking
-out the `master` branch in the Go repository, or by using
-`golang.org/dl/gotip`:
+Gopls has support for editing generic Go code. To enable this support, you need
+to **install gopls using Go 1.18 or later**. The easiest way to do this is by
+[installing Go 1.18+](https://go.dev/dl) and then using this Go version to
+install gopls:
 
 ```
-$ go install golang.org/dl/gotip@latest
-$ gotip download
+$ go install golang.org/x/tools/gopls@latest
 ```
 
-For building gopls with type parameter support, it is recommended that you
-build gopls at tip. External APIs are under active development on the Go
-`master` branch, so building gopls at tip minimizes the chances of a build
-failure. You will also need to update the `go` directive in your `go.mod`
-file to refer to `go 1.18` to use generics.
+It is strongly recommended that you install the latest version of `gopls`, or
+the latest **unstable** version as [described above](#installing-unreleased-versions).
+We're still working on improving our generics support.
 
-Build and install the latest **unstable** version of `gopls` following
-[the instruction](#installing-unreleased-versions).
-Remember to use `gotip` instead of `go`.
+The `gopls` built with these instructions understands generic code. See the
+[generics tutorial](https://go.dev/doc/tutorial/generics) for more information
+on how to use generics in Go!
 
-The `gopls` build with this instruction understands generic code. To actually
-run the generic code you develop, you must also use the tip version of the Go
-compiler. For example:
+### Known issues
 
-```
-$ gotip run .
-```
+  * [`staticcheck`](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#staticcheck-bool)
+    on generic code is not supported yet.
 
 [Go project]: https://go.googlesource.com/go

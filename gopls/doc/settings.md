@@ -1,6 +1,6 @@
 # Settings
 
-<!--TODO: Generate this file from the documentation in golang/org/x/tools/internal/lsp/source/options.go.-->
+<!--TODO: Generate this file from the documentation in golang.org/x/tools/gopls/internal/lsp/source/options.go.-->
 
 This document describes the global settings for `gopls` inside the editor.
 The settings block will be called `"gopls"` and contains a collection of
@@ -35,6 +35,7 @@ still be able to independently override specific experimental features.
   * [Completion](#completion)
   * [Diagnostic](#diagnostic)
   * [Documentation](#documentation)
+  * [Inlayhint](#inlayhint)
   * [Navigation](#navigation)
 
 ### Build
@@ -62,15 +63,27 @@ relative to the workspace folder. They are evaluated in order, and
 the last filter that applies to a path controls whether it is included.
 The path prefix can be empty, so an initial `-` excludes everything.
 
+DirectoryFilters also supports the `**` operator to match 0 or more directories.
+
 Examples:
 
-Exclude node_modules: `-node_modules`
+Exclude node_modules at current depth: `-node_modules`
+
+Exclude node_modules at any depth: `-**/node_modules`
 
 Include only project_a: `-` (exclude everything), `+project_a`
 
 Include only project_a, but not node_modules inside it: `-`, `+project_a`, `-project_a/node_modules`
 
-Default: `["-node_modules"]`.
+Default: `["-**/node_modules"]`.
+
+#### **templateExtensions** *[]string*
+
+templateExtensions gives the extensions of file names that are treateed
+as template files. (The extension
+is the part of the file name after the final dot.)
+
+Default: `[]`.
 
 #### **memoryMode** *enum*
 
@@ -86,8 +99,8 @@ Must be one of:
 * `"DegradeClosed"`: In DegradeClosed mode, `gopls` will collect less information about
 packages without open files. As a result, features like Find
 References and Rename will miss results in such packages.
-
 * `"Normal"`
+
 Default: `"Normal"`.
 
 #### **expandWorkspaceToModule** *bool*
@@ -110,14 +123,8 @@ Default: `true`.
 experimentalWorkspaceModule opts a user into the experimental support
 for multi-module workspaces.
 
-Default: `false`.
-
-#### **experimentalTemplateSupport** *bool*
-
-**This setting is experimental and may be deleted.**
-
-experimentalTemplateSupport opts into the experimental support
-for template files.
+Deprecated: this feature is deprecated and will be removed in a future
+version of gopls (https://go.dev/issue/55331).
 
 Default: `false`.
 
@@ -160,8 +167,10 @@ Default: `false`.
 
 experimentalUseInvalidMetadata enables gopls to fall back on outdated
 package metadata to provide editor features if the go command fails to
-load packages for some reason (like an invalid go.mod file). This will
-eventually be the default behavior, and this setting will be removed.
+load packages for some reason (like an invalid go.mod file).
+
+Deprecated: this setting is deprecated and will be removed in a future
+version of gopls (https://go.dev/issue/55333).
 
 Default: `false`.
 
@@ -188,7 +197,7 @@ Default: `false`.
 
 codelenses overrides the enabled/disabled state of code lenses. See the
 "Code Lenses" section of the
-[Settings page](https://github.com/golang/tools/blob/master/gopls/doc/settings.md)
+[Settings page](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#code-lenses)
 for the list of supported lenses.
 
 Example Usage:
@@ -212,6 +221,22 @@ Default: `{"gc_details":false,"generate":true,"regenerate_cgo":true,"tidy":true,
 
 semanticTokens controls whether the LSP server will send
 semantic tokens to the client.
+
+Default: `false`.
+
+#### **noSemanticString** *bool*
+
+**This setting is experimental and may be deleted.**
+
+noSemanticString turns off the sending of the semantic token 'string'
+
+Default: `false`.
+
+#### **noSemanticNumber** *bool*
+
+**This setting is experimental and may be deleted.**
+
+noSemanticNumber  turns off the sending of the semantic token 'number'
 
 Default: `false`.
 
@@ -248,13 +273,14 @@ Must be one of:
 * `"CaseInsensitive"`
 * `"CaseSensitive"`
 * `"Fuzzy"`
+
 Default: `"Fuzzy"`.
 
 ##### **experimentalPostfixCompletions** *bool*
 
 **This setting is experimental and may be deleted.**
 
-experimentalPostfixCompletions enables artifical method snippets
+experimentalPostfixCompletions enables artificial method snippets
 such as "someSlice.sort!".
 
 Default: `true`.
@@ -265,8 +291,8 @@ Default: `true`.
 
 analyses specify analyses that the user would like to enable or disable.
 A map of the names of analysis passes that should be enabled/disabled.
-A full list of analyzers that gopls uses can be found
-[here](https://github.com/golang/tools/blob/master/gopls/doc/analyzers.md).
+A full list of analyzers that gopls uses can be found in
+[analyzers.md](https://github.com/golang/tools/blob/master/gopls/doc/analyzers.md).
 
 Example Usage:
 
@@ -286,6 +312,8 @@ Default: `{}`.
 **This setting is experimental and may be deleted.**
 
 staticcheck enables additional analyses from staticcheck.io.
+These analyses are documented on
+[Staticcheck's website](https://staticcheck.io/docs/checks/).
 
 Default: `false`.
 
@@ -299,11 +327,8 @@ that should be reported by the gc_details command.
 Can contain any of:
 
 * `"bounds"` controls bounds checking diagnostics.
-
 * `"escape"` controls diagnostics about escape choices.
-
 * `"inline"` controls diagnostics about inlining choices.
-
 * `"nil"` controls nil checks.
 
 Default: `{"bounds":true,"escape":true,"inline":true,"nil":true}`.
@@ -333,6 +358,9 @@ file system notifications.
 
 This option must be set to a valid duration string, for example `"100ms"`.
 
+Deprecated: this setting is deprecated and will be removed in a future
+version of gopls (https://go.dev/issue/55332)
+
 Default: `"0s"`.
 
 #### Documentation
@@ -351,8 +379,8 @@ Must be one of:
 This format separates the signature from the documentation, so that the client
 can do more manipulation of these fields.\
 This should only be used by clients that support this behavior.
-
 * `"SynopsisDocumentation"`
+
 Default: `"FullDocumentation"`.
 
 ##### **linkTarget** *string*
@@ -365,6 +393,9 @@ It might be one of:
 
 If company chooses to use its own `godoc.org`, its address can be used as well.
 
+Modules matching the GOPRIVATE environment variable will not have
+documentation links in hover.
+
 Default: `"pkg.go.dev"`.
 
 ##### **linksInHover** *bool*
@@ -372,6 +403,18 @@ Default: `"pkg.go.dev"`.
 linksInHover toggles the presence of links to documentation in hover.
 
 Default: `true`.
+
+#### Inlayhint
+
+##### **hints** *map[string]bool*
+
+**This setting is experimental and may be deleted.**
+
+hints specify inlay hints that users want to see. A full list of hints
+that gopls uses can be found in
+[inlayHints.md](https://github.com/golang/tools/blob/master/gopls/doc/inlayHints.md).
+
+Default: `{}`.
 
 #### Navigation
 
@@ -385,6 +428,7 @@ Must be one of:
 * `"Both"`
 * `"Definition"`
 * `"Link"`
+
 Default: `"Both"`.
 
 ##### **symbolMatcher** *enum*
@@ -399,7 +443,8 @@ Must be one of:
 * `"CaseSensitive"`
 * `"FastFuzzy"`
 * `"Fuzzy"`
-Default: `"Fuzzy"`.
+
+Default: `"FastFuzzy"`.
 
 ##### **symbolStyle** *enum*
 
@@ -423,10 +468,8 @@ Must be one of:
 match for the given symbol query. Here a "qualifier" is any "/" or "."
 delimited suffix of the fully qualified symbol. i.e. "to/pkg.Foo.Field" or
 just "Foo.Field".
-
 * `"Full"` is fully qualified symbols, i.e.
 "path/to/pkg.Foo.Field".
-
 * `"Package"` is package qualified symbols i.e.
 "pkg.Foo.Field".
 
@@ -441,6 +484,16 @@ verboseOutput enables additional debug logging.
 Default: `false`.
 
 <!-- END User: DO NOT MANUALLY EDIT THIS SECTION -->
+
+#### **newDiff** *string*
+
+newDiff enables the new diff implementation. If this is "both",
+for now both diffs will be run and statistics will be generateted in
+a file in $TMPDIR. This is a risky setting; help in trying it
+is appreciated. If it is "old" the old implementation is used,
+and if it is "new", just the new implementation is used.
+
+Default: 'old'.
 
 ## Code Lenses
 
@@ -464,6 +517,11 @@ Runs `go generate` for a given directory.
 Identifier: `regenerate_cgo`
 
 Regenerates cgo definitions.
+### **Run vulncheck (experimental)**
+
+Identifier: `run_vulncheck_exp`
+
+Run vulnerability check (`govulncheck`).
 ### **Run test(s) (legacy)**
 
 Identifier: `test`

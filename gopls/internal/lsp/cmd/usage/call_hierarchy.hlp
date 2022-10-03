@@ -1,0 +1,10 @@
+display selected identifier's call hierarchy
+
+Usage:
+  gopls [flags] call_hierarchy <position>
+
+Example:
+
+	$ # 1-indexed location (:line:column or :#offset) of the target identifier
+	$ gopls call_hierarchy helper/helper.go:8:6
+	$ gopls call_hierarchy helper/helper.go:#53

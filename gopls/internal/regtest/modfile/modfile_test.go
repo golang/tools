@@ -6,18 +6,21 @@ package modfile
 
 import (
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/hooks"
-	. "golang.org/x/tools/internal/lsp/regtest"
+	. "golang.org/x/tools/gopls/internal/lsp/regtest"
+	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
+	"golang.org/x/tools/internal/bug"
 
-	"golang.org/x/tools/internal/lsp/protocol"
-	"golang.org/x/tools/internal/lsp/tests"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/testenv"
 )
 
 func TestMain(m *testing.M) {
+	bug.PanicOnBugs = true
 	Main(m, hooks.Options)
 }
 
@@ -92,10 +95,13 @@ func main() {
 			goModContent := env.ReadWorkspaceFile("a/go.mod")
 			env.OpenFile("a/main.go")
 			env.Await(
-				env.DiagnosticAtRegexp("a/main.go", "\"example.com/blah\""),
+				OnceMet(
+					env.DoneWithOpen(),
+					env.DiagnosticAtRegexp("a/main.go", "\"example.com/blah\""),
+				),
 			)
 			if got := env.ReadWorkspaceFile("a/go.mod"); got != goModContent {
-				t.Fatalf("go.mod changed on disk:\n%s", tests.Diff(t, goModContent, got))
+				t.Fatalf("go.mod changed on disk:\n%s", compare.Text(goModContent, got))
 			}
 			// Save the buffer, which will format and organize imports.
 			// Confirm that the go.mod file still does not change.
@@ -104,34 +110,51 @@ func main() {
 				env.DiagnosticAtRegexp("a/main.go", "\"example.com/blah\""),
 			)
 			if got := env.ReadWorkspaceFile("a/go.mod"); got != goModContent {
-				t.Fatalf("go.mod changed on disk:\n%s", tests.Diff(t, goModContent, got))
+				t.Fatalf("go.mod changed on disk:\n%s", compare.Text(goModContent, got))
 			}
 		})
 	})
 
 	// Reproduce golang/go#40269 by deleting and recreating main.go.
 	t.Run("delete main.go", func(t *testing.T) {
-		t.Skip("This test will be flaky until golang/go#40269 is resolved.")
-
 		runner.Run(t, untidyModule, func(t *testing.T, env *Env) {
 			goModContent := env.ReadWorkspaceFile("a/go.mod")
 			mainContent := env.ReadWorkspaceFile("a/main.go")
 			env.OpenFile("a/main.go")
 			env.SaveBuffer("a/main.go")
 
+			// Ensure that we're done processing all the changes caused by opening
+			// and saving above. If not, we may run into a file locking issue on
+			// windows.
+			//
+			// If this proves insufficient, env.RemoveWorkspaceFile can be updated to
+			// retry file lock errors on windows.
+			env.Await(
+				env.DoneWithOpen(),
+				env.DoneWithSave(),
+				env.DoneWithChangeWatchedFiles(),
+			)
 			env.RemoveWorkspaceFile("a/main.go")
+
+			// TODO(rfindley): awaiting here shouldn't really be necessary. We should
+			// be consistent eventually.
+			//
+			// Probably this was meant to exercise a race with the change below.
 			env.Await(
 				env.DoneWithOpen(),
 				env.DoneWithSave(),
 				env.DoneWithChangeWatchedFiles(),
 			)
 
-			env.WriteWorkspaceFile("main.go", mainContent)
+			env.WriteWorkspaceFile("a/main.go", mainContent)
 			env.Await(
-				env.DiagnosticAtRegexp("main.go", "\"example.com/blah\""),
+				OnceMet(
+					env.DoneWithChangeWatchedFiles(),
+					env.DiagnosticAtRegexp("a/main.go", "\"example.com/blah\""),
+				),
 			)
-			if got := env.ReadWorkspaceFile("go.mod"); got != goModContent {
-				t.Fatalf("go.mod changed on disk:\n%s", tests.Diff(t, goModContent, got))
+			if got := env.ReadWorkspaceFile("a/go.mod"); got != goModContent {
+				t.Fatalf("go.mod changed on disk:\n%s", compare.Text(goModContent, got))
 			}
 		})
 	})
@@ -183,7 +206,7 @@ require example.com v1.2.3
 		}
 		env.ApplyQuickFixes("a/main.go", []protocol.Diagnostic{goGetDiag})
 		if got := env.ReadWorkspaceFile("a/go.mod"); got != want {
-			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(t, want, got))
+			t.Fatalf("unexpected go.mod content:\n%s", compare.Text(want, got))
 		}
 	})
 }
@@ -233,7 +256,63 @@ require random.org v1.2.3
 		}
 		env.ApplyQuickFixes("a/main.go", []protocol.Diagnostic{randomDiag})
 		if got := env.ReadWorkspaceFile("a/go.mod"); got != want {
-			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(t, want, got))
+			t.Fatalf("unexpected go.mod content:\n%s", compare.Text(want, got))
+		}
+	})
+}
+
+// Tests that multiple missing dependencies gives good single fixes.
+func TestMissingDependencyFixesWithGoWork(t *testing.T) {
+	testenv.NeedsGo1Point(t, 18)
+	const mod = `
+-- go.work --
+go 1.18
+
+use (
+	./a
+)
+-- a/go.mod --
+module mod.com
+
+go 1.12
+
+-- a/main.go --
+package main
+
+import "example.com/blah"
+import "random.org/blah"
+
+var _, _ = blah.Name, hello.Name
+`
+
+	const want = `module mod.com
+
+go 1.12
+
+require random.org v1.2.3
+`
+
+	RunMultiple{
+		{"default", WithOptions(ProxyFiles(proxy), WorkspaceFolders("a"))},
+		{"nested", WithOptions(ProxyFiles(proxy))},
+	}.Run(t, mod, func(t *testing.T, env *Env) {
+		env.OpenFile("a/main.go")
+		var d protocol.PublishDiagnosticsParams
+		env.Await(
+			OnceMet(
+				env.DiagnosticAtRegexp("a/main.go", `"random.org/blah"`),
+				ReadDiagnostics("a/main.go", &d),
+			),
+		)
+		var randomDiag protocol.Diagnostic
+		for _, diag := range d.Diagnostics {
+			if strings.Contains(diag.Message, "random.org") {
+				randomDiag = diag
+			}
+		}
+		env.ApplyQuickFixes("a/main.go", []protocol.Diagnostic{randomDiag})
+		if got := env.ReadWorkspaceFile("a/go.mod"); got != want {
+			t.Fatalf("unexpected go.mod content:\n%s", compare.Text(want, got))
 		}
 	})
 }
@@ -280,7 +359,7 @@ require example.com v1.2.3
 		)
 		env.ApplyQuickFixes("a/go.mod", d.Diagnostics)
 		if got := env.Editor.BufferText("a/go.mod"); got != want {
-			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(t, want, got))
+			t.Fatalf("unexpected go.mod content:\n%s", compare.Text(want, got))
 		}
 	})
 }
@@ -325,7 +404,7 @@ go 1.14
 		)
 		env.ApplyQuickFixes("a/go.mod", d.Diagnostics)
 		if got := env.Editor.BufferText("a/go.mod"); got != want {
-			t.Fatalf("unexpected go.mod content:\n%s", tests.Diff(t, want, got))
+			t.Fatalf("unexpected go.mod content:\n%s", compare.Text(want, got))
 		}
 	})
 }
@@ -397,7 +476,7 @@ require (
 )
 `
 		if got := env.ReadWorkspaceFile("a/go.mod"); got != want {
-			t.Fatalf("TestNewDepWithUnusedDep failed:\n%s", tests.Diff(t, want, got))
+			t.Fatalf("TestNewDepWithUnusedDep failed:\n%s", compare.Text(want, got))
 		}
 	})
 }
@@ -493,7 +572,7 @@ var _ = blah.Name
 			env.DiagnosticAtRegexpWithMessage("a/main.go", `"example.com/blah/v2"`, "cannot find module providing"),
 			env.DiagnosticAtRegexpWithMessage("a/go.mod", `require example.com/blah/v2`, "cannot find module providing"),
 		)
-		env.ApplyQuickFixes("a/go.mod", env.DiagnosticsFor("a/go.mod").Diagnostics)
+		env.ApplyQuickFixes("a/go.mod", env.Awaiter.DiagnosticsFor("a/go.mod").Diagnostics)
 		const want = `module mod.com
 
 go 1.12
@@ -506,14 +585,20 @@ require (
 		env.SaveBuffer("a/go.mod")
 		env.Await(EmptyDiagnostics("a/main.go"))
 		if got := env.Editor.BufferText("a/go.mod"); got != want {
-			t.Fatalf("suggested fixes failed:\n%s", tests.Diff(t, want, got))
+			t.Fatalf("suggested fixes failed:\n%s", compare.Text(want, got))
 		}
 	})
 }
 
 // Reproduces golang/go#38232.
 func TestUnknownRevision(t *testing.T) {
-	testenv.NeedsGo1Point(t, 14)
+	if runtime.GOOS == "plan9" {
+		t.Skipf("skipping test that fails for unknown reasons on plan9; see https://go.dev/issue/50477")
+	}
+
+	// This test fails at go1.14 and go1.15 due to differing Go command behavior.
+	// This was not significantly investigated.
+	testenv.NeedsGo1Point(t, 16)
 
 	const unknown = `
 -- a/go.mod --
@@ -677,13 +762,9 @@ func main() {
 }
 `
 	WithOptions(
-		EditorConfig{
-			Env: map[string]string{
-				"GOFLAGS": "-mod=readonly",
-			},
-		},
+		EnvVars{"GOFLAGS": "-mod=readonly"},
 		ProxyFiles(proxy),
-		Modes(Singleton),
+		Modes(Default),
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		original := env.ReadWorkspaceFile("go.mod")
@@ -692,7 +773,7 @@ func main() {
 		)
 		got := env.ReadWorkspaceFile("go.mod")
 		if got != original {
-			t.Fatalf("go.mod file modified:\n%s", tests.Diff(t, original, got))
+			t.Fatalf("go.mod file modified:\n%s", compare.Text(original, got))
 		}
 		env.RunGoCommand("get", "example.com/blah@v1.2.3")
 		env.RunGoCommand("mod", "tidy")
@@ -767,9 +848,7 @@ func main() {
 `
 	WithOptions(
 		ProxyFiles(workspaceProxy),
-		EditorConfig{
-			BuildFlags: []string{"-tags", "bob"},
-		},
+		Settings{"buildFlags": []string{"-tags", "bob"}},
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.Await(
 			env.DiagnosticAtRegexp("main.go", `"example.com/blah"`),
@@ -863,7 +942,7 @@ func hello() {}
 		// TODO(rFindley) this doesn't work in multi-module workspace mode, because
 		// it keeps around the last parsing modfile. Update this test to also
 		// exercise the workspace module.
-		Modes(Singleton),
+		Modes(Default),
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
 		env.Await(env.DoneWithOpen())
@@ -947,7 +1026,7 @@ go 1.12
 `
 			env.ApplyQuickFixes("go.mod", d.Diagnostics)
 			if got := env.Editor.BufferText("go.mod"); got != want {
-				t.Fatalf("unexpected content in go.mod:\n%s", tests.Diff(t, want, got))
+				t.Fatalf("unexpected content in go.mod:\n%s", compare.Text(want, got))
 			}
 		})
 	})
@@ -1000,7 +1079,7 @@ require random.com v1.2.3
 			}
 			env.ApplyQuickFixes("go.mod", diagnostics)
 			if got := env.Editor.BufferText("go.mod"); got != want {
-				t.Fatalf("unexpected content in go.mod:\n%s", tests.Diff(t, want, got))
+				t.Fatalf("unexpected content in go.mod:\n%s", compare.Text(want, got))
 			}
 		})
 	})
@@ -1031,7 +1110,7 @@ func main() {
 `
 	WithOptions(
 		ProxyFiles(workspaceProxy),
-		Modes(Singleton),
+		Modes(Default),
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
 		params := &protocol.PublishDiagnosticsParams{}
@@ -1046,7 +1125,7 @@ func main() {
 example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
 `
 		if got := env.ReadWorkspaceFile("go.sum"); got != want {
-			t.Fatalf("unexpected go.sum contents:\n%s", tests.Diff(t, want, got))
+			t.Fatalf("unexpected go.sum contents:\n%s", compare.Text(want, got))
 		}
 	})
 }
@@ -1100,7 +1179,7 @@ func main() {
 `
 	WithOptions(
 		ProxyFiles(proxy),
-		Modes(Singleton),
+		Modes(Default),
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		d := &protocol.PublishDiagnosticsParams{}
@@ -1110,8 +1189,25 @@ func main() {
 		)
 		env.ApplyQuickFixes("main.go", d.Diagnostics)
 		env.Await(
-			EmptyDiagnostics("main.go"),
-			NoDiagnostics("go.mod"),
+			EmptyOrNoDiagnostics("main.go"),
+			EmptyOrNoDiagnostics("go.mod"),
 		)
+	})
+}
+
+func TestInvalidGoVersion(t *testing.T) {
+	testenv.NeedsGo1Point(t, 14) // Times out on 1.13 for reasons unclear. Not worth worrying about.
+	const files = `
+-- go.mod --
+module mod.com
+
+go foo
+-- main.go --
+package main
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.Await(env.DiagnosticAtRegexpWithMessage("go.mod", `go foo`, "invalid go version"))
+		env.WriteWorkspaceFile("go.mod", "module mod.com \n\ngo 1.12\n")
+		env.Await(EmptyDiagnostics("go.mod"))
 	})
 }

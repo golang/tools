@@ -217,6 +217,7 @@ func PrintfTests() {
 	Printf("%[2]*.[1]*[3]d x", 2, "hi", 4) // want `a.Printf format %\[2]\*\.\[1\]\*\[3\]d uses non-int \x22hi\x22 as argument of \*`
 	Printf("%[0]s x", "arg1")              // want `a.Printf format has invalid argument index \[0\]`
 	Printf("%[0]d x", 1)                   // want `a.Printf format has invalid argument index \[0\]`
+	Printf("%[3]*.[2*[1]f", 1, 2, 3)       // want `a.Printf format has invalid argument index \[2\*\[1\]`
 	// Something that satisfies the error interface.
 	var e error
 	fmt.Println(e.Error()) // ok
@@ -341,7 +342,7 @@ func PrintfTests() {
 	_ = fmt.Errorf("%[2]w %[1]s", "x", err) // OK
 	_ = fmt.Errorf("%[2]w %[1]s", e, "x")   // want `fmt.Errorf format %\[2\]w has arg "x" of wrong type string`
 	_ = fmt.Errorf("%w", "x")               // want `fmt.Errorf format %w has arg "x" of wrong type string`
-	_ = fmt.Errorf("%w %w", err, err)       // want `fmt.Errorf call has more than one error-wrapping directive %w`
+	_ = fmt.Errorf("%w %w", err, err)       // OK
 	_ = fmt.Errorf("%w", interface{}(nil))  // want `fmt.Errorf format %w has arg interface{}\(nil\) of wrong type interface{}`
 	_ = fmt.Errorf("%w", errorTestOK(0))    // concrete value implements error
 	_ = fmt.Errorf("%w", errSubset)         // interface value implements error
@@ -698,6 +699,7 @@ type unexportedInterface struct {
 type unexportedStringer struct {
 	t ptrStringer
 }
+
 type unexportedStringerOtherFields struct {
 	s string
 	t ptrStringer
@@ -708,6 +710,7 @@ type unexportedStringerOtherFields struct {
 type unexportedError struct {
 	e error
 }
+
 type unexportedErrorOtherFields struct {
 	s string
 	e error

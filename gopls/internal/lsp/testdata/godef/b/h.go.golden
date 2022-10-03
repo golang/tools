@@ -1,0 +1,13 @@
+-- AStuff-hoverdef --
+```go
+func AStuff()
+```
+
+[`a.AStuff` on pkg.go.dev](https://pkg.go.dev/golang.org/lsptests/godef/a#AStuff)
+-- AVariable-hoverdef --
+```go
+var _ A
+```
+
+variable of type a.A
+

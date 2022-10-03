@@ -175,9 +175,10 @@ func (f function) String() string {
 // We merge such constructs into a single node for simplicity and without
 // much precision sacrifice as such variables are rare in practice. Both
 // a and b would be represented as the same PtrInterface(I) node in:
-//   type I interface
-//   var a ***I
-//   var b **I
+//
+//	type I interface
+//	var a ***I
+//	var b **I
 type nestedPtrInterface struct {
 	typ types.Type
 }
@@ -195,8 +196,9 @@ func (l nestedPtrInterface) String() string {
 // constructs into a single node for simplicity and without much precision
 // sacrifice as such variables are rare in practice. Both a and b would be
 // represented as the same PtrFunction(func()) node in:
-//   var a *func()
-//   var b **func()
+//
+//	var a *func()
+//	var b **func()
 type nestedPtrFunction struct {
 	typ types.Type
 }
@@ -441,7 +443,9 @@ func (b *builder) send(s *ssa.Send) {
 }
 
 // selekt generates flows for select statement
-//   a = select blocking/nonblocking [c_1 <- t_1, c_2 <- t_2, ..., <- o_1, <- o_2, ...]
+//
+//	a = select blocking/nonblocking [c_1 <- t_1, c_2 <- t_2, ..., <- o_1, <- o_2, ...]
+//
 // between receiving channel registers c_i and corresponding input register t_i. Further,
 // flows are generated between o_i and a[2 + i]. Note that a is a tuple register of type
 // <int, bool, r_1, r_2, ...> where the type of r_i is the element type of channel o_i.
@@ -544,8 +548,9 @@ func (b *builder) closure(c *ssa.MakeClosure) {
 // panic creates a flow from arguments to panic instructions to return
 // registers of all recover statements in the program. Introduces a
 // global panic node Panic and
-//  1) for every panic statement p: add p -> Panic
-//  2) for every recover statement r: add Panic -> r (handled in call)
+//  1. for every panic statement p: add p -> Panic
+//  2. for every recover statement r: add Panic -> r (handled in call)
+//
 // TODO(zpavlinovic): improve precision by explicitly modeling how panic
 // values flow from callees to callers and into deferred recover instructions.
 func (b *builder) panic(p *ssa.Panic) {
@@ -563,7 +568,9 @@ func (b *builder) panic(p *ssa.Panic) {
 func (b *builder) call(c ssa.CallInstruction) {
 	// When c is r := recover() call register instruction, we add Recover -> r.
 	if bf, ok := c.Common().Value.(*ssa.Builtin); ok && bf.Name() == "recover" {
-		b.addInFlowEdge(recoverReturn{}, b.nodeFromVal(c.(*ssa.Call)))
+		if v, ok := c.(ssa.Value); ok {
+			b.addInFlowEdge(recoverReturn{}, b.nodeFromVal(v))
+		}
 		return
 	}
 
@@ -573,18 +580,33 @@ func (b *builder) call(c ssa.CallInstruction) {
 }
 
 func addArgumentFlows(b *builder, c ssa.CallInstruction, f *ssa.Function) {
-	cc := c.Common()
-	// When c is an unresolved method call (cc.Method != nil), cc.Value contains
-	// the receiver object rather than cc.Args[0].
-	if cc.Method != nil {
-		b.addInFlowAliasEdges(b.nodeFromVal(f.Params[0]), b.nodeFromVal(cc.Value))
+	// When f has no paremeters (including receiver), there is no type
+	// flow here. Also, f's body and parameters might be missing, such
+	// as when vta is used within the golang.org/x/tools/go/analysis
+	// framework (see github.com/golang/go/issues/50670).
+	if len(f.Params) == 0 {
+		return
 	}
+	cc := c.Common()
 
 	offset := 0
 	if cc.Method != nil {
+		// We don't add interprocedural flows for receiver objects.
+		// At a call site, the receiver object is interface while the
+		// callee object is concrete. The flow from interface to
+		// concrete type does not make sense. The flow other way around
+		// would bake in information from the initial call graph.
 		offset = 1
 	}
 	for i, v := range cc.Args {
+		// Parameters of f might not be available, as in the case
+		// when vta is used within the golang.org/x/tools/go/analysis
+		// framework (see github.com/golang/go/issues/50670).
+		//
+		// TODO: investigate other cases of missing body and parameters
+		if len(f.Params) <= i+offset {
+			return
+		}
 		b.addInFlowAliasEdges(b.nodeFromVal(f.Params[i+offset]), b.nodeFromVal(v))
 	}
 }
@@ -625,7 +647,7 @@ func addReturnFlows(b *builder, r *ssa.Return, site ssa.Value) {
 
 // addInFlowEdge adds s -> d to g if d is node that can have an inflow, i.e., a node
 // that represents an interface or an unresolved function value. Otherwise, there
-// is no interesting type flow so the edge is ommited.
+// is no interesting type flow so the edge is omitted.
 func (b *builder) addInFlowEdge(s, d node) {
 	if hasInFlow(d) {
 		b.graph.addEdge(b.representative(s), b.representative(d))
@@ -634,7 +656,7 @@ func (b *builder) addInFlowEdge(s, d node) {
 
 // Creates const, pointer, global, func, and local nodes based on register instructions.
 func (b *builder) nodeFromVal(val ssa.Value) node {
-	if p, ok := val.Type().(*types.Pointer); ok && !isInterface(p.Elem()) && !isFunction(p.Elem()) {
+	if p, ok := val.Type().(*types.Pointer); ok && !types.IsInterface(p.Elem()) && !isFunction(p.Elem()) {
 		// Nested pointer to interfaces are modeled as a special
 		// nestedPtrInterface node.
 		if i := interfaceUnderPtr(p.Elem()); i != nil {
@@ -661,14 +683,15 @@ func (b *builder) nodeFromVal(val ssa.Value) node {
 	default:
 		panic(fmt.Errorf("unsupported value %v in node creation", val))
 	}
-	return nil
 }
 
 // representative returns a unique representative for node `n`. Since
 // semantically equivalent types can have different implementations,
 // this method guarantees the same implementation is always used.
 func (b *builder) representative(n node) node {
-	if !hasInitialTypes(n) {
+	if n.Type() == nil {
+		// panicArg and recoverReturn do not have
+		// types and are unique by definition.
 		return n
 	}
 	t := canonicalize(n.Type(), &b.canon)

@@ -24,8 +24,8 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/internal/checker"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/internal/lsp/diff"
-	"golang.org/x/tools/internal/lsp/diff/myers"
+	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/diff/myers"
 	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
@@ -81,23 +81,24 @@ type Testing interface {
 // Each section in the archive corresponds to a single message.
 //
 // A golden file using txtar may look like this:
-// 	-- turn into single negation --
-// 	package pkg
 //
-// 	func fn(b1, b2 bool) {
-// 		if !b1 { // want `negating a boolean twice`
-// 			println()
-// 		}
-// 	}
+//	-- turn into single negation --
+//	package pkg
 //
-// 	-- remove double negation --
-// 	package pkg
+//	func fn(b1, b2 bool) {
+//		if !b1 { // want `negating a boolean twice`
+//			println()
+//		}
+//	}
 //
-// 	func fn(b1, b2 bool) {
-// 		if b1 { // want `negating a boolean twice`
-// 			println()
-// 		}
-// 	}
+//	-- remove double negation --
+//	package pkg
+//
+//	func fn(b1, b2 bool) {
+//		if b1 { // want `negating a boolean twice`
+//			println()
+//		}
+//	}
 func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns ...string) []*Result {
 	r := Run(t, dir, a, patterns...)
 
@@ -141,7 +142,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 						}
 						fileContents[file] = contents
 					}
-					spn, err := span.NewRange(act.Pass.Fset, edit.Pos, edit.End).Span()
+					spn, err := span.NewRange(file, edit.Pos, edit.End).Span()
 					if err != nil {
 						t.Errorf("error converting edit to span %s: %v", file.Name(), err)
 					}
@@ -248,7 +249,8 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 // directory using golang.org/x/tools/go/packages, runs the analysis on
 // them, and checks that each analysis emits the expected diagnostics
 // and facts specified by the contents of '// want ...' comments in the
-// package's source files.
+// package's source files. It treats a comment of the form
+// "//...// want..." or "/*...// want... */" as if it starts at 'want'
 //
 // An expectation of a Diagnostic is specified by a string literal
 // containing a regular expression that must match the diagnostic
@@ -284,7 +286,7 @@ func Run(t Testing, dir string, a *analysis.Analyzer, patterns ...string) []*Res
 		testenv.NeedsGoPackages(t)
 	}
 
-	pkgs, err := loadPackages(dir, patterns...)
+	pkgs, err := loadPackages(a, dir, patterns...)
 	if err != nil {
 		t.Errorf("loading %s: %v", patterns, err)
 		return nil
@@ -308,7 +310,7 @@ type Result = checker.TestAnalyzerResult
 // dependencies) from dir, which is the root of a GOPATH-style project
 // tree. It returns an error if any package had an error, or the pattern
 // matched no packages.
-func loadPackages(dir string, patterns ...string) ([]*packages.Package, error) {
+func loadPackages(a *analysis.Analyzer, dir string, patterns ...string) ([]*packages.Package, error) {
 	// packages.Load loads the real standard library, not a minimal
 	// fake version, which would be more efficient, especially if we
 	// have many small tests that import, say, net/http.
@@ -316,8 +318,11 @@ func loadPackages(dir string, patterns ...string) ([]*packages.Package, error) {
 	// a list of packages we generate and then do the parsing and
 	// typechecking, though this feature seems to be a recurring need.
 
+	mode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports |
+		packages.NeedTypes | packages.NeedTypesSizes | packages.NeedSyntax | packages.NeedTypesInfo |
+		packages.NeedDeps
 	cfg := &packages.Config{
-		Mode:  packages.LoadAllSyntax,
+		Mode:  mode,
 		Dir:   dir,
 		Tests: true,
 		Env:   append(os.Environ(), "GOPATH="+dir, "GO111MODULE=off", "GOPROXY=off"),
@@ -327,9 +332,13 @@ func loadPackages(dir string, patterns ...string) ([]*packages.Package, error) {
 		return nil, err
 	}
 
-	// Print errors but do not stop:
-	// some Analyzers may be disposed to RunDespiteErrors.
-	packages.PrintErrors(pkgs)
+	// Do NOT print errors if the analyzer will continue running.
+	// It is incredibly confusing for tests to be printing to stderr
+	// willy-nilly instead of their test logs, especially when the
+	// errors are expected and are going to be fixed.
+	if !a.RunDespiteErrors {
+		packages.PrintErrors(pkgs)
+	}
 
 	if len(pkgs) == 0 {
 		return nil, fmt.Errorf("no packages matched %s", patterns)
@@ -441,7 +450,7 @@ func check(t Testing, gopath string, pass *analysis.Pass, diagnostics []analysis
 					want[k] = expects
 					return
 				}
-				unmatched = append(unmatched, fmt.Sprintf("%q", exp.rx))
+				unmatched = append(unmatched, fmt.Sprintf("%#q", exp.rx))
 			}
 		}
 		if unmatched == nil {
@@ -505,7 +514,7 @@ func check(t Testing, gopath string, pass *analysis.Pass, diagnostics []analysis
 	var surplus []string
 	for key, expects := range want {
 		for _, exp := range expects {
-			err := fmt.Sprintf("%s:%d: no %s was reported matching %q", key.file, key.line, exp.kind, exp.rx)
+			err := fmt.Sprintf("%s:%d: no %s was reported matching %#q", key.file, key.line, exp.kind, exp.rx)
 			surplus = append(surplus, err)
 		}
 	}

@@ -41,24 +41,27 @@ const (
 // call the Mark method to add the marker to the global set.
 // You can register the "mark" method to override these in your own call to
 // Expect. The bound Mark function is usable directly in your method map, so
-//    exported.Expect(map[string]interface{}{"mark": exported.Mark})
+//
+//	exported.Expect(map[string]interface{}{"mark": exported.Mark})
+//
 // replicates the built in behavior.
 //
-// Method invocation
+// # Method invocation
 //
 // When invoking a method the expressions in the parameter list need to be
 // converted to values to be passed to the method.
 // There are a very limited set of types the arguments are allowed to be.
-//   expect.Note : passed the Note instance being evaluated.
-//   string : can be supplied either a string literal or an identifier.
-//   int : can only be supplied an integer literal.
-//   *regexp.Regexp : can only be supplied a regular expression literal
-//   token.Pos : has a file position calculated as described below.
-//   token.Position : has a file position calculated as described below.
-//   expect.Range: has a start and end position as described below.
-//   interface{} : will be passed any value
 //
-// Position calculation
+//	expect.Note : passed the Note instance being evaluated.
+//	string : can be supplied either a string literal or an identifier.
+//	int : can only be supplied an integer literal.
+//	*regexp.Regexp : can only be supplied a regular expression literal
+//	token.Pos : has a file position calculated as described below.
+//	token.Position : has a file position calculated as described below.
+//	expect.Range: has a start and end position as described below.
+//	interface{} : will be passed any value
+//
+// # Position calculation
 //
 // There is some extra handling when a parameter is being coerced into a
 // token.Pos, token.Position or Range type argument.
@@ -406,6 +409,7 @@ func (e *Exported) buildConverter(pt reflect.Type) (converter, error) {
 }
 
 func (e *Exported) rangeConverter(n *expect.Note, args []interface{}) (span.Range, []interface{}, error) {
+	tokFile := e.ExpectFileSet.File(n.Pos)
 	if len(args) < 1 {
 		return span.Range{}, nil, fmt.Errorf("missing argument")
 	}
@@ -416,10 +420,9 @@ func (e *Exported) rangeConverter(n *expect.Note, args []interface{}) (span.Rang
 		// handle the special identifiers
 		switch arg {
 		case eofIdentifier:
-			// end of file identifier, look up the current file
-			f := e.ExpectFileSet.File(n.Pos)
-			eof := f.Pos(f.Size())
-			return span.Range{FileSet: e.ExpectFileSet, Start: eof, End: token.NoPos}, args, nil
+			// end of file identifier
+			eof := tokFile.Pos(tokFile.Size())
+			return span.NewRange(tokFile, eof, eof), args, nil
 		default:
 			// look up an marker by name
 			mark, ok := e.markers[string(arg)]
@@ -433,19 +436,19 @@ func (e *Exported) rangeConverter(n *expect.Note, args []interface{}) (span.Rang
 		if err != nil {
 			return span.Range{}, nil, err
 		}
-		if start == token.NoPos {
+		if !start.IsValid() {
 			return span.Range{}, nil, fmt.Errorf("%v: pattern %s did not match", e.ExpectFileSet.Position(n.Pos), arg)
 		}
-		return span.Range{FileSet: e.ExpectFileSet, Start: start, End: end}, args, nil
+		return span.NewRange(tokFile, start, end), args, nil
 	case *regexp.Regexp:
 		start, end, err := expect.MatchBefore(e.ExpectFileSet, e.FileContents, n.Pos, arg)
 		if err != nil {
 			return span.Range{}, nil, err
 		}
-		if start == token.NoPos {
+		if !start.IsValid() {
 			return span.Range{}, nil, fmt.Errorf("%v: pattern %s did not match", e.ExpectFileSet.Position(n.Pos), arg)
 		}
-		return span.Range{FileSet: e.ExpectFileSet, Start: start, End: end}, args, nil
+		return span.NewRange(tokFile, start, end), args, nil
 	default:
 		return span.Range{}, nil, fmt.Errorf("cannot convert %v to pos", arg)
 	}

@@ -6,7 +6,11 @@
 
 package testdata
 
-import "golang.org/x/sync/errgroup"
+import (
+	"golang.org/x/sync/errgroup"
+)
+
+var A int
 
 func _() {
 	var s []int
@@ -47,6 +51,19 @@ func _() {
 		i, v := i, v
 		go func() {
 			println(i, v)
+		}()
+	}
+
+	// iteration variable declared outside the loop
+	for A = range s {
+		go func() {
+			println(A) // want "loop variable A captured by func literal"
+		}()
+	}
+	// iteration variable declared in a different file
+	for B = range s {
+		go func() {
+			println(B) // want "loop variable B captured by func literal"
 		}()
 	}
 	// If the key of the range statement is not an identifier
@@ -91,9 +108,9 @@ func _() {
 	}
 }
 
-// Group is used to test that loopclosure does not match on any type named "Group".
-// The checker only matches on methods "(*...errgroup.Group).Go".
-type Group struct{};
+// Group is used to test that loopclosure only matches Group.Go when Group is
+// from the golang.org/x/sync/errgroup package.
+type Group struct{}
 
 func (g *Group) Go(func() error) {}
 

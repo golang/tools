@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	_ "expvar" // to serve /debug/vars
 	"flag"
 	"fmt"
@@ -46,7 +47,6 @@ import (
 	"golang.org/x/tools/godoc/vfs/mapfs"
 	"golang.org/x/tools/godoc/vfs/zipfs"
 	"golang.org/x/tools/internal/gocommand"
-	"golang.org/x/xerrors"
 )
 
 const defaultAddr = "localhost:6060" // default webserver address
@@ -207,21 +207,21 @@ func main() {
 		fmt.Printf("using module mode; GOMOD=%s\n", goModFile)
 
 		// Detect whether to use vendor mode or not.
-		mainMod, vendorEnabled, err := gocommand.VendorEnabled(context.Background(), gocommand.Invocation{}, &gocommand.Runner{})
+		vendorEnabled, mainModVendor, err := gocommand.VendorEnabled(context.Background(), gocommand.Invocation{}, &gocommand.Runner{})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to determine if vendoring is enabled: %v", err)
 			os.Exit(1)
 		}
 		if vendorEnabled {
 			// Bind the root directory of the main module.
-			fs.Bind(path.Join("/src", mainMod.Path), gatefs.New(vfs.OS(mainMod.Dir), fsGate), "/", vfs.BindAfter)
+			fs.Bind(path.Join("/src", mainModVendor.Path), gatefs.New(vfs.OS(mainModVendor.Dir), fsGate), "/", vfs.BindAfter)
 
 			// Bind the vendor directory.
 			//
 			// Note that in module mode, vendor directories in locations
 			// other than the main module's root directory are ignored.
 			// See https://golang.org/ref/mod#vendoring.
-			vendorDir := filepath.Join(mainMod.Dir, "vendor")
+			vendorDir := filepath.Join(mainModVendor.Dir, "vendor")
 			fs.Bind("/src", gatefs.New(vfs.OS(vendorDir), fsGate), "/", vfs.BindAfter)
 
 		} else {
@@ -368,12 +368,11 @@ func main() {
 //
 // GOMOD is documented at https://golang.org/cmd/go/#hdr-Environment_variables:
 //
-// 	The absolute path to the go.mod of the main module,
-// 	or the empty string if not using modules.
-//
+//	The absolute path to the go.mod of the main module,
+//	or the empty string if not using modules.
 func goMod() (string, error) {
 	out, err := exec.Command("go", "env", "-json", "GOMOD").Output()
-	if ee := (*exec.ExitError)(nil); xerrors.As(err, &ee) {
+	if ee := (*exec.ExitError)(nil); errors.As(err, &ee) {
 		return "", fmt.Errorf("go command exited unsuccessfully: %v\n%s", ee.ProcessState.String(), ee.Stderr)
 	} else if err != nil {
 		return "", err
@@ -406,7 +405,7 @@ func fillModuleCache(w io.Writer, goMod string) {
 	cmd.Stdout = &out
 	cmd.Stderr = w
 	err := cmd.Run()
-	if ee := (*exec.ExitError)(nil); xerrors.As(err, &ee) && ee.ExitCode() == 1 {
+	if ee := (*exec.ExitError)(nil); errors.As(err, &ee) && ee.ExitCode() == 1 {
 		// Exit code 1 from this command means there were some
 		// non-empty Error values in the output. Print them to w.
 		fmt.Fprintf(w, "documentation for some packages is not shown:\n")
@@ -450,7 +449,7 @@ func buildList(goMod string) ([]mod, error) {
 	}
 
 	out, err := exec.Command("go", "list", "-m", "-json", "all").Output()
-	if ee := (*exec.ExitError)(nil); xerrors.As(err, &ee) {
+	if ee := (*exec.ExitError)(nil); errors.As(err, &ee) {
 		return nil, fmt.Errorf("go command exited unsuccessfully: %v\n%s", ee.ProcessState.String(), ee.Stderr)
 	} else if err != nil {
 		return nil, err
@@ -483,7 +482,6 @@ func buildList(goMod string) ([]mod, error) {
 // workspaces are bound at their roots, but scales poorly in the
 // general case. It should be replaced by a more direct solution
 // for determining whether a package is third party or not.
-//
 type moduleFS struct{ vfs.FileSystem }
 
 func (moduleFS) RootType(path string) vfs.RootType {

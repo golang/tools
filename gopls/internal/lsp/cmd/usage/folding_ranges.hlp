@@ -1,0 +1,8 @@
+display selected file's folding ranges
+
+Usage:
+  gopls [flags] folding_ranges <file>
+
+Example:
+
+	$ gopls folding_ranges helper/helper.go

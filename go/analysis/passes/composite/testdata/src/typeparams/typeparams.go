@@ -6,7 +6,7 @@ package typeparams
 
 import "typeparams/lib"
 
-type localStruct struct { F int }
+type localStruct struct{ F int }
 
 func F[
 	T1 ~struct{ f int },
@@ -20,8 +20,8 @@ func F[
 	_ = T1{2}
 	_ = T2a{2}
 	_ = T2b{2} // want "unkeyed fields"
-	_ = T3{1,2}
-	_ = T4{1,2}
-	_ = T5{1:2}
-	_ = T6{1:2}
+	_ = T3{1, 2}
+	_ = T4{1, 2}
+	_ = T5{1: 2}
+	_ = T6{1: 2}
 }

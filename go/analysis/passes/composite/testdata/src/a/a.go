@@ -11,6 +11,7 @@ import (
 	"go/scanner"
 	"go/token"
 	"image"
+	"sync"
 	"unicode"
 )
 
@@ -79,6 +80,18 @@ var badStructLiteral = flag.Flag{ // want "unkeyed fields"
 	nil, // Value
 	"DefValue",
 }
+var tooManyFieldsStructLiteral = flag.Flag{ // want "unkeyed fields"
+	"Name",
+	"Usage",
+	nil, // Value
+	"DefValue",
+	"Extra Field",
+}
+var tooFewFieldsStructLiteral = flag.Flag{ // want "unkeyed fields"
+	"Name",
+	"Usage",
+	nil, // Value
+}
 
 var delta [3]rune
 
@@ -99,6 +112,10 @@ var goodScannerErrorList = scanner.ErrorList{
 var badScannerErrorList = scanner.ErrorList{
 	&scanner.Error{token.Position{}, "foobar"}, // want "unkeyed fields"
 }
+
+// sync.Mutex has unexported fields. We expect a diagnostic but no
+// suggested fix.
+var mu = sync.Mutex{0, 0} // want "unkeyed fields"
 
 // Check whitelisted structs: if vet is run with --compositewhitelist=false,
 // this line triggers an error.

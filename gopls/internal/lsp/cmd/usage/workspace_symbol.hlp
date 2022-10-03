@@ -1,0 +1,13 @@
+search symbols in workspace
+
+Usage:
+  gopls [flags] workspace_symbol [workspace_symbol-flags] <query>
+
+Example:
+
+	$ gopls workspace_symbol -matcher fuzzy 'wsymbols'
+
+workspace_symbol-flags:
+  -matcher=string
+    	specifies the type of matcher: fuzzy, caseSensitive, or caseInsensitive.
+    	The default is caseInsensitive.

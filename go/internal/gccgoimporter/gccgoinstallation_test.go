@@ -9,6 +9,7 @@ package gccgoimporter
 
 import (
 	"go/types"
+	"runtime"
 	"testing"
 )
 
@@ -156,6 +157,12 @@ func TestInstallationImporter(t *testing.T) {
 	if gpath == "" {
 		t.Skip("This test needs gccgo")
 	}
+	if runtime.GOOS == "aix" {
+		// We don't yet have a debug/xcoff package for reading
+		// object files on AIX. Remove this skip if/when issue #29038
+		// is implemented (see also issue #49445).
+		t.Skip("no support yet for debug/xcoff")
+	}
 
 	var inst GccgoInstallation
 	err := inst.InitFromDriver(gpath)
@@ -187,7 +194,7 @@ func TestInstallationImporter(t *testing.T) {
 		{pkgpath: "io", name: "ReadWriter", want: "type ReadWriter interface{Reader; Writer}"},
 		{pkgpath: "math", name: "Pi", want: "const Pi untyped float"},
 		{pkgpath: "math", name: "Sin", want: "func Sin(x float64) float64"},
-		{pkgpath: "sort", name: "Ints", want: "func Ints(a []int)"},
+		{pkgpath: "sort", name: "Search", want: "func Search(n int, f func(int) bool) int"},
 		{pkgpath: "unsafe", name: "Pointer", want: "type Pointer"},
 	} {
 		runImporterTest(t, imp, nil, &test)

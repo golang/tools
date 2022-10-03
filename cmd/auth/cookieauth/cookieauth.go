@@ -7,7 +7,8 @@
 // It expects the location of the file as the first command-line argument.
 //
 // Example GOAUTH usage:
-// 	export GOAUTH="cookieauth $(git config --get http.cookieFile)"
+//
+//	export GOAUTH="cookieauth $(git config --get http.cookieFile)"
 //
 // See http://www.cookiecentral.com/faq/#3.5 for a description of the Netscape
 // cookie file format.
@@ -39,7 +40,6 @@ func main() {
 	f, err := os.Open(os.Args[1])
 	if err != nil {
 		log.Fatalf("failed to read cookie file: %v\n", os.Args[1])
-		os.Exit(1)
 	}
 	defer f.Close()
 

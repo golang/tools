@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"golang.org/x/tools/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
 // verify that type errors in Initialize lsp messages don't cause
@@ -99,7 +99,7 @@ func allDeltas(t *testing.T, v [][]int, repls ...string) {
 }
 
 func tryChange(start, end int, repl string) error {
-	var p, q protocol.InitializeParams
+	var p, q protocol.ParamInitialize
 	mod := input[:start] + repl + input[end:]
 	excerpt := func() (string, string) {
 		a := start - 5

@@ -19,13 +19,8 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
-var from, to string
-
 func TestApplyFixes(t *testing.T) {
 	testenv.NeedsGoPackages(t)
-
-	from = "bar"
-	to = "baz"
 
 	files := map[string]string{
 		"rename/test.go": `package rename
@@ -75,6 +70,10 @@ var analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
+	const (
+		from = "bar"
+		to   = "baz"
+	)
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{(*ast.Ident)(nil)}
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
@@ -98,4 +97,63 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	})
 
 	return nil, nil
+}
+
+func TestRunDespiteErrors(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+
+	files := map[string]string{
+		"rderr/test.go": `package rderr
+
+// Foo deliberately has a type error
+func Foo(s string) int {
+	return s + 1
+}
+`}
+
+	testdata, cleanup, err := analysistest.WriteFiles(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(testdata, "src/rderr/test.go")
+
+	// A no-op analyzer that should finish regardless of
+	// parse or type errors in the code.
+	noop := &analysis.Analyzer{
+		Name:     "noop",
+		Requires: []*analysis.Analyzer{inspect.Analyzer},
+		Run: func(pass *analysis.Pass) (interface{}, error) {
+			return nil, nil
+		},
+		RunDespiteErrors: true,
+	}
+
+	for _, test := range []struct {
+		name      string
+		pattern   []string
+		analyzers []*analysis.Analyzer
+		code      int
+	}{
+		// parse/type errors
+		{name: "skip-error", pattern: []string{"file=" + path}, analyzers: []*analysis.Analyzer{analyzer}, code: 1},
+		{name: "despite-error", pattern: []string{"file=" + path}, analyzers: []*analysis.Analyzer{noop}, code: 0},
+		// combination of parse/type errors and no errors
+		{name: "despite-error-and-no-error", pattern: []string{"file=" + path, "sort"}, analyzers: []*analysis.Analyzer{analyzer, noop}, code: 1},
+		// non-existing package error
+		{name: "no-package", pattern: []string{"xyz"}, analyzers: []*analysis.Analyzer{analyzer}, code: 1},
+		{name: "no-package-despite-error", pattern: []string{"abc"}, analyzers: []*analysis.Analyzer{noop}, code: 1},
+		{name: "no-multi-package-despite-error", pattern: []string{"xyz", "abc"}, analyzers: []*analysis.Analyzer{noop}, code: 1},
+		// combination of type/parsing and different errors
+		{name: "different-errors", pattern: []string{"file=" + path, "xyz"}, analyzers: []*analysis.Analyzer{analyzer, noop}, code: 1},
+		// non existing dir error
+		{name: "no-match-dir", pattern: []string{"file=non/existing/dir"}, analyzers: []*analysis.Analyzer{analyzer, noop}, code: 1},
+		// no errors
+		{name: "no-errors", pattern: []string{"sort"}, analyzers: []*analysis.Analyzer{analyzer, noop}, code: 0},
+	} {
+		if got := checker.Run(test.pattern, test.analyzers); got != test.code {
+			t.Errorf("got incorrect exit code %d for test %s; want %d", got, test.name, test.code)
+		}
+	}
+
+	defer cleanup()
 }
