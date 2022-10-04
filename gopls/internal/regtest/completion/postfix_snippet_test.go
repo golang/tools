@@ -21,10 +21,12 @@ go 1.12
 
 	cases := []struct {
 		name          string
+		posRegExp     string
 		before, after string
 	}{
 		{
-			name: "sort",
+			name:      "sort",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -47,7 +49,8 @@ func _() {
 `,
 		},
 		{
-			name: "sort_renamed_sort_package",
+			name:      "sort_renamed_sort_package",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -76,7 +79,8 @@ func _() {
 `,
 		},
 		{
-			name: "last",
+			name:      "last",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -95,7 +99,8 @@ func _() {
 `,
 		},
 		{
-			name: "reverse",
+			name:      "reverse",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -117,7 +122,8 @@ func _() {
 `,
 		},
 		{
-			name: "slice_range",
+			name:      "slice_range",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -140,7 +146,8 @@ func _() {
 `,
 		},
 		{
-			name: "append_stmt",
+			name:      "append_stmt",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -159,7 +166,8 @@ func _() {
 `,
 		},
 		{
-			name: "append_expr",
+			name:      "append_expr",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -178,7 +186,8 @@ func _() {
 `,
 		},
 		{
-			name: "slice_copy",
+			name:      "slice_copy",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -199,7 +208,8 @@ copy(fooCopy, foo)
 `,
 		},
 		{
-			name: "map_range",
+			name:      "map_range",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -220,7 +230,8 @@ func _() {
 `,
 		},
 		{
-			name: "map_clear",
+			name:      "map_clear",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -242,7 +253,8 @@ func _() {
 `,
 		},
 		{
-			name: "map_keys",
+			name:      "map_keys",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -265,7 +277,8 @@ for k := range foo {
 `,
 		},
 		{
-			name: "channel_range",
+			name:      "channel_range",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -286,7 +299,8 @@ func _() {
 `,
 		},
 		{
-			name: "var",
+			name:      "var",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -307,7 +321,8 @@ func _() {
 `,
 		},
 		{
-			name: "var_single_value",
+			name:      "var_single_value",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -328,7 +343,8 @@ func _() {
 `,
 		},
 		{
-			name: "var_same_type",
+			name:      "var_same_type",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -349,7 +365,8 @@ func _() {
 `,
 		},
 		{
-			name: "print_scalar",
+			name:      "print_scalar",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -370,7 +387,8 @@ func _() {
 `,
 		},
 		{
-			name: "print_multi",
+			name:      "print_multi",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -393,7 +411,8 @@ func _() {
 `,
 		},
 		{
-			name: "string split",
+			name:      "string split",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -412,7 +431,8 @@ func foo() []string {
 }`,
 		},
 		{
-			name: "string slice join",
+			name:      "string slice join",
+			posRegExp: "\n}",
 			before: `
 package foo
 
@@ -430,6 +450,25 @@ func foo() string {
 	return strings.Join(x, "$0")
 }`,
 		},
+		{
+			name:      "method for struct",
+			posRegExp: "meth()",
+			before: `
+package foo
+
+type Foo struct{}
+
+Foo.meth
+`,
+			after: `
+package foo
+
+type Foo struct{}
+
+func (foo Foo) ${1:}(${2:}) ${3:} {
+	$0
+}`,
+		},
 	}
 
 	r := WithOptions(
@@ -445,7 +484,7 @@ func foo() string {
 
 				env.CreateBuffer("foo.go", c.before)
 
-				pos := env.RegexpSearch("foo.go", "\n}")
+				pos := env.RegexpSearch("foo.go", c.posRegExp)
 				completions := env.Completion("foo.go", pos)
 				if len(completions.Items) != 1 {
 					t.Fatalf("expected one completion, got %v", completions.Items)

@@ -16,11 +16,11 @@ import (
 	"sync"
 	"text/template"
 
-	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/snippet"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/imports"
 )
 
 // Postfix snippets are artificial methods that allow the user to
@@ -193,7 +193,20 @@ for {{.VarName .ElemType "e"}} := range {{.X}} {
 	body: `{{if and (eq .Kind "slice") (eq (.TypeName .ElemType) "string") -}}
 {{.Import "strings"}}.Join({{.X}}, "{{.Cursor}}")
 {{- end}}`,
+}, {
+	label:   "meth",
+	details: "method for struct",
+	body: `{{if (eq .Kind "struct") -}}
+func ({{.VarName .Type ""}} {{.TypeName .Type}}) {{.PlaceHolder}}({{.PlaceHolder}}) {{.PlaceHolder}} {
+	{{.Cursor}}
+}
+{{- end}}`,
 }}
+
+func (a *postfixTmplArgs) PlaceHolder() string {
+	a.snip.WritePlaceholder(nil)
+	return ""
+}
 
 // Cursor indicates where the client's cursor should end up after the
 // snippet is done.
