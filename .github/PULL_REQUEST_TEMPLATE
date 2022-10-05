@@ -16,7 +16,7 @@ More info can be found at https://github.com/golang/go/wiki/CommitMessage
 + No Markdown
 + The first PR comment (this one) is wrapped at 76 characters, unless it's
   really needed (ASCII art, table, or long link)
-+ If there is a corresponding issue, add either `Fixes #1234` or `Updates #1234`
++ If there is a corresponding issue, add either `Fixes golang/go#1234` or `Updates golang/go#123`
   (the latter if this is not a complete fix) to this comment
 + If referring to a repo other than `golang/tools` you can use the
   `owner/repo#issue_number` syntax: `Fixes golang/go#1234`
