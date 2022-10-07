@@ -10,6 +10,7 @@
 package main
 
 import (
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -451,7 +452,7 @@ func (i Token) String() string {
 func TestGolden(t *testing.T) {
 	testenv.NeedsTool(t, "go")
 
-	dir, err := os.MkdirTemp("", "stringer")
+	dir, err := ioutil.TempDir("", "stringer")
 	if err != nil {
 		t.Error(err)
 	}
@@ -465,7 +466,7 @@ func TestGolden(t *testing.T) {
 		input := "package test\n" + test.input
 		file := test.name + ".go"
 		absFile := filepath.Join(dir, file)
-		err := os.WriteFile(absFile, []byte(input), 0644)
+		err := ioutil.WriteFile(absFile, []byte(input), 0644)
 		if err != nil {
 			t.Error(err)
 		}

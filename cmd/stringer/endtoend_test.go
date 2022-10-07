@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"go/build"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -112,7 +113,7 @@ func TestTags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := os.ReadFile(output)
+	result, err := ioutil.ReadFile(output)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +128,7 @@ func TestTags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err = os.ReadFile(output)
+	result, err = ioutil.ReadFile(output)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +184,7 @@ func buildStringer(t *testing.T) (dir string, stringer string) {
 	t.Helper()
 	testenv.NeedsTool(t, "go")
 
-	dir, err := os.MkdirTemp("", "stringer")
+	dir, err := ioutil.TempDir("", "stringer")
 	if err != nil {
 		t.Fatal(err)
 	}
