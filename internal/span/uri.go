@@ -21,7 +21,7 @@ const fileScheme = "file"
 type URI string
 
 func (uri URI) IsFile() bool {
-	return strings.HasPrefix(string(uri), "file://")
+	return strings.HasPrefix(string(uri), "file:/")
 }
 
 // Filename returns the file path for the given URI.
