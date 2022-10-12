@@ -32,6 +32,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -39,7 +40,6 @@ import (
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/persistent"
-	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -671,7 +671,7 @@ func (s *snapshot) PackageForFile(ctx context.Context, uri span.URI, mode source
 	return ph.await(ctx, s)
 }
 
-func (s *snapshot) packageHandlesForFile(ctx context.Context, uri span.URI, mode source.TypecheckMode, includeTestVariants bool) ([]*packageHandle, error) {
+func (s *snapshot) packageHandlesForFile(ctx context.Context, uri span.URI, mode source.TypecheckMode, withIntermediateTestVariants bool) ([]*packageHandle, error) {
 	// TODO(rfindley): why can't/shouldn't we awaitLoaded here? It seems that if
 	// we ask for package handles for a file, we should wait for pending loads.
 	// Else we will reload orphaned files before the initial load completes.
@@ -695,30 +695,19 @@ func (s *snapshot) packageHandlesForFile(ctx context.Context, uri span.URI, mode
 	for _, id := range knownIDs {
 		// Filter out any intermediate test variants. We typically aren't
 		// interested in these packages for file= style queries.
-		if m := s.getMetadata(id); m != nil && m.IsIntermediateTestVariant && !includeTestVariants {
+		if m := s.getMetadata(id); m != nil && m.IsIntermediateTestVariant() && !withIntermediateTestVariants {
 			continue
 		}
-		var parseModes []source.ParseMode
-		switch mode {
-		case source.TypecheckAll:
-			if s.workspaceParseMode(id) == source.ParseFull {
-				parseModes = []source.ParseMode{source.ParseFull}
-			} else {
-				parseModes = []source.ParseMode{source.ParseExported, source.ParseFull}
-			}
-		case source.TypecheckFull:
-			parseModes = []source.ParseMode{source.ParseFull}
-		case source.TypecheckWorkspace:
-			parseModes = []source.ParseMode{s.workspaceParseMode(id)}
+		parseMode := source.ParseFull
+		if mode == source.TypecheckWorkspace {
+			parseMode = s.workspaceParseMode(id)
 		}
 
-		for _, parseMode := range parseModes {
-			ph, err := s.buildPackageHandle(ctx, id, parseMode)
-			if err != nil {
-				return nil, err
-			}
-			phs = append(phs, ph)
+		ph, err := s.buildPackageHandle(ctx, id, parseMode)
+		if err != nil {
+			return nil, err
 		}
+		phs = append(phs, ph)
 	}
 	return phs, nil
 }
@@ -1867,26 +1856,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 		addRevDeps(id, invalidateMetadata)
 	}
 
-	// Delete invalidated package type information.
-	for id := range idsToInvalidate {
-		for _, mode := range source.AllParseModes {
-			key := packageKey{mode, id}
-			result.packages.Delete(key)
-		}
-	}
-
-	// Copy actions.
-	// TODO(adonovan): opt: avoid iteration over s.actions.
-	var actionsToDelete []actionKey
-	s.actions.Range(func(k, _ interface{}) {
-		key := k.(actionKey)
-		if _, ok := idsToInvalidate[key.pkgid]; ok {
-			actionsToDelete = append(actionsToDelete, key)
-		}
-	})
-	for _, key := range actionsToDelete {
-		result.actions.Delete(key)
-	}
+	result.invalidatePackagesLocked(idsToInvalidate)
 
 	// If a file has been deleted, we must delete metadata for all packages
 	// containing that file.
@@ -2059,6 +2029,35 @@ func invalidatedPackageIDs(uri span.URI, known map[span.URI][]PackageID, package
 		}
 	}
 	return invalidated
+}
+
+// invalidatePackagesLocked deletes data associated with the given package IDs.
+//
+// Note: all keys in the ids map are invalidated, regardless of the
+// corresponding value.
+//
+// s.mu must be held while calling this function.
+func (s *snapshot) invalidatePackagesLocked(ids map[PackageID]bool) {
+	// Delete invalidated package type information.
+	for id := range ids {
+		for _, mode := range source.AllParseModes {
+			key := packageKey{mode, id}
+			s.packages.Delete(key)
+		}
+	}
+
+	// Copy actions.
+	// TODO(adonovan): opt: avoid iteration over s.actions.
+	var actionsToDelete []actionKey
+	s.actions.Range(func(k, _ interface{}) {
+		key := k.(actionKey)
+		if _, ok := ids[key.pkgid]; ok {
+			actionsToDelete = append(actionsToDelete, key)
+		}
+	})
+	for _, key := range actionsToDelete {
+		s.actions.Delete(key)
+	}
 }
 
 // fileWasSaved reports whether the FileHandle passed in has been saved. It

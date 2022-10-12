@@ -12,15 +12,14 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"sort"
 	"strconv"
 
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
-	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/internal/bug"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -81,40 +80,22 @@ func Identifier(ctx context.Context, snapshot Snapshot, fh FileHandle, position 
 	ctx, done := event.Start(ctx, "source.Identifier")
 	defer done()
 
-	pkgs, err := snapshot.PackagesForFile(ctx, fh.URI(), TypecheckAll, false)
+	pkg, err := snapshot.PackageForFile(ctx, fh.URI(), TypecheckFull, NarrowestPackage)
 	if err != nil {
 		return nil, err
 	}
-	if len(pkgs) == 0 {
-		return nil, fmt.Errorf("no packages for file %v", fh.URI())
+	pgf, err := pkg.File(fh.URI())
+	if err != nil {
+		// We shouldn't get a package from PackagesForFile that doesn't actually
+		// contain the file.
+		bug.Report("missing package file", bug.Data{"pkg": pkg.ID(), "file": fh.URI()})
+		return nil, err
 	}
-	sort.Slice(pkgs, func(i, j int) bool {
-		// Prefer packages with a more complete parse mode.
-		if pkgs[i].ParseMode() != pkgs[j].ParseMode() {
-			return pkgs[i].ParseMode() > pkgs[j].ParseMode()
-		}
-		return len(pkgs[i].CompiledGoFiles()) < len(pkgs[j].CompiledGoFiles())
-	})
-	var findErr error
-	for _, pkg := range pkgs {
-		pgf, err := pkg.File(fh.URI())
-		if err != nil {
-			// We shouldn't get a package from PackagesForFile that doesn't actually
-			// contain the file.
-			bug.Report("missing package file", bug.Data{"pkg": pkg.ID(), "file": fh.URI()})
-			return nil, err
-		}
-		pos, err := pgf.Mapper.Pos(position)
-		if err != nil {
-			return nil, err
-		}
-		var ident *IdentifierInfo
-		ident, findErr = findIdentifier(ctx, snapshot, pkg, pgf, pos)
-		if findErr == nil {
-			return ident, nil
-		}
+	pos, err := pgf.Mapper.Pos(position)
+	if err != nil {
+		return nil, err
 	}
-	return nil, findErr
+	return findIdentifier(ctx, snapshot, pkg, pgf, pos)
 }
 
 // ErrNoIdentFound is error returned when no identifier is found at a particular position
@@ -141,7 +122,7 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, pgf *Pa
 	// Special case for package declarations, since they have no
 	// corresponding types.Object.
 	if ident == file.Name {
-		rng, err := posToMappedRange(snapshot, pkg, file.Name.Pos(), file.Name.End())
+		rng, err := posToMappedRange(snapshot.FileSet(), pkg, file.Name.Pos(), file.Name.End())
 		if err != nil {
 			return nil, err
 		}
@@ -155,7 +136,7 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, pgf *Pa
 		if declAST == nil {
 			declAST = file
 		}
-		declRng, err := posToMappedRange(snapshot, pkg, declAST.Name.Pos(), declAST.Name.End())
+		declRng, err := posToMappedRange(snapshot.FileSet(), pkg, declAST.Name.Pos(), declAST.Name.End())
 		if err != nil {
 			return nil, err
 		}
@@ -183,7 +164,7 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, pgf *Pa
 
 	result.Name = result.ident.Name
 	var err error
-	if result.MappedRange, err = posToMappedRange(snapshot, pkg, result.ident.Pos(), result.ident.End()); err != nil {
+	if result.MappedRange, err = posToMappedRange(snapshot.FileSet(), pkg, result.ident.Pos(), result.ident.End()); err != nil {
 		return nil, err
 	}
 
@@ -282,13 +263,13 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, pgf *Pa
 		}
 	}
 
-	rng, err := objToMappedRange(snapshot, pkg, result.Declaration.obj)
+	rng, err := objToMappedRange(snapshot.FileSet(), pkg, result.Declaration.obj)
 	if err != nil {
 		return nil, err
 	}
 	result.Declaration.MappedRange = append(result.Declaration.MappedRange, rng)
 
-	declPkg, err := FindPackageFromPos(ctx, snapshot, result.Declaration.obj.Pos())
+	declPkg, err := FindPackageFromPos(snapshot.FileSet(), pkg, result.Declaration.obj.Pos())
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +293,7 @@ func findIdentifier(ctx context.Context, snapshot Snapshot, pkg Package, pgf *Pa
 		if hasErrorType(result.Type.Object) {
 			return result, nil
 		}
-		if result.Type.MappedRange, err = objToMappedRange(snapshot, pkg, result.Type.Object); err != nil {
+		if result.Type.MappedRange, err = objToMappedRange(snapshot.FileSet(), pkg, result.Type.Object); err != nil {
 			return nil, err
 		}
 	}
@@ -480,7 +461,7 @@ func importSpec(snapshot Snapshot, pkg Package, file *ast.File, pos token.Pos) (
 		Name:     importPath,
 		pkg:      pkg,
 	}
-	if result.MappedRange, err = posToMappedRange(snapshot, pkg, imp.Path.Pos(), imp.Path.End()); err != nil {
+	if result.MappedRange, err = posToMappedRange(snapshot.FileSet(), pkg, imp.Path.Pos(), imp.Path.End()); err != nil {
 		return nil, err
 	}
 	// Consider the "declaration" of an import spec to be the imported package.
@@ -490,7 +471,7 @@ func importSpec(snapshot Snapshot, pkg Package, file *ast.File, pos token.Pos) (
 	}
 	// Return all of the files in the package as the definition of the import spec.
 	for _, dst := range importedPkg.GetSyntax() {
-		rng, err := posToMappedRange(snapshot, pkg, dst.Pos(), dst.End())
+		rng, err := posToMappedRange(snapshot.FileSet(), pkg, dst.Pos(), dst.End())
 		if err != nil {
 			return nil, err
 		}

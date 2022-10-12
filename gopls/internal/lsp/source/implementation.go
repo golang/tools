@@ -15,8 +15,8 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/span"
 )
 
 func Implementation(ctx context.Context, snapshot Snapshot, f FileHandle, pp protocol.Position) ([]protocol.Location, error) {
@@ -32,7 +32,7 @@ func Implementation(ctx context.Context, snapshot Snapshot, f FileHandle, pp pro
 		if impl.pkg == nil || len(impl.pkg.CompiledGoFiles()) == 0 {
 			continue
 		}
-		rng, err := objToMappedRange(snapshot, impl.pkg, impl.obj)
+		rng, err := objToMappedRange(snapshot.FileSet(), impl.pkg, impl.obj)
 		if err != nil {
 			return nil, err
 		}
@@ -208,28 +208,27 @@ var (
 	errNoObjectFound = errors.New("no object found")
 )
 
-// qualifiedObjsAtProtocolPos returns info for all the type.Objects
-// referenced at the given position. An object will be returned for
-// every package that the file belongs to, in every typechecking mode
-// applicable.
+// qualifiedObjsAtProtocolPos returns info for all the types.Objects referenced
+// at the given position, for the following selection of packages:
+//
+// 1. all packages (including all test variants), in their workspace parse mode
+// 2. if not included above, at least one package containing uri in full parse mode
+//
+// Finding objects in (1) ensures that we locate references within all
+// workspace packages, including in x_test packages. Including (2) ensures that
+// we find local references in the current package, for non-workspace packages
+// that may be open.
 func qualifiedObjsAtProtocolPos(ctx context.Context, s Snapshot, uri span.URI, pp protocol.Position) ([]qualifiedObject, error) {
-	pkgs, err := s.PackagesForFile(ctx, uri, TypecheckAll, false)
+	fh, err := s.GetFile(ctx, uri)
 	if err != nil {
 		return nil, err
 	}
-	if len(pkgs) == 0 {
-		return nil, errNoObjectFound
-	}
-	pkg := pkgs[0]
-	pgf, err := pkg.File(uri)
+	content, err := fh.Read()
 	if err != nil {
 		return nil, err
 	}
-	pos, err := pgf.Mapper.Pos(pp)
-	if err != nil {
-		return nil, err
-	}
-	offset, err := safetoken.Offset(pgf.Tok, pos)
+	m := protocol.NewColumnMapper(uri, content)
+	offset, err := m.Offset(pp)
 	if err != nil {
 		return nil, err
 	}
@@ -247,8 +246,8 @@ type positionKey struct {
 	offset int
 }
 
-// qualifiedObjsAtLocation finds all objects referenced at offset in uri, across
-// all packages in the snapshot.
+// qualifiedObjsAtLocation finds all objects referenced at offset in uri,
+// across all packages in the snapshot.
 func qualifiedObjsAtLocation(ctx context.Context, s Snapshot, key positionKey, seen map[positionKey]bool) ([]qualifiedObject, error) {
 	if seen[key] {
 		return nil, nil
@@ -264,9 +263,29 @@ func qualifiedObjsAtLocation(ctx context.Context, s Snapshot, key positionKey, s
 	// try to be comprehensive in case we ever support variations on build
 	// constraints.
 
-	pkgs, err := s.PackagesForFile(ctx, key.uri, TypecheckAll, false)
+	pkgs, err := s.PackagesForFile(ctx, key.uri, TypecheckWorkspace, true)
 	if err != nil {
 		return nil, err
+	}
+
+	// In order to allow basic references/rename/implementations to function when
+	// non-workspace packages are open, ensure that we have at least one fully
+	// parsed package for the current file. This allows us to find references
+	// inside the open package. Use WidestPackage to capture references in test
+	// files.
+	hasFullPackage := false
+	for _, pkg := range pkgs {
+		if pkg.ParseMode() == ParseFull {
+			hasFullPackage = true
+			break
+		}
+	}
+	if !hasFullPackage {
+		pkg, err := s.PackageForFile(ctx, key.uri, TypecheckFull, WidestPackage)
+		if err != nil {
+			return nil, err
+		}
+		pkgs = append(pkgs, pkg)
 	}
 
 	// report objects in the order we encounter them. This ensures that the first

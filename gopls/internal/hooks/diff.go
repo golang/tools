@@ -20,8 +20,8 @@ import (
 	"unicode"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
+	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/span"
 )
 
 // structure for saving information about diffs
@@ -113,7 +113,7 @@ func disaster(before, after string) string {
 	fname := fmt.Sprintf("%s/gopls-failed-%x", os.TempDir(), os.Getpid())
 	fd, err := os.Create(fname)
 	defer fd.Close()
-	_, err = fd.Write([]byte(fmt.Sprintf("%s\n%s\n", string(first), string(second))))
+	_, err = fmt.Fprintf(fd, "%s\n%s\n", first, second)
 	if err != nil {
 		// what do we tell the user?
 		return ""
@@ -142,64 +142,67 @@ func initrepl(n int) []rune {
 
 // BothDiffs edits calls both the new and old diffs, checks that the new diffs
 // change before into after, and attempts to preserve some statistics.
-func BothDiffs(uri span.URI, before, after string) (edits []diff.TextEdit, err error) {
+func BothDiffs(before, after string) (edits []diff.Edit) {
 	// The new diff code contains a lot of internal checks that panic when they
 	// fail. This code catches the panics, or other failures, tries to save
 	// the failing example (and ut wiykd ask the user to send it back to us, and
 	// changes options.newDiff to 'old', if only we could figure out how.)
 	stat := diffstat{Before: len(before), After: len(after)}
 	now := time.Now()
-	Oldedits, oerr := ComputeEdits(uri, before, after)
-	if oerr != nil {
-		stat.Msg += fmt.Sprintf("old:%v", oerr)
-	}
-	stat.Oldedits = len(Oldedits)
+	oldedits := ComputeEdits(before, after)
+	stat.Oldedits = len(oldedits)
 	stat.Oldtime = time.Since(now)
 	defer func() {
 		if r := recover(); r != nil {
 			disaster(before, after)
-			edits, err = Oldedits, oerr
+			edits = oldedits
 		}
 	}()
 	now = time.Now()
-	Newedits, rerr := diff.NComputeEdits(uri, before, after)
-	stat.Newedits = len(Newedits)
+	newedits := diff.Strings(before, after)
+	stat.Newedits = len(newedits)
 	stat.Newtime = time.Now().Sub(now)
-	got := diff.ApplyEdits(before, Newedits)
-	if got != after {
+	got, err := diff.Apply(before, newedits)
+	if err != nil || got != after {
 		stat.Msg += "FAIL"
 		disaster(before, after)
 		stat.save()
-		return Oldedits, oerr
+		return oldedits
 	}
 	stat.save()
-	return Newedits, rerr
+	return newedits
 }
 
-func ComputeEdits(uri span.URI, before, after string) (edits []diff.TextEdit, err error) {
+// ComputeEdits computes a diff using the github.com/sergi/go-diff implementation.
+func ComputeEdits(before, after string) (edits []diff.Edit) {
 	// The go-diff library has an unresolved panic (see golang/go#278774).
 	// TODO(rstambler): Remove the recover once the issue has been fixed
 	// upstream.
 	defer func() {
 		if r := recover(); r != nil {
-			edits = nil
-			err = fmt.Errorf("unable to compute edits for %s: %s", uri.Filename(), r)
+			bug.Reportf("unable to compute edits: %s", r)
+			// Report one big edit for the whole file.
+			edits = []diff.Edit{{
+				Start: 0,
+				End:   len(before),
+				New:   after,
+			}}
 		}
 	}()
 	diffs := diffmatchpatch.New().DiffMain(before, after, true)
-	edits = make([]diff.TextEdit, 0, len(diffs))
+	edits = make([]diff.Edit, 0, len(diffs))
 	offset := 0
 	for _, d := range diffs {
-		start := span.NewPoint(0, 0, offset)
+		start := offset
 		switch d.Type {
 		case diffmatchpatch.DiffDelete:
 			offset += len(d.Text)
-			edits = append(edits, diff.TextEdit{Span: span.New(uri, start, span.NewPoint(0, 0, offset))})
+			edits = append(edits, diff.Edit{Start: start, End: offset})
 		case diffmatchpatch.DiffEqual:
 			offset += len(d.Text)
 		case diffmatchpatch.DiffInsert:
-			edits = append(edits, diff.TextEdit{Span: span.New(uri, start, span.Point{}), NewText: d.Text})
+			edits = append(edits, diff.Edit{Start: start, End: start, New: d.Text})
 		}
 	}
-	return edits, nil
+	return edits
 }

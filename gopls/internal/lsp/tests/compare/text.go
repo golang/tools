@@ -5,8 +5,6 @@
 package compare
 
 import (
-	"fmt"
-
 	"golang.org/x/tools/internal/diff"
 )
 
@@ -21,28 +19,15 @@ func Text(want, got string) string {
 	}
 
 	// Add newlines to avoid verbose newline messages ("No newline at end of file").
-	want += "\n"
-	got += "\n"
-
-	d, err := diff.NComputeEdits("", want, got)
-
-	// Panic on errors.
-	//
-	// TODO(rfindley): refactor so that this function doesn't need to panic.
-	// Computing diffs should never fail.
-	if err != nil {
-		panic(fmt.Sprintf("computing edits failed: %v", err))
-	}
-
-	diff := diff.ToUnified("want", "got", want, d).String()
+	unified := diff.Unified("want", "got", want+"\n", got+"\n")
 
 	// Defensively assert that we get an actual diff, so that we guarantee the
 	// invariant that we return "" if and only if want == got.
 	//
 	// This is probably unnecessary, but convenient.
-	if diff == "" {
+	if unified == "" {
 		panic("empty diff for non-identical input")
 	}
 
-	return diff
+	return unified
 }

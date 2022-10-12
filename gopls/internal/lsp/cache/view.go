@@ -24,14 +24,14 @@ import (
 	"golang.org/x/mod/semver"
 	exec "golang.org/x/sys/execabs"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/gopls/internal/lsp/command"
+	"golang.org/x/tools/gopls/internal/govulncheck"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
-	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
 )
 
@@ -61,7 +61,7 @@ type View struct {
 	// Each modfile has a map of module name to upgrade version.
 	moduleUpgrades map[span.URI]map[string]string
 
-	vulns map[span.URI][]command.Vuln
+	vulns map[span.URI][]govulncheck.Vuln
 
 	// keep track of files by uri and by basename, a single file may be mapped
 	// to multiple uris, and the same basename may map to multiple files
@@ -315,15 +315,6 @@ func (v *View) SetOptions(ctx context.Context, options *source.Options) (source.
 	v.optionsMu.Unlock()
 	newView, err := v.session.updateView(ctx, v, options)
 	return newView, err
-}
-
-func (v *View) Rebuild(ctx context.Context) (source.Snapshot, func(), error) {
-	newView, err := v.session.updateView(ctx, v, v.Options())
-	if err != nil {
-		return nil, func() {}, err
-	}
-	snapshot, release := newView.Snapshot(ctx)
-	return snapshot, release, nil
 }
 
 func (s *snapshot) WriteEnv(ctx context.Context, w io.Writer) error {
@@ -1041,20 +1032,24 @@ func (v *View) ClearModuleUpgrades(modfile span.URI) {
 	delete(v.moduleUpgrades, modfile)
 }
 
-func (v *View) Vulnerabilities(modfile span.URI) []command.Vuln {
+func (v *View) Vulnerabilities(modfile span.URI) []govulncheck.Vuln {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
-	vulns := make([]command.Vuln, len(v.vulns[modfile]))
+	vulns := make([]govulncheck.Vuln, len(v.vulns[modfile]))
 	copy(vulns, v.vulns[modfile])
 	return vulns
 }
 
-func (v *View) SetVulnerabilities(modfile span.URI, vulns []command.Vuln) {
+func (v *View) SetVulnerabilities(modfile span.URI, vulns []govulncheck.Vuln) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
 	v.vulns[modfile] = vulns
+}
+
+func (v *View) GoVersion() int {
+	return v.workspaceInformation.goversion
 }
 
 // Copied from

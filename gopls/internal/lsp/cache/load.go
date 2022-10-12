@@ -17,13 +17,13 @@ import (
 	"time"
 
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/gocommand"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/event/tag"
+	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/packagesinternal"
-	"golang.org/x/tools/internal/span"
 )
 
 var loadID uint64 // atomic identifier for loads
@@ -228,16 +228,17 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...interf
 	s.meta = s.meta.Clone(updates)
 	s.resetIsActivePackageLocked()
 
-	// Invalidate any packages we may have associated with this metadata.
+	// Invalidate any packages and analysis results we may have associated with
+	// this metadata.
 	//
-	// TODO(rfindley): this should not be necessary, as we should have already
-	// invalidated in snapshot.clone.
-	for id := range invalidatedPackages {
-		for _, mode := range source.AllParseModes {
-			key := packageKey{mode, id}
-			s.packages.Delete(key)
-		}
-	}
+	// Generally speaking we should have already invalidated these results in
+	// snapshot.clone, but with experimentalUseInvalidMetadata is may be possible
+	// that we have re-computed stale results before the reload completes. In
+	// this case, we must re-invalidate here.
+	//
+	// TODO(golang/go#54180): if we decide to make experimentalUseInvalidMetadata
+	// obsolete, we should avoid this invalidation.
+	s.invalidatePackagesLocked(invalidatedPackages)
 
 	s.workspacePackages = computeWorkspacePackagesLocked(s, s.meta)
 	s.dumpWorkspace("load")
@@ -504,12 +505,6 @@ func buildMetadata(ctx context.Context, pkgPath PackagePath, pkg *packages.Packa
 	}
 	updates[id] = m
 
-	// Identify intermediate test variants for later filtering. See the
-	// documentation of IsIntermediateTestVariant for more information.
-	if m.ForTest != "" && m.ForTest != m.PkgPath && m.ForTest+"_test" != m.PkgPath {
-		m.IsIntermediateTestVariant = true
-	}
-
 	for _, err := range pkg.Errors {
 		// Filter out parse errors from go list. We'll get them when we
 		// actually parse, and buggy overlay support may generate spurious
@@ -622,7 +617,7 @@ func containsOpenFileLocked(s *snapshot, m *KnownMetadata) bool {
 	return false
 }
 
-// containsFileInWorkspace reports whether m contains any file inside the
+// containsFileInWorkspaceLocked reports whether m contains any file inside the
 // workspace of the snapshot s.
 //
 // s.mu must be held while calling this function.
@@ -661,6 +656,7 @@ func computeWorkspacePackagesLocked(s *snapshot, meta *metadataGraph) map[Packag
 		if !m.Valid {
 			continue
 		}
+
 		if !containsPackageLocked(s, m.Metadata) {
 			continue
 		}
@@ -686,6 +682,9 @@ func computeWorkspacePackagesLocked(s *snapshot, meta *metadataGraph) map[Packag
 		case m.ForTest == m.PkgPath, m.ForTest+"_test" == m.PkgPath:
 			// The test variant of some workspace package or its x_test.
 			// To load it, we need to load the non-test variant with -test.
+			//
+			// Notably, this excludes intermediate test variants from workspace
+			// packages.
 			workspacePackages[m.ID] = m.ForTest
 		}
 	}

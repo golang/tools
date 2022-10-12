@@ -19,9 +19,9 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/bug"
-	"golang.org/x/tools/internal/span"
 )
 
 func extractVariable(fset *token.FileSet, rng span.Range, src []byte, file *ast.File, _ *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
@@ -651,7 +651,7 @@ func extractFunctionMethod(fset *token.FileSet, rng span.Range, src []byte, file
 	}, nil
 }
 
-// adjustRangeForCommentsAndWhitespace adjusts the given range to exclude unnecessary leading or
+// adjustRangeForCommentsAndWhiteSpace adjusts the given range to exclude unnecessary leading or
 // trailing whitespace characters from selection as well as leading or trailing comments.
 // In the following example, each line of the if statement is indented once. There are also two
 // extra spaces after the sclosing bracket before the line break and a comment.
@@ -1119,7 +1119,7 @@ func varOverridden(info *types.Info, firstUse *ast.Ident, obj types.Object, isFr
 	return isOverriden
 }
 
-// parseExtraction generates an AST file from the given text. We then return the portion of the
+// parseBlockStmt generates an AST file from the given text. We then return the portion of the
 // file that represents the text.
 func parseBlockStmt(fset *token.FileSet, src []byte) (*ast.BlockStmt, error) {
 	text := "package main\nfunc _() { " + string(src) + " }"

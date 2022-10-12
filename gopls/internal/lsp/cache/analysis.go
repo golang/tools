@@ -16,12 +16,12 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/memoize"
-	"golang.org/x/tools/internal/span"
 )
 
 func (s *snapshot) Analyze(ctx context.Context, id string, analyzers []*source.Analyzer) ([]*source.Diagnostic, error) {
@@ -361,19 +361,26 @@ func actionImpl(ctx context.Context, snapshot *snapshot, deps []*actionHandle, a
 	var result interface{}
 	var err error
 	func() {
-		// Set this flag temporarily when debugging crashes.
-		// See https://github.com/golang/go/issues/54762.
-		const norecover = false
-		if norecover {
-			debug.SetTraceback("all") // show all goroutines
-		} else {
-			defer func() {
-				if r := recover(); r != nil {
-					// Use bug.Errorf so that we detect panics during testing.
-					err = bug.Errorf("analysis %s for package %s panicked: %v", analyzer.Name, pkg.PkgPath(), r)
+		defer func() {
+			if r := recover(); r != nil {
+				// An Analyzer crashed. This is often merely a symptom
+				// of a problem in package loading.
+				//
+				// We believe that CL 420538 may have fixed these crashes, so enable
+				// strict checks in tests.
+				const strict = true
+				if strict && bug.PanicOnBugs && analyzer.Name != "fact_purity" {
+					// During testing, crash. See issues 54762, 56035.
+					// But ignore analyzers with known crash bugs:
+					// - fact_purity (dominikh/go-tools#1327)
+					debug.SetTraceback("all") // show all goroutines
+					panic(r)
+				} else {
+					// In production, suppress the panic and press on.
+					err = fmt.Errorf("analysis %s for package %s panicked: %v", analyzer.Name, pkg.PkgPath(), r)
 				}
-			}()
-		}
+			}
+		}()
 		result, err = pass.Analyzer.Run(pass)
 	}()
 	if err != nil {

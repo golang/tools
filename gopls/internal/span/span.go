@@ -42,7 +42,7 @@ var Invalid = Span{v: span{Start: invalidPoint.v, End: invalidPoint.v}}
 
 var invalidPoint = Point{v: point{Line: 0, Column: 0, Offset: -1}}
 
-func New(uri URI, start Point, end Point) Span {
+func New(uri URI, start, end Point) Span {
 	s := Span{v: span{URI: uri, Start: start.v, End: end.v}}
 	s.v.clean()
 	return s
@@ -274,4 +274,14 @@ func (p *point) updateOffset(tf *token.File) error {
 	}
 	p.Offset = offset
 	return nil
+}
+
+// SetRange implements packagestest.rangeSetter, allowing
+// gopls' test suites to use Spans instead of Range in parameters.
+func (span *Span) SetRange(file *token.File, start, end token.Pos) {
+	point := func(pos token.Pos) Point {
+		posn := file.Position(pos)
+		return NewPoint(posn.Line, posn.Column, posn.Offset)
+	}
+	*span = New(URIFromPath(file.Name()), point(start), point(end))
 }

@@ -20,15 +20,16 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/govulncheck"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
-	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
 )
 
@@ -390,10 +391,7 @@ func dropDependency(snapshot source.Snapshot, pm *source.ParsedModule, modulePat
 		return nil, err
 	}
 	// Calculate the edits to be made due to the change.
-	diff, err := snapshot.View().Options().ComputeEdits(pm.URI, string(pm.Mapper.Content), string(newContent))
-	if err != nil {
-		return nil, err
-	}
+	diff := snapshot.View().Options().ComputeEdits(string(pm.Mapper.Content), string(newContent))
 	return source.ToProtocolEdits(pm.Mapper, diff)
 }
 
@@ -615,10 +613,7 @@ func applyFileEdits(ctx context.Context, snapshot source.Snapshot, uri span.URI,
 	}
 
 	m := protocol.NewColumnMapper(fh.URI(), oldContent)
-	diff, err := snapshot.View().Options().ComputeEdits(uri, string(oldContent), string(newContent))
-	if err != nil {
-		return nil, err
-	}
+	diff := snapshot.View().Options().ComputeEdits(string(oldContent), string(newContent))
 	edits, err := source.ToProtocolEdits(m, diff)
 	if err != nil {
 		return nil, err
@@ -855,7 +850,7 @@ func (c *commandHandler) RunVulncheckExp(ctx context.Context, args command.Vulnc
 			return errors.New("vulncheck feature is not available")
 		}
 
-		cmd := exec.CommandContext(ctx, os.Args[0], "vulncheck", "-config", args.Pattern)
+		cmd := exec.CommandContext(ctx, os.Args[0], "vulncheck", "-summary", "-config", args.Pattern)
 		cmd.Dir = filepath.Dir(args.URI.SpanURI().Filename())
 
 		var viewEnv []string
@@ -885,28 +880,26 @@ func (c *commandHandler) RunVulncheckExp(ctx context.Context, args command.Vulnc
 			return fmt.Errorf("failed to run govulncheck: %v", err)
 		}
 
-		var vulns command.VulncheckResult
-		if err := json.Unmarshal(stdout, &vulns); err != nil {
+		var summary govulncheck.Summary
+		if err := json.Unmarshal(stdout, &summary); err != nil {
 			// TODO: for easy debugging, log the failed stdout somewhere?
 			return fmt.Errorf("failed to parse govulncheck output: %v", err)
 		}
 
-		deps.snapshot.View().SetVulnerabilities(args.URI.SpanURI(), vulns.Vuln)
+		vulns := append(summary.Affecting, summary.NonAffecting...)
+		deps.snapshot.View().SetVulnerabilities(args.URI.SpanURI(), vulns)
 		c.s.diagnoseSnapshot(deps.snapshot, nil, false)
 
-		set := make(map[string]bool)
-		for _, v := range vulns.Vuln {
-			if len(v.CallStackSummaries) > 0 {
-				set[v.ID] = true
-			}
-		}
-		if len(set) == 0 {
+		if len(summary.Affecting) == 0 {
 			return c.s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
 				Type:    protocol.Info,
 				Message: "No vulnerabilities found",
 			})
 		}
-
+		set := make(map[string]bool)
+		for _, v := range summary.Affecting {
+			set[v.OSV.ID] = true
+		}
 		list := make([]string, 0, len(set))
 		for k := range set {
 			list = append(list, k)

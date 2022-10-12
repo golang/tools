@@ -21,11 +21,11 @@ import (
 	"golang.org/x/mod/module"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/gopls/internal/lsp/command"
+	"golang.org/x/tools/gopls/internal/govulncheck"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
-	"golang.org/x/tools/internal/span"
 )
 
 // Snapshot represents the current state for the given view.
@@ -138,7 +138,10 @@ type Snapshot interface {
 
 	// PackagesForFile returns an unordered list of packages that contain
 	// the file denoted by uri, type checked in the specified mode.
-	PackagesForFile(ctx context.Context, uri span.URI, mode TypecheckMode, includeTestVariants bool) ([]Package, error)
+	//
+	// If withIntermediateTestVariants is set, the resulting package set includes
+	// intermediate test variants.
+	PackagesForFile(ctx context.Context, uri span.URI, mode TypecheckMode, withIntermediateTestVariants bool) ([]Package, error)
 
 	// PackageForFile returns a single package that this file belongs to,
 	// checked in mode and filtered by the package policy.
@@ -250,11 +253,6 @@ type View interface {
 	// no longer needed.
 	Snapshot(ctx context.Context) (Snapshot, func())
 
-	// Rebuild rebuilds the current view, replacing the original
-	// view in its session.  It returns a Snapshot and a release
-	// function that must be called when the Snapshot is no longer needed.
-	Rebuild(ctx context.Context) (Snapshot, func(), error)
-
 	// IsGoPrivatePath reports whether target is a private import path, as identified
 	// by the GOPRIVATE environment variable.
 	IsGoPrivatePath(path string) bool
@@ -273,14 +271,17 @@ type View interface {
 	// Vulnerabilites returns known vulnerabilities for the given modfile.
 	// TODO(suzmue): replace command.Vuln with a different type, maybe
 	// https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck/govulnchecklib#Summary?
-	Vulnerabilities(modfile span.URI) []command.Vuln
+	Vulnerabilities(modfile span.URI) []govulncheck.Vuln
 
 	// SetVulnerabilities resets the list of vulnerabilites that exists for the given modules
 	// required by modfile.
-	SetVulnerabilities(modfile span.URI, vulnerabilities []command.Vuln)
+	SetVulnerabilities(modfile span.URI, vulnerabilities []govulncheck.Vuln)
 
 	// FileKind returns the type of a file
 	FileKind(FileHandle) FileKind
+
+	// GoVersion returns the configured Go version for this view.
+	GoVersion() int
 }
 
 // A FileSource maps uris to FileHandles. This abstraction exists both for
@@ -436,16 +437,11 @@ var AllParseModes = []ParseMode{ParseHeader, ParseExported, ParseFull}
 type TypecheckMode int
 
 const (
-	// Invalid default value.
-	TypecheckUnknown TypecheckMode = iota
 	// TypecheckFull means to use ParseFull.
-	TypecheckFull
+	TypecheckFull TypecheckMode = iota
 	// TypecheckWorkspace means to use ParseFull for workspace packages, and
 	// ParseExported for others.
 	TypecheckWorkspace
-	// TypecheckAll means ParseFull for workspace packages, and both Full and
-	// Exported for others. Only valid for some functions.
-	TypecheckAll
 )
 
 type VersionedFileHandle interface {

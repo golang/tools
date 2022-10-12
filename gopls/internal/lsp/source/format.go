@@ -16,12 +16,12 @@ import (
 	"strings"
 	"text/scanner"
 
-	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/imports"
-	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/gopls/internal/lsp/lsppos"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
+	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/imports"
 )
 
 // Format formats a file with a given range.
@@ -199,11 +199,8 @@ func computeFixEdits(snapshot Snapshot, pgf *ParsedGoFile, options *imports.Opti
 	if fixedData == nil || fixedData[len(fixedData)-1] != '\n' {
 		fixedData = append(fixedData, '\n') // ApplyFixes may miss the newline, go figure.
 	}
-	edits, err := snapshot.View().Options().ComputeEdits(pgf.URI, left, string(fixedData))
-	if err != nil {
-		return nil, err
-	}
-	return ProtocolEditsFromSource([]byte(left), edits, pgf.Mapper.TokFile)
+	edits := snapshot.View().Options().ComputeEdits(left, string(fixedData))
+	return protocolEditsFromSource([]byte(left), edits, pgf.Mapper.TokFile)
 }
 
 // importPrefix returns the prefix of the given file content through the final
@@ -312,73 +309,85 @@ func computeTextEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile,
 	_, done := event.Start(ctx, "source.computeTextEdits")
 	defer done()
 
-	edits, err := snapshot.View().Options().ComputeEdits(pgf.URI, string(pgf.Src), formatted)
-	if err != nil {
-		return nil, err
-	}
+	edits := snapshot.View().Options().ComputeEdits(string(pgf.Src), formatted)
 	return ToProtocolEdits(pgf.Mapper, edits)
 }
 
-// ProtocolEditsFromSource converts text edits to LSP edits using the original
+// protocolEditsFromSource converts text edits to LSP edits using the original
 // source.
-func ProtocolEditsFromSource(src []byte, edits []diff.TextEdit, tf *token.File) ([]protocol.TextEdit, error) {
+func protocolEditsFromSource(src []byte, edits []diff.Edit, tf *token.File) ([]protocol.TextEdit, error) {
 	m := lsppos.NewMapper(src)
 	var result []protocol.TextEdit
 	for _, edit := range edits {
-		spn, err := edit.Span.WithOffset(tf)
-		if err != nil {
-			return nil, fmt.Errorf("computing offsets: %v", err)
-		}
-		rng, err := m.Range(spn.Start().Offset(), spn.End().Offset())
+		rng, err := m.Range(edit.Start, edit.End)
 		if err != nil {
 			return nil, err
 		}
 
-		if rng.Start == rng.End && edit.NewText == "" {
+		if rng.Start == rng.End && edit.New == "" {
 			// Degenerate case, which may result from a diff tool wanting to delete
 			// '\r' in line endings. Filter it out.
 			continue
 		}
 		result = append(result, protocol.TextEdit{
 			Range:   rng,
-			NewText: edit.NewText,
+			NewText: edit.New,
 		})
 	}
 	return result, nil
 }
 
-func ToProtocolEdits(m *protocol.ColumnMapper, edits []diff.TextEdit) ([]protocol.TextEdit, error) {
-	if edits == nil {
-		return nil, nil
-	}
+// ToProtocolEdits converts diff.Edits to LSP TextEdits.
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textEditArray
+func ToProtocolEdits(m *protocol.ColumnMapper, edits []diff.Edit) ([]protocol.TextEdit, error) {
+	// LSP doesn't require TextEditArray to be sorted:
+	// this is the receiver's concern. But govim, and perhaps
+	// other clients have historically relied on the order.
+	edits = append([]diff.Edit(nil), edits...)
+	diff.SortEdits(edits)
+
 	result := make([]protocol.TextEdit, len(edits))
 	for i, edit := range edits {
-		rng, err := m.Range(edit.Span)
+		rng, err := m.OffsetRange(edit.Start, edit.End)
 		if err != nil {
 			return nil, err
 		}
 		result[i] = protocol.TextEdit{
 			Range:   rng,
-			NewText: edit.NewText,
+			NewText: edit.New,
 		}
 	}
 	return result, nil
 }
 
-func FromProtocolEdits(m *protocol.ColumnMapper, edits []protocol.TextEdit) ([]diff.TextEdit, error) {
+// FromProtocolEdits converts LSP TextEdits to diff.Edits.
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textEditArray
+func FromProtocolEdits(m *protocol.ColumnMapper, edits []protocol.TextEdit) ([]diff.Edit, error) {
 	if edits == nil {
 		return nil, nil
 	}
-	result := make([]diff.TextEdit, len(edits))
+	result := make([]diff.Edit, len(edits))
 	for i, edit := range edits {
 		spn, err := m.RangeSpan(edit.Range)
 		if err != nil {
 			return nil, err
 		}
-		result[i] = diff.TextEdit{
-			Span:    spn,
-			NewText: edit.NewText,
+		result[i] = diff.Edit{
+			Start: spn.Start().Offset(),
+			End:   spn.End().Offset(),
+			New:   edit.NewText,
 		}
 	}
 	return result, nil
+}
+
+// ApplyProtocolEdits applies the patch (edits) to m.Content and returns the result.
+// It also returns the edits converted to diff-package form.
+func ApplyProtocolEdits(m *protocol.ColumnMapper, edits []protocol.TextEdit) (string, []diff.Edit, error) {
+	diffEdits, err := FromProtocolEdits(m, edits)
+	if err != nil {
+		return "", nil, err
+	}
+	out, err := diff.Apply(string(m.Content), diffEdits)
+	return out, diffEdits, err
 }

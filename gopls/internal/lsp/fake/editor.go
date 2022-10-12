@@ -19,9 +19,9 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
-	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
 )
 
@@ -271,6 +271,11 @@ func (e *Editor) initialize(ctx context.Context) error {
 	// editor does send didChangeWatchedFiles notifications, so set this to
 	// true.
 	params.Capabilities.Workspace.DidChangeWatchedFiles.DynamicRegistration = true
+	params.Capabilities.Workspace.WorkspaceEdit = &protocol.WorkspaceEditClientCapabilities{
+		ResourceOperations: []protocol.ResourceOperationKind{
+			"rename",
+		},
+	}
 
 	params.Trace = "messages"
 	// TODO: support workspace folders.
@@ -705,9 +710,7 @@ func (e *Editor) editBufferLocked(ctx context.Context, path string, edits []Edit
 	if !ok {
 		return fmt.Errorf("unknown buffer %q", path)
 	}
-	content := make([]string, len(buf.lines))
-	copy(content, buf.lines)
-	content, err := editContent(content, edits)
+	content, err := applyEdits(buf.lines, edits)
 	if err != nil {
 		return err
 	}
@@ -1134,7 +1137,8 @@ func (e *Editor) InlayHint(ctx context.Context, path string) ([]protocol.InlayHi
 	return hints, nil
 }
 
-// References executes a reference request on the server.
+// References returns references to the object at (path, pos), as returned by
+// the connected LSP server. If no server is connected, it returns (nil, nil).
 func (e *Editor) References(ctx context.Context, path string, pos Pos) ([]protocol.Location, error) {
 	if e.Server == nil {
 		return nil, nil
@@ -1161,6 +1165,8 @@ func (e *Editor) References(ctx context.Context, path string, pos Pos) ([]protoc
 	return locations, nil
 }
 
+// Rename performs a rename of the object at (path, pos) to newName, using the
+// connected LSP server. If no server is connected, it returns nil.
 func (e *Editor) Rename(ctx context.Context, path string, pos Pos, newName string) error {
 	if e.Server == nil {
 		return nil
@@ -1182,6 +1188,28 @@ func (e *Editor) Rename(ctx context.Context, path string, pos Pos, newName strin
 	return nil
 }
 
+// Implementations returns implementations for the object at (path, pos), as
+// returned by the connected LSP server. If no server is connected, it returns
+// (nil, nil).
+func (e *Editor) Implementations(ctx context.Context, path string, pos Pos) ([]protocol.Location, error) {
+	if e.Server == nil {
+		return nil, nil
+	}
+	e.mu.Lock()
+	_, ok := e.buffers[path]
+	e.mu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("buffer %q is not open", path)
+	}
+	params := &protocol.ImplementationParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: e.TextDocumentIdentifier(path),
+			Position:     pos.ToProtocolPosition(),
+		},
+	}
+	return e.Server.Implementation(ctx, params)
+}
+
 func (e *Editor) RenameFile(ctx context.Context, oldPath, newPath string) error {
 	closed, opened, err := e.renameBuffers(ctx, oldPath, newPath)
 	if err != nil {
@@ -1200,7 +1228,10 @@ func (e *Editor) RenameFile(ctx context.Context, oldPath, newPath string) error 
 	}
 
 	// Finally, perform the renaming on disk.
-	return e.sandbox.Workdir.RenameFile(ctx, oldPath, newPath)
+	if err := e.sandbox.Workdir.RenameFile(ctx, oldPath, newPath); err != nil {
+		return fmt.Errorf("renaming sandbox file: %w", err)
+	}
+	return nil
 }
 
 // renameBuffers renames in-memory buffers affected by the renaming of

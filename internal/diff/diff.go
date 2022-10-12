@@ -2,158 +2,160 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package diff supports a pluggable diff algorithm.
+// Package diff computes differences between text files or strings.
 package diff
 
 import (
+	"fmt"
 	"sort"
 	"strings"
-
-	"golang.org/x/tools/internal/span"
 )
 
-// TextEdit represents a change to a section of a document.
-// The text within the specified span should be replaced by the supplied new text.
-type TextEdit struct {
-	Span    span.Span
-	NewText string
+// An Edit describes the replacement of a portion of a text file.
+type Edit struct {
+	Start, End int    // byte offsets of the region to replace
+	New        string // the replacement
 }
 
-// ComputeEdits is the type for a function that produces a set of edits that
-// convert from the before content to the after content.
-type ComputeEdits func(uri span.URI, before, after string) ([]TextEdit, error)
-
-// SortTextEdits attempts to order all edits by their starting points.
-// The sort is stable so that edits with the same starting point will not
-// be reordered.
-func SortTextEdits(d []TextEdit) {
-	// Use a stable sort to maintain the order of edits inserted at the same position.
-	sort.SliceStable(d, func(i int, j int) bool {
-		return span.Compare(d[i].Span, d[j].Span) < 0
-	})
-}
-
-// ApplyEdits applies the set of edits to the before and returns the resulting
-// content.
-// It may panic or produce garbage if the edits are not valid for the provided
-// before content.
-func ApplyEdits(before string, edits []TextEdit) string {
-	// Preconditions:
-	//   - all of the edits apply to before
-	//   - and all the spans for each TextEdit have the same URI
-	if len(edits) == 0 {
-		return before
+// Apply applies a sequence of edits to the src buffer and returns the
+// result. Edits are applied in order of start offset; edits with the
+// same start offset are applied in they order they were provided.
+//
+// Apply returns an error if any edit is out of bounds,
+// or if any pair of edits is overlapping.
+func Apply(src string, edits []Edit) (string, error) {
+	edits, size, err := validate(src, edits)
+	if err != nil {
+		return "", err
 	}
-	edits, _ = prepareEdits(before, edits)
-	after := strings.Builder{}
-	last := 0
+
+	// Apply edits.
+	out := make([]byte, 0, size)
+	lastEnd := 0
 	for _, edit := range edits {
-		start := edit.Span.Start().Offset()
-		if start > last {
-			after.WriteString(before[last:start])
-			last = start
+		if lastEnd < edit.Start {
+			out = append(out, src[lastEnd:edit.Start]...)
 		}
-		after.WriteString(edit.NewText)
-		last = edit.Span.End().Offset()
+		out = append(out, edit.New...)
+		lastEnd = edit.End
 	}
-	if last < len(before) {
-		after.WriteString(before[last:])
+	out = append(out, src[lastEnd:]...)
+
+	if len(out) != size {
+		panic("wrong size")
 	}
-	return after.String()
+
+	return string(out), nil
 }
 
-// LineEdits takes a set of edits and expands and merges them as necessary
-// to ensure that there are only full line edits left when it is done.
-func LineEdits(before string, edits []TextEdit) []TextEdit {
-	if len(edits) == 0 {
-		return nil
+// validate checks that edits are consistent with src,
+// and returns the size of the patched output.
+// It may return a different slice.
+func validate(src string, edits []Edit) ([]Edit, int, error) {
+	if !sort.IsSorted(editsSort(edits)) {
+		edits = append([]Edit(nil), edits...)
+		SortEdits(edits)
 	}
-	edits, partial := prepareEdits(before, edits)
-	if partial {
-		edits = lineEdits(before, edits)
-	}
-	return edits
-}
 
-// prepareEdits returns a sorted copy of the edits
-func prepareEdits(before string, edits []TextEdit) ([]TextEdit, bool) {
-	partial := false
-	tf := span.NewTokenFile("", []byte(before))
-	copied := make([]TextEdit, len(edits))
-	for i, edit := range edits {
-		edit.Span, _ = edit.Span.WithAll(tf)
-		copied[i] = edit
-		partial = partial ||
-			edit.Span.Start().Offset() >= len(before) ||
-			edit.Span.Start().Column() > 1 || edit.Span.End().Column() > 1
-	}
-	SortTextEdits(copied)
-	return copied, partial
-}
-
-// lineEdits rewrites the edits to always be full line edits
-func lineEdits(before string, edits []TextEdit) []TextEdit {
-	adjusted := make([]TextEdit, 0, len(edits))
-	current := TextEdit{Span: span.Invalid}
+	// Check validity of edits and compute final size.
+	size := len(src)
+	lastEnd := 0
 	for _, edit := range edits {
-		if current.Span.IsValid() && edit.Span.Start().Line() <= current.Span.End().Line() {
-			// overlaps with the current edit, need to combine
-			// first get the gap from the previous edit
-			gap := before[current.Span.End().Offset():edit.Span.Start().Offset()]
-			// now add the text of this edit
-			current.NewText += gap + edit.NewText
-			// and then adjust the end position
-			current.Span = span.New(current.Span.URI(), current.Span.Start(), edit.Span.End())
-		} else {
-			// does not overlap, add previous run (if there is one)
-			adjusted = addEdit(before, adjusted, current)
-			// and then remember this edit as the start of the next run
-			current = edit
+		if !(0 <= edit.Start && edit.Start <= edit.End && edit.End <= len(src)) {
+			return nil, 0, fmt.Errorf("diff has out-of-bounds edits")
 		}
+		if edit.Start < lastEnd {
+			return nil, 0, fmt.Errorf("diff has overlapping edits")
+		}
+		size += len(edit.New) + edit.Start - edit.End
+		lastEnd = edit.End
 	}
-	// add the current pending run if there is one
-	return addEdit(before, adjusted, current)
+
+	return edits, size, nil
 }
 
-func addEdit(before string, edits []TextEdit, edit TextEdit) []TextEdit {
-	if !edit.Span.IsValid() {
-		return edits
+// SortEdits orders a slice of Edits by (start, end) offset.
+// This ordering puts insertions (end = start) before deletions
+// (end > start) at the same point, but uses a stable sort to preserve
+// the order of multiple insertions at the same point.
+// (Apply detects multiple deletions at the same point as an error.)
+func SortEdits(edits []Edit) {
+	sort.Stable(editsSort(edits))
+}
+
+type editsSort []Edit
+
+func (a editsSort) Len() int { return len(a) }
+func (a editsSort) Less(i, j int) bool {
+	if cmp := a[i].Start - a[j].Start; cmp != 0 {
+		return cmp < 0
 	}
-	// if edit is partial, expand it to full line now
-	start := edit.Span.Start()
-	end := edit.Span.End()
-	if start.Column() > 1 {
-		// prepend the text and adjust to start of line
-		delta := start.Column() - 1
-		start = span.NewPoint(start.Line(), 1, start.Offset()-delta)
-		edit.Span = span.New(edit.Span.URI(), start, end)
-		edit.NewText = before[start.Offset():start.Offset()+delta] + edit.NewText
+	return a[i].End < a[j].End
+}
+func (a editsSort) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+
+// lineEdits expands and merges a sequence of edits so that each
+// resulting edit replaces one or more complete lines.
+// See ApplyEdits for preconditions.
+func lineEdits(src string, edits []Edit) ([]Edit, error) {
+	edits, _, err := validate(src, edits)
+	if err != nil {
+		return nil, err
 	}
-	if start.Offset() >= len(before) && start.Line() > 1 && before[len(before)-1] != '\n' {
-		// after end of file that does not end in eol, so join to last line of file
-		// to do this we need to know where the start of the last line was
-		eol := strings.LastIndex(before, "\n")
-		if eol < 0 {
-			// file is one non terminated line
-			eol = 0
+
+	// Do all edits begin and end at the start of a line?
+	// TODO(adonovan): opt: is this fast path necessary?
+	// (Also, it complicates the result ownership.)
+	for _, edit := range edits {
+		if edit.Start >= len(src) || // insertion at EOF
+			edit.Start > 0 && src[edit.Start-1] != '\n' || // not at line start
+			edit.End > 0 && src[edit.End-1] != '\n' { // not at line start
+			goto expand
 		}
-		delta := len(before) - eol
-		start = span.NewPoint(start.Line()-1, 1, start.Offset()-delta)
-		edit.Span = span.New(edit.Span.URI(), start, end)
-		edit.NewText = before[start.Offset():start.Offset()+delta] + edit.NewText
 	}
-	if end.Column() > 1 {
-		remains := before[end.Offset():]
-		eol := strings.IndexRune(remains, '\n')
-		if eol < 0 {
-			eol = len(remains)
+	return edits, nil // aligned
+
+expand:
+	expanded := make([]Edit, 0, len(edits)) // a guess
+	prev := edits[0]
+	// TODO(adonovan): opt: start from the first misaligned edit.
+	// TODO(adonovan): opt: avoid quadratic cost of string += string.
+	for _, edit := range edits[1:] {
+		between := src[prev.End:edit.Start]
+		if !strings.Contains(between, "\n") {
+			// overlapping lines: combine with previous edit.
+			prev.New += between + edit.New
+			prev.End = edit.End
 		} else {
-			eol++
+			// non-overlapping lines: flush previous edit.
+			expanded = append(expanded, expandEdit(prev, src))
+			prev = edit
 		}
-		end = span.NewPoint(end.Line()+1, 1, end.Offset()+eol)
-		edit.Span = span.New(edit.Span.URI(), start, end)
-		edit.NewText = edit.NewText + remains[:eol]
 	}
-	edits = append(edits, edit)
-	return edits
+	return append(expanded, expandEdit(prev, src)), nil // flush final edit
+}
+
+// expandEdit returns edit expanded to complete whole lines.
+func expandEdit(edit Edit, src string) Edit {
+	// Expand start left to start of line.
+	// (delta is the zero-based column number of of start.)
+	start := edit.Start
+	if delta := start - 1 - strings.LastIndex(src[:start], "\n"); delta > 0 {
+		edit.Start -= delta
+		edit.New = src[start-delta:start] + edit.New
+	}
+
+	// Expand end right to end of line.
+	// (endCol is the zero-based column number of end.)
+	end := edit.End
+	if endCol := end - 1 - strings.LastIndex(src[:end], "\n"); endCol > 0 {
+		if nl := strings.IndexByte(src[end:], '\n'); nl < 0 {
+			edit.End = len(src) // extend to EOF
+		} else {
+			edit.End = end + nl + 1 // extend beyond \n
+		}
+		edit.New += src[end:edit.End]
+	}
+
+	return edit
 }

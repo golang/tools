@@ -13,15 +13,17 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
-	"golang.org/x/tools/internal/span"
 )
 
 func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitialize) (*protocol.InitializeResult, error) {
@@ -202,6 +204,7 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 		return err
 	}
 	s.pendingFolders = nil
+	s.checkViewGoVersions()
 
 	var registrations []protocol.Registration
 	if options.ConfigurationSupported && options.DynamicConfigurationSupported {
@@ -221,6 +224,34 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 		}
 	}
 	return nil
+}
+
+// OldestSupportedGoVersion is the last X in Go 1.X that we support.
+//
+// Mutable for testing, since we won't otherwise run CI on unsupported Go
+// versions.
+var OldestSupportedGoVersion = 16
+
+// checkViewGoVersions checks whether any Go version used by a view is too old,
+// raising a showMessage notification if so.
+//
+// It should be called after views change.
+func (s *Server) checkViewGoVersions() {
+	oldestVersion := -1
+	for _, view := range s.session.Views() {
+		viewVersion := view.GoVersion()
+		if oldestVersion == -1 || viewVersion < oldestVersion {
+			oldestVersion = viewVersion
+		}
+	}
+
+	if oldestVersion >= 0 && oldestVersion < OldestSupportedGoVersion {
+		msg := fmt.Sprintf("Found Go version 1.%d, which is unsupported. Please upgrade to Go 1.%d or later.", oldestVersion, OldestSupportedGoVersion)
+		s.eventuallyShowMessage(context.Background(), &protocol.ShowMessageParams{
+			Type:    protocol.Error,
+			Message: msg,
+		})
+	}
 }
 
 func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFolder) error {
@@ -430,28 +461,46 @@ func (s *Server) eventuallyShowMessage(ctx context.Context, msg *protocol.ShowMe
 }
 
 func (s *Server) handleOptionResults(ctx context.Context, results source.OptionResults) error {
+	var warnings, errors []string
 	for _, result := range results {
-		var msg *protocol.ShowMessageParams
 		switch result.Error.(type) {
 		case nil:
 			// nothing to do
 		case *source.SoftError:
-			msg = &protocol.ShowMessageParams{
-				Type:    protocol.Warning,
-				Message: result.Error.Error(),
-			}
+			warnings = append(warnings, result.Error.Error())
 		default:
-			msg = &protocol.ShowMessageParams{
-				Type:    protocol.Error,
-				Message: result.Error.Error(),
-			}
-		}
-		if msg != nil {
-			if err := s.eventuallyShowMessage(ctx, msg); err != nil {
-				return err
-			}
+			errors = append(errors, result.Error.Error())
 		}
 	}
+
+	// Sort messages, but put errors first.
+	//
+	// Having stable content for the message allows clients to de-duplicate. This
+	// matters because we may send duplicate warnings for clients that support
+	// dynamic configuration: one for the initial settings, and then more for the
+	// individual view settings.
+	var msgs []string
+	msgType := protocol.Warning
+	if len(errors) > 0 {
+		msgType = protocol.Error
+		sort.Strings(errors)
+		msgs = append(msgs, errors...)
+	}
+	if len(warnings) > 0 {
+		sort.Strings(warnings)
+		msgs = append(msgs, warnings...)
+	}
+
+	if len(msgs) > 0 {
+		// Settings
+		combined := "Invalid settings: " + strings.Join(msgs, "; ")
+		params := &protocol.ShowMessageParams{
+			Type:    msgType,
+			Message: combined,
+		}
+		return s.eventuallyShowMessage(ctx, params)
+	}
+
 	return nil
 }
 

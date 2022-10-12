@@ -165,8 +165,10 @@ func DefaultOptions() *Options {
 				CompletionDocumentation: true,
 				DeepCompletion:          true,
 				ChattyDiagnostics:       true,
+				NewDiff:                 "both",
 			},
 			Hooks: Hooks{
+				// TODO(adonovan): switch to new diff.Strings implementation.
 				ComputeEdits:         myers.ComputeEdits,
 				URLRegexp:            urlRegexp(),
 				DefaultAnalyzers:     defaultAnalyzers(),
@@ -497,6 +499,10 @@ func (u *UserOptions) SetEnvSlice(env []string) {
 	}
 }
 
+// DiffFunction is the type for a function that produces a set of edits that
+// convert from the before content to the after content.
+type DiffFunction func(before, after string) []diff.Edit
+
 // Hooks contains configuration that is provided to the Gopls command by the
 // main package.
 type Hooks struct {
@@ -510,7 +516,7 @@ type Hooks struct {
 	StaticcheckSupported bool
 
 	// ComputeEdits is used to compute edits between file versions.
-	ComputeEdits diff.ComputeEdits
+	ComputeEdits DiffFunction
 
 	// URLRegexp is used to find potential URLs in comments/strings.
 	//
@@ -817,7 +823,6 @@ func (o *Options) EnableAllExperiments() {
 	o.SemanticTokens = true
 	o.ExperimentalUseInvalidMetadata = true
 	o.ExperimentalWatchedFileDelay = 50 * time.Millisecond
-	o.NewDiff = "checked"
 }
 
 func (o *Options) enableAllExperimentMaps() {
@@ -1047,10 +1052,10 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		result.setBool(&o.ExperimentalPostfixCompletions)
 
 	case "experimentalWorkspaceModule":
-		const msg = "The experimentalWorkspaceModule feature has been replaced by go workspaces, " +
-			"and will be removed in a future version of gopls (https://go.dev/issue/55331). " +
-			"Please see https://github.com/golang/tools/blob/master/gopls/doc/workspace.md " +
-			"for information on setting up multi-module workspaces using go.work files."
+		const msg = "experimentalWorkspaceModule has been replaced by go workspaces, " +
+			"and will be removed in a future version of gopls (https://go.dev/issue/55331) -- " +
+			"see https://github.com/golang/tools/blob/master/gopls/doc/workspace.md " +
+			"for information on setting up multi-module workspaces using go.work files"
 		result.softErrorf(msg)
 		result.setBool(&o.ExperimentalWorkspaceModule)
 
@@ -1079,8 +1084,8 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		result.setDuration(&o.DiagnosticsDelay)
 
 	case "experimentalWatchedFileDelay":
-		const msg = "The experimentalWatchedFileDelay setting is deprecated, and will " +
-			"be removed in a future version of gopls (https://go.dev/issue/55332)."
+		const msg = "experimentalWatchedFileDelay is deprecated, and will " +
+			"be removed in a future version of gopls (https://go.dev/issue/55332)"
 		result.softErrorf(msg)
 		result.setDuration(&o.ExperimentalWatchedFileDelay)
 
@@ -1094,8 +1099,8 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		result.setBool(&o.AllowImplicitNetworkAccess)
 
 	case "experimentalUseInvalidMetadata":
-		const msg = "The experimentalUseInvalidMetadata setting is deprecated, and will be removed" +
-			"in a future version of gopls (https://go.dev/issue/55333)."
+		const msg = "experimentalUseInvalidMetadata is deprecated, and will be removed " +
+			"in a future version of gopls (https://go.dev/issue/55333)"
 		result.softErrorf(msg)
 		result.setBool(&o.ExperimentalUseInvalidMetadata)
 
