@@ -33,6 +33,10 @@ var (
 	ErrServerOverloaded = NewError(-32000, "JSON RPC overloaded")
 	// ErrUnknown should be used for all non coded errors.
 	ErrUnknown = NewError(-32001, "JSON RPC unknown error")
+	// ErrServerClosing is returned for calls that arrive while the server is closing.
+	ErrServerClosing = NewError(-32002, "JSON RPC server is closing")
+	// ErrClientClosing is a dummy error returned for calls initiated while the client is closing.
+	ErrClientClosing = NewError(-32003, "JSON RPC client is closing")
 )
 
 const wireVersion = "2.0"
@@ -71,4 +75,12 @@ func NewError(code int64, message string) error {
 
 func (err *wireError) Error() string {
 	return err.Message
+}
+
+func (err *wireError) Is(other error) bool {
+	w, ok := other.(*wireError)
+	if !ok {
+		return false
+	}
+	return err.Code == w.Code
 }

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sync"
 	"sync/atomic"
 
 	"golang.org/x/tools/internal/event"
@@ -26,6 +27,15 @@ type Binder interface {
 	// The connection is not ready to use when Bind is called.
 	Bind(context.Context, *Connection) (ConnectionOptions, error)
 }
+
+// A BinderFunc implements the Binder interface for a standalone Bind function.
+type BinderFunc func(context.Context, *Connection) (ConnectionOptions, error)
+
+func (f BinderFunc) Bind(ctx context.Context, c *Connection) (ConnectionOptions, error) {
+	return f(ctx, c)
+}
+
+var _ Binder = BinderFunc(nil)
 
 // ConnectionOptions holds the options for new connections.
 type ConnectionOptions struct {
@@ -45,19 +55,22 @@ type ConnectionOptions struct {
 // Connection is bidirectional; it does not have a designated server or client
 // end.
 type Connection struct {
-	seq         int64 // must only be accessed using atomic operations
-	closer      io.Closer
-	writerBox   chan Writer
-	outgoingBox chan map[ID]chan<- *Response
-	incomingBox chan map[ID]*incoming
-	async       *async
+	seq int64 // must only be accessed using atomic operations
+
+	closeOnce sync.Once
+	closer    io.Closer
+
+	writer   chan Writer
+	outgoing chan map[ID]chan<- *Response
+	incoming chan map[ID]*incoming
+	async    *async
 }
 
 type AsyncCall struct {
-	id        ID
-	response  chan *Response // the channel a response will be delivered on
-	resultBox chan asyncResult
-	endSpan   func() // close the tracing span when all processing for the message is complete
+	id       ID
+	response chan *Response // the channel a response will be delivered on
+	result   chan asyncResult
+	endSpan  func() // close the tracing span when all processing for the message is complete
 }
 
 type asyncResult struct {
@@ -83,11 +96,11 @@ func (o ConnectionOptions) Bind(context.Context, *Connection) (ConnectionOptions
 // This is used by the Dial and Serve functions to build the actual connection.
 func newConnection(ctx context.Context, rwc io.ReadWriteCloser, binder Binder) (*Connection, error) {
 	c := &Connection{
-		closer:      rwc,
-		writerBox:   make(chan Writer, 1),
-		outgoingBox: make(chan map[ID]chan<- *Response, 1),
-		incomingBox: make(chan map[ID]*incoming, 1),
-		async:       newAsync(),
+		closer:   rwc,
+		writer:   make(chan Writer, 1),
+		outgoing: make(chan map[ID]chan<- *Response, 1),
+		incoming: make(chan map[ID]*incoming, 1),
+		async:    newAsync(),
 	}
 
 	options, err := binder.Bind(ctx, c)
@@ -103,8 +116,8 @@ func newConnection(ctx context.Context, rwc io.ReadWriteCloser, binder Binder) (
 	if options.Handler == nil {
 		options.Handler = defaultHandler{}
 	}
-	c.outgoingBox <- make(map[ID]chan<- *Response)
-	c.incomingBox <- make(map[ID]*incoming)
+	c.outgoing <- make(map[ID]chan<- *Response)
+	c.incoming <- make(map[ID]*incoming)
 	// the goroutines started here will continue until the underlying stream is closed
 	reader := options.Framer.Reader(rwc)
 	readToQueue := make(chan *incoming)
@@ -115,7 +128,7 @@ func newConnection(ctx context.Context, rwc io.ReadWriteCloser, binder Binder) (
 
 	// releaseing the writer must be the last thing we do in case any requests
 	// are blocked waiting for the connection to be ready
-	c.writerBox <- options.Framer.Writer(rwc)
+	c.writer <- options.Framer.Writer(rwc)
 	return c, nil
 }
 
@@ -150,14 +163,14 @@ func (c *Connection) Notify(ctx context.Context, method string, params interface
 // If sending the call failed, the response will be ready and have the error in it.
 func (c *Connection) Call(ctx context.Context, method string, params interface{}) *AsyncCall {
 	result := &AsyncCall{
-		id:        Int64ID(atomic.AddInt64(&c.seq, 1)),
-		resultBox: make(chan asyncResult, 1),
+		id:     Int64ID(atomic.AddInt64(&c.seq, 1)),
+		result: make(chan asyncResult, 1),
 	}
 	// generate a new request identifier
 	call, err := NewCall(result.id, method, params)
 	if err != nil {
 		//set the result to failed
-		result.resultBox <- asyncResult{err: fmt.Errorf("marshaling call parameters: %w", err)}
+		result.result <- asyncResult{err: fmt.Errorf("marshaling call parameters: %w", err)}
 		return result
 	}
 	ctx, endSpan := event.Start(ctx, method,
@@ -171,9 +184,25 @@ func (c *Connection) Call(ctx context.Context, method string, params interface{}
 	// are racing the response.
 	// rchan is buffered in case the response arrives without a listener.
 	result.response = make(chan *Response, 1)
-	pending := <-c.outgoingBox
-	pending[result.id] = result.response
-	c.outgoingBox <- pending
+	outgoing, ok := <-c.outgoing
+	if !ok {
+		// If the call failed due to (say) an I/O error or broken pipe, attribute it
+		// as such. (If the error is nil, then the connection must have been shut
+		// down cleanly.)
+		err := c.async.wait()
+		if err == nil {
+			err = ErrClientClosing
+		}
+
+		resp, respErr := NewResponse(result.id, nil, err)
+		if respErr != nil {
+			panic(fmt.Errorf("unexpected error from NewResponse: %w", respErr))
+		}
+		result.response <- resp
+		return result
+	}
+	outgoing[result.id] = result.response
+	c.outgoing <- outgoing
 	// now we are ready to send
 	if err := c.write(ctx, call); err != nil {
 		// sending failed, we will never get a response, so deliver a fake one
@@ -192,8 +221,8 @@ func (a *AsyncCall) ID() ID { return a.id }
 // returned, or a call that failed to send in the first place.
 func (a *AsyncCall) IsReady() bool {
 	select {
-	case r := <-a.resultBox:
-		a.resultBox <- r
+	case r := <-a.result:
+		a.result <- r
 		return true
 	default:
 		return false
@@ -216,14 +245,14 @@ func (a *AsyncCall) Await(ctx context.Context, result interface{}) error {
 			r.result = response.Result
 			event.Label(ctx, tag.StatusCode.Of("OK"))
 		}
-	case r = <-a.resultBox:
+	case r = <-a.result:
 		// result already available
 	case <-ctx.Done():
 		event.Label(ctx, tag.StatusCode.Of("CANCELLED"))
 		return ctx.Err()
 	}
 	// refill the box for the next caller
-	a.resultBox <- r
+	a.result <- r
 	// and unpack the result
 	if r.err != nil {
 		return r.err
@@ -239,8 +268,8 @@ func (a *AsyncCall) Await(ctx context.Context, result interface{}) error {
 // Respond must be called exactly once for any message for which a handler
 // returns ErrAsyncResponse. It must not be called for any other message.
 func (c *Connection) Respond(id ID, result interface{}, rerr error) error {
-	pending := <-c.incomingBox
-	defer func() { c.incomingBox <- pending }()
+	pending := <-c.incoming
+	defer func() { c.incoming <- pending }()
 	entry, found := pending[id]
 	if !found {
 		return nil
@@ -257,8 +286,8 @@ func (c *Connection) Respond(id ID, result interface{}, rerr error) error {
 // not cause any messages that have not arrived yet with that ID to be
 // cancelled.
 func (c *Connection) Cancel(id ID) {
-	pending := <-c.incomingBox
-	defer func() { c.incomingBox <- pending }()
+	pending := <-c.incoming
+	defer func() { c.incoming <- pending }()
 	if entry, found := pending[id]; found && entry.cancel != nil {
 		entry.cancel()
 		entry.cancel = nil
@@ -275,28 +304,40 @@ func (c *Connection) Wait() error {
 // This does not cancel in flight requests, but waits for them to gracefully complete.
 func (c *Connection) Close() error {
 	// close the underlying stream
-	if err := c.closer.Close(); err != nil && !isClosingError(err) {
-		return err
-	}
+	c.closeOnce.Do(func() {
+		if err := c.closer.Close(); err != nil {
+			c.async.setError(err)
+		}
+	})
 	// and then wait for it to cause the connection to close
-	if err := c.Wait(); err != nil && !isClosingError(err) {
-		return err
-	}
-	return nil
+	return c.Wait()
 }
 
 // readIncoming collects inbound messages from the reader and delivers them, either responding
 // to outgoing calls or feeding requests to the queue.
-func (c *Connection) readIncoming(ctx context.Context, reader Reader, toQueue chan<- *incoming) {
-	defer close(toQueue)
+func (c *Connection) readIncoming(ctx context.Context, reader Reader, toQueue chan<- *incoming) (err error) {
+	defer func() {
+		// Retire any outgoing requests that were still in flight.
+		// With the Reader no longer being processed, they necessarily cannot receive a response.
+		outgoing := <-c.outgoing
+		close(c.outgoing) // Prevent new outgoing requests, which would deadlock.
+		for id, response := range outgoing {
+			response <- &Response{ID: id, Error: err}
+		}
+
+		close(toQueue)
+	}()
+
 	for {
 		// get the next message
 		// no lock is needed, this is the only reader
 		msg, n, err := reader.Read(ctx)
 		if err != nil {
 			// The stream failed, we cannot continue
-			c.async.setError(err)
-			return
+			if !isClosingError(err) {
+				c.async.setError(err)
+			}
+			return err
 		}
 		switch msg := msg.(type) {
 		case *Request:
@@ -320,9 +361,9 @@ func (c *Connection) readIncoming(ctx context.Context, reader Reader, toQueue ch
 			// if the request is a call, add it to the incoming map so it can be
 			// cancelled by id
 			if msg.IsCall() {
-				pending := <-c.incomingBox
+				pending := <-c.incoming
 				pending[msg.ID] = entry
-				c.incomingBox <- pending
+				c.incoming <- pending
 			}
 			// send the message to the incoming queue
 			toQueue <- entry
@@ -335,12 +376,12 @@ func (c *Connection) readIncoming(ctx context.Context, reader Reader, toQueue ch
 }
 
 func (c *Connection) incomingResponse(msg *Response) {
-	pending := <-c.outgoingBox
-	response, ok := pending[msg.ID]
-	if ok {
-		delete(pending, msg.ID)
+	var response chan<- *Response
+	if outgoing, ok := <-c.outgoing; ok {
+		response = outgoing[msg.ID]
+		delete(outgoing, msg.ID)
+		c.outgoing <- outgoing
 	}
-	c.outgoingBox <- pending
 	if response != nil {
 		response <- msg
 	}
@@ -395,7 +436,23 @@ func (c *Connection) manageQueue(ctx context.Context, preempter Preempter, fromR
 }
 
 func (c *Connection) deliverMessages(ctx context.Context, handler Handler, fromQueue <-chan *incoming) {
-	defer c.async.done()
+	defer func() {
+		// Close the underlying ReadWriteCloser if not already closed. We're about
+		// to mark the Connection as done, so we'd better actually be done! 😅
+		//
+		// TODO(bcmills): This is actually a bit premature, since we may have
+		// asynchronous handlers still in flight at this point, but it's at least no
+		// more premature than calling c.async.done at this point (which we were
+		// already doing). This will get a proper fix in https://go.dev/cl/388134.
+		c.closeOnce.Do(func() {
+			if err := c.closer.Close(); err != nil {
+				c.async.setError(err)
+			}
+		})
+
+		c.async.done()
+	}()
+
 	for entry := range fromQueue {
 		// cancel any messages in the queue that we have a pending cancel for
 		var result interface{}
@@ -420,8 +477,8 @@ func (c *Connection) deliverMessages(ctx context.Context, handler Handler, fromQ
 func (c *Connection) reply(entry *incoming, result interface{}, rerr error) {
 	if entry.request.IsCall() {
 		// we have a call finishing, remove it from the incoming map
-		pending := <-c.incomingBox
-		defer func() { c.incomingBox <- pending }()
+		pending := <-c.incoming
+		defer func() { c.incoming <- pending }()
 		delete(pending, entry.request.ID)
 	}
 	if err := c.respond(entry, result, rerr); err != nil {
@@ -479,8 +536,8 @@ func (c *Connection) respond(entry *incoming, result interface{}, rerr error) er
 // write is used by all things that write outgoing messages, including replies.
 // it makes sure that writes are atomic
 func (c *Connection) write(ctx context.Context, msg Message) error {
-	writer := <-c.writerBox
-	defer func() { c.writerBox <- writer }()
+	writer := <-c.writer
+	defer func() { c.writer <- writer }()
 	n, err := writer.Write(ctx, msg)
 	event.Metric(ctx, tag.SentBytes.Of(n))
 	return err

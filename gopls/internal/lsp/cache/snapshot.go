@@ -892,7 +892,7 @@ func (s *snapshot) isActiveLocked(id PackageID) (active bool) {
 	}
 	// TODO(rfindley): it looks incorrect that we don't also check GoFiles here.
 	// If a CGo file is open, we want to consider the package active.
-	for _, dep := range m.Deps {
+	for _, dep := range m.Imports {
 		if s.isActiveLocked(dep) {
 			return true
 		}
@@ -1195,6 +1195,28 @@ func (s *snapshot) KnownPackages(ctx context.Context) ([]source.Package, error) 
 	return pkgs, nil
 }
 
+func (s *snapshot) AllValidMetadata(ctx context.Context) ([]source.Metadata, error) {
+	if err := s.awaitLoaded(ctx); err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var meta []source.Metadata
+	for _, m := range s.meta.metadata {
+		if m.Valid {
+			meta = append(meta, m)
+		}
+	}
+	return meta, nil
+}
+
+func (s *snapshot) WorkspacePackageByID(ctx context.Context, id string) (source.Package, error) {
+	packageID := PackageID(id)
+	return s.checkedPackage(ctx, packageID, s.workspaceParseMode(packageID))
+}
+
 func (s *snapshot) CachedImportPaths(ctx context.Context) (map[string]source.Package, error) {
 	// Don't reload workspace package metadata.
 	// This function is meant to only return currently cached information.
@@ -1209,14 +1231,14 @@ func (s *snapshot) CachedImportPaths(ctx context.Context) (map[string]source.Pac
 		if err != nil {
 			return
 		}
-		for importPath, newPkg := range cachedPkg.imports {
-			if oldPkg, ok := results[string(importPath)]; ok {
+		for pkgPath, newPkg := range cachedPkg.depsByPkgPath {
+			if oldPkg, ok := results[string(pkgPath)]; ok {
 				// Using the same trick as NarrowestPackage, prefer non-variants.
 				if len(newPkg.compiledGoFiles) < len(oldPkg.(*pkg).compiledGoFiles) {
-					results[string(importPath)] = newPkg
+					results[string(pkgPath)] = newPkg
 				}
 			} else {
-				results[string(importPath)] = newPkg
+				results[string(pkgPath)] = newPkg
 			}
 		}
 	})

@@ -152,8 +152,8 @@ type Snapshot interface {
 	GetReverseDependencies(ctx context.Context, id string) ([]Package, error)
 
 	// CachedImportPaths returns all the imported packages loaded in this
-	// snapshot, indexed by their import path and checked in TypecheckWorkspace
-	// mode.
+	// snapshot, indexed by their package path (not import path, despite the name)
+	// and checked in TypecheckWorkspace mode.
 	CachedImportPaths(ctx context.Context) (map[string]Package, error)
 
 	// KnownPackages returns all the packages loaded in this snapshot, checked
@@ -165,6 +165,13 @@ type Snapshot interface {
 	// In normal memory mode, this is all workspace packages. In degraded memory
 	// mode, this is just the reverse transitive closure of open packages.
 	ActivePackages(ctx context.Context) ([]Package, error)
+
+	// AllValidMetadata returns all valid metadata loaded for the snapshot.
+	AllValidMetadata(ctx context.Context) ([]Metadata, error)
+
+	// WorkspacePackageByID returns the workspace package with id, type checked
+	// in 'workspace' mode.
+	WorkspacePackageByID(ctx context.Context, id string) (Package, error)
 
 	// Symbols returns all symbols in the snapshot.
 	Symbols(ctx context.Context) map[span.URI][]Symbol
@@ -510,6 +517,14 @@ func (h Hash) Less(other Hash) bool {
 	return bytes.Compare(h[:], other[:]) < 0
 }
 
+// XORWith updates *h to *h XOR h2.
+func (h *Hash) XORWith(h2 Hash) {
+	// Small enough that we don't need crypto/subtle.XORBytes.
+	for i := range h {
+		h[i] ^= h2[i]
+	}
+}
+
 // FileIdentity uniquely identifies a file at a version from a FileSystem.
 type FileIdentity struct {
 	URI  span.URI
@@ -581,9 +596,9 @@ func (a Analyzer) IsEnabled(view View) bool {
 // Package represents a Go package that has been type-checked. It maintains
 // only the relevant fields of a *go/packages.Package.
 type Package interface {
-	ID() string
-	Name() string
-	PkgPath() string
+	ID() string      // logically a cache.PackageID
+	Name() string    // logically a cache.PackageName
+	PkgPath() string // logically a cache.PackagePath
 	CompiledGoFiles() []*ParsedGoFile
 	File(uri span.URI) (*ParsedGoFile, error)
 	GetSyntax() []*ast.File
@@ -591,8 +606,9 @@ type Package interface {
 	GetTypesInfo() *types.Info
 	GetTypesSizes() types.Sizes
 	ForTest() string
-	GetImport(pkgPath string) (Package, error)
-	MissingDependencies() []string
+	DirectDep(packagePath string) (Package, error)        // logically a cache.PackagePath
+	ResolveImportPath(importPath string) (Package, error) // logically a cache.ImportPath
+	MissingDependencies() []string                        // unordered; logically cache.ImportPaths
 	Imports() []Package
 	Version() *module.Version
 	HasListOrParseErrors() bool
