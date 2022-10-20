@@ -80,7 +80,8 @@ func Format(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.T
 				modulePath = mi.Path
 			}
 		}
-		b, err := format(ctx, langVersion, modulePath, buf.Bytes())
+		extraRules := snapshot.View().Options().GofumptExtraRules
+		b, err := format(ctx, langVersion, modulePath, extraRules, buf.Bytes())
 		if err != nil {
 			return nil, err
 		}

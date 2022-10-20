@@ -658,6 +658,13 @@ var GeneratedAPIJSON = &APIJSON{
 				Hierarchy: "formatting",
 			},
 			{
+				Name:      "gofumptExtraRules",
+				Type:      "bool",
+				Doc:       "gofumptExtraRules enables gofumpt's extra rules.\n",
+				Default:   "false",
+				Hierarchy: "formatting",
+			},
+			{
 				Name:    "verboseOutput",
 				Type:    "bool",
 				Doc:     "verboseOutput enables additional debug logging.\n",

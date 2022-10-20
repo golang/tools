@@ -214,6 +214,12 @@ gofumpt indicates if we should run gofumpt formatting.
 
 Default: `false`.
 
+#### **gofumptExtraRules** *bool*
+
+gofumptExtraRules enables gofumpt's extra rules.
+
+Default: `false`.
+
 ### UI
 
 #### **codelenses** *map[string]bool*

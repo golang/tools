@@ -29,10 +29,11 @@ func Options(options *source.Options) {
 		}
 	}
 	options.URLRegexp = xurls.Relaxed()
-	options.GofumptFormat = func(ctx context.Context, langVersion, modulePath string, src []byte) ([]byte, error) {
+	options.GofumptFormat = func(ctx context.Context, langVersion, modulePath string, extraRules bool, src []byte) ([]byte, error) {
 		return format.Source(src, format.Options{
 			LangVersion: langVersion,
 			ModulePath:  modulePath,
+			ExtraRules:  extraRules,
 		})
 	}
 	updateAnalyzers(options)

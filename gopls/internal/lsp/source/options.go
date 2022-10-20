@@ -409,6 +409,9 @@ type FormattingOptions struct {
 
 	// Gofumpt indicates if we should run gofumpt formatting.
 	Gofumpt bool
+
+	// GofumptExtraRules enables gofumpt's extra rules.
+	GofumptExtraRules bool
 }
 
 type DiagnosticOptions struct {
@@ -548,7 +551,7 @@ type Hooks struct {
 	// GofumptFormat allows the gopls module to wire-in a call to
 	// gofumpt/format.Source. langVersion and modulePath are used for some
 	// Gofumpt formatting rules -- see the Gofumpt documentation for details.
-	GofumptFormat func(ctx context.Context, langVersion, modulePath string, src []byte) ([]byte, error)
+	GofumptFormat func(ctx context.Context, langVersion, modulePath string, extraRules bool, src []byte) ([]byte, error)
 
 	DefaultAnalyzers     map[string]*Analyzer
 	TypeErrorAnalyzers   map[string]*Analyzer
@@ -1062,6 +1065,9 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 
 	case "gofumpt":
 		result.setBool(&o.Gofumpt)
+
+	case "gofumptExtraRules":
+		result.setBool(&o.GofumptExtraRules)
 
 	case "semanticTokens":
 		result.setBool(&o.SemanticTokens)
