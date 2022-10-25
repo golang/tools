@@ -1096,22 +1096,16 @@ func formatDoc(h *hoverJSON, options *settings.Options) string {
 // TODO(rfindley): this function has tricky semantics, and may be worth unit
 // testing and/or refactoring.
 func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spec, field *ast.Field) {
-	// panic(found{}) breaks off the traversal and
-	// causes the function to return normally.
-	type found struct{}
-	defer func() {
-		switch x := recover().(type) {
-		case nil:
-		case found:
-		default:
-			panic(x)
-		}
-	}()
+	found := false
 
 	// Visit the files in search of the node at pos.
 	stack := make([]ast.Node, 0, 20)
+
 	// Allocate the closure once, outside the loop.
 	f := func(n ast.Node) bool {
+		if found {
+			return false
+		}
 		if n != nil {
 			stack = append(stack, n) // push
 		} else {
@@ -1144,7 +1138,8 @@ func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spe
 				if id.Pos() == pos {
 					field = n
 					findEnclosingDeclAndSpec()
-					panic(found{})
+					found = true
+					return false
 				}
 			}
 
@@ -1153,7 +1148,8 @@ func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spe
 			if n.Pos() == pos {
 				field = n
 				findEnclosingDeclAndSpec()
-				panic(found{})
+				found = true
+				return false
 			}
 
 			// Also check "X" in "...X". This makes it easy to format variadic
@@ -1164,13 +1160,15 @@ func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spe
 			if ell, ok := n.Type.(*ast.Ellipsis); ok && ell.Elt != nil && ell.Elt.Pos() == pos {
 				field = n
 				findEnclosingDeclAndSpec()
-				panic(found{})
+				found = true
+				return false
 			}
 
 		case *ast.FuncDecl:
 			if n.Name.Pos() == pos {
 				decl = n
-				panic(found{})
+				found = true
+				return false
 			}
 
 		case *ast.GenDecl:
@@ -1180,14 +1178,16 @@ func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spe
 					if s.Name.Pos() == pos {
 						decl = n
 						spec = s
-						panic(found{})
+						found = true
+						return false
 					}
 				case *ast.ValueSpec:
 					for _, id := range s.Names {
 						if id.Pos() == pos {
 							decl = n
 							spec = s
-							panic(found{})
+							found = true
+							return false
 						}
 					}
 				}
@@ -1197,6 +1197,9 @@ func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spe
 	}
 	for _, file := range files {
 		ast.Inspect(file, f)
+		if found {
+			return decl, spec, field
+		}
 	}
 
 	return nil, nil, nil
