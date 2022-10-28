@@ -102,8 +102,8 @@ golang.org/x/tools v0.1.10/go.mod h1:Uh6Zz+xoGYZom868N8YTex3t7RhtHDBrE8Gzo9bV56E
 golang.org/x/tools v0.1.11-0.20220513221640-090b14e8501f/go.mod h1:SgwaegtQh8clINPpECJMqnxLv9I09HLqnW3RMqW0CA4=
 golang.org/x/tools v0.1.12/go.mod h1:hNGJHUnrk76NpqgfD5Aqm5Crs+Hm0VOH/i9J2+nxYbc=
 golang.org/x/tools v0.1.13-0.20220928184430-f80e98464e27/go.mod h1:VsjNM1dMo+Ofkp5d7y7fOdQZD8MTXSQ4w3EPk65AvKU=
-golang.org/x/tools v0.2.1-0.20221027142404-6d11a099b843 h1:7XQq4jqNxKfECRGTQNQmIoHt2iXiBPW4cgmC++CZEg8=
-golang.org/x/tools v0.2.1-0.20221027142404-6d11a099b843/go.mod h1:y4OqIKeOV/fWJetJ8bXPU1sEVniLMIyDAZWeHdV+NTA=
+golang.org/x/tools v0.2.1-0.20221028182455-bd7d62852469 h1:N4UYjGjl5FFK3cn1CiPnWdTiLe3SjfprMLDNiYh+0Fc=
+golang.org/x/tools v0.2.1-0.20221028182455-bd7d62852469/go.mod h1:y4OqIKeOV/fWJetJ8bXPU1sEVniLMIyDAZWeHdV+NTA=
 golang.org/x/vuln v0.0.0-20221010193109-563322be2ea9 h1:KaYZQUtEEaV8aVADIHAuYBTjo77aUcCvC7KTGKM3J1I=
 golang.org/x/vuln v0.0.0-20221010193109-563322be2ea9/go.mod h1:F12iebNzxRMpJsm4W7ape+r/KdnXiSy3VC94WsyCG68=
 golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
