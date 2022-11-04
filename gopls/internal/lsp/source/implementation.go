@@ -116,14 +116,23 @@ func implementations(ctx context.Context, s Snapshot, f FileHandle, pp protocol.
 	}
 	seen := make(map[token.Position]bool)
 	for _, obj := range objs {
-		pos := s.FileSet().Position(obj.Pos())
-		if seen[pos] {
+		pkg := pkgs[obj.Pkg()] // may be nil (e.g. error)
+
+		// TODO(adonovan): the logic below assumes there is only one
+		// predeclared (pkg=nil) object of interest, the error type.
+		// That could change in a future version of Go.
+
+		var posn token.Position
+		if pkg != nil {
+			posn = pkg.FileSet().Position(obj.Pos())
+		}
+		if seen[posn] {
 			continue
 		}
-		seen[pos] = true
+		seen[posn] = true
 		impls = append(impls, qualifiedObject{
 			obj: obj,
-			pkg: pkgs[obj.Pkg()], // may be nil (e.g. error)
+			pkg: pkg,
 		})
 	}
 
