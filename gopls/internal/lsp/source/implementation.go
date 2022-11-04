@@ -23,7 +23,7 @@ func Implementation(ctx context.Context, snapshot Snapshot, f FileHandle, pp pro
 	ctx, done := event.Start(ctx, "source.Implementation")
 	defer done()
 
-	impls, err := implementations(ctx, snapshot, f, pp)
+	impls, err := implementations(ctx, snapshot, f, pp, true)
 	if err != nil {
 		return nil, err
 	}
@@ -58,94 +58,156 @@ func Implementation(ctx context.Context, snapshot Snapshot, f FileHandle, pp pro
 var ErrNotAType = errors.New("not a type name or method")
 
 // implementations returns the concrete implementations of the specified
-// interface, or the interfaces implemented by the specified concrete type.
-// It populates only the definition-related fields of qualifiedObject.
-// (Arguably it should return a smaller data type.)
-func implementations(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position) ([]qualifiedObject, error) {
+// interface, or the interfaces implemented by the specified concrete type,
+// or the concrete implementations of a function type. It populates only
+// the definition-related fields of qualifiedObject. (Arguably it should
+// return a smaller data type.)
+func implementations(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position, includeFuncs bool) (impls []qualifiedObject, err error) {
 	// Find all named types, even local types
 	// (which can have methods due to promotion).
-	var (
-		allNamed []*types.Named
-		pkgs     = make(map[*types.Package]Package)
-	)
-	knownPkgs, err := s.KnownPackages(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, pkg := range knownPkgs {
-		pkgs[pkg.GetTypes()] = pkg
-		for _, obj := range pkg.GetTypesInfo().Defs {
-			obj, ok := obj.(*types.TypeName)
-			// We ignore aliases 'type M = N' to avoid duplicate reporting
-			// of the Named type N.
-			if !ok || obj.IsAlias() {
-				continue
-			}
-			if named, ok := obj.Type().(*types.Named); ok {
-				allNamed = append(allNamed, named)
-			}
-		}
-	}
-
 	qos, err := qualifiedObjsAtProtocolPos(ctx, s, f.URI(), pp)
 	if err != nil {
 		return nil, err
 	}
-	var (
-		impls []qualifiedObject
-		seen  = make(map[token.Position]bool)
-	)
+	knownPkgs, err := s.KnownPackages(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pkgs := make(map[*types.Package]Package, len(knownPkgs))
+	for _, pkg := range knownPkgs {
+		pkgs[pkg.GetTypes()] = pkg
+	}
+
+	// Defer collection and caching of named types. It's only required for
+	// interface definitions, not function type defintions.
+	var allNamed []*types.Named
+	getAllNamed := func() []*types.Named {
+		if allNamed == nil {
+			for _, pkg := range knownPkgs {
+				for _, obj := range pkg.GetTypesInfo().Defs {
+					obj, ok := obj.(*types.TypeName)
+					// We ignore aliases 'type M = N' to avoid duplicate reporting
+					// of the Named type N.
+					if !ok || obj.IsAlias() {
+						continue
+					}
+					if named, ok := obj.Type().(*types.Named); ok {
+						allNamed = append(allNamed, named)
+					}
+				}
+			}
+		}
+		return allNamed
+	}
+
+	seen := make(map[token.Position]bool)
 	for _, qo := range qos {
-		// Ascertain the query identifier (type or method).
-		var (
-			queryType   types.Type
-			queryMethod *types.Func
-		)
+		var ok bool
 		switch obj := qo.obj.(type) {
 		case *types.Func:
-			queryMethod = obj
-			if recv := obj.Type().(*types.Signature).Recv(); recv != nil {
-				queryType = ensurePointer(recv.Type())
+			recv := obj.Type().(*types.Signature).Recv()
+			if recv == nil {
+				break
 			}
+			impls = append(impls, findInterfaceImplementations(pkgs, getAllNamed, seen, s, ensurePointer(recv.Type()), obj)...)
+			ok = true
 		case *types.TypeName:
-			queryType = ensurePointer(obj.Type())
+			sig, isFunc := obj.Type().Underlying().(*types.Signature)
+			if isFunc {
+				if !includeFuncs {
+					break
+				}
+				impls = append(impls, findFunctionImplementations(pkgs, seen, s, sig)...)
+				ok = true
+				break
+			}
+			impls = append(impls, findInterfaceImplementations(pkgs, getAllNamed, seen, s, ensurePointer(obj.Type()), nil)...)
+			ok = true
+		case *types.Var:
+			if !includeFuncs {
+				break
+			}
+			sig, isFunc := obj.Type().Underlying().(*types.Signature)
+			if !isFunc {
+				break
+			}
+			impls = append(impls, findFunctionImplementations(pkgs, seen, s, sig)...)
+			ok = true
 		}
 
-		if queryType == nil {
+		if !ok {
 			return nil, ErrNotAType
 		}
+	}
 
-		if types.NewMethodSet(queryType).Len() == 0 {
-			return nil, nil
+	return impls, nil
+}
+
+func findInterfaceImplementations(pkgs map[*types.Package]Package, getAllNamed func() []*types.Named, seen map[token.Position]bool, s Snapshot, queryType types.Type, queryMethod *types.Func) (impls []qualifiedObject) {
+	if types.NewMethodSet(queryType).Len() == 0 {
+		return nil
+	}
+
+	// Find all the named types that match our query.
+	for _, named := range getAllNamed() {
+		var (
+			candObj  types.Object = named.Obj()
+			candType              = ensurePointer(named)
+		)
+
+		if !concreteImplementsIntf(candType, queryType) {
+			continue
 		}
 
-		// Find all the named types that match our query.
-		for _, named := range allNamed {
-			var (
-				candObj  types.Object = named.Obj()
-				candType              = ensurePointer(named)
-			)
+		ms := types.NewMethodSet(candType)
+		if ms.Len() == 0 {
+			// Skip empty interfaces.
+			continue
+		}
 
-			if !concreteImplementsIntf(candType, queryType) {
+		// If client queried a method, look up corresponding candType method.
+		if queryMethod != nil {
+			sel := ms.Lookup(queryMethod.Pkg(), queryMethod.Name())
+			if sel == nil {
+				continue
+			}
+			candObj = sel.Obj()
+		}
+
+		pos := s.FileSet().Position(candObj.Pos())
+		if candObj == queryMethod || seen[pos] {
+			continue
+		}
+
+		seen[pos] = true
+
+		impls = append(impls, qualifiedObject{
+			obj: candObj,
+			pkg: pkgs[candObj.Pkg()], // may be nil (e.g. error)
+		})
+	}
+
+	return impls
+}
+
+func findFunctionImplementations(pkgs map[*types.Package]Package, seen map[token.Position]bool, s Snapshot, sig *types.Signature) (impls []qualifiedObject) {
+	for pkg := range pkgs {
+		for _, name := range pkg.Scope().Names() {
+			o := pkg.Scope().Lookup(name)
+			if _, isType := o.(*types.TypeName); isType {
+				continue
+			}
+			var csig *types.Signature
+			var isFunc bool
+			if csig, isFunc = o.Type().Underlying().(*types.Signature); !isFunc {
 				continue
 			}
 
-			ms := types.NewMethodSet(candType)
-			if ms.Len() == 0 {
-				// Skip empty interfaces.
+			if !types.AssignableTo(sig, csig) {
 				continue
 			}
-
-			// If client queried a method, look up corresponding candType method.
-			if queryMethod != nil {
-				sel := ms.Lookup(queryMethod.Pkg(), queryMethod.Name())
-				if sel == nil {
-					continue
-				}
-				candObj = sel.Obj()
-			}
-
-			if candObj == queryMethod {
+			pos := s.FileSet().Position(o.Pos())
+			if seen[pos] {
 				continue
 			}
 
@@ -165,13 +227,12 @@ func implementations(ctx context.Context, s Snapshot, f FileHandle, pp protocol.
 			seen[posn] = true
 
 			impls = append(impls, qualifiedObject{
-				obj: candObj,
-				pkg: pkg,
+				obj: o,
+				pkg: pkgs[o.Pkg()], // may be nil (e.g. error)
 			})
 		}
 	}
-
-	return impls, nil
+	return impls
 }
 
 // concreteImplementsIntf returns true if a is an interface type implemented by
