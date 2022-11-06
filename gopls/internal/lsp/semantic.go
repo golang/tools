@@ -43,8 +43,8 @@ func (s *Server) semanticTokensFull(ctx context.Context, p *protocol.SemanticTok
 	return ret, err
 }
 
-func (s *Server) semanticTokensFullDelta(ctx context.Context, p *protocol.SemanticTokensDeltaParams) (interface{}, error) {
-	return nil, fmt.Errorf("implement SemanticTokensFullDelta")
+func (s *Server) semanticTokensFullDelta(ctx context.Context, p *protocol.SemanticTokensDeltaParams) (any, error) {
+	return nil, errors.New("implement SemanticTokensFullDelta")
 }
 
 func (s *Server) semanticTokensRange(ctx context.Context, p *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
@@ -54,7 +54,7 @@ func (s *Server) semanticTokensRange(ctx context.Context, p *protocol.SemanticTo
 
 func (s *Server) semanticTokensRefresh(ctx context.Context) error {
 	// in the code, but not in the protocol spec
-	return fmt.Errorf("implement SemanticTokensRefresh")
+	return errors.New("implement SemanticTokensRefresh")
 }
 
 func (s *Server) computeSemanticTokens(ctx context.Context, td protocol.TextDocumentIdentifier, rng *protocol.Range) (*protocol.SemanticTokens, error) {
@@ -70,7 +70,7 @@ func (s *Server) computeSemanticTokens(ctx context.Context, td protocol.TextDocu
 	if !vv.Options().SemanticTokens {
 		// return an error, so if the option changes
 		// the client won't remember the wrong answer
-		return nil, fmt.Errorf("semantictokens are disabled")
+		return nil, errors.New("semantictokens are disabled")
 	}
 	kind := snapshot.View().FileKind(fh)
 	if kind == source.Tmpl {

@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	exec "golang.org/x/sys/execabs"
 	"log"
 	"net/url"
 	"os"
@@ -26,6 +25,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 // Verbose enables verbose operation logging.
@@ -640,7 +641,7 @@ func matchGoImport(imports []metaImport, importPath string) (_ metaImport, err e
 // expand rewrites s to replace {k} with match[k] for each key k in match.
 func expand(match map[string]string, s string) string {
 	for k, v := range match {
-		s = strings.Replace(s, "{"+k+"}", v, -1)
+		s = strings.ReplaceAll(s, "{"+k+"}", v)
 	}
 	return s
 }
@@ -738,7 +739,7 @@ func bitbucketVCS(match map[string]string) error {
 		return nil
 	}
 
-	return fmt.Errorf("unable to detect version control system for bitbucket.org/ path")
+	return errors.New("unable to detect version control system for bitbucket.org/ path")
 }
 
 // launchpadVCS solves the ambiguity for "lp.net/project/foo". In this case,

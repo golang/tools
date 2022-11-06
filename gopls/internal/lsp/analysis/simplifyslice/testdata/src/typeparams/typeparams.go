@@ -19,7 +19,7 @@ var (
 
 	_ = p[0:]
 	_ = p[1:10]
-	_ = p[2:len(p)] // want "unneeded: len\\(p\\)"
+	_ = p[2:] // want "unneeded: len\\(p\\)"
 	_ = p[3:(len(p))]
 	_ = p[len(a) : len(p)-1]
 	_ = p[0:len(b)]
@@ -27,7 +27,7 @@ var (
 
 	_ = p[:]
 	_ = p[:10]
-	_ = p[:len(p)] // want "unneeded: len\\(p\\)"
+	_ = p[:] // want "unneeded: len\\(p\\)"
 	_ = p[:(len(p))]
 	_ = p[:len(p)-1]
 	_ = p[:len(b)]
@@ -35,5 +35,5 @@ var (
 )
 
 func foo[E any](a List[E]) {
-	_ = a[0:len(a)] // want "unneeded: len\\(a\\)"
+	_ = a[0:] // want "unneeded: len\\(a\\)"
 }

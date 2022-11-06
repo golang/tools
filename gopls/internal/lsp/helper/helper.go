@@ -121,7 +121,7 @@ func output() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ans, err := format.Source(bytes.Replace(buf.Bytes(), []byte("\\\n"), []byte{}, -1))
+	ans, err := format.Source(bytes.ReplaceAll(buf.Bytes(), []byte("\\\n"), []byte{}))
 	if err != nil {
 		log.Fatal(err)
 	}

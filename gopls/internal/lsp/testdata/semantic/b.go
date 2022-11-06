@@ -1,6 +1,6 @@
 package semantictokens //@ semantic("")
 
-func f(x ...interface{}) {
+func f(x ...any) {
 }
 
 func weirⰀd() { /*😀*/ // comment

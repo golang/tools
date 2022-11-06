@@ -5,7 +5,6 @@
 package packagestest_test
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -17,7 +16,7 @@ import (
 
 var testdata = []packagestest.Module{{
 	Name: "golang.org/fake1",
-	Files: map[string]interface{}{
+	Files: map[string]any{
 		"a.go": packagestest.Symlink("testdata/a.go"), // broken symlink
 		"b.go": "invalid file contents",
 	},
@@ -27,22 +26,22 @@ var testdata = []packagestest.Module{{
 	},
 }, {
 	Name: "golang.org/fake2",
-	Files: map[string]interface{}{
+	Files: map[string]any{
 		"other/a.go": "package fake2",
 	},
 }, {
 	Name: "golang.org/fake2/v2",
-	Files: map[string]interface{}{
+	Files: map[string]any{
 		"other/a.go": "package fake2",
 	},
 }, {
 	Name: "golang.org/fake3@v1.0.0",
-	Files: map[string]interface{}{
+	Files: map[string]any{
 		"other/a.go": "package fake3",
 	},
 }, {
 	Name: "golang.org/fake3@v1.1.0",
-	Files: map[string]interface{}{
+	Files: map[string]any{
 		"other/a.go": "package fake3",
 	},
 }}
@@ -98,13 +97,13 @@ func TestGroupFilesByModules(t *testing.T) {
 			want: []packagestest.Module{
 				{
 					Name: "testdata/groups/one",
-					Files: map[string]interface{}{
+					Files: map[string]any{
 						"main.go": true,
 					},
 				},
 				{
 					Name: "example.com/extra",
-					Files: map[string]interface{}{
+					Files: map[string]any{
 						"help.go": true,
 					},
 				},
@@ -115,7 +114,7 @@ func TestGroupFilesByModules(t *testing.T) {
 			want: []packagestest.Module{
 				{
 					Name: "testdata/groups/two",
-					Files: map[string]interface{}{
+					Files: map[string]any{
 						"main.go":           true,
 						"expect/yo.go":      true,
 						"expect/yo_test.go": true,
@@ -123,33 +122,33 @@ func TestGroupFilesByModules(t *testing.T) {
 				},
 				{
 					Name: "example.com/extra",
-					Files: map[string]interface{}{
+					Files: map[string]any{
 						"yo.go":        true,
 						"geez/help.go": true,
 					},
 				},
 				{
 					Name: "example.com/extra/v2",
-					Files: map[string]interface{}{
+					Files: map[string]any{
 						"me.go":        true,
 						"geez/help.go": true,
 					},
 				},
 				{
 					Name: "example.com/tempmod",
-					Files: map[string]interface{}{
+					Files: map[string]any{
 						"main.go": true,
 					},
 				},
 				{
 					Name: "example.com/what@v1.0.0",
-					Files: map[string]interface{}{
+					Files: map[string]any{
 						"main.go": true,
 					},
 				},
 				{
 					Name: "example.com/what@v1.1.0",
-					Files: map[string]interface{}{
+					Files: map[string]any{
 						"main.go": true,
 					},
 				},
@@ -197,7 +196,7 @@ func TestMustCopyFiles(t *testing.T) {
 		"nested/b/b.go": "package b",
 	}
 
-	tmpDir, err := ioutil.TempDir("", t.Name())
+	tmpDir, err := os.MkdirTemp("", t.Name())
 	if err != nil {
 		t.Fatalf("failed to create a temporary directory: %v", err)
 	}
@@ -208,7 +207,7 @@ func TestMustCopyFiles(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(fullpath), 0755); err != nil {
 			t.Fatal(err)
 		}
-		if err := ioutil.WriteFile(fullpath, []byte(contents), 0644); err != nil {
+		if err := os.WriteFile(fullpath, []byte(contents), 0644); err != nil {
 			t.Fatal(err)
 		}
 	}

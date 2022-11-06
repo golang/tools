@@ -36,6 +36,7 @@ package protocol
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/token"
 	"unicode/utf8"
@@ -143,7 +144,7 @@ func (m *ColumnMapper) PosRange(start, end token.Pos) (Range, error) {
 // which must have a byte offset.
 func (m *ColumnMapper) Position(p span.Point) (Position, error) {
 	if !p.HasOffset() {
-		return Position{}, fmt.Errorf("point is missing offset")
+		return Position{}, errors.New("point is missing offset")
 	}
 	return m.OffsetPosition(p.Offset())
 }

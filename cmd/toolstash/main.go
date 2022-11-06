@@ -126,7 +126,6 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	exec "golang.org/x/sys/execabs"
 	"io"
 	"io/ioutil"
 	"log"
@@ -135,6 +134,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 var usageMessage = `usage: toolstash [-n] [-v] [-cmp] command line

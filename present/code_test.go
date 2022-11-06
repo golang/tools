@@ -5,7 +5,7 @@
 package present
 
 import (
-	"fmt"
+	"errors"
 	"html/template"
 	"strings"
 	"testing"
@@ -45,7 +45,7 @@ func main() { // HLfunc
 }
 `)
 	highlight := func(h template.HTML, s string) template.HTML {
-		return template.HTML(strings.Replace(string(h), s, "<b>"+s+"</b>", -1))
+		return template.HTML(strings.ReplaceAll(string(h), s, "<b>"+s+"</b>"))
 	}
 	read := func(b []byte, err error) func(string) ([]byte, error) {
 		return func(string) ([]byte, error) { return b, err }
@@ -118,7 +118,7 @@ func main() { // HLfunc
 		},
 		{
 			name:       "error reading file",
-			readFile:   read(nil, fmt.Errorf("nope")),
+			readFile:   read(nil, errors.New("nope")),
 			sourceFile: "main.go",
 			cmd:        ".code main.go",
 			err:        "main.go:0: nope",

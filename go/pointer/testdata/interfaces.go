@@ -24,8 +24,8 @@ var a, b int
 var unknown bool // defeat dead-code elimination
 
 func interface1() {
-	var i interface{} = &a
-	var j interface{} = D{&b}
+	var i any = &a
+	var j any = D{&b}
 	k := j
 	if unknown {
 		k = i
@@ -77,7 +77,7 @@ func interface2() {
 
 func interface3() {
 	// There should be no backflow of concrete types from the type-switch to x.
-	var x interface{} = 0
+	var x any = 0
 	print(x) // @types int
 	switch x.(type) {
 	case int:
@@ -86,7 +86,7 @@ func interface3() {
 }
 
 func interface4() {
-	var i interface{} = D{&a}
+	var i any = D{&a}
 	if unknown {
 		i = 123
 	}
@@ -97,13 +97,13 @@ func interface4() {
 	print(j)         // @types D
 	print(j.(D).ptr) // @pointsto command-line-arguments.a
 
-	var l interface{} = j // interface widening assignment.
-	print(l)              // @types D
-	print(l.(D).ptr)      // @pointsto command-line-arguments.a
+	var l any = j    // interface widening assignment.
+	print(l)         // @types D
+	print(l.(D).ptr) // @pointsto command-line-arguments.a
 
-	m := j.(interface{}) // interface widening type-assertion.
-	print(m)             // @types D
-	print(m.(D).ptr)     // @pointsto command-line-arguments.a
+	m := j.(any)     // interface widening type-assertion.
+	print(m)         // @types D
+	print(m.(D).ptr) // @pointsto command-line-arguments.a
 }
 
 // Interface method calls and value flow:

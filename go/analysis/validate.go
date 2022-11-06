@@ -5,6 +5,7 @@
 package analysis
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -34,7 +35,7 @@ func Validate(analyzers []*Analyzer) error {
 	var visit func(a *Analyzer) error
 	visit = func(a *Analyzer) error {
 		if a == nil {
-			return fmt.Errorf("nil *Analyzer")
+			return errors.New("nil *Analyzer")
 		}
 		if color[a] == white {
 			color[a] = grey

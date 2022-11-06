@@ -1,10 +1,11 @@
+//go:build ignore
 // +build ignore
 
 package main
 
 // Test of runtime types (types for which descriptors are needed).
 
-func use(interface{})
+func use(any)
 
 type A byte // neither A nor byte are runtime types
 

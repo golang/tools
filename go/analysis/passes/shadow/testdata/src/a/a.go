@@ -37,7 +37,7 @@ func ShadowRead(f *os.File, buf []byte) (err error) {
 			println(i)
 		}()
 	}
-	var shadowTemp interface{}
+	var shadowTemp any
 	switch shadowTemp := shadowTemp.(type) { // OK: obviously intentional idiomatic redeclaration
 	case int:
 		println("OK")
@@ -60,7 +60,7 @@ func one() int {
 
 // Must not complain with an internal error for the
 // implicitly declared type switch variable v.
-func issue26725(x interface{}) int {
+func issue26725(x any) int {
 	switch v := x.(type) {
 	case int, int32:
 		if v, ok := x.(int); ok {
@@ -74,7 +74,7 @@ func issue26725(x interface{}) int {
 
 // Verify that implicitly declared variables from
 // type switches are considered in shadowing analysis.
-func shadowTypeSwitch(a interface{}) {
+func shadowTypeSwitch(a any) {
 	switch t := a.(type) {
 	case int:
 		{

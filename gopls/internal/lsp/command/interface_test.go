@@ -6,7 +6,7 @@ package command_test
 
 import (
 	"bytes"
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/lsp/command/gen"
@@ -16,7 +16,7 @@ import (
 func TestGenerated(t *testing.T) {
 	testenv.NeedsGoBuild(t) // This is a lie. We actually need the source code.
 
-	onDisk, err := ioutil.ReadFile("command_gen.go")
+	onDisk, err := os.ReadFile("command_gen.go")
 	if err != nil {
 		t.Fatal(err)
 	}

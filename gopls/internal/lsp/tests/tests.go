@@ -13,7 +13,6 @@ import (
 	"go/ast"
 	"go/token"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -385,7 +384,7 @@ func load(t testing.TB, mode string, dir string) *Data {
 		} else if index := strings.Index(fragment, overlayFileSuffix); index >= 0 {
 			delete(files, fragment)
 			partial := fragment[:index] + fragment[index+len(overlayFileSuffix):]
-			contents, err := ioutil.ReadFile(filepath.Join(dir, fragment))
+			contents, err := os.ReadFile(filepath.Join(dir, fragment))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -406,7 +405,7 @@ func load(t testing.TB, mode string, dir string) *Data {
 	case "GOPATH":
 		datum.Exported = packagestest.Export(t, packagestest.GOPATH, modules)
 	case "MultiModule":
-		files := map[string]interface{}{}
+		files := map[string]any{}
 		for k, v := range modules[0].Files {
 			files[filepath.Join("testmodule", k)] = v
 		}
@@ -453,7 +452,7 @@ func load(t testing.TB, mode string, dir string) *Data {
 	}
 
 	// Do a first pass to collect special markers for completion and workspace symbols.
-	if err := datum.Exported.Expect(map[string]interface{}{
+	if err := datum.Exported.Expect(map[string]any{
 		"item": func(name string, r packagestest.Range, _ []string) {
 			datum.Exported.Mark(name, r)
 		},
@@ -465,7 +464,7 @@ func load(t testing.TB, mode string, dir string) *Data {
 	}
 
 	// Collect any data that needs to be used by subsequent tests.
-	if err := datum.Exported.Expect(map[string]interface{}{
+	if err := datum.Exported.Expect(map[string]any{
 		"codelens":        datum.collectCodeLens,
 		"diag":            datum.collectDiagnostics,
 		"item":            datum.collectCompletionItems,
@@ -504,7 +503,7 @@ func load(t testing.TB, mode string, dir string) *Data {
 	}
 
 	// Collect names for the entries that require golden files.
-	if err := datum.Exported.Expect(map[string]interface{}{
+	if err := datum.Exported.Expect(map[string]any{
 		"godef":                        datum.collectDefinitionNames,
 		"hoverdef":                     datum.collectDefinitionNames,
 		"workspacesymbol":              datum.collectWorkspaceSymbols(WorkspaceSymbolsDefault),
@@ -955,7 +954,7 @@ func Run(t *testing.T, tests Tests, data *Data) {
 			sort.Slice(golden.Archive.Files, func(i, j int) bool {
 				return golden.Archive.Files[i].Name < golden.Archive.Files[j].Name
 			})
-			if err := ioutil.WriteFile(golden.Filename, txtar.Format(golden.Archive), 0666); err != nil {
+			if err := os.WriteFile(golden.Filename, txtar.Format(golden.Archive), 0666); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -1413,11 +1412,11 @@ func CopyFolderToTempDir(folder string) (string, error) {
 	if _, err := os.Stat(folder); err != nil {
 		return "", err
 	}
-	dst, err := ioutil.TempDir("", "modfile_test")
+	dst, err := os.MkdirTemp("", "modfile_test")
 	if err != nil {
 		return "", err
 	}
-	fds, err := ioutil.ReadDir(folder)
+	fds, err := os.ReadDir(folder)
 	if err != nil {
 		return "", err
 	}
@@ -1430,11 +1429,11 @@ func CopyFolderToTempDir(folder string) (string, error) {
 		if !stat.Mode().IsRegular() {
 			return "", fmt.Errorf("cannot copy non regular file %s", srcfp)
 		}
-		contents, err := ioutil.ReadFile(srcfp)
+		contents, err := os.ReadFile(srcfp)
 		if err != nil {
 			return "", err
 		}
-		if err := ioutil.WriteFile(filepath.Join(dst, fd.Name()), contents, stat.Mode()); err != nil {
+		if err := os.WriteFile(filepath.Join(dst, fd.Name()), contents, stat.Mode()); err != nil {
 			return "", err
 		}
 	}

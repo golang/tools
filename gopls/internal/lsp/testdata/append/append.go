@@ -10,9 +10,9 @@ func _() {
 		aString  string   //@item(appendString, "aString", "string", "var")
 	)
 
-	append(aStrings, a)                     //@rank(")", appendString, appendInt)
-	var _ interface{} = append(aStrings, a) //@rank(")", appendString, appendInt)
-	var _ []string = append(oops, a)        //@rank(")", appendString, appendInt)
+	append(aStrings, a)              //@rank(")", appendString, appendInt)
+	var _ any = append(aStrings, a)  //@rank(")", appendString, appendInt)
+	var _ []string = append(oops, a) //@rank(")", appendString, appendInt)
 
 	foo(append())                  //@rank("))", appendStrings, appendInt),rank("))", appendStrings, appendString)
 	foo(append([]string{}, a))     //@rank("))", appendStrings, appendInt),rank("))", appendString, appendInt),snippet("))", appendStrings, "aStrings...", "aStrings...")

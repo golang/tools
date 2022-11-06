@@ -136,7 +136,7 @@ type msg struct {
 
 type fakeHandler struct{}
 
-func (fakeHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (interface{}, error) {
+func (fakeHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	switch req.Method {
 	case "ping":
 		return &msg{"pong"}, nil
@@ -283,7 +283,7 @@ func TestCloseCallRace(t *testing.T) {
 		pokec := make(chan *jsonrpc2.AsyncCall, 1)
 
 		s := jsonrpc2.NewServer(ctx, listener, jsonrpc2.BinderFunc(func(_ context.Context, srvConn *jsonrpc2.Connection) jsonrpc2.ConnectionOptions {
-			h := jsonrpc2.HandlerFunc(func(ctx context.Context, _ *jsonrpc2.Request) (interface{}, error) {
+			h := jsonrpc2.HandlerFunc(func(ctx context.Context, _ *jsonrpc2.Request) (any, error) {
 				// Start a concurrent call from the server to the client.
 				// The point of this test is to ensure this doesn't deadlock
 				// if the client shuts down the connection concurrently.

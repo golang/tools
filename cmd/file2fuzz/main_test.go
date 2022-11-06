@@ -5,7 +5,6 @@
 package main
 
 import (
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -114,7 +113,7 @@ func TestFile2Fuzz(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tmp, err := ioutil.TempDir(os.TempDir(), "file2fuzz")
+			tmp, err := os.MkdirTemp(os.TempDir(), "file2fuzz")
 			if err != nil {
 				t.Fatalf("ioutil.TempDir failed: %s", err)
 			}
@@ -125,7 +124,7 @@ func TestFile2Fuzz(t *testing.T) {
 						t.Fatalf("failed to create test directory: %s", err)
 					}
 				} else {
-					if err := ioutil.WriteFile(filepath.Join(tmp, f.name), []byte(f.content), 0666); err != nil {
+					if err := os.WriteFile(filepath.Join(tmp, f.name), []byte(f.content), 0666); err != nil {
 						t.Fatalf("failed to create test input file: %s", err)
 					}
 				}
@@ -142,7 +141,7 @@ func TestFile2Fuzz(t *testing.T) {
 			}
 
 			for _, f := range tc.expectedFiles {
-				c, err := ioutil.ReadFile(filepath.Join(tmp, f.name))
+				c, err := os.ReadFile(filepath.Join(tmp, f.name))
 				if err != nil {
 					t.Fatalf("failed to read expected output file %q: %s", f.name, err)
 				}

@@ -10,7 +10,7 @@ type S string
 func incr(x int) int { return x + 1 }
 
 func main() {
-	var i interface{}
+	var i any
 	i = 1
 	if unknown {
 		i = S("foo")

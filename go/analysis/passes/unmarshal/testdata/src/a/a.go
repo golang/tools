@@ -48,7 +48,7 @@ func _() {
 	asn1.Unmarshal([]byte{}, p)
 	asn1.Unmarshal([]byte{}, *p) // want "call of Unmarshal passes non-pointer as second argument"
 
-	var i interface{}
+	var i any
 	json.Unmarshal([]byte{}, i)
 	json.NewDecoder(r).Decode(i)
 
@@ -59,5 +59,5 @@ func _() {
 	json.NewDecoder(r).Decode([]t{})            // want "call of Decode passes non-pointer"
 	json.NewDecoder(r).Decode(map[string]int{}) // want "call of Decode passes non-pointer"
 
-	json.Unmarshal(func() ([]byte, interface{}) { return []byte{}, v }())
+	json.Unmarshal(func() ([]byte, any) { return []byte{}, v }())
 }

@@ -6,6 +6,7 @@
 package main // import "golang.org/x/tools/cmd/ssadump"
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"go/build"
@@ -125,10 +126,10 @@ func doMain() error {
 		return err
 	}
 	if len(initial) == 0 {
-		return fmt.Errorf("no packages")
+		return errors.New("no packages")
 	}
 	if packages.PrintErrors(initial) > 0 {
-		return fmt.Errorf("packages contain errors")
+		return errors.New("packages contain errors")
 	}
 
 	// Turn on instantiating generics during build if the program will be run.
@@ -165,7 +166,7 @@ func doMain() error {
 		// Unfortunately, this means only trivial programs can be
 		// interpreted by ssadump.
 		if prog.ImportedPackage("runtime") != nil {
-			return fmt.Errorf("-run: program depends on runtime package (interpreter can run only trivial programs)")
+			return errors.New("-run: program depends on runtime package (interpreter can run only trivial programs)")
 		}
 
 		if runtime.GOARCH != build.Default.GOARCH {
@@ -178,7 +179,7 @@ func doMain() error {
 			fmt.Fprintf(os.Stderr, "Running: %s\n", main.Pkg.Path())
 			os.Exit(interp.Interpret(main, interpMode, sizes, main.Pkg.Path(), args))
 		}
-		return fmt.Errorf("no main package")
+		return errors.New("no main package")
 	}
 	return nil
 }
@@ -192,7 +193,7 @@ func newStringListValue(val []string, p *[]string) *stringListValue {
 	return (*stringListValue)(p)
 }
 
-func (ss *stringListValue) Get() interface{} { return []string(*ss) }
+func (ss *stringListValue) Get() any { return []string(*ss) }
 
 func (ss *stringListValue) String() string { return fmt.Sprintf("%q", *ss) }
 

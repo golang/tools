@@ -19,8 +19,8 @@ import (
 var DiagnoseFuzzTests bool = false
 
 var (
-	GetTypeErrors func(p interface{}) []types.Error
-	SetTypeErrors func(p interface{}, errors []types.Error)
+	GetTypeErrors func(p any) []types.Error
+	SetTypeErrors func(p any, errors []types.Error)
 )
 
 func TypeErrorEndPos(fset *token.FileSet, src []byte, start token.Pos) token.Pos {

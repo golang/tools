@@ -23,8 +23,8 @@ func CorrectSort() {
 // CorrectInterface sorts an interface with a slice
 // as the concrete type. It should not produce a diagnostic.
 func CorrectInterface() {
-	var s interface{}
-	s = interface{}([]int{2, 1, 0})
+	var s any
+	s = any([]int{2, 1, 0})
 	sortFn := func(i, j int) bool { return s.([]int)[i] < s.([]int)[j] }
 	sort.Slice(s, sortFn)
 	sort.SliceStable(s, sortFn)

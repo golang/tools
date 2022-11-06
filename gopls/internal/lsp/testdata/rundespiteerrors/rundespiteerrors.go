@@ -8,7 +8,7 @@ func _() {
 
 	// A violation of an analyzer for which RunDespiteErrors=false:
 	// no diagnostic is produced; the diag comment is merely illustrative.
-	for _ = range "" { //diag("for _", "simplifyrange", "simplify range expression", "warning")
+	for range "" { //diag("for _", "simplifyrange", "simplify range expression", "warning")
 
 	}
 }

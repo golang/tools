@@ -5,7 +5,6 @@ package cache
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,7 +15,7 @@ import (
 )
 
 func TestCaseInsensitiveFilesystem(t *testing.T) {
-	base, err := ioutil.TempDir("", t.Name())
+	base, err := os.MkdirTemp("", t.Name())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +25,7 @@ func TestCaseInsensitiveFilesystem(t *testing.T) {
 		t.Fatal(err)
 	}
 	file := filepath.Join(inner, "f.go")
-	if err := ioutil.WriteFile(file, []byte("hi"), 0777); err != nil {
+	if err := os.WriteFile(file, []byte("hi"), 0777); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(inner, "F.go")); err != nil {

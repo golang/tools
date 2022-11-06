@@ -10,11 +10,11 @@ import (
 	"crypto/sha256"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"go/token"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
@@ -202,7 +202,7 @@ func addVersionFlag() {
 type versionFlag struct{}
 
 func (versionFlag) IsBoolFlag() bool { return true }
-func (versionFlag) Get() interface{} { return nil }
+func (versionFlag) Get() any         { return nil }
 func (versionFlag) String() string   { return "" }
 func (versionFlag) Set(s string) error {
 	if s != "full" {
@@ -255,7 +255,7 @@ func triStateFlag(name string, value triState, usage string) *triState {
 
 // triState implements flag.Value, flag.Getter, and flag.boolFlag.
 // They work like boolean flags: we can say vet -printf as well as vet -printf=true
-func (ts *triState) Get() interface{} {
+func (ts *triState) Get() any {
 	return *ts == setTrue
 }
 
@@ -268,7 +268,7 @@ func (ts *triState) Set(value string) error {
 	if err != nil {
 		// This error message looks poor but package "flag" adds
 		// "invalid boolean value %q for -NAME: %s"
-		return fmt.Errorf("want true or false")
+		return errors.New("want true or false")
 	}
 	if b {
 		*ts = setTrue
@@ -328,7 +328,7 @@ func PrintPlain(fset *token.FileSet, diag analysis.Diagnostic) {
 		if !end.IsValid() {
 			end = posn
 		}
-		data, _ := ioutil.ReadFile(posn.Filename)
+		data, _ := os.ReadFile(posn.Filename)
 		lines := strings.Split(string(data), "\n")
 		for i := posn.Line - Context; i <= end.Line+Context; i++ {
 			if 1 <= i && i <= len(lines) {
@@ -340,7 +340,7 @@ func PrintPlain(fset *token.FileSet, diag analysis.Diagnostic) {
 
 // A JSONTree is a mapping from package ID to analysis name to result.
 // Each result is either a jsonError or a list of JSONDiagnostic.
-type JSONTree map[string]map[string]interface{}
+type JSONTree map[string]map[string]any
 
 // A TextEdit describes the replacement of a portion of a file.
 // Start and End are zero-based half-open indices into the original byte
@@ -374,7 +374,7 @@ type JSONDiagnostic struct {
 // Add adds the result of analysis 'name' on package 'id'.
 // The result is either a list of diagnostics or an error.
 func (tree JSONTree) Add(fset *token.FileSet, id, name string, diags []analysis.Diagnostic, err error) {
-	var v interface{}
+	var v any
 	if err != nil {
 		type jsonError struct {
 			Err string `json:"error"`
@@ -412,7 +412,7 @@ func (tree JSONTree) Add(fset *token.FileSet, id, name string, diags []analysis.
 	if v != nil {
 		m, ok := tree[id]
 		if !ok {
-			m = make(map[string]interface{})
+			m = make(map[string]any)
 			tree[id] = m
 		}
 		m[name] = v

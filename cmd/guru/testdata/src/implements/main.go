@@ -9,7 +9,7 @@ import _ "lib"
 func main() {
 }
 
-type E interface{} // @implements E "E"
+type E any // @implements E "E"
 
 type F interface { // @implements F "F"
 	f()

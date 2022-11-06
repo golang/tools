@@ -17,7 +17,7 @@ import (
 // An extendedQuery represents a sequence of destructuring operations
 // applied to an ssa.Value (denoted by "x").
 type extendedQuery struct {
-	ops []interface{}
+	ops []any
 	ptr *Pointer
 }
 
@@ -37,7 +37,7 @@ func indexValue(expr ast.Expr) (int, error) {
 // parseExtendedQuery parses and validates a destructuring Go
 // expression and returns the sequence of destructuring operations.
 // See parseDestructuringExpr for details.
-func parseExtendedQuery(typ types.Type, query string) ([]interface{}, types.Type, error) {
+func parseExtendedQuery(typ types.Type, query string) ([]any, types.Type, error) {
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		return nil, nil, err
@@ -50,7 +50,7 @@ func parseExtendedQuery(typ types.Type, query string) ([]interface{}, types.Type
 		return nil, nil, errors.New("invalid query: must not be empty")
 	}
 	if ops[0] != "x" {
-		return nil, nil, fmt.Errorf("invalid query: query operand must be named x")
+		return nil, nil, errors.New("invalid query: query operand must be named x")
 	}
 	if !CanPoint(typ) {
 		return nil, nil, fmt.Errorf("query does not describe a pointer-like value: %s", typ)
@@ -62,7 +62,7 @@ func parseExtendedQuery(typ types.Type, query string) ([]interface{}, types.Type
 // identifier "x", field selections, indexing, channel receives, load
 // operations and parens---for example: "<-(*x[i])[key]"--- and
 // returns the sequence of destructuring operations on x.
-func destructuringOps(typ types.Type, expr ast.Expr) ([]interface{}, types.Type, error) {
+func destructuringOps(typ types.Type, expr ast.Expr) ([]any, types.Type, error) {
 	switch expr := expr.(type) {
 	case *ast.SelectorExpr:
 		out, typ, err := destructuringOps(typ, expr.X)
@@ -103,9 +103,9 @@ func destructuringOps(typ types.Type, expr ast.Expr) ([]interface{}, types.Type,
 		// and at this point it's not really worth the complexity.
 		return nil, nil, fmt.Errorf("no field %s in %s (embedded fields must be resolved manually)", expr.Sel.Name, structT)
 	case *ast.Ident:
-		return []interface{}{expr.Name}, typ, nil
+		return []any{expr.Name}, typ, nil
 	case *ast.BasicLit:
-		return []interface{}{expr.Value}, nil, nil
+		return []any{expr.Value}, nil, nil
 	case *ast.IndexExpr:
 		out, typ, err := destructuringOps(typ, expr.X)
 		if err != nil {
@@ -168,7 +168,7 @@ func destructuringOps(typ types.Type, expr ast.Expr) ([]interface{}, types.Type,
 	}
 }
 
-func (a *analysis) evalExtendedQuery(t types.Type, id nodeid, ops []interface{}) (types.Type, nodeid) {
+func (a *analysis) evalExtendedQuery(t types.Type, id nodeid, ops []any) (types.Type, nodeid) {
 	pid := id
 	// TODO(dh): we're allocating intermediary nodes each time
 	// evalExtendedQuery is called. We should probably only generate

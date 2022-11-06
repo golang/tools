@@ -43,7 +43,7 @@ func (r *runner) Definition(t *testing.T, spn span.Span, d tests.Definition) {
 		args = append(args, fmt.Sprint(d.Src))
 		got, _ := r.NormalizeGoplsCmd(t, args...)
 		if mode&jsonGoDef != 0 && runtime.GOOS == "windows" {
-			got = strings.Replace(got, "file:///", "file://", -1)
+			got = strings.ReplaceAll(got, "file:///", "file://")
 		}
 		expect := strings.TrimSpace(string(r.data.Golden(t, tag, uri.Filename(), func() ([]byte, error) {
 			return []byte(got), nil

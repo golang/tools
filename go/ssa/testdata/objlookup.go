@@ -1,3 +1,4 @@
+//go:build ignore
 // +build ignore
 
 package main
@@ -15,8 +16,10 @@ package main
 // are always values not addresses, so no annotations are needed.  The
 // declaration is enough.
 
-import "fmt"
-import "os"
+import (
+	"fmt"
+	"os"
+)
 
 type J int
 
@@ -130,7 +133,7 @@ func main() {
 	if y := 0; y > 1 { //@ ssa(y,"Const"), ssa(y,"Const")
 	}
 
-	var i interface{}      //@ ssa(i,"Const") // nil interface
+	var i any              //@ ssa(i,"Const") // nil interface
 	i = 1                  //@ ssa(i,"MakeInterface")
 	switch i := i.(type) { //@ ssa(i,"MakeInterface"), ssa(i,"MakeInterface")
 	case int:

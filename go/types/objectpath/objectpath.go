@@ -24,6 +24,7 @@
 package objectpath
 
 import (
+	"errors"
 	"fmt"
 	"go/types"
 	"sort"
@@ -509,7 +510,7 @@ func findTypeParam(obj types.Object, list *typeparams.TypeParamList, path []byte
 // Object returns the object denoted by path p within the package pkg.
 func Object(pkg *types.Package, p Path) (types.Object, error) {
 	if p == "" {
-		return nil, fmt.Errorf("empty path")
+		return nil, errors.New("empty path")
 	}
 
 	pathstr := string(p)

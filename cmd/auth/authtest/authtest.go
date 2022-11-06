@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	exec "golang.org/x/sys/execabs"
 	"io"
 	"log"
 	"net/http"
@@ -27,6 +26,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 var v = flag.Bool("v", false, "if true, log GOAUTH responses to stderr")
@@ -56,7 +57,7 @@ func try(url string, prev *http.Response) *http.Response {
 		*req = *prev.Request
 	} else {
 		var err error
-		req, err = http.NewRequest("HEAD", os.Args[1], nil)
+		req, err = http.NewRequest(http.MethodHead, os.Args[1], http.NoBody)
 		if err != nil {
 			log.Fatal(err)
 		}

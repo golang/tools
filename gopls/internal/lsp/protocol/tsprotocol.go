@@ -140,7 +140,7 @@ type CallHierarchyItem struct { // line 2678
 	 * A data entry field that is preserved between a call hierarchy prepare and
 	 * incoming calls or outgoing calls requests.
 	 */
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 
 /*
@@ -201,7 +201,7 @@ type CallHierarchyRegistrationOptions struct { // line 2755
 }
 type CancelParams struct { // line 6198
 	// The request id to cancel.
-	ID interface{} `json:"id"`
+	ID any `json:"id"`
 }
 
 /*
@@ -250,7 +250,7 @@ type ClientCapabilities struct { // line 9700
 	 */
 	General *GeneralClientCapabilities `json:"general,omitempty"`
 	// Experimental client capabilities.
-	Experimental interface{} `json:"experimental,omitempty"`
+	Experimental any `json:"experimental,omitempty"`
 }
 
 /*
@@ -312,7 +312,7 @@ type CodeAction struct { // line 5401
 	 *
 	 * @since 3.16.0
 	 */
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 
 // The Client Capabilities of a [CodeActionRequest](#CodeActionRequest).
@@ -458,7 +458,7 @@ type CodeLens struct { // line 5618
 	 * a [CodeLensRequest](#CodeLensRequest) and a [CodeLensResolveRequest]
 	 * (#CodeLensResolveRequest)
 	 */
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 
 // The client capabilities  of a [CodeLensRequest](#CodeLensRequest).
@@ -771,7 +771,7 @@ type CompletionItem struct { // line 4550
 	 * A data entry field that is preserved on a completion item between a
 	 * [CompletionRequest](#CompletionRequest) and a [CompletionResolveRequest](#CompletionResolveRequest).
 	 */
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 type CompletionItemKind uint32 // line 13160
 /*
@@ -1050,7 +1050,7 @@ type Diagnostic struct { // line 8545
 	 */
 	Severity DiagnosticSeverity `json:"severity,omitempty"`
 	// The diagnostic's code, which usually appear in the user interface.
-	Code interface{} `json:"code,omitempty"`
+	Code any `json:"code,omitempty"`
 	/*
 	 * An optional property to describe the error code.
 	 * Requires the code field (above) to be present/not null.
@@ -1083,7 +1083,7 @@ type Diagnostic struct { // line 8545
 	 *
 	 * @since 3.16.0
 	 */
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 
 /*
@@ -1183,7 +1183,7 @@ type DidChangeConfigurationClientCapabilities struct { // line 10863
 // The parameters of a change configuration notification.
 type DidChangeConfigurationParams struct { // line 4166
 	// The actual changed settings
-	Settings interface{} `json:"settings"`
+	Settings any `json:"settings"`
 }
 type DidChangeConfigurationRegistrationOptions struct { // line 4180
 	Section *OrPSection_workspace_didChangeConfiguration `json:"section,omitempty"`
@@ -1397,7 +1397,7 @@ type DocumentDiagnosticReportKind string                    // line 12748
  * @since 3.17.0
  */
 type DocumentDiagnosticReportPartialResult struct { // line 3833
-	RelatedDocuments map[DocumentURI]interface{} `json:"relatedDocuments"`
+	RelatedDocuments map[DocumentURI]any `json:"relatedDocuments"`
 }
 
 /*
@@ -1492,7 +1492,7 @@ type DocumentLink struct { // line 5689
 	 * A data entry field that is preserved on a document link between a
 	 * DocumentLinkRequest and a DocumentLinkResolveRequest.
 	 */
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 
 // The client capabilities of a [DocumentLinkRequest](#DocumentLinkRequest).
@@ -2315,7 +2315,7 @@ type InlayHint struct { // line 3667
 	 * A data entry field that is preserved on an inlay hint between
 	 * a `textDocument/inlayHint` and a `inlayHint/resolve` request.
 	 */
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 
 /*
@@ -2585,13 +2585,13 @@ type InsertTextMode uint32   // line 13306
  * optional as well.
  * @since 3.17.0
  */
-type LSPAny = interface{} // (alias) line 13817
+type LSPAny = any // (alias) line 13817
 /*
  * LSP arrays.
  * @since 3.17.0
  */
-type LSPArray = []interface{} // (alias) line 13805
-type LSPErrorCodes int32      // line 12809
+type LSPArray = []any    // (alias) line 13805
+type LSPErrorCodes int32 // line 12809
 /*
  * LSP object definition.
  * @since 3.17.0
@@ -3072,72 +3072,72 @@ type OptionalVersionedTextDocumentIdentifier struct { // line 9363
 
 // created for Or [Range FEditRangePItemDefaults]
 type OrFEditRangePItemDefaults struct { // line 4791
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [string NotebookDocumentFilter]
 type OrFNotebookPNotebookSelector struct { // line 9838
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [Location PLocationMsg_workspace_symbol]
 type OrPLocation_workspace_symbol struct { // line 5540
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [string []string]
 type OrPSection_workspace_didChangeConfiguration struct { // line 4186
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [string MarkupContent]
 type OrPTooltipPLabel struct { // line 7081
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [string MarkupContent]
 type OrPTooltip_textDocument_inlayHint struct { // line 3722
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [Location []Location]
 type Or_Definition struct { // line 13780
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [RelatedFullDocumentDiagnosticReport RelatedUnchangedDocumentDiagnosticReport]
 type Or_DocumentDiagnosticReport struct { // line 13912
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [TextDocumentFilter NotebookCellTextDocumentFilter]
 type Or_DocumentFilter struct { // line 14121
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [InlineValueText InlineValueVariableLookup InlineValueEvaluatableExpression]
 type Or_InlineValue struct { // line 13890
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [string Msg_MarkedString]
 type Or_MarkedString struct { // line 14087
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [WorkspaceFolder URI]
 type Or_RelativePattern_baseUri struct { // line 10768
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [WorkspaceFullDocumentDiagnosticReport WorkspaceUnchangedDocumentDiagnosticReport]
 type Or_WorkspaceDocumentDiagnosticReport struct { // line 14013
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [Declaration []DeclarationLink ]
 type Or_textDocument_declaration struct { // line 257
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Literal
@@ -3349,7 +3349,7 @@ type PItemDefaultsMsg_textDocument_completion struct { // line 4772
 	 *
 	 * @since 3.17.0
 	 */
-	Data interface{} `json:"data"`
+	Data any `json:"data"`
 }
 
 // created for Literal
@@ -3394,7 +3394,7 @@ type PRequestsPSemanticTokens struct { // line 12198
 	 * The client will send the `textDocument/semanticTokens/full` request if
 	 * the server provides a corresponding handler.
 	 */
-	Full interface{} `json:"full"`
+	Full any `json:"full"`
 }
 
 // created for Literal
@@ -3612,7 +3612,7 @@ type PrepareRenameParams struct {            // line 5944
 	WorkDoneProgressParams
 }
 type PrepareRenameResult = Msg_PrepareRename2Gn // (alias) line 13927
-type PrepareSupportDefaultBehavior interface{}  // line 13748
+type PrepareSupportDefaultBehavior any          // line 13748
 /*
  * A previous result id in a workspace pull request.
  *
@@ -3646,9 +3646,9 @@ type ProgressParams struct { // line 6220
 	// The progress token provided by the client or server.
 	Token ProgressToken `json:"token"`
 	// The progress data.
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
-type ProgressToken = interface{} // (alias) line 13974
+type ProgressToken = any // (alias) line 13974
 // The publish diagnostic client capabilities.
 type PublishDiagnosticsClientCapabilities struct { // line 12098
 	// Whether the clients accepts diagnostics with related information.
@@ -3761,7 +3761,7 @@ type Registration struct { // line 7602
 	// The method / capability to register for.
 	Method string `json:"method"`
 	// Options necessary for the registration.
-	RegisterOptions interface{} `json:"registerOptions,omitempty"`
+	RegisterOptions any `json:"registerOptions,omitempty"`
 }
 type RegistrationParams struct { // line 4060
 	Registrations []Registration `json:"registrations"`
@@ -3794,7 +3794,7 @@ type RelatedFullDocumentDiagnosticReport struct { // line 7162
 	 *
 	 * @since 3.17.0
 	 */
-	RelatedDocuments map[DocumentURI]interface{} `json:"relatedDocuments,omitempty"`
+	RelatedDocuments map[DocumentURI]any `json:"relatedDocuments,omitempty"`
 	FullDocumentDiagnosticReport
 }
 
@@ -3813,7 +3813,7 @@ type RelatedUnchangedDocumentDiagnosticReport struct { // line 7201
 	 *
 	 * @since 3.17.0
 	 */
-	RelatedDocuments map[DocumentURI]interface{} `json:"relatedDocuments,omitempty"`
+	RelatedDocuments map[DocumentURI]any `json:"relatedDocuments,omitempty"`
 	UnchangedDocumentDiagnosticReport
 }
 
@@ -3851,7 +3851,7 @@ type RenameClientCapabilities struct { // line 11960
 	 *
 	 * @since 3.16.0
 	 */
-	PrepareSupportDefaultBehavior interface{} `json:"prepareSupportDefaultBehavior,omitempty"`
+	PrepareSupportDefaultBehavior any `json:"prepareSupportDefaultBehavior,omitempty"`
 	/*
 	 * Whether the client honors the change annotations in
 	 * text edits and resource operations returned via the
@@ -4104,7 +4104,7 @@ type SemanticTokensOptions struct { // line 6551
 	 * Server supports providing semantic tokens for a specific range
 	 * of a document.
 	 */
-	Range interface{} `json:"range,omitempty"`
+	Range any `json:"range,omitempty"`
 	// Server supports providing semantic tokens for a full document.
 	Full bool `json:"full,omitempty"`
 	WorkDoneProgressOptions
@@ -4176,13 +4176,13 @@ type ServerCapabilities struct { // line 7829
 	 * defining each notification or for backwards compatibility the
 	 * TextDocumentSyncKind number.
 	 */
-	TextDocumentSync interface{} `json:"textDocumentSync,omitempty"`
+	TextDocumentSync any `json:"textDocumentSync,omitempty"`
 	/*
 	 * Defines how notebook documents are synced.
 	 *
 	 * @since 3.17.0
 	 */
-	NotebookDocumentSync interface{} `json:"notebookDocumentSync,omitempty"`
+	NotebookDocumentSync any `json:"notebookDocumentSync,omitempty"`
 	// The server provides completion support.
 	CompletionProvider CompletionOptions `json:"completionProvider,omitempty"`
 	// The server provides hover support.
@@ -4194,9 +4194,9 @@ type ServerCapabilities struct { // line 7829
 	// The server provides goto definition support.
 	DefinitionProvider bool `json:"definitionProvider,omitempty"`
 	// The server provides Goto Type Definition support.
-	TypeDefinitionProvider interface{} `json:"typeDefinitionProvider,omitempty"`
+	TypeDefinitionProvider any `json:"typeDefinitionProvider,omitempty"`
 	// The server provides Goto Implementation support.
-	ImplementationProvider interface{} `json:"implementationProvider,omitempty"`
+	ImplementationProvider any `json:"implementationProvider,omitempty"`
 	// The server provides find references support.
 	ReferencesProvider bool `json:"referencesProvider,omitempty"`
 	// The server provides document highlight support.
@@ -4208,13 +4208,13 @@ type ServerCapabilities struct { // line 7829
 	 * specified if the client states that it supports
 	 * `codeActionLiteralSupport` in its initial `initialize` request.
 	 */
-	CodeActionProvider interface{} `json:"codeActionProvider,omitempty"`
+	CodeActionProvider any `json:"codeActionProvider,omitempty"`
 	// The server provides code lens.
 	CodeLensProvider *CodeLensOptions `json:"codeLensProvider,omitempty"`
 	// The server provides document link support.
 	DocumentLinkProvider DocumentLinkOptions `json:"documentLinkProvider,omitempty"`
 	// The server provides color provider support.
-	ColorProvider interface{} `json:"colorProvider,omitempty"`
+	ColorProvider any `json:"colorProvider,omitempty"`
 	// The server provides workspace symbol support.
 	WorkspaceSymbolProvider bool `json:"workspaceSymbolProvider,omitempty"`
 	// The server provides document formatting.
@@ -4228,11 +4228,11 @@ type ServerCapabilities struct { // line 7829
 	 * specified if the client states that it supports
 	 * `prepareSupport` in its initial `initialize` request.
 	 */
-	RenameProvider interface{} `json:"renameProvider,omitempty"`
+	RenameProvider any `json:"renameProvider,omitempty"`
 	// The server provides folding provider support.
-	FoldingRangeProvider interface{} `json:"foldingRangeProvider,omitempty"`
+	FoldingRangeProvider any `json:"foldingRangeProvider,omitempty"`
 	// The server provides selection range support.
-	SelectionRangeProvider interface{} `json:"selectionRangeProvider,omitempty"`
+	SelectionRangeProvider any `json:"selectionRangeProvider,omitempty"`
 	// The server provides execute command support.
 	ExecuteCommandProvider ExecuteCommandOptions `json:"executeCommandProvider,omitempty"`
 	/*
@@ -4240,53 +4240,53 @@ type ServerCapabilities struct { // line 7829
 	 *
 	 * @since 3.16.0
 	 */
-	CallHierarchyProvider interface{} `json:"callHierarchyProvider,omitempty"`
+	CallHierarchyProvider any `json:"callHierarchyProvider,omitempty"`
 	/*
 	 * The server provides linked editing range support.
 	 *
 	 * @since 3.16.0
 	 */
-	LinkedEditingRangeProvider interface{} `json:"linkedEditingRangeProvider,omitempty"`
+	LinkedEditingRangeProvider any `json:"linkedEditingRangeProvider,omitempty"`
 	/*
 	 * The server provides semantic tokens support.
 	 *
 	 * @since 3.16.0
 	 */
-	SemanticTokensProvider interface{} `json:"semanticTokensProvider,omitempty"`
+	SemanticTokensProvider any `json:"semanticTokensProvider,omitempty"`
 	/*
 	 * The server provides moniker support.
 	 *
 	 * @since 3.16.0
 	 */
-	MonikerProvider interface{} `json:"monikerProvider,omitempty"`
+	MonikerProvider any `json:"monikerProvider,omitempty"`
 	/*
 	 * The server provides type hierarchy support.
 	 *
 	 * @since 3.17.0
 	 */
-	TypeHierarchyProvider interface{} `json:"typeHierarchyProvider,omitempty"`
+	TypeHierarchyProvider any `json:"typeHierarchyProvider,omitempty"`
 	/*
 	 * The server provides inline values.
 	 *
 	 * @since 3.17.0
 	 */
-	InlineValueProvider interface{} `json:"inlineValueProvider,omitempty"`
+	InlineValueProvider any `json:"inlineValueProvider,omitempty"`
 	/*
 	 * The server provides inlay hints.
 	 *
 	 * @since 3.17.0
 	 */
-	InlayHintProvider interface{} `json:"inlayHintProvider,omitempty"`
+	InlayHintProvider any `json:"inlayHintProvider,omitempty"`
 	/*
 	 * The server has support for pull model diagnostics.
 	 *
 	 * @since 3.17.0
 	 */
-	DiagnosticProvider interface{} `json:"diagnosticProvider,omitempty"`
+	DiagnosticProvider any `json:"diagnosticProvider,omitempty"`
 	// Workspace specific server capabilities.
 	Workspace Workspace6Gn `json:"workspace,omitempty"`
 	// Experimental server capabilities.
-	Experimental interface{} `json:"experimental,omitempty"`
+	Experimental any `json:"experimental,omitempty"`
 }
 type SetTraceParams struct { // line 6166
 	Value TraceValues `json:"value"`
@@ -4912,7 +4912,7 @@ type TypeHierarchyItem struct { // line 3432
 	 * type hierarchy in the server, helping improve the performance on
 	 * resolving supertypes and subtypes.
 	 */
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 
 /*
@@ -5451,7 +5451,7 @@ type WorkspaceSymbol struct { // line 5534
 	 * A data entry field that is preserved on a workspace symbol between a
 	 * workspace symbol request and a workspace symbol resolve request.
 	 */
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 	BaseSymbolInformation
 }
 
@@ -5567,7 +5567,7 @@ type XInitializeParams struct { // line 7655
 	// The capabilities provided by the client (editor or tool)
 	Capabilities ClientCapabilities `json:"capabilities"`
 	// User provided initialization options.
-	InitializationOptions interface{} `json:"initializationOptions,omitempty"`
+	InitializationOptions any `json:"initializationOptions,omitempty"`
 	// The initial trace setting. If omitted trace is disabled ('off').
 	Trace string `json:"trace,omitempty"`
 }
@@ -5617,7 +5617,7 @@ type _InitializeParams struct { // line 7655
 	// The capabilities provided by the client (editor or tool)
 	Capabilities ClientCapabilities `json:"capabilities"`
 	// User provided initialization options.
-	InitializationOptions interface{} `json:"initializationOptions,omitempty"`
+	InitializationOptions any `json:"initializationOptions,omitempty"`
 	// The initial trace setting. If omitted trace is disabled ('off').
 	Trace string `json:"trace,omitempty"`
 }

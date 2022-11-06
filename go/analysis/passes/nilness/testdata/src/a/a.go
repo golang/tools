@@ -29,7 +29,7 @@ func f(x, y *X) {
 	}
 }
 
-func f2(ptr *[3]int, i interface{}) {
+func f2(ptr *[3]int, i any) {
 	if ptr != nil {
 		print(ptr[:])
 		*ptr = [3]int{}
@@ -121,7 +121,7 @@ func bad() (*X, error) {
 
 func f8() {
 	var e error
-	v, _ := e.(interface{})
+	v, _ := e.(any)
 	print(v)
 }
 
@@ -174,7 +174,7 @@ func unknown() bool {
 	return false
 }
 
-func f11(a interface{}) {
+func f11(a any) {
 	switch a.(type) {
 	case nil:
 		return
@@ -185,7 +185,7 @@ func f11(a interface{}) {
 	}
 }
 
-func f12(a interface{}) {
+func f12(a any) {
 	switch a {
 	case nil:
 		return

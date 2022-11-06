@@ -11,7 +11,6 @@ package pointer_test
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -31,7 +30,7 @@ func TestSliceToArrayPointer(t *testing.T) {
 	}
 	fmt.Fprintf(os.Stderr, "Entering directory `%s'\n", wd)
 
-	content, err := ioutil.ReadFile(filename)
+	content, err := os.ReadFile(filename)
 	if err != nil {
 		t.Fatalf("couldn't read file '%s': %s", filename, err)
 	}

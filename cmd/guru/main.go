@@ -195,7 +195,7 @@ func main() {
 			fmt.Printf("%s\n", qr.JSON(fset))
 		} else {
 			// plain output
-			printf := func(pos interface{}, format string, args ...interface{}) {
+			printf := func(pos any, format string, args ...any) {
 				fprintf(os.Stdout, fset, pos, format, args...)
 			}
 			qr.PrintPlain(printf)

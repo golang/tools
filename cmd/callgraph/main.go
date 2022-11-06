@@ -22,6 +22,7 @@ package main // import "golang.org/x/tools/cmd/callgraph"
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"go/build"
@@ -185,7 +186,7 @@ func doCallgraph(dir, gopath, algo, format string, tests bool, args []string) er
 		return err
 	}
 	if packages.PrintErrors(initial) > 0 {
-		return fmt.Errorf("packages contain errors")
+		return errors.New("packages contain errors")
 	}
 
 	// Create and build SSA-form program representation.
@@ -319,7 +320,7 @@ func mainPackages(pkgs []*ssa.Package) ([]*ssa.Package, error) {
 		}
 	}
 	if len(mains) == 0 {
-		return nil, fmt.Errorf("no main packages")
+		return nil, errors.New("no main packages")
 	}
 	return mains, nil
 }

@@ -8,6 +8,7 @@ package completion
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/constant"
@@ -453,7 +454,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 	// Find the path to the position before pos.
 	path, _ := astutil.PathEnclosingInterval(pgf.File, pos-1, pos-1)
 	if path == nil {
-		return nil, nil, fmt.Errorf("cannot find node enclosing position")
+		return nil, nil, errors.New("cannot find node enclosing position")
 	}
 
 	// Check if completion at this position is valid. If not, return early.

@@ -6,7 +6,6 @@ package main_test
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,7 +55,7 @@ func TestGeneratedFiles(t *testing.T) {
 			// Test: variable not used in any cgo file -> no error
 			from: `"mytest"::f`, to: "g",
 			packages: map[string][]string{
-				"mytest": []string{`package mytest; func f() {}`,
+				"mytest": {`package mytest; func f() {}`,
 					`package mytest
 // #include <stdio.h>
 import "C"
@@ -69,7 +68,7 @@ func z() {C.puts(nil)}`},
 			// Test: to name used in cgo file -> rename error
 			from: `"mytest"::f`, to: "g",
 			packages: map[string][]string{
-				"mytest": []string{`package mytest; func f() {}`,
+				"mytest": {`package mytest; func f() {}`,
 					`package mytest
 // #include <stdio.h>
 import "C"
@@ -83,7 +82,7 @@ func g() {C.puts(nil)}`},
 			// Test: from name in package in cgo file -> error
 			from: `"mytest"::f`, to: "g",
 			packages: map[string][]string{
-				"mytest": []string{`package mytest
+				"mytest": {`package mytest
 
 // #include <stdio.h>
 import "C"
@@ -98,7 +97,7 @@ func f() { C.puts(nil); }
 			from: filepath.Join("mytest", "0.go") + `::f`, to: "g",
 			fileSpecified: true,
 			packages: map[string][]string{
-				"mytest": []string{`package mytest
+				"mytest": {`package mytest
 
 // #include <stdio.h>
 import "C"
@@ -132,7 +131,7 @@ func main() {
 			// Test: from identifier appears in cgo file in another package -> error
 			from: `"test"::Foo`, to: "Bar",
 			packages: map[string][]string{
-				"test": []string{
+				"test": {
 					`package test
 
 func Foo(x int) (int){
@@ -140,7 +139,7 @@ func Foo(x int) (int){
 }
 `,
 				},
-				"main": []string{
+				"main": {
 					`package main
 
 import "test"
@@ -162,7 +161,7 @@ func fun() {
 			// Test: from identifier doesn't appear in cgo file that includes modified package -> rename successful
 			from: `"test".Foo::x`, to: "y",
 			packages: map[string][]string{
-				"test": []string{
+				"test": {
 					`package test
 
 func Foo(x int) (int){
@@ -170,7 +169,7 @@ func Foo(x int) (int){
 }
 `,
 				},
-				"main": []string{
+				"main": {
 					`package main
 import "test"
 import "fmt"
@@ -191,7 +190,7 @@ func fun() {
 			// Test: from name appears in cgo file in same package -> error
 			from: `"mytest"::f`, to: "g",
 			packages: map[string][]string{
-				"mytest": []string{`package mytest; func f() {}`,
+				"mytest": {`package mytest; func f() {}`,
 					`package mytest
 // #include <stdio.h>
 import "C"
@@ -211,7 +210,7 @@ func foo() {C.close(3); f()}`,
 			from: filepath.Join("mytest", "0.go") + `::f`, to: "g",
 			fileSpecified: true,
 			packages: map[string][]string{
-				"mytest": []string{`package mytest; func f() {}`,
+				"mytest": {`package mytest; func f() {}`,
 					`package mytest
 // #include <stdio.h>
 import "C"
@@ -224,7 +223,7 @@ func z() {C.puts(nil)}`},
 			// Test: from identifier imported to another package but does not modify cgo file -> rename successful
 			from: `"test".Foo`, to: "Bar",
 			packages: map[string][]string{
-				"test": []string{
+				"test": {
 					`package test
 
 func Foo(x int) (int){
@@ -232,7 +231,7 @@ func Foo(x int) (int){
 }
 `,
 				},
-				"main": []string{
+				"main": {
 					`package main
 // #include <unistd.h>
 import "C"
@@ -315,7 +314,7 @@ func buildGorename(t *testing.T) (tmp, bin string, cleanup func()) {
 		t.Skipf("the dependencies are not available on android")
 	}
 
-	tmp, err := ioutil.TempDir("", "gorename-regtest-")
+	tmp, err := os.MkdirTemp("", "gorename-regtest-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +351,7 @@ func setUpPackages(t *testing.T, dir string, packages map[string][]string) (clea
 		// Write the packages files
 		for i, val := range files {
 			file := filepath.Join(pkgDir, strconv.Itoa(i)+".go")
-			if err := ioutil.WriteFile(file, []byte(val), os.ModePerm); err != nil {
+			if err := os.WriteFile(file, []byte(val), os.ModePerm); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -373,7 +372,7 @@ func modifiedFiles(t *testing.T, dir string, packages map[string][]string) (resu
 		for i, val := range files {
 			file := filepath.Join(pkgDir, strconv.Itoa(i)+".go")
 			// read file contents and compare to val
-			if contents, err := ioutil.ReadFile(file); err != nil {
+			if contents, err := os.ReadFile(file); err != nil {
 				t.Fatalf("File missing: %s", err)
 			} else if string(contents) != val {
 				results = append(results, strings.TrimPrefix(dir, file))

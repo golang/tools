@@ -6,6 +6,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -332,7 +333,7 @@ func (s *Session) viewOf(uri span.URI) (*View, error) {
 	}
 	// Pick the best view for this file and memoize the result.
 	if len(s.views) == 0 {
-		return nil, fmt.Errorf("no views in session")
+		return nil, errors.New("no views in session")
 	}
 	s.viewMap[uri] = bestViewForURI(uri, s.views)
 	return s.viewMap[uri], nil

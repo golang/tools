@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -46,7 +47,7 @@ func callees(q *Query) error {
 		}
 	}
 	if e == nil {
-		return fmt.Errorf("there is no function call here")
+		return errors.New("there is no function call here")
 	}
 	// TODO(adonovan): issue an error if the call is "too far
 	// away" from the current selection, as this most likely is
@@ -54,7 +55,7 @@ func callees(q *Query) error {
 
 	// Reject type conversions.
 	if qpos.info.Types[e.Fun].IsType() {
-		return fmt.Errorf("this is a type conversion, not a function call")
+		return errors.New("this is a type conversion, not a function call")
 	}
 
 	// Deal with obviously static calls before constructing SSA form.
@@ -115,7 +116,7 @@ func callees(q *Query) error {
 
 	pkg := prog.Package(qpos.info.Pkg)
 	if pkg == nil {
-		return fmt.Errorf("no SSA package")
+		return errors.New("no SSA package")
 	}
 
 	// Defer SSA construction till after errors are reported.
@@ -124,7 +125,7 @@ func callees(q *Query) error {
 	// Ascertain calling function and call site.
 	callerFn := ssa.EnclosingFunction(pkg, qpos.path)
 	if callerFn == nil {
-		return fmt.Errorf("no SSA function built for this location (dead code?)")
+		return errors.New("no SSA function built for this location (dead code?)")
 	}
 
 	// Find the call site.
@@ -149,7 +150,7 @@ func findCallSite(fn *ssa.Function, call *ast.CallExpr) (ssa.CallInstruction, er
 	instr, _ := fn.ValueForExpr(call)
 	callInstr, _ := instr.(ssa.CallInstruction)
 	if instr == nil {
-		return nil, fmt.Errorf("this call site is unreachable in this analysis")
+		return nil, errors.New("this call site is unreachable in this analysis")
 	}
 	return callInstr, nil
 }
@@ -175,7 +176,7 @@ func findCallees(conf *pointer.Config, site ssa.CallInstruction) ([]*ssa.Functio
 	// Find all call edges from the site.
 	n := cg.Nodes[site.Parent()]
 	if n == nil {
-		return nil, fmt.Errorf("this call site is unreachable in this analysis")
+		return nil, errors.New("this call site is unreachable in this analysis")
 	}
 	calleesMap := make(map[*ssa.Function]bool)
 	for _, edge := range n.Out {

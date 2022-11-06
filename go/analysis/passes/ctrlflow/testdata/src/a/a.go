@@ -55,7 +55,6 @@ func (T) method2() { // (may return)
 
 // Checking for the noreturn fact associated with F ensures that
 // ctrlflow proved each of the listed functions was "noReturn".
-//
 func standardFunctions(x int) { // want standardFunctions:"noReturn"
 	t := new(testing.T)
 	switch x {
@@ -96,7 +95,6 @@ func standardFunctions(x int) { // want standardFunctions:"noReturn"
 
 // False positives are possible.
 // This function is marked noReturn but in fact returns.
-//
 func spurious() { // want spurious:"noReturn"
 	defer func() { recover() }()
 	panic(nil)

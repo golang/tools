@@ -115,7 +115,7 @@ func makeHeadings(body string) string {
 			buf.WriteString("* Introduction\n\n")
 		}
 		if isBoldTitle(s) {
-			s = strings.TrimSpace(strings.Replace(s, "*", " ", -1))
+			s = strings.TrimSpace(strings.ReplaceAll(s, "*", " "))
 			s = "* " + s
 		}
 		buf.WriteString(s)
@@ -254,7 +254,7 @@ func childText(node *html.Node) string {
 }
 
 func highlight(node *html.Node, char string) string {
-	t := strings.Replace(childText(node), " ", char, -1)
+	t := strings.ReplaceAll(childText(node), " ", char)
 	return fmt.Sprintf("%s%s%s", char, t, char)
 }
 

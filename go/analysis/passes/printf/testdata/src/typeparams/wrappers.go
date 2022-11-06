@@ -11,14 +11,14 @@ import "fmt"
 
 type N[T any] int
 
-func (N[P]) Wrapf(p P, format string, args ...interface{}) { // want Wrapf:"printfWrapper"
+func (N[P]) Wrapf(p P, format string, args ...any) { // want Wrapf:"printfWrapper"
 	fmt.Printf(format, args...)
 }
 
-func (*N[P]) PtrWrapf(p P, format string, args ...interface{}) { // want PtrWrapf:"printfWrapper"
+func (*N[P]) PtrWrapf(p P, format string, args ...any) { // want PtrWrapf:"printfWrapper"
 	fmt.Printf(format, args...)
 }
 
-func Printf[P any](p P, format string, args ...interface{}) { // want Printf:"printfWrapper"
+func Printf[P any](p P, format string, args ...any) { // want Printf:"printfWrapper"
 	fmt.Printf(format, args...)
 }

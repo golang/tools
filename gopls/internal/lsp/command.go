@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,7 +32,7 @@ import (
 	"golang.org/x/tools/internal/xcontext"
 )
 
-func (s *Server) executeCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (interface{}, error) {
+func (s *Server) executeCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (any, error) {
 	var found bool
 	for _, name := range s.session.Options().SupportedCommands {
 		if name == params.Command {
@@ -608,7 +607,7 @@ func applyFileEdits(ctx context.Context, snapshot source.Snapshot, uri span.URI,
 	// file and leave it unsaved. We would rather apply the changes directly,
 	// especially to go.sum, which should be mostly invisible to the user.
 	if !snapshot.IsOpen(uri) {
-		err := ioutil.WriteFile(uri.Filename(), newContent, 0666)
+		err := os.WriteFile(uri.Filename(), newContent, 0666)
 		return nil, err
 	}
 
@@ -722,7 +721,7 @@ func (c *commandHandler) GenerateGoplsMod(ctx context.Context, args command.URIA
 			return fmt.Errorf("formatting mod file: %w", err)
 		}
 		filename := filepath.Join(v.Folder().Filename(), "gopls.mod")
-		if err := ioutil.WriteFile(filename, content, 0644); err != nil {
+		if err := os.WriteFile(filename, content, 0644); err != nil {
 			return fmt.Errorf("writing mod file: %w", err)
 		}
 		return nil

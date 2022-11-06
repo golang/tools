@@ -60,7 +60,7 @@ var Analyzer = &analysis.Analyzer{
 	Requires: []*analysis.Analyzer{buildssa.Analyzer},
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	ssainput := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 	// TODO(48525): ssainput.SrcFuncs is missing fn._Instances(). runFunc will be skipped.
 	for _, fn := range ssainput.SrcFuncs {
@@ -70,7 +70,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 }
 
 func runFunc(pass *analysis.Pass, fn *ssa.Function) {
-	reportf := func(category string, pos token.Pos, format string, args ...interface{}) {
+	reportf := func(category string, pos token.Pos, format string, args ...any) {
 		pass.Report(analysis.Diagnostic{
 			Pos:      pos,
 			Category: category,

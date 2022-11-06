@@ -68,7 +68,7 @@ func reflectSetMapIndex() {
 func reflectSetMapIndexInterface() {
 	// Exercises reflect.Value conversions to/from interfaces:
 	// a different code path than for concrete types.
-	m := make(map[interface{}]interface{})
+	m := make(map[any]any)
 	reflect.ValueOf(m).SetMapIndex(reflect.ValueOf(&a), reflect.ValueOf(&b))
 	for k, v := range m {
 		print(k)         // @types *int

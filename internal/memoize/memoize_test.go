@@ -18,7 +18,7 @@ func TestGet(t *testing.T) {
 
 	evaled := 0
 
-	h, release := store.Promise("key", func(context.Context, interface{}) interface{} {
+	h, release := store.Promise("key", func(context.Context, any) any {
 		evaled++
 		return "res"
 	})
@@ -30,7 +30,7 @@ func TestGet(t *testing.T) {
 	}
 }
 
-func expectGet(t *testing.T, h *memoize.Promise, wantV interface{}) {
+func expectGet(t *testing.T, h *memoize.Promise, wantV any) {
 	t.Helper()
 	gotV, gotErr := h.Get(context.Background(), nil)
 	if gotV != wantV || gotErr != nil {
@@ -40,7 +40,7 @@ func expectGet(t *testing.T, h *memoize.Promise, wantV interface{}) {
 
 func TestNewPromise(t *testing.T) {
 	calls := 0
-	f := func(context.Context, interface{}) interface{} {
+	f := func(context.Context, any) any {
 		calls++
 		return calls
 	}
@@ -63,10 +63,10 @@ func TestStoredPromiseRefCounting(t *testing.T) {
 	var store memoize.Store
 	v1 := false
 	v2 := false
-	p1, release1 := store.Promise("key1", func(context.Context, interface{}) interface{} {
+	p1, release1 := store.Promise("key1", func(context.Context, any) any {
 		return &v1
 	})
-	p2, release2 := store.Promise("key2", func(context.Context, interface{}) interface{} {
+	p2, release2 := store.Promise("key2", func(context.Context, any) any {
 		return &v2
 	})
 	expectGet(t, p1, &v1)
@@ -75,7 +75,7 @@ func TestStoredPromiseRefCounting(t *testing.T) {
 	expectGet(t, p1, &v1)
 	expectGet(t, p2, &v2)
 
-	p2Copy, release2Copy := store.Promise("key2", func(context.Context, interface{}) interface{} {
+	p2Copy, release2Copy := store.Promise("key2", func(context.Context, any) any {
 		return &v1
 	})
 	if p2 != p2Copy {
@@ -93,7 +93,7 @@ func TestStoredPromiseRefCounting(t *testing.T) {
 	}
 	release1()
 
-	p2Copy, release2Copy = store.Promise("key2", func(context.Context, interface{}) interface{} {
+	p2Copy, release2Copy = store.Promise("key2", func(context.Context, any) any {
 		return &v2
 	})
 	if p2 == p2Copy {
@@ -109,7 +109,7 @@ func TestPromiseDestroyedWhileRunning(t *testing.T) {
 	c := make(chan int)
 
 	var v int
-	h, release := store.Promise("key", func(ctx context.Context, _ interface{}) interface{} {
+	h, release := store.Promise("key", func(ctx context.Context, _ any) any {
 		<-c
 		<-c
 		if err := ctx.Err(); err != nil {
@@ -123,7 +123,7 @@ func TestPromiseDestroyedWhileRunning(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	var got interface{}
+	var got any
 	var err error
 	go func() {
 		got, err = h.Get(ctx, nil)
@@ -146,7 +146,7 @@ func TestPromiseDestroyedWhileRunning(t *testing.T) {
 
 func TestDoubleReleasePanics(t *testing.T) {
 	var store memoize.Store
-	_, release := store.Promise("key", func(ctx context.Context, _ interface{}) interface{} { return 0 })
+	_, release := store.Promise("key", func(ctx context.Context, _ any) any { return 0 })
 
 	panicked := false
 

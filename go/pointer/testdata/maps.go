@@ -83,15 +83,15 @@ func maps4() {
 		print(y)   // @pointsto command-line-arguments.g
 	}
 	var i struct{ a *float64 }
-	for i, _ = range m {
+	for i = range m {
 		print(i.a) // @pointsto command-line-arguments.v
 	}
-	var j interface{}
+	var j any
 	for _, j = range m {
 		// TODO support the statement `print(j.(*int))`
 		print(j) // @pointsto command-line-arguments.g
 	}
-	for _, _ = range m {
+	for range m {
 	}
 	// do something after 'for _, _ =' to exercise the
 	// effects of indexing

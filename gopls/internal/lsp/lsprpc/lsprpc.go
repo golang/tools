@@ -19,14 +19,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/event/tag"
+	"golang.org/x/tools/internal/jsonrpc2"
 )
 
 // Unique identifiers for client/server.
@@ -169,7 +169,7 @@ func dialRemote(ctx context.Context, addr string) (jsonrpc2.Conn, error) {
 	return serverConn, nil
 }
 
-func ExecuteCommand(ctx context.Context, addr string, id string, request, result interface{}) error {
+func ExecuteCommand(ctx context.Context, addr string, id string, request, result any) error {
 	serverConn, err := dialRemote(ctx, addr)
 	if err != nil {
 		return err
@@ -329,20 +329,20 @@ func addGoEnvToInitializeRequest(ctx context.Context, r jsonrpc2.Request) (jsonr
 	if err := json.Unmarshal(r.Params(), &params); err != nil {
 		return nil, err
 	}
-	var opts map[string]interface{}
+	var opts map[string]any
 	switch v := params.InitializationOptions.(type) {
 	case nil:
-		opts = make(map[string]interface{})
-	case map[string]interface{}:
+		opts = make(map[string]any)
+	case map[string]any:
 		opts = v
 	default:
 		return nil, fmt.Errorf("unexpected type for InitializationOptions: %T", v)
 	}
 	envOpt, ok := opts["env"]
 	if !ok {
-		envOpt = make(map[string]interface{})
+		envOpt = make(map[string]any)
 	}
-	env, ok := envOpt.(map[string]interface{})
+	env, ok := envOpt.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf(`env option is %T, expected a map`, envOpt)
 	}
@@ -374,7 +374,7 @@ func (f *Forwarder) replyWithDebugAddress(outerCtx context.Context, r jsonrpc2.R
 		event.Log(outerCtx, "no debug instance to start")
 		return r
 	}
-	return func(ctx context.Context, result interface{}, outerErr error) error {
+	return func(ctx context.Context, result any, outerErr error) error {
 		if outerErr != nil {
 			return r(ctx, result, outerErr)
 		}

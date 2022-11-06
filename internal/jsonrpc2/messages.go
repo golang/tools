@@ -65,7 +65,7 @@ type Response struct {
 
 // NewNotification constructs a new Notification message for the supplied
 // method and parameters.
-func NewNotification(method string, params interface{}) (*Notification, error) {
+func NewNotification(method string, params any) (*Notification, error) {
 	p, merr := marshalToRaw(params)
 	return &Notification{method: method, params: p}, merr
 }
@@ -98,7 +98,7 @@ func (n *Notification) UnmarshalJSON(data []byte) error {
 
 // NewCall constructs a new Call message for the supplied ID, method and
 // parameters.
-func NewCall(id ID, method string, params interface{}) (*Call, error) {
+func NewCall(id ID, method string, params any) (*Call, error) {
 	p, merr := marshalToRaw(params)
 	return &Call{id: id, method: method, params: p}, merr
 }
@@ -135,7 +135,7 @@ func (c *Call) UnmarshalJSON(data []byte) error {
 
 // NewResponse constructs a new Response message that is a reply to the
 // supplied. If err is set result may be ignored.
-func NewResponse(id ID, result interface{}, err error) (*Response, error) {
+func NewResponse(id ID, result any, err error) (*Response, error) {
 	r, merr := marshalToRaw(result)
 	return &Response{id: id, result: r, err: err}, merr
 }
@@ -229,7 +229,7 @@ func DecodeMessage(data []byte) (Message, error) {
 	return call, nil
 }
 
-func marshalToRaw(obj interface{}) (json.RawMessage, error) {
+func marshalToRaw(obj any) (json.RawMessage, error) {
 	data, err := json.Marshal(obj)
 	if err != nil {
 		return json.RawMessage{}, err

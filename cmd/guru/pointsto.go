@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -61,7 +62,7 @@ func pointsto(q *Query) error {
 	switch n := path[0].(type) {
 	case *ast.ValueSpec:
 		// ambiguous ValueSpec containing multiple names
-		return fmt.Errorf("multiple value specification")
+		return errors.New("multiple value specification")
 	case *ast.Ident:
 		obj = qpos.info.ObjectOf(n)
 		expr = n
@@ -143,7 +144,7 @@ func ssaValueForExpr(prog *ssa.Program, qinfo *loader.PackageInfo, path []ast.No
 
 	fn := ssa.EnclosingFunction(pkg, path)
 	if fn == nil {
-		return nil, false, fmt.Errorf("no SSA function built for this location (dead code?)")
+		return nil, false, errors.New("no SSA function built for this location (dead code?)")
 	}
 
 	if v, addr := fn.ValueForExpr(path[0].(ast.Expr)); v != nil {
@@ -171,14 +172,14 @@ func runPTA(conf *pointer.Config, v ssa.Value, isAddr bool) (ptrs []pointerResul
 		ptr = ptares.Queries[v]
 	}
 	if ptr == (pointer.Pointer{}) {
-		return nil, fmt.Errorf("pointer analysis did not find expression (dead code?)")
+		return nil, errors.New("pointer analysis did not find expression (dead code?)")
 	}
 	pts := ptr.PointsTo()
 
 	if pointer.CanHaveDynamicTypes(T) {
 		// Show concrete types for interface/reflect.Value expression.
 		if concs := pts.DynamicTypes(); concs.Len() > 0 {
-			concs.Iterate(func(conc types.Type, pta interface{}) {
+			concs.Iterate(func(conc types.Type, pta any) {
 				labels := pta.(pointer.PointsToSet).Labels()
 				sort.Sort(byPosAndString(labels)) // to ensure determinism
 				ptrs = append(ptrs, pointerResult{conc, labels})

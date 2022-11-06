@@ -5,7 +5,7 @@
 package vfs
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"time"
 )
@@ -27,7 +27,7 @@ type emptyVFS struct{}
 // attempts to open a file should returns errors.
 func (e *emptyVFS) Open(path string) (ReadSeekCloser, error) {
 	if path == "/" {
-		return nil, fmt.Errorf("open: / is a directory")
+		return nil, errors.New("open: / is a directory")
 	}
 	return nil, os.ErrNotExist
 }
@@ -84,6 +84,6 @@ func (e *emptyVFS) IsDir() bool {
 	return true
 }
 
-func (e *emptyVFS) Sys() interface{} {
+func (e *emptyVFS) Sys() any {
 	return nil
 }

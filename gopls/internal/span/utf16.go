@@ -5,6 +5,7 @@
 package span
 
 import (
+	"errors"
 	"fmt"
 	"unicode/utf8"
 )
@@ -18,10 +19,10 @@ import (
 // or consolidate with (*protocol.ColumnMapper).utf16Column.
 func ToUTF16Column(p Point, content []byte) (int, error) {
 	if !p.HasPosition() {
-		return -1, fmt.Errorf("ToUTF16Column: point is missing position")
+		return -1, errors.New("ToUTF16Column: point is missing position")
 	}
 	if !p.HasOffset() {
-		return -1, fmt.Errorf("ToUTF16Column: point is missing offset")
+		return -1, errors.New("ToUTF16Column: point is missing offset")
 	}
 	offset := p.Offset()      // 0-based
 	colZero := p.Column() - 1 // 0-based
@@ -66,7 +67,7 @@ func ToUTF16Column(p Point, content []byte) (int, error) {
 // position.
 func FromUTF16Column(p Point, chr int, content []byte) (Point, error) {
 	if !p.HasOffset() {
-		return Point{}, fmt.Errorf("FromUTF16Column: point is missing offset")
+		return Point{}, errors.New("FromUTF16Column: point is missing offset")
 	}
 	// if chr is 1 then no adjustment needed
 	if chr <= 1 {
@@ -79,7 +80,7 @@ func FromUTF16Column(p Point, chr int, content []byte) (Point, error) {
 	// scan forward the specified number of characters
 	for count := 1; count < chr; count++ {
 		if len(remains) <= 0 {
-			return Point{}, fmt.Errorf("FromUTF16Column: chr goes beyond the content")
+			return Point{}, errors.New("FromUTF16Column: chr goes beyond the content")
 		}
 		r, w := utf8.DecodeRune(remains)
 		if r == '\n' {

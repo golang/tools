@@ -14,7 +14,7 @@ func Testbad(t *testing.T) { //@diag("", "tests", "Testbad has malformed name: f
 	printfWrapper("%s") //@diag(re`printfWrapper\(.*\)`, "printf", "golang.org/lsptests/analyzer.printfWrapper format %s reads arg #1, but call has 0 args", "warning")
 }
 
-func printfWrapper(format string, args ...interface{}) {
+func printfWrapper(format string, args ...any) {
 	fmt.Printf(format, args...)
 }
 

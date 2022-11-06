@@ -167,7 +167,7 @@ func printResult(res *rta.Result, from *types.Package, edgeMatch, desc string) s
 
 	buf.WriteString("Reflect types\n")
 	var rtypes []string
-	res.RuntimeTypes.Iterate(func(key types.Type, value interface{}) {
+	res.RuntimeTypes.Iterate(func(key types.Type, value any) {
 		if value == false { // accessible to reflection
 			rtypes = append(rtypes, types.TypeString(key, types.RelativeTo(from)))
 		}

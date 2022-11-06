@@ -42,16 +42,16 @@ type Bug struct {
 }
 
 // Data is additional metadata to record for a bug.
-type Data map[string]interface{}
+type Data map[string]any
 
 // Reportf reports a formatted bug message.
-func Reportf(format string, args ...interface{}) {
+func Reportf(format string, args ...any) {
 	Report(fmt.Sprintf(format, args...), nil)
 }
 
 // Errorf calls fmt.Errorf for the given arguments, and reports the resulting
 // error message as a bug.
-func Errorf(format string, args ...interface{}) error {
+func Errorf(format string, args ...any) error {
 	err := fmt.Errorf(format, args...)
 	Report(err.Error(), nil)
 	return err

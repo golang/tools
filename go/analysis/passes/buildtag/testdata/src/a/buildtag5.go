@@ -8,4 +8,3 @@
 package a
 
 //want +1 `misplaced \+build comment`
-// +build other

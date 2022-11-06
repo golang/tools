@@ -116,11 +116,11 @@ func (s *Server) DocumentLink(ctx context.Context, params *protocol.DocumentLink
 	return s.documentLink(ctx, params)
 }
 
-func (s *Server) DocumentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]interface{}, error) {
+func (s *Server) DocumentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]any, error) {
 	return s.documentSymbol(ctx, params)
 }
 
-func (s *Server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (interface{}, error) {
+func (s *Server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (any, error) {
 	return s.executeCommand(ctx, params)
 }
 
@@ -180,7 +180,7 @@ func (s *Server) Moniker(context.Context, *protocol.MonikerParams) ([]protocol.M
 	return nil, notImplemented("Moniker")
 }
 
-func (s *Server) NonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {
+func (s *Server) NonstandardRequest(ctx context.Context, method string, params any) (any, error) {
 	return s.nonstandardRequest(ctx, method, params)
 }
 
@@ -252,7 +252,7 @@ func (s *Server) SemanticTokensFull(ctx context.Context, p *protocol.SemanticTok
 	return s.semanticTokensFull(ctx, p)
 }
 
-func (s *Server) SemanticTokensFullDelta(ctx context.Context, p *protocol.SemanticTokensDeltaParams) (interface{}, error) {
+func (s *Server) SemanticTokensFullDelta(ctx context.Context, p *protocol.SemanticTokensDeltaParams) (any, error) {
 	return s.semanticTokensFullDelta(ctx, p)
 }
 

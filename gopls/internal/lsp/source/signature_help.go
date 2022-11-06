@@ -6,6 +6,7 @@ package source
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -32,7 +33,7 @@ func SignatureHelp(ctx context.Context, snapshot Snapshot, fh FileHandle, positi
 	var callExpr *ast.CallExpr
 	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
 	if path == nil {
-		return nil, 0, fmt.Errorf("cannot find node enclosing position")
+		return nil, 0, errors.New("cannot find node enclosing position")
 	}
 FindCall:
 	for _, node := range path {
@@ -46,16 +47,16 @@ FindCall:
 			// The user is within an anonymous function,
 			// which may be the parameter to the *ast.CallExpr.
 			// Don't show signature help in this case.
-			return nil, 0, fmt.Errorf("no signature help within a function declaration")
+			return nil, 0, errors.New("no signature help within a function declaration")
 		case *ast.BasicLit:
 			if node.Kind == token.STRING {
-				return nil, 0, fmt.Errorf("no signature help within a string literal")
+				return nil, 0, errors.New("no signature help within a string literal")
 			}
 		}
 
 	}
 	if callExpr == nil || callExpr.Fun == nil {
-		return nil, 0, fmt.Errorf("cannot find an enclosing function")
+		return nil, 0, errors.New("cannot find an enclosing function")
 	}
 
 	qf := Qualifier(pgf.File, pkg.GetTypes(), pkg.GetTypesInfo())

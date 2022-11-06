@@ -81,7 +81,7 @@ func Ok(*CustomLock) {}
 func Bad(CustomLock) {} // want "Bad passes lock by value: a.CustomLock"
 
 // Passing lock values into interface function arguments
-func FuncCallInterfaceArg(f func(a int, b interface{})) {
+func FuncCallInterfaceArg(f func(a int, b any)) {
 	var m sync.Mutex
 	var t struct{ lock sync.Mutex }
 
@@ -95,7 +95,7 @@ func FuncCallInterfaceArg(f func(a int, b interface{})) {
 }
 
 // Returning lock via interface value
-func ReturnViaInterface(x int) (int, interface{}) {
+func ReturnViaInterface(x int) (int, any) {
 	var m sync.Mutex
 	var t struct{ lock sync.Mutex }
 

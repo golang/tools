@@ -8,7 +8,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -108,7 +107,7 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 					return fmt.Errorf("%v: %v", edits, err)
 				}
 			}
-			ioutil.WriteFile(filename, []byte(newContent), 0644)
+			os.WriteFile(filename, []byte(newContent), 0644)
 		case r.Diff:
 			unified, err := diff.ToUnified(filename+".orig", filename, string(cmdFile.mapper.Content), renameEdits)
 			if err != nil {

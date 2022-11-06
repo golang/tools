@@ -133,7 +133,7 @@ func main() {
 	}
 }
 
-func fatal(msg interface{}) {
+func fatal(msg any) {
 	fmt.Fprintln(os.Stderr, msg)
 	os.Exit(1)
 }

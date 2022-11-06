@@ -27,7 +27,6 @@ import (
 	"go/token"
 	"go/types"
 	"io"
-	"io/ioutil"
 	"os/exec"
 
 	"golang.org/x/tools/internal/gcimporter"
@@ -102,7 +101,7 @@ func NewReader(r io.Reader) (io.Reader, error) {
 //
 // On return, the state of the reader is undefined.
 func Read(in io.Reader, fset *token.FileSet, imports map[string]*types.Package, path string) (*types.Package, error) {
-	data, err := ioutil.ReadAll(in)
+	data, err := io.ReadAll(in)
 	if err != nil {
 		return nil, fmt.Errorf("reading export data for %q: %v", path, err)
 	}
@@ -165,7 +164,7 @@ func Write(out io.Writer, fset *token.FileSet, pkg *types.Package) error {
 //
 // Experimental: This API is experimental and may change in the future.
 func ReadBundle(in io.Reader, fset *token.FileSet, imports map[string]*types.Package) ([]*types.Package, error) {
-	data, err := ioutil.ReadAll(in)
+	data, err := io.ReadAll(in)
 	if err != nil {
 		return nil, fmt.Errorf("reading export bundle: %v", err)
 	}

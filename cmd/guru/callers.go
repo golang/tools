@@ -5,7 +5,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"go/token"
 	"go/types"
 
@@ -45,10 +45,10 @@ func callers(q *Query) error {
 
 	pkg := prog.Package(qpos.info.Pkg)
 	if pkg == nil {
-		return fmt.Errorf("no SSA package")
+		return errors.New("no SSA package")
 	}
 	if !ssa.HasEnclosingFunction(pkg, qpos.path) {
-		return fmt.Errorf("this position is not inside a function")
+		return errors.New("this position is not inside a function")
 	}
 
 	// Defer SSA construction till after errors are reported.
@@ -56,7 +56,7 @@ func callers(q *Query) error {
 
 	target := ssa.EnclosingFunction(pkg, qpos.path)
 	if target == nil {
-		return fmt.Errorf("no SSA function built for this location (dead code?)")
+		return errors.New("no SSA function built for this location (dead code?)")
 	}
 
 	// If the function is never address-taken, all calls are direct

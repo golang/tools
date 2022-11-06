@@ -50,7 +50,7 @@ func init() {
 
 // runUnkeyedLiteral checks if a composite literal is a struct literal with
 // unkeyed fields.
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	nodeFilter := []ast.Node{

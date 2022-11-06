@@ -6,6 +6,7 @@ package facts_test
 
 import (
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"go/token"
 	"go/types"
@@ -326,7 +327,7 @@ func load(t *testing.T, dir string, path string) (*types.Package, error) {
 		return nil, err
 	}
 	if packages.PrintErrors(pkgs) > 0 {
-		return nil, fmt.Errorf("packages had errors")
+		return nil, errors.New("packages had errors")
 	}
 	if len(pkgs) == 0 {
 		return nil, fmt.Errorf("no package matched %s", path)

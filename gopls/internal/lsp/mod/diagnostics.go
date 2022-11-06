@@ -305,7 +305,7 @@ func formatMessage(v govulncheck.Vuln) string {
 			details[i] = ' '
 		}
 	}
-	return strings.TrimSpace(strings.Replace(string(details), "\n\n", "\n\n  ", -1))
+	return strings.TrimSpace(strings.ReplaceAll(string(details), "\n\n", "\n\n  "))
 }
 
 // href returns a URL embedded in the entry if any.

@@ -8,9 +8,9 @@ package testenv
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/build"
-	"io/ioutil"
 	"os"
 	"runtime"
 	"runtime/debug"
@@ -26,8 +26,8 @@ import (
 
 // Testing is an abstraction of a *testing.T.
 type Testing interface {
-	Skipf(format string, args ...interface{})
-	Fatalf(format string, args ...interface{})
+	Skipf(format string, args ...any)
+	Fatalf(format string, args ...any)
 }
 
 type helperer interface {
@@ -62,7 +62,7 @@ func hasTool(tool string) error {
 			return fmt.Errorf("checking cgo: %v", err)
 		}
 		if !enabled {
-			return fmt.Errorf("cgo not enabled")
+			return errors.New("cgo not enabled")
 		}
 		return nil
 	}
@@ -75,7 +75,7 @@ func hasTool(tool string) error {
 	switch tool {
 	case "patch":
 		// check that the patch tools supports the -o argument
-		temp, err := ioutil.TempFile("", "patch-test")
+		temp, err := os.CreateTemp("", "patch-test")
 		if err != nil {
 			return err
 		}
@@ -114,7 +114,7 @@ func hasTool(tool string) error {
 			return err
 		}
 		if !bytes.Contains(out, []byte("GNU diffutils")) {
-			return fmt.Errorf("diff is not the GNU version")
+			return errors.New("diff is not the GNU version")
 		}
 	}
 
@@ -344,7 +344,7 @@ func WriteImportcfg(t testing.TB, dstPath string, additionalPackageFiles map[str
 	if err != nil {
 		t.Fatalf("preparing the importcfg failed: %s", err)
 	}
-	ioutil.WriteFile(dstPath, []byte(importcfg), 0655)
+	os.WriteFile(dstPath, []byte(importcfg), 0655)
 	if err != nil {
 		t.Fatalf("writing the importcfg failed: %s", err)
 	}

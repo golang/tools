@@ -6,6 +6,7 @@ package source
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/printer"
@@ -149,10 +150,10 @@ func objToMappedRange(fset *token.FileSet, pkg Package, obj types.Object) (Mappe
 // which must be among the transitive dependencies of pkg.
 func posToMappedRange(fset *token.FileSet, pkg Package, pos, end token.Pos) (MappedRange, error) {
 	if !pos.IsValid() {
-		return MappedRange{}, fmt.Errorf("invalid start position")
+		return MappedRange{}, errors.New("invalid start position")
 	}
 	if !end.IsValid() {
-		return MappedRange{}, fmt.Errorf("invalid end position")
+		return MappedRange{}, errors.New("invalid end position")
 	}
 
 	tokFile := fset.File(pos)
@@ -185,7 +186,7 @@ func posToMappedRange(fset *token.FileSet, pkg Package, pos, end token.Pos) (Map
 // function to expose.
 func FindPackageFromPos(fset *token.FileSet, pkg Package, pos token.Pos) (Package, error) {
 	if !pos.IsValid() {
-		return nil, fmt.Errorf("invalid position")
+		return nil, errors.New("invalid position")
 	}
 	fileName := fset.File(pos).Name()
 	uri := span.URIFromPath(fileName)

@@ -105,7 +105,7 @@ type EditorConfig struct {
 	FileAssociations map[string]string
 
 	// Settings holds user-provided configuration for the LSP server.
-	Settings map[string]interface{}
+	Settings map[string]any
 }
 
 // NewEditor Creates a new Editor.
@@ -203,7 +203,7 @@ func (e *Editor) Client() *Client {
 // settingsLocked builds the settings map for use in LSP settings RPCs.
 //
 // e.mu must be held while calling this function.
-func (e *Editor) settingsLocked() map[string]interface{} {
+func (e *Editor) settingsLocked() map[string]any {
 	env := make(map[string]string)
 	for k, v := range e.defaultEnv {
 		env[k] = v
@@ -216,7 +216,7 @@ func (e *Editor) settingsLocked() map[string]interface{} {
 		env[k] = v
 	}
 
-	settings := map[string]interface{}{
+	settings := map[string]any{
 		"env": env,
 
 		// Use verbose progress reporting so that regtests can assert on
@@ -520,7 +520,7 @@ func (e *Editor) SaveBufferWithoutActions(ctx context.Context, path string) erro
 	defer e.mu.Unlock()
 	buf, ok := e.buffers[path]
 	if !ok {
-		return fmt.Errorf(fmt.Sprintf("unknown buffer: %q", path))
+		return errors.New(fmt.Sprintf("unknown buffer: %q", path))
 	}
 	content := buf.text()
 	includeText := false
@@ -857,7 +857,7 @@ func (e *Editor) OrganizeImports(ctx context.Context, path string) error {
 func (e *Editor) RefactorRewrite(ctx context.Context, path string, rng *protocol.Range) error {
 	applied, err := e.applyCodeActions(ctx, path, rng, nil, protocol.RefactorRewrite)
 	if applied == 0 {
-		return fmt.Errorf("no refactorings were applied")
+		return errors.New("no refactorings were applied")
 	}
 	return err
 }
@@ -866,7 +866,7 @@ func (e *Editor) RefactorRewrite(ctx context.Context, path string, rng *protocol
 func (e *Editor) ApplyQuickFixes(ctx context.Context, path string, rng *protocol.Range, diagnostics []protocol.Diagnostic) error {
 	applied, err := e.applyCodeActions(ctx, path, rng, diagnostics, protocol.SourceFixAll, protocol.QuickFix)
 	if applied == 0 {
-		return fmt.Errorf("no quick fixes were applied")
+		return errors.New("no quick fixes were applied")
 	}
 	return err
 }
@@ -913,7 +913,7 @@ func (e *Editor) applyCodeActions(ctx context.Context, path string, rng *protoco
 	applied := 0
 	for _, action := range actions {
 		if action.Title == "" {
-			return 0, fmt.Errorf("empty title for code action")
+			return 0, errors.New("empty title for code action")
 		}
 		var match bool
 		for _, o := range only {
@@ -949,7 +949,7 @@ func (e *Editor) getCodeActions(ctx context.Context, path string, rng *protocol.
 	return e.Server.CodeAction(ctx, params)
 }
 
-func (e *Editor) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (interface{}, error) {
+func (e *Editor) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (any, error) {
 	if e.Server == nil {
 		return nil, nil
 	}

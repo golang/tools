@@ -132,7 +132,7 @@ func (prog *Program) RuntimeTypes() []types.Type {
 	defer prog.methodsMu.Unlock()
 
 	var res []types.Type
-	prog.methodSets.Iterate(func(T types.Type, v interface{}) {
+	prog.methodSets.Iterate(func(T types.Type, v any) {
 		if v.(*methodSet).complete {
 			res = append(res, T)
 		}

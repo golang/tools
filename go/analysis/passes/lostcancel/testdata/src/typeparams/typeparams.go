@@ -35,7 +35,7 @@ type C1[P1 any, P2 any] interface {
 	Value(key P2) P2
 }
 
-func _(bg C1[bool, interface{}]) {
+func _(bg C1[bool, any]) {
 	ctx, _ := context.WithCancel(bg)    // want "the cancel function returned by context.WithCancel should be called, not discarded, to avoid a context leak"
 	ctx, _ = context.WithTimeout(bg, 0) // want "the cancel function returned by context.WithTimeout should be called, not discarded, to avoid a context leak"
 	_ = ctx
@@ -46,7 +46,7 @@ type C2[P any] interface {
 	WithCancel(parent C1[P, bool]) (ctx C1[P, bool], cancel func())
 }
 
-func _(c C2[interface{}]) {
+func _(c C2[any]) {
 	ctx, _ := c.WithCancel(nil) // not "context.WithCancel()"
 	_ = ctx
 }

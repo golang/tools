@@ -41,13 +41,13 @@ func appendArgs() ([]string, string) {
 	return []string{"foo"}, "bar"
 }
 
-func h() (i interface{}, ok bool) {
+func h() (i any, ok bool) {
 	m := map[int]string{1: "hi"}
 	i, ok = m[1] // string->interface{} conversion within multi-valued expression
 	return
 }
 
-func h2() (i interface{}, ok bool) {
+func h2() (i any, ok bool) {
 	ch := make(chan string, 1)
 	ch <- "hi"
 	i, ok = <-ch // string->interface{} conversion within multi-valued expression

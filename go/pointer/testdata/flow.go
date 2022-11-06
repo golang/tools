@@ -27,8 +27,8 @@ func flow1() {
 
 // Tracking concrete types in interfaces.
 func flow2() {
-	var s interface{} = 1
-	var p interface{} = "foo"
+	var s any = 1
+	var p any = "foo"
 	q := p
 	r := q
 	if somepred {

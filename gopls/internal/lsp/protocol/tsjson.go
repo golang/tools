@@ -8,9 +8,11 @@ package protocol
 // git hash 8de18faed635819dd2bc631d2c26ce4a18f7cf4a (as of Fri Sep 16 13:04:31 2022)
 // Code generated; DO NOT EDIT.
 
-import "encoding/json"
-import "errors"
-import "fmt"
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+)
 
 func (t OrFEditRangePItemDefaults) MarshalJSON() ([]byte, error) {
 	switch x := t.Value.(type) {

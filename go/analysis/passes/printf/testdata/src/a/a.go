@@ -27,12 +27,12 @@ func UnsafePointerPrintfTest() {
 // Error methods that do not satisfy the Error interface and should be checked.
 type errorTest1 int
 
-func (errorTest1) Error(...interface{}) string {
+func (errorTest1) Error(...any) string {
 	return "hi"
 }
 
 type errorTest2 int // Analogous to testing's *T type.
-func (errorTest2) Error(...interface{}) {
+func (errorTest2) Error(...any) {
 }
 
 type errorTest3 int
@@ -106,9 +106,9 @@ func PrintfTests() {
 	fmt.Printf("%v", notstringerarrayv)
 	fmt.Printf("%T", notstringerarrayv)
 	fmt.Printf("%d", new(fmt.Formatter))
-	fmt.Printf("%*%", 2)                              // Ridiculous but allowed.
-	fmt.Printf("%s", interface{}(nil))                // Nothing useful we can say.
-	fmt.Printf("%a", interface{}(new(BoolFormatter))) // Could be a fmt.Formatter.
+	fmt.Printf("%*%", 2)                      // Ridiculous but allowed.
+	fmt.Printf("%s", any(nil))                // Nothing useful we can say.
+	fmt.Printf("%a", any(new(BoolFormatter))) // Could be a fmt.Formatter.
 
 	fmt.Printf("%g", 1+2i)
 	fmt.Printf("%#e %#E %#f %#F %#g %#G", 1.2, 1.2, 1.2, 1.2, 1.2, 1.2) // OK since Go 1.9
@@ -343,7 +343,7 @@ func PrintfTests() {
 	_ = fmt.Errorf("%[2]w %[1]s", e, "x")   // want `fmt.Errorf format %\[2\]w has arg "x" of wrong type string`
 	_ = fmt.Errorf("%w", "x")               // want `fmt.Errorf format %w has arg "x" of wrong type string`
 	_ = fmt.Errorf("%w %w", err, err)       // OK
-	_ = fmt.Errorf("%w", interface{}(nil))  // want `fmt.Errorf format %w has arg interface{}\(nil\) of wrong type interface{}`
+	_ = fmt.Errorf("%w", any(nil))          // want `fmt.Errorf format %w has arg interface{}\(nil\) of wrong type interface{}`
 	_ = fmt.Errorf("%w", errorTestOK(0))    // concrete value implements error
 	_ = fmt.Errorf("%w", errSubset)         // interface value implements error
 	fmt.Printf("%w", err)                   // want `fmt.Printf does not support error-wrapping directive %w`
@@ -378,46 +378,46 @@ func (ss *someStruct) Error(args ...func()) {}
 
 // Println is variadic user-defined Println-like function.
 // Calls to this func must be checked for Println-like arguments.
-func (ss *someStruct) Println(args ...interface{}) {}
+func (ss *someStruct) Println(args ...any) {}
 
 // log is variadic user-defined Println-like function.
 // Calls to this func must be checked for Println-like arguments.
-func (ss *someStruct) log(f func(), args ...interface{}) {}
+func (ss *someStruct) log(f func(), args ...any) {}
 
 // A function we use as a function value; it has no other purpose.
 func someFunction() {}
 
 // Printf is used by the test so we must declare it.
-func Printf(format string, args ...interface{}) { // want Printf:"printfWrapper"
+func Printf(format string, args ...any) { // want Printf:"printfWrapper"
 	fmt.Printf(format, args...)
 }
 
 // Println is used by the test so we must declare it.
-func Println(args ...interface{}) { // want Println:"printWrapper"
+func Println(args ...any) { // want Println:"printWrapper"
 	fmt.Println(args...)
 }
 
 // printf is used by the test so we must declare it.
-func printf(format string, args ...interface{}) { // want printf:"printfWrapper"
+func printf(format string, args ...any) { // want printf:"printfWrapper"
 	fmt.Printf(format, args...)
 }
 
 // Errorf is used by the test for a case in which the first parameter
 // is not a format string.
-func Errorf(i int, format string, args ...interface{}) { // want Errorf:"printfWrapper"
+func Errorf(i int, format string, args ...any) { // want Errorf:"printfWrapper"
 	fmt.Sprintf(format, args...)
 }
 
 // errorf is used by the test for a case in which the function accepts multiple
 // string parameters before variadic arguments
-func errorf(level, format string, args ...interface{}) { // want errorf:"printfWrapper"
+func errorf(level, format string, args ...any) { // want errorf:"printfWrapper"
 	fmt.Sprintf(format, args...)
 }
 
 type errorfStruct struct{}
 
 // Errorf is used to test %w works on errorf wrappers.
-func (errorfStruct) Errorf(format string, args ...interface{}) { // want Errorf:"errorfWrapper"
+func (errorfStruct) Errorf(format string, args ...any) { // want Errorf:"errorfWrapper"
 	_ = fmt.Errorf(format, args...)
 }
 
@@ -425,7 +425,7 @@ type errorfStringStruct struct{}
 
 // Errorf is used by the test for a case in which the function accepts multiple
 // string parameters before variadic arguments
-func (errorfStringStruct) Errorf(level, format string, args ...interface{}) { // want Errorf:"errorfWrapper"
+func (errorfStringStruct) Errorf(level, format string, args ...any) { // want Errorf:"errorfWrapper"
 	_ = fmt.Errorf(format, args...)
 }
 
@@ -433,12 +433,12 @@ type errorfIntStruct struct{}
 
 // Errorf is used by the test for a case in which the first parameter
 // is not a format string.
-func (errorfIntStruct) Errorf(i int, format string, args ...interface{}) { // want Errorf:"errorfWrapper"
+func (errorfIntStruct) Errorf(i int, format string, args ...any) { // want Errorf:"errorfWrapper"
 	_ = fmt.Errorf(format, args...)
 }
 
 // multi is used by the test.
-func multi() []interface{} {
+func multi() []any {
 	panic("don't call - testing only")
 }
 
@@ -454,49 +454,49 @@ func (*ptrStringer) String() string {
 	return "string"
 }
 
-func (p *ptrStringer) Warn2(x int, args ...interface{}) string { // want Warn2:"printWrapper"
+func (p *ptrStringer) Warn2(x int, args ...any) string { // want Warn2:"printWrapper"
 	return p.Warn(x, args...)
 }
 
-func (p *ptrStringer) Warnf2(x int, format string, args ...interface{}) string { // want Warnf2:"printfWrapper"
+func (p *ptrStringer) Warnf2(x int, format string, args ...any) string { // want Warnf2:"printfWrapper"
 	return p.Warnf(x, format, args...)
 }
 
 // During testing -printf.funcs flag matches Warn.
-func (*ptrStringer) Warn(x int, args ...interface{}) string {
+func (*ptrStringer) Warn(x int, args ...any) string {
 	return "warn"
 }
 
 // During testing -printf.funcs flag matches Warnf.
-func (*ptrStringer) Warnf(x int, format string, args ...interface{}) string {
+func (*ptrStringer) Warnf(x int, format string, args ...any) string {
 	return "warnf"
 }
 
-func (p *ptrStringer) Wrap2(x int, args ...interface{}) string { // want Wrap2:"printWrapper"
+func (p *ptrStringer) Wrap2(x int, args ...any) string { // want Wrap2:"printWrapper"
 	return p.Wrap(x, args...)
 }
 
-func (p *ptrStringer) Wrapf2(x int, format string, args ...interface{}) string { // want Wrapf2:"printfWrapper"
+func (p *ptrStringer) Wrapf2(x int, format string, args ...any) string { // want Wrapf2:"printfWrapper"
 	return p.Wrapf(x, format, args...)
 }
 
-func (*ptrStringer) Wrap(x int, args ...interface{}) string { // want Wrap:"printWrapper"
+func (*ptrStringer) Wrap(x int, args ...any) string { // want Wrap:"printWrapper"
 	return fmt.Sprint(args...)
 }
 
-func (*ptrStringer) Wrapf(x int, format string, args ...interface{}) string { // want Wrapf:"printfWrapper"
+func (*ptrStringer) Wrapf(x int, format string, args ...any) string { // want Wrapf:"printfWrapper"
 	return fmt.Sprintf(format, args...)
 }
 
-func (*ptrStringer) BadWrap(x int, args ...interface{}) string {
+func (*ptrStringer) BadWrap(x int, args ...any) string {
 	return fmt.Sprint(args) // want "missing ... in args forwarded to print-like function"
 }
 
-func (*ptrStringer) BadWrapf(x int, format string, args ...interface{}) string {
+func (*ptrStringer) BadWrapf(x int, format string, args ...any) string {
 	return fmt.Sprintf(format, args) // want "missing ... in args forwarded to printf-like function"
 }
 
-func (*ptrStringer) WrapfFalsePositive(x int, arg1 string, arg2 ...interface{}) string {
+func (*ptrStringer) WrapfFalsePositive(x int, arg1 string, arg2 ...any) string {
 	return fmt.Sprintf("%s %v", arg1, arg2)
 }
 
@@ -692,7 +692,7 @@ type RecursiveStruct2 struct {
 var recursiveStruct1V = &RecursiveStruct1{}
 
 type unexportedInterface struct {
-	f interface{}
+	f any
 }
 
 // Issue 17798: unexported ptrStringer cannot be formatted.
@@ -792,7 +792,7 @@ func DisableErrorForFlag0() {
 }
 
 // Issue 26486.
-func dbg(format string, args ...interface{}) {
+func dbg(format string, args ...any) {
 	if format == "" {
 		format = "%v"
 	}

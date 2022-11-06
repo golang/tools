@@ -19,7 +19,7 @@ type A struct{}
 
 func (a A) Foo() {}
 
-func Baz(a *A) (I, I, interface{}, interface{}) {
+func Baz(a *A) (I, I, any, any) {
 	var i I
 	i = a
 
@@ -28,10 +28,10 @@ func Baz(a *A) (I, I, interface{}, interface{}) {
 	ii = aa
 
 	m := make(map[int]int)
-	var iii interface{}
+	var iii any
 	iii = m
 
-	var iiii interface{}
+	var iiii any
 	iiii = m
 
 	return i, ii, iii, iiii

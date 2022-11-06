@@ -16,7 +16,6 @@ import (
 	htmlpkg "html"
 	htmltemplate "html/template"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -85,7 +84,7 @@ func (h *handlerServer) GetPageInfo(abspath, relpath string, mode PageInfoMode, 
 		if err != nil {
 			return nil, err
 		}
-		return ioutil.NopCloser(bytes.NewReader(data)), nil
+		return io.NopCloser(bytes.NewReader(data)), nil
 	}
 
 	// Make the syscall/js package always visible by default.
@@ -504,7 +503,7 @@ func packageExports(fset *token.FileSet, pkg *ast.Package) {
 	}
 }
 
-func applyTemplate(t *template.Template, name string, data interface{}) []byte {
+func applyTemplate(t *template.Template, name string, data any) []byte {
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, data); err != nil {
 		log.Printf("%s.Execute: %s", name, err)
@@ -531,7 +530,7 @@ func (w *writerCapturesErr) Write(p []byte) (int, error) {
 // they come from the template processing and not the Writer; this avoid
 // polluting log files with error messages due to networking issues, such as
 // client disconnects and http HEAD protocol violations.
-func applyTemplateToResponseWriter(rw http.ResponseWriter, t *template.Template, data interface{}) {
+func applyTemplateToResponseWriter(rw http.ResponseWriter, t *template.Template, data any) {
 	w := &writerCapturesErr{w: rw}
 	err := t.Execute(w, data)
 	// There are some cases where template.Execute does not return an error when
@@ -841,7 +840,7 @@ func (p *Presentation) ServeText(w http.ResponseWriter, text []byte) {
 	w.Write(text)
 }
 
-func marshalJSON(x interface{}) []byte {
+func marshalJSON(x any) []byte {
 	var data []byte
 	var err error
 	const indentJSON = false // for easier debugging

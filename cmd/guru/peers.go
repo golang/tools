@@ -5,7 +5,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -50,7 +50,7 @@ func peers(q *Query) error {
 
 	opPos := findOp(qpos)
 	if opPos == token.NoPos {
-		return fmt.Errorf("there is no channel operation here")
+		return errors.New("there is no channel operation here")
 	}
 
 	// Defer SSA construction till after errors are reported.
@@ -75,7 +75,7 @@ func peers(q *Query) error {
 		}
 	}
 	if queryOp.ch == nil {
-		return fmt.Errorf("ssa.Instruction for send/receive not found")
+		return errors.New("ssa.Instruction for send/receive not found")
 	}
 
 	// Discard operations of wrong channel element type.

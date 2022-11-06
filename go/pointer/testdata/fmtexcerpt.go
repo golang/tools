@@ -6,23 +6,23 @@
 package main
 
 type pp struct {
-	field interface{}
+	field any
 }
 
 func newPrinter() *pp {
 	return new(pp)
 }
 
-func Fprintln(a ...interface{}) {
+func Fprintln(a ...any) {
 	p := newPrinter()
 	p.doPrint(a, true, true)
 }
 
-func Println(a ...interface{}) {
+func Println(a ...any) {
 	Fprintln(a...)
 }
 
-func (p *pp) doPrint(a []interface{}, addspace, addnewline bool) {
+func (p *pp) doPrint(a []any, addspace, addnewline bool) {
 	print(a[0]) // @types S | string
 	stringer := a[0].(interface {
 		String() string

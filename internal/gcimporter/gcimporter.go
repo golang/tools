@@ -20,7 +20,6 @@ import (
 	"go/token"
 	"go/types"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -234,7 +233,7 @@ func Import(packages map[string]*types.Package, path, srcDir string, lookup func
 
 	case "$$B\n":
 		var data []byte
-		data, err = ioutil.ReadAll(buf)
+		data, err = io.ReadAll(buf)
 		if err != nil {
 			break
 		}
@@ -354,7 +353,7 @@ func (e importError) Error() string {
 	return fmt.Sprintf("import error %s (byte offset = %d): %s", e.pos, e.pos.Offset, e.err)
 }
 
-func (p *parser) error(err interface{}) {
+func (p *parser) error(err any) {
 	if s, ok := err.(string); ok {
 		err = errors.New(s)
 	}
@@ -362,7 +361,7 @@ func (p *parser) error(err interface{}) {
 	panic(importError{p.scanner.Pos(), err.(error)})
 }
 
-func (p *parser) errorf(format string, args ...interface{}) {
+func (p *parser) errorf(format string, args ...any) {
 	p.error(fmt.Sprintf(format, args...))
 }
 

@@ -35,7 +35,7 @@ func TestRedirects(t *testing.T) {
 			want.path = ts.URL + want.path
 		}
 
-		req, err := http.NewRequest("GET", ts.URL+path, nil)
+		req, err := http.NewRequest(http.MethodGet, ts.URL+path, http.NoBody)
 		if err != nil {
 			t.Errorf("(path: %q) unexpected error: %v", path, err)
 			continue

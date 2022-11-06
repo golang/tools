@@ -54,7 +54,7 @@ func (r *symbols) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 	for _, s := range symbols {
-		if m, ok := s.(map[string]interface{}); ok {
+		if m, ok := s.(map[string]any); ok {
 			s, err = mapToSymbol(m)
 			if err != nil {
 				return err
@@ -70,7 +70,7 @@ func (r *symbols) Run(ctx context.Context, args ...string) error {
 	return nil
 }
 
-func mapToSymbol(m map[string]interface{}) (interface{}, error) {
+func mapToSymbol(m map[string]any) (any, error) {
 	b, err := json.Marshal(m)
 	if err != nil {
 		return nil, err

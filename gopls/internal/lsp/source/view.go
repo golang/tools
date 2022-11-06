@@ -501,7 +501,7 @@ func HashOf(data []byte) Hash {
 }
 
 // Hashf returns the hash of a printf-formatted string.
-func Hashf(format string, args ...interface{}) Hash {
+func Hashf(format string, args ...any) Hash {
 	// Although this looks alloc-heavy, it is faster than using
 	// Fprintf on sha256.New() because the allocations don't escape.
 	return HashOf([]byte(fmt.Sprintf(format, args...)))

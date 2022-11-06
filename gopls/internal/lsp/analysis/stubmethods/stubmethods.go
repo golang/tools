@@ -6,6 +6,7 @@ package stubmethods
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -34,7 +35,7 @@ var Analyzer = &analysis.Analyzer{
 	RunDespiteErrors: true,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	for _, err := range analysisinternal.GetTypeErrors(pass) {
 		ifaceErr := strings.Contains(err.Msg, "missing method") || strings.HasPrefix(err.Msg, "cannot convert")
 		if !ifaceErr {
@@ -179,7 +180,7 @@ func fromReturnStmt(ti *types.Info, pos token.Pos, path []ast.Node, rs *ast.Retu
 	}
 	ef := enclosingFunction(path, ti)
 	if ef == nil {
-		return nil, fmt.Errorf("could not find the enclosing function of the return statement")
+		return nil, errors.New("could not find the enclosing function of the return statement")
 	}
 	iface := ifaceType(ef.Results.List[returnIdx].Type, ti)
 	if iface == nil {

@@ -68,7 +68,7 @@ func (fi zipFI) IsDir() bool {
 	return fi.file == nil
 }
 
-func (fi zipFI) Sys() interface{} {
+func (fi zipFI) Sys() any {
 	return nil
 }
 

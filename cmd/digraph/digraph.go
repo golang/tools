@@ -384,7 +384,7 @@ func digraph(cmd string, args []string) error {
 	switch cmd {
 	case "nodes":
 		if len(args) != 0 {
-			return fmt.Errorf("usage: digraph nodes")
+			return errors.New("usage: digraph nodes")
 		}
 		nodes := make(nodeset)
 		for node := range g {
@@ -394,7 +394,7 @@ func digraph(cmd string, args []string) error {
 
 	case "degree":
 		if len(args) != 0 {
-			return fmt.Errorf("usage: digraph degree")
+			return errors.New("usage: digraph degree")
 		}
 		nodes := make(nodeset)
 		for node := range g {
@@ -407,7 +407,7 @@ func digraph(cmd string, args []string) error {
 
 	case "transpose":
 		if len(args) != 0 {
-			return fmt.Errorf("usage: digraph transpose")
+			return errors.New("usage: digraph transpose")
 		}
 		var revEdges []string
 		for node, succs := range g.transpose() {
@@ -457,7 +457,7 @@ func digraph(cmd string, args []string) error {
 
 	case "somepath":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: digraph somepath <from> <to>")
+			return errors.New("usage: digraph somepath <from> <to>")
 		}
 		from, to := args[0], args[1]
 		if g[from] == nil {
@@ -472,7 +472,7 @@ func digraph(cmd string, args []string) error {
 
 	case "allpaths":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: digraph allpaths <from> <to>")
+			return errors.New("usage: digraph allpaths <from> <to>")
 		}
 		from, to := args[0], args[1]
 		if g[from] == nil {
@@ -487,7 +487,7 @@ func digraph(cmd string, args []string) error {
 
 	case "sccs":
 		if len(args) != 0 {
-			return fmt.Errorf("usage: digraph sccs")
+			return errors.New("usage: digraph sccs")
 		}
 		buf := new(bytes.Buffer)
 		oldStdout := stdout
@@ -502,7 +502,7 @@ func digraph(cmd string, args []string) error {
 
 	case "scc":
 		if len(args) != 1 {
-			return fmt.Errorf("usage: digraph scc <node>")
+			return errors.New("usage: digraph scc <node>")
 		}
 		node := args[0]
 		if g[node] == nil {
@@ -517,7 +517,7 @@ func digraph(cmd string, args []string) error {
 
 	case "focus":
 		if len(args) != 1 {
-			return fmt.Errorf("usage: digraph focus <node>")
+			return errors.New("usage: digraph focus <node>")
 		}
 		node := args[0]
 		if g[node] == nil {

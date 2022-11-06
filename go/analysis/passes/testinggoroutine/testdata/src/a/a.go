@@ -230,7 +230,7 @@ func TestBadWithLoopCond(ty *testing.T) {
 
 type customType int
 
-func (ct *customType) Fatalf(fmtSpec string, args ...interface{}) {
+func (ct *customType) Fatalf(fmtSpec string, args ...any) {
 	if fmtSpec == "" {
 		panic("empty format specifier")
 	}

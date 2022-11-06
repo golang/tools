@@ -7,7 +7,7 @@ package checker_test
 import (
 	"fmt"
 	"go/ast"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -50,7 +50,7 @@ func Foo() {
 	checker.Fix = true
 	checker.Run([]string{"file=" + path}, []*analysis.Analyzer{analyzer})
 
-	contents, err := ioutil.ReadFile(path)
+	contents, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ var analyzer = &analysis.Analyzer{
 	Run:      run,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	const (
 		from = "bar"
 		to   = "baz"
@@ -122,7 +122,7 @@ func Foo(s string) int {
 	noop := &analysis.Analyzer{
 		Name:     "noop",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
-		Run: func(pass *analysis.Pass) (interface{}, error) {
+		Run: func(pass *analysis.Pass) (any, error) {
 			return nil, nil
 		},
 		RunDespiteErrors: true,
@@ -133,7 +133,7 @@ func Foo(s string) int {
 	noopWithFact := &analysis.Analyzer{
 		Name:     "noopfact",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
-		Run: func(pass *analysis.Pass) (interface{}, error) {
+		Run: func(pass *analysis.Pass) (any, error) {
 			return nil, nil
 		},
 		RunDespiteErrors: true,

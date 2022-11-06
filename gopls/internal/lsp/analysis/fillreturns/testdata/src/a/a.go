@@ -17,7 +17,7 @@ import (
 
 type T struct{}
 type T1 = T
-type I interface{}
+type I any
 type I1 = I
 type z func(string, http.Handler) error
 

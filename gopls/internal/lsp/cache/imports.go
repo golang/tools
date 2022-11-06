@@ -124,7 +124,7 @@ func (s *importsState) populateProcessEnv(ctx context.Context, snapshot *snapsho
 	pe := s.processEnv
 
 	if snapshot.view.Options().VerboseOutput {
-		pe.Logf = func(format string, args ...interface{}) {
+		pe.Logf = func(format string, args ...any) {
 			event.Log(ctx, fmt.Sprintf(format, args...))
 		}
 	} else {

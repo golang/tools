@@ -7,6 +7,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -56,7 +57,7 @@ func (v *vulncheck) DetailedHelp(f *flag.FlagSet) {
 
 func (v *vulncheck) Run(ctx context.Context, args ...string) error {
 	if vulnchecklib.Govulncheck == nil {
-		return fmt.Errorf("vulncheck command is available only in gopls compiled with go1.18 or newer")
+		return errors.New("vulncheck command is available only in gopls compiled with go1.18 or newer")
 	}
 
 	// TODO(hyangah): what's wrong with allowing multiple targets?

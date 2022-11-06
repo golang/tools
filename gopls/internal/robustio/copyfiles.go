@@ -50,7 +50,7 @@ func main() {
 			if entry.Name() == "robustio_windows.go" && bytes.Contains(content, windowsImport) {
 				foundWindowsImport = true
 				content = bytes.Replace(content, windowsImport, nil, 1)
-				content = bytes.Replace(content, []byte("windows.ERROR_SHARING_VIOLATION"), []byte("ERROR_SHARING_VIOLATION"), -1)
+				content = bytes.ReplaceAll(content, []byte("windows.ERROR_SHARING_VIOLATION"), []byte("ERROR_SHARING_VIOLATION"))
 			}
 
 			// Replace os.ReadFile with ioutil.ReadFile (for 1.15 and older). We
@@ -61,7 +61,7 @@ func main() {
 			// this and break the build.
 			if bytes.Contains(content, []byte("os.ReadFile(")) {
 				content = bytes.Replace(content, []byte("\"os\""), []byte("\"io/ioutil\"\n\t\"os\""), 1)
-				content = bytes.Replace(content, []byte("os.ReadFile("), []byte("ioutil.ReadFile("), -1)
+				content = bytes.ReplaceAll(content, []byte("os.ReadFile("), []byte("ioutil.ReadFile("))
 			}
 
 			// Add +build constraints, for 1.16.

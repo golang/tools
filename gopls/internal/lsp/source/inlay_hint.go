@@ -13,9 +13,9 @@ import (
 	"go/types"
 	"strings"
 
-	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/gopls/internal/lsp/lsppos"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typeparams"
 )
 

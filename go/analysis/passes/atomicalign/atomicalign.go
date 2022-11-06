@@ -29,7 +29,7 @@ var Analyzer = &analysis.Analyzer{
 	Run:      run,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	if 8*pass.TypesSizes.Sizeof(types.Typ[types.Uintptr]) == 64 {
 		return nil, nil // 64-bit platform
 	}

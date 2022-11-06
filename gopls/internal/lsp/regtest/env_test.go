@@ -33,7 +33,7 @@ func TestProgressUpdating(t *testing.T) {
 	}
 	updates := []struct {
 		token string
-		value interface{}
+		value any
 	}{
 		{"foo", protocol.WorkDoneProgressBegin{Kind: "begin", Title: "foo work"}},
 		{"bar", protocol.WorkDoneProgressBegin{Kind: "begin", Title: "bar work"}},

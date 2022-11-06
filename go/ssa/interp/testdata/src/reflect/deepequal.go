@@ -6,7 +6,7 @@ package reflect
 // Does not handle cycles.
 //
 // Note: unclear if reflect.go can support this.
-func DeepEqual(x, y interface{}) bool {
+func DeepEqual(x, y any) bool {
 	if x == nil || y == nil {
 		return x == y
 	}

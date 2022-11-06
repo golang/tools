@@ -38,7 +38,6 @@ import (
 	"go/token"
 	"go/types"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -166,7 +165,7 @@ func Run(configFile string, analyzers []*analysis.Analyzer) {
 }
 
 func readConfig(filename string) (*Config, error) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +251,7 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 	// Also build a map to hold working state and result.
 	type action struct {
 		once        sync.Once
-		result      interface{}
+		result      any
 		err         error
 		usesFacts   bool // (transitively uses)
 		diagnostics []analysis.Diagnostic
@@ -289,7 +288,7 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 	// Read facts from imported packages.
 	read := func(imp *types.Package) ([]byte, error) {
 		if vetx, ok := cfg.PackageVetx[imp.Path()]; ok {
-			return ioutil.ReadFile(vetx)
+			return os.ReadFile(vetx)
 		}
 		return nil, nil // no .vetx file, no facts
 	}
@@ -308,7 +307,7 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 
 			// The inputs to this analysis are the
 			// results of its prerequisites.
-			inputs := make(map[*analysis.Analyzer]interface{})
+			inputs := make(map[*analysis.Analyzer]any)
 			var failed []string
 			for _, req := range a.Requires {
 				reqact := exec(req)
@@ -382,7 +381,7 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 	}
 
 	data := facts.Encode()
-	if err := ioutil.WriteFile(cfg.VetxOutput, data, 0666); err != nil {
+	if err := os.WriteFile(cfg.VetxOutput, data, 0666); err != nil {
 		return nil, fmt.Errorf("failed to write analysis facts: %v", err)
 	}
 

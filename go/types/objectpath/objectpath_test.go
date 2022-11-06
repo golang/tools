@@ -320,7 +320,7 @@ func objectString(obj types.Object) string {
 
 	// The printing of interface methods changed in go1.11.
 	// This work-around makes the specific test pass with earlier versions.
-	s = strings.Replace(s, "func (interface).Method", "func (p.Foo).Method", -1)
+	s = strings.ReplaceAll(s, "func (interface).Method", "func (p.Foo).Method")
 
 	return s
 }

@@ -10,10 +10,11 @@ package gccgoimporter
 import (
 	"bufio"
 	"go/types"
-	exec "golang.org/x/sys/execabs"
 	"os"
 	"path/filepath"
 	"strings"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 // Information about a specific installation of gccgo.

@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"go/build"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -40,7 +40,7 @@ func buildGodoc(t *testing.T) (bin string, cleanup func()) {
 	}
 	testenv.NeedsTool(t, "go")
 
-	tmp, err := ioutil.TempDir("", "godoc-regtest-")
+	tmp, err := os.MkdirTemp("", "godoc-regtest-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func waitForServer(t *testing.T, ch chan<- error, url, match string, timeout tim
 		if err != nil {
 			continue
 		}
-		body, err := ioutil.ReadAll(res.Body)
+		body, err := io.ReadAll(res.Body)
 		res.Body.Close()
 		if err != nil || res.StatusCode != http.StatusOK {
 			continue
@@ -234,7 +234,7 @@ func testWeb(t *testing.T, x packagestest.Exporter, bin string, withIndex bool) 
 	e := packagestest.Export(t, x, []packagestest.Module{
 		{
 			Name: "godoc.test/repo1",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"a/a.go": `// Package a is a package in godoc.test/repo1.
 package a; import _ "godoc.test/repo2/a"; const Name = "repo1a"`,
 				"b/b.go": `package b; const Name = "repo1b"`,
@@ -242,7 +242,7 @@ package a; import _ "godoc.test/repo2/a"; const Name = "repo1a"`,
 		},
 		{
 			Name: "godoc.test/repo2",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"a/a.go": `package a; const Name = "repo2a"`,
 				"b/b.go": `package b; const Name = "repo2b"`,
 			},
@@ -406,7 +406,7 @@ package a; import _ "godoc.test/repo2/a"; const Name = "repo1a"`,
 			t.Errorf("GET %s failed: %s", url, err)
 			continue
 		}
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		strBody := string(body)
 		resp.Body.Close()
 		if err != nil {
@@ -456,7 +456,7 @@ func TestNoMainModule(t *testing.T) {
 	}
 	bin, cleanup := buildGodoc(t)
 	defer cleanup()
-	tempDir, err := ioutil.TempDir("", "godoc-test-")
+	tempDir, err := os.MkdirTemp("", "godoc-test-")
 	if err != nil {
 		t.Fatal(err)
 	}

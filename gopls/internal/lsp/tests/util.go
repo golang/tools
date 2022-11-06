@@ -194,7 +194,7 @@ func sortCodeLens(c []protocol.CodeLens) {
 	})
 }
 
-func summarizeCodeLens(i int, uri span.URI, want, got []protocol.CodeLens, reason string, args ...interface{}) string {
+func summarizeCodeLens(i int, uri span.URI, want, got []protocol.CodeLens, reason string, args ...any) string {
 	msg := &bytes.Buffer{}
 	fmt.Fprint(msg, "codelens failed")
 	if i >= 0 {
@@ -214,7 +214,7 @@ func summarizeCodeLens(i int, uri span.URI, want, got []protocol.CodeLens, reaso
 }
 
 func DiffSignatures(spn span.Span, want, got *protocol.SignatureHelp) string {
-	decorate := func(f string, args ...interface{}) string {
+	decorate := func(f string, args ...any) string {
 		return fmt.Sprintf("invalid signature at %s: %s", spn, fmt.Sprintf(f, args...))
 	}
 	if len(got.Signatures) != 1 {
@@ -438,7 +438,7 @@ func DiffCompletionItems(want, got []protocol.CompletionItem) string {
 	return ""
 }
 
-func summarizeCompletionItems(i int, want, got []protocol.CompletionItem, reason string, args ...interface{}) string {
+func summarizeCompletionItems(i int, want, got []protocol.CompletionItem, reason string, args ...any) string {
 	msg := &bytes.Buffer{}
 	fmt.Fprint(msg, "completion failed")
 	if i >= 0 {

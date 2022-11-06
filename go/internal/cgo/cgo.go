@@ -57,7 +57,6 @@ import (
 	"go/build"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -70,7 +69,7 @@ import (
 // ProcessFiles invokes the cgo preprocessor on bp.CgoFiles, parses
 // the output and returns the resulting ASTs.
 func ProcessFiles(bp *build.Package, fset *token.FileSet, DisplayPath func(path string) string, mode parser.Mode) ([]*ast.File, error) {
-	tmpdir, err := ioutil.TempDir("", strings.Replace(bp.ImportPath, "/", "_", -1)+"_C")
+	tmpdir, err := os.MkdirTemp("", strings.ReplaceAll(bp.ImportPath, "/", "_")+"_C")
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +204,7 @@ func envList(key, def string) []string {
 
 // stringList's arguments should be a sequence of string or []string values.
 // stringList flattens them into a single []string.
-func stringList(args ...interface{}) []string {
+func stringList(args ...any) []string {
 	var x []string
 	for _, arg := range args {
 		switch arg := arg.(type) {

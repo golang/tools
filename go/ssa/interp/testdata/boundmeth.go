@@ -85,7 +85,7 @@ func anonStruct() {
 }
 
 func typeCheck() {
-	var i interface{}
+	var i any
 	i = (*S).incr
 	_ = i.(func(*S)) // type assertion: receiver type prepended to params
 

@@ -9,6 +9,7 @@ package fillreturns
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -46,10 +47,10 @@ var Analyzer = &analysis.Analyzer{
 	RunDespiteErrors: true,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	info := pass.TypesInfo
 	if info == nil {
-		return nil, fmt.Errorf("nil TypeInfo")
+		return nil, errors.New("nil TypeInfo")
 	}
 
 	errors := analysisinternal.GetTypeErrors(pass)

@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -143,7 +142,7 @@ func (e *expectation) String() string {
 	return fmt.Sprintf("@%s[%s]", e.kind, strings.Join(e.args, " | "))
 }
 
-func (e *expectation) errorf(format string, args ...interface{}) {
+func (e *expectation) errorf(format string, args ...any) {
 	fmt.Printf("%s:%d: ", e.filepath, e.linenum)
 	fmt.Printf(format, args...)
 	fmt.Println()
@@ -627,7 +626,7 @@ func TestInput(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "Entering directory `%s'\n", wd)
 
 	for _, filename := range inputs {
-		content, err := ioutil.ReadFile(filename)
+		content, err := os.ReadFile(filename)
 		if err != nil {
 			t.Errorf("couldn't read file '%s': %s", filename, err)
 			continue
@@ -689,7 +688,7 @@ func TestTypeParam(t *testing.T) {
 	}
 	fmt.Fprintf(os.Stderr, "Entering directory `%s'\n", wd)
 
-	content, err := ioutil.ReadFile(filename)
+	content, err := os.ReadFile(filename)
 	if err != nil {
 		t.Fatalf("couldn't read file '%s': %s", filename, err)
 	}

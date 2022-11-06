@@ -11,7 +11,6 @@ import (
 	"go/format"
 	"go/token"
 	"go/types"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -34,7 +33,7 @@ import (
 // maps file names to contents). On success it returns the name of the
 // directory and a cleanup function to delete it.
 func WriteFiles(filemap map[string]string) (dir string, cleanup func(), err error) {
-	gopath, err := ioutil.TempDir("", "analysistest")
+	gopath, err := os.MkdirTemp("", "analysistest")
 	if err != nil {
 		return "", nil, err
 	}
@@ -43,7 +42,7 @@ func WriteFiles(filemap map[string]string) (dir string, cleanup func(), err erro
 	for name, content := range filemap {
 		filename := filepath.Join(gopath, "src", name)
 		os.MkdirAll(filepath.Dir(filename), 0777) // ignore error
-		if err := ioutil.WriteFile(filename, []byte(content), 0666); err != nil {
+		if err := os.WriteFile(filename, []byte(content), 0666); err != nil {
 			cleanup()
 			return "", nil, err
 		}
@@ -66,7 +65,7 @@ var TestData = func() string {
 
 // Testing is an abstraction of a *testing.T.
 type Testing interface {
-	Errorf(format string, args ...interface{})
+	Errorf(format string, args ...any)
 }
 
 // RunWithSuggestedFixes behaves like Run, but additionally verifies suggested fixes.
@@ -134,7 +133,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 						continue
 					}
 					if _, ok := fileContents[file]; !ok {
-						contents, err := ioutil.ReadFile(file.Name())
+						contents, err := os.ReadFile(file.Name())
 						if err != nil {
 							t.Errorf("error reading %s: %v", file.Name(), err)
 						}
@@ -406,7 +405,7 @@ func check(t Testing, gopath string, pass *analysis.Pass, diagnostics []analysis
 	// Extract 'want' comments from non-Go files.
 	// TODO(adonovan): we may need to handle //line directives.
 	for _, filename := range pass.OtherFiles {
-		data, err := ioutil.ReadFile(filename)
+		data, err := os.ReadFile(filename)
 		if err != nil {
 			t.Errorf("can't read '// want' comments from %s: %v", filename, err)
 			continue

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"go/token"
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -23,14 +22,14 @@ import (
 
 	exec "golang.org/x/sys/execabs"
 
-	"golang.org/x/tools/internal/jsonrpc2"
-	"golang.org/x/tools/internal/jsonrpc2/servertest"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/lsprpc"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/internal/jsonrpc2"
+	"golang.org/x/tools/internal/jsonrpc2/servertest"
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/xcontext"
@@ -182,11 +181,11 @@ func WindowsLineEndings() RunOption {
 //
 // As a special case, the env setting must not be provided via Settings: use
 // EnvVars instead.
-type Settings map[string]interface{}
+type Settings map[string]any
 
 func (s Settings) set(opts *runConfig) {
 	if opts.editor.Settings == nil {
-		opts.editor.Settings = make(map[string]interface{})
+		opts.editor.Settings = make(map[string]any)
 	}
 	for k, v := range s {
 		opts.editor.Settings[k] = v
@@ -471,7 +470,7 @@ func (r *Runner) separateProcessServer(optsHook func(*source.Options)) jsonrpc2.
 	}
 
 	r.startRemoteOnce.Do(func() {
-		socketDir, err := ioutil.TempDir(r.tempDir, "gopls-regtest-socket")
+		socketDir, err := os.MkdirTemp(r.tempDir, "gopls-regtest-socket")
 		if err != nil {
 			r.remoteErr = err
 			return

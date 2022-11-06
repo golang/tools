@@ -6,7 +6,7 @@
 
 package testdata
 
-type I interface{}
+type I any
 
 func Bar(ii I) (I, I) {
 	return Foo(ii)

@@ -8,6 +8,7 @@ package eg // import "golang.org/x/tools/refactor/eg"
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -161,11 +162,11 @@ func NewTransformer(fset *token.FileSet, tmplPkg *types.Package, tmplFile *ast.F
 	// Check the template.
 	beforeSig := funcSig(tmplPkg, "before")
 	if beforeSig == nil {
-		return nil, fmt.Errorf("no 'before' func found in template")
+		return nil, errors.New("no 'before' func found in template")
 	}
 	afterSig := funcSig(tmplPkg, "after")
 	if afterSig == nil {
-		return nil, fmt.Errorf("no 'after' func found in template")
+		return nil, errors.New("no 'after' func found in template")
 	}
 
 	// TODO(adonovan): should we also check the names of the params match?
@@ -302,15 +303,15 @@ func funcSig(pkg *types.Package, name string) *types.Signature {
 // soleExpr returns the sole expression in the before/after template function.
 func soleExpr(fn *ast.FuncDecl) (ast.Expr, error) {
 	if fn.Body == nil {
-		return nil, fmt.Errorf("no body")
+		return nil, errors.New("no body")
 	}
 	if len(fn.Body.List) != 1 {
-		return nil, fmt.Errorf("must contain a single statement")
+		return nil, errors.New("must contain a single statement")
 	}
 	switch stmt := fn.Body.List[0].(type) {
 	case *ast.ReturnStmt:
 		if len(stmt.Results) != 1 {
-			return nil, fmt.Errorf("return statement must have a single operand")
+			return nil, errors.New("return statement must have a single operand")
 		}
 		return stmt.Results[0], nil
 
@@ -318,18 +319,18 @@ func soleExpr(fn *ast.FuncDecl) (ast.Expr, error) {
 		return stmt.X, nil
 	}
 
-	return nil, fmt.Errorf("must contain a single return or expression statement")
+	return nil, errors.New("must contain a single return or expression statement")
 }
 
 // stmtAndExpr returns the expression in the last return statement as well as the preceding lines.
 func stmtAndExpr(fn *ast.FuncDecl) ([]ast.Stmt, ast.Expr, error) {
 	if fn.Body == nil {
-		return nil, nil, fmt.Errorf("no body")
+		return nil, nil, errors.New("no body")
 	}
 
 	n := len(fn.Body.List)
 	if n == 0 {
-		return nil, nil, fmt.Errorf("must contain at least one statement")
+		return nil, nil, errors.New("must contain at least one statement")
 	}
 
 	stmts, last := fn.Body.List[:n-1], fn.Body.List[n-1]
@@ -337,7 +338,7 @@ func stmtAndExpr(fn *ast.FuncDecl) ([]ast.Stmt, ast.Expr, error) {
 	switch last := last.(type) {
 	case *ast.ReturnStmt:
 		if len(last.Results) != 1 {
-			return nil, nil, fmt.Errorf("return statement must have a single operand")
+			return nil, nil, errors.New("return statement must have a single operand")
 		}
 		return stmts, last.Results[0], nil
 
@@ -345,7 +346,7 @@ func stmtAndExpr(fn *ast.FuncDecl) ([]ast.Stmt, ast.Expr, error) {
 		return stmts, last.X, nil
 	}
 
-	return nil, nil, fmt.Errorf("must end with a single return or expression statement")
+	return nil, nil, errors.New("must end with a single return or expression statement")
 }
 
 // mergeTypeInfo adds type info from src to dst.

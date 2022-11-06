@@ -5,10 +5,11 @@
 package nilfunc_test
 
 import (
+	"testing"
+
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/nilfunc"
 	"golang.org/x/tools/internal/typeparams"
-	"testing"
 )
 
 func Test(t *testing.T) {

@@ -14,9 +14,9 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/internal/event"
 )
 
 func Completion(ctx context.Context, snapshot source.Snapshot, fh source.VersionedFileHandle, position protocol.Position) (*protocol.CompletionList, error) {

@@ -35,11 +35,11 @@ const (
 	pageAlign = 12 // 4096 = 1 << 12
 )
 
-func note(format string, why ...interface{}) {
+func note(format string, why ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", why...)
 }
 
-func fail(format string, why ...interface{}) {
+func fail(format string, why ...any) {
 	note(format, why...)
 	os.Exit(1)
 }

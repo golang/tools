@@ -6,9 +6,10 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -67,7 +68,7 @@ func (c *format) Run(ctx context.Context, args ...string) error {
 			return err
 		}
 		if loc.Range.Start != loc.Range.End {
-			return fmt.Errorf("only full file formatting supported")
+			return errors.New("only full file formatting supported")
 		}
 		p := protocol.DocumentFormattingParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
@@ -90,7 +91,7 @@ func (c *format) Run(ctx context.Context, args ...string) error {
 		if c.Write {
 			printIt = false
 			if len(edits) > 0 {
-				ioutil.WriteFile(filename, []byte(formatted), 0644)
+				os.WriteFile(filename, []byte(formatted), 0644)
 			}
 		}
 		if c.Diff {

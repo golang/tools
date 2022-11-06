@@ -18,7 +18,6 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"io/ioutil"
 	"log"
 	"os"
 	"reflect"
@@ -243,7 +242,7 @@ type TestAnalyzerResult struct {
 	Pass        *analysis.Pass
 	Diagnostics []analysis.Diagnostic
 	Facts       map[types.Object][]analysis.Fact
-	Result      interface{}
+	Result      any
 	Err         error
 }
 
@@ -408,7 +407,7 @@ func applyFixes(roots []*action) error {
 	fset := token.NewFileSet() // Shared by parse calls below
 	// Now we've got a set of valid edits for each file. Get the new file contents.
 	for f, tree := range editsForFile {
-		contents, err := ioutil.ReadFile(f.Name())
+		contents, err := os.ReadFile(f.Name())
 		if err != nil {
 			return err
 		}
@@ -446,12 +445,12 @@ func applyFixes(roots []*action) error {
 		ff, err := parser.ParseFile(fset, f.Name(), out.Bytes(), parser.ParseComments)
 		if err == nil {
 			var buf bytes.Buffer
-			if err = format.Node(&buf, fset, ff); err == nil {
+			if err := format.Node(&buf, fset, ff); err == nil {
 				out = buf
 			}
 		}
 
-		if err := ioutil.WriteFile(f.Name(), out.Bytes(), 0644); err != nil {
+		if err := os.WriteFile(f.Name(), out.Bytes(), 0644); err != nil {
 			return err
 		}
 	}
@@ -602,7 +601,7 @@ type action struct {
 	deps         []*action
 	objectFacts  map[objectFactKey]analysis.Fact
 	packageFacts map[packageFactKey]analysis.Fact
-	result       interface{}
+	result       any
 	diagnostics  []analysis.Diagnostic
 	err          error
 	duration     time.Duration
@@ -679,7 +678,7 @@ func (act *action) execOnce() {
 
 	// Plumb the output values of the dependencies
 	// into the inputs of this action.  Also facts.
-	inputs := make(map[*analysis.Analyzer]interface{})
+	inputs := make(map[*analysis.Analyzer]any)
 	act.objectFacts = make(map[objectFactKey]analysis.Fact)
 	act.packageFacts = make(map[packageFactKey]analysis.Fact)
 	for _, dep := range act.deps {
@@ -718,7 +717,7 @@ func (act *action) execOnce() {
 	}
 	act.pass = pass
 
-	var errors []types.Error
+	var errs []types.Error
 	// Get any type errors that are attributed to the pkg.
 	// This is necessary to test analyzers that provide
 	// suggested fixes for compiler/type errors.
@@ -776,17 +775,17 @@ func (act *action) execOnce() {
 		if offset == -1 {
 			continue
 		}
-		errors = append(errors, types.Error{
+		errs = append(errs, types.Error{
 			Fset: act.pkg.Fset,
 			Msg:  err.Msg,
 			Pos:  token.Pos(offset),
 		})
 	}
-	analysisinternal.SetTypeErrors(pass, errors)
+	analysisinternal.SetTypeErrors(pass, errs)
 
 	var err error
 	if act.pkg.IllTyped && !pass.Analyzer.RunDespiteErrors {
-		err = fmt.Errorf("analysis skipped due to errors in package")
+		err = errors.New("analysis skipped due to errors in package")
 	} else {
 		act.result, err = pass.Analyzer.Run(pass)
 		if err == nil {

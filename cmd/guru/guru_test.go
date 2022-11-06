@@ -34,7 +34,6 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -83,7 +82,7 @@ func parseRegexp(text string) (*regexp.Regexp, error) {
 
 // parseQueries parses and returns the queries in the named file.
 func parseQueries(t *testing.T, filename string) []*query {
-	filedata, err := ioutil.ReadFile(filename)
+	filedata, err := os.ReadFile(filename)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,11 +183,11 @@ func doQuery(out io.Writer, q *query, json bool) {
 		if json {
 			jsonstr := string(qr.JSON(fset))
 			// Sanitize any absolute filenames that creep in.
-			jsonstr = strings.Replace(jsonstr, gopathAbs, "$GOPATH", -1)
+			jsonstr = strings.ReplaceAll(jsonstr, gopathAbs, "$GOPATH")
 			outputs = append(outputs, jsonstr)
 		} else {
 			// suppress position information
-			qr.PrintPlain(func(_ interface{}, format string, args ...interface{}) {
+			qr.PrintPlain(func(_ any, format string, args ...any) {
 				outputs = append(outputs, fmt.Sprintf(format, args...))
 			})
 		}
@@ -278,7 +277,7 @@ func TestGuru(t *testing.T) {
 			json := strings.Contains(filename, "-json/")
 			queries := parseQueries(t, filename)
 			golden := filename + "lden"
-			gotfh, err := ioutil.TempFile("", filepath.Base(filename)+"t")
+			gotfh, err := os.CreateTemp("", filepath.Base(filename)+"t")
 			if err != nil {
 				t.Fatal(err)
 			}

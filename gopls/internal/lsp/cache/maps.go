@@ -17,7 +17,7 @@ type filesMap struct {
 }
 
 // uriLessInterface is the < relation for "any" values containing span.URIs.
-func uriLessInterface(a, b interface{}) bool {
+func uriLessInterface(a, b any) bool {
 	return a.(span.URI) < b.(span.URI)
 }
 
@@ -46,7 +46,7 @@ func (m filesMap) Get(key span.URI) (source.VersionedFileHandle, bool) {
 }
 
 func (m filesMap) Range(do func(key span.URI, value source.VersionedFileHandle)) {
-	m.impl.Range(func(key, value interface{}) {
+	m.impl.Range(func(key, value any) {
 		do(key.(span.URI), value.(source.VersionedFileHandle))
 	})
 }
@@ -59,7 +59,7 @@ func (m filesMap) Delete(key span.URI) {
 	m.impl.Delete(key)
 }
 
-func parseKeyLessInterface(a, b interface{}) bool {
+func parseKeyLessInterface(a, b any) bool {
 	return parseKeyLess(a.(parseKey), b.(parseKey))
 }
 
@@ -79,7 +79,7 @@ type isActivePackageCacheMap struct {
 
 func newIsActivePackageCacheMap() isActivePackageCacheMap {
 	return isActivePackageCacheMap{
-		impl: persistent.NewMap(func(a, b interface{}) bool {
+		impl: persistent.NewMap(func(a, b any) bool {
 			return a.(PackageID) < b.(PackageID)
 		}),
 	}
@@ -136,7 +136,7 @@ func (m parseKeysByURIMap) Get(key span.URI) ([]parseKey, bool) {
 }
 
 func (m parseKeysByURIMap) Range(do func(key span.URI, value []parseKey)) {
-	m.impl.Range(func(key, value interface{}) {
+	m.impl.Range(func(key, value any) {
 		do(key.(span.URI), value.([]parseKey))
 	})
 }
@@ -149,7 +149,7 @@ func (m parseKeysByURIMap) Delete(key span.URI) {
 	m.impl.Delete(key)
 }
 
-func packageKeyLessInterface(x, y interface{}) bool {
+func packageKeyLessInterface(x, y any) bool {
 	return packageKeyLess(x.(packageKey), y.(packageKey))
 }
 
@@ -166,7 +166,7 @@ type knownDirsSet struct {
 
 func newKnownDirsSet() knownDirsSet {
 	return knownDirsSet{
-		impl: persistent.NewMap(func(a, b interface{}) bool {
+		impl: persistent.NewMap(func(a, b any) bool {
 			return a.(span.URI) < b.(span.URI)
 		}),
 	}
@@ -188,7 +188,7 @@ func (s knownDirsSet) Contains(key span.URI) bool {
 }
 
 func (s knownDirsSet) Range(do func(key span.URI)) {
-	s.impl.Range(func(key, value interface{}) {
+	s.impl.Range(func(key, value any) {
 		do(key.(span.URI))
 	})
 }
@@ -207,7 +207,7 @@ func (s knownDirsSet) Remove(key span.URI) {
 
 // actionKeyLessInterface is the less-than relation for actionKey
 // values wrapped in an interface.
-func actionKeyLessInterface(a, b interface{}) bool {
+func actionKeyLessInterface(a, b any) bool {
 	x, y := a.(actionKey), b.(actionKey)
 	if x.analyzer.Name != y.analyzer.Name {
 		return x.analyzer.Name < y.analyzer.Name

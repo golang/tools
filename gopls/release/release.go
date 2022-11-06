@@ -12,17 +12,18 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"go/types"
-	exec "golang.org/x/sys/execabs"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	exec "golang.org/x/sys/execabs"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"
@@ -146,7 +147,7 @@ func validateHardcodedVersion(wd string, version string) error {
 	obj := pkg.Types.Scope().Lookup("Version")
 	c, ok := obj.(*types.Const)
 	if !ok {
-		return fmt.Errorf("no constant named Version")
+		return errors.New("no constant named Version")
 	}
 	hardcodedVersion, err := strconv.Unquote(c.Val().ExactString())
 	if err != nil {
@@ -166,7 +167,7 @@ func validateHardcodedVersion(wd string, version string) error {
 
 func validateGoModFile(wd string) error {
 	filename := filepath.Join(wd, "go.mod")
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return err
 	}
@@ -196,7 +197,7 @@ func validateGoModFile(wd string) error {
 		}
 	}
 	if version == "" {
-		return fmt.Errorf("no require for golang.org/x/tools")
+		return errors.New("no require for golang.org/x/tools")
 	}
 	split := strings.Split(version, "-")
 	if len(split) != 3 {

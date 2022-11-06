@@ -14,6 +14,7 @@ package fillstruct
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -48,7 +49,7 @@ var Analyzer = &analysis.Analyzer{
 	RunDespiteErrors: true,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{(*ast.CompositeLit)(nil)}
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
@@ -137,7 +138,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 // diagnostics produced by the Analyzer above.
 func SuggestedFix(fset *token.FileSet, rng span.Range, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
 	if info == nil {
-		return nil, fmt.Errorf("nil types.Info")
+		return nil, errors.New("nil types.Info")
 	}
 
 	pos := rng.Start // don't use the end
@@ -146,7 +147,7 @@ func SuggestedFix(fset *token.FileSet, rng span.Range, content []byte, file *ast
 	// calling PathEnclosingInterval. Switch this approach.
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
 	if len(path) == 0 {
-		return nil, fmt.Errorf("no enclosing ast.Node")
+		return nil, errors.New("no enclosing ast.Node")
 	}
 	var expr *ast.CompositeLit
 	for _, n := range path {
@@ -158,7 +159,7 @@ func SuggestedFix(fset *token.FileSet, rng span.Range, content []byte, file *ast
 
 	typ := info.TypeOf(expr)
 	if typ == nil {
-		return nil, fmt.Errorf("no composite literal")
+		return nil, errors.New("no composite literal")
 	}
 
 	// Find reference to the type declaration of the struct being initialized.
@@ -251,7 +252,7 @@ func SuggestedFix(fset *token.FileSet, rng span.Range, content []byte, file *ast
 
 	// If all of the struct's fields are unexported, we have nothing to do.
 	if len(elts) == 0 {
-		return nil, fmt.Errorf("no elements to fill")
+		return nil, errors.New("no elements to fill")
 	}
 
 	// Add the final line for the right brace. Offset is the number of

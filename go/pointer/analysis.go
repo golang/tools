@@ -7,6 +7,7 @@ package pointer
 // This file defines the main datatypes and Analyze function of the pointer analysis.
 
 import (
+	"errors"
 	"fmt"
 	"go/token"
 	"go/types"
@@ -61,7 +62,7 @@ type object struct {
 	// string	for an intrinsic object, e.g. the array behind os.Args.
 	// nil		for an object allocated by an intrinsic.
 	//		(cgn provides the identity of the intrinsic.)
-	data interface{}
+	data any
 
 	// The call-graph node (=context) in which this object was allocated.
 	// May be nil for global objects: Global, Const, some Functions.
@@ -165,7 +166,7 @@ func (a *analysis) labelFor(id nodeid) *Label {
 	}
 }
 
-func (a *analysis) warnf(pos token.Pos, format string, args ...interface{}) {
+func (a *analysis) warnf(pos token.Pos, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	if a.log != nil {
 		fmt.Fprintf(a.log, "%s: warning: %s\n", a.prog.Fset.Position(pos), msg)
@@ -215,7 +216,7 @@ func (a *analysis) computeTrackBits() {
 // always succeed.  An error can occur only due to an internal bug.
 func Analyze(config *Config) (result *Result, err error) {
 	if config.Mains == nil {
-		return nil, fmt.Errorf("no main/test packages to analyze (check $GOROOT/$GOPATH)")
+		return nil, errors.New("no main/test packages to analyze (check $GOROOT/$GOPATH)")
 	}
 	defer func() {
 		if p := recover(); p != nil {
@@ -332,7 +333,7 @@ func Analyze(config *Config) (result *Result, err error) {
 		a.dumpSolution("B.pts", N)
 
 		if !diff("A.pts", "B.pts") {
-			return nil, fmt.Errorf("internal error: optimization changed solution")
+			return nil, errors.New("internal error: optimization changed solution")
 		}
 	}
 

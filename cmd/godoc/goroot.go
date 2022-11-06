@@ -5,11 +5,12 @@
 package main
 
 import (
-	exec "golang.org/x/sys/execabs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 func findGOROOT() string {

@@ -9,13 +9,13 @@ package packages
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/scanner"
 	"go/token"
 	"go/types"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -135,7 +135,7 @@ type Config struct {
 	// If the user provides a logger, debug logging is enabled.
 	// If the GOPACKAGESDEBUG environment variable is set to true,
 	// but the logger is nil, default to log.Printf.
-	Logf func(format string, args ...interface{})
+	Logf func(format string, args ...any)
 
 	// Dir is the directory in which to run the build system's query tool
 	// that provides information about the packages.
@@ -397,22 +397,22 @@ type ModuleError struct {
 }
 
 func init() {
-	packagesinternal.GetForTest = func(p interface{}) string {
+	packagesinternal.GetForTest = func(p any) string {
 		return p.(*Package).forTest
 	}
-	packagesinternal.GetDepsErrors = func(p interface{}) []*packagesinternal.PackageError {
+	packagesinternal.GetDepsErrors = func(p any) []*packagesinternal.PackageError {
 		return p.(*Package).depsErrors
 	}
-	packagesinternal.GetGoCmdRunner = func(config interface{}) *gocommand.Runner {
+	packagesinternal.GetGoCmdRunner = func(config any) *gocommand.Runner {
 		return config.(*Config).gocmdRunner
 	}
-	packagesinternal.SetGoCmdRunner = func(config interface{}, runner *gocommand.Runner) {
+	packagesinternal.SetGoCmdRunner = func(config any, runner *gocommand.Runner) {
 		config.(*Config).gocmdRunner = runner
 	}
-	packagesinternal.SetModFile = func(config interface{}, value string) {
+	packagesinternal.SetModFile = func(config any, value string) {
 		config.(*Config).modFile = value
 	}
-	packagesinternal.SetModFlag = func(config interface{}, value string) {
+	packagesinternal.SetModFlag = func(config any, value string) {
 		config.(*Config).modFlag = value
 	}
 	packagesinternal.TypecheckCgo = int(typecheckCgo)
@@ -580,7 +580,7 @@ func newLoader(cfg *Config) *loader {
 		if debug {
 			ld.Config.Logf = log.Printf
 		} else {
-			ld.Config.Logf = func(format string, args ...interface{}) {}
+			ld.Config.Logf = func(format string, args ...any) {}
 		}
 	}
 	if ld.Config.Mode == 0 {
@@ -1104,7 +1104,7 @@ func (ld *loader) parseFile(filename string) (*ast.File, error) {
 		var err error
 		if src == nil {
 			ioLimit <- true // wait
-			src, err = ioutil.ReadFile(filename)
+			src, err = os.ReadFile(filename)
 			<-ioLimit // signal
 		}
 		if err != nil {
@@ -1217,7 +1217,7 @@ func (ld *loader) loadFromExportData(lpkg *loaderPackage) (*types.Package, error
 
 	if lpkg.ExportFile == "" {
 		// Errors while building export data will have been printed to stderr.
-		return nil, fmt.Errorf("no export data file")
+		return nil, errors.New("no export data file")
 	}
 	f, err := os.Open(lpkg.ExportFile)
 	if err != nil {

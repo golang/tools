@@ -62,15 +62,15 @@ type Link interface {
 // FileInfo holds analysis information for the source file view.
 // Clients must not mutate it.
 type FileInfo struct {
-	Data  []interface{} // JSON serializable values
-	Links []Link        // HTML link markup
+	Data  []any  // JSON serializable values
+	Links []Link // HTML link markup
 }
 
 // A fileInfo is the server's store of hyperlinks and JSON data for a
 // particular file.
 type fileInfo struct {
 	mu        sync.Mutex
-	data      []interface{} // JSON objects
+	data      []any // JSON objects
 	links     []Link
 	sorted    bool
 	hasErrors bool // TODO(adonovan): surface this in the UI

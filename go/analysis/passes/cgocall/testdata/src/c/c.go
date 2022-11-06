@@ -11,4 +11,4 @@ import "unsafe"
 // Passing a pointer (via the slice), but C isn't cgo.
 var _ = C.f(unsafe.Pointer(new([]int)))
 
-var C struct{ f func(interface{}) int }
+var C struct{ f func(any) int }

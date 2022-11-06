@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/build"
@@ -33,7 +34,7 @@ func definition(q *Query) error {
 
 		id, _ := qpos.path[0].(*ast.Ident)
 		if id == nil {
-			return fmt.Errorf("no identifier here")
+			return errors.New("no identifier here")
 		}
 
 		// Did the parser resolve it to a local object?
@@ -83,7 +84,7 @@ func definition(q *Query) error {
 
 	id, _ := qpos.path[0].(*ast.Ident)
 	if id == nil {
-		return fmt.Errorf("no identifier here")
+		return errors.New("no identifier here")
 	}
 
 	// Look up the declaration of this identifier.
@@ -97,7 +98,7 @@ func definition(q *Query) error {
 			// Happens for y in "switch y := x.(type)",
 			// and the package declaration,
 			// but I think that's all.
-			return fmt.Errorf("no object for identifier")
+			return errors.New("no object for identifier")
 		}
 	}
 

@@ -43,7 +43,7 @@ type Analyzer struct {
 	// To pass analysis results between packages (and thus
 	// potentially between address spaces), use Facts, which are
 	// serializable.
-	Run func(*Pass) (interface{}, error)
+	Run func(*Pass) (any, error)
 
 	// RunDespiteErrors allows the driver to invoke
 	// the Run method of this analyzer even on a
@@ -78,10 +78,10 @@ func (a *Analyzer) String() string { return a.Name }
 func init() {
 	// Set the analysisinternal functions to be able to pass type errors
 	// to the Pass type without modifying the go/analysis API.
-	analysisinternal.SetTypeErrors = func(p interface{}, errors []types.Error) {
+	analysisinternal.SetTypeErrors = func(p any, errors []types.Error) {
 		p.(*Pass).typeErrors = errors
 	}
-	analysisinternal.GetTypeErrors = func(p interface{}) []types.Error {
+	analysisinternal.GetTypeErrors = func(p any) []types.Error {
 		return p.(*Pass).typeErrors
 	}
 }
@@ -117,7 +117,7 @@ type Pass struct {
 	// The map keys are the elements of Analysis.Required,
 	// and the type of each corresponding value is the required
 	// analysis's ResultType.
-	ResultOf map[*Analyzer]interface{}
+	ResultOf map[*Analyzer]any
 
 	// -- facts --
 
@@ -179,7 +179,7 @@ type ObjectFact struct {
 
 // Reportf is a helper function that reports a Diagnostic using the
 // specified position and formatted error message.
-func (pass *Pass) Reportf(pos token.Pos, format string, args ...interface{}) {
+func (pass *Pass) Reportf(pos token.Pos, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	pass.Report(Diagnostic{Pos: pos, Message: msg})
 }
@@ -194,7 +194,7 @@ type Range interface {
 // ReportRangef is a helper function that reports a Diagnostic using the
 // range provided. ast.Node values can be passed in as the range because
 // they satisfy the Range interface.
-func (pass *Pass) ReportRangef(rng Range, format string, args ...interface{}) {
+func (pass *Pass) ReportRangef(rng Range, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	pass.Report(Diagnostic{Pos: rng.Pos(), End: rng.End(), Message: msg})
 }

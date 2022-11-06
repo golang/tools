@@ -8,11 +8,12 @@ import (
 	"bytes"
 	"fmt"
 	"go/types"
-	exec "golang.org/x/sys/execabs"
 	"log"
 	"os"
 	"runtime"
 	"time"
+
+	exec "golang.org/x/sys/execabs"
 
 	"golang.org/x/tools/container/intsets"
 )
@@ -87,7 +88,7 @@ type fieldInfo struct {
 	typ types.Type
 
 	// op and tail describe the path to the element (e.g. ".a#2.b[*].c").
-	op   interface{} // *Array: true; *Tuple: int; *Struct: *types.Var; *Named: nil
+	op   any // *Array: true; *Tuple: int; *Struct: *types.Var; *Named: nil
 	tail *fieldInfo
 }
 

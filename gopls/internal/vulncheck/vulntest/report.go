@@ -158,7 +158,7 @@ type Reference struct {
 	URL  string        `json:"url,omitempty"`
 }
 
-func (r *Reference) MarshalYAML() (interface{}, error) {
+func (r *Reference) MarshalYAML() (any, error) {
 	return map[string]string{
 		strings.ToLower(string(r.Type)): r.URL,
 	}, nil

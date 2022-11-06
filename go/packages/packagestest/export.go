@@ -69,7 +69,6 @@ import (
 	"fmt"
 	"go/token"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -98,7 +97,7 @@ type Module struct {
 	// The keys are the file fragment that follows the module name, the value can
 	// be a string or byte slice, in which case it is the contents of the
 	// file, otherwise it must be a Writer function.
-	Files map[string]interface{}
+	Files map[string]any
 
 	// Overlay is the set of source file overlays for the module.
 	// The keys are the file fragment as in the Files configuration.
@@ -196,9 +195,9 @@ func Export(t testing.TB, exporter Exporter, modules []Module) *Exported {
 		testenv.NeedsTool(t, "go")
 	}
 
-	dirname := strings.Replace(t.Name(), "/", "_", -1)
-	dirname = strings.Replace(dirname, "#", "_", -1) // duplicate subtests get a #NNN suffix.
-	temp, err := ioutil.TempDir("", dirname)
+	dirname := strings.ReplaceAll(t.Name(), "/", "_")
+	dirname = strings.ReplaceAll(dirname, "#", "_") // duplicate subtests get a #NNN suffix.
+	temp, err := os.MkdirTemp("", dirname)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +250,7 @@ func Export(t testing.TB, exporter Exporter, modules []Module) *Exported {
 					t.Fatal(err)
 				}
 			case string:
-				if err := ioutil.WriteFile(fullpath, []byte(value), 0644); err != nil {
+				if err := os.WriteFile(fullpath, []byte(value), 0644); err != nil {
 					t.Fatal(err)
 				}
 			default:
@@ -275,7 +274,7 @@ func Export(t testing.TB, exporter Exporter, modules []Module) *Exported {
 // It is intended for source files that are shell scripts.
 func Script(contents string) Writer {
 	return func(filename string) error {
-		return ioutil.WriteFile(filename, []byte(contents), 0755)
+		return os.WriteFile(filename, []byte(contents), 0755)
 	}
 }
 
@@ -477,7 +476,7 @@ func GroupFilesByModules(root string) ([]Module, error) {
 
 	primarymod := &Module{
 		Name:    root,
-		Files:   make(map[string]interface{}),
+		Files:   make(map[string]any),
 		Overlay: make(map[string][]byte),
 	}
 	mods := map[string]*Module{
@@ -567,7 +566,7 @@ func GroupFilesByModules(root string) ([]Module, error) {
 		}
 		mods[path] = &Module{
 			Name:    filepath.ToSlash(module),
-			Files:   make(map[string]interface{}),
+			Files:   make(map[string]any),
 			Overlay: make(map[string][]byte),
 		}
 		currentModule = path
@@ -585,8 +584,8 @@ func GroupFilesByModules(root string) ([]Module, error) {
 // This is to enable the common case in tests where you have a full copy of the
 // package in your testdata.
 // This will panic if there is any kind of error trying to walk the file tree.
-func MustCopyFileTree(root string) map[string]interface{} {
-	result := map[string]interface{}{}
+func MustCopyFileTree(root string) map[string]any {
+	result := map[string]any{}
 	if err := filepath.Walk(filepath.FromSlash(root), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -656,7 +655,7 @@ func (e *Exported) FileContents(filename string) ([]byte, error) {
 	if content, found := e.Config.Overlay[filename]; found {
 		return content, nil
 	}
-	content, err := ioutil.ReadFile(filename)
+	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}

@@ -97,7 +97,7 @@ import (
 	"go/scanner"
 	"go/token"
 	"go/types"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -185,7 +185,7 @@ func report(err error) {
 }
 
 // parse may be called concurrently
-func parse(filename string, src interface{}) (*ast.File, error) {
+func parse(filename string, src any) (*ast.File, error) {
 	if *verbose {
 		fmt.Println(filename)
 	}
@@ -197,7 +197,7 @@ func parse(filename string, src interface{}) (*ast.File, error) {
 }
 
 func parseStdin() (*ast.File, error) {
-	src, err := ioutil.ReadAll(os.Stdin)
+	src, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		return nil, err
 	}

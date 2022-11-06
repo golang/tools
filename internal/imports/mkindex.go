@@ -19,7 +19,6 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
 	"log"
 	"os"
 	"path"
@@ -74,12 +73,12 @@ func main() {
 	src := buf.Bytes()
 
 	// Replace main.pkg type name with pkg.
-	src = bytes.Replace(src, []byte("main.pkg"), []byte("pkg"), -1)
+	src = bytes.ReplaceAll(src, []byte("main.pkg"), []byte("pkg"))
 	// Replace actual GOROOT with "/go".
-	src = bytes.Replace(src, []byte(ctx.GOROOT), []byte("/go"), -1)
+	src = bytes.ReplaceAll(src, []byte(ctx.GOROOT), []byte("/go"))
 	// Add some line wrapping.
-	src = bytes.Replace(src, []byte("}, "), []byte("},\n"), -1)
-	src = bytes.Replace(src, []byte("true, "), []byte("true,\n"), -1)
+	src = bytes.ReplaceAll(src, []byte("}, "), []byte("},\n"))
+	src = bytes.ReplaceAll(src, []byte("true, "), []byte("true,\n"))
 
 	var err error
 	src, err = format.Source(src)
@@ -88,8 +87,7 @@ func main() {
 	}
 
 	// Write out source file.
-	err = ioutil.WriteFile("pkgindex.go", src, 0644)
-	if err != nil {
+	if err := os.WriteFile("pkgindex.go", src, 0644); err != nil {
 		log.Fatal(err)
 	}
 }

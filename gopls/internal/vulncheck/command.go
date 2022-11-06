@@ -9,6 +9,7 @@ package vulncheck
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -81,7 +82,7 @@ func (c *cmd) Run(ctx context.Context, cfg *packages.Config, patterns ...string)
 	loadedPkgs, err := gvc.LoadPackages(cfg, patterns...)
 	if err != nil {
 		logger.Printf("%v", err)
-		return nil, fmt.Errorf("package load failed")
+		return nil, errors.New("package load failed")
 	}
 
 	logger.Printf("analyzing %d packages...\n", len(loadedPkgs))

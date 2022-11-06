@@ -19,7 +19,7 @@ func Test(t *testing.T) {
 		t.Skipf("skipping on %v", runtime.Version())
 	}
 	analyzer := *buildtag.Analyzer
-	analyzer.Run = func(pass *analysis.Pass) (interface{}, error) {
+	analyzer.Run = func(pass *analysis.Pass) (any, error) {
 		defer func() {
 			// The buildtag pass is unusual in that it checks the IgnoredFiles.
 			// After analysis, add IgnoredFiles to OtherFiles so that

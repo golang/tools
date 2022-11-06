@@ -40,7 +40,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"go/types"
-	"io/ioutil"
+	"io"
 	"log"
 	"reflect"
 	"sort"
@@ -181,7 +181,7 @@ func (d *Decoder) Decode(read func(*types.Package) ([]byte, error)) (*Set, error
 	// Facts may describe indirectly imported packages, or their objects.
 	m := make(map[key]analysis.Fact) // one big bucket
 	for _, imp := range d.pkg.Imports() {
-		logf := func(format string, args ...interface{}) {
+		logf := func(format string, args ...any) {
 			if debug {
 				prefix := fmt.Sprintf("in %s, importing %s: ",
 					d.pkg.Path(), imp.Path())
@@ -296,7 +296,7 @@ func (s *Set) Encode() []byte {
 		if err := gob.NewEncoder(&buf).Encode(gobFacts); err != nil {
 			// Fact encoding should never fail. Identify the culprit.
 			for _, gf := range gobFacts {
-				if err := gob.NewEncoder(ioutil.Discard).Encode(gf); err != nil {
+				if err := gob.NewEncoder(io.Discard).Encode(gf); err != nil {
 					fact := gf.Fact
 					pkgpath := reflect.TypeOf(fact).Elem().PkgPath()
 					log.Panicf("internal error: gob encoding of analysis fact %s failed: %v; please report a bug against fact %T in package %q",

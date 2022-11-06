@@ -76,7 +76,7 @@ func main() {
 	deepeq_h.y = h
 	assert(reflect.DeepEqual(h, deepeq_h))
 
-	distinct := []interface{}{a, b, c, d, e, f, g, h}
+	distinct := []any{a, b, c, d, e, f, g, h}
 	for x := range distinct {
 		for y := range distinct {
 			assert((x == y) == reflect.DeepEqual(distinct[x], distinct[y]))

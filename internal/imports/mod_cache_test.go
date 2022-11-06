@@ -5,7 +5,7 @@
 package imports
 
 import (
-	"fmt"
+	"errors"
 	"reflect"
 	"sort"
 	"testing"
@@ -29,7 +29,7 @@ func TestDirectoryPackageInfoReachedStatus(t *testing.T) {
 		{
 			info: directoryPackageInfo{
 				status: directoryScanned,
-				err:    fmt.Errorf("error getting to directory scanned"),
+				err:    errors.New("error getting to directory scanned"),
 			},
 			target:     directoryScanned,
 			wantStatus: true,
@@ -78,7 +78,7 @@ func TestModCacheInfo(t *testing.T) {
 			dir: "bad package",
 			info: directoryPackageInfo{
 				status: directoryScanned,
-				err:    fmt.Errorf("bad package"),
+				err:    errors.New("bad package"),
 			},
 		},
 		{

@@ -79,7 +79,7 @@ func (e commandLineError) Error() string { return string(e) }
 // CommandLineErrorf is like fmt.Errorf except that it returns a value that
 // triggers printing of the command line help.
 // In general you should use this when generating command line validation errors.
-func CommandLineErrorf(message string, args ...interface{}) error {
+func CommandLineErrorf(message string, args ...any) error {
 	return commandLineError(fmt.Sprintf(message, args...))
 }
 

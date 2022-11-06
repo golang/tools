@@ -207,7 +207,7 @@ func OutgoingCalls(ctx context.Context, snapshot Snapshot, fh FileHandle, pos pr
 	// token.File of the identifier and its declaration, since it looks up both anyway.
 	tokFile := snapshot.FileSet().File(node.Pos())
 	if tokFile == nil {
-		return nil, fmt.Errorf("no file for position")
+		return nil, errors.New("no file for position")
 	}
 	callExprs, err := collectCallExpressions(tokFile, declMappedRange.m, node)
 	if err != nil {

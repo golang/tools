@@ -103,8 +103,9 @@ var _ = []ast.BasicLit{
 	{}, // want `Fill go/ast.BasicLit`
 }
 
-var _ = []ast.BasicLit{{}, // want "go/ast.BasicLit"
-}
+var _ = []ast.BasicLit{{}}
+
+// want "go/ast.BasicLit"
 
 type unsafeStruct struct {
 	foo unsafe.Pointer

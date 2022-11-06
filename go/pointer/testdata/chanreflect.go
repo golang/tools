@@ -21,7 +21,7 @@ func chanreflect1() {
 func chanreflect1i() {
 	// Exercises reflect.Value conversions to/from interfaces:
 	// a different code path than for concrete types.
-	ch := make(chan interface{}, 0)
+	ch := make(chan any, 0)
 	reflect.ValueOf(ch).Send(reflect.ValueOf(&a))
 	v := <-ch
 	print(v)        // @types *int

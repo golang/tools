@@ -16,5 +16,5 @@ func funcLitType() {
 }
 
 func compositeLitType() {
-	foo := map[string]interface{}{"": ""}
+	foo := map[string]any{"": ""}
 }

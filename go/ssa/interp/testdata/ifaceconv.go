@@ -2,8 +2,8 @@ package main
 
 // Tests of interface conversions and type assertions.
 
-type I0 interface {
-}
+type I0 any
+
 type I1 interface {
 	f()
 }

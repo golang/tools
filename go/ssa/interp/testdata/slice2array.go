@@ -19,7 +19,7 @@ func main() {
 
 	{
 		var s []int
-		a:= ([0]int)(s)
+		a := ([0]int)(s)
 		if a != [0]int{} {
 			panic("zero len array is not equal")
 		}

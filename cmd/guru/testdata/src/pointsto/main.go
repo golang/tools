@@ -52,7 +52,7 @@ func main() {
 
 	// NB: s.f is addressable per (*ssa.Program).VarValue,
 	// but our query concerns the object, not its address.
-	s := struct{ f interface{} }{f: make(chan bool)}
+	s := struct{ f any }{f: make(chan bool)}
 	print(s.f) // @pointsto var-ref-s-f "s.f"
 }
 

@@ -47,8 +47,8 @@ func reflectTypeElem() {
 	print(reflect.Zero(reflect.TypeOf(make(map[string]float64)).Elem()).Interface()) // @types float64
 	print(reflect.Zero(reflect.TypeOf([3]complex64{}).Elem()).Interface())           // @types complex64
 	print(reflect.Zero(reflect.TypeOf(3).Elem()).Interface())                        // @types
-	print(reflect.Zero(reflect.TypeOf(new(interface{})).Elem()))                     // @types interface{}
-	print(reflect.Zero(reflect.TypeOf(new(interface{})).Elem()).Interface())         // @types
+	print(reflect.Zero(reflect.TypeOf(new(any)).Elem()))                             // @types interface{}
+	print(reflect.Zero(reflect.TypeOf(new(any)).Elem()).Interface())                 // @types
 }
 
 // reflect.Values within reflect.Values.
@@ -67,7 +67,7 @@ func metareflection() {
 	print(v0a.Interface().(*int))          // @pointsto command-line-arguments.a
 
 	// "box" an interface{} lvalue twice, unbox it twice.
-	var iface interface{} = 3
+	var iface any = 3
 	x0 := reflect.ValueOf(&iface).Elem()
 	print(x0)                              // @types interface{}
 	x1 := reflect.ValueOf(x0)              // box

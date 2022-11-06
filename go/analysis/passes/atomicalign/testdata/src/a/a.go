@@ -4,6 +4,7 @@
 
 // This file contains tests for the atomic alignment checker.
 
+//go:build arm || 386
 // +build arm 386
 
 package testdata
@@ -176,7 +177,7 @@ func sliceAlignment() {
 
 func interfaceAlignment() {
 	var s struct {
-		a interface{}
+		a any
 		b int64
 		c io.Writer
 		e int64
@@ -193,7 +194,7 @@ func pointerAlignment() {
 	var s struct {
 		a, b *int
 		c    int64
-		d    *interface{}
+		d    *any
 		e    uint64
 	}
 

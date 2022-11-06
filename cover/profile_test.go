@@ -6,7 +6,6 @@ package cover
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"reflect"
 	"testing"
@@ -208,7 +207,7 @@ some/fancy/path:42.69,44.16 2 -1`,
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			f, err := ioutil.TempFile("", "")
+			f, err := os.CreateTemp("", "")
 			if err != nil {
 				t.Fatalf("Failed to create a temp file: %v.", err)
 			}

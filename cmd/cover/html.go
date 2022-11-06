@@ -8,14 +8,14 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	exec "golang.org/x/sys/execabs"
 	"html/template"
 	"io"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
 	"runtime"
+
+	exec "golang.org/x/sys/execabs"
 
 	"golang.org/x/tools/cover"
 )
@@ -40,13 +40,12 @@ func htmlOutput(profile, outfile string) error {
 		if err != nil {
 			return err
 		}
-		src, err := ioutil.ReadFile(file)
+		src, err := os.ReadFile(file)
 		if err != nil {
 			return fmt.Errorf("can't read %q: %v", fn, err)
 		}
 		var buf bytes.Buffer
-		err = htmlGen(&buf, src, profile.Boundaries(src))
-		if err != nil {
+		if err := htmlGen(&buf, src, profile.Boundaries(src)); err != nil {
 			return err
 		}
 		d.Files = append(d.Files, &templateFile{
@@ -59,7 +58,7 @@ func htmlOutput(profile, outfile string) error {
 	var out *os.File
 	if outfile == "" {
 		var dir string
-		dir, err = ioutil.TempDir("", "cover")
+		dir, err = os.MkdirTemp("", "cover")
 		if err != nil {
 			return err
 		}

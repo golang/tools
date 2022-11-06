@@ -24,13 +24,13 @@ func (Value) Field(int) Value
 func (Value) MapIndex(Value) Value
 func (Value) MapKeys() []Value
 func (Value) NumField() int
-func (Value) Interface() interface{}
+func (Value) Interface() any
 
 func SliceOf(Type) Type
 
-func TypeOf(interface{}) Type
+func TypeOf(any) Type
 
-func ValueOf(interface{}) Value
+func ValueOf(any) Value
 
 type Kind uint
 

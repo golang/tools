@@ -11,6 +11,6 @@ import "golang.org/x/tools/go/analysis"
 
 // This analyzer only relates to go1.18+, and uses the types.CheckExpr API that
 // was added in Go 1.13.
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }

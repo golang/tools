@@ -26,9 +26,9 @@ func BindHandler(hmw HandlerMiddleware) Middleware {
 	})
 }
 
-func CommandInterceptor(command string, run func(*protocol.ExecuteCommandParams) (interface{}, error)) Middleware {
+func CommandInterceptor(command string, run func(*protocol.ExecuteCommandParams) (any, error)) Middleware {
 	return BindHandler(func(delegate jsonrpc2_v2.Handler) jsonrpc2_v2.Handler {
-		return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+		return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 			if req.Method == "workspace/executeCommand" {
 				var params protocol.ExecuteCommandParams
 				if err := json.Unmarshal(req.Params, &params); err == nil {

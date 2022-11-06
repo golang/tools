@@ -13,14 +13,14 @@ import (
 	"flag"
 	"fmt"
 	"go/build"
-	exec "golang.org/x/sys/execabs"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 var (
@@ -66,7 +66,7 @@ func detectrepo() string {
 var googleSourceRx = regexp.MustCompile(`(?m)^(go|go-review)?\.googlesource.com\b`)
 
 func checkCLA() {
-	slurp, err := ioutil.ReadFile(cookiesFile())
+	slurp, err := os.ReadFile(cookiesFile())
 	if err != nil && !os.IsNotExist(err) {
 		log.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func checkGoroot() {
 				"your GOROOT or set it to the path of your development version\n"+
 				"of Go.", v)
 		}
-		slurp, err := ioutil.ReadFile(filepath.Join(v, "VERSION"))
+		slurp, err := os.ReadFile(filepath.Join(v, "VERSION"))
 		if err == nil {
 			slurp = bytes.TrimSpace(slurp)
 			log.Fatalf("Your GOROOT environment variable is set to %q\n"+

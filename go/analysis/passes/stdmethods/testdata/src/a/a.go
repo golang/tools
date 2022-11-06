@@ -61,7 +61,7 @@ func (*F) Unwrap() {} // want `method Unwrap\(\) should have signature Unwrap\(\
 
 type G int
 
-func (G) As(interface{}) bool // ok
+func (G) As(any) bool // ok
 
 type W int
 

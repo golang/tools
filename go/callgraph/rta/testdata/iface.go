@@ -1,10 +1,11 @@
+//go:build ignore
 // +build ignore
 
 package main
 
 // Test of interface calls.
 
-func use(interface{})
+func use(any)
 
 type A byte // instantiated but not a reflect type
 

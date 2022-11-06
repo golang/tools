@@ -6,9 +6,10 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -96,7 +97,7 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 	var edits []protocol.TextEdit
 	for _, a := range actions {
 		if a.Command != nil {
-			return fmt.Errorf("ExecuteCommand is not yet supported on the command line")
+			return errors.New("ExecuteCommand is not yet supported on the command line")
 		}
 		if !a.IsPreferred && !s.All {
 			continue
@@ -151,7 +152,7 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 	switch {
 	case s.Write:
 		if len(edits) > 0 {
-			ioutil.WriteFile(filename, []byte(newContent), 0644)
+			os.WriteFile(filename, []byte(newContent), 0644)
 		}
 	case s.Diff:
 		diffs, err := diff.ToUnified(filename+".orig", filename, string(file.mapper.Content), sedits)

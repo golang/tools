@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -151,7 +152,7 @@ func (r *headerReader) Read(ctx context.Context) (Message, int64, error) {
 		}
 	}
 	if length == 0 {
-		return nil, total, fmt.Errorf("missing Content-Length header")
+		return nil, total, errors.New("missing Content-Length header")
 	}
 	data := make([]byte, length)
 	n, err := io.ReadFull(r.in, data)

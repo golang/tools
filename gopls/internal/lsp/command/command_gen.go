@@ -70,7 +70,7 @@ var Commands = []Command{
 	Vendor,
 }
 
-func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Interface) (interface{}, error) {
+func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Interface) (any, error) {
 	switch params.Command {
 	case "gopls.add_dependency":
 		var a0 DependencyArgs

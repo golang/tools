@@ -15,7 +15,7 @@ import (
 )
 
 // Metadata holds arbitrary data transferred between jsonrpc2 peers.
-type Metadata map[string]interface{}
+type Metadata map[string]any
 
 // PeerInfo holds information about a peering between jsonrpc2 servers.
 type PeerInfo struct {
@@ -73,7 +73,7 @@ func (h *Handshaker) Middleware(inner jsonrpc2_v2.Binder) jsonrpc2_v2.Binder {
 
 		// Wrap the delegated handler to accept the handshake.
 		delegate := opts.Handler
-		opts.Handler = jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+		opts.Handler = jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 			if req.Method == handshakeMethod {
 				var peerInfo PeerInfo
 				if err := json.Unmarshal(req.Params, &peerInfo); err != nil {

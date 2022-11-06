@@ -12,7 +12,6 @@ package main_test
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,7 +36,7 @@ var debug = false // Keeps the rewritten files around if set.
 func TestCover(t *testing.T) {
 	testenv.NeedsTool(t, "go")
 
-	tmpdir, err := ioutil.TempDir("", "TestCover")
+	tmpdir, err := os.MkdirTemp("", "TestCover")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,26 +55,25 @@ func TestCover(t *testing.T) {
 	coverOutput := filepath.Join(tmpdir, "test_cover.go")
 
 	for _, f := range []string{testMain, testTest} {
-		data, err := ioutil.ReadFile(filepath.Join(testdata, filepath.Base(f)))
+		data, err := os.ReadFile(filepath.Join(testdata, filepath.Base(f)))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := ioutil.WriteFile(f, data, 0644); err != nil {
+		if err := os.WriteFile(f, data, 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	// Read in the test file (testTest) and write it, with LINEs specified, to coverInput.
-	file, err := ioutil.ReadFile(testTest)
+	file, err := os.ReadFile(testTest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	lines := bytes.Split(file, []byte("\n"))
 	for i, line := range lines {
-		lines[i] = bytes.Replace(line, []byte("LINE"), []byte(fmt.Sprint(i+1)), -1)
+		lines[i] = bytes.ReplaceAll(line, []byte("LINE"), []byte(fmt.Sprint(i+1)))
 	}
-	err = ioutil.WriteFile(coverInput, bytes.Join(lines, []byte("\n")), 0666)
-	if err != nil {
+	if err := os.WriteFile(coverInput, bytes.Join(lines, []byte("\n")), 0666); err != nil {
 		t.Fatal(err)
 	}
 

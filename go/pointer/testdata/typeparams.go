@@ -39,7 +39,7 @@ func fn[T any](a *T) {
 	m := make(map[string]chan *T)
 	m[""] = make(chan *T, 1)
 	m[""] <- a
-	x := []t[T]{t[T]{a: &m}}
+	x := []t[T]{{a: &m}}
 	print(x) // @pointstoquery <-(*x[i].a)[key] command-line-arguments.a | command-line-arguments.b
 }
 

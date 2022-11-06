@@ -12,6 +12,7 @@ package buildtag
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -30,7 +31,7 @@ var Analyzer = &analysis.Analyzer{
 	Run:  runBuildTag,
 }
 
-func runBuildTag(pass *analysis.Pass) (interface{}, error) {
+func runBuildTag(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
 		checkGoFile(pass, f)
 	}
@@ -134,10 +135,10 @@ func checkLine(line string, pastCutoff bool) error {
 		fields := strings.Fields(line)
 		if fields[0] != "+build" {
 			// Comment is something like +buildasdf not +build.
-			return fmt.Errorf("possible malformed +build comment")
+			return errors.New("possible malformed +build comment")
 		}
 		if pastCutoff {
-			return fmt.Errorf("+build comment must appear before package clause and be followed by a blank line")
+			return errors.New("+build comment must appear before package clause and be followed by a blank line")
 		}
 		if err := checkArguments(fields); err != nil {
 			return err
@@ -145,7 +146,7 @@ func checkLine(line string, pastCutoff bool) error {
 	} else {
 		// Comment with +build but not at beginning.
 		if !pastCutoff {
-			return fmt.Errorf("possible malformed +build comment")
+			return errors.New("possible malformed +build comment")
 		}
 	}
 	return nil

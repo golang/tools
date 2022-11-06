@@ -30,7 +30,7 @@ var (
 	asmControlFlow = re(`^(J|RET)`)
 )
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	if build.Default.GOARCH != "amd64" { // TODO: arm64 also?
 		return nil, nil
 	}

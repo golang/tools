@@ -54,7 +54,7 @@ func (s stack) name(prefix string) string {
 		if x[0] <= 'Z' && x[0] >= 'A' {
 			// it may contain a message
 			if idx := strings.Index(x, " "); idx >= 0 {
-				x = prefix + strings.Replace(x[idx+1:], "/", "_", -1)
+				x = prefix + strings.ReplaceAll(x[idx+1:], "/", "_")
 			}
 			nm += x
 			seen++

@@ -29,7 +29,7 @@ func benchmarkCompletion(options completionBenchOptions, b *testing.B) {
 	// Use a new environment for each test, to avoid any existing state from the
 	// previous session.
 	sandbox, editor, awaiter, err := connectEditor(dir, fake.EditorConfig{
-		Settings: map[string]interface{}{
+		Settings: map[string]any{
 			"completionBudget": "1m", // arbitrary long completion budget
 		},
 	})

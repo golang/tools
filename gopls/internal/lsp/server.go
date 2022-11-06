@@ -128,11 +128,11 @@ func (s *Server) workDoneProgressCancel(ctx context.Context, params *protocol.Wo
 	return s.progress.Cancel(params.Token)
 }
 
-func (s *Server) nonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {
+func (s *Server) nonstandardRequest(ctx context.Context, method string, params any) (any, error) {
 	switch method {
 	case "gopls/diagnoseFiles":
-		paramMap := params.(map[string]interface{})
-		for _, file := range paramMap["files"].([]interface{}) {
+		paramMap := params.(map[string]any)
+		for _, file := range paramMap["files"].([]any) {
 			snapshot, fh, ok, release, err := s.beginFileRequest(ctx, protocol.DocumentURI(file.(string)), source.UnknownKind)
 			defer release()
 			if !ok {

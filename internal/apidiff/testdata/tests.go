@@ -2,11 +2,12 @@
 // It is syntactically valid Go so that gofmt can process it.
 //
 // If a comment begins with:   Then:
-//  old                        write subsequent lines to the "old" package
-//  new                        write subsequent lines to the "new" package
-//  both                       write subsequent lines to both packages
-//  c                          expect a compatible error with the following text
-//  i                          expect an incompatible error with the following text
+//
+//	old                        write subsequent lines to the "old" package
+//	new                        write subsequent lines to the "new" package
+//	both                       write subsequent lines to both packages
+//	c                          expect a compatible error with the following text
+//	i                          expect an incompatible error with the following text
 package ignore
 
 // both
@@ -14,11 +15,11 @@ import "io"
 
 //////////////// Basics
 
-//// Same type in both: OK.
+// // Same type in both: OK.
 // both
 type A int
 
-//// Changing the type is an incompatible change.
+// // Changing the type is an incompatible change.
 // old
 type B int
 
@@ -26,7 +27,7 @@ type B int
 // i B: changed from int to string
 type B string
 
-//// Adding a new type, whether alias or not, is a compatible change.
+// // Adding a new type, whether alias or not, is a compatible change.
 // new
 // c AA: added
 type AA = A
@@ -34,14 +35,14 @@ type AA = A
 // c B1: added
 type B1 bool
 
-//// Change of type for an unexported name doesn't matter...
+// // Change of type for an unexported name doesn't matter...
 // old
 type t int
 
 // new
 type t string // OK: t isn't part of the API
 
-//// ...unless it is exposed.
+// // ...unless it is exposed.
 // both
 var V2 u
 
@@ -52,7 +53,7 @@ type u string
 // i u: changed from string to int
 type u int
 
-//// An exposed, unexported type can be renamed.
+// // An exposed, unexported type can be renamed.
 // both
 type u2 int
 
@@ -64,7 +65,7 @@ var V5 u1
 // new
 var V5 u2 // OK: V5 has changed type, but old u1 corresopnds to new u2
 
-//// Splitting a single type into two is an incompatible change.
+// // Splitting a single type into two is an incompatible change.
 // both
 type u3 int
 
@@ -83,7 +84,7 @@ type (
 	Split2 = u3
 )
 
-//// Merging two types into one is OK.
+// // Merging two types into one is OK.
 // old
 type (
 	GoodMerge1 = u2
@@ -96,7 +97,7 @@ type (
 	GoodMerge2 = u3
 )
 
-//// Merging isn't OK here because a method is lost.
+// // Merging isn't OK here because a method is lost.
 // both
 type u4 int
 
@@ -125,7 +126,7 @@ type Rem int
 
 //////////////// Constants
 
-//// type changes
+// // type changes
 // old
 const (
 	C1     = 1
@@ -172,7 +173,7 @@ const (
 
 //////////////// Variables
 
-//// simple type changes
+// // simple type changes
 // old
 var (
 	V1 string
@@ -189,7 +190,7 @@ var (
 	V7 chan int
 )
 
-//// interface type  changes
+// // interface type  changes
 // old
 var (
 	V9  interface{ M() }
@@ -200,7 +201,7 @@ var (
 // new
 var (
 	// i V9: changed from interface{M()} to interface{}
-	V9 interface{}
+	V9 any
 	// i V10: changed from interface{M()} to interface{M(); M2()}
 	V10 interface {
 		M2()
@@ -210,7 +211,7 @@ var (
 	V11 interface{ M(int) }
 )
 
-//// struct type changes
+// // struct type changes
 // old
 var (
 	VS1 struct{ A, B int }
@@ -413,7 +414,8 @@ type I5 = io.Writer
 // i I5: changed from io.Writer to I5
 // In old, I5 and io.Writer are the same type; in new,
 // they are different. That can break something like:
-//   var _ func(io.Writer) = func(pkg.I6) {}
+//
+//	var _ func(io.Writer) = func(pkg.I6) {}
 type I5 io.Writer
 
 // old
@@ -471,7 +473,9 @@ type t4 int
 
 // i VT4: changed from int to t4
 // This is incompatible because of code like
-//    VT4 + int(1)
+//
+//	VT4 + int(1)
+//
 // which works in old but fails in new.
 // The difference from the above cases is that
 // in those, we were merging two types into one;
@@ -487,7 +491,7 @@ func F3(int)                      {}
 func F4(int) int                  { return 0 }
 func F5(int) int                  { return 0 }
 func F6(int)                      {}
-func F7(interface{})              {}
+func F7(any)                      {}
 
 // new
 func F1(c int, d string) map[u2]AA { return nil } //OK: same (since u1 corresponds to u2)
@@ -627,7 +631,7 @@ type S4 struct {
 	*S4 // OK: same (recursive embedding)
 }
 
-//// Difference between exported selectable fields and exported immediate fields.
+// // Difference between exported selectable fields and exported immediate fields.
 // both
 type S5 struct{ A int }
 
@@ -648,7 +652,7 @@ type S6 struct {
 	S5
 }
 
-//// Ambiguous fields can exist; they just can't be selected.
+// // Ambiguous fields can exist; they just can't be selected.
 // both
 type (
 	embed7a struct{ E int }
@@ -870,7 +874,7 @@ type H interface {
 
 //// Splitting types
 
-//// OK: in both old and new, {J1, K1, L1} name the same type.
+// // OK: in both old and new, {J1, K1, L1} name the same type.
 // old
 type (
 	J1 = K1
@@ -885,7 +889,7 @@ type (
 	L1 = J1
 )
 
-//// Old has one type, K2; new has J2 and K2.
+// // Old has one type, K2; new has J2 and K2.
 // both
 type K2 int
 

@@ -74,7 +74,7 @@ func isUntyped(typ types.Type) bool {
 // returns a closure that prints the corresponding "end" message.
 // Call using 'defer logStack(...)()' to show builder stack on panic.
 // Don't forget trailing parens!
-func logStack(format string, args ...interface{}) func() {
+func logStack(format string, args ...any) func() {
 	msg := fmt.Sprintf(format, args...)
 	io.WriteString(os.Stderr, msg)
 	io.WriteString(os.Stderr, "\n")

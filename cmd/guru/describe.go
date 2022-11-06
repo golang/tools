@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/constant"
@@ -315,7 +316,7 @@ func describeValue(qpos *queryPos, path []ast.Node) (*describeValueResult, error
 	switch n := path[0].(type) {
 	case *ast.ValueSpec:
 		// ambiguous ValueSpec containing multiple names
-		return nil, fmt.Errorf("multiple value specification")
+		return nil, errors.New("multiple value specification")
 	case *ast.Ident:
 		obj = qpos.info.ObjectOf(n)
 		expr = n

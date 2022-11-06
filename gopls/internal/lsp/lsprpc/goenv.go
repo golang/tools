@@ -10,15 +10,15 @@ import (
 	"fmt"
 	"os"
 
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	jsonrpc2_v2 "golang.org/x/tools/internal/jsonrpc2_v2"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
 func GoEnvMiddleware() (Middleware, error) {
 	return BindHandler(func(delegate jsonrpc2_v2.Handler) jsonrpc2_v2.Handler {
-		return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+		return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 			if req.Method == "initialize" {
 				if err := addGoEnvToInitializeRequestV2(ctx, req); err != nil {
 					event.Error(ctx, "adding go env to initialize", err)
@@ -34,20 +34,20 @@ func addGoEnvToInitializeRequestV2(ctx context.Context, req *jsonrpc2_v2.Request
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return err
 	}
-	var opts map[string]interface{}
+	var opts map[string]any
 	switch v := params.InitializationOptions.(type) {
 	case nil:
-		opts = make(map[string]interface{})
-	case map[string]interface{}:
+		opts = make(map[string]any)
+	case map[string]any:
 		opts = v
 	default:
 		return fmt.Errorf("unexpected type for InitializationOptions: %T", v)
 	}
 	envOpt, ok := opts["env"]
 	if !ok {
-		envOpt = make(map[string]interface{})
+		envOpt = make(map[string]any)
 	}
-	env, ok := envOpt.(map[string]interface{})
+	env, ok := envOpt.(map[string]any)
 	if !ok {
 		return fmt.Errorf("env option is %T, expected a map", envOpt)
 	}
@@ -74,7 +74,7 @@ func addGoEnvToInitializeRequestV2(ctx context.Context, req *jsonrpc2_v2.Request
 	return nil
 }
 
-func getGoEnv(ctx context.Context, env map[string]interface{}) (map[string]string, error) {
+func getGoEnv(ctx context.Context, env map[string]any) (map[string]string, error) {
 	var runEnv []string
 	for k, v := range env {
 		runEnv = append(runEnv, fmt.Sprintf("%s=%s", k, v))

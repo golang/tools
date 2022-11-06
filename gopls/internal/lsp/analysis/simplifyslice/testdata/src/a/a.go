@@ -14,21 +14,21 @@ var (
 
 	_ = a[0:]
 	_ = a[1:10]
-	_ = a[2:len(a)] // want "unneeded: len\\(a\\)"
+	_ = a[2:] // want "unneeded: len\\(a\\)"
 	_ = a[3:(len(a))]
-	_ = a[len(a)-1 : len(a)] // want "unneeded: len\\(a\\)"
+	_ = a[len(a)-1:] // want "unneeded: len\\(a\\)"
 	_ = a[2:len(a):len(a)]
 
 	_ = a[:]
 	_ = a[:10]
-	_ = a[:len(a)] // want "unneeded: len\\(a\\)"
+	_ = a[:] // want "unneeded: len\\(a\\)"
 	_ = a[:(len(a))]
 	_ = a[:len(a)-1]
 	_ = a[:len(a):len(a)]
 
 	_ = s[0:]
 	_ = s[1:10]
-	_ = s[2:len(s)] // want "unneeded: len\\(s\\)"
+	_ = s[2:] // want "unneeded: len\\(s\\)"
 	_ = s[3:(len(s))]
 	_ = s[len(a) : len(s)-1]
 	_ = s[0:len(b)]
@@ -36,7 +36,7 @@ var (
 
 	_ = s[:]
 	_ = s[:10]
-	_ = s[:len(s)] // want "unneeded: len\\(s\\)"
+	_ = s[:] // want "unneeded: len\\(s\\)"
 	_ = s[:(len(s))]
 	_ = s[:len(s)-1]
 	_ = s[:len(b)]
@@ -60,11 +60,11 @@ var (
 )
 
 func _() {
-	s := s[0:len(s)] // want "unneeded: len\\(s\\)"
+	s := s[0:] // want "unneeded: len\\(s\\)"
 	_ = s
 }
 
 func m() {
 	maps := []int{}
-	_ = maps[1:len(maps)] // want "unneeded: len\\(maps\\)"
+	_ = maps[1:] // want "unneeded: len\\(maps\\)"
 }

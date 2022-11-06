@@ -5,7 +5,6 @@
 package misc
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -148,7 +147,7 @@ var _, _ = x.X, y.Y
 `
 	testenv.NeedsGo1Point(t, 15)
 
-	modcache, err := ioutil.TempDir("", "TestGOMODCACHE-modcache")
+	modcache, err := os.MkdirTemp("", "TestGOMODCACHE-modcache")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -150,7 +150,7 @@ func formatLines(lines []codeLine, highlight string) []codeLine {
 	formatted := make([]codeLine, len(lines))
 	for i, line := range lines {
 		// Replace tabs with spaces, which work better in HTML.
-		line.L = strings.Replace(line.L, "\t", "    ", -1)
+		line.L = strings.ReplaceAll(line.L, "\t", "    ")
 
 		// Highlight lines that end with "// HL[highlight]"
 		// and strip the magic comment.
@@ -238,8 +238,8 @@ func codeLines(src []byte, start, end int) (lines []codeLine) {
 	return
 }
 
-func parseArgs(name string, line int, args []string) (res []interface{}, err error) {
-	res = make([]interface{}, len(args))
+func parseArgs(name string, line int, args []string) (res []any, err error) {
+	res = make([]any, len(args))
 	for i, v := range args {
 		if len(v) == 0 {
 			return nil, fmt.Errorf("%s:%d bad code argument %q", name, line, v)

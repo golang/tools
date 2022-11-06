@@ -9,8 +9,8 @@ import (
 	"flag"
 	"fmt"
 	"go/build"
-	"io/ioutil"
 	"log"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -1628,7 +1628,7 @@ type testConfig struct {
 }
 
 // fm is the type for a packagestest.Module's Files, abbreviated for shorter lines.
-type fm map[string]interface{}
+type fm map[string]any
 
 func (c testConfig) test(t *testing.T, fn func(*goimportTest)) {
 	t.Helper()
@@ -1700,7 +1700,7 @@ func (t *goimportTest) process(module, file string, contents []byte, opts *Optio
 func (t *goimportTest) processNonModule(file string, contents []byte, opts *Options) ([]byte, error) {
 	if contents == nil {
 		var err error
-		contents, err = ioutil.ReadFile(file)
+		contents, err = os.ReadFile(file)
 		if err != nil {
 			return nil, err
 		}

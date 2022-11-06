@@ -14,9 +14,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	exec "golang.org/x/sys/execabs"
 	"os"
 	"strings"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 var (
@@ -61,7 +62,7 @@ func main() {
 	runStep(setupGOPATH)
 }
 
-func verbosef(format string, v ...interface{}) {
+func verbosef(format string, v ...any) {
 	if !*verbose {
 		return
 	}

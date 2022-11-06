@@ -19,7 +19,7 @@ func init() {
 	}
 }
 
-type empty interface{}
+type empty any
 
 type I interface {
 	f() int
@@ -29,7 +29,7 @@ type T struct{ z int }
 
 func (t T) f() int { return t.z }
 
-func use(interface{}) {}
+func use(any) {}
 
 var counter = 2
 
@@ -249,7 +249,7 @@ func (mybool) f() {}
 func init() {
 	type mybool bool
 	var b mybool
-	var i interface{} = b || b // result preserves types of operands
+	var i any = b || b // result preserves types of operands
 	_ = i.(mybool)
 
 	i = false && b // result preserves type of "typed" operand
@@ -298,7 +298,7 @@ func init() {
 
 // Implicit conversion of delete() key operand.
 func init() {
-	type I interface{}
+	type I any
 	m := make(map[I]bool)
 	m[1] = true
 	m[I(2)] = true
@@ -415,8 +415,8 @@ func init() {
 
 func init() {
 	// A slice var can be compared to const []T nil.
-	var i interface{} = []string{"foo"}
-	var j interface{} = []string(nil)
+	var i any = []string{"foo"}
+	var j any = []string(nil)
 	if i.([]string) == nil {
 		panic("expected i non-nil")
 	}

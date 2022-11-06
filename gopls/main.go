@@ -13,8 +13,9 @@ package main // import "golang.org/x/tools/gopls"
 
 import (
 	"context"
-	"golang.org/x/tools/internal/analysisinternal"
 	"os"
+
+	"golang.org/x/tools/internal/analysisinternal"
 
 	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/lsp/cmd"

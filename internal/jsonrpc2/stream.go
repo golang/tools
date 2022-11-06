@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -135,7 +136,7 @@ func (s *headerStream) Read(ctx context.Context) (Message, int64, error) {
 		}
 	}
 	if length == 0 {
-		return nil, total, fmt.Errorf("missing Content-Length header")
+		return nil, total, errors.New("missing Content-Length header")
 	}
 	data := make([]byte, length)
 	if _, err := io.ReadFull(s.in, data); err != nil {

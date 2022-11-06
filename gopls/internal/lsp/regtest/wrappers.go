@@ -355,7 +355,7 @@ func (e *Env) ExecuteCodeLensCommand(path string, cmd command.Command) {
 	}, nil)
 }
 
-func (e *Env) ExecuteCommand(params *protocol.ExecuteCommandParams, result interface{}) {
+func (e *Env) ExecuteCommand(params *protocol.ExecuteCommandParams, result any) {
 	e.T.Helper()
 	response, err := e.Editor.ExecuteCommand(e.Ctx, params)
 	if err != nil {

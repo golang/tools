@@ -9,7 +9,7 @@ var p, q int
 
 type A struct {
 	f *int
-	g interface{}
+	g any
 }
 
 func (a A) m1() {

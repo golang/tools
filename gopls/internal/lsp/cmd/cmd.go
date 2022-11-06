@@ -12,7 +12,6 @@ import (
 	"flag"
 	"fmt"
 	"go/token"
-	"io/ioutil"
 	"log"
 	"os"
 	"reflect"
@@ -366,7 +365,7 @@ func (c *connection) initialize(ctx context.Context, options func(*source.Option
 	params.Capabilities.TextDocument.SemanticTokens.Requests.Full = true
 	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = lsp.SemanticTypes()
 	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = lsp.SemanticModifiers()
-	params.InitializationOptions = map[string]interface{}{
+	params.InitializationOptions = map[string]any{
 		"symbolMatcher": matcherString[opts.SymbolMatcher],
 	}
 	if _, err := c.Server.Initialize(ctx, params); err != nil {
@@ -454,7 +453,7 @@ func (c *cmdClient) LogMessage(ctx context.Context, p *protocol.LogMessageParams
 	return nil
 }
 
-func (c *cmdClient) Event(ctx context.Context, t *interface{}) error { return nil }
+func (c *cmdClient) Event(ctx context.Context, t *any) error { return nil }
 
 func (c *cmdClient) RegisterCapability(ctx context.Context, p *protocol.RegistrationParams) error {
 	return nil
@@ -468,13 +467,13 @@ func (c *cmdClient) WorkspaceFolders(ctx context.Context) ([]protocol.WorkspaceF
 	return nil, nil
 }
 
-func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfiguration) ([]interface{}, error) {
-	results := make([]interface{}, len(p.Items))
+func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfiguration) ([]any, error) {
+	results := make([]any, len(p.Items))
 	for i, item := range p.Items {
 		if item.Section != "gopls" {
 			continue
 		}
-		env := map[string]interface{}{}
+		env := map[string]any{}
 		for _, value := range c.app.env {
 			l := strings.SplitN(value, "=", 2)
 			if len(l) != 2 {
@@ -482,7 +481,7 @@ func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfigur
 			}
 			env[l[0]] = l[1]
 		}
-		m := map[string]interface{}{
+		m := map[string]any{
 			"env": env,
 			"analyses": map[string]bool{
 				"fillreturns":    true,
@@ -542,7 +541,7 @@ func (c *cmdClient) getFile(ctx context.Context, uri span.URI) *cmdFile {
 	}
 	if file.mapper == nil {
 		fname := uri.Filename()
-		content, err := ioutil.ReadFile(fname)
+		content, err := os.ReadFile(fname)
 		if err != nil {
 			file.err = fmt.Errorf("getFile: %v: %v", uri, err)
 			return file
@@ -600,7 +599,7 @@ func (c *connection) semanticTokens(ctx context.Context, p *protocol.SemanticTok
 }
 
 func (c *connection) diagnoseFiles(ctx context.Context, files []span.URI) error {
-	var untypedFiles []interface{}
+	var untypedFiles []any
 	for _, file := range files {
 		untypedFiles = append(untypedFiles, string(file))
 	}
@@ -608,7 +607,7 @@ func (c *connection) diagnoseFiles(ctx context.Context, files []span.URI) error 
 	defer c.Client.diagnosticsMu.Unlock()
 
 	c.Client.diagnosticsDone = make(chan struct{})
-	_, err := c.Server.NonstandardRequest(ctx, "gopls/diagnoseFiles", map[string]interface{}{"files": untypedFiles})
+	_, err := c.Server.NonstandardRequest(ctx, "gopls/diagnoseFiles", map[string]any{"files": untypedFiles})
 	if err != nil {
 		close(c.Client.diagnosticsDone)
 		return err

@@ -5,7 +5,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -81,7 +81,7 @@ func implements(q *Query) error {
 			if obj, ok := qpos.info.ObjectOf(id).(*types.Func); ok {
 				recv := obj.Type().(*types.Signature).Recv()
 				if recv == nil {
-					return fmt.Errorf("this function is not a method")
+					return errors.New("this function is not a method")
 				}
 				method = obj
 				T = recv.Type()
@@ -97,7 +97,7 @@ func implements(q *Query) error {
 		T = qpos.info.TypeOf(path[0].(ast.Expr))
 	}
 	if T == nil {
-		return fmt.Errorf("not a type, method, or value")
+		return errors.New("not a type, method, or value")
 	}
 
 	// Find all named types, even local types (which can have
@@ -161,7 +161,7 @@ func implements(q *Query) error {
 		}
 	}
 
-	var pos interface{} = qpos
+	var pos any = qpos
 	if nt, ok := deref(T).(*types.Named); ok {
 		pos = nt.Obj()
 	}
@@ -197,7 +197,7 @@ type implementsResult struct {
 	qpos *queryPos
 
 	t       types.Type   // queried type (not necessarily named)
-	pos     interface{}  // pos of t (*types.Name or *QueryPos)
+	pos     any          // pos of t (*types.Name or *QueryPos)
 	to      []types.Type // named or ptr-to-named types assignable to interface T
 	from    []types.Type // named interfaces assignable from T
 	fromPtr []types.Type // named interfaces assignable only from *T

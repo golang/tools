@@ -20,7 +20,7 @@ func argint(x int, y uint)
 func argptr(x *byte, y *byte, c chan int, m map[int]int, f func())
 func argstring(x, y string)
 func argslice(x, y []string)
-func argiface(x interface{}, y interface {
+func argiface(x any, y interface {
 	m()
 })
 func argcomplex(x complex64, y complex128)

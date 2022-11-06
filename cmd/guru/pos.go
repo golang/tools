@@ -7,6 +7,7 @@ package main
 // This file defines utilities for working with file positions.
 
 import (
+	"errors"
 	"fmt"
 	"go/build"
 	"go/parser"
@@ -39,7 +40,7 @@ func parseOctothorpDecimal(s string) int {
 // e.g. to indicate line/column positions.)
 func parsePos(pos string) (filename string, startOffset, endOffset int, err error) {
 	if pos == "" {
-		err = fmt.Errorf("no source position specified")
+		err = errors.New("no source position specified")
 		return
 	}
 
@@ -76,14 +77,14 @@ func fileOffsetToPos(file *token.File, startOffset, endOffset int) (start, end t
 	if 0 <= startOffset && startOffset <= file.Size() {
 		start = file.Pos(int(startOffset))
 	} else {
-		err = fmt.Errorf("start position is beyond end of file")
+		err = errors.New("start position is beyond end of file")
 		return
 	}
 
 	if 0 <= endOffset && endOffset <= file.Size() {
 		end = file.Pos(int(endOffset))
 	} else {
-		err = fmt.Errorf("end position is beyond end of file")
+		err = errors.New("end position is beyond end of file")
 		return
 	}
 
@@ -132,7 +133,7 @@ func fastQueryPos(ctxt *build.Context, pos string) (*queryPos, error) {
 
 	path, exact := astutil.PathEnclosingInterval(f, start, end)
 	if path == nil {
-		return nil, fmt.Errorf("no syntax here")
+		return nil, errors.New("no syntax here")
 	}
 
 	return &queryPos{fset, start, end, path, exact, nil}, nil

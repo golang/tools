@@ -7,9 +7,9 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"runtime"
 	"time"
@@ -39,7 +39,7 @@ func playScript(root, transport string) {
 			buf.WriteString(s)
 			continue
 		}
-		b, err := ioutil.ReadFile(filepath.Join(root, "static", p))
+		b, err := os.ReadFile(filepath.Join(root, "static", p))
 		if err != nil {
 			panic(err)
 		}

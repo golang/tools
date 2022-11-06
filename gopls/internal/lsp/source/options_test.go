@@ -12,7 +12,7 @@ import (
 func TestSetOption(t *testing.T) {
 	tests := []struct {
 		name      string
-		value     interface{}
+		value     any
 		wantError bool
 		check     func(Options) bool
 	}{
@@ -51,7 +51,7 @@ func TestSetOption(t *testing.T) {
 		},
 		{
 			name:  "codelenses",
-			value: map[string]interface{}{"generate": true},
+			value: map[string]any{"generate": true},
 			check: func(o Options) bool { return o.Codelenses["generate"] },
 		},
 		{
@@ -119,7 +119,7 @@ func TestSetOption(t *testing.T) {
 		},
 		{
 			name:  "env",
-			value: map[string]interface{}{"testing": "true"},
+			value: map[string]any{"testing": "true"},
 			check: func(o Options) bool {
 				v, found := o.Env["testing"]
 				return found && v == "true"
@@ -135,14 +135,14 @@ func TestSetOption(t *testing.T) {
 		},
 		{
 			name:  "directoryFilters",
-			value: []interface{}{"-node_modules", "+project_a"},
+			value: []any{"-node_modules", "+project_a"},
 			check: func(o Options) bool {
 				return len(o.DirectoryFilters) == 2
 			},
 		},
 		{
 			name:      "directoryFilters",
-			value:     []interface{}{"invalid"},
+			value:     []any{"invalid"},
 			wantError: true,
 			check: func(o Options) bool {
 				return len(o.DirectoryFilters) == 0
@@ -158,7 +158,7 @@ func TestSetOption(t *testing.T) {
 		},
 		{
 			name: "annotations",
-			value: map[string]interface{}{
+			value: map[string]any{
 				"Nil":      false,
 				"noBounds": true,
 			},

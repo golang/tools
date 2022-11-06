@@ -308,7 +308,7 @@ func (r *rta) interfaces(C types.Type) []*types.Interface {
 	// Ascertain set of interfaces C implements
 	// and update 'implements' relation.
 	var ifaces []*types.Interface
-	r.interfaceTypes.Iterate(func(I types.Type, concs interface{}) {
+	r.interfaceTypes.Iterate(func(I types.Type, concs any) {
 		if I := I.(*types.Interface); types.Implements(C, I) {
 			concs, _ := concs.([]types.Type)
 			r.interfaceTypes.Set(I, append(concs, C))
@@ -327,7 +327,7 @@ func (r *rta) implementations(I *types.Interface) []types.Type {
 	} else {
 		// First time seeing this interface.
 		// Update the 'implements' relation.
-		r.concreteTypes.Iterate(func(C types.Type, ifaces interface{}) {
+		r.concreteTypes.Iterate(func(C types.Type, ifaces any) {
 			if types.Implements(C, I) {
 				ifaces, _ := ifaces.([]*types.Interface)
 				r.concreteTypes.Set(C, append(ifaces, I))

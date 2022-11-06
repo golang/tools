@@ -11,7 +11,6 @@ import (
 	"go/token"
 	"go/types"
 	"html/template"
-	"io/ioutil"
 	"os"
 	"reflect"
 	"sort"
@@ -149,7 +148,7 @@ func readFile(ctx context.Context, uri span.URI, fi os.FileInfo) (*fileHandle, e
 	_ = ctx
 	defer done()
 
-	data, err := ioutil.ReadFile(uri.Filename()) // ~20us
+	data, err := os.ReadFile(uri.Filename()) // ~20us
 	if err != nil {
 		return &fileHandle{
 			modTime: fi.ModTime(),
@@ -219,7 +218,7 @@ type packageStat struct {
 
 func (c *Cache) PackageStats(withNames bool) template.HTML {
 	var packageStats []packageStat
-	c.store.DebugOnlyIterate(func(k, v interface{}) {
+	c.store.DebugOnlyIterate(func(k, v any) {
 		switch k.(type) {
 		case packageHandleKey:
 			v := v.(typeCheckResult)

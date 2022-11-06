@@ -5,7 +5,7 @@ import "fmt"
 func TypeStuff() { //@Stuff
 	var x string
 
-	switch y := interface{}(x).(type) { //@mark(switchY, "y"),godef("y", switchY)
+	switch y := any(x).(type) { //@mark(switchY, "y"),godef("y", switchY)
 	case int: //@mark(intY, "int")
 		fmt.Printf("%v", y) //@hoverdef("y", intY)
 	case string: //@mark(stringY, "string")

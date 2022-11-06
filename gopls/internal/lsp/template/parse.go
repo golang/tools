@@ -14,6 +14,7 @@ package template
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -118,7 +119,7 @@ func parseBuffer(buf []byte) *Parsed {
 			matches := parseErrR.FindStringSubmatch(err.Error())
 			if len(matches) == 2 {
 				// suppress the error by giving it a function with the right name
-				funcs[matches[1]] = func() interface{} { return nil }
+				funcs[matches[1]] = func() any { return nil }
 				t, err = template.New("").Funcs(funcs).Parse(string(ans.buf))
 				continue
 			}
@@ -384,7 +385,7 @@ func symAtPosition(fh source.FileHandle, loc protocol.Position) (*symbol, *Parse
 	pos := p.FromPosition(loc)
 	syms := p.SymsAtPos(pos)
 	if len(syms) == 0 {
-		return nil, p, fmt.Errorf("no symbol found")
+		return nil, p, errors.New("no symbol found")
 	}
 	if len(syms) > 1 {
 		log.Printf("Hover: %d syms, not 1 %v", len(syms), syms)

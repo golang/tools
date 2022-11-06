@@ -13,9 +13,9 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -36,7 +36,7 @@ func downloadGoVersion(version, ops, arch, dest string) error {
 
 	verbosef("Downloading %s", uri)
 
-	req, err := http.NewRequest("GET", uri, nil)
+	req, err := http.NewRequest(http.MethodGet, uri, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -51,7 +51,7 @@ func downloadGoVersion(version, ops, arch, dest string) error {
 	}
 	defer resp.Body.Close()
 
-	tmpf, err := ioutil.TempFile("", "go")
+	tmpf, err := os.CreateTemp("", "go")
 	if err != nil {
 		return err
 	}
@@ -75,7 +75,7 @@ func downloadGoVersion(version, ops, arch, dest string) error {
 		return fmt.Errorf("Downloading Go sha256 from %s.sha256 failed with HTTP status %s", uri, sresp.Status)
 	}
 
-	shasum, err := ioutil.ReadAll(sresp.Body)
+	shasum, err := io.ReadAll(sresp.Body)
 	if err != nil {
 		return err
 	}
@@ -174,7 +174,7 @@ func getLatestGoVersion() (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		b, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 1024))
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return "", fmt.Errorf("Could not get current Go release: HTTP %d: %q", resp.StatusCode, b)
 	}
 	var releases []struct {
@@ -185,7 +185,7 @@ func getLatestGoVersion() (string, error) {
 		return "", err
 	}
 	if len(releases) < 1 {
-		return "", fmt.Errorf("Could not get at least one Go release")
+		return "", errors.New("Could not get at least one Go release")
 	}
 	return releases[0].Version, nil
 }

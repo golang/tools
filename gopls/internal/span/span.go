@@ -8,6 +8,7 @@ package span
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/token"
 	"path"
@@ -233,7 +234,7 @@ func (s Span) WithAll(tf *token.File) (Span, error) {
 
 func (s *Span) update(tf *token.File, withPos, withOffset bool) error {
 	if !s.IsValid() {
-		return fmt.Errorf("cannot add information to an invalid span")
+		return errors.New("cannot add information to an invalid span")
 	}
 	if withPos && !s.HasPosition() {
 		if err := s.v.Start.updatePosition(tf); err != nil {

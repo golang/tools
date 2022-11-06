@@ -54,7 +54,7 @@ func Qux() {
 	fnPtr := &fn
 	(*fnPtr)("hi", "there") //@signature(",", "func(hi string, there string) func(i int) rune", 0)
 
-	var fnIntf interface{} = Foo
+	var fnIntf any = Foo
 	fnIntf.(func(string, int) bool)("hi", 123) //@signature("123", "func(string, int) bool", 1)
 
 	(&bytes.Buffer{}).Next(2) //@signature("2", "Next(n int) []byte", 0)

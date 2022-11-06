@@ -23,8 +23,8 @@ func OkFunc() {
 	}
 
 	yy := []Tlock{
-		Tlock{},
-		Tlock{
+		{},
+		{
 			once: sync.Once{},
 		},
 	}
@@ -69,7 +69,7 @@ func BadFunc() {
 	}
 
 	// override 'new' keyword
-	new := func(interface{}) {}
+	new := func(any) {}
 	new(t) // want `call of new copies lock value: a.Tlock contains sync.Once contains sync\b.*`
 
 	// copy of array of locks
@@ -93,7 +93,7 @@ func BadFunc() {
 	// map access by single and tuple copies prohibited
 	type mut struct{ mu sync.Mutex }
 	muM := map[string]mut{
-		"a": mut{},
+		"a": {},
 	}
 	mumA := muM["a"]    // want "assignment copies lock value to mumA: a.mut contains sync.Mutex"
 	mumB, _ := muM["a"] // want "assignment copies lock value to mumB: \\(a.mut, bool\\) contains a.mut contains sync.Mutex"
@@ -106,10 +106,10 @@ func LenAndCapOnLockArrays() {
 
 	// override 'len' and 'cap' keywords
 
-	len := func(interface{}) {}
+	len := func(any) {}
 	len(a) // want "call of len copies lock value: sync.Mutex"
 
-	cap := func(interface{}) {}
+	cap := func(any) {}
 	cap(a) // want "call of cap copies lock value: sync.Mutex"
 }
 
@@ -118,9 +118,9 @@ func SizeofMutex() {
 	unsafe.Sizeof(mu)  // OK
 	unsafe1.Sizeof(mu) // OK
 	Sizeof(mu)         // OK
-	unsafe := struct{ Sizeof func(interface{}) }{}
+	unsafe := struct{ Sizeof func(any) }{}
 	unsafe.Sizeof(mu) // want "call of unsafe.Sizeof copies lock value: sync.Mutex"
-	Sizeof := func(interface{}) {}
+	Sizeof := func(any) {}
 	Sizeof(mu) // want "call of Sizeof copies lock value: sync.Mutex"
 }
 
@@ -130,7 +130,7 @@ func OffsetofMutex() {
 		mu sync.Mutex
 	}
 	unsafe.Offsetof(T{}.mu) // OK
-	unsafe := struct{ Offsetof func(interface{}) }{}
+	unsafe := struct{ Offsetof func(any) }{}
 	unsafe.Offsetof(T{}.mu) // want "call of unsafe.Offsetof copies lock value: sync.Mutex"
 }
 
@@ -140,7 +140,7 @@ func AlignofMutex() {
 		mu sync.Mutex
 	}
 	unsafe.Alignof(T{}.mu) // OK
-	unsafe := struct{ Alignof func(interface{}) }{}
+	unsafe := struct{ Alignof func(any) }{}
 	unsafe.Alignof(T{}.mu) // want "call of unsafe.Alignof copies lock value: sync.Mutex"
 }
 

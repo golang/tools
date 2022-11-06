@@ -18,7 +18,7 @@ const debugEnabled = false
 
 // If debugEnabled is true, debugf formats its arguments and prints to stderr.
 // If debugEnabled is false, it is a no-op.
-func debugf(format string, args ...interface{}) {
+func debugf(format string, args ...any) {
 	if !debugEnabled {
 		return
 	}

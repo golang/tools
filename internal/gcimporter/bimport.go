@@ -167,7 +167,7 @@ func BImportData(fset *token.FileSet, imports map[string]*types.Package, data []
 	return p.read, pkg, nil
 }
 
-func errorf(format string, args ...interface{}) {
+func errorf(format string, args ...any) {
 	panic(fmt.Sprintf(format, args...))
 }
 

@@ -1,3 +1,4 @@
+//go:build ignore
 // +build ignore
 
 package main
@@ -237,7 +238,7 @@ func DuplicateConstantsAreNotEliminated(x int) {
 
 // Interface values (created by comparisons) are not constants,
 // so ConstSwitch.X is never of interface type.
-func MakeInterfaceIsNotAConstant(x interface{}) {
+func MakeInterfaceIsNotAConstant(x any) {
 	if x == "foo" {
 		print("foo")
 	} else if x == 1 {
@@ -303,7 +304,7 @@ func NonblockingSelectDefaultCasePanics(ch chan int) {
 // -------- Type switches --------
 
 // NB, reliance on fragile register numbering.
-func SimpleTypeSwitch(x interface{}) {
+func SimpleTypeSwitch(x any) {
 	// switch x.(type) {
 	// case t3 int: println(x)
 	// case t7 bool: println(x)
@@ -323,7 +324,7 @@ func SimpleTypeSwitch(x interface{}) {
 }
 
 // NB, potentially fragile reliance on register number.
-func DuplicateTypesAreNotEliminated(x interface{}) {
+func DuplicateTypesAreNotEliminated(x any) {
 	// switch x.(type) {
 	// case t1 string: println(1:int)
 	// case t5 interface{}: println(t5)
@@ -333,7 +334,7 @@ func DuplicateTypesAreNotEliminated(x interface{}) {
 	switch y := x.(type) {
 	case string:
 		println(1)
-	case interface{}:
+	case any:
 		println(y)
 	case int:
 		println(3) // unreachable!
@@ -341,7 +342,7 @@ func DuplicateTypesAreNotEliminated(x interface{}) {
 }
 
 // NB, potentially fragile reliance on register number.
-func AdHocTypeSwitch(x interface{}) {
+func AdHocTypeSwitch(x any) {
 	// switch x.(type) {
 	// case t1 int: println(t1)
 	// case t5 string: println(t5)

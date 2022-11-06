@@ -8,6 +8,7 @@ package printf
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/constant"
@@ -133,7 +134,7 @@ func (f *isWrapper) String() string {
 	}
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	res := &Result{
 		funcs: make(map[*types.Func]Kind),
 	}
@@ -206,7 +207,7 @@ func maybePrintfWrapper(info *types.Info, decl ast.Decl) *printfWrapper {
 }
 
 // findPrintfLike scans the entire package to find printf-like functions.
-func findPrintfLike(pass *analysis.Pass, res *Result) (interface{}, error) {
+func findPrintfLike(pass *analysis.Pass, res *Result) (any, error) {
 	// Gather potential wrappers and call graph between them.
 	byObj := make(map[*types.Func]*printfWrapper)
 	var wrappers []*printfWrapper
@@ -1128,7 +1129,7 @@ func (ss stringSet) String() string {
 func (ss stringSet) Set(flag string) error {
 	for _, name := range strings.Split(flag, ",") {
 		if len(name) == 0 {
-			return fmt.Errorf("empty string")
+			return errors.New("empty string")
 		}
 		if !strings.Contains(name, ".") {
 			name = strings.ToLower(name)

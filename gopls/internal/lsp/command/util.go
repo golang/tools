@@ -26,7 +26,7 @@ func (c Command) ID() string {
 // Example usage:
 //
 //	jsonArgs, err := MarshalArgs(1, "hello", true, StructuredArg{42, 12.6})
-func MarshalArgs(args ...interface{}) ([]json.RawMessage, error) {
+func MarshalArgs(args ...any) ([]json.RawMessage, error) {
 	var out []json.RawMessage
 	for _, arg := range args {
 		argJSON, err := json.Marshal(arg)
@@ -50,7 +50,7 @@ func MarshalArgs(args ...interface{}) ([]json.RawMessage, error) {
 //	    structured StructuredArg
 //	)
 //	err := UnmarshalArgs(args, &num, &str, &bul, &structured)
-func UnmarshalArgs(jsonArgs []json.RawMessage, args ...interface{}) error {
+func UnmarshalArgs(jsonArgs []json.RawMessage, args ...any) error {
 	if len(args) != len(jsonArgs) {
 		return fmt.Errorf("DecodeArgs: expected %d input arguments, got %d JSON arguments", len(args), len(jsonArgs))
 	}

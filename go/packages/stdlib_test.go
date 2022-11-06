@@ -6,7 +6,7 @@ package packages_test
 
 import (
 	"bytes"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -120,7 +120,7 @@ func TestCgoOption(t *testing.T) {
 		}
 
 		// Load the file and check the object is declared at the right place.
-		b, err := ioutil.ReadFile(posn.Filename)
+		b, err := os.ReadFile(posn.Filename)
 		if err != nil {
 			t.Errorf("can't read %s: %s", posn.Filename, err)
 			continue

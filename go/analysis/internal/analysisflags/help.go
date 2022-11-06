@@ -29,7 +29,7 @@ genuine problems, but it can find errors not caught by the compilers.
 func Help(progname string, analyzers []*analysis.Analyzer, args []string) {
 	// No args: show summary of all analyzers.
 	if len(args) == 0 {
-		fmt.Println(strings.Replace(help, "PROGNAME", progname, -1))
+		fmt.Println(strings.ReplaceAll(help, "PROGNAME", progname))
 		fmt.Println("Registered analyzers:")
 		fmt.Println()
 		sort.Slice(analyzers, func(i, j int) bool {

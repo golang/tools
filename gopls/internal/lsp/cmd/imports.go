@@ -8,7 +8,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -89,7 +89,7 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 	switch {
 	case t.Write:
 		if len(edits) > 0 {
-			ioutil.WriteFile(filename, []byte(newContent), 0644)
+			os.WriteFile(filename, []byte(newContent), 0644)
 		}
 	case t.Diff:
 		unified, err := diff.ToUnified(filename+".orig", filename, string(file.mapper.Content), sedits)

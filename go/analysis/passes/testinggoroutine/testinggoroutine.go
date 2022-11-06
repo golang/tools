@@ -44,7 +44,7 @@ var forbidden = map[string]bool{
 	"SkipNow": true,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	if !analysisutil.Imports(pass.Pkg, "testing") {

@@ -704,15 +704,15 @@ type OptionResults []OptionResult
 
 type OptionResult struct {
 	Name  string
-	Value interface{}
+	Value any
 	Error error
 }
 
-func SetOptions(options *Options, opts interface{}) OptionResults {
+func SetOptions(options *Options, opts any) OptionResults {
 	var results OptionResults
 	switch opts := opts.(type) {
 	case nil:
-	case map[string]interface{}:
+	case map[string]any:
 		// If the user's settings contains "allExperiments", set that first,
 		// and then let them override individual settings independently.
 		var enableExperiments bool
@@ -882,7 +882,7 @@ func validateDirectoryFilter(ifilter string) (string, error) {
 	return strings.TrimRight(filepath.FromSlash(filter), "/"), nil
 }
 
-func (o *Options) set(name string, value interface{}, seen map[string]struct{}) OptionResult {
+func (o *Options) set(name string, value any, seen map[string]struct{}) OptionResult {
 	// Flatten the name in case we get options with a hierarchy.
 	split := strings.Split(name, ".")
 	name = split[len(split)-1]
@@ -895,7 +895,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 
 	switch name {
 	case "env":
-		menv, ok := value.(map[string]interface{})
+		menv, ok := value.(map[string]any)
 		if !ok {
 			result.parseErrorf("invalid type %T, expect map", value)
 			break
@@ -909,7 +909,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 
 	case "buildFlags":
 		// TODO(rfindley): use asStringSlice.
-		iflags, ok := value.([]interface{})
+		iflags, ok := value.([]any)
 		if !ok {
 			result.parseErrorf("invalid type %T, expect list", value)
 			break
@@ -922,7 +922,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 
 	case "directoryFilters":
 		// TODO(rfindley): use asStringSlice.
-		ifilters, ok := value.([]interface{})
+		ifilters, ok := value.([]any)
 		if !ok {
 			result.parseErrorf("invalid type %T, expect list", value)
 			break
@@ -1092,7 +1092,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		result.deprecated("")
 
 	case "templateExtensions":
-		if iexts, ok := value.([]interface{}); ok {
+		if iexts, ok := value.([]any); ok {
 			ans := []string{}
 			for _, x := range iexts {
 				ans = append(ans, fmt.Sprint(x))
@@ -1188,7 +1188,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 }
 
 // parseErrorf reports an error parsing the current configuration value.
-func (r *OptionResult) parseErrorf(msg string, values ...interface{}) {
+func (r *OptionResult) parseErrorf(msg string, values ...any) {
 	if false {
 		_ = fmt.Sprintf(msg, values...) // this causes vet to check this like printf
 	}
@@ -1208,7 +1208,7 @@ func (e *SoftError) Error() string {
 // softErrorf reports an error that does not affect the functionality of gopls
 // (a warning in the UI).
 // The formatted message will be shown to the user unmodified.
-func (r *OptionResult) softErrorf(format string, values ...interface{}) {
+func (r *OptionResult) softErrorf(format string, values ...any) {
 	msg := fmt.Sprintf(format, values...)
 	r.Error = &SoftError{msg}
 }
@@ -1300,7 +1300,7 @@ func (r *OptionResult) setAnnotationMap(bm *map[Annotation]bool) {
 }
 
 func (r *OptionResult) asBoolMap() map[string]bool {
-	all, ok := r.Value.(map[string]interface{})
+	all, ok := r.Value.(map[string]any)
 	if !ok {
 		r.parseErrorf("invalid type %T for map[string]bool option", r.Value)
 		return nil
@@ -1327,7 +1327,7 @@ func (r *OptionResult) asString() (string, bool) {
 }
 
 func (r *OptionResult) asStringSlice() ([]string, bool) {
-	iList, ok := r.Value.([]interface{})
+	iList, ok := r.Value.([]any)
 	if !ok {
 		r.parseErrorf("invalid type %T, expect list", r.Value)
 		return nil, false

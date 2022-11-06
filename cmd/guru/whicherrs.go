@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -64,7 +65,7 @@ func whicherrs(q *Query) error {
 	switch n := path[0].(type) {
 	case *ast.ValueSpec:
 		// ambiguous ValueSpec containing multiple names
-		return fmt.Errorf("multiple value specification")
+		return errors.New("multiple value specification")
 	case *ast.Ident:
 		obj = qpos.info.ObjectOf(n)
 		expr = n
@@ -76,7 +77,7 @@ func whicherrs(q *Query) error {
 
 	typ := qpos.info.TypeOf(expr)
 	if !types.Identical(typ, builtinErrorType) {
-		return fmt.Errorf("selection is not an expression of type 'error'")
+		return errors.New("selection is not an expression of type 'error'")
 	}
 	// Determine the ssa.Value for the expression.
 	var value ssa.Value
@@ -142,7 +143,7 @@ func whicherrs(q *Query) error {
 	ptares := ptrAnalysis(ptaConfig)
 	valueptr := ptares.Queries[value]
 	if valueptr == (pointer.Pointer{}) {
-		return fmt.Errorf("pointer analysis did not find expression (dead code?)")
+		return errors.New("pointer analysis did not find expression (dead code?)")
 	}
 	for g, v := range globals {
 		ptr, ok := ptares.Queries[v]
@@ -175,7 +176,7 @@ func whicherrs(q *Query) error {
 		}
 	}
 	concs := pts.DynamicTypes()
-	concs.Iterate(func(conc types.Type, _ interface{}) {
+	concs.Iterate(func(conc types.Type, _ any) {
 		// go/types is a bit annoying here.
 		// We want to find all the types that we can
 		// typeswitch or assert to. This means finding out

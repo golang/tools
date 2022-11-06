@@ -223,7 +223,7 @@ func newStringListValue(val []string, p *[]string) *stringListValue {
 	return (*stringListValue)(p)
 }
 
-func (ss *stringListValue) Get() interface{} { return []string(*ss) }
+func (ss *stringListValue) Get() any { return []string(*ss) }
 
 func (ss *stringListValue) String() string { return fmt.Sprintf("%q", *ss) }
 

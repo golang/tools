@@ -45,7 +45,7 @@ func (b *ServerBinder) Bind(ctx context.Context, conn *jsonrpc2_v2.Connection) j
 	serverHandler := protocol.ServerHandlerV2(server)
 	// Wrap the server handler to inject the client into each request context, so
 	// that log events are reflected back to the client.
-	wrapped := jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+	wrapped := jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 		ctx = protocol.WithClient(ctx, client)
 		return serverHandler.Handle(ctx, req)
 	})
@@ -62,7 +62,7 @@ type canceler struct {
 	conn *jsonrpc2_v2.Connection
 }
 
-func (c *canceler) Preempt(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+func (c *canceler) Preempt(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 	if req.Method != "$/cancelRequest" {
 		return nil, jsonrpc2_v2.ErrNotHandled
 	}
@@ -101,7 +101,7 @@ func (b *ForwardBinder) Bind(ctx context.Context, conn *jsonrpc2_v2.Connection) 
 	serverConn, err := jsonrpc2_v2.Dial(context.Background(), b.dialer, clientBinder)
 	if err != nil {
 		return jsonrpc2_v2.ConnectionOptions{
-			Handler: jsonrpc2_v2.HandlerFunc(func(context.Context, *jsonrpc2_v2.Request) (interface{}, error) {
+			Handler: jsonrpc2_v2.HandlerFunc(func(context.Context, *jsonrpc2_v2.Request) (any, error) {
 				return nil, fmt.Errorf("%w: %v", jsonrpc2_v2.ErrInternal, err)
 			}),
 		}

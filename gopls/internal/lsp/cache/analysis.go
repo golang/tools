@@ -80,7 +80,7 @@ type actionData struct {
 	analyzer     *analysis.Analyzer
 	pkgTypes     *types.Package // types only; don't keep syntax live
 	diagnostics  []*source.Diagnostic
-	result       interface{}
+	result       any
 	objectFacts  map[objectFactKey]analysis.Fact
 	packageFacts map[packageFactKey]analysis.Fact
 }
@@ -169,7 +169,7 @@ func (s *snapshot) actionHandle(ctx context.Context, id PackageID, a *analysis.A
 	// itself as part of the key. Rather than actually use a pointer
 	// in the key, we get a simpler object graph if we shard the
 	// store by packages.)
-	promise, release := pkg.analyses.Promise(a.Name, func(ctx context.Context, arg interface{}) interface{} {
+	promise, release := pkg.analyses.Promise(a.Name, func(ctx context.Context, arg any) any {
 		res, err := actionImpl(ctx, arg.(*snapshot), deps, a, pkg)
 		return actionResult{res, err}
 	})
@@ -188,7 +188,7 @@ func (s *snapshot) actionHandle(ctx context.Context, id PackageID, a *analysis.A
 		return result.(*actionHandle), nil
 	}
 
-	s.actions.Set(key, ah, func(_, _ interface{}) { release() })
+	s.actions.Set(key, ah, func(_, _ any) { release() })
 
 	return ah, nil
 }
@@ -208,7 +208,7 @@ func actionImpl(ctx context.Context, snapshot *snapshot, deps []*actionHandle, a
 	// facts of each dependency into the inputs of this action.
 	var (
 		mu           sync.Mutex
-		inputs       = make(map[*analysis.Analyzer]interface{})
+		inputs       = make(map[*analysis.Analyzer]any)
 		objectFacts  = make(map[objectFactKey]analysis.Fact)
 		packageFacts = make(map[packageFactKey]analysis.Fact)
 	)
@@ -359,7 +359,7 @@ func actionImpl(ctx context.Context, snapshot *snapshot, deps []*actionHandle, a
 
 	// Recover from panics (only) within the analyzer logic.
 	// (Use an anonymous function to limit the recover scope.)
-	var result interface{}
+	var result any
 	var err error
 	func() {
 		defer func() {

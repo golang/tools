@@ -5,6 +5,7 @@
 package fake
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -130,7 +131,7 @@ func applyEdits(lines []string, edits []Edit) ([]string, error) {
 			for i := 0; i < pos.Column; i++ {
 				r, sz := utf8.DecodeRuneInString(src[offset:])
 				if r == '\n' && badCol == nil {
-					badCol = fmt.Errorf("bad column")
+					badCol = errors.New("bad column")
 				}
 				offset += sz
 			}

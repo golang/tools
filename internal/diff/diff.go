@@ -6,7 +6,7 @@
 package diff
 
 import (
-	"fmt"
+	"errors"
 	"sort"
 	"strings"
 )
@@ -62,10 +62,10 @@ func validate(src string, edits []Edit) ([]Edit, int, error) {
 	lastEnd := 0
 	for _, edit := range edits {
 		if !(0 <= edit.Start && edit.Start <= edit.End && edit.End <= len(src)) {
-			return nil, 0, fmt.Errorf("diff has out-of-bounds edits")
+			return nil, 0, errors.New("diff has out-of-bounds edits")
 		}
 		if edit.Start < lastEnd {
-			return nil, 0, fmt.Errorf("diff has overlapping edits")
+			return nil, 0, errors.New("diff has overlapping edits")
 		}
 		size += len(edit.New) + edit.Start - edit.End
 		lastEnd = edit.End

@@ -6,12 +6,12 @@
 
 package testdata
 
-func foo(c chan interface{}, j int) {
+func foo(c chan any, j int) {
 	c <- j + 1
 }
 
 func Baz(i int) {
-	c := make(chan interface{})
+	c := make(chan any)
 	go foo(c, i)
 	x := <-c
 	print(x)

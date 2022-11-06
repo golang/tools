@@ -7,9 +7,10 @@
 
 package b
 
-import C "fmt"
-
-import "unsafe"
+import (
+	C "fmt"
+	"unsafe"
+)
 
 func init() {
 	var f func()

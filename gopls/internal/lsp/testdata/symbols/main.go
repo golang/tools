@@ -84,7 +84,7 @@ type WithEmbeddeds interface { //@symbol("WithEmbeddeds", "WithEmbeddeds", "Inte
 	io.Writer //@symbol("Writer", "Writer", "Field", "io.Writer", "", "WithEmbeddeds")
 }
 
-type EmptyInterface interface{} //@symbol("EmptyInterface", "EmptyInterface", "Interface", "interface{}", "", "")
+type EmptyInterface any //@symbol("EmptyInterface", "EmptyInterface", "Interface", "interface{}", "", "")
 
 func Dunk() int { return 0 } //@symbol("Dunk", "Dunk", "Function", "func() int", "", "")
 

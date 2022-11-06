@@ -87,7 +87,7 @@ func TestMap(t *testing.T) {
 		t.Errorf("At(): got %q, want \"*string\"", v)
 	}
 	// Iteration over sole entry.
-	tmap.Iterate(func(key types.Type, value interface{}) {
+	tmap.Iterate(func(key types.Type, value any) {
 		if key != tPStr1 {
 			t.Errorf("Iterate: key: got %s, want %s", key, tPStr1)
 		}
@@ -137,7 +137,7 @@ func TestMap(t *testing.T) {
 		t.Errorf("At(): got %q, want \"*string again\"", v)
 	}
 	hamming := 1
-	tmap.Iterate(func(key types.Type, value interface{}) {
+	tmap.Iterate(func(key types.Type, value any) {
 		switch {
 		case I(key, tChanInt1):
 			hamming *= 2 // ok

@@ -96,7 +96,7 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 		return nil, fmt.Errorf("unsupported URI schemes: %v (gopls only supports file URIs)", folders)
 	}
 
-	var codeActionProvider interface{} = true
+	var codeActionProvider any = true
 	if ca := params.Capabilities.TextDocument.CodeAction; len(ca.CodeActionLiteralSupport.CodeActionKind.ValueSet) > 0 {
 		// If the client has specified CodeActionLiteralSupport,
 		// send the code actions we support.
@@ -106,7 +106,7 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 			CodeActionKinds: s.getSupportedCodeActions(),
 		}
 	}
-	var renameOpts interface{} = true
+	var renameOpts any = true
 	if r := params.Capabilities.TextDocument.Rename; r.PrepareSupport {
 		renameOpts = protocol.RenameOptions{
 			PrepareProvider: r.PrepareSupport,

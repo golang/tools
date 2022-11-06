@@ -241,7 +241,7 @@ func (s *Server) diagnose(ctx context.Context, snapshot source.Snapshot, forceAn
 		}
 		for id, diags := range diagsByFileID {
 			if id.URI == "" {
-				event.Error(ctx, "missing URI while "+operation, fmt.Errorf("empty URI"), tag.Directory.Of(snapshot.View().Folder().Filename()))
+				event.Error(ctx, "missing URI while "+operation, errors.New("empty URI"), tag.Directory.Of(snapshot.View().Folder().Filename()))
 				continue
 			}
 			s.storeDiagnostics(snapshot, id.URI, dsource, diags)

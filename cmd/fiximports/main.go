@@ -76,7 +76,6 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	exec "golang.org/x/sys/execabs"
 	"io"
 	"io/ioutil"
 	"log"
@@ -86,6 +85,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 // flags

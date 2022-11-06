@@ -5,7 +5,7 @@
 package cmdtest
 
 import (
-	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 
@@ -21,7 +21,7 @@ import (
 func (r *runner) Diagnostics(t *testing.T, uri span.URI, want []*source.Diagnostic) {
 	out, _ := r.runGoplsCmd(t, "check", uri.Filename())
 
-	content, err := ioutil.ReadFile(uri.Filename())
+	content, err := os.ReadFile(uri.Filename())
 	if err != nil {
 		t.Fatal(err)
 	}

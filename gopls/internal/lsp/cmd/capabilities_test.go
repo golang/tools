@@ -7,7 +7,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,15 +19,15 @@ import (
 // TestCapabilities does some minimal validation of the server's adherence to the LSP.
 // The checks in the test are added as changes are made and errors noticed.
 func TestCapabilities(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "fake")
+	tmpDir, err := os.MkdirTemp("", "fake")
 	if err != nil {
 		t.Fatal(err)
 	}
 	tmpFile := filepath.Join(tmpDir, "fake.go")
-	if err := ioutil.WriteFile(tmpFile, []byte(""), 0775); err != nil {
+	if err := os.WriteFile(tmpFile, []byte(""), 0775); err != nil {
 		t.Fatal(err)
 	}
-	if err := ioutil.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module fake\n\ngo 1.12\n"), 0775); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module fake\n\ngo 1.12\n"), 0775); err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
@@ -139,7 +138,7 @@ func TestCapabilities(t *testing.T) {
 		}
 		// The item's TextEdit must be a pointer, as VS Code considers TextEdits
 		// that don't contain the cursor position to be invalid.
-		var textEdit interface{} = item.TextEdit
+		var textEdit any = item.TextEdit
 		if _, ok := textEdit.(*protocol.TextEdit); !ok {
 			t.Errorf("textEdit is not a *protocol.TextEdit, instead it is %T", textEdit)
 		}

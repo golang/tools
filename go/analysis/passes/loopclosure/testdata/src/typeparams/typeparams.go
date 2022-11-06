@@ -45,15 +45,15 @@ type T[P any] struct {
 	a P
 }
 
-func (t T[P]) Go(func() error) { }
+func (t T[P]) Go(func() error) {}
 
 func _(g T[errgroup.Group]) {
 	var s []int
 	for i, v := range s {
 		// "T.a" is method "(*...errgroup.Group).Go".
 		g.a.Go(func() error {
-			print(i)  // want "loop variable i captured by func literal"
-			print(v)  // want "loop variable v captured by func literal"
+			print(i) // want "loop variable i captured by func literal"
+			print(v) // want "loop variable v captured by func literal"
 			return nil
 		})
 	}

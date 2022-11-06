@@ -12,6 +12,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/build"
@@ -30,7 +31,7 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
-type printfFunc func(pos interface{}, format string, args ...interface{})
+type printfFunc func(pos any, format string, args ...any)
 
 // A QueryResult is an item of output.  Each query produces a stream of
 // query results, calling Query.Output for each one.
@@ -114,7 +115,7 @@ func Run(mode string, q *Query) error {
 func setPTAScope(lconf *loader.Config, scope []string) error {
 	pkgs := buildutil.ExpandPatterns(lconf.Build, scope)
 	if len(pkgs) == 0 {
-		return fmt.Errorf("no packages specified for pointer analysis scope")
+		return errors.New("no packages specified for pointer analysis scope")
 	}
 	// The value of each entry in pkgs is true,
 	// giving ImportWithTests (not Import) semantics.
@@ -137,7 +138,7 @@ func setupPTA(prog *ssa.Program, lprog *loader.Program, ptaLog io.Writer, reflec
 		}
 	}
 	if mains == nil {
-		return nil, fmt.Errorf("analysis scope has no main and no tests")
+		return nil, errors.New("analysis scope has no main and no tests")
 	}
 	return &pointer.Config{
 		Log:        ptaLog,
@@ -237,7 +238,7 @@ func parseQueryPos(lprog *loader.Program, pos string, needExact bool) (*queryPos
 	}
 	info, path, exact := lprog.PathEnclosingInterval(start, end)
 	if path == nil {
-		return nil, fmt.Errorf("no syntax here")
+		return nil, errors.New("no syntax here")
 	}
 	if needExact && !exact {
 		return nil, fmt.Errorf("ambiguous selection within %s", astutil.NodeDescription(path[0]))
@@ -339,7 +340,7 @@ func deref(typ types.Type) types.Type {
 //
 // The output format is is compatible with the 'gnu'
 // compilation-error-regexp in Emacs' compilation mode.
-func fprintf(w io.Writer, fset *token.FileSet, pos interface{}, format string, args ...interface{}) {
+func fprintf(w io.Writer, fset *token.FileSet, pos any, format string, args ...any) {
 	var start, end token.Pos
 	switch pos := pos.(type) {
 	case ast.Node:
@@ -387,7 +388,7 @@ func fprintf(w io.Writer, fset *token.FileSet, pos interface{}, format string, a
 	io.WriteString(w, "\n")
 }
 
-func toJSON(x interface{}) []byte {
+func toJSON(x any) []byte {
 	b, err := json.MarshalIndent(x, "", "\t")
 	if err != nil {
 		log.Fatalf("JSON error: %v", err)

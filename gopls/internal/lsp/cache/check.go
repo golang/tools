@@ -145,7 +145,7 @@ func (s *snapshot) buildPackageHandle(ctx context.Context, id PackageID, mode so
 	// Create a handle for the result of type checking.
 	experimentalKey := s.View().Options().ExperimentalPackageCacheKey
 	phKey := computePackageKey(m.ID, compiledGoFiles, m, depKey, mode, experimentalKey)
-	promise, release := s.store.Promise(phKey, func(ctx context.Context, arg interface{}) interface{} {
+	promise, release := s.store.Promise(phKey, func(ctx context.Context, arg any) any {
 		pkg, err := typeCheckImpl(ctx, arg.(*snapshot), goFiles, compiledGoFiles, m.Metadata, mode, deps)
 		return typeCheckResult{pkg, err}
 	})
@@ -181,7 +181,7 @@ func (s *snapshot) buildPackageHandle(ctx context.Context, id PackageID, mode so
 	}
 
 	// Update the map.
-	s.packages.Set(packageKey, ph, func(_, _ interface{}) { release() })
+	s.packages.Set(packageKey, ph, func(_, _ any) { release() })
 
 	return ph, nil
 }

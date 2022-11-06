@@ -37,7 +37,7 @@ func Baz(i I) {
 	i.Foo()
 }
 
-func sink(i interface{}) {
+func sink(i any) {
 	print(i)
 }
 

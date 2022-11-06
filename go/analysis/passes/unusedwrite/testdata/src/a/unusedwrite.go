@@ -19,13 +19,13 @@ func BadWrites() {
 	s2[1] = 10 // want "unused write to array index 1:int"
 
 	// Test range variables of struct type.
-	s3 := []T1{T1{x: 100}}
+	s3 := []T1{{x: 100}}
 	for i, v := range s3 {
 		v.x = i // want "unused write to field x"
 	}
 
 	// Test the case where a different field is read after the write.
-	s4 := []T2{T2{x: 1, y: 2}}
+	s4 := []T2{{x: 1, y: 2}}
 	for i, v := range s4 {
 		v.x = i // want "unused write to field x"
 		_ = v.y
@@ -53,7 +53,7 @@ func GoodWrites(m map[int]int) {
 	_ = s2[2]
 
 	// Test range variables of struct type.
-	s3 := []T1{T1{x: 100}}
+	s3 := []T1{{x: 100}}
 	for i, v := range s3 { // v is a copy
 		v.x = i
 		_ = v.x // still a usage

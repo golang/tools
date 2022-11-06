@@ -83,7 +83,7 @@ type internalError string
 
 func (e internalError) Error() string { return "gcimporter: " + string(e) }
 
-func internalErrorf(format string, args ...interface{}) error {
+func internalErrorf(format string, args ...any) error {
 	return internalError(fmt.Sprintf(format, args...))
 }
 
@@ -793,7 +793,7 @@ func (p *exporter) rawByte(b byte) {
 
 // tracef is like fmt.Printf but it rewrites the format string
 // to take care of indentation.
-func (p *exporter) tracef(format string, args ...interface{}) {
+func (p *exporter) tracef(format string, args ...any) {
 	if strings.ContainsAny(format, "<>\n") {
 		var buf bytes.Buffer
 		for i := 0; i < len(format); i++ {

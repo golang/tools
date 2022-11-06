@@ -149,7 +149,7 @@ type Invocation struct {
 	CleanEnv   bool
 	Env        []string
 	WorkingDir string
-	Logf       func(format string, args ...interface{})
+	Logf       func(format string, args ...any)
 }
 
 func (i *Invocation) runWithFriendlyError(ctx context.Context, stdout, stderr io.Writer) (friendlyError error, rawError error) {
@@ -171,7 +171,7 @@ func (i *Invocation) runWithFriendlyError(ctx context.Context, stdout, stderr io
 func (i *Invocation) run(ctx context.Context, stdout, stderr io.Writer) error {
 	log := i.Logf
 	if log == nil {
-		log = func(string, ...interface{}) {}
+		log = func(string, ...any) {}
 	}
 
 	goArgs := []string{i.Verb}

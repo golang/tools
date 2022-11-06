@@ -6,7 +6,7 @@ package typeparams
 
 import "unsafe"
 
-func GenericShiftTest[DifferentSize ~int8|int16|int64, SameSize int8|byte]() {
+func GenericShiftTest[DifferentSize ~int8 | int16 | int64, SameSize int8 | byte]() {
 	var d DifferentSize
 	_ = d << 7
 	_ = d << 8        // want "d .may be 8 bits. too small for shift of 8"
@@ -24,9 +24,9 @@ func GenericShiftTest[DifferentSize ~int8|int16|int64, SameSize int8|byte]() {
 
 	var s SameSize
 	_ = s << 7
-	_ = s << 8        // want "s .8 bits. too small for shift of 8"
-	_ = s << (7 + 1)  // want "s .8 bits. too small for shift of 8"
-	_ = s >> 8        // want "s .8 bits. too small for shift of 8"
-	s <<= 8           // want "s .8 bits. too small for shift of 8"
-	s >>= 8           // want "s .8 bits. too small for shift of 8"
+	_ = s << 8       // want "s .8 bits. too small for shift of 8"
+	_ = s << (7 + 1) // want "s .8 bits. too small for shift of 8"
+	_ = s >> 8       // want "s .8 bits. too small for shift of 8"
+	s <<= 8          // want "s .8 bits. too small for shift of 8"
+	s >>= 8          // want "s .8 bits. too small for shift of 8"
 }

@@ -167,14 +167,14 @@ func (cfg *Config) buildNode() *wire.Node {
 	}
 }
 
-func (e *Exporter) send(endpoint string, message interface{}) {
+func (e *Exporter) send(endpoint string, message any) {
 	blob, err := json.Marshal(message)
 	if err != nil {
 		errorInExport("ocagent failed to marshal message for %v: %v", endpoint, err)
 		return
 	}
 	uri := e.config.Address + endpoint
-	req, err := http.NewRequest("POST", uri, bytes.NewReader(blob))
+	req, err := http.NewRequest(http.MethodPost, uri, bytes.NewReader(blob))
 	if err != nil {
 		errorInExport("ocagent failed to build request for %v: %v", uri, err)
 		return
@@ -190,7 +190,7 @@ func (e *Exporter) send(endpoint string, message interface{}) {
 	}
 }
 
-func errorInExport(message string, args ...interface{}) {
+func errorInExport(message string, args ...any) {
 	// This function is useful when debugging the exporter, but in general we
 	// want to just drop any export
 }

@@ -5,7 +5,7 @@ package protocol
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 )
 
 // DocumentChanges is a union of a file edit and directory rename operations
@@ -16,7 +16,7 @@ type DocumentChanges struct {
 }
 
 func (d *DocumentChanges) UnmarshalJSON(data []byte) error {
-	var m map[string]interface{}
+	var m map[string]any
 
 	if err := json.Unmarshal(data, &m); err != nil {
 		return err
@@ -37,5 +37,5 @@ func (d *DocumentChanges) MarshalJSON() ([]byte, error) {
 	} else if d.RenameFile != nil {
 		return json.Marshal(d.RenameFile)
 	}
-	return nil, fmt.Errorf("Empty DocumentChanges union value")
+	return nil, errors.New("Empty DocumentChanges union value")
 }

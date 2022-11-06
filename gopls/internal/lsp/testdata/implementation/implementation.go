@@ -28,4 +28,4 @@ type cryer int //@implementations("cryer", Cryer)
 
 func (cryer) Cry(other.CryType) {} //@mark(CryImpl, "Cry"),implementations("Cry", Cry)
 
-type Empty interface{} //@implementations("Empty")
+type Empty any //@implementations("Empty")

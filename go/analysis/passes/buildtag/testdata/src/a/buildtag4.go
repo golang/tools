@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build !(bad || worse)
-// +build !bad
-// +build !worse
+// +build !bad,!worse
 
 package a

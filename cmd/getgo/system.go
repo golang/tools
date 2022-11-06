@@ -10,9 +10,10 @@ package main
 import (
 	"bytes"
 	"context"
-	exec "golang.org/x/sys/execabs"
 	"runtime"
 	"strings"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 // arch contains either amd64 or 386.

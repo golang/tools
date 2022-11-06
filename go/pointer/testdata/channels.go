@@ -96,7 +96,7 @@ func chan4() {
 func chan5() {
 	type T struct {
 		x *int
-		y interface{}
+		y any
 	}
 	ch := make(chan T)
 	ch <- T{new(int), incr} // @line ch5new

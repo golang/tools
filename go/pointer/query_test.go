@@ -31,19 +31,19 @@ var V9 reflect.Value
 `
 	tests := []struct {
 		in    string
-		out   []interface{}
+		out   []any
 		v     string
 		valid bool
 	}{
-		{`x`, []interface{}{"x"}, "V1", true},
-		{`x`, []interface{}{"x"}, "V9", true},
-		{`*x`, []interface{}{"x", "load"}, "V2", true},
-		{`x[0]`, []interface{}{"x", "sliceelem"}, "V3", true},
-		{`x[0]`, []interface{}{"x", "sliceelem"}, "V8", true},
-		{`<-x`, []interface{}{"x", "recv"}, "V4", true},
-		{`(<-x)[0]`, []interface{}{"x", "recv", "sliceelem"}, "V4", true},
-		{`<-x.F2`, []interface{}{"x", "field", 1, "recv"}, "V5", true},
-		{`<-x[0]`, []interface{}{"x", "arrayelem", "recv"}, "V6", true},
+		{`x`, []any{"x"}, "V1", true},
+		{`x`, []any{"x"}, "V9", true},
+		{`*x`, []any{"x", "load"}, "V2", true},
+		{`x[0]`, []any{"x", "sliceelem"}, "V3", true},
+		{`x[0]`, []any{"x", "sliceelem"}, "V8", true},
+		{`<-x`, []any{"x", "recv"}, "V4", true},
+		{`(<-x)[0]`, []any{"x", "recv", "sliceelem"}, "V4", true},
+		{`<-x.F2`, []any{"x", "field", 1, "recv"}, "V5", true},
+		{`<-x[0]`, []any{"x", "arrayelem", "recv"}, "V6", true},
 		{`x`, nil, "V7", false},
 		{`y`, nil, "V1", false},
 		{`x; x`, nil, "V1", false},

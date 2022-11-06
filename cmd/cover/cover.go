@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -13,7 +14,6 @@ import (
 	"go/printer"
 	"go/token"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -106,14 +106,14 @@ func parseFlags() error {
 	profile = *htmlOut
 	if *funcOut != "" {
 		if profile != "" {
-			return fmt.Errorf("too many options")
+			return errors.New("too many options")
 		}
 		profile = *funcOut
 	}
 
 	// Must either display a profile or rewrite Go source.
 	if (profile == "") == (*mode == "") {
-		return fmt.Errorf("too many options")
+		return errors.New("too many options")
 	}
 
 	if *mode != "" {
@@ -129,14 +129,14 @@ func parseFlags() error {
 		}
 
 		if flag.NArg() == 0 {
-			return fmt.Errorf("missing source file")
+			return errors.New("missing source file")
 		} else if flag.NArg() == 1 {
 			return nil
 		}
 	} else if flag.NArg() == 0 {
 		return nil
 	}
-	return fmt.Errorf("too many arguments")
+	return errors.New("too many arguments")
 }
 
 // Block represents the information about a basic block to be recorded in the analysis.
@@ -325,7 +325,7 @@ func initialComments(content []byte) []byte {
 
 func annotate(name string) {
 	fset := token.NewFileSet()
-	content, err := ioutil.ReadFile(name)
+	content, err := os.ReadFile(name)
 	if err != nil {
 		log.Fatalf("cover: %s: %s", name, err)
 	}

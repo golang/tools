@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
-	"io/ioutil"
+	"os"
 	"sort"
 	"strings"
 
@@ -36,7 +36,7 @@ func want(f *ast.File) []string {
 // `path`, assumed to define package "testdata," and the
 // test want result as list of strings.
 func testProg(path string, mode ssa.BuilderMode) (*ssa.Program, []string, error) {
-	content, err := ioutil.ReadFile(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, err
 	}

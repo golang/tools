@@ -127,7 +127,7 @@ func (p *Presentation) HandleSearch(w http.ResponseWriter, r *http.Request) {
 
 func (p *Presentation) serveSearchDesc(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/opensearchdescription+xml")
-	data := map[string]interface{}{
+	data := map[string]any{
 		"BaseURL": fmt.Sprintf("http://%s", r.Host),
 	}
 	applyTemplateToResponseWriter(w, p.SearchDescXML, &data)

@@ -314,7 +314,7 @@ type FormatError struct {
 	msg string
 }
 
-func formatError(off int64, format string, data ...interface{}) *FormatError {
+func formatError(off int64, format string, data ...any) *FormatError {
 	return &FormatError{off, fmt.Sprintf(format, data...)}
 }
 

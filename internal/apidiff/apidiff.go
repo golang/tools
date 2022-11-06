@@ -61,15 +61,15 @@ func newDiffer(old, new *types.Package) *differ {
 	}
 }
 
-func (d *differ) incompatible(obj types.Object, part, format string, args ...interface{}) {
+func (d *differ) incompatible(obj types.Object, part, format string, args ...any) {
 	addMessage(d.incompatibles, obj, part, format, args)
 }
 
-func (d *differ) compatible(obj types.Object, part, format string, args ...interface{}) {
+func (d *differ) compatible(obj types.Object, part, format string, args ...any) {
 	addMessage(d.compatibles, obj, part, format, args)
 }
 
-func addMessage(ms messageSet, obj types.Object, part, format string, args []interface{}) {
+func addMessage(ms messageSet, obj types.Object, part, format string, args []any) {
 	ms.add(obj, part, fmt.Sprintf(format, args...))
 }
 

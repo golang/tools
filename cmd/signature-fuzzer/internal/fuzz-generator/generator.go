@@ -445,7 +445,7 @@ func writeCom(b *bytes.Buffer, i int) {
 
 var Verbctl int = 0
 
-func verb(vlevel int, s string, a ...interface{}) {
+func verb(vlevel int, s string, a ...any) {
 	if Verbctl >= vlevel {
 		fmt.Printf(s, a...)
 		fmt.Printf("\n")

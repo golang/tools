@@ -13,7 +13,7 @@ import (
 // the implementation that doesn't use generics.
 
 // Compute the Diffs and the lcs.
-func Compute(a, b interface{}, limit int) ([]Diff, lcs) {
+func Compute(a, b any, limit int) ([]Diff, lcs) {
 	var ans lcs
 	g := newegraph(a, b, limit)
 	ans = g.twosided()
@@ -67,7 +67,7 @@ func (x *lineeq) substr(i, j int) string { return strings.Join(x.b[i:j], "") }
 func (x *lineeq) lena() int              { return int(len(x.a)) }
 func (x *lineeq) lenb() int              { return int(len(x.b)) }
 
-func neweq(a, b interface{}) eq {
+func neweq(a, b any) eq {
 	switch x := a.(type) {
 	case []byte:
 		return &byteeq{a: x, b: b.([]byte)}
@@ -104,7 +104,7 @@ func (g *editGraph) fromlcs(lcs lcs) []Diff {
 	return ans
 }
 
-func newegraph(a, b interface{}, limit int) *editGraph {
+func newegraph(a, b any, limit int) *editGraph {
 	if limit <= 0 {
 		limit = 1 << 25 // effectively infinity
 	}

@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -344,7 +343,7 @@ See the documentation for more information on setting up your workspace:
 https://github.com/golang/tools/blob/master/gopls/doc/workspace.md.`
 		}
 		return &source.CriticalError{
-			MainError:   fmt.Errorf(msg),
+			MainError:   errors.New(msg),
 			Diagnostics: s.applyCriticalErrorToFiles(ctx, msg, openFiles),
 		}
 	}
@@ -380,9 +379,10 @@ You can learn more here: https://github.com/golang/tools/blob/master/gopls/doc/w
 		}
 		if len(srcDiags) != 0 {
 			return &source.CriticalError{
-				MainError: fmt.Errorf(`You are working in a nested module.
+				MainError: errors.New(`You are working in a nested module.
 Please open it as a separate workspace folder. Learn more:
 https://github.com/golang/tools/blob/master/gopls/doc/workspace.md.`),
+
 				Diagnostics: srcDiags,
 			}
 		}
@@ -457,7 +457,7 @@ func makeWorkspaceDir(ctx context.Context, workspace *workspace, fs source.FileS
 	if err != nil {
 		return "", err
 	}
-	tmpdir, err := ioutil.TempDir("", "gopls-workspace-mod")
+	tmpdir, err := os.MkdirTemp("", "gopls-workspace-mod")
 	if err != nil {
 		return "", err
 	}
@@ -465,7 +465,7 @@ func makeWorkspaceDir(ctx context.Context, workspace *workspace, fs source.FileS
 		"go.mod": modContent,
 		"go.sum": sumContent,
 	} {
-		if err := ioutil.WriteFile(filepath.Join(tmpdir, name), content, 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(tmpdir, name), content, 0644); err != nil {
 			os.RemoveAll(tmpdir) // ignore error
 			return "", err
 		}

@@ -6,6 +6,7 @@ package source
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -61,7 +62,7 @@ func extractVariable(fset *token.FileSet, rng span.Range, src []byte, file *ast.
 
 	insertBeforeStmt := analysisinternal.StmtToInsertVarBefore(path)
 	if insertBeforeStmt == nil {
-		return nil, fmt.Errorf("cannot find location to insert extraction")
+		return nil, errors.New("cannot find location to insert extraction")
 	}
 	indent, err := calculateIndentation(src, tokFile, insertBeforeStmt)
 	if err != nil {
@@ -101,24 +102,24 @@ func extractVariable(fset *token.FileSet, rng span.Range, src []byte, file *ast.
 // extracted to a variable.
 func CanExtractVariable(rng span.Range, file *ast.File) (ast.Expr, []ast.Node, bool, error) {
 	if rng.Start == rng.End {
-		return nil, nil, false, fmt.Errorf("start and end are equal")
+		return nil, nil, false, errors.New("start and end are equal")
 	}
 	path, _ := astutil.PathEnclosingInterval(file, rng.Start, rng.End)
 	if len(path) == 0 {
-		return nil, nil, false, fmt.Errorf("no path enclosing interval")
+		return nil, nil, false, errors.New("no path enclosing interval")
 	}
 	for _, n := range path {
 		if _, ok := n.(*ast.ImportSpec); ok {
-			return nil, nil, false, fmt.Errorf("cannot extract variable in an import block")
+			return nil, nil, false, errors.New("cannot extract variable in an import block")
 		}
 	}
 	node := path[0]
 	if rng.Start != node.Pos() || rng.End != node.End() {
-		return nil, nil, false, fmt.Errorf("range does not map to an AST node")
+		return nil, nil, false, errors.New("range does not map to an AST node")
 	}
 	expr, ok := node.(ast.Expr)
 	if !ok {
-		return nil, nil, false, fmt.Errorf("node is not an expression")
+		return nil, nil, false, errors.New("node is not an expression")
 	}
 	switch expr.(type) {
 	case *ast.BasicLit, *ast.CompositeLit, *ast.IndexExpr, *ast.CallExpr,
@@ -346,7 +347,7 @@ func extractFunctionMethod(fset *token.FileSet, rng span.Range, src []byte, file
 		// selection (isUsed), and (3) its first use after the selection
 		// cannot be its own reassignment or redefinition (objOverriden).
 		if v.obj.Parent() == nil {
-			return nil, fmt.Errorf("parent nil")
+			return nil, errors.New("parent nil")
 		}
 		isUsed, firstUseAfter := objUsed(info, span.NewRange(tok, rng.End, v.obj.Parent().End()), v.obj)
 		if v.assigned && isUsed && !varOverridden(info, firstUseAfter, v.obj, v.free, outer) {
@@ -983,7 +984,7 @@ type fnExtractParams struct {
 // extracted to a function.
 func CanExtractFunction(tok *token.File, rng span.Range, src []byte, file *ast.File) (*fnExtractParams, bool, bool, error) {
 	if rng.Start == rng.End {
-		return nil, false, false, fmt.Errorf("start and end are equal")
+		return nil, false, false, errors.New("start and end are equal")
 	}
 	var err error
 	rng, err = adjustRangeForCommentsAndWhiteSpace(rng, tok, src, file)
@@ -992,13 +993,13 @@ func CanExtractFunction(tok *token.File, rng span.Range, src []byte, file *ast.F
 	}
 	path, _ := astutil.PathEnclosingInterval(file, rng.Start, rng.End)
 	if len(path) == 0 {
-		return nil, false, false, fmt.Errorf("no path enclosing interval")
+		return nil, false, false, errors.New("no path enclosing interval")
 	}
 	// Node that encloses the selection must be a statement.
 	// TODO: Support function extraction for an expression.
 	_, ok := path[0].(ast.Stmt)
 	if !ok {
-		return nil, false, false, fmt.Errorf("node is not a statement")
+		return nil, false, false, errors.New("node is not a statement")
 	}
 
 	// Find the function declaration that encloses the selection.
@@ -1010,7 +1011,7 @@ func CanExtractFunction(tok *token.File, rng span.Range, src []byte, file *ast.F
 		}
 	}
 	if outer == nil {
-		return nil, false, false, fmt.Errorf("no enclosing function")
+		return nil, false, false, errors.New("no enclosing function")
 	}
 
 	// Find the nodes at the start and end of the selection.
@@ -1030,14 +1031,14 @@ func CanExtractFunction(tok *token.File, rng span.Range, src []byte, file *ast.F
 		return n.Pos() <= rng.End
 	})
 	if start == nil || end == nil {
-		return nil, false, false, fmt.Errorf("range does not map to AST nodes")
+		return nil, false, false, errors.New("range does not map to AST nodes")
 	}
 	// If the region is a blockStmt, use the first and last nodes in the block
 	// statement.
 	// <rng.start>{ ... }<rng.end> => { <rng.start>...<rng.end> }
 	if blockStmt, ok := start.(*ast.BlockStmt); ok {
 		if len(blockStmt.List) == 0 {
-			return nil, false, false, fmt.Errorf("range maps to empty block statement")
+			return nil, false, false, errors.New("range maps to empty block statement")
 		}
 		start, end = blockStmt.List[0], blockStmt.List[len(blockStmt.List)-1]
 		rng.Start, rng.End = start.Pos(), end.End()
@@ -1128,14 +1129,14 @@ func parseBlockStmt(fset *token.FileSet, src []byte) (*ast.BlockStmt, error) {
 		return nil, err
 	}
 	if len(extract.Decls) == 0 {
-		return nil, fmt.Errorf("parsed file does not contain any declarations")
+		return nil, errors.New("parsed file does not contain any declarations")
 	}
 	decl, ok := extract.Decls[0].(*ast.FuncDecl)
 	if !ok {
-		return nil, fmt.Errorf("parsed file does not contain expected function declaration")
+		return nil, errors.New("parsed file does not contain expected function declaration")
 	}
 	if decl.Body == nil {
-		return nil, fmt.Errorf("extracted function has no body")
+		return nil, errors.New("extracted function has no body")
 	}
 	return decl.Body, nil
 }
@@ -1168,7 +1169,7 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 			}
 			expr := analysisinternal.TypeExpr(file, pkg, typ)
 			if expr == nil {
-				return nil, nil, fmt.Errorf("nil AST expression")
+				return nil, nil, errors.New("nil AST expression")
 			}
 			var name string
 			name, idx = generateAvailableIdentifier(pos, file,

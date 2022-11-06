@@ -7,6 +7,7 @@ package jsonrpc2_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -95,7 +96,7 @@ func TestErrorEncode(t *testing.T) {
 func TestErrorResponse(t *testing.T) {
 	// originally reported in #39719, this checks that result is not present if
 	// it is an error response
-	r, _ := jsonrpc2.NewResponse(jsonrpc2.NewIntID(3), nil, fmt.Errorf("computing fix edits"))
+	r, _ := jsonrpc2.NewResponse(jsonrpc2.NewIntID(3), nil, errors.New("computing fix edits"))
 	data, err := json.Marshal(r)
 	if err != nil {
 		t.Fatal(err)

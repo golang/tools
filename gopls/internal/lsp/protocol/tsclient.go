@@ -20,7 +20,7 @@ type Client interface {
 	Progress(context.Context, *ProgressParams) error                                           // $/progress
 	RegisterCapability(context.Context, *RegistrationParams) error                             // client/registerCapability
 	UnregisterCapability(context.Context, *UnregistrationParams) error                         // client/unregisterCapability
-	Event(context.Context, *interface{}) error                                                 // telemetry/event
+	Event(context.Context, *any) error                                                         // telemetry/event
 	PublishDiagnostics(context.Context, *PublishDiagnosticsParams) error                       // textDocument/publishDiagnostics
 	LogMessage(context.Context, *LogMessageParams) error                                       // window/logMessage
 	ShowDocument(context.Context, *ShowDocumentParams) (*ShowDocumentResult, error)            // window/showDocument
@@ -64,7 +64,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 		err := client.UnregisterCapability(ctx, &params)
 		return true, reply(ctx, nil, err) // 155
 	case "telemetry/event":
-		var params interface{}
+		var params any
 		if err := json.Unmarshal(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
@@ -164,7 +164,7 @@ func (s *clientDispatcher) RegisterCapability(ctx context.Context, params *Regis
 func (s *clientDispatcher) UnregisterCapability(ctx context.Context, params *UnregistrationParams) error {
 	return s.sender.Call(ctx, "client/unregisterCapability", params, nil)
 } // 194
-func (s *clientDispatcher) Event(ctx context.Context, params *interface{}) error {
+func (s *clientDispatcher) Event(ctx context.Context, params *any) error {
 	return s.sender.Notify(ctx, "telemetry/event", params)
 } // 244
 func (s *clientDispatcher) PublishDiagnostics(ctx context.Context, params *PublishDiagnosticsParams) error {

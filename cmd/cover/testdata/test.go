@@ -140,7 +140,7 @@ func testSwitch() {
 }
 
 func testTypeSwitch() {
-	var x = []interface{}{1, 2.0, "hi"}
+	var x = []any{1, 2.0, "hi"}
 	for _, v := range x {
 		switch func() { check(LINE, 3) }(); v.(type) {
 		case int:
@@ -204,7 +204,7 @@ func testEmptySwitches() {
 	switch 3 {
 	}
 	check(LINE, 1)
-	switch i := (interface{})(3).(int); i {
+	switch i := (any)(3).(int); i {
 	}
 	check(LINE, 1)
 	c := make(chan int)

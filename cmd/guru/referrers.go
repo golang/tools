@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/build"
@@ -57,7 +58,7 @@ func referrers(q *Query) error {
 
 	id, _ := qpos.path[0].(*ast.Ident)
 	if id == nil {
-		return fmt.Errorf("no identifier here")
+		return errors.New("no identifier here")
 	}
 
 	obj := qpos.info.ObjectOf(id)
@@ -709,8 +710,8 @@ func (r *referrersPackageResult) foreachRef(f func(id *ast.Ident, text string)) 
 	// Show referring lines, like grep.
 	type fileinfo struct {
 		refs     []*ast.Ident
-		linenums []int            // line number of refs[i]
-		data     chan interface{} // file contents or error
+		linenums []int    // line number of refs[i]
+		data     chan any // file contents or error
 	}
 	var fileinfos []*fileinfo
 	fileinfosByName := make(map[string]*fileinfo)
@@ -721,7 +722,7 @@ func (r *referrersPackageResult) foreachRef(f func(id *ast.Ident, text string)) 
 		posn := r.fset.Position(ref.Pos())
 		fi := fileinfosByName[posn.Filename]
 		if fi == nil {
-			fi = &fileinfo{data: make(chan interface{})}
+			fi = &fileinfo{data: make(chan any)}
 			fileinfosByName[posn.Filename] = fi
 			fileinfos = append(fileinfos, fi)
 

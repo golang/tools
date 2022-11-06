@@ -3,21 +3,21 @@ package b
 import "fmt"
 
 // Wrapf is a printf wrapper.
-func Wrapf(format string, args ...interface{}) { // want Wrapf:"printfWrapper"
+func Wrapf(format string, args ...any) { // want Wrapf:"printfWrapper"
 	fmt.Sprintf(format, args...)
 }
 
 // Wrap is a print wrapper.
-func Wrap(args ...interface{}) { // want Wrap:"printWrapper"
+func Wrap(args ...any) { // want Wrap:"printWrapper"
 	fmt.Sprint(args...)
 }
 
 // NoWrap is not a wrapper.
-func NoWrap(format string, args ...interface{}) {
+func NoWrap(format string, args ...any) {
 }
 
 // Wrapf2 is another printf wrapper.
-func Wrapf2(format string, args ...interface{}) string { // want Wrapf2:"printfWrapper"
+func Wrapf2(format string, args ...any) string { // want Wrapf2:"printfWrapper"
 
 	// This statement serves as an assertion that this function is a
 	// printf wrapper and that calls to it should be checked

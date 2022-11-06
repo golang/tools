@@ -21,7 +21,7 @@ godef(bFunc, Things)
 */
 
 func _() {
-	var x interface{}      //@mark(eInterface, "interface{}")
+	var x any              //@mark(eInterface, "interface{}")
 	switch x := x.(type) { //@hoverdef("x", eInterface)
 	case string: //@mark(eString, "string")
 		fmt.Println(x) //@hoverdef("x", eString)

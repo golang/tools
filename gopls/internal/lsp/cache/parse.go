@@ -57,7 +57,7 @@ func (s *snapshot) ParseGo(ctx context.Context, fh source.FileHandle, mode sourc
 
 	// cache miss?
 	if !hit {
-		handle, release := s.store.Promise(key, func(ctx context.Context, arg interface{}) interface{} {
+		handle, release := s.store.Promise(key, func(ctx context.Context, arg any) any {
 			parsed, err := parseGoImpl(ctx, arg.(*snapshot).FileSet(), fh, mode)
 			return parseGoResult{parsed, err}
 		})
@@ -69,7 +69,7 @@ func (s *snapshot) ParseGo(ctx context.Context, fh source.FileHandle, mode sourc
 			release()
 		} else {
 			entry = handle
-			s.parsedGoFiles.Set(key, entry, func(_, _ interface{}) { release() })
+			s.parsedGoFiles.Set(key, entry, func(_, _ any) { release() })
 		}
 		s.mu.Unlock()
 	}

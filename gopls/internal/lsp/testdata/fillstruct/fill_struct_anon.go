@@ -2,7 +2,7 @@ package fillstruct
 
 type StructAnon struct {
 	a struct{}
-	b map[string]interface{}
+	b map[string]any
 	c map[string]struct {
 		d int
 		e bool

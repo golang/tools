@@ -88,7 +88,7 @@ func TestPackages(t *testing.T) {
 
 		// For determinism, sanitize the location.
 		location := prog.Fset.Position(bytesNewBuffer.Pos()).String()
-		got := strings.Replace(out.String(), location, "$GOROOT/src/bytes/buffer.go:1", -1)
+		got := strings.ReplaceAll(out.String(), location, "$GOROOT/src/bytes/buffer.go:1")
 
 		want := `
 # Name: bytes.NewBuffer
@@ -152,7 +152,7 @@ func TestIssue53604(t *testing.T) {
 	e := packagestest.Export(t, packagestest.Modules, []packagestest.Module{
 		{
 			Name: "golang.org/fake",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"x/x.go": `package x; import "golang.org/fake/y"; var V = y.F()`,
 				"y/y.go": `package y; import "golang.org/fake/z"; var F = func () *int { return &z.Z } `,
 				"z/z.go": `package z; var Z int`,

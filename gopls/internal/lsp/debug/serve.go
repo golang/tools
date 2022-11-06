@@ -280,19 +280,19 @@ func cmdline(w http.ResponseWriter, r *http.Request) {
 	pprof.Cmdline(fake, r)
 }
 
-func (i *Instance) getCache(r *http.Request) interface{} {
+func (i *Instance) getCache(r *http.Request) any {
 	return i.State.Cache(path.Base(r.URL.Path))
 }
 
-func (i *Instance) getSession(r *http.Request) interface{} {
+func (i *Instance) getSession(r *http.Request) any {
 	return i.State.Session(path.Base(r.URL.Path))
 }
 
-func (i *Instance) getClient(r *http.Request) interface{} {
+func (i *Instance) getClient(r *http.Request) any {
 	return i.State.Client(path.Base(r.URL.Path))
 }
 
-func (i *Instance) getServer(r *http.Request) interface{} {
+func (i *Instance) getServer(r *http.Request) any {
 	i.State.mu.Lock()
 	defer i.State.mu.Unlock()
 	id := path.Base(r.URL.Path)
@@ -304,11 +304,11 @@ func (i *Instance) getServer(r *http.Request) interface{} {
 	return nil
 }
 
-func (i *Instance) getView(r *http.Request) interface{} {
+func (i *Instance) getView(r *http.Request) any {
 	return i.State.View(path.Base(r.URL.Path))
 }
 
-func (i *Instance) getFile(r *http.Request) interface{} {
+func (i *Instance) getFile(r *http.Request) any {
 	identifier := path.Base(r.URL.Path)
 	sid := path.Base(path.Dir(r.URL.Path))
 	s := i.State.Session(sid)
@@ -324,7 +324,7 @@ func (i *Instance) getFile(r *http.Request) interface{} {
 	return nil
 }
 
-func (i *Instance) getInfo(r *http.Request) interface{} {
+func (i *Instance) getInfo(r *http.Request) any {
 	buf := &bytes.Buffer{}
 	i.PrintServerInfo(r.Context(), buf)
 	return template.HTML(buf.String())
@@ -340,7 +340,7 @@ func (i *Instance) AddService(s protocol.Server, session *cache.Session) {
 	stdlog.Printf("unable to find a Client to add the protocol.Server to")
 }
 
-func getMemory(_ *http.Request) interface{} {
+func getMemory(_ *http.Request) any {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	return m
@@ -440,7 +440,7 @@ func (i *Instance) Serve(ctx context.Context, addr string) (string, error) {
 	event.Log(ctx, "Debug serving", tag.Port.Of(port))
 	go func() {
 		mux := http.NewServeMux()
-		mux.HandleFunc("/", render(MainTmpl, func(*http.Request) interface{} { return i }))
+		mux.HandleFunc("/", render(MainTmpl, func(*http.Request) any { return i }))
 		mux.HandleFunc("/debug/", render(DebugTmpl, nil))
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
 		mux.HandleFunc("/debug/pprof/cmdline", cmdline)
@@ -657,11 +657,11 @@ func makeInstanceExporter(i *Instance) event.Exporter {
 	return exporter
 }
 
-type dataFunc func(*http.Request) interface{}
+type dataFunc func(*http.Request) any
 
 func render(tmpl *template.Template, fun dataFunc) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var data interface{}
+		var data any
 		if fun != nil {
 			data = fun(r)
 		}

@@ -6,17 +6,15 @@
 
 // want +1 `possible malformed \+build comment`
 // +builder
-// +build ignore
+//go:build ok
+// +build ok
 
 // Mention +build // want `possible malformed \+build comment`
 
 // want +1 `misplaced \+build comment`
-// +build nospace
-//go:build ok
 package a
 
 // want +1 `misplaced \+build comment`
-// +build toolate
 
 var _ = 3
 

@@ -35,7 +35,7 @@ var Analyzer = &analysis.Analyzer{
 // The suffix for this error message changed in Go 1.20.
 var unusedVariableSuffixes = []string{" declared and not used", " declared but not used"}
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	for _, typeErr := range analysisinternal.GetTypeErrors(pass) {
 		for _, suffix := range unusedVariableSuffixes {
 			if strings.HasSuffix(typeErr.Msg, suffix) {

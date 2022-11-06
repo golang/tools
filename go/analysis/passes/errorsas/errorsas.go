@@ -29,7 +29,7 @@ var Analyzer = &analysis.Analyzer{
 	Run:      run,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	switch pass.Pkg.Path() {
 	case "errors", "errors_test":
 		// These packages know how to use their own APIs.

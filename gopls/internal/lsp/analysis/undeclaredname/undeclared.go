@@ -8,6 +8,7 @@ package undeclaredname
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -48,7 +49,7 @@ var Analyzer = &analysis.Analyzer{
 // The prefix for this error message changed in Go 1.20.
 var undeclaredNamePrefixes = []string{"undeclared name: ", "undefined: "}
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	for _, err := range analysisinternal.GetTypeErrors(pass) {
 		runForError(pass, err)
 	}
@@ -125,11 +126,11 @@ func SuggestedFix(fset *token.FileSet, rng span.Range, content []byte, file *ast
 	pos := rng.Start // don't use the end
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
 	if len(path) < 2 {
-		return nil, fmt.Errorf("no expression found")
+		return nil, errors.New("no expression found")
 	}
 	ident, ok := path[0].(*ast.Ident)
 	if !ok {
-		return nil, fmt.Errorf("no identifier found")
+		return nil, errors.New("no identifier found")
 	}
 
 	// Check for a possible call expression, in which case we should add a
@@ -143,7 +144,7 @@ func SuggestedFix(fset *token.FileSet, rng span.Range, content []byte, file *ast
 	// Get the place to insert the new statement.
 	insertBeforeStmt := analysisinternal.StmtToInsertVarBefore(path)
 	if insertBeforeStmt == nil {
-		return nil, fmt.Errorf("could not locate insertion point")
+		return nil, errors.New("could not locate insertion point")
 	}
 
 	insertBefore := fset.Position(insertBeforeStmt.Pos()).Offset

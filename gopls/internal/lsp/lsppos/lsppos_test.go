@@ -14,9 +14,9 @@ import (
 )
 
 type testCase struct {
-	content            string      // input text
-	substrOrOffset     interface{} // explicit integer offset, or a substring
-	wantLine, wantChar int         // expected LSP position information
+	content            string // input text
+	substrOrOffset     any    // explicit integer offset, or a substring
+	wantLine, wantChar int    // expected LSP position information
 }
 
 // offset returns the test case byte offset

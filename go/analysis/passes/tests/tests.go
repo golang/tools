@@ -54,7 +54,7 @@ var acceptedFuzzTypes = []types.Type{
 	types.NewSlice(types.Universe.Lookup("byte").Type()),
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
 		if !strings.HasSuffix(pass.Fset.File(f.Pos()).Name(), "_test.go") {
 			continue

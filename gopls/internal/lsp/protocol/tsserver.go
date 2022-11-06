@@ -47,7 +47,7 @@ type Server interface {
 	DocumentColor(context.Context, *DocumentColorParams) ([]ColorInformation, error)                       // textDocument/documentColor
 	DocumentHighlight(context.Context, *DocumentHighlightParams) ([]DocumentHighlight, error)              // textDocument/documentHighlight
 	DocumentLink(context.Context, *DocumentLinkParams) ([]DocumentLink, error)                             // textDocument/documentLink
-	DocumentSymbol(context.Context, *DocumentSymbolParams) ([]interface{}, error)                          // textDocument/documentSymbol
+	DocumentSymbol(context.Context, *DocumentSymbolParams) ([]any, error)                                  // textDocument/documentSymbol
 	FoldingRange(context.Context, *FoldingRangeParams) ([]FoldingRange, error)                             // textDocument/foldingRange
 	Formatting(context.Context, *DocumentFormattingParams) ([]TextEdit, error)                             // textDocument/formatting
 	Hover(context.Context, *HoverParams) (*Hover, error)                                                   // textDocument/hover
@@ -65,7 +65,7 @@ type Server interface {
 	Rename(context.Context, *RenameParams) (*WorkspaceEdit, error)                                         // textDocument/rename
 	SelectionRange(context.Context, *SelectionRangeParams) ([]SelectionRange, error)                       // textDocument/selectionRange
 	SemanticTokensFull(context.Context, *SemanticTokensParams) (*SemanticTokens, error)                    // textDocument/semanticTokens/full
-	SemanticTokensFullDelta(context.Context, *SemanticTokensDeltaParams) (interface{}, error)              // textDocument/semanticTokens/full/delta
+	SemanticTokensFullDelta(context.Context, *SemanticTokensDeltaParams) (any, error)                      // textDocument/semanticTokens/full/delta
 	SemanticTokensRange(context.Context, *SemanticTokensRangeParams) (*SemanticTokens, error)              // textDocument/semanticTokens/range
 	SignatureHelp(context.Context, *SignatureHelpParams) (*SignatureHelp, error)                           // textDocument/signatureHelp
 	TypeDefinition(context.Context, *TypeDefinitionParams) ([]Location, error)                             // textDocument/typeDefinition
@@ -82,7 +82,7 @@ type Server interface {
 	DidCreateFiles(context.Context, *CreateFilesParams) error                                              // workspace/didCreateFiles
 	DidDeleteFiles(context.Context, *DeleteFilesParams) error                                              // workspace/didDeleteFiles
 	DidRenameFiles(context.Context, *RenameFilesParams) error                                              // workspace/didRenameFiles
-	ExecuteCommand(context.Context, *ExecuteCommandParams) (interface{}, error)                            // workspace/executeCommand
+	ExecuteCommand(context.Context, *ExecuteCommandParams) (any, error)                                    // workspace/executeCommand
 	InlayHintRefresh(context.Context) error                                                                // workspace/inlayHint/refresh
 	InlineValueRefresh(context.Context) error                                                              // workspace/inlineValue/refresh
 	SemanticTokensRefresh(context.Context) error                                                           // workspace/semanticTokens/refresh
@@ -91,7 +91,7 @@ type Server interface {
 	WillDeleteFiles(context.Context, *DeleteFilesParams) (*WorkspaceEdit, error)                           // workspace/willDeleteFiles
 	WillRenameFiles(context.Context, *RenameFilesParams) (*WorkspaceEdit, error)                           // workspace/willRenameFiles
 	ResolveWorkspaceSymbol(context.Context, *WorkspaceSymbol) (*WorkspaceSymbol, error)                    // workspaceSymbol/resolve
-	NonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error)
+	NonstandardRequest(ctx context.Context, method string, params any) (any, error)
 }
 
 func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
@@ -917,8 +917,8 @@ func (s *serverDispatcher) DocumentLink(ctx context.Context, params *DocumentLin
 	}
 	return result, nil
 } // 169
-func (s *serverDispatcher) DocumentSymbol(ctx context.Context, params *DocumentSymbolParams) ([]interface{}, error) {
-	var result []interface{}
+func (s *serverDispatcher) DocumentSymbol(ctx context.Context, params *DocumentSymbolParams) ([]any, error) {
+	var result []any
 	if err := s.sender.Call(ctx, "textDocument/documentSymbol", params, &result); err != nil {
 		return nil, err
 	}
@@ -1043,8 +1043,8 @@ func (s *serverDispatcher) SemanticTokensFull(ctx context.Context, params *Seman
 	}
 	return result, nil
 } // 169
-func (s *serverDispatcher) SemanticTokensFullDelta(ctx context.Context, params *SemanticTokensDeltaParams) (interface{}, error) {
-	var result interface{}
+func (s *serverDispatcher) SemanticTokensFullDelta(ctx context.Context, params *SemanticTokensDeltaParams) (any, error) {
+	var result any
 	if err := s.sender.Call(ctx, "textDocument/semanticTokens/full/delta", params, &result); err != nil {
 		return nil, err
 	}
@@ -1126,8 +1126,8 @@ func (s *serverDispatcher) DidDeleteFiles(ctx context.Context, params *DeleteFil
 func (s *serverDispatcher) DidRenameFiles(ctx context.Context, params *RenameFilesParams) error {
 	return s.sender.Notify(ctx, "workspace/didRenameFiles", params)
 } // 244
-func (s *serverDispatcher) ExecuteCommand(ctx context.Context, params *ExecuteCommandParams) (interface{}, error) {
-	var result interface{}
+func (s *serverDispatcher) ExecuteCommand(ctx context.Context, params *ExecuteCommandParams) (any, error) {
+	var result any
 	if err := s.sender.Call(ctx, "workspace/executeCommand", params, &result); err != nil {
 		return nil, err
 	}
@@ -1177,8 +1177,8 @@ func (s *serverDispatcher) ResolveWorkspaceSymbol(ctx context.Context, params *W
 	}
 	return result, nil
 } // 169
-func (s *serverDispatcher) NonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {
-	var result interface{}
+func (s *serverDispatcher) NonstandardRequest(ctx context.Context, method string, params any) (any, error) {
+	var result any
 	if err := s.sender.Call(ctx, method, params, &result); err != nil {
 		return nil, err
 	}

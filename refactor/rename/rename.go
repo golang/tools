@@ -17,9 +17,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	exec "golang.org/x/sys/execabs"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path"
@@ -27,6 +25,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	exec "golang.org/x/sys/execabs"
 
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/types/typeutil"
@@ -219,7 +219,7 @@ func Main(ctxt *build.Context, offsetFlag, fromFlag, to string) error {
 	// -- Parse the -from or -offset specifier ----------------------------
 
 	if (offsetFlag == "") == (fromFlag == "") {
-		return fmt.Errorf("exactly one of the -from and -offset flags must be specified")
+		return errors.New("exactly one of the -from and -offset flags must be specified")
 	}
 
 	if !isValidIdentifier(to) {
@@ -579,12 +579,12 @@ func plural(n int) string {
 var writeFile = reallyWriteFile
 
 func reallyWriteFile(filename string, content []byte) error {
-	return ioutil.WriteFile(filename, content, 0644)
+	return os.WriteFile(filename, content, 0644)
 }
 
 func diff(filename string, content []byte) error {
 	renamed := fmt.Sprintf("%s.%d.renamed", filename, os.Getpid())
-	if err := ioutil.WriteFile(renamed, content, 0644); err != nil {
+	if err := os.WriteFile(renamed, content, 0644); err != nil {
 		return err
 	}
 	defer os.Remove(renamed)

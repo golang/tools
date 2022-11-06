@@ -8,6 +8,7 @@
 package main // import "golang.org/x/tools/cmd/eg"
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -15,7 +16,6 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,14 +70,14 @@ func doMain() error {
 	}
 
 	if *templateFlag == "" {
-		return fmt.Errorf("no -t template.go file specified")
+		return errors.New("no -t template.go file specified")
 	}
 
 	tAbs, err := filepath.Abs(*templateFlag)
 	if err != nil {
 		return err
 	}
-	template, err := ioutil.ReadFile(tAbs)
+	template, err := os.ReadFile(tAbs)
 	if err != nil {
 		return err
 	}
@@ -148,7 +148,7 @@ func doMain() error {
 					// Replace "{}" with the filename, like find(1).
 					for i := range args {
 						if i > 0 {
-							args[i] = strings.Replace(args[i], "{}", filename, -1)
+							args[i] = strings.ReplaceAll(args[i], "{}", filename)
 						}
 					}
 					cmd := exec.Command(args[0], args[1:]...)

@@ -22,7 +22,7 @@ type T2[P1 any, P2 any] struct {
 	g func(P1) P2
 }
 
-func Comparison[P any](f2 func()T1[P]) {
+func Comparison[P any](f2 func() T1[P]) {
 	var t1 T1[P]
 	var t2 T2[P, int]
 	var fn func()
@@ -40,7 +40,7 @@ func Comparison[P any](f2 func()T1[P]) {
 	}
 }
 
-func Index[P any](a [](func()P)) {
+func Index[P any](a [](func() P)) {
 	if a[1] == nil {
 		// no error
 	}

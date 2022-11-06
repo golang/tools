@@ -7,6 +7,7 @@ package source
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -35,7 +36,7 @@ func stubSuggestedFixFunc(ctx context.Context, snapshot Snapshot, fh VersionedFi
 	}
 	si := stubmethods.GetStubInfo(pkg.GetTypesInfo(), nodes, pos)
 	if si == nil {
-		return nil, fmt.Errorf("nil interface request")
+		return nil, errors.New("nil interface request")
 	}
 	parsedConcreteFile, concreteFH, err := getStubFile(ctx, si.Concrete.Obj(), snapshot)
 	if err != nil {
@@ -60,7 +61,7 @@ func stubSuggestedFixFunc(ctx context.Context, snapshot Snapshot, fh VersionedFi
 	}
 	insertPos, err := safetoken.Offset(parsedConcreteFile.Tok, nodes[1].End())
 	if err != nil || insertPos >= len(concreteSrc) {
-		return nil, fmt.Errorf("insertion position is past the end of the file")
+		return nil, errors.New("insertion position is past the end of the file")
 	}
 	var buf bytes.Buffer
 	buf.Write(concreteSrc[:insertPos])
@@ -109,7 +110,7 @@ func stubMethods(ctx context.Context, concreteFile *ast.File, si *stubmethods.St
 		return nil, nil, fmt.Errorf("missingMethods: %w", err)
 	}
 	if len(missing) == 0 {
-		return nil, nil, fmt.Errorf("no missing methods found")
+		return nil, nil, errors.New("no missing methods found")
 	}
 	var (
 		stubImports   []*stubImport

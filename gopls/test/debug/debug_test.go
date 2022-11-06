@@ -29,7 +29,7 @@ import (
 
 type tdata struct {
 	tmpl *template.Template
-	data interface{} // a value of the needed type
+	data any // a value of the needed type
 }
 
 var templates = map[string]tdata{

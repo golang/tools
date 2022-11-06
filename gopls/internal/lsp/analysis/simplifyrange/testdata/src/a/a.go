@@ -8,9 +8,9 @@ import "log"
 
 func m() {
 	maps := make(map[string]string)
-	for k, _ := range maps { // want "simplify range expression"
+	for k := range maps { // want "simplify range expression"
 		log.Println(k)
 	}
-	for _ = range maps { // want "simplify range expression"
+	for range maps { // want "simplify range expression"
 	}
 }

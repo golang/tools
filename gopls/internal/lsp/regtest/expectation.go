@@ -421,7 +421,7 @@ func checkFileWatch(re string, onMatch, onNoMatch Verdict) func(State) Verdict {
 	rec := regexp.MustCompile(re)
 	return func(s State) Verdict {
 		r := s.registeredCapabilities["workspace/didChangeWatchedFiles"]
-		watchers := jsonProperty(r.RegisterOptions, "watchers").([]interface{})
+		watchers := jsonProperty(r.RegisterOptions, "watchers").([]any)
 		for _, watcher := range watchers {
 			pattern := jsonProperty(watcher, "globPattern").(string)
 			if rec.MatchString(pattern) {
@@ -443,11 +443,11 @@ func checkFileWatch(re string, onMatch, onNoMatch Verdict) func(State) Verdict {
 //	}
 //
 // Then jsonProperty(obj, "foo", "bar") will be 3.
-func jsonProperty(obj interface{}, path ...string) interface{} {
+func jsonProperty(obj any, path ...string) any {
 	if len(path) == 0 || obj == nil {
 		return obj
 	}
-	m := obj.(map[string]interface{})
+	m := obj.(map[string]any)
 	return jsonProperty(m[path[0]], path[1:]...)
 }
 

@@ -9,6 +9,7 @@ package parse // import "golang.org/x/tools/benchmark/parse"
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -46,7 +47,7 @@ func ParseLine(line string) (*Benchmark, error) {
 		return nil, fmt.Errorf("two fields required, have %d", len(fields))
 	}
 	if !strings.HasPrefix(fields[0], "Benchmark") {
-		return nil, fmt.Errorf(`first field does not start with "Benchmark"`)
+		return nil, errors.New(`first field does not start with "Benchmark"`)
 	}
 	n, err := strconv.Atoi(fields[1])
 	if err != nil {

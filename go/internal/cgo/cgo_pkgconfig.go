@@ -8,8 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"go/build"
-	exec "golang.org/x/sys/execabs"
 	"strings"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 // pkgConfig runs pkg-config with the specified arguments and returns the flags it prints.

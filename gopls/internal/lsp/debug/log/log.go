@@ -33,7 +33,7 @@ func (l Level) Log(ctx context.Context, msg string) {
 }
 
 // Logf formats and exports a log event labeled with level l.
-func (l Level) Logf(ctx context.Context, format string, args ...interface{}) {
+func (l Level) Logf(ctx context.Context, format string, args ...any) {
 	l.Log(ctx, fmt.Sprintf(format, args...))
 }
 

@@ -37,7 +37,7 @@ type HoverContext struct {
 	//
 	// It may also hold a precomputed string.
 	// TODO(rfindley): pre-compute all signatures to avoid this indirection.
-	signatureSource interface{}
+	signatureSource any
 
 	// comment is the most relevant comment group associated with the hovered object.
 	Comment *ast.CommentGroup
@@ -177,7 +177,7 @@ func findRune(ctx context.Context, snapshot Snapshot, fh FileHandle, position pr
 		}
 		r, _ = utf8.DecodeRuneInString(s)
 		if r == utf8.RuneError {
-			return 0, MappedRange{}, fmt.Errorf("rune error")
+			return 0, MappedRange{}, errors.New("rune error")
 		}
 		start, end = lit.Pos(), lit.End()
 	case token.INT:
@@ -192,7 +192,7 @@ func findRune(ctx context.Context, snapshot Snapshot, fh FileHandle, position pr
 		}
 		r = rune(v)
 		if r == utf8.RuneError {
-			return 0, MappedRange{}, fmt.Errorf("rune error")
+			return 0, MappedRange{}, errors.New("rune error")
 		}
 		start, end = lit.Pos(), lit.End()
 	case token.STRING:
@@ -211,7 +211,7 @@ func findRune(ctx context.Context, snapshot Snapshot, fh FileHandle, position pr
 			// Start at the cursor position and search backward for the beginning of a rune escape sequence.
 			rr, _ := utf8.DecodeRuneInString(lit.Value[i:])
 			if rr == utf8.RuneError {
-				return 0, MappedRange{}, fmt.Errorf("rune error")
+				return 0, MappedRange{}, errors.New("rune error")
 			}
 			if rr == '\\' {
 				// Got the beginning, decode it.

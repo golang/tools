@@ -114,7 +114,7 @@ func _() {
 			// test key
 			key string //@mark(testInputKey, "key")
 			// test value
-			value interface{} //@mark(testInputValue, "value")
+			value any //@mark(testInputValue, "value")
 		}
 		result struct {
 			v <-chan struct {

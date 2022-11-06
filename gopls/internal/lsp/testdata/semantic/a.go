@@ -55,12 +55,12 @@ func (a *A) f() bool {
 	w := b[4:]
 	j := len(x)
 	j--
-	q := []interface{}{j, 23i, &y}
+	q := []any{j, 23i, &y}
 	g(q...)
 	return true
 }
 
-func g(vv ...interface{}) {
+func g(vv ...any) {
 	ff := func() {}
 	defer ff()
 	go utf.RuneCount("")

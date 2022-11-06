@@ -3,9 +3,9 @@ package folding //@fold("package")
 import (
 	"fmt"
 	_ "log"
-)
 
-import _ "os"
+	_ "os"
+)
 
 // bar is a function.
 // With a multiline doc comment.

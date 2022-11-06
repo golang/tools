@@ -33,7 +33,7 @@ func (v *TagsFlag) Set(s string) error {
 	return err
 }
 
-func (v *TagsFlag) Get() interface{} { return *v }
+func (v *TagsFlag) Get() any { return *v }
 
 func splitQuotedFields(s string) ([]string, error) {
 	// Split fields allowing '' or "" around elements.

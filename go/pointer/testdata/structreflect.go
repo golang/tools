@@ -1,3 +1,4 @@
+//go:build ignore
 // +build ignore
 
 package main
@@ -6,7 +7,7 @@ import "reflect"
 
 type A struct {
 	f *int
-	g interface{}
+	g any
 	h bool
 }
 

@@ -1,11 +1,11 @@
 package fmt
 
-func Sprint(args ...interface{}) string
-func Sprintln(args ...interface{}) string
-func Sprintf(format string, args ...interface{}) string
+func Sprint(args ...any) string
+func Sprintln(args ...any) string
+func Sprintf(format string, args ...any) string
 
-func Print(args ...interface{}) (int, error)
-func Println(args ...interface{})
-func Printf(format string, args ...interface{}) (int, error)
+func Print(args ...any) (int, error)
+func Println(args ...any)
+func Printf(format string, args ...any) (int, error)
 
-func Errorf(format string, args ...interface{}) error
+func Errorf(format string, args ...any) error

@@ -29,7 +29,7 @@ func TestSimpleMap(t *testing.T) {
 	seenEntries := make(map[mapEntry]struct{})
 
 	m1 := &validatedMap{
-		impl: NewMap(func(a, b interface{}) bool {
+		impl: NewMap(func(a, b any) bool {
 			return a.(int) < b.(int)
 		}),
 		expected: make(map[int]int),
@@ -122,7 +122,7 @@ func TestRandomMap(t *testing.T) {
 	seenEntries := make(map[mapEntry]struct{})
 
 	m := &validatedMap{
-		impl: NewMap(func(a, b interface{}) bool {
+		impl: NewMap(func(a, b any) bool {
 			return a.(int) < b.(int)
 		}),
 		expected: make(map[int]int),
@@ -156,7 +156,7 @@ func TestUpdate(t *testing.T) {
 	seenEntries := make(map[mapEntry]struct{})
 
 	m1 := &validatedMap{
-		impl: NewMap(func(a, b interface{}) bool {
+		impl: NewMap(func(a, b any) bool {
 			return a.(int) < b.(int)
 		}),
 		expected: make(map[int]int),
@@ -242,7 +242,7 @@ func (vm *validatedMap) validate(t *testing.T) {
 	}
 
 	actualMap := make(map[int]int, len(vm.expected))
-	vm.impl.Range(func(key, value interface{}) {
+	vm.impl.Range(func(key, value any) {
 		if other, ok := actualMap[key.(int)]; ok {
 			t.Fatalf("key is present twice, key: %d, first value: %d, second value: %d", key, value, other)
 		}
@@ -252,7 +252,7 @@ func (vm *validatedMap) validate(t *testing.T) {
 	assertSameMap(t, actualMap, vm.expected)
 }
 
-func validateNode(t *testing.T, node *mapNode, less func(a, b interface{}) bool) {
+func validateNode(t *testing.T, node *mapNode, less func(a, b any) bool) {
 	if node == nil {
 		return
 	}
@@ -289,7 +289,7 @@ func (vm *validatedMap) setAll(t *testing.T, other *validatedMap) {
 
 func (vm *validatedMap) set(t *testing.T, key, value int) {
 	vm.seen[mapEntry{key: key, value: value}] = struct{}{}
-	vm.impl.Set(key, value, func(deletedKey, deletedValue interface{}) {
+	vm.impl.Set(key, value, func(deletedKey, deletedValue any) {
 		if deletedKey != key || deletedValue != value {
 			t.Fatalf("unexpected passed in deleted entry: %v/%v, expected: %v/%v", deletedKey, deletedValue, key, value)
 		}
@@ -333,7 +333,7 @@ func (vm *validatedMap) destroy() {
 	vm.impl.Destroy()
 }
 
-func assertSameMap(t *testing.T, map1, map2 interface{}) {
+func assertSameMap(t *testing.T, map1, map2 any) {
 	t.Helper()
 
 	if !reflect.DeepEqual(map1, map2) {

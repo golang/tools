@@ -32,7 +32,7 @@ func OkFunc2[MutexPtr *sync.Mutex](m MutexPtr) {
 
 	var mus []MutexPtr
 
-	for _, _ = range mus {
+	for range mus {
 	}
 }
 
@@ -45,7 +45,7 @@ func BadFunc2[Mutex sync.Mutex](m Mutex) { // want `passes lock by value: .*Mute
 
 	var mus []Mutex
 
-	for _, _ = range mus {
+	for range mus {
 	}
 }
 

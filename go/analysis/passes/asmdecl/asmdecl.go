@@ -146,7 +146,7 @@ var (
 	abiSuff      = re(`^(.+)<(ABI.+)>$`)
 )
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	// No work if no assembly files.
 	var sfiles []string
 	for _, fname := range pass.OtherFiles {
@@ -222,7 +222,7 @@ Files:
 		for lineno, line := range lines {
 			lineno++
 
-			badf := func(format string, args ...interface{}) {
+			badf := func(format string, args ...any) {
 				pass.Reportf(analysisutil.LineStart(tf, lineno), "[%s] %s: %s", arch, fnName, fmt.Sprintf(format, args...))
 			}
 
@@ -279,7 +279,7 @@ Files:
 				if pkgPath := strings.TrimSpace(m[1]); pkgPath != "" {
 					// The assembler uses Unicode division slash within
 					// identifiers to represent the directory separator.
-					pkgPath = strings.Replace(pkgPath, "∕", "/", -1)
+					pkgPath = strings.ReplaceAll(pkgPath, "∕", "/")
 					if pkgPath != pass.Pkg.Path() {
 						// log.Printf("%s:%d: [%s] cannot check cross-package assembly function: %s is in package %s", fname, lineno, arch, fnName, pkgPath)
 						fn = nil
@@ -636,7 +636,7 @@ func asmParseDecl(pass *analysis.Pass, decl *ast.FuncDecl) map[string]*asmFunc {
 }
 
 // asmCheckVar checks a single variable reference.
-func asmCheckVar(badf func(string, ...interface{}), fn *asmFunc, line, expr string, off int, v *asmVar, archDef *asmArch) {
+func asmCheckVar(badf func(string, ...any), fn *asmFunc, line, expr string, off int, v *asmVar, archDef *asmArch) {
 	m := asmOpcode.FindStringSubmatch(line)
 	if m == nil {
 		if !strings.HasPrefix(strings.TrimSpace(line), "//") {

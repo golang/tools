@@ -16,11 +16,11 @@ package gccgoexportdata
 import (
 	"bytes"
 	"debug/elf"
+	"errors"
 	"fmt"
 	"go/token"
 	"go/types"
 	"io"
-	"io/ioutil"
 	"strconv"
 	"strings"
 
@@ -46,7 +46,7 @@ func CompilerInfo(gccgo string, args ...string) (version, triple string, dirs []
 // NewReader returns a reader for the export data section of an object
 // (.o) or archive (.a) file read from r.
 func NewReader(r io.Reader) (io.Reader, error) {
-	data, err := ioutil.ReadAll(r)
+	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func NewReader(r io.Reader) (io.Reader, error) {
 	}
 	sec := ef.Section(".go_export")
 	if sec == nil {
-		return nil, fmt.Errorf("no .go_export section")
+		return nil, errors.New("no .go_export section")
 	}
 	return sec.Open(), nil
 }
@@ -107,7 +107,7 @@ func firstSection(a []byte) ([]byte, error) {
 
 		return payload, nil
 	}
-	return nil, fmt.Errorf("archive has no regular sections")
+	return nil, errors.New("archive has no regular sections")
 }
 
 // Read reads export data from in, decodes it, and returns type

@@ -20,14 +20,14 @@ package main
 import (
 	"flag"
 	"fmt"
-	exec "golang.org/x/sys/execabs"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"syscall"
 	"time"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 var (
@@ -127,7 +127,7 @@ func main() {
 			}
 			fails++
 			dir, path := filepath.Split(*flagOutput)
-			f, err := ioutil.TempFile(dir, path)
+			f, err := os.CreateTemp(dir, path)
 			if err != nil {
 				fmt.Printf("failed to create temp file: %v\n", err)
 				os.Exit(1)

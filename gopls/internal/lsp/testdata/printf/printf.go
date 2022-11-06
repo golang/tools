@@ -2,7 +2,7 @@ package printf
 
 import "fmt"
 
-func myPrintf(string, ...interface{}) {}
+func myPrintf(string, ...any) {}
 
 func _() {
 	var (

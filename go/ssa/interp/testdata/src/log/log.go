@@ -5,19 +5,19 @@ import (
 	"os"
 )
 
-func Println(v ...interface{}) {
+func Println(v ...any) {
 	fmt.Println(v...)
 }
-func Printf(format string, v ...interface{}) {
+func Printf(format string, v ...any) {
 	fmt.Printf(format, v...)
 }
 
-func Fatalln(v ...interface{}) {
+func Fatalln(v ...any) {
 	Println(v...)
 	os.Exit(1)
 }
 
-func Fatalf(format string, v ...interface{}) {
+func Fatalf(format string, v ...any) {
 	Printf(format, v...)
 	os.Exit(1)
 }

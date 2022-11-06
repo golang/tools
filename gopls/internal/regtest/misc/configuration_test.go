@@ -40,7 +40,7 @@ var FooErr = errors.New("foo")
 			EmptyDiagnostics("a/a.go"),
 		)
 		cfg := env.Editor.Config()
-		cfg.Settings = map[string]interface{}{
+		cfg.Settings = map[string]any{
 			"staticcheck": true,
 		}
 		env.ChangeConfiguration(cfg)

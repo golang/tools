@@ -43,8 +43,8 @@ func TestGoEnvMiddleware(t *testing.T) {
 	conn := env.dial(ctx, t, l.Dialer(), noopBinder, true)
 	dispatch := protocol.ServerDispatcherV2(conn)
 	initParams := &protocol.ParamInitialize{}
-	initParams.InitializationOptions = map[string]interface{}{
-		"env": map[string]interface{}{
+	initParams.InitializationOptions = map[string]any{
+		"env": map[string]any{
 			"GONOPROXY": "example.com",
 		},
 	}
@@ -55,7 +55,7 @@ func TestGoEnvMiddleware(t *testing.T) {
 	if server.params == nil {
 		t.Fatalf("initialize params are unset")
 	}
-	envOpts := server.params.InitializationOptions.(map[string]interface{})["env"].(map[string]interface{})
+	envOpts := server.params.InitializationOptions.(map[string]any)["env"].(map[string]any)
 
 	// Check for an arbitrary Go variable. It should be set.
 	if _, ok := envOpts["GOPRIVATE"]; !ok {

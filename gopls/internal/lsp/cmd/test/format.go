@@ -6,7 +6,6 @@ package cmdtest
 
 import (
 	"bytes"
-	"io/ioutil"
 	"os"
 	"regexp"
 	"strings"
@@ -61,7 +60,7 @@ func checkUnified(t *testing.T, filename string, expect string, patch string) {
 	if patch == "" {
 		applied = expect
 	} else {
-		temp, err := ioutil.TempFile("", "applied")
+		temp, err := os.CreateTemp("", "applied")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -74,7 +73,7 @@ func checkUnified(t *testing.T, filename string, expect string, patch string) {
 			t.Errorf("failed applying patch to %s: %v\ngot:\n%s\npatch:\n%s", filename, err, msg, patch)
 			return
 		}
-		out, err := ioutil.ReadFile(temp.Name())
+		out, err := os.ReadFile(temp.Name())
 		if err != nil {
 			t.Errorf("failed reading patched output for %s: %v\n", filename, err)
 			return

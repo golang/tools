@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -68,7 +67,7 @@ func (s *snapshot) ModTidy(ctx context.Context, pm *source.ParsedModule) (*sourc
 			return nil, err
 		}
 
-		handle := memoize.NewPromise("modTidy", func(ctx context.Context, arg interface{}) interface{} {
+		handle := memoize.NewPromise("modTidy", func(ctx context.Context, arg any) any {
 			tidied, err := modTidyImpl(ctx, arg.(*snapshot), uri.Filename(), pm)
 			return modTidyResult{tidied, err}
 		})
@@ -112,7 +111,7 @@ func modTidyImpl(ctx context.Context, snapshot *snapshot, filename string, pm *s
 
 	// Go directly to disk to get the temporary mod file,
 	// since it is always on disk.
-	tempContents, err := ioutil.ReadFile(tmpURI.Filename())
+	tempContents, err := os.ReadFile(tmpURI.Filename())
 	if err != nil {
 		return nil, err
 	}

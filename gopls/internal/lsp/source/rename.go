@@ -210,7 +210,7 @@ func Rename(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position,
 		}
 
 		if strings.HasSuffix(newName, "_test") {
-			return nil, true, fmt.Errorf("cannot rename to _test package")
+			return nil, true, errors.New("cannot rename to _test package")
 		}
 
 		metadata, err := s.AllValidMetadata(ctx)
@@ -515,7 +515,7 @@ func renameObj(ctx context.Context, s Snapshot, newName string, qos []qualifiedO
 		}
 	}
 	if r.hadConflicts {
-		return nil, fmt.Errorf(r.errors)
+		return nil, errors.New(r.errors)
 	}
 
 	changes, err := r.update()

@@ -166,7 +166,7 @@ type Elem interface {
 // renderElem implements the elem template function, used to render
 // sub-templates.
 func renderElem(t *template.Template, e Elem) (template.HTML, error) {
-	var data interface{} = e
+	var data any = e
 	if s, ok := e.(Section); ok {
 		data = struct {
 			Section
@@ -191,7 +191,7 @@ func init() {
 
 // execTemplate is a helper to execute a template and return the output as a
 // template.HTML value.
-func execTemplate(t *template.Template, name string, data interface{}) (template.HTML, error) {
+func execTemplate(t *template.Template, name string, data any) (template.HTML, error) {
 	b := new(bytes.Buffer)
 	err := t.ExecuteTemplate(b, name, data)
 	if err != nil {
@@ -422,7 +422,7 @@ func parseSections(ctx *Context, name, prefix string, lines *Lines, number []int
 				lines.back()
 				pre := strings.Join(s, "\n")
 				raw := pre
-				pre = strings.Replace(pre, "\t", "    ", -1) // browsers treat tabs badly
+				pre = strings.ReplaceAll(pre, "\t", "    ") // browsers treat tabs badly
 				pre = strings.TrimRightFunc(pre, unicode.IsSpace)
 				e = Text{Lines: []string{pre}, Pre: true, Raw: raw}
 			case !isMarkdown && strings.HasPrefix(text, "- "):

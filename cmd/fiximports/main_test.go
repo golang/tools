@@ -213,8 +213,8 @@ import (
 		}
 
 		if runtime.GOOS == "windows" {
-			test.wantStderr = strings.Replace(test.wantStderr, `testdata/src/old.com/bad/bad.go`, `testdata\src\old.com\bad\bad.go`, -1)
-			test.wantStderr = strings.Replace(test.wantStderr, `testdata/src/fruit.io/banana/banana.go`, `testdata\src\fruit.io\banana\banana.go`, -1)
+			test.wantStderr = strings.ReplaceAll(test.wantStderr, `testdata/src/old.com/bad/bad.go`, `testdata\src\old.com\bad\bad.go`)
+			test.wantStderr = strings.ReplaceAll(test.wantStderr, `testdata/src/fruit.io/banana/banana.go`, `testdata\src\fruit.io\banana\banana.go`)
 		}
 		test.wantStderr = strings.TrimSpace(test.wantStderr)
 

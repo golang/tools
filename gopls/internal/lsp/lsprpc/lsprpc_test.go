@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/jsonrpc2"
-	"golang.org/x/tools/internal/jsonrpc2/servertest"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/jsonrpc2"
+	"golang.org/x/tools/internal/jsonrpc2/servertest"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -300,8 +300,8 @@ func TestEnvForwarding(t *testing.T) {
 	conn.Go(ctx, jsonrpc2.MethodNotFound)
 	dispatch := protocol.ServerDispatcher(conn)
 	initParams := &protocol.ParamInitialize{}
-	initParams.InitializationOptions = map[string]interface{}{
-		"env": map[string]interface{}{
+	initParams.InitializationOptions = map[string]any{
+		"env": map[string]any{
 			"GONOPROXY": "example.com",
 		},
 	}
@@ -312,7 +312,7 @@ func TestEnvForwarding(t *testing.T) {
 	if server.params == nil {
 		t.Fatalf("initialize params are unset")
 	}
-	env := server.params.InitializationOptions.(map[string]interface{})["env"].(map[string]interface{})
+	env := server.params.InitializationOptions.(map[string]any)["env"].(map[string]any)
 
 	// Check for an arbitrary Go variable. It should be set.
 	if _, ok := env["GOPRIVATE"]; !ok {

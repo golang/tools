@@ -12,7 +12,7 @@ import (
 
 func f() {
 	var x, y reflect.Value
-	var a, b interface{}
+	var a, b any
 	_ = x == y // want `avoid using == with reflect.Value`
 	_ = x == a // want `avoid using == with reflect.Value`
 	_ = a == x // want `avoid using == with reflect.Value`
@@ -25,7 +25,7 @@ func f() {
 }
 func g() {
 	var x, y reflect.Value
-	var a, b interface{}
+	var a, b any
 	_ = x != y // want `avoid using != with reflect.Value`
 	_ = x != a // want `avoid using != with reflect.Value`
 	_ = a != x // want `avoid using != with reflect.Value`
@@ -38,7 +38,7 @@ func g() {
 }
 func h() {
 	var x, y reflect.Value
-	var a, b interface{}
+	var a, b any
 	reflect.DeepEqual(x, y) // want `avoid using reflect.DeepEqual with reflect.Value`
 	reflect.DeepEqual(x, a) // want `avoid using reflect.DeepEqual with reflect.Value`
 	reflect.DeepEqual(a, x) // want `avoid using reflect.DeepEqual with reflect.Value`

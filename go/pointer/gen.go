@@ -122,7 +122,7 @@ func (a *analysis) setValueNode(v ssa.Value, id nodeid, cgn *cgnode) {
 //
 // obj is the start node of the object, from a prior call to nextNode.
 // Its size, flags and optional data will be updated.
-func (a *analysis) endObject(obj nodeid, cgn *cgnode, data interface{}) *object {
+func (a *analysis) endObject(obj nodeid, cgn *cgnode, data any) *object {
 	// Ensure object is non-empty by padding;
 	// the pad will be the object node.
 	size := uint32(a.nextNode() - obj)
@@ -174,7 +174,7 @@ func (a *analysis) makeFunctionObject(fn *ssa.Function, callersite *callsite) no
 }
 
 // makeTagged creates a tagged object of type typ.
-func (a *analysis) makeTagged(typ types.Type, cgn *cgnode, data interface{}) nodeid {
+func (a *analysis) makeTagged(typ types.Type, cgn *cgnode, data any) nodeid {
 	obj := a.addOneNode(typ, "tagged.T", nil) // NB: type may be non-scalar!
 	a.addNodes(typ, "tagged.v")
 	a.endObject(obj, cgn, data).flags |= otTagged

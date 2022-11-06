@@ -89,7 +89,7 @@ func packageCompletionSurrounding(fset *token.FileSet, pgf *source.ParsedGoFile,
 			"URI":    pgf.URI,
 			"size":   tok.Size(),
 		})
-		return nil, fmt.Errorf("cursor out of bounds")
+		return nil, errors.New("cursor out of bounds")
 	}
 	cursor := tok.Pos(offset)
 
@@ -99,7 +99,7 @@ func packageCompletionSurrounding(fset *token.FileSet, pgf *source.ParsedGoFile,
 	if name, ok := expr.(*ast.Ident); ok {
 		if cursor >= name.Pos() && cursor <= name.End() {
 			if !strings.HasPrefix(PACKAGE, name.Name) {
-				return nil, fmt.Errorf("cursor in non-matching ident")
+				return nil, errors.New("cursor in non-matching ident")
 			}
 			return &Selection{
 				content: name.Name,
@@ -121,7 +121,7 @@ func packageCompletionSurrounding(fset *token.FileSet, pgf *source.ParsedGoFile,
 	lines := strings.Split(string(pgf.Src), "\n")
 	cursorLine := tok.Line(cursor)
 	if cursorLine <= 0 || cursorLine > len(lines) {
-		return nil, fmt.Errorf("invalid line number")
+		return nil, errors.New("invalid line number")
 	}
 	if fset.Position(expr.Pos()).Line == cursorLine {
 		words := strings.Fields(lines[cursorLine-1])
@@ -150,12 +150,12 @@ func packageCompletionSurrounding(fset *token.FileSet, pgf *source.ParsedGoFile,
 	// If the cursor is after the start of the expression, no package
 	// declaration will be valid.
 	if cursor > expr.Pos() {
-		return nil, fmt.Errorf("cursor after expression")
+		return nil, errors.New("cursor after expression")
 	}
 
 	// If the cursor is in a comment, don't offer any completions.
 	if cursorInComment(fset.File(cursor), cursor, pgf.Src) {
-		return nil, fmt.Errorf("cursor in comment")
+		return nil, errors.New("cursor in comment")
 	}
 
 	// The surrounding range in this case is the cursor except for empty file,

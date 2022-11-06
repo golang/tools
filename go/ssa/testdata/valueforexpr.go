@@ -1,3 +1,4 @@
+//go:build ignore
 // +build ignore
 
 package main
@@ -47,7 +48,7 @@ func f(spilled, unspilled int) {
 	_ = /*@nil*/ (new(int)) // optimized away
 	tmp := /*@Alloc*/ (new(int))
 	_ = tmp
-	var iface interface{}
+	var iface any
 	_ = /*@TypeAssert*/ (iface.(int))
 	_ = /*@UnOp*/ (sl[0])
 	_ = /*@IndexAddr*/ (&sl[0])

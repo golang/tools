@@ -6,10 +6,11 @@
 package browser
 
 import (
-	exec "golang.org/x/sys/execabs"
 	"os"
 	"runtime"
 	"time"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 // Commands returns a list of possible commands to use to open a url.

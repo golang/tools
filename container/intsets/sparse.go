@@ -25,6 +25,7 @@ package intsets // import "golang.org/x/tools/container/intsets"
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math/bits"
 )
@@ -267,7 +268,7 @@ func (s *Sparse) init() {
 		// loop.  Fail fast before this occurs.
 		// We don't want to call panic here because it prevents the
 		// inlining of this function.
-		_ = (interface{}(nil)).(to_copy_a_sparse_you_must_call_its_Copy_method)
+		_ = (any(nil)).(to_copy_a_sparse_you_must_call_its_Copy_method)
 	}
 }
 
@@ -1082,7 +1083,7 @@ func (s *Sparse) check() error {
 	if s.root.empty() {
 		// An empty set must have only the root block with offset MaxInt.
 		if s.root.next != &s.root {
-			return fmt.Errorf("multiple blocks with empty root block")
+			return errors.New("multiple blocks with empty root block")
 		}
 		if s.root.offset != MaxInt {
 			return fmt.Errorf("empty set has offset %d, should be MaxInt", s.root.offset)
@@ -1094,13 +1095,13 @@ func (s *Sparse) check() error {
 			return fmt.Errorf("bad offset modulo: %d", b.offset)
 		}
 		if b.empty() {
-			return fmt.Errorf("empty block")
+			return errors.New("empty block")
 		}
 		if b.prev.next != b {
-			return fmt.Errorf("bad prev.next link")
+			return errors.New("bad prev.next link")
 		}
 		if b.next.prev != b {
-			return fmt.Errorf("bad next.prev link")
+			return errors.New("bad next.prev link")
 		}
 		if b.next == &s.root {
 			break

@@ -106,7 +106,7 @@ type frame struct {
 	defers           *deferred
 	result           value
 	panicking        bool
-	panic            interface{}
+	panic            any
 }
 
 func (fr *frame) get(key ssa.Value) value {

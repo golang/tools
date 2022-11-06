@@ -1,3 +1,4 @@
+//go:build ignore
 // +build ignore
 
 // This file is the input to TestValueForExprStructConv in identical_test.go,

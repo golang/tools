@@ -5,7 +5,6 @@
 package mod
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -41,7 +40,7 @@ func TestModfileRemainsUnchanged(t *testing.T) {
 	}
 	defer os.RemoveAll(folder)
 
-	before, err := ioutil.ReadFile(filepath.Join(folder, "go.mod"))
+	before, err := os.ReadFile(filepath.Join(folder, "go.mod"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +49,7 @@ func TestModfileRemainsUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	release()
-	after, err := ioutil.ReadFile(filepath.Join(folder, "go.mod"))
+	after, err := os.ReadFile(filepath.Join(folder, "go.mod"))
 	if err != nil {
 		t.Fatal(err)
 	}

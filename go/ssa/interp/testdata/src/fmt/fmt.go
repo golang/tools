@@ -5,13 +5,13 @@ import (
 	"strings"
 )
 
-func Sprint(args ...interface{}) string
+func Sprint(args ...any) string
 
-func Sprintln(args ...interface{}) string {
+func Sprintln(args ...any) string {
 	return Sprint(args...) + "\n"
 }
 
-func Print(args ...interface{}) (int, error) {
+func Print(args ...any) (int, error) {
 	var n int
 	for i, arg := range args {
 		if i > 0 {
@@ -25,7 +25,7 @@ func Print(args ...interface{}) (int, error) {
 	return n, nil
 }
 
-func Println(args ...interface{}) {
+func Println(args ...any) {
 	Print(args...)
 	println()
 }
@@ -33,13 +33,13 @@ func Println(args ...interface{}) {
 // formatting is too complex to fake
 // handle the bare minimum needed for tests
 
-func Printf(format string, args ...interface{}) (int, error) {
+func Printf(format string, args ...any) (int, error) {
 	msg := Sprintf(format, args...)
 	print(msg)
 	return len(msg), nil
 }
 
-func Sprintf(format string, args ...interface{}) string {
+func Sprintf(format string, args ...any) string {
 	// handle extremely simple cases that appear in tests.
 	if len(format) == 0 {
 		return ""
@@ -54,7 +54,7 @@ func Sprintf(format string, args ...interface{}) string {
 	}
 }
 
-func Errorf(format string, args ...interface{}) error {
+func Errorf(format string, args ...any) error {
 	msg := Sprintf(format, args...)
 	return errors.New(msg)
 }

@@ -72,6 +72,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -79,7 +80,6 @@ import (
 	"go/printer"
 	"go/token"
 	"go/types"
-	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
@@ -149,13 +149,11 @@ func main() {
 		log.Fatal(err)
 	}
 	if *outputFile != "" {
-		err := ioutil.WriteFile(*outputFile, code, 0666)
-		if err != nil {
+		if err := os.WriteFile(*outputFile, code, 0666); err != nil {
 			log.Fatal(err)
 		}
 	} else {
-		_, err := os.Stdout.Write(code)
-		if err != nil {
+		if _, err := os.Stdout.Write(code); err != nil {
 			log.Fatal(err)
 		}
 	}
@@ -189,12 +187,12 @@ func bundle(src, dst, dstpkg, prefix, buildTags string) ([]byte, error) {
 		return nil, err
 	}
 	if packages.PrintErrors(pkgs) > 0 || len(pkgs) != 1 {
-		return nil, fmt.Errorf("failed to load source package")
+		return nil, errors.New("failed to load source package")
 	}
 	pkg := pkgs[0]
 
 	if strings.Contains(prefix, "&") {
-		prefix = strings.Replace(prefix, "&", pkg.Syntax[0].Name.Name, -1)
+		prefix = strings.ReplaceAll(prefix, "&", pkg.Syntax[0].Name.Name)
 	}
 
 	objsToUpdate := make(map[types.Object]bool)
@@ -366,7 +364,7 @@ func bundle(src, dst, dstpkg, prefix, buildTags string) ([]byte, error) {
 			format.Node(&buf, pkg.Fset, &printer.CommentedNode{Node: decl, Comments: f.Comments})
 			// Remove each "@@@." in the output.
 			// TODO(adonovan): not hygienic.
-			out.Write(bytes.Replace(buf.Bytes(), []byte("@@@."), nil, -1))
+			out.Write(bytes.ReplaceAll(buf.Bytes(), []byte("@@@."), nil))
 
 			last = printSameLineComment(&out, f.Comments, pkg.Fset, end)
 

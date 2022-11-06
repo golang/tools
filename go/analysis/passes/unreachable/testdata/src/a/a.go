@@ -9,7 +9,7 @@ package unreachable
 
 type T int
 
-var x interface{}
+var x any
 var c chan int
 
 func external() int // ok

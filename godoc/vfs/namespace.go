@@ -275,7 +275,7 @@ func (d dirInfo) Size() int64        { return 0 }
 func (d dirInfo) Mode() os.FileMode  { return os.ModeDir | 0555 }
 func (d dirInfo) ModTime() time.Time { return startTime }
 func (d dirInfo) IsDir() bool        { return true }
-func (d dirInfo) Sys() interface{}   { return nil }
+func (d dirInfo) Sys() any           { return nil }
 
 var startTime = time.Now()
 

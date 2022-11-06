@@ -6,6 +6,7 @@ package lsp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -33,7 +34,7 @@ func (s *Server) addView(ctx context.Context, name string, uri span.URI) (source
 	state := s.state
 	s.stateMu.Unlock()
 	if state < serverInitialized {
-		return nil, nil, fmt.Errorf("addView called before server initialized")
+		return nil, nil, errors.New("addView called before server initialized")
 	}
 	options := s.session.Options().Clone()
 	if err := s.fetchConfig(ctx, name, uri, options); err != nil {

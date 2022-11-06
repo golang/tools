@@ -8,7 +8,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -98,7 +97,7 @@ var (
 func getTempDir() string {
 	makeTempDirOnce.Do(func() {
 		var err error
-		tempDir, err = ioutil.TempDir("", "gopls-bench")
+		tempDir, err = os.MkdirTemp("", "gopls-bench")
 		if err != nil {
 			log.Fatal(err)
 		}

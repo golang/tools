@@ -5,6 +5,7 @@
 package span
 
 import (
+	"errors"
 	"fmt"
 	"go/token"
 
@@ -86,7 +87,7 @@ func (r Range) Span() (Span, error) {
 // //line directives are in use. If so, fix this function; if not, fix Range.Span.
 func FileSpan(posFile, srcFile *token.File, start, end token.Pos) (Span, error) {
 	if !start.IsValid() {
-		return Span{}, fmt.Errorf("start pos is not valid")
+		return Span{}, errors.New("start pos is not valid")
 	}
 	if posFile == nil {
 		return Span{}, bug.Errorf("missing file association") // should never get here with a nil file
@@ -205,7 +206,7 @@ func ToOffset(tf *token.File, line, col int) (int, error) {
 		return -1, fmt.Errorf("line %d is beyond end of file %v", line, lineMax)
 	} else if line == lineMax {
 		if col > 1 {
-			return -1, fmt.Errorf("column is beyond end of file")
+			return -1, errors.New("column is beyond end of file")
 		}
 		// at the end of the file, allowing for a trailing eol
 		return tf.Size(), nil

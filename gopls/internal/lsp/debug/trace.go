@@ -196,7 +196,7 @@ func (t *traces) ProcessEvent(ctx context.Context, ev core.Event, lm label.Map) 
 	return ctx
 }
 
-func (t *traces) getData(req *http.Request) interface{} {
+func (t *traces) getData(req *http.Request) any {
 	if len(t.sets) == 0 {
 		return nil
 	}

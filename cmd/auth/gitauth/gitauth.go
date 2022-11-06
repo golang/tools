@@ -17,13 +17,14 @@ package main
 import (
 	"bytes"
 	"fmt"
-	exec "golang.org/x/sys/execabs"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 func main() {
@@ -108,7 +109,7 @@ func main() {
 		// Send a HEAD request to try to detect whether the credential is valid.
 		// If the user just typed in a correct password and has caching enabled,
 		// we don't want to nag them for it again the next time they run a 'go' command.
-		req, err := http.NewRequest("HEAD", u.String(), nil)
+		req, err := http.NewRequest(http.MethodHead, u.String(), http.NoBody)
 		if err != nil {
 			log.Fatalf("internal error constructing HTTP HEAD request: %v\n", err)
 		}

@@ -6,7 +6,7 @@ package fake
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
@@ -48,7 +48,7 @@ func (c *Client) ShowMessageRequest(ctx context.Context, params *protocol.ShowMe
 		}
 	}
 	if len(params.Actions) == 0 || len(params.Actions) > 1 {
-		return nil, fmt.Errorf("fake editor cannot handle multiple action items")
+		return nil, errors.New("fake editor cannot handle multiple action items")
 	}
 	return &params.Actions[0], nil
 }
@@ -60,7 +60,7 @@ func (c *Client) LogMessage(ctx context.Context, params *protocol.LogMessagePara
 	return nil
 }
 
-func (c *Client) Event(ctx context.Context, event *interface{}) error {
+func (c *Client) Event(ctx context.Context, event *any) error {
 	return nil
 }
 
@@ -75,8 +75,8 @@ func (c *Client) WorkspaceFolders(context.Context) ([]protocol.WorkspaceFolder, 
 	return []protocol.WorkspaceFolder{}, nil
 }
 
-func (c *Client) Configuration(_ context.Context, p *protocol.ParamConfiguration) ([]interface{}, error) {
-	results := make([]interface{}, len(p.Items))
+func (c *Client) Configuration(_ context.Context, p *protocol.ParamConfiguration) ([]any, error) {
+	results := make([]any, len(p.Items))
 	for i, item := range p.Items {
 		if item.Section == "gopls" {
 			c.editor.mu.Lock()

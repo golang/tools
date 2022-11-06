@@ -10,6 +10,7 @@ package rename
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/build"
@@ -328,7 +329,7 @@ func findFromObjectsInFile(iprog *loader.Program, spec *spec) ([]types.Object, e
 				id := identAtOffset(iprog.Fset, f, spec.offset)
 				if id == nil {
 					// can't happen?
-					return nil, fmt.Errorf("identifier not found")
+					return nil, errors.New("identifier not found")
 				}
 				obj := info.Uses[id]
 				if obj == nil {

@@ -90,7 +90,7 @@ type I interface {
 var nonconst string
 
 func reflectTypeMethodByName() {
-	TU := reflect.TypeOf([]interface{}{T{}, U{}}[0])
+	TU := reflect.TypeOf([]any{T{}, U{}}[0])
 	print(reflect.Zero(TU)) // @types T | U
 
 	F, _ := TU.MethodByName("F")

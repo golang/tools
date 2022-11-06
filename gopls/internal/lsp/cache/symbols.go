@@ -35,7 +35,7 @@ func (s *snapshot) symbolize(ctx context.Context, fh source.FileHandle) ([]sourc
 	if !hit {
 		type symbolHandleKey source.Hash
 		key := symbolHandleKey(fh.FileIdentity().Hash)
-		promise, release := s.store.Promise(key, func(_ context.Context, arg interface{}) interface{} {
+		promise, release := s.store.Promise(key, func(_ context.Context, arg any) any {
 			symbols, err := symbolizeImpl(arg.(*snapshot), fh)
 			return symbolizeResult{symbols, err}
 		})
@@ -43,7 +43,7 @@ func (s *snapshot) symbolize(ctx context.Context, fh source.FileHandle) ([]sourc
 		entry = promise
 
 		s.mu.Lock()
-		s.symbolizeHandles.Set(uri, entry, func(_, _ interface{}) { release() })
+		s.symbolizeHandles.Set(uri, entry, func(_, _ any) { release() })
 		s.mu.Unlock()
 	}
 

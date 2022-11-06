@@ -13,7 +13,7 @@ func (Value) Elem() Value
 func (Value) Field(int) Value
 func (Value) Index(i int) Value
 func (Value) Int() int64
-func (Value) Interface() interface{}
+func (Value) Interface() any
 func (Value) IsNil() bool
 func (Value) IsValid() bool
 func (Value) Kind() Kind
@@ -26,8 +26,8 @@ func (Value) SetInt(int64)
 func (Value) Type() Type
 
 func SliceOf(Type) Type
-func TypeOf(interface{}) Type
-func ValueOf(interface{}) Value
+func TypeOf(any) Type
+func ValueOf(any) Value
 
 type Kind uint
 
@@ -37,4 +37,4 @@ const (
 	Pointer
 )
 
-func DeepEqual(x, y interface{}) bool
+func DeepEqual(x, y any) bool

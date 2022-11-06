@@ -5,7 +5,7 @@
 // want +3 `[+]build lines do not match //go:build condition`
 
 //go:build good
-// +build bad
+// +build good
 
 package a
 

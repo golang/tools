@@ -14,8 +14,8 @@ import (
 )
 
 func _[T any]() {
-	fmt.Errorf("") // want "result of fmt.Errorf call not used"
-	_ = fmt.Errorf("")
+	errors.New("") // want "result of fmt.Errorf call not used"
+	_ = errors.New("")
 
 	errors.New("") // want "result of errors.New call not used"
 

@@ -6,20 +6,20 @@
 
 package a
 
-type Any interface{}
+type Any any
 
-func _[T interface{}]()                    {} // want "could use \"any\" for this empty interface"
-func _[X any, T interface{}]()             {} // want "could use \"any\" for this empty interface"
-func _[any interface{}]()                  {} // want "could use \"any\" for this empty interface"
-func _[T Any]()                            {} // want "could use \"any\" for this empty interface"
-func _[T interface{ int | interface{} }]() {} // want "could use \"any\" for this empty interface"
-func _[T interface{ int | Any }]()         {} // want "could use \"any\" for this empty interface"
-func _[T any]()                            {}
+func _[T any]()                    {} // want "could use \"any\" for this empty interface"
+func _[X any, T any]()             {} // want "could use \"any\" for this empty interface"
+func _[any any]()                  {} // want "could use \"any\" for this empty interface"
+func _[T Any]()                    {} // want "could use \"any\" for this empty interface"
+func _[T interface{ int | any }]() {} // want "could use \"any\" for this empty interface"
+func _[T interface{ int | Any }]() {} // want "could use \"any\" for this empty interface"
+func _[T any]()                    {}
 
-type _[T interface{}] int                    // want "could use \"any\" for this empty interface"
-type _[X any, T interface{}] int             // want "could use \"any\" for this empty interface"
-type _[any interface{}] int                  // want "could use \"any\" for this empty interface"
-type _[T Any] int                            // want "could use \"any\" for this empty interface"
-type _[T interface{ int | interface{} }] int // want "could use \"any\" for this empty interface"
-type _[T interface{ int | Any }] int         // want "could use \"any\" for this empty interface"
+type _[T any] int                    // want "could use \"any\" for this empty interface"
+type _[X any, T any] int             // want "could use \"any\" for this empty interface"
+type _[any any] int                  // want "could use \"any\" for this empty interface"
+type _[T Any] int                    // want "could use \"any\" for this empty interface"
+type _[T interface{ int | any }] int // want "could use \"any\" for this empty interface"
+type _[T interface{ int | Any }] int // want "could use \"any\" for this empty interface"
 type _[T any] int

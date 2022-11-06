@@ -13,7 +13,6 @@ import (
 	"go/token"
 	"go/types"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -176,7 +175,7 @@ func (s *snapshot) Acquire() func() {
 	return s.refcount.Done
 }
 
-func (s *snapshot) awaitPromise(ctx context.Context, p *memoize.Promise) (interface{}, error) {
+func (s *snapshot) awaitPromise(ctx context.Context, p *memoize.Promise) (any, error) {
 	return p.Get(ctx, s)
 }
 
@@ -350,7 +349,7 @@ func (s *snapshot) config(ctx context.Context, inv *gocommand.Invocation) *packa
 		ParseFile: func(*token.FileSet, string, []byte) (*ast.File, error) {
 			panic("go/packages must not be used to parse files")
 		},
-		Logf: func(format string, args ...interface{}) {
+		Logf: func(format string, args ...any) {
 			if verboseOutput {
 				event.Log(ctx, fmt.Sprintf(format, args...))
 			}
@@ -413,11 +412,11 @@ func (s *snapshot) RunGoCommands(ctx context.Context, allowNetwork bool, wd stri
 		return false, nil, nil, nil
 	}
 	var modBytes, sumBytes []byte
-	modBytes, err = ioutil.ReadFile(tmpURI.Filename())
+	modBytes, err = os.ReadFile(tmpURI.Filename())
 	if err != nil && !os.IsNotExist(err) {
 		return false, nil, nil, err
 	}
-	sumBytes, err = ioutil.ReadFile(strings.TrimSuffix(tmpURI.Filename(), ".mod") + ".sum")
+	sumBytes, err = os.ReadFile(strings.TrimSuffix(tmpURI.Filename(), ".mod") + ".sum")
 	if err != nil && !os.IsNotExist(err) {
 		return false, nil, nil, err
 	}
@@ -648,7 +647,7 @@ func (s *snapshot) PackageForFile(ctx context.Context, uri span.URI, mode source
 	}
 
 	if len(phs) < 1 {
-		return nil, fmt.Errorf("no packages")
+		return nil, errors.New("no packages")
 	}
 
 	ph := phs[0]
@@ -665,7 +664,7 @@ func (s *snapshot) PackageForFile(ctx context.Context, uri span.URI, mode source
 		}
 	}
 	if ph == nil {
-		return nil, fmt.Errorf("no packages in input")
+		return nil, errors.New("no packages in input")
 	}
 
 	return ph.await(ctx, s)
@@ -1226,7 +1225,7 @@ func (s *snapshot) CachedImportPaths(ctx context.Context) (map[string]source.Pac
 	defer s.mu.Unlock()
 
 	results := map[string]source.Package{}
-	s.packages.Range(func(_, v interface{}) {
+	s.packages.Range(func(_, v any) {
 		cachedPkg, err := v.(*packageHandle).cached()
 		if err != nil {
 			return
@@ -2120,7 +2119,7 @@ func (s *snapshot) invalidatePackagesLocked(ids map[PackageID]bool) {
 	// Copy actions.
 	// TODO(adonovan): opt: avoid iteration over s.actions.
 	var actionsToDelete []actionKey
-	s.actions.Range(func(k, _ interface{}) {
+	s.actions.Range(func(k, _ any) {
 		key := k.(actionKey)
 		if _, ok := ids[key.pkgid]; ok {
 			actionsToDelete = append(actionsToDelete, key)
