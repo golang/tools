@@ -100,50 +100,60 @@ func implementations(ctx context.Context, s Snapshot, f FileHandle, pp protocol.
 		return allNamed
 	}
 
-	seen := make(map[token.Position]bool)
+	var objs []types.Object
+
 	for _, qo := range qos {
-		var ok bool
+		var sig *types.Signature
+		var iface types.Type
+		var method *types.Func
+
 		switch obj := qo.obj.(type) {
 		case *types.Func:
 			recv := obj.Type().(*types.Signature).Recv()
 			if recv == nil {
 				break
 			}
-			impls = append(impls, findInterfaceImplementations(pkgs, getAllNamed, seen, s, ensurePointer(recv.Type()), obj)...)
-			ok = true
+			iface = ensurePointer(recv.Type())
+			method = obj
 		case *types.TypeName:
-			sig, isFunc := obj.Type().Underlying().(*types.Signature)
-			if isFunc {
-				if !includeFuncs {
-					break
-				}
-				impls = append(impls, findFunctionImplementations(pkgs, seen, s, sig)...)
-				ok = true
+			sig, _ = obj.Type().Underlying().(*types.Signature)
+			if sig != nil {
 				break
 			}
-			impls = append(impls, findInterfaceImplementations(pkgs, getAllNamed, seen, s, ensurePointer(obj.Type()), nil)...)
-			ok = true
+			iface = ensurePointer(obj.Type())
 		case *types.Var:
-			if !includeFuncs {
-				break
-			}
-			sig, isFunc := obj.Type().Underlying().(*types.Signature)
-			if !isFunc {
-				break
-			}
-			impls = append(impls, findFunctionImplementations(pkgs, seen, s, sig)...)
-			ok = true
+			sig, _ = obj.Type().Underlying().(*types.Signature)
 		}
 
-		if !ok {
-			return nil, ErrNotAType
+		if iface != nil {
+			objs = append(objs, findInterfaceImplementations(getAllNamed, s, iface, method)...)
+			continue
 		}
+		if sig != nil && includeFuncs {
+			objs = append(objs, findFunctionImplementations(pkgs, s, sig)...)
+			continue
+		}
+
+		return nil, ErrNotAType
+	}
+
+	seen := make(map[token.Position]bool)
+	for _, obj := range objs {
+		pos := s.FileSet().Position(obj.Pos())
+		if seen[pos] {
+			continue
+		}
+		seen[pos] = true
+		impls = append(impls, qualifiedObject{
+			obj: obj,
+			pkg: pkgs[obj.Pkg()], // may be nil (e.g. error)
+		})
 	}
 
 	return impls, nil
 }
 
-func findInterfaceImplementations(pkgs map[*types.Package]Package, getAllNamed func() []*types.Named, seen map[token.Position]bool, s Snapshot, queryType types.Type, queryMethod *types.Func) (impls []qualifiedObject) {
+func findInterfaceImplementations(getAllNamed func() []*types.Named, s Snapshot, queryType types.Type, queryMethod *types.Func) (objs []types.Object) {
 	if types.NewMethodSet(queryType).Len() == 0 {
 		return nil
 	}
@@ -174,23 +184,16 @@ func findInterfaceImplementations(pkgs map[*types.Package]Package, getAllNamed f
 			candObj = sel.Obj()
 		}
 
-		pos := s.FileSet().Position(candObj.Pos())
-		if candObj == queryMethod || seen[pos] {
+		if candObj == queryMethod {
 			continue
 		}
 
-		seen[pos] = true
-
-		impls = append(impls, qualifiedObject{
-			obj: candObj,
-			pkg: pkgs[candObj.Pkg()], // may be nil (e.g. error)
-		})
+		objs = append(objs, candObj)
 	}
-
-	return impls
+	return objs
 }
 
-func findFunctionImplementations(pkgs map[*types.Package]Package, seen map[token.Position]bool, s Snapshot, sig *types.Signature) (impls []qualifiedObject) {
+func findFunctionImplementations(pkgs map[*types.Package]Package, s Snapshot, sig *types.Signature) (objs []types.Object) {
 	for pkg := range pkgs {
 		for _, name := range pkg.Scope().Names() {
 			o := pkg.Scope().Lookup(name)
@@ -206,33 +209,11 @@ func findFunctionImplementations(pkgs map[*types.Package]Package, seen map[token
 			if !types.AssignableTo(sig, csig) {
 				continue
 			}
-			pos := s.FileSet().Position(o.Pos())
-			if seen[pos] {
-				continue
-			}
 
-			pkg := pkgs[candObj.Pkg()] // may be nil (e.g. error)
-
-			// TODO(adonovan): the logic below assumes there is only one
-			// predeclared (pkg=nil) object of interest, the error type.
-			// That could change in a future version of Go.
-
-			var posn token.Position
-			if pkg != nil {
-				posn = pkg.FileSet().Position(candObj.Pos())
-			}
-			if seen[posn] {
-				continue
-			}
-			seen[posn] = true
-
-			impls = append(impls, qualifiedObject{
-				obj: o,
-				pkg: pkgs[o.Pkg()], // may be nil (e.g. error)
-			})
+			objs = append(objs, o)
 		}
 	}
-	return impls
+	return objs
 }
 
 // concreteImplementsIntf returns true if a is an interface type implemented by

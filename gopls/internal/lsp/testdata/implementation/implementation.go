@@ -41,6 +41,14 @@ func TestFunctionType(f FunctionType) {
 	f("s", 0) //implementations("f", ImplementationOfFunctionType1, ImplementationOfFunctionType2)
 }
 
+type StructWithFunctionFields struct {
+	FT FunctionType //implementations("FT", ImplementationOfFunctionType1, ImplementationOfFunctionType2)
+}
+
+func (s StructWithFunctionFields) struct {
+	s.FT("s", 0) //implementations("FT", ImplementationOfFunctionType1, ImplementationOfFunctionType2)
+}
+
 func implementationOfAnonymous1(data []byte) error { //@mark(implementationOfAnonymous1, "implementationOfAnonymous1")
 	return nil
 }
