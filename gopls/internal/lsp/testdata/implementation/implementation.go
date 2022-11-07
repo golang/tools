@@ -45,7 +45,7 @@ type StructWithFunctionFields struct {
 	FT FunctionType //implementations("FT", ImplementationOfFunctionType1, ImplementationOfFunctionType2)
 }
 
-func (s StructWithFunctionFields) struct {
+func (s StructWithFunctionFields) Test() {
 	s.FT("s", 0) //implementations("FT", ImplementationOfFunctionType1, ImplementationOfFunctionType2)
 }
 
