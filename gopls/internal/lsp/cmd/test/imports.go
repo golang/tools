@@ -7,8 +7,8 @@ package cmdtest
 import (
 	"testing"
 
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/span"
 )
 
 func (r *runner) Import(t *testing.T, spn span.Span) {
@@ -19,7 +19,7 @@ func (r *runner) Import(t *testing.T, spn span.Span) {
 		return []byte(got), nil
 	}))
 	if want != got {
-		edits := diff.Strings(want, got)
-		t.Errorf("imports failed for %s, expected:\n%s", filename, diff.Unified("want", "got", want, edits))
+		unified := diff.Unified("want", "got", want, got)
+		t.Errorf("imports failed for %s, expected:\n%s", filename, unified)
 	}
 }

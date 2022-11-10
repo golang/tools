@@ -15,8 +15,8 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -61,7 +61,7 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 	defer conn.terminate(ctx)
 
 	from := span.Parse(args[0])
-	file := conn.AddFile(ctx, from.URI())
+	file := conn.openFile(ctx, from.URI())
 	if file.err != nil {
 		return file.err
 	}
@@ -92,15 +92,13 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 
 	for _, u := range orderedURIs {
 		uri := span.URIFromURI(u)
-		cmdFile := conn.AddFile(ctx, uri)
+		cmdFile := conn.openFile(ctx, uri)
 		filename := cmdFile.uri.Filename()
 
-		// convert LSP-style edits to []diff.TextEdit cuz Spans are handy
-		renameEdits, err := source.FromProtocolEdits(cmdFile.mapper, edits[uri])
+		newContent, renameEdits, err := source.ApplyProtocolEdits(cmdFile.mapper, edits[uri])
 		if err != nil {
 			return fmt.Errorf("%v: %v", edits, err)
 		}
-		newContent := diff.Apply(string(cmdFile.mapper.Content), renameEdits)
 
 		switch {
 		case r.Write:
@@ -112,8 +110,11 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 			}
 			ioutil.WriteFile(filename, []byte(newContent), 0644)
 		case r.Diff:
-			diffs := diff.Unified(filename+".orig", filename, string(cmdFile.mapper.Content), renameEdits)
-			fmt.Print(diffs)
+			unified, err := diff.ToUnified(filename+".orig", filename, string(cmdFile.mapper.Content), renameEdits)
+			if err != nil {
+				return err
+			}
+			fmt.Print(unified)
 		default:
 			if len(orderedURIs) > 1 {
 				fmt.Printf("%s:\n", filepath.Base(filename))

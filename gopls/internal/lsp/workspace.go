@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/gopls/internal/span"
 )
 
 func (s *Server) didChangeWorkspaceFolders(ctx context.Context, params *protocol.DidChangeWorkspaceFoldersParams) error {
@@ -68,6 +68,9 @@ func (s *Server) didChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 			s.diagnoseDetached(snapshot)
 		}()
 	}
+
+	// An options change may have affected the detected Go version.
+	s.checkViewGoVersions()
 
 	registration := semanticTokenRegistration(options.SemanticTypes, options.SemanticMods)
 	// Update any session-specific registrations or unregistrations.

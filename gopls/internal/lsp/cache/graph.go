@@ -8,7 +8,7 @@ import (
 	"sort"
 
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/gopls/internal/span"
 )
 
 // A metadataGraph is an immutable and transitively closed import
@@ -53,8 +53,8 @@ func (g *metadataGraph) build() {
 	// Build the import graph.
 	g.importedBy = make(map[PackageID][]PackageID)
 	for id, m := range g.metadata {
-		for _, importID := range m.Deps {
-			g.importedBy[importID] = append(g.importedBy[importID], id)
+		for _, depID := range m.DepsByPkgPath {
+			g.importedBy[depID] = append(g.importedBy[depID], id)
 		}
 	}
 
@@ -130,16 +130,16 @@ func (g *metadataGraph) build() {
 }
 
 // reverseTransitiveClosure calculates the set of packages that transitively
-// reach an id in ids via their Deps. The result also includes given ids.
+// import an id in ids. The result also includes given ids.
 //
 // If includeInvalid is false, the algorithm ignores packages with invalid
 // metadata (including those in the given list of ids).
-func (g *metadataGraph) reverseTransitiveClosure(includeInvalid bool, ids ...PackageID) map[PackageID]struct{} {
-	seen := make(map[PackageID]struct{})
+func (g *metadataGraph) reverseTransitiveClosure(includeInvalid bool, ids ...PackageID) map[PackageID]bool {
+	seen := make(map[PackageID]bool)
 	var visitAll func([]PackageID)
 	visitAll = func(ids []PackageID) {
 		for _, id := range ids {
-			if _, ok := seen[id]; ok {
+			if seen[id] {
 				continue
 			}
 			m := g.metadata[id]
@@ -147,7 +147,7 @@ func (g *metadataGraph) reverseTransitiveClosure(includeInvalid bool, ids ...Pac
 			if m == nil || !(m.Valid || includeInvalid) {
 				continue
 			}
-			seen[id] = struct{}{}
+			seen[id] = true
 			visitAll(g.importedBy[id])
 		}
 	}

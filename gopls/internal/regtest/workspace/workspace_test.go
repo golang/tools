@@ -5,15 +5,18 @@
 package workspace
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/hooks"
+	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/bug"
+	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/testenv"
 
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
@@ -31,6 +34,8 @@ module example.com
 go 1.12
 -- example.com@v1.2.3/blah/blah.go --
 package blah
+
+import "fmt"
 
 func SaySomething() {
 	fmt.Println("something")
@@ -59,7 +64,7 @@ require (
 	random.org v1.2.3
 )
 -- pkg/go.sum --
-example.com v1.2.3 h1:Yryq11hF02fEf2JlOS2eph+ICE2/ceevGV3C9dl5V/c=
+example.com v1.2.3 h1:veRD4tUnatQRgsULqULZPjeoBGFr2qBhevSCZllD2Ds=
 example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
 random.org v1.2.3 h1:+JE2Fkp7gS0zsHXGEQJ7hraom3pNTlkxC4b2qPfA+/Q=
 random.org v1.2.3/go.mod h1:E9KM6+bBX2g5ykHZ9H27w16sWo3QwgonyjM44Dnej3I=
@@ -213,6 +218,8 @@ go 1.12
 -- example.com@v1.2.3/blah/blah.go --
 package blah
 
+import "fmt"
+
 func SaySomething() {
 	fmt.Println("something")
 }
@@ -281,6 +288,8 @@ require b.com v1.2.3
 -- c.com@v1.2.3/blah/blah.go --
 package blah
 
+import "fmt"
+
 func SaySomething() {
 	fmt.Println("something")
 }
@@ -326,7 +335,12 @@ func main() {
 
 // This change tests that the version of the module used changes after it has
 // been deleted from the workspace.
+//
+// TODO(golang/go#55331): delete this placeholder along with experimental
+// workspace module.
 func TestDeleteModule_Interdependent(t *testing.T) {
+	t.Skip("golang/go#55331: the experimental workspace module is scheduled for deletion")
+
 	const multiModule = `
 -- moda/a/go.mod --
 module a.com
@@ -515,7 +529,7 @@ module b.com
 
 require example.com v1.2.3
 -- modb/go.sum --
-example.com v1.2.3 h1:Yryq11hF02fEf2JlOS2eph+ICE2/ceevGV3C9dl5V/c=
+example.com v1.2.3 h1:veRD4tUnatQRgsULqULZPjeoBGFr2qBhevSCZllD2Ds=
 example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
 -- modb/b/b.go --
 package b
@@ -1233,4 +1247,78 @@ import (
 			),
 		)
 	})
+}
+
+// Test that we don't get a version warning when the Go version in PATH is
+// supported.
+func TestOldGoNotification_SupportedVersion(t *testing.T) {
+	v := goVersion(t)
+	if v < lsp.OldestSupportedGoVersion() {
+		t.Skipf("go version 1.%d is unsupported", v)
+	}
+
+	Run(t, "", func(t *testing.T, env *Env) {
+		env.Await(
+			OnceMet(
+				InitialWorkspaceLoad,
+				NoShownMessage("upgrade"),
+			),
+		)
+	})
+}
+
+// Test that we do get a version warning when the Go version in PATH is
+// unsupported, though this test may never execute if we stop running CI at
+// legacy Go versions (see also TestOldGoNotification_Fake)
+func TestOldGoNotification_UnsupportedVersion(t *testing.T) {
+	v := goVersion(t)
+	if v >= lsp.OldestSupportedGoVersion() {
+		t.Skipf("go version 1.%d is supported", v)
+	}
+
+	Run(t, "", func(t *testing.T, env *Env) {
+		env.Await(
+			// Note: cannot use OnceMet(InitialWorkspaceLoad, ...) here, as the
+			// upgrade message may race with the IWL.
+			ShownMessage("Please upgrade"),
+		)
+	})
+}
+
+func TestOldGoNotification_Fake(t *testing.T) {
+	// Get the Go version from path, and make sure it's unsupported.
+	//
+	// In the future we'll stop running CI on legacy Go versions. By mutating the
+	// oldest supported Go version here, we can at least ensure that the
+	// ShowMessage pop-up works.
+	ctx := context.Background()
+	goversion, err := gocommand.GoVersion(ctx, gocommand.Invocation{}, &gocommand.Runner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func(t []lsp.GoVersionSupport) {
+		lsp.GoVersionTable = t
+	}(lsp.GoVersionTable)
+	lsp.GoVersionTable = []lsp.GoVersionSupport{
+		{GoVersion: goversion, InstallGoplsVersion: "v1.0.0"},
+	}
+
+	Run(t, "", func(t *testing.T, env *Env) {
+		env.Await(
+			// Note: cannot use OnceMet(InitialWorkspaceLoad, ...) here, as the
+			// upgrade message may race with the IWL.
+			ShownMessage("Please upgrade"),
+		)
+	})
+}
+
+// goVersion returns the version of the Go command in PATH.
+func goVersion(t *testing.T) int {
+	t.Helper()
+	ctx := context.Background()
+	goversion, err := gocommand.GoVersion(ctx, gocommand.Invocation{}, &gocommand.Runner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return goversion
 }

@@ -23,10 +23,9 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/tests"
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/bug"
-	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -361,26 +360,18 @@ func foldRanges(m *protocol.ColumnMapper, contents string, ranges []protocol.Fol
 	res := contents
 	// Apply the edits from the end of the file forward
 	// to preserve the offsets
+	// TODO(adonovan): factor to use diff.ApplyEdits, which validates the input.
 	for i := len(ranges) - 1; i >= 0; i-- {
-		fRange := ranges[i]
-		spn, err := m.RangeSpan(protocol.Range{
-			Start: protocol.Position{
-				Line:      fRange.StartLine,
-				Character: fRange.StartCharacter,
-			},
-			End: protocol.Position{
-				Line:      fRange.EndLine,
-				Character: fRange.EndCharacter,
-			},
-		})
+		r := ranges[i]
+		start, err := m.Point(protocol.Position{r.StartLine, r.StartCharacter})
 		if err != nil {
 			return "", err
 		}
-		start := spn.Start().Offset()
-		end := spn.End().Offset()
-
-		tmp := res[0:start] + foldedText
-		res = tmp + res[end:]
+		end, err := m.Point(protocol.Position{r.EndLine, r.EndCharacter})
+		if err != nil {
+			return "", err
+		}
+		res = res[:start.Offset()] + foldedText + res[end.Offset():]
 	}
 	return res, nil
 }
@@ -409,11 +400,10 @@ func (r *runner) Format(t *testing.T, spn span.Span) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sedits, err := source.FromProtocolEdits(m, edits)
+	got, _, err := source.ApplyProtocolEdits(m, edits)
 	if err != nil {
 		t.Error(err)
 	}
-	got := diff.Apply(string(m.Content), sedits)
 	if diff := compare.Text(gofmted, got); diff != "" {
 		t.Errorf("format failed for %s (-want +got):\n%s", filename, diff)
 	}
@@ -975,11 +965,10 @@ func (r *runner) InlayHints(t *testing.T, spn span.Span) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sedits, err := source.FromProtocolEdits(m, edits)
+	got, _, err := source.ApplyProtocolEdits(m, edits)
 	if err != nil {
 		t.Error(err)
 	}
-	got := diff.Apply(string(m.Content), sedits)
 
 	withinlayHints := string(r.data.Golden(t, "inlayHint", filename, func() ([]byte, error) {
 		return []byte(got), nil
@@ -1115,27 +1104,14 @@ func applyTextDocumentEdits(r *runner, edits []protocol.DocumentChanges) (map[sp
 					return nil, err
 				}
 			}
-			res[uri] = string(m.Content)
-			sedits, err := source.FromProtocolEdits(m, docEdits.TextDocumentEdit.Edits)
+			patched, _, err := source.ApplyProtocolEdits(m, docEdits.TextDocumentEdit.Edits)
 			if err != nil {
 				return nil, err
 			}
-			res[uri] = applyEdits(res[uri], sedits)
+			res[uri] = patched
 		}
 	}
 	return res, nil
-}
-
-func applyEdits(contents string, edits []diff.Edit) string {
-	res := contents
-
-	// Apply the edits from the end of the file forward
-	// to preserve the offsets
-	for i := len(edits) - 1; i >= 0; i-- {
-		edit := edits[i]
-		res = res[:edit.Start] + edit.New + res[edit.End:]
-	}
-	return res
 }
 
 func (r *runner) Symbols(t *testing.T, uri span.URI, expectedSymbols []protocol.DocumentSymbol) {
@@ -1239,11 +1215,7 @@ func (r *runner) SignatureHelp(t *testing.T, spn span.Span, want *protocol.Signa
 	if got == nil {
 		t.Fatalf("expected %v, got nil", want)
 	}
-	diff, err := tests.DiffSignatures(spn, want, got)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if diff != "" {
+	if diff := tests.DiffSignatures(spn, want, got); diff != "" {
 		t.Error(diff)
 	}
 }

@@ -337,7 +337,15 @@ func protocolEditsFromSource(src []byte, edits []diff.Edit, tf *token.File) ([]p
 	return result, nil
 }
 
+// ToProtocolEdits converts diff.Edits to LSP TextEdits.
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textEditArray
 func ToProtocolEdits(m *protocol.ColumnMapper, edits []diff.Edit) ([]protocol.TextEdit, error) {
+	// LSP doesn't require TextEditArray to be sorted:
+	// this is the receiver's concern. But govim, and perhaps
+	// other clients have historically relied on the order.
+	edits = append([]diff.Edit(nil), edits...)
+	diff.SortEdits(edits)
+
 	result := make([]protocol.TextEdit, len(edits))
 	for i, edit := range edits {
 		rng, err := m.OffsetRange(edit.Start, edit.End)
@@ -352,6 +360,8 @@ func ToProtocolEdits(m *protocol.ColumnMapper, edits []diff.Edit) ([]protocol.Te
 	return result, nil
 }
 
+// FromProtocolEdits converts LSP TextEdits to diff.Edits.
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textEditArray
 func FromProtocolEdits(m *protocol.ColumnMapper, edits []protocol.TextEdit) ([]diff.Edit, error) {
 	if edits == nil {
 		return nil, nil
@@ -369,4 +379,15 @@ func FromProtocolEdits(m *protocol.ColumnMapper, edits []protocol.TextEdit) ([]d
 		}
 	}
 	return result, nil
+}
+
+// ApplyProtocolEdits applies the patch (edits) to m.Content and returns the result.
+// It also returns the edits converted to diff-package form.
+func ApplyProtocolEdits(m *protocol.ColumnMapper, edits []protocol.TextEdit) (string, []diff.Edit, error) {
+	diffEdits, err := FromProtocolEdits(m, edits)
+	if err != nil {
+		return "", nil, err
+	}
+	out, err := diff.Apply(string(m.Content), diffEdits)
+	return out, diffEdits, err
 }

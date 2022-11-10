@@ -13,9 +13,9 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
-	"golang.org/x/tools/internal/span"
 )
 
 func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[source.VersionedFileIdentity][]*source.Diagnostic, error) {
@@ -59,7 +59,7 @@ func DiagnosticsForWork(ctx context.Context, snapshot source.Snapshot, fh source
 	// Add diagnostic if a directory does not contain a module.
 	var diagnostics []*source.Diagnostic
 	for _, use := range pw.File.Use {
-		rng, err := source.LineToRange(pw.Mapper, fh.URI(), use.Syntax.Start, use.Syntax.End)
+		rng, err := pw.Mapper.OffsetRange(use.Syntax.Start.Byte, use.Syntax.End.Byte)
 		if err != nil {
 			return nil, err
 		}

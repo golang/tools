@@ -17,11 +17,11 @@ import (
 	"sync"
 
 	"golang.org/x/mod/modfile"
-	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/event/tag"
 )
 
 func (s *Server) documentLink(ctx context.Context, params *protocol.DocumentLinkParams) (links []protocol.DocumentLink, err error) {
@@ -174,8 +174,8 @@ func goLinks(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle
 	return links, nil
 }
 
-func moduleAtVersion(target string, pkg source.Package) (string, string, bool) {
-	impPkg, err := pkg.GetImport(target)
+func moduleAtVersion(targetImportPath string, pkg source.Package) (string, string, bool) {
+	impPkg, err := pkg.ResolveImportPath(targetImportPath)
 	if err != nil {
 		return "", "", false
 	}

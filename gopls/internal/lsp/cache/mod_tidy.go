@@ -19,11 +19,11 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
-	"golang.org/x/tools/internal/span"
 )
 
 // ModTidy returns the go.mod file that would be obtained by running
@@ -287,7 +287,7 @@ func modTidyDiagnostics(ctx context.Context, snapshot *snapshot, pm *source.Pars
 
 // unusedDiagnostic returns a source.Diagnostic for an unused require.
 func unusedDiagnostic(m *protocol.ColumnMapper, req *modfile.Require, onlyDiagnostic bool) (*source.Diagnostic, error) {
-	rng, err := rangeFromPositions(m, req.Syntax.Start, req.Syntax.End)
+	rng, err := m.OffsetRange(req.Syntax.Start.Byte, req.Syntax.End.Byte)
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +313,7 @@ func unusedDiagnostic(m *protocol.ColumnMapper, req *modfile.Require, onlyDiagno
 // directnessDiagnostic extracts errors when a dependency is labeled indirect when
 // it should be direct and vice versa.
 func directnessDiagnostic(m *protocol.ColumnMapper, req *modfile.Require, computeEdits source.DiffFunction) (*source.Diagnostic, error) {
-	rng, err := rangeFromPositions(m, req.Syntax.Start, req.Syntax.End)
+	rng, err := m.OffsetRange(req.Syntax.Start.Byte, req.Syntax.End.Byte)
 	if err != nil {
 		return nil, err
 	}
@@ -325,8 +325,8 @@ func directnessDiagnostic(m *protocol.ColumnMapper, req *modfile.Require, comput
 		if comments := req.Syntax.Comment(); comments != nil && len(comments.Suffix) > 0 {
 			end := comments.Suffix[0].Start
 			end.LineRune += len(comments.Suffix[0].Token)
-			end.Byte += len([]byte(comments.Suffix[0].Token))
-			rng, err = rangeFromPositions(m, comments.Suffix[0].Start, end)
+			end.Byte += len(comments.Suffix[0].Token)
+			rng, err = m.OffsetRange(comments.Suffix[0].Start.Byte, end.Byte)
 			if err != nil {
 				return nil, err
 			}
@@ -359,7 +359,7 @@ func missingModuleDiagnostic(pm *source.ParsedModule, req *modfile.Require) (*so
 	if pm.File != nil && pm.File.Module != nil && pm.File.Module.Syntax != nil {
 		start, end := pm.File.Module.Syntax.Span()
 		var err error
-		rng, err = rangeFromPositions(pm.Mapper, start, end)
+		rng, err = pm.Mapper.OffsetRange(start.Byte, end.Byte)
 		if err != nil {
 			return nil, err
 		}
@@ -429,11 +429,7 @@ func missingModuleForImport(file *token.File, m *protocol.ColumnMapper, imp *ast
 	if req.Syntax == nil {
 		return nil, fmt.Errorf("no syntax for %v", req)
 	}
-	spn, err := span.NewRange(file, imp.Path.Pos(), imp.Path.End()).Span()
-	if err != nil {
-		return nil, err
-	}
-	rng, err := m.Range(spn)
+	rng, err := m.PosRange(imp.Path.Pos(), imp.Path.End())
 	if err != nil {
 		return nil, err
 	}
@@ -445,14 +441,6 @@ func missingModuleForImport(file *token.File, m *protocol.ColumnMapper, imp *ast
 		Message:        fmt.Sprintf("%s is not in your go.mod file", req.Mod.Path),
 		SuggestedFixes: fixes,
 	}, nil
-}
-
-func rangeFromPositions(m *protocol.ColumnMapper, s, e modfile.Position) (protocol.Range, error) {
-	spn, err := spanFromPositions(m, s, e)
-	if err != nil {
-		return protocol.Range{}, err
-	}
-	return m.Range(spn)
 }
 
 func spanFromPositions(m *protocol.ColumnMapper, s, e modfile.Position) (span.Span, error) {
@@ -478,9 +466,8 @@ func spanFromPositions(m *protocol.ColumnMapper, s, e modfile.Position) (span.Sp
 // the set of strings that appear in import declarations within
 // GoFiles. Errors are ignored.
 //
-// (We can't simply use ph.m.Metadata.Deps because it contains
-// PackageIDs--not import paths--and is based on CompiledGoFiles,
-// after cgo processing.)
+// (We can't simply use Metadata.Imports because it is based on
+// CompiledGoFiles, after cgo processing.)
 func parseImports(ctx context.Context, s *snapshot, files []source.FileHandle) map[string]bool {
 	s.mu.Lock() // peekOrParse requires a locked snapshot (!)
 	defer s.mu.Unlock()

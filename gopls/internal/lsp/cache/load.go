@@ -7,6 +7,7 @@ package cache
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -19,21 +20,24 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/packagesinternal"
-	"golang.org/x/tools/internal/span"
 )
 
 var loadID uint64 // atomic identifier for loads
+
+// errNoPackages indicates that a load query matched no packages.
+var errNoPackages = errors.New("no packages returned")
 
 // load calls packages.Load for the given scopes, updating package metadata,
 // import graph, and mapped files with the result.
 //
 // The resulting error may wrap the moduleErrorMap error type, representing
 // errors associated with specific modules.
-func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...interface{}) (err error) {
+func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadScope) (err error) {
 	id := atomic.AddUint64(&loadID, 1)
 	eventName := fmt.Sprintf("go/packages.Load #%d", id) // unique name for logging
 
@@ -45,7 +49,7 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...interf
 	moduleQueries := make(map[string]string)
 	for _, scope := range scopes {
 		switch scope := scope.(type) {
-		case PackagePath:
+		case packageLoadScope:
 			if source.IsCommandLineArguments(string(scope)) {
 				panic("attempted to load command-line-arguments")
 			}
@@ -53,14 +57,24 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...interf
 			// partial workspace load. In those cases, the paths came back from
 			// go list and should already be GOPATH-vendorized when appropriate.
 			query = append(query, string(scope))
-		case fileURI:
+
+		case fileLoadScope:
 			uri := span.URI(scope)
-			// Don't try to load a file that doesn't exist.
 			fh := s.FindFile(uri)
 			if fh == nil || s.View().FileKind(fh) != source.Go {
+				// Don't try to load a file that doesn't exist, or isn't a go file.
 				continue
 			}
-			query = append(query, fmt.Sprintf("file=%s", uri.Filename()))
+			contents, err := fh.Read()
+			if err != nil {
+				continue
+			}
+			if isStandaloneFile(contents, s.view.Options().StandaloneTags) {
+				query = append(query, uri.Filename())
+			} else {
+				query = append(query, fmt.Sprintf("file=%s", uri.Filename()))
+			}
+
 		case moduleLoadScope:
 			switch scope {
 			case "std", "cmd":
@@ -70,6 +84,7 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...interf
 				query = append(query, modQuery)
 				moduleQueries[modQuery] = string(scope)
 			}
+
 		case viewLoadScope:
 			// If we are outside of GOPATH, a module, or some other known
 			// build system, don't load subdirectories.
@@ -78,6 +93,7 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...interf
 			} else {
 				query = append(query, "./...")
 			}
+
 		default:
 			panic(fmt.Sprintf("unknown scope type %T", scope))
 		}
@@ -136,9 +152,9 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...interf
 
 	if len(pkgs) == 0 {
 		if err == nil {
-			err = fmt.Errorf("no packages returned")
+			err = errNoPackages
 		}
-		return fmt.Errorf("%v: %w", err, source.PackagesLoadError)
+		return fmt.Errorf("packages.Load error: %w", err)
 	}
 
 	moduleErrs := make(map[string][]packages.Error) // module path -> errors
@@ -191,7 +207,7 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...interf
 		if s.view.allFilesExcluded(pkg, filterer) {
 			continue
 		}
-		if err := buildMetadata(ctx, PackagePath(pkg.PkgPath), pkg, cfg, query, newMetadata, nil); err != nil {
+		if err := buildMetadata(ctx, pkg, cfg, query, newMetadata, nil); err != nil {
 			return err
 		}
 	}
@@ -228,16 +244,17 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...interf
 	s.meta = s.meta.Clone(updates)
 	s.resetIsActivePackageLocked()
 
-	// Invalidate any packages we may have associated with this metadata.
+	// Invalidate any packages and analysis results we may have associated with
+	// this metadata.
 	//
-	// TODO(rfindley): this should not be necessary, as we should have already
-	// invalidated in snapshot.clone.
-	for id := range invalidatedPackages {
-		for _, mode := range source.AllParseModes {
-			key := packageKey{mode, id}
-			s.packages.Delete(key)
-		}
-	}
+	// Generally speaking we should have already invalidated these results in
+	// snapshot.clone, but with experimentalUseInvalidMetadata is may be possible
+	// that we have re-computed stale results before the reload completes. In
+	// this case, we must re-invalidate here.
+	//
+	// TODO(golang/go#54180): if we decide to make experimentalUseInvalidMetadata
+	// obsolete, we should avoid this invalidation.
+	s.invalidatePackagesLocked(invalidatedPackages)
 
 	s.workspacePackages = computeWorkspacePackagesLocked(s, s.meta)
 	s.dumpWorkspace("load")
@@ -335,10 +352,10 @@ https://github.com/golang/tools/blob/master/gopls/doc/workspace.md.`
 	// If the user has one active go.mod file, they may still be editing files
 	// in nested modules. Check the module of each open file and add warnings
 	// that the nested module must be opened as a workspace folder.
-	if len(s.workspace.getActiveModFiles()) == 1 {
+	if len(s.workspace.ActiveModFiles()) == 1 {
 		// Get the active root go.mod file to compare against.
 		var rootModURI span.URI
-		for uri := range s.workspace.getActiveModFiles() {
+		for uri := range s.workspace.ActiveModFiles() {
 			rootModURI = uri
 		}
 		nestedModules := map[string][]source.VersionedFileHandle{}
@@ -391,8 +408,8 @@ func (s *snapshot) applyCriticalErrorToFiles(ctx context.Context, msg string, fi
 			}
 		case source.Mod:
 			if pmf, err := s.ParseMod(ctx, fh); err == nil {
-				if pmf.File.Module != nil && pmf.File.Module.Syntax != nil {
-					rng, _ = rangeFromPositions(pmf.Mapper, pmf.File.Module.Syntax.Start, pmf.File.Module.Syntax.End)
+				if mod := pmf.File.Module; mod != nil && mod.Syntax != nil {
+					rng, _ = pmf.Mapper.OffsetRange(mod.Syntax.Start.Byte, mod.Syntax.End.Byte)
 				}
 			}
 		}
@@ -459,7 +476,9 @@ func makeWorkspaceDir(ctx context.Context, workspace *workspace, fs source.FileS
 // buildMetadata populates the updates map with metadata updates to
 // apply, based on the given pkg. It recurs through pkg.Imports to ensure that
 // metadata exists for all dependencies.
-func buildMetadata(ctx context.Context, pkgPath PackagePath, pkg *packages.Package, cfg *packages.Config, query []string, updates map[PackageID]*KnownMetadata, path []PackageID) error {
+func buildMetadata(ctx context.Context, pkg *packages.Package, cfg *packages.Config, query []string, updates map[PackageID]*KnownMetadata, path []PackageID) error {
+	// Allow for multiple ad-hoc packages in the workspace (see #47584).
+	pkgPath := PackagePath(pkg.PkgPath)
 	id := PackageID(pkg.ID)
 	if source.IsCommandLineArguments(pkg.ID) {
 		suffix := ":" + strings.Join(query, ",")
@@ -523,33 +542,66 @@ func buildMetadata(ctx context.Context, pkgPath PackagePath, pkg *packages.Packa
 		m.GoFiles = append(m.GoFiles, uri)
 	}
 
-	for importPath, importPkg := range pkg.Imports {
-		// TODO(rfindley): in rare cases it is possible that the import package
-		// path is not the same as the package path of the import. That is to say
-		// (quoting adonovan):
-		// "The importPath string is the path by which one package is imported from
-		// another, but that needn't be the same as its internal name (sometimes
-		// called the "package path") used to prefix its linker symbols"
-		//
-		// We should not set this package path on the metadata of the dep.
-		importPkgPath := PackagePath(importPath)
-		importID := PackageID(importPkg.ID)
+	depsByImpPath := make(map[ImportPath]PackageID)
+	depsByPkgPath := make(map[PackagePath]PackageID)
+	for importPath, imported := range pkg.Imports {
+		importPath := ImportPath(importPath)
 
-		m.Deps = append(m.Deps, importID)
+		// It is not an invariant that importPath == imported.PkgPath.
+		// For example, package "net" imports "golang.org/x/net/dns/dnsmessage"
+		// which refers to the package whose ID and PkgPath are both
+		// "vendor/golang.org/x/net/dns/dnsmessage". Notice the ImportMap,
+		// which maps ImportPaths to PackagePaths:
+		//
+		// $ go list -json net vendor/golang.org/x/net/dns/dnsmessage
+		// {
+		// 	"ImportPath": "net",
+		// 	"Name": "net",
+		// 	"Imports": [
+		// 		"C",
+		// 		"vendor/golang.org/x/net/dns/dnsmessage",
+		// 		"vendor/golang.org/x/net/route",
+		// 		...
+		// 	],
+		// 	"ImportMap": {
+		// 		"golang.org/x/net/dns/dnsmessage": "vendor/golang.org/x/net/dns/dnsmessage",
+		// 		"golang.org/x/net/route": "vendor/golang.org/x/net/route"
+		// 	},
+		//      ...
+		// }
+		// {
+		// 	"ImportPath": "vendor/golang.org/x/net/dns/dnsmessage",
+		// 	"Name": "dnsmessage",
+		//      ...
+		// }
+		//
+		// (Beware that, for historical reasons, go list uses
+		// the JSON field "ImportPath" for the package's
+		// path--effectively the linker symbol prefix.)
 
 		// Don't remember any imports with significant errors.
-		if importPkgPath != "unsafe" && len(importPkg.CompiledGoFiles) == 0 {
-			if m.MissingDeps == nil {
-				m.MissingDeps = make(map[PackagePath]struct{})
-			}
-			m.MissingDeps[importPkgPath] = struct{}{}
+		//
+		// The len=0 condition is a heuristic check for imports of
+		// non-existent packages (for which go/packages will create
+		// an edge to a synthesized node). The heuristic is unsound
+		// because some valid packages have zero files, for example,
+		// a directory containing only the file p_test.go defines an
+		// empty package p.
+		// TODO(adonovan): clarify this. Perhaps go/packages should
+		// report which nodes were synthesized.
+		if importPath != "unsafe" && len(imported.CompiledGoFiles) == 0 {
+			depsByImpPath[importPath] = "" // missing
 			continue
 		}
-		if err := buildMetadata(ctx, importPkgPath, importPkg, cfg, query, updates, append(path, id)); err != nil {
+
+		depsByImpPath[importPath] = PackageID(imported.ID)
+		depsByPkgPath[PackagePath(imported.PkgPath)] = PackageID(imported.ID)
+		if err := buildMetadata(ctx, imported, cfg, query, updates, append(path, id)); err != nil {
 			event.Error(ctx, "error in dependency", err)
 		}
 	}
-	sort.Slice(m.Deps, func(i, j int) bool { return m.Deps[i] < m.Deps[j] }) // for determinism
+	m.DepsByImpPath = depsByImpPath
+	m.DepsByPkgPath = depsByPkgPath
 
 	return nil
 }
@@ -616,7 +668,7 @@ func containsOpenFileLocked(s *snapshot, m *KnownMetadata) bool {
 	return false
 }
 
-// containsFileInWorkspace reports whether m contains any file inside the
+// containsFileInWorkspaceLocked reports whether m contains any file inside the
 // workspace of the snapshot s.
 //
 // s.mu must be held while calling this function.
@@ -655,6 +707,7 @@ func computeWorkspacePackagesLocked(s *snapshot, meta *metadataGraph) map[Packag
 		if !m.Valid {
 			continue
 		}
+
 		if !containsPackageLocked(s, m.Metadata) {
 			continue
 		}

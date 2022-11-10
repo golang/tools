@@ -13,15 +13,17 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
-	"golang.org/x/tools/internal/span"
 )
 
 func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitialize) (*protocol.InitializeResult, error) {
@@ -202,6 +204,7 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 		return err
 	}
 	s.pendingFolders = nil
+	s.checkViewGoVersions()
 
 	var registrations []protocol.Registration
 	if options.ConfigurationSupported && options.DynamicConfigurationSupported {
@@ -223,22 +226,100 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 	return nil
 }
 
+// GoVersionTable maps Go versions to the gopls version in which support will
+// be deprecated, and the final gopls version supporting them without warnings.
+// Keep this in sync with gopls/README.md
+//
+// Must be sorted in ascending order of Go version.
+//
+// Mutable for testing.
+var GoVersionTable = []GoVersionSupport{
+	{12, "", "v0.7.5"},
+	{15, "v0.11.0", "v0.9.5"},
+}
+
+// GoVersionSupport holds information about end-of-life Go version support.
+type GoVersionSupport struct {
+	GoVersion           int
+	DeprecatedVersion   string // if unset, the version is already deprecated
+	InstallGoplsVersion string
+}
+
+// OldestSupportedGoVersion is the last X in Go 1.X that this version of gopls
+// supports.
+func OldestSupportedGoVersion() int {
+	return GoVersionTable[len(GoVersionTable)-1].GoVersion + 1
+}
+
+// versionMessage returns the warning/error message to display if the user is
+// on the given Go version, if any. The goVersion variable is the X in Go 1.X.
+//
+// If goVersion is invalid (< 0), it returns "", 0.
+func versionMessage(goVersion int) (string, protocol.MessageType) {
+	if goVersion < 0 {
+		return "", 0
+	}
+
+	for _, v := range GoVersionTable {
+		if goVersion <= v.GoVersion {
+			var msgBuilder strings.Builder
+
+			mType := protocol.Error
+			fmt.Fprintf(&msgBuilder, "Found Go version 1.%d", goVersion)
+			if v.DeprecatedVersion != "" {
+				// not deprecated yet, just a warning
+				fmt.Fprintf(&msgBuilder, ", which will be unsupported by gopls %s. ", v.DeprecatedVersion)
+				mType = protocol.Warning
+			} else {
+				fmt.Fprint(&msgBuilder, ", which is not supported by this version of gopls. ")
+			}
+			fmt.Fprintf(&msgBuilder, "Please upgrade to Go 1.%d or later and reinstall gopls. ", OldestSupportedGoVersion())
+			fmt.Fprintf(&msgBuilder, "If you can't upgrade and want this message to go away, please install gopls %s. ", v.InstallGoplsVersion)
+			fmt.Fprint(&msgBuilder, "See https://go.dev/s/gopls-support-policy for more details.")
+
+			return msgBuilder.String(), mType
+		}
+	}
+	return "", 0
+}
+
+// checkViewGoVersions checks whether any Go version used by a view is too old,
+// raising a showMessage notification if so.
+//
+// It should be called after views change.
+func (s *Server) checkViewGoVersions() {
+	oldestVersion := -1
+	for _, view := range s.session.Views() {
+		viewVersion := view.GoVersion()
+		if oldestVersion == -1 || viewVersion < oldestVersion {
+			oldestVersion = viewVersion
+		}
+	}
+
+	if msg, mType := versionMessage(oldestVersion); msg != "" {
+		s.eventuallyShowMessage(context.Background(), &protocol.ShowMessageParams{
+			Type:    mType,
+			Message: msg,
+		})
+	}
+}
+
 func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFolder) error {
 	originalViews := len(s.session.Views())
 	viewErrors := make(map[span.URI]error)
 
-	var wg sync.WaitGroup
+	var ndiagnose sync.WaitGroup // number of unfinished diagnose calls
 	if s.session.Options().VerboseWorkDoneProgress {
 		work := s.progress.Start(ctx, DiagnosticWorkTitle(FromInitialWorkspaceLoad), "Calculating diagnostics for initial workspace load...", nil, nil)
 		defer func() {
 			go func() {
-				wg.Wait()
+				ndiagnose.Wait()
 				work.End(ctx, "Done.")
 			}()
 		}()
 	}
 	// Only one view gets to have a workspace.
-	var allFoldersWg sync.WaitGroup
+	var nsnapshots sync.WaitGroup // number of unfinished snapshot initializations
 	for _, folder := range folders {
 		uri := span.URIFromURI(folder.URI)
 		// Ignore non-file URIs.
@@ -257,41 +338,40 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 		}
 		// Inv: release() must be called once.
 
-		var swg sync.WaitGroup
-		swg.Add(1)
-		allFoldersWg.Add(1)
-		// TODO(adonovan): this looks fishy. Is AwaitInitialized
-		// supposed to be called once per folder?
-		go func() {
-			defer swg.Done()
-			defer allFoldersWg.Done()
-			snapshot.AwaitInitialized(ctx)
-			work.End(ctx, "Finished loading packages.")
-		}()
-
 		// Print each view's environment.
-		buf := &bytes.Buffer{}
-		if err := snapshot.WriteEnv(ctx, buf); err != nil {
+		var buf bytes.Buffer
+		if err := snapshot.WriteEnv(ctx, &buf); err != nil {
 			viewErrors[uri] = err
 			release()
 			continue
 		}
 		event.Log(ctx, buf.String())
 
-		// Diagnose the newly created view.
-		wg.Add(1)
+		// Initialize snapshot asynchronously.
+		initialized := make(chan struct{})
+		nsnapshots.Add(1)
+		go func() {
+			snapshot.AwaitInitialized(ctx)
+			work.End(ctx, "Finished loading packages.")
+			nsnapshots.Done()
+			close(initialized) // signal
+		}()
+
+		// Diagnose the newly created view asynchronously.
+		ndiagnose.Add(1)
 		go func() {
 			s.diagnoseDetached(snapshot)
-			swg.Wait()
+			<-initialized
 			release()
-			wg.Done()
+			ndiagnose.Done()
 		}()
 	}
 
+	// Wait for snapshots to be initialized so that all files are known.
+	// (We don't need to wait for diagnosis to finish.)
+	nsnapshots.Wait()
+
 	// Register for file watching notifications, if they are supported.
-	// Wait for all snapshots to be initialized first, since all files might
-	// not yet be known to the snapshots.
-	allFoldersWg.Wait()
 	if err := s.updateWatchedDirectories(ctx); err != nil {
 		event.Error(ctx, "failed to register for file watching notifications", err)
 	}
@@ -430,28 +510,46 @@ func (s *Server) eventuallyShowMessage(ctx context.Context, msg *protocol.ShowMe
 }
 
 func (s *Server) handleOptionResults(ctx context.Context, results source.OptionResults) error {
+	var warnings, errors []string
 	for _, result := range results {
-		var msg *protocol.ShowMessageParams
 		switch result.Error.(type) {
 		case nil:
 			// nothing to do
 		case *source.SoftError:
-			msg = &protocol.ShowMessageParams{
-				Type:    protocol.Warning,
-				Message: result.Error.Error(),
-			}
+			warnings = append(warnings, result.Error.Error())
 		default:
-			msg = &protocol.ShowMessageParams{
-				Type:    protocol.Error,
-				Message: result.Error.Error(),
-			}
-		}
-		if msg != nil {
-			if err := s.eventuallyShowMessage(ctx, msg); err != nil {
-				return err
-			}
+			errors = append(errors, result.Error.Error())
 		}
 	}
+
+	// Sort messages, but put errors first.
+	//
+	// Having stable content for the message allows clients to de-duplicate. This
+	// matters because we may send duplicate warnings for clients that support
+	// dynamic configuration: one for the initial settings, and then more for the
+	// individual view settings.
+	var msgs []string
+	msgType := protocol.Warning
+	if len(errors) > 0 {
+		msgType = protocol.Error
+		sort.Strings(errors)
+		msgs = append(msgs, errors...)
+	}
+	if len(warnings) > 0 {
+		sort.Strings(warnings)
+		msgs = append(msgs, warnings...)
+	}
+
+	if len(msgs) > 0 {
+		// Settings
+		combined := "Invalid settings: " + strings.Join(msgs, "; ")
+		params := &protocol.ShowMessageParams{
+			Type:    msgType,
+			Message: combined,
+		}
+		return s.eventuallyShowMessage(ctx, params)
+	}
+
 	return nil
 }
 

@@ -15,12 +15,12 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -334,7 +334,11 @@ func relatedInformation(pkg *pkg, fset *token.FileSet, diag *analysis.Diagnostic
 		if tokFile == nil {
 			return nil, bug.Errorf("no file for %q diagnostic position", diag.Category)
 		}
-		spn, err := span.NewRange(tokFile, related.Pos, related.End).Span()
+		end := related.End
+		if !end.IsValid() {
+			end = related.Pos
+		}
+		spn, err := span.NewRange(tokFile, related.Pos, end).Span()
 		if err != nil {
 			return nil, err
 		}

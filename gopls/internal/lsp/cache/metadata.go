@@ -8,8 +8,8 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/packagesinternal"
-	"golang.org/x/tools/internal/span"
 )
 
 // Declare explicit types for package paths, names, and IDs to ensure that we
@@ -17,9 +17,10 @@ import (
 // it would result in confusing errors because package IDs often look like
 // package paths.
 type (
-	PackageID   string
-	PackagePath string
-	PackageName string
+	PackageID   string // go list's unique identifier for a package (e.g. "vendor/example.com/foo [vendor/example.com/bar.test]")
+	PackagePath string // name used to prefix linker symbols (e.g. "vendor/example.com/foo")
+	PackageName string // identifier in 'package' declaration (e.g. "foo")
+	ImportPath  string // path that appears in an import declaration (e.g. "example.com/foo")
 )
 
 // Metadata holds package Metadata extracted from a call to packages.Load.
@@ -32,13 +33,18 @@ type Metadata struct {
 	ForTest         PackagePath // package path under test, or ""
 	TypesSizes      types.Sizes
 	Errors          []packages.Error
-	Deps            []PackageID // direct dependencies, in string order
-	MissingDeps     map[PackagePath]struct{}
+	DepsByImpPath   map[ImportPath]PackageID  // may contain dups; empty ID => missing
+	DepsByPkgPath   map[PackagePath]PackageID // values are unique and non-empty
 	Module          *packages.Module
 	depsErrors      []*packagesinternal.PackageError
 
 	// Config is the *packages.Config associated with the loaded package.
 	Config *packages.Config
+}
+
+// PackageID implements the source.Metadata interface.
+func (m *Metadata) PackageID() string {
+	return string(m.ID)
 }
 
 // Name implements the source.Metadata interface.

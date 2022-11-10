@@ -12,8 +12,8 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -56,7 +56,7 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 
 	from := span.Parse(args[0])
 	uri := from.URI()
-	file := conn.AddFile(ctx, uri)
+	file := conn.openFile(ctx, uri)
 	if file.err != nil {
 		return file.err
 	}
@@ -142,11 +142,10 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 		}
 	}
 
-	sedits, err := source.FromProtocolEdits(file.mapper, edits)
+	newContent, sedits, err := source.ApplyProtocolEdits(file.mapper, edits)
 	if err != nil {
 		return fmt.Errorf("%v: %v", edits, err)
 	}
-	newContent := diff.Apply(string(file.mapper.Content), sedits)
 
 	filename := file.uri.Filename()
 	switch {
@@ -155,7 +154,10 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 			ioutil.WriteFile(filename, []byte(newContent), 0644)
 		}
 	case s.Diff:
-		diffs := diff.Unified(filename+".orig", filename, string(file.mapper.Content), sedits)
+		diffs, err := diff.ToUnified(filename+".orig", filename, string(file.mapper.Content), sedits)
+		if err != nil {
+			return err
+		}
 		fmt.Print(diffs)
 	default:
 		fmt.Print(string(newContent))

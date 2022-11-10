@@ -12,7 +12,7 @@ import (
 	"os"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -53,7 +53,7 @@ func (l *links) Run(ctx context.Context, args ...string) error {
 
 	from := span.Parse(args[0])
 	uri := from.URI()
-	file := conn.AddFile(ctx, uri)
+	file := conn.openFile(ctx, uri)
 	if file.err != nil {
 		return file.err
 	}

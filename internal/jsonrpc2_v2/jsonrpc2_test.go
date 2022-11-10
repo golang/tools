@@ -11,7 +11,6 @@ import (
 	"path"
 	"reflect"
 	"testing"
-	"time"
 
 	"golang.org/x/tools/internal/event/export/eventtest"
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
@@ -77,7 +76,7 @@ type binder struct {
 type handler struct {
 	conn        *jsonrpc2.Connection
 	accumulator int
-	waitersBox  chan map[string]chan struct{}
+	waiters     chan map[string]chan struct{}
 	calls       map[string]*jsonrpc2.AsyncCall
 }
 
@@ -137,10 +136,7 @@ func testConnection(t *testing.T, framer jsonrpc2.Framer) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, err := jsonrpc2.Serve(ctx, listener, binder{framer, nil})
-	if err != nil {
-		t.Fatal(err)
-	}
+	server := jsonrpc2.NewServer(ctx, listener, binder{framer, nil})
 	defer func() {
 		listener.Close()
 		server.Wait()
@@ -254,13 +250,13 @@ func verifyResults(t *testing.T, method string, results interface{}, expect inte
 	}
 }
 
-func (b binder) Bind(ctx context.Context, conn *jsonrpc2.Connection) (jsonrpc2.ConnectionOptions, error) {
+func (b binder) Bind(ctx context.Context, conn *jsonrpc2.Connection) jsonrpc2.ConnectionOptions {
 	h := &handler{
-		conn:       conn,
-		waitersBox: make(chan map[string]chan struct{}, 1),
-		calls:      make(map[string]*jsonrpc2.AsyncCall),
+		conn:    conn,
+		waiters: make(chan map[string]chan struct{}, 1),
+		calls:   make(map[string]*jsonrpc2.AsyncCall),
 	}
-	h.waitersBox <- make(map[string]chan struct{})
+	h.waiters <- make(map[string]chan struct{})
 	if b.runTest != nil {
 		go b.runTest(h)
 	}
@@ -268,12 +264,12 @@ func (b binder) Bind(ctx context.Context, conn *jsonrpc2.Connection) (jsonrpc2.C
 		Framer:    b.framer,
 		Preempter: h,
 		Handler:   h,
-	}, nil
+	}
 }
 
 func (h *handler) waiter(name string) chan struct{} {
-	waiters := <-h.waitersBox
-	defer func() { h.waitersBox <- waiters }()
+	waiters := <-h.waiters
+	defer func() { h.waiters <- waiters }()
 	waiter, found := waiters[name]
 	if !found {
 		waiter = make(chan struct{})
@@ -370,8 +366,6 @@ func (h *handler) Handle(ctx context.Context, req *jsonrpc2.Request) (interface{
 			return true, nil
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(time.Second):
-			return nil, fmt.Errorf("wait for %q timed out", name)
 		}
 	case "fork":
 		var name string
@@ -385,8 +379,6 @@ func (h *handler) Handle(ctx context.Context, req *jsonrpc2.Request) (interface{
 				h.conn.Respond(req.ID, true, nil)
 			case <-ctx.Done():
 				h.conn.Respond(req.ID, nil, ctx.Err())
-			case <-time.After(time.Second):
-				h.conn.Respond(req.ID, nil, fmt.Errorf("wait for %q timed out", name))
 			}
 		}()
 		return nil, jsonrpc2.ErrAsyncResponse

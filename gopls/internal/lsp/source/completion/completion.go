@@ -23,13 +23,13 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/imports"
-	"golang.org/x/tools/internal/fuzzy"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/snippet"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/fuzzy"
+	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -264,7 +264,6 @@ type compLitInfo struct {
 type importInfo struct {
 	importPath string
 	name       string
-	pkg        source.Package
 }
 
 type methodSetKey struct {
@@ -1165,7 +1164,6 @@ func (c *completer) unimportedMembers(ctx context.Context, id *ast.Ident) error 
 		}
 		imp := &importInfo{
 			importPath: path,
-			pkg:        pkg,
 		}
 		if imports.ImportPathToAssumedName(path) != pkg.GetTypes().Name() {
 			imp.name = pkg.GetTypes().Name()
@@ -1282,7 +1280,9 @@ func isStarTestingDotF(typ types.Type) bool {
 	if named == nil {
 		return false
 	}
-	return named.Obj() != nil && named.Obj().Pkg().Path() == "testing" && named.Obj().Name() == "F"
+	obj := named.Obj()
+	// obj.Pkg is nil for the error type.
+	return obj != nil && obj.Pkg() != nil && obj.Pkg().Path() == "testing" && obj.Name() == "F"
 }
 
 // lexical finds completions in the lexical environment.
@@ -1517,7 +1517,6 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		}
 		imp := &importInfo{
 			importPath: path,
-			pkg:        pkg,
 		}
 		if imports.ImportPathToAssumedName(path) != pkg.GetTypes().Name() {
 			imp.name = pkg.GetTypes().Name()

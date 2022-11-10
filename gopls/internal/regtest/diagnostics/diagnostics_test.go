@@ -1334,8 +1334,8 @@ package a
 func main() {
 	var x int
 }
--- a/a_ignore.go --
-// +build ignore
+-- a/a_exclude.go --
+// +build exclude
 
 package a
 
@@ -1348,14 +1348,18 @@ func _() {
 		env.Await(
 			env.DiagnosticAtRegexp("a/a.go", "x"),
 		)
-		env.OpenFile("a/a_ignore.go")
+		env.OpenFile("a/a_exclude.go")
 		env.Await(
-			DiagnosticAt("a/a_ignore.go", 2, 8),
+			DiagnosticAt("a/a_exclude.go", 2, 8),
 		)
 	})
 }
 
 func TestEnableAllExperiments(t *testing.T) {
+	// Before the oldest supported Go version, gopls sends a warning to upgrade
+	// Go, which fails the expectation below.
+	testenv.NeedsGo1Point(t, lsp.OldestSupportedGoVersion())
+
 	const mod = `
 -- go.mod --
 module mod.com
@@ -1374,7 +1378,12 @@ func b(c bytes.Buffer) {
 		Settings{"allExperiments": true},
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		// Confirm that the setting doesn't cause any warnings.
-		env.Await(NoShowMessage())
+		env.Await(
+			OnceMet(
+				InitialWorkspaceLoad,
+				NoShownMessage(""), // empty substring to match any message
+			),
+		)
 	})
 }
 

@@ -21,11 +21,11 @@ import (
 	"golang.org/x/mod/module"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/gopls/internal/lsp/command"
+	"golang.org/x/tools/gopls/internal/govulncheck"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
-	"golang.org/x/tools/internal/span"
 )
 
 // Snapshot represents the current state for the given view.
@@ -152,8 +152,8 @@ type Snapshot interface {
 	GetReverseDependencies(ctx context.Context, id string) ([]Package, error)
 
 	// CachedImportPaths returns all the imported packages loaded in this
-	// snapshot, indexed by their import path and checked in TypecheckWorkspace
-	// mode.
+	// snapshot, indexed by their package path (not import path, despite the name)
+	// and checked in TypecheckWorkspace mode.
 	CachedImportPaths(ctx context.Context) (map[string]Package, error)
 
 	// KnownPackages returns all the packages loaded in this snapshot, checked
@@ -165,6 +165,13 @@ type Snapshot interface {
 	// In normal memory mode, this is all workspace packages. In degraded memory
 	// mode, this is just the reverse transitive closure of open packages.
 	ActivePackages(ctx context.Context) ([]Package, error)
+
+	// AllValidMetadata returns all valid metadata loaded for the snapshot.
+	AllValidMetadata(ctx context.Context) ([]Metadata, error)
+
+	// WorkspacePackageByID returns the workspace package with id, type checked
+	// in 'workspace' mode.
+	WorkspacePackageByID(ctx context.Context, id string) (Package, error)
 
 	// Symbols returns all symbols in the snapshot.
 	Symbols(ctx context.Context) map[span.URI][]Symbol
@@ -253,11 +260,6 @@ type View interface {
 	// no longer needed.
 	Snapshot(ctx context.Context) (Snapshot, func())
 
-	// Rebuild rebuilds the current view, replacing the original
-	// view in its session.  It returns a Snapshot and a release
-	// function that must be called when the Snapshot is no longer needed.
-	Rebuild(ctx context.Context) (Snapshot, func(), error)
-
 	// IsGoPrivatePath reports whether target is a private import path, as identified
 	// by the GOPRIVATE environment variable.
 	IsGoPrivatePath(path string) bool
@@ -276,14 +278,17 @@ type View interface {
 	// Vulnerabilites returns known vulnerabilities for the given modfile.
 	// TODO(suzmue): replace command.Vuln with a different type, maybe
 	// https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck/govulnchecklib#Summary?
-	Vulnerabilities(modfile span.URI) []command.Vuln
+	Vulnerabilities(modfile span.URI) []govulncheck.Vuln
 
 	// SetVulnerabilities resets the list of vulnerabilites that exists for the given modules
 	// required by modfile.
-	SetVulnerabilities(modfile span.URI, vulnerabilities []command.Vuln)
+	SetVulnerabilities(modfile span.URI, vulnerabilities []govulncheck.Vuln)
 
 	// FileKind returns the type of a file
 	FileKind(FileHandle) FileKind
+
+	// GoVersion returns the configured Go version for this view.
+	GoVersion() int
 }
 
 // A FileSource maps uris to FileHandles. This abstraction exists both for
@@ -333,7 +338,12 @@ type TidiedModule struct {
 }
 
 // Metadata represents package metadata retrieved from go/packages.
+//
+// TODO(rfindley): move the strongly typed strings from the cache package here.
 type Metadata interface {
+	// PackageID is the unique package id.
+	PackageID() string
+
 	// PackageName is the package name.
 	PackageName() string
 
@@ -439,16 +449,11 @@ var AllParseModes = []ParseMode{ParseHeader, ParseExported, ParseFull}
 type TypecheckMode int
 
 const (
-	// Invalid default value.
-	TypecheckUnknown TypecheckMode = iota
 	// TypecheckFull means to use ParseFull.
-	TypecheckFull
+	TypecheckFull TypecheckMode = iota
 	// TypecheckWorkspace means to use ParseFull for workspace packages, and
 	// ParseExported for others.
 	TypecheckWorkspace
-	// TypecheckAll means ParseFull for workspace packages, and both Full and
-	// Exported for others. Only valid for some functions.
-	TypecheckAll
 )
 
 type VersionedFileHandle interface {
@@ -510,6 +515,14 @@ func (h Hash) String() string {
 // Less returns true if the given hash is less than the other.
 func (h Hash) Less(other Hash) bool {
 	return bytes.Compare(h[:], other[:]) < 0
+}
+
+// XORWith updates *h to *h XOR h2.
+func (h *Hash) XORWith(h2 Hash) {
+	// Small enough that we don't need crypto/subtle.XORBytes.
+	for i := range h {
+		h[i] ^= h2[i]
+	}
 }
 
 // FileIdentity uniquely identifies a file at a version from a FileSystem.
@@ -583,9 +596,9 @@ func (a Analyzer) IsEnabled(view View) bool {
 // Package represents a Go package that has been type-checked. It maintains
 // only the relevant fields of a *go/packages.Package.
 type Package interface {
-	ID() string
-	Name() string
-	PkgPath() string
+	ID() string      // logically a cache.PackageID
+	Name() string    // logically a cache.PackageName
+	PkgPath() string // logically a cache.PackagePath
 	CompiledGoFiles() []*ParsedGoFile
 	File(uri span.URI) (*ParsedGoFile, error)
 	GetSyntax() []*ast.File
@@ -593,8 +606,9 @@ type Package interface {
 	GetTypesInfo() *types.Info
 	GetTypesSizes() types.Sizes
 	ForTest() string
-	GetImport(pkgPath string) (Package, error)
-	MissingDependencies() []string
+	DirectDep(packagePath string) (Package, error)        // logically a cache.PackagePath
+	ResolveImportPath(importPath string) (Package, error) // logically a cache.ImportPath
+	MissingDependencies() []string                        // unordered; logically cache.ImportPaths
 	Imports() []Package
 	Version() *module.Version
 	HasListOrParseErrors() bool
@@ -659,10 +673,6 @@ const (
 func AnalyzerErrorKind(name string) DiagnosticSource {
 	return DiagnosticSource(name)
 }
-
-var (
-	PackagesLoadError = errors.New("packages.Load error")
-)
 
 // WorkspaceModuleVersion is the nonexistent pseudoversion suffix used in the
 // construction of the workspace module. It is exported so that we can make

@@ -12,11 +12,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/xcontext"
 )
 
@@ -39,6 +39,9 @@ const (
 
 	// FromDidClose is a file modification caused by closing a file.
 	FromDidClose
+
+	// TODO: add FromDidChangeConfiguration, once configuration changes cause a
+	// new snapshot to be created.
 
 	// FromRegenerateCgo refers to file modifications caused by regenerating
 	// the cgo sources for the workspace.
@@ -356,6 +359,9 @@ func (s *Server) applyIncrementalChanges(ctx context.Context, uri span.URI, chan
 		return nil, fmt.Errorf("%w: file not found (%v)", jsonrpc2.ErrInternal, err)
 	}
 	for _, change := range changes {
+		// TODO(adonovan): refactor to use diff.Apply, which is robust w.r.t.
+		// out-of-order or overlapping changes---and much more efficient.
+
 		// Make sure to update column mapper along with the content.
 		m := protocol.NewColumnMapper(uri, content)
 		if change.Range == nil {
@@ -364,9 +370,6 @@ func (s *Server) applyIncrementalChanges(ctx context.Context, uri span.URI, chan
 		spn, err := m.RangeSpan(*change.Range)
 		if err != nil {
 			return nil, err
-		}
-		if !spn.HasOffset() {
-			return nil, fmt.Errorf("%w: invalid range for content change", jsonrpc2.ErrInternal)
 		}
 		start, end := spn.Start().Offset(), spn.End().Offset()
 		if end < start {

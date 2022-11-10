@@ -24,14 +24,14 @@ import (
 	"golang.org/x/mod/semver"
 	exec "golang.org/x/sys/execabs"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/gopls/internal/lsp/command"
+	"golang.org/x/tools/gopls/internal/govulncheck"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
-	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
 )
 
@@ -61,7 +61,7 @@ type View struct {
 	// Each modfile has a map of module name to upgrade version.
 	moduleUpgrades map[span.URI]map[string]string
 
-	vulns map[span.URI][]command.Vuln
+	vulns map[span.URI][]govulncheck.Vuln
 
 	// keep track of files by uri and by basename, a single file may be mapped
 	// to multiple uris, and the same basename may map to multiple files
@@ -291,6 +291,9 @@ func minorOptionsChange(a, b *source.Options) bool {
 	if !reflect.DeepEqual(a.DirectoryFilters, b.DirectoryFilters) {
 		return false
 	}
+	if !reflect.DeepEqual(a.StandaloneTags, b.StandaloneTags) {
+		return false
+	}
 	if a.MemoryMode != b.MemoryMode {
 		return false
 	}
@@ -315,15 +318,6 @@ func (v *View) SetOptions(ctx context.Context, options *source.Options) (source.
 	v.optionsMu.Unlock()
 	newView, err := v.session.updateView(ctx, v, options)
 	return newView, err
-}
-
-func (v *View) Rebuild(ctx context.Context) (source.Snapshot, func(), error) {
-	newView, err := v.session.updateView(ctx, v, v.Options())
-	if err != nil {
-		return nil, func() {}, err
-	}
-	snapshot, release := newView.Snapshot(ctx)
-	return snapshot, release, nil
 }
 
 func (s *snapshot) WriteEnv(ctx context.Context, w io.Writer) error {
@@ -587,13 +581,13 @@ func (v *View) Session() *Session {
 func (s *snapshot) IgnoredFile(uri span.URI) bool {
 	filename := uri.Filename()
 	var prefixes []string
-	if len(s.workspace.getActiveModFiles()) == 0 {
+	if len(s.workspace.ActiveModFiles()) == 0 {
 		for _, entry := range filepath.SplitList(s.view.gopath) {
 			prefixes = append(prefixes, filepath.Join(entry, "src"))
 		}
 	} else {
 		prefixes = append(prefixes, s.view.gomodcache)
-		for m := range s.workspace.getActiveModFiles() {
+		for m := range s.workspace.ActiveModFiles() {
 			prefixes = append(prefixes, dirURI(m).Filename())
 		}
 	}
@@ -674,7 +668,7 @@ func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) {
 
 	// Collect module paths to load by parsing go.mod files. If a module fails to
 	// parse, capture the parsing failure as a critical diagnostic.
-	var scopes []interface{}                // scopes to load
+	var scopes []loadScope                  // scopes to load
 	var modDiagnostics []*source.Diagnostic // diagnostics for broken go.mod files
 	addError := func(uri span.URI, err error) {
 		modDiagnostics = append(modDiagnostics, &source.Diagnostic{
@@ -685,8 +679,8 @@ func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) {
 		})
 	}
 
-	if len(s.workspace.getActiveModFiles()) > 0 {
-		for modURI := range s.workspace.getActiveModFiles() {
+	if len(s.workspace.ActiveModFiles()) > 0 {
+		for modURI := range s.workspace.ActiveModFiles() {
 			// Be careful not to add context cancellation errors as critical module
 			// errors.
 			fh, err := s.GetFile(ctx, modURI)
@@ -718,7 +712,7 @@ func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) {
 	// since it provides fake definitions (and documentation)
 	// for types like int that are used everywhere.
 	if len(scopes) > 0 {
-		scopes = append(scopes, PackagePath("builtin"))
+		scopes = append(scopes, packageLoadScope("builtin"))
 	}
 	err := s.load(ctx, true, scopes...)
 
@@ -1041,20 +1035,24 @@ func (v *View) ClearModuleUpgrades(modfile span.URI) {
 	delete(v.moduleUpgrades, modfile)
 }
 
-func (v *View) Vulnerabilities(modfile span.URI) []command.Vuln {
+func (v *View) Vulnerabilities(modfile span.URI) []govulncheck.Vuln {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
-	vulns := make([]command.Vuln, len(v.vulns[modfile]))
+	vulns := make([]govulncheck.Vuln, len(v.vulns[modfile]))
 	copy(vulns, v.vulns[modfile])
 	return vulns
 }
 
-func (v *View) SetVulnerabilities(modfile span.URI, vulns []command.Vuln) {
+func (v *View) SetVulnerabilities(modfile span.URI, vulns []govulncheck.Vuln) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
 	v.vulns[modfile] = vulns
+}
+
+func (v *View) GoVersion() int {
+	return v.workspaceInformation.goversion
 }
 
 // Copied from

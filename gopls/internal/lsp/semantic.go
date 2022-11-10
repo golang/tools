@@ -15,14 +15,15 @@ import (
 	"log"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
-	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/template"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -525,9 +526,14 @@ func (e *encoded) ident(x *ast.Ident) {
 			tok(x.Pos(), len(x.Name), tokFunction, nil)
 		} else if _, ok := y.Type().(*typeparams.TypeParam); ok {
 			tok(x.Pos(), len(x.Name), tokTypeParam, nil)
+		} else if e.isParam(use.Pos()) {
+			// variable, unless use.pos is the pos of a Field in an ancestor FuncDecl
+			// or FuncLit and then it's a parameter
+			tok(x.Pos(), len(x.Name), tokParameter, nil)
 		} else {
 			tok(x.Pos(), len(x.Name), tokVariable, nil)
 		}
+
 	default:
 		// can't happen
 		if use == nil {
@@ -540,6 +546,30 @@ func (e *encoded) ident(x *ast.Ident) {
 			e.unexpected(fmt.Sprintf("%s %T", x.String(), use))
 		}
 	}
+}
+
+func (e *encoded) isParam(pos token.Pos) bool {
+	for i := len(e.stack) - 1; i >= 0; i-- {
+		switch n := e.stack[i].(type) {
+		case *ast.FuncDecl:
+			for _, f := range n.Type.Params.List {
+				for _, id := range f.Names {
+					if id.Pos() == pos {
+						return true
+					}
+				}
+			}
+		case *ast.FuncLit:
+			for _, f := range n.Type.Params.List {
+				for _, id := range f.Names {
+					if id.Pos() == pos {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 func isSignature(use types.Object) bool {
@@ -639,7 +669,7 @@ func (e *encoded) unkIdent(x *ast.Ident) (tokenType, []string) {
 				if nd.Tok != token.DEFINE {
 					def = nil
 				}
-				return tokVariable, def
+				return tokVariable, def // '_' in _ = ...
 			}
 		}
 		// RHS, = x
@@ -875,31 +905,25 @@ func (e *encoded) importSpec(d *ast.ImportSpec) {
 		}
 		return // don't mark anything for . or _
 	}
-	val := d.Path.Value
-	if len(val) < 2 || val[0] != '"' || val[len(val)-1] != '"' {
-		// avoid panics on imports without a properly quoted string
+	importPath, err := strconv.Unquote(d.Path.Value)
+	if err != nil {
 		return
 	}
-	nm := val[1 : len(val)-1] // remove surrounding "s
 	// Import strings are implementation defined. Try to match with parse information.
-	x, err := e.pkg.GetImport(nm)
+	imported, err := e.pkg.ResolveImportPath(importPath)
 	if err != nil {
 		// unexpected, but impact is that maybe some import is not colored
 		return
 	}
-	// expect that nm is x.PkgPath and that x.Name() is a component of it
-	if x.PkgPath() != nm {
-		// don't know how or what to color (if this can happen at all)
-		return
-	}
-	// this is not a precise test: imagine "github.com/nasty/v/v2"
-	j := strings.LastIndex(nm, x.Name())
+	// Check whether the original literal contains the package's declared name.
+	j := strings.LastIndex(d.Path.Value, imported.Name())
 	if j == -1 {
 		// name doesn't show up, for whatever reason, so nothing to report
 		return
 	}
-	start := d.Path.Pos() + 1 + token.Pos(j) // skip the initial quote
-	e.token(start, len(x.Name()), tokNamespace, nil)
+	// Report virtual declaration at the position of the substring.
+	start := d.Path.Pos() + token.Pos(j)
+	e.token(start, len(imported.Name()), tokNamespace, nil)
 }
 
 // log unexpected state

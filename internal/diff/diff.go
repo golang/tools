@@ -2,76 +2,106 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package diff computes differences between files or strings.
+// Package diff computes differences between text files or strings.
 package diff
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
 
-// TODO(adonovan): switch to []byte throughout.
-// But make clear that the operation is defined on runes, not bytes.
-// Also:
-// - delete LineEdits? (used only by Unified and test)
-// - delete Lines (unused except by its test)
-
-// An Edit describes the replacement of a portion of a file.
+// An Edit describes the replacement of a portion of a text file.
 type Edit struct {
 	Start, End int    // byte offsets of the region to replace
 	New        string // the replacement
 }
 
-// SortEdits orders edits by their start offset.  The sort is stable
-// so that edits with the same start offset will not be reordered.
-func SortEdits(edits []Edit) {
-	sort.SliceStable(edits, func(i int, j int) bool {
-		return edits[i].Start < edits[j].Start
-	})
-}
-
-// Apply applies a sequence of edits to the src buffer and
-// returns the result.  It may panic or produce garbage if the edits
-// are overlapping, out of bounds of src, or out of order.
+// Apply applies a sequence of edits to the src buffer and returns the
+// result. Edits are applied in order of start offset; edits with the
+// same start offset are applied in they order they were provided.
 //
-// TODO(adonovan): this function must not panic if the edits aren't
-// consistent with src, or with each other---especially when fed
-// information from an untrusted source. It should probably be
-// defensive against bad input and report an error in any of the above
-// situations.
-func Apply(src string, edits []Edit) string {
-	SortEdits(edits) // TODO(adonovan): move to caller? What's the contract? Don't mutate arguments.
+// Apply returns an error if any edit is out of bounds,
+// or if any pair of edits is overlapping.
+func Apply(src string, edits []Edit) (string, error) {
+	edits, size, err := validate(src, edits)
+	if err != nil {
+		return "", err
+	}
 
-	var out strings.Builder
-	// TODO(adonovan): opt: preallocate correct final size
-	// by scanning the list of edits. (This can be done
-	// in the same pass as detecting inconsistent edits.)
-	last := 0
+	// Apply edits.
+	out := make([]byte, 0, size)
+	lastEnd := 0
 	for _, edit := range edits {
-		start := edit.Start
-		if start > last {
-			out.WriteString(src[last:start])
-			last = start
+		if lastEnd < edit.Start {
+			out = append(out, src[lastEnd:edit.Start]...)
 		}
-		out.WriteString(edit.New)
-		last = edit.End
+		out = append(out, edit.New...)
+		lastEnd = edit.End
 	}
-	if last < len(src) {
-		out.WriteString(src[last:])
+	out = append(out, src[lastEnd:]...)
+
+	if len(out) != size {
+		panic("wrong size")
 	}
-	return out.String()
+
+	return string(out), nil
 }
 
-// LineEdits expands and merges a sequence of edits so that each
+// validate checks that edits are consistent with src,
+// and returns the size of the patched output.
+// It may return a different slice.
+func validate(src string, edits []Edit) ([]Edit, int, error) {
+	if !sort.IsSorted(editsSort(edits)) {
+		edits = append([]Edit(nil), edits...)
+		SortEdits(edits)
+	}
+
+	// Check validity of edits and compute final size.
+	size := len(src)
+	lastEnd := 0
+	for _, edit := range edits {
+		if !(0 <= edit.Start && edit.Start <= edit.End && edit.End <= len(src)) {
+			return nil, 0, fmt.Errorf("diff has out-of-bounds edits")
+		}
+		if edit.Start < lastEnd {
+			return nil, 0, fmt.Errorf("diff has overlapping edits")
+		}
+		size += len(edit.New) + edit.Start - edit.End
+		lastEnd = edit.End
+	}
+
+	return edits, size, nil
+}
+
+// SortEdits orders a slice of Edits by (start, end) offset.
+// This ordering puts insertions (end = start) before deletions
+// (end > start) at the same point, but uses a stable sort to preserve
+// the order of multiple insertions at the same point.
+// (Apply detects multiple deletions at the same point as an error.)
+func SortEdits(edits []Edit) {
+	sort.Stable(editsSort(edits))
+}
+
+type editsSort []Edit
+
+func (a editsSort) Len() int { return len(a) }
+func (a editsSort) Less(i, j int) bool {
+	if cmp := a[i].Start - a[j].Start; cmp != 0 {
+		return cmp < 0
+	}
+	return a[i].End < a[j].End
+}
+func (a editsSort) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+
+// lineEdits expands and merges a sequence of edits so that each
 // resulting edit replaces one or more complete lines.
-//
-// It may panic or produce garbage if the edits
-// are overlapping, out of bounds of src, or out of order.
-// TODO(adonovan): see consistency note at Apply.
-// We could hide this from the API so that we can enforce
-// the precondition... but it seems like a reasonable feature.
-func LineEdits(src string, edits []Edit) []Edit {
-	SortEdits(edits) // TODO(adonovan): is this necessary? Move burden to caller?
+// See ApplyEdits for preconditions.
+func lineEdits(src string, edits []Edit) ([]Edit, error) {
+	edits, _, err := validate(src, edits)
+	if err != nil {
+		return nil, err
+	}
 
 	// Do all edits begin and end at the start of a line?
 	// TODO(adonovan): opt: is this fast path necessary?
@@ -83,7 +113,7 @@ func LineEdits(src string, edits []Edit) []Edit {
 			goto expand
 		}
 	}
-	return edits // aligned
+	return edits, nil // aligned
 
 expand:
 	expanded := make([]Edit, 0, len(edits)) // a guess
@@ -102,7 +132,7 @@ expand:
 			prev = edit
 		}
 	}
-	return append(expanded, expandEdit(prev, src)) // flush final edit
+	return append(expanded, expandEdit(prev, src)), nil // flush final edit
 }
 
 // expandEdit returns edit expanded to complete whole lines.

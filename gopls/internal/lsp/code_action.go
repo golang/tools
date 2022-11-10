@@ -14,10 +14,10 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/mod"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/imports"
-	"golang.org/x/tools/internal/span"
 )
 
 func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
@@ -81,16 +81,30 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 			if err != nil {
 				return nil, err
 			}
-			vdiags, err := mod.ModVulnerabilityDiagnostics(ctx, snapshot, fh)
-			if err != nil {
-				return nil, err
-			}
-			// TODO(suzmue): Consider deduping upgrades from ModUpgradeDiagnostics and ModVulnerabilityDiagnostics.
-			quickFixes, err := codeActionsMatchingDiagnostics(ctx, snapshot, diagnostics, append(append(diags, udiags...), vdiags...))
+			quickFixes, err := codeActionsMatchingDiagnostics(ctx, snapshot, diagnostics, append(diags, udiags...))
 			if err != nil {
 				return nil, err
 			}
 			codeActions = append(codeActions, quickFixes...)
+
+			vdiags, err := mod.ModVulnerabilityDiagnostics(ctx, snapshot, fh)
+			if err != nil {
+				return nil, err
+			}
+			// Group vulnerabilities by location and then limit which code actions we return
+			// for each location.
+			m := make(map[protocol.Range][]*source.Diagnostic)
+			for _, v := range vdiags {
+				m[v.Range] = append(m[v.Range], v)
+			}
+			for _, sdiags := range m {
+				quickFixes, err = codeActionsMatchingDiagnostics(ctx, snapshot, diagnostics, sdiags)
+				if err != nil {
+					return nil, err
+				}
+				quickFixes = mod.SelectUpgradeCodeActions(quickFixes)
+				codeActions = append(codeActions, quickFixes...)
+			}
 		}
 	case source.Go:
 		// Don't suggest fixes for generated files, since they are generally

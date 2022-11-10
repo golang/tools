@@ -12,8 +12,8 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/span"
 )
 
 // format implements the format verb for gopls.
@@ -57,7 +57,7 @@ func (c *format) Run(ctx context.Context, args ...string) error {
 	defer conn.terminate(ctx)
 	for _, arg := range args {
 		spn := span.Parse(arg)
-		file := conn.AddFile(ctx, spn.URI())
+		file := conn.openFile(ctx, spn.URI())
 		if file.err != nil {
 			return file.err
 		}
@@ -76,11 +76,10 @@ func (c *format) Run(ctx context.Context, args ...string) error {
 		if err != nil {
 			return fmt.Errorf("%v: %v", spn, err)
 		}
-		sedits, err := source.FromProtocolEdits(file.mapper, edits)
+		formatted, sedits, err := source.ApplyProtocolEdits(file.mapper, edits)
 		if err != nil {
 			return fmt.Errorf("%v: %v", spn, err)
 		}
-		formatted := diff.Apply(string(file.mapper.Content), sedits)
 		printIt := true
 		if c.List {
 			printIt = false
@@ -96,8 +95,11 @@ func (c *format) Run(ctx context.Context, args ...string) error {
 		}
 		if c.Diff {
 			printIt = false
-			u := diff.Unified(filename+".orig", filename, string(file.mapper.Content), sedits)
-			fmt.Print(u)
+			unified, err := diff.ToUnified(filename+".orig", filename, string(file.mapper.Content), sedits)
+			if err != nil {
+				return err
+			}
+			fmt.Print(unified)
 		}
 		if printIt {
 			fmt.Print(formatted)

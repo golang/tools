@@ -14,7 +14,7 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/gopls/internal/span"
 )
 
 // osFileSource is a fileSource that just reads from the operating system.
@@ -386,7 +386,7 @@ func checkState(ctx context.Context, t *testing.T, fs source.FileSource, rel fak
 		t.Errorf("module source = %v, want %v", got.moduleSource, want.source)
 	}
 	modules := make(map[span.URI]struct{})
-	for k := range got.getActiveModFiles() {
+	for k := range got.ActiveModFiles() {
 		modules[k] = struct{}{}
 	}
 	for _, modPath := range want.modules {

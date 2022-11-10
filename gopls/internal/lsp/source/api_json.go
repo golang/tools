@@ -97,6 +97,13 @@ var GeneratedAPIJSON = &APIJSON{
 				Hierarchy: "build",
 			},
 			{
+				Name:      "standaloneTags",
+				Type:      "[]string",
+				Doc:       "standaloneTags specifies a set of build constraints that identify\nindividual Go source files that make up the entire main package of an\nexecutable.\n\nA common example of standalone main files is the convention of using the\ndirective `//go:build ignore` to denote files that are not intended to be\nincluded in any package, for example because they are invoked directly by\nthe developer using `go run`.\n\nGopls considers a file to be a standalone main file if and only if it has\npackage name \"main\" and has a build directive of the exact form\n\"//go:build tag\" or \"// +build tag\", where tag is among the list of tags\nconfigured by this setting. Notably, if the build constraint is more\ncomplicated than a simple tag (such as the composite constraint\n`//go:build tag && go1.18`), the file is not considered to be a standalone\nmain file.\n\nThis setting is only supported when gopls is built with Go 1.16 or later.\n",
+				Default:   "[\"ignore\"]",
+				Hierarchy: "build",
+			},
+			{
 				Name: "hoverKind",
 				Type: "enum",
 				Doc:  "hoverKind controls the information that appears in the hover text.\nSingleLine and Structured are intended for use only by authors of editor plugins.\n",
@@ -300,7 +307,7 @@ var GeneratedAPIJSON = &APIJSON{
 						},
 						{
 							Name:    "\"loopclosure\"",
-							Doc:     "check references to loop variables from within nested functions\n\nThis analyzer checks for references to loop variables from within a function\nliteral inside the loop body. It checks for patterns where access to a loop\nvariable is known to escape the current loop iteration:\n 1. a call to go or defer at the end of the loop body\n 2. a call to golang.org/x/sync/errgroup.Group.Go at the end of the loop body\n\nThe analyzer only considers references in the last statement of the loop body\nas it is not deep enough to understand the effects of subsequent statements\nwhich might render the reference benign.\n\nFor example:\n\n\tfor i, v := range s {\n\t\tgo func() {\n\t\t\tprintln(i, v) // not what you might expect\n\t\t}()\n\t}\n\nSee: https://golang.org/doc/go_faq.html#closures_and_goroutines",
+							Doc:     "check references to loop variables from within nested functions\n\nThis analyzer checks for references to loop variables from within a function\nliteral inside the loop body. It checks for patterns where access to a loop\nvariable is known to escape the current loop iteration:\n 1. a call to go or defer at the end of the loop body\n 2. a call to golang.org/x/sync/errgroup.Group.Go at the end of the loop body\n 3. a call testing.T.Run where the subtest body invokes t.Parallel()\n\nIn the case of (1) and (2), the analyzer only considers references in the last\nstatement of the loop body as it is not deep enough to understand the effects\nof subsequent statements which might render the reference benign.\n\nFor example:\n\n\tfor i, v := range s {\n\t\tgo func() {\n\t\t\tprintln(i, v) // not what you might expect\n\t\t}()\n\t}\n\nSee: https://golang.org/doc/go_faq.html#closures_and_goroutines",
 							Default: "true",
 						},
 						{
@@ -926,7 +933,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Name:    "loopclosure",
-			Doc:     "check references to loop variables from within nested functions\n\nThis analyzer checks for references to loop variables from within a function\nliteral inside the loop body. It checks for patterns where access to a loop\nvariable is known to escape the current loop iteration:\n 1. a call to go or defer at the end of the loop body\n 2. a call to golang.org/x/sync/errgroup.Group.Go at the end of the loop body\n\nThe analyzer only considers references in the last statement of the loop body\nas it is not deep enough to understand the effects of subsequent statements\nwhich might render the reference benign.\n\nFor example:\n\n\tfor i, v := range s {\n\t\tgo func() {\n\t\t\tprintln(i, v) // not what you might expect\n\t\t}()\n\t}\n\nSee: https://golang.org/doc/go_faq.html#closures_and_goroutines",
+			Doc:     "check references to loop variables from within nested functions\n\nThis analyzer checks for references to loop variables from within a function\nliteral inside the loop body. It checks for patterns where access to a loop\nvariable is known to escape the current loop iteration:\n 1. a call to go or defer at the end of the loop body\n 2. a call to golang.org/x/sync/errgroup.Group.Go at the end of the loop body\n 3. a call testing.T.Run where the subtest body invokes t.Parallel()\n\nIn the case of (1) and (2), the analyzer only considers references in the last\nstatement of the loop body as it is not deep enough to understand the effects\nof subsequent statements which might render the reference benign.\n\nFor example:\n\n\tfor i, v := range s {\n\t\tgo func() {\n\t\t\tprintln(i, v) // not what you might expect\n\t\t}()\n\t}\n\nSee: https://golang.org/doc/go_faq.html#closures_and_goroutines",
 			Default: true,
 		},
 		{

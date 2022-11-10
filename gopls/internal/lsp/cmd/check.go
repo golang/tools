@@ -9,7 +9,7 @@ import (
 	"flag"
 	"fmt"
 
-	"golang.org/x/tools/internal/span"
+	"golang.org/x/tools/gopls/internal/span"
 )
 
 // check implements the check verb for gopls.
@@ -48,7 +48,7 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 	for _, arg := range args {
 		uri := span.URIFromPath(arg)
 		uris = append(uris, uri)
-		file := conn.AddFile(ctx, uri)
+		file := conn.openFile(ctx, uri)
 		if file.err != nil {
 			return file.err
 		}

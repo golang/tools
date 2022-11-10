@@ -14,14 +14,14 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
-	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/gopls/internal/lsp/command"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/event/tag"
+	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
-	"golang.org/x/tools/internal/span"
 )
 
 // ParseMod parses a go.mod file, using a cache. It may return partial results and an error.
@@ -79,7 +79,7 @@ func parseModImpl(ctx context.Context, fh source.FileHandle) (*source.ParsedModu
 			return nil, fmt.Errorf("unexpected parse error type %v", parseErr)
 		}
 		for _, mfErr := range mfErrList {
-			rng, err := rangeFromPositions(m, mfErr.Pos, mfErr.Pos)
+			rng, err := m.OffsetRange(mfErr.Pos.Byte, mfErr.Pos.Byte)
 			if err != nil {
 				return nil, err
 			}
@@ -155,7 +155,7 @@ func parseWorkImpl(ctx context.Context, fh source.FileHandle) (*source.ParsedWor
 			return nil, fmt.Errorf("unexpected parse error type %v", parseErr)
 		}
 		for _, mfErr := range mfErrList {
-			rng, err := rangeFromPositions(m, mfErr.Pos, mfErr.Pos)
+			rng, err := m.OffsetRange(mfErr.Pos.Byte, mfErr.Pos.Byte)
 			if err != nil {
 				return nil, err
 			}

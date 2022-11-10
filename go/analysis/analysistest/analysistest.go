@@ -183,7 +183,11 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 					for _, vf := range ar.Files {
 						if vf.Name == sf {
 							found = true
-							out := diff.Apply(string(orig), edits)
+							out, err := diff.Apply(string(orig), edits)
+							if err != nil {
+								t.Errorf("%s: error applying fixes: %v", file.Name(), err)
+								continue
+							}
 							// the file may contain multiple trailing
 							// newlines if the user places empty lines
 							// between files in the archive. normalize
@@ -194,9 +198,9 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 								t.Errorf("%s: error formatting edited source: %v\n%s", file.Name(), err, out)
 								continue
 							}
-							if want != string(formatted) {
-								edits := diff.Strings(want, string(formatted))
-								t.Errorf("suggested fixes failed for %s:\n%s", file.Name(), diff.Unified(fmt.Sprintf("%s.golden [%s]", file.Name(), sf), "actual", want, edits))
+							if got := string(formatted); got != want {
+								unified := diff.Unified(fmt.Sprintf("%s.golden [%s]", file.Name(), sf), "actual", want, got)
+								t.Errorf("suggested fixes failed for %s:\n%s", file.Name(), unified)
 							}
 							break
 						}
@@ -213,7 +217,11 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 					catchallEdits = append(catchallEdits, edits...)
 				}
 
-				out := diff.Apply(string(orig), catchallEdits)
+				out, err := diff.Apply(string(orig), catchallEdits)
+				if err != nil {
+					t.Errorf("%s: error applying fixes: %v", file.Name(), err)
+					continue
+				}
 				want := string(ar.Comment)
 
 				formatted, err := format.Source([]byte(out))
@@ -221,9 +229,9 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 					t.Errorf("%s: error formatting resulting source: %v\n%s", file.Name(), err, out)
 					continue
 				}
-				if want != string(formatted) {
-					edits := diff.Strings(want, string(formatted))
-					t.Errorf("suggested fixes failed for %s:\n%s", file.Name(), diff.Unified(file.Name()+".golden", "actual", want, edits))
+				if got := string(formatted); got != want {
+					unified := diff.Unified(file.Name()+".golden", "actual", want, got)
+					t.Errorf("suggested fixes failed for %s:\n%s", file.Name(), unified)
 				}
 			}
 		}

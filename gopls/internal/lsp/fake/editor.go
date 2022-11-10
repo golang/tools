@@ -19,9 +19,9 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
-	"golang.org/x/tools/internal/span"
 	"golang.org/x/tools/internal/xcontext"
 )
 
@@ -265,6 +265,10 @@ func (e *Editor) initialize(ctx context.Context) error {
 		"event", "function", "method", "macro", "keyword", "modifier", "comment",
 		"string", "number", "regexp", "operator",
 	}
+	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = []string{
+		"declaration", "definition", "readonly", "static",
+		"deprecated", "abstract", "async", "modification", "documentation", "defaultLibrary",
+	}
 
 	// This is a bit of a hack, since the fake editor doesn't actually support
 	// watching changed files that match a specific glob pattern. However, the
@@ -366,7 +370,12 @@ func (e *Editor) onFileChanges(ctx context.Context, evts []FileEvent) {
 }
 
 // OpenFile creates a buffer for the given workdir-relative file.
+//
+// If the file is already open, it is a no-op.
 func (e *Editor) OpenFile(ctx context.Context, path string) error {
+	if e.HasBuffer(path) {
+		return nil
+	}
 	content, err := e.sandbox.Workdir.ReadFile(path)
 	if err != nil {
 		return err
@@ -382,6 +391,11 @@ func (e *Editor) CreateBuffer(ctx context.Context, path, content string) error {
 
 func (e *Editor) createBuffer(ctx context.Context, path string, dirty bool, content string) error {
 	e.mu.Lock()
+
+	if _, ok := e.buffers[path]; ok {
+		e.mu.Unlock()
+		return fmt.Errorf("buffer %q already exists", path)
+	}
 
 	buf := buffer{
 		windowsLineEndings: e.config.WindowsLineEndings,
@@ -710,11 +724,9 @@ func (e *Editor) editBufferLocked(ctx context.Context, path string, edits []Edit
 	if !ok {
 		return fmt.Errorf("unknown buffer %q", path)
 	}
-	content := make([]string, len(buf.lines))
-	copy(content, buf.lines)
-	content, err := editContent(content, edits)
+	content, err := applyEdits(buf.lines, edits)
 	if err != nil {
-		return err
+		return fmt.Errorf("editing %q: %v; edits:\n%v", path, err, edits)
 	}
 	return e.setBufferContentLocked(ctx, path, true, content, edits)
 }
@@ -1139,7 +1151,8 @@ func (e *Editor) InlayHint(ctx context.Context, path string) ([]protocol.InlayHi
 	return hints, nil
 }
 
-// References executes a reference request on the server.
+// References returns references to the object at (path, pos), as returned by
+// the connected LSP server. If no server is connected, it returns (nil, nil).
 func (e *Editor) References(ctx context.Context, path string, pos Pos) ([]protocol.Location, error) {
 	if e.Server == nil {
 		return nil, nil
@@ -1166,10 +1179,21 @@ func (e *Editor) References(ctx context.Context, path string, pos Pos) ([]protoc
 	return locations, nil
 }
 
+// Rename performs a rename of the object at (path, pos) to newName, using the
+// connected LSP server. If no server is connected, it returns nil.
 func (e *Editor) Rename(ctx context.Context, path string, pos Pos, newName string) error {
 	if e.Server == nil {
 		return nil
 	}
+
+	// Verify that PrepareRename succeeds.
+	prepareParams := &protocol.PrepareRenameParams{}
+	prepareParams.TextDocument = e.TextDocumentIdentifier(path)
+	prepareParams.Position = pos.ToProtocolPosition()
+	if _, err := e.Server.PrepareRename(ctx, prepareParams); err != nil {
+		return fmt.Errorf("preparing rename: %v", err)
+	}
+
 	params := &protocol.RenameParams{
 		TextDocument: e.TextDocumentIdentifier(path),
 		Position:     pos.ToProtocolPosition(),
@@ -1185,6 +1209,28 @@ func (e *Editor) Rename(ctx context.Context, path string, pos Pos, newName strin
 		}
 	}
 	return nil
+}
+
+// Implementations returns implementations for the object at (path, pos), as
+// returned by the connected LSP server. If no server is connected, it returns
+// (nil, nil).
+func (e *Editor) Implementations(ctx context.Context, path string, pos Pos) ([]protocol.Location, error) {
+	if e.Server == nil {
+		return nil, nil
+	}
+	e.mu.Lock()
+	_, ok := e.buffers[path]
+	e.mu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("buffer %q is not open", path)
+	}
+	params := &protocol.ImplementationParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: e.TextDocumentIdentifier(path),
+			Position:     pos.ToProtocolPosition(),
+		},
+	}
+	return e.Server.Implementation(ctx, params)
 }
 
 func (e *Editor) RenameFile(ctx context.Context, oldPath, newPath string) error {
@@ -1205,7 +1251,10 @@ func (e *Editor) RenameFile(ctx context.Context, oldPath, newPath string) error 
 	}
 
 	// Finally, perform the renaming on disk.
-	return e.sandbox.Workdir.RenameFile(ctx, oldPath, newPath)
+	if err := e.sandbox.Workdir.RenameFile(ctx, oldPath, newPath); err != nil {
+		return fmt.Errorf("renaming sandbox file: %w", err)
+	}
+	return nil
 }
 
 // renameBuffers renames in-memory buffers affected by the renaming of

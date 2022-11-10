@@ -16,9 +16,9 @@ import (
 	"strconv"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/span"
 )
 
 // ReferenceInfo holds information about reference to an identifier in Go source.
@@ -62,7 +62,9 @@ func References(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Posit
 	}
 
 	if inPackageName {
-		renamingPkg, err := s.PackageForFile(ctx, f.URI(), TypecheckAll, NarrowestPackage)
+		// TODO(rfindley): this is inaccurate, excluding test variants, and
+		// redundant with package renaming. Refactor to share logic.
+		renamingPkg, err := s.PackageForFile(ctx, f.URI(), TypecheckWorkspace, NarrowestPackage)
 		if err != nil {
 			return nil, err
 		}
