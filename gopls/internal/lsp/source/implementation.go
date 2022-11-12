@@ -73,70 +73,47 @@ func implementations(ctx context.Context, s Snapshot, f FileHandle, pp protocol.
 	if err != nil {
 		return nil, err
 	}
-	pkgs := make(map[*types.Package]Package, len(knownPkgs))
-	for _, pkg := range knownPkgs {
-		pkgs[pkg.GetTypes()] = pkg
-	}
-
-	// Defer collection and caching of named types. It's only required for
-	// interface definitions, not function type defintions.
-	var allNamed []*types.Named
-	getAllNamed := func() []*types.Named {
-		if allNamed == nil {
-			for _, pkg := range knownPkgs {
-				for _, obj := range pkg.GetTypesInfo().Defs {
-					obj, ok := obj.(*types.TypeName)
-					// We ignore aliases 'type M = N' to avoid duplicate reporting
-					// of the Named type N.
-					if !ok || obj.IsAlias() {
-						continue
-					}
-					if named, ok := obj.Type().(*types.Named); ok {
-						allNamed = append(allNamed, named)
-					}
-				}
-			}
-		}
-		return allNamed
-	}
 
 	var objs []types.Object
 
 	for _, qo := range qos {
-		var sig *types.Signature
-		var iface types.Type
-		var method *types.Func
+		var queryType types.Type
+		var queryMethod types.Object
 
-		switch obj := qo.obj.(type) {
-		case *types.Func:
-			recv := obj.Type().(*types.Signature).Recv()
-			if recv == nil {
-				break
+		sig, hasSig := qo.obj.Type().Underlying().(*types.Signature)
+		// If there's a signature, then qo must be a function.
+		// If there's no receiver, then search for implementations of the
+		// function type, or function types that qo's signature matches.
+		if hasSig && sig.Recv() != nil {
+			// If there's a receiver, then qo must be a method.
+			// Query for implementations of the interface's method /
+			// interfaces that the method fully or partially implements.
+			queryType = ensurePointer(sig.Recv().Type())
+			queryMethod = qo.obj
+		} else if !hasSig {
+			// If there's no signature, then qo must be a type.
+			// Query for implementations of the interface / types that
+			// implement the interface.
+			queryType = ensurePointer(qo.obj.Type())
+		}
+
+		if queryType != nil {
+			for _, pkg := range knownPkgs {
+				objs = append(objs, findInterfaceImplementations(pkg, queryType, queryMethod)...)
 			}
-			iface = ensurePointer(recv.Type())
-			method = obj
-		case *types.TypeName:
-			sig, _ = obj.Type().Underlying().(*types.Signature)
-			if sig != nil {
-				break
+		} else if hasSig && includeFuncs {
+			for _, pkg := range knownPkgs {
+				objs = append(objs, findFunctionImplementations(pkg, sig)...)
 			}
-			iface = ensurePointer(obj.Type())
-		case *types.Var:
-			sig, _ = obj.Type().Underlying().(*types.Signature)
+		} else {
+			return nil, ErrNotAType
 		}
-
-		if iface != nil {
-			objs = append(objs, findInterfaceImplementations(getAllNamed, s, iface, method)...)
-			continue
-		}
-		if sig != nil && includeFuncs {
-			objs = append(objs, findFunctionImplementations(pkgs, s, sig)...)
-			continue
-		}
-
-		return nil, ErrNotAType
 	}
 
+	pkgs := make(map[*types.Package]Package, len(knownPkgs))
+	for _, pkg := range knownPkgs {
+		pkgs[pkg.GetTypes()] = pkg
+	}
 	seen := make(map[token.Position]bool)
 	for _, obj := range objs {
 		pos := s.FileSet().Position(obj.Pos())
@@ -153,13 +130,23 @@ func implementations(ctx context.Context, s Snapshot, f FileHandle, pp protocol.
 	return impls, nil
 }
 
-func findInterfaceImplementations(getAllNamed func() []*types.Named, s Snapshot, queryType types.Type, queryMethod *types.Func) (objs []types.Object) {
+func findInterfaceImplementations(pkg Package, queryType types.Type, queryMethod types.Object) (objs []types.Object) {
 	if types.NewMethodSet(queryType).Len() == 0 {
 		return nil
 	}
+	for _, obj := range pkg.GetTypesInfo().Defs {
+		obj, ok := obj.(*types.TypeName)
+		// We ignore aliases 'type M = N' to avoid duplicate reporting
+		// of the Named type N.
+		if !ok || obj.IsAlias() {
+			continue
+		}
+		named, ok := obj.Type().(*types.Named)
+		if !ok {
+			continue
+		}
 
-	// Find all the named types that match our query.
-	for _, named := range getAllNamed() {
+		// Find all the named types that match our query.
 		var (
 			candObj  types.Object = named.Obj()
 			candType              = ensurePointer(named)
@@ -193,27 +180,37 @@ func findInterfaceImplementations(getAllNamed func() []*types.Named, s Snapshot,
 	return objs
 }
 
-func findFunctionImplementations(pkgs map[*types.Package]Package, s Snapshot, sig *types.Signature) (objs []types.Object) {
-	for pkg := range pkgs {
-		for _, name := range pkg.Scope().Names() {
-			o := pkg.Scope().Lookup(name)
-			if _, isType := o.(*types.TypeName); isType {
-				continue
-			}
-			var csig *types.Signature
-			var isFunc bool
-			if csig, isFunc = o.Type().Underlying().(*types.Signature); !isFunc {
-				continue
-			}
+func findFunctionImplementations(pkg Package, sig *types.Signature) (objs []types.Object) {
+	for _, name := range pkg.GetTypes().Scope().Names() {
+		o := pkg.GetTypes().Scope().Lookup(name)
 
-			if !types.AssignableTo(sig, csig) {
-				continue
+		// Look up methods that match the signature.
+		if obj, isTypeName := o.(*types.TypeName); isTypeName && !obj.IsAlias() {
+			if named, isNamed := obj.Type().(*types.Named); isNamed {
+				ms := types.NewMethodSet(ensurePointer(named))
+				for i := 0; i < ms.Len(); i++ {
+					o := ms.At(i).Obj()
+					if objectImplementsSignature(o, sig) {
+						objs = append(objs, o)
+					}
+				}
 			}
+		}
 
+		// Look up functions that match.
+		if _, isType := o.(*types.TypeName); isType {
+			continue
+		}
+		if objectImplementsSignature(o, sig) {
 			objs = append(objs, o)
 		}
 	}
 	return objs
+}
+
+func objectImplementsSignature(o types.Object, sig *types.Signature) bool {
+	csig, isSig := o.Type().Underlying().(*types.Signature)
+	return isSig && types.AssignableTo(sig, csig)
 }
 
 // concreteImplementsIntf returns true if a is an interface type implemented by

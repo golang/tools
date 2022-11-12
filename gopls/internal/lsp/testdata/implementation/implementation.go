@@ -57,7 +57,7 @@ func implementationOfAnonymous2(data []byte) error { //@mark(implementationOfAno
 	return nil
 }
 
-func TestAnonymousFunction(af func([]byte) error) {
+func TestAnonymousFunction(af func([]byte, cry func(other.CryType)) error) {
 	af([]byte{0, 1}) //implementations("af", implementationOfAnonymous1, implementationOfAnonymous2)
+	cry(other.CryType(12)) //implementations("Cry", Cry)
 }
-
