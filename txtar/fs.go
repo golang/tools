@@ -1,8 +1,6 @@
-// Copyright 2021 The Go Authors. All rights reserved.
+// Copyright 2022 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
-
-// +build go1.16
 
 package txtar
 
@@ -16,10 +14,12 @@ import (
 	"time"
 )
 
-var _ fs.FS = (*Archive)(nil)
+type fsys struct {
+	*Archive
+}
 
 // Open implements fs.FS.
-func (a *Archive) Open(name string) (fs.File, error) {
+func (a fsys) Open(name string) (fs.File, error) {
 	if !fs.ValidPath(name) {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 	}
@@ -65,10 +65,10 @@ func (a *Archive) Open(name string) (fs.File, error) {
 	return &openDir{newDirInfo(name), entries, 0}, nil
 }
 
-var _ fs.ReadFileFS = (*Archive)(nil)
+var _ fs.ReadFileFS = fsys{}
 
 // ReadFile implements fs.ReadFileFS.
-func (a *Archive) ReadFile(name string) ([]byte, error) {
+func (a fsys) ReadFile(name string) ([]byte, error) {
 	if !fs.ValidPath(name) {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 	}
@@ -165,8 +165,9 @@ func (d *openDir) ReadDir(count int) ([]fs.DirEntry, error) {
 //
 // The transformation is lossy.
 // For example, because directories are implicit in txtar archives,
-// empty directories in fsys will be lost, and txtar does not represent file mode, mtime, or other file metadata.
-// From does not guarantee that a.File[i].Data contain no file marker lines.
+// empty directories in fsys will be lost,
+// and txtar does not represent file mode, mtime, or other file metadata.
+// From does not guarantee that a.File[i].Data contains no file marker lines.
 // See also warnings on Format.
 // In short, it is unwise to use txtar as a generic filesystem serialization mechanism.
 func From(fsys fs.FS) (*Archive, error) {

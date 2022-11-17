@@ -68,7 +68,7 @@ two
 		t.Run(tc.name, func(t *testing.T) {
 			a := Parse([]byte(tc.input))
 			files := strings.Fields(tc.files)
-			if err := fstest.TestFS(a, files...); err != nil {
+			if err := fstest.TestFS(a.FS(), files...); err != nil {
 				t.Fatal(err)
 			}
 			for _, name := range files {
@@ -76,7 +76,8 @@ two
 					if f.Name != name {
 						continue
 					}
-					b, err := fs.ReadFile(a, name)
+					fsys := a.FS()
+					b, err := fs.ReadFile(fsys, name)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -85,7 +86,7 @@ two
 					}
 					// Be careful with n cases, this open is O(n^3) deep
 					// Do iotest
-					fsfile, err := a.Open(name)
+					fsfile, err := fsys.Open(name)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -96,7 +97,7 @@ two
 						t.Fatal(err)
 					}
 					// test io.Copy
-					fsfile, err = a.Open(name)
+					fsfile, err = fsys.Open(name)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -116,7 +117,7 @@ two
 					}
 				}
 			}
-			a2, err := From(a)
+			a2, err := From(a.FS())
 			if err != nil {
 				t.Fatalf("failed to write fsys for %v: %v", tc.name, err)
 			}

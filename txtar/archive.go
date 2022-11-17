@@ -34,6 +34,7 @@ package txtar
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 )
@@ -137,4 +138,9 @@ func fixNL(data []byte) []byte {
 	copy(d, data)
 	d[len(data)] = '\n'
 	return d
+}
+
+// FS returns an fs.FS that reads from the Archive.
+func (a *Archive) FS() fs.FS {
+	return fsys{a}
 }
