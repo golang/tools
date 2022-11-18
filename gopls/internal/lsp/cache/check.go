@@ -46,7 +46,7 @@ type packageHandle struct {
 	promise *memoize.Promise // [typeCheckResult]
 
 	// m is the metadata associated with the package.
-	m *KnownMetadata
+	m *source.Metadata
 
 	// key is the hashed key for the package.
 	//
@@ -105,12 +105,8 @@ func (s *snapshot) buildPackageHandle(ctx context.Context, id PackageID, mode so
 		// Don't use invalid metadata for dependencies if the top-level
 		// metadata is valid. We only load top-level packages, so if the
 		// top-level is valid, all of its dependencies should be as well.
-		if err != nil || m.Valid && !depHandle.m.Valid {
-			if err != nil {
-				event.Error(ctx, fmt.Sprintf("%s: no dep handle for %s", id, depID), err, source.SnapshotLabels(s)...)
-			} else {
-				event.Log(ctx, fmt.Sprintf("%s: invalid dep handle for %s", id, depID), source.SnapshotLabels(s)...)
-			}
+		if err != nil {
+			event.Error(ctx, fmt.Sprintf("%s: no dep handle for %s", id, depID), err, source.SnapshotLabels(s)...)
 
 			// This check ensures we break out of the slow
 			// buildPackageHandle recursion quickly when
@@ -136,7 +132,7 @@ func (s *snapshot) buildPackageHandle(ctx context.Context, id PackageID, mode so
 	// syntax trees are available from (*pkg).File(URI).
 	// TODO(adonovan): consider parsing them on demand?
 	// The need should be rare.
-	goFiles, compiledGoFiles, err := readGoFiles(ctx, s, m.Metadata)
+	goFiles, compiledGoFiles, err := readGoFiles(ctx, s, m)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +142,7 @@ func (s *snapshot) buildPackageHandle(ctx context.Context, id PackageID, mode so
 	experimentalKey := s.View().Options().ExperimentalPackageCacheKey
 	phKey := computePackageKey(m.ID, compiledGoFiles, m, depKey, mode, experimentalKey)
 	promise, release := s.store.Promise(phKey, func(ctx context.Context, arg interface{}) interface{} {
-		pkg, err := typeCheckImpl(ctx, arg.(*snapshot), goFiles, compiledGoFiles, m.Metadata, mode, deps)
+		pkg, err := typeCheckImpl(ctx, arg.(*snapshot), goFiles, compiledGoFiles, m, mode, deps)
 		return typeCheckResult{pkg, err}
 	})
 
@@ -166,7 +162,7 @@ func (s *snapshot) buildPackageHandle(ctx context.Context, id PackageID, mode so
 	// packageHandle to the handles for parsing its files and the
 	// handles for type-checking its immediate deps, at which
 	// point there will be no need to even access s.meta.)
-	if s.meta.metadata[ph.m.ID].Metadata != ph.m.Metadata {
+	if s.meta.metadata[ph.m.ID] != ph.m {
 		return nil, fmt.Errorf("stale metadata for %s", ph.m.ID)
 	}
 
@@ -174,7 +170,7 @@ func (s *snapshot) buildPackageHandle(ctx context.Context, id PackageID, mode so
 	if prev, ok := s.packages.Get(packageKey); ok {
 		prevPH := prev.(*packageHandle)
 		release()
-		if prevPH.m.Metadata != ph.m.Metadata {
+		if prevPH.m != ph.m {
 			return nil, bug.Errorf("existing package handle does not match for %s", ph.m.ID)
 		}
 		return prevPH, nil
@@ -188,7 +184,7 @@ func (s *snapshot) buildPackageHandle(ctx context.Context, id PackageID, mode so
 
 // readGoFiles reads the content of Metadata.GoFiles and
 // Metadata.CompiledGoFiles, in parallel.
-func readGoFiles(ctx context.Context, s *snapshot, m *Metadata) (goFiles, compiledGoFiles []source.FileHandle, err error) {
+func readGoFiles(ctx context.Context, s *snapshot, m *source.Metadata) (goFiles, compiledGoFiles []source.FileHandle, err error) {
 	var group errgroup.Group
 	getFileHandles := func(files []span.URI) []source.FileHandle {
 		fhs := make([]source.FileHandle, len(files))
@@ -225,7 +221,7 @@ func (s *snapshot) workspaceParseMode(id PackageID) source.ParseMode {
 // computePackageKey returns a key representing the act of type checking
 // a package named id containing the specified files, metadata, and
 // combined dependency hash.
-func computePackageKey(id PackageID, files []source.FileHandle, m *KnownMetadata, depsKey source.Hash, mode source.ParseMode, experimentalKey bool) packageHandleKey {
+func computePackageKey(id PackageID, files []source.FileHandle, m *source.Metadata, depsKey source.Hash, mode source.ParseMode, experimentalKey bool) packageHandleKey {
 	// TODO(adonovan): opt: no need to materalize the bytes; hash them directly.
 	// Also, use field separators to avoid spurious collisions.
 	b := bytes.NewBuffer(nil)
@@ -308,7 +304,7 @@ func (ph *packageHandle) cached() (*pkg, error) {
 // typeCheckImpl type checks the parsed source files in compiledGoFiles.
 // (The resulting pkg also holds the parsed but not type-checked goFiles.)
 // deps holds the future results of type-checking the direct dependencies.
-func typeCheckImpl(ctx context.Context, snapshot *snapshot, goFiles, compiledGoFiles []source.FileHandle, m *Metadata, mode source.ParseMode, deps map[PackageID]*packageHandle) (*pkg, error) {
+func typeCheckImpl(ctx context.Context, snapshot *snapshot, goFiles, compiledGoFiles []source.FileHandle, m *source.Metadata, mode source.ParseMode, deps map[PackageID]*packageHandle) (*pkg, error) {
 	// Start type checking of direct dependencies,
 	// in parallel and asynchronously.
 	// As the type checker imports each of these
@@ -443,7 +439,7 @@ func typeCheckImpl(ctx context.Context, snapshot *snapshot, goFiles, compiledGoF
 
 var goVersionRx = regexp.MustCompile(`^go([1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
-func doTypeCheck(ctx context.Context, snapshot *snapshot, goFiles, compiledGoFiles []source.FileHandle, m *Metadata, mode source.ParseMode, deps map[PackageID]*packageHandle, astFilter *unexportedFilter) (*pkg, error) {
+func doTypeCheck(ctx context.Context, snapshot *snapshot, goFiles, compiledGoFiles []source.FileHandle, m *source.Metadata, mode source.ParseMode, deps map[PackageID]*packageHandle, astFilter *unexportedFilter) (*pkg, error) {
 	ctx, done := event.Start(ctx, "cache.typeCheck", tag.Package.Of(string(m.ID)))
 	defer done()
 
@@ -632,7 +628,7 @@ func (s *snapshot) depsErrors(ctx context.Context, pkg *pkg) ([]*source.Diagnost
 	// Select packages that can't be found, and were imported in non-workspace packages.
 	// Workspace packages already show their own errors.
 	var relevantErrors []*packagesinternal.PackageError
-	for _, depsError := range pkg.m.depsErrors {
+	for _, depsError := range pkg.m.DepsErrors {
 		// Up to Go 1.15, the missing package was included in the stack, which
 		// was presumably a bug. We want the next one up.
 		directImporterIdx := len(depsError.ImportStack) - 1
