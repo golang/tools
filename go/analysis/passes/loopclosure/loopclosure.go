@@ -93,57 +93,116 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		// statement, because it's hard to prove go isn't followed by wait, or
 		// defer by return.
 		//
+		// We define "last" recursively. For example, if the last statement is an
+		// if statement, then we examine the last statements in both of its branches.
+		// Or if the last statement is a nested loop, then we examine the last statement
+		// of that loop's body, and so on.
+		var visitLast func(stmts []ast.Stmt)
+		visitLast = func(stmts []ast.Stmt) {
+			if len(stmts) == 0 {
+				return
+			}
+			var checkStmts []ast.Stmt // statements that must be checked for escaping references
+			s := stmts[len(stmts)-1]
+			switch s := s.(type) {
+			case *ast.IfStmt:
+				visitLast(s.Body.List)
+				if s.Else != nil {
+					switch s := s.Else.(type) {
+					case *ast.BlockStmt:
+						visitLast(s.List)
+					case *ast.IfStmt:
+						visitLast([]ast.Stmt{s})
+					}
+				}
+				return
+			case *ast.ForStmt:
+				visitLast(s.Body.List)
+				return
+			case *ast.RangeStmt:
+				visitLast(s.Body.List)
+				return
+			case *ast.SwitchStmt:
+				for _, c := range s.Body.List {
+					c, ok := c.(*ast.CaseClause)
+					if !ok {
+						continue
+					}
+					visitLast(c.Body)
+				}
+				return
+			case *ast.TypeSwitchStmt:
+				for _, c := range s.Body.List {
+					c, ok := c.(*ast.CaseClause)
+					if !ok {
+						continue
+					}
+					visitLast(c.Body)
+				}
+				return
+			case *ast.SelectStmt:
+				for _, c := range s.Body.List {
+					c, ok := c.(*ast.CommClause)
+					if !ok {
+						continue
+					}
+					visitLast(c.Body)
+				}
+				return
+			case *ast.GoStmt:
+				checkStmts = litStmts(s.Call.Fun)
+			case *ast.DeferStmt:
+				checkStmts = litStmts(s.Call.Fun)
+			case *ast.ExprStmt: // check for errgroup.Group.Go
+				if call, ok := s.X.(*ast.CallExpr); ok {
+					checkStmts = litStmts(goInvoke(pass.TypesInfo, call))
+				}
+			}
+			reportCaptured(pass, vars, checkStmts)
+		}
+		visitLast(body.List)
+
+		// Also check for testing.T.Run (with T.Parallel).
 		// We consider every t.Run statement in the loop body, because there is
-		// no such commonly used mechanism for synchronizing parallel subtests.
+		// no commonly used mechanism for synchronizing parallel subtests.
 		// It is of course theoretically possible to synchronize parallel subtests,
 		// though such a pattern is likely to be exceedingly rare as it would be
 		// fighting against the test runner.
-		lastStmt := len(body.List) - 1
-		for i, s := range body.List {
-			var stmts []ast.Stmt // statements that must be checked for escaping references
+		for _, s := range body.List {
 			switch s := s.(type) {
-			case *ast.GoStmt:
-				if i == lastStmt {
-					stmts = litStmts(s.Call.Fun)
-				}
-
-			case *ast.DeferStmt:
-				if i == lastStmt {
-					stmts = litStmts(s.Call.Fun)
-				}
-
-			case *ast.ExprStmt: // check for errgroup.Group.Go and testing.T.Run (with T.Parallel)
+			case *ast.ExprStmt:
 				if call, ok := s.X.(*ast.CallExpr); ok {
-					if i == lastStmt {
-						stmts = litStmts(goInvoke(pass.TypesInfo, call))
-					}
-					if stmts == nil {
-						stmts = parallelSubtest(pass.TypesInfo, call)
-					}
+					reportCaptured(pass, vars, parallelSubtest(pass.TypesInfo, call))
 				}
-			}
-
-			for _, stmt := range stmts {
-				ast.Inspect(stmt, func(n ast.Node) bool {
-					id, ok := n.(*ast.Ident)
-					if !ok {
-						return true
-					}
-					obj := pass.TypesInfo.Uses[id]
-					if obj == nil {
-						return true
-					}
-					for _, v := range vars {
-						if v == obj {
-							pass.ReportRangef(id, "loop variable %s captured by func literal", id.Name)
-						}
-					}
-					return true
-				})
 			}
 		}
 	})
 	return nil, nil
+}
+
+// reportCaptured reports a diagnostic stating a loop variable
+// has been captured by a func literal if any of stmts have escaping
+// references to vars. vars is expected to be variables updated by a loop statement,
+// and stmts is expected to be statements from the body of a func literal in the loop.
+func reportCaptured(pass *analysis.Pass, vars []types.Object, stmts []ast.Stmt) {
+	for _, stmt := range stmts {
+		ast.Inspect(stmt, func(n ast.Node) bool {
+			id, ok := n.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			obj := pass.TypesInfo.Uses[id]
+			if obj == nil {
+				return true
+			}
+			for _, v := range vars {
+				if v == obj {
+					pass.ReportRangef(id, "loop variable %s captured by func literal", id.Name)
+				}
+			}
+			return true
+		})
+	}
 }
 
 // litStmts returns all statements from the function body of a function

@@ -108,6 +108,70 @@ func _() {
 	}
 }
 
+// Cases that rely on recursively checking for last statements.
+func _() {
+
+	for i := range "outer" {
+		for j := range "inner" {
+			if j < 1 {
+				defer func() {
+					print(i) // want "loop variable i captured by func literal"
+				}()
+			} else if j < 2 {
+				go func() {
+					print(i) // want "loop variable i captured by func literal"
+				}()
+			} else {
+				go func() {
+					print(i)
+				}()
+				println("we don't catch the error above because of this statement")
+			}
+		}
+	}
+
+	for i := 0; i < 10; i++ {
+		for j := 0; j < 10; j++ {
+			if j < 1 {
+				switch j {
+				case 0:
+					defer func() {
+						print(i) // want "loop variable i captured by func literal"
+					}()
+				default:
+					go func() {
+						print(i) // want "loop variable i captured by func literal"
+					}()
+				}
+			} else if j < 2 {
+				var a any = j
+				switch a.(type) {
+				case int:
+					defer func() {
+						print(i) // want "loop variable i captured by func literal"
+					}()
+				default:
+					go func() {
+						print(i) // want "loop variable i captured by func literal"
+					}()
+				}
+			} else {
+				ch := make(chan string)
+				select {
+				case <-ch:
+					defer func() {
+						print(i) // want "loop variable i captured by func literal"
+					}()
+				default:
+					go func() {
+						print(i) // want "loop variable i captured by func literal"
+					}()
+				}
+			}
+		}
+	}
+}
+
 // Group is used to test that loopclosure only matches Group.Go when Group is
 // from the golang.org/x/sync/errgroup package.
 type Group struct{}
@@ -125,6 +189,21 @@ func _() {
 			return nil
 		})
 	}
+
+	for i, v := range s {
+		if i > 0 {
+			g.Go(func() error {
+				print(i) // want "loop variable i captured by func literal"
+				return nil
+			})
+		} else {
+			g.Go(func() error {
+				print(v) // want "loop variable v captured by func literal"
+				return nil
+			})
+		}
+	}
+
 	// Do not match other Group.Go cases
 	g1 := new(Group)
 	for i, v := range s {
