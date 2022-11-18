@@ -14,17 +14,17 @@ import (
 	"time"
 )
 
-type fsys struct {
-	*Archive
+type archiveFS struct {
+	a *Archive
 }
 
 // Open implements fs.FS.
-func (a fsys) Open(name string) (fs.File, error) {
+func (fsys archiveFS) Open(name string) (fs.File, error) {
 	if !fs.ValidPath(name) {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 	}
 
-	for _, f := range a.Files {
+	for _, f := range fsys.a.Files {
 		// In case the txtar has weird filenames
 		cleanName := path.Clean(f.Name)
 		if name == cleanName {
@@ -38,7 +38,7 @@ func (a fsys) Open(name string) (fs.File, error) {
 		prefix = ""
 	}
 
-	for _, f := range a.Files {
+	for _, f := range fsys.a.Files {
 		cleanName := path.Clean(f.Name)
 		if !strings.HasPrefix(cleanName, prefix) {
 			continue
@@ -65,10 +65,10 @@ func (a fsys) Open(name string) (fs.File, error) {
 	return &openDir{newDirInfo(name), entries, 0}, nil
 }
 
-var _ fs.ReadFileFS = fsys{}
+var _ fs.ReadFileFS = archiveFS{}
 
 // ReadFile implements fs.ReadFileFS.
-func (a fsys) ReadFile(name string) ([]byte, error) {
+func (fsys archiveFS) ReadFile(name string) ([]byte, error) {
 	if !fs.ValidPath(name) {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 	}
@@ -76,7 +76,7 @@ func (a fsys) ReadFile(name string) ([]byte, error) {
 		return nil, &fs.PathError{Op: "read", Path: name, Err: errors.New("is a directory")}
 	}
 	prefix := name + "/"
-	for _, f := range a.Files {
+	for _, f := range fsys.a.Files {
 		if cleanName := path.Clean(f.Name); name == cleanName {
 			return append(([]byte)(nil), f.Data...), nil
 		}
@@ -96,22 +96,25 @@ var (
 )
 
 type openFile struct {
-	*bytes.Reader
-	fileInfo
+	bytes.Reader
+	fi fileInfo
 }
 
 func newOpenFile(f File) *openFile {
-	return &openFile{bytes.NewReader(f.Data), fileInfo{f, 0444}}
+	var o openFile
+	o.Reader.Reset(f.Data)
+	o.fi = fileInfo{f, 0444}
+	return &o
 }
 
-func (o *openFile) Stat() (fs.FileInfo, error) { return o.fileInfo, nil }
+func (o *openFile) Stat() (fs.FileInfo, error) { return o.fi, nil }
 
 func (o *openFile) Close() error { return nil }
 
 var _ fs.FileInfo = fileInfo{}
 
 type fileInfo struct {
-	File
+	f File
 	m fs.FileMode
 }
 
@@ -123,13 +126,13 @@ func newDirInfo(name string) fileInfo {
 	return fileInfo{File{Name: name}, fs.ModeDir | 0555}
 }
 
-func (f fileInfo) Name() string               { return path.Base(f.File.Name) }
-func (f fileInfo) Size() int64                { return int64(len(f.File.Data)) }
+func (f fileInfo) Name() string               { return path.Base(f.f.Name) }
+func (f fileInfo) Size() int64                { return int64(len(f.f.Data)) }
 func (f fileInfo) Mode() fs.FileMode          { return f.m }
 func (f fileInfo) Type() fs.FileMode          { return f.m.Type() }
 func (f fileInfo) ModTime() time.Time         { return time.Time{} }
 func (f fileInfo) IsDir() bool                { return f.m.IsDir() }
-func (f fileInfo) Sys() interface{}           { return f.File }
+func (f fileInfo) Sys() interface{}           { return f.f }
 func (f fileInfo) Info() (fs.FileInfo, error) { return f, nil }
 
 type openDir struct {
@@ -141,7 +144,7 @@ type openDir struct {
 func (d *openDir) Stat() (fs.FileInfo, error) { return &d.dirInfo, nil }
 func (d *openDir) Close() error               { return nil }
 func (d *openDir) Read(b []byte) (int, error) {
-	return 0, &fs.PathError{Op: "read", Path: d.dirInfo.File.Name, Err: errors.New("is a directory")}
+	return 0, &fs.PathError{Op: "read", Path: d.dirInfo.f.Name, Err: errors.New("is a directory")}
 }
 
 func (d *openDir) ReadDir(count int) ([]fs.DirEntry, error) {

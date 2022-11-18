@@ -142,5 +142,5 @@ func fixNL(data []byte) []byte {
 
 // FS returns an fs.FS that reads from the Archive.
 func (a *Archive) FS() fs.FS {
-	return fsys{a}
+	return archiveFS{a}
 }
