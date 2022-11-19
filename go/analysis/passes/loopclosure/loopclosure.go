@@ -169,13 +169,14 @@ func lastStmts(pass *analysis.Pass, stmts []ast.Stmt) []ast.Stmt {
 	s := stmts[len(stmts)-1]
 	switch s := s.(type) {
 	case *ast.IfStmt:
-		res = append(res, lastStmts(pass, s.Body.List)...)
-		if s.Else != nil {
-			switch s := s.Else.(type) {
+		var next *ast.IfStmt
+		for ; s != nil; s, next = next, nil {
+			res = append(res, lastStmts(pass, s.Body.List)...)
+			switch e := s.Else.(type) {
 			case *ast.BlockStmt:
-				res = append(res, lastStmts(pass, s.List)...)
+				res = append(res, lastStmts(pass, e.List)...)
 			case *ast.IfStmt:
-				res = append(res, lastStmts(pass, []ast.Stmt{s})...)
+				next = e
 			}
 		}
 	case *ast.ForStmt:
@@ -184,27 +185,21 @@ func lastStmts(pass *analysis.Pass, stmts []ast.Stmt) []ast.Stmt {
 		res = append(res, lastStmts(pass, s.Body.List)...)
 	case *ast.SwitchStmt:
 		for _, c := range s.Body.List {
-			c, ok := c.(*ast.CaseClause)
-			if !ok {
-				continue
+			if c, ok := c.(*ast.CaseClause); ok {
+				res = append(res, lastStmts(pass, c.Body)...)
 			}
-			res = append(res, lastStmts(pass, c.Body)...)
 		}
 	case *ast.TypeSwitchStmt:
 		for _, c := range s.Body.List {
-			c, ok := c.(*ast.CaseClause)
-			if !ok {
-				continue
+			if c, ok := c.(*ast.CaseClause); ok {
+				res = append(res, lastStmts(pass, c.Body)...)
 			}
-			res = append(res, lastStmts(pass, c.Body)...)
 		}
 	case *ast.SelectStmt:
 		for _, c := range s.Body.List {
-			c, ok := c.(*ast.CommClause)
-			if !ok {
-				continue
+			if c, ok := c.(*ast.CommClause); ok {
+				res = append(res, lastStmts(pass, c.Body)...)
 			}
-			res = append(res, lastStmts(pass, c.Body)...)
 		}
 	case *ast.GoStmt:
 		res = append(res, litStmts(s.Call.Fun)...)
