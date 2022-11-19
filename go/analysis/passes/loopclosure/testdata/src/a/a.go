@@ -144,7 +144,7 @@ func _() {
 					}()
 				}
 			} else if j < 2 {
-				var a any = j
+				var a interface{} = j
 				switch a.(type) {
 				case int:
 					defer func() {

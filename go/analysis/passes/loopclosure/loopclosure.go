@@ -20,21 +20,36 @@ const Doc = `check references to loop variables from within nested functions
 
 This analyzer checks for references to loop variables from within a function
 literal inside the loop body. It checks for patterns where access to a loop
-variable is known to escape the current loop iteration:
- 1. a call to go or defer at the end of the loop body
- 2. a call to golang.org/x/sync/errgroup.Group.Go at the end of the loop body
+variable used in the loop body is known to escape the current loop iteration:
+ 1. a call to go or defer as the last statement
+ 2. a call to golang.org/x/sync/errgroup.Group.Go as the last statement
  3. a call testing.T.Run where the subtest body invokes t.Parallel()
 
-In the case of (1) and (2), the analyzer only considers references in the last
-statement of the loop body as it is not deep enough to understand the effects
-of subsequent statements which might render the reference benign.
+In the case of (1) and (2), the analyzer only considers references in the
+last statement of the loop body, where "last" is defined recursively.
+For example, if the last statement in the loop body is a switch statement,
+then the analyzer examines the last statements in each of the switch cases.
+Or if the last statement is a nested loop, then it examines the last
+statement of that loop's body, and so on. The analyzer is not otherwise
+deep enough to understand the effects of subsequent statements
+that might render the reference benign.
 
-For example:
+Two examples that are caught:
+
+	for _, v := range s {
+		go func() {
+			println(v) // each closure shares the same instance of v
+		}()
+	}
 
 	for i, v := range s {
-		go func() {
-			println(i, v) // not what you might expect
-		}()
+		if i == 0 {
+			go func() {
+				println(v) // each closure shares the same instance of v
+			}()
+		} else {
+			println(v)
+		}
 	}
 
 See: https://golang.org/doc/go_faq.html#closures_and_goroutines`
@@ -91,76 +106,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		//
 		// For go, defer, and errgroup.Group.Go, we ignore all but the last
 		// statement, because it's hard to prove go isn't followed by wait, or
-		// defer by return.
-		//
-		// We define "last" recursively. For example, if the last statement is an
-		// if statement, then we examine the last statements in both of its branches.
-		// Or if the last statement is a nested loop, then we examine the last statement
-		// of that loop's body, and so on.
-		var visitLast func(stmts []ast.Stmt)
-		visitLast = func(stmts []ast.Stmt) {
-			if len(stmts) == 0 {
-				return
-			}
-			var checkStmts []ast.Stmt // statements that must be checked for escaping references
-			s := stmts[len(stmts)-1]
-			switch s := s.(type) {
-			case *ast.IfStmt:
-				visitLast(s.Body.List)
-				if s.Else != nil {
-					switch s := s.Else.(type) {
-					case *ast.BlockStmt:
-						visitLast(s.List)
-					case *ast.IfStmt:
-						visitLast([]ast.Stmt{s})
-					}
-				}
-				return
-			case *ast.ForStmt:
-				visitLast(s.Body.List)
-				return
-			case *ast.RangeStmt:
-				visitLast(s.Body.List)
-				return
-			case *ast.SwitchStmt:
-				for _, c := range s.Body.List {
-					c, ok := c.(*ast.CaseClause)
-					if !ok {
-						continue
-					}
-					visitLast(c.Body)
-				}
-				return
-			case *ast.TypeSwitchStmt:
-				for _, c := range s.Body.List {
-					c, ok := c.(*ast.CaseClause)
-					if !ok {
-						continue
-					}
-					visitLast(c.Body)
-				}
-				return
-			case *ast.SelectStmt:
-				for _, c := range s.Body.List {
-					c, ok := c.(*ast.CommClause)
-					if !ok {
-						continue
-					}
-					visitLast(c.Body)
-				}
-				return
-			case *ast.GoStmt:
-				checkStmts = litStmts(s.Call.Fun)
-			case *ast.DeferStmt:
-				checkStmts = litStmts(s.Call.Fun)
-			case *ast.ExprStmt: // check for errgroup.Group.Go
-				if call, ok := s.X.(*ast.CallExpr); ok {
-					checkStmts = litStmts(goInvoke(pass.TypesInfo, call))
-				}
-			}
-			reportCaptured(pass, vars, checkStmts)
+		// defer by return. "Last" is defined recursively, as described in the
+		// documentation string at the top of this file.
+		for _, stmt := range lastStmts(pass, body.List) {
+			reportCaptured(pass, vars, stmt)
 		}
-		visitLast(body.List)
 
 		// Also check for testing.T.Run (with T.Parallel).
 		// We consider every t.Run statement in the loop body, because there is
@@ -172,7 +122,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			switch s := s.(type) {
 			case *ast.ExprStmt:
 				if call, ok := s.X.(*ast.CallExpr); ok {
-					reportCaptured(pass, vars, parallelSubtest(pass.TypesInfo, call))
+					reportCaptured(pass, vars, parallelSubtest(pass.TypesInfo, call)...)
 				}
 			}
 		}
@@ -184,7 +134,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 // has been captured by a func literal if any of stmts have escaping
 // references to vars. vars is expected to be variables updated by a loop statement,
 // and stmts is expected to be statements from the body of a func literal in the loop.
-func reportCaptured(pass *analysis.Pass, vars []types.Object, stmts []ast.Stmt) {
+func reportCaptured(pass *analysis.Pass, vars []types.Object, stmts ...ast.Stmt) {
 	for _, stmt := range stmts {
 		ast.Inspect(stmt, func(n ast.Node) bool {
 			id, ok := n.(*ast.Ident)
@@ -203,6 +153,70 @@ func reportCaptured(pass *analysis.Pass, vars []types.Object, stmts []ast.Stmt) 
 			return true
 		})
 	}
+}
+
+// lastStmts returns the last go, defer and errgroup.Group.Go statements in stmts,
+// where "last" is defined recursively. For example, if the last statement in stmts
+// is a switch statement, then the last statements in each of the case clauses
+// are also visited to examine their last statements. See the documentation string
+// at the top of this file for an example.
+func lastStmts(pass *analysis.Pass, stmts []ast.Stmt) []ast.Stmt {
+	if len(stmts) == 0 {
+		return nil
+	}
+
+	var res []ast.Stmt
+	s := stmts[len(stmts)-1]
+	switch s := s.(type) {
+	case *ast.IfStmt:
+		res = append(res, lastStmts(pass, s.Body.List)...)
+		if s.Else != nil {
+			switch s := s.Else.(type) {
+			case *ast.BlockStmt:
+				res = append(res, lastStmts(pass, s.List)...)
+			case *ast.IfStmt:
+				res = append(res, lastStmts(pass, []ast.Stmt{s})...)
+			}
+		}
+	case *ast.ForStmt:
+		res = append(res, lastStmts(pass, s.Body.List)...)
+	case *ast.RangeStmt:
+		res = append(res, lastStmts(pass, s.Body.List)...)
+	case *ast.SwitchStmt:
+		for _, c := range s.Body.List {
+			c, ok := c.(*ast.CaseClause)
+			if !ok {
+				continue
+			}
+			res = append(res, lastStmts(pass, c.Body)...)
+		}
+	case *ast.TypeSwitchStmt:
+		for _, c := range s.Body.List {
+			c, ok := c.(*ast.CaseClause)
+			if !ok {
+				continue
+			}
+			res = append(res, lastStmts(pass, c.Body)...)
+		}
+	case *ast.SelectStmt:
+		for _, c := range s.Body.List {
+			c, ok := c.(*ast.CommClause)
+			if !ok {
+				continue
+			}
+			res = append(res, lastStmts(pass, c.Body)...)
+		}
+	case *ast.GoStmt:
+		res = append(res, litStmts(s.Call.Fun)...)
+	case *ast.DeferStmt:
+		res = append(res, litStmts(s.Call.Fun)...)
+	case *ast.ExprStmt: // check for errgroup.Group.Go
+		if call, ok := s.X.(*ast.CallExpr); ok {
+			res = append(res, litStmts(goInvoke(pass.TypesInfo, call))...)
+		}
+	}
+
+	return res
 }
 
 // litStmts returns all statements from the function body of a function
