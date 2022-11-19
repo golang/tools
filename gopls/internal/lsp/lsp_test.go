@@ -1282,6 +1282,34 @@ func (r *runner) AddImport(t *testing.T, uri span.URI, expectedImport string) {
 	}
 }
 
+func (r *runner) SelectionRanges(t *testing.T, spn span.Span, exp span.Span) {
+	sm, err := r.data.Mapper(spn.URI())
+	if err != nil {
+		t.Fatal(err)
+	}
+	loc, err := sm.Location(spn)
+
+	ranges, err := r.server.selectionRange(r.ctx, &protocol.SelectionRangeParams{
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: protocol.URIFromSpanURI(spn.URI()),
+		},
+		Positions: []protocol.Position{loc.Range.Start, loc.Range.End},
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(ranges) != 1 {
+		t.Error(ranges)
+	}
+
+	exploc, err := sm.Location(exp)
+
+	if ranges[0].Range != exploc.Range {
+		t.Errorf("expected %v, actual %v", exploc.Range, ranges[0].Range)
+	}
+}
+
 func TestBytesOffset(t *testing.T) {
 	tests := []struct {
 		text string
