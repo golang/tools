@@ -93,7 +93,7 @@ type Signatures = map[span.Span]*protocol.SignatureHelp
 type Links = map[span.URI][]Link
 type AddImport = map[span.URI]string
 type Hovers = map[span.Span]string
-type SelectionRanges = map[span.Span]span.Span
+type SelectionRanges = []span.Span
 
 type Data struct {
 	Config                   packages.Config
@@ -179,7 +179,7 @@ type Tests interface {
 	Link(*testing.T, span.URI, []Link)
 	AddImport(*testing.T, span.URI, string)
 	Hover(*testing.T, span.Span, string)
-	SelectionRanges(*testing.T, span.Span, span.Span)
+	SelectionRanges(*testing.T, span.Span)
 }
 
 type Definition struct {
@@ -337,7 +337,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 		Links:                    make(Links),
 		AddImport:                make(AddImport),
 		Hovers:                   make(Hovers),
-		SelectionRanges:          make(SelectionRanges),
 
 		dir:       dir,
 		fragments: map[string]string{},
@@ -954,9 +953,9 @@ func Run(t *testing.T, tests Tests, data *Data) {
 
 	t.Run("SelectionRanges", func(t *testing.T) {
 		t.Helper()
-		for span, exp := range data.SelectionRanges {
+		for _, span := range data.SelectionRanges {
 			t.Run(SpanName(span), func(t *testing.T) {
-				tests.SelectionRanges(t, span, exp)
+				tests.SelectionRanges(t, span)
 			})
 		}
 	})
@@ -1255,10 +1254,8 @@ func (data *Data) collectDefinitions(src, target span.Span) {
 	}
 }
 
-func (data *Data) collectSelectionRanges(src, exp span.Span) {
-	if _, ok := data.SelectionRanges[src]; !ok {
-		data.SelectionRanges[src] = exp
-	}
+func (data *Data) collectSelectionRanges(spn span.Span) {
+	data.SelectionRanges = append(data.SelectionRanges, spn)
 }
 
 func (data *Data) collectImplementations(src span.Span, targets []span.Span) {

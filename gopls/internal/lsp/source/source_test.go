@@ -497,7 +497,7 @@ func (r *runner) SemanticTokens(t *testing.T, spn span.Span) {
 	t.Skip("nothing to test in source")
 }
 
-func (r *runner) SelectionRanges(t *testing.T, spn, exp span.Span) {
+func (r *runner) SelectionRanges(t *testing.T, spn span.Span) {
 	t.Skip("nothing to test in source")
 }
 

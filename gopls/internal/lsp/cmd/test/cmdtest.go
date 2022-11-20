@@ -118,7 +118,7 @@ func (r *runner) InlayHints(t *testing.T, spn span.Span) {
 	// TODO: inlayHints not supported on command line
 }
 
-func (r *runner) SelectionRanges(t *testing.T, spn span.Span, exp span.Span) {
+func (r *runner) SelectionRanges(t *testing.T, spn span.Span) {
 	// TODO: selectionRanges not supported on command line
 }
 

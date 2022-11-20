@@ -1282,31 +1282,67 @@ func (r *runner) AddImport(t *testing.T, uri span.URI, expectedImport string) {
 	}
 }
 
-func (r *runner) SelectionRanges(t *testing.T, spn span.Span, exp span.Span) {
-	sm, err := r.data.Mapper(spn.URI())
+func (r *runner) SelectionRanges(t *testing.T, spn span.Span) {
+	uri := spn.URI()
+	sm, err := r.data.Mapper(uri)
 	if err != nil {
 		t.Fatal(err)
 	}
 	loc, err := sm.Location(spn)
+	if err != nil {
+		t.Error(err)
+	}
 
 	ranges, err := r.server.selectionRange(r.ctx, &protocol.SelectionRangeParams{
 		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(spn.URI()),
+			URI: protocol.URIFromSpanURI(uri),
 		},
-		Positions: []protocol.Position{loc.Range.Start, loc.Range.End},
+		Positions: []protocol.Position{loc.Range.Start},
 	})
 	if err != nil {
 		t.Error(err)
 	}
 
-	if len(ranges) != 1 {
-		t.Error(ranges)
+	sb := &strings.Builder{}
+	for i, path := range ranges {
+		fmt.Fprintf(sb, "Ranges %d: ", i)
+		r := path
+		for {
+			s, err := sm.Offset(r.Range.Start)
+			if err != nil {
+				t.Error(err)
+			}
+			e, err := sm.Offset(r.Range.End)
+			if err != nil {
+				t.Error(err)
+			}
+
+			var snippet string
+			if e-s < 30 {
+				snippet = string(sm.Content[s:e])
+			} else {
+				snippet = string(sm.Content[s:s+15]) + "..." + string(sm.Content[e-15:e])
+			}
+
+			fmt.Fprintf(sb, "\n\t%v '%s'", r.Range, strings.ReplaceAll(snippet, "\n", "\\n"))
+
+			if r.Parent == nil {
+				break
+			}
+			r = *r.Parent
+		}
+		sb.WriteRune('\n')
 	}
+	got := sb.String()
 
-	exploc, err := sm.Location(exp)
-
-	if ranges[0].Range != exploc.Range {
-		t.Errorf("expected %v, actual %v", exploc.Range, ranges[0].Range)
+	want := r.data.Golden(t, "selectionrange_"+tests.SpanName(spn), uri.Filename(), func() ([]byte, error) {
+		return []byte(got), nil
+	})
+	if want == nil {
+		t.Fatalf("golden file %q not found", uri.Filename())
+	}
+	if diff := compare.Text(got, string(want)); diff != "" {
+		t.Errorf("%s mismatch\n%s", command.AddImport, diff)
 	}
 }
 
