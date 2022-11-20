@@ -108,8 +108,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		// statement, because it's hard to prove go isn't followed by wait, or
 		// defer by return. "Last" is defined recursively, as described in the
 		// documentation string at the top of this file.
-		for _, stmt := range lastStmts(pass, body.List) {
-			reportCaptured(pass, vars, stmt)
+		for _, checkStmt := range visitLast(pass, body.List) {
+			reportCaptured(pass, vars, checkStmt)
 		}
 
 		// Also check for testing.T.Run (with T.Parallel).
@@ -155,12 +155,14 @@ func reportCaptured(pass *analysis.Pass, vars []types.Object, stmts ...ast.Stmt)
 	}
 }
 
-// lastStmts returns the last go, defer and errgroup.Group.Go statements in stmts,
-// where "last" is defined recursively. For example, if the last statement in stmts
-// is a switch statement, then the last statements in each of the case clauses
-// are also visited to examine their last statements. See the documentation string
-// at the top of this file for an example.
-func lastStmts(pass *analysis.Pass, stmts []ast.Stmt) []ast.Stmt {
+// visitLast returns all the statements from the bodies of any function literals
+// used as the call expression in the last go, defer and errgroup.Group.Go
+// statements in stmts, where "last" is defined recursively.
+//
+// For example, if the last statement in stmts is a switch statement, then the
+// last statements in each of the case clauses are also visited to examine their
+// last statements. See the documentation string at the top of this file for an example.
+func visitLast(pass *analysis.Pass, stmts []ast.Stmt) []ast.Stmt {
 	if len(stmts) == 0 {
 		return nil
 	}
@@ -171,34 +173,34 @@ func lastStmts(pass *analysis.Pass, stmts []ast.Stmt) []ast.Stmt {
 	case *ast.IfStmt:
 		var next *ast.IfStmt
 		for ; s != nil; s, next = next, nil {
-			res = append(res, lastStmts(pass, s.Body.List)...)
+			res = append(res, visitLast(pass, s.Body.List)...)
 			switch e := s.Else.(type) {
 			case *ast.BlockStmt:
-				res = append(res, lastStmts(pass, e.List)...)
+				res = append(res, visitLast(pass, e.List)...)
 			case *ast.IfStmt:
 				next = e
 			}
 		}
 	case *ast.ForStmt:
-		res = append(res, lastStmts(pass, s.Body.List)...)
+		res = append(res, visitLast(pass, s.Body.List)...)
 	case *ast.RangeStmt:
-		res = append(res, lastStmts(pass, s.Body.List)...)
+		res = append(res, visitLast(pass, s.Body.List)...)
 	case *ast.SwitchStmt:
 		for _, c := range s.Body.List {
 			if c, ok := c.(*ast.CaseClause); ok {
-				res = append(res, lastStmts(pass, c.Body)...)
+				res = append(res, visitLast(pass, c.Body)...)
 			}
 		}
 	case *ast.TypeSwitchStmt:
 		for _, c := range s.Body.List {
 			if c, ok := c.(*ast.CaseClause); ok {
-				res = append(res, lastStmts(pass, c.Body)...)
+				res = append(res, visitLast(pass, c.Body)...)
 			}
 		}
 	case *ast.SelectStmt:
 		for _, c := range s.Body.List {
 			if c, ok := c.(*ast.CommClause); ok {
-				res = append(res, lastStmts(pass, c.Body)...)
+				res = append(res, visitLast(pass, c.Body)...)
 			}
 		}
 	case *ast.GoStmt:
