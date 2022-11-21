@@ -18,39 +18,60 @@ import (
 
 const Doc = `check references to loop variables from within nested functions
 
-This analyzer checks for references to loop variables from within a function
-literal inside the loop body. It checks for patterns where access to a loop
-variable used in the loop body is known to escape the current loop iteration:
- 1. a call to go or defer as the last statement
- 2. a call to golang.org/x/sync/errgroup.Group.Go as the last statement
- 3. a call testing.T.Run where the subtest body invokes t.Parallel()
+This analyzer reports places where a function literal references the
+iteration variable of an enclosing loop, and the loop calls the function
+in such a way (e.g. with go or defer) that it may outlive the loop
+iteration and possibly observe the wrong value of the variable.
 
-In the case of (1) and (2), the analyzer only considers references in the
-last statement of the loop body, where "last" is defined recursively.
-For example, if the last statement in the loop body is a switch statement,
-then the analyzer examines the last statements in each of the switch cases.
-Or if the last statement is a nested loop, then it examines the last
-statement of that loop's body, and so on. The analyzer is not otherwise
-deep enough to understand the effects of subsequent statements
-that might render the reference benign.
+In this example, all the deferred functions run after the loop has
+completed, so all observe the final value of v.
 
-Two examples that are caught:
+    for _, v := range list {
+        defer func() {
+            use(v) // incorrect
+        }()
+    }
 
-	for _, v := range s {
-		go func() {
-			println(v) // each closure shares the same instance of v
-		}()
-	}
+One fix is to create a new variable for each iteration of the loop:
 
-	for i, v := range s {
-		if i == 0 {
-			go func() {
-				println(v) // each closure shares the same instance of v
-			}()
-		} else {
-			println(v)
-		}
-	}
+    for _, v := range list {
+        v := v // new var per iteration
+        defer func() {
+            use(v) // ok
+        }()
+    }
+
+The next example uses a go statement and has a similar problem.
+In addition, it has a data race because the loop updates v
+concurrent with the goroutines accessing it.
+
+    for _, v := range elem {
+        go func() {
+            use(v)  // incorrect, and a data race
+        }()
+    }
+
+A fix is the same as before. The checker also reports problems
+in goroutines started by golang.org/x/sync/errgroup.Group.
+A hard-to-spot variant of this form is common in parallel tests:
+
+    func Test(t *testing.T) {
+        for _, test := range tests {
+            t.Run(test.name, func(t *testing.T) {
+                t.Parallel()
+                use(test) // incorrect, and a data race
+            })
+        }
+    }
+
+The t.Parallel() call causes the rest of the function to execute
+concurrent with the loop.
+
+The analyzer reports references only in the last statement,
+as it is not deep enough to understand the effects of subsequent
+statements that might render the reference benign.
+("Last statement" is defined recursively in compound
+statements such as if, switch, and select.)
 
 See: https://golang.org/doc/go_faq.html#closures_and_goroutines`
 
@@ -106,8 +127,13 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		//
 		// For go, defer, and errgroup.Group.Go, we ignore all but the last
 		// statement, because it's hard to prove go isn't followed by wait, or
-		// defer by return. "Last" is defined recursively, as described in the
-		// documentation string at the top of this file.
+		// defer by return. "Last" is defined recursively.
+		//
+		// TODO: consider allowing the "last" go/defer/Go statement to be followed by
+		// N "trivial" statements, possibly under a recursive definition of "trivial"
+		// so that that checker could, for example, conclude that a go statement is
+		// followed by an if statement made of only trivial statements and trivial expressions,
+		// and hence the go statement could still be checked.
 		forEachLastStmt(body.List, func(last ast.Stmt) {
 			var stmts []ast.Stmt
 			switch s := last.(type) {
