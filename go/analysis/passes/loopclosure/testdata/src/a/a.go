@@ -7,6 +7,8 @@
 package testdata
 
 import (
+	"sync"
+
 	"golang.org/x/sync/errgroup"
 )
 
@@ -212,5 +214,30 @@ func _() {
 			print(v)
 			return nil
 		})
+	}
+}
+
+// Real-world example from #16520, slightly simplified
+func _() {
+	var nodes []interface{}
+
+	critical := new(errgroup.Group)
+	others := sync.WaitGroup{}
+
+	isCritical := func(node interface{}) bool { return false }
+	run := func(node interface{}) error { return nil }
+
+	for _, node := range nodes {
+		if isCritical(node) {
+			critical.Go(func() error {
+				return run(node) // want "loop variable node captured by func literal"
+			})
+		} else {
+			others.Add(1)
+			go func() {
+				_ = run(node) // want "loop variable node captured by func literal"
+				others.Done()
+			}()
+		}
 	}
 }

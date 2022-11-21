@@ -107,10 +107,12 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		// For go, defer, and errgroup.Group.Go, we ignore all but the last
 		// statement, because it's hard to prove go isn't followed by wait, or
 		// defer by return. "Last" is defined recursively, as described in the
-		// documentation string at the top of this file.
-		for _, checkStmt := range visitLast(pass, body.List) {
-			reportCaptured(pass, vars, checkStmt)
-		}
+		// documentation string at the top of this file. checkStmts are
+		// the statements from a visited function literal that must be checked
+		// for escaping references.
+		visitLast(pass, body.List, func(checkStmts []ast.Stmt) {
+			reportCaptured(pass, vars, checkStmts)
+		})
 
 		// Also check for testing.T.Run (with T.Parallel).
 		// We consider every t.Run statement in the loop body, because there is
@@ -122,7 +124,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			switch s := s.(type) {
 			case *ast.ExprStmt:
 				if call, ok := s.X.(*ast.CallExpr); ok {
-					reportCaptured(pass, vars, parallelSubtest(pass.TypesInfo, call)...)
+					reportCaptured(pass, vars, parallelSubtest(pass.TypesInfo, call))
 				}
 			}
 		}
@@ -134,7 +136,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 // has been captured by a func literal if any of stmts have escaping
 // references to vars. vars is expected to be variables updated by a loop statement,
 // and stmts is expected to be statements from the body of a func literal in the loop.
-func reportCaptured(pass *analysis.Pass, vars []types.Object, stmts ...ast.Stmt) {
+func reportCaptured(pass *analysis.Pass, vars []types.Object, stmts []ast.Stmt) {
 	for _, stmt := range stmts {
 		ast.Inspect(stmt, func(n ast.Node) bool {
 			id, ok := n.(*ast.Ident)
@@ -155,65 +157,65 @@ func reportCaptured(pass *analysis.Pass, vars []types.Object, stmts ...ast.Stmt)
 	}
 }
 
-// visitLast returns all the statements from the bodies of any function literals
+// visitLast calls f on all the statements from the bodies of any function literals
 // used as the call expression in the last go, defer and errgroup.Group.Go
 // statements in stmts, where "last" is defined recursively.
 //
 // For example, if the last statement in stmts is a switch statement, then the
 // last statements in each of the case clauses are also visited to examine their
 // last statements. See the documentation string at the top of this file for an example.
-func visitLast(pass *analysis.Pass, stmts []ast.Stmt) []ast.Stmt {
+func visitLast(pass *analysis.Pass, stmts []ast.Stmt, f func(lastStmts []ast.Stmt)) {
 	if len(stmts) == 0 {
-		return nil
+		return
 	}
 
-	var res []ast.Stmt
 	s := stmts[len(stmts)-1]
 	switch s := s.(type) {
 	case *ast.IfStmt:
-		var next *ast.IfStmt
-		for ; s != nil; s, next = next, nil {
-			res = append(res, visitLast(pass, s.Body.List)...)
+	loop:
+		for {
+			visitLast(pass, s.Body.List, f)
 			switch e := s.Else.(type) {
 			case *ast.BlockStmt:
-				res = append(res, visitLast(pass, e.List)...)
+				visitLast(pass, e.List, f)
+				break loop
 			case *ast.IfStmt:
-				next = e
+				s = e
+			case nil:
+				break loop
 			}
 		}
 	case *ast.ForStmt:
-		res = append(res, visitLast(pass, s.Body.List)...)
+		visitLast(pass, s.Body.List, f)
 	case *ast.RangeStmt:
-		res = append(res, visitLast(pass, s.Body.List)...)
+		visitLast(pass, s.Body.List, f)
 	case *ast.SwitchStmt:
 		for _, c := range s.Body.List {
 			if c, ok := c.(*ast.CaseClause); ok {
-				res = append(res, visitLast(pass, c.Body)...)
+				visitLast(pass, c.Body, f)
 			}
 		}
 	case *ast.TypeSwitchStmt:
 		for _, c := range s.Body.List {
 			if c, ok := c.(*ast.CaseClause); ok {
-				res = append(res, visitLast(pass, c.Body)...)
+				visitLast(pass, c.Body, f)
 			}
 		}
 	case *ast.SelectStmt:
 		for _, c := range s.Body.List {
 			if c, ok := c.(*ast.CommClause); ok {
-				res = append(res, visitLast(pass, c.Body)...)
+				visitLast(pass, c.Body, f)
 			}
 		}
 	case *ast.GoStmt:
-		res = append(res, litStmts(s.Call.Fun)...)
+		f(litStmts(s.Call.Fun))
 	case *ast.DeferStmt:
-		res = append(res, litStmts(s.Call.Fun)...)
+		f(litStmts(s.Call.Fun))
 	case *ast.ExprStmt: // check for errgroup.Group.Go
 		if call, ok := s.X.(*ast.CallExpr); ok {
-			res = append(res, litStmts(goInvoke(pass.TypesInfo, call))...)
+			f(litStmts(goInvoke(pass.TypesInfo, call)))
 		}
 	}
-
-	return res
 }
 
 // litStmts returns all statements from the function body of a function
