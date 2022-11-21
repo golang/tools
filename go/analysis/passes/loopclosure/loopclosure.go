@@ -108,7 +108,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		// statement, because it's hard to prove go isn't followed by wait, or
 		// defer by return. "Last" is defined recursively, as described in the
 		// documentation string at the top of this file.
-		visitLast(pass, body.List, func(last ast.Stmt) {
+		forEachLastStmt(body.List, func(last ast.Stmt) {
 			var stmts []ast.Stmt
 			switch s := last.(type) {
 			case *ast.GoStmt:
@@ -169,13 +169,11 @@ func reportCaptured(pass *analysis.Pass, vars []types.Object, checkStmt ast.Stmt
 	})
 }
 
-// visitLast calls f on last go, defer and errgroup.Group.Go
-// statements in stmts, where "last" is defined recursively.
-//
-// For example, if the last statement in stmts is a switch statement, then the
-// last statements in each of the case clauses are also visited to examine their
-// last statements. See the documentation string at the top of this file for an example.
-func visitLast(pass *analysis.Pass, stmts []ast.Stmt, f func(last ast.Stmt)) {
+// forEachLastStmt calls onLast on each "last" statement in a list of statements.
+// "Last" is defined recursively so, for example, if the last statement is
+// a switch statement, then each switch case is also visited to examine
+// its last statements.
+func forEachLastStmt(stmts []ast.Stmt, onLast func(last ast.Stmt)) {
 	if len(stmts) == 0 {
 		return
 	}
@@ -185,10 +183,10 @@ func visitLast(pass *analysis.Pass, stmts []ast.Stmt, f func(last ast.Stmt)) {
 	case *ast.IfStmt:
 	loop:
 		for {
-			visitLast(pass, s.Body.List, f)
+			forEachLastStmt(s.Body.List, onLast)
 			switch e := s.Else.(type) {
 			case *ast.BlockStmt:
-				visitLast(pass, e.List, f)
+				forEachLastStmt(e.List, onLast)
 				break loop
 			case *ast.IfStmt:
 				s = e
@@ -197,29 +195,26 @@ func visitLast(pass *analysis.Pass, stmts []ast.Stmt, f func(last ast.Stmt)) {
 			}
 		}
 	case *ast.ForStmt:
-		visitLast(pass, s.Body.List, f)
+		forEachLastStmt(s.Body.List, onLast)
 	case *ast.RangeStmt:
-		visitLast(pass, s.Body.List, f)
+		forEachLastStmt(s.Body.List, onLast)
 	case *ast.SwitchStmt:
 		for _, c := range s.Body.List {
-			if c, ok := c.(*ast.CaseClause); ok {
-				visitLast(pass, c.Body, f)
-			}
+			cc := c.(*ast.CaseClause)
+			forEachLastStmt(cc.Body, onLast)
 		}
 	case *ast.TypeSwitchStmt:
 		for _, c := range s.Body.List {
-			if c, ok := c.(*ast.CaseClause); ok {
-				visitLast(pass, c.Body, f)
-			}
+			cc := c.(*ast.CaseClause)
+			forEachLastStmt(cc.Body, onLast)
 		}
 	case *ast.SelectStmt:
 		for _, c := range s.Body.List {
-			if c, ok := c.(*ast.CommClause); ok {
-				visitLast(pass, c.Body, f)
-			}
+			cc := c.(*ast.CommClause)
+			forEachLastStmt(cc.Body, onLast)
 		}
-	case *ast.GoStmt, *ast.DeferStmt, *ast.ExprStmt:
-		f(s)
+	default:
+		onLast(s)
 	}
 }
 
