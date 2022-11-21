@@ -107,11 +107,22 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		// For go, defer, and errgroup.Group.Go, we ignore all but the last
 		// statement, because it's hard to prove go isn't followed by wait, or
 		// defer by return. "Last" is defined recursively, as described in the
-		// documentation string at the top of this file. checkStmts are
-		// the statements from a visited function literal that must be checked
-		// for escaping references.
-		visitLast(pass, body.List, func(checkStmts []ast.Stmt) {
-			reportCaptured(pass, vars, checkStmts)
+		// documentation string at the top of this file.
+		visitLast(pass, body.List, func(last ast.Stmt) {
+			var stmts []ast.Stmt
+			switch s := last.(type) {
+			case *ast.GoStmt:
+				stmts = litStmts(s.Call.Fun)
+			case *ast.DeferStmt:
+				stmts = litStmts(s.Call.Fun)
+			case *ast.ExprStmt: // check for errgroup.Group.Go
+				if call, ok := s.X.(*ast.CallExpr); ok {
+					stmts = litStmts(goInvoke(pass.TypesInfo, call))
+				}
+			}
+			for _, stmt := range stmts {
+				reportCaptured(pass, vars, stmt)
+			}
 		})
 
 		// Also check for testing.T.Run (with T.Parallel).
@@ -124,7 +135,10 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			switch s := s.(type) {
 			case *ast.ExprStmt:
 				if call, ok := s.X.(*ast.CallExpr); ok {
-					reportCaptured(pass, vars, parallelSubtest(pass.TypesInfo, call))
+					for _, stmt := range parallelSubtest(pass.TypesInfo, call) {
+						reportCaptured(pass, vars, stmt)
+					}
+
 				}
 			}
 		}
@@ -133,38 +147,35 @@ func run(pass *analysis.Pass) (interface{}, error) {
 }
 
 // reportCaptured reports a diagnostic stating a loop variable
-// has been captured by a func literal if any of stmts have escaping
+// has been captured by a func literal if checkStmt has escaping
 // references to vars. vars is expected to be variables updated by a loop statement,
-// and stmts is expected to be statements from the body of a func literal in the loop.
-func reportCaptured(pass *analysis.Pass, vars []types.Object, stmts []ast.Stmt) {
-	for _, stmt := range stmts {
-		ast.Inspect(stmt, func(n ast.Node) bool {
-			id, ok := n.(*ast.Ident)
-			if !ok {
-				return true
-			}
-			obj := pass.TypesInfo.Uses[id]
-			if obj == nil {
-				return true
-			}
-			for _, v := range vars {
-				if v == obj {
-					pass.ReportRangef(id, "loop variable %s captured by func literal", id.Name)
-				}
-			}
+// and checkStmt is expected to be a statements from the body of a func literal in the loop.
+func reportCaptured(pass *analysis.Pass, vars []types.Object, checkStmt ast.Stmt) {
+	ast.Inspect(checkStmt, func(n ast.Node) bool {
+		id, ok := n.(*ast.Ident)
+		if !ok {
 			return true
-		})
-	}
+		}
+		obj := pass.TypesInfo.Uses[id]
+		if obj == nil {
+			return true
+		}
+		for _, v := range vars {
+			if v == obj {
+				pass.ReportRangef(id, "loop variable %s captured by func literal", id.Name)
+			}
+		}
+		return true
+	})
 }
 
-// visitLast calls f on all the statements from the bodies of any function literals
-// used as the call expression in the last go, defer and errgroup.Group.Go
+// visitLast calls f on last go, defer and errgroup.Group.Go
 // statements in stmts, where "last" is defined recursively.
 //
 // For example, if the last statement in stmts is a switch statement, then the
 // last statements in each of the case clauses are also visited to examine their
 // last statements. See the documentation string at the top of this file for an example.
-func visitLast(pass *analysis.Pass, stmts []ast.Stmt, f func(lastStmts []ast.Stmt)) {
+func visitLast(pass *analysis.Pass, stmts []ast.Stmt, f func(last ast.Stmt)) {
 	if len(stmts) == 0 {
 		return
 	}
@@ -207,14 +218,8 @@ func visitLast(pass *analysis.Pass, stmts []ast.Stmt, f func(lastStmts []ast.Stm
 				visitLast(pass, c.Body, f)
 			}
 		}
-	case *ast.GoStmt:
-		f(litStmts(s.Call.Fun))
-	case *ast.DeferStmt:
-		f(litStmts(s.Call.Fun))
-	case *ast.ExprStmt: // check for errgroup.Group.Go
-		if call, ok := s.X.(*ast.CallExpr); ok {
-			f(litStmts(goInvoke(pass.TypesInfo, call)))
-		}
+	case *ast.GoStmt, *ast.DeferStmt, *ast.ExprStmt:
+		f(s)
 	}
 }
 
