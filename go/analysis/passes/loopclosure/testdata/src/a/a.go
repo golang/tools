@@ -110,9 +110,10 @@ func _() {
 	}
 }
 
-// Cases that rely on recursively checking for last statements.
+// Cases that rely on recursively inspecting "last" compound statements
+// for captured loop variables in function literals in defer or go statements.
 func _() {
-
+	// Cases with if and else in nested range loops
 	for i := range "outer" {
 		for j := range "inner" {
 			if j < 1 {
@@ -132,6 +133,7 @@ func _() {
 		}
 	}
 
+	// Cases with switch, type switch, and select in nested for loops
 	for i := 0; i < 10; i++ {
 		for j := 0; j < 10; j++ {
 			if j < 1 {
@@ -171,6 +173,91 @@ func _() {
 				}
 			}
 		}
+	}
+
+	// Case with no loop variables in outer loop.
+	for range "outer" {
+		for j := range "inner" {
+			if j < 1 {
+				defer func() {
+					print(j) // want "loop variable j captured by func literal"
+				}()
+			}
+		}
+	}
+
+	// Cases with differences in "last" with nested ranges
+	for i := range "outer" {
+		go func() {
+			print(i)
+		}()
+		for j := range "inner" {
+			go func() {
+				// This is a last statement for the inner loop, but not the outer loop,
+				// so we flag j but not i
+				print(i)
+				print(j) // want "loop variable j captured by func literal"
+			}()
+		}
+		print("last statement for outer loop")
+	}
+
+	for i := range "outer" {
+		go func() {
+			print(i)
+		}()
+		for j := range "inner" {
+			go func() {
+				// This is a last statement for both the inner and outer loops
+				print(i) // want "loop variable i captured by func literal"
+				print(j) // want "loop variable j captured by func literal"
+			}()
+		}
+	}
+
+	for i := range "outer" {
+		for j := range "inner" {
+			go func() {
+				print(j) // want "loop variable j captured by func literal"
+			}()
+		}
+		go func() {
+			print(i)
+		}()
+		print("last statement for outer loop")
+	}
+
+	for i := range "outer" {
+		if i > 0 {
+			go func() {
+				print(i)
+			}()
+			for j := range "inner" {
+				go func() {
+					print(j) // want "loop variable j captured by func literal"
+				}()
+			}
+		}
+		print("last statement for outer loop")
+	}
+
+	// Cases that exercise push/pop of range vars
+	for i := range "outer" {
+		for j := range "inner" {
+			print(j)
+		}
+		go func() {
+			print(i) // want "loop variable i captured by func literal"
+		}()
+	}
+
+	for i := range "outer" {
+		for i = range "inner" { // reuse range variable
+			print(i)
+		}
+		go func() {
+			print(i) // want "loop variable i captured by func literal"
+		}()
 	}
 }
 
@@ -217,7 +304,9 @@ func _() {
 	}
 }
 
-// Real-world example from #16520, slightly simplified
+// Real-world example from #16520, slightly simplified.
+// This relies on recursively inspecting "last" compound statements.
+// including the if/else within the range here.
 func _() {
 	var nodes []interface{}
 

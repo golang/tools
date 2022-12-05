@@ -168,6 +168,20 @@ func _(t *T) {
 	}
 }
 
+// Check that an outer loop does not hide problems in an inner loop.
+func _(t *testing.T) {
+	for i := range "outer" {
+		println(i)
+		for j, test := range []int{1, 2, 3} {
+			t.Run("", func(t *testing.T) {
+				t.Parallel()
+				println(j)    // want "loop variable j captured by func literal"
+				println(test) // want "loop variable test captured by func literal"
+			})
+		}
+	}
+}
+
 // Check that the top-level must be parallel in order to cause a diagnostic.
 //
 // From https://pkg.go.dev/testing:
