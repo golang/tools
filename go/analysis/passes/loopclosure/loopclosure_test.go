@@ -14,7 +14,7 @@ import (
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	tests := []string{"a", "golang.org/...", "subtests"}
+	tests := []string{"a", "golang.org/...", "subtests", "go121"}
 	if typeparams.Enabled {
 		tests = append(tests, "typeparams")
 	}

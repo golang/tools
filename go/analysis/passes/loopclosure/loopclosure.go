@@ -159,19 +159,18 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		// Inspect statements to find function literals that may be run outside of
 		// the current loop iteration.
 		//
-		// For go, defer, and errgroup.Group.Go, we ignore all but the last
-		// statement, because it's hard to prove go isn't followed by wait, or
-		// defer by return. "Last" is defined recursively.
-		//
-		// TODO: consider allowing the "last" go/defer/Go statement to be followed by
-		// N "trivial" statements, possibly under a recursive definition of "trivial"
-		// so that that checker could, for example, conclude that a go statement is
-		// followed by an if statement made of only trivial statements and trivial expressions,
-		// and hence the go statement could still be checked.
+		// For go, defer, and errgroup.Group.Go, by default we ignore all but the last
+		// statement, where "last" is defined recursively.
+		// In addition, if a potentially problematic go, defer, or errgroup.Group.Go
+		// statement is followed by one or more "last" statements that we can prove
+		// do not cause a wait or otherwise derail the flow of execution sufficiently, then
+		// we still examine the function literal within the potentially problematic statement.
+		// TODO: consider differentiating between go vs. defer for what we can prove.
 		gdv := goDeferVisitor{pass: pass, vars: vars}
 		v := visitor{
-			last: gdv.last,
-			all:  gdv.all,
+			last:     gdv.last,
+			all:      gdv.all,
+			skipLast: newFilter(pass.TypesInfo).skipStmt,
 		}
 		v.visit(body.List)
 
