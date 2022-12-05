@@ -19,6 +19,10 @@ import (
 // in Go 1.18+.
 var DiagnoseFuzzTests bool = false
 
+// LoopclosureGo121 controls whether the 'loopclosure' analyzer performs additional
+// diagnoses that are disabled in Go 1.20.
+var LoopclosureGo121 bool = false
+
 func TypeErrorEndPos(fset *token.FileSet, src []byte, start token.Pos) token.Pos {
 	// Get the end position for the type error.
 	offset, end := fset.PositionFor(start, false).Offset, start

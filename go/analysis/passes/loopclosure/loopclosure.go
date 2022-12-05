@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/analysisinternal"
 )
 
 const Doc = `check references to loop variables from within nested functions
@@ -87,6 +88,108 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
+	// Check if we are enabling additional experimental logic.
+	if !analysisinternal.LoopclosureGo121 {
+		return runGo120(pass)
+	}
+	return runGo121(pass)
+}
+
+// runGo120 runs the analyzer with logic intended for Go 1.20 cmd/vet.
+// TODO: delete this once the Go 1.21 dev cycle has started.
+func runGo120(pass *analysis.Pass) (interface{}, error) {
+	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+
+	nodeFilter := []ast.Node{
+		(*ast.RangeStmt)(nil),
+		(*ast.ForStmt)(nil),
+	}
+	inspect.Preorder(nodeFilter, func(n ast.Node) {
+		// Find the variables updated by the loop statement.
+		vars := make(map[types.Object]int)
+		addVar := func(expr ast.Expr) {
+			if id, _ := expr.(*ast.Ident); id != nil {
+				if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+					// For runGo121, we use a count to track when to remove
+					// elements from the vars map.
+					// For runGo120, we do not, but set the proper count anyway.
+					vars[obj] = 1
+				}
+			}
+		}
+		var body *ast.BlockStmt
+		switch n := n.(type) {
+		case *ast.RangeStmt:
+			body = n.Body
+			addVar(n.Key)
+			addVar(n.Value)
+		case *ast.ForStmt:
+			body = n.Body
+			switch post := n.Post.(type) {
+			case *ast.AssignStmt:
+				// e.g. for p = head; p != nil; p = p.next
+				for _, lhs := range post.Lhs {
+					addVar(lhs)
+				}
+			case *ast.IncDecStmt:
+				// e.g. for i := 0; i < n; i++
+				addVar(post.X)
+			}
+		}
+		if vars == nil {
+			return
+		}
+
+		// Inspect statements to find function literals that may be run outside of
+		// the current loop iteration.
+		//
+		// For go, defer, and errgroup.Group.Go, we ignore all but the last
+		// statement, where "last" is defined recursively.
+		// See runGo120 for an alternative approach.
+		v := visitor{last: func(v visitor, last ast.Stmt) {
+			var stmts []ast.Stmt
+			switch s := last.(type) {
+			case *ast.GoStmt:
+				stmts = litStmts(s.Call.Fun)
+			case *ast.DeferStmt:
+				stmts = litStmts(s.Call.Fun)
+			case *ast.ExprStmt: // check for errgroup.Group.Go
+				if call, ok := s.X.(*ast.CallExpr); ok {
+					stmts = litStmts(goInvoke(pass.TypesInfo, call))
+				}
+			}
+			for _, stmt := range stmts {
+				reportCaptured(pass, vars, stmt)
+			}
+		}}
+		v.visit(body.List)
+
+		// Also check for testing.T.Run (with T.Parallel).
+		// We consider every t.Run statement in the loop body, because there is
+		// no commonly used mechanism for synchronizing parallel subtests.
+		// It is of course theoretically possible to synchronize parallel subtests,
+		// though such a pattern is likely to be exceedingly rare as it would be
+		// fighting against the test runner.
+		for _, s := range body.List {
+			switch s := s.(type) {
+			case *ast.ExprStmt:
+				if call, ok := s.X.(*ast.CallExpr); ok {
+					for _, stmt := range parallelSubtest(pass.TypesInfo, call) {
+						reportCaptured(pass, vars, stmt)
+					}
+				}
+			}
+		}
+	})
+	return nil, nil
+}
+
+// runGo121 runs the analyzer with additional experimental logic
+// that is not intended for Go 1.20 cmd/vet, including examining
+// statements following a go, defer or errgroup.Group.Go statement
+// to determine if they cannot delay start of execution of the
+// go or defer.
+func runGo121(pass *analysis.Pass) (interface{}, error) {
 	// We do two passes with inspect: first, a simpler walk
 	// looking for problems with testing.T.Run with T.Parallel, and
 	// second, a more involved walk to examine last statements
