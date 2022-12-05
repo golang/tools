@@ -11,7 +11,7 @@ require (
 	golang.org/x/sync v0.1.0
 	golang.org/x/sys v0.2.0
 	golang.org/x/text v0.4.0
-	golang.org/x/tools v0.2.1-0.20221108172846-9474ca31d0df
+	golang.org/x/tools v0.3.1-0.20221205193246-8fab61e05792
 	golang.org/x/vuln v0.0.0-20221109205719-3af8368ee4fe
 	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.3.3
@@ -26,5 +26,3 @@ require (
 	github.com/google/safehtml v0.1.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20221031165847-c99f073a8326 // indirect
 )
-
-replace golang.org/x/tools => ../
