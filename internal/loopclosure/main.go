@@ -5,7 +5,6 @@
 // The loopclosure command applies the golang.org/x/tools/go/analysis/passes/loopclosure
 // analysis to the specified packages of Go source code.
 // It enables additional experimental checking that is disabled by default in Go 1.20.
-//
 package main
 
 import (
