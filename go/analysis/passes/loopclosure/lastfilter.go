@@ -53,7 +53,6 @@ func (f *filter) skipStmt(v visitor, stmt ast.Stmt) bool {
 	// TODO: consider differentiating what we skip for defer vs. go.
 	// TODO: consider parameterizing, such as whether to allow panic, select, ...
 	// TODO: more precise description of intent and nature of statements we skip.
-	// TODO: allow *ast.DeclStmt (e.g., 'var a int').
 
 	// Check if we have already determined an answer for this statement.
 	if skip, ok := f.skipStmts[stmt]; ok {
@@ -82,7 +81,33 @@ func (f *filter) skipStmt(v visitor, stmt ast.Stmt) bool {
 		return true
 	case *ast.BranchStmt:
 		switch s.Tok {
-		case token.CONTINUE, token.FALLTHROUGH:
+		case token.CONTINUE:
+			if s.Label == nil {
+				return true
+			}
+		case token.FALLTHROUGH:
+			return true
+		}
+	case *ast.DeclStmt:
+		if decl, ok := s.Decl.(*ast.GenDecl); ok {
+			if decl.Tok != token.VAR && decl.Tok != token.CONST && decl.Tok != token.TYPE {
+				return false
+			}
+			for _, spec := range decl.Specs {
+				switch s := spec.(type) {
+				case *ast.ValueSpec:
+					for _, x := range s.Values {
+						if !f.skipExpr(x) {
+							return false
+						}
+					}
+				case *ast.TypeSpec:
+					// TODO: confirm whether we need to go deeper, such as s.Type, which is a ast.Expr
+					continue
+				default:
+					return false
+				}
+			}
 			return true
 		}
 	case *ast.ExprStmt:
@@ -92,7 +117,7 @@ func (f *filter) skipStmt(v visitor, stmt ast.Stmt) bool {
 	case *ast.IncDecStmt:
 		return f.skipExpr(s.X)
 	case *ast.IfStmt:
-		if !f.skipExpr(s.Cond) {
+		if !f.skipStmt(v, s.Init) || !f.skipExpr(s.Cond) {
 			f.skipStmts[stmt] = false // memoize
 			return false
 		}
@@ -136,7 +161,7 @@ func (f *filter) skipStmt(v visitor, stmt ast.Stmt) bool {
 		return true
 	case *ast.RangeStmt:
 		// TODO: we might not need to check s.Key or s.Value?
-		if !f.skipExpr(s.Key) || !f.skipExpr(s.Value) {
+		if !f.skipExpr(s.X) || !f.skipExpr(s.Key) || !f.skipExpr(s.Value) {
 			f.skipStmts[stmt] = false // memoize
 			return false
 		}
@@ -240,10 +265,7 @@ func (f *filter) skipExpr(expr ast.Expr) bool {
 				if _, ok := obj.Type().Underlying().(*types.Struct); ok {
 					for _, elt := range x.Elts {
 						kv, ok := elt.(*ast.KeyValueExpr)
-						if !ok {
-							return false
-						}
-						if !f.skipExpr(kv.Value) {
+						if !ok || !f.skipExpr(kv.Value) {
 							return false
 						}
 					}
