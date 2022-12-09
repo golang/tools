@@ -118,9 +118,7 @@ func (r *runner) InlayHints(t *testing.T, spn span.Span) {
 	// TODO: inlayHints not supported on command line
 }
 
-func (r *runner) SelectionRanges(t *testing.T, spn span.Span) {
-	// TODO: selectionRanges not supported on command line
-}
+func (r *runner) SelectionRanges(t *testing.T, spn span.Span) {}
 
 func (r *runner) runGoplsCmd(t testing.TB, args ...string) (string, string) {
 	rStdout, wStdout, err := os.Pipe()

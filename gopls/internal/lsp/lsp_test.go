@@ -1300,19 +1300,19 @@ func (r *runner) SelectionRanges(t *testing.T, spn span.Span) {
 		Positions: []protocol.Position{loc.Range.Start},
 	})
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	sb := &strings.Builder{}
 	for i, path := range ranges {
 		fmt.Fprintf(sb, "Ranges %d: ", i)
-		r := path
+		rng := path
 		for {
-			s, err := sm.Offset(r.Range.Start)
+			s, err := sm.Offset(rng.Range.Start)
 			if err != nil {
 				t.Error(err)
 			}
-			e, err := sm.Offset(r.Range.End)
+			e, err := sm.Offset(rng.Range.End)
 			if err != nil {
 				t.Error(err)
 			}
@@ -1324,25 +1324,26 @@ func (r *runner) SelectionRanges(t *testing.T, spn span.Span) {
 				snippet = string(sm.Content[s:s+15]) + "..." + string(sm.Content[e-15:e])
 			}
 
-			fmt.Fprintf(sb, "\n\t%v '%s'", r.Range, strings.ReplaceAll(snippet, "\n", "\\n"))
+			fmt.Fprintf(sb, "\n\t%v %q", rng.Range, strings.ReplaceAll(snippet, "\n", "\\n"))
 
-			if r.Parent == nil {
+			if rng.Parent == nil {
 				break
 			}
-			r = *r.Parent
+			rng = *rng.Parent
 		}
 		sb.WriteRune('\n')
 	}
 	got := sb.String()
 
-	want := r.data.Golden(t, "selectionrange_"+tests.SpanName(spn), uri.Filename(), func() ([]byte, error) {
+	testName := "selectionrange_" + tests.SpanName(spn)
+	want := r.data.Golden(t, testName, uri.Filename(), func() ([]byte, error) {
 		return []byte(got), nil
 	})
 	if want == nil {
 		t.Fatalf("golden file %q not found", uri.Filename())
 	}
 	if diff := compare.Text(got, string(want)); diff != "" {
-		t.Errorf("%s mismatch\n%s", command.AddImport, diff)
+		t.Errorf("%s mismatch\n%s", testName, diff)
 	}
 }
 
