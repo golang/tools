@@ -255,7 +255,7 @@ func equalOrigin(obj1, obj2 types.Object) bool {
 // interfaceReferences returns the references to the interfaces implemented by
 // the type or method at the given position.
 func interfaceReferences(ctx context.Context, s Snapshot, f FileHandle, pp protocol.Position) ([]*ReferenceInfo, error) {
-	implementations, err := implementations(ctx, s, f, pp)
+	implementations, err := implementations(ctx, s, f, pp, false)
 	if err != nil {
 		if errors.Is(err, ErrNotAType) {
 			return nil, nil
