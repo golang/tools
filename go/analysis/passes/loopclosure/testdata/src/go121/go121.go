@@ -3,6 +3,7 @@ package go121
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -104,7 +105,7 @@ func _() {
 		ppairs = append(ppairs, &pair{a: i, b: i})
 	}
 
-	// We allow trailing field selectors for struct literals.
+	// We allow trailing field selectors for structs.
 	for i := range "loop" {
 		go func() {
 			print(i) // want "loop variable i captured by func literal"
@@ -115,7 +116,7 @@ func _() {
 	}
 
 	// We do not allow trailing field selectors for pointers to
-	// struct literals, which can panic.
+	// structs, which can panic.
 	for i := range "loop" {
 		go func() {
 			print(i)
@@ -181,6 +182,62 @@ func _() {
 		type myInt int
 		const j myInt = 0
 		_ = j
+	}
+
+	// We understand trailing go and defer statements.
+	for i := range "loop" {
+		go func() {
+			print(i) // want "loop variable i captured by func literal"
+		}()
+		defer func() {
+			print(i) // want "loop variable i captured by func literal"
+		}()
+		go func() {
+			print(i) // want "loop variable i captured by func literal"
+		}()
+	}
+
+	// We understand trailing go statements nested in a compound statements like for.
+	for i := range "outer" {
+		go func() {
+			print(i) // want "loop variable i captured by func literal"
+		}()
+		for j := range "inner" {
+			go func() {
+				print(i) // want "loop variable i captured by func literal"
+				print(j) // want "loop variable j captured by func literal"
+			}()
+		}
+	}
+
+	// We analyze a go statement with complex arguments (e.g., calling foo here),
+	// but we do not analyze a go statement preceding a go statement with complex arguments.
+	for i := range "loop" {
+		go func() {
+			print(i)
+		}()
+		go func(int) {
+			print(i) // want "loop variable i captured by func literal"
+		}(foo())
+		go func() {
+			print(i) // want "loop variable i captured by func literal"
+		}()
+	}
+
+	// We understand sync.WaitGroup.Add.
+	var wg sync.WaitGroup
+	for i := range "loop" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			print(i) // want "loop variable i captured by func literal"
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			print(i) // want "loop variable i captured by func literal"
+		}()
 	}
 
 	// We understand nested loops and various compound statements prior to
@@ -432,6 +489,37 @@ func _() {
 			print(i)
 		}()
 		_ = n.inner.pair
+	}
+}
+
+// Illustration of why we do not report captured loop iteration variables
+// with a go statement trailed by something that waits, might wait, or we can't prove won't wait.
+// In this example, the func literal always completes prior to the loop variable changing.
+func _() {
+	for i := range "loop" {
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			print(i)
+		}()
+		wg.Wait()
+	}
+}
+
+// Example from #57173.
+func _() {
+	process := func(s string) {}
+
+	var processMore []string
+	for _, s := range []string{"one", "two", "three"} {
+		go func() { process(s) }() // want "loop variable s captured by func literal"
+		switch s {
+		case "two":
+			continue
+		default:
+			processMore = append(processMore, s)
+		}
 	}
 }
 

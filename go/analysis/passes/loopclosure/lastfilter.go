@@ -10,6 +10,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/analysisinternal"
 )
 
 // filter provides filtering for statements and expressions that are
@@ -114,6 +115,20 @@ func (f *filter) skipStmt(v visitor, stmt ast.Stmt) bool {
 		if call, ok := s.X.(*ast.CallExpr); ok {
 			return f.skipExpr(call)
 		}
+	case *ast.DeferStmt:
+		for _, arg := range s.Call.Args {
+			if !f.skipExpr(arg) {
+				return false
+			}
+		}
+		return true
+	case *ast.GoStmt:
+		for _, arg := range s.Call.Args {
+			if !f.skipExpr(arg) {
+				return false
+			}
+		}
+		return true
 	case *ast.IncDecStmt:
 		return f.skipExpr(s.X)
 	case *ast.IfStmt:
@@ -257,6 +272,13 @@ func (f *filter) skipExpr(expr ast.Expr) bool {
 				return true
 			}
 		}
+		// This is the start of a currently small "allow list" for the standard library.
+		// A longer list would likely require a different approach, but this should be
+		// sufficient to start.
+		if isMethodCall(f.info, x, "sync", "WaitGroup", "Add") ||
+			isMethodCall(f.info, x, "sync", "WaitGroup", "Done") {
+			return true
+		}
 	case *ast.CompositeLit:
 		// We handle things like pair{a: i, b: i}, where 'pair' is the *ast.Ident.
 		// TODO: handle *ast.CompositeLit for slices and maps
@@ -279,7 +301,9 @@ func (f *filter) skipExpr(expr ast.Expr) bool {
 		return f.skipExpr(x.X)
 	case *ast.SelectorExpr:
 		// We only allow basic cases for selector expressions such as foo.bar,
-		// where foo is an *ast.Ident with a struct object and not a pointer type.
+		// where foo is an *ast.Ident with a struct object.
+		// We do not allow foo to be a pointer type,
+		// unless LoopclosureTrailingPossiblePanic is true.
 		// TODO: we do not yet handle x.y.z = 1
 		// TODO: probably add test for Call().bar and foo.Call().bar
 		if !f.skipExpr(x.X) {
@@ -288,10 +312,17 @@ func (f *filter) skipExpr(expr ast.Expr) bool {
 		if ident, ok := x.X.(*ast.Ident); ok {
 			obj := f.info.Uses[ident]
 			if obj != nil {
-				if _, ok := obj.Type().Underlying().(*types.Struct); ok {
-					// We do not (currently) want to allow pointers here, given
-					// a pointer dereference could panic.
-					// TODO: consider allowing pointer types in selector expression.
+				u := obj.Type().Underlying()
+				if analysisinternal.LoopclosureTrailingPossiblePanic {
+					// TODO: consider allowing pointer types in selector expression by default
+					// even though it could possibly panic. Probably unlikely for someone to
+					// purposefully use that as control flow that purposefully limits
+					// the iteration while also purposefully capturing an iteration variable?
+					if p, ok := u.(*types.Pointer); ok {
+						u = p.Elem().Underlying()
+					}
+				}
+				if _, ok := u.(*types.Struct); ok {
 					return true
 				}
 			}

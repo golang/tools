@@ -192,6 +192,7 @@ func _() {
 			print(i)
 		}()
 		for j := range "inner" {
+			print(j)
 			go func() {
 				// This is a last statement for the inner loop, but not the outer loop,
 				// so we flag j but not i
@@ -207,6 +208,7 @@ func _() {
 			print(i)
 		}()
 		for j := range "inner" {
+			print(j)
 			go func() {
 				// This is a last statement for both the inner and outer loops
 				print(i) // want "loop variable i captured by func literal"

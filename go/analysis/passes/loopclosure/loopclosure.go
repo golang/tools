@@ -136,7 +136,7 @@ func runGo120(pass *analysis.Pass) (interface{}, error) {
 				addVar(post.X)
 			}
 		}
-		if vars == nil {
+		if len(vars) == 0 {
 			return
 		}
 
@@ -664,7 +664,7 @@ func debugf(format string, a ...interface{}) {
 }
 
 func debugVisit(pass *analysis.Pass, s string, n ast.Node) {
-	if lcDebug > 1 {
+	if lcDebug > 1 && n != nil {
 		p := pass.Fset.Position(n.Pos())
 		p.Filename = shortPos(pass, n)
 		debugf("VISIT %s: %d:%d %T %X %s\n", s, p.Line, p.Column, n, n, p.Filename)

@@ -23,6 +23,11 @@ var DiagnoseFuzzTests bool = false
 // diagnoses that are disabled in Go 1.20.
 var LoopclosureGo121 bool = false
 
+// LoopclosureTrailingPossiblePanic controls whether the 'loopclosure' analyzer
+// allows some possible panics (such as a field selector for pointers to structs)
+// in statements that trail a candidate go, errgroup.Group.Go, or defer statement.
+var LoopclosureTrailingPossiblePanic bool = false
+
 func TypeErrorEndPos(fset *token.FileSet, src []byte, start token.Pos) token.Pos {
 	// Get the end position for the type error.
 	offset, end := fset.PositionFor(start, false).Offset, start

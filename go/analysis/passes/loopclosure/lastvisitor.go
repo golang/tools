@@ -63,7 +63,7 @@ func (v visitor) visit(stmts []ast.Stmt) {
 		// Copy the visitor so that it can be modified independently per iteration.
 		vv := v
 
-		if i != lastStmt {
+		if i < lastStmt {
 			// Clear last so that last by default it is not called in this branch of recursion
 			// (even if a visited is last statement of some body lower in the AST tree).
 			// It is only by default because the client can set visitor.last
@@ -111,7 +111,7 @@ func (v visitor) visit(stmts []ast.Stmt) {
 				vv.visit(cc.Body)
 			}
 		default:
-			if i == lastStmt && vv.last != nil {
+			if i >= lastStmt && vv.last != nil {
 				vv.last(vv, s)
 			}
 		}
