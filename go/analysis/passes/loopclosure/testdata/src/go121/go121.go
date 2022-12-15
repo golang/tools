@@ -305,6 +305,15 @@ func _() {
 				case int:
 					i++
 				}
+			case 6:
+				var a interface{}
+				go func() {
+					print(i) // want "loop variable i captured by func literal"
+				}()
+				switch a := a.(type) {
+				case int:
+					i += a
+				}
 			}
 		}
 	}
@@ -369,6 +378,15 @@ func _() {
 				switch a.(type) {
 				case int:
 					i = foo()
+				}
+			case 8: // call bar in the type assert expression of a type switch
+				bar := func() interface{} { return nil }
+				go func() {
+					print(i)
+				}()
+				switch bar().(type) {
+				case int:
+					i++
 				}
 			}
 		}

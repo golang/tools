@@ -90,27 +90,22 @@ func (f *filter) skipStmt(v visitor, stmt ast.Stmt) bool {
 			return true
 		}
 	case *ast.DeclStmt:
-		if decl, ok := s.Decl.(*ast.GenDecl); ok {
-			if decl.Tok != token.VAR && decl.Tok != token.CONST && decl.Tok != token.TYPE {
+		decl := s.Decl.(*ast.GenDecl)
+		for _, spec := range decl.Specs {
+			switch s := spec.(type) {
+			case *ast.ValueSpec:
+				for _, x := range s.Values {
+					if !f.skipExpr(x) {
+						return false
+					}
+				}
+			case *ast.TypeSpec:
+				continue
+			default:
 				return false
 			}
-			for _, spec := range decl.Specs {
-				switch s := spec.(type) {
-				case *ast.ValueSpec:
-					for _, x := range s.Values {
-						if !f.skipExpr(x) {
-							return false
-						}
-					}
-				case *ast.TypeSpec:
-					// TODO: confirm whether we need to go deeper, such as s.Type, which is a ast.Expr
-					continue
-				default:
-					return false
-				}
-			}
-			return true
 		}
+		return true
 	case *ast.ExprStmt:
 		if call, ok := s.X.(*ast.CallExpr); ok {
 			return f.skipExpr(call)
@@ -175,7 +170,6 @@ func (f *filter) skipStmt(v visitor, stmt ast.Stmt) bool {
 		f.skipStmts[stmt] = true
 		return true
 	case *ast.RangeStmt:
-		// TODO: we might not need to check s.Key or s.Value?
 		if !f.skipExpr(s.X) || !f.skipExpr(s.Key) || !f.skipExpr(s.Value) {
 			f.skipStmts[stmt] = false // memoize
 			return false
@@ -211,11 +205,27 @@ func (f *filter) skipStmt(v visitor, stmt ast.Stmt) bool {
 		f.skipStmts[stmt] = true
 		return true
 	case *ast.TypeSwitchStmt:
-		// TODO: confirm we don't need to check s.Assign
 		if !f.skipStmt(v, s.Init) {
 			f.skipStmts[stmt] = false // memoize
 			return false
 		}
+
+		// Check the expression x in 'y := x.(T)' and 'x.(T)'.
+		// TODO: if we decide to generally support possibly panicking type assertions that are not the comma ok form,
+		// then we could likely simplify these checks to just f.SkipStmt(s.Assign).
+		var x ast.Expr
+		switch assign := s.Assign.(type) {
+		case *ast.ExprStmt:
+			x = assign.X.(*ast.TypeAssertExpr).X
+		case *ast.AssignStmt:
+			// TODO: confirm we don't need to check length of RHS.
+			x = assign.Rhs[0].(*ast.TypeAssertExpr).X
+		}
+		if !f.skipExpr(x) {
+			f.skipStmts[stmt] = false
+			return false
+		}
+
 		for i := range s.Body.List {
 			cc := s.Body.List[i].(*ast.CaseClause)
 			for _, x := range cc.List {
@@ -241,6 +251,9 @@ func (f *filter) skipStmt(v visitor, stmt ast.Stmt) bool {
 
 // skipExpr is like skipStmt, but for expressions.
 func (f *filter) skipExpr(expr ast.Expr) bool {
+	// TODO: consider allowing TypeAssertExpr
+	// TODO: consider allowing conversions like float64(i)
+
 	switch x := expr.(type) {
 	case nil:
 		return true
@@ -254,7 +267,6 @@ func (f *filter) skipExpr(expr ast.Expr) bool {
 		}
 		return f.skipExpr(x.X) && f.skipExpr(x.Y)
 	case *ast.CallExpr:
-		// TODO: consider allowing conversions like float64(i)
 		fn := typeutil.Callee(f.info, x)
 		if b, ok := fn.(*types.Builtin); ok {
 			switch b.Name() {
@@ -330,9 +342,9 @@ func (f *filter) skipExpr(expr ast.Expr) bool {
 	case *ast.UnaryExpr:
 		switch x.Op {
 		// See https://go.dev/ref/spec#UnaryExpr
-		case token.ADD, token.SUB, token.NOT, token.XOR, token.AND:
+		case token.ADD, token.SUB, token.NOT, token.XOR, token.AND, token.TILDE:
 			// We disallow token.MUL because we currently do not want to allow dereference.
-			// TODO: review this UnaryExpr list -- is it complete? are any of these issues?
+			// We also disallow token.ARROW because it can cause a wait.
 			// TODO: confirm token.AND is not allowing more address operations than we expect.
 			return f.skipExpr(x.X)
 		}
