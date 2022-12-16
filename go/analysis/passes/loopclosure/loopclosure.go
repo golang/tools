@@ -145,8 +145,8 @@ func runGo120(pass *analysis.Pass) (interface{}, error) {
 		//
 		// For go, defer, and errgroup.Group.Go, we ignore all but the last
 		// statement, where "last" is defined recursively.
-		// See runGo120 for an alternative approach.
-		v := visitor{last: func(v visitor, last ast.Stmt) {
+		// See runGo121 for an alternative approach.
+		forEachLastStmt(body.List, func(last ast.Stmt) {
 			var stmts []ast.Stmt
 			switch s := last.(type) {
 			case *ast.GoStmt:
@@ -161,8 +161,7 @@ func runGo120(pass *analysis.Pass) (interface{}, error) {
 			for _, stmt := range stmts {
 				reportCaptured(pass, vars, stmt)
 			}
-		}}
-		v.visit(body.List)
+		})
 
 		// Also check for testing.T.Run (with T.Parallel).
 		// We consider every t.Run statement in the loop body, because there is
@@ -192,8 +191,8 @@ func runGo120(pass *analysis.Pass) (interface{}, error) {
 func runGo121(pass *analysis.Pass) (interface{}, error) {
 	// We do two passes with inspect: first, a simpler walk
 	// looking for problems with testing.T.Run with T.Parallel, and
-	// second, a more involved walk to examine last statements
-	// looking for problems with go, defer and errgroup.Group.Go.
+	// second, a more involved walk visiting statements looking
+	// for problems with go, defer and errgroup.Group.Go statements.
 
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{
@@ -262,20 +261,18 @@ func runGo121(pass *analysis.Pass) (interface{}, error) {
 		// Inspect statements to find function literals that may be run outside of
 		// the current loop iteration.
 		//
-		// For go, defer, and errgroup.Group.Go, by default we ignore all but the last
-		// statement, where "last" is defined recursively.
-		// In addition, if a potentially problematic go, defer, or errgroup.Group.Go
-		// statement is followed by one or more "last" statements that we can prove
+		// If a potentially problematic go, defer, or errgroup.Group.Go statement
+		// is followed by one or more statements that we can prove
 		// do not cause a wait or otherwise derail the flow of execution sufficiently, then
-		// we still examine the function literal within the potentially problematic statement.
+		// we examine the function literal within the potentially problematic statement.
 		// TODO: consider differentiating between go vs. defer for what we can prove.
-		gdv := goDeferVisitor{pass: pass, vars: vars}
-		v := visitor{
-			last:     gdv.last,
-			all:      gdv.all,
-			skipLast: newFilter(pass.TypesInfo).skipStmt,
+		gdv := goDeferVisitor{
+			pass:         pass,
+			vars:         vars,
+			filter:       newFilter(pass.TypesInfo),
+			checkGoDefer: true,
 		}
-		v.visit(body.List)
+		reverseVisit(gdv, body.List)
 
 		// Once we find any range or for statement, we traverse the contained AST ourselves,
 		// so we do not need inspect.Preorder to continue.
@@ -315,76 +312,172 @@ func reportCaptured(pass *analysis.Pass, vars map[types.Object]int, checkStmt as
 // It is expected to be passed by value, and maintains state useful
 // for the traversal, including a stack of loop variables from
 // possibly nested range and for statements.
+//
+// checkGoDefer indicates whether any visited go, defer, or errgroup.Group.Go
+// statement has been proven safe to analyze for possibly captured loop variables.
+//
+// Statements within a compound statement body are visited in reverse order.
+// The returned visitor from bodyStmt is used for subsequent sibling statements,
+// while the returned visitor from push is used for descending recursively
+// but not for sibling statements. See the reverseVisitor interface documentation
+// for details.
+//
+// The following is an example snippet to be analyzed, where the
+// call to foo in the inner range expression means we should not analyze
+// the go statement's func literal, but we can still analyze
+// the defer statement's func literal for possible misuse of j:
+//
+//   0:   foo := func() []int { return nil }
+//   1:   for i := range "outer" {
+//   2:           go func() { print(i) }()             // misuse of i, but cannot analyze
+//   3:           for j := range foo() {               // we do not understand foo
+//   4:                   defer func() { print(j) }()  // misuse of j, and we can analyze
+//   5:           }
+//   6:           i++
+//   7:   }
+//
+// The sequence of calls to goDeferVisitor for this example:
+//
+//                                      incoming       returned visitor's
+//                                      checkGoDefer   checkGoDefer
+//   ---- IncDecStmt ----               ------------   ------------------
+//   line 6: PUSH:     *ast.IncDecStmt  true           true
+//   line 6: BODYSTMT: *ast.IncDecStmt  true           true
+//   line 6: POP:      *ast.IncDecStmt
+//
+//   ---- Inner RangeStmt ----
+//   line 3: PUSH:     *ast.RangeStmt   true           true
+//   line 3: BODYSTMT: *ast.RangeStmt   true           FALSE
+//   line 4: PUSH:     *ast.DeferStmt   true           true
+//   line 4: BODYSTMT: *ast.DeferStmt   true           true
+//   line 4: POP:      *ast.DeferStmt
+//   line 3: POP:      *ast.RangeStmt
+//
+//   ---- GoStmt ----
+//   line 2: PUSH:     *ast.GoStmt      FALSE          FALSE
+//   line 2: BODYSTMT: *ast.GoStmt      FALSE          FALSE
+//   line 2: POP:      *ast.GoStmt
 type goDeferVisitor struct {
-	pass *analysis.Pass
-	vars *loopVars
+	pass   *analysis.Pass
+	vars   *loopVars
+	filter *filter // TODO: maybe rename to complex?
+
+	// checkGoDefer indicates a visited go, defer, or errgroup.Group.Go statement
+	// is safe to check for possibly captured loop iteration variables.
+	checkGoDefer bool
 }
 
-// last examines "last" statements within a range or for statement body
+// bodyStmt implements bodyStmt from the reverseVisitor interface.
+// It examines statements within a range or for statement body
 // to determine if they are a go, defer, or errgroup.Group.Go statement
 // using a function literal that incorrectly captures a loop variable.
+//
+// bodyStmt only examines statements we can prove do not cause a wait or
+// otherwise derail the flow of execution from returning to the top of the loop.
 // If a problem is found, it calls reportCaptured.
-// "Last" is defined recursively.
-func (gdv goDeferVisitor) last(v visitor, last ast.Stmt) {
-	var stmts []ast.Stmt
-	switch s := last.(type) {
+func (gdv goDeferVisitor) bodyStmt(stmt ast.Stmt) reverseVisitor {
+
+	debugVisit(gdv.pass, "BODYSTMT", stmt)
+	debug("incoming checkGoDefer:", gdv.checkGoDefer)
+
+	if !gdv.checkGoDefer {
+		// TODO: consider clear our stack of loop vars here instead of in body??
+		return gdv
+	}
+
+	// Check if we must stop checking go, defer, and errgroup statements that precede this stmt
+	// because this stmt will wait, might wait, otherwise derail return to the top of the loop,
+	// or is too complex for us to understand.
+	gdv.checkGoDefer = gdv.filter.skipStmt(oldLastVisitor{}, stmt) // TODO: remove temporary oldLastVisitor placeholder.
+	debug("returned checkGoDefer:", gdv.checkGoDefer)
+
+	// Check if we have a go, defer, or errgroup statement of interest.
+	var checkStmts []ast.Stmt
+	switch s := stmt.(type) {
 	case *ast.GoStmt:
-		stmts = litStmts(s.Call.Fun)
+		checkStmts = litStmts(s.Call.Fun)
 	case *ast.DeferStmt:
-		stmts = litStmts(s.Call.Fun)
+		checkStmts = litStmts(s.Call.Fun)
 	case *ast.ExprStmt: // check for errgroup.Group.Go
 		if call, ok := s.X.(*ast.CallExpr); ok {
-			stmts = litStmts(goInvoke(gdv.pass.TypesInfo, call))
+			checkStmts = litStmts(goInvoke(gdv.pass.TypesInfo, call))
 		}
 	}
-	for _, stmt := range stmts {
+	for _, stmt := range checkStmts {
 		reportCaptured(gdv.pass, gdv.vars.m, stmt)
 	}
+
+	return gdv
 }
 
-// all tracks a stack of loop variables and modifies visitor v.
-// all expects to be called for all statements within a range or for statement,
-// including nested statements. all returns a visitor v that is expected to be
-// used for the remaining traversal within any nested statements. When all
+// push implements push from the reverseVisitor interface.
+// It tracks a stack of loop variables and returns a potentially modified visitor.
+//
+// push is called for all statements within a range or for statement,
+// including nested statements. push returns a visitor that is expected to be
+// used for the remaining traversal within any nested statements. When push
 // encounters a new range or for statement, it updates the tracked loop variables
-// as well returns a new visitor that is prepared to identify any "last" statements
-// within the new for or range statement. "Last" is defined recursively.
-func (gdv goDeferVisitor) all(v visitor, stmt ast.Stmt, push bool) visitor {
+// and returns a new visitor that is prepared to identify any problematic
+// go, defer, and errgroup.Group.Go statements.
+func (gdv goDeferVisitor) push(stmt ast.Stmt) reverseVisitor {
+	debugVisit(gdv.pass, "PUSH", stmt)
+	debug("incoming checkGoDefer:", gdv.checkGoDefer)
+
 	switch stmt.(type) {
 	case *ast.RangeStmt, *ast.ForStmt:
-		if push && v.last == nil {
-			// We are in a branch of the recursion
-			// that is not considered "last" for any range/for statement
+
+		// Check if we need to rest our loop variables.
+		resetLoopVars := false
+		if !gdv.checkGoDefer {
+			// We are in a branch of the recursion where are are not checking go,
+			// defer and errgroup.Group.Go statements for any range/for statement
 			// already visited higher in the stack.
-			// We are now about to process a range or for statement,
-			// so create a new set of loop variables for tracking.
-			// To do this, we create a new goDeferVisitor,
-			// which contains the loop variables.
-			new := goDeferVisitor{
-				pass: gdv.pass,
-				vars: newLoopVars(gdv.pass.TypesInfo),
-			}
-			// Track the new loop vars.
-			new.vars.push(stmt)
-
-			// Finally, create and return a new visitor to return
-			// for use in this branch of the recursion.
-			return visitor{
-				last:     new.last,
-				all:      new.all,
-				skipLast: v.skipLast, // we reuse the current filter
-			}
-		}
-
-		// Otherwise, simply track the vars for this for/range statement
-		// with the appropriate loop variable push or pop
-		if push {
-			gdv.vars.push(stmt)
+			//
+			// We are now about to process a new range or for statement,
+			// so we need to freshly start tracking loop variables
+			// in the visitor that we will return by value.
+			resetLoopVars = true
 		} else {
-			gdv.vars.pop()
+			// Check if this for/range statement has a complex range expression, init, condition,
+			// or similar component of the loop outside the body, which means we should
+			// not report captures of loop variables for any parent loops
+			// (though we still report captures of loop variables of this loop).
+			switch s := stmt.(type) {
+			case *ast.RangeStmt:
+				if !gdv.filter.skipExpr(s.X) || !gdv.filter.skipExpr(s.Key) || !gdv.filter.skipExpr(s.Value) {
+					resetLoopVars = true
+				}
+			case *ast.ForStmt:
+				v := oldLastVisitor{} // TODO: delete temp placeholder
+				if !gdv.filter.skipStmt(v, s.Init) || !gdv.filter.skipExpr(s.Cond) || !gdv.filter.skipStmt(v, s.Post) {
+					resetLoopVars = true
+				}
+			}
 		}
+
+		if resetLoopVars {
+			gdv.vars = newLoopVars(gdv.pass.TypesInfo)
+		}
+
+		// Track the vars for this for/range statement, as well as start checking
+		// for any potentially problematic go/defer/errgroup statements  if we weren't already.
+		gdv.vars.push(stmt)
+		gdv.checkGoDefer = true
 	}
-	return v
+
+	debug("returned checkGoDefer:", gdv.checkGoDefer)
+	return gdv
+}
+
+// pop implements pop from the reverseVisitor interface.
+// It helps track loop iteration variables.
+func (gdv goDeferVisitor) pop(stmt ast.Stmt) {
+	debugVisit(gdv.pass, "POP", stmt)
+	switch stmt.(type) {
+	case *ast.RangeStmt, *ast.ForStmt:
+		// Pop the vars for this for/range statement.
+		gdv.vars.pop()
+	}
 }
 
 // loopVars tracks loop variable usage in a stack that can be pushed and popped.
@@ -462,6 +555,57 @@ func (v *loopVars) pop() {
 			delete(v.m, obj)
 			continue
 		}
+	}
+}
+
+// forEachLastStmt temporarily helps preserve the external behavior of Go 1.20.
+// forEachLastStmt calls onLast on each "last" statement in a list of statements.
+// "Last" is defined recursively so, for example, if the last statement is
+// a switch statement, then each switch case is also visited to examine
+// its last statements.
+// TODO: delete forEachLastStmt when we no longer want to preserve Go 1.20 behavior.
+func forEachLastStmt(stmts []ast.Stmt, onLast func(last ast.Stmt)) {
+	if len(stmts) == 0 {
+		return
+	}
+
+	s := stmts[len(stmts)-1]
+	switch s := s.(type) {
+	case *ast.IfStmt:
+	loop:
+		for {
+			forEachLastStmt(s.Body.List, onLast)
+			switch e := s.Else.(type) {
+			case *ast.BlockStmt:
+				forEachLastStmt(e.List, onLast)
+				break loop
+			case *ast.IfStmt:
+				s = e
+			case nil:
+				break loop
+			}
+		}
+	case *ast.ForStmt:
+		forEachLastStmt(s.Body.List, onLast)
+	case *ast.RangeStmt:
+		forEachLastStmt(s.Body.List, onLast)
+	case *ast.SwitchStmt:
+		for _, c := range s.Body.List {
+			cc := c.(*ast.CaseClause)
+			forEachLastStmt(cc.Body, onLast)
+		}
+	case *ast.TypeSwitchStmt:
+		for _, c := range s.Body.List {
+			cc := c.(*ast.CaseClause)
+			forEachLastStmt(cc.Body, onLast)
+		}
+	case *ast.SelectStmt:
+		for _, c := range s.Body.List {
+			cc := c.(*ast.CommClause)
+			forEachLastStmt(cc.Body, onLast)
+		}
+	default:
+		onLast(s)
 	}
 }
 

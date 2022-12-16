@@ -437,6 +437,21 @@ func _() {
 		}
 	}
 
+	// A case that relies on resetting our tracked loop variables when
+	// we encounter a complex statement in a range expression or similar.
+	// In this case, foo could in theory (via a wait or similar)
+	// make the use of the outer loop variable i safe, but foo
+	// cannot make the use of the inner loop variable j safe.
+	for i := range "outer" {
+		go func() {
+			print(i)
+		}()
+		for j := range append(s, foo()) {
+			defer func() { print(i) }()
+			defer func() { print(j) }() // want "loop variable j captured by func literal"
+		}
+	}
+
 	// Some additional cases we currently purposefully disallow.
 
 	// We disallow a trailing division, which can panic.

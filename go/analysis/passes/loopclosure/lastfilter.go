@@ -50,7 +50,8 @@ func newFilter(info *types.Info) *filter {
 // Statements it does not understand are conservatively reported as not skippable.
 // It understands certain builtins, such as len and append.
 // It does not skip select statements, which can cause a wait on a go statement.
-func (f *filter) skipStmt(v visitor, stmt ast.Stmt) bool {
+// TODO: remove oldLastVisitor from this API
+func (f *filter) skipStmt(v oldLastVisitor, stmt ast.Stmt) bool {
 	// TODO: consider differentiating what we skip for defer vs. go.
 	// TODO: consider parameterizing, such as whether to allow panic, select, ...
 	// TODO: more precise description of intent and nature of statements we skip.
