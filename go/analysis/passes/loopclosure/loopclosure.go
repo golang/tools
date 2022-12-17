@@ -263,7 +263,7 @@ func runGo121(pass *analysis.Pass) (interface{}, error) {
 		case *ast.ForStmt:
 			stmt = n
 		}
-		reverseVisit(gdv, stmt)
+		reverseVisit(gdv, []ast.Stmt{stmt})
 
 		// Once we find any range or for statement, we traverse the contained AST ourselves,
 		// so we do not need inspect.Preorder to continue.
