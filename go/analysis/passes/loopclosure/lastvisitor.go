@@ -33,60 +33,65 @@ type reverseVisitor interface {
 
 // reverseVisit does a depth first walk of statements.
 // Sibling statements in compound statements are visited in reverse order.
-// TODO: consider changing signature to single ast.Stmt.
-func reverseVisit(visitor reverseVisitor, stmts []ast.Stmt) {
-	if len(stmts) == 0 {
-		return
-	}
+func reverseVisit(visitor reverseVisitor, stmt ast.Stmt) {
 
-	for i := len(stmts) - 1; i >= 0; i-- {
-		stmt := stmts[i]
-
-		// Call push, and use the returned vistor when we recursively descend.
-		descendVisitor := visitor.push(stmt)
-
-		// Call bodyStmt, and update the visitor we are using on the remaining
-		// statements in this body, which are the statements that precede this one in the
-		// natural non-reversed body order.
-		visitor = visitor.bodyStmt(stmt)
-
-		switch s := stmt.(type) {
-		case *ast.IfStmt:
-		loop:
-			for {
-				reverseVisit(descendVisitor, s.Body.List)
-				switch e := s.Else.(type) {
-				case *ast.BlockStmt:
-					reverseVisit(descendVisitor, e.List)
-					break loop
-				case *ast.IfStmt:
-					s = e
-				case nil:
-					break loop
-				}
-			}
-		case *ast.ForStmt:
-			reverseVisit(descendVisitor, s.Body.List)
-		case *ast.RangeStmt:
-			reverseVisit(descendVisitor, s.Body.List)
-		case *ast.SwitchStmt:
-			for _, c := range s.Body.List {
-				cc := c.(*ast.CaseClause)
-				reverseVisit(descendVisitor, cc.Body)
-			}
-		case *ast.TypeSwitchStmt:
-			for _, c := range s.Body.List {
-				cc := c.(*ast.CaseClause)
-				reverseVisit(descendVisitor, cc.Body)
-			}
-		case *ast.SelectStmt:
-			for _, c := range s.Body.List {
-				cc := c.(*ast.CommClause)
-				reverseVisit(descendVisitor, cc.Body)
-			}
+	var reverseVisitStmts func(visitor reverseVisitor, stmts []ast.Stmt)
+	reverseVisitStmts = func(visitor reverseVisitor, stmts []ast.Stmt) {
+		if len(stmts) == 0 {
+			return
 		}
 
-		// Call pop using the the visitor returned by push.
-		descendVisitor.pop(stmt)
+		for i := len(stmts) - 1; i >= 0; i-- {
+			stmt := stmts[i]
+
+			// Call push, and use the returned vistor when we recursively descend.
+			descendVisitor := visitor.push(stmt)
+
+			// Call bodyStmt, and update the visitor we are using on the remaining
+			// statements in this body, which are the statements that precede this one in the
+			// natural non-reversed body order.
+			visitor = visitor.bodyStmt(stmt)
+
+			switch s := stmt.(type) {
+			case *ast.IfStmt:
+			loop:
+				for {
+					reverseVisitStmts(descendVisitor, s.Body.List)
+					switch e := s.Else.(type) {
+					case *ast.BlockStmt:
+						reverseVisitStmts(descendVisitor, e.List)
+						break loop
+					case *ast.IfStmt:
+						s = e
+					case nil:
+						break loop
+					}
+				}
+			case *ast.ForStmt:
+				reverseVisitStmts(descendVisitor, s.Body.List)
+			case *ast.RangeStmt:
+				reverseVisitStmts(descendVisitor, s.Body.List)
+			case *ast.SwitchStmt:
+				for _, c := range s.Body.List {
+					cc := c.(*ast.CaseClause)
+					reverseVisitStmts(descendVisitor, cc.Body)
+				}
+			case *ast.TypeSwitchStmt:
+				for _, c := range s.Body.List {
+					cc := c.(*ast.CaseClause)
+					reverseVisitStmts(descendVisitor, cc.Body)
+				}
+			case *ast.SelectStmt:
+				for _, c := range s.Body.List {
+					cc := c.(*ast.CommClause)
+					reverseVisitStmts(descendVisitor, cc.Body)
+				}
+			}
+
+			// Call pop using the the visitor returned by push.
+			descendVisitor.pop(stmt)
+		}
 	}
+
+	reverseVisitStmts(visitor, []ast.Stmt{stmt})
 }

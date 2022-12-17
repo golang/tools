@@ -241,23 +241,6 @@ func runGo121(pass *analysis.Pass) (interface{}, error) {
 			return true
 		}
 
-		// Find and track the variables updated by the loop statement.
-		vars := newLoopVars(pass.TypesInfo)
-		vars.push(n)
-		if len(vars.m) == 0 {
-			// Nothing do for this range or for statement, but ask inspect to proceed
-			// to handle any interesting nested statements.
-			return true
-		}
-
-		var body *ast.BlockStmt
-		switch n := n.(type) {
-		case *ast.RangeStmt:
-			body = n.Body
-		case *ast.ForStmt:
-			body = n.Body
-		}
-
 		// Inspect statements to find function literals that may be run outside of
 		// the current loop iteration.
 		//
@@ -265,14 +248,22 @@ func runGo121(pass *analysis.Pass) (interface{}, error) {
 		// is followed by one or more statements that we can prove
 		// do not cause a wait or otherwise derail the flow of execution sufficiently, then
 		// we examine the function literal within the potentially problematic statement.
+		// As we go, we track loop iteration variables to check if they are captured incorrectly.
 		// TODO: consider differentiating between go vs. defer for what we can prove.
 		gdv := goDeferVisitor{
 			pass:         pass,
-			vars:         vars,
+			vars:         newLoopVars(pass.TypesInfo),
 			filter:       newFilter(pass.TypesInfo),
 			checkGoDefer: true,
 		}
-		reverseVisit(gdv, body.List)
+		var stmt ast.Stmt
+		switch n := n.(type) {
+		case *ast.RangeStmt:
+			stmt = n
+		case *ast.ForStmt:
+			stmt = n
+		}
+		reverseVisit(gdv, stmt)
 
 		// Once we find any range or for statement, we traverse the contained AST ourselves,
 		// so we do not need inspect.Preorder to continue.
@@ -336,6 +327,8 @@ func reportCaptured(pass *analysis.Pass, vars map[types.Object]int, checkStmt as
 //   6:           i++
 //   7:   }
 //
+// TODO: update for single stmt reverseVisit
+//
 // The sequence of calls to goDeferVisitor for this example:
 //
 //                                      incoming       returned visitor's
@@ -377,6 +370,7 @@ type goDeferVisitor struct {
 // If a problem is found, it calls reportCaptured.
 func (gdv goDeferVisitor) bodyStmt(stmt ast.Stmt) reverseVisitor {
 
+	// TODO: remove debug statements here and in similar spots
 	debugVisit(gdv.pass, "BODYSTMT", stmt)
 	debug("incoming checkGoDefer:", gdv.checkGoDefer)
 
