@@ -388,7 +388,7 @@ func (gdv goDeferVisitor) bodyStmt(stmt ast.Stmt) reverseVisitor {
 	// Check if we must stop checking go, defer, and errgroup statements that precede this stmt
 	// because this stmt will wait, might wait, otherwise derail return to the top of the loop,
 	// or is too complex for us to understand.
-	gdv.checkGoDefer = gdv.filter.skipStmt(oldLastVisitor{}, stmt) // TODO: remove temporary oldLastVisitor placeholder.
+	gdv.checkGoDefer = gdv.filter.skipStmt(stmt)
 	debug("returned checkGoDefer:", gdv.checkGoDefer)
 
 	// Check if we have a go, defer, or errgroup statement of interest.
@@ -448,8 +448,7 @@ func (gdv goDeferVisitor) push(stmt ast.Stmt) reverseVisitor {
 					resetLoopVars = true
 				}
 			case *ast.ForStmt:
-				v := oldLastVisitor{} // TODO: delete temp placeholder
-				if !gdv.filter.skipStmt(v, s.Init) || !gdv.filter.skipExpr(s.Cond) || !gdv.filter.skipStmt(v, s.Post) {
+				if !gdv.filter.skipStmt(s.Init) || !gdv.filter.skipExpr(s.Cond) || !gdv.filter.skipStmt(s.Post) {
 					resetLoopVars = true
 				}
 			}

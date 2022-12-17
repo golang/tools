@@ -50,8 +50,7 @@ func newFilter(info *types.Info) *filter {
 // Statements it does not understand are conservatively reported as not skippable.
 // It understands certain builtins, such as len and append.
 // It does not skip select statements, which can cause a wait on a go statement.
-// TODO: remove oldLastVisitor from this API
-func (f *filter) skipStmt(v oldLastVisitor, stmt ast.Stmt) bool {
+func (f *filter) skipStmt(stmt ast.Stmt) bool {
 	// TODO: consider differentiating what we skip for defer vs. go.
 	// TODO: consider parameterizing, such as whether to allow panic, select, ...
 	// TODO: more precise description of intent and nature of statements we skip.
@@ -128,14 +127,14 @@ func (f *filter) skipStmt(v oldLastVisitor, stmt ast.Stmt) bool {
 	case *ast.IncDecStmt:
 		return f.skipExpr(s.X)
 	case *ast.IfStmt:
-		if !f.skipStmt(v, s.Init) || !f.skipExpr(s.Cond) {
+		if !f.skipStmt(s.Init) || !f.skipExpr(s.Cond) {
 			f.skipStmts[stmt] = false // memoize
 			return false
 		}
 	loop:
 		for {
 			for i := range s.Body.List {
-				if !f.skipStmt(v, s.Body.List[i]) {
+				if !f.skipStmt(s.Body.List[i]) {
 					f.skipStmts[stmt] = false
 					return false
 				}
@@ -143,7 +142,7 @@ func (f *filter) skipStmt(v oldLastVisitor, stmt ast.Stmt) bool {
 			switch e := s.Else.(type) {
 			case *ast.BlockStmt:
 				for i := range e.List {
-					if !f.skipStmt(v, e.List[i]) {
+					if !f.skipStmt(e.List[i]) {
 						f.skipStmts[stmt] = false
 						return false
 					}
@@ -158,12 +157,12 @@ func (f *filter) skipStmt(v oldLastVisitor, stmt ast.Stmt) bool {
 		f.skipStmts[stmt] = true
 		return true
 	case *ast.ForStmt:
-		if !f.skipStmt(v, s.Init) || !f.skipExpr(s.Cond) || !f.skipStmt(v, s.Post) {
+		if !f.skipStmt(s.Init) || !f.skipExpr(s.Cond) || !f.skipStmt(s.Post) {
 			f.skipStmts[stmt] = false // memoize
 			return false
 		}
 		for i := range s.Body.List {
-			if !f.skipStmt(v, s.Body.List[i]) {
+			if !f.skipStmt(s.Body.List[i]) {
 				f.skipStmts[stmt] = false
 				return false
 			}
@@ -176,7 +175,7 @@ func (f *filter) skipStmt(v oldLastVisitor, stmt ast.Stmt) bool {
 			return false
 		}
 		for i := range s.Body.List {
-			if !f.skipStmt(v, s.Body.List[i]) {
+			if !f.skipStmt(s.Body.List[i]) {
 				f.skipStmts[stmt] = false
 				return false
 			}
@@ -184,7 +183,7 @@ func (f *filter) skipStmt(v oldLastVisitor, stmt ast.Stmt) bool {
 		f.skipStmts[stmt] = true
 		return true
 	case *ast.SwitchStmt:
-		if !f.skipExpr(s.Tag) || !f.skipStmt(v, s.Init) {
+		if !f.skipExpr(s.Tag) || !f.skipStmt(s.Init) {
 			f.skipStmts[stmt] = false // memoize
 			return false
 		}
@@ -197,7 +196,7 @@ func (f *filter) skipStmt(v oldLastVisitor, stmt ast.Stmt) bool {
 				}
 			}
 			for _, ccStmt := range cc.Body {
-				if !f.skipStmt(v, ccStmt) {
+				if !f.skipStmt(ccStmt) {
 					f.skipStmts[stmt] = false
 					return false
 				}
@@ -206,7 +205,7 @@ func (f *filter) skipStmt(v oldLastVisitor, stmt ast.Stmt) bool {
 		f.skipStmts[stmt] = true
 		return true
 	case *ast.TypeSwitchStmt:
-		if !f.skipStmt(v, s.Init) {
+		if !f.skipStmt(s.Init) {
 			f.skipStmts[stmt] = false // memoize
 			return false
 		}
@@ -236,7 +235,7 @@ func (f *filter) skipStmt(v oldLastVisitor, stmt ast.Stmt) bool {
 				}
 			}
 			for _, ccStmt := range cc.Body {
-				if !f.skipStmt(v, ccStmt) {
+				if !f.skipStmt(ccStmt) {
 					f.skipStmts[stmt] = false
 					return false
 				}

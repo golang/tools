@@ -90,6 +90,3 @@ func reverseVisit(visitor reverseVisitor, stmts []ast.Stmt) {
 		descendVisitor.pop(stmt)
 	}
 }
-
-// TODO: delete oldLastVisitor. It is a temp empty placeholder to minimize the diff.
-type oldLastVisitor struct{}
