@@ -28,8 +28,9 @@ Selected commands:
 
 These commands may be fetched with a command such as
 ```
-go install golang.org/x/tools/cmd/goimports@latest
+go install golang.org/x/tools/cmd/goimports@v0.11.0
 ```
+(replace `v0.11.0` with the latest version if it is different - do not use `@latest`)
 
 Selected packages:
 
