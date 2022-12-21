@@ -452,6 +452,21 @@ func _() {
 		}
 	}
 
+	// Cases that nest range and statements within func literals.
+	for i := range "outer" {
+		i++
+		_ = func() {
+			for j := range "inner" {
+				go func() { print(j) }() // want "loop variable j captured by func literal"
+			}
+		}
+		go func() {
+			for k := 0; k < 10; k++ {
+				go func() { print(k) }() // want "loop variable k captured by func literal"
+			}
+		}()
+	}
+
 	// Some additional cases we currently purposefully disallow.
 
 	// We disallow a trailing division, which can panic.

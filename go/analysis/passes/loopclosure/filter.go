@@ -22,9 +22,9 @@ type filter struct {
 	info *types.Info
 
 	// skipStmts tracks if we have already determined whether to skip a statement.
-	// This is an optimization we only use for compound statements in order
-	// to avoid recursively descending into the same compound statement multiple times
-	// during filtering. The map value indicates whether to skip (that is, this is not a set).
+	// This is an optimization to avoid recursively descending into the same compound statement
+	// multiple times during filtering.
+	// The map value indicates whether to skip (that is, this is not a set).
 	skipStmts map[ast.Stmt]bool
 }
 
@@ -60,193 +60,179 @@ func (f *filter) skipStmt(stmt ast.Stmt) bool {
 		return skip
 	}
 
-	switch s := stmt.(type) {
-	case nil:
-		return true
-	case *ast.AssignStmt:
-		switch s.Tok {
-		case token.QUO_ASSIGN, token.REM_ASSIGN, token.SHL_ASSIGN, token.SHR_ASSIGN:
-			// TODO: consider allowing division and shift, which can panic
-			return false
-		}
-		for _, e := range s.Rhs {
-			if !f.skipExpr(e) {
+	skipStmt := func(stmt ast.Stmt) bool {
+		switch s := stmt.(type) {
+		case nil:
+			return true
+		case *ast.AssignStmt:
+			switch s.Tok {
+			case token.QUO_ASSIGN, token.REM_ASSIGN, token.SHL_ASSIGN, token.SHR_ASSIGN:
+				// TODO: consider allowing division and shift, which can panic
 				return false
 			}
-		}
-		for _, e := range s.Lhs {
-			if !f.skipExpr(e) {
-				return false
+			for _, e := range s.Rhs {
+				if !f.skipExpr(e) {
+					return false
+				}
 			}
-		}
-		return true
-	case *ast.BranchStmt:
-		switch s.Tok {
-		case token.CONTINUE:
-			if s.Label == nil {
+			for _, e := range s.Lhs {
+				if !f.skipExpr(e) {
+					return false
+				}
+			}
+			return true
+		case *ast.BranchStmt:
+			switch s.Tok {
+			case token.CONTINUE:
+				if s.Label == nil {
+					return true
+				}
+			case token.FALLTHROUGH:
 				return true
 			}
-		case token.FALLTHROUGH:
+		case *ast.DeclStmt:
+			decl := s.Decl.(*ast.GenDecl)
+			for _, spec := range decl.Specs {
+				switch s := spec.(type) {
+				case *ast.ValueSpec:
+					for _, x := range s.Values {
+						if !f.skipExpr(x) {
+							return false
+						}
+					}
+				case *ast.TypeSpec:
+					continue
+				default:
+					return false
+				}
+			}
 			return true
-		}
-	case *ast.DeclStmt:
-		decl := s.Decl.(*ast.GenDecl)
-		for _, spec := range decl.Specs {
-			switch s := spec.(type) {
-			case *ast.ValueSpec:
-				for _, x := range s.Values {
+		case *ast.ExprStmt:
+			if call, ok := s.X.(*ast.CallExpr); ok {
+				return f.skipExpr(call)
+			}
+		case *ast.DeferStmt:
+			for _, arg := range s.Call.Args {
+				if !f.skipExpr(arg) {
+					return false
+				}
+			}
+			return true
+		case *ast.GoStmt:
+			for _, arg := range s.Call.Args {
+				if !f.skipExpr(arg) {
+					return false
+				}
+			}
+			return true
+		case *ast.IncDecStmt:
+			return f.skipExpr(s.X)
+		case *ast.IfStmt:
+			if !f.skipStmt(s.Init) || !f.skipExpr(s.Cond) {
+				return false
+			}
+		loop:
+			for {
+				for i := range s.Body.List {
+					if !f.skipStmt(s.Body.List[i]) {
+						return false
+					}
+				}
+				switch e := s.Else.(type) {
+				case *ast.BlockStmt:
+					for i := range e.List {
+						if !f.skipStmt(e.List[i]) {
+							return false
+						}
+					}
+					break loop
+				case *ast.IfStmt:
+					s = e
+				case nil:
+					break loop
+				}
+			}
+			return true
+		case *ast.ForStmt:
+			if !f.skipStmt(s.Init) || !f.skipExpr(s.Cond) || !f.skipStmt(s.Post) {
+				return false
+			}
+			for i := range s.Body.List {
+				if !f.skipStmt(s.Body.List[i]) {
+					return false
+				}
+			}
+			return true
+		case *ast.RangeStmt:
+			if !f.skipExpr(s.X) || !f.skipExpr(s.Key) || !f.skipExpr(s.Value) {
+				return false
+			}
+			for i := range s.Body.List {
+				if !f.skipStmt(s.Body.List[i]) {
+					return false
+				}
+			}
+			return true
+		case *ast.SwitchStmt:
+			if !f.skipExpr(s.Tag) || !f.skipStmt(s.Init) {
+				return false
+			}
+			for i := range s.Body.List {
+				cc := s.Body.List[i].(*ast.CaseClause)
+				for _, x := range cc.List {
 					if !f.skipExpr(x) {
 						return false
 					}
 				}
-			case *ast.TypeSpec:
-				continue
-			default:
-				return false
-			}
-		}
-		return true
-	case *ast.ExprStmt:
-		if call, ok := s.X.(*ast.CallExpr); ok {
-			return f.skipExpr(call)
-		}
-	case *ast.DeferStmt:
-		for _, arg := range s.Call.Args {
-			if !f.skipExpr(arg) {
-				return false
-			}
-		}
-		return true
-	case *ast.GoStmt:
-		for _, arg := range s.Call.Args {
-			if !f.skipExpr(arg) {
-				return false
-			}
-		}
-		return true
-	case *ast.IncDecStmt:
-		return f.skipExpr(s.X)
-	case *ast.IfStmt:
-		if !f.skipStmt(s.Init) || !f.skipExpr(s.Cond) {
-			f.skipStmts[stmt] = false // memoize
-			return false
-		}
-	loop:
-		for {
-			for i := range s.Body.List {
-				if !f.skipStmt(s.Body.List[i]) {
-					f.skipStmts[stmt] = false
-					return false
-				}
-			}
-			switch e := s.Else.(type) {
-			case *ast.BlockStmt:
-				for i := range e.List {
-					if !f.skipStmt(e.List[i]) {
-						f.skipStmts[stmt] = false
+				for _, ccStmt := range cc.Body {
+					if !f.skipStmt(ccStmt) {
 						return false
 					}
 				}
-				break loop
-			case *ast.IfStmt:
-				s = e
-			case nil:
-				break loop
 			}
-		}
-		f.skipStmts[stmt] = true
-		return true
-	case *ast.ForStmt:
-		if !f.skipStmt(s.Init) || !f.skipExpr(s.Cond) || !f.skipStmt(s.Post) {
-			f.skipStmts[stmt] = false // memoize
-			return false
-		}
-		for i := range s.Body.List {
-			if !f.skipStmt(s.Body.List[i]) {
-				f.skipStmts[stmt] = false
+			return true
+		case *ast.TypeSwitchStmt:
+			if !f.skipStmt(s.Init) {
 				return false
 			}
-		}
-		f.skipStmts[stmt] = true
-		return true
-	case *ast.RangeStmt:
-		if !f.skipExpr(s.X) || !f.skipExpr(s.Key) || !f.skipExpr(s.Value) {
-			f.skipStmts[stmt] = false // memoize
-			return false
-		}
-		for i := range s.Body.List {
-			if !f.skipStmt(s.Body.List[i]) {
-				f.skipStmts[stmt] = false
+
+			// Check the expression x in 'y := x.(T)' and 'x.(T)'.
+			// TODO: if we decide to generally support possibly panicking type assertions that are not the comma ok form,
+			// then we could likely simplify these checks to just f.SkipStmt(s.Assign).
+			var x ast.Expr
+			switch assign := s.Assign.(type) {
+			case *ast.ExprStmt:
+				x = assign.X.(*ast.TypeAssertExpr).X
+			case *ast.AssignStmt:
+				// TODO: confirm we don't need to check length of RHS.
+				x = assign.Rhs[0].(*ast.TypeAssertExpr).X
+			}
+			if !f.skipExpr(x) {
 				return false
 			}
-		}
-		f.skipStmts[stmt] = true
-		return true
-	case *ast.SwitchStmt:
-		if !f.skipExpr(s.Tag) || !f.skipStmt(s.Init) {
-			f.skipStmts[stmt] = false // memoize
-			return false
-		}
-		for i := range s.Body.List {
-			cc := s.Body.List[i].(*ast.CaseClause)
-			for _, x := range cc.List {
-				if !f.skipExpr(x) {
-					f.skipStmts[stmt] = false
-					return false
-				}
-			}
-			for _, ccStmt := range cc.Body {
-				if !f.skipStmt(ccStmt) {
-					f.skipStmts[stmt] = false
-					return false
-				}
-			}
-		}
-		f.skipStmts[stmt] = true
-		return true
-	case *ast.TypeSwitchStmt:
-		if !f.skipStmt(s.Init) {
-			f.skipStmts[stmt] = false // memoize
-			return false
-		}
 
-		// Check the expression x in 'y := x.(T)' and 'x.(T)'.
-		// TODO: if we decide to generally support possibly panicking type assertions that are not the comma ok form,
-		// then we could likely simplify these checks to just f.SkipStmt(s.Assign).
-		var x ast.Expr
-		switch assign := s.Assign.(type) {
-		case *ast.ExprStmt:
-			x = assign.X.(*ast.TypeAssertExpr).X
-		case *ast.AssignStmt:
-			// TODO: confirm we don't need to check length of RHS.
-			x = assign.Rhs[0].(*ast.TypeAssertExpr).X
-		}
-		if !f.skipExpr(x) {
-			f.skipStmts[stmt] = false
-			return false
-		}
-
-		for i := range s.Body.List {
-			cc := s.Body.List[i].(*ast.CaseClause)
-			for _, x := range cc.List {
-				if !f.skipExpr(x) {
-					f.skipStmts[stmt] = false
-					return false
+			for i := range s.Body.List {
+				cc := s.Body.List[i].(*ast.CaseClause)
+				for _, x := range cc.List {
+					if !f.skipExpr(x) {
+						return false
+					}
+				}
+				for _, ccStmt := range cc.Body {
+					if !f.skipStmt(ccStmt) {
+						return false
+					}
 				}
 			}
-			for _, ccStmt := range cc.Body {
-				if !f.skipStmt(ccStmt) {
-					f.skipStmts[stmt] = false
-					return false
-				}
-			}
+			return true
 		}
-		f.skipStmts[stmt] = true
-		return true
+		// We default to false if we don't have specific knowledge of a statement.
+		return false
 	}
 
-	// We default to false if we don't have specific knowledge of a statement.
-	return false
+	skip := skipStmt(stmt)
+	f.skipStmts[stmt] = skip // memoize
+	return skip
 }
 
 // skipExpr is like skipStmt, but for expressions.

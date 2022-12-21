@@ -235,9 +235,22 @@ func runGo121(pass *analysis.Pass) (interface{}, error) {
 		}
 	})
 
-	// Look for loop closure problems with go, defer and errgroup.Group.Go.
+	// Look for loop closure problems with go, defer and errgroup.Group.Go
+	// within range and for statements.
+	visited := make(map[ast.Stmt]bool) // have we visited a range or for statement
 	inspect.Nodes(nodeFilter, func(n ast.Node, push bool) bool {
 		if !push {
+			return true
+		}
+		var stmt ast.Stmt
+		switch n := n.(type) {
+		case *ast.RangeStmt:
+			stmt = n
+		case *ast.ForStmt:
+			stmt = n
+		}
+		if visited[stmt] {
+			// Already processed. This can happen if there are nested range or for statements.
 			return true
 		}
 
@@ -254,20 +267,16 @@ func runGo121(pass *analysis.Pass) (interface{}, error) {
 			pass:         pass,
 			vars:         newLoopVars(pass.TypesInfo),
 			filter:       newFilter(pass.TypesInfo),
+			visited:      visited,
 			checkGoDefer: true,
-		}
-		var stmt ast.Stmt
-		switch n := n.(type) {
-		case *ast.RangeStmt:
-			stmt = n
-		case *ast.ForStmt:
-			stmt = n
 		}
 		reverseVisit(gdv, []ast.Stmt{stmt})
 
-		// Once we find any range or for statement, we traverse the contained AST ourselves,
-		// so we do not need inspect.Preorder to continue.
-		return false
+		// reverseVisit visits nested range and for statements, but does
+		// not visit the statements in any func literals, so
+		// we ask inspect.Preorder to continue to ensure coverage within func literals.
+		// We use visited to avoid duplicate processing of the same range or for statement.
+		return true
 	})
 
 	return nil, nil
@@ -287,10 +296,8 @@ func reportCaptured(pass *analysis.Pass, vars map[types.Object]int, checkStmt as
 		if obj == nil {
 			return true
 		}
-		for v := range vars {
-			if v == obj {
-				pass.ReportRangef(id, "loop variable %s captured by func literal", id.Name)
-			}
+		if vars[obj] > 0 {
+			pass.ReportRangef(id, "loop variable %s captured by func literal", id.Name)
 		}
 		return true
 	})
@@ -319,7 +326,7 @@ func reportCaptured(pass *analysis.Pass, vars map[types.Object]int, checkStmt as
 // the defer statement's func literal for possible misuse of j:
 //
 //   0:   foo := func() []int { return nil }
-//   1:   for i := range "outer" {
+//   1:   for i := 0; i < 10; i++ {
 //   2:           go func() { print(i) }()             // misuse of i, but cannot analyze
 //   3:           for j := range foo() {               // we do not understand foo
 //   4:                   defer func() { print(j) }()  // misuse of j, and we can analyze
@@ -327,33 +334,37 @@ func reportCaptured(pass *analysis.Pass, vars map[types.Object]int, checkStmt as
 //   6:           i++
 //   7:   }
 //
-// TODO: update for single stmt reverseVisit
-//
 // The sequence of calls to goDeferVisitor for this example:
 //
 //                                      incoming       returned visitor's
 //                                      checkGoDefer   checkGoDefer
-//   ---- IncDecStmt ----               ------------   ------------------
+//                                      ------------   ------------------
+//   line 1: PUSH:     *ast.ForStmt     true           true
+//   line 1: BODYSTMT: *ast.ForStmt     true           true
 //   line 6: PUSH:     *ast.IncDecStmt  true           true
 //   line 6: BODYSTMT: *ast.IncDecStmt  true           true
 //   line 6: POP:      *ast.IncDecStmt
-//
-//   ---- Inner RangeStmt ----
 //   line 3: PUSH:     *ast.RangeStmt   true           true
-//   line 3: BODYSTMT: *ast.RangeStmt   true           FALSE
+//   line 3: BODYSTMT: *ast.RangeStmt   true           false
 //   line 4: PUSH:     *ast.DeferStmt   true           true
 //   line 4: BODYSTMT: *ast.DeferStmt   true           true
 //   line 4: POP:      *ast.DeferStmt
 //   line 3: POP:      *ast.RangeStmt
-//
-//   ---- GoStmt ----
-//   line 2: PUSH:     *ast.GoStmt      FALSE          FALSE
-//   line 2: BODYSTMT: *ast.GoStmt      FALSE          FALSE
+//   line 2: PUSH:     *ast.GoStmt      false          false
+//   line 2: BODYSTMT: *ast.GoStmt      false          false
 //   line 2: POP:      *ast.GoStmt
+//   line 1: POP:      *ast.ForStmt
 type goDeferVisitor struct {
 	pass   *analysis.Pass
 	vars   *loopVars
 	filter *filter // TODO: maybe rename to complex?
+
+	// visited tracks if a goDeferVisitor has already processed a given
+	// range or for statement. reverseWalk does not visit any func literals
+	// which might have range and for statements, so we use inspect.Node
+	// to ensure we visit all range and for statements, including those
+	// inside func literals.
+	visited map[ast.Stmt]bool
 
 	// checkGoDefer indicates a visited go, defer, or errgroup.Group.Go statement
 	// is safe to check for possibly captured loop iteration variables.
@@ -419,6 +430,8 @@ func (gdv goDeferVisitor) push(stmt ast.Stmt) reverseVisitor {
 
 	switch stmt.(type) {
 	case *ast.RangeStmt, *ast.ForStmt:
+		// Mark as visited so we don't reprocess later.
+		gdv.visited[stmt] = true
 
 		// Check if we need to rest our loop variables.
 		resetLoopVars := false

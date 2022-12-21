@@ -33,6 +33,8 @@ type reverseVisitor interface {
 
 // reverseVisit does a depth first walk of statements.
 // Sibling statements in compound statements are visited in reverse order.
+// reverseVisit does not descend into func literals, and hence does
+// not visit statements within func literals.
 func reverseVisit(visitor reverseVisitor, bodyStmts []ast.Stmt) {
 
 	if len(bodyStmts) == 0 {
