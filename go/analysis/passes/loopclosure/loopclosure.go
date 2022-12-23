@@ -186,34 +186,37 @@ func runGo120(pass *analysis.Pass) (interface{}, error) {
 // runGo121 runs the analyzer with additional experimental logic
 // that is not intended for Go 1.20 cmd/vet, including examining
 // statements following a go, defer or errgroup.Group.Go statement
-// to determine if they cannot delay start of execution of the
-// go or defer.
+// to determine if they cannot wait or derail changing loop iteration variables
+// by returning to the top of a loop.
 func runGo121(pass *analysis.Pass) (interface{}, error) {
-	// We do two passes with inspect: first, a simpler walk
-	// looking for problems with testing.T.Run with T.Parallel, and
-	// second, a more involved walk visiting statements looking
-	// for problems with go, defer and errgroup.Group.Go statements.
-
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{
 		(*ast.RangeStmt)(nil),
 		(*ast.ForStmt)(nil),
 	}
 
-	// Look for loop closure problems with testing.T.Run with T.Parallel.
+	// Track if we processed a range or for statement for possible problems with
+	// go, defer, or errgroup.Group.Go statements.
+	goDeferVisited := make(map[ast.Stmt]bool)
+
+	// Visit all range and for statements.
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		// Find and track the variables updated by the loop statement.
+		// First, look for loop closure problems with testing.T.Run with T.Parallel.
+		// Start by tracking the variables updated by the loop statement.
 		vars := newLoopVars(pass.TypesInfo)
 		vars.push(n)
 		if len(vars.m) == 0 {
+			// Nothing to do for this loop given there are no loop iteration variables.
 			return
 		}
-
+		var loopStmt ast.Stmt
 		var body *ast.BlockStmt
 		switch n := n.(type) {
 		case *ast.RangeStmt:
+			loopStmt = n
 			body = n.Body
 		case *ast.ForStmt:
+			loopStmt = n
 			body = n.Body
 		}
 
@@ -233,49 +236,34 @@ func runGo121(pass *analysis.Pass) (interface{}, error) {
 				}
 			}
 		}
-	})
 
-	// Look for loop closure problems with go, defer and errgroup.Group.Go
-	// within range and for statements.
-	visited := make(map[ast.Stmt]bool) // have we visited a range or for statement
-	inspect.Nodes(nodeFilter, func(n ast.Node, push bool) bool {
-		if !push {
-			return true
-		}
-		var stmt ast.Stmt
-		switch n := n.(type) {
-		case *ast.RangeStmt:
-			stmt = n
-		case *ast.ForStmt:
-			stmt = n
-		}
-		if visited[stmt] {
-			// Already processed. This can happen if there are nested range or for statements.
-			return true
-		}
-
-		// Inspect statements to find function literals that may be run outside of
-		// the current loop iteration.
+		// Second, inspect statements to find any func literals that may be run outside of
+		// the current loop iteration where the func literal captures a loop iteration variable.
 		//
-		// If a potentially problematic go, defer, or errgroup.Group.Go statement
-		// is followed by one or more statements that we can prove
-		// do not cause a wait or otherwise derail the flow of execution sufficiently, then
-		// we examine the function literal within the potentially problematic statement.
-		// As we go, we track loop iteration variables to check if they are captured incorrectly.
-		// TODO: consider differentiating between go vs. defer for what we can prove.
+		// If a go, defer, or errgroup.Group.Go statement is followed by one or more statements
+		// that we can prove do not cause a wait or otherwise derail returning to the top of the loop,
+		// then we check its function literal for captures.
+		//
+		// reverseVisit recursively walks compound statements and their bodies, including
+		// nested range and for statements. During that walk, goDeferVisitor tracks loop
+		// iteration variables, and if it can prove they are captured incorrectly,
+		// it reports the problem via reportCaptured.
+		//
+		// reverseVisit does not recursively descend into the statements inside a func literal,
+		// even if the func literal contains range or for statements. This is not a problem
+		// because inspect.Preorder will visit those statements. We avoid duplicate processing
+		// of a range or for statement by checking goDeferVisited here.
+		if goDeferVisited[loopStmt] {
+			// This is a loop inside another loop, and we already processed this inner loop.
+			return
+		}
 		gdv := &goDeferVisitor{
 			pass:    pass,
 			vars:    newLoopVars(pass.TypesInfo),
 			filter:  newFilter(pass.TypesInfo),
-			visited: visited,
+			visited: goDeferVisited,
 		}
-		reverseVisit(gdv, []ast.Stmt{stmt})
-
-		// reverseVisit visits nested range and for statements, but does
-		// not visit the statements in any func literals, so
-		// we ask inspect.Preorder to continue to ensure coverage within func literals.
-		// We use visited to avoid duplicate processing of the same range or for statement.
-		return true
+		reverseVisit(gdv, []ast.Stmt{loopStmt})
 	})
 
 	return nil, nil
@@ -352,8 +340,8 @@ type goDeferVisitor struct {
 	filter *filter
 
 	// visited tracks if a goDeferVisitor has already processed a given
-	// range or for statement. reverseWalk does not visit any func literals
-	// which might have range and for statements, so we use inspect.Node
+	// range or for statement. reverseWalk does not visit inside any func literals
+	// which might have range and for statements, so we use inspect.Preorder
 	// to ensure we visit all range and for statements, including those
 	// inside func literals.
 	visited map[ast.Stmt]bool
@@ -367,6 +355,8 @@ type goDeferVisitor struct {
 // bodyStmt only examines statements we can prove do not cause a wait or
 // otherwise derail the flow of execution from returning to the top of the loop.
 // If a problem is found, it calls reportCaptured.
+//
+// TODO: consider differentiating between defer vs. go statements for what we can prove.
 func (gdv *goDeferVisitor) bodyStmt(stmt ast.Stmt) reverseVisitor {
 	// Check if we have a go, defer, or errgroup statement of interest.
 	var checkStmts []ast.Stmt
