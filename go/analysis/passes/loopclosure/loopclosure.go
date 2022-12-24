@@ -237,21 +237,27 @@ func runGo121(pass *analysis.Pass) (interface{}, error) {
 			}
 		}
 
-		// Second, inspect statements to find any func literals that may be run outside of
+		// Second, inspect statements to find func literals that may be run outside of
 		// the current loop iteration where the func literal captures a loop iteration variable.
-		//
-		// If a go, defer, or errgroup.Group.Go statement is followed by one or more statements
-		// that we can prove do not cause a wait or otherwise derail returning to the top of the loop,
-		// then we check its function literal for captures.
 		//
 		// reverseVisit recursively walks compound statements and their bodies, including
 		// nested range and for statements. During that walk, goDeferVisitor tracks loop
 		// iteration variables, and if it can prove they are captured incorrectly,
 		// it reports the problem via reportCaptured.
 		//
+		// The simplest case we handle is a go, defer or errgroup.Group.Go statement that is
+		// the last statement of the body of a range or for loop. We also recursively
+		// examine last statements that are compound statements. For example, if the last statement
+		// is a switch statement, then each switch case body is also visited to examine its
+		// last statements. If the last statement of a body is a statement we understand enough
+		// to conclude it cannot wait or derail returning to the top of the loop, we also examine
+		// the immediately prior statement, and we then repeat that process. Based on a random
+		// sample of public modules, in aggregate this means we are able to examine the majority
+		// of go, defer and errgroup.Group.Go statements with func literals that are inside loops.
+		//
 		// reverseVisit does not recursively descend into the statements inside a func literal,
-		// even if the func literal contains range or for statements. This is not a problem
-		// because inspect.Preorder will visit those statements. We avoid duplicate processing
+		// even if the func literal contains range or for statements. We do not miss examining those
+		// loops because inspect.Preorder will visit those statements. We avoid duplicate processing
 		// of a range or for statement by checking goDeferVisited here.
 		if goDeferVisited[loopStmt] {
 			// This is a loop inside another loop, and we already processed this inner loop.
@@ -259,11 +265,11 @@ func runGo121(pass *analysis.Pass) (interface{}, error) {
 		}
 		gdv := &goDeferVisitor{
 			pass:    pass,
-			vars:    newLoopVars(pass.TypesInfo),
+			vars:    vars, // use the loop iteration vars we already populated above
 			filter:  newFilter(pass.TypesInfo),
 			visited: goDeferVisited,
 		}
-		reverseVisit(gdv, []ast.Stmt{loopStmt})
+		reverseVisit(gdv, body.List)
 	})
 
 	return nil, nil
@@ -317,13 +323,10 @@ func reportCaptured(pass *analysis.Pass, vars map[types.Object]int, checkStmt as
 //   6:           i++
 //   7:   }
 //
-// Here is the sequence of calls to goDeferVisitor for this example.
-// Note that the go statement on line 2 is never visited because
-// push returns a nil visitor for the range statement on line 3,
-// which means stop visiting preceding sibling statements.
+// Here is the sequence of calls to goDeferVisitor for the body of the outer for loop.
+// Note that the go statement on line 2 is never visited because push returns a nil visitor
+// for the range statement on line 3, which means stop visiting preceding sibling statements.
 //
-//   line 1: PUSH:     *ast.ForStmt
-//   line 1: BODYSTMT: *ast.ForStmt
 //   line 6: PUSH:     *ast.IncDecStmt
 //   line 6: BODYSTMT: *ast.IncDecStmt
 //   line 6: POP:      *ast.IncDecStmt
@@ -333,7 +336,6 @@ func reportCaptured(pass *analysis.Pass, vars map[types.Object]int, checkStmt as
 //   line 4: BODYSTMT: *ast.DeferStmt
 //   line 4: POP:      *ast.DeferStmt
 //   line 3: POP:      *ast.RangeStmt
-//   line 1: POP:      *ast.ForStmt
 type goDeferVisitor struct {
 	pass   *analysis.Pass
 	vars   *loopVars
@@ -352,7 +354,7 @@ type goDeferVisitor struct {
 // to determine if they are a go, defer, or errgroup.Group.Go statement
 // using a function literal that incorrectly captures a loop variable.
 //
-// bodyStmt only examines statements we can prove do not cause a wait or
+// bodyStmt only continues to examine statements we can prove do not cause a wait or
 // otherwise derail the flow of execution from returning to the top of the loop.
 // If a problem is found, it calls reportCaptured.
 //
