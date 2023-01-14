@@ -328,9 +328,10 @@ func (f *filter) skipExpr(expr ast.Expr) bool {
 	case *ast.UnaryExpr:
 		switch x.Op {
 		// See https://go.dev/ref/spec#UnaryExpr
-		case token.ADD, token.SUB, token.NOT, token.XOR, token.AND, token.TILDE:
+		case token.ADD, token.SUB, token.NOT, token.XOR, token.AND:
 			// We disallow token.MUL because we currently do not want to allow dereference.
 			// We also disallow token.ARROW because it can cause a wait.
+			// TODO: allow token.TILDE once Go 1.18 is the earliest supported version for x/tools.
 			// TODO: confirm token.AND is not allowing more address operations than we expect.
 			return f.skipExpr(x.X)
 		}
