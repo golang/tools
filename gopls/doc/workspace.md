@@ -68,7 +68,7 @@ setting.
 
 If neither of the above solutions work, and your editor allows configuring the
 set of
-["workspace folders"](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspaceFolder)
+["workspace folders"](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_workspaceFolders)
 used during your LSP session, you can still work on multiple modules by adding
 a workspace folder at each module root (the locations of `go.mod` files). This
 means that each module has its own scope, and features will not work across
