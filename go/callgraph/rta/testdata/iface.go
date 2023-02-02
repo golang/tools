@@ -31,6 +31,14 @@ type D uint // instantiated only in dead code
 func (D) f() {} // unreachable
 func (D) F() {} // unreachable
 
+type E interface {
+	h()
+}
+
+type F int // instantiated
+
+func (F) h() {} // reachable via interface invoke
+
 func main() {
 	A(0).f()
 
@@ -43,6 +51,11 @@ func main() {
 	i.f() // calls (*B).f, (*B2).f and (B2.f)
 
 	live()
+
+	var willChange interface {
+		h()
+	} = F(0)
+	invokesH(willChange)
 }
 
 func live() {
@@ -53,12 +66,18 @@ func live() {
 	j.f() // calls (B2).f and (*B2).f but not (*B).f (no g method).
 }
 
+func invokesH(e E) {
+	e.h()
+}
+
 func dead() {
 	use(D(0))
 }
 
 // WANT:
 // Dynamic calls
+//   invokesH --> (*F).h
+//   invokesH --> (F).h
 //   live --> (*B2).f
 //   live --> (B2).f
 //   main --> (*B).f
@@ -68,12 +87,19 @@ func dead() {
 //   (*B).F
 //   (*B).f
 //   (*B2).f
+//   (*F).h
 //   (A).f
 //   (B2).f
+//   (F).h
+//   invokesH
 //   live
 //   use
 // Reflect types
 //   *B
 //   *B2
+//   *E
+//   *F
 //   B
 //   B2
+//   E
+//   F

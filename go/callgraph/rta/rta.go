@@ -112,7 +112,7 @@ type rta struct {
 
 	// concreteTypes maps each concrete type to the set of interfaces that it implements.
 	// Keys are types.Type, values are unordered []*types.Interface.
-	// Only concrete types used as MakeInterface operands are included.
+	// Concrete types used as MakeInterface and ChangeInterface operands are included.
 	concreteTypes typeutil.Map
 
 	// interfaceTypes maps each interface type to
@@ -246,6 +246,8 @@ func (r *rta) visitFunc(f *ssa.Function) {
 
 			case *ssa.MakeInterface:
 				r.addRuntimeType(instr.X.Type(), false)
+			case *ssa.ChangeInterface:
+				r.addRuntimeType(instr.Type(), false)
 			}
 
 			// Process all address-taken functions.
