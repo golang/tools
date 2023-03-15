@@ -22,7 +22,7 @@ import (
 var Analyzer = &analysis.Analyzer{
 	Name:       "buildssa",
 	Doc:        "build SSA-form IR for later passes",
-	Run:        run,
+	Run:        CreateRunner(0),
 	ResultType: reflect.TypeOf(new(SSA)),
 }
 
@@ -33,7 +33,13 @@ type SSA struct {
 	SrcFuncs []*ssa.Function
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func CreateRunner(mode ssa.BuilderMode) func(pass *analysis.Pass) (interface{}, error) {
+	return func(pass *analysis.Pass) (interface{}, error) {
+		return run(pass, mode)
+	}
+}
+
+func run(pass *analysis.Pass, mode ssa.BuilderMode) (interface{}, error) {
 	// Plundered from ssautil.BuildPackage.
 
 	// We must create a new Program for each Package because the
@@ -45,10 +51,6 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	// packages to be analysed independently, so any given call to
 	// Analysis.Run on a package will see only SSA objects belonging
 	// to a single Program.
-
-	// Some Analyzers may need GlobalDebug, in which case we'll have
-	// to set it globally, but let's wait till we need it.
-	mode := ssa.BuilderMode(0)
 
 	prog := ssa.NewProgram(pass.Fset, mode)
 
