@@ -322,7 +322,6 @@ func loadPackages(a *analysis.Analyzer, dir string, patterns ...string) ([]*pack
 		Mode:  mode,
 		Dir:   dir,
 		Tests: true,
-		Env:   append(os.Environ(), "GOPATH="+dir, "GO111MODULE=off", "GOPROXY=off"),
 	}
 	pkgs, err := packages.Load(cfg, patterns...)
 	if err != nil {
