@@ -240,12 +240,11 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 	return r
 }
 
-// Run applies an analysis to the packages denoted by the "go list" patterns.
+// RunModule applies an analysis to the packages denoted by the "go list" patterns.
 //
-// It loads the packages from the specified GOPATH-style project
-// directory using golang.org/x/tools/go/packages, runs the analysis on
-// them, and checks that each analysis emits the expected diagnostics
-// and facts specified by the contents of '// want ...' comments in the
+// It loads the packages from the module using golang.org/x/tools/go/packages,
+// runs the analysis on them, and checks that each analysis emits the expected
+// diagnostics and facts specified by the contents of '// want ...' comments in the
 // package's source files. It treats a comment of the form
 // "//...// want..." or "/*...// want... */" as if it starts at 'want'
 //
@@ -278,7 +277,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 // Run also returns a Result for each package for which analysis was
 // attempted, even if unsuccessful. It is safe for a test to ignore all
 // the results, but a test may use it to perform additional checks.
-func Run(t Testing, dir string, a *analysis.Analyzer, patterns ...string) []*Result {
+func RunModule(t Testing, dir string, a *analysis.Analyzer, patterns ...string) []*Result {
 	if t, ok := t.(testing.TB); ok {
 		testenv.NeedsGoPackages(t)
 	}
@@ -300,12 +299,20 @@ func Run(t Testing, dir string, a *analysis.Analyzer, patterns ...string) []*Res
 	return results
 }
 
+// Run applies an analysis to the packages denoted by the "go list" patterns.
+// It performs the same analysis as [RunModule], but uses GOPATH instead.
+func Run(t Testing, dir string, a *analysis.Analyzer, patterns ...string) []*Result {
+	os.Setenv("GOPATH", dir)
+	os.Setenv("GO111MODULE", "off")
+	os.Setenv("GOPROXY", "off")
+	return RunModule(t, dir, a, patterns...)
+}
+
 // A Result holds the result of applying an analyzer to a package.
 type Result = checker.TestAnalyzerResult
 
 // loadPackages uses go/packages to load a specified packages (from source, with
-// dependencies) from dir, which is the root of a GOPATH-style project
-// tree. It returns an error if any package had an error, or the pattern
+// dependencies) from dir. It returns an error if any package had an error, or the pattern
 // matched no packages.
 func loadPackages(a *analysis.Analyzer, dir string, patterns ...string) ([]*packages.Package, error) {
 	// packages.Load loads the real standard library, not a minimal
