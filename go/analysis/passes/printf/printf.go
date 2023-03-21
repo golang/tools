@@ -63,7 +63,7 @@ known formatting functions or methods. If the name contains a period,
 it must denote a specific function using one of the following forms:
 
 	dir/pkg.Function
-	dir/pkg.Type.Method
+	(dir/pkg.Type).Method
 	(*dir/pkg.Type).Method
 
 Otherwise the name is interpreted as a case-insensitive unqualified
