@@ -7,16 +7,14 @@ Ticket here: <https://github.com/golang/vscode-go/issues/2557>
 * [Follow the contribution guidelines](doc/contributing.md)
 * Run tests inside the `gopls` directory: `go test ./...`
 
-Code lives [here](internal/lsp/analysis/invertifcondition/invertifcondition.go).
+Run our tests: `go test golang.org/x/tools/gopls/internal/lsp`
 
 ## TODO
 
-* Ensure the newly added test cases are run on `go test ./...`
-* Figure out how to run only our test cases
-* Make the test cases valid. By putting the right thing in our `.golden` file,
-  or by splitting up the test cases or something. Maybe both?
 * Move `invertifcondition.go` next to `extract.go`
 * Rewrite `invertifcondition.go` so it's triggered the same way as `extract.go`
+* Make the test cases valid. By putting the right thing in our `.golden` file,
+  or by splitting up the test cases or something. Maybe both?
 * Give the user a way to actually invert the condition
 * `git diff origin/master` and ensure we're looking good
 * Remove this file
@@ -36,3 +34,6 @@ Code lives [here](internal/lsp/analysis/invertifcondition/invertifcondition.go).
   conditions. What we're doing now is adding diagnostics, and this is not a
   diagnostic.
 * Move test cases into `internal/lsp/testdata/invertifcondition`
+* Ensure the newly added test cases are run on `go test ./...`
+* Figure out how to run only our test cases
+  * `go test golang.org/x/tools/gopls/internal/lsp`
