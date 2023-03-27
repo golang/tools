@@ -31,6 +31,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			// Can't invert conditions without else clauses
 			return
 		}
+		if _, hasElseIf := ifStatement.Else.(*ast.IfStmt); hasElseIf {
+			// Can't invert conditions with else-if clauses, unclear what that
+			// would look like
+			return
+		}
 
 		// Find enclosing file.
 		// TODO(adonovan): use inspect.WithStack?
