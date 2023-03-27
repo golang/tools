@@ -9,7 +9,6 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/invertifstatement"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func Test(t *testing.T) {
