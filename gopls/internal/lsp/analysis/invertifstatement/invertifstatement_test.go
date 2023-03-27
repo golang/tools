@@ -14,5 +14,5 @@ import (
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
 	tests := []string{"a"}
-	analysistest.Run(t, testdata, invertifstatement.Analyzer, tests...)
+	analysistest.RunWithSuggestedFixes(t, testdata, invertifstatement.Analyzer, tests...)
 }
