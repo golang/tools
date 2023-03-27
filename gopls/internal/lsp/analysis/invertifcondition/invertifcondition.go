@@ -2,7 +2,6 @@ package invertifcondition
 
 import (
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/inspect"
 )
 
 const Doc = `invert if condition
@@ -14,9 +13,9 @@ switches places between the two branches.
 var Analyzer = &analysis.Analyzer{
 	Name:             "fillstruct",
 	Doc:              Doc,
-	Requires:         []*analysis.Analyzer{inspect.Analyzer},
+	Requires:         []*analysis.Analyzer{},
 	Run:              run,
-	RunDespiteErrors: true,
+	RunDespiteErrors: false,
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
