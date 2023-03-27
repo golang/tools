@@ -11,7 +11,6 @@ Run our tests: `go test golang.org/x/tools/gopls/internal/lsp`
 
 ## TODO
 
-* Move `invertifcondition.go` next to `extract.go`
 * Rewrite `invertifcondition.go` so it's triggered the same way as `extract.go`
 * Make the test cases valid. By putting the right thing in our `.golden` file,
   or by splitting up the test cases or something. Maybe both?
@@ -37,3 +36,4 @@ Run our tests: `go test golang.org/x/tools/gopls/internal/lsp`
 * Ensure the newly added test cases are run on `go test ./...`
 * Figure out how to run only our test cases
   * `go test golang.org/x/tools/gopls/internal/lsp`
+* Move `invertifcondition.go` next to `extract.go`
