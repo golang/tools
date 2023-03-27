@@ -9,7 +9,8 @@ Ticket here: <https://github.com/golang/vscode-go/issues/2557>
 
 ## TODO
 
-* Implement functionality...
+* Add diagnostic for the right if statements only
+* Give the user a way to actually invert the condition
 * Integrate with the rest of the LSP
 * Remove this file
 * Make a PR
