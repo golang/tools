@@ -26,13 +26,17 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{(*ast.IfStmt)(nil)}
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		expr := n.(*ast.IfStmt)
+		ifStatement := n.(*ast.IfStmt)
+		if ifStatement.Else == nil {
+			// Can't invert conditions without else clauses
+			return
+		}
 
 		// Find enclosing file.
 		// TODO(adonovan): use inspect.WithStack?
 		var file *ast.File
 		for _, f := range pass.Files {
-			if f.Pos() <= expr.Pos() && expr.Pos() <= f.End() {
+			if f.Pos() <= ifStatement.Pos() && ifStatement.Pos() <= f.End() {
 				file = f
 				break
 			}
@@ -46,8 +50,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 		pass.Report(analysis.Diagnostic{
 			Message: "Invert if condition",
-			Pos:     expr.Pos(),
-			End:     expr.End(),
+			Pos:     ifStatement.Pos(),
+			End:     ifStatement.End(),
 		})
 	})
 	return nil, nil

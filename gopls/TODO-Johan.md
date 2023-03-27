@@ -7,6 +7,8 @@ Ticket here: <https://github.com/golang/vscode-go/issues/2557>
 * [Follow the contribution guidelines](doc/contributing.md)
 * Run tests inside the `gopls` directory: `go test ./...`
 
+Code lives [here](internal/lsp/analysis/invertifcondition/invertifcondition.go).
+
 ## TODO
 
 * Add diagnostic for the right if statements only
