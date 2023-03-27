@@ -9,9 +9,6 @@ Ticket here: <https://github.com/golang/vscode-go/issues/2557>
 
 ## TODO
 
-* Add test cases in
-  `internal/lsp/analysis/invertifstatement/testdata/src/a/a.go`, like in its
-  neighboring analysis directories
 * Implement functionality...
 * Integrate with the rest of the LSP
 * Remove this file
@@ -23,3 +20,6 @@ Ticket here: <https://github.com/golang/vscode-go/issues/2557>
   * Inspired (arbitrarily) from `internal/lsp/analysis/fillstruct/fillstruct.go`
   * Let's just add a new neighboring directory there and start writing tests
 * Write tests in `internal/lsp/analysis/invertifstatement/`
+* Add test cases in
+  `internal/lsp/analysis/invertifstatement/testdata/src/a/a.go`, like in its
+  neighboring analysis directories

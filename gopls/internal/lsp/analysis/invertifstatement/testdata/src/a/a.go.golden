@@ -1,3 +1,59 @@
 package invertifstatement
 
-// FIXME: Add expected fixes in here
+import (
+	"fmt"
+	"os"
+)
+
+func F() {
+	if len(os.Args) <= 2 { // want "invert if condition"
+		fmt.Println("B")
+	} else {
+		fmt.Println("A")
+	}
+
+	if _, err := fmt.Println("x"); err == nil { // want "invert if condition"
+		fmt.Println("B")
+	} else {
+		fmt.Println("A")
+	}
+
+	if n, err := fmt.Println("x"); err == nil || n <= 0 { // want "invert if condition"
+		fmt.Println("B")
+	} else {
+		fmt.Println("A")
+	}
+
+	if n, err := fmt.Println("x"); err == nil && n <= 0 { // want "invert if condition"
+		fmt.Println("B")
+	} else {
+		fmt.Println("A")
+	}
+
+	// No inversion expected when there's not else clause
+	if len(os.Args) > 2 {
+		fmt.Println("A")
+	}
+
+	// No inversion expected for else-if, that would become unreadable
+	if len(os.Args) > 2 {
+		fmt.Println("A")
+	} else if os.Args[0] != "X" { // want "invert if condition"
+		fmt.Println("C")
+	} else {
+		fmt.Println("B")
+	}
+
+	b := true
+	if !b { // want "invert if condition"
+		fmt.Println("B")
+	} else {
+		fmt.Println("A")
+	}
+
+	if !os.IsPathSeparator('X') { // want "invert if condition"
+		fmt.Println("B")
+	} else {
+		fmt.Println("A")
+	}
+}
