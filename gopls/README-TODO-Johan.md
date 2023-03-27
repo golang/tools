@@ -11,11 +11,14 @@ Code lives [here](internal/lsp/analysis/invertifcondition/invertifcondition.go).
 
 ## TODO
 
-* Move everything next to `extract.go`.
-  * Inversion logic
-  * Test cases
+* Ensure the newly added test cases are run on `go test ./...`
+* Figure out how to run only our test cases
+* Make the test cases valid. By putting the right thing in our `.golden` file,
+  or by splitting up the test cases or something. Maybe both?
+* Move `invertifcondition.go` next to `extract.go`
+* Rewrite `invertifcondition.go` so it's triggered the same way as `extract.go`
 * Give the user a way to actually invert the condition
-* Integrate with the rest of the LSP
+* `git diff origin/master` and ensure we're looking good
 * Remove this file
 * Make a PR
 
@@ -32,3 +35,4 @@ Code lives [here](internal/lsp/analysis/invertifcondition/invertifcondition.go).
 * Realize we should be doing what `extract.go` is doing but for inverting if
   conditions. What we're doing now is adding diagnostics, and this is not a
   diagnostic.
+* Move test cases into `internal/lsp/testdata/invertifcondition`
