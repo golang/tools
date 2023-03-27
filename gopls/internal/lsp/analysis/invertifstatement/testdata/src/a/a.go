@@ -1,11 +1,14 @@
 package invertifstatement
 
-import "os"
+import (
+	"fmt"
+	"os"
+)
 
-func F1() int {
+func F1() {
 	if len(os.Args) > 2 { // want "invert if condition"
-		return 1
+		fmt.Println("A")
 	} else {
-		return 2
+		fmt.Println("B")
 	}
 }
