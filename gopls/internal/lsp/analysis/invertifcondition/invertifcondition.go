@@ -1,11 +1,11 @@
-package invertifstatement
+package invertifcondition
 
 import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 )
 
-const Doc = `invert if statement
+const Doc = `invert if condition
 
 Given an if-else statement, this analyzer inverts the condition and
 switches places between the two branches.

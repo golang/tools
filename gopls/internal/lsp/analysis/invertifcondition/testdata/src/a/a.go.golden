@@ -1,4 +1,4 @@
-package invertifstatement
+package invertifcondition
 
 import (
 	"fmt"

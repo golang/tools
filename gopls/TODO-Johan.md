@@ -19,7 +19,7 @@ Ticket here: <https://github.com/golang/vscode-go/issues/2557>
 * Figure out where to put tests for the new functionality
   * Inspired (arbitrarily) from `internal/lsp/analysis/fillstruct/fillstruct.go`
   * Let's just add a new neighboring directory there and start writing tests
-* Write tests in `internal/lsp/analysis/invertifstatement/`
+* Write tests in `internal/lsp/analysis/invertifcondition/`
 * Add test cases in
-  `internal/lsp/analysis/invertifstatement/testdata/src/a/a.go`, like in its
+  `internal/lsp/analysis/invertifcondition/testdata/src/a/a.go`, like in its
   neighboring analysis directories
