@@ -11,7 +11,8 @@ Run our tests: `go test golang.org/x/tools/gopls/internal/lsp`
 
 ## TODO
 
-* Rewrite `invertifcondition.go` so it's triggered the same way as `extract.go`
+* Figure out why `go test golang.org/x/tools/gopls/internal/lsp` complains about
+  `invertifcondition/a.go:9:26: pattern if len(os.args) > 2 did not match`
 * Make the test cases valid. By putting the right thing in our `.golden` file,
   or by splitting up the test cases or something. Maybe both?
 * Give the user a way to actually invert the condition
@@ -37,3 +38,4 @@ Run our tests: `go test golang.org/x/tools/gopls/internal/lsp`
 * Figure out how to run only our test cases
   * `go test golang.org/x/tools/gopls/internal/lsp`
 * Move `invertifcondition.go` next to `extract.go`
+* Rewrite `invertifcondition.go` so it's triggered the same way as `extract.go`

@@ -1,63 +1,46 @@
-package invertifcondition
+package source
 
 import (
+	"fmt"
 	"go/ast"
+	"go/token"
+	"go/types"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/ast/astutil"
 )
 
-const Doc = `invert if condition
-
-Given an if-else statement, this analyzer inverts the condition and
-switches places between the two branches.
-`
-
-var Analyzer = &analysis.Analyzer{
-	Name:             "invertifcondition",
-	Doc:              Doc,
-	Requires:         []*analysis.Analyzer{inspect.Analyzer},
-	Run:              run,
-	RunDespiteErrors: false,
+func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
+	return nil, fmt.Errorf("FIXME: Unimplemented")
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	nodeFilter := []ast.Node{(*ast.IfStmt)(nil)}
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		ifStatement := n.(*ast.IfStmt)
-		if ifStatement.Else == nil {
-			// Can't invert conditions without else clauses
-			return
-		}
-		if _, hasElseIf := ifStatement.Else.(*ast.IfStmt); hasElseIf {
-			// Can't invert conditions with else-if clauses, unclear what that
-			// would look like
-			return
-		}
+// CanInvertIfCondition reports whether we can do invert-if-condition on the
+// code in the given range
+func CanInvertIfCondition(start, end token.Pos, file *ast.File) (*ast.IfStmt, []ast.Node, bool, error) {
+	path, _ := astutil.PathEnclosingInterval(file, start, end)
+	if len(path) == 0 {
+		return nil, nil, false, fmt.Errorf("no path enclosing interval")
+	}
 
-		// Find enclosing file.
-		// TODO(adonovan): use inspect.WithStack?
-		var file *ast.File
-		for _, f := range pass.Files {
-			if f.Pos() <= ifStatement.Pos() && ifStatement.Pos() <= f.End() {
-				file = f
-				break
-			}
-		}
-		if file == nil {
-			return
-		}
+	expr, ok := path[0].(ast.Stmt)
+	if !ok {
+		return nil, nil, false, fmt.Errorf("node is not an expression")
+	}
 
-		// FIXME: Add a ton more code here and a way to tell gopls how to
-		// actually invert the condition
+	ifStatement, isIfStatement := expr.(*ast.IfStmt)
+	if !isIfStatement {
+		return nil, nil, false, fmt.Errorf("not an if statement")
+	}
 
-		pass.Report(analysis.Diagnostic{
-			Message: "Invert if condition",
-			Pos:     ifStatement.Pos(),
-			End:     ifStatement.End(),
-		})
-	})
-	return nil, nil
+	if ifStatement.Else == nil {
+		// Can't invert conditions without else clauses
+		return nil, nil, false, fmt.Errorf("else clause required")
+	}
+	if _, hasElseIf := ifStatement.Else.(*ast.IfStmt); hasElseIf {
+		// Can't invert conditions with else-if clauses, unclear what that
+		// would look like
+		return nil, nil, false, fmt.Errorf("else-if not supported")
+	}
+
+	return ifStatement, path, true, nil
 }
