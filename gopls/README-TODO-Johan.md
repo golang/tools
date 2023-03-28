@@ -7,10 +7,20 @@ Ticket here: <https://github.com/golang/vscode-go/issues/2557>
 * [Follow the contribution guidelines](doc/contributing.md)
 * Run tests inside the `gopls` directory: `go test ./...`
 
-Run our tests: `go test golang.org/x/tools/gopls/internal/lsp`
+Run our tests:
+```
+go test golang.org/x/tools/gopls/internal/lsp -test.run TestLSP/Modules/SuggestedFix
+```
+
+Or for a somewhat more complete version:
+```
+go test golang.org/x/tools/gopls/internal/lsp
+```
 
 ## TODO
 
+* Figure out why `go test golang.org/x/tools/gopls/internal/lsp -test.run
+  TestLSP/Modules/SuggestedFix` complains about not getting any code actions
 * Make the test cases valid. By putting the right thing in our `.golden` file,
   or by splitting up the test cases or something. Maybe both?
 * Give the user a way to actually invert the condition
