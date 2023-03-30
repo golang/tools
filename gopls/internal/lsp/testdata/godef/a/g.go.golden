@@ -1,7 +1,67 @@
 -- dur-hoverdef --
 ```go
-const dur time.Duration = 910350000000 // 15m10.35s
+const dur time.Duration = 15*time.Minute + 10*time.Second + 350*time.Millisecond // 15m10.35s
 ```
 
 dur is a constant of type time.Duration.
 
+-- decimalConst-hoverdef --
+```go
+const decimal untyped int = 153
+```
+
+no inline comment
+
+-- hexConst-hoverdef --
+```go
+const hex untyped int = 0xe34e // 58190
+```
+-- binConst-hoverdef --
+```go
+const bin untyped int = 0b1001001 // 73
+```
+-- numberWithUnderscoreConst-hoverdef --
+```go
+const numberWithUnderscore int64 = 10_000_000_000 // 10000000000
+```
+-- octalConst-hoverdef --
+```go
+const octal untyped int = 0o777 // 511
+```
+-- exprConst-hoverdef --
+```go
+const expr untyped int = 2 << (0b111&0b101 - 2) // 16
+```
+-- boolConst-hoverdef --
+```go
+const boolean untyped bool = (55 - 3) == (26 * 2) // true
+```
+-- ln10Const-hoverdef --
+```go
+const ln10 untyped float = 2.30258509299404568401799145468436420760110148862877297603332790 // 2.30259
+```
+-- aIota-hoverdef --
+```go
+const a untyped int = 1 << iota // 1
+```
+-- bIota-hoverdef --
+```go
+const b untyped int = 2
+```
+-- strConst-hoverdef --
+```go
+const str untyped string = "hello world"
+```
+-- longStrConst-hoverdef --
+```go
+const longStr untyped string = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur e...
+```
+-- maxFloat32Const-hoverdef --
+```go
+const math.MaxFloat32 untyped float = 0x1p127 * (1 + (1 - 0x1p-23)) // 3.40282e+38
+```
+
+Floating-point limit values.
+
+
+[`math.MaxFloat32` on pkg.go.dev](https://pkg.go.dev/math#MaxFloat32)
