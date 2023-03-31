@@ -173,8 +173,7 @@ func hover(ctx context.Context, snapshot Snapshot, fh FileHandle, pp protocol.Po
 
 	// TODO(rfindley): we could do much better for inferred signatures.
 	if inferred := inferredSignature(pkg.GetTypesInfo(), ident); inferred != nil {
-		s := inferredSignatureString(obj, qf, inferred)
-		if s != "" {
+		if s := inferredSignatureString(obj, qf, inferred); s != "" {
 			signature = s
 		}
 	}
@@ -584,7 +583,7 @@ func hoverLit(pgf *ParsedGoFile, lit *ast.BasicLit, pos token.Pos) (protocol.Ran
 
 // inferredSignatureString is a wrapper around the types.ObjectString function
 // that adds more information to inferred signatures. It will return an empty string
-// if passed types.Object is not a signature.
+// if the passed types.Object is not a signature.
 func inferredSignatureString(obj types.Object, qf types.Qualifier, inferred *types.Signature) string {
 	// If the signature type was inferred, prefer the inferred signature with a
 	// comment showing the generic signature.
@@ -605,12 +604,17 @@ func inferredSignatureString(obj types.Object, qf types.Qualifier, inferred *typ
 
 // objectString is a wrapper around the types.ObjectString function.
 // It handles adding more information to the object string.
+// If spec is non-nil, it may be used to format additional declaration
+// syntax, and file must be the token.File describing its positions.
 func objectString(obj types.Object, qf types.Qualifier, declPos token.Pos, file *token.File, spec ast.Spec) string {
 	str := types.ObjectString(obj, qf)
 
 	switch obj := obj.(type) {
 	case *types.Const:
-		declaration := obj.Val().String()
+		var (
+			declaration = obj.Val().String() // default formatted declaration
+			comment     = ""                 // if non-empty, a clarifying comment
+		)
 
 		// Try to use the original declaration.
 		switch obj.Val().Kind() {
@@ -619,16 +623,15 @@ func objectString(obj types.Object, qf types.Qualifier, declPos token.Pos, file 
 			// Also strings can be very long. So, just use the constant's value.
 
 		default:
-			if file == nil || spec == nil {
-				break
-			}
-
-			switch spec := spec.(type) {
-			case *ast.ValueSpec:
+			if spec, _ := spec.(*ast.ValueSpec); spec != nil {
 				for i, name := range spec.Names {
 					if declPos == name.Pos() {
 						if i < len(spec.Values) {
-							declaration = FormatNodeFile(file, spec.Values[i])
+							originalDeclaration := FormatNodeFile(file, spec.Values[i])
+							if originalDeclaration != declaration {
+								comment = declaration
+								declaration = originalDeclaration
+							}
 						}
 						break
 					}
@@ -636,7 +639,7 @@ func objectString(obj types.Object, qf types.Qualifier, declPos token.Pos, file 
 			}
 		}
 
-		comment := obj.Val().String()
+		// Special formatting cases.
 		switch typ := obj.Type().(type) {
 		case *types.Named:
 			// Try to add a formatted duration as an inline comment.
@@ -647,9 +650,12 @@ func objectString(obj types.Object, qf types.Qualifier, declPos token.Pos, file 
 				}
 			}
 		}
+		if comment == declaration {
+			comment = ""
+		}
 
 		str += " = " + declaration
-		if declaration != comment {
+		if comment != "" {
 			str += " // " + comment
 		}
 	}
