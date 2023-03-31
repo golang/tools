@@ -24,7 +24,7 @@ func CanInvertIfCondition(start, end token.Pos, file *ast.File) (*ast.IfStmt, []
 
 	expr, ok := path[0].(ast.Stmt)
 	if !ok {
-		return nil, nil, false, fmt.Errorf("node is not an expression")
+		return nil, nil, false, fmt.Errorf("node is not an statement")
 	}
 
 	ifStatement, isIfStatement := expr.(*ast.IfStmt)

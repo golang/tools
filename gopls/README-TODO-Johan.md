@@ -21,7 +21,8 @@ go test golang.org/x/tools/gopls/internal/lsp
 
 * Figure out why `go test golang.org/x/tools/gopls/internal/lsp -test.run
   TestLSP/Modules/SuggestedFix` complains about not getting any code actions.
-  Maybe by looking how `extractionFixes()` is set up in `code_action.go`?
+  Maybe by looking how `extractionFixes()` is set up in `code_action.go`? Run
+  `TestLSP` in a debugger over and over!
 * Make the test cases valid. By putting the right thing in our `.golden` file,
   or by splitting up the test cases or something. Maybe both?
 * Give the user a way to actually invert the condition
