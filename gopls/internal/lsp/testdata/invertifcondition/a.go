@@ -6,19 +6,19 @@ import (
 )
 
 func F() {
-	if len(os.Args) > 2 { //@suggestedfix("if len(os.Args) > 2", "refactor.rewrite", "")
+	if len(os.Args) > 2 { //@suggestedfix("i", "refactor.rewrite", "")
 		fmt.Println("A")
 	} else {
 		fmt.Println("B")
 	}
 
-	if _, err := fmt.Println("x"); err != nil { //@suggestedfix(re"if _, err := fmt.Println..x..; err != nil", "refactor.rewrite", "")
+	if _, err := fmt.Println("x"); err != nil { //@suggestedfix("if", "refactor.rewrite", "")
 		fmt.Println("A")
 	} else {
 		fmt.Println("B")
 	}
 
-	if n, err := fmt.Println("x"); err != nil && n > 0 { //@suggestedfix(re"if n, err := fmt.Println..x..; err != nil && n > 0", "refactor.rewrite", "")
+	if n, err := fmt.Println("x"); err != nil && n > 0 { //@suggestedfix("f", "refactor.rewrite", "")
 		fmt.Println("A")
 	} else {
 		fmt.Println("B")
