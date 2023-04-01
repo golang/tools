@@ -19,10 +19,9 @@ go test golang.org/x/tools/gopls/internal/lsp
 
 ## TODO
 
-### Timeline
+* Actually start inverting if conditions in `invertifcondition.go`
 * Make the test cases valid. By putting the right thing in our `.golden` file,
   or by splitting up the test cases or something. Maybe both?
-* Give the user a way to actually invert the condition
 * `git diff origin/master` and ensure we're looking good
 * Remove this file
 * Make a PR
@@ -52,3 +51,5 @@ go test golang.org/x/tools/gopls/internal/lsp
   TestLSP/Modules/SuggestedFix` complains about not getting any code actions.
   Maybe by looking how `extractionFixes()` is set up in `code_action.go`? Run
   `TestLSP` in a debugger over and over!
+* Figure out why we get one `got 0 code actions` when running the tests
+* Give the user a way to actually invert the condition

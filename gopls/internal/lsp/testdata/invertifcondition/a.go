@@ -24,7 +24,7 @@ func F() {
 		fmt.Println("B")
 	}
 
-	if n, err := fmt.Println("x"); err != nil || n > 0 { //@suggestedfix(re"if n, err := fmt.Println..x..; err != nil || n > 0", "refactor.rewrite", "")
+	if n, err := fmt.Println("x"); err != nil || n > 0 { //@suggestedfix(re"if n, err := fmt.Println..x..; err != nil .. n > 0", "refactor.rewrite", "")
 		fmt.Println("A")
 	} else {
 		fmt.Println("B")
