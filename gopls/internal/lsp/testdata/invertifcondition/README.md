@@ -10,12 +10,12 @@ Here's a copy of the available expression types from the above source code link:
 ## Supported
 
 * `Ident` (name of a `bool` variable)
+* `CallExpr` (a function call)
 
 ## Should support
 
 In order of importance.
 
-* `CallExpr` (a function call)
 * `UnaryExpr` (`!` something)
 * `StarExpr` (dereferencing a pointer to a `bool` variable)
 * `BinaryExpr` (`a || b`, `c > 7`)

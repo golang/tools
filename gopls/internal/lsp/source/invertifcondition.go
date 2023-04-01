@@ -79,6 +79,18 @@ func createInverseEdit(fset *token.FileSet, expr ast.Expr, src []byte) (*analysi
 		}, nil
 	}
 
+	if _, ok := expr.(*ast.CallExpr); ok {
+		posInSource := fset.PositionFor(expr.Pos(), false)
+		endInSource := fset.PositionFor(expr.End(), false)
+		callText := string(src[posInSource.Offset:endInSource.Offset])
+
+		return &analysis.TextEdit{
+			Pos:     expr.Pos(),
+			End:     expr.End(),
+			NewText: []byte("!" + callText),
+		}, nil
+	}
+
 	return nil, fmt.Errorf("Inversion not supported for %T", expr)
 }
 
