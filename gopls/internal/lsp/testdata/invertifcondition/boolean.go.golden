@@ -13,3 +13,4 @@ func Boolean() {
 		fmt.Println("A")
 	}
 }
+

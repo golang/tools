@@ -12,3 +12,4 @@ func Semicolon() {
 		fmt.Println("A")
 	}
 }
+
