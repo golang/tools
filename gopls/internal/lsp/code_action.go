@@ -255,7 +255,7 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 			codeActions = append(codeActions, fixes...)
 		}
 
-		if wanted[protocol.Refactor] {
+		if wanted[protocol.RefactorRewrite] {
 			fixes, err := refactoringFixes(ctx, snapshot, uri, params.Range)
 			if err != nil {
 				return nil, err
@@ -437,7 +437,7 @@ func refactoringFixes(ctx context.Context, snapshot source.Snapshot, uri span.UR
 	for i := range commands {
 		actions = append(actions, protocol.CodeAction{
 			Title:   commands[i].Title,
-			Kind:    protocol.Refactor,
+			Kind:    protocol.RefactorRewrite,
 			Command: &commands[i],
 		})
 	}

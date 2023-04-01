@@ -19,10 +19,7 @@ go test golang.org/x/tools/gopls/internal/lsp
 
 ## TODO
 
-* Figure out why `go test golang.org/x/tools/gopls/internal/lsp -test.run
-  TestLSP/Modules/SuggestedFix` complains about not getting any code actions.
-  Maybe by looking how `extractionFixes()` is set up in `code_action.go`? Run
-  `TestLSP` in a debugger over and over!
+### Timeline
 * Make the test cases valid. By putting the right thing in our `.golden` file,
   or by splitting up the test cases or something. Maybe both?
 * Give the user a way to actually invert the condition
@@ -51,3 +48,7 @@ go test golang.org/x/tools/gopls/internal/lsp
 * Rewrite `invertifcondition.go` so it's triggered the same way as `extract.go`
 * Figure out why `go test golang.org/x/tools/gopls/internal/lsp` complains about
   `invertifcondition/a.go:9:26: pattern if len(os.args) > 2 did not match`
+* Figure out why `go test golang.org/x/tools/gopls/internal/lsp -test.run
+  TestLSP/Modules/SuggestedFix` complains about not getting any code actions.
+  Maybe by looking how `extractionFixes()` is set up in `code_action.go`? Run
+  `TestLSP` in a debugger over and over!
