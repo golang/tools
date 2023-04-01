@@ -7,12 +7,14 @@ See also [the Go `ast` package docs](https://pkg.go.dev/go/ast).
 
 Here's a copy of the available expression types from the above source code link:
 
+## Supported
+
+* `Ident` (name of a `bool` variable)
+
 ## Should support
 
 In order of importance.
 
-* `BasicLit` (`true` / `false`)
-* `Ident` (name of a `bool` variable)
 * `CallExpr` (a function call)
 * `UnaryExpr` (`!` something)
 * `StarExpr` (dereferencing a pointer to a `bool` variable)
@@ -22,6 +24,7 @@ In order of importance.
 ## Others, that we may or may not choose to support
 
 * `BadExpr`
+* `BasicLit`
 * `CompositeLit`
 * `Ellipsis`
 * `FuncLit`

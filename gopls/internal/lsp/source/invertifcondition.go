@@ -64,7 +64,22 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 }
 
 func createInverseEdit(fset *token.FileSet, expr ast.Expr, src []byte) (*analysis.TextEdit, error) {
-	return nil, fmt.Errorf("Johan: Not implemented")
+	if identifier, ok := expr.(*ast.Ident); ok {
+		newText := "!" + identifier.Name
+		if identifier.Name == "true" {
+			newText = "false"
+		} else if identifier.Name == "false" {
+			newText = "true"
+		}
+
+		return &analysis.TextEdit{
+			Pos:     expr.Pos(),
+			End:     expr.End(),
+			NewText: []byte(newText),
+		}, nil
+	}
+
+	return nil, fmt.Errorf("Inversion not supported for %T", expr)
 }
 
 // CanInvertIfCondition reports whether we can do invert-if-condition on the
