@@ -36,21 +36,35 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 		NewText: elseText,
 	}
 
+	// Replace the if condition with its inverse
+	replaceConditionWithInverse, err := createInverseEdit(fset, ifStatement.Cond, src)
+	if err != nil {
+		return nil, err
+	}
+
 	// Return a SuggestedFix with just that TextEdit in there
 	return &analysis.SuggestedFix{
 		Message: "Invert if condition", // FIXME: Try without this message and see how it looks!
 		TextEdits: []analysis.TextEdit{
-			// Do the furthest-down-in-the-file changes first
+			// Replace the else part first because it is last in the file, and
+			// replacing it won't affect any higher-up file offsets
 			replaceElseWithBody,
 
-			// Then higher-up-in-the-file changes
+			// Then replace the if body since it's the next higher thing to replace
 			replaceBodyWithElse,
+
+			// Finally, replace the if condition at the top
+			*replaceConditionWithInverse,
 		},
 	}, nil
 
 	// FIXME: Also make a TextEdit for replacing the first block with the second block
 
 	// FIXME: Also make a TextEdit for inverting the if condition
+}
+
+func createInverseEdit(fset *token.FileSet, expr ast.Expr, src []byte) (*analysis.TextEdit, error) {
+	return nil, fmt.Errorf("Johan: Not implemented")
 }
 
 // CanInvertIfCondition reports whether we can do invert-if-condition on the
