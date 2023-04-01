@@ -79,15 +79,31 @@ func createInverseEdit(fset *token.FileSet, expr ast.Expr, src []byte) (*analysi
 		}, nil
 	}
 
+	posInSource := fset.PositionFor(expr.Pos(), false)
+	endInSource := fset.PositionFor(expr.End(), false)
+
 	if _, ok := expr.(*ast.CallExpr); ok {
-		posInSource := fset.PositionFor(expr.Pos(), false)
-		endInSource := fset.PositionFor(expr.End(), false)
-		callText := string(src[posInSource.Offset:endInSource.Offset])
+		exprText := string(src[posInSource.Offset:endInSource.Offset])
 
 		return &analysis.TextEdit{
 			Pos:     expr.Pos(),
 			End:     expr.End(),
-			NewText: []byte("!" + callText),
+			NewText: []byte("!" + exprText),
+		}, nil
+	}
+
+	if unary, ok := expr.(*ast.UnaryExpr); ok {
+		if unary.Op != token.NOT {
+			return nil, fmt.Errorf("Inversion not supported for unary operator %s", unary.Op.String())
+		}
+
+		xPosInSource := fset.PositionFor(unary.X.Pos(), false)
+		textWithoutNot := src[xPosInSource.Offset:endInSource.Offset]
+
+		return &analysis.TextEdit{
+			Pos:     expr.Pos(),
+			End:     expr.End(),
+			NewText: textWithoutNot,
 		}, nil
 	}
 

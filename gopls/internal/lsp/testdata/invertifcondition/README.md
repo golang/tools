@@ -9,14 +9,14 @@ Here's a copy of the available expression types from the above source code link:
 
 ## Supported
 
-* `Ident` (name of a `bool` variable)
-* `CallExpr` (a function call)
+* `Ident` (name of a `bool` variable, we add an initial `!`)
+* `CallExpr` (a function call, we add an initial `!`)
+* `UnaryExpr` (`!` something, we remove the leading `!`)
 
 ## Should support
 
 In order of importance.
 
-* `UnaryExpr` (`!` something)
 * `StarExpr` (dereferencing a pointer to a `bool` variable)
 * `BinaryExpr` (`a || b`, `c > 7`)
 * `ParenExpr`
