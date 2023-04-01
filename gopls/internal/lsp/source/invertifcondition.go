@@ -11,7 +11,16 @@ import (
 )
 
 func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
-	return nil, fmt.Errorf("FIXME: Unimplemented")
+	return &analysis.SuggestedFix{
+		Message: "Invert if condition", // FIXME: Try without this message and see how it looks!
+		TextEdits: []analysis.TextEdit{
+			{
+				Pos:     start,
+				End:     end,
+				NewText: []byte("FIXME: Imagine an inverted if statement here"),
+			},
+		},
+	}, nil
 }
 
 // CanInvertIfCondition reports whether we can do invert-if-condition on the

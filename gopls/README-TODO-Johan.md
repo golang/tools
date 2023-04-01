@@ -19,6 +19,7 @@ go test golang.org/x/tools/gopls/internal/lsp
 
 ## TODO
 
+* Put the right contents in our `iic.go.golden` file
 * Actually start inverting if conditions in `invertifcondition.go`
 * Make the test cases valid. By putting the right thing in our `.golden` file,
   or by splitting up the test cases or something. Maybe both?
@@ -53,3 +54,4 @@ go test golang.org/x/tools/gopls/internal/lsp
   `TestLSP` in a debugger over and over!
 * Figure out why we get one `got 0 code actions` when running the tests
 * Give the user a way to actually invert the condition
+* Make the test cases care about our `a.go.golden` file
