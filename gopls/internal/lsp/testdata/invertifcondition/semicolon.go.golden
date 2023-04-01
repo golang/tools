@@ -6,9 +6,9 @@ import (
 )
 
 func Semicolon() {
-	if _, err := fmt.Println("x"); err == nil { //@suggestedfix("if", "refactor.rewrite", "")
+	if _, err := fmt.Println("x"); err == nil {
 		fmt.Println("B")
-	} else {
+	} else { //@suggestedfix("if", "refactor.rewrite", "")
 		fmt.Println("A")
 	}
 }

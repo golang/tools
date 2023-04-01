@@ -15,9 +15,9 @@ func ElseIf() {
 	// No inversion expected for else-if, that would become unreadable
 	if len(os.Args) > 2 {
 		fmt.Println("A")
-	} else if os.Args[0] != "X" { //@suggestedfix(re"if os.Args.0. == .X.", "refactor.rewrite", "")
+	} else if os.Args[0] != "X" {
 		fmt.Println("C")
-	} else {
+	} else { //@suggestedfix(re"if os.Args.0. == .X.", "refactor.rewrite", "")
 		fmt.Println("B")
 	}
 }

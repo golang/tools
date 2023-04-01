@@ -7,9 +7,9 @@ import (
 )
 
 func GreaterThan() {
-	if len(os.Args) < 2 { //@suggestedfix("i", "refactor.rewrite", "")
+	if len(os.Args) < 2 {
 		fmt.Println("B")
-	} else {
+	} else { //@suggestedfix("i", "refactor.rewrite", "")
 		fmt.Println("A")
 	}
 }

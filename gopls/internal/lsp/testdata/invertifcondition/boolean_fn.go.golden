@@ -7,9 +7,9 @@ import (
 )
 
 func BooleanFn() {
-	if !os.IsPathSeparator('X') { //@suggestedfix("if os.IsPathSeparator('X')", "refactor.rewrite", "")
+	if !os.IsPathSeparator('X') {
 		fmt.Println("B")
-	} else {
+	} else { //@suggestedfix("if os.IsPathSeparator('X')", "refactor.rewrite", "")
 		fmt.Println("A")
 	}
 }
