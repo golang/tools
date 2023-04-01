@@ -19,7 +19,10 @@ go test golang.org/x/tools/gopls/internal/lsp
 
 ## TODO
 
-* Actually start inverting if conditions in `invertifcondition.go`
+* Figure out why tests are complaining about linefeed changes towards the end of
+  the code
+* Invert the actual condition (after we're done with switching places between
+  the `if` and `else` blocks)
 * Make the test cases valid. By putting the right thing in our `.golden` file,
   or by splitting up the test cases or something. Maybe both?
 * `git diff origin/master` and ensure we're looking good
@@ -55,3 +58,4 @@ go test golang.org/x/tools/gopls/internal/lsp
 * Give the user a way to actually invert the condition
 * Make the test cases care about our `a.go.golden` file
 * Put the right contents in our `.golden` files
+* Actually start inverting if conditions in `invertifcondition.go`

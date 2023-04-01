@@ -16,23 +16,35 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 		return nil, err
 	}
 
-	// Extract the text of the first (if) block
+	// Replace the else text with the if text
 	bodyPosInSource := fset.PositionFor(ifStatement.Body.Lbrace, false)
 	bodyEndInSource := fset.PositionFor(ifStatement.Body.Rbrace, false)
 	bodyText := src[bodyPosInSource.Offset : bodyEndInSource.Offset+1]
-
-	// Create a TextEdit for replacing the second block with the contents of the first block
 	replaceElseWithBody := analysis.TextEdit{
 		Pos:     ifStatement.Else.Pos(),
 		End:     ifStatement.Else.End(),
 		NewText: bodyText,
 	}
 
+	// Replace the if text with the else text
+	elsePosInSource := fset.PositionFor(ifStatement.Else.Pos(), false)
+	elseEndInSource := fset.PositionFor(ifStatement.Else.End(), false)
+	elseText := src[elsePosInSource.Offset:elseEndInSource.Offset]
+	replaceBodyWithElse := analysis.TextEdit{
+		Pos:     ifStatement.Body.Pos(),
+		End:     ifStatement.Body.End(),
+		NewText: elseText,
+	}
+
 	// Return a SuggestedFix with just that TextEdit in there
 	return &analysis.SuggestedFix{
 		Message: "Invert if condition", // FIXME: Try without this message and see how it looks!
 		TextEdits: []analysis.TextEdit{
+			// Do the furthest-down-in-the-file changes first
 			replaceElseWithBody,
+
+			// Then higher-up-in-the-file changes
+			replaceBodyWithElse,
 		},
 	}, nil
 
