@@ -256,7 +256,6 @@ func DefaultOptions(o *source.Options) {
 			protocol.QuickFix:              true,
 			protocol.RefactorRewrite:       true,
 			protocol.RefactorExtract:       true,
-			protocol.Refactor:              true,
 			protocol.SourceFixAll:          true,
 		},
 		source.Mod: {
