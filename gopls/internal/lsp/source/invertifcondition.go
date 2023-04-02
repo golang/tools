@@ -96,6 +96,29 @@ func createInverseEdit(fset *token.FileSet, expr ast.Expr, src []byte) (*analysi
 			End:     expr.End(),
 			NewText: textWithoutNot,
 		}, nil
+
+	case *ast.BinaryExpr:
+		if expr.Op != token.GTR {
+			// FIXME: Support the other operators as well
+			return nil, fmt.Errorf("Inversion not supported for binary operator %s", expr.Op.String())
+		}
+
+		xPosInSource := fset.PositionFor(expr.X.Pos(), false)
+		opPosInSource := fset.PositionFor(expr.OpPos, false)
+		yPosInSource := fset.PositionFor(expr.Y.Pos(), false)
+
+		textBeforeOp := string(src[xPosInSource.Offset:opPosInSource.Offset])
+
+		oldOpWithTrailingWhitespace := string(src[opPosInSource.Offset:yPosInSource.Offset])
+		newOpWithTrailingWhitespace := "<=" + oldOpWithTrailingWhitespace[len(expr.Op.String()):]
+
+		textAfterOp := string(src[yPosInSource.Offset:endInSource.Offset])
+
+		return &analysis.TextEdit{
+			Pos:     expr.Pos(),
+			End:     expr.End(),
+			NewText: []byte(textBeforeOp + newOpWithTrailingWhitespace + textAfterOp),
+		}, nil
 	}
 
 	return nil, fmt.Errorf("Inversion not supported for %T", expr)
