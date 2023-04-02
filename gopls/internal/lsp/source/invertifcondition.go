@@ -102,7 +102,7 @@ func createInverseCondition(fset *token.FileSet, expr ast.Expr, src []byte) ([]b
 
 		negation, negationFound := negations[expr.Op]
 		if !negationFound {
-			return nil, fmt.Errorf("Inversion not supported for binary operator %s", expr.Op.String())
+			return createInverseAndOrCondition(fset, *expr, src)
 		}
 
 		xPosInSource := fset.PositionFor(expr.X.Pos(), false)
@@ -120,6 +120,40 @@ func createInverseCondition(fset *token.FileSet, expr ast.Expr, src []byte) ([]b
 	}
 
 	return nil, fmt.Errorf("Inversion not supported for %T", expr)
+}
+
+func createInverseAndOrCondition(fset *token.FileSet, expr ast.BinaryExpr, src []byte) ([]byte, error) {
+	if expr.Op != token.LAND && expr.Op != token.LOR {
+		return nil, fmt.Errorf("Inversion not supported for binary operator %s", expr.Op.String())
+	}
+
+	oppositeOp := "&&"
+	if expr.Op == token.LAND {
+		oppositeOp = "||"
+	}
+
+	xEndInSource := fset.PositionFor(expr.X.End(), false)
+	opPosInSource := fset.PositionFor(expr.OpPos, false)
+	whitespaceAfterBefore := src[xEndInSource.Offset:opPosInSource.Offset]
+
+	// FIXME: We must suffix this string with any part that used to exist
+	// between the first part and the operator
+	invertedBefore, err := createInverseCondition(fset, expr.X, src)
+	if err != nil {
+		return nil, err
+	}
+
+	invertedAfter, err := createInverseCondition(fset, expr.Y, src)
+	if err != nil {
+		return nil, err
+	}
+
+	yPosInSource := fset.PositionFor(expr.Y.Pos(), false)
+
+	oldOpWithTrailingWhitespace := string(src[opPosInSource.Offset:yPosInSource.Offset])
+	newOpWithTrailingWhitespace := oppositeOp + oldOpWithTrailingWhitespace[len(expr.Op.String()):]
+
+	return []byte(string(invertedBefore) + string(whitespaceAfterBefore) + newOpWithTrailingWhitespace + string(invertedAfter)), nil
 }
 
 // CanInvertIfCondition reports whether we can do invert-if-condition on the

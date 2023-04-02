@@ -19,8 +19,8 @@ go test golang.org/x/tools/gopls/internal/lsp
 
 ## TODO
 
-* Invert the actual condition (after we're done with switching places between
-  the `if` and `else` blocks)
+* Make an `else` removal test case where the new `if` block ends with a `return`
+  statement
 * Do `else` removal when the new `if` block ends with a `return` statement
 * Pass the full test suite
 * Record an animated gif where we demonstrate inverting an `if` condition and
@@ -63,3 +63,5 @@ go test golang.org/x/tools/gopls/internal/lsp
   the code
 * Make the test cases valid. By putting the right thing in our `.golden` file,
   or by splitting up the test cases or something. Maybe both?
+* Invert the actual condition (after we're done with switching places between
+  the `if` and `else` blocks)
