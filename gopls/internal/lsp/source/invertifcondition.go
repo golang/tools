@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
@@ -22,22 +23,26 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 	if err != nil {
 		return nil, err
 	}
+
 	if endsWithReturn {
 		// Replace the whole else part with an empty line and an unindented
 		// version of the existing body
+		ifStatementPositionInSource := fset.PositionFor(ifStatement.Pos(), false)
 
-		unindentedBodyTextWithoutBraces, err := ifBodyToStandaloneCode(*ifStatement.Body)
-		if err != nil {
-			return nil, err
+		ifStatementIndentationLevel := ifStatementPositionInSource.Column - 1
+		if ifStatementIndentationLevel < 0 {
+			ifStatementIndentationLevel = 0
 		}
+		ifIndentation := strings.Repeat("\t", ifStatementIndentationLevel)
 
+		standaloneBodyText := ifBodyToStandaloneCode(fset, *ifStatement.Body, src)
 		replaceElse = analysis.TextEdit{
-			Pos:     ifStatement.Body.Rbrace, // FIXME: Plus one?
+			Pos:     ifStatement.Body.Rbrace + 1,
 			End:     ifStatement.End(),
-			NewText: unindentedBodyTextWithoutBraces,
+			NewText: []byte("\n\n" + ifIndentation + standaloneBodyText),
 		}
 	} else {
-		// Replace the else text with the if text
+		// Replace the else body text with the if body text
 		bodyPosInSource := fset.PositionFor(ifStatement.Body.Lbrace, false)
 		bodyEndInSource := fset.PositionFor(ifStatement.Body.Rbrace, false)
 		bodyText := src[bodyPosInSource.Offset : bodyEndInSource.Offset+1]
@@ -105,8 +110,19 @@ func endsWithReturn(elseBranch ast.Stmt) (bool, error) {
 
 // Turn { fmt.Println("Hello") } into just fmt.Println("Hello"), with one less
 // level of indentation
-func ifBodyToStandaloneCode(ifBody ast.BlockStmt) ([]byte, error) {
-	return nil, fmt.Errorf("Unable to convert to standalone code: %T", ifBody)
+func ifBodyToStandaloneCode(fset *token.FileSet, ifBody ast.BlockStmt, src []byte) string {
+	// Get the whole body (without the surrounding braces) as a string
+	leftBracePosInSource := fset.PositionFor(ifBody.Lbrace, false)
+	rightBracePosInSource := fset.PositionFor(ifBody.Rbrace, false)
+	bodyWithoutBraces := string(src[leftBracePosInSource.Offset+1 : rightBracePosInSource.Offset])
+	bodyWithoutBraces = strings.TrimSpace(bodyWithoutBraces)
+
+	// Unindent
+	bodyWithoutBraces = strings.ReplaceAll(bodyWithoutBraces, "\n\t", "\n")
+
+	// FIXME: Maybe fix the indentation of the first line?
+
+	return bodyWithoutBraces
 }
 
 func createInverseCondition(fset *token.FileSet, expr ast.Expr, src []byte) ([]byte, error) {

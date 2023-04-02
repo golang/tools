@@ -19,7 +19,6 @@ go test golang.org/x/tools/gopls/internal/lsp
 
 ## TODO
 
-* Do `else` removal when the new `if` block ends with a `return` statement
 * Pass the full test suite
 * Tend to any FIXMEs we might have added
 * `git diff -b origin/master` and ensure we're looking good
@@ -66,3 +65,4 @@ go test golang.org/x/tools/gopls/internal/lsp
   the `if` and `else` blocks)
 * Make an `else` removal test case where the new `if` block ends with a `return`
   statement
+* Do `else` removal when the new `if` block ends with a `return` statement

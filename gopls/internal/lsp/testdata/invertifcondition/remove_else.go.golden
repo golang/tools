@@ -11,7 +11,7 @@ func RemoveElse() {
 		return
 	}
 
-	//@suggestedfix("if !b", "refactor.rewrite", "")
+	//@suggestedfix("if true", "refactor.rewrite", "")
 	fmt.Println("A")
 
 	fmt.Println("C")
