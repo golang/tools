@@ -5,10 +5,12 @@ import (
 )
 
 func RemoveElse() {
-	b := true
-	if !b { //@suggestedfix("if !b", "refactor.rewrite", "")
+	if true { //@suggestedfix("if true", "refactor.rewrite", "")
 		fmt.Println("A")
 	} else {
+		fmt.Println("B")
 		return
 	}
+
+	fmt.Println("C")
 }
