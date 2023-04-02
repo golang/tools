@@ -27,7 +27,7 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 
 	if endsWithReturn {
 		// Replace the whole else part with an empty line and an unindented
-		// version of the existing body
+		// version of the original if body
 		ifStatementPositionInSource := safetoken.StartPosition(fset, ifStatement.Pos())
 
 		ifStatementIndentationLevel := ifStatementPositionInSource.Column - 1
@@ -44,8 +44,8 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 		}
 	} else {
 		// Replace the else body text with the if body text
-		bodyPosInSource := fset.PositionFor(ifStatement.Body.Lbrace, false)
-		bodyEndInSource := fset.PositionFor(ifStatement.Body.Rbrace, false)
+		bodyPosInSource := safetoken.StartPosition(fset, ifStatement.Body.Lbrace)
+		bodyEndInSource := safetoken.StartPosition(fset, ifStatement.Body.Rbrace)
 		bodyText := src[bodyPosInSource.Offset : bodyEndInSource.Offset+1]
 		replaceElse = analysis.TextEdit{
 			Pos:     ifStatement.Else.Pos(),
@@ -55,8 +55,8 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 	}
 
 	// Replace the if text with the else text
-	elsePosInSource := fset.PositionFor(ifStatement.Else.Pos(), false)
-	elseEndInSource := fset.PositionFor(ifStatement.Else.End(), false)
+	elsePosInSource := safetoken.StartPosition(fset, ifStatement.Else.Pos())
+	elseEndInSource := safetoken.EndPosition(fset, ifStatement.Else.End())
 	elseText := src[elsePosInSource.Offset:elseEndInSource.Offset]
 	replaceBodyWithElse := analysis.TextEdit{
 		Pos:     ifStatement.Body.Pos(),
@@ -112,12 +112,12 @@ func endsWithReturn(elseBranch ast.Stmt) (bool, error) {
 // Turn { fmt.Println("Hello") } into just fmt.Println("Hello"), with one less
 // level of indentation.
 //
-// The first line of the result will not be indented, but
-// all of the following lines will.
+// The first line of the result will not be indented, but all of the following
+// lines will.
 func ifBodyToStandaloneCode(fset *token.FileSet, ifBody ast.BlockStmt, src []byte) string {
 	// Get the whole body (without the surrounding braces) as a string
-	leftBracePosInSource := fset.PositionFor(ifBody.Lbrace, false)
-	rightBracePosInSource := fset.PositionFor(ifBody.Rbrace, false)
+	leftBracePosInSource := safetoken.StartPosition(fset, ifBody.Lbrace)
+	rightBracePosInSource := safetoken.StartPosition(fset, ifBody.Rbrace)
 	bodyWithoutBraces := string(src[leftBracePosInSource.Offset+1 : rightBracePosInSource.Offset])
 	bodyWithoutBraces = strings.TrimSpace(bodyWithoutBraces)
 
@@ -128,8 +128,8 @@ func ifBodyToStandaloneCode(fset *token.FileSet, ifBody ast.BlockStmt, src []byt
 }
 
 func createInverseCondition(fset *token.FileSet, expr ast.Expr, src []byte) ([]byte, error) {
-	posInSource := fset.PositionFor(expr.Pos(), false)
-	endInSource := fset.PositionFor(expr.End(), false)
+	posInSource := safetoken.StartPosition(fset, expr.Pos())
+	endInSource := safetoken.EndPosition(fset, expr.End())
 	oldText := string(src[posInSource.Offset:endInSource.Offset])
 
 	switch expr := expr.(type) {
@@ -148,7 +148,7 @@ func createInverseCondition(fset *token.FileSet, expr ast.Expr, src []byte) ([]b
 			return nil, fmt.Errorf("Inversion not supported for unary operator %s", expr.Op.String())
 		}
 
-		xPosInSource := fset.PositionFor(expr.X.Pos(), false)
+		xPosInSource := safetoken.StartPosition(fset, expr.X.Pos())
 		textWithoutNot := src[xPosInSource.Offset:endInSource.Offset]
 
 		return textWithoutNot, nil
@@ -168,9 +168,9 @@ func createInverseCondition(fset *token.FileSet, expr ast.Expr, src []byte) ([]b
 			return createInverseAndOrCondition(fset, *expr, src)
 		}
 
-		xPosInSource := fset.PositionFor(expr.X.Pos(), false)
-		opPosInSource := fset.PositionFor(expr.OpPos, false)
-		yPosInSource := fset.PositionFor(expr.Y.Pos(), false)
+		xPosInSource := safetoken.StartPosition(fset, expr.X.Pos())
+		opPosInSource := safetoken.StartPosition(fset, expr.OpPos)
+		yPosInSource := safetoken.StartPosition(fset, expr.Y.Pos())
 
 		textBeforeOp := string(src[xPosInSource.Offset:opPosInSource.Offset])
 
@@ -195,8 +195,8 @@ func createInverseAndOrCondition(fset *token.FileSet, expr ast.BinaryExpr, src [
 		oppositeOp = "||"
 	}
 
-	xEndInSource := fset.PositionFor(expr.X.End(), false)
-	opPosInSource := fset.PositionFor(expr.OpPos, false)
+	xEndInSource := safetoken.EndPosition(fset, expr.X.End())
+	opPosInSource := safetoken.StartPosition(fset, expr.OpPos)
 	whitespaceAfterBefore := src[xEndInSource.Offset:opPosInSource.Offset]
 
 	invertedBefore, err := createInverseCondition(fset, expr.X, src)
@@ -209,7 +209,7 @@ func createInverseAndOrCondition(fset *token.FileSet, expr ast.BinaryExpr, src [
 		return nil, err
 	}
 
-	yPosInSource := fset.PositionFor(expr.Y.Pos(), false)
+	yPosInSource := safetoken.StartPosition(fset, expr.Y.Pos())
 
 	oldOpWithTrailingWhitespace := string(src[opPosInSource.Offset:yPosInSource.Offset])
 	newOpWithTrailingWhitespace := oppositeOp + oldOpWithTrailingWhitespace[len(expr.Op.String()):]
