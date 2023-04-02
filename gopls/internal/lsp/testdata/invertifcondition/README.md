@@ -11,15 +11,17 @@ Here's a copy of the available expression types from the above source code link:
 
 * `Ident` (name of a `bool` variable, we add an initial `!`)
 * `CallExpr` (a function call, we add an initial `!`)
+* `ParenExpr`  (something in parenthesis, we add an initial `!`)
 * `UnaryExpr` (`!` something, we remove the leading `!`)
+* `StarExpr` (dereferencing a pointer to a `bool` variable)
+* `IndexExpr` (`bools[x]`, we add an initial `!`)
+* `SelectorExpr` (struct dereference like `x.booleanField`, we add an initial `!`)
 
 ## Should support
 
 In order of importance.
 
-* `StarExpr` (dereferencing a pointer to a `bool` variable)
 * `BinaryExpr` (`a || b`, `c > 7`)
-* `ParenExpr`
 
 ## Others, that we may or may not choose to support
 
@@ -28,11 +30,9 @@ In order of importance.
 * `CompositeLit`
 * `Ellipsis`
 * `FuncLit`
-* `IndexExpr`
-* `IndexListExpr`
+* `IndexListExpr` (unsure what this is, examples welcome, should we support this?)
 * `KeyValueExpr`
-* `SelectorExpr`
-* `SliceExpr`
+* `SliceExpr` (unsure what this is, examples welcome, should we support this?)
 * `TypeAssertExpr`
 
 [expression types]: https://cs.opensource.google/go/go/+/refs/tags/go1.20.2:src/go/ast/ast.go;l=548-573

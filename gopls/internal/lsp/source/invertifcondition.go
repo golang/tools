@@ -64,11 +64,16 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 }
 
 func createInverseEdit(fset *token.FileSet, expr ast.Expr, src []byte) (*analysis.TextEdit, error) {
-	if identifier, ok := expr.(*ast.Ident); ok {
-		newText := "!" + identifier.Name
-		if identifier.Name == "true" {
+	posInSource := fset.PositionFor(expr.Pos(), false)
+	endInSource := fset.PositionFor(expr.End(), false)
+	oldText := string(src[posInSource.Offset:endInSource.Offset])
+
+	switch expr := expr.(type) {
+	case *ast.Ident, *ast.ParenExpr, *ast.CallExpr, *ast.StarExpr, *ast.IndexExpr, *ast.IndexListExpr, *ast.SelectorExpr:
+		newText := "!" + oldText
+		if oldText == "true" {
 			newText = "false"
-		} else if identifier.Name == "false" {
+		} else if oldText == "false" {
 			newText = "true"
 		}
 
@@ -77,27 +82,13 @@ func createInverseEdit(fset *token.FileSet, expr ast.Expr, src []byte) (*analysi
 			End:     expr.End(),
 			NewText: []byte(newText),
 		}, nil
-	}
 
-	posInSource := fset.PositionFor(expr.Pos(), false)
-	endInSource := fset.PositionFor(expr.End(), false)
-
-	if _, ok := expr.(*ast.CallExpr); ok {
-		exprText := string(src[posInSource.Offset:endInSource.Offset])
-
-		return &analysis.TextEdit{
-			Pos:     expr.Pos(),
-			End:     expr.End(),
-			NewText: []byte("!" + exprText),
-		}, nil
-	}
-
-	if unary, ok := expr.(*ast.UnaryExpr); ok {
-		if unary.Op != token.NOT {
-			return nil, fmt.Errorf("Inversion not supported for unary operator %s", unary.Op.String())
+	case *ast.UnaryExpr:
+		if expr.Op != token.NOT {
+			return nil, fmt.Errorf("Inversion not supported for unary operator %s", expr.Op.String())
 		}
 
-		xPosInSource := fset.PositionFor(unary.X.Pos(), false)
+		xPosInSource := fset.PositionFor(expr.X.Pos(), false)
 		textWithoutNot := src[xPosInSource.Offset:endInSource.Offset]
 
 		return &analysis.TextEdit{
