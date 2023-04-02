@@ -98,8 +98,17 @@ func createInverseEdit(fset *token.FileSet, expr ast.Expr, src []byte) (*analysi
 		}, nil
 
 	case *ast.BinaryExpr:
-		if expr.Op != token.GTR {
-			// FIXME: Support the other operators as well
+		negations := map[token.Token]string{
+			token.EQL: "!=",
+			token.LSS: ">=",
+			token.GTR: "<=",
+			token.NEQ: "==",
+			token.LEQ: ">",
+			token.GEQ: "<",
+		}
+
+		negation, negationFound := negations[expr.Op]
+		if !negationFound {
 			return nil, fmt.Errorf("Inversion not supported for binary operator %s", expr.Op.String())
 		}
 
@@ -110,7 +119,7 @@ func createInverseEdit(fset *token.FileSet, expr ast.Expr, src []byte) (*analysi
 		textBeforeOp := string(src[xPosInSource.Offset:opPosInSource.Offset])
 
 		oldOpWithTrailingWhitespace := string(src[opPosInSource.Offset:yPosInSource.Offset])
-		newOpWithTrailingWhitespace := "<=" + oldOpWithTrailingWhitespace[len(expr.Op.String()):]
+		newOpWithTrailingWhitespace := negation + oldOpWithTrailingWhitespace[len(expr.Op.String()):]
 
 		textAfterOp := string(src[yPosInSource.Offset:endInSource.Offset])
 
