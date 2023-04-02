@@ -37,9 +37,14 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 	}
 
 	// Replace the if condition with its inverse
-	replaceConditionWithInverse, err := createInverseEdit(fset, ifStatement.Cond, src)
+	inverseCondition, err := createInverseCondition(fset, ifStatement.Cond, src)
 	if err != nil {
 		return nil, err
+	}
+	replaceConditionWithInverse := analysis.TextEdit{
+		Pos:     ifStatement.Cond.Pos(),
+		End:     ifStatement.Cond.End(),
+		NewText: inverseCondition,
 	}
 
 	// Return a SuggestedFix with just that TextEdit in there
@@ -54,16 +59,12 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 			replaceBodyWithElse,
 
 			// Finally, replace the if condition at the top
-			*replaceConditionWithInverse,
+			replaceConditionWithInverse,
 		},
 	}, nil
-
-	// FIXME: Also make a TextEdit for replacing the first block with the second block
-
-	// FIXME: Also make a TextEdit for inverting the if condition
 }
 
-func createInverseEdit(fset *token.FileSet, expr ast.Expr, src []byte) (*analysis.TextEdit, error) {
+func createInverseCondition(fset *token.FileSet, expr ast.Expr, src []byte) ([]byte, error) {
 	posInSource := fset.PositionFor(expr.Pos(), false)
 	endInSource := fset.PositionFor(expr.End(), false)
 	oldText := string(src[posInSource.Offset:endInSource.Offset])
@@ -77,11 +78,7 @@ func createInverseEdit(fset *token.FileSet, expr ast.Expr, src []byte) (*analysi
 			newText = "true"
 		}
 
-		return &analysis.TextEdit{
-			Pos:     expr.Pos(),
-			End:     expr.End(),
-			NewText: []byte(newText),
-		}, nil
+		return []byte(newText), nil
 
 	case *ast.UnaryExpr:
 		if expr.Op != token.NOT {
@@ -91,11 +88,7 @@ func createInverseEdit(fset *token.FileSet, expr ast.Expr, src []byte) (*analysi
 		xPosInSource := fset.PositionFor(expr.X.Pos(), false)
 		textWithoutNot := src[xPosInSource.Offset:endInSource.Offset]
 
-		return &analysis.TextEdit{
-			Pos:     expr.Pos(),
-			End:     expr.End(),
-			NewText: textWithoutNot,
-		}, nil
+		return textWithoutNot, nil
 
 	case *ast.BinaryExpr:
 		negations := map[token.Token]string{
@@ -123,11 +116,7 @@ func createInverseEdit(fset *token.FileSet, expr ast.Expr, src []byte) (*analysi
 
 		textAfterOp := string(src[yPosInSource.Offset:endInSource.Offset])
 
-		return &analysis.TextEdit{
-			Pos:     expr.Pos(),
-			End:     expr.End(),
-			NewText: []byte(textBeforeOp + newOpWithTrailingWhitespace + textAfterOp),
-		}, nil
+		return []byte(textBeforeOp + newOpWithTrailingWhitespace + textAfterOp), nil
 	}
 
 	return nil, fmt.Errorf("Inversion not supported for %T", expr)

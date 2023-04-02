@@ -21,11 +21,13 @@ go test golang.org/x/tools/gopls/internal/lsp
 
 * Invert the actual condition (after we're done with switching places between
   the `if` and `else` blocks)
-* Make the test cases valid. By putting the right thing in our `.golden` file,
-  or by splitting up the test cases or something. Maybe both?
-* `git diff origin/master` and ensure we're looking good
+* Do `else` removal when the new `if` block ends with a `return` statement
+* Pass the full test suite
+* Record an animated gif where we demonstrate inverting an `if` condition and
+  losing the `else` block
+* `git diff -b origin/master` and ensure we're looking good
 * Remove this file
-* Make a PR
+* Make a PR, include the animated gif
 
 ### Done
 
@@ -59,3 +61,5 @@ go test golang.org/x/tools/gopls/internal/lsp
 * Actually start inverting if conditions in `invertifcondition.go`
 * Figure out why tests are complaining about linefeed changes towards the end of
   the code
+* Make the test cases valid. By putting the right thing in our `.golden` file,
+  or by splitting up the test cases or something. Maybe both?
