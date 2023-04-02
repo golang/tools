@@ -21,9 +21,10 @@ go test golang.org/x/tools/gopls/internal/lsp
 
 * Do `else` removal when the new `if` block ends with a `return` statement
 * Pass the full test suite
+* Tend to any FIXMEs we might have added
+* `git diff -b origin/master` and ensure we're looking good
 * Record an animated gif where we demonstrate inverting an `if` condition and
   losing the `else` block
-* `git diff -b origin/master` and ensure we're looking good
 * Remove this file
 * Make a PR, include the animated gif
 

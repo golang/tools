@@ -16,14 +16,36 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 		return nil, err
 	}
 
-	// Replace the else text with the if text
-	bodyPosInSource := fset.PositionFor(ifStatement.Body.Lbrace, false)
-	bodyEndInSource := fset.PositionFor(ifStatement.Body.Rbrace, false)
-	bodyText := src[bodyPosInSource.Offset : bodyEndInSource.Offset+1]
-	replaceElseWithBody := analysis.TextEdit{
-		Pos:     ifStatement.Else.Pos(),
-		End:     ifStatement.Else.End(),
-		NewText: bodyText,
+	var replaceElse analysis.TextEdit
+
+	endsWithReturn, err := endsWithReturn(ifStatement.Else)
+	if err != nil {
+		return nil, err
+	}
+	if endsWithReturn {
+		// Replace the whole else part with an empty line and an unindented
+		// version of the existing body
+
+		unindentedBodyTextWithoutBraces, err := ifBodyToStandaloneCode(*ifStatement.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		replaceElse = analysis.TextEdit{
+			Pos:     ifStatement.Body.Rbrace, // FIXME: Plus one?
+			End:     ifStatement.End(),
+			NewText: unindentedBodyTextWithoutBraces,
+		}
+	} else {
+		// Replace the else text with the if text
+		bodyPosInSource := fset.PositionFor(ifStatement.Body.Lbrace, false)
+		bodyEndInSource := fset.PositionFor(ifStatement.Body.Rbrace, false)
+		bodyText := src[bodyPosInSource.Offset : bodyEndInSource.Offset+1]
+		replaceElse = analysis.TextEdit{
+			Pos:     ifStatement.Else.Pos(),
+			End:     ifStatement.Else.End(),
+			NewText: bodyText,
+		}
 	}
 
 	// Replace the if text with the else text
@@ -53,7 +75,7 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 		TextEdits: []analysis.TextEdit{
 			// Replace the else part first because it is last in the file, and
 			// replacing it won't affect any higher-up file offsets
-			replaceElseWithBody,
+			replaceElse,
 
 			// Then replace the if body since it's the next higher thing to replace
 			replaceBodyWithElse,
@@ -62,6 +84,29 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 			replaceConditionWithInverse,
 		},
 	}, nil
+}
+
+func endsWithReturn(elseBranch ast.Stmt) (bool, error) {
+	elseBlock, isBlockStatement := elseBranch.(*ast.BlockStmt)
+	if !isBlockStatement {
+		return false, fmt.Errorf("Unable to figure out whether this ends with return: %T", elseBranch)
+	}
+
+	if len(elseBlock.List) == 0 {
+		// Empty blocks don't end in returns
+		return false, nil
+	}
+
+	lastStatement := elseBlock.List[len(elseBlock.List)-1]
+
+	_, lastStatementIsReturn := lastStatement.(*ast.ReturnStmt)
+	return lastStatementIsReturn, nil
+}
+
+// Turn { fmt.Println("Hello") } into just fmt.Println("Hello"), with one less
+// level of indentation
+func ifBodyToStandaloneCode(ifBody ast.BlockStmt) ([]byte, error) {
+	return nil, fmt.Errorf("Unable to convert to standalone code: %T", ifBody)
 }
 
 func createInverseCondition(fset *token.FileSet, expr ast.Expr, src []byte) ([]byte, error) {
