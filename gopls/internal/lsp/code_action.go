@@ -421,7 +421,7 @@ func refactoringFixes(ctx context.Context, snapshot source.Snapshot, uri span.UR
 
 	puri := protocol.URIFromSpanURI(uri)
 	var commands []protocol.Command
-	if _, _, ok, _ := source.CanInvertIfCondition(start, end, pgf.File); ok {
+	if _, ok, _ := source.CanInvertIfCondition(start, end, pgf.File); ok {
 		cmd, err := command.NewApplyFixCommand("Invert if condition", command.ApplyFixArgs{
 			URI:   puri,
 			Fix:   source.InvertIfCondition,
