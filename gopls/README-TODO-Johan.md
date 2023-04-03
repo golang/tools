@@ -19,8 +19,6 @@ go test golang.org/x/tools/gopls/internal/lsp
 
 ## TODO
 
-* Test run our changes manually in VSCode
-* Remedy the FIXME we added in `invertifcondition.go`
 * `git diff -b origin/master` and ensure we're looking good
 * Record an animated gif where we demonstrate inverting an `if` condition and
   losing the `else` block
@@ -67,3 +65,5 @@ go test golang.org/x/tools/gopls/internal/lsp
   statement
 * Do `else` removal when the new `if` block ends with a `return` statement
 * Pass the full test suite
+* Remedy the FIXME we added in `invertifcondition.go`
+* Test run our changes manually in VSCode

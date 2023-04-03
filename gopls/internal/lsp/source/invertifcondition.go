@@ -77,7 +77,6 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 
 	// Return a SuggestedFix with just that TextEdit in there
 	return &analysis.SuggestedFix{
-		Message: "Invert if condition", // FIXME: Try without this message and see how it looks!
 		TextEdits: []analysis.TextEdit{
 			// Replace the else part first because it is last in the file, and
 			// replacing it won't affect any higher-up file offsets
