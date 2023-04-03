@@ -19,8 +19,6 @@ go test golang.org/x/tools/gopls/internal/lsp
 
 ## TODO
 
-* Record an animated gif where we demonstrate inverting an `if` condition and
-  losing the `else` block
 * Remove this file
 * Make a PR, include the animated gif
 
@@ -67,3 +65,5 @@ go test golang.org/x/tools/gopls/internal/lsp
 * Remedy the FIXME we added in `invertifcondition.go`
 * Test run our changes manually in VSCode
 * `git diff -b origin/master` and ensure we're looking good
+* Record an animated gif where we demonstrate inverting an `if` condition and
+  losing the `else` block
