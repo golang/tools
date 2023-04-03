@@ -12,7 +12,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 )
 
-func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
+func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, _ *types.Package, _ *types.Info) (*analysis.SuggestedFix, error) {
 	ifStatement, _, err := CanInvertIfCondition(start, end, file)
 	if err != nil {
 		return nil, err
