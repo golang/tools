@@ -18,7 +18,7 @@ func TestParse(t *testing.T) {
 		parsed *Archive
 	}{
 		{
-			name: "basic",
+			name: "basic LF",
 			text: `comment1
 comment2
 -- file1 --
@@ -42,6 +42,35 @@ some content
 					{"noNL", []byte("hello world\n")},
 					{"empty filename line", []byte("some content\n-- --\n")},
 				},
+				UseCRLF: false,
+			},
+		},
+		{
+			name: "basic CRLF",
+			text: "comment1\r\n" +
+				"comment2\r\n" +
+				"-- file1 --\r\n" +
+				"File 1 text.\r\n" +
+				"-- foo ---\r\n" +
+				"More file 1 text.\r\n" +
+				"-- file 2 --\r\n" +
+				"File 2 text.\r\n" +
+				"-- empty --\r\n" +
+				"-- noNL --\r\n" +
+				"hello world\r\n" +
+				"-- empty filename line --\r\n" +
+				"some content\r\n" +
+				"-- --\r\n",
+			parsed: &Archive{
+				Comment: []byte("comment1\r\ncomment2\r\n"),
+				Files: []File{
+					{"file1", []byte("File 1 text.\r\n-- foo ---\r\nMore file 1 text.\r\n")},
+					{"file 2", []byte("File 2 text.\r\n")},
+					{"empty", []byte{}},
+					{"noNL", []byte("hello world\r\n")},
+					{"empty filename line", []byte("some content\r\n-- --\r\n")},
+				},
+				UseCRLF: true,
 			},
 		},
 	}
@@ -67,7 +96,7 @@ func TestFormat(t *testing.T) {
 		wanted string
 	}{
 		{
-			name: "basic",
+			name: "basic LF",
 			input: &Archive{
 				Comment: []byte("comment1\ncomment2\n"),
 				Files: []File{
@@ -76,6 +105,7 @@ func TestFormat(t *testing.T) {
 					{"empty", []byte{}},
 					{"noNL", []byte("hello world")},
 				},
+				UseCRLF: false,
 			},
 			wanted: `comment1
 comment2
@@ -89,6 +119,30 @@ File 2 text.
 -- noNL --
 hello world
 `,
+		},
+		{
+			name: "basic CRLF",
+			input: &Archive{
+				Comment: []byte("comment1\r\ncomment2\r\n"),
+				Files: []File{
+					{"file1", []byte("File 1 text.\r\n-- foo ---\r\nMore file 1 text.\r\n")},
+					{"file 2", []byte("File 2 text.\r\n")},
+					{"empty", []byte{}},
+					{"noNL", []byte("hello world")},
+				},
+				UseCRLF: true,
+			},
+			wanted: "comment1\r\n" +
+				"comment2\r\n" +
+				"-- file1 --\r\n" +
+				"File 1 text.\r\n" +
+				"-- foo ---\r\n" +
+				"More file 1 text.\r\n" +
+				"-- file 2 --\r\n" +
+				"File 2 text.\r\n" +
+				"-- empty --\r\n" +
+				"-- noNL --\r\n" +
+				"hello world\r\n",
 		},
 	}
 	for _, tt := range tests {
