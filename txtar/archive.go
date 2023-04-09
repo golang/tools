@@ -54,7 +54,8 @@ type File struct {
 // Format returns the serialized form of an Archive.
 // It is assumed that the Archive data structure is well-formed:
 // a.Comment and all a.File[i].Data contain no file marker lines,
-// and all a.File[i].Name is non-empty.
+// and all a.File[i].Name is non-empty. Format uses line separators
+// based on a.UseCRLF field.
 func Format(a *Archive) []byte {
 	lineSeparator := lf
 	if a.UseCRLF {
@@ -107,6 +108,7 @@ var (
 // findFileMarker finds the next file marker in data,
 // extracts the file name, and returns the data before the marker,
 // the file name, and the data after the marker.
+// useCRLF states if \n or \r\n should be treated as a line separator.
 // If there is no next marker, findFileMarker returns before = fixNL(data), name = "", after = nil.
 func findFileMarker(data []byte, useCRLF bool) (before []byte, name string, after []byte) {
 	var i int
@@ -125,6 +127,7 @@ func findFileMarker(data []byte, useCRLF bool) (before []byte, name string, afte
 // isMarker checks whether data begins with a file marker line.
 // If so, it returns the name from the line and the data after the line.
 // Otherwise it returns name == "" with an unspecified after.
+// useCRLF states if \n or \r\n should be treated as a line separator.
 func isMarker(data []byte, useCRLF bool) (name string, after []byte) {
 	if !bytes.HasPrefix(data, marker) {
 		return "", nil
@@ -143,6 +146,7 @@ func isMarker(data []byte, useCRLF bool) (name string, after []byte) {
 }
 
 // If data is empty or ends in lineSeparator, fixNL returns data.
+// useCRLF states if \n or \r\n should be treated as a line separator.
 // Otherwise fixNL returns a new slice consisting of data with a final lineSeparator added.
 func fixNL(data []byte, useCRLF bool) []byte {
 	lineSeparator := lf
