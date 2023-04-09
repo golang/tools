@@ -82,7 +82,7 @@ func ParseFile(file string) (*Archive, error) {
 // The returned Archive holds slices of data.
 func Parse(data []byte) *Archive {
 	a := new(Archive)
-	i := bytes.IndexByte(data, '\n')
+	i := bytes.Index(data, newlineMarker)
 	if i > 0 && data[i-1] == '\r' {
 		a.UseCRLF = true
 	}
