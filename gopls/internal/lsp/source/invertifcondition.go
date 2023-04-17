@@ -12,8 +12,9 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 )
 
+// invertIfCondition is a singleFileFixFunc that inverts an if/else statement
 func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, _ *types.Package, _ *types.Info) (*analysis.SuggestedFix, error) {
-	ifStatement, _, err := CanInvertIfCondition(start, end, file)
+	ifStatement, _, err := CanInvertIfCondition(file, start, end)
 	if err != nil {
 		return nil, err
 	}
@@ -28,25 +29,24 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 	if endsWithReturn {
 		// Replace the whole else part with an empty line and an unindented
 		// version of the original if body
-		ifStatementPositionInSource := safetoken.StartPosition(fset, ifStatement.Pos())
+		sourcePos := safetoken.StartPosition(fset, ifStatement.Pos())
 
-		ifStatementIndentationLevel := ifStatementPositionInSource.Column - 1
-		if ifStatementIndentationLevel < 0 {
-			ifStatementIndentationLevel = 0
+		indent := sourcePos.Column - 1
+		if indent < 0 {
+			indent = 0
 		}
-		ifIndentation := strings.Repeat("\t", ifStatementIndentationLevel)
 
-		standaloneBodyText := ifBodyToStandaloneCode(fset, *ifStatement.Body, src)
+		standaloneBodyText := ifBodyToStandaloneCode(fset, ifStatement.Body, src)
 		replaceElse = analysis.TextEdit{
-			Pos:     ifStatement.Body.Rbrace + 1,
+			Pos:     ifStatement.Body.Rbrace + 1, // 1 == len("}")
 			End:     ifStatement.End(),
-			NewText: []byte("\n\n" + ifIndentation + standaloneBodyText),
+			NewText: []byte("\n\n" + strings.Repeat("\t", indent) + standaloneBodyText),
 		}
 	} else {
 		// Replace the else body text with the if body text
-		bodyPosInSource := safetoken.StartPosition(fset, ifStatement.Body.Lbrace)
-		bodyEndInSource := safetoken.StartPosition(fset, ifStatement.Body.Rbrace)
-		bodyText := src[bodyPosInSource.Offset : bodyEndInSource.Offset+1]
+		bodyStart := safetoken.StartPosition(fset, ifStatement.Body.Lbrace)
+		bodyEnd := safetoken.EndPosition(fset, ifStatement.Body.Rbrace+1) // 1 == len("}")
+		bodyText := src[bodyStart.Offset:bodyEnd.Offset]
 		replaceElse = analysis.TextEdit{
 			Pos:     ifStatement.Else.Pos(),
 			End:     ifStatement.Else.End(),
@@ -65,7 +65,7 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 	}
 
 	// Replace the if condition with its inverse
-	inverseCondition, err := createInverseCondition(fset, ifStatement.Cond, src)
+	inverseCondition, err := invertCondition(fset, ifStatement.Cond, src)
 	if err != nil {
 		return nil, err
 	}
@@ -78,15 +78,9 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 	// Return a SuggestedFix with just that TextEdit in there
 	return &analysis.SuggestedFix{
 		TextEdits: []analysis.TextEdit{
-			// Replace the else part first because it is last in the file, and
-			// replacing it won't affect any higher-up file offsets
-			replaceElse,
-
-			// Then replace the if body since it's the next higher thing to replace
-			replaceBodyWithElse,
-
-			// Finally, replace the if condition at the top
 			replaceConditionWithInverse,
+			replaceBodyWithElse,
+			replaceElse,
 		},
 	}, nil
 }
@@ -113,11 +107,11 @@ func endsWithReturn(elseBranch ast.Stmt) (bool, error) {
 //
 // The first line of the result will not be indented, but all of the following
 // lines will.
-func ifBodyToStandaloneCode(fset *token.FileSet, ifBody ast.BlockStmt, src []byte) string {
+func ifBodyToStandaloneCode(fset *token.FileSet, ifBody *ast.BlockStmt, src []byte) string {
 	// Get the whole body (without the surrounding braces) as a string
-	leftBracePosInSource := safetoken.StartPosition(fset, ifBody.Lbrace)
-	rightBracePosInSource := safetoken.StartPosition(fset, ifBody.Rbrace)
-	bodyWithoutBraces := string(src[leftBracePosInSource.Offset+1 : rightBracePosInSource.Offset])
+	bodyStart := safetoken.StartPosition(fset, ifBody.Lbrace+1) // 1 == len("}")
+	bodyEnd := safetoken.EndPosition(fset, ifBody.Rbrace)
+	bodyWithoutBraces := string(src[bodyStart.Offset:bodyEnd.Offset])
 	bodyWithoutBraces = strings.TrimSpace(bodyWithoutBraces)
 
 	// Unindent
@@ -126,12 +120,12 @@ func ifBodyToStandaloneCode(fset *token.FileSet, ifBody ast.BlockStmt, src []byt
 	return bodyWithoutBraces
 }
 
-func createInverseCondition(fset *token.FileSet, expr ast.Expr, src []byte) ([]byte, error) {
-	posInSource := safetoken.StartPosition(fset, expr.Pos())
-	endInSource := safetoken.EndPosition(fset, expr.End())
+func invertCondition(fset *token.FileSet, cond ast.Expr, src []byte) ([]byte, error) {
+	posInSource := safetoken.StartPosition(fset, cond.Pos())
+	endInSource := safetoken.EndPosition(fset, cond.End())
 	oldText := string(src[posInSource.Offset:endInSource.Offset])
 
-	switch expr := expr.(type) {
+	switch expr := cond.(type) {
 	case *ast.Ident, *ast.ParenExpr, *ast.CallExpr, *ast.StarExpr, *ast.IndexExpr, *ast.IndexListExpr, *ast.SelectorExpr:
 		newText := "!" + oldText
 		if oldText == "true" {
@@ -147,12 +141,14 @@ func createInverseCondition(fset *token.FileSet, expr ast.Expr, src []byte) ([]b
 			return nil, fmt.Errorf("Inversion not supported for unary operator %s", expr.Op.String())
 		}
 
-		xPosInSource := safetoken.StartPosition(fset, expr.X.Pos())
-		textWithoutNot := src[xPosInSource.Offset:endInSource.Offset]
+		start := safetoken.StartPosition(fset, expr.X.Pos())
+		end := safetoken.EndPosition(fset, expr.X.End())
+		textWithoutNot := src[start.Offset:end.Offset]
 
 		return textWithoutNot, nil
 
 	case *ast.BinaryExpr:
+		// These inversions are unsound for floating point NaN, but that's ok.
 		negations := map[token.Token]string{
 			token.EQL: "!=",
 			token.LSS: ">=",
@@ -164,7 +160,7 @@ func createInverseCondition(fset *token.FileSet, expr ast.Expr, src []byte) ([]b
 
 		negation, negationFound := negations[expr.Op]
 		if !negationFound {
-			return createInverseAndOrCondition(fset, *expr, src)
+			return invertAndOr(fset, expr, src)
 		}
 
 		xPosInSource := safetoken.StartPosition(fset, expr.X.Pos())
@@ -181,10 +177,10 @@ func createInverseCondition(fset *token.FileSet, expr ast.Expr, src []byte) ([]b
 		return []byte(textBeforeOp + newOpWithTrailingWhitespace + textAfterOp), nil
 	}
 
-	return nil, fmt.Errorf("Inversion not supported for %T", expr)
+	return nil, fmt.Errorf("Inversion not supported for %T", cond)
 }
 
-func createInverseAndOrCondition(fset *token.FileSet, expr ast.BinaryExpr, src []byte) ([]byte, error) {
+func invertAndOr(fset *token.FileSet, expr *ast.BinaryExpr, src []byte) ([]byte, error) {
 	if expr.Op != token.LAND && expr.Op != token.LOR {
 		return nil, fmt.Errorf("Inversion not supported for binary operator %s", expr.Op.String())
 	}
@@ -198,12 +194,12 @@ func createInverseAndOrCondition(fset *token.FileSet, expr ast.BinaryExpr, src [
 	opPosInSource := safetoken.StartPosition(fset, expr.OpPos)
 	whitespaceAfterBefore := src[xEndInSource.Offset:opPosInSource.Offset]
 
-	invertedBefore, err := createInverseCondition(fset, expr.X, src)
+	invertedBefore, err := invertCondition(fset, expr.X, src)
 	if err != nil {
 		return nil, err
 	}
 
-	invertedAfter, err := createInverseCondition(fset, expr.Y, src)
+	invertedAfter, err := invertCondition(fset, expr.Y, src)
 	if err != nil {
 		return nil, err
 	}
@@ -218,18 +214,18 @@ func createInverseAndOrCondition(fset *token.FileSet, expr ast.BinaryExpr, src [
 
 // CanInvertIfCondition reports whether we can do invert-if-condition on the
 // code in the given range
-func CanInvertIfCondition(start, end token.Pos, file *ast.File) (*ast.IfStmt, bool, error) {
+func CanInvertIfCondition(file *ast.File, start, end token.Pos) (*ast.IfStmt, bool, error) {
 	path, _ := astutil.PathEnclosingInterval(file, start, end)
 	if len(path) == 0 {
 		return nil, false, fmt.Errorf("no path enclosing interval")
 	}
 
-	expr, ok := path[0].(ast.Stmt)
+	stmt, ok := path[0].(ast.Stmt)
 	if !ok {
-		return nil, false, fmt.Errorf("node is not an statement")
+		return nil, false, fmt.Errorf("node is not a statement")
 	}
 
-	ifStatement, isIfStatement := expr.(*ast.IfStmt)
+	ifStatement, isIfStatement := stmt.(*ast.IfStmt)
 	if !isIfStatement {
 		return nil, false, fmt.Errorf("not an if statement")
 	}

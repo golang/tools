@@ -411,7 +411,7 @@ func refactoringFixes(ctx context.Context, snapshot source.Snapshot, uri span.UR
 
 	pgf, err := snapshot.ParseGo(ctx, fh, source.ParseFull)
 	if err != nil {
-		return nil, fmt.Errorf("getting file for Identifier: %w", err)
+		return nil, err
 	}
 
 	start, end, err := pgf.RangePos(rng)
@@ -419,11 +419,10 @@ func refactoringFixes(ctx context.Context, snapshot source.Snapshot, uri span.UR
 		return nil, err
 	}
 
-	puri := protocol.URIFromSpanURI(uri)
 	var commands []protocol.Command
-	if _, ok, _ := source.CanInvertIfCondition(start, end, pgf.File); ok {
+	if _, ok, _ := source.CanInvertIfCondition(pgf.File, start, end); ok {
 		cmd, err := command.NewApplyFixCommand("Invert if condition", command.ApplyFixArgs{
-			URI:   puri,
+			URI:   protocol.URIFromSpanURI(uri),
 			Fix:   source.InvertIfCondition,
 			Range: rng,
 		})
