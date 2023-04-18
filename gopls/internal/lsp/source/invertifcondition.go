@@ -1,6 +1,7 @@
 package source
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -141,8 +142,21 @@ func invertCondition(fset *token.FileSet, cond ast.Expr, src []byte) ([]byte, er
 			return nil, fmt.Errorf("Inversion not supported for unary operator %s", expr.Op.String())
 		}
 
-		start := safetoken.StartPosition(fset, expr.X.Pos())
-		end := safetoken.EndPosition(fset, expr.X.End())
+		inverse := expr.X
+		if p, isParen := inverse.(*ast.ParenExpr); isParen {
+			// We got !(x), remove the parentheses with the ! so we get just "x"
+			inverse = p.X
+
+			start := safetoken.StartPosition(fset, inverse.Pos())
+			end := safetoken.EndPosition(fset, inverse.End())
+			if bytes.Contains(src[start.Offset:end.Offset], []byte("\n")) {
+				// The expression is multi-line, so we can't remove the parentheses
+				inverse = expr.X
+			}
+		}
+
+		start := safetoken.StartPosition(fset, inverse.Pos())
+		end := safetoken.EndPosition(fset, inverse.End())
 		textWithoutNot := src[start.Offset:end.Offset]
 
 		return textWithoutNot, nil
@@ -216,29 +230,25 @@ func invertAndOr(fset *token.FileSet, expr *ast.BinaryExpr, src []byte) ([]byte,
 // code in the given range
 func CanInvertIfCondition(file *ast.File, start, end token.Pos) (*ast.IfStmt, bool, error) {
 	path, _ := astutil.PathEnclosingInterval(file, start, end)
-	if len(path) == 0 {
-		return nil, false, fmt.Errorf("no path enclosing interval")
+	for _, node := range path {
+		stmt, isIfStatement := node.(*ast.IfStmt)
+		if !isIfStatement {
+			continue
+		}
+
+		if stmt.Else == nil {
+			// Can't invert conditions without else clauses
+			return nil, false, fmt.Errorf("else clause required")
+		}
+
+		if _, hasElseIf := stmt.Else.(*ast.IfStmt); hasElseIf {
+			// Can't invert conditions with else-if clauses, unclear what that
+			// would look like
+			return nil, false, fmt.Errorf("else-if not supported")
+		}
+
+		return stmt, true, nil
 	}
 
-	stmt, ok := path[0].(ast.Stmt)
-	if !ok {
-		return nil, false, fmt.Errorf("node is not a statement")
-	}
-
-	ifStatement, isIfStatement := stmt.(*ast.IfStmt)
-	if !isIfStatement {
-		return nil, false, fmt.Errorf("not an if statement")
-	}
-
-	if ifStatement.Else == nil {
-		// Can't invert conditions without else clauses
-		return nil, false, fmt.Errorf("else clause required")
-	}
-	if _, hasElseIf := ifStatement.Else.(*ast.IfStmt); hasElseIf {
-		// Can't invert conditions with else-if clauses, unclear what that
-		// would look like
-		return nil, false, fmt.Errorf("else-if not supported")
-	}
-
-	return ifStatement, true, nil
+	return nil, false, fmt.Errorf("not an if statement")
 }
