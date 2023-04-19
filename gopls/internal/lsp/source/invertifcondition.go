@@ -139,7 +139,8 @@ func invertCondition(fset *token.FileSet, cond ast.Expr, src []byte) ([]byte, er
 
 	case *ast.UnaryExpr:
 		if expr.Op != token.NOT {
-			return nil, fmt.Errorf("Inversion not supported for unary operator %s", expr.Op.String())
+			// This should never happen
+			return dumbInvert(fset, cond, src), nil
 		}
 
 		inverse := expr.X
@@ -191,12 +192,21 @@ func invertCondition(fset *token.FileSet, cond ast.Expr, src []byte) ([]byte, er
 		return []byte(textBeforeOp + newOpWithTrailingWhitespace + textAfterOp), nil
 	}
 
-	return nil, fmt.Errorf("Inversion not supported for %T", cond)
+	return dumbInvert(fset, cond, src), nil
+}
+
+// dumbInvert is a fallback, inverting cond into !(cond).
+func dumbInvert(fset *token.FileSet, expr ast.Expr, src []byte) []byte {
+	start := safetoken.StartPosition(fset, expr.Pos())
+	end := safetoken.EndPosition(fset, expr.End())
+	text := string(src[start.Offset:end.Offset])
+	return []byte("!(" + text + ")")
 }
 
 func invertAndOr(fset *token.FileSet, expr *ast.BinaryExpr, src []byte) ([]byte, error) {
 	if expr.Op != token.LAND && expr.Op != token.LOR {
-		return nil, fmt.Errorf("Inversion not supported for binary operator %s", expr.Op.String())
+		// Neither AND nor OR, don't know how to invert this
+		return dumbInvert(fset, expr, src), nil
 	}
 
 	oppositeOp := "&&"
