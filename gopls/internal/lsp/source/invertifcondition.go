@@ -1,7 +1,6 @@
 package source
 
 import (
-	"bytes"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -122,9 +121,9 @@ func ifBodyToStandaloneCode(fset *token.FileSet, ifBody *ast.BlockStmt, src []by
 }
 
 func invertCondition(fset *token.FileSet, cond ast.Expr, src []byte) ([]byte, error) {
-	posInSource := safetoken.StartPosition(fset, cond.Pos())
-	endInSource := safetoken.EndPosition(fset, cond.End())
-	oldText := string(src[posInSource.Offset:endInSource.Offset])
+	condStart := safetoken.StartPosition(fset, cond.Pos())
+	condEnd := safetoken.EndPosition(fset, cond.End())
+	oldText := string(src[condStart.Offset:condEnd.Offset])
 
 	switch expr := cond.(type) {
 	case *ast.Ident, *ast.ParenExpr, *ast.CallExpr, *ast.StarExpr, *ast.IndexExpr, *ast.IndexListExpr, *ast.SelectorExpr:
@@ -150,7 +149,7 @@ func invertCondition(fset *token.FileSet, cond ast.Expr, src []byte) ([]byte, er
 
 			start := safetoken.StartPosition(fset, inverse.Pos())
 			end := safetoken.EndPosition(fset, inverse.End())
-			if bytes.Contains(src[start.Offset:end.Offset], []byte("\n")) {
+			if start.Line != end.Line {
 				// The expression is multi-line, so we can't remove the parentheses
 				inverse = expr.X
 			}
@@ -187,7 +186,7 @@ func invertCondition(fset *token.FileSet, cond ast.Expr, src []byte) ([]byte, er
 		oldOpWithTrailingWhitespace := string(src[opPosInSource.Offset:yPosInSource.Offset])
 		newOpWithTrailingWhitespace := negation + oldOpWithTrailingWhitespace[len(expr.Op.String()):]
 
-		textAfterOp := string(src[yPosInSource.Offset:endInSource.Offset])
+		textAfterOp := string(src[yPosInSource.Offset:condEnd.Offset])
 
 		return []byte(textBeforeOp + newOpWithTrailingWhitespace + textAfterOp), nil
 	}
