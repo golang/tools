@@ -33,33 +33,33 @@ hello world
 -- empty filename line --
 some content
 -- --`,
-			parsed: &Archive{
-				Comment: []byte("comment1\ncomment2\n"),
-				Files: []File{
-					{"file1", []byte("File 1 text.\n-- foo ---\nMore file 1 text.\n")},
-					{"file 2", []byte("File 2 text.\n")},
-					{"empty", []byte{}},
-					{"noNL", []byte("hello world\n")},
-					{"empty filename line", []byte("some content\n-- --\n")},
-				},
-			},
+parsed: &Archive{
+	Comment: []byte("comment1\ncomment2\n"),
+	Files: []File{
+		{"file1", []byte("File 1 text.\n-- foo ---\nMore file 1 text.\n")},
+		{"file 2", []byte("File 2 text.\n")},
+		{"empty", []byte{}},
+		{"noNL", []byte("hello world\n")},
+		{"empty filename line", []byte("some content\n-- --\n")},
+	},
+},
 		},
 		{
 			name: "basic CRLF",
 			text: "comment1\r\n" +
-				"comment2\r\n" +
-				"-- file1 --\r\n" +
-				"File 1 text.\r\n" +
-				"-- foo ---\r\n" +
-				"More file 1 text.\r\n" +
-				"-- file 2 --\r\n" +
-				"File 2 text.\r\n" +
-				"-- empty --\r\n" +
-				"-- noNL --\r\n" +
-				"hello world\r\n" +
-				"-- empty filename line --\r\n" +
-				"some content\r\n" +
-				"-- --\r\n",
+			"comment2\r\n" +
+			"-- file1 --\r\n" +
+			"File 1 text.\r\n" +
+			"-- foo ---\r\n" +
+			"More file 1 text.\r\n" +
+			"-- file 2 --\r\n" +
+			"File 2 text.\r\n" +
+			"-- empty --\r\n" +
+			"-- noNL --\r\n" +
+			"hello world\r\n" +
+			"-- empty filename line --\r\n" +
+			"some content\r\n" +
+			"-- --\r\n",
 			parsed: &Archive{
 				Comment: []byte("comment1\r\ncomment2\r\n"),
 				Files: []File{
@@ -68,6 +68,38 @@ some content
 					{"empty", []byte{}},
 					{"noNL", []byte("hello world\r\n")},
 					{"empty filename line", []byte("some content\r\n-- --\r\n")},
+				},
+			},
+		},
+		{
+			name: "mixed",
+			text: "comment1\n" +
+			"comment2\r\n" +
+			"-- file1 --\r\n" +
+			"File 1 text.\n" +
+			"-- foo ---\r\n" +
+			"More file 1 text.\r\n" +
+			"-- file 2 --\r\n" +
+			"File 2 text.\r\n" +
+			"-- file 3 --\r\n" +
+			"File 3 text.\r\n" +
+			"-- foo ---\r\n" +
+			"More file 3 text.\r\n" +
+			"-- empty --\r\n" +
+			"-- noNL --\r\n" +
+			"hello world\r\n" +
+			"-- empty filename line --\r\n" +
+			"some content\r\n" +
+			"-- --\n",
+			parsed: &Archive{
+				Comment: []byte("comment1\ncomment2\r\n"),
+				Files: []File{
+					{"file1", []byte("File 1 text.\n-- foo ---\r\nMore file 1 text.\r\n")},
+					{"file 2", []byte("File 2 text.\r\n")},
+					{"file 3", []byte("File 3 text.\r\n-- foo ---\r\nMore file 3 text.\r\n")},
+					{"empty", []byte{}},
+					{"noNL", []byte("hello world\r\n")},
+					{"empty filename line", []byte("some content\r\n-- --\n")},
 				},
 			},
 		},
