@@ -153,6 +153,6 @@ func fixNL(data , lineSeparator []byte) []byte {
 	}
 	d := make([]byte, len(data)+len(lineSeparator))
 	copy(d, data)
-	d = append(d[:len(d)-len(lineSeparator)], lineSeparator...)
+	copy(d[len(d)-len(lineSeparator):], lineSeparator)
 	return d
 }
