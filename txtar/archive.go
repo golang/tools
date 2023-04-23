@@ -105,7 +105,7 @@ var (
 // findFileMarker finds the next file marker in data,
 // extracts the file name, and returns the data before the marker,
 // the file name, and the data after the marker.
-// useCRLF states if \n or \r\n should be treated as a line separator.
+// lineSep states if \n or \r\n should be appended by fixNL.
 // If there is no next marker, findFileMarker returns before = fixNL(data), name = "", after = nil.
 func findFileMarker(data, lineSep []byte) (before []byte, name string, lineSeparator []byte, after []byte) {
 	var i int
@@ -122,9 +122,8 @@ func findFileMarker(data, lineSep []byte) (before []byte, name string, lineSepar
 }
 
 // isMarker checks whether data begins with a file marker line.
-// If so, it returns the name from the line and the data after the line.
-// Otherwise it returns name == "" with an unspecified after.
-// useCRLF states if \n or \r\n should be treated as a line separator.
+// If so, it returns the name from the line, used line separator and the data after the line.
+// Otherwise it returns name == "" with unspecified lineSeparator and after.
 func isMarker(data []byte) (name string, lineSeparator, after []byte) {
 	if !bytes.HasPrefix(data, marker) {
 		return "", lineSeparator, nil
@@ -145,7 +144,7 @@ func isMarker(data []byte) (name string, lineSeparator, after []byte) {
 }
 
 // If data is empty or ends in lineSeparator, fixNL returns data.
-// useCRLF states if \n or \r\n should be treated as a line separator.
+// lineSeparator states if \n or \r\n should be appended as a line separator if it is not present.
 // Otherwise fixNL returns a new slice consisting of data with a final lineSeparator added.
 func fixNL(data , lineSeparator []byte) []byte {
 	if len(data) == 0 || bytes.HasSuffix(data, crlf) || bytes.HasSuffix(data, lf) {
