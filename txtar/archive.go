@@ -62,10 +62,10 @@ func Format(a *Archive) []byte {
 		lineSeparator = crlf
 	}
 	var buf bytes.Buffer
-	buf.Write(fixNL(a.Comment, a.UseCRLF))
+	buf.Write(fixNL(a.Comment, lineSeparator))
 	for _, f := range a.Files {
 		fmt.Fprintf(&buf, "-- %s --%s", f.Name, lineSeparator)
-		buf.Write(fixNL(f.Data, a.UseCRLF))
+		buf.Write(fixNL(f.Data, lineSeparator))
 	}
 	return buf.Bytes()
 }
@@ -83,15 +83,12 @@ func ParseFile(file string) (*Archive, error) {
 // The returned Archive holds slices of data.
 func Parse(data []byte) *Archive {
 	a := new(Archive)
-	i := bytes.Index(data, newlineMarker)
-	if i > 0 && data[i-1] == '\r' {
-		a.UseCRLF = true
-	}
 	var name string
-	a.Comment, name, data = findFileMarker(data, a.UseCRLF)
+	var lineSeparator []byte
+	a.Comment, name, lineSeparator, data = findFileMarker(data, nil)
 	for name != "" {
 		f := File{name, nil}
-		f.Data, name, data = findFileMarker(data, a.UseCRLF)
+		f.Data, name, lineSeparator, data = findFileMarker(data, lineSeparator)
 		a.Files = append(a.Files, f)
 	}
 	return a
@@ -110,15 +107,15 @@ var (
 // the file name, and the data after the marker.
 // useCRLF states if \n or \r\n should be treated as a line separator.
 // If there is no next marker, findFileMarker returns before = fixNL(data), name = "", after = nil.
-func findFileMarker(data []byte, useCRLF bool) (before []byte, name string, after []byte) {
+func findFileMarker(data, lineSep []byte) (before []byte, name string, lineSeparator []byte, after []byte) {
 	var i int
 	for {
-		if name, after = isMarker(data[i:], useCRLF); name != "" {
-			return data[:i], name, after
+		if name, lineSeparator, after = isMarker(data[i:]); name != "" {
+			return data[:i], name, lineSeparator, after
 		}
 		j := bytes.Index(data[i:], newlineMarker)
 		if j < 0 {
-			return fixNL(data, useCRLF), "", nil
+			return fixNL(data, lineSep), "", lineSeparator, nil
 		}
 		i += j + 1 // positioned at start of new possible marker
 	}
@@ -128,32 +125,30 @@ func findFileMarker(data []byte, useCRLF bool) (before []byte, name string, afte
 // If so, it returns the name from the line and the data after the line.
 // Otherwise it returns name == "" with an unspecified after.
 // useCRLF states if \n or \r\n should be treated as a line separator.
-func isMarker(data []byte, useCRLF bool) (name string, after []byte) {
+func isMarker(data []byte) (name string, lineSeparator, after []byte) {
 	if !bytes.HasPrefix(data, marker) {
-		return "", nil
+		return "", lineSeparator, nil
 	}
 	if i := bytes.IndexByte(data, '\n'); i >= 0 {
-		if useCRLF && len(data) > 0 && data[i-1] == '\r' {
+		if len(data) > 0 && data[i-1] == '\r' {
 			data, after = data[:i-1], data[i+1:]
+			lineSeparator = crlf
 		} else {
 			data, after = data[:i], data[i+1:]
+			lineSeparator = lf
 		}
 	}
 	if !(bytes.HasSuffix(data, markerEnd) && len(data) >= len(marker)+len(markerEnd)) {
-		return "", nil
+		return "", lineSeparator, nil
 	}
-	return strings.TrimSpace(string(data[len(marker) : len(data)-len(markerEnd)])), after
+	return strings.TrimSpace(string(data[len(marker) : len(data)-len(markerEnd)])), lineSeparator, after
 }
 
 // If data is empty or ends in lineSeparator, fixNL returns data.
 // useCRLF states if \n or \r\n should be treated as a line separator.
 // Otherwise fixNL returns a new slice consisting of data with a final lineSeparator added.
-func fixNL(data []byte, useCRLF bool) []byte {
-	lineSeparator := lf
-	if useCRLF {
-		lineSeparator = crlf
-	}
-	if len(data) == 0 || (len(data) >= len(lineSeparator) && bytes.Equal(data[len(data)-len(lineSeparator):], lineSeparator)) {
+func fixNL(data , lineSeparator []byte) []byte {
+	if len(data) == 0 || bytes.HasSuffix(data, crlf) || bytes.HasSuffix(data, lf) {
 		return data
 	}
 	d := make([]byte, len(data)+len(lineSeparator))
