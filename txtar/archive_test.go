@@ -18,7 +18,7 @@ func TestParse(t *testing.T) {
 		parsed *Archive
 	}{
 		{
-			name: "basic LF",
+			name: "basic with line ending LF",
 			text: `comment1
 comment2
 -- file1 --
@@ -45,7 +45,7 @@ parsed: &Archive{
 },
 		},
 		{
-			name: "basic CRLF",
+			name: "basic with line ending CRLF",
 			text: "comment1\r\n" +
 			"comment2\r\n" +
 			"-- file1 --\r\n" +
@@ -72,7 +72,7 @@ parsed: &Archive{
 			},
 		},
 		{
-			name: "mixed",
+			name: "mixed line endings",
 			text: "comment1\n" +
 			"comment2\r\n" +
 			"-- file1 --\r\n" +
@@ -126,7 +126,7 @@ func TestFormat(t *testing.T) {
 		wanted string
 	}{
 		{
-			name: "basic LF",
+			name: "basic with line ending LF",
 			input: &Archive{
 				Comment: []byte("comment1\ncomment2\n"),
 				Files: []File{
@@ -151,7 +151,7 @@ hello world
 `,
 		},
 		{
-			name: "basic CRLF",
+			name: "basic with line ending CRLF",
 			input: &Archive{
 				Comment: []byte("comment1\r\ncomment2\r\n"),
 				Files: []File{
@@ -175,7 +175,7 @@ hello world
 				"hello world\r\n",
 		},
 		{
-			name: "mixed",
+			name: "mixed line endings",
 			input: &Archive{
 				Comment: []byte("comment1\ncomment2\r\n"),
 				Files: []File{
@@ -212,7 +212,6 @@ hello world
 		t.Run(tt.name, func(t *testing.T) {
 			result := Format(tt.input)
 			if string(result) != tt.wanted {
-				fmt.Println(len(string(result)), len(tt.wanted))
 				t.Errorf("Wrong output. \nGot:\n%s\nWant:\n%s\n", string(result), tt.wanted)
 			}
 		})
