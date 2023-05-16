@@ -120,6 +120,17 @@ var TestCases = []struct {
 `[1:],
 	Edits: []diff.Edit{{Start: 0, End: 1, New: "B"}},
 }, {
+	Name: "delete_empty",
+	In:   "meow",
+	Out:  "", // GNU diff -u special case: +0,0
+	Unified: UnifiedPrefix + `
+@@ -1 +0,0 @@
+-meow
+\ No newline at end of file
+`[1:],
+	Edits:     []diff.Edit{{Start: 0, End: 4, New: ""}},
+	LineEdits: []diff.Edit{{Start: 0, End: 4, New: ""}},
+}, {
 	Name: "append_empty",
 	In:   "", // GNU diff -u special case: -0,0
 	Out:  "AB\nC",
@@ -261,6 +272,13 @@ var TestCases = []struct {
 -
  A
 `,
+	}, {
+		Name:      "unified_lines",
+		In:        "aaa\nccc\n",
+		Out:       "aaa\nbbb\nccc\n",
+		Edits:     []diff.Edit{{Start: 3, End: 3, New: "\nbbb"}},
+		LineEdits: []diff.Edit{{Start: 0, End: 4, New: "aaa\nbbb\n"}},
+		Unified:   UnifiedPrefix + "@@ -1,2 +1,3 @@\n aaa\n+bbb\n ccc\n",
 	},
 }
 

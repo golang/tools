@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"go/token"
@@ -19,6 +18,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -98,11 +98,18 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //
 // # Special files
 //
-// There are three types of file within the test archive that are given special
+// There are several types of file within the test archive that are given special
 // treatment by the test runner:
 //   - "flags": this file is treated as a whitespace-separated list of flags
-//     that configure the MarkerTest instance. For example, -min_go=go1.18 sets
-//     the minimum required Go version for the test.
+//     that configure the MarkerTest instance. Supported flags:
+//     -min_go=go1.18 sets the minimum Go version for the test;
+//     -cgo requires that CGO_ENABLED is set and the cgo tool is available
+//     -write_sumfile=a,b,c instructs the test runner to generate go.sum files
+//     in these directories before running the test.
+//     -skip_goos=a,b,c instructs the test runner to skip the test for the
+//     listed GOOS values.
+//     TODO(rfindley): using build constraint expressions for -skip_goos would
+//     be clearer.
 //     TODO(rfindley): support flag values containing whitespace.
 //   - "settings.json": this file is parsed as JSON, and used as the
 //     session configuration (see gopls/doc/settings.md)
@@ -115,20 +122,44 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //     Foo were of type *Golden, the test runner would convert the identifier a
 //     in the call @foo(a, "b", 3) into a *Golden by collecting golden file
 //     data starting with "@a/".
+//   - proxy files: any file starting with proxy/ is treated as a Go proxy
+//     file. If present, these files are written to a separate temporary
+//     directory and GOPROXY is set to file://<proxy directory>.
 //
 // # Marker types
 //
 // The following markers are supported within marker tests:
+//
+//   - codeaction(kind, start, end, golden): specifies a codeaction to request
+//     for the given range. To support multi-line ranges, the range is defined
+//     to be between start.Start and end.End. The golden directory contains
+//     changed file content after the code action is applied.
+//
+//   - codeactionerr(kind, start, end, wantError): specifies a codeaction that
+//     fails with an error that matches the expectation.
 //
 //   - complete(location, ...labels): specifies expected completion results at
 //     the given location.
 //
 //   - diag(location, regexp): specifies an expected diagnostic matching the
 //     given regexp at the given location. The test runner requires
-//     a 1:1 correspondence between observed diagnostics and diag annotations
+//     a 1:1 correspondence between observed diagnostics and diag annotations.
+//     The diagnostics source and kind fields are ignored, to reduce fuss.
+//
+//     The specified location must match the start position of the diagnostic,
+//     but end positions are ignored.
+//
+//     TODO(adonovan): in the older marker framework, the annotation asserted
+//     two additional fields (source="compiler", kind="error"). Restore them?
 //
 //   - def(src, dst location): perform a textDocument/definition request at
-//     the src location, and check the the result points to the dst location.
+//     the src location, and check the result points to the dst location.
+//
+//   - format(golden): perform a textDocument/format request for the enclosing
+//     file, and compare against the named golden file. If the formatting
+//     request succeeds, the golden file must contain the resulting formatted
+//     source. If the formatting request fails, the golden file must contain
+//     the error message.
 //
 //   - hover(src, dst location, g Golden): perform a textDocument/hover at the
 //     src location, and checks that the result is the dst location, with hover
@@ -169,6 +200,14 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //     several lines. The test otherwise makes no attempt to check
 //     location information. There is no point to using more than one
 //     @symbol marker in a given file.
+//
+//   - workspacesymbol(query, golden): makes a workspace/symbol request for the
+//     given query, formats the response with one symbol per line, and compares
+//     against the named golden file. As workspace symbols are by definition a
+//     workspace-wide request, the location of the workspace symbol marker does
+//     not matter. Each line is of the form:
+//
+//     location name kind
 //
 // # Argument conversion
 //
@@ -258,6 +297,9 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //   - parallelize/optimize test execution
 //   - reorganize regtest packages (and rename to just 'test'?)
 //   - Rename the files .txtar.
+//   - Provide some means by which locations in the standard library
+//     (or builtin.go) can be named, so that, for example, we can we
+//     can assert that MyError implements the built-in error type.
 //
 // Existing marker tests (in ../testdata) to port:
 //   - CallHierarchy
@@ -301,6 +343,12 @@ func RunMarkerTests(t *testing.T, dir string) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			for _, goos := range test.skipGOOS {
+				if runtime.GOOS == goos {
+					t.Skipf("skipping on %s due to -skip_goos", runtime.GOOS)
+				}
+			}
+
 			// TODO(rfindley): it may be more useful to have full support for build
 			// constraints.
 			if test.minGoVersion != "" {
@@ -309,6 +357,9 @@ func RunMarkerTests(t *testing.T, dir string) {
 					t.Fatalf("parsing -min_go version: %v", err)
 				}
 				testenv.NeedsGo1Point(t, go1point)
+			}
+			if test.cgo {
+				testenv.NeedsTool(t, "cgo")
 			}
 			config := fake.EditorConfig{
 				Settings: test.settings,
@@ -320,10 +371,10 @@ func RunMarkerTests(t *testing.T, dir string) {
 				}
 				config.Settings["diagnosticsDelay"] = "10ms"
 			}
-			run := &markerTestRun{
-				test: test,
-				env:  newEnv(t, cache, test.files, config),
 
+			run := &markerTestRun{
+				test:      test,
+				env:       newEnv(t, cache, test.files, test.proxyFiles, test.writeGoSum, config),
 				locations: make(map[expect.Identifier]protocol.Location),
 				diags:     make(map[protocol.Location][]protocol.Diagnostic),
 			}
@@ -360,8 +411,11 @@ func RunMarkerTests(t *testing.T, dir string) {
 				uri := run.env.Sandbox.Workdir.URI(path)
 				for _, diag := range params.Diagnostics {
 					loc := protocol.Location{
-						URI:   uri,
-						Range: diag.Range,
+						URI: uri,
+						Range: protocol.Range{
+							Start: diag.Range.Start,
+							End:   diag.Range.Start, // ignore end positions
+						},
 					}
 					run.diags[loc] = append(run.diags[loc], diag)
 				}
@@ -415,6 +469,11 @@ func RunMarkerTests(t *testing.T, dir string) {
 type marker struct {
 	run  *markerTestRun
 	note *expect.Note
+}
+
+// server returns the LSP server for the marker test run.
+func (m marker) server() protocol.Server {
+	return m.run.env.Editor.Server
 }
 
 // errorf reports an error with a prefix indicating the position of the marker note.
@@ -482,17 +541,21 @@ arity:
 // Marker funcs should not mutate the test environment (e.g. via opening files
 // or applying edits in the editor).
 var markerFuncs = map[string]markerFunc{
-	"complete":       makeMarkerFunc(completeMarker),
-	"def":            makeMarkerFunc(defMarker),
-	"diag":           makeMarkerFunc(diagMarker),
-	"hover":          makeMarkerFunc(hoverMarker),
-	"implementation": makeMarkerFunc(implementationMarker),
-	"loc":            makeMarkerFunc(locMarker),
-	"rename":         makeMarkerFunc(renameMarker),
-	"renameerr":      makeMarkerFunc(renameErrMarker),
-	"suggestedfix":   makeMarkerFunc(suggestedfixMarker),
-	"symbol":         makeMarkerFunc(symbolMarker),
-	"refs":           makeMarkerFunc(refsMarker),
+	"codeaction":      makeMarkerFunc(codeActionMarker),
+	"codeactionerr":   makeMarkerFunc(codeActionErrMarker),
+	"complete":        makeMarkerFunc(completeMarker),
+	"def":             makeMarkerFunc(defMarker),
+	"diag":            makeMarkerFunc(diagMarker),
+	"hover":           makeMarkerFunc(hoverMarker),
+	"format":          makeMarkerFunc(formatMarker),
+	"implementation":  makeMarkerFunc(implementationMarker),
+	"loc":             makeMarkerFunc(locMarker),
+	"rename":          makeMarkerFunc(renameMarker),
+	"renameerr":       makeMarkerFunc(renameErrMarker),
+	"suggestedfix":    makeMarkerFunc(suggestedfixMarker),
+	"symbol":          makeMarkerFunc(symbolMarker),
+	"refs":            makeMarkerFunc(refsMarker),
+	"workspacesymbol": makeMarkerFunc(workspaceSymbolMarker),
 }
 
 // markerTest holds all the test data extracted from a test txtar archive.
@@ -500,20 +563,24 @@ var markerFuncs = map[string]markerFunc{
 // See the documentation for RunMarkerTests for more information on the archive
 // format.
 type markerTest struct {
-	name     string                 // relative path to the txtar file in the testdata dir
-	fset     *token.FileSet         // fileset used for parsing notes
-	content  []byte                 // raw test content
-	archive  *txtar.Archive         // original test archive
-	settings map[string]interface{} // gopls settings
-	env      map[string]string      // editor environment
-	files    map[string][]byte      // data files from the archive (excluding special files)
-	notes    []*expect.Note         // extracted notes from data files
-	golden   map[string]*Golden     // extracted golden content, by identifier name
+	name       string                 // relative path to the txtar file in the testdata dir
+	fset       *token.FileSet         // fileset used for parsing notes
+	content    []byte                 // raw test content
+	archive    *txtar.Archive         // original test archive
+	settings   map[string]interface{} // gopls settings
+	env        map[string]string      // editor environment
+	proxyFiles map[string][]byte      // proxy content
+	files      map[string][]byte      // data files from the archive (excluding special files)
+	notes      []*expect.Note         // extracted notes from data files
+	golden     map[string]*Golden     // extracted golden content, by identifier name
 
 	// flags holds flags extracted from the special "flags" archive file.
 	flags []string
 	// Parsed flags values.
 	minGoVersion string
+	cgo          bool
+	writeGoSum   []string // comma separated dirs to write go sum for
+	skipGOOS     []string // comma separated GOOS values to skip
 }
 
 // flagSet returns the flagset used for parsing the special "flags" file in the
@@ -521,7 +588,26 @@ type markerTest struct {
 func (t *markerTest) flagSet() *flag.FlagSet {
 	flags := flag.NewFlagSet(t.name, flag.ContinueOnError)
 	flags.StringVar(&t.minGoVersion, "min_go", "", "if set, the minimum go1.X version required for this test")
+	flags.BoolVar(&t.cgo, "cgo", false, "if set, requires cgo (both the cgo tool and CGO_ENABLED=1)")
+	flags.Var((*stringListValue)(&t.writeGoSum), "write_sumfile", "if set, write the sumfile for these directories")
+	flags.Var((*stringListValue)(&t.skipGOOS), "skip_goos", "if set, skip this test on these GOOS values")
 	return flags
+}
+
+// stringListValue implements flag.Value.
+type stringListValue []string
+
+func (l *stringListValue) Set(s string) error {
+	if s != "" {
+		for _, d := range strings.Split(s, ",") {
+			*l = append(*l, strings.TrimSpace(d))
+		}
+	}
+	return nil
+}
+
+func (l stringListValue) String() string {
+	return strings.Join([]string(l), ",")
 }
 
 func (t *markerTest) getGolden(id string) *Golden {
@@ -589,9 +675,6 @@ func (g *Golden) Get(t testing.TB, name string, updated []byte) ([]byte, bool) {
 //
 // See the documentation for RunMarkerTests for more details on the test data
 // archive.
-//
-// TODO(rfindley): this test could sanity check the results. For example, it is
-// too easy to write "// @" instead of "//@", which we will happy skip silently.
 func loadMarkerTests(dir string) ([]*markerTest, error) {
 	var tests []*markerTest
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -600,6 +683,7 @@ func loadMarkerTests(dir string) ([]*markerTest, error) {
 			if err != nil {
 				return err
 			}
+
 			name := strings.TrimPrefix(path, dir+string(filepath.Separator))
 			test, err := loadMarkerTest(name, content)
 			if err != nil {
@@ -665,11 +749,26 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 			}
 			test.golden[id].data[name] = file.Data
 
+		case strings.HasPrefix(file.Name, "proxy/"):
+			name := file.Name[len("proxy/"):]
+			if test.proxyFiles == nil {
+				test.proxyFiles = make(map[string][]byte)
+			}
+			test.proxyFiles[name] = file.Data
+
 		default: // ordinary file content
 			notes, err := expect.Parse(test.fset, file.Name, file.Data)
 			if err != nil {
 				return nil, fmt.Errorf("parsing notes in %q: %v", file.Name, err)
 			}
+
+			// Reject common misspelling: "// @mark".
+			// TODO(adonovan): permit "// @" within a string. Detect multiple spaces.
+			if i := bytes.Index(file.Data, []byte("// @")); i >= 0 {
+				line := 1 + bytes.Count(file.Data[:i], []byte("\n"))
+				return nil, fmt.Errorf("%s:%d: unwanted space before marker (// @)", file.Name, line)
+			}
+
 			test.notes = append(test.notes, notes...)
 			test.files[file.Name] = file.Data
 		}
@@ -719,6 +818,8 @@ func formatTest(test *markerTest) ([]byte, error) {
 		default:
 			if _, ok := test.files[file.Name]; ok { // ordinary file
 				arch.Files = append(arch.Files, file)
+			} else if strings.HasPrefix(file.Name, "proxy/") { // proxy file
+				arch.Files = append(arch.Files, file)
 			} else if data, ok := updatedGolden[file.Name]; ok { // golden file
 				arch.Files = append(arch.Files, txtar.File{Name: file.Name, Data: data})
 				delete(updatedGolden, file.Name)
@@ -744,14 +845,20 @@ func formatTest(test *markerTest) ([]byte, error) {
 //
 // TODO(rfindley): simplify and refactor the construction of testing
 // environments across regtests, marker tests, and benchmarks.
-func newEnv(t *testing.T, cache *cache.Cache, files map[string][]byte, config fake.EditorConfig) *Env {
+func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byte, writeGoSum []string, config fake.EditorConfig) *Env {
 	sandbox, err := fake.NewSandbox(&fake.SandboxConfig{
-		RootDir: t.TempDir(),
-		GOPROXY: "https://proxy.golang.org",
-		Files:   files,
+		RootDir:    t.TempDir(),
+		Files:      files,
+		ProxyFiles: proxyFiles,
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	for _, dir := range writeGoSum {
+		if err := sandbox.RunGoCommand(context.Background(), dir, "list", []string{"-mod=mod", "..."}, []string{"GOWORK=off"}, true); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Put a debug instance in the context to prevent logging to stderr.
@@ -797,7 +904,7 @@ type markerTestRun struct {
 	// Collected information.
 	// Each @diag/@suggestedfix marker eliminates an entry from diags.
 	locations map[expect.Identifier]protocol.Location
-	diags     map[protocol.Location][]protocol.Diagnostic
+	diags     map[protocol.Location][]protocol.Diagnostic // diagnostics by position; location end == start
 }
 
 // sprintf returns a formatted string after applying pre-processing to
@@ -852,8 +959,21 @@ func (run *markerTestRun) fmtPos(pos token.Pos) string {
 // archive-relative paths for files and including the line number in the full
 // archive file.
 func (run *markerTestRun) fmtLoc(loc protocol.Location) string {
+	formatted := run.fmtLocDetails(loc, true)
+	if formatted == "" {
+		run.env.T.Errorf("unable to find %s in test archive", loc)
+		return "<invalid location>"
+	}
+	return formatted
+}
+
+// See fmtLoc. If includeTxtPos is not set, the position in the full archive
+// file is omitted.
+//
+// If the location cannot be found within the archive, fmtLocDetails returns "".
+func (run *markerTestRun) fmtLocDetails(loc protocol.Location, includeTxtPos bool) string {
 	if loc == (protocol.Location{}) {
-		return "<missing location>"
+		return ""
 	}
 	lines := bytes.Count(run.test.archive.Comment, []byte("\n"))
 	var name string
@@ -867,8 +987,7 @@ func (run *markerTestRun) fmtLoc(loc protocol.Location) string {
 		lines += bytes.Count(f.Data, []byte("\n"))
 	}
 	if name == "" {
-		run.env.T.Errorf("unable to find %s in test archive", loc)
-		return "<invalid location>"
+		return ""
 	}
 	m, err := run.env.Editor.Mapper(name)
 	if err != nil {
@@ -893,7 +1012,11 @@ func (run *markerTestRun) fmtLoc(loc protocol.Location) string {
 		}
 	}
 
-	return fmt.Sprintf("%s:%s (%s:%s)", name, innerSpan, run.test.name, outerSpan)
+	if includeTxtPos {
+		return fmt.Sprintf("%s:%s (%s:%s)", name, innerSpan, run.test.name, outerSpan)
+	} else {
+		return fmt.Sprintf("%s:%s", name, innerSpan)
+	}
 }
 
 // makeMarkerFunc uses reflection to create a markerFunc for the given func value.
@@ -1160,7 +1283,7 @@ func completeMarker(mark marker, src protocol.Location, want ...string) {
 	}
 }
 
-// defMarker implements the @godef marker, running textDocument/definition at
+// defMarker implements the @def marker, running textDocument/definition at
 // the given src location and asserting that there is exactly one resulting
 // location, matching dst.
 //
@@ -1170,6 +1293,40 @@ func defMarker(mark marker, src, dst protocol.Location) {
 	if got != dst {
 		mark.errorf("definition location does not match:\n\tgot: %s\n\twant %s",
 			mark.run.fmtLoc(got), mark.run.fmtLoc(dst))
+	}
+}
+
+// formatMarker implements the @format marker.
+func formatMarker(mark marker, golden *Golden) {
+	edits, err := mark.server().Formatting(mark.run.env.Ctx, &protocol.DocumentFormattingParams{
+		TextDocument: protocol.TextDocumentIdentifier{URI: mark.uri()},
+	})
+	var got []byte
+	if err != nil {
+		got = []byte(err.Error() + "\n") // all golden content is newline terminated
+	} else {
+		env := mark.run.env
+		filename := env.Sandbox.Workdir.URIToPath(mark.uri())
+		mapper, err := env.Editor.Mapper(filename)
+		if err != nil {
+			mark.errorf("Editor.Mapper(%s) failed: %v", filename, err)
+		}
+
+		got, _, err = source.ApplyProtocolEdits(mapper, edits)
+		if err != nil {
+			mark.errorf("ApplyProtocolEdits failed: %v", err)
+			return
+		}
+	}
+
+	want, ok := golden.Get(mark.run.env.T, "", got)
+	if !ok {
+		mark.errorf("missing golden file @%s", golden.id)
+		return
+	}
+
+	if diff := compare.Bytes(want, got); diff != "" {
+		mark.errorf("golden file @%s does not match format results:\n%s", golden.id, diff)
 	}
 }
 
@@ -1215,20 +1372,27 @@ func locMarker(mark marker, name expect.Identifier, loc protocol.Location) {
 // diagMarker implements the @diag marker. It eliminates diagnostics from
 // the observed set in mark.test.
 func diagMarker(mark marker, loc protocol.Location, re *regexp.Regexp) {
-	if _, err := removeDiagnostic(mark, loc, re); err != nil {
-		mark.errorf("%v", err)
+	if _, ok := removeDiagnostic(mark, loc, re); !ok {
+		mark.errorf("no diagnostic at %v matches %q", loc, re)
 	}
 }
 
-func removeDiagnostic(mark marker, loc protocol.Location, re *regexp.Regexp) (protocol.Diagnostic, error) {
+// removeDiagnostic looks for a diagnostic matching loc at the given position.
+//
+// If found, it returns (diag, true), and eliminates the matched diagnostic
+// from the unmatched set.
+//
+// If not found, it returns (protocol.Diagnostic{}, false).
+func removeDiagnostic(mark marker, loc protocol.Location, re *regexp.Regexp) (protocol.Diagnostic, bool) {
+	loc.Range.End = loc.Range.Start // diagnostics ignore end position.
 	diags := mark.run.diags[loc]
 	for i, diag := range diags {
 		if re.MatchString(diag.Message) {
 			mark.run.diags[loc] = append(diags[:i], diags[i+1:]...)
-			return diag, nil
+			return diag, true
 		}
 	}
-	return protocol.Diagnostic{}, errors.New(mark.sprintf("no diagnostic at %v matches %q", loc, re))
+	return protocol.Diagnostic{}, false
 }
 
 // renameMarker implements the @rename(location, new, golden) marker.
@@ -1265,41 +1429,74 @@ func rename(env *Env, loc protocol.Location, newName string) (map[string][]byte,
 		return nil, err
 	}
 
-	return applyDocumentChanges(env, editMap.DocumentChanges)
+	fileChanges := make(map[string][]byte)
+	if err := applyDocumentChanges(env, editMap.DocumentChanges, fileChanges); err != nil {
+		return nil, fmt.Errorf("applying document changes: %v", err)
+	}
+	return fileChanges, nil
 }
 
-// applyDocumentChanges returns the effect of applying the document
-// changes to the contents of the Editor buffers. The actual editor
-// buffers are unchanged.
-func applyDocumentChanges(env *Env, changes []protocol.DocumentChanges) (map[string][]byte, error) {
-	result := make(map[string][]byte)
+// applyDocumentChanges applies the given document changes to the editor buffer
+// content, recording the resulting contents in the fileChanges map. It is an
+// error for a change to an edit a file that is already present in the
+// fileChanges map.
+func applyDocumentChanges(env *Env, changes []protocol.DocumentChanges, fileChanges map[string][]byte) error {
+	getMapper := func(path string) (*protocol.Mapper, error) {
+		if _, ok := fileChanges[path]; ok {
+			return nil, fmt.Errorf("internal error: %s is already edited", path)
+		}
+		return env.Editor.Mapper(path)
+	}
+
 	for _, change := range changes {
 		if change.RenameFile != nil {
 			// rename
 			oldFile := env.Sandbox.Workdir.URIToPath(change.RenameFile.OldURI)
-			newFile := env.Sandbox.Workdir.URIToPath(change.RenameFile.NewURI)
-			mapper, err := env.Editor.Mapper(oldFile)
+			mapper, err := getMapper(oldFile)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			result[newFile] = mapper.Content
-
+			newFile := env.Sandbox.Workdir.URIToPath(change.RenameFile.NewURI)
+			fileChanges[newFile] = mapper.Content
 		} else {
 			// edit
 			filename := env.Sandbox.Workdir.URIToPath(change.TextDocumentEdit.TextDocument.URI)
-			mapper, err := env.Editor.Mapper(filename)
+			mapper, err := getMapper(filename)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			patched, _, err := source.ApplyProtocolEdits(mapper, change.TextDocumentEdit.Edits)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			result[filename] = patched
+			fileChanges[filename] = patched
 		}
 	}
 
-	return result, nil
+	return nil
+}
+
+func codeActionMarker(mark marker, actionKind string, start, end protocol.Location, golden *Golden) {
+	// Request the range from start.Start to end.End.
+	loc := start
+	loc.Range.End = end.Range.End
+
+	// Apply the fix it suggests.
+	changed, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil)
+	if err != nil {
+		mark.errorf("codeAction failed: %v", err)
+		return
+	}
+
+	// Check the file state.
+	checkChangedFiles(mark, changed, golden)
+}
+
+func codeActionErrMarker(mark marker, actionKind string, start, end protocol.Location, wantErr wantError) {
+	loc := start
+	loc.Range.End = end.Range.End
+	_, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil)
+	wantErr.check(mark, err)
 }
 
 // suggestedfixMarker implements the @suggestedfix(location, regexp,
@@ -1307,15 +1504,16 @@ func applyDocumentChanges(env *Env, changes []protocol.DocumentChanges) (map[str
 // the expectation of a diagnostic, but then it applies the first code
 // action of the specified kind suggested by the matched diagnostic.
 func suggestedfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, actionKind string, golden *Golden) {
+	loc.Range.End = loc.Range.Start // diagnostics ignore end position.
 	// Find and remove the matching diagnostic.
-	diag, err := removeDiagnostic(mark, loc, re)
-	if err != nil {
-		mark.errorf("%v", err)
+	diag, ok := removeDiagnostic(mark, loc, re)
+	if !ok {
+		mark.errorf("no diagnostic at %v matches %q", loc, re)
 		return
 	}
 
 	// Apply the fix it suggests.
-	changed, err := suggestedfix(mark.run.env, loc, diag, actionKind)
+	changed, err := codeAction(mark.run.env, loc.URI, diag.Range, actionKind, &diag)
 	if err != nil {
 		mark.errorf("suggestedfix failed: %v. (Use @suggestedfixerr for expected errors.)", err)
 		return
@@ -1325,19 +1523,29 @@ func suggestedfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, a
 	checkChangedFiles(mark, changed, golden)
 }
 
-func suggestedfix(env *Env, loc protocol.Location, diag protocol.Diagnostic, actionKind string) (map[string][]byte, error) {
-
+// codeAction executes a textDocument/codeAction request for the specified
+// location and kind. If diag is non-nil, it is used as the code action
+// context.
+//
+// The resulting map contains resulting file contents after the code action is
+// applied. Currently, this function does not support code actions that return
+// edits directly; it only supports code action commands.
+func codeAction(env *Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic) (map[string][]byte, error) {
 	// Request all code actions that apply to the diagnostic.
 	// (The protocol supports filtering using Context.Only={actionKind}
 	// but we can give a better error if we don't filter.)
-	actions, err := env.Editor.Server.CodeAction(env.Ctx, &protocol.CodeActionParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
-		Range:        diag.Range,
+	params := &protocol.CodeActionParams{
+		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+		Range:        rng,
 		Context: protocol.CodeActionContext{
-			Only:        nil, // => all kinds
-			Diagnostics: []protocol.Diagnostic{diag},
+			Only: nil, // => all kinds
 		},
-	})
+	}
+	if diag != nil {
+		params.Context.Diagnostics = []protocol.Diagnostic{*diag}
+	}
+
+	actions, err := env.Editor.Server.CodeAction(env.Ctx, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1357,40 +1565,56 @@ func suggestedfix(env *Env, loc protocol.Location, diag protocol.Diagnostic, act
 	}
 	action := candidates[0]
 
+	// Apply the codeAction.
+	//
+	// Spec:
+	//  "If a code action provides an edit and a command, first the edit is
+	//  executed and then the command."
+	fileChanges := make(map[string][]byte)
 	// An action may specify an edit and/or a command, to be
 	// applied in that order. But since applyDocumentChanges(env,
 	// action.Edit.DocumentChanges) doesn't compose, for now we
 	// assert that all commands used in the @suggestedfix tests
 	// return only a command.
-	if action.Edit.DocumentChanges != nil {
-		env.T.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Edit.DocumentChanges", action.Kind, action.Title)
-	}
-	if action.Command == nil {
-		return nil, fmt.Errorf("missing CodeAction{Kind=%s, Title=%q}.Command", action.Kind, action.Title)
-	}
-
-	// This is a typical CodeAction command:
-	//
-	//   Title:     "Implement error"
-	//   Command:   gopls.apply_fix
-	//   Arguments: [{"Fix":"stub_methods","URI":".../a.go","Range":...}}]
-	//
-	// The client makes an ExecuteCommand RPC to the server,
-	// which dispatches it to the ApplyFix handler.
-	// ApplyFix dispatches to the "stub_methods" suggestedfix hook (the meat).
-	// The server then makes an ApplyEdit RPC to the client,
-	// whose Awaiter hook gathers the edits instead of applying them.
-
-	_ = env.Awaiter.takeDocumentChanges() // reset (assuming Env is confined to this thread)
-
-	if _, err := env.Editor.Server.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
-		Command:   action.Command.Command,
-		Arguments: action.Command.Arguments,
-	}); err != nil {
-		env.T.Fatalf("error converting command %q to edits: %v", action.Command.Command, err)
+	if action.Edit != nil {
+		if action.Edit.Changes != nil {
+			env.T.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Edit.Changes", action.Kind, action.Title)
+		}
+		if action.Edit.DocumentChanges != nil {
+			if err := applyDocumentChanges(env, action.Edit.DocumentChanges, fileChanges); err != nil {
+				return nil, fmt.Errorf("applying document changes: %v", err)
+			}
+		}
 	}
 
-	return applyDocumentChanges(env, env.Awaiter.takeDocumentChanges())
+	if action.Command != nil {
+		// This is a typical CodeAction command:
+		//
+		//   Title:     "Implement error"
+		//   Command:   gopls.apply_fix
+		//   Arguments: [{"Fix":"stub_methods","URI":".../a.go","Range":...}}]
+		//
+		// The client makes an ExecuteCommand RPC to the server,
+		// which dispatches it to the ApplyFix handler.
+		// ApplyFix dispatches to the "stub_methods" suggestedfix hook (the meat).
+		// The server then makes an ApplyEdit RPC to the client,
+		// whose Awaiter hook gathers the edits instead of applying them.
+
+		_ = env.Awaiter.takeDocumentChanges() // reset (assuming Env is confined to this thread)
+
+		if _, err := env.Editor.Server.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
+			Command:   action.Command.Command,
+			Arguments: action.Command.Arguments,
+		}); err != nil {
+			env.T.Fatalf("error converting command %q to edits: %v", action.Command.Command, err)
+		}
+
+		if err := applyDocumentChanges(env, env.Awaiter.takeDocumentChanges(), fileChanges); err != nil {
+			return nil, fmt.Errorf("applying document changes from command: %v", err)
+		}
+	}
+
+	return fileChanges, nil
 }
 
 // TODO(adonovan): suggestedfixerr
@@ -1398,7 +1622,7 @@ func suggestedfix(env *Env, loc protocol.Location, diag protocol.Diagnostic, act
 // refsMarker implements the @refs marker.
 func refsMarker(mark marker, src protocol.Location, want ...protocol.Location) {
 	refs := func(includeDeclaration bool, want []protocol.Location) error {
-		got, err := mark.run.env.Editor.Server.References(mark.run.env.Ctx, &protocol.ReferenceParams{
+		got, err := mark.server().References(mark.run.env.Ctx, &protocol.ReferenceParams{
 			TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
 			Context: protocol.ReferenceContext{
 				IncludeDeclaration: includeDeclaration,
@@ -1428,7 +1652,7 @@ func refsMarker(mark marker, src protocol.Location, want ...protocol.Location) {
 
 // implementationMarker implements the @implementation marker.
 func implementationMarker(mark marker, src protocol.Location, want ...protocol.Location) {
-	got, err := mark.run.env.Editor.Server.Implementation(mark.run.env.Ctx, &protocol.ImplementationParams{
+	got, err := mark.server().Implementation(mark.run.env.Ctx, &protocol.ImplementationParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
 	})
 	if err != nil {
@@ -1443,7 +1667,7 @@ func implementationMarker(mark marker, src protocol.Location, want ...protocol.L
 // symbolMarker implements the @symbol marker.
 func symbolMarker(mark marker, golden *Golden) {
 	// Retrieve information about all symbols in this file.
-	symbols, err := mark.run.env.Editor.Server.DocumentSymbol(mark.run.env.Ctx, &protocol.DocumentSymbolParams{
+	symbols, err := mark.server().DocumentSymbol(mark.run.env.Ctx, &protocol.DocumentSymbolParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: mark.uri()},
 	})
 	if err != nil {
@@ -1525,4 +1749,38 @@ func compareLocations(mark marker, got, want []protocol.Location) error {
 			len(got), len(want), diff)
 	}
 	return nil
+}
+
+func workspaceSymbolMarker(mark marker, query string, golden *Golden) {
+	params := &protocol.WorkspaceSymbolParams{
+		Query: query,
+	}
+
+	gotSymbols, err := mark.server().Symbol(mark.run.env.Ctx, params)
+	if err != nil {
+		mark.errorf("Symbol(%q) failed: %v", query, err)
+		return
+	}
+	var got bytes.Buffer
+	for _, s := range gotSymbols {
+		// Omit the txtar position of the symbol location; otherwise edits to the
+		// txtar archive lead to unexpected failures.
+		loc := mark.run.fmtLocDetails(s.Location, false)
+		// TODO(rfindley): can we do better here, by detecting if the location is
+		// relative to GOROOT?
+		if loc == "" {
+			loc = "<unknown>"
+		}
+		fmt.Fprintf(&got, "%s %s %s\n", loc, s.Name, s.Kind)
+	}
+
+	want, ok := golden.Get(mark.run.env.T, "", got.Bytes())
+	if !ok {
+		mark.errorf("missing golden file @%s", golden.id)
+		return
+	}
+
+	if diff := compare.Bytes(want, got.Bytes()); diff != "" {
+		mark.errorf("Symbol(%q) mismatch:\n%s", query, diff)
+	}
 }

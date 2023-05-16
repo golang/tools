@@ -217,22 +217,6 @@ io.Reader, so this assertion cannot succeed.
 
 **Enabled by default.**
 
-## **infertypeargs**
-
-check for unnecessary type arguments in call expressions
-
-Explicit type arguments may be omitted from call expressions if they can be
-inferred from function arguments, or from other type arguments:
-
-	func f[T any](T) {}
-	
-	func _() {
-		f[string]("foo") // string could be inferred
-	}
-
-
-**Enabled by default.**
-
 ## **loopclosure**
 
 check references to loop variables from within nested functions
@@ -600,7 +584,7 @@ The unsafeptr analyzer reports likely incorrect uses of unsafe.Pointer
 to convert integers to pointers. A conversion from uintptr to
 unsafe.Pointer is invalid if it implies that there is a uintptr-typed
 word in memory that holds a pointer value, because that word will be
-invisible to stack copying and to the garbage collector.`
+invisible to stack copying and to the garbage collector.
 
 **Enabled by default.**
 
@@ -623,9 +607,11 @@ To reduce false positives it ignores:
 
 check for unused results of calls to some functions
 
-Some functions like fmt.Errorf return a result and have no side effects,
-so it is always a mistake to discard the result. This analyzer reports
-calls to certain functions in which the result of the call is ignored.
+Some functions like fmt.Errorf return a result and have no side
+effects, so it is always a mistake to discard the result. Other
+functions may return an error that must not be ignored, or a cleanup
+operation that must be called. This analyzer reports calls to
+functions like these when the result of the call is ignored.
 
 The set of functions may be controlled using flags.
 
@@ -751,6 +737,22 @@ This analyzer provides diagnostics for any struct literals that do not have
 any fields initialized. Because the suggested fix for this analysis is
 expensive to compute, callers should compute it separately, using the
 SuggestedFix function below.
+
+
+**Enabled by default.**
+
+## **infertypeargs**
+
+check for unnecessary type arguments in call expressions
+
+Explicit type arguments may be omitted from call expressions if they can be
+inferred from function arguments, or from other type arguments:
+
+	func f[T any](T) {}
+	
+	func _() {
+		f[string]("foo") // string could be inferred
+	}
 
 
 **Enabled by default.**

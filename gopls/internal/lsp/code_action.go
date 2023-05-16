@@ -176,6 +176,18 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 					},
 				})
 			}
+
+			diags, err := snapshot.OrphanedFileDiagnostics(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if d, ok := diags[fh.URI()]; ok {
+				quickFixes, err := codeActionsMatchingDiagnostics(ctx, snapshot, diagnostics, []*source.Diagnostic{d})
+				if err != nil {
+					return nil, err
+				}
+				codeActions = append(codeActions, quickFixes...)
+			}
 		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -249,6 +261,14 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 
 		if wanted[protocol.GoTest] {
 			fixes, err := goTest(ctx, snapshot, uri, params.Range)
+			if err != nil {
+				return nil, err
+			}
+			codeActions = append(codeActions, fixes...)
+		}
+
+		if wanted[protocol.RefactorRewrite] {
+			fixes, err := refactoringFixes(ctx, snapshot, uri, params.Range)
 			if err != nil {
 				return nil, err
 			}
@@ -389,6 +409,46 @@ func extractionFixes(ctx context.Context, snapshot source.Snapshot, uri span.URI
 		actions = append(actions, protocol.CodeAction{
 			Title:   commands[i].Title,
 			Kind:    protocol.RefactorExtract,
+			Command: &commands[i],
+		})
+	}
+	return actions, nil
+}
+
+func refactoringFixes(ctx context.Context, snapshot source.Snapshot, uri span.URI, rng protocol.Range) ([]protocol.CodeAction, error) {
+	fh, err := snapshot.ReadFile(ctx, uri)
+	if err != nil {
+		return nil, err
+	}
+
+	pgf, err := snapshot.ParseGo(ctx, fh, source.ParseFull)
+	if err != nil {
+		return nil, err
+	}
+
+	start, end, err := pgf.RangePos(rng)
+	if err != nil {
+		return nil, err
+	}
+
+	var commands []protocol.Command
+	if _, ok, _ := source.CanInvertIfCondition(pgf.File, start, end); ok {
+		cmd, err := command.NewApplyFixCommand("Invert if condition", command.ApplyFixArgs{
+			URI:   protocol.URIFromSpanURI(uri),
+			Fix:   source.InvertIfCondition,
+			Range: rng,
+		})
+		if err != nil {
+			return nil, err
+		}
+		commands = append(commands, cmd)
+	}
+
+	var actions []protocol.CodeAction
+	for i := range commands {
+		actions = append(actions, protocol.CodeAction{
+			Title:   commands[i].Title,
+			Kind:    protocol.RefactorRewrite,
 			Command: &commands[i],
 		})
 	}

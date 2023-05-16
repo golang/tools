@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/testenv"
 
@@ -647,7 +647,7 @@ use (
 		}
 
 		// This fails if guarded with a OnceMet(DoneWithSave(), ...), because it is
-		// debounced (and therefore not synchronous with the change).
+		// delayed (and therefore not synchronous with the change).
 		env.Await(NoDiagnostics(ForFile("modb/go.mod")))
 
 		// Test Formatting.

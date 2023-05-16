@@ -26,10 +26,10 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/debug/log"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/core"
 	"golang.org/x/tools/internal/event/export"
@@ -469,7 +469,7 @@ func (i *Instance) Serve(ctx context.Context, addr string) (string, error) {
 			http.Error(w, "OK", 200)
 		})
 		mux.HandleFunc("/_makeabug", func(w http.ResponseWriter, r *http.Request) {
-			bug.Report("bug here", nil)
+			bug.Report("bug here")
 			http.Error(w, "made a bug", http.StatusOK)
 		})
 

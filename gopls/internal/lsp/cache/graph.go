@@ -8,9 +8,9 @@ import (
 	"sort"
 
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/bug"
 )
 
 // A metadataGraph is an immutable and transitively closed import
@@ -24,6 +24,8 @@ type metadataGraph struct {
 
 	// ids maps file URIs to package IDs, sorted by (!valid, cli, packageID).
 	// A single file may belong to multiple packages due to tests packages.
+	//
+	// Invariant: all IDs present in the ids map exist in the metadata map.
 	ids map[span.URI][]PackageID
 }
 

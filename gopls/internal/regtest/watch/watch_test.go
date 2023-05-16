@@ -7,9 +7,9 @@ package regtest
 import (
 	"testing"
 
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/hooks"
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
-	"golang.org/x/tools/internal/bug"
 
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -577,7 +577,7 @@ func main() {
 		env.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
 		)
-		if err := env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"init", "mod.com"}, true); err != nil {
+		if err := env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"init", "mod.com"}, nil, true); err != nil {
 			t.Fatal(err)
 		}
 

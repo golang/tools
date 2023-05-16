@@ -66,6 +66,10 @@ func run(pass *analysis.Pass) (any, error) {
 			// Not a slog function that takes key-value pairs.
 			return
 		}
+		if isMethodExpr(pass.TypesInfo, call) {
+			// Call is to a method value. Skip the first argument.
+			skipArgs++
+		}
 		if len(call.Args) <= skipArgs {
 			// Too few args; perhaps there are no k-v pairs.
 			return
@@ -74,7 +78,7 @@ func run(pass *analysis.Pass) (any, error) {
 		// Check this call.
 		// The first position should hold a key or Attr.
 		pos := key
-		sawUnknown := false
+		var unknownArg ast.Expr // nil or the last unknown argument
 		for _, arg := range call.Args[skipArgs:] {
 			t := pass.TypesInfo.Types[arg].Type
 			switch pos {
@@ -86,17 +90,19 @@ func run(pass *analysis.Pass) (any, error) {
 				case isAttr(t):
 					pos = key
 				case types.IsInterface(t):
-					// We don't know if this arg is a string or an Attr, so we don't know what to expect next.
-					// (We could see if one of interface's methods isn't a method of Attr, and thus know
-					// for sure that this type is definitely not a string or Attr, but it doesn't seem
-					// worth the effort for such an unlikely case.)
+					// As we do not do dataflow, we do not know what the dynamic type is.
+					// It could be a string or an Attr so we don't know what to expect next.
 					pos = unknown
 				default:
-					// Definitely not a key.
-					pass.ReportRangef(call, "%s arg %q should be a string or a slog.Attr (possible missing key or value)",
-						shortName(fn), analysisutil.Format(pass.Fset, arg))
-					// Assume this was supposed to be a value, and expect a key next.
-					pos = key
+					if unknownArg == nil {
+						pass.ReportRangef(arg, "%s arg %q should be a string or a slog.Attr (possible missing key or value)",
+							shortName(fn), analysisutil.Format(pass.Fset, arg))
+					} else {
+						pass.ReportRangef(arg, "%s arg %q should probably be a string or a slog.Attr (previous arg %q cannot be a key)",
+							shortName(fn), analysisutil.Format(pass.Fset, arg), analysisutil.Format(pass.Fset, unknownArg))
+					}
+					// Stop here so we report at most one missing key per call.
+					return
 				}
 
 			case value:
@@ -105,31 +111,27 @@ func run(pass *analysis.Pass) (any, error) {
 				pos = key
 
 			case unknown:
-				// We don't know anything about this position, but all hope is not lost.
+				// Once we encounter an unknown position, we can never be
+				// sure if a problem later or at the end of the call is due to a
+				// missing final value, or a non-key in key position.
+				// In both cases, unknownArg != nil.
+				unknownArg = arg
+
+				// We don't know what is expected about this position, but all hope is not lost.
 				if t != stringType && !isAttr(t) && !types.IsInterface(t) {
 					// This argument is definitely not a key.
 					//
-					// The previous argument could have been a key, in which case this is the
+					// unknownArg cannot have been a key, in which case this is the
 					// corresponding value, and the next position should hold another key.
-					// We will assume that.
 					pos = key
-					// Another possibility: the previous argument was an Attr, and this is
-					// a value incorrectly placed in a key position.
-					// If we assumed this case instead, we might produce a false positive
-					// (since the first case might actually hold).
-
-					// Once we encounter an unknown position, we can never be
-					// sure if a problem at the end of the call is due to a
-					// missing final value, or a non-key in key position.
-					sawUnknown = true
 				}
 			}
 		}
 		if pos == value {
-			if sawUnknown {
-				pass.ReportRangef(call, "call to %s has a missing or misplaced value", shortName(fn))
-			} else {
+			if unknownArg == nil {
 				pass.ReportRangef(call, "call to %s missing a final value", shortName(fn))
+			} else {
+				pass.ReportRangef(call, "call to %s has a missing or misplaced value", shortName(fn))
 			}
 		}
 	})
@@ -137,7 +139,7 @@ func run(pass *analysis.Pass) (any, error) {
 }
 
 func isAttr(t types.Type) bool {
-	return t.String() == "log/slog.Attr"
+	return analysisutil.IsNamed(t, "log/slog", "Attr")
 }
 
 // shortName returns a name for the function that is shorter than FullName.
@@ -170,49 +172,63 @@ func kvFuncSkipArgs(fn *types.Func) (int, bool) {
 	if pkg := fn.Pkg(); pkg == nil || pkg.Path() != "log/slog" {
 		return 0, false
 	}
+	var recvName string // by default a slog package function
 	recv := fn.Type().(*types.Signature).Recv()
-	if recv == nil {
-		// TODO: If #59204 is accepted, uncomment the lines below.
-		// if fn.Name() == "Group" {
-		// 	return 0, true
-		// }
-		skip, ok := slogOutputFuncs[fn.Name()]
-		return skip, ok
-	}
-	var recvName string
-	if pt, ok := recv.Type().(*types.Pointer); ok {
-		if nt, ok := pt.Elem().(*types.Named); ok {
+	if recv != nil {
+		t := recv.Type()
+		if pt, ok := t.(*types.Pointer); ok {
+			t = pt.Elem()
+		}
+		if nt, ok := t.(*types.Named); !ok {
+			return 0, false
+		} else {
 			recvName = nt.Obj().Name()
 		}
 	}
-	if recvName == "" {
-		return 0, false
-	}
-	// The methods on *Logger include all the top-level output methods, as well as "With".
-	if recvName == "Logger" {
-		if fn.Name() == "With" {
-			return 0, true
-		}
-		skip, ok := slogOutputFuncs[fn.Name()]
-		return skip, ok
-	}
-	if recvName == "Record" && fn.Name() == "Add" {
-		return 0, true
-	}
-	return 0, false
+	skip, ok := kvFuncs[recvName][fn.Name()]
+	return skip, ok
 }
 
-// The names of top-level functions and *Logger methods in log/slog that take
+// The names of functions and methods in log/slog that take
 // ...any for key-value pairs, mapped to the number of initial args to skip in
 // order to get to the ones that match the ...any parameter.
-var slogOutputFuncs = map[string]int{
-	"Debug":    1,
-	"Info":     1,
-	"Warn":     1,
-	"Error":    1,
-	"DebugCtx": 2,
-	"InfoCtx":  2,
-	"WarnCtx":  2,
-	"ErrorCtx": 2,
-	"Log":      3,
+// The first key is the dereferenced receiver type name, or "" for a function.
+var kvFuncs = map[string]map[string]int{
+	"": map[string]int{
+		"Debug":    1,
+		"Info":     1,
+		"Warn":     1,
+		"Error":    1,
+		"DebugCtx": 2,
+		"InfoCtx":  2,
+		"WarnCtx":  2,
+		"ErrorCtx": 2,
+		"Log":      3,
+		"Group":    0,
+	},
+	"Logger": map[string]int{
+		"Debug":    1,
+		"Info":     1,
+		"Warn":     1,
+		"Error":    1,
+		"DebugCtx": 2,
+		"InfoCtx":  2,
+		"WarnCtx":  2,
+		"ErrorCtx": 2,
+		"Log":      3,
+		"With":     0,
+	},
+	"Record": map[string]int{
+		"Add": 0,
+	},
+}
+
+// isMethodExpr reports whether a call is to a MethodExpr.
+func isMethodExpr(info *types.Info, c *ast.CallExpr) bool {
+	s, ok := c.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	sel := info.Selections[s]
+	return sel != nil && sel.Kind() == types.MethodExpr
 }

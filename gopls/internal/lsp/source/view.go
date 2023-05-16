@@ -63,11 +63,6 @@ type Snapshot interface {
 	// on behalf of this snapshot.
 	BackgroundContext() context.Context
 
-	// ValidBuildConfiguration returns true if there is some error in the
-	// user's workspace. In particular, if they are both outside of a module
-	// and their GOPATH.
-	ValidBuildConfiguration() bool
-
 	// A Snapshot is a caching implementation of FileSource whose
 	// ReadFile method returns consistent information about the existence
 	// and content of each file throughout its lifetime.
@@ -117,7 +112,7 @@ type Snapshot interface {
 
 	// RunProcessEnvFunc runs fn with the process env for this snapshot's view.
 	// Note: the process env contains cached module and filesystem state.
-	RunProcessEnvFunc(ctx context.Context, fn func(*imports.Options) error) error
+	RunProcessEnvFunc(ctx context.Context, fn func(context.Context, *imports.Options) error) error
 
 	// ModFiles are the go.mod files enclosed in the snapshot's view and known
 	// to the snapshot.
@@ -151,7 +146,7 @@ type Snapshot interface {
 	BuiltinFile(ctx context.Context) (*ParsedGoFile, error)
 
 	// IsBuiltin reports whether uri is part of the builtin package.
-	IsBuiltin(ctx context.Context, uri span.URI) bool
+	IsBuiltin(uri span.URI) bool
 
 	// CriticalError returns any critical errors in the workspace.
 	//
@@ -159,7 +154,10 @@ type Snapshot interface {
 	CriticalError(ctx context.Context) *CriticalError
 
 	// Symbols returns all symbols in the snapshot.
-	Symbols(ctx context.Context) (map[span.URI][]Symbol, error)
+	//
+	// If workspaceOnly is set, this only includes symbols from files in a
+	// workspace package. Otherwise, it returns symbols from all loaded packages.
+	Symbols(ctx context.Context, workspaceOnly bool) (map[span.URI][]Symbol, error)
 
 	// -- package metadata --
 
@@ -172,9 +170,23 @@ type Snapshot interface {
 	// WorkspaceMetadata returns a new, unordered slice containing
 	// metadata for all ordinary and test packages (but not
 	// intermediate test variants) in the workspace.
+	//
+	// The workspace is the set of modules typically defined by a
+	// go.work file. It is not transitively closed: for example,
+	// the standard library is not usually part of the workspace
+	// even though every module in the workspace depends on it.
+	//
+	// Operations that must inspect all the dependencies of the
+	// workspace packages should instead use AllMetadata.
 	WorkspaceMetadata(ctx context.Context) ([]*Metadata, error)
 
-	// AllMetadata returns a new unordered array of metadata for all packages in the workspace.
+	// AllMetadata returns a new unordered array of metadata for
+	// all packages known to this snapshot, which includes the
+	// packages of all workspace modules plus their transitive
+	// import dependencies.
+	//
+	// It may also contain ad-hoc packages for standalone files.
+	// It includes all test variants.
 	AllMetadata(ctx context.Context) ([]*Metadata, error)
 
 	// Metadata returns the metadata for the specified package,
@@ -189,6 +201,12 @@ type Snapshot interface {
 	// importable packages.
 	// It returns an error if the context was cancelled.
 	MetadataForFile(ctx context.Context, uri span.URI) ([]*Metadata, error)
+
+	// OrphanedFileDiagnostics reports diagnostics for files that have no package
+	// associations or which only have only command-line-arguments packages.
+	//
+	// The caller must not mutate the result.
+	OrphanedFileDiagnostics(ctx context.Context) (map[span.URI]*Diagnostic, error)
 
 	// -- package type-checking --
 
@@ -513,21 +531,29 @@ type TidiedModule struct {
 
 // Metadata represents package metadata retrieved from go/packages.
 // The Deps* maps do not contain self-import edges.
+//
+// An ad-hoc package (without go.mod or GOPATH) has its ID, PkgPath,
+// and LoadDir equal to the absolute path of its directory.
 type Metadata struct {
-	ID              PackageID
-	PkgPath         PackagePath
-	Name            PackageName
+	ID      PackageID
+	PkgPath PackagePath
+	Name    PackageName
+
+	// these three fields are as defined by go/packages.Package
 	GoFiles         []span.URI
 	CompiledGoFiles []span.URI
-	ForTest         PackagePath // package path under test, or ""
-	TypesSizes      types.Sizes
-	Errors          []packages.Error          // must be set for packages in import cycles
-	DepsByImpPath   map[ImportPath]PackageID  // may contain dups; empty ID => missing
-	DepsByPkgPath   map[PackagePath]PackageID // values are unique and non-empty
-	Module          *packages.Module
-	DepsErrors      []*packagesinternal.PackageError
-	Diagnostics     []*Diagnostic // processed diagnostics from 'go list'
-	LoadDir         string        // directory from which go/packages was run
+	IgnoredFiles    []span.URI
+
+	ForTest       PackagePath // package path under test, or ""
+	TypesSizes    types.Sizes
+	Errors        []packages.Error          // must be set for packages in import cycles
+	DepsByImpPath map[ImportPath]PackageID  // may contain dups; empty ID => missing
+	DepsByPkgPath map[PackagePath]PackageID // values are unique and non-empty
+	Module        *packages.Module
+	DepsErrors    []*packagesinternal.PackageError
+	Diagnostics   []*Diagnostic // processed diagnostics from 'go list'
+	LoadDir       string        // directory from which go/packages was run
+	Standalone    bool          // package synthesized for a standalone file (e.g. ignore-tagged)
 }
 
 func (m *Metadata) String() string { return string(m.ID) }
@@ -539,7 +565,7 @@ func (m *Metadata) String() string { return string(m.ID) }
 // import metadata (DepsBy{Imp,Pkg}Path).
 //
 // Such test variants arise when an x_test package (in this case net/url_test)
-// imports a package (in this case net/http) that itself imports the the
+// imports a package (in this case net/http) that itself imports the
 // non-x_test package (in this case net/url).
 //
 // This is done so that the forward transitive closure of net/url_test has

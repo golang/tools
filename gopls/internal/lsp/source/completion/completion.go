@@ -200,7 +200,7 @@ type completer struct {
 	// completionCallbacks is a list of callbacks to collect completions that
 	// require expensive operations. This includes operations where we search
 	// through the entire module cache.
-	completionCallbacks []func(opts *imports.Options) error
+	completionCallbacks []func(context.Context, *imports.Options) error
 
 	// surrounding describes the identifier surrounding the position.
 	surrounding *Selection
@@ -887,7 +887,7 @@ func (c *completer) populateImportCompletions(ctx context.Context, searchImport 
 		})
 	}
 
-	c.completionCallbacks = append(c.completionCallbacks, func(opts *imports.Options) error {
+	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
 		return imports.GetImportPaths(ctx, searchImports, prefix, c.filename, c.pkg.GetTypes().Name(), opts.Env)
 	})
 	return nil
@@ -1174,7 +1174,8 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	// not assume global Pos/Object realms and then use export
 	// data instead of the quick parse approach taken here.
 
-	// First, we search among packages in the workspace.
+	// First, we search among packages in the forward transitive
+	// closure of the workspace.
 	// We'll use a fast parse to extract package members
 	// from those that match the name/path criterion.
 	all, err := c.snapshot.AllMetadata(ctx)
@@ -1194,7 +1195,7 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	// Rank import paths as goimports would.
 	var relevances map[string]float64
 	if len(paths) > 0 {
-		if err := c.snapshot.RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
+		if err := c.snapshot.RunProcessEnvFunc(ctx, func(ctx context.Context, opts *imports.Options) error {
 			var err error
 			relevances, err = imports.ScoreImportPaths(ctx, opts.Env, paths)
 			return err
@@ -1341,7 +1342,7 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 		}
 	}
 
-	c.completionCallbacks = append(c.completionCallbacks, func(opts *imports.Options) error {
+	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
 		defer cancel()
 		return imports.GetPackageExports(ctx, add, id.Name, c.filename, c.pkg.GetTypes().Name(), opts.Env)
 	})
@@ -1610,7 +1611,7 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 
 	count := 0
 
-	// Search packages across the entire workspace.
+	// Search the forward transitive closure of the workspace.
 	all, err := c.snapshot.AllMetadata(ctx)
 	if err != nil {
 		return err
@@ -1634,7 +1635,7 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 	// Rank candidates using goimports' algorithm.
 	var relevances map[string]float64
 	if len(paths) != 0 {
-		if err := c.snapshot.RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
+		if err := c.snapshot.RunProcessEnvFunc(ctx, func(ctx context.Context, opts *imports.Options) error {
 			var err error
 			relevances, err = imports.ScoreImportPaths(ctx, opts.Env, paths)
 			return err
@@ -1707,7 +1708,7 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		})
 		count++
 	}
-	c.completionCallbacks = append(c.completionCallbacks, func(opts *imports.Options) error {
+	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
 		defer cancel()
 		return imports.GetAllCandidates(ctx, add, prefix, c.filename, c.pkg.GetTypes().Name(), opts.Env)
 	})

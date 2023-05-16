@@ -24,19 +24,23 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/tools/internal/bug"
+	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/lsp/lru"
 	"golang.org/x/tools/internal/lockedfile"
 )
 
@@ -48,11 +52,31 @@ func Start() {
 	go getCacheDir()
 }
 
+// As an optimization, use a 100MB in-memory LRU cache in front of filecache
+// operations. This reduces I/O for operations such as diagnostics or
+// implementations that repeatedly access the same cache entries.
+var memCache = lru.New(100 * 1e6)
+
+type memKey struct {
+	kind string
+	key  [32]byte
+}
+
 // Get retrieves from the cache and returns a newly allocated
 // copy of the value most recently supplied to Set(kind, key),
 // possibly by another process.
 // Get returns ErrNotFound if the value was not found.
 func Get(kind string, key [32]byte) ([]byte, error) {
+	// First consult the read-through memory cache.
+	// Note that memory cache hits do not update the times
+	// used for LRU eviction of the file-based cache.
+	if value := memCache.Get(memKey{kind, key}); value != nil {
+		return value.([]byte), nil
+	}
+
+	iolimit <- struct{}{}        // acquire a token
+	defer func() { <-iolimit }() // release a token
+
 	name, err := filename(kind, key)
 	if err != nil {
 		return nil, err
@@ -79,7 +103,16 @@ func Get(kind string, key [32]byte) ([]byte, error) {
 	// issue #59289. TODO(adonovan): stop printing the entire file
 	// once we've seen enough reports to understand the pattern.
 	if binary.LittleEndian.Uint32(checksum) != crc32.ChecksumIEEE(value) {
-		return nil, bug.Errorf("internal error in filecache.Get(%q, %x): invalid checksum at end of %d-byte file %s:\n%q",
+		// Darwin has repeatedly displayed a problem (#59895)
+		// whereby the checksum portion (and only it) is zero,
+		// which suggests a bug in its file system . Don't
+		// panic, but keep an eye on other failures for now.
+		errorf := bug.Errorf
+		if binary.LittleEndian.Uint32(checksum) == 0 && runtime.GOOS == "darwin" {
+			errorf = fmt.Errorf
+		}
+
+		return nil, errorf("internal error in filecache.Get(%q, %x): invalid checksum at end of %d-byte file %s:\n%q",
 			kind, key, len(data), name, data)
 	}
 
@@ -97,6 +130,7 @@ func Get(kind string, key [32]byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to update access time: %w", err)
 	}
 
+	memCache.Set(memKey{kind, key}, value, len(value))
 	return value, nil
 }
 
@@ -106,6 +140,11 @@ var ErrNotFound = fmt.Errorf("not found")
 
 // Set updates the value in the cache.
 func Set(kind string, key [32]byte, value []byte) error {
+	memCache.Set(memKey{kind, key}, value, len(value))
+
+	iolimit <- struct{}{}        // acquire a token
+	defer func() { <-iolimit }() // release a token
+
 	name, err := filename(kind, key)
 	if err != nil {
 		return err
@@ -144,6 +183,8 @@ func Set(kind string, key [32]byte, value []byte) error {
 		bytes.NewReader(checksum[:])),
 		0600)
 }
+
+var iolimit = make(chan struct{}, 128) // counting semaphore to limit I/O concurrency in Set.
 
 var budget int64 = 1e9 // 1GB
 
@@ -419,4 +460,49 @@ func gc(goplsDir string) {
 			}
 		}
 	}
+}
+
+const bugKind = "bug" // reserved kind for gopls bug reports
+
+func init() {
+	// Register a handler to durably record this process's first
+	// assertion failure in the cache so that we can ask users to
+	// share this information via the stats command.
+	bug.Handle(func(bug bug.Bug) {
+		// Wait for cache init (bugs in tests happen early).
+		_, _ = getCacheDir()
+
+		value := []byte(fmt.Sprintf("%s: %+v", time.Now().Format(time.RFC3339), bug))
+		key := sha256.Sum256(value)
+		_ = Set(bugKind, key, value)
+	})
+}
+
+// BugReports returns a new unordered array of the contents
+// of all cached bug reports produced by this executable.
+func BugReports() [][]byte {
+	dir, err := getCacheDir()
+	if err != nil {
+		return nil // ignore initialization errors
+	}
+	var result [][]byte
+	_ = filepath.Walk(filepath.Join(dir, bugKind),
+		func(path string, info fs.FileInfo, err error) error {
+			if err != nil {
+				return nil // ignore readdir/stat errors
+			}
+			if !info.IsDir() {
+				var key [32]byte
+				n, err := hex.Decode(key[:], []byte(filepath.Base(path)))
+				if err != nil || n != len(key) {
+					return nil // ignore malformed file names
+				}
+				content, err := Get(bugKind, key)
+				if err == nil { // ignore read errors
+					result = append(result, content)
+				}
+			}
+			return nil
+		})
+	return result
 }

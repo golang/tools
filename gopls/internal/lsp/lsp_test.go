@@ -9,13 +9,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
@@ -24,7 +24,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/tests"
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -242,7 +241,7 @@ func (r *runner) CodeLens(t *testing.T, uri span.URI, want []protocol.CodeLens) 
 
 func (r *runner) Diagnostics(t *testing.T, uri span.URI, want []*source.Diagnostic) {
 	// Get the diagnostics for this view if we have not done it before.
-	v := r.server.session.View(r.data.Config.Dir)
+	v := r.server.session.ViewByName(r.data.Config.Dir)
 	r.collectDiagnostics(v)
 	tests.CompareDiagnostics(t, uri, want, r.diagnostics[uri])
 }
@@ -386,39 +385,6 @@ func foldRanges(m *protocol.Mapper, contents string, ranges []protocol.FoldingRa
 	return res, nil
 }
 
-func (r *runner) Format(t *testing.T, spn span.Span) {
-	uri := spn.URI()
-	filename := uri.Filename()
-	gofmted := r.data.Golden(t, "gofmt", filename, func() ([]byte, error) {
-		cmd := exec.Command("gofmt", filename)
-		out, _ := cmd.Output() // ignore error, sometimes we have intentionally ungofmt-able files
-		return out, nil
-	})
-
-	edits, err := r.server.Formatting(r.ctx, &protocol.DocumentFormattingParams{
-		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(uri),
-		},
-	})
-	if err != nil {
-		if len(gofmted) > 0 {
-			t.Error(err)
-		}
-		return
-	}
-	m, err := r.data.Mapper(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, _, err := source.ApplyProtocolEdits(m, edits)
-	if err != nil {
-		t.Error(err)
-	}
-	if diff := compare.Bytes(gofmted, got); diff != "" {
-		t.Errorf("format failed for %s (-want +got):\n%s", filename, diff)
-	}
-}
-
 func (r *runner) SemanticTokens(t *testing.T, spn span.Span) {
 	uri := spn.URI()
 	filename := uri.Filename()
@@ -449,39 +415,6 @@ func (r *runner) SemanticTokens(t *testing.T, spn span.Span) {
 	})
 	if err != nil {
 		t.Errorf("%v for Range %s", err, filename)
-	}
-}
-
-func (r *runner) Import(t *testing.T, spn span.Span) {
-	// Invokes textDocument/codeAction and applies all the "goimports" edits.
-
-	uri := spn.URI()
-	filename := uri.Filename()
-	actions, err := r.server.CodeAction(r.ctx, &protocol.CodeActionParams{
-		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(uri),
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := r.data.Mapper(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := m.Content
-	if len(actions) > 0 {
-		res, err := applyTextDocumentEdits(r, actions[0].Edit.DocumentChanges)
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = res[uri]
-	}
-	want := r.data.Golden(t, "goimports", filename, func() ([]byte, error) {
-		return got, nil
-	})
-	if diff := compare.Bytes(want, got); diff != "" {
-		t.Errorf("import failed for %s:\n%s", filename, diff)
 	}
 }
 
@@ -579,58 +512,6 @@ func (r *runner) SuggestedFix(t *testing.T, spn span.Span, actionKinds []tests.S
 		})
 		if diff := compare.Bytes(want, got); diff != "" {
 			t.Errorf("suggested fixes failed for %s:\n%s", u.Filename(), diff)
-		}
-	}
-}
-
-func (r *runner) FunctionExtraction(t *testing.T, start span.Span, end span.Span) {
-	uri := start.URI()
-	m, err := r.data.Mapper(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	spn := span.New(start.URI(), start.Start(), end.End())
-	rng, err := m.SpanRange(spn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	actionsRaw, err := r.server.CodeAction(r.ctx, &protocol.CodeActionParams{
-		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(uri),
-		},
-		Range: rng,
-		Context: protocol.CodeActionContext{
-			Only: []protocol.CodeActionKind{"refactor.extract"},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var actions []protocol.CodeAction
-	for _, action := range actionsRaw {
-		if action.Command.Title == "Extract function" {
-			actions = append(actions, action)
-		}
-	}
-	// Hack: We assume that we only get one code action per range.
-	// TODO(rstambler): Support multiple code actions per test.
-	if len(actions) == 0 || len(actions) > 1 {
-		t.Fatalf("unexpected number of code actions, want 1, got %v", len(actions))
-	}
-	_, err = r.server.ExecuteCommand(r.ctx, &protocol.ExecuteCommandParams{
-		Command:   actions[0].Command.Command,
-		Arguments: actions[0].Command.Arguments,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	res := <-r.editRecv
-	for u, got := range res {
-		want := r.data.Golden(t, "functionextraction_"+tests.SpanName(spn), u.Filename(), func() ([]byte, error) {
-			return got, nil
-		})
-		if diff := compare.Bytes(want, got); diff != "" {
-			t.Errorf("function extraction failed for %s:\n%s", u.Filename(), diff)
 		}
 	}
 }
@@ -988,35 +869,6 @@ func applyTextDocumentEdits(r *runner, edits []protocol.DocumentChanges) (map[sp
 		}
 	}
 	return res, nil
-}
-
-func (r *runner) WorkspaceSymbols(t *testing.T, uri span.URI, query string, typ tests.WorkspaceSymbolsTestType) {
-	matcher := tests.WorkspaceSymbolsTestTypeToMatcher(typ)
-
-	original := r.server.session.Options()
-	modified := original
-	modified.SymbolMatcher = matcher
-	r.server.session.SetOptions(modified)
-	defer r.server.session.SetOptions(original)
-
-	params := &protocol.WorkspaceSymbolParams{
-		Query: query,
-	}
-	gotSymbols, err := r.server.Symbol(r.ctx, params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := tests.WorkspaceSymbolsString(r.ctx, r.data, uri, gotSymbols)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got = filepath.ToSlash(tests.Normalize(got, r.normalizers))
-	want := string(r.data.Golden(t, fmt.Sprintf("workspace_symbol-%s-%s", strings.ToLower(string(matcher)), query), uri.Filename(), func() ([]byte, error) {
-		return []byte(got), nil
-	}))
-	if diff := compare.Text(want, got); diff != "" {
-		t.Error(diff)
-	}
 }
 
 func (r *runner) SignatureHelp(t *testing.T, spn span.Span, want *protocol.SignatureHelp) {

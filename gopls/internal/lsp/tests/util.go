@@ -6,11 +6,9 @@ package tests
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"go/token"
 	"path"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -95,16 +93,10 @@ func DiffLinks(mapper *protocol.Mapper, wantLinks []Link, gotLinks []protocol.Do
 }
 
 // CompareDiagnostics reports testing errors to t when the diagnostic set got
-// does not match want. If the sole expectation has source "no_diagnostics",
-// the test expects that no diagnostics were received for the given document.
+// does not match want.
 func CompareDiagnostics(t *testing.T, uri span.URI, want, got []*source.Diagnostic) {
 	t.Helper()
 	fileName := path.Base(string(uri))
-
-	// A special case to test that there are no diagnostics for a file.
-	if len(want) == 1 && want[0].Source == "no_diagnostics" {
-		want = nil
-	}
 
 	// Build a helper function to match an actual diagnostic to an overlapping
 	// expected diagnostic (if any).
@@ -482,39 +474,5 @@ func EnableAllInlayHints(opts *source.Options) {
 	}
 	for name := range source.AllInlayHints {
 		opts.Hints[name] = true
-	}
-}
-
-func WorkspaceSymbolsString(ctx context.Context, data *Data, queryURI span.URI, symbols []protocol.SymbolInformation) (string, error) {
-	queryDir := filepath.Dir(queryURI.Filename())
-	var filtered []string
-	for _, s := range symbols {
-		uri := s.Location.URI.SpanURI()
-		dir := filepath.Dir(uri.Filename())
-		if !source.InDir(queryDir, dir) { // assume queries always issue from higher directories
-			continue
-		}
-		m, err := data.Mapper(uri)
-		if err != nil {
-			return "", err
-		}
-		spn, err := m.LocationSpan(s.Location)
-		if err != nil {
-			return "", err
-		}
-		filtered = append(filtered, fmt.Sprintf("%s %s %s", spn, s.Name, s.Kind))
-	}
-	sort.Strings(filtered)
-	return strings.Join(filtered, "\n") + "\n", nil
-}
-
-func WorkspaceSymbolsTestTypeToMatcher(typ WorkspaceSymbolsTestType) source.SymbolMatcher {
-	switch typ {
-	case WorkspaceSymbolsFuzzy:
-		return source.SymbolFuzzy
-	case WorkspaceSymbolsCaseSensitive:
-		return source.SymbolCaseSensitive
-	default:
-		return source.SymbolCaseInsensitive
 	}
 }

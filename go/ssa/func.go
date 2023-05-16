@@ -382,7 +382,9 @@ func (pkg *Package) SetDebugMode(debug bool) {
 
 // debugInfo reports whether debug info is wanted for this function.
 func (f *Function) debugInfo() bool {
-	return f.Pkg != nil && f.Pkg.debug
+	// debug info for instantiations follows the debug info of their origin.
+	p := f.declaredPackage()
+	return p != nil && p.debug
 }
 
 // addNamedLocal creates a local variable, adds it to function f and
@@ -594,7 +596,7 @@ func WriteFunction(buf *bytes.Buffer, f *Function) {
 	if len(f.Locals) > 0 {
 		buf.WriteString("# Locals:\n")
 		for i, l := range f.Locals {
-			fmt.Fprintf(buf, "# % 3d:\t%s %s\n", i, l.Name(), relType(deref(l.Type()), from))
+			fmt.Fprintf(buf, "# % 3d:\t%s %s\n", i, l.Name(), relType(mustDeref(l.Type()), from))
 		}
 	}
 	writeSignature(buf, from, f.Name(), f.Signature, f.Params)

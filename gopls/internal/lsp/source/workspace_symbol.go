@@ -317,10 +317,16 @@ func collectSymbols(ctx context.Context, views []View, matcherType SymbolMatcher
 		filters := v.Options().DirectoryFilters
 		filterer := NewFilterer(filters)
 		folder := filepath.ToSlash(v.Folder().Filename())
-		symbols, err := snapshot.Symbols(ctx)
+
+		workspaceOnly := true
+		if v.Options().SymbolScope == AllSymbolScope {
+			workspaceOnly = false
+		}
+		symbols, err := snapshot.Symbols(ctx, workspaceOnly)
 		if err != nil {
 			return nil, err
 		}
+
 		for uri, syms := range symbols {
 			norm := filepath.ToSlash(uri.Filename())
 			nm := strings.TrimPrefix(norm, folder)
@@ -478,7 +484,10 @@ func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, r
 			// every field or method nesting level to access the field decreases
 			// the score by a factor of 1.0 - depth*depthFactor, up to a depth of
 			// 3.
-			depthFactor = 0.2
+			//
+			// Use a small constant here, as this exists mostly to break ties
+			// (e.g. given a type Foo and a field x.Foo, prefer Foo).
+			depthFactor = 0.01
 		)
 
 		startWord := true
@@ -496,6 +505,8 @@ func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, r
 			}
 		}
 
+		// TODO(rfindley): use metadata to determine if the file is in a workspace
+		// package, rather than this heuristic.
 		inWorkspace := false
 		for _, root := range roots {
 			if strings.HasPrefix(string(i.uri), root) {

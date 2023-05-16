@@ -68,7 +68,7 @@ type View struct {
 	vulns   map[span.URI]*govulncheck.Result
 
 	// fs is the file source used to populate this view.
-	fs source.FileSource
+	fs *overlayFS
 
 	// seenFiles tracks files that the view has accessed.
 	// TODO(golang/go#57558): this notion is fundamentally problematic, and
@@ -145,13 +145,16 @@ func (w workspaceInformation) effectiveGO111MODULE() go111module {
 	}
 }
 
-// effectiveGOWORK returns the effective GOWORK value for this workspace, if
+// GOWORK returns the effective GOWORK value for this workspace, if
 // any, in URI form.
-func (w workspaceInformation) effectiveGOWORK() span.URI {
+//
+// The second result reports whether the effective GOWORK value is "" because
+// GOWORK=off.
+func (w workspaceInformation) GOWORK() (span.URI, bool) {
 	if w.gowork == "off" || w.gowork == "" {
-		return ""
+		return "", w.gowork == "off"
 	}
-	return span.URIFromPath(w.gowork)
+	return span.URIFromPath(w.gowork), false
 }
 
 // GO111MODULE returns the value of GO111MODULE to use for running the go
@@ -421,7 +424,7 @@ func viewEnv(v *View) string {
 		v.folder.Filename(),
 		v.workingDir().Filename(),
 		strings.TrimRight(v.workspaceInformation.goversionOutput, "\n"),
-		v.snapshot.ValidBuildConfiguration(),
+		v.snapshot.validBuildConfiguration(),
 		buildFlags,
 		v.goEnv,
 	)
@@ -436,7 +439,7 @@ func viewEnv(v *View) string {
 	return buf.String()
 }
 
-func (s *snapshot) RunProcessEnvFunc(ctx context.Context, fn func(*imports.Options) error) error {
+func (s *snapshot) RunProcessEnvFunc(ctx context.Context, fn func(context.Context, *imports.Options) error) error {
 	return s.view.importsState.runProcessEnvFunc(ctx, s, fn)
 }
 
@@ -540,7 +543,7 @@ func (v *View) relevantChange(c source.FileModification) bool {
 	//
 	// TODO(rfindley): Make sure the go.work files are always known
 	// to the view.
-	if c.URI == v.effectiveGOWORK() {
+	if gowork, _ := v.GOWORK(); gowork == c.URI {
 		return true
 	}
 
@@ -588,22 +591,57 @@ func (v *View) shutdown() {
 	v.snapshotWG.Wait()
 }
 
+// While go list ./... skips directories starting with '.', '_', or 'testdata',
+// gopls may still load them via file queries. Explicitly filter them out.
 func (s *snapshot) IgnoredFile(uri span.URI) bool {
-	filename := uri.Filename()
-	var prefixes []string
-	if len(s.workspaceModFiles) == 0 {
-		for _, entry := range filepath.SplitList(s.view.gopath) {
-			prefixes = append(prefixes, filepath.Join(entry, "src"))
-		}
-	} else {
-		prefixes = append(prefixes, s.view.gomodcache)
-		for m := range s.workspaceModFiles {
-			prefixes = append(prefixes, span.Dir(m).Filename())
+	// Fast path: if uri doesn't contain '.', '_', or 'testdata', it is not
+	// possible that it is ignored.
+	{
+		uriStr := string(uri)
+		if !strings.Contains(uriStr, ".") && !strings.Contains(uriStr, "_") && !strings.Contains(uriStr, "testdata") {
+			return false
 		}
 	}
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(filename, prefix) {
-			return checkIgnored(filename[len(prefix):])
+
+	s.ignoreFilterOnce.Do(func() {
+		var dirs []string
+		if len(s.workspaceModFiles) == 0 {
+			for _, entry := range filepath.SplitList(s.view.gopath) {
+				dirs = append(dirs, filepath.Join(entry, "src"))
+			}
+		} else {
+			dirs = append(dirs, s.view.gomodcache)
+			for m := range s.workspaceModFiles {
+				dirs = append(dirs, filepath.Dir(m.Filename()))
+			}
+		}
+		s.ignoreFilter = newIgnoreFilter(dirs)
+	})
+
+	return s.ignoreFilter.ignored(uri.Filename())
+}
+
+// An ignoreFilter implements go list's exclusion rules via its 'ignored' method.
+type ignoreFilter struct {
+	prefixes []string // root dirs, ending in filepath.Separator
+}
+
+// newIgnoreFilter returns a new ignoreFilter implementing exclusion rules
+// relative to the provided directories.
+func newIgnoreFilter(dirs []string) *ignoreFilter {
+	f := new(ignoreFilter)
+	for _, d := range dirs {
+		f.prefixes = append(f.prefixes, filepath.Clean(d)+string(filepath.Separator))
+	}
+	return f
+}
+
+func (f *ignoreFilter) ignored(filename string) bool {
+	for _, prefix := range f.prefixes {
+		if suffix := strings.TrimPrefix(filename, prefix); suffix != filename {
+			if checkIgnored(suffix) {
+				return true
+			}
 		}
 	}
 	return false
@@ -615,6 +653,8 @@ func (s *snapshot) IgnoredFile(uri span.URI) bool {
 //	Directory and file names that begin with "." or "_" are ignored
 //	by the go tool, as are directories named "testdata".
 func checkIgnored(suffix string) bool {
+	// Note: this could be further optimized by writing a HasSegment helper, a
+	// segment-boundary respecting variant of strings.Contains.
 	for _, component := range strings.Split(suffix, string(filepath.Separator)) {
 		if len(component) == 0 {
 			continue
@@ -712,16 +752,18 @@ func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 			// errors.
 			fh, err := s.ReadFile(ctx, modURI)
 			if err != nil {
-				if ctx.Err() == nil {
-					addError(modURI, err)
+				if ctx.Err() != nil {
+					return ctx.Err()
 				}
+				addError(modURI, err)
 				continue
 			}
 			parsed, err := s.ParseMod(ctx, fh)
 			if err != nil {
-				if ctx.Err() == nil {
-					addError(modURI, err)
+				if ctx.Err() != nil {
+					return ctx.Err()
 				}
+				addError(modURI, err)
 				continue
 			}
 			if parsed.File == nil || parsed.File.Module == nil {
@@ -741,8 +783,10 @@ func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 	// If we're loading anything, ensure we also load builtin,
 	// since it provides fake definitions (and documentation)
 	// for types like int that are used everywhere.
+	// ("unsafe" is also needed since its sole GoFiles is
+	// derived from that of "builtin" via a workaround in load.)
 	if len(scopes) > 0 {
-		scopes = append(scopes, packageLoadScope("builtin"))
+		scopes = append(scopes, packageLoadScope("builtin"), packageLoadScope("unsafe"))
 	}
 	loadErr = s.load(ctx, true, scopes...)
 
@@ -909,7 +953,7 @@ func (v *View) workingDir() span.URI {
 	// TODO(golang/go#57514): eliminate the expandWorkspaceToModule setting
 	// entirely.
 	if v.Options().ExpandWorkspaceToModule && v.gomod != "" {
-		return span.Dir(v.gomod)
+		return span.URIFromPath(filepath.Dir(v.gomod.Filename()))
 	}
 	return v.folder
 }

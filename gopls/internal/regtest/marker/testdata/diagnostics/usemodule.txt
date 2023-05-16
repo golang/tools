@@ -1,0 +1,51 @@
+This test demonstrates diagnostics for a module that is missing from the
+go.work file.
+
+Quick-fixes change files on disk, so are tested by regtests.
+
+-- flags --
+-min_go=go1.18
+
+-- go.work --
+go 1.21
+
+use (
+	./a
+)
+
+-- a/go.mod --
+module mod.com/a
+
+go 1.18
+
+-- a/main.go --
+package main
+
+import "mod.com/a/lib"
+
+func main() {
+	_ = lib.C
+}
+
+-- a/lib/lib.go --
+package lib
+
+const C = "b"
+-- b/go.mod --
+module mod.com/b
+
+go 1.18
+
+-- b/main.go --
+package main //@diag("main", re"add this module to your go.work")
+
+import "mod.com/b/lib" //@diag("\"mod.com", re"not included in a workspace module")
+
+func main() {
+	_ = lib.C
+}
+
+-- b/lib/lib.go --
+package lib //@diag("lib", re"add this module to your go.work")
+
+const C = "b"

@@ -12,11 +12,11 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/fillstruct"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/undeclaredname"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/bug"
 )
 
 type (
@@ -34,22 +34,24 @@ type (
 )
 
 const (
-	FillStruct      = "fill_struct"
-	StubMethods     = "stub_methods"
-	UndeclaredName  = "undeclared_name"
-	ExtractVariable = "extract_variable"
-	ExtractFunction = "extract_function"
-	ExtractMethod   = "extract_method"
+	FillStruct        = "fill_struct"
+	StubMethods       = "stub_methods"
+	UndeclaredName    = "undeclared_name"
+	ExtractVariable   = "extract_variable"
+	ExtractFunction   = "extract_function"
+	ExtractMethod     = "extract_method"
+	InvertIfCondition = "invert_if_condition"
 )
 
 // suggestedFixes maps a suggested fix command id to its handler.
 var suggestedFixes = map[string]SuggestedFixFunc{
-	FillStruct:      singleFile(fillstruct.SuggestedFix),
-	UndeclaredName:  singleFile(undeclaredname.SuggestedFix),
-	ExtractVariable: singleFile(extractVariable),
-	ExtractFunction: singleFile(extractFunction),
-	ExtractMethod:   singleFile(extractMethod),
-	StubMethods:     stubSuggestedFixFunc,
+	FillStruct:        singleFile(fillstruct.SuggestedFix),
+	UndeclaredName:    singleFile(undeclaredname.SuggestedFix),
+	ExtractVariable:   singleFile(extractVariable),
+	ExtractFunction:   singleFile(extractFunction),
+	ExtractMethod:     singleFile(extractMethod),
+	InvertIfCondition: singleFile(invertIfCondition),
+	StubMethods:       stubSuggestedFixFunc,
 }
 
 // singleFile calls analyzers that expect inputs for a single file

@@ -195,6 +195,23 @@ var GeneratedAPIJSON = &APIJSON{
 				Hierarchy: "ui.navigation",
 			},
 			{
+				Name: "symbolScope",
+				Type: "enum",
+				Doc:  "symbolScope controls which packages are searched for workspace/symbol\nrequests. The default value, \"workspace\", searches only workspace\npackages. The legacy behavior, \"all\", causes all loaded packages to be\nsearched, including dependencies; this is more expensive and may return\nunwanted results.\n",
+				EnumValues: []EnumValue{
+					{
+						Value: "\"all\"",
+						Doc:   "`\"all\"` matches symbols in any loaded package, including\ndependencies.\n",
+					},
+					{
+						Value: "\"workspace\"",
+						Doc:   "`\"workspace\"` matches symbols in workspace packages only.\n",
+					},
+				},
+				Default:   "\"all\"",
+				Hierarchy: "ui.navigation",
+			},
+			{
 				Name: "analyses",
 				Type: "map[string]bool",
 				Doc:  "analyses specify analyses that the user would like to enable or disable.\nA map of the names of analysis passes that should be enabled/disabled.\nA full list of analyzers that gopls uses can be found in\n[analyzers.md](https://github.com/golang/tools/blob/master/gopls/doc/analyzers.md).\n\nExample Usage:\n\n```json5\n...\n\"analyses\": {\n  \"unreachable\": false, // Disable the unreachable analyzer.\n  \"unusedparams\": true  // Enable the unusedparams analyzer.\n}\n...\n```\n",
@@ -279,11 +296,6 @@ var GeneratedAPIJSON = &APIJSON{
 						{
 							Name:    "\"ifaceassert\"",
 							Doc:     "detect impossible interface-to-interface type assertions\n\nThis checker flags type assertions v.(T) and corresponding type-switch cases\nin which the static type V of v is an interface that cannot possibly implement\nthe target interface T. This occurs when V and T contain methods with the same\nname but different signatures. Example:\n\n\tvar v interface {\n\t\tRead()\n\t}\n\t_ = v.(io.Reader)\n\nThe Read method in v has a different signature than the Read method in\nio.Reader, so this assertion cannot succeed.",
-							Default: "true",
-						},
-						{
-							Name:    "\"infertypeargs\"",
-							Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
 							Default: "true",
 						},
 						{
@@ -383,7 +395,7 @@ var GeneratedAPIJSON = &APIJSON{
 						},
 						{
 							Name:    "\"unsafeptr\"",
-							Doc:     "check for invalid conversions of uintptr to unsafe.Pointer\n\nThe unsafeptr analyzer reports likely incorrect uses of unsafe.Pointer\nto convert integers to pointers. A conversion from uintptr to\nunsafe.Pointer is invalid if it implies that there is a uintptr-typed\nword in memory that holds a pointer value, because that word will be\ninvisible to stack copying and to the garbage collector.`",
+							Doc:     "check for invalid conversions of uintptr to unsafe.Pointer\n\nThe unsafeptr analyzer reports likely incorrect uses of unsafe.Pointer\nto convert integers to pointers. A conversion from uintptr to\nunsafe.Pointer is invalid if it implies that there is a uintptr-typed\nword in memory that holds a pointer value, because that word will be\ninvisible to stack copying and to the garbage collector.",
 							Default: "true",
 						},
 						{
@@ -393,7 +405,7 @@ var GeneratedAPIJSON = &APIJSON{
 						},
 						{
 							Name:    "\"unusedresult\"",
-							Doc:     "check for unused results of calls to some functions\n\nSome functions like fmt.Errorf return a result and have no side effects,\nso it is always a mistake to discard the result. This analyzer reports\ncalls to certain functions in which the result of the call is ignored.\n\nThe set of functions may be controlled using flags.",
+							Doc:     "check for unused results of calls to some functions\n\nSome functions like fmt.Errorf return a result and have no side\neffects, so it is always a mistake to discard the result. Other\nfunctions may return an error that must not be ignored, or a cleanup\noperation that must be called. This analyzer reports calls to\nfunctions like these when the result of the call is ignored.\n\nThe set of functions may be controlled using flags.",
 							Default: "true",
 						},
 						{
@@ -434,6 +446,11 @@ var GeneratedAPIJSON = &APIJSON{
 						{
 							Name:    "\"fillstruct\"",
 							Doc:     "note incomplete struct initializations\n\nThis analyzer provides diagnostics for any struct literals that do not have\nany fields initialized. Because the suggested fix for this analysis is\nexpensive to compute, callers should compute it separately, using the\nSuggestedFix function below.\n",
+							Default: "true",
+						},
+						{
+							Name:    "\"infertypeargs\"",
+							Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
 							Default: "true",
 						},
 						{
@@ -752,6 +769,12 @@ var GeneratedAPIJSON = &APIJSON{
 			ArgDoc:  "{\n\t\"URIArg\": {\n\t\t\"URI\": string,\n\t},\n\t// Optional: source of the diagnostics to reset.\n\t// If not set, all resettable go.mod diagnostics will be cleared.\n\t\"DiagnosticSource\": string,\n}",
 		},
 		{
+			Command: "gopls.run_go_work_command",
+			Title:   "run `go work [args...]`, and apply the resulting go.work",
+			Doc:     "edits to the current go.work file.",
+			ArgDoc:  "{\n\t\"ViewID\": string,\n\t\"InitFirst\": bool,\n\t\"Args\": []string,\n}",
+		},
+		{
 			Command:   "gopls.run_govulncheck",
 			Title:     "Run govulncheck.",
 			Doc:       "Run vulnerability check (`govulncheck`).",
@@ -952,11 +975,6 @@ var GeneratedAPIJSON = &APIJSON{
 			Default: true,
 		},
 		{
-			Name:    "infertypeargs",
-			Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
-			Default: true,
-		},
-		{
 			Name:    "loopclosure",
 			Doc:     "check references to loop variables from within nested functions\n\nThis analyzer reports places where a function literal references the\niteration variable of an enclosing loop, and the loop calls the function\nin such a way (e.g. with go or defer) that it may outlive the loop\niteration and possibly observe the wrong value of the variable.\n\nIn this example, all the deferred functions run after the loop has\ncompleted, so all observe the final value of v.\n\n\tfor _, v := range list {\n\t    defer func() {\n\t        use(v) // incorrect\n\t    }()\n\t}\n\nOne fix is to create a new variable for each iteration of the loop:\n\n\tfor _, v := range list {\n\t    v := v // new var per iteration\n\t    defer func() {\n\t        use(v) // ok\n\t    }()\n\t}\n\nThe next example uses a go statement and has a similar problem.\nIn addition, it has a data race because the loop updates v\nconcurrent with the goroutines accessing it.\n\n\tfor _, v := range elem {\n\t    go func() {\n\t        use(v)  // incorrect, and a data race\n\t    }()\n\t}\n\nA fix is the same as before. The checker also reports problems\nin goroutines started by golang.org/x/sync/errgroup.Group.\nA hard-to-spot variant of this form is common in parallel tests:\n\n\tfunc Test(t *testing.T) {\n\t    for _, test := range tests {\n\t        t.Run(test.name, func(t *testing.T) {\n\t            t.Parallel()\n\t            use(test) // incorrect, and a data race\n\t        })\n\t    }\n\t}\n\nThe t.Parallel() call causes the rest of the function to execute\nconcurrent with the loop.\n\nThe analyzer reports references only in the last statement,\nas it is not deep enough to understand the effects of subsequent\nstatements that might render the reference benign.\n(\"Last statement\" is defined recursively in compound\nstatements such as if, switch, and select.)\n\nSee: https://golang.org/doc/go_faq.html#closures_and_goroutines",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/loopclosure",
@@ -1067,7 +1085,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Name:    "unsafeptr",
-			Doc:     "check for invalid conversions of uintptr to unsafe.Pointer\n\nThe unsafeptr analyzer reports likely incorrect uses of unsafe.Pointer\nto convert integers to pointers. A conversion from uintptr to\nunsafe.Pointer is invalid if it implies that there is a uintptr-typed\nword in memory that holds a pointer value, because that word will be\ninvisible to stack copying and to the garbage collector.`",
+			Doc:     "check for invalid conversions of uintptr to unsafe.Pointer\n\nThe unsafeptr analyzer reports likely incorrect uses of unsafe.Pointer\nto convert integers to pointers. A conversion from uintptr to\nunsafe.Pointer is invalid if it implies that there is a uintptr-typed\nword in memory that holds a pointer value, because that word will be\ninvisible to stack copying and to the garbage collector.",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unsafeptr",
 			Default: true,
 		},
@@ -1077,7 +1095,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Name:    "unusedresult",
-			Doc:     "check for unused results of calls to some functions\n\nSome functions like fmt.Errorf return a result and have no side effects,\nso it is always a mistake to discard the result. This analyzer reports\ncalls to certain functions in which the result of the call is ignored.\n\nThe set of functions may be controlled using flags.",
+			Doc:     "check for unused results of calls to some functions\n\nSome functions like fmt.Errorf return a result and have no side\neffects, so it is always a mistake to discard the result. Other\nfunctions may return an error that must not be ignored, or a cleanup\noperation that must be called. This analyzer reports calls to\nfunctions like these when the result of the call is ignored.\n\nThe set of functions may be controlled using flags.",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unusedresult",
 			Default: true,
 		},
@@ -1117,6 +1135,11 @@ var GeneratedAPIJSON = &APIJSON{
 		{
 			Name:    "fillstruct",
 			Doc:     "note incomplete struct initializations\n\nThis analyzer provides diagnostics for any struct literals that do not have\nany fields initialized. Because the suggested fix for this analysis is\nexpensive to compute, callers should compute it separately, using the\nSuggestedFix function below.\n",
+			Default: true,
+		},
+		{
+			Name:    "infertypeargs",
+			Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
 			Default: true,
 		},
 		{

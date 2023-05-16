@@ -11,8 +11,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // emitNew emits to f a new (heap Alloc) instruction allocating an
@@ -29,7 +27,7 @@ func emitNew(f *Function, typ types.Type, pos token.Pos) *Alloc {
 // new temporary, and returns the value so defined.
 func emitLoad(f *Function, addr Value) *UnOp {
 	v := &UnOp{Op: token.MUL, X: addr}
-	v.setType(deref(typeparams.CoreType(addr.Type())))
+	v.setType(mustDeref(addr.Type()))
 	f.emit(v)
 	return v
 }
@@ -372,9 +370,10 @@ func emitTypeCoercion(f *Function, v Value, typ types.Type) Value {
 // emitStore emits to f an instruction to store value val at location
 // addr, applying implicit conversions as required by assignability rules.
 func emitStore(f *Function, addr, val Value, pos token.Pos) *Store {
+	typ := mustDeref(addr.Type())
 	s := &Store{
 		Addr: addr,
-		Val:  emitConv(f, val, deref(addr.Type())),
+		Val:  emitConv(f, val, typ),
 		pos:  pos,
 	}
 	f.emit(s)
@@ -477,9 +476,8 @@ func emitTailCall(f *Function, call *Call) {
 // value of a field.
 func emitImplicitSelections(f *Function, v Value, indices []int, pos token.Pos) Value {
 	for _, index := range indices {
-		fld := typeparams.CoreType(deref(v.Type())).(*types.Struct).Field(index)
-
-		if isPointer(v.Type()) {
+		if st, vptr := deptr(v.Type()); vptr {
+			fld := fieldOf(st, index)
 			instr := &FieldAddr{
 				X:     v,
 				Field: index,
@@ -488,10 +486,11 @@ func emitImplicitSelections(f *Function, v Value, indices []int, pos token.Pos) 
 			instr.setType(types.NewPointer(fld.Type()))
 			v = f.emit(instr)
 			// Load the field's value iff indirectly embedded.
-			if isPointer(fld.Type()) {
+			if _, fldptr := deptr(fld.Type()); fldptr {
 				v = emitLoad(f, v)
 			}
 		} else {
+			fld := fieldOf(v.Type(), index)
 			instr := &Field{
 				X:     v,
 				Field: index,
@@ -511,8 +510,8 @@ func emitImplicitSelections(f *Function, v Value, indices []int, pos token.Pos) 
 // field's value.
 // Ident id is used for position and debug info.
 func emitFieldSelection(f *Function, v Value, index int, wantAddr bool, id *ast.Ident) Value {
-	fld := typeparams.CoreType(deref(v.Type())).(*types.Struct).Field(index)
-	if isPointer(v.Type()) {
+	if st, vptr := deptr(v.Type()); vptr {
+		fld := fieldOf(st, index)
 		instr := &FieldAddr{
 			X:     v,
 			Field: index,
@@ -525,6 +524,7 @@ func emitFieldSelection(f *Function, v Value, index int, wantAddr bool, id *ast.
 			v = emitLoad(f, v)
 		}
 	} else {
+		fld := fieldOf(v.Type(), index)
 		instr := &Field{
 			X:     v,
 			Field: index,

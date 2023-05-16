@@ -43,12 +43,6 @@ func isBlankIdent(e ast.Expr) bool {
 
 //// Type utilities.  Some of these belong in go/types.
 
-// isPointer returns true for types whose underlying type is a pointer.
-func isPointer(typ types.Type) bool {
-	_, ok := typ.Underlying().(*types.Pointer)
-	return ok
-}
-
 // isNonTypeParamInterface reports whether t is an interface type but not a type parameter.
 func isNonTypeParamInterface(t types.Type) bool {
 	return !typeparams.IsTypeParam(t) && types.IsInterface(t)
@@ -100,17 +94,49 @@ func isBasicConvTypes(tset termList) bool {
 	return all && basics >= 1 && tset.Len()-basics <= 1
 }
 
-// deref returns a pointer's element type; otherwise it returns typ.
-func deref(typ types.Type) types.Type {
+// deptr returns a pointer's element type and true; otherwise it returns (typ, false).
+// This function is oblivious to core types and is not suitable for generics.
+//
+// TODO: Deprecate this function once all usages have been audited.
+func deptr(typ types.Type) (types.Type, bool) {
 	if p, ok := typ.Underlying().(*types.Pointer); ok {
-		return p.Elem()
+		return p.Elem(), true
 	}
-	return typ
+	return typ, false
+}
+
+// deref returns the element type of a type with a pointer core type and true;
+// otherwise it returns (typ, false).
+func deref(typ types.Type) (types.Type, bool) {
+	if p, ok := typeparams.CoreType(typ).(*types.Pointer); ok {
+		return p.Elem(), true
+	}
+	return typ, false
+}
+
+// mustDeref returns the element type of a type with a pointer core type.
+// Panics on failure.
+func mustDeref(typ types.Type) types.Type {
+	if et, ok := deref(typ); ok {
+		return et
+	}
+	panic("cannot dereference type " + typ.String())
 }
 
 // recvType returns the receiver type of method obj.
 func recvType(obj *types.Func) types.Type {
 	return obj.Type().(*types.Signature).Recv().Type()
+}
+
+// fieldOf returns the index'th field of the (core type of) a struct type;
+// otherwise returns nil.
+func fieldOf(typ types.Type, index int) *types.Var {
+	if st, ok := typeparams.CoreType(typ).(*types.Struct); ok {
+		if 0 <= index && index < st.NumFields() {
+			return st.Field(index)
+		}
+	}
+	return nil
 }
 
 // isUntyped returns true for types that are untyped.
@@ -172,16 +198,14 @@ func nonbasicTypes(ts []types.Type) []types.Type {
 	return filtered
 }
 
-// receiverTypeArgs returns the type arguments to a function's reciever.
-// Returns an empty list if obj does not have a reciever or its reciever does not have type arguments.
+// receiverTypeArgs returns the type arguments to a function's receiver.
+// Returns an empty list if obj does not have a receiver or its receiver does not have type arguments.
 func receiverTypeArgs(obj *types.Func) []types.Type {
 	rtype := recvType(obj)
 	if rtype == nil {
 		return nil
 	}
-	if isPointer(rtype) {
-		rtype = rtype.(*types.Pointer).Elem()
-	}
+	rtype, _ = deptr(rtype)
 	named, ok := rtype.(*types.Named)
 	if !ok {
 		return nil

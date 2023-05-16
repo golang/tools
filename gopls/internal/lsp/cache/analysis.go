@@ -27,10 +27,11 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/internal/bug"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/facts"
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/memoize"
@@ -454,13 +455,15 @@ func analyzeImpl(ctx context.Context, snapshot *snapshot, analyzers []*analysis.
 		if err != nil {
 			return nil, err
 		}
-		data := mustEncode(summary)
-		if false {
-			log.Printf("Set key=%d value=%d id=%s\n", len(key), len(data), id)
-		}
-		if err := filecache.Set(cacheKind, key, data); err != nil {
-			return nil, fmt.Errorf("internal error updating shared cache: %v", err)
-		}
+		go func() {
+			data := mustEncode(summary)
+			if false {
+				log.Printf("Set key=%d value=%d id=%s\n", len(key), len(data), id)
+			}
+			if err := filecache.Set(cacheKind, key, data); err != nil {
+				event.Error(ctx, "internal error updating analysis shared cache", err)
+			}
+		}()
 	}
 
 	// Hit or miss, we need to merge the export data from
@@ -605,7 +608,6 @@ func actuallyAnalyze(ctx context.Context, analyzers []*analysis.Analyzer, m *sou
 
 	// TODO(adonovan): port the old logic to:
 	// - gather go/packages diagnostics from m.Errors? (port goPackagesErrorDiagnostics)
-	// - record unparseable file URIs so we can suppress type errors for these files.
 	// - gather diagnostics from expandErrors + typeErrorDiagnostics + depsErrors.
 
 	// -- analysis --
@@ -762,7 +764,16 @@ func typeCheckForAnalysis(fset *token.FileSet, parsed []*source.ParsedGoFile, m 
 		Sizes: m.TypesSizes,
 		Error: func(e error) {
 			pkg.compiles = false // type error
-			pkg.typeErrors = append(pkg.typeErrors, e.(types.Error))
+
+			// Suppress type errors in files with parse errors
+			// as parser recovery can be quite lossy (#59888).
+			typeError := e.(types.Error)
+			for _, p := range parsed {
+				if p.ParseErr != nil && source.NodeContains(p.File, typeError.Pos) {
+					return
+				}
+			}
+			pkg.typeErrors = append(pkg.typeErrors, typeError)
 		},
 		Importer: importerFunc(func(importPath string) (*types.Package, error) {
 			if importPath == "unsafe" {

@@ -12,11 +12,11 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/govulncheck"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
@@ -45,6 +45,11 @@ type Session struct {
 // ID returns the unique identifier for this session on this server.
 func (s *Session) ID() string     { return s.id }
 func (s *Session) String() string { return s.id }
+
+// GoCommandRunner returns the gocommand Runner for this session.
+func (s *Session) GoCommandRunner() *gocommand.Runner {
+	return s.gocmdRunner
+}
 
 // Options returns a copy of the SessionOptions for this session.
 func (s *Session) Options() *source.Options {
@@ -113,7 +118,8 @@ func (s *Session) createView(ctx context.Context, name string, folder span.URI, 
 		return nil, nil, func() {}, err
 	}
 
-	wsModFiles, wsModFilesErr := computeWorkspaceModFiles(ctx, info.gomod, info.effectiveGOWORK(), info.effectiveGO111MODULE(), s)
+	gowork, _ := info.GOWORK()
+	wsModFiles, wsModFilesErr := computeWorkspaceModFiles(ctx, info.gomod, gowork, info.effectiveGO111MODULE(), s)
 
 	// We want a true background context and not a detached context here
 	// the spans need to be unrelated and no tag values should pollute it.
@@ -199,8 +205,8 @@ func (s *Session) createView(ctx context.Context, name string, folder span.URI, 
 	return v, snapshot, snapshot.Acquire(), nil
 }
 
-// View returns a view with a matching name, if the session has one.
-func (s *Session) View(name string) *View {
+// ViewByName returns a view with a matching name, if the session has one.
+func (s *Session) ViewByName(name string) *View {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 	for _, view := range s.views {
@@ -209,6 +215,18 @@ func (s *Session) View(name string) *View {
 		}
 	}
 	return nil
+}
+
+// View returns the view with a matching id, if present.
+func (s *Session) View(id string) (*View, error) {
+	s.viewMu.Lock()
+	defer s.viewMu.Unlock()
+	for _, view := range s.views {
+		if view.ID() == id {
+			return view, nil
+		}
+	}
+	return nil, fmt.Errorf("no view with ID %q", id)
 }
 
 // ViewOf returns a view corresponding to the given URI.
@@ -308,7 +326,16 @@ func (s *Session) updateViewLocked(ctx context.Context, view *View, options *sou
 		return nil, fmt.Errorf("view %q not found", view.id)
 	}
 
-	v, _, release, err := s.createView(ctx, view.name, view.folder, options, seqID)
+	v, snapshot, release, err := s.createView(ctx, view.name, view.folder, options, seqID)
+	// The new snapshot has lost the history of the previous view. As a result,
+	// it may not see open files that aren't in its build configuration (as it
+	// would have done via didOpen notifications). This can lead to inconsistent
+	// behavior when configuration is changed mid-session.
+	//
+	// Ensure the new snapshot observes all open files.
+	for _, o := range v.fs.Overlays() {
+		_, _ = snapshot.ReadFile(ctx, o.URI())
+	}
 	release()
 
 	if err != nil {

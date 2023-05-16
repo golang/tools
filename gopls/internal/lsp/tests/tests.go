@@ -77,18 +77,14 @@ type FuzzyCompletions = map[span.Span][]Completion
 type CaseSensitiveCompletions = map[span.Span][]Completion
 type RankCompletions = map[span.Span][]Completion
 type FoldingRanges = []span.Span
-type Formats = []span.Span
-type Imports = []span.Span
 type SemanticTokens = []span.Span
 type SuggestedFixes = map[span.Span][]SuggestedFix
-type FunctionExtractions = map[span.Span]span.Span
 type MethodExtractions = map[span.Span]span.Span
 type Definitions = map[span.Span]Definition
 type Highlights = map[span.Span][]span.Span
 type Renames = map[span.Span]string
 type PrepareRenames = map[span.Span]*source.PrepareItem
 type InlayHints = []span.Span
-type WorkspaceSymbols = map[WorkspaceSymbolsTestType]map[span.URI][]string
 type Signatures = map[span.Span]*protocol.SignatureHelp
 type Links = map[span.URI][]Link
 type AddImport = map[span.URI]string
@@ -109,18 +105,14 @@ type Data struct {
 	CaseSensitiveCompletions CaseSensitiveCompletions
 	RankCompletions          RankCompletions
 	FoldingRanges            FoldingRanges
-	Formats                  Formats
-	Imports                  Imports
 	SemanticTokens           SemanticTokens
 	SuggestedFixes           SuggestedFixes
-	FunctionExtractions      FunctionExtractions
 	MethodExtractions        MethodExtractions
 	Definitions              Definitions
 	Highlights               Highlights
 	Renames                  Renames
 	InlayHints               InlayHints
 	PrepareRenames           PrepareRenames
-	WorkspaceSymbols         WorkspaceSymbols
 	Signatures               Signatures
 	Links                    Links
 	AddImport                AddImport
@@ -155,18 +147,14 @@ type Tests interface {
 	CaseSensitiveCompletion(*testing.T, span.Span, Completion, CompletionItems)
 	RankCompletion(*testing.T, span.Span, Completion, CompletionItems)
 	FoldingRanges(*testing.T, span.Span)
-	Format(*testing.T, span.Span)
-	Import(*testing.T, span.Span)
 	SemanticTokens(*testing.T, span.Span)
 	SuggestedFix(*testing.T, span.Span, []SuggestedFix, int)
-	FunctionExtraction(*testing.T, span.Span, span.Span)
 	MethodExtraction(*testing.T, span.Span, span.Span)
 	Definition(*testing.T, span.Span, Definition)
 	Highlight(*testing.T, span.Span, []span.Span)
 	InlayHints(*testing.T, span.Span)
 	Rename(*testing.T, span.Span, string)
 	PrepareRename(*testing.T, span.Span, *source.PrepareItem)
-	WorkspaceSymbols(*testing.T, span.URI, string, WorkspaceSymbolsTestType)
 	SignatureHelp(*testing.T, span.Span, *protocol.SignatureHelp)
 	Link(*testing.T, span.URI, []Link)
 	AddImport(*testing.T, span.URI, string)
@@ -200,19 +188,6 @@ const (
 
 	// CompletionRank candidates in test must be valid and in the right relative order.
 	CompletionRank
-)
-
-type WorkspaceSymbolsTestType int
-
-const (
-	// Default runs the standard workspace symbols tests.
-	WorkspaceSymbolsDefault = WorkspaceSymbolsTestType(iota)
-
-	// Fuzzy tests workspace symbols with fuzzy matching.
-	WorkspaceSymbolsFuzzy
-
-	// CaseSensitive tests workspace symbols with case sensitive.
-	WorkspaceSymbolsCaseSensitive
 )
 
 type Completion struct {
@@ -307,9 +282,7 @@ func load(t testing.TB, mode string, dir string) *Data {
 		Renames:                  make(Renames),
 		PrepareRenames:           make(PrepareRenames),
 		SuggestedFixes:           make(SuggestedFixes),
-		FunctionExtractions:      make(FunctionExtractions),
 		MethodExtractions:        make(MethodExtractions),
-		WorkspaceSymbols:         make(WorkspaceSymbols),
 		Signatures:               make(Signatures),
 		Links:                    make(Links),
 		AddImport:                make(AddImport),
@@ -456,8 +429,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 		"rank":           datum.collectCompletions(CompletionRank),
 		"snippet":        datum.collectCompletionSnippets,
 		"fold":           datum.collectFoldingRanges,
-		"format":         datum.collectFormats,
-		"import":         datum.collectImports,
 		"semantic":       datum.collectSemanticTokens,
 		"godef":          datum.collectDefinitions,
 		"typdef":         datum.collectTypeDefinitions,
@@ -469,7 +440,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 		"signature":      datum.collectSignatures,
 		"link":           datum.collectLinks,
 		"suggestedfix":   datum.collectSuggestedFixes,
-		"extractfunc":    datum.collectFunctionExtractions,
 		"extractmethod":  datum.collectMethodExtractions,
 		"incomingcalls":  datum.collectIncomingCalls,
 		"outgoingcalls":  datum.collectOutgoingCalls,
@@ -481,11 +451,8 @@ func load(t testing.TB, mode string, dir string) *Data {
 
 	// Collect names for the entries that require golden files.
 	if err := datum.Exported.Expect(map[string]interface{}{
-		"godef":                        datum.collectDefinitionNames,
-		"hoverdef":                     datum.collectDefinitionNames,
-		"workspacesymbol":              datum.collectWorkspaceSymbols(WorkspaceSymbolsDefault),
-		"workspacesymbolfuzzy":         datum.collectWorkspaceSymbols(WorkspaceSymbolsFuzzy),
-		"workspacesymbolcasesensitive": datum.collectWorkspaceSymbols(WorkspaceSymbolsCaseSensitive),
+		"godef":    datum.collectDefinitionNames,
+		"hoverdef": datum.collectDefinitionNames,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -653,26 +620,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		}
 	})
 
-	t.Run("Format", func(t *testing.T) {
-		t.Helper()
-		for _, spn := range data.Formats {
-			t.Run(uriName(spn.URI()), func(t *testing.T) {
-				t.Helper()
-				tests.Format(t, spn)
-			})
-		}
-	})
-
-	t.Run("Import", func(t *testing.T) {
-		t.Helper()
-		for _, spn := range data.Imports {
-			t.Run(uriName(spn.URI()), func(t *testing.T) {
-				t.Helper()
-				tests.Import(t, spn)
-			})
-		}
-	})
-
 	t.Run("SemanticTokens", func(t *testing.T) {
 		t.Helper()
 		for _, spn := range data.SemanticTokens {
@@ -693,20 +640,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 			t.Run(SpanName(spn), func(t *testing.T) {
 				t.Helper()
 				tests.SuggestedFix(t, spn, actionKinds, 1)
-			})
-		}
-	})
-
-	t.Run("FunctionExtraction", func(t *testing.T) {
-		t.Helper()
-		for start, end := range data.FunctionExtractions {
-			// Check if we should skip this spn if the -modfile flag is not available.
-			if shouldSkip(data, start.URI()) {
-				continue
-			}
-			t.Run(SpanName(start), func(t *testing.T) {
-				t.Helper()
-				tests.FunctionExtraction(t, start, end)
 			})
 		}
 	})
@@ -776,30 +709,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 				tests.PrepareRename(t, src, want)
 			})
 		}
-	})
-
-	t.Run("WorkspaceSymbols", func(t *testing.T) {
-		t.Helper()
-
-		for _, typ := range []WorkspaceSymbolsTestType{
-			WorkspaceSymbolsDefault,
-			WorkspaceSymbolsCaseSensitive,
-			WorkspaceSymbolsFuzzy,
-		} {
-			for uri, cases := range data.WorkspaceSymbols[typ] {
-				for _, query := range cases {
-					name := query
-					if name == "" {
-						name = "EmptyQuery"
-					}
-					t.Run(name, func(t *testing.T) {
-						t.Helper()
-						tests.WorkspaceSymbols(t, uri, query, typ)
-					})
-				}
-			}
-		}
-
 	})
 
 	t.Run("SignatureHelp", func(t *testing.T) {
@@ -906,15 +815,6 @@ func checkData(t *testing.T, data *Data) {
 		return count
 	}
 
-	countWorkspaceSymbols := func(c map[WorkspaceSymbolsTestType]map[span.URI][]string) (count int) {
-		for _, typs := range c {
-			for _, queries := range typs {
-				count += len(queries)
-			}
-		}
-		return count
-	}
-
 	fmt.Fprintf(buf, "CallHierarchyCount = %v\n", len(data.CallHierarchy))
 	fmt.Fprintf(buf, "CodeLensCount = %v\n", countCodeLens(data.CodeLens))
 	fmt.Fprintf(buf, "CompletionsCount = %v\n", countCompletions(data.Completions))
@@ -926,11 +826,8 @@ func checkData(t *testing.T, data *Data) {
 	fmt.Fprintf(buf, "CaseSensitiveCompletionsCount = %v\n", countCompletions(data.CaseSensitiveCompletions))
 	fmt.Fprintf(buf, "DiagnosticsCount = %v\n", diagnosticsCount)
 	fmt.Fprintf(buf, "FoldingRangesCount = %v\n", len(data.FoldingRanges))
-	fmt.Fprintf(buf, "FormatCount = %v\n", len(data.Formats))
-	fmt.Fprintf(buf, "ImportCount = %v\n", len(data.Imports))
 	fmt.Fprintf(buf, "SemanticTokenCount = %v\n", len(data.SemanticTokens))
 	fmt.Fprintf(buf, "SuggestedFixCount = %v\n", len(data.SuggestedFixes))
-	fmt.Fprintf(buf, "FunctionExtractionCount = %v\n", len(data.FunctionExtractions))
 	fmt.Fprintf(buf, "MethodExtractionCount = %v\n", len(data.MethodExtractions))
 	fmt.Fprintf(buf, "DefinitionsCount = %v\n", definitionCount)
 	fmt.Fprintf(buf, "TypeDefinitionsCount = %v\n", typeDefinitionCount)
@@ -938,7 +835,6 @@ func checkData(t *testing.T, data *Data) {
 	fmt.Fprintf(buf, "InlayHintsCount = %v\n", len(data.InlayHints))
 	fmt.Fprintf(buf, "RenamesCount = %v\n", len(data.Renames))
 	fmt.Fprintf(buf, "PrepareRenamesCount = %v\n", len(data.PrepareRenames))
-	fmt.Fprintf(buf, "WorkspaceSymbolsCount = %v\n", countWorkspaceSymbols(data.WorkspaceSymbols))
 	fmt.Fprintf(buf, "SignaturesCount = %v\n", len(data.Signatures))
 	fmt.Fprintf(buf, "LinksCount = %v\n", linksCount)
 	fmt.Fprintf(buf, "SelectionRangesCount = %v\n", len(data.SelectionRanges))
@@ -1104,14 +1000,6 @@ func (data *Data) collectFoldingRanges(spn span.Span) {
 	data.FoldingRanges = append(data.FoldingRanges, spn)
 }
 
-func (data *Data) collectFormats(spn span.Span) {
-	data.Formats = append(data.Formats, spn)
-}
-
-func (data *Data) collectImports(spn span.Span) {
-	data.Imports = append(data.Imports, spn)
-}
-
 func (data *Data) collectAddImports(spn span.Span, imp string) {
 	data.AddImport[spn.URI()] = imp
 }
@@ -1122,12 +1010,6 @@ func (data *Data) collectSemanticTokens(spn span.Span) {
 
 func (data *Data) collectSuggestedFixes(spn span.Span, actionKind, fix string) {
 	data.SuggestedFixes[spn] = append(data.SuggestedFixes[spn], SuggestedFix{actionKind, fix})
-}
-
-func (data *Data) collectFunctionExtractions(start span.Span, end span.Span) {
-	if _, ok := data.FunctionExtractions[start]; !ok {
-		data.FunctionExtractions[start] = end
-	}
 }
 
 func (data *Data) collectMethodExtractions(start span.Span, end span.Span) {
@@ -1231,17 +1113,6 @@ func (data *Data) mustRange(spn span.Span) protocol.Range {
 		panic(fmt.Sprintf("converting span %s to range: %v", spn, err))
 	}
 	return rng
-}
-
-func (data *Data) collectWorkspaceSymbols(typ WorkspaceSymbolsTestType) func(*expect.Note, string) {
-	return func(note *expect.Note, query string) {
-		if data.WorkspaceSymbols[typ] == nil {
-			data.WorkspaceSymbols[typ] = make(map[span.URI][]string)
-		}
-		pos := safetoken.StartPosition(data.Exported.ExpectFileSet, note.Pos)
-		uri := span.URIFromPath(pos.Filename)
-		data.WorkspaceSymbols[typ][uri] = append(data.WorkspaceSymbols[typ][uri], query)
-	}
 }
 
 func (data *Data) collectSignatures(spn span.Span, signature string, activeParam int64) {
