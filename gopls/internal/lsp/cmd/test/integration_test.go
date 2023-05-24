@@ -756,6 +756,18 @@ package foo
 		}
 	}
 
+	// Check that -anon suppresses fields containing user information.
+	{
+		res2 := gopls(t, tree, "stats", "-anon")
+		res2.checkExit(true)
+		var stats2 cmd.GoplsStats
+		if err := json.Unmarshal([]byte(res2.stdout), &stats2); err != nil {
+			t.Fatalf("failed to unmarshal JSON output of stats command: %v", err)
+		}
+		if got := len(stats2.BugReports); got > 0 {
+			t.Errorf("Got %d bug reports with -anon, want 0. Reports:%+v", got, stats2.BugReports)
+		}
+	}
 }
 
 // TestFix tests the 'fix' subcommand (../suggested_fix.go).
@@ -890,10 +902,7 @@ func goplsWithEnv(t *testing.T, dir string, env []string, args ...string) *resul
 	}
 
 	goplsCmd := exec.Command(os.Args[0], args...)
-	goplsCmd.Env = append(os.Environ(),
-		"ENTRYPOINT=goplsMain",
-		fmt.Sprintf("%s=true", cmd.DebugSuggestedFixEnvVar),
-	)
+	goplsCmd.Env = append(os.Environ(), "ENTRYPOINT=goplsMain")
 	goplsCmd.Env = append(goplsCmd.Env, env...)
 	goplsCmd.Dir = dir
 	goplsCmd.Stdout = new(bytes.Buffer)

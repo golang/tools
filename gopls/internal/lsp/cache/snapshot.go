@@ -159,10 +159,10 @@ type snapshot struct {
 	modWhyHandles  *persistent.Map // from span.URI to *memoize.Promise[modWhyResult]
 	modVulnHandles *persistent.Map // from span.URI to *memoize.Promise[modVulnResult]
 
-	// knownSubdirs is the set of subdirectories in the workspace, used to
-	// create glob patterns for file watching.
-	knownSubdirs             knownDirsSet
-	knownSubdirsPatternCache string
+	// knownSubdirs is the set of subdirectory URIs in the workspace,
+	// used to create glob patterns for file watching.
+	knownSubdirs      knownDirsSet
+	knownSubdirsCache map[string]struct{} // memo of knownSubdirs as a set of filenames
 	// unprocessedSubdirChanges are any changes that might affect the set of
 	// subdirectories in the workspace. They are not reflected to knownSubdirs
 	// during the snapshot cloning step as it can slow down cloning.
@@ -327,47 +327,19 @@ func (s *snapshot) validBuildConfiguration() bool {
 	if s.view.hasGopackagesDriver {
 		return true
 	}
+
 	// Check if the user is working within a module or if we have found
 	// multiple modules in the workspace.
 	if len(s.workspaceModFiles) > 0 {
 		return true
 	}
-	// The user may have a multiple directories in their GOPATH.
-	// Check if the workspace is within any of them.
+
 	// TODO(rfindley): this should probably be subject to "if GO111MODULES = off {...}".
-	for _, gp := range filepath.SplitList(s.view.gopath) {
-		if source.InDir(filepath.Join(gp, "src"), s.view.folder.Filename()) {
-			return true
-		}
-	}
-	return false
-}
-
-// moduleMode reports whether the current snapshot uses Go modules.
-//
-// From https://go.dev/ref/mod, module mode is active if either of the
-// following hold:
-//   - GO111MODULE=on
-//   - GO111MODULE=auto and we are inside a module or have a GOWORK value.
-//
-// Additionally, this method returns false if GOPACKAGESDRIVER is set.
-//
-// TODO(rfindley): use this more widely.
-func (s *snapshot) moduleMode() bool {
-	// Since we only really understand the `go` command, if the user has a
-	// different GOPACKAGESDRIVER, assume that their configuration is valid.
-	if s.view.hasGopackagesDriver {
-		return false
-	}
-
-	switch s.view.effectiveGO111MODULE() {
-	case on:
+	if s.view.inGOPATH {
 		return true
-	case off:
-		return false
-	default:
-		return len(s.workspaceModFiles) > 0 || s.view.gowork != ""
 	}
+
+	return false
 }
 
 // workspaceMode describes the way in which the snapshot's workspace should
@@ -652,21 +624,11 @@ func (s *snapshot) buildOverlay() map[string][]byte {
 	return overlays
 }
 
-// TODO(rfindley): investigate whether it would be worthwhile to keep track of
-// overlays when we get them via GetFile.
 func (s *snapshot) overlays() []*Overlay {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var overlays []*Overlay
-	s.files.Range(func(uri span.URI, fh source.FileHandle) {
-		overlay, ok := fh.(*Overlay)
-		if !ok {
-			return
-		}
-		overlays = append(overlays, overlay)
-	})
-	return overlays
+	return s.files.overlays()
 }
 
 // Package data kinds, identifying various package data that may be stored in
@@ -763,6 +725,18 @@ func (s *snapshot) MethodSets(ctx context.Context, ids ...PackageID) ([]*methods
 }
 
 func (s *snapshot) MetadataForFile(ctx context.Context, uri span.URI) ([]*source.Metadata, error) {
+	if s.view.ViewType() == AdHocView {
+		// As described in golang/go#57209, in ad-hoc workspaces (where we load ./
+		// rather than ./...), preempting the directory load with file loads can
+		// lead to an inconsistent outcome, where certain files are loaded with
+		// command-line-arguments packages and others are loaded only in the ad-hoc
+		// package. Therefore, ensure that the workspace is loaded before doing any
+		// file loads.
+		if err := s.awaitLoaded(ctx); err != nil {
+			return nil, err
+		}
+	}
+
 	s.mu.Lock()
 
 	// Start with the set of package associations derived from the last load.
@@ -962,19 +936,57 @@ func (s *snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]stru
 		patterns[fmt.Sprintf("%s/**/*.{%s}", dirName, extensions)] = struct{}{}
 	}
 
-	// Some clients do not send notifications for changes to directories that
-	// contain Go code (golang/go#42348). To handle this, explicitly watch all
-	// of the directories in the workspace. We find them by adding the
-	// directories of every file in the snapshot's workspace directories.
-	// There may be thousands.
-	if pattern := s.getKnownSubdirsPattern(dirs); pattern != "" {
-		patterns[pattern] = struct{}{}
+	if s.watchSubdirs() {
+		// Some clients (e.g. VS Code) do not send notifications for changes to
+		// directories that contain Go code (golang/go#42348). To handle this,
+		// explicitly watch all of the directories in the workspace. We find them
+		// by adding the directories of every file in the snapshot's workspace
+		// directories. There may be thousands of patterns, each a single
+		// directory.
+		//
+		// (A previous iteration created a single glob pattern holding a union of
+		// all the directories, but this was found to cause VS Code to get stuck
+		// for several minutes after a buffer was saved twice in a workspace that
+		// had >8000 watched directories.)
+		//
+		// Some clients (notably coc.nvim, which uses watchman for globs) perform
+		// poorly with a large list of individual directories.
+		s.addKnownSubdirs(patterns, dirs)
 	}
 
 	return patterns
 }
 
-func (s *snapshot) getKnownSubdirsPattern(wsDirs []span.URI) string {
+// watchSubdirs reports whether gopls should request separate file watchers for
+// each relevant subdirectory. This is necessary only for clients (namely VS
+// Code) that do not send notifications for individual files in a directory
+// when the entire directory is deleted.
+func (s *snapshot) watchSubdirs() bool {
+	opts := s.view.Options()
+	switch p := opts.SubdirWatchPatterns; p {
+	case source.SubdirWatchPatternsOn:
+		return true
+	case source.SubdirWatchPatternsOff:
+		return false
+	case source.SubdirWatchPatternsAuto:
+		// See the documentation of InternalOptions.SubdirWatchPatterns for an
+		// explanation of why VS Code gets a different default value here.
+		//
+		// Unfortunately, there is no authoritative list of client names, nor any
+		// requirements that client names do not change. We should update the VS
+		// Code extension to set a default value of "subdirWatchPatterns" to "on",
+		// so that this workaround is only temporary.
+		if opts.ClientInfo != nil && opts.ClientInfo.Name == "Visual Studio Code" {
+			return true
+		}
+		return false
+	default:
+		bug.Reportf("invalid subdirWatchPatterns: %q", p)
+		return false
+	}
+}
+
+func (s *snapshot) addKnownSubdirs(patterns map[string]struct{}, wsDirs []span.URI) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -983,23 +995,18 @@ func (s *snapshot) getKnownSubdirsPattern(wsDirs []span.URI) string {
 	// It may change list of known subdirs and therefore invalidate the cache.
 	s.applyKnownSubdirsChangesLocked(wsDirs)
 
-	if s.knownSubdirsPatternCache == "" {
-		var builder strings.Builder
+	// TODO(adonovan): is it still necessary to memoize the Range
+	// and URI.Filename operations?
+	if s.knownSubdirsCache == nil {
+		s.knownSubdirsCache = make(map[string]struct{})
 		s.knownSubdirs.Range(func(uri span.URI) {
-			if builder.Len() == 0 {
-				builder.WriteString("{")
-			} else {
-				builder.WriteString(",")
-			}
-			builder.WriteString(uri.Filename())
+			s.knownSubdirsCache[uri.Filename()] = struct{}{}
 		})
-		if builder.Len() > 0 {
-			builder.WriteString("}")
-			s.knownSubdirsPatternCache = builder.String()
-		}
 	}
 
-	return s.knownSubdirsPatternCache
+	for pattern := range s.knownSubdirsCache {
+		patterns[pattern] = struct{}{}
+	}
 }
 
 // collectAllKnownSubdirs collects all of the subdirectories within the
@@ -1013,7 +1020,7 @@ func (s *snapshot) collectAllKnownSubdirs(ctx context.Context) {
 
 	s.knownSubdirs.Destroy()
 	s.knownSubdirs = newKnownDirsSet()
-	s.knownSubdirsPatternCache = ""
+	s.knownSubdirsCache = nil
 	s.files.Range(func(uri span.URI, fh source.FileHandle) {
 		s.addKnownSubdirLocked(uri, dirs)
 	})
@@ -1072,7 +1079,7 @@ func (s *snapshot) addKnownSubdirLocked(uri span.URI, dirs []span.URI) {
 		}
 		s.knownSubdirs.Insert(uri)
 		dir = filepath.Dir(dir)
-		s.knownSubdirsPatternCache = ""
+		s.knownSubdirsCache = nil
 	}
 }
 
@@ -1085,7 +1092,7 @@ func (s *snapshot) removeKnownSubdirLocked(uri span.URI) {
 		}
 		if info, _ := os.Stat(dir); info == nil {
 			s.knownSubdirs.Remove(uri)
-			s.knownSubdirsPatternCache = ""
+			s.knownSubdirsCache = nil
 		}
 		dir = filepath.Dir(dir)
 	}
@@ -1849,7 +1856,7 @@ searchOverlays:
 					fix = `To work with multiple modules simultaneously, please upgrade to Go 1.18 or
 later, reinstall gopls, and use a go.work file.`
 				}
-				msg = fmt.Sprintf(`This file is in directory %q, which is not included in your workspace.
+				msg = fmt.Sprintf(`This file is within module %q, which is not included in your workspace.
 %s
 See the documentation for more information on setting up your workspace:
 https://github.com/golang/tools/blob/master/gopls/doc/workspace.md.`, modDir, fix)
@@ -2050,7 +2057,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 	// changed files. We need to rebuild the workspace module to know the
 	// true set of known subdirectories, but we don't want to do that in clone.
 	result.knownSubdirs = s.knownSubdirs.Clone()
-	result.knownSubdirsPatternCache = s.knownSubdirsPatternCache
+	result.knownSubdirsCache = s.knownSubdirsCache
 	for _, c := range changes {
 		result.unprocessedSubdirChanges = append(result.unprocessedSubdirChanges, c)
 	}
@@ -2109,10 +2116,36 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 		// Invalidate the previous modTidyHandle if any of the files have been
 		// saved or if any of the metadata has been invalidated.
 		if invalidateMetadata || fileWasSaved(originalFH, change.fileHandle) {
-			// TODO(maybe): Only delete mod handles for
-			// which the withoutURI is relevant.
-			// Requires reverse-engineering the go command. (!)
-			result.modTidyHandles.Clear()
+			// Only invalidate mod tidy results for the most relevant modfile in the
+			// workspace. This is a potentially lossy optimization for workspaces
+			// with many modules (such as google-cloud-go, which has 145 modules as
+			// of writing).
+			//
+			// While it is theoretically possible that a change in workspace module A
+			// could affect the mod-tidiness of workspace module B (if B transitively
+			// requires A), such changes are probably unlikely and not worth the
+			// penalty of re-running go mod tidy for everything. Note that mod tidy
+			// ignores GOWORK, so the two modules would have to be related by a chain
+			// of replace directives.
+			//
+			// We could improve accuracy by inspecting replace directives, using
+			// overlays in go mod tidy, and/or checking for metadata changes from the
+			// on-disk content.
+			//
+			// Note that we iterate the modTidyHandles map here, rather than e.g.
+			// using nearestModFile, because we don't have access to an accurate
+			// FileSource at this point in the snapshot clone.
+			const onlyInvalidateMostRelevant = true
+			if onlyInvalidateMostRelevant {
+				deleteMostRelevantModFile(result.modTidyHandles, uri)
+			} else {
+				result.modTidyHandles.Clear()
+			}
+
+			// TODO(rfindley): should we apply the above heuristic to mod vuln
+			// or mod handles as well?
+			//
+			// TODO(rfindley): no tests fail if I delete the below line.
 			result.modWhyHandles.Clear()
 			result.modVulnHandles.Clear()
 		}
@@ -2301,6 +2334,31 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]*fileC
 		result.workspacePackages = map[PackageID]PackagePath{}
 	}
 	return result, release
+}
+
+// deleteMostRelevantModFile deletes the mod file most likely to be the mod
+// file for the changed URI, if it exists.
+//
+// Specifically, this is the longest mod file path in a directory containing
+// changed. This might not be accurate if there is another mod file closer to
+// changed that happens not to be present in the map, but that's OK: the goal
+// of this function is to guarantee that IF the nearest mod file is present in
+// the map, it is invalidated.
+func deleteMostRelevantModFile(m *persistent.Map, changed span.URI) {
+	var mostRelevant span.URI
+	changedFile := changed.Filename()
+
+	m.Range(func(key, value interface{}) {
+		modURI := key.(span.URI)
+		if len(modURI) > len(mostRelevant) {
+			if source.InDir(filepath.Dir(modURI.Filename()), changedFile) {
+				mostRelevant = modURI
+			}
+		}
+	})
+	if mostRelevant != "" {
+		m.Delete(mostRelevant)
+	}
 }
 
 // invalidatedPackageIDs returns all packages invalidated by a change to uri.

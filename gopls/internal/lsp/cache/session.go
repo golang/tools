@@ -109,13 +109,14 @@ func (s *Session) NewView(ctx context.Context, name string, folder span.URI, opt
 
 // TODO(rfindley): clarify that createView can never be cancelled (with the
 // possible exception of server shutdown).
+// On success, the caller becomes responsible for calling the release function once.
 func (s *Session) createView(ctx context.Context, name string, folder span.URI, options *source.Options, seqID uint64) (*View, *snapshot, func(), error) {
 	index := atomic.AddInt64(&viewIndex, 1)
 
 	// Get immutable workspace information.
 	info, err := s.getWorkspaceInformation(ctx, folder, options)
 	if err != nil {
-		return nil, nil, func() {}, err
+		return nil, nil, nil, err
 	}
 
 	gowork, _ := info.GOWORK()
@@ -327,6 +328,15 @@ func (s *Session) updateViewLocked(ctx context.Context, view *View, options *sou
 	}
 
 	v, snapshot, release, err := s.createView(ctx, view.name, view.folder, options, seqID)
+	if err != nil {
+		// we have dropped the old view, but could not create the new one
+		// this should not happen and is very bad, but we still need to clean
+		// up the view array if it happens
+		s.views = removeElement(s.views, i)
+		return nil, err
+	}
+	defer release()
+
 	// The new snapshot has lost the history of the previous view. As a result,
 	// it may not see open files that aren't in its build configuration (as it
 	// would have done via didOpen notifications). This can lead to inconsistent
@@ -336,15 +346,7 @@ func (s *Session) updateViewLocked(ctx context.Context, view *View, options *sou
 	for _, o := range v.fs.Overlays() {
 		_, _ = snapshot.ReadFile(ctx, o.URI())
 	}
-	release()
 
-	if err != nil {
-		// we have dropped the old view, but could not create the new one
-		// this should not happen and is very bad, but we still need to clean
-		// up the view array if it happens
-		s.views = removeElement(s.views, i)
-		return nil, err
-	}
 	// substitute the new view into the array where the old view was
 	s.views[i] = v
 	return v, nil
@@ -596,20 +598,17 @@ func (s *Session) ExpandModificationsToDirectories(ctx context.Context, changes 
 	for _, c := range changes {
 		if !knownDirs.Contains(c.URI) {
 			result = append(result, c)
-			continue
+		} else {
+			for uri := range knownFilesInDir(ctx, snapshots, c.URI) {
+				result = append(result, source.FileModification{
+					URI:        uri,
+					Action:     c.Action,
+					LanguageID: "",
+					OnDisk:     c.OnDisk,
+					// changes to directories cannot include text or versions
+				})
+			}
 		}
-		affectedFiles := knownFilesInDir(ctx, snapshots, c.URI)
-		var fileChanges []source.FileModification
-		for uri := range affectedFiles {
-			fileChanges = append(fileChanges, source.FileModification{
-				URI:        uri,
-				Action:     c.Action,
-				LanguageID: "",
-				OnDisk:     c.OnDisk,
-				// changes to directories cannot include text or versions
-			})
-		}
-		result = append(result, fileChanges...)
 	}
 	return result
 }
@@ -738,9 +737,10 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []source.FileMo
 	return nil
 }
 
-// FileWatchingGlobPatterns returns glob patterns to watch every directory
-// known by the view. For views within a module, this is the module root,
-// any directory in the module root, and any replace targets.
+// FileWatchingGlobPatterns returns a new set of glob patterns to
+// watch every directory known by the view. For views within a module,
+// this is the module root, any directory in the module root, and any
+// replace targets.
 func (s *Session) FileWatchingGlobPatterns(ctx context.Context) map[string]struct{} {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()

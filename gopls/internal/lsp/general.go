@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/build"
 	"log"
 	"os"
 	"path"
@@ -59,7 +60,7 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 	if err := s.handleOptionResults(ctx, source.SetOptions(options, params.InitializationOptions)); err != nil {
 		return nil, err
 	}
-	options.ForClientCapabilities(params.Capabilities)
+	options.ForClientCapabilities(params.ClientInfo, params.Capabilities)
 
 	if options.ShowBugReports {
 		// Report the next bug that occurs on the server.
@@ -239,14 +240,16 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 
 // GoVersionTable maps Go versions to the gopls version in which support will
 // be deprecated, and the final gopls version supporting them without warnings.
-// Keep this in sync with gopls/README.md
+// Keep this in sync with gopls/README.md.
 //
 // Must be sorted in ascending order of Go version.
 //
 // Mutable for testing.
 var GoVersionTable = []GoVersionSupport{
 	{12, "", "v0.7.5"},
-	{15, "v0.11.0", "v0.9.5"},
+	{15, "", "v0.9.5"},
+	{16, "v0.13.0", "v0.11.0"},
+	{17, "v0.13.0", "v0.11.0"},
 }
 
 // GoVersionSupport holds information about end-of-life Go version support.
@@ -262,11 +265,13 @@ func OldestSupportedGoVersion() int {
 	return GoVersionTable[len(GoVersionTable)-1].GoVersion + 1
 }
 
-// versionMessage returns the warning/error message to display if the user is
-// on the given Go version, if any. The goVersion variable is the X in Go 1.X.
+// versionMessage returns the warning/error message to display if the user has
+// the given Go version, if any. The goVersion variable is the X in Go 1.X. If
+// fromBuild is set, the Go version is the version used to build gopls.
+// Otherwise, it is the go command version.
 //
 // If goVersion is invalid (< 0), it returns "", 0.
-func versionMessage(goVersion int) (string, protocol.MessageType) {
+func versionMessage(goVersion int, fromBuild bool) (string, protocol.MessageType) {
 	if goVersion < 0 {
 		return "", 0
 	}
@@ -276,7 +281,11 @@ func versionMessage(goVersion int) (string, protocol.MessageType) {
 			var msgBuilder strings.Builder
 
 			mType := protocol.Error
-			fmt.Fprintf(&msgBuilder, "Found Go version 1.%d", goVersion)
+			if fromBuild {
+				fmt.Fprintf(&msgBuilder, "Gopls was built with Go version 1.%d", goVersion)
+			} else {
+				fmt.Fprintf(&msgBuilder, "Found Go version 1.%d", goVersion)
+			}
 			if v.DeprecatedVersion != "" {
 				// not deprecated yet, just a warning
 				fmt.Fprintf(&msgBuilder, ", which will be unsupported by gopls %s. ", v.DeprecatedVersion)
@@ -299,20 +308,35 @@ func versionMessage(goVersion int) (string, protocol.MessageType) {
 //
 // It should be called after views change.
 func (s *Server) checkViewGoVersions() {
-	oldestVersion := -1
+	oldestVersion, fromBuild := go1Point(), true
 	for _, view := range s.session.Views() {
 		viewVersion := view.GoVersion()
 		if oldestVersion == -1 || viewVersion < oldestVersion {
-			oldestVersion = viewVersion
+			oldestVersion, fromBuild = viewVersion, false
 		}
 	}
 
-	if msg, mType := versionMessage(oldestVersion); msg != "" {
+	if msg, mType := versionMessage(oldestVersion, fromBuild); msg != "" {
 		s.eventuallyShowMessage(context.Background(), &protocol.ShowMessageParams{
 			Type:    mType,
 			Message: msg,
 		})
 	}
+}
+
+// go1Point returns the x in Go 1.x. If an error occurs extracting the go
+// version, it returns -1.
+//
+// Copied from the testenv package.
+func go1Point() int {
+	for i := len(build.Default.ReleaseTags) - 1; i >= 0; i-- {
+		var version int
+		if _, err := fmt.Sscanf(build.Default.ReleaseTags[i], "go1.%d", &version); err != nil {
+			continue
+		}
+		return version
+	}
+	return -1
 }
 
 func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFolder) error {
@@ -445,14 +469,13 @@ func equalURISet(m1, m2 map[string]struct{}) bool {
 
 // registerWatchedDirectoriesLocked sends the workspace/didChangeWatchedFiles
 // registrations to the client and updates s.watchedDirectories.
+// The caller must not subsequently mutate patterns.
 func (s *Server) registerWatchedDirectoriesLocked(ctx context.Context, patterns map[string]struct{}) error {
 	if !s.session.Options().DynamicWatchedFilesSupported {
 		return nil
 	}
-	for k := range s.watchedGlobPatterns {
-		delete(s.watchedGlobPatterns, k)
-	}
-	watchers := []protocol.FileSystemWatcher{} // must be a slice
+	s.watchedGlobPatterns = patterns
+	watchers := make([]protocol.FileSystemWatcher, 0, len(patterns)) // must be a slice
 	val := protocol.WatchChange | protocol.WatchDelete | protocol.WatchCreate
 	for pattern := range patterns {
 		watchers = append(watchers, protocol.FileSystemWatcher{
@@ -473,10 +496,6 @@ func (s *Server) registerWatchedDirectoriesLocked(ctx context.Context, patterns 
 		return err
 	}
 	s.watchRegistrationCount++
-
-	for k, v := range patterns {
-		s.watchedGlobPatterns[k] = v
-	}
 	return nil
 }
 

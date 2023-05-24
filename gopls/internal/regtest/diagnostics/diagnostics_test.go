@@ -1506,7 +1506,13 @@ func main() {
 	bob.Hello()
 }
 `
-	Run(t, mod, func(t *testing.T, env *Env) {
+	WithOptions(
+		Settings{
+			// Now that we don't watch subdirs by default (except for VS Code),
+			// we must explicitly ask gopls to requests subdir watch patterns.
+			"subdirWatchPatterns": "on",
+		},
+	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OnceMet(
 			InitialWorkspaceLoad,
 			FileWatchMatching("bob"),
@@ -1695,8 +1701,7 @@ func helloHelper() {}
 		env.OpenFile("nested/hello/hello.go")
 		env.AfterChange(
 			Diagnostics(env.AtRegexp("nested/hello/hello.go", "helloHelper")),
-			Diagnostics(env.AtRegexp("nested/hello/hello.go", "package hello"), WithMessage("nested module")),
-			OutstandingWork(lsp.WorkspaceLoadFailure, "nested module"),
+			Diagnostics(env.AtRegexp("nested/hello/hello.go", "package (hello)"), WithMessage("not included in your workspace")),
 		)
 	})
 }
