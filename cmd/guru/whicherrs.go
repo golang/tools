@@ -21,7 +21,7 @@ import (
 
 var builtinErrorType = types.Universe.Lookup("error").Type()
 
-// whicherrs takes an position to an error and tries to find all types, constants
+// whicherrs takes a pointer to an error and tries to find all types, constants
 // and global value which a given error can point to and which can be checked from the
 // scope where the error lives.
 // In short, it returns a list of things that can be checked against in order to handle
