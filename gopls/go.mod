@@ -11,7 +11,7 @@ require (
 	golang.org/x/sync v0.2.0
 	golang.org/x/sys v0.8.0
 	golang.org/x/text v0.9.0
-	golang.org/x/tools v0.9.2-0.20230524171317-188b785caf35
+	golang.org/x/tools v0.9.4-0.20230601215739-41a7dc76dd8f
 	golang.org/x/vuln v0.0.0-20230110180137-6ad3e3d07815
 	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.4.2
@@ -25,5 +25,3 @@ require (
 	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e // indirect
 	golang.org/x/exp/typeparams v0.0.0-20221212164502-fae10dda9338 // indirect
 )
-
-replace golang.org/x/tools => ../
