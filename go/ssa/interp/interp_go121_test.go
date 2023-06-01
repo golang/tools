@@ -5,10 +5,8 @@
 //go:build go1.21
 // +build go1.21
 
-package tests
+package interp_test
 
 func init() {
-	builtins["clear"] = true
-	builtins["max"] = true
-	builtins["min"] = true
+	testdataTests = append(testdataTests, "minmax.go")
 }
