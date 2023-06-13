@@ -79,7 +79,6 @@ import (
 	"go/printer"
 	"go/token"
 	"go/types"
-	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
@@ -149,7 +148,7 @@ func main() {
 		log.Fatal(err)
 	}
 	if *outputFile != "" {
-		err := ioutil.WriteFile(*outputFile, code, 0666)
+		err := os.WriteFile(*outputFile, code, 0666)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -193,9 +192,7 @@ func bundle(src, dst, dstpkg, prefix, buildTags string) ([]byte, error) {
 	}
 	pkg := pkgs[0]
 
-	if strings.Contains(prefix, "&") {
-		prefix = strings.Replace(prefix, "&", pkg.Syntax[0].Name.Name, -1)
-	}
+	prefix = strings.ReplaceAll(prefix, "&", pkg.Syntax[0].Name.Name)
 
 	objsToUpdate := make(map[types.Object]bool)
 	var rename func(from types.Object)
@@ -208,11 +205,17 @@ func bundle(src, dst, dstpkg, prefix, buildTags string) ([]byte, error) {
 			// 	type T int // if we rename this to U..
 			// 	var s struct {T}
 			// 	print(s.T) // ...this must change too
-			if _, ok := from.(*types.TypeName); ok {
-				for id, obj := range pkg.TypesInfo.Uses {
+			for id, obj := range pkg.TypesInfo.Uses {
+				if _, ok := from.(*types.TypeName); ok {
 					if obj == from {
 						if field := pkg.TypesInfo.Defs[id]; field != nil {
 							rename(field)
+						}
+					}
+				} else {
+					if v, ok := obj.(*types.Var); ok {
+						if v.IsField() && obj.Pos() == from.Pos() {
+							objsToUpdate[v] = true
 						}
 					}
 				}

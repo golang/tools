@@ -63,3 +63,29 @@ func prefixbaz() {
 	renamedfmt2.Println()
 	Println()
 }
+
+type prefixAtype[E any] struct {
+	data E
+}
+
+func (a prefixAtype[E]) foo() E {
+	return a.data
+}
+
+// Embedded generic struct
+type prefixBtype[E any] struct {
+	prefixAtype[[2]E]
+}
+
+func (b prefixBtype[E]) foo() (E, E) {
+	x := b.prefixAtype.foo()
+	return x[0], x[1]
+}
+
+func prefixNewBtype[E any](e0, e1 E) *prefixBtype[E] {
+	return &prefixBtype[E]{
+		prefixAtype: prefixAtype[[2]E]{
+			data: [2]E{e0, e1},
+		},
+	}
+}
