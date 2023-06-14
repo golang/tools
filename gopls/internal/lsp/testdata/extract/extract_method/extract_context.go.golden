@@ -1,0 +1,19 @@
+-- methodextraction_extract_context_12_2 --
+package extract
+
+import "context"
+
+type A struct {
+	x int
+	y int
+}
+
+func (a *A) AddP(ctx context.Context) (int, error) {
+	sum := a.x + a.y
+	return a.newMethod(ctx, sum) //@extractmethod("return", "ctx.Err()"),extractfunc("return", "ctx.Err()")
+}
+
+func (*A) newMethod(ctx context.Context, sum int) (int, error) {
+	return sum, ctx.Err()
+}
+
