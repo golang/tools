@@ -26,9 +26,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
-	"golang.org/x/tools/gopls/internal/lsp/source/xrefs"
 	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -44,6 +42,8 @@ const (
 	preserveImportGraph = true // hold on to the import graph for open packages
 )
 
+type unit = struct{}
+
 // A typeCheckBatch holds data for a logical type-checking operation, which may
 // type-check many unrelated packages.
 //
@@ -56,7 +56,7 @@ type typeCheckBatch struct {
 	handles     map[PackageID]*packageHandle
 	parseCache  *parseCache
 	fset        *token.FileSet // describes all parsed or imported files
-	cpulimit    chan struct{}  // concurrency limiter for CPU-bound operations
+	cpulimit    chan unit      // concurrency limiter for CPU-bound operations
 
 	mu             sync.Mutex
 	syntaxPackages map[PackageID]*futurePackage // results of processing a requested package; may hold (nil, nil)
@@ -69,7 +69,7 @@ type typeCheckBatch struct {
 // The goroutine that creates the futurePackage is responsible for evaluating
 // its value, and closing the done channel.
 type futurePackage struct {
-	done chan struct{}
+	done chan unit
 	v    pkgOrErr
 }
 
@@ -154,7 +154,7 @@ func (s *snapshot) getImportGraph(ctx context.Context) *importGraph {
 	//     for the work to be done.
 	done := s.importGraphDone
 	if done == nil {
-		done = make(chan struct{})
+		done = make(chan unit)
 		s.importGraphDone = done
 		release := s.Acquire() // must acquire to use the snapshot asynchronously
 		go func() {
@@ -360,7 +360,7 @@ func (s *snapshot) forEachPackageInternal(ctx context.Context, importGraph *impo
 		handles:        handles,
 		fset:           fileSetWithBase(reservedForParsing),
 		syntaxIndex:    make(map[PackageID]int),
-		cpulimit:       make(chan struct{}, runtime.GOMAXPROCS(0)),
+		cpulimit:       make(chan unit, runtime.GOMAXPROCS(0)),
 		syntaxPackages: make(map[PackageID]*futurePackage),
 		importPackages: make(map[PackageID]*futurePackage),
 	}
@@ -369,7 +369,7 @@ func (s *snapshot) forEachPackageInternal(ctx context.Context, importGraph *impo
 		// Clone the file set every time, to ensure we do not leak files.
 		b.fset = tokeninternal.CloneFileSet(importGraph.fset)
 		// Pre-populate future cache with 'done' futures.
-		done := make(chan struct{})
+		done := make(chan unit)
 		close(done)
 		for id, res := range importGraph.imports {
 			b.importPackages[id] = &futurePackage{done, res}
@@ -427,7 +427,7 @@ func (b *typeCheckBatch) getImportPackage(ctx context.Context, id PackageID) (pk
 		}
 	}
 
-	f = &futurePackage{done: make(chan struct{})}
+	f = &futurePackage{done: make(chan unit)}
 	b.importPackages[id] = f
 	b.mu.Unlock()
 
@@ -453,6 +453,13 @@ func (b *typeCheckBatch) getImportPackage(ctx context.Context, id PackageID) (pk
 	}
 
 	ph := b.handles[id]
+
+	// Do a second check for "unsafe" defensively, due to golang/go#60890.
+	if ph.m.PkgPath == "unsafe" {
+		bug.Reportf("encountered \"unsafe\" as %s (golang/go#60890)", id)
+		return types.Unsafe, nil
+	}
+
 	data, err := filecache.Get(exportDataKind, ph.key)
 	if err == filecache.ErrNotFound {
 		// No cached export data: type-check as fast as possible.
@@ -479,7 +486,7 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 		return f.v.pkg, f.v.err
 	}
 
-	f = &futurePackage{done: make(chan struct{})}
+	f = &futurePackage{done: make(chan unit)}
 	b.syntaxPackages[id] = f
 	b.mu.Unlock()
 	defer func() {
@@ -508,7 +515,7 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case b.cpulimit <- struct{}{}:
+	case b.cpulimit <- unit{}:
 		defer func() {
 			<-b.cpulimit // release CPU token
 		}()
@@ -531,29 +538,30 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, m *source.Metadata, 
 
 	impMap := b.importMap(m.ID)
 
-	var firstErr error // TODO(rfindley): unused: revisit or remove.
 	thisPackage := types.NewPackage(string(m.PkgPath), string(m.Name))
-	getPackage := func(path, name string) *types.Package {
-		if path == string(m.PkgPath) {
-			return thisPackage
-		}
+	getPackages := func(items []gcimporter.GetPackagesItem) error {
+		for i, item := range items {
+			var id PackageID
+			var pkg *types.Package
+			if item.Path == string(m.PkgPath) {
+				id = m.ID
+				pkg = thisPackage
+			} else {
+				id = impMap[item.Path]
+				var err error
+				pkg, err = b.getImportPackage(ctx, id)
+				if err != nil {
+					return err
+				}
+			}
+			items[i].Pkg = pkg
 
-		id := impMap[path]
-		imp, err := b.getImportPackage(ctx, id)
-		if err == nil {
-			return imp
+			// debugging issue #60904
+			if pkg.Name() != item.Name {
+				return bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904)",
+					pkg.Name(), item.Name, id, item.Path)
+			}
 		}
-		// inv: err != nil
-		if firstErr == nil {
-			firstErr = err
-		}
-
-		// Context cancellation, or a very bad error such as a file permission
-		// error.
-		//
-		// Returning nil here will cause the import to fail (and panic if
-		// gcimporter.debug is set), but that is preferable to the confusing errors
-		// produced when shallow import encounters an empty package.
 		return nil
 	}
 
@@ -563,9 +571,9 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, m *source.Metadata, 
 		return nil, ctx.Err()
 	}
 
-	// TODO(rfindley): collect "deep" hashes here using the provided
+	// TODO(rfindley): collect "deep" hashes here using the getPackages
 	// callback, for precise pruning.
-	imported, err := gcimporter.IImportShallow(b.fset, getPackage, data, string(m.PkgPath), func(*types.Package, string) {})
+	imported, err := gcimporter.IImportShallow(b.fset, getPackages, data, string(m.PkgPath))
 	if err != nil {
 		return nil, fmt.Errorf("import failed for %q: %v", m.ID, err)
 	}
@@ -637,18 +645,22 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 		// Write package data to disk asynchronously.
 		go func() {
 			toCache := map[string][]byte{
-				xrefsKind:       pkg.xrefs,
-				methodSetsKind:  pkg.methodsets.Encode(),
+				xrefsKind:       pkg.xrefs(),
+				methodSetsKind:  pkg.methodsets().Encode(),
 				diagnosticsKind: encodeDiagnostics(pkg.diagnostics),
 			}
 
-			if ph.m.ID != "unsafe" { // unsafe cannot be exported
+			if ph.m.PkgPath != "unsafe" { // unsafe cannot be exported
 				exportData, err := gcimporter.IExportShallow(pkg.fset, pkg.types)
 				if err != nil {
 					bug.Reportf("exporting package %v: %v", ph.m.ID, err)
 				} else {
 					toCache[exportDataKind] = exportData
 				}
+			} else if ph.m.ID != "unsafe" {
+				// golang/go#60890: we should only ever see one variant of the "unsafe"
+				// package.
+				bug.Reportf("encountered \"unsafe\" as %s (golang/go#60890)", ph.m.ID)
 			}
 
 			for kind, data := range toCache {
@@ -748,7 +760,7 @@ func (ph *packageHandle) clone(validated bool) *packageHandle {
 }
 
 // getPackageHandles gets package handles for all given ids and their
-// dependencies.
+// dependencies, recursively.
 func (s *snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[PackageID]*packageHandle, error) {
 	s.mu.Lock()
 	meta := s.meta
@@ -763,13 +775,13 @@ func (s *snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[
 	// Collect all reachable IDs, and create done channels.
 	// TODO: opt: modify SortPostOrder to make this pre-traversal unnecessary.
 	var allIDs []PackageID
-	dones := make(map[PackageID]chan struct{})
+	dones := make(map[PackageID]chan unit)
 	var walk func(PackageID)
 	walk = func(id PackageID) {
 		if _, ok := dones[id]; ok {
 			return
 		}
-		dones[id] = make(chan struct{})
+		dones[id] = make(chan unit)
 		allIDs = append(allIDs, id)
 		m := meta.metadata[id]
 		for _, depID := range m.DepsByPkgPath {
@@ -984,8 +996,7 @@ func (b *packageHandleBuilder) validatePackageHandle(prevPH, ph *packageHandle) 
 
 	// Opt: if no dep keys have changed, we need not re-evaluate the key.
 	if prevPH != nil {
-		depsChanged := true
-		depsChanged = false
+		depsChanged := false
 		assert(len(prevPH.depKeys) == len(ph.depKeys), "mismatching dep count")
 		for id, newKey := range ph.depKeys {
 			oldKey, ok := prevPH.depKeys[id]
@@ -995,7 +1006,6 @@ func (b *packageHandleBuilder) validatePackageHandle(prevPH, ph *packageHandle) 
 				break
 			}
 		}
-
 		if !depsChanged {
 			return nil // key cannot have changed
 		}
@@ -1010,10 +1020,8 @@ func (b *packageHandleBuilder) validatePackageHandle(prevPH, ph *packageHandle) 
 			// A predecessor failed to build due to e.g. context cancellation.
 			return fmt.Errorf("missing transitive refs for %s", dep.m.ID)
 		}
-		for name, set := range trefs {
-			if token.IsExported(name) {
-				reachable.Union(set)
-			}
+		for _, set := range trefs {
+			reachable.Union(set)
 		}
 	}
 
@@ -1266,8 +1274,6 @@ func typeCheckImpl(ctx context.Context, b *typeCheckBatch, inputs typeCheckInput
 	if err != nil {
 		return nil, err
 	}
-	pkg.methodsets = methodsets.NewIndex(pkg.fset, pkg.types)
-	pkg.xrefs = xrefs.Index(pkg.compiledGoFiles, pkg.types, pkg.typesInfo)
 
 	// Our heuristic for whether to show type checking errors is:
 	//  + If any file was 'fixed', don't show type checking errors as we
