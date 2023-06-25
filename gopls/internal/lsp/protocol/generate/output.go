@@ -101,7 +101,9 @@ func genCase(method string, param, result *Type, dir string) {
 			nm = "ParamConfiguration" // gopls compatibility
 		}
 		fmt.Fprintf(out, "\t\tvar params %s\n", nm)
-		fmt.Fprintf(out, "\t\tif err := json.Unmarshal(r.Params(), &params); err != nil {\n")
+		fmt.Fprintf(out, "\t\tdecoder := json.NewDecoder(bytes.NewReader(r.Params()))\n")
+		fmt.Fprintf(out, "\t\tdecoder.UseNumber()\n")
+		fmt.Fprintf(out, "\t\tif err := decoder.Decode(&params); err != nil {\n")
 		fmt.Fprintf(out, "\t\t\treturn true, sendParseError(ctx, reply, err)\n\t\t}\n")
 		p = ", &params"
 	}

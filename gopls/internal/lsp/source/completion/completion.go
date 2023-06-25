@@ -104,15 +104,16 @@ type CompletionItem struct {
 
 // completionOptions holds completion specific configuration.
 type completionOptions struct {
-	unimported        bool
-	documentation     bool
-	fullDocumentation bool
-	placeholders      bool
-	literal           bool
-	snippets          bool
-	postfix           bool
-	matcher           source.Matcher
-	budget            time.Duration
+	unimported                bool
+	documentation             bool
+	fullDocumentation         bool
+	placeholders              bool
+	literal                   bool
+	snippets                  bool
+	postfix                   bool
+	matcher                   source.Matcher
+	budget                    time.Duration
+	maxUnimportedPackageNames int
 }
 
 // Snippet is a convenience returns the snippet if available, otherwise
@@ -535,15 +536,16 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 			enabled: opts.DeepCompletion,
 		},
 		opts: &completionOptions{
-			matcher:           opts.Matcher,
-			unimported:        opts.CompleteUnimported,
-			documentation:     opts.CompletionDocumentation && opts.HoverKind != source.NoDocumentation,
-			fullDocumentation: opts.HoverKind == source.FullDocumentation,
-			placeholders:      opts.UsePlaceholders,
-			literal:           opts.LiteralCompletions && opts.InsertTextFormat == protocol.SnippetTextFormat,
-			budget:            opts.CompletionBudget,
-			snippets:          opts.InsertTextFormat == protocol.SnippetTextFormat,
-			postfix:           opts.ExperimentalPostfixCompletions,
+			matcher:                   opts.Matcher,
+			unimported:                opts.CompleteUnimported,
+			documentation:             opts.CompletionDocumentation && opts.HoverKind != source.NoDocumentation,
+			fullDocumentation:         opts.HoverKind == source.FullDocumentation,
+			placeholders:              opts.UsePlaceholders,
+			literal:                   opts.LiteralCompletions && opts.InsertTextFormat == protocol.SnippetTextFormat,
+			budget:                    opts.CompletionBudget,
+			snippets:                  opts.InsertTextFormat == protocol.SnippetTextFormat,
+			postfix:                   opts.ExperimentalPostfixCompletions,
+			maxUnimportedPackageNames: opts.MaxUnimportedPackageNames,
 		},
 		// default to a matcher that always matches
 		matcher:        prefixMatcher(""),
@@ -1104,10 +1106,7 @@ func (c *completer) wantTypeName() bool {
 }
 
 // See https://golang.org/issue/36001. Unimported completions are expensive.
-const (
-	maxUnimportedPackageNames = 5
-	unimportedMemberTarget    = 100
-)
+const unimportedMemberTarget = 100
 
 // selector finds completions for the specified selector expression.
 func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
@@ -1689,7 +1688,7 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		if imports.ImportPathToAssumedName(path) != name {
 			imp.name = name
 		}
-		if count >= maxUnimportedPackageNames {
+		if count >= c.opts.maxUnimportedPackageNames {
 			return nil
 		}
 		c.deepState.enqueue(candidate{
@@ -1714,7 +1713,7 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 			return
 		}
 
-		if count >= maxUnimportedPackageNames {
+		if count >= c.opts.maxUnimportedPackageNames {
 			cancel()
 			return
 		}

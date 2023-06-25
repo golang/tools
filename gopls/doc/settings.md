@@ -233,6 +233,12 @@ fields in completion responses.
 
 Default: `false`.
 
+##### **maxUnimportedPackageNames** *int*
+
+max number of completion candidates for unimported packages.
+
+Default: `5`.
+
 ##### **completionBudget** *time.Duration*
 
 **This setting is for debugging purposes only.**
