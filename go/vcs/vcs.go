@@ -426,7 +426,7 @@ func RepoRootForImportPath(importPath string, verbose bool) (*RepoRoot, error) {
 		// dynamic import in the first place.
 		// Squelch it.
 		if err != nil {
-			if Verbose {
+			if verbose || Verbose {
 				log.Printf("import %q: %v", importPath, err)
 			}
 			err = fmt.Errorf("unrecognized import path %q", importPath)
