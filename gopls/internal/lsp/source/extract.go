@@ -633,7 +633,7 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 	}, nil
 }
 
-// isSelector checks if e is the selector expr <x>, <sel>.
+// isSelector reports if e is the selector expr <x>, <sel>.
 func isSelector(e ast.Expr, x, sel string) bool {
 	selectorExpr, ok := e.(*ast.SelectorExpr)
 	if !ok {
@@ -648,13 +648,29 @@ func isSelector(e ast.Expr, x, sel string) bool {
 
 // reorderParams reorders the given parameters in-place to follow common Go conventions.
 func reorderParams(params []ast.Expr, paramTypes []*ast.Field) {
+	// Nothing to do if there are no parameters
+	if len(paramTypes) == 0 {
+		return
+	}
 	// If a context is found in the parameters, put it first.
+	contextPosition := -1
 	for i, t := range paramTypes {
 		if isSelector(t.Type, "context", "Context") {
-			params[0], params[i] = params[i], params[0]
-			paramTypes[0], paramTypes[i] = paramTypes[i], paramTypes[0]
+			contextPosition = i
 			break
 		}
+	}
+	if contextPosition != -1 {
+		ctxParam := params[contextPosition]
+		ctxType := paramTypes[contextPosition]
+		// Move all parameters from the first one to the ctx parameter to the right.
+		// This overwrites the ctx parameter with the one before it, and we put it first when we are done.
+		for i := contextPosition; i > 0; i-- {
+			params[i] = params[i-1]
+			paramTypes[i] = paramTypes[i-1]
+		}
+		params[0] = ctxParam
+		paramTypes[0] = ctxType
 	}
 }
 
