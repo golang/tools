@@ -648,29 +648,15 @@ func isSelector(e ast.Expr, x, sel string) bool {
 
 // reorderParams reorders the given parameters in-place to follow common Go conventions.
 func reorderParams(params []ast.Expr, paramTypes []*ast.Field) {
-	// Nothing to do if there are no parameters
-	if len(paramTypes) == 0 {
-		return
-	}
-	// If a context is found in the parameters, put it first.
-	contextPosition := -1
+	// Move Context parameter (if any) to front.
 	for i, t := range paramTypes {
 		if isSelector(t.Type, "context", "Context") {
-			contextPosition = i
+			p, t := params[i], paramTypes[i]
+			copy(params[1:], params[:i])
+			copy(paramTypes[1:], paramTypes[:i])
+			params[0], paramTypes[0] = p, t
 			break
 		}
-	}
-	if contextPosition != -1 {
-		ctxParam := params[contextPosition]
-		ctxType := paramTypes[contextPosition]
-		// Move all parameters from the first one to the ctx parameter to the right.
-		// This overwrites the ctx parameter with the one before it, and we put it first when we are done.
-		for i := contextPosition; i > 0; i-- {
-			params[i] = params[i-1]
-			paramTypes[i] = paramTypes[i-1]
-		}
-		params[0] = ctxParam
-		paramTypes[0] = ctxType
 	}
 }
 
