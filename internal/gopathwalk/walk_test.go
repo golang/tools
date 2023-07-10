@@ -74,13 +74,8 @@ func TestShouldTraverse(t *testing.T) {
 		},
 	}
 	for i, tt := range tests {
-		fi, err := os.Stat(filepath.Join(dir, tt.dir, tt.file))
-		if err != nil {
-			t.Errorf("%d. Stat = %v", i, err)
-			continue
-		}
 		var w walker
-		got := w.shouldTraverse(filepath.Join(dir, tt.dir, fi.Name()))
+		got := w.shouldTraverse(filepath.Join(dir, tt.dir, tt.file))
 		if got != tt.want {
 			t.Errorf("%d. shouldTraverse(%q, %q) = %v; want %v", i, tt.dir, tt.file, got, tt.want)
 		}

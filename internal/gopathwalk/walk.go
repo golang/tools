@@ -115,7 +115,7 @@ type walker struct {
 	skip func(Root, string) bool // The callback that will be invoked for every dir. dir is skipped if it returns true.
 	opts Options                 // Options passed to Walk by the user.
 
-	ignoredDirs []os.FileInfo // The ignored directories, loaded from .goimportsignore files.
+	ignoredDirs []string
 
 	added map[string]bool
 }
@@ -133,13 +133,9 @@ func (w *walker) init() {
 
 	for _, p := range ignoredPaths {
 		full := filepath.Join(w.root.Path, p)
-		if fi, err := os.Stat(full); err == nil {
-			w.ignoredDirs = append(w.ignoredDirs, fi)
-			if w.opts.Logf != nil {
-				w.opts.Logf("Directory added to ignore list: %s", full)
-			}
-		} else if w.opts.Logf != nil {
-			w.opts.Logf("Error statting ignored directory: %v", err)
+		w.ignoredDirs = append(w.ignoredDirs, full)
+		if w.opts.Logf != nil {
+			w.opts.Logf("Directory added to ignore list: %s", full)
 		}
 	}
 }
@@ -174,16 +170,9 @@ func (w *walker) getIgnoredDirs(path string) []string {
 }
 
 // shouldSkipDir reports whether the file should be skipped or not.
-func (w *walker) shouldSkipDir(fi os.FileInfo, dir string) bool {
+func (w *walker) shouldSkipDir(dir string) bool {
 	for _, ignoredDir := range w.ignoredDirs {
-		// TODO(bcmills): Given that we already ought to be preserving the
-		// user-provided paths for directories encountered via symlinks, and that we
-		// don't expect GOROOT/src or GOPATH/src to itself contain symlinks,
-		// os.SameFile seems needlessly expensive here — it forces the caller to
-		// obtain an os.FileInfo instead of a potentially much cheaper fs.DirEntry.
-		//
-		// Can we drop this and use a lexical comparison instead?
-		if os.SameFile(fi, ignoredDir) {
+		if dir == ignoredDir {
 			return true
 		}
 	}
@@ -223,8 +212,7 @@ func (w *walker) walk(path string, d fs.DirEntry, err error) error {
 			(!w.opts.ModulesEnabled && base == "node_modules") {
 			return filepath.SkipDir
 		}
-		fi, err := d.Info()
-		if err == nil && w.shouldSkipDir(fi, path) {
+		if w.shouldSkipDir(path) {
 			return filepath.SkipDir
 		}
 		return nil
@@ -293,6 +281,10 @@ func (w *walker) walk(path string, d fs.DirEntry, err error) error {
 // should be followed.  It makes sure symlinks were never visited
 // before to avoid symlink loops.
 func (w *walker) shouldTraverse(path string) bool {
+	if w.shouldSkipDir(path) {
+		return false
+	}
+
 	ts, err := os.Stat(path)
 	if err != nil {
 		logf := w.opts.Logf
@@ -305,9 +297,7 @@ func (w *walker) shouldTraverse(path string) bool {
 	if !ts.IsDir() {
 		return false
 	}
-	if w.shouldSkipDir(ts, filepath.Dir(path)) {
-		return false
-	}
+
 	// Check for symlink loops by statting each directory component
 	// and seeing if any are the same file as ts.
 	for {
