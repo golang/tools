@@ -1,15 +1,15 @@
 package builtins
 
-func _() {
-	//@complete("", append, bool, byte, cap, close, complex, complex128, complex64, copy, delete, error, _false, float32, float64, imag, int, int16, int32, int64, int8, len, make, new, panic, print, println, real, recover, rune, string, _true, uint, uint16, uint32, uint64, uint8, uintptr, _nil)
-}
+// Definitions of builtin completion items.
 
 /* Create markers for builtin types. Only for use by this test.
 /* append(slice []Type, elems ...Type) []Type */ //@item(append, "append", "func(slice []Type, elems ...Type) []Type", "func")
 /* bool */ //@item(bool, "bool", "", "type")
 /* byte */ //@item(byte, "byte", "", "type")
 /* cap(v Type) int */ //@item(cap, "cap", "func(v Type) int", "func")
+/* clear[T interface{ ~[]Type | ~map[Type]Type1 }](t T) */ //@item(clear, "clear", "func(t T)", "func")
 /* close(c chan<- Type) */ //@item(close, "close", "func(c chan<- Type)", "func")
+/* comparable */ //@item(comparable, "comparable", "", "interface")
 /* complex(r float64, i float64) */ //@item(complex, "complex", "func(r float64, i float64) complex128", "func")
 /* complex128 */ //@item(complex128, "complex128", "", "type")
 /* complex64 */ //@item(complex64, "complex64", "", "type")
@@ -27,6 +27,8 @@ func _() {
 /* int8 */ //@item(int8, "int8", "", "type")
 /* iota */ //@item(iota, "iota", "", "const")
 /* len(v Type) int */ //@item(len, "len", "func(v Type) int", "func")
+/* max(x T, y ...T) T */ //@item(max, "max", "func(x T, y ...T) T", "func")
+/* min(y T, y ...T) T */ //@item(min, "min", "func(x T, y ...T) T", "func")
 /* make(t Type, size ...int) Type */ //@item(make, "make", "func(t Type, size ...int) Type", "func")
 /* new(Type) *Type */ //@item(new, "new", "func(Type) *Type", "func")
 /* nil */ //@item(_nil, "nil", "", "var")

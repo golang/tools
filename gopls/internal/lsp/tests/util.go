@@ -24,6 +24,29 @@ import (
 	"golang.org/x/tools/gopls/internal/span"
 )
 
+var builtins = map[string]bool{
+	"append":  true,
+	"cap":     true,
+	"close":   true,
+	"complex": true,
+	"copy":    true,
+	"delete":  true,
+	"error":   true,
+	"false":   true,
+	"imag":    true,
+	"iota":    true,
+	"len":     true,
+	"make":    true,
+	"new":     true,
+	"nil":     true,
+	"panic":   true,
+	"print":   true,
+	"println": true,
+	"real":    true,
+	"recover": true,
+	"true":    true,
+}
+
 // DiffLinks takes the links we got and checks if they are located within the source or a Note.
 // If the link is within a Note, the link is removed.
 // Returns an diff comment if there are differences and empty string if no diffs.
@@ -328,13 +351,7 @@ func isBuiltin(label, detail string, kind protocol.CompletionItemKind) bool {
 	if i := strings.Index(trimmed, "("); i >= 0 {
 		trimmed = trimmed[:i]
 	}
-	switch trimmed {
-	case "append", "cap", "close", "complex", "copy", "delete",
-		"error", "false", "imag", "iota", "len", "make", "new",
-		"nil", "panic", "print", "println", "real", "recover", "true":
-		return true
-	}
-	return false
+	return builtins[trimmed]
 }
 
 func CheckCompletionOrder(want, got []protocol.CompletionItem, strictScores bool) string {

@@ -31,12 +31,15 @@ const (
 	GoGetPackage          Command = "go_get_package"
 	ListImports           Command = "list_imports"
 	ListKnownPackages     Command = "list_known_packages"
+	MemStats              Command = "mem_stats"
 	RegenerateCgo         Command = "regenerate_cgo"
 	RemoveDependency      Command = "remove_dependency"
 	ResetGoModDiagnostics Command = "reset_go_mod_diagnostics"
 	RunGovulncheck        Command = "run_govulncheck"
 	RunTests              Command = "run_tests"
 	StartDebugging        Command = "start_debugging"
+	StartProfile          Command = "start_profile"
+	StopProfile           Command = "stop_profile"
 	Test                  Command = "test"
 	Tidy                  Command = "tidy"
 	ToggleGCDetails       Command = "toggle_gc_details"
@@ -58,12 +61,15 @@ var Commands = []Command{
 	GoGetPackage,
 	ListImports,
 	ListKnownPackages,
+	MemStats,
 	RegenerateCgo,
 	RemoveDependency,
 	ResetGoModDiagnostics,
 	RunGovulncheck,
 	RunTests,
 	StartDebugging,
+	StartProfile,
+	StopProfile,
 	Test,
 	Tidy,
 	ToggleGCDetails,
@@ -146,6 +152,8 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return s.ListKnownPackages(ctx, a0)
+	case "gopls.mem_stats":
+		return s.MemStats(ctx)
 	case "gopls.regenerate_cgo":
 		var a0 URIArg
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -182,6 +190,18 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return s.StartDebugging(ctx, a0)
+	case "gopls.start_profile":
+		var a0 StartProfileArgs
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return s.StartProfile(ctx, a0)
+	case "gopls.stop_profile":
+		var a0 StopProfileArgs
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return s.StopProfile(ctx, a0)
 	case "gopls.test":
 		var a0 protocol.DocumentURI
 		var a1 []string
@@ -368,6 +388,18 @@ func NewListKnownPackagesCommand(title string, a0 URIArg) (protocol.Command, err
 	}, nil
 }
 
+func NewMemStatsCommand(title string) (protocol.Command, error) {
+	args, err := MarshalArgs()
+	if err != nil {
+		return protocol.Command{}, err
+	}
+	return protocol.Command{
+		Title:     title,
+		Command:   "gopls.mem_stats",
+		Arguments: args,
+	}, nil
+}
+
 func NewRegenerateCgoCommand(title string, a0 URIArg) (protocol.Command, error) {
 	args, err := MarshalArgs(a0)
 	if err != nil {
@@ -436,6 +468,30 @@ func NewStartDebuggingCommand(title string, a0 DebuggingArgs) (protocol.Command,
 	return protocol.Command{
 		Title:     title,
 		Command:   "gopls.start_debugging",
+		Arguments: args,
+	}, nil
+}
+
+func NewStartProfileCommand(title string, a0 StartProfileArgs) (protocol.Command, error) {
+	args, err := MarshalArgs(a0)
+	if err != nil {
+		return protocol.Command{}, err
+	}
+	return protocol.Command{
+		Title:     title,
+		Command:   "gopls.start_profile",
+		Arguments: args,
+	}, nil
+}
+
+func NewStopProfileCommand(title string, a0 StopProfileArgs) (protocol.Command, error) {
+	args, err := MarshalArgs(a0)
+	if err != nil {
+		return protocol.Command{}, err
+	}
+	return protocol.Command{
+		Title:     title,
+		Command:   "gopls.stop_profile",
 		Arguments: args,
 	}, nil
 }

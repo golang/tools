@@ -16,6 +16,10 @@ import (
 func TestGenerated(t *testing.T) {
 	testenv.NeedsGoBuild(t) // This is a lie. We actually need the source code.
 
+	// This test fails on 1.18 Kokoro for unknown reasons; in any case, it
+	// suffices to run this test on any builder.
+	testenv.NeedsGo1Point(t, 19)
+
 	ok, err := doMain(false)
 	if err != nil {
 		t.Fatal(err)

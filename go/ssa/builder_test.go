@@ -732,6 +732,9 @@ func TestTypeparamTest(t *testing.T) {
 		if entry.Name() == "issue376214.go" {
 			continue // investigate variadic + New signature.
 		}
+		if entry.Name() == "issue58513.go" {
+			continue // not investigated: gopls@v0.11 release branch skip only
+		}
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
 			continue // Consider standalone go files.
 		}

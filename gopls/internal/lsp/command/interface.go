@@ -150,6 +150,21 @@ type Interface interface {
 	// address.
 	StartDebugging(context.Context, DebuggingArgs) (DebuggingResult, error)
 
+	// StartProfile: start capturing a profile of gopls' execution.
+	//
+	// Start a new pprof profile. Before using the resulting file, profiling must
+	// be stopped with a corresponding call to StopProfile.
+	//
+	// This command is intended for internal use only, by the gopls benchmark
+	// runner.
+	StartProfile(context.Context, StartProfileArgs) (StartProfileResult, error)
+
+	// StopProfile: stop an ongoing profile.
+	//
+	// This command is intended for internal use only, by the gopls benchmark
+	// runner.
+	StopProfile(context.Context, StopProfileArgs) (StopProfileResult, error)
+
 	// RunGovulncheck: Run govulncheck.
 	//
 	// Run vulnerability check (`govulncheck`).
@@ -159,6 +174,14 @@ type Interface interface {
 	//
 	// Fetch the result of latest vulnerability check (`govulncheck`).
 	FetchVulncheckResult(context.Context, URIArg) (map[protocol.DocumentURI]*govulncheck.Result, error)
+
+	// MemStats: fetch memory statistics
+	//
+	// Call runtime.GC multiple times and return memory statistics as reported by
+	// runtime.MemStats.
+	//
+	// This command is used for benchmarking, and may change in the future.
+	MemStats(context.Context) (MemStatsResult, error)
 }
 
 type RunTestsArgs struct {
@@ -309,6 +332,30 @@ type DebuggingResult struct {
 	URLs []string
 }
 
+// StartProfileArgs holds the arguments to the StartProfile command.
+//
+// It is a placeholder for future compatibility.
+type StartProfileArgs struct {
+}
+
+// StartProfileResult holds the result of the StartProfile command.
+//
+// It is a placeholder for future compatibility.
+type StartProfileResult struct {
+}
+
+// StopProfileArgs holds the arguments to the StopProfile command.
+//
+// It is a placeholder for future compatibility.
+type StopProfileArgs struct {
+}
+
+// StopProfileResult holds the result to the StopProfile command.
+type StopProfileResult struct {
+	// File is the profile file name.
+	File string
+}
+
 type ResetGoModDiagnosticsArgs struct {
 	URIArg
 
@@ -398,4 +445,10 @@ type Vuln struct {
 	CallStackSummaries []string `json:",omitempty"`
 
 	// TODO: import graph & module graph.
+}
+
+// MemStatsResult holds selected fields from runtime.MemStats.
+type MemStatsResult struct {
+	HeapAlloc uint64
+	HeapInUse uint64
 }

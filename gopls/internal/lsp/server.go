@@ -8,6 +8,7 @@ package lsp
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/lsp/cache"
@@ -115,6 +116,11 @@ type Server struct {
 	// report with an error message.
 	criticalErrorStatusMu sync.Mutex
 	criticalErrorStatus   *progress.WorkDone
+
+	// Track an ongoing CPU profile created with the StartProfile command and
+	// terminated with the StopProfile command.
+	ongoingProfileMu sync.Mutex
+	ongoingProfile   *os.File // if non-nil, an ongoing profile is writing to this file
 }
 
 type pendingModificationSet struct {

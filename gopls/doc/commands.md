@@ -236,6 +236,23 @@ Result:
 }
 ```
 
+### **fetch memory statistics**
+Identifier: `gopls.mem_stats`
+
+Call runtime.GC multiple times and return memory statistics as reported by
+runtime.MemStats.
+
+This command is used for benchmarking, and may change in the future.
+
+Result:
+
+```
+{
+	"HeapAlloc": uint64,
+	"HeapInUse": uint64,
+}
+```
+
 ### **Regenerate cgo**
 Identifier: `gopls.regenerate_cgo`
 
@@ -371,6 +388,48 @@ Result:
 	// error will be returned but the debug URL for that server in the URLs slice
 	// will be empty.
 	"URLs": []string,
+}
+```
+
+### **start capturing a profile of gopls' execution.**
+Identifier: `gopls.start_profile`
+
+Start a new pprof profile. Before using the resulting file, profiling must
+be stopped with a corresponding call to StopProfile.
+
+This command is intended for internal use only, by the gopls benchmark
+runner.
+
+Args:
+
+```
+struct{}
+```
+
+Result:
+
+```
+struct{}
+```
+
+### **stop an ongoing profile.**
+Identifier: `gopls.stop_profile`
+
+This command is intended for internal use only, by the gopls benchmark
+runner.
+
+Args:
+
+```
+struct{}
+```
+
+Result:
+
+```
+{
+	// File is the profile file name.
+	"File": string,
 }
 ```
 

@@ -15,6 +15,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"runtime/pprof"
 	"sort"
 	"strings"
 	"time"
@@ -837,6 +839,48 @@ func (c *commandHandler) StartDebugging(ctx context.Context, args command.Debugg
 	return result, nil
 }
 
+func (c *commandHandler) StartProfile(ctx context.Context, args command.StartProfileArgs) (result command.StartProfileResult, _ error) {
+	file, err := os.CreateTemp("", "gopls-profile-*")
+	if err != nil {
+		return result, fmt.Errorf("creating temp profile file: %v", err)
+	}
+
+	c.s.ongoingProfileMu.Lock()
+	defer c.s.ongoingProfileMu.Unlock()
+
+	if c.s.ongoingProfile != nil {
+		file.Close() // ignore error
+		return result, fmt.Errorf("profile already started (for %q)", c.s.ongoingProfile.Name())
+	}
+
+	if err := pprof.StartCPUProfile(file); err != nil {
+		file.Close() // ignore error
+		return result, fmt.Errorf("starting profile: %v", err)
+	}
+
+	c.s.ongoingProfile = file
+	return result, nil
+}
+
+func (c *commandHandler) StopProfile(ctx context.Context, args command.StopProfileArgs) (result command.StopProfileResult, _ error) {
+	c.s.ongoingProfileMu.Lock()
+	defer c.s.ongoingProfileMu.Unlock()
+
+	prof := c.s.ongoingProfile
+	c.s.ongoingProfile = nil
+
+	if prof == nil {
+		return result, fmt.Errorf("no ongoing profile")
+	}
+
+	pprof.StopCPUProfile()
+	if err := prof.Close(); err != nil {
+		return result, fmt.Errorf("closing profile file: %v", err)
+	}
+	result.File = prof.Name()
+	return result, nil
+}
+
 // Copy of pkgLoadConfig defined in internal/lsp/cmd/vulncheck.go
 // TODO(hyangah): decide where to define this.
 type pkgLoadConfig struct {
@@ -965,4 +1009,19 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 	case token := <-tokenChan:
 		return command.RunVulncheckResult{Token: token}, nil
 	}
+}
+
+// MemStats implements the MemStats command. It returns an error as a
+// future-proof API, but the resulting error is currently always nil.
+func (c *commandHandler) MemStats(ctx context.Context) (command.MemStatsResult, error) {
+	// GC a few times for stable results.
+	runtime.GC()
+	runtime.GC()
+	runtime.GC()
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return command.MemStatsResult{
+		HeapAlloc: m.HeapAlloc,
+		HeapInUse: m.HeapInuse,
+	}, nil
 }
