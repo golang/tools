@@ -335,6 +335,7 @@ func forEachLexicalRef(pkg Package, obj types.Object, fn func(id *ast.Ident, blo
 			if !ok {
 				return visit(nil) // pop stack, don't descend
 			}
+			// TODO(adonovan): fix: for generics, should be T.core not T.underlying.
 			if _, ok := Deref(tv.Type).Underlying().(*types.Struct); ok {
 				if n.Type != nil {
 					ast.Inspect(n.Type, visit)
@@ -364,22 +365,39 @@ func forEachLexicalRef(pkg Package, obj types.Object, fn func(id *ast.Ident, blo
 	return ok
 }
 
-// enclosingBlock returns the innermost block enclosing the specified
-// AST node, specified in the form of a path from the root of the file,
-// [file...n].
+// enclosingBlock returns the innermost block logically enclosing the
+// specified AST node (an ast.Ident), specified in the form of a path
+// from the root of the file, [file...n].
 func enclosingBlock(info *types.Info, stack []ast.Node) *types.Scope {
 	for i := range stack {
 		n := stack[len(stack)-1-i]
-		// For some reason, go/types always associates a
-		// function's scope with its FuncType.
-		// TODO(adonovan): feature or a bug?
+
+		// FuncType is a special case in the scope rules.
+		// Idents that are uses (of types or constants)
+		// among the receiver/param/result vars are textually
+		// within the extent of the function scope block,
+		// but logically they are resolved in the parent block.
+		var useParent bool
 		switch f := n.(type) {
+		case *ast.FuncType:
+			// Referring ident within TypeParams/Params/Results.
+			useParent = true
+
 		case *ast.FuncDecl:
+			// Referring ident with Recv?
+			_, useParent = stack[len(stack)-i].(*ast.FieldList)
+
+			// types.Info associates a Func{Decl,Lit} Scope with its FuncType.
 			n = f.Type
+
 		case *ast.FuncLit:
-			n = f.Type
+			n = f.Type // see above
 		}
+
 		if b := info.Scopes[n]; b != nil {
+			if useParent {
+				b = b.Parent()
+			}
 			return b
 		}
 	}
