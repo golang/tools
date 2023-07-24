@@ -194,6 +194,12 @@ for {{.VarName .ElemType "e"}} := range {{.X}} {
 	body: `{{if and (eq .Kind "slice") (eq (.TypeName .ElemType) "string") -}}
 {{.Import "strings"}}.Join({{.X}}, "{{.Cursor}}")
 {{- end}}`,
+}, {
+	label:   "wrap",
+	details: "wrap error with fmt.Errorf()",
+	body: `{{if (eq (.TypeName .Type) "error") -}}
+	{{.Import "fmt"}}.Errorf("{{.Cursor}}: %w", {{.X}})
+{{- end}}`,
 }}
 
 // Cursor indicates where the client's cursor should end up after the
