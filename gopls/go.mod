@@ -11,7 +11,7 @@ require (
 	golang.org/x/sync v0.3.0
 	golang.org/x/sys v0.10.0
 	golang.org/x/text v0.11.0
-	golang.org/x/tools v0.11.1-0.20230725205053-88637d46cf6c
+	golang.org/x/tools v0.11.1-0.20230726135247-3ff6127f8513
 	golang.org/x/vuln v0.0.0-20230110180137-6ad3e3d07815
 	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.4.2
