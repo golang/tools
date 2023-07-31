@@ -343,15 +343,18 @@ func renameOrdinary(ctx context.Context, snapshot Snapshot, f FileHandle, pp pro
 	// Find objectpath, if object is exported ("" otherwise).
 	var declObjPath objectpath.Path
 	if obj.Exported() {
-		// objectpath.For requires the origin of a generic
-		// function or type, not an instantiation (a bug?).
-		// Unfortunately we can't call {Func,TypeName}.Origin
-		// as these are not available in go/types@go1.18.
-		// So we take a scenic route.
+		// objectpath.For requires the origin of a generic function or type, not an
+		// instantiation (a bug?). Unfortunately we can't call Func.Origin as this
+		// is not available in go/types@go1.18. So we take a scenic route.
+		//
+		// Note that unlike Funcs, TypeNames are always canonical (they are "left"
+		// of the type parameters, unlike methods).
 		switch obj.(type) { // avoid "obj :=" since cases reassign the var
 		case *types.TypeName:
-			if named, ok := obj.Type().(*types.Named); ok {
-				obj = named.Obj()
+			if _, ok := obj.Type().(*typeparams.TypeParam); ok {
+				// As with capitalized function parameters below, type parameters are
+				// local.
+				goto skipObjectPath
 			}
 		case *types.Func:
 			obj = funcOrigin(obj.(*types.Func))
