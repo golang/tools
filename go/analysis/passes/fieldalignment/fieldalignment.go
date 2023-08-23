@@ -91,6 +91,12 @@ func fieldalignment(pass *analysis.Pass, node *ast.StructType, typ *types.Struct
 		message = fmt.Sprintf("struct with %d pointer bytes could be %d", ptrs, optptrs)
 	} else {
 		// Already optimal order.
+		message = fmt.Sprintf("struct with %d bytes", sz)
+		pass.Report(analysis.Diagnostic{
+			Pos:     node.Pos(),
+			End:     node.Pos() + token.Pos(len("struct")),
+			Message: message,
+		})
 		return
 	}
 
