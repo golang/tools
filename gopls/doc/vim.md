@@ -145,37 +145,54 @@ git clone 'https://github.com/neovim/nvim-lspconfig.git' .
 You can add custom configuration using Lua.  Here is an example of enabling the
 `unusedparams` check as well as `staticcheck`:
 
-```vim
-lua <<EOF
-  lspconfig = require "lspconfig"
-  util = require "lspconfig/util"
+```lua
+lspconfig = require "lspconfig"
+util = require "lspconfig/util"
 
-  lspconfig.gopls.setup {
-    cmd = {"gopls", "serve"},
-    filetypes = {"go", "gomod"},
-    root_dir = util.root_pattern("go.work", "go.mod", ".git"),
-    settings = {
-      gopls = {
-        analyses = {
-          unusedparams = true,
-        },
-        staticcheck = true,
+lspconfig.gopls.setup {
+  cmd = {"gopls", "serve"},
+  filetypes = {"go", "gomod"},
+  root_dir = util.root_pattern("go.work", "go.mod", ".git"),
+  settings = {
+    gopls = {
+      analyses = {
+        unusedparams = true,
       },
+      staticcheck = true,
     },
-  }
-EOF
+  },
+}
 ```
 
-### <a href="#neovim-imports" id="neovim-imports">Imports</a>
+### <a href="#neovim-imports" id="neovim-imports">Imports and Formatting</a>
 
 Use the following configuration to have your imports organized on save using
-the logic of `goimports`. Note: this requires Neovim v0.7.0 or later.
+the logic of `goimports` and your code formatted.
 
 ```lua
+-- If wait_ms is nil, vim.lsp.buf_request_sync defaults to 1000ms.
+local goimports = function(wait_ms)
+  local params = vim.lsp.util.make_range_params()
+  params.context = {only = {"source.organizeImports"}}
+  local result = vim.lsp.buf_request_sync(0, "textDocument/codeAction", params, wait_ms)
+  for cid, res in pairs(result or {}) do
+    for _, r in pairs(res.result or {}) do
+      if r.edit then
+        local enc = (vim.lsp.get_client_by_id(cid) or {}).offset_encoding or "utf-16"
+        vim.lsp.util.apply_workspace_edit(r.edit, enc)
+      end
+    end
+  end
+end
+
 vim.api.nvim_create_autocmd('BufWritePre', {
   pattern = '*.go',
   callback = function()
-    vim.lsp.buf.code_action({ context = { only = { 'source.organizeImports' } }, apply = true })
+    -- goimports defaults to a 1000ms timeout. Depending on your machine and
+    -- codebase, you may want longer. Add an argument (e.g., 2000 or more) if
+    -- you find that you have to write the file twice for changes to be saved.
+    goimports()
+    vim.lsp.buf.format({async = false})
   end
 })
 ```
