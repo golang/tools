@@ -144,7 +144,7 @@ func (check *checker) nonGoFile(pos token.Pos, fullText string) {
 				inStar = false
 				continue
 			}
-			line, inStar = stringsCutPrefix(line, "/*")
+			line, inStar = strings.CutPrefix(line, "/*")
 			if !inStar {
 				break
 			}
@@ -206,12 +206,4 @@ func stringsCut(s, sep string) (before, after string, found bool) {
 		return s[:i], s[i+len(sep):], true
 	}
 	return s, "", false
-}
-
-// Go 1.20 strings.CutPrefix.
-func stringsCutPrefix(s, prefix string) (after string, found bool) {
-	if !strings.HasPrefix(s, prefix) {
-		return s, false
-	}
-	return s[len(prefix):], true
 }
