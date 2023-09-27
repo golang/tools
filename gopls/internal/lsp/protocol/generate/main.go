@@ -135,6 +135,7 @@ func writeserver() {
 	fmt.Fprintln(out, fileHdr)
 	out.WriteString(
 		`import (
+	"bytes"
 	"context"
 	"encoding/json"
 

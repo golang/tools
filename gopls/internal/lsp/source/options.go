@@ -6,11 +6,13 @@ package source
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -155,6 +157,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						Matcher:                        Fuzzy,
 						CompletionBudget:               100 * time.Millisecond,
 						ExperimentalPostfixCompletions: true,
+						MaxUnimportedPackageNames:      5,
 					},
 					Codelenses: map[string]bool{
 						string(command.Generate):          true,
@@ -388,6 +391,9 @@ type CompletionOptions struct {
 	// ExperimentalPostfixCompletions enables artificial method snippets
 	// such as "someSlice.sort!".
 	ExperimentalPostfixCompletions bool `status:"experimental"`
+
+	// MaxUnimportedPackageNames is the maximum number of completion candidates for unimported packages.
+	MaxUnimportedPackageNames int
 }
 
 type DocumentationOptions struct {
@@ -1111,6 +1117,9 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 	case "linkTarget":
 		result.setString(&o.LinkTarget)
 
+	case "maxUnimportedPackageNames":
+		result.setInt(&o.MaxUnimportedPackageNames)
+
 	case "linksInHover":
 		result.setBool(&o.LinksInHover)
 
@@ -1467,6 +1476,22 @@ func (r *OptionResult) asStringSlice() ([]string, bool) {
 	return list, true
 }
 
+func (r *OptionResult) asInt() (int, bool) {
+	s, ok := r.Value.(json.Number)
+	if !ok {
+		r.parseErrorf("invalid type %T, expect int", r.Value)
+		return 0, false
+	}
+
+	i, err := strconv.Atoi(s.String())
+	if err != nil {
+		r.parseErrorf("invalid value %s, expect int", s)
+		return 0, false
+	}
+
+	return i, true
+}
+
 func (r *OptionResult) asOneOf(options ...string) (string, bool) {
 	s, ok := r.asString()
 	if !ok {
@@ -1498,6 +1523,12 @@ func (r *OptionResult) setString(s *string) {
 func (r *OptionResult) setStringSlice(s *[]string) {
 	if v, ok := r.asStringSlice(); ok {
 		*s = v
+	}
+}
+
+func (r *OptionResult) setInt(i *int) {
+	if v, ok := r.asInt(); ok {
+		*i = v
 	}
 }
 
