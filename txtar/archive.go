@@ -42,7 +42,6 @@ import (
 type Archive struct {
 	Comment []byte
 	Files   []File
-	UseCRLF bool
 }
 
 // A File is a single file in an archive.
@@ -55,19 +54,39 @@ type File struct {
 // It is assumed that the Archive data structure is well-formed:
 // a.Comment and all a.File[i].Data contain no file marker lines,
 // and all a.File[i].Name is non-empty. Format uses line separators
-// based on a.UseCRLF field.
+// based on the first line separator encountered in the comment section.
 func Format(a *Archive) []byte {
-	lineSeparator := lf
-	if a.UseCRLF {
-		lineSeparator = crlf
+	firstSep, ok := lineEnd(a.Comment)
+	if !ok {
+		for _, f := range a.Files {
+			firstSep, ok = lineEnd(f.Data)
+			if ok {
+				break
+			}
+		}
 	}
+
 	var buf bytes.Buffer
-	buf.Write(fixNL(a.Comment, lineSeparator))
+	buf.Write(fixNL(a.Comment, firstSep))
 	for _, f := range a.Files {
-		fmt.Fprintf(&buf, "-- %s --%s", f.Name, lineSeparator)
-		buf.Write(fixNL(f.Data, lineSeparator))
+		fmt.Fprintf(&buf, "-- %s --%s", f.Name, firstSep)
+		buf.Write(fixNL(f.Data, firstSep))
 	}
 	return buf.Bytes()
+}
+
+// lineEnd returns the line separator that was used at the end
+// of the passed byte slice and a bool flag that says if the line separator
+// was really found or it is a default value (lf).
+func lineEnd(b []byte) ([]byte, bool) {
+	switch {
+	case bytes.HasSuffix(b, crlf):
+		return crlf, true
+	case bytes.HasSuffix(b, lf):
+		return lf, true
+	default:
+		return lf, false
+	}
 }
 
 // ParseFile parses the named file as an archive.

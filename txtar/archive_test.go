@@ -135,7 +135,6 @@ func TestFormat(t *testing.T) {
 					{"empty", []byte{}},
 					{"noNL", []byte("hello world")},
 				},
-				UseCRLF: false,
 			},
 			wanted: `comment1
 comment2
@@ -160,7 +159,6 @@ hello world
 					{"empty", []byte{}},
 					{"noNL", []byte("hello world")},
 				},
-				UseCRLF: true,
 			},
 			wanted: "comment1\r\n" +
 				"comment2\r\n" +
@@ -186,7 +184,6 @@ hello world
 					{"noNL", []byte("hello world\r\n")},
 					{"empty filename line", []byte("some content\r\n-- --\n")},
 				},
-				UseCRLF: true,
 			},
 			wanted: "comment1\n" +
 				"comment2\r\n" +
