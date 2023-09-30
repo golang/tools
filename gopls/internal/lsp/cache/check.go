@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"go/types"
 	"regexp"
@@ -16,17 +17,17 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"golang.org/x/mod/module"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
-	"golang.org/x/tools/gopls/internal/lsp/source/xrefs"
+	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gcimporter"
@@ -41,20 +42,25 @@ const (
 	preserveImportGraph = true // hold on to the import graph for open packages
 )
 
+type unit = struct{}
+
 // A typeCheckBatch holds data for a logical type-checking operation, which may
 // type-check many unrelated packages.
 //
 // It shares state such as parsed files and imports, to optimize type-checking
 // for packages with overlapping dependency graphs.
 type typeCheckBatch struct {
+	activePackageCache interface {
+		getActivePackage(id PackageID) *Package
+		setActivePackage(id PackageID, pkg *Package)
+	}
 	syntaxIndex map[PackageID]int // requested ID -> index in ids
 	pre         preTypeCheck
 	post        postTypeCheck
-
-	s        *snapshot
-	meta     *metadataGraph // captured once at the start of type checking
-	fset     *token.FileSet // describes all parsed or imported files
-	cpulimit chan struct{}  // concurrency limiter for CPU-bound operations
+	handles     map[PackageID]*packageHandle
+	parseCache  *parseCache
+	fset        *token.FileSet // describes all parsed or imported files
+	cpulimit    chan unit      // concurrency limiter for CPU-bound operations
 
 	mu             sync.Mutex
 	syntaxPackages map[PackageID]*futurePackage // results of processing a requested package; may hold (nil, nil)
@@ -67,7 +73,7 @@ type typeCheckBatch struct {
 // The goroutine that creates the futurePackage is responsible for evaluating
 // its value, and closing the done channel.
 type futurePackage struct {
-	done chan struct{}
+	done chan unit
 	v    pkgOrErr
 }
 
@@ -93,15 +99,11 @@ func (s *snapshot) TypeCheck(ctx context.Context, ids ...PackageID) ([]source.Pa
 		indexes []int       // original index of requested ids
 	)
 
-	// Check for existing active packages.
+	// Check for existing active packages, as any package will do.
 	//
-	// Since gopls can't depend on package identity, any instance of the
-	// requested package must be ok to return.
-	//
-	// This is an optimization to avoid redundant type-checking: following
-	// changes to an open package many LSP clients send several successive
-	// requests for package information for the modified package (semantic
-	// tokens, code lens, inlay hints, etc.)
+	// This is also done inside forEachPackage, but doing it here avoids
+	// unnecessary set up for type checking (e.g. assembling the package handle
+	// graph).
 	for i, id := range ids {
 		if pkg := s.getActivePackage(id); pkg != nil {
 			pkgs[i] = pkg
@@ -112,11 +114,6 @@ func (s *snapshot) TypeCheck(ctx context.Context, ids ...PackageID) ([]source.Pa
 	}
 
 	post := func(i int, pkg *Package) {
-		if alt := s.memoizeActivePackage(pkg.m.ID, pkg); alt != nil && alt != pkg {
-			// pkg is an open package, but we've lost a race and an existing package
-			// has already been memoized.
-			pkg = alt
-		}
 		pkgs[indexes[i]] = pkg
 	}
 	return pkgs, s.forEachPackage(ctx, needIDs, nil, post)
@@ -152,7 +149,7 @@ func (s *snapshot) getImportGraph(ctx context.Context) *importGraph {
 	//     for the work to be done.
 	done := s.importGraphDone
 	if done == nil {
-		done = make(chan struct{})
+		done = make(chan unit)
 		s.importGraphDone = done
 		release := s.Acquire() // must acquire to use the snapshot asynchronously
 		go func() {
@@ -191,40 +188,30 @@ func (s *snapshot) resolveImportGraph() (*importGraph, error) {
 	ctx, done := event.Start(event.Detach(ctx), "cache.resolveImportGraph")
 	defer done()
 
-	if err := s.awaitLoaded(ctx); err != nil {
-		return nil, err
-	}
-
 	s.mu.Lock()
-	meta := s.meta
 	lastImportGraph := s.importGraph
 	s.mu.Unlock()
 
 	openPackages := make(map[PackageID]bool)
 	for _, fh := range s.overlays() {
-		for _, id := range meta.ids[fh.URI()] {
-			openPackages[id] = true
+		meta, err := s.MetadataForFile(ctx, fh.URI())
+		if err != nil {
+			return nil, err
+		}
+		source.RemoveIntermediateTestVariants(&meta)
+		for _, m := range meta {
+			openPackages[m.ID] = true
 		}
 	}
 
-	// TODO(rfindley): when building package handles becomes more expensive (due
-	// to precise pruning support), we may want to parallelize this loop.
-	deps := make(map[PackageID]source.Hash)
+	var openPackageIDs []source.PackageID
 	for id := range openPackages {
-		m := meta.metadata[id]
-		for _, id := range m.DepsByPkgPath {
-			if _, ok := deps[id]; !ok {
-				ph, err := s.buildPackageHandle(ctx, id)
-				if err != nil {
-					if ctx.Err() != nil {
-						return nil, err
-					} else {
-						continue
-					}
-				}
-				deps[id] = ph.key
-			}
-		}
+		openPackageIDs = append(openPackageIDs, id)
+	}
+
+	handles, err := s.getPackageHandles(ctx, openPackageIDs)
+	if err != nil {
+		return nil, err
 	}
 
 	// Subtlety: we erase the upward cone of open packages from the shared import
@@ -243,33 +230,30 @@ func (s *snapshot) resolveImportGraph() (*importGraph, error) {
 	//
 	// TODO(rfindley): this logic could use a unit test.
 	volatileDeps := make(map[PackageID]bool)
-	var isVolatile func(PackageID) bool
-	isVolatile = func(id PackageID) (volatile bool) {
-		if v, ok := volatileDeps[id]; ok {
+	var isVolatile func(*packageHandle) bool
+	isVolatile = func(ph *packageHandle) (volatile bool) {
+		if v, ok := volatileDeps[ph.m.ID]; ok {
 			return v
 		}
 		defer func() {
-			volatileDeps[id] = volatile
+			volatileDeps[ph.m.ID] = volatile
 		}()
-		if openPackages[id] {
+		if openPackages[ph.m.ID] {
 			return true
 		}
-		m := meta.metadata[id]
-		if m != nil {
-			for _, dep := range m.DepsByPkgPath {
-				if isVolatile(dep) {
-					return true
-				}
+		for _, dep := range ph.m.DepsByPkgPath {
+			if isVolatile(handles[dep]) {
+				return true
 			}
 		}
 		return false
 	}
-	for dep := range deps {
+	for _, dep := range handles {
 		isVolatile(dep)
 	}
 	for id, volatile := range volatileDeps {
 		if volatile {
-			delete(deps, id)
+			delete(handles, id)
 		}
 	}
 
@@ -277,13 +261,15 @@ func (s *snapshot) resolveImportGraph() (*importGraph, error) {
 	// have changed. Doing better would involve analyzing dependencies to find
 	// subgraphs that are still valid. Not worth it, especially when in the
 	// common case nothing has changed.
-	unchanged := lastImportGraph != nil && len(deps) == len(lastImportGraph.deps)
+	unchanged := lastImportGraph != nil && len(handles) == len(lastImportGraph.depKeys)
 	var ids []PackageID
-	for id, key := range deps {
+	depKeys := make(map[PackageID]source.Hash)
+	for id, ph := range handles {
 		ids = append(ids, id)
+		depKeys[id] = ph.key
 		if unchanged {
-			prevKey, ok := lastImportGraph.deps[id]
-			unchanged = ok && prevKey == key
+			prevKey, ok := lastImportGraph.depKeys[id]
+			unchanged = ok && prevKey == ph.key
 		}
 	}
 
@@ -291,14 +277,14 @@ func (s *snapshot) resolveImportGraph() (*importGraph, error) {
 		return lastImportGraph, nil
 	}
 
-	b, err := s.forEachPackageInternal(ctx, nil, ids, nil, nil, nil)
+	b, err := s.forEachPackageInternal(ctx, nil, ids, nil, nil, nil, handles)
 	if err != nil {
 		return nil, err
 	}
 
 	next := &importGraph{
 		fset:    b.fset,
-		deps:    deps,
+		depKeys: depKeys,
 		imports: make(map[PackageID]pkgOrErr),
 	}
 	for id, fut := range b.importPackages {
@@ -314,7 +300,7 @@ func (s *snapshot) resolveImportGraph() (*importGraph, error) {
 // by subsequent snapshots.
 type importGraph struct {
 	fset    *token.FileSet            // fileset used for type checking imports
-	deps    map[PackageID]source.Hash // hash of direct dependencies for this graph
+	depKeys map[PackageID]source.Hash // hash of direct dependencies for this graph
 	imports map[PackageID]pkgOrErr    // results of type checking
 }
 
@@ -328,7 +314,7 @@ type (
 // forEachPackage does a pre- and post- order traversal of the packages
 // specified by ids using the provided pre and post functions.
 //
-// The pre func is is optional. If set, pre is evaluated after the package
+// The pre func is optional. If set, pre is evaluated after the package
 // handle has been constructed, but before type-checking. If pre returns false,
 // type-checking is skipped for this package handle.
 //
@@ -344,8 +330,13 @@ func (s *snapshot) forEachPackage(ctx context.Context, ids []PackageID, pre preT
 		return nil // short cut: many call sites do not handle empty ids
 	}
 
+	handles, err := s.getPackageHandles(ctx, ids)
+	if err != nil {
+		return err
+	}
+
 	impGraph := s.getImportGraph(ctx)
-	_, err := s.forEachPackageInternal(ctx, impGraph, nil, ids, pre, post)
+	_, err = s.forEachPackageInternal(ctx, impGraph, nil, ids, pre, post, handles)
 	return err
 }
 
@@ -353,23 +344,25 @@ func (s *snapshot) forEachPackage(ctx context.Context, ids []PackageID, pre preT
 // type-check a graph of packages.
 //
 // If a non-nil importGraph is provided, imports in this graph will be reused.
-func (s *snapshot) forEachPackageInternal(ctx context.Context, importGraph *importGraph, importIDs, syntaxIDs []PackageID, pre preTypeCheck, post postTypeCheck) (*typeCheckBatch, error) {
+func (s *snapshot) forEachPackageInternal(ctx context.Context, importGraph *importGraph, importIDs, syntaxIDs []PackageID, pre preTypeCheck, post postTypeCheck, handles map[PackageID]*packageHandle) (*typeCheckBatch, error) {
 	b := &typeCheckBatch{
-		s:              s,
-		pre:            pre,
-		post:           post,
-		fset:           fileSetWithBase(reservedForParsing),
-		syntaxIndex:    make(map[PackageID]int),
-		cpulimit:       make(chan struct{}, runtime.GOMAXPROCS(0)),
-		syntaxPackages: make(map[PackageID]*futurePackage),
-		importPackages: make(map[PackageID]*futurePackage),
+		activePackageCache: s,
+		pre:                pre,
+		post:               post,
+		handles:            handles,
+		parseCache:         s.view.parseCache,
+		fset:               fileSetWithBase(reservedForParsing),
+		syntaxIndex:        make(map[PackageID]int),
+		cpulimit:           make(chan unit, runtime.GOMAXPROCS(0)),
+		syntaxPackages:     make(map[PackageID]*futurePackage),
+		importPackages:     make(map[PackageID]*futurePackage),
 	}
 
 	if importGraph != nil {
 		// Clone the file set every time, to ensure we do not leak files.
 		b.fset = tokeninternal.CloneFileSet(importGraph.fset)
 		// Pre-populate future cache with 'done' futures.
-		done := make(chan struct{})
+		done := make(chan unit)
 		close(done)
 		for id, res := range importGraph.imports {
 			b.importPackages[id] = &futurePackage{done, res}
@@ -377,12 +370,6 @@ func (s *snapshot) forEachPackageInternal(ctx context.Context, importGraph *impo
 	} else {
 		b.fset = fileSetWithBase(reservedForParsing)
 	}
-
-	// Capture metadata once to avoid locking the snapshot when accessing
-	// metadata.
-	s.mu.Lock()
-	b.meta = s.meta
-	s.mu.Unlock()
 
 	for i, id := range syntaxIDs {
 		b.syntaxIndex[id] = i
@@ -433,7 +420,7 @@ func (b *typeCheckBatch) getImportPackage(ctx context.Context, id PackageID) (pk
 		}
 	}
 
-	f = &futurePackage{done: make(chan struct{})}
+	f = &futurePackage{done: make(chan unit)}
 	b.importPackages[id] = f
 	b.mu.Unlock()
 
@@ -458,9 +445,12 @@ func (b *typeCheckBatch) getImportPackage(ctx context.Context, id PackageID) (pk
 		return types.Unsafe, nil
 	}
 
-	ph, err := b.s.buildPackageHandle(ctx, id)
-	if err != nil {
-		return nil, err
+	ph := b.handles[id]
+
+	// Do a second check for "unsafe" defensively, due to golang/go#60890.
+	if ph.m.PkgPath == "unsafe" {
+		bug.Reportf("encountered \"unsafe\" as %s (golang/go#60890)", id)
+		return types.Unsafe, nil
 	}
 
 	data, err := filecache.Get(exportDataKind, ph.key)
@@ -489,7 +479,7 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 		return f.v.pkg, f.v.err
 	}
 
-	f = &futurePackage{done: make(chan struct{})}
+	f = &futurePackage{done: make(chan unit)}
 	b.syntaxPackages[id] = f
 	b.mu.Unlock()
 	defer func() {
@@ -497,13 +487,23 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 		close(f.done)
 	}()
 
-	ph, err := b.s.buildPackageHandle(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
+	ph := b.handles[id]
 	if b.pre != nil && !b.pre(i, ph) {
 		return nil, nil // skip: export data only
+	}
+
+	// Check for existing active packages.
+	//
+	// Since gopls can't depend on package identity, any instance of the
+	// requested package must be ok to return.
+	//
+	// This is an optimization to avoid redundant type-checking: following
+	// changes to an open package many LSP clients send several successive
+	// requests for package information for the modified package (semantic
+	// tokens, code lens, inlay hints, etc.)
+	if pkg := b.activePackageCache.getActivePackage(id); pkg != nil {
+		b.post(i, pkg)
+		return nil, nil // skip: not checked in this batch
 	}
 
 	if err := b.awaitPredecessors(ctx, ph.m); err != nil {
@@ -522,7 +522,7 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case b.cpulimit <- struct{}{}:
+	case b.cpulimit <- unit{}:
 		defer func() {
 			<-b.cpulimit // release CPU token
 		}()
@@ -533,7 +533,9 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 	if err != nil {
 		return nil, err
 	}
+	b.activePackageCache.setActivePackage(id, syntaxPkg)
 	b.post(i, syntaxPkg)
+
 	return syntaxPkg.pkg.types, nil
 }
 
@@ -545,29 +547,30 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, m *source.Metadata, 
 
 	impMap := b.importMap(m.ID)
 
-	var firstErr error // TODO(rfindley): unused: revisit or remove.
 	thisPackage := types.NewPackage(string(m.PkgPath), string(m.Name))
-	getPackage := func(path, name string) *types.Package {
-		if path == string(m.PkgPath) {
-			return thisPackage
-		}
+	getPackages := func(items []gcimporter.GetPackagesItem) error {
+		for i, item := range items {
+			var id PackageID
+			var pkg *types.Package
+			if item.Path == string(m.PkgPath) {
+				id = m.ID
+				pkg = thisPackage
+			} else {
+				id = impMap[item.Path]
+				var err error
+				pkg, err = b.getImportPackage(ctx, id)
+				if err != nil {
+					return err
+				}
+			}
+			items[i].Pkg = pkg
 
-		id := impMap[path]
-		imp, err := b.getImportPackage(ctx, id)
-		if err == nil {
-			return imp
+			// debugging issue #60904
+			if pkg.Name() != item.Name {
+				return bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904)",
+					pkg.Name(), item.Name, id, item.Path)
+			}
 		}
-		// inv: err != nil
-		if firstErr == nil {
-			firstErr = err
-		}
-
-		// Context cancellation, or a very bad error such as a file permission
-		// error.
-		//
-		// Returning nil here will cause the import to fail (and panic if
-		// gcimporter.debug is set), but that is preferable to the confusing errors
-		// produced when shallow import encounters an empty package.
 		return nil
 	}
 
@@ -577,9 +580,9 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, m *source.Metadata, 
 		return nil, ctx.Err()
 	}
 
-	// TODO(rfindley): collect "deep" hashes here using the provided
+	// TODO(rfindley): collect "deep" hashes here using the getPackages
 	// callback, for precise pruning.
-	imported, err := gcimporter.IImportShallow(b.fset, getPackage, data, string(m.PkgPath), func(*types.Package, string) {})
+	imported, err := gcimporter.IImportShallow(b.fset, getPackages, data, string(m.PkgPath), bug.Reportf)
 	if err != nil {
 		return nil, fmt.Errorf("import failed for %q: %v", m.ID, err)
 	}
@@ -595,13 +598,36 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 	onError := func(e error) {
 		// Ignore errors for exporting.
 	}
-	cfg := b.typesConfig(ctx, ph.inputs, onError)
+	cfg := b.typesConfig(ctx, ph.localInputs, onError)
 	cfg.IgnoreFuncBodies = true
-	pgfs, err := b.s.parseCache.parseFiles(ctx, b.fset, source.ParseFull, ph.inputs.compiledGoFiles...)
-	if err != nil {
-		return nil, err
+
+	// Parse the compiled go files, bypassing the parse cache as packages checked
+	// for import are unlikely to get cache hits. Additionally, we can optimize
+	// parsing slightly by not passing parser.ParseComments.
+	pgfs := make([]*source.ParsedGoFile, len(ph.localInputs.compiledGoFiles))
+	{
+		var group errgroup.Group
+		// Set an arbitrary concurrency limit; we want some parallelism but don't
+		// need GOMAXPROCS, as there is already a lot of concurrency among calls to
+		// checkPackageForImport.
+		//
+		// TODO(rfindley): is there a better way to limit parallelism here? We could
+		// have a global limit on the type-check batch, but would have to be very
+		// careful to avoid starvation.
+		group.SetLimit(4)
+		for i, fh := range ph.localInputs.compiledGoFiles {
+			i, fh := i, fh
+			group.Go(func() error {
+				pgf, err := parseGoImpl(ctx, b.fset, fh, parser.SkipObjectResolution, false)
+				pgfs[i] = pgf
+				return err
+			})
+		}
+		if err := group.Wait(); err != nil {
+			return nil, err // cancelled, or catastrophic error (e.g. missing file)
+		}
 	}
-	pkg := types.NewPackage(string(ph.inputs.pkgPath), string(ph.inputs.name))
+	pkg := types.NewPackage(string(ph.localInputs.pkgPath), string(ph.localInputs.name))
 	check := types.NewChecker(cfg, b.fset, pkg, nil)
 
 	files := make([]*ast.File, len(pgfs))
@@ -625,7 +651,7 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 
 	// Asynchronously record export data.
 	go func() {
-		exportData, err := gcimporter.IExportShallow(b.fset, pkg)
+		exportData, err := gcimporter.IExportShallow(b.fset, pkg, bug.Reportf)
 		if err != nil {
 			bug.Reportf("exporting package %v: %v", ph.m.ID, err)
 			return
@@ -645,24 +671,28 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 	// TODO(rfindley): refactor to inline typeCheckImpl here. There is no need
 	// for so many layers to build up the package
 	// (checkPackage->typeCheckImpl->doTypeCheck).
-	pkg, err := typeCheckImpl(ctx, b, ph.inputs)
+	pkg, err := typeCheckImpl(ctx, b, ph.localInputs)
 
 	if err == nil {
 		// Write package data to disk asynchronously.
 		go func() {
 			toCache := map[string][]byte{
-				xrefsKind:       pkg.xrefs,
-				methodSetsKind:  pkg.methodsets.Encode(),
+				xrefsKind:       pkg.xrefs(),
+				methodSetsKind:  pkg.methodsets().Encode(),
 				diagnosticsKind: encodeDiagnostics(pkg.diagnostics),
 			}
 
-			if ph.m.ID != "unsafe" { // unsafe cannot be exported
-				exportData, err := gcimporter.IExportShallow(pkg.fset, pkg.types)
+			if ph.m.PkgPath != "unsafe" { // unsafe cannot be exported
+				exportData, err := gcimporter.IExportShallow(pkg.fset, pkg.types, bug.Reportf)
 				if err != nil {
 					bug.Reportf("exporting package %v: %v", ph.m.ID, err)
 				} else {
 					toCache[exportDataKind] = exportData
 				}
+			} else if ph.m.ID != "unsafe" {
+				// golang/go#60890: we should only ever see one variant of the "unsafe"
+				// package.
+				bug.Reportf("encountered \"unsafe\" as %s (golang/go#60890)", ph.m.ID)
 			}
 
 			for kind, data := range toCache {
@@ -703,7 +733,7 @@ func (b *typeCheckBatch) importMap(id PackageID) map[string]source.PackageID {
 	var populateDeps func(m *source.Metadata)
 	populateDeps = func(parent *source.Metadata) {
 		for _, id := range parent.DepsByPkgPath {
-			m := b.meta.metadata[id]
+			m := b.handles[id].m
 			if _, ok := impMap[string(m.PkgPath)]; ok {
 				continue
 			}
@@ -711,89 +741,548 @@ func (b *typeCheckBatch) importMap(id PackageID) map[string]source.PackageID {
 			populateDeps(m)
 		}
 	}
-	m := b.meta.metadata[id]
+	m := b.handles[id].m
 	populateDeps(m)
 	return impMap
 }
 
-// A packageHandle holds package information, some of which may not be fully
-// evaluated.
+// A packageHandle holds inputs required to compute a type-checked package,
+// including inputs to type checking itself, and a key for looking up
+// precomputed data.
 //
-// The only methods on packageHandle that are safe to call before calling await
-// are Metadata and await itself.
+// packageHandles may be invalid following an invalidation via snapshot.clone,
+// but the handles returned by getPackageHandles will always be valid.
+//
+// packageHandles are critical for implementing "precise pruning" in gopls:
+// packageHandle.key is a hash of a precise set of inputs, such as package
+// files and "reachable" syntax, that may affect type checking.
+//
+// packageHandles also keep track of state that allows gopls to compute, and
+// then quickly recompute, these keys. This state is split into two categories:
+//   - local state, which depends only on the package's local files and metadata
+//   - other state, which includes data derived from dependencies.
+//
+// Dividing the data in this way allows gopls to minimize invalidation when a
+// package is modified. For example, any change to a package file fully
+// invalidates the package handle. On the other hand, if that change was not
+// metadata-affecting it may be the case that packages indirectly depending on
+// the modified package are unaffected by the change. For that reason, we have
+// two types of invalidation, corresponding to the two types of data above:
+//   - deletion of the handle, which occurs when the package itself changes
+//   - clearing of the validated field, which marks the package as possibly
+//     invalid.
+//
+// With the second type of invalidation, packageHandles are re-evaluated from the
+// bottom up. If this process encounters a packageHandle whose deps have not
+// changed (as detected by the depkeys field), then the packageHandle in
+// question must also not have changed, and we need not re-evaluate its key.
 type packageHandle struct {
 	m *source.Metadata
 
-	inputs typeCheckInputs
+	// Local data:
 
+	// localInputs holds all local type-checking localInputs, excluding
+	// dependencies.
+	localInputs typeCheckInputs
+	// localKey is a hash of localInputs.
+	localKey source.Hash
+	// refs is the result of syntactic dependency analysis produced by the
+	// typerefs package.
+	refs map[string][]typerefs.Symbol
+
+	// Data derived from dependencies:
+
+	// validated indicates whether the current packageHandle is known to have a
+	// valid key. Invalidated package handles are stored for packages whose
+	// type information may have changed.
+	validated bool
+	// depKeys records the key of each dependency that was used to calculate the
+	// key above. If the handle becomes invalid, we must re-check that each still
+	// matches.
+	depKeys map[PackageID]source.Hash
 	// key is the hashed key for the package.
 	//
 	// It includes the all bits of the transitive closure of
-	// dependencies's sources. This is more than type checking
-	// really depends on: export data of direct deps should be
-	// enough. (The key for analysis actions could similarly
-	// hash only Facts of direct dependencies.)
+	// dependencies's sources.
 	key source.Hash
 }
 
-// buildPackageHandle returns a handle for the future results of
-// type-checking the package identified by id in the given mode.
-// It assumes that the given ID already has metadata available, so it does not
-// attempt to reload missing or invalid metadata. The caller must reload
-// metadata if needed.
-func (s *snapshot) buildPackageHandle(ctx context.Context, id PackageID) (*packageHandle, error) {
-	s.mu.Lock()
-	entry, hit := s.packages.Get(id)
-	m := s.meta.metadata[id]
+// clone returns a copy of the receiver with the validated bit set to the
+// provided value.
+func (ph *packageHandle) clone(validated bool) *packageHandle {
+	copy := *ph
+	copy.validated = validated
+	return &copy
+}
+
+// getPackageHandles gets package handles for all given ids and their
+// dependencies, recursively.
+func (s *snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[PackageID]*packageHandle, error) {
+	// perform a two-pass traversal.
+	//
+	// On the first pass, build up a bidirectional graph of handle nodes, and collect leaves.
+	// Then build package handles from bottom up.
+
+	s.mu.Lock() // guard s.meta and s.packages below
+	b := &packageHandleBuilder{
+		s:              s,
+		transitiveRefs: make(map[typerefs.IndexID]*partialRefs),
+		nodes:          make(map[typerefs.IndexID]*handleNode),
+	}
+
+	var leaves []*handleNode
+	var makeNode func(*handleNode, PackageID) *handleNode
+	makeNode = func(from *handleNode, id PackageID) *handleNode {
+		idxID := b.s.pkgIndex.IndexID(id)
+		n, ok := b.nodes[idxID]
+		if !ok {
+			m := s.meta.metadata[id]
+			if m == nil {
+				panic(fmt.Sprintf("nil metadata for %q", id))
+			}
+			n = &handleNode{
+				m:               m,
+				idxID:           idxID,
+				unfinishedSuccs: int32(len(m.DepsByPkgPath)),
+			}
+			if entry, hit := b.s.packages.Get(m.ID); hit {
+				n.ph = entry
+			}
+			if n.unfinishedSuccs == 0 {
+				leaves = append(leaves, n)
+			} else {
+				n.succs = make(map[source.PackageID]*handleNode, n.unfinishedSuccs)
+			}
+			b.nodes[idxID] = n
+			for _, depID := range m.DepsByPkgPath {
+				n.succs[depID] = makeNode(n, depID)
+			}
+		}
+		// Add edge from predecessor.
+		if from != nil {
+			n.preds = append(n.preds, from)
+		}
+		return n
+	}
+	for _, id := range ids {
+		makeNode(nil, id)
+	}
 	s.mu.Unlock()
 
-	if m == nil {
-		return nil, fmt.Errorf("no metadata for %s", id)
+	g, ctx := errgroup.WithContext(ctx)
+
+	// files are preloaded, so building package handles is CPU-bound.
+	//
+	// Note that we can't use g.SetLimit, as that could result in starvation:
+	// g.Go blocks until a slot is available, and so all existing goroutines
+	// could be blocked trying to enqueue a predecessor.
+	limiter := make(chan unit, runtime.GOMAXPROCS(0))
+
+	var enqueue func(*handleNode)
+	enqueue = func(n *handleNode) {
+		g.Go(func() error {
+			limiter <- unit{}
+			defer func() { <-limiter }()
+
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+
+			b.buildPackageHandle(ctx, n)
+
+			for _, pred := range n.preds {
+				if atomic.AddInt32(&pred.unfinishedSuccs, -1) == 0 {
+					enqueue(pred)
+				}
+			}
+
+			return n.err
+		})
+	}
+	for _, leaf := range leaves {
+		enqueue(leaf)
 	}
 
-	if hit {
-		return entry.(*packageHandle), nil
-	}
-
-	inputs, err := s.typeCheckInputs(ctx, m)
-	if err != nil {
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
-	// All the file reading has now been done.
-	// Create a handle for the result of type checking.
-	phKey := computePackageKey(s, inputs)
-	ph := &packageHandle{
-		m:      m,
-		inputs: inputs,
-		key:    phKey,
+
+	// Copy handles into the result map.
+	handles := make(map[PackageID]*packageHandle, len(b.nodes))
+	for _, v := range b.nodes {
+		assert(v.ph != nil, "nil handle")
+		handles[v.m.ID] = v.ph
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	return handles, nil
+}
+
+// A packageHandleBuilder computes a batch of packageHandles concurrently,
+// sharing computed transitive reachability sets used to compute package keys.
+type packageHandleBuilder struct {
+	meta *metadataGraph
+	s    *snapshot
+
+	// nodes are assembled synchronously.
+	nodes map[typerefs.IndexID]*handleNode
+
+	// transitiveRefs is incrementally evaluated as package handles are built.
+	transitiveRefsMu sync.Mutex
+	transitiveRefs   map[typerefs.IndexID]*partialRefs // see getTransitiveRefs
+}
+
+// A handleNode represents a to-be-computed packageHandle within a graph of
+// predecessors and successors.
+//
+// It is used to implement a bottom-up construction of packageHandles.
+type handleNode struct {
+	m               *source.Metadata
+	idxID           typerefs.IndexID
+	ph              *packageHandle
+	err             error
+	preds           []*handleNode
+	succs           map[PackageID]*handleNode
+	unfinishedSuccs int32
+}
+
+// partialRefs maps names declared by a given package to their set of
+// transitive references.
+//
+// If complete is set, refs is known to be complete for the package in
+// question. Otherwise, it may only map a subset of all names declared by the
+// package.
+type partialRefs struct {
+	refs     map[string]*typerefs.PackageSet
+	complete bool
+}
+
+// getTransitiveRefs gets or computes the set of transitively reachable
+// packages for each exported name in the package specified by id.
+//
+// The operation may fail if building a predecessor failed. If and only if this
+// occurs, the result will be nil.
+func (b *packageHandleBuilder) getTransitiveRefs(pkgID PackageID) map[string]*typerefs.PackageSet {
+	b.transitiveRefsMu.Lock()
+	defer b.transitiveRefsMu.Unlock()
+
+	idxID := b.s.pkgIndex.IndexID(pkgID)
+	trefs, ok := b.transitiveRefs[idxID]
+	if !ok {
+		trefs = &partialRefs{
+			refs: make(map[string]*typerefs.PackageSet),
+		}
+		b.transitiveRefs[idxID] = trefs
+	}
+
+	if !trefs.complete {
+		trefs.complete = true
+		ph := b.nodes[idxID].ph
+		for name := range ph.refs {
+			if ('A' <= name[0] && name[0] <= 'Z') || token.IsExported(name) {
+				if _, ok := trefs.refs[name]; !ok {
+					pkgs := b.s.pkgIndex.NewSet()
+					for _, sym := range ph.refs[name] {
+						pkgs.Add(sym.Package)
+						otherSet := b.getOneTransitiveRefLocked(sym)
+						pkgs.Union(otherSet)
+					}
+					trefs.refs[name] = pkgs
+				}
+			}
+		}
+	}
+
+	return trefs.refs
+}
+
+// getOneTransitiveRefLocked computes the full set packages transitively
+// reachable through the given sym reference.
+//
+// It may return nil if the reference is invalid (i.e. the referenced name does
+// not exist).
+func (b *packageHandleBuilder) getOneTransitiveRefLocked(sym typerefs.Symbol) *typerefs.PackageSet {
+	assert(token.IsExported(sym.Name), "expected exported symbol")
+
+	trefs := b.transitiveRefs[sym.Package]
+	if trefs == nil {
+		trefs = &partialRefs{
+			refs:     make(map[string]*typerefs.PackageSet),
+			complete: false,
+		}
+		b.transitiveRefs[sym.Package] = trefs
+	}
+
+	pkgs, ok := trefs.refs[sym.Name]
+	if ok && pkgs == nil {
+		// See below, where refs is set to nil before recursing.
+		bug.Reportf("cycle detected to %q in reference graph", sym.Name)
+	}
+
+	// Note that if (!ok && trefs.complete), the name does not exist in the
+	// referenced package, and we should not write to trefs as that may introduce
+	// a race.
+	if !ok && !trefs.complete {
+		n := b.nodes[sym.Package]
+		if n == nil {
+			// We should always have IndexID in our node set, because symbol references
+			// should only be recorded for packages that actually exist in the import graph.
+			//
+			// However, it is not easy to prove this (typerefs are serialized and
+			// deserialized), so make this code temporarily defensive while we are on a
+			// point release.
+			//
+			// TODO(rfindley): in the future, we should turn this into an assertion.
+			bug.Reportf("missing reference to package %s", b.s.pkgIndex.PackageID(sym.Package))
+			return nil
+		}
+
+		// Break cycles. This is perhaps overly defensive as cycles should not
+		// exist at this point: metadata cycles should have been broken at load
+		// time, and intra-package reference cycles should have been contracted by
+		// the typerefs algorithm.
+		//
+		// See the "cycle detected" bug report above.
+		trefs.refs[sym.Name] = nil
+
+		pkgs := b.s.pkgIndex.NewSet()
+		for _, sym2 := range n.ph.refs[sym.Name] {
+			pkgs.Add(sym2.Package)
+			otherSet := b.getOneTransitiveRefLocked(sym2)
+			pkgs.Union(otherSet)
+		}
+		trefs.refs[sym.Name] = pkgs
+	}
+
+	return pkgs
+}
+
+// buildPackageHandle gets or builds a package handle for the given id, storing
+// its result in the snapshot.packages map.
+//
+// buildPackageHandle must only be called from getPackageHandles.
+func (b *packageHandleBuilder) buildPackageHandle(ctx context.Context, n *handleNode) {
+	var prevPH *packageHandle
+	if n.ph != nil {
+		// Existing package handle: if it is valid, return it. Otherwise, create a
+		// copy to update.
+		if n.ph.validated {
+			return
+		}
+		prevPH = n.ph
+		// Either prevPH is still valid, or we will update the key and depKeys of
+		// this copy. In either case, the result will be valid.
+		n.ph = prevPH.clone(true)
+	} else {
+		// No package handle: read and analyze the package syntax.
+		inputs, err := b.s.typeCheckInputs(ctx, n.m)
+		if err != nil {
+			n.err = err
+			return
+		}
+		refs, err := b.s.typerefs(ctx, n.m, inputs.compiledGoFiles)
+		if err != nil {
+			n.err = err
+			return
+		}
+		n.ph = &packageHandle{
+			m:           n.m,
+			localInputs: inputs,
+			localKey:    localPackageKey(inputs),
+			refs:        refs,
+			validated:   true,
+		}
+	}
+
+	// ph either did not exist, or was invalid. We must re-evaluate deps and key.
+	if err := b.evaluatePackageHandle(prevPH, n); err != nil {
+		n.err = err
+		return
+	}
+
+	assert(n.ph.validated, "unvalidated handle")
+
+	// Ensure the result (or an equivalent) is recorded in the snapshot.
+	b.s.mu.Lock()
+	defer b.s.mu.Unlock()
 
 	// Check that the metadata has not changed
 	// (which should invalidate this handle).
 	//
-	// (In future, handles should form a graph with edges from a
-	// packageHandle to the handles for parsing its files and the
-	// handles for type-checking its immediate deps, at which
-	// point there will be no need to even access s.meta.)
-	if s.meta.metadata[ph.m.ID] != ph.m {
-		// TODO(rfindley): this should be bug.Errorf.
-		return nil, fmt.Errorf("stale metadata for %s", ph.m.ID)
+	// TODO(rfindley): eventually promote this to an assert.
+	// TODO(rfindley): move this to after building the package handle graph?
+	if b.s.meta.metadata[n.m.ID] != n.m {
+		bug.Reportf("stale metadata for %s", n.m.ID)
 	}
 
-	// Check cache again in case another goroutine got there first.
-	if prev, ok := s.packages.Get(id); ok {
-		prevPH := prev.(*packageHandle)
-		if prevPH.m != ph.m {
-			return nil, bug.Errorf("existing package handle does not match for %s", ph.m.ID)
+	// Check the packages map again in case another goroutine got there first.
+	if alt, ok := b.s.packages.Get(n.m.ID); ok && alt.validated {
+		if alt.m != n.m {
+			bug.Reportf("existing package handle does not match for %s", n.m.ID)
 		}
-		return prevPH, nil
+		n.ph = alt
+	} else {
+		b.s.packages.Set(n.m.ID, n.ph, nil)
+	}
+}
+
+// evaluatePackageHandle validates and/or computes the key of ph, setting key,
+// depKeys, and the validated flag on ph.
+//
+// It uses prevPH to avoid recomputing keys that can't have changed, since
+// their depKeys did not change.
+//
+// See the documentation for packageHandle for more details about packageHandle
+// state, and see the documentation for the typerefs package for more details
+// about precise reachability analysis.
+func (b *packageHandleBuilder) evaluatePackageHandle(prevPH *packageHandle, n *handleNode) error {
+	// Opt: if no dep keys have changed, we need not re-evaluate the key.
+	if prevPH != nil {
+		depsChanged := false
+		assert(len(prevPH.depKeys) == len(n.succs), "mismatching dep count")
+		for id, succ := range n.succs {
+			oldKey, ok := prevPH.depKeys[id]
+			assert(ok, "missing dep")
+			if oldKey != succ.ph.key {
+				depsChanged = true
+				break
+			}
+		}
+		if !depsChanged {
+			return nil // key cannot have changed
+		}
 	}
 
-	s.packages.Set(id, ph, nil)
-	return ph, nil
+	// Deps have changed, so we must re-evaluate the key.
+	n.ph.depKeys = make(map[PackageID]source.Hash)
+
+	// See the typerefs package: the reachable set of packages is defined to be
+	// the set of packages containing syntax that is reachable through the
+	// exported symbols in the dependencies of n.ph.
+	reachable := b.s.pkgIndex.NewSet()
+	for depID, succ := range n.succs {
+		n.ph.depKeys[depID] = succ.ph.key
+		reachable.Add(succ.idxID)
+		trefs := b.getTransitiveRefs(succ.m.ID)
+		if trefs == nil {
+			// A predecessor failed to build due to e.g. context cancellation.
+			return fmt.Errorf("missing transitive refs for %s", succ.m.ID)
+		}
+		for _, set := range trefs {
+			reachable.Union(set)
+		}
+	}
+
+	// Collect reachable handles.
+	var reachableHandles []*packageHandle
+	// In the presence of context cancellation, any package may be missing.
+	// We need all dependencies to produce a valid key.
+	missingReachablePackage := false
+	reachable.Elems(func(id typerefs.IndexID) {
+		dh := b.nodes[id]
+		if dh == nil {
+			missingReachablePackage = true
+		} else {
+			assert(dh.ph.validated, "unvalidated dependency")
+			reachableHandles = append(reachableHandles, dh.ph)
+		}
+	})
+	if missingReachablePackage {
+		return fmt.Errorf("missing reachable package")
+	}
+	// Sort for stability.
+	sort.Slice(reachableHandles, func(i, j int) bool {
+		return reachableHandles[i].m.ID < reachableHandles[j].m.ID
+	})
+
+	// Key is the hash of the local key, and the local key of all reachable
+	// packages.
+	depHasher := sha256.New()
+	depHasher.Write(n.ph.localKey[:])
+	for _, rph := range reachableHandles {
+		depHasher.Write(rph.localKey[:])
+	}
+	depHasher.Sum(n.ph.key[:0])
+
+	return nil
+}
+
+// typerefs returns typerefs for the package described by m and cgfs, after
+// either computing it or loading it from the file cache.
+func (s *snapshot) typerefs(ctx context.Context, m *source.Metadata, cgfs []source.FileHandle) (map[string][]typerefs.Symbol, error) {
+	imports := make(map[ImportPath]*source.Metadata)
+	for impPath, id := range m.DepsByImpPath {
+		if id != "" {
+			imports[impPath] = s.Metadata(id)
+		}
+	}
+
+	data, err := s.typerefData(ctx, m.ID, imports, cgfs)
+	if err != nil {
+		return nil, err
+	}
+	classes := typerefs.Decode(s.pkgIndex, m.ID, data)
+	refs := make(map[string][]typerefs.Symbol)
+	for _, class := range classes {
+		for _, decl := range class.Decls {
+			refs[decl] = class.Refs
+		}
+	}
+	return refs, nil
+}
+
+// typerefData retrieves encoded typeref data from the filecache, or computes it on
+// a cache miss.
+func (s *snapshot) typerefData(ctx context.Context, id PackageID, imports map[ImportPath]*source.Metadata, cgfs []source.FileHandle) ([]byte, error) {
+	key := typerefsKey(id, imports, cgfs)
+	if data, err := filecache.Get(typerefsKind, key); err == nil {
+		return data, nil
+	} else if err != filecache.ErrNotFound {
+		bug.Reportf("internal error reading typerefs data: %v", err)
+	}
+
+	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), source.ParseFull&^parser.ParseComments, true, cgfs...)
+	if err != nil {
+		return nil, err
+	}
+	data := typerefs.Encode(pgfs, id, imports)
+
+	// Store the resulting data in the cache.
+	go func() {
+		if err := filecache.Set(typerefsKind, key, data); err != nil {
+			event.Error(ctx, fmt.Sprintf("storing typerefs data for %s", id), err)
+		}
+	}()
+
+	return data, nil
+}
+
+// typerefsKey produces a key for the reference information produced by the
+// typerefs package.
+func typerefsKey(id PackageID, imports map[ImportPath]*source.Metadata, compiledGoFiles []source.FileHandle) source.Hash {
+	hasher := sha256.New()
+
+	fmt.Fprintf(hasher, "typerefs: %s\n", id)
+
+	importPaths := make([]string, 0, len(imports))
+	for impPath := range imports {
+		importPaths = append(importPaths, string(impPath))
+	}
+	sort.Strings(importPaths)
+	for _, importPath := range importPaths {
+		imp := imports[ImportPath(importPath)]
+		// TODO(rfindley): strength reduce the typerefs.Export API to guarantee
+		// that it only depends on these attributes of dependencies.
+		fmt.Fprintf(hasher, "import %s %s %s", importPath, imp.ID, imp.Name)
+	}
+
+	fmt.Fprintf(hasher, "compiledGoFiles: %d\n", len(compiledGoFiles))
+	for _, fh := range compiledGoFiles {
+		fmt.Fprintln(hasher, fh.FileIdentity())
+	}
+
+	var hash [sha256.Size]byte
+	hasher.Sum(hash[:0])
+	return hash
 }
 
 // typeCheckInputs contains the inputs of a call to typeCheckImpl, which
@@ -809,7 +1298,6 @@ type typeCheckInputs struct {
 	name                     PackageName
 	goFiles, compiledGoFiles []source.FileHandle
 	sizes                    types.Sizes
-	deps                     map[PackageID]*packageHandle
 	depsByImpPath            map[ImportPath]PackageID
 	goVersion                string // packages.Module.GoVersion, e.g. "1.18"
 
@@ -820,30 +1308,6 @@ type typeCheckInputs struct {
 }
 
 func (s *snapshot) typeCheckInputs(ctx context.Context, m *source.Metadata) (typeCheckInputs, error) {
-	deps := make(map[PackageID]*packageHandle)
-	for _, depID := range m.DepsByPkgPath {
-		depHandle, err := s.buildPackageHandle(ctx, depID)
-		if err != nil {
-			// If err is non-nil, we either have an invalid dependency, or a
-			// catastrophic failure to read a file (context cancellation or
-			// permission issues).
-			//
-			// We don't want one bad dependency to prevent us from type-checking the
-			// package -- we should instead get an import error. So we only abort
-			// this operation if the context is cancelled.
-			//
-			// We could do a better job of handling permission errors on files, but
-			// this is rare, and it is reasonable to treat the same an invalid
-			// dependency.
-			event.Error(ctx, fmt.Sprintf("%s: no dep handle for %s", m.ID, depID), err, source.SnapshotLabels(s)...)
-			if ctx.Err() != nil {
-				return typeCheckInputs{}, ctx.Err() // cancelled
-			}
-			continue
-		}
-		deps[depID] = depHandle
-	}
-
 	// Read both lists of files of this package.
 	//
 	// Parallelism is not necessary here as the files will have already been
@@ -875,13 +1339,12 @@ func (s *snapshot) typeCheckInputs(ctx context.Context, m *source.Metadata) (typ
 		goFiles:         goFiles,
 		compiledGoFiles: compiledGoFiles,
 		sizes:           m.TypesSizes,
-		deps:            deps,
 		depsByImpPath:   m.DepsByImpPath,
 		goVersion:       goVersion,
 
-		relatedInformation: s.view.Options().RelatedInformationSupported,
-		linkTarget:         s.view.Options().LinkTarget,
-		moduleMode:         s.moduleMode(),
+		relatedInformation: s.options.RelatedInformationSupported,
+		linkTarget:         s.options.LinkTarget,
+		moduleMode:         s.view.moduleMode(),
 	}, nil
 }
 
@@ -898,10 +1361,9 @@ func readFiles(ctx context.Context, fs source.FileSource, uris []span.URI) (_ []
 	return fhs, nil
 }
 
-// computePackageKey returns a key representing the act of type checking
-// a package named id containing the specified files, metadata, and
-// combined dependency hash.
-func computePackageKey(s *snapshot, inputs typeCheckInputs) source.Hash {
+// localPackageKey returns a key for local inputs into type-checking, excluding
+// dependency information: files, metadata, and configuration.
+func localPackageKey(inputs typeCheckInputs) source.Hash {
 	hasher := sha256.New()
 
 	// In principle, a key must be the hash of an
@@ -924,17 +1386,6 @@ func computePackageKey(s *snapshot, inputs typeCheckInputs) source.Hash {
 		fmt.Fprintf(hasher, "import %s %s", impPath, string(inputs.depsByImpPath[ImportPath(impPath)]))
 	}
 
-	// deps, in PackageID order
-	depIDs := make([]string, 0, len(inputs.deps))
-	for depID := range inputs.deps {
-		depIDs = append(depIDs, string(depID))
-	}
-	sort.Strings(depIDs)
-	for _, depID := range depIDs {
-		dep := inputs.deps[PackageID(depID)]
-		fmt.Fprintf(hasher, "dep: %s key:%s\n", dep.m.PkgPath, dep.key)
-	}
-
 	// file names and contents
 	fmt.Fprintf(hasher, "compiledGoFiles: %d\n", len(inputs.compiledGoFiles))
 	for _, fh := range inputs.compiledGoFiles {
@@ -946,8 +1397,9 @@ func computePackageKey(s *snapshot, inputs typeCheckInputs) source.Hash {
 	}
 
 	// types sizes
-	sz := inputs.sizes.(*types.StdSizes)
-	fmt.Fprintf(hasher, "sizes: %d %d\n", sz.WordSize, sz.MaxAlign)
+	wordSize := inputs.sizes.Sizeof(types.Typ[types.Int])
+	maxAlign := inputs.sizes.Alignof(types.NewPointer(types.Typ[types.Int64]))
+	fmt.Fprintf(hasher, "sizes: %d %d\n", wordSize, maxAlign)
 
 	fmt.Fprintf(hasher, "relatedInformation: %t\n", inputs.relatedInformation)
 	fmt.Fprintf(hasher, "linkTarget: %s\n", inputs.linkTarget)
@@ -969,8 +1421,6 @@ func typeCheckImpl(ctx context.Context, b *typeCheckBatch, inputs typeCheckInput
 	if err != nil {
 		return nil, err
 	}
-	pkg.methodsets = methodsets.NewIndex(pkg.fset, pkg.types)
-	pkg.xrefs = xrefs.Index(pkg.compiledGoFiles, pkg.types, pkg.typesInfo)
 
 	// Our heuristic for whether to show type checking errors is:
 	//  + If any file was 'fixed', don't show type checking errors as we
@@ -1007,8 +1457,10 @@ func typeCheckImpl(ctx context.Context, b *typeCheckBatch, inputs typeCheckInput
 		diags, err := typeErrorDiagnostics(inputs.moduleMode, inputs.linkTarget, pkg, e)
 		if err != nil {
 			// If we fail here and there are no parse errors, it means we are hiding
-			// a valid type-checking error from the user. This must be a bug.
-			if len(pkg.parseErrors) == 0 {
+			// a valid type-checking error from the user. This must be a bug, with
+			// one exception: relocated primary errors may fail processing, because
+			// they reference locations outside of the package.
+			if len(pkg.parseErrors) == 0 && !e.relocated {
 				bug.Reportf("failed to compute position for type error %v: %v", e, err)
 			}
 			continue
@@ -1021,6 +1473,14 @@ func typeCheckImpl(ctx context.Context, b *typeCheckBatch, inputs typeCheckInput
 			if !unparseable[diag.URI] {
 				pkg.diagnostics = append(pkg.diagnostics, diag)
 			}
+		}
+	}
+
+	// Work around golang/go#61561: interface instances aren't concurrency-safe
+	// as they are not completed by the type checker.
+	for _, inst := range typeparams.GetInstances(pkg.typesInfo) {
+		if iface, _ := inst.Type.Underlying().(*types.Interface); iface != nil {
+			iface.Complete()
 		}
 	}
 
@@ -1048,11 +1508,11 @@ func doTypeCheck(ctx context.Context, b *typeCheckBatch, inputs typeCheckInputs)
 	// Collect parsed files from the type check pass, capturing parse errors from
 	// compiled files.
 	var err error
-	pkg.goFiles, err = b.s.parseCache.parseFiles(ctx, b.fset, source.ParseFull, inputs.goFiles...)
+	pkg.goFiles, err = b.parseCache.parseFiles(ctx, b.fset, source.ParseFull, false, inputs.goFiles...)
 	if err != nil {
 		return nil, err
 	}
-	pkg.compiledGoFiles, err = b.s.parseCache.parseFiles(ctx, b.fset, source.ParseFull, inputs.compiledGoFiles...)
+	pkg.compiledGoFiles, err = b.parseCache.parseFiles(ctx, b.fset, source.ParseFull, false, inputs.compiledGoFiles...)
 	if err != nil {
 		return nil, err
 	}
@@ -1140,10 +1600,10 @@ func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs
 				// See TestFixImportDecl for an example.
 				return nil, fmt.Errorf("missing metadata for import of %q", path)
 			}
-			depPH := inputs.deps[id]
+			depPH := b.handles[id]
 			if depPH == nil {
 				// e.g. missing metadata for dependencies in buildPackageHandle
-				return nil, missingPkgError(path, inputs.moduleMode)
+				return nil, missingPkgError(inputs.id, path, inputs.moduleMode)
 			}
 			if !source.IsValidImport(inputs.pkgPath, depPH.m.PkgPath) {
 				return nil, fmt.Errorf("invalid use of internal package %q", path)
@@ -1245,14 +1705,18 @@ func depsErrors(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs
 				if err != nil {
 					return nil, err
 				}
-				errors = append(errors, &source.Diagnostic{
+				diag := &source.Diagnostic{
 					URI:            imp.cgf.URI,
 					Range:          rng,
 					Severity:       protocol.SeverityError,
 					Source:         source.TypeError,
 					Message:        fmt.Sprintf("error while importing %v: %v", item, depErr.Err),
 					SuggestedFixes: fixes,
-				})
+				}
+				if !source.BundleQuickFixes(diag) {
+					bug.Reportf("failed to bundle fixes for diagnostic %q", diag.Message)
+				}
+				errors = append(errors, diag)
 			}
 		}
 	}
@@ -1288,14 +1752,18 @@ func depsErrors(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs
 			if err != nil {
 				return nil, err
 			}
-			errors = append(errors, &source.Diagnostic{
+			diag := &source.Diagnostic{
 				URI:            pm.URI,
 				Range:          rng,
 				Severity:       protocol.SeverityError,
 				Source:         source.TypeError,
 				Message:        fmt.Sprintf("error while importing %v: %v", item, depErr.Err),
 				SuggestedFixes: fixes,
-			})
+			}
+			if !source.BundleQuickFixes(diag) {
+				bug.Reportf("failed to bundle fixes for diagnostic %q", diag.Message)
+			}
+			errors = append(errors, diag)
 			break
 		}
 	}
@@ -1304,13 +1772,17 @@ func depsErrors(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs
 
 // missingPkgError returns an error message for a missing package that varies
 // based on the user's workspace mode.
-func missingPkgError(pkgPath string, moduleMode bool) error {
+func missingPkgError(from PackageID, pkgPath string, moduleMode bool) error {
 	// TODO(rfindley): improve this error. Previous versions of this error had
 	// access to the full snapshot, and could provide more information (such as
 	// the initialization error).
 	if moduleMode {
-		// Previously, we would present the initialization error here.
-		return fmt.Errorf("no required module provides package %q", pkgPath)
+		if source.IsCommandLineArguments(from) {
+			return fmt.Errorf("current file is not included in a workspace module")
+		} else {
+			// Previously, we would present the initialization error here.
+			return fmt.Errorf("no required module provides package %q", pkgPath)
+		}
 	} else {
 		// Previously, we would list the directories in GOROOT and GOPATH here.
 		return fmt.Errorf("cannot find package %q in GOROOT or GOPATH", pkgPath)
@@ -1318,6 +1790,7 @@ func missingPkgError(pkgPath string, moduleMode bool) error {
 }
 
 type extendedError struct {
+	relocated   bool // if set, this is a relocation of a primary error to a secondary location
 	primary     types.Error
 	secondaries []types.Error
 }
@@ -1370,7 +1843,7 @@ func expandErrors(errs []types.Error, supportsRelatedInformation bool) []extende
 
 			// Copy over the secondary errors, noting the location of the
 			// current error we're cloning.
-			clonedError := extendedError{primary: relocatedSecondary, secondaries: []types.Error{original.primary}}
+			clonedError := extendedError{relocated: true, primary: relocatedSecondary, secondaries: []types.Error{original.primary}}
 			for j, secondary := range original.secondaries {
 				if i == j {
 					secondary.Msg += " (this error)"
@@ -1379,7 +1852,6 @@ func expandErrors(errs []types.Error, supportsRelatedInformation bool) []extende
 			}
 			result = append(result, clonedError)
 		}
-
 	}
 	return result
 }

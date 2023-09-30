@@ -40,7 +40,7 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 	checking := map[span.URI]*cmdFile{}
 	var uris []span.URI
 	// now we ready to kick things off
-	conn, err := c.app.connect(ctx)
+	conn, err := c.app.connect(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -48,17 +48,17 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 	for _, arg := range args {
 		uri := span.URIFromPath(arg)
 		uris = append(uris, uri)
-		file := conn.openFile(ctx, uri)
-		if file.err != nil {
-			return file.err
+		file, err := conn.openFile(ctx, uri)
+		if err != nil {
+			return err
 		}
 		checking[uri] = file
 	}
 	if err := conn.diagnoseFiles(ctx, uris); err != nil {
 		return err
 	}
-	conn.Client.filesMu.Lock()
-	defer conn.Client.filesMu.Unlock()
+	conn.client.filesMu.Lock()
+	defer conn.client.filesMu.Unlock()
 
 	for _, file := range checking {
 		for _, d := range file.diagnostics {

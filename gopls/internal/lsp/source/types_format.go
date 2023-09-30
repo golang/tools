@@ -15,8 +15,8 @@ import (
 	"go/types"
 	"strings"
 
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/tokeninternal"
@@ -115,7 +115,7 @@ func NewBuiltinSignature(ctx context.Context, s Snapshot, name string) (*signatu
 	params, _ := formatFieldList(ctx, fset, decl.Type.Params, variadic)
 	results, needResultParens := formatFieldList(ctx, fset, decl.Type.Results, false)
 	d := decl.Doc.Text()
-	switch s.View().Options().HoverKind {
+	switch s.Options().HoverKind {
 	case SynopsisDocumentation:
 		d = doc.Synopsis(d)
 	case NoDocumentation:
@@ -245,7 +245,7 @@ func NewSignature(ctx context.Context, s Snapshot, pkg Package, sig *types.Signa
 	if comment != nil {
 		d = comment.Text()
 	}
-	switch s.View().Options().HoverKind {
+	switch s.Options().HoverKind {
 	case SynopsisDocumentation:
 		d = doc.Synopsis(d)
 	case NoDocumentation:
@@ -289,6 +289,8 @@ func FormatVarType(ctx context.Context, snapshot Snapshot, srcpkg Package, obj *
 		return types.TypeString(obj.Type(), qf), nil
 	}
 
+	// TODO(rfindley): parsing to produce candidates can be costly; consider
+	// using faster methods.
 	targetpgf, pos, err := parseFull(ctx, snapshot, srcpkg.FileSet(), obj.Pos())
 	if err != nil {
 		return "", err // e.g. ctx cancelled

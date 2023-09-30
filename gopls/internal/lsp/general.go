@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/build"
 	"log"
 	"os"
 	"path"
@@ -16,11 +17,12 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/bug"
+	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 )
@@ -28,6 +30,8 @@ import (
 func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitialize) (*protocol.InitializeResult, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.initialize")
 	defer done()
+
+	telemetry.RecordClientInfo(params)
 
 	s.stateMu.Lock()
 	if s.state >= serverInitializing {
@@ -53,27 +57,29 @@ func (s *Server) initialize(ctx context.Context, params *protocol.ParamInitializ
 	}
 	s.progress.SetSupportsWorkDoneProgress(params.Capabilities.Window.WorkDoneProgress)
 
-	options := s.session.Options()
-	defer func() { s.session.SetOptions(options) }()
+	options := s.Options().Clone()
+	// TODO(rfindley): remove the error return from handleOptionResults, and
+	// eliminate this defer.
+	defer func() { s.SetOptions(options) }()
 
 	if err := s.handleOptionResults(ctx, source.SetOptions(options, params.InitializationOptions)); err != nil {
 		return nil, err
 	}
-	options.ForClientCapabilities(params.Capabilities)
+	options.ForClientCapabilities(params.ClientInfo, params.Capabilities)
 
 	if options.ShowBugReports {
 		// Report the next bug that occurs on the server.
-		bugCh := bug.Notify()
-		go func() {
-			b := <-bugCh
+		bug.Handle(func(b bug.Bug) {
 			msg := &protocol.ShowMessageParams{
 				Type:    protocol.Error,
 				Message: fmt.Sprintf("A bug occurred on the server: %s\nLocation:%s", b.Description, b.Key),
 			}
-			if err := s.eventuallyShowMessage(context.Background(), msg); err != nil {
-				log.Printf("error showing bug: %v", err)
-			}
-		}()
+			go func() {
+				if err := s.eventuallyShowMessage(context.Background(), msg); err != nil {
+					log.Printf("error showing bug: %v", err)
+				}
+			}()
+		})
 	}
 
 	folders := params.WorkspaceFolders
@@ -152,7 +158,7 @@ See https://github.com/golang/go/issues/45732 for more information.`,
 			DocumentSymbolProvider:     &protocol.Or_ServerCapabilities_documentSymbolProvider{Value: true},
 			WorkspaceSymbolProvider:    &protocol.Or_ServerCapabilities_workspaceSymbolProvider{Value: true},
 			ExecuteCommandProvider: &protocol.ExecuteCommandOptions{
-				Commands: options.SupportedCommands,
+				Commands: nonNilSliceString(options.SupportedCommands),
 			},
 			FoldingRangeProvider:      &protocol.Or_ServerCapabilities_foldingRangeProvider{Value: true},
 			HoverProvider:             &protocol.Or_ServerCapabilities_hoverProvider{Value: true},
@@ -166,8 +172,8 @@ See https://github.com/golang/go/issues/45732 for more information.`,
 				Range: &protocol.Or_SemanticTokensOptions_range{Value: true},
 				Full:  &protocol.Or_SemanticTokensOptions_full{Value: true},
 				Legend: protocol.SemanticTokensLegend{
-					TokenTypes:     s.session.Options().SemanticTypes,
-					TokenModifiers: s.session.Options().SemanticMods,
+					TokenTypes:     nonNilSliceString(s.Options().SemanticTypes),
+					TokenModifiers: nonNilSliceString(s.Options().SemanticMods),
 				},
 			},
 			SignatureHelpProvider: &protocol.SignatureHelpOptions{
@@ -211,9 +217,7 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 	}
 	s.notifications = nil
 
-	options := s.session.Options()
-	defer func() { s.session.SetOptions(options) }()
-
+	options := s.Options()
 	if err := s.addFolders(ctx, s.pendingFolders); err != nil {
 		return err
 	}
@@ -234,19 +238,26 @@ func (s *Server) initialized(ctx context.Context, params *protocol.InitializedPa
 			return err
 		}
 	}
+
+	// Ask (maybe) about enabling telemetry. Do this asynchronously, as it's OK
+	// for users to ignore or dismiss the question.
+	go s.maybePromptForTelemetry(ctx, options.TelemetryPrompt)
+
 	return nil
 }
 
 // GoVersionTable maps Go versions to the gopls version in which support will
 // be deprecated, and the final gopls version supporting them without warnings.
-// Keep this in sync with gopls/README.md
+// Keep this in sync with gopls/README.md.
 //
 // Must be sorted in ascending order of Go version.
 //
 // Mutable for testing.
 var GoVersionTable = []GoVersionSupport{
 	{12, "", "v0.7.5"},
-	{15, "v0.11.0", "v0.9.5"},
+	{15, "", "v0.9.5"},
+	{16, "v0.13.0", "v0.11.0"},
+	{17, "v0.13.0", "v0.11.0"},
 }
 
 // GoVersionSupport holds information about end-of-life Go version support.
@@ -262,11 +273,13 @@ func OldestSupportedGoVersion() int {
 	return GoVersionTable[len(GoVersionTable)-1].GoVersion + 1
 }
 
-// versionMessage returns the warning/error message to display if the user is
-// on the given Go version, if any. The goVersion variable is the X in Go 1.X.
+// versionMessage returns the warning/error message to display if the user has
+// the given Go version, if any. The goVersion variable is the X in Go 1.X. If
+// fromBuild is set, the Go version is the version used to build gopls.
+// Otherwise, it is the go command version.
 //
 // If goVersion is invalid (< 0), it returns "", 0.
-func versionMessage(goVersion int) (string, protocol.MessageType) {
+func versionMessage(goVersion int, fromBuild bool) (string, protocol.MessageType) {
 	if goVersion < 0 {
 		return "", 0
 	}
@@ -276,7 +289,11 @@ func versionMessage(goVersion int) (string, protocol.MessageType) {
 			var msgBuilder strings.Builder
 
 			mType := protocol.Error
-			fmt.Fprintf(&msgBuilder, "Found Go version 1.%d", goVersion)
+			if fromBuild {
+				fmt.Fprintf(&msgBuilder, "Gopls was built with Go version 1.%d", goVersion)
+			} else {
+				fmt.Fprintf(&msgBuilder, "Found Go version 1.%d", goVersion)
+			}
 			if v.DeprecatedVersion != "" {
 				// not deprecated yet, just a warning
 				fmt.Fprintf(&msgBuilder, ", which will be unsupported by gopls %s. ", v.DeprecatedVersion)
@@ -299,15 +316,16 @@ func versionMessage(goVersion int) (string, protocol.MessageType) {
 //
 // It should be called after views change.
 func (s *Server) checkViewGoVersions() {
-	oldestVersion := -1
+	oldestVersion, fromBuild := go1Point(), true
 	for _, view := range s.session.Views() {
 		viewVersion := view.GoVersion()
 		if oldestVersion == -1 || viewVersion < oldestVersion {
-			oldestVersion = viewVersion
+			oldestVersion, fromBuild = viewVersion, false
 		}
+		telemetry.RecordViewGoVersion(viewVersion)
 	}
 
-	if msg, mType := versionMessage(oldestVersion); msg != "" {
+	if msg, mType := versionMessage(oldestVersion, fromBuild); msg != "" {
 		s.eventuallyShowMessage(context.Background(), &protocol.ShowMessageParams{
 			Type:    mType,
 			Message: msg,
@@ -315,12 +333,27 @@ func (s *Server) checkViewGoVersions() {
 	}
 }
 
+// go1Point returns the x in Go 1.x. If an error occurs extracting the go
+// version, it returns -1.
+//
+// Copied from the testenv package.
+func go1Point() int {
+	for i := len(build.Default.ReleaseTags) - 1; i >= 0; i-- {
+		var version int
+		if _, err := fmt.Sscanf(build.Default.ReleaseTags[i], "go1.%d", &version); err != nil {
+			continue
+		}
+		return version
+	}
+	return -1
+}
+
 func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFolder) error {
 	originalViews := len(s.session.Views())
 	viewErrors := make(map[span.URI]error)
 
 	var ndiagnose sync.WaitGroup // number of unfinished diagnose calls
-	if s.session.Options().VerboseWorkDoneProgress {
+	if s.Options().VerboseWorkDoneProgress {
 		work := s.progress.Start(ctx, DiagnosticWorkTitle(FromInitialWorkspaceLoad), "Calculating diagnostics for initial workspace load...", nil, nil)
 		defer func() {
 			go func() {
@@ -362,7 +395,7 @@ func (s *Server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 		// Diagnose the newly created view asynchronously.
 		ndiagnose.Add(1)
 		go func() {
-			s.diagnoseDetached(snapshot)
+			s.diagnoseSnapshot(snapshot, nil, false, 0)
 			<-initialized
 			release()
 			ndiagnose.Done()
@@ -445,14 +478,13 @@ func equalURISet(m1, m2 map[string]struct{}) bool {
 
 // registerWatchedDirectoriesLocked sends the workspace/didChangeWatchedFiles
 // registrations to the client and updates s.watchedDirectories.
+// The caller must not subsequently mutate patterns.
 func (s *Server) registerWatchedDirectoriesLocked(ctx context.Context, patterns map[string]struct{}) error {
-	if !s.session.Options().DynamicWatchedFilesSupported {
+	if !s.Options().DynamicWatchedFilesSupported {
 		return nil
 	}
-	for k := range s.watchedGlobPatterns {
-		delete(s.watchedGlobPatterns, k)
-	}
-	var watchers []protocol.FileSystemWatcher
+	s.watchedGlobPatterns = patterns
+	watchers := make([]protocol.FileSystemWatcher, 0, len(patterns)) // must be a slice
 	val := protocol.WatchChange | protocol.WatchDelete | protocol.WatchCreate
 	for pattern := range patterns {
 		watchers = append(watchers, protocol.FileSystemWatcher{
@@ -473,16 +505,30 @@ func (s *Server) registerWatchedDirectoriesLocked(ctx context.Context, patterns 
 		return err
 	}
 	s.watchRegistrationCount++
-
-	for k, v := range patterns {
-		s.watchedGlobPatterns[k] = v
-	}
 	return nil
 }
 
-func (s *Server) fetchConfig(ctx context.Context, name string, folder span.URI, o *source.Options) error {
-	if !s.session.Options().ConfigurationSupported {
-		return nil
+// Options returns the current server options.
+//
+// The caller must not modify the result.
+func (s *Server) Options() *source.Options {
+	s.optionsMu.Lock()
+	defer s.optionsMu.Unlock()
+	return s.options
+}
+
+// SetOptions sets the current server options.
+//
+// The caller must not subsequently modify the options.
+func (s *Server) SetOptions(opts *source.Options) {
+	s.optionsMu.Lock()
+	defer s.optionsMu.Unlock()
+	s.options = opts
+}
+
+func (s *Server) fetchFolderOptions(ctx context.Context, folder span.URI) (*source.Options, error) {
+	if opts := s.Options(); !opts.ConfigurationSupported {
+		return opts, nil
 	}
 	configs, err := s.client.Configuration(ctx, &protocol.ParamConfiguration{
 		Items: []protocol.ConfigurationItem{{
@@ -492,14 +538,16 @@ func (s *Server) fetchConfig(ctx context.Context, name string, folder span.URI, 
 	},
 	)
 	if err != nil {
-		return fmt.Errorf("failed to get workspace configuration from client (%s): %v", folder, err)
+		return nil, fmt.Errorf("failed to get workspace configuration from client (%s): %v", folder, err)
 	}
+
+	folderOpts := s.Options().Clone()
 	for _, config := range configs {
-		if err := s.handleOptionResults(ctx, source.SetOptions(o, config)); err != nil {
-			return err
+		if err := s.handleOptionResults(ctx, source.SetOptions(folderOpts, config)); err != nil {
+			return nil, err
 		}
 	}
-	return nil
+	return folderOpts, nil
 }
 
 func (s *Server) eventuallyShowMessage(ctx context.Context, msg *protocol.ShowMessageParams) error {
@@ -580,7 +628,7 @@ func (s *Server) beginFileRequest(ctx context.Context, pURI protocol.DocumentURI
 		release()
 		return nil, nil, false, func() {}, err
 	}
-	if expectKind != source.UnknownKind && view.FileKind(fh) != expectKind {
+	if expectKind != source.UnknownKind && snapshot.FileKind(fh) != expectKind {
 		// Wrong kind of file. Nothing to do.
 		release()
 		return nil, nil, false, func() {}, nil
@@ -625,7 +673,35 @@ func (s *Server) exit(ctx context.Context) error {
 		// TODO: We should be able to do better than this.
 		os.Exit(1)
 	}
-	// we don't terminate the process on a normal exit, we just allow it to
+	// We don't terminate the process on a normal exit, we just allow it to
 	// close naturally if needed after the connection is closed.
 	return nil
+}
+
+// TODO: when we can assume go1.18, replace with generic
+// (after retiring support for go1.17)
+func nonNilSliceString(x []string) []string {
+	if x == nil {
+		return []string{}
+	}
+	return x
+}
+func nonNilSliceTextEdit(x []protocol.TextEdit) []protocol.TextEdit {
+	if x == nil {
+		return []protocol.TextEdit{}
+	}
+
+	return x
+}
+func nonNilSliceCompletionItemTag(x []protocol.CompletionItemTag) []protocol.CompletionItemTag {
+	if x == nil {
+		return []protocol.CompletionItemTag{}
+	}
+	return x
+}
+func emptySliceDiagnosticTag(x []protocol.DiagnosticTag) []protocol.DiagnosticTag {
+	if x == nil {
+		return []protocol.DiagnosticTag{}
+	}
+	return x
 }

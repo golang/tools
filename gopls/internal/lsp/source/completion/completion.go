@@ -12,6 +12,7 @@ import (
 	"go/ast"
 	"go/constant"
 	"go/parser"
+	"go/printer"
 	"go/scanner"
 	"go/token"
 	"go/types"
@@ -103,15 +104,16 @@ type CompletionItem struct {
 
 // completionOptions holds completion specific configuration.
 type completionOptions struct {
-	unimported        bool
-	documentation     bool
-	fullDocumentation bool
-	placeholders      bool
-	literal           bool
-	snippets          bool
-	postfix           bool
-	matcher           source.Matcher
-	budget            time.Duration
+	unimported            bool
+	documentation         bool
+	fullDocumentation     bool
+	placeholders          bool
+	literal               bool
+	snippets              bool
+	postfix               bool
+	matcher               source.Matcher
+	budget                time.Duration
+	completeFunctionCalls bool
 }
 
 // Snippet is a convenience returns the snippet if available, otherwise
@@ -200,7 +202,7 @@ type completer struct {
 	// completionCallbacks is a list of callbacks to collect completions that
 	// require expensive operations. This includes operations where we search
 	// through the entire module cache.
-	completionCallbacks []func(opts *imports.Options) error
+	completionCallbacks []func(context.Context, *imports.Options) error
 
 	// surrounding describes the identifier surrounding the position.
 	surrounding *Selection
@@ -233,6 +235,11 @@ type completer struct {
 
 	// startTime is when we started processing this completion request. It does
 	// not include any time the request spent in the queue.
+	//
+	// Note: in CL 503016, startTime move to *after* type checking, but it was
+	// subsequently determined that it was better to keep setting it *before*
+	// type checking, so that the completion budget best approximates the user
+	// experience. See golang/go#62665 for more details.
 	startTime time.Time
 
 	// scopes contains all scopes defined by nodes in our path,
@@ -303,10 +310,6 @@ type Selection struct {
 	tokFile            *token.File
 	start, end, cursor token.Pos // relative to rng.TokFile
 	mapper             *protocol.Mapper
-}
-
-func (p Selection) Content() string {
-	return p.content
 }
 
 func (p Selection) Range() (protocol.Range, error) {
@@ -446,7 +449,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 
 	startTime := time.Now()
 
-	pkg, pgf, err := source.PackageForFile(ctx, snapshot, fh.URI(), source.NarrowestPackage)
+	pkg, pgf, err := source.NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil || pgf.File.Package == token.NoPos {
 		// If we can't parse this file or find position for the package
 		// keyword, it may be missing a package declaration. Try offering
@@ -460,6 +463,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 		}
 		return items, surrounding, nil
 	}
+
 	pos, err := pgf.PositionPos(protoPos)
 	if err != nil {
 		return nil, nil, err
@@ -517,7 +521,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 	scopes := source.CollectScopes(pkg.GetTypesInfo(), path, pos)
 	scopes = append(scopes, pkg.GetTypes().Scope(), types.Universe)
 
-	opts := snapshot.View().Options()
+	opts := snapshot.Options()
 	c := &completer{
 		pkg:      pkg,
 		snapshot: snapshot,
@@ -540,15 +544,16 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 			enabled: opts.DeepCompletion,
 		},
 		opts: &completionOptions{
-			matcher:           opts.Matcher,
-			unimported:        opts.CompleteUnimported,
-			documentation:     opts.CompletionDocumentation && opts.HoverKind != source.NoDocumentation,
-			fullDocumentation: opts.HoverKind == source.FullDocumentation,
-			placeholders:      opts.UsePlaceholders,
-			literal:           opts.LiteralCompletions && opts.InsertTextFormat == protocol.SnippetTextFormat,
-			budget:            opts.CompletionBudget,
-			snippets:          opts.InsertTextFormat == protocol.SnippetTextFormat,
-			postfix:           opts.ExperimentalPostfixCompletions,
+			matcher:               opts.Matcher,
+			unimported:            opts.CompleteUnimported,
+			documentation:         opts.CompletionDocumentation && opts.HoverKind != source.NoDocumentation,
+			fullDocumentation:     opts.HoverKind == source.FullDocumentation,
+			placeholders:          opts.UsePlaceholders,
+			literal:               opts.LiteralCompletions && opts.InsertTextFormat == protocol.SnippetTextFormat,
+			budget:                opts.CompletionBudget,
+			snippets:              opts.InsertTextFormat == protocol.SnippetTextFormat,
+			postfix:               opts.ExperimentalPostfixCompletions,
+			completeFunctionCalls: opts.CompleteFunctionCalls,
 		},
 		// default to a matcher that always matches
 		matcher:        prefixMatcher(""),
@@ -558,19 +563,26 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 		scopes:         scopes,
 	}
 
-	var cancel context.CancelFunc
-	if c.opts.budget == 0 {
-		ctx, cancel = context.WithCancel(ctx)
-	} else {
-		// timeoutDuration is the completion budget remaining. If less than
-		// 10ms, set to 10ms
-		timeoutDuration := time.Until(c.startTime.Add(c.opts.budget))
-		if timeoutDuration < 10*time.Millisecond {
-			timeoutDuration = 10 * time.Millisecond
-		}
-		ctx, cancel = context.WithTimeout(ctx, timeoutDuration)
-	}
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	// Compute the deadline for this operation. Deadline is relative to the
+	// search operation, not the entire completion RPC, as the work up until this
+	// point depends significantly on how long it took to type-check, which in
+	// turn depends on the timing of the request relative to other operations on
+	// the snapshot. Including that work in the budget leads to inconsistent
+	// results (and realistically, if type-checking took 200ms already, the user
+	// is unlikely to be significantly more bothered by e.g. another 100ms of
+	// search).
+	//
+	// Don't overload the context with this deadline, as we don't want to
+	// conflate user cancellation (=fail the operation) with our time limit
+	// (=stop searching and succeed with partial results).
+	var deadline *time.Time
+	if c.opts.budget > 0 {
+		d := startTime.Add(c.opts.budget)
+		deadline = &d
+	}
 
 	if surrounding := c.containingIdent(pgf.Src); surrounding != nil {
 		c.setSurrounding(surrounding)
@@ -584,17 +596,30 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 	}
 
 	// Deep search collected candidates and their members for more candidates.
-	c.deepSearch(ctx)
+	c.deepSearch(ctx, 1, deadline)
+
+	// At this point we have a sufficiently complete set of results, and want to
+	// return as close to the completion budget as possible. Previously, we
+	// avoided cancelling the context because it could result in partial results
+	// for e.g. struct fields. At this point, we have a minimal valid set of
+	// candidates, and so truncating due to context cancellation is acceptable.
+	if c.opts.budget > 0 {
+		timeoutDuration := time.Until(c.startTime.Add(c.opts.budget))
+		ctx, cancel = context.WithTimeout(ctx, timeoutDuration)
+		defer cancel()
+	}
 
 	for _, callback := range c.completionCallbacks {
-		if err := c.snapshot.RunProcessEnvFunc(ctx, callback); err != nil {
-			return nil, nil, err
+		if deadline == nil || time.Now().Before(*deadline) {
+			if err := c.snapshot.RunProcessEnvFunc(ctx, callback); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 
 	// Search candidates populated by expensive operations like
 	// unimportedMembers etc. for more completion items.
-	c.deepSearch(ctx)
+	c.deepSearch(ctx, 0, deadline)
 
 	// Statement candidates offer an entire statement in certain contexts, as
 	// opposed to a single object. Add statement candidates last because they
@@ -613,7 +638,7 @@ func (c *completer) collectCompletions(ctx context.Context) error {
 		if !(importSpec.Path.Pos() <= c.pos && c.pos <= importSpec.Path.End()) {
 			continue
 		}
-		return c.populateImportCompletions(ctx, importSpec)
+		return c.populateImportCompletions(importSpec)
 	}
 
 	// Inside comments, offer completions for the name of the relevant symbol.
@@ -766,7 +791,7 @@ func (c *completer) emptySwitchStmt() bool {
 // Completions for "golang.org/" yield its subdirectories
 // (i.e. "golang.org/x/"). The user is meant to accept completion suggestions
 // until they reach a complete import path.
-func (c *completer) populateImportCompletions(ctx context.Context, searchImport *ast.ImportSpec) error {
+func (c *completer) populateImportCompletions(searchImport *ast.ImportSpec) error {
 	if !strings.HasPrefix(searchImport.Path.Value, `"`) {
 		return nil
 	}
@@ -887,7 +912,7 @@ func (c *completer) populateImportCompletions(ctx context.Context, searchImport 
 		})
 	}
 
-	c.completionCallbacks = append(c.completionCallbacks, func(opts *imports.Options) error {
+	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
 		return imports.GetImportPaths(ctx, searchImports, prefix, c.filename, c.pkg.GetTypes().Name(), opts.Env)
 	})
 	return nil
@@ -1174,27 +1199,47 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	// not assume global Pos/Object realms and then use export
 	// data instead of the quick parse approach taken here.
 
-	// First, we search among packages in the workspace.
+	// First, we search among packages in the forward transitive
+	// closure of the workspace.
 	// We'll use a fast parse to extract package members
 	// from those that match the name/path criterion.
 	all, err := c.snapshot.AllMetadata(ctx)
 	if err != nil {
 		return err
 	}
-	var paths []string
-	known := make(map[source.PackagePath][]*source.Metadata) // may include test variant
+	known := make(map[source.PackagePath]*source.Metadata)
 	for _, m := range all {
-		if m.IsIntermediateTestVariant() || m.Name == "main" || !filter(m) {
+		if m.Name == "main" {
+			continue // not importable
+		}
+		if m.IsIntermediateTestVariant() {
 			continue
 		}
-		known[m.PkgPath] = append(known[m.PkgPath], m)
-		paths = append(paths, string(m.PkgPath))
+		// The only test variant we admit is "p [p.test]"
+		// when we are completing within "p_test [p.test]",
+		// as in that case we would like to offer completions
+		// of the test variants' additional symbols.
+		if m.ForTest != "" && c.pkg.Metadata().PkgPath != m.ForTest+"_test" {
+			continue
+		}
+		if !filter(m) {
+			continue
+		}
+		// Prefer previous entry unless this one is its test variant.
+		if m.ForTest != "" || known[m.PkgPath] == nil {
+			known[m.PkgPath] = m
+		}
+	}
+
+	paths := make([]string, 0, len(known))
+	for path := range known {
+		paths = append(paths, string(path))
 	}
 
 	// Rank import paths as goimports would.
 	var relevances map[string]float64
 	if len(paths) > 0 {
-		if err := c.snapshot.RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
+		if err := c.snapshot.RunProcessEnvFunc(ctx, func(ctx context.Context, opts *imports.Options) error {
 			var err error
 			relevances, err = imports.ScoreImportPaths(ctx, opts.Env, paths)
 			return err
@@ -1208,8 +1253,10 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 
 	// quickParse does a quick parse of a single file of package m,
 	// extracts exported package members and adds candidates to c.items.
-	var itemsMu sync.Mutex // guards c.items
-	var enough int32       // atomic bool
+	// TODO(rfindley): synchronizing access to c here does not feel right.
+	// Consider adding a concurrency-safe API for completer.
+	var cMu sync.Mutex // guards c.items and c.matcher
+	var enough int32   // atomic bool
 	quickParse := func(uri span.URI, m *source.Metadata) error {
 		if atomic.LoadInt32(&enough) != 0 {
 			return nil
@@ -1229,18 +1276,27 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 				return
 			}
 
-			if !id.IsExported() ||
-				sel.Sel.Name != "_" && !strings.HasPrefix(id.Name, sel.Sel.Name) {
-				return // not a match
+			if !id.IsExported() {
+				return
+			}
+
+			cMu.Lock()
+			score := c.matcher.Score(id.Name)
+			cMu.Unlock()
+
+			if sel.Sel.Name != "_" && score == 0 {
+				return // not a match; avoid constructing the completion item below
 			}
 
 			// The only detail is the kind and package: `var (from "example.com/foo")`
 			// TODO(adonovan): pretty-print FuncDecl.FuncType or TypeSpec.Type?
+			// TODO(adonovan): should this score consider the actual c.matcher.Score
+			// of the item? How does this compare with the deepState.enqueue path?
 			item := CompletionItem{
 				Label:      id.Name,
 				Detail:     fmt.Sprintf("%s (from %q)", strings.ToLower(tok.String()), m.PkgPath),
 				InsertText: id.Name,
-				Score:      unimportedScore(relevances[path]),
+				Score:      float64(score) * unimportedScore(relevances[path]),
 			}
 			switch tok {
 			case token.FUNC:
@@ -1264,33 +1320,44 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 
 			// For functions, add a parameter snippet.
 			if fn != nil {
+				paramList := func(list *ast.FieldList) []string {
+					var params []string
+					if list != nil {
+						var cfg printer.Config // slight overkill
+						param := func(name string, typ ast.Expr) {
+							var buf strings.Builder
+							buf.WriteString(name)
+							buf.WriteByte(' ')
+							cfg.Fprint(&buf, token.NewFileSet(), typ)
+							params = append(params, buf.String())
+						}
+
+						for _, field := range list.List {
+							if field.Names != nil {
+								for _, name := range field.Names {
+									param(name.Name, field.Type)
+								}
+							} else {
+								param("_", field.Type)
+							}
+						}
+					}
+					return params
+				}
+
+				tparams := paramList(fn.Type.TypeParams)
+				params := paramList(fn.Type.Params)
 				var sn snippet.Builder
-				sn.WriteText(id.Name)
-				sn.WriteText("(")
-				var nparams int
-				for _, field := range fn.Type.Params.List {
-					if field.Names != nil {
-						nparams += len(field.Names)
-					} else {
-						nparams++
-					}
-				}
-				for i := 0; i < nparams; i++ {
-					if i > 0 {
-						sn.WriteText(", ")
-					}
-					sn.WritePlaceholder(nil)
-				}
-				sn.WriteText(")")
+				c.functionCallSnippet(id.Name, tparams, params, &sn)
 				item.snippet = &sn
 			}
 
-			itemsMu.Lock()
+			cMu.Lock()
 			c.items = append(c.items, item)
 			if len(c.items) >= unimportedMemberTarget {
 				atomic.StoreInt32(&enough, 1)
 			}
-			itemsMu.Unlock()
+			cMu.Unlock()
 		})
 		return nil
 	}
@@ -1298,14 +1365,12 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	// Extract the package-level candidates using a quick parse.
 	var g errgroup.Group
 	for _, path := range paths {
-		for _, m := range known[source.PackagePath(path)] {
-			m := m
-			for _, uri := range m.CompiledGoFiles {
-				uri := uri
-				g.Go(func() error {
-					return quickParse(uri, m)
-				})
-			}
+		m := known[source.PackagePath(path)]
+		for _, uri := range m.CompiledGoFiles {
+			uri := uri
+			g.Go(func() error {
+				return quickParse(uri, m)
+			})
 		}
 	}
 	if err := g.Wait(); err != nil {
@@ -1316,6 +1381,10 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	ctx, cancel := context.WithCancel(ctx)
 	var mu sync.Mutex
 	add := func(pkgExport imports.PackageExport) {
+		if ignoreUnimportedCompletion(pkgExport.Fix) {
+			return
+		}
+
 		mu.Lock()
 		defer mu.Unlock()
 		// TODO(adonovan): what if the actual package has a vendor/ prefix?
@@ -1341,7 +1410,7 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 		}
 	}
 
-	c.completionCallbacks = append(c.completionCallbacks, func(opts *imports.Options) error {
+	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
 		defer cancel()
 		return imports.GetPackageExports(ctx, add, id.Name, c.filename, c.pkg.GetTypes().Name(), opts.Env)
 	})
@@ -1365,6 +1434,13 @@ func (c *completer) packageMembers(pkg *types.Package, score float64, imp *impor
 			addressable: isVar(obj),
 		})
 	}
+}
+
+// ignoreUnimportedCompletion reports whether an unimported completion
+// resulting in the given import should be ignored.
+func ignoreUnimportedCompletion(fix *imports.ImportFix) bool {
+	// golang/go#60062: don't add unimported completion to golang.org/toolchain.
+	return fix != nil && strings.HasPrefix(fix.StmtInfo.ImportPath, "golang.org/toolchain")
 }
 
 func (c *completer) methodsAndFields(typ types.Type, addressable bool, imp *importInfo, cb func(candidate)) {
@@ -1610,7 +1686,7 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 
 	count := 0
 
-	// Search packages across the entire workspace.
+	// Search the forward transitive closure of the workspace.
 	all, err := c.snapshot.AllMetadata(ctx)
 	if err != nil {
 		return err
@@ -1634,7 +1710,7 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 	// Rank candidates using goimports' algorithm.
 	var relevances map[string]float64
 	if len(paths) != 0 {
-		if err := c.snapshot.RunProcessEnvFunc(ctx, func(opts *imports.Options) error {
+		if err := c.snapshot.RunProcessEnvFunc(ctx, func(ctx context.Context, opts *imports.Options) error {
 			var err error
 			relevances, err = imports.ScoreImportPaths(ctx, opts.Env, paths)
 			return err
@@ -1679,6 +1755,9 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 
 	var mu sync.Mutex
 	add := func(pkg imports.ImportFix) {
+		if ignoreUnimportedCompletion(&pkg) {
+			return
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		if _, ok := seen[pkg.IdentName]; ok {
@@ -1707,7 +1786,7 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		})
 		count++
 	}
-	c.completionCallbacks = append(c.completionCallbacks, func(opts *imports.Options) error {
+	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
 		defer cancel()
 		return imports.GetAllCandidates(ctx, add, prefix, c.filename, c.pkg.GetTypes().Name(), opts.Env)
 	})

@@ -6,31 +6,27 @@ package cache
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"golang.org/x/tools/gopls/internal/govulncheck"
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/gopls/internal/vulncheck"
 )
 
 func TestCaseInsensitiveFilesystem(t *testing.T) {
-	base, err := ioutil.TempDir("", t.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
+	base := t.TempDir()
 
 	inner := filepath.Join(base, "a/B/c/DEFgh")
 	if err := os.MkdirAll(inner, 0777); err != nil {
 		t.Fatal(err)
 	}
 	file := filepath.Join(inner, "f.go")
-	if err := ioutil.WriteFile(file, []byte("hi"), 0777); err != nil {
+	if err := os.WriteFile(file, []byte("hi"), 0777); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(inner, "F.go")); err != nil {
@@ -220,19 +216,19 @@ func TestView_Vulnerabilities(t *testing.T) {
 	now := time.Now()
 
 	view := &View{
-		vulns: make(map[span.URI]*govulncheck.Result),
+		vulns: make(map[span.URI]*vulncheck.Result),
 	}
 	file1, file2 := span.URIFromPath("f1/go.mod"), span.URIFromPath("f2/go.mod")
 
-	vuln1 := &govulncheck.Result{AsOf: now.Add(-(maxGovulncheckResultAge * 3) / 4)} // already ~3/4*maxGovulncheckResultAge old
+	vuln1 := &vulncheck.Result{AsOf: now.Add(-(maxGovulncheckResultAge * 3) / 4)} // already ~3/4*maxGovulncheckResultAge old
 	view.SetVulnerabilities(file1, vuln1)
 
-	vuln2 := &govulncheck.Result{AsOf: now} // fresh.
+	vuln2 := &vulncheck.Result{AsOf: now} // fresh.
 	view.SetVulnerabilities(file2, vuln2)
 
 	t.Run("fresh", func(t *testing.T) {
 		got := view.Vulnerabilities()
-		want := map[span.URI]*govulncheck.Result{
+		want := map[span.URI]*vulncheck.Result{
 			file1: vuln1,
 			file2: vuln2,
 		}
@@ -246,7 +242,7 @@ func TestView_Vulnerabilities(t *testing.T) {
 	timeNow = func() time.Time { return now.Add(maxGovulncheckResultAge / 2) }
 	t.Run("after30min", func(t *testing.T) {
 		got := view.Vulnerabilities()
-		want := map[span.URI]*govulncheck.Result{
+		want := map[span.URI]*vulncheck.Result{
 			file1: nil, // expired.
 			file2: vuln2,
 		}
@@ -261,7 +257,7 @@ func TestView_Vulnerabilities(t *testing.T) {
 
 	t.Run("after1hr", func(t *testing.T) {
 		got := view.Vulnerabilities()
-		want := map[span.URI]*govulncheck.Result{
+		want := map[span.URI]*vulncheck.Result{
 			file1: nil,
 			file2: nil,
 		}
@@ -275,4 +271,33 @@ func TestView_Vulnerabilities(t *testing.T) {
 func toJSON(x interface{}) string {
 	b, _ := json.MarshalIndent(x, "", " ")
 	return string(b)
+}
+
+func TestIgnoreFilter(t *testing.T) {
+	tests := []struct {
+		dirs []string
+		path string
+		want bool
+	}{
+		{[]string{"a"}, "a/testdata/foo", true},
+		{[]string{"a"}, "a/_ignore/foo", true},
+		{[]string{"a"}, "a/.ignore/foo", true},
+		{[]string{"a"}, "b/testdata/foo", false},
+		{[]string{"a"}, "testdata/foo", false},
+		{[]string{"a", "b"}, "b/testdata/foo", true},
+		{[]string{"a"}, "atestdata/foo", false},
+	}
+
+	for _, test := range tests {
+		// convert to filepaths, for convenience
+		for i, dir := range test.dirs {
+			test.dirs[i] = filepath.FromSlash(dir)
+		}
+		test.path = filepath.FromSlash(test.path)
+
+		f := newIgnoreFilter(test.dirs)
+		if got := f.ignored(test.path); got != test.want {
+			t.Errorf("newIgnoreFilter(%q).ignore(%q) = %t, want %t", test.dirs, test.path, got, test.want)
+		}
+	}
 }

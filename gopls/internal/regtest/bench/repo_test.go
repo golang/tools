@@ -26,6 +26,14 @@ import (
 // These repos were selected to represent a variety of different types of
 // codebases.
 var repos = map[string]*repo{
+	// google-cloud-go has 145 workspace modules (!), and is quite large.
+	"google-cloud-go": {
+		name:   "google-cloud-go",
+		url:    "https://github.com/googleapis/google-cloud-go.git",
+		commit: "07da765765218debf83148cc7ed8a36d6e8921d5",
+		inDir:  flag.String("cloud_go_dir", "", "if set, reuse this directory as google-cloud-go@07da7657"),
+	},
+
 	// Used by x/benchmarks; large.
 	"istio": {
 		name:   "istio",
@@ -40,6 +48,7 @@ var repos = map[string]*repo{
 		name:   "kubernetes",
 		url:    "https://github.com/kubernetes/kubernetes",
 		commit: "v1.24.0",
+		short:  true,
 		inDir:  flag.String("kubernetes_dir", "", "if set, reuse this directory as kubernetes@v1.24.0"),
 	},
 
@@ -49,6 +58,15 @@ var repos = map[string]*repo{
 		url:    "https://github.com/kumahq/kuma",
 		commit: "2.1.1",
 		inDir:  flag.String("kuma_dir", "", "if set, reuse this directory as kuma@v2.1.1"),
+	},
+
+	// A repo containing a very large package (./dataintegration).
+	"oracle": {
+		name:   "oracle",
+		url:    "https://github.com/oracle/oci-go-sdk.git",
+		commit: "v65.43.0",
+		short:  true,
+		inDir:  flag.String("oracle_dir", "", "if set, reuse this directory as oracle/oci-go-sdk@v65.43.0"),
 	},
 
 	// x/pkgsite is familiar and represents a common use case (a webserver). It
@@ -78,6 +96,15 @@ var repos = map[string]*repo{
 		short:  true,
 		inDir:  flag.String("tools_dir", "", "if set, reuse this directory as x/tools@v0.9.0"),
 	},
+
+	// A repo of similar size to kubernetes, but with substantially more
+	// complex types that led to a serious performance regression (issue #60621).
+	"hashiform": {
+		name:   "hashiform",
+		url:    "https://github.com/hashicorp/terraform-provider-aws",
+		commit: "ac55de2b1950972d93feaa250d7505d9ed829c7c",
+		inDir:  flag.String("hashiform_dir", "", "if set, reuse this directory as hashiform@ac55de2"),
+	},
 }
 
 // getRepo gets the requested repo, and skips the test if -short is set and
@@ -89,7 +116,7 @@ func getRepo(tb testing.TB, name string) *repo {
 		tb.Fatalf("repo %s does not exist", name)
 	}
 	if !repo.short && testing.Short() {
-		tb.Skipf("large repo %s does not run whith -short", repo.name)
+		tb.Skipf("large repo %s does not run with -short", repo.name)
 	}
 	return repo
 }
@@ -168,7 +195,7 @@ func (r *repo) sharedEnv(tb testing.TB) *Env {
 
 		start := time.Now()
 		log.Printf("starting initial workspace load for %s", r.name)
-		ts, err := newGoplsServer(r.name)
+		ts, err := newGoplsConnector(profileArgs(r.name, false))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -197,10 +224,11 @@ func (r *repo) sharedEnv(tb testing.TB) *Env {
 //
 // It is the caller's responsibility to call Close on the resulting Env when it
 // is no longer needed.
-func (r *repo) newEnv(tb testing.TB, name string, config fake.EditorConfig) *Env {
+func (r *repo) newEnv(tb testing.TB, config fake.EditorConfig, forOperation string, cpuProfile bool) *Env {
 	dir := r.getDir()
 
-	ts, err := newGoplsServer(name)
+	args := profileArgs(qualifiedName(r.name, forOperation), cpuProfile)
+	ts, err := newGoplsConnector(args)
 	if err != nil {
 		tb.Fatal(err)
 	}

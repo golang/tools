@@ -20,12 +20,15 @@ func BenchmarkInitialWorkspaceLoad(b *testing.B) {
 		repo string
 		file string
 	}{
-		{"tools", "internal/lsp/cache/snapshot.go"},
+		{"google-cloud-go", "httpreplay/httpreplay.go"},
+		{"istio", "pkg/fuzz/util.go"},
 		{"kubernetes", "pkg/controller/lookup_cache.go"},
+		{"kuma", "api/generic/insights.go"},
+		{"oracle", "dataintegration/data_type.go"},
 		{"pkgsite", "internal/frontend/server.go"},
 		{"starlark", "starlark/eval.go"},
-		{"istio", "pkg/fuzz/util.go"},
-		{"kuma", "api/generic/insights.go"},
+		{"tools", "internal/lsp/cache/snapshot.go"},
+		{"hashiform", "internal/provider/provider.go"},
 	}
 
 	for _, test := range tests {
@@ -49,17 +52,16 @@ func doIWL(b *testing.B, gopath string, repo *repo, file string) {
 	// involve installing gopls and/or checking out the repo dir.
 	b.StopTimer()
 	config := fake.EditorConfig{Env: map[string]string{"GOPATH": gopath}}
-	env := repo.newEnv(b, "iwl."+repo.name, config)
+	env := repo.newEnv(b, config, "iwl", true)
 	defer env.Close()
 	b.StartTimer()
 
 	// Note: in the future, we may need to open a file in order to cause gopls to
-	// start loading. the workspace.
+	// start loading the workspace.
 
 	env.Await(InitialWorkspaceLoad)
-	// TODO(rfindley): remove this guard once the released gopls version supports
-	// the memstats command.
-	if !testing.Short() {
+
+	if env.Editor.HasCommand(command.MemStats.ID()) {
 		b.StopTimer()
 		params := &protocol.ExecuteCommandParams{
 			Command: command.MemStats.ID(),
@@ -68,6 +70,7 @@ func doIWL(b *testing.B, gopath string, repo *repo, file string) {
 		env.ExecuteCommand(params, &memstats)
 		b.ReportMetric(float64(memstats.HeapAlloc), "alloc_bytes")
 		b.ReportMetric(float64(memstats.HeapInUse), "in_use_bytes")
+		b.ReportMetric(float64(memstats.TotalAlloc), "total_alloc_bytes")
 		b.StartTimer()
 	}
 }

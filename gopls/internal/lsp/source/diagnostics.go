@@ -6,7 +6,10 @@ package source
 
 import (
 	"context"
+	"encoding/json"
 
+	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/span"
 )
@@ -19,21 +22,21 @@ type SuggestedFix struct {
 }
 
 // Analyze reports go/analysis-framework diagnostics in the specified package.
-func Analyze(ctx context.Context, snapshot Snapshot, pkgid PackageID, includeConvenience bool) (map[span.URI][]*Diagnostic, error) {
+//
+// If the provided tracker is non-nil, it may be used to provide notifications
+// of the ongoing analysis pass.
+func Analyze(ctx context.Context, snapshot Snapshot, pkgIDs map[PackageID]unit, tracker *progress.Tracker) (map[span.URI][]*Diagnostic, error) {
 	// Exit early if the context has been canceled. This also protects us
 	// from a race on Options, see golang/go#36699.
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
-	options := snapshot.View().Options()
+	options := snapshot.Options()
 	categories := []map[string]*Analyzer{
 		options.DefaultAnalyzers,
 		options.StaticcheckAnalyzers,
 		options.TypeErrorAnalyzers,
-	}
-	if includeConvenience { // e.g. for codeAction
-		categories = append(categories, options.ConvenienceAnalyzers) // e.g. fillstruct
 	}
 
 	var analyzers []*Analyzer
@@ -43,7 +46,7 @@ func Analyze(ctx context.Context, snapshot Snapshot, pkgid PackageID, includeCon
 		}
 	}
 
-	analysisDiagnostics, err := snapshot.Analyze(ctx, pkgid, analyzers)
+	analysisDiagnostics, err := snapshot.Analyze(ctx, pkgIDs, analyzers, tracker)
 	if err != nil {
 		return nil, err
 	}
@@ -54,38 +57,6 @@ func Analyze(ctx context.Context, snapshot Snapshot, pkgid PackageID, includeCon
 		reports[diag.URI] = append(reports[diag.URI], diag)
 	}
 	return reports, nil
-}
-
-// FileDiagnostics reports diagnostics in the specified file,
-// as used by the "gopls check" command.
-//
-// TODO(adonovan): factor in common with (*Server).codeAction, which
-// executes { PackageForFile; Analyze } too?
-//
-// TODO(adonovan): opt: this function is called in a loop from the
-// "gopls/diagnoseFiles" nonstandard request handler. It would be more
-// efficient to compute the set of packages and TypeCheck and
-// Analyze them all at once.
-func FileDiagnostics(ctx context.Context, snapshot Snapshot, uri span.URI) (FileHandle, []*Diagnostic, error) {
-	fh, err := snapshot.ReadFile(ctx, uri)
-	if err != nil {
-		return nil, nil, err
-	}
-	pkg, _, err := PackageForFile(ctx, snapshot, uri, NarrowestPackage)
-	if err != nil {
-		return nil, nil, err
-	}
-	pkgDiags, err := pkg.DiagnosticsForFile(ctx, snapshot, uri)
-	if err != nil {
-		return nil, nil, err
-	}
-	adiags, err := Analyze(ctx, snapshot, pkg.Metadata().ID, false)
-	if err != nil {
-		return nil, nil, err
-	}
-	var fileDiags []*Diagnostic // combine load/parse/type + analysis diagnostics
-	CombineDiagnostics(pkgDiags, adiags[uri], &fileDiags, &fileDiags)
-	return fh, fileDiags, nil
 }
 
 // CombineDiagnostics combines and filters list/parse/type diagnostics from
@@ -135,4 +106,82 @@ func CombineDiagnostics(tdiags []*Diagnostic, adiags []*Diagnostic, outT, outA *
 	}
 
 	*outT = append(*outT, tdiags...)
+}
+
+// quickFixesJSON is a JSON-serializable list of quick fixes
+// to be saved in the protocol.Diagnostic.Data field.
+type quickFixesJSON struct {
+	// TODO(rfindley): pack some sort of identifier here for later
+	// lookup/validation?
+	Fixes []protocol.CodeAction
+}
+
+// BundleQuickFixes attempts to bundle sd.SuggestedFixes into the
+// sd.BundledFixes field, so that it can be round-tripped through the client.
+// It returns false if the quick-fixes cannot be bundled.
+func BundleQuickFixes(sd *Diagnostic) bool {
+	if len(sd.SuggestedFixes) == 0 {
+		return true
+	}
+	var actions []protocol.CodeAction
+	for _, fix := range sd.SuggestedFixes {
+		if fix.Edits != nil {
+			// For now, we only support bundled code actions that execute commands.
+			//
+			// In order to cleanly support bundled edits, we'd have to guarantee that
+			// the edits were generated on the current snapshot. But this naively
+			// implies that every fix would have to include a snapshot ID, which
+			// would require us to republish all diagnostics on each new snapshot.
+			//
+			// TODO(rfindley): in order to avoid this additional chatter, we'd need
+			// to build some sort of registry or other mechanism on the snapshot to
+			// check whether a diagnostic is still valid.
+			return false
+		}
+		action := protocol.CodeAction{
+			Title:   fix.Title,
+			Kind:    fix.ActionKind,
+			Command: fix.Command,
+		}
+		actions = append(actions, action)
+	}
+	fixes := quickFixesJSON{
+		Fixes: actions,
+	}
+	data, err := json.Marshal(fixes)
+	if err != nil {
+		bug.Reportf("marshalling quick fixes: %v", err)
+		return false
+	}
+	msg := json.RawMessage(data)
+	sd.BundledFixes = &msg
+	return true
+}
+
+// BundledQuickFixes extracts any bundled codeActions from the
+// diag.Data field.
+func BundledQuickFixes(diag protocol.Diagnostic) []protocol.CodeAction {
+	if diag.Data == nil {
+		return nil
+	}
+	var fix quickFixesJSON
+	if err := json.Unmarshal(*diag.Data, &fix); err != nil {
+		bug.Reportf("unmarshalling quick fix: %v", err)
+		return nil
+	}
+
+	var actions []protocol.CodeAction
+	for _, action := range fix.Fixes {
+		// See BundleQuickFixes: for now we only support bundling commands.
+		if action.Edit != nil {
+			bug.Reportf("bundled fix %q includes workspace edits", action.Title)
+			continue
+		}
+		// associate the action with the incoming diagnostic
+		// (Note that this does not mutate the fix.Fixes slice).
+		action.Diagnostics = []protocol.Diagnostic{diag}
+		actions = append(actions, action)
+	}
+
+	return actions
 }

@@ -7,7 +7,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,36 +14,44 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/internal/testenv"
 )
 
 // TestCapabilities does some minimal validation of the server's adherence to the LSP.
 // The checks in the test are added as changes are made and errors noticed.
 func TestCapabilities(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "fake")
+	// TODO(bcmills): This test fails on js/wasm, which is not unexpected, but the
+	// failure mode is that the DidOpen call below reports "no views in session",
+	// which seems a little too cryptic.
+	// Is there some missing error reporting somewhere?
+	testenv.NeedsTool(t, "go")
+
+	tmpDir, err := os.MkdirTemp("", "fake")
 	if err != nil {
 		t.Fatal(err)
 	}
 	tmpFile := filepath.Join(tmpDir, "fake.go")
-	if err := ioutil.WriteFile(tmpFile, []byte(""), 0775); err != nil {
+	if err := os.WriteFile(tmpFile, []byte(""), 0775); err != nil {
 		t.Fatal(err)
 	}
-	if err := ioutil.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module fake\n\ngo 1.12\n"), 0775); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module fake\n\ngo 1.12\n"), 0775); err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
 	app := New("gopls-test", tmpDir, os.Environ(), nil)
-	c := newConnection(app)
-	ctx := context.Background()
-	defer c.terminate(ctx)
 
 	params := &protocol.ParamInitialize{}
-	params.RootURI = protocol.URIFromPath(c.Client.app.wd)
+	params.RootURI = protocol.URIFromPath(app.wd)
 	params.Capabilities.Workspace.Configuration = true
 
 	// Send an initialize request to the server.
-	c.Server = lsp.NewServer(cache.NewSession(ctx, cache.New(nil), app.options), c.Client)
-	result, err := c.Server.Initialize(ctx, params)
+	ctx := context.Background()
+	client := newClient(app, nil)
+	options := source.DefaultOptions(app.options)
+	server := lsp.NewServer(cache.NewSession(ctx, cache.New(nil)), client, options)
+	result, err := server.Initialize(ctx, params)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,9 +60,12 @@ func TestCapabilities(t *testing.T) {
 		t.Error(err)
 	}
 	// Complete initialization of server.
-	if err := c.Server.Initialized(ctx, &protocol.InitializedParams{}); err != nil {
+	if err := server.Initialized(ctx, &protocol.InitializedParams{}); err != nil {
 		t.Fatal(err)
 	}
+
+	c := newConnection(server, client)
+	defer c.terminate(ctx)
 
 	// Open the file on the server side.
 	uri := protocol.URIFromPath(tmpFile)

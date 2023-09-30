@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -61,7 +60,7 @@ func (s *snapshot) ModTidy(ctx context.Context, pm *source.ParsedModule) (*sourc
 			}
 		}
 
-		if criticalErr := s.GetCriticalError(ctx); criticalErr != nil {
+		if criticalErr := s.CriticalError(ctx); criticalErr != nil {
 			return &source.TidiedModule{
 				Diagnostics: criticalErr.Diagnostics,
 			}, nil
@@ -86,7 +85,7 @@ func (s *snapshot) ModTidy(ctx context.Context, pm *source.ParsedModule) (*sourc
 	}
 
 	// Await result.
-	v, err := s.awaitPromise(ctx, entry.(*memoize.Promise))
+	v, err := s.awaitPromise(ctx, entry)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +117,7 @@ func modTidyImpl(ctx context.Context, snapshot *snapshot, filename string, pm *s
 
 	// Go directly to disk to get the temporary mod file,
 	// since it is always on disk.
-	tempContents, err := ioutil.ReadFile(tmpURI.Filename())
+	tempContents, err := os.ReadFile(tmpURI.Filename())
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +168,7 @@ func modTidyDiagnostics(ctx context.Context, snapshot *snapshot, pm *source.Pars
 	for _, req := range wrongDirectness {
 		// Handle dependencies that are incorrectly labeled indirect and
 		// vice versa.
-		srcDiag, err := directnessDiagnostic(pm.Mapper, req, snapshot.View().Options().ComputeEdits)
+		srcDiag, err := directnessDiagnostic(pm.Mapper, req, snapshot.Options().ComputeEdits)
 		if err != nil {
 			// We're probably in a bad state if we can't compute a
 			// directnessDiagnostic, but try to keep going so as to not suppress
@@ -183,7 +182,33 @@ func modTidyDiagnostics(ctx context.Context, snapshot *snapshot, pm *source.Pars
 	// go.mod file. The fixes will be for the go.mod file, but the
 	// diagnostics should also appear in both the go.mod file and the import
 	// statements in the Go files in which the dependencies are used.
+	// Finally, add errors for any unused dependencies.
+	if len(missing) > 0 {
+		missingModuleDiagnostics, err := missingModuleDiagnostics(ctx, snapshot, pm, ideal, missing)
+		if err != nil {
+			return nil, err
+		}
+		diagnostics = append(diagnostics, missingModuleDiagnostics...)
+	}
+
+	// Opt: if this is the only diagnostic, we can avoid textual edits and just
+	// run the Go command.
+	//
+	// See also the documentation for command.RemoveDependencyArgs.OnlyDiagnostic.
+	onlyDiagnostic := len(diagnostics) == 0 && len(unused) == 1
+	for _, req := range unused {
+		srcErr, err := unusedDiagnostic(pm.Mapper, req, onlyDiagnostic)
+		if err != nil {
+			return nil, err
+		}
+		diagnostics = append(diagnostics, srcErr)
+	}
+	return diagnostics, nil
+}
+
+func missingModuleDiagnostics(ctx context.Context, snapshot *snapshot, pm *source.ParsedModule, ideal *modfile.File, missing map[string]*modfile.Require) ([]*source.Diagnostic, error) {
 	missingModuleFixes := map[*modfile.Require][]source.SuggestedFix{}
+	var diagnostics []*source.Diagnostic
 	for _, req := range missing {
 		srcDiag, err := missingModuleDiagnostic(pm, req)
 		if err != nil {
@@ -192,10 +217,15 @@ func modTidyDiagnostics(ctx context.Context, snapshot *snapshot, pm *source.Pars
 		missingModuleFixes[req] = srcDiag.SuggestedFixes
 		diagnostics = append(diagnostics, srcDiag)
 	}
+
 	// Add diagnostics for missing modules anywhere they are imported in the
 	// workspace.
+	metas, err := snapshot.WorkspaceMetadata(ctx)
+	if err != nil {
+		return nil, err
+	}
 	// TODO(adonovan): opt: opportunities for parallelism abound.
-	for _, m := range snapshot.workspaceMetadata() {
+	for _, m := range metas {
 		// Read both lists of files of this package.
 		//
 		// Parallelism is not necessary here as the files will have already been
@@ -284,15 +314,6 @@ func modTidyDiagnostics(ctx context.Context, snapshot *snapshot, pm *source.Pars
 				diagnostics = append(diagnostics, srcErr)
 			}
 		}
-	}
-	// Finally, add errors for any unused dependencies.
-	onlyDiagnostic := len(diagnostics) == 0 && len(unused) == 1
-	for _, req := range unused {
-		srcErr, err := unusedDiagnostic(pm.Mapper, req, onlyDiagnostic)
-		if err != nil {
-			return nil, err
-		}
-		diagnostics = append(diagnostics, srcErr)
 	}
 	return diagnostics, nil
 }
@@ -464,7 +485,7 @@ func missingModuleForImport(pgf *source.ParsedGoFile, imp *ast.ImportSpec, req *
 //
 // TODO(rfindley): this should key off source.ImportPath.
 func parseImports(ctx context.Context, s *snapshot, files []source.FileHandle) (map[string]bool, error) {
-	pgfs, err := s.parseCache.parseFiles(ctx, token.NewFileSet(), source.ParseHeader, files...)
+	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), source.ParseHeader, false, files...)
 	if err != nil { // e.g. context cancellation
 		return nil, err
 	}

@@ -37,16 +37,15 @@ func (r *foldingRanges) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("folding_ranges expects 1 argument (file)")
 	}
 
-	conn, err := r.app.connect(ctx)
+	conn, err := r.app.connect(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer conn.terminate(ctx)
 
 	from := span.Parse(args[0])
-	file := conn.openFile(ctx, from.URI())
-	if file.err != nil {
-		return file.err
+	if _, err := conn.openFile(ctx, from.URI()); err != nil {
+		return err
 	}
 
 	p := protocol.FoldingRangeParams{

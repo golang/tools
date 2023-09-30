@@ -18,10 +18,11 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/stubmethods"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
-	"golang.org/x/tools/internal/bug"
+	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -30,7 +31,7 @@ import (
 // methods of the concrete type that is assigned to an interface type
 // at the cursor position.
 func stubSuggestedFixFunc(ctx context.Context, snapshot Snapshot, fh FileHandle, rng protocol.Range) (*token.FileSet, *analysis.SuggestedFix, error) {
-	pkg, pgf, err := PackageForFile(ctx, snapshot, fh.URI(), NarrowestPackage)
+	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, nil, fmt.Errorf("GetTypedFile: %w", err)
 	}
@@ -125,6 +126,12 @@ func stub(ctx context.Context, snapshot Snapshot, si *stubmethods.StubInfo) (*to
 	var newImports []newImport // for AddNamedImport
 	qual := func(pkg *types.Package) string {
 		// TODO(adonovan): don't ignore vendor prefix.
+		//
+		// Ignore the current package import.
+		if pkg.Path() == conc.Pkg().Path() {
+			return ""
+		}
+
 		importPath := ImportPath(pkg.Path())
 		name, ok := importEnv[importPath]
 		if !ok {
@@ -162,7 +169,7 @@ func stub(ctx context.Context, snapshot Snapshot, si *stubmethods.StubInfo) (*to
 	// Format the new methods.
 	var newMethods bytes.Buffer
 	for _, method := range missing {
-		fmt.Fprintf(&newMethods, `// %s implements %s
+		fmt.Fprintf(&newMethods, `// %s implements %s.
 func (%s%s%s) %s%s {
 	panic("unimplemented")
 }
@@ -224,16 +231,20 @@ func (%s%s%s) %s%s {
 	}
 
 	// Report the diff.
-	diffs := snapshot.View().Options().ComputeEdits(string(input), output.String())
-	var edits []analysis.TextEdit
+	diffs := snapshot.Options().ComputeEdits(string(input), output.String())
+	return tokeninternal.FileSetFor(declPGF.Tok), // edits use declPGF.Tok
+		&analysis.SuggestedFix{TextEdits: diffToTextEdits(declPGF.Tok, diffs)},
+		nil
+}
+
+func diffToTextEdits(tok *token.File, diffs []diff.Edit) []analysis.TextEdit {
+	edits := make([]analysis.TextEdit, 0, len(diffs))
 	for _, edit := range diffs {
 		edits = append(edits, analysis.TextEdit{
-			Pos:     declPGF.Tok.Pos(edit.Start),
-			End:     declPGF.Tok.Pos(edit.End),
+			Pos:     tok.Pos(edit.Start),
+			End:     tok.Pos(edit.End),
 			NewText: []byte(edit.New),
 		})
 	}
-	return tokeninternal.FileSetFor(declPGF.Tok), // edits use declPGF.Tok
-		&analysis.SuggestedFix{TextEdits: edits},
-		nil
+	return edits
 }

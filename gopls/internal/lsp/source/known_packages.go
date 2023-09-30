@@ -6,7 +6,6 @@ package source
 
 import (
 	"context"
-	"fmt"
 	"go/parser"
 	"go/token"
 	"sort"
@@ -28,15 +27,10 @@ func KnownPackagePaths(ctx context.Context, snapshot Snapshot, fh FileHandle) ([
 	// This algorithm is expressed in terms of Metadata, not Packages,
 	// so it doesn't cause or wait for type checking.
 
-	// Find a Metadata containing the file.
-	metas, err := snapshot.MetadataForFile(ctx, fh.URI())
+	current, err := NarrowestMetadataForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err // e.g. context cancelled
 	}
-	if len(metas) == 0 {
-		return nil, fmt.Errorf("no loaded package contain file %s", fh.URI())
-	}
-	current := metas[0] // pick one arbitrarily (they should all have the same package path)
 
 	// Parse the file's imports so we can compute which
 	// PackagePaths are imported by this specific file.
@@ -57,7 +51,7 @@ func KnownPackagePaths(ctx context.Context, snapshot Snapshot, fh FileHandle) ([
 		}
 	}
 
-	// Now find candidates among known packages.
+	// Now find candidates among all known packages.
 	knownPkgs, err := snapshot.AllMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -91,7 +85,7 @@ func KnownPackagePaths(ctx context.Context, snapshot Snapshot, fh FileHandle) ([
 	}
 
 	// Augment the set by invoking the goimports algorithm.
-	if err := snapshot.RunProcessEnvFunc(ctx, func(o *imports.Options) error {
+	if err := snapshot.RunProcessEnvFunc(ctx, func(ctx context.Context, o *imports.Options) error {
 		ctx, cancel := context.WithTimeout(ctx, time.Millisecond*80)
 		defer cancel()
 		var seenMu sync.Mutex

@@ -6,12 +6,12 @@ import (
 )
 
 func newCloser() io.Closer {
-	return closer{} //@suggestedfix("c", "refactor.rewrite", "")
+	return closer{} //@suggestedfix("c", "quickfix", "")
 }
 
 type closer struct{}
 
-// Close implements io.Closer
+// Close implements io.Closer.
 func (closer) Close() error {
 	panic("unimplemented")
 }

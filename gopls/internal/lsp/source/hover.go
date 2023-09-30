@@ -14,6 +14,8 @@ import (
 	"go/format"
 	"go/token"
 	"go/types"
+	"io/fs"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -22,10 +24,10 @@ import (
 	"golang.org/x/text/unicode/runenames"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/typeparams"
@@ -71,13 +73,13 @@ func Hover(ctx context.Context, snapshot Snapshot, fh FileHandle, position proto
 	if h == nil {
 		return nil, nil
 	}
-	hover, err := formatHover(h, snapshot.View().Options())
+	hover, err := formatHover(h, snapshot.Options())
 	if err != nil {
 		return nil, err
 	}
 	return &protocol.Hover{
 		Contents: protocol.MarkupContent{
-			Kind:  snapshot.View().Options().PreferredContentFormat,
+			Kind:  snapshot.Options().PreferredContentFormat,
 			Value: hover,
 		},
 		Range: rng,
@@ -88,7 +90,7 @@ func Hover(ctx context.Context, snapshot Snapshot, fh FileHandle, position proto
 // hovering at the position, it returns _, nil, nil: an error is only returned
 // if the position is valid but we fail to compute hover information.
 func hover(ctx context.Context, snapshot Snapshot, fh FileHandle, pp protocol.Position) (protocol.Range, *HoverJSON, error) {
-	pkg, pgf, err := PackageForFile(ctx, snapshot, fh.URI(), NarrowestPackage)
+	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return protocol.Range{}, nil, err
 	}
@@ -121,6 +123,28 @@ func hover(ctx context.Context, snapshot Snapshot, fh FileHandle, pp protocol.Po
 		}
 	}
 
+	// Handle hovering over embed directive argument.
+	pattern, embedRng := parseEmbedDirective(pgf.Mapper, pp)
+	if pattern != "" {
+		return hoverEmbed(fh, embedRng, pattern)
+	}
+
+	// Handle linkname directive by overriding what to look for.
+	var linkedRange *protocol.Range // range referenced by linkname directive, or nil
+	if pkgPath, name, offset := parseLinkname(ctx, snapshot, fh, pp); pkgPath != "" && name != "" {
+		// rng covering 2nd linkname argument: pkgPath.name.
+		rng, err := pgf.PosRange(pgf.Tok.Pos(offset), pgf.Tok.Pos(offset+len(pkgPath)+len(".")+len(name)))
+		if err != nil {
+			return protocol.Range{}, nil, fmt.Errorf("range over linkname arg: %w", err)
+		}
+		linkedRange = &rng
+
+		pkg, pgf, pos, err = findLinkname(ctx, snapshot, PackagePath(pkgPath), name)
+		if err != nil {
+			return protocol.Range{}, nil, fmt.Errorf("find linkname: %w", err)
+		}
+	}
+
 	// The general case: compute hover information for the object referenced by
 	// the identifier at pos.
 	ident, obj, selectedType := referencedObject(pkg, pgf, pos)
@@ -128,9 +152,15 @@ func hover(ctx context.Context, snapshot Snapshot, fh FileHandle, pp protocol.Po
 		return protocol.Range{}, nil, nil // no object to hover
 	}
 
-	rng, err := pgf.NodeRange(ident)
-	if err != nil {
-		return protocol.Range{}, nil, err
+	// Unless otherwise specified, rng covers the ident being hovered.
+	var rng protocol.Range
+	if linkedRange != nil {
+		rng = *linkedRange
+	} else {
+		rng, err = pgf.NodeRange(ident)
+		if err != nil {
+			return protocol.Range{}, nil, err
+		}
 	}
 
 	// By convention, we qualify hover information relative to the package
@@ -342,8 +372,6 @@ func hoverBuiltin(ctx context.Context, snapshot Snapshot, obj types.Object) (*Ho
 		return nil, err
 	}
 
-	// TODO(rfindley): add a test for jump to definition of error.Error (which is
-	// probably failing, considering it lacks special handling).
 	if obj.Name() == "Error" {
 		signature := obj.String()
 		return &HoverJSON{
@@ -487,8 +515,11 @@ func hoverPackageName(pkg Package, pgf *ParsedGoFile) (protocol.Range, *HoverJSO
 //
 //	'∑', U+2211, N-ARY SUMMATION
 func hoverLit(pgf *ParsedGoFile, lit *ast.BasicLit, pos token.Pos) (protocol.Range, *HoverJSON, error) {
-	var r rune
-	var start, end token.Pos
+	var (
+		value      string    // if non-empty, a constant value to format in hover
+		r          rune      // if non-zero, format a description of this rune in hover
+		start, end token.Pos // hover span
+	)
 	// Extract a rune from the current position.
 	// 'Ω', "...Ω...", or 0x03A9 => 'Ω', U+03A9, GREEK CAPITAL LETTER OMEGA
 	switch lit.Kind {
@@ -504,23 +535,34 @@ func hoverLit(pgf *ParsedGoFile, lit *ast.BasicLit, pos token.Pos) (protocol.Ran
 			return protocol.Range{}, nil, fmt.Errorf("rune error")
 		}
 		start, end = lit.Pos(), lit.End()
-	case token.INT:
-		// TODO(rfindley): add support for hex/octal/binary->int conversion here.
 
-		// It's an integer, scan only if it is a hex literal whose bitsize in
-		// ranging from 8 to 32.
-		if !(strings.HasPrefix(lit.Value, "0x") && len(lit.Value[2:]) >= 2 && len(lit.Value[2:]) <= 8) {
+	case token.INT:
+		// Short literals (e.g. 99 decimal, 07 octal) are uninteresting.
+		if len(lit.Value) < 3 {
 			return protocol.Range{}, nil, nil
 		}
-		v, err := strconv.ParseUint(lit.Value[2:], 16, 32)
-		if err != nil {
-			return protocol.Range{}, nil, fmt.Errorf("parsing int: %v", err)
+
+		v := constant.MakeFromLiteral(lit.Value, lit.Kind, 0)
+		if v.Kind() != constant.Int {
+			return protocol.Range{}, nil, nil
 		}
-		r = rune(v)
-		if r == utf8.RuneError {
-			return protocol.Range{}, nil, fmt.Errorf("rune error")
+
+		switch lit.Value[:2] {
+		case "0x", "0X":
+			// As a special case, try to recognize hexadecimal literals as runes if
+			// they are within the range of valid unicode values.
+			if v, ok := constant.Int64Val(v); ok && v > 0 && v <= utf8.MaxRune && utf8.ValidRune(rune(v)) {
+				r = rune(v)
+			}
+			fallthrough
+		case "0o", "0O", "0b", "0B":
+			// Format the decimal value of non-decimal literals.
+			value = v.ExactString()
+			start, end = lit.Pos(), lit.End()
+		default:
+			return protocol.Range{}, nil, nil
 		}
-		start, end = lit.Pos(), lit.End()
+
 	case token.STRING:
 		// It's a string, scan only if it contains a unicode escape sequence under or before the
 		// current cursor position.
@@ -555,30 +597,82 @@ func hoverLit(pgf *ParsedGoFile, lit *ast.BasicLit, pos token.Pos) (protocol.Ran
 			}
 		}
 	}
-	if r == 0 {
+
+	if value == "" && r == 0 { // nothing to format
 		return protocol.Range{}, nil, nil
 	}
+
 	rng, err := pgf.PosRange(start, end)
 	if err != nil {
 		return protocol.Range{}, nil, err
 	}
 
-	var desc string
-	runeName := runenames.Name(r)
-	if len(runeName) > 0 && runeName[0] == '<' {
-		// Check if the rune looks like an HTML tag. If so, trim the surrounding <>
-		// characters to work around https://github.com/microsoft/vscode/issues/124042.
-		runeName = strings.TrimRight(runeName[1:], ">")
+	var b strings.Builder
+	if value != "" {
+		b.WriteString(value)
 	}
-	if strconv.IsPrint(r) {
-		desc = fmt.Sprintf("'%s', U+%04X, %s", string(r), uint32(r), runeName)
-	} else {
-		desc = fmt.Sprintf("U+%04X, %s", uint32(r), runeName)
+	if r != 0 {
+		runeName := runenames.Name(r)
+		if len(runeName) > 0 && runeName[0] == '<' {
+			// Check if the rune looks like an HTML tag. If so, trim the surrounding <>
+			// characters to work around https://github.com/microsoft/vscode/issues/124042.
+			runeName = strings.TrimRight(runeName[1:], ">")
+		}
+		if b.Len() > 0 {
+			b.WriteString(", ")
+		}
+		if strconv.IsPrint(r) {
+			fmt.Fprintf(&b, "'%c', ", r)
+		}
+		fmt.Fprintf(&b, "U+%04X, %s", r, runeName)
 	}
+	hover := b.String()
 	return rng, &HoverJSON{
-		Synopsis:          desc,
-		FullDocumentation: desc,
+		Synopsis:          hover,
+		FullDocumentation: hover,
 	}, nil
+}
+
+// hoverEmbed computes hover information for a filepath.Match pattern.
+// Assumes that the pattern is relative to the location of fh.
+func hoverEmbed(fh FileHandle, rng protocol.Range, pattern string) (protocol.Range, *HoverJSON, error) {
+	s := &strings.Builder{}
+
+	dir := filepath.Dir(fh.URI().Filename())
+	var matches []string
+	err := filepath.WalkDir(dir, func(abs string, _ fs.DirEntry, e error) error {
+		if e != nil {
+			return e
+		}
+		rel, err := filepath.Rel(dir, abs)
+		if err != nil {
+			return err
+		}
+		ok, err := filepath.Match(pattern, rel)
+		if err != nil {
+			return err
+		}
+		if ok {
+			matches = append(matches, rel)
+		}
+		return nil
+	})
+	if err != nil {
+		return protocol.Range{}, nil, err
+	}
+
+	for _, m := range matches {
+		// TODO: Renders each file as separate markdown paragraphs.
+		// If forcing (a single) newline is possible it might be more clear.
+		fmt.Fprintf(s, "%s\n\n", m)
+	}
+
+	json := &HoverJSON{
+		Signature:         fmt.Sprintf("Embedding %q", pattern),
+		Synopsis:          s.String(),
+		FullDocumentation: s.String(),
+	}
+	return rng, json, nil
 }
 
 // inferredSignatureString is a wrapper around the types.ObjectString function

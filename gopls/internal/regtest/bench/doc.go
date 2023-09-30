@@ -14,19 +14,18 @@
 //
 // # Profiling
 //
-// As benchmark functions run gopls in a separate process, the normal test
-// flags for profiling are not useful. Instead the -gopls_cpuprofile,
+// Benchmark functions run gopls in a separate process, which means the normal
+// test flags for profiling aren't useful. Instead the -gopls_cpuprofile,
 // -gopls_memprofile, -gopls_allocprofile, and -gopls_trace flags may be used
-// to pass through profiling flags to the gopls process. Each of these flags
-// sets a suffix for the respective gopls profiling flag, which is prefixed
-// with a name corresponding to the shared repository or (in some cases)
-// benchmark name. For example, settings -gopls_cpuprofile=cpu.out will result
-// in profiles named tools.cpu.out, BenchmarkInitialWorkspaceLoad.cpu.out, etc.
-// Here, tools.cpu.out is the cpu profile for the shared x/tools session, which
-// may be used by multiple benchmark functions, and
-// BenchmarkInitialWorkspaceLoad is the cpu profile for the last iteration of
-// the initial workspace load test, which starts a new editor session for each
-// iteration.
+// to pass through profiling to the gopls subproces.
+//
+// Each of these flags sets a suffix for the respective gopls profile, which is
+// named according to the schema <repo>.<operation>.<suffix>. For example,
+// setting -gopls_cpuprofile=cpu will result in profiles named tools.iwl.cpu,
+// tools.rename.cpu, etc. In some cases, these profiles are for the entire
+// gopls subprocess (as in the initial workspace load), whereas in others they
+// span only the critical section of the benchmark. It is up to each benchmark
+// to implement profiling as appropriate.
 //
 // # Integration with perf.golang.org
 //

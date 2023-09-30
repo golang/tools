@@ -7,9 +7,9 @@ package regtest
 import (
 	"testing"
 
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/hooks"
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
-	"golang.org/x/tools/internal/bug"
 
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -383,7 +383,9 @@ package a
 		).Run(t, pkg, func(t *testing.T, env *Env) {
 			env.OpenFile("a/a.go")
 			env.OpenFile("a/a_unneeded.go")
-			env.AfterChange(
+			env.Await(
+				// Log messages are asynchronous to other events on the LSP stream, so we
+				// can't use OnceMet or AfterChange here.
 				LogMatching(protocol.Info, "a_unneeded.go", 1, false),
 			)
 
@@ -395,7 +397,7 @@ package a
 				Diagnostics(env.AtRegexp("a/a.go", "fmt")),
 			)
 			env.SaveBuffer("a/a.go")
-			env.AfterChange(
+			env.Await(
 				// There should only be one log message containing
 				// a_unneeded.go, from the initial workspace load, which we
 				// check for earlier. If there are more, there's a bug.
@@ -411,7 +413,7 @@ package a
 		).Run(t, pkg, func(t *testing.T, env *Env) {
 			env.OpenFile("a/a.go")
 			env.OpenFile("a/a_unneeded.go")
-			env.AfterChange(
+			env.Await(
 				LogMatching(protocol.Info, "a_unneeded.go", 1, false),
 			)
 
@@ -423,7 +425,7 @@ package a
 				Diagnostics(env.AtRegexp("a/a.go", "fmt")),
 			)
 			env.SaveBuffer("a/a.go")
-			env.AfterChange(
+			env.Await(
 				// There should only be one log message containing
 				// a_unneeded.go, from the initial workspace load, which we
 				// check for earlier. If there are more, there's a bug.
@@ -577,7 +579,7 @@ func main() {
 		env.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
 		)
-		if err := env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"init", "mod.com"}, true); err != nil {
+		if err := env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"init", "mod.com"}, nil, true); err != nil {
 			t.Fatal(err)
 		}
 

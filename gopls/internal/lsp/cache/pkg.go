@@ -11,9 +11,11 @@ import (
 	"go/scanner"
 	"go/token"
 	"go/types"
+	"sync"
 
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
+	"golang.org/x/tools/gopls/internal/lsp/source/xrefs"
 	"golang.org/x/tools/gopls/internal/span"
 )
 
@@ -25,11 +27,10 @@ type (
 	ImportPath  = source.ImportPath
 )
 
-// A Package is the union of snapshot-local information (Metadata) and shared
-// type-checking information (a syntaxPackage).
+// A Package is the union of package metadata and type checking results.
 //
 // TODO(rfindley): for now, we do not persist the post-processing of
-// loadDiagnostics, because the value of the snapshot.packages map  is just the
+// loadDiagnostics, because the value of the snapshot.packages map is just the
 // package handle. Fix this.
 type Package struct {
 	m   *source.Metadata
@@ -52,8 +53,26 @@ type syntaxPackage struct {
 	typesInfo       *types.Info
 	importMap       map[PackagePath]*types.Package
 	hasFixedFiles   bool // if true, AST was sufficiently mangled that we should hide type errors
-	xrefs           []byte
-	methodsets      *methodsets.Index
+
+	xrefsOnce sync.Once
+	_xrefs    []byte // only used by the xrefs method
+
+	methodsetsOnce sync.Once
+	_methodsets    *methodsets.Index // only used by the methodsets method
+}
+
+func (p *syntaxPackage) xrefs() []byte {
+	p.xrefsOnce.Do(func() {
+		p._xrefs = xrefs.Index(p.compiledGoFiles, p.types, p.typesInfo)
+	})
+	return p._xrefs
+}
+
+func (p *syntaxPackage) methodsets() *methodsets.Index {
+	p.methodsetsOnce.Do(func() {
+		p._methodsets = methodsets.NewIndex(p.fset, p.types)
+	})
+	return p._methodsets
 }
 
 func (p *Package) String() string { return string(p.m.ID) }
@@ -70,8 +89,11 @@ type loadScope interface {
 type (
 	fileLoadScope    span.URI // load packages containing a file (including command-line-arguments)
 	packageLoadScope string   // load a specific package (the value is its PackageID)
-	moduleLoadScope  string   // load packages in a specific module
-	viewLoadScope    span.URI // load the workspace
+	moduleLoadScope  struct {
+		dir        string // dir containing the go.mod file
+		modulePath string // parsed module path
+	}
+	viewLoadScope span.URI // load the workspace
 )
 
 // Implement the loadScope interface.
@@ -130,12 +152,12 @@ func (p *Package) DependencyTypes(path source.PackagePath) *types.Package {
 	return p.pkg.importMap[path]
 }
 
-func (p *Package) HasParseErrors() bool {
-	return len(p.pkg.parseErrors) != 0
+func (p *Package) GetParseErrors() []scanner.ErrorList {
+	return p.pkg.parseErrors
 }
 
-func (p *Package) HasTypeErrors() bool {
-	return len(p.pkg.typeErrors) != 0
+func (p *Package) GetTypeErrors() []types.Error {
+	return p.pkg.typeErrors
 }
 
 func (p *Package) DiagnosticsForFile(ctx context.Context, s source.Snapshot, uri span.URI) ([]*source.Diagnostic, error) {

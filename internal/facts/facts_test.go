@@ -295,7 +295,7 @@ func testEncodeDecode(t *testing.T, files map[string]string, tests []pkgLookups)
 	// factmap represents the passing of encoded facts from one
 	// package to another. In practice one would use the file system.
 	factmap := make(map[string][]byte)
-	read := func(imp *types.Package) ([]byte, error) { return factmap[imp.Path()], nil }
+	read := func(pkgPath string) ([]byte, error) { return factmap[pkgPath], nil }
 
 	// Analyze packages in order, look up various objects accessible within
 	// each package, and see if they have a fact.  The "analysis" exports a
@@ -311,7 +311,7 @@ func testEncodeDecode(t *testing.T, files map[string]string, tests []pkgLookups)
 		}
 
 		// decode
-		facts, err := facts.NewDecoder(pkg).Decode(read)
+		facts, err := facts.NewDecoder(pkg).Decode(false, read)
 		if err != nil {
 			t.Fatalf("Decode failed: %v", err)
 		}
@@ -345,7 +345,7 @@ func testEncodeDecode(t *testing.T, files map[string]string, tests []pkgLookups)
 		}
 
 		// encode
-		factmap[pkg.Path()] = facts.Encode()
+		factmap[pkg.Path()] = facts.Encode(false)
 	}
 }
 
@@ -413,7 +413,7 @@ func TestFactFilter(t *testing.T) {
 	}
 
 	obj := pkg.Scope().Lookup("A")
-	s, err := facts.NewDecoder(pkg).Decode(func(*types.Package) ([]byte, error) { return nil, nil })
+	s, err := facts.NewDecoder(pkg).Decode(false, func(pkgPath string) ([]byte, error) { return nil, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,6 +472,7 @@ func TestMalformed(t *testing.T) {
 		{
 			name: "initialization-cycle",
 			pkgs: []pkgTest{
+				// Notation: myFact(a.[N]) means: package a has members {N}.
 				{
 					content: `package a; type N[T any] struct { F *N[N[T]] }`,
 					err:     "instantiation cycle:",
@@ -483,7 +484,8 @@ func TestMalformed(t *testing.T) {
 				},
 				{
 					content: `package c; import "b"; var C b.B`,
-					wants:   map[string]string{"a": "myFact(a.[N])", "b": "myFact(b.[B])", "c": "myFact(c.[C])"},
+					wants:   map[string]string{"a": "no fact", "b": "myFact(b.[B])", "c": "myFact(c.[C])"},
+					// package fact myFact(a.[N]) not reexported
 				},
 			},
 		},
@@ -502,7 +504,7 @@ func TestMalformed(t *testing.T) {
 			}
 			fset := token.NewFileSet()
 			factmap := make(map[string][]byte)
-			read := func(imp *types.Package) ([]byte, error) { return factmap[imp.Path()], nil }
+			read := func(pkgPath string) ([]byte, error) { return factmap[pkgPath], nil }
 
 			// Processes the pkgs in order. For package, export a package fact,
 			// and use this fact to verify which package facts are reachable via Decode.
@@ -526,7 +528,7 @@ func TestMalformed(t *testing.T) {
 				packages[pkg.Path()] = pkg
 
 				// decode facts
-				facts, err := facts.NewDecoder(pkg).Decode(read)
+				facts, err := facts.NewDecoder(pkg).Decode(false, read)
 				if err != nil {
 					t.Fatalf("Decode failed: %v", err)
 				}
@@ -553,7 +555,7 @@ func TestMalformed(t *testing.T) {
 				}
 
 				// encode facts
-				factmap[pkg.Path()] = facts.Encode()
+				factmap[pkg.Path()] = facts.Encode(false)
 			}
 		})
 	}

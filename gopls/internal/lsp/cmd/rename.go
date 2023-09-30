@@ -8,24 +8,15 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
-	"sort"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/tool"
 )
 
 // rename implements the rename verb for gopls.
 type rename struct {
-	Diff     bool `flag:"d,diff" help:"display diffs instead of rewriting files"`
-	Write    bool `flag:"w,write" help:"write result to (source) file instead of stdout"`
-	Preserve bool `flag:"preserve" help:"preserve original files"`
-
+	EditFlags
 	app *Application
 }
 
@@ -54,16 +45,17 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 	if len(args) != 2 {
 		return tool.CommandLineErrorf("definition expects 2 arguments (position, new name)")
 	}
-	conn, err := r.app.connect(ctx)
+	r.app.editFlags = &r.EditFlags
+	conn, err := r.app.connect(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer conn.terminate(ctx)
 
 	from := span.Parse(args[0])
-	file := conn.openFile(ctx, from.URI())
-	if file.err != nil {
-		return file.err
+	file, err := conn.openFile(ctx, from.URI())
+	if err != nil {
+		return err
 	}
 	loc, err := file.mapper.SpanLocation(from)
 	if err != nil {
@@ -78,53 +70,5 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	var orderedURIs []string
-	edits := map[span.URI][]protocol.TextEdit{}
-	for _, c := range edit.DocumentChanges {
-		if c.TextDocumentEdit != nil {
-			uri := fileURI(c.TextDocumentEdit.TextDocument.URI)
-			edits[uri] = append(edits[uri], c.TextDocumentEdit.Edits...)
-			orderedURIs = append(orderedURIs, string(uri))
-		}
-	}
-	sort.Strings(orderedURIs)
-	changeCount := len(orderedURIs)
-
-	for _, u := range orderedURIs {
-		uri := span.URIFromURI(u)
-		cmdFile := conn.openFile(ctx, uri)
-		filename := cmdFile.uri.Filename()
-
-		newContent, renameEdits, err := source.ApplyProtocolEdits(cmdFile.mapper, edits[uri])
-		if err != nil {
-			return fmt.Errorf("%v: %v", edits, err)
-		}
-
-		switch {
-		case r.Write:
-			fmt.Fprintln(os.Stderr, filename)
-			if r.Preserve {
-				if err := os.Rename(filename, filename+".orig"); err != nil {
-					return fmt.Errorf("%v: %v", edits, err)
-				}
-			}
-			ioutil.WriteFile(filename, newContent, 0644)
-		case r.Diff:
-			unified, err := diff.ToUnified(filename+".orig", filename, string(cmdFile.mapper.Content), renameEdits)
-			if err != nil {
-				return err
-			}
-			fmt.Print(unified)
-		default:
-			if len(orderedURIs) > 1 {
-				fmt.Printf("%s:\n", filepath.Base(filename))
-			}
-			os.Stdout.Write(newContent)
-			if changeCount > 1 { // if this wasn't last change, print newline
-				fmt.Println()
-			}
-			changeCount -= 1
-		}
-	}
-	return nil
+	return conn.client.applyWorkspaceEdit(edit)
 }

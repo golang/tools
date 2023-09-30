@@ -56,10 +56,11 @@ func NewStreamServer(cache *cache.Cache, daemon bool, optionsFunc func(*source.O
 
 func (s *StreamServer) Binder() *ServerBinder {
 	newServer := func(ctx context.Context, client protocol.ClientCloser) protocol.Server {
-		session := cache.NewSession(ctx, s.cache, s.optionsOverrides)
+		session := cache.NewSession(ctx, s.cache)
 		server := s.serverForTest
 		if server == nil {
-			server = lsp.NewServer(session, client)
+			options := source.DefaultOptions(s.optionsOverrides)
+			server = lsp.NewServer(session, client, options)
 			if instance := debug.GetInstance(ctx); instance != nil {
 				instance.AddService(server, session)
 			}
@@ -73,10 +74,11 @@ func (s *StreamServer) Binder() *ServerBinder {
 // incoming streams using a new lsp server.
 func (s *StreamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) error {
 	client := protocol.ClientDispatcher(conn)
-	session := cache.NewSession(ctx, s.cache, s.optionsOverrides)
+	session := cache.NewSession(ctx, s.cache)
 	server := s.serverForTest
 	if server == nil {
-		server = lsp.NewServer(session, client)
+		options := source.DefaultOptions(s.optionsOverrides)
+		server = lsp.NewServer(session, client, options)
 		if instance := debug.GetInstance(ctx); instance != nil {
 			instance.AddService(server, session)
 		}

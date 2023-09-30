@@ -17,7 +17,6 @@ import (
 	goparser "go/parser"
 	"go/token"
 	"go/types"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -25,6 +24,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -104,7 +104,7 @@ func testPath(t *testing.T, path, srcDir string) *types.Package {
 }
 
 func mktmpdir(t *testing.T) string {
-	tmpdir, err := ioutil.TempDir("", "gcimporter_test")
+	tmpdir, err := os.MkdirTemp("", "gcimporter_test")
 	if err != nil {
 		t.Fatal("mktmpdir:", err)
 	}
@@ -285,7 +285,7 @@ func TestVersionHandling(t *testing.T) {
 	needsCompiler(t, "gc")
 
 	const dir = "./testdata/versions"
-	list, err := ioutil.ReadDir(dir)
+	list, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,21 +314,13 @@ func TestVersionHandling(t *testing.T) {
 		// test that export data can be imported
 		_, err := Import(make(map[string]*types.Package), pkgpath, dir, nil)
 		if err != nil {
-			// ok to fail if it fails with a newer version error for select files
-			if strings.Contains(err.Error(), "newer version") {
-				switch name {
-				case "test_go1.11_999b.a", "test_go1.11_999i.a":
-					continue
-				}
-				// fall through
-			}
 			t.Errorf("import %q failed: %v", pkgpath, err)
 			continue
 		}
 
 		// create file with corrupted export data
 		// 1) read file
-		data, err := ioutil.ReadFile(filepath.Join(dir, name))
+		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -345,13 +337,13 @@ func TestVersionHandling(t *testing.T) {
 		// 4) write the file
 		pkgpath += "_corrupted"
 		filename := filepath.Join(corruptdir, pkgpath) + ".a"
-		ioutil.WriteFile(filename, data, 0666)
+		os.WriteFile(filename, data, 0666)
 
 		// test that importing the corrupted file results in an error
 		_, err = Import(make(map[string]*types.Package), pkgpath, corruptdir, nil)
 		if err == nil {
 			t.Errorf("import corrupted %q succeeded", pkgpath)
-		} else if msg := err.Error(); !strings.Contains(msg, "version skew") {
+		} else if msg := err.Error(); !strings.Contains(msg, "internal error") {
 			t.Errorf("import %q error incorrect (%s)", pkgpath, msg)
 		}
 	}
@@ -403,7 +395,6 @@ var importedObjectTests = []struct {
 	{"math.Pi", "const Pi untyped float"},
 	{"math.Sin", "func Sin(x float64) float64"},
 	{"go/ast.NotNilFilter", "func NotNilFilter(_ string, v reflect.Value) bool"},
-	{"go/internal/gcimporter.FindPkg", "func FindPkg(path string, srcDir string) (filename string, id string)"},
 
 	// interfaces
 	{"context.Context", "type Context interface{Deadline() (deadline time.Time, ok bool); Done() <-chan struct{}; Err() error; Value(key any) any}"},
@@ -778,6 +769,72 @@ func TestIssue51836(t *testing.T) {
 	_ = importPkg(t, "./testdata/aa", tmpdir)
 }
 
+func TestIssue61561(t *testing.T) {
+	testenv.NeedsGo1Point(t, 18) // requires generics
+
+	const src = `package p
+
+type I[P any] interface {
+	m(P)
+	n() P
+}
+
+type J = I[int]
+
+type StillBad[P any] *interface{b(P)}
+
+type K = StillBad[string]
+`
+	fset := token.NewFileSet()
+	f, err := goparser.ParseFile(fset, "p.go", src, 0)
+	if f == nil {
+		// Some test cases may have parse errors, but we must always have a
+		// file.
+		t.Fatalf("ParseFile returned nil file. Err: %v", err)
+	}
+
+	config := &types.Config{}
+	pkg1, err := config.Check("p", fset, []*ast.File{f}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Export it. (Shallowness isn't important here.)
+	data, err := IExportShallow(fset, pkg1, nil)
+	if err != nil {
+		t.Fatalf("export: %v", err) // any failure to export is a bug
+	}
+
+	// Re-import it.
+	imports := make(map[string]*types.Package)
+	pkg2, err := IImportShallow(fset, GetPackagesFromMap(imports), data, "p", nil)
+	if err != nil {
+		t.Fatalf("import: %v", err) // any failure of IExport+IImport is a bug.
+	}
+
+	insts := []types.Type{
+		pkg2.Scope().Lookup("J").Type(),
+		// This test is still racy, because the incomplete interface is contained
+		// within a nested type expression.
+		//
+		// Uncomment this once golang/go#61561 is fixed.
+		// pkg2.Scope().Lookup("K").Type().Underlying().(*types.Pointer).Elem(),
+	}
+
+	// Use the interface instances concurrently.
+	for _, inst := range insts {
+		var wg sync.WaitGroup
+		for i := 0; i < 2; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_ = types.NewMethodSet(inst)
+			}()
+		}
+		wg.Wait()
+	}
+}
+
 func TestIssue57015(t *testing.T) {
 	testenv.NeedsGo1Point(t, 18) // requires generics
 
@@ -794,57 +851,74 @@ func TestIssue57015(t *testing.T) {
 }
 
 // This is a regression test for a failure to export a package
-// containing a specific type error.
+// containing type errors.
 //
-// Though the issue and test are specific, they may be representatives
-// of class of exporter bugs on ill-typed code that we have yet to
-// flush out.
+// Though the issues and tests are specific, they may be representatives of a
+// class of exporter bugs on ill-typed code that we have yet to flush out.
 //
 // TODO(adonovan): systematize our search for similar problems using
-// fuzz testing, and drive this test from a table of test cases
-// discovered by fuzzing.
-func TestIssue57729(t *testing.T) {
-	// The lack of a receiver causes Recv.Type=Invalid.
-	// (The type checker then treats Foo as a package-level
-	// function, inserting it into the package scope.)
-	// The exporter needs to apply the same treatment.
-	const src = `package p; func () Foo() {}`
+// fuzz testing.
+func TestExportInvalid(t *testing.T) {
 
-	// Parse the ill-typed input.
-	fset := token.NewFileSet()
-	f, err := goparser.ParseFile(fset, "p.go", src, 0)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
+	tests := []struct {
+		name    string
+		src     string
+		objName string
+	}{
+		// The lack of a receiver causes Recv.Type=Invalid.
+		// (The type checker then treats Foo as a package-level
+		// function, inserting it into the package scope.)
+		// The exporter needs to apply the same treatment.
+		{"issue 57729", `package p; func () Foo() {}`, "Foo"},
+
+		// It must be possible to export a constant with unknown kind, even if its
+		// type is known.
+		{"issue 60605", `package p; const EPSILON float64 = 1e-`, "EPSILON"},
+
+		// We must not crash when exporting a struct with unknown package.
+		{"issue 60891", `package p; type I[P any] int; const C I[struct{}] = 42`, "C"},
 	}
 
-	// Type check it, expecting errors.
-	config := &types.Config{
-		Error: func(err error) { t.Log(err) }, // don't abort at first error
-	}
-	pkg1, _ := config.Check("p", fset, []*ast.File{f}, nil)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// Parse the ill-typed input.
+			fset := token.NewFileSet()
 
-	// Export it.
-	// (Shallowness isn't important here.)
-	data, err := IExportShallow(fset, pkg1)
-	if err != nil {
-		t.Fatalf("export: %v", err) // any failure to export is a bug
-	}
+			f, err := goparser.ParseFile(fset, "p.go", test.src, 0)
+			if f == nil {
+				// Some test cases may have parse errors, but we must always have a
+				// file.
+				t.Fatalf("ParseFile returned nil file. Err: %v", err)
+			}
 
-	// Re-import it.
-	imports := make(map[string]*types.Package)
-	insert := func(pkg1 *types.Package, name string) { panic("unexpected insert") }
-	pkg2, err := IImportShallow(fset, GetPackageFromMap(imports), data, "p", insert)
-	if err != nil {
-		t.Fatalf("import: %v", err) // any failure of IExport+IImport is a bug.
-	}
+			// Type check it, expecting errors.
+			config := &types.Config{
+				Error: func(err error) { t.Log(err) }, // don't abort at first error
+			}
+			pkg1, _ := config.Check("p", fset, []*ast.File{f}, nil)
 
-	// Check that Lookup("Foo") still returns something.
-	// We can't assert the type hasn't change: it has,
-	// from a method of Invalid to a standalone function.
-	hasObj1 := pkg1.Scope().Lookup("Foo") != nil
-	hasObj2 := pkg2.Scope().Lookup("Foo") != nil
-	if hasObj1 != hasObj2 {
-		t.Errorf("export+import changed Lookup('Foo')!=nil: was %t, became %t", hasObj1, hasObj2)
+			// Export it.
+			// (Shallowness isn't important here.)
+			data, err := IExportShallow(fset, pkg1, nil)
+			if err != nil {
+				t.Fatalf("export: %v", err) // any failure to export is a bug
+			}
+
+			// Re-import it.
+			imports := make(map[string]*types.Package)
+			pkg2, err := IImportShallow(fset, GetPackagesFromMap(imports), data, "p", nil)
+			if err != nil {
+				t.Fatalf("import: %v", err) // any failure of IExport+IImport is a bug.
+			}
+
+			// Check that the expected object is present in both packages.
+			// We can't assert the type hasn't changed: it may have, in some cases.
+			hasObj1 := pkg1.Scope().Lookup(test.objName) != nil
+			hasObj2 := pkg2.Scope().Lookup(test.objName) != nil
+			if hasObj1 != hasObj2 {
+				t.Errorf("export+import changed Lookup(%q)!=nil: was %t, became %t", test.objName, hasObj1, hasObj2)
+			}
+		})
 	}
 }
 

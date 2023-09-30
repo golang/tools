@@ -6,21 +6,15 @@ package tests
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"go/token"
-	"path"
-	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/completion"
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 	"golang.org/x/tools/gopls/internal/span"
@@ -81,90 +75,17 @@ func DiffLinks(mapper *protocol.Mapper, wantLinks []Link, gotLinks []protocol.Do
 
 		if target, ok := links[spn]; ok {
 			delete(links, spn)
-			if target != link.Target {
-				fmt.Fprintf(&msg, "%s: want link with target %q, got %q\n", spn, target, link.Target)
+			if target != *link.Target {
+				fmt.Fprintf(&msg, "%s: want link with target %q, got %q\n", spn, target, *link.Target)
 			}
 		} else {
-			fmt.Fprintf(&msg, "%s: got unexpected link with target %q\n", spn, link.Target)
+			fmt.Fprintf(&msg, "%s: got unexpected link with target %q\n", spn, *link.Target)
 		}
 	}
 	for spn, target := range links {
 		fmt.Fprintf(&msg, "%s: expected link with target %q is missing\n", spn, target)
 	}
 	return msg.String()
-}
-
-// CompareDiagnostics reports testing errors to t when the diagnostic set got
-// does not match want. If the sole expectation has source "no_diagnostics",
-// the test expects that no diagnostics were received for the given document.
-func CompareDiagnostics(t *testing.T, uri span.URI, want, got []*source.Diagnostic) {
-	t.Helper()
-	fileName := path.Base(string(uri))
-
-	// A special case to test that there are no diagnostics for a file.
-	if len(want) == 1 && want[0].Source == "no_diagnostics" {
-		want = nil
-	}
-
-	// Build a helper function to match an actual diagnostic to an overlapping
-	// expected diagnostic (if any).
-	unmatched := make([]*source.Diagnostic, len(want))
-	copy(unmatched, want)
-	source.SortDiagnostics(unmatched)
-	match := func(g *source.Diagnostic) *source.Diagnostic {
-		// Find the last expected diagnostic d for which start(d) < end(g), and
-		// check to see if it overlaps.
-		i := sort.Search(len(unmatched), func(i int) bool {
-			d := unmatched[i]
-			// See rangeOverlaps: if a range is a single point, we consider End to be
-			// included in the range...
-			if g.Range.Start == g.Range.End {
-				return protocol.ComparePosition(d.Range.Start, g.Range.End) > 0
-			}
-			// ...otherwise the end position of a range is not included.
-			return protocol.ComparePosition(d.Range.Start, g.Range.End) >= 0
-		})
-		if i == 0 {
-			return nil
-		}
-		w := unmatched[i-1]
-		if rangeOverlaps(w.Range, g.Range) {
-			unmatched = append(unmatched[:i-1], unmatched[i:]...)
-			return w
-		}
-		return nil
-	}
-
-	for _, g := range got {
-		w := match(g)
-		if w == nil {
-			t.Errorf("%s:%s: unexpected diagnostic %q", fileName, g.Range, g.Message)
-			continue
-		}
-		if match, err := regexp.MatchString(w.Message, g.Message); err != nil {
-			t.Errorf("%s:%s: invalid regular expression %q: %v", fileName, w.Range.Start, w.Message, err)
-		} else if !match {
-			t.Errorf("%s:%s: got Message %q, want match for pattern %q", fileName, g.Range.Start, g.Message, w.Message)
-		}
-		if w.Severity != g.Severity {
-			t.Errorf("%s:%s: got Severity %v, want %v", fileName, g.Range.Start, g.Severity, w.Severity)
-		}
-		if w.Source != g.Source {
-			t.Errorf("%s:%s: got Source %v, want %v", fileName, g.Range.Start, g.Source, w.Source)
-		}
-	}
-
-	for _, w := range unmatched {
-		t.Errorf("%s:%s: unmatched diagnostic pattern %q", fileName, w.Range, w.Message)
-	}
-}
-
-// rangeOverlaps reports whether r1 and r2 overlap.
-func rangeOverlaps(r1, r2 protocol.Range) bool {
-	if inRange(r2.Start, r1) || inRange(r1.Start, r2) {
-		return true
-	}
-	return false
 }
 
 // inRange reports whether p is contained within [r.Start, r.End), or if p ==
@@ -178,67 +99,6 @@ func inRange(p protocol.Position, r protocol.Range) bool {
 		return true
 	}
 	return false
-}
-
-func DiffCodeLens(uri span.URI, want, got []protocol.CodeLens) string {
-	sortCodeLens(want)
-	sortCodeLens(got)
-
-	if len(got) != len(want) {
-		return summarizeCodeLens(-1, uri, want, got, "different lengths got %v want %v", len(got), len(want))
-	}
-	for i, w := range want {
-		g := got[i]
-		if w.Command.Command != g.Command.Command {
-			return summarizeCodeLens(i, uri, want, got, "incorrect Command Name got %v want %v", g.Command.Command, w.Command.Command)
-		}
-		if w.Command.Title != g.Command.Title {
-			return summarizeCodeLens(i, uri, want, got, "incorrect Command Title got %v want %v", g.Command.Title, w.Command.Title)
-		}
-		if protocol.ComparePosition(w.Range.Start, g.Range.Start) != 0 {
-			return summarizeCodeLens(i, uri, want, got, "incorrect Start got %v want %v", g.Range.Start, w.Range.Start)
-		}
-		if !protocol.IsPoint(g.Range) { // Accept any 'want' range if the codelens returns a zero-length range.
-			if protocol.ComparePosition(w.Range.End, g.Range.End) != 0 {
-				return summarizeCodeLens(i, uri, want, got, "incorrect End got %v want %v", g.Range.End, w.Range.End)
-			}
-		}
-	}
-	return ""
-}
-
-func sortCodeLens(c []protocol.CodeLens) {
-	sort.Slice(c, func(i int, j int) bool {
-		if r := protocol.CompareRange(c[i].Range, c[j].Range); r != 0 {
-			return r < 0
-		}
-		if c[i].Command.Command < c[j].Command.Command {
-			return true
-		} else if c[i].Command.Command == c[j].Command.Command {
-			return c[i].Command.Title < c[j].Command.Title
-		} else {
-			return false
-		}
-	})
-}
-
-func summarizeCodeLens(i int, uri span.URI, want, got []protocol.CodeLens, reason string, args ...interface{}) string {
-	msg := &bytes.Buffer{}
-	fmt.Fprint(msg, "codelens failed")
-	if i >= 0 {
-		fmt.Fprintf(msg, " at %d", i)
-	}
-	fmt.Fprint(msg, " because of ")
-	fmt.Fprintf(msg, reason, args...)
-	fmt.Fprint(msg, ":\nexpected:\n")
-	for _, d := range want {
-		fmt.Fprintf(msg, "  %s:%v: %s | %s\n", uri, d.Range, d.Command.Command, d.Command.Title)
-	}
-	fmt.Fprintf(msg, "got:\n")
-	for _, d := range got {
-		fmt.Fprintf(msg, "  %s:%v: %s | %s\n", uri, d.Range, d.Command.Command, d.Command.Title)
-	}
-	return msg.String()
 }
 
 func DiffSignatures(spn span.Span, want, got *protocol.SignatureHelp) string {
@@ -448,73 +308,4 @@ func summarizeCompletionItems(i int, want, got []protocol.CompletionItem, reason
 		fmt.Fprintf(msg, "  %v\n", d)
 	}
 	return msg.String()
-}
-
-func EnableAllAnalyzers(opts *source.Options) {
-	if opts.Analyses == nil {
-		opts.Analyses = make(map[string]bool)
-	}
-	for _, a := range opts.DefaultAnalyzers {
-		if !a.IsEnabled(opts) {
-			opts.Analyses[a.Analyzer.Name] = true
-		}
-	}
-	for _, a := range opts.TypeErrorAnalyzers {
-		if !a.IsEnabled(opts) {
-			opts.Analyses[a.Analyzer.Name] = true
-		}
-	}
-	for _, a := range opts.ConvenienceAnalyzers {
-		if !a.IsEnabled(opts) {
-			opts.Analyses[a.Analyzer.Name] = true
-		}
-	}
-	for _, a := range opts.StaticcheckAnalyzers {
-		if !a.IsEnabled(opts) {
-			opts.Analyses[a.Analyzer.Name] = true
-		}
-	}
-}
-
-func EnableAllInlayHints(opts *source.Options) {
-	if opts.Hints == nil {
-		opts.Hints = make(map[string]bool)
-	}
-	for name := range source.AllInlayHints {
-		opts.Hints[name] = true
-	}
-}
-
-func WorkspaceSymbolsString(ctx context.Context, data *Data, queryURI span.URI, symbols []protocol.SymbolInformation) (string, error) {
-	queryDir := filepath.Dir(queryURI.Filename())
-	var filtered []string
-	for _, s := range symbols {
-		uri := s.Location.URI.SpanURI()
-		dir := filepath.Dir(uri.Filename())
-		if !source.InDir(queryDir, dir) { // assume queries always issue from higher directories
-			continue
-		}
-		m, err := data.Mapper(uri)
-		if err != nil {
-			return "", err
-		}
-		spn, err := m.LocationSpan(s.Location)
-		if err != nil {
-			return "", err
-		}
-		filtered = append(filtered, fmt.Sprintf("%s %s %s", spn, s.Name, s.Kind))
-	}
-	sort.Strings(filtered)
-	return strings.Join(filtered, "\n") + "\n", nil
-}
-
-func WorkspaceSymbolsTestTypeToMatcher(typ WorkspaceSymbolsTestType) source.SymbolMatcher {
-	switch typ {
-	case WorkspaceSymbolsFuzzy:
-		return source.SymbolFuzzy
-	case WorkspaceSymbolsCaseSensitive:
-		return source.SymbolCaseSensitive
-	default:
-		return source.SymbolCaseInsensitive
-	}
 }

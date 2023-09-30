@@ -29,16 +29,12 @@ type importsState struct {
 	cachedModFileHash      source.Hash
 	cachedBuildFlags       []string
 	cachedDirectoryFilters []string
-
-	// runOnce records whether runProcessEnvFunc has been called at least once.
-	// This is necessary to avoid resetting state before the process env is
-	// populated.
-	//
-	// TODO(rfindley): this shouldn't be necessary.
-	runOnce bool
 }
 
-func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot, fn func(*imports.Options) error) error {
+func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot, fn func(context.Context, *imports.Options) error) error {
+	ctx, done := event.Start(ctx, "cache.importsState.runProcessEnvFunc")
+	defer done()
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -58,38 +54,31 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot
 
 	// view.goEnv is immutable -- changes make a new view. Options can change.
 	// We can't compare build flags directly because we may add -modfile.
-	snapshot.view.optionsMu.Lock()
-	localPrefix := snapshot.view.options.Local
-	currentBuildFlags := snapshot.view.options.BuildFlags
-	currentDirectoryFilters := snapshot.view.options.DirectoryFilters
+	localPrefix := snapshot.options.Local
+	currentBuildFlags := snapshot.options.BuildFlags
+	currentDirectoryFilters := snapshot.options.DirectoryFilters
 	changed := !reflect.DeepEqual(currentBuildFlags, s.cachedBuildFlags) ||
-		snapshot.view.options.VerboseOutput != (s.processEnv.Logf != nil) ||
+		snapshot.options.VerboseOutput != (s.processEnv.Logf != nil) ||
 		modFileHash != s.cachedModFileHash ||
-		!reflect.DeepEqual(snapshot.view.options.DirectoryFilters, s.cachedDirectoryFilters)
-	snapshot.view.optionsMu.Unlock()
+		!reflect.DeepEqual(snapshot.options.DirectoryFilters, s.cachedDirectoryFilters)
 
 	// If anything relevant to imports has changed, clear caches and
 	// update the processEnv. Clearing caches blocks on any background
 	// scans.
 	if changed {
-		// As a special case, skip cleanup the first time -- we haven't fully
-		// initialized the environment yet and calling GetResolver will do
-		// unnecessary work and potentially mess up the go.mod file.
-		if s.runOnce {
-			if resolver, err := s.processEnv.GetResolver(); err == nil {
-				if modResolver, ok := resolver.(*imports.ModuleResolver); ok {
-					modResolver.ClearForNewMod()
-				}
+		if err := populateProcessEnvFromSnapshot(ctx, s.processEnv, snapshot); err != nil {
+			return err
+		}
+
+		if resolver, err := s.processEnv.GetResolver(); err == nil {
+			if modResolver, ok := resolver.(*imports.ModuleResolver); ok {
+				modResolver.ClearForNewMod()
 			}
 		}
 
 		s.cachedModFileHash = modFileHash
 		s.cachedBuildFlags = currentBuildFlags
 		s.cachedDirectoryFilters = currentDirectoryFilters
-		if err := s.populateProcessEnv(ctx, snapshot); err != nil {
-			return err
-		}
-		s.runOnce = true
 	}
 
 	// Run the user function.
@@ -105,7 +94,7 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot
 		LocalPrefix: localPrefix,
 	}
 
-	if err := fn(opts); err != nil {
+	if err := fn(ctx, opts); err != nil {
 		return err
 	}
 
@@ -122,12 +111,14 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot
 	return nil
 }
 
-// populateProcessEnv sets the dynamically configurable fields for the view's
-// process environment. Assumes that the caller is holding the s.view.importsMu.
-func (s *importsState) populateProcessEnv(ctx context.Context, snapshot *snapshot) error {
-	pe := s.processEnv
+// populateProcessEnvFromSnapshot sets the dynamically configurable fields for
+// the view's process environment. Assumes that the caller is holding the
+// importsState mutex.
+func populateProcessEnvFromSnapshot(ctx context.Context, pe *imports.ProcessEnv, snapshot *snapshot) error {
+	ctx, done := event.Start(ctx, "cache.populateProcessEnvFromSnapshot")
+	defer done()
 
-	if snapshot.view.Options().VerboseOutput {
+	if snapshot.options.VerboseOutput {
 		pe.Logf = func(format string, args ...interface{}) {
 			event.Log(ctx, fmt.Sprintf(format, args...))
 		}
@@ -142,7 +133,7 @@ func (s *importsState) populateProcessEnv(ctx context.Context, snapshot *snapsho
 	// and has led to memory leaks in the past, when the snapshot was
 	// unintentionally held past its lifetime.
 	_, inv, cleanupInvocation, err := snapshot.goCommandInvocation(ctx, source.LoadWorkspace, &gocommand.Invocation{
-		WorkingDir: snapshot.view.workingDir().Filename(),
+		WorkingDir: snapshot.view.goCommandDir.Filename(),
 	})
 	if err != nil {
 		return err
@@ -161,11 +152,14 @@ func (s *importsState) populateProcessEnv(ctx context.Context, snapshot *snapsho
 	// We don't actually use the invocation, so clean it up now.
 	cleanupInvocation()
 	// TODO(rfindley): should this simply be inv.WorkingDir?
-	pe.WorkingDir = snapshot.view.workingDir().Filename()
+	pe.WorkingDir = snapshot.view.goCommandDir.Filename()
 	return nil
 }
 
 func (s *importsState) refreshProcessEnv() {
+	ctx, done := event.Start(s.ctx, "cache.importsState.refreshProcessEnv")
+	defer done()
+
 	start := time.Now()
 
 	s.mu.Lock()
@@ -177,9 +171,9 @@ func (s *importsState) refreshProcessEnv() {
 
 	event.Log(s.ctx, "background imports cache refresh starting")
 	if err := imports.PrimeCache(context.Background(), env); err == nil {
-		event.Log(s.ctx, fmt.Sprintf("background refresh finished after %v", time.Since(start)))
+		event.Log(ctx, fmt.Sprintf("background refresh finished after %v", time.Since(start)))
 	} else {
-		event.Log(s.ctx, fmt.Sprintf("background refresh finished after %v", time.Since(start)), keys.Err.Of(err))
+		event.Log(ctx, fmt.Sprintf("background refresh finished after %v", time.Since(start)), keys.Err.Of(err))
 	}
 	s.mu.Lock()
 	s.cacheRefreshDuration = time.Since(start)

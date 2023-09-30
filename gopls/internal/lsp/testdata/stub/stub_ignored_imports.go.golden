@@ -13,12 +13,12 @@ import (
 
 var (
 	_ Reader
-	_ zlib.Resetter = (*ignoredResetter)(nil) //@suggestedfix("(", "refactor.rewrite", "")
+	_ zlib.Resetter = (*ignoredResetter)(nil) //@suggestedfix("(", "quickfix", "")
 )
 
 type ignoredResetter struct{}
 
-// Reset implements zlib.Resetter
+// Reset implements zlib.Resetter.
 func (*ignoredResetter) Reset(r Reader, dict []byte) error {
 	panic("unimplemented")
 }

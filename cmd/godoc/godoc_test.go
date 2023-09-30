@@ -9,7 +9,7 @@ import (
 	"context"
 	"fmt"
 	"go/build"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -46,8 +46,7 @@ var exe struct {
 }
 
 func godocPath(t *testing.T) string {
-	switch runtime.GOOS {
-	case "js", "ios":
+	if !testenv.HasExec() {
 		t.Skipf("skipping test that requires exec")
 	}
 
@@ -112,7 +111,7 @@ func waitForServer(t *testing.T, ctx context.Context, url, match string, reverse
 		if err != nil {
 			continue
 		}
-		body, err := ioutil.ReadAll(res.Body)
+		body, err := io.ReadAll(res.Body)
 		res.Body.Close()
 		if err != nil || res.StatusCode != http.StatusOK {
 			continue
@@ -188,6 +187,7 @@ func TestWeb(t *testing.T) {
 
 // Basic integration test for godoc HTTP interface.
 func TestWebIndex(t *testing.T) {
+	t.Skip("slow test of to-be-deleted code (golang/go#59056)")
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
@@ -396,7 +396,7 @@ package a; import _ "godoc.test/repo2/a"; const Name = "repo1a"`,
 			t.Errorf("GET %s failed: %s", url, err)
 			continue
 		}
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		strBody := string(body)
 		resp.Body.Close()
 		if err != nil {

@@ -8,6 +8,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strings"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -16,7 +17,7 @@ import (
 
 // workspaceSymbol implements the workspace_symbol verb for gopls.
 type workspaceSymbol struct {
-	Matcher string `flag:"matcher" help:"specifies the type of matcher: fuzzy, caseSensitive, or caseInsensitive.\nThe default is caseInsensitive."`
+	Matcher string `flag:"matcher" help:"specifies the type of matcher: fuzzy, fastfuzzy, casesensitive, or caseinsensitive.\nThe default is caseinsensitive."`
 
 	app *Application
 }
@@ -46,10 +47,10 @@ func (r *workspaceSymbol) Run(ctx context.Context, args ...string) error {
 		if opts != nil {
 			opts(o)
 		}
-		switch r.Matcher {
+		switch strings.ToLower(r.Matcher) {
 		case "fuzzy":
 			o.SymbolMatcher = source.SymbolFuzzy
-		case "caseSensitive":
+		case "casesensitive":
 			o.SymbolMatcher = source.SymbolCaseSensitive
 		case "fastfuzzy":
 			o.SymbolMatcher = source.SymbolFastFuzzy
@@ -58,7 +59,7 @@ func (r *workspaceSymbol) Run(ctx context.Context, args ...string) error {
 		}
 	}
 
-	conn, err := r.app.connect(ctx)
+	conn, err := r.app.connect(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -73,7 +74,10 @@ func (r *workspaceSymbol) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 	for _, s := range symbols {
-		f := conn.openFile(ctx, fileURI(s.Location.URI))
+		f, err := conn.openFile(ctx, fileURI(s.Location.URI))
+		if err != nil {
+			return err
+		}
 		span, err := f.mapper.LocationSpan(s.Location)
 		if err != nil {
 			return err

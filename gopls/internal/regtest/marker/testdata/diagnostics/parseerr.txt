@@ -1,0 +1,27 @@
+
+This test exercises diagnostics produced for syntax errors.
+
+Because parser error recovery can be quite lossy, diagnostics
+for type errors are suppressed in files with syntax errors;
+see issue #59888. But diagnostics are reported for type errors
+in well-formed files of the same package.
+
+-- go.mod --
+module example.com
+go 1.12
+
+-- bad.go --
+package p
+
+func f() {
+	append("") // no diagnostic for type error in file containing syntax error
+}
+
+func .() {} //@diag(re"func ().", re"expected 'IDENT', found '.'")
+
+-- good.go --
+package p
+
+func g() {
+	append("") //@diag(re`""`, re"a slice")
+}

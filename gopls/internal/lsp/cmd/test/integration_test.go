@@ -1,6 +1,8 @@
 // Copyright 2023 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
+
+// Package cmdtest contains the test suite for the command line behavior of gopls.
 package cmdtest
 
 // This file defines integration tests of each gopls subcommand that
@@ -17,9 +19,9 @@ package cmdtest
 //
 // TODO(adonovan):
 // - Use markers to represent positions in the input and in assertions.
-// - Coverage of cross-cutting things like cwd, enviro, span parsing, etc.
-// - Subcommands that accept -write and -diff flags should implement
-//   them consistently wrt the default behavior; factor their tests.
+// - Coverage of cross-cutting things like cwd, environ, span parsing, etc.
+// - Subcommands that accept -write and -diff flags implement them
+//   consistently; factor their tests.
 // - Add missing test for 'vulncheck' subcommand.
 // - Add tests for client-only commands: serve, bug, help, api-json, licenses.
 
@@ -28,6 +30,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -35,11 +38,11 @@ import (
 	"testing"
 
 	exec "golang.org/x/sys/execabs"
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/lsp/cmd"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/tool"
 	"golang.org/x/tools/txtar"
@@ -52,7 +55,7 @@ func TestVersion(t *testing.T) {
 	tree := writeTree(t, "")
 
 	// There's not much we can robustly assert about the actual version.
-	const want = debug.Version // e.g. "master"
+	want := debug.Version() // e.g. "master"
 
 	// basic
 	{
@@ -393,7 +396,7 @@ func _() {
 		res := gopls(t, tree, "imports", "a.go")
 		res.checkExit(true)
 		if res.stdout != want {
-			t.Errorf("format: got <<%s>>, want <<%s>>", res.stdout, want)
+			t.Errorf("imports: got <<%s>>, want <<%s>>", res.stdout, want)
 		}
 	}
 	// -diff: show a unified diff
@@ -678,6 +681,95 @@ const c = 0
 	}
 }
 
+func TestStats(t *testing.T) {
+	t.Parallel()
+
+	tree := writeTree(t, `
+-- go.mod --
+module example.com
+go 1.18
+
+-- a.go --
+package a
+-- b/b.go --
+package b
+-- testdata/foo.go --
+package foo
+`)
+
+	// Trigger a bug report with a distinctive string
+	// and check that it was durably recorded.
+	oops := fmt.Sprintf("oops-%d", rand.Int())
+	{
+		env := []string{"TEST_GOPLS_BUG=" + oops}
+		res := goplsWithEnv(t, tree, env, "bug")
+		res.checkExit(true)
+	}
+
+	res := gopls(t, tree, "stats")
+	res.checkExit(true)
+
+	var stats cmd.GoplsStats
+	if err := json.Unmarshal([]byte(res.stdout), &stats); err != nil {
+		t.Fatalf("failed to unmarshal JSON output of stats command: %v", err)
+	}
+
+	// a few sanity checks
+	checks := []struct {
+		field string
+		got   int
+		want  int
+	}{
+		{
+			"WorkspaceStats.Views[0].WorkspaceModules",
+			stats.WorkspaceStats.Views[0].WorkspacePackages.Modules,
+			1,
+		},
+		{
+			"WorkspaceStats.Views[0].WorkspacePackages",
+			stats.WorkspaceStats.Views[0].WorkspacePackages.Packages,
+			2,
+		},
+		{"DirStats.Files", stats.DirStats.Files, 4},
+		{"DirStats.GoFiles", stats.DirStats.GoFiles, 2},
+		{"DirStats.ModFiles", stats.DirStats.ModFiles, 1},
+		{"DirStats.TestdataFiles", stats.DirStats.TestdataFiles, 1},
+	}
+	for _, check := range checks {
+		if check.got != check.want {
+			t.Errorf("stats.%s = %d, want %d", check.field, check.got, check.want)
+		}
+	}
+
+	// Check that we got a BugReport with the expected message.
+	{
+		got := fmt.Sprint(stats.BugReports)
+		wants := []string{
+			"cmd/info.go", // File containing call to bug.Report
+			oops,          // Description
+		}
+		for _, want := range wants {
+			if !strings.Contains(got, want) {
+				t.Errorf("BugReports does not contain %q. Got:<<%s>>", want, got)
+				break
+			}
+		}
+	}
+
+	// Check that -anon suppresses fields containing user information.
+	{
+		res2 := gopls(t, tree, "stats", "-anon")
+		res2.checkExit(true)
+		var stats2 cmd.GoplsStats
+		if err := json.Unmarshal([]byte(res2.stdout), &stats2); err != nil {
+			t.Fatalf("failed to unmarshal JSON output of stats command: %v", err)
+		}
+		if got := len(stats2.BugReports); got > 0 {
+			t.Errorf("Got %d bug reports with -anon, want 0. Reports:%+v", got, stats2.BugReports)
+		}
+	}
+}
+
 // TestFix tests the 'fix' subcommand (../suggested_fix.go).
 func TestFix(t *testing.T) {
 	t.Parallel()
@@ -689,16 +781,15 @@ go 1.18
 
 -- a.go --
 package a
-var _ error = T(0)
 type T int
 func f() (int, string) { return }
-`)
-	want := `
+
+-- b.go --
 package a
-var _ error = T(0)
-type T int
-func f() (int, string) { return 0, "" }
-`[1:]
+import "io"
+var _ io.Reader = C{}
+type C struct{}
+`)
 
 	// no arguments
 	{
@@ -706,20 +797,45 @@ func f() (int, string) { return 0, "" }
 		res.checkExit(false)
 		res.checkStderr("expects at least 1 argument")
 	}
-	// success (-a enables fillreturns)
+	// success with default kinds, {quickfix}.
+	// -a is always required because no fix is currently "preferred" (!)
 	{
 		res := gopls(t, tree, "fix", "-a", "a.go")
 		res.checkExit(true)
 		got := res.stdout
+		want := `
+package a
+type T int
+func f() (int, string) { return 0, "" }
+
+`[1:]
 		if got != want {
-			t.Errorf("fix: got <<%s>>, want <<%s>>", got, want)
+			t.Errorf("fix: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
 		}
 	}
-	// TODO(adonovan): more tests:
-	// - -write, -diff: factor with imports, format, rename.
-	// - without -all flag
-	// - args[2:] is an optional list of protocol.CodeActionKind enum values.
-	// - a span argument with a range causes filtering.
+	// success, with explicit CodeAction kind and diagnostics span.
+	{
+		res := gopls(t, tree, "fix", "-a", "b.go:#40", "quickfix")
+		res.checkExit(true)
+		got := res.stdout
+		want := `
+package a
+
+import "io"
+
+var _ io.Reader = C{}
+
+type C struct{}
+
+// Read implements io.Reader.
+func (C) Read(p []byte) (n int, err error) {
+	panic("unimplemented")
+}
+`[1:]
+		if got != want {
+			t.Errorf("fix: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
+		}
+	}
 }
 
 // TestWorkspaceSymbol tests the 'workspace_symbol' subcommand (../workspace_symbol.go).
@@ -762,7 +878,12 @@ func TestMain(m *testing.M) {
 
 // This function is a stand-in for gopls.main in ../../../../main.go.
 func goplsMain() {
-	bug.PanicOnBugs = true // (not in the production command)
+	// Panic on bugs (unlike the production gopls command),
+	// except in tests that inject calls to bug.Report.
+	if os.Getenv("TEST_GOPLS_BUG") == "" {
+		bug.PanicOnBugs = true
+	}
+
 	tool.Main(context.Background(), cmd.New("gopls", "", nil, hooks.Options), os.Args[1:])
 }
 
@@ -792,6 +913,10 @@ func writeTree(t *testing.T, archive string) string {
 
 // gopls executes gopls in a child process.
 func gopls(t *testing.T, dir string, args ...string) *result {
+	return goplsWithEnv(t, dir, nil, args...)
+}
+
+func goplsWithEnv(t *testing.T, dir string, env []string, args ...string) *result {
 	testenv.NeedsTool(t, "go")
 
 	// Catch inadvertent use of dir=".", which would make
@@ -800,16 +925,17 @@ func gopls(t *testing.T, dir string, args ...string) *result {
 		t.Fatalf("dir is not absolute: %s", dir)
 	}
 
-	cmd := exec.Command(os.Args[0], args...)
-	cmd.Env = append(os.Environ(), "ENTRYPOINT=goplsMain")
-	cmd.Dir = dir
-	cmd.Stdout = new(bytes.Buffer)
-	cmd.Stderr = new(bytes.Buffer)
+	goplsCmd := exec.Command(os.Args[0], args...)
+	goplsCmd.Env = append(os.Environ(), "ENTRYPOINT=goplsMain")
+	goplsCmd.Env = append(goplsCmd.Env, env...)
+	goplsCmd.Dir = dir
+	goplsCmd.Stdout = new(bytes.Buffer)
+	goplsCmd.Stderr = new(bytes.Buffer)
 
-	cmdErr := cmd.Run()
+	cmdErr := goplsCmd.Run()
 
-	stdout := strings.ReplaceAll(fmt.Sprint(cmd.Stdout), dir, ".")
-	stderr := strings.ReplaceAll(fmt.Sprint(cmd.Stderr), dir, ".")
+	stdout := strings.ReplaceAll(fmt.Sprint(goplsCmd.Stdout), dir, ".")
+	stderr := strings.ReplaceAll(fmt.Sprint(goplsCmd.Stderr), dir, ".")
 	exitcode := 0
 	if cmdErr != nil {
 		if exitErr, ok := cmdErr.(*exec.ExitError); ok {

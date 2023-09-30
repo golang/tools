@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !plan9
-// +build !plan9
+//go:build unix || aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris || windows
+// +build unix aix darwin dragonfly freebsd linux netbsd openbsd solaris windows
 
 // The stress utility is intended for catching sporadic failures.
 // It runs a given process in parallel in a loop and collects any failures.
@@ -20,14 +20,14 @@ package main
 import (
 	"flag"
 	"fmt"
-	exec "golang.org/x/sys/execabs"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"syscall"
 	"time"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 var (
@@ -127,7 +127,7 @@ func main() {
 			}
 			fails++
 			dir, path := filepath.Split(*flagOutput)
-			f, err := ioutil.TempFile(dir, path)
+			f, err := os.CreateTemp(dir, path)
 			if err != nil {
 				fmt.Printf("failed to create temp file: %v\n", err)
 				os.Exit(1)

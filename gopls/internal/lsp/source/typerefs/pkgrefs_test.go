@@ -26,6 +26,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/packagesinternal"
+	"golang.org/x/tools/internal/testenv"
 )
 
 var (
@@ -67,8 +68,10 @@ func TestBuildPackageGraph(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping with -short: loading the packages can take a long time with a cold cache")
 	}
+	testenv.NeedsGoBuild(t) // for go/packages
+
 	t0 := time.Now()
-	exports, meta, err := load(*query)
+	exports, meta, err := load(*query, *verify)
 	if err != nil {
 		t.Fatalf("loading failed: %v", err)
 	}
@@ -84,7 +87,7 @@ func TestBuildPackageGraph(t *testing.T) {
 	})
 
 	t0 = time.Now()
-	g, err := typerefs.BuildPackageGraph(ctx, meta, ids, newParser().parse)
+	g, err := BuildPackageGraph(ctx, meta, ids, newParser().parse)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,8 +147,8 @@ func TestBuildPackageGraph(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		pkg.ReachesByDeps.Elems(func(id2 PackageID) {
-			recordEdge(id, id2, reaches, reachedBy)
+		pkg.ReachesByDeps.Elems(func(id2 typerefs.IndexID) {
+			recordEdge(id, g.pkgIndex.PackageID(id2), reaches, reachedBy)
 		})
 
 		importMap := importMap(id, meta)
@@ -247,7 +250,7 @@ func importFromExportData(pkgPath, exportFile string) (*types.Package, error) {
 
 func BenchmarkBuildPackageGraph(b *testing.B) {
 	t0 := time.Now()
-	exports, meta, err := load(*query)
+	exports, meta, err := load(*query, *verify)
 	if err != nil {
 		b.Fatalf("loading failed: %v", err)
 	}
@@ -260,7 +263,7 @@ func BenchmarkBuildPackageGraph(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := typerefs.BuildPackageGraph(ctx, meta, ids, newParser().parse)
+		_, err := BuildPackageGraph(ctx, meta, ids, newParser().parse)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -292,7 +295,7 @@ func (p *memoizedParser) parse(ctx context.Context, uri span.URI) (*ParsedGoFile
 			return nil, err
 		}
 		content = astutil.PurgeFuncBodies(content)
-		pgf, _ := cache.ParseGoSrc(ctx, token.NewFileSet(), uri, content, source.ParseFull)
+		pgf, _ := cache.ParseGoSrc(ctx, token.NewFileSet(), uri, content, source.ParseFull, false)
 		return pgf, nil
 	}
 
@@ -328,7 +331,7 @@ func (s mapMetadataSource) Metadata(id PackageID) *Metadata {
 //
 // TODO(rfindley): it may be valuable to extract this logic from the snapshot,
 // since it is otherwise standalone.
-func load(query string) (map[PackageID]string, MetadataSource, error) {
+func load(query string, needExport bool) (map[PackageID]string, MetadataSource, error) {
 	cfg := &packages.Config{
 		Dir: *dir,
 		Mode: packages.NeedName |
@@ -338,11 +341,13 @@ func load(query string) (map[PackageID]string, MetadataSource, error) {
 			packages.NeedDeps |
 			packages.NeedTypesSizes |
 			packages.NeedModule |
-			packages.NeedExportFile | // ExportFile is not requested by gopls: this is used to verify reachability
 			packages.NeedEmbedFiles |
 			packages.LoadMode(packagesinternal.DepsErrors) |
 			packages.LoadMode(packagesinternal.ForTest),
 		Tests: true,
+	}
+	if needExport {
+		cfg.Mode |= packages.NeedExportFile // ExportFile is not requested by gopls: this is used to verify reachability
 	}
 	pkgs, err := packages.Load(cfg, query)
 	if err != nil {

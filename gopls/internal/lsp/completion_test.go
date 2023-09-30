@@ -49,15 +49,6 @@ func (r *runner) CompletionSnippet(t *testing.T, src span.Span, expected tests.C
 	}
 }
 
-func (r *runner) UnimportedCompletion(t *testing.T, src span.Span, test tests.Completion, items tests.CompletionItems) {
-	got := r.callCompletion(t, src, func(opts *source.Options) {})
-	got = tests.FilterBuiltins(src, got)
-	want := expected(t, test, items)
-	if diff := tests.CheckCompletionOrder(want, got, false); diff != "" {
-		t.Errorf("%s", diff)
-	}
-}
-
 func (r *runner) DeepCompletion(t *testing.T, src span.Span, test tests.Completion, items tests.CompletionItems) {
 	got := r.callCompletion(t, src, func(opts *source.Options) {
 		opts.DeepCompletion = true
@@ -118,6 +109,7 @@ func expected(t *testing.T, test tests.Completion, items tests.CompletionItems) 
 			Label:  item.Label,
 			Kind:   item.Kind,
 			Detail: item.Detail,
+			Tags:   []protocol.CompletionItemTag{}, // must be a slice
 			Documentation: &protocol.Or_CompletionItem_documentation{
 				Value: item.Documentation,
 			},
@@ -143,20 +135,8 @@ func expected(t *testing.T, test tests.Completion, items tests.CompletionItems) 
 
 func (r *runner) callCompletion(t *testing.T, src span.Span, options func(*source.Options)) []protocol.CompletionItem {
 	t.Helper()
-
-	view, err := r.server.session.ViewOf(src.URI())
-	if err != nil {
-		t.Fatal(err)
-	}
-	original := view.Options()
-	modified := view.Options().Clone()
-	options(modified)
-	view, err = r.server.session.SetViewOptions(r.ctx, view, modified)
-	if err != nil {
-		t.Error(err)
-		return nil
-	}
-	defer r.server.session.SetViewOptions(r.ctx, view, original)
+	cleanup := r.toggleOptions(t, src.URI(), options)
+	defer cleanup()
 
 	list, err := r.server.Completion(r.ctx, &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
@@ -173,4 +153,21 @@ func (r *runner) callCompletion(t *testing.T, src span.Span, options func(*sourc
 		t.Fatal(err)
 	}
 	return list.Items
+}
+
+func (r *runner) toggleOptions(t *testing.T, uri span.URI, options func(*source.Options)) (reset func()) {
+	view, err := r.server.session.ViewOf(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder := view.Folder()
+
+	modified := r.server.Options().Clone()
+	options(modified)
+	if err = r.server.session.SetFolderOptions(r.ctx, folder, modified); err != nil {
+		t.Fatal(err)
+	}
+	return func() {
+		r.server.session.SetFolderOptions(r.ctx, folder, r.server.Options())
+	}
 }

@@ -70,6 +70,7 @@ func init() {
 		"bytes.IndexByte":                 ext۰bytes۰IndexByte,
 		"fmt.Sprint":                      ext۰fmt۰Sprint,
 		"math.Abs":                        ext۰math۰Abs,
+		"math.Copysign":                   ext۰math۰Copysign,
 		"math.Exp":                        ext۰math۰Exp,
 		"math.Float32bits":                ext۰math۰Float32bits,
 		"math.Float32frombits":            ext۰math۰Float32frombits,
@@ -156,6 +157,10 @@ func ext۰math۰Float32frombits(fr *frame, args []value) value {
 
 func ext۰math۰Abs(fr *frame, args []value) value {
 	return math.Abs(args[0].(float64))
+}
+
+func ext۰math۰Copysign(fr *frame, args []value) value {
+	return math.Copysign(args[0].(float64), args[1].(float64))
 }
 
 func ext۰math۰Exp(fr *frame, args []value) value {
@@ -312,10 +317,6 @@ func ext۰os۰Getenv(fr *frame, args []value) value {
 	switch name {
 	case "GOSSAINTERP":
 		return "1"
-	case "GOARCH":
-		return "amd64"
-	case "GOOS":
-		return "linux"
 	}
 	return os.Getenv(name)
 }

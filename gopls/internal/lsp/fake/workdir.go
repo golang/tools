@@ -10,7 +10,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -57,7 +56,7 @@ func writeFileData(path string, content []byte, rel RelativeTo) error {
 	}
 	backoff := 1 * time.Millisecond
 	for {
-		err := ioutil.WriteFile(fp, []byte(content), 0644)
+		err := os.WriteFile(fp, []byte(content), 0644)
 		if err != nil {
 			// This lock file violation is not handled by the robustio package, as it
 			// indicates a real race condition that could be avoided.
@@ -120,7 +119,7 @@ func NewWorkdir(dir string, files map[string][]byte) (*Workdir, error) {
 // fileID identifies a file version on disk.
 type fileID struct {
 	mtime time.Time
-	hash  string // empty if mtime is old enough to be reliabe; otherwise a file digest
+	hash  string // empty if mtime is old enough to be reliable; otherwise a file digest
 }
 
 func hashFile(data []byte) string {
@@ -160,7 +159,7 @@ func toURI(fp string) protocol.DocumentURI {
 func (w *Workdir) ReadFile(path string) ([]byte, error) {
 	backoff := 1 * time.Millisecond
 	for {
-		b, err := ioutil.ReadFile(w.AbsPath(path))
+		b, err := os.ReadFile(w.AbsPath(path))
 		if err != nil {
 			if runtime.GOOS == "plan9" && strings.HasSuffix(err.Error(), " exclusive use file already open") {
 				// Plan 9 enforces exclusive access to locked files.
@@ -217,13 +216,6 @@ func (w *Workdir) WriteFiles(ctx context.Context, files map[string]string) error
 // watchers of the change.
 func (w *Workdir) WriteFile(ctx context.Context, path, content string) error {
 	return w.WriteFiles(ctx, map[string]string{path: content})
-}
-
-func (w *Workdir) fileEvent(path string, changeType protocol.FileChangeType) protocol.FileEvent {
-	return protocol.FileEvent{
-		URI:  w.URI(path),
-		Type: changeType,
-	}
 }
 
 // RenameFile performs an on disk-renaming of the workdir-relative oldPath to
@@ -370,14 +362,14 @@ func (w *Workdir) pollFiles() ([]protocol.FileEvent, error) {
 			return nil
 		}
 
-		// Opt: avoid reading the file if mtime is sufficently old to be reliable.
+		// Opt: avoid reading the file if mtime is sufficiently old to be reliable.
 		//
 		// If mtime is recent, it may not sufficiently identify the file contents:
 		// a subsequent write could result in the same mtime. For these cases, we
 		// must read the file contents.
 		id := fileID{mtime: info.ModTime()}
 		if time.Since(info.ModTime()) < 2*time.Second {
-			data, err := ioutil.ReadFile(fp)
+			data, err := os.ReadFile(fp)
 			if err != nil {
 				return err
 			}
@@ -404,7 +396,7 @@ func (w *Workdir) pollFiles() ([]protocol.FileEvent, error) {
 				// In this case, read the content to check whether the file actually
 				// changed.
 				if oldID.mtime.Equal(id.mtime) && oldID.hash != "" && id.hash == "" {
-					data, err := ioutil.ReadFile(fp)
+					data, err := os.ReadFile(fp)
 					if err != nil {
 						return err
 					}

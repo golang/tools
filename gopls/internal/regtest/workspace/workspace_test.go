@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/testenv"
 
@@ -177,31 +177,8 @@ func TestReloadOnlyOnce(t *testing.T) {
 replace random.org => %s
 `, env.ReadWorkspaceFile("pkg/go.mod"), dir)
 		env.WriteWorkspaceFile("pkg/go.mod", goModWithReplace)
-		env.AfterChange(
+		env.Await(
 			LogMatching(protocol.Info, `packages\.Load #\d+\n`, 2, false),
-		)
-	})
-}
-
-// This test checks that gopls updates the set of files it watches when a
-// replace target is added to the go.mod.
-func TestWatchReplaceTargets(t *testing.T) {
-	t.Skipf("skipping known-flaky test: see https://go.dev/issue/50748")
-
-	WithOptions(
-		ProxyFiles(workspaceProxy),
-		WorkspaceFolders("pkg"),
-	).Run(t, workspaceModule, func(t *testing.T, env *Env) {
-		// Add a replace directive and expect the files that gopls is watching
-		// to change.
-		dir := env.Sandbox.Workdir.URI("goodbye").SpanURI().Filename()
-		goModWithReplace := fmt.Sprintf(`%s
-replace random.org => %s
-`, env.ReadWorkspaceFile("pkg/go.mod"), dir)
-		env.WriteWorkspaceFile("pkg/go.mod", goModWithReplace)
-		env.AfterChange(
-			UnregistrationMatching("didChangeWatchedFiles"),
-			RegistrationMatching("didChangeWatchedFiles"),
 		)
 	})
 }
@@ -575,10 +552,18 @@ use (
 `
 	WithOptions(
 		ProxyFiles(workspaceModuleProxy),
+		Settings{
+			"subdirWatchPatterns": "on",
+		},
 	).Run(t, multiModule, func(t *testing.T, env *Env) {
-		// Initially, the go.work should cause only the a.com module to be
-		// loaded. Validate this by jumping to a definition in b.com and ensuring
-		// that we go to the module cache.
+		// Initially, the go.work should cause only the a.com module to be loaded,
+		// so we shouldn't get any file watches for modb. Further validate this by
+		// jumping to a definition in b.com and ensuring that we go to the module
+		// cache.
+		env.OnceMet(
+			InitialWorkspaceLoad,
+			NoFileWatchMatching("modb"),
+		)
 		env.OpenFile("moda/a/a.go")
 		env.Await(env.DoneWithOpen())
 
@@ -610,9 +595,13 @@ use (
 `)
 
 		// As of golang/go#54069, writing go.work to the workspace triggers a
-		// workspace reload.
+		// workspace reload, and new file watches.
 		env.AfterChange(
 			Diagnostics(env.AtRegexp("modb/b/b.go", "x")),
+			// TODO(golang/go#60340): we don't get a file watch yet, because
+			// updateWatchedDirectories runs before snapshot.load. Instead, we get it
+			// after the next change (the didOpen below).
+			// FileWatchMatching("modb"),
 		)
 
 		// Jumping to definition should now go to b.com in the workspace.
@@ -623,7 +612,13 @@ use (
 		// Now, let's modify the go.work *overlay* (not on disk), and verify that
 		// this change is only picked up once it is saved.
 		env.OpenFile("go.work")
-		env.AfterChange()
+		env.AfterChange(
+			// TODO(golang/go#60340): delete this expectation in favor of
+			// the commented-out expectation above, once we fix the evaluation order
+			// of file watches. We should not have to wait for a second change to get
+			// the correct watches.
+			FileWatchMatching("modb"),
+		)
 		env.SetBufferContent("go.work", `go 1.17
 
 use (
@@ -647,7 +642,7 @@ use (
 		}
 
 		// This fails if guarded with a OnceMet(DoneWithSave(), ...), because it is
-		// debounced (and therefore not synchronous with the change).
+		// delayed (and therefore not synchronous with the change).
 		env.Await(NoDiagnostics(ForFile("modb/go.mod")))
 
 		// Test Formatting.
@@ -1059,7 +1054,7 @@ func main() {}
 		// package declaration.
 		env.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
-			Diagnostics(AtPosition("b/main.go", 0, 0)),
+			Diagnostics(env.AtRegexp("b/main.go", "package (main)")),
 		)
 		env.WriteWorkspaceFile("go.work", `go 1.16
 
@@ -1085,7 +1080,7 @@ use (
 
 		env.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
-			Diagnostics(AtPosition("b/main.go", 0, 0)),
+			Diagnostics(env.AtRegexp("b/main.go", "package (main)")),
 		)
 	})
 }

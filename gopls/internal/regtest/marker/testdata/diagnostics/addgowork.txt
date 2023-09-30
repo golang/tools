@@ -1,0 +1,50 @@
+This test demonstrates diagnostics for adding a go.work file.
+
+Quick-fixes change files on disk, so are tested by regtests.
+
+TODO(rfindley): improve the "cannot find package" import errors.
+
+-- skip --
+Skipping due to go.dev/issue/60584#issuecomment-1622238115.
+There appears to be a real race in the critical error logic causing this test
+to flake with high frequency.
+
+-- flags --
+-min_go=go1.18
+
+-- a/go.mod --
+module mod.com/a
+
+go 1.18
+
+-- a/main.go --
+package main //@diag("main", re"add a go.work file")
+
+import "mod.com/a/lib" //@diag("\"mod.com", re"cannot find package")
+
+func main() {
+	_ = lib.C
+}
+
+-- a/lib/lib.go --
+package lib //@diag("lib", re"add a go.work file")
+
+const C = "b"
+-- b/go.mod --
+module mod.com/b
+
+go 1.18
+
+-- b/main.go --
+package main //@diag("main", re"add a go.work file")
+
+import "mod.com/b/lib" //@diag("\"mod.com", re"cannot find package")
+
+func main() {
+	_ = lib.C
+}
+
+-- b/lib/lib.go --
+package lib //@diag("lib", re"add a go.work file")
+
+const C = "b"

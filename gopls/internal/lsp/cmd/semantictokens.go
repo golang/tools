@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
 	"log"
 	"os"
 	"unicode/utf8"
@@ -76,18 +75,18 @@ func (c *semtok) Run(ctx context.Context, args ...string) error {
 		origOptions(opts)
 		opts.SemanticTokens = true
 	}
-	conn, err := c.app.connect(ctx)
+	conn, err := c.app.connect(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer conn.terminate(ctx)
 	uri := span.URIFromPath(args[0])
-	file := conn.openFile(ctx, uri)
-	if file.err != nil {
-		return file.err
+	file, err := conn.openFile(ctx, uri)
+	if err != nil {
+		return err
 	}
 
-	buf, err := ioutil.ReadFile(args[0])
+	buf, err := os.ReadFile(args[0])
 	if err != nil {
 		return err
 	}
@@ -162,7 +161,7 @@ func markLine(m mark, lines [][]byte) {
 }
 
 func decorate(file string, result []uint32) error {
-	buf, err := ioutil.ReadFile(file)
+	buf, err := os.ReadFile(file)
 	if err != nil {
 		return err
 	}

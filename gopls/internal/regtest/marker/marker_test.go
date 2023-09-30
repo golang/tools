@@ -5,10 +5,19 @@
 package marker
 
 import (
+	"os"
 	"testing"
 
+	"golang.org/x/tools/gopls/internal/bug"
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
+	"golang.org/x/tools/internal/testenv"
 )
+
+func TestMain(m *testing.M) {
+	bug.PanicOnBugs = true
+	testenv.ExitIfSmallMachine()
+	os.Exit(m.Run())
+}
 
 // Note: we use a separate package for the marker tests so that we can easily
 // compare their performance to the existing marker tests in ./internal/lsp.

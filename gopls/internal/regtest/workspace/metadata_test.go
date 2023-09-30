@@ -59,16 +59,7 @@ package main
 func main() {}
 	`
 
-	WithOptions(
-		// TODO(golang/go#54180): we don't run in 'experimental' mode here, because
-		// with "experimentalUseInvalidMetadata", this test fails because the
-		// orphaned bar.go is diagnosed using stale metadata, and then not
-		// re-diagnosed when new metadata arrives.
-		//
-		// We could fix this by re-running diagnostics after a load, but should
-		// consider whether that is worthwhile.
-		Modes(Default),
-	).Run(t, src, func(t *testing.T, env *Env) {
+	Run(t, src, func(t *testing.T, env *Env) {
 		env.OpenFile("foo.go")
 		env.OpenFile("bar.go")
 		env.OnceMet(
@@ -97,7 +88,7 @@ func main() {}
 		// packages for bar.go
 		env.RegexpReplace("bar.go", "ignore", "excluded")
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("bar.go", "package (main)"), WithMessage("No packages")),
+			Diagnostics(env.AtRegexp("bar.go", "package (main)"), WithMessage("not included in your workspace")),
 		)
 	})
 }
@@ -177,5 +168,78 @@ func Hello() int {
 		if want := "b.com@v1.2.3/b/b.go"; !strings.HasSuffix(got, want) {
 			t.Errorf("expected %s, got %v", want, got)
 		}
+	})
+}
+
+// Test for golang/go#59458. With lazy module loading, we may not need
+// transitively required modules.
+func TestNestedModuleLoading_Issue59458(t *testing.T) {
+	testenv.NeedsGo1Point(t, 17) // needs lazy module loading
+
+	// In this test, module b.com/nested requires b.com/other, which in turn
+	// requires b.com, but b.com/nested does not reach b.com through the package
+	// graph. Therefore, b.com/nested does not need b.com on 1.17 and later,
+	// thanks to graph pruning.
+	//
+	// We verify that we can load b.com/nested successfully. Previously, we
+	// couldn't, because loading the pattern b.com/nested/... matched the module
+	// b.com, which exists in the module graph but does not have a go.sum entry.
+
+	const proxy = `
+-- b.com@v1.2.3/go.mod --
+module b.com
+
+go 1.18
+-- b.com@v1.2.3/b/b.go --
+package b
+
+func Hello() {}
+
+-- b.com/other@v1.4.6/go.mod --
+module b.com/other
+
+go 1.18
+
+require b.com v1.2.3
+-- b.com/other@v1.4.6/go.sun --
+b.com v1.2.3 h1:AGjCxWRJLUuJiZ21IUTByr9buoa6+B6Qh5LFhVLKpn4=
+-- b.com/other@v1.4.6/bar/bar.go --
+package bar
+
+import "b.com/b"
+
+func _() {
+	b.Hello()
+}
+-- b.com/other@v1.4.6/foo/foo.go --
+package foo
+
+const Foo = 0
+`
+
+	const files = `
+-- go.mod --
+module b.com/nested
+
+go 1.18
+
+require b.com/other v1.4.6
+-- go.sum --
+b.com/other v1.4.6 h1:pHXSzGsk6DamYXp9uRdDB9A/ZQqAN9it+JudU0sBf94=
+b.com/other v1.4.6/go.mod h1:T0TYuGdAHw4p/l0+1P/yhhYHfZRia7PaadNVDu58OWM=
+-- nested.go --
+package nested
+
+import "b.com/other/foo"
+
+const C = foo.Foo
+`
+	WithOptions(
+		ProxyFiles(proxy),
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OnceMet(
+			InitialWorkspaceLoad,
+			NoDiagnostics(),
+		)
 	})
 }

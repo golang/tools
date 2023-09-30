@@ -90,7 +90,6 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 		}
 		defer closeLog()
 		di.ServerAddress = s.Address
-		di.MonitorMemory(ctx)
 		di.Serve(ctx, s.Debug)
 	}
 	var ss jsonrpc2.StreamServer
@@ -110,6 +109,23 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 	}
 	if s.Port != 0 {
 		network = "tcp"
+		// TODO(adonovan): should gopls ever be listening on network
+		// sockets, or only local ones?
+		//
+		// Ian says this was added in anticipation of
+		// something related to "VS Code remote" that turned
+		// out to be unnecessary. So I propose we limit it to
+		// localhost, if only so that we avoid the macOS
+		// firewall prompt.
+		//
+		// Hana says: "s.Address is for the remote access (LSP)
+		// and s.Port is for debugging purpose (according to
+		// the Server type documentation). I am not sure why the
+		// existing code here is mixing up and overwriting addr.
+		// For debugging endpoint, I think localhost makes perfect sense."
+		//
+		// TODO(adonovan): disentangle Address and Port,
+		// and use only localhost for the latter.
 		addr = fmt.Sprintf(":%v", s.Port)
 	}
 	if addr != "" {

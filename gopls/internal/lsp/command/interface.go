@@ -17,8 +17,8 @@ package command
 import (
 	"context"
 
-	"golang.org/x/tools/gopls/internal/govulncheck"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/vulncheck"
 )
 
 // Interface defines the interface gopls exposes for the
@@ -145,7 +145,22 @@ type Interface interface {
 	// address.
 	StartDebugging(context.Context, DebuggingArgs) (DebuggingResult, error)
 
-	// RunGovulncheck: Run govulncheck.
+	// StartProfile: start capturing a profile of gopls' execution.
+	//
+	// Start a new pprof profile. Before using the resulting file, profiling must
+	// be stopped with a corresponding call to StopProfile.
+	//
+	// This command is intended for internal use only, by the gopls benchmark
+	// runner.
+	StartProfile(context.Context, StartProfileArgs) (StartProfileResult, error)
+
+	// StopProfile: stop an ongoing profile.
+	//
+	// This command is intended for internal use only, by the gopls benchmark
+	// runner.
+	StopProfile(context.Context, StopProfileArgs) (StopProfileResult, error)
+
+	// RunGovulncheck: Run vulncheck.
 	//
 	// Run vulnerability check (`govulncheck`).
 	RunGovulncheck(context.Context, VulncheckArgs) (RunVulncheckResult, error)
@@ -153,7 +168,7 @@ type Interface interface {
 	// FetchVulncheckResult: Get known vulncheck result
 	//
 	// Fetch the result of latest vulnerability check (`govulncheck`).
-	FetchVulncheckResult(context.Context, URIArg) (map[protocol.DocumentURI]*govulncheck.Result, error)
+	FetchVulncheckResult(context.Context, URIArg) (map[protocol.DocumentURI]*vulncheck.Result, error)
 
 	// MemStats: fetch memory statistics
 	//
@@ -162,6 +177,29 @@ type Interface interface {
 	//
 	// This command is used for benchmarking, and may change in the future.
 	MemStats(context.Context) (MemStatsResult, error)
+
+	// WorkspaceStats: fetch workspace statistics
+	//
+	// Query statistics about workspace builds, modules, packages, and files.
+	//
+	// This command is intended for internal use only, by the gopls stats
+	// command.
+	WorkspaceStats(context.Context) (WorkspaceStatsResult, error)
+
+	// RunGoWorkCommand: run `go work [args...]`, and apply the resulting go.work
+	// edits to the current go.work file.
+	RunGoWorkCommand(context.Context, RunGoWorkArgs) error
+
+	// AddTelemetryCounters: update the given telemetry counters.
+	//
+	// Gopls will prepend "fwd/" to all the counters updated using this command
+	// to avoid conflicts with other counters gopls collects.
+	AddTelemetryCounters(context.Context, AddTelemetryCountersArgs) error
+
+	// MaybePromptForTelemetry: checks for the right conditions, and then prompts
+	// the user to ask if they want to enable Go telemetry uploading. If the user
+	// responds 'Yes', the telemetry mode is set to "on".
+	MaybePromptForTelemetry(context.Context) error
 }
 
 type RunTestsArgs struct {
@@ -224,7 +262,10 @@ type RemoveDependencyArgs struct {
 	// The go.mod file URI.
 	URI protocol.DocumentURI
 	// The module path to remove.
-	ModulePath     string
+	ModulePath string
+	// If the module is tidied apart from the one unused diagnostic, we can
+	// run `go get module@none`, and then run `go mod tidy`. Otherwise, we
+	// must make textual edits.
 	OnlyDiagnostic bool
 }
 
@@ -310,6 +351,30 @@ type DebuggingResult struct {
 	// error will be returned but the debug URL for that server in the URLs slice
 	// will be empty.
 	URLs []string
+}
+
+// StartProfileArgs holds the arguments to the StartProfile command.
+//
+// It is a placeholder for future compatibility.
+type StartProfileArgs struct {
+}
+
+// StartProfileResult holds the result of the StartProfile command.
+//
+// It is a placeholder for future compatibility.
+type StartProfileResult struct {
+}
+
+// StopProfileArgs holds the arguments to the StopProfile command.
+//
+// It is a placeholder for future compatibility.
+type StopProfileArgs struct {
+}
+
+// StopProfileResult holds the result to the StopProfile command.
+type StopProfileResult struct {
+	// File is the profile file name.
+	File string
 }
 
 type ResetGoModDiagnosticsArgs struct {
@@ -405,6 +470,51 @@ type Vuln struct {
 
 // MemStatsResult holds selected fields from runtime.MemStats.
 type MemStatsResult struct {
-	HeapAlloc uint64
-	HeapInUse uint64
+	HeapAlloc  uint64
+	HeapInUse  uint64
+	TotalAlloc uint64
+}
+
+// WorkspaceStatsResult returns information about the size and shape of the
+// workspace.
+type WorkspaceStatsResult struct {
+	Files FileStats   // file stats for the cache
+	Views []ViewStats // stats for each view in the session
+}
+
+// FileStats holds information about a set of files.
+type FileStats struct {
+	Total   int // total number of files
+	Largest int // number of bytes in the largest file
+	Errs    int // number of files that could not be read
+}
+
+// ViewStats holds information about a single View in the session.
+type ViewStats struct {
+	GoCommandVersion  string       // version of the Go command resolved for this view
+	AllPackages       PackageStats // package info for all packages (incl. dependencies)
+	WorkspacePackages PackageStats // package info for workspace packages
+	Diagnostics       int          // total number of diagnostics in the workspace
+}
+
+// PackageStats holds information about a collection of packages.
+type PackageStats struct {
+	Packages        int // total number of packages
+	LargestPackage  int // number of files in the largest package
+	CompiledGoFiles int // total number of compiled Go files across all packages
+	Modules         int // total number of unique modules
+}
+
+type RunGoWorkArgs struct {
+	ViewID    string   // ID of the view to run the command from
+	InitFirst bool     // Whether to run `go work init` first
+	Args      []string // Args to pass to `go work`
+}
+
+// AddTelemetryCountersArgs holds the arguments to the AddCounters command
+// that updates the telemetry counters.
+type AddTelemetryCountersArgs struct {
+	// Names and Values must have the same length.
+	Names  []string // Name of counters.
+	Values []int64  // Values added to the corresponding counters. Must be non-negative.
 }

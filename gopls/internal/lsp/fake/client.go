@@ -14,7 +14,7 @@ import (
 )
 
 // ClientHooks are a set of optional hooks called during handling of
-// the corresponding client method (see protocol.Client for the the
+// the corresponding client method (see protocol.Client for the
 // LSP server-to-client RPCs) in order to make test expectations
 // awaitable.
 type ClientHooks struct {
@@ -22,6 +22,7 @@ type ClientHooks struct {
 	OnDiagnostics            func(context.Context, *protocol.PublishDiagnosticsParams) error
 	OnWorkDoneProgressCreate func(context.Context, *protocol.WorkDoneProgressCreateParams) error
 	OnProgress               func(context.Context, *protocol.ProgressParams) error
+	OnShowDocument           func(context.Context, *protocol.ShowDocumentParams) error
 	OnShowMessage            func(context.Context, *protocol.ShowMessageParams) error
 	OnShowMessageRequest     func(context.Context, *protocol.ShowMessageRequestParams) error
 	OnRegisterCapability     func(context.Context, *protocol.RegistrationParams) error
@@ -62,10 +63,10 @@ func (c *Client) ShowMessageRequest(ctx context.Context, params *protocol.ShowMe
 			return nil, err
 		}
 	}
-	if len(params.Actions) == 0 || len(params.Actions) > 1 {
-		return nil, fmt.Errorf("fake editor cannot handle multiple action items")
+	if c.editor.config.MessageResponder != nil {
+		return c.editor.config.MessageResponder(params)
 	}
-	return &params.Actions[0], nil
+	return nil, nil // don't choose, which is effectively dismissing the message
 }
 
 func (c *Client) LogMessage(ctx context.Context, params *protocol.LogMessageParams) error {
@@ -94,9 +95,8 @@ func (c *Client) Configuration(_ context.Context, p *protocol.ParamConfiguration
 	results := make([]interface{}, len(p.Items))
 	for i, item := range p.Items {
 		if item.Section == "gopls" {
-			c.editor.mu.Lock()
-			results[i] = c.editor.settingsLocked()
-			c.editor.mu.Unlock()
+			config := c.editor.Config()
+			results[i] = makeSettings(c.editor.sandbox, config)
 		}
 	}
 	return results, nil
@@ -163,7 +163,13 @@ func (c *Client) WorkDoneProgressCreate(ctx context.Context, params *protocol.Wo
 	return nil
 }
 
-func (c *Client) ShowDocument(context.Context, *protocol.ShowDocumentParams) (*protocol.ShowDocumentResult, error) {
+func (c *Client) ShowDocument(ctx context.Context, params *protocol.ShowDocumentParams) (*protocol.ShowDocumentResult, error) {
+	if c.hooks.OnShowDocument != nil {
+		if err := c.hooks.OnShowDocument(ctx, params); err != nil {
+			return nil, err
+		}
+		return &protocol.ShowDocumentResult{Success: true}, nil
+	}
 	return nil, nil
 }
 

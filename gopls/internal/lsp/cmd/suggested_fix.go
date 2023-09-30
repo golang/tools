@@ -8,21 +8,21 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
-	"os"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/tool"
 )
 
+// TODO(adonovan): this command has a very poor user interface. It
+// should have a way to query the available fixes for a file (without
+// a span), enumerate the valid fix kinds, enable all fixes, and not
+// require the pointless -all flag. See issue #60290.
+
 // suggestedFix implements the fix verb for gopls.
 type suggestedFix struct {
-	Diff  bool `flag:"d,diff" help:"display diffs instead of rewriting files"`
-	Write bool `flag:"w,write" help:"write result to (source) file instead of stdout"`
-	All   bool `flag:"a,all" help:"apply all fixes, not just preferred fixes"`
+	EditFlags
+	All bool `flag:"a,all" help:"apply all fixes, not just preferred fixes"`
 
 	app *Application
 }
@@ -33,8 +33,33 @@ func (s *suggestedFix) Usage() string     { return "[fix-flags] <filename>" }
 func (s *suggestedFix) ShortHelp() string { return "apply suggested fixes" }
 func (s *suggestedFix) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprintf(f.Output(), `
-Example: apply suggested fixes for this file
-	$ gopls fix -w internal/lsp/cmd/check.go
+Example: apply fixes to this file, rewriting it:
+
+	$ gopls fix -a -w internal/lsp/cmd/check.go
+
+The -a (-all) flag causes all fixes, not just preferred ones, to be
+applied, but since no fixes are currently preferred, this flag is
+essentially mandatory.
+
+Arguments after the filename are interpreted as LSP CodeAction kinds
+to be applied; the default set is {"quickfix"}, but valid kinds include:
+
+	quickfix
+	refactor
+	refactor.extract
+	refactor.inline
+	refactor.rewrite
+	source.organizeImports
+	source.fixAll
+
+CodeAction kinds are hierarchical, so "refactor" includes
+"refactor.inline". There is currently no way to enable or even
+enumerate all kinds.
+
+Example: apply any "refactor.rewrite" fixes at the specific byte
+offset within this file:
+
+	$ gopls fix -a internal/lsp/cmd/check.go:#43 refactor.rewrite
 
 fix-flags:
 `)
@@ -49,7 +74,8 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 	if len(args) < 1 {
 		return tool.CommandLineErrorf("fix expects at least 1 argument")
 	}
-	conn, err := s.app.connect(ctx)
+	s.app.editFlags = &s.EditFlags
+	conn, err := s.app.connect(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -57,17 +83,25 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 
 	from := span.Parse(args[0])
 	uri := from.URI()
-	file := conn.openFile(ctx, uri)
-	if file.err != nil {
-		return file.err
+	file, err := conn.openFile(ctx, uri)
+	if err != nil {
+		return err
+	}
+	rng, err := file.mapper.SpanRange(from)
+	if err != nil {
+		return err
 	}
 
+	// Get diagnostics.
 	if err := conn.diagnoseFiles(ctx, []span.URI{uri}); err != nil {
 		return err
 	}
-	conn.Client.filesMu.Lock()
-	defer conn.Client.filesMu.Unlock()
+	diagnostics := []protocol.Diagnostic{} // LSP wants non-nil slice
+	conn.client.filesMu.Lock()
+	diagnostics = append(diagnostics, file.diagnostics...)
+	conn.client.filesMu.Unlock()
 
+	// Request code actions
 	codeActionKinds := []protocol.CodeActionKind{protocol.QuickFix}
 	if len(args) > 1 {
 		codeActionKinds = []protocol.CodeActionKind{}
@@ -75,18 +109,13 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 			codeActionKinds = append(codeActionKinds, protocol.CodeActionKind(k))
 		}
 	}
-
-	rng, err := file.mapper.SpanRange(from)
-	if err != nil {
-		return err
-	}
 	p := protocol.CodeActionParams{
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: protocol.URIFromSpanURI(uri),
 		},
 		Context: protocol.CodeActionContext{
 			Only:        codeActionKinds,
-			Diagnostics: file.diagnostics,
+			Diagnostics: diagnostics,
 		},
 		Range: rng,
 	}
@@ -94,14 +123,34 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return fmt.Errorf("%v: %v", from, err)
 	}
+
+	// Gather edits from matching code actions.
 	var edits []protocol.TextEdit
 	for _, a := range actions {
-		if a.Command != nil {
-			return fmt.Errorf("ExecuteCommand is not yet supported on the command line")
-		}
+		// Without -all, apply only "preferred" fixes.
 		if !a.IsPreferred && !s.All {
 			continue
 		}
+
+		// Execute any command.
+		// This may cause the server to make
+		// an ApplyEdit downcall to the client.
+		if a.Command != nil {
+			if _, err := conn.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
+				Command:   a.Command.Command,
+				Arguments: a.Command.Arguments,
+			}); err != nil {
+				return err
+			}
+			// The specification says that commands should
+			// be executed _after_ edits are applied, not
+			// instead of them, but we don't want to
+			// duplicate edits.
+			continue
+		}
+
+		// Partially apply CodeAction.Edit, a WorkspaceEdit.
+		// (See also conn.Client.applyWorkspaceEdit(a.Edit)).
 		if !from.HasPosition() {
 			for _, c := range a.Edit.DocumentChanges {
 				if c.TextDocumentEdit != nil {
@@ -112,14 +161,11 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 			}
 			continue
 		}
-		// If the span passed in has a position, then we need to find
-		// the codeaction that has the same range as the passed in span.
+
+		// The provided span has a position (not just offsets).
+		// Find the code action that has the same range as it.
 		for _, diag := range a.Diagnostics {
-			spn, err := file.mapper.RangeSpan(diag.Range)
-			if err != nil {
-				continue
-			}
-			if span.ComparePoint(from.Start(), spn.Start()) == 0 {
+			if diag.Range.Start == rng.Start {
 				for _, c := range a.Edit.DocumentChanges {
 					if c.TextDocumentEdit != nil {
 						if fileURI(c.TextDocumentEdit.TextDocument.URI) == uri {
@@ -143,25 +189,5 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 		}
 	}
 
-	newContent, sedits, err := source.ApplyProtocolEdits(file.mapper, edits)
-	if err != nil {
-		return fmt.Errorf("%v: %v", edits, err)
-	}
-
-	filename := file.uri.Filename()
-	switch {
-	case s.Write:
-		if len(edits) > 0 {
-			ioutil.WriteFile(filename, newContent, 0644)
-		}
-	case s.Diff:
-		diffs, err := diff.ToUnified(filename+".orig", filename, string(file.mapper.Content), sedits)
-		if err != nil {
-			return err
-		}
-		fmt.Print(diffs)
-	default:
-		os.Stdout.Write(newContent)
-	}
-	return nil
+	return applyTextEdits(file.mapper, edits, s.app.editFlags)
 }

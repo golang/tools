@@ -269,6 +269,16 @@ such as "someSlice.sort!".
 
 Default: `true`.
 
+##### **completeFunctionCalls** *bool*
+
+completeFunctionCalls enables function call completion.
+
+When completing a statement, or when a function return type matches the
+expected of the expression being completed, completion may suggest call
+expressions (i.e. may include parentheses).
+
+Default: `true`.
+
 #### Diagnostic
 
 ##### **analyses** *map[string]bool*
@@ -343,6 +353,20 @@ on recently modified packages.
 This option must be set to a valid duration string, for example `"250ms"`.
 
 Default: `"1s"`.
+
+##### **analysisProgressReporting** *bool*
+
+analysisProgressReporting controls whether gopls sends progress
+notifications when construction of its index of analysis facts is taking a
+long time. Cancelling these notifications will cancel the indexing task,
+though it will restart after the next change in the workspace.
+
+When a package is opened for the first time and heavyweight analyses such as
+staticcheck are enabled, it can take a while to construct the index of
+analysis facts for all its dependencies. The index is cached in the
+filesystem, so subsequent analysis should be faster.
+
+Default: `true`.
 
 #### Documentation
 
@@ -456,6 +480,22 @@ just "Foo.Field".
 
 Default: `"Dynamic"`.
 
+##### **symbolScope** *enum*
+
+symbolScope controls which packages are searched for workspace/symbol
+requests. The default value, "workspace", searches only workspace
+packages. The legacy behavior, "all", causes all loaded packages to be
+searched, including dependencies; this is more expensive and may return
+unwanted results.
+
+Must be one of:
+
+* `"all"` matches symbols in any loaded package, including
+dependencies.
+* `"workspace"` matches symbols in workspace packages only.
+
+Default: `"all"`.
+
 #### **verboseOutput** *bool*
 
 **This setting is for debugging purposes only.**
@@ -499,7 +539,7 @@ Runs `go generate` for a given directory.
 Identifier: `regenerate_cgo`
 
 Regenerates cgo definitions.
-### **Run govulncheck.**
+### **Run vulncheck.**
 
 Identifier: `run_govulncheck`
 

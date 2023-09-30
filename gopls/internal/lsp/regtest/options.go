@@ -4,7 +4,10 @@
 
 package regtest
 
-import "golang.org/x/tools/gopls/internal/lsp/fake"
+import (
+	"golang.org/x/tools/gopls/internal/lsp/fake"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
+)
 
 type runConfig struct {
 	editor    fake.EditorConfig
@@ -64,8 +67,14 @@ func WindowsLineEndings() RunOption {
 	})
 }
 
-// Settings is a RunOption that sets user-provided configuration for the LSP
-// server.
+// ClientName sets the LSP client name.
+func ClientName(name string) RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.editor.ClientName = name
+	})
+}
+
+// Settings sets user-provided configuration for the LSP server.
 //
 // As a special case, the env setting must not be provided via Settings: use
 // EnvVars instead.
@@ -113,5 +122,13 @@ func (e EnvVars) set(opts *runConfig) {
 func InGOPATH() RunOption {
 	return optionSetter(func(opts *runConfig) {
 		opts.sandbox.InGoPath = true
+	})
+}
+
+// MessageResponder configures the editor to respond to
+// window/showMessageRequest messages using the provided function.
+func MessageResponder(f func(*protocol.ShowMessageRequestParams) (*protocol.MessageActionItem, error)) RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.editor.MessageResponder = f
 	})
 }

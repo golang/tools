@@ -147,6 +147,13 @@ var GeneratedAPIJSON = &APIJSON{
 				Hierarchy: "ui.completion",
 			},
 			{
+				Name:      "completeFunctionCalls",
+				Type:      "bool",
+				Doc:       "completeFunctionCalls enables function call completion.\n\nWhen completing a statement, or when a function return type matches the\nexpected of the expression being completed, completion may suggest call\nexpressions (i.e. may include parentheses).\n",
+				Default:   "true",
+				Hierarchy: "ui.completion",
+			},
+			{
 				Name: "importShortcut",
 				Type: "enum",
 				Doc:  "importShortcut specifies whether import statements should link to\ndocumentation or go to definitions.\n",
@@ -195,12 +202,34 @@ var GeneratedAPIJSON = &APIJSON{
 				Hierarchy: "ui.navigation",
 			},
 			{
+				Name: "symbolScope",
+				Type: "enum",
+				Doc:  "symbolScope controls which packages are searched for workspace/symbol\nrequests. The default value, \"workspace\", searches only workspace\npackages. The legacy behavior, \"all\", causes all loaded packages to be\nsearched, including dependencies; this is more expensive and may return\nunwanted results.\n",
+				EnumValues: []EnumValue{
+					{
+						Value: "\"all\"",
+						Doc:   "`\"all\"` matches symbols in any loaded package, including\ndependencies.\n",
+					},
+					{
+						Value: "\"workspace\"",
+						Doc:   "`\"workspace\"` matches symbols in workspace packages only.\n",
+					},
+				},
+				Default:   "\"all\"",
+				Hierarchy: "ui.navigation",
+			},
+			{
 				Name: "analyses",
 				Type: "map[string]bool",
 				Doc:  "analyses specify analyses that the user would like to enable or disable.\nA map of the names of analysis passes that should be enabled/disabled.\nA full list of analyzers that gopls uses can be found in\n[analyzers.md](https://github.com/golang/tools/blob/master/gopls/doc/analyzers.md).\n\nExample Usage:\n\n```json5\n...\n\"analyses\": {\n  \"unreachable\": false, // Disable the unreachable analyzer.\n  \"unusedparams\": true  // Enable the unusedparams analyzer.\n}\n...\n```\n",
 				EnumKeys: EnumKeys{
 					ValueType: "bool",
 					Keys: []EnumKey{
+						{
+							Name:    "\"appends\"",
+							Doc:     "check for missing values after append\n\nThis checker reports calls to append that pass\nno values to be appended to the slice.\n\n\ts := []string{\"a\", \"b\", \"c\"}\n\t_ = append(s)\n\nSuch calls are always no-ops and often indicate an\nunderlying mistake.",
+							Default: "true",
+						},
 						{
 							Name:    "\"asmdecl\"",
 							Doc:     "report mismatches between assembly files and Go declarations",
@@ -252,13 +281,23 @@ var GeneratedAPIJSON = &APIJSON{
 							Default: "true",
 						},
 						{
+							Name:    "\"defers\"",
+							Doc:     "report common mistakes in defer statements\n\nThe defers analyzer reports a diagnostic when a defer statement would\nresult in a non-deferred call to time.Since, as experience has shown\nthat this is nearly always a mistake.\n\nFor example:\n\n\tstart := time.Now()\n\t...\n\tdefer recordLatency(time.Since(start)) // error: call to time.Since is not deferred\n\nThe correct code is:\n\n\tdefer func() { recordLatency(time.Since(start)) }()",
+							Default: "true",
+						},
+						{
+							Name:    "\"deprecated\"",
+							Doc:     "check for use of deprecated identifiers\n\nThe deprecated analyzer looks for deprecated symbols and package imports.\n\nSee https://go.dev/wiki/Deprecated to learn about Go's convention\nfor documenting and signaling deprecated identifiers.",
+							Default: "true",
+						},
+						{
 							Name:    "\"directive\"",
 							Doc:     "check Go toolchain directives such as //go:debug\n\nThis analyzer checks for problems with known Go toolchain directives\nin all Go source files in a package directory, even those excluded by\n//go:build constraints, and all non-Go source files too.\n\nFor //go:debug (see https://go.dev/doc/godebug), the analyzer checks\nthat the directives are placed only in Go source files, only above the\npackage comment, and only in package main or *_test.go files.\n\nSupport for other known directives may be added in the future.\n\nThis analyzer does not check //go:build, which is handled by the\nbuildtag analyzer.\n",
 							Default: "true",
 						},
 						{
 							Name:    "\"embed\"",
-							Doc:     "check for //go:embed directive import\n\nThis analyzer checks that the embed package is imported when source code contains //go:embed comment directives.\nThe embed package must be imported for //go:embed directives to function.import _ \"embed\".",
+							Doc:     "check //go:embed directive usage\n\nThis analyzer checks that the embed package is imported if //go:embed\ndirectives are present, providing a suggested fix to add the import if\nit is missing.\n\nThis analyzer also checks that //go:embed directives precede the\ndeclaration of a single variable.",
 							Default: "true",
 						},
 						{
@@ -279,11 +318,6 @@ var GeneratedAPIJSON = &APIJSON{
 						{
 							Name:    "\"ifaceassert\"",
 							Doc:     "detect impossible interface-to-interface type assertions\n\nThis checker flags type assertions v.(T) and corresponding type-switch cases\nin which the static type V of v is an interface that cannot possibly implement\nthe target interface T. This occurs when V and T contain methods with the same\nname but different signatures. Example:\n\n\tvar v interface {\n\t\tRead()\n\t}\n\t_ = v.(io.Reader)\n\nThe Read method in v has a different signature than the Read method in\nio.Reader, so this assertion cannot succeed.",
-							Default: "true",
-						},
-						{
-							Name:    "\"infertypeargs\"",
-							Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
 							Default: "true",
 						},
 						{
@@ -337,6 +371,11 @@ var GeneratedAPIJSON = &APIJSON{
 							Default: "true",
 						},
 						{
+							Name:    "\"slog\"",
+							Doc:     "check for invalid structured logging calls\n\nThe slog checker looks for calls to functions from the log/slog\npackage that take alternating key-value pairs. It reports calls\nwhere an argument in a key position is neither a string nor a\nslog.Attr, and where a final key is missing its value.\nFor example,it would report\n\n\tslog.Warn(\"message\", 11, \"k\") // slog.Warn arg \"11\" should be a string or a slog.Attr\n\nand\n\n\tslog.Info(\"message\", \"k1\", v1, \"k2\") // call to slog.Info missing a final value",
+							Default: "true",
+						},
+						{
 							Name:    "\"sortslice\"",
 							Doc:     "check the argument type of sort.Slice\n\nsort.Slice requires an argument of a slice type. Check that\nthe interface{} value passed to sort.Slice is actually a slice.",
 							Default: "true",
@@ -383,17 +422,17 @@ var GeneratedAPIJSON = &APIJSON{
 						},
 						{
 							Name:    "\"unsafeptr\"",
-							Doc:     "check for invalid conversions of uintptr to unsafe.Pointer\n\nThe unsafeptr analyzer reports likely incorrect uses of unsafe.Pointer\nto convert integers to pointers. A conversion from uintptr to\nunsafe.Pointer is invalid if it implies that there is a uintptr-typed\nword in memory that holds a pointer value, because that word will be\ninvisible to stack copying and to the garbage collector.`",
+							Doc:     "check for invalid conversions of uintptr to unsafe.Pointer\n\nThe unsafeptr analyzer reports likely incorrect uses of unsafe.Pointer\nto convert integers to pointers. A conversion from uintptr to\nunsafe.Pointer is invalid if it implies that there is a uintptr-typed\nword in memory that holds a pointer value, because that word will be\ninvisible to stack copying and to the garbage collector.",
 							Default: "true",
 						},
 						{
 							Name:    "\"unusedparams\"",
-							Doc:     "check for unused parameters of functions\n\nThe unusedparams analyzer checks functions to see if there are\nany parameters that are not being used.\n\nTo reduce false positives it ignores:\n- methods\n- parameters that do not have a name or are underscored\n- functions in test files\n- functions with empty bodies or those with just a return stmt",
+							Doc:     "check for unused parameters of functions\n\nThe unusedparams analyzer checks functions to see if there are\nany parameters that are not being used.\n\nTo reduce false positives it ignores:\n- methods\n- parameters that do not have a name or have the name '_' (the blank identifier)\n- functions in test files\n- functions with empty bodies or those with just a return stmt",
 							Default: "false",
 						},
 						{
 							Name:    "\"unusedresult\"",
-							Doc:     "check for unused results of calls to some functions\n\nSome functions like fmt.Errorf return a result and have no side effects,\nso it is always a mistake to discard the result. This analyzer reports\ncalls to certain functions in which the result of the call is ignored.\n\nThe set of functions may be controlled using flags.",
+							Doc:     "check for unused results of calls to some functions\n\nSome functions like fmt.Errorf return a result and have no side\neffects, so it is always a mistake to discard the result. Other\nfunctions may return an error that must not be ignored, or a cleanup\noperation that must be called. This analyzer reports calls to\nfunctions like these when the result of the call is ignored.\n\nThe set of functions may be controlled using flags.",
 							Default: "true",
 						},
 						{
@@ -434,6 +473,11 @@ var GeneratedAPIJSON = &APIJSON{
 						{
 							Name:    "\"fillstruct\"",
 							Doc:     "note incomplete struct initializations\n\nThis analyzer provides diagnostics for any struct literals that do not have\nany fields initialized. Because the suggested fix for this analysis is\nexpensive to compute, callers should compute it separately, using the\nSuggestedFix function below.\n",
+							Default: "true",
+						},
+						{
+							Name:    "\"infertypeargs\"",
+							Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
 							Default: "true",
 						},
 						{
@@ -511,6 +555,13 @@ var GeneratedAPIJSON = &APIJSON{
 				Doc:       "diagnosticsDelay controls the amount of time that gopls waits\nafter the most recent file modification before computing deep diagnostics.\nSimple diagnostics (parsing and type-checking) are always run immediately\non recently modified packages.\n\nThis option must be set to a valid duration string, for example `\"250ms\"`.\n",
 				Default:   "\"1s\"",
 				Status:    "advanced",
+				Hierarchy: "ui.diagnostic",
+			},
+			{
+				Name:      "analysisProgressReporting",
+				Type:      "bool",
+				Doc:       "analysisProgressReporting controls whether gopls sends progress\nnotifications when construction of its index of analysis facts is taking a\nlong time. Cancelling these notifications will cancel the indexing task,\nthough it will restart after the next change in the workspace.\n\nWhen a package is opened for the first time and heavyweight analyses such as\nstaticcheck are enabled, it can take a while to construct the index of\nanalysis facts for all its dependencies. The index is cached in the\nfilesystem, so subsequent analysis should be faster.\n",
+				Default:   "true",
 				Hierarchy: "ui.diagnostic",
 			},
 			{
@@ -671,6 +722,12 @@ var GeneratedAPIJSON = &APIJSON{
 			ArgDoc:  "{\n\t// ImportPath is the target import path that should\n\t// be added to the URI file\n\t\"ImportPath\": string,\n\t// URI is the file that the ImportPath should be\n\t// added to\n\t\"URI\": string,\n}",
 		},
 		{
+			Command: "gopls.add_telemetry_counters",
+			Title:   "update the given telemetry counters.",
+			Doc:     "Gopls will prepend \"fwd/\" to all the counters updated using this command\nto avoid conflicts with other counters gopls collects.",
+			ArgDoc:  "{\n\t// Names and Values must have the same length.\n\t\"Names\": []string,\n\t\"Values\": []int64,\n}",
+		},
+		{
 			Command: "gopls.apply_fix",
 			Title:   "Apply a fix",
 			Doc:     "Applies a fix to a region of source code.",
@@ -693,7 +750,7 @@ var GeneratedAPIJSON = &APIJSON{
 			Title:     "Get known vulncheck result",
 			Doc:       "Fetch the result of latest vulnerability check (`govulncheck`).",
 			ArgDoc:    "{\n\t// The file URI.\n\t\"URI\": string,\n}",
-			ResultDoc: "map[golang.org/x/tools/gopls/internal/lsp/protocol.DocumentURI]*golang.org/x/tools/gopls/internal/govulncheck.Result",
+			ResultDoc: "map[golang.org/x/tools/gopls/internal/lsp/protocol.DocumentURI]*golang.org/x/tools/gopls/internal/vulncheck.Result",
 		},
 		{
 			Command: "gopls.gc_details",
@@ -728,10 +785,15 @@ var GeneratedAPIJSON = &APIJSON{
 			ResultDoc: "{\n\t// Packages is a list of packages relative\n\t// to the URIArg passed by the command request.\n\t// In other words, it omits paths that are already\n\t// imported or cannot be imported due to compiler\n\t// restrictions.\n\t\"Packages\": []string,\n}",
 		},
 		{
+			Command: "gopls.maybe_prompt_for_telemetry",
+			Title:   "checks for the right conditions, and then prompts",
+			Doc:     "the user to ask if they want to enable Go telemetry uploading. If the user\nresponds 'Yes', the telemetry mode is set to \"on\".",
+		},
+		{
 			Command:   "gopls.mem_stats",
 			Title:     "fetch memory statistics",
 			Doc:       "Call runtime.GC multiple times and return memory statistics as reported by\nruntime.MemStats.\n\nThis command is used for benchmarking, and may change in the future.",
-			ResultDoc: "{\n\t\"HeapAlloc\": uint64,\n\t\"HeapInUse\": uint64,\n}",
+			ResultDoc: "{\n\t\"HeapAlloc\": uint64,\n\t\"HeapInUse\": uint64,\n\t\"TotalAlloc\": uint64,\n}",
 		},
 		{
 			Command: "gopls.regenerate_cgo",
@@ -743,7 +805,7 @@ var GeneratedAPIJSON = &APIJSON{
 			Command: "gopls.remove_dependency",
 			Title:   "Remove a dependency",
 			Doc:     "Removes a dependency from the go.mod file of a module.",
-			ArgDoc:  "{\n\t// The go.mod file URI.\n\t\"URI\": string,\n\t// The module path to remove.\n\t\"ModulePath\": string,\n\t\"OnlyDiagnostic\": bool,\n}",
+			ArgDoc:  "{\n\t// The go.mod file URI.\n\t\"URI\": string,\n\t// The module path to remove.\n\t\"ModulePath\": string,\n\t// If the module is tidied apart from the one unused diagnostic, we can\n\t// run `go get module@none`, and then run `go mod tidy`. Otherwise, we\n\t// must make textual edits.\n\t\"OnlyDiagnostic\": bool,\n}",
 		},
 		{
 			Command: "gopls.reset_go_mod_diagnostics",
@@ -752,8 +814,14 @@ var GeneratedAPIJSON = &APIJSON{
 			ArgDoc:  "{\n\t\"URIArg\": {\n\t\t\"URI\": string,\n\t},\n\t// Optional: source of the diagnostics to reset.\n\t// If not set, all resettable go.mod diagnostics will be cleared.\n\t\"DiagnosticSource\": string,\n}",
 		},
 		{
+			Command: "gopls.run_go_work_command",
+			Title:   "run `go work [args...]`, and apply the resulting go.work",
+			Doc:     "edits to the current go.work file.",
+			ArgDoc:  "{\n\t\"ViewID\": string,\n\t\"InitFirst\": bool,\n\t\"Args\": []string,\n}",
+		},
+		{
 			Command:   "gopls.run_govulncheck",
-			Title:     "Run govulncheck.",
+			Title:     "Run vulncheck.",
 			Doc:       "Run vulnerability check (`govulncheck`).",
 			ArgDoc:    "{\n\t// Any document in the directory from which govulncheck will run.\n\t\"URI\": string,\n\t// Package pattern. E.g. \"\", \".\", \"./...\".\n\t\"Pattern\": string,\n}",
 			ResultDoc: "{\n\t// Token holds the progress token for LSP workDone reporting of the vulncheck\n\t// invocation.\n\t\"Token\": interface{},\n}",
@@ -768,8 +836,22 @@ var GeneratedAPIJSON = &APIJSON{
 			Command:   "gopls.start_debugging",
 			Title:     "Start the gopls debug server",
 			Doc:       "Start the gopls debug server if it isn't running, and return the debug\naddress.",
-			ArgDoc:    "{\n\t// Optional: the address (including port) for the debug server to listen on.\n\t// If not provided, the debug server will bind to \"localhost:0\", and the\n\t// full debug URL will be contained in the result.\n\t// \n\t// If there is more than one gopls instance along the serving path (i.e. you\n\t// are using a daemon), each gopls instance will attempt to start debugging.\n\t// If Addr specifies a port, only the daemon will be able to bind to that\n\t// port, and each intermediate gopls instance will fail to start debugging.\n\t// For this reason it is recommended not to specify a port (or equivalently,\n\t// to specify \":0\").\n\t// \n\t// If the server was already debugging this field has no effect, and the\n\t// result will contain the previously configured debug URL(s).\n\t\"Addr\": string,\n}",
-			ResultDoc: "{\n\t// The URLs to use to access the debug servers, for all gopls instances in\n\t// the serving path. For the common case of a single gopls instance (i.e. no\n\t// daemon), this will be exactly one address.\n\t// \n\t// In the case of one or more gopls instances forwarding the LSP to a daemon,\n\t// URLs will contain debug addresses for each server in the serving path, in\n\t// serving order. The daemon debug address will be the last entry in the\n\t// slice. If any intermediate gopls instance fails to start debugging, no\n\t// error will be returned but the debug URL for that server in the URLs slice\n\t// will be empty.\n\t\"URLs\": []string,\n}",
+			ArgDoc:    "{\n\t// Optional: the address (including port) for the debug server to listen on.\n\t// If not provided, the debug server will bind to \"localhost:0\", and the\n\t// full debug URL will be contained in the result.\n\t//\n\t// If there is more than one gopls instance along the serving path (i.e. you\n\t// are using a daemon), each gopls instance will attempt to start debugging.\n\t// If Addr specifies a port, only the daemon will be able to bind to that\n\t// port, and each intermediate gopls instance will fail to start debugging.\n\t// For this reason it is recommended not to specify a port (or equivalently,\n\t// to specify \":0\").\n\t//\n\t// If the server was already debugging this field has no effect, and the\n\t// result will contain the previously configured debug URL(s).\n\t\"Addr\": string,\n}",
+			ResultDoc: "{\n\t// The URLs to use to access the debug servers, for all gopls instances in\n\t// the serving path. For the common case of a single gopls instance (i.e. no\n\t// daemon), this will be exactly one address.\n\t//\n\t// In the case of one or more gopls instances forwarding the LSP to a daemon,\n\t// URLs will contain debug addresses for each server in the serving path, in\n\t// serving order. The daemon debug address will be the last entry in the\n\t// slice. If any intermediate gopls instance fails to start debugging, no\n\t// error will be returned but the debug URL for that server in the URLs slice\n\t// will be empty.\n\t\"URLs\": []string,\n}",
+		},
+		{
+			Command:   "gopls.start_profile",
+			Title:     "start capturing a profile of gopls' execution.",
+			Doc:       "Start a new pprof profile. Before using the resulting file, profiling must\nbe stopped with a corresponding call to StopProfile.\n\nThis command is intended for internal use only, by the gopls benchmark\nrunner.",
+			ArgDoc:    "struct{}",
+			ResultDoc: "struct{}",
+		},
+		{
+			Command:   "gopls.stop_profile",
+			Title:     "stop an ongoing profile.",
+			Doc:       "This command is intended for internal use only, by the gopls benchmark\nrunner.",
+			ArgDoc:    "struct{}",
+			ResultDoc: "{\n\t// File is the profile file name.\n\t\"File\": string,\n}",
 		},
 		{
 			Command: "gopls.test",
@@ -807,6 +889,12 @@ var GeneratedAPIJSON = &APIJSON{
 			Doc:     "Runs `go mod vendor` for a module.",
 			ArgDoc:  "{\n\t// The file URI.\n\t\"URI\": string,\n}",
 		},
+		{
+			Command:   "gopls.workspace_stats",
+			Title:     "fetch workspace statistics",
+			Doc:       "Query statistics about workspace builds, modules, packages, and files.\n\nThis command is intended for internal use only, by the gopls stats\ncommand.",
+			ResultDoc: "{\n\t\"Files\": {\n\t\t\"Total\": int,\n\t\t\"Largest\": int,\n\t\t\"Errs\": int,\n\t},\n\t\"Views\": []{\n\t\t\"GoCommandVersion\": string,\n\t\t\"AllPackages\": {\n\t\t\t\"Packages\": int,\n\t\t\t\"LargestPackage\": int,\n\t\t\t\"CompiledGoFiles\": int,\n\t\t\t\"Modules\": int,\n\t\t},\n\t\t\"WorkspacePackages\": {\n\t\t\t\"Packages\": int,\n\t\t\t\"LargestPackage\": int,\n\t\t\t\"CompiledGoFiles\": int,\n\t\t\t\"Modules\": int,\n\t\t},\n\t\t\"Diagnostics\": int,\n\t},\n}",
+		},
 	},
 	Lenses: []*LensJSON{
 		{
@@ -826,7 +914,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Lens:  "run_govulncheck",
-			Title: "Run govulncheck.",
+			Title: "Run vulncheck.",
 			Doc:   "Run vulnerability check (`govulncheck`).",
 		},
 		{
@@ -851,6 +939,12 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 	},
 	Analyzers: []*AnalyzerJSON{
+		{
+			Name:    "appends",
+			Doc:     "check for missing values after append\n\nThis checker reports calls to append that pass\nno values to be appended to the slice.\n\n\ts := []string{\"a\", \"b\", \"c\"}\n\t_ = append(s)\n\nSuch calls are always no-ops and often indicate an\nunderlying mistake.",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/appends",
+			Default: true,
+		},
 		{
 			Name:    "asmdecl",
 			Doc:     "report mismatches between assembly files and Go declarations",
@@ -896,7 +990,7 @@ var GeneratedAPIJSON = &APIJSON{
 		{
 			Name:    "composites",
 			Doc:     "check for unkeyed composite literals\n\nThis analyzer reports a diagnostic for composite literals of struct\ntypes imported from another package that do not use the field-keyed\nsyntax. Such literals are fragile because the addition of a new field\n(even if unexported) to the struct will cause compilation to fail.\n\nAs an example,\n\n\terr = &net.DNSConfigError{err}\n\nshould be replaced by:\n\n\terr = &net.DNSConfigError{Err: err}\n",
-			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/composites",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/composite",
 			Default: true,
 		},
 		{
@@ -912,6 +1006,17 @@ var GeneratedAPIJSON = &APIJSON{
 			Default: true,
 		},
 		{
+			Name:    "defers",
+			Doc:     "report common mistakes in defer statements\n\nThe defers analyzer reports a diagnostic when a defer statement would\nresult in a non-deferred call to time.Since, as experience has shown\nthat this is nearly always a mistake.\n\nFor example:\n\n\tstart := time.Now()\n\t...\n\tdefer recordLatency(time.Since(start)) // error: call to time.Since is not deferred\n\nThe correct code is:\n\n\tdefer func() { recordLatency(time.Since(start)) }()",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/defers",
+			Default: true,
+		},
+		{
+			Name:    "deprecated",
+			Doc:     "check for use of deprecated identifiers\n\nThe deprecated analyzer looks for deprecated symbols and package imports.\n\nSee https://go.dev/wiki/Deprecated to learn about Go's convention\nfor documenting and signaling deprecated identifiers.",
+			Default: true,
+		},
+		{
 			Name:    "directive",
 			Doc:     "check Go toolchain directives such as //go:debug\n\nThis analyzer checks for problems with known Go toolchain directives\nin all Go source files in a package directory, even those excluded by\n//go:build constraints, and all non-Go source files too.\n\nFor //go:debug (see https://go.dev/doc/godebug), the analyzer checks\nthat the directives are placed only in Go source files, only above the\npackage comment, and only in package main or *_test.go files.\n\nSupport for other known directives may be added in the future.\n\nThis analyzer does not check //go:build, which is handled by the\nbuildtag analyzer.\n",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/directive",
@@ -919,7 +1024,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Name:    "embed",
-			Doc:     "check for //go:embed directive import\n\nThis analyzer checks that the embed package is imported when source code contains //go:embed comment directives.\nThe embed package must be imported for //go:embed directives to function.import _ \"embed\".",
+			Doc:     "check //go:embed directive usage\n\nThis analyzer checks that the embed package is imported if //go:embed\ndirectives are present, providing a suggested fix to add the import if\nit is missing.\n\nThis analyzer also checks that //go:embed directives precede the\ndeclaration of a single variable.",
 			Default: true,
 		},
 		{
@@ -943,11 +1048,6 @@ var GeneratedAPIJSON = &APIJSON{
 			Name:    "ifaceassert",
 			Doc:     "detect impossible interface-to-interface type assertions\n\nThis checker flags type assertions v.(T) and corresponding type-switch cases\nin which the static type V of v is an interface that cannot possibly implement\nthe target interface T. This occurs when V and T contain methods with the same\nname but different signatures. Example:\n\n\tvar v interface {\n\t\tRead()\n\t}\n\t_ = v.(io.Reader)\n\nThe Read method in v has a different signature than the Read method in\nio.Reader, so this assertion cannot succeed.",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/ifaceassert",
-			Default: true,
-		},
-		{
-			Name:    "infertypeargs",
-			Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
 			Default: true,
 		},
 		{
@@ -1006,6 +1106,12 @@ var GeneratedAPIJSON = &APIJSON{
 			Default: true,
 		},
 		{
+			Name:    "slog",
+			Doc:     "check for invalid structured logging calls\n\nThe slog checker looks for calls to functions from the log/slog\npackage that take alternating key-value pairs. It reports calls\nwhere an argument in a key position is neither a string nor a\nslog.Attr, and where a final key is missing its value.\nFor example,it would report\n\n\tslog.Warn(\"message\", 11, \"k\") // slog.Warn arg \"11\" should be a string or a slog.Attr\n\nand\n\n\tslog.Info(\"message\", \"k1\", v1, \"k2\") // call to slog.Info missing a final value",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/slog",
+			Default: true,
+		},
+		{
 			Name:    "sortslice",
 			Doc:     "check the argument type of sort.Slice\n\nsort.Slice requires an argument of a slice type. Check that\nthe interface{} value passed to sort.Slice is actually a slice.",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/sortslice",
@@ -1061,17 +1167,17 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Name:    "unsafeptr",
-			Doc:     "check for invalid conversions of uintptr to unsafe.Pointer\n\nThe unsafeptr analyzer reports likely incorrect uses of unsafe.Pointer\nto convert integers to pointers. A conversion from uintptr to\nunsafe.Pointer is invalid if it implies that there is a uintptr-typed\nword in memory that holds a pointer value, because that word will be\ninvisible to stack copying and to the garbage collector.`",
+			Doc:     "check for invalid conversions of uintptr to unsafe.Pointer\n\nThe unsafeptr analyzer reports likely incorrect uses of unsafe.Pointer\nto convert integers to pointers. A conversion from uintptr to\nunsafe.Pointer is invalid if it implies that there is a uintptr-typed\nword in memory that holds a pointer value, because that word will be\ninvisible to stack copying and to the garbage collector.",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unsafeptr",
 			Default: true,
 		},
 		{
 			Name: "unusedparams",
-			Doc:  "check for unused parameters of functions\n\nThe unusedparams analyzer checks functions to see if there are\nany parameters that are not being used.\n\nTo reduce false positives it ignores:\n- methods\n- parameters that do not have a name or are underscored\n- functions in test files\n- functions with empty bodies or those with just a return stmt",
+			Doc:  "check for unused parameters of functions\n\nThe unusedparams analyzer checks functions to see if there are\nany parameters that are not being used.\n\nTo reduce false positives it ignores:\n- methods\n- parameters that do not have a name or have the name '_' (the blank identifier)\n- functions in test files\n- functions with empty bodies or those with just a return stmt",
 		},
 		{
 			Name:    "unusedresult",
-			Doc:     "check for unused results of calls to some functions\n\nSome functions like fmt.Errorf return a result and have no side effects,\nso it is always a mistake to discard the result. This analyzer reports\ncalls to certain functions in which the result of the call is ignored.\n\nThe set of functions may be controlled using flags.",
+			Doc:     "check for unused results of calls to some functions\n\nSome functions like fmt.Errorf return a result and have no side\neffects, so it is always a mistake to discard the result. Other\nfunctions may return an error that must not be ignored, or a cleanup\noperation that must be called. This analyzer reports calls to\nfunctions like these when the result of the call is ignored.\n\nThe set of functions may be controlled using flags.",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unusedresult",
 			Default: true,
 		},
@@ -1111,6 +1217,11 @@ var GeneratedAPIJSON = &APIJSON{
 		{
 			Name:    "fillstruct",
 			Doc:     "note incomplete struct initializations\n\nThis analyzer provides diagnostics for any struct literals that do not have\nany fields initialized. Because the suggested fix for this analysis is\nexpensive to compute, callers should compute it separately, using the\nSuggestedFix function below.\n",
+			Default: true,
+		},
+		{
+			Name:    "infertypeargs",
+			Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
 			Default: true,
 		},
 		{

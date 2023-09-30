@@ -6,12 +6,12 @@ import (
 	myio "io"
 )
 
-var _ zlib.Resetter = &myIO{} //@suggestedfix("&", "refactor.rewrite", "")
+var _ zlib.Resetter = &myIO{} //@suggestedfix("&", "quickfix", "")
 var _ myio.Reader
 
 type myIO struct{}
 
-// Reset implements zlib.Resetter
+// Reset implements zlib.Resetter.
 func (*myIO) Reset(r myio.Reader, dict []byte) error {
 	panic("unimplemented")
 }

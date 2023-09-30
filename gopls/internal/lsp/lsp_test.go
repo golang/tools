@@ -9,13 +9,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
@@ -24,7 +23,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/tests"
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -36,8 +34,8 @@ func TestMain(m *testing.M) {
 }
 
 // TestLSP runs the marker tests in files beneath testdata/ using
-// implementations of each of the marker operations (e.g. @codelens) that
-// make LSP RPCs (e.g. textDocument/codeLens) to a gopls server.
+// implementations of each of the marker operations that make LSP RPCs to a
+// gopls server.
 func TestLSP(t *testing.T) {
 	tests.RunTests(t, "testdata", true, testLSP)
 }
@@ -52,10 +50,8 @@ func testLSP(t *testing.T, datum *tests.Data) {
 	// instrumentation.
 	ctx = debug.WithInstance(ctx, "", "off")
 
-	session := cache.NewSession(ctx, cache.New(nil), nil)
-	options := source.DefaultOptions().Clone()
-	tests.DefaultOptions(options)
-	session.SetOptions(options)
+	session := cache.NewSession(ctx, cache.New(nil))
+	options := source.DefaultOptions(tests.DefaultOptions)
 	options.SetEnvSlice(datum.Config.Env)
 	view, snapshot, release, err := session.NewView(ctx, datum.Config.Dir, span.URIFromPath(datum.Config.Dir), options)
 	if err != nil {
@@ -64,20 +60,12 @@ func testLSP(t *testing.T, datum *tests.Data) {
 
 	defer session.RemoveView(view)
 
-	// Enable type error analyses for tests.
-	// TODO(golang/go#38212): Delete this once they are enabled by default.
-	tests.EnableAllAnalyzers(options)
-	session.SetViewOptions(ctx, view, options)
-
-	// Enable all inlay hints for tests.
-	tests.EnableAllInlayHints(options)
-
 	// Only run the -modfile specific tests in module mode with Go 1.14 or above.
 	datum.ModfileFlagAvailable = len(snapshot.ModFiles()) > 0 && testenv.Go1Point() >= 14
 	release()
 
-	// Open all files for performance reasons. This is done because gopls only
-	// keeps active packages in memory for open files.
+	// Open all files for performance reasons, because gopls only
+	// keeps active packages (those with open files) in memory.
 	//
 	// In practice clients will only send document-oriented requests for open
 	// files.
@@ -117,13 +105,12 @@ func testLSP(t *testing.T, datum *tests.Data) {
 		t.Fatal(err)
 	}
 	r := &runner{
-		data:        datum,
-		ctx:         ctx,
-		normalizers: tests.CollectNormalizers(datum.Exported),
-		editRecv:    make(chan map[span.URI][]byte, 1),
+		data:     datum,
+		ctx:      ctx,
+		editRecv: make(chan map[span.URI][]byte, 1),
 	}
 
-	r.server = NewServer(session, testClient{runner: r})
+	r.server = NewServer(session, testClient{runner: r}, options)
 	tests.Run(t, r, datum)
 }
 
@@ -133,7 +120,6 @@ type runner struct {
 	data        *tests.Data
 	diagnostics map[span.URI][]*source.Diagnostic
 	ctx         context.Context
-	normalizers []tests.Normalizer
 	editRecv    chan map[span.URI][]byte
 }
 
@@ -206,7 +192,7 @@ func (r *runner) CallHierarchy(t *testing.T, spn span.Span, expectedCalls *tests
 	}
 	msg := tests.DiffCallHierarchyItems(incomingCallItems, expectedCalls.IncomingCalls)
 	if msg != "" {
-		t.Error(fmt.Sprintf("incoming calls: %s", msg))
+		t.Errorf("incoming calls: %s", msg)
 	}
 
 	outgoingCalls, err := r.server.OutgoingCalls(r.ctx, &protocol.CallHierarchyOutgoingCallsParams{Item: items[0]})
@@ -219,204 +205,7 @@ func (r *runner) CallHierarchy(t *testing.T, spn span.Span, expectedCalls *tests
 	}
 	msg = tests.DiffCallHierarchyItems(outgoingCallItems, expectedCalls.OutgoingCalls)
 	if msg != "" {
-		t.Error(fmt.Sprintf("outgoing calls: %s", msg))
-	}
-}
-
-func (r *runner) CodeLens(t *testing.T, uri span.URI, want []protocol.CodeLens) {
-	if !strings.HasSuffix(uri.Filename(), "go.mod") {
-		return
-	}
-	got, err := r.server.codeLens(r.ctx, &protocol.CodeLensParams{
-		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.DocumentURI(uri),
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if diff := tests.DiffCodeLens(uri, want, got); diff != "" {
-		t.Errorf("%s: %s", uri, diff)
-	}
-}
-
-func (r *runner) Diagnostics(t *testing.T, uri span.URI, want []*source.Diagnostic) {
-	// Get the diagnostics for this view if we have not done it before.
-	v := r.server.session.View(r.data.Config.Dir)
-	r.collectDiagnostics(v)
-	tests.CompareDiagnostics(t, uri, want, r.diagnostics[uri])
-}
-
-func (r *runner) FoldingRanges(t *testing.T, spn span.Span) {
-	uri := spn.URI()
-	view, err := r.server.session.ViewOf(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	original := view.Options()
-	modified := original
-	defer r.server.session.SetViewOptions(r.ctx, view, original)
-
-	for _, test := range []struct {
-		lineFoldingOnly bool
-		prefix          string
-	}{
-		{false, "foldingRange"},
-		{true, "foldingRange-lineFolding"},
-	} {
-		modified.LineFoldingOnly = test.lineFoldingOnly
-		view, err = r.server.session.SetViewOptions(r.ctx, view, modified)
-		if err != nil {
-			t.Error(err)
-			continue
-		}
-		ranges, err := r.server.FoldingRange(r.ctx, &protocol.FoldingRangeParams{
-			TextDocument: protocol.TextDocumentIdentifier{
-				URI: protocol.URIFromSpanURI(uri),
-			},
-		})
-		if err != nil {
-			t.Error(err)
-			continue
-		}
-		r.foldingRanges(t, test.prefix, uri, ranges)
-	}
-}
-
-func (r *runner) foldingRanges(t *testing.T, prefix string, uri span.URI, ranges []protocol.FoldingRange) {
-	m, err := r.data.Mapper(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Fold all ranges.
-	nonOverlapping := nonOverlappingRanges(ranges)
-	for i, rngs := range nonOverlapping {
-		got, err := foldRanges(m, string(m.Content), rngs)
-		if err != nil {
-			t.Error(err)
-			continue
-		}
-		tag := fmt.Sprintf("%s-%d", prefix, i)
-		want := string(r.data.Golden(t, tag, uri.Filename(), func() ([]byte, error) {
-			return []byte(got), nil
-		}))
-
-		if want != got {
-			t.Errorf("%s: foldingRanges failed for %s, expected:\n%v\ngot:\n%v", tag, uri.Filename(), want, got)
-		}
-	}
-
-	// Filter by kind.
-	kinds := []protocol.FoldingRangeKind{protocol.Imports, protocol.Comment}
-	for _, kind := range kinds {
-		var kindOnly []protocol.FoldingRange
-		for _, fRng := range ranges {
-			if fRng.Kind == string(kind) {
-				kindOnly = append(kindOnly, fRng)
-			}
-		}
-
-		nonOverlapping := nonOverlappingRanges(kindOnly)
-		for i, rngs := range nonOverlapping {
-			got, err := foldRanges(m, string(m.Content), rngs)
-			if err != nil {
-				t.Error(err)
-				continue
-			}
-			tag := fmt.Sprintf("%s-%s-%d", prefix, kind, i)
-			want := string(r.data.Golden(t, tag, uri.Filename(), func() ([]byte, error) {
-				return []byte(got), nil
-			}))
-
-			if want != got {
-				t.Errorf("%s: foldingRanges failed for %s, expected:\n%v\ngot:\n%v", tag, uri.Filename(), want, got)
-			}
-		}
-
-	}
-}
-
-func nonOverlappingRanges(ranges []protocol.FoldingRange) (res [][]protocol.FoldingRange) {
-	for _, fRng := range ranges {
-		setNum := len(res)
-		for i := 0; i < len(res); i++ {
-			canInsert := true
-			for _, rng := range res[i] {
-				if conflict(rng, fRng) {
-					canInsert = false
-					break
-				}
-			}
-			if canInsert {
-				setNum = i
-				break
-			}
-		}
-		if setNum == len(res) {
-			res = append(res, []protocol.FoldingRange{})
-		}
-		res[setNum] = append(res[setNum], fRng)
-	}
-	return res
-}
-
-func conflict(a, b protocol.FoldingRange) bool {
-	// a start position is <= b start positions
-	return (a.StartLine < b.StartLine || (a.StartLine == b.StartLine && a.StartCharacter <= b.StartCharacter)) &&
-		(a.EndLine > b.StartLine || (a.EndLine == b.StartLine && a.EndCharacter > b.StartCharacter))
-}
-
-func foldRanges(m *protocol.Mapper, contents string, ranges []protocol.FoldingRange) (string, error) {
-	foldedText := "<>"
-	res := contents
-	// Apply the edits from the end of the file forward
-	// to preserve the offsets
-	// TODO(adonovan): factor to use diff.ApplyEdits, which validates the input.
-	for i := len(ranges) - 1; i >= 0; i-- {
-		r := ranges[i]
-		start, err := m.PositionPoint(protocol.Position{Line: r.StartLine, Character: r.StartCharacter})
-		if err != nil {
-			return "", err
-		}
-		end, err := m.PositionPoint(protocol.Position{Line: r.EndLine, Character: r.EndCharacter})
-		if err != nil {
-			return "", err
-		}
-		res = res[:start.Offset()] + foldedText + res[end.Offset():]
-	}
-	return res, nil
-}
-
-func (r *runner) Format(t *testing.T, spn span.Span) {
-	uri := spn.URI()
-	filename := uri.Filename()
-	gofmted := r.data.Golden(t, "gofmt", filename, func() ([]byte, error) {
-		cmd := exec.Command("gofmt", filename)
-		out, _ := cmd.Output() // ignore error, sometimes we have intentionally ungofmt-able files
-		return out, nil
-	})
-
-	edits, err := r.server.Formatting(r.ctx, &protocol.DocumentFormattingParams{
-		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(uri),
-		},
-	})
-	if err != nil {
-		if len(gofmted) > 0 {
-			t.Error(err)
-		}
-		return
-	}
-	m, err := r.data.Mapper(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, _, err := source.ApplyProtocolEdits(m, edits)
-	if err != nil {
-		t.Error(err)
-	}
-	if diff := compare.Bytes(gofmted, got); diff != "" {
-		t.Errorf("format failed for %s (-want +got):\n%s", filename, diff)
+		t.Errorf("outgoing calls: %s", msg)
 	}
 }
 
@@ -450,39 +239,6 @@ func (r *runner) SemanticTokens(t *testing.T, spn span.Span) {
 	})
 	if err != nil {
 		t.Errorf("%v for Range %s", err, filename)
-	}
-}
-
-func (r *runner) Import(t *testing.T, spn span.Span) {
-	// Invokes textDocument/codeAction and applies all the "goimports" edits.
-
-	uri := spn.URI()
-	filename := uri.Filename()
-	actions, err := r.server.CodeAction(r.ctx, &protocol.CodeActionParams{
-		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(uri),
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := r.data.Mapper(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := m.Content
-	if len(actions) > 0 {
-		res, err := applyTextDocumentEdits(r, actions[0].Edit.DocumentChanges)
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = res[uri]
-	}
-	want := r.data.Golden(t, "goimports", filename, func() ([]byte, error) {
-		return got, nil
-	})
-	if diff := compare.Bytes(want, got); diff != "" {
-		t.Errorf("import failed for %s:\n%s", filename, diff)
 	}
 }
 
@@ -584,58 +340,6 @@ func (r *runner) SuggestedFix(t *testing.T, spn span.Span, actionKinds []tests.S
 	}
 }
 
-func (r *runner) FunctionExtraction(t *testing.T, start span.Span, end span.Span) {
-	uri := start.URI()
-	m, err := r.data.Mapper(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	spn := span.New(start.URI(), start.Start(), end.End())
-	rng, err := m.SpanRange(spn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	actionsRaw, err := r.server.CodeAction(r.ctx, &protocol.CodeActionParams{
-		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(uri),
-		},
-		Range: rng,
-		Context: protocol.CodeActionContext{
-			Only: []protocol.CodeActionKind{"refactor.extract"},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var actions []protocol.CodeAction
-	for _, action := range actionsRaw {
-		if action.Command.Title == "Extract function" {
-			actions = append(actions, action)
-		}
-	}
-	// Hack: We assume that we only get one code action per range.
-	// TODO(rstambler): Support multiple code actions per test.
-	if len(actions) == 0 || len(actions) > 1 {
-		t.Fatalf("unexpected number of code actions, want 1, got %v", len(actions))
-	}
-	_, err = r.server.ExecuteCommand(r.ctx, &protocol.ExecuteCommandParams{
-		Command:   actions[0].Command.Command,
-		Arguments: actions[0].Command.Arguments,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	res := <-r.editRecv
-	for u, got := range res {
-		want := r.data.Golden(t, "functionextraction_"+tests.SpanName(spn), u.Filename(), func() ([]byte, error) {
-			return got, nil
-		})
-		if diff := compare.Bytes(want, got); diff != "" {
-			t.Errorf("function extraction failed for %s:\n%s", u.Filename(), diff)
-		}
-	}
-}
-
 func (r *runner) MethodExtraction(t *testing.T, start span.Span, end span.Span) {
 	uri := start.URI()
 	m, err := r.data.Mapper(uri)
@@ -685,129 +389,6 @@ func (r *runner) MethodExtraction(t *testing.T, start span.Span, end span.Span) 
 		if diff := compare.Bytes(want, got); diff != "" {
 			t.Errorf("method extraction failed for %s:\n%s", u.Filename(), diff)
 		}
-	}
-}
-
-// TODO(rfindley): This handler needs more work. The output is still a bit hard
-// to read (range diffs do not format nicely), and it is too entangled with hover.
-func (r *runner) Definition(t *testing.T, _ span.Span, d tests.Definition) {
-	sm, err := r.data.Mapper(d.Src.URI())
-	if err != nil {
-		t.Fatal(err)
-	}
-	loc, err := sm.SpanLocation(d.Src)
-	if err != nil {
-		t.Fatalf("failed for %v: %v", d.Src, err)
-	}
-	tdpp := protocol.LocationTextDocumentPositionParams(loc)
-	var got []protocol.Location
-	var hover *protocol.Hover
-	if d.IsType {
-		params := &protocol.TypeDefinitionParams{
-			TextDocumentPositionParams: tdpp,
-		}
-		got, err = r.server.TypeDefinition(r.ctx, params)
-	} else {
-		params := &protocol.DefinitionParams{
-			TextDocumentPositionParams: tdpp,
-		}
-		got, err = r.server.Definition(r.ctx, params)
-		if err != nil {
-			t.Fatalf("failed for %v: %+v", d.Src, err)
-		}
-		v := &protocol.HoverParams{
-			TextDocumentPositionParams: tdpp,
-		}
-		hover, err = r.server.Hover(r.ctx, v)
-	}
-	if err != nil {
-		t.Fatalf("failed for %v: %v", d.Src, err)
-	}
-	dm, err := r.data.Mapper(d.Def.URI())
-	if err != nil {
-		t.Fatal(err)
-	}
-	def, err := dm.SpanLocation(d.Def)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !d.OnlyHover {
-		want := []protocol.Location{def}
-		if diff := cmp.Diff(want, got); diff != "" {
-			t.Fatalf("Definition(%s) mismatch (-want +got):\n%s", d.Src, diff)
-		}
-	}
-	didSomething := false
-	if hover != nil {
-		didSomething = true
-		tag := fmt.Sprintf("%s-hoverdef", d.Name)
-		want := string(r.data.Golden(t, tag, d.Src.URI().Filename(), func() ([]byte, error) {
-			return []byte(hover.Contents.Value), nil
-		}))
-		got := hover.Contents.Value
-		if diff := tests.DiffMarkdown(want, got); diff != "" {
-			t.Errorf("%s: markdown mismatch:\n%s", d.Src, diff)
-		}
-	}
-	if !d.OnlyHover {
-		didSomething = true
-		locURI := got[0].URI.SpanURI()
-		lm, err := r.data.Mapper(locURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if def, err := lm.LocationSpan(got[0]); err != nil {
-			t.Fatalf("failed for %v: %v", got[0], err)
-		} else if def != d.Def {
-			t.Errorf("for %v got %v want %v", d.Src, def, d.Def)
-		}
-	}
-	if !didSomething {
-		t.Errorf("no tests ran for %s", d.Src.URI())
-	}
-}
-
-func (r *runner) Highlight(t *testing.T, src span.Span, spans []span.Span) {
-	m, err := r.data.Mapper(src.URI())
-	if err != nil {
-		t.Fatal(err)
-	}
-	loc, err := m.SpanLocation(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	params := &protocol.DocumentHighlightParams{
-		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
-	}
-	highlights, err := r.server.DocumentHighlight(r.ctx, params)
-	if err != nil {
-		t.Fatalf("DocumentHighlight(%v) failed: %v", params, err)
-	}
-	var got []protocol.Range
-	for _, h := range highlights {
-		got = append(got, h.Range)
-	}
-
-	var want []protocol.Range
-	for _, s := range spans {
-		rng, err := m.SpanRange(s)
-		if err != nil {
-			t.Fatalf("Mapper.SpanRange(%v) failed: %v", s, err)
-		}
-		want = append(want, rng)
-	}
-
-	sortRanges := func(s []protocol.Range) {
-		sort.Slice(s, func(i, j int) bool {
-			return protocol.CompareRange(s[i], s[j]) < 0
-		})
-	}
-
-	sortRanges(got)
-	sortRanges(want)
-
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("DocumentHighlight(%v) mismatch (-want +got):\n%s", src, diff)
 	}
 }
 
@@ -989,35 +570,6 @@ func applyTextDocumentEdits(r *runner, edits []protocol.DocumentChanges) (map[sp
 		}
 	}
 	return res, nil
-}
-
-func (r *runner) WorkspaceSymbols(t *testing.T, uri span.URI, query string, typ tests.WorkspaceSymbolsTestType) {
-	matcher := tests.WorkspaceSymbolsTestTypeToMatcher(typ)
-
-	original := r.server.session.Options()
-	modified := original
-	modified.SymbolMatcher = matcher
-	r.server.session.SetOptions(modified)
-	defer r.server.session.SetOptions(original)
-
-	params := &protocol.WorkspaceSymbolParams{
-		Query: query,
-	}
-	gotSymbols, err := r.server.Symbol(r.ctx, params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := tests.WorkspaceSymbolsString(r.ctx, r.data, uri, gotSymbols)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got = filepath.ToSlash(tests.Normalize(got, r.normalizers))
-	want := string(r.data.Golden(t, fmt.Sprintf("workspace_symbol-%s-%s", strings.ToLower(string(matcher)), query), uri.Filename(), func() ([]byte, error) {
-		return []byte(got), nil
-	}))
-	if diff := compare.Text(want, got); diff != "" {
-		t.Error(diff)
-	}
 }
 
 func (r *runner) SignatureHelp(t *testing.T, spn span.Span, want *protocol.SignatureHelp) {

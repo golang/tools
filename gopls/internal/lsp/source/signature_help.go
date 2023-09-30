@@ -23,7 +23,7 @@ func SignatureHelp(ctx context.Context, snapshot Snapshot, fh FileHandle, positi
 
 	// We need full type-checking here, as we must type-check function bodies in
 	// order to provide signature help at the requested position.
-	pkg, pgf, err := PackageForFile(ctx, snapshot, fh.URI(), NarrowestPackage)
+	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, 0, fmt.Errorf("getting file for SignatureHelp: %w", err)
 	}
@@ -117,7 +117,7 @@ FindCall:
 	}
 	return &protocol.SignatureInformation{
 		Label:         name + s.Format(),
-		Documentation: stringToSigInfoDocumentation(s.doc, snapshot.View().Options()),
+		Documentation: stringToSigInfoDocumentation(s.doc, snapshot.Options()),
 		Parameters:    paramInfo,
 	}, activeParam, nil
 }
@@ -134,7 +134,7 @@ func builtinSignature(ctx context.Context, snapshot Snapshot, callExpr *ast.Call
 	activeParam := activeParameter(callExpr, len(sig.params), sig.variadic, pos)
 	return &protocol.SignatureInformation{
 		Label:         sig.name + sig.Format(),
-		Documentation: stringToSigInfoDocumentation(sig.doc, snapshot.View().Options()),
+		Documentation: stringToSigInfoDocumentation(sig.doc, snapshot.Options()),
 		Parameters:    paramInfo,
 	}, activeParam, nil
 

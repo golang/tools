@@ -35,7 +35,7 @@ var TraceTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 
         <H2>Recent spans (oldest first)</H2>
         <p>
-	A finite number of recent span start/end times are shown below.
+        A finite number of recent span start/end times are shown below.
         The nesting represents the children of a parent span (and the log events within a span).
         A span may appear twice: chronologically at toplevel, and nested within its parent.
         </p>
@@ -259,13 +259,10 @@ func (t *traces) ProcessEvent(ctx context.Context, ev core.Event, lm label.Map) 
 // addRecentLocked appends a start or end event to the "recent" log,
 // evicting an old entry if necessary.
 func (t *traces) addRecentLocked(span *traceSpan, start bool) {
-	const (
-		maxRecent = 100 // number of log entries before age-based eviction
-		maxAge    = 1 * time.Minute
-	)
 	t.recent = append(t.recent, spanStartEnd{Start: start, Span: span})
 
-	for len(t.recent) > maxRecent && t.recent[0].Time().Before(time.Now().Add(-maxAge)) {
+	const maxRecent = 100 // number of log entries before eviction
+	for len(t.recent) > maxRecent {
 		t.recent[0] = spanStartEnd{} // aid GC
 		t.recent = t.recent[1:]
 		t.recentEvictions++

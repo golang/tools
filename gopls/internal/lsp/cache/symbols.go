@@ -11,10 +11,10 @@ import (
 	"go/types"
 	"strings"
 
+	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/memoize"
 )
 
 // symbolize returns the result of symbolizing the file identified by uri, using a cache.
@@ -50,7 +50,7 @@ func (s *snapshot) symbolize(ctx context.Context, uri span.URI) ([]source.Symbol
 	}
 
 	// Await result.
-	v, err := s.awaitPromise(ctx, entry.(*memoize.Promise))
+	v, err := s.awaitPromise(ctx, entry)
 	if err != nil {
 		return nil, err
 	}
@@ -59,10 +59,8 @@ func (s *snapshot) symbolize(ctx context.Context, uri span.URI) ([]source.Symbol
 }
 
 // symbolizeImpl reads and parses a file and extracts symbols from it.
-// It may use a parsed file already present in the cache but
-// otherwise does not populate the cache.
 func symbolizeImpl(ctx context.Context, snapshot *snapshot, fh source.FileHandle) ([]source.Symbol, error) {
-	pgfs, err := snapshot.parseCache.parseFiles(ctx, token.NewFileSet(), source.ParseFull, fh)
+	pgfs, err := snapshot.view.parseCache.parseFiles(ctx, token.NewFileSet(), source.ParseFull, false, fh)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +120,7 @@ func (w *symbolWalker) fileDecls(decls []ast.Decl) {
 			var recv *ast.Ident
 			if decl.Recv.NumFields() > 0 {
 				kind = protocol.Method
-				recv = unpackRecv(decl.Recv.List[0].Type)
+				_, recv, _ = astutil.UnpackRecv(decl.Recv.List[0].Type)
 			}
 			w.atNode(decl.Name, decl.Name.Name, kind, recv)
 		case *ast.GenDecl:
@@ -156,25 +154,6 @@ func guessKind(spec *ast.TypeSpec) protocol.SymbolKind {
 		return protocol.Function
 	}
 	return protocol.Class
-}
-
-func unpackRecv(rtyp ast.Expr) *ast.Ident {
-	// Extract the receiver identifier. Lifted from go/types/resolver.go
-L:
-	for {
-		switch t := rtyp.(type) {
-		case *ast.ParenExpr:
-			rtyp = t.X
-		case *ast.StarExpr:
-			rtyp = t.X
-		default:
-			break L
-		}
-	}
-	if name, _ := rtyp.(*ast.Ident); name != nil {
-		return name
-	}
-	return nil
 }
 
 // walkType processes symbols related to a type expression. path is path of

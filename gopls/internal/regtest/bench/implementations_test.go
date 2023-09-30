@@ -12,6 +12,7 @@ func BenchmarkImplementations(b *testing.B) {
 		file   string
 		regexp string
 	}{
+		{"google-cloud-go", "httpreplay/httpreplay.go", `type (Recorder)`},
 		{"istio", "pkg/config/mesh/watcher.go", `type (Watcher)`},
 		{"kubernetes", "pkg/controller/lookup_cache.go", `objectWithMeta`},
 		{"kuma", "api/generic/insights.go", `type (Insight)`},
@@ -24,10 +25,16 @@ func BenchmarkImplementations(b *testing.B) {
 		b.Run(test.repo, func(b *testing.B) {
 			env := getRepo(b, test.repo).sharedEnv(b)
 			env.OpenFile(test.file)
+			defer closeBuffer(b, env, test.file)
+
 			loc := env.RegexpSearch(test.file, test.regexp)
-			env.Await(env.DoneWithOpen())
+			env.AfterChange()
 			env.Implementations(loc) // pre-warm the query
 			b.ResetTimer()
+
+			if stopAndRecord := startProfileIfSupported(b, env, qualifiedName(test.repo, "implementations")); stopAndRecord != nil {
+				defer stopAndRecord()
+			}
 
 			for i := 0; i < b.N; i++ {
 				env.Implementations(loc)

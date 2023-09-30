@@ -18,7 +18,6 @@ import (
 	"go/token"
 	"go/types"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -85,9 +84,13 @@ func doMain(write bool) (bool, error) {
 
 // pkgDir returns the directory corresponding to the import path pkgPath.
 func pkgDir(pkgPath string) (string, error) {
-	out, err := exec.Command("go", "list", "-f", "{{.Dir}}", pkgPath).Output()
+	cmd := exec.Command("go", "list", "-f", "{{.Dir}}", pkgPath)
+	out, err := cmd.Output()
 	if err != nil {
-		return "", err
+		if ee, _ := err.(*exec.ExitError); ee != nil && len(ee.Stderr) > 0 {
+			return "", fmt.Errorf("%v: %w\n%s", cmd, err, ee.Stderr)
+		}
+		return "", fmt.Errorf("%v: %w", cmd, err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -465,7 +468,11 @@ func structDoc(fields []*commandmeta.Field, level int) string {
 		if fld.Doc != "" && level == 0 {
 			doclines := strings.Split(fld.Doc, "\n")
 			for _, line := range doclines {
-				fmt.Fprintf(&b, "%s\t// %s\n", indent, line)
+				text := ""
+				if line != "" {
+					text = " " + line
+				}
+				fmt.Fprintf(&b, "%s\t//%s\n", indent, text)
 			}
 		}
 		tag := strings.Split(fld.JSONTag, ",")[0]
@@ -565,7 +572,7 @@ func fileForPos(pkg *packages.Package, pos token.Pos) (*ast.File, error) {
 }
 
 func rewriteFile(file string, api *source.APIJSON, write bool, rewrite func([]byte, *source.APIJSON) ([]byte, error)) (bool, error) {
-	old, err := ioutil.ReadFile(file)
+	old, err := os.ReadFile(file)
 	if err != nil {
 		return false, err
 	}
@@ -579,7 +586,7 @@ func rewriteFile(file string, api *source.APIJSON, write bool, rewrite func([]by
 		return bytes.Equal(old, new), nil
 	}
 
-	if err := ioutil.WriteFile(file, new, 0); err != nil {
+	if err := os.WriteFile(file, new, 0); err != nil {
 		return false, err
 	}
 

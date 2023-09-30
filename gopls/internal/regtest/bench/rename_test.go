@@ -16,9 +16,10 @@ func BenchmarkRename(b *testing.B) {
 		regexp   string
 		baseName string
 	}{
+		{"google-cloud-go", "httpreplay/httpreplay.go", `func (NewRecorder)`, "NewRecorder"},
+		{"istio", "pkg/config/model.go", `(Namespace) string`, "Namespace"},
 		{"kubernetes", "pkg/controller/lookup_cache.go", `hashutil\.(DeepHashObject)`, "DeepHashObject"},
 		{"kuma", "pkg/events/interfaces.go", `Delete`, "Delete"},
-		{"istio", "pkg/config/model.go", `(Namespace) string`, "Namespace"},
 		{"pkgsite", "internal/log/log.go", `func (Infof)`, "Infof"},
 		{"starlark", "starlark/eval.go", `Program\) (Filename)`, "Filename"},
 		{"tools", "internal/lsp/cache/snapshot.go", `meta \*(metadataGraph)`, "metadataGraph"},
@@ -33,6 +34,10 @@ func BenchmarkRename(b *testing.B) {
 			env.Await(env.DoneWithOpen())
 			env.Rename(loc, test.baseName+"X") // pre-warm the query
 			b.ResetTimer()
+
+			if stopAndRecord := startProfileIfSupported(b, env, qualifiedName(test.repo, "rename")); stopAndRecord != nil {
+				defer stopAndRecord()
+			}
 
 			for i := 0; i < b.N; i++ {
 				names++

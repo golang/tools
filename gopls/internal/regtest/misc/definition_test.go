@@ -351,7 +351,7 @@ func main() {}
 			Run(t, mod, func(t *testing.T, env *Env) {
 				env.OpenFile("main.go")
 
-				loc, err := env.Editor.GoToTypeDefinition(env.Ctx, env.RegexpSearch("main.go", tt.re))
+				loc, err := env.Editor.TypeDefinition(env.Ctx, env.RegexpSearch("main.go", tt.re))
 				if tt.wantError {
 					if err == nil {
 						t.Fatal("expected error, got nil")
@@ -369,6 +369,25 @@ func main() {}
 			})
 		})
 	}
+}
+
+func TestGoToTypeDefinition_Issue60544(t *testing.T) {
+	const mod = `
+-- go.mod --
+module mod.com
+
+go 1.19
+-- main.go --
+package main
+
+func F[T comparable]() {}
+`
+
+	Run(t, mod, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+
+		_ = env.TypeDefinition(env.RegexpSearch("main.go", "comparable")) // must not panic
+	})
 }
 
 // Test for golang/go#47825.
@@ -476,7 +495,7 @@ const _ = b.K
 		}
 
 		// Run 'go mod vendor' outside the editor.
-		if err := env.Sandbox.RunGoCommand(env.Ctx, ".", "mod", []string{"vendor"}, true); err != nil {
+		if err := env.Sandbox.RunGoCommand(env.Ctx, ".", "mod", []string{"vendor"}, nil, true); err != nil {
 			t.Fatalf("go mod vendor: %v", err)
 		}
 

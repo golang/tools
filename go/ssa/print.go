@@ -95,7 +95,7 @@ func (v *Alloc) String() string {
 		op = "new"
 	}
 	from := v.Parent().relPkg()
-	return fmt.Sprintf("%s %s (%s)", op, relType(deref(v.Type()), from), v.Comment)
+	return fmt.Sprintf("%s %s (%s)", op, relType(mustDeref(v.Type()), from), v.Comment)
 }
 
 func (v *Phi) String() string {
@@ -259,21 +259,19 @@ func (v *MakeChan) String() string {
 }
 
 func (v *FieldAddr) String() string {
-	st := typeparams.CoreType(deref(v.X.Type())).(*types.Struct)
 	// Be robust against a bad index.
 	name := "?"
-	if 0 <= v.Field && v.Field < st.NumFields() {
-		name = st.Field(v.Field).Name()
+	if fld := fieldOf(mustDeref(v.X.Type()), v.Field); fld != nil {
+		name = fld.Name()
 	}
 	return fmt.Sprintf("&%s.%s [#%d]", relName(v.X, v), name, v.Field)
 }
 
 func (v *Field) String() string {
-	st := typeparams.CoreType(v.X.Type()).(*types.Struct)
 	// Be robust against a bad index.
 	name := "?"
-	if 0 <= v.Field && v.Field < st.NumFields() {
-		name = st.Field(v.Field).Name()
+	if fld := fieldOf(v.X.Type(), v.Field); fld != nil {
+		name = fld.Name()
 	}
 	return fmt.Sprintf("%s.%s [#%d]", relName(v.X, v), name, v.Field)
 }
@@ -452,7 +450,7 @@ func WritePackage(buf *bytes.Buffer, p *Package) {
 
 		case *Global:
 			fmt.Fprintf(buf, "  var   %-*s %s\n",
-				maxname, name, relType(mem.Type().(*types.Pointer).Elem(), from))
+				maxname, name, relType(mustDeref(mem.Type()), from))
 		}
 	}
 

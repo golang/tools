@@ -45,7 +45,7 @@ func (l *links) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
 		return tool.CommandLineErrorf("links expects 1 argument")
 	}
-	conn, err := l.app.connect(ctx)
+	conn, err := l.app.connect(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -53,9 +53,9 @@ func (l *links) Run(ctx context.Context, args ...string) error {
 
 	from := span.Parse(args[0])
 	uri := from.URI()
-	file := conn.openFile(ctx, uri)
-	if file.err != nil {
-		return file.err
+
+	if _, err := conn.openFile(ctx, uri); err != nil {
+		return err
 	}
 	results, err := conn.DocumentLink(ctx, &protocol.DocumentLinkParams{
 		TextDocument: protocol.TextDocumentIdentifier{
@@ -71,7 +71,7 @@ func (l *links) Run(ctx context.Context, args ...string) error {
 		return enc.Encode(results)
 	}
 	for _, v := range results {
-		fmt.Println(v.Target)
+		fmt.Println(*v.Target)
 	}
 	return nil
 }

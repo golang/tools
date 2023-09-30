@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
@@ -105,6 +106,26 @@ func describeExpectations(expectations ...Expectation) string {
 	return strings.Join(descriptions, "\n")
 }
 
+// Not inverts the sense of an expectation: a met expectation is unmet, and an
+// unmet expectation is met.
+func Not(e Expectation) Expectation {
+	check := func(s State) Verdict {
+		switch v := e.Check(s); v {
+		case Met:
+			return Unmet
+		case Unmet, Unmeetable:
+			return Met
+		default:
+			panic(fmt.Sprintf("unexpected verdict %v", v))
+		}
+	}
+	description := describeExpectations(e)
+	return Expectation{
+		Check:       check,
+		Description: fmt.Sprintf("not: %s", description),
+	}
+}
+
 // AnyOf returns an expectation that is satisfied when any of the given
 // expectations is met.
 func AnyOf(anyOf ...Expectation) Expectation {
@@ -191,18 +212,20 @@ func ReadAllDiagnostics(into *map[string]*protocol.PublishDiagnosticsParams) Exp
 	}
 }
 
-// NoOutstandingWork asserts that there is no work initiated using the LSP
-// $/progress API that has not completed.
-func NoOutstandingWork() Expectation {
+// ShownDocument asserts that the client has received a
+// ShowDocumentRequest for the given URI.
+func ShownDocument(uri protocol.URI) Expectation {
 	check := func(s State) Verdict {
-		if len(s.outstandingWork()) == 0 {
-			return Met
+		for _, params := range s.showDocument {
+			if params.URI == uri {
+				return Met
+			}
 		}
 		return Unmet
 	}
 	return Expectation{
 		Check:       check,
-		Description: "no outstanding work",
+		Description: fmt.Sprintf("received window/showDocument for URI %s", uri),
 	}
 }
 
@@ -235,30 +258,28 @@ func ShownMessage(containing string) Expectation {
 	}
 	return Expectation{
 		Check:       check,
-		Description: "received ShowMessage",
+		Description: fmt.Sprintf("received window/showMessage containing %q", containing),
 	}
 }
 
-// ShowMessageRequest asserts that the editor has received a ShowMessageRequest
-// with an action item that has the given title.
-func ShowMessageRequest(title string) Expectation {
+// ShownMessageRequest asserts that the editor has received a
+// ShowMessageRequest with message matching the given regular expression.
+func ShownMessageRequest(messageRegexp string) Expectation {
+	msgRE := regexp.MustCompile(messageRegexp)
 	check := func(s State) Verdict {
 		if len(s.showMessageRequest) == 0 {
 			return Unmet
 		}
-		// Only check the most recent one.
-		m := s.showMessageRequest[len(s.showMessageRequest)-1]
-		if len(m.Actions) == 0 || len(m.Actions) > 1 {
-			return Unmet
-		}
-		if m.Actions[0].Title == title {
-			return Met
+		for _, m := range s.showMessageRequest {
+			if msgRE.MatchString(m.Message) {
+				return Met
+			}
 		}
 		return Unmet
 	}
 	return Expectation{
 		Check:       check,
-		Description: "received ShowMessageRequest",
+		Description: fmt.Sprintf("ShowMessageRequest matching %q", messageRegexp),
 	}
 }
 
@@ -274,11 +295,12 @@ func ShowMessageRequest(title string) Expectation {
 func (e *Env) DoneDiagnosingChanges() Expectation {
 	stats := e.Editor.Stats()
 	statsBySource := map[lsp.ModificationSource]uint64{
-		lsp.FromDidOpen:               stats.DidOpen,
-		lsp.FromDidChange:             stats.DidChange,
-		lsp.FromDidSave:               stats.DidSave,
-		lsp.FromDidChangeWatchedFiles: stats.DidChangeWatchedFiles,
-		lsp.FromDidClose:              stats.DidClose,
+		lsp.FromDidOpen:                stats.DidOpen,
+		lsp.FromDidChange:              stats.DidChange,
+		lsp.FromDidSave:                stats.DidSave,
+		lsp.FromDidChangeWatchedFiles:  stats.DidChangeWatchedFiles,
+		lsp.FromDidClose:               stats.DidClose,
+		lsp.FromDidChangeConfiguration: stats.DidChangeConfiguration,
 	}
 
 	var expected []lsp.ModificationSource
@@ -457,6 +479,46 @@ func OutstandingWork(title, msg string) Expectation {
 	}
 }
 
+// NoOutstandingWork asserts that there is no work initiated using the LSP
+// $/progress API that has not completed.
+//
+// If non-nil, the ignore func is used to ignore certain work items for the
+// purpose of this check.
+//
+// TODO(rfindley): consider refactoring to treat outstanding work the same way
+// we treat diagnostics: with an algebra of filters.
+func NoOutstandingWork(ignore func(title, msg string) bool) Expectation {
+	check := func(s State) Verdict {
+		for _, w := range s.work {
+			if w.complete {
+				continue
+			}
+			if w.title == "" {
+				// A token that has been created but not yet used.
+				//
+				// TODO(rfindley): this should be separated in the data model: until
+				// the "begin" notification, work should not be in progress.
+				continue
+			}
+			if ignore(w.title, w.msg) {
+				continue
+			}
+			return Unmet
+		}
+		return Met
+	}
+	return Expectation{
+		Check:       check,
+		Description: "no outstanding work",
+	}
+}
+
+// IgnoreTelemetryPromptWork may be used in conjunction with NoOutStandingWork
+// to ignore the telemetry prompt.
+func IgnoreTelemetryPromptWork(title, msg string) bool {
+	return title == lsp.TelemetryPromptWorkTitle
+}
+
 // NoErrorLogs asserts that the client has not received any log messages of
 // error severity.
 func NoErrorLogs() Expectation {
@@ -469,6 +531,10 @@ func NoErrorLogs() Expectation {
 // The count argument specifies the expected number of matching logs. If
 // atLeast is set, this is a lower bound, otherwise there must be exactly count
 // matching logs.
+//
+// Logs are asynchronous to other LSP messages, so this expectation should not
+// be used with combinators such as OnceMet or AfterChange that assert on
+// ordering with respect to other operations.
 func LogMatching(typ protocol.MessageType, re string, count int, atLeast bool) Expectation {
 	rec, err := regexp.Compile(re)
 	if err != nil {
@@ -484,6 +550,11 @@ func LogMatching(typ protocol.MessageType, re string, count int, atLeast bool) E
 		// Check for an exact or "at least" match.
 		if found == count || (found >= count && atLeast) {
 			return Met
+		}
+		// If we require an exact count, and have received more than expected, the
+		// expectation can never be met.
+		if found > count && !atLeast {
+			return Unmeetable
 		}
 		return Unmet
 	}
@@ -574,50 +645,6 @@ func jsonProperty(obj interface{}, path ...string) interface{} {
 	}
 	m := obj.(map[string]interface{})
 	return jsonProperty(m[path[0]], path[1:]...)
-}
-
-// RegistrationMatching asserts that the client has received a capability
-// registration matching the given regexp.
-//
-// TODO(rfindley): remove this once TestWatchReplaceTargets has been revisited.
-//
-// Deprecated: use (No)FileWatchMatching
-func RegistrationMatching(re string) Expectation {
-	rec := regexp.MustCompile(re)
-	check := func(s State) Verdict {
-		for _, p := range s.registrations {
-			for _, r := range p.Registrations {
-				if rec.Match([]byte(r.Method)) {
-					return Met
-				}
-			}
-		}
-		return Unmet
-	}
-	return Expectation{
-		Check:       check,
-		Description: fmt.Sprintf("registration matching %q", re),
-	}
-}
-
-// UnregistrationMatching asserts that the client has received an
-// unregistration whose ID matches the given regexp.
-func UnregistrationMatching(re string) Expectation {
-	rec := regexp.MustCompile(re)
-	check := func(s State) Verdict {
-		for _, p := range s.unregistrations {
-			for _, r := range p.Unregisterations {
-				if rec.Match([]byte(r.Method)) {
-					return Met
-				}
-			}
-		}
-		return Unmet
-	}
-	return Expectation{
-		Check:       check,
-		Description: fmt.Sprintf("unregistration matching %q", re),
-	}
 }
 
 // Diagnostics asserts that there is at least one diagnostic matching the given
@@ -764,6 +791,17 @@ func WithMessage(substring string) DiagnosticFilter {
 		desc: fmt.Sprintf("with message containing %q", substring),
 		check: func(_ string, d protocol.Diagnostic) bool {
 			return strings.Contains(d.Message, substring)
+		},
+	}
+}
+
+// WithSeverityTags filters to diagnostics whose severity and tags match
+// the given expectation.
+func WithSeverityTags(diagName string, severity protocol.DiagnosticSeverity, tags []protocol.DiagnosticTag) DiagnosticFilter {
+	return DiagnosticFilter{
+		desc: fmt.Sprintf("with diagnostic %q with severity %q and tag %#q", diagName, severity, tags),
+		check: func(_ string, d protocol.Diagnostic) bool {
+			return d.Source == diagName && d.Severity == severity && cmp.Equal(d.Tags, tags)
 		},
 	}
 }

@@ -92,8 +92,8 @@ func constValue(c *ssa.Const) value {
 func fitsInt(x int64, sizes types.Sizes) bool {
 	intSize := sizes.Sizeof(types.Typ[types.Int])
 	if intSize < sizes.Sizeof(types.Typ[types.Int64]) {
-		maxInt := int64(1)<<(intSize-1) - 1
-		minInt := -int64(1) << (intSize - 1)
+		maxInt := int64(1)<<((intSize*8)-1) - 1
+		minInt := -int64(1) << ((intSize * 8) - 1)
 		return minInt <= x && x <= maxInt
 	}
 	return true
@@ -1060,6 +1060,11 @@ func callBuiltin(caller *frame, callpos token.Pos, fn *ssa.Builtin, args []value
 			panic(fmt.Sprintf("cap: illegal operand: %T", x))
 		}
 
+	case "min":
+		return foldLeft(min, args)
+	case "max":
+		return foldLeft(max, args)
+
 	case "real":
 		switch c := args[0].(type) {
 		case complex64:
@@ -1206,8 +1211,7 @@ func conv(t_dst, t_src types.Type, x value) value {
 
 	case *types.Slice:
 		// []byte or []rune -> string
-		// TODO(adonovan): fix: type B byte; conv([]B -> string).
-		switch ut_src.Elem().(*types.Basic).Kind() {
+		switch ut_src.Elem().Underlying().(*types.Basic).Kind() {
 		case types.Byte:
 			x := x.([]value)
 			b := make([]byte, 0, len(x))
@@ -1229,7 +1233,6 @@ func conv(t_dst, t_src types.Type, x value) value {
 		x = widen(x)
 
 		// integer -> string?
-		// TODO(adonovan): fix: test integer -> named alias of string.
 		if ut_src.Info()&types.IsInteger != 0 {
 			if ut_dst, ok := ut_dst.(*types.Basic); ok && ut_dst.Kind() == types.String {
 				return fmt.Sprintf("%c", x)
@@ -1241,8 +1244,7 @@ func conv(t_dst, t_src types.Type, x value) value {
 			switch ut_dst := ut_dst.(type) {
 			case *types.Slice:
 				var res []value
-				// TODO(adonovan): fix: test named alias of rune, byte.
-				switch ut_dst.Elem().(*types.Basic).Kind() {
+				switch ut_dst.Elem().Underlying().(*types.Basic).Kind() {
 				case types.Rune:
 					for _, r := range []rune(s) {
 						res = append(res, r)
@@ -1425,4 +1427,90 @@ func checkInterface(i *interpreter, itype *types.Interface, x iface) string {
 			x.t, itype, meth.Name())
 	}
 	return "" // ok
+}
+
+func foldLeft(op func(value, value) value, args []value) value {
+	x := args[0]
+	for _, arg := range args[1:] {
+		x = op(x, arg)
+	}
+	return x
+}
+
+func min(x, y value) value {
+	switch x := x.(type) {
+	case float32:
+		return fmin(x, y.(float32))
+	case float64:
+		return fmin(x, y.(float64))
+	}
+
+	// return (y < x) ? y : x
+	if binop(token.LSS, nil, y, x).(bool) {
+		return y
+	}
+	return x
+}
+
+func max(x, y value) value {
+	switch x := x.(type) {
+	case float32:
+		return fmax(x, y.(float32))
+	case float64:
+		return fmax(x, y.(float64))
+	}
+
+	// return (y > x) ? y : x
+	if binop(token.GTR, nil, y, x).(bool) {
+		return y
+	}
+	return x
+}
+
+// copied from $GOROOT/src/runtime/minmax.go
+
+type floaty interface{ ~float32 | ~float64 }
+
+func fmin[F floaty](x, y F) F {
+	if y != y || y < x {
+		return y
+	}
+	if x != x || x < y || x != 0 {
+		return x
+	}
+	// x and y are both ±0
+	// if either is -0, return -0; else return +0
+	return forbits(x, y)
+}
+
+func fmax[F floaty](x, y F) F {
+	if y != y || y > x {
+		return y
+	}
+	if x != x || x > y || x != 0 {
+		return x
+	}
+	// x and y are both ±0
+	// if both are -0, return -0; else return +0
+	return fandbits(x, y)
+}
+
+func forbits[F floaty](x, y F) F {
+	switch unsafe.Sizeof(x) {
+	case 4:
+		*(*uint32)(unsafe.Pointer(&x)) |= *(*uint32)(unsafe.Pointer(&y))
+	case 8:
+		*(*uint64)(unsafe.Pointer(&x)) |= *(*uint64)(unsafe.Pointer(&y))
+	}
+	return x
+}
+
+func fandbits[F floaty](x, y F) F {
+	switch unsafe.Sizeof(x) {
+	case 4:
+		*(*uint32)(unsafe.Pointer(&x)) &= *(*uint32)(unsafe.Pointer(&y))
+	case 8:
+		*(*uint64)(unsafe.Pointer(&x)) &= *(*uint64)(unsafe.Pointer(&y))
+	}
+	return x
 }

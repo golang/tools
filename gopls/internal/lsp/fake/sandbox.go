@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,7 +91,7 @@ func NewSandbox(config *SandboxConfig) (_ *Sandbox, err error) {
 
 	rootDir := config.RootDir
 	if rootDir == "" {
-		rootDir, err = ioutil.TempDir(config.RootDir, "gopls-sandbox-")
+		rootDir, err = os.MkdirTemp(config.RootDir, "gopls-sandbox-")
 		if err != nil {
 			return nil, fmt.Errorf("creating temporary workdir: %v", err)
 		}
@@ -150,7 +149,7 @@ func NewSandbox(config *SandboxConfig) (_ *Sandbox, err error) {
 // is the responsibility of the caller to call os.RemoveAll on the returned
 // file path when it is no longer needed.
 func Tempdir(files map[string][]byte) (string, error) {
-	dir, err := ioutil.TempDir("", "gopls-tempdir-")
+	dir, err := os.MkdirTemp("", "gopls-tempdir-")
 	if err != nil {
 		return "", err
 	}
@@ -254,10 +253,11 @@ func (sb *Sandbox) goCommandInvocation() gocommand.Invocation {
 // RunGoCommand executes a go command in the sandbox. If checkForFileChanges is
 // true, the sandbox scans the working directory and emits file change events
 // for any file changes it finds.
-func (sb *Sandbox) RunGoCommand(ctx context.Context, dir, verb string, args []string, checkForFileChanges bool) error {
+func (sb *Sandbox) RunGoCommand(ctx context.Context, dir, verb string, args, env []string, checkForFileChanges bool) error {
 	inv := sb.goCommandInvocation()
 	inv.Verb = verb
 	inv.Args = args
+	inv.Env = append(inv.Env, env...)
 	if dir != "" {
 		inv.WorkingDir = sb.Workdir.AbsPath(dir)
 	}
@@ -266,7 +266,7 @@ func (sb *Sandbox) RunGoCommand(ctx context.Context, dir, verb string, args []st
 		return fmt.Errorf("go command failed (stdout: %s) (stderr: %s): %v", stdout.String(), stderr.String(), err)
 	}
 	// Since running a go command may result in changes to workspace files,
-	// check if we need to send any any "watched" file events.
+	// check if we need to send any "watched" file events.
 	//
 	// TODO(rFindley): this side-effect can impact the usability of the sandbox
 	//                 for benchmarks. Consider refactoring.
@@ -289,7 +289,7 @@ func (sb *Sandbox) GoVersion(ctx context.Context) (int, error) {
 func (sb *Sandbox) Close() error {
 	var goCleanErr error
 	if sb.gopath != "" {
-		goCleanErr = sb.RunGoCommand(context.Background(), "", "clean", []string{"-modcache"}, false)
+		goCleanErr = sb.RunGoCommand(context.Background(), "", "clean", []string{"-modcache"}, nil, false)
 	}
 	err := robustio.RemoveAll(sb.rootdir)
 	if err != nil || goCleanErr != nil {

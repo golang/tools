@@ -10,12 +10,12 @@ import (
 	"os/exec"
 	"testing"
 
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -299,7 +299,7 @@ func Hello() {
 				InitialWorkspaceLoad,
 				Diagnostics(env.AtRegexp("main.go", `"mod.com/bob"`)),
 			)
-			if err := env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"init", "mod.com"}, true); err != nil {
+			if err := env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"init", "mod.com"}, nil, true); err != nil {
 				t.Fatal(err)
 			}
 			env.AfterChange(
@@ -432,7 +432,11 @@ func TestResolveDiagnosticWithDownload(t *testing.T) {
 func TestMissingDependency(t *testing.T) {
 	Run(t, testPackageWithRequire, func(t *testing.T, env *Env) {
 		env.OpenFile("print.go")
-		env.Await(LogMatching(protocol.Error, "initial workspace load failed", 1, false))
+		env.Await(
+			// Log messages are asynchronous to other events on the LSP stream, so we
+			// can't use OnceMet or AfterChange here.
+			LogMatching(protocol.Error, "initial workspace load failed", 1, false),
+		)
 	})
 }
 
@@ -555,7 +559,7 @@ func f() {
 		// Deleting the import dismisses the warning.
 		env.RegexpReplace("a.go", `import "mod.com/hello"`, "")
 		env.AfterChange(
-			NoOutstandingWork(),
+			NoOutstandingWork(IgnoreTelemetryPromptWork),
 		)
 	})
 }
@@ -572,7 +576,7 @@ hi mom
 			).Run(t, files, func(t *testing.T, env *Env) {
 				env.OnceMet(
 					InitialWorkspaceLoad,
-					NoOutstandingWork(),
+					NoOutstandingWork(IgnoreTelemetryPromptWork),
 				)
 			})
 		})
@@ -1274,7 +1278,7 @@ func main() {}
 	})
 }
 
-func TestNotifyOrphanedFiles(t *testing.T) {
+func TestOrphanedFiles(t *testing.T) {
 	const files = `
 -- go.mod --
 module mod.com
@@ -1301,9 +1305,26 @@ func _() {
 			Diagnostics(env.AtRegexp("a/a.go", "x")),
 		)
 		env.OpenFile("a/a_exclude.go")
-		env.AfterChange(
-			Diagnostics(env.AtRegexp("a/a_exclude.go", "package (a)")),
-		)
+
+		loadOnce := LogMatching(protocol.Info, "query=.*file=.*a_exclude.go", 1, false)
+
+		// can't use OnceMet or AfterChange as logs are async
+		env.Await(loadOnce)
+		// ...but ensure that the change has been fully processed before editing.
+		// Otherwise, there may be a race where the snapshot is cloned before all
+		// state changes resulting from the load have been processed
+		// (golang/go#61521).
+		env.AfterChange()
+
+		// Check that orphaned files are not reloaded, by making a change in
+		// a.go file and confirming that the workspace diagnosis did not reload
+		// a_exclude.go.
+		//
+		// This is racy (but fails open) because logs are asynchronous to other LSP
+		// operations. There's a chance gopls _did_ log, and we just haven't seen
+		// it yet.
+		env.RegexpReplace("a/a.go", "package a", "package a // arbitrary comment")
+		env.AfterChange(loadOnce)
 	})
 }
 
@@ -1448,7 +1469,7 @@ package foo_
 		env.RegexpReplace("foo/foo_test.go", "_t", "_test")
 		env.AfterChange(
 			NoDiagnostics(ForFile("foo/foo_test.go")),
-			NoOutstandingWork(),
+			NoOutstandingWork(IgnoreTelemetryPromptWork),
 		)
 	})
 }
@@ -1482,7 +1503,7 @@ go 1.hello
 		env.RegexpReplace("go.mod", "go 1.hello", "go 1.12")
 		env.SaveBufferWithoutActions("go.mod")
 		env.AfterChange(
-			NoOutstandingWork(),
+			NoOutstandingWork(IgnoreTelemetryPromptWork),
 		)
 	})
 }
@@ -1506,7 +1527,13 @@ func main() {
 	bob.Hello()
 }
 `
-	Run(t, mod, func(t *testing.T, env *Env) {
+	WithOptions(
+		Settings{
+			// Now that we don't watch subdirs by default (except for VS Code),
+			// we must explicitly ask gopls to requests subdir watch patterns.
+			"subdirWatchPatterns": "on",
+		},
+	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OnceMet(
 			InitialWorkspaceLoad,
 			FileWatchMatching("bob"),
@@ -1695,8 +1722,7 @@ func helloHelper() {}
 		env.OpenFile("nested/hello/hello.go")
 		env.AfterChange(
 			Diagnostics(env.AtRegexp("nested/hello/hello.go", "helloHelper")),
-			Diagnostics(env.AtRegexp("nested/hello/hello.go", "package hello"), WithMessage("nested module")),
-			OutstandingWork(lsp.WorkspaceLoadFailure, "nested module"),
+			Diagnostics(env.AtRegexp("nested/hello/hello.go", "package (hello)"), WithMessage("not included in your workspace")),
 		)
 	})
 }
@@ -1813,8 +1839,11 @@ func main() {}
 `
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
-		env.AfterChange(
-			LogMatching(protocol.Info, `.*query=\[builtin mod.com/...\].*`, 1, false),
+		env.Await(
+			// Check that we have only loaded "<dir>/..." once.
+			// Log messages are asynchronous to other events on the LSP stream, so we
+			// can't use OnceMet or AfterChange here.
+			LogMatching(protocol.Info, `.*query=.*\.\.\..*`, 1, false),
 		)
 	})
 }
@@ -2044,5 +2073,42 @@ var _ = 1 / "" // type error
 				t.Logf("Diagnostics[%d] = %+v", i, diag)
 			}
 		}
+	})
+}
+
+// This test demonstrates the deprecated symbol analyzer
+// produces deprecation notices with expected severity and tags.
+func TestDeprecatedAnalysis(t *testing.T) {
+	const src = `
+-- go.mod --
+module example.com
+-- a/a.go --
+package a
+
+import "example.com/b"
+
+func _() {
+	new(b.B).Obsolete() // deprecated
+}
+
+-- b/b.go --
+package b
+
+type B struct{}
+
+// Deprecated: use New instead.
+func (B) Obsolete() {}
+
+func (B) New() {}
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		env.AfterChange(
+			Diagnostics(
+				env.AtRegexp("a/a.go", "new.*Obsolete"),
+				WithMessage("use New instead."),
+				WithSeverityTags("deprecated", protocol.SeverityHint, []protocol.DiagnosticTag{protocol.Deprecated}),
+			),
+		)
 	})
 }

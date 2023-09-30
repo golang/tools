@@ -18,10 +18,12 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"testing"
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestBasics(t *testing.T) {
@@ -31,6 +33,10 @@ func TestBasics(t *testing.T) {
 
 	// Get of a never-seen key returns not found.
 	if _, err := filecache.Get(kind, key); err != filecache.ErrNotFound {
+		if strings.Contains(err.Error(), "operation not supported") ||
+			strings.Contains(err.Error(), "not implemented") {
+			t.Skipf("skipping: %v", err)
+		}
 		t.Errorf("Get of random key returned err=%q, want not found", err)
 	}
 
@@ -54,6 +60,9 @@ func TestBasics(t *testing.T) {
 
 // TestConcurrency exercises concurrent access to the same entry.
 func TestConcurrency(t *testing.T) {
+	if os.Getenv("GO_BUILDER_NAME") == "plan9-arm" {
+		t.Skip(`skipping on plan9-arm builder due to golang/go#58748: failing with 'mount rpc error'`)
+	}
 	const kind = "TestConcurrency"
 	key := uniqueKey()
 	const N = 100 // concurrency level
@@ -96,6 +105,10 @@ func TestConcurrency(t *testing.T) {
 		group.Go(func() error { return get(false) })
 	}
 	if err := group.Wait(); err != nil {
+		if strings.Contains(err.Error(), "operation not supported") ||
+			strings.Contains(err.Error(), "not implemented") {
+			t.Skipf("skipping: %v", err)
+		}
 		t.Fatal(err)
 	}
 
@@ -115,12 +128,17 @@ const (
 // It calls Set(A) in the parent, { Get(A); Set(B) } in the child
 // process, then Get(B) in the parent.
 func TestIPC(t *testing.T) {
+	testenv.NeedsExec(t)
+
 	keyA := uniqueKey()
 	keyB := uniqueKey()
 	value := []byte(testIPCValueA)
 
 	// Set keyA.
 	if err := filecache.Set(testIPCKind, keyA, value); err != nil {
+		if strings.Contains(err.Error(), "operation not supported") {
+			t.Skipf("skipping: %v", err)
+		}
 		t.Fatalf("Set: %v", err)
 	}
 
@@ -200,6 +218,7 @@ func BenchmarkUncontendedGet(b *testing.B) {
 		b.Fatal(err)
 	}
 	b.ResetTimer()
+	b.SetBytes(int64(len(value)))
 
 	var group errgroup.Group
 	group.SetLimit(50)
@@ -211,5 +230,36 @@ func BenchmarkUncontendedGet(b *testing.B) {
 	}
 	if err := group.Wait(); err != nil {
 		b.Fatal(err)
+	}
+}
+
+// These two benchmarks are asymmetric: the one for Get imposes a
+// modest bound on concurrency (50) whereas the one for Set imposes a
+// much higher concurrency (1000) to test the implementation's
+// self-imposed bound.
+
+func BenchmarkUncontendedSet(b *testing.B) {
+	const kind = "BenchmarkUncontendedSet"
+	key := uniqueKey()
+	var value [8192]byte
+
+	const P = 1000 // parallelism
+	b.SetBytes(P * int64(len(value)))
+
+	for i := 0; i < b.N; i++ {
+		// Perform P concurrent calls to Set. All must succeed.
+		var group errgroup.Group
+		for range [P]bool{} {
+			group.Go(func() error {
+				return filecache.Set(kind, key, value[:])
+			})
+		}
+		if err := group.Wait(); err != nil {
+			if strings.Contains(err.Error(), "operation not supported") ||
+				strings.Contains(err.Error(), "not implemented") {
+				b.Skipf("skipping: %v", err)
+			}
+			b.Fatal(err)
+		}
 	}
 }

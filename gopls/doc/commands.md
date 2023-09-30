@@ -41,6 +41,22 @@ Args:
 }
 ```
 
+### **update the given telemetry counters.**
+Identifier: `gopls.add_telemetry_counters`
+
+Gopls will prepend "fwd/" to all the counters updated using this command
+to avoid conflicts with other counters gopls collects.
+
+Args:
+
+```
+{
+	// Names and Values must have the same length.
+	"Names": []string,
+	"Values": []int64,
+}
+```
+
 ### **Apply a fix**
 Identifier: `gopls.apply_fix`
 
@@ -117,7 +133,7 @@ Args:
 Result:
 
 ```
-map[golang.org/x/tools/gopls/internal/lsp/protocol.DocumentURI]*golang.org/x/tools/gopls/internal/govulncheck.Result
+map[golang.org/x/tools/gopls/internal/lsp/protocol.DocumentURI]*golang.org/x/tools/gopls/internal/vulncheck.Result
 ```
 
 ### **Toggle gc_details**
@@ -222,6 +238,12 @@ Result:
 }
 ```
 
+### **checks for the right conditions, and then prompts**
+Identifier: `gopls.maybe_prompt_for_telemetry`
+
+the user to ask if they want to enable Go telemetry uploading. If the user
+responds 'Yes', the telemetry mode is set to "on".
+
 ### **fetch memory statistics**
 Identifier: `gopls.mem_stats`
 
@@ -236,6 +258,7 @@ Result:
 {
 	"HeapAlloc": uint64,
 	"HeapInUse": uint64,
+	"TotalAlloc": uint64,
 }
 ```
 
@@ -266,6 +289,9 @@ Args:
 	"URI": string,
 	// The module path to remove.
 	"ModulePath": string,
+	// If the module is tidied apart from the one unused diagnostic, we can
+	// run `go get module@none`, and then run `go mod tidy`. Otherwise, we
+	// must make textual edits.
 	"OnlyDiagnostic": bool,
 }
 ```
@@ -288,7 +314,22 @@ Args:
 }
 ```
 
-### **Run govulncheck.**
+### **run `go work [args...]`, and apply the resulting go.work**
+Identifier: `gopls.run_go_work_command`
+
+edits to the current go.work file.
+
+Args:
+
+```
+{
+	"ViewID": string,
+	"InitFirst": bool,
+	"Args": []string,
+}
+```
+
+### **Run vulncheck.**
 Identifier: `gopls.run_govulncheck`
 
 Run vulnerability check (`govulncheck`).
@@ -345,14 +386,14 @@ Args:
 	// Optional: the address (including port) for the debug server to listen on.
 	// If not provided, the debug server will bind to "localhost:0", and the
 	// full debug URL will be contained in the result.
-	// 
+	//
 	// If there is more than one gopls instance along the serving path (i.e. you
 	// are using a daemon), each gopls instance will attempt to start debugging.
 	// If Addr specifies a port, only the daemon will be able to bind to that
 	// port, and each intermediate gopls instance will fail to start debugging.
 	// For this reason it is recommended not to specify a port (or equivalently,
 	// to specify ":0").
-	// 
+	//
 	// If the server was already debugging this field has no effect, and the
 	// result will contain the previously configured debug URL(s).
 	"Addr": string,
@@ -366,7 +407,7 @@ Result:
 	// The URLs to use to access the debug servers, for all gopls instances in
 	// the serving path. For the common case of a single gopls instance (i.e. no
 	// daemon), this will be exactly one address.
-	// 
+	//
 	// In the case of one or more gopls instances forwarding the LSP to a daemon,
 	// URLs will contain debug addresses for each server in the serving path, in
 	// serving order. The daemon debug address will be the last entry in the
@@ -374,6 +415,48 @@ Result:
 	// error will be returned but the debug URL for that server in the URLs slice
 	// will be empty.
 	"URLs": []string,
+}
+```
+
+### **start capturing a profile of gopls' execution.**
+Identifier: `gopls.start_profile`
+
+Start a new pprof profile. Before using the resulting file, profiling must
+be stopped with a corresponding call to StopProfile.
+
+This command is intended for internal use only, by the gopls benchmark
+runner.
+
+Args:
+
+```
+struct{}
+```
+
+Result:
+
+```
+struct{}
+```
+
+### **stop an ongoing profile.**
+Identifier: `gopls.stop_profile`
+
+This command is intended for internal use only, by the gopls benchmark
+runner.
+
+Args:
+
+```
+struct{}
+```
+
+Result:
+
+```
+{
+	// File is the profile file name.
+	"File": string,
 }
 ```
 
@@ -461,6 +544,42 @@ Args:
 {
 	// The file URI.
 	"URI": string,
+}
+```
+
+### **fetch workspace statistics**
+Identifier: `gopls.workspace_stats`
+
+Query statistics about workspace builds, modules, packages, and files.
+
+This command is intended for internal use only, by the gopls stats
+command.
+
+Result:
+
+```
+{
+	"Files": {
+		"Total": int,
+		"Largest": int,
+		"Errs": int,
+	},
+	"Views": []{
+		"GoCommandVersion": string,
+		"AllPackages": {
+			"Packages": int,
+			"LargestPackage": int,
+			"CompiledGoFiles": int,
+			"Modules": int,
+		},
+		"WorkspacePackages": {
+			"Packages": int,
+			"LargestPackage": int,
+			"CompiledGoFiles": int,
+			"Modules": int,
+		},
+		"Diagnostics": int,
+	},
 }
 ```
 

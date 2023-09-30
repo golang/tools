@@ -14,11 +14,17 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source/completion"
 	"golang.org/x/tools/gopls/internal/lsp/template"
 	"golang.org/x/tools/gopls/internal/lsp/work"
+	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 )
 
-func (s *Server) completion(ctx context.Context, params *protocol.CompletionParams) (*protocol.CompletionList, error) {
+func (s *Server) completion(ctx context.Context, params *protocol.CompletionParams) (_ *protocol.CompletionList, rerr error) {
+	recordLatency := telemetry.StartLatencyTimer("completion")
+	defer func() {
+		recordLatency(ctx, rerr)
+	}()
+
 	ctx, done := event.Start(ctx, "lsp.Server.completion", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
@@ -29,7 +35,7 @@ func (s *Server) completion(ctx context.Context, params *protocol.CompletionPara
 	}
 	var candidates []completion.CompletionItem
 	var surrounding *completion.Selection
-	switch snapshot.View().FileKind(fh) {
+	switch snapshot.FileKind(fh) {
 	case source.Go:
 		candidates, surrounding, err = completion.Completion(ctx, snapshot, fh, params.Position, params.Context)
 	case source.Mod:
@@ -65,7 +71,7 @@ func (s *Server) completion(ctx context.Context, params *protocol.CompletionPara
 
 	// When using deep completions/fuzzy matching, report results as incomplete so
 	// client fetches updated completions after every key stroke.
-	options := snapshot.View().Options()
+	options := snapshot.Options()
 	incompleteResults := options.DeepCompletion || options.Matcher == source.Fuzzy
 
 	items := toProtocolCompletionItems(candidates, rng, options)
@@ -134,7 +140,7 @@ func toProtocolCompletionItems(candidates []completion.CompletionItem, rng proto
 
 			Preselect:     i == 0,
 			Documentation: doc,
-			Tags:          candidate.Tags,
+			Tags:          nonNilSliceCompletionItemTag(candidate.Tags),
 			Deprecated:    candidate.Deprecated,
 		}
 		items = append(items, item)

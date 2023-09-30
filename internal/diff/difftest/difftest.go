@@ -28,7 +28,7 @@ const (
 
 var TestCases = []struct {
 	Name, In, Out, Unified string
-	Edits, LineEdits       []diff.Edit
+	Edits, LineEdits       []diff.Edit // expectation (LineEdits=nil => already line-aligned)
 	NoDiff                 bool
 }{{
 	Name: "empty",
@@ -120,6 +120,17 @@ var TestCases = []struct {
 `[1:],
 	Edits: []diff.Edit{{Start: 0, End: 1, New: "B"}},
 }, {
+	Name: "delete_empty",
+	In:   "meow",
+	Out:  "", // GNU diff -u special case: +0,0
+	Unified: UnifiedPrefix + `
+@@ -1 +0,0 @@
+-meow
+\ No newline at end of file
+`[1:],
+	Edits:     []diff.Edit{{Start: 0, End: 4, New: ""}},
+	LineEdits: []diff.Edit{{Start: 0, End: 4, New: ""}},
+}, {
 	Name: "append_empty",
 	In:   "", // GNU diff -u special case: -0,0
 	Out:  "AB\nC",
@@ -209,9 +220,9 @@ var TestCases = []struct {
 			{Start: 14, End: 14, New: "C\n"},
 		},
 		LineEdits: []diff.Edit{
-			{Start: 0, End: 6, New: "C\n"},
-			{Start: 6, End: 8, New: "B\nA\n"},
-			{Start: 10, End: 14, New: "A\n"},
+			{Start: 0, End: 4, New: ""},
+			{Start: 6, End: 6, New: "B\n"},
+			{Start: 10, End: 12, New: ""},
 			{Start: 14, End: 14, New: "C\n"},
 		},
 	}, {
@@ -261,6 +272,30 @@ var TestCases = []struct {
 -
  A
 `,
+	}, {
+		Name:      "unified_lines",
+		In:        "aaa\nccc\n",
+		Out:       "aaa\nbbb\nccc\n",
+		Edits:     []diff.Edit{{Start: 3, End: 3, New: "\nbbb"}},
+		LineEdits: []diff.Edit{{Start: 0, End: 4, New: "aaa\nbbb\n"}},
+		Unified:   UnifiedPrefix + "@@ -1,2 +1,3 @@\n aaa\n+bbb\n ccc\n",
+	}, {
+		Name: "60379",
+		In: `package a
+
+type S struct {
+s fmt.Stringer
+}
+`,
+		Out: `package a
+
+type S struct {
+	s fmt.Stringer
+}
+`,
+		Edits:     []diff.Edit{{Start: 27, End: 27, New: "\t"}},
+		LineEdits: []diff.Edit{{Start: 27, End: 42, New: "\ts fmt.Stringer\n"}},
+		Unified:   UnifiedPrefix + "@@ -1,5 +1,5 @@\n package a\n \n type S struct {\n-s fmt.Stringer\n+\ts fmt.Stringer\n }\n",
 	},
 }
 

@@ -15,7 +15,6 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -217,7 +216,7 @@ func testLoadImportsGraph(t *testing.T, exporter packagestest.Exporter) {
 		id          string
 		wantName    string
 		wantKind    string
-		wantSrcs    string
+		wantSrcs    string // = {Go,Other,Embed}Files
 		wantIgnored string
 	}{
 		{"golang.org/fake/a", "a", "package", "a.go", ""},
@@ -227,7 +226,7 @@ func testLoadImportsGraph(t *testing.T, exporter packagestest.Exporter) {
 		{"container/list", "list", "package", "list.go", ""},
 		{"golang.org/fake/subdir/d", "d", "package", "d.go", ""},
 		{"golang.org/fake/subdir/d.test", "main", "command", "0.go", ""},
-		{"unsafe", "unsafe", "package", "", ""},
+		{"unsafe", "unsafe", "package", "unsafe.go", ""},
 	} {
 		p, ok := all[test.id]
 		if !ok {
@@ -250,10 +249,10 @@ func testLoadImportsGraph(t *testing.T, exporter packagestest.Exporter) {
 		}
 
 		if srcs := strings.Join(srcs(p), " "); srcs != test.wantSrcs {
-			t.Errorf("%s.Srcs = [%s], want [%s]", test.id, srcs, test.wantSrcs)
+			t.Errorf("%s.{Go,Other,Embed}Files = [%s], want [%s]", test.id, srcs, test.wantSrcs)
 		}
 		if ignored := strings.Join(cleanPaths(p.IgnoredFiles), " "); ignored != test.wantIgnored {
-			t.Errorf("%s.Srcs = [%s], want [%s]", test.id, ignored, test.wantIgnored)
+			t.Errorf("%s.IgnoredFiles = [%s], want [%s]", test.id, ignored, test.wantIgnored)
 		}
 	}
 
@@ -927,10 +926,11 @@ func testParseFileModifyAST(t *testing.T, exporter packagestest.Exporter) {
 
 func TestAdHocPackagesBadImport(t *testing.T) {
 	t.Parallel()
+	testenv.NeedsTool(t, "go")
 
 	// This test doesn't use packagestest because we are testing ad-hoc packages,
 	// which are outside of $GOPATH and outside of a module.
-	tmp, err := ioutil.TempDir("", "a")
+	tmp, err := os.MkdirTemp("", "a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -941,7 +941,7 @@ func TestAdHocPackagesBadImport(t *testing.T) {
 import _ "badimport"
 const A = 1
 `)
-	if err := ioutil.WriteFile(filename, content, 0775); err != nil {
+	if err := os.WriteFile(filename, content, 0775); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1747,7 +1747,7 @@ func testAdHocContains(t *testing.T, exporter packagestest.Exporter) {
 		}}})
 	defer exported.Cleanup()
 
-	tmpfile, err := ioutil.TempFile("", "adhoc*.go")
+	tmpfile, err := os.CreateTemp("", "adhoc*.go")
 	filename := tmpfile.Name()
 	if err != nil {
 		t.Fatal(err)
@@ -1984,11 +1984,11 @@ import "C"`,
 }
 
 func buildFakePkgconfig(t *testing.T, env []string) string {
-	tmpdir, err := ioutil.TempDir("", "fakepkgconfig")
+	tmpdir, err := os.MkdirTemp("", "fakepkgconfig")
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = ioutil.WriteFile(filepath.Join(tmpdir, "pkg-config.go"), []byte(`
+	err = os.WriteFile(filepath.Join(tmpdir, "pkg-config.go"), []byte(`
 package main
 
 import "fmt"
@@ -2451,7 +2451,7 @@ func testIssue37098(t *testing.T, exporter packagestest.Exporter) {
 			if err != nil {
 				t.Errorf("Failed to parse file '%s' as a Go source: %v", file, err)
 
-				contents, err := ioutil.ReadFile(file)
+				contents, err := os.ReadFile(file)
 				if err != nil {
 					t.Fatalf("Failed to read the un-parsable file '%s': %v", file, err)
 				}
@@ -2632,7 +2632,7 @@ func testExternal_NotHandled(t *testing.T, exporter packagestest.Exporter) {
 	skipIfShort(t, "builds and links fake driver binaries")
 	testenv.NeedsGoBuild(t)
 
-	tempdir, err := ioutil.TempDir("", "testexternal")
+	tempdir, err := os.MkdirTemp("", "testexternal")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2646,12 +2646,12 @@ func testExternal_NotHandled(t *testing.T, exporter packagestest.Exporter) {
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 )
 
 func main() {
-	ioutil.ReadAll(os.Stdin)
+	io.ReadAll(os.Stdin)
 	fmt.Println("{}")
 }
 `,
@@ -2659,12 +2659,12 @@ func main() {
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 )
 
 func main() {
-	ioutil.ReadAll(os.Stdin)
+	io.ReadAll(os.Stdin)
 	fmt.Println("{\"NotHandled\": true}")
 }
 `,
@@ -2752,7 +2752,9 @@ func TestEmptyEnvironment(t *testing.T) {
 }
 
 func TestPackageLoadSingleFile(t *testing.T) {
-	tmp, err := ioutil.TempDir("", "a")
+	testenv.NeedsTool(t, "go")
+
+	tmp, err := os.MkdirTemp("", "a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2760,7 +2762,7 @@ func TestPackageLoadSingleFile(t *testing.T) {
 
 	filename := filepath.Join(tmp, "a.go")
 
-	if err := ioutil.WriteFile(filename, []byte(`package main; func main() { println("hello world") }`), 0775); err != nil {
+	if err := os.WriteFile(filename, []byte(`package main; func main() { println("hello world") }`), 0775); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2785,7 +2787,11 @@ func errorMessages(errors []packages.Error) []string {
 }
 
 func srcs(p *packages.Package) []string {
-	return cleanPaths(append(append(p.GoFiles[:len(p.GoFiles):len(p.GoFiles)], p.OtherFiles...), p.EmbedFiles...))
+	var files []string
+	files = append(files, p.GoFiles...)
+	files = append(files, p.OtherFiles...)
+	files = append(files, p.EmbedFiles...)
+	return cleanPaths(files)
 }
 
 // cleanPaths attempts to reduce path names to stable forms
@@ -2892,7 +2898,7 @@ func copyAll(srcPath, dstPath string) error {
 		if info.IsDir() {
 			return nil
 		}
-		contents, err := ioutil.ReadFile(path)
+		contents, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
@@ -2904,7 +2910,7 @@ func copyAll(srcPath, dstPath string) error {
 		if err := os.MkdirAll(filepath.Dir(dstFilePath), 0755); err != nil {
 			return err
 		}
-		if err := ioutil.WriteFile(dstFilePath, contents, 0644); err != nil {
+		if err := os.WriteFile(dstFilePath, contents, 0644); err != nil {
 			return err
 		}
 		return nil

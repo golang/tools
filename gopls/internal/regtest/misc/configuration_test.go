@@ -42,10 +42,8 @@ var FooErr = errors.New("foo")
 		cfg.Settings = map[string]interface{}{
 			"staticcheck": true,
 		}
-		// TODO(rfindley): support waiting on diagnostics following a configuration
-		// change.
 		env.ChangeConfiguration(cfg)
-		env.Await(
+		env.AfterChange(
 			Diagnostics(env.AtRegexp("a/a.go", "var (FooErr)")),
 		)
 	})
@@ -57,9 +55,7 @@ var FooErr = errors.New("foo")
 //
 // Gopls should not get confused about buffer content when recreating the view.
 func TestMajorOptionsChange(t *testing.T) {
-	t.Skip("broken due to golang/go#57934")
-
-	testenv.NeedsGo1Point(t, 17)
+	testenv.NeedsGo1Point(t, 19) // needs staticcheck
 
 	const files = `
 -- go.mod --
@@ -91,10 +87,8 @@ var ErrFoo = errors.New("foo")
 		cfg.Settings = map[string]interface{}{
 			"staticcheck": true,
 		}
-		// TODO(rfindley): support waiting on diagnostics following a configuration
-		// change.
 		env.ChangeConfiguration(cfg)
-		env.Await(
+		env.AfterChange(
 			Diagnostics(env.AtRegexp("a/a.go", "var (FooErr)")),
 		)
 	})

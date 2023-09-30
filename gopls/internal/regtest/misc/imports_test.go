@@ -5,7 +5,6 @@
 package misc
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,7 +58,7 @@ func TestIssue59124(t *testing.T) {
 	const stuff = `
 -- go.mod --
 module foo
-go 1.29
+go 1.19
 -- a.go --
 //line foo.y:102
 package main
@@ -175,7 +174,7 @@ import "example.com/x"
 
 var _, _ = x.X, y.Y
 `
-	modcache, err := ioutil.TempDir("", "TestGOMODCACHE-modcache")
+	modcache, err := os.MkdirTemp("", "TestGOMODCACHE-modcache")
 	if err != nil {
 		t.Fatal(err)
 	}

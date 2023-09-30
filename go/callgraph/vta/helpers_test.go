@@ -5,12 +5,14 @@
 package vta
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
-	"io/ioutil"
+	"os"
 	"sort"
 	"strings"
+	"testing"
 
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa/ssautil"
@@ -36,7 +38,7 @@ func want(f *ast.File) []string {
 // `path`, assumed to define package "testdata," and the
 // test want result as list of strings.
 func testProg(path string, mode ssa.BuilderMode) (*ssa.Program, []string, error) {
-	content, err := ioutil.ReadFile(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -113,4 +115,13 @@ func callGraphStr(g *callgraph.Graph) []string {
 		gs = append(gs, entry)
 	}
 	return gs
+}
+
+// Logs the functions of prog to t.
+func logFns(t testing.TB, prog *ssa.Program) {
+	for fn := range ssautil.AllFunctions(prog) {
+		var buf bytes.Buffer
+		fn.WriteTo(&buf)
+		t.Log(buf.String())
+	}
 }

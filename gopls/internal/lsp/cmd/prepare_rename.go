@@ -44,16 +44,16 @@ func (r *prepareRename) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("prepare_rename expects 1 argument (file)")
 	}
 
-	conn, err := r.app.connect(ctx)
+	conn, err := r.app.connect(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer conn.terminate(ctx)
 
 	from := span.Parse(args[0])
-	file := conn.openFile(ctx, from.URI())
-	if file.err != nil {
-		return file.err
+	file, err := conn.openFile(ctx, from.URI())
+	if err != nil {
+		return err
 	}
 	loc, err := file.mapper.SpanLocation(from)
 	if err != nil {

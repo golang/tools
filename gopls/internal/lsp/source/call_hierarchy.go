@@ -14,10 +14,10 @@ import (
 	"path/filepath"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 )
@@ -27,7 +27,7 @@ func PrepareCallHierarchy(ctx context.Context, snapshot Snapshot, fh FileHandle,
 	ctx, done := event.Start(ctx, "source.PrepareCallHierarchy")
 	defer done()
 
-	pkg, pgf, err := PackageForFile(ctx, snapshot, fh.URI(), NarrowestPackage)
+	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +182,7 @@ func OutgoingCalls(ctx context.Context, snapshot Snapshot, fh FileHandle, pp pro
 	ctx, done := event.Start(ctx, "source.OutgoingCalls")
 	defer done()
 
-	pkg, pgf, err := PackageForFile(ctx, snapshot, fh.URI(), NarrowestPackage)
+	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +221,7 @@ func OutgoingCalls(ctx context.Context, snapshot Snapshot, fh FileHandle, pp pro
 	}
 
 	// Use TypecheckFull as we want to inspect the body of the function declaration.
-	declPkg, declPGF, err := PackageForFile(ctx, snapshot, uri, NarrowestPackage)
+	declPkg, declPGF, err := NarrowestPackageForFile(ctx, snapshot, uri)
 	if err != nil {
 		return nil, err
 	}

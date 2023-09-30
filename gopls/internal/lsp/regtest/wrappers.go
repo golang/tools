@@ -155,9 +155,20 @@ func (e *Env) SaveBufferWithoutActions(name string) {
 
 // GoToDefinition goes to definition in the editor, calling t.Fatal on any
 // error. It returns the path and position of the resulting jump.
+//
+// TODO(rfindley): rename this to just 'Definition'.
 func (e *Env) GoToDefinition(loc protocol.Location) protocol.Location {
 	e.T.Helper()
-	loc, err := e.Editor.GoToDefinition(e.Ctx, loc)
+	loc, err := e.Editor.Definition(e.Ctx, loc)
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	return loc
+}
+
+func (e *Env) TypeDefinition(loc protocol.Location) protocol.Location {
+	e.T.Helper()
+	loc, err := e.Editor.TypeDefinition(e.Ctx, loc)
 	if err != nil {
 		e.T.Fatal(err)
 	}
@@ -245,7 +256,7 @@ func (e *Env) RunGenerate(dir string) {
 	if err := e.Editor.RunGenerate(e.Ctx, dir); err != nil {
 		e.T.Fatal(err)
 	}
-	e.Await(NoOutstandingWork())
+	e.Await(NoOutstandingWork(IgnoreTelemetryPromptWork))
 	// Ideally the fake.Workspace would handle all synthetic file watching, but
 	// we help it out here as we need to wait for the generate command to
 	// complete before checking the filesystem.
@@ -256,7 +267,7 @@ func (e *Env) RunGenerate(dir string) {
 // directory.
 func (e *Env) RunGoCommand(verb string, args ...string) {
 	e.T.Helper()
-	if err := e.Sandbox.RunGoCommand(e.Ctx, "", verb, args, true); err != nil {
+	if err := e.Sandbox.RunGoCommand(e.Ctx, "", verb, args, nil, true); err != nil {
 		e.T.Fatal(err)
 	}
 }
@@ -265,7 +276,16 @@ func (e *Env) RunGoCommand(verb string, args ...string) {
 // relative directory of the sandbox.
 func (e *Env) RunGoCommandInDir(dir, verb string, args ...string) {
 	e.T.Helper()
-	if err := e.Sandbox.RunGoCommand(e.Ctx, dir, verb, args, true); err != nil {
+	if err := e.Sandbox.RunGoCommand(e.Ctx, dir, verb, args, nil, true); err != nil {
+		e.T.Fatal(err)
+	}
+}
+
+// RunGoCommandInDirWithEnv is like RunGoCommand, but executes in the given
+// relative directory of the sandbox with the given additional environment variables.
+func (e *Env) RunGoCommandInDirWithEnv(dir string, env []string, verb string, args ...string) {
+	e.T.Helper()
+	if err := e.Sandbox.RunGoCommand(e.Ctx, dir, verb, args, env, true); err != nil {
 		e.T.Fatal(err)
 	}
 }
@@ -286,7 +306,7 @@ func (e *Env) GoVersion() int {
 func (e *Env) DumpGoSum(dir string) {
 	e.T.Helper()
 
-	if err := e.Sandbox.RunGoCommand(e.Ctx, dir, "list", []string{"-mod=mod", "..."}, true); err != nil {
+	if err := e.Sandbox.RunGoCommand(e.Ctx, dir, "list", []string{"-mod=mod", "..."}, nil, true); err != nil {
 		e.T.Fatal(err)
 	}
 	sumFile := path.Join(dir, "/go.sum")
@@ -358,6 +378,41 @@ func (e *Env) ExecuteCommand(params *protocol.ExecuteCommandParams, result inter
 	}
 	if err := json.Unmarshal(data, result); err != nil {
 		e.T.Fatal(err)
+	}
+}
+
+// StartProfile starts a CPU profile with the given name, using the
+// gopls.start_profile custom command. It calls t.Fatal on any error.
+//
+// The resulting stop function must be called to stop profiling (using the
+// gopls.stop_profile custom command).
+func (e *Env) StartProfile() (stop func() string) {
+	// TODO(golang/go#61217): revisit the ergonomics of these command APIs.
+	//
+	// This would be a lot simpler if we generated params constructors.
+	args, err := command.MarshalArgs(command.StartProfileArgs{})
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	params := &protocol.ExecuteCommandParams{
+		Command:   command.StartProfile.ID(),
+		Arguments: args,
+	}
+	var result command.StartProfileResult
+	e.ExecuteCommand(params, &result)
+
+	return func() string {
+		stopArgs, err := command.MarshalArgs(command.StopProfileArgs{})
+		if err != nil {
+			e.T.Fatal(err)
+		}
+		stopParams := &protocol.ExecuteCommandParams{
+			Command:   command.StopProfile.ID(),
+			Arguments: stopArgs,
+		}
+		var result command.StopProfileResult
+		e.ExecuteCommand(stopParams, &result)
+		return result.File
 	}
 }
 

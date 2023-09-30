@@ -15,6 +15,7 @@ func BenchmarkDefinition(b *testing.B) {
 		regexp string
 	}{
 		{"istio", "pkg/config/model.go", `gogotypes\.(MarshalAny)`},
+		{"google-cloud-go", "httpreplay/httpreplay.go", `proxy\.(ForRecording)`},
 		{"kubernetes", "pkg/controller/lookup_cache.go", `hashutil\.(DeepHashObject)`},
 		{"kuma", "api/generic/insights.go", `proto\.(Message)`},
 		{"pkgsite", "internal/log/log.go", `derrors\.(Wrap)`},
@@ -26,10 +27,16 @@ func BenchmarkDefinition(b *testing.B) {
 		b.Run(test.repo, func(b *testing.B) {
 			env := getRepo(b, test.repo).sharedEnv(b)
 			env.OpenFile(test.file)
+			defer closeBuffer(b, env, test.file)
+
 			loc := env.RegexpSearch(test.file, test.regexp)
 			env.Await(env.DoneWithOpen())
 			env.GoToDefinition(loc) // pre-warm the query, and open the target file
 			b.ResetTimer()
+
+			if stopAndRecord := startProfileIfSupported(b, env, qualifiedName(test.repo, "definition")); stopAndRecord != nil {
+				defer stopAndRecord()
+			}
 
 			for i := 0; i < b.N; i++ {
 				env.GoToDefinition(loc) // pre-warm the query

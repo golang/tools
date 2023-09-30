@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/appends"
 	"golang.org/x/tools/go/analysis/passes/asmdecl"
 	"golang.org/x/tools/go/analysis/passes/assign"
 	"golang.org/x/tools/go/analysis/passes/atomic"
@@ -26,6 +27,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/composite"
 	"golang.org/x/tools/go/analysis/passes/copylock"
 	"golang.org/x/tools/go/analysis/passes/deepequalerrors"
+	"golang.org/x/tools/go/analysis/passes/defers"
 	"golang.org/x/tools/go/analysis/passes/directive"
 	"golang.org/x/tools/go/analysis/passes/errorsas"
 	"golang.org/x/tools/go/analysis/passes/fieldalignment"
@@ -38,6 +40,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/printf"
 	"golang.org/x/tools/go/analysis/passes/shadow"
 	"golang.org/x/tools/go/analysis/passes/shift"
+	"golang.org/x/tools/go/analysis/passes/slog"
 	"golang.org/x/tools/go/analysis/passes/sortslice"
 	"golang.org/x/tools/go/analysis/passes/stdmethods"
 	"golang.org/x/tools/go/analysis/passes/stringintconv"
@@ -50,6 +53,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/unsafeptr"
 	"golang.org/x/tools/go/analysis/passes/unusedresult"
 	"golang.org/x/tools/go/analysis/passes/unusedwrite"
+	"golang.org/x/tools/gopls/internal/lsp/analysis/deprecated"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/fillreturns"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/fillstruct"
@@ -78,7 +82,7 @@ var (
 // DefaultOptions is the options that are used for Gopls execution independent
 // of any externally provided configuration (LSP initialization, command
 // invocation, etc.).
-func DefaultOptions() *Options {
+func DefaultOptions(overrides ...func(*Options)) *Options {
 	optionsOnce.Do(func() {
 		var commands []string
 		for _, c := range command.Commands {
@@ -102,6 +106,7 @@ func DefaultOptions() *Options {
 						protocol.SourceOrganizeImports: true,
 						protocol.QuickFix:              true,
 						protocol.RefactorRewrite:       true,
+						protocol.RefactorInline:        true,
 						protocol.RefactorExtract:       true,
 					},
 					Mod: {
@@ -124,14 +129,15 @@ func DefaultOptions() *Options {
 				},
 				UIOptions: UIOptions{
 					DiagnosticOptions: DiagnosticOptions{
-						DiagnosticsDelay: 1 * time.Second,
 						Annotations: map[Annotation]bool{
 							Bounds: true,
 							Escape: true,
 							Inline: true,
 							Nil:    true,
 						},
-						Vulncheck: ModeVulncheckOff,
+						Vulncheck:                 ModeVulncheckOff,
+						DiagnosticsDelay:          1 * time.Second,
+						AnalysisProgressReporting: true,
 					},
 					InlayHintOptions: InlayHintOptions{},
 					DocumentationOptions: DocumentationOptions{
@@ -143,11 +149,13 @@ func DefaultOptions() *Options {
 						ImportShortcut: BothShortcuts,
 						SymbolMatcher:  SymbolFastFuzzy,
 						SymbolStyle:    DynamicSymbols,
+						SymbolScope:    AllSymbolScope,
 					},
 					CompletionOptions: CompletionOptions{
 						Matcher:                        Fuzzy,
 						CompletionBudget:               100 * time.Millisecond,
 						ExperimentalPostfixCompletions: true,
+						CompleteFunctionCalls:          true,
 					},
 					Codelenses: map[string]bool{
 						string(command.Generate):          true,
@@ -161,13 +169,17 @@ func DefaultOptions() *Options {
 				},
 			},
 			InternalOptions: InternalOptions{
-				LiteralCompletions:      true,
-				TempModfile:             true,
-				CompleteUnimported:      true,
-				CompletionDocumentation: true,
-				DeepCompletion:          true,
-				ChattyDiagnostics:       true,
-				NewDiff:                 "both",
+				LiteralCompletions:          true,
+				TempModfile:                 true,
+				CompleteUnimported:          true,
+				CompletionDocumentation:     true,
+				DeepCompletion:              true,
+				ChattyDiagnostics:           true,
+				NewDiff:                     "new",
+				SubdirWatchPatterns:         SubdirWatchPatternsAuto,
+				ReportAnalysisProgressAfter: 5 * time.Second,
+				TelemetryPrompt:             false,
+				LinkifyShowMessage:          false,
 			},
 			Hooks: Hooks{
 				// TODO(adonovan): switch to new diff.Strings implementation.
@@ -181,7 +193,13 @@ func DefaultOptions() *Options {
 			},
 		}
 	})
-	return defaultOptions
+	options := defaultOptions.Clone()
+	for _, override := range overrides {
+		if override != nil {
+			override(options)
+		}
+	}
+	return options
 }
 
 // Options holds various configuration that affects Gopls execution, organized
@@ -194,9 +212,26 @@ type Options struct {
 	Hooks
 }
 
+// IsAnalyzerEnabled reports whether an analyzer with the given name is
+// enabled.
+//
+// TODO(rfindley): refactor to simplify this function. We no longer need the
+// different categories of analyzer.
+func (opts *Options) IsAnalyzerEnabled(name string) bool {
+	for _, amap := range []map[string]*Analyzer{opts.DefaultAnalyzers, opts.TypeErrorAnalyzers, opts.ConvenienceAnalyzers, opts.StaticcheckAnalyzers} {
+		for _, analyzer := range amap {
+			if analyzer.Analyzer.Name == name && analyzer.IsEnabled(opts) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ClientOptions holds LSP-specific configuration that is provided by the
 // client.
 type ClientOptions struct {
+	ClientInfo                                 *protocol.Msg_XInitializeParams_clientInfo
 	InsertTextFormat                           protocol.InsertTextFormat
 	ConfigurationSupported                     bool
 	DynamicConfigurationSupported              bool
@@ -354,6 +389,13 @@ type CompletionOptions struct {
 	// ExperimentalPostfixCompletions enables artificial method snippets
 	// such as "someSlice.sort!".
 	ExperimentalPostfixCompletions bool `status:"experimental"`
+
+	// CompleteFunctionCalls enables function call completion.
+	//
+	// When completing a statement, or when a function return type matches the
+	// expected of the expression being completed, completion may suggest call
+	// expressions (i.e. may include parentheses).
+	CompleteFunctionCalls bool
 }
 
 type DocumentationOptions struct {
@@ -425,6 +467,17 @@ type DiagnosticOptions struct {
 	//
 	// This option must be set to a valid duration string, for example `"250ms"`.
 	DiagnosticsDelay time.Duration `status:"advanced"`
+
+	// AnalysisProgressReporting controls whether gopls sends progress
+	// notifications when construction of its index of analysis facts is taking a
+	// long time. Cancelling these notifications will cancel the indexing task,
+	// though it will restart after the next change in the workspace.
+	//
+	// When a package is opened for the first time and heavyweight analyses such as
+	// staticcheck are enabled, it can take a while to construct the index of
+	// analysis facts for all its dependencies. The index is cached in the
+	// filesystem, so subsequent analysis should be faster.
+	AnalysisProgressReporting bool
 }
 
 type InlayHintOptions struct {
@@ -454,6 +507,13 @@ type NavigationOptions struct {
 	// }
 	// ```
 	SymbolStyle SymbolStyle `status:"advanced"`
+
+	// SymbolScope controls which packages are searched for workspace/symbol
+	// requests. The default value, "workspace", searches only workspace
+	// packages. The legacy behavior, "all", causes all loaded packages to be
+	// searched, including dependencies; this is more expensive and may return
+	// unwanted results.
+	SymbolScope SymbolScope
 }
 
 // UserOptions holds custom Gopls configuration (not part of the LSP) that is
@@ -528,6 +588,9 @@ type Hooks struct {
 // average user. These may be settings used by tests or outdated settings that
 // will soon be deprecated. Some of these settings may not even be configurable
 // by the user.
+//
+// TODO(rfindley): even though these settings are not intended for
+// modification, some of them should be surfaced in our documentation.
 type InternalOptions struct {
 	// LiteralCompletions controls whether literal candidates such as
 	// "&someStruct{}" are offered. Tests disable this flag to simplify
@@ -591,7 +654,57 @@ type InternalOptions struct {
 	// file change. If unset, gopls only reports diagnostics when they change, or
 	// when a file is opened or closed.
 	ChattyDiagnostics bool
+
+	// SubdirWatchPatterns configures the file watching glob patterns registered
+	// by gopls.
+	//
+	// Some clients (namely VS Code) do not send workspace/didChangeWatchedFile
+	// notifications for files contained in a directory when that directory is
+	// deleted:
+	// https://github.com/microsoft/vscode/issues/109754
+	//
+	// In this case, gopls would miss important notifications about deleted
+	// packages. To work around this, gopls registers a watch pattern for each
+	// directory containing Go files.
+	//
+	// Unfortunately, other clients experience performance problems with this
+	// many watch patterns, so there is no single behavior that works well for
+	// all clients.
+	//
+	// The "subdirWatchPatterns" setting allows configuring this behavior. Its
+	// default value of "auto" attempts to guess the correct behavior based on
+	// the client name. We'd love to avoid this specialization, but as described
+	// above there is no single value that works for all clients.
+	//
+	// If any LSP client does not behave well with the default value (for
+	// example, if like VS Code it drops file notifications), please file an
+	// issue.
+	SubdirWatchPatterns SubdirWatchPatterns
+
+	// ReportAnalysisProgressAfter sets the duration for gopls to wait before starting
+	// progress reporting for ongoing go/analysis passes.
+	//
+	// It is intended to be used for testing only.
+	ReportAnalysisProgressAfter time.Duration
+
+	// TelemetryPrompt controls whether gopls prompts about enabling Go telemetry.
+	//
+	// Once the prompt is answered, gopls doesn't ask again, but TelemetryPrompt
+	// can prevent the question from ever being asked in the first place.
+	TelemetryPrompt bool
+
+	// LinkifyShowMessage controls whether the client wants gopls
+	// to linkify links in showMessage. e.g. [go.dev](https://go.dev).
+	LinkifyShowMessage bool
 }
+
+type SubdirWatchPatterns string
+
+const (
+	SubdirWatchPatternsOn   SubdirWatchPatterns = "on"
+	SubdirWatchPatternsOff  SubdirWatchPatterns = "off"
+	SubdirWatchPatternsAuto SubdirWatchPatterns = "auto"
+)
 
 type ImportShortcut string
 
@@ -617,6 +730,8 @@ const (
 	CaseSensitive   Matcher = "CaseSensitive"
 )
 
+// A SymbolMatcher controls the matching of symbols for workspace/symbol
+// requests.
 type SymbolMatcher string
 
 const (
@@ -626,6 +741,7 @@ const (
 	SymbolCaseSensitive   SymbolMatcher = "CaseSensitive"
 )
 
+// A SymbolStyle controls the formatting of symbols in workspace/symbol results.
 type SymbolStyle string
 
 const (
@@ -640,6 +756,17 @@ const (
 	// delimited suffix of the fully qualified symbol. i.e. "to/pkg.Foo.Field" or
 	// just "Foo.Field".
 	DynamicSymbols SymbolStyle = "Dynamic"
+)
+
+// A SymbolScope controls the search scope for workspace/symbol requests.
+type SymbolScope string
+
+const (
+	// WorkspaceSymbolScope matches symbols in workspace packages only.
+	WorkspaceSymbolScope SymbolScope = "workspace"
+	// AllSymbolScope matches symbols in any loaded package, including
+	// dependencies.
+	AllSymbolScope SymbolScope = "all"
 )
 
 type HoverKind string
@@ -720,7 +847,8 @@ func SetOptions(options *Options, opts interface{}) OptionResults {
 	return results
 }
 
-func (o *Options) ForClientCapabilities(caps protocol.ClientCapabilities) {
+func (o *Options) ForClientCapabilities(clientName *protocol.Msg_XInitializeParams_clientInfo, caps protocol.ClientCapabilities) {
+	o.ClientInfo = clientName
 	// Check if the client supports snippets in completion items.
 	if caps.Workspace.WorkspaceEdit != nil {
 		o.SupportedResourceOperations = caps.Workspace.WorkspaceEdit.ResourceOperations
@@ -969,6 +1097,14 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 			o.SymbolStyle = SymbolStyle(s)
 		}
 
+	case "symbolScope":
+		if s, ok := result.asOneOf(
+			string(WorkspaceSymbolScope),
+			string(AllSymbolScope),
+		); ok {
+			o.SymbolScope = SymbolScope(s)
+		}
+
 	case "hoverKind":
 		if s, ok := result.asOneOf(
 			string(NoDocumentation),
@@ -1058,6 +1194,8 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 					" rebuild gopls with a more recent version of Go", result.Name, runtime.Version())
 			}
 		}
+	case "completeFunctionCalls":
+		result.setBool(&o.CompleteFunctionCalls)
 
 	case "semanticTokens":
 		result.setBool(&o.SemanticTokens)
@@ -1101,6 +1239,9 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 	case "diagnosticsDelay":
 		result.setDuration(&o.DiagnosticsDelay)
 
+	case "analysisProgressReporting":
+		result.setBool(&o.AnalysisProgressReporting)
+
 	case "experimentalWatchedFileDelay":
 		result.deprecated("")
 
@@ -1128,6 +1269,23 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 
 	case "chattyDiagnostics":
 		result.setBool(&o.ChattyDiagnostics)
+
+	case "subdirWatchPatterns":
+		if s, ok := result.asOneOf(
+			string(SubdirWatchPatternsOn),
+			string(SubdirWatchPatternsOff),
+			string(SubdirWatchPatternsAuto),
+		); ok {
+			o.SubdirWatchPatterns = SubdirWatchPatterns(s)
+		}
+
+	case "reportAnalysisProgressAfter":
+		result.setDuration(&o.ReportAnalysisProgressAfter)
+
+	case "telemetryPrompt":
+		result.setBool(&o.TelemetryPrompt)
+	case "linkifyShowMessage":
+		result.setBool(&o.LinkifyShowMessage)
 
 	// Replaced settings.
 	case "experimentalDisabledAnalyses":
@@ -1186,14 +1344,6 @@ type SoftError struct {
 
 func (e *SoftError) Error() string {
 	return e.msg
-}
-
-// softErrorf reports an error that does not affect the functionality of gopls
-// (a warning in the UI).
-// The formatted message will be shown to the user unmodified.
-func (r *OptionResult) softErrorf(format string, values ...interface{}) {
-	msg := fmt.Sprintf(format, values...)
-	r.Error = &SoftError{msg}
 }
 
 // deprecated reports the current setting as deprecated. If 'replacement' is
@@ -1364,7 +1514,8 @@ func (r *OptionResult) setStringSlice(s *[]string) {
 func typeErrorAnalyzers() map[string]*Analyzer {
 	return map[string]*Analyzer{
 		fillreturns.Analyzer.Name: {
-			Analyzer:   fillreturns.Analyzer,
+			Analyzer: fillreturns.Analyzer,
+			// TODO(rfindley): is SourceFixAll even necessary here? Is that not implied?
 			ActionKind: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
 			Enabled:    true,
 		},
@@ -1388,6 +1539,8 @@ func typeErrorAnalyzers() map[string]*Analyzer {
 	}
 }
 
+// TODO(golang/go#61559): remove convenience analyzers now that they are not
+// used from the analysis framework.
 func convenienceAnalyzers() map[string]*Analyzer {
 	return map[string]*Analyzer{
 		fillstruct.Analyzer.Name: {
@@ -1397,10 +1550,14 @@ func convenienceAnalyzers() map[string]*Analyzer {
 			ActionKind: []protocol.CodeActionKind{protocol.RefactorRewrite},
 		},
 		stubmethods.Analyzer.Name: {
-			Analyzer:   stubmethods.Analyzer,
-			ActionKind: []protocol.CodeActionKind{protocol.RefactorRewrite},
-			Fix:        StubMethods,
+			Analyzer: stubmethods.Analyzer,
+			Fix:      StubMethods,
+			Enabled:  true,
+		},
+		infertypeargs.Analyzer.Name: {
+			Analyzer:   infertypeargs.Analyzer,
 			Enabled:    true,
+			ActionKind: []protocol.CodeActionKind{protocol.RefactorRewrite},
 		},
 	}
 }
@@ -1408,6 +1565,7 @@ func convenienceAnalyzers() map[string]*Analyzer {
 func defaultAnalyzers() map[string]*Analyzer {
 	return map[string]*Analyzer{
 		// The traditional vet suite:
+		appends.Analyzer.Name:       {Analyzer: appends.Analyzer, Enabled: true},
 		asmdecl.Analyzer.Name:       {Analyzer: asmdecl.Analyzer, Enabled: true},
 		assign.Analyzer.Name:        {Analyzer: assign.Analyzer, Enabled: true},
 		atomic.Analyzer.Name:        {Analyzer: atomic.Analyzer, Enabled: true},
@@ -1416,6 +1574,8 @@ func defaultAnalyzers() map[string]*Analyzer {
 		cgocall.Analyzer.Name:       {Analyzer: cgocall.Analyzer, Enabled: true},
 		composite.Analyzer.Name:     {Analyzer: composite.Analyzer, Enabled: true},
 		copylock.Analyzer.Name:      {Analyzer: copylock.Analyzer, Enabled: true},
+		defers.Analyzer.Name:        {Analyzer: defers.Analyzer, Enabled: true},
+		deprecated.Analyzer.Name:    {Analyzer: deprecated.Analyzer, Enabled: true, Severity: protocol.SeverityHint, Tag: []protocol.DiagnosticTag{protocol.Deprecated}},
 		directive.Analyzer.Name:     {Analyzer: directive.Analyzer, Enabled: true},
 		errorsas.Analyzer.Name:      {Analyzer: errorsas.Analyzer, Enabled: true},
 		httpresponse.Analyzer.Name:  {Analyzer: httpresponse.Analyzer, Enabled: true},
@@ -1425,6 +1585,7 @@ func defaultAnalyzers() map[string]*Analyzer {
 		nilfunc.Analyzer.Name:       {Analyzer: nilfunc.Analyzer, Enabled: true},
 		printf.Analyzer.Name:        {Analyzer: printf.Analyzer, Enabled: true},
 		shift.Analyzer.Name:         {Analyzer: shift.Analyzer, Enabled: true},
+		slog.Analyzer.Name:          {Analyzer: slog.Analyzer, Enabled: true},
 		stdmethods.Analyzer.Name:    {Analyzer: stdmethods.Analyzer, Enabled: true},
 		stringintconv.Analyzer.Name: {Analyzer: stringintconv.Analyzer, Enabled: true},
 		structtag.Analyzer.Name:     {Analyzer: structtag.Analyzer, Enabled: true},
@@ -1445,9 +1606,13 @@ func defaultAnalyzers() map[string]*Analyzer {
 		unusedparams.Analyzer.Name:     {Analyzer: unusedparams.Analyzer, Enabled: false},
 		unusedwrite.Analyzer.Name:      {Analyzer: unusedwrite.Analyzer, Enabled: false},
 		useany.Analyzer.Name:           {Analyzer: useany.Analyzer, Enabled: false},
-		infertypeargs.Analyzer.Name:    {Analyzer: infertypeargs.Analyzer, Enabled: true},
-		embeddirective.Analyzer.Name:   {Analyzer: embeddirective.Analyzer, Enabled: true},
 		timeformat.Analyzer.Name:       {Analyzer: timeformat.Analyzer, Enabled: true},
+		embeddirective.Analyzer.Name: {
+			Analyzer:        embeddirective.Analyzer,
+			Enabled:         true,
+			Fix:             AddEmbedImport,
+			fixesDiagnostic: fixedByImportingEmbed,
+		},
 
 		// gofmt -s suite:
 		simplifycompositelit.Analyzer.Name: {

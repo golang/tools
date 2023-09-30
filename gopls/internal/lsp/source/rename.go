@@ -21,7 +21,7 @@ package source
 //   - special cases: embedded fields, interfaces, test variants,
 //     function-local things with uppercase names;
 //     packages with type errors (currently 'satisfy' rejects them),
-//     pakage with missing imports;
+//     package with missing imports;
 //
 // - measure performance in k8s.
 //
@@ -59,10 +59,10 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typeparams"
@@ -116,7 +116,7 @@ func PrepareRename(ctx context.Context, snapshot Snapshot, f FileHandle, pp prot
 	// which means we return (nil, nil) at the protocol
 	// layer. This seems like a bug, or at best an exploitation of
 	// knowledge of VSCode-specific behavior. Can we avoid that?
-	pkg, pgf, err := PackageForFile(ctx, snapshot, f.URI(), NarrowestPackage)
+	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, f.URI())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -152,7 +152,7 @@ func PrepareRename(ctx context.Context, snapshot Snapshot, f FileHandle, pp prot
 func prepareRenamePackageName(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile) (*PrepareItem, error) {
 	// Does the client support file renaming?
 	fileRenameSupported := false
-	for _, op := range snapshot.View().Options().SupportedResourceOperations {
+	for _, op := range snapshot.Options().SupportedResourceOperations {
 		if op == protocol.Rename {
 			fileRenameSupported = true
 			break
@@ -163,14 +163,10 @@ func prepareRenamePackageName(ctx context.Context, snapshot Snapshot, pgf *Parse
 	}
 
 	// Check validity of the metadata for the file's containing package.
-	fileMeta, err := snapshot.MetadataForFile(ctx, pgf.URI)
+	meta, err := NarrowestMetadataForFile(ctx, snapshot, pgf.URI)
 	if err != nil {
 		return nil, err
 	}
-	if len(fileMeta) == 0 {
-		return nil, fmt.Errorf("no packages found for file %q", pgf.URI)
-	}
-	meta := fileMeta[0]
 	if meta.Name == "main" {
 		return nil, fmt.Errorf("can't rename package \"main\"")
 	}
@@ -293,19 +289,42 @@ func Rename(ctx context.Context, snapshot Snapshot, f FileHandle, pp protocol.Po
 // renameOrdinary renames an ordinary (non-package) name throughout the workspace.
 func renameOrdinary(ctx context.Context, snapshot Snapshot, f FileHandle, pp protocol.Position, newName string) (map[span.URI][]diff.Edit, error) {
 	// Type-check the referring package and locate the object(s).
-	// We choose the widest variant as, for non-exported
-	// identifiers, it is the only package we need.
-	pkg, pgf, err := PackageForFile(ctx, snapshot, f.URI(), WidestPackage)
-	if err != nil {
-		return nil, err
-	}
-	pos, err := pgf.PositionPos(pp)
-	if err != nil {
-		return nil, err
-	}
-	targets, _, err := objectsAt(pkg.GetTypesInfo(), pgf.File, pos)
-	if err != nil {
-		return nil, err
+	//
+	// Unlike NarrowestPackageForFile, this operation prefers the
+	// widest variant as, for non-exported identifiers, it is the
+	// only package we need. (In case you're wondering why
+	// 'references' doesn't also want the widest variant: it
+	// computes the union across all variants.)
+	var targets map[types.Object]ast.Node
+	var pkg Package
+	{
+		metas, err := snapshot.MetadataForFile(ctx, f.URI())
+		if err != nil {
+			return nil, err
+		}
+		RemoveIntermediateTestVariants(&metas)
+		if len(metas) == 0 {
+			return nil, fmt.Errorf("no package metadata for file %s", f.URI())
+		}
+		widest := metas[len(metas)-1] // widest variant may include _test.go files
+		pkgs, err := snapshot.TypeCheck(ctx, widest.ID)
+		if err != nil {
+			return nil, err
+		}
+		pkg = pkgs[0]
+		pgf, err := pkg.File(f.URI())
+		if err != nil {
+			return nil, err // "can't happen"
+		}
+		pos, err := pgf.PositionPos(pp)
+		if err != nil {
+			return nil, err
+		}
+		objects, _, err := objectsAt(pkg.GetTypesInfo(), pgf.File, pos)
+		if err != nil {
+			return nil, err
+		}
+		targets = objects
 	}
 
 	// Pick a representative object arbitrarily.
@@ -324,24 +343,42 @@ func renameOrdinary(ctx context.Context, snapshot Snapshot, f FileHandle, pp pro
 	// Find objectpath, if object is exported ("" otherwise).
 	var declObjPath objectpath.Path
 	if obj.Exported() {
-		// objectpath.For requires the origin of a generic
-		// function or type, not an instantiation (a bug?).
-		// Unfortunately we can't call {Func,TypeName}.Origin
-		// as these are not available in go/types@go1.18.
-		// So we take a scenic route.
+		// objectpath.For requires the origin of a generic function or type, not an
+		// instantiation (a bug?). Unfortunately we can't call Func.Origin as this
+		// is not available in go/types@go1.18. So we take a scenic route.
+		//
+		// Note that unlike Funcs, TypeNames are always canonical (they are "left"
+		// of the type parameters, unlike methods).
 		switch obj.(type) { // avoid "obj :=" since cases reassign the var
 		case *types.TypeName:
-			if named, ok := obj.Type().(*types.Named); ok {
-				obj = named.Obj()
+			if _, ok := obj.Type().(*typeparams.TypeParam); ok {
+				// As with capitalized function parameters below, type parameters are
+				// local.
+				goto skipObjectPath
 			}
 		case *types.Func:
 			obj = funcOrigin(obj.(*types.Func))
 		case *types.Var:
 			// TODO(adonovan): do vars need the origin treatment too? (issue #58462)
+
+			// Function parameter and result vars that are (unusually)
+			// capitalized are technically exported, even though they
+			// cannot be referenced, because they may affect downstream
+			// error messages. But we can safely treat them as local.
+			//
+			// This is not merely an optimization: the renameExported
+			// operation gets confused by such vars. It finds them from
+			// objectpath, the classifies them as local vars, but as
+			// they came from export data they lack syntax and the
+			// correct scope tree (issue #61294).
+			if !obj.(*types.Var).IsField() && !isPackageLevel(obj) {
+				goto skipObjectPath
+			}
 		}
 		if path, err := objectpath.For(obj); err == nil {
 			declObjPath = path
 		}
+	skipObjectPath:
 	}
 
 	// Nonexported? Search locally.
@@ -444,6 +481,8 @@ func typeCheckReverseDependencies(ctx context.Context, snapshot Snapshot, declUR
 	if err != nil {
 		return nil, err
 	}
+	// variants must include ITVs for the reverse dependency
+	// computation, but they are filtered out before we typecheck.
 	allRdeps := make(map[PackageID]*Metadata)
 	for _, variant := range variants {
 		rdeps, err := snapshot.ReverseDependencies(ctx, variant.ID, transitive)
@@ -548,12 +587,15 @@ func renameExported(ctx context.Context, snapshot Snapshot, pkgs []Package, decl
 			}
 			obj, err := objectpath.Object(p, t.obj)
 			if err != nil {
-				// Though this can happen with regular export data
-				// due to trimming of inconsequential objects,
-				// it can't happen if we load dependencies from full
-				// syntax (as today) or shallow export data (soon),
-				// as both are complete.
-				bug.Reportf("objectpath.Object(%v, %v) failed: %v", p, t.obj, err)
+				// Possibly a method or an unexported type
+				// that is not reachable through export data?
+				// See https://github.com/golang/go/issues/60789.
+				//
+				// TODO(adonovan): it seems unsatisfactory that Object
+				// should return an error for a "valid" path. Perhaps
+				// we should define such paths as invalid and make
+				// objectpath.For compute reachability?
+				// Would that be a compatible change?
 				continue
 			}
 			objects = append(objects, obj)
@@ -610,8 +652,9 @@ func renamePackageName(ctx context.Context, s Snapshot, f FileHandle, newName Pa
 	// Update any affected replace directives in go.mod files.
 	// TODO(adonovan): extract into its own function.
 	//
-	// TODO: should this operate on all go.mod files, irrespective of whether they are included in the workspace?
-	// Get all active mod files in the workspace
+	// Get all workspace modules.
+	// TODO(adonovan): should this operate on all go.mod files,
+	// irrespective of whether they are included in the workspace?
 	modFiles := s.ModFiles()
 	for _, m := range modFiles {
 		fh, err := s.ReadFile(ctx, m)
@@ -684,7 +727,7 @@ func renamePackageName(ctx context.Context, s Snapshot, f FileHandle, newName Pa
 		}
 
 		// Calculate the edits to be made due to the change.
-		edits := s.View().Options().ComputeEdits(string(pm.Mapper.Content), string(newContent))
+		edits := s.Options().ComputeEdits(string(pm.Mapper.Content), string(newContent))
 		renamingEdits[pm.URI] = append(renamingEdits[pm.URI], edits...)
 	}
 
@@ -696,8 +739,8 @@ func renamePackageName(ctx context.Context, s Snapshot, f FileHandle, newName Pa
 // directory.
 //
 // It updates package clauses and import paths for the renamed package as well
-// as any other packages affected by the directory renaming among packages
-// described by allMetadata.
+// as any other packages affected by the directory renaming among all packages
+// known to the snapshot.
 func renamePackage(ctx context.Context, s Snapshot, f FileHandle, newName PackageName) (map[span.URI][]diff.Edit, error) {
 	if strings.HasSuffix(string(newName), "_test") {
 		return nil, fmt.Errorf("cannot rename to _test package")
@@ -705,14 +748,10 @@ func renamePackage(ctx context.Context, s Snapshot, f FileHandle, newName Packag
 
 	// We need metadata for the relevant package and module paths.
 	// These should be the same for all packages containing the file.
-	metas, err := s.MetadataForFile(ctx, f.URI())
+	meta, err := NarrowestMetadataForFile(ctx, s, f.URI())
 	if err != nil {
 		return nil, err
 	}
-	if len(metas) == 0 {
-		return nil, fmt.Errorf("no packages found for file %q", f.URI())
-	}
-	meta := metas[0] // narrowest
 
 	oldPkgPath := meta.PkgPath
 	if meta.Module == nil {
@@ -738,7 +777,7 @@ func renamePackage(ctx context.Context, s Snapshot, f FileHandle, newName Packag
 	edits := make(map[span.URI][]diff.Edit)
 	for _, m := range allMetadata {
 		// Special case: x_test packages for the renamed package will not have the
-		// package path as as a dir prefix, but still need their package clauses
+		// package path as a dir prefix, but still need their package clauses
 		// renamed.
 		if m.PkgPath == oldPkgPath+"_test" {
 			if err := renamePackageClause(ctx, m, s, newName+"_test", edits); err != nil {
@@ -1015,17 +1054,11 @@ func (r *renamer) update() (map[span.URI][]diff.Edit, error) {
 	// shouldUpdate reports whether obj is one of (or an
 	// instantiation of one of) the target objects.
 	shouldUpdate := func(obj types.Object) bool {
-		if r.objsToUpdate[obj] {
-			return true
-		}
-		if fn, ok := obj.(*types.Func); ok && r.objsToUpdate[funcOrigin(fn)] {
-			return true
-		}
-		return false
+		return containsOrigin(r.objsToUpdate, obj)
 	}
 
 	// Find all identifiers in the package that define or use a
-	// renamed object. We iterate over info as it is more efficent
+	// renamed object. We iterate over info as it is more efficient
 	// than calling ast.Inspect for each of r.pkg.CompiledGoFiles().
 	type item struct {
 		node  ast.Node // Ident, ImportSpec (obj=PkgName), or CaseClause (obj=Var)

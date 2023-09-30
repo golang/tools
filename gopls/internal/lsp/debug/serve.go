@@ -5,7 +5,6 @@
 package debug
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"errors"
@@ -20,16 +19,15 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
-	rpprof "runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/debug/log"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/core"
 	"golang.org/x/tools/internal/event/export"
@@ -106,6 +104,13 @@ func (st *State) Cache(id string) *cache.Cache {
 	}
 	return nil
 }
+
+// Analysis returns the global Analysis template value.
+func (st *State) Analysis() (_ analysisTmpl) { return }
+
+type analysisTmpl struct{}
+
+func (analysisTmpl) AnalyzerRunTimes() []cache.LabelDuration { return cache.AnalyzerRunTimes() }
 
 // Sessions returns the set of Session objects currently being served.
 func (st *State) Sessions() []*cache.Session {
@@ -280,6 +285,10 @@ func (i *Instance) getCache(r *http.Request) interface{} {
 	return i.State.Cache(path.Base(r.URL.Path))
 }
 
+func (i *Instance) getAnalysis(r *http.Request) interface{} {
+	return i.State.Analysis()
+}
+
 func (i *Instance) getSession(r *http.Request) interface{} {
 	return i.State.Session(path.Base(r.URL.Path))
 }
@@ -452,6 +461,7 @@ func (i *Instance) Serve(ctx context.Context, addr string) (string, error) {
 		if i.traces != nil {
 			mux.HandleFunc("/trace/", render(TraceTmpl, i.traces.getData))
 		}
+		mux.HandleFunc("/analysis/", render(AnalysisTmpl, i.getAnalysis))
 		mux.HandleFunc("/cache/", render(CacheTmpl, i.getCache))
 		mux.HandleFunc("/session/", render(SessionTmpl, i.getSession))
 		mux.HandleFunc("/view/", render(ViewTmpl, i.getView))
@@ -462,14 +472,14 @@ func (i *Instance) Serve(ctx context.Context, addr string) (string, error) {
 		mux.HandleFunc("/memory", render(MemoryTmpl, getMemory))
 
 		// Internal debugging helpers.
-		mux.HandleFunc("/_dogc", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/gc", func(w http.ResponseWriter, r *http.Request) {
 			runtime.GC()
 			runtime.GC()
 			runtime.GC()
-			http.Error(w, "OK", 200)
+			http.Redirect(w, r, "/memory", http.StatusTemporaryRedirect)
 		})
 		mux.HandleFunc("/_makeabug", func(w http.ResponseWriter, r *http.Request) {
-			bug.Report("bug here", nil)
+			bug.Report("bug here")
 			http.Error(w, "made a bug", http.StatusOK)
 		})
 
@@ -492,65 +502,6 @@ func (i *Instance) ListenedDebugAddress() string {
 	i.serveMu.Lock()
 	defer i.serveMu.Unlock()
 	return i.listenedDebugAddress
-}
-
-// MonitorMemory starts recording memory statistics each second.
-func (i *Instance) MonitorMemory(ctx context.Context) {
-	tick := time.NewTicker(time.Second)
-	nextThresholdGiB := uint64(1)
-	go func() {
-		for {
-			<-tick.C
-			var mem runtime.MemStats
-			runtime.ReadMemStats(&mem)
-			if mem.HeapAlloc < nextThresholdGiB*1<<30 {
-				continue
-			}
-			if err := i.writeMemoryDebug(nextThresholdGiB, true); err != nil {
-				event.Error(ctx, "writing memory debug info", err)
-			}
-			if err := i.writeMemoryDebug(nextThresholdGiB, false); err != nil {
-				event.Error(ctx, "writing memory debug info", err)
-			}
-			event.Log(ctx, fmt.Sprintf("Wrote memory usage debug info to %v", os.TempDir()))
-			nextThresholdGiB++
-		}
-	}()
-}
-
-func (i *Instance) writeMemoryDebug(threshold uint64, withNames bool) error {
-	suffix := "withnames"
-	if !withNames {
-		suffix = "nonames"
-	}
-
-	filename := fmt.Sprintf("gopls.%d-%dGiB-%s.zip", os.Getpid(), threshold, suffix)
-	zipf, err := os.OpenFile(filepath.Join(os.TempDir(), filename), os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		return err
-	}
-	zipw := zip.NewWriter(zipf)
-
-	f, err := zipw.Create("heap.pb.gz")
-	if err != nil {
-		return err
-	}
-	if err := rpprof.Lookup("heap").WriteTo(f, 0); err != nil {
-		return err
-	}
-
-	f, err = zipw.Create("goroutines.txt")
-	if err != nil {
-		return err
-	}
-	if err := rpprof.Lookup("goroutine").WriteTo(f, 1); err != nil {
-		return err
-	}
-
-	if err := zipw.Close(); err != nil {
-		return err
-	}
-	return zipf.Close()
 }
 
 func makeGlobalExporter(stderr io.Writer) event.Exporter {
@@ -708,9 +659,11 @@ ul.spans {
 <a href="/">Main</a>
 <a href="/info">Info</a>
 <a href="/memory">Memory</a>
+<a href="/debug/pprof">Profiling</a>
 <a href="/metrics">Metrics</a>
 <a href="/rpc">RPC</a>
 <a href="/trace">Trace</a>
+<a href="/analysis">Analysis</a>
 <hr>
 <h1>{{template "title" .}}</h1>
 {{block "body" .}}
@@ -748,9 +701,10 @@ Unknown page
 		}
 		return s
 	},
-	"options": func(s *cache.Session) []sessionOption {
-		return showOptions(s.Options())
-	},
+	// TODO(rfindley): re-enable option inspection.
+	// "options": func(s *cache.Session) []sessionOption {
+	// 	return showOptions(s.Options())
+	// },
 })
 
 var MainTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
@@ -777,9 +731,10 @@ var InfoTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 `))
 
 var MemoryTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
-{{define "title"}}GoPls memory usage{{end}}
+{{define "title"}}Gopls memory usage{{end}}
 {{define "head"}}<meta http-equiv="refresh" content="5">{{end}}
 {{define "body"}}
+<form action="/gc"><input type="submit" value="Run garbage collector"/></form>
 <h2>Stats</h2>
 <table>
 <tr><td class="label">Allocated bytes</td><td class="value">{{fuint64 .HeapAlloc}}</td></tr>
@@ -818,6 +773,14 @@ var CacheTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{define "body"}}
 <h2>memoize.Store entries</h2>
 <ul>{{range $k,$v := .MemStats}}<li>{{$k}} - {{$v}}</li>{{end}}</ul>
+{{end}}
+`))
+
+var AnalysisTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
+{{define "title"}}Analysis{{end}}
+{{define "body"}}
+<h2>Analyzer.Run times</h2>
+<ul>{{range .AnalyzerRunTimes}}<li>{{.Duration}} {{.Label}}</li>{{end}}</ul>
 {{end}}
 `))
 
@@ -875,12 +838,6 @@ From: <b>{{template "cachelink" .Cache.ID}}</b><br>
 <li>
 <a href="/file/{{$session.ID}}/{{.FileIdentity.Hash}}">{{.FileIdentity.URI}}</a>
 </li>{{end}}</ul>
-<h2>Options</h2>
-{{range options .}}
-<p><b>{{.Name}}</b> {{.Type}}</p>
-<p><i>default:</i> {{.Default}}</p>
-{{if ne .Default .Current}}<p><i>current:</i> {{.Current}}</p>{{end}}
-{{end}}
 {{end}}
 `))
 
@@ -889,8 +846,6 @@ var ViewTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{define "body"}}
 Name: <b>{{.Name}}</b><br>
 Folder: <b>{{.Folder}}</b><br>
-<h2>Environment</h2>
-<ul>{{range .Options.Env}}<li>{{.}}</li>{{end}}</ul>
 {{end}}
 `))
 

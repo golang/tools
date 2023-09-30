@@ -12,8 +12,9 @@ func BenchmarkReferences(b *testing.B) {
 		file   string
 		regexp string
 	}{
+		{"google-cloud-go", "httpreplay/httpreplay.go", `func (NewRecorder)`},
 		{"istio", "pkg/config/model.go", "type (Meta)"},
-		{"kubernetes", "pkg/controller/lookup_cache.go", "type (objectWithMeta)"},
+		{"kubernetes", "pkg/controller/lookup_cache.go", "type (objectWithMeta)"}, // TODO: choose an exported identifier
 		{"kuma", "pkg/events/interfaces.go", "type (Event)"},
 		{"pkgsite", "internal/log/log.go", "func (Infof)"},
 		{"starlark", "syntax/syntax.go", "type (Ident)"},
@@ -24,10 +25,16 @@ func BenchmarkReferences(b *testing.B) {
 		b.Run(test.repo, func(b *testing.B) {
 			env := getRepo(b, test.repo).sharedEnv(b)
 			env.OpenFile(test.file)
+			defer closeBuffer(b, env, test.file)
+
 			loc := env.RegexpSearch(test.file, test.regexp)
-			env.Await(env.DoneWithOpen())
+			env.AfterChange()
 			env.References(loc) // pre-warm the query
 			b.ResetTimer()
+
+			if stopAndRecord := startProfileIfSupported(b, env, qualifiedName(test.repo, "references")); stopAndRecord != nil {
+				defer stopAndRecord()
+			}
 
 			for i := 0; i < b.N; i++ {
 				env.References(loc)

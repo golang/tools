@@ -4,12 +4,12 @@ package stub
 import "io"
 
 func getReaderFrom() io.ReaderFrom {
-	return &pointerImpl{} //@suggestedfix("&", "refactor.rewrite", "")
+	return &pointerImpl{} //@suggestedfix("&", "quickfix", "")
 }
 
 type pointerImpl struct{}
 
-// ReadFrom implements io.ReaderFrom
+// ReadFrom implements io.ReaderFrom.
 func (*pointerImpl) ReadFrom(r io.Reader) (n int64, err error) {
 	panic("unimplemented")
 }

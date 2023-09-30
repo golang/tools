@@ -11,7 +11,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"reflect"
@@ -22,6 +21,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/lsp"
+	"golang.org/x/tools/gopls/internal/lsp/browser"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
@@ -29,6 +29,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/tool"
 	"golang.org/x/tools/internal/xcontext"
@@ -74,6 +75,26 @@ type Application struct {
 	// PrepareOptions is called to update the options when a new view is built.
 	// It is primarily to allow the behavior of gopls to be modified by hooks.
 	PrepareOptions func(*source.Options)
+
+	// editFlags holds flags that control how file edit operations
+	// are applied, in particular when the server makes an ApplyEdits
+	// downcall to the client. Present only for commands that apply edits.
+	editFlags *EditFlags
+}
+
+// EditFlags defines flags common to {fix,format,imports,rename}
+// that control how edits are applied to the client's files.
+//
+// The type is exported for flag reflection.
+//
+// The -write, -diff, and -list flags are orthogonal but any
+// of them suppresses the default behavior, which is to print
+// the edited file contents.
+type EditFlags struct {
+	Write    bool `flag:"w,write" help:"write edited content to source files"`
+	Preserve bool `flag:"preserve" help:"with -write, make copies of original files"`
+	Diff     bool `flag:"d,diff" help:"display diffs instead of edited file content"`
+	List     bool `flag:"l,list" help:"display names of edited files"`
 }
 
 func (app *Application) verbose() bool {
@@ -136,6 +157,12 @@ Command:
 	fmt.Fprint(w, "\t\nFeatures\t\n")
 	for _, c := range app.featureCommands() {
 		fmt.Fprintf(w, "  %s\t%s\n", c.Name(), c.ShortHelp())
+	}
+	if app.verbose() {
+		fmt.Fprint(w, "\t\nInternal Use Only\t\n")
+		for _, c := range app.internalCommands() {
+			fmt.Fprintf(w, "  %s\t%s\n", c.Name(), c.ShortHelp())
+		}
 	}
 	fmt.Fprint(w, "\nflags:\n")
 	printFlagDefaults(f)
@@ -242,6 +269,7 @@ func (app *Application) Commands() []tool.Application {
 	var commands []tool.Application
 	commands = append(commands, app.mainCommands()...)
 	commands = append(commands, app.featureCommands()...)
+	commands = append(commands, app.internalCommands()...)
 	return commands
 }
 
@@ -253,6 +281,12 @@ func (app *Application) mainCommands() []tool.Application {
 		&help{app: app},
 		&apiJSON{app: app},
 		&licenses{app: app},
+	}
+}
+
+func (app *Application) internalCommands() []tool.Application {
+	return []tool.Application{
+		&vulncheck{app: app},
 	}
 }
 
@@ -274,10 +308,11 @@ func (app *Application) featureCommands() []tool.Application {
 		&rename{app: app},
 		&semtok{app: app},
 		&signature{app: app},
+		&stats{app: app},
 		&suggestedFix{app: app},
 		&symbols{app: app},
+
 		&workspaceSymbol{app: app},
-		&vulncheck{app: app},
 	}
 }
 
@@ -286,20 +321,25 @@ var (
 	internalConnections = make(map[string]*connection)
 )
 
-func (app *Application) connect(ctx context.Context) (*connection, error) {
+// connect creates and initializes a new in-process gopls session.
+//
+// If onProgress is set, it is called for each new progress notification.
+func (app *Application) connect(ctx context.Context, onProgress func(*protocol.ProgressParams)) (*connection, error) {
 	switch {
 	case app.Remote == "":
-		connection := newConnection(app)
-		connection.Server = lsp.NewServer(cache.NewSession(ctx, cache.New(nil), app.options), connection.Client)
-		ctx = protocol.WithClient(ctx, connection.Client)
-		return connection, connection.initialize(ctx, app.options)
+		client := newClient(app, onProgress)
+		options := source.DefaultOptions(app.options)
+		server := lsp.NewServer(cache.NewSession(ctx, cache.New(nil)), client, options)
+		conn := newConnection(server, client)
+		if err := conn.initialize(protocol.WithClient(ctx, client), app.options); err != nil {
+			return nil, err
+		}
+		return conn, nil
+
 	case strings.HasPrefix(app.Remote, "internal@"):
 		internalMu.Lock()
 		defer internalMu.Unlock()
-		opts := source.DefaultOptions().Clone()
-		if app.options != nil {
-			app.options(opts)
-		}
+		opts := source.DefaultOptions(app.options)
 		key := fmt.Sprintf("%s %v %v %v", app.wd, opts.PreferredContentFormat, opts.HierarchicalDocumentSymbolSupport, opts.SymbolMatcher)
 		if c := internalConnections[key]; c != nil {
 			return c, nil
@@ -317,29 +357,20 @@ func (app *Application) connect(ctx context.Context) (*connection, error) {
 	}
 }
 
-// CloseTestConnections terminates shared connections used in command tests. It
-// should only be called from tests.
-func CloseTestConnections(ctx context.Context) {
-	for _, c := range internalConnections {
-		c.Shutdown(ctx)
-		c.Exit(ctx)
-	}
-}
-
 func (app *Application) connectRemote(ctx context.Context, remote string) (*connection, error) {
-	connection := newConnection(app)
 	conn, err := lsprpc.ConnectToRemote(ctx, remote)
 	if err != nil {
 		return nil, err
 	}
 	stream := jsonrpc2.NewHeaderStream(conn)
 	cc := jsonrpc2.NewConn(stream)
-	connection.Server = protocol.ServerDispatcher(cc)
-	ctx = protocol.WithClient(ctx, connection.Client)
+	server := protocol.ServerDispatcher(cc)
+	client := newClient(app, nil)
+	connection := newConnection(server, client)
+	ctx = protocol.WithClient(ctx, connection.client)
 	cc.Go(ctx,
 		protocol.Handlers(
-			protocol.ClientHandler(connection.Client,
-				jsonrpc2.MethodNotFound)))
+			protocol.ClientHandler(client, jsonrpc2.MethodNotFound)))
 	return connection, connection.initialize(ctx, app.options)
 }
 
@@ -351,14 +382,11 @@ var matcherString = map[source.SymbolMatcher]string{
 
 func (c *connection) initialize(ctx context.Context, options func(*source.Options)) error {
 	params := &protocol.ParamInitialize{}
-	params.RootURI = protocol.URIFromPath(c.Client.app.wd)
+	params.RootURI = protocol.URIFromPath(c.client.app.wd)
 	params.Capabilities.Workspace.Configuration = true
 
 	// Make sure to respect configured options when sending initialize request.
-	opts := source.DefaultOptions().Clone()
-	if options != nil {
-		options(opts)
-	}
+	opts := source.DefaultOptions(options)
 	// If you add an additional option here, you must update the map key in connect.
 	params.Capabilities.TextDocument.Hover = &protocol.HoverClientCapabilities{
 		ContentFormat: []protocol.MarkupKind{opts.PreferredContentFormat},
@@ -370,6 +398,13 @@ func (c *connection) initialize(ctx context.Context, options func(*source.Option
 	params.Capabilities.TextDocument.SemanticTokens.Requests.Full.Value = true
 	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = lsp.SemanticTypes()
 	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = lsp.SemanticModifiers()
+
+	// If the subcommand has registered a progress handler, report the progress
+	// capability.
+	if c.client.onProgress != nil {
+		params.Capabilities.Window.WorkDoneProgress = true
+	}
+
 	params.InitializationOptions = map[string]interface{}{
 		"symbolMatcher": matcherString[opts.SymbolMatcher],
 	}
@@ -384,17 +419,18 @@ func (c *connection) initialize(ctx context.Context, options func(*source.Option
 
 type connection struct {
 	protocol.Server
-	Client *cmdClient
+	client *cmdClient
 }
 
+// cmdClient defines the protocol.Client interface behavior of the gopls CLI tool.
 type cmdClient struct {
-	protocol.Server
-	app *Application
+	app        *Application
+	onProgress func(*protocol.ProgressParams)
 
 	diagnosticsMu   sync.Mutex
 	diagnosticsDone chan struct{}
 
-	filesMu sync.Mutex
+	filesMu sync.Mutex // guards files map and each cmdFile.diagnostics
 	files   map[span.URI]*cmdFile
 }
 
@@ -402,16 +438,21 @@ type cmdFile struct {
 	uri         span.URI
 	mapper      *protocol.Mapper
 	err         error
-	open        bool
 	diagnostics []protocol.Diagnostic
 }
 
-func newConnection(app *Application) *connection {
+func newClient(app *Application, onProgress func(*protocol.ProgressParams)) *cmdClient {
+	return &cmdClient{
+		app:        app,
+		onProgress: onProgress,
+		files:      make(map[span.URI]*cmdFile),
+	}
+}
+
+func newConnection(server protocol.Server, client *cmdClient) *connection {
 	return &connection{
-		Client: &cmdClient{
-			app:   app,
-			files: make(map[span.URI]*cmdFile),
-		},
+		Server: server,
+		client: client,
 	}
 }
 
@@ -502,7 +543,87 @@ func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfigur
 }
 
 func (c *cmdClient) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResult, error) {
-	return &protocol.ApplyWorkspaceEditResult{Applied: false, FailureReason: "not implemented"}, nil
+	if err := c.applyWorkspaceEdit(&p.Edit); err != nil {
+		return &protocol.ApplyWorkspaceEditResult{FailureReason: err.Error()}, nil
+	}
+	return &protocol.ApplyWorkspaceEditResult{Applied: true}, nil
+}
+
+// applyWorkspaceEdit applies a complete WorkspaceEdit to the client's
+// files, honoring the preferred edit mode specified by cli.app.editMode.
+// (Used by rename and by ApplyEdit downcalls.)
+func (cli *cmdClient) applyWorkspaceEdit(edit *protocol.WorkspaceEdit) error {
+	var orderedURIs []string
+	edits := map[span.URI][]protocol.TextEdit{}
+	for _, c := range edit.DocumentChanges {
+		if c.TextDocumentEdit != nil {
+			uri := fileURI(c.TextDocumentEdit.TextDocument.URI)
+			edits[uri] = append(edits[uri], c.TextDocumentEdit.Edits...)
+			orderedURIs = append(orderedURIs, string(uri))
+		}
+		if c.RenameFile != nil {
+			return fmt.Errorf("client does not support file renaming (%s -> %s)",
+				c.RenameFile.OldURI,
+				c.RenameFile.NewURI)
+		}
+	}
+	sort.Strings(orderedURIs)
+	for _, u := range orderedURIs {
+		uri := span.URIFromURI(u)
+		f := cli.openFile(uri)
+		if f.err != nil {
+			return f.err
+		}
+		if err := applyTextEdits(f.mapper, edits[uri], cli.app.editFlags); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// applyTextEdits applies a list of edits to the mapper file content,
+// using the preferred edit mode. It is a no-op if there are no edits.
+func applyTextEdits(mapper *protocol.Mapper, edits []protocol.TextEdit, flags *EditFlags) error {
+	if len(edits) == 0 {
+		return nil
+	}
+	newContent, renameEdits, err := source.ApplyProtocolEdits(mapper, edits)
+	if err != nil {
+		return err
+	}
+
+	filename := mapper.URI.Filename()
+
+	if flags.List {
+		fmt.Println(filename)
+	}
+
+	if flags.Write {
+		if flags.Preserve {
+			if err := os.Rename(filename, filename+".orig"); err != nil {
+				return err
+			}
+		}
+		if err := os.WriteFile(filename, newContent, 0644); err != nil {
+			return err
+		}
+	}
+
+	if flags.Diff {
+		unified, err := diff.ToUnified(filename+".orig", filename, string(mapper.Content), renameEdits)
+		if err != nil {
+			return err
+		}
+		fmt.Print(unified)
+	}
+
+	// No flags: just print edited file content.
+	// TODO(adonovan): how is this ever useful with multiple files?
+	if !(flags.List || flags.Write || flags.Diff) {
+		os.Stdout.Write(newContent)
+	}
+
+	return nil
 }
 
 func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishDiagnosticsParams) error {
@@ -517,17 +638,52 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 	c.filesMu.Lock()
 	defer c.filesMu.Unlock()
 
-	file := c.getFile(ctx, fileURI(p.URI))
-	file.diagnostics = p.Diagnostics
+	file := c.getFile(fileURI(p.URI))
+	file.diagnostics = append(file.diagnostics, p.Diagnostics...)
+
+	// Perform a crude in-place deduplication.
+	// TODO(golang/go#60122): replace the ad-hoc gopls/diagnoseFiles
+	// non-standard request with support for textDocument/diagnostic,
+	// so that we don't need to do this de-duplication.
+	type key [6]interface{}
+	seen := make(map[key]bool)
+	out := file.diagnostics[:0]
+	for _, d := range file.diagnostics {
+		var codeHref string
+		if desc := d.CodeDescription; desc != nil {
+			codeHref = desc.Href
+		}
+		k := key{d.Range, d.Severity, d.Code, codeHref, d.Source, d.Message}
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, d)
+		}
+	}
+	file.diagnostics = out
+
 	return nil
 }
 
-func (c *cmdClient) Progress(context.Context, *protocol.ProgressParams) error {
+func (c *cmdClient) Progress(_ context.Context, params *protocol.ProgressParams) error {
+	if c.onProgress != nil {
+		c.onProgress(params)
+	}
 	return nil
 }
 
-func (c *cmdClient) ShowDocument(context.Context, *protocol.ShowDocumentParams) (*protocol.ShowDocumentResult, error) {
-	return nil, nil
+func (c *cmdClient) ShowDocument(ctx context.Context, params *protocol.ShowDocumentParams) (*protocol.ShowDocumentResult, error) {
+	var success bool
+	if params.External {
+		// Open URI in external browser.
+		success = browser.Open(string(params.URI))
+	} else {
+		// Open file in editor, optionally taking focus and selecting a range.
+		// (cmdClient has no editor. Should it fork+exec $EDITOR?)
+		log.Printf("Server requested that client editor open %q (takeFocus=%t, selection=%+v)",
+			params.URI, params.TakeFocus, params.Selection)
+		success = true
+	}
+	return &protocol.ShowDocumentResult{Success: success}, nil
 }
 
 func (c *cmdClient) WorkDoneProgressCreate(context.Context, *protocol.WorkDoneProgressCreateParams) error {
@@ -550,7 +706,7 @@ func (c *cmdClient) InlineValueRefresh(context.Context) error {
 	return nil
 }
 
-func (c *cmdClient) getFile(ctx context.Context, uri span.URI) *cmdFile {
+func (c *cmdClient) getFile(uri span.URI) *cmdFile {
 	file, found := c.files[uri]
 	if !found || file.err != nil {
 		file = &cmdFile{
@@ -559,7 +715,7 @@ func (c *cmdClient) getFile(ctx context.Context, uri span.URI) *cmdFile {
 		c.files[uri] = file
 	}
 	if file.mapper == nil {
-		content, err := ioutil.ReadFile(uri.Filename())
+		content, err := os.ReadFile(uri.Filename())
 		if err != nil {
 			file.err = fmt.Errorf("getFile: %v: %v", uri, err)
 			return file
@@ -569,22 +725,19 @@ func (c *cmdClient) getFile(ctx context.Context, uri span.URI) *cmdFile {
 	return file
 }
 
-func (c *cmdClient) openFile(ctx context.Context, uri span.URI) *cmdFile {
+func (c *cmdClient) openFile(uri span.URI) *cmdFile {
 	c.filesMu.Lock()
 	defer c.filesMu.Unlock()
-
-	file := c.getFile(ctx, uri)
-	if file.err != nil || file.open {
-		return file
-	}
-	file.open = true
-	return file
+	return c.getFile(uri)
 }
 
-func (c *connection) openFile(ctx context.Context, uri span.URI) *cmdFile {
-	file := c.Client.openFile(ctx, uri)
+// TODO(adonovan): provide convenience helpers to:
+// - map a (URI, protocol.Range) to a MappedRange;
+// - parse a command-line argument to a MappedRange.
+func (c *connection) openFile(ctx context.Context, uri span.URI) (*cmdFile, error) {
+	file := c.client.openFile(uri)
 	if file.err != nil {
-		return file
+		return nil, file.err
 	}
 
 	p := &protocol.DidOpenTextDocumentParams{
@@ -596,9 +749,11 @@ func (c *connection) openFile(ctx context.Context, uri span.URI) *cmdFile {
 		},
 	}
 	if err := c.Server.DidOpen(ctx, p); err != nil {
+		// TODO(adonovan): is this assignment concurrency safe?
 		file.err = fmt.Errorf("%v: %v", uri, err)
+		return nil, file.err
 	}
-	return file
+	return file, nil
 }
 
 func (c *connection) semanticTokens(ctx context.Context, p *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
@@ -615,22 +770,22 @@ func (c *connection) diagnoseFiles(ctx context.Context, files []span.URI) error 
 	for _, file := range files {
 		untypedFiles = append(untypedFiles, string(file))
 	}
-	c.Client.diagnosticsMu.Lock()
-	defer c.Client.diagnosticsMu.Unlock()
+	c.client.diagnosticsMu.Lock()
+	defer c.client.diagnosticsMu.Unlock()
 
-	c.Client.diagnosticsDone = make(chan struct{})
+	c.client.diagnosticsDone = make(chan struct{})
 	_, err := c.Server.NonstandardRequest(ctx, "gopls/diagnoseFiles", map[string]interface{}{"files": untypedFiles})
 	if err != nil {
-		close(c.Client.diagnosticsDone)
+		close(c.client.diagnosticsDone)
 		return err
 	}
 
-	<-c.Client.diagnosticsDone
+	<-c.client.diagnosticsDone
 	return nil
 }
 
 func (c *connection) terminate(ctx context.Context) {
-	if strings.HasPrefix(c.Client.app.Remote, "internal@") {
+	if strings.HasPrefix(c.client.app.Remote, "internal@") {
 		// internal connections need to be left alive for the next test
 		return
 	}

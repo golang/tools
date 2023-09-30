@@ -6,8 +6,8 @@
 
 package protocol
 
-// Code generated from protocol/metaModel.json at ref release/protocol/3.17.3-next.6 (hash 56c23c557e3568a9f56f42435fd5a80f9458957f).
-// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.3-next.6/protocol/metaModel.json
+// Code generated from protocol/metaModel.json at ref release/protocol/3.17.4-next.2 (hash 184c8a7f010d335582f24337fe182baa6f2fccdd).
+// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.4-next.2/protocol/metaModel.json
 // LSP metaData.version = 3.17.0.
 
 import (

@@ -6,16 +6,18 @@ package completion
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/hooks"
-	. "golang.org/x/tools/gopls/internal/lsp/regtest"
-	"golang.org/x/tools/internal/bug"
-	"golang.org/x/tools/internal/testenv"
-
+	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	. "golang.org/x/tools/gopls/internal/lsp/regtest"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestMain(m *testing.M) {
@@ -515,6 +517,7 @@ func main() {
 `
 	WithOptions(
 		WindowsLineEndings(),
+		Settings{"ui.completion.usePlaceholders": true},
 	).Run(t, src, func(t *testing.T, env *Env) {
 		// Trigger unimported completions for the mod.com package.
 		env.OpenFile("main.go")
@@ -527,9 +530,63 @@ func main() {
 		env.AcceptCompletion(loc, completions.Items[0])
 		env.Await(env.DoneWithChange())
 		got := env.BufferText("main.go")
-		want := "package main\r\n\r\nimport (\r\n\t\"fmt\"\r\n\t\"math\"\r\n)\r\n\r\nfunc main() {\r\n\tfmt.Println(\"a\")\r\n\tmath.Sqrt(${1:})\r\n}\r\n"
+		want := "package main\r\n\r\nimport (\r\n\t\"fmt\"\r\n\t\"math\"\r\n)\r\n\r\nfunc main() {\r\n\tfmt.Println(\"a\")\r\n\tmath.Sqrt(${1:x float64})\r\n}\r\n"
 		if diff := cmp.Diff(want, got); diff != "" {
 			t.Errorf("unimported completion (-want +got):\n%s", diff)
+		}
+	})
+}
+
+func TestUnimportedCompletionHasPlaceholders60269(t *testing.T) {
+	testenv.NeedsGo1Point(t, 18) // uses type params
+
+	// We can't express this as a marker test because it doesn't support AcceptCompletion.
+	const src = `
+-- go.mod --
+module example.com
+go 1.12
+
+-- a/a.go --
+package a
+
+var _ = b.F
+
+-- b/b.go --
+package b
+
+func F0(a, b int, c float64) {}
+func F1(int, chan *string) {}
+func F2[K, V any](map[K]V, chan V) {} // missing type parameters was issue #60959
+func F3[K comparable, V any](map[K]V, chan V) {}
+`
+	WithOptions(
+		WindowsLineEndings(),
+		Settings{"ui.completion.usePlaceholders": true},
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		env.Await(env.DoneWithOpen())
+
+		// The table lists the expected completions of b.F as they appear in Items.
+		const common = "package a\r\n\r\nimport \"example.com/b\"\r\n\r\nvar _ = "
+		for i, want := range []string{
+			common + "b.F0(${1:a int}, ${2:b int}, ${3:c float64})\r\n",
+			common + "b.F1(${1:_ int}, ${2:_ chan *string})\r\n",
+			common + "b.F2[${1:K any}, ${2:V any}](${3:_ map[K]V}, ${4:_ chan V})\r\n",
+			common + "b.F3[${1:K comparable}, ${2:V any}](${3:_ map[K]V}, ${4:_ chan V})\r\n",
+		} {
+			loc := env.RegexpSearch("a/a.go", "b.F()")
+			completions := env.Completion(loc)
+			if len(completions.Items) == 0 {
+				t.Fatalf("no completion items")
+			}
+			saved := env.BufferText("a/a.go")
+			env.AcceptCompletion(loc, completions.Items[i])
+			env.Await(env.DoneWithChange())
+			got := env.BufferText("a/a.go")
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("%d: unimported completion (-want +got):\n%s", i, diff)
+			}
+			env.SetBufferContent("a/a.go", saved) // restore
 		}
 	})
 }
@@ -571,6 +628,66 @@ func main() {
 		want := "package main\n\nimport \"math\"\n\nfunc main() {\n\tmath.Sqrt(,0)\n\tmath.Ldexmath.Abs(${1:})\n}\n"
 		if diff := cmp.Diff(want, got); diff != "" {
 			t.Errorf("unimported completion (-want +got):\n%s", diff)
+		}
+	})
+}
+
+func TestCompleteAllFields(t *testing.T) {
+	// This test verifies that completion results always include all struct fields.
+	// See golang/go#53992.
+
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.18
+
+-- p/p.go --
+package p
+
+import (
+	"fmt"
+
+	. "net/http"
+	. "runtime"
+	. "go/types"
+	. "go/parser"
+	. "go/ast"
+)
+
+type S struct {
+	a, b, c, d, e, f, g, h, i, j, k, l, m int
+	n, o, p, q, r, s, t, u, v, w, x, y, z int
+}
+
+func _() {
+	var s S
+	fmt.Println(s.)
+}
+`
+
+	WithOptions(Settings{
+		"completionBudget": "1ns", // must be non-zero as 0 => infinity
+	}).Run(t, src, func(t *testing.T, env *Env) {
+		wantFields := make(map[string]bool)
+		for c := 'a'; c <= 'z'; c++ {
+			wantFields[string(c)] = true
+		}
+
+		env.OpenFile("p/p.go")
+		// Make an arbitrary edit to ensure we're not hitting the cache.
+		env.EditBuffer("p/p.go", fake.NewEdit(0, 0, 0, 0, fmt.Sprintf("// current time: %v\n", time.Now())))
+		loc := env.RegexpSearch("p/p.go", `s\.()`)
+		completions := env.Completion(loc)
+		gotFields := make(map[string]bool)
+		for _, item := range completions.Items {
+			if item.Kind == protocol.FieldCompletion {
+				gotFields[item.Label] = true
+			}
+		}
+
+		if diff := cmp.Diff(wantFields, gotFields); diff != "" {
+			t.Errorf("Completion(...) returned mismatching fields (-want +got):\n%s", diff)
 		}
 	})
 }
@@ -748,6 +865,140 @@ use ./dir/foobar/
 			diff := compareCompletionLabels(tt.want, completions.Items)
 			if diff != "" {
 				t.Errorf("%s: %s", tt.re, diff)
+			}
+		}
+	})
+}
+
+func TestBuiltinCompletion(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.18
+-- a.go --
+package a
+
+func _() {
+	// here
+}
+`
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+		result := env.Completion(env.RegexpSearch("a.go", `// here`))
+		builtins := []string{
+			"any", "append", "bool", "byte", "cap", "close",
+			"comparable", "complex", "complex128", "complex64", "copy", "delete",
+			"error", "false", "float32", "float64", "imag", "int", "int16", "int32",
+			"int64", "int8", "len", "make", "new", "panic", "print", "println", "real",
+			"recover", "rune", "string", "true", "uint", "uint16", "uint32", "uint64",
+			"uint8", "uintptr", "nil",
+		}
+		if testenv.Go1Point() >= 21 {
+			builtins = append(builtins, "clear", "max", "min")
+		}
+		sort.Strings(builtins)
+		var got []string
+
+		for _, item := range result.Items {
+			// TODO(rfindley): for flexibility, ignore zero while it is being
+			// implemented. Remove this if/when zero lands.
+			if item.Label != "zero" {
+				got = append(got, item.Label)
+			}
+		}
+		sort.Strings(got)
+
+		if diff := cmp.Diff(builtins, got); diff != "" {
+			t.Errorf("Completion: unexpected mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
+func TestOverlayCompletion(t *testing.T) {
+	const files = `
+-- go.mod --
+module foo.test
+
+go 1.18
+
+-- foo/foo.go --
+package foo
+
+type Foo struct{}
+`
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.CreateBuffer("nodisk/nodisk.go", `
+package nodisk
+
+import (
+	"foo.test/foo"
+)
+
+func _() {
+	foo.Foo()
+}
+`)
+		list := env.Completion(env.RegexpSearch("nodisk/nodisk.go", "foo.(Foo)"))
+		want := []string{"Foo"}
+		var got []string
+		for _, item := range list.Items {
+			got = append(got, item.Label)
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("Completion: unexpected mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
+// Fix for golang/go#60062: unimported completion included "golang.org/toolchain" results.
+func TestToolchainCompletions(t *testing.T) {
+	const files = `
+-- go.mod --
+module foo.test/foo
+
+go 1.21
+
+-- foo.go --
+package foo
+
+func _() {
+	os.Open
+}
+
+func _() {
+	strings
+}
+`
+
+	const proxy = `
+-- golang.org/toolchain@v0.0.1-go1.21.1.linux-amd64/go.mod --
+module golang.org/toolchain
+-- golang.org/toolchain@v0.0.1-go1.21.1.linux-amd64/src/os/os.go --
+package os
+
+func Open() {}
+-- golang.org/toolchain@v0.0.1-go1.21.1.linux-amd64/src/strings/strings.go --
+package strings
+
+func Join() {}
+`
+
+	WithOptions(
+		ProxyFiles(proxy),
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.RunGoCommand("mod", "download", "golang.org/toolchain@v0.0.1-go1.21.1.linux-amd64")
+		env.OpenFile("foo.go")
+
+		for _, pattern := range []string{"os.Open()", "string()"} {
+			loc := env.RegexpSearch("foo.go", pattern)
+			res := env.Completion(loc)
+			for _, item := range res.Items {
+				if strings.Contains(item.Detail, "golang.org/toolchain") {
+					t.Errorf("Completion(...) returned toolchain item %#v", item)
+				}
 			}
 		}
 	})

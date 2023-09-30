@@ -10,6 +10,7 @@ package lsp
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/lsp/cache"
@@ -24,18 +25,18 @@ import (
 const concurrentAnalyses = 1
 
 // NewServer creates an LSP server and binds it to handle incoming client
-// messages on on the supplied stream.
-func NewServer(session *cache.Session, client protocol.ClientCloser) *Server {
+// messages on the supplied stream.
+func NewServer(session *cache.Session, client protocol.ClientCloser, options *source.Options) *Server {
 	return &Server{
 		diagnostics:           map[span.URI]*fileReports{},
 		gcOptimizationDetails: make(map[source.PackageID]struct{}),
-		watchedGlobPatterns:   make(map[string]struct{}),
+		watchedGlobPatterns:   nil, // empty
 		changedFiles:          make(map[span.URI]struct{}),
 		session:               session,
 		client:                client,
 		diagnosticsSema:       make(chan struct{}, concurrentAnalyses),
 		progress:              progress.NewTracker(client),
-		diagDebouncer:         newDebouncer(),
+		options:               options,
 	}
 }
 
@@ -86,6 +87,7 @@ type Server struct {
 	// watchedGlobPatterns is the set of glob patterns that we have requested
 	// the client watch on disk. It will be updated as the set of directories
 	// that the server should watch changes.
+	// The map field may be reassigned but the map is immutable.
 	watchedGlobPatternsMu  sync.Mutex
 	watchedGlobPatterns    map[string]struct{}
 	watchRegistrationCount int
@@ -105,13 +107,19 @@ type Server struct {
 
 	progress *progress.Tracker
 
-	// diagDebouncer is used for debouncing diagnostics.
-	diagDebouncer *debouncer
-
 	// When the workspace fails to load, we show its status through a progress
 	// report with an error message.
 	criticalErrorStatusMu sync.Mutex
 	criticalErrorStatus   *progress.WorkDone
+
+	// Track an ongoing CPU profile created with the StartProfile command and
+	// terminated with the StopProfile command.
+	ongoingProfileMu sync.Mutex
+	ongoingProfile   *os.File // if non-nil, an ongoing profile is writing to this file
+
+	// Track most recently requested options.
+	optionsMu sync.Mutex
+	options   *source.Options
 }
 
 func (s *Server) workDoneProgressCancel(ctx context.Context, params *protocol.WorkDoneProgressCancelParams) error {
@@ -138,7 +146,7 @@ func (s *Server) nonstandardRequest(ctx context.Context, method string, params i
 				return nil, err
 			}
 
-			fileID, diagnostics, err := source.FileDiagnostics(ctx, snapshot, fh.URI())
+			fileID, diagnostics, err := s.diagnoseFile(ctx, snapshot, fh.URI())
 			if err != nil {
 				return nil, err
 			}
@@ -158,6 +166,38 @@ func (s *Server) nonstandardRequest(ctx context.Context, method string, params i
 		return struct{}{}, nil
 	}
 	return nil, notImplemented(method)
+}
+
+// fileDiagnostics reports diagnostics in the specified file,
+// as used by the "gopls check" or "gopls fix" commands.
+//
+// TODO(adonovan): opt: this function is called in a loop from the
+// "gopls/diagnoseFiles" nonstandard request handler. It would be more
+// efficient to compute the set of packages and TypeCheck and
+// Analyze them all at once. Or instead support textDocument/diagnostic
+// (golang/go#60122).
+func (s *Server) diagnoseFile(ctx context.Context, snapshot source.Snapshot, uri span.URI) (source.FileHandle, []*source.Diagnostic, error) {
+	fh, err := snapshot.ReadFile(ctx, uri)
+	if err != nil {
+		return nil, nil, err
+	}
+	pkg, _, err := source.NarrowestPackageForFile(ctx, snapshot, uri)
+	if err != nil {
+		return nil, nil, err
+	}
+	pkgDiags, err := pkg.DiagnosticsForFile(ctx, snapshot, uri)
+	if err != nil {
+		return nil, nil, err
+	}
+	adiags, err := source.Analyze(ctx, snapshot, map[source.PackageID]unit{pkg.Metadata().ID: {}}, nil /* progress tracker */)
+	if err != nil {
+		return nil, nil, err
+	}
+	var td, ad []*source.Diagnostic // combine load/parse/type + analysis diagnostics
+	source.CombineDiagnostics(pkgDiags, adiags[uri], &td, &ad)
+	s.storeDiagnostics(snapshot, uri, typeCheckSource, td, true)
+	s.storeDiagnostics(snapshot, uri, analysisSource, ad, true)
+	return fh, append(td, ad...), nil
 }
 
 func notImplemented(method string) error {

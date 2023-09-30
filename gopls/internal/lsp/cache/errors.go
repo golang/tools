@@ -21,13 +21,13 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/bug"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -249,13 +249,13 @@ func encodeDiagnostics(srcDiags []*source.Diagnostic) []byte {
 		}
 		gobDiags = append(gobDiags, gobDiag)
 	}
-	return mustJSONEncode(gobDiags)
+	return diagnosticsCodec.Encode(gobDiags)
 }
 
 // decodeDiagnostics decodes the given gob-encoded diagnostics.
 func decodeDiagnostics(data []byte) []*source.Diagnostic {
 	var gobDiags []gobDiagnostic
-	mustJSONDecode(data, &gobDiags)
+	diagnosticsCodec.Decode(data, &gobDiags)
 	var srcDiags []*source.Diagnostic
 	for _, gobDiag := range gobDiags {
 		var srcFixes []source.SuggestedFix
@@ -339,17 +339,23 @@ func toSourceDiagnostic(srcAnalyzer *source.Analyzer, gobDiag *gobDiagnostic) *s
 	}
 
 	diag := &source.Diagnostic{
-		URI:            gobDiag.Location.URI.SpanURI(),
-		Range:          gobDiag.Location.Range,
-		Severity:       severity,
-		Source:         source.AnalyzerErrorKind(gobDiag.Source),
-		Message:        gobDiag.Message,
-		Related:        related,
-		SuggestedFixes: fixes,
+		URI:      gobDiag.Location.URI.SpanURI(),
+		Range:    gobDiag.Location.Range,
+		Severity: severity,
+		Code:     gobDiag.Code,
+		CodeHref: gobDiag.CodeHref,
+		Source:   source.AnalyzerErrorKind(gobDiag.Source),
+		Message:  gobDiag.Message,
+		Related:  related,
+		Tags:     srcAnalyzer.Tag,
 	}
+	if srcAnalyzer.FixesDiagnostic(diag) {
+		diag.SuggestedFixes = fixes
+	}
+
 	// If the fixes only delete code, assume that the diagnostic is reporting dead code.
 	if onlyDeletions(fixes) {
-		diag.Tags = []protocol.DiagnosticTag{protocol.Unnecessary}
+		diag.Tags = append(diag.Tags, protocol.Unnecessary)
 	}
 	return diag
 }
@@ -516,12 +522,14 @@ func parseGoListImportCycleError(ctx context.Context, e packages.Error, m *sourc
 // to use in a list of file of a package, for example.
 //
 // It returns an error if the file could not be read.
+//
+// TODO(rfindley): eliminate this helper.
 func parseGoURI(ctx context.Context, fs source.FileSource, uri span.URI, mode parser.Mode) (*source.ParsedGoFile, error) {
 	fh, err := fs.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, err
 	}
-	return parseGoImpl(ctx, token.NewFileSet(), fh, mode)
+	return parseGoImpl(ctx, token.NewFileSet(), fh, mode, false)
 }
 
 // parseModURI is a helper to parse the Mod file at the given URI from the file

@@ -7,6 +7,7 @@ package lsp
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -17,7 +18,7 @@ import (
 func (s *Server) didChangeWorkspaceFolders(ctx context.Context, params *protocol.DidChangeWorkspaceFoldersParams) error {
 	event := params.Event
 	for _, folder := range event.Removed {
-		view := s.session.View(folder.Name)
+		view := s.session.ViewByName(folder.Name)
 		if view != nil {
 			s.session.RemoveView(view)
 		} else {
@@ -36,8 +37,8 @@ func (s *Server) addView(ctx context.Context, name string, uri span.URI) (source
 	if state < serverInitialized {
 		return nil, nil, fmt.Errorf("addView called before server initialized")
 	}
-	options := s.session.Options().Clone()
-	if err := s.fetchConfig(ctx, name, uri, options); err != nil {
+	options, err := s.fetchFolderOptions(ctx, uri)
+	if err != nil {
 		return nil, nil, err
 	}
 	_, snapshot, release, err := s.session.NewView(ctx, name, uri, options)
@@ -49,29 +50,46 @@ func (s *Server) didChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 	defer done()
 
 	// Apply any changes to the session-level settings.
-	options := s.session.Options().Clone()
-	if err := s.fetchConfig(ctx, "", "", options); err != nil {
+	options, err := s.fetchFolderOptions(ctx, "")
+	if err != nil {
 		return err
 	}
-	s.session.SetOptions(options)
+	s.SetOptions(options)
 
-	// Go through each view, getting and updating its configuration.
+	// Collect options for all workspace folders.
+	seen := make(map[span.URI]bool)
 	for _, view := range s.session.Views() {
-		options := s.session.Options().Clone()
-		if err := s.fetchConfig(ctx, view.Name(), view.Folder(), options); err != nil {
-			return err
+		if seen[view.Folder()] {
+			continue
 		}
-		view, err := s.session.SetViewOptions(ctx, view, options)
+		seen[view.Folder()] = true
+		options, err := s.fetchFolderOptions(ctx, view.Folder())
 		if err != nil {
 			return err
 		}
+		s.session.SetFolderOptions(ctx, view.Folder(), options)
+	}
+
+	var wg sync.WaitGroup
+	for _, view := range s.session.Views() {
+		view := view
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			snapshot, release, err := view.Snapshot()
 			if err != nil {
 				return // view is shut down; no need to diagnose
 			}
 			defer release()
-			s.diagnoseDetached(snapshot)
+			s.diagnoseSnapshot(snapshot, nil, false, 0)
+		}()
+	}
+
+	if s.Options().VerboseWorkDoneProgress {
+		work := s.progress.Start(ctx, DiagnosticWorkTitle(FromDidChangeConfiguration), "Calculating diagnostics...", nil, nil)
+		go func() {
+			wg.Wait()
+			work.End(ctx, "Done.")
 		}()
 	}
 
@@ -79,21 +97,4 @@ func (s *Server) didChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 	s.checkViewGoVersions()
 
 	return nil
-}
-
-func semanticTokenRegistration(tokenTypes, tokenModifiers []string) protocol.Registration {
-	return protocol.Registration{
-		ID:     "textDocument/semanticTokens",
-		Method: "textDocument/semanticTokens",
-		RegisterOptions: &protocol.SemanticTokensOptions{
-			Legend: protocol.SemanticTokensLegend{
-				// TODO(pjw): trim these to what we use (and an unused one
-				// at position 0 of TokTypes, to catch typos)
-				TokenTypes:     tokenTypes,
-				TokenModifiers: tokenModifiers,
-			},
-			Full:  &protocol.Or_SemanticTokensOptions_full{Value: true},
-			Range: &protocol.Or_SemanticTokensOptions_range{Value: true},
-		},
-	}
 }

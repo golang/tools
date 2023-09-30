@@ -7,7 +7,6 @@ package source
 import (
 	"context"
 	"fmt"
-	"go/types"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -314,13 +313,19 @@ func collectSymbols(ctx context.Context, views []View, matcherType SymbolMatcher
 		// whether a URI is in any open workspace.
 		roots = append(roots, strings.TrimRight(string(v.Folder()), "/"))
 
-		filters := v.Options().DirectoryFilters
+		filters := snapshot.Options().DirectoryFilters
 		filterer := NewFilterer(filters)
 		folder := filepath.ToSlash(v.Folder().Filename())
-		symbols, err := snapshot.Symbols(ctx)
+
+		workspaceOnly := true
+		if snapshot.Options().SymbolScope == AllSymbolScope {
+			workspaceOnly = false
+		}
+		symbols, err := snapshot.Symbols(ctx, workspaceOnly)
 		if err != nil {
 			return nil, err
 		}
+
 		for uri, syms := range symbols {
 			norm := filepath.ToSlash(uri.Filename())
 			nm := strings.TrimPrefix(norm, folder)
@@ -331,17 +336,13 @@ func collectSymbols(ctx context.Context, views []View, matcherType SymbolMatcher
 			if seen[uri] {
 				continue
 			}
-			mds, err := snapshot.MetadataForFile(ctx, uri)
+			meta, err := NarrowestMetadataForFile(ctx, snapshot, uri)
 			if err != nil {
 				event.Error(ctx, fmt.Sprintf("missing metadata for %q", uri), err)
 				continue
 			}
-			if len(mds) == 0 {
-				// TODO: should use the bug reporting API
-				continue
-			}
 			seen[uri] = true
-			work = append(work, symbolFile{uri, mds[0], syms})
+			work = append(work, symbolFile{uri, meta, syms})
 		}
 	}
 
@@ -471,18 +472,21 @@ func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, r
 		// All factors are multiplicative, meaning if more than one applies they are
 		// multiplied together.
 		const (
-			// nonWorkspaceFactor is applied to symbols outside of any active
-			// workspace. Developers are less likely to want to jump to code that they
+			// nonWorkspaceFactor is applied to symbols outside the workspace.
+			// Developers are less likely to want to jump to code that they
 			// are not actively working on.
 			nonWorkspaceFactor = 0.5
-			// nonWorkspaceUnexportedFactor is applied to unexported symbols outside of
-			// any active workspace. Since one wouldn't usually jump to unexported
+			// nonWorkspaceUnexportedFactor is applied to unexported symbols outside
+			// the workspace. Since one wouldn't usually jump to unexported
 			// symbols to understand a package API, they are particularly irrelevant.
 			nonWorkspaceUnexportedFactor = 0.5
 			// every field or method nesting level to access the field decreases
 			// the score by a factor of 1.0 - depth*depthFactor, up to a depth of
 			// 3.
-			depthFactor = 0.2
+			//
+			// Use a small constant here, as this exists mostly to break ties
+			// (e.g. given a type Foo and a field x.Foo, prefer Foo).
+			depthFactor = 0.01
 		)
 
 		startWord := true
@@ -500,6 +504,8 @@ func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, r
 			}
 		}
 
+		// TODO(rfindley): use metadata to determine if the file is in a workspace
+		// package, rather than this heuristic.
 		inWorkspace := false
 		for _, root := range roots {
 			if strings.HasPrefix(string(i.uri), root) {
@@ -576,33 +582,6 @@ func (sc *symbolStore) results() []protocol.SymbolInformation {
 		res = append(res, si.asProtocolSymbolInformation())
 	}
 	return res
-}
-
-func typeToKind(typ types.Type) protocol.SymbolKind {
-	switch typ := typ.Underlying().(type) {
-	case *types.Interface:
-		return protocol.Interface
-	case *types.Struct:
-		return protocol.Struct
-	case *types.Signature:
-		if typ.Recv() != nil {
-			return protocol.Method
-		}
-		return protocol.Function
-	case *types.Named:
-		return typeToKind(typ.Underlying())
-	case *types.Basic:
-		i := typ.Info()
-		switch {
-		case i&types.IsNumeric != 0:
-			return protocol.Number
-		case i&types.IsBoolean != 0:
-			return protocol.Boolean
-		case i&types.IsString != 0:
-			return protocol.String
-		}
-	}
-	return protocol.Variable
 }
 
 // symbolInformation is a cut-down version of protocol.SymbolInformation that

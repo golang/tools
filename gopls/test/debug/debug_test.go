@@ -4,7 +4,7 @@
 
 package debug_test
 
-// Provide 'static type checking' of the templates. This guards against changes is various
+// Provide 'static type checking' of the templates. This guards against changes in various
 // gopls datastructures causing template execution to fail. The checking is done by
 // the github.com/jba/templatecheck package. Before that is run, the test checks that
 // its list of templates and their arguments corresponds to the arguments in
@@ -13,6 +13,7 @@ package debug_test
 import (
 	"go/ast"
 	"html/template"
+	"os"
 	"runtime"
 	"sort"
 	"strings"
@@ -22,33 +23,42 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
+	"golang.org/x/tools/internal/testenv"
 )
 
 var templates = map[string]struct {
 	tmpl *template.Template
 	data interface{} // a value of the needed type
 }{
-	"MainTmpl":    {debug.MainTmpl, &debug.Instance{}},
-	"DebugTmpl":   {debug.DebugTmpl, nil},
-	"RPCTmpl":     {debug.RPCTmpl, &debug.Rpcs{}},
-	"TraceTmpl":   {debug.TraceTmpl, debug.TraceResults{}},
-	"CacheTmpl":   {debug.CacheTmpl, &cache.Cache{}},
-	"SessionTmpl": {debug.SessionTmpl, &cache.Session{}},
-	"ViewTmpl":    {debug.ViewTmpl, &cache.View{}},
-	"ClientTmpl":  {debug.ClientTmpl, &debug.Client{}},
-	"ServerTmpl":  {debug.ServerTmpl, &debug.Server{}},
-	"FileTmpl":    {debug.FileTmpl, &cache.Overlay{}},
-	"InfoTmpl":    {debug.InfoTmpl, "something"},
-	"MemoryTmpl":  {debug.MemoryTmpl, runtime.MemStats{}},
+	"MainTmpl":     {debug.MainTmpl, &debug.Instance{}},
+	"DebugTmpl":    {debug.DebugTmpl, nil},
+	"RPCTmpl":      {debug.RPCTmpl, &debug.Rpcs{}},
+	"TraceTmpl":    {debug.TraceTmpl, debug.TraceResults{}},
+	"CacheTmpl":    {debug.CacheTmpl, &cache.Cache{}},
+	"SessionTmpl":  {debug.SessionTmpl, &cache.Session{}},
+	"ViewTmpl":     {debug.ViewTmpl, &cache.View{}},
+	"ClientTmpl":   {debug.ClientTmpl, &debug.Client{}},
+	"ServerTmpl":   {debug.ServerTmpl, &debug.Server{}},
+	"FileTmpl":     {debug.FileTmpl, &cache.Overlay{}},
+	"InfoTmpl":     {debug.InfoTmpl, "something"},
+	"MemoryTmpl":   {debug.MemoryTmpl, runtime.MemStats{}},
+	"AnalysisTmpl": {debug.AnalysisTmpl, new(debug.State).Analysis()},
 }
 
 func TestTemplates(t *testing.T) {
-	if runtime.GOOS == "android" {
-		t.Skip("this test is not supported for Android")
-	}
+	testenv.NeedsGoPackages(t)
+	testenv.NeedsLocalXTools(t)
+
 	cfg := &packages.Config{
-		Mode: packages.NeedTypesInfo | packages.LoadAllSyntax, // figure out what's necessary PJW
+		Mode: packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo,
 	}
+	cfg.Env = os.Environ()
+	cfg.Env = append(cfg.Env,
+		"GOPACKAGESDRIVER=off",
+		"GOWORK=off", // necessary for -mod=mod below
+		"GOFLAGS=-mod=mod",
+	)
+
 	pkgs, err := packages.Load(cfg, "golang.org/x/tools/gopls/internal/lsp/debug")
 	if err != nil {
 		t.Fatal(err)
@@ -107,7 +117,9 @@ func TestTemplates(t *testing.T) {
 		// the FuncMap is an annoyance; should not be necessary
 		if err := templatecheck.CheckHTML(v.tmpl, v.data); err != nil {
 			t.Errorf("%s: %v", k, err)
+			continue
 		}
+		t.Logf("%s ok", k)
 	}
 }
 

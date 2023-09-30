@@ -156,6 +156,10 @@ func (s *Server) InlayHint(ctx context.Context, params *protocol.InlayHintParams
 	return s.inlayHint(ctx, params)
 }
 
+func (s *Server) InlineCompletion(context.Context, *protocol.InlineCompletionParams) (*protocol.Or_Result_textDocument_inlineCompletion, error) {
+	return nil, notImplemented("InlineCompletion")
+}
+
 func (s *Server) InlineValue(context.Context, *protocol.InlineValueParams) ([]protocol.InlineValue, error) {
 	return nil, notImplemented("InlineValue")
 }
@@ -200,6 +204,10 @@ func (s *Server) RangeFormatting(context.Context, *protocol.DocumentRangeFormatt
 	return nil, notImplemented("RangeFormatting")
 }
 
+func (s *Server) RangesFormatting(context.Context, *protocol.DocumentRangesFormattingParams) ([]protocol.TextEdit, error) {
+	return nil, notImplemented("RangesFormatting")
+}
+
 func (s *Server) References(ctx context.Context, params *protocol.ReferenceParams) ([]protocol.Location, error) {
 	return s.references(ctx, params)
 }
@@ -236,16 +244,16 @@ func (s *Server) SelectionRange(ctx context.Context, params *protocol.SelectionR
 	return s.selectionRange(ctx, params)
 }
 
-func (s *Server) SemanticTokensFull(ctx context.Context, p *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
-	return s.semanticTokensFull(ctx, p)
+func (s *Server) SemanticTokensFull(ctx context.Context, params *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
+	return s.semanticTokensFull(ctx, params)
 }
 
-func (s *Server) SemanticTokensFullDelta(ctx context.Context, p *protocol.SemanticTokensDeltaParams) (interface{}, error) {
+func (s *Server) SemanticTokensFullDelta(context.Context, *protocol.SemanticTokensDeltaParams) (interface{}, error) {
 	return nil, notImplemented("SemanticTokensFullDelta")
 }
 
-func (s *Server) SemanticTokensRange(ctx context.Context, p *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
-	return s.semanticTokensRange(ctx, p)
+func (s *Server) SemanticTokensRange(ctx context.Context, params *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
+	return s.semanticTokensRange(ctx, params)
 }
 
 func (s *Server) SetTrace(context.Context, *protocol.SetTraceParams) error {

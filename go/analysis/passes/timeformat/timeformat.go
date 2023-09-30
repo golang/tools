@@ -24,13 +24,6 @@ import (
 const badFormat = "2006-02-01"
 const goodFormat = "2006-01-02"
 
-const Doc = `check for calls of (time.Time).Format or time.Parse with 2006-02-01
-
-The timeformat checker looks for time formats with the 2006-02-01 (yyyy-dd-mm)
-format. Internationally, "yyyy-dd-mm" does not occur in common calendar date
-standards, and so it is more likely that 2006-01-02 (yyyy-mm-dd) was intended.
-`
-
 //go:embed doc.go
 var doc string
 
@@ -43,6 +36,11 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
+	// Note: (time.Time).Format is a method and can be a typeutil.Callee
+	// without directly importing "time". So we cannot just skip this package
+	// when !analysisutil.Imports(pass.Pkg, "time").
+	// TODO(taking): Consider using a prepass to collect typeutil.Callees.
+
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	nodeFilter := []ast.Node{

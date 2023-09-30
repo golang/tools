@@ -84,12 +84,6 @@ func main() {
 }
 
 func TestHoverIntLiteral(t *testing.T) {
-	// TODO(rfindley): this behavior doesn't actually make sense for vars. It is
-	// misleading to format their value when it is (of course) variable.
-	//
-	// Instead, we should allow hovering on numeric literals.
-	t.Skip("golang/go#58220: broken due to new hover logic")
-
 	const source = `
 -- main.go --
 package main
@@ -106,13 +100,13 @@ func main() {
 	Run(t, source, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		hexExpected := "58190"
-		got, _ := env.Hover(env.RegexpSearch("main.go", "hex"))
+		got, _ := env.Hover(env.RegexpSearch("main.go", "0xe"))
 		if got != nil && !strings.Contains(got.Value, hexExpected) {
 			t.Errorf("Hover: missing expected field '%s'. Got:\n%q", hexExpected, got.Value)
 		}
 
 		binExpected := "73"
-		got, _ = env.Hover(env.RegexpSearch("main.go", "bigBin"))
+		got, _ = env.Hover(env.RegexpSearch("main.go", "0b1"))
 		if got != nil && !strings.Contains(got.Value, binExpected) {
 			t.Errorf("Hover: missing expected field '%s'. Got:\n%q", binExpected, got.Value)
 		}
@@ -381,4 +375,108 @@ var C int
 			}
 		})
 	}
+}
+
+const linknameHover = `
+-- go.mod --
+module mod.com
+
+-- upper/upper.go --
+package upper
+
+import (
+	_ "unsafe"
+	_ "mod.com/lower"
+)
+
+//go:linkname foo mod.com/lower.bar
+func foo() string
+
+-- lower/lower.go --
+package lower
+
+// bar does foo.
+func bar() string {
+	return "foo by bar"
+}`
+
+func TestHoverLinknameDirective(t *testing.T) {
+	Run(t, linknameHover, func(t *testing.T, env *Env) {
+		// Jump from directives 2nd arg.
+		env.OpenFile("upper/upper.go")
+		from := env.RegexpSearch("upper/upper.go", `lower.bar`)
+
+		hover, _ := env.Hover(from)
+		content := hover.Value
+
+		expect := "bar does foo"
+		if !strings.Contains(content, expect) {
+			t.Errorf("hover: %q does not contain: %q", content, expect)
+		}
+	})
+}
+
+func TestHoverGoWork_Issue60821(t *testing.T) {
+	const files = `
+-- go.work --
+go 1.19
+
+use (
+	moda
+	modb
+)
+-- moda/go.mod --
+
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("go.work")
+		// Neither of the requests below should crash gopls.
+		_, _, _ = env.Editor.Hover(env.Ctx, env.RegexpSearch("go.work", "moda"))
+		_, _, _ = env.Editor.Hover(env.Ctx, env.RegexpSearch("go.work", "modb"))
+	})
+}
+
+const embedHover = `
+-- go.mod --
+module mod.com
+go 1.19
+-- main.go --
+package main
+
+import "embed"
+
+//go:embed *.txt
+var foo embed.FS
+
+func main() {
+}
+-- foo.txt --
+FOO
+-- bar.txt --
+BAR
+-- baz.txt --
+BAZ
+-- other.sql --
+SKIPPED
+`
+
+func TestHoverEmbedDirective(t *testing.T) {
+	testenv.NeedsGo1Point(t, 19)
+	Run(t, embedHover, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		from := env.RegexpSearch("main.go", `\*.txt`)
+
+		got, _ := env.Hover(from)
+		if got == nil {
+			t.Fatalf("hover over //go:embed arg not found")
+		}
+		content := got.Value
+
+		wants := []string{"foo.txt", "bar.txt", "baz.txt"}
+		for _, want := range wants {
+			if !strings.Contains(content, want) {
+				t.Errorf("hover: %q does not contain: %q", content, want)
+			}
+		}
+	})
 }

@@ -6,6 +6,21 @@ Details about how to enable/disable these analyses can be found
 [here](settings.md#analyses).
 
 <!-- BEGIN Analyzers: DO NOT MANUALLY EDIT THIS SECTION -->
+## **appends**
+
+check for missing values after append
+
+This checker reports calls to append that pass
+no values to be appended to the slice.
+
+	s := []string{"a", "b", "c"}
+	_ = append(s)
+
+Such calls are always no-ops and often indicate an
+underlying mistake.
+
+**Enabled by default.**
+
 ## **asmdecl**
 
 report mismatches between assembly files and Go declarations
@@ -108,6 +123,37 @@ errors is discouraged.
 
 **Enabled by default.**
 
+## **defers**
+
+report common mistakes in defer statements
+
+The defers analyzer reports a diagnostic when a defer statement would
+result in a non-deferred call to time.Since, as experience has shown
+that this is nearly always a mistake.
+
+For example:
+
+	start := time.Now()
+	...
+	defer recordLatency(time.Since(start)) // error: call to time.Since is not deferred
+
+The correct code is:
+
+	defer func() { recordLatency(time.Since(start)) }()
+
+**Enabled by default.**
+
+## **deprecated**
+
+check for use of deprecated identifiers
+
+The deprecated analyzer looks for deprecated symbols and package imports.
+
+See https://go.dev/wiki/Deprecated to learn about Go's convention
+for documenting and signaling deprecated identifiers.
+
+**Enabled by default.**
+
 ## **directive**
 
 check Go toolchain directives such as //go:debug
@@ -130,10 +176,14 @@ buildtag analyzer.
 
 ## **embed**
 
-check for //go:embed directive import
+check //go:embed directive usage
 
-This analyzer checks that the embed package is imported when source code contains //go:embed comment directives.
-The embed package must be imported for //go:embed directives to function.import _ "embed".
+This analyzer checks that the embed package is imported if //go:embed
+directives are present, providing a suggested fix to add the import if
+it is missing.
+
+This analyzer also checks that //go:embed directives precede the
+declaration of a single variable.
 
 **Enabled by default.**
 
@@ -214,22 +264,6 @@ name but different signatures. Example:
 
 The Read method in v has a different signature than the Read method in
 io.Reader, so this assertion cannot succeed.
-
-**Enabled by default.**
-
-## **infertypeargs**
-
-check for unnecessary type arguments in call expressions
-
-Explicit type arguments may be omitted from call expressions if they can be
-inferred from function arguments, or from other type arguments:
-
-	func f[T any](T) {}
-	
-	func _() {
-		f[string]("foo") // string could be inferred
-	}
-
 
 **Enabled by default.**
 
@@ -475,6 +509,24 @@ This is one of the simplifications that "gofmt -s" applies.
 
 **Enabled by default.**
 
+## **slog**
+
+check for invalid structured logging calls
+
+The slog checker looks for calls to functions from the log/slog
+package that take alternating key-value pairs. It reports calls
+where an argument in a key position is neither a string nor a
+slog.Attr, and where a final key is missing its value.
+For example,it would report
+
+	slog.Warn("message", 11, "k") // slog.Warn arg "11" should be a string or a slog.Attr
+
+and
+
+	slog.Info("message", "k1", v1, "k2") // call to slog.Info missing a final value
+
+**Enabled by default.**
+
 ## **sortslice**
 
 check the argument type of sort.Slice
@@ -600,7 +652,7 @@ The unsafeptr analyzer reports likely incorrect uses of unsafe.Pointer
 to convert integers to pointers. A conversion from uintptr to
 unsafe.Pointer is invalid if it implies that there is a uintptr-typed
 word in memory that holds a pointer value, because that word will be
-invisible to stack copying and to the garbage collector.`
+invisible to stack copying and to the garbage collector.
 
 **Enabled by default.**
 
@@ -613,7 +665,7 @@ any parameters that are not being used.
 
 To reduce false positives it ignores:
 - methods
-- parameters that do not have a name or are underscored
+- parameters that do not have a name or have the name '_' (the blank identifier)
 - functions in test files
 - functions with empty bodies or those with just a return stmt
 
@@ -623,9 +675,11 @@ To reduce false positives it ignores:
 
 check for unused results of calls to some functions
 
-Some functions like fmt.Errorf return a result and have no side effects,
-so it is always a mistake to discard the result. This analyzer reports
-calls to certain functions in which the result of the call is ignored.
+Some functions like fmt.Errorf return a result and have no side
+effects, so it is always a mistake to discard the result. Other
+functions may return an error that must not be ignored, or a cleanup
+operation that must be called. This analyzer reports calls to
+functions like these when the result of the call is ignored.
 
 The set of functions may be controlled using flags.
 
@@ -751,6 +805,22 @@ This analyzer provides diagnostics for any struct literals that do not have
 any fields initialized. Because the suggested fix for this analysis is
 expensive to compute, callers should compute it separately, using the
 SuggestedFix function below.
+
+
+**Enabled by default.**
+
+## **infertypeargs**
+
+check for unnecessary type arguments in call expressions
+
+Explicit type arguments may be omitted from call expressions if they can be
+inferred from function arguments, or from other type arguments:
+
+	func f[T any](T) {}
+	
+	func _() {
+		f[string]("foo") // string could be inferred
+	}
 
 
 **Enabled by default.**
