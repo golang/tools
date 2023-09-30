@@ -142,11 +142,13 @@ func findFileMarker(data, lineSep []byte) (before []byte, name string, lineSepar
 
 // isMarker checks whether data begins with a file marker line.
 // If so, it returns the name from the line, used line separator and the data after the line.
-// Otherwise it returns name == "" with unspecified lineSeparator and after.
+// Otherwise it returns name == "" with nil lineSeparator ("\n") and after.
+// If the data does not contain a new line the default line separator is returned ("\n").
 func isMarker(data []byte) (name string, lineSeparator, after []byte) {
 	if !bytes.HasPrefix(data, marker) {
 		return "", nil, nil
 	}
+	lineSeparator = lf
 	if i := bytes.IndexByte(data, '\n'); i >= 0 {
 		if len(data) > 0 && data[i-1] == '\r' {
 			data, after = data[:i-1], data[i+1:]
@@ -157,7 +159,7 @@ func isMarker(data []byte) (name string, lineSeparator, after []byte) {
 		}
 	}
 	if !(bytes.HasSuffix(data, markerEnd) && len(data) >= len(marker)+len(markerEnd)) {
-		return "", lineSeparator, nil
+		return "", nil, nil
 	}
 	return strings.TrimSpace(string(data[len(marker) : len(data)-len(markerEnd)])), lineSeparator, after
 }
