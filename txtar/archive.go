@@ -54,7 +54,7 @@ type File struct {
 // It is assumed that the Archive data structure is well-formed:
 // a.Comment and all a.File[i].Data contain no file marker lines,
 // and all a.File[i].Name is non-empty. Format uses line separators
-// based on the first line separator encountered in the comment section.
+// based on the line separator encountered in the comment section.
 func Format(a *Archive) []byte {
 	firstSep, ok := lineEnd(a.Comment)
 	if !ok {
