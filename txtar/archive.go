@@ -145,7 +145,7 @@ func findFileMarker(data, lineSep []byte) (before []byte, name string, lineSepar
 // Otherwise it returns name == "" with unspecified lineSeparator and after.
 func isMarker(data []byte) (name string, lineSeparator, after []byte) {
 	if !bytes.HasPrefix(data, marker) {
-		return "", lineSeparator, nil
+		return "", nil, nil
 	}
 	if i := bytes.IndexByte(data, '\n'); i >= 0 {
 		if len(data) > 0 && data[i-1] == '\r' {
