@@ -168,11 +168,11 @@ func isMarker(data []byte) (name string, lineSeparator, after []byte) {
 // lineSeparator states if \n or \r\n should be appended as a line separator if it is not present.
 // Otherwise fixNL returns a new slice consisting of data with a final lineSeparator added.
 func fixNL(data , lineSeparator []byte) []byte {
-	if len(data) == 0 || bytes.HasSuffix(data, lf) || bytes.HasSuffix(data, crlf) {
+	if len(data) == 0 || bytes.HasSuffix(data, lf) {
 		return data
 	}
 	d := make([]byte, len(data)+len(lineSeparator))
 	copy(d, data)
-	copy(d[len(d)-len(lineSeparator):], lineSeparator)
+	copy(d[len(data):], lineSeparator)
 	return d
 }
