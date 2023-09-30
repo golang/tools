@@ -134,7 +134,7 @@ func findFileMarker(data, lineSep []byte) (before []byte, name string, lineSepar
 		}
 		j := bytes.Index(data[i:], newlineMarker)
 		if j < 0 {
-			return fixNL(data, lineSep), "", lineSeparator, nil
+			return fixNL(data, lineSep), "", lineSep, nil
 		}
 		i += j + 1 // positioned at start of new possible marker
 	}
