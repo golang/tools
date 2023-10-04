@@ -133,7 +133,7 @@ func (f *Function) addParam(name string, typ types.Type, pos token.Pos) *Paramet
 	return v
 }
 
-func (f *Function) addParamObj(obj types.Object) *Parameter {
+func (f *Function) addParamObj(obj *types.Var) *Parameter {
 	name := obj.Name()
 	if name == "" {
 		name = fmt.Sprintf("arg%d", len(f.Params))
@@ -146,14 +146,9 @@ func (f *Function) addParamObj(obj types.Object) *Parameter {
 // addSpilledParam declares a parameter that is pre-spilled to the
 // stack; the function body will load/store the spilled location.
 // Subsequent lifting will eliminate spills where possible.
-func (f *Function) addSpilledParam(obj types.Object) {
+func (f *Function) addSpilledParam(obj *types.Var) {
 	param := f.addParamObj(obj)
-	spill := &Alloc{Comment: obj.Name()}
-	spill.setType(types.NewPointer(param.Type()))
-	spill.setPos(obj.Pos())
-	f.objects[obj] = spill
-	f.Locals = append(f.Locals, spill)
-	f.emit(spill)
+	spill := emitLocalVar(f, obj)
 	f.emit(&Store{Addr: spill, Val: param})
 }
 
@@ -177,7 +172,7 @@ func (f *Function) createSyntacticParams(recv *ast.FieldList, functype *ast.Func
 	if recv != nil {
 		for _, field := range recv.List {
 			for _, n := range field.Names {
-				f.addSpilledParam(f.info.Defs[n])
+				f.addSpilledParam(identVar(f, n))
 			}
 			// Anonymous receiver?  No need to spill.
 			if field.Names == nil {
@@ -191,7 +186,7 @@ func (f *Function) createSyntacticParams(recv *ast.FieldList, functype *ast.Func
 		n := len(f.Params) // 1 if has recv, 0 otherwise
 		for _, field := range functype.Params.List {
 			for _, n := range field.Names {
-				f.addSpilledParam(f.info.Defs[n])
+				f.addSpilledParam(identVar(f, n))
 			}
 			// Anonymous parameter?  No need to spill.
 			if field.Names == nil {
@@ -205,7 +200,8 @@ func (f *Function) createSyntacticParams(recv *ast.FieldList, functype *ast.Func
 		for _, field := range functype.Results.List {
 			// Implicit "var" decl of locals for named results.
 			for _, n := range field.Names {
-				f.namedResults = append(f.namedResults, f.addLocalForIdent(n))
+				namedResult := emitLocalVar(f, identVar(f, n))
+				f.namedResults = append(f.namedResults, namedResult)
 			}
 		}
 	}
@@ -386,32 +382,6 @@ func (f *Function) debugInfo() bool {
 	// debug info for instantiations follows the debug info of their origin.
 	p := f.declaredPackage()
 	return p != nil && p.debug
-}
-
-// addNamedLocal creates a local variable, adds it to function f and
-// returns it.  Its name and type are taken from obj.  Subsequent
-// calls to f.lookup(obj) will return the same local.
-func (f *Function) addNamedLocal(obj types.Object) *Alloc {
-	l := f.addLocal(obj.Type(), obj.Pos())
-	l.Comment = obj.Name()
-	f.objects[obj] = l
-	return l
-}
-
-func (f *Function) addLocalForIdent(id *ast.Ident) *Alloc {
-	return f.addNamedLocal(f.info.Defs[id])
-}
-
-// addLocal creates an anonymous local variable of type typ, adds it
-// to function f and returns it.  pos is the optional source location.
-func (f *Function) addLocal(typ types.Type, pos token.Pos) *Alloc {
-	typ = f.typ(typ)
-	v := &Alloc{}
-	v.setType(types.NewPointer(typ))
-	v.setPos(pos)
-	f.Locals = append(f.Locals, v)
-	f.emit(v)
-	return v
 }
 
 // lookup returns the address of the named variable identified by obj
@@ -704,3 +674,8 @@ func (n extentNode) End() token.Pos { return n[1] }
 // function.  Otherwise, it is an opaque Node providing only position
 // information; this avoids pinning the AST in memory.
 func (f *Function) Syntax() ast.Node { return f.syntax }
+
+// identVar returns the variable defined by id.
+func identVar(fn *Function, id *ast.Ident) *types.Var {
+	return fn.info.Defs[id].(*types.Var)
+}

@@ -323,10 +323,8 @@ func (b *builder) builtin(fn *Function, obj *types.Builtin, args []ast.Expr, typ
 				// treat make([]T, n, m) as new([m]T)[:n]
 				cap := m.Int64()
 				at := types.NewArray(ct.Elem(), cap)
-				alloc := emitNew(fn, at, pos)
-				alloc.Comment = "makeslice"
 				v := &Slice{
-					X:    alloc,
+					X:    emitNew(fn, at, pos, "makeslice"),
 					High: n,
 				}
 				v.setPos(pos)
@@ -363,9 +361,7 @@ func (b *builder) builtin(fn *Function, obj *types.Builtin, args []ast.Expr, typ
 		}
 
 	case "new":
-		alloc := emitNew(fn, mustDeref(typ), pos)
-		alloc.Comment = "new"
-		return alloc
+		return emitNew(fn, mustDeref(typ), pos, "new")
 
 	case "len", "cap":
 		// Special case: len or cap of an array or *array is
@@ -432,11 +428,10 @@ func (b *builder) addr(fn *Function, e ast.Expr, escaping bool) lvalue {
 		typ, _ := deref(fn.typeOf(e))
 		var v *Alloc
 		if escaping {
-			v = emitNew(fn, typ, e.Lbrace)
+			v = emitNew(fn, typ, e.Lbrace, "complit")
 		} else {
-			v = fn.addLocal(typ, e.Lbrace)
+			v = emitLocal(fn, typ, e.Lbrace, "complit")
 		}
-		v.Comment = "complit"
 		var sb storebuf
 		b.compLit(fn, v, e, true, &sb)
 		sb.emit(fn)
@@ -1091,9 +1086,8 @@ func (b *builder) emitCallArgs(fn *Function, sig *types.Signature, e *ast.CallEx
 		} else {
 			// Replace a suffix of args with a slice containing it.
 			at := types.NewArray(vt, int64(len(varargs)))
-			a := emitNew(fn, at, token.NoPos)
+			a := emitNew(fn, at, token.NoPos, "varargs")
 			a.setPos(e.Rparen)
-			a.Comment = "varargs"
 			for i, arg := range varargs {
 				iaddr := &IndexAddr{
 					X:     a,
@@ -1140,7 +1134,7 @@ func (b *builder) localValueSpec(fn *Function, spec *ast.ValueSpec) {
 		// 1:1 assignment
 		for i, id := range spec.Names {
 			if !isBlankIdent(id) {
-				fn.addLocalForIdent(id)
+				emitLocalVar(fn, identVar(fn, id))
 			}
 			lval := b.addr(fn, id, false) // non-escaping
 			b.assign(fn, lval, spec.Values[i], true, nil)
@@ -1151,7 +1145,7 @@ func (b *builder) localValueSpec(fn *Function, spec *ast.ValueSpec) {
 		// Locals are implicitly zero-initialized.
 		for _, id := range spec.Names {
 			if !isBlankIdent(id) {
-				lhs := fn.addLocalForIdent(id)
+				lhs := emitLocalVar(fn, identVar(fn, id))
 				if fn.debugInfo() {
 					emitDebugRef(fn, id, lhs, true)
 				}
@@ -1163,7 +1157,7 @@ func (b *builder) localValueSpec(fn *Function, spec *ast.ValueSpec) {
 		tuple := b.exprN(fn, spec.Values[0])
 		for i, id := range spec.Names {
 			if !isBlankIdent(id) {
-				fn.addLocalForIdent(id)
+				emitLocalVar(fn, identVar(fn, id))
 				lhs := b.addr(fn, id, false) // non-escaping
 				lhs.store(fn, emitExtract(fn, tuple, i))
 			}
@@ -1183,8 +1177,8 @@ func (b *builder) assignStmt(fn *Function, lhss, rhss []ast.Expr, isDef bool) {
 		var lval lvalue = blank{}
 		if !isBlankIdent(lhs) {
 			if isDef {
-				if obj := fn.info.Defs[lhs.(*ast.Ident)]; obj != nil {
-					fn.addNamedLocal(obj)
+				if obj, ok := fn.info.Defs[lhs.(*ast.Ident)].(*types.Var); ok {
+					emitLocalVar(fn, obj)
 					isZero[i] = true
 				}
 			}
@@ -1293,9 +1287,7 @@ func (b *builder) compLit(fn *Function, addr Value, e *ast.CompositeLit, isZero 
 		switch t := t.(type) {
 		case *types.Slice:
 			at = types.NewArray(t.Elem(), b.arrayLen(fn, e.Elts))
-			alloc := emitNew(fn, at, e.Lbrace)
-			alloc.Comment = "slicelit"
-			array = alloc
+			array = emitNew(fn, at, e.Lbrace, "slicelit")
 		case *types.Array:
 			at = t
 			array = addr
@@ -1583,13 +1575,13 @@ func (b *builder) typeSwitchStmt(fn *Function, s *ast.TypeSwitchStmt, label *lbl
 }
 
 func (b *builder) typeCaseBody(fn *Function, cc *ast.CaseClause, x Value, done *BasicBlock) {
-	if obj := fn.info.Implicits[cc]; obj != nil {
+	if obj, ok := fn.info.Implicits[cc].(*types.Var); ok {
 		// In a switch y := x.(type), each case clause
 		// implicitly declares a distinct object y.
 		// In a single-type case, y has that type.
 		// In multi-type cases, 'case nil' and default,
 		// y has the same type as the interface operand.
-		emitStore(fn, fn.addNamedLocal(obj), x, obj.Pos())
+		emitStore(fn, emitLocalVar(fn, obj), x, obj.Pos())
 	}
 	fn.targets = &targets{
 		tail:   fn.targets,
@@ -1738,7 +1730,7 @@ func (b *builder) selectStmt(fn *Function, s *ast.SelectStmt, label *lblock) {
 
 		case *ast.AssignStmt: // x := <-states[state].Chan
 			if comm.Tok == token.DEFINE {
-				fn.addLocalForIdent(comm.Lhs[0].(*ast.Ident))
+				emitLocalVar(fn, identVar(fn, comm.Lhs[0].(*ast.Ident)))
 			}
 			x := b.addr(fn, comm.Lhs[0], false) // non-escaping
 			v := emitExtract(fn, sel, r)
@@ -1749,7 +1741,7 @@ func (b *builder) selectStmt(fn *Function, s *ast.SelectStmt, label *lblock) {
 
 			if len(comm.Lhs) == 2 { // x, ok := ...
 				if comm.Tok == token.DEFINE {
-					fn.addLocalForIdent(comm.Lhs[1].(*ast.Ident))
+					emitLocalVar(fn, identVar(fn, comm.Lhs[1].(*ast.Ident)))
 				}
 				ok := b.addr(fn, comm.Lhs[1], false) // non-escaping
 				ok.store(fn, emitExtract(fn, sel, 1))
@@ -1874,7 +1866,7 @@ func (b *builder) rangeIndexed(fn *Function, x Value, tv types.Type, pos token.P
 		length = fn.emit(&c)
 	}
 
-	index := fn.addLocal(tInt, token.NoPos)
+	index := emitLocal(fn, tInt, token.NoPos, "rangeindex")
 	emitStore(fn, index, intConst(-1), pos)
 
 	loop = fn.newBasicBlock("rangeindex.loop")
@@ -2053,7 +2045,7 @@ func (b *builder) rangeInt(fn *Function, x Value, tk types.Type, pos token.Pos) 
 	}
 
 	T := x.Type()
-	iter := fn.addLocal(T, token.NoPos)
+	iter := emitLocal(fn, T, token.NoPos, "rangeint.iter")
 	// x may be unsigned. Avoid initializing x to -1.
 
 	body := fn.newBasicBlock("rangeint.body")
@@ -2100,10 +2092,10 @@ func (b *builder) rangeStmt(fn *Function, s *ast.RangeStmt, label *lblock) {
 		// using := never redeclares an existing variable; it
 		// always creates a new one.
 		if tk != nil {
-			fn.addLocalForIdent(s.Key.(*ast.Ident))
+			emitLocalVar(fn, identVar(fn, s.Key.(*ast.Ident)))
 		}
 		if tv != nil {
-			fn.addLocalForIdent(s.Value.(*ast.Ident))
+			emitLocalVar(fn, identVar(fn, s.Value.(*ast.Ident)))
 		}
 	}
 

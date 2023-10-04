@@ -318,7 +318,7 @@ type Function struct {
 	Prog      *Program      // enclosing program
 	Params    []*Parameter  // function parameters; for methods, includes receiver
 	FreeVars  []*FreeVar    // free variables whose values must be supplied by closure
-	Locals    []*Alloc      // local variables of this function
+	Locals    []*Alloc      // frame-allocated variables of this function
 	Blocks    []*BasicBlock // basic blocks of the function; nil => external
 	Recover   *BasicBlock   // optional; control transfers here after recovered panic
 	AnonFuncs []*Function   // anonymous functions directly beneath this one
@@ -484,15 +484,12 @@ type Builtin struct {
 // type of the allocated variable is actually
 // Type().Underlying().(*types.Pointer).Elem().
 //
-// If Heap is false, Alloc allocates space in the function's
-// activation record (frame); we refer to an Alloc(Heap=false) as a
-// "local" alloc.  Each local Alloc returns the same address each time
-// it is executed within the same activation; the space is
-// re-initialized to zero.
+// If Heap is false, Alloc zero-initializes the same local variable in
+// the call frame and returns its address; in this case the Alloc must
+// be present in Function.Locals. We call this a "local" alloc.
 //
-// If Heap is true, Alloc allocates space in the heap; we
-// refer to an Alloc(Heap=true) as a "new" alloc.  Each new Alloc
-// returns a different address each time it is executed.
+// If Heap is true, Alloc allocates a new zero-initialized variable
+// each time the instruction is executed. We call this a "new" alloc.
 //
 // When Alloc is applied to a channel, map or slice type, it returns
 // the address of an uninitialized (nil) reference of that kind; store
