@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/versions"
 	"golang.org/x/tools/refactor/satisfy"
 )
 
@@ -228,6 +229,7 @@ func constraints(t *testing.T, src string) []string {
 		Selections: make(map[*ast.SelectorExpr]*types.Selection),
 	}
 	typeparams.InitInstanceInfo(info)
+	versions.InitFileVersions(info)
 	conf := types.Config{
 		Importer: importer.Default(),
 	}

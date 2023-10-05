@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/versions"
 )
 
 // NewProgram returns a new SSA Program.
@@ -245,7 +246,7 @@ func (prog *Program) CreatePackage(pkg *types.Package, files []*ast.File, info *
 	if len(files) > 0 {
 		// Go source package.
 		for _, file := range files {
-			goversion := goversionOf(p, file)
+			goversion := versions.Lang(versions.FileVersions(p.info, file))
 			for _, decl := range file.Decls {
 				membersFromDecl(p, decl, goversion)
 			}

@@ -82,6 +82,7 @@ import (
 	"sync"
 
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/versions"
 )
 
 type opaqueType struct {
@@ -1744,8 +1745,7 @@ func (b *builder) forStmt(fn *Function, s *ast.ForStmt, label *lblock) {
 	// Use forStmtGo122 instead if it applies.
 	if s.Init != nil {
 		if assign, ok := s.Init.(*ast.AssignStmt); ok && assign.Tok == token.DEFINE {
-			major, minor := parseGoVersion(fn.goversion)
-			afterGo122 := major >= 1 && minor >= 22
+			afterGo122 := versions.Compare(fn.goversion, "go1.21") > 0
 			if afterGo122 {
 				b.forStmtGo122(fn, s, label)
 				return
@@ -2195,9 +2195,7 @@ func (b *builder) rangeStmt(fn *Function, s *ast.RangeStmt, label *lblock) {
 		}
 	}
 
-	major, minor := parseGoVersion(fn.goversion)
-	afterGo122 := major >= 1 && minor >= 22
-
+	afterGo122 := versions.Compare(fn.goversion, "go1.21") > 0
 	if s.Tok == token.DEFINE && !afterGo122 {
 		// pre-go1.22: If iteration variables are defined (:=), this
 		// occurs once outside the loop.
