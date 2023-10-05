@@ -104,15 +104,16 @@ type CompletionItem struct {
 
 // completionOptions holds completion specific configuration.
 type completionOptions struct {
-	unimported        bool
-	documentation     bool
-	fullDocumentation bool
-	placeholders      bool
-	literal           bool
-	snippets          bool
-	postfix           bool
-	matcher           source.Matcher
-	budget            time.Duration
+	unimported            bool
+	documentation         bool
+	fullDocumentation     bool
+	placeholders          bool
+	literal               bool
+	snippets              bool
+	postfix               bool
+	matcher               source.Matcher
+	budget                time.Duration
+	completeFunctionCalls bool
 }
 
 // Snippet is a convenience returns the snippet if available, otherwise
@@ -543,15 +544,16 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 			enabled: opts.DeepCompletion,
 		},
 		opts: &completionOptions{
-			matcher:           opts.Matcher,
-			unimported:        opts.CompleteUnimported,
-			documentation:     opts.CompletionDocumentation && opts.HoverKind != source.NoDocumentation,
-			fullDocumentation: opts.HoverKind == source.FullDocumentation,
-			placeholders:      opts.UsePlaceholders,
-			literal:           opts.LiteralCompletions && opts.InsertTextFormat == protocol.SnippetTextFormat,
-			budget:            opts.CompletionBudget,
-			snippets:          opts.InsertTextFormat == protocol.SnippetTextFormat,
-			postfix:           opts.ExperimentalPostfixCompletions,
+			matcher:               opts.Matcher,
+			unimported:            opts.CompleteUnimported,
+			documentation:         opts.CompletionDocumentation && opts.HoverKind != source.NoDocumentation,
+			fullDocumentation:     opts.HoverKind == source.FullDocumentation,
+			placeholders:          opts.UsePlaceholders,
+			literal:               opts.LiteralCompletions && opts.InsertTextFormat == protocol.SnippetTextFormat,
+			budget:                opts.CompletionBudget,
+			snippets:              opts.InsertTextFormat == protocol.SnippetTextFormat,
+			postfix:               opts.ExperimentalPostfixCompletions,
+			completeFunctionCalls: opts.CompleteFunctionCalls,
 		},
 		// default to a matcher that always matches
 		matcher:        prefixMatcher(""),
@@ -595,6 +597,17 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 
 	// Deep search collected candidates and their members for more candidates.
 	c.deepSearch(ctx, 1, deadline)
+
+	// At this point we have a sufficiently complete set of results, and want to
+	// return as close to the completion budget as possible. Previously, we
+	// avoided cancelling the context because it could result in partial results
+	// for e.g. struct fields. At this point, we have a minimal valid set of
+	// candidates, and so truncating due to context cancellation is acceptable.
+	if c.opts.budget > 0 {
+		timeoutDuration := time.Until(c.startTime.Add(c.opts.budget))
+		ctx, cancel = context.WithTimeout(ctx, timeoutDuration)
+		defer cancel()
+	}
 
 	for _, callback := range c.completionCallbacks {
 		if deadline == nil || time.Now().Before(*deadline) {
@@ -1283,7 +1296,7 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 				Label:      id.Name,
 				Detail:     fmt.Sprintf("%s (from %q)", strings.ToLower(tok.String()), m.PkgPath),
 				InsertText: id.Name,
-				Score:      unimportedScore(relevances[path]),
+				Score:      float64(score) * unimportedScore(relevances[path]),
 			}
 			switch tok {
 			case token.FUNC:
@@ -1307,32 +1320,18 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 
 			// For functions, add a parameter snippet.
 			if fn != nil {
-				var sn snippet.Builder
-				sn.WriteText(id.Name)
-
-				paramList := func(open, close string, list *ast.FieldList) {
+				paramList := func(list *ast.FieldList) []string {
+					var params []string
 					if list != nil {
 						var cfg printer.Config // slight overkill
-						var nparams int
 						param := func(name string, typ ast.Expr) {
-							if nparams > 0 {
-								sn.WriteText(", ")
-							}
-							nparams++
-							if c.opts.placeholders {
-								sn.WritePlaceholder(func(b *snippet.Builder) {
-									var buf strings.Builder
-									buf.WriteString(name)
-									buf.WriteByte(' ')
-									cfg.Fprint(&buf, token.NewFileSet(), typ)
-									b.WriteText(buf.String())
-								})
-							} else {
-								sn.WriteText(name)
-							}
+							var buf strings.Builder
+							buf.WriteString(name)
+							buf.WriteByte(' ')
+							cfg.Fprint(&buf, token.NewFileSet(), typ)
+							params = append(params, buf.String())
 						}
 
-						sn.WriteText(open)
 						for _, field := range list.List {
 							if field.Names != nil {
 								for _, name := range field.Names {
@@ -1342,13 +1341,14 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 								param("_", field.Type)
 							}
 						}
-						sn.WriteText(close)
 					}
+					return params
 				}
 
-				paramList("[", "]", typeparams.ForFuncType(fn.Type))
-				paramList("(", ")", fn.Type.Params)
-
+				tparams := paramList(fn.Type.TypeParams)
+				params := paramList(fn.Type.Params)
+				var sn snippet.Builder
+				c.functionCallSnippet(id.Name, tparams, params, &sn)
 				item.snippet = &sn
 			}
 
@@ -1381,6 +1381,10 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	ctx, cancel := context.WithCancel(ctx)
 	var mu sync.Mutex
 	add := func(pkgExport imports.PackageExport) {
+		if ignoreUnimportedCompletion(pkgExport.Fix) {
+			return
+		}
+
 		mu.Lock()
 		defer mu.Unlock()
 		// TODO(adonovan): what if the actual package has a vendor/ prefix?
@@ -1430,6 +1434,13 @@ func (c *completer) packageMembers(pkg *types.Package, score float64, imp *impor
 			addressable: isVar(obj),
 		})
 	}
+}
+
+// ignoreUnimportedCompletion reports whether an unimported completion
+// resulting in the given import should be ignored.
+func ignoreUnimportedCompletion(fix *imports.ImportFix) bool {
+	// golang/go#60062: don't add unimported completion to golang.org/toolchain.
+	return fix != nil && strings.HasPrefix(fix.StmtInfo.ImportPath, "golang.org/toolchain")
 }
 
 func (c *completer) methodsAndFields(typ types.Type, addressable bool, imp *importInfo, cb func(candidate)) {
@@ -1744,6 +1755,9 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 
 	var mu sync.Mutex
 	add := func(pkg imports.ImportFix) {
+		if ignoreUnimportedCompletion(&pkg) {
+			return
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		if _, ok := seen[pkg.IdentName]; ok {

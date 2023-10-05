@@ -45,6 +45,12 @@ func TestData(t *testing.T) {
 		t.Run(filepath.Base(file), func(t *testing.T) {
 			t.Parallel()
 
+			// The few tests that use cgo should be in
+			// files whose name includes "cgo".
+			if strings.Contains(t.Name(), "cgo") {
+				testenv.NeedsTool(t, "cgo")
+			}
+
 			// Extract archive to temporary tree.
 			ar, err := txtar.ParseFile(file)
 			if err != nil {
@@ -231,7 +237,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 		}
 	}
 
-	calleeDecl, err := findFuncByPosition(calleePkg, caller.Fset.Position(fn.Pos()))
+	calleeDecl, err := findFuncByPosition(calleePkg, caller.Fset.PositionFor(fn.Pos(), false))
 	if err != nil {
 		return err
 	}
@@ -297,7 +303,7 @@ func findFuncByPosition(pkg *packages.Package, posn token.Position) (*ast.FuncDe
 		// them, so how are we supposed to find the source? Yuck!
 		// Ugh. need to samefile? Nope $GOROOT just won't work
 		// This is highly client specific anyway.
-		posn2 := pkg.Fset.Position(decl.Name.Pos())
+		posn2 := pkg.Fset.PositionFor(decl.Name.Pos(), false)
 		return posn.Filename == posn2.Filename &&
 			posn.Line == posn2.Line
 	}
@@ -311,18 +317,27 @@ func findFuncByPosition(pkg *packages.Package, posn token.Position) (*ast.FuncDe
 	return nil, fmt.Errorf("can't find FuncDecl at %v in package %q", posn, pkg.PkgPath)
 }
 
-// TestTable is a table driven test, enabling more compact expression
-// of single-package test cases than is possible with the txtar notation.
-func TestTable(t *testing.T) {
-	// Each callee must declare a function or method named f,
-	// and each caller must call it.
-	const funcName = "f"
+// Each callee must declare a function or method named f,
+// and each caller must call it.
+const funcName = "f"
 
-	var tests = []struct {
-		descr          string
-		callee, caller string // Go source files (sans package decl) of caller, callee
-		want           string // expected new portion of caller file, or "error: regexp"
-	}{
+// A testcase is an item in a table-driven test.
+//
+// The table-driven tests are less flexible, but enable more compact
+// expression of single-package test cases than is possible with the
+// txtar notation.
+//
+// TODO(adonovan): improve coverage of the cross product of each
+// strategy with the checklist of concerns enumerated in the package
+// doc comment.
+type testcase struct {
+	descr          string
+	callee, caller string // Go source files (sans package decl) of caller, callee
+	want           string // expected new portion of caller file, or "error: regexp"
+}
+
+func TestErrors(t *testing.T) {
+	runTests(t, []testcase{
 		{
 			"Generic functions are not yet supported.",
 			`func f[T any](x T) T { return x }`,
@@ -335,11 +350,16 @@ func TestTable(t *testing.T) {
 			`var _ = G[int]{}.f(0)`,
 			`error: type parameters are not yet supported`,
 		},
+	})
+}
+
+func TestBasics(t *testing.T) {
+	runTests(t, []testcase{
 		{
 			"Basic",
 			`func f(x int) int { return x }`,
 			`var _ = f(0)`,
-			`var _ = (0)`,
+			`var _ = 0`,
 		},
 		{
 			"Empty body, no arg effects.",
@@ -354,10 +374,184 @@ func TestTable(t *testing.T) {
 			`func _() { _ = recover().(int) }`,
 		},
 		{
+			"Non-duplicable arguments are not substituted even if pure.",
+			`func f(s string, i int) { print(s, s, i, i) }`,
+			`func _() { f("hi", 0)  }`,
+			`func _() {
+	var s string = "hi"
+	print(s, s, 0, 0)
+}`,
+		},
+		{
+			"Workaround for T(x) misformatting (#63362).",
+			`func f(ch <-chan int) { <-ch }`,
+			`func _(ch chan int) { f(ch) }`,
+			`func _(ch chan int) { <-(<-chan int)(ch) }`,
+		},
+	})
+}
+
+func TestExprStmtReduction(t *testing.T) {
+	runTests(t, []testcase{
+		{
+			"A call in an unrestricted ExprStmt may be replaced by the body stmts.",
+			`func f() { var _ = len("") }`,
+			`func _() { f() }`,
+			`func _() { var _ = len("") }`,
+		},
+		{
+			"ExprStmts in the body of a switch case are unrestricted.",
+			`func f() { x := 1; print(x) }`,
+			`func _() { switch { case true: f() } }`,
+			`func _() {
+	switch {
+	case true:
+		x := 1
+		print(x)
+	}
+}`,
+		},
+		{
+			"ExprStmts in the body of a select case are unrestricted.",
+			`func f() { x := 1; print(x) }`,
+			`func _() { select { default: f() } }`,
+			`func _() {
+	select {
+	default:
+		x := 1
+		print(x)
+	}
+}`,
+		},
+		{
+			"Some ExprStmt contexts are restricted to simple statements.",
+			`func f() { var _ = len("") }`,
+			`func _(cond bool) { if f(); cond {} }`,
+			`func _(cond bool) {
+	if func() { var _ = len("") }(); cond {
+	}
+}`,
+		},
+		{
+			"Braces must be preserved to avoid a name conflict (decl before).",
+			`func f() { x := 1; print(x) }`,
+			`func _() { x := 2; print(x); f() }`,
+			`func _() {
+	x := 2
+	print(x)
+	{
+		x := 1
+		print(x)
+	}
+}`,
+		},
+		{
+			"Braces must be preserved to avoid a name conflict (decl after).",
+			`func f() { x := 1; print(x) }`,
+			`func _() { f(); x := 2; print(x) }`,
+			`func _() {
+	{
+		x := 1
+		print(x)
+	}
+	x := 2
+	print(x)
+}`,
+		},
+		{
+			"Braces must be preserved to avoid a forward jump across a decl.",
+			`func f() { x := 1; print(x) }`,
+			`func _() { goto label; f(); label: }`,
+			`func _() {
+	goto label
+	{
+		x := 1
+		print(x)
+	}
+label:
+}`,
+		},
+	})
+}
+
+func TestPrecedenceParens(t *testing.T) {
+	// Ensure that parens are inserted when (and only when) necessary
+	// around the replacement for the call expression. (This is a special
+	// case in the way the inliner uses a combination of AST formatting
+	// for the call and text splicing for the rest of the file.)
+	runTests(t, []testcase{
+		{
+			"Multiplication in addition context (no parens).",
+			`func f(x, y int) int { return x * y }`,
+			`func _() { _ = 1 + f(2, 3) }`,
+			`func _() { _ = 1 + 2*3 }`,
+		},
+		{
+			"Addition in multiplication context (parens).",
+			`func f(x, y int) int { return x + y }`,
+			`func _() { _ = 1 * f(2, 3) }`,
+			`func _() { _ = 1 * (2 + 3) }`,
+		},
+		{
+			"Addition in negation context (parens).",
+			`func f(x, y int) int { return x + y }`,
+			`func _() { _ = -f(1, 2) }`,
+			`func _() { _ = -(1 + 2) }`,
+		},
+		{
+			"Addition in call context (no parens).",
+			`func f(x, y int) int { return x + y }`,
+			`func _() { println(f(1, 2)) }`,
+			`func _() { println(1 + 2) }`,
+		},
+		{
+			"Addition in slice operand context (parens).",
+			`func f(x, y string) string { return x + y }`,
+			`func _() { _ = f("x",  "y")[1:2] }`,
+			`func _() { _ = ("x" + "y")[1:2] }`,
+		},
+		{
+			"String literal in slice operand context (no parens).",
+			`func f(x string) string { return x }`,
+			`func _() { _ = f("xy")[1:2] }`,
+			`func _() { _ = "xy"[1:2] }`,
+		},
+	})
+}
+
+func TestSubstitution(t *testing.T) {
+	runTests(t, []testcase{
+		{
+			"Arg to unref'd param can be eliminated if has no effects.",
+			`func f(x, y int) {}; var global int`,
+			`func _() { f(0, global) }`,
+			`func _() {}`,
+		},
+		{
+			"But not if it may contain last reference to a caller local var.",
+			`func f(int) {}`,
+			`func _() { var local int; f(local) }`,
+			`func _() { var local int; _ = local }`,
+		},
+		{
+			"Regression test for detection of shadowing in nested functions.",
+			`func f(x int) { _ = func() { y := 1; print(y); print(x) } }`,
+			`func _(y int) { f(y) } `,
+			`func _(y int) {
+	var x int = y
+	_ = func() { y := 1; print(y); print(x) }
+}`,
+		},
+	})
+}
+
+func TestTailCallStrategy(t *testing.T) {
+	runTests(t, []testcase{
+		{
 			"Tail call.",
 			`func f() int { return 1 }`,
 			`func _() int { return f() }`,
-			`func _() int { return (1) }`,
+			`func _() int { return 1 }`,
 		},
 		{
 			"Void tail call.",
@@ -371,6 +565,30 @@ func TestTable(t *testing.T) {
 			`func _() { f() }`,
 			`func _() { func() { defer f(); println() }() }`,
 		},
+		// Tests for issue #63336:
+		{
+			"Tail call with non-trivial return conversion (caller.sig = callee.sig).",
+			`func f() error { if true { return nil } else { return e } }; var e struct{error}`,
+			`func _() error { return f() }`,
+			`func _() error {
+	if true {
+		return nil
+	} else {
+		return e
+	}
+}`,
+		},
+		{
+			"Tail call with non-trivial return conversion (caller.sig != callee.sig).",
+			`func f() error { return E{} }; type E struct{error}`,
+			`func _() any { return f() }`,
+			`func _() any { return func() error { return E{} }() }`,
+		},
+	})
+}
+
+func TestSpreadCalls(t *testing.T) {
+	runTests(t, []testcase{
 		{
 			"Edge case: cannot literalize spread method call.",
 			`type I int
@@ -382,6 +600,28 @@ func TestTable(t *testing.T) {
 			`func _() I { return recover().(I).f(g()) }`,
 			`error: can't yet inline spread call to method`,
 		},
+		{
+			"Spread argument evaluated for effect.",
+			`func f(int, int) {}; func g() (int, int)`,
+			`func _() { f(g())  }`,
+			`func _() { _, _ = g() }`,
+		},
+		{
+			"Edge case: receiver and spread argument, both evaluated for effect.",
+			`type T int; func (T) f(int, int) {}; func g() (int, int)`,
+			`func _() { T(0).f(g())  }`,
+			`func _() {
+	var (
+		_    = T(0)
+		_, _ = g()
+	)
+}`,
+		},
+	})
+}
+
+func TestVariadic(t *testing.T) {
+	runTests(t, []testcase{
 		{
 			"Variadic cancellation (basic).",
 			`func f(args ...any) { defer f(&args); println(args) }`,
@@ -404,7 +644,7 @@ func TestTable(t *testing.T) {
 			"Variadic elimination (literalization).",
 			`func f(x any, rest ...any) { defer println(x, rest) }`, // defer => literalization
 			`func _() { f(1, 2, 3) }`,
-			`func _() { func(x any) { defer println(x, []any{2, 3}) }(1) }`,
+			`func _() { func() { defer println(any(1), []any{2, 3}) }() }`,
 		},
 		{
 			"Variadic elimination (reduction).",
@@ -430,39 +670,56 @@ func TestTable(t *testing.T) {
 			`func _() { f(g()) }`,
 			`func _() { func(x, y int, rest ...int) { println(x, y, rest) }(g()) }`,
 		},
+	})
+}
+
+func TestParameterBindingDecl(t *testing.T) {
+	runTests(t, []testcase{
 		{
-			"Binding declaration (x eliminated).",
-			`func f(w, x, y any, z int) { println(w, y, z) }; func g(int) int`,
-			`func _() { f(g(0), g(1), g(2), g(3)) }`,
+			"IncDec counts as assignment.",
+			`func f(x int) { x++ }`,
+			`func _() { f(1) }`,
 			`func _() {
-	{
-		var (
-			w, _, y any = g(0), g(1), g(2)
-			z       int = g(3)
-		)
-		println(w, y, z)
-	}
+	var x int = 1
+	x++
 }`,
 		},
 		{
-			"Binding decl in reduction of stmt-context call to { return exprs }",
+			"Binding declaration (x, y, z eliminated).",
+			`func f(w, x, y any, z int) { println(w, y, z) }; func g(int) int`,
+			`func _() { f(g(0), g(1), g(2), g(3)) }`,
+			`func _() {
+	var w, _ any = g(0), g(1)
+	println(w, any(g(2)), g(3))
+}`,
+		},
+		{
+			"Reduction of stmt-context call to { return exprs }, with substitution",
 			`func f(ch chan int) int { return <-ch }; func g() chan int`,
 			`func _() { f(g()) }`,
+			`func _() { <-g() }`,
+		},
+		{
+			// Same again, with callee effects:
+			"Binding decl in reduction of stmt-context call to { return exprs }",
+			`func f(x int) int { return <-h(g(2), x) }; func g(int) int; func h(int, int) chan int`,
+			`func _() { f(g(1)) }`,
 			`func _() {
-	{
-		var ch chan int = g()
-		<-ch
-	}
+	var x int = g(1)
+	<-h(g(2), x)
 }`,
 		},
 		{
 			"No binding decl due to shadowing of int",
-			`func f(int, y any, z int) { defer println(int, y, z) }; func g() int`,
-			`func _() { f(g(), g(), g()) }`,
-			`func _() { func(int, y any, z int) { defer println(int, y, z) }(g(), g(), g()) }
-`,
+			`func f(int, y any, z int) { defer g(0); println(int, y, z) }; func g(int) int`,
+			`func _() { f(g(1), g(2), g(3)) }`,
+			`func _() { func(int, y any, z int) { defer g(0); println(int, y, z) }(g(1), g(2), g(3)) }`,
 		},
-		// Embedded fields:
+	})
+}
+
+func TestEmbeddedFields(t *testing.T) {
+	runTests(t, []testcase{
 		{
 			"Embedded fields in x.f method selection (direct).",
 			`type T int; func (t T) f() { print(t) }; type U struct{ T }`,
@@ -475,20 +732,11 @@ func TestTable(t *testing.T) {
 			`func _(v V) { v.f() }`,
 			`func _(v V) { print(*v.U.T) }`,
 		},
-		// TODO(adonovan): due to former unsoundness in pure(),
-		// the previous outputs of two tests below used to be neater.
-		// A followup analysis (strict effects) will restore tidiness.
 		{
 			"Embedded fields in x.f method selection (implicit &).",
 			`type ( T int; U struct{T}; V struct {U} ); func (t *T) f() { print(t) }`,
 			`func _(v V) { v.f() }`,
-			// was `func _(v V) { print(&v.U.T) }`,
-			`func _(v V) {
-	{
-		var t *T = &v.U.T
-		print(t)
-	}
-}`,
+			`func _(v V) { print(&v.U.T) }`,
 		},
 		// Now the same tests again with T.f(recv).
 		{
@@ -507,18 +755,299 @@ func TestTable(t *testing.T) {
 			"Embedded fields in (*T).f method selection.",
 			`type ( T int; U struct{T}; V struct {U} ); func (t *T) f() { print(t) }`,
 			`func _(v V) { (*V).f(&v) }`,
-			// was `func _(v V) { print(&(&v).U.T) }`,
-			`func _(v V) {
+			`func _(v V) { print(&(&v).U.T) }`,
+		},
+		{
+			// x is a single-assign var, and x.f does not load through a pointer
+			// (despite types.Selection.Indirect=true), so x is pure.
+			"No binding decl is required for recv in method-to-method calls.",
+			`type T struct{}; func (x *T) f() { g(); print(*x) }; func g()`,
+			`func (x *T) _() { x.f() }`,
+			`func (x *T) _() {
+	g()
+	print(*x)
+}`,
+		},
+		{
+			"Same, with implicit &recv.",
+			`type T struct{}; func (x *T) f() { g(); print(*x) }; func g()`,
+			`func (x T) _() { x.f() }`,
+			`func (x T) _() {
 	{
-		var t *T = &(&v).U.T
-		print(t)
+		var x *T = &x
+		g()
+		print(*x)
 	}
 }`,
 		},
-		// TODO(adonovan): improve coverage of the cross
-		// product of each strategy with the checklist of
-		// concerns enumerated in the package doc comment.
+	})
+}
+
+func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
+	runTests(t, []testcase{
+		{
+			"Arguments have effects, but parameters are evaluated in order.",
+			`func f(a, b, c int) { print(a, b, c) }; func g(int) int`,
+			`func _() { f(g(1), g(2), g(3)) }`,
+			`func _() { print(g(1), g(2), g(3)) }`,
+		},
+		{
+			"Arguments have effects, and parameters are evaluated out of order.",
+			`func f(a, b, c int) { print(a, c, b) }; func g(int) int`,
+			`func _() { f(g(1), g(2), g(3)) }`,
+			`func _() {
+	var a, b int = g(1), g(2)
+	print(a, g(3), b)
+}`,
+		},
+		{
+			"Pure arguments may commute with argument that have effects.",
+			`func f(a, b, c int) { print(a, c, b) }; func g(int) int`,
+			`func _() { f(g(1), 2, g(3)) }`,
+			`func _() { print(g(1), g(3), 2) }`,
+		},
+		{
+			"Impure arguments may commute with each other.",
+			`func f(a, b, c, d int) { print(a, c, b, d) }; func g(int) int; var x, y int`,
+			`func _() { f(g(1), x, y, g(2)) }`,
+			`func _() { print(g(1), y, x, g(2)) }`,
+		},
+		{
+			"Impure arguments do not commute with arguments that have effects (1)",
+			`func f(a, b, c, d int) { print(a, c, b, d) }; func g(int) int; var x, y int`,
+			`func _() { f(g(1), g(2), y, g(3)) }`,
+			`func _() {
+	var a, b int = g(1), g(2)
+	print(a, y, b, g(3))
+}`,
+		},
+		{
+			"Impure arguments do not commute with those that have effects (2).",
+			`func f(a, b, c, d int) { print(a, c, b, d) }; func g(int) int; var x, y int`,
+			`func _() { f(g(1), y, g(2), g(3)) }`,
+			`func _() {
+	var a, b int = g(1), y
+	print(a, g(2), b, g(3))
+}`,
+		},
+		{
+			"Callee effects commute with pure arguments.",
+			`func f(a, b, c int) { print(a, c, recover().(int), b) }; func g(int) int`,
+			`func _() { f(g(1), 2, g(3)) }`,
+			`func _() { print(g(1), g(3), recover().(int), 2) }`,
+		},
+		{
+			"Callee reads may commute with impure arguments.",
+			`func f(a, b int) { print(a, x, b) }; func g(int) int; var x, y int`,
+			`func _() { f(g(1), y) }`,
+			`func _() { print(g(1), x, y) }`,
+		},
+		{
+			"All impure parameters preceding a read hazard must be kept.",
+			`func f(a, b, c int) { print(a, b, recover().(int), c) }; var x, y, z int`,
+			`func _() { f(x, y, z) }`,
+			`func _() {
+	var c int = z
+	print(x, y, recover().(int), c)
+}`,
+		},
+		{
+			"All parameters preceding a write hazard must be kept.",
+			`func f(a, b, c int) { print(a, b, recover().(int), c) }; func g(int) int; var x, y, z int`,
+			`func _() { f(x, y, g(0))  }`,
+			`func _() {
+	var a, b, c int = x, y, g(0)
+	print(a, b, recover().(int), c)
+}`,
+		},
+		{
+			"[W1 R0 W2 W4 R3] -- test case for second iteration of effect loop",
+			`func f(a, b, c, d, e int) { print(b, a, c, e, d) }; func g(int) int; var x, y int`,
+			`func _() { f(x, g(1), g(2), y, g(3))  }`,
+			`func _() {
+	var a, b, c, d int = x, g(1), g(2), y
+	print(b, a, c, g(3), d)
+}`,
+		},
+		{
+			// In this example, the set() call is rejected as a substitution
+			// candidate due to a shadowing conflict (x). This must entail that the
+			// selection x.y (R) is also rejected, because it is lower numbered.
+			//
+			// Incidentally this program (which panics when executed) illustrates
+			// that although effects occur left-to-right, read operations such
+			// as x.y are not ordered wrt writes, depending on the compiler.
+			// Changing x.y to identity(x).y forces the ordering and avoids the panic.
+			"Hazards with args already rejected (e.g. due to shadowing) are detected too.",
+			`func f(x, y int) int { return x + y }; func set[T any](ptr *T, old, new T) int { println(old); *ptr = new; return 0; }`,
+			`func _() { x := new(struct{ y int }); f(x.y, set(&x, x, nil)) }`,
+			`func _() {
+	x := new(struct{ y int })
+	{
+		var x, y int = x.y, set(&x, x, nil)
+		_ = x + y
 	}
+}`,
+		},
+		{
+			// Rejection of a later parameter for reasons other than callee
+			// effects (e.g. escape) may create hazards with lower-numbered
+			// parameters that require them to be rejected too.
+			"Hazards with already eliminated parameters (variant)",
+			`func f(x, y int) { _ = &y }; func g(int) int`,
+			`func _() { f(g(1), g(2)) }`,
+			`func _() {
+	var _, y int = g(1), g(2)
+	_ = &y
+}`,
+		},
+		{
+			// In this case g(2) is rejected for substitution because it is
+			// unreferenced but has effects, so parameter x must also be rejected
+			// so that its argument v can be evaluated earlier in the binding decl.
+			"Hazards with already eliminated parameters (unreferenced fx variant)",
+			`func f(x, y int) { _ = x }; func g(int) int; var v int`,
+			`func _() { f(v, g(2)) }`,
+			`func _() {
+	var x, _ int = v, g(2)
+	_ = x
+}`,
+		},
+		{
+			"Defer f() evaluates f() before unknown effects",
+			`func f(int, y any, z int) { defer println(int, y, z) }; func g(int) int`,
+			`func _() { f(g(1), g(2), g(3)) }`,
+			`func _() { func() { defer println(any(g(1)), any(g(2)), g(3)) }() }`,
+		},
+	})
+}
+
+func TestNamedResultVars(t *testing.T) {
+	runTests(t, []testcase{
+		{
+			"Stmt-context call to {return g()} that mentions named result.",
+			`func f() (x int) { return g(x) }; func g(int) int`,
+			`func _() { f() }`,
+			`func _() {
+	var x int
+	g(x)
+}`,
+		},
+		{
+			"Ditto, with binding decl again.",
+			`func f(y string) (x int) { return x+x+len(y+y) }`,
+			`func _() { f(".") }`,
+			`func _() {
+	var (
+		y string = "."
+		x int
+	)
+	_ = x + x + len(y+y)
+}`,
+		},
+
+		{
+			"Ditto, with binding decl (due to repeated y refs).",
+			`func f(y string) (x string) { return x+y+y }`,
+			`func _() { f(".") }`,
+			`func _() {
+	var (
+		y string = "."
+		x string
+	)
+	_ = x + y + y
+}`,
+		},
+		{
+			"Stmt-context call to {return binary} that mentions named result.",
+			`func f() (x int) { return x+x }`,
+			`func _() { f() }`,
+			`func _() {
+	var x int
+	_ = x + x
+}`,
+		},
+		{
+			"Tail call to {return expr} that mentions named result.",
+			`func f() (x int) { return x }`,
+			`func _() int { return f() }`,
+			`func _() int { return func() (x int) { return x }() }`,
+		},
+		{
+			"Tail call to {return} that implicitly reads named result.",
+			`func f() (x int) { return }`,
+			`func _() int { return f() }`,
+			`func _() int { return func() (x int) { return }() }`,
+		},
+		{
+			"Spread-context call to {return expr} that mentions named result.",
+			`func f() (x, y int) { return x, y }`,
+			`func _() { var _, _ = f() }`,
+			`func _() { var _, _ = func() (x, y int) { return x, y }() }`,
+		},
+		{
+			"Shadowing in binding decl for named results => literalization.",
+			`func f(y string) (x y) { return x+x+len(y+y) }; type y = int`,
+			`func _() { f(".") }`,
+			`func _() { func(y string) (x y) { return x + x + len(y+y) }(".") }`,
+		},
+	})
+}
+
+func TestSubstitutionPreservesParameterType(t *testing.T) {
+	runTests(t, []testcase{
+		{
+			"Substitution preserves argument type (#63193).",
+			`func f(x int16) { y := x; _ = (*int16)(&y) }`,
+			`func _() { f(1) }`,
+			`func _() {
+	y := int16(1)
+	_ = (*int16)(&y)
+}`,
+		},
+		{
+			"Same, with non-constant (unnamed to named struct) conversion.",
+			`func f(x T) { y := x; _ = (*T)(&y) }; type T struct{}`,
+			`func _() { f(struct{}{}) }`,
+			`func _() {
+	y := T(struct{}{})
+	_ = (*T)(&y)
+}`,
+		},
+		{
+			"Same, with non-constant (chan to <-chan) conversion.",
+			`func f(x T) { y := x; _ = (*T)(&y) }; type T = <-chan int; var ch chan int`,
+			`func _() { f(ch) }`,
+			`func _() {
+	y := T(ch)
+	_ = (*T)(&y)
+}`,
+		},
+		{
+			"Same, with untyped nil to typed nil conversion.",
+			`func f(x *int) { y := x; _ = (**int)(&y) }`,
+			`func _() { f(nil) }`,
+			`func _() {
+	y := (*int)(nil)
+	_ = (**int)(&y)
+}`,
+		},
+		{
+			"Conversion of untyped int to named type is made explicit.",
+			`type T int; func (x T) f() { x.g() }; func (T) g() {}`,
+			`func _() { T.f(1) }`,
+			`func _() { T(1).g() }`,
+		},
+		{
+			"Check for shadowing error on type used in the conversion.",
+			`func f(x T) { _ = &x == (*T)(nil) }; type T int16`,
+			`func _() { type T bool; f(1) }`,
+			`error: T.*shadowed.*by.*type`,
+		},
+	})
+}
+
+func runTests(t *testing.T, tests []testcase) {
 	for _, test := range tests {
 		test := test
 		t.Run(test.descr, func(t *testing.T) {
@@ -580,7 +1109,7 @@ func TestTable(t *testing.T) {
 			conf := &types.Config{Error: func(err error) { t.Error(err) }}
 			pkg, err := conf.Check("p", fset, []*ast.File{callerFile, calleeFile}, info)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatal("transformation introduced type errors")
 			}
 
 			// Analyze callee and inline call.

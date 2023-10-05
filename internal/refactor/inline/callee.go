@@ -14,6 +14,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
@@ -36,15 +37,17 @@ type gobCallee struct {
 	Unexported       []string     // names of free objects that are unexported
 	FreeRefs         []freeRef    // locations of references to free objects
 	FreeObjs         []object     // descriptions of free objects
-	BodyIsReturnExpr bool         // function body is "return expr(s)" with trivial conversion
-	ValidForCallStmt bool         // => bodyIsReturnExpr and sole expr is f() or <-ch
+	ValidForCallStmt bool         // function body is "return expr" where expr is f() or <-ch
 	NumResults       int          // number of results (according to type, not ast.FieldList)
 	Params           []*paramInfo // information about parameters (incl. receiver)
 	Results          []*paramInfo // information about result variables
+	Effects          []int        // order in which parameters are evaluated (see calleefx)
 	HasDefer         bool         // uses defer
+	HasBareReturn    bool         // uses bare return in non-void function
 	TotalReturns     int          // number of return statements
 	TrivialReturns   int          // number of return statements with trivial result conversions
 	Labels           []string     // names of all control labels
+	Falcon           falconResult // falcon constraint system
 }
 
 // A freeRef records a reference to a free object.  Gob-serializable.
@@ -56,10 +59,11 @@ type freeRef struct {
 
 // An object abstracts a free types.Object referenced by the callee. Gob-serializable.
 type object struct {
-	Name     string // Object.Name()
-	Kind     string // one of {var,func,const,type,pkgname,nil,builtin}
-	PkgPath  string // pkgpath of object (or of imported package if kind="pkgname")
-	ValidPos bool   // Object.Pos().IsValid()
+	Name     string          // Object.Name()
+	Kind     string          // one of {var,func,const,type,pkgname,nil,builtin}
+	PkgPath  string          // pkgpath of object (or of imported package if kind="pkgname")
+	ValidPos bool            // Object.Pos().IsValid()
+	Shadow   map[string]bool // names shadowed at one of the object's refs
 }
 
 // AnalyzeCallee analyzes a function that is a candidate for inlining
@@ -117,7 +121,14 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 	)
 	var f func(n ast.Node) bool
 	visit := func(n ast.Node) { ast.Inspect(n, f) }
+	var stack []ast.Node
+	stack = append(stack, decl.Type) // for scope of function itself
 	f = func(n ast.Node) bool {
+		if n != nil {
+			stack = append(stack, n) // push
+		} else {
+			stack = stack[:len(stack)-1] // pop
+		}
 		switch n := n.(type) {
 		case *ast.SelectorExpr:
 			// Check selections of free fields/methods.
@@ -196,6 +207,8 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 						freeObjIndex[obj] = objidx
 					}
 
+					freeObjs[objidx].Shadow = addShadows(freeObjs[objidx].Shadow, info, obj.Name(), stack)
+
 					freeRefs = append(freeRefs, freeRef{
 						Offset: int(n.Pos() - decl.Pos()),
 						Object: objidx,
@@ -207,67 +220,34 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 	}
 	visit(decl)
 
-	// Analyze callee body for "return results" form, where
-	// results is one or more expressions or an n-ary call,
-	// and the implied conversions are trivial.
+	// Analyze callee body for "return expr" form,
+	// where expr is f() or <-ch. These forms are
+	// safe to inline as a standalone statement.
 	validForCallStmt := false
-	bodyIsReturnExpr := func() bool {
-		if decl.Type.Results != nil &&
-			len(decl.Type.Results.List) > 0 &&
-			len(decl.Body.List) == 1 {
-			if ret, ok := decl.Body.List[0].(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
-				// Don't reduce calls to functions whose
-				// return statement has non trivial conversions.
-				argType := func(i int) types.Type {
-					return info.TypeOf(ret.Results[i])
-				}
-				if len(ret.Results) == 1 && sig.Results().Len() > 1 {
-					// Spread return: return f() where f.Results > 1.
-					tuple := info.TypeOf(ret.Results[0]).(*types.Tuple)
-					argType = func(i int) types.Type {
-						return tuple.At(i).Type()
-					}
-				}
-				for i := 0; i < sig.Results().Len(); i++ {
-					if !trivialConversion(argType(i), sig.Results().At(i)) {
-						return false
-					}
-				}
-
-				return true
-			}
-		}
-		return false
-	}()
-	if bodyIsReturnExpr {
-		ret := decl.Body.List[0].(*ast.ReturnStmt)
-
-		// Ascertain whether the results expression(s)
-		// would be safe to inline as a standalone statement.
-		// (This is true only for a single call or receive expression.)
+	if len(decl.Body.List) != 1 {
+		// not just a return statement
+	} else if ret, ok := decl.Body.List[0].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
 		validForCallStmt = func() bool {
-			if len(ret.Results) == 1 {
-				switch expr := astutil.Unparen(ret.Results[0]).(type) {
-				case *ast.CallExpr: // f(x)
-					callee := typeutil.Callee(info, expr)
-					if callee == nil {
-						return false // conversion T(x)
-					}
-
-					// The only non-void built-in functions that may be
-					// called as a statement are copy and recover
-					// (though arguably a call to recover should never
-					// be inlined as that changes its behavior).
-					if builtin, ok := callee.(*types.Builtin); ok {
-						return builtin.Name() == "copy" ||
-							builtin.Name() == "recover"
-					}
-
-					return true // ordinary call f()
-
-				case *ast.UnaryExpr: // <-x
-					return expr.Op == token.ARROW // channel receive <-ch
+			switch expr := astutil.Unparen(ret.Results[0]).(type) {
+			case *ast.CallExpr: // f(x)
+				callee := typeutil.Callee(info, expr)
+				if callee == nil {
+					return false // conversion T(x)
 				}
+
+				// The only non-void built-in functions that may be
+				// called as a statement are copy and recover
+				// (though arguably a call to recover should never
+				// be inlined as that changes its behavior).
+				if builtin, ok := callee.(*types.Builtin); ok {
+					return builtin.Name() == "copy" ||
+						builtin.Name() == "recover"
+				}
+
+				return true // ordinary call f()
+
+			case *ast.UnaryExpr: // <-x
+				return expr.Op == token.ARROW // channel receive <-ch
 			}
 
 			// No other expressions are valid statements.
@@ -279,6 +259,7 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 	// (but not any nested functions).
 	var (
 		hasDefer       = false
+		hasBareReturn  = false
 		totalReturns   = 0
 		trivialReturns = 0
 		labels         []string
@@ -314,6 +295,8 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 						break
 					}
 				}
+			} else if sig.Results().Len() > 0 {
+				hasBareReturn = true
 			}
 			if trivial {
 				trivialReturns++
@@ -321,6 +304,17 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 		}
 		return true
 	})
+
+	// Reject attempts to inline cgo-generated functions.
+	for _, obj := range freeObjs {
+		// There are others (iconst fconst sconst fpvar macro)
+		// but this is probably sufficient.
+		if strings.HasPrefix(obj.Name, "_Cfunc_") ||
+			strings.HasPrefix(obj.Name, "_Ctype_") ||
+			strings.HasPrefix(obj.Name, "_Cvar_") {
+			return nil, fmt.Errorf("cannot inline cgo-generated functions")
+		}
+	}
 
 	// Compact content to just the FuncDecl.
 	//
@@ -338,7 +332,7 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 		return nil, err
 	}
 
-	params, results := analyzeParams(logf, fset, info, decl)
+	params, results, effects, falcon := analyzeParams(logf, fset, info, decl)
 	return &Callee{gobCallee{
 		Content:          content,
 		PkgPath:          pkg.Path(),
@@ -346,15 +340,17 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 		Unexported:       unexported,
 		FreeObjs:         freeObjs,
 		FreeRefs:         freeRefs,
-		BodyIsReturnExpr: bodyIsReturnExpr,
 		ValidForCallStmt: validForCallStmt,
 		NumResults:       sig.Results().Len(),
 		Params:           params,
 		Results:          results,
+		Effects:          effects,
 		HasDefer:         hasDefer,
+		HasBareReturn:    hasBareReturn,
 		TotalReturns:     totalReturns,
 		TrivialReturns:   trivialReturns,
 		Labels:           labels,
+		Falcon:           falcon,
 	}}, nil
 }
 
@@ -372,11 +368,14 @@ func parseCompact(content []byte) (*token.FileSet, *ast.FuncDecl, error) {
 
 // A paramInfo records information about a callee receiver, parameter, or result variable.
 type paramInfo struct {
-	Name     string          // parameter name (may be blank, or even "")
-	Assigned bool            // parameter appears on left side of an assignment statement
-	Escapes  bool            // parameter has its address taken
-	Refs     []int           // FuncDecl-relative byte offset of parameter ref within body
-	Shadow   map[string]bool // names shadowed at one of the above refs
+	Name       string          // parameter name (may be blank, or even "")
+	Index      int             // index within signature
+	IsResult   bool            // false for receiver or parameter, true for result variable
+	Assigned   bool            // parameter appears on left side of an assignment statement
+	Escapes    bool            // parameter has its address taken
+	Refs       []int           // FuncDecl-relative byte offset of parameter ref within body
+	Shadow     map[string]bool // names shadowed at one of the above refs
+	FalconType string          // name of this parameter's type (if basic) in the falcon system
 }
 
 // analyzeParams computes information about parameters of function fn,
@@ -386,7 +385,7 @@ type paramInfo struct {
 // the other of the result variables of function fn.
 //
 // The input must be well-typed.
-func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.Info, decl *ast.FuncDecl) (params, results []*paramInfo) {
+func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.Info, decl *ast.FuncDecl) (params, results []*paramInfo, effects []int, _ falconResult) {
 	fnobj, ok := info.Defs[decl.Name]
 	if !ok {
 		panic(fmt.Sprintf("%s: no func object for %q",
@@ -396,19 +395,23 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 	paramInfos := make(map[*types.Var]*paramInfo)
 	{
 		sig := fnobj.Type().(*types.Signature)
-		newParamInfo := func(param *types.Var) *paramInfo {
-			info := &paramInfo{Name: param.Name()}
+		newParamInfo := func(param *types.Var, isResult bool) *paramInfo {
+			info := &paramInfo{
+				Name:     param.Name(),
+				IsResult: isResult,
+				Index:    len(paramInfos),
+			}
 			paramInfos[param] = info
 			return info
 		}
 		if sig.Recv() != nil {
-			params = append(params, newParamInfo(sig.Recv()))
+			params = append(params, newParamInfo(sig.Recv(), false))
 		}
 		for i := 0; i < sig.Params().Len(); i++ {
-			params = append(params, newParamInfo(sig.Params().At(i)))
+			params = append(params, newParamInfo(sig.Params().At(i), false))
 		}
 		for i := 0; i < sig.Results().Len(); i++ {
-			results = append(results, newParamInfo(sig.Results().At(i)))
+			results = append(results, newParamInfo(sig.Results().At(i), true))
 		}
 	}
 
@@ -426,6 +429,9 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 
 	// Record locations of all references to parameters.
 	// And record the set of intervening definitions for each parameter.
+	//
+	// TODO(adonovan): combine this traversal with the one that computes
+	// FreeRefs. The tricky part is that calleefx needs this one first.
 	var stack []ast.Node
 	stack = append(stack, decl.Type) // for scope of function itself
 	ast.Inspect(decl.Body, func(n ast.Node) bool {
@@ -438,36 +444,51 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 		if id, ok := n.(*ast.Ident); ok {
 			if v, ok := info.Uses[id].(*types.Var); ok {
 				if pinfo, ok := paramInfos[v]; ok {
-					// Record location of ref to parameter.
+					// Record location of ref to parameter/result
+					// and any intervening (shadowing) names.
 					offset := int(n.Pos() - decl.Pos())
 					pinfo.Refs = append(pinfo.Refs, offset)
-
-					// Find set of names shadowed within body
-					// (excluding the parameter itself).
-					// If these names are free in the arg expression,
-					// we can't substitute the parameter.
-					for _, n := range stack {
-						if scope, ok := info.Scopes[n]; ok {
-							for _, name := range scope.Names() {
-								if name != pinfo.Name {
-									if pinfo.Shadow == nil {
-										pinfo.Shadow = make(map[string]bool)
-									}
-									pinfo.Shadow[name] = true
-								}
-							}
-						}
-					}
+					pinfo.Shadow = addShadows(pinfo.Shadow, info, pinfo.Name, stack)
 				}
 			}
 		}
 		return true
 	})
 
-	return params, results
+	// Compute subset and order of parameters that are strictly evaluated.
+	// (Depends on Refs computed above.)
+	effects = calleefx(info, decl.Body, paramInfos)
+	logf("effects list = %v", effects)
+
+	falcon := falcon(logf, fset, paramInfos, info, decl)
+
+	return params, results, effects, falcon
 }
 
 // -- callee helpers --
+
+// addShadows returns the shadows set augmented by the set of names
+// locally shadowed at the location of the reference in the callee
+// (identified by the stack). The name of the reference itself is
+// excluded.
+//
+// These shadowed names may not be used in a replacement expression
+// for the reference.
+func addShadows(shadows map[string]bool, info *types.Info, exclude string, stack []ast.Node) map[string]bool {
+	for _, n := range stack {
+		if scope := scopeFor(info, n); scope != nil {
+			for _, name := range scope.Names() {
+				if name != exclude {
+					if shadows == nil {
+						shadows = make(map[string]bool)
+					}
+					shadows[name] = true
+				}
+			}
+		}
+	}
+	return shadows
+}
 
 // deref removes a pointer type constructor from the core type of t.
 func deref(t types.Type) types.Type {
