@@ -21,32 +21,28 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
+// TestMultipleGoversions tests that globals initialized to equivalent
+// function literals are compiled based on the different GoVersion in each file.
 func TestMultipleGoversions(t *testing.T) {
 	var contents = map[string]string{
 		"post.go": `
 	//go:build go1.22
 	package p
 
-	var distinct = func(l []int) []*int {
-		var r []*int
+	var distinct = func(l []int) {
 		for i := range l {
-			r = append(r, &i)
+			print(&i)
 		}
-		return r
-	}(l)
+	}
 	`,
 		"pre.go": `
 	package p
 
-	var l = []int{0, 0, 0}
-
-	var same = func(l []int) []*int {
-		var r []*int
+	var same = func(l []int) {
 		for i := range l {
-			r = append(r, &i)
+			print(&i)
 		}
-		return r
-	}(l)
+	}
 	`,
 	}
 
@@ -64,28 +60,41 @@ func TestMultipleGoversions(t *testing.T) {
 	conf := &types.Config{Importer: nil, GoVersion: "go1.21"}
 	p, _, err := ssautil.BuildPackage(conf, fset, pkg, files, ssa.SanityCheckFunctions)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
 
-	fns := ssautil.AllFunctions(p.Prog)
-	names := make(map[string]*ssa.Function)
-	for fn := range fns {
-		names[fn.String()] = fn
-	}
-	for _, item := range []struct{ name, wantSyn, wantPos string }{
-		{"p.init", "package initializer", "-"},
-		{"p.init$1", "", "post.go:5:17"},
-		{"p.init$2", "", "pre.go:6:13"},
+	// Test that global is initialized to a function literal that was
+	// compiled to have the expected for loop range variable lifetime for i.
+	for _, test := range []struct {
+		global *ssa.Global
+		want   string // basic block to []*ssa.Alloc.
+	}{
+		{p.Var("same"), "map[entry:[new int (i)]]"},               // i is allocated in the entry block.
+		{p.Var("distinct"), "map[rangeindex.body:[new int (i)]]"}, // i is allocated in the body block.
 	} {
-		fn := names[item.name]
+		// Find the function the test.name global is initialized to.
+		var fn *ssa.Function
+		for _, b := range p.Func("init").Blocks {
+			for _, instr := range b.Instrs {
+				if s, ok := instr.(*ssa.Store); ok && s.Addr == test.global {
+					fn, _ = s.Val.(*ssa.Function)
+				}
+			}
+		}
 		if fn == nil {
-			t.Fatalf("Could not find function named %q in package %s", item.name, p)
+			t.Fatalf("Failed to find *ssa.Function for initial value of global %s", test.global)
 		}
-		if fn.Synthetic != item.wantSyn {
-			t.Errorf("Function %q.Synthetic=%q. expected %q", fn, fn.Synthetic, item.wantSyn)
+
+		allocs := make(map[string][]string) // block comments -> []Alloc
+		for _, b := range fn.Blocks {
+			for _, instr := range b.Instrs {
+				if a, ok := instr.(*ssa.Alloc); ok {
+					allocs[b.Comment] = append(allocs[b.Comment], a.String())
+				}
+			}
 		}
-		if got := fset.Position(fn.Pos()).String(); got != item.wantPos {
-			t.Errorf("Function %q.Pos()=%q. expected %q", fn, got, item.wantPos)
+		if got := fmt.Sprint(allocs); got != test.want {
+			t.Errorf("[%s:=%s] expected the allocations to be in the basic blocks %q, got %q", test.global, fn, test.want, got)
 		}
 	}
 }

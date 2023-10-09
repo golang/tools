@@ -132,6 +132,7 @@ var testdataTests = []string{
 	"slice2arrayptr.go",
 	"static.go",
 	"width32.go",
+	"rangevarlifetime_old.go",
 
 	"fixedbugs/issue52342.go",
 	"fixedbugs/issue55115.go",

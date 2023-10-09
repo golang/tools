@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.19
+//go:build go1.22
+// +build go1.22
 
 package interp_test
-
-// Utilities from interp_test.go require go1.19.
 
 import (
 	"log"
@@ -16,6 +15,10 @@ import (
 
 	"golang.org/x/tools/internal/testenv"
 )
+
+func init() {
+	testdataTests = append(testdataTests, "rangevarlifetime_go122.go")
+}
 
 // TestExperimentRange tests files in testdata with GOEXPERIMENT=range set.
 func TestExperimentRange(t *testing.T) {

@@ -1798,6 +1798,7 @@ func (b *builder) forStmt(fn *Function, s *ast.ForStmt, label *lblock) {
 	if s.Init != nil {
 		b.stmt(fn, s.Init)
 	}
+
 	body := fn.newBasicBlock("for.body")
 	done := fn.newBasicBlock("for.done") // target of 'break'
 	loop := body                         // target of back-edge
@@ -2093,19 +2094,26 @@ func (b *builder) rangeStmt(fn *Function, s *ast.RangeStmt, label *lblock) {
 		tv = fn.typeOf(s.Value)
 	}
 
-	// If iteration variables are defined (:=), this
-	// occurs once outside the loop.
-	//
-	// Unlike a short variable declaration, a RangeStmt
-	// using := never redeclares an existing variable; it
-	// always creates a new one.
-	if s.Tok == token.DEFINE {
+	// create locals for s.Key and s.Value.
+	createVars := func() {
+		// Unlike a short variable declaration, a RangeStmt
+		// using := never redeclares an existing variable; it
+		// always creates a new one.
 		if tk != nil {
 			fn.addLocalForIdent(s.Key.(*ast.Ident))
 		}
 		if tv != nil {
 			fn.addLocalForIdent(s.Value.(*ast.Ident))
 		}
+	}
+
+	major, minor := parseGoVersion(fn.goversion)
+	afterGo122 := major >= 1 && minor >= 22
+
+	if s.Tok == token.DEFINE && !afterGo122 {
+		// pre-go1.22: If iteration variables are defined (:=), this
+		// occurs once outside the loop.
+		createVars()
 	}
 
 	x := b.expr(fn, s.X)
@@ -2136,6 +2144,11 @@ func (b *builder) rangeStmt(fn *Function, s *ast.RangeStmt, label *lblock) {
 
 	default:
 		panic("Cannot range over: " + rt.String())
+	}
+
+	if s.Tok == token.DEFINE && afterGo122 {
+		// go1.22: If iteration variables are defined (:=), this occurs inside the loop.
+		createVars()
 	}
 
 	// Evaluate both LHS expressions before we update either.
