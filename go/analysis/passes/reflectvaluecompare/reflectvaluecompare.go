@@ -49,11 +49,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				}
 			}
 		case *ast.CallExpr:
-			fn, ok := typeutil.Callee(pass.TypesInfo, n).(*types.Func)
-			if !ok {
-				return
-			}
-			if fn.FullName() == "reflect.DeepEqual" && (isReflectValue(pass, n.Args[0]) || isReflectValue(pass, n.Args[1])) {
+			fn, _ := typeutil.Callee(pass.TypesInfo, n).(*types.Func)
+			if analysisutil.IsFunctionNamed(fn, "reflect", "DeepEqual") && (isReflectValue(pass, n.Args[0]) || isReflectValue(pass, n.Args[1])) {
 				pass.ReportRangef(n, "avoid using reflect.DeepEqual with reflect.Value")
 			}
 		}
@@ -68,11 +65,7 @@ func isReflectValue(pass *analysis.Pass, e ast.Expr) bool {
 		return false
 	}
 	// See if the type is reflect.Value
-	named, ok := tv.Type.(*types.Named)
-	if !ok {
-		return false
-	}
-	if obj := named.Obj(); obj == nil || obj.Pkg() == nil || obj.Pkg().Path() != "reflect" || obj.Name() != "Value" {
+	if !analysisutil.IsNamedType(tv.Type, "reflect", "Value") {
 		return false
 	}
 	if _, ok := e.(*ast.CompositeLit); ok {

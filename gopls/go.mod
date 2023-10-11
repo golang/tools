@@ -7,10 +7,10 @@ require (
 	github.com/jba/printsrc v0.2.2
 	github.com/jba/templatecheck v0.6.0
 	github.com/sergi/go-diff v1.1.0
-	golang.org/x/mod v0.12.0
-	golang.org/x/sync v0.3.0
-	golang.org/x/sys v0.12.0
-	golang.org/x/telemetry v0.0.0-20231003223302-0168ef4ebbd3
+	golang.org/x/mod v0.13.0
+	golang.org/x/sync v0.4.0
+	golang.org/x/sys v0.13.0
+	golang.org/x/telemetry v0.0.0-20231011160506-788d5629a052
 	golang.org/x/text v0.13.0
 	golang.org/x/tools v0.13.1-0.20231005170247-117a486e6b4a
 	golang.org/x/vuln v1.0.1
@@ -26,3 +26,5 @@ require (
 	golang.org/x/exp/typeparams v0.0.0-20221212164502-fae10dda9338 // indirect
 
 )
+
+replace golang.org/x/tools => ../

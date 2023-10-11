@@ -391,6 +391,56 @@ func TestBasics(t *testing.T) {
 	})
 }
 
+func TestDuplicable(t *testing.T) {
+	runTests(t, []testcase{
+		{
+			"Empty strings are duplicable.",
+			`func f(s string) { print(s, s) }`,
+			`func _() { f("")  }`,
+			`func _() { print("", "") }`,
+		},
+		{
+			"Non-empty string literals are not duplicable.",
+			`func f(s string) { print(s, s) }`,
+			`func _() { f("hi")  }`,
+			`func _() {
+	var s string = "hi"
+	print(s, s)
+}`,
+		},
+		{
+			"Empty array literals are duplicable.",
+			`func f(a [2]int) { print(a, a) }`,
+			`func _() { f([2]int{})  }`,
+			`func _() { print([2]int{}, [2]int{}) }`,
+		},
+		{
+			"Non-empty array literals are not duplicable.",
+			`func f(a [2]int) { print(a, a) }`,
+			`func _() { f([2]int{1, 2})  }`,
+			`func _() {
+	var a [2]int = [2]int{1, 2}
+	print(a, a)
+}`,
+		},
+		{
+			"Empty struct literals are duplicable.",
+			`func f(s S) { print(s, s) }; type S struct { x int }`,
+			`func _() { f(S{})  }`,
+			`func _() { print(S{}, S{}) }`,
+		},
+		{
+			"Non-empty struct literals are not duplicable.",
+			`func f(s S) { print(s, s) }; type S struct { x int }`,
+			`func _() { f(S{x: 1})  }`,
+			`func _() {
+	var s S = S{x: 1}
+	print(s, s)
+}`,
+		},
+	})
+}
+
 func TestExprStmtReduction(t *testing.T) {
 	runTests(t, []testcase{
 		{
@@ -617,6 +667,12 @@ func TestSpreadCalls(t *testing.T) {
 	)
 }`,
 		},
+		{
+			"Spread call in return (#63398).",
+			`func f() (int, error) { return 0, nil }`,
+			`func _() (int, error) { return f() }`,
+			`func _() (int, error) { return 0, nil }`,
+		},
 	})
 }
 
@@ -714,6 +770,21 @@ func TestParameterBindingDecl(t *testing.T) {
 			`func f(int, y any, z int) { defer g(0); println(int, y, z) }; func g(int) int`,
 			`func _() { f(g(1), g(2), g(3)) }`,
 			`func _() { func(int, y any, z int) { defer g(0); println(int, y, z) }(g(1), g(2), g(3)) }`,
+		},
+		{
+			"An indirect method selection (*x).g acts as a read.",
+			`func f(x *T, y any) any { return x.g(y) }; type T struct{}; func (T) g(x any) any { return x }`,
+			`func _(x *T) { f(x, recover()) }`,
+			`func _(x *T) {
+	var y any = recover()
+	x.g(y)
+}`,
+		},
+		{
+			"A direct method selection x.g is pure.",
+			`func f(x *T, y any) any { return x.g(y) }; type T struct{}; func (*T) g(x any) any { return x }`,
+			`func _(x *T) { f(x, recover()) }`,
+			`func _(x *T) { x.g(recover()) }`,
 		},
 	})
 }
