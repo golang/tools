@@ -447,3 +447,32 @@ func NeedsLocalXTools(t testing.TB) {
 		t.Skipf("skipping test: %s module path is %q, not %q", modFilePath, modulePath, want)
 	}
 }
+
+// NeedsGoExperiment skips t if the current process environment does not
+// have a GOEXPERIMENT flag set.
+func NeedsGoExperiment(t testing.TB, flag string) {
+	t.Helper()
+
+	goexp := os.Getenv("GOEXPERIMENT")
+	set := false
+	for _, f := range strings.Split(goexp, ",") {
+		if f == "" {
+			continue
+		}
+		if f == "none" {
+			// GOEXPERIMENT=none disables all experiment flags.
+			set = false
+			break
+		}
+		val := true
+		if strings.HasPrefix(f, "no") {
+			f, val = f[2:], false
+		}
+		if f == flag {
+			set = val
+		}
+	}
+	if !set {
+		t.Skipf("skipping test: flag %q is not set in GOEXPERIMENT=%q", flag, goexp)
+	}
+}
