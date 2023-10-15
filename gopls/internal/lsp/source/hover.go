@@ -131,7 +131,7 @@ func hover(ctx context.Context, snapshot Snapshot, fh FileHandle, pp protocol.Po
 
 	// Handle linkname directive by overriding what to look for.
 	var linkedRange *protocol.Range // range referenced by linkname directive, or nil
-	if pkgPath, name, offset := parseLinkname(ctx, snapshot, fh, pp); pkgPath != "" && name != "" {
+	if pkgPath, name, offset := parseLinkname(pgf.Mapper, pp); pkgPath != "" && name != "" {
 		// rng covering 2nd linkname argument: pkgPath.name.
 		rng, err := pgf.PosRange(pgf.Tok.Pos(offset), pgf.Tok.Pos(offset+len(pkgPath)+len(".")+len(name)))
 		if err != nil {

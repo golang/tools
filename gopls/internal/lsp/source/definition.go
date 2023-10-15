@@ -60,7 +60,7 @@ func Definition(ctx context.Context, snapshot Snapshot, fh FileHandle, position 
 	}
 
 	// Handle the case where the cursor is in a linkname directive.
-	locations, err := LinknameDefinition(ctx, snapshot, fh, position)
+	locations, err := LinknameDefinition(ctx, snapshot, pgf.Mapper, position)
 	if !errors.Is(err, ErrNoLinkname) {
 		return locations, err
 	}
