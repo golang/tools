@@ -558,6 +558,24 @@ var GeneratedAPIJSON = &APIJSON{
 				Hierarchy: "ui.diagnostic",
 			},
 			{
+				Name: "diagnosticsTrigger",
+				Type: "enum",
+				Doc:  "diagnosticsTrigger controls when to run diagnostics.\n",
+				EnumValues: []EnumValue{
+					{
+						Value: "\"Edit\"",
+						Doc:   "`\"Edit\"`: Trigger diagnostics on file edit and save. (default)\n",
+					},
+					{
+						Value: "\"Save\"",
+						Doc:   "`\"Save\"`: Trigger diagnostics only on file save. Events like initial workspace load\nor configuration change will still trigger diagnostics.\n",
+					},
+				},
+				Default:   "\"Edit\"",
+				Status:    "experimental",
+				Hierarchy: "ui.diagnostic",
+			},
+			{
 				Name:      "analysisProgressReporting",
 				Type:      "bool",
 				Doc:       "analysisProgressReporting controls whether gopls sends progress\nnotifications when construction of its index of analysis facts is taking a\nlong time. Cancelling these notifications will cancel the indexing task,\nthough it will restart after the next change in the workspace.\n\nWhen a package is opened for the first time and heavyweight analyses such as\nstaticcheck are enabled, it can take a while to construct the index of\nanalysis facts for all its dependencies. The index is cached in the\nfilesystem, so subsequent analysis should be faster.\n",

@@ -2112,3 +2112,44 @@ func (B) New() {}
 		)
 	})
 }
+
+func TestDiagnosticsOnlyOnSaveFile(t *testing.T) {
+	const onlyMod = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- main.go --
+package main
+
+func main() {
+	Foo()
+}
+-- foo.go --
+package main
+
+func Foo() {}
+`
+	WithOptions(
+		Settings{
+			"diagnosticsTrigger": "Save",
+		},
+	).Run(t, onlyMod, func(t *testing.T, env *Env) {
+		env.OpenFile("foo.go")
+		env.RegexpReplace("foo.go", "(Foo)", "Bar") // Makes reference to Foo undefined/undeclared.
+		env.AfterChange(NoDiagnostics())            // No diagnostics update until file save.
+
+		env.SaveBuffer("foo.go")
+		// Compiler's error message about undeclared names vary depending on the version,
+		// but must be explicit about the problematic name.
+		env.AfterChange(Diagnostics(env.AtRegexp("main.go", "Foo"), WithMessage("Foo")))
+
+		env.OpenFile("main.go")
+		env.RegexpReplace("main.go", "(Foo)", "Bar")
+		// No diagnostics update until file save. That results in outdated diagnostic.
+		env.AfterChange(Diagnostics(env.AtRegexp("main.go", "Bar"), WithMessage("Foo")))
+
+		env.SaveBuffer("main.go")
+		env.AfterChange(NoDiagnostics())
+	})
+}

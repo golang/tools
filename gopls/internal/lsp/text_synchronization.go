@@ -289,7 +289,7 @@ func (s *Server) didModifyFiles(ctx context.Context, modifications []source.File
 
 	wg.Add(1)
 	go func() {
-		s.diagnoseSnapshots(snapshots, onDisk)
+		s.diagnoseSnapshots(snapshots, onDisk, cause)
 		release()
 		wg.Done()
 	}()

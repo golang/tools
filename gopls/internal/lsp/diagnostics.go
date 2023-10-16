@@ -155,9 +155,12 @@ func computeDiagnosticHash(diags ...*source.Diagnostic) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func (s *Server) diagnoseSnapshots(snapshots map[source.Snapshot][]span.URI, onDisk bool) {
+func (s *Server) diagnoseSnapshots(snapshots map[source.Snapshot][]span.URI, onDisk bool, cause ModificationSource) {
 	var diagnosticWG sync.WaitGroup
 	for snapshot, uris := range snapshots {
+		if snapshot.Options().DiagnosticsTrigger == source.DiagnosticsOnSave && cause == FromDidChange {
+			continue // user requested to update the diagnostics only on save. do not diagnose yet.
+		}
 		diagnosticWG.Add(1)
 		go func(snapshot source.Snapshot, uris []span.URI) {
 			defer diagnosticWG.Done()

@@ -354,6 +354,20 @@ This option must be set to a valid duration string, for example `"250ms"`.
 
 Default: `"1s"`.
 
+##### **diagnosticsTrigger** *enum*
+
+**This setting is experimental and may be deleted.**
+
+diagnosticsTrigger controls when to run diagnostics.
+
+Must be one of:
+
+* `"Edit"`: Trigger diagnostics on file edit and save. (default)
+* `"Save"`: Trigger diagnostics only on file save. Events like initial workspace load
+or configuration change will still trigger diagnostics.
+
+Default: `"Edit"`.
+
 ##### **analysisProgressReporting** *bool*
 
 analysisProgressReporting controls whether gopls sends progress
