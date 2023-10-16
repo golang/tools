@@ -55,3 +55,7 @@ func _() {
 	_ = snippets.X(nil) //@signature("nil", "X(_ map[sig.Alias]types.CoolAlias) map[sig.Alias]types.CoolAlias")
 	var _ sig.Alias
 }
+
+func issue63578(err error) {
+	err.Error() //@signature(")", "Error()")
+}
