@@ -388,6 +388,17 @@ func TestBasics(t *testing.T) {
 			`func _(ch chan int) { f(ch) }`,
 			`func _(ch chan int) { <-(<-chan int)(ch) }`,
 		},
+		{
+			// (a regression test for unnecessary braces)
+			"In block elision, blank decls don't count when computing name conflicts.",
+			`func f(x int) { var _ = x; var _ = 3 }`,
+			`func _() { var _ = 1; f(2) }`,
+			`func _() {
+	var _ = 1
+	var _ = 2
+	var _ = 3
+}`,
+		},
 	})
 }
 
@@ -584,6 +595,36 @@ func TestSubstitution(t *testing.T) {
 			`func _() { var local int; _ = local }`,
 		},
 		{
+			"Arguments that are used are detected",
+			`func f(int) {}`,
+			`func _() { var local int; _ = local; f(local) }`,
+			`func _() { var local int; _ = local }`,
+		},
+		{
+			"Arguments that are used are detected",
+			`func f(x, y int) { print(x) }`,
+			`func _() { var z int; f(z, z) }`,
+			`func _() {
+	var z int
+	var _ int = z
+	print(z)
+}`,
+		},
+		{
+			"Function parameters are always used",
+			`func f(int) {}`,
+			`func _() {
+	func(local int) {
+		f(local)
+	}(1)
+}`,
+			`func _() {
+	func(local int) {
+
+	}(1)
+}`,
+		},
+		{
 			"Regression test for detection of shadowing in nested functions.",
 			`func f(x int) { _ = func() { y := 1; print(y); print(x) } }`,
 			`func _(y int) { f(y) } `,
@@ -682,7 +723,7 @@ func TestVariadic(t *testing.T) {
 			"Variadic cancellation (basic).",
 			`func f(args ...any) { defer f(&args); println(args) }`,
 			`func _(slice []any) { f(slice...) }`,
-			`func _(slice []any) { func(args []any) { defer f(&args); println(args) }(slice) }`,
+			`func _(slice []any) { func() { var args []any = slice; defer f(&args); println(args) }() }`,
 		},
 		{
 			"Variadic cancellation (literalization with parameter elimination).",
@@ -785,6 +826,24 @@ func TestParameterBindingDecl(t *testing.T) {
 			`func f(x *T, y any) any { return x.g(y) }; type T struct{}; func (*T) g(x any) any { return x }`,
 			`func _(x *T) { f(x, recover()) }`,
 			`func _(x *T) { x.g(recover()) }`,
+		},
+		{
+			"Literalization can make use of a binding decl (all params).",
+			`func f(x, y int) int { defer println(); return y + x }; func g(int) int`,
+			`func _() { println(f(g(1), g(2))) }`,
+			`func _() { println(func() int { var x, y int = g(1), g(2); defer println(); return y + x }()) }`,
+		},
+		{
+			"Literalization can make use of a binding decl (some params).",
+			`func f(x, y int) int { z := y + x; defer println(); return z }; func g(int) int`,
+			`func _() { println(f(g(1), g(2))) }`,
+			`func _() { println(func() int { var x int = g(1); z := g(2) + x; defer println(); return z }()) }`,
+		},
+		{
+			"Literalization can't yet use of a binding decl if named results.",
+			`func f(x, y int) (z int) { z = y + x; defer println(); return }; func g(int) int`,
+			`func _() { println(f(g(1), g(2))) }`,
+			`func _() { println(func(x int) (z int) { z = g(2) + x; defer println(); return }(g(1))) }`,
 		},
 	})
 }

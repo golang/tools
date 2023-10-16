@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/imports"
+	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -182,15 +183,19 @@ func Inline(logf func(string, ...any), caller *Caller, callee *Callee) ([]byte, 
 		// Precise comment handling would make this a
 		// non-issue. Formatting wouldn't really need a
 		// FileSet at all.
-		mark := out.Len()
-		if err := format.Node(&out, caller.Fset, res.new); err != nil {
-			return nil, err
-		}
 		if elideBraces {
-			// Overwrite unnecessary {...} braces with spaces.
-			// TODO(adonovan): less hacky solution.
-			out.Bytes()[mark] = ' '
-			out.Bytes()[out.Len()-1] = ' '
+			for i, stmt := range res.new.(*ast.BlockStmt).List {
+				if i > 0 {
+					out.WriteByte('\n')
+				}
+				if err := format.Node(&out, caller.Fset, stmt); err != nil {
+					return nil, err
+				}
+			}
+		} else {
+			if err := format.Node(&out, caller.Fset, res.new); err != nil {
+				return nil, err
+			}
 		}
 		out.Write(caller.Content[end:])
 		const mode = parser.ParseComments | parser.SkipObjectResolution | parser.AllErrors
@@ -487,8 +492,12 @@ func inline(logf func(string, ...any), caller *Caller, callee *gobCallee) (*resu
 				if samePkg {
 					// Caller and callee are in same package.
 					// Check caller has not shadowed the decl.
-					found := caller.lookup(obj.Name) // can't fail
-					if !isPkgLevel(found) {
+					//
+					// This may fail if the callee is "fake", such as for signature
+					// refactoring where the callee is modified to be a trivial wrapper
+					// around the refactored signature.
+					found := caller.lookup(obj.Name)
+					if found != nil && !isPkgLevel(found) {
 						return nil, fmt.Errorf("cannot inline because %q is shadowed in caller by a %s (line %d)",
 							obj.Name, objectKind(found),
 							caller.Fset.PositionFor(found.Pos(), false).Line)
@@ -897,9 +906,6 @@ func inline(logf func(string, ...any), caller *Caller, callee *gobCallee) (*resu
 	// The body may use defer, arbitrary control flow, and
 	// multiple returns.
 	//
-	// TODO(adonovan): omit the braces if the sets of
-	// names in the two blocks are disjoint.
-	//
 	// TODO(adonovan): add a strategy for a 'void tail
 	// call', i.e. a call statement prior to an (explicit
 	// or implicit) return.
@@ -937,8 +943,6 @@ func inline(logf func(string, ...any), caller *Caller, callee *gobCallee) (*resu
 	// - all parameters and result vars can be eliminated
 	//   or replaced by a binding decl,
 	// - caller ExprStmt is in unrestricted statement context.
-	//
-	// If there is only a single statement, the braces are omitted.
 	if stmt := callStmt(caller.path, true); stmt != nil &&
 		(!needBindingDecl || bindingDeclStmt != nil) &&
 		!callee.HasDefer &&
@@ -950,9 +954,6 @@ func inline(logf func(string, ...any), caller *Caller, callee *gobCallee) (*resu
 		clearPositions(repl)
 		if needBindingDecl {
 			body.List = prepend(bindingDeclStmt, body.List...)
-		}
-		if len(body.List) == 1 { // FIXME do this opt later
-			repl = body.List[0] // singleton: omit braces
 		}
 		res.old = stmt
 		res.new = repl
@@ -989,15 +990,32 @@ func inline(logf func(string, ...any), caller *Caller, callee *gobCallee) (*resu
 	}
 
 	// Infallible general case: literalization.
+	//
+	//    func(params) { body }(args)
+	//
 	logf("strategy: literalization")
+	funcLit := &ast.FuncLit{
+		Type: calleeDecl.Type,
+		Body: calleeDecl.Body,
+	}
+
+	// Literalization can still make use of a binding
+	// decl as it gives a more natural reading order:
+	//
+	//    func() { var params = args; body }()
+	//
+	// TODO(adonovan): relax the allResultsUnreferenced requirement
+	// by adding a parameter-only (no named results) binding decl.
+	if bindingDeclStmt != nil && allResultsUnreferenced {
+		funcLit.Type.Params.List = nil
+		remainingArgs = nil
+		funcLit.Body.List = prepend(bindingDeclStmt, funcLit.Body.List...)
+	}
 
 	// Emit a new call to a function literal in place of
 	// the callee name, with appropriate replacements.
 	newCall := &ast.CallExpr{
-		Fun: &ast.FuncLit{
-			Type: calleeDecl.Type,
-			Body: calleeDecl.Body,
-		},
+		Fun:      funcLit,
 		Ellipsis: token.NoPos, // f(slice...) is always simplified
 		Args:     remainingArgs,
 	}
@@ -1240,11 +1258,11 @@ next:
 			// remove the last reference to a caller local var.
 			if caller.enclosingFunc != nil {
 				for free := range arg.freevars {
-					if v, ok := caller.lookup(free).(*types.Var); ok && within(v.Pos(), caller.enclosingFunc.Body) {
-						// TODO(adonovan): be more precise and check that v
-						// is indeed referenced only by call arguments.
-						// Better: proceed, but blank out its declaration as needed.
-						logf("keeping param %q: arg contains perhaps the last reference to possible caller local %v @ %v",
+					// TODO(rfindley): we can get this 100% right by looking for
+					// references among other arguments which have non-zero references
+					// within the callee.
+					if v, ok := caller.lookup(free).(*types.Var); ok && within(v.Pos(), caller.enclosingFunc.Body) && !isUsedOutsideCall(caller, v) {
+						logf("keeping param %q: arg contains perhaps the last reference to caller local %v @ %v",
 							param.info.Name, v, caller.Fset.PositionFor(v.Pos(), false))
 						continue next
 					}
@@ -1306,12 +1324,40 @@ next:
 			logf("replacing parameter %q by argument %q",
 				param.info.Name, debugFormatNode(caller.Fset, arg.expr))
 			for _, ref := range param.info.Refs {
-				replaceCalleeID(ref, cloneNode(arg.expr).(ast.Expr))
+				replaceCalleeID(ref, internalastutil.CloneNode(arg.expr).(ast.Expr))
 			}
 			params[i] = nil // substituted
 			args[i] = nil   // substituted
 		}
 	}
+}
+
+// isUsedOutsideCall reports whether v is used outside of caller.Call, within
+// the body of caller.enclosingFunc.
+func isUsedOutsideCall(caller *Caller, v *types.Var) bool {
+	used := false
+	ast.Inspect(caller.enclosingFunc.Body, func(n ast.Node) bool {
+		if n == caller.Call {
+			return false
+		}
+		switch n := n.(type) {
+		case *ast.Ident:
+			if use := caller.Info.Uses[n]; use == v {
+				used = true
+			}
+		case *ast.FuncType:
+			// All params are used.
+			for _, fld := range n.Params.List {
+				for _, n := range fld.Names {
+					if def := caller.Info.Defs[n]; def == v {
+						used = true
+					}
+				}
+			}
+		}
+		return !used // keep going until we find a use
+	})
+	return used
 }
 
 // checkFalconConstraints checks whether constant arguments
@@ -1536,11 +1582,12 @@ func updateCalleeParams(calleeDecl *ast.FuncDecl, params []*parameter) {
 
 // createBindingDecl constructs a "binding decl" that implements
 // parameter assignment and declares any named result variables
-// referenced by the callee.
+// referenced by the callee. It returns nil if there were no
+// unsubstituted parameters.
 //
 // It may not always be possible to create the decl (e.g. due to
-// shadowing), in which case it returns nil; but if it succeeds, the
-// declaration may be used by reduction strategies to relax the
+// shadowing), in which case it also returns nil; but if it succeeds,
+// the declaration may be used by reduction strategies to relax the
 // requirement that all parameters have been substituted.
 //
 // For example, a call:
@@ -1682,14 +1729,19 @@ func createBindingDecl(logf func(string, ...any), caller *Caller, args []*argume
 		}
 	}
 
-	decl := &ast.DeclStmt{
+	if len(specs) == 0 {
+		logf("binding decl not needed: all parameters substituted")
+		return nil
+	}
+
+	stmt := &ast.DeclStmt{
 		Decl: &ast.GenDecl{
 			Tok:   token.VAR,
 			Specs: specs,
 		},
 	}
-	logf("binding decl: %s", debugFormatNode(caller.Fset, decl))
-	return decl
+	logf("binding decl: %s", debugFormatNode(caller.Fset, stmt))
+	return stmt
 }
 
 // lookup does a symbol lookup in the lexical environment of the caller.
@@ -2317,60 +2369,6 @@ func replaceNode(root ast.Node, from, to ast.Node) {
 	}
 }
 
-// cloneNode returns a deep copy of a Node.
-// It omits pointers to ast.{Scope,Object} variables.
-func cloneNode(n ast.Node) ast.Node {
-	var clone func(x reflect.Value) reflect.Value
-	set := func(dst, src reflect.Value) {
-		src = clone(src)
-		if src.IsValid() {
-			dst.Set(src)
-		}
-	}
-	clone = func(x reflect.Value) reflect.Value {
-		switch x.Kind() {
-		case reflect.Ptr:
-			if x.IsNil() {
-				return x
-			}
-			// Skip fields of types potentially involved in cycles.
-			switch x.Interface().(type) {
-			case *ast.Object, *ast.Scope:
-				return reflect.Zero(x.Type())
-			}
-			y := reflect.New(x.Type().Elem())
-			set(y.Elem(), x.Elem())
-			return y
-
-		case reflect.Struct:
-			y := reflect.New(x.Type()).Elem()
-			for i := 0; i < x.Type().NumField(); i++ {
-				set(y.Field(i), x.Field(i))
-			}
-			return y
-
-		case reflect.Slice:
-			y := reflect.MakeSlice(x.Type(), x.Len(), x.Cap())
-			for i := 0; i < x.Len(); i++ {
-				set(y.Index(i), x.Index(i))
-			}
-			return y
-
-		case reflect.Interface:
-			y := reflect.New(x.Type()).Elem()
-			set(y, x.Elem())
-			return y
-
-		case reflect.Array, reflect.Chan, reflect.Func, reflect.Map, reflect.UnsafePointer:
-			panic(x) // unreachable in AST
-
-		default:
-			return x // bool, string, number
-		}
-	}
-	return clone(reflect.ValueOf(n)).Interface().(ast.Node)
-}
-
 // clearPositions destroys token.Pos information within the tree rooted at root,
 // as positions in callee trees may cause caller comments to be emitted prematurely.
 //
@@ -2622,6 +2620,7 @@ func declares(stmts []ast.Stmt) map[string]bool {
 			}
 		}
 	}
+	delete(names, "_")
 	return names
 }
 
