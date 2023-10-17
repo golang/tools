@@ -106,12 +106,12 @@ type field struct {
 }
 
 func (f field) Type() types.Type {
-	s := f.StructType.Underlying().(*types.Struct)
+	s := typeparams.CoreType(f.StructType).(*types.Struct)
 	return s.Field(f.index).Type()
 }
 
 func (f field) String() string {
-	s := f.StructType.Underlying().(*types.Struct)
+	s := typeparams.CoreType(f.StructType).(*types.Struct)
 	return fmt.Sprintf("Field(%v:%s)", f.StructType, s.Field(f.index).Name())
 }
 
@@ -434,7 +434,7 @@ func (b *builder) field(f *ssa.Field) {
 }
 
 func (b *builder) fieldAddr(f *ssa.FieldAddr) {
-	t := f.X.Type().Underlying().(*types.Pointer).Elem()
+	t := typeparams.CoreType(f.X.Type()).(*types.Pointer).Elem()
 
 	// Since we are getting pointer to a field, make a bidirectional edge.
 	fnode := field{StructType: t, index: f.Field}

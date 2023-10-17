@@ -127,6 +127,7 @@ func TestVTACallGraphGenerics(t *testing.T) {
 	files := []string{
 		"testdata/src/arrays_generics.go",
 		"testdata/src/callgraph_generics.go",
+		"testdata/src/issue63146.go",
 	}
 	for _, file := range files {
 		t.Run(file, func(t *testing.T) {
