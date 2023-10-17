@@ -145,3 +145,60 @@ func New[K int, V any]() Smap[K, V] {
 		}
 	})
 }
+
+func TestSemanticGoDirectives(t *testing.T) {
+	src := `
+-- go.mod --
+module example.com
+
+go 1.19
+-- main.go --
+package foo
+
+//go:linkname now time.Now
+func now()
+
+//go:noinline
+func foo() {}
+
+// Mentioning go:noinline should not tokenize.
+
+//go:notadirective
+func bar() {}
+`
+	want := []fake.SemanticToken{
+		{Token: "package", TokenType: "keyword"},
+		{Token: "foo", TokenType: "namespace"},
+
+		{Token: "//", TokenType: "comment"},
+		{Token: "go:linkname", TokenType: "namespace"},
+		{Token: "now time.Now", TokenType: "comment"},
+		{Token: "func", TokenType: "keyword"},
+		{Token: "now", TokenType: "function", Mod: "definition"},
+
+		{Token: "//", TokenType: "comment"},
+		{Token: "go:noinline", TokenType: "namespace"},
+		{Token: "func", TokenType: "keyword"},
+		{Token: "foo", TokenType: "function", Mod: "definition"},
+
+		{Token: "// Mentioning go:noinline should not tokenize.", TokenType: "comment"},
+
+		{Token: "//go:notadirective", TokenType: "comment"},
+		{Token: "func", TokenType: "keyword"},
+		{Token: "bar", TokenType: "function", Mod: "definition"},
+	}
+
+	WithOptions(
+		Modes(Default),
+		Settings{"semanticTokens": true},
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		seen, err := env.Editor.SemanticTokens(env.Ctx, "main.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if x := cmp.Diff(want, seen); x != "" {
+			t.Errorf("Semantic tokens do not match (-want +got):\n%s", x)
+		}
+	})
+}

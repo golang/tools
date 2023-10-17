@@ -143,6 +143,10 @@ func (e *encoded) semantics() {
 	}
 	for _, cg := range f.Comments {
 		for _, c := range cg.List {
+			if strings.HasPrefix(c.Text, "//go:") {
+				e.godirective(c)
+				continue
+			}
 			if !strings.Contains(c.Text, "\n") {
 				e.token(c.Pos(), len(c.Text), tokComment, nil)
 				continue
@@ -997,3 +1001,52 @@ var (
 		"deprecated", "abstract", "async", "modification", "documentation", "defaultLibrary",
 	}
 )
+
+var godirectives = map[string]struct{}{
+	// https://pkg.go.dev/cmd/compile
+	"noescape":       {},
+	"uintptrescapes": {},
+	"noinline":       {},
+	"norace":         {},
+	"nosplit":        {},
+	"linkname":       {},
+
+	// https://pkg.go.dev/go/build
+	"build":               {},
+	"binary-only-package": {},
+	"embed":               {},
+}
+
+// Tokenize godirective at the start of the comment c, if any, and the surrounding comment.
+// If there is any failure, emits the entire comment as a tokComment token.
+// Directives are highlighted as-is, even if used incorrectly. Typically there are
+// dedicated analyzers that will warn about misuse.
+func (e *encoded) godirective(c *ast.Comment) {
+	// First check if '//go:directive args...' is a valid directive.
+	directive, args, _ := strings.Cut(c.Text, " ")
+	kind, _ := stringsCutPrefix(directive, "//go:")
+	if _, ok := godirectives[kind]; !ok {
+		// Unknown go: directive.
+		e.token(c.Pos(), len(c.Text), tokComment, nil)
+		return
+	}
+
+	// Make the 'go:directive' part stand out, the rest is comments.
+	e.token(c.Pos(), len("//"), tokComment, nil)
+
+	directiveStart := c.Pos() + token.Pos(len("//"))
+	e.token(directiveStart, len(directive[len("//"):]), tokNamespace, nil)
+
+	if len(args) > 0 {
+		tailStart := c.Pos() + token.Pos(len(directive)+len(" "))
+		e.token(tailStart, len(args), tokComment, nil)
+	}
+}
+
+// Go 1.20 strings.CutPrefix.
+func stringsCutPrefix(s, prefix string) (after string, found bool) {
+	if !strings.HasPrefix(s, prefix) {
+		return s, false
+	}
+	return s[len(prefix):], true
+}
