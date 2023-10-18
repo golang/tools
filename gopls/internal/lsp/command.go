@@ -484,10 +484,7 @@ func (c *commandHandler) RunTests(ctx context.Context, args command.RunTestsArgs
 		requireSave: true,
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		if err := c.runTests(ctx, deps.snapshot, deps.work, args.URI, args.Tests, args.Benchmarks); err != nil {
-			return fmt.Errorf("running tests failed: %w", err)
-		}
-		return nil
+		return c.runTests(ctx, deps.snapshot, deps.work, args.URI, args.Tests, args.Benchmarks)
 	})
 }
 
@@ -558,10 +555,15 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot source.Snapshot,
 		message += "\n" + buf.String()
 	}
 
-	return c.s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+	_ = c.s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
 		Type:    protocol.Info,
 		Message: message,
 	})
+
+	if failedTests > 0 || failedBenchmarks > 0 {
+		return errors.New("gopls.test command failed")
+	}
+	return nil
 }
 
 func (c *commandHandler) Generate(ctx context.Context, args command.GenerateArgs) error {

@@ -1,0 +1,35 @@
+List or execute code lenses for a file
+
+Usage:
+  gopls [flags] codelens [codelens-flags] file[:line[:col]] [title]
+
+The codelens command lists or executes code lenses for the specified
+file, or line within a file. A code lens is a command associated with
+a position in the code.
+
+With an optional title argment, only code lenses matching that
+title are considered.
+
+By default, the codelens command lists the available lenses for the
+specified file or line within a file, including the title and
+title of the command. With the -exec flag, the first matching command
+is executed, and its output is printed to stdout.
+
+Example:
+
+	$ gopls codelens a_test.go                    # list code lenses in a file
+	$ gopls codelens a_test.go:10                 # list code lenses on line 10
+	$ gopls codelens a_test.go gopls.test         # list gopls.test commands
+	$ gopls codelens -run a_test.go:10 gopls.test # run a specific test
+
+codelens-flags:
+  -d,-diff
+    	display diffs instead of edited file content
+  -exec
+    	execute the first matching code lens
+  -l,-list
+    	display names of edited files
+  -preserve
+    	with -write, make copies of original files
+  -w,-write
+    	write edited content to source files

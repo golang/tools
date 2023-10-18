@@ -294,6 +294,7 @@ func (app *Application) featureCommands() []tool.Application {
 	return []tool.Application{
 		&callHierarchy{app: app},
 		&check{app: app},
+		&codelens{app: app},
 		&definition{app: app},
 		&foldingRanges{app: app},
 		&format{app: app},
@@ -374,12 +375,6 @@ func (app *Application) connectRemote(ctx context.Context, remote string) (*conn
 	return connection, connection.initialize(ctx, app.options)
 }
 
-var matcherString = map[source.SymbolMatcher]string{
-	source.SymbolFuzzy:           "fuzzy",
-	source.SymbolCaseSensitive:   "caseSensitive",
-	source.SymbolCaseInsensitive: "caseInsensitive",
-}
-
 func (c *connection) initialize(ctx context.Context, options func(*source.Options)) error {
 	params := &protocol.ParamInitialize{}
 	params.RootURI = protocol.URIFromPath(c.client.app.wd)
@@ -406,7 +401,7 @@ func (c *connection) initialize(ctx context.Context, options func(*source.Option
 	}
 
 	params.InitializationOptions = map[string]interface{}{
-		"symbolMatcher": matcherString[opts.SymbolMatcher],
+		"symbolMatcher": string(opts.SymbolMatcher),
 	}
 	if _, err := c.Server.Initialize(ctx, params); err != nil {
 		return err
@@ -469,13 +464,19 @@ func (c *cmdClient) CodeLensRefresh(context.Context) error { return nil }
 
 func (c *cmdClient) LogTrace(context.Context, *protocol.LogTraceParams) error { return nil }
 
-func (c *cmdClient) ShowMessage(ctx context.Context, p *protocol.ShowMessageParams) error { return nil }
+func (c *cmdClient) ShowMessage(ctx context.Context, p *protocol.ShowMessageParams) error {
+	fmt.Fprintf(os.Stderr, "%s: %s\n", p.Type, p.Message)
+	return nil
+}
 
 func (c *cmdClient) ShowMessageRequest(ctx context.Context, p *protocol.ShowMessageRequestParams) (*protocol.MessageActionItem, error) {
 	return nil, nil
 }
 
 func (c *cmdClient) LogMessage(ctx context.Context, p *protocol.LogMessageParams) error {
+	// This logic causes server logging to be double-prefixed with a timestamp.
+	//     2023/11/08 10:50:21 Error:2023/11/08 10:50:21 <actual message>
+	// TODO(adonovan): print just p.Message, plus a newline if needed?
 	switch p.Type {
 	case protocol.Error:
 		log.Print("Error:", p.Message)
@@ -527,7 +528,7 @@ func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfigur
 		}
 		m := map[string]interface{}{
 			"env": env,
-			"analyses": map[string]bool{
+			"analyses": map[string]any{
 				"fillreturns":    true,
 				"nonewvars":      true,
 				"noresultvalues": true,

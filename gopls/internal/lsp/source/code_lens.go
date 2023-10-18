@@ -31,8 +31,8 @@ func LensFuncs() map[command.Command]LensFunc {
 }
 
 var (
-	testRe      = regexp.MustCompile("^Test[^a-z]")
-	benchmarkRe = regexp.MustCompile("^Benchmark[^a-z]")
+	testRe      = regexp.MustCompile(`^Test([^a-z]|$)`) // TestFoo or Test but not Testable
+	benchmarkRe = regexp.MustCompile(`^Benchmark([^a-z]|$)`)
 )
 
 func runTestCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.CodeLens, error) {

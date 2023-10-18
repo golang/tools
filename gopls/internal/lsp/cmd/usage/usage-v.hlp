@@ -21,6 +21,7 @@ Main
 Features            
   call_hierarchy    display selected identifier's call hierarchy
   check             show diagnostic results for the specified file
+  codelens          List or execute code lenses for a file
   definition        show declaration of selected identifier
   folding_ranges    display selected file's folding ranges
   format            format the code according to the go standard

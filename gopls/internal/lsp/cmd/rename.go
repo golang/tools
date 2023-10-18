@@ -43,7 +43,7 @@ rename-flags:
 // - otherwise, prints the new versions to stdout.
 func (r *rename) Run(ctx context.Context, args ...string) error {
 	if len(args) != 2 {
-		return tool.CommandLineErrorf("definition expects 2 arguments (position, new name)")
+		return tool.CommandLineErrorf("rename expects 2 arguments (position, new name)")
 	}
 	r.app.editFlags = &r.EditFlags
 	conn, err := r.app.connect(ctx, nil)

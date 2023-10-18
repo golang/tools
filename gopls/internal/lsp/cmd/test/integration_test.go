@@ -165,6 +165,58 @@ func h() {
 	}
 }
 
+// TestCodeLens tests the 'codelens' subcommand (../codelens.go).
+func TestCodeLens(t *testing.T) {
+	t.Parallel()
+
+	tree := writeTree(t, `
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+-- a/a_test.go --
+package a_test
+import "testing"
+func TestPass(t *testing.T) {}
+func TestFail(t *testing.T) { t.Fatal("fail") }
+`)
+	// missing position
+	{
+		res := gopls(t, tree, "codelens")
+		res.checkExit(false)
+		res.checkStderr("requires a file name")
+	}
+	// list code lenses
+	{
+		res := gopls(t, tree, "codelens", "./a/a_test.go")
+		res.checkExit(true)
+		res.checkStdout(`a_test.go:3: "run test" \[gopls.test\]`)
+		res.checkStdout(`a_test.go:4: "run test" \[gopls.test\]`)
+	}
+	// no codelens with title/position
+	{
+		res := gopls(t, tree, "codelens", "-exec", "./a/a_test.go:1", "nope")
+		res.checkExit(false)
+		res.checkStderr(`no code lens at .* with title "nope"`)
+	}
+	// run the passing test
+	{
+		res := gopls(t, tree, "codelens", "-exec", "./a/a_test.go:3", "run test")
+		res.checkExit(true)
+		res.checkStdout(`PASS: TestPass`)         // from go test
+		res.checkStderr("Info: all tests passed") // from gopls.test
+	}
+	// run the failing test
+	{
+		res := gopls(t, tree, "codelens", "-exec", "./a/a_test.go:4", "run test")
+		res.checkExit(false)
+		res.checkStdout(`FAIL	example.com/a`)
+		res.checkStderr("Info: 1 / 1 tests failed")
+	}
+}
+
 // TestDefinition tests the 'definition' subcommand (../definition.go).
 func TestDefinition(t *testing.T) {
 	t.Parallel()
