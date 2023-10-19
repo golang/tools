@@ -9,6 +9,7 @@ package embeddirective
 import (
 	"go/ast"
 	"go/token"
+	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -67,10 +68,12 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			switch {
 			case spec == nil:
 				report(`go:embed directives must precede a "var" declaration`)
-			case len(spec.Names) > 1:
+			case len(spec.Names) != 1:
 				report("declarations following go:embed directives must define a single variable")
 			case len(spec.Values) > 0:
 				report("declarations following go:embed directives must not specify a value")
+			case !embeddableType(pass.TypesInfo.Defs[spec.Names[0]]):
+				report("declarations following go:embed directives must be of type string, []byte or embed.FS")
 			}
 		}
 	}
@@ -131,4 +134,29 @@ func nextVarSpec(com *ast.Comment, f *ast.File) *ast.ValueSpec {
 		return nil
 	}
 	return spec
+}
+
+// embeddableType in go:embed directives are string, []byte or embed.FS.
+func embeddableType(o types.Object) bool {
+	if o == nil {
+		return false
+	}
+
+	// For embed.FS the underlying type is an implementation detail.
+	// As long as the named type resolves to embed.FS, it is OK.
+	if named, ok := o.Type().(*types.Named); ok {
+		obj := named.Obj()
+		if obj.Pkg() != nil && obj.Pkg().Path() == "embed" && obj.Name() == "FS" {
+			return true
+		}
+	}
+
+	switch v := o.Type().Underlying().(type) {
+	case *types.Basic:
+		return types.Identical(v, types.Typ[types.String])
+	case *types.Slice:
+		return types.Identical(v.Elem(), types.Typ[types.Byte])
+	}
+
+	return false
 }

@@ -11,7 +11,7 @@ var (
 	// Okay directive wise but the compiler will complain that
 	// imports must appear before other declarations.
 	//go:embed embedText // ok
-	"foo"
+	foo string
 )
 
 import (
