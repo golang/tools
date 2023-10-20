@@ -38,7 +38,7 @@ func B() {}
 package a
 
 import (
-	b "testdata/b"
+	"testdata/b"
 	b0 "testdata/another/b"
 
 	//@ inline(re"a2", result)
