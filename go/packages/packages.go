@@ -373,6 +373,7 @@ type Package struct {
 	TypesInfo *types.Info
 
 	// TypesSizes provides the effective size function for types in TypesInfo.
+	// It may be nil if, for example, the compiler/architecture pair is not known.
 	TypesSizes types.Sizes
 
 	// forTest is the package under test, if any.
@@ -553,7 +554,7 @@ type loaderPackage struct {
 type loader struct {
 	pkgs map[string]*loaderPackage
 	Config
-	sizes        types.Sizes
+	sizes        types.Sizes // nil => unknown
 	parseCache   map[string]*parseValue
 	parseCacheMu sync.Mutex
 	exportMu     sync.Mutex // enforces mutual exclusion of exportdata operations
@@ -1042,7 +1043,7 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 		IgnoreFuncBodies: ld.Mode&NeedDeps == 0 && !lpkg.initial,
 
 		Error: appendError,
-		Sizes: ld.sizes,
+		Sizes: ld.sizes, // may be nil
 	}
 	if lpkg.Module != nil && lpkg.Module.GoVersion != "" {
 		typesinternal.SetGoVersion(tc, "go"+lpkg.Module.GoVersion)
