@@ -1217,12 +1217,13 @@ func testSizes(t *testing.T, exporter packagestest.Exporter) {
 	}
 }
 
-// This is a regression test for the root cause of
-// github.com/golang/vscode-go/issues/3021.
-// If types are needed (any of NeedTypes{,Info,Sizes}
-// and the types.Sizes cannot be obtained (e.g. due to a bad GOARCH)
-// then the Load operation must fail. It must not return a nil
-// TypesSizes, or use the default (wrong) size.
+// This is a regression test for a bug related to
+// github.com/golang/vscode-go/issues/3021: if types are needed (any
+// of NeedTypes{,Info,Sizes} and the types.Sizes cannot be obtained
+// (e.g. due to a bad GOARCH) then the Load operation must fail. It
+// must not return a nil TypesSizes, or use the default (wrong) size.
+// (The root cause of that issue turned out to be due to skew in the
+// Bazel GOPACKAGESDRIVER; see CL 537876.)
 //
 // We use a file=... query because it suppresses the bad-GOARCH check
 // that the go command would otherwise perform eagerly.

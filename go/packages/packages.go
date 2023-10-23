@@ -699,92 +699,91 @@ func (ld *loader) refine(response *driverResponse) ([]*Package, error) {
 		}
 	}
 
-	// Materialize the import graph (if NeedImports).
+	if ld.Mode&NeedImports != 0 {
+		// Materialize the import graph.
 
-	const (
-		white = 0 // new
-		grey  = 1 // in progress
-		black = 2 // complete
-	)
+		const (
+			white = 0 // new
+			grey  = 1 // in progress
+			black = 2 // complete
+		)
 
-	// visit traverses the import graph, depth-first,
-	// and materializes the graph as Packages.Imports.
-	//
-	// Valid imports are saved in the Packages.Import map.
-	// Invalid imports (cycles and missing nodes) are saved in the importErrors map.
-	// Thus, even in the presence of both kinds of errors, the Import graph remains a DAG.
-	//
-	// visit returns whether the package needs src or has a transitive
-	// dependency on a package that does. These are the only packages
-	// for which we load source code.
-	var stack, srcPkgs []*loaderPackage
-	var visit func(lpkg *loaderPackage) bool
-	visit = func(lpkg *loaderPackage) bool {
-		switch lpkg.color {
-		case black:
-			return lpkg.needsrc
-		case grey:
-			panic("internal error: grey node")
-		}
-		lpkg.color = grey
-		stack = append(stack, lpkg) // push
-		stubs := lpkg.Imports       // the structure form has only stubs with the ID in the Imports
-		lpkg.Imports = make(map[string]*Package, len(stubs))
-		for importPath, ipkg := range stubs {
-			var importErr error
-			imp := ld.pkgs[ipkg.ID]
-			if imp == nil {
-				// (includes package "C" when DisableCgo)
-				importErr = fmt.Errorf("missing package: %q", ipkg.ID)
-			} else if imp.color == grey {
-				importErr = fmt.Errorf("import cycle: %s", stack)
+		// visit traverses the import graph, depth-first,
+		// and materializes the graph as Packages.Imports.
+		//
+		// Valid imports are saved in the Packages.Import map.
+		// Invalid imports (cycles and missing nodes) are saved in the importErrors map.
+		// Thus, even in the presence of both kinds of errors,
+		// the Import graph remains a DAG.
+		//
+		// visit returns whether the package needs src or has a transitive
+		// dependency on a package that does. These are the only packages
+		// for which we load source code.
+		var stack []*loaderPackage
+		var visit func(lpkg *loaderPackage) bool
+		visit = func(lpkg *loaderPackage) bool {
+			switch lpkg.color {
+			case black:
+				return lpkg.needsrc
+			case grey:
+				panic("internal error: grey node")
 			}
-			if importErr != nil {
-				if lpkg.importErrors == nil {
-					lpkg.importErrors = make(map[string]error)
+			lpkg.color = grey
+			stack = append(stack, lpkg) // push
+			stubs := lpkg.Imports       // the structure form has only stubs with the ID in the Imports
+			lpkg.Imports = make(map[string]*Package, len(stubs))
+			for importPath, ipkg := range stubs {
+				var importErr error
+				imp := ld.pkgs[ipkg.ID]
+				if imp == nil {
+					// (includes package "C" when DisableCgo)
+					importErr = fmt.Errorf("missing package: %q", ipkg.ID)
+				} else if imp.color == grey {
+					importErr = fmt.Errorf("import cycle: %s", stack)
 				}
-				lpkg.importErrors[importPath] = importErr
-				continue
+				if importErr != nil {
+					if lpkg.importErrors == nil {
+						lpkg.importErrors = make(map[string]error)
+					}
+					lpkg.importErrors[importPath] = importErr
+					continue
+				}
+
+				if visit(imp) {
+					lpkg.needsrc = true
+				}
+				lpkg.Imports[importPath] = imp.Package
 			}
 
-			if visit(imp) {
-				lpkg.needsrc = true
+			// Complete type information is required for the
+			// immediate dependencies of each source package.
+			if lpkg.needsrc && ld.Mode&NeedTypes != 0 {
+				for _, ipkg := range lpkg.Imports {
+					ld.pkgs[ipkg.ID].needtypes = true
+				}
 			}
-			lpkg.Imports[importPath] = imp.Package
-		}
-		if lpkg.needsrc {
-			srcPkgs = append(srcPkgs, lpkg)
-		}
-		// NeedTypeSizes causes TypeSizes to be set even
-		// on packages for which types aren't needed.
-		if ld.Mode&NeedTypesSizes != 0 {
-			lpkg.TypesSizes = ld.sizes
-		}
-		stack = stack[:len(stack)-1] // pop
-		lpkg.color = black
 
-		return lpkg.needsrc
-	}
+			// NeedTypeSizes causes TypeSizes to be set even
+			// on packages for which types aren't needed.
+			if ld.Mode&NeedTypesSizes != 0 {
+				lpkg.TypesSizes = ld.sizes
+			}
+			stack = stack[:len(stack)-1] // pop
+			lpkg.color = black
 
-	if ld.Mode&NeedImports == 0 {
-		// We do this to drop the stub import packages that we are not even going to try to resolve.
-		for _, lpkg := range initial {
-			lpkg.Imports = nil
+			return lpkg.needsrc
 		}
-	} else {
+
 		// For each initial package, create its import DAG.
 		for _, lpkg := range initial {
 			visit(lpkg)
 		}
 
-		if ld.Mode&NeedTypes != 0 {
-			// Complete type information is required for the
-			// immediate dependencies of each source package.
-			for _, lpkg := range srcPkgs {
-				for _, ipkg := range lpkg.Imports {
-					ld.pkgs[ipkg.ID].needtypes = true
-				}
-			}
+	} else {
+		// !NeedImports: drop the stub (ID-only) import packages
+		// that we are not even going to try to resolve.
+		for _, lpkg := range initial {
+			lpkg.Imports = nil
 		}
 	}
 
