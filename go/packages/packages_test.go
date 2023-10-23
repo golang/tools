@@ -1217,6 +1217,34 @@ func testSizes(t *testing.T, exporter packagestest.Exporter) {
 	}
 }
 
+// This is a regression test for the root cause of
+// github.com/golang/vscode-go/issues/3021.
+// If types are needed (any of NeedTypes{,Info,Sizes}
+// and the types.Sizes cannot be obtained (e.g. due to a bad GOARCH)
+// then the Load operation must fail. It must not return a nil
+// TypesSizes, or use the default (wrong) size.
+//
+// We use a file=... query because it suppresses the bad-GOARCH check
+// that the go command would otherwise perform eagerly.
+// (Gopls relies on this as a fallback.)
+func TestNeedTypeSizesWithBadGOARCH(t *testing.T) {
+	testAllOrModulesParallel(t, func(t *testing.T, exporter packagestest.Exporter) {
+		exported := packagestest.Export(t, exporter, []packagestest.Module{{
+			Name:  "testdata",
+			Files: map[string]interface{}{"a/a.go": `package a`}}})
+		defer exported.Cleanup()
+
+		exported.Config.Mode = packages.NeedTypesSizes // or {,Info,Sizes}
+		exported.Config.Env = append(exported.Config.Env, "GOARCH=286")
+		_, err := packages.Load(exported.Config, "file=./a/a.go")
+		got := fmt.Sprint(err)
+		want := "can't determine type sizes"
+		if !strings.Contains(got, want) {
+			t.Errorf("Load error %q does not contain substring %q", got, want)
+		}
+	})
+}
+
 // TestContainsFallbackSticks ensures that when there are both contains and non-contains queries
 // the decision whether to fallback to the pre-1.11 go list sticks across both sets of calls to
 // go list.
