@@ -85,7 +85,7 @@ package a
 
 import (
 	"mod.test/b"
-	c "mod.test/c"
+	"mod.test/c"
 )
 
 func _() {
@@ -97,7 +97,7 @@ package a
 
 import (
 	"mod.test/b"
-	c "mod.test/c"
+	"mod.test/c"
 )
 
 func _() {
@@ -111,7 +111,7 @@ package a
 
 import (
 	"mod.test/b"
-	c "mod.test/c"
+	"mod.test/c"
 )
 
 func _() {
@@ -129,9 +129,9 @@ package a
 // TODO(rfindley/adonovan): inlining here adds an additional import of
 // mod.test/b. Can we do better?
 import (
+	"mod.test/b"
 	. "mod.test/b"
-	b "mod.test/b"
-	c "mod.test/c"
+	"mod.test/c"
 )
 
 func _() {

@@ -413,6 +413,10 @@ func buildMetadata(updates map[PackageID]*source.Metadata, pkg *packages.Package
 		return
 	}
 
+	if pkg.TypesSizes == nil {
+		panic(id + ".TypeSizes is nil")
+	}
+
 	// Recreate the metadata rather than reusing it to avoid locking.
 	m := &source.Metadata{
 		ID:         id,

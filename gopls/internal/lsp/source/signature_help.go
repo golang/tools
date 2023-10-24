@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/event"
 )
@@ -74,9 +75,22 @@ FindCall:
 		obj = pkg.GetTypesInfo().ObjectOf(t.Sel)
 	}
 
-	// Handle builtin functions separately.
-	if obj, ok := obj.(*types.Builtin); ok {
-		return builtinSignature(ctx, snapshot, callExpr, obj.Name(), pos)
+	// Built-in?
+	if obj != nil && !obj.Pos().IsValid() {
+		// built-in function?
+		if obj, ok := obj.(*types.Builtin); ok {
+			return builtinSignature(ctx, snapshot, callExpr, obj.Name(), pos)
+		}
+
+		// error.Error?
+		if fn, ok := obj.(*types.Func); ok && fn.Name() == "Error" {
+			return &protocol.SignatureInformation{
+				Label:         "Error()",
+				Documentation: stringToSigInfoDocumentation("Error returns the error message.", snapshot.Options()),
+			}, 0, nil
+		}
+
+		return nil, 0, bug.Errorf("call to unexpected built-in %v (%T)", obj, obj)
 	}
 
 	// Get the type information for the function being called.
@@ -137,7 +151,6 @@ func builtinSignature(ctx context.Context, snapshot Snapshot, callExpr *ast.Call
 		Documentation: stringToSigInfoDocumentation(sig.doc, snapshot.Options()),
 		Parameters:    paramInfo,
 	}, activeParam, nil
-
 }
 
 func activeParameter(callExpr *ast.CallExpr, numParams int, variadic bool, pos token.Pos) (activeParam int) {

@@ -1784,16 +1784,16 @@ func (b *builder) selectStmt(fn *Function, s *ast.SelectStmt, label *lblock) {
 // forStmt emits to fn code for the for statement s, optionally
 // labelled by label.
 func (b *builder) forStmt(fn *Function, s *ast.ForStmt, label *lblock) {
-	//	...init...
-	//      jump loop
+	//     ...init...
+	//     jump loop
 	// loop:
-	//      if cond goto body else done
+	//     if cond goto body else done
 	// body:
-	//      ...body...
-	//      jump post
-	// post:				 (target of continue)
-	//      ...post...
-	//      jump loop
+	//     ...body...
+	//     jump post
+	// post:                                 (target of continue)
+	//     ...post...
+	//     jump loop
 	// done:                                 (target of break)
 	if s.Init != nil {
 		b.stmt(fn, s.Init)
@@ -1841,17 +1841,17 @@ func (b *builder) forStmt(fn *Function, s *ast.ForStmt, label *lblock) {
 // forPos is the position of the "for" token.
 func (b *builder) rangeIndexed(fn *Function, x Value, tv types.Type, pos token.Pos) (k, v Value, loop, done *BasicBlock) {
 	//
-	//      length = len(x)
-	//      index = -1
-	// loop:                                   (target of continue)
-	//      index++
-	// 	if index < length goto body else done
+	//     length = len(x)
+	//     index = -1
+	// loop:                                     (target of continue)
+	//     index++
+	//     if index < length goto body else done
 	// body:
-	//      k = index
-	//      v = x[index]
-	//      ...body...
-	// 	jump loop
-	// done:                                   (target of break)
+	//     k = index
+	//     v = x[index]
+	//     ...body...
+	//     jump loop
+	// done:                                     (target of break)
 
 	// Determine number of iterations.
 	var length Value
@@ -1936,16 +1936,16 @@ func (b *builder) rangeIndexed(fn *Function, x Value, tv types.Type, pos token.P
 // if the respective component is not wanted.
 func (b *builder) rangeIter(fn *Function, x Value, tk, tv types.Type, pos token.Pos) (k, v Value, loop, done *BasicBlock) {
 	//
-	//	it = range x
+	//     it = range x
 	// loop:                                   (target of continue)
-	//	okv = next it                      (ok, key, value)
-	//  	ok = extract okv #0
-	// 	if ok goto body else done
+	//     okv = next it                       (ok, key, value)
+	//     ok = extract okv #0
+	//     if ok goto body else done
 	// body:
-	// 	k = extract okv #1
-	// 	v = extract okv #2
-	//      ...body...
-	// 	jump loop
+	//     k = extract okv #1
+	//     v = extract okv #2
+	//     ...body...
+	//     jump loop
 	// done:                                   (target of break)
 	//
 
@@ -1998,13 +1998,13 @@ func (b *builder) rangeIter(fn *Function, x Value, tk, tv types.Type, pos token.
 func (b *builder) rangeChan(fn *Function, x Value, tk types.Type, pos token.Pos) (k Value, loop, done *BasicBlock) {
 	//
 	// loop:                                   (target of continue)
-	//      ko = <-x                           (key, ok)
-	//      ok = extract ko #1
-	//      if ok goto body else done
+	//     ko = <-x                            (key, ok)
+	//     ok = extract ko #1
+	//     if ok goto body else done
 	// body:
-	//      k = extract ko #0
-	//      ...
-	//      goto loop
+	//     k = extract ko #0
+	//     ...body...
+	//     goto loop
 	// done:                                   (target of break)
 
 	loop = fn.newBasicBlock("rangechan.loop")
@@ -2028,6 +2028,57 @@ func (b *builder) rangeChan(fn *Function, x Value, tk types.Type, pos token.Pos)
 	if tk != nil {
 		k = emitExtract(fn, ko, 0)
 	}
+	return
+}
+
+// rangeInt emits to fn the header for a range loop with an integer operand.
+// tk is the key value's type, or nil if the k result is not wanted.
+// pos is the position of the "for" token.
+func (b *builder) rangeInt(fn *Function, x Value, tk types.Type, pos token.Pos) (k Value, loop, done *BasicBlock) {
+	//
+	//     iter = 0
+	//     if 0 < x goto body else done
+	// loop:                                   (target of continue)
+	//     iter++
+	//     if iter < x goto body else done
+	// body:
+	//     k = x
+	//     ...body...
+	//     jump loop
+	// done:                                   (target of break)
+
+	if isUntyped(x.Type()) {
+		x = emitConv(fn, x, tInt)
+	}
+
+	T := x.Type()
+	iter := fn.addLocal(T, token.NoPos)
+	// x may be unsigned. Avoid initializing x to -1.
+
+	body := fn.newBasicBlock("rangeint.body")
+	done = fn.newBasicBlock("rangeint.done")
+	emitIf(fn, emitCompare(fn, token.LSS, zeroConst(T), x, token.NoPos), body, done)
+
+	loop = fn.newBasicBlock("rangeint.loop")
+	fn.currentBlock = loop
+
+	incr := &BinOp{
+		Op: token.ADD,
+		X:  emitLoad(fn, iter),
+		Y:  emitConv(fn, vOne, T),
+	}
+	incr.setType(T)
+	emitStore(fn, iter, fn.emit(incr), pos)
+	emitIf(fn, emitCompare(fn, token.LSS, incr, x, token.NoPos), body, done)
+	fn.currentBlock = body
+
+	if tk != nil {
+		// Integer types (int, uint8, etc.) are named and
+		// we know that k is assignable to x when tk != nil.
+		// This implies tk and T are identical so no conversion is needed.
+		k = emitLoad(fn, iter)
+	}
+
 	return
 }
 
@@ -2068,8 +2119,20 @@ func (b *builder) rangeStmt(fn *Function, s *ast.RangeStmt, label *lblock) {
 	case *types.Chan:
 		k, loop, done = b.rangeChan(fn, x, tk, s.For)
 
-	case *types.Map, *types.Basic: // string
+	case *types.Map:
 		k, v, loop, done = b.rangeIter(fn, x, tk, tv, s.For)
+
+	case *types.Basic:
+		switch {
+		case rt.Info()&types.IsString != 0:
+			k, v, loop, done = b.rangeIter(fn, x, tk, tv, s.For)
+
+		case rt.Info()&types.IsInteger != 0:
+			k, loop, done = b.rangeInt(fn, x, tk, s.For)
+
+		default:
+			panic("Cannot range over basic type: " + rt.String())
+		}
 
 	default:
 		panic("Cannot range over: " + rt.String())

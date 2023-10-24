@@ -59,9 +59,12 @@ type freeRef struct {
 
 // An object abstracts a free types.Object referenced by the callee. Gob-serializable.
 type object struct {
-	Name     string          // Object.Name()
-	Kind     string          // one of {var,func,const,type,pkgname,nil,builtin}
-	PkgPath  string          // pkgpath of object (or of imported package if kind="pkgname")
+	Name    string // Object.Name()
+	Kind    string // one of {var,func,const,type,pkgname,nil,builtin}
+	PkgPath string // path of object's package (or imported package if kind="pkgname")
+	PkgName string // name of object's package (or imported package if kind="pkgname")
+	// TODO(rfindley): should we also track LocalPkgName here? Do we want to
+	// preserve the local package name?
 	ValidPos bool            // Object.Pos().IsValid()
 	Shadow   map[string]bool // names shadowed at one of the object's refs
 }
@@ -192,15 +195,18 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 					objidx, ok := freeObjIndex[obj]
 					if !ok {
 						objidx = len(freeObjIndex)
-						var pkgpath string
-						if pkgname, ok := obj.(*types.PkgName); ok {
-							pkgpath = pkgname.Imported().Path()
+						var pkgpath, pkgname string
+						if pn, ok := obj.(*types.PkgName); ok {
+							pkgpath = pn.Imported().Path()
+							pkgname = pn.Imported().Name()
 						} else if obj.Pkg() != nil {
 							pkgpath = obj.Pkg().Path()
+							pkgname = obj.Pkg().Name()
 						}
 						freeObjs = append(freeObjs, object{
 							Name:     obj.Name(),
 							Kind:     objectKind(obj),
+							PkgName:  pkgname,
 							PkgPath:  pkgpath,
 							ValidPos: obj.Pos().IsValid(),
 						})

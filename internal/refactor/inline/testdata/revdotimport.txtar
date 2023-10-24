@@ -32,8 +32,8 @@ func _() {
 package c
 
 import (
+	"testdata/a"
 	. "testdata/a"
-	a "testdata/a"
 )
 
 func _() {

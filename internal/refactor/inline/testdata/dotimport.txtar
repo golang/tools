@@ -29,7 +29,7 @@ func _() {
 package c
 
 import (
-	a "testdata/a"
+	"testdata/a"
 )
 
 func _() {
