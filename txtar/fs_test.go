@@ -79,12 +79,10 @@ two
 			invalidRoundtrip: true,
 		},
 		{
-			name: "invalid names",
+			name: "invalid name",
 			input: `
 -- ../one.txt --
 one
--- ../one.txt --
-two
 `,
 			invalidNames: true,
 		},
