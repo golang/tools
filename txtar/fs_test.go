@@ -1,4 +1,4 @@
-// Copyright 2022 The Go Authors. All rights reserved.
+// Copyright 2023 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -15,33 +15,37 @@ import (
 	"testing/iotest"
 )
 
-var fstestcases = []struct{ name, input, files string }{
-	{
-		name:  "empty",
-		input: ``,
-		files: "",
-	},
-	{
-		name: "one",
-		input: `
+func TestFS(t *testing.T) {
+	var fstestcases = []struct {
+		name, input, files             string
+		invalidNames, invalidRoundtrip bool
+	}{
+		{
+			name:  "empty",
+			input: ``,
+			files: "",
+		},
+		{
+			name: "one",
+			input: `
 -- one.txt --
 one
 `,
-		files: "one.txt",
-	},
-	{
-		name: "two",
-		input: `
+			files: "one.txt",
+		},
+		{
+			name: "two",
+			input: `
 -- one.txt --
 one
 -- two.txt --
 two
 `,
-		files: "one.txt two.txt",
-	},
-	{
-		name: "subdirectories",
-		input: `
+			files: "one.txt two.txt",
+		},
+		{
+			name: "subdirectories",
+			input: `
 -- one.txt --
 one
 -- 2/two.txt --
@@ -51,94 +55,121 @@ three
 -- 4/four.txt --
 three
 `,
-		files: "one.txt 2/two.txt 2/3/three.txt 4/four.txt",
-	},
-	{
-		name: "unclean file names",
-		input: `
+			files: "one.txt 2/two.txt 2/3/three.txt 4/four.txt",
+		},
+		{
+			name: "unclean file names",
+			input: `
 -- 1/../one.txt --
 one
 -- 2/sub/../two.txt --
 two
 `,
-		files: "one.txt 2/two.txt",
-	},
-}
+			files: "one.txt 2/two.txt",
+		},
+		{
+			name: "overlapping names",
+			input: `
+-- 1/../one.txt --
+one
+-- 2/../one.txt --
+two
+`,
+			files:            "one.txt",
+			invalidRoundtrip: true,
+		},
+		{
+			name: "invalid names",
+			input: `
+-- ../one.txt --
+one
+-- ../one.txt --
+two
+`,
+			invalidNames: true,
+		},
+	}
 
-func TestFS(t *testing.T) {
 	for _, tc := range fstestcases {
 		t.Run(tc.name, func(t *testing.T) {
-			testFS(t, tc.name, tc.input, tc.files)
+			files := strings.Fields(tc.files)
+			a := Parse([]byte(tc.input))
+			fsys, err := FS(a)
+			if tc.invalidNames {
+				if err == nil {
+					t.Fatal("expected error: got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := fstest.TestFS(fsys, files...); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range files {
+				for _, f := range a.Files {
+					if f.Name != name {
+						continue
+					}
+					fsys, err := FS(a)
+					if err != nil {
+						continue
+					}
+					b, err := fs.ReadFile(fsys, name)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if string(b) != string(f.Data) {
+						t.Fatalf("mismatched contents for %q", name)
+					}
+					// Do iotest
+					fsfile, err := fsys.Open(name)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err = iotest.TestReader(fsfile, f.Data); err != nil {
+						t.Fatal(err)
+					}
+					if err = fsfile.Close(); err != nil {
+						t.Fatal(err)
+					}
+					// test io.Copy
+					fsfile, err = fsys.Open(name)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var buf strings.Builder
+					n, err := io.Copy(&buf, fsfile)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if n != int64(len(f.Data)) {
+						t.Fatalf("bad copy size: %d", n)
+					}
+					if buf.String() != string(f.Data) {
+						t.Fatalf("mismatched contents for io.Copy of %q", name)
+					}
+					if err = fsfile.Close(); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			fsys2, err := FS(a)
+			if err != nil {
+				t.Fatal(err)
+			}
+			a2, err := From(fsys2)
+			if err != nil {
+				t.Fatalf("failed to write fsys for %v: %v", tc.name, err)
+			}
+
+			in, out := normalized(a), normalized(a2)
+			roundTrips := in == out
+			if roundTrips == tc.invalidRoundtrip {
+				t.Errorf("Got round trip %v: want %v", roundTrips, !tc.invalidRoundtrip)
+			}
 		})
-	}
-}
-
-func FuzzFS(f *testing.F) {
-	for _, tc := range fstestcases {
-		f.Add(tc.name, tc.input, tc.files)
-	}
-	f.Fuzz(testFS)
-}
-
-func testFS(t *testing.T, name, input, fileNames string) {
-	a := Parse([]byte(input))
-	files := strings.Fields(fileNames)
-	if err := fstest.TestFS(a.FS(), files...); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range files {
-		for _, f := range a.Files {
-			if f.Name != name {
-				continue
-			}
-			fsys := a.FS()
-			b, err := fs.ReadFile(fsys, name)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(b) != string(f.Data) {
-				t.Fatalf("mismatched contents for %q", name)
-			}
-			// Be careful with n cases, this open is O(n^3) deep
-			// Do iotest
-			fsfile, err := fsys.Open(name)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err = iotest.TestReader(fsfile, f.Data); err != nil {
-				t.Fatal(err)
-			}
-			if err = fsfile.Close(); err != nil {
-				t.Fatal(err)
-			}
-			// test io.Copy
-			fsfile, err = fsys.Open(name)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var buf strings.Builder
-			n, err := io.Copy(&buf, fsfile)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if n != int64(len(f.Data)) {
-				t.Fatalf("bad copy size: %d", n)
-			}
-			if buf.String() != string(f.Data) {
-				t.Fatalf("mismatched contents for io.Copy of %q", name)
-			}
-			if err = fsfile.Close(); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	a2, err := From(a.FS())
-	if err != nil {
-		t.Fatalf("failed to write fsys for %v: %v", name, err)
-	}
-
-	if in, out := normalized(a), normalized(a2); in != out {
-		t.Errorf("From round trip failed: %q != %q", in, out)
 	}
 }
 

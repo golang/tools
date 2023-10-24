@@ -1,166 +1,64 @@
-// Copyright 2022 The Go Authors. All rights reserved.
+// Copyright 2023 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
 package txtar
 
 import (
-	"bytes"
-	"errors"
-	"io"
+	"fmt"
 	"io/fs"
 	"path"
 	"strings"
+	"testing/fstest"
 	"time"
 )
 
-type archiveFS struct {
-	a *Archive
-}
-
-// Open implements fs.FS.
-func (fsys archiveFS) Open(name string) (fs.File, error) {
-	if !fs.ValidPath(name) {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
-	}
-
-	for _, f := range fsys.a.Files {
-		// In case the txtar has weird filenames
-		cleanName := path.Clean(f.Name)
-		if name == cleanName {
-			return newOpenFile(f), nil
+// FS returns the file system form of an Archive.
+// It returns an error if any of the file names in the archive
+// are not valid file system names.
+// It also builds an index of the files and their content:
+// adding, removing, or renaming files in the archive
+// after calling FS will not affect file system method calls.
+// However, FS does not copy the underlying file contents:
+// change to file content will be visible in file system method calls.
+func FS(a *Archive) (fs.FS, error) {
+	m := make(fstest.MapFS)
+	for _, f := range a.Files {
+		if !unixIsLocal(f.Name) {
+			return nil, fmt.Errorf("txtar.FS: Archive contains invalid path for fs.File: %q", f.Name)
+		}
+		m[path.Clean(f.Name)] = &fstest.MapFile{
+			Data:    f.Data,
+			Mode:    0o666,
+			ModTime: time.Time{},
+			Sys:     f,
 		}
 	}
-	var entries []fileInfo
-	dirs := make(map[string]bool)
-	prefix := name + "/"
-	if name == "." {
-		prefix = ""
-	}
+	return m, nil
+}
 
-	for _, f := range fsys.a.Files {
-		cleanName := path.Clean(f.Name)
-		if !strings.HasPrefix(cleanName, prefix) {
-			continue
-		}
-		felem := cleanName[len(prefix):]
-		i := strings.Index(felem, "/")
-		if i < 0 {
-			entries = append(entries, newFileInfo(f))
-		} else {
-			dirs[felem[:i]] = true
+// copied from filepath.unixIsLocal
+// with modification to use path
+func unixIsLocal(p string) bool {
+	if path.IsAbs(p) || p == "" {
+		return false
+	}
+	hasDots := false
+	for p := p; p != ""; {
+		var part string
+		part, p, _ = strings.Cut(p, "/")
+		if part == "." || part == ".." {
+			hasDots = true
+			break
 		}
 	}
-	// If there are no children of the name,
-	// then the directory is treated as not existing
-	// unless the directory is "."
-	if len(entries) == 0 && len(dirs) == 0 && name != "." {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+	if hasDots {
+		p = path.Clean(p)
 	}
-
-	for name := range dirs {
-		entries = append(entries, newDirInfo(name))
+	if p == ".." || strings.HasPrefix(p, "../") {
+		return false
 	}
-
-	return &openDir{newDirInfo(name), entries, 0}, nil
-}
-
-var _ fs.ReadFileFS = archiveFS{}
-
-// ReadFile implements fs.ReadFileFS.
-func (fsys archiveFS) ReadFile(name string) ([]byte, error) {
-	if !fs.ValidPath(name) {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
-	}
-	if name == "." {
-		return nil, &fs.PathError{Op: "read", Path: name, Err: errors.New("is a directory")}
-	}
-	prefix := name + "/"
-	for _, f := range fsys.a.Files {
-		if cleanName := path.Clean(f.Name); name == cleanName {
-			return append(([]byte)(nil), f.Data...), nil
-		}
-		// It's a directory
-		if strings.HasPrefix(f.Name, prefix) {
-			return nil, &fs.PathError{Op: "read", Path: name, Err: errors.New("is a directory")}
-		}
-	}
-	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
-}
-
-var (
-	_ fs.File           = (*openFile)(nil)
-	_ io.ReadSeekCloser = (*openFile)(nil)
-	_ io.ReaderAt       = (*openFile)(nil)
-	_ io.WriterTo       = (*openFile)(nil)
-)
-
-type openFile struct {
-	bytes.Reader
-	fi fileInfo
-}
-
-func newOpenFile(f File) *openFile {
-	var o openFile
-	o.Reader.Reset(f.Data)
-	o.fi = fileInfo{f, 0444}
-	return &o
-}
-
-func (o *openFile) Stat() (fs.FileInfo, error) { return o.fi, nil }
-
-func (o *openFile) Close() error { return nil }
-
-var _ fs.FileInfo = fileInfo{}
-
-type fileInfo struct {
-	f File
-	m fs.FileMode
-}
-
-func newFileInfo(f File) fileInfo {
-	return fileInfo{f, 0444}
-}
-
-func newDirInfo(name string) fileInfo {
-	return fileInfo{File{Name: name}, fs.ModeDir | 0555}
-}
-
-func (f fileInfo) Name() string               { return path.Base(f.f.Name) }
-func (f fileInfo) Size() int64                { return int64(len(f.f.Data)) }
-func (f fileInfo) Mode() fs.FileMode          { return f.m }
-func (f fileInfo) Type() fs.FileMode          { return f.m.Type() }
-func (f fileInfo) ModTime() time.Time         { return time.Time{} }
-func (f fileInfo) IsDir() bool                { return f.m.IsDir() }
-func (f fileInfo) Sys() interface{}           { return f.f }
-func (f fileInfo) Info() (fs.FileInfo, error) { return f, nil }
-
-type openDir struct {
-	dirInfo fileInfo
-	entries []fileInfo
-	offset  int
-}
-
-func (d *openDir) Stat() (fs.FileInfo, error) { return &d.dirInfo, nil }
-func (d *openDir) Close() error               { return nil }
-func (d *openDir) Read(b []byte) (int, error) {
-	return 0, &fs.PathError{Op: "read", Path: d.dirInfo.f.Name, Err: errors.New("is a directory")}
-}
-
-func (d *openDir) ReadDir(count int) ([]fs.DirEntry, error) {
-	n := len(d.entries) - d.offset
-	if count > 0 && n > count {
-		n = count
-	}
-	if n == 0 && count > 0 {
-		return nil, io.EOF
-	}
-	entries := make([]fs.DirEntry, n)
-	for i := range entries {
-		entries[i] = &d.entries[d.offset+i]
-	}
-	d.offset += n
-	return entries, nil
+	return true
 }
 
 // From constructs an Archive with the contents of fsys and an empty Comment.
