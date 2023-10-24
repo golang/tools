@@ -42,7 +42,7 @@ func runTestCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]p
 	if err != nil {
 		return nil, err
 	}
-	fns, err := TestsAndBenchmarks(ctx, snapshot, pkg, pgf)
+	fns, err := TestsAndBenchmarks(pkg, pgf)
 	if err != nil {
 		return nil, err
 	}
@@ -88,18 +88,18 @@ func runTestCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]p
 	return codeLens, nil
 }
 
-type testFn struct {
+type TestFn struct {
 	Name string
 	Rng  protocol.Range
 }
 
-type testFns struct {
-	Tests      []testFn
-	Benchmarks []testFn
+type TestFns struct {
+	Tests      []TestFn
+	Benchmarks []TestFn
 }
 
-func TestsAndBenchmarks(ctx context.Context, snapshot Snapshot, pkg Package, pgf *ParsedGoFile) (testFns, error) {
-	var out testFns
+func TestsAndBenchmarks(pkg Package, pgf *ParsedGoFile) (TestFns, error) {
+	var out TestFns
 
 	if !strings.HasSuffix(pgf.URI.Filename(), "_test.go") {
 		return out, nil
@@ -117,11 +117,11 @@ func TestsAndBenchmarks(ctx context.Context, snapshot Snapshot, pkg Package, pgf
 		}
 
 		if matchTestFunc(fn, pkg, testRe, "T") {
-			out.Tests = append(out.Tests, testFn{fn.Name.Name, rng})
+			out.Tests = append(out.Tests, TestFn{fn.Name.Name, rng})
 		}
 
 		if matchTestFunc(fn, pkg, benchmarkRe, "B") {
-			out.Benchmarks = append(out.Benchmarks, testFn{fn.Name.Name, rng})
+			out.Benchmarks = append(out.Benchmarks, TestFn{fn.Name.Name, rng})
 		}
 	}
 

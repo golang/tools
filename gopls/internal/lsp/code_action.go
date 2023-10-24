@@ -674,7 +674,7 @@ func codeActionsForDiagnostic(ctx context.Context, snapshot source.Snapshot, sd 
 }
 
 func goTest(ctx context.Context, snapshot source.Snapshot, pkg source.Package, pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
-	fns, err := source.TestsAndBenchmarks(ctx, snapshot, pkg, pgf)
+	fns, err := source.TestsAndBenchmarks(pkg, pgf)
 	if err != nil {
 		return nil, err
 	}

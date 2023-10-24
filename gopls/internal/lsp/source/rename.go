@@ -387,7 +387,7 @@ func renameOrdinary(ctx context.Context, snapshot Snapshot, f FileHandle, pp pro
 		for obj := range targets {
 			objects = append(objects, obj)
 		}
-		editMap, _, err := renameObjects(ctx, snapshot, newName, pkg, objects...)
+		editMap, _, err := renameObjects(newName, pkg, objects...)
 		return editMap, err
 	}
 
@@ -445,7 +445,7 @@ func renameOrdinary(ctx context.Context, snapshot Snapshot, f FileHandle, pp pro
 
 	// Apply the renaming to the (initial) object.
 	declPkgPath := PackagePath(obj.Pkg().Path())
-	return renameExported(ctx, snapshot, pkgs, declPkgPath, declObjPath, newName)
+	return renameExported(pkgs, declPkgPath, declObjPath, newName)
 }
 
 // funcOrigin is a go1.18-portable implementation of (*types.Func).Origin.
@@ -549,7 +549,7 @@ func SortPostOrder(meta MetadataSource, ids []PackageID) {
 // within the specified packages, along with any other objects that
 // must be renamed as a consequence. The slice of packages must be
 // topologically ordered.
-func renameExported(ctx context.Context, snapshot Snapshot, pkgs []Package, declPkgPath PackagePath, declObjPath objectpath.Path, newName string) (map[span.URI][]diff.Edit, error) {
+func renameExported(pkgs []Package, declPkgPath PackagePath, declObjPath objectpath.Path, newName string) (map[span.URI][]diff.Edit, error) {
 
 	// A target is a name for an object that is stable across types.Packages.
 	type target struct {
@@ -605,7 +605,7 @@ func renameExported(ctx context.Context, snapshot Snapshot, pkgs []Package, decl
 		}
 
 		// Apply the renaming.
-		editMap, moreObjects, err := renameObjects(ctx, snapshot, newName, pkg, objects...)
+		editMap, moreObjects, err := renameObjects(newName, pkg, objects...)
 		if err != nil {
 			return nil, err
 		}
@@ -970,7 +970,7 @@ func renameImports(ctx context.Context, snapshot Snapshot, m *Metadata, newPath 
 				//   become shadowed by an intervening declaration that
 				//   uses the new name.
 				// It returns the edits if no conflict was detected.
-				editMap, _, err := renameObjects(ctx, snapshot, localName, pkg, pkgname)
+				editMap, _, err := renameObjects(localName, pkg, pkgname)
 				if err != nil {
 					return err
 				}
@@ -1004,7 +1004,7 @@ func renameImports(ctx context.Context, snapshot Snapshot, m *Metadata, newPath 
 // consequence of the requested renamings.
 //
 // It returns an error if the renaming would cause a conflict.
-func renameObjects(ctx context.Context, snapshot Snapshot, newName string, pkg Package, targets ...types.Object) (map[span.URI][]diff.Edit, map[types.Object]bool, error) {
+func renameObjects(newName string, pkg Package, targets ...types.Object) (map[span.URI][]diff.Edit, map[types.Object]bool, error) {
 	r := renamer{
 		pkg:          pkg,
 		objsToUpdate: make(map[types.Object]bool),

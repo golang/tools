@@ -156,7 +156,7 @@ func fixedByImportingEmbed(diag *Diagnostic) bool {
 }
 
 // addEmbedImport adds a missing embed "embed" import with blank name.
-func addEmbedImport(ctx context.Context, snapshot Snapshot, fh FileHandle, rng protocol.Range) (*token.FileSet, *analysis.SuggestedFix, error) {
+func addEmbedImport(ctx context.Context, snapshot Snapshot, fh FileHandle, _ protocol.Range) (*token.FileSet, *analysis.SuggestedFix, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, nil, fmt.Errorf("narrow pkg: %w", err)

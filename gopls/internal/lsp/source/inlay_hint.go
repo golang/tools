@@ -306,7 +306,7 @@ func constantValues(node ast.Node, m *protocol.Mapper, tf *token.File, info *typ
 	return hints
 }
 
-func compositeLiteralFields(node ast.Node, m *protocol.Mapper, tf *token.File, info *types.Info, q *types.Qualifier) []protocol.InlayHint {
+func compositeLiteralFields(node ast.Node, m *protocol.Mapper, tf *token.File, info *types.Info, _ *types.Qualifier) []protocol.InlayHint {
 	compLit, ok := node.(*ast.CompositeLit)
 	if !ok {
 		return nil

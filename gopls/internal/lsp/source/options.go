@@ -1695,7 +1695,7 @@ var parBreakRE = regexp.MustCompile("\n{2,}")
 
 func collectEnums(opt *OptionJSON) string {
 	var b strings.Builder
-	write := func(name, doc string, index, len int) {
+	write := func(name, doc string) {
 		if doc != "" {
 			unbroken := parBreakRE.ReplaceAllString(doc, "\\\n")
 			fmt.Fprintf(&b, "* %s\n", strings.TrimSpace(unbroken))
@@ -1705,13 +1705,13 @@ func collectEnums(opt *OptionJSON) string {
 	}
 	if len(opt.EnumValues) > 0 && opt.Type == "enum" {
 		b.WriteString("\nMust be one of:\n\n")
-		for i, val := range opt.EnumValues {
-			write(val.Value, val.Doc, i, len(opt.EnumValues))
+		for _, val := range opt.EnumValues {
+			write(val.Value, val.Doc)
 		}
 	} else if len(opt.EnumKeys.Keys) > 0 && shouldShowEnumKeysInSettings(opt.Name) {
 		b.WriteString("\nCan contain any of:\n\n")
-		for i, val := range opt.EnumKeys.Keys {
-			write(val.Name, val.Doc, i, len(opt.EnumKeys.Keys))
+		for _, val := range opt.EnumKeys.Keys {
+			write(val.Name, val.Doc)
 		}
 	}
 	return b.String()
