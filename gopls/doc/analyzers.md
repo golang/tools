@@ -276,8 +276,12 @@ iteration variable of an enclosing loop, and the loop calls the function
 in such a way (e.g. with go or defer) that it may outlive the loop
 iteration and possibly observe the wrong value of the variable.
 
+Note: An iteration variable can only outlive a loop iteration in Go versions <=1.21.
+In Go 1.22 and later, the loop variable lifetimes changed to create a new
+iteration variable per loop iteration. (See go.dev/issue/60078.)
+
 In this example, all the deferred functions run after the loop has
-completed, so all observe the final value of v.
+completed, so all observe the final value of v [<go1.22].
 
 	for _, v := range list {
 	    defer func() {
@@ -294,7 +298,10 @@ One fix is to create a new variable for each iteration of the loop:
 	    }()
 	}
 
-The next example uses a go statement and has a similar problem.
+After Go version 1.22, the previous two for loops are equivalent
+and both are correct.
+
+The next example uses a go statement and has a similar problem [<go1.22].
 In addition, it has a data race because the loop updates v
 concurrent with the goroutines accessing it.
 
@@ -318,7 +325,7 @@ A hard-to-spot variant of this form is common in parallel tests:
 	}
 
 The t.Parallel() call causes the rest of the function to execute
-concurrent with the loop.
+concurrent with the loop [<go1.22].
 
 The analyzer reports references only in the last statement,
 as it is not deep enough to understand the effects of subsequent
