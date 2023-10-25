@@ -68,7 +68,6 @@ type MethodExtractions = map[span.Span]span.Span
 type Renames = map[span.Span]string
 type PrepareRenames = map[span.Span]*source.PrepareItem
 type InlayHints = []span.Span
-type Signatures = map[span.Span]*protocol.SignatureHelp
 type Links = map[span.URI][]Link
 type AddImport = map[span.URI]string
 type SelectionRanges = []span.Span
@@ -90,7 +89,6 @@ type Data struct {
 	Renames                  Renames
 	InlayHints               InlayHints
 	PrepareRenames           PrepareRenames
-	Signatures               Signatures
 	Links                    Links
 	AddImport                AddImport
 	SelectionRanges          SelectionRanges
@@ -126,7 +124,6 @@ type Tests interface {
 	InlayHints(*testing.T, span.Span)
 	Rename(*testing.T, span.Span, string)
 	PrepareRename(*testing.T, span.Span, *source.PrepareItem)
-	SignatureHelp(*testing.T, span.Span, *protocol.SignatureHelp)
 	Link(*testing.T, span.URI, []Link)
 	AddImport(*testing.T, span.URI, string)
 	SelectionRanges(*testing.T, span.Span)
@@ -246,7 +243,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 		PrepareRenames:           make(PrepareRenames),
 		SuggestedFixes:           make(SuggestedFixes),
 		MethodExtractions:        make(MethodExtractions),
-		Signatures:               make(Signatures),
 		Links:                    make(Links),
 		AddImport:                make(AddImport),
 
@@ -392,7 +388,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 		"inlayHint":      datum.collectInlayHints,
 		"rename":         datum.collectRenames,
 		"prepare":        datum.collectPrepareRenames,
-		"signature":      datum.collectSignatures,
 		"link":           datum.collectLinks,
 		"suggestedfix":   datum.collectSuggestedFixes,
 		"extractmethod":  datum.collectMethodExtractions,
@@ -593,16 +588,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		}
 	})
 
-	t.Run("SignatureHelp", func(t *testing.T) {
-		t.Helper()
-		for spn, expectedSignature := range data.Signatures {
-			t.Run(SpanName(spn), func(t *testing.T) {
-				t.Helper()
-				tests.SignatureHelp(t, spn, expectedSignature)
-			})
-		}
-	})
-
 	t.Run("Link", func(t *testing.T) {
 		t.Helper()
 		for uri, wantLinks := range data.Links {
@@ -690,7 +675,6 @@ func checkData(t *testing.T, data *Data) {
 	fmt.Fprintf(buf, "InlayHintsCount = %v\n", len(data.InlayHints))
 	fmt.Fprintf(buf, "RenamesCount = %v\n", len(data.Renames))
 	fmt.Fprintf(buf, "PrepareRenamesCount = %v\n", len(data.PrepareRenames))
-	fmt.Fprintf(buf, "SignaturesCount = %v\n", len(data.Signatures))
 	fmt.Fprintf(buf, "LinksCount = %v\n", linksCount)
 	fmt.Fprintf(buf, "SelectionRangesCount = %v\n", len(data.SelectionRanges))
 
@@ -895,21 +879,6 @@ func (data *Data) mustRange(spn span.Span) protocol.Range {
 		panic(fmt.Sprintf("converting span %s to range: %v", spn, err))
 	}
 	return rng
-}
-
-func (data *Data) collectSignatures(spn span.Span, signature string, activeParam int64) {
-	data.Signatures[spn] = &protocol.SignatureHelp{
-		Signatures: []protocol.SignatureInformation{
-			{
-				Label: signature,
-			},
-		},
-		ActiveParameter: uint32(activeParam),
-	}
-	// Hardcode special case to test the lack of a signature.
-	if signature == "" && activeParam == 0 {
-		data.Signatures[spn] = nil
-	}
 }
 
 func (data *Data) collectCompletionSnippets(spn span.Span, item token.Pos, plain, placeholder string) {

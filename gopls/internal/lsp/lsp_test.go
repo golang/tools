@@ -572,40 +572,6 @@ func applyTextDocumentEdits(r *runner, edits []protocol.DocumentChanges) (map[sp
 	return res, nil
 }
 
-func (r *runner) SignatureHelp(t *testing.T, spn span.Span, want *protocol.SignatureHelp) {
-	m, err := r.data.Mapper(spn.URI())
-	if err != nil {
-		t.Fatal(err)
-	}
-	loc, err := m.SpanLocation(spn)
-	if err != nil {
-		t.Fatalf("failed for %v: %v", loc, err)
-	}
-	params := &protocol.SignatureHelpParams{
-		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
-	}
-	got, err := r.server.SignatureHelp(r.ctx, params)
-	if err != nil {
-		// Only fail if we got an error we did not expect.
-		if want != nil {
-			t.Fatal(err)
-		}
-		return
-	}
-	if want == nil {
-		if got != nil {
-			t.Errorf("expected no signature, got %v", got)
-		}
-		return
-	}
-	if got == nil {
-		t.Fatalf("expected %v, got nil", want)
-	}
-	if diff := tests.DiffSignatures(spn, want, got); diff != "" {
-		t.Error(diff)
-	}
-}
-
 func (r *runner) Link(t *testing.T, uri span.URI, wantLinks []tests.Link) {
 	m, err := r.data.Mapper(uri)
 	if err != nil {

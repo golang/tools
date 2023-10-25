@@ -1,10 +1,10 @@
 -- summary --
 CallHierarchyCount = 2
-CompletionsCount = 194
-CompletionSnippetCount = 74
+CompletionsCount = 181
+CompletionSnippetCount = 53
 DeepCompletionsCount = 5
 FuzzyCompletionsCount = 8
-RankedCompletionsCount = 166
+RankedCompletionsCount = 163
 CaseSensitiveCompletionsCount = 4
 SemanticTokenCount = 3
 SuggestedFixCount = 80
@@ -12,7 +12,6 @@ MethodExtractionCount = 8
 InlayHintsCount = 5
 RenamesCount = 48
 PrepareRenamesCount = 7
-SignaturesCount = 32
 LinksCount = 7
 SelectionRangesCount = 3
 

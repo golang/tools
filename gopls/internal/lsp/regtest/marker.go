@@ -222,6 +222,10 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //   - renameerr(location, new, wantError): specifies a renaming that
 //     fails with an error that matches the expectation.
 //
+//   - signature(location, label, active): specifies that
+//     signatureHelp at the given location should match the provided string, with
+//     the active parameter (an index) highlighted.
+//
 //   - suggestedfix(location, regexp, kind, golden): like diag, the location and
 //     regexp identify an expected diagnostic. This diagnostic must
 //     to have exactly one associated code action of the specified kind.
@@ -354,7 +358,6 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 // internal/lsp/tests.
 //
 // Remaining TODO:
-//   - optimize test execution
 //   - reorganize regtest packages (and rename to just 'test'?)
 //   - Rename the files .txtar.
 //   - Provide some means by which locations in the standard library
@@ -363,7 +366,6 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //
 // Existing marker tests (in ../testdata) to port:
 //   - CallHierarchy
-//   - Diagnostics
 //   - CompletionItems
 //   - Completions
 //   - CompletionSnippets
@@ -371,18 +373,14 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //   - FuzzyCompletions
 //   - CaseSensitiveCompletions
 //   - RankCompletions
-//   - Formats
-//   - Imports
 //   - SemanticTokens
 //   - FunctionExtractions
 //   - MethodExtractions
 //   - Renames
 //   - PrepareRenames
 //   - InlayHints
-//   - WorkspaceSymbols
 //   - Signatures
 //   - Links
-//   - AddImport
 //   - SelectionRanges
 func RunMarkerTests(t *testing.T, dir string) {
 	// The marker tests must be able to run go/packages.Load.
@@ -850,7 +848,7 @@ func (g *Golden) Get(t testing.TB, name string, updated []byte) ([]byte, bool) {
 // archive.
 func loadMarkerTests(dir string) ([]*markerTest, error) {
 	var tests []*markerTest
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(dir, func(path string, _ fs.DirEntry, err error) error {
 		if strings.HasSuffix(path, ".txt") {
 			content, err := os.ReadFile(path)
 			if err != nil {
@@ -864,7 +862,7 @@ func loadMarkerTests(dir string) ([]*markerTest, error) {
 			}
 			tests = append(tests, test)
 		}
-		return nil
+		return err
 	})
 	return tests, err
 }
@@ -1222,7 +1220,7 @@ func convert(mark marker, arg any, paramType reflect.Type) (any, error) {
 	if id, ok := arg.(expect.Identifier); ok {
 		if arg, ok := mark.run.values[id]; ok {
 			if !reflect.TypeOf(arg).AssignableTo(paramType) {
-				return nil, fmt.Errorf("cannot convert %v to %s", arg, paramType)
+				return nil, fmt.Errorf("cannot convert %v (%T) to %s", arg, arg, paramType)
 			}
 			return arg, nil
 		}
@@ -1236,7 +1234,7 @@ func convert(mark marker, arg any, paramType reflect.Type) (any, error) {
 	case wantErrorType:
 		return convertWantError(mark, arg)
 	default:
-		return nil, fmt.Errorf("cannot convert %v to %s", arg, paramType)
+		return nil, fmt.Errorf("cannot convert %v (%T) to %s", arg, arg, paramType)
 	}
 }
 
@@ -1793,14 +1791,23 @@ func renameErrMarker(mark marker, loc protocol.Location, newName string, wantErr
 	wantErr.check(mark, err)
 }
 
-func signatureMarker(mark marker, src protocol.Location, want string) {
+func signatureMarker(mark marker, src protocol.Location, label string, active int64) {
 	got := mark.run.env.SignatureHelp(src)
+	if label == "" {
+		if got != nil && len(got.Signatures) > 0 {
+			mark.errorf("signatureHelp = %v, want 0 signatures", got)
+		}
+		return
+	}
 	if got == nil || len(got.Signatures) != 1 {
 		mark.errorf("signatureHelp = %v, want exactly 1 signature", got)
 		return
 	}
-	if got := got.Signatures[0].Label; got != want {
-		mark.errorf("signatureHelp: got %q, want %q", got, want)
+	if got := got.Signatures[0].Label; got != label {
+		mark.errorf("signatureHelp: got label %q, want %q", got, label)
+	}
+	if got := int64(got.ActiveParameter); got != active {
+		mark.errorf("signatureHelp: got active parameter %d, want %d", got, active)
 	}
 }
 
@@ -1912,7 +1919,7 @@ func codeLensesMarker(mark marker) {
 	}
 
 	var want []codeLens
-	mark.consumeExtraNotes("codelens", actionMarkerFunc(func(mark marker, loc protocol.Location, title string) {
+	mark.consumeExtraNotes("codelens", actionMarkerFunc(func(_ marker, loc protocol.Location, title string) {
 		want = append(want, codeLens{loc.Range, title})
 	}))
 

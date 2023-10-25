@@ -52,10 +52,10 @@ func TestSomething(t *testing.T) { //@item(TestSomething, "TestSomething(t *test
 }
 
 func _() {
-	_ = snippets.X(nil) //@signature("nil", "X(_ map[sig.Alias]types.CoolAlias) map[sig.Alias]types.CoolAlias")
+	_ = snippets.X(nil) //@signature("nil", "X(_ map[sig.Alias]types.CoolAlias) map[sig.Alias]types.CoolAlias", 0)
 	var _ sig.Alias
 }
 
 func issue63578(err error) {
-	err.Error() //@signature(")", "Error()")
+	err.Error() //@signature(")", "Error()", 0)
 }

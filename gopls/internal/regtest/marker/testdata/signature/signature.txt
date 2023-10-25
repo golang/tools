@@ -1,0 +1,206 @@
+This test exercises basic tests for signature help.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests
+
+go 1.18
+
+-- signature/signature.go --
+// Package signature has tests for signature help.
+package signature
+
+import (
+	"bytes"
+	"encoding/json"
+	"math/big"
+)
+
+func Foo(a string, b int) (c bool) {
+	return
+}
+
+func Bar(float64, ...byte) {
+}
+
+type myStruct struct{}
+
+func (*myStruct) foo(e *json.Decoder) (*big.Int, error) {
+	return nil, nil
+}
+
+type MyType struct{}
+
+type MyFunc func(foo int) string
+
+type Alias = int
+type OtherAlias = int
+type StringAlias = string
+
+func AliasSlice(a []*Alias) (b Alias)                                 { return 0 }
+func AliasMap(a map[*Alias]StringAlias) (b, c map[*Alias]StringAlias) { return nil, nil }
+func OtherAliasMap(a, b map[Alias]OtherAlias) map[Alias]OtherAlias    { return nil }
+
+func Qux() {
+	Foo("foo", 123) //@signature("(", "Foo(a string, b int) (c bool)", 0)
+	Foo("foo", 123) //@signature("123", "Foo(a string, b int) (c bool)", 1)
+	Foo("foo", 123) //@signature(",", "Foo(a string, b int) (c bool)", 0)
+	Foo("foo", 123) //@signature(" 1", "Foo(a string, b int) (c bool)", 1)
+	Foo("foo", 123) //@signature(")", "Foo(a string, b int) (c bool)", 1)
+
+	Bar(13.37, 0x13)       //@signature("13.37", "Bar(float64, ...byte)", 0)
+	Bar(13.37, 0x37)       //@signature("0x37", "Bar(float64, ...byte)", 1)
+	Bar(13.37, 1, 2, 3, 4) //@signature("4", "Bar(float64, ...byte)", 1)
+
+	fn := func(hi, there string) func(i int) rune {
+		return func(int) rune { return 0 }
+	}
+
+	fn("hi", "there")    //@signature("hi", "", 0)
+	fn("hi", "there")    //@signature(",", "fn(hi string, there string) func(i int) rune", 0)
+	fn("hi", "there")(1) //@signature("1", "func(i int) rune", 0)
+
+	fnPtr := &fn
+	(*fnPtr)("hi", "there") //@signature(",", "func(hi string, there string) func(i int) rune", 0)
+
+	var fnIntf interface{} = Foo
+	fnIntf.(func(string, int) bool)("hi", 123) //@signature("123", "func(string, int) bool", 1)
+
+	(&bytes.Buffer{}).Next(2) //@signature("2", "Next(n int) []byte", 0)
+
+	myFunc := MyFunc(func(n int) string { return "" })
+	myFunc(123) //@signature("123", "myFunc(foo int) string", 0)
+
+	var ms myStruct
+	ms.foo(nil) //@signature("nil", "foo(e *json.Decoder) (*big.Int, error)", 0)
+
+	_ = make([]int, 1, 2) //@signature("2", "make(t Type, size ...int) Type", 1)
+
+	Foo(myFunc(123), 456) //@signature("myFunc", "Foo(a string, b int) (c bool)", 0)
+	Foo(myFunc(123), 456) //@signature("123", "myFunc(foo int) string", 0)
+
+	panic("oops!")            //@signature(")", "panic(v any)", 0)
+	println("hello", "world") //@signature(",", "println(args ...Type)", 0)
+
+	Hello(func() {
+		//@signature("//", "", 0)
+	})
+
+	AliasSlice()    //@signature(")", "AliasSlice(a []*Alias) (b Alias)", 0)
+	AliasMap()      //@signature(")", "AliasMap(a map[*Alias]StringAlias) (b map[*Alias]StringAlias, c map[*Alias]StringAlias)", 0)
+	OtherAliasMap() //@signature(")", "OtherAliasMap(a map[Alias]OtherAlias, b map[Alias]OtherAlias) map[Alias]OtherAlias", 0)
+}
+
+func Hello(func()) {}
+
+-- signature/signature2.go --
+package signature
+
+func _() {
+	Foo(//@signature("//", "Foo(a string, b int) (c bool)", 0)
+}
+
+-- signature/signature3.go --
+package signature
+
+func _() {
+	Foo("hello",//@signature("//", "Foo(a string, b int) (c bool)", 1)
+}
+
+-- signature/signature_test.go --
+package signature_test
+
+import (
+	"testing"
+
+	sig "golang.org/lsptests/signature"
+)
+
+func TestSignature(t *testing.T) {
+	sig.AliasSlice()    //@signature(")", "AliasSlice(a []*sig.Alias) (b sig.Alias)", 0)
+	sig.AliasMap()      //@signature(")", "AliasMap(a map[*sig.Alias]sig.StringAlias) (b map[*sig.Alias]sig.StringAlias, c map[*sig.Alias]sig.StringAlias)", 0)
+	sig.OtherAliasMap() //@signature(")", "OtherAliasMap(a map[sig.Alias]sig.OtherAlias, b map[sig.Alias]sig.OtherAlias) map[sig.Alias]sig.OtherAlias", 0)
+}
+
+-- snippets/snippets.go --
+package snippets
+
+import (
+	"golang.org/lsptests/signature"
+)
+
+type CoolAlias = int //@item(CoolAlias, "CoolAlias", "int", "type")
+
+type structy struct {
+	x signature.MyType
+}
+
+func X(_ map[signature.Alias]CoolAlias) (map[signature.Alias]CoolAlias) {
+	return nil
+}
+
+func _() {
+	X() //@signature(")", "X(_ map[signature.Alias]CoolAlias) map[signature.Alias]CoolAlias", 0)
+	_ = signature.MyType{} //@item(literalMyType, "signature.MyType{}", "", "var")
+	s := structy{
+		x: //@snippet(" //", literalMyType, "signature.MyType{\\}")
+	}
+}
+
+-- importedcomplit/importedcomplit.go --
+package importedcomplit
+
+import (
+	// TODO(rfindley): re-enable after moving to new framework
+	// "golang.org/lsptests/foo"
+
+	// import completions (separate blocks to avoid comment alignment)
+	"crypto/elli" //@complete("\" //", cryptoImport)
+
+	"fm" //@complete("\" //", fmtImport)
+
+	"go/pars" //@complete("\" //", parserImport)
+
+	namedParser "go/pars" //@complete("\" //", parserImport)
+
+	"golang.org/lspte" //@complete("\" //", lsptestsImport)
+
+	"golang.org/lsptests/sign" //@complete("\" //", signatureImport)
+
+	"golang.org/lsptests/sign" //@complete("ests", lsptestsImport)
+
+	"golang.org/lsptests/signa" //@complete("na\" //", signatureImport)
+)
+
+func _() {
+	var V int //@item(icVVar, "V", "int", "var")
+
+	// TODO(rfindley): re-enable after moving to new framework
+	// _ = foo.StructFoo{V} // complete("}", Value, icVVar)
+}
+
+func _() {
+	var (
+		aa string //@item(icAAVar, "aa", "string", "var")
+		ab int    //@item(icABVar, "ab", "int", "var")
+	)
+
+	// TODO(rfindley): re-enable after moving to new framework
+	// _ = foo.StructFoo{a} // complete("}", abVar, aaVar)
+
+	var s struct {
+		AA string //@item(icFieldAA, "AA", "string", "field")
+		AB int    //@item(icFieldAB, "AB", "int", "field")
+	}
+
+	// TODO(rfindley): re-enable after moving to new framework
+	//_ = foo.StructFoo{s.} // complete("}", icFieldAB, icFieldAA)
+}
+
+/* "fmt" */ //@item(fmtImport, "fmt", "\"fmt\"", "package")
+/* "go/parser" */ //@item(parserImport, "parser", "\"go/parser\"", "package")
+/* "golang.org/lsptests/signature" */ //@item(signatureImport, "signature", "\"golang.org/lsptests/signature\"", "package")
+/* "golang.org/lsptests/" */ //@item(lsptestsImport, "lsptests/", "\"golang.org/lsptests/\"", "package")
+/* "crypto/elliptic" */ //@item(cryptoImport, "elliptic", "\"crypto/elliptic\"", "package")

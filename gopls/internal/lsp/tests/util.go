@@ -16,7 +16,6 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source/completion"
-	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 	"golang.org/x/tools/gopls/internal/span"
 )
 
@@ -86,48 +85,6 @@ func DiffLinks(mapper *protocol.Mapper, wantLinks []Link, gotLinks []protocol.Do
 		fmt.Fprintf(&msg, "%s: expected link with target %q is missing\n", spn, target)
 	}
 	return msg.String()
-}
-
-// inRange reports whether p is contained within [r.Start, r.End), or if p ==
-// r.Start == r.End (special handling for the case where the range is a single
-// point).
-func inRange(p protocol.Position, r protocol.Range) bool {
-	if protocol.IsPoint(r) {
-		return protocol.ComparePosition(r.Start, p) == 0
-	}
-	if protocol.ComparePosition(r.Start, p) <= 0 && protocol.ComparePosition(p, r.End) < 0 {
-		return true
-	}
-	return false
-}
-
-func DiffSignatures(spn span.Span, want, got *protocol.SignatureHelp) string {
-	decorate := func(f string, args ...interface{}) string {
-		return fmt.Sprintf("invalid signature at %s: %s", spn, fmt.Sprintf(f, args...))
-	}
-	if len(got.Signatures) != 1 {
-		return decorate("wanted 1 signature, got %d", len(got.Signatures))
-	}
-	if got.ActiveSignature != 0 {
-		return decorate("wanted active signature of 0, got %d", int(got.ActiveSignature))
-	}
-	if want.ActiveParameter != got.ActiveParameter {
-		return decorate("wanted active parameter of %d, got %d", want.ActiveParameter, int(got.ActiveParameter))
-	}
-	g := got.Signatures[0]
-	w := want.Signatures[0]
-	if diff := compare.Text(NormalizeAny(w.Label), NormalizeAny(g.Label)); diff != "" {
-		return decorate("mismatched labels:\n%s", diff)
-	}
-	var paramParts []string
-	for _, p := range g.Parameters {
-		paramParts = append(paramParts, p.Label)
-	}
-	paramsStr := strings.Join(paramParts, ", ")
-	if !strings.Contains(g.Label, paramsStr) {
-		return decorate("expected signature %q to contain params %q", g.Label, paramsStr)
-	}
-	return ""
 }
 
 // NormalizeAny replaces occurrences of interface{} in input with any.
