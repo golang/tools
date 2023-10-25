@@ -5,14 +5,12 @@
 package txtar
 
 import (
-	"io"
 	"io/fs"
 	"path"
 	"sort"
 	"strings"
 	"testing"
 	"testing/fstest"
-	"testing/iotest"
 )
 
 func TestFS(t *testing.T) {
@@ -105,61 +103,19 @@ one
 			if err := fstest.TestFS(fsys, files...); err != nil {
 				t.Fatal(err)
 			}
-			for _, name := range files {
-				for _, f := range a.Files {
-					if f.Name != name {
-						continue
-					}
-					fsys, err := FS(a)
-					if err != nil {
-						continue
-					}
-					b, err := fs.ReadFile(fsys, name)
-					if err != nil {
-						t.Fatal(err)
-					}
-					if string(b) != string(f.Data) {
-						t.Fatalf("mismatched contents for %q", name)
-					}
-					// Do iotest
-					fsfile, err := fsys.Open(name)
-					if err != nil {
-						t.Fatal(err)
-					}
-					if err = iotest.TestReader(fsfile, f.Data); err != nil {
-						t.Fatal(err)
-					}
-					if err = fsfile.Close(); err != nil {
-						t.Fatal(err)
-					}
-					// test io.Copy
-					fsfile, err = fsys.Open(name)
-					if err != nil {
-						t.Fatal(err)
-					}
-					var buf strings.Builder
-					n, err := io.Copy(&buf, fsfile)
-					if err != nil {
-						t.Fatal(err)
-					}
-					if n != int64(len(f.Data)) {
-						t.Fatalf("bad copy size: %d", n)
-					}
-					if buf.String() != string(f.Data) {
-						t.Fatalf("mismatched contents for io.Copy of %q", name)
-					}
-					if err = fsfile.Close(); err != nil {
-						t.Fatal(err)
-					}
+
+			for _, f := range a.Files {
+				b, err := fs.ReadFile(fsys, f.Name)
+				if err != nil {
+					t.Fatalf("could not read %s from fsys: %v", f.Name, err)
+				}
+				if string(b) != string(f.Data) {
+					t.Fatalf("mismatched contents for %q", f.Name)
 				}
 			}
-			fsys2, err := FS(a)
+			a2, err := From(fsys)
 			if err != nil {
-				t.Fatal(err)
-			}
-			a2, err := From(fsys2)
-			if err != nil {
-				t.Fatalf("failed to write fsys for %v: %v", tc.name, err)
+				t.Fatalf("error building Archive from fsys: %v", err)
 			}
 
 			if in, out := normalized(a), normalized(a2); in != out {
