@@ -1,7 +1,7 @@
 -- summary --
 CallHierarchyCount = 2
-CompletionsCount = 181
-CompletionSnippetCount = 53
+CompletionsCount = 178
+CompletionSnippetCount = 41
 DeepCompletionsCount = 5
 FuzzyCompletionsCount = 8
 RankedCompletionsCount = 163
