@@ -17,8 +17,8 @@ import (
 
 func TestFS(t *testing.T) {
 	var fstestcases = []struct {
-		name, input, files             string
-		invalidNames, invalidRoundtrip bool
+		name, input, files string
+		invalidNames       bool
 	}{
 		{
 			name:  "empty",
@@ -65,7 +65,7 @@ one
 -- 2/sub/../two.txt --
 two
 `,
-			files: "one.txt 2/two.txt",
+			invalidNames: true,
 		},
 		{
 			name: "overlapping names",
@@ -75,8 +75,8 @@ one
 -- 2/../one.txt --
 two
 `,
-			files:            "one.txt",
-			invalidRoundtrip: true,
+			files:        "one.txt",
+			invalidNames: true,
 		},
 		{
 			name: "invalid name",
@@ -162,10 +162,8 @@ one
 				t.Fatalf("failed to write fsys for %v: %v", tc.name, err)
 			}
 
-			in, out := normalized(a), normalized(a2)
-			roundTrips := in == out
-			if roundTrips == tc.invalidRoundtrip {
-				t.Errorf("Got round trip %v: want %v", roundTrips, !tc.invalidRoundtrip)
+			if in, out := normalized(a), normalized(a2); in != out {
+				t.Error("did not round trip")
 			}
 		})
 	}

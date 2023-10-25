@@ -7,8 +7,6 @@ package txtar
 import (
 	"fmt"
 	"io/fs"
-	"path"
-	"strings"
 	"testing/fstest"
 	"time"
 )
@@ -24,10 +22,10 @@ import (
 func FS(a *Archive) (fs.FS, error) {
 	m := make(fstest.MapFS)
 	for _, f := range a.Files {
-		if !unixIsLocal(f.Name) {
-			return nil, fmt.Errorf("txtar.FS: Archive contains invalid path for fs.File: %q", f.Name)
+		if !fs.ValidPath(f.Name) {
+			return nil, fmt.Errorf("txtar.FS: Archive contains invalid fs.FS path: %q", f.Name)
 		}
-		m[path.Clean(f.Name)] = &fstest.MapFile{
+		m[f.Name] = &fstest.MapFile{
 			Data:    f.Data,
 			Mode:    0o666,
 			ModTime: time.Time{},
@@ -35,30 +33,6 @@ func FS(a *Archive) (fs.FS, error) {
 		}
 	}
 	return m, nil
-}
-
-// copied from filepath.unixIsLocal
-// with modification to use path
-func unixIsLocal(p string) bool {
-	if path.IsAbs(p) || p == "" {
-		return false
-	}
-	hasDots := false
-	for p := p; p != ""; {
-		var part string
-		part, p, _ = strings.Cut(p, "/")
-		if part == "." || part == ".." {
-			hasDots = true
-			break
-		}
-	}
-	if hasDots {
-		p = path.Clean(p)
-	}
-	if p == ".." || strings.HasPrefix(p, "../") {
-		return false
-	}
-	return true
 }
 
 // From constructs an Archive with the contents of fsys and an empty Comment.
