@@ -27,7 +27,10 @@ import (
 	"golang.org/x/tools/gopls/internal/immutable"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/lsp/safetoken"
+	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
+	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gcimporter"
@@ -507,12 +510,23 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 		return nil, nil // skip: not checked in this batch
 	}
 
-	if err := b.awaitPredecessors(ctx, ph.m); err != nil {
-		// One failed precessesor should not fail the entire type checking
-		// operation. Errors related to imports will be reported as type checking
-		// diagnostics.
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+	// Wait for predecessors.
+	{
+		var g errgroup.Group
+		for _, depID := range ph.m.DepsByPkgPath {
+			depID := depID
+			g.Go(func() error {
+				_, err := b.getImportPackage(ctx, depID)
+				return err
+			})
+		}
+		if err := g.Wait(); err != nil {
+			// Failure to import a package should not abort the whole operation.
+			// Stop only if the context was cancelled, a likely cause.
+			// Import errors will be reported as type diagnostics.
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 		}
 	}
 
@@ -529,15 +543,49 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 		}()
 	}
 
-	// We need a syntax package.
-	syntaxPkg, err := b.checkPackage(ctx, ph)
+	// Compute the syntax package.
+	p, err := b.checkPackage(ctx, ph)
 	if err != nil {
 		return nil, err
 	}
-	b.activePackageCache.setActivePackage(id, syntaxPkg)
-	b.post(i, syntaxPkg)
 
-	return syntaxPkg.pkg.types, nil
+	// Update caches.
+	b.activePackageCache.setActivePackage(id, p) // store active packages in memory
+	go storePackageResults(ctx, ph, p)           // ...and write all packages to disk
+
+	b.post(i, p)
+
+	return p.pkg.types, nil
+}
+
+// storePackageResults serializes and writes information derived from p to the
+// file cache.
+// The context is used only for logging; cancellation does not affect the operation.
+func storePackageResults(ctx context.Context, ph *packageHandle, p *Package) {
+	toCache := map[string][]byte{
+		xrefsKind:       p.pkg.xrefs(),
+		methodSetsKind:  p.pkg.methodsets().Encode(),
+		diagnosticsKind: encodeDiagnostics(p.pkg.diagnostics),
+	}
+
+	if p.m.PkgPath != "unsafe" { // unsafe cannot be exported
+		exportData, err := gcimporter.IExportShallow(p.pkg.fset, p.pkg.types, bug.Reportf)
+		if err != nil {
+			bug.Reportf("exporting package %v: %v", p.m.ID, err)
+		} else {
+			toCache[exportDataKind] = exportData
+		}
+	} else if p.m.ID != "unsafe" {
+		// golang/go#60890: we should only ever see one variant of the "unsafe"
+		// package.
+		bug.Reportf("encountered \"unsafe\" as %s (golang/go#60890)", p.m.ID)
+	}
+
+	for kind, data := range toCache {
+		if err := filecache.Set(kind, ph.key, data); err != nil {
+			event.Error(ctx, fmt.Sprintf("storing %s data for %s", kind, ph.m.ID), err)
+		}
+	}
 }
 
 // importPackage loads the given package from its export data in p.exportData
@@ -581,8 +629,6 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, m *Metadata, data []
 		return nil, ctx.Err()
 	}
 
-	// TODO(rfindley): collect "deep" hashes here using the getPackages
-	// callback, for precise pruning.
 	imported, err := gcimporter.IImportShallow(b.fset, getPackages, data, string(m.PkgPath), bug.Reportf)
 	if err != nil {
 		return nil, fmt.Errorf("import failed for %q: %v", m.ID, err)
@@ -636,7 +682,7 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 		files[i] = pgf.File
 	}
 
-	// Type checking is expensive, and we may not have ecountered cancellations
+	// Type checking is expensive, and we may not have encountered cancellations
 	// via parsing (e.g. if we got nothing but cache hits for parsed files).
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -662,69 +708,6 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 		}
 	}()
 	return pkg, nil
-}
-
-// checkPackage "fully type checks" to produce a syntax package.
-func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*Package, error) {
-	ctx, done := event.Start(ctx, "cache.typeCheckBatch.checkPackage", tag.Package.Of(string(ph.m.ID)))
-	defer done()
-
-	// TODO(rfindley): refactor to inline typeCheckImpl here. There is no need
-	// for so many layers to build up the package
-	// (checkPackage->typeCheckImpl->doTypeCheck).
-	pkg, err := typeCheckImpl(ctx, b, ph.localInputs)
-
-	if err == nil {
-		// Write package data to disk asynchronously.
-		go func() {
-			toCache := map[string][]byte{
-				xrefsKind:       pkg.xrefs(),
-				methodSetsKind:  pkg.methodsets().Encode(),
-				diagnosticsKind: encodeDiagnostics(pkg.diagnostics),
-			}
-
-			if ph.m.PkgPath != "unsafe" { // unsafe cannot be exported
-				exportData, err := gcimporter.IExportShallow(pkg.fset, pkg.types, bug.Reportf)
-				if err != nil {
-					bug.Reportf("exporting package %v: %v", ph.m.ID, err)
-				} else {
-					toCache[exportDataKind] = exportData
-				}
-			} else if ph.m.ID != "unsafe" {
-				// golang/go#60890: we should only ever see one variant of the "unsafe"
-				// package.
-				bug.Reportf("encountered \"unsafe\" as %s (golang/go#60890)", ph.m.ID)
-			}
-
-			for kind, data := range toCache {
-				if err := filecache.Set(kind, ph.key, data); err != nil {
-					event.Error(ctx, fmt.Sprintf("storing %s data for %s", kind, ph.m.ID), err)
-				}
-			}
-		}()
-	}
-
-	return &Package{ph.m, pkg}, err
-}
-
-// awaitPredecessors awaits all packages for m.DepsByPkgPath, returning an
-// error if awaiting failed due to context cancellation or if there was an
-// unrecoverable error loading export data.
-//
-// TODO(rfindley): inline, now that this is only called in one place.
-func (b *typeCheckBatch) awaitPredecessors(ctx context.Context, m *Metadata) error {
-	// await predecessors concurrently, as some of them may be non-syntax
-	// packages, and therefore will not have been started by the type-checking
-	// batch.
-	var g errgroup.Group
-	for _, depID := range m.DepsByPkgPath {
-		depID := depID
-		g.Go(func() error {
-			_, err := b.getImportPackage(ctx, depID)
-			return err
-		})
-	}
-	return g.Wait()
 }
 
 // importMap returns the map of package path -> package ID relative to the
@@ -1303,6 +1286,9 @@ type typeCheckInputs struct {
 	goVersion                string // packages.Module.GoVersion, e.g. "1.18"
 
 	// Used for type check diagnostics:
+	// TODO(rfindley): consider storing less data in gobDiagnostics, and
+	// interpreting each diagnostic in the context of a fixed set of options.
+	// Then these fields need not be part of the type checking inputs.
 	relatedInformation bool
 	linkTarget         string
 	moduleMode         bool
@@ -1411,87 +1397,14 @@ func localPackageKey(inputs typeCheckInputs) file.Hash {
 	return hash
 }
 
-// typeCheckImpl type checks the parsed source files in compiledGoFiles.
+// checkPackage type checks the parsed source files in compiledGoFiles.
 // (The resulting pkg also holds the parsed but not type-checked goFiles.)
 // deps holds the future results of type-checking the direct dependencies.
-func typeCheckImpl(ctx context.Context, b *typeCheckBatch, inputs typeCheckInputs) (*syntaxPackage, error) {
-	ctx, done := event.Start(ctx, "cache.typeCheck", tag.Package.Of(string(inputs.id)))
+func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*Package, error) {
+	inputs := ph.localInputs
+	ctx, done := event.Start(ctx, "cache.typeCheckBatch.checkPackage", tag.Package.Of(string(inputs.id)))
 	defer done()
 
-	pkg, err := doTypeCheck(ctx, b, inputs)
-	if err != nil {
-		return nil, err
-	}
-
-	// Our heuristic for whether to show type checking errors is:
-	//  + If any file was 'fixed', don't show type checking errors as we
-	//    can't guarantee that they reference accurate locations in thesource.
-	//  + If there is a parse error _in the current file_, suppress type
-	//    errors in that file.
-	//  + Otherwise, show type errors even in the presence of parse errors in
-	//    other package files. go/types attempts to suppress follow-on errors
-	//    due to bad syntax, so on balance type checking errors still provide
-	//    a decent signal/noise ratio as long as the file in question parses.
-
-	// Track URIs with parse errors so that we can suppress type errors for these
-	// files.
-	unparseable := map[protocol.DocumentURI]bool{}
-	for _, e := range pkg.parseErrors {
-		diags, err := parseErrorDiagnostics(pkg, e)
-		if err != nil {
-			event.Error(ctx, "unable to compute positions for parse errors", err, tag.Package.Of(string(inputs.id)))
-			continue
-		}
-		for _, diag := range diags {
-			unparseable[diag.URI] = true
-			pkg.diagnostics = append(pkg.diagnostics, diag)
-		}
-	}
-
-	if pkg.hasFixedFiles {
-		return pkg, nil
-	}
-
-	unexpanded := pkg.typeErrors
-	pkg.typeErrors = nil
-	for _, e := range expandErrors(unexpanded, inputs.relatedInformation) {
-		diags, err := typeErrorDiagnostics(inputs.moduleMode, inputs.linkTarget, pkg, e)
-		if err != nil {
-			// If we fail here and there are no parse errors, it means we are hiding
-			// a valid type-checking error from the user. This must be a bug, with
-			// one exception: relocated primary errors may fail processing, because
-			// they reference locations outside of the package.
-			if len(pkg.parseErrors) == 0 && !e.relocated {
-				bug.Reportf("failed to compute position for type error %v: %v", e, err)
-			}
-			continue
-		}
-		pkg.typeErrors = append(pkg.typeErrors, e.primary)
-		for _, diag := range diags {
-			// If the file didn't parse cleanly, it is highly likely that type
-			// checking errors will be confusing or redundant. But otherwise, type
-			// checking usually provides a good enough signal to include.
-			if !unparseable[diag.URI] {
-				pkg.diagnostics = append(pkg.diagnostics, diag)
-			}
-		}
-	}
-
-	// Work around golang/go#61561: interface instances aren't concurrency-safe
-	// as they are not completed by the type checker.
-	for _, inst := range typeparams.GetInstances(pkg.typesInfo) {
-		if iface, _ := inst.Type.Underlying().(*types.Interface); iface != nil {
-			iface.Complete()
-		}
-	}
-
-	return pkg, nil
-}
-
-// TODO(golang/go#63472): this looks wrong with the new Go version syntax.
-var goVersionRx = regexp.MustCompile(`^go([1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
-
-func doTypeCheck(ctx context.Context, b *typeCheckBatch, inputs typeCheckInputs) (*syntaxPackage, error) {
 	pkg := &syntaxPackage{
 		id:    inputs.id,
 		fset:  b.fset, // must match parse call below
@@ -1530,62 +1443,105 @@ func doTypeCheck(ctx context.Context, b *typeCheckBatch, inputs typeCheckInputs)
 		// Don't type check Unsafe: it's unnecessary, and doing so exposes a data
 		// race to Unsafe.completed.
 		pkg.types = types.Unsafe
-		return pkg, nil
-	}
+	} else {
 
-	if len(pkg.compiledGoFiles) == 0 {
-		// No files most likely means go/packages failed.
-		//
-		// TODO(rfindley): in the past, we would capture go list errors in this
-		// case, to present go list errors to the user. However we had no tests for
-		// this behavior. It is unclear if anything better can be done here.
-		return nil, fmt.Errorf("no parsed files for package %s", inputs.pkgPath)
-	}
-
-	onError := func(e error) {
-		pkg.typeErrors = append(pkg.typeErrors, e.(types.Error))
-	}
-	cfg := b.typesConfig(ctx, inputs, onError)
-
-	check := types.NewChecker(cfg, pkg.fset, pkg.types, pkg.typesInfo)
-
-	var files []*ast.File
-	for _, cgf := range pkg.compiledGoFiles {
-		files = append(files, cgf.File)
-	}
-
-	// Type checking is expensive, and we may not have ecountered cancellations
-	// via parsing (e.g. if we got nothing but cache hits for parsed files).
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	// Type checking errors are handled via the config, so ignore them here.
-	_ = check.Files(files) // 50us-15ms, depending on size of package
-
-	// If the context was cancelled, we may have returned a ton of transient
-	// errors to the type checker. Swallow them.
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	// Collect imports by package path for the DependencyTypes API.
-	pkg.importMap = make(map[PackagePath]*types.Package)
-	var collectDeps func(*types.Package)
-	collectDeps = func(p *types.Package) {
-		pkgPath := PackagePath(p.Path())
-		if _, ok := pkg.importMap[pkgPath]; ok {
-			return
+		if len(pkg.compiledGoFiles) == 0 {
+			// No files most likely means go/packages failed.
+			//
+			// TODO(rfindley): in the past, we would capture go list errors in this
+			// case, to present go list errors to the user. However we had no tests for
+			// this behavior. It is unclear if anything better can be done here.
+			return nil, fmt.Errorf("no parsed files for package %s", inputs.pkgPath)
 		}
-		pkg.importMap[pkgPath] = p
-		for _, imp := range p.Imports() {
-			collectDeps(imp)
+
+		onError := func(e error) {
+			pkg.typeErrors = append(pkg.typeErrors, e.(types.Error))
+		}
+		cfg := b.typesConfig(ctx, inputs, onError)
+		check := types.NewChecker(cfg, pkg.fset, pkg.types, pkg.typesInfo)
+
+		var files []*ast.File
+		for _, cgf := range pkg.compiledGoFiles {
+			files = append(files, cgf.File)
+		}
+
+		// Type checking is expensive, and we may not have encountered cancellations
+		// via parsing (e.g. if we got nothing but cache hits for parsed files).
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		// Type checking errors are handled via the config, so ignore them here.
+		_ = check.Files(files) // 50us-15ms, depending on size of package
+
+		// If the context was cancelled, we may have returned a ton of transient
+		// errors to the type checker. Swallow them.
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		// Collect imports by package path for the DependencyTypes API.
+		pkg.importMap = make(map[PackagePath]*types.Package)
+		var collectDeps func(*types.Package)
+		collectDeps = func(p *types.Package) {
+			pkgPath := PackagePath(p.Path())
+			if _, ok := pkg.importMap[pkgPath]; ok {
+				return
+			}
+			pkg.importMap[pkgPath] = p
+			for _, imp := range p.Imports() {
+				collectDeps(imp)
+			}
+		}
+		collectDeps(pkg.types)
+
+		// Work around golang/go#61561: interface instances aren't concurrency-safe
+		// as they are not completed by the type checker.
+		for _, inst := range typeparams.GetInstances(pkg.typesInfo) {
+			if iface, _ := inst.Type.Underlying().(*types.Interface); iface != nil {
+				iface.Complete()
+			}
 		}
 	}
-	collectDeps(pkg.types)
 
-	return pkg, nil
+	// Our heuristic for whether to show type checking errors is:
+	//  + If there is a parse error _in the current file_, suppress type
+	//    errors in that file.
+	//  + Otherwise, show type errors even in the presence of parse errors in
+	//    other package files. go/types attempts to suppress follow-on errors
+	//    due to bad syntax, so on balance type checking errors still provide
+	//    a decent signal/noise ratio as long as the file in question parses.
+
+	// Track URIs with parse errors so that we can suppress type errors for these
+	// files.
+	unparseable := map[protocol.DocumentURI]bool{}
+	for _, e := range pkg.parseErrors {
+		diags, err := parseErrorDiagnostics(pkg, e)
+		if err != nil {
+			event.Error(ctx, "unable to compute positions for parse errors", err, tag.Package.Of(string(inputs.id)))
+			continue
+		}
+		for _, diag := range diags {
+			unparseable[diag.URI] = true
+			pkg.diagnostics = append(pkg.diagnostics, diag)
+		}
+	}
+
+	diags := typeErrorsToDiagnostics(pkg, pkg.typeErrors, inputs.linkTarget, inputs.moduleMode, inputs.relatedInformation)
+	for _, diag := range diags {
+		// If the file didn't parse cleanly, it is highly likely that type
+		// checking errors will be confusing or redundant. But otherwise, type
+		// checking usually provides a good enough signal to include.
+		if !unparseable[diag.URI] {
+			pkg.diagnostics = append(pkg.diagnostics, diag)
+		}
+	}
+
+	return &Package{ph.m, pkg}, nil
 }
+
+// TODO(golang/go#63472): this looks wrong with the new Go version syntax.
+var goVersionRx = regexp.MustCompile(`^go([1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
 func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs, onError func(e error)) *types.Config {
 	cfg := &types.Config{
@@ -1704,17 +1660,13 @@ func depsErrors(ctx context.Context, m *Metadata, meta *metadataGraph, fs file.S
 				if err != nil {
 					return nil, err
 				}
-				fixes, err := goGetQuickFixes(m.Module != nil, imp.cgf.URI, item)
-				if err != nil {
-					return nil, err
-				}
 				diag := &Diagnostic{
 					URI:            imp.cgf.URI,
 					Range:          rng,
 					Severity:       protocol.SeverityError,
 					Source:         TypeError,
 					Message:        fmt.Sprintf("error while importing %v: %v", item, depErr.Err),
-					SuggestedFixes: fixes,
+					SuggestedFixes: goGetQuickFixes(m.Module != nil, imp.cgf.URI, item),
 				}
 				if !BundleQuickFixes(diag) {
 					bug.Reportf("failed to bundle fixes for diagnostic %q", diag.Message)
@@ -1751,17 +1703,13 @@ func depsErrors(ctx context.Context, m *Metadata, meta *metadataGraph, fs file.S
 			if err != nil {
 				return nil, err
 			}
-			fixes, err := goGetQuickFixes(true, pm.URI, item)
-			if err != nil {
-				return nil, err
-			}
 			diag := &Diagnostic{
 				URI:            pm.URI,
 				Range:          rng,
 				Severity:       protocol.SeverityError,
 				Source:         TypeError,
 				Message:        fmt.Sprintf("error while importing %v: %v", item, depErr.Err),
-				SuggestedFixes: fixes,
+				SuggestedFixes: goGetQuickFixes(true, pm.URI, item),
 			}
 			if !BundleQuickFixes(diag) {
 				bug.Reportf("failed to bundle fixes for diagnostic %q", diag.Message)
@@ -1792,70 +1740,136 @@ func missingPkgError(from PackageID, pkgPath string, moduleMode bool) error {
 	}
 }
 
-type extendedError struct {
-	relocated   bool // if set, this is a relocation of a primary error to a secondary location
-	primary     types.Error
-	secondaries []types.Error
-}
-
-func (e extendedError) Error() string {
-	return e.primary.Error()
-}
-
-// expandErrors duplicates "secondary" errors by mapping them to their main
-// error. Some errors returned by the type checker are followed by secondary
-// errors which give more information about the error. These are errors in
-// their own right, and they are marked by starting with \t. For instance, when
-// there is a multiply-defined function, the secondary error points back to the
-// definition first noticed.
+// typeErrorsToDiagnostics translates a slice of types.Errors into a slice of
+// Diagnostics.
 //
-// This function associates the secondary error with its primary error, which can
-// then be used as RelatedInformation when the error becomes a diagnostic.
+// In addition to simply mapping data such as position information and error
+// codes, this function interprets related go/types "continuation" errors as
+// protocol.DiagnosticRelatedInformation. Continuation errors are go/types
+// errors whose messages starts with "\t". By convention, these errors relate
+// to the previous error in the errs slice (such as if they were printed in
+// sequence to a terminal).
 //
-// If supportsRelatedInformation is false, the secondary is instead embedded as
-// additional context in the primary error.
-func expandErrors(errs []types.Error, supportsRelatedInformation bool) []extendedError {
-	var result []extendedError
-	for i := 0; i < len(errs); {
-		original := extendedError{
-			primary: errs[i],
+// The linkTarget, moduleMode, and supportsRelatedInformation parameters affect
+// the construction of protocol objects (see the code for details).
+func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget string, moduleMode, supportsRelatedInformation bool) []*Diagnostic {
+	var result []*Diagnostic
+
+	// batch records diagnostics for a set of related types.Errors.
+	batch := func(related []types.Error) {
+		var diags []*Diagnostic
+		for i, e := range related {
+			code, start, end, ok := typesinternal.ReadGo116ErrorData(e)
+			if !ok || !start.IsValid() || !end.IsValid() {
+				start, end = e.Pos, e.Pos
+				code = 0
+			}
+			if !start.IsValid() {
+				// Type checker errors may be missing position information if they
+				// relate to synthetic syntax, such as if the file were fixed. In that
+				// case, we should have a parse error anyway, so skipping the type
+				// checker error is likely benign.
+				//
+				// TODO(golang/go#64335): we should eventually verify that all type
+				// checked syntax has valid positions, and promote this skip to a bug
+				// report.
+				continue
+			}
+			posn := safetoken.StartPosition(e.Fset, start)
+			if !posn.IsValid() {
+				// All valid positions produced by the type checker should described by
+				// its fileset.
+				bug.Reportf("internal error: type checker error %v not outside its Fset", e)
+				continue
+			}
+			pgf, err := pkg.File(protocol.URIFromPath(posn.Filename))
+			if err != nil {
+				// Sometimes type-checker errors refer to positions in other packages,
+				// such as when a declaration duplicates a dot-imported name.
+				//
+				// In these cases, we don't want to report an error in the other
+				// package (the message would be rather confusing), but we do want to
+				// report an error in the current package (golang/go#59005).
+				if i == 0 {
+					bug.Reportf("internal error: could not locate file for primary type checker error %v: %v", e, err)
+				}
+				continue
+			}
+			if !end.IsValid() || end == start {
+				// Expand the end position to a more meaningful span.
+				end = analysisinternal.TypeErrorEndPos(e.Fset, pgf.Src, start)
+			}
+			rng, err := pgf.Mapper.PosRange(pgf.Tok, start, end)
+			if err != nil {
+				bug.Reportf("internal error: could not compute pos to range for %v: %v", e, err)
+				continue
+			}
+			msg := related[0].Msg
+			if i > 0 {
+				if supportsRelatedInformation {
+					msg += " (see details)"
+				} else {
+					msg += fmt.Sprintf(" (this error: %v)", e.Msg)
+				}
+			}
+			diag := &source.Diagnostic{
+				URI:      pgf.URI,
+				Range:    rng,
+				Severity: protocol.SeverityError,
+				Source:   source.TypeError,
+				Message:  msg,
+			}
+			if code != 0 {
+				diag.Code = code.String()
+				diag.CodeHref = typesCodeHref(linkTarget, code)
+			}
+			if code == typesinternal.UnusedVar || code == typesinternal.UnusedImport {
+				diag.Tags = append(diag.Tags, protocol.Unnecessary)
+			}
+			if match := importErrorRe.FindStringSubmatch(e.Msg); match != nil {
+				diag.SuggestedFixes = append(diag.SuggestedFixes, goGetQuickFixes(moduleMode, pgf.URI, match[1])...)
+			}
+			if match := unsupportedFeatureRe.FindStringSubmatch(e.Msg); match != nil {
+				diag.SuggestedFixes = append(diag.SuggestedFixes, editGoDirectiveQuickFix(moduleMode, pgf.URI, match[1])...)
+			}
+
+			// Link up related information. For the primary error, all related errors
+			// are treated as related information. For secondary errors, only the
+			// primary is related.
+			//
+			// This is because go/types assumes that errors are read top-down, such as
+			// in the cycle error "A refers to...". The structure of the secondary
+			// error set likely only makes sense for the primary error.
+			if i > 0 {
+				primary := diags[0]
+				primary.Related = append(primary.Related, protocol.DiagnosticRelatedInformation{
+					Location: protocol.Location{URI: diag.URI, Range: diag.Range},
+					Message:  related[i].Msg, // use the unmodified secondary error for related errors.
+				})
+				diag.Related = []protocol.DiagnosticRelatedInformation{{
+					Location: protocol.Location{URI: primary.URI, Range: primary.Range},
+				}}
+			}
+			diags = append(diags, diag)
 		}
-		for i++; i < len(errs); i++ {
+		result = append(result, diags...)
+	}
+
+	// Process batches of related errors.
+	for len(errs) > 0 {
+		related := []types.Error{errs[0]}
+		for i := 1; i < len(errs); i++ {
 			spl := errs[i]
 			if len(spl.Msg) == 0 || spl.Msg[0] != '\t' {
 				break
 			}
-			spl.Msg = spl.Msg[1:]
-			original.secondaries = append(original.secondaries, spl)
+			spl.Msg = spl.Msg[len("\t"):]
+			related = append(related, spl)
 		}
-
-		// Clone the error to all its related locations -- VS Code, at least,
-		// doesn't do it for us.
-		result = append(result, original)
-		for i, mainSecondary := range original.secondaries {
-			// Create the new primary error, with a tweaked message, in the
-			// secondary's location. We need to start from the secondary to
-			// capture its unexported location fields.
-			relocatedSecondary := mainSecondary
-			if supportsRelatedInformation {
-				relocatedSecondary.Msg = fmt.Sprintf("%v (see details)", original.primary.Msg)
-			} else {
-				relocatedSecondary.Msg = fmt.Sprintf("%v (this error: %v)", original.primary.Msg, mainSecondary.Msg)
-			}
-			relocatedSecondary.Soft = original.primary.Soft
-
-			// Copy over the secondary errors, noting the location of the
-			// current error we're cloning.
-			clonedError := extendedError{relocated: true, primary: relocatedSecondary, secondaries: []types.Error{original.primary}}
-			for j, secondary := range original.secondaries {
-				if i == j {
-					secondary.Msg += " (this error)"
-				}
-				clonedError.secondaries = append(clonedError.secondaries, secondary)
-			}
-			result = append(result, clonedError)
-		}
+		batch(related)
+		errs = errs[len(related):]
 	}
+
 	return result
 }
 

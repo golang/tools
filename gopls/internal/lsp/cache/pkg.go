@@ -102,7 +102,6 @@ type syntaxPackage struct {
 	types           *types.Package
 	typesInfo       *types.Info
 	importMap       map[PackagePath]*types.Package
-	hasFixedFiles   bool // if true, AST was sufficiently mangled that we should hide type errors
 
 	xrefsOnce sync.Once
 	_xrefs    []byte // only used by the xrefs method

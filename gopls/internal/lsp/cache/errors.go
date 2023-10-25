@@ -14,7 +14,6 @@ import (
 	"go/parser"
 	"go/scanner"
 	"go/token"
-	"go/types"
 	"log"
 	"path/filepath"
 	"regexp"
@@ -26,10 +25,8 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -131,63 +128,10 @@ func parseErrorDiagnostics(pkg *syntaxPackage, errList scanner.ErrorList) ([]*so
 var importErrorRe = regexp.MustCompile(`could not import ([^\s]+)`)
 var unsupportedFeatureRe = regexp.MustCompile(`.*require.* go(\d+\.\d+) or later`)
 
-func typeErrorDiagnostics(moduleMode bool, linkTarget string, pkg *syntaxPackage, e extendedError) ([]*source.Diagnostic, error) {
-	code, loc, err := typeErrorData(pkg, e.primary)
-	if err != nil {
-		return nil, err
-	}
-	diag := &source.Diagnostic{
-		URI:      loc.URI,
-		Range:    loc.Range,
-		Severity: protocol.SeverityError,
-		Source:   source.TypeError,
-		Message:  e.primary.Msg,
-	}
-	if code != 0 {
-		diag.Code = code.String()
-		diag.CodeHref = typesCodeHref(linkTarget, code)
-	}
-	switch code {
-	case typesinternal.UnusedVar, typesinternal.UnusedImport:
-		diag.Tags = append(diag.Tags, protocol.Unnecessary)
-	}
-
-	for _, secondary := range e.secondaries {
-		_, secondaryLoc, err := typeErrorData(pkg, secondary)
-		if err != nil {
-			// We may not be able to compute type error data in scenarios where the
-			// secondary position is outside of the current package. In this case, we
-			// don't want to ignore the diagnostic entirely.
-			//
-			// See golang/go#59005 for an example where gopls was missing diagnostics
-			// due to returning an error here.
-			continue
-		}
-		diag.Related = append(diag.Related, protocol.DiagnosticRelatedInformation{
-			Location: secondaryLoc,
-			Message:  secondary.Msg,
-		})
-	}
-
-	if match := importErrorRe.FindStringSubmatch(e.primary.Msg); match != nil {
-		diag.SuggestedFixes, err = goGetQuickFixes(moduleMode, loc.URI, match[1])
-		if err != nil {
-			return nil, err
-		}
-	}
-	if match := unsupportedFeatureRe.FindStringSubmatch(e.primary.Msg); match != nil {
-		diag.SuggestedFixes, err = editGoDirectiveQuickFix(moduleMode, loc.URI, match[1])
-		if err != nil {
-			return nil, err
-		}
-	}
-	return []*source.Diagnostic{diag}, nil
-}
-
-func goGetQuickFixes(moduleMode bool, uri protocol.DocumentURI, pkg string) ([]source.SuggestedFix, error) {
+func goGetQuickFixes(moduleMode bool, uri protocol.DocumentURI, pkg string) []source.SuggestedFix {
 	// Go get only supports module mode for now.
 	if !moduleMode {
-		return nil, nil
+		return nil
 	}
 	title := fmt.Sprintf("go get package %v", pkg)
 	cmd, err := command.NewGoGetPackageCommand(title, command.GoGetPackageArgs{
@@ -196,15 +140,16 @@ func goGetQuickFixes(moduleMode bool, uri protocol.DocumentURI, pkg string) ([]s
 		Pkg:        pkg,
 	})
 	if err != nil {
-		return nil, err
+		bug.Reportf("internal error building 'go get package' fix: %v", err)
+		return nil
 	}
-	return []source.SuggestedFix{SuggestedFixFromCommand(cmd, protocol.QuickFix)}, nil
+	return []source.SuggestedFix{SuggestedFixFromCommand(cmd, protocol.QuickFix)}
 }
 
-func editGoDirectiveQuickFix(moduleMode bool, uri protocol.DocumentURI, version string) ([]source.SuggestedFix, error) {
+func editGoDirectiveQuickFix(moduleMode bool, uri protocol.DocumentURI, version string) []source.SuggestedFix {
 	// Go mod edit only supports module mode.
 	if !moduleMode {
-		return nil, nil
+		return nil
 	}
 	title := fmt.Sprintf("go mod edit -go=%s", version)
 	cmd, err := command.NewEditGoDirectiveCommand(title, command.EditGoDirectiveArgs{
@@ -212,9 +157,10 @@ func editGoDirectiveQuickFix(moduleMode bool, uri protocol.DocumentURI, version 
 		Version: version,
 	})
 	if err != nil {
-		return nil, err
+		bug.Reportf("internal error constructing 'edit go directive' fix: %v", err)
+		return nil
 	}
-	return []source.SuggestedFix{SuggestedFixFromCommand(cmd, protocol.QuickFix)}, nil
+	return []source.SuggestedFix{SuggestedFixFromCommand(cmd, protocol.QuickFix)}
 }
 
 // encodeDiagnostics gob-encodes the given diagnostics.
@@ -425,38 +371,6 @@ func suggestedAnalysisFixes(diag *gobDiagnostic, kinds []protocol.CodeActionKind
 
 	}
 	return fixes
-}
-
-func typeErrorData(pkg *syntaxPackage, terr types.Error) (typesinternal.ErrorCode, protocol.Location, error) {
-	ecode, start, end, ok := typesinternal.ReadGo116ErrorData(terr)
-	if !ok {
-		start, end = terr.Pos, terr.Pos
-		ecode = 0
-	}
-	// go/types may return invalid positions in some cases, such as
-	// in errors on tokens missing from the syntax tree.
-	if !start.IsValid() {
-		return 0, protocol.Location{}, fmt.Errorf("type error (%q, code %d, go116=%t) without position", terr.Msg, ecode, ok)
-	}
-	// go/types errors retain their FileSet.
-	// Sanity-check that we're using the right one.
-	fset := pkg.fset
-	if fset != terr.Fset {
-		return 0, protocol.Location{}, bug.Errorf("wrong FileSet for type error")
-	}
-	posn := safetoken.StartPosition(fset, start)
-	if !posn.IsValid() {
-		return 0, protocol.Location{}, fmt.Errorf("position %d of type error %q (code %q) not found in FileSet", start, start, terr)
-	}
-	pgf, err := pkg.File(protocol.URIFromPath(posn.Filename))
-	if err != nil {
-		return 0, protocol.Location{}, err
-	}
-	if !end.IsValid() || end == start {
-		end = analysisinternal.TypeErrorEndPos(fset, pgf.Src, start)
-	}
-	loc, err := pgf.Mapper.PosLocation(pgf.Tok, start, end)
-	return ecode, loc, err
 }
 
 func parseGoListError(e packages.Error, dir string) (filename string, line, col8 int) {
