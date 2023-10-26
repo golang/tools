@@ -70,11 +70,12 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	}
 
 	stats := GoplsStats{
-		GOOS:         runtime.GOOS,
-		GOARCH:       runtime.GOARCH,
-		GOPLSCACHE:   os.Getenv("GOPLSCACHE"),
-		GoVersion:    runtime.Version(),
-		GoplsVersion: debug.Version(),
+		GOOS:             runtime.GOOS,
+		GOARCH:           runtime.GOARCH,
+		GOPLSCACHE:       os.Getenv("GOPLSCACHE"),
+		GoVersion:        runtime.Version(),
+		GoplsVersion:     debug.Version(),
+		GOPACKAGESDRIVER: os.Getenv("GOPACKAGESDRIVER"),
 	}
 
 	opts := s.app.options
@@ -198,11 +199,12 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 			if !token.IsExported(f.Name) {
 				continue
 			}
-			if s.Anon && f.Tag.Get("anon") != "ok" {
+			vf := v.FieldByName(f.Name)
+			if s.Anon && f.Tag.Get("anon") != "ok" && !vf.IsZero() {
 				// Fields that can be served with -anon must be explicitly marked as OK.
+				// But, if it's zero value, it's ok to print.
 				continue
 			}
-			vf := v.FieldByName(f.Name)
 			okFields[f.Name] = vf.Interface()
 		}
 	}
@@ -227,6 +229,7 @@ type GoplsStats struct {
 	GOPLSCACHE                   string
 	GoVersion                    string `anon:"ok"`
 	GoplsVersion                 string `anon:"ok"`
+	GOPACKAGESDRIVER             string
 	InitialWorkspaceLoadDuration string `anon:"ok"` // in time.Duration string form
 	CacheDir                     string
 	BugReports                   []goplsbug.Bug
