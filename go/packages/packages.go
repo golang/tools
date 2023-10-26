@@ -259,17 +259,28 @@ type driverResponse struct {
 // provided for convenient display of all errors.
 func Load(cfg *Config, patterns ...string) ([]*Package, error) {
 	ld := newLoader(cfg)
-	response, err := defaultDriver(&ld.Config, patterns...)
+	response, external, err := defaultDriver(&ld.Config, patterns...)
 	if err != nil {
 		return nil, err
 	}
 
-	// If type size information is needed but unavailable.
-	// reject the whole Load since the error is the same for every package.
 	ld.sizes = types.SizesFor(response.Compiler, response.Arch)
 	if ld.sizes == nil && ld.Config.Mode&(NeedTypes|NeedTypesSizes|NeedTypesInfo) != 0 {
-		return nil, fmt.Errorf("can't determine type sizes for compiler %q on GOARCH %q",
-			response.Compiler, response.Arch)
+		// Type size information is needed but unavailable.
+		if external {
+			// An external driver may fail to populate the Compiler/GOARCH fields,
+			// especially since they are relatively new (see #63700).
+			// Provide a sensible fallback in this case.
+			ld.sizes = types.SizesFor("gc", runtime.GOARCH)
+			if ld.sizes == nil { // gccgo-only arch
+				ld.sizes = types.SizesFor("gc", "amd64")
+			}
+		} else {
+			// Go list should never fail to deliver accurate size information.
+			// Reject the whole Load since the error is the same for every package.
+			return nil, fmt.Errorf("can't determine type sizes for compiler %q on GOARCH %q",
+				response.Compiler, response.Arch)
+		}
 	}
 
 	return ld.refine(response)
@@ -279,18 +290,20 @@ func Load(cfg *Config, patterns ...string) ([]*Package, error) {
 // It will try to request to an external driver, if one exists. If there's
 // no external driver, or the driver returns a response with NotHandled set,
 // defaultDriver will fall back to the go list driver.
-func defaultDriver(cfg *Config, patterns ...string) (*driverResponse, error) {
-	driver := findExternalDriver(cfg)
-	if driver == nil {
-		driver = goListDriver
+// The boolean result indicates that an external driver handled the request.
+func defaultDriver(cfg *Config, patterns ...string) (*driverResponse, bool, error) {
+	if driver := findExternalDriver(cfg); driver != nil {
+		response, err := driver(cfg, patterns...)
+		if err != nil {
+			return nil, false, err
+		} else if !response.NotHandled {
+			return response, true, nil
+		}
+		// (fall through)
 	}
-	response, err := driver(cfg, patterns...)
-	if err != nil {
-		return response, err
-	} else if response.NotHandled {
-		return goListDriver(cfg, patterns...)
-	}
-	return response, nil
+
+	response, err := goListDriver(cfg, patterns...)
+	return response, false, err
 }
 
 // A Package describes a loaded Go package.
