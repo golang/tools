@@ -101,3 +101,36 @@ func Foo() error {
 		env.AfterChange(NoDiagnostics(ForFile("main.go")))
 	})
 }
+
+func TestUnusedParameter_Issue63755(t *testing.T) {
+	// This test verifies the fix for #63755, where codeActions panicked on parameters
+	// of functions with no function body.
+
+	// We should not detect parameters as unused for external functions.
+
+	const files = `
+-- go.mod --
+module unused.mod
+
+go 1.18
+
+-- external.go --
+package external
+
+func External(z int) //@codeaction("refactor.rewrite", "z", "z", recursive)
+
+func _() {
+	External(1)
+}
+	`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("external.go")
+		actions, err := env.Editor.CodeAction(env.Ctx, env.RegexpSearch("external.go", "z"), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(actions) > 0 {
+			t.Errorf("CodeAction(): got %d code actions, want 0", len(actions))
+		}
+	})
+}
