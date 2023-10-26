@@ -17,7 +17,10 @@ import (
 )
 
 func init() {
-	testdataTests = append(testdataTests, "rangevarlifetime_go122.go")
+	testdataTests = append(testdataTests,
+		"rangevarlifetime_go122.go",
+		"forvarlifetime_go122.go",
+	)
 }
 
 // TestExperimentRange tests files in testdata with GOEXPERIMENT=range set.

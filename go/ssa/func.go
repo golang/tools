@@ -382,10 +382,21 @@ func (f *Function) debugInfo() bool {
 // that is local to function f or one of its enclosing functions.
 // If escaping, the reference comes from a potentially escaping pointer
 // expression and the referent must be heap-allocated.
+// We assume the referent is a *Alloc or *Phi.
+// (The only Phis at this stage are those created directly by go1.22 "for" loops.)
 func (f *Function) lookup(obj *types.Var, escaping bool) Value {
 	if v, ok := f.vars[obj]; ok {
-		if alloc, ok := v.(*Alloc); ok && escaping {
-			alloc.Heap = true
+		if escaping {
+			switch v := v.(type) {
+			case *Alloc:
+				v.Heap = true
+			case *Phi:
+				for _, edge := range v.Edges {
+					if alloc, ok := edge.(*Alloc); ok {
+						alloc.Heap = true
+					}
+				}
+			}
 		}
 		return v // function-local var (address)
 	}

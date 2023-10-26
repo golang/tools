@@ -121,6 +121,7 @@ var testdataTests = []string{
 	"deepequal.go",
 	"defer.go",
 	"fieldprom.go",
+	"forvarlifetime_old.go",
 	"ifaceconv.go",
 	"ifaceprom.go",
 	"initorder.go",

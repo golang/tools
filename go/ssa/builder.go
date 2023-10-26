@@ -1784,6 +1784,18 @@ func (b *builder) selectStmt(fn *Function, s *ast.SelectStmt, label *lblock) {
 // forStmt emits to fn code for the for statement s, optionally
 // labelled by label.
 func (b *builder) forStmt(fn *Function, s *ast.ForStmt, label *lblock) {
+	// Use forStmtGo122 instead if it applies.
+	if s.Init != nil {
+		if assign, ok := s.Init.(*ast.AssignStmt); ok && assign.Tok == token.DEFINE {
+			major, minor := parseGoVersion(fn.goversion)
+			afterGo122 := major >= 1 && minor >= 22
+			if afterGo122 {
+				b.forStmtGo122(fn, s, label)
+				return
+			}
+		}
+	}
+
 	//     ...init...
 	//     jump loop
 	// loop:
@@ -1834,6 +1846,125 @@ func (b *builder) forStmt(fn *Function, s *ast.ForStmt, label *lblock) {
 		emitJump(fn, loop) // back-edge
 	}
 	fn.currentBlock = done
+}
+
+// forStmtGo122 emits to fn code for the for statement s, optionally
+// labelled by label. s must define its variables.
+//
+// This allocates once per loop iteration. This is only correct in
+// GoVersions >= go1.22.
+func (b *builder) forStmtGo122(fn *Function, s *ast.ForStmt, label *lblock) {
+	//     i_outer = alloc[T]
+	//     *i_outer = ...init...        // under objects[i] = i_outer
+	//     jump loop
+	// loop:
+	//     i = phi [head: i_outer, loop: i_next]
+	//     ...cond...                   // under objects[i] = i
+	//     if cond goto body else done
+	// body:
+	//     ...body...                   // under objects[i] = i (same as loop)
+	//     jump post
+	// post:
+	//     tmp = *i
+	//     i_next = alloc[T]
+	//     *i_next = tmp
+	//     ...post...                   // under objects[i] = i_next
+	//     goto loop
+	// done:
+
+	init := s.Init.(*ast.AssignStmt)
+
+	pre := fn.currentBlock               // current block before starting
+	loop := fn.newBasicBlock("for.loop") // target of back-edge
+	body := fn.newBasicBlock("for.body")
+	post := fn.newBasicBlock("for.post") // target of 'continue'
+	done := fn.newBasicBlock("for.done") // target of 'break'
+
+	// For each of the n loop variables, we create three SSA values,
+	// outer[i], phi[i], and next[i] in pre, loop, and post.
+	// There is no limit on n.
+	lhss := init.Lhs
+	vars := make([]*types.Var, len(lhss))
+	outers := make([]Value, len(vars))
+	phis := make([]Value, len(vars))
+	nexts := make([]Value, len(vars))
+	for i, lhs := range lhss {
+		v := identVar(fn, lhs.(*ast.Ident))
+		typ := fn.typ(v.Type())
+
+		fn.currentBlock = pre
+		outer := emitLocal(fn, typ, v.Pos(), v.Name())
+
+		fn.currentBlock = loop
+		phi := &Phi{Comment: v.Name()}
+		phi.pos = v.Pos()
+		phi.typ = outer.Type()
+		fn.emit(phi)
+
+		fn.currentBlock = post
+		// If next is is local, it reuses the address and zeroes the old value.
+		// Load before the Alloc.
+		load := emitLoad(fn, phi)
+		next := emitLocal(fn, typ, v.Pos(), v.Name())
+		emitStore(fn, next, load, token.NoPos)
+
+		phi.Edges = []Value{outer, next} // pre edge is emitted before post edge.
+
+		vars[i] = v
+		outers[i] = outer
+		phis[i] = phi
+		nexts[i] = next
+	}
+
+	varsCurrentlyReferTo := func(vals []Value) {
+		for i, v := range vars {
+			fn.vars[v] = vals[i]
+		}
+	}
+
+	// ...init... under fn.objects[v] = i_outer
+	fn.currentBlock = pre
+	varsCurrentlyReferTo(outers)
+	const isDef = false // assign to already-allocated outers
+	b.assignStmt(fn, lhss, init.Rhs, isDef)
+	if label != nil {
+		label._break = done
+		label._continue = post
+	}
+	emitJump(fn, loop)
+
+	// ...cond... under fn.objects[v] = i
+	fn.currentBlock = loop
+	varsCurrentlyReferTo(phis)
+	if s.Cond != nil {
+		b.cond(fn, s.Cond, body, done)
+	} else {
+		emitJump(fn, body)
+	}
+
+	// ...body... under fn.objects[v] = i
+	fn.currentBlock = body
+	fn.targets = &targets{
+		tail:      fn.targets,
+		_break:    done,
+		_continue: post,
+	}
+	b.stmt(fn, s.Body)
+	fn.targets = fn.targets.tail
+	emitJump(fn, post)
+
+	// ...post... under fn.objects[v] = i_next
+	varsCurrentlyReferTo(nexts)
+	fn.currentBlock = post
+	if s.Post != nil {
+		b.stmt(fn, s.Post)
+	}
+	emitJump(fn, loop) // back-edge
+	fn.currentBlock = done
+
+	// TODO(taking): Optimizations for when local variables can be fused.
+	// Principled approach is: hoist i_next, fuse i_outer and i_next, eliminate redundant phi, and ssa-lifting.
+	// Unclear if we want to do any of this in general or only for range/for-loops with new lifetimes.
 }
 
 // rangeIndexed emits to fn the header for an integer-indexed loop
