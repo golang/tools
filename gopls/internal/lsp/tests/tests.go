@@ -58,7 +58,6 @@ type CallHierarchy = map[span.Span]*CallHierarchyResult
 type CompletionItems = map[token.Pos]*completion.CompletionItem
 type Completions = map[span.Span][]Completion
 type CompletionSnippets = map[span.Span][]CompletionSnippet
-type CaseSensitiveCompletions = map[span.Span][]Completion
 type RankCompletions = map[span.Span][]Completion
 type SemanticTokens = []span.Span
 type SuggestedFixes = map[span.Span][]SuggestedFix
@@ -71,23 +70,22 @@ type AddImport = map[span.URI]string
 type SelectionRanges = []span.Span
 
 type Data struct {
-	Config                   packages.Config
-	Exported                 *packagestest.Exported
-	CallHierarchy            CallHierarchy
-	CompletionItems          CompletionItems
-	Completions              Completions
-	CompletionSnippets       CompletionSnippets
-	CaseSensitiveCompletions CaseSensitiveCompletions
-	RankCompletions          RankCompletions
-	SemanticTokens           SemanticTokens
-	SuggestedFixes           SuggestedFixes
-	MethodExtractions        MethodExtractions
-	Renames                  Renames
-	InlayHints               InlayHints
-	PrepareRenames           PrepareRenames
-	Links                    Links
-	AddImport                AddImport
-	SelectionRanges          SelectionRanges
+	Config             packages.Config
+	Exported           *packagestest.Exported
+	CallHierarchy      CallHierarchy
+	CompletionItems    CompletionItems
+	Completions        Completions
+	CompletionSnippets CompletionSnippets
+	RankCompletions    RankCompletions
+	SemanticTokens     SemanticTokens
+	SuggestedFixes     SuggestedFixes
+	MethodExtractions  MethodExtractions
+	Renames            Renames
+	InlayHints         InlayHints
+	PrepareRenames     PrepareRenames
+	Links              Links
+	AddImport          AddImport
+	SelectionRanges    SelectionRanges
 
 	fragments map[string]string
 	dir       string
@@ -110,7 +108,6 @@ type Tests interface {
 	CallHierarchy(*testing.T, span.Span, *CallHierarchyResult)
 	Completion(*testing.T, span.Span, Completion, CompletionItems)
 	CompletionSnippet(*testing.T, span.Span, CompletionSnippet, bool, CompletionItems)
-	CaseSensitiveCompletion(*testing.T, span.Span, Completion, CompletionItems)
 	RankCompletion(*testing.T, span.Span, Completion, CompletionItems)
 	SemanticTokens(*testing.T, span.Span)
 	SuggestedFix(*testing.T, span.Span, []SuggestedFix, int)
@@ -128,15 +125,6 @@ type CompletionTestType int
 const (
 	// Default runs the standard completion tests.
 	CompletionDefault = CompletionTestType(iota)
-
-	// Deep tests deep completion.
-	CompletionDeep
-
-	// Fuzzy tests deep completion and fuzzy matching.
-	CompletionFuzzy
-
-	// CaseSensitive tests case sensitive completion.
-	CompletionCaseSensitive
 
 	// CompletionRank candidates in test must be valid and in the right relative order.
 	CompletionRank
@@ -225,18 +213,17 @@ func RunTests(t *testing.T, dataDir string, includeMultiModule bool, f func(*tes
 
 func load(t testing.TB, mode string, dir string) *Data {
 	datum := &Data{
-		CallHierarchy:            make(CallHierarchy),
-		CompletionItems:          make(CompletionItems),
-		Completions:              make(Completions),
-		CompletionSnippets:       make(CompletionSnippets),
-		RankCompletions:          make(RankCompletions),
-		CaseSensitiveCompletions: make(CaseSensitiveCompletions),
-		Renames:                  make(Renames),
-		PrepareRenames:           make(PrepareRenames),
-		SuggestedFixes:           make(SuggestedFixes),
-		MethodExtractions:        make(MethodExtractions),
-		Links:                    make(Links),
-		AddImport:                make(AddImport),
+		CallHierarchy:      make(CallHierarchy),
+		CompletionItems:    make(CompletionItems),
+		Completions:        make(Completions),
+		CompletionSnippets: make(CompletionSnippets),
+		RankCompletions:    make(RankCompletions),
+		Renames:            make(Renames),
+		PrepareRenames:     make(PrepareRenames),
+		SuggestedFixes:     make(SuggestedFixes),
+		MethodExtractions:  make(MethodExtractions),
+		Links:              make(Links),
+		AddImport:          make(AddImport),
 
 		dir:       dir,
 		fragments: map[string]string{},
@@ -371,9 +358,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 	if err := datum.Exported.Expect(map[string]interface{}{
 		"item":           datum.collectCompletionItems,
 		"complete":       datum.collectCompletions(CompletionDefault),
-		"deep":           datum.collectCompletions(CompletionDeep),
-		"fuzzy":          datum.collectCompletions(CompletionFuzzy),
-		"casesensitive":  datum.collectCompletions(CompletionCaseSensitive),
 		"rank":           datum.collectCompletions(CompletionRank),
 		"snippet":        datum.collectCompletionSnippets,
 		"semantic":       datum.collectSemanticTokens,
@@ -490,11 +474,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 				}
 			}
 		}
-	})
-
-	t.Run("CaseSensitiveCompletion", func(t *testing.T) {
-		t.Helper()
-		eachCompletion(t, data.CaseSensitiveCompletions, tests.CaseSensitiveCompletion)
 	})
 
 	t.Run("RankCompletions", func(t *testing.T) {
@@ -648,7 +627,6 @@ func checkData(t *testing.T, data *Data) {
 	fmt.Fprintf(buf, "CompletionsCount = %v\n", countCompletions(data.Completions))
 	fmt.Fprintf(buf, "CompletionSnippetCount = %v\n", snippetCount)
 	fmt.Fprintf(buf, "RankedCompletionsCount = %v\n", countCompletions(data.RankCompletions))
-	fmt.Fprintf(buf, "CaseSensitiveCompletionsCount = %v\n", countCompletions(data.CaseSensitiveCompletions))
 	fmt.Fprintf(buf, "SemanticTokenCount = %v\n", len(data.SemanticTokens))
 	fmt.Fprintf(buf, "SuggestedFixCount = %v\n", len(data.SuggestedFixes))
 	fmt.Fprintf(buf, "MethodExtractionCount = %v\n", len(data.MethodExtractions))
@@ -747,10 +725,6 @@ func (data *Data) collectCompletions(typ CompletionTestType) func(span.Span, []t
 	case CompletionRank:
 		return func(src span.Span, expected []token.Pos) {
 			result(data.RankCompletions, src, expected)
-		}
-	case CompletionCaseSensitive:
-		return func(src span.Span, expected []token.Pos) {
-			result(data.CaseSensitiveCompletions, src, expected)
 		}
 	default:
 		return func(src span.Span, expected []token.Pos) {

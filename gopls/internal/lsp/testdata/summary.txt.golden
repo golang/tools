@@ -3,7 +3,6 @@ CallHierarchyCount = 2
 CompletionsCount = 177
 CompletionSnippetCount = 27
 RankedCompletionsCount = 151
-CaseSensitiveCompletionsCount = 4
 SemanticTokenCount = 3
 SuggestedFixCount = 80
 MethodExtractionCount = 8
