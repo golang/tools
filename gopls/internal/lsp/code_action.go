@@ -541,6 +541,10 @@ func canRemoveParameter(pkg source.Package, pgf *source.ParsedGoFile, rng protoc
 		return false
 	}
 
+	if info.Decl.Body == nil {
+		return false // external function
+	}
+
 	if len(info.Field.Names) == 0 {
 		return true // no names => field is unused
 	}
