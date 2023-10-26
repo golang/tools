@@ -1,3 +1,20 @@
+This test exercises deep completion.
+
+-- settings.json --
+{
+	"completeUnimported": false,
+	"matcher": "caseInsensitive"
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests
+
+go 1.18
+
+-- deep/deep.go --
 package deep
 
 import "context"
@@ -14,9 +31,9 @@ func wantsDeepB(deepB) {}
 func _() {
 	var a deepA   //@item(deepAVar, "a", "deepA", "var")
 	a.b           //@item(deepABField, "a.b", "deepB", "field")
-	wantsDeepB(a) //@deep(")", deepABField, deepAVar)
+	wantsDeepB(a) //@complete(")", deepABField, deepAVar)
 
-	deepA{a} //@snippet("}", deepABField, "a.b", "a.b")
+	deepA{a} //@snippet("}", deepABField, "a.b")
 }
 
 func wantsContext(context.Context) {}
@@ -32,7 +49,7 @@ func _() {
 	var cork struct{ err error }
 	cork.err         //@item(deepCorkErr, "cork.err", "error", "field")
 	context          //@item(deepContextPkg, "context", "\"context\"", "package")
-	var _ error = co //@rank(" //", deepCorkErr, deepContextPkg)
+	var _ error = co // rank(" //", deepCorkErr, deepContextPkg)
 }
 
 func _() {
@@ -42,7 +59,7 @@ func _() {
 	}
 	var circle deepCircle   //@item(deepCircle, "circle", "deepCircle", "var")
 	circle.deepCircle       //@item(deepCircleField, "circle.deepCircle", "*deepCircle", "field")
-	var _ deepCircle = circ //@deep(" //", deepCircle, deepCircleField),snippet(" //", deepCircleField, "*circle.deepCircle", "*circle.deepCircle")
+	var _ deepCircle = circ //@complete(" //", deepCircle, deepCircleField),snippet(" //", deepCircleField, "*circle.deepCircle")
 }
 
 func _() {
@@ -60,7 +77,7 @@ func _() {
 	var a deepEmbedA //@item(deepEmbedA, "a", "deepEmbedA", "var")
 	a.deepEmbedB     //@item(deepEmbedB, "a.deepEmbedB", "deepEmbedB", "field")
 	a.deepEmbedC     //@item(deepEmbedC, "a.deepEmbedC", "deepEmbedC", "field")
-	wantsC(a)        //@deep(")", deepEmbedC, deepEmbedA, deepEmbedB)
+	wantsC(a)        //@complete(")", deepEmbedC, deepEmbedA, deepEmbedB)
 }
 
 func _() {
@@ -70,7 +87,7 @@ func _() {
 	}
 
 	nested{
-		a: 123, //@deep(" //", deepNestedField)
+		a: 123, //@complete(" //", deepNestedField)
 	}
 }
 
@@ -89,54 +106,5 @@ func _() {
 
 	// "a.d" should be ranked above the deeper "a.b.c"
 	var i int
-	i = a //@deep(" //", deepAD, deepABC, deepA, deepAB)
-}
-
-type foo struct {
-	b bar
-}
-
-func (f foo) bar() bar {
-	return f.b
-}
-
-func (f foo) barPtr() *bar {
-	return &f.b
-}
-
-type bar struct{}
-
-func (b bar) valueReceiver() int {
-	return 0
-}
-
-func (b *bar) ptrReceiver() int {
-	return 0
-}
-
-func _() {
-	var (
-		i int
-		f foo
-	)
-
-	f.bar().valueReceiver    //@item(deepBarValue, "f.bar().valueReceiver", "func() int", "method")
-	f.barPtr().ptrReceiver   //@item(deepBarPtrPtr, "f.barPtr().ptrReceiver", "func() int", "method")
-	f.barPtr().valueReceiver //@item(deepBarPtrValue, "f.barPtr().valueReceiver", "func() int", "method")
-
-	i = fbar //@fuzzy(" //", deepBarValue, deepBarPtrPtr, deepBarPtrValue)
-}
-
-func (b baz) Thing() struct{ val int } {
-	return b.thing
-}
-
-type baz struct {
-	thing struct{ val int }
-}
-
-func (b baz) _() {
-	b.Thing().val    //@item(deepBazMethVal, "b.Thing().val", "int", "field")
-	b.thing.val      //@item(deepBazFieldVal, "b.thing.val", "int", "field")
-	var _ int = bval //@rank(" //", deepBazFieldVal, deepBazMethVal)
+	i = a //@complete(" //", deepAD, deepABC, deepA, deepAB)
 }

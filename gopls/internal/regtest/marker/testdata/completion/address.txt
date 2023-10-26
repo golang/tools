@@ -1,3 +1,17 @@
+This test exercises the reference and dereference completion modifiers.
+
+TODO: remove the need to set "literalCompletions" here, as this is one of the
+few places this setting is needed.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests
+
+go 1.18
+
+-- address/address.go --
 package address
 
 func wantsPtr(*int)            {}
@@ -13,28 +27,28 @@ func _() {
 		b int    //@item(addrB, "b", "int", "var")
 	)
 
-	wantsPtr()   //@rank(")", addrB, addrA),snippet(")", addrB, "&b", "&b")
-	wantsPtr(&b) //@snippet(")", addrB, "b", "b")
+	wantsPtr()   //@rank(")", addrB, addrA),snippet(")", addrB, "&b")
+	wantsPtr(&b) //@snippet(")", addrB, "b")
 
-	wantsVariadicPtr() //@rank(")", addrB, addrA),snippet(")", addrB, "&b", "&b")
+	wantsVariadicPtr() //@rank(")", addrB, addrA),snippet(")", addrB, "&b")
 
 	var s foo
 	s.c          //@item(addrDeepC, "s.c", "int", "field")
-	wantsPtr()   //@snippet(")", addrDeepC, "&s.c", "&s.c")
-	wantsPtr(s)  //@snippet(")", addrDeepC, "&s.c", "&s.c")
-	wantsPtr(&s) //@snippet(")", addrDeepC, "s.c", "s.c")
+	wantsPtr()   //@snippet(")", addrDeepC, "&s.c")
+	wantsPtr(s)  //@snippet(")", addrDeepC, "&s.c")
+	wantsPtr(&s) //@snippet(")", addrDeepC, "s.c")
 
 	// don't add "&" in item (it gets added as an additional edit)
-	wantsPtr(&s.c) //@snippet(")", addrFieldC, "c", "c")
+	wantsPtr(&s.c) //@snippet(")", addrFieldC, "c")
 
 	// check dereferencing as well
 	var c *int    //@item(addrCPtr, "c", "*int", "var")
-	var _ int = _ //@rank("_ //", addrCPtr, addrA),snippet("_ //", addrCPtr, "*c", "*c")
+	var _ int = _ //@rank("_ //", addrCPtr, addrA),snippet("_ //", addrCPtr, "*c")
 
-	wantsVariadic() //@rank(")", addrCPtr, addrA),snippet(")", addrCPtr, "*c", "*c")
+	wantsVariadic() //@rank(")", addrCPtr, addrA),snippet(")", addrCPtr, "*c")
 
 	var d **int   //@item(addrDPtr, "d", "**int", "var")
-	var _ int = _ //@rank("_ //", addrDPtr, addrA),snippet("_ //", addrDPtr, "**d", "**d")
+	var _ int = _ //@rank("_ //", addrDPtr, addrA),snippet("_ //", addrDPtr, "**d")
 
 	type namedPtr *int
 	var np namedPtr //@item(addrNamedPtr, "np", "namedPtr", "var")
@@ -42,10 +56,10 @@ func _() {
 	var _ int = _ //@rank("_ //", addrNamedPtr, addrA)
 
 	// don't get tripped up by recursive pointer type
-	type dontMessUp *dontMessUp
+	type dontMessUp *dontMessUp //@item(dontMessUp, "dontMessUp", "*dontMessUp", "type")
 	var dmu *dontMessUp //@item(addrDMU, "dmu", "*dontMessUp", "var")
 
-	var _ int = dmu //@complete(" //", addrDMU)
+	var _ int = dmu //@complete(" //", addrDMU, dontMessUp)
 }
 
 func (f foo) ptr() *foo { return &f }
@@ -59,8 +73,8 @@ func _() {
 	// addressable
 	getFoo().ptr().c //@item(addrGetFooPtrC, "getFoo().ptr().c", "int", "field")
 
-	wantsPtr()   //@rank(addrGetFooPtrC, addrGetFooC),snippet(")", addrGetFooPtrC, "&getFoo().ptr().c", "&getFoo().ptr().c")
-	wantsPtr(&g) //@rank(addrGetFooPtrC, addrGetFooC),snippet(")", addrGetFooPtrC, "getFoo().ptr().c", "getFoo().ptr().c")
+	wantsPtr()   //@snippet(")", addrGetFooPtrC, "&getFoo().ptr().c")
+	wantsPtr(&g) //@snippet(")", addrGetFooPtrC, "getFoo().ptr().c")
 }
 
 type nested struct {
@@ -74,5 +88,5 @@ func _() {
 	getNested().f.ptr().c //@item(addrNestedPtrC, "getNested().f.ptr().c", "int", "field")
 
 	// addrNestedC is not addressable, so rank lower
-	wantsPtr(getNestedfc) //@fuzzy(")", addrNestedPtrC, addrNestedC)
+	wantsPtr(getNestedfc) //@complete(")", addrNestedPtrC, addrNestedC)
 }

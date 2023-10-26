@@ -58,8 +58,6 @@ type CallHierarchy = map[span.Span]*CallHierarchyResult
 type CompletionItems = map[token.Pos]*completion.CompletionItem
 type Completions = map[span.Span][]Completion
 type CompletionSnippets = map[span.Span][]CompletionSnippet
-type DeepCompletions = map[span.Span][]Completion
-type FuzzyCompletions = map[span.Span][]Completion
 type CaseSensitiveCompletions = map[span.Span][]Completion
 type RankCompletions = map[span.Span][]Completion
 type SemanticTokens = []span.Span
@@ -79,8 +77,6 @@ type Data struct {
 	CompletionItems          CompletionItems
 	Completions              Completions
 	CompletionSnippets       CompletionSnippets
-	DeepCompletions          DeepCompletions
-	FuzzyCompletions         FuzzyCompletions
 	CaseSensitiveCompletions CaseSensitiveCompletions
 	RankCompletions          RankCompletions
 	SemanticTokens           SemanticTokens
@@ -114,8 +110,6 @@ type Tests interface {
 	CallHierarchy(*testing.T, span.Span, *CallHierarchyResult)
 	Completion(*testing.T, span.Span, Completion, CompletionItems)
 	CompletionSnippet(*testing.T, span.Span, CompletionSnippet, bool, CompletionItems)
-	DeepCompletion(*testing.T, span.Span, Completion, CompletionItems)
-	FuzzyCompletion(*testing.T, span.Span, Completion, CompletionItems)
 	CaseSensitiveCompletion(*testing.T, span.Span, Completion, CompletionItems)
 	RankCompletion(*testing.T, span.Span, Completion, CompletionItems)
 	SemanticTokens(*testing.T, span.Span)
@@ -235,8 +229,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 		CompletionItems:          make(CompletionItems),
 		Completions:              make(Completions),
 		CompletionSnippets:       make(CompletionSnippets),
-		DeepCompletions:          make(DeepCompletions),
-		FuzzyCompletions:         make(FuzzyCompletions),
 		RankCompletions:          make(RankCompletions),
 		CaseSensitiveCompletions: make(CaseSensitiveCompletions),
 		Renames:                  make(Renames),
@@ -500,16 +492,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		}
 	})
 
-	t.Run("DeepCompletion", func(t *testing.T) {
-		t.Helper()
-		eachCompletion(t, data.DeepCompletions, tests.DeepCompletion)
-	})
-
-	t.Run("FuzzyCompletion", func(t *testing.T) {
-		t.Helper()
-		eachCompletion(t, data.FuzzyCompletions, tests.FuzzyCompletion)
-	})
-
 	t.Run("CaseSensitiveCompletion", func(t *testing.T) {
 		t.Helper()
 		eachCompletion(t, data.CaseSensitiveCompletions, tests.CaseSensitiveCompletion)
@@ -665,8 +647,6 @@ func checkData(t *testing.T, data *Data) {
 	fmt.Fprintf(buf, "CallHierarchyCount = %v\n", len(data.CallHierarchy))
 	fmt.Fprintf(buf, "CompletionsCount = %v\n", countCompletions(data.Completions))
 	fmt.Fprintf(buf, "CompletionSnippetCount = %v\n", snippetCount)
-	fmt.Fprintf(buf, "DeepCompletionsCount = %v\n", countCompletions(data.DeepCompletions))
-	fmt.Fprintf(buf, "FuzzyCompletionsCount = %v\n", countCompletions(data.FuzzyCompletions))
 	fmt.Fprintf(buf, "RankedCompletionsCount = %v\n", countCompletions(data.RankCompletions))
 	fmt.Fprintf(buf, "CaseSensitiveCompletionsCount = %v\n", countCompletions(data.CaseSensitiveCompletions))
 	fmt.Fprintf(buf, "SemanticTokenCount = %v\n", len(data.SemanticTokens))
@@ -764,14 +744,6 @@ func (data *Data) collectCompletions(typ CompletionTestType) func(span.Span, []t
 		})
 	}
 	switch typ {
-	case CompletionDeep:
-		return func(src span.Span, expected []token.Pos) {
-			result(data.DeepCompletions, src, expected)
-		}
-	case CompletionFuzzy:
-		return func(src span.Span, expected []token.Pos) {
-			result(data.FuzzyCompletions, src, expected)
-		}
 	case CompletionRank:
 		return func(src span.Span, expected []token.Pos) {
 			result(data.RankCompletions, src, expected)

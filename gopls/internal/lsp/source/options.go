@@ -595,6 +595,9 @@ type InternalOptions struct {
 	// LiteralCompletions controls whether literal candidates such as
 	// "&someStruct{}" are offered. Tests disable this flag to simplify
 	// their expected values.
+	//
+	// TODO(rfindley): this is almost unnecessary now. Remove it along with the
+	// old marker tests.
 	LiteralCompletions bool
 
 	// VerboseWorkDoneProgress controls whether the LSP server should send

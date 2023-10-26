@@ -1,7 +1,14 @@
-// Copyright 2019 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+This test exercises fuzzy completion matching.
 
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests
+
+go 1.18
+
+-- fuzzy/fuzzy.go --
 package fuzzy
 
 func _() {
@@ -13,13 +20,13 @@ func _() {
 	a.fabar  //@item(fuzzFabarField, "a.fabar", "int", "field")
 	a.fooBar //@item(fuzzFooBarField, "a.fooBar", "string", "field")
 
-	afa //@fuzzy(" //", fuzzFabarField, fuzzFooBarField)
-	afb //@fuzzy(" //", fuzzFooBarField, fuzzFabarField)
+	afa //@complete(" //", fuzzFabarField, fuzzFooBarField)
+	afb //@complete(" //", fuzzFooBarField, fuzzFabarField)
 
-	fab //@fuzzy(" //", fuzzFabarField)
+	fab //@complete(" //", fuzzFabarField)
 
 	var myString string
-	myString = af //@fuzzy(" //", fuzzFooBarField, fuzzFabarField)
+	myString = af //@complete(" //", fuzzFooBarField, fuzzFabarField)
 
 	var b struct {
 		c struct {
@@ -40,9 +47,9 @@ func _() {
 	b.c.d.e.abc //@item(fuzzABCstring, "b.c.d.e.abc", "string", "field")
 
 	// in depth order by default
-	abc //@fuzzy(" //", fuzzABCInt, fuzzABCbool, fuzzABCfloat)
+	abc //@complete(" //", fuzzABCInt, fuzzABCbool, fuzzABCfloat)
 
 	// deep candidate that matches expected type should still ranked first
 	var s string
-	s = abc //@fuzzy(" //", fuzzABCstring, fuzzABCInt, fuzzABCbool)
+	s = abc //@complete(" //", fuzzABCstring, fuzzABCInt, fuzzABCbool)
 }
