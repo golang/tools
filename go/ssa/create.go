@@ -27,8 +27,6 @@ func NewProgram(fset *token.FileSet, mode BuilderMode) *Program {
 		Fset:          fset,
 		imported:      make(map[string]*Package),
 		packages:      make(map[*types.Package]*Package),
-		thunks:        make(map[selectionKey]*Function),
-		bounds:        make(map[boundsKey]*Function),
 		mode:          mode,
 		canon:         newCanonizer(),
 		ctxt:          typeparams.NewContext(),

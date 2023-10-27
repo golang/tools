@@ -422,6 +422,7 @@ var (
 
 		"P.init": "package initializer",
 	}
+	var seen []string // may contain dups
 	for fn := range ssautil.AllFunctions(prog) {
 		if fn.Synthetic == "" {
 			continue
@@ -432,11 +433,15 @@ var (
 			t.Errorf("got unexpected/duplicate func: %q: %q", name, fn.Synthetic)
 			continue
 		}
-		delete(want, name)
+		seen = append(seen, name)
 
 		if wantDescr != fn.Synthetic {
 			t.Errorf("(%s).Synthetic = %q, want %q", name, fn.Synthetic, wantDescr)
 		}
+	}
+
+	for _, name := range seen {
+		delete(want, name)
 	}
 	for fn, descr := range want {
 		t.Errorf("want func: %q: %q", fn, descr)

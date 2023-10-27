@@ -33,8 +33,6 @@ type Program struct {
 	methodsMu     sync.Mutex                 // guards the following maps:
 	methodSets    typeutil.Map               // maps type to its concrete methodSet
 	runtimeTypes  typeutil.Map               // types for which rtypes are needed
-	bounds        map[boundsKey]*Function    // bounds for curried x.Method closures
-	thunks        map[selectionKey]*Function // thunks for T.Method expressions
 	instances     map[*Function]*instanceSet // instances of generic functions
 	parameterized tpWalker                   // determines whether a type reaches a type parameter.
 }

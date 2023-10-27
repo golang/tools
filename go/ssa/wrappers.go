@@ -184,56 +184,50 @@ func createParams(fn *Function, start int) {
 //
 // EXCLUSIVE_LOCKS_ACQUIRED(meth.Prog.methodsMu)
 func makeBound(prog *Program, obj *types.Func, cr *creator) *Function {
-	targs := receiverTypeArgs(obj)
-	key := boundsKey{obj, prog.canon.List(targs)}
-
 	prog.methodsMu.Lock()
 	defer prog.methodsMu.Unlock()
-	fn, ok := prog.bounds[key]
-	if !ok {
-		description := fmt.Sprintf("bound method wrapper for %s", obj)
-		if prog.mode&LogSource != 0 {
-			defer logStack("%s", description)()
-		}
-		fn = &Function{
-			name:      obj.Name() + "$bound",
-			object:    obj,
-			Signature: changeRecv(obj.Type().(*types.Signature), nil), // drop receiver
-			Synthetic: description,
-			Prog:      prog,
-			pos:       obj.Pos(),
-			// wrappers have no syntax
-			info:      nil,
-			goversion: "",
-		}
-		cr.Add(fn)
 
-		fv := &FreeVar{name: "recv", typ: recvType(obj), parent: fn}
-		fn.FreeVars = []*FreeVar{fv}
-		fn.startBody()
-		createParams(fn, 0)
-		var c Call
-
-		if !types.IsInterface(recvType(obj)) { // concrete
-			callee := prog.originFunc(obj)
-			if callee.typeparams.Len() > 0 {
-				callee = prog.lookupOrCreateInstance(callee, targs, cr)
-			}
-			c.Call.Value = callee
-			c.Call.Args = []Value{fv}
-		} else {
-			c.Call.Method = obj
-			c.Call.Value = fv // interface (possibly a typeparam)
-		}
-		for _, arg := range fn.Params {
-			c.Call.Args = append(c.Call.Args, arg)
-		}
-		emitTailCall(fn, &c)
-		fn.finishBody()
-		fn.done()
-
-		prog.bounds[key] = fn
+	description := fmt.Sprintf("bound method wrapper for %s", obj)
+	if prog.mode&LogSource != 0 {
+		defer logStack("%s", description)()
 	}
+	fn := &Function{
+		name:      obj.Name() + "$bound",
+		object:    obj,
+		Signature: changeRecv(obj.Type().(*types.Signature), nil), // drop receiver
+		Synthetic: description,
+		Prog:      prog,
+		pos:       obj.Pos(),
+		// wrappers have no syntax
+		info:      nil,
+		goversion: "",
+	}
+	cr.Add(fn)
+
+	fv := &FreeVar{name: "recv", typ: recvType(obj), parent: fn}
+	fn.FreeVars = []*FreeVar{fv}
+	fn.startBody()
+	createParams(fn, 0)
+	var c Call
+
+	if !types.IsInterface(recvType(obj)) { // concrete
+		callee := prog.originFunc(obj)
+		if callee.typeparams.Len() > 0 {
+			callee = prog.lookupOrCreateInstance(callee, receiverTypeArgs(obj), cr)
+		}
+		c.Call.Value = callee
+		c.Call.Args = []Value{fv}
+	} else {
+		c.Call.Method = obj
+		c.Call.Value = fv // interface (possibly a typeparam)
+	}
+	for _, arg := range fn.Params {
+		c.Call.Args = append(c.Call.Args, arg)
+	}
+	emitTailCall(fn, &c)
+	fn.finishBody()
+	fn.done()
+
 	return fn
 }
 
@@ -256,57 +250,25 @@ func makeBound(prog *Program, obj *types.Func, cr *creator) *Function {
 //
 //	f := func(t T) { return t.meth() }
 //
-// TODO(adonovan): opt: currently the stub is created even when used
-// directly in a function call: C.f(i, 0).  This is less efficient
-// than inlining the stub.
-//
 // EXCLUSIVE_LOCKS_ACQUIRED(meth.Prog.methodsMu)
 func makeThunk(prog *Program, sel *selection, cr *creator) *Function {
 	if sel.kind != types.MethodExpr {
 		panic(sel)
 	}
 
-	// Canonicalize sel.recv to avoid constructing duplicate thunks.
-	canonRecv := prog.canon.Type(sel.recv)
-	key := selectionKey{
-		kind:     sel.kind,
-		recv:     canonRecv,
-		obj:      sel.obj,
-		index:    fmt.Sprint(sel.index),
-		indirect: sel.indirect,
-	}
-
 	prog.methodsMu.Lock()
 	defer prog.methodsMu.Unlock()
 
-	fn, ok := prog.thunks[key]
-	if !ok {
-		fn = makeWrapper(prog, sel, cr)
-		if fn.Signature.Recv() != nil {
-			panic(fn) // unexpected receiver
-		}
-		prog.thunks[key] = fn
+	fn := makeWrapper(prog, sel, cr)
+	if fn.Signature.Recv() != nil {
+		panic(fn) // unexpected receiver
 	}
+
 	return fn
 }
 
 func changeRecv(s *types.Signature, recv *types.Var) *types.Signature {
 	return types.NewSignature(recv, s.Params(), s.Results(), s.Variadic())
-}
-
-// selectionKey is like types.Selection but a usable map key.
-type selectionKey struct {
-	kind     types.SelectionKind
-	recv     types.Type // canonicalized via Program.canon
-	obj      types.Object
-	index    string
-	indirect bool
-}
-
-// boundsKey is a unique for the object and a type instantiation.
-type boundsKey struct {
-	obj  types.Object // t.meth
-	inst *typeList    // canonical type instantiation list.
 }
 
 // A local version of *types.Selection.
