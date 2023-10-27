@@ -17,6 +17,8 @@ import (
 // Thread-safe.
 //
 // This is an experimental interface! It may change without warning.
+//
+// Acquires prog.methodsMu.
 func (prog *Program) _Instances(fn *Function) []*Function {
 	if fn.typeparams.Len() == 0 || len(fn.typeargs) > 0 {
 		return nil
@@ -116,10 +118,10 @@ func (insts *instanceSet) lookupOrCreate(targs []types.Type, parameterized *tpWa
 		return inst
 	}
 
-	// CREATE instance/instantiation wrapper
+	// Create instance or instantiation wrapper.
 	var syntax ast.Node
 	if insts.syntax != nil {
-		syntax = insts.syntax
+		syntax = ast.Node(insts.syntax)
 	}
 
 	var sig *types.Signature
@@ -141,26 +143,33 @@ func (insts *instanceSet) lookupOrCreate(targs []types.Type, parameterized *tpWa
 		sig = prog.canon.Type(instance).(*types.Signature)
 	}
 
-	var synthetic string
-	var subst *subster
-
-	concrete := !parameterized.anyParameterized(targs)
-
-	if prog.mode&InstantiateGenerics != 0 && concrete {
+	var (
+		synthetic string
+		subst     *subster
+		build     buildFunc
+	)
+	if prog.mode&InstantiateGenerics != 0 && !parameterized.anyParameterized(targs) {
 		synthetic = fmt.Sprintf("instance of %s", fn.Name())
-		scope := typeparams.OriginMethod(obj).Scope()
-		subst = makeSubster(prog.ctxt, scope, fn.typeparams, targs, false)
+		if syntax != nil {
+			scope := typeparams.OriginMethod(obj).Scope()
+			subst = makeSubster(prog.ctxt, scope, fn.typeparams, targs, false)
+			build = (*builder).buildFromSyntax
+		} else {
+			build = (*builder).buildParamsOnly
+		}
 	} else {
 		synthetic = fmt.Sprintf("instantiation wrapper of %s", fn.Name())
+		build = (*builder).buildInstantiationWrapper
 	}
 
-	name := fmt.Sprintf("%s%s", fn.Name(), targs) // may not be unique
+	/* generic instance or instantiation wrapper */
 	instance := &Function{
-		name:           name,
+		name:           fmt.Sprintf("%s%s", fn.Name(), targs), // may not be unique
 		object:         obj,
 		Signature:      sig,
 		Synthetic:      synthetic,
 		syntax:         syntax,
+		build:          build,
 		topLevelOrigin: fn,
 		pos:            obj.Pos(),
 		Pkg:            nil,

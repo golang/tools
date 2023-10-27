@@ -135,6 +135,8 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 			t.Errorf("Expected instances of %s to be %v. got %v", meth, want, instances)
 		}
 
+		// TODO(adonovan): tests should not rely on unexported functions.
+
 		// build and sanity check manually created instance.
 		var b builder
 		b.buildFunction(instance)

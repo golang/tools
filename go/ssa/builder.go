@@ -75,27 +75,34 @@ package ssa
 // parent. Anonymous functions also track where they are referred to in their
 // parent function.
 //
-// Happens-before:
+// Create and build:
 //
-// The above discussion leads to the following happens-before relation for
-// the BUILD and CREATE phases.
-// The happens-before relation (with X<Y denoting X happens-before Y) are:
-// - CREATE fn < fn.startBody() < fn.finishBody() < fn.built
-//   for any function fn.
-// - anon.parent.startBody() < CREATE anon, and
-//   anon.finishBody() < anon.parent().finishBody() < anon.built < fn.built
-//   for an anonymous function anon (i.e. anon.parent() != nil).
-// - CREATE fn.Pkg < CREATE fn
-//   for a declared function fn (i.e. fn.Pkg != nil)
-// - fn.built < BUILD pkg done
-//   for any function fn created during the CREATE or BUILD phase of a package
-//   pkg. This includes declared and synthetic functions.
+// Construction happens in two phases, "create" and "build".
+// Package and Function data structures are created by CreatePackage.
+// However, fields of Function such as Body, Params, and others are
+// populated only during building, which happens later (or never).
 //
-// Program.MethodValue:
+// A complete Program is built (in parallel) by calling Program.Build,
+// but individual packages may built by calling Package.Build.
 //
-// Program.MethodValue may trigger new wrapper and instantiation functions to
-// be created. It has the same obligation to BUILD created functions as a
-// Package.
+// The Function.build fields determines the algorithm for building the
+// function body. It is cleared to mark that building is complete.
+//
+// Anonymous functions must be built as soon as they are encountered,
+// as it may affect locals of the enclosing function, but they are not
+// marked 'built' until the end of the outermost enclosing function.
+// (Among other things, this causes them to be logged in top-down order.)
+//
+// The {start,finish}Body functions must be called (in that order)
+// around construction of the Body.
+//
+// Building a package may trigger the creation of new functions for
+// wrapper methods and instantiations. The Package.Build operation
+// will build these additional functions, and any that they in turn
+// create, until it converges.
+//
+// Program.MethodValue may also trigger the creation of new functions,
+// and it too must build iterately until it converges.
 //
 // Program.NewFunction:
 //
@@ -629,7 +636,8 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 		panic("non-constant BasicLit") // unreachable
 
 	case *ast.FuncLit:
-		fn2 := &Function{
+		/* function literal */
+		anon := &Function{
 			name:           fmt.Sprintf("%s$%d", fn.Name(), 1+len(fn.AnonFuncs)),
 			Signature:      fn.typeOf(e.Type).(*types.Signature),
 			pos:            e.Type.Func,
@@ -638,6 +646,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			Pkg:            fn.Pkg,
 			Prog:           fn.Prog,
 			syntax:         e,
+			build:          (*builder).buildFromSyntax,
 			topLevelOrigin: nil,           // use anonIdx to lookup an anon instance's origin.
 			typeparams:     fn.typeparams, // share the parent's type parameters.
 			typeargs:       fn.typeargs,   // share the parent's type arguments.
@@ -645,17 +654,16 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			subst:          fn.subst,     // share the parent's type substitutions.
 			goversion:      fn.goversion, // share the parent's goversion
 		}
-		fn.AnonFuncs = append(fn.AnonFuncs, fn2)
-		b.created.Add(fn2)
-		b.buildFunctionBody(fn2)
-		// fn2 is not done BUILDing. fn2.referrers can still be updated.
-		// fn2 is done BUILDing after fn.finishBody().
-		if fn2.FreeVars == nil {
-			return fn2
+		fn.AnonFuncs = append(fn.AnonFuncs, anon)
+		// Build anon immediately, as it may cause fn's locals to escape.
+		// (It is not marked 'built' until the end of the enclosing FuncDecl.)
+		anon.build(b, anon)
+		if anon.FreeVars == nil {
+			return anon
 		}
-		v := &MakeClosure{Fn: fn2}
+		v := &MakeClosure{Fn: anon}
 		v.setType(fn.typ(tv.Type))
-		for _, fv := range fn2.FreeVars {
+		for _, fv := range anon.FreeVars {
 			v.Bindings = append(v.Bindings, fv.outer)
 			fv.outer = nil
 		}
@@ -817,7 +825,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 		case types.MethodExpr:
 			// (*T).f or T.f, the method f from the method-set of type T.
 			// The result is a "thunk".
-			thunk := makeThunk(fn.Prog, sel, b.created)
+			thunk := createThunk(fn.Prog, sel, b.created)
 			return emitConv(fn, thunk, fn.typ(tv.Type))
 
 		case types.MethodVal:
@@ -860,7 +868,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 				obj = fn.Prog.canon.instantiateMethod(obj, fn.subst.types(targs), fn.Prog.ctxt)
 			}
 			c := &MakeClosure{
-				Fn:       makeBound(fn.Prog, obj, b.created),
+				Fn:       createBound(fn.Prog, obj, b.created),
 				Bindings: []Value{v},
 			}
 			c.setPos(e.Sel.Pos())
@@ -2366,73 +2374,81 @@ start:
 	}
 }
 
+// A buildFunc is a strategy for building the SSA body for a function.
+type buildFunc = func(*builder, *Function)
+
+// iterate causes all created but unbuilt functions to be built.
+//
+// Since building may visit new types, and gathering methods for new
+// types may create functions, this process must be iterated until it
+// converges.
+func (b *builder) iterate() {
+	for b.rtypes < b.created.Len() {
+		// Build any created but unbuilt functions.
+		// May visit new runtime types.
+		for ; b.finished < b.created.Len(); b.finished++ {
+			fn := b.created.At(b.finished)
+			b.buildFunction(fn)
+		}
+
+		// Gather methods for new runtime types.
+		// May create new functions.
+		b.needsRuntimeTypes()
+	}
+}
+
 // buildFunction builds SSA code for the body of function fn.  Idempotent.
 func (b *builder) buildFunction(fn *Function) {
-	if !fn.built {
+	if fn.build != nil {
 		assert(fn.parent == nil, "anonymous functions should not be built by buildFunction()")
-		b.buildFunctionBody(fn)
+
+		if fn.Prog.mode&LogSource != 0 {
+			defer logStack("build %s @ %s", fn, fn.Prog.Fset.Position(fn.pos))()
+		}
+		fn.build(b, fn)
 		fn.done()
 	}
 }
 
-// buildFunctionBody builds SSA code for the body of function fn.
-//
-// fn is not done building until fn.done() is called.
-func (b *builder) buildFunctionBody(fn *Function) {
-	// TODO(taking): see if this check is reachable.
-	if fn.Blocks != nil {
-		return // building already started
+// buildParamsOnly builds fn.Params from fn.Signature, but does not build fn.Body.
+func (b *builder) buildParamsOnly(fn *Function) {
+	// For external (C, asm) functions or functions loaded from
+	// export data, we must set fn.Params even though there is no
+	// body code to reference them.
+	if recv := fn.Signature.Recv(); recv != nil {
+		fn.addParamVar(recv)
 	}
+	params := fn.Signature.Params()
+	for i, n := 0, params.Len(); i < n; i++ {
+		fn.addParamVar(params.At(i))
+	}
+}
 
-	var recvField *ast.FieldList
-	var body *ast.BlockStmt
-	var functype *ast.FuncType
-	switch n := fn.syntax.(type) {
-	case nil:
-		if fn.Params != nil {
-			return // not a Go source function.  (Synthetic, or from object file.)
-		}
+// buildFromSyntax builds fn.Body from fn.syntax, which must be non-nil.
+func (b *builder) buildFromSyntax(fn *Function) {
+	var (
+		recvField *ast.FieldList
+		body      *ast.BlockStmt
+		functype  *ast.FuncType
+	)
+	switch syntax := fn.syntax.(type) {
 	case *ast.FuncDecl:
-		functype = n.Type
-		recvField = n.Recv
-		body = n.Body
-	case *ast.FuncLit:
-		functype = n.Type
-		body = n.Body
-	default:
-		panic(n)
-	}
-
-	if body == nil {
-		// External function.
-		if fn.Params == nil {
-			// This condition ensures we add a non-empty
-			// params list once only, but we may attempt
-			// the degenerate empty case repeatedly.
-			// TODO(adonovan): opt: don't do that.
-
-			// We set Function.Params even though there is no body
-			// code to reference them.  This simplifies clients.
-			if recv := fn.Signature.Recv(); recv != nil {
-				fn.addParamVar(recv)
-			}
-			params := fn.Signature.Params()
-			for i, n := 0, params.Len(); i < n; i++ {
-				fn.addParamVar(params.At(i))
-			}
+		functype = syntax.Type
+		recvField = syntax.Recv
+		body = syntax.Body
+		if body == nil {
+			b.buildParamsOnly(fn) // no body (non-Go function)
+			return
 		}
-		return
+	case *ast.FuncLit:
+		functype = syntax.Type
+		body = syntax.Body
+	case nil:
+		panic("no syntax")
+	default:
+		panic(syntax) // unexpected syntax
 	}
 
-	// Build instantiation wrapper around generic body?
-	if fn.topLevelOrigin != nil && fn.subst == nil {
-		buildInstantiationWrapper(fn)
-		return
-	}
-
-	if fn.Prog.mode&LogSource != 0 {
-		defer logStack("build function %s @ %s", fn, fn.Prog.Fset.Position(fn.pos))()
-	}
 	fn.startBody()
 	fn.createSyntacticParams(recvField, functype)
 	b.stmt(fn, body)
@@ -2448,17 +2464,6 @@ func (b *builder) buildFunctionBody(fn *Function) {
 		fn.emit(new(Return))
 	}
 	fn.finishBody()
-}
-
-// buildCreated does the BUILD phase for each function created by builder that is not yet BUILT.
-// Functions are built using buildFunction.
-//
-// May add types that require runtime type information to builder.
-func (b *builder) buildCreated() {
-	for ; b.finished < b.created.Len(); b.finished++ {
-		fn := b.created.At(b.finished)
-		b.buildFunction(fn)
-	}
 }
 
 // Adds any needed runtime type information for the created functions.
@@ -2485,10 +2490,6 @@ func (b *builder) needsRuntimeTypes() {
 	for _, T := range rtypes {
 		prog.needMethodsOf(T, b.created)
 	}
-}
-
-func (b *builder) done() bool {
-	return b.rtypes >= b.created.Len()
 }
 
 // Build calls Package.Build for each package in prog.
@@ -2528,11 +2529,10 @@ func (p *Package) build() {
 		return // synthetic package, e.g. "testmain"
 	}
 
-	// Ensure we have runtime type info for all exported members.
-	// Additionally filter for just concrete types that can be runtime types.
+	// Gather runtime types for exported members with ground types.
 	//
-	// TODO(adonovan): ideally belongs in memberFromObject, but
-	// that would require package creation in topological order.
+	// (We can't do this in memberFromObject because it would
+	// require package creation in topological order.)
 	for name, mem := range p.Members {
 		isGround := func(m Member) bool {
 			switch m := m.(type) {
@@ -2553,114 +2553,7 @@ func (p *Package) build() {
 	}
 
 	b := builder{created: &p.created}
-	init := p.init
-	init.startBody()
-
-	var done *BasicBlock
-
-	if p.Prog.mode&BareInits == 0 {
-		// Make init() skip if package is already initialized.
-		initguard := p.Var("init$guard")
-		doinit := init.newBasicBlock("init.start")
-		done = init.newBasicBlock("init.done")
-		emitIf(init, emitLoad(init, initguard), done, doinit)
-		init.currentBlock = doinit
-		emitStore(init, initguard, vTrue, token.NoPos)
-
-		// Call the init() function of each package we import.
-		for _, pkg := range p.Pkg.Imports() {
-			prereq := p.Prog.packages[pkg]
-			if prereq == nil {
-				panic(fmt.Sprintf("Package(%q).Build(): unsatisfied import: Program.CreatePackage(%q) was not called", p.Pkg.Path(), pkg.Path()))
-			}
-			var v Call
-			v.Call.Value = prereq.init
-			v.Call.pos = init.pos
-			v.setType(types.NewTuple())
-			init.emit(&v)
-		}
-	}
-
-	// Initialize package-level vars in correct order.
-	if len(p.info.InitOrder) > 0 && len(p.files) == 0 {
-		panic("no source files provided for package. cannot initialize globals")
-	}
-
-	for _, varinit := range p.info.InitOrder {
-		if init.Prog.mode&LogSource != 0 {
-			fmt.Fprintf(os.Stderr, "build global initializer %v @ %s\n",
-				varinit.Lhs, p.Prog.Fset.Position(varinit.Rhs.Pos()))
-		}
-		// Initializers for global vars are evaluated in dependency
-		// order, but may come from arbitrary files of the package
-		// with different versions, so we transiently update
-		// init.goversion for each one. (Since init is a synthetic
-		// function it has no syntax of its own that needs a version.)
-		init.goversion = p.initVersion[varinit.Rhs]
-		if len(varinit.Lhs) == 1 {
-			// 1:1 initialization: var x, y = a(), b()
-			var lval lvalue
-			if v := varinit.Lhs[0]; v.Name() != "_" {
-				lval = &address{addr: p.objects[v].(*Global), pos: v.Pos()}
-			} else {
-				lval = blank{}
-			}
-			b.assign(init, lval, varinit.Rhs, true, nil)
-		} else {
-			// n:1 initialization: var x, y :=  f()
-			tuple := b.exprN(init, varinit.Rhs)
-			for i, v := range varinit.Lhs {
-				if v.Name() == "_" {
-					continue
-				}
-				emitStore(init, p.objects[v].(*Global), emitExtract(init, tuple, i), v.Pos())
-			}
-		}
-	}
-	init.goversion = "" // The rest of the init function is synthetic. No syntax => no goversion.
-
-	// Call all of the declared init() functions in source order.
-	for _, file := range p.files {
-		for _, decl := range file.Decls {
-			if decl, ok := decl.(*ast.FuncDecl); ok {
-				id := decl.Name
-				if !isBlankIdent(id) && id.Name == "init" && decl.Recv == nil {
-					fn := p.objects[p.info.Defs[id]].(*Function)
-					var v Call
-					v.Call.Value = fn
-					v.setType(types.NewTuple())
-					p.init.emit(&v)
-				}
-			}
-		}
-	}
-
-	// Finish up init().
-	if p.Prog.mode&BareInits == 0 {
-		emitJump(init, done)
-		init.currentBlock = done
-	}
-	init.emit(new(Return))
-	init.finishBody()
-	init.done()
-
-	// Build all CREATEd functions and add runtime types.
-	// These Functions include package-level functions, init functions, methods, and synthetic (including unreachable/blank ones).
-	// Builds any functions CREATEd while building this package.
-	//
-	// Initially the created functions for the package are:
-	//   [init, decl0, ... , declN]
-	// Where decl0, ..., declN are declared functions in source order, but it's not significant.
-	//
-	// As these are built, more functions (function literals, wrappers, etc.) can be CREATEd.
-	// Iterate until we reach a fixed point.
-	//
-	// Wait for init() to be BUILT as that cannot be built by buildFunction().
-	//
-	for !b.done() {
-		b.buildCreated()      // build any CREATEd and not BUILT function. May add runtime types.
-		b.needsRuntimeTypes() // Add all of the runtime type information. May CREATE Functions.
-	}
+	b.iterate()
 
 	// We no longer need transient information: ASTs or go/types deductions.
 	p.info = nil
@@ -2671,4 +2564,97 @@ func (p *Package) build() {
 	if p.Prog.mode&SanityCheckFunctions != 0 {
 		sanityCheckPackage(p)
 	}
+}
+
+// buildPackageInit builds fn.Body for the synthetic package initializer.
+func (b *builder) buildPackageInit(fn *Function) {
+	p := fn.Pkg
+	fn.startBody()
+
+	var done *BasicBlock
+
+	if p.Prog.mode&BareInits == 0 {
+		// Make init() skip if package is already initialized.
+		initguard := p.Var("init$guard")
+		doinit := fn.newBasicBlock("init.start")
+		done = fn.newBasicBlock("init.done")
+		emitIf(fn, emitLoad(fn, initguard), done, doinit)
+		fn.currentBlock = doinit
+		emitStore(fn, initguard, vTrue, token.NoPos)
+
+		// Call the init() function of each package we import.
+		for _, pkg := range p.Pkg.Imports() {
+			prereq := p.Prog.packages[pkg]
+			if prereq == nil {
+				panic(fmt.Sprintf("Package(%q).Build(): unsatisfied import: Program.CreatePackage(%q) was not called", p.Pkg.Path(), pkg.Path()))
+			}
+			var v Call
+			v.Call.Value = prereq.init
+			v.Call.pos = fn.pos
+			v.setType(types.NewTuple())
+			fn.emit(&v)
+		}
+	}
+
+	// Initialize package-level vars in correct order.
+	if len(p.info.InitOrder) > 0 && len(p.files) == 0 {
+		panic("no source files provided for package. cannot initialize globals")
+	}
+
+	for _, varinit := range p.info.InitOrder {
+		if fn.Prog.mode&LogSource != 0 {
+			fmt.Fprintf(os.Stderr, "build global initializer %v @ %s\n",
+				varinit.Lhs, p.Prog.Fset.Position(varinit.Rhs.Pos()))
+		}
+		// Initializers for global vars are evaluated in dependency
+		// order, but may come from arbitrary files of the package
+		// with different versions, so we transiently update
+		// fn.goversion for each one. (Since init is a synthetic
+		// function it has no syntax of its own that needs a version.)
+		fn.goversion = p.initVersion[varinit.Rhs]
+		if len(varinit.Lhs) == 1 {
+			// 1:1 initialization: var x, y = a(), b()
+			var lval lvalue
+			if v := varinit.Lhs[0]; v.Name() != "_" {
+				lval = &address{addr: p.objects[v].(*Global), pos: v.Pos()}
+			} else {
+				lval = blank{}
+			}
+			b.assign(fn, lval, varinit.Rhs, true, nil)
+		} else {
+			// n:1 initialization: var x, y :=  f()
+			tuple := b.exprN(fn, varinit.Rhs)
+			for i, v := range varinit.Lhs {
+				if v.Name() == "_" {
+					continue
+				}
+				emitStore(fn, p.objects[v].(*Global), emitExtract(fn, tuple, i), v.Pos())
+			}
+		}
+	}
+	fn.goversion = "" // The rest of the init function is synthetic. No syntax => no goversion.
+
+	// Call all of the declared init() functions in source order.
+	for _, file := range p.files {
+		for _, decl := range file.Decls {
+			if decl, ok := decl.(*ast.FuncDecl); ok {
+				id := decl.Name
+				if !isBlankIdent(id) && id.Name == "init" && decl.Recv == nil {
+					declaredInit := p.objects[p.info.Defs[id]].(*Function)
+					var v Call
+					v.Call.Value = declaredInit
+					v.setType(types.NewTuple())
+					p.init.emit(&v)
+				}
+			}
+		}
+	}
+
+	// Finish up init().
+	if p.Prog.mode&BareInits == 0 {
+		emitJump(fn, done)
+		fn.currentBlock = done
+	}
+	fn.emit(new(Return))
+	fn.finishBody()
 }

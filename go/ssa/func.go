@@ -318,7 +318,8 @@ func (f *Function) finishBody() {
 	numberRegisters(f) // uses f.namedRegisters
 }
 
-// After this, function is done with BUILD phase.
+// done marks the building of f's SSA body complete,
+// along with any nested functions, and optionally prints them.
 func (f *Function) done() {
 	assert(f.parent == nil, "done called on an anonymous function")
 
@@ -328,7 +329,7 @@ func (f *Function) done() {
 			visit(anon) // anon is done building before f.
 		}
 
-		f.built = true // function is done with BUILD phase
+		f.build = nil // function is built
 
 		if f.Prog.mode&PrintFunctions != 0 {
 			printMu.Lock()

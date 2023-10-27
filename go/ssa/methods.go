@@ -48,10 +48,7 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 	if m == nil {
 		return nil // abstract method (generic)
 	}
-	for !b.done() {
-		b.buildCreated()
-		b.needsRuntimeTypes()
-	}
+	b.iterate()
 	return m
 }
 
@@ -107,7 +104,7 @@ func (prog *Program) addMethod(mset *methodSet, sel *types.Selection, cr *creato
 		needsPromotion := len(sel.index) > 1
 		needsIndirection := !ptrObj && ptrRecv
 		if needsPromotion || needsIndirection {
-			fn = makeWrapper(prog, sel, cr)
+			fn = createWrapper(prog, sel, cr)
 		} else {
 			fn = prog.originFunc(obj)
 			if fn.typeparams.Len() > 0 { // instantiate

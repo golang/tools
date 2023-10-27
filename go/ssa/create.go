@@ -97,10 +97,12 @@ func memberFromObject(pkg *Package, obj types.Object, syntax ast.Node, goversion
 			tparams = sigparams
 		}
 
+		/* declared function/method (from syntax or export data) */
 		fn := &Function{
 			name:       name,
 			object:     obj,
 			Signature:  sig,
+			build:      (*builder).buildFromSyntax,
 			syntax:     syntax,
 			pos:        obj.Pos(),
 			Pkg:        pkg,
@@ -112,6 +114,7 @@ func memberFromObject(pkg *Package, obj types.Object, syntax ast.Node, goversion
 		pkg.created.Add(fn)
 		if syntax == nil {
 			fn.Synthetic = "loaded from gc object file"
+			fn.build = (*builder).buildParamsOnly
 		}
 		if tparams.Len() > 0 {
 			fn.Prog.createInstanceSet(fn)
@@ -206,13 +209,14 @@ func (prog *Program) CreatePackage(pkg *types.Package, files []*ast.File, info *
 		initVersion: make(map[ast.Expr]string),
 	}
 
-	// Add init() function.
+	/* synthesized package initializer */
 	p.init = &Function{
 		name:      "init",
 		Signature: new(types.Signature),
 		Synthetic: "package initializer",
 		Pkg:       p,
 		Prog:      prog,
+		build:     (*builder).buildPackageInit,
 		info:      p.info,
 		goversion: "", // See Package.build() for details.
 	}

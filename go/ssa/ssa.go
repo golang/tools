@@ -30,6 +30,7 @@ type Program struct {
 	canon *canonizer          // type canonicalization map
 	ctxt  *typeparams.Context // cache for type checking instantiations
 
+	// TODO(adonovan): split this mutex.
 	methodsMu     sync.Mutex                 // guards the following maps:
 	methodSets    typeutil.Map               // maps type to its concrete methodSet
 	runtimeTypes  typeutil.Map               // types for which rtypes are needed
@@ -311,6 +312,7 @@ type Function struct {
 
 	Synthetic string    // provenance of synthetic function; "" for true source functions
 	syntax    ast.Node  // *ast.Func{Decl,Lit}; replaced with simple ast.Node after build, unless debug mode
+	build     buildFunc // algorithm to build function body (nil => built)
 	parent    *Function // enclosing function if anon; nil if global
 	Pkg       *Package  // enclosing package; nil for shared funcs (wrappers and error.Error)
 	Prog      *Program  // enclosing program
@@ -324,7 +326,6 @@ type Function struct {
 	Recover   *BasicBlock   // optional; control transfers here after recovered panic
 	AnonFuncs []*Function   // anonymous functions directly beneath this one
 	referrers []Instruction // referring instructions (iff Parent() != nil)
-	built     bool          // function has completed both CREATE and BUILD phase.
 	anonIdx   int32         // position of a nested function in parent's AnonFuncs. fn.Parent()!=nil => fn.Parent().AnonFunc[fn.anonIdx] == fn.
 
 	typeparams     *typeparams.TypeParamList // type parameters of this function. typeparams.Len() > 0 => generic or instance of generic function
