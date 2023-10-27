@@ -108,38 +108,31 @@ type lblock struct {
 // labelledBlock returns the branch target associated with the
 // specified label, creating it if needed.
 func (f *Function) labelledBlock(label *ast.Ident) *lblock {
-	obj := f.objectOf(label)
+	obj := f.objectOf(label).(*types.Label)
 	lb := f.lblocks[obj]
 	if lb == nil {
 		lb = &lblock{_goto: f.newBasicBlock(label.Name)}
 		if f.lblocks == nil {
-			f.lblocks = make(map[types.Object]*lblock)
+			f.lblocks = make(map[*types.Label]*lblock)
 		}
 		f.lblocks[obj] = lb
 	}
 	return lb
 }
 
-// addParam adds a (non-escaping) parameter to f.Params of the
-// specified name, type and source position.
-func (f *Function) addParam(name string, typ types.Type, pos token.Pos) *Parameter {
-	v := &Parameter{
-		name:   name,
-		typ:    typ,
-		pos:    pos,
-		parent: f,
-	}
-	f.Params = append(f.Params, v)
-	return v
-}
-
-func (f *Function) addParamObj(obj *types.Var) *Parameter {
-	name := obj.Name()
+// addParamVar adds a parameter to f.Params.
+func (f *Function) addParamVar(v *types.Var) *Parameter {
+	name := v.Name()
 	if name == "" {
 		name = fmt.Sprintf("arg%d", len(f.Params))
 	}
-	param := f.addParam(name, f.typ(obj.Type()), obj.Pos())
-	param.object = obj
+	param := &Parameter{
+		name:   name,
+		object: v,
+		typ:    f.typ(v.Type()),
+		parent: f,
+	}
+	f.Params = append(f.Params, param)
 	return param
 }
 
@@ -147,7 +140,7 @@ func (f *Function) addParamObj(obj *types.Var) *Parameter {
 // stack; the function body will load/store the spilled location.
 // Subsequent lifting will eliminate spills where possible.
 func (f *Function) addSpilledParam(obj *types.Var) {
-	param := f.addParamObj(obj)
+	param := f.addParamVar(obj)
 	spill := emitLocalVar(f, obj)
 	f.emit(&Store{Addr: spill, Val: param})
 }
@@ -156,7 +149,7 @@ func (f *Function) addSpilledParam(obj *types.Var) {
 // Precondition: f.Type() already set.
 func (f *Function) startBody() {
 	f.currentBlock = f.newBasicBlock("entry")
-	f.objects = make(map[types.Object]Value) // needed for some synthetics, e.g. init
+	f.vars = make(map[*types.Var]Value) // needed for some synthetics, e.g. init
 }
 
 // createSyntacticParams populates f.Params and generates code (spills
@@ -176,7 +169,7 @@ func (f *Function) createSyntacticParams(recv *ast.FieldList, functype *ast.Func
 			}
 			// Anonymous receiver?  No need to spill.
 			if field.Names == nil {
-				f.addParamObj(f.Signature.Recv())
+				f.addParamVar(f.Signature.Recv())
 			}
 		}
 	}
@@ -190,7 +183,7 @@ func (f *Function) createSyntacticParams(recv *ast.FieldList, functype *ast.Func
 			}
 			// Anonymous parameter?  No need to spill.
 			if field.Names == nil {
-				f.addParamObj(f.Signature.Params().At(len(f.Params) - n))
+				f.addParamVar(f.Signature.Params().At(len(f.Params) - n))
 			}
 		}
 	}
@@ -280,7 +273,7 @@ func mayNeedRuntimeTypes(fn *Function) []types.Type {
 //
 // The function is not done being built until done() is called.
 func (f *Function) finishBody() {
-	f.objects = nil
+	f.vars = nil
 	f.currentBlock = nil
 	f.lblocks = nil
 
@@ -388,8 +381,8 @@ func (f *Function) debugInfo() bool {
 // that is local to function f or one of its enclosing functions.
 // If escaping, the reference comes from a potentially escaping pointer
 // expression and the referent must be heap-allocated.
-func (f *Function) lookup(obj types.Object, escaping bool) Value {
-	if v, ok := f.objects[obj]; ok {
+func (f *Function) lookup(obj *types.Var, escaping bool) Value {
+	if v, ok := f.vars[obj]; ok {
 		if alloc, ok := v.(*Alloc); ok && escaping {
 			alloc.Heap = true
 		}
@@ -409,7 +402,7 @@ func (f *Function) lookup(obj types.Object, escaping bool) Value {
 		outer:  outer,
 		parent: f,
 	}
-	f.objects[obj] = v
+	f.vars[obj] = v
 	f.FreeVars = append(f.FreeVars, v)
 	return v
 }

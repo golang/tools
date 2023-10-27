@@ -153,7 +153,7 @@ func makeWrapper(prog *Program, sel *selection, cr *creator) *Function {
 func createParams(fn *Function, start int) {
 	tparams := fn.Signature.Params()
 	for i, n := start, tparams.Len(); i < n; i++ {
-		fn.addParamObj(tparams.At(i))
+		fn.addParamVar(tparams.At(i))
 	}
 }
 
@@ -342,7 +342,7 @@ func buildInstantiationWrapper(fn *Function) {
 
 	fn.startBody()
 	if sig.Recv() != nil {
-		fn.addParamObj(sig.Recv())
+		fn.addParamVar(sig.Recv())
 	}
 	createParams(fn, 0)
 

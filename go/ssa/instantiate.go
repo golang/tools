@@ -126,8 +126,7 @@ func (insts *instanceSet) lookupOrCreate(targs []types.Type, parameterized *tpWa
 	var obj *types.Func
 	if recv := fn.Signature.Recv(); recv != nil {
 		// method
-		m := fn.object.(*types.Func)
-		obj = prog.canon.instantiateMethod(m, targs, prog.ctxt)
+		obj = prog.canon.instantiateMethod(fn.object, targs, prog.ctxt)
 		sig = obj.Type().(*types.Signature)
 	} else {
 		instSig, err := typeparams.Instantiate(prog.ctxt, fn.Signature, targs, false)
@@ -138,7 +137,7 @@ func (insts *instanceSet) lookupOrCreate(targs []types.Type, parameterized *tpWa
 		if !ok {
 			panic("Instantiate of a Signature returned a non-signature")
 		}
-		obj = fn.object.(*types.Func) // instantiation does not exist yet
+		obj = fn.object // instantiation does not exist yet
 		sig = prog.canon.Type(instance).(*types.Signature)
 	}
 

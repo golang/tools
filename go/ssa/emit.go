@@ -56,7 +56,7 @@ func emitLocal(f *Function, t types.Type, pos token.Pos, comment string) *Alloc 
 // It applies the appropriate generic instantiation to the type.
 func emitLocalVar(f *Function, v *types.Var) *Alloc {
 	alloc := emitLocal(f, f.typ(v.Type()), v.Pos(), v.Name())
-	f.objects[v] = alloc
+	f.vars[v] = alloc
 	return alloc
 }
 

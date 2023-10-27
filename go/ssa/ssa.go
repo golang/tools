@@ -306,16 +306,19 @@ type Node interface {
 // respectively, and is nil in the generic method.
 type Function struct {
 	name      string
-	object    types.Object // a declared *types.Func or one of its wrappers
-	method    *selection   // info about provenance of synthetic methods; thunk => non-nil
+	object    *types.Func // symbol for declared function (nil for FuncLit or synthetic init)
+	method    *selection  // info about provenance of synthetic methods; thunk => non-nil
 	Signature *types.Signature
 	pos       token.Pos
 
-	Synthetic string        // provenance of synthetic function; "" for true source functions
-	syntax    ast.Node      // *ast.Func{Decl,Lit}; replaced with simple ast.Node after build, unless debug mode
-	parent    *Function     // enclosing function if anon; nil if global
-	Pkg       *Package      // enclosing package; nil for shared funcs (wrappers and error.Error)
-	Prog      *Program      // enclosing program
+	Synthetic string    // provenance of synthetic function; "" for true source functions
+	syntax    ast.Node  // *ast.Func{Decl,Lit}; replaced with simple ast.Node after build, unless debug mode
+	parent    *Function // enclosing function if anon; nil if global
+	Pkg       *Package  // enclosing package; nil for shared funcs (wrappers and error.Error)
+	Prog      *Program  // enclosing program
+
+	// These fields are populated only when the function body is built:
+
 	Params    []*Parameter  // function parameters; for methods, includes receiver
 	FreeVars  []*FreeVar    // free variables whose values must be supplied by closure
 	Locals    []*Alloc      // frame-allocated variables of this function
@@ -333,10 +336,10 @@ type Function struct {
 	// The following fields are set transiently during building,
 	// then cleared.
 	currentBlock *BasicBlock              // where to emit code
-	objects      map[types.Object]Value   // addresses of local variables
+	vars         map[*types.Var]Value     // addresses of local variables
 	namedResults []*Alloc                 // tuple of named results
 	targets      *targets                 // linked stack of branch targets
-	lblocks      map[types.Object]*lblock // labelled blocks
+	lblocks      map[*types.Label]*lblock // labelled blocks
 	info         *types.Info              // *types.Info to build from. nil for wrappers.
 	subst        *subster                 // non-nil => expand generic body using this type substitution of ground types
 	goversion    string                   // Go version of syntax (NB: init is special)
@@ -404,9 +407,8 @@ type FreeVar struct {
 // A Parameter represents an input parameter of a function.
 type Parameter struct {
 	name      string
-	object    types.Object // a *types.Var; nil for non-source locals
+	object    *types.Var // non-nil
 	typ       types.Type
-	pos       token.Pos
 	parent    *Function
 	referrers []Instruction
 }
@@ -1506,14 +1508,19 @@ func (v *Global) String() string                       { return v.RelString(nil)
 func (v *Global) Package() *Package                    { return v.Pkg }
 func (v *Global) RelString(from *types.Package) string { return relString(v, from) }
 
-func (v *Function) Name() string         { return v.name }
-func (v *Function) Type() types.Type     { return v.Signature }
-func (v *Function) Pos() token.Pos       { return v.pos }
-func (v *Function) Token() token.Token   { return token.FUNC }
-func (v *Function) Object() types.Object { return v.object }
-func (v *Function) String() string       { return v.RelString(nil) }
-func (v *Function) Package() *Package    { return v.Pkg }
-func (v *Function) Parent() *Function    { return v.parent }
+func (v *Function) Name() string       { return v.name }
+func (v *Function) Type() types.Type   { return v.Signature }
+func (v *Function) Pos() token.Pos     { return v.pos }
+func (v *Function) Token() token.Token { return token.FUNC }
+func (v *Function) Object() types.Object {
+	if v.object != nil {
+		return types.Object(v.object)
+	}
+	return nil
+}
+func (v *Function) String() string    { return v.RelString(nil) }
+func (v *Function) Package() *Package { return v.Pkg }
+func (v *Function) Parent() *Function { return v.parent }
 func (v *Function) Referrers() *[]Instruction {
 	if v.parent != nil {
 		return &v.referrers
@@ -1561,7 +1568,7 @@ func (v *Parameter) Type() types.Type          { return v.typ }
 func (v *Parameter) Name() string              { return v.name }
 func (v *Parameter) Object() types.Object      { return v.object }
 func (v *Parameter) Referrers() *[]Instruction { return &v.referrers }
-func (v *Parameter) Pos() token.Pos            { return v.pos }
+func (v *Parameter) Pos() token.Pos            { return v.object.Pos() }
 func (v *Parameter) Parent() *Function         { return v.parent }
 
 func (v *Alloc) Type() types.Type          { return v.typ }

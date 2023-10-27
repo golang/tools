@@ -415,7 +415,7 @@ func (b *builder) addr(fn *Function, e ast.Expr, escaping bool) lvalue {
 		if isBlankIdent(e) {
 			return blank{}
 		}
-		obj := fn.objectOf(e)
+		obj := fn.objectOf(e).(*types.Var)
 		var v Value
 		if g := fn.Prog.packageLevelMember(obj); g != nil {
 			v = g.(*Global) // var (address)
@@ -801,7 +801,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			return callee
 		}
 		// Local var.
-		return emitLoad(fn, fn.lookup(obj, false)) // var (address)
+		return emitLoad(fn, fn.lookup(obj.(*types.Var), false)) // var (address)
 
 	case *ast.SelectorExpr:
 		sel := fn.selection(e)
@@ -2414,11 +2414,11 @@ func (b *builder) buildFunctionBody(fn *Function) {
 			// We set Function.Params even though there is no body
 			// code to reference them.  This simplifies clients.
 			if recv := fn.Signature.Recv(); recv != nil {
-				fn.addParamObj(recv)
+				fn.addParamVar(recv)
 			}
 			params := fn.Signature.Params()
 			for i, n := 0, params.Len(); i < n; i++ {
-				fn.addParamObj(params.At(i))
+				fn.addParamVar(params.At(i))
 			}
 		}
 		return
