@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sync"
 
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
@@ -41,7 +42,12 @@ func (s *Server) addView(ctx context.Context, name string, uri span.URI) (source
 	if err != nil {
 		return nil, nil, err
 	}
-	_, snapshot, release, err := s.session.NewView(ctx, name, uri, options)
+	folder := &cache.Folder{
+		Dir:     uri,
+		Name:    name,
+		Options: options,
+	}
+	_, snapshot, release, err := s.session.NewView(ctx, folder)
 	return snapshot, release, err
 }
 

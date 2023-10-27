@@ -53,7 +53,12 @@ func testLSP(t *testing.T, datum *tests.Data) {
 	session := cache.NewSession(ctx, cache.New(nil))
 	options := source.DefaultOptions(tests.DefaultOptions)
 	options.SetEnvSlice(datum.Config.Env)
-	view, snapshot, release, err := session.NewView(ctx, datum.Config.Dir, span.URIFromPath(datum.Config.Dir), options)
+	folder := &cache.Folder{
+		Dir:     span.URIFromPath(datum.Config.Dir),
+		Name:    datum.Config.Dir,
+		Options: options,
+	}
+	view, snapshot, release, err := session.NewView(ctx, folder)
 	if err != nil {
 		t.Fatal(err)
 	}

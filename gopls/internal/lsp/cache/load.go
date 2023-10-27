@@ -75,7 +75,7 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 			if err != nil {
 				continue
 			}
-			if isStandaloneFile(contents, s.options.StandaloneTags) {
+			if isStandaloneFile(contents, s.Options().StandaloneTags) {
 				standalone = true
 				query = append(query, uri.Filename())
 			} else {
@@ -178,7 +178,7 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 			continue
 		}
 
-		if !containsDir || s.options.VerboseOutput {
+		if !containsDir || s.Options().VerboseOutput {
 			event.Log(ctx, eventName, append(
 				source.SnapshotLabels(s),
 				tag.Package.Of(pkg.ID),

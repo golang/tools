@@ -175,10 +175,6 @@ type snapshot struct {
 	// detect ignored files.
 	ignoreFilterOnce sync.Once
 	ignoreFilter     *ignoreFilter
-
-	// options holds the user configuration at the time this snapshot was
-	// created.
-	options *source.Options
 }
 
 var globalSnapshotID uint64
@@ -288,7 +284,7 @@ func (s *snapshot) FileKind(fh source.FileHandle) source.FileKind {
 	case ".work":
 		return source.Work
 	}
-	exts := s.options.TemplateExtensions
+	exts := s.Options().TemplateExtensions
 	for _, ext := range exts {
 		if fext == ext || fext == "."+ext {
 			return source.Tmpl
@@ -299,7 +295,7 @@ func (s *snapshot) FileKind(fh source.FileHandle) source.FileKind {
 }
 
 func (s *snapshot) Options() *source.Options {
-	return s.options // temporarily return view options.
+	return s.view.folder.Options
 }
 
 func (s *snapshot) BackgroundContext() context.Context {
@@ -373,7 +369,7 @@ func (s *snapshot) workspaceMode() workspaceMode {
 		return mode
 	}
 	mode |= moduleMode
-	if s.options.TempModfile {
+	if s.Options().TempModfile {
 		mode |= tempModfile
 	}
 	return mode
@@ -408,7 +404,7 @@ func (s *snapshot) config(ctx context.Context, inv *gocommand.Invocation) *packa
 			panic("go/packages must not be used to parse files")
 		},
 		Logf: func(format string, args ...interface{}) {
-			if s.options.VerboseOutput {
+			if s.Options().VerboseOutput {
 				event.Log(ctx, fmt.Sprintf(format, args...))
 			}
 		},
@@ -490,16 +486,16 @@ func (s *snapshot) RunGoCommands(ctx context.Context, allowNetwork bool, wd stri
 // it used only after call to tempModFile. Clarify that it is only
 // non-nil on success.
 func (s *snapshot) goCommandInvocation(ctx context.Context, flags source.InvocationFlags, inv *gocommand.Invocation) (tmpURI span.URI, updatedInv *gocommand.Invocation, cleanup func(), err error) {
-	allowModfileModificationOption := s.options.AllowModfileModifications
-	allowNetworkOption := s.options.AllowImplicitNetworkAccess
+	allowModfileModificationOption := s.Options().AllowModfileModifications
+	allowNetworkOption := s.Options().AllowImplicitNetworkAccess
 
 	// TODO(rfindley): this is very hard to follow, and may not even be doing the
 	// right thing: should inv.Env really trample view.options? Do we ever invoke
 	// this with a non-empty inv.Env?
 	//
 	// We should refactor to make it clearer that the correct env is being used.
-	inv.Env = append(append(append(os.Environ(), s.options.EnvSlice()...), inv.Env...), "GO111MODULE="+s.view.GO111MODULE())
-	inv.BuildFlags = append([]string{}, s.options.BuildFlags...)
+	inv.Env = append(append(append(os.Environ(), s.Options().EnvSlice()...), inv.Env...), "GO111MODULE="+s.view.GO111MODULE())
+	inv.BuildFlags = append([]string{}, s.Options().BuildFlags...)
 	cleanup = func() {} // fallback
 
 	// All logic below is for module mode.
@@ -659,7 +655,7 @@ func (s *snapshot) PackageDiagnostics(ctx context.Context, ids ...PackageID) (ma
 			perFile[diag.URI] = append(perFile[diag.URI], diag)
 		}
 	}
-	pre := func(i int, ph *packageHandle) bool {
+	pre := func(_ int, ph *packageHandle) bool {
 		data, err := filecache.Get(diagnosticsKind, ph.key)
 		if err == nil { // hit
 			collect(ph.m.Diagnostics)
@@ -917,7 +913,7 @@ func (s *snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]stru
 
 	// If GOWORK is outside the folder, ensure we are watching it.
 	gowork, _ := s.view.GOWORK()
-	if gowork != "" && !source.InDir(s.view.folder.Filename(), gowork.Filename()) {
+	if gowork != "" && !source.InDir(s.view.folder.Dir.Filename(), gowork.Filename()) {
 		patterns[gowork.Filename()] = struct{}{}
 	}
 
@@ -926,7 +922,7 @@ func (s *snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]stru
 	for _, dir := range dirs {
 		// If the directory is within the view's folder, we're already watching
 		// it with the first pattern above.
-		if source.InDir(s.view.folder.Filename(), dir) {
+		if source.InDir(s.view.folder.Dir.Filename(), dir) {
 			continue
 		}
 		// TODO(rstambler): If microsoft/vscode#3025 is resolved before
@@ -983,7 +979,7 @@ func (s *snapshot) workspaceDirs(ctx context.Context) []string {
 
 	// Dirs should, at the very least, contain the working directory and folder.
 	dirSet[s.view.goCommandDir.Filename()] = unit{}
-	dirSet[s.view.folder.Filename()] = unit{}
+	dirSet[s.view.folder.Dir.Filename()] = unit{}
 
 	// Additionally, if e.g. go.work indicates other workspace modules, we should
 	// include their directories too.
@@ -1006,7 +1002,7 @@ func (s *snapshot) workspaceDirs(ctx context.Context) []string {
 // Code) that do not send notifications for individual files in a directory
 // when the entire directory is deleted.
 func (s *snapshot) watchSubdirs() bool {
-	switch p := s.options.SubdirWatchPatterns; p {
+	switch p := s.Options().SubdirWatchPatterns; p {
 	case source.SubdirWatchPatternsOn:
 		return true
 	case source.SubdirWatchPatternsOff:
@@ -1019,7 +1015,7 @@ func (s *snapshot) watchSubdirs() bool {
 		// requirements that client names do not change. We should update the VS
 		// Code extension to set a default value of "subdirWatchPatterns" to "on",
 		// so that this workaround is only temporary.
-		if s.options.ClientInfo != nil && s.options.ClientInfo.Name == "Visual Studio Code" {
+		if s.Options().ClientInfo != nil && s.Options().ClientInfo.Name == "Visual Studio Code" {
 			return true
 		}
 		return false
@@ -1684,7 +1680,7 @@ searchOverlays:
 		if goMod, err := nearestModFile(ctx, fh.URI(), s); err == nil && goMod != "" {
 			if _, ok := loadedModFiles[goMod]; !ok {
 				modDir := filepath.Dir(goMod.Filename())
-				viewDir := s.view.folder.Filename()
+				viewDir := s.view.folder.Dir.Filename()
 
 				// When the module is underneath the view dir, we offer
 				// "use all modules" quick-fixes.
@@ -1817,7 +1813,7 @@ func inVendor(uri span.URI) bool {
 	return found && strings.Contains(after, "/")
 }
 
-func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source.FileHandle, newOptions *source.Options, forceReloadMetadata bool) (*snapshot, func()) {
+func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source.FileHandle, forceReloadMetadata bool) (*snapshot, func()) {
 	ctx, done := event.Start(ctx, "cache.snapshot.clone")
 	defer done()
 
@@ -1850,11 +1846,6 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source
 		workspaceModFilesErr: s.workspaceModFilesErr,
 		importGraph:          s.importGraph,
 		pkgIndex:             s.pkgIndex,
-		options:              s.options,
-	}
-
-	if newOptions != nil {
-		result.options = newOptions
 	}
 
 	// Create a lease on the new snapshot.
@@ -2439,7 +2430,7 @@ func (s *snapshot) BuiltinFile(ctx context.Context) (*source.ParsedGoFile, error
 	s.mu.Unlock()
 
 	if builtin == "" {
-		return nil, fmt.Errorf("no builtin package for view %s", s.view.name)
+		return nil, fmt.Errorf("no builtin package for view %s", s.view.folder.Name)
 	}
 
 	fh, err := s.ReadFile(ctx, builtin)

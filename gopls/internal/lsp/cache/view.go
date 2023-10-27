@@ -14,7 +14,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -34,6 +33,20 @@ import (
 	"golang.org/x/tools/internal/xcontext"
 )
 
+// A Folder represents an LSP workspace folder, together with its per-folder
+// options.
+//
+// Folders (Name and Dir) are specified by the 'initialize' and subsequent
+// 'didChangeWorkspaceFolders' requests; their options come from
+// didChangeConfiguration.
+//
+// Folders must not be mutated, as they may be shared across multiple views.
+type Folder struct {
+	Dir     span.URI
+	Name    string
+	Options *source.Options
+}
+
 type View struct {
 	id string
 
@@ -43,14 +56,7 @@ type View struct {
 	// background contexts created for this view.
 	baseCtx context.Context
 
-	// name is the user-specified name of this view.
-	name string
-
-	// lastOptions holds the most recent options on this view, used for detecting
-	// major changes.
-	//
-	// Guarded by Session.viewMu.
-	lastOptions *source.Options
+	folder *Folder
 
 	// Workspace information. The fields below are immutable, and together with
 	// options define the build list. Any change to these fields results in a new
@@ -407,52 +413,12 @@ func tempModFile(modFh source.FileHandle, gosum []byte) (tmpURI span.URI, cleanu
 
 // Name returns the user visible name of this view.
 func (v *View) Name() string {
-	return v.name
+	return v.folder.Name
 }
 
 // Folder returns the folder at the base of this view.
 func (v *View) Folder() span.URI {
-	return v.folder
-}
-
-func minorOptionsChange(a, b *source.Options) bool {
-	// TODO(rfindley): this function detects whether a view should be recreated,
-	// but this is also checked by the getWorkspaceInformation logic.
-	//
-	// We should eliminate this redundancy.
-	//
-	// Additionally, this function has existed for a long time, but git history
-	// suggests that it was added arbitrarily, not due to an actual performance
-	// problem.
-	//
-	// Especially now that we have optimized reinitialization of the session, we
-	// should consider just always creating a new view on any options change.
-
-	// Check if any of the settings that modify our understanding of files have
-	// been changed.
-	if !reflect.DeepEqual(a.Env, b.Env) {
-		return false
-	}
-	if !reflect.DeepEqual(a.DirectoryFilters, b.DirectoryFilters) {
-		return false
-	}
-	if !reflect.DeepEqual(a.StandaloneTags, b.StandaloneTags) {
-		return false
-	}
-	if a.ExpandWorkspaceToModule != b.ExpandWorkspaceToModule {
-		return false
-	}
-	if a.MemoryMode != b.MemoryMode {
-		return false
-	}
-	aBuildFlags := make([]string, len(a.BuildFlags))
-	bBuildFlags := make([]string, len(b.BuildFlags))
-	copy(aBuildFlags, a.BuildFlags)
-	copy(bBuildFlags, b.BuildFlags)
-	sort.Strings(aBuildFlags)
-	sort.Strings(bBuildFlags)
-	// the rest of the options are benign
-	return reflect.DeepEqual(aBuildFlags, bBuildFlags)
+	return v.folder.Dir
 }
 
 // SetFolderOptions updates the options of each View associated with the folder
@@ -465,8 +431,10 @@ func (s *Session) SetFolderOptions(ctx context.Context, uri span.URI, options *s
 	defer s.viewMu.Unlock()
 
 	for _, v := range s.views {
-		if v.folder == uri {
-			if err := s.setViewOptions(ctx, v, options); err != nil {
+		if v.folder.Dir == uri {
+			folder2 := *v.folder
+			folder2.Options = options
+			if err := s.updateViewLocked(ctx, v, &folder2); err != nil {
 				return err
 			}
 		}
@@ -474,23 +442,12 @@ func (s *Session) SetFolderOptions(ctx context.Context, uri span.URI, options *s
 	return nil
 }
 
-func (s *Session) setViewOptions(ctx context.Context, v *View, options *source.Options) error {
-	// no need to rebuild the view if the options were not materially changed
-	if minorOptionsChange(v.lastOptions, options) {
-		_, release := v.invalidateContent(ctx, nil, options, false)
-		release()
-		v.lastOptions = options
-		return nil
-	}
-	return s.updateViewLocked(ctx, v, options)
-}
-
 // viewEnv returns a string describing the environment of a newly created view.
 //
 // It must not be called concurrently with any other view methods.
 func viewEnv(v *View) string {
-	env := v.snapshot.options.EnvSlice()
-	buildFlags := append([]string{}, v.snapshot.options.BuildFlags...)
+	env := v.folder.Options.EnvSlice()
+	buildFlags := append([]string{}, v.folder.Options.BuildFlags...)
 
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, `go info for %v
@@ -500,7 +457,7 @@ func viewEnv(v *View) string {
 (build flags: %v)
 (selected go env: %v)
 `,
-		v.folder.Filename(),
+		v.folder.Dir.Filename(),
 		v.goCommandDir.Filename(),
 		strings.TrimRight(v.workspaceInformation.goversionOutput, "\n"),
 		v.snapshot.validBuildConfiguration(),
@@ -539,14 +496,14 @@ func fileHasExtension(path string, suffixes []string) bool {
 // locateTemplateFiles ensures that the snapshot has mapped template files
 // within the workspace folder.
 func (s *snapshot) locateTemplateFiles(ctx context.Context) {
-	if len(s.options.TemplateExtensions) == 0 {
+	suffixes := s.Options().TemplateExtensions
+	if len(suffixes) == 0 {
 		return
 	}
-	suffixes := s.options.TemplateExtensions
 
 	searched := 0
 	filterFunc := s.filterFunc()
-	err := filepath.WalkDir(s.view.folder.Filename(), func(path string, entry os.DirEntry, err error) error {
+	err := filepath.WalkDir(s.view.folder.Dir.Filename(), func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -586,10 +543,10 @@ func (s *snapshot) contains(uri span.URI) bool {
 	// user. It would be better to explicitly consider the set of active modules
 	// wherever relevant.
 	inGoDir := false
-	if source.InDir(s.view.goCommandDir.Filename(), s.view.folder.Filename()) {
+	if source.InDir(s.view.goCommandDir.Filename(), s.view.folder.Dir.Filename()) {
 		inGoDir = source.InDir(s.view.goCommandDir.Filename(), uri.Filename())
 	}
-	inFolder := source.InDir(s.view.folder.Filename(), uri.Filename())
+	inFolder := source.InDir(s.view.folder.Dir.Filename(), uri.Filename())
 
 	if !inGoDir && !inFolder {
 		return false
@@ -601,11 +558,12 @@ func (s *snapshot) contains(uri span.URI) bool {
 // filterFunc returns a func that reports whether uri is filtered by the currently configured
 // directoryFilters.
 func (s *snapshot) filterFunc() func(span.URI) bool {
-	filterer := buildFilterer(s.view.folder.Filename(), s.view.gomodcache, s.options)
+	folderDir := s.view.folder.Dir.Filename()
+	filterer := buildFilterer(folderDir, s.view.gomodcache, s.Options())
 	return func(uri span.URI) bool {
 		// Only filter relative to the configured root directory.
-		if source.InDir(s.view.folder.Filename(), uri.Filename()) {
-			return pathExcludedByFilter(strings.TrimPrefix(uri.Filename(), s.view.folder.Filename()), filterer)
+		if source.InDir(folderDir, uri.Filename()) {
+			return pathExcludedByFilter(strings.TrimPrefix(uri.Filename(), folderDir), filterer)
 		}
 		return false
 	}
@@ -917,7 +875,7 @@ func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 // a callback which the caller must invoke to release that snapshot.
 //
 // newOptions may be nil, in which case options remain unchanged.
-func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]source.FileHandle, newOptions *source.Options, forceReloadMetadata bool) (*snapshot, func()) {
+func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]source.FileHandle, forceReloadMetadata bool) (*snapshot, func()) {
 	// Detach the context so that content invalidation cannot be canceled.
 	ctx = xcontext.Detach(ctx)
 
@@ -939,7 +897,7 @@ func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]sourc
 	prevSnapshot.AwaitInitialized(ctx)
 
 	// Save one lease of the cloned snapshot in the view.
-	v.snapshot, v.releaseSnapshot = prevSnapshot.clone(ctx, v.baseCtx, changes, newOptions, forceReloadMetadata)
+	v.snapshot, v.releaseSnapshot = prevSnapshot.clone(ctx, v.baseCtx, changes, forceReloadMetadata)
 
 	prevReleaseSnapshot()
 	v.destroy(prevSnapshot, "View.invalidateContent")

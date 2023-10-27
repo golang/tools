@@ -76,15 +76,15 @@ func (s *Session) Cache() *Cache {
 // of its gopls workspace module in that directory, so that client tooling
 // can execute in the same main module.  On success it also returns a release
 // function that must be called when the Snapshot is no longer needed.
-func (s *Session) NewView(ctx context.Context, name string, folder span.URI, options *source.Options) (*View, source.Snapshot, func(), error) {
+func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, source.Snapshot, func(), error) {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 	for _, view := range s.views {
-		if span.SameExistingFile(view.folder, folder) {
+		if span.SameExistingFile(view.folder.Dir, folder.Dir) {
 			return nil, nil, nil, source.ErrViewExists
 		}
 	}
-	view, snapshot, release, err := s.createView(ctx, name, folder, options, 0)
+	view, snapshot, release, err := s.createView(ctx, folder, 0)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -97,11 +97,11 @@ func (s *Session) NewView(ctx context.Context, name string, folder span.URI, opt
 // TODO(rfindley): clarify that createView can never be cancelled (with the
 // possible exception of server shutdown).
 // On success, the caller becomes responsible for calling the release function once.
-func (s *Session) createView(ctx context.Context, name string, folder span.URI, options *source.Options, seqID uint64) (*View, *snapshot, func(), error) {
+func (s *Session) createView(ctx context.Context, folder *Folder, seqID uint64) (*View, *snapshot, func(), error) {
 	index := atomic.AddInt64(&viewIndex, 1)
 
 	// Get immutable workspace information.
-	info, err := s.getWorkspaceInformation(ctx, folder, options)
+	info, err := s.getWorkspaceInformation(ctx, folder.Dir, folder.Options)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -117,11 +117,10 @@ func (s *Session) createView(ctx context.Context, name string, folder span.URI, 
 	v := &View{
 		id:                   strconv.FormatInt(index, 10),
 		gocmdRunner:          s.gocmdRunner,
-		lastOptions:          options,
+		folder:               folder,
 		initialWorkspaceLoad: make(chan struct{}),
 		initializationSema:   make(chan struct{}, 1),
 		baseCtx:              baseCtx,
-		name:                 name,
 		moduleUpgrades:       map[span.URI]map[string]string{},
 		vulns:                map[span.URI]*vulncheck.Result{},
 		parseCache:           s.parseCache,
@@ -133,12 +132,12 @@ func (s *Session) createView(ctx context.Context, name string, folder span.URI, 
 		processEnv: &imports.ProcessEnv{
 			GocmdRunner: s.gocmdRunner,
 			SkipPathInScan: func(dir string) bool {
-				prefix := strings.TrimSuffix(string(v.folder), "/") + "/"
+				prefix := strings.TrimSuffix(string(v.folder.Dir), "/") + "/"
 				uri := strings.TrimSuffix(string(span.URIFromPath(dir)), "/")
 				if !strings.HasPrefix(uri+"/", prefix) {
 					return false
 				}
-				filterer := source.NewFilterer(options.DirectoryFilters)
+				filterer := source.NewFilterer(folder.Options.DirectoryFilters)
 				rel := strings.TrimPrefix(uri, prefix)
 				disallow := filterer.Disallow(rel)
 				return disallow
@@ -167,7 +166,6 @@ func (s *Session) createView(ctx context.Context, name string, folder span.URI, 
 		workspaceModFiles:    wsModFiles,
 		workspaceModFilesErr: wsModFilesErr,
 		pkgIndex:             typerefs.NewPackageIndex(),
-		options:              options,
 	}
 	// Save one reference in the view.
 	v.releaseSnapshot = v.snapshot.Acquire()
@@ -297,7 +295,7 @@ func (s *Session) RemoveView(view *View) {
 //
 // If the resulting error is non-nil, the view may or may not have already been
 // dropped from the session.
-func (s *Session) updateViewLocked(ctx context.Context, view *View, options *source.Options) error {
+func (s *Session) updateViewLocked(ctx context.Context, view *View, folder *Folder) error {
 	// Preserve the snapshot ID if we are recreating the view.
 	view.snapshotMu.Lock()
 	if view.snapshot == nil {
@@ -312,7 +310,7 @@ func (s *Session) updateViewLocked(ctx context.Context, view *View, options *sou
 		return fmt.Errorf("view %q not found", view.id)
 	}
 
-	v, snapshot, release, err := s.createView(ctx, view.name, view.folder, options, seqID)
+	v, snapshot, release, err := s.createView(ctx, folder, seqID)
 	if err != nil {
 		// we have dropped the old view, but could not create the new one
 		// this should not happen and is very bad, but we still need to clean
@@ -427,7 +425,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 			// synchronously to change processing? Can we assume that the env did not
 			// change, and derive go.work using a combination of the configured
 			// GOWORK value and filesystem?
-			info, err := s.getWorkspaceInformation(ctx, view.folder, view.lastOptions)
+			info, err := s.getWorkspaceInformation(ctx, view.folder.Dir, view.folder.Options)
 			if err != nil {
 				// Catastrophic failure, equivalent to a failure of session
 				// initialization and therefore should almost never happen. One
@@ -441,7 +439,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 			}
 
 			if info != view.workspaceInformation {
-				if err := s.updateViewLocked(ctx, view, view.lastOptions); err != nil {
+				if err := s.updateViewLocked(ctx, view, view.folder); err != nil {
 					// More catastrophic failure. The view may or may not still exist.
 					// The best we can do is log and move on.
 					event.Error(ctx, "recreating view", err)
@@ -499,7 +497,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 	var releases []func()
 	viewToSnapshot := map[*View]*snapshot{}
 	for view, changed := range views {
-		snapshot, release := view.invalidateContent(ctx, changed, nil, forceReloadMetadata)
+		snapshot, release := view.invalidateContent(ctx, changed, forceReloadMetadata)
 		releases = append(releases, release)
 		viewToSnapshot[view] = snapshot
 	}

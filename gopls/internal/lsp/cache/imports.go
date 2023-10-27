@@ -54,13 +54,13 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot
 
 	// view.goEnv is immutable -- changes make a new view. Options can change.
 	// We can't compare build flags directly because we may add -modfile.
-	localPrefix := snapshot.options.Local
-	currentBuildFlags := snapshot.options.BuildFlags
-	currentDirectoryFilters := snapshot.options.DirectoryFilters
+	localPrefix := snapshot.Options().Local
+	currentBuildFlags := snapshot.Options().BuildFlags
+	currentDirectoryFilters := snapshot.Options().DirectoryFilters
 	changed := !reflect.DeepEqual(currentBuildFlags, s.cachedBuildFlags) ||
-		snapshot.options.VerboseOutput != (s.processEnv.Logf != nil) ||
+		snapshot.Options().VerboseOutput != (s.processEnv.Logf != nil) ||
 		modFileHash != s.cachedModFileHash ||
-		!reflect.DeepEqual(snapshot.options.DirectoryFilters, s.cachedDirectoryFilters)
+		!reflect.DeepEqual(snapshot.Options().DirectoryFilters, s.cachedDirectoryFilters)
 
 	// If anything relevant to imports has changed, clear caches and
 	// update the processEnv. Clearing caches blocks on any background
@@ -118,7 +118,7 @@ func populateProcessEnvFromSnapshot(ctx context.Context, pe *imports.ProcessEnv,
 	ctx, done := event.Start(ctx, "cache.populateProcessEnvFromSnapshot")
 	defer done()
 
-	if snapshot.options.VerboseOutput {
+	if snapshot.Options().VerboseOutput {
 		pe.Logf = func(format string, args ...interface{}) {
 			event.Log(ctx, fmt.Sprintf(format, args...))
 		}

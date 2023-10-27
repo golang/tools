@@ -372,9 +372,16 @@ func (m InvocationFlags) AllowNetwork() bool {
 	return m&AllowNetwork != 0
 }
 
-// View represents a single workspace.
-// This is the level at which we maintain configuration like working directory
-// and build tags.
+// View represents a single build context for a workspace.
+//
+// A unique build is determined by the workspace folder along with a Go
+// environment (GOOS, GOARCH, GOWORK, etc).
+//
+// Additionally, the View holds a pointer to the current state of that build
+// (the Snapshot).
+//
+// TODO(rfindley): move all other state such as module upgrades into the
+// Snapshot.
 type View interface {
 	// ID returns a globally unique identifier for this view.
 	ID() string

@@ -1342,8 +1342,8 @@ func (s *snapshot) typeCheckInputs(ctx context.Context, m *source.Metadata) (typ
 		depsByImpPath:   m.DepsByImpPath,
 		goVersion:       goVersion,
 
-		relatedInformation: s.options.RelatedInformationSupported,
-		linkTarget:         s.options.LinkTarget,
+		relatedInformation: s.Options().RelatedInformationSupported,
+		linkTarget:         s.Options().LinkTarget,
 		moduleMode:         s.view.moduleMode(),
 	}, nil
 }
