@@ -572,24 +572,6 @@ func applyTextDocumentEdits(r *runner, edits []protocol.DocumentChanges) (map[sp
 	return res, nil
 }
 
-func (r *runner) Link(t *testing.T, uri span.URI, wantLinks []tests.Link) {
-	m, err := r.data.Mapper(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := r.server.DocumentLink(r.ctx, &protocol.DocumentLinkParams{
-		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(uri),
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if diff := tests.DiffLinks(m, wantLinks, got); diff != "" {
-		t.Error(diff)
-	}
-}
-
 func (r *runner) AddImport(t *testing.T, uri span.URI, expectedImport string) {
 	cmd, err := command.NewListKnownPackagesCommand("List Known Packages", command.URIArg{
 		URI: protocol.URIFromSpanURI(uri),

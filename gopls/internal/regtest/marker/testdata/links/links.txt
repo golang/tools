@@ -1,0 +1,47 @@
+This test verifies behavior of textDocument/documentLink.
+
+-- go.mod --
+module golang.org/lsptests
+
+go 1.18
+-- foo/foo.go --
+package foo
+
+type StructFoo struct {}
+
+-- links/links.go --
+package links //@documentlink(links)
+
+import (
+	"fmt"
+
+	"golang.org/lsptests/foo"
+
+	_ "database/sql"
+)
+
+var (
+	_ fmt.Formatter
+	_ foo.StructFoo
+	_ errors.Formatter //@diag("errors", re"(undeclared|undefined)")
+)
+
+// Foo function
+func Foo() string {
+	/*https://example.com/comment */
+
+	url := "https://example.com/string_literal"
+	return url
+
+	// TODO(golang/go#1234): Link the relevant issue.
+	// TODO(microsoft/vscode-go#12): Another issue.
+}
+
+-- @links --
+links/links.go:4:3-6 https://pkg.go.dev/fmt
+links/links.go:6:3-26 https://pkg.go.dev/golang.org/lsptests/foo
+links/links.go:8:5-17 https://pkg.go.dev/database/sql
+links/links.go:21:10-44 https://example.com/string_literal
+links/links.go:19:4-31 https://example.com/comment
+links/links.go:24:10-24 https://github.com/golang/go/issues/1234
+links/links.go:25:10-32 https://github.com/microsoft/vscode-go/issues/12

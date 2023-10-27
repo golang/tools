@@ -15,7 +15,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,11 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/completion"
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
@@ -65,7 +62,6 @@ type MethodExtractions = map[span.Span]span.Span
 type Renames = map[span.Span]string
 type PrepareRenames = map[span.Span]*source.PrepareItem
 type InlayHints = []span.Span
-type Links = map[span.URI][]Link
 type AddImport = map[span.URI]string
 type SelectionRanges = []span.Span
 
@@ -83,7 +79,6 @@ type Data struct {
 	Renames            Renames
 	InlayHints         InlayHints
 	PrepareRenames     PrepareRenames
-	Links              Links
 	AddImport          AddImport
 	SelectionRanges    SelectionRanges
 
@@ -115,7 +110,6 @@ type Tests interface {
 	InlayHints(*testing.T, span.Span)
 	Rename(*testing.T, span.Span, string)
 	PrepareRename(*testing.T, span.Span, *source.PrepareItem)
-	Link(*testing.T, span.URI, []Link)
 	AddImport(*testing.T, span.URI, string)
 	SelectionRanges(*testing.T, span.Span)
 }
@@ -222,7 +216,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 		PrepareRenames:     make(PrepareRenames),
 		SuggestedFixes:     make(SuggestedFixes),
 		MethodExtractions:  make(MethodExtractions),
-		Links:              make(Links),
 		AddImport:          make(AddImport),
 
 		dir:       dir,
@@ -364,7 +357,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 		"inlayHint":      datum.collectInlayHints,
 		"rename":         datum.collectRenames,
 		"prepare":        datum.collectPrepareRenames,
-		"link":           datum.collectLinks,
 		"suggestedfix":   datum.collectSuggestedFixes,
 		"extractmethod":  datum.collectMethodExtractions,
 		"incomingcalls":  datum.collectIncomingCalls,
@@ -549,28 +541,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		}
 	})
 
-	t.Run("Link", func(t *testing.T) {
-		t.Helper()
-		for uri, wantLinks := range data.Links {
-			// If we are testing GOPATH, then we do not want links with the versions
-			// attached (pkg.go.dev/repoa/moda@v1.1.0/pkg), unless the file is a
-			// go.mod, then we can skip it altogether.
-			if data.Exported.Exporter == packagestest.GOPATH {
-				if strings.HasSuffix(uri.Filename(), ".mod") {
-					continue
-				}
-				re := regexp.MustCompile(`@v\d+\.\d+\.[\w-]+`)
-				for i, link := range wantLinks {
-					wantLinks[i].Target = re.ReplaceAllString(link.Target, "")
-				}
-			}
-			t.Run(uriName(uri), func(t *testing.T) {
-				t.Helper()
-				tests.Link(t, uri, wantLinks)
-			})
-		}
-	})
-
 	t.Run("AddImport", func(t *testing.T) {
 		t.Helper()
 		for uri, exp := range data.AddImport {
@@ -606,10 +576,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 
 func checkData(t *testing.T, data *Data) {
 	buf := &bytes.Buffer{}
-	linksCount := 0
-	for _, want := range data.Links {
-		linksCount += len(want)
-	}
 
 	snippetCount := 0
 	for _, want := range data.CompletionSnippets {
@@ -633,7 +599,6 @@ func checkData(t *testing.T, data *Data) {
 	fmt.Fprintf(buf, "InlayHintsCount = %v\n", len(data.InlayHints))
 	fmt.Fprintf(buf, "RenamesCount = %v\n", len(data.Renames))
 	fmt.Fprintf(buf, "PrepareRenamesCount = %v\n", len(data.PrepareRenames))
-	fmt.Fprintf(buf, "LinksCount = %v\n", linksCount)
 	fmt.Fprintf(buf, "SelectionRangesCount = %v\n", len(data.SelectionRanges))
 
 	want := string(data.Golden(t, "summary", summaryFile, func() ([]byte, error) {
@@ -832,16 +797,6 @@ func (data *Data) collectCompletionSnippets(spn span.Span, item token.Pos, plain
 		CompletionItem:     item,
 		PlainSnippet:       plain,
 		PlaceholderSnippet: placeholder,
-	})
-}
-
-func (data *Data) collectLinks(spn span.Span, link string, note *expect.Note, fset *token.FileSet) {
-	position := safetoken.StartPosition(fset, note.Pos)
-	uri := spn.URI()
-	data.Links[uri] = append(data.Links[uri], Link{
-		Src:          spn,
-		Target:       link,
-		NotePosition: position,
 	})
 }
 

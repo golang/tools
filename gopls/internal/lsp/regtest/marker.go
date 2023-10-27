@@ -181,6 +181,9 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //   - def(src, dst location): perform a textDocument/definition request at
 //     the src location, and check the result points to the dst location.
 //
+//   - documentLink(golden): asserts that textDocument/documentLink returns
+//     links as described by the golden file.
+//
 //   - foldingrange(golden): perform a textDocument/foldingRange for the
 //     current document, and compare with the golden content, which is the
 //     original source annotated with numbered tags delimiting the resulting
@@ -707,6 +710,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"complete":         actionMarkerFunc(completeMarker),
 	"def":              actionMarkerFunc(defMarker),
 	"diag":             actionMarkerFunc(diagMarker),
+	"documentlink":     actionMarkerFunc(documentLinkMarker),
 	"foldingrange":     actionMarkerFunc(foldingRangeMarker),
 	"format":           actionMarkerFunc(formatMarker),
 	"highlight":        actionMarkerFunc(highlightMarker),
@@ -1680,15 +1684,7 @@ func formatMarker(mark marker, golden *Golden) {
 		}
 	}
 
-	want, ok := golden.Get(mark.run.env.T, "", got)
-	if !ok {
-		mark.errorf("missing golden file @%s", golden.id)
-		return
-	}
-
-	if diff := compare.Bytes(want, got); diff != "" {
-		mark.errorf("golden file @%s does not match format results:\n%s", golden.id, diff)
-	}
+	compareGolden(mark, "format", got, golden)
 }
 
 func highlightMarker(mark marker, src protocol.Location, dsts ...protocol.Location) {
@@ -1936,6 +1932,21 @@ func codeLensesMarker(mark marker) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		mark.errorf("codelenses: unexpected diff (-want +got):\n%s", diff)
 	}
+}
+
+func documentLinkMarker(mark marker, g *Golden) {
+	var b bytes.Buffer
+	links := mark.run.env.DocumentLink(mark.path())
+	for _, l := range links {
+		if l.Target == nil {
+			mark.errorf("%s: nil link target", l.Range)
+			continue
+		}
+		loc := protocol.Location{URI: mark.uri(), Range: l.Range}
+		fmt.Fprintln(&b, mark.run.fmtLocDetails(loc, false), *l.Target)
+	}
+
+	compareGolden(mark, "documentLink", b.Bytes(), g)
 }
 
 // consumeExtraNotes runs the provided func for each extra note with the given
@@ -2225,13 +2236,20 @@ func workspaceSymbolMarker(mark marker, query string, golden *Golden) {
 		fmt.Fprintf(&got, "%s %s %s\n", loc, s.Name, s.Kind)
 	}
 
-	want, ok := golden.Get(mark.run.env.T, "", got.Bytes())
+	compareGolden(mark, fmt.Sprintf("Symbol(%q)", query), got.Bytes(), golden)
+}
+
+// compareGolden compares the content of got with that of g.Get(""), reporting
+// errors on any mismatch.
+//
+// TODO(rfindley): use this helper in more places.
+func compareGolden(mark marker, op string, got []byte, g *Golden) {
+	want, ok := g.Get(mark.run.env.T, "", got)
 	if !ok {
-		mark.errorf("missing golden file @%s", golden.id)
+		mark.errorf("missing golden file @%s", g.id)
 		return
 	}
-
-	if diff := compare.Bytes(want, got.Bytes()); diff != "" {
-		mark.errorf("Symbol(%q) mismatch:\n%s", query, diff)
+	if diff := compare.Bytes(want, got); diff != "" {
+		mark.errorf("%s mismatch:\n%s", op, diff)
 	}
 }

@@ -42,51 +42,6 @@ var builtins = map[string]bool{
 	"true":    true,
 }
 
-// DiffLinks takes the links we got and checks if they are located within the source or a Note.
-// If the link is within a Note, the link is removed.
-// Returns an diff comment if there are differences and empty string if no diffs.
-func DiffLinks(mapper *protocol.Mapper, wantLinks []Link, gotLinks []protocol.DocumentLink) string {
-	var notePositions []token.Position
-	links := make(map[span.Span]string, len(wantLinks))
-	for _, link := range wantLinks {
-		links[link.Src] = link.Target
-		notePositions = append(notePositions, link.NotePosition)
-	}
-
-	var msg strings.Builder
-	for _, link := range gotLinks {
-		spn, err := mapper.RangeSpan(link.Range)
-		if err != nil {
-			return fmt.Sprintf("%v", err)
-		}
-		linkInNote := false
-		for _, notePosition := range notePositions {
-			// Drop the links found inside expectation notes arguments as this links are not collected by expect package.
-			if notePosition.Line == spn.Start().Line() &&
-				notePosition.Column <= spn.Start().Column() {
-				delete(links, spn)
-				linkInNote = true
-			}
-		}
-		if linkInNote {
-			continue
-		}
-
-		if target, ok := links[spn]; ok {
-			delete(links, spn)
-			if target != *link.Target {
-				fmt.Fprintf(&msg, "%s: want link with target %q, got %q\n", spn, target, *link.Target)
-			}
-		} else {
-			fmt.Fprintf(&msg, "%s: got unexpected link with target %q\n", spn, *link.Target)
-		}
-	}
-	for spn, target := range links {
-		fmt.Fprintf(&msg, "%s: expected link with target %q is missing\n", spn, target)
-	}
-	return msg.String()
-}
-
 // NormalizeAny replaces occurrences of interface{} in input with any.
 //
 // In Go 1.18, standard library functions were changed to use the 'any'
