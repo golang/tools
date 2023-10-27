@@ -20,7 +20,7 @@ import (
 // However, FS does not copy the underlying file contents:
 // change to file content will be visible in file system method calls.
 func FS(a *Archive) (fs.FS, error) {
-	m := make(fstest.MapFS)
+	m := make(fstest.MapFS, len(a.Files))
 	for _, f := range a.Files {
 		if !fs.ValidPath(f.Name) {
 			return nil, fmt.Errorf("txtar.FS: Archive contains invalid fs.FS path: %q", f.Name)
