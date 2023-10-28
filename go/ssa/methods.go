@@ -121,30 +121,23 @@ func (prog *Program) addMethod(mset *methodSet, sel *types.Selection, cr *creato
 	return fn
 }
 
-// RuntimeTypes returns a new unordered slice containing all
-// concrete types in the program for which a complete (non-empty)
-// method set is required at run-time.
+// RuntimeTypes returns a new unordered slice containing all types in
+// the program for which a runtime type is required.
+//
+// A runtime type is required for any non-parameterized, non-interface
+// type that is converted to an interface, or for any type (including
+// interface types) derivable from one through reflection.
+//
+// The methods of such types may be reachable through reflection or
+// interface calls even if they are never called directly.
 //
 // Thread-safe.
 //
 // Acquires prog.runtimeTypesMu.
 func (prog *Program) RuntimeTypes() []types.Type {
 	prog.runtimeTypesMu.Lock()
-	rtypes := prog.runtimeTypes.Keys()
-	prog.runtimeTypesMu.Unlock()
-
-	// Remove interfaces and types with empty method sets,
-	// so as not to change the historic behavior-yet.
-	// TODO(adonovan): change it in the next CL 538357,
-	// when we remove the kludge in Package.Build, keeping
-	// the observable semantic changes together.
-	res := rtypes[:0]
-	for _, t := range rtypes {
-		if !types.IsInterface(t) && prog.MethodSets.MethodSet(t).Len() > 0 {
-			res = append(res, t)
-		}
-	}
-	return res
+	defer prog.runtimeTypesMu.Unlock()
+	return prog.runtimeTypes.Keys()
 }
 
 // declaredFunc returns the concrete function/method denoted by obj.

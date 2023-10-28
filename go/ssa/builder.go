@@ -2635,27 +2635,6 @@ func (p *Package) build() {
 	if p.info == nil {
 		return // synthetic package, e.g. "testmain"
 	}
-
-	// Gather runtime types for exported members with ground types.
-	//
-	// TODO(adonovan): remove this hack in a follow-up (see CL 538357).
-	for name, mem := range p.Members {
-		isGround := func(m Member) bool {
-			switch m := m.(type) {
-			case *Type:
-				named, _ := m.Type().(*types.Named)
-				return named == nil || typeparams.ForNamed(named) == nil
-			case *Function:
-				return m.typeparams.Len() == 0
-			}
-			return true // *NamedConst, *Global
-		}
-		if ast.IsExported(name) && isGround(mem) {
-			p.Prog.methodsMu.Lock()
-			addRuntimeType(p.Prog, mem.Type())
-			p.Prog.methodsMu.Unlock()
-		}
-	}
 	if p.Prog.mode&LogSource != 0 {
 		defer logStack("build %s", p)()
 	}

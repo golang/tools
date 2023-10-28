@@ -55,6 +55,7 @@ type Package struct {
 	objects map[types.Object]Member // mapping of package objects to members (incl. methods). Contains *NamedConst, *Global, *Function.
 	init    *Function               // Func("init"); the package's init function
 	debug   bool                    // include full debug info in this package
+	syntax  bool                    // package was loaded from syntax
 
 	// The following fields are set transiently, then cleared
 	// after building.

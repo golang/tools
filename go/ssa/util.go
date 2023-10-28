@@ -366,3 +366,6 @@ func (canon *canonizer) instantiateMethod(m *types.Func, targs []types.Type, ctx
 	obj, _, _ := types.LookupFieldOrMethod(rep, true, m.Pkg(), m.Name())
 	return obj.(*types.Func)
 }
+
+// Exposed to ssautil using the linkname hack.
+func isSyntactic(pkg *Package) bool { return pkg.syntax }

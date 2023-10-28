@@ -196,6 +196,7 @@ func (prog *Program) CreatePackage(pkg *types.Package, files []*ast.File, info *
 		Members: make(map[string]Member),
 		objects: make(map[types.Object]Member),
 		Pkg:     pkg,
+		syntax:  info != nil,
 		// transient values (CREATE and BUILD phases)
 		info:        info,
 		files:       files,

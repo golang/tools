@@ -59,7 +59,7 @@ func main() {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "input.go", input, 0)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 		return
 	}
 
@@ -69,7 +69,7 @@ func main() {
 	mainPkg, _, err := ssautil.BuildPackage(&types.Config{Importer: importer.Default()}, fset,
 		types.NewPackage("main", ""), []*ast.File{f}, mode)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 		return
 	}
 
@@ -169,12 +169,15 @@ func main() {
 func TestRuntimeTypes(t *testing.T) {
 	testenv.NeedsGoBuild(t) // for importer.Default()
 
+	// TODO(adonovan): these test cases don't really make logical
+	// sense any more. Rethink.
+
 	tests := []struct {
 		input string
 		want  []string
 	}{
-		// An exported package-level type is needed.
-		{`package A; type T struct{}; func (T) f() {}`,
+		// An package-level type is needed.
+		{`package A; type T struct{}; func (T) f() {}; var x any = T{}`,
 			[]string{"*p.T", "p.T"},
 		},
 		// An unexported package-level type is not needed.
@@ -182,20 +185,20 @@ func TestRuntimeTypes(t *testing.T) {
 			nil,
 		},
 		// Subcomponents of type of exported package-level var are needed.
-		{`package C; import "bytes"; var V struct {*bytes.Buffer}`,
+		{`package C; import "bytes"; var V struct {*bytes.Buffer}; var x any = &V`,
 			[]string{"*bytes.Buffer", "*struct{*bytes.Buffer}", "struct{*bytes.Buffer}"},
 		},
 		// Subcomponents of type of unexported package-level var are not needed.
-		{`package D; import "bytes"; var v struct {*bytes.Buffer}`,
-			nil,
+		{`package D; import "bytes"; var v struct {*bytes.Buffer}; var x any = v`,
+			[]string{"*bytes.Buffer", "struct{*bytes.Buffer}"},
 		},
 		// Subcomponents of type of exported package-level function are needed.
-		{`package E; import "bytes"; func F(struct {*bytes.Buffer}) {}`,
+		{`package E; import "bytes"; func F(struct {*bytes.Buffer}) {}; var v any = F`,
 			[]string{"*bytes.Buffer", "struct{*bytes.Buffer}"},
 		},
 		// Subcomponents of type of unexported package-level function are not needed.
-		{`package F; import "bytes"; func f(struct {*bytes.Buffer}) {}`,
-			nil,
+		{`package F; import "bytes"; func f(struct {*bytes.Buffer}) {}; var v any = f`,
+			[]string{"*bytes.Buffer", "struct{*bytes.Buffer}"},
 		},
 		// Subcomponents of type of exported method of uninstantiated unexported type are not needed.
 		{`package G; import "bytes"; type x struct{}; func (x) G(struct {*bytes.Buffer}) {}; var v x`,
@@ -206,7 +209,7 @@ func TestRuntimeTypes(t *testing.T) {
 			[]string{"*bytes.Buffer", "*p.x", "p.x", "struct{*bytes.Buffer}"},
 		},
 		// Subcomponents of type of unexported method are not needed.
-		{`package I; import "bytes"; type X struct{}; func (X) G(struct {*bytes.Buffer}) {}`,
+		{`package I; import "bytes"; type X struct{}; func (X) G(struct {*bytes.Buffer}) {}; var x any = X{}`,
 			[]string{"*bytes.Buffer", "*p.X", "p.X", "struct{*bytes.Buffer}"},
 		},
 		// Local types aren't needed.
@@ -225,18 +228,10 @@ func TestRuntimeTypes(t *testing.T) {
 		{`package M; import "bytes"; var _ interface{} = struct{*bytes.Buffer}{}`,
 			nil,
 		},
-	}
-
-	if typeparams.Enabled {
-		tests = append(tests, []struct {
-			input string
-			want  []string
-		}{
-			// MakeInterface does not create runtime type for parameterized types.
-			{`package N; var g interface{}; func f[S any]() { var v []S; g = v }; `,
-				nil,
-			},
-		}...)
+		// MakeInterface does not create runtime type for parameterized types.
+		{`package N; var g interface{}; func f[S any]() { var v []S; g = v }; `,
+			nil,
+		},
 	}
 	for _, test := range tests {
 		// Parse the file.
@@ -259,6 +254,9 @@ func TestRuntimeTypes(t *testing.T) {
 
 		var typstrs []string
 		for _, T := range ssapkg.Prog.RuntimeTypes() {
+			if types.IsInterface(T) || types.NewMethodSet(T).Len() == 0 {
+				continue // skip interfaces and types without methods
+			}
 			typstrs = append(typstrs, T.String())
 		}
 		sort.Strings(typstrs)
@@ -925,7 +923,7 @@ func TestIssue58491(t *testing.T) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "p.go", src, 0)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	files := []*ast.File{f}
 
@@ -978,7 +976,7 @@ func TestIssue58491Rec(t *testing.T) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "p.go", src, 0)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	files := []*ast.File{f}
 
