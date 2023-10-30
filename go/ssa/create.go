@@ -112,6 +112,8 @@ func memberFromObject(pkg *Package, obj types.Object, syntax ast.Node, goversion
 		pkg.created.Add(fn)
 		if syntax == nil {
 			fn.Synthetic = "loaded from gc object file"
+		} else {
+			fn.Doc = syntax.(*ast.FuncDecl).Doc
 		}
 		if tparams.Len() > 0 {
 			fn.Prog.createInstanceSet(fn)
