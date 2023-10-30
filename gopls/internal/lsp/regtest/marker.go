@@ -218,6 +218,11 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //   - loc(name, location): specifies the name for a location in the source. These
 //     locations may be referenced by other markers.
 //
+//   - preparerename(src, spn, placeholder): asserts that a textDocument/prepareRename
+//     request at the src location expands to the spn location, with given
+//     placeholder. If placeholder is "", this is treated as a negative
+//     assertion and prepareRename should return nil.
+//
 //   - rename(location, new, golden): specifies a renaming of the
 //     identifier at the specified location to the new name.
 //     The golden directory contains the transformed files.
@@ -369,21 +374,15 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //
 // Existing marker tests (in ../testdata) to port:
 //   - CallHierarchy
-//   - CompletionItems
 //   - Completions
 //   - CompletionSnippets
-//   - DeepCompletions
-//   - FuzzyCompletions
 //   - CaseSensitiveCompletions
 //   - RankCompletions
 //   - SemanticTokens
 //   - FunctionExtractions
 //   - MethodExtractions
 //   - Renames
-//   - PrepareRenames
 //   - InlayHints
-//   - Signatures
-//   - Links
 //   - SelectionRanges
 func RunMarkerTests(t *testing.T, dir string) {
 	// The marker tests must be able to run go/packages.Load.
@@ -716,6 +715,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"highlight":        actionMarkerFunc(highlightMarker),
 	"hover":            actionMarkerFunc(hoverMarker),
 	"implementation":   actionMarkerFunc(implementationMarker),
+	"preparerename":    actionMarkerFunc(prepareRenameMarker),
 	"rank":             actionMarkerFunc(rankMarker),
 	"rankl":            actionMarkerFunc(ranklMarker),
 	"refs":             actionMarkerFunc(refsMarker),
@@ -2123,6 +2123,26 @@ func implementationMarker(mark marker, src protocol.Location, want ...protocol.L
 	}
 	if err := compareLocations(mark, got, want); err != nil {
 		mark.errorf("implementation: %v", err)
+	}
+}
+
+func prepareRenameMarker(mark marker, src, spn protocol.Location, placeholder string) {
+	params := &protocol.PrepareRenameParams{
+		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
+	}
+	got, err := mark.run.env.Editor.Server.PrepareRename(mark.run.env.Ctx, params)
+	if err != nil {
+		mark.run.env.T.Fatal(err)
+	}
+	if placeholder == "" {
+		if got != nil {
+			mark.errorf("PrepareRename(...) = %v, want nil", got)
+		}
+		return
+	}
+	want := &protocol.PrepareRename2Gn{Range: spn.Range, Placeholder: placeholder}
+	if diff := cmp.Diff(want, got); diff != "" {
+		mark.errorf("mismatching PrepareRename result:\n%s", diff)
 	}
 }
 

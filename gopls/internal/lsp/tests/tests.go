@@ -60,7 +60,6 @@ type SemanticTokens = []span.Span
 type SuggestedFixes = map[span.Span][]SuggestedFix
 type MethodExtractions = map[span.Span]span.Span
 type Renames = map[span.Span]string
-type PrepareRenames = map[span.Span]*source.PrepareItem
 type InlayHints = []span.Span
 type AddImport = map[span.URI]string
 type SelectionRanges = []span.Span
@@ -78,7 +77,6 @@ type Data struct {
 	MethodExtractions  MethodExtractions
 	Renames            Renames
 	InlayHints         InlayHints
-	PrepareRenames     PrepareRenames
 	AddImport          AddImport
 	SelectionRanges    SelectionRanges
 
@@ -109,7 +107,6 @@ type Tests interface {
 	MethodExtraction(*testing.T, span.Span, span.Span)
 	InlayHints(*testing.T, span.Span)
 	Rename(*testing.T, span.Span, string)
-	PrepareRename(*testing.T, span.Span, *source.PrepareItem)
 	AddImport(*testing.T, span.URI, string)
 	SelectionRanges(*testing.T, span.Span)
 }
@@ -213,7 +210,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 		CompletionSnippets: make(CompletionSnippets),
 		RankCompletions:    make(RankCompletions),
 		Renames:            make(Renames),
-		PrepareRenames:     make(PrepareRenames),
 		SuggestedFixes:     make(SuggestedFixes),
 		MethodExtractions:  make(MethodExtractions),
 		AddImport:          make(AddImport),
@@ -356,7 +352,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 		"semantic":       datum.collectSemanticTokens,
 		"inlayHint":      datum.collectInlayHints,
 		"rename":         datum.collectRenames,
-		"prepare":        datum.collectPrepareRenames,
 		"suggestedfix":   datum.collectSuggestedFixes,
 		"extractmethod":  datum.collectMethodExtractions,
 		"incomingcalls":  datum.collectIncomingCalls,
@@ -531,16 +526,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		}
 	})
 
-	t.Run("PrepareRenames", func(t *testing.T) {
-		t.Helper()
-		for src, want := range data.PrepareRenames {
-			t.Run(SpanName(src), func(t *testing.T) {
-				t.Helper()
-				tests.PrepareRename(t, src, want)
-			})
-		}
-	})
-
 	t.Run("AddImport", func(t *testing.T) {
 		t.Helper()
 		for uri, exp := range data.AddImport {
@@ -598,7 +583,6 @@ func checkData(t *testing.T, data *Data) {
 	fmt.Fprintf(buf, "MethodExtractionCount = %v\n", len(data.MethodExtractions))
 	fmt.Fprintf(buf, "InlayHintsCount = %v\n", len(data.InlayHints))
 	fmt.Fprintf(buf, "RenamesCount = %v\n", len(data.Renames))
-	fmt.Fprintf(buf, "PrepareRenamesCount = %v\n", len(data.PrepareRenames))
 	fmt.Fprintf(buf, "SelectionRangesCount = %v\n", len(data.SelectionRanges))
 
 	want := string(data.Golden(t, "summary", summaryFile, func() ([]byte, error) {
@@ -773,13 +757,6 @@ func (data *Data) collectInlayHints(src span.Span) {
 
 func (data *Data) collectRenames(src span.Span, newText string) {
 	data.Renames[src] = newText
-}
-
-func (data *Data) collectPrepareRenames(src, spn span.Span, placeholder string) {
-	data.PrepareRenames[src] = &source.PrepareItem{
-		Range: data.mustRange(spn),
-		Text:  placeholder,
-	}
 }
 
 // mustRange converts spn into a protocol.Range, panicking on any error.

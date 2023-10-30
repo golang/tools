@@ -501,51 +501,6 @@ func (r *runner) Rename(t *testing.T, spn span.Span, newText string) {
 	}
 }
 
-func (r *runner) PrepareRename(t *testing.T, src span.Span, want *source.PrepareItem) {
-	m, err := r.data.Mapper(src.URI())
-	if err != nil {
-		t.Fatal(err)
-	}
-	loc, err := m.SpanLocation(src)
-	if err != nil {
-		t.Fatalf("failed for %v: %v", src, err)
-	}
-	params := &protocol.PrepareRenameParams{
-		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
-	}
-	got, err := r.server.PrepareRename(context.Background(), params)
-	if err != nil {
-		t.Errorf("prepare rename failed for %v: got error: %v", src, err)
-		return
-	}
-
-	// TODO(rfindley): can we consolidate on a single representation for
-	// PrepareRename results, and use cmp.Diff here?
-
-	// PrepareRename may fail with no error if there was no object found at the
-	// position.
-	if got == nil {
-		if want.Text != "" { // expected an ident.
-			t.Errorf("prepare rename failed for %v: got nil", src)
-		}
-		return
-	}
-	if got.Range.Start == got.Range.End {
-		// Special case for 0-length ranges. Marks can't specify a 0-length range,
-		// so just compare the start.
-		if got.Range.Start != want.Range.Start {
-			t.Errorf("prepare rename failed: incorrect point, got %v want %v", got.Range.Start, want.Range.Start)
-		}
-	} else {
-		if got.Range != want.Range {
-			t.Errorf("prepare rename failed: incorrect range got %v want %v", got.Range, want.Range)
-		}
-	}
-	if got.Placeholder != want.Text {
-		t.Errorf("prepare rename failed: incorrect text got %v want %v", got.Placeholder, want.Text)
-	}
-}
-
 func applyTextDocumentEdits(r *runner, edits []protocol.DocumentChanges) (map[span.URI][]byte, error) {
 	res := make(map[span.URI][]byte)
 	for _, docEdits := range edits {

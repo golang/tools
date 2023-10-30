@@ -1,0 +1,19 @@
+This test verifies the fix for golang/go#43616: renaming mishandles embedded
+fields.
+
+-- p.go --
+package issue43616
+
+type foo int //@rename("foo", "bar", fooToBar),preparerename("oo","foo","foo")
+
+var x struct{ foo } //@renameerr("foo", "baz", "rename the type directly")
+
+var _ = x.foo //@renameerr("foo", "quux", "rename the type directly")
+-- @fooToBar/p.go --
+package issue43616
+
+type bar int //@rename("foo", "bar", fooToBar),preparerename("oo","foo","foo")
+
+var x struct{ bar } //@renameerr("foo", "baz", "rename the type directly")
+
+var _ = x.bar //@renameerr("foo", "quux", "rename the type directly")

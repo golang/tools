@@ -1,0 +1,62 @@
+This test verifies the behavior of textDocument/prepareRename.
+
+-- settings.json --
+{
+	"deepCompletion": false
+}
+
+-- go.mod --
+module golang.org/lsptests
+
+go 1.18
+-- types/types.go --
+package types
+
+type CoolAlias = int //@item(CoolAlias, "CoolAlias", "int", "type")
+
+type X struct { //@item(X_struct, "X", "struct{...}", "struct")
+	x int
+}
+
+type Y struct { //@item(Y_struct, "Y", "struct{...}", "struct")
+	y int
+}
+
+
+type Bob interface { //@item(Bob_interface, "Bob", "interface{...}", "interface")
+	Bobby()
+}
+
+func (*X) Bobby() {}
+func (*Y) Bobby() {}
+
+-- good/good0.go --
+package good
+
+func stuff() { //@item(good_stuff, "stuff", "func()", "func"),preparerename("stu", "stuff", "stuff")
+	x := 5
+	random2(x) //@preparerename("dom", "random2", "random2")
+}
+
+-- good/good1.go --
+package good
+
+import (
+	"golang.org/lsptests/types" //@item(types_import, "types", "\"golang.org/lsptests/types\"", "package")
+)
+
+func random() int { //@item(good_random, "random", "func() int", "func")
+	_ = "random() int" //@preparerename("random", "", "")
+	y := 6 + 7         //@preparerename("7", "", "")
+	return y           //@preparerename("return", "","")
+}
+
+func random2(y int) int { //@item(good_random2, "random2", "func(y int) int", "func"),item(good_y_param, "y", "int", "var")
+	//@complete("", good_y_param, types_import, good_random, good_random2, good_stuff)
+	var b types.Bob = &types.X{}   //@preparerename("ypes","types", "types")
+	if _, ok := b.(*types.X); ok { //@complete("X", X_struct, Y_struct, Bob_interface, CoolAlias)
+		_ = 0 // suppress "empty branch" diagnostic
+	}
+
+	return y
+}
