@@ -33,9 +33,11 @@ type Program struct {
 	// TODO(adonovan): split this mutex.
 	methodsMu     sync.Mutex                 // guards the following maps:
 	methodSets    typeutil.Map               // maps type to its concrete methodSet
-	runtimeTypes  typeutil.Map               // types for which rtypes are needed
 	instances     map[*Function]*instanceSet // instances of generic functions
-	parameterized tpWalker                   // determines whether a type reaches a type parameter.
+	parameterized tpWalker                   // memoization of whether a type reaches a type parameter.
+
+	runtimeTypesMu sync.Mutex
+	runtimeTypes   typeutil.Map // set of runtime types (from MakeInterface)
 }
 
 // A Package is a single analyzed Go package containing Members for

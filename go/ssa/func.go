@@ -239,36 +239,6 @@ func buildReferrers(f *Function) {
 	}
 }
 
-// mayNeedRuntimeTypes returns all of the types in the body of fn that might need runtime types.
-//
-// EXCLUSIVE_LOCKS_ACQUIRED(meth.Prog.methodsMu)
-func mayNeedRuntimeTypes(fn *Function) []types.Type {
-	// Collect all types that may need rtypes, i.e. those that flow into an interface.
-	var ts []types.Type
-	for _, bb := range fn.Blocks {
-		for _, instr := range bb.Instrs {
-			if mi, ok := instr.(*MakeInterface); ok {
-				ts = append(ts, mi.X.Type())
-			}
-		}
-	}
-
-	// Types that contain a parameterized type are considered to not be runtime types.
-	if fn.typeparams.Len() == 0 {
-		return ts // No potentially parameterized types.
-	}
-	// Filter parameterized types, in place.
-	fn.Prog.methodsMu.Lock()
-	defer fn.Prog.methodsMu.Unlock()
-	filtered := ts[:0]
-	for _, t := range ts {
-		if !fn.Prog.parameterized.isParameterized(t) {
-			filtered = append(filtered, t)
-		}
-	}
-	return filtered
-}
-
 // finishBody() finalizes the contents of the function after SSA code generation of its body.
 //
 // The function is not done being built until done() is called.
@@ -309,7 +279,7 @@ func (f *Function) finishBody() {
 		lift(f)
 	}
 
-	// clear remaining stateful variables
+	// clear remaining builder state
 	f.namedResults = nil // (used by lifting)
 	f.info = nil
 	f.subst = nil

@@ -56,7 +56,7 @@ func (insts *instanceSet) list() []*Function {
 //
 // Precondition: fn is a package level declaration (function or method).
 //
-// EXCLUSIVE_LOCKS_ACQUIRED(prog.methodMu)
+// Acquires prog.methodsMu.
 func (prog *Program) createInstanceSet(fn *Function) {
 	assert(fn.typeparams.Len() > 0 && len(fn.typeargs) == 0, "Can only create instance sets for generic functions")
 
@@ -80,7 +80,7 @@ func (prog *Program) createInstanceSet(fn *Function) {
 //
 // Any CREATEd instance is added to cr.
 //
-// EXCLUSIVE_LOCKS_ACQUIRED(prog.methodMu)
+// Acquires prog.methodMu.
 func (prog *Program) needsInstance(fn *Function, targs []types.Type, cr *creator) *Function {
 	prog.methodsMu.Lock()
 	defer prog.methodsMu.Unlock()
@@ -92,13 +92,15 @@ func (prog *Program) needsInstance(fn *Function, targs []types.Type, cr *creator
 //
 // Any CREATEd instance is added to cr.
 //
-// EXCLUSIVE_LOCKS_REQUIRED(prog.methodMu)
+// Requires prog.methodMu.
 func (prog *Program) lookupOrCreateInstance(fn *Function, targs []types.Type, cr *creator) *Function {
 	return prog.instances[fn].lookupOrCreate(targs, &prog.parameterized, cr)
 }
 
 // lookupOrCreate returns the instantiation of insts.fn using targs.
 // If the instantiation is created, this is added to cr.
+//
+// Requires prog.methodMu.
 func (insts *instanceSet) lookupOrCreate(targs []types.Type, parameterized *tpWalker, cr *creator) *Function {
 	if insts.instances == nil {
 		insts.instances = make(map[*typeList]*Function)

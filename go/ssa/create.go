@@ -15,7 +15,6 @@ import (
 	"os"
 	"sync"
 
-	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -23,7 +22,7 @@ import (
 //
 // mode controls diagnostics and checking during SSA construction.
 func NewProgram(fset *token.FileSet, mode BuilderMode) *Program {
-	prog := &Program{
+	return &Program{
 		Fset:          fset,
 		imported:      make(map[string]*Package),
 		packages:      make(map[*types.Package]*Package),
@@ -33,12 +32,6 @@ func NewProgram(fset *token.FileSet, mode BuilderMode) *Program {
 		instances:     make(map[*Function]*instanceSet),
 		parameterized: tpWalker{seen: make(map[types.Type]bool)},
 	}
-
-	h := typeutil.MakeHasher() // protected by methodsMu, in effect
-	prog.methodSets.SetHasher(h)
-	prog.runtimeTypes.SetHasher(h)
-
-	return prog
 }
 
 // memberFromObject populates package pkg with a member for the
@@ -196,7 +189,7 @@ func (c *creator) Len() int           { return len(*c) }
 // subsequent call to ImportedPackage(pkg.Path()).
 //
 // The real work of building SSA form for each function is not done
-// until a subsequent call to Package.Build().
+// until a subsequent call to Package.Build.
 func (prog *Program) CreatePackage(pkg *types.Package, files []*ast.File, info *types.Info, importable bool) *Package {
 	p := &Package{
 		Prog:    prog,
@@ -218,7 +211,7 @@ func (prog *Program) CreatePackage(pkg *types.Package, files []*ast.File, info *
 		Prog:      prog,
 		build:     (*builder).buildPackageInit,
 		info:      p.info,
-		goversion: "", // See Package.build() for details.
+		goversion: "", // See Package.build for details.
 	}
 	p.Members[p.init.name] = p.init
 	p.created.Add(p.init)

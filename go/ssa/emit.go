@@ -207,6 +207,8 @@ func isValuePreserving(ut_src, ut_dst types.Type) bool {
 // and returns the converted value.  Implicit conversions are required
 // by language assignability rules in assignments, parameter passing,
 // etc.
+//
+// Acquires f.Prog.methodsMu < f.Prog.runtimeTypesMu.
 func emitConv(f *Function, val Value, typ types.Type) Value {
 	t_src := val.Type()
 
@@ -242,6 +244,16 @@ func emitConv(f *Function, val Value, typ types.Type) Value {
 		if t, ok := ut_src.(*types.Basic); ok && t.Info()&types.IsUntyped != 0 {
 			val = emitConv(f, val, types.Default(ut_src))
 		}
+
+		// Record the types of operands to MakeInterface, if
+		// non-parameterized, as they are the set of runtime types.
+		// TODO(taking): simplify the locking.
+		t := val.Type()
+		f.Prog.methodsMu.Lock() // for isParameterized
+		if f.typeparams.Len() == 0 || !f.Prog.parameterized.isParameterized(t) {
+			addRuntimeType(f.Prog, t)
+		}
+		f.Prog.methodsMu.Unlock()
 
 		mi := &MakeInterface{X: val}
 		mi.setType(typ)
@@ -572,48 +584,6 @@ func emitFieldSelection(f *Function, v Value, index int, wantAddr bool, id *ast.
 	}
 	emitDebugRef(f, id, v, wantAddr)
 	return v
-}
-
-// emitSliceToArray emits to f code to convert a slice value to an array value.
-//
-// Precondition: all types in type set of typ are arrays and convertible to all
-// types in the type set of val.Type().
-func emitSliceToArray(f *Function, val Value, typ types.Type) Value {
-	// Emit the following:
-	// if val == nil && len(typ) == 0 {
-	//    ptr = &[0]T{}
-	// } else {
-	//	  ptr = SliceToArrayPointer(val)
-	// }
-	// v = *ptr
-
-	ptype := types.NewPointer(typ)
-	p := &SliceToArrayPointer{X: val}
-	p.setType(ptype)
-	ptr := f.emit(p)
-
-	nilb := f.newBasicBlock("slicetoarray.nil")
-	nonnilb := f.newBasicBlock("slicetoarray.nonnil")
-	done := f.newBasicBlock("slicetoarray.done")
-
-	cond := emitCompare(f, token.EQL, ptr, zeroConst(ptype), token.NoPos)
-	emitIf(f, cond, nilb, nonnilb)
-	f.currentBlock = nilb
-
-	zero := emitLocal(f, f.typ(typ), token.NoPos, "phizero")
-	emitJump(f, done)
-	f.currentBlock = nonnilb
-
-	emitJump(f, done)
-	f.currentBlock = done
-
-	phi := &Phi{Edges: []Value{zero, ptr}, Comment: "slicetoarray"}
-	phi.pos = val.Pos()
-	phi.setType(typ)
-	x := f.emit(phi)
-	unOp := &UnOp{Op: token.MUL, X: x}
-	unOp.setType(typ)
-	return f.emit(unOp)
 }
 
 // createRecoverBlock emits to f a block of code to return after a

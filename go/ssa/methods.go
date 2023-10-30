@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"go/types"
 
+	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -21,7 +22,7 @@ import (
 //
 // Thread-safe.
 //
-// EXCLUSIVE_LOCKS_ACQUIRED(prog.methodsMu)
+// Acquires prog.methodsMu.
 func (prog *Program) MethodValue(sel *types.Selection) *Function {
 	if sel.Kind() != types.MethodVal {
 		panic(fmt.Sprintf("MethodValue(%s) kind != MethodVal", sel))
@@ -70,7 +71,7 @@ type methodSet struct {
 }
 
 // Precondition: T is a concrete type, e.g. !isInterface(T) and not parameterized.
-// EXCLUSIVE_LOCKS_REQUIRED(prog.methodsMu)
+// Requires prog.methodsMu.
 func (prog *Program) createMethodSet(T types.Type) *methodSet {
 	if prog.mode&SanityCheckFunctions != 0 {
 		if types.IsInterface(T) || prog.parameterized.isParameterized(T) {
@@ -87,7 +88,7 @@ func (prog *Program) createMethodSet(T types.Type) *methodSet {
 
 // Adds any created functions to cr.
 // Precondition: T is a concrete type, e.g. !isInterface(T) and not parameterized.
-// EXCLUSIVE_LOCKS_REQUIRED(prog.methodsMu)
+// Requires prog.methodsMu.
 func (prog *Program) addMethod(mset *methodSet, sel *types.Selection, cr *creator) *Function {
 	if sel.Kind() == types.MethodExpr {
 		panic(sel)
@@ -126,17 +127,23 @@ func (prog *Program) addMethod(mset *methodSet, sel *types.Selection, cr *creato
 //
 // Thread-safe.
 //
-// EXCLUSIVE_LOCKS_ACQUIRED(prog.methodsMu)
+// Acquires prog.runtimeTypesMu.
 func (prog *Program) RuntimeTypes() []types.Type {
-	prog.methodsMu.Lock()
-	defer prog.methodsMu.Unlock()
+	prog.runtimeTypesMu.Lock()
+	rtypes := prog.runtimeTypes.Keys()
+	prog.runtimeTypesMu.Unlock()
 
-	var res []types.Type
-	prog.methodSets.Iterate(func(T types.Type, v interface{}) {
-		if v.(*methodSet).complete {
-			res = append(res, T)
+	// Remove interfaces and types with empty method sets,
+	// so as not to change the historic behavior-yet.
+	// TODO(adonovan): change it in the next CL 538357,
+	// when we remove the kludge in Package.Build, keeping
+	// the observable semantic changes together.
+	res := rtypes[:0]
+	for _, t := range rtypes {
+		if !types.IsInterface(t) && prog.MethodSets.MethodSet(t).Len() > 0 {
+			res = append(res, t)
 		}
-	})
+	}
 	return res
 }
 
@@ -149,124 +156,114 @@ func (prog *Program) declaredFunc(obj *types.Func) *Function {
 	panic("no concrete method: " + obj.String())
 }
 
-// needMethodsOf ensures that runtime type information (including the
-// complete method set) is available for the specified type T and all
-// its subcomponents.
+// forEachReachable calls f for type T and each type reachable from
+// its type through reflection.
 //
-// needMethodsOf must be called for at least every type that is an
-// operand of some MakeInterface instruction, and for the type of
-// every exported package member.
+// The function f must use memoization to break cycles and
+// return false when the type has already been visited.
 //
-// Adds any created functions to cr.
-//
-// Precondition: T is not a method signature (*Signature with Recv()!=nil).
-// Precondition: T is not parameterized.
-//
-// Thread-safe.  (Called via Package.build from multiple builder goroutines.)
-//
-// TODO(adonovan): make this faster.  It accounts for 20% of SSA build time.
-//
-// EXCLUSIVE_LOCKS_ACQUIRED(prog.methodsMu)
-func (prog *Program) needMethodsOf(T types.Type, cr *creator) {
-	prog.methodsMu.Lock()
-	prog.needMethods(T, false, cr)
-	prog.methodsMu.Unlock()
-}
-
-// Precondition: T is not a method signature (*Signature with Recv()!=nil).
-// Precondition: T is not parameterized.
-// Recursive case: skip => don't create methods for T.
-//
-// EXCLUSIVE_LOCKS_REQUIRED(prog.methodsMu)
-func (prog *Program) needMethods(T types.Type, skip bool, cr *creator) {
-	// Each package maintains its own set of types it has visited.
-	if prevSkip, ok := prog.runtimeTypes.At(T).(bool); ok {
-		// needMethods(T) was previously called
-		if !prevSkip || skip {
-			return // already seen, with same or false 'skip' value
-		}
-	}
-	prog.runtimeTypes.Set(T, skip)
-
-	tmset := prog.MethodSets.MethodSet(T)
-
-	if !skip && !types.IsInterface(T) && tmset.Len() > 0 {
-		// Create methods of T.
-		mset := prog.createMethodSet(T)
-		if !mset.complete {
-			mset.complete = true
-			n := tmset.Len()
-			for i := 0; i < n; i++ {
-				prog.addMethod(mset, tmset.At(i), cr)
+// TODO(adonovan): publish in typeutil and share with go/callgraph/rta.
+func forEachReachable(msets *typeutil.MethodSetCache, T types.Type, f func(types.Type) bool) {
+	var visit func(T types.Type, skip bool)
+	visit = func(T types.Type, skip bool) {
+		if !skip {
+			if !f(T) {
+				return
 			}
 		}
-	}
 
-	// Recursion over signatures of each method.
-	for i := 0; i < tmset.Len(); i++ {
-		sig := tmset.At(i).Type().(*types.Signature)
-		prog.needMethods(sig.Params(), false, cr)
-		prog.needMethods(sig.Results(), false, cr)
-	}
-
-	switch t := T.(type) {
-	case *types.Basic:
-		// nop
-
-	case *types.Interface:
-		// nop---handled by recursion over method set.
-
-	case *types.Pointer:
-		prog.needMethods(t.Elem(), false, cr)
-
-	case *types.Slice:
-		prog.needMethods(t.Elem(), false, cr)
-
-	case *types.Chan:
-		prog.needMethods(t.Elem(), false, cr)
-
-	case *types.Map:
-		prog.needMethods(t.Key(), false, cr)
-		prog.needMethods(t.Elem(), false, cr)
-
-	case *types.Signature:
-		if t.Recv() != nil {
-			panic(fmt.Sprintf("Signature %s has Recv %s", t, t.Recv()))
-		}
-		prog.needMethods(t.Params(), false, cr)
-		prog.needMethods(t.Results(), false, cr)
-
-	case *types.Named:
-		// A pointer-to-named type can be derived from a named
-		// type via reflection.  It may have methods too.
-		prog.needMethods(types.NewPointer(T), false, cr)
-
-		// Consider 'type T struct{S}' where S has methods.
-		// Reflection provides no way to get from T to struct{S},
-		// only to S, so the method set of struct{S} is unwanted,
-		// so set 'skip' flag during recursion.
-		prog.needMethods(t.Underlying(), true, cr)
-
-	case *types.Array:
-		prog.needMethods(t.Elem(), false, cr)
-
-	case *types.Struct:
-		for i, n := 0, t.NumFields(); i < n; i++ {
-			prog.needMethods(t.Field(i).Type(), false, cr)
+		// Recursion over signatures of each method.
+		tmset := msets.MethodSet(T)
+		for i := 0; i < tmset.Len(); i++ {
+			sig := tmset.At(i).Type().(*types.Signature)
+			// It is tempting to call visit(sig, false)
+			// but, as noted in golang.org/cl/65450043,
+			// the Signature.Recv field is ignored by
+			// types.Identical and typeutil.Map, which
+			// is confusing at best.
+			//
+			// More importantly, the true signature rtype
+			// reachable from a method using reflection
+			// has no receiver but an extra ordinary parameter.
+			// For the Read method of io.Reader we want:
+			//   func(Reader, []byte) (int, error)
+			// but here sig is:
+			//   func([]byte) (int, error)
+			// with .Recv = Reader (though it is hard to
+			// notice because it doesn't affect Signature.String
+			// or types.Identical).
+			//
+			// TODO(adonovan): construct and visit the correct
+			// non-method signature with an extra parameter
+			// (though since unnamed func types have no methods
+			// there is essentially no actual demand for this).
+			//
+			// TODO(adonovan): document whether or not it is
+			// safe to skip non-exported methods (as RTA does).
+			visit(sig.Params(), true)  // skip the Tuple
+			visit(sig.Results(), true) // skip the Tuple
 		}
 
-	case *types.Tuple:
-		for i, n := 0, t.Len(); i < n; i++ {
-			prog.needMethods(t.At(i).Type(), false, cr)
+		switch T := T.(type) {
+		case *types.Basic:
+			// nop
+
+		case *types.Interface:
+			// nop---handled by recursion over method set.
+
+		case *types.Pointer:
+			visit(T.Elem(), false)
+
+		case *types.Slice:
+			visit(T.Elem(), false)
+
+		case *types.Chan:
+			visit(T.Elem(), false)
+
+		case *types.Map:
+			visit(T.Key(), false)
+			visit(T.Elem(), false)
+
+		case *types.Signature:
+			if T.Recv() != nil {
+				panic(fmt.Sprintf("Signature %s has Recv %s", T, T.Recv()))
+			}
+			visit(T.Params(), true)  // skip the Tuple
+			visit(T.Results(), true) // skip the Tuple
+
+		case *types.Named:
+			// A pointer-to-named type can be derived from a named
+			// type via reflection.  It may have methods too.
+			visit(types.NewPointer(T), false)
+
+			// Consider 'type T struct{S}' where S has methods.
+			// Reflection provides no way to get from T to struct{S},
+			// only to S, so the method set of struct{S} is unwanted,
+			// so set 'skip' flag during recursion.
+			visit(T.Underlying(), true) // skip the unnamed type
+
+		case *types.Array:
+			visit(T.Elem(), false)
+
+		case *types.Struct:
+			for i, n := 0, T.NumFields(); i < n; i++ {
+				// TODO(adonovan): document whether or not
+				// it is safe to skip non-exported fields.
+				visit(T.Field(i).Type(), false)
+			}
+
+		case *types.Tuple:
+			for i, n := 0, T.Len(); i < n; i++ {
+				visit(T.At(i).Type(), false)
+			}
+
+		case *typeparams.TypeParam, *typeparams.Union:
+			// Type parameters cannot be reached from ground types.
+			panic(T)
+
+		default:
+			panic(T)
 		}
-
-	case *typeparams.TypeParam:
-		panic(T) // type parameters are always abstract.
-
-	case *typeparams.Union:
-		// nop
-
-	default:
-		panic(T)
 	}
+	visit(T, false)
 }

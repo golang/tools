@@ -350,14 +350,3 @@ func Foo[T any, S any](t T, s S) {
 		})
 	}
 }
-
-// instancesStr returns a sorted slice of string
-// representation of instances.
-func instancesStr(instances []*Function) []string {
-	var is []string
-	for _, i := range instances {
-		is = append(is, fmt.Sprintf("%v", i))
-	}
-	sort.Strings(is)
-	return is
-}
