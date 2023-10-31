@@ -22,10 +22,12 @@ import (
 
 	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/txtar"
 )
 
 func isEmpty(f *ssa.Function) bool { return f.Blocks == nil }
@@ -163,6 +165,116 @@ func main() {
 	if callNum != 4 {
 		t.Errorf("in main.main: got %d calls, want %d", callNum, 4)
 	}
+}
+
+// Tests that methods from indirect dependencies not subject to
+// CreatePackage are created as needed.
+func TestNoIndirectCreatePackage(t *testing.T) {
+	testenv.NeedsGoBuild(t) // for go/packages
+
+	src := `
+-- go.mod --
+module testdata
+go 1.18
+
+-- a/a.go --
+package a
+
+import "testdata/b"
+
+func A() {
+	var x b.B
+	x.F()
+}
+
+-- b/b.go --
+package b
+
+import "testdata/c"
+
+type B struct { c.C }
+
+-- c/c.go --
+package c
+
+type C int
+func (C) F() {}
+`
+	dir := t.TempDir()
+	if err := extractArchive(dir, src); err != nil {
+		t.Fatal(err)
+	}
+	pkgs, err := loadPackages(dir, "testdata/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := pkgs[0]
+
+	// Create a from syntax, its direct deps b from types, but not indirect deps c.
+	prog := ssa.NewProgram(a.Fset, ssa.SanityCheckFunctions|ssa.PrintFunctions)
+	aSSA := prog.CreatePackage(a.Types, a.Syntax, a.TypesInfo, false)
+	for _, p := range a.Types.Imports() {
+		prog.CreatePackage(p, nil, nil, true)
+	}
+
+	// Build SSA for package a.
+	aSSA.Build()
+
+	// Find the function in the sole call in the sole block of function a.A.
+	var got string
+	for _, instr := range aSSA.Members["A"].(*ssa.Function).Blocks[0].Instrs {
+		if call, ok := instr.(*ssa.Call); ok {
+			f := call.Call.Value.(*ssa.Function)
+			got = fmt.Sprintf("%v # %s", f, f.Synthetic)
+			break
+		}
+	}
+	want := "(testdata/c.C).F # from type information (on demand)"
+	if got != want {
+		t.Errorf("for sole call in a.A, got: <<%s>>, want <<%s>>", got, want)
+	}
+}
+
+// extractArchive extracts the txtar archive into the specified directory.
+func extractArchive(dir, arch string) error {
+	// TODO(adonovan): publish this a helper (#61386).
+	extractTxtar := func(ar *txtar.Archive, dir string) error {
+		for _, file := range ar.Files {
+			name := filepath.Join(dir, file.Name)
+			if err := os.MkdirAll(filepath.Dir(name), 0777); err != nil {
+				return err
+			}
+			if err := os.WriteFile(name, file.Data, 0666); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Extract archive to temporary tree.
+	ar := txtar.Parse([]byte(arch))
+	return extractTxtar(ar, dir)
+}
+
+// loadPackages loads packages from the specified directory, using LoadSyntax.
+func loadPackages(dir string, patterns ...string) ([]*packages.Package, error) {
+	cfg := &packages.Config{
+		Dir:  dir,
+		Mode: packages.LoadSyntax,
+		Env: append(os.Environ(),
+			"GO111MODULES=on",
+			"GOPATH=",
+			"GOWORK=off",
+			"GOPROXY=off"),
+	}
+	pkgs, err := packages.Load(cfg, patterns...)
+	if err != nil {
+		return nil, err
+	}
+	if packages.PrintErrors(pkgs) > 0 {
+		return nil, fmt.Errorf("there were errors")
+	}
+	return pkgs, nil
 }
 
 // TestRuntimeTypes tests that (*Program).RuntimeTypes() includes all necessary types.

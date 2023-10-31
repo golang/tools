@@ -337,7 +337,6 @@ func (f *Function) removeNilBlocks() {
 // size of the instruction stream, and causes Functions to depend upon
 // the ASTs, potentially keeping them live in memory for longer.
 func (pkg *Package) SetDebugMode(debug bool) {
-	// TODO(adonovan): do we want ast.File granularity?
 	pkg.debug = debug
 }
 
@@ -482,7 +481,7 @@ func writeSignature(buf *bytes.Buffer, from *types.Package, name string, sig *ty
 func (fn *Function) declaredPackage() *Package {
 	switch {
 	case fn.Pkg != nil:
-		return fn.Pkg // non-generic function
+		return fn.Pkg // non-generic function  (does that follow??)
 	case fn.topLevelOrigin != nil:
 		return fn.topLevelOrigin.Pkg // instance of a named generic function
 	case fn.parent != nil:

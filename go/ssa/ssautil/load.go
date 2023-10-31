@@ -35,6 +35,24 @@ import (
 //
 // The mode parameter controls diagnostics and checking during SSA construction.
 func Packages(initial []*packages.Package, mode ssa.BuilderMode) (*ssa.Program, []*ssa.Package) {
+	// TODO(adonovan): opt: this calls CreatePackage far more than
+	// necessary: for all dependencies, not just the (non-initial)
+	// direct dependencies of the initial packages.
+	//
+	// But can it reasonably be changed without breaking the
+	// spirit and/or letter of the law above? Clients may notice
+	// if we call CreatePackage less, as methods like
+	// Program.FuncValue will return nil. Or must we provide a new
+	// function (and perhaps deprecate this one)? Is it worth it?
+	//
+	// Tim King makes the interesting point that it would be
+	// possible to entirely alleviate the client from the burden
+	// of calling CreatePackage for non-syntax packages, if we
+	// were to treat vars and funcs lazily in the same way we now
+	// treat methods. (In essence, try to move away from the
+	// notion of ssa.Packages, and make the Program answer
+	// all reasonable questions about any types.Object.)
+
 	return doPackages(initial, mode, false)
 }
 
@@ -168,6 +186,25 @@ func BuildPackage(tc *types.Config, fset *token.FileSet, pkg *types.Package, fil
 		}
 	}
 	createAll(pkg.Imports())
+
+	// TODO(adonovan): we could replace createAll with just:
+	//
+	// // Create SSA packages for all imports.
+	// for _, p := range pkg.Imports() {
+	// 	prog.CreatePackage(p, nil, nil, true)
+	// }
+	//
+	// (with minor changes to changes to ../builder_test.go as
+	// shown in CL 511715 PS 10.) But this would strictly violate
+	// the letter of the doc comment above, which says "all
+	// dependencies created".
+	//
+	// Tim makes the good point with some extra work we could
+	// remove the need for any CreatePackage calls except the
+	// ones with syntax (i.e. primary packages). Of course
+	// You wouldn't have ssa.Packages and Members for as
+	// many things but no-one really uses that anyway.
+	// I wish I had done this from the outset.
 
 	// Create and build the primary package.
 	ssapkg := prog.CreatePackage(pkg, files, info, false)

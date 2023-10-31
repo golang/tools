@@ -33,8 +33,6 @@ type SSA struct {
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
-	// Plundered from ssautil.BuildPackage.
-
 	// We must create a new Program for each Package because the
 	// analysis API provides no place to hang a Program shared by
 	// all Packages. Consequently, SSA Packages and Functions do not
@@ -51,20 +49,10 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 	prog := ssa.NewProgram(pass.Fset, mode)
 
-	// Create SSA packages for all imports.
-	// Order is not significant.
-	created := make(map[*types.Package]bool)
-	var createAll func(pkgs []*types.Package)
-	createAll = func(pkgs []*types.Package) {
-		for _, p := range pkgs {
-			if !created[p] {
-				created[p] = true
-				prog.CreatePackage(p, nil, nil, true)
-				createAll(p.Imports())
-			}
-		}
+	// Create SSA packages for direct imports.
+	for _, p := range pass.Pkg.Imports() {
+		prog.CreatePackage(p, nil, nil, true)
 	}
-	createAll(pass.Pkg.Imports())
 
 	// Create and build the primary package.
 	ssapkg := prog.CreatePackage(pass.Pkg, pass.Files, pass.TypesInfo, false)

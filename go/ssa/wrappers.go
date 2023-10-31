@@ -79,7 +79,6 @@ func createWrapper(prog *Program, sel *selection, cr *creator) *Function {
 }
 
 // buildWrapper builds fn.Body for a method wrapper.
-// Acquires fn.Prog.methodsMu.
 func (b *builder) buildWrapper(fn *Function) {
 	var recv *types.Var // wrapper's receiver or thunk's params[0]
 	var start int       // first regular param
@@ -141,13 +140,7 @@ func (b *builder) buildWrapper(fn *Function) {
 		if _, ptrObj := deptr(r); !ptrObj {
 			v = emitLoad(fn, v)
 		}
-		callee := fn.Prog.originFunc(fn.object)
-		if callee.typeparams.Len() > 0 {
-			fn.Prog.methodsMu.Lock()
-			callee = callee.instance(receiverTypeArgs(fn.object), b.created)
-			fn.Prog.methodsMu.Unlock()
-		}
-		c.Call.Value = callee
+		c.Call.Value = fn.Prog.objectMethod(fn.object, b.created)
 		c.Call.Args = append(c.Call.Args, v)
 	} else {
 		c.Call.Method = fn.object
@@ -218,7 +211,6 @@ func createBound(prog *Program, obj *types.Func, cr *creator) *Function {
 }
 
 // buildBound builds fn.Body for a bound method closure.
-// Acquires fn.Prog.methodsMu.
 func (b *builder) buildBound(fn *Function) {
 	fn.startBody()
 	createParams(fn, 0)
@@ -226,13 +218,7 @@ func (b *builder) buildBound(fn *Function) {
 
 	recv := fn.FreeVars[0]
 	if !types.IsInterface(recvType(fn.object)) { // concrete
-		callee := fn.Prog.originFunc(fn.object)
-		if callee.typeparams.Len() > 0 {
-			fn.Prog.methodsMu.Lock()
-			callee = callee.instance(receiverTypeArgs(fn.object), b.created)
-			fn.Prog.methodsMu.Unlock()
-		}
-		c.Call.Value = callee
+		c.Call.Value = fn.Prog.objectMethod(fn.object, b.created)
 		c.Call.Args = []Value{recv}
 	} else {
 		c.Call.Method = fn.object

@@ -37,6 +37,11 @@ type Program struct {
 
 	runtimeTypesMu sync.Mutex
 	runtimeTypes   typeutil.Map // set of runtime types (from MakeInterface)
+
+	// objectMethods is a memoization of objectMethod
+	// to avoid creation of duplicate methods from type information.
+	objectMethodsMu sync.Mutex
+	objectMethods   map[*types.Func]*Function
 }
 
 // A Package is a single analyzed Go package containing Members for

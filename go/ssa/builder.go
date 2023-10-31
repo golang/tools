@@ -34,13 +34,6 @@ package ssa
 // Generic functions declared in a package P can be instantiated from functions
 // outside of P. This happens independently of the CREATE and BUILD phase of P.
 //
-// Locks:
-//
-// Mutexes are currently acquired according to the following order:
-//     Prog.methodsMu ⊃ canonizer.mu ⊃ printMu
-// where x ⊃ y denotes that y can be acquired while x is held
-// and x cannot be acquired while y is held.
-//
 // Synthetics:
 //
 // During the BUILD phase new functions can be created and built. These include:
@@ -795,7 +788,9 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 		case *types.Nil:
 			return zeroConst(fn.instanceType(e))
 		}
+
 		// Package-level func or var?
+		// (obj must belong to same package or a direct import.)
 		if v := fn.Prog.packageLevelMember(obj); v != nil {
 			if g, ok := v.(*Global); ok {
 				return emitLoad(fn, g) // var (address)
@@ -997,11 +992,7 @@ func (b *builder) setCallFunc(fn *Function, e *ast.CallExpr, c *CallCommon) {
 				c.Method = obj
 			} else {
 				// "Call"-mode call.
-				callee := fn.Prog.originFunc(obj)
-				if callee.typeparams.Len() > 0 {
-					callee = callee.instance(receiverTypeArgs(obj), b.created)
-				}
-				c.Value = callee
+				c.Value = fn.Prog.objectMethod(obj, b.created)
 				c.Args = append(c.Args, v)
 			}
 			return
@@ -2592,11 +2583,11 @@ func (b *builder) buildFromSyntax(fn *Function) {
 // Acquires prog.runtimeTypesMu.
 func addRuntimeType(prog *Program, t types.Type) {
 	prog.runtimeTypesMu.Lock()
+	defer prog.runtimeTypesMu.Unlock()
 	forEachReachable(&prog.MethodSets, t, func(t types.Type) bool {
 		prev, _ := prog.runtimeTypes.Set(t, true).(bool)
 		return !prev // already seen?
 	})
-	prog.runtimeTypesMu.Unlock()
 }
 
 // Build calls Package.Build for each package in prog.
@@ -2624,9 +2615,11 @@ func (prog *Program) Build() {
 
 // Build builds SSA code for all functions and vars in package p.
 //
-// Precondition: CreatePackage must have been called for all of p's
-// direct imports (and hence its direct imports must have been
-// error-free).
+// CreatePackage must have been called for all of p's direct imports
+// (and hence its direct imports must have been error-free). It is not
+// necessary to call CreatePackage for indirect dependencies.
+// Functions will be created for all necessary methods in those
+// packages on demand.
 //
 // Build is idempotent and thread-safe.
 func (p *Package) Build() { p.buildOnce.Do(p.build) }

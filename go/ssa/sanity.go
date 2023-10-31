@@ -422,7 +422,8 @@ func (s *sanity) checkFunction(fn *Function) bool {
 	// shared across packages, or duplicated as weak symbols in a
 	// separate-compilation model), and error.Error.
 	if fn.Pkg == nil {
-		if strings.HasPrefix(fn.Synthetic, "wrapper ") ||
+		if strings.HasPrefix(fn.Synthetic, "from type information (on demand)") ||
+			strings.HasPrefix(fn.Synthetic, "wrapper ") ||
 			strings.HasPrefix(fn.Synthetic, "bound ") ||
 			strings.HasPrefix(fn.Synthetic, "thunk ") ||
 			strings.HasSuffix(fn.name, "Error") ||

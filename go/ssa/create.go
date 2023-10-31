@@ -21,6 +21,17 @@ import (
 // NewProgram returns a new SSA Program.
 //
 // mode controls diagnostics and checking during SSA construction.
+//
+// To construct an SSA program:
+//
+//   - Call NewProgram to create an empty Program.
+//   - Call CreatePackage providing typed syntax for each package
+//     you want to build, and call it with types but not
+//     syntax for each of those package's direct dependencies.
+//   - Call [Package.Build] on each syntax package you wish to build,
+//     or [Program.Build] to build all of them.
+//
+// See the Example tests for simple examples.
 func NewProgram(fset *token.FileSet, mode BuilderMode) *Program {
 	return &Program{
 		Fset:          fset,
@@ -92,7 +103,9 @@ func memberFromObject(pkg *Package, obj types.Object, syntax ast.Node, goversion
 	}
 }
 
-// createFunction creates a function or method.
+// createFunction creates a function or method. It supports both
+// CreatePackage (with or without syntax) and the on-demand creation
+// of methods in non-created packages based on their types.Func.
 func createFunction(prog *Program, obj *types.Func, name string, syntax ast.Node, info *types.Info, goversion string, cr *creator) *Function {
 	sig := obj.Type().(*types.Signature)
 
@@ -207,7 +220,11 @@ func (c *creator) Len() int           { return len(*c) }
 //
 // The real work of building SSA form for each function is not done
 // until a subsequent call to Package.Build.
+//
+// CreatePackage should not be called after building any package in
+// the program.
 func (prog *Program) CreatePackage(pkg *types.Package, files []*ast.File, info *types.Info, importable bool) *Package {
+	// TODO(adonovan): assert that no package has yet been built.
 	if pkg == nil {
 		panic("nil pkg") // otherwise pkg.Scope below returns types.Universe!
 	}
@@ -296,8 +313,8 @@ func (prog *Program) CreatePackage(pkg *types.Package, files []*ast.File, info *
 // printMu serializes printing of Packages/Functions to stdout.
 var printMu sync.Mutex
 
-// AllPackages returns a new slice containing all packages in the
-// program prog in unspecified order.
+// AllPackages returns a new slice containing all packages created by
+// prog.CreatePackage in in unspecified order.
 func (prog *Program) AllPackages() []*Package {
 	pkgs := make([]*Package, 0, len(prog.packages))
 	for _, pkg := range prog.packages {
