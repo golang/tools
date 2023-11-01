@@ -1,0 +1,212 @@
+This test checks various ranking of completion results.
+
+-- flags --
+-ignore_extra_diags
+
+-- settings.json --
+{
+	"completeUnimported": false,
+	"deepCompletion": false
+}
+
+-- go.mod --
+module golang.org/lsptests/rank
+
+go 1.18
+
+-- struct/struct_rank.go --
+package struct_rank
+
+type foo struct {
+	c int //@item(c_rank, "c", "int", "field")
+	b int //@item(b_rank, "b", "int", "field")
+	a int //@item(a_rank, "a", "int", "field")
+}
+
+func f() {
+	foo := foo{} //@rank("}", c_rank, b_rank, a_rank)
+}
+
+-- assign_rank.go --
+package rank
+
+// Literal completion results.
+/* int() */ //@item(int, "int()", "int", "var")
+/* string() */ //@item(string, "string()", "string", "var")
+
+var (
+	apple int = 3         //@item(apple, "apple", "int", "var")
+	pear string = "hello" //@item(pear, "pear", "string", "var")
+)
+
+func _() {
+	orange := 1      //@item(orange, "orange", "int", "var")
+	grape := "hello" //@item(grape, "grape", "string", "var")
+	orange, grape = 2, "hello"  //@complete(" \"", grape, pear, string, orange, apple)
+}
+
+func _() {
+	var pineapple int //@item(pineapple, "pineapple", "int", "var")
+	pineapple = 1    //@complete(" 1", pineapple, apple, int, pear)
+
+	y := //@complete(" /", pineapple, apple, pear)
+}
+
+-- binexpr_rank.go --
+package rank
+
+func _() {
+  _ = 5 +  ; //@complete(" ;", apple, pear)
+  y :=  + 5; //@complete(" +", apple, pear)
+
+  if 6 ==  {} //@complete(" {", apple, pear)
+}
+
+-- boolexpr_rank.go --
+package rank
+
+func _() {
+	someRandomBoolFunc := func() bool { //@item(boolExprFunc, "someRandomBoolFunc", "func() bool", "var")
+		return true
+	}
+
+	var foo, bar int     //@item(boolExprBar, "bar", "int", "var")
+	if foo == 123 && b { //@rank(" {", boolExprBar, boolExprFunc)
+	}
+}
+
+-- convert_rank.go --
+package rank
+
+import "time"
+
+// Copied from the old builtins.go, which has been ported to the new marker tests.
+/* complex(r float64, i float64) */ //@item(complex, "complex", "func(r float64, i float64) complex128", "func")
+
+func _() {
+	type strList []string
+	wantsStrList := func(strList) {}
+
+	var (
+		convA string   //@item(convertA, "convA", "string", "var")
+		convB []string //@item(convertB, "convB", "[]string", "var")
+	)
+	wantsStrList(strList(conv)) //@complete("))", convertB, convertA)
+}
+
+func _() {
+	type myInt int
+
+	const (
+		convC        = "hi"    //@item(convertC, "convC", "string", "const")
+		convD        = 123     //@item(convertD, "convD", "int", "const")
+		convE int    = 123     //@item(convertE, "convE", "int", "const")
+		convF string = "there" //@item(convertF, "convF", "string", "const")
+		convG myInt  = 123     //@item(convertG, "convG", "myInt", "const")
+	)
+
+	var foo int
+	foo = conv //@rank(" //", convertE, convertD)
+
+	var mi myInt
+	mi = conv //@rank(" //", convertG, convertD, convertE)
+	mi + conv //@rank(" //", convertG, convertD, convertE)
+
+	1 + conv //@rank(" //", convertD, convertC),rank(" //", convertE, convertC),rank(" //", convertG, convertC)
+
+	type myString string
+	var ms myString
+	ms = conv //@rank(" //", convertC, convertF)
+
+	type myUint uint32
+	var mu myUint
+	mu = conv //@rank(" //", convertD, convertE)
+
+	// don't downrank constants when assigning to interface{}
+	var _ interface{} = c //@rank(" //", convertD, complex)
+
+	var _ time.Duration = conv //@rank(" //", convertD, convertE),snippet(" //", convertE, "time.Duration(convE)")
+
+	var convP myInt   //@item(convertP, "convP", "myInt", "var")
+	var _ *int = conv //@snippet(" //", convertP, "(*int)(&convP)")
+
+	var ff float64 //@item(convertFloat, "ff", "float64", "var")
+	f == convD     //@snippet(" =", convertFloat, "ff")
+}
+
+-- switch_rank.go --
+package rank
+
+import "time"
+
+func _() {
+	switch pear {
+	case _: //@rank("_", pear, apple)
+	}
+
+	time.Monday //@item(timeMonday, "time.Monday", "time.Weekday", "const"),item(monday ,"Monday", "time.Weekday", "const")
+	time.Friday //@item(timeFriday, "time.Friday", "time.Weekday", "const"),item(friday ,"Friday", "time.Weekday", "const")
+
+	now := time.Now()
+	now.Weekday //@item(nowWeekday, "now.Weekday", "func() time.Weekday", "method")
+
+	then := time.Now()
+	then.Weekday //@item(thenWeekday, "then.Weekday", "func() time.Weekday", "method")
+
+	switch time.Weekday(0) {
+	case time.Monday, time.Tuesday:
+	case time.Wednesday, time.Thursday:
+	case time.Saturday, time.Sunday:
+	// TODO: these tests were disabled because they require deep completion
+	// (which would break other tests)
+	case t: // rank(":", timeFriday, timeMonday)
+	case time.: //@rank(":", friday, monday)
+
+	case now.Weekday():
+	case week: // rank(":", thenWeekday, nowWeekday)
+	}
+}
+
+-- type_assert_rank.go --
+package rank
+
+func _() {
+	type flower int //@item(flower, "flower", "int", "type")
+	var fig string  //@item(fig, "fig", "string", "var")
+
+	_ = interface{}(nil).(f) //@complete(") //", flower)
+}
+
+-- type_switch_rank.go --
+package rank
+
+import (
+	"fmt"
+	"go/ast"
+)
+
+func _() {
+	type basket int   //@item(basket, "basket", "int", "type")
+	var banana string //@item(banana, "banana", "string", "var")
+
+	switch interface{}(pear).(type) {
+	case b: //@complete(":", basket)
+		b //@complete(" //", banana, basket)
+	}
+
+	Ident  //@item(astIdent, "Ident", "struct{...}", "struct")
+	IfStmt //@item(astIfStmt, "IfStmt", "struct{...}", "struct")
+
+	switch ast.Node(nil).(type) {
+	case *ast.Ident:
+	case *ast.I: //@rank(":", astIfStmt, astIdent)
+	}
+
+	Stringer   //@item(fmtStringer, "Stringer", "interface{...}", "interface")
+	GoStringer //@item(fmtGoStringer, "GoStringer", "interface{...}", "interface")
+
+	switch interface{}(nil).(type) {
+	case fmt.Stringer: //@rank(":", fmtStringer, fmtGoStringer)
+	}
+}
+

@@ -1,3 +1,16 @@
+This test checks various ranking of completion results within function call
+context.
+
+-- flags --
+-ignore_extra_diags
+
+-- settings.json --
+{
+	"completeUnimported": false,
+	"deepCompletion": false
+}
+
+-- func_rank.go --
 package func_rank
 
 import "net/http"
@@ -38,7 +51,7 @@ func _() {
 
 	var aaPtr *string //@item(rankAAPtr, "aaPtr", "*string", "var")
 	var abPtr *int    //@item(rankABPtr, "abPtr", "*int", "var")
-	fnInt(*a)         //@complete(")", rankABPtr, rankAAPtr)
+	fnInt(*a)         //@complete(")", rankABPtr, rankAAPtr, stringAVar)
 
 	_ = func() string {
 		return s.A //@complete(" //", rankAB, rankAA, rankAC)
