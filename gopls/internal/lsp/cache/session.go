@@ -101,7 +101,7 @@ func (s *Session) createView(ctx context.Context, folder *Folder, seqID uint64) 
 	index := atomic.AddInt64(&viewIndex, 1)
 
 	// Get immutable workspace information.
-	info, err := s.getWorkspaceInformation(ctx, folder.Dir, folder.Options)
+	info, err := getWorkspaceInformation(ctx, s.gocmdRunner, s, folder)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -419,7 +419,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 			// synchronously to change processing? Can we assume that the env did not
 			// change, and derive go.work using a combination of the configured
 			// GOWORK value and filesystem?
-			info, err := s.getWorkspaceInformation(ctx, view.folder.Dir, view.folder.Options)
+			info, err := getWorkspaceInformation(ctx, s.gocmdRunner, s, view.folder)
 			if err != nil {
 				// Catastrophic failure, equivalent to a failure of session
 				// initialization and therefore should almost never happen. One
@@ -430,9 +430,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 				// TODO(rfindley): consider surfacing this error more loudly. We
 				// could report a bug, but it's not really a bug.
 				event.Error(ctx, "fetching workspace information", err)
-			}
-
-			if info != view.workspaceInformation {
+			} else if *info != *view.workspaceInformation {
 				if err := s.updateViewLocked(ctx, view, view.folder); err != nil {
 					// More catastrophic failure. The view may or may not still exist.
 					// The best we can do is log and move on.
