@@ -62,8 +62,9 @@ func _() {
 	}
 	x.G = "hi" //@refs("G", GDef, "G")
 	_ = x.E //@refs("E", EDef, "E")
+}
 
-	var y b.BI
+func _(y b.BI) {
 	_ = y.M //@refs("M", MDef, "M")
 	_ = y.N //@refs("N", NDef, "N")
 }

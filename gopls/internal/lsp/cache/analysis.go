@@ -442,7 +442,7 @@ func (snapshot *snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, 
 			if !ok {
 				// Although this 'skip' operation is logically sound,
 				// it is nonetheless surprising that its absence should
-				// cause #60909 since none of the analyzers added for
+				// cause #60909 since none of the analyzers currently added for
 				// requirements (e.g. ctrlflow, inspect, buildssa)
 				// is capable of reporting diagnostics.
 				if summary := root.summary.Actions[stableNames[a]]; summary != nil {

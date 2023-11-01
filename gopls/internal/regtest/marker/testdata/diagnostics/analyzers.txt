@@ -1,5 +1,5 @@
 Test of warning diagnostics from various analyzers:
-copylocks, printf, slog, tests, and timeformat.
+copylocks, printf, slog, tests, timeformat, and nilness.
 
 -- go.mod --
 module example.com
@@ -49,3 +49,9 @@ func _() {
 	fmt.Println(now.Format("2006-02-01")) //@diag("2006-02-01", re"2006-02-01 should be 2006-01-02")
 }
 
+// nilness
+func _(ptr *int) {
+	if ptr == nil {
+		_ = *ptr //@diag("*ptr", re"nil dereference in load")
+	}
+}

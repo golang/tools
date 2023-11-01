@@ -1632,7 +1632,7 @@ func defaultAnalyzers() map[string]*Analyzer {
 		atomicalign.Analyzer.Name:      {Analyzer: atomicalign.Analyzer, Enabled: true},
 		deepequalerrors.Analyzer.Name:  {Analyzer: deepequalerrors.Analyzer, Enabled: true},
 		fieldalignment.Analyzer.Name:   {Analyzer: fieldalignment.Analyzer, Enabled: false},
-		nilness.Analyzer.Name:          {Analyzer: nilness.Analyzer, Enabled: false},
+		nilness.Analyzer.Name:          {Analyzer: nilness.Analyzer, Enabled: true},
 		shadow.Analyzer.Name:           {Analyzer: shadow.Analyzer, Enabled: false},
 		sortslice.Analyzer.Name:        {Analyzer: sortslice.Analyzer, Enabled: true},
 		testinggoroutine.Analyzer.Name: {Analyzer: testinggoroutine.Analyzer, Enabled: true},

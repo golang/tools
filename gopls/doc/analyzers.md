@@ -386,7 +386,7 @@ and:
 		panic(p)
 	}
 
-**Disabled by default. Enable it by setting `"analyses": {"nilness": true}`.**
+**Enabled by default.**
 
 ## **printf**
 
