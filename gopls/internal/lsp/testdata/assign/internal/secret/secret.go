@@ -1,3 +1,0 @@
-package secret
-
-func Hello() {}

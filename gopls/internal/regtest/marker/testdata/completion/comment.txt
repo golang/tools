@@ -1,3 +1,14 @@
+This test checks behavior of completion within comments.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/comment
+
+go 1.18
+
+-- p.go --
 package comment_completion
 
 var p bool

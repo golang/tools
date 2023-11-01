@@ -1,3 +1,19 @@
+This test checks that completion considers assignability when ranking results.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/assign
+
+go 1.18
+
+-- settings.json --
+{
+	"completeUnimported": false
+}
+
+-- assign.go --
 package assign
 
 import "golang.org/lsptests/assign/internal/secret"
@@ -24,3 +40,8 @@ func _() {
 		fooBar := fooBa //@complete(" //", assignFooBar)
 	}
 }
+
+-- internal/secret/secret.go --
+package secret
+
+func Hello() {}

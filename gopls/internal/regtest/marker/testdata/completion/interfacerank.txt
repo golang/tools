@@ -1,3 +1,16 @@
+This test checks that completion ranking accounts for interface assignability.
+
+-- flags --
+-ignore_extra_diags
+
+-- settings.json --
+{
+	"completeUnimported": false,
+	"deepCompletion": false
+}
+
+-- p.go --
+
 package interfacerank
 
 type foo interface {
