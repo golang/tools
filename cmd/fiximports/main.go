@@ -78,13 +78,12 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-
-	exec "golang.org/x/sys/execabs"
 )
 
 // flags

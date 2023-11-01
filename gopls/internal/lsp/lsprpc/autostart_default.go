@@ -6,8 +6,7 @@ package lsprpc
 
 import (
 	"fmt"
-
-	exec "golang.org/x/sys/execabs"
+	"os/exec"
 )
 
 var (

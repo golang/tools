@@ -14,8 +14,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	exec "golang.org/x/sys/execabs"
 	"os"
+	"os/exec"
 	"strings"
 )
 

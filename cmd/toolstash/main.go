@@ -129,12 +129,11 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
-
-	exec "golang.org/x/sys/execabs"
 )
 
 var usageMessage = `usage: toolstash [-n] [-v] [-cmp] command line

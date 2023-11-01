@@ -21,13 +21,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"syscall"
 	"time"
-
-	exec "golang.org/x/sys/execabs"
 )
 
 var (

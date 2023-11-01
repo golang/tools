@@ -83,14 +83,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
-
-	exec "golang.org/x/sys/execabs"
 )
 
 var (

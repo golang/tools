@@ -17,11 +17,10 @@ import (
 	"go/types"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	exec "golang.org/x/sys/execabs"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"

@@ -59,11 +59,10 @@ import (
 	"go/token"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	exec "golang.org/x/sys/execabs"
 )
 
 // ProcessFiles invokes the cgo preprocessor on bp.CgoFiles, parses

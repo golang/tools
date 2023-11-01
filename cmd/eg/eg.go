@@ -16,10 +16,10 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
-	exec "golang.org/x/sys/execabs"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/refactor/eg"
 )
