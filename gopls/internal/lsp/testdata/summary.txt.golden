@@ -1,7 +1,5 @@
 -- summary --
 CallHierarchyCount = 2
-CompletionSnippetCount = 9
-RankedCompletionsCount = 45
 SemanticTokenCount = 3
 SuggestedFixCount = 80
 MethodExtractionCount = 8

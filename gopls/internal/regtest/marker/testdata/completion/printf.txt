@@ -1,3 +1,9 @@
+This test checks various ranking of completion results related to printf.
+
+-- flags --
+-ignore_extra_diags
+
+-- printf.go --
 package printf
 
 import "fmt"

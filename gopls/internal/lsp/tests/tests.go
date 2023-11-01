@@ -16,7 +16,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -26,10 +25,8 @@ import (
 	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/lsp/source/completion"
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/txtar"
 )
@@ -52,9 +49,6 @@ var UpdateGolden = flag.Bool("golden", false, "Update golden files")
 // These type names apparently avoid the need to repeat the
 // type in the field name and the make() expression.
 type CallHierarchy = map[span.Span]*CallHierarchyResult
-type CompletionItems = map[token.Pos]*completion.CompletionItem
-type CompletionSnippets = map[span.Span][]CompletionSnippet
-type RankCompletions = map[span.Span][]Completion
 type SemanticTokens = []span.Span
 type SuggestedFixes = map[span.Span][]SuggestedFix
 type MethodExtractions = map[span.Span]span.Span
@@ -64,19 +58,16 @@ type AddImport = map[span.URI]string
 type SelectionRanges = []span.Span
 
 type Data struct {
-	Config             packages.Config
-	Exported           *packagestest.Exported
-	CallHierarchy      CallHierarchy
-	CompletionItems    CompletionItems
-	CompletionSnippets CompletionSnippets
-	RankCompletions    RankCompletions
-	SemanticTokens     SemanticTokens
-	SuggestedFixes     SuggestedFixes
-	MethodExtractions  MethodExtractions
-	Renames            Renames
-	InlayHints         InlayHints
-	AddImport          AddImport
-	SelectionRanges    SelectionRanges
+	Config            packages.Config
+	Exported          *packagestest.Exported
+	CallHierarchy     CallHierarchy
+	SemanticTokens    SemanticTokens
+	SuggestedFixes    SuggestedFixes
+	MethodExtractions MethodExtractions
+	Renames           Renames
+	InlayHints        InlayHints
+	AddImport         AddImport
+	SelectionRanges   SelectionRanges
 
 	fragments map[string]string
 	dir       string
@@ -97,8 +88,6 @@ type Data struct {
 // we can abolish the interface now.
 type Tests interface {
 	CallHierarchy(*testing.T, span.Span, *CallHierarchyResult)
-	CompletionSnippet(*testing.T, span.Span, CompletionSnippet, bool, CompletionItems)
-	RankCompletion(*testing.T, span.Span, Completion, CompletionItems)
 	SemanticTokens(*testing.T, span.Span)
 	SuggestedFix(*testing.T, span.Span, []SuggestedFix, int)
 	MethodExtraction(*testing.T, span.Span, span.Span)
@@ -107,16 +96,6 @@ type Tests interface {
 	AddImport(*testing.T, span.URI, string)
 	SelectionRanges(*testing.T, span.Span)
 }
-
-type CompletionTestType int
-
-const (
-	// Default runs the standard completion tests.
-	_ = CompletionTestType(iota)
-
-	// CompletionRank candidates in test must be valid and in the right relative order.
-	CompletionRank
-)
 
 type Completion struct {
 	CompletionItems []token.Pos
@@ -201,14 +180,11 @@ func RunTests(t *testing.T, dataDir string, includeMultiModule bool, f func(*tes
 
 func load(t testing.TB, mode string, dir string) *Data {
 	datum := &Data{
-		CallHierarchy:      make(CallHierarchy),
-		CompletionItems:    make(CompletionItems),
-		CompletionSnippets: make(CompletionSnippets),
-		RankCompletions:    make(RankCompletions),
-		Renames:            make(Renames),
-		SuggestedFixes:     make(SuggestedFixes),
-		MethodExtractions:  make(MethodExtractions),
-		AddImport:          make(AddImport),
+		CallHierarchy:     make(CallHierarchy),
+		Renames:           make(Renames),
+		SuggestedFixes:    make(SuggestedFixes),
+		MethodExtractions: make(MethodExtractions),
+		AddImport:         make(AddImport),
 
 		dir:       dir,
 		fragments: map[string]string{},
@@ -341,9 +317,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 
 	// Collect any data that needs to be used by subsequent tests.
 	if err := datum.Exported.Expect(map[string]interface{}{
-		"item":           datum.collectCompletionItems,
-		"rank":           datum.collectCompletions(CompletionRank),
-		"snippet":        datum.collectCompletionSnippets,
 		"semantic":       datum.collectSemanticTokens,
 		"inlayHint":      datum.collectInlayHints,
 		"rename":         datum.collectRenames,
@@ -407,23 +380,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 	t.Helper()
 	checkData(t, data)
 
-	eachCompletion := func(t *testing.T, cases map[span.Span][]Completion, test func(*testing.T, span.Span, Completion, CompletionItems)) {
-		t.Helper()
-
-		for src, exp := range cases {
-			for i, e := range exp {
-				t.Run(SpanName(src)+"_"+strconv.Itoa(i), func(t *testing.T) {
-					t.Helper()
-					if strings.Contains(t.Name(), "cgo") {
-						testenv.NeedsTool(t, "cgo")
-					}
-					test(t, src, e, data.CompletionItems)
-				})
-			}
-
-		}
-	}
-
 	t.Run("CallHierarchy", func(t *testing.T) {
 		t.Helper()
 		for spn, callHierarchyResult := range data.CallHierarchy {
@@ -432,30 +388,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 				tests.CallHierarchy(t, spn, callHierarchyResult)
 			})
 		}
-	})
-
-	t.Run("CompletionSnippets", func(t *testing.T) {
-		t.Helper()
-		for _, placeholders := range []bool{true, false} {
-			for src, expecteds := range data.CompletionSnippets {
-				for i, expected := range expecteds {
-					name := SpanName(src) + "_" + strconv.Itoa(i+1)
-					if placeholders {
-						name += "_placeholders"
-					}
-
-					t.Run(name, func(t *testing.T) {
-						t.Helper()
-						tests.CompletionSnippet(t, src, expected, placeholders, data.CompletionItems)
-					})
-				}
-			}
-		}
-	})
-
-	t.Run("RankCompletions", func(t *testing.T) {
-		t.Helper()
-		eachCompletion(t, data.RankCompletions, tests.RankCompletion)
 	})
 
 	t.Run("SemanticTokens", func(t *testing.T) {
@@ -552,21 +484,7 @@ func Run(t *testing.T, tests Tests, data *Data) {
 func checkData(t *testing.T, data *Data) {
 	buf := &bytes.Buffer{}
 
-	snippetCount := 0
-	for _, want := range data.CompletionSnippets {
-		snippetCount += len(want)
-	}
-
-	countCompletions := func(c map[span.Span][]Completion) (count int) {
-		for _, want := range c {
-			count += len(want)
-		}
-		return count
-	}
-
 	fmt.Fprintf(buf, "CallHierarchyCount = %v\n", len(data.CallHierarchy))
-	fmt.Fprintf(buf, "CompletionSnippetCount = %v\n", snippetCount)
-	fmt.Fprintf(buf, "RankedCompletionsCount = %v\n", countCompletions(data.RankCompletions))
 	fmt.Fprintf(buf, "SemanticTokenCount = %v\n", len(data.SemanticTokens))
 	fmt.Fprintf(buf, "SuggestedFixCount = %v\n", len(data.SuggestedFixes))
 	fmt.Fprintf(buf, "MethodExtractionCount = %v\n", len(data.MethodExtractions))
@@ -653,35 +571,6 @@ func (data *Data) Golden(t *testing.T, tag, target string, update func() ([]byte
 	return file.Data[:len(file.Data)-1] // drop the trailing \n
 }
 
-func (data *Data) collectCompletions(typ CompletionTestType) func(span.Span, []token.Pos) {
-	result := func(m map[span.Span][]Completion, src span.Span, expected []token.Pos) {
-		m[src] = append(m[src], Completion{
-			CompletionItems: expected,
-		})
-	}
-	switch typ {
-	case CompletionRank:
-		return func(src span.Span, expected []token.Pos) {
-			result(data.RankCompletions, src, expected)
-		}
-	default:
-		panic("unsupported")
-	}
-}
-
-func (data *Data) collectCompletionItems(pos token.Pos, label, detail, kind string, args []string) {
-	var documentation string
-	if len(args) > 3 {
-		documentation = args[3]
-	}
-	data.CompletionItems[pos] = &completion.CompletionItem{
-		Label:         label,
-		Detail:        detail,
-		Kind:          protocol.ParseCompletionItemKind(kind),
-		Documentation: documentation,
-	}
-}
-
 func (data *Data) collectAddImports(spn span.Span, imp string) {
 	data.AddImport[spn.URI()] = imp
 }
@@ -754,14 +643,6 @@ func (data *Data) mustRange(spn span.Span) protocol.Range {
 		panic(fmt.Sprintf("converting span %s to range: %v", spn, err))
 	}
 	return rng
-}
-
-func (data *Data) collectCompletionSnippets(spn span.Span, item token.Pos, plain, placeholder string) {
-	data.CompletionSnippets[spn] = append(data.CompletionSnippets[spn], CompletionSnippet{
-		CompletionItem:     item,
-		PlainSnippet:       plain,
-		PlaceholderSnippet: placeholder,
-	})
 }
 
 func uriName(uri span.URI) string {

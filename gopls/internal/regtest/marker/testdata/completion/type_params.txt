@@ -1,6 +1,10 @@
-//go:build go1.18
-// +build go1.18
+This test checks various ranking of completion results related to type
+parameters.
 
+-- flags --
+-ignore_extra_diags
+
+-- type_params.go --
 package typeparams
 
 // Copied from the old builtins.go, which has been ported to the new marker tests.
@@ -32,15 +36,15 @@ func _() {
 
 func takesGeneric[a int | string](s[a]) {
 	"s[a]{}" //@item(tpInScopeLit, "s[a]{}", "", "var")
-	takesGeneric() //@rank(")", tpInScopeLit),snippet(")", tpInScopeLit, "s[a]{\\}", "s[a]{\\}")
+	takesGeneric() //@rank(")", tpInScopeLit),snippet(")", tpInScopeLit, "s[a]{\\}")
 }
 
 func _() {
 	s[int]{} //@item(tpInstLit, "s[int]{}", "", "var")
-	takesGeneric[int]() //@rank(")", tpInstLit),snippet(")", tpInstLit, "s[int]{\\}", "s[int]{\\}")
+	takesGeneric[int]() //@rank(")", tpInstLit),snippet(")", tpInstLit, "s[int]{\\}")
 
 	"s[...]{}" //@item(tpUninstLit, "s[...]{}", "", "var")
-	takesGeneric() //@rank(")", tpUninstLit),snippet(")", tpUninstLit, "s[${1:}]{\\}", "s[${1:a}]{\\}")
+	takesGeneric() //@rank(")", tpUninstLit),snippet(")", tpUninstLit, "s[${1:}]{\\}")
 }
 
 func returnTP[A int | float64](a A) A { //@item(returnTP, "returnTP", "something", "func")
@@ -49,7 +53,7 @@ func returnTP[A int | float64](a A) A { //@item(returnTP, "returnTP", "something
 
 func _() {
 	// disabled - see issue #54822
-	var _ int = returnTP // snippet(" //", returnTP, "returnTP[${1:}](${2:})", "returnTP[${1:A int|float64}](${2:a A})")
+	var _ int = returnTP // snippet(" //", returnTP, "returnTP[${1:}](${2:})")
 
 	var aa int //@item(tpInt, "aa", "int", "var")
 	var ab float64 //@item(tpFloat, "ab", "float64", "var")
@@ -57,11 +61,11 @@ func _() {
 }
 
 func takesFunc[T any](func(T) T) {
-	var _ func(t T) T = f //@snippet(" //", tpLitFunc, "func(t T) T {$0\\}", "func(t T) T {$0\\}")
+	var _ func(t T) T = f //@snippet(" //", tpLitFunc, "func(t T) T {$0\\}")
 }
 
 func _() {
 	_ = "func(...) {}" //@item(tpLitFunc, "func(...) {}", "", "var")
-	takesFunc() //@snippet(")", tpLitFunc, "func(${1:}) ${2:} {$0\\}", "func(${1:t} ${2:T}) ${3:T} {$0\\}")
-	takesFunc[int]() //@snippet(")", tpLitFunc, "func(i int) int {$0\\}", "func(${1:i} int) int {$0\\}")
+	takesFunc() //@snippet(")", tpLitFunc, "func(${1:}) ${2:} {$0\\}")
+	takesFunc[int]() //@snippet(")", tpLitFunc, "func(i int) int {$0\\}")
 }

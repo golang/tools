@@ -1,0 +1,23 @@
+This test checks completion of nested composite literals;
+
+TODO(rfindley): investigate an un-skip the disabled test below.
+
+-- flags --
+-ignore_extra_diags
+
+-- nested_complit.go --
+package nested_complit
+
+type ncFoo struct {} //@item(structNCFoo, "ncFoo", "struct{...}", "struct")
+
+type ncBar struct { //@item(structNCBar, "ncBar", "struct{...}", "struct")
+	baz []ncFoo
+}
+
+func _() {
+	[]ncFoo{} //@item(litNCFoo, "[]ncFoo{}", "", "var")
+	_ := ncBar{
+		// disabled - see issue #54822
+		baz: [] // complete(" //", structNCFoo, structNCBar)
+	}
+}

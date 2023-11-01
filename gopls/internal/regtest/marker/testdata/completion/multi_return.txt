@@ -1,3 +1,10 @@
+This test checks various ranking of completion results related to functions
+with multiple return values.
+
+-- flags --
+-ignore_extra_diags
+
+-- multireturn.go --
 package multireturn
 
 func f0() {} //@item(multiF0, "f0", "func()", "func")
