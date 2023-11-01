@@ -114,6 +114,10 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //     -ignore_extra_diags suppresses errors for unmatched diagnostics
 //     TODO(rfindley): using build constraint expressions for -skip_goos would
 //     be clearer.
+//     -filter_builtins=false disables the filtering of builtins from
+//     completion results.
+//     -filter_keywords=false disables the filtering of keywords from
+//     completion results.
 //     TODO(rfindley): support flag values containing whitespace.
 //   - "settings.json": this file is parsed as JSON, and used as the
 //     session configuration (see gopls/doc/settings.md)
@@ -755,6 +759,8 @@ type markerTest struct {
 	writeGoSum       []string // comma separated dirs to write go sum for
 	skipGOOS         []string // comma separated GOOS values to skip
 	ignoreExtraDiags bool
+	filterBuiltins   bool
+	filterKeywords   bool
 }
 
 // flagSet returns the flagset used for parsing the special "flags" file in the
@@ -766,6 +772,8 @@ func (t *markerTest) flagSet() *flag.FlagSet {
 	flags.Var((*stringListValue)(&t.writeGoSum), "write_sumfile", "if set, write the sumfile for these directories")
 	flags.Var((*stringListValue)(&t.skipGOOS), "skip_goos", "if set, skip this test on these GOOS values")
 	flags.BoolVar(&t.ignoreExtraDiags, "ignore_extra_diags", false, "if set, suppress errors for unmatched diagnostics")
+	flags.BoolVar(&t.filterBuiltins, "filter_builtins", true, "if set, filter builtins from completion results")
+	flags.BoolVar(&t.filterKeywords, "filter_keywords", true, "if set, filter keywords from completion results")
 	return flags
 }
 
@@ -897,9 +905,6 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 
 		case file.Name == "flags":
 			test.flags = strings.Fields(string(file.Data))
-			if err := test.flagSet().Parse(test.flags); err != nil {
-				return nil, fmt.Errorf("parsing flags: %v", err)
-			}
 
 		case file.Name == "settings.json":
 			if err := json.Unmarshal(file.Data, &test.settings); err != nil {
@@ -962,6 +967,12 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 		if bytes.Contains(file.Data, []byte("\n-- ")) {
 			log.Printf("ill-formed '-- filename --' header in %s?", file.Name)
 		}
+	}
+
+	// Parse flags after loading files, as they may have been set by the "flags"
+	// file.
+	if err := test.flagSet().Parse(test.flags); err != nil {
+		return nil, fmt.Errorf("parsing flags: %v", err)
 	}
 
 	return test, nil
@@ -1483,7 +1494,7 @@ func snippetMarker(mark marker, src protocol.Location, item completionItem, want
 		got   string
 		all   []string // for errors
 	)
-	items := filterBuiltinsAndKeywords(list.Items)
+	items := filterBuiltinsAndKeywords(mark, list.Items)
 	for _, i := range items {
 		all = append(all, i.Label)
 		if i.Label == item.Label {
@@ -1508,7 +1519,7 @@ func snippetMarker(mark marker, src protocol.Location, item completionItem, want
 // results match the expected results.
 func completeMarker(mark marker, src protocol.Location, want ...completionItem) {
 	list := mark.run.env.Completion(src)
-	items := filterBuiltinsAndKeywords(list.Items)
+	items := filterBuiltinsAndKeywords(mark, list.Items)
 	var got []completionItem
 	for i, item := range items {
 		simplified := completionItem{
@@ -1551,13 +1562,17 @@ func completeMarker(mark marker, src protocol.Location, want ...completionItem) 
 // results.
 //
 // It over-approximates, and does not detect if builtins are shadowed.
-func filterBuiltinsAndKeywords(items []protocol.CompletionItem) []protocol.CompletionItem {
+func filterBuiltinsAndKeywords(mark marker, items []protocol.CompletionItem) []protocol.CompletionItem {
 	keep := 0
 	for _, item := range items {
-		if types.Universe.Lookup(item.Label) == nil && token.Lookup(item.Label) == token.IDENT {
-			items[keep] = item
-			keep++
+		if mark.run.test.filterKeywords && item.Kind == protocol.KeywordCompletion {
+			continue
 		}
+		if mark.run.test.filterBuiltins && types.Universe.Lookup(item.Label) != nil {
+			continue
+		}
+		items[keep] = item
+		keep++
 	}
 	return items[:keep]
 }

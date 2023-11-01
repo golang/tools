@@ -1,3 +1,9 @@
+This test checks completion of labels.
+
+-- flags --
+-ignore_extra_diags
+
+-- labels.go --
 package labels
 
 func _() {

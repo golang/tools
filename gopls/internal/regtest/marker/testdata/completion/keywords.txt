@@ -1,3 +1,17 @@
+This test checks completion of Go keywords.
+
+-- flags --
+-ignore_extra_diags
+-filter_keywords=false
+
+-- settings.json --
+{
+	"completeUnimported": false,
+	"matcher": "caseInsensitive",
+	"experimentalPostfixCompletions": false
+}
+
+-- keywords.go --
 package keywords
 
 //@rank("", type),rank("", func),rank("", var),rank("", const),rank("", import)
@@ -89,12 +103,64 @@ func _() {
 /* fallthrough */ //@item(fallthrough, "fallthrough", "", "keyword")
 /* continue */ //@item(continue, "continue", "", "keyword")
 /* return */ //@item(return, "return", "", "keyword")
-/* var */ //@item(var, "var", "", "keyword")
-/* const */ //@item(const, "const", "", "keyword")
 /* goto */ //@item(goto, "goto", "", "keyword")
 /* struct */ //@item(struct, "struct", "", "keyword")
 /* interface */ //@item(interface, "interface", "", "keyword")
 /* map */ //@item(map, "map", "", "keyword")
-/* func */ //@item(func, "func", "", "keyword")
 /* chan */ //@item(chan, "chan", "", "keyword")
 /* range */ //@item(range, "range", "", "keyword")
+/* string */ //@item(string, "string", "", "type")
+/* int */ //@item(int, "int", "", "type")
+
+-- accidental_keywords.go --
+package keywords
+
+// non-matching candidate - shouldn't show up as completion
+var apple = "apple"
+
+func _() {
+	foo.bar() // insert some extra statements to exercise our AST surgery
+	variance := 123 //@item(kwVariance, "variance", "int", "var")
+	foo.bar()
+	println(var) //@complete(")", kwVariance)
+}
+
+func _() {
+	foo.bar()
+	var s struct { variance int } //@item(kwVarianceField, "variance", "int", "field")
+	foo.bar()
+	s.var //@complete(" //", kwVarianceField)
+}
+
+func _() {
+	channel := 123 //@item(kwChannel, "channel", "int", "var")
+	chan //@complete(" //", kwChannel)
+	foo.bar()
+}
+
+func _() {
+	foo.bar()
+	var typeName string //@item(kwTypeName, "typeName", "string", "var")
+	foo.bar()
+	type //@complete(" //", kwTypeName)
+}
+-- empty_select.go --
+package keywords
+
+func _() {
+	select {
+		c //@complete(" //", case)
+	}
+}
+-- empty_switch.go --
+package keywords
+
+func _() {
+	switch {
+		//@complete("", case, default)
+	}
+
+	switch test.(type) {
+		d //@complete(" //", default)
+	}
+}

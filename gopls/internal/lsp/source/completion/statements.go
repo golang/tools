@@ -307,9 +307,8 @@ func (c *completer) addErrCheck() {
 	}
 
 	c.items = append(c.items, CompletionItem{
-		Label: label,
-		// There doesn't seem to be a more appropriate kind.
-		Kind:    protocol.KeywordCompletion,
+		Label:   label,
+		Kind:    protocol.SnippetCompletion,
 		Score:   highScore,
 		snippet: &snip,
 	})

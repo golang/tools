@@ -1,3 +1,10 @@
+This test checks completion of Go builtins.
+
+-- flags --
+-ignore_extra_diags
+-filter_builtins=false
+
+-- builtin_args.go --
 package builtins
 
 func _() {
@@ -45,7 +52,7 @@ func _() {
 
 	type myInt int
 	var mi myInt        //@item(builtinMyInt, "mi", "myInt", "var")
-	make(aSliceType, m) //@snippet(")", builtinMyInt, "mi", "mi")
+	make(aSliceType, m) //@snippet(")", builtinMyInt, "mi")
 
 	var _ []int = make() //@rank(")", builtinSliceType, builtinMapType)
 
@@ -59,4 +66,53 @@ func _() {
 	}
 
 	<-a //@rank(" //", builtinChan, builtinInt)
+}
+
+-- builtin_types.go --
+package builtins
+
+func _() {
+	var _ []bool //@item(builtinBoolSliceType, "[]bool", "[]bool", "type")
+
+	var _ []bool = make() //@rank(")", builtinBoolSliceType, int)
+
+	var _ []bool = make([], 0) //@rank(",", bool, int)
+
+	var _ [][]bool = make([][], 0) //@rank(",", bool, int)
+}
+
+-- builtins.go --
+package builtins
+
+// Definitions of builtin completion items that are still used in tests.
+
+/* bool */ //@item(bool, "bool", "", "type")
+/* complex(r float64, i float64) */ //@item(complex, "complex", "func(r float64, i float64) complex128", "func")
+/* float32 */ //@item(float32, "float32", "", "type")
+/* float64 */ //@item(float64, "float64", "", "type")
+/* imag(c complex128) float64 */ //@item(imag, "imag", "func(c complex128) float64", "func")
+/* int */ //@item(int, "int", "", "type")
+/* iota */ //@item(iota, "iota", "", "const")
+/* string */ //@item(string, "string", "", "type")
+/* true */ //@item(_true, "true", "", "const")
+
+-- constants.go --
+package builtins
+
+func _() {
+	const (
+		foo = iota //@complete(" //", iota)
+	)
+
+	iota //@complete(" //")
+
+	var iota int //@item(iotaVar, "iota", "int", "var")
+
+	iota //@complete(" //", iotaVar)
+}
+
+func _() {
+	var twoRedUpEnd bool //@item(TRUEVar, "twoRedUpEnd", "bool", "var")
+
+	var _ bool = true //@rank(" //", _true, TRUEVar)
 }

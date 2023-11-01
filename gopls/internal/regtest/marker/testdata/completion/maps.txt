@@ -1,3 +1,14 @@
+This test checks completion of map keys and values.
+
+-- flags --
+-ignore_extra_diags
+
+-- settings.json --
+{
+	"completeUnimported": false
+}
+
+-- maps.go --
 package maps
 
 func _() {
@@ -11,7 +22,7 @@ func _() {
 	// comparable
 	type aStruct struct{} //@item(mapStructType, "aStruct", "struct{...}", "struct")
 
-	map[]a{} //@complete("]", mapSliceType, mapStructType),snippet("]", mapSliceType, "*aSlice", "*aSlice")
+	map[]a{} //@complete("]", mapSliceType, mapStructType),snippet("]", mapSliceType, "*aSlice")
 
 	map[a]a{} //@complete("]", mapSliceType, mapStructType)
 	map[a]a{} //@complete("{", mapSliceType, mapStructType)

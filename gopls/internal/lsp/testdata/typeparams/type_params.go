@@ -3,6 +3,12 @@
 
 package typeparams
 
+// Copied from the old builtins.go, which has been ported to the new marker tests.
+/* string */ //@item(string, "string", "", "type")
+/* float32 */ //@item(float32, "float32", "", "type")
+/* float64 */ //@item(float64, "float64", "", "type")
+/* int */ //@item(int, "int", "", "type")
+
 func one[a int | string]()            {}
 func two[a int | string, b float64 | int]() {}
 
