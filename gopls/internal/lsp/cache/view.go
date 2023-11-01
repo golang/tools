@@ -502,7 +502,7 @@ func (s *snapshot) locateTemplateFiles(ctx context.Context) {
 	}
 
 	searched := 0
-	filterFunc := s.filterFunc()
+	filterFunc := s.view.filterFunc()
 	err := filepath.WalkDir(s.view.folder.Dir.Filename(), func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -536,30 +536,30 @@ func (s *snapshot) locateTemplateFiles(ctx context.Context) {
 	}
 }
 
-func (s *snapshot) contains(uri span.URI) bool {
+func (v *View) contains(uri span.URI) bool {
 	// If we've expanded the go dir to a parent directory, consider if the
 	// expanded dir contains the uri.
 	// TODO(rfindley): should we ignore the root here? It is not provided by the
 	// user. It would be better to explicitly consider the set of active modules
 	// wherever relevant.
 	inGoDir := false
-	if source.InDir(s.view.goCommandDir.Filename(), s.view.folder.Dir.Filename()) {
-		inGoDir = source.InDir(s.view.goCommandDir.Filename(), uri.Filename())
+	if source.InDir(v.goCommandDir.Filename(), v.folder.Dir.Filename()) {
+		inGoDir = source.InDir(v.goCommandDir.Filename(), uri.Filename())
 	}
-	inFolder := source.InDir(s.view.folder.Dir.Filename(), uri.Filename())
+	inFolder := source.InDir(v.folder.Dir.Filename(), uri.Filename())
 
 	if !inGoDir && !inFolder {
 		return false
 	}
 
-	return !s.filterFunc()(uri)
+	return !v.filterFunc()(uri)
 }
 
 // filterFunc returns a func that reports whether uri is filtered by the currently configured
 // directoryFilters.
-func (s *snapshot) filterFunc() func(span.URI) bool {
-	folderDir := s.view.folder.Dir.Filename()
-	filterer := buildFilterer(folderDir, s.view.gomodcache, s.Options())
+func (v *View) filterFunc() func(span.URI) bool {
+	folderDir := v.folder.Dir.Filename()
+	filterer := buildFilterer(folderDir, v.gomodcache, v.folder.Options)
 	return func(uri span.URI) bool {
 		// Only filter relative to the configured root directory.
 		if source.InDir(folderDir, uri.Filename()) {
@@ -590,12 +590,7 @@ func (v *View) relevantChange(c source.FileModification) bool {
 	// had neither test nor associated issue, and cited only emacs behavior, this
 	// logic was deleted.
 
-	snapshot, release, err := v.getSnapshot()
-	if err != nil {
-		return false // view was shut down
-	}
-	defer release()
-	return snapshot.contains(c.URI)
+	return v.contains(c.URI)
 }
 
 func (v *View) markKnown(uri span.URI) {

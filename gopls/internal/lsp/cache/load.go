@@ -160,7 +160,7 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 	}
 
 	moduleErrs := make(map[string][]packages.Error) // module path -> errors
-	filterFunc := s.filterFunc()
+	filterFunc := s.view.filterFunc()
 	newMetadata := make(map[PackageID]*source.Metadata)
 	for _, pkg := range pkgs {
 		// The Go command returns synthetic list results for module queries that
@@ -620,7 +620,7 @@ func containsPackageLocked(s *snapshot, m *source.Metadata) bool {
 			uris[uri] = struct{}{}
 		}
 
-		filterFunc := s.filterFunc()
+		filterFunc := s.view.filterFunc()
 		for uri := range uris {
 			// Don't use view.contains here. go.work files may include modules
 			// outside of the workspace folder.
@@ -631,7 +631,7 @@ func containsPackageLocked(s *snapshot, m *source.Metadata) bool {
 		return false
 	}
 
-	return containsFileInWorkspaceLocked(s, m)
+	return containsFileInWorkspaceLocked(s.view, m)
 }
 
 // containsOpenFileLocked reports whether any file referenced by m is open in
@@ -660,7 +660,7 @@ func containsOpenFileLocked(s *snapshot, m *source.Metadata) bool {
 // workspace of the snapshot s.
 //
 // s.mu must be held while calling this function.
-func containsFileInWorkspaceLocked(s *snapshot, m *source.Metadata) bool {
+func containsFileInWorkspaceLocked(v *View, m *source.Metadata) bool {
 	uris := map[span.URI]struct{}{}
 	for _, uri := range m.CompiledGoFiles {
 		uris[uri] = struct{}{}
@@ -675,7 +675,7 @@ func containsFileInWorkspaceLocked(s *snapshot, m *source.Metadata) bool {
 
 		// The package's files are in this view. It may be a workspace package.
 		// Vendored packages are not likely to be interesting to the user.
-		if !strings.Contains(string(uri), "/vendor/") && s.contains(uri) {
+		if !strings.Contains(string(uri), "/vendor/") && v.contains(uri) {
 			return true
 		}
 	}

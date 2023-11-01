@@ -254,15 +254,9 @@ func bestViewForURI(uri span.URI, views []*View) *View {
 		}
 		// TODO(rfindley): this should consider the workspace layout (i.e.
 		// go.work).
-		snapshot, release, err := view.getSnapshot()
-		if err != nil {
-			// view is shutdown
-			continue
-		}
-		if snapshot.contains(uri) {
+		if view.contains(uri) {
 			longest = view
 		}
-		release()
 	}
 	if longest != nil {
 		return longest
