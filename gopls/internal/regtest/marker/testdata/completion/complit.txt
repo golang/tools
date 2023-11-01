@@ -1,4 +1,18 @@
+This test checks completion related to composite literals.
+
+-- flags --
+-ignore_extra_diags
+
+-- settings.json --
+{
+	"completeUnimported": false
+}
+
+-- complit.go --
 package complit
+
+// Literal completion results.
+/* int() */ //@item(int, "int()", "int", "var")
 
 // general completions
 
@@ -8,7 +22,7 @@ type position struct { //@item(structPosition, "position", "struct{...}", "struc
 
 func _() {
 	_ = position{
-		//@complete("", fieldX, fieldY, structPosition)
+		//@complete("", fieldX, fieldY, int, structPosition)
 	}
 	_ = position{
 		X: 1,
@@ -20,7 +34,7 @@ func _() {
 	}
 	_ = []*position{
         {
-            //@complete("", fieldX, fieldY, structPosition)
+            //@complete("", fieldX, fieldY, int, structPosition)
         },
 	}
 }
@@ -36,7 +50,7 @@ func _() {
 	}
 
 	_ = map[int]int{
-		//@complete("", abVar, aaVar, structPosition)
+		//@complete("", abVar, int, aaVar, structPosition)
 	}
 
 	_ = []string{a: ""} //@complete(":", abVar, aaVar)
@@ -44,7 +58,7 @@ func _() {
 
 	_ = position{X: a}   //@complete("}", abVar, aaVar)
 	_ = position{a}      //@complete("}", abVar, aaVar)
-	_ = position{a, }      //@complete("}", abVar, aaVar, structPosition)
+	_ = position{a, }      //@complete("}", abVar, int, aaVar, structPosition)
 
 	_ = []int{a}  //@complete("}", abVar, aaVar)
 	_ = [1]int{a} //@complete("}", abVar, aaVar)
@@ -73,18 +87,18 @@ func _() {
 func _() {
 	type foo struct{} //@item(complitFoo, "foo", "struct{...}", "struct")
 
-	var _ *foo = &fo{} //@snippet("{", complitFoo, "foo", "foo")
-	var _ *foo = fo{} //@snippet("{", complitFoo, "&foo", "&foo")
+	var _ *foo = &fo{} //@snippet("{", complitFoo, "foo")
+	var _ *foo = fo{} //@snippet("{", complitFoo, "&foo")
 
 	struct { a, b *foo }{
 		a: &fo{}, //@rank("{", complitFoo)
-		b: fo{}, //@snippet("{", complitFoo, "&foo", "&foo")
+		b: fo{}, //@snippet("{", complitFoo, "&foo")
 	}
 }
 
 func _() {
 	_ := position{
-		X: 1, //@complete("X", fieldX),complete(" 1", structPosition)
-		Y: ,  //@complete(":", fieldY),complete(" ,", structPosition)
+		X: 1, //@complete("X", fieldX),complete(" 1", int, structPosition)
+		Y: ,  //@complete(":", fieldY),complete(" ,", int, structPosition)
 	}
 }

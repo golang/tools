@@ -53,7 +53,6 @@ var UpdateGolden = flag.Bool("golden", false, "Update golden files")
 // type in the field name and the make() expression.
 type CallHierarchy = map[span.Span]*CallHierarchyResult
 type CompletionItems = map[token.Pos]*completion.CompletionItem
-type Completions = map[span.Span][]Completion
 type CompletionSnippets = map[span.Span][]CompletionSnippet
 type RankCompletions = map[span.Span][]Completion
 type SemanticTokens = []span.Span
@@ -69,7 +68,6 @@ type Data struct {
 	Exported           *packagestest.Exported
 	CallHierarchy      CallHierarchy
 	CompletionItems    CompletionItems
-	Completions        Completions
 	CompletionSnippets CompletionSnippets
 	RankCompletions    RankCompletions
 	SemanticTokens     SemanticTokens
@@ -99,7 +97,6 @@ type Data struct {
 // we can abolish the interface now.
 type Tests interface {
 	CallHierarchy(*testing.T, span.Span, *CallHierarchyResult)
-	Completion(*testing.T, span.Span, Completion, CompletionItems)
 	CompletionSnippet(*testing.T, span.Span, CompletionSnippet, bool, CompletionItems)
 	RankCompletion(*testing.T, span.Span, Completion, CompletionItems)
 	SemanticTokens(*testing.T, span.Span)
@@ -115,7 +112,7 @@ type CompletionTestType int
 
 const (
 	// Default runs the standard completion tests.
-	CompletionDefault = CompletionTestType(iota)
+	_ = CompletionTestType(iota)
 
 	// CompletionRank candidates in test must be valid and in the right relative order.
 	CompletionRank
@@ -206,7 +203,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 	datum := &Data{
 		CallHierarchy:      make(CallHierarchy),
 		CompletionItems:    make(CompletionItems),
-		Completions:        make(Completions),
 		CompletionSnippets: make(CompletionSnippets),
 		RankCompletions:    make(RankCompletions),
 		Renames:            make(Renames),
@@ -346,7 +342,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 	// Collect any data that needs to be used by subsequent tests.
 	if err := datum.Exported.Expect(map[string]interface{}{
 		"item":           datum.collectCompletionItems,
-		"complete":       datum.collectCompletions(CompletionDefault),
 		"rank":           datum.collectCompletions(CompletionRank),
 		"snippet":        datum.collectCompletionSnippets,
 		"semantic":       datum.collectSemanticTokens,
@@ -437,11 +432,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 				tests.CallHierarchy(t, spn, callHierarchyResult)
 			})
 		}
-	})
-
-	t.Run("Completion", func(t *testing.T) {
-		t.Helper()
-		eachCompletion(t, data.Completions, tests.Completion)
 	})
 
 	t.Run("CompletionSnippets", func(t *testing.T) {
@@ -575,7 +565,6 @@ func checkData(t *testing.T, data *Data) {
 	}
 
 	fmt.Fprintf(buf, "CallHierarchyCount = %v\n", len(data.CallHierarchy))
-	fmt.Fprintf(buf, "CompletionsCount = %v\n", countCompletions(data.Completions))
 	fmt.Fprintf(buf, "CompletionSnippetCount = %v\n", snippetCount)
 	fmt.Fprintf(buf, "RankedCompletionsCount = %v\n", countCompletions(data.RankCompletions))
 	fmt.Fprintf(buf, "SemanticTokenCount = %v\n", len(data.SemanticTokens))
@@ -676,9 +665,7 @@ func (data *Data) collectCompletions(typ CompletionTestType) func(span.Span, []t
 			result(data.RankCompletions, src, expected)
 		}
 	default:
-		return func(src span.Span, expected []token.Pos) {
-			result(data.Completions, src, expected)
-		}
+		panic("unsupported")
 	}
 }
 

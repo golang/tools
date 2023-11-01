@@ -1,3 +1,9 @@
+This test checks completion related to function values.
+
+-- flags --
+-ignore_extra_diags
+
+-- func_value.go --
 package funcvalue
 
 func fooFunc() int { //@item(fvFooFunc, "fooFunc", "func() int", "func")

@@ -1,3 +1,9 @@
+This test checks completion related to type assertions.
+
+-- flags --
+-ignore_extra_diags
+
+-- type_assert.go --
 package typeassert
 
 type abc interface { //@item(abcIntf, "abc", "interface{...}", "interface")

@@ -1,3 +1,14 @@
+This test checks completion related to index expressions.
+
+-- flags --
+-ignore_extra_diags
+
+-- settings.json --
+{
+	"completeUnimported": false
+}
+
+-- index.go --
 package index
 
 func _() {
@@ -21,5 +32,5 @@ func _() {
 
 	type myInt int
 	var mi myInt //@item(indexMyInt, "mi", "myInt", "var")
-	foo[m]       //@snippet("]", indexMyInt, "mi", "mi")
+	foo[m]       //@snippet("]", indexMyInt, "mi")
 }

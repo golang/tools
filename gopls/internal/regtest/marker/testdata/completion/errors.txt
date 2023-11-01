@@ -1,0 +1,33 @@
+This test checks completion related to errors.
+
+-- flags --
+-ignore_extra_diags
+
+-- settings.json --
+{
+	"deepCompletion": false
+}
+
+-- go.mod --
+module golang.org/lsptests
+
+go 1.18
+
+-- errors.go --
+package errors
+
+import (
+	"golang.org/lsptests/types"
+)
+
+func _() {
+	bob.Bob() //@complete(".")
+	types.b //@complete(" //", Bob_interface)
+}
+
+-- types/types.go --
+package types
+
+type Bob interface { //@item(Bob_interface, "Bob", "interface{...}", "interface")
+	Bobby()
+}

@@ -1,0 +1,13 @@
+Test for golang/go#56505: completion on variables of type *error should not
+panic.
+
+-- flags --
+-ignore_extra_diags
+
+-- issue.go --
+package issues
+
+func _() {
+	var e *error
+	e.x //@complete(" //")
+}

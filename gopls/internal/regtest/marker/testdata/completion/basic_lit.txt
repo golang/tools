@@ -1,3 +1,9 @@
+This test checks completion related to basic literals.
+
+-- flags --
+-ignore_extra_diags
+
+-- basiclit.go --
 package basiclit
 
 func _() {

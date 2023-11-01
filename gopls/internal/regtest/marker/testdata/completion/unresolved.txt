@@ -1,0 +1,16 @@
+This test verifies gopls does not crash on fake "resolved" types.
+
+-- flags --
+-ignore_extra_diags
+
+-- settings.json --
+{
+	"completeUnimported": false
+}
+
+-- unresolved.go --
+package unresolved
+
+func foo(interface{}) {
+	foo(func(i, j f //@complete(" //")
+}

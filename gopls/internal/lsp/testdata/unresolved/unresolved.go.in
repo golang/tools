@@ -1,6 +1,0 @@
-package unresolved
-
-func foo(interface{}) {
-	// don't crash on fake "resolved" type
-	foo(func(i, j f //@complete(" //")
-}

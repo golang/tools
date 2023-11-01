@@ -1,3 +1,14 @@
+This test checks completion related to field lists.
+
+-- flags --
+-ignore_extra_diags
+
+-- settings.json --
+{
+	"completeUnimported": false
+}
+
+-- field_list.go --
 package fieldlist
 
 var myInt int   //@item(flVar, "myInt", "int", "var")
