@@ -103,9 +103,14 @@ func buildDomFrontier(fn *Function) domFrontier {
 }
 
 func removeInstr(refs []Instruction, instr Instruction) []Instruction {
+	return removeInstrsIf(refs, func(i Instruction) bool { return i == instr })
+}
+
+func removeInstrsIf(refs []Instruction, p func(Instruction) bool) []Instruction {
+	// TODO(taking): replace with go1.22 slices.DeleteFunc.
 	i := 0
 	for _, ref := range refs {
-		if ref == instr {
+		if p(ref) {
 			continue
 		}
 		refs[i] = ref
