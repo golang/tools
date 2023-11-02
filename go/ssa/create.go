@@ -124,30 +124,19 @@ func createFunction(prog *Program, obj *types.Func, name string, syntax ast.Node
 		Signature:  sig,
 		build:      (*builder).buildFromSyntax,
 		syntax:     syntax,
+		info:       info,
+		goversion:  goversion,
 		pos:        obj.Pos(),
 		Pkg:        nil, // may be set by caller
 		Prog:       prog,
 		typeparams: tparams,
-		info:       info,
-		goversion:  goversion,
 	}
 	if fn.syntax == nil {
 		fn.Synthetic = "from type information"
 		fn.build = (*builder).buildParamsOnly
 	}
 	if tparams.Len() > 0 {
-		// TODO(adonovan): retain the syntax/info/goversion fields indefinitely
-		// (i.e. don't clear them after Package.Build). It was a premature
-		// optimization design to avoid keeping typed syntax live, but the
-		// typed syntax is always live for some other reason.
-		// Then 'generic' reduces to a set of instances.
-		fn.generic = &generic{
-			origin: fn,
-			// Syntax fields may all be empty:
-			syntax:    fn.syntax,
-			info:      fn.info,
-			goversion: fn.goversion,
-		}
+		fn.generic = new(generic)
 	}
 	cr.Add(fn)
 	return fn

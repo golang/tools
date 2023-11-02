@@ -10,7 +10,6 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/token"
 	"go/types"
 	"io"
 	"os"
@@ -247,11 +246,6 @@ func (f *Function) finishBody() {
 	f.currentBlock = nil
 	f.lblocks = nil
 
-	// Don't pin the AST in memory (except in debug mode).
-	if n := f.syntax; n != nil && !f.debugInfo() {
-		f.syntax = extentNode{n.Pos(), n.End()}
-	}
-
 	// Remove from f.Locals any Allocs that escape to the heap.
 	j := 0
 	for _, l := range f.Locals {
@@ -281,9 +275,7 @@ func (f *Function) finishBody() {
 
 	// clear remaining builder state
 	f.namedResults = nil // (used by lifting)
-	f.info = nil
 	f.subst = nil
-	f.goversion = ""
 
 	numberRegisters(f) // uses f.namedRegisters
 }
@@ -634,19 +626,8 @@ func (prog *Program) NewFunction(name string, sig *types.Signature, provenance s
 	return &Function{Prog: prog, name: name, Signature: sig, Synthetic: provenance}
 }
 
-type extentNode [2]token.Pos
-
-func (n extentNode) Pos() token.Pos { return n[0] }
-func (n extentNode) End() token.Pos { return n[1] }
-
-// Syntax returns an ast.Node whose Pos/End methods provide the
-// lexical extent of the function if it was defined by Go source code
-// (f.Synthetic==""), or nil otherwise.
-//
-// If f was built with debug information (see Package.SetDebugRef),
-// the result is the *ast.FuncDecl or *ast.FuncLit that declared the
-// function.  Otherwise, it is an opaque Node providing only position
-// information; this avoids pinning the AST in memory.
+// Syntax returns the function's syntax (*ast.Func{Decl,Lit)
+// if it was produced from syntax.
 func (f *Function) Syntax() ast.Node { return f.syntax }
 
 // identVar returns the variable defined by id.

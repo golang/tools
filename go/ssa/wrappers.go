@@ -71,6 +71,7 @@ func createWrapper(prog *Program, sel *selection, cr *creator) *Function {
 		pos:       obj.Pos(),
 		// wrappers have no syntax
 		build:     (*builder).buildWrapper,
+		syntax:    nil,
 		info:      nil,
 		goversion: "",
 	}
@@ -202,6 +203,7 @@ func createBound(prog *Program, obj *types.Func, cr *creator) *Function {
 		pos:       obj.Pos(),
 		// wrappers have no syntax
 		build:     (*builder).buildBound,
+		syntax:    nil,
 		info:      nil,
 		goversion: "",
 	}

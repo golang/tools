@@ -1119,13 +1119,8 @@ func TestIssue58491Rec(t *testing.T) {
 	}
 }
 
-// TestSyntax ensures that a function's Syntax is available when
-// debug info is enabled.
+// TestSyntax ensures that a function's Syntax is available.
 func TestSyntax(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestSyntax uses type parameters.")
-	}
-
 	const input = `package p
 
 	type P int
@@ -1146,7 +1141,8 @@ func TestSyntax(t *testing.T) {
 		}
 		return (*T)(f3())
 	}
-	var _ = F[int]
+	var g = F[int]
+	var _ = F[P] // unreferenced => not instantiated
 	`
 
 	// Parse
@@ -1164,7 +1160,7 @@ func TestSyntax(t *testing.T) {
 	}
 
 	// Create and build SSA
-	prog := ssautil.CreateProgram(lprog, ssa.GlobalDebug|ssa.InstantiateGenerics)
+	prog := ssautil.CreateProgram(lprog, ssa.InstantiateGenerics)
 	prog.Build()
 
 	// Collect syntax information for all of the functions.
@@ -1174,6 +1170,9 @@ func TestSyntax(t *testing.T) {
 			continue
 		}
 		syntax := fn.Syntax()
+		if got[fn.Name()] != "" {
+			t.Error("dup")
+		}
 		got[fn.Name()] = fmt.Sprintf("%T : %s @ %d", syntax, fn.Signature, prog.Fset.Position(syntax.Pos()).Line)
 	}
 
@@ -1187,6 +1186,8 @@ func TestSyntax(t *testing.T) {
 		"F[int]$1":   "*ast.FuncLit : func() p.S1 @ 10",
 		"F[int]$1$1": "*ast.FuncLit : func() p.S2 @ 11",
 		"F[int]$2":   "*ast.FuncLit : func() p.S3 @ 16",
+		// ...but no F[P] etc as they are unreferenced.
+		// (NB: GlobalDebug mode would cause them to be referenced.)
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Expected the functions with signature to be:\n\t%#v.\n Got:\n\t%#v", want, got)

@@ -638,13 +638,13 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			Pkg:            fn.Pkg,
 			Prog:           fn.Prog,
 			syntax:         e,
+			info:           fn.info,
+			goversion:      fn.goversion,
 			build:          (*builder).buildFromSyntax,
 			topLevelOrigin: nil,           // use anonIdx to lookup an anon instance's origin.
 			typeparams:     fn.typeparams, // share the parent's type parameters.
 			typeargs:       fn.typeargs,   // share the parent's type arguments.
-			info:           fn.info,
-			subst:          fn.subst,     // share the parent's type substitutions.
-			goversion:      fn.goversion, // share the parent's goversion
+			subst:          fn.subst,      // share the parent's type substitutions.
 		}
 		fn.AnonFuncs = append(fn.AnonFuncs, anon)
 		// Build anon immediately, as it may cause fn's locals to escape.
@@ -2712,7 +2712,11 @@ func (b *builder) buildPackageInit(fn *Function) {
 			}
 		}
 	}
-	fn.goversion = "" // The rest of the init function is synthetic. No syntax => no goversion.
+
+	// The rest of the init function is synthetic:
+	// no syntax, info, goversion.
+	fn.info = nil
+	fn.goversion = ""
 
 	// Call all of the declared init() functions in source order.
 	for _, file := range p.files {

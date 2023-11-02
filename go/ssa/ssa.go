@@ -317,12 +317,16 @@ type Function struct {
 	Signature *types.Signature
 	pos       token.Pos
 
-	Synthetic string    // provenance of synthetic function; "" for true source functions
-	syntax    ast.Node  // *ast.Func{Decl,Lit}; replaced with simple ast.Node after build, unless debug mode
-	build     buildFunc // algorithm to build function body (nil => built)
-	parent    *Function // enclosing function if anon; nil if global
-	Pkg       *Package  // enclosing package; nil for shared funcs (wrappers and error.Error)
-	Prog      *Program  // enclosing program
+	// source information
+	Synthetic string      // provenance of synthetic function; "" for true source functions
+	syntax    ast.Node    // *ast.Func{Decl,Lit}, if from syntax (incl. generic instances)
+	info      *types.Info // type annotations (iff syntax != nil)
+	goversion string      // Go version of syntax (NB: init is special)
+
+	build  buildFunc // algorithm to build function body (nil => built)
+	parent *Function // enclosing function if anon; nil if global
+	Pkg    *Package  // enclosing package; nil for shared funcs (wrappers and error.Error)
+	Prog   *Program  // enclosing program
 
 	// These fields are populated only when the function body is built:
 
@@ -347,9 +351,7 @@ type Function struct {
 	namedResults []*Alloc                 // tuple of named results
 	targets      *targets                 // linked stack of branch targets
 	lblocks      map[*types.Label]*lblock // labelled blocks
-	info         *types.Info              // *types.Info to build from. nil for wrappers.
 	subst        *subster                 // non-nil => expand generic body using this type substitution of ground types
-	goversion    string                   // Go version of syntax (NB: init is special)
 }
 
 // BasicBlock represents an SSA basic block.

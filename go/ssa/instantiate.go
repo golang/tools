@@ -6,7 +6,6 @@ package ssa
 
 import (
 	"fmt"
-	"go/ast"
 	"go/types"
 	"sync"
 
@@ -16,15 +15,8 @@ import (
 // A generic records information about a generic origin function,
 // including a cache of existing instantiations.
 type generic struct {
-	origin *Function // generic origin; has typeparams but no typeargs
-
 	instancesMu sync.Mutex
 	instances   map[*typeList]*Function // canonical type arguments to an instance.
-
-	// Syntax info saved from origin. Empty for a synthetic package.
-	syntax    ast.Node    // saved reference to FuncDecl
-	info      *types.Info // type information
-	goversion string      // goversion of syntax
 }
 
 // instance returns a Function that is the instantiation of generic
@@ -42,7 +34,7 @@ func (fn *Function) instance(targs []types.Type, cr *creator) *Function {
 	defer gen.instancesMu.Unlock()
 	inst, ok := gen.instances[key]
 	if !ok {
-		inst = createInstance(gen, targs, cr)
+		inst = createInstance(fn, targs, cr)
 		if gen.instances == nil {
 			gen.instances = make(map[*typeList]*Function)
 		}
@@ -51,12 +43,11 @@ func (fn *Function) instance(targs []types.Type, cr *creator) *Function {
 	return inst
 }
 
-// createInstance returns the instantiation of gen.origin using targs.
+// createInstance returns the instantiation of generic function fn using targs.
 // If the instantiation is created, this is added to cr.
 //
-// Requires gen.instancesMu.
-func createInstance(gen *generic, targs []types.Type, cr *creator) *Function {
-	fn := gen.origin
+// Requires fn.generic.instancesMu.
+func createInstance(fn *Function, targs []types.Type, cr *creator) *Function {
 	prog := fn.Prog
 
 	// Compute signature.
@@ -88,7 +79,7 @@ func createInstance(gen *generic, targs []types.Type, cr *creator) *Function {
 	)
 	if prog.mode&InstantiateGenerics != 0 && !prog.parameterized.anyParameterized(targs) {
 		synthetic = fmt.Sprintf("instance of %s", fn.Name())
-		if gen.syntax != nil {
+		if fn.syntax != nil {
 			scope := typeparams.OriginMethod(obj).Scope()
 			subst = makeSubster(prog.ctxt, scope, fn.typeparams, targs, false)
 			build = (*builder).buildFromSyntax
@@ -106,7 +97,9 @@ func createInstance(gen *generic, targs []types.Type, cr *creator) *Function {
 		object:         obj,
 		Signature:      sig,
 		Synthetic:      synthetic,
-		syntax:         gen.syntax,
+		syntax:         fn.syntax,    // \
+		info:           fn.info,      //  } empty for non-created packages
+		goversion:      fn.goversion, // /
 		build:          build,
 		topLevelOrigin: fn,
 		pos:            obj.Pos(),
@@ -114,9 +107,7 @@ func createInstance(gen *generic, targs []types.Type, cr *creator) *Function {
 		Prog:           fn.Prog,
 		typeparams:     fn.typeparams, // share with origin
 		typeargs:       targs,
-		info:           gen.info, // on synthetic packages info is nil.
 		subst:          subst,
-		goversion:      gen.goversion,
 	}
 	cr.Add(instance)
 	return instance
