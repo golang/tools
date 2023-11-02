@@ -19,6 +19,7 @@ import (
 	"go/types"
 	"log"
 	urlpkg "net/url"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"runtime/debug"
@@ -167,9 +168,6 @@ const AnalysisProgressTitle = "Analyzing Dependencies"
 // The analyzers list must be duplicate free; order does not matter.
 //
 // Notifications of progress may be sent to the optional reporter.
-//
-// Precondition: all analyzers within the process have distinct names.
-// (The names are relied on by the serialization logic.)
 func (snapshot *snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, analyzers []*source.Analyzer, reporter *progress.Tracker) ([]*source.Diagnostic, error) {
 	start := time.Now() // for progress reporting
 
@@ -202,10 +200,22 @@ func (snapshot *snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, 
 	})
 	analyzers = nil // prevent accidental use
 
-	// Register fact types of required analyzers.
 	enabled = requiredAnalyzers(enabled)
+
+	// Perform basic sanity checks.
+	// (Ideally we would do this only once.)
+	if err := analysis.Validate(enabled); err != nil {
+		return nil, fmt.Errorf("invalid analyzer configuration: %v", err)
+	}
+
+	stableNames := make(map[*analysis.Analyzer]string)
+
 	var facty []*analysis.Analyzer // facty subset of enabled + transitive requirements
 	for _, a := range enabled {
+		// TODO(adonovan): reject duplicate stable names (very unlikely).
+		stableNames[a] = stableName(a)
+
+		// Register fact types of all required analyzers.
 		if len(a.FactTypes) > 0 {
 			facty = append(facty, a)
 			for _, f := range a.FactTypes {
@@ -239,11 +249,12 @@ func (snapshot *snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, 
 			// -- preorder --
 
 			an = &analysisNode{
-				fset:       fset,
-				m:          m,
-				analyzers:  facty, // all nodes run at least the facty analyzers
-				allDeps:    make(map[PackagePath]*analysisNode),
-				exportDeps: make(map[PackagePath]*analysisNode),
+				fset:        fset,
+				m:           m,
+				analyzers:   facty, // all nodes run at least the facty analyzers
+				allDeps:     make(map[PackagePath]*analysisNode),
+				exportDeps:  make(map[PackagePath]*analysisNode),
+				stableNames: stableNames,
 			}
 			nodes[id] = an
 
@@ -434,7 +445,7 @@ func (snapshot *snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, 
 				// cause #60909 since none of the analyzers added for
 				// requirements (e.g. ctrlflow, inspect, buildssa)
 				// is capable of reporting diagnostics.
-				if summary := root.summary.Actions[a.Name]; summary != nil {
+				if summary := root.summary.Actions[stableNames[a]]; summary != nil {
 					if n := len(summary.Diagnostics); n > 0 {
 						bug.Reportf("Internal error: got %d unexpected diagnostics from analyzer %s. This analyzer was added only to fulfil the requirements of the requested set of analyzers, and it is not expected that such analyzers report diagnostics. Please report this in issue #60909.", n, a)
 					}
@@ -443,10 +454,10 @@ func (snapshot *snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, 
 			}
 
 			// Inv: root.summary is the successful result of run (via runCached).
-			summary, ok := root.summary.Actions[a.Name]
+			summary, ok := root.summary.Actions[stableNames[a]]
 			if summary == nil {
 				panic(fmt.Sprintf("analyzeSummary.Actions[%q] = (nil, %t); got %v (#60551)",
-					a.Name, ok, root.summary.Actions))
+					stableNames[a], ok, root.summary.Actions))
 			}
 			if summary.Err != "" {
 				continue // action failed
@@ -500,6 +511,7 @@ type analysisNode struct {
 	allDeps         map[PackagePath]*analysisNode // all dependencies including self
 	exportDeps      map[PackagePath]*analysisNode // subset of allDeps ref'd by export data (+self)
 	summary         *analyzeSummary               // serializable result of analyzing this package
+	stableNames     map[*analysis.Analyzer]string // cross-process stable names for Analyzers
 
 	typesOnce sync.Once      // guards lazy population of types and typesErr fields
 	types     *types.Package // type information lazily imported from summary
@@ -568,16 +580,16 @@ type analyzeSummary struct {
 	Export         []byte      // encoded types of package
 	DeepExportHash source.Hash // hash of reflexive transitive closure of export data
 	Compiles       bool        // transitively free of list/parse/type errors
-	Actions        actionsMap  // map from analyzer name to analysis results (*actionSummary)
+	Actions        actionMap   // maps analyzer stablename to analysis results (*actionSummary)
 }
 
-// actionsMap defines a stable Gob encoding for a map.
+// actionMap defines a stable Gob encoding for a map.
 // TODO(adonovan): generalize and move to a library when we can use generics.
-type actionsMap map[string]*actionSummary
+type actionMap map[string]*actionSummary
 
 var (
-	_ gob.GobEncoder = (actionsMap)(nil)
-	_ gob.GobDecoder = (*actionsMap)(nil)
+	_ gob.GobEncoder = (actionMap)(nil)
+	_ gob.GobDecoder = (*actionMap)(nil)
 )
 
 type actionsMapEntry struct {
@@ -585,7 +597,7 @@ type actionsMapEntry struct {
 	V *actionSummary
 }
 
-func (m actionsMap) GobEncode() ([]byte, error) {
+func (m actionMap) GobEncode() ([]byte, error) {
 	entries := make([]actionsMapEntry, 0, len(m))
 	for k, v := range m {
 		entries = append(entries, actionsMapEntry{k, v})
@@ -598,12 +610,12 @@ func (m actionsMap) GobEncode() ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-func (m *actionsMap) GobDecode(data []byte) error {
+func (m *actionMap) GobDecode(data []byte) error {
 	var entries []actionsMapEntry
 	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&entries); err != nil {
 		return err
 	}
-	*m = make(actionsMap, len(entries))
+	*m = make(actionMap, len(entries))
 	for _, e := range entries {
 		(*m)[e.K] = e.V
 	}
@@ -849,7 +861,13 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 			for _, req := range a.Requires {
 				hdeps = append(hdeps, mkAction(req))
 			}
-			act = &action{a: a, pkg: pkg, vdeps: an.succs, hdeps: hdeps}
+			act = &action{
+				a:          a,
+				stableName: an.stableNames[a],
+				pkg:        pkg,
+				vdeps:      an.succs,
+				hdeps:      hdeps,
+			}
 			actions[a] = act
 		}
 		return act
@@ -876,7 +894,7 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 		if root.summary == nil {
 			panic("root has nil action.summary (#60551)")
 		}
-		summaries[root.a.Name] = root.summary
+		summaries[root.stableName] = root.summary
 	}
 
 	return &analyzeSummary{
@@ -1095,11 +1113,12 @@ type analysisPackage struct {
 // package (as different analyzers are applied, either in sequence or
 // parallel), and across packages (as dependencies are analyzed).
 type action struct {
-	once  sync.Once
-	a     *analysis.Analyzer
-	pkg   *analysisPackage
-	hdeps []*action                   // horizontal dependencies
-	vdeps map[PackageID]*analysisNode // vertical dependencies
+	once       sync.Once
+	a          *analysis.Analyzer
+	stableName string // cross-process stable name of analyzer
+	pkg        *analysisPackage
+	hdeps      []*action                   // horizontal dependencies
+	vdeps      map[PackageID]*analysisNode // vertical dependencies
 
 	// results of action.exec():
 	result  interface{} // result of Run function, of type a.ResultType
@@ -1158,7 +1177,7 @@ func (act *action) exec() (interface{}, *actionSummary, error) {
 	if hasFacts {
 		// TODO(adonovan): use deterministic order.
 		for _, vdep := range act.vdeps {
-			if summ := vdep.summary.Actions[analyzer.Name]; summ.Err != "" {
+			if summ := vdep.summary.Actions[act.stableName]; summ.Err != "" {
 				return nil, nil, errors.New(summ.Err)
 			}
 		}
@@ -1232,7 +1251,7 @@ func (act *action) exec() (interface{}, *actionSummary, error) {
 			return nil, bug.Errorf("internal error in %s: missing vdep for id=%s", pkg.types.Path(), id)
 		}
 
-		return vdep.summary.Actions[analyzer.Name].Facts, nil
+		return vdep.summary.Actions[act.stableName].Facts, nil
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("internal error decoding analysis facts: %w", err)
@@ -1512,4 +1531,23 @@ func effectiveURL(a *analysis.Analyzer, diag analysis.Diagnostic) string {
 		}
 	}
 	return u
+}
+
+// stableName returns a name for the analyzer that is unique and
+// stable across address spaces.
+//
+// Analyzer names are not unique. For example, gopls includes
+// both x/tools/passes/nilness and staticcheck/nilness.
+// For serialization, we must assign each analyzer a unique identifier
+// that two gopls processes accessing the cache can agree on.
+func stableName(a *analysis.Analyzer) string {
+	// Incorporate the file and line of the analyzer's Run function.
+	addr := reflect.ValueOf(a.Run).Pointer()
+	fn := runtime.FuncForPC(addr)
+	file, line := fn.FileLine(addr)
+
+	// It is tempting to use just a.Name as the stable name when
+	// it is unique, but making them always differ helps avoid
+	// name/stablename confusion.
+	return fmt.Sprintf("%s(%s:%d)", a.Name, filepath.Base(file), line)
 }
