@@ -84,7 +84,11 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, source.Sn
 			return nil, nil, nil, source.ErrViewExists
 		}
 	}
-	view, snapshot, release, err := s.createView(ctx, folder, 0)
+	info, err := getWorkspaceInformation(ctx, s.gocmdRunner, s, folder)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	view, snapshot, release, err := s.createView(ctx, info, folder, 0)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -97,14 +101,8 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, source.Sn
 // TODO(rfindley): clarify that createView can never be cancelled (with the
 // possible exception of server shutdown).
 // On success, the caller becomes responsible for calling the release function once.
-func (s *Session) createView(ctx context.Context, folder *Folder, seqID uint64) (*View, *snapshot, func(), error) {
+func (s *Session) createView(ctx context.Context, info *workspaceInformation, folder *Folder, seqID uint64) (*View, *snapshot, func(), error) {
 	index := atomic.AddInt64(&viewIndex, 1)
-
-	// Get immutable workspace information.
-	info, err := getWorkspaceInformation(ctx, s.gocmdRunner, s, folder)
-	if err != nil {
-		return nil, nil, nil, err
-	}
 
 	gowork, _ := info.GOWORK()
 	wsModFiles, wsModFilesErr := computeWorkspaceModFiles(ctx, info.gomod, gowork, info.effectiveGO111MODULE(), s)
@@ -289,7 +287,7 @@ func (s *Session) RemoveView(view *View) {
 //
 // If the resulting error is non-nil, the view may or may not have already been
 // dropped from the session.
-func (s *Session) updateViewLocked(ctx context.Context, view *View, folder *Folder) error {
+func (s *Session) updateViewLocked(ctx context.Context, view *View, info *workspaceInformation, folder *Folder) error {
 	// Preserve the snapshot ID if we are recreating the view.
 	view.snapshotMu.Lock()
 	if view.snapshot == nil {
@@ -304,7 +302,7 @@ func (s *Session) updateViewLocked(ctx context.Context, view *View, folder *Fold
 		return fmt.Errorf("view %q not found", view.id)
 	}
 
-	v, snapshot, release, err := s.createView(ctx, folder, seqID)
+	v, snapshot, release, err := s.createView(ctx, info, folder, seqID)
 	if err != nil {
 		// we have dropped the old view, but could not create the new one
 		// this should not happen and is very bad, but we still need to clean
@@ -431,7 +429,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 				// could report a bug, but it's not really a bug.
 				event.Error(ctx, "fetching workspace information", err)
 			} else if *info != *view.workspaceInformation {
-				if err := s.updateViewLocked(ctx, view, view.folder); err != nil {
+				if err := s.updateViewLocked(ctx, view, info, view.folder); err != nil {
 					// More catastrophic failure. The view may or may not still exist.
 					// The best we can do is log and move on.
 					event.Error(ctx, "recreating view", err)

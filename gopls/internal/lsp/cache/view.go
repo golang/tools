@@ -431,7 +431,11 @@ func (s *Session) SetFolderOptions(ctx context.Context, uri span.URI, options *s
 		if v.folder.Dir == uri {
 			folder2 := *v.folder
 			folder2.Options = options
-			if err := s.updateViewLocked(ctx, v, &folder2); err != nil {
+			info, err := getWorkspaceInformation(ctx, s.gocmdRunner, s, &folder2)
+			if err != nil {
+				return err
+			}
+			if err := s.updateViewLocked(ctx, v, info, &folder2); err != nil {
 				return err
 			}
 		}
