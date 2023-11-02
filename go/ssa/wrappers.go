@@ -144,7 +144,7 @@ func (b *builder) buildWrapper(fn *Function) {
 		callee := fn.Prog.originFunc(fn.object)
 		if callee.typeparams.Len() > 0 {
 			fn.Prog.methodsMu.Lock()
-			callee = fn.Prog.lookupOrCreateInstance(callee, receiverTypeArgs(fn.object), b.created)
+			callee = callee.instance(receiverTypeArgs(fn.object), b.created)
 			fn.Prog.methodsMu.Unlock()
 		}
 		c.Call.Value = callee
@@ -229,7 +229,7 @@ func (b *builder) buildBound(fn *Function) {
 		callee := fn.Prog.originFunc(fn.object)
 		if callee.typeparams.Len() > 0 {
 			fn.Prog.methodsMu.Lock()
-			callee = fn.Prog.lookupOrCreateInstance(callee, receiverTypeArgs(fn.object), b.created)
+			callee = callee.instance(receiverTypeArgs(fn.object), b.created)
 			fn.Prog.methodsMu.Unlock()
 		}
 		c.Call.Value = callee

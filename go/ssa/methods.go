@@ -109,7 +109,7 @@ func (prog *Program) addMethod(mset *methodSet, sel *types.Selection, cr *creato
 			fn = prog.originFunc(obj)
 			if fn.typeparams.Len() > 0 { // instantiate
 				targs := receiverTypeArgs(obj)
-				fn = prog.lookupOrCreateInstance(fn, targs, cr)
+				fn = fn.instance(targs, cr)
 			}
 		}
 		if fn.Signature.Recv() == nil {

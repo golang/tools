@@ -803,7 +803,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			callee := v.(*Function) // (func)
 			if callee.typeparams.Len() > 0 {
 				targs := fn.subst.types(instanceArgs(fn.info, e))
-				callee = fn.Prog.needsInstance(callee, targs, b.created)
+				callee = callee.instance(targs, b.created)
 			}
 			return callee
 		}
@@ -999,7 +999,7 @@ func (b *builder) setCallFunc(fn *Function, e *ast.CallExpr, c *CallCommon) {
 				// "Call"-mode call.
 				callee := fn.Prog.originFunc(obj)
 				if callee.typeparams.Len() > 0 {
-					callee = fn.Prog.needsInstance(callee, receiverTypeArgs(obj), b.created)
+					callee = callee.instance(receiverTypeArgs(obj), b.created)
 				}
 				c.Value = callee
 				c.Args = append(c.Args, v)

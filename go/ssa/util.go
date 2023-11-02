@@ -369,3 +369,13 @@ func (canon *canonizer) instantiateMethod(m *types.Func, targs []types.Type, ctx
 
 // Exposed to ssautil using the linkname hack.
 func isSyntactic(pkg *Package) bool { return pkg.syntax }
+
+// mapValues returns a new unordered array of map values.
+func mapValues[K comparable, V any](m map[K]V) []V {
+	vals := make([]V, 0, len(m))
+	for _, fn := range m {
+		vals = append(vals, fn)
+	}
+	return vals
+
+}

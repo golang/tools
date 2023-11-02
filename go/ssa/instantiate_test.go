@@ -102,7 +102,7 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 
 		var cr creator
 		intSliceTyp := types.NewSlice(types.Typ[types.Int])
-		instance := prog.needsInstance(meth, []types.Type{intSliceTyp}, &cr)
+		instance := meth.instance([]types.Type{intSliceTyp}, &cr)
 		if len(cr) != 1 {
 			t.Errorf("Expected first instance to create a function. got %d created functions", len(cr))
 		}
@@ -112,20 +112,20 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 		if len(instance.TypeArgs()) != 1 || !types.Identical(instance.TypeArgs()[0], intSliceTyp) {
 			t.Errorf("Expected TypeArgs of %s to be %v. got %v", instance, []types.Type{intSliceTyp}, instance.typeargs)
 		}
-		instances := prog._Instances(meth)
+		instances := allInstances(meth)
 		if want := []*Function{instance}; !reflect.DeepEqual(instances, want) {
 			t.Errorf("Expected instances of %s to be %v. got %v", meth, want, instances)
 		}
 
 		// A second request with an identical type returns the same Function.
-		second := prog.needsInstance(meth, []types.Type{types.NewSlice(types.Typ[types.Int])}, &cr)
+		second := meth.instance([]types.Type{types.NewSlice(types.Typ[types.Int])}, &cr)
 		if second != instance || len(cr) != 1 {
 			t.Error("Expected second identical instantiation to not create a function")
 		}
 
 		// Add a second instance.
-		inst2 := prog.needsInstance(meth, []types.Type{types.NewSlice(types.Typ[types.Uint])}, &cr)
-		instances = prog._Instances(meth)
+		inst2 := meth.instance([]types.Type{types.NewSlice(types.Typ[types.Uint])}, &cr)
+		instances = allInstances(meth)
 
 		// Note: instance.Name() < inst2.Name()
 		sort.Slice(instances, func(i, j int) bool {
@@ -258,7 +258,7 @@ func entry(i int, a A) int {
 }
 
 func instanceOf(f *Function, name string, prog *Program) *Function {
-	for _, i := range prog._Instances(f) {
+	for _, i := range allInstances(f) {
 		if i.Name() == name {
 			return i
 		}
@@ -326,7 +326,6 @@ func Foo[T any, S any](t T, s S) {
 	}
 
 	p := buildPackage(lprog, "p", SanityCheckFunctions)
-	prog := p.Prog
 
 	for _, test := range []struct {
 		orig      string
@@ -341,7 +340,7 @@ func Foo[T any, S any](t T, s S) {
 				t.Fatalf("origin function not found")
 			}
 
-			instances := prog._Instances(f)
+			instances := allInstances(f)
 			sort.Slice(instances, func(i, j int) bool { return instances[i].Name() < instances[j].Name() })
 
 			if got := fmt.Sprintf("%v", instances); !reflect.DeepEqual(got, test.instances) {
@@ -349,4 +348,24 @@ func Foo[T any, S any](t T, s S) {
 			}
 		})
 	}
+}
+
+// allInstances returns a new unordered array of all instances of the
+// specified function, if generic, or nil otherwise.
+//
+// Thread-safe.
+//
+// TODO(adonovan): delete this. The tests should be intensional (e.g.
+// "what instances of f are reachable?") not representational (e.g.
+// "what is the history of calls to Function.instance?").
+//
+// Acquires fn.generic.instancesMu.
+func allInstances(fn *Function) []*Function {
+	if fn.generic == nil {
+		return nil
+	}
+
+	fn.generic.instancesMu.Lock()
+	defer fn.generic.instancesMu.Unlock()
+	return mapValues(fn.generic.instances)
 }

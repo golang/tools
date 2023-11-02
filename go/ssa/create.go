@@ -29,7 +29,6 @@ func NewProgram(fset *token.FileSet, mode BuilderMode) *Program {
 		mode:          mode,
 		canon:         newCanonizer(),
 		ctxt:          typeparams.NewContext(),
-		instances:     make(map[*Function]*instanceSet),
 		parameterized: tpWalker{seen: make(map[types.Type]bool)},
 	}
 }
@@ -81,38 +80,8 @@ func memberFromObject(pkg *Package, obj types.Object, syntax ast.Node, goversion
 			pkg.ninit++
 			name = fmt.Sprintf("init#%d", pkg.ninit)
 		}
-
-		// Collect type parameters if this is a generic function/method.
-		var tparams *typeparams.TypeParamList
-		if rtparams := typeparams.RecvTypeParams(sig); rtparams.Len() > 0 {
-			tparams = rtparams
-		} else if sigparams := typeparams.ForSignature(sig); sigparams.Len() > 0 {
-			tparams = sigparams
-		}
-
-		/* declared function/method (from syntax or export data) */
-		fn := &Function{
-			name:       name,
-			object:     obj,
-			Signature:  sig,
-			build:      (*builder).buildFromSyntax,
-			syntax:     syntax,
-			pos:        obj.Pos(),
-			Pkg:        pkg,
-			Prog:       pkg.Prog,
-			typeparams: tparams,
-			info:       pkg.info,
-			goversion:  goversion,
-		}
-		pkg.created.Add(fn)
-		if syntax == nil {
-			fn.Synthetic = "loaded from gc object file"
-			fn.build = (*builder).buildParamsOnly
-		}
-		if tparams.Len() > 0 {
-			fn.Prog.createInstanceSet(fn)
-		}
-
+		fn := createFunction(pkg.Prog, obj, name, syntax, pkg.info, goversion, &pkg.created)
+		fn.Pkg = pkg
 		pkg.objects[obj] = fn
 		if sig.Recv() == nil {
 			pkg.Members[name] = fn // package-level function
@@ -121,6 +90,54 @@ func memberFromObject(pkg *Package, obj types.Object, syntax ast.Node, goversion
 	default: // (incl. *types.Package)
 		panic("unexpected Object type: " + obj.String())
 	}
+}
+
+// createFunction creates a function or method.
+func createFunction(prog *Program, obj *types.Func, name string, syntax ast.Node, info *types.Info, goversion string, cr *creator) *Function {
+	sig := obj.Type().(*types.Signature)
+
+	// Collect type parameters.
+	var tparams *typeparams.TypeParamList
+	if rtparams := typeparams.RecvTypeParams(sig); rtparams.Len() > 0 {
+		tparams = rtparams // method of generic type
+	} else if sigparams := typeparams.ForSignature(sig); sigparams.Len() > 0 {
+		tparams = sigparams // generic function
+	}
+
+	/* declared function/method (from syntax or export data) */
+	fn := &Function{
+		name:       name,
+		object:     obj,
+		Signature:  sig,
+		build:      (*builder).buildFromSyntax,
+		syntax:     syntax,
+		pos:        obj.Pos(),
+		Pkg:        nil, // may be set by caller
+		Prog:       prog,
+		typeparams: tparams,
+		info:       info,
+		goversion:  goversion,
+	}
+	if fn.syntax == nil {
+		fn.Synthetic = "from type information"
+		fn.build = (*builder).buildParamsOnly
+	}
+	if tparams.Len() > 0 {
+		// TODO(adonovan): retain the syntax/info/goversion fields indefinitely
+		// (i.e. don't clear them after Package.Build). It was a premature
+		// optimization design to avoid keeping typed syntax live, but the
+		// typed syntax is always live for some other reason.
+		// Then 'generic' reduces to a set of instances.
+		fn.generic = &generic{
+			origin: fn,
+			// Syntax fields may all be empty:
+			syntax:    fn.syntax,
+			info:      fn.info,
+			goversion: fn.goversion,
+		}
+	}
+	cr.Add(fn)
+	return fn
 }
 
 // membersFromDecl populates package pkg with members for each
@@ -191,6 +208,9 @@ func (c *creator) Len() int           { return len(*c) }
 // The real work of building SSA form for each function is not done
 // until a subsequent call to Package.Build.
 func (prog *Program) CreatePackage(pkg *types.Package, files []*ast.File, info *types.Info, importable bool) *Package {
+	if pkg == nil {
+		panic("nil pkg") // otherwise pkg.Scope below returns types.Universe!
+	}
 	p := &Package{
 		Prog:    prog,
 		Members: make(map[string]Member),

@@ -23,17 +23,15 @@ import (
 type Program struct {
 	Fset       *token.FileSet              // position information for the files of this Program
 	imported   map[string]*Package         // all importable Packages, keyed by import path
-	packages   map[*types.Package]*Package // all loaded Packages, keyed by object
+	packages   map[*types.Package]*Package // all created Packages
 	mode       BuilderMode                 // set of mode bits for SSA construction
 	MethodSets typeutil.MethodSetCache     // cache of type-checker's method-sets
 
 	canon *canonizer          // type canonicalization map
 	ctxt  *typeparams.Context // cache for type checking instantiations
 
-	// TODO(adonovan): split this mutex.
-	methodsMu  sync.Mutex                 // guards the following maps:
-	methodSets typeutil.Map               // maps type to its concrete methodSet
-	instances  map[*Function]*instanceSet // instances of generic functions
+	methodsMu  sync.Mutex
+	methodSets typeutil.Map // maps type to its concrete *methodSet
 
 	parameterized tpWalker // memoization of whether a type refers to type parameters
 
@@ -335,6 +333,7 @@ type Function struct {
 	typeparams     *typeparams.TypeParamList // type parameters of this function. typeparams.Len() > 0 => generic or instance of generic function
 	typeargs       []types.Type              // type arguments that instantiated typeparams. len(typeargs) > 0 => instance of generic function
 	topLevelOrigin *Function                 // the origin function if this is an instance of a source function. nil if Parent()!=nil.
+	generic        *generic                  // instances of this function, if generic
 
 	// The following fields are set transiently during building,
 	// then cleared.
