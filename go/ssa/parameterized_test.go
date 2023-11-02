@@ -10,15 +10,9 @@ import (
 	"go/token"
 	"go/types"
 	"testing"
-
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func TestIsParameterized(t *testing.T) {
-	if !typeparams.Enabled {
-		return
-	}
-
 	const source = `
 package P
 type A int

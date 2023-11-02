@@ -16,7 +16,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/loader"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // loadProgram creates loader.Program out of p.
@@ -53,9 +52,6 @@ func buildPackage(lprog *loader.Program, pkg string, mode BuilderMode) *Package 
 // TestNeedsInstance ensures that new method instances can be created via needsInstance,
 // that TypeArgs are as expected, and can be accessed via _Instances.
 func TestNeedsInstance(t *testing.T) {
-	if !typeparams.Enabled {
-		return
-	}
 	const input = `
 package p
 
@@ -150,9 +146,6 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 // TestCallsToInstances checks that calles of calls to generic functions,
 // without monomorphization, are wrappers around the origin generic function.
 func TestCallsToInstances(t *testing.T) {
-	if !typeparams.Enabled {
-		return
-	}
 	const input = `
 package p
 
@@ -294,9 +287,6 @@ func changeTypeInstrs(b *BasicBlock) int {
 }
 
 func TestInstanceUniqueness(t *testing.T) {
-	if !typeparams.Enabled {
-		return
-	}
 	const input = `
 package p
 

@@ -15,10 +15,6 @@ import (
 )
 
 func TestSubst(t *testing.T) {
-	if !typeparams.Enabled {
-		return
-	}
-
 	const source = `
 package P
 

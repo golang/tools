@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // TestGenericBodies tests that bodies of generic functions and methods containing
@@ -32,9 +31,6 @@ import (
 // serialized using go/types.Type.String().
 // See x/tools/go/expect for details on the syntax.
 func TestGenericBodies(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestGenericBodies requires type parameters")
-	}
 	for _, contents := range []string{
 		`
 		package p00
@@ -590,9 +586,6 @@ func matchNotes(fset *token.FileSet, notes []*expect.Note, calls map[*ssa.CallCo
 
 // TestInstructionString tests serializing instructions via Instruction.String().
 func TestInstructionString(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestInstructionString requires type parameters")
-	}
 	// Tests (ssa.Instruction).String(). Instructions are from a single go file.
 	// The Instructions tested are those that match a comment of the form:
 	//

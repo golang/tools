@@ -19,10 +19,6 @@ import (
 )
 
 func TestConstString(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestConstString requires type parameters.")
-	}
-
 	const source = `
 	package P
 

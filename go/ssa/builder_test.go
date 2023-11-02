@@ -644,9 +644,6 @@ func h(error)
 // TODO(taking): Add calls from non-generic functions to instantiations of generic functions.
 // TODO(taking): Add globals with types that are instantiations of generic functions.
 func TestGenericDecls(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestGenericDecls only works with type parameters enabled.")
-	}
 	const input = `
 package p
 
@@ -701,9 +698,6 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 }
 
 func TestGenericWrappers(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestGenericWrappers only works with type parameters enabled.")
-	}
 	const input = `
 package p
 
@@ -957,10 +951,6 @@ func sliceMax(s []int) []int { return s[a():b():c()] }
 
 // TestGenericFunctionSelector ensures generic functions from other packages can be selected.
 func TestGenericFunctionSelector(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestGenericFunctionSelector uses type parameters.")
-	}
-
 	pkgs := map[string]map[string]string{
 		"main": {"m.go": `package main; import "a"; func main() { a.F[int](); a.G[int,string](); a.H(0) }`},
 		"a":    {"a.go": `package a; func F[T any](){}; func G[S, T any](){}; func H[T any](a T){} `},
@@ -1191,5 +1181,36 @@ func TestSyntax(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Expected the functions with signature to be:\n\t%#v.\n Got:\n\t%#v", want, got)
+	}
+}
+
+func TestGo117Builtins(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		importer types.Importer
+	}{
+		{"slice to array pointer", "package p; var s []byte; var _ = (*[4]byte)(s)", nil},
+		{"unsafe slice", `package p; import "unsafe"; var _ = unsafe.Add(nil, 0)`, importer.Default()},
+		{"unsafe add", `package p; import "unsafe"; var _ = unsafe.Slice((*int)(nil), 0)`, importer.Default()},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, "p.go", tc.src, parser.ParseComments)
+			if err != nil {
+				t.Error(err)
+			}
+			files := []*ast.File{f}
+
+			pkg := types.NewPackage("p", "")
+			conf := &types.Config{Importer: tc.importer}
+			if _, _, err := ssautil.BuildPackage(conf, fset, pkg, files, ssa.SanityCheckFunctions); err != nil {
+				t.Error(err)
+			}
+		})
 	}
 }
