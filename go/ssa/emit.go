@@ -207,8 +207,6 @@ func isValuePreserving(ut_src, ut_dst types.Type) bool {
 // and returns the converted value.  Implicit conversions are required
 // by language assignability rules in assignments, parameter passing,
 // etc.
-//
-// Acquires f.Prog.methodsMu < f.Prog.runtimeTypesMu.
 func emitConv(f *Function, val Value, typ types.Type) Value {
 	t_src := val.Type()
 
@@ -247,13 +245,10 @@ func emitConv(f *Function, val Value, typ types.Type) Value {
 
 		// Record the types of operands to MakeInterface, if
 		// non-parameterized, as they are the set of runtime types.
-		// TODO(taking): simplify the locking.
 		t := val.Type()
-		f.Prog.methodsMu.Lock() // for isParameterized
 		if f.typeparams.Len() == 0 || !f.Prog.parameterized.isParameterized(t) {
 			addRuntimeType(f.Prog, t)
 		}
-		f.Prog.methodsMu.Unlock()
 
 		mi := &MakeInterface{X: val}
 		mi.setType(typ)

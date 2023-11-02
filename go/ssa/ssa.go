@@ -31,10 +31,11 @@ type Program struct {
 	ctxt  *typeparams.Context // cache for type checking instantiations
 
 	// TODO(adonovan): split this mutex.
-	methodsMu     sync.Mutex                 // guards the following maps:
-	methodSets    typeutil.Map               // maps type to its concrete methodSet
-	instances     map[*Function]*instanceSet // instances of generic functions
-	parameterized tpWalker                   // memoization of whether a type reaches a type parameter.
+	methodsMu  sync.Mutex                 // guards the following maps:
+	methodSets typeutil.Map               // maps type to its concrete methodSet
+	instances  map[*Function]*instanceSet // instances of generic functions
+
+	parameterized tpWalker // memoization of whether a type refers to type parameters
 
 	runtimeTypesMu sync.Mutex
 	runtimeTypes   typeutil.Map // set of runtime types (from MakeInterface)

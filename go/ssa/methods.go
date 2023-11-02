@@ -31,25 +31,24 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 	if types.IsInterface(T) {
 		return nil // abstract method (interface, possibly type param)
 	}
+
+	if prog.parameterized.isParameterized(T) {
+		return nil // abstract method (generic)
+	}
+
 	if prog.mode&LogSource != 0 {
 		defer logStack("MethodValue %s %v", T, sel)()
 	}
 
-	var m *Function
-	b := builder{created: &creator{}}
+	var cr creator
 
 	prog.methodsMu.Lock()
-	// Checks whether a type param is reachable from T.
-	// This is an expensive check. May need to be optimized later.
-	if !prog.parameterized.isParameterized(T) {
-		m = prog.addMethod(prog.createMethodSet(T), sel, b.created)
-	}
+	m := prog.addMethod(prog.createMethodSet(T), sel, &cr)
 	prog.methodsMu.Unlock()
 
-	if m == nil {
-		return nil // abstract method (generic)
-	}
+	b := builder{created: &cr}
 	b.iterate()
+
 	return m
 }
 
