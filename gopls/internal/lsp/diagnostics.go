@@ -178,6 +178,9 @@ func (s *Server) diagnoseSnapshots(snapshots map[source.Snapshot][]span.URI, onD
 // If changedURIs is non-empty, it is a set of recently changed files that
 // should be diagnosed immediately, and onDisk reports whether these file
 // changes came from a change to on-disk files.
+//
+// TODO(rfindley): eliminate the onDisk parameter, which looks misplaced. If we
+// don't want to diagnose changes on disk, filter out the changedURIs.
 func (s *Server) diagnoseSnapshot(snapshot source.Snapshot, changedURIs []span.URI, onDisk bool, delay time.Duration) {
 	ctx := snapshot.BackgroundContext()
 	ctx, done := event.Start(ctx, "Server.diagnoseSnapshot", source.SnapshotLabels(snapshot)...)
@@ -203,8 +206,10 @@ func (s *Server) diagnoseSnapshot(snapshot source.Snapshot, changedURIs []span.U
 			return
 		}
 
-		s.diagnoseChangedFiles(ctx, snapshot, changedURIs, onDisk)
-		s.publishDiagnostics(ctx, false, snapshot)
+		if len(changedURIs) > 0 {
+			s.diagnoseChangedFiles(ctx, snapshot, changedURIs, onDisk)
+			s.publishDiagnostics(ctx, false, snapshot)
+		}
 
 		if delay < minDelay {
 			delay = 0

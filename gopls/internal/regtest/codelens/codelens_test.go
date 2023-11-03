@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/hooks"
+	"golang.org/x/tools/gopls/internal/lsp"
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 
@@ -343,6 +344,9 @@ func Foo() {
 
 		// Regenerate cgo, fixing the diagnostic.
 		env.ExecuteCodeLensCommand("cgo.go", command.RegenerateCgo, nil)
-		env.Await(NoDiagnostics(ForFile("cgo.go")))
+		env.OnceMet(
+			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromRegenerateCgo), 1, true),
+			NoDiagnostics(ForFile("cgo.go")),
+		)
 	})
 }

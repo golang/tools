@@ -1813,7 +1813,7 @@ func inVendor(uri span.URI) bool {
 	return found && strings.Contains(after, "/")
 }
 
-func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source.FileHandle, forceReloadMetadata bool) (*snapshot, func()) {
+func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source.FileHandle) (*snapshot, func()) {
 	ctx, done := event.Start(ctx, "cache.snapshot.clone")
 	defer done()
 
@@ -1975,7 +1975,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source
 			result.unloadableFiles.Remove(uri)
 		}
 
-		invalidateMetadata = invalidateMetadata || forceReloadMetadata || reinit
+		invalidateMetadata = invalidateMetadata || reinit
 		anyImportDeleted = anyImportDeleted || importDeleted
 
 		// Mark all of the package IDs containing the given file.

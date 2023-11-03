@@ -287,28 +287,34 @@ func (s *Session) RemoveView(view *View) {
 //
 // If the resulting error is non-nil, the view may or may not have already been
 // dropped from the session.
-func (s *Session) updateViewLocked(ctx context.Context, view *View, info *workspaceInformation, folder *Folder) error {
+func (s *Session) updateViewLocked(ctx context.Context, view *View, info *workspaceInformation, folder *Folder) (*View, error) {
 	// Preserve the snapshot ID if we are recreating the view.
 	view.snapshotMu.Lock()
 	if view.snapshot == nil {
 		view.snapshotMu.Unlock()
 		panic("updateView called after View was already shut down")
 	}
+	// TODO(rfindley): we should probably increment the sequence ID here.
 	seqID := view.snapshot.sequenceID // Preserve sequence IDs when updating a view in place.
 	view.snapshotMu.Unlock()
 
 	i := s.dropView(view)
 	if i == -1 {
-		return fmt.Errorf("view %q not found", view.id)
+		return nil, fmt.Errorf("view %q not found", view.id)
 	}
 
-	v, snapshot, release, err := s.createView(ctx, info, folder, seqID)
+	var (
+		snapshot *snapshot
+		release  func()
+		err      error
+	)
+	view, snapshot, release, err = s.createView(ctx, info, folder, seqID)
 	if err != nil {
 		// we have dropped the old view, but could not create the new one
 		// this should not happen and is very bad, but we still need to clean
 		// up the view array if it happens
 		s.views = removeElement(s.views, i)
-		return err
+		return nil, err
 	}
 	defer release()
 
@@ -318,13 +324,13 @@ func (s *Session) updateViewLocked(ctx context.Context, view *View, info *worksp
 	// behavior when configuration is changed mid-session.
 	//
 	// Ensure the new snapshot observes all open files.
-	for _, o := range v.fs.Overlays() {
+	for _, o := range view.fs.Overlays() {
 		_, _ = snapshot.ReadFile(ctx, o.URI())
 	}
 
 	// substitute the new view into the array where the old view was
-	s.views[i] = v
-	return nil
+	s.views[i] = view
+	return view, nil
 }
 
 // removeElement removes the ith element from the slice replacing it with the last element.
@@ -360,6 +366,14 @@ func (s *Session) ModifyFiles(ctx context.Context, changes []source.FileModifica
 	_, release, err := s.DidModifyFiles(ctx, changes)
 	release()
 	return err
+}
+
+// ResetView resets the best view for the given URI.
+func (s *Session) ResetView(ctx context.Context, uri span.URI) (*View, error) {
+	s.viewMu.Lock()
+	defer s.viewMu.Unlock()
+	v := bestViewForURI(uri, s.views)
+	return s.updateViewLocked(ctx, v, v.workspaceInformation, v.folder)
 }
 
 // DidModifyFiles reports a file modification to the session. It returns
@@ -401,7 +415,6 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 			// Change, InvalidateMetadata, and UnknownFileAction actions do not cause
 			// us to re-evaluate views.
 			redoViews := (c.Action != source.Change &&
-				c.Action != source.InvalidateMetadata &&
 				c.Action != source.UnknownFileAction)
 
 			if redoViews {
@@ -429,7 +442,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 				// could report a bug, but it's not really a bug.
 				event.Error(ctx, "fetching workspace information", err)
 			} else if *info != *view.workspaceInformation {
-				if err := s.updateViewLocked(ctx, view, info, view.folder); err != nil {
+				if _, err := s.updateViewLocked(ctx, view, info, view.folder); err != nil {
 					// More catastrophic failure. The view may or may not still exist.
 					// The best we can do is log and move on.
 					event.Error(ctx, "recreating view", err)
@@ -441,13 +454,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 	// Collect information about views affected by these changes.
 	views := make(map[*View]map[span.URI]source.FileHandle)
 	affectedViews := map[span.URI][]*View{}
-	// forceReloadMetadata records whether any change is the magic
-	// source.InvalidateMetadata action.
-	forceReloadMetadata := false
 	for _, c := range changes {
-		if c.Action == source.InvalidateMetadata {
-			forceReloadMetadata = true
-		}
 		// Build the list of affected views.
 		var changedViews []*View
 		for _, view := range s.views {
@@ -487,7 +494,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 	var releases []func()
 	viewToSnapshot := map[*View]*snapshot{}
 	for view, changed := range views {
-		snapshot, release := view.invalidateContent(ctx, changed, forceReloadMetadata)
+		snapshot, release := view.invalidateContent(ctx, changed)
 		releases = append(releases, release)
 		viewToSnapshot[view] = snapshot
 	}
@@ -574,11 +581,6 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []source.FileMo
 	defer fs.mu.Unlock()
 
 	for _, c := range changes {
-		// Don't update overlays for metadata invalidations.
-		if c.Action == source.InvalidateMetadata {
-			continue
-		}
-
 		o, ok := fs.overlays[c.URI]
 
 		// If the file is not opened in an overlay and the change is on disk,

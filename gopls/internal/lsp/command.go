@@ -17,6 +17,7 @@ import (
 	"runtime/pprof"
 	"sort"
 	"strings"
+	"sync"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/ast/astutil"
@@ -214,12 +215,37 @@ func (c *commandHandler) ApplyFix(ctx context.Context, args command.ApplyFixArgs
 func (c *commandHandler) RegenerateCgo(ctx context.Context, args command.URIArg) error {
 	return c.run(ctx, commandConfig{
 		progress: "Regenerating Cgo",
-	}, func(ctx context.Context, deps commandDeps) error {
-		mod := source.FileModification{
-			URI:    args.URI.SpanURI(),
-			Action: source.InvalidateMetadata,
+	}, func(ctx context.Context, _ commandDeps) error {
+		var wg sync.WaitGroup // tracks work done on behalf of this function, incl. diagnostics
+		wg.Add(1)
+		defer wg.Done()
+
+		// Track progress on this operation for testing.
+		if c.s.Options().VerboseWorkDoneProgress {
+			work := c.s.progress.Start(ctx, DiagnosticWorkTitle(FromRegenerateCgo), "Calculating file diagnostics...", nil, nil)
+			go func() {
+				wg.Wait()
+				work.End(ctx, "Done.")
+			}()
 		}
-		return c.s.didModifyFiles(ctx, []source.FileModification{mod}, FromRegenerateCgo)
+
+		// Resetting the view causes cgo to be regenerated via `go list`.
+		v, err := c.s.session.ResetView(ctx, args.URI.SpanURI())
+		if err != nil {
+			return err
+		}
+
+		snapshot, release, err := v.Snapshot()
+		if err != nil {
+			return err
+		}
+		wg.Add(1)
+		go func() {
+			c.s.diagnoseSnapshot(snapshot, nil, true, 0)
+			release()
+			wg.Done()
+		}()
+		return nil
 	})
 }
 

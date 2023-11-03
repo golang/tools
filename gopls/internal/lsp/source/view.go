@@ -738,7 +738,6 @@ const (
 	Save
 	Create
 	Delete
-	InvalidateMetadata
 )
 
 func (a FileAction) String() string {
@@ -755,8 +754,6 @@ func (a FileAction) String() string {
 		return "Create"
 	case Delete:
 		return "Delete"
-	case InvalidateMetadata:
-		return "InvalidateMetadata"
 	default:
 		return "Unknown"
 	}

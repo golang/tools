@@ -435,7 +435,7 @@ func (s *Session) SetFolderOptions(ctx context.Context, uri span.URI, options *s
 			if err != nil {
 				return err
 			}
-			if err := s.updateViewLocked(ctx, v, info, &folder2); err != nil {
+			if _, err := s.updateViewLocked(ctx, v, info, &folder2); err != nil {
 				return err
 			}
 		}
@@ -871,7 +871,7 @@ func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 // a callback which the caller must invoke to release that snapshot.
 //
 // newOptions may be nil, in which case options remain unchanged.
-func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]source.FileHandle, forceReloadMetadata bool) (*snapshot, func()) {
+func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]source.FileHandle) (*snapshot, func()) {
 	// Detach the context so that content invalidation cannot be canceled.
 	ctx = xcontext.Detach(ctx)
 
@@ -893,7 +893,7 @@ func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]sourc
 	prevSnapshot.AwaitInitialized(ctx)
 
 	// Save one lease of the cloned snapshot in the view.
-	v.snapshot, v.releaseSnapshot = prevSnapshot.clone(ctx, v.baseCtx, changes, forceReloadMetadata)
+	v.snapshot, v.releaseSnapshot = prevSnapshot.clone(ctx, v.baseCtx, changes)
 
 	prevReleaseSnapshot()
 	v.destroy(prevSnapshot, "View.invalidateContent")
