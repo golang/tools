@@ -357,7 +357,7 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 		case u.Kind() == types.UnsafePointer:
 			return ast.NewIdent("nil")
 		default:
-			panic("unknown basic type")
+			panic(fmt.Sprintf("unknown basic type %v", u))
 		}
 
 	case *types.Map:

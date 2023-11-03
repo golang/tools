@@ -307,7 +307,7 @@ func DiffTest(t *testing.T, compute func(before, after string) []diff.Edit) {
 			if err != nil {
 				t.Fatalf("Apply failed: %v", err)
 			}
-			unified, err := diff.ToUnified(FileA, FileB, test.In, edits)
+			unified, err := diff.ToUnified(FileA, FileB, test.In, edits, diff.DefaultContextLines)
 			if err != nil {
 				t.Fatalf("ToUnified: %v", err)
 			}

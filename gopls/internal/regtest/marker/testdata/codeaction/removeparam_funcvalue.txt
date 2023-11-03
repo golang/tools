@@ -10,7 +10,7 @@ go 1.18
 -- a/a.go --
 package a
 
-func A(x, unused int) int { //@codeactionerr("refactor.rewrite", "unused", "unused", re"non-call function reference")
+func A(x, unused int) int { //@codeactionerr("unused", "unused", "refactor.rewrite", re"non-call function reference")
 	return x
 }
 

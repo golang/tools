@@ -6,7 +6,7 @@ module mod.test/imports
 go 1.18
 
 -- add.go --
-package imports //@codeaction("source.organizeImports", "imports", "", add)
+package imports //@codeaction("imports", "", "source.organizeImports", add)
 
 import (
 	"fmt"
@@ -18,7 +18,7 @@ func _() {
 }
 
 -- @add/add.go --
-package imports //@codeaction("source.organizeImports", "imports", "", add)
+package imports //@codeaction("imports", "", "source.organizeImports", add)
 
 import (
 	"bytes"
@@ -31,7 +31,7 @@ func _() {
 }
 
 -- good.go --
-package imports //@codeactionerr("source.organizeImports", "imports", "", re"found 0 CodeActions")
+package imports //@codeactionerr("imports", "", "source.organizeImports", re"found 0 CodeActions")
 
 import "fmt"
 
@@ -46,7 +46,7 @@ fmt.Println("")
 
 
 // package doc
-package imports //@codeaction("source.organizeImports", "imports", "", issue35458)
+package imports //@codeaction("imports", "", "source.organizeImports", issue35458)
 
 
 
@@ -66,7 +66,7 @@ func _() {
 
 -- @issue35458/issue35458.go --
 // package doc
-package imports //@codeaction("source.organizeImports", "imports", "", issue35458)
+package imports //@codeaction("imports", "", "source.organizeImports", issue35458)
 
 
 
@@ -85,7 +85,7 @@ func _() {
 
 
 -- multi.go --
-package imports //@codeaction("source.organizeImports", "imports", "", multi)
+package imports //@codeaction("imports", "", "source.organizeImports", multi)
 
 import "fmt"
 
@@ -96,7 +96,7 @@ func _() {
 }
 
 -- @multi/multi.go --
-package imports //@codeaction("source.organizeImports", "imports", "", multi)
+package imports //@codeaction("imports", "", "source.organizeImports", multi)
 
 import "fmt"
 
@@ -107,7 +107,7 @@ func _() {
 }
 
 -- needs.go --
-package imports //@codeaction("source.organizeImports", "package", "", needs)
+package imports //@codeaction("package", "", "source.organizeImports", needs)
 
 func goodbye() {
 	fmt.Printf("HI") //@diag("fmt", re"(undeclared|undefined)")
@@ -115,7 +115,7 @@ func goodbye() {
 }
 
 -- @needs/needs.go --
-package imports //@codeaction("source.organizeImports", "package", "", needs)
+package imports //@codeaction("package", "", "source.organizeImports", needs)
 
 import (
 	"fmt"
@@ -128,7 +128,7 @@ func goodbye() {
 }
 
 -- remove.go --
-package imports //@codeaction("source.organizeImports", "package", "", remove)
+package imports //@codeaction("package", "", "source.organizeImports", remove)
 
 import (
 	"bytes" //@diag("\"bytes\"", re"not used")
@@ -140,7 +140,7 @@ func _() {
 }
 
 -- @remove/remove.go --
-package imports //@codeaction("source.organizeImports", "package", "", remove)
+package imports //@codeaction("package", "", "source.organizeImports", remove)
 
 import (
 	"fmt"
@@ -151,7 +151,7 @@ func _() {
 }
 
 -- removeall.go --
-package imports //@codeaction("source.organizeImports", "package", "", removeall)
+package imports //@codeaction("package", "", "source.organizeImports", removeall)
 
 import (
 	"bytes" //@diag("\"bytes\"", re"not used")
@@ -163,7 +163,7 @@ func _() {
 }
 
 -- @removeall/removeall.go --
-package imports //@codeaction("source.organizeImports", "package", "", removeall)
+package imports //@codeaction("package", "", "source.organizeImports", removeall)
 
 //@diag("\"fmt\"", re"not used")
 
@@ -172,4 +172,4 @@ func _() {
 
 -- twolines.go --
 package imports
-func main()  {} //@codeactionerr("source.organizeImports", "main", "", re"found 0")
+func main()  {} //@codeactionerr("main", "", "source.organizeImports", re"found 0")

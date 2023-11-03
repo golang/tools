@@ -610,7 +610,7 @@ func applyTextEdits(mapper *protocol.Mapper, edits []protocol.TextEdit, flags *E
 	}
 
 	if flags.Diff {
-		unified, err := diff.ToUnified(filename+".orig", filename, string(mapper.Content), renameEdits)
+		unified, err := diff.ToUnified(filename+".orig", filename, string(mapper.Content), renameEdits, diff.DefaultContextLines)
 		if err != nil {
 			return err
 		}

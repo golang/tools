@@ -114,6 +114,18 @@ func (e *Env) SetBufferContent(name string, content string) {
 	}
 }
 
+// ReadFile returns the file content for name that applies to the current
+// editing session: if the file is open, it returns its buffer content,
+// otherwise it returns on disk content.
+func (e *Env) FileContent(name string) string {
+	e.T.Helper()
+	text, ok := e.Editor.BufferText(name)
+	if ok {
+		return text
+	}
+	return e.ReadWorkspaceFile(name)
+}
+
 // RegexpSearch returns the starting position of the first match for re in the
 // buffer specified by name, calling t.Fatal on any error. It first searches
 // for the position in open buffers, then in workspace files.
