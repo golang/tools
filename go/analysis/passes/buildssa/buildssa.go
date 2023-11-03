@@ -26,7 +26,7 @@ var Analyzer = &analysis.Analyzer{
 }
 
 // SSA provides SSA-form intermediate representation for all the
-// non-blank source functions in the current package.
+// source functions in the current package.
 type SSA struct {
 	Pkg      *ssa.Package
 	SrcFuncs []*ssa.Function
@@ -64,16 +64,6 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	for _, f := range pass.Files {
 		for _, decl := range f.Decls {
 			if fdecl, ok := decl.(*ast.FuncDecl); ok {
-
-				// SSA will not build a Function
-				// for a FuncDecl named blank.
-				// That's arguably too strict but
-				// relaxing it would break uniqueness of
-				// names of package members.
-				if fdecl.Name.Name == "_" {
-					continue
-				}
-
 				// (init functions have distinct Func
 				// objects named "init" and distinct
 				// ssa.Functions named "init#1", ...)

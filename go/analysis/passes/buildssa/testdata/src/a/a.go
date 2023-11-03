@@ -14,3 +14,7 @@ func (T) fib(x int) int { return Fib(x) }
 func _() {
 	print("hi")
 }
+
+func _() {
+	print("hello")
+}

@@ -182,11 +182,6 @@ func srcFunctions(prog *ssa.Program, pkgs []*packages.Package) (res []*ssa.Funct
 		for _, file := range pkg.Syntax {
 			for _, decl := range file.Decls {
 				if decl, ok := decl.(*ast.FuncDecl); ok {
-					// TODO(adonovan): construct ssa.Functions for blank-named
-					// functions too, to avoid annoying edge cases like this.
-					if decl.Name.Name == "_" {
-						continue
-					}
 					obj := pkg.TypesInfo.Defs[decl.Name].(*types.Func)
 					if obj == nil {
 						panic("nil *Func")

@@ -56,7 +56,7 @@ type Package struct {
 	Prog    *Program                // the owning program
 	Pkg     *types.Package          // the corresponding go/types.Package
 	Members map[string]Member       // all package members keyed by name (incl. init and init#%d)
-	objects map[types.Object]Member // mapping of package objects to members (incl. methods). Contains *NamedConst, *Global, *Function.
+	objects map[types.Object]Member // mapping of package objects to members (incl. methods). Contains *NamedConst, *Global, *Function (values but not types)
 	init    *Function               // Func("init"); the package's init function
 	debug   bool                    // include full debug info in this package
 	syntax  bool                    // package was loaded from syntax
