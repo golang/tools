@@ -45,6 +45,7 @@ import (
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/persistent"
 	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/xcontext"
 )
 
 type snapshot struct {
@@ -1813,20 +1814,20 @@ func inVendor(uri span.URI) bool {
 	return found && strings.Contains(after, "/")
 }
 
-func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source.FileHandle) (*snapshot, func()) {
+func (s *snapshot) clone(ctx context.Context, changes map[span.URI]source.FileHandle) (*snapshot, func()) {
 	ctx, done := event.Start(ctx, "cache.snapshot.clone")
 	defer done()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	bgCtx, cancel := context.WithCancel(bgCtx)
+	backgroundCtx, cancel := context.WithCancel(event.Detach(xcontext.Detach(s.backgroundCtx)))
 	result := &snapshot{
 		sequenceID:           s.sequenceID + 1,
 		globalID:             nextSnapshotID(),
 		store:                s.store,
 		view:                 s.view,
-		backgroundCtx:        bgCtx,
+		backgroundCtx:        backgroundCtx,
 		cancel:               cancel,
 		builtin:              s.builtin,
 		initialized:          s.initialized,
