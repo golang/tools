@@ -198,7 +198,7 @@ func (c *creator) Add(fn *Function) {
 func (c *creator) At(i int) *Function { return (*c)[i] }
 func (c *creator) Len() int           { return len(*c) }
 
-// CreatePackage constructs and returns an SSA Package from the
+// CreatePackage creates and returns an SSA Package from the
 // specified type-checked, error-free file ASTs, and populates its
 // Members mapping.
 //
@@ -221,7 +221,7 @@ func (prog *Program) CreatePackage(pkg *types.Package, files []*ast.File, info *
 		objects: make(map[types.Object]Member),
 		Pkg:     pkg,
 		syntax:  info != nil,
-		// transient values (CREATE and BUILD phases)
+		// transient values (cleared after Package.Build)
 		info:        info,
 		files:       files,
 		initVersion: make(map[ast.Expr]string),
@@ -241,7 +241,6 @@ func (prog *Program) CreatePackage(pkg *types.Package, files []*ast.File, info *
 	p.Members[p.init.name] = p.init
 	p.created.Add(p.init)
 
-	// CREATE phase.
 	// Allocate all package members: vars, funcs, consts and types.
 	if len(files) > 0 {
 		// Go source package.

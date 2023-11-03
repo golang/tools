@@ -303,8 +303,8 @@ type Node interface {
 //
 // A generic function is a function or method that has uninstantiated type
 // parameters (TypeParams() != nil). Consider a hypothetical generic
-// method, (*Map[K,V]).Get. It may be instantiated with all ground
-// (non-parameterized) types as (*Map[string,int]).Get or with
+// method, (*Map[K,V]).Get. It may be instantiated with all
+// non-parameterized types as (*Map[string,int]).Get or with
 // parameterized types as (*Map[string,U]).Get, where U is a type parameter.
 // In both instantiations, Origin() refers to the instantiated generic
 // method, (*Map[K,V]).Get, TypeParams() refers to the parameters [K,V] of
@@ -344,14 +344,13 @@ type Function struct {
 	topLevelOrigin *Function                 // the origin function if this is an instance of a source function. nil if Parent()!=nil.
 	generic        *generic                  // instances of this function, if generic
 
-	// The following fields are set transiently during building,
-	// then cleared.
+	// The following fields are cleared after building.
 	currentBlock *BasicBlock              // where to emit code
 	vars         map[*types.Var]Value     // addresses of local variables
 	namedResults []*Alloc                 // tuple of named results
 	targets      *targets                 // linked stack of branch targets
 	lblocks      map[*types.Label]*lblock // labelled blocks
-	subst        *subster                 // non-nil => expand generic body using this type substitution of ground types
+	subst        *subster                 // type parameter substitutions (if non-nil)
 }
 
 // BasicBlock represents an SSA basic block.
@@ -1400,7 +1399,7 @@ type anInstruction struct {
 // represents a dynamically dispatched call to an interface method.
 // In this mode, Value is the interface value and Method is the
 // interface's abstract method. The interface value may be a type
-// parameter. Note: an abstract method may be shared by multiple
+// parameter. Note: an interface method may be shared by multiple
 // interfaces due to embedding; Value.Type() provides the specific
 // interface used for this call.
 //
@@ -1418,7 +1417,7 @@ type anInstruction struct {
 // the last element of Args is a slice.
 type CallCommon struct {
 	Value  Value       // receiver (invoke mode) or func value (call mode)
-	Method *types.Func // abstract method (invoke mode)
+	Method *types.Func // interface method (invoke mode)
 	Args   []Value     // actual parameters (in static method call, includes receiver)
 	pos    token.Pos   // position of CallExpr.Lparen, iff explicit in source
 }

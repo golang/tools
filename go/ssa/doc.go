@@ -116,9 +116,6 @@
 // The ssa/ssautil package provides various utilities that depend only
 // on the public API of this package.
 //
-// TODO(adonovan): Consider the exceptional control-flow implications
-// of defer and recover().
-//
 // TODO(adonovan): write a how-to document for all the various cases
 // of trying to determine corresponding elements across the four
 // domains of source locations, ast.Nodes, types.Objects,

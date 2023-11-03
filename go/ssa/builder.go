@@ -4,106 +4,73 @@
 
 package ssa
 
-// This file implements the BUILD phase of SSA construction.
+// This file defines the builder, which builds SSA-form IR for function bodies.
 //
-// SSA construction has two phases, CREATE and BUILD.  In the CREATE phase
-// (create.go), all packages are constructed and type-checked and
-// definitions of all package members are created, method-sets are
-// computed, and wrapper methods are synthesized.
-// ssa.Packages are created in arbitrary order.
+// SSA construction has two phases, "create" and "build". First, one
+// or more packages are created in any order by a sequence of calls to
+// CreatePackage, either from syntax or from mere type information.
+// Each created package has a complete set of Members (const, var,
+// type, func) that can be accessed through methods like
+// Program.FuncValue.
 //
-// In the BUILD phase (builder.go), the builder traverses the AST of
-// each Go source function and generates SSA instructions for the
-// function body.  Initializer expressions for package-level variables
-// are emitted to the package's init() function in the order specified
-// by go/types.Info.InitOrder, then code for each function in the
-// package is generated in lexical order.
-// The BUILD phases for distinct packages are independent and are
-// executed in parallel.
+// It is not necessary to call CreatePackage for all dependencies of
+// each syntax package, only for its direct imports. (In future
+// perhaps even this restriction may be lifted.)
 //
-// TODO(adonovan): indeed, building functions is now embarrassingly parallel.
-// Audit for concurrency then benchmark using more goroutines.
+// Second, packages created from syntax are built, by one or more
+// calls to Package.Build, which may be concurrent; or by a call to
+// Program.Build, which builds all packages in parallel. Building
+// traverses the type-annotated syntax tree of each function body and
+// creates SSA-form IR, a control-flow graph of instructions,
+// populating fields such as Function.Body, .Params, and others.
 //
-// State:
+// Building may create additional methods, including:
+// - wrapper methods (e.g. for embeddding, or implicit &recv)
+// - bound method closures (e.g. for use(recv.f))
+// - thunks (e.g. for use(I.f) or use(T.f))
+// - generic instances (e.g. to produce f[int] from f[any]).
+// As these methods are created, they are added to the build queue,
+// and then processed in turn, until a fixed point is reached,
+// Since these methods might belong to packages that were not
+// created (by a call to CreatePackage), their Pkg field is unset.
 //
-// The Package's and Program's indices (maps) are populated and
-// mutated during the CREATE phase, but during the BUILD phase they
-// remain constant.  The sole exception is Prog.methodSets and its
-// related maps, which are protected by a dedicated mutex.
+// Instances of generic functions may be either instantiated (f[int]
+// is a copy of f[T] with substitutions) or wrapped (f[int] delegates
+// to f[T]), depending on the availability of generic syntax and the
+// InstantiateGenerics mode flag.
 //
-// Generic functions declared in a package P can be instantiated from functions
-// outside of P. This happens independently of the CREATE and BUILD phase of P.
+// Each package has an initializer function named "init" that calls
+// the initializer functions of each direct import, computes and
+// assigns the initial value of each global variable, and calls each
+// source-level function named "init". (These generate SSA functions
+// named "init#1", "init#2", etc.)
 //
-// Synthetics:
+// Runtime types
 //
-// During the BUILD phase new functions can be created and built. These include:
-// - wrappers (wrappers, bounds, thunks)
-// - generic function instantiations
-// These functions do not belong to a specific Pkg (Pkg==nil). Instead the
-// Package that led to them being CREATED is obligated to ensure these
-// are BUILT during the BUILD phase of the Package.
+// Each MakeInterface operation is a conversion from a non-interface
+// type to an interface type. The semantics of this operation requires
+// a runtime type descriptor, which is the type portion of an
+// interface, and the value abstracted by reflect.Type.
 //
-// Runtime types:
+// The program accumulates all non-parameterized types that are
+// encountered as MakeInterface operands, along with all types that
+// may be derived from them using reflection. This set is available as
+// Program.RuntimeTypes, and the methods of these types may be
+// reachable via interface calls or reflection even if they are never
+// referenced from the SSA IR. (In practice, algorithms such as RTA
+// that compute reachability from package main perform their own
+// tracking of runtime types at a finer grain, so this feature is not
+// very useful.)
 //
-// A concrete type is a type that is fully monomorphized with concrete types,
-// i.e. it cannot reach a TypeParam type.
-// Some concrete types require full runtime type information. Cases
-// include checking whether a type implements an interface or
-// interpretation by the reflect package. All such types that may require
-// this information will have all of their method sets built and will be added to Prog.methodSets.
-// A type T is considered to require runtime type information if it is
-// a runtime type and has a non-empty method set and either:
-// - T flows into a MakeInterface instructions,
-// - T appears in a concrete exported member, or
-// - T is a type reachable from a type S that has non-empty method set.
-// For any such type T, method sets must be created before the BUILD
-// phase of the package is done.
-//
-// Function literals:
-//
-// The BUILD phase of a function literal (anonymous function) is tied to the
-// BUILD phase of the enclosing parent function. The FreeVars of an anonymous
-// function are discovered by building the anonymous function. This in turn
-// changes which variables must be bound in a MakeClosure instruction in the
-// parent. Anonymous functions also track where they are referred to in their
-// parent function.
-//
-// Create and build:
-//
-// Construction happens in two phases, "create" and "build".
-// Package and Function data structures are created by CreatePackage.
-// However, fields of Function such as Body, Params, and others are
-// populated only during building, which happens later (or never).
-//
-// A complete Program is built (in parallel) by calling Program.Build,
-// but individual packages may built by calling Package.Build.
-//
-// The Function.build fields determines the algorithm for building the
-// function body. It is cleared to mark that building is complete.
+// Function literals
 //
 // Anonymous functions must be built as soon as they are encountered,
 // as it may affect locals of the enclosing function, but they are not
 // marked 'built' until the end of the outermost enclosing function.
 // (Among other things, this causes them to be logged in top-down order.)
 //
-// The {start,finish}Body functions must be called (in that order)
-// around construction of the Body.
-//
-// Building a package may trigger the creation of new functions for
-// wrapper methods and instantiations. The Package.Build operation
-// will build these additional functions, and any that they in turn
-// create, until it converges.
-//
-// Program.MethodValue may also trigger the creation of new functions,
-// and it too must build iterately until it converges.
-//
-// Program.NewFunction:
-//
-// This is a low level operation for creating functions that do not exist in
-// the source. Use with caution.
-//
-// TODO(taking): Use consistent terminology for "concrete".
-// TODO(taking): Use consistent terminology for "monomorphization"/"instantiate"/"expand".
+// The Function.build fields determines the algorithm for building the
+// function body. It is cleared to mark that building is complete.
 
 import (
 	"fmt"

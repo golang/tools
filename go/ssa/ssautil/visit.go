@@ -83,7 +83,7 @@ func AllFunctions(prog *ssa.Program) map[*ssa.Function]bool {
 
 	// Historically, Program.RuntimeTypes used to include the type
 	// of any exported member of a package loaded from syntax that
-	// has a non-parameterized (ground) type, plus all types
+	// has a non-parameterized type, plus all types
 	// reachable from that type using reflection, even though
 	// these runtime types may not be required for them.
 	//

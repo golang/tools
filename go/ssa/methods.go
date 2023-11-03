@@ -15,8 +15,8 @@ import (
 )
 
 // MethodValue returns the Function implementing method sel, building
-// wrapper methods on demand.  It returns nil if sel denotes an
-// abstract (interface or parameterized) method.
+// wrapper methods on demand. It returns nil if sel denotes an
+// interface or generic method.
 //
 // Precondition: sel.Kind() == MethodVal.
 //
@@ -29,11 +29,11 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 	}
 	T := sel.Recv()
 	if types.IsInterface(T) {
-		return nil // abstract method (interface, possibly type param)
+		return nil // interface method or type parameter
 	}
 
 	if prog.parameterized.isParameterized(T) {
-		return nil // abstract method (generic)
+		return nil // generic method
 	}
 
 	if prog.mode&LogSource != 0 {
@@ -97,7 +97,7 @@ func (prog *Program) objectMethod(obj *types.Func, cr *creator) *Function {
 
 // LookupMethod returns the implementation of the method of type T
 // identified by (pkg, name).  It returns nil if the method exists but
-// is abstract, and panics if T has no such method.
+// is an interface method or generic method, and panics if T has no such method.
 func (prog *Program) LookupMethod(T types.Type, pkg *types.Package, name string) *Function {
 	sel := prog.MethodSets.MethodSet(T).Lookup(pkg, name)
 	if sel == nil {
@@ -280,7 +280,7 @@ func forEachReachable(msets *typeutil.MethodSetCache, T types.Type, f func(types
 			}
 
 		case *typeparams.TypeParam, *typeparams.Union:
-			// Type parameters cannot be reached from ground types.
+			// forEachReachable must not be called on parameterized types.
 			panic(T)
 
 		default:
