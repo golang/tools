@@ -312,7 +312,11 @@ func FormatVarType(ctx context.Context, snapshot Snapshot, srcpkg Package, obj *
 			return types.TypeString(obj.Type(), qf), nil // in generic function
 		}
 		if decl.Recv != nil && len(decl.Recv.List) > 0 {
-			if x, _, _, _ := typeparams.UnpackIndexExpr(decl.Recv.List[0].Type); x != nil {
+			rtype := decl.Recv.List[0].Type
+			if e, ok := rtype.(*ast.StarExpr); ok {
+				rtype = e.X
+			}
+			if x, _, _, _ := typeparams.UnpackIndexExpr(rtype); x != nil {
 				return types.TypeString(obj.Type(), qf), nil // in method of generic type
 			}
 		}

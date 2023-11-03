@@ -1,0 +1,21 @@
+This test checks signature help on generic signatures.
+
+-- g.go --
+package g
+
+type M[K comparable, V any] map[K]V
+
+// golang/go#61189: signatureHelp must handle pointer receivers. 
+func (m *M[K, V]) Get(k K) V {
+	return (*m)[k]
+}
+
+func Get[K comparable, V any](m M[K, V], k K) V {
+	return m[k]
+}
+
+func _() {
+	var m M[int, string]
+	_ = m.Get(0)  //@signature("(", "Get(k int) string", 0)
+	_ = Get(m, 0) //@signature("0", "Get(m M[int, string], k int) string", 1)
+}
