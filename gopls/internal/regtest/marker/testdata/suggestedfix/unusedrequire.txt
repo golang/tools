@@ -13,12 +13,15 @@ module mod.com
 
 go 1.14
 
-require example.com v1.0.0 //@suggestedfix("require", re"not used", "quickfix", a)
+require example.com v1.0.0 //@suggestedfix("require", re"not used", a)
 
 -- @a/a/go.mod --
-module mod.com
-
-go 1.14
+--- before
++++ after
+@@ -4,3 +4 @@
+-
+-require example.com v1.0.0 //@suggestedfix("require", re"not used", a)
+-
 -- a/main.go --
 package main
 func main() {}

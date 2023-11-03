@@ -249,9 +249,6 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //     to have exactly one associated code action of the specified kind.
 //     This action is executed for its editing effects on the source files.
 //     Like rename, the golden directory contains the expected transformed files.
-//     TODO(rfindley): we probably only need 'suggestedfix' for quick-fixes. All
-//     other actions should use codeaction markers. In that case, we can remove
-//     the 'kind' parameter.
 //
 //   - rank(location, ...completionItem): executes a textDocument/completion
 //     request at the given location, and verifies that each expected
@@ -387,15 +384,11 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //
 // Existing marker tests (in ../testdata) to port:
 //   - CallHierarchy
-//   - Completions
-//   - CompletionSnippets
-//   - CaseSensitiveCompletions
-//   - RankCompletions
 //   - SemanticTokens
-//   - FunctionExtractions
+//   - SuggestedFixes
 //   - MethodExtractions
-//   - Renames
 //   - InlayHints
+//   - Renames
 //   - SelectionRanges
 func RunMarkerTests(t *testing.T, dir string) {
 	// The marker tests must be able to run go/packages.Load.
@@ -407,7 +400,6 @@ func RunMarkerTests(t *testing.T, dir string) {
 	}
 
 	// Opt: use a shared cache.
-	// TODO(rfindley): opt: use a memoize store with no eviction.
 	cache := cache.New(nil)
 
 	for _, test := range tests {
@@ -2035,7 +2027,7 @@ func (mark marker) consumeExtraNotes(name string, f func(marker)) {
 // kind, golden) marker. It acts like @diag(location, regexp), to set
 // the expectation of a diagnostic, but then it applies the first code
 // action of the specified kind suggested by the matched diagnostic.
-func suggestedfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, actionKind string, golden *Golden) {
+func suggestedfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, golden *Golden) {
 	loc.Range.End = loc.Range.Start // diagnostics ignore end position.
 	// Find and remove the matching diagnostic.
 	diag, ok := removeDiagnostic(mark, loc, re)
@@ -2045,14 +2037,14 @@ func suggestedfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, a
 	}
 
 	// Apply the fix it suggests.
-	changed, err := codeAction(mark.run.env, loc.URI, diag.Range, actionKind, &diag)
+	changed, err := codeAction(mark.run.env, loc.URI, diag.Range, "quickfix", &diag)
 	if err != nil {
 		mark.errorf("suggestedfix failed: %v. (Use @suggestedfixerr for expected errors.)", err)
 		return
 	}
 
 	// Check the file state.
-	checkChangedFiles(mark, changed, golden)
+	checkDiffs(mark, changed, golden)
 }
 
 // codeAction executes a textDocument/codeAction request for the specified

@@ -9,20 +9,13 @@ import (
 
 func goodbye() {
 	s := "hiiiiiii"
-	s = s //@suggestedfix("s = s", re"self-assignment", "quickfix", fix)
+	s = s //@suggestedfix("s = s", re"self-assignment", fix)
 	log.Print(s)
 }
 
 -- @fix/a.go --
-package suggestedfix
-
-import (
-	"log"
-)
-
-func goodbye() {
-	s := "hiiiiiii"
-	 //@suggestedfix("s = s", re"self-assignment", "quickfix", fix)
-	log.Print(s)
-}
-
+--- before
++++ after
+@@ -9 +9 @@
+-	s = s //@suggestedfix("s = s", re"self-assignment", fix)
++	 //@suggestedfix("s = s", re"self-assignment", fix)

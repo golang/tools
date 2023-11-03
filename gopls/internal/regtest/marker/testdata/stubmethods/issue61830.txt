@@ -14,23 +14,15 @@ type I interface {
 
 type A struct{}
 
-var _ I = &A{} //@suggestedfix(re"&A..", re"missing method M", "quickfix", stub)
+var _ I = &A{} //@suggestedfix(re"&A..", re"missing method M", stub)
 -- @stub/p.go --
-package p
-
-import "io"
-
-type B struct{}
-
-type I interface {
-	M(io.Reader, B)
-}
-
-type A struct{}
-
-// M implements I.
-func (*A) M(io.Reader, B) {
-	panic("unimplemented")
-}
-
-var _ I = &A{} //@suggestedfix(re"&A..", re"missing method M", "quickfix", stub)
+--- before
++++ after
+@@ -11 +11,6 @@
+-type A struct{}
++type A struct{}
++
++// M implements I.
++func (*A) M(io.Reader, B) {
++	panic("unimplemented")
++}

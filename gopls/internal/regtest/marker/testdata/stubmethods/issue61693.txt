@@ -15,21 +15,16 @@ func F(err ...error) {}
 
 func _() {
 	var x error
-	F(x, C(0)) //@suggestedfix(re"C.0.", re"missing method Error", "quickfix", stub)
+	F(x, C(0)) //@suggestedfix(re"C.0.", re"missing method Error", stub)
 }
 -- @stub/main.go --
-package main
-
-type C int
-
-// Error implements error.
-func (C) Error() string {
-	panic("unimplemented")
-}
-
-func F(err ...error) {}
-
-func _() {
-	var x error
-	F(x, C(0)) //@suggestedfix(re"C.0.", re"missing method Error", "quickfix", stub)
-}
+--- before
++++ after
+@@ -3 +3,6 @@
+-type C int
++type C int
++
++// Error implements error.
++func (C) Error() string {
++	panic("unimplemented")
++}

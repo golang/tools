@@ -9,54 +9,46 @@ go 1.12
 package p
 
 func a() {
-	z, _ := 1+y, 11 //@suggestedfix("y", re"(undeclared name|undefined): y", "quickfix", a)
+	z, _ := 1+y, 11 //@suggestedfix("y", re"(undeclared name|undefined): y", a)
 	_ = z
 }
 
 -- @a/a.go --
-package p
-
-func a() {
-	y := 
-	z, _ := 1+y, 11 //@suggestedfix("y", re"(undeclared name|undefined): y", "quickfix", a)
-	_ = z
-}
-
+--- before
++++ after
+@@ -3 +3,2 @@
+-func a() {
++func a() {
++	y := 
 -- b.go --
 package p
 
 func b() {
 	if 100 < 90 {
-	} else if 100 > n+2 { //@suggestedfix("n", re"(undeclared name|undefined): n", "quickfix", b)
+	} else if 100 > n+2 { //@suggestedfix("n", re"(undeclared name|undefined): n", b)
 	}
 }
 
 -- @b/b.go --
-package p
-
-func b() {
-	n := 
-	if 100 < 90 {
-	} else if 100 > n+2 { //@suggestedfix("n", re"(undeclared name|undefined): n", "quickfix", b)
-	}
-}
-
+--- before
++++ after
+@@ -3 +3,2 @@
+-func b() {
++func b() {
++	n := 
 -- c.go --
 package p
 
 func c() {
-	for i < 200 { //@suggestedfix("i", re"(undeclared name|undefined): i", "quickfix", c)
+	for i < 200 { //@suggestedfix("i", re"(undeclared name|undefined): i", c)
 	}
 	r() //@diag("r", re"(undeclared name|undefined): r")
 }
 
 -- @c/c.go --
-package p
-
-func c() {
-	i := 
-	for i < 200 { //@suggestedfix("i", re"(undeclared name|undefined): i", "quickfix", c)
-	}
-	r() //@diag("r", re"(undeclared name|undefined): r")
-}
-
+--- before
++++ after
+@@ -3 +3,2 @@
+-func c() {
++func c() {
++	i := 
