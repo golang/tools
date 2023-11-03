@@ -51,23 +51,21 @@ var UpdateGolden = flag.Bool("golden", false, "Update golden files")
 type CallHierarchy = map[span.Span]*CallHierarchyResult
 type SemanticTokens = []span.Span
 type SuggestedFixes = map[span.Span][]SuggestedFix
-type MethodExtractions = map[span.Span]span.Span
 type Renames = map[span.Span]string
 type InlayHints = []span.Span
 type AddImport = map[span.URI]string
 type SelectionRanges = []span.Span
 
 type Data struct {
-	Config            packages.Config
-	Exported          *packagestest.Exported
-	CallHierarchy     CallHierarchy
-	SemanticTokens    SemanticTokens
-	SuggestedFixes    SuggestedFixes
-	MethodExtractions MethodExtractions
-	Renames           Renames
-	InlayHints        InlayHints
-	AddImport         AddImport
-	SelectionRanges   SelectionRanges
+	Config          packages.Config
+	Exported        *packagestest.Exported
+	CallHierarchy   CallHierarchy
+	SemanticTokens  SemanticTokens
+	SuggestedFixes  SuggestedFixes
+	Renames         Renames
+	InlayHints      InlayHints
+	AddImport       AddImport
+	SelectionRanges SelectionRanges
 
 	fragments map[string]string
 	dir       string
@@ -90,7 +88,6 @@ type Tests interface {
 	CallHierarchy(*testing.T, span.Span, *CallHierarchyResult)
 	SemanticTokens(*testing.T, span.Span)
 	SuggestedFix(*testing.T, span.Span, []SuggestedFix, int)
-	MethodExtraction(*testing.T, span.Span, span.Span)
 	InlayHints(*testing.T, span.Span)
 	Rename(*testing.T, span.Span, string)
 	AddImport(*testing.T, span.URI, string)
@@ -180,11 +177,10 @@ func RunTests(t *testing.T, dataDir string, includeMultiModule bool, f func(*tes
 
 func load(t testing.TB, mode string, dir string) *Data {
 	datum := &Data{
-		CallHierarchy:     make(CallHierarchy),
-		Renames:           make(Renames),
-		SuggestedFixes:    make(SuggestedFixes),
-		MethodExtractions: make(MethodExtractions),
-		AddImport:         make(AddImport),
+		CallHierarchy:  make(CallHierarchy),
+		Renames:        make(Renames),
+		SuggestedFixes: make(SuggestedFixes),
+		AddImport:      make(AddImport),
 
 		dir:       dir,
 		fragments: map[string]string{},
@@ -321,7 +317,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 		"inlayHint":      datum.collectInlayHints,
 		"rename":         datum.collectRenames,
 		"suggestedfix":   datum.collectSuggestedFixes,
-		"extractmethod":  datum.collectMethodExtractions,
 		"incomingcalls":  datum.collectIncomingCalls,
 		"outgoingcalls":  datum.collectOutgoingCalls,
 		"addimport":      datum.collectAddImports,
@@ -414,20 +409,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		}
 	})
 
-	t.Run("MethodExtraction", func(t *testing.T) {
-		t.Helper()
-		for start, end := range data.MethodExtractions {
-			// Check if we should skip this spn if the -modfile flag is not available.
-			if shouldSkip(data, start.URI()) {
-				continue
-			}
-			t.Run(SpanName(start), func(t *testing.T) {
-				t.Helper()
-				tests.MethodExtraction(t, start, end)
-			})
-		}
-	})
-
 	t.Run("InlayHints", func(t *testing.T) {
 		t.Helper()
 		for _, src := range data.InlayHints {
@@ -487,7 +468,6 @@ func checkData(t *testing.T, data *Data) {
 	fmt.Fprintf(buf, "CallHierarchyCount = %v\n", len(data.CallHierarchy))
 	fmt.Fprintf(buf, "SemanticTokenCount = %v\n", len(data.SemanticTokens))
 	fmt.Fprintf(buf, "SuggestedFixCount = %v\n", len(data.SuggestedFixes))
-	fmt.Fprintf(buf, "MethodExtractionCount = %v\n", len(data.MethodExtractions))
 	fmt.Fprintf(buf, "InlayHintsCount = %v\n", len(data.InlayHints))
 	fmt.Fprintf(buf, "RenamesCount = %v\n", len(data.Renames))
 	fmt.Fprintf(buf, "SelectionRangesCount = %v\n", len(data.SelectionRanges))
@@ -581,12 +561,6 @@ func (data *Data) collectSemanticTokens(spn span.Span) {
 
 func (data *Data) collectSuggestedFixes(spn span.Span, actionKind, fix string) {
 	data.SuggestedFixes[spn] = append(data.SuggestedFixes[spn], SuggestedFix{actionKind, fix})
-}
-
-func (data *Data) collectMethodExtractions(start span.Span, end span.Span) {
-	if _, ok := data.MethodExtractions[start]; !ok {
-		data.MethodExtractions[start] = end
-	}
 }
 
 func (data *Data) collectSelectionRanges(spn span.Span) {

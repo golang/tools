@@ -1,0 +1,244 @@
+This test exercises function and method extraction.
+
+-- flags --
+-ignore_extra_diags
+
+-- basic.go --
+package extract
+
+//@codeactionedit(A_XLessThanYP, "refactor.extract", meth1, "Extract method")
+//@codeactionedit(A_XLessThanYP, "refactor.extract", func1, "Extract function")
+//@codeactionedit(A_AddP1, "refactor.extract", meth2, "Extract method")
+//@codeactionedit(A_AddP1, "refactor.extract", func2, "Extract function")
+//@codeactionedit(A_AddP2, "refactor.extract", meth3, "Extract method")
+//@codeactionedit(A_AddP2, "refactor.extract", func3, "Extract function")
+//@codeactionedit(A_XLessThanY, "refactor.extract", meth4, "Extract method")
+//@codeactionedit(A_XLessThanY, "refactor.extract", func4, "Extract function")
+//@codeactionedit(A_Add1, "refactor.extract", meth5, "Extract method")
+//@codeactionedit(A_Add1, "refactor.extract", func5, "Extract function")
+//@codeactionedit(A_Add2, "refactor.extract", meth6, "Extract method")
+//@codeactionedit(A_Add2, "refactor.extract", func6, "Extract function")
+
+type A struct {
+	x int
+	y int
+}
+
+func (a *A) XLessThanYP() bool {
+	return a.x < a.y //@loc(A_XLessThanYP, re`return.*a\.y`)
+}
+
+func (a *A) AddP() int {
+	sum := a.x + a.y //@loc(A_AddP1, re`sum.*a\.y`)
+	return sum       //@loc(A_AddP2, re`return.*sum`)
+}
+
+func (a A) XLessThanY() bool {
+	return a.x < a.y //@loc(A_XLessThanY, re`return.*a\.y`)
+}
+
+func (a A) Add() int {
+	sum := a.x + a.y //@loc(A_Add1, re`sum.*a\.y`)
+	return sum       //@loc(A_Add2, re`return.*sum`)
+}
+
+-- @func1/basic.go --
+--- before
++++ after
+@@ -22 +22,5 @@
+-	return a.x < a.y //@loc(A_XLessThanYP, re`return.*a\.y`)
++	return newFunction(a) //@loc(A_XLessThanYP, re`return.*a\.y`)
++}
++
++func newFunction(a *A) bool {
++	return a.x < a.y
+-- @func2/basic.go --
+--- before
++++ after
+@@ -26,2 +26,7 @@
+-	sum := a.x + a.y //@loc(A_AddP1, re`sum.*a\.y`)
++	sum := newFunction(a) //@loc(A_AddP1, re`sum.*a\.y`)
+-	return sum       //@loc(A_AddP2, re`return.*sum`)
++	return sum       //@loc(A_AddP2, re`return.*sum`)
++}
++
++func newFunction(a *A) int {
++	sum := a.x + a.y
++	return sum
+-- @func3/basic.go --
+--- before
++++ after
+@@ -27 +27,5 @@
+-	return sum       //@loc(A_AddP2, re`return.*sum`)
++	return newFunction(sum)       //@loc(A_AddP2, re`return.*sum`)
++}
++
++func newFunction(sum int) int {
++	return sum
+-- @func4/basic.go --
+--- before
++++ after
+@@ -31 +31,5 @@
+-	return a.x < a.y //@loc(A_XLessThanY, re`return.*a\.y`)
++	return newFunction(a) //@loc(A_XLessThanY, re`return.*a\.y`)
++}
++
++func newFunction(a A) bool {
++	return a.x < a.y
+-- @func5/basic.go --
+--- before
++++ after
+@@ -35 +35 @@
+-	sum := a.x + a.y //@loc(A_Add1, re`sum.*a\.y`)
++	sum := newFunction(a) //@loc(A_Add1, re`sum.*a\.y`)
+@@ -39 +39,5 @@
++func newFunction(a A) int {
++	sum := a.x + a.y
++	return sum
++}
++
+-- @func6/basic.go --
+--- before
++++ after
+@@ -36 +36 @@
+-	return sum       //@loc(A_Add2, re`return.*sum`)
++	return newFunction(sum)       //@loc(A_Add2, re`return.*sum`)
+@@ -39 +39,4 @@
++func newFunction(sum int) int {
++	return sum
++}
++
+-- @meth1/basic.go --
+--- before
++++ after
+@@ -22 +22,5 @@
+-	return a.x < a.y //@loc(A_XLessThanYP, re`return.*a\.y`)
++	return a.newMethod() //@loc(A_XLessThanYP, re`return.*a\.y`)
++}
++
++func (a *A) newMethod() bool {
++	return a.x < a.y
+-- @meth2/basic.go --
+--- before
++++ after
+@@ -26,2 +26,7 @@
+-	sum := a.x + a.y //@loc(A_AddP1, re`sum.*a\.y`)
++	sum := a.newMethod() //@loc(A_AddP1, re`sum.*a\.y`)
+-	return sum       //@loc(A_AddP2, re`return.*sum`)
++	return sum       //@loc(A_AddP2, re`return.*sum`)
++}
++
++func (a *A) newMethod() int {
++	sum := a.x + a.y
++	return sum
+-- @meth3/basic.go --
+--- before
++++ after
+@@ -27 +27,5 @@
+-	return sum       //@loc(A_AddP2, re`return.*sum`)
++	return a.newMethod(sum)       //@loc(A_AddP2, re`return.*sum`)
++}
++
++func (*A) newMethod(sum int) int {
++	return sum
+-- @meth4/basic.go --
+--- before
++++ after
+@@ -31 +31,5 @@
+-	return a.x < a.y //@loc(A_XLessThanY, re`return.*a\.y`)
++	return a.newMethod() //@loc(A_XLessThanY, re`return.*a\.y`)
++}
++
++func (a A) newMethod() bool {
++	return a.x < a.y
+-- @meth5/basic.go --
+--- before
++++ after
+@@ -35 +35 @@
+-	sum := a.x + a.y //@loc(A_Add1, re`sum.*a\.y`)
++	sum := a.newMethod() //@loc(A_Add1, re`sum.*a\.y`)
+@@ -39 +39,5 @@
++func (a A) newMethod() int {
++	sum := a.x + a.y
++	return sum
++}
++
+-- @meth6/basic.go --
+--- before
++++ after
+@@ -36 +36 @@
+-	return sum       //@loc(A_Add2, re`return.*sum`)
++	return a.newMethod(sum)       //@loc(A_Add2, re`return.*sum`)
+@@ -39 +39,4 @@
++func (A) newMethod(sum int) int {
++	return sum
++}
++
+-- context.go --
+package extract
+
+import "context"
+
+//@codeactionedit(B_AddP, "refactor.extract", contextMeth1, "Extract method")
+//@codeactionedit(B_AddP, "refactor.extract", contextFunc1, "Extract function")
+//@codeactionedit(B_LongList, "refactor.extract", contextMeth2, "Extract method")
+//@codeactionedit(B_LongList, "refactor.extract", contextFunc2, "Extract function")
+
+type B struct {
+	x int
+	y int
+}
+
+func (b *B) AddP(ctx context.Context) (int, error) {
+	sum := b.x + b.y
+	return sum, ctx.Err() //@loc(B_AddP, re`return.*ctx\.Err\(\)`)
+}
+
+func (b *B) LongList(ctx context.Context) (int, error) {
+	p1 := 1
+	p2 := 1
+	p3 := 1
+	return p1 + p2 + p3, ctx.Err() //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
+}
+-- @contextMeth1/context.go --
+--- before
++++ after
+@@ -17 +17,5 @@
+-	return sum, ctx.Err() //@loc(B_AddP, re`return.*ctx\.Err\(\)`)
++	return b.newMethod(ctx, sum) //@loc(B_AddP, re`return.*ctx\.Err\(\)`)
++}
++
++func (*B) newMethod(ctx context.Context, sum int) (int, error) {
++	return sum, ctx.Err()
+-- @contextMeth2/context.go --
+--- before
++++ after
+@@ -24 +24 @@
+-	return p1 + p2 + p3, ctx.Err() //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
++	return b.newMethod(ctx, p1, p2, p3) //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
+@@ -26 +26,4 @@
++
++func (*B) newMethod(ctx context.Context, p1 int, p2 int, p3 int) (int, error) {
++	return p1 + p2 + p3, ctx.Err()
++}
+-- @contextFunc2/context.go --
+--- before
++++ after
+@@ -24 +24 @@
+-	return p1 + p2 + p3, ctx.Err() //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
++	return newFunction(ctx, p1, p2, p3) //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
+@@ -26 +26,4 @@
++
++func newFunction(ctx context.Context, p1 int, p2 int, p3 int) (int, error) {
++	return p1 + p2 + p3, ctx.Err()
++}
+-- @contextFunc1/context.go --
+--- before
++++ after
+@@ -17 +17,5 @@
+-	return sum, ctx.Err() //@loc(B_AddP, re`return.*ctx\.Err\(\)`)
++	return newFunction(ctx, sum) //@loc(B_AddP, re`return.*ctx\.Err\(\)`)
++}
++
++func newFunction(ctx context.Context, sum int) (int, error) {
++	return sum, ctx.Err()
