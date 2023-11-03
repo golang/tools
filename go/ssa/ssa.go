@@ -1077,11 +1077,12 @@ type Next struct {
 // Type() reflects the actual type of the result, possibly a
 // 2-types.Tuple; AssertedType is the asserted type.
 //
-// Pos() returns the ast.CallExpr.Lparen if the instruction arose from
-// an explicit T(e) conversion; the ast.TypeAssertExpr.Lparen if the
-// instruction arose from an explicit e.(T) operation; or the
-// ast.CaseClause.Case if the instruction arose from a case of a
-// type-switch statement.
+// Depending on the TypeAssert's purpose, Pos may return:
+//   - the ast.CallExpr.Lparen of an explicit T(e) conversion;
+//   - the ast.TypeAssertExpr.Lparen of an explicit e.(T) operation;
+//   - the ast.CaseClause.Case of a case of a type-switch statement;
+//   - the Ident(m).NamePos of an interface method value i.m
+//     (for which TypeAssert may be used to effect the nil check).
 //
 // Example printed form:
 //

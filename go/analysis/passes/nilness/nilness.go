@@ -38,11 +38,15 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 func runFunc(pass *analysis.Pass, fn *ssa.Function) {
 	reportf := func(category string, pos token.Pos, format string, args ...interface{}) {
-		pass.Report(analysis.Diagnostic{
-			Pos:      pos,
-			Category: category,
-			Message:  fmt.Sprintf(format, args...),
-		})
+		// We ignore nil-checking ssa.Instructions
+		// that don't correspond to syntax.
+		if pos.IsValid() {
+			pass.Report(analysis.Diagnostic{
+				Pos:      pos,
+				Category: category,
+				Message:  fmt.Sprintf(format, args...),
+			})
+		}
 	}
 
 	// notNil reports an error if v is provably nil.

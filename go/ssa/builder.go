@@ -821,7 +821,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 				} else {
 					// non-type param interface
 					// Emit nil check: typeassert v.(I).
-					emitTypeAssert(fn, v, rt, token.NoPos)
+					emitTypeAssert(fn, v, rt, e.Sel.Pos())
 				}
 			}
 			if targs := receiverTypeArgs(obj); len(targs) > 0 {
