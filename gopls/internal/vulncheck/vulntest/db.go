@@ -120,13 +120,6 @@ func generateEntries(_ context.Context, archive *txtar.Archive) ([]osv.Entry, er
 	return entries, nil
 }
 
-func writeVulns(outPath string, vulns []osv.Entry, indent bool) error {
-	if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-		return fmt.Errorf("failed to create directory %q: %s", filepath.Dir(outPath), err)
-	}
-	return writeJSON(outPath+".json", vulns, indent)
-}
-
 func writeEntriesByID(idDir string, entries []osv.Entry, indent bool) error {
 	// Write a directory containing entries by ID.
 	if err := os.MkdirAll(idDir, 0755); err != nil {

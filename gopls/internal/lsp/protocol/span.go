@@ -23,10 +23,6 @@ func (u DocumentURI) SpanURI() span.URI {
 	return span.URIFromURI(string(u)) // normalizing conversion
 }
 
-func IsPoint(r Range) bool {
-	return r.Start.Line == r.End.Line && r.Start.Character == r.End.Character
-}
-
 // CompareLocation defines a three-valued comparison over locations,
 // lexicographically ordered by (URI, Range).
 func CompareLocation(x, y Location) int {

@@ -129,103 +129,46 @@ func formatEnum(f fmt.State, c rune, i int, names []string, unknown string) {
 	}
 }
 
-func parseEnum(s string, names []string) int {
-	for i, name := range names {
-		if s == name {
-			return i
-		}
-	}
-	return 0
-}
-
 func (e TextDocumentSyncKind) Format(f fmt.State, c rune) {
 	formatEnum(f, c, int(e), namesTextDocumentSyncKind[:], "TextDocumentSyncKind")
-}
-
-func ParseTextDocumentSyncKind(s string) TextDocumentSyncKind {
-	return TextDocumentSyncKind(parseEnum(s, namesTextDocumentSyncKind[:]))
 }
 
 func (e MessageType) Format(f fmt.State, c rune) {
 	formatEnum(f, c, int(e), namesMessageType[:], "MessageType")
 }
 
-func ParseMessageType(s string) MessageType {
-	return MessageType(parseEnum(s, namesMessageType[:]))
-}
-
 func (e FileChangeType) Format(f fmt.State, c rune) {
 	formatEnum(f, c, int(e), namesFileChangeType[:], "FileChangeType")
-}
-
-func ParseFileChangeType(s string) FileChangeType {
-	return FileChangeType(parseEnum(s, namesFileChangeType[:]))
-}
-
-func ParseWatchKind(s string) WatchKind {
-	return WatchKind(parseEnum(s, namesWatchKind[:]))
 }
 
 func (e CompletionTriggerKind) Format(f fmt.State, c rune) {
 	formatEnum(f, c, int(e), namesCompletionTriggerKind[:], "CompletionTriggerKind")
 }
 
-func ParseCompletionTriggerKind(s string) CompletionTriggerKind {
-	return CompletionTriggerKind(parseEnum(s, namesCompletionTriggerKind[:]))
-}
-
 func (e DiagnosticSeverity) Format(f fmt.State, c rune) {
 	formatEnum(f, c, int(e), namesDiagnosticSeverity[:], "DiagnosticSeverity")
-}
-
-func ParseDiagnosticSeverity(s string) DiagnosticSeverity {
-	return DiagnosticSeverity(parseEnum(s, namesDiagnosticSeverity[:]))
 }
 
 func (e DiagnosticTag) Format(f fmt.State, c rune) {
 	formatEnum(f, c, int(e), namesDiagnosticTag[:], "DiagnosticTag")
 }
 
-func ParseDiagnosticTag(s string) DiagnosticTag {
-	return DiagnosticTag(parseEnum(s, namesDiagnosticTag[:]))
-}
-
 func (e CompletionItemKind) Format(f fmt.State, c rune) {
 	formatEnum(f, c, int(e), namesCompletionItemKind[:], "CompletionItemKind")
-}
-
-func ParseCompletionItemKind(s string) CompletionItemKind {
-	return CompletionItemKind(parseEnum(s, namesCompletionItemKind[:]))
 }
 
 func (e InsertTextFormat) Format(f fmt.State, c rune) {
 	formatEnum(f, c, int(e), namesInsertTextFormat[:], "InsertTextFormat")
 }
 
-func ParseInsertTextFormat(s string) InsertTextFormat {
-	return InsertTextFormat(parseEnum(s, namesInsertTextFormat[:]))
-}
-
 func (e DocumentHighlightKind) Format(f fmt.State, c rune) {
 	formatEnum(f, c, int(e), namesDocumentHighlightKind[:], "DocumentHighlightKind")
-}
-
-func ParseDocumentHighlightKind(s string) DocumentHighlightKind {
-	return DocumentHighlightKind(parseEnum(s, namesDocumentHighlightKind[:]))
 }
 
 func (e SymbolKind) Format(f fmt.State, c rune) {
 	formatEnum(f, c, int(e), namesSymbolKind[:], "SymbolKind")
 }
 
-func ParseSymbolKind(s string) SymbolKind {
-	return SymbolKind(parseEnum(s, namesSymbolKind[:]))
-}
-
 func (e TextDocumentSaveReason) Format(f fmt.State, c rune) {
 	formatEnum(f, c, int(e), namesTextDocumentSaveReason[:], "TextDocumentSaveReason")
-}
-
-func ParseTextDocumentSaveReason(s string) TextDocumentSaveReason {
-	return TextDocumentSaveReason(parseEnum(s, namesTextDocumentSaveReason[:]))
 }
