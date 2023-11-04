@@ -48,8 +48,9 @@ func Test(t *testing.T) {
 			// Parse archive comment as directives of these forms:
 			//
 			//    deadcode args...		command-line arguments
-			//  [!]want "quoted"		expected/unwanted string in output
+			//  [!]want arg		expected/unwanted string in output
 			//
+			// Args may be Go-quoted strings.
 			var args []string
 			want := make(map[string]bool) // string -> sense
 			for _, line := range strings.Split(string(ar.Comment), "\n") {
@@ -58,17 +59,18 @@ func Test(t *testing.T) {
 					continue // skip blanks and comments
 				}
 
-				fields := strings.Fields(line)
-				switch kind := fields[0]; kind {
+				words, err := words(line)
+				if err != nil {
+					t.Fatalf("cannot break line into words: %v (%s)", err, line)
+				}
+				switch kind := words[0]; kind {
 				case "deadcode":
-					args = fields[1:] // lossy wrt spaces
+					args = words[1:]
 				case "want", "!want":
-					rest := line[len(kind):]
-					str, err := strconv.Unquote(strings.TrimSpace(rest))
-					if err != nil {
-						t.Fatalf("bad %s directive <<%s>>", kind, line)
+					if len(words) != 2 {
+						t.Fatalf("'want' directive needs argument <<%s>>", line)
 					}
-					want[str] = kind[0] != '!'
+					want[words[1]] = kind[0] != '!'
 				default:
 					t.Fatalf("%s: invalid directive %q", filename, kind)
 				}
@@ -128,4 +130,31 @@ func buildDeadcode(t *testing.T) string {
 		t.Fatalf("Building deadcode: %v\n%s", err, out)
 	}
 	return bin
+}
+
+// words breaks a string into words, respecting
+// Go string quotations around words with spaces.
+func words(s string) ([]string, error) {
+	var words []string
+	for s != "" {
+		if s[0] == ' ' {
+			s = s[1:]
+			continue
+		}
+		var word string
+		if s[0] == '"' || s[0] == '`' {
+			prefix, err := strconv.QuotedPrefix(s)
+			if err != nil {
+				return nil, err
+			}
+			s = s[len(prefix):]
+			word, _ = strconv.Unquote(prefix)
+		} else {
+			prefix, rest, _ := strings.Cut(s, " ")
+			s = rest
+			word = prefix
+		}
+		words = append(words, word)
+	}
+	return words, nil
 }

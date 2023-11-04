@@ -7,11 +7,14 @@
 package main
 
 import (
+	"bytes"
 	_ "embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"go/ast"
 	"go/token"
+	"html/template"
 	"io"
 	"log"
 	"os"
@@ -36,8 +39,9 @@ var (
 	tagsFlag = flag.String("tags", "", "comma-separated list of extra build tags (see: go help buildconstraint)")
 
 	filterFlag    = flag.String("filter", "<module>", "report only packages matching this regular expression (default: module of first package)")
-	generatedFlag = flag.Bool("generated", true, "report dead functions in generated Go files")
-	lineFlag      = flag.Bool("line", false, "show output in a line-oriented format")
+	generatedFlag = flag.Bool("generated", false, "include dead functions in generated Go files")
+	formatFlag    = flag.String("format", "", "format output records using template")
+	jsonFlag      = flag.Bool("json", false, "output JSON records")
 	cpuProfile    = flag.String("cpuprofile", "", "write CPU profile to this file")
 	memProfile    = flag.String("memprofile", "", "write memory profile to this file")
 )
@@ -91,6 +95,18 @@ func main() {
 		}()
 	}
 
+	var tmpl *template.Template
+	if *formatFlag != "" {
+		if *jsonFlag {
+			log.Fatalf("you cannot specify both -format=template and -json")
+		}
+		var err error
+		tmpl, err = template.New("deadcode").Parse(*formatFlag)
+		if err != nil {
+			log.Fatalf("invalid -format: %v", err)
+		}
+	}
+
 	// Load, parse, and type-check the complete program(s).
 	cfg := &packages.Config{
 		BuildFlags: []string{"-tags=" + *tagsFlag},
@@ -108,17 +124,15 @@ func main() {
 		log.Fatalf("packages contain errors")
 	}
 
-	// (Optionally) gather names of generated files.
+	// Gather names of generated files.
 	generated := make(map[string]bool)
-	if !*generatedFlag {
-		packages.Visit(initial, nil, func(p *packages.Package) {
-			for _, file := range p.Syntax {
-				if isGenerated(file) {
-					generated[p.Fset.File(file.Pos()).Name()] = true
-				}
+	packages.Visit(initial, nil, func(p *packages.Package) {
+		for _, file := range p.Syntax {
+			if isGenerated(file) {
+				generated[p.Fset.File(file.Pos()).Name()] = true
 			}
-		})
-	}
+		}
+	})
 
 	// If -filter is unset, use first module (if available).
 	if *filterFlag == "<module>" {
@@ -193,12 +207,6 @@ func main() {
 
 		posn := prog.Fset.Position(fn.Pos())
 
-		// If -generated=false, skip functions declared in generated Go files.
-		// (Functions called by them may still be reported as dead.)
-		if generated[posn.Filename] {
-			continue
-		}
-
 		if !reachablePosn[posn] {
 			reachablePosn[posn] = true // suppress dups with same pos
 
@@ -211,6 +219,8 @@ func main() {
 			m[fn] = true
 		}
 	}
+
+	var packages []jsonPackage
 
 	// Report dead functions grouped by packages.
 	// TODO(adonovan): use maps.Keys, twice.
@@ -243,18 +253,68 @@ func main() {
 			return xposn.Line < yposn.Line
 		})
 
-		if *lineFlag {
-			// line-oriented output
-			for _, fn := range fns {
-				fmt.Println(fn)
+		var functions []jsonFunction
+		for _, fn := range fns {
+			posn := prog.Fset.Position(fn.Pos())
+
+			// Without -generated, skip functions declared in
+			// generated Go files.
+			// (Functions called by them may still be reported.)
+			gen := generated[posn.Filename]
+			if gen && !*generatedFlag {
+				continue
 			}
-		} else {
-			// functions grouped by package
-			fmt.Printf("package %q\n", pkgpath)
-			for _, fn := range fns {
-				fmt.Printf("\tfunc %s\n", fn.RelString(fn.Pkg.Pkg))
+
+			functions = append(functions, jsonFunction{
+				Name:      fn.String(),
+				RelName:   fn.RelString(fn.Pkg.Pkg),
+				Posn:      posn.String(),
+				Generated: gen,
+			})
+		}
+		packages = append(packages, jsonPackage{
+			Path:  pkgpath,
+			Funcs: functions,
+		})
+	}
+
+	// Format the output, in the manner of 'go list (-json|-f=template)'.
+	switch {
+	case *jsonFlag:
+		// -json
+		out, err := json.MarshalIndent(packages, "", "\t")
+		if err != nil {
+			log.Fatalf("internal error: %v", err)
+		}
+		os.Stdout.Write(out)
+
+	case tmpl != nil:
+		// -format=template
+		for _, p := range packages {
+			var buf bytes.Buffer
+			if err := tmpl.Execute(&buf, p); err != nil {
+				log.Fatal(err)
 			}
-			fmt.Println()
+			if n := buf.Len(); n == 0 || buf.Bytes()[n-1] != '\n' {
+				buf.WriteByte('\n')
+			}
+			os.Stdout.Write(buf.Bytes())
+		}
+
+	default:
+		// functions grouped by package
+		for _, pkg := range packages {
+			seen := false
+			for _, fn := range pkg.Funcs {
+				if !seen {
+					seen = true
+					fmt.Printf("package %q\n", pkg.Path)
+				}
+				fmt.Printf("\tfunc %s\n", fn.RelName)
+			}
+			if seen {
+				fmt.Println()
+			}
 		}
 	}
 }
@@ -297,3 +357,23 @@ func generator(file *ast.File) (string, bool) {
 	}
 	return "", false
 }
+
+// -- output protocol (for JSON or text/template) --
+
+// Keep in sync with doc comment!
+
+type jsonFunction struct {
+	Name      string // name (with package qualifier)
+	RelName   string // name (sans package qualifier)
+	Posn      string // position in form "filename:line:col"
+	Generated bool   // function is declared in a generated .go file
+}
+
+func (f jsonFunction) String() string { return f.Name }
+
+type jsonPackage struct {
+	Path  string
+	Funcs []jsonFunction
+}
+
+func (p jsonPackage) String() string { return p.Path }

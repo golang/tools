@@ -1,0 +1,20 @@
+# Very minimal test of -json flag.
+
+deadcode -json example.com/p
+
+ want `"Path": "example.com/p",`
+ want `"Name": "example.com/p.Dead",`
+ want `"RelName": "Dead",`
+ want `"Generated": false`
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- p/p.go --
+package main
+
+func Dead() {}
+
+func main() {}
+

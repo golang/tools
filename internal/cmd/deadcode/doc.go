@@ -39,6 +39,10 @@ will fail to recognize that calls to a linkname-annotated function
 with no body in fact dispatch to the function named in the annotation.
 This may result in the latter function being spuriously reported as dead.
 
+By default, the tool does not report dead functions in generated files,
+as determined by the special comment described in
+https://go.dev/s/generatedcode. Use the -generated flag to include them.
+
 In any case, just because a function is reported as dead does not mean
 it is unconditionally safe to delete it. For example, a dead function
 may be referenced (by another dead function), and a dead method may be
@@ -48,8 +52,39 @@ Some judgement is required.
 The analysis is valid only for a single GOOS/GOARCH/-tags configuration,
 so a function reported as dead may be live in a different configuration.
 Consider running the tool once for each configuration of interest.
-Use the -line flag to emit a line-oriented output that makes it
+Consider using a line-oriented output format (see below) to make it
 easier to compute the intersection of results across all runs.
+
+# Output
+
+The command supports three output formats.
+
+With no flags, the command prints dead functions grouped by package.
+
+With the -json flag, the command prints an array of JSON Package
+objects, as defined by this schema:
+
+	type Package struct {
+		Path  string
+		Funcs []Function
+	}
+
+	type Function struct {
+		Name      string // name (with package qualifier)
+		RelName   string // name (sans package qualifier)
+		Posn      string // position in form "filename:line:col"
+		Generated bool   // function is declared in a generated .go file
+	}
+
+With the -format=template flag, the command executes the specified template
+on each Package record. So, this template produces a result similar to the
+default format:
+
+	-format='{{printf "package %q\n" .Path}}{{range .Funcs}}{{println "\tfunc " .RelName}}{{end}}{{println}}'
+
+And this template shows only the list of source positions of dead functions:
+
+	-format='{{range .Funcs}}{{println .Posn}}{{end}}'
 
 THIS TOOL IS EXPERIMENTAL and its interface may change.
 At some point it may be published at cmd/deadcode.
