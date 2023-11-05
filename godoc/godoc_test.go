@@ -325,19 +325,17 @@ func TestSrcToPkgLinkFunc(t *testing.T) {
 }
 
 func TestFilterOutBuildAnnotations(t *testing.T) {
-	// TODO: simplify this by using a multiline string once we stop
-	// using go vet from 1.10 on the build dashboard.
-	// https://golang.org/issue/26627
-	src := []byte("// +build !foo\n" +
-		"// +build !anothertag\n" +
-		"\n" +
-		"// non-tag comment\n" +
-		"\n" +
-		"package foo\n" +
-		"\n" +
-		"func bar() int {\n" +
-		"	return 42\n" +
-		"}\n")
+	src := []byte(
+		`// +build !foo
+		 // +build !anothertag
+		
+		 // non-tag comment
+		
+		package foo
+		
+		func bar() int {
+			return 42
+		}`)
 
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, "foo.go", src, parser.ParseComments)
