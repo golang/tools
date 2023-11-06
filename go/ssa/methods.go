@@ -42,9 +42,39 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 
 	var cr creator
 
-	prog.methodsMu.Lock()
-	m := prog.addMethod(prog.createMethodSet(T), sel, &cr)
-	prog.methodsMu.Unlock()
+	m := func() *Function {
+		prog.methodsMu.Lock()
+		defer prog.methodsMu.Unlock()
+
+		// Get or create SSA method set.
+		mset, ok := prog.methodSets.At(T).(*methodSet)
+		if !ok {
+			mset = &methodSet{mapping: make(map[string]*Function)}
+			prog.methodSets.Set(T, mset)
+		}
+
+		// Get or create SSA method.
+		id := sel.Obj().Id()
+		fn, ok := mset.mapping[id]
+		if !ok {
+			obj := sel.Obj().(*types.Func)
+			_, ptrObj := deptr(recvType(obj))
+			_, ptrRecv := deptr(T)
+			needsPromotion := len(sel.Index()) > 1
+			needsIndirection := !ptrObj && ptrRecv
+			if needsPromotion || needsIndirection {
+				fn = createWrapper(prog, toSelection(sel), &cr)
+			} else {
+				fn = prog.objectMethod(obj, &cr)
+			}
+			if fn.Signature.Recv() == nil {
+				panic(fn)
+			}
+			mset.mapping[id] = fn
+		}
+
+		return fn
+	}()
 
 	b := builder{created: &cr}
 	b.iterate()
@@ -109,54 +139,6 @@ func (prog *Program) LookupMethod(T types.Type, pkg *types.Package, name string)
 // methodSet contains the (concrete) methods of a concrete type (non-interface, non-parameterized).
 type methodSet struct {
 	mapping map[string]*Function // populated lazily
-}
-
-// Precondition: T is a concrete type, e.g. !isInterface(T) and not parameterized.
-// Requires prog.methodsMu.
-func (prog *Program) createMethodSet(T types.Type) *methodSet {
-	if prog.mode&SanityCheckFunctions != 0 {
-		if types.IsInterface(T) || prog.parameterized.isParameterized(T) {
-			panic("type is interface or parameterized")
-		}
-	}
-
-	mset, ok := prog.methodSets.At(T).(*methodSet)
-	if !ok {
-		mset = &methodSet{mapping: make(map[string]*Function)}
-		prog.methodSets.Set(T, mset)
-	}
-	return mset
-}
-
-// Adds any created functions to cr.
-// Precondition: T is a concrete type, e.g. !isInterface(T) and not parameterized.
-// Requires prog.methodsMu.
-func (prog *Program) addMethod(mset *methodSet, sel *types.Selection, cr *creator) *Function {
-	if sel.Kind() == types.MethodExpr {
-		panic(sel)
-	}
-	id := sel.Obj().Id()
-	fn := mset.mapping[id]
-	if fn == nil {
-		sel := toSelection(sel)
-		obj := sel.obj.(*types.Func)
-
-		_, ptrObj := deptr(recvType(obj))
-		_, ptrRecv := deptr(sel.recv)
-
-		needsPromotion := len(sel.index) > 1
-		needsIndirection := !ptrObj && ptrRecv
-		if needsPromotion || needsIndirection {
-			fn = createWrapper(prog, sel, cr)
-		} else {
-			fn = prog.objectMethod(obj, cr)
-		}
-		if fn.Signature.Recv() == nil {
-			panic(fn) // missing receiver
-		}
-		mset.mapping[id] = fn
-	}
-	return fn
 }
 
 // RuntimeTypes returns a new unordered slice containing all types in

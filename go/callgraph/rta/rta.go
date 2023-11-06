@@ -232,7 +232,7 @@ func (r *rta) visitDynCall(site ssa.CallInstruction) {
 func (r *rta) addInvokeEdge(site ssa.CallInstruction, C types.Type) {
 	// Ascertain the concrete method of C to be called.
 	imethod := site.Common().Method
-	cmethod := r.prog.MethodValue(r.prog.MethodSets.MethodSet(C).Lookup(imethod.Pkg(), imethod.Name()))
+	cmethod := r.prog.LookupMethod(C, imethod.Pkg(), imethod.Name())
 	r.addEdge(site.Parent(), site, cmethod, true)
 }
 

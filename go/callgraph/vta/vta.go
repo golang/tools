@@ -154,6 +154,9 @@ func propFunc(p propType, c ssa.CallInstruction, cache methodCache) []*ssa.Funct
 // ssa.Program.MethodSets and ssa.Program.MethodValue
 // APIs. The cache is used to speed up querying of
 // methods of a type as the mentioned APIs are expensive.
+//
+// TODO(adonovan): Program.MethodValue already does this kind of
+// caching. Is this really necessary?
 type methodCache map[types.Type]map[string][]*ssa.Function
 
 // methods returns methods of a type `t` named `name`. First consults
