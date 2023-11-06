@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/gopls/internal/persistent"
 	"golang.org/x/tools/internal/constraints"
-	"golang.org/x/tools/internal/persistent"
 )
 
 func TestSet(t *testing.T) {

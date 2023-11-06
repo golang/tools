@@ -17,13 +17,13 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
+	"golang.org/x/tools/gopls/internal/persistent"
 	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/memoize"
-	"golang.org/x/tools/internal/persistent"
 	"golang.org/x/tools/internal/xcontext"
 )
 
@@ -163,7 +163,7 @@ func (s *Session) createView(ctx context.Context, info *workspaceInformation, fo
 		files:                newFileMap(),
 		activePackages:       new(persistent.Map[PackageID, *Package]),
 		symbolizeHandles:     new(persistent.Map[span.URI, *memoize.Promise]),
-		workspacePackages:    make(map[PackageID]PackagePath),
+		shouldLoad:           new(persistent.Map[PackageID, []PackagePath]),
 		unloadableFiles:      new(persistent.Set[span.URI]),
 		parseModHandles:      new(persistent.Map[span.URI, *memoize.Promise]),
 		parseWorkHandles:     new(persistent.Map[span.URI, *memoize.Promise]),

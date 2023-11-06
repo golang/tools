@@ -30,6 +30,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/immutable"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -37,13 +38,13 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/gopls/internal/lsp/source/xrefs"
+	"golang.org/x/tools/gopls/internal/persistent"
 	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/packagesinternal"
-	"golang.org/x/tools/internal/persistent"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -119,16 +120,15 @@ type snapshot struct {
 	activePackages *persistent.Map[PackageID, *Package]
 
 	// workspacePackages contains the workspace's packages, which are loaded
-	// when the view is created. It contains no intermediate test variants.
-	// TODO(rfindley): use a persistent.Map.
-	workspacePackages map[PackageID]PackagePath
+	// when the view is created. It does not contain intermediate test variants.
+	workspacePackages immutable.Map[PackageID, PackagePath]
 
 	// shouldLoad tracks packages that need to be reloaded, mapping a PackageID
 	// to the package paths that should be used to reload it
 	//
 	// When we try to load a package, we clear it from the shouldLoad map
 	// regardless of whether the load succeeded, to prevent endless loads.
-	shouldLoad map[PackageID][]PackagePath
+	shouldLoad *persistent.Map[PackageID, []PackagePath]
 
 	// unloadableFiles keeps track of files that we've failed to load.
 	unloadableFiles *persistent.Set[span.URI]
@@ -157,6 +157,8 @@ type snapshot struct {
 	// set of mod files used by the workspace go.work file.
 	//
 	// This set is immutable inside the snapshot, and therefore is not guarded by mu.
+	//
+	// TODO(golang/go#57979): lift this to the view.
 	workspaceModFiles    map[span.URI]struct{}
 	workspaceModFilesErr error // error encountered computing workspaceModFiles
 
@@ -744,7 +746,7 @@ func (s *snapshot) MetadataForFile(ctx context.Context, uri span.URI) ([]*source
 
 	shouldLoad := false // whether any packages containing uri are marked 'shouldLoad'
 	for _, id := range ids {
-		if len(s.shouldLoad[id]) > 0 {
+		if pkgs, _ := s.shouldLoad.Get(id); len(pkgs) > 0 {
 			shouldLoad = true
 		}
 	}
@@ -1051,10 +1053,10 @@ func (s *snapshot) WorkspaceMetadata(ctx context.Context) ([]*source.Metadata, e
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	meta := make([]*source.Metadata, 0, len(s.workspacePackages))
-	for id := range s.workspacePackages {
+	meta := make([]*source.Metadata, 0, s.workspacePackages.Len())
+	s.workspacePackages.Range(func(id PackageID, _ PackagePath) {
 		meta = append(meta, s.meta.metadata[id])
-	}
+	})
 	return meta, nil
 }
 
@@ -1184,21 +1186,21 @@ func (s *snapshot) clearShouldLoad(scopes ...loadScope) {
 		case packageLoadScope:
 			scopePath := PackagePath(scope)
 			var toDelete []PackageID
-			for id, pkgPaths := range s.shouldLoad {
+			s.shouldLoad.Range(func(id PackageID, pkgPaths []PackagePath) {
 				for _, pkgPath := range pkgPaths {
 					if pkgPath == scopePath {
 						toDelete = append(toDelete, id)
 					}
 				}
-			}
+			})
 			for _, id := range toDelete {
-				delete(s.shouldLoad, id)
+				s.shouldLoad.Delete(id)
 			}
 		case fileLoadScope:
 			uri := span.URI(scope)
 			ids := s.meta.ids[uri]
 			for _, id := range ids {
-				delete(s.shouldLoad, id)
+				s.shouldLoad.Delete(id)
 			}
 		}
 	}
@@ -1460,7 +1462,7 @@ func (s *snapshot) reloadWorkspace(ctx context.Context) error {
 	var scopes []loadScope
 	var seen map[PackagePath]bool
 	s.mu.Lock()
-	for _, pkgPaths := range s.shouldLoad {
+	s.shouldLoad.Range(func(_ PackageID, pkgPaths []PackagePath) {
 		for _, pkgPath := range pkgPaths {
 			if seen == nil {
 				seen = make(map[PackagePath]bool)
@@ -1471,7 +1473,7 @@ func (s *snapshot) reloadWorkspace(ctx context.Context) error {
 			seen[pkgPath] = true
 			scopes = append(scopes, packageLoadScope(pkgPath))
 		}
-	}
+	})
 	s.mu.Unlock()
 
 	if len(scopes) == 0 {
@@ -1834,7 +1836,8 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source
 		activePackages:       s.activePackages.Clone(),
 		files:                s.files.Clone(changes),
 		symbolizeHandles:     cloneWithout(s.symbolizeHandles, changes),
-		workspacePackages:    make(map[PackageID]PackagePath, len(s.workspacePackages)),
+		workspacePackages:    s.workspacePackages,
+		shouldLoad:           s.shouldLoad.Clone(),      // not cloneWithout: shouldLoad is cleared on loads
 		unloadableFiles:      s.unloadableFiles.Clone(), // not cloneWithout: typing in a file doesn't necessarily make it loadable
 		parseModHandles:      cloneWithout(s.parseModHandles, changes),
 		parseWorkHandles:     cloneWithout(s.parseWorkHandles, changes),
@@ -2100,15 +2103,6 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source
 		result.activePackages.Delete(id)
 	}
 
-	// Any packages that need loading in s still need loading in the new
-	// snapshot.
-	for k, v := range s.shouldLoad {
-		if result.shouldLoad == nil {
-			result.shouldLoad = make(map[PackageID][]PackagePath)
-		}
-		result.shouldLoad[k] = v
-	}
-
 	// Compute which metadata updates are required. We only need to invalidate
 	// packages directly containing the affected file, and only if it changed in
 	// a relevant way.
@@ -2119,9 +2113,6 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source
 		// For metadata that has been newly invalidated, capture package paths
 		// requiring reloading in the shouldLoad map.
 		if invalidateMetadata && !source.IsCommandLineArguments(v.ID) {
-			if result.shouldLoad == nil {
-				result.shouldLoad = make(map[PackageID][]PackagePath)
-			}
 			needsReload := []PackagePath{v.PkgPath}
 			if v.ForTest != "" && v.ForTest != v.PkgPath {
 				// When reloading test variants, always reload their ForTest package as
@@ -2132,7 +2123,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source
 				// determine exactly what needs to be reloaded here.
 				needsReload = append(needsReload, v.ForTest)
 			}
-			result.shouldLoad[k] = needsReload
+			result.shouldLoad.Set(k, needsReload, nil)
 		}
 
 		// Check whether the metadata should be deleted.
@@ -2164,7 +2155,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source
 	// If the snapshot's workspace mode has changed, the packages loaded using
 	// the previous mode are no longer relevant, so clear them out.
 	if workspaceModeChanged {
-		result.workspacePackages = map[PackageID]PackagePath{}
+		result.workspacePackages = immutable.MapOf[PackageID, PackagePath](nil)
 	}
 	return result, release
 }

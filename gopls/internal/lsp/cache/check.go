@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/immutable"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -1636,7 +1637,7 @@ func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs
 // of pkg, or to 'requires' declarations in the package's go.mod file.
 //
 // TODO(rfindley): move this to load.go
-func depsErrors(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs source.FileSource, workspacePackages map[PackageID]PackagePath) ([]*source.Diagnostic, error) {
+func depsErrors(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs source.FileSource, workspacePackages immutable.Map[PackageID, PackagePath]) ([]*source.Diagnostic, error) {
 	// Select packages that can't be found, and were imported in non-workspace packages.
 	// Workspace packages already show their own errors.
 	var relevantErrors []*packagesinternal.PackageError
@@ -1649,7 +1650,7 @@ func depsErrors(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs
 		}
 
 		directImporter := depsError.ImportStack[directImporterIdx]
-		if _, ok := workspacePackages[PackageID(directImporter)]; ok {
+		if _, ok := workspacePackages.Value(PackageID(directImporter)); ok {
 			continue
 		}
 		relevantErrors = append(relevantErrors, depsError)
@@ -1695,7 +1696,7 @@ func depsErrors(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs
 	for _, depErr := range relevantErrors {
 		for i := len(depErr.ImportStack) - 1; i >= 0; i-- {
 			item := depErr.ImportStack[i]
-			if _, ok := workspacePackages[PackageID(item)]; ok {
+			if _, ok := workspacePackages.Value(PackageID(item)); ok {
 				break
 			}
 

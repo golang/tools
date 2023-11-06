@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/immutable"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
@@ -238,7 +239,7 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 				}
 			}
 			updates[m.ID] = m
-			delete(s.shouldLoad, m.ID)
+			s.shouldLoad.Delete(m.ID)
 		}
 	}
 
@@ -557,7 +558,7 @@ func buildMetadata(updates map[PackageID]*source.Metadata, pkg *packages.Package
 // computeLoadDiagnostics computes and sets m.Diagnostics for the given metadata m.
 //
 // It should only be called during metadata construction in snapshot.load.
-func computeLoadDiagnostics(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs source.FileSource, workspacePackages map[PackageID]PackagePath) {
+func computeLoadDiagnostics(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs source.FileSource, workspacePackages immutable.Map[PackageID, PackagePath]) {
 	for _, packagesErr := range m.Errors {
 		// Filter out parse errors from go list. We'll get them when we
 		// actually parse, and buggy overlay support may generate spurious
@@ -687,7 +688,7 @@ func containsFileInWorkspaceLocked(v *View, m *source.Metadata) bool {
 // contain intermediate test variants.
 //
 // s.mu must be held while calling this function.
-func computeWorkspacePackagesLocked(s *snapshot, meta *metadataGraph) map[PackageID]PackagePath {
+func computeWorkspacePackagesLocked(s *snapshot, meta *metadataGraph) immutable.Map[PackageID, PackagePath] {
 	workspacePackages := make(map[PackageID]PackagePath)
 	for _, m := range meta.metadata {
 		if !containsPackageLocked(s, m) {
@@ -722,7 +723,7 @@ func computeWorkspacePackagesLocked(s *snapshot, meta *metadataGraph) map[Packag
 			workspacePackages[m.ID] = m.ForTest
 		}
 	}
-	return workspacePackages
+	return immutable.MapOf(workspacePackages)
 }
 
 // allFilesHaveRealPackages reports whether all files referenced by m are
