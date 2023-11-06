@@ -2,12 +2,12 @@
 
  deadcode -filter=other.net example.com
 
- want `package "other.net"`
- want `func Dead`
-!want `func Live`
+ want `other.net`
+ want `Dead`
+!want `Live`
 
-!want `package "example.com"`
-!want `func unreferenced`
+!want `example.com`
+!want `unreferenced`
 
 -- go.work --
 use example.com

@@ -308,9 +308,9 @@ func main() {
 			for _, fn := range pkg.Funcs {
 				if !seen {
 					seen = true
-					fmt.Printf("package %q\n", pkg.Path)
+					fmt.Println(pkg.Path)
 				}
-				fmt.Printf("\tfunc %s\n", fn.RelName)
+				fmt.Printf("\t%s\n", fn.RelName)
 			}
 			if seen {
 				fmt.Println()

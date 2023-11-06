@@ -2,13 +2,13 @@
 
  deadcode -filter= example.com
 
- want "func (T).Goodbye"
-!want "func (T).Hello"
- want "func unreferenced"
+ want "(T).Goodbye"
+!want "(T).Hello"
+ want "unreferenced"
 
- want "func Scanf"
- want "func Printf"
-!want "func Println"
+ want "Scanf"
+ want "Printf"
+!want "Println"
 
 -- go.mod --
 module example.com

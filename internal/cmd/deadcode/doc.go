@@ -80,7 +80,7 @@ With the -format=template flag, the command executes the specified template
 on each Package record. So, this template produces a result similar to the
 default format:
 
-	-format='{{printf "package %q\n" .Path}}{{range .Funcs}}{{println "\tfunc " .RelName}}{{end}}{{println}}'
+	-format='{{println .Path}}{{range .Funcs}}{{printf "\t%s\n" .RelName}}{{end}}{{println}}'
 
 And this template shows only the list of source positions of dead functions:
 

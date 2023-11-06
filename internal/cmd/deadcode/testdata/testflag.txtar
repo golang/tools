@@ -2,12 +2,12 @@
 
 deadcode -test -filter=example.com example.com/p
 
- want "func Dead"
-!want "func Live1"
-!want "func Live2"
+ want "Dead"
+!want "Live1"
+!want "Live2"
 
- want "func ExampleDead"
-!want "func ExampleLive"
+ want "ExampleDead"
+!want "ExampleLive"
 
 -- go.mod --
 module example.com
