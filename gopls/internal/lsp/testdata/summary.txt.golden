@@ -1,7 +1,7 @@
 -- summary --
 CallHierarchyCount = 2
 SemanticTokenCount = 3
-SuggestedFixCount = 39
+SuggestedFixCount = 28
 InlayHintsCount = 5
 RenamesCount = 45
 SelectionRangesCount = 3
