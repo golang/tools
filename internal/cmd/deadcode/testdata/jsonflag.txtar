@@ -6,6 +6,8 @@ deadcode -json example.com/p
  want `"Name": "example.com/p.Dead",`
  want `"RelName": "Dead",`
  want `"Generated": false`
+ want `"Line": 5,`
+ want `"Col": 6`
 
 -- go.mod --
 module example.com
@@ -14,7 +16,6 @@ go 1.18
 -- p/p.go --
 package main
 
-func Dead() {}
-
 func main() {}
 
+func Dead() {}

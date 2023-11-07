@@ -61,20 +61,8 @@ The command supports three output formats.
 
 With no flags, the command prints dead functions grouped by package.
 
-With the -json flag, the command prints an array of JSON Package
-objects, as defined by this schema:
-
-	type Package struct {
-		Path  string
-		Funcs []Function
-	}
-
-	type Function struct {
-		Name      string // name (with package qualifier)
-		RelName   string // name (sans package qualifier)
-		Posn      string // position in form "filename:line:col"
-		Generated bool   // function is declared in a generated .go file
-	}
+With the -json flag, the command prints an array of Package
+objects, as defined by the JSON schema (see below).
 
 With the -format=template flag, the command executes the specified template
 on each Package record. So, this template produces a result similar to the
@@ -85,6 +73,58 @@ default format:
 And this template shows only the list of source positions of dead functions:
 
 	-format='{{range .Funcs}}{{println .Posn}}{{end}}'
+
+# Why is a function not dead?
+
+The -whylive=function flag explain why the named function is not dead
+by showing an arbitrary shortest path to it from one of the main functions.
+(To enumerate the functions in a program, or for more sophisticated
+call graph queries, use golang.org/x/tools/cmd/callgraph.)
+
+Fully static call paths are preferred over paths involving dynamic
+edges, even if longer. Paths starting from a non-test package are
+preferred over those from tests. Paths from main functions are
+preferred over paths from init functions.
+
+The result is a list of Edge objects (see JSON schema below).
+Again, the -json and -format=template flags may be used to control
+the formatting of the list of Edge objects.
+The default format shows, for each edge in the path, whether the call
+is static or dynamic, and its source line number. For example:
+
+	$ deadcode -whylive="(*bytes.Buffer).String" -test ./internal/cmd/deadcode/...
+	                  golang.org/x/tools/internal/cmd/deadcode.main
+	 static@L0321 --> (*golang.org/x/tools/go/ssa.Function).RelString
+	 static@L0428 --> (*golang.org/x/tools/go/ssa.Function).relMethod
+	 static@L0452 --> golang.org/x/tools/go/ssa.relType
+	 static@L0047 --> go/types.TypeString
+	 static@L0051 --> (*bytes.Buffer).String
+
+# JSON schema
+
+	type Package struct {
+		Path  string       // import path of package
+		Funcs []Function   // list of dead functions within it
+	}
+
+	type Function struct {
+		Name      string   // name (with package qualifier)
+		RelName   string   // name (sans package qualifier)
+		Posn      Position // file/line/column of function declaration
+		Generated bool     // function is declared in a generated .go file
+	}
+
+	type Edge struct {
+		Initial string     // initial entrypoint (main or init); first edge only
+		Kind    string     // = static | dynamic
+		Posn    Position   // file/line/column of call site
+		Callee  string     // target of the call
+	}
+
+	type Position struct {
+		File      string   // name of file
+		Line, Col int      // line and byte index, both 1-based
+	}
 
 THIS TOOL IS EXPERIMENTAL and its interface may change.
 At some point it may be published at cmd/deadcode.
