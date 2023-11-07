@@ -48,6 +48,9 @@ func Main(ctx context.Context, args ...string) error {
 // RunGovulncheck implements the codelens "Run Govulncheck"
 // that runs 'gopls vulncheck' and converts the output to gopls's internal data
 // used for diagnostics and hover message construction.
+//
+// TODO(rfindley): this should accept a *View (which exposes) Options, rather
+// than a snapshot.
 func RunGovulncheck(ctx context.Context, pattern string, snapshot source.Snapshot, dir string, log io.Writer) (*vulncheck.Result, error) {
 	vulncheckargs := []string{
 		"vulncheck", "--",

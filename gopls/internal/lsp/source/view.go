@@ -257,6 +257,18 @@ type Snapshot interface {
 	// If these indexes cannot be loaded from cache, the requested packages may
 	// be type-checked.
 	MethodSets(ctx context.Context, ids ...PackageID) ([]*methodsets.Index, error)
+
+	// ModuleUpgrades returns known module upgrades for the dependencies of
+	// modfile.
+	ModuleUpgrades(modfile span.URI) map[string]string
+
+	// Vulnerabilities returns known vulnerabilities for the given modfile.
+	//
+	// Results more than an hour old are excluded.
+	//
+	// TODO(suzmue): replace command.Vuln with a different type, maybe
+	// https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck/govulnchecklib#Summary?
+	Vulnerabilities(modfile ...span.URI) map[span.URI]*vulncheck.Result
 }
 
 // NarrowestMetadataForFile returns metadata for the narrowest package
@@ -400,29 +412,13 @@ type View interface {
 	// release function need not be called.
 	Snapshot() (Snapshot, func(), error)
 
+	// Invalidate is documented at its sole implementation in the cache package.
+	// (this interface is to be deleted).
+	Invalidate(context.Context, StateChange) (Snapshot, func())
+
 	// IsGoPrivatePath reports whether target is a private import path, as identified
 	// by the GOPRIVATE environment variable.
 	IsGoPrivatePath(path string) bool
-
-	// ModuleUpgrades returns known module upgrades for the dependencies of
-	// modfile.
-	ModuleUpgrades(modfile span.URI) map[string]string
-
-	// RegisterModuleUpgrades registers that upgrades exist for the given modules
-	// required by modfile.
-	RegisterModuleUpgrades(modfile span.URI, upgrades map[string]string)
-
-	// ClearModuleUpgrades clears all upgrades for the modules in modfile.
-	ClearModuleUpgrades(modfile span.URI)
-
-	// Vulnerabilities returns known vulnerabilities for the given modfile.
-	// TODO(suzmue): replace command.Vuln with a different type, maybe
-	// https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck/govulnchecklib#Summary?
-	Vulnerabilities(modfile ...span.URI) map[span.URI]*vulncheck.Result
-
-	// SetVulnerabilities resets the list of vulnerabilities that exists for the given modules
-	// required by modfile.
-	SetVulnerabilities(modfile span.URI, vulncheckResult *vulncheck.Result)
 
 	// GoVersion returns the configured Go version for this view.
 	GoVersion() int
@@ -430,6 +426,16 @@ type View interface {
 	// GoVersionString returns the go version string configured for this view.
 	// Unlike [GoVersion], this encodes the minor version and commit hash information.
 	GoVersionString() string
+}
+
+// A StateChange describes external state changes that may affect a snapshot.
+//
+// By far the most common of these is a change to file state, but a query of
+// module upgrade information or vulnerabilities also affects gopls' behavior.
+type StateChange struct {
+	Files          map[span.URI]FileHandle
+	ModuleUpgrades map[span.URI]map[string]string
+	Vulns          map[span.URI]*vulncheck.Result
 }
 
 // A FileSource maps URIs to FileHandles.

@@ -216,37 +216,44 @@ func (c *commandHandler) RegenerateCgo(ctx context.Context, args command.URIArg)
 	return c.run(ctx, commandConfig{
 		progress: "Regenerating Cgo",
 	}, func(ctx context.Context, _ commandDeps) error {
-		var wg sync.WaitGroup // tracks work done on behalf of this function, incl. diagnostics
-		wg.Add(1)
-		defer wg.Done()
-
-		// Track progress on this operation for testing.
-		if c.s.Options().VerboseWorkDoneProgress {
-			work := c.s.progress.Start(ctx, DiagnosticWorkTitle(FromRegenerateCgo), "Calculating file diagnostics...", nil, nil)
-			go func() {
-				wg.Wait()
-				work.End(ctx, "Done.")
-			}()
-		}
-
-		// Resetting the view causes cgo to be regenerated via `go list`.
-		v, err := c.s.session.ResetView(ctx, args.URI.SpanURI())
-		if err != nil {
-			return err
-		}
-
-		snapshot, release, err := v.Snapshot()
-		if err != nil {
-			return err
-		}
-		wg.Add(1)
-		go func() {
-			c.s.diagnoseSnapshot(snapshot, nil, true, 0)
-			release()
-			wg.Done()
-		}()
-		return nil
+		return c.modifyState(ctx, FromRegenerateCgo, func() (source.Snapshot, func(), error) {
+			// Resetting the view causes cgo to be regenerated via `go list`.
+			v, err := c.s.session.ResetView(ctx, args.URI.SpanURI())
+			if err != nil {
+				return nil, nil, err
+			}
+			return v.Snapshot()
+		})
 	})
+}
+
+// modifyState performs an operation that modifies the snapshot state.
+//
+// It causes a snapshot diagnosis for the provided ModificationSource.
+func (c *commandHandler) modifyState(ctx context.Context, source ModificationSource, work func() (source.Snapshot, func(), error)) error {
+	var wg sync.WaitGroup // tracks work done on behalf of this function, incl. diagnostics
+	wg.Add(1)
+	defer wg.Done()
+
+	// Track progress on this operation for testing.
+	if c.s.Options().VerboseWorkDoneProgress {
+		work := c.s.progress.Start(ctx, DiagnosticWorkTitle(source), "Calculating file diagnostics...", nil, nil)
+		go func() {
+			wg.Wait()
+			work.End(ctx, "Done.")
+		}()
+	}
+	snapshot, release, err := work()
+	if err != nil {
+		return err
+	}
+	wg.Add(1)
+	go func() {
+		c.s.diagnoseSnapshot(snapshot, nil, true, 0)
+		release()
+		wg.Done()
+	}()
+	return nil
 }
 
 func (c *commandHandler) CheckUpgrades(ctx context.Context, args command.CheckUpgradesArgs) error {
@@ -254,14 +261,16 @@ func (c *commandHandler) CheckUpgrades(ctx context.Context, args command.CheckUp
 		forURI:   args.URI,
 		progress: "Checking for upgrades",
 	}, func(ctx context.Context, deps commandDeps) error {
-		upgrades, err := c.s.getUpgrades(ctx, deps.snapshot, args.URI.SpanURI(), args.Modules)
-		if err != nil {
-			return err
-		}
-		deps.snapshot.View().RegisterModuleUpgrades(args.URI.SpanURI(), upgrades)
-		// Re-diagnose the snapshot to publish the new module diagnostics.
-		c.s.diagnoseSnapshot(deps.snapshot, nil, false, 0)
-		return nil
+		return c.modifyState(ctx, FromCheckUpgrades, func() (source.Snapshot, func(), error) {
+			upgrades, err := c.s.getUpgrades(ctx, deps.snapshot, args.URI.SpanURI(), args.Modules)
+			if err != nil {
+				return nil, nil, err
+			}
+			snapshot, release := deps.snapshot.View().Invalidate(ctx, source.StateChange{
+				ModuleUpgrades: map[span.URI]map[string]string{args.URI.SpanURI(): upgrades},
+			})
+			return snapshot, release, nil
+		})
 	})
 }
 
@@ -277,22 +286,17 @@ func (c *commandHandler) ResetGoModDiagnostics(ctx context.Context, args command
 	return c.run(ctx, commandConfig{
 		forURI: args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		// Clear all diagnostics coming from the upgrade check source and vulncheck.
-		// This will clear the diagnostics in all go.mod files, but they
-		// will be re-calculated when the snapshot is diagnosed again.
-		if args.DiagnosticSource == "" || args.DiagnosticSource == string(source.UpgradeNotification) {
-			deps.snapshot.View().ClearModuleUpgrades(args.URI.SpanURI())
-			c.s.clearDiagnosticSource(modCheckUpgradesSource)
-		}
-
-		if args.DiagnosticSource == "" || args.DiagnosticSource == string(source.Govulncheck) {
-			deps.snapshot.View().SetVulnerabilities(args.URI.SpanURI(), nil)
-			c.s.clearDiagnosticSource(modVulncheckSource)
-		}
-
-		// Re-diagnose the snapshot to remove the diagnostics.
-		c.s.diagnoseSnapshot(deps.snapshot, nil, false, 0)
-		return nil
+		return c.modifyState(ctx, FromResetGoModDiagnostics, func() (source.Snapshot, func(), error) {
+			snapshot, release := deps.snapshot.View().Invalidate(ctx, source.StateChange{
+				ModuleUpgrades: map[span.URI]map[string]string{
+					deps.fh.URI(): nil,
+				},
+				Vulns: map[span.URI]*vulncheck.Result{
+					deps.fh.URI(): nil,
+				},
+			})
+			return snapshot, release, nil
+		})
 	})
 }
 
@@ -734,6 +738,7 @@ func addModuleRequire(invoke func(...string) (*bytes.Buffer, error), args []stri
 	return err
 }
 
+// TODO(rfindley): inline.
 func (s *server) getUpgrades(ctx context.Context, snapshot source.Snapshot, uri span.URI, modules []string) (map[string]string, error) {
 	stdout, err := snapshot.RunGoCommandDirect(ctx, source.Normal|source.AllowNetwork, &gocommand.Invocation{
 		Verb:       "list",
@@ -950,7 +955,7 @@ func (c *commandHandler) FetchVulncheckResult(ctx context.Context, arg command.U
 			}
 		}
 		// Overwrite if there is any govulncheck-based result.
-		for modfile, result := range deps.snapshot.View().Vulnerabilities() {
+		for modfile, result := range deps.snapshot.Vulnerabilities() {
 			ret[protocol.URIFromSpanURI(modfile)] = result
 		}
 		return nil
@@ -986,8 +991,11 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 			return err
 		}
 
-		deps.snapshot.View().SetVulnerabilities(args.URI.SpanURI(), result)
-		c.s.diagnoseSnapshot(deps.snapshot, nil, false, 0)
+		snapshot, release := deps.snapshot.View().Invalidate(ctx, source.StateChange{
+			Vulns: map[span.URI]*vulncheck.Result{args.URI.SpanURI(): result},
+		})
+		defer release()
+		c.s.diagnoseSnapshot(snapshot, nil, false, 0)
 
 		affecting := make(map[string]bool, len(result.Entries))
 		for _, finding := range result.Findings {

@@ -128,8 +128,6 @@ func (s *Session) createView(ctx context.Context, info *workspaceInformation, fo
 		initialWorkspaceLoad: make(chan struct{}),
 		initializationSema:   make(chan struct{}, 1),
 		baseCtx:              baseCtx,
-		moduleUpgrades:       map[span.URI]map[string]string{},
-		vulns:                map[span.URI]*vulncheck.Result{},
 		parseCache:           s.parseCache,
 		fs:                   s.overlayFS,
 		workspaceInformation: info,
@@ -173,6 +171,8 @@ func (s *Session) createView(ctx context.Context, info *workspaceInformation, fo
 		workspaceModFiles:    wsModFiles,
 		workspaceModFilesErr: wsModFilesErr,
 		pkgIndex:             typerefs.NewPackageIndex(),
+		moduleUpgrades:       new(persistent.Map[span.URI, map[string]string]),
+		vulns:                new(persistent.Map[span.URI, *vulncheck.Result]),
 	}
 	// Save one reference in the view.
 	v.releaseSnapshot = v.snapshot.Acquire()
@@ -501,9 +501,9 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 	}
 
 	var releases []func()
-	viewToSnapshot := map[*View]*snapshot{}
+	viewToSnapshot := make(map[*View]source.Snapshot)
 	for view, changed := range views {
-		snapshot, release := view.invalidateContent(ctx, changed)
+		snapshot, release := view.Invalidate(ctx, source.StateChange{Files: changed})
 		releases = append(releases, release)
 		viewToSnapshot[view] = snapshot
 	}

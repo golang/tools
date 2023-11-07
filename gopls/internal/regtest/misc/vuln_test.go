@@ -13,9 +13,11 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
@@ -205,28 +207,9 @@ func main() {
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
 
-		// Test CodeLens is present.
-		lenses := env.CodeLens("go.mod")
-
-		const wantCommand = "gopls." + string(command.RunGovulncheck)
-		var gotCodelens = false
-		var lens protocol.CodeLens
-		for _, l := range lenses {
-			if l.Command.Command == wantCommand {
-				gotCodelens = true
-				lens = l
-				break
-			}
-		}
-		if !gotCodelens {
-			t.Fatal("got no vulncheck codelens")
-		}
 		// Run Command included in the codelens.
 		var result command.RunVulncheckResult
-		env.ExecuteCommand(&protocol.ExecuteCommandParams{
-			Command:   lens.Command.Command,
-			Arguments: lens.Command.Arguments,
-		}, &result)
+		env.ExecuteCodeLensCommand("go.mod", command.RunGovulncheck, &result)
 
 		env.OnceMet(
 			CompletedProgress(result.Token, nil),
@@ -237,7 +220,6 @@ func main() {
 			"go.mod": {IDs: []string{"GOSTDLIB"}, Mode: vulncheck.ModeGovulncheck}})
 	})
 }
-
 func TestFetchVulncheckResultStd(t *testing.T) {
 	const files = `
 -- go.mod --
@@ -615,6 +597,41 @@ func TestRunVulncheckPackageDiagnostics(t *testing.T) {
 			})
 		})
 	}
+}
+
+// TestRunGovulncheck_Expiry checks that govulncheck results expire after a
+// certain amount of time.
+func TestRunGovulncheck_Expiry(t *testing.T) {
+	// For this test, set the max age to a duration smaller than the sleep below.
+	defer func(prev time.Duration) {
+		cache.MaxGovulncheckResultAge = prev
+	}(cache.MaxGovulncheckResultAge)
+	cache.MaxGovulncheckResultAge = 99 * time.Millisecond
+
+	db, opts0, err := vulnTestEnv(vulnsData, proxy1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Clean()
+
+	WithOptions(opts0...).Run(t, workspace1, func(t *testing.T, env *Env) {
+		env.OpenFile("go.mod")
+		env.OpenFile("x/x.go")
+
+		var result command.RunVulncheckResult
+		env.ExecuteCodeLensCommand("go.mod", command.RunGovulncheck, &result)
+		env.OnceMet(
+			CompletedProgress(result.Token, nil),
+			ShownMessage("Found"),
+		)
+		// Sleep long enough for the results to expire.
+		time.Sleep(100 * time.Millisecond)
+		// Make an arbitrary edit to force re-diagnosis of the workspace.
+		env.RegexpReplace("x/x.go", "package x", "package x ")
+		env.AfterChange(
+			NoDiagnostics(env.AtRegexp("go.mod", "golang.org/bmod")),
+		)
+	})
 }
 
 func stringify(a interface{}) string {

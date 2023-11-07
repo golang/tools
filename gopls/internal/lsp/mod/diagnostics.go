@@ -140,7 +140,7 @@ func ModUpgradeDiagnostics(ctx context.Context, snapshot source.Snapshot, fh sou
 		return nil, err
 	}
 
-	upgrades := snapshot.View().ModuleUpgrades(fh.URI())
+	upgrades := snapshot.ModuleUpgrades(fh.URI())
 	for _, req := range pm.File.Require {
 		ver, ok := upgrades[req.Mod.Path]
 		if !ok || req.Mod.Version == ver {
@@ -189,7 +189,7 @@ func ModVulnerabilityDiagnostics(ctx context.Context, snapshot source.Snapshot, 
 	}
 
 	diagSource := source.Govulncheck
-	vs := snapshot.View().Vulnerabilities(fh.URI())[fh.URI()]
+	vs := snapshot.Vulnerabilities(fh.URI())[fh.URI()]
 	if vs == nil && snapshot.Options().Vulncheck == source.ModeVulncheckImports {
 		vs, err = snapshot.ModVuln(ctx, fh.URI())
 		if err != nil {

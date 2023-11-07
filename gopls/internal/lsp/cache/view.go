@@ -65,15 +65,6 @@ type View struct {
 
 	importsState *importsState
 
-	// moduleUpgrades tracks known upgrades for module paths in each modfile.
-	// Each modfile has a map of module name to upgrade version.
-	moduleUpgradesMu sync.Mutex
-	moduleUpgrades   map[span.URI]map[string]string
-
-	// vulns maps each go.mod file's URI to its known vulnerabilities.
-	vulnsMu sync.Mutex
-	vulns   map[span.URI]*vulncheck.Result
-
 	// parseCache holds an LRU cache of recently parsed files.
 	parseCache *parseCache
 
@@ -864,14 +855,13 @@ func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 	return loadErr
 }
 
-// invalidateContent invalidates the content of a Go file,
-// including any position and type information that depends on it.
+// Invalidate processes the provided state change, invalidating any derived
+// results that depend on the changed state.
 //
-// invalidateContent returns a non-nil snapshot for the new content, along with
-// a callback which the caller must invoke to release that snapshot.
-//
-// newOptions may be nil, in which case options remain unchanged.
-func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]source.FileHandle) (*snapshot, func()) {
+// The resulting snapshot is non-nil, representing the outcome of the state
+// change. The second result is a function that must be called to release the
+// snapshot when the snapshot is no longer needed.
+func (v *View) Invalidate(ctx context.Context, changed source.StateChange) (source.Snapshot, func()) {
 	// Detach the context so that content invalidation cannot be canceled.
 	ctx = xcontext.Detach(ctx)
 
@@ -893,7 +883,7 @@ func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]sourc
 	prevSnapshot.AwaitInitialized(ctx)
 
 	// Save one lease of the cloned snapshot in the view.
-	v.snapshot, v.releaseSnapshot = prevSnapshot.clone(ctx, v.baseCtx, changes)
+	v.snapshot, v.releaseSnapshot = prevSnapshot.clone(ctx, v.baseCtx, changed)
 
 	prevReleaseSnapshot()
 	v.destroy(prevSnapshot, "View.invalidateContent")
@@ -1037,73 +1027,42 @@ func (v *View) IsGoPrivatePath(target string) bool {
 	return globsMatchPath(v.goprivate, target)
 }
 
-func (v *View) ModuleUpgrades(modfile span.URI) map[string]string {
-	v.moduleUpgradesMu.Lock()
-	defer v.moduleUpgradesMu.Unlock()
-
+func (s *snapshot) ModuleUpgrades(modfile span.URI) map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	upgrades := map[string]string{}
-	for mod, ver := range v.moduleUpgrades[modfile] {
+	orig, _ := s.moduleUpgrades.Get(modfile)
+	for mod, ver := range orig {
 		upgrades[mod] = ver
 	}
 	return upgrades
 }
 
-func (v *View) RegisterModuleUpgrades(modfile span.URI, upgrades map[string]string) {
-	// Return early if there are no upgrades.
-	if len(upgrades) == 0 {
-		return
-	}
+// MaxGovulncheckResultsAge defines the maximum vulnerability age considered
+// valid by gopls.
+//
+// Mutable for testing.
+var MaxGovulncheckResultAge = 1 * time.Hour
 
-	v.moduleUpgradesMu.Lock()
-	defer v.moduleUpgradesMu.Unlock()
-
-	m := v.moduleUpgrades[modfile]
-	if m == nil {
-		m = make(map[string]string)
-		v.moduleUpgrades[modfile] = m
-	}
-	for mod, ver := range upgrades {
-		m[mod] = ver
-	}
-}
-
-func (v *View) ClearModuleUpgrades(modfile span.URI) {
-	v.moduleUpgradesMu.Lock()
-	defer v.moduleUpgradesMu.Unlock()
-
-	delete(v.moduleUpgrades, modfile)
-}
-
-const maxGovulncheckResultAge = 1 * time.Hour // Invalidate results older than this limit.
-var timeNow = time.Now                        // for testing
-
-func (v *View) Vulnerabilities(modfiles ...span.URI) map[span.URI]*vulncheck.Result {
+// TODO(rfindley): move to snapshot.go
+func (s *snapshot) Vulnerabilities(modfiles ...span.URI) map[span.URI]*vulncheck.Result {
 	m := make(map[span.URI]*vulncheck.Result)
-	now := timeNow()
-	v.vulnsMu.Lock()
-	defer v.vulnsMu.Unlock()
+	now := time.Now()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	if len(modfiles) == 0 { // empty means all modfiles
-		for modfile := range v.vulns {
-			modfiles = append(modfiles, modfile)
-		}
+		modfiles = s.vulns.Keys()
 	}
 	for _, modfile := range modfiles {
-		vuln := v.vulns[modfile]
-		if vuln != nil && now.Sub(vuln.AsOf) > maxGovulncheckResultAge {
-			v.vulns[modfile] = nil // same as SetVulnerabilities(modfile, nil)
+		vuln, _ := s.vulns.Get(modfile)
+		if vuln != nil && now.Sub(vuln.AsOf) > MaxGovulncheckResultAge {
 			vuln = nil
 		}
 		m[modfile] = vuln
 	}
 	return m
-}
-
-func (v *View) SetVulnerabilities(modfile span.URI, vulns *vulncheck.Result) {
-	v.vulnsMu.Lock()
-	defer v.vulnsMu.Unlock()
-
-	v.vulns[modfile] = vulns
 }
 
 func (v *View) GoVersion() int {

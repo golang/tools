@@ -146,6 +146,15 @@ func (pm *Map[K, V]) Clear() {
 	pm.root = nil
 }
 
+// Keys returns all keys present in the map.
+func (pm *Map[K, V]) Keys() []K {
+	var keys []K
+	pm.root.forEach(func(k, _ any) {
+		keys = append(keys, k.(K))
+	})
+	return keys
+}
+
 // Range calls f sequentially in ascending key order for all entries in the map.
 func (pm *Map[K, V]) Range(f func(key K, value V)) {
 	pm.root.forEach(func(k, v any) {

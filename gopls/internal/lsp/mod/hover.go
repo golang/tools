@@ -83,7 +83,7 @@ func hoverOnRequireStatement(ctx context.Context, pm *source.ParsedModule, offse
 
 	// Get the vulnerability info.
 	fromGovulncheck := true
-	vs := snapshot.View().Vulnerabilities(fh.URI())[fh.URI()]
+	vs := snapshot.Vulnerabilities(fh.URI())[fh.URI()]
 	if vs == nil && snapshot.Options().Vulncheck == source.ModeVulncheckImports {
 		var err error
 		vs, err = snapshot.ModVuln(ctx, fh.URI())
@@ -140,7 +140,7 @@ func hoverOnModuleStatement(ctx context.Context, pm *source.ParsedModule, offset
 		return nil, false
 	}
 	fromGovulncheck := true
-	vs := snapshot.View().Vulnerabilities(fh.URI())[fh.URI()]
+	vs := snapshot.Vulnerabilities(fh.URI())[fh.URI()]
 
 	if vs == nil && snapshot.Options().Vulncheck == source.ModeVulncheckImports {
 		vs, err = snapshot.ModVuln(ctx, fh.URI())

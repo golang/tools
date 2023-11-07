@@ -40,6 +40,8 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source/xrefs"
 	"golang.org/x/tools/gopls/internal/persistent"
 	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/gopls/internal/vulncheck"
+	"golang.org/x/tools/internal/constraints"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
@@ -177,6 +179,13 @@ type snapshot struct {
 	// detect ignored files.
 	ignoreFilterOnce sync.Once
 	ignoreFilter     *ignoreFilter
+
+	// moduleUpgrades tracks known upgrades for module paths in each modfile.
+	// Each modfile has a map of module name to upgrade version.
+	moduleUpgrades *persistent.Map[span.URI, map[string]string]
+
+	// vulns maps each go.mod file's URI to its known vulnerabilities.
+	vulns *persistent.Map[span.URI, *vulncheck.Result]
 }
 
 var globalSnapshotID uint64
@@ -251,6 +260,8 @@ func (s *snapshot) destroy(destroyedBy string) {
 	s.modVulnHandles.Destroy()
 	s.modWhyHandles.Destroy()
 	s.unloadableFiles.Destroy()
+	s.moduleUpgrades.Destroy()
+	s.vulns.Destroy()
 }
 
 func (s *snapshot) SequenceID() uint64 {
@@ -1814,7 +1825,8 @@ func inVendor(uri span.URI) bool {
 	return found && strings.Contains(after, "/")
 }
 
-func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source.FileHandle) (*snapshot, func()) {
+func (s *snapshot) clone(ctx, bgCtx context.Context, changed source.StateChange) (*snapshot, func()) {
+	changedFiles := changed.Files
 	ctx, done := event.Start(ctx, "cache.snapshot.clone")
 	defer done()
 
@@ -1834,20 +1846,22 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source
 		initializedErr:       s.initializedErr,
 		packages:             s.packages.Clone(),
 		activePackages:       s.activePackages.Clone(),
-		files:                s.files.Clone(changes),
-		symbolizeHandles:     cloneWithout(s.symbolizeHandles, changes),
+		files:                s.files.Clone(changedFiles),
+		symbolizeHandles:     cloneWithout(s.symbolizeHandles, changedFiles),
 		workspacePackages:    s.workspacePackages,
 		shouldLoad:           s.shouldLoad.Clone(),      // not cloneWithout: shouldLoad is cleared on loads
 		unloadableFiles:      s.unloadableFiles.Clone(), // not cloneWithout: typing in a file doesn't necessarily make it loadable
-		parseModHandles:      cloneWithout(s.parseModHandles, changes),
-		parseWorkHandles:     cloneWithout(s.parseWorkHandles, changes),
-		modTidyHandles:       cloneWithout(s.modTidyHandles, changes),
-		modWhyHandles:        cloneWithout(s.modWhyHandles, changes),
-		modVulnHandles:       cloneWithout(s.modVulnHandles, changes),
+		parseModHandles:      cloneWithout(s.parseModHandles, changedFiles),
+		parseWorkHandles:     cloneWithout(s.parseWorkHandles, changedFiles),
+		modTidyHandles:       cloneWithout(s.modTidyHandles, changedFiles),
+		modWhyHandles:        cloneWithout(s.modWhyHandles, changedFiles),
+		modVulnHandles:       cloneWithout(s.modVulnHandles, changedFiles),
 		workspaceModFiles:    s.workspaceModFiles,
 		workspaceModFilesErr: s.workspaceModFilesErr,
 		importGraph:          s.importGraph,
 		pkgIndex:             s.pkgIndex,
+		moduleUpgrades:       cloneWith(s.moduleUpgrades, changed.ModuleUpgrades),
+		vulns:                cloneWith(s.vulns, changed.Vulns),
 	}
 
 	// Create a lease on the new snapshot.
@@ -1864,7 +1878,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source
 	// vendor tree after 'go mod vendor' or 'rm -fr vendor/'.
 	//
 	// TODO(rfindley): revisit the location of this check.
-	for uri := range changes {
+	for uri := range changedFiles {
 		if inVendor(uri) && s.initializedErr != nil ||
 			strings.HasSuffix(string(uri), "/vendor/modules.txt") {
 			reinit = true
@@ -1877,7 +1891,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source
 	// where a file is added on disk; we don't want to read the newly added file
 	// into the old snapshot, as that will break our change detection below.
 	oldFiles := make(map[span.URI]source.FileHandle)
-	for uri := range changes {
+	for uri := range changedFiles {
 		if fh, ok := s.files.Get(uri); ok {
 			oldFiles[uri] = fh
 		}
@@ -1898,7 +1912,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source
 	}
 
 	if workURI, _ := s.view.GOWORK(); workURI != "" {
-		if newFH, ok := changes[workURI]; ok {
+		if newFH, ok := changedFiles[workURI]; ok {
 			result.workspaceModFiles, result.workspaceModFilesErr = computeWorkspaceModFiles(ctx, s.view.gomod, workURI, s.view.effectiveGO111MODULE(), result)
 			if changedOnDisk(oldFiles[workURI], newFH) {
 				reinit = true
@@ -1907,14 +1921,14 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source
 	}
 
 	// Reinitialize if any workspace mod file has changed on disk.
-	for uri, newFH := range changes {
+	for uri, newFH := range changedFiles {
 		if _, ok := result.workspaceModFiles[uri]; ok && changedOnDisk(oldFiles[uri], newFH) {
 			reinit = true
 		}
 	}
 
 	// Finally, process sumfile changes that may affect loading.
-	for uri, newFH := range changes {
+	for uri, newFH := range changedFiles {
 		if !changedOnDisk(oldFiles[uri], newFH) {
 			continue // like with go.mod files, we only reinit when things change on disk
 		}
@@ -1955,7 +1969,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source
 	anyFileOpenedOrClosed := false // opened files affect workspace packages
 	anyFileAdded := false          // adding a file can resolve missing dependencies
 
-	for uri, newFH := range changes {
+	for uri, newFH := range changedFiles {
 		// The original FileHandle for this URI is cached on the snapshot.
 		oldFH, _ := oldFiles[uri] // may be nil
 		_, oldOpen := oldFH.(*Overlay)
@@ -2160,10 +2174,20 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changes map[span.URI]source
 	return result, release
 }
 
-func cloneWithout[V any](m *persistent.Map[span.URI, V], changes map[span.URI]source.FileHandle) *persistent.Map[span.URI, V] {
+// cloneWithout clones m then deletes from it the keys of changes.
+func cloneWithout[K constraints.Ordered, V1, V2 any](m *persistent.Map[K, V1], changes map[K]V2) *persistent.Map[K, V1] {
 	m2 := m.Clone()
 	for k := range changes {
 		m2.Delete(k)
+	}
+	return m2
+}
+
+// cloneWith clones m then inserts the changes into it.
+func cloneWith[K constraints.Ordered, V any](m *persistent.Map[K, V], changes map[K]V) *persistent.Map[K, V] {
+	m2 := m.Clone()
+	for k, v := range changes {
+		m2.Set(k, v, nil)
 	}
 	return m2
 }

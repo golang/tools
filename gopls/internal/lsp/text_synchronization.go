@@ -49,6 +49,14 @@ const (
 	// FromInitialWorkspaceLoad refers to the loading of all packages in the
 	// workspace when the view is first created.
 	FromInitialWorkspaceLoad
+
+	// FromCheckUpgrades refers to state changes resulting from the CheckUpgrades
+	// command, which queries module upgrades.
+	FromCheckUpgrades
+
+	// FromResetGoModDiagnostics refers to state changes resulting from the
+	// ResetGoModDiagnostics command.
+	FromResetGoModDiagnostics
 )
 
 func (m ModificationSource) String() string {
@@ -67,6 +75,10 @@ func (m ModificationSource) String() string {
 		return "regenerate cgo"
 	case FromInitialWorkspaceLoad:
 		return "initial workspace load"
+	case FromCheckUpgrades:
+		return "from check upgrades"
+	case FromResetGoModDiagnostics:
+		return "from resetting go.mod diagnostics"
 	default:
 		return "unknown file modification"
 	}
