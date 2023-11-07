@@ -5,90 +5,118 @@
 package gopathwalk
 
 import (
-	"log"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
 )
 
-func TestShouldTraverse(t *testing.T) {
-	switch runtime.GOOS {
-	case "windows", "plan9":
-		t.Skipf("skipping symlink-requiring test on %s", runtime.GOOS)
-	}
+func TestSymlinkTraversal(t *testing.T) {
+	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "goimports-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	gopath := t.TempDir()
 
-	// Note: mapToDir prepends "src" to each element, since
-	// mapToDir was made for creating GOPATHs.
-	if err := mapToDir(dir, map[string]string{
-		"foo/foo2/file.txt":        "",
-		"foo/foo2/link-to-src":     "LINK:../../",
-		"foo/foo2/link-to-src-foo": "LINK:../../foo",
-		"foo/foo2/link-to-dot":     "LINK:.",
-		"bar/bar2/file.txt":        "",
-		"bar/bar2/link-to-src-foo": "LINK:../../foo",
-
-		"a/b/c": "LINK:../../a/d",
-		"a/d/e": "LINK:../../a/b",
+	if err := mapToDir(gopath, map[string]string{
+		"a/b/c":          "LINK:../../a/d",
+		"a/b/pkg/pkg.go": "package pkg",
+		"a/d/e":          "LINK:../../a/b",
+		"a/d/pkg/pkg.go": "package pkg",
+		"a/f/loop":       "LINK:../f",
+		"a/f/pkg/pkg.go": "package pkg",
+		"a/g/pkg/pkg.go": "LINK:../../f/pkg/pkg.go",
+		"a/self":         "LINK:.",
 	}); err != nil {
+		switch runtime.GOOS {
+		case "windows", "plan9":
+			t.Skipf("skipping symlink-requiring test on %s", runtime.GOOS)
+		}
 		t.Fatal(err)
+	}
+
+	pkgs := []string{}
+	add := func(root Root, dir string) {
+		rel, err := filepath.Rel(filepath.Join(root.Path, "src"), dir)
+		if err != nil {
+			t.Error(err)
+		}
+		pkgs = append(pkgs, filepath.ToSlash(rel))
+	}
+
+	Walk([]Root{{Path: gopath, Type: RootGOPATH}}, add, Options{Logf: t.Logf})
+
+	sort.Strings(pkgs)
+	t.Logf("Found packages:\n\t%s", strings.Join(pkgs, "\n\t"))
+
+	got := make(map[string]bool, len(pkgs))
+	for _, pkg := range pkgs {
+		got[pkg] = true
 	}
 	tests := []struct {
-		dir  string
-		file string
+		path string
 		want bool
+		why  string
 	}{
 		{
-			dir:  "src/foo/foo2",
-			file: "link-to-src-foo",
-			want: false, // loop
+			path: "a/b/pkg",
+			want: true,
+			why:  "found via regular directories",
 		},
 		{
-			dir:  "src/foo/foo2",
-			file: "link-to-src",
-			want: false, // loop
+			path: "a/b/c/pkg",
+			want: true,
+			why:  "found via non-cyclic dir link",
 		},
 		{
-			dir:  "src/foo/foo2",
-			file: "link-to-dot",
-			want: false, // loop
+			path: "a/b/c/e/pkg",
+			want: true,
+			why:  "found via two non-cyclic dir links",
 		},
 		{
-			dir:  "src/bar/bar2",
-			file: "link-to-src-foo",
-			want: true, // not a loop
+			path: "a/d/e/c/pkg",
+			want: true,
+			why:  "found via two non-cyclic dir links",
 		},
 		{
-			dir:  "src/a/b/c",
-			file: "e",
-			want: false, // loop: "e" is the same as "b".
+			path: "a/f/loop/pkg",
+			want: true,
+			why:  "found via a single parent-dir link",
+		},
+		{
+			path: "a/f/loop/loop/pkg",
+			want: false,
+			why:  "would follow loop symlink twice",
+		},
+		{
+			path: "a/self/b/pkg",
+			want: true,
+			why:  "follows self-link once",
+		},
+		{
+			path: "a/self/self/b/pkg",
+			want: false,
+			why:  "would follow self-link twice",
 		},
 	}
-	for i, tt := range tests {
-		var w walker
-		got := w.shouldTraverse(filepath.Join(dir, tt.dir, tt.file))
-		if got != tt.want {
-			t.Errorf("%d. shouldTraverse(%q, %q) = %v; want %v", i, tt.dir, tt.file, got, tt.want)
+	for _, tc := range tests {
+		if got[tc.path] != tc.want {
+			if tc.want {
+				t.Errorf("MISSING: %s (%s)", tc.path, tc.why)
+			} else {
+				t.Errorf("UNEXPECTED: %s (%s)", tc.path, tc.why)
+			}
 		}
 	}
 }
 
 // TestSkip tests that various goimports rules are followed in non-modules mode.
 func TestSkip(t *testing.T) {
-	dir, err := os.MkdirTemp("", "goimports-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	t.Parallel()
+
+	dir := t.TempDir()
 
 	if err := mapToDir(dir, map[string]string{
 		"ignoreme/f.go":     "package ignoreme",     // ignored by .goimportsignore
@@ -111,7 +139,10 @@ func TestSkip(t *testing.T) {
 			found = append(found, dir[len(root.Path)+1:])
 		}, func(root Root, dir string) bool {
 			return false
-		}, Options{ModulesEnabled: false, Logf: log.Printf})
+		}, Options{
+			ModulesEnabled: false,
+			Logf:           t.Logf,
+		})
 	if want := []string{"shouldfind"}; !reflect.DeepEqual(found, want) {
 		t.Errorf("expected to find only %v, got %v", want, found)
 	}
@@ -119,11 +150,9 @@ func TestSkip(t *testing.T) {
 
 // TestSkipFunction tests that scan successfully skips directories from user callback.
 func TestSkipFunction(t *testing.T) {
-	dir, err := os.MkdirTemp("", "goimports-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	t.Parallel()
+
+	dir := t.TempDir()
 
 	if err := mapToDir(dir, map[string]string{
 		"ignoreme/f.go":           "package ignoreme",    // ignored by skip
@@ -143,13 +172,53 @@ func TestSkipFunction(t *testing.T) {
 		}, func(root Root, dir string) bool {
 			return strings.HasSuffix(dir, "ignoreme")
 		},
-		Options{ModulesEnabled: false})
+		Options{
+			ModulesEnabled: false,
+			Logf:           t.Logf,
+		})
 	if want := []string{"shouldfind"}; !reflect.DeepEqual(found, want) {
 		t.Errorf("expected to find only %v, got %v", want, found)
 	}
 }
 
+// TestWalkSymlinkConcurrentDeletion is a regression test for the panic reported
+// in https://go.dev/issue/58054#issuecomment-1791513726.
+func TestWalkSymlinkConcurrentDeletion(t *testing.T) {
+	t.Parallel()
+
+	src := t.TempDir()
+
+	m := map[string]string{
+		"dir/readme.txt": "dir is not a go package",
+		"dirlink":        "LINK:dir",
+	}
+	if err := mapToDir(src, m); err != nil {
+		switch runtime.GOOS {
+		case "windows", "plan9":
+			t.Skipf("skipping symlink-requiring test on %s", runtime.GOOS)
+		}
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		if err := os.RemoveAll(src); err != nil {
+			t.Log(err)
+		}
+		close(done)
+	}()
+	defer func() {
+		<-done
+	}()
+
+	add := func(root Root, dir string) {
+		t.Errorf("unexpected call to add(%q, %q)", root.Path, dir)
+	}
+	Walk([]Root{{Path: src, Type: RootGOPATH}}, add, Options{Logf: t.Logf})
+}
+
 func mapToDir(destDir string, files map[string]string) error {
+	var symlinkPaths []string
 	for path, contents := range files {
 		file := filepath.Join(destDir, "src", path)
 		if err := os.MkdirAll(filepath.Dir(file), 0755); err != nil {
@@ -157,7 +226,9 @@ func mapToDir(destDir string, files map[string]string) error {
 		}
 		var err error
 		if strings.HasPrefix(contents, "LINK:") {
-			err = os.Symlink(strings.TrimPrefix(contents, "LINK:"), file)
+			// To work around https://go.dev/issue/39183, wait to create symlinks
+			// until we have created all non-symlink paths.
+			symlinkPaths = append(symlinkPaths, path)
 		} else {
 			err = os.WriteFile(file, []byte(contents), 0644)
 		}
@@ -165,5 +236,15 @@ func mapToDir(destDir string, files map[string]string) error {
 			return err
 		}
 	}
+
+	for _, path := range symlinkPaths {
+		file := filepath.Join(destDir, "src", path)
+		target := filepath.FromSlash(strings.TrimPrefix(files[path], "LINK:"))
+		err := os.Symlink(target, file)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

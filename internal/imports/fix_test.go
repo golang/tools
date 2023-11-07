@@ -1371,6 +1371,41 @@ var (
 	}.processTest(t, "golang.org/fake", "myotherpackage/toformat.go", nil, nil, want)
 }
 
+// Test support for packages in GOPATH whose files are symlinks.
+func TestImportSymlinkFiles(t *testing.T) {
+	const input = `package p
+
+var (
+	_ = fmt.Print
+	_ = mypkg.Foo
+)
+`
+	const want = `package p
+
+import (
+	"fmt"
+
+	"golang.org/fake/x/y/mypkg"
+)
+
+var (
+	_ = fmt.Print
+	_ = mypkg.Foo
+)
+`
+
+	testConfig{
+		module: packagestest.Module{
+			Name: "golang.org/fake",
+			Files: fm{
+				"target/f.go":                "package mypkg\nvar Foo = 123\n",
+				"x/y/mypkg/f.go":             packagestest.Symlink("../../../target/f.go"),
+				"myotherpackage/toformat.go": input,
+			},
+		},
+	}.processTest(t, "golang.org/fake", "myotherpackage/toformat.go", nil, nil, want)
+}
+
 func TestImportSymlinksWithIgnore(t *testing.T) {
 	const input = `package p
 
@@ -1398,7 +1433,8 @@ var (
 				"x/y/mypkg":              packagestest.Symlink("../../target"), // valid symlink
 				"x/y/apkg":               packagestest.Symlink(".."),           // symlink loop
 				"myotherpkg/toformat.go": input,
-				"../../.goimportsignore": "golang.org/fake/x/y/mypkg\n",
+				"../../.goimportsignore": "golang.org/fake/x/y/mypkg\n" +
+					"golang.org/fake/x/y/apkg\n",
 			},
 		},
 	}.processTest(t, "golang.org/fake", "myotherpkg/toformat.go", nil, nil, want)
