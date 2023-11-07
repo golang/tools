@@ -1,6 +1,6 @@
 # Test of line-oriented output.
 
- deadcode "-format={{range .Funcs}}{{println .Name}}{{end}}" -filter= example.com
+ deadcode "-f={{range .Funcs}}{{println .Name}}{{end}}" -filter= example.com
 
  want "(example.com.T).Goodbye"
 !want "(example.com.T).Hello"

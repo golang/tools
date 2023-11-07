@@ -64,15 +64,15 @@ With no flags, the command prints dead functions grouped by package.
 With the -json flag, the command prints an array of Package
 objects, as defined by the JSON schema (see below).
 
-With the -format=template flag, the command executes the specified template
+With the -f=template flag, the command executes the specified template
 on each Package record. So, this template produces a result similar to the
 default format:
 
-	-format='{{println .Path}}{{range .Funcs}}{{printf "\t%s\n" .RelName}}{{end}}{{println}}'
+	-f='{{println .Path}}{{range .Funcs}}{{printf "\t%s\n" .RelName}}{{end}}{{println}}'
 
 And this template shows only the list of source positions of dead functions:
 
-	-format='{{range .Funcs}}{{println .Posn}}{{end}}'
+	-f='{{range .Funcs}}{{println .Posn}}{{end}}'
 
 # Why is a function not dead?
 
@@ -87,7 +87,7 @@ preferred over those from tests. Paths from main functions are
 preferred over paths from init functions.
 
 The result is a list of Edge objects (see JSON schema below).
-Again, the -json and -format=template flags may be used to control
+Again, the -json and -f=template flags may be used to control
 the formatting of the list of Edge objects.
 The default format shows, for each edge in the path, whether the call
 is static or dynamic, and its source line number. For example:

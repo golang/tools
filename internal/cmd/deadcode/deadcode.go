@@ -43,7 +43,7 @@ var (
 	filterFlag    = flag.String("filter", "<module>", "report only packages matching this regular expression (default: module of first package)")
 	generatedFlag = flag.Bool("generated", false, "include dead functions in generated Go files")
 	whyLiveFlag   = flag.String("whylive", "", "show a path from main to the named function")
-	formatFlag    = flag.String("format", "", "format output records using template")
+	formatFlag    = flag.String("f", "", "format output records using template")
 	jsonFlag      = flag.Bool("json", false, "output JSON records")
 	cpuProfile    = flag.String("cpuprofile", "", "write CPU profile to this file")
 	memProfile    = flag.String("memprofile", "", "write memory profile to this file")
@@ -101,10 +101,10 @@ func main() {
 	// Reject bad output options early.
 	if *formatFlag != "" {
 		if *jsonFlag {
-			log.Fatalf("you cannot specify both -format=template and -json")
+			log.Fatalf("you cannot specify both -f=template and -json")
 		}
 		if _, err := template.New("deadcode").Parse(*formatFlag); err != nil {
-			log.Fatalf("invalid -format: %v", err)
+			log.Fatalf("invalid -f: %v", err)
 		}
 	}
 
@@ -232,7 +232,7 @@ func main() {
 		}
 
 		// Build a list of jsonEdge records
-		// to print as -json or -format=template.
+		// to print as -json or -f=template.
 		var edges []any
 		for _, edge := range path {
 			edges = append(edges, jsonEdge{
@@ -357,7 +357,7 @@ func printObjects(format string, objects []any) {
 		return
 	}
 
-	// -format=template. Parse can't fail: we checked it earlier.
+	// -f=template. Parse can't fail: we checked it earlier.
 	tmpl := template.Must(template.New("deadcode").Parse(format))
 	for _, object := range objects {
 		var buf bytes.Buffer
