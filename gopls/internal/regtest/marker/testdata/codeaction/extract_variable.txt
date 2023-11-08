@@ -14,11 +14,9 @@ func _() {
 -- @basic_lit1/basic_lit.go --
 --- before
 +++ after
-@@ -3,2 +3,3 @@
--func _() {
-+func _() {
-+	x := 1
+@@ -4 +4,2 @@
 -	var _ = 1 + 2 //@codeactionedit("1", "refactor.extract", basic_lit1)
++	x := 1
 +	var _ = x + 2 //@codeactionedit("1", "refactor.extract", basic_lit1)
 -- @basic_lit2/basic_lit.go --
 --- before

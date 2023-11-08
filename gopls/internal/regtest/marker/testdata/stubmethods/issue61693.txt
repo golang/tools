@@ -20,11 +20,9 @@ func _() {
 -- @stub/main.go --
 --- before
 +++ after
-@@ -3 +3,6 @@
--type C int
-+type C int
-+
+@@ -5 +5,5 @@
 +// Error implements error.
 +func (C) Error() string {
 +	panic("unimplemented")
 +}
++

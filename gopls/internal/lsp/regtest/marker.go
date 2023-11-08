@@ -37,6 +37,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/tests"
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/diff/myers"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
 	"golang.org/x/tools/internal/testenv"
@@ -1436,7 +1437,8 @@ func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
 	diffs := make(map[string]string)
 	for name, after := range changed {
 		before := mark.run.env.FileContent(name)
-		edits := diff.Strings(before, string(after))
+		// TODO(golang/go#64023): switch back to diff.Strings.
+		edits := myers.ComputeEdits(before, string(after))
 		d, err := diff.ToUnified("before", "after", before, edits, 0)
 		if err != nil {
 			// Can't happen: edits are consistent.

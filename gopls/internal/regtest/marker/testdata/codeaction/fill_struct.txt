@@ -505,10 +505,10 @@ func fill() {
 +++ after
 @@ -19,4 +19,2 @@
 -		/* this comment should disappear */
-+		PrefilledInt: 7,
 -		PrefilledInt: 7, // This comment should be blown away.
 -		/* As should
 -		this one */
++		PrefilledInt: 7,
 +		UnfilledInt:  0,
 -- fill_struct_spaces.go --
 package fillstruct
@@ -607,9 +607,7 @@ func _[T any]() {
 -- @typeparams3/typeparams.go --
 --- before
 +++ after
-@@ -20 +20,2 @@
--var _ = twoArgStructWithTypeParams[int, string]{
-+var _ = twoArgStructWithTypeParams[int, string]{
+@@ -21 +21 @@
 +	foo: 0,
 -- @typeparams4/typeparams.go --
 --- before

@@ -18,11 +18,9 @@ var _ I = &A{} //@suggestedfix(re"&A..", re"missing method M", stub)
 -- @stub/p.go --
 --- before
 +++ after
-@@ -11 +11,6 @@
--type A struct{}
-+type A struct{}
-+
+@@ -13 +13,5 @@
 +// M implements I.
 +func (*A) M(io.Reader, B) {
 +	panic("unimplemented")
 +}
++

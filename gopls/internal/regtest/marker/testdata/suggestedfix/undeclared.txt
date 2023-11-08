@@ -16,9 +16,7 @@ func a() {
 -- @a/a.go --
 --- before
 +++ after
-@@ -3 +3,2 @@
--func a() {
-+func a() {
+@@ -4 +4 @@
 +	y := 
 -- b.go --
 package p
@@ -32,9 +30,7 @@ func b() {
 -- @b/b.go --
 --- before
 +++ after
-@@ -3 +3,2 @@
--func b() {
-+func b() {
+@@ -4 +4 @@
 +	n := 
 -- c.go --
 package p
@@ -48,7 +44,5 @@ func c() {
 -- @c/c.go --
 --- before
 +++ after
-@@ -3 +3,2 @@
--func c() {
-+func c() {
+@@ -4 +4 @@
 +	i := 
