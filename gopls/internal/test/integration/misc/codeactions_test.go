@@ -59,7 +59,14 @@ func g() {}
 				t.Log(actions)
 			}
 		}
-		check("src.go", protocol.GoDoc, protocol.RefactorExtract, protocol.RefactorInline)
-		check("gen.go", protocol.GoDoc) // just "View package documentation"
+
+		check("src.go",
+			protocol.GoDoc,
+			protocol.GoFreeSymbols,
+			protocol.RefactorExtract,
+			protocol.RefactorInline)
+		check("gen.go",
+			protocol.GoDoc,
+			protocol.GoFreeSymbols)
 	})
 }

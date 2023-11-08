@@ -1003,6 +1003,13 @@
 			"ResultDoc": "map[golang.org/x/tools/gopls/internal/protocol.DocumentURI]*golang.org/x/tools/gopls/internal/vulncheck.Result"
 		},
 		{
+			"Command": "gopls.free_symbols",
+			"Title": "report free symbols referenced by the selection.",
+			"Doc": "This command is a query over a selected range of Go source\ncode. It reports the set of \"free\" symbols of the\nselection: the set of symbols that are referenced within\nthe selection but are declared outside of it. This\ninformation is useful for understanding at a glance what a\nblock of code depends on, perhaps as a precursor to\nextracting it into a separate function.",
+			"ArgDoc": "string,\n{\n\t// The range's start position.\n\t\"start\": {\n\t\t\"line\": uint32,\n\t\t\"character\": uint32,\n\t},\n\t// The range's end position.\n\t\"end\": {\n\t\t\"line\": uint32,\n\t\t\"character\": uint32,\n\t},\n}",
+			"ResultDoc": ""
+		},
+		{
 			"Command": "gopls.gc_details",
 			"Title": "Toggle gc_details",
 			"Doc": "Toggle the calculation of gc annotations.",

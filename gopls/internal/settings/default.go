@@ -50,6 +50,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						protocol.RefactorInline:        true,
 						protocol.RefactorExtract:       true,
 						protocol.GoDoc:                 true,
+						protocol.GoFreeSymbols:         true,
 					},
 					file.Mod: {
 						protocol.SourceOrganizeImports: true,

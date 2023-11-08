@@ -356,6 +356,60 @@ func (s *server) initWeb() (*web, error) {
 		w.Write(content)
 	})))
 
+	// The /freesymbols?file=...&range=...&view=... handler shows
+	// free symbols referenced by the selection.
+	webMux.HandleFunc("/freesymbols", func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		if err := req.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Get snapshot of specified view.
+		view, err := s.session.View(req.Form.Get("view"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		snapshot, release, err := view.Snapshot()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer release()
+
+		// Get selection range and type-check.
+		loc := protocol.Location{
+			URI: protocol.DocumentURI(req.Form.Get("file")),
+		}
+		if _, err := fmt.Sscanf(req.Form.Get("range"), "%d:%d:%d:%d",
+			&loc.Range.Start.Line,
+			&loc.Range.Start.Character,
+			&loc.Range.End.Line,
+			&loc.Range.End.Character,
+		); err != nil {
+			http.Error(w, "invalid range", http.StatusInternalServerError)
+			return
+		}
+		pkg, pgf, err := golang.NarrowestPackageForFile(ctx, snapshot, loc.URI)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		start, end, err := pgf.RangePos(loc.Range)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Produce report.
+		pkgURL := func(path golang.PackagePath, fragment string) protocol.URI {
+			return web.pkgURL(view, path, fragment)
+		}
+		html := golang.FreeSymbolsHTML(pkg, pgf, start, end, web.openURL, pkgURL)
+		w.Write(html)
+	})
+
 	return web, nil
 }
 
@@ -385,6 +439,21 @@ func (w *web) pkgURL(v *cache.View, path golang.PackagePath, fragment string) pr
 		"pkg/"+string(path),
 		"view="+url.QueryEscape(v.ID()),
 		fragment)
+}
+
+// freesymbolsURL returns a /freesymbols URL for a report
+// on the free symbols referenced within the selection span (loc).
+func (w *web) freesymbolsURL(v *cache.View, loc protocol.Location) protocol.URI {
+	return w.url(
+		"freesymbols",
+		fmt.Sprintf("file=%s&range=%d:%d:%d:%d&view=%s",
+			url.QueryEscape(string(loc.URI)),
+			loc.Range.Start.Line,
+			loc.Range.Start.Character,
+			loc.Range.End.Line,
+			loc.Range.End.Character,
+			url.QueryEscape(v.ID())),
+		"")
 }
 
 // url returns a URL by joining a relative path, an (encoded) query,

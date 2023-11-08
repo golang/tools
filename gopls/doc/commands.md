@@ -306,6 +306,35 @@ Result:
 map[golang.org/x/tools/gopls/internal/protocol.DocumentURI]*golang.org/x/tools/gopls/internal/vulncheck.Result
 ```
 
+### **report free symbols referenced by the selection.**
+Identifier: `gopls.free_symbols`
+
+This command is a query over a selected range of Go source
+code. It reports the set of "free" symbols of the
+selection: the set of symbols that are referenced within
+the selection but are declared outside of it. This
+information is useful for understanding at a glance what a
+block of code depends on, perhaps as a precursor to
+extracting it into a separate function.
+
+Args:
+
+```
+string,
+{
+	// The range's start position.
+	"start": {
+		"line": uint32,
+		"character": uint32,
+	},
+	// The range's end position.
+	"end": {
+		"line": uint32,
+		"character": uint32,
+	},
+}
+```
+
 ### **Toggle gc_details**
 Identifier: `gopls.gc_details`
 

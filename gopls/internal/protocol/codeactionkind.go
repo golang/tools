@@ -6,7 +6,7 @@ package protocol
 
 // This file defines constants for non-standard CodeActions and CodeLenses.
 
-// CodeAction kinds
+// CodeAction kinds specific to gopls
 //
 // See tsprotocol.go for LSP standard kinds, including
 //
@@ -21,8 +21,9 @@ package protocol
 //	"source.fixAll"
 //	"notebook"
 const (
-	GoTest CodeActionKind = "goTest"
-	GoDoc  CodeActionKind = "source.doc"
+	GoTest        CodeActionKind = "goTest"
+	GoDoc         CodeActionKind = "source.doc"
+	GoFreeSymbols CodeActionKind = "source.freesymbols"
 )
 
 // A CodeLensSource identifies an (algorithmic) source of code lenses.

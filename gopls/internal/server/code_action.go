@@ -119,7 +119,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		if golang.IsGenerated(ctx, snapshot, uri) {
 			actions = slices.DeleteFunc(actions, func(a protocol.CodeAction) bool {
 				switch a.Kind {
-				case protocol.GoTest, protocol.GoDoc:
+				case protocol.GoTest, protocol.GoDoc, protocol.GoFreeSymbols:
 					return false // read-only query
 				}
 				return true // potential write operation

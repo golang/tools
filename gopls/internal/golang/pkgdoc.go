@@ -40,7 +40,6 @@ import (
 	"go/token"
 	"go/types"
 	"html"
-	"log"
 	"path/filepath"
 	"strings"
 
@@ -54,6 +53,15 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 )
 
+// TODO(adonovan): factor these two functions into an interface.
+type (
+	// A PkgURLFunc forms URLs of package or symbol documentation.
+	PkgURLFunc = func(path PackagePath, fragment string) protocol.URI
+
+	// A PosURLFunc forms URLs that cause the editor to navigate to a position.
+	PosURLFunc = func(filename string, line, col8 int) protocol.URI
+)
+
 // RenderPackageDoc formats the package documentation page.
 //
 // The posURL function returns a URL that when visited, has the side
@@ -62,7 +70,9 @@ import (
 //
 // The pkgURL function returns a URL for the documentation of the
 // specified package and symbol.
-func RenderPackageDoc(pkg *cache.Package, posURL func(filename string, line, col8 int) protocol.URI, pkgURL func(path PackagePath, fragment string) protocol.URI) ([]byte, error) {
+//
+// TODO(adonovan): "Render" is a client-side verb; rename to PackageDocHTML.
+func RenderPackageDoc(pkg *cache.Package, posURL PosURLFunc, pkgURL PkgURLFunc) ([]byte, error) {
 	// We can't use doc.NewFromFiles (even with doc.PreserveAST
 	// mode) as it calls ast.NewPackage which assumes that each
 	// ast.File has an ast.Scope and resolves identifiers to
@@ -165,9 +175,6 @@ func RenderPackageDoc(pkg *cache.Package, posURL func(filename string, line, col
 			return "", false
 		}
 		parser.LookupSym = func(recv, name string) (ok bool) {
-			defer func() {
-				log.Printf("LookupSym %q %q = %t ", recv, name, ok)
-			}()
 			// package-level decl?
 			if recv == "" {
 				return pkg.Types().Scope().Lookup(name) != nil
@@ -322,7 +329,7 @@ window.onload = () => {
 		// We keep the href attribute as it causes the <a> to render
 		// as a link: blue, underlined, with URL hover information.
 		return fmt.Sprintf(`<a href="%[1]s" onclick='return httpGET("%[1]s")'>%[2]s</a>`,
-			escape(url), text)
+			escape(url), escape(text))
 	}
 
 	// objHTML returns HTML for obj.Name(), possibly as a link.

@@ -233,6 +233,17 @@ type Interface interface {
 	//
 	// This command is intended for use by gopls tests only.
 	Views(context.Context) ([]View, error)
+
+	// FreeSymbols: report free symbols referenced by the selection.
+	//
+	// This command is a query over a selected range of Go source
+	// code. It reports the set of "free" symbols of the
+	// selection: the set of symbols that are referenced within
+	// the selection but are declared outside of it. This
+	// information is useful for understanding at a glance what a
+	// block of code depends on, perhaps as a precursor to
+	// extracting it into a separate function.
+	FreeSymbols(context.Context, protocol.DocumentURI, protocol.Range) error
 }
 
 type RunTestsArgs struct {

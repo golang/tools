@@ -36,8 +36,13 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 	// when adding new query operations like GoTest and GoDoc that
 	// are permitted even in generated source files
 
-	// Code actions requiring syntax information alone.
-	if wantQuickFixes || want[protocol.SourceOrganizeImports] || want[protocol.RefactorExtract] {
+	// Code actions that can be offered based on syntax information alone.
+	if wantQuickFixes ||
+		want[protocol.SourceOrganizeImports] ||
+		want[protocol.RefactorExtract] ||
+		want[protocol.GoDoc] ||
+		want[protocol.GoFreeSymbols] {
+
 		pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 		if err != nil {
 			return nil, err
@@ -89,13 +94,38 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 			}
 			actions = append(actions, extractions...)
 		}
+
+		if want[protocol.GoDoc] {
+			loc := protocol.Location{URI: pgf.URI, Range: rng}
+			cmd, err := command.NewDocCommand("View package documentation", loc)
+			if err != nil {
+				return nil, err
+			}
+			actions = append(actions, protocol.CodeAction{
+				Title:   cmd.Title,
+				Kind:    protocol.GoDoc,
+				Command: &cmd,
+			})
+		}
+
+		if want[protocol.GoFreeSymbols] && rng.End != rng.Start {
+			cmd, err := command.NewFreeSymbolsCommand("Show free symbols", pgf.URI, rng)
+			if err != nil {
+				return nil, err
+			}
+			// For implementation, see commandHandler.showFreeSymbols.
+			actions = append(actions, protocol.CodeAction{
+				Title:   cmd.Title,
+				Kind:    protocol.GoFreeSymbols,
+				Command: &cmd,
+			})
+		}
 	}
 
 	// Code actions requiring type information.
 	if want[protocol.RefactorRewrite] ||
 		want[protocol.RefactorInline] ||
-		want[protocol.GoTest] ||
-		want[protocol.GoDoc] {
+		want[protocol.GoTest] {
 		pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 		if err != nil {
 			return nil, err
@@ -122,19 +152,6 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 				return nil, err
 			}
 			actions = append(actions, fixes...)
-		}
-
-		if want[protocol.GoDoc] {
-			loc := protocol.Location{URI: pgf.URI, Range: rng}
-			cmd, err := command.NewDocCommand("View package documentation", loc)
-			if err != nil {
-				return nil, err
-			}
-			actions = append(actions, protocol.CodeAction{
-				Title:   cmd.Title,
-				Kind:    protocol.GoDoc,
-				Command: &cmd,
-			})
 		}
 	}
 	return actions, nil
