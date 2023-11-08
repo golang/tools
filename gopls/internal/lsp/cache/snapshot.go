@@ -417,7 +417,6 @@ func (s *snapshot) config(ctx context.Context, inv *gocommand.Invocation) *packa
 	if typesinternal.SetUsesCgo(&types.Config{}) {
 		cfg.Mode |= packages.LoadMode(packagesinternal.TypecheckCgo)
 	}
-	packagesinternal.SetGoCmdRunner(cfg, s.view.gocmdRunner)
 	return cfg
 }
 

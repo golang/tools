@@ -432,12 +432,6 @@ func init() {
 	packagesinternal.GetDepsErrors = func(p interface{}) []*packagesinternal.PackageError {
 		return p.(*Package).depsErrors
 	}
-	packagesinternal.GetGoCmdRunner = func(config interface{}) *gocommand.Runner {
-		return config.(*Config).gocmdRunner
-	}
-	packagesinternal.SetGoCmdRunner = func(config interface{}, runner *gocommand.Runner) {
-		config.(*Config).gocmdRunner = runner
-	}
 	packagesinternal.SetModFile = func(config interface{}, value string) {
 		config.(*Config).modFile = value
 	}
