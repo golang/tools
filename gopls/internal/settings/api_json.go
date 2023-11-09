@@ -397,7 +397,7 @@ var GeneratedAPIJSON = &APIJSON{
 						},
 						{
 							Name:    "\"testinggoroutine\"",
-							Doc:     "report calls to (*testing.T).Fatal from goroutines started by a test.\n\nFunctions that abruptly terminate a test, such as the Fatal, Fatalf, FailNow, and\nSkip{,f,Now} methods of *testing.T, must be called from the test goroutine itself.\nThis checker detects calls to these functions that occur within a goroutine\nstarted by the test. For example:\n\n\tfunc TestFoo(t *testing.T) {\n\t    go func() {\n\t        t.Fatal(\"oops\") // error: (*T).Fatal called from non-test goroutine\n\t    }()\n\t}",
+							Doc:     "report calls to (*testing.T).Fatal from goroutines started by a test\n\nFunctions that abruptly terminate a test, such as the Fatal, Fatalf, FailNow, and\nSkip{,f,Now} methods of *testing.T, must be called from the test goroutine itself.\nThis checker detects calls to these functions that occur within a goroutine\nstarted by the test. For example:\n\n\tfunc TestFoo(t *testing.T) {\n\t    go func() {\n\t        t.Fatal(\"oops\") // error: (*T).Fatal called from non-test goroutine\n\t    }()\n\t}",
 							Default: "true",
 						},
 						{
@@ -1162,7 +1162,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Name:    "testinggoroutine",
-			Doc:     "report calls to (*testing.T).Fatal from goroutines started by a test.\n\nFunctions that abruptly terminate a test, such as the Fatal, Fatalf, FailNow, and\nSkip{,f,Now} methods of *testing.T, must be called from the test goroutine itself.\nThis checker detects calls to these functions that occur within a goroutine\nstarted by the test. For example:\n\n\tfunc TestFoo(t *testing.T) {\n\t    go func() {\n\t        t.Fatal(\"oops\") // error: (*T).Fatal called from non-test goroutine\n\t    }()\n\t}",
+			Doc:     "report calls to (*testing.T).Fatal from goroutines started by a test\n\nFunctions that abruptly terminate a test, such as the Fatal, Fatalf, FailNow, and\nSkip{,f,Now} methods of *testing.T, must be called from the test goroutine itself.\nThis checker detects calls to these functions that occur within a goroutine\nstarted by the test. For example:\n\n\tfunc TestFoo(t *testing.T) {\n\t    go func() {\n\t        t.Fatal(\"oops\") // error: (*T).Fatal called from non-test goroutine\n\t    }()\n\t}",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/testinggoroutine",
 			Default: true,
 		},

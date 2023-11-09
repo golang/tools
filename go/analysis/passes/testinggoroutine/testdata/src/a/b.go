@@ -4,4 +4,8 @@
 
 package a
 
-func h() {}
+import "testing"
+
+func helper(t *testing.T) {
+	t.Skip()
+}
