@@ -50,7 +50,6 @@ var UpdateGolden = flag.Bool("golden", false, "Update golden files")
 // type in the field name and the make() expression.
 type CallHierarchy = map[span.Span]*CallHierarchyResult
 type SemanticTokens = []span.Span
-type InlayHints = []span.Span
 type AddImport = map[span.URI]string
 type SelectionRanges = []span.Span
 
@@ -59,7 +58,6 @@ type Data struct {
 	Exported        *packagestest.Exported
 	CallHierarchy   CallHierarchy
 	SemanticTokens  SemanticTokens
-	InlayHints      InlayHints
 	AddImport       AddImport
 	SelectionRanges SelectionRanges
 
@@ -83,7 +81,6 @@ type Data struct {
 type Tests interface {
 	CallHierarchy(*testing.T, span.Span, *CallHierarchyResult)
 	SemanticTokens(*testing.T, span.Span)
-	InlayHints(*testing.T, span.Span)
 	AddImport(*testing.T, span.URI, string)
 	SelectionRanges(*testing.T, span.Span)
 }
@@ -306,7 +303,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 	// Collect any data that needs to be used by subsequent tests.
 	if err := datum.Exported.Expect(map[string]interface{}{
 		"semantic":       datum.collectSemanticTokens,
-		"inlayHint":      datum.collectInlayHints,
 		"incomingcalls":  datum.collectIncomingCalls,
 		"outgoingcalls":  datum.collectOutgoingCalls,
 		"addimport":      datum.collectAddImports,
@@ -385,16 +381,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		}
 	})
 
-	t.Run("InlayHints", func(t *testing.T) {
-		t.Helper()
-		for _, src := range data.InlayHints {
-			t.Run(SpanName(src), func(t *testing.T) {
-				t.Helper()
-				tests.InlayHints(t, src)
-			})
-		}
-	})
-
 	t.Run("AddImport", func(t *testing.T) {
 		t.Helper()
 		for uri, exp := range data.AddImport {
@@ -433,7 +419,6 @@ func checkData(t *testing.T, data *Data) {
 
 	fmt.Fprintf(buf, "CallHierarchyCount = %v\n", len(data.CallHierarchy))
 	fmt.Fprintf(buf, "SemanticTokenCount = %v\n", len(data.SemanticTokens))
-	fmt.Fprintf(buf, "InlayHintsCount = %v\n", len(data.InlayHints))
 	fmt.Fprintf(buf, "SelectionRangesCount = %v\n", len(data.SelectionRanges))
 
 	want := string(data.Golden(t, "summary", summaryFile, func() ([]byte, error) {
@@ -559,10 +544,6 @@ func (data *Data) collectOutgoingCalls(src span.Span, calls []span.Span) {
 				Range: data.mustRange(call),
 			})
 	}
-}
-
-func (data *Data) collectInlayHints(src span.Span) {
-	data.InlayHints = append(data.InlayHints, src)
 }
 
 // mustRange converts spn into a protocol.Range, panicking on any error.

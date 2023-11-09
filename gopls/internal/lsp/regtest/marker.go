@@ -729,6 +729,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"highlight":        actionMarkerFunc(highlightMarker),
 	"hover":            actionMarkerFunc(hoverMarker),
 	"implementation":   actionMarkerFunc(implementationMarker),
+	"inlayhints":       actionMarkerFunc(inlayhintsMarker),
 	"preparerename":    actionMarkerFunc(prepareRenameMarker),
 	"rank":             actionMarkerFunc(rankMarker),
 	"rankl":            actionMarkerFunc(ranklMarker),
@@ -1129,9 +1130,23 @@ func (mark marker) uri() protocol.DocumentURI {
 	return mark.run.env.Sandbox.Workdir.URI(mark.run.test.fset.File(mark.note.Pos).Name())
 }
 
+// document returns a protocol.TextDocumentIdentifier for the current file.
+func (mark marker) document() protocol.TextDocumentIdentifier {
+	return protocol.TextDocumentIdentifier{URI: mark.uri()}
+}
+
 // path returns the relative path to the file containing the marker.
 func (mark marker) path() string {
 	return mark.run.env.Sandbox.Workdir.RelPath(mark.run.test.fset.File(mark.note.Pos).Name())
+}
+
+// mapper returns a *protocol.Mapper for the current file.
+func (mark marker) mapper() *protocol.Mapper {
+	mapper, err := mark.run.env.Editor.Mapper(mark.path())
+	if err != nil {
+		mark.run.env.T.Fatalf("failed to get mapper for current mark: %v", err)
+	}
+	return mapper
 }
 
 // fmtLoc formats the given pos in the context of the test, using
@@ -1647,12 +1662,7 @@ func acceptCompletionMarker(mark marker, src protocol.Location, label string, go
 		return
 	}
 	filename := mark.path()
-	mapper, err := mark.run.env.Editor.Mapper(filename)
-	if err != nil {
-		mark.errorf("Editor.Mapper(%s) failed: %v", filename, err)
-		return
-	}
-
+	mapper := mark.mapper()
 	patched, _, err := source.ApplyProtocolEdits(mapper, append([]protocol.TextEdit{
 		*selected.TextEdit,
 	}, selected.AdditionalTextEdits...))
@@ -1690,7 +1700,7 @@ func typedefMarker(mark marker, src, dst protocol.Location) {
 func foldingRangeMarker(mark marker, g *Golden) {
 	env := mark.run.env
 	ranges, err := mark.server().FoldingRange(env.Ctx, &protocol.FoldingRangeParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: mark.uri()},
+		TextDocument: mark.document(),
 	})
 	if err != nil {
 		mark.errorf("foldingRange failed: %v", err)
@@ -1731,7 +1741,7 @@ func foldingRangeMarker(mark marker, g *Golden) {
 // formatMarker implements the @format marker.
 func formatMarker(mark marker, golden *Golden) {
 	edits, err := mark.server().Formatting(mark.run.env.Ctx, &protocol.DocumentFormattingParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: mark.uri()},
+		TextDocument: mark.document(),
 	})
 	var got []byte
 	if err != nil {
@@ -2222,6 +2232,35 @@ func implementationMarker(mark marker, src protocol.Location, want ...protocol.L
 	if err := compareLocations(mark, got, want); err != nil {
 		mark.errorf("implementation: %v", err)
 	}
+}
+
+func inlayhintsMarker(mark marker, g *Golden) {
+	hints := mark.run.env.InlayHints(mark.path())
+
+	// Map inlay hints to text edits.
+	edits := make([]protocol.TextEdit, len(hints))
+	for i, hint := range hints {
+		var paddingLeft, paddingRight string
+		if hint.PaddingLeft {
+			paddingLeft = " "
+		}
+		if hint.PaddingRight {
+			paddingRight = " "
+		}
+		edits[i] = protocol.TextEdit{
+			Range:   protocol.Range{Start: hint.Position, End: hint.Position},
+			NewText: fmt.Sprintf("<%s%s%s>", paddingLeft, hint.Label[0].Value, paddingRight),
+		}
+	}
+
+	m := mark.mapper()
+	got, _, err := source.ApplyProtocolEdits(m, edits)
+	if err != nil {
+		mark.errorf("ApplyProtocolEdits: %v", err)
+		return
+	}
+
+	compareGolden(mark, "inlay hints", got, g)
 }
 
 func prepareRenameMarker(mark marker, src, spn protocol.Location, placeholder string) {

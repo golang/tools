@@ -5,7 +5,6 @@
 package lsp
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -243,54 +242,6 @@ func (r *runner) SemanticTokens(t *testing.T, spn span.Span) {
 	})
 	if err != nil {
 		t.Errorf("%v for Range %s", err, filename)
-	}
-}
-
-func (r *runner) InlayHints(t *testing.T, spn span.Span) {
-	uri := spn.URI()
-	filename := uri.Filename()
-
-	hints, err := r.server.InlayHint(r.ctx, &protocol.InlayHintParams{
-		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(uri),
-		},
-		// TODO: add Range
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Map inlay hints to text edits.
-	edits := make([]protocol.TextEdit, len(hints))
-	for i, hint := range hints {
-		var paddingLeft, paddingRight string
-		if hint.PaddingLeft {
-			paddingLeft = " "
-		}
-		if hint.PaddingRight {
-			paddingRight = " "
-		}
-		edits[i] = protocol.TextEdit{
-			Range:   protocol.Range{Start: hint.Position, End: hint.Position},
-			NewText: fmt.Sprintf("<%s%s%s>", paddingLeft, hint.Label[0].Value, paddingRight),
-		}
-	}
-
-	m, err := r.data.Mapper(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, _, err := source.ApplyProtocolEdits(m, edits)
-	if err != nil {
-		t.Error(err)
-	}
-
-	withinlayHints := r.data.Golden(t, "inlayHint", filename, func() ([]byte, error) {
-		return got, nil
-	})
-
-	if !bytes.Equal(withinlayHints, got) {
-		t.Errorf("inlay hints failed for %s, expected:\n%s\ngot:\n%s", filename, withinlayHints, got)
 	}
 }
 

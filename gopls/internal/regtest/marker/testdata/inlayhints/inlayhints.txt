@@ -1,0 +1,405 @@
+
+-- flags --
+-ignore_extra_diags
+
+-- settings.json --
+{
+	"hints": {
+		"assignVariableTypes": true,
+		"compositeLiteralFields": true,
+		"compositeLiteralTypes": true,
+		"constantValues": true,
+		"functionTypeParameters": true,
+		"parameterNames": true,
+		"rangeVariabletypes": true
+	}
+}
+
+-- composite_literals.go --
+package inlayHint //@inlayhints(complit)
+
+import "fmt"
+
+func fieldNames() {
+	for _, c := range []struct {
+		in, want string
+	}{
+		struct{ in, want string }{"Hello, world", "dlrow ,olleH"},
+		{"Hello, 世界", "界世 ,olleH"},
+		{"", ""},
+	} {
+		fmt.Println(c.in == c.want)
+	}
+}
+
+func fieldNamesPointers() {
+	for _, c := range []*struct {
+		in, want string
+	}{
+		&struct{ in, want string }{"Hello, world", "dlrow ,olleH"},
+		{"Hello, 世界", "界世 ,olleH"},
+		{"", ""},
+	} {
+		fmt.Println(c.in == c.want)
+	}
+}
+
+-- @complit --
+package inlayHint //@inlayhints(complit)
+
+import "fmt"
+
+func fieldNames() {
+	for _, c := range []struct {
+		in, want string
+	}{
+		struct{ in, want string }{<in: >"Hello, world", <want: >"dlrow ,olleH"},
+		<struct{in string; want string}>{<in: >"Hello, 世界", <want: >"界世 ,olleH"},
+		<struct{in string; want string}>{<in: >"", <want: >""},
+	} {
+		fmt.Println(<a...: >c.in == c.want)
+	}
+}
+
+func fieldNamesPointers() {
+	for _, c := range []*struct {
+		in, want string
+	}{
+		&struct{ in, want string }{<in: >"Hello, world", <want: >"dlrow ,olleH"},
+		<&struct{in string; want string}>{<in: >"Hello, 世界", <want: >"界世 ,olleH"},
+		<&struct{in string; want string}>{<in: >"", <want: >""},
+	} {
+		fmt.Println(<a...: >c.in == c.want)
+	}
+}
+
+-- constant_values.go --
+package inlayHint //@inlayhints(values)
+
+const True = true
+
+type Kind int
+
+const (
+	KindNone Kind = iota
+	KindPrint
+	KindPrintf
+	KindErrorf
+)
+
+const (
+	u         = iota * 4
+	v float64 = iota * 42
+	w         = iota * 42
+)
+
+const (
+	a, b = 1, 2
+	c, d
+	e, f = 5 * 5, "hello" + "world"
+	g, h
+	i, j = true, f
+)
+
+// No hint
+const (
+	Int     = 3
+	Float   = 3.14
+	Bool    = true
+	Rune    = '3'
+	Complex = 2.7i
+	String  = "Hello, world!"
+)
+
+var (
+	varInt     = 3
+	varFloat   = 3.14
+	varBool    = true
+	varRune    = '3' + '4'
+	varComplex = 2.7i
+	varString  = "Hello, world!"
+)
+
+-- @values --
+package inlayHint //@inlayhints(values)
+
+const True = true
+
+type Kind int
+
+const (
+	KindNone Kind = iota< = 0>
+	KindPrint< = 1>
+	KindPrintf< = 2>
+	KindErrorf< = 3>
+)
+
+const (
+	u         = iota * 4< = 0>
+	v float64 = iota * 42< = 42>
+	w         = iota * 42< = 84>
+)
+
+const (
+	a, b = 1, 2
+	c, d< = 1, 2>
+	e, f = 5 * 5, "hello" + "world"< = 25, "helloworld">
+	g, h< = 25, "helloworld">
+	i, j = true, f< = true, "helloworld">
+)
+
+// No hint
+const (
+	Int     = 3
+	Float   = 3.14
+	Bool    = true
+	Rune    = '3'
+	Complex = 2.7i
+	String  = "Hello, world!"
+)
+
+var (
+	varInt     = 3
+	varFloat   = 3.14
+	varBool    = true
+	varRune    = '3' + '4'
+	varComplex = 2.7i
+	varString  = "Hello, world!"
+)
+
+-- parameter_names.go --
+package inlayHint //@inlayhints(parameters)
+
+import "fmt"
+
+func hello(name string) string {
+	return "Hello " + name
+}
+
+func helloWorld() string {
+	return hello("World")
+}
+
+type foo struct{}
+
+func (*foo) bar(baz string, qux int) int {
+	if baz != "" {
+		return qux + 1
+	}
+	return qux
+}
+
+func kase(foo int, bar bool, baz ...string) {
+	fmt.Println(foo, bar, baz)
+}
+
+func kipp(foo string, bar, baz string) {
+	fmt.Println(foo, bar, baz)
+}
+
+func plex(foo, bar string, baz string) {
+	fmt.Println(foo, bar, baz)
+}
+
+func tars(foo string, bar, baz string) {
+	fmt.Println(foo, bar, baz)
+}
+
+func foobar() {
+	var x foo
+	x.bar("", 1)
+	kase(0, true, "c", "d", "e")
+	kipp("a", "b", "c")
+	plex("a", "b", "c")
+	tars("a", "b", "c")
+	foo, bar, baz := "a", "b", "c"
+	kipp(foo, bar, baz)
+	plex("a", bar, baz)
+	tars(foo+foo, (bar), "c")
+
+}
+
+-- @parameters --
+package inlayHint //@inlayhints(parameters)
+
+import "fmt"
+
+func hello(name string) string {
+	return "Hello " + name
+}
+
+func helloWorld() string {
+	return hello(<name: >"World")
+}
+
+type foo struct{}
+
+func (*foo) bar(baz string, qux int) int {
+	if baz != "" {
+		return qux + 1
+	}
+	return qux
+}
+
+func kase(foo int, bar bool, baz ...string) {
+	fmt.Println(<a...: >foo, bar, baz)
+}
+
+func kipp(foo string, bar, baz string) {
+	fmt.Println(<a...: >foo, bar, baz)
+}
+
+func plex(foo, bar string, baz string) {
+	fmt.Println(<a...: >foo, bar, baz)
+}
+
+func tars(foo string, bar, baz string) {
+	fmt.Println(<a...: >foo, bar, baz)
+}
+
+func foobar() {
+	var x foo
+	x.bar(<baz: >"", <qux: >1)
+	kase(<foo: >0, <bar: >true, <baz...: >"c", "d", "e")
+	kipp(<foo: >"a", <bar: >"b", <baz: >"c")
+	plex(<foo: >"a", <bar: >"b", <baz: >"c")
+	tars(<foo: >"a", <bar: >"b", <baz: >"c")
+	foo< string>, bar< string>, baz< string> := "a", "b", "c"
+	kipp(foo, bar, baz)
+	plex(<foo: >"a", bar, baz)
+	tars(<foo: >foo+foo, <bar: >(bar), <baz: >"c")
+
+}
+
+-- type_params.go --
+package inlayHint //@inlayhints(typeparams)
+
+func main() {
+	ints := map[string]int64{
+		"first":  34,
+		"second": 12,
+	}
+
+	floats := map[string]float64{
+		"first":  35.98,
+		"second": 26.99,
+	}
+
+	SumIntsOrFloats[string, int64](ints)
+	SumIntsOrFloats[string, float64](floats)
+
+	SumIntsOrFloats(ints)
+	SumIntsOrFloats(floats)
+
+	SumNumbers(ints)
+	SumNumbers(floats)
+}
+
+type Number interface {
+	int64 | float64
+}
+
+func SumIntsOrFloats[K comparable, V int64 | float64](m map[K]V) V {
+	var s V
+	for _, v := range m {
+		s += v
+	}
+	return s
+}
+
+func SumNumbers[K comparable, V Number](m map[K]V) V {
+	var s V
+	for _, v := range m {
+		s += v
+	}
+	return s
+}
+
+-- @typeparams --
+package inlayHint //@inlayhints(typeparams)
+
+func main() {
+	ints< map[string]int64> := map[string]int64{
+		"first":  34,
+		"second": 12,
+	}
+
+	floats< map[string]float64> := map[string]float64{
+		"first":  35.98,
+		"second": 26.99,
+	}
+
+	SumIntsOrFloats[string, int64](<m: >ints)
+	SumIntsOrFloats[string, float64](<m: >floats)
+
+	SumIntsOrFloats<[string, int64]>(<m: >ints)
+	SumIntsOrFloats<[string, float64]>(<m: >floats)
+
+	SumNumbers<[string, int64]>(<m: >ints)
+	SumNumbers<[string, float64]>(<m: >floats)
+}
+
+type Number interface {
+	int64 | float64
+}
+
+func SumIntsOrFloats[K comparable, V int64 | float64](m map[K]V) V {
+	var s V
+	for _, v := range m {
+		s += v
+	}
+	return s
+}
+
+func SumNumbers[K comparable, V Number](m map[K]V) V {
+	var s V
+	for _, v := range m {
+		s += v
+	}
+	return s
+}
+
+-- variable_types.go --
+package inlayHint //@inlayhints(vartypes)
+
+func assignTypes() {
+	i, j := 0, len([]string{})-1
+	println(i, j)
+}
+
+func rangeTypes() {
+	for k, v := range []string{} {
+		println(k, v)
+	}
+}
+
+func funcLitType() {
+	myFunc := func(a string) string { return "" }
+}
+
+func compositeLitType() {
+	foo := map[string]interface{}{"": ""}
+}
+
+-- @vartypes --
+package inlayHint //@inlayhints(vartypes)
+
+func assignTypes() {
+	i< int>, j< int> := 0, len([]string{})-1
+	println(i, j)
+}
+
+func rangeTypes() {
+	for k, v := range []string{} {
+		println(k, v)
+	}
+}
+
+func funcLitType() {
+	myFunc< func(a string) string> := func(a string) string { return "" }
+}
+
+func compositeLitType() {
+	foo< map[string]interface{}> := map[string]interface{}{"": ""}
+}
+
