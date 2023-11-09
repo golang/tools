@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -22,7 +23,6 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"
-	exec "golang.org/x/sys/execabs"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"

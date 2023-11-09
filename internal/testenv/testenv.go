@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"go/build"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -21,8 +22,6 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/internal/goroot"
-
-	exec "golang.org/x/sys/execabs"
 )
 
 // packageMainIsDevel reports whether the module containing package main

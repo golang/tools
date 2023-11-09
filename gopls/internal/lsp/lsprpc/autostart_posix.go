@@ -13,12 +13,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
 	"syscall"
-
-	exec "golang.org/x/sys/execabs"
 )
 
 func init() {

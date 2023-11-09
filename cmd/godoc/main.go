@@ -32,13 +32,12 @@ import (
 	_ "net/http/pprof" // to serve /debug/pprof/*
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
-
-	exec "golang.org/x/sys/execabs"
 
 	"golang.org/x/tools/godoc"
 	"golang.org/x/tools/godoc/static"

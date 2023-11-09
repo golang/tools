@@ -10,9 +10,9 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"time"
 
-	exec "golang.org/x/sys/execabs"
 	"golang.org/x/tools/internal/event"
 )
 
