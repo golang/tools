@@ -38,26 +38,10 @@ const maxFullFileSize int = 100000
 // semDebug should NEVER be true in checked-in code
 const semDebug = false
 
-func (s *Server) semanticTokensFull(ctx context.Context, params *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.semanticTokensFull", tag.URI.Of(params.TextDocument.URI))
+func (s *Server) semanticTokens(ctx context.Context, td protocol.TextDocumentIdentifier, rng *protocol.Range) (*protocol.SemanticTokens, error) {
+	ctx, done := event.Start(ctx, "lsp.Server.semanticTokens", tag.URI.Of(td.URI))
 	defer done()
 
-	ret, err := s.computeSemanticTokens(ctx, params.TextDocument, nil)
-	return ret, err
-}
-
-func (s *Server) semanticTokensRange(ctx context.Context, params *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.semanticTokensRange", tag.URI.Of(params.TextDocument.URI))
-	defer done()
-
-	ret, err := s.computeSemanticTokens(ctx, params.TextDocument, &params.Range)
-	return ret, err
-}
-
-func (s *Server) computeSemanticTokens(ctx context.Context, td protocol.TextDocumentIdentifier, rng *protocol.Range) (*protocol.SemanticTokens, error) {
-	ans := protocol.SemanticTokens{
-		Data: []uint32{},
-	}
 	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, td.URI, source.UnknownKind)
 	defer release()
 	if !ok {
@@ -68,6 +52,7 @@ func (s *Server) computeSemanticTokens(ctx context.Context, td protocol.TextDocu
 		// the client won't remember the wrong answer
 		return nil, fmt.Errorf("semantictokens are disabled")
 	}
+
 	kind := snapshot.FileKind(fh)
 	if kind == source.Tmpl {
 		// this is a little cumbersome to avoid both exporting 'encoded' and its methods
@@ -75,11 +60,11 @@ func (s *Server) computeSemanticTokens(ctx context.Context, td protocol.TextDocu
 		e := &encoded{
 			ctx:            ctx,
 			metadataSource: snapshot,
-			rng:            rng,
 			tokTypes:       snapshot.Options().SemanticTypes,
 			tokMods:        snapshot.Options().SemanticMods,
 		}
 		add := func(line, start uint32, len uint32) {
+			// TODO(adonovan): don't ignore the rng restriction, if any.
 			e.add(line, start, len, tokMacro, nil)
 		}
 		data := func() []uint32 {
@@ -95,16 +80,30 @@ func (s *Server) computeSemanticTokens(ctx context.Context, td protocol.TextDocu
 		return nil, err
 	}
 
-	if rng == nil && len(pgf.Src) > maxFullFileSize {
-		err := fmt.Errorf("semantic tokens: file %s too large for full (%d>%d)",
-			fh.URI().Filename(), len(pgf.Src), maxFullFileSize)
+	// Select range.
+	var start, end token.Pos
+	if rng != nil {
+		var err error
+		start, end, err = pgf.RangePos(*rng)
+		if err != nil {
+			return nil, fmt.Errorf("range span (%w) error for %s", err, pgf.File.Name)
+		}
+	} else {
+		tok := pgf.Tok
+		start, end = tok.Pos(0), tok.Pos(tok.Size()) // entire file
+	}
+	if int(end-start) > maxFullFileSize {
+		err := fmt.Errorf("semantic tokens: range %s too large (%d > %d)",
+			fh.URI().Filename(), end-start, maxFullFileSize)
 		return nil, err
 	}
+
 	e := &encoded{
 		ctx:            ctx,
 		metadataSource: snapshot,
 		pgf:            pgf,
-		rng:            rng,
+		start:          start,
+		end:            end,
 		ti:             pkg.GetTypesInfo(),
 		pkg:            pkg,
 		fset:           pkg.FileSet(),
@@ -113,16 +112,12 @@ func (s *Server) computeSemanticTokens(ctx context.Context, td protocol.TextDocu
 		noStrings:      snapshot.Options().NoSemanticString,
 		noNumbers:      snapshot.Options().NoSemanticNumber,
 	}
-	if err := e.init(); err != nil {
-		// e.init should never return an error, unless there's some
-		// seemingly impossible race condition
-		return nil, err
-	}
 	e.semantics()
-	ans.Data = e.Data()
-	// For delta requests, but we've never seen any.
-	ans.ResultID = fmt.Sprintf("%v", time.Now())
-	return &ans, nil
+	return &protocol.SemanticTokens{
+		Data: e.Data(),
+		// For delta requests, but we've never seen any.
+		ResultID: fmt.Sprintf("%v", time.Now()),
+	}, nil
 }
 
 func (e *encoded) semantics() {
@@ -224,13 +219,10 @@ type encoded struct {
 	metadataSource    source.MetadataSource
 	tokTypes, tokMods []string
 	pgf               *source.ParsedGoFile
-	rng               *protocol.Range
+	start, end        token.Pos // range of interest
 	ti                *types.Info
 	pkg               source.Package
 	fset              *token.FileSet
-	// allowed starting and ending token.Pos, set by init
-	// used to avoid looking at declarations not in range
-	start, end token.Pos
 	// path from the root of the parse tree, used for debugging
 	stack []ast.Node
 }
@@ -837,20 +829,6 @@ func (e *encoded) findKeyword(keyword string, start, end token.Pos) token.Pos {
 	//(in unparsable programs: type _ <-<-chan int)
 	e.unexpected(fmt.Sprintf("not found:%s %v", keyword, safetoken.StartPosition(e.fset, start)))
 	return token.NoPos
-}
-
-func (e *encoded) init() error {
-	if e.rng != nil {
-		var err error
-		e.start, e.end, err = e.pgf.RangePos(*e.rng)
-		if err != nil {
-			return fmt.Errorf("range span (%w) error for %s", err, e.pgf.File.Name)
-		}
-	} else {
-		tok := e.pgf.Tok
-		e.start, e.end = tok.Pos(0), tok.Pos(tok.Size()) // entire file
-	}
-	return nil
 }
 
 func (e *encoded) Data() []uint32 {
