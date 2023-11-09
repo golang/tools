@@ -19,9 +19,12 @@ func InlayHint(ctx context.Context, snapshot source.Snapshot, fh source.FileHand
 		return nil, err
 	}
 
-	// Compare the version of the module used in the snapshot's metadata with the
-	// version requested by the module, in both cases, taking replaces into account.
-	// Produce an InlayHint when the version is the module is not the one used.
+	// Compare the version of the module used in the snapshot's
+	// metadata (i.e. the solution to the MVS constraints computed
+	// by go list) with the version requested by the module, in
+	// both cases, taking replaces into account. Produce an
+	// InlayHint when the version of the module is not the one
+	// used.
 
 	replaces := make(map[string]*modfile.Replace)
 	for _, x := range pm.File.Replace {
@@ -79,7 +82,7 @@ func genHint(mline *modfile.Line, oldVersion, newVersion string, m *protocol.Map
 	part := protocol.InlayHintLabelPart{
 		Value: newVersion,
 		Tooltip: &protocol.OrPTooltipPLabel{
-			Value: fmt.Sprintf("used metadata's version %s rather than go.mod's version %s", newVersion, oldVersion),
+			Value: fmt.Sprintf("The build selects version %s rather than go.mod's version %s.", newVersion, oldVersion),
 		},
 	}
 	rng, err := m.OffsetRange(x, mline.End.Byte)
