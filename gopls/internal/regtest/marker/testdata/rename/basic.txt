@@ -6,10 +6,11 @@ package p
 func f(x int) { println(x) } //@rename("x", "y", xToy)
 
 -- @xToy/basic.go --
-package p
-
-func f(y int) { println(y) } //@rename("x", "y", xToy)
-
+--- before
++++ after
+@@ -3 +3 @@
+-func f(x int) { println(x) } //@rename("x", "y", xToy)
++func f(y int) { println(y) } //@rename("x", "y", xToy)
 -- alias.go --
 package p
 
@@ -29,10 +30,10 @@ func _(x []int) { //@renameerr("_", "blank", `can't rename "_"`)
 }
 
 -- @AToB/alias.go --
-package p
-
-// from golang/go#61625
-type LongNameHere struct{}
-type B = LongNameHere //@rename("A", "B", AToB)
-func Foo() B
-
+--- before
++++ after
+@@ -5,2 +5,2 @@
+-type A = LongNameHere //@rename("A", "B", AToB)
+-func Foo() A
++type B = LongNameHere //@rename("A", "B", AToB)
++func Foo() B

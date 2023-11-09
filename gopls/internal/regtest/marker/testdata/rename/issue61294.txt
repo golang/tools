@@ -21,9 +21,8 @@ package b
 import _ "example.com/a"
 
 -- @OneToThree/a/a.go --
-package a
-
-func One()
-
-func Two(Three int) //@rename("One", "Three", OneToThree)
-
+--- before
++++ after
+@@ -5 +5 @@
+-func Two(One int) //@rename("One", "Three", OneToThree)
++func Two(Three int) //@rename("One", "Three", OneToThree)

@@ -1839,7 +1839,7 @@ func renameMarker(mark marker, loc protocol.Location, newName string, golden *Go
 		mark.errorf("rename failed: %v. (Use @renameerr for expected errors.)", err)
 		return
 	}
-	checkChangedFiles(mark, changed, golden)
+	checkDiffs(mark, changed, golden)
 }
 
 // renameErrMarker implements the @renamererr(location, new, error) marker.

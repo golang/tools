@@ -10,10 +10,14 @@ var x struct{ foo } //@renameerr("foo", "baz", "rename the type directly")
 
 var _ = x.foo //@renameerr("foo", "quux", "rename the type directly")
 -- @fooToBar/p.go --
-package issue43616
-
-type bar int //@rename("foo", "bar", fooToBar),preparerename("oo","foo","foo")
-
-var x struct{ bar } //@renameerr("foo", "baz", "rename the type directly")
-
-var _ = x.bar //@renameerr("foo", "quux", "rename the type directly")
+--- before
++++ after
+@@ -3 +3 @@
+-type foo int //@rename("foo", "bar", fooToBar),preparerename("oo","foo","foo")
++type bar int //@rename("foo", "bar", fooToBar),preparerename("oo","foo","foo")
+@@ -5 +5 @@
+-var x struct{ foo } //@renameerr("foo", "baz", "rename the type directly")
++var x struct{ bar } //@renameerr("foo", "baz", "rename the type directly")
+@@ -7 +7 @@
+-var _ = x.foo //@renameerr("foo", "quux", "rename the type directly")
++var _ = x.bar //@renameerr("foo", "quux", "rename the type directly")

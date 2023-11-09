@@ -9,10 +9,8 @@ func (P) M() {} //@rename("M", "N", MToN)
 
 var x = []*P{{}}
 -- @MToN/p.go --
-package p
-
-type P struct{}
-
-func (P) N() {} //@rename("M", "N", MToN)
-
-var x = []*P{{}}
+--- before
++++ after
+@@ -5 +5 @@
+-func (P) M() {} //@rename("M", "N", MToN)
++func (P) N() {} //@rename("M", "N", MToN)

@@ -21,16 +21,17 @@ var _ = new(B).A //@renameerr("A", "A4", errAnonField)
 -- @errAnonField --
 can't rename embedded fields: rename the type directly or name the field
 -- @type/a/a.go --
-package a
-
-type A2 int //@rename("A", "A2", type)
-
+--- before
++++ after
+@@ -3 +3 @@
+-type A int //@rename("A", "A2", type)
++type A2 int //@rename("A", "A2", type)
 -- @type/b/b.go --
-package b
-
-import "example.com/a"
-
-type B struct { a.A2 } //@renameerr("A", "A3", errAnonField)
-
-var _ = new(B).A2 //@renameerr("A", "A4", errAnonField)
-
+--- before
++++ after
+@@ -5 +5 @@
+-type B struct { a.A } //@renameerr("A", "A3", errAnonField)
++type B struct { a.A2 } //@renameerr("A", "A3", errAnonField)
+@@ -7 +7 @@
+-var _ = new(B).A //@renameerr("A", "A4", errAnonField)
++var _ = new(B).A2 //@renameerr("A", "A4", errAnonField)

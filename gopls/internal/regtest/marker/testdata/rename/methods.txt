@@ -44,23 +44,17 @@ a/a.go:5:10: renaming this method "F" to "G"
 b/b.go:6:6:	would make example.com/a.A no longer assignable to interface B
 b/b.go:6:20:	(rename example.com/b.B.F if you intend to change both types)
 -- @BfToG/b/b.go --
-package b
-
-import "example.com/a"
-import "example.com/c"
-
-type B interface { G() } //@rename("F", "G", BfToG)
-
-var _ B = a.A(0)
-var _ B = c.C(0)
-
+--- before
++++ after
+@@ -6 +6 @@
+-type B interface { F() } //@rename("F", "G", BfToG)
++type B interface { G() } //@rename("F", "G", BfToG)
 -- @BfToG/d/d.go --
-package d
-
-import "example.com/b"
-
-var _ = b.B.G
-
+--- before
++++ after
+@@ -5 +5 @@
+-var _ = b.B.F
++var _ = b.B.G
 -- @errCfToG --
 c/c.go:5:10: renaming this method "F" to "G"
 b/b.go:6:6:	would make example.com/c.C no longer assignable to interface B

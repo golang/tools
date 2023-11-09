@@ -27,10 +27,11 @@ package b
 import _ "example.com/a"
 
 -- @fToG/a/a.go --
-package a
-
-type unexported int
-func (unexported) G() {} //@rename("F", "G", fToG)
-
-var _ = unexported(0).G
-
+--- before
++++ after
+@@ -4 +4 @@
+-func (unexported) F() {} //@rename("F", "G", fToG)
++func (unexported) G() {} //@rename("F", "G", fToG)
+@@ -6 +6 @@
+-var _ = unexported(0).F
++var _ = unexported(0).G

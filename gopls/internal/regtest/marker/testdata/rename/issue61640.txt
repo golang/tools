@@ -25,23 +25,14 @@ func NewBuilderImpl[S ~[]int](name string)  *BuilderImpl[S] {
   return impl
 }
 -- @OneToTwo/a.go --
-package a
-
-// This file is adapted from the example in the issue.
-
-type builder[S ~[]int] struct {
-	elements2 S //@rename("elements", "elements2", OneToTwo)
-}
-
-type BuilderImpl[S ~[]int] struct{ builder[S] }
-
-func NewBuilderImpl[S ~[]int](name string)  *BuilderImpl[S] {
-  impl := &BuilderImpl[S]{
-	builder[S]{
-	  elements2: S{},
-	},
-  }
-
-  _ = impl.elements2
-  return impl
-}
+--- before
++++ after
+@@ -6 +6 @@
+-	elements S //@rename("elements", "elements2", OneToTwo)
++	elements2 S //@rename("elements", "elements2", OneToTwo)
+@@ -14 +14 @@
+-	  elements: S{},
++	  elements2: S{},
+@@ -18 +18 @@
+-  _ = impl.elements
++  _ = impl.elements2

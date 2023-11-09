@@ -13,14 +13,14 @@ func _(x interface{}) {
 }
 
 -- @yToZ/p.go --
-package p
-
-func _(x interface{}) {
-	switch z := x.(type) { //@rename("y", "z", yToZ)
-	case string:
-		print(z) //@rename("y", "z", yToZ)
-	default:
-		print(z) //@rename("y", "z", yToZ)
-	}
-}
-
+--- before
++++ after
+@@ -4 +4 @@
+-	switch y := x.(type) { //@rename("y", "z", yToZ)
++	switch z := x.(type) { //@rename("y", "z", yToZ)
+@@ -6 +6 @@
+-		print(y) //@rename("y", "z", yToZ)
++		print(z) //@rename("y", "z", yToZ)
+@@ -8 +8 @@
+-		print(y) //@rename("y", "z", yToZ)
++		print(z) //@rename("y", "z", yToZ)
