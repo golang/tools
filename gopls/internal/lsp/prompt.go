@@ -219,11 +219,9 @@ Would you like to enable Go telemetry?
 	}
 
 	message := func(typ protocol.MessageType, msg string) {
-		if err := s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
-			Type:    typ,
-			Message: msg,
-		}); err != nil {
-			errorf("ShowMessage(unrecognize) failed: %v", err)
+		if !showMessage(ctx, s.client, typ, msg) {
+			// Make sure we record that "telemetry prompt failed".
+			errorf("showMessage failed: %v", err)
 		}
 	}
 

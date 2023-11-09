@@ -216,9 +216,8 @@ func (s *server) Initialized(ctx context.Context, params *protocol.InitializedPa
 	}
 	s.notifications = nil
 
-	if err := s.addFolders(ctx, s.pendingFolders); err != nil {
-		return err
-	}
+	s.addFolders(ctx, s.pendingFolders)
+
 	s.pendingFolders = nil
 	s.checkViewGoVersions()
 
@@ -286,8 +285,13 @@ func go1Point() int {
 	return -1
 }
 
-// addFolders should only be called with valid file URIs.
-func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFolder) error {
+// addFolders adds the specified list of "folders" (that's Windows for
+// directories) to the session. It does not return an error, though it
+// may report an error to the client over LSP if one or more folders
+// had problems.
+//
+// addFolders must be called only with valid file URIs.
+func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFolder) {
 	originalViews := len(s.session.Views())
 	viewErrors := make(map[protocol.DocumentURI]error)
 
@@ -350,17 +354,14 @@ func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 		event.Error(ctx, "failed to register for file watching notifications", err)
 	}
 
+	// Report any errors using the protocol.
 	if len(viewErrors) > 0 {
 		errMsg := fmt.Sprintf("Error loading workspace folders (expected %v, got %v)\n", len(folders), len(s.session.Views())-originalViews)
 		for uri, err := range viewErrors {
 			errMsg += fmt.Sprintf("failed to load view for %s: %v\n", uri, err)
 		}
-		return s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
-			Type:    protocol.Error,
-			Message: errMsg,
-		})
+		showMessage(ctx, s.client, protocol.Error, errMsg)
 	}
-	return nil
 }
 
 // updateWatchedDirectories compares the current set of directories to watch

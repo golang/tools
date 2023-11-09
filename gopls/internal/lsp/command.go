@@ -169,12 +169,7 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 	if cfg.async {
 		go func() {
 			if err := runcmd(); err != nil {
-				if showMessageErr := c.s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
-					Type:    protocol.Error,
-					Message: err.Error(),
-				}); showMessageErr != nil {
-					event.Error(ctx, fmt.Sprintf("failed to show message: %q", err.Error()), showMessageErr)
-				}
+				showMessage(ctx, c.s.client, protocol.Error, err.Error())
 			}
 		}()
 		return nil
@@ -560,10 +555,7 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot,
 		message += "\n" + buf.String()
 	}
 
-	_ = c.s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
-		Type:    protocol.Info,
-		Message: message,
-	})
+	showMessage(ctx, c.s.client, protocol.Info, message)
 
 	if failedTests > 0 || failedBenchmarks > 0 {
 		return errors.New("gopls.test command failed")
@@ -1001,20 +993,18 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 			}
 		}
 		if len(affecting) == 0 {
-			return c.s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
-				Type:    protocol.Info,
-				Message: "No vulnerabilities found",
-			})
+			showMessage(ctx, c.s.client, protocol.Info, "No vulnerabilities found")
+			return nil
 		}
 		affectingOSVs := make([]string, 0, len(affecting))
 		for id := range affecting {
 			affectingOSVs = append(affectingOSVs, id)
 		}
 		sort.Strings(affectingOSVs)
-		return c.s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
-			Type:    protocol.Warning,
-			Message: fmt.Sprintf("Found %v", strings.Join(affectingOSVs, ", ")),
-		})
+
+		showMessage(ctx, c.s.client, protocol.Warning, fmt.Sprintf("Found %v", strings.Join(affectingOSVs, ", ")))
+
+		return nil
 	})
 	if err != nil {
 		return command.RunVulncheckResult{}, err
@@ -1198,6 +1188,22 @@ func (c *commandHandler) invokeGoWork(ctx context.Context, viewDir, gowork strin
 		return fmt.Errorf("running go work command: %v", err)
 	}
 	return nil
+}
+
+// showMessage causes the client to show a progress or error message.
+//
+// It reports whether it succeeded. If it fails, it writes an error to
+// the server log, so most callers can safely ignore the result.
+func showMessage(ctx context.Context, cli protocol.Client, typ protocol.MessageType, message string) bool {
+	err := cli.ShowMessage(ctx, &protocol.ShowMessageParams{
+		Type:    typ,
+		Message: message,
+	})
+	if err != nil {
+		event.Error(ctx, "client.showMessage: %v", err)
+		return false
+	}
+	return true
 }
 
 // openClientBrowser causes the LSP client to open the specified URL

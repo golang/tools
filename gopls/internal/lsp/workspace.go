@@ -24,7 +24,8 @@ func (s *server) DidChangeWorkspaceFolders(ctx context.Context, params *protocol
 			return fmt.Errorf("view %s for %v not found", folder.Name, folder.URI)
 		}
 	}
-	return s.addFolders(ctx, event.Added)
+	s.addFolders(ctx, event.Added)
+	return nil
 }
 
 // addView returns a Snapshot and a release function that must be
