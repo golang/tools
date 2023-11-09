@@ -397,7 +397,6 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //     suggestedfix be consolidated?
 //
 // Existing marker tests (in ../testdata) to port:
-//   - AddImport
 //   - CallHierarchy
 //   - InlayHints
 //   - SelectionRanges

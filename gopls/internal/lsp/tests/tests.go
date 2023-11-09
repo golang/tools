@@ -49,14 +49,12 @@ var UpdateGolden = flag.Bool("golden", false, "Update golden files")
 // These type names apparently avoid the need to repeat the
 // type in the field name and the make() expression.
 type CallHierarchy = map[span.Span]*CallHierarchyResult
-type AddImport = map[span.URI]string
 type SelectionRanges = []span.Span
 
 type Data struct {
 	Config          packages.Config
 	Exported        *packagestest.Exported
 	CallHierarchy   CallHierarchy
-	AddImport       AddImport
 	SelectionRanges SelectionRanges
 
 	fragments map[string]string
@@ -78,7 +76,6 @@ type Data struct {
 // we can abolish the interface now.
 type Tests interface {
 	CallHierarchy(*testing.T, span.Span, *CallHierarchyResult)
-	AddImport(*testing.T, span.URI, string)
 	SelectionRanges(*testing.T, span.Span)
 }
 
@@ -166,7 +163,6 @@ func RunTests(t *testing.T, dataDir string, includeMultiModule bool, f func(*tes
 func load(t testing.TB, mode string, dir string) *Data {
 	datum := &Data{
 		CallHierarchy: make(CallHierarchy),
-		AddImport:     make(AddImport),
 
 		dir:       dir,
 		fragments: map[string]string{},
@@ -301,7 +297,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 	if err := datum.Exported.Expect(map[string]interface{}{
 		"incomingcalls":  datum.collectIncomingCalls,
 		"outgoingcalls":  datum.collectOutgoingCalls,
-		"addimport":      datum.collectAddImports,
 		"selectionrange": datum.collectSelectionRanges,
 	}); err != nil {
 		t.Fatal(err)
@@ -363,15 +358,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 			t.Run(SpanName(spn), func(t *testing.T) {
 				t.Helper()
 				tests.CallHierarchy(t, spn, callHierarchyResult)
-			})
-		}
-	})
-
-	t.Run("AddImport", func(t *testing.T) {
-		t.Helper()
-		for uri, exp := range data.AddImport {
-			t.Run(uriName(uri), func(t *testing.T) {
-				tests.AddImport(t, uri, exp)
 			})
 		}
 	})
@@ -483,10 +469,6 @@ func (data *Data) Golden(t *testing.T, tag, target string, update func() ([]byte
 		return file.Data
 	}
 	return file.Data[:len(file.Data)-1] // drop the trailing \n
-}
-
-func (data *Data) collectAddImports(spn span.Span, imp string) {
-	data.AddImport[spn.URI()] = imp
 }
 
 func (data *Data) collectSelectionRanges(spn span.Span) {
