@@ -331,10 +331,12 @@ func main() {
 				Generated: gen,
 			})
 		}
-		packages = append(packages, jsonPackage{
-			Path:  pkgpath,
-			Funcs: functions,
-		})
+		if len(functions) > 0 {
+			packages = append(packages, jsonPackage{
+				Path:  pkgpath,
+				Funcs: functions,
+			})
+		}
 	}
 
 	// Default format: functions grouped by package.
