@@ -1,0 +1,19 @@
+This test checks that rename fails in the presence of errors.
+
+-- go.mod --
+module golang.org/lsptests/bad
+
+go 1.18
+
+-- bad.go --
+package bad
+
+type myStruct struct {
+}
+
+func (s *myStruct) sFunc() bool { //@renameerr("sFunc", "rFunc", re"not possible")
+	return s.Bad //@diag("Bad", re"no field or method")
+}
+
+-- bad_test.go --
+package bad

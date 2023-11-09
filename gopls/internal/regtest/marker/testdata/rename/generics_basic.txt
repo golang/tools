@@ -1,0 +1,107 @@
+This test exercise basic renaming of generic code.
+
+-- embedded.go --
+package a
+
+type foo[P any] int //@rename("foo", "bar", fooTobar)
+
+var x struct{ foo[int] }
+
+var _ = x.foo
+
+-- @fooTobar/embedded.go --
+@@ -3 +3 @@
+-type foo[P any] int //@rename("foo", "bar", fooTobar)
++type bar[P any] int //@rename("foo", "bar", fooTobar)
+@@ -5 +5 @@
+-var x struct{ foo[int] }
++var x struct{ bar[int] }
+@@ -7 +7 @@
+-var _ = x.foo
++var _ = x.bar
+-- generics.go --
+package a
+
+type G[P any] struct {
+	F int
+}
+
+func (G[_]) M() {}
+
+func F[P any](P) {
+	var p P //@rename("P", "Q", PToQ)
+	_ = p
+}
+
+func _() {
+	var x G[int] //@rename("G", "H", GToH)
+	_ = x.F      //@rename("F", "K", FToK)
+	x.M()        //@rename("M", "N", MToN)
+
+	var y G[string]
+	_ = y.F
+	y.M()
+}
+
+-- @FToK/generics.go --
+@@ -4 +4 @@
+-	F int
++	K int
+@@ -16 +16 @@
+-	_ = x.F      //@rename("F", "K", FToK)
++	_ = x.K      //@rename("F", "K", FToK)
+@@ -20 +20 @@
+-	_ = y.F
++	_ = y.K
+-- @GToH/generics.go --
+@@ -3 +3 @@
+-type G[P any] struct {
++type H[P any] struct {
+@@ -7 +7 @@
+-func (G[_]) M() {}
++func (H[_]) M() {}
+@@ -15 +15 @@
+-	var x G[int] //@rename("G", "H", GToH)
++	var x H[int] //@rename("G", "H", GToH)
+@@ -19 +19 @@
+-	var y G[string]
++	var y H[string]
+-- @MToN/generics.go --
+@@ -7 +7 @@
+-func (G[_]) M() {}
++func (G[_]) N() {}
+@@ -17 +17 @@
+-	x.M()        //@rename("M", "N", MToN)
++	x.N()        //@rename("M", "N", MToN)
+@@ -21 +21 @@
+-	y.M()
++	y.N()
+-- @PToQ/generics.go --
+@@ -9,2 +9,2 @@
+-func F[P any](P) {
+-	var p P //@rename("P", "Q", PToQ)
++func F[Q any](Q) {
++	var p Q //@rename("P", "Q", PToQ)
+-- unions.go --
+package a
+
+type T string //@rename("T", "R", TToR)
+
+type C interface {
+	T | ~int //@rename("T", "S", TToS)
+}
+
+-- @TToR/unions.go --
+@@ -3 +3 @@
+-type T string //@rename("T", "R", TToR)
++type R string //@rename("T", "R", TToR)
+@@ -6 +6 @@
+-	T | ~int //@rename("T", "S", TToS)
++	R | ~int //@rename("T", "S", TToS)
+-- @TToS/unions.go --
+@@ -3 +3 @@
+-type T string //@rename("T", "R", TToR)
++type S string //@rename("T", "R", TToR)
+@@ -6 +6 @@
+-	T | ~int //@rename("T", "S", TToS)
++	S | ~int //@rename("T", "S", TToS)

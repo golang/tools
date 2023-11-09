@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
@@ -292,67 +291,6 @@ func (r *runner) InlayHints(t *testing.T, spn span.Span) {
 
 	if !bytes.Equal(withinlayHints, got) {
 		t.Errorf("inlay hints failed for %s, expected:\n%s\ngot:\n%s", filename, withinlayHints, got)
-	}
-}
-
-func (r *runner) Rename(t *testing.T, spn span.Span, newText string) {
-	tag := fmt.Sprintf("%s-rename", newText)
-
-	uri := spn.URI()
-	filename := uri.Filename()
-	sm, err := r.data.Mapper(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	loc, err := sm.SpanLocation(spn)
-	if err != nil {
-		t.Fatalf("failed for %v: %v", spn, err)
-	}
-
-	wedit, err := r.server.Rename(r.ctx, &protocol.RenameParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
-		Position:     loc.Range.Start,
-		NewName:      newText,
-	})
-	if err != nil {
-		renamed := string(r.data.Golden(t, tag, filename, func() ([]byte, error) {
-			return []byte(err.Error()), nil
-		}))
-		if err.Error() != renamed {
-			t.Errorf("%s: rename failed for %s, expected:\n%v\ngot:\n%v\n", spn, newText, renamed, err)
-		}
-		return
-	}
-	res, err := applyTextDocumentEdits(r, wedit.DocumentChanges)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var orderedURIs []string
-	for uri := range res {
-		orderedURIs = append(orderedURIs, string(uri))
-	}
-	sort.Strings(orderedURIs)
-
-	// Print the name and content of each modified file,
-	// concatenated, and compare against the golden.
-	var buf bytes.Buffer
-	for i := 0; i < len(res); i++ {
-		if i != 0 {
-			buf.WriteByte('\n')
-		}
-		uri := span.URIFromURI(orderedURIs[i])
-		if len(res) > 1 {
-			buf.WriteString(filepath.Base(uri.Filename()))
-			buf.WriteString(":\n")
-		}
-		buf.Write(res[uri])
-	}
-	got := buf.Bytes()
-	want := r.data.Golden(t, tag, filename, func() ([]byte, error) {
-		return got, nil
-	})
-	if diff := compare.Bytes(want, got); diff != "" {
-		t.Errorf("rename failed for %s:\n%s", newText, diff)
 	}
 }
 

@@ -1,0 +1,238 @@
+This test ports some "random" rename tests from the old marker tests.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/rename
+
+go 1.18
+-- a/a.go --
+package a
+
+import (
+	lg "log"
+	"fmt" //@rename("fmt", "fmty", fmtTofmty)
+	f2 "fmt" //@rename("f2", "f2name", f2Tof2name),rename("fmt", "f2y", fmtTof2y)
+)
+
+func Random() int {
+	y := 6 + 7
+	return y
+}
+
+func Random2(y int) int { //@rename("y", "z", yToz)
+	return y
+}
+
+type Pos struct {
+	x, y int
+}
+
+func (p *Pos) Sum() int {
+	return p.x + p.y //@rename("x", "myX", xTomyX)
+}
+
+func _() {
+	var p Pos   //@rename("p", "pos", pTopos)
+	_ = p.Sum() //@rename("Sum", "GetSum", SumToGetSum)
+}
+
+func sw() {
+	var x interface{}
+
+	switch y := x.(type) { //@rename("y", "y0", yToy0)
+	case int:
+		fmt.Printf("%d", y) //@rename("y", "y1", yToy1),rename("fmt", "format", fmtToformat)
+	case string:
+		lg.Printf("%s", y) //@rename("y", "y2", yToy2),rename("lg", "log", lgTolog)
+	default:
+		f2.Printf("%v", y) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
+	}
+}
+-- @SumToGetSum/a/a.go --
+@@ -22 +22 @@
+-func (p *Pos) Sum() int {
++func (p *Pos) GetSum() int {
+@@ -28 +28 @@
+-	_ = p.Sum() //@rename("Sum", "GetSum", SumToGetSum)
++	_ = p.GetSum() //@rename("Sum", "GetSum", SumToGetSum)
+-- @f2Tof2name/a/a.go --
+@@ -6 +6 @@
+-	f2 "fmt" //@rename("f2", "f2name", f2Tof2name),rename("fmt", "f2y", fmtTof2y)
++	f2name "fmt" //@rename("f2", "f2name", f2Tof2name),rename("fmt", "f2y", fmtTof2y)
+@@ -40 +40 @@
+-		f2.Printf("%v", y) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
++		f2name.Printf("%v", y) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
+-- @f2Tofmt2/a/a.go --
+@@ -6 +6 @@
+-	f2 "fmt" //@rename("f2", "f2name", f2Tof2name),rename("fmt", "f2y", fmtTof2y)
++	fmt2 "fmt" //@rename("f2", "f2name", f2Tof2name),rename("fmt", "f2y", fmtTof2y)
+@@ -40 +40 @@
+-		f2.Printf("%v", y) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
++		fmt2.Printf("%v", y) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
+-- @fmtTof2y/a/a.go --
+@@ -6 +6 @@
+-	f2 "fmt" //@rename("f2", "f2name", f2Tof2name),rename("fmt", "f2y", fmtTof2y)
++	f2y "fmt" //@rename("f2", "f2name", f2Tof2name),rename("fmt", "f2y", fmtTof2y)
+@@ -40 +40 @@
+-		f2.Printf("%v", y) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
++		f2y.Printf("%v", y) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
+-- @fmtTofmty/a/a.go --
+@@ -5 +5 @@
+-	"fmt" //@rename("fmt", "fmty", fmtTofmty)
++	fmty "fmt" //@rename("fmt", "fmty", fmtTofmty)
+@@ -36 +36 @@
+-		fmt.Printf("%d", y) //@rename("y", "y1", yToy1),rename("fmt", "format", fmtToformat)
++		fmty.Printf("%d", y) //@rename("y", "y1", yToy1),rename("fmt", "format", fmtToformat)
+-- @fmtToformat/a/a.go --
+@@ -5 +5 @@
+-	"fmt" //@rename("fmt", "fmty", fmtTofmty)
++	format "fmt" //@rename("fmt", "fmty", fmtTofmty)
+@@ -36 +36 @@
+-		fmt.Printf("%d", y) //@rename("y", "y1", yToy1),rename("fmt", "format", fmtToformat)
++		format.Printf("%d", y) //@rename("y", "y1", yToy1),rename("fmt", "format", fmtToformat)
+-- @lgTolog/a/a.go --
+@@ -4 +4 @@
+-	lg "log"
++	"log"
+@@ -38 +38 @@
+-		lg.Printf("%s", y) //@rename("y", "y2", yToy2),rename("lg", "log", lgTolog)
++		log.Printf("%s", y) //@rename("y", "y2", yToy2),rename("lg", "log", lgTolog)
+-- @pTopos/a/a.go --
+@@ -27,2 +27,2 @@
+-	var p Pos   //@rename("p", "pos", pTopos)
+-	_ = p.Sum() //@rename("Sum", "GetSum", SumToGetSum)
++	var pos Pos   //@rename("p", "pos", pTopos)
++	_ = pos.Sum() //@rename("Sum", "GetSum", SumToGetSum)
+-- @xTomyX/a/a.go --
+@@ -19 +19 @@
+-	x, y int
++	myX, y int
+@@ -23 +23 @@
+-	return p.x + p.y //@rename("x", "myX", xTomyX)
++	return p.myX + p.y //@rename("x", "myX", xTomyX)
+-- @yToy0/a/a.go --
+@@ -34 +34 @@
+-	switch y := x.(type) { //@rename("y", "y0", yToy0)
++	switch y0 := x.(type) { //@rename("y", "y0", yToy0)
+@@ -36 +36 @@
+-		fmt.Printf("%d", y) //@rename("y", "y1", yToy1),rename("fmt", "format", fmtToformat)
++		fmt.Printf("%d", y0) //@rename("y", "y1", yToy1),rename("fmt", "format", fmtToformat)
+@@ -38 +38 @@
+-		lg.Printf("%s", y) //@rename("y", "y2", yToy2),rename("lg", "log", lgTolog)
++		lg.Printf("%s", y0) //@rename("y", "y2", yToy2),rename("lg", "log", lgTolog)
+@@ -40 +40 @@
+-		f2.Printf("%v", y) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
++		f2.Printf("%v", y0) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
+-- @yToy1/a/a.go --
+@@ -34 +34 @@
+-	switch y := x.(type) { //@rename("y", "y0", yToy0)
++	switch y1 := x.(type) { //@rename("y", "y0", yToy0)
+@@ -36 +36 @@
+-		fmt.Printf("%d", y) //@rename("y", "y1", yToy1),rename("fmt", "format", fmtToformat)
++		fmt.Printf("%d", y1) //@rename("y", "y1", yToy1),rename("fmt", "format", fmtToformat)
+@@ -38 +38 @@
+-		lg.Printf("%s", y) //@rename("y", "y2", yToy2),rename("lg", "log", lgTolog)
++		lg.Printf("%s", y1) //@rename("y", "y2", yToy2),rename("lg", "log", lgTolog)
+@@ -40 +40 @@
+-		f2.Printf("%v", y) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
++		f2.Printf("%v", y1) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
+-- @yToy2/a/a.go --
+@@ -34 +34 @@
+-	switch y := x.(type) { //@rename("y", "y0", yToy0)
++	switch y2 := x.(type) { //@rename("y", "y0", yToy0)
+@@ -36 +36 @@
+-		fmt.Printf("%d", y) //@rename("y", "y1", yToy1),rename("fmt", "format", fmtToformat)
++		fmt.Printf("%d", y2) //@rename("y", "y1", yToy1),rename("fmt", "format", fmtToformat)
+@@ -38 +38 @@
+-		lg.Printf("%s", y) //@rename("y", "y2", yToy2),rename("lg", "log", lgTolog)
++		lg.Printf("%s", y2) //@rename("y", "y2", yToy2),rename("lg", "log", lgTolog)
+@@ -40 +40 @@
+-		f2.Printf("%v", y) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
++		f2.Printf("%v", y2) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
+-- @yToy3/a/a.go --
+@@ -34 +34 @@
+-	switch y := x.(type) { //@rename("y", "y0", yToy0)
++	switch y3 := x.(type) { //@rename("y", "y0", yToy0)
+@@ -36 +36 @@
+-		fmt.Printf("%d", y) //@rename("y", "y1", yToy1),rename("fmt", "format", fmtToformat)
++		fmt.Printf("%d", y3) //@rename("y", "y1", yToy1),rename("fmt", "format", fmtToformat)
+@@ -38 +38 @@
+-		lg.Printf("%s", y) //@rename("y", "y2", yToy2),rename("lg", "log", lgTolog)
++		lg.Printf("%s", y3) //@rename("y", "y2", yToy2),rename("lg", "log", lgTolog)
+@@ -40 +40 @@
+-		f2.Printf("%v", y) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
++		f2.Printf("%v", y3) //@rename("y", "y3", yToy3),rename("f2", "fmt2", f2Tofmt2)
+-- @yToz/a/a.go --
+@@ -14,2 +14,2 @@
+-func Random2(y int) int { //@rename("y", "z", yToz)
+-	return y
++func Random2(z int) int { //@rename("y", "z", yToz)
++	return z
+-- b/b.go --
+package b
+
+var c int //@renameerr("int", "uint", re"cannot be renamed")
+
+func _() {
+	a := 1 //@rename("a", "error", aToerror)
+	a = 2
+	_ = a
+}
+
+var (
+	// Hello there.
+	// Foo does the thing.
+	Foo int //@rename("Foo", "Bob", FooToBob)
+)
+
+/*
+Hello description
+*/
+func Hello() {} //@rename("Hello", "Goodbye", HelloToGoodbye)
+
+-- c/c.go --
+package c
+
+import "golang.org/lsptests/rename/b"
+
+func _() {
+	b.Hello() //@rename("Hello", "Goodbye", HelloToGoodbye)
+}
+
+-- c/c2.go --
+package c
+
+//go:embed Static/*
+var Static embed.FS //@rename("Static", "static", StaticTostatic)
+
+-- @FooToBob/b/b.go --
+@@ -13,2 +13,2 @@
+-	// Foo does the thing.
+-	Foo int //@rename("Foo", "Bob", FooToBob)
++	// Bob does the thing.
++	Bob int //@rename("Foo", "Bob", FooToBob)
+-- @HelloToGoodbye/b/b.go --
+@@ -18 +18 @@
+-Hello description
++Goodbye description
+@@ -20 +20 @@
+-func Hello() {} //@rename("Hello", "Goodbye", HelloToGoodbye)
++func Goodbye() {} //@rename("Hello", "Goodbye", HelloToGoodbye)
+-- @aToerror/b/b.go --
+@@ -6,3 +6,3 @@
+-	a := 1 //@rename("a", "error", aToerror)
+-	a = 2
+-	_ = a
++	error := 1 //@rename("a", "error", aToerror)
++	error = 2
++	_ = error
+-- @HelloToGoodbye/c/c.go --
+@@ -6 +6 @@
+-	b.Hello() //@rename("Hello", "Goodbye", HelloToGoodbye)
++	b.Goodbye() //@rename("Hello", "Goodbye", HelloToGoodbye)
+-- @StaticTostatic/c/c2.go --
+@@ -4 +4 @@
+-var Static embed.FS //@rename("Static", "static", StaticTostatic)
++var static embed.FS //@rename("Static", "static", StaticTostatic)

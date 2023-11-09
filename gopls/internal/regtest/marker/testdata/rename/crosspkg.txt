@@ -1,0 +1,72 @@
+This test checks cross-package renaming.
+
+-- go.mod --
+module golang.org/lsptests/rename
+
+go 1.18
+
+-- crosspkg/crosspkg.go --
+package crosspkg
+
+func Foo() { //@rename("Foo", "Dolphin", FooToDolphin)
+
+}
+
+var Bar int //@rename("Bar", "Tomato", BarToTomato)
+
+-- crosspkg/another/another.go --
+package another
+
+type (
+	I interface{ F() }
+	C struct{ I }
+)
+
+func (C) g()
+
+func _() {
+	var x I = C{}
+	x.F() //@rename("F", "G", FToG)
+}
+
+-- crosspkg/other/other.go --
+package other
+
+import "golang.org/lsptests/rename/crosspkg"
+
+func Other() {
+	crosspkg.Bar //@diag("crosspkg", re"not used")
+	crosspkg.Foo() //@rename("Foo", "Flamingo", FooToFlamingo)
+}
+
+-- @BarToTomato/crosspkg/crosspkg.go --
+@@ -7 +7 @@
+-var Bar int //@rename("Bar", "Tomato", BarToTomato)
++var Tomato int //@rename("Bar", "Tomato", BarToTomato)
+-- @BarToTomato/crosspkg/other/other.go --
+@@ -6 +6 @@
+-	crosspkg.Bar //@diag("crosspkg", re"not used")
++	crosspkg.Tomato //@diag("crosspkg", re"not used")
+-- @FToG/crosspkg/another/another.go --
+@@ -4 +4 @@
+-	I interface{ F() }
++	I interface{ G() }
+@@ -12 +12 @@
+-	x.F() //@rename("F", "G", FToG)
++	x.G() //@rename("F", "G", FToG)
+-- @FooToDolphin/crosspkg/crosspkg.go --
+@@ -3 +3 @@
+-func Foo() { //@rename("Foo", "Dolphin", FooToDolphin)
++func Dolphin() { //@rename("Foo", "Dolphin", FooToDolphin)
+-- @FooToDolphin/crosspkg/other/other.go --
+@@ -7 +7 @@
+-	crosspkg.Foo() //@rename("Foo", "Flamingo", FooToFlamingo)
++	crosspkg.Dolphin() //@rename("Foo", "Flamingo", FooToFlamingo)
+-- @FooToFlamingo/crosspkg/crosspkg.go --
+@@ -3 +3 @@
+-func Foo() { //@rename("Foo", "Dolphin", FooToDolphin)
++func Flamingo() { //@rename("Foo", "Dolphin", FooToDolphin)
+-- @FooToFlamingo/crosspkg/other/other.go --
+@@ -7 +7 @@
+-	crosspkg.Foo() //@rename("Foo", "Flamingo", FooToFlamingo)
++	crosspkg.Flamingo() //@rename("Foo", "Flamingo", FooToFlamingo)
