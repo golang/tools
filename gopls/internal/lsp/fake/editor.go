@@ -39,7 +39,7 @@ type Editor struct {
 	client     *Client
 	sandbox    *Sandbox
 
-	// TODO(adonovan): buffers should be keyed by protocol.DocumentURI.
+	// TODO(rfindley): buffers should be keyed by protocol.DocumentURI.
 	mu                 sync.Mutex
 	config             EditorConfig                // editor configuration
 	buffers            map[string]buffer           // open buffers (relative path -> buffer content)
@@ -1512,9 +1512,9 @@ func (e *Editor) DocumentHighlight(ctx context.Context, loc protocol.Location) (
 	return e.Server.DocumentHighlight(ctx, params)
 }
 
-// SemanticTokens invokes textDocument/semanticTokens/full, and interprets its
-// result.
-func (e *Editor) SemanticTokens(ctx context.Context, path string) ([]SemanticToken, error) {
+// SemanticTokensFull invokes textDocument/semanticTokens/full, and interprets
+// its result.
+func (e *Editor) SemanticTokensFull(ctx context.Context, path string) ([]SemanticToken, error) {
 	p := &protocol.SemanticTokensParams{
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: e.sandbox.Workdir.URI(path),
@@ -1524,6 +1524,26 @@ func (e *Editor) SemanticTokens(ctx context.Context, path string) ([]SemanticTok
 	if err != nil {
 		return nil, err
 	}
+	content, ok := e.BufferText(path)
+	if !ok {
+		return nil, fmt.Errorf("buffer %s is not open", path)
+	}
+	return e.interpretTokens(resp.Data, content), nil
+}
+
+// SemanticTokensRange invokes textDocument/semanticTokens/range, and
+// interprets its result.
+func (e *Editor) SemanticTokensRange(ctx context.Context, loc protocol.Location) ([]SemanticToken, error) {
+	p := &protocol.SemanticTokensRangeParams{
+		TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
+		Range:        loc.Range,
+	}
+	resp, err := e.Server.SemanticTokensRange(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	path := e.sandbox.Workdir.URIToPath(loc.URI)
+	// As noted above: buffers should be keyed by protocol.DocumentURI.
 	content, ok := e.BufferText(path)
 	if !ok {
 		return nil, fmt.Errorf("buffer %s is not open", path)

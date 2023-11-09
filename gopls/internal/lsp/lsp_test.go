@@ -212,39 +212,6 @@ func (r *runner) CallHierarchy(t *testing.T, spn span.Span, expectedCalls *tests
 	}
 }
 
-func (r *runner) SemanticTokens(t *testing.T, spn span.Span) {
-	uri := spn.URI()
-	filename := uri.Filename()
-	// this is called solely for coverage in semantic.go
-	_, err := r.server.semanticTokensFull(r.ctx, &protocol.SemanticTokensParams{
-		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(uri),
-		},
-	})
-	if err != nil {
-		t.Errorf("%v for %s", err, filename)
-	}
-	_, err = r.server.semanticTokensRange(r.ctx, &protocol.SemanticTokensRangeParams{
-		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(uri),
-		},
-		// any legal range. Just to exercise the call.
-		Range: protocol.Range{
-			Start: protocol.Position{
-				Line:      0,
-				Character: 0,
-			},
-			End: protocol.Position{
-				Line:      2,
-				Character: 0,
-			},
-		},
-	})
-	if err != nil {
-		t.Errorf("%v for Range %s", err, filename)
-	}
-}
-
 func applyTextDocumentEdits(r *runner, edits []protocol.DocumentChanges) (map[span.URI][]byte, error) {
 	res := make(map[span.URI][]byte)
 	for _, docEdits := range edits {

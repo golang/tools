@@ -49,7 +49,6 @@ var UpdateGolden = flag.Bool("golden", false, "Update golden files")
 // These type names apparently avoid the need to repeat the
 // type in the field name and the make() expression.
 type CallHierarchy = map[span.Span]*CallHierarchyResult
-type SemanticTokens = []span.Span
 type AddImport = map[span.URI]string
 type SelectionRanges = []span.Span
 
@@ -57,7 +56,6 @@ type Data struct {
 	Config          packages.Config
 	Exported        *packagestest.Exported
 	CallHierarchy   CallHierarchy
-	SemanticTokens  SemanticTokens
 	AddImport       AddImport
 	SelectionRanges SelectionRanges
 
@@ -80,7 +78,6 @@ type Data struct {
 // we can abolish the interface now.
 type Tests interface {
 	CallHierarchy(*testing.T, span.Span, *CallHierarchyResult)
-	SemanticTokens(*testing.T, span.Span)
 	AddImport(*testing.T, span.URI, string)
 	SelectionRanges(*testing.T, span.Span)
 }
@@ -302,7 +299,6 @@ func load(t testing.TB, mode string, dir string) *Data {
 
 	// Collect any data that needs to be used by subsequent tests.
 	if err := datum.Exported.Expect(map[string]interface{}{
-		"semantic":       datum.collectSemanticTokens,
 		"incomingcalls":  datum.collectIncomingCalls,
 		"outgoingcalls":  datum.collectOutgoingCalls,
 		"addimport":      datum.collectAddImports,
@@ -371,16 +367,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		}
 	})
 
-	t.Run("SemanticTokens", func(t *testing.T) {
-		t.Helper()
-		for _, spn := range data.SemanticTokens {
-			t.Run(uriName(spn.URI()), func(t *testing.T) {
-				t.Helper()
-				tests.SemanticTokens(t, spn)
-			})
-		}
-	})
-
 	t.Run("AddImport", func(t *testing.T) {
 		t.Helper()
 		for uri, exp := range data.AddImport {
@@ -418,7 +404,6 @@ func checkData(t *testing.T, data *Data) {
 	buf := &bytes.Buffer{}
 
 	fmt.Fprintf(buf, "CallHierarchyCount = %v\n", len(data.CallHierarchy))
-	fmt.Fprintf(buf, "SemanticTokenCount = %v\n", len(data.SemanticTokens))
 	fmt.Fprintf(buf, "SelectionRangesCount = %v\n", len(data.SelectionRanges))
 
 	want := string(data.Golden(t, "summary", summaryFile, func() ([]byte, error) {
@@ -502,10 +487,6 @@ func (data *Data) Golden(t *testing.T, tag, target string, update func() ([]byte
 
 func (data *Data) collectAddImports(spn span.Span, imp string) {
 	data.AddImport[spn.URI()] = imp
-}
-
-func (data *Data) collectSemanticTokens(spn span.Span) {
-	data.SemanticTokens = append(data.SemanticTokens, spn)
 }
 
 func (data *Data) collectSelectionRanges(spn span.Span) {

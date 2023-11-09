@@ -289,6 +289,10 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //     location information. There is no point to using more than one
 //     @symbol marker in a given file.
 //
+//   - token(location, tokenType, mod): makes a textDocument/semanticTokens/range
+//     request at the given location, and asserts that the result includes
+//     exactly one token with the given token type and modifier string.
+//
 //   - workspacesymbol(query, golden): makes a workspace/symbol request for the
 //     given query, formats the response with one symbol per line, and compares
 //     against the named golden file. As workspace symbols are by definition a
@@ -393,10 +397,9 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //     suggestedfix be consolidated?
 //
 // Existing marker tests (in ../testdata) to port:
+//   - AddImport
 //   - CallHierarchy
-//   - SemanticTokens
 //   - InlayHints
-//   - Renames
 //   - SelectionRanges
 func RunMarkerTests(t *testing.T, dir string) {
 	// The marker tests must be able to run go/packages.Load.
@@ -740,6 +743,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"snippet":          actionMarkerFunc(snippetMarker),
 	"suggestedfix":     actionMarkerFunc(suggestedfixMarker),
 	"symbol":           actionMarkerFunc(symbolMarker),
+	"token":            actionMarkerFunc(tokenMarker),
 	"typedef":          actionMarkerFunc(typedefMarker),
 	"workspacesymbol":  actionMarkerFunc(workspaceSymbolMarker),
 }
@@ -1862,6 +1866,21 @@ func renameMarker(mark marker, loc protocol.Location, newName string, golden *Go
 func renameErrMarker(mark marker, loc protocol.Location, newName string, wantErr wantError) {
 	_, err := rename(mark.run.env, loc, newName)
 	wantErr.check(mark, err)
+}
+
+func tokenMarker(mark marker, loc protocol.Location, tokenType, mod string) {
+	tokens := mark.run.env.SemanticTokensRange(loc)
+	if len(tokens) != 1 {
+		mark.errorf("got %d tokens, want 1", len(tokens))
+		return
+	}
+	tok := tokens[0]
+	if tok.TokenType != tokenType {
+		mark.errorf("token type = %q, want %q", tok.TokenType, tokenType)
+	}
+	if tok.Mod != mod {
+		mark.errorf("token mod = %q, want %q", tok.Mod, mod)
+	}
 }
 
 func signatureMarker(mark marker, src protocol.Location, label string, active int64) {

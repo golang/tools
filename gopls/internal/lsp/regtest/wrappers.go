@@ -514,7 +514,7 @@ func (e *Env) AcceptCompletion(loc protocol.Location, item protocol.CompletionIt
 	}
 }
 
-// CodeAction calls testDocument/codeAction for the given path, and calls
+// CodeAction calls textDocument/codeAction for the given path, and calls
 // t.Fatal if there are errors.
 func (e *Env) CodeAction(path string, diagnostics []protocol.Diagnostic) []protocol.CodeAction {
 	e.T.Helper()
@@ -541,6 +541,28 @@ func (e *Env) ChangeWorkspaceFolders(newFolders ...string) {
 	if err := e.Editor.ChangeWorkspaceFolders(e.Ctx, newFolders); err != nil {
 		e.T.Fatal(err)
 	}
+}
+
+// SemanticTokensFull invokes textDocument/semanticTokens/full, calling t.Fatal
+// on any error.
+func (e *Env) SemanticTokensFull(path string) []fake.SemanticToken {
+	e.T.Helper()
+	toks, err := e.Editor.SemanticTokensFull(e.Ctx, path)
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	return toks
+}
+
+// SemanticTokensRange invokes textDocument/semanticTokens/range, calling t.Fatal
+// on any error.
+func (e *Env) SemanticTokensRange(loc protocol.Location) []fake.SemanticToken {
+	e.T.Helper()
+	toks, err := e.Editor.SemanticTokensRange(e.Ctx, loc)
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	return toks
 }
 
 // Close shuts down the editor session and cleans up the sandbox directory,

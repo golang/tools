@@ -1,0 +1,19 @@
+This test checks the output of textDocument/semanticTokens/range.
+
+TODO: add more assertions.
+
+-- settings.json --
+{
+	"semanticTokens": true
+}
+
+-- a.go --
+package p //@token("package", "keyword", "")
+
+const C = 42 //@token("C", "variable", "definition readonly")
+
+func F() { //@token("F", "function", "definition")
+	x := 2 + 3//@token("x", "variable", "definition"),token("2", "number", ""),token("+", "operator", "")
+	_ = x //@token("x", "variable", "")
+	_ = F //@token("F", "function", "")
+}

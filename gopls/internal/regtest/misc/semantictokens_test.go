@@ -94,10 +94,7 @@ func Add[T int](target T, l []T) []T {
 		env.AfterChange(
 			Diagnostics(env.AtRegexp("main.go", "for range")),
 		)
-		seen, err := env.Editor.SemanticTokens(env.Ctx, "main.go")
-		if err != nil {
-			t.Fatal(err)
-		}
+		seen := env.SemanticTokensFull("main.go")
 		if x := cmp.Diff(want, seen); x != "" {
 			t.Errorf("Semantic tokens do not match (-want +got):\n%s", x)
 		}
@@ -134,10 +131,7 @@ func New[K int, V any]() Smap[K, V] {
 		Settings{"semanticTokens": true},
 	).Run(t, src, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
-		seen, err := env.Editor.SemanticTokens(env.Ctx, "main.go")
-		if err != nil {
-			t.Fatal(err)
-		}
+		seen := env.SemanticTokensFull("main.go")
 		for i, s := range seen {
 			if (s.Token == "K" || s.Token == "V") && s.TokenType != "typeParameter" {
 				t.Errorf("%d: expected K and V to be type parameters, but got %v", i, s)
@@ -193,10 +187,7 @@ func bar() {}
 		Settings{"semanticTokens": true},
 	).Run(t, src, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
-		seen, err := env.Editor.SemanticTokens(env.Ctx, "main.go")
-		if err != nil {
-			t.Fatal(err)
-		}
+		seen := env.SemanticTokensFull("main.go")
 		if x := cmp.Diff(want, seen); x != "" {
 			t.Errorf("Semantic tokens do not match (-want +got):\n%s", x)
 		}
