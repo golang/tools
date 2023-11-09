@@ -45,16 +45,12 @@ var _ = nestedStruct{} //@codeactionedit("}", "refactor.rewrite", a3)
 
 var _ = data.B{} //@codeactionedit("}", "refactor.rewrite", a4)
 -- @a1/a.go --
---- before
-+++ after
 @@ -11 +11,3 @@
 -var _ = basicStruct{} //@codeactionedit("}", "refactor.rewrite", a1)
 +var _ = basicStruct{
 +	foo: 0,
 +} //@codeactionedit("}", "refactor.rewrite", a1)
 -- @a2/a.go --
---- before
-+++ after
 @@ -18 +18,4 @@
 -var _ = twoArgStruct{} //@codeactionedit("}", "refactor.rewrite", a2)
 +var _ = twoArgStruct{
@@ -62,8 +58,6 @@ var _ = data.B{} //@codeactionedit("}", "refactor.rewrite", a4)
 +	bar: "",
 +} //@codeactionedit("}", "refactor.rewrite", a2)
 -- @a3/a.go --
---- before
-+++ after
 @@ -25 +25,4 @@
 -var _ = nestedStruct{} //@codeactionedit("}", "refactor.rewrite", a3)
 +var _ = nestedStruct{
@@ -71,8 +65,6 @@ var _ = data.B{} //@codeactionedit("}", "refactor.rewrite", a4)
 +	basic: basicStruct{},
 +} //@codeactionedit("}", "refactor.rewrite", a3)
 -- @a4/a.go --
---- before
-+++ after
 @@ -27 +27,3 @@
 -var _ = data.B{} //@codeactionedit("}", "refactor.rewrite", a4)
 +var _ = data.B{
@@ -110,8 +102,6 @@ type funStructEmpty struct {
 var _ = funStructEmpty{} //@codeactionedit("}", "refactor.rewrite", a24)
 
 -- @a21/a2.go --
---- before
-+++ after
 @@ -11 +11,7 @@
 -var _ = typedStruct{} //@codeactionedit("}", "refactor.rewrite", a21)
 +var _ = typedStruct{
@@ -122,8 +112,6 @@ var _ = funStructEmpty{} //@codeactionedit("}", "refactor.rewrite", a24)
 +	a:  [2]string{},
 +} //@codeactionedit("}", "refactor.rewrite", a21)
 -- @a22/a2.go --
---- before
-+++ after
 @@ -17 +17,4 @@
 -var _ = funStruct{} //@codeactionedit("}", "refactor.rewrite", a22)
 +var _ = funStruct{
@@ -131,8 +119,6 @@ var _ = funStructEmpty{} //@codeactionedit("}", "refactor.rewrite", a24)
 +	},
 +} //@codeactionedit("}", "refactor.rewrite", a22)
 -- @a23/a2.go --
---- before
-+++ after
 @@ -23 +23,4 @@
 -var _ = funStructCompex{} //@codeactionedit("}", "refactor.rewrite", a23)
 +var _ = funStructCompex{
@@ -140,8 +126,6 @@ var _ = funStructEmpty{} //@codeactionedit("}", "refactor.rewrite", a24)
 +	},
 +} //@codeactionedit("}", "refactor.rewrite", a23)
 -- @a24/a2.go --
---- before
-+++ after
 @@ -29 +29,4 @@
 -var _ = funStructEmpty{} //@codeactionedit("}", "refactor.rewrite", a24)
 +var _ = funStructEmpty{
@@ -192,8 +176,6 @@ var _ = []ast.BasicLit{
 
 var _ = []ast.BasicLit{{}} //@codeactionedit("}", "refactor.rewrite", a35)
 -- @a31/a3.go --
---- before
-+++ after
 @@ -17 +17,4 @@
 -var _ = Bar{} //@codeactionedit("}", "refactor.rewrite", a31)
 +var _ = Bar{
@@ -201,8 +183,6 @@ var _ = []ast.BasicLit{{}} //@codeactionedit("}", "refactor.rewrite", a35)
 +	Y: &Foo{},
 +} //@codeactionedit("}", "refactor.rewrite", a31)
 -- @a32/a3.go --
---- before
-+++ after
 @@ -28 +28,9 @@
 -var _ = importedStruct{} //@codeactionedit("}", "refactor.rewrite", a32)
 +var _ = importedStruct{
@@ -215,8 +195,6 @@ var _ = []ast.BasicLit{{}} //@codeactionedit("}", "refactor.rewrite", a35)
 +	st: ast.CompositeLit{},
 +} //@codeactionedit("}", "refactor.rewrite", a32)
 -- @a33/a3.go --
---- before
-+++ after
 @@ -36 +36,5 @@
 -var _ = pointerBuiltinStruct{} //@codeactionedit("}", "refactor.rewrite", a33)
 +var _ = pointerBuiltinStruct{
@@ -225,8 +203,6 @@ var _ = []ast.BasicLit{{}} //@codeactionedit("}", "refactor.rewrite", a35)
 +	i: new(int),
 +} //@codeactionedit("}", "refactor.rewrite", a33)
 -- @a34/a3.go --
---- before
-+++ after
 @@ -39 +39,5 @@
 -	{}, //@codeactionedit("}", "refactor.rewrite", a34)
 +	{
@@ -235,8 +211,6 @@ var _ = []ast.BasicLit{{}} //@codeactionedit("}", "refactor.rewrite", a35)
 +		Value:    "",
 +	}, //@codeactionedit("}", "refactor.rewrite", a34)
 -- @a35/a3.go --
---- before
-+++ after
 @@ -42 +42,5 @@
 -var _ = []ast.BasicLit{{}} //@codeactionedit("}", "refactor.rewrite", a35)
 +var _ = []ast.BasicLit{{
@@ -286,24 +260,18 @@ func fill() {
 }
 
 -- @a41/a4.go --
---- before
-+++ after
 @@ -25 +25,3 @@
 -	var _ = iStruct{} //@codeactionedit("}", "refactor.rewrite", a41)
 +	var _ = iStruct{
 +		X: x,
 +	} //@codeactionedit("}", "refactor.rewrite", a41)
 -- @a42/a4.go --
---- before
-+++ after
 @@ -28 +28,3 @@
 -	var _ = sStruct{} //@codeactionedit("}", "refactor.rewrite", a42)
 +	var _ = sStruct{
 +		str: s,
 +	} //@codeactionedit("}", "refactor.rewrite", a42)
 -- @a43/a4.go --
---- before
-+++ after
 @@ -35 +35,5 @@
 -	var _ = multiFill{} //@codeactionedit("}", "refactor.rewrite", a43)
 +	var _ = multiFill{
@@ -312,8 +280,6 @@ func fill() {
 +		arr:   []int{},
 +	} //@codeactionedit("}", "refactor.rewrite", a43)
 -- @a45/a4.go --
---- before
-+++ after
 @@ -38 +38,3 @@
 -	var _ = assignStruct{} //@codeactionedit("}", "refactor.rewrite", a45)
 +	var _ = assignStruct{
@@ -348,8 +314,6 @@ func fill() {
 }
 
 -- @fill_struct1/fill_struct.go --
---- before
-+++ after
 @@ -20 +20,7 @@
 -	a := StructA{}  //@codeactionedit("}", "refactor.rewrite", fill_struct1)
 +	a := StructA{
@@ -360,24 +324,18 @@ func fill() {
 +		StructB:            StructB{},
 +	}  //@codeactionedit("}", "refactor.rewrite", fill_struct1)
 -- @fill_struct2/fill_struct.go --
---- before
-+++ after
 @@ -21 +21,3 @@
 -	b := StructA2{} //@codeactionedit("}", "refactor.rewrite", fill_struct2)
 +	b := StructA2{
 +		B: &StructB{},
 +	} //@codeactionedit("}", "refactor.rewrite", fill_struct2)
 -- @fill_struct3/fill_struct.go --
---- before
-+++ after
 @@ -22 +22,3 @@
 -	c := StructA3{} //@codeactionedit("}", "refactor.rewrite", fill_struct3)
 +	c := StructA3{
 +		B: StructB{},
 +	} //@codeactionedit("}", "refactor.rewrite", fill_struct3)
 -- @fill_struct4/fill_struct.go --
---- before
-+++ after
 @@ -24 +24,3 @@
 -		_ = StructA3{} //@codeactionedit("}", "refactor.rewrite", fill_struct4)
 +		_ = StructA3{
@@ -399,8 +357,6 @@ func fill() {
 	_ := StructAnon{} //@codeactionedit("}", "refactor.rewrite", fill_struct_anon)
 }
 -- @fill_struct_anon/fill_struct_anon.go --
---- before
-+++ after
 @@ -13 +13,5 @@
 -	_ := StructAnon{} //@codeactionedit("}", "refactor.rewrite", fill_struct_anon)
 +	_ := StructAnon{
@@ -426,8 +382,6 @@ func nested() {
 }
 
 -- @fill_nested/fill_struct_nested.go --
---- before
-+++ after
 @@ -13 +13,3 @@
 -		StructC: StructC{}, //@codeactionedit("}", "refactor.rewrite", fill_nested)
 +		StructC: StructC{
@@ -447,16 +401,12 @@ func unexported() {
 	_ = h2.Client{} //@codeactionedit("}", "refactor.rewrite", fill_struct_package2)
 }
 -- @fill_struct_package1/fill_struct_package.go --
---- before
-+++ after
 @@ -10 +10,3 @@
 -	a := data.B{}   //@codeactionedit("}", "refactor.rewrite", fill_struct_package1)
 +	a := data.B{
 +		ExportedInt: 0,
 +	}   //@codeactionedit("}", "refactor.rewrite", fill_struct_package1)
 -- @fill_struct_package2/fill_struct_package.go --
---- before
-+++ after
 @@ -11 +11,7 @@
 -	_ = h2.Client{} //@codeactionedit("}", "refactor.rewrite", fill_struct_package2)
 +	_ = h2.Client{
@@ -493,16 +443,12 @@ func fill() {
 }
 
 -- @fill_struct_partial1/fill_struct_partial.go --
---- before
-+++ after
 @@ -16 +16,3 @@
 -		PrefilledInt: 5,
 +		PrefilledInt:   5,
 +		UnfilledInt:    0,
 +		StructPartialB: StructPartialB{},
 -- @fill_struct_partial2/fill_struct_partial.go --
---- before
-+++ after
 @@ -19,4 +19,2 @@
 -		/* this comment should disappear */
 -		PrefilledInt: 7, // This comment should be blown away.
@@ -522,8 +468,6 @@ func spaces() {
 }
 
 -- @fill_struct_spaces/fill_struct_spaces.go --
---- before
-+++ after
 @@ -8 +8,3 @@
 -	d := StructD{} //@codeactionedit("}", "refactor.rewrite", fill_struct_spaces)
 +	d := StructD{
@@ -544,8 +488,6 @@ func fill() {
 }
 
 -- @fill_struct_unsafe/fill_struct_unsafe.go --
---- before
-+++ after
 @@ -11 +11,4 @@
 -	_ := unsafeStruct{} //@codeactionedit("}", "refactor.rewrite", fill_struct_unsafe)
 +	_ := unsafeStruct{
@@ -588,16 +530,12 @@ func _[T any]() {
 	_ = S{} //@codeactionedit("}", "refactor.rewrite", typeparams5)
 }
 -- @typeparams1/typeparams.go --
---- before
-+++ after
 @@ -11 +11,3 @@
 -var _ = basicStructWithTypeParams[int]{} //@codeactionedit("}", "refactor.rewrite", typeparams1)
 +var _ = basicStructWithTypeParams[int]{
 +	foo: 0,
 +} //@codeactionedit("}", "refactor.rewrite", typeparams1)
 -- @typeparams2/typeparams.go --
---- before
-+++ after
 @@ -18 +18,4 @@
 -var _ = twoArgStructWithTypeParams[string, int]{} //@codeactionedit("}", "refactor.rewrite", typeparams2)
 +var _ = twoArgStructWithTypeParams[string, int]{
@@ -605,13 +543,9 @@ func _[T any]() {
 +	bar: 0,
 +} //@codeactionedit("}", "refactor.rewrite", typeparams2)
 -- @typeparams3/typeparams.go --
---- before
-+++ after
 @@ -21 +21 @@
 +	foo: 0,
 -- @typeparams4/typeparams.go --
---- before
-+++ after
 @@ -29 +29,4 @@
 -var _ = nestedStructWithTypeParams{} //@codeactionedit("}", "refactor.rewrite", typeparams4)
 +var _ = nestedStructWithTypeParams{
@@ -619,8 +553,6 @@ func _[T any]() {
 +	basic: basicStructWithTypeParams{},
 +} //@codeactionedit("}", "refactor.rewrite", typeparams4)
 -- @typeparams5/typeparams.go --
---- before
-+++ after
 @@ -33 +33,3 @@
 -	_ = S{} //@codeactionedit("}", "refactor.rewrite", typeparams5)
 +	_ = S{

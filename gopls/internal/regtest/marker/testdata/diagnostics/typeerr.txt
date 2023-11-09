@@ -23,8 +23,6 @@ func f(x int) {
 }
 
 -- @fix/typeerr.go --
---- before
-+++ after
 @@ -6 +6 @@
 -	x := 123 //@diag(re"x := 123", re"no new variables"), suggestedfix(re"():", re"no new variables", fix)
 +	x = 123 //@diag(re"x := 123", re"no new variables"), suggestedfix(re"():", re"no new variables", fix)

@@ -27,8 +27,6 @@ package b
 import _ "example.com/a"
 
 -- @fToG/a/a.go --
---- before
-+++ after
 @@ -4 +4 @@
 -func (unexported) F() {} //@rename("F", "G", fToG)
 +func (unexported) G() {} //@rename("F", "G", fToG)

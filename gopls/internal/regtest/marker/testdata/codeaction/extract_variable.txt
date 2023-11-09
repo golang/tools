@@ -12,15 +12,11 @@ func _() {
 }
 
 -- @basic_lit1/basic_lit.go --
---- before
-+++ after
 @@ -4 +4,2 @@
 -	var _ = 1 + 2 //@codeactionedit("1", "refactor.extract", basic_lit1)
 +	x := 1
 +	var _ = x + 2 //@codeactionedit("1", "refactor.extract", basic_lit1)
 -- @basic_lit2/basic_lit.go --
---- before
-+++ after
 @@ -5 +5,2 @@
 -	var _ = 3 + 4 //@codeactionedit("3 + 4", "refactor.extract", basic_lit2)
 +	x := 3 + 4
@@ -37,15 +33,11 @@ func _() {
 }
 
 -- @func_call1/func_call.go --
---- before
-+++ after
 @@ -6 +6,2 @@
 -	x0 := append([]int{}, 1) //@codeactionedit("append([]int{}, 1)", "refactor.extract", func_call1)
 +	x := append([]int{}, 1)
 +	x0 := x //@codeactionedit("append([]int{}, 1)", "refactor.extract", func_call1)
 -- @func_call2/func_call.go --
---- before
-+++ after
 @@ -8 +8,2 @@
 -	b, err := strconv.Atoi(str) //@codeactionedit("strconv.Atoi(str)", "refactor.extract", func_call2)
 +	x, x1 := strconv.Atoi(str)
@@ -66,15 +58,11 @@ func _() {
 }
 
 -- @scope1/scope.go --
---- before
-+++ after
 @@ -8 +8,2 @@
 -		y := ast.CompositeLit{} //@codeactionedit("ast.CompositeLit{}", "refactor.extract", scope1)
 +		x := ast.CompositeLit{}
 +		y := x //@codeactionedit("ast.CompositeLit{}", "refactor.extract", scope1)
 -- @scope2/scope.go --
---- before
-+++ after
 @@ -11 +11,2 @@
 -		x1 := !false //@codeactionedit("!false", "refactor.extract", scope2)
 +		x := !false

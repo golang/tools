@@ -14,8 +14,6 @@ func a() {
 }
 
 -- @a/a.go --
---- before
-+++ after
 @@ -4 +4 @@
 +	y := 
 -- b.go --
@@ -28,8 +26,6 @@ func b() {
 }
 
 -- @b/b.go --
---- before
-+++ after
 @@ -4 +4 @@
 +	n := 
 -- c.go --
@@ -42,7 +38,5 @@ func c() {
 }
 
 -- @c/c.go --
---- before
-+++ after
 @@ -4 +4 @@
 +	i := 

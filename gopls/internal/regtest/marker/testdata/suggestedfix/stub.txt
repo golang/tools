@@ -31,8 +31,6 @@ var _ io.ReaderFrom = &readerFrom{} //@suggestedfix("&readerFrom", re"cannot use
 
 type readerFrom struct{}
 -- @readerFrom/add_selector.go --
---- before
-+++ after
 @@ -13 +13,5 @@
 +
 +// ReadFrom implements io.ReaderFrom.
@@ -52,8 +50,6 @@ func _() {
 
 type byteWriter struct{}
 -- @assign/assign.go --
---- before
-+++ after
 @@ -12 +12,5 @@
 +
 +// WriteByte implements io.ByteWriter.
@@ -74,8 +70,6 @@ func _() {
 
 type multiByteWriter struct{}
 -- @assign_multivars/assign_multivars.go --
---- before
-+++ after
 @@ -13 +13,5 @@
 +
 +// WriteByte implements io.ByteWriter.
@@ -97,8 +91,6 @@ func check(err error) {
 
 type callExpr struct{}
 -- @call_expr/call_expr.go --
---- before
-+++ after
 @@ -14 +14,5 @@
 +
 +// Error implements error.
@@ -122,8 +114,6 @@ type embeddedInterface interface {
 	io.Reader
 }
 -- @embedded/embedded.go --
---- before
-+++ after
 @@ -12 +12,20 @@
 +// Len implements embeddedInterface.
 +func (*embeddedConcrete) Len() int {
@@ -155,8 +145,6 @@ func _() {
 
 type customErr struct{}
 -- @err/err.go --
---- before
-+++ after
 @@ -9 +9,5 @@
 +
 +// Error implements error.
@@ -176,8 +164,6 @@ func newCloser() io.Closer {
 
 type closer struct{}
 -- @function_return/function_return.go --
---- before
-+++ after
 @@ -12 +12,5 @@
 +
 +// Close implements io.Closer.
@@ -198,8 +184,6 @@ type genReader[T, Y any] struct {
 	Y Y
 }
 -- @generic_receiver/generic_receiver.go --
---- before
-+++ after
 @@ -13 +13,5 @@
 +
 +// ReadFrom implements io.ReaderFrom.
@@ -226,8 +210,6 @@ var (
 
 type ignoredResetter struct{}
 -- @ignored_imports/ignored_imports.go --
---- before
-+++ after
 @@ -19 +19,5 @@
 +
 +// Reset implements zlib.Resetter.
@@ -243,8 +225,6 @@ type C int
 
 var _ I = C(0) //@suggestedfix("C", re"does not implement", issue2606)
 -- @issue2606/issue2606.go --
---- before
-+++ after
 @@ -7 +7,5 @@
 +// Error implements I.
 +func (C) Error() string {
@@ -264,8 +244,6 @@ var one, two, three io.Reader = nil, &multiVar{}, nil //@suggestedfix("&", re"do
 
 type multiVar struct{}
 -- @multi_var/multi_var.go --
---- before
-+++ after
 @@ -12 +12,5 @@
 +
 +// Read implements io.Reader.
@@ -283,8 +261,6 @@ func getReaderFrom() io.ReaderFrom {
 
 type pointerImpl struct{}
 -- @pointer/pointer.go --
---- before
-+++ after
 @@ -10 +10,5 @@
 +
 +// ReadFrom implements io.ReaderFrom.
@@ -304,8 +280,6 @@ var _ myio.Reader
 
 type myIO struct{}
 -- @renamed_import/renamed_import.go --
---- before
-+++ after
 @@ -12 +12,5 @@
 +
 +// Reset implements zlib.Resetter.
@@ -327,8 +301,6 @@ var _ other.Interface = &otherInterfaceImpl{} //@suggestedfix("&otherInterfaceIm
 
 type otherInterfaceImpl struct{}
 -- @renamed_import_iface/renamed_import_iface.go --
---- before
-+++ after
 @@ -4 +4,2 @@
 +	"bytes"
 +	"context"
@@ -349,8 +321,6 @@ var _ io.Writer = writer{} //@suggestedfix("w", re"does not implement", stdlib)
 
 type writer struct{}
 -- @stdlib/stdlib.go --
---- before
-+++ after
 @@ -10 +10,5 @@
 +
 +// Write implements io.Writer.
@@ -382,8 +352,6 @@ func _() {
 	var _ io.ReadCloser = local{} //@diag("local", re"does not implement")
 }
 -- @typedecl_group/typedecl_group.go --
---- before
-+++ after
 @@ -18 +18,10 @@
 +// Close implements io.ReadCloser.
 +func (rdcloser) Close() error {

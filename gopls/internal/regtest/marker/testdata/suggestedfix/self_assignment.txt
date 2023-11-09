@@ -14,8 +14,6 @@ func goodbye() {
 }
 
 -- @fix/a.go --
---- before
-+++ after
 @@ -9 +9 @@
 -	s = s //@suggestedfix("s = s", re"self-assignment", fix)
 +	 //@suggestedfix("s = s", re"self-assignment", fix)

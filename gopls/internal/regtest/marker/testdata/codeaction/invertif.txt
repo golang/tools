@@ -115,8 +115,6 @@ func SemicolonOr() {
 }
 
 -- @boolean/p.go --
---- before
-+++ after
 @@ -10,3 +10 @@
 -	if b { //@codeactionedit("if b", "refactor.rewrite", boolean)
 -		fmt.Println("A")
@@ -126,8 +124,6 @@ func SemicolonOr() {
 +	} else { //@codeactionedit("if b", "refactor.rewrite", boolean)
 +		fmt.Println("A")
 -- @boolean_fn/p.go --
---- before
-+++ after
 @@ -18,3 +18 @@
 -	if os.IsPathSeparator('X') { //@codeactionedit("if os.IsPathSeparator('X')", "refactor.rewrite", boolean_fn)
 -		fmt.Println("A")
@@ -137,8 +133,6 @@ func SemicolonOr() {
 +	} else { //@codeactionedit("if os.IsPathSeparator('X')", "refactor.rewrite", boolean_fn)
 +		fmt.Println("A")
 -- @dont_remove_parens/p.go --
---- before
-+++ after
 @@ -29,4 +29,2 @@
 -	if !(a ||
 -		b) { //@codeactionedit("b", "refactor.rewrite", dont_remove_parens)
@@ -150,8 +144,6 @@ func SemicolonOr() {
 +	} else { //@codeactionedit("b", "refactor.rewrite", dont_remove_parens)
 +		fmt.Println("A")
 -- @else_if/p.go --
---- before
-+++ after
 @@ -46,3 +46 @@
 -	} else if os.Args[0] == "X" { //@codeactionedit(re"if os.Args.0. == .X.", "refactor.rewrite", else_if)
 -		fmt.Println("B")
@@ -161,8 +153,6 @@ func SemicolonOr() {
 +	} else { //@codeactionedit(re"if os.Args.0. == .X.", "refactor.rewrite", else_if)
 +		fmt.Println("B")
 -- @greater_than/p.go --
---- before
-+++ after
 @@ -54,3 +54 @@
 -	if len(os.Args) > 2 { //@codeactionedit("i", "refactor.rewrite", greater_than)
 -		fmt.Println("A")
@@ -172,8 +162,6 @@ func SemicolonOr() {
 +	} else { //@codeactionedit("i", "refactor.rewrite", greater_than)
 +		fmt.Println("A")
 -- @not_boolean/p.go --
---- before
-+++ after
 @@ -63,3 +63 @@
 -	if !b { //@codeactionedit("if !b", "refactor.rewrite", not_boolean)
 -		fmt.Println("A")
@@ -183,8 +171,6 @@ func SemicolonOr() {
 +	} else { //@codeactionedit("if !b", "refactor.rewrite", not_boolean)
 +		fmt.Println("A")
 -- @remove_else/p.go --
---- before
-+++ after
 @@ -71,3 +71 @@
 -	if true { //@codeactionedit("if true", "refactor.rewrite", remove_else)
 -		fmt.Println("A")
@@ -195,8 +181,6 @@ func SemicolonOr() {
 +	fmt.Println("A")
 +
 -- @remove_parens/p.go --
---- before
-+++ after
 @@ -83,3 +83 @@
 -	if !(b) { //@codeactionedit("if", "refactor.rewrite", remove_parens)
 -		fmt.Println("A")
@@ -206,8 +190,6 @@ func SemicolonOr() {
 +	} else { //@codeactionedit("if", "refactor.rewrite", remove_parens)
 +		fmt.Println("A")
 -- @semicolon/p.go --
---- before
-+++ after
 @@ -91,3 +91 @@
 -	if _, err := fmt.Println("x"); err != nil { //@codeactionedit("if", "refactor.rewrite", semicolon)
 -		fmt.Println("A")
@@ -217,8 +199,6 @@ func SemicolonOr() {
 +	} else { //@codeactionedit("if", "refactor.rewrite", semicolon)
 +		fmt.Println("A")
 -- @semicolon_and/p.go --
---- before
-+++ after
 @@ -99,3 +99 @@
 -	if n, err := fmt.Println("x"); err != nil && n > 0 { //@codeactionedit("f", "refactor.rewrite", semicolon_and)
 -		fmt.Println("A")
@@ -228,8 +208,6 @@ func SemicolonOr() {
 +	} else { //@codeactionedit("f", "refactor.rewrite", semicolon_and)
 +		fmt.Println("A")
 -- @semicolon_or/p.go --
---- before
-+++ after
 @@ -107,3 +107 @@
 -	if n, err := fmt.Println("x"); err != nil || n < 5 { //@codeactionedit(re"if n, err := fmt.Println..x..; err != nil .. n < 5", "refactor.rewrite", semicolon_or)
 -		fmt.Println("A")

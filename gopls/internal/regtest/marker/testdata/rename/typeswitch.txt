@@ -13,8 +13,6 @@ func _(x interface{}) {
 }
 
 -- @yToZ/p.go --
---- before
-+++ after
 @@ -4 +4 @@
 -	switch y := x.(type) { //@rename("y", "z", yToZ)
 +	switch z := x.(type) { //@rename("y", "z", yToZ)

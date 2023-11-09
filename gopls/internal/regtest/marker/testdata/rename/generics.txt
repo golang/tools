@@ -28,8 +28,6 @@ func _[P ~[]int]() {
 }
 
 -- @mToM/a.go --
---- before
-+++ after
 @@ -5 +5 @@
 -func (I) m() {} //@rename("m", "M", mToM)
 +func (I) M() {} //@rename("m", "M", mToM)
@@ -46,8 +44,6 @@ func F[R any](r R) {
 }
 
 -- @PToQ/g.go --
---- before
-+++ after
 @@ -3,3 +3,3 @@
 -type S[P any] struct { //@rename("P", "Q", PToQ)
 -	P P
@@ -56,8 +52,6 @@ func F[R any](r R) {
 +	P Q
 +	F func(Q) Q
 -- @RToS/g.go --
---- before
-+++ after
 @@ -8,2 +8,2 @@
 -func F[R any](r R) {
 -	var _ R //@rename("R", "S", RToS)
@@ -88,8 +82,6 @@ import "example.com/issue61635" // importing is necessary to repro golang/go#616
 var _ issue61635.ElemData[string]
 
 -- @SToT/issue61635/p.go --
---- before
-+++ after
 @@ -3 +3 @@
 -type builder[S ~[]F, F ~string] struct { //@rename("S", "T", SToT)
 +type builder[T ~[]F, F ~string] struct { //@rename("S", "T", SToT)
@@ -114,8 +106,6 @@ func _() {
 }
 
 -- @RTos/instances/type.go --
---- before
-+++ after
 @@ -3,2 +3,2 @@
 -type R[P any] struct { //@rename("R", "u", Rtou)
 -	Next *R[P] //@rename("R", "s", RTos)
@@ -130,8 +120,6 @@ func _() {
 -	var x R[int] //@rename("R", "r", RTor)
 +	var x s[int] //@rename("R", "r", RTor)
 -- @Rtou/instances/type.go --
---- before
-+++ after
 @@ -3,2 +3,2 @@
 -type R[P any] struct { //@rename("R", "u", Rtou)
 -	Next *R[P] //@rename("R", "s", RTos)
@@ -146,8 +134,6 @@ func _() {
 -	var x R[int] //@rename("R", "r", RTor)
 +	var x u[int] //@rename("R", "r", RTor)
 -- @DoToDo1/instances/type.go --
---- before
-+++ after
 @@ -7 +7 @@
 -func (rv R[P]) Do(R[P]) R[P] { //@rename("Do", "Do1", DoToDo1)
 +func (rv R[P]) Do1(R[P]) R[P] { //@rename("Do", "Do1", DoToDo1)
@@ -158,8 +144,6 @@ func _() {
 -	x = x.Do(x)
 +	x = x.Do1(x)
 -- @DoToDo2/instances/type.go --
---- before
-+++ after
 @@ -7 +7 @@
 -func (rv R[P]) Do(R[P]) R[P] { //@rename("Do", "Do1", DoToDo1)
 +func (rv R[P]) Do2(R[P]) R[P] { //@rename("Do", "Do1", DoToDo1)
@@ -177,24 +161,18 @@ func Foo[P any](p P) { //@rename("Foo", "Bar", FooToBar)
 }
 
 -- @FooToBar/instances/func.go --
---- before
-+++ after
 @@ -3,2 +3,2 @@
 -func Foo[P any](p P) { //@rename("Foo", "Bar", FooToBar)
 -	Foo(p) //@rename("Foo", "Baz", FooToBaz)
 +func Bar[P any](p P) { //@rename("Foo", "Bar", FooToBar)
 +	Bar(p) //@rename("Foo", "Baz", FooToBaz)
 -- @FooToBaz/instances/func.go --
---- before
-+++ after
 @@ -3,2 +3,2 @@
 -func Foo[P any](p P) { //@rename("Foo", "Bar", FooToBar)
 -	Foo(p) //@rename("Foo", "Baz", FooToBaz)
 +func Baz[P any](p P) { //@rename("Foo", "Bar", FooToBar)
 +	Baz(p) //@rename("Foo", "Baz", FooToBaz)
 -- @RTor/instances/type.go --
---- before
-+++ after
 @@ -3,2 +3,2 @@
 -type R[P any] struct { //@rename("R", "u", Rtou)
 -	Next *R[P] //@rename("R", "s", RTos)

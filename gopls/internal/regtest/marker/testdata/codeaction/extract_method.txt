@@ -43,8 +43,6 @@ func (a A) Add() int {
 }
 
 -- @func1/basic.go --
---- before
-+++ after
 @@ -22 +22 @@
 -	return a.x < a.y //@loc(A_XLessThanYP, re`return.*a\.y`)
 +	return newFunction(a) //@loc(A_XLessThanYP, re`return.*a\.y`)
@@ -54,8 +52,6 @@ func (a A) Add() int {
 +}
 +
 -- @func2/basic.go --
---- before
-+++ after
 @@ -26 +26 @@
 -	sum := a.x + a.y //@loc(A_AddP1, re`sum.*a\.y`)
 +	sum := newFunction(a) //@loc(A_AddP1, re`sum.*a\.y`)
@@ -66,8 +62,6 @@ func (a A) Add() int {
 +}
 +
 -- @func3/basic.go --
---- before
-+++ after
 @@ -27 +27 @@
 -	return sum       //@loc(A_AddP2, re`return.*sum`)
 +	return newFunction(sum)       //@loc(A_AddP2, re`return.*sum`)
@@ -77,8 +71,6 @@ func (a A) Add() int {
 +}
 +
 -- @func4/basic.go --
---- before
-+++ after
 @@ -31 +31 @@
 -	return a.x < a.y //@loc(A_XLessThanY, re`return.*a\.y`)
 +	return newFunction(a) //@loc(A_XLessThanY, re`return.*a\.y`)
@@ -88,8 +80,6 @@ func (a A) Add() int {
 +}
 +
 -- @func5/basic.go --
---- before
-+++ after
 @@ -35 +35 @@
 -	sum := a.x + a.y //@loc(A_Add1, re`sum.*a\.y`)
 +	sum := newFunction(a) //@loc(A_Add1, re`sum.*a\.y`)
@@ -100,8 +90,6 @@ func (a A) Add() int {
 +}
 +
 -- @func6/basic.go --
---- before
-+++ after
 @@ -36 +36 @@
 -	return sum       //@loc(A_Add2, re`return.*sum`)
 +	return newFunction(sum)       //@loc(A_Add2, re`return.*sum`)
@@ -111,8 +99,6 @@ func (a A) Add() int {
 +}
 +
 -- @meth1/basic.go --
---- before
-+++ after
 @@ -22 +22 @@
 -	return a.x < a.y //@loc(A_XLessThanYP, re`return.*a\.y`)
 +	return a.newMethod() //@loc(A_XLessThanYP, re`return.*a\.y`)
@@ -122,8 +108,6 @@ func (a A) Add() int {
 +}
 +
 -- @meth2/basic.go --
---- before
-+++ after
 @@ -26 +26 @@
 -	sum := a.x + a.y //@loc(A_AddP1, re`sum.*a\.y`)
 +	sum := a.newMethod() //@loc(A_AddP1, re`sum.*a\.y`)
@@ -134,8 +118,6 @@ func (a A) Add() int {
 +}
 +
 -- @meth3/basic.go --
---- before
-+++ after
 @@ -27 +27 @@
 -	return sum       //@loc(A_AddP2, re`return.*sum`)
 +	return a.newMethod(sum)       //@loc(A_AddP2, re`return.*sum`)
@@ -145,8 +127,6 @@ func (a A) Add() int {
 +}
 +
 -- @meth4/basic.go --
---- before
-+++ after
 @@ -31 +31 @@
 -	return a.x < a.y //@loc(A_XLessThanY, re`return.*a\.y`)
 +	return a.newMethod() //@loc(A_XLessThanY, re`return.*a\.y`)
@@ -156,8 +136,6 @@ func (a A) Add() int {
 +}
 +
 -- @meth5/basic.go --
---- before
-+++ after
 @@ -35 +35 @@
 -	sum := a.x + a.y //@loc(A_Add1, re`sum.*a\.y`)
 +	sum := a.newMethod() //@loc(A_Add1, re`sum.*a\.y`)
@@ -168,8 +146,6 @@ func (a A) Add() int {
 +}
 +
 -- @meth6/basic.go --
---- before
-+++ after
 @@ -36 +36 @@
 -	return sum       //@loc(A_Add2, re`return.*sum`)
 +	return a.newMethod(sum)       //@loc(A_Add2, re`return.*sum`)
@@ -205,8 +181,6 @@ func (b *B) LongList(ctx context.Context) (int, error) {
 	return p1 + p2 + p3, ctx.Err() //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
 }
 -- @contextMeth1/context.go --
---- before
-+++ after
 @@ -17 +17 @@
 -	return sum, ctx.Err() //@loc(B_AddP, re`return.*ctx\.Err\(\)`)
 +	return b.newMethod(ctx, sum) //@loc(B_AddP, re`return.*ctx\.Err\(\)`)
@@ -216,8 +190,6 @@ func (b *B) LongList(ctx context.Context) (int, error) {
 +}
 +
 -- @contextMeth2/context.go --
---- before
-+++ after
 @@ -24 +24 @@
 -	return p1 + p2 + p3, ctx.Err() //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
 +	return b.newMethod(ctx, p1, p2, p3) //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
@@ -227,8 +199,6 @@ func (b *B) LongList(ctx context.Context) (int, error) {
 +	return p1 + p2 + p3, ctx.Err()
 +}
 -- @contextFunc2/context.go --
---- before
-+++ after
 @@ -24 +24 @@
 -	return p1 + p2 + p3, ctx.Err() //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
 +	return newFunction(ctx, p1, p2, p3) //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
@@ -238,8 +208,6 @@ func (b *B) LongList(ctx context.Context) (int, error) {
 +	return p1 + p2 + p3, ctx.Err()
 +}
 -- @contextFunc1/context.go --
---- before
-+++ after
 @@ -17 +17 @@
 -	return sum, ctx.Err() //@loc(B_AddP, re`return.*ctx\.Err\(\)`)
 +	return newFunction(ctx, sum) //@loc(B_AddP, re`return.*ctx\.Err\(\)`)

@@ -6,8 +6,6 @@ package p
 func f(x int) { println(x) } //@rename("x", "y", xToy)
 
 -- @xToy/basic.go --
---- before
-+++ after
 @@ -3 +3 @@
 -func f(x int) { println(x) } //@rename("x", "y", xToy)
 +func f(y int) { println(y) } //@rename("x", "y", xToy)
@@ -30,8 +28,6 @@ func _(x []int) { //@renameerr("_", "blank", `can't rename "_"`)
 }
 
 -- @AToB/alias.go --
---- before
-+++ after
 @@ -5,2 +5,2 @@
 -type A = LongNameHere //@rename("A", "B", AToB)
 -func Foo() A

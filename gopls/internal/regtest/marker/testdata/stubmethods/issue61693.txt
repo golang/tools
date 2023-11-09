@@ -18,8 +18,6 @@ func _() {
 	F(x, C(0)) //@suggestedfix(re"C.0.", re"missing method Error", stub)
 }
 -- @stub/main.go --
---- before
-+++ after
 @@ -5 +5,5 @@
 +// Error implements error.
 +func (C) Error() string {

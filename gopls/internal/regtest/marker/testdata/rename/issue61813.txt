@@ -9,8 +9,6 @@ func (P) M() {} //@rename("M", "N", MToN)
 
 var x = []*P{{}}
 -- @MToN/p.go --
---- before
-+++ after
 @@ -5 +5 @@
 -func (P) M() {} //@rename("M", "N", MToN)
 +func (P) N() {} //@rename("M", "N", MToN)

@@ -1443,7 +1443,13 @@ func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
 			// Can't happen: edits are consistent.
 			log.Fatalf("internal error in diff.ToUnified: %v", err)
 		}
-		diffs[name] = d
+		// Trim the unified header from diffs, as it is unnecessary and repetitive.
+		difflines := strings.Split(d, "\n")
+		if len(difflines) >= 2 && strings.HasPrefix(difflines[1], "+++") {
+			diffs[name] = strings.Join(difflines[2:], "\n")
+		} else {
+			diffs[name] = d
+		}
 	}
 	// Check changed files match expectations.
 	for filename, got := range diffs {
