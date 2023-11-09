@@ -399,7 +399,6 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 // Existing marker tests (in ../testdata) to port:
 //   - CallHierarchy
 //   - InlayHints
-//   - SelectionRanges
 func RunMarkerTests(t *testing.T, dir string) {
 	// The marker tests must be able to run go/packages.Load.
 	testenv.NeedsGoPackages(t)
@@ -738,6 +737,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"refs":             actionMarkerFunc(refsMarker),
 	"rename":           actionMarkerFunc(renameMarker),
 	"renameerr":        actionMarkerFunc(renameErrMarker),
+	"selectionrange":   actionMarkerFunc(selectionRangeMarker),
 	"signature":        actionMarkerFunc(signatureMarker),
 	"snippet":          actionMarkerFunc(snippetMarker),
 	"suggestedfix":     actionMarkerFunc(suggestedfixMarker),
@@ -1865,6 +1865,47 @@ func renameMarker(mark marker, loc protocol.Location, newName string, golden *Go
 func renameErrMarker(mark marker, loc protocol.Location, newName string, wantErr wantError) {
 	_, err := rename(mark.run.env, loc, newName)
 	wantErr.check(mark, err)
+}
+
+func selectionRangeMarker(mark marker, loc protocol.Location, g *Golden) {
+	ctx := mark.run.env.Ctx
+	ranges, err := mark.run.env.Editor.Server.SelectionRange(ctx, &protocol.SelectionRangeParams{
+		TextDocument: mark.document(),
+		Positions:    []protocol.Position{loc.Range.Start},
+	})
+	if err != nil {
+		mark.errorf("SelectionRange failed: %v", err)
+		return
+	}
+	var buf bytes.Buffer
+	m := mark.mapper()
+	for i, path := range ranges {
+		fmt.Fprintf(&buf, "Ranges %d:", i)
+		rng := path
+		for {
+			s, e, err := m.RangeOffsets(rng.Range)
+			if err != nil {
+				mark.errorf("RangeOffsets failed: %v", err)
+				return
+			}
+
+			var snippet string
+			if e-s < 30 {
+				snippet = string(m.Content[s:e])
+			} else {
+				snippet = string(m.Content[s:s+15]) + "..." + string(m.Content[e-15:e])
+			}
+
+			fmt.Fprintf(&buf, "\n\t%v %q", rng.Range, strings.ReplaceAll(snippet, "\n", "\\n"))
+
+			if rng.Parent == nil {
+				break
+			}
+			rng = *rng.Parent
+		}
+		buf.WriteRune('\n')
+	}
+	compareGolden(mark, "selection range", buf.Bytes(), g)
 }
 
 func tokenMarker(mark marker, loc protocol.Location, tokenType, mod string) {

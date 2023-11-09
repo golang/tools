@@ -6,10 +6,8 @@ package lsp
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/bug"
@@ -18,7 +16,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/tests"
-	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -235,65 +232,4 @@ func applyTextDocumentEdits(r *runner, edits []protocol.DocumentChanges) (map[sp
 		}
 	}
 	return res, nil
-}
-
-func (r *runner) SelectionRanges(t *testing.T, spn span.Span) {
-	uri := spn.URI()
-	sm, err := r.data.Mapper(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	loc, err := sm.SpanLocation(spn)
-	if err != nil {
-		t.Error(err)
-	}
-
-	ranges, err := r.server.selectionRange(r.ctx, &protocol.SelectionRangeParams{
-		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(uri),
-		},
-		Positions: []protocol.Position{loc.Range.Start},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	sb := &strings.Builder{}
-	for i, path := range ranges {
-		fmt.Fprintf(sb, "Ranges %d: ", i)
-		rng := path
-		for {
-			s, e, err := sm.RangeOffsets(rng.Range)
-			if err != nil {
-				t.Error(err)
-			}
-
-			var snippet string
-			if e-s < 30 {
-				snippet = string(sm.Content[s:e])
-			} else {
-				snippet = string(sm.Content[s:s+15]) + "..." + string(sm.Content[e-15:e])
-			}
-
-			fmt.Fprintf(sb, "\n\t%v %q", rng.Range, strings.ReplaceAll(snippet, "\n", "\\n"))
-
-			if rng.Parent == nil {
-				break
-			}
-			rng = *rng.Parent
-		}
-		sb.WriteRune('\n')
-	}
-	got := sb.String()
-
-	testName := "selectionrange_" + tests.SpanName(spn)
-	want := r.data.Golden(t, testName, uri.Filename(), func() ([]byte, error) {
-		return []byte(got), nil
-	})
-	if want == nil {
-		t.Fatalf("golden file %q not found", uri.Filename())
-	}
-	if diff := compare.Text(got, string(want)); diff != "" {
-		t.Errorf("%s mismatch\n%s", testName, diff)
-	}
 }

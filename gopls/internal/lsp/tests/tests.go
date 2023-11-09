@@ -49,13 +49,11 @@ var UpdateGolden = flag.Bool("golden", false, "Update golden files")
 // These type names apparently avoid the need to repeat the
 // type in the field name and the make() expression.
 type CallHierarchy = map[span.Span]*CallHierarchyResult
-type SelectionRanges = []span.Span
 
 type Data struct {
-	Config          packages.Config
-	Exported        *packagestest.Exported
-	CallHierarchy   CallHierarchy
-	SelectionRanges SelectionRanges
+	Config        packages.Config
+	Exported      *packagestest.Exported
+	CallHierarchy CallHierarchy
 
 	fragments map[string]string
 	dir       string
@@ -76,7 +74,6 @@ type Data struct {
 // we can abolish the interface now.
 type Tests interface {
 	CallHierarchy(*testing.T, span.Span, *CallHierarchyResult)
-	SelectionRanges(*testing.T, span.Span)
 }
 
 type Completion struct {
@@ -295,9 +292,8 @@ func load(t testing.TB, mode string, dir string) *Data {
 
 	// Collect any data that needs to be used by subsequent tests.
 	if err := datum.Exported.Expect(map[string]interface{}{
-		"incomingcalls":  datum.collectIncomingCalls,
-		"outgoingcalls":  datum.collectOutgoingCalls,
-		"selectionrange": datum.collectSelectionRanges,
+		"incomingcalls": datum.collectIncomingCalls,
+		"outgoingcalls": datum.collectOutgoingCalls,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -362,15 +358,6 @@ func Run(t *testing.T, tests Tests, data *Data) {
 		}
 	})
 
-	t.Run("SelectionRanges", func(t *testing.T) {
-		t.Helper()
-		for _, span := range data.SelectionRanges {
-			t.Run(SpanName(span), func(t *testing.T) {
-				tests.SelectionRanges(t, span)
-			})
-		}
-	})
-
 	if *UpdateGolden {
 		for _, golden := range data.golden {
 			if !golden.Modified {
@@ -390,7 +377,6 @@ func checkData(t *testing.T, data *Data) {
 	buf := &bytes.Buffer{}
 
 	fmt.Fprintf(buf, "CallHierarchyCount = %v\n", len(data.CallHierarchy))
-	fmt.Fprintf(buf, "SelectionRangesCount = %v\n", len(data.SelectionRanges))
 
 	want := string(data.Golden(t, "summary", summaryFile, func() ([]byte, error) {
 		return buf.Bytes(), nil
@@ -469,10 +455,6 @@ func (data *Data) Golden(t *testing.T, tag, target string, update func() ([]byte
 		return file.Data
 	}
 	return file.Data[:len(file.Data)-1] // drop the trailing \n
-}
-
-func (data *Data) collectSelectionRanges(spn span.Span) {
-	data.SelectionRanges = append(data.SelectionRanges, spn)
 }
 
 func (data *Data) collectIncomingCalls(src span.Span, calls []span.Span) {
