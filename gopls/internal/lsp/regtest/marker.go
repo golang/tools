@@ -223,6 +223,10 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //     textDocument/implementation query at the src location and
 //     checks that the resulting set of locations matches want.
 //
+//   - incomingcalls(src location, want ...location): makes a
+//     callHierarchy/incomingCalls query at the src location, and checks that
+//     the set of call.From locations matches want.
+//
 //   - item(label, details, kind): defines a completion item with the provided
 //     fields. This information is not positional, and therefore @item markers
 //     may occur anywhere in the source. Used in conjunction with @complete,
@@ -233,6 +237,10 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //
 //   - loc(name, location): specifies the name for a location in the source. These
 //     locations may be referenced by other markers.
+//
+//   - outgoingcalls(src location, want ...location): makes a
+//     callHierarchy/outgoingCalls query at the src location, and checks that
+//     the set of call.To locations matches want.
 //
 //   - preparerename(src, spn, placeholder): asserts that a textDocument/prepareRename
 //     request at the src location expands to the spn location, with given
@@ -564,6 +572,11 @@ type marker struct {
 	note *expect.Note
 }
 
+// ctx returns the mark context.
+func (m marker) ctx() context.Context {
+	return m.run.env.Ctx
+}
+
 // server returns the LSP server for the marker test run.
 func (m marker) server() protocol.Server {
 	return m.run.env.Editor.Server
@@ -730,7 +743,9 @@ var actionMarkerFuncs = map[string]func(marker){
 	"highlight":        actionMarkerFunc(highlightMarker),
 	"hover":            actionMarkerFunc(hoverMarker),
 	"implementation":   actionMarkerFunc(implementationMarker),
+	"incomingcalls":    actionMarkerFunc(incomingCallsMarker),
 	"inlayhints":       actionMarkerFunc(inlayhintsMarker),
+	"outgoingcalls":    actionMarkerFunc(outgoingCallsMarker),
 	"preparerename":    actionMarkerFunc(prepareRenameMarker),
 	"rank":             actionMarkerFunc(rankMarker),
 	"rankl":            actionMarkerFunc(ranklMarker),
@@ -1743,7 +1758,7 @@ func foldingRangeMarker(mark marker, g *Golden) {
 
 // formatMarker implements the @format marker.
 func formatMarker(mark marker, golden *Golden) {
-	edits, err := mark.server().Formatting(mark.run.env.Ctx, &protocol.DocumentFormattingParams{
+	edits, err := mark.server().Formatting(mark.ctx(), &protocol.DocumentFormattingParams{
 		TextDocument: mark.document(),
 	})
 	var got []byte
@@ -1868,8 +1883,7 @@ func renameErrMarker(mark marker, loc protocol.Location, newName string, wantErr
 }
 
 func selectionRangeMarker(mark marker, loc protocol.Location, g *Golden) {
-	ctx := mark.run.env.Ctx
-	ranges, err := mark.run.env.Editor.Server.SelectionRange(ctx, &protocol.SelectionRangeParams{
+	ranges, err := mark.run.env.Editor.Server.SelectionRange(mark.ctx(), &protocol.SelectionRangeParams{
 		TextDocument: mark.document(),
 		Positions:    []protocol.Position{loc.Range.Start},
 	})
@@ -2251,7 +2265,7 @@ func codeActionChanges(env *Env, uri protocol.DocumentURI, rng protocol.Range, a
 // refsMarker implements the @refs marker.
 func refsMarker(mark marker, src protocol.Location, want ...protocol.Location) {
 	refs := func(includeDeclaration bool, want []protocol.Location) error {
-		got, err := mark.server().References(mark.run.env.Ctx, &protocol.ReferenceParams{
+		got, err := mark.server().References(mark.ctx(), &protocol.ReferenceParams{
 			TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
 			Context: protocol.ReferenceContext{
 				IncludeDeclaration: includeDeclaration,
@@ -2281,7 +2295,7 @@ func refsMarker(mark marker, src protocol.Location, want ...protocol.Location) {
 
 // implementationMarker implements the @implementation marker.
 func implementationMarker(mark marker, src protocol.Location, want ...protocol.Location) {
-	got, err := mark.server().Implementation(mark.run.env.Ctx, &protocol.ImplementationParams{
+	got, err := mark.server().Implementation(mark.ctx(), &protocol.ImplementationParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
 	})
 	if err != nil {
@@ -2290,6 +2304,82 @@ func implementationMarker(mark marker, src protocol.Location, want ...protocol.L
 	}
 	if err := compareLocations(mark, got, want); err != nil {
 		mark.errorf("implementation: %v", err)
+	}
+}
+
+func itemLocation(item protocol.CallHierarchyItem) protocol.Location {
+	return protocol.Location{
+		URI:   item.URI,
+		Range: item.Range,
+	}
+}
+
+func incomingCallsMarker(mark marker, src protocol.Location, want ...protocol.Location) {
+	getCalls := func(item protocol.CallHierarchyItem) ([]protocol.Location, error) {
+		calls, err := mark.server().IncomingCalls(mark.ctx(), &protocol.CallHierarchyIncomingCallsParams{Item: item})
+		if err != nil {
+			return nil, err
+		}
+		var locs []protocol.Location
+		for _, call := range calls {
+			locs = append(locs, itemLocation(call.From))
+		}
+		return locs, nil
+	}
+	callHierarchy(mark, src, getCalls, want)
+}
+
+func outgoingCallsMarker(mark marker, src protocol.Location, want ...protocol.Location) {
+	getCalls := func(item protocol.CallHierarchyItem) ([]protocol.Location, error) {
+		calls, err := mark.server().OutgoingCalls(mark.ctx(), &protocol.CallHierarchyOutgoingCallsParams{Item: item})
+		if err != nil {
+			return nil, err
+		}
+		var locs []protocol.Location
+		for _, call := range calls {
+			locs = append(locs, itemLocation(call.To))
+		}
+		return locs, nil
+	}
+	callHierarchy(mark, src, getCalls, want)
+}
+
+type callHierarchyFunc = func(protocol.CallHierarchyItem) ([]protocol.Location, error)
+
+func callHierarchy(mark marker, src protocol.Location, getCalls callHierarchyFunc, want []protocol.Location) {
+	items, err := mark.server().PrepareCallHierarchy(mark.ctx(), &protocol.CallHierarchyPrepareParams{
+		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
+	})
+	if err != nil {
+		mark.errorf("PrepareCallHierarchy failed: %v", err)
+		return
+	}
+	if nitems := len(items); nitems != 1 {
+		mark.errorf("PrepareCallHierarchy returned %d items, want exactly 1", nitems)
+		return
+	}
+	if loc := itemLocation(items[0]); loc != src {
+		mark.errorf("PrepareCallHierarchy found call %v, want %v", loc, src)
+		return
+	}
+	calls, err := getCalls(items[0])
+	if err != nil {
+		mark.errorf("call hierarchy failed: %v", err)
+		return
+	}
+	if calls == nil {
+		calls = []protocol.Location{}
+	}
+	// TODO(rfindley): why aren't call hierarchy results stable?
+	sortLocs := func(locs []protocol.Location) {
+		sort.Slice(locs, func(i, j int) bool {
+			return protocol.CompareLocation(locs[i], locs[j]) < 0
+		})
+	}
+	sortLocs(want)
+	sortLocs(calls)
+	if d := cmp.Diff(want, calls); d != "" {
+		mark.errorf("call hierarchy: unexpected results (-want +got):\n%s", d)
 	}
 }
 
@@ -2326,7 +2416,7 @@ func prepareRenameMarker(mark marker, src, spn protocol.Location, placeholder st
 	params := &protocol.PrepareRenameParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
 	}
-	got, err := mark.run.env.Editor.Server.PrepareRename(mark.run.env.Ctx, params)
+	got, err := mark.run.env.Editor.Server.PrepareRename(mark.ctx(), params)
 	if err != nil {
 		mark.run.env.T.Fatal(err)
 	}
@@ -2345,7 +2435,7 @@ func prepareRenameMarker(mark marker, src, spn protocol.Location, placeholder st
 // symbolMarker implements the @symbol marker.
 func symbolMarker(mark marker, golden *Golden) {
 	// Retrieve information about all symbols in this file.
-	symbols, err := mark.server().DocumentSymbol(mark.run.env.Ctx, &protocol.DocumentSymbolParams{
+	symbols, err := mark.server().DocumentSymbol(mark.ctx(), &protocol.DocumentSymbolParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: mark.uri()},
 	})
 	if err != nil {
@@ -2434,7 +2524,7 @@ func workspaceSymbolMarker(mark marker, query string, golden *Golden) {
 		Query: query,
 	}
 
-	gotSymbols, err := mark.server().Symbol(mark.run.env.Ctx, params)
+	gotSymbols, err := mark.server().Symbol(mark.ctx(), params)
 	if err != nil {
 		mark.errorf("Symbol(%q) failed: %v", query, err)
 		return
