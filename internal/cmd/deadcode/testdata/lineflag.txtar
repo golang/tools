@@ -1,9 +1,9 @@
 # Test of line-oriented output.
 
- deadcode "-f={{range .Funcs}}{{println .Name}}{{end}}" -filter= example.com
+ deadcode `-f={{range .Funcs}}{{printf "%s.%s\n" $.Path .Name}}{{end}}` -filter= example.com
 
- want "(example.com.T).Goodbye"
-!want "(example.com.T).Hello"
+ want "example.com.T.Goodbye"
+!want "example.com.T.Hello"
  want "example.com.unreferenced"
 
  want "fmt.Scanf"

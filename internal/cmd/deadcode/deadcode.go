@@ -189,7 +189,10 @@ func main() {
 	if *whyLiveFlag != "" {
 		targets := make(map[*ssa.Function]bool)
 		for fn := range ssautil.AllFunctions(prog) {
-			if fn.String() == *whyLiveFlag {
+			if fn.Synthetic != "" || fn.Object() == nil {
+				continue // not a source-level named function
+			}
+			if prettyName(fn, true) == *whyLiveFlag {
 				targets[fn] = true
 			}
 		}
@@ -220,6 +223,7 @@ func main() {
 			log.Fatalf("function %s is dead code", *whyLiveFlag)
 		}
 
+		res.CallGraph.DeleteSyntheticNodes() // inline synthetic wrappers (except inits)
 		root, path := pathSearch(roots, res, targets)
 		if root == nil {
 			// RTA doesn't add callgraph edges for reflective calls.
@@ -236,13 +240,13 @@ func main() {
 		var edges []any
 		for _, edge := range path {
 			edges = append(edges, jsonEdge{
-				Initial: cond(len(edges) == 0, edge.Caller.Func.String(), ""),
-				Kind:    cond(isStaticCall(edge), "static", "dynamic"),
-				Posn:    toJSONPosition(prog.Fset.Position(edge.Site.Pos())),
-				Callee:  edge.Callee.Func.String(),
+				Initial:  cond(len(edges) == 0, prettyName(edge.Caller.Func, true), ""),
+				Kind:     cond(isStaticCall(edge), "static", "dynamic"),
+				Position: toJSONPosition(prog.Fset.Position(edge.Site.Pos())),
+				Callee:   prettyName(edge.Callee.Func, true),
 			})
 		}
-		format := `{{if .Initial}}{{printf "%19s%s\n" "" .Initial}}{{end}}{{printf "%8s@L%.4d --> %s" .Kind .Posn.Line .Callee}}`
+		format := `{{if .Initial}}{{printf "%19s%s\n" "" .Initial}}{{end}}{{printf "%8s@L%.4d --> %s" .Kind .Position.Line .Callee}}`
 		if *formatFlag != "" {
 			format = *formatFlag
 		}
@@ -325,9 +329,8 @@ func main() {
 			}
 
 			functions = append(functions, jsonFunction{
-				Name:      fn.String(),
-				RelName:   fn.RelString(fn.Pkg.Pkg),
-				Posn:      toJSONPosition(posn),
+				Name:      prettyName(fn, false),
+				Position:  toJSONPosition(posn),
 				Generated: gen,
 			})
 		}
@@ -340,11 +343,54 @@ func main() {
 	}
 
 	// Default format: functions grouped by package.
-	format := `{{println .Path}}{{range .Funcs}}{{printf "\t%s\n" .RelName}}{{end}}{{println}}`
+	format := `{{println .Path}}{{range .Funcs}}{{printf "\t%s\n" .Name}}{{end}}{{println}}`
 	if *formatFlag != "" {
 		format = *formatFlag
 	}
 	printObjects(format, packages)
+}
+
+// prettyName is a fork of Function.String designed to reduce
+// go/ssa's fussy punctuation symbols, e.g. "(*pkg.T).F" -> "pkg.T.F".
+//
+// It only works for functions that remain after
+// callgraph.Graph.DeleteSyntheticNodes: source-level named functions
+// and methods, their anonymous functions, and synthetic package
+// initializers.
+func prettyName(fn *ssa.Function, qualified bool) string {
+	var buf strings.Builder
+
+	// optional package qualifier
+	if qualified && fn.Pkg != nil {
+		fmt.Fprintf(&buf, "%s.", fn.Pkg.Pkg.Path())
+	}
+
+	var format func(*ssa.Function)
+	format = func(fn *ssa.Function) {
+		// anonymous?
+		if fn.Parent() != nil {
+			format(fn.Parent())
+			i := index(fn.Parent().AnonFuncs, fn)
+			fmt.Fprintf(&buf, "$%d", i+1)
+			return
+		}
+
+		// method receiver?
+		if recv := fn.Signature.Recv(); recv != nil {
+			t := recv.Type()
+			if ptr, ok := t.(*types.Pointer); ok {
+				t = ptr.Elem()
+			}
+			buf.WriteString(t.(*types.Named).Obj().Name())
+			buf.WriteByte('.')
+		}
+
+		// function/method name
+		buf.WriteString(fn.Name())
+	}
+	format(fn)
+
+	return buf.String()
 }
 
 // printObjects formats an array of objects, either as JSON or using a
@@ -480,6 +526,11 @@ func pathSearch(roots []*ssa.Function, res *rta.Result, targets map[*ssa.Functio
 		}
 		for _, rootFn := range roots {
 			root := res.CallGraph.Nodes[rootFn]
+			if root == nil {
+				// Missing call graph node for root.
+				// TODO(adonovan): seems like a bug in rta.
+				continue
+			}
 			if path := bfs(root); path != nil {
 				return root, path
 			}
@@ -519,9 +570,8 @@ func cond[T any](cond bool, t, f T) T {
 // Keep in sync with doc comment!
 
 type jsonFunction struct {
-	Name      string       // name (with package qualifier)
-	RelName   string       // name (sans package qualifier)
-	Posn      jsonPosition // file/line/column of declaration
+	Name      string       // name (sans package qualifier)
+	Position  jsonPosition // file/line/column of declaration
 	Generated bool         // function is declared in a generated .go file
 }
 
@@ -534,11 +584,12 @@ type jsonPackage struct {
 
 func (p jsonPackage) String() string { return p.Path }
 
+// The Initial and Callee names are package-qualified.
 type jsonEdge struct {
-	Initial string `json:",omitempty"` // initial entrypoint (main or init); first edge only
-	Kind    string // = static | dynamic
-	Posn    jsonPosition
-	Callee  string
+	Initial  string `json:",omitempty"` // initial entrypoint (main or init); first edge only
+	Kind     string // = static | dynamic
+	Position jsonPosition
+	Callee   string
 }
 
 type jsonPosition struct {
@@ -561,6 +612,15 @@ func containsFunc[S ~[]E, E any](s S, f func(E) bool) bool {
 func indexFunc[S ~[]E, E any](s S, f func(E) bool) int {
 	for i := range s {
 		if f(s[i]) {
+			return i
+		}
+	}
+	return -1
+}
+
+func index[S ~[]E, E comparable](s S, v E) int {
+	for i := range s {
+		if v == s[i] {
 			return i
 		}
 	}

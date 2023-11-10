@@ -2,8 +2,10 @@
 
  deadcode -filter= example.com
 
- want "(T).Goodbye"
-!want "(T).Hello"
+ want "T.Goodbye"
+ want "T.Goodbye2"
+ want "T.Goodbye3"
+!want "T.Hello"
  want "unreferenced"
 
  want "Scanf"
@@ -28,5 +30,9 @@ func main() {
 
 func (T) Hello() { fmt.Println("hello") }
 func (T) Goodbye() { fmt.Println("goodbye") }
+func (*T) Goodbye2() { fmt.Println("goodbye2") }
+func (*A) Goodbye3() { fmt.Println("goodbye3") }
+
+type A = T
 
 func unreferenced() {}

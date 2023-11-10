@@ -26,6 +26,37 @@
 !deadcode -whylive=example.com.main example.com
  want "example.com.main is a root"
 
+# Test of path through (*T).m method wrapper.
+
+ deadcode -whylive=example.com/p.live example.com/p
+ want "                 example.com/p.main"
+ want "static@L0006 --> example.com/p.E.Error"
+ want "static@L0010 --> example.com/p.live"
+
+# Test of path through (I).m interface method wrapper (thunk).
+
+ deadcode -whylive=example.com/q.live example.com/q
+ want "                 example.com/q.main"
+ want "static@L0006 --> example.com/q.E.Error"
+ want "static@L0010 --> example.com/q.live"
+
+# Test of path through synthetic package initializer,
+# a declared package initializer, and its anonymous function.
+
+ deadcode -whylive=example.com/q.live2 example.com/q
+ want "                 example.com/q.init"
+ want "static@L0000 --> example.com/q.init#1"
+ want "static@L0016 --> example.com/q.init#1$1"
+ want "static@L0015 --> example.com/q.live2"
+
+# Test of path through synthetic package initializer,
+# and a global var initializer.
+
+ deadcode -whylive=example.com/r.live example.com/r
+ want "                 example.com/r.init"
+ want "static@L0007 --> example.com/r.init$1"
+ want "static@L0006 --> example.com/r.live"
+
 -- go.mod --
 module example.com
 go 1.18
@@ -54,3 +85,49 @@ func f()
 func init() {
      (func ())(nil)() // potential dynamic call to c, e
 }
+
+-- p/p.go --
+package main
+
+func main() {
+	f := (*E).Error
+	var e E
+	f(&e)
+}
+
+type E int
+func (E) Error() string { return live() }
+
+func live() string
+
+-- q/q.go --
+package main
+
+func main() {
+	f := error.Error
+	var e E
+	f(e)
+}
+
+type E int
+func (E) Error() string { return live() }
+
+func live() string
+
+func init() {
+	f := func() { live2() }
+	f()
+}
+
+func live2()
+
+-- r/r.go --
+package main
+
+func main() {}
+
+var x = func() int {
+	return live()
+}()
+
+func live() int

@@ -3,8 +3,7 @@
 deadcode -json example.com/p
 
  want `"Path": "example.com/p",`
- want `"Name": "example.com/p.Dead",`
- want `"RelName": "Dead",`
+ want `"Name": "DeadFunc",`
  want `"Generated": false`
  want `"Line": 5,`
  want `"Col": 6`
@@ -18,4 +17,7 @@ package main
 
 func main() {}
 
-func Dead() {}
+func DeadFunc() {}
+
+type T int
+func (*T) DeadMethod() {}

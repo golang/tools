@@ -45,8 +45,8 @@ https://go.dev/s/generatedcode. Use the -generated flag to include them.
 
 In any case, just because a function is reported as dead does not mean
 it is unconditionally safe to delete it. For example, a dead function
-may be referenced (by another dead function), and a dead method may be
-required to satisfy an interface (that is never called).
+may be referenced by another dead function, and a dead method may be
+required to satisfy an interface that is never called.
 Some judgement is required.
 
 The analysis is valid only for a single GOOS/GOARCH/-tags configuration,
@@ -68,11 +68,11 @@ With the -f=template flag, the command executes the specified template
 on each Package record. So, this template produces a result similar to the
 default format:
 
-	-f='{{println .Path}}{{range .Funcs}}{{printf "\t%s\n" .RelName}}{{end}}{{println}}'
+	-f='{{println .Path}}{{range .Funcs}}{{printf "\t%s\n" .Name}}{{end}}{{println}}'
 
 And this template shows only the list of source positions of dead functions:
 
-	-f='{{range .Funcs}}{{println .Posn}}{{end}}'
+	-f='{{range .Funcs}}{{println .Position}}{{end}}'
 
 # Why is a function not dead?
 
@@ -92,13 +92,14 @@ the formatting of the list of Edge objects.
 The default format shows, for each edge in the path, whether the call
 is static or dynamic, and its source line number. For example:
 
-	$ deadcode -whylive="(*bytes.Buffer).String" -test ./internal/cmd/deadcode/...
-	                  golang.org/x/tools/internal/cmd/deadcode.main
-	 static@L0321 --> (*golang.org/x/tools/go/ssa.Function).RelString
-	 static@L0428 --> (*golang.org/x/tools/go/ssa.Function).relMethod
-	 static@L0452 --> golang.org/x/tools/go/ssa.relType
-	 static@L0047 --> go/types.TypeString
-	 static@L0051 --> (*bytes.Buffer).String
+	$ deadcode -whylive=bytes.Buffer.String -test ./internal/cmd/deadcode/...
+	                 golang.org/x/tools/internal/cmd/deadcode.main
+	static@L0117 --> golang.org/x/tools/go/packages.Load
+	static@L0262 --> golang.org/x/tools/go/packages.defaultDriver
+	static@L0305 --> golang.org/x/tools/go/packages.goListDriver
+	static@L0153 --> golang.org/x/tools/go/packages.goListDriver$1
+	static@L0154 --> golang.org/x/tools/go/internal/packagesdriver.GetSizesForArgsGolist
+	static@L0044 --> bytes.Buffer.String
 
 # JSON schema
 
@@ -108,26 +109,21 @@ is static or dynamic, and its source line number. For example:
 	}
 
 	type Function struct {
-		Name      string   // name (with package qualifier)
-		RelName   string   // name (sans package qualifier)
-		Posn      Position // file/line/column of function declaration
+		Name      string   // name (sans package qualifier)
+		Position  Position // file/line/column of function declaration
 		Generated bool     // function is declared in a generated .go file
 	}
 
 	type Edge struct {
-		Initial string     // initial entrypoint (main or init); first edge only
-		Kind    string     // = static | dynamic
-		Posn    Position   // file/line/column of call site
-		Callee  string     // target of the call
+		Initial  string    // initial entrypoint (main or init); first edge only
+		Kind     string    // = static | dynamic
+		Position Position  // file/line/column of call site
+		Callee   string    // target of the call
 	}
 
 	type Position struct {
 		File      string   // name of file
 		Line, Col int      // line and byte index, both 1-based
 	}
-
-THIS TOOL IS EXPERIMENTAL and its interface may change.
-At some point it may be published at cmd/deadcode.
-In the meantime, please give us feedback at github.com/golang/go/issues.
 */
 package main
