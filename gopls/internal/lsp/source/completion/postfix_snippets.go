@@ -74,6 +74,7 @@ type postfixTmplArgs struct {
 	edits          []protocol.TextEdit
 	qf             types.Qualifier
 	varNames       map[string]bool
+	placeholders   bool
 }
 
 var postfixTmpls = []postfixTmpl{{
@@ -103,7 +104,23 @@ for {{$i}}, {{$j}} := 0, len({{.X}})-1; {{$i}} < {{$j}}; {{$i}}, {{$j}} = {{$i}}
 	label:   "range",
 	details: "range over slice",
 	body: `{{if and (eq .Kind "slice") .StmtOK -}}
-for {{.VarName nil "i"}}, {{.VarName .ElemType "v"}} := range {{.X}} {
+for {{.VarName nil "i" | .Placeholder }}, {{.VarName .ElemType "v" | .Placeholder}} := range {{.X}} {
+	{{.Cursor}}
+}
+{{- end}}`,
+}, {
+	label:   "for",
+	details: "range over slice by index",
+	body: `{{if and (eq .Kind "slice") .StmtOK -}}
+for {{ .VarName nil "i" | .Placeholder }} := range {{.X}} {
+	{{.Cursor}}
+}
+{{- end}}`,
+}, {
+	label:   "forr",
+	details: "range over slice by index and value",
+	body: `{{if and (eq .Kind "slice") .StmtOK -}}
+for {{.VarName nil "i" | .Placeholder }}, {{.VarName .ElemType "v" | .Placeholder }} := range {{.X}} {
 	{{.Cursor}}
 }
 {{- end}}`,
@@ -130,7 +147,23 @@ copy({{$v}}, {{.X}})
 	label:   "range",
 	details: "range over map",
 	body: `{{if and (eq .Kind "map") .StmtOK -}}
-for {{.VarName .KeyType "k"}}, {{.VarName .ElemType "v"}} := range {{.X}} {
+for {{.VarName .KeyType "k" | .Placeholder}}, {{.VarName .ElemType "v" | .Placeholder}} := range {{.X}} {
+	{{.Cursor}}
+}
+{{- end}}`,
+}, {
+	label:   "for",
+	details: "range over map by key",
+	body: `{{if and (eq .Kind "map") .StmtOK -}}
+for {{.VarName .KeyType "k" | .Placeholder}} := range {{.X}} {
+	{{.Cursor}}
+}
+{{- end}}`,
+}, {
+	label:   "forr",
+	details: "range over map by key and value",
+	body: `{{if and (eq .Kind "map") .StmtOK -}}
+for {{.VarName .KeyType "k" | .Placeholder}}, {{.VarName .ElemType "v" | .Placeholder}} := range {{.X}} {
 	{{.Cursor}}
 }
 {{- end}}`,
@@ -155,7 +188,15 @@ for {{.VarName .KeyType "k"}}, {{.VarName .ElemType "v"}} := range {{.X}} {
 	label:   "range",
 	details: "range over channel",
 	body: `{{if and (eq .Kind "chan") .StmtOK -}}
-for {{.VarName .ElemType "e"}} := range {{.X}} {
+for {{.VarName .ElemType "e" | .Placeholder}} := range {{.X}} {
+	{{.Cursor}}
+}
+{{- end}}`,
+}, {
+	label:   "for",
+	details: "range over channel",
+	body: `{{if and (eq .Kind "chan") .StmtOK -}}
+for {{.VarName .ElemType "e" | .Placeholder}} := range {{.X}} {
 	{{.Cursor}}
 }
 {{- end}}`,
@@ -163,13 +204,13 @@ for {{.VarName .ElemType "e"}} := range {{.X}} {
 	label:   "var",
 	details: "assign to variables",
 	body: `{{if and (eq .Kind "tuple") .StmtOK -}}
-{{$a := .}}{{range $i, $v := .Tuple}}{{if $i}}, {{end}}{{$a.VarName $v.Type $v.Name}}{{end}} := {{.X}}
+{{$a := .}}{{range $i, $v := .Tuple}}{{if $i}}, {{end}}{{$a.VarName $v.Type $v.Name | $a.Placeholder }}{{end}} := {{.X}}
 {{- end}}`,
 }, {
 	label:   "var",
 	details: "assign to variable",
 	body: `{{if and (ne .Kind "tuple") .StmtOK -}}
-{{.VarName .Type ""}} := {{.X}}
+{{.VarName .Type "" | .Placeholder }} := {{.X}}
 {{- end}}`,
 }, {
 	label:   "print",
@@ -199,9 +240,15 @@ for {{.VarName .ElemType "e"}} := range {{.X}} {
 	label:   "ifnotnil",
 	details: "if expr != nil",
 	body: `{{if and (or (eq .Kind "pointer") (eq .Kind "chan") (eq .Kind "signature") (eq .Kind "interface") (eq .Kind "map") (eq .Kind "slice")) .StmtOK -}}
-if {{.X}} != nil {{"{"}}
+if {{.X}} != nil {
 	{{.Cursor}}
-{{"}"}}
+}
+{{- end}}`,
+}, {
+	label:   "len",
+	details: "len(s)",
+	body: `{{if (eq .Kind "slice" "map" "array" "chan") -}}
+len({{.X}})
 {{- end}}`,
 }}
 
@@ -209,6 +256,19 @@ if {{.X}} != nil {{"{"}}
 // snippet is done.
 func (a *postfixTmplArgs) Cursor() string {
 	a.snip.WriteFinalTabstop()
+	return ""
+}
+
+// Placeholder indicate a tab stops with the placeholder string, the order
+// of tab stops is the same as the order of invocation
+func (a *postfixTmplArgs) Placeholder(s string) string {
+	if a.placeholders {
+		a.snip.WritePlaceholder(func(b *snippet.Builder) {
+			b.WriteText(s)
+		})
+	} else {
+		a.snip.WritePlaceholder(nil)
+	}
 	return ""
 }
 
@@ -399,6 +459,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 			importIfNeeded: c.importIfNeeded,
 			scope:          scope,
 			varNames:       make(map[string]bool),
+			placeholders:   c.opts.placeholders,
 		}
 
 		// Feed the template straight into the snippet builder. This

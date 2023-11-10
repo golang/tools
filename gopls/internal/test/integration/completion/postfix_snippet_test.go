@@ -20,8 +20,9 @@ go 1.12
 `
 
 	cases := []struct {
-		name          string
-		before, after string
+		name              string
+		before, after     string
+		allowMultipleItem bool
 	}{
 		{
 			name: "sort",
@@ -133,7 +134,7 @@ package foo
 func _() {
 	type myThing struct{}
 	var foo []myThing
-	for i, mt := range foo {
+	for ${1:}, ${2:} := range foo {
 	$0
 }
 }
@@ -213,7 +214,7 @@ package foo
 
 func _() {
 	var foo map[string]int
-	for k, v := range foo {
+	for ${1:}, ${2:} := range foo {
 	$0
 }
 }
@@ -279,7 +280,7 @@ package foo
 
 func _() {
 	foo := make(chan int)
-	for e := range foo {
+	for ${1:} := range foo {
 	$0
 }
 }
@@ -302,7 +303,7 @@ package foo
 func foo() (int, error) { return 0, nil }
 
 func _() {
-	i, err := foo()
+	${1:}, ${2:} := foo()
 }
 `,
 		},
@@ -323,7 +324,7 @@ package foo
 func foo() error { return nil }
 
 func _() {
-	err := foo()
+	${1:} := foo()
 }
 `,
 		},
@@ -344,7 +345,7 @@ package foo
 func foo() (int, int) { return 0, 0 }
 
 func _() {
-	i, i2 := foo()
+	${1:}, ${2:} := foo()
 }
 `,
 		},
@@ -556,6 +557,173 @@ func _() {
 }
 `,
 		},
+		{
+			name: "slice_len",
+			before: `
+package foo
+
+func _() {
+	var foo []int
+	foo.len
+}
+`,
+			after: `
+package foo
+
+func _() {
+	var foo []int
+	len(foo)
+}
+`,
+		},
+		{
+			name: "map_len",
+			before: `
+package foo
+
+func _() {
+	var foo map[string]int
+	foo.len
+}
+`,
+			after: `
+package foo
+
+func _() {
+	var foo map[string]int
+	len(foo)
+}
+`,
+		},
+		{
+			name:              "slice_for",
+			allowMultipleItem: true,
+			before: `
+package foo
+
+func _() {
+	var foo []int
+	foo.for
+}
+`,
+			after: `
+package foo
+
+func _() {
+	var foo []int
+	for ${1:} := range foo {
+	$0
+}
+}
+`,
+		},
+		{
+			name:              "map_for",
+			allowMultipleItem: true,
+			before: `
+package foo
+
+func _() {
+	var foo map[string]int
+	foo.for
+}
+`,
+			after: `
+package foo
+
+func _() {
+	var foo map[string]int
+	for ${1:} := range foo {
+	$0
+}
+}
+`,
+		},
+		{
+			name:              "chan_for",
+			allowMultipleItem: true,
+			before: `
+package foo
+
+func _() {
+	var foo chan int
+	foo.for
+}
+`,
+			after: `
+package foo
+
+func _() {
+	var foo chan int
+	for ${1:} := range foo {
+	$0
+}
+}
+`,
+		},
+		{
+			name: "slice_forr",
+			before: `
+package foo
+
+func _() {
+	var foo []int
+	foo.forr
+}
+`,
+			after: `
+package foo
+
+func _() {
+	var foo []int
+	for ${1:}, ${2:} := range foo {
+	$0
+}
+}
+`,
+		},
+		{
+			name: "slice_forr",
+			before: `
+package foo
+
+func _() {
+	var foo []int
+	foo.forr
+}
+`,
+			after: `
+package foo
+
+func _() {
+	var foo []int
+	for ${1:}, ${2:} := range foo {
+	$0
+}
+}
+`,
+		},
+		{
+			name: "map_forr",
+			before: `
+package foo
+
+func _() {
+	var foo map[string]int
+	foo.forr
+}
+`,
+			after: `
+package foo
+
+func _() {
+	var foo map[string]int
+	for ${1:}, ${2:} := range foo {
+	$0
+}
+}
+`,
+		},
 	}
 
 	r := WithOptions(
@@ -575,7 +743,10 @@ func _() {
 
 				loc := env.RegexpSearch("foo.go", "\n}")
 				completions := env.Completion(loc)
-				if len(completions.Items) != 1 {
+				if len(completions.Items) < 1 {
+					t.Fatalf("expected at least one completion, got %v", completions.Items)
+				}
+				if !c.allowMultipleItem && len(completions.Items) > 1 {
 					t.Fatalf("expected one completion, got %v", completions.Items)
 				}
 
