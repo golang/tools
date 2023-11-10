@@ -390,10 +390,6 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //
 // # TODO
 //
-// This API is a work-in-progress, as we migrate existing marker tests from
-// internal/lsp/tests.
-//
-// Remaining TODO:
 //   - reorganize regtest packages (and rename to just 'test'?)
 //   - Rename the files .txtar.
 //   - Provide some means by which locations in the standard library
@@ -403,10 +399,6 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //     multiple variations of a marker, it would be nice to support a more
 //     flexible signature: can codeaction, codeactionedit, codeactionerr, and
 //     suggestedfix be consolidated?
-//
-// Existing marker tests (in ../testdata) to port:
-//   - CallHierarchy
-//   - InlayHints
 func RunMarkerTests(t *testing.T, dir string) {
 	// The marker tests must be able to run go/packages.Load.
 	testenv.NeedsGoPackages(t)
@@ -573,13 +565,36 @@ type marker struct {
 }
 
 // ctx returns the mark context.
-func (m marker) ctx() context.Context {
-	return m.run.env.Ctx
-}
+func (m marker) ctx() context.Context { return m.run.env.Ctx }
+
+// T returns the testing.TB for this mark.
+func (m marker) T() testing.TB { return m.run.env.T }
 
 // server returns the LSP server for the marker test run.
-func (m marker) server() protocol.Server {
-	return m.run.env.Editor.Server
+func (m marker) server() protocol.Server { return m.run.env.Editor.Server }
+
+// uri returns the URI of the file containing the marker.
+func (mark marker) uri() protocol.DocumentURI {
+	return mark.run.env.Sandbox.Workdir.URI(mark.run.test.fset.File(mark.note.Pos).Name())
+}
+
+// document returns a protocol.TextDocumentIdentifier for the current file.
+func (mark marker) document() protocol.TextDocumentIdentifier {
+	return protocol.TextDocumentIdentifier{URI: mark.uri()}
+}
+
+// path returns the relative path to the file containing the marker.
+func (mark marker) path() string {
+	return mark.run.env.Sandbox.Workdir.RelPath(mark.run.test.fset.File(mark.note.Pos).Name())
+}
+
+// mapper returns a *protocol.Mapper for the current file.
+func (mark marker) mapper() *protocol.Mapper {
+	mapper, err := mark.run.env.Editor.Mapper(mark.path())
+	if err != nil {
+		mark.T().Fatalf("failed to get mapper for current mark: %v", err)
+	}
+	return mapper
 }
 
 // errorf reports an error with a prefix indicating the position of the marker note.
@@ -591,7 +606,7 @@ func (mark marker) errorf(format string, args ...any) {
 	// t.Errorf to avoid reporting uninteresting positions in the Go source of
 	// the driver. However, this loses the order of stderr wrt "FAIL: TestFoo"
 	// subtest dividers.
-	mark.run.env.T.Errorf("%s: %s", mark.run.fmtPos(mark.note.Pos), msg)
+	mark.T().Errorf("%s: %s", mark.run.fmtPos(mark.note.Pos), msg)
 }
 
 // valueMarkerFunc returns a wrapper around a function that allows it to be
@@ -1143,30 +1158,6 @@ func (c *marker) sprintf(format string, args ...any) string {
 	return fmt.Sprintf(format, args2...)
 }
 
-// uri returns the URI of the file containing the marker.
-func (mark marker) uri() protocol.DocumentURI {
-	return mark.run.env.Sandbox.Workdir.URI(mark.run.test.fset.File(mark.note.Pos).Name())
-}
-
-// document returns a protocol.TextDocumentIdentifier for the current file.
-func (mark marker) document() protocol.TextDocumentIdentifier {
-	return protocol.TextDocumentIdentifier{URI: mark.uri()}
-}
-
-// path returns the relative path to the file containing the marker.
-func (mark marker) path() string {
-	return mark.run.env.Sandbox.Workdir.RelPath(mark.run.test.fset.File(mark.note.Pos).Name())
-}
-
-// mapper returns a *protocol.Mapper for the current file.
-func (mark marker) mapper() *protocol.Mapper {
-	mapper, err := mark.run.env.Editor.Mapper(mark.path())
-	if err != nil {
-		mark.run.env.T.Fatalf("failed to get mapper for current mark: %v", err)
-	}
-	return mapper
-}
-
 // fmtLoc formats the given pos in the context of the test, using
 // archive-relative paths for files and including the line number in the full
 // archive file.
@@ -1414,7 +1405,7 @@ func (we wantError) check(mark marker, err error) {
 
 	if we.golden != nil {
 		// Error message must match @id golden file.
-		wantBytes, ok := we.golden.Get(mark.run.env.T, "", []byte(got))
+		wantBytes, ok := we.golden.Get(mark.T(), "", []byte(got))
 		if !ok {
 			mark.errorf("@%s: missing @%s entry", mark.note.Name, we.golden.id)
 			return
@@ -1442,7 +1433,7 @@ func (we wantError) check(mark marker, err error) {
 func checkChangedFiles(mark marker, changed map[string][]byte, golden *Golden) {
 	// Check changed files match expectations.
 	for filename, got := range changed {
-		if want, ok := golden.Get(mark.run.env.T, filename, got); !ok {
+		if want, ok := golden.Get(mark.T(), filename, got); !ok {
 			mark.errorf("%s: unexpected change to file %s; got:\n%s",
 				mark.note.Name, filename, got)
 
@@ -1456,7 +1447,7 @@ func checkChangedFiles(mark marker, changed map[string][]byte, golden *Golden) {
 	// Report unmet expectations.
 	for filename := range golden.data {
 		if _, ok := changed[filename]; !ok {
-			want, _ := golden.Get(mark.run.env.T, filename, nil)
+			want, _ := golden.Get(mark.T(), filename, nil)
 			mark.errorf("%s: missing change to file %s; want:\n%s",
 				mark.note.Name, filename, want)
 		}
@@ -1486,7 +1477,7 @@ func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
 	}
 	// Check changed files match expectations.
 	for filename, got := range diffs {
-		if want, ok := golden.Get(mark.run.env.T, filename, []byte(got)); !ok {
+		if want, ok := golden.Get(mark.T(), filename, []byte(got)); !ok {
 			mark.errorf("%s: unexpected change to file %s; got diff:\n%s",
 				mark.note.Name, filename, got)
 
@@ -1498,7 +1489,7 @@ func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
 	// Report unmet expectations.
 	for filename := range golden.data {
 		if _, ok := changed[filename]; !ok {
-			want, _ := golden.Get(mark.run.env.T, filename, nil)
+			want, _ := golden.Get(mark.T(), filename, nil)
 			mark.errorf("%s: missing change to file %s; want:\n%s",
 				mark.note.Name, filename, want)
 		}
@@ -1750,7 +1741,7 @@ func foldingRangeMarker(mark marker, g *Golden) {
 		mark.errorf("ApplyProtocolEdits failed: %v", err)
 		return
 	}
-	want, _ := g.Get(mark.run.env.T, "", got)
+	want, _ := g.Get(mark.T(), "", got)
 	if diff := compare.Bytes(want, got); diff != "" {
 		mark.errorf("foldingRange mismatch:\n%s", diff)
 	}
@@ -1823,7 +1814,7 @@ func hoverMarker(mark marker, src, dst protocol.Location, golden *Golden) {
 	}
 	wantMD := ""
 	if golden != nil {
-		wantBytes, _ := golden.Get(mark.run.env.T, "hover.md", []byte(gotMD))
+		wantBytes, _ := golden.Get(mark.T(), "hover.md", []byte(gotMD))
 		wantMD = string(wantBytes)
 	}
 	// Normalize newline termination: archive files can't express non-newline
@@ -1883,7 +1874,7 @@ func renameErrMarker(mark marker, loc protocol.Location, newName string, wantErr
 }
 
 func selectionRangeMarker(mark marker, loc protocol.Location, g *Golden) {
-	ranges, err := mark.run.env.Editor.Server.SelectionRange(mark.ctx(), &protocol.SelectionRangeParams{
+	ranges, err := mark.server().SelectionRange(mark.ctx(), &protocol.SelectionRangeParams{
 		TextDocument: mark.document(),
 		Positions:    []protocol.Position{loc.Range.Start},
 	})
@@ -2416,9 +2407,9 @@ func prepareRenameMarker(mark marker, src, spn protocol.Location, placeholder st
 	params := &protocol.PrepareRenameParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
 	}
-	got, err := mark.run.env.Editor.Server.PrepareRename(mark.ctx(), params)
+	got, err := mark.server().PrepareRename(mark.ctx(), params)
 	if err != nil {
-		mark.run.env.T.Fatal(err)
+		mark.T().Fatal(err)
 	}
 	if placeholder == "" {
 		if got != nil {
@@ -2451,7 +2442,7 @@ func symbolMarker(mark marker, golden *Golden) {
 		// so we ascertain which one and then transcode.
 		data, err := json.Marshal(symbol)
 		if err != nil {
-			mark.run.env.T.Fatal(err)
+			mark.T().Fatal(err)
 		}
 		if _, ok := symbol.(map[string]any)["location"]; ok {
 			// This case is not reached because Editor initialization
@@ -2459,14 +2450,14 @@ func symbolMarker(mark marker, golden *Golden) {
 			// TODO(adonovan): test this too.
 			var sym protocol.SymbolInformation
 			if err := json.Unmarshal(data, &sym); err != nil {
-				mark.run.env.T.Fatal(err)
+				mark.T().Fatal(err)
 			}
 			mark.errorf("fake Editor doesn't support SymbolInformation")
 
 		} else {
 			var sym protocol.DocumentSymbol // new hierarchical hotness
 			if err := json.Unmarshal(data, &sym); err != nil {
-				mark.run.env.T.Fatal(err)
+				mark.T().Fatal(err)
 			}
 
 			// Print each symbol in the response tree.
@@ -2492,7 +2483,7 @@ func symbolMarker(mark marker, golden *Golden) {
 	got := []byte(strings.Join(lines, "\n"))
 
 	// Compare with golden.
-	want, ok := golden.Get(mark.run.env.T, "", got)
+	want, ok := golden.Get(mark.T(), "", got)
 	if !ok {
 		mark.errorf("%s: missing golden file @%s", mark.note.Name, golden.id)
 	} else if diff := cmp.Diff(string(got), string(want)); diff != "" {
@@ -2550,7 +2541,7 @@ func workspaceSymbolMarker(mark marker, query string, golden *Golden) {
 //
 // TODO(rfindley): use this helper in more places.
 func compareGolden(mark marker, op string, got []byte, g *Golden) {
-	want, ok := g.Get(mark.run.env.T, "", got)
+	want, ok := g.Get(mark.T(), "", got)
 	if !ok {
 		mark.errorf("missing golden file @%s", g.id)
 		return
