@@ -371,12 +371,6 @@ func (s *Session) dropView(v *View) int {
 	return -1
 }
 
-func (s *Session) ModifyFiles(ctx context.Context, changes []source.FileModification) error {
-	_, release, err := s.DidModifyFiles(ctx, changes)
-	release()
-	return err
-}
-
 // ResetView resets the best view for the given URI.
 func (s *Session) ResetView(ctx context.Context, uri span.URI) (*View, error) {
 	s.viewMu.Lock()
