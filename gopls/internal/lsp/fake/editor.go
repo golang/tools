@@ -255,9 +255,10 @@ func (e *Editor) initialize(ctx context.Context) error {
 
 	params := &protocol.ParamInitialize{}
 	if e.config.ClientName != "" {
-		params.ClientInfo = &protocol.Msg_XInitializeParams_clientInfo{}
-		params.ClientInfo.Name = e.config.ClientName
-		params.ClientInfo.Version = "v1.0.0"
+		params.ClientInfo = &protocol.ClientInfo{
+			Name:    e.config.ClientName,
+			Version: "v1.0.0",
+		}
 	}
 	params.InitializationOptions = makeSettings(e.sandbox, config)
 	params.WorkspaceFolders = makeWorkspaceFolders(e.sandbox, config.WorkspaceFolders)
@@ -265,9 +266,10 @@ func (e *Editor) initialize(ctx context.Context) error {
 	// Set various client capabilities that are sought by gopls.
 	params.Capabilities.Workspace.Configuration = true // support workspace/configuration
 	params.Capabilities.Window.WorkDoneProgress = true // support window/workDoneProgress
+	params.Capabilities.TextDocument.Completion.CompletionItem.TagSupport = &protocol.CompletionItemTagOptions{}
 	params.Capabilities.TextDocument.Completion.CompletionItem.TagSupport.ValueSet = []protocol.CompletionItemTag{protocol.ComplDeprecated}
 	params.Capabilities.TextDocument.Completion.CompletionItem.SnippetSupport = true
-	params.Capabilities.TextDocument.SemanticTokens.Requests.Full.Value = true
+	params.Capabilities.TextDocument.SemanticTokens.Requests.Full = &protocol.Or_ClientSemanticTokensRequestOptions_full{Value: true}
 	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = []string{
 		"namespace", "type", "class", "enum", "interface",
 		"struct", "typeParameter", "parameter", "variable", "property", "enumMember",

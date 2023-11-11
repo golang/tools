@@ -188,14 +188,14 @@ See https://github.com/golang/go/issues/45732 for more information.`,
 					IncludeText: false,
 				},
 			},
-			Workspace: &protocol.Workspace6Gn{
+			Workspace: &protocol.WorkspaceOptions{
 				WorkspaceFolders: &protocol.WorkspaceFolders5Gn{
 					Supported:           true,
 					ChangeNotifications: "workspace/didChangeWorkspaceFolders",
 				},
 			},
 		},
-		ServerInfo: &protocol.PServerInfoMsg_initialize{
+		ServerInfo: &protocol.ServerInfo{
 			Name:    "gopls",
 			Version: string(goplsVersion),
 		},
@@ -471,9 +471,10 @@ func (s *server) fetchFolderOptions(ctx context.Context, folder protocol.Documen
 	if opts := s.Options(); !opts.ConfigurationSupported {
 		return opts, nil
 	}
+	scope := string(folder)
 	configs, err := s.client.Configuration(ctx, &protocol.ParamConfiguration{
 		Items: []protocol.ConfigurationItem{{
-			ScopeURI: string(folder),
+			ScopeURI: &scope,
 			Section:  "gopls",
 		}},
 	},

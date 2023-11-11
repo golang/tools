@@ -117,7 +117,7 @@ func (opts *Options) IsAnalyzerEnabled(name string) bool {
 // ClientOptions holds LSP-specific configuration that is provided by the
 // client.
 type ClientOptions struct {
-	ClientInfo                                 *protocol.Msg_XInitializeParams_clientInfo
+	ClientInfo                                 *protocol.ClientInfo
 	InsertTextFormat                           protocol.InsertTextFormat
 	ConfigurationSupported                     bool
 	DynamicConfigurationSupported              bool
@@ -734,7 +734,7 @@ func SetOptions(options *Options, opts interface{}) OptionResults {
 	return results
 }
 
-func (o *Options) ForClientCapabilities(clientName *protocol.Msg_XInitializeParams_clientInfo, caps protocol.ClientCapabilities) {
+func (o *Options) ForClientCapabilities(clientName *protocol.ClientInfo, caps protocol.ClientCapabilities) {
 	o.ClientInfo = clientName
 	// Check if the client supports snippets in completion items.
 	if caps.Workspace.WorkspaceEdit != nil {
@@ -770,7 +770,8 @@ func (o *Options) ForClientCapabilities(clientName *protocol.Msg_XInitializePara
 	// Check if the client supports diagnostic related information.
 	o.RelatedInformationSupported = caps.TextDocument.PublishDiagnostics.RelatedInformation
 	// Check if the client completion support includes tags (preferred) or deprecation
-	if caps.TextDocument.Completion.CompletionItem.TagSupport.ValueSet != nil {
+	if caps.TextDocument.Completion.CompletionItem.TagSupport != nil &&
+		caps.TextDocument.Completion.CompletionItem.TagSupport.ValueSet != nil {
 		o.CompletionTags = true
 	} else if caps.TextDocument.Completion.CompletionItem.DeprecatedSupport {
 		o.CompletionDeprecated = true

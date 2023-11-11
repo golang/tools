@@ -6,8 +6,8 @@
 
 package protocol
 
-// Code generated from protocol/metaModel.json at ref release/protocol/3.17.4-next.2 (hash 184c8a7f010d335582f24337fe182baa6f2fccdd).
-// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.4-next.2/protocol/metaModel.json
+// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.1 (hash d2c907f450cb6d3baff74b31b432b90786d2c3b0).
+// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.1/protocol/metaModel.json
 // LSP metaData.version = 3.17.0.
 
 import (
@@ -33,6 +33,7 @@ type Client interface {
 	CodeLensRefresh(context.Context) error                                                     // workspace/codeLens/refresh
 	Configuration(context.Context, *ParamConfiguration) ([]LSPAny, error)                      // workspace/configuration
 	DiagnosticRefresh(context.Context) error                                                   // workspace/diagnostic/refresh
+	FoldingRangeRefresh(context.Context) error                                                 // workspace/foldingRange/refresh
 	InlayHintRefresh(context.Context) error                                                    // workspace/inlayHint/refresh
 	InlineValueRefresh(context.Context) error                                                  // workspace/inlineValue/refresh
 	SemanticTokensRefresh(context.Context) error                                               // workspace/semanticTokens/refresh
@@ -150,6 +151,9 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 	case "workspace/diagnostic/refresh":
 		err := client.DiagnosticRefresh(ctx)
 		return true, reply(ctx, nil, err)
+	case "workspace/foldingRange/refresh":
+		err := client.FoldingRangeRefresh(ctx)
+		return true, reply(ctx, nil, err)
 	case "workspace/inlayHint/refresh":
 		err := client.InlayHintRefresh(ctx)
 		return true, reply(ctx, nil, err)
@@ -230,6 +234,9 @@ func (s *clientDispatcher) Configuration(ctx context.Context, params *ParamConfi
 }
 func (s *clientDispatcher) DiagnosticRefresh(ctx context.Context) error {
 	return s.sender.Call(ctx, "workspace/diagnostic/refresh", nil, nil)
+}
+func (s *clientDispatcher) FoldingRangeRefresh(ctx context.Context) error {
+	return s.sender.Call(ctx, "workspace/foldingRange/refresh", nil, nil)
 }
 func (s *clientDispatcher) InlayHintRefresh(ctx context.Context) error {
 	return s.sender.Call(ctx, "workspace/inlayHint/refresh", nil, nil)

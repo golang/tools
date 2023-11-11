@@ -44,6 +44,8 @@ func (c *Client) InlayHintRefresh(context.Context) error { return nil }
 
 func (c *Client) DiagnosticRefresh(context.Context) error { return nil }
 
+func (c *Client) FoldingRangeRefresh(context.Context) error { return nil }
+
 func (c *Client) InlineValueRefresh(context.Context) error { return nil }
 
 func (c *Client) SemanticTokensRefresh(context.Context) error { return nil }

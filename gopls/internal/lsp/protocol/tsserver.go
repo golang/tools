@@ -6,8 +6,8 @@
 
 package protocol
 
-// Code generated from protocol/metaModel.json at ref release/protocol/3.17.4-next.2 (hash 184c8a7f010d335582f24337fe182baa6f2fccdd).
-// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.4-next.2/protocol/metaModel.json
+// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.1 (hash d2c907f450cb6d3baff74b31b432b90786d2c3b0).
+// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.1/protocol/metaModel.json
 // LSP metaData.version = 3.17.0.
 
 import (
@@ -61,7 +61,7 @@ type Server interface {
 	Moniker(context.Context, *MonikerParams) ([]Moniker, error)                                                  // textDocument/moniker
 	OnTypeFormatting(context.Context, *DocumentOnTypeFormattingParams) ([]TextEdit, error)                       // textDocument/onTypeFormatting
 	PrepareCallHierarchy(context.Context, *CallHierarchyPrepareParams) ([]CallHierarchyItem, error)              // textDocument/prepareCallHierarchy
-	PrepareRename(context.Context, *PrepareRenameParams) (*PrepareRename2Gn, error)                              // textDocument/prepareRename
+	PrepareRename(context.Context, *PrepareRenameParams) (*PrepareRenameResult, error)                           // textDocument/prepareRename
 	PrepareTypeHierarchy(context.Context, *TypeHierarchyPrepareParams) ([]TypeHierarchyItem, error)              // textDocument/prepareTypeHierarchy
 	RangeFormatting(context.Context, *DocumentRangeFormattingParams) ([]TextEdit, error)                         // textDocument/rangeFormatting
 	RangesFormatting(context.Context, *DocumentRangesFormattingParams) ([]TextEdit, error)                       // textDocument/rangesFormatting
@@ -1009,8 +1009,8 @@ func (s *serverDispatcher) PrepareCallHierarchy(ctx context.Context, params *Cal
 	}
 	return result, nil
 }
-func (s *serverDispatcher) PrepareRename(ctx context.Context, params *PrepareRenameParams) (*PrepareRename2Gn, error) {
-	var result *PrepareRename2Gn
+func (s *serverDispatcher) PrepareRename(ctx context.Context, params *PrepareRenameParams) (*PrepareRenameResult, error) {
+	var result *PrepareRenameResult
 	if err := s.sender.Call(ctx, "textDocument/prepareRename", params, &result); err != nil {
 		return nil, err
 	}

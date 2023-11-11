@@ -63,7 +63,7 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 //
 // TODO(rfindley): why wouldn't we want to show an error to the user, if the
 // user initiated a rename request at the cursor?
-func (s *server) PrepareRename(ctx context.Context, params *protocol.PrepareRenameParams) (*protocol.PrepareRename2Gn, error) {
+func (s *server) PrepareRename(ctx context.Context, params *protocol.PrepareRenameParams) (*protocol.PrepareRenamePlaceholder, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.prepareRename", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
@@ -80,7 +80,7 @@ func (s *server) PrepareRename(ctx context.Context, params *protocol.PrepareRena
 		// internal error details.
 		return nil, usererr
 	}
-	return &protocol.PrepareRename2Gn{
+	return &protocol.PrepareRenamePlaceholder{
 		Range:       item.Range,
 		Placeholder: item.Text,
 	}, nil

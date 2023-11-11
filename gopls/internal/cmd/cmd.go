@@ -391,8 +391,9 @@ func (c *connection) initialize(ctx context.Context, options func(*settings.Opti
 	params.Capabilities.TextDocument.DocumentSymbol.HierarchicalDocumentSymbolSupport = opts.HierarchicalDocumentSymbolSupport
 	params.Capabilities.TextDocument.SemanticTokens = protocol.SemanticTokensClientCapabilities{}
 	params.Capabilities.TextDocument.SemanticTokens.Formats = []protocol.TokenFormat{"relative"}
-	params.Capabilities.TextDocument.SemanticTokens.Requests.Range.Value = true
-	params.Capabilities.TextDocument.SemanticTokens.Requests.Full.Value = true
+	params.Capabilities.TextDocument.SemanticTokens.Requests.Range = &protocol.Or_ClientSemanticTokensRequestOptions_range{Value: true}
+	//params.Capabilities.TextDocument.SemanticTokens.Requests.Range.Value = true
+	params.Capabilities.TextDocument.SemanticTokens.Requests.Full = &protocol.Or_ClientSemanticTokensRequestOptions_full{Value: true}
 	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = protocol.SemanticTypes()
 	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = protocol.SemanticModifiers()
 
@@ -454,6 +455,8 @@ func newConnection(server protocol.Server, client *cmdClient) *connection {
 }
 
 func (c *cmdClient) CodeLensRefresh(context.Context) error { return nil }
+
+func (c *cmdClient) FoldingRangeRefresh(context.Context) error { return nil }
 
 func (c *cmdClient) LogTrace(context.Context, *protocol.LogTraceParams) error { return nil }
 

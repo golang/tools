@@ -2421,7 +2421,7 @@ func prepareRenameMarker(mark marker, src, spn protocol.Location, placeholder st
 		}
 		return
 	}
-	want := &protocol.PrepareRename2Gn{Range: spn.Range, Placeholder: placeholder}
+	want := &protocol.PrepareRenameResult{Range: spn.Range, Placeholder: placeholder}
 	if diff := cmp.Diff(want, got); diff != "" {
 		mark.errorf("mismatching PrepareRename result:\n%s", diff)
 	}
