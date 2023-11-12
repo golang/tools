@@ -93,11 +93,11 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, source.Sn
 		}
 	}
 
-	info, err := getWorkspaceInformation(ctx, s.gocmdRunner, s, folder)
+	def, err := getViewDefinition(ctx, s.gocmdRunner, s, folder)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	view, snapshot, release, err := s.createView(ctx, info, folder, 0)
+	view, snapshot, release, err := s.createView(ctx, def, folder, 0)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -110,11 +110,11 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, source.Sn
 // TODO(rfindley): clarify that createView can never be cancelled (with the
 // possible exception of server shutdown).
 // On success, the caller becomes responsible for calling the release function once.
-func (s *Session) createView(ctx context.Context, info *workspaceInformation, folder *Folder, seqID uint64) (*View, *snapshot, func(), error) {
+func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *Folder, seqID uint64) (*View, *snapshot, func(), error) {
 	index := atomic.AddInt64(&viewIndex, 1)
 
-	gowork, _ := info.GOWORK()
-	wsModFiles, wsModFilesErr := computeWorkspaceModFiles(ctx, info.gomod, gowork, info.effectiveGO111MODULE(), s)
+	gowork, _ := def.GOWORK()
+	wsModFiles, wsModFilesErr := computeWorkspaceModFiles(ctx, def.gomod, gowork, def.effectiveGO111MODULE(), s)
 
 	// We want a true background context and not a detached context here
 	// the spans need to be unrelated and no tag values should pollute it.
@@ -130,7 +130,7 @@ func (s *Session) createView(ctx context.Context, info *workspaceInformation, fo
 		baseCtx:              baseCtx,
 		parseCache:           s.parseCache,
 		fs:                   s.overlayFS,
-		workspaceInformation: info,
+		viewDefinition:       def,
 	}
 	v.importsState = &importsState{
 		ctx: backgroundCtx,
@@ -296,7 +296,7 @@ func (s *Session) RemoveView(view *View) {
 //
 // If the resulting error is non-nil, the view may or may not have already been
 // dropped from the session.
-func (s *Session) updateViewLocked(ctx context.Context, view *View, info *workspaceInformation, folder *Folder) (*View, error) {
+func (s *Session) updateViewLocked(ctx context.Context, view *View, def *viewDefinition, folder *Folder) (*View, error) {
 	// Preserve the snapshot ID if we are recreating the view.
 	view.snapshotMu.Lock()
 	if view.snapshot == nil {
@@ -317,7 +317,7 @@ func (s *Session) updateViewLocked(ctx context.Context, view *View, info *worksp
 		release  func()
 		err      error
 	)
-	view, snapshot, release, err = s.createView(ctx, info, folder, seqID)
+	view, snapshot, release, err = s.createView(ctx, def, folder, seqID)
 	if err != nil {
 		// we have dropped the old view, but could not create the new one
 		// this should not happen and is very bad, but we still need to clean
@@ -376,7 +376,7 @@ func (s *Session) ResetView(ctx context.Context, uri span.URI) (*View, error) {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 	v := bestViewForURI(uri, s.views)
-	return s.updateViewLocked(ctx, v, v.workspaceInformation, v.folder)
+	return s.updateViewLocked(ctx, v, v.viewDefinition, v.folder)
 }
 
 // DidModifyFiles reports a file modification to the session. It returns
@@ -433,7 +433,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 			// synchronously to change processing? Can we assume that the env did not
 			// change, and derive go.work using a combination of the configured
 			// GOWORK value and filesystem?
-			info, err := getWorkspaceInformation(ctx, s.gocmdRunner, s, view.folder)
+			info, err := getViewDefinition(ctx, s.gocmdRunner, s, view.folder)
 			if err != nil {
 				// Catastrophic failure, equivalent to a failure of session
 				// initialization and therefore should almost never happen. One
@@ -444,7 +444,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 				// TODO(rfindley): consider surfacing this error more loudly. We
 				// could report a bug, but it's not really a bug.
 				event.Error(ctx, "fetching workspace information", err)
-			} else if *info != *view.workspaceInformation {
+			} else if *info != *view.viewDefinition {
 				if _, err := s.updateViewLocked(ctx, view, info, view.folder); err != nil {
 					// More catastrophic failure. The view may or may not still exist.
 					// The best we can do is log and move on.

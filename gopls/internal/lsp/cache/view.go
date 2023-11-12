@@ -58,10 +58,7 @@ type View struct {
 
 	folder *Folder
 
-	// Workspace information. The fields below are immutable, and together with
-	// options define the build list. Any change to these fields results in a new
-	// View.
-	*workspaceInformation // Go environment information
+	*viewDefinition // Go environment information defining the view
 
 	importsState *importsState
 
@@ -109,10 +106,10 @@ type View struct {
 	initializationSema chan struct{}
 }
 
-// workspaceInformation holds the defining features of the View workspace.
+// viewDefinition holds the defining features of the View workspace.
 //
 // This type is compared to see if the View needs to be reconstructed.
-type workspaceInformation struct {
+type viewDefinition struct {
 	// `go env` variables that need to be tracked by gopls.
 	goEnv
 
@@ -146,7 +143,7 @@ type workspaceInformation struct {
 
 // effectiveGO111MODULE reports the value of GO111MODULE effective in the go
 // command at this go version, assuming at least Go 1.16.
-func (w workspaceInformation) effectiveGO111MODULE() go111module {
+func (w viewDefinition) effectiveGO111MODULE() go111module {
 	switch w.GO111MODULE() {
 	case "off":
 		return off
@@ -194,7 +191,7 @@ const (
 // TODO(rfindley): this logic is overlapping and slightly inconsistent with
 // validBuildConfiguration. As part of zero-config-gopls (golang/go#57979), fix
 // this inconsistency and consolidate on the ViewType abstraction.
-func (w workspaceInformation) ViewType() ViewType {
+func (w viewDefinition) ViewType() ViewType {
 	if w.hasGopackagesDriver {
 		return GoPackagesDriverView
 	}
@@ -221,7 +218,7 @@ func (w workspaceInformation) ViewType() ViewType {
 // Additionally, this method returns false if GOPACKAGESDRIVER is set.
 //
 // TODO(rfindley): use this more widely.
-func (w workspaceInformation) moduleMode() bool {
+func (w viewDefinition) moduleMode() bool {
 	switch w.ViewType() {
 	case GoModuleView, GoWorkView:
 		return true
@@ -235,7 +232,7 @@ func (w workspaceInformation) moduleMode() bool {
 //
 // The second result reports whether the effective GOWORK value is "" because
 // GOWORK=off.
-func (w workspaceInformation) GOWORK() (span.URI, bool) {
+func (w viewDefinition) GOWORK() (span.URI, bool) {
 	if w.gowork == "off" || w.gowork == "" {
 		return "", w.gowork == "off"
 	}
@@ -252,7 +249,7 @@ func (w workspaceInformation) GOWORK() (span.URI, bool) {
 //
 // Put differently: we shouldn't go out of our way to make GOPATH work, when
 // the go command does not.
-func (w workspaceInformation) GO111MODULE() string {
+func (w viewDefinition) GO111MODULE() string {
 	if w.go111module == "" {
 		return "auto"
 	}
@@ -422,7 +419,7 @@ func (s *Session) SetFolderOptions(ctx context.Context, uri span.URI, options *s
 		if v.folder.Dir == uri {
 			folder2 := *v.folder
 			folder2.Options = options
-			info, err := getWorkspaceInformation(ctx, s.gocmdRunner, s, &folder2)
+			info, err := getViewDefinition(ctx, s.gocmdRunner, s, &folder2)
 			if err != nil {
 				return err
 			}
@@ -451,7 +448,7 @@ func viewEnv(v *View) string {
 `,
 		v.folder.Dir.Filename(),
 		v.goCommandDir.Filename(),
-		strings.TrimRight(v.workspaceInformation.goversionOutput, "\n"),
+		strings.TrimRight(v.viewDefinition.goversionOutput, "\n"),
 		v.snapshot.validBuildConfiguration(),
 		buildFlags,
 		v.goEnv,
@@ -892,46 +889,46 @@ func (v *View) Invalidate(ctx context.Context, changed source.StateChange) (sour
 	return v.snapshot, v.snapshot.Acquire()
 }
 
-func getWorkspaceInformation(ctx context.Context, runner *gocommand.Runner, fs source.FileSource, folder *Folder) (*workspaceInformation, error) {
+func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs source.FileSource, folder *Folder) (*viewDefinition, error) {
 	if err := checkPathCase(folder.Dir.Filename()); err != nil {
 		return nil, fmt.Errorf("invalid workspace folder path: %w; check that the casing of the configured workspace folder path agrees with the casing reported by the operating system", err)
 	}
-	info := new(workspaceInformation)
+	def := new(viewDefinition)
 	var err error
 	inv := gocommand.Invocation{
 		WorkingDir: folder.Dir.Filename(),
 		Env:        folder.Options.EnvSlice(),
 	}
-	info.goversion, err = gocommand.GoVersion(ctx, inv, runner)
+	def.goversion, err = gocommand.GoVersion(ctx, inv, runner)
 	if err != nil {
-		return info, err
+		return nil, err
 	}
-	info.goversionOutput, err = gocommand.GoVersionOutput(ctx, inv, runner)
+	def.goversionOutput, err = gocommand.GoVersionOutput(ctx, inv, runner)
 	if err != nil {
-		return info, err
+		return nil, err
 	}
-	if err := info.load(ctx, folder.Dir.Filename(), folder.Options.EnvSlice(), runner); err != nil {
-		return info, err
+	if err := def.load(ctx, folder.Dir.Filename(), folder.Options.EnvSlice(), runner); err != nil {
+		return nil, err
 	}
 	// The value of GOPACKAGESDRIVER is not returned through the go command.
 	gopackagesdriver := os.Getenv("GOPACKAGESDRIVER")
 	// A user may also have a gopackagesdriver binary on their machine, which
 	// works the same way as setting GOPACKAGESDRIVER.
 	tool, _ := exec.LookPath("gopackagesdriver")
-	info.hasGopackagesDriver = gopackagesdriver != "off" && (gopackagesdriver != "" || tool != "")
+	def.hasGopackagesDriver = gopackagesdriver != "off" && (gopackagesdriver != "" || tool != "")
 
 	// filterFunc is the path filter function for this workspace folder. Notably,
 	// it is relative to folder (which is specified by the user), not root.
-	filterFunc := pathExcludedByFilterFunc(folder.Dir.Filename(), info.gomodcache, folder.Options)
-	info.gomod, err = findWorkspaceModFile(ctx, folder.Dir, fs, filterFunc)
+	filterFunc := pathExcludedByFilterFunc(folder.Dir.Filename(), def.gomodcache, folder.Options)
+	def.gomod, err = findWorkspaceModFile(ctx, folder.Dir, fs, filterFunc)
 	if err != nil {
-		return info, err
+		return nil, err
 	}
 
 	// Check if the workspace is within any GOPATH directory.
-	for _, gp := range filepath.SplitList(info.gopath) {
+	for _, gp := range filepath.SplitList(def.gopath) {
 		if source.InDir(filepath.Join(gp, "src"), folder.Dir.Filename()) {
-			info.inGOPATH = true
+			def.inGOPATH = true
 			break
 		}
 	}
@@ -944,12 +941,12 @@ func getWorkspaceInformation(ctx context.Context, runner *gocommand.Runner, fs s
 	//
 	// TODO(golang/go#57514): eliminate the expandWorkspaceToModule setting
 	// entirely.
-	if folder.Options.ExpandWorkspaceToModule && info.gomod != "" {
-		info.goCommandDir = span.URIFromPath(filepath.Dir(info.gomod.Filename()))
+	if folder.Options.ExpandWorkspaceToModule && def.gomod != "" {
+		def.goCommandDir = span.URIFromPath(filepath.Dir(def.gomod.Filename()))
 	} else {
-		info.goCommandDir = folder.Dir
+		def.goCommandDir = folder.Dir
 	}
-	return info, nil
+	return def, nil
 }
 
 // findWorkspaceModFile searches for a single go.mod file relative to the given
@@ -1066,11 +1063,11 @@ func (s *snapshot) Vulnerabilities(modfiles ...span.URI) map[span.URI]*vulncheck
 }
 
 func (v *View) GoVersion() int {
-	return v.workspaceInformation.goversion
+	return v.viewDefinition.goversion
 }
 
 func (v *View) GoVersionString() string {
-	return gocommand.ParseGoVersionOutput(v.workspaceInformation.goversionOutput)
+	return gocommand.ParseGoVersionOutput(v.viewDefinition.goversionOutput)
 }
 
 // Copied from
