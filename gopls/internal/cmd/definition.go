@@ -49,8 +49,8 @@ func (d *definition) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprintf(f.Output(), `
 Example: show the definition of the identifier at syntax at offset %[1]v in this file (flag.FlagSet):
 
-	$ gopls definition internal/lsp/cmd/definition.go:%[1]v:%[2]v
-	$ gopls definition internal/lsp/cmd/definition.go:#%[3]v
+	$ gopls definition internal/cmd/definition.go:%[1]v:%[2]v
+	$ gopls definition internal/cmd/definition.go:#%[3]v
 
 definition-flags:
 `, exampleLine, exampleColumn, exampleOffset)

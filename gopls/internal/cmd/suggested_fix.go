@@ -35,7 +35,7 @@ func (s *suggestedFix) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprintf(f.Output(), `
 Example: apply fixes to this file, rewriting it:
 
-	$ gopls fix -a -w internal/lsp/cmd/check.go
+	$ gopls fix -a -w internal/cmd/check.go
 
 The -a (-all) flag causes all fixes, not just preferred ones, to be
 applied, but since no fixes are currently preferred, this flag is
@@ -59,7 +59,7 @@ enumerate all kinds.
 Example: apply any "refactor.rewrite" fixes at the specific byte
 offset within this file:
 
-	$ gopls fix -a internal/lsp/cmd/check.go:#43 refactor.rewrite
+	$ gopls fix -a internal/cmd/check.go:#43 refactor.rewrite
 
 fix-flags:
 `)

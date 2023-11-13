@@ -31,7 +31,7 @@ func (l *links) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprintf(f.Output(), `
 Example: list links contained within a file:
 
-	$ gopls links internal/lsp/cmd/check.go
+	$ gopls links internal/cmd/check.go
 
 links-flags:
 `)

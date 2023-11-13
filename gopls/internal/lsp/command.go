@@ -926,7 +926,7 @@ func (c *commandHandler) StopProfile(ctx context.Context, args command.StopProfi
 	return result, nil
 }
 
-// Copy of pkgLoadConfig defined in internal/lsp/cmd/vulncheck.go
+// Copy of pkgLoadConfig defined in internal/cmd/vulncheck.go
 // TODO(hyangah): decide where to define this.
 type pkgLoadConfig struct {
 	// BuildFlags is a list of command-line flags to be passed through to

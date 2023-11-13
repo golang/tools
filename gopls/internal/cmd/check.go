@@ -25,7 +25,7 @@ func (c *check) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), `
 Example: show the diagnostic results of this file:
 
-	$ gopls check internal/lsp/cmd/check.go
+	$ gopls check internal/cmd/check.go
 `)
 	printFlagDefaults(f)
 }

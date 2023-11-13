@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package cmdtest contains the test suite for the command line behavior of gopls.
-package cmdtest
+package cmd_test
 
 // This file defines integration tests of each gopls subcommand that
 // fork+exec the command in a separate process.
@@ -39,8 +39,8 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/cmd"
 	"golang.org/x/tools/gopls/internal/hooks"
-	"golang.org/x/tools/gopls/internal/lsp/cmd"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/testenv"

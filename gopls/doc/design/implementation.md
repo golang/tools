@@ -27,7 +27,7 @@ Package | Description
 [gopls] | the main binary, plugins and integration tests
 [internal/lsp] | the core message handling package
 [internal/lsp/cache] | the cache layer
-[internal/lsp/cmd] | the gopls command line layer
+[internal/cmd] | the gopls command line layer
 [internal/lsp/debug] | features to aid in debugging gopls
 [internal/lsp/protocol] | the types of LSP request and response messages
 [internal/lsp/source] | the core feature implementations
@@ -39,7 +39,7 @@ Package | Description
 [internal/jsonrpc2]: https://github.com/golang/tools/tree/master/internal/jsonrpc2
 [internal/lsp]: https://github.com/golang/tools/tree/master/gopls/internal/lsp
 [internal/lsp/cache]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/cache
-[internal/lsp/cmd]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/cmd
+[internal/cmd]: https://github.com/golang/tools/tree/master/gopls/internal/cmd
 [internal/lsp/debug]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/debug
 [internal/lsp/protocol]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/protocol
 [internal/lsp/source]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/source

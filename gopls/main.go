@@ -17,8 +17,8 @@ import (
 	"context"
 	"os"
 
+	"golang.org/x/tools/gopls/internal/cmd"
 	"golang.org/x/tools/gopls/internal/hooks"
-	"golang.org/x/tools/gopls/internal/lsp/cmd"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/internal/tool"
 )

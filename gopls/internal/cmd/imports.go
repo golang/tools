@@ -28,7 +28,7 @@ func (t *imports) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprintf(f.Output(), `
 Example: update imports statements in a file:
 
-	$ gopls imports -w internal/lsp/cmd/check.go
+	$ gopls imports -w internal/cmd/check.go
 
 imports-flags:
 `)
