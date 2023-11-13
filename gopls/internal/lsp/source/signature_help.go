@@ -62,7 +62,20 @@ FindCall:
 		return nil, 0, fmt.Errorf("cannot find an enclosing function")
 	}
 
-	qf := Qualifier(pgf.File, pkg.GetTypes(), pkg.GetTypesInfo())
+	info := pkg.GetTypesInfo()
+
+	// Get the type information for the function being called.
+	var sig *types.Signature
+	if tv, ok := info.Types[callExpr.Fun]; !ok {
+		return nil, 0, fmt.Errorf("cannot get type for Fun %[1]T (%[1]v)", callExpr.Fun)
+	} else if tv.IsType() {
+		return nil, 0, fmt.Errorf("this is a conversion to %s, not a call", tv.Type)
+	} else if sig, ok = tv.Type.Underlying().(*types.Signature); !ok {
+		return nil, 0, fmt.Errorf("cannot find signature for Fun %[1]T (%[1]v)", callExpr.Fun)
+	}
+	// Inv: sig != nil
+
+	qf := Qualifier(pgf.File, pkg.GetTypes(), info)
 
 	// Get the object representing the function, if available.
 	// There is no object in certain cases such as calling a function returned by
@@ -70,19 +83,19 @@ FindCall:
 	var obj types.Object
 	switch t := callExpr.Fun.(type) {
 	case *ast.Ident:
-		obj = pkg.GetTypesInfo().ObjectOf(t)
+		obj = info.ObjectOf(t)
 	case *ast.SelectorExpr:
-		obj = pkg.GetTypesInfo().ObjectOf(t.Sel)
+		obj = info.ObjectOf(t.Sel)
 	}
 
-	// Built-in?
+	// Call to built-in?
 	if obj != nil && !obj.Pos().IsValid() {
-		// built-in function?
+		// function?
 		if obj, ok := obj.(*types.Builtin); ok {
 			return builtinSignature(ctx, snapshot, callExpr, obj.Name(), pos)
 		}
 
-		// error.Error?
+		// method (only error.Error)?
 		if fn, ok := obj.(*types.Func); ok && fn.Name() == "Error" {
 			return &protocol.SignatureInformation{
 				Label:         "Error()",
@@ -91,17 +104,6 @@ FindCall:
 		}
 
 		return nil, 0, bug.Errorf("call to unexpected built-in %v (%T)", obj, obj)
-	}
-
-	// Get the type information for the function being called.
-	sigType := pkg.GetTypesInfo().TypeOf(callExpr.Fun)
-	if sigType == nil {
-		return nil, 0, fmt.Errorf("cannot get type for Fun %[1]T (%[1]v)", callExpr.Fun)
-	}
-
-	sig, _ := sigType.Underlying().(*types.Signature)
-	if sig == nil {
-		return nil, 0, fmt.Errorf("cannot find signature for Fun %[1]T (%[1]v)", callExpr.Fun)
 	}
 
 	activeParam := activeParameter(callExpr, sig.Params().Len(), sig.Variadic(), pos)

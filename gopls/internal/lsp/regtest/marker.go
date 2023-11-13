@@ -1931,6 +1931,9 @@ func tokenMarker(mark marker, loc protocol.Location, tokenType, mod string) {
 func signatureMarker(mark marker, src protocol.Location, label string, active int64) {
 	got := mark.run.env.SignatureHelp(src)
 	if label == "" {
+		// A null result is expected.
+		// (There's no point having a @signatureerr marker
+		// because the server handler suppresses all errors.)
 		if got != nil && len(got.Signatures) > 0 {
 			mark.errorf("signatureHelp = %v, want 0 signatures", got)
 		}
