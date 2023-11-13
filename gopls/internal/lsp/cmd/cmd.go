@@ -391,8 +391,8 @@ func (c *connection) initialize(ctx context.Context, options func(*source.Option
 	params.Capabilities.TextDocument.SemanticTokens.Formats = []protocol.TokenFormat{"relative"}
 	params.Capabilities.TextDocument.SemanticTokens.Requests.Range.Value = true
 	params.Capabilities.TextDocument.SemanticTokens.Requests.Full.Value = true
-	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = lsp.SemanticTypes()
-	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = lsp.SemanticModifiers()
+	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = protocol.SemanticTypes()
+	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = protocol.SemanticModifiers()
 
 	// If the subcommand has registered a progress handler, report the progress
 	// capability.
