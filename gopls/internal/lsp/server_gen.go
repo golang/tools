@@ -245,7 +245,7 @@ func (s *Server) SelectionRange(ctx context.Context, params *protocol.SelectionR
 }
 
 func (s *Server) SemanticTokensFull(ctx context.Context, params *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
-	return s.semanticTokens(ctx, params.TextDocument, nil)
+	return s.semanticTokensFull(ctx, params)
 }
 
 func (s *Server) SemanticTokensFullDelta(context.Context, *protocol.SemanticTokensDeltaParams) (interface{}, error) {
@@ -253,7 +253,7 @@ func (s *Server) SemanticTokensFullDelta(context.Context, *protocol.SemanticToke
 }
 
 func (s *Server) SemanticTokensRange(ctx context.Context, params *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
-	return s.semanticTokens(ctx, params.TextDocument, &params.Range)
+	return s.semanticTokensRange(ctx, params)
 }
 
 func (s *Server) SetTrace(context.Context, *protocol.SetTraceParams) error {
