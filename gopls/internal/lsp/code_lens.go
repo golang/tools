@@ -17,7 +17,7 @@ import (
 	"golang.org/x/tools/internal/event/tag"
 )
 
-func (s *Server) codeLens(ctx context.Context, params *protocol.CodeLensParams) ([]protocol.CodeLens, error) {
+func (s *server) codeLens(ctx context.Context, params *protocol.CodeLensParams) ([]protocol.CodeLens, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.codeLens", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 

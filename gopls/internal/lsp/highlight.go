@@ -14,7 +14,7 @@ import (
 	"golang.org/x/tools/internal/event/tag"
 )
 
-func (s *Server) documentHighlight(ctx context.Context, params *protocol.DocumentHighlightParams) ([]protocol.DocumentHighlight, error) {
+func (s *server) documentHighlight(ctx context.Context, params *protocol.DocumentHighlightParams) ([]protocol.DocumentHighlight, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.documentHighlight", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 

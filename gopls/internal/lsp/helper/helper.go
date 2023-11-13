@@ -28,7 +28,7 @@ import (
 )
 
 var (
-	typ = flag.String("t", "Server", "generate code for this type")
+	typ = flag.String("t", "server", "generate code for this type")
 	def = flag.String("d", "", "the file the type is defined in") // this relies on punning
 	use = flag.String("u", "", "look for uses in this package")
 	out = flag.String("o", "", "where to write the generated file")
@@ -217,7 +217,7 @@ func doTypes() {
 
 func inter(n ast.Node) bool {
 	x, ok := n.(*ast.TypeSpec)
-	if !ok || x.Name.Name != *typ {
+	if !ok || !strings.EqualFold(x.Name.Name, *typ) { // server ~= Server
 		return true
 	}
 	m := x.Type.(*ast.InterfaceType).Methods.List

@@ -16,7 +16,7 @@ import (
 	"golang.org/x/tools/internal/event/tag"
 )
 
-func (s *Server) definition(ctx context.Context, params *protocol.DefinitionParams) (_ []protocol.Location, rerr error) {
+func (s *server) definition(ctx context.Context, params *protocol.DefinitionParams) (_ []protocol.Location, rerr error) {
 	recordLatency := telemetry.StartLatencyTimer("definition")
 	defer func() {
 		recordLatency(ctx, rerr)
@@ -41,7 +41,7 @@ func (s *Server) definition(ctx context.Context, params *protocol.DefinitionPara
 	}
 }
 
-func (s *Server) typeDefinition(ctx context.Context, params *protocol.TypeDefinitionParams) ([]protocol.Location, error) {
+func (s *server) typeDefinition(ctx context.Context, params *protocol.TypeDefinitionParams) ([]protocol.Location, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.typeDefinition", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 

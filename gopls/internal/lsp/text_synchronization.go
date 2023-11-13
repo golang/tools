@@ -72,7 +72,7 @@ func (m ModificationSource) String() string {
 	}
 }
 
-func (s *Server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
+func (s *server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.didOpen", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
@@ -107,7 +107,7 @@ func (s *Server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 	}}, FromDidOpen)
 }
 
-func (s *Server) didChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
+func (s *server) didChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.didChange", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
@@ -134,7 +134,7 @@ func (s *Server) didChange(ctx context.Context, params *protocol.DidChangeTextDo
 
 // warnAboutModifyingGeneratedFiles shows a warning if a user tries to edit a
 // generated file for the first time.
-func (s *Server) warnAboutModifyingGeneratedFiles(ctx context.Context, uri span.URI) error {
+func (s *server) warnAboutModifyingGeneratedFiles(ctx context.Context, uri span.URI) error {
 	s.changedFilesMu.Lock()
 	_, ok := s.changedFiles[uri]
 	if !ok {
@@ -170,7 +170,7 @@ func (s *Server) warnAboutModifyingGeneratedFiles(ctx context.Context, uri span.
 	})
 }
 
-func (s *Server) didChangeWatchedFiles(ctx context.Context, params *protocol.DidChangeWatchedFilesParams) error {
+func (s *server) didChangeWatchedFiles(ctx context.Context, params *protocol.DidChangeWatchedFilesParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.didChangeWatchedFiles")
 	defer done()
 
@@ -190,7 +190,7 @@ func (s *Server) didChangeWatchedFiles(ctx context.Context, params *protocol.Did
 	return s.didModifyFiles(ctx, modifications, FromDidChangeWatchedFiles)
 }
 
-func (s *Server) didSave(ctx context.Context, params *protocol.DidSaveTextDocumentParams) error {
+func (s *server) didSave(ctx context.Context, params *protocol.DidSaveTextDocumentParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.didSave", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
@@ -208,7 +208,7 @@ func (s *Server) didSave(ctx context.Context, params *protocol.DidSaveTextDocume
 	return s.didModifyFiles(ctx, []source.FileModification{c}, FromDidSave)
 }
 
-func (s *Server) didClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
+func (s *server) didClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.didClose", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
@@ -226,7 +226,7 @@ func (s *Server) didClose(ctx context.Context, params *protocol.DidCloseTextDocu
 	}, FromDidClose)
 }
 
-func (s *Server) didModifyFiles(ctx context.Context, modifications []source.FileModification, cause ModificationSource) error {
+func (s *server) didModifyFiles(ctx context.Context, modifications []source.FileModification, cause ModificationSource) error {
 	// wg guards two conditions:
 	//  1. didModifyFiles is complete
 	//  2. the goroutine diagnosing changes on behalf of didModifyFiles is
@@ -306,7 +306,7 @@ func DiagnosticWorkTitle(cause ModificationSource) string {
 	return fmt.Sprintf("diagnosing %v", cause)
 }
 
-func (s *Server) changedText(ctx context.Context, uri span.URI, changes []protocol.TextDocumentContentChangeEvent) ([]byte, error) {
+func (s *server) changedText(ctx context.Context, uri span.URI, changes []protocol.TextDocumentContentChangeEvent) ([]byte, error) {
 	if len(changes) == 0 {
 		return nil, fmt.Errorf("%w: no content changes provided", jsonrpc2.ErrInternal)
 	}
@@ -319,7 +319,7 @@ func (s *Server) changedText(ctx context.Context, uri span.URI, changes []protoc
 	return s.applyIncrementalChanges(ctx, uri, changes)
 }
 
-func (s *Server) applyIncrementalChanges(ctx context.Context, uri span.URI, changes []protocol.TextDocumentContentChangeEvent) ([]byte, error) {
+func (s *server) applyIncrementalChanges(ctx context.Context, uri span.URI, changes []protocol.TextDocumentContentChangeEvent) ([]byte, error) {
 	fh, err := s.session.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, err

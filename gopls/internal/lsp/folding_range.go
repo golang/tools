@@ -13,7 +13,7 @@ import (
 	"golang.org/x/tools/internal/event/tag"
 )
 
-func (s *Server) foldingRange(ctx context.Context, params *protocol.FoldingRangeParams) ([]protocol.FoldingRange, error) {
+func (s *server) foldingRange(ctx context.Context, params *protocol.FoldingRangeParams) ([]protocol.FoldingRange, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.foldingRange", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 

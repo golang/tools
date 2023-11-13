@@ -12,7 +12,7 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-func (s *Server) prepareCallHierarchy(ctx context.Context, params *protocol.CallHierarchyPrepareParams) ([]protocol.CallHierarchyItem, error) {
+func (s *server) prepareCallHierarchy(ctx context.Context, params *protocol.CallHierarchyPrepareParams) ([]protocol.CallHierarchyItem, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.prepareCallHierarchy")
 	defer done()
 
@@ -25,7 +25,7 @@ func (s *Server) prepareCallHierarchy(ctx context.Context, params *protocol.Call
 	return source.PrepareCallHierarchy(ctx, snapshot, fh, params.Position)
 }
 
-func (s *Server) incomingCalls(ctx context.Context, params *protocol.CallHierarchyIncomingCallsParams) ([]protocol.CallHierarchyIncomingCall, error) {
+func (s *server) incomingCalls(ctx context.Context, params *protocol.CallHierarchyIncomingCallsParams) ([]protocol.CallHierarchyIncomingCall, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.incomingCalls")
 	defer done()
 
@@ -38,7 +38,7 @@ func (s *Server) incomingCalls(ctx context.Context, params *protocol.CallHierarc
 	return source.IncomingCalls(ctx, snapshot, fh, params.Item.Range.Start)
 }
 
-func (s *Server) outgoingCalls(ctx context.Context, params *protocol.CallHierarchyOutgoingCallsParams) ([]protocol.CallHierarchyOutgoingCall, error) {
+func (s *server) outgoingCalls(ctx context.Context, params *protocol.CallHierarchyOutgoingCallsParams) ([]protocol.CallHierarchyOutgoingCall, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.outgoingCalls")
 	defer done()
 

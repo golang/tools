@@ -24,7 +24,7 @@ import (
 // for multiple cursors, and the entire path up to the whole document is
 // returned for each cursor to avoid multiple round-trips when the user is
 // likely to issue this command multiple times in quick succession.
-func (s *Server) selectionRange(ctx context.Context, params *protocol.SelectionRangeParams) ([]protocol.SelectionRange, error) {
+func (s *server) selectionRange(ctx context.Context, params *protocol.SelectionRangeParams) ([]protocol.SelectionRange, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.selectionRange")
 	defer done()
 

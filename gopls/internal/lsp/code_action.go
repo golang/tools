@@ -26,7 +26,7 @@ import (
 	"golang.org/x/tools/internal/imports"
 )
 
-func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
+func (s *server) codeAction(ctx context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.codeAction")
 	defer done()
 
@@ -278,7 +278,7 @@ func (s *Server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 	}
 }
 
-func (s *Server) findMatchingDiagnostics(uri span.URI, pd protocol.Diagnostic) []*source.Diagnostic {
+func (s *server) findMatchingDiagnostics(uri span.URI, pd protocol.Diagnostic) []*source.Diagnostic {
 	s.diagnosticsMu.Lock()
 	defer s.diagnosticsMu.Unlock()
 
@@ -297,7 +297,7 @@ func (s *Server) findMatchingDiagnostics(uri span.URI, pd protocol.Diagnostic) [
 	return sds
 }
 
-func (s *Server) getSupportedCodeActions() []protocol.CodeActionKind {
+func (s *server) getSupportedCodeActions() []protocol.CodeActionKind {
 	allCodeActionKinds := make(map[protocol.CodeActionKind]struct{})
 	for _, kinds := range s.Options().SupportedCodeActions {
 		for kind := range kinds {
@@ -620,7 +620,7 @@ func documentChanges(fh source.FileHandle, edits []protocol.TextEdit) []protocol
 // bundled protocol.Diagnostic.Data field, and failing that by falling back on
 // fetching a matching source.Diagnostic from the set of stored diagnostics for
 // this file.
-func (s *Server) codeActionsMatchingDiagnostics(ctx context.Context, uri span.URI, snapshot source.Snapshot, pds []protocol.Diagnostic, want map[protocol.CodeActionKind]bool) ([]protocol.CodeAction, error) {
+func (s *server) codeActionsMatchingDiagnostics(ctx context.Context, uri span.URI, snapshot source.Snapshot, pds []protocol.Diagnostic, want map[protocol.CodeActionKind]bool) ([]protocol.CodeAction, error) {
 	var actions []protocol.CodeAction
 	var unbundled []protocol.Diagnostic // diagnostics without bundled code actions in their Data field
 	for _, pd := range pds {

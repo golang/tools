@@ -26,8 +26,8 @@ const concurrentAnalyses = 1
 
 // NewServer creates an LSP server and binds it to handle incoming client
 // messages on the supplied stream.
-func NewServer(session *cache.Session, client protocol.ClientCloser, options *source.Options) *Server {
-	return &Server{
+func NewServer(session *cache.Session, client protocol.ClientCloser, options *source.Options) protocol.Server {
+	return &server{
 		diagnostics:           map[span.URI]*fileReports{},
 		gcOptimizationDetails: make(map[source.PackageID]struct{}),
 		watchedGlobPatterns:   nil, // empty
@@ -63,8 +63,8 @@ func (s serverState) String() string {
 	return fmt.Sprintf("(unknown state: %d)", int(s))
 }
 
-// Server implements the protocol.Server interface.
-type Server struct {
+// server implements the protocol.server interface.
+type server struct {
 	client protocol.ClientCloser
 
 	stateMu sync.Mutex
@@ -122,14 +122,14 @@ type Server struct {
 	options   *source.Options
 }
 
-func (s *Server) workDoneProgressCancel(ctx context.Context, params *protocol.WorkDoneProgressCancelParams) error {
+func (s *server) workDoneProgressCancel(ctx context.Context, params *protocol.WorkDoneProgressCancelParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.workDoneProgressCancel")
 	defer done()
 
 	return s.progress.Cancel(params.Token)
 }
 
-func (s *Server) nonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {
+func (s *server) nonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.nonstandardRequest")
 	defer done()
 
@@ -176,7 +176,7 @@ func (s *Server) nonstandardRequest(ctx context.Context, method string, params i
 // efficient to compute the set of packages and TypeCheck and
 // Analyze them all at once. Or instead support textDocument/diagnostic
 // (golang/go#60122).
-func (s *Server) diagnoseFile(ctx context.Context, snapshot source.Snapshot, uri span.URI) (source.FileHandle, []*source.Diagnostic, error) {
+func (s *server) diagnoseFile(ctx context.Context, snapshot source.Snapshot, uri span.URI) (source.FileHandle, []*source.Diagnostic, error) {
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, nil, err

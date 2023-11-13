@@ -155,7 +155,7 @@ func computeDiagnosticHash(diags ...*source.Diagnostic) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func (s *Server) diagnoseSnapshots(snapshots map[source.Snapshot][]span.URI, onDisk bool, cause ModificationSource) {
+func (s *server) diagnoseSnapshots(snapshots map[source.Snapshot][]span.URI, onDisk bool, cause ModificationSource) {
 	var diagnosticWG sync.WaitGroup
 	for snapshot, uris := range snapshots {
 		if snapshot.Options().DiagnosticsTrigger == source.DiagnosticsOnSave && cause == FromDidChange {
@@ -181,7 +181,7 @@ func (s *Server) diagnoseSnapshots(snapshots map[source.Snapshot][]span.URI, onD
 //
 // TODO(rfindley): eliminate the onDisk parameter, which looks misplaced. If we
 // don't want to diagnose changes on disk, filter out the changedURIs.
-func (s *Server) diagnoseSnapshot(snapshot source.Snapshot, changedURIs []span.URI, onDisk bool, delay time.Duration) {
+func (s *server) diagnoseSnapshot(snapshot source.Snapshot, changedURIs []span.URI, onDisk bool, delay time.Duration) {
 	ctx := snapshot.BackgroundContext()
 	ctx, done := event.Start(ctx, "Server.diagnoseSnapshot", source.SnapshotLabels(snapshot)...)
 	defer done()
@@ -228,7 +228,7 @@ func (s *Server) diagnoseSnapshot(snapshot source.Snapshot, changedURIs []span.U
 	s.publishDiagnostics(ctx, true, snapshot)
 }
 
-func (s *Server) diagnoseChangedFiles(ctx context.Context, snapshot source.Snapshot, uris []span.URI, onDisk bool) {
+func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot source.Snapshot, uris []span.URI, onDisk bool) {
 	ctx, done := event.Start(ctx, "Server.diagnoseChangedFiles", source.SnapshotLabels(snapshot)...)
 	defer done()
 
@@ -282,7 +282,7 @@ const (
 
 // diagnose is a helper function for running diagnostics with a given context.
 // Do not call it directly. forceAnalysis is only true for testing purposes.
-func (s *Server) diagnose(ctx context.Context, snapshot source.Snapshot, analyze analysisMode) {
+func (s *server) diagnose(ctx context.Context, snapshot source.Snapshot, analyze analysisMode) {
 	ctx, done := event.Start(ctx, "Server.diagnose", source.SnapshotLabels(snapshot)...)
 	defer done()
 
@@ -442,7 +442,7 @@ func (s *Server) diagnose(ctx context.Context, snapshot source.Snapshot, analyze
 // of concurrent dispatch: as of writing we concurrently run TidyDiagnostics
 // and diagnosePkgs, and diagnosePkgs concurrently runs PackageDiagnostics and
 // analysis.
-func (s *Server) diagnosePkgs(ctx context.Context, snapshot source.Snapshot, toDiagnose map[source.PackageID]*source.Metadata, toAnalyze map[source.PackageID]unit) {
+func (s *server) diagnosePkgs(ctx context.Context, snapshot source.Snapshot, toDiagnose map[source.PackageID]*source.Metadata, toAnalyze map[source.PackageID]unit) {
 	ctx, done := event.Start(ctx, "Server.diagnosePkgs", source.SnapshotLabels(snapshot)...)
 	defer done()
 
@@ -596,7 +596,7 @@ func (s *Server) diagnosePkgs(ctx context.Context, snapshot source.Snapshot, toD
 //
 // This can be used for ensuring gopls publishes diagnostics after certain file
 // events.
-func (s *Server) mustPublishDiagnostics(uri span.URI) {
+func (s *server) mustPublishDiagnostics(uri span.URI) {
 	s.diagnosticsMu.Lock()
 	defer s.diagnosticsMu.Unlock()
 
@@ -616,7 +616,7 @@ func (s *Server) mustPublishDiagnostics(uri span.URI) {
 //
 // TODO(hyangah): investigate whether we can unconditionally overwrite previous report.diags
 // with the new diags and eliminate the need for the `merge` flag.
-func (s *Server) storeDiagnostics(snapshot source.Snapshot, uri span.URI, dsource diagnosticSource, diags []*source.Diagnostic, merge bool) {
+func (s *server) storeDiagnostics(snapshot source.Snapshot, uri span.URI, dsource diagnosticSource, diags []*source.Diagnostic, merge bool) {
 	// Safeguard: ensure that the file actually exists in the snapshot
 	// (see golang.org/issues/38602).
 	fh := snapshot.FindFile(uri)
@@ -653,7 +653,7 @@ func (s *Server) storeDiagnostics(snapshot source.Snapshot, uri span.URI, dsourc
 // clearDiagnosticSource clears all diagnostics for a given source type. It is
 // necessary for cases where diagnostics have been invalidated by something
 // other than a snapshot change, for example when gc_details is toggled.
-func (s *Server) clearDiagnosticSource(dsource diagnosticSource) {
+func (s *server) clearDiagnosticSource(dsource diagnosticSource) {
 	s.diagnosticsMu.Lock()
 	defer s.diagnosticsMu.Unlock()
 	for _, reports := range s.diagnostics {
@@ -665,7 +665,7 @@ const WorkspaceLoadFailure = "Error loading workspace"
 
 // showCriticalErrorStatus shows the error as a progress report.
 // If the error is nil, it clears any existing error progress report.
-func (s *Server) showCriticalErrorStatus(ctx context.Context, snapshot source.Snapshot, err *source.CriticalError) {
+func (s *server) showCriticalErrorStatus(ctx context.Context, snapshot source.Snapshot, err *source.CriticalError) {
 	s.criticalErrorStatusMu.Lock()
 	defer s.criticalErrorStatusMu.Unlock()
 
@@ -698,7 +698,7 @@ func (s *Server) showCriticalErrorStatus(ctx context.Context, snapshot source.Sn
 }
 
 // publishDiagnostics collects and publishes any unpublished diagnostic reports.
-func (s *Server) publishDiagnostics(ctx context.Context, final bool, snapshot source.Snapshot) {
+func (s *server) publishDiagnostics(ctx context.Context, final bool, snapshot source.Snapshot) {
 	ctx, done := event.Start(ctx, "Server.publishDiagnostics", source.SnapshotLabels(snapshot)...)
 	defer done()
 
@@ -814,7 +814,7 @@ func toProtocolDiagnostics(diagnostics []*source.Diagnostic) []protocol.Diagnost
 	return reports
 }
 
-func (s *Server) shouldIgnoreError(ctx context.Context, snapshot source.Snapshot, err error) bool {
+func (s *server) shouldIgnoreError(ctx context.Context, snapshot source.Snapshot, err error) bool {
 	if err == nil { // if there is no error at all
 		return false
 	}
@@ -841,7 +841,7 @@ func (s *Server) shouldIgnoreError(ctx context.Context, snapshot source.Snapshot
 // Diagnostics formattedfor the debug server
 // (all the relevant fields of Server are private)
 // (The alternative is to export them)
-func (s *Server) Diagnostics() map[string][]string {
+func (s *server) Diagnostics() map[string][]string {
 	ans := make(map[string][]string)
 	s.diagnosticsMu.Lock()
 	defer s.diagnosticsMu.Unlock()

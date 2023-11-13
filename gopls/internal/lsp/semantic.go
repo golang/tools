@@ -38,15 +38,15 @@ const maxFullFileSize int = 100000
 // semDebug should NEVER be true in checked-in code
 const semDebug = false
 
-func (s *Server) semanticTokensFull(ctx context.Context, params *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
+func (s *server) semanticTokensFull(ctx context.Context, params *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
 	return s.semanticTokens(ctx, params.TextDocument, nil)
 }
 
-func (s *Server) semanticTokensRange(ctx context.Context, params *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
+func (s *server) semanticTokensRange(ctx context.Context, params *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
 	return s.semanticTokens(ctx, params.TextDocument, &params.Range)
 }
 
-func (s *Server) semanticTokens(ctx context.Context, td protocol.TextDocumentIdentifier, rng *protocol.Range) (*protocol.SemanticTokens, error) {
+func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIdentifier, rng *protocol.Range) (*protocol.SemanticTokens, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.semanticTokens", tag.URI.Of(td.URI))
 	defer done()
 

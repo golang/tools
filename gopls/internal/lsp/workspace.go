@@ -16,7 +16,7 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-func (s *Server) didChangeWorkspaceFolders(ctx context.Context, params *protocol.DidChangeWorkspaceFoldersParams) error {
+func (s *server) didChangeWorkspaceFolders(ctx context.Context, params *protocol.DidChangeWorkspaceFoldersParams) error {
 	event := params.Event
 	for _, folder := range event.Removed {
 		view := s.session.ViewByName(folder.Name)
@@ -31,7 +31,7 @@ func (s *Server) didChangeWorkspaceFolders(ctx context.Context, params *protocol
 
 // addView returns a Snapshot and a release function that must be
 // called when it is no longer needed.
-func (s *Server) addView(ctx context.Context, name string, uri span.URI) (source.Snapshot, func(), error) {
+func (s *server) addView(ctx context.Context, name string, uri span.URI) (source.Snapshot, func(), error) {
 	s.stateMu.Lock()
 	state := s.state
 	s.stateMu.Unlock()
@@ -51,7 +51,7 @@ func (s *Server) addView(ctx context.Context, name string, uri span.URI) (source
 	return snapshot, release, err
 }
 
-func (s *Server) didChangeConfiguration(ctx context.Context, _ *protocol.DidChangeConfigurationParams) error {
+func (s *server) didChangeConfiguration(ctx context.Context, _ *protocol.DidChangeConfigurationParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.didChangeConfiguration")
 	defer done()
 

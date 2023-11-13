@@ -35,7 +35,7 @@ const (
 // getenv returns the effective environment variable value for the provided
 // key, looking up the key in the session environment before falling back on
 // the process environment.
-func (s *Server) getenv(key string) string {
+func (s *server) getenv(key string) string {
 	if v, ok := s.Options().Env[key]; ok {
 		return v
 	}
@@ -44,7 +44,7 @@ func (s *Server) getenv(key string) string {
 
 // configDir returns the root of the gopls configuration dir. By default this
 // is os.UserConfigDir/gopls, but it may be overridden for tests.
-func (s *Server) configDir() (string, error) {
+func (s *server) configDir() (string, error) {
 	if d := s.getenv(GoplsConfigDirEnvvar); d != "" {
 		return d, nil
 	}
@@ -57,7 +57,7 @@ func (s *Server) configDir() (string, error) {
 
 // telemetryMode returns the current effective telemetry mode.
 // By default this is x/telemetry.Mode(), but it may be overridden for tests.
-func (s *Server) telemetryMode() string {
+func (s *server) telemetryMode() string {
 	if fake := s.getenv(FakeTelemetryModefileEnvvar); fake != "" {
 		if data, err := os.ReadFile(fake); err == nil {
 			return string(data)
@@ -70,7 +70,7 @@ func (s *Server) telemetryMode() string {
 // setTelemetryMode sets the current telemetry mode.
 // By default this calls x/telemetry.SetMode, but it may be overridden for
 // tests.
-func (s *Server) setTelemetryMode(mode string) error {
+func (s *server) setTelemetryMode(mode string) error {
 	if fake := s.getenv(FakeTelemetryModefileEnvvar); fake != "" {
 		return os.WriteFile(fake, []byte(mode), 0666)
 	}
@@ -85,7 +85,7 @@ func (s *Server) setTelemetryMode(mode string) error {
 // prompting.
 // If enabled is false, this will not prompt the user in any condition,
 // but will send work progress reports to help testing.
-func (s *Server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
+func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 	if s.Options().VerboseWorkDoneProgress {
 		work := s.progress.Start(ctx, TelemetryPromptWorkTitle, "Checking if gopls should prompt about telemetry...", nil, nil)
 		defer work.End(ctx, "Done.")

@@ -14,7 +14,7 @@ import (
 	"golang.org/x/tools/internal/event/tag"
 )
 
-func (s *Server) documentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]interface{}, error) {
+func (s *server) documentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]interface{}, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.documentSymbol", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
