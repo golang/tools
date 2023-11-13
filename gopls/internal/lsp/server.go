@@ -4,7 +4,12 @@
 
 //go:generate go run ./helper -d protocol/tsserver.go -o server_gen.go -u .
 
-// Package lsp implements LSP for gopls.
+// Package lsp defines gopls' implementation of the LSP server
+// interface, [protocol.Server]. Call [NewServer] to create an instance.
+//
+// TODO(adonovan): rename lsp.NewServer to server.New (and
+// package)--but it's a big change, so first make sure no-one has
+// pending CLs.
 package lsp
 
 import (
