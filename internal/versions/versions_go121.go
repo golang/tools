@@ -17,7 +17,13 @@ package versions
 //	Lang("go1") = "go1"
 //	Lang("bad") = ""
 //	Lang("1.21") = ""
-func Lang(x string) string { return lang(x) }
+func Lang(x string) string {
+	v := lang(stripGo(x))
+	if v == "" {
+		return ""
+	}
+	return x[:2+len(v)] // "go"+v without allocation
+}
 
 // Compare returns -1, 0, or +1 depending on whether
 // x < y, x == y, or x > y, interpreted as Go versions.
@@ -28,7 +34,16 @@ func Lang(x string) string { return lang(x) }
 // release candidate and eventual releases "go1.21rc1" and "go1.21.0".
 // Custom toolchain suffixes are ignored during comparison:
 // "go1.21.0" and "go1.21.0-bigcorp" are equal.
-func Compare(x, y string) int { return compare(x, y) }
+func Compare(x, y string) int { return compare(stripGo(x), stripGo(y)) }
 
 // IsValid reports whether the version x is valid.
-func IsValid(x string) bool { return isValid(x) }
+func IsValid(x string) bool { return isValid(stripGo(x)) }
+
+// stripGo converts from a "go1.21" version to a "1.21" version.
+// If v does not start with "go", stripGo returns the empty string (a known invalid version).
+func stripGo(v string) string {
+	if len(v) < 2 || v[:2] != "go" {
+		return ""
+	}
+	return v[2:]
+}

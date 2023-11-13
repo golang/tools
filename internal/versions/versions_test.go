@@ -7,13 +7,10 @@ package versions_test
 import (
 	"testing"
 
-	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/versions"
 )
 
 func TestIsValid(t *testing.T) {
-	testenv.NeedsGo1Point(t, 22)
-
 	// valid versions
 	for _, x := range []string{
 		"go1.21",
@@ -51,8 +48,6 @@ func TestIsValid(t *testing.T) {
 }
 
 func TestVersionComparisons(t *testing.T) {
-	testenv.NeedsGo1Point(t, 22)
-
 	for _, item := range []struct {
 		x, y string
 		want int
@@ -115,7 +110,6 @@ func TestVersionComparisons(t *testing.T) {
 }
 
 func TestLang(t *testing.T) {
-	testenv.NeedsGo1Point(t, 22)
 	for _, item := range []struct {
 		x    string
 		want string
