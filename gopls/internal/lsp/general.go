@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/goversion"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -246,73 +247,6 @@ func (s *server) initialized(ctx context.Context, params *protocol.InitializedPa
 	return nil
 }
 
-// GoVersionTable maps Go versions to the gopls version in which support will
-// be deprecated, and the final gopls version supporting them without warnings.
-// Keep this in sync with gopls/README.md.
-//
-// Must be sorted in ascending order of Go version.
-//
-// Exposed (and mutable) for testing.
-var GoVersionTable = []GoVersionSupport{
-	{12, "", "v0.7.5"},
-	{15, "", "v0.9.5"},
-	{16, "v0.13.0", "v0.11.0"},
-	{17, "v0.13.0", "v0.11.0"},
-}
-
-// GoVersionSupport holds information about end-of-life Go version support.
-//
-// Exposed for testing.
-type GoVersionSupport struct {
-	GoVersion           int
-	DeprecatedVersion   string // if unset, the version is already deprecated
-	InstallGoplsVersion string
-}
-
-// OldestSupportedGoVersion is the last X in Go 1.X that this version of gopls
-// supports.
-func OldestSupportedGoVersion() int {
-	return GoVersionTable[len(GoVersionTable)-1].GoVersion + 1
-}
-
-// versionMessage returns the warning/error message to display if the user has
-// the given Go version, if any. The goVersion variable is the X in Go 1.X. If
-// fromBuild is set, the Go version is the version used to build gopls.
-// Otherwise, it is the go command version.
-//
-// If goVersion is invalid (< 0), it returns "", 0.
-func versionMessage(goVersion int, fromBuild bool) (string, protocol.MessageType) {
-	if goVersion < 0 {
-		return "", 0
-	}
-
-	for _, v := range GoVersionTable {
-		if goVersion <= v.GoVersion {
-			var msgBuilder strings.Builder
-
-			mType := protocol.Error
-			if fromBuild {
-				fmt.Fprintf(&msgBuilder, "Gopls was built with Go version 1.%d", goVersion)
-			} else {
-				fmt.Fprintf(&msgBuilder, "Found Go version 1.%d", goVersion)
-			}
-			if v.DeprecatedVersion != "" {
-				// not deprecated yet, just a warning
-				fmt.Fprintf(&msgBuilder, ", which will be unsupported by gopls %s. ", v.DeprecatedVersion)
-				mType = protocol.Warning
-			} else {
-				fmt.Fprint(&msgBuilder, ", which is not supported by this version of gopls. ")
-			}
-			fmt.Fprintf(&msgBuilder, "Please upgrade to Go 1.%d or later and reinstall gopls. ", OldestSupportedGoVersion())
-			fmt.Fprintf(&msgBuilder, "If you can't upgrade and want this message to go away, please install gopls %s. ", v.InstallGoplsVersion)
-			fmt.Fprint(&msgBuilder, "See https://go.dev/s/gopls-support-policy for more details.")
-
-			return msgBuilder.String(), mType
-		}
-	}
-	return "", 0
-}
-
 // checkViewGoVersions checks whether any Go version used by a view is too old,
 // raising a showMessage notification if so.
 //
@@ -327,7 +261,11 @@ func (s *server) checkViewGoVersions() {
 		telemetry.RecordViewGoVersion(viewVersion)
 	}
 
-	if msg, mType := versionMessage(oldestVersion, fromBuild); msg != "" {
+	if msg, isError := goversion.Message(oldestVersion, fromBuild); msg != "" {
+		mType := protocol.Warning
+		if isError {
+			mType = protocol.Error
+		}
 		s.eventuallyShowMessage(context.Background(), &protocol.ShowMessageParams{
 			Type:    mType,
 			Message: msg,

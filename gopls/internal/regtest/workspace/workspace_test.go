@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/goversion"
 	"golang.org/x/tools/gopls/internal/hooks"
-	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/gocommand"
@@ -1189,7 +1189,7 @@ import (
 // supported.
 func TestOldGoNotification_SupportedVersion(t *testing.T) {
 	v := goVersion(t)
-	if v < lsp.OldestSupportedGoVersion() {
+	if v < goversion.OldestSupported() {
 		t.Skipf("go version 1.%d is unsupported", v)
 	}
 
@@ -1206,7 +1206,7 @@ func TestOldGoNotification_SupportedVersion(t *testing.T) {
 // legacy Go versions (see also TestOldGoNotification_Fake)
 func TestOldGoNotification_UnsupportedVersion(t *testing.T) {
 	v := goVersion(t)
-	if v >= lsp.OldestSupportedGoVersion() {
+	if v >= goversion.OldestSupported() {
 		t.Skipf("go version 1.%d is supported", v)
 	}
 
@@ -1226,15 +1226,15 @@ func TestOldGoNotification_Fake(t *testing.T) {
 	// oldest supported Go version here, we can at least ensure that the
 	// ShowMessage pop-up works.
 	ctx := context.Background()
-	goversion, err := gocommand.GoVersion(ctx, gocommand.Invocation{}, &gocommand.Runner{})
+	version, err := gocommand.GoVersion(ctx, gocommand.Invocation{}, &gocommand.Runner{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func(t []lsp.GoVersionSupport) {
-		lsp.GoVersionTable = t
-	}(lsp.GoVersionTable)
-	lsp.GoVersionTable = []lsp.GoVersionSupport{
-		{GoVersion: goversion, InstallGoplsVersion: "v1.0.0"},
+	defer func(t []goversion.Support) {
+		goversion.Supported = t
+	}(goversion.Supported)
+	goversion.Supported = []goversion.Support{
+		{GoVersion: version, InstallGoplsVersion: "v1.0.0"},
 	}
 
 	Run(t, "", func(t *testing.T, env *Env) {

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/goversion"
 	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/fake"
@@ -1331,7 +1332,7 @@ func _() {
 func TestEnableAllExperiments(t *testing.T) {
 	// Before the oldest supported Go version, gopls sends a warning to upgrade
 	// Go, which fails the expectation below.
-	testenv.NeedsGo1Point(t, lsp.OldestSupportedGoVersion())
+	testenv.NeedsGo1Point(t, goversion.OldestSupported())
 
 	const mod = `
 -- go.mod --
