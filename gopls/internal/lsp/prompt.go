@@ -62,7 +62,7 @@ func (s *Server) telemetryMode() string {
 		if data, err := os.ReadFile(fake); err == nil {
 			return string(data)
 		}
-		return "off"
+		return "local"
 	}
 	return telemetry.Mode()
 }
@@ -95,8 +95,8 @@ func (s *Server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 		return // prompt is disabled
 	}
 
-	if s.telemetryMode() == "on" {
-		// Telemetry is already on -- nothing to ask about.
+	if s.telemetryMode() == "on" || s.telemetryMode() == "off" {
+		// Telemetry is already on or explicitly off -- nothing to ask about.
 		return
 	}
 
@@ -262,9 +262,9 @@ func telemetryOnMessage(linkify bool) string {
 
 To disable telemetry uploading, run %s.
 `
-	var runCmd = "`go run golang.org/x/telemetry/cmd/gotelemetry@latest off`"
+	var runCmd = "`go run golang.org/x/telemetry/cmd/gotelemetry@latest local`"
 	if linkify {
-		runCmd = "[gotelemetry off](https://golang.org/x/telemetry/cmd/gotelemetry)"
+		runCmd = "[gotelemetry local](https://golang.org/x/telemetry/cmd/gotelemetry)"
 	}
 	return fmt.Sprintf(format, runCmd)
 }
