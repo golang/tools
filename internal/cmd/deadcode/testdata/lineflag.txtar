@@ -1,10 +1,10 @@
 # Test of line-oriented output.
 
- deadcode `-f={{range .Funcs}}{{printf "%s.%s\n" $.Path .Name}}{{end}}` -filter= example.com
+ deadcode `-f={{range .Funcs}}{{printf "%s: %s.%s\n" .Position $.Path .Name}}{{end}}` -filter= example.com
 
- want "example.com.T.Goodbye"
+ want "main.go:13:10: example.com.T.Goodbye"
 !want "example.com.T.Hello"
- want "example.com.unreferenced"
+ want "main.go:15:6: example.com.unreferenced"
 
  want "fmt.Scanf"
  want "fmt.Printf"

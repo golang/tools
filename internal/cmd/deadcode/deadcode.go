@@ -18,6 +18,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"runtime/pprof"
@@ -336,14 +337,15 @@ func main() {
 		}
 		if len(functions) > 0 {
 			packages = append(packages, jsonPackage{
+				Name:  fns[0].Pkg.Pkg.Name(),
 				Path:  pkgpath,
 				Funcs: functions,
 			})
 		}
 	}
 
-	// Default format: functions grouped by package.
-	format := `{{println .Path}}{{range .Funcs}}{{printf "\t%s\n" .Name}}{{end}}{{println}}`
+	// Default line-oriented format: "a/b/c.go:1:2: unreachable func: T.f"
+	format := `{{range .Funcs}}{{printf "%s: unreachable func: %s\n" .Position .Name}}{{end}}`
 	if *formatFlag != "" {
 		format = *formatFlag
 	}
@@ -553,8 +555,16 @@ func isStaticCall(edge *callgraph.Edge) bool {
 	return edge.Site != nil && edge.Site.Common().StaticCallee() != nil
 }
 
+var cwd, _ = os.Getwd()
+
 func toJSONPosition(posn token.Position) jsonPosition {
-	return jsonPosition{posn.Filename, posn.Line, posn.Column}
+	// Use cwd-relative filename if possible.
+	filename := posn.Filename
+	if rel, err := filepath.Rel(cwd, filename); err == nil && !strings.HasPrefix(rel, "..") {
+		filename = rel
+	}
+
+	return jsonPosition{filename, posn.Line, posn.Column}
 }
 
 func cond[T any](cond bool, t, f T) T {
@@ -578,8 +588,9 @@ type jsonFunction struct {
 func (f jsonFunction) String() string { return f.Name }
 
 type jsonPackage struct {
-	Path  string
-	Funcs []jsonFunction
+	Name  string         // declared name
+	Path  string         // full import path
+	Funcs []jsonFunction // non-empty list of package's dead functions
 }
 
 func (p jsonPackage) String() string { return p.Path }

@@ -59,20 +59,28 @@ easier to compute the intersection of results across all runs.
 
 The command supports three output formats.
 
-With no flags, the command prints dead functions grouped by package.
+With no flags, the command prints the name and location of each dead
+function in the form of a typical compiler diagnostic, for example:
+
+	$ deadcode -f='{{range .Funcs}}{{println .Position}}{{end}}' -test ./gopls/...
+	gopls/internal/lsp/command.go:1206:6: unreachable func: openClientEditor
+	gopls/internal/lsp/template/parse.go:414:18: unreachable func: Parsed.WriteNode
+	gopls/internal/lsp/template/parse.go:419:18: unreachable func: wrNode.writeNode
 
 With the -json flag, the command prints an array of Package
 objects, as defined by the JSON schema (see below).
 
 With the -f=template flag, the command executes the specified template
-on each Package record. So, this template produces a result similar to the
-default format:
+on each Package record. So, this template shows dead functions grouped
+by package:
 
-	-f='{{println .Path}}{{range .Funcs}}{{printf "\t%s\n" .Name}}{{end}}{{println}}'
+	$ deadcode -f='{{println .Path}}{{range .Funcs}}{{printf "\t%s\n" .Name}}{{end}}{{println}}' -test ./gopls/...
+	golang.org/x/tools/gopls/internal/lsp
+		openClientEditor
 
-And this template shows only the list of source positions of dead functions:
-
-	-f='{{range .Funcs}}{{println .Position}}{{end}}'
+	golang.org/x/tools/gopls/internal/lsp/template
+		Parsed.WriteNode
+		wrNode.writeNode
 
 # Why is a function not dead?
 
@@ -104,7 +112,8 @@ is static or dynamic, and its source line number. For example:
 # JSON schema
 
 	type Package struct {
-		Path  string       // import path of package
+		Name  string       // declared name
+		Path  string       // full import path
 		Funcs []Function   // list of dead functions within it
 	}
 
