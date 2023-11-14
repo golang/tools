@@ -10,7 +10,6 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -50,7 +49,7 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 	}
 	defer conn.terminate(ctx)
 
-	from := span.Parse(args[0])
+	from := parseSpan(args[0])
 	uri := from.URI()
 	file, err := conn.openFile(ctx, uri)
 	if err != nil {

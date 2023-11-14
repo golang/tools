@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -46,13 +45,13 @@ func (c *callHierarchy) Run(ctx context.Context, args ...string) error {
 	}
 	defer conn.terminate(ctx)
 
-	from := span.Parse(args[0])
+	from := parseSpan(args[0])
 	file, err := conn.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
 
-	loc, err := file.mapper.SpanLocation(from)
+	loc, err := file.spanLocation(from)
 	if err != nil {
 		return err
 	}
@@ -115,7 +114,7 @@ func callItemPrintString(ctx context.Context, conn *connection, item protocol.Ca
 	if err != nil {
 		return "", err
 	}
-	itemSpan, err := itemFile.mapper.RangeSpan(item.Range)
+	itemSpan, err := itemFile.rangeSpan(item.Range)
 	if err != nil {
 		return "", err
 	}
@@ -127,7 +126,7 @@ func callItemPrintString(ctx context.Context, conn *connection, item protocol.Ca
 			return "", err
 		}
 		for _, rng := range calls {
-			call, err := callsFile.mapper.RangeSpan(rng)
+			call, err := callsFile.rangeSpan(rng)
 			if err != nil {
 				return "", err
 			}

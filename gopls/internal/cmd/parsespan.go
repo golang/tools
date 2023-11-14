@@ -2,33 +2,23 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package span
+package cmd
 
 import (
-	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"golang.org/x/tools/gopls/internal/span"
 )
 
-// Parse returns the location represented by the input.
+// parseSpan returns the location represented by the input.
 // Only file paths are accepted, not URIs.
 // The returned span will be normalized, and thus if printed may produce a
 // different string.
-//
-// TODO(adonovan): used only from cmd package; move there and simplify.
-func Parse(input string) Span {
-	return parseInDir(input, ".")
-}
+func parseSpan(input string) Span {
+	uri := span.URIFromPath
 
-// parseInDir is like Parse, but interprets paths relative to wd.
-func parseInDir(input, wd string) Span {
-	uri := func(path string) URI {
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(wd, path)
-		}
-		return URIFromPath(path)
-	}
 	// :0:0#0-0:0#0
 	valid := input
 	var hold, offset int
@@ -46,19 +36,19 @@ func parseInDir(input, wd string) Span {
 	}
 	switch {
 	case suf.sep == ":":
-		return New(uri(suf.remains), NewPoint(suf.num, hold, offset), Point{})
+		return newSpan(uri(suf.remains), newPoint(suf.num, hold, offset), point{})
 	case suf.sep == "-":
 		// we have a span, fall out of the case to continue
 	default:
 		// separator not valid, rewind to either the : or the start
-		return New(uri(valid), NewPoint(hold, 0, offset), Point{})
+		return newSpan(uri(valid), newPoint(hold, 0, offset), point{})
 	}
 	// only the span form can get here
 	// at this point we still don't know what the numbers we have mean
 	// if have not yet seen a : then we might have either a line or a column depending
 	// on whether start has a column or not
 	// we build an end point and will fix it later if needed
-	end := NewPoint(suf.num, hold, offset)
+	end := newPoint(suf.num, hold, offset)
 	hold, offset = 0, 0
 	suf = rstripSuffix(suf.remains)
 	if suf.sep == "#" {
@@ -67,20 +57,20 @@ func parseInDir(input, wd string) Span {
 	}
 	if suf.sep != ":" {
 		// turns out we don't have a span after all, rewind
-		return New(uri(valid), end, Point{})
+		return newSpan(uri(valid), end, point{})
 	}
 	valid = suf.remains
 	hold = suf.num
 	suf = rstripSuffix(suf.remains)
 	if suf.sep != ":" {
 		// line#offset only
-		return New(uri(valid), NewPoint(hold, 0, offset), end)
+		return newSpan(uri(valid), newPoint(hold, 0, offset), end)
 	}
 	// we have a column, so if end only had one number, it is also the column
 	if !hadCol {
-		end = NewPoint(suf.num, end.v.Line, end.v.Offset)
+		end = newPoint(suf.num, end.v.Line, end.v.Offset)
 	}
-	return New(uri(suf.remains), NewPoint(suf.num, hold, offset), end)
+	return newSpan(uri(suf.remains), newPoint(suf.num, hold, offset), end)
 }
 
 type suffix struct {

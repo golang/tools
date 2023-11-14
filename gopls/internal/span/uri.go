@@ -4,6 +4,10 @@
 
 package span
 
+// TODO(adonovan): rename this package. Perhaps merge span.URI with
+// protocol.DocumentURI and make these methods on it? Or is span.URI
+// supposed to establish stronger invariants? urls.FromPath?
+
 import (
 	"fmt"
 	"net/url"
@@ -104,6 +108,8 @@ func URIFromURI(s string) URI {
 
 // SameExistingFile reports whether two spans denote the
 // same existing file by querying the file system.
+//
+// TODO(adonovan): inline sole use of this in view de-duping.
 func SameExistingFile(a, b URI) bool {
 	fa, err := filename(a)
 	if err != nil {

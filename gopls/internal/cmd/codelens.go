@@ -12,7 +12,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -107,12 +106,12 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 	}
 	defer conn.terminate(ctx)
 
-	filespan := span.Parse(filename)
+	filespan := parseSpan(filename)
 	file, err := conn.openFile(ctx, filespan.URI())
 	if err != nil {
 		return err
 	}
-	loc, err := file.mapper.SpanLocation(filespan)
+	loc, err := file.spanLocation(filespan)
 	if err != nil {
 		return err
 	}
@@ -126,7 +125,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 	}
 
 	for _, lens := range lenses {
-		sp, err := file.mapper.RangeSpan(lens.Range)
+		sp, err := file.rangeSpan(lens.Range)
 		if err != nil {
 			return nil
 		}

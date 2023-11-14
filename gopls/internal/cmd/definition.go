@@ -14,14 +14,13 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/tool"
 )
 
 // A Definition is the result of a 'definition' query.
 type Definition struct {
-	Span        span.Span `json:"span"`        // span of the definition
-	Description string    `json:"description"` // description of the denoted object
+	Span        Span   `json:"span"`        // span of the definition
+	Description string `json:"description"` // description of the denoted object
 }
 
 // These constant is printed in the help, and then used in a test to verify the
@@ -79,12 +78,12 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 	defer conn.terminate(ctx)
-	from := span.Parse(args[0])
+	from := parseSpan(args[0])
 	file, err := conn.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
-	loc, err := file.mapper.SpanLocation(from)
+	loc, err := file.spanLocation(from)
 	if err != nil {
 		return err
 	}
@@ -103,7 +102,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return fmt.Errorf("%v: %v", from, err)
 	}
-	definition, err := file.mapper.LocationSpan(locs[0])
+	definition, err := file.locationSpan(locs[0])
 	if err != nil {
 		return fmt.Errorf("%v: %v", from, err)
 	}

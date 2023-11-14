@@ -81,13 +81,13 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 	}
 	defer conn.terminate(ctx)
 
-	from := span.Parse(args[0])
+	from := parseSpan(args[0])
 	uri := from.URI()
 	file, err := conn.openFile(ctx, uri)
 	if err != nil {
 		return err
 	}
-	rng, err := file.mapper.SpanRange(from)
+	rng, err := file.spanRange(from)
 	if err != nil {
 		return err
 	}

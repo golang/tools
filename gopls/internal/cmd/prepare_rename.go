@@ -11,7 +11,6 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -50,12 +49,12 @@ func (r *prepareRename) Run(ctx context.Context, args ...string) error {
 	}
 	defer conn.terminate(ctx)
 
-	from := span.Parse(args[0])
+	from := parseSpan(args[0])
 	file, err := conn.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
-	loc, err := file.mapper.SpanLocation(from)
+	loc, err := file.spanLocation(from)
 	if err != nil {
 		return err
 	}
@@ -70,7 +69,7 @@ func (r *prepareRename) Run(ctx context.Context, args ...string) error {
 		return ErrInvalidRenamePosition
 	}
 
-	s, err := file.mapper.RangeSpan(result.Range)
+	s, err := file.rangeSpan(result.Range)
 	if err != nil {
 		return err
 	}

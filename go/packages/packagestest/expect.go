@@ -128,21 +128,6 @@ type Range struct {
 	Start, End token.Pos   // both valid and within range of TokFile
 }
 
-// A rangeSetter abstracts a variable that can be set from a Range value.
-//
-// The parameter conversion machinery will automatically construct a
-// variable of type T and call the SetRange method on its address if
-// *T implements rangeSetter. This allows alternative notations of
-// source ranges to interoperate transparently with this package.
-//
-// This type intentionally does not mention Range itself, to avoid a
-// dependency from the application's range type upon this package.
-//
-// Currently this is a secret back door for use only by gopls.
-type rangeSetter interface {
-	SetRange(file *token.File, start, end token.Pos)
-}
-
 // Mark adds a new marker to the known set.
 func (e *Exported) Mark(name string, r Range) {
 	if e.markers == nil {
@@ -243,15 +228,14 @@ func (e *Exported) getMarkers() error {
 }
 
 var (
-	noteType        = reflect.TypeOf((*expect.Note)(nil))
-	identifierType  = reflect.TypeOf(expect.Identifier(""))
-	posType         = reflect.TypeOf(token.Pos(0))
-	positionType    = reflect.TypeOf(token.Position{})
-	rangeType       = reflect.TypeOf(Range{})
-	rangeSetterType = reflect.TypeOf((*rangeSetter)(nil)).Elem()
-	fsetType        = reflect.TypeOf((*token.FileSet)(nil))
-	regexType       = reflect.TypeOf((*regexp.Regexp)(nil))
-	exportedType    = reflect.TypeOf((*Exported)(nil))
+	noteType       = reflect.TypeOf((*expect.Note)(nil))
+	identifierType = reflect.TypeOf(expect.Identifier(""))
+	posType        = reflect.TypeOf(token.Pos(0))
+	positionType   = reflect.TypeOf(token.Position{})
+	rangeType      = reflect.TypeOf(Range{})
+	fsetType       = reflect.TypeOf((*token.FileSet)(nil))
+	regexType      = reflect.TypeOf((*regexp.Regexp)(nil))
+	exportedType   = reflect.TypeOf((*Exported)(nil))
 )
 
 // converter converts from a marker's argument parsed from the comment to
@@ -309,17 +293,6 @@ func (e *Exported) buildConverter(pt reflect.Type) (converter, error) {
 				return reflect.Value{}, nil, err
 			}
 			return reflect.ValueOf(r), remains, nil
-		}, nil
-	case reflect.PtrTo(pt).AssignableTo(rangeSetterType):
-		// (*pt).SetRange method exists: call it.
-		return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {
-			r, remains, err := e.rangeConverter(n, args)
-			if err != nil {
-				return reflect.Value{}, nil, err
-			}
-			v := reflect.New(pt)
-			v.Interface().(rangeSetter).SetRange(r.TokFile, r.Start, r.End)
-			return v.Elem(), remains, nil
 		}, nil
 	case pt == identifierType:
 		return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {

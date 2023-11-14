@@ -2,19 +2,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package span contains support for representing with positions and ranges in
-// text files.
-package span
+package cmd
+
+// Span and point represent positions and ranges in text files.
 
 import (
 	"encoding/json"
 	"fmt"
-	"go/token"
 	"path"
 	"sort"
 	"strings"
 
-	"golang.org/x/tools/gopls/internal/lsp/safetoken"
+	"golang.org/x/tools/gopls/internal/span"
 )
 
 // A Span represents a range of text within a source file.  The start
@@ -30,54 +29,54 @@ import (
 // (UTF-16). The latter requires access to file contents.
 //
 // See overview comments at ../lsp/protocol/mapper.go.
+//
+// TODO(adonovan): unexport, once "span" package is renamed.
+// And perhaps rename to cmd.{range,point} to match protocol.{Range,Point}?
 type Span struct {
-	v span
+	v _span
 }
 
-// Point represents a single point within a file.
+// point represents a single point within a file.
 // In general this should only be used as part of a Span, as on its own it
 // does not carry enough information.
-type Point struct {
-	v point
+type point struct {
+	v _point
 }
 
 // The private span/point types have public fields to support JSON
-// encoding, but the public Span/Point types hide these fields by
+// encoding, but the public Span/point types hide these fields by
 // defining methods that shadow them. (This is used by a few of the
 // command-line tool subcommands, which emit spans and have a -json
 // flag.)
 
-type span struct {
-	URI   URI   `json:"uri"`
-	Start point `json:"start"`
-	End   point `json:"end"`
+// TODO(adonovan): simplify now that it's all internal to cmd.
+
+type _span struct {
+	URI   span.URI `json:"uri"`
+	Start _point   `json:"start"`
+	End   _point   `json:"end"`
 }
 
-type point struct {
+type _point struct {
 	Line   int `json:"line"`   // 1-based line number
 	Column int `json:"column"` // 1-based, UTF-8 codes (bytes)
 	Offset int `json:"offset"` // 0-based byte offset
 }
 
-// Invalid is a span that reports false from IsValid
-var Invalid = Span{v: span{Start: invalidPoint.v, End: invalidPoint.v}}
-
-var invalidPoint = Point{v: point{Line: 0, Column: 0, Offset: -1}}
-
-func New(uri URI, start, end Point) Span {
-	s := Span{v: span{URI: uri, Start: start.v, End: end.v}}
+func newSpan(uri span.URI, start, end point) Span {
+	s := Span{v: _span{URI: uri, Start: start.v, End: end.v}}
 	s.v.clean()
 	return s
 }
 
-func NewPoint(line, col, offset int) Point {
-	p := Point{v: point{Line: line, Column: col, Offset: offset}}
+func newPoint(line, col, offset int) point {
+	p := point{v: _point{Line: line, Column: col, Offset: offset}}
 	p.v.clean()
 	return p
 }
 
-// SortSpans sorts spans into a stable but unspecified order.
-func SortSpans(spans []Span) {
+// sortSpans sorts spans into a stable but unspecified order.
+func sortSpans(spans []Span) {
 	sort.SliceStable(spans, func(i, j int) bool {
 		return compare(spans[i], spans[j]) < 0
 	})
@@ -97,7 +96,7 @@ func compare(a, b Span) int {
 	return comparePoint(a.v.End, b.v.End)
 }
 
-func comparePoint(a, b point) int {
+func comparePoint(a, b _point) int {
 	if !a.hasPosition() {
 		if a.Offset < b.Offset {
 			return -1
@@ -126,51 +125,51 @@ func (s Span) HasPosition() bool             { return s.v.Start.hasPosition() }
 func (s Span) HasOffset() bool               { return s.v.Start.hasOffset() }
 func (s Span) IsValid() bool                 { return s.v.Start.isValid() }
 func (s Span) IsPoint() bool                 { return s.v.Start == s.v.End }
-func (s Span) URI() URI                      { return s.v.URI }
-func (s Span) Start() Point                  { return Point{s.v.Start} }
-func (s Span) End() Point                    { return Point{s.v.End} }
+func (s Span) URI() span.URI                 { return s.v.URI }
+func (s Span) Start() point                  { return point{s.v.Start} }
+func (s Span) End() point                    { return point{s.v.End} }
 func (s *Span) MarshalJSON() ([]byte, error) { return json.Marshal(&s.v) }
 func (s *Span) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, &s.v) }
 
-func (p Point) HasPosition() bool             { return p.v.hasPosition() }
-func (p Point) HasOffset() bool               { return p.v.hasOffset() }
-func (p Point) IsValid() bool                 { return p.v.isValid() }
-func (p *Point) MarshalJSON() ([]byte, error) { return json.Marshal(&p.v) }
-func (p *Point) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, &p.v) }
-func (p Point) Line() int {
+func (p point) HasPosition() bool             { return p.v.hasPosition() }
+func (p point) HasOffset() bool               { return p.v.hasOffset() }
+func (p point) IsValid() bool                 { return p.v.isValid() }
+func (p *point) MarshalJSON() ([]byte, error) { return json.Marshal(&p.v) }
+func (p *point) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, &p.v) }
+func (p point) Line() int {
 	if !p.v.hasPosition() {
 		panic(fmt.Errorf("position not set in %v", p.v))
 	}
 	return p.v.Line
 }
-func (p Point) Column() int {
+func (p point) Column() int {
 	if !p.v.hasPosition() {
 		panic(fmt.Errorf("position not set in %v", p.v))
 	}
 	return p.v.Column
 }
-func (p Point) Offset() int {
+func (p point) Offset() int {
 	if !p.v.hasOffset() {
 		panic(fmt.Errorf("offset not set in %v", p.v))
 	}
 	return p.v.Offset
 }
 
-func (p point) hasPosition() bool { return p.Line > 0 }
-func (p point) hasOffset() bool   { return p.Offset >= 0 }
-func (p point) isValid() bool     { return p.hasPosition() || p.hasOffset() }
-func (p point) isZero() bool {
+func (p _point) hasPosition() bool { return p.Line > 0 }
+func (p _point) hasOffset() bool   { return p.Offset >= 0 }
+func (p _point) isValid() bool     { return p.hasPosition() || p.hasOffset() }
+func (p _point) isZero() bool {
 	return (p.Line == 1 && p.Column == 1) || (!p.hasPosition() && p.Offset == 0)
 }
 
-func (s *span) clean() {
+func (s *_span) clean() {
 	//this presumes the points are already clean
-	if !s.End.isValid() || (s.End == point{}) {
+	if !s.End.isValid() || (s.End == _point{}) {
 		s.End = s.Start
 	}
 }
 
-func (p *point) clean() {
+func (p *_point) clean() {
 	if p.Line < 0 {
 		p.Line = 0
 	}
@@ -187,7 +186,11 @@ func (p *point) clean() {
 }
 
 // Format implements fmt.Formatter to print the Location in a standard form.
-// The format produced is one that can be read back in using Parse.
+// The format produced is one that can be read back in using parseSpan.
+//
+// TODO(adonovan): this is esoteric, and the formatting options are
+// never used outside of TestFormat. Replace with something simpler
+// along the lines of MappedRange.String.
 func (s Span) Format(f fmt.State, c rune) {
 	fullForm := f.Flag('+')
 	preferOffset := f.Flag('#')
@@ -236,14 +239,4 @@ func (s Span) Format(f fmt.State, c rune) {
 	if printOffset {
 		fmt.Fprintf(f, "#%d", s.v.End.Offset)
 	}
-}
-
-// SetRange implements packagestest.rangeSetter, allowing
-// gopls' test suites to use Spans instead of Range in parameters.
-func (span *Span) SetRange(file *token.File, start, end token.Pos) {
-	point := func(pos token.Pos) Point {
-		posn := safetoken.Position(file, pos)
-		return NewPoint(posn.Line, posn.Column, posn.Offset)
-	}
-	*span = New(URIFromPath(file.Name()), point(start), point(end))
 }

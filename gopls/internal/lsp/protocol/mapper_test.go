@@ -13,9 +13,9 @@ import (
 	"golang.org/x/tools/gopls/internal/span"
 )
 
-// This file tests Mapper's logic for converting between
-// span.Point and UTF-16 columns. (The strange form attests to an
-// earlier abstraction.)
+// This file tests Mapper's logic for converting between offsets,
+// UTF-8 columns, and UTF-16 columns. (The strange form attests to
+// earlier abstractions.)
 
 // 𐐀 is U+10400 = [F0 90 90 80] in UTF-8, [D801 DC00] in UTF-16.
 var funnyString = []byte("𐐀23\n𐐀45")
@@ -233,9 +233,16 @@ func TestToUTF16(t *testing.T) {
 			if e.issue != nil && !*e.issue {
 				t.Skip("expected to fail")
 			}
-			p := span.NewPoint(e.line, e.col, e.offset)
 			m := protocol.NewMapper("", e.input)
-			pos, err := m.PointPosition(p)
+			var pos protocol.Position
+			var err error
+			if e.line > 0 {
+				pos, err = m.LineCol8Position(e.line, e.col)
+			} else if e.offset >= 0 {
+				pos, err = m.OffsetPosition(e.offset)
+			} else {
+				err = fmt.Errorf("point has neither offset nor line/column")
+			}
 			if err != nil {
 				if err.Error() != e.err {
 					t.Fatalf("expected error %v; got %v", e.err, err)
@@ -249,12 +256,12 @@ func TestToUTF16(t *testing.T) {
 			if got != e.resUTF16col {
 				t.Fatalf("expected result %v; got %v", e.resUTF16col, got)
 			}
-			pre, post := getPrePost(e.input, p.Offset())
+			pre, post := getPrePost(e.input, e.offset)
 			if string(pre) != e.pre {
-				t.Fatalf("expected #%d pre %q; got %q", p.Offset(), e.pre, pre)
+				t.Fatalf("expected #%d pre %q; got %q", e.offset, e.pre, pre)
 			}
 			if string(post) != e.post {
-				t.Fatalf("expected #%d, post %q; got %q", p.Offset(), e.post, post)
+				t.Fatalf("expected #%d, post %q; got %q", e.offset, e.post, post)
 			}
 		})
 	}
@@ -264,7 +271,7 @@ func TestFromUTF16(t *testing.T) {
 	for _, e := range fromUTF16Tests {
 		t.Run(e.scenario, func(t *testing.T) {
 			m := protocol.NewMapper("", []byte(e.input))
-			p, err := m.PositionPoint(protocol.Position{
+			offset, err := m.PositionOffset(protocol.Position{
 				Line:      uint32(e.line - 1),
 				Character: uint32(e.utf16col - 1),
 			})
@@ -277,18 +284,22 @@ func TestFromUTF16(t *testing.T) {
 			if e.err != "" {
 				t.Fatalf("unexpected success; wanted %v", e.err)
 			}
-			if p.Column() != e.resCol {
-				t.Fatalf("expected resulting col %v; got %v", e.resCol, p.Column())
+			if offset != e.resOffset {
+				t.Fatalf("expected offset %v; got %v", e.resOffset, offset)
 			}
-			if p.Offset() != e.resOffset {
-				t.Fatalf("expected resulting offset %v; got %v", e.resOffset, p.Offset())
+			line, col8 := m.OffsetLineCol8(offset)
+			if line != e.line {
+				t.Fatalf("expected resulting line %v; got %v", e.line, line)
 			}
-			pre, post := getPrePost(e.input, p.Offset())
+			if col8 != e.resCol {
+				t.Fatalf("expected resulting col %v; got %v", e.resCol, col8)
+			}
+			pre, post := getPrePost(e.input, offset)
 			if string(pre) != e.pre {
-				t.Fatalf("expected #%d pre %q; got %q", p.Offset(), e.pre, pre)
+				t.Fatalf("expected #%d pre %q; got %q", offset, e.pre, pre)
 			}
 			if string(post) != e.post {
-				t.Fatalf("expected #%d post %q; got %q", p.Offset(), e.post, post)
+				t.Fatalf("expected #%d post %q; got %q", offset, e.post, post)
 			}
 		})
 	}
@@ -428,12 +439,12 @@ func TestBytesOffset(t *testing.T) {
 		fname := fmt.Sprintf("test %d", i)
 		uri := span.URIFromPath(fname)
 		mapper := protocol.NewMapper(uri, []byte(test.text))
-		got, err := mapper.PositionPoint(test.pos)
+		got, err := mapper.PositionOffset(test.pos)
 		if err != nil && test.want != -1 {
 			t.Errorf("%d: unexpected error: %v", i, err)
 		}
-		if err == nil && got.Offset() != test.want {
-			t.Errorf("want %d for %q(Line:%d,Character:%d), but got %d", test.want, test.text, int(test.pos.Line), int(test.pos.Character), got.Offset())
+		if err == nil && got != test.want {
+			t.Errorf("want %d for %q(Line:%d,Character:%d), but got %d", test.want, test.text, int(test.pos.Line), int(test.pos.Character), got)
 		}
 	}
 }

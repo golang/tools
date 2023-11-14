@@ -2,23 +2,21 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package span_test
+package cmd
 
 import (
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"golang.org/x/tools/gopls/internal/span"
 )
 
-func TestFormat(t *testing.T) {
+func TestSpanFormat(t *testing.T) {
 	formats := []string{"%v", "%#v", "%+v"}
 
 	// Element 0 is the input, and the elements 0-2 are the expected
 	// output in [%v %#v %+v] formats. Thus the first must be in
-	// canonical form (invariant under span.Parse + fmt.Sprint).
+	// canonical form (invariant under parseSpan + fmt.Sprint).
 	// The '#' form displays offsets; the '+' form outputs a URI.
 	// If len=4, element 0 is a noncanonical input and 1-3 are expected outputs.
 	for _, test := range [][]string{
@@ -35,7 +33,7 @@ func TestFormat(t *testing.T) {
 		{"C:/file_h:3:7#26-4:8#37", // not canonical
 			"C:/file_h:3:7-4:8", "C:/file_h:#26-#37", "file:///C:/file_h:3:7#26-4:8#37"}} {
 		input := test[0]
-		spn := span.Parse(input)
+		spn := parseSpan(input)
 		wants := test[0:3]
 		if len(test) == 4 {
 			wants = test[1:4]

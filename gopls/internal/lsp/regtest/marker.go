@@ -1218,21 +1218,24 @@ func (run *markerTestRun) fmtLocDetails(loc protocol.Location, includeTxtPos boo
 		run.env.T.Errorf("internal error: %v", err)
 		return "<invalid location>"
 	}
-	s, err := m.LocationSpan(loc)
+	start, end, err := m.RangeOffsets(loc.Range)
 	if err != nil {
 		run.env.T.Errorf("error formatting location %s: %v", loc, err)
 		return "<invalid location>"
 	}
-
-	innerSpan := fmt.Sprintf("%d:%d", s.Start().Line(), s.Start().Column())       // relative to the embedded file
-	outerSpan := fmt.Sprintf("%d:%d", lines+s.Start().Line(), s.Start().Column()) // relative to the archive file
-	if s.Start() != s.End() {
-		if s.End().Line() == s.Start().Line() {
-			innerSpan += fmt.Sprintf("-%d", s.End().Column())
-			outerSpan += fmt.Sprintf("-%d", s.End().Column())
+	var (
+		startLine, startCol8 = m.OffsetLineCol8(start)
+		endLine, endCol8     = m.OffsetLineCol8(end)
+	)
+	innerSpan := fmt.Sprintf("%d:%d", startLine, startCol8)       // relative to the embedded file
+	outerSpan := fmt.Sprintf("%d:%d", lines+startLine, startCol8) // relative to the archive file
+	if start != end {
+		if endLine == startLine {
+			innerSpan += fmt.Sprintf("-%d", endCol8)
+			outerSpan += fmt.Sprintf("-%d", endCol8)
 		} else {
-			innerSpan += fmt.Sprintf("-%d:%d", s.End().Line(), s.End().Column())
-			innerSpan += fmt.Sprintf("-%d:%d", lines+s.End().Line(), s.End().Column())
+			innerSpan += fmt.Sprintf("-%d:%d", endLine, endCol8)
+			outerSpan += fmt.Sprintf("-%d:%d", lines+endLine, endCol8)
 		}
 	}
 

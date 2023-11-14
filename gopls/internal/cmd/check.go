@@ -62,7 +62,7 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 
 	for _, file := range checking {
 		for _, d := range file.diagnostics {
-			spn, err := file.mapper.RangeSpan(d.Range)
+			spn, err := file.rangeSpan(d.Range)
 			if err != nil {
 				return fmt.Errorf("Could not convert position %v for %q", d.Range, d.Message)
 			}

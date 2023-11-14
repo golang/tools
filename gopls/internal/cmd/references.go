@@ -11,7 +11,6 @@ import (
 	"sort"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -50,12 +49,12 @@ func (r *references) Run(ctx context.Context, args ...string) error {
 	}
 	defer conn.terminate(ctx)
 
-	from := span.Parse(args[0])
+	from := parseSpan(args[0])
 	file, err := conn.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
-	loc, err := file.mapper.SpanLocation(from)
+	loc, err := file.spanLocation(from)
 	if err != nil {
 		return err
 	}
@@ -77,7 +76,7 @@ func (r *references) Run(ctx context.Context, args ...string) error {
 		}
 		// convert location to span for user-friendly 1-indexed line
 		// and column numbers
-		span, err := f.mapper.LocationSpan(l)
+		span, err := f.locationSpan(l)
 		if err != nil {
 			return err
 		}

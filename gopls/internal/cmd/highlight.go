@@ -10,7 +10,6 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -45,13 +44,13 @@ func (r *highlight) Run(ctx context.Context, args ...string) error {
 	}
 	defer conn.terminate(ctx)
 
-	from := span.Parse(args[0])
+	from := parseSpan(args[0])
 	file, err := conn.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
 
-	loc, err := file.mapper.SpanLocation(from)
+	loc, err := file.spanLocation(from)
 	if err != nil {
 		return err
 	}
@@ -64,16 +63,16 @@ func (r *highlight) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 
-	var results []span.Span
+	var results []Span
 	for _, h := range highlights {
-		s, err := file.mapper.RangeSpan(h.Range)
+		s, err := file.rangeSpan(h.Range)
 		if err != nil {
 			return err
 		}
 		results = append(results, s)
 	}
 	// Sort results to make tests deterministic since DocumentHighlight uses a map.
-	span.SortSpans(results)
+	sortSpans(results)
 
 	for _, s := range results {
 		fmt.Println(s)

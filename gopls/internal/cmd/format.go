@@ -10,7 +10,6 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 // format implements the format verb for gopls.
@@ -49,12 +48,12 @@ func (c *format) Run(ctx context.Context, args ...string) error {
 	}
 	defer conn.terminate(ctx)
 	for _, arg := range args {
-		spn := span.Parse(arg)
+		spn := parseSpan(arg)
 		file, err := conn.openFile(ctx, spn.URI())
 		if err != nil {
 			return err
 		}
-		loc, err := file.mapper.SpanLocation(spn)
+		loc, err := file.spanLocation(spn)
 		if err != nil {
 			return err
 		}

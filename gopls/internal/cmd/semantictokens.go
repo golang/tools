@@ -9,8 +9,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"go/parser"
-	"go/token"
 	"log"
 	"os"
 	"unicode/utf8"
@@ -46,8 +44,6 @@ import (
 type semtok struct {
 	app *Application
 }
-
-var colmap *protocol.Mapper
 
 func (c *semtok) Name() string      { return "semtok" }
 func (c *semtok) Parent() string    { return c.app.Name() }
@@ -85,11 +81,7 @@ func (c *semtok) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 
-	buf, err := os.ReadFile(args[0])
-	if err != nil {
-		return err
-	}
-	lines := bytes.Split(buf, []byte{'\n'})
+	lines := bytes.Split(file.mapper.Content, []byte{'\n'})
 	p := &protocol.SemanticTokensRangeParams{
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: protocol.URIFromSpanURI(uri),
@@ -104,23 +96,7 @@ func (c *semtok) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, args[0], buf, 0)
-	if err != nil {
-		log.Printf("parsing %s failed %v", args[0], err)
-		return err
-	}
-	tok := fset.File(f.Pos())
-	if tok == nil {
-		// can't happen; just parsed this file
-		return fmt.Errorf("can't find %s in fset", args[0])
-	}
-	colmap = protocol.NewMapper(uri, buf)
-	err = decorate(file.uri.Filename(), resp.Data)
-	if err != nil {
-		return err
-	}
-	return nil
+	return decorate(file, resp.Data)
 }
 
 type mark struct {
@@ -159,16 +135,12 @@ func markLine(m mark, lines [][]byte) {
 	lines[m.line-1] = l
 }
 
-func decorate(file string, result []uint32) error {
-	buf, err := os.ReadFile(file)
-	if err != nil {
-		return err
-	}
-	marks := newMarks(result)
+func decorate(file *cmdFile, result []uint32) error {
+	marks := newMarks(file, result)
 	if len(marks) == 0 {
 		return nil
 	}
-	lines := bytes.Split(buf, []byte{'\n'})
+	lines := bytes.Split(file.mapper.Content, []byte{'\n'})
 	for i := len(marks) - 1; i >= 0; i-- {
 		mx := marks[i]
 		markLine(mx, lines)
@@ -177,7 +149,7 @@ func decorate(file string, result []uint32) error {
 	return nil
 }
 
-func newMarks(d []uint32) []mark {
+func newMarks(file *cmdFile, d []uint32) []mark {
 	ans := []mark{}
 	// the following two loops could be merged, at the cost
 	// of making the logic slightly more complicated to understand
@@ -206,7 +178,7 @@ func newMarks(d []uint32) []mark {
 				Character: lspChar[i] + d[5*i+2],
 			},
 		}
-		spn, err := colmap.RangeSpan(pr)
+		spn, err := file.rangeSpan(pr)
 		if err != nil {
 			log.Fatal(err)
 		}

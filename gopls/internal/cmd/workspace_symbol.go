@@ -78,7 +78,7 @@ func (r *workspaceSymbol) Run(ctx context.Context, args ...string) error {
 		if err != nil {
 			return err
 		}
-		span, err := f.mapper.LocationSpan(s.Location)
+		span, err := f.locationSpan(s.Location)
 		if err != nil {
 			return err
 		}

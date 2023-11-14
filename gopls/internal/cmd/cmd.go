@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	bugpkg "golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/browser"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
@@ -799,4 +801,96 @@ func (c *connection) terminate(ctx context.Context) {
 // Implement io.Closer.
 func (c *cmdClient) Close() error {
 	return nil
+}
+
+// -- conversions to span (UTF-8) domain --
+
+// locationSpan converts a protocol (UTF-16) Location to a (UTF-8) span.
+// Precondition: the URIs of Location and Mapper match.
+func (f *cmdFile) locationSpan(loc protocol.Location) (Span, error) {
+	// TODO(adonovan): check that l.URI matches m.URI.
+	return f.rangeSpan(loc.Range)
+}
+
+// rangeSpan converts a protocol (UTF-16) range to a (UTF-8) span.
+// The resulting span has valid Positions and Offsets.
+func (f *cmdFile) rangeSpan(r protocol.Range) (Span, error) {
+	start, end, err := f.mapper.RangeOffsets(r)
+	if err != nil {
+		return Span{}, err
+	}
+	return f.offsetSpan(start, end)
+}
+
+// offsetSpan converts a byte-offset interval to a (UTF-8) span.
+// The resulting span contains line, column, and offset information.
+func (f *cmdFile) offsetSpan(start, end int) (Span, error) {
+	if start > end {
+		return Span{}, fmt.Errorf("start offset (%d) > end (%d)", start, end)
+	}
+	startPoint, err := offsetPoint(f.mapper, start)
+	if err != nil {
+		return Span{}, fmt.Errorf("start: %v", err)
+	}
+	endPoint, err := offsetPoint(f.mapper, end)
+	if err != nil {
+		return Span{}, fmt.Errorf("end: %v", err)
+	}
+	return newSpan(f.mapper.URI, startPoint, endPoint), nil
+}
+
+// offsetPoint converts a byte offset to a span (UTF-8) point.
+// The resulting point contains line, column, and offset information.
+func offsetPoint(m *protocol.Mapper, offset int) (point, error) {
+	if !(0 <= offset && offset <= len(m.Content)) {
+		return point{}, fmt.Errorf("invalid offset %d (want 0-%d)", offset, len(m.Content))
+	}
+	line, col8 := m.OffsetLineCol8(offset)
+	return newPoint(line, col8, offset), nil
+}
+
+// -- conversions from span (UTF-8) domain --
+
+// spanLocation converts a (UTF-8) span to a protocol (UTF-16) range.
+// Precondition: the URIs of spanLocation and Mapper match.
+func (f *cmdFile) spanLocation(s Span) (protocol.Location, error) {
+	rng, err := f.spanRange(s)
+	if err != nil {
+		return protocol.Location{}, err
+	}
+	return f.mapper.RangeLocation(rng), nil
+}
+
+// spanRange converts a (UTF-8) span to a protocol (UTF-16) range.
+// Precondition: the URIs of Span and Mapper match.
+func (f *cmdFile) spanRange(s Span) (protocol.Range, error) {
+	// Assert that we aren't using the wrong mapper.
+	// We check only the base name, and case insensitively,
+	// because we can't assume clean paths, no symbolic links,
+	// case-sensitive directories. The authoritative answer
+	// requires querying the file system, and we don't want
+	// to do that.
+	if !strings.EqualFold(filepath.Base(string(f.mapper.URI)), filepath.Base(string(s.URI()))) {
+		return protocol.Range{}, bugpkg.Errorf("mapper is for file %q instead of %q", f.mapper.URI, s.URI())
+	}
+	start, err := pointPosition(f.mapper, s.Start())
+	if err != nil {
+		return protocol.Range{}, fmt.Errorf("start: %w", err)
+	}
+	end, err := pointPosition(f.mapper, s.End())
+	if err != nil {
+		return protocol.Range{}, fmt.Errorf("end: %w", err)
+	}
+	return protocol.Range{Start: start, End: end}, nil
+}
+
+// pointPosition converts a valid span (UTF-8) point to a protocol (UTF-16) position.
+func pointPosition(m *protocol.Mapper, p point) (protocol.Position, error) {
+	if p.HasPosition() {
+		return m.LineCol8Position(p.Line(), p.Column())
+	}
+	if p.HasOffset() {
+		return m.OffsetPosition(p.Offset())
+	}
+	return protocol.Position{}, fmt.Errorf("point has neither offset nor line/column")
 }
