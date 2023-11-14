@@ -33,7 +33,7 @@ func main() {
 
 	for _, enabled := range []bool{true, false} {
 		t.Run(fmt.Sprintf("telemetryPrompt=%v", enabled), func(t *testing.T) {
-			for _, initialMode := range []string{"", "off", "on"} {
+			for _, initialMode := range []string{"", "local", "off", "on"} {
 				t.Run(fmt.Sprintf("initial_mode=%s", initialMode), func(t *testing.T) {
 					modeFile := filepath.Join(t.TempDir(), "mode")
 					if initialMode != "" {
@@ -51,7 +51,7 @@ func main() {
 							"telemetryPrompt": enabled,
 						},
 					).Run(t, src, func(t *testing.T, env *Env) {
-						wantPrompt := enabled && (initialMode == "" || initialMode == "off")
+						wantPrompt := enabled && (initialMode == "" || initialMode == "local")
 						expectation := ShownMessageRequest(".*Would you like to enable Go telemetry?")
 						if !wantPrompt {
 							expectation = Not(expectation)

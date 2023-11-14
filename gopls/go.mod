@@ -9,8 +9,7 @@ require (
 	github.com/sergi/go-diff v1.1.0
 	golang.org/x/mod v0.14.0
 	golang.org/x/sync v0.5.0
-	golang.org/x/sys v0.14.0
-	golang.org/x/telemetry v0.0.0-20231011160506-788d5629a052
+	golang.org/x/telemetry v0.0.0-20231114163143-69313e640400
 	golang.org/x/text v0.14.0
 	golang.org/x/tools v0.13.1-0.20230920233436-f9b8da7b22be
 	golang.org/x/vuln v1.0.1
@@ -24,6 +23,7 @@ require (
 	github.com/BurntSushi/toml v1.2.1 // indirect
 	github.com/google/safehtml v0.1.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20221212164502-fae10dda9338 // indirect
+	golang.org/x/sys v0.14.0 // indirect
 
 )
 
