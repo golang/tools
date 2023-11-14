@@ -7,6 +7,8 @@ package cache
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -79,11 +81,18 @@ func (s *Session) Cache() *Cache {
 func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, source.Snapshot, func(), error) {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
-	for _, view := range s.views {
-		if span.SameExistingFile(view.folder.Dir, folder.Dir) {
-			return nil, nil, nil, source.ErrViewExists
+
+	// Querying the file system to check whether
+	// two folders denote the same existing directory.
+	if inode1, err := os.Stat(filepath.FromSlash(folder.Dir.Filename())); err == nil {
+		for _, view := range s.views {
+			inode2, err := os.Stat(filepath.FromSlash(view.folder.Dir.Filename()))
+			if err == nil && os.SameFile(inode1, inode2) {
+				return nil, nil, nil, source.ErrViewExists
+			}
 		}
 	}
+
 	info, err := getWorkspaceInformation(ctx, s.gocmdRunner, s, folder)
 	if err != nil {
 		return nil, nil, nil, err

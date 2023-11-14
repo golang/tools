@@ -11,7 +11,6 @@ package span
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -104,30 +103,6 @@ func URIFromURI(s string) URI {
 	}
 	u := url.URL{Scheme: fileScheme, Path: path}
 	return URI(u.String())
-}
-
-// SameExistingFile reports whether two spans denote the
-// same existing file by querying the file system.
-//
-// TODO(adonovan): inline sole use of this in view de-duping.
-func SameExistingFile(a, b URI) bool {
-	fa, err := filename(a)
-	if err != nil {
-		return false
-	}
-	fb, err := filename(b)
-	if err != nil {
-		return false
-	}
-	infoa, err := os.Stat(filepath.FromSlash(fa))
-	if err != nil {
-		return false
-	}
-	infob, err := os.Stat(filepath.FromSlash(fb))
-	if err != nil {
-		return false
-	}
-	return os.SameFile(infoa, infob)
 }
 
 // URIFromPath returns a span URI for the supplied file path.
