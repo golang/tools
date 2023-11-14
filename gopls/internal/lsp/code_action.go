@@ -450,6 +450,10 @@ func refactorRewrite(ctx context.Context, snapshot source.Snapshot, pkg source.P
 		})
 	}
 
+	if action, ok := source.ConvertStringLiteral(pgf, fh, rng); ok {
+		actions = append(actions, action)
+	}
+
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err

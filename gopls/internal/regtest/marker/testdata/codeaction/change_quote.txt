@@ -1,0 +1,69 @@
+This test checks the behavior of the 'change quote' code action.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/changequote
+
+go 1.18
+
+-- a.go --
+package changequote
+
+import (
+	"fmt"
+)
+
+func foo() {
+	var s string
+	s = "hello" //@codeactionedit(`"`, "refactor.rewrite", a1, "Convert to raw string literal")
+	s = `hello` //@codeactionedit("`", "refactor.rewrite", a2, "Convert to interpreted string literal")
+	s = "hello\tworld" //@codeactionedit(`"`, "refactor.rewrite", a3, "Convert to raw string literal")
+	s = `hello	world` //@codeactionedit("`", "refactor.rewrite", a4, "Convert to interpreted string literal")
+	s = "hello\nworld" //@codeactionedit(`"`, "refactor.rewrite", a5, "Convert to raw string literal")
+	// add a comment  to avoid affect diff compute
+	s = `hello
+world` //@codeactionedit("`", "refactor.rewrite", a6, "Convert to interpreted string literal")
+	s = "hello\"world" //@codeactionedit(`"`, "refactor.rewrite", a7, "Convert to raw string literal")
+	s = `hello"world` //@codeactionedit("`", "refactor.rewrite", a8, "Convert to interpreted string literal")
+	s = "hello\x1bworld" //@codeactionerr(`"`, "", "refactor.rewrite", re"found 0 CodeActions")
+	s = "hello`world" //@codeactionerr(`"`, "", "refactor.rewrite", re"found 0 CodeActions")
+	s = "hello\x7fworld" //@codeactionerr(`"`, "", "refactor.rewrite", re"found 0 CodeActions")
+	fmt.Println(s)
+}
+
+-- @a1/a.go --
+@@ -9 +9 @@
+-	s = "hello" //@codeactionedit(`"`, "refactor.rewrite", a1, "Convert to raw string literal")
++	s = `hello` //@codeactionedit(`"`, "refactor.rewrite", a1, "Convert to raw string literal")
+-- @a2/a.go --
+@@ -10 +10 @@
+-	s = `hello` //@codeactionedit("`", "refactor.rewrite", a2, "Convert to interpreted string literal")
++	s = "hello" //@codeactionedit("`", "refactor.rewrite", a2, "Convert to interpreted string literal")
+-- @a3/a.go --
+@@ -11 +11 @@
+-	s = "hello\tworld" //@codeactionedit(`"`, "refactor.rewrite", a3, "Convert to raw string literal")
++	s = `hello	world` //@codeactionedit(`"`, "refactor.rewrite", a3, "Convert to raw string literal")
+-- @a4/a.go --
+@@ -12 +12 @@
+-	s = `hello	world` //@codeactionedit("`", "refactor.rewrite", a4, "Convert to interpreted string literal")
++	s = "hello\tworld" //@codeactionedit("`", "refactor.rewrite", a4, "Convert to interpreted string literal")
+-- @a5/a.go --
+@@ -13 +13,2 @@
+-	s = "hello\nworld" //@codeactionedit(`"`, "refactor.rewrite", a5, "Convert to raw string literal")
++	s = `hello
++world` //@codeactionedit(`"`, "refactor.rewrite", a5, "Convert to raw string literal")
+-- @a6/a.go --
+@@ -15,2 +15 @@
+-	s = `hello
+-world` //@codeactionedit("`", "refactor.rewrite", a6, "Convert to interpreted string literal")
++	s = "hello\nworld" //@codeactionedit("`", "refactor.rewrite", a6, "Convert to interpreted string literal")
+-- @a7/a.go --
+@@ -17 +17 @@
+-	s = "hello\"world" //@codeactionedit(`"`, "refactor.rewrite", a7, "Convert to raw string literal")
++	s = `hello"world` //@codeactionedit(`"`, "refactor.rewrite", a7, "Convert to raw string literal")
+-- @a8/a.go --
+@@ -18 +18 @@
+-	s = `hello"world` //@codeactionedit("`", "refactor.rewrite", a8, "Convert to interpreted string literal")
++	s = "hello\"world" //@codeactionedit("`", "refactor.rewrite", a8, "Convert to interpreted string literal")
