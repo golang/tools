@@ -15,12 +15,14 @@ import (
 // Only file paths are accepted, not URIs.
 // The returned span will be normalized, and thus if printed may produce a
 // different string.
+//
+// TODO(adonovan): used only from cmd package; move there and simplify.
 func Parse(input string) Span {
-	return ParseInDir(input, ".")
+	return parseInDir(input, ".")
 }
 
-// ParseInDir is like Parse, but interprets paths relative to wd.
-func ParseInDir(input, wd string) Span {
+// parseInDir is like Parse, but interprets paths relative to wd.
+func parseInDir(input, wd string) Span {
 	uri := func(path string) URI {
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(wd, path)

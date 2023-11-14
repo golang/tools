@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
@@ -30,28 +31,27 @@ func TestParseErrorMessage(t *testing.T) {
 			expectedLine:     13,
 			expectedColumn:   1,
 		},
+		{
+			name:             "windows driver letter",
+			in:               "C:\\foo\\bar.go:13: message",
+			expectedFileName: "bar.go",
+			expectedLine:     13,
+			expectedColumn:   0,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			spn := parseGoListError(tt.in, ".")
-			fn := spn.URI().Filename()
+			fn, line, col8 := parseGoListError(packages.Error{Msg: tt.in}, ".")
 
 			if !strings.HasSuffix(fn, tt.expectedFileName) {
 				t.Errorf("expected filename with suffix %v but got %v", tt.expectedFileName, fn)
 			}
-
-			if !spn.HasPosition() {
-				t.Fatalf("expected span to have position")
+			if line != tt.expectedLine {
+				t.Errorf("expected line %v but got %v", tt.expectedLine, line)
 			}
-
-			pos := spn.Start()
-			if pos.Line() != tt.expectedLine {
-				t.Errorf("expected line %v but got %v", tt.expectedLine, pos.Line())
-			}
-
-			if pos.Column() != tt.expectedColumn {
-				t.Errorf("expected line %v but got %v", tt.expectedLine, pos.Line())
+			if col8 != tt.expectedColumn {
+				t.Errorf("expected col %v but got %v", tt.expectedLine, col8)
 			}
 		})
 	}

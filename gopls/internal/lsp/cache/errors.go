@@ -16,6 +16,7 @@ import (
 	"go/token"
 	"go/types"
 	"log"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -42,25 +43,32 @@ func goPackagesErrorDiagnostics(ctx context.Context, e packages.Error, m *source
 		return []*source.Diagnostic{diag}, nil
 	}
 
-	var spn span.Span
-	if e.Pos == "" {
-		spn = parseGoListError(e.Msg, m.LoadDir)
-		// We may not have been able to parse a valid span. Apply the errors to all files.
-		if _, err := spanToRange(ctx, fs, spn); err != nil {
-			var diags []*source.Diagnostic
-			for _, uri := range m.CompiledGoFiles {
-				diags = append(diags, &source.Diagnostic{
-					URI:      uri,
-					Severity: protocol.SeverityError,
-					Source:   source.ListError,
-					Message:  e.Msg,
-				})
-			}
-			return diags, nil
+	// Parse error location and attempt to convert to protocol form.
+	loc, err := func() (protocol.Location, error) {
+		filename, line, col8 := parseGoListError(e, m.LoadDir)
+		uri := span.URIFromPath(filename)
+
+		fh, err := fs.ReadFile(ctx, uri)
+		if err != nil {
+			return protocol.Location{}, err
 		}
-	} else {
-		spn = span.ParseInDir(e.Pos, m.LoadDir)
-	}
+		content, err := fh.Content()
+		if err != nil {
+			return protocol.Location{}, err
+		}
+		mapper := protocol.NewMapper(uri, content)
+		posn, err := mapper.LineCol8Position(line, col8)
+		if err != nil {
+			return protocol.Location{}, err
+		}
+		return protocol.Location{
+			URI: protocol.DocumentURI(uri),
+			Range: protocol.Range{
+				Start: posn,
+				End:   posn,
+			},
+		}, nil
+	}()
 
 	// TODO(rfindley): in some cases the go command outputs invalid spans, for
 	// example (from TestGoListErrors):
@@ -73,13 +81,23 @@ func goPackagesErrorDiagnostics(ctx context.Context, e packages.Error, m *source
 	// likely because *token.File lacks information about newline termination.
 	//
 	// We could do better here by handling that case.
-	rng, err := spanToRange(ctx, fs, spn)
 	if err != nil {
-		return nil, err
+		// Unable to parse a valid position.
+		// Apply the error to all files to be safe.
+		var diags []*source.Diagnostic
+		for _, uri := range m.CompiledGoFiles {
+			diags = append(diags, &source.Diagnostic{
+				URI:      uri,
+				Severity: protocol.SeverityError,
+				Source:   source.ListError,
+				Message:  e.Msg,
+			})
+		}
+		return diags, nil
 	}
 	return []*source.Diagnostic{{
-		URI:      spn.URI(),
-		Range:    rng,
+		URI:      span.URI(loc.URI),
+		Range:    loc.Range,
 		Severity: protocol.SeverityError,
 		Source:   source.ListError,
 		Message:  e.Msg,
@@ -439,36 +457,53 @@ func typeErrorData(pkg *syntaxPackage, terr types.Error) (typesinternal.ErrorCod
 	return ecode, loc, err
 }
 
-// spanToRange converts a span.Span to a protocol.Range, by mapping content
-// contained in the provided FileSource.
-func spanToRange(ctx context.Context, fs source.FileSource, spn span.Span) (protocol.Range, error) {
-	uri := spn.URI()
-	fh, err := fs.ReadFile(ctx, uri)
-	if err != nil {
-		return protocol.Range{}, err
+func parseGoListError(e packages.Error, dir string) (filename string, line, col8 int) {
+	input := e.Pos
+	if input == "" {
+		// No position. Attempt to parse one out of a
+		// go list error of the form "file:line:col:
+		// message" by stripping off the message.
+		input = strings.TrimSpace(e.Msg)
+		if i := strings.Index(input, ": "); i >= 0 {
+			input = input[:i]
+		}
 	}
-	content, err := fh.Content()
-	if err != nil {
-		return protocol.Range{}, err
+
+	filename, line, col8 = splitFileLineCol(input)
+	if !filepath.IsAbs(filename) {
+		filename = filepath.Join(dir, filename)
 	}
-	mapper := protocol.NewMapper(uri, content)
-	return mapper.SpanRange(spn)
+	return filename, line, col8
 }
 
-// parseGoListError attempts to parse a standard `go list` error message
-// by stripping off the trailing error message.
-//
-// It works only on errors whose message is prefixed by colon,
-// followed by a space (": "). For example:
-//
-//	attributes.go:13:1: expected 'package', found 'type'
-func parseGoListError(input, wd string) span.Span {
-	input = strings.TrimSpace(input)
-	msgIndex := strings.Index(input, ": ")
-	if msgIndex < 0 {
-		return span.Parse(input)
+// splitFileLineCol splits s into "filename:line:col",
+// where line and col consist of decimal digits.
+func splitFileLineCol(s string) (file string, line, col8 int) {
+	// Beware that the filename may contain colon on Windows.
+
+	// stripColonDigits removes a ":%d" suffix, if any.
+	stripColonDigits := func(s string) (rest string, num int) {
+		if i := strings.LastIndex(s, ":"); i >= 0 {
+			if v, err := strconv.ParseInt(s[i+1:], 10, 32); err == nil {
+				return s[:i], int(v)
+			}
+		}
+		return s, -1
 	}
-	return span.ParseInDir(input[:msgIndex], wd)
+
+	// strip col ":%d"
+	s, n1 := stripColonDigits(s)
+	if n1 < 0 {
+		return s, 0, 0 // "filename"
+	}
+
+	// strip line ":%d"
+	s, n2 := stripColonDigits(s)
+	if n2 < 0 {
+		return s, n1, 0 // "filename:line"
+	}
+
+	return s, n2, n1 // "filename:line:col"
 }
 
 // parseGoListImportCycleError attempts to parse the given go/packages error as

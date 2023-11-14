@@ -337,11 +337,10 @@ func (s *server) applyIncrementalChanges(ctx context.Context, uri span.URI, chan
 		if change.Range == nil {
 			return nil, fmt.Errorf("%w: unexpected nil range for change", jsonrpc2.ErrInternal)
 		}
-		spn, err := m.RangeSpan(*change.Range)
+		start, end, err := m.RangeOffsets(*change.Range)
 		if err != nil {
 			return nil, err
 		}
-		start, end := spn.Start().Offset(), spn.End().Offset()
 		if end < start {
 			return nil, fmt.Errorf("%w: invalid range for content change", jsonrpc2.ErrInternal)
 		}

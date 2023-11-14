@@ -44,6 +44,9 @@ package protocol
 //    they are also useful for parsing user-provided positions (e.g. in
 //    the CLI) before we have access to file contents.
 //
+//    TODO(adonovan): all the span-based methods of Mapper are now
+//    used only by gopls/internal/cmd. Move them into that package.
+//
 // 4. protocol, the LSP RPC message format.
 //
 //    protocol.Position = (Line, Character uint32)
@@ -169,28 +172,35 @@ func (m *Mapper) SpanRange(s span.Span) (Range, error) {
 // PointPosition converts a valid span (UTF-8) point to a protocol (UTF-16) position.
 func (m *Mapper) PointPosition(p span.Point) (Position, error) {
 	if p.HasPosition() {
-		line, col8 := p.Line()-1, p.Column()-1 // both 0-based
-		m.initLines()
-		if line >= len(m.lineStart) {
-			return Position{}, fmt.Errorf("line number %d out of range (max %d)", line, len(m.lineStart))
-		}
-		offset := m.lineStart[line]
-		end := offset + col8
-
-		// Validate column.
-		if end > len(m.Content) {
-			return Position{}, fmt.Errorf("column is beyond end of file")
-		} else if line+1 < len(m.lineStart) && end >= m.lineStart[line+1] {
-			return Position{}, fmt.Errorf("column is beyond end of line")
-		}
-
-		char := UTF16Len(m.Content[offset:end])
-		return Position{Line: uint32(line), Character: uint32(char)}, nil
+		return m.LineCol8Position(p.Line(), p.Column())
 	}
 	if p.HasOffset() {
 		return m.OffsetPosition(p.Offset())
 	}
 	return Position{}, fmt.Errorf("point has neither offset nor line/column")
+}
+
+// LineCol8Position converts a valid line and UTF-8 column number,
+// both 1-based, to a protocol (UTF-16) position.
+func (m *Mapper) LineCol8Position(line, col8 int) (Position, error) {
+	m.initLines()
+	if line-1 >= len(m.lineStart) {
+		return Position{}, fmt.Errorf("line number %d out of range (max %d)", line, len(m.lineStart))
+	}
+
+	// content[start:end] is the preceding partial line.
+	start := m.lineStart[line-1]
+	end := start + col8 - 1
+
+	// Validate column.
+	if end > len(m.Content) {
+		return Position{}, fmt.Errorf("column is beyond end of file")
+	} else if line < len(m.lineStart) && end >= m.lineStart[line] {
+		return Position{}, fmt.Errorf("column is beyond end of line")
+	}
+
+	char := UTF16Len(m.Content[start:end])
+	return Position{Line: uint32(line - 1), Character: uint32(char)}, nil
 }
 
 // -- conversions from byte offsets --
