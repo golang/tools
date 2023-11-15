@@ -379,29 +379,6 @@ func (s *Snapshot) validBuildConfiguration() bool {
 	return false
 }
 
-// workspaceMode describes the way in which the snapshot's workspace should
-// be loaded.
-//
-// TODO(rfindley): remove this, in favor of specific methods.
-func (s *Snapshot) workspaceMode() workspaceMode {
-	var mode workspaceMode
-
-	// If the view has an invalid configuration, don't build the workspace
-	// module.
-	validBuildConfiguration := s.validBuildConfiguration()
-	if !validBuildConfiguration {
-		return mode
-	}
-	// If the view is not in a module and contains no modules, but still has a
-	// valid workspace configuration, do not create the workspace module.
-	// It could be using GOPATH or a different build system entirely.
-	if len(s.view.workspaceModFiles) == 0 && validBuildConfiguration {
-		return mode
-	}
-	mode |= moduleMode
-	return mode
-}
-
 // config returns the configuration used for the snapshot's interaction with
 // the go/packages API. It uses the given working directory.
 //
@@ -527,7 +504,7 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags source.Invocat
 	cleanup = func() {} // fallback
 
 	// All logic below is for module mode.
-	if s.workspaceMode()&moduleMode == 0 {
+	if len(s.view.workspaceModFiles) == 0 {
 		return "", inv, cleanup, nil
 	}
 
@@ -2168,18 +2145,6 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 		result.workspacePackages = s.workspacePackages
 	}
 
-	// Don't bother copying the importedBy graph,
-	// as it changes each time we update metadata.
-
-	// TODO(rfindley): consolidate the this workspace mode detection with
-	// workspace invalidation.
-	workspaceModeChanged := s.workspaceMode() != result.workspaceMode()
-
-	// If the snapshot's workspace mode has changed, the packages loaded using
-	// the previous mode are no longer relevant, so clear them out.
-	if workspaceModeChanged {
-		result.workspacePackages = immutable.MapOf[PackageID, PackagePath](nil)
-	}
 	return result, release
 }
 

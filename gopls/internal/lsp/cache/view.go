@@ -387,18 +387,6 @@ func (env *goEnv) vars() map[string]*string {
 	}
 }
 
-// workspaceMode holds various flags defining how the gopls workspace should
-// behave. They may be derived from the environment, user configuration, or
-// depend on the Go version.
-//
-// TODO(rfindley): remove workspace mode, in favor of explicit checks.
-type workspaceMode int
-
-const (
-	moduleMode workspaceMode = 1 << iota
-)
-
-// ID returns a globally unique identifier for this view.
 func (v *View) ID() string { return v.id }
 
 // tempModFile creates a temporary go.mod file based on the contents
@@ -1211,7 +1199,7 @@ var modFlagRegexp = regexp.MustCompile(`-mod[ =](\w+)`)
 // cannot delete it.
 func (s *Snapshot) vendorEnabled(ctx context.Context, modURI protocol.DocumentURI, modContent []byte) (bool, error) {
 	// Legacy GOPATH workspace?
-	if s.workspaceMode()&moduleMode == 0 {
+	if len(s.view.workspaceModFiles) == 0 {
 		return false, nil
 	}
 
