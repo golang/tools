@@ -51,7 +51,7 @@ const maxSymbols = 100
 // with a different configured SymbolMatcher per View. Therefore we assume that
 // Session level configuration will define the SymbolMatcher to be used for the
 // WorkspaceSymbols method.
-func WorkspaceSymbols(ctx context.Context, matcher settings.SymbolMatcher, style settings.SymbolStyle, views []View, query string) ([]protocol.SymbolInformation, error) {
+func WorkspaceSymbols(ctx context.Context, matcher settings.SymbolMatcher, style settings.SymbolStyle, snapshots []Snapshot, query string) ([]protocol.SymbolInformation, error) {
 	ctx, done := event.Start(ctx, "source.WorkspaceSymbols")
 	defer done()
 	if query == "" {
@@ -70,7 +70,7 @@ func WorkspaceSymbols(ctx context.Context, matcher settings.SymbolMatcher, style
 		panic(fmt.Errorf("unknown symbol style: %v", style))
 	}
 
-	return collectSymbols(ctx, views, matcher, s, query)
+	return collectSymbols(ctx, snapshots, matcher, s, query)
 }
 
 // A matcherFunc returns the index and score of a symbol match.
@@ -296,26 +296,21 @@ func (c comboMatcher) match(chunks []string) (int, float64) {
 //     of zero indicates no match.
 //   - A symbolizer determines how we extract the symbol for an object. This
 //     enables the 'symbolStyle' configuration option.
-func collectSymbols(ctx context.Context, views []View, matcherType settings.SymbolMatcher, symbolizer symbolizer, query string) ([]protocol.SymbolInformation, error) {
+func collectSymbols(ctx context.Context, snapshots []Snapshot, matcherType settings.SymbolMatcher, symbolizer symbolizer, query string) ([]protocol.SymbolInformation, error) {
 	// Extract symbols from all files.
 	var work []symbolFile
 	var roots []string
 	seen := make(map[protocol.DocumentURI]bool)
 	// TODO(adonovan): opt: parallelize this loop? How often is len > 1?
-	for _, v := range views {
-		snapshot, release, err := v.Snapshot()
-		if err != nil {
-			continue // view is shut down; continue with others
-		}
-		defer release()
-
+	for _, snapshot := range snapshots {
 		// Use the root view URIs for determining (lexically)
 		// whether a URI is in any open workspace.
-		roots = append(roots, strings.TrimRight(string(v.Folder()), "/"))
+		folderURI := snapshot.View().Folder()
+		roots = append(roots, strings.TrimRight(string(folderURI), "/"))
 
 		filters := snapshot.Options().DirectoryFilters
 		filterer := NewFilterer(filters)
-		folder := filepath.ToSlash(v.Folder().Path())
+		folder := filepath.ToSlash(folderURI.Path())
 
 		workspaceOnly := true
 		if snapshot.Options().SymbolScope == settings.AllSymbolScope {

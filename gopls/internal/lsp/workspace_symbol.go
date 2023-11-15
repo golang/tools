@@ -25,14 +25,16 @@ func (s *server) Symbol(ctx context.Context, params *protocol.WorkspaceSymbolPar
 	views := s.session.Views()
 	matcher := s.Options().SymbolMatcher
 	style := s.Options().SymbolStyle
-	// TODO(rfindley): it looks wrong that we need to pass views here.
-	//
-	// Evidence:
-	//  - this is the only place we convert views to []source.View
-	//  - workspace symbols is the only place where we call source.View.Snapshot
-	var sourceViews []source.View
+
+	var snapshots []source.Snapshot
 	for _, v := range views {
-		sourceViews = append(sourceViews, v)
+		snapshot, release, err := v.Snapshot()
+		if err != nil {
+			continue // snapshot is shutting down
+		}
+		// If err is non-nil, the snapshot is shutting down. Skip it.
+		defer release()
+		snapshots = append(snapshots, snapshot)
 	}
-	return source.WorkspaceSymbols(ctx, matcher, style, sourceViews, params.Query)
+	return source.WorkspaceSymbols(ctx, matcher, style, snapshots, params.Query)
 }

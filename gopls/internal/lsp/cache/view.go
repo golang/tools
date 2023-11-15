@@ -738,6 +738,12 @@ func checkIgnored(suffix string) bool {
 	return false
 }
 
+// Snapshot returns the current snapshot for the view, and a
+// release function that must be called when the Snapshot is
+// no longer needed.
+//
+// The resulting error is non-nil if and only if the view is shut down, in
+// which case the resulting release function will also be nil.
 func (v *View) Snapshot() (source.Snapshot, func(), error) {
 	return v.getSnapshot()
 }

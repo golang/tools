@@ -403,14 +403,6 @@ type View interface {
 	// Folder returns the folder with which this view was created.
 	Folder() protocol.DocumentURI
 
-	// Snapshot returns the current snapshot for the view, and a
-	// release function that must be called when the Snapshot is
-	// no longer needed.
-	//
-	// If the view is shut down, the resulting error will be non-nil, and the
-	// release function need not be called.
-	Snapshot() (Snapshot, func(), error)
-
 	// Invalidate is documented at its sole implementation in the cache package.
 	// (this interface is to be deleted).
 	Invalidate(context.Context, StateChange) (Snapshot, func())
