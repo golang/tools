@@ -28,7 +28,7 @@ import (
 
 // ModTidy returns the go.mod file that would be obtained by running
 // "go mod tidy". Concurrent requests are combined into a single command.
-func (s *snapshot) ModTidy(ctx context.Context, pm *source.ParsedModule) (*source.TidiedModule, error) {
+func (s *Snapshot) ModTidy(ctx context.Context, pm *source.ParsedModule) (*source.TidiedModule, error) {
 	ctx, done := event.Start(ctx, "cache.snapshot.ModTidy")
 	defer done()
 
@@ -75,7 +75,7 @@ func (s *snapshot) ModTidy(ctx context.Context, pm *source.ParsedModule) (*sourc
 		}
 
 		handle := memoize.NewPromise("modTidy", func(ctx context.Context, arg interface{}) interface{} {
-			tidied, err := modTidyImpl(ctx, arg.(*snapshot), uri.Path(), pm)
+			tidied, err := modTidyImpl(ctx, arg.(*Snapshot), uri.Path(), pm)
 			return modTidyResult{tidied, err}
 		})
 
@@ -95,7 +95,7 @@ func (s *snapshot) ModTidy(ctx context.Context, pm *source.ParsedModule) (*sourc
 }
 
 // modTidyImpl runs "go mod tidy" on a go.mod file.
-func modTidyImpl(ctx context.Context, snapshot *snapshot, filename string, pm *source.ParsedModule) (*source.TidiedModule, error) {
+func modTidyImpl(ctx context.Context, snapshot *Snapshot, filename string, pm *source.ParsedModule) (*source.TidiedModule, error) {
 	ctx, done := event.Start(ctx, "cache.ModTidy", tag.URI.Of(filename))
 	defer done()
 
@@ -145,7 +145,7 @@ func modTidyImpl(ctx context.Context, snapshot *snapshot, filename string, pm *s
 // modTidyDiagnostics computes the differences between the original and tidied
 // go.mod files to produce diagnostic and suggested fixes. Some diagnostics
 // may appear on the Go files that import packages from missing modules.
-func modTidyDiagnostics(ctx context.Context, snapshot *snapshot, pm *source.ParsedModule, ideal *modfile.File) (diagnostics []*source.Diagnostic, err error) {
+func modTidyDiagnostics(ctx context.Context, snapshot *Snapshot, pm *source.ParsedModule, ideal *modfile.File) (diagnostics []*source.Diagnostic, err error) {
 	// First, determine which modules are unused and which are missing from the
 	// original go.mod file.
 	var (
@@ -207,7 +207,7 @@ func modTidyDiagnostics(ctx context.Context, snapshot *snapshot, pm *source.Pars
 	return diagnostics, nil
 }
 
-func missingModuleDiagnostics(ctx context.Context, snapshot *snapshot, pm *source.ParsedModule, ideal *modfile.File, missing map[string]*modfile.Require) ([]*source.Diagnostic, error) {
+func missingModuleDiagnostics(ctx context.Context, snapshot *Snapshot, pm *source.ParsedModule, ideal *modfile.File, missing map[string]*modfile.Require) ([]*source.Diagnostic, error) {
 	missingModuleFixes := map[*modfile.Require][]source.SuggestedFix{}
 	var diagnostics []*source.Diagnostic
 	for _, req := range missing {
@@ -485,7 +485,7 @@ func missingModuleForImport(pgf *source.ParsedGoFile, imp *ast.ImportSpec, req *
 // CompiledGoFiles, after cgo processing.)
 //
 // TODO(rfindley): this should key off source.ImportPath.
-func parseImports(ctx context.Context, s *snapshot, files []file.Handle) (map[string]bool, error) {
+func parseImports(ctx context.Context, s *Snapshot, files []file.Handle) (map[string]bool, error) {
 	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), source.ParseHeader, false, files...)
 	if err != nil { // e.g. context cancellation
 		return nil, err

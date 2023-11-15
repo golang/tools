@@ -27,7 +27,7 @@ import (
 
 // ParseGo parses the file whose contents are provided by fh, using a cache.
 // The resulting tree may have been fixed up.
-func (s *snapshot) ParseGo(ctx context.Context, fh file.Handle, mode parser.Mode) (*source.ParsedGoFile, error) {
+func (s *Snapshot) ParseGo(ctx context.Context, fh file.Handle, mode parser.Mode) (*source.ParsedGoFile, error) {
 	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), mode, false, fh)
 	if err != nil {
 		return nil, err

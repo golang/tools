@@ -93,7 +93,7 @@ type pkgOrErr struct {
 // This is different from having type-checking errors: a failure to type-check
 // indicates context cancellation or otherwise significant failure to perform
 // the type-checking operation.
-func (s *snapshot) TypeCheck(ctx context.Context, ids ...PackageID) ([]source.Package, error) {
+func (s *Snapshot) TypeCheck(ctx context.Context, ids ...PackageID) ([]source.Package, error) {
 	pkgs := make([]source.Package, len(ids))
 
 	var (
@@ -132,7 +132,7 @@ func (s *snapshot) TypeCheck(ctx context.Context, ids ...PackageID) ([]source.Pa
 // the shared import graph means we don't run the risk of pinning duplicate
 // copies of common imports, if active packages are computed in separate type
 // checking batches.
-func (s *snapshot) getImportGraph(ctx context.Context) *importGraph {
+func (s *Snapshot) getImportGraph(ctx context.Context) *importGraph {
 	if !preserveImportGraph {
 		return nil
 	}
@@ -185,7 +185,7 @@ func (s *snapshot) getImportGraph(ctx context.Context) *importGraph {
 // import graph.
 //
 // resolveImportGraph should only be called from getImportGraph.
-func (s *snapshot) resolveImportGraph() (*importGraph, error) {
+func (s *Snapshot) resolveImportGraph() (*importGraph, error) {
 	ctx := s.backgroundCtx
 	ctx, done := event.Start(event.Detach(ctx), "cache.resolveImportGraph")
 	defer done()
@@ -324,7 +324,7 @@ type (
 // successfully. It is only called if pre returned true.
 //
 // Both pre and post may be called concurrently.
-func (s *snapshot) forEachPackage(ctx context.Context, ids []PackageID, pre preTypeCheck, post postTypeCheck) error {
+func (s *Snapshot) forEachPackage(ctx context.Context, ids []PackageID, pre preTypeCheck, post postTypeCheck) error {
 	ctx, done := event.Start(ctx, "cache.forEachPackage", tag.PackageCount.Of(len(ids)))
 	defer done()
 
@@ -346,7 +346,7 @@ func (s *snapshot) forEachPackage(ctx context.Context, ids []PackageID, pre preT
 // type-check a graph of packages.
 //
 // If a non-nil importGraph is provided, imports in this graph will be reused.
-func (s *snapshot) forEachPackageInternal(ctx context.Context, importGraph *importGraph, importIDs, syntaxIDs []PackageID, pre preTypeCheck, post postTypeCheck, handles map[PackageID]*packageHandle) (*typeCheckBatch, error) {
+func (s *Snapshot) forEachPackageInternal(ctx context.Context, importGraph *importGraph, importIDs, syntaxIDs []PackageID, pre preTypeCheck, post postTypeCheck, handles map[PackageID]*packageHandle) (*typeCheckBatch, error) {
 	b := &typeCheckBatch{
 		activePackageCache: s,
 		pre:                pre,
@@ -819,7 +819,7 @@ func (ph *packageHandle) clone(validated bool) *packageHandle {
 
 // getPackageHandles gets package handles for all given ids and their
 // dependencies, recursively.
-func (s *snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[PackageID]*packageHandle, error) {
+func (s *Snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[PackageID]*packageHandle, error) {
 	// perform a two-pass traversal.
 	//
 	// On the first pass, build up a bidirectional graph of handle nodes, and collect leaves.
@@ -923,7 +923,7 @@ func (s *snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[
 // sharing computed transitive reachability sets used to compute package keys.
 type packageHandleBuilder struct {
 	meta *metadataGraph
-	s    *snapshot
+	s    *Snapshot
 
 	// nodes are assembled synchronously.
 	nodes map[typerefs.IndexID]*handleNode
@@ -1210,7 +1210,7 @@ func (b *packageHandleBuilder) evaluatePackageHandle(prevPH *packageHandle, n *h
 
 // typerefs returns typerefs for the package described by m and cgfs, after
 // either computing it or loading it from the file cache.
-func (s *snapshot) typerefs(ctx context.Context, m *source.Metadata, cgfs []file.Handle) (map[string][]typerefs.Symbol, error) {
+func (s *Snapshot) typerefs(ctx context.Context, m *source.Metadata, cgfs []file.Handle) (map[string][]typerefs.Symbol, error) {
 	imports := make(map[ImportPath]*source.Metadata)
 	for impPath, id := range m.DepsByImpPath {
 		if id != "" {
@@ -1234,7 +1234,7 @@ func (s *snapshot) typerefs(ctx context.Context, m *source.Metadata, cgfs []file
 
 // typerefData retrieves encoded typeref data from the filecache, or computes it on
 // a cache miss.
-func (s *snapshot) typerefData(ctx context.Context, id PackageID, imports map[ImportPath]*source.Metadata, cgfs []file.Handle) ([]byte, error) {
+func (s *Snapshot) typerefData(ctx context.Context, id PackageID, imports map[ImportPath]*source.Metadata, cgfs []file.Handle) ([]byte, error) {
 	key := typerefsKey(id, imports, cgfs)
 	if data, err := filecache.Get(typerefsKind, key); err == nil {
 		return data, nil
@@ -1309,7 +1309,7 @@ type typeCheckInputs struct {
 	moduleMode         bool
 }
 
-func (s *snapshot) typeCheckInputs(ctx context.Context, m *source.Metadata) (typeCheckInputs, error) {
+func (s *Snapshot) typeCheckInputs(ctx context.Context, m *source.Metadata) (typeCheckInputs, error) {
 	// Read both lists of files of this package.
 	//
 	// Parallelism is not necessary here as the files will have already been

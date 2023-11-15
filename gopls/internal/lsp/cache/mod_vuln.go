@@ -15,7 +15,7 @@ import (
 
 // ModVuln returns import vulnerability analysis for the given go.mod URI.
 // Concurrent requests are combined into a single command.
-func (s *snapshot) ModVuln(ctx context.Context, modURI protocol.DocumentURI) (*vulncheck.Result, error) {
+func (s *Snapshot) ModVuln(ctx context.Context, modURI protocol.DocumentURI) (*vulncheck.Result, error) {
 	s.mu.Lock()
 	entry, hit := s.modVulnHandles.Get(modURI)
 	s.mu.Unlock()
@@ -28,7 +28,7 @@ func (s *snapshot) ModVuln(ctx context.Context, modURI protocol.DocumentURI) (*v
 	// Cache miss?
 	if !hit {
 		handle := memoize.NewPromise("modVuln", func(ctx context.Context, arg interface{}) interface{} {
-			result, err := scan.VulnerablePackages(ctx, arg.(*snapshot))
+			result, err := scan.VulnerablePackages(ctx, arg.(*Snapshot))
 			return modVuln{result, err}
 		})
 

@@ -32,7 +32,7 @@ type importsState struct {
 	cachedDirectoryFilters []string
 }
 
-func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot, fn func(context.Context, *imports.Options) error) error {
+func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *Snapshot, fn func(context.Context, *imports.Options) error) error {
 	ctx, done := event.Start(ctx, "cache.importsState.runProcessEnvFunc")
 	defer done()
 
@@ -115,7 +115,7 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot
 // populateProcessEnvFromSnapshot sets the dynamically configurable fields for
 // the view's process environment. Assumes that the caller is holding the
 // importsState mutex.
-func populateProcessEnvFromSnapshot(ctx context.Context, pe *imports.ProcessEnv, snapshot *snapshot) error {
+func populateProcessEnvFromSnapshot(ctx context.Context, pe *imports.ProcessEnv, snapshot *Snapshot) error {
 	ctx, done := event.Start(ctx, "cache.populateProcessEnvFromSnapshot")
 	defer done()
 

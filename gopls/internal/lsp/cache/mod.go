@@ -25,7 +25,7 @@ import (
 )
 
 // ParseMod parses a go.mod file, using a cache. It may return partial results and an error.
-func (s *snapshot) ParseMod(ctx context.Context, fh file.Handle) (*source.ParsedModule, error) {
+func (s *Snapshot) ParseMod(ctx context.Context, fh file.Handle) (*source.ParsedModule, error) {
 	uri := fh.URI()
 
 	s.mu.Lock()
@@ -103,7 +103,7 @@ func parseModImpl(ctx context.Context, fh file.Handle) (*source.ParsedModule, er
 
 // ParseWork parses a go.work file, using a cache. It may return partial results and an error.
 // TODO(adonovan): move to new work.go file.
-func (s *snapshot) ParseWork(ctx context.Context, fh file.Handle) (*source.ParsedWorkFile, error) {
+func (s *Snapshot) ParseWork(ctx context.Context, fh file.Handle) (*source.ParsedWorkFile, error) {
 	uri := fh.URI()
 
 	s.mu.Lock()
@@ -180,7 +180,7 @@ func parseWorkImpl(ctx context.Context, fh file.Handle) (*source.ParsedWorkFile,
 
 // goSum reads the go.sum file for the go.mod file at modURI, if it exists. If
 // it doesn't exist, it returns nil.
-func (s *snapshot) goSum(ctx context.Context, modURI protocol.DocumentURI) []byte {
+func (s *Snapshot) goSum(ctx context.Context, modURI protocol.DocumentURI) []byte {
 	// Get the go.sum file, either from the snapshot or directly from the
 	// cache. Avoid (*snapshot).ReadFile here, as we don't want to add
 	// nonexistent file handles to the snapshot if the file does not exist.
@@ -210,7 +210,7 @@ func sumFilename(modURI protocol.DocumentURI) string {
 // ModWhy returns the "go mod why" result for each module named in a
 // require statement in the go.mod file.
 // TODO(adonovan): move to new mod_why.go file.
-func (s *snapshot) ModWhy(ctx context.Context, fh file.Handle) (map[string]string, error) {
+func (s *Snapshot) ModWhy(ctx context.Context, fh file.Handle) (map[string]string, error) {
 	uri := fh.URI()
 
 	if s.FileKind(fh) != file.Mod {
@@ -229,7 +229,7 @@ func (s *snapshot) ModWhy(ctx context.Context, fh file.Handle) (map[string]strin
 	// cache miss?
 	if !hit {
 		handle := memoize.NewPromise("modWhy", func(ctx context.Context, arg interface{}) interface{} {
-			why, err := modWhyImpl(ctx, arg.(*snapshot), fh)
+			why, err := modWhyImpl(ctx, arg.(*Snapshot), fh)
 			return modWhyResult{why, err}
 		})
 
@@ -249,7 +249,7 @@ func (s *snapshot) ModWhy(ctx context.Context, fh file.Handle) (map[string]strin
 }
 
 // modWhyImpl returns the result of "go mod why -m" on the specified go.mod file.
-func modWhyImpl(ctx context.Context, snapshot *snapshot, fh file.Handle) (map[string]string, error) {
+func modWhyImpl(ctx context.Context, snapshot *Snapshot, fh file.Handle) (map[string]string, error) {
 	ctx, done := event.Start(ctx, "cache.ModWhy", tag.URI.Of(fh.URI()))
 	defer done()
 
@@ -288,7 +288,7 @@ func modWhyImpl(ctx context.Context, snapshot *snapshot, fh file.Handle) (map[st
 // extractGoCommandErrors tries to parse errors that come from the go command
 // and shape them into go.mod diagnostics.
 // TODO: rename this to 'load errors'
-func (s *snapshot) extractGoCommandErrors(ctx context.Context, goCmdError error) []*source.Diagnostic {
+func (s *Snapshot) extractGoCommandErrors(ctx context.Context, goCmdError error) []*source.Diagnostic {
 	if goCmdError == nil {
 		return nil
 	}
@@ -380,7 +380,7 @@ var moduleVersionInErrorRe = regexp.MustCompile(`[:\s]([+-._~0-9A-Za-z]+)@([+-._
 //
 // It returns the location of a reference to the one of the modules and true
 // if one exists. If none is found it returns a fallback location and false.
-func (s *snapshot) matchErrorToModule(ctx context.Context, pm *source.ParsedModule, goCmdError string) (protocol.Location, bool, error) {
+func (s *Snapshot) matchErrorToModule(ctx context.Context, pm *source.ParsedModule, goCmdError string) (protocol.Location, bool, error) {
 	var reference *modfile.Line
 	matches := moduleVersionInErrorRe.FindAllStringSubmatch(goCmdError, -1)
 
@@ -413,7 +413,7 @@ func (s *snapshot) matchErrorToModule(ctx context.Context, pm *source.ParsedModu
 }
 
 // goCommandDiagnostic creates a diagnostic for a given go command error.
-func (s *snapshot) goCommandDiagnostic(pm *source.ParsedModule, loc protocol.Location, goCmdError string) (*source.Diagnostic, error) {
+func (s *Snapshot) goCommandDiagnostic(pm *source.ParsedModule, loc protocol.Location, goCmdError string) (*source.Diagnostic, error) {
 	matches := moduleVersionInErrorRe.FindAllStringSubmatch(goCmdError, -1)
 	var innermost *module.Version
 	for i := len(matches) - 1; i >= 0; i-- {

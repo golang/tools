@@ -111,7 +111,7 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, source.Sn
 // TODO(rfindley): clarify that createView can never be cancelled (with the
 // possible exception of server shutdown).
 // On success, the caller becomes responsible for calling the release function once.
-func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *Folder, seqID uint64) (*View, *snapshot, func(), error) {
+func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *Folder, seqID uint64) (*View, *Snapshot, func(), error) {
 	index := atomic.AddInt64(&viewIndex, 1)
 
 	// We want a true background context and not a detached context here
@@ -147,7 +147,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 			},
 		},
 	}
-	v.snapshot = &snapshot{
+	v.snapshot = &Snapshot{
 		sequenceID:       seqID,
 		globalID:         nextSnapshotID(),
 		view:             v,
@@ -309,7 +309,7 @@ func (s *Session) updateViewLocked(ctx context.Context, view *View, def *viewDef
 	}
 
 	var (
-		snapshot *snapshot
+		snapshot *Snapshot
 		release  func()
 		err      error
 	)
@@ -534,10 +534,10 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 // directory changes removed and expanded to include all of the files in
 // the directory.
 func (s *Session) ExpandModificationsToDirectories(ctx context.Context, changes []file.Modification) []file.Modification {
-	var snapshots []*snapshot
+	var snapshots []*Snapshot
 	s.viewMu.Lock()
 	for _, v := range s.views {
-		snapshot, release, err := v.getSnapshot()
+		snapshot, release, err := v.Snapshot()
 		if err != nil {
 			continue // view is shut down; continue with others
 		}
@@ -694,7 +694,7 @@ func (s *Session) FileWatchingGlobPatterns(ctx context.Context) map[string]struc
 	defer s.viewMu.Unlock()
 	patterns := map[string]struct{}{}
 	for _, view := range s.views {
-		snapshot, release, err := view.getSnapshot()
+		snapshot, release, err := view.Snapshot()
 		if err != nil {
 			continue // view is shut down; continue with others
 		}

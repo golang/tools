@@ -39,7 +39,7 @@ var errNoPackages = errors.New("no packages returned")
 // errors associated with specific modules.
 //
 // If scopes contains a file scope there must be exactly one scope.
-func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadScope) (err error) {
+func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadScope) (err error) {
 	id := atomic.AddUint64(&loadID, 1)
 	eventName := fmt.Sprintf("go/packages.Load #%d", id) // unique name for logging
 
@@ -311,7 +311,7 @@ func (m *moduleErrorMap) Error() string {
 //
 // TODO(rfindley): separate workspace diagnostics from critical workspace
 // errors.
-func (s *snapshot) workspaceLayoutError(ctx context.Context) (error, []*source.Diagnostic) {
+func (s *Snapshot) workspaceLayoutError(ctx context.Context) (error, []*source.Diagnostic) {
 	// TODO(rfindley): both of the checks below should be delegated to the workspace.
 
 	if s.view.effectiveGO111MODULE() == off {
@@ -355,7 +355,7 @@ https://github.com/golang/tools/blob/master/gopls/doc/workspace.md.`
 	return nil, nil
 }
 
-func (s *snapshot) applyCriticalErrorToFiles(ctx context.Context, msg string, files []*Overlay) []*source.Diagnostic {
+func (s *Snapshot) applyCriticalErrorToFiles(ctx context.Context, msg string, files []*Overlay) []*source.Diagnostic {
 	var srcDiags []*source.Diagnostic
 	for _, fh := range files {
 		// Place the diagnostics on the package or module declarations.
@@ -594,7 +594,7 @@ func computeLoadDiagnostics(ctx context.Context, m *source.Metadata, meta *metad
 // snapshot s.
 //
 // s.mu must be held while calling this function.
-func containsPackageLocked(s *snapshot, m *source.Metadata) bool {
+func containsPackageLocked(s *Snapshot, m *source.Metadata) bool {
 	// In legacy workspace mode, or if a package does not have an associated
 	// module, a package is considered inside the workspace if any of its files
 	// are under the workspace root (and not excluded).
@@ -639,7 +639,7 @@ func containsPackageLocked(s *snapshot, m *source.Metadata) bool {
 // the snapshot s.
 //
 // s.mu must be held while calling this function.
-func containsOpenFileLocked(s *snapshot, m *source.Metadata) bool {
+func containsOpenFileLocked(s *Snapshot, m *source.Metadata) bool {
 	uris := map[protocol.DocumentURI]struct{}{}
 	for _, uri := range m.CompiledGoFiles {
 		uris[uri] = struct{}{}
@@ -688,7 +688,7 @@ func containsFileInWorkspaceLocked(v *View, m *source.Metadata) bool {
 // contain intermediate test variants.
 //
 // s.mu must be held while calling this function.
-func computeWorkspacePackagesLocked(s *snapshot, meta *metadataGraph) immutable.Map[PackageID, PackagePath] {
+func computeWorkspacePackagesLocked(s *Snapshot, meta *metadataGraph) immutable.Map[PackageID, PackagePath] {
 	workspacePackages := make(map[PackageID]PackagePath)
 	for _, m := range meta.metadata {
 		if !containsPackageLocked(s, m) {
