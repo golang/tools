@@ -628,12 +628,9 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 }
 
 func (s *server) runGoModUpdateCommands(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, run func(invoke func(...string) (*bytes.Buffer, error)) error) error {
-	tmpModfile, newModBytes, newSumBytes, err := snapshot.RunGoCommands(ctx, true, filepath.Dir(uri.Path()), run)
+	newModBytes, newSumBytes, err := snapshot.RunGoModUpdateCommands(ctx, filepath.Dir(uri.Path()), run)
 	if err != nil {
 		return err
-	}
-	if !tmpModfile {
-		return nil
 	}
 	modURI := snapshot.GoModForFile(uri)
 	sumURI := protocol.URIFromPath(strings.TrimSuffix(modURI.Path(), ".mod") + ".sum")

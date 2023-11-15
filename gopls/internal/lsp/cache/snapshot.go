@@ -474,21 +474,16 @@ func (s *Snapshot) RunGoCommandPiped(ctx context.Context, mode source.Invocation
 	return s.view.gocmdRunner.RunPiped(ctx, *inv, stdout, stderr)
 }
 
-// RunGoCommands runs a series of `go` commands that updates the go.mod
+// RunGoModUpdateCommands runs a series of `go` commands that updates the go.mod
 // and go.sum file for wd, and returns their updated contents.
-func (s *Snapshot) RunGoCommands(ctx context.Context, allowNetwork bool, wd string, run func(invoke func(...string) (*bytes.Buffer, error)) error) (bool, []byte, []byte, error) {
-	var flags source.InvocationFlags
-	if s.workspaceMode()&tempModfile != 0 {
-		flags = source.WriteTemporaryModFile
-	} else {
-		flags = source.Normal
-	}
-	if allowNetwork {
-		flags |= source.AllowNetwork
-	}
+//
+// TODO(rfindley): the signature of RunGoModUpdateCommands is very confusing.
+// Simplify it.
+func (s *Snapshot) RunGoModUpdateCommands(ctx context.Context, wd string, run func(invoke func(...string) (*bytes.Buffer, error)) error) ([]byte, []byte, error) {
+	flags := source.WriteTemporaryModFile | source.AllowNetwork
 	tmpURI, inv, cleanup, err := s.goCommandInvocation(ctx, flags, &gocommand.Invocation{WorkingDir: wd})
 	if err != nil {
-		return false, nil, nil, err
+		return nil, nil, err
 	}
 	defer cleanup()
 	invoke := func(args ...string) (*bytes.Buffer, error) {
@@ -497,21 +492,21 @@ func (s *Snapshot) RunGoCommands(ctx context.Context, allowNetwork bool, wd stri
 		return s.view.gocmdRunner.Run(ctx, *inv)
 	}
 	if err := run(invoke); err != nil {
-		return false, nil, nil, err
+		return nil, nil, err
 	}
 	if flags.Mode() != source.WriteTemporaryModFile {
-		return false, nil, nil, nil
+		return nil, nil, nil
 	}
 	var modBytes, sumBytes []byte
 	modBytes, err = os.ReadFile(tmpURI.Path())
 	if err != nil && !os.IsNotExist(err) {
-		return false, nil, nil, err
+		return nil, nil, err
 	}
 	sumBytes, err = os.ReadFile(strings.TrimSuffix(tmpURI.Path(), ".mod") + ".sum")
 	if err != nil && !os.IsNotExist(err) {
-		return false, nil, nil, err
+		return nil, nil, err
 	}
-	return true, modBytes, sumBytes, nil
+	return modBytes, sumBytes, nil
 }
 
 // goCommandInvocation populates inv with configuration for running go commands on the snapshot.

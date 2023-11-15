@@ -282,7 +282,6 @@ const (
 	// LoadWorkspace is for packages.Load, and other operations that should
 	// consider the whole workspace at once.
 	LoadWorkspace
-
 	// AllowNetwork is a flag bit that indicates the invocation should be
 	// allowed to access the network.
 	AllowNetwork InvocationFlags = 1 << 10
