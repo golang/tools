@@ -742,7 +742,6 @@ func (s *server) getUpgrades(ctx context.Context, snapshot source.Snapshot, uri 
 		Verb:       "list",
 		Args:       append([]string{"-m", "-u", "-json"}, modules...),
 		WorkingDir: filepath.Dir(uri.Path()),
-		ModFlag:    "readonly",
 	})
 	if err != nil {
 		return nil, err

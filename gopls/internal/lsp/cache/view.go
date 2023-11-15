@@ -396,9 +396,6 @@ type workspaceMode int
 
 const (
 	moduleMode workspaceMode = 1 << iota
-
-	// tempModfile indicates whether or not the -modfile flag should be used.
-	tempModfile
 )
 
 // ID returns a globally unique identifier for this view.
@@ -408,8 +405,8 @@ func (v *View) ID() string { return v.id }
 // of the given go.mod file. On success, it is the caller's
 // responsibility to call the cleanup function when the file is no
 // longer needed.
-func tempModFile(modFh file.Handle, gosum []byte) (tmpURI protocol.DocumentURI, cleanup func(), err error) {
-	filenameHash := file.Hashf("%s", modFh.URI().Path())
+func tempModFile(modURI protocol.DocumentURI, gomod, gosum []byte) (tmpURI protocol.DocumentURI, cleanup func(), err error) {
+	filenameHash := file.HashOf([]byte(modURI.Path()))
 	tmpMod, err := os.CreateTemp("", fmt.Sprintf("go.%s.*.mod", filenameHash))
 	if err != nil {
 		return "", nil, err
@@ -419,12 +416,7 @@ func tempModFile(modFh file.Handle, gosum []byte) (tmpURI protocol.DocumentURI, 
 	tmpURI = protocol.URIFromPath(tmpMod.Name())
 	tmpSumName := sumFilename(tmpURI)
 
-	content, err := modFh.Content()
-	if err != nil {
-		return "", nil, err
-	}
-
-	if _, err := tmpMod.Write(content); err != nil {
+	if _, err := tmpMod.Write(gomod); err != nil {
 		return "", nil, err
 	}
 

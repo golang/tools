@@ -4,14 +4,16 @@ command-line-arguments packages.
 Previously, we would load only one because go/packages returns at most one
 command-line-arguments package per query.
 
+TODO(rfindley): is the error about missing packages desirable?
+
 -- a/main.go --
-package main
+package main //@diag("main", re"No packages")
 
 func main() {
 	var a int //@diag(re"var (a)", re"not used")
 }
 -- b/main.go --
-package main
+package main //@diag("main", re"No packages")
 
 func main() {
 	var b int //@diag(re"var (b)", re"not used")

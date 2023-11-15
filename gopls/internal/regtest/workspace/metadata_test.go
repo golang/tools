@@ -85,7 +85,7 @@ func main() {}
 		// packages for bar.go
 		env.RegexpReplace("bar.go", "ignore", "excluded")
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("bar.go", "package (main)"), WithMessage("not included in your workspace")),
+			Diagnostics(env.AtRegexp("bar.go", "package (main)"), WithMessage("excluded due to its build tags")),
 		)
 	})
 }

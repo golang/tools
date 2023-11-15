@@ -15,7 +15,7 @@ module golang.org/lsptests
 
 go 1.18
 -- %percent/perc%ent.go --
-package percent //@diag("percent", re"not included in your workspace")
+package percent //@diag("percent", re"No packages")
 
 -- noparse/noparse.go --
 

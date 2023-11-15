@@ -520,9 +520,6 @@ type InternalOptions struct {
 	// the result `x.str`.
 	DeepCompletion bool
 
-	// TempModfile controls the use of the -modfile flag in Go 1.14.
-	TempModfile bool
-
 	// ShowBugReports causes a message to be shown when the first bug is reported
 	// on the server.
 	// This option applies only during initialization.
@@ -1070,9 +1067,8 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 	case "verboseWorkDoneProgress":
 		result.setBool(&o.VerboseWorkDoneProgress)
 
-	case "tempModfile":
-		result.softErrorf("gopls setting \"tempModfile\" is deprecated.\nPlease comment on https://go.dev/issue/63537 if this impacts your workflow.")
-		result.setBool(&o.TempModfile)
+	case "tempModFile":
+		result.deprecated("")
 
 	case "showBugReports":
 		result.setBool(&o.ShowBugReports)

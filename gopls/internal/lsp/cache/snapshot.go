@@ -399,9 +399,6 @@ func (s *Snapshot) workspaceMode() workspaceMode {
 		return mode
 	}
 	mode |= moduleMode
-	if s.Options().TempModfile {
-		mode |= tempModfile
-	}
 	return mode
 }
 
@@ -515,8 +512,7 @@ func (s *Snapshot) RunGoModUpdateCommands(ctx context.Context, wd string, run fu
 // explicitly, rather than implicitly deriving it from flags and inv.
 //
 // TODO(adonovan): simplify cleanup mechanism. It's hard to see, but
-// it used only after call to tempModFile. Clarify that it is only
-// non-nil on success.
+// it used only after call to tempModFile.
 func (s *Snapshot) goCommandInvocation(ctx context.Context, flags source.InvocationFlags, inv *gocommand.Invocation) (tmpURI protocol.DocumentURI, updatedInv *gocommand.Invocation, cleanup func(), err error) {
 	allowModfileModificationOption := s.Options().AllowModfileModifications
 	allowNetworkOption := s.Options().AllowImplicitNetworkAccess
@@ -554,6 +550,8 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags source.Invocat
 	// synthetic workspace, whether flags are supported at the current go
 	// version, and what we're actually trying to achieve (the
 	// source.InvocationFlags).
+	//
+	// TODO(rfindley): should we set -overlays here?
 
 	var modURI protocol.DocumentURI
 	// Select the module context to use.
@@ -590,7 +588,6 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags source.Invocat
 
 	const mutableModFlag = "mod"
 	// If the mod flag isn't set, populate it based on the mode and workspace.
-	// TODO(rfindley): this doesn't make sense if we're not in module mode
 	if inv.ModFlag == "" {
 		switch mode {
 		case source.LoadWorkspace, source.Normal:
@@ -608,32 +605,19 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags source.Invocat
 		}
 	}
 
-	// Only use a temp mod file if the modfile can actually be mutated.
-	needTempMod := inv.ModFlag == mutableModFlag
-	useTempMod := s.workspaceMode()&tempModfile != 0
-	if needTempMod && !useTempMod {
-		return "", nil, cleanup, source.ErrTmpModfileUnsupported
-	}
+	// TODO(rfindley): if inv.ModFlag was already set to "mod", we may not have
+	// set GOWORK=off here. But that doesn't happen. Clean up this entire API so
+	// that we don't have this mutation of the invocation, which is quite hard to
+	// follow.
 
-	// We should use -modfile if:
-	//  - the workspace mode supports it
-	//  - we're using a go.work file on go1.18+, or we need a temp mod file (for
-	//    example, if running go mod tidy in a go.work workspace)
-	//
-	// TODO(rfindley): this is very hard to follow. Refactor.
-	if !needTempMod && s.view.gowork != "" {
-		// Since we're running in the workspace root, the go command will resolve GOWORK automatically.
-	} else if useTempMod {
+	// If the invocation needs to mutate the modfile, we must use a temp mod.
+	if inv.ModFlag == mutableModFlag {
 		if modURI == "" {
 			return "", nil, cleanup, fmt.Errorf("no go.mod file found in %s", inv.WorkingDir)
 		}
-		modFH, err := s.ReadFile(ctx, modURI)
-		if err != nil {
-			return "", nil, cleanup, err
-		}
 		// Use the go.sum if it happens to be available.
 		gosum := s.goSum(ctx, modURI)
-		tmpURI, cleanup, err = tempModFile(modFH, gosum)
+		tmpURI, cleanup, err = tempModFile(modURI, modContent, gosum)
 		if err != nil {
 			return "", nil, cleanup, err
 		}
@@ -1792,6 +1776,7 @@ searchOverlays:
 					fix = `To work with multiple modules simultaneously, please upgrade to Go 1.18 or
 later, reinstall gopls, and use a go.work file.`
 				}
+
 				msg = fmt.Sprintf(`This file is within module %q, which is not included in your workspace.
 %s
 See the documentation for more information on setting up your workspace:
@@ -1799,25 +1784,32 @@ https://github.com/golang/tools/blob/master/gopls/doc/workspace.md.`, modDir, fi
 			}
 		}
 
-		if msg == "" && ignoredFiles[fh.URI()] {
-			// TODO(rfindley): use the constraint package to check if the file
-			// _actually_ satisfies the current build context.
-			hasConstraint := false
-			walkConstraints(pgf.File, func(constraint.Expr) bool {
-				hasConstraint = true
-				return false
-			})
-			var fix string
-			if hasConstraint {
-				fix = `This file may be excluded due to its build tags; try adding "-tags=<build tag>" to your gopls "buildFlags" configuration
+		if msg == "" {
+			if ignoredFiles[fh.URI()] {
+				// TODO(rfindley): use the constraint package to check if the file
+				// _actually_ satisfies the current build context.
+				hasConstraint := false
+				walkConstraints(pgf.File, func(constraint.Expr) bool {
+					hasConstraint = true
+					return false
+				})
+				var fix string
+				if hasConstraint {
+					fix = `This file may be excluded due to its build tags; try adding "-tags=<build tag>" to your gopls "buildFlags" configuration
 See the documentation for more information on working with build tags:
 https://github.com/golang/tools/blob/master/gopls/doc/settings.md#buildflags-string.`
-			} else if strings.Contains(filepath.Base(fh.URI().Path()), "_") {
-				fix = `This file may be excluded due to its GOOS/GOARCH, or other build constraints.`
+				} else if strings.Contains(filepath.Base(fh.URI().Path()), "_") {
+					fix = `This file may be excluded due to its GOOS/GOARCH, or other build constraints.`
+				} else {
+					fix = `This file is ignored by your gopls build.` // we don't know why
+				}
+				msg = fmt.Sprintf("No packages found for open file %s.\n%s", fh.URI().Path(), fix)
 			} else {
-				fix = `This file is ignored by your gopls build.` // we don't know why
+				// Fall back: we're not sure why the file is orphaned.
+				// TODO(rfindley): we could do better here, diagnosing the lack of a
+				// go.mod file and malformed file names (see the perc%ent marker test).
+				msg = fmt.Sprintf("No packages found for open file %s.", fh.URI().Path())
 			}
-			msg = fmt.Sprintf("No packages found for open file %s.\n%s", fh.URI().Path(), fix)
 		}
 
 		if msg != "" {
