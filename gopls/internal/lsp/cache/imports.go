@@ -7,16 +7,15 @@ package cache
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/keys"
-	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
 )
 
@@ -127,33 +126,18 @@ func populateProcessEnvFromSnapshot(ctx context.Context, pe *imports.ProcessEnv,
 		pe.Logf = nil
 	}
 
-	// Extract invocation details from the snapshot to use with goimports.
-	//
-	// TODO(rfindley): refactor to extract the necessary invocation logic into
-	// separate functions. Using goCommandInvocation is unnecessarily indirect,
-	// and has led to memory leaks in the past, when the snapshot was
-	// unintentionally held past its lifetime.
-	_, inv, cleanupInvocation, err := snapshot.goCommandInvocation(ctx, source.LoadWorkspace, &gocommand.Invocation{
-		WorkingDir: snapshot.view.goCommandDir.Path(),
-	})
-	if err != nil {
-		return err
-	}
-
-	pe.BuildFlags = inv.BuildFlags
+	pe.WorkingDir = snapshot.view.goCommandDir.Path()
 	pe.ModFlag = "readonly" // processEnv operations should not mutate the modfile
 	pe.Env = map[string]string{}
-	for _, kv := range inv.Env {
+	pe.BuildFlags = append([]string{}, snapshot.Options().BuildFlags...)
+	env := append(append(os.Environ(), snapshot.Options().EnvSlice()...), "GO111MODULE="+snapshot.view.GO111MODULE())
+	for _, kv := range env {
 		split := strings.SplitN(kv, "=", 2)
 		if len(split) != 2 {
 			continue
 		}
 		pe.Env[split[0]] = split[1]
 	}
-	// We don't actually use the invocation, so clean it up now.
-	cleanupInvocation()
-	// TODO(rfindley): should this simply be inv.WorkingDir?
-	pe.WorkingDir = snapshot.view.goCommandDir.Path()
 	return nil
 }
 
