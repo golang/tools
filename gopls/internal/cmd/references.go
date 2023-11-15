@@ -70,7 +70,7 @@ func (r *references) Run(ctx context.Context, args ...string) error {
 	}
 	var spans []string
 	for _, l := range locations {
-		f, err := conn.openFile(ctx, fileURI(l.URI))
+		f, err := conn.openFile(ctx, l.URI)
 		if err != nil {
 			return err
 		}

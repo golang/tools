@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/vulncheck/osv"
 )
 
@@ -37,7 +37,7 @@ func TestNewDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Clean()
-	dbpath := span.URIFromURI(db.URI()).Filename()
+	dbpath := protocol.DocumentURI(db.URI()).Filename()
 
 	// The generated JSON file will be in DB/GO-2022-0001.json.
 	got := readOSVEntry(t, filepath.Join(dbpath, "GO-2020-0001.json"))

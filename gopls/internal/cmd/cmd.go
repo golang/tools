@@ -31,6 +31,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/internal/constraints"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/tool"
@@ -453,15 +454,6 @@ func newConnection(server protocol.Server, client *cmdClient) *connection {
 	}
 }
 
-// fileURI converts a DocumentURI to a file:// span.URI, panicking if it's not a file.
-func fileURI(uri protocol.DocumentURI) span.URI {
-	sURI := uri.SpanURI()
-	if !sURI.IsFile() {
-		panic(fmt.Sprintf("%q is not a file URI", uri))
-	}
-	return sURI
-}
-
 func (c *cmdClient) CodeLensRefresh(context.Context) error { return nil }
 
 func (c *cmdClient) LogTrace(context.Context, *protocol.LogTraceParams) error { return nil }
@@ -556,13 +548,13 @@ func (c *cmdClient) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEdi
 // files, honoring the preferred edit mode specified by cli.app.editMode.
 // (Used by rename and by ApplyEdit downcalls.)
 func (cli *cmdClient) applyWorkspaceEdit(edit *protocol.WorkspaceEdit) error {
-	var orderedURIs []string
+	var orderedURIs []span.URI
 	edits := map[span.URI][]protocol.TextEdit{}
 	for _, c := range edit.DocumentChanges {
 		if c.TextDocumentEdit != nil {
-			uri := fileURI(c.TextDocumentEdit.TextDocument.URI)
+			uri := c.TextDocumentEdit.TextDocument.URI
 			edits[uri] = append(edits[uri], c.TextDocumentEdit.Edits...)
-			orderedURIs = append(orderedURIs, string(uri))
+			orderedURIs = append(orderedURIs, uri)
 		}
 		if c.RenameFile != nil {
 			return fmt.Errorf("client does not support file renaming (%s -> %s)",
@@ -570,9 +562,8 @@ func (cli *cmdClient) applyWorkspaceEdit(edit *protocol.WorkspaceEdit) error {
 				c.RenameFile.NewURI)
 		}
 	}
-	sort.Strings(orderedURIs)
-	for _, u := range orderedURIs {
-		uri := span.URIFromURI(u)
+	sortSlice(orderedURIs)
+	for _, uri := range orderedURIs {
 		f := cli.openFile(uri)
 		if f.err != nil {
 			return f.err
@@ -582,6 +573,10 @@ func (cli *cmdClient) applyWorkspaceEdit(edit *protocol.WorkspaceEdit) error {
 		}
 	}
 	return nil
+}
+
+func sortSlice[T constraints.Ordered](slice []T) {
+	sort.Slice(slice, func(i, j int) bool { return slice[i] < slice[j] })
 }
 
 // applyTextEdits applies a list of edits to the mapper file content,
@@ -641,7 +636,7 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 	c.filesMu.Lock()
 	defer c.filesMu.Unlock()
 
-	file := c.getFile(fileURI(p.URI))
+	file := c.getFile(p.URI)
 	file.diagnostics = append(file.diagnostics, p.Diagnostics...)
 
 	// Perform a crude in-place deduplication.

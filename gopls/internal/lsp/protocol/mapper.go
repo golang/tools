@@ -72,7 +72,6 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 // A Mapper wraps the content of a file and provides mapping
@@ -94,7 +93,7 @@ import (
 //
 // See overview comments at top of this file.
 type Mapper struct {
-	URI     span.URI
+	URI     DocumentURI
 	Content []byte
 
 	// Line-number information is requested only for a tiny
@@ -109,7 +108,7 @@ type Mapper struct {
 }
 
 // NewMapper creates a new mapper for the given URI and content.
-func NewMapper(uri span.URI, content []byte) *Mapper {
+func NewMapper(uri DocumentURI, content []byte) *Mapper {
 	return &Mapper{URI: uri, Content: content}
 }
 
@@ -392,7 +391,7 @@ func (mr MappedRange) Offsets() (start, end int) { return mr.start, mr.end }
 // -- convenience functions --
 
 // URI returns the URI of the range's file.
-func (mr MappedRange) URI() span.URI {
+func (mr MappedRange) URI() DocumentURI {
 	return mr.Mapper.URI
 }
 

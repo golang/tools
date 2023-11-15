@@ -98,7 +98,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	if len(locs) == 0 {
 		return fmt.Errorf("%v: not an identifier", from)
 	}
-	file, err = conn.openFile(ctx, fileURI(locs[0].URI))
+	file, err = conn.openFile(ctx, locs[0].URI)
 	if err != nil {
 		return fmt.Errorf("%v: %v", from, err)
 	}

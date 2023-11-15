@@ -258,6 +258,9 @@ func genStructs(model Model) {
 //    file:///c:/project/readme.md
 //    file:///C%3A/project/readme.md
 //
+// This is done during JSON unmarshalling;
+// see [DocumentURI.UnmarshalText] for details.
+//
 type DocumentURI string
 `
 	types["URI"] = `// A URI is an arbitrary URL (e.g. https), not necessarily a file.

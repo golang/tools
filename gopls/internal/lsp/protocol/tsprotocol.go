@@ -1476,6 +1476,9 @@ type DocumentSymbolRegistrationOptions struct {
 //
 //	file:///c:/project/readme.md
 //	file:///C%3A/project/readme.md
+//
+// This is done during JSON unmarshalling;
+// see [DocumentURI.UnmarshalText] for details.
 type DocumentURI string
 
 // Predefined error codes.

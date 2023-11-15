@@ -93,7 +93,7 @@ func (s *server) initialize(ctx context.Context, params *protocol.ParamInitializ
 		}
 	}
 	for _, folder := range folders {
-		uri := span.URIFromURI(folder.URI)
+		uri := protocol.URIFromURI(folder.URI)
 		if !uri.IsFile() {
 			continue
 		}
@@ -305,7 +305,7 @@ func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 	// Only one view gets to have a workspace.
 	var nsnapshots sync.WaitGroup // number of unfinished snapshot initializations
 	for _, folder := range folders {
-		uri := span.URIFromURI(folder.URI)
+		uri := protocol.URIFromURI(folder.URI)
 		// Ignore non-file URIs.
 		if !uri.IsFile() {
 			continue

@@ -66,7 +66,7 @@ func (i *implementation) Run(ctx context.Context, args ...string) error {
 
 	var spans []string
 	for _, impl := range implementations {
-		f, err := conn.openFile(ctx, fileURI(impl.URI))
+		f, err := conn.openFile(ctx, impl.URI)
 		if err != nil {
 			return err
 		}

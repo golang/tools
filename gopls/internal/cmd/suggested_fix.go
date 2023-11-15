@@ -154,7 +154,7 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 		if !from.HasPosition() {
 			for _, c := range a.Edit.DocumentChanges {
 				if c.TextDocumentEdit != nil {
-					if fileURI(c.TextDocumentEdit.TextDocument.URI) == uri {
+					if c.TextDocumentEdit.TextDocument.URI == uri {
 						edits = append(edits, c.TextDocumentEdit.Edits...)
 					}
 				}
@@ -168,7 +168,7 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 			if diag.Range.Start == rng.Start {
 				for _, c := range a.Edit.DocumentChanges {
 					if c.TextDocumentEdit != nil {
-						if fileURI(c.TextDocumentEdit.TextDocument.URI) == uri {
+						if c.TextDocumentEdit.TextDocument.URI == uri {
 							edits = append(edits, c.TextDocumentEdit.Edits...)
 						}
 					}
@@ -181,7 +181,7 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 		if len(a.Diagnostics) == 0 {
 			for _, c := range a.Edit.DocumentChanges {
 				if c.TextDocumentEdit != nil {
-					if fileURI(c.TextDocumentEdit.TextDocument.URI) == uri {
+					if c.TextDocumentEdit.TextDocument.URI == uri {
 						edits = append(edits, c.TextDocumentEdit.Edits...)
 					}
 				}

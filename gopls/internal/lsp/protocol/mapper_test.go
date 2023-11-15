@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 // This file tests Mapper's logic for converting between offsets,
@@ -437,7 +436,7 @@ func TestBytesOffset(t *testing.T) {
 
 	for i, test := range tests {
 		fname := fmt.Sprintf("test %d", i)
-		uri := span.URIFromPath(fname)
+		uri := protocol.URIFromPath(fname)
 		mapper := protocol.NewMapper(uri, []byte(test.text))
 		got, err := mapper.PositionOffset(test.pos)
 		if err != nil && test.want != -1 {
