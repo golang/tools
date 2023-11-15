@@ -4,9 +4,6 @@ go.mod files, when a go.work file is used.
 Note that unlike unusedrequire.txt, we need not write go.sum files when
 a go.work file is used.
 
--- flags --
--min_go=go1.18
-
 -- proxy/example.com@v1.0.0/x.go --
 package pkg
 const X = 1

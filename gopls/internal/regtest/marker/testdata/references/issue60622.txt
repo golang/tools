@@ -1,9 +1,6 @@
 Regression test for 'references' bug golang/go#60622:
 references to methods of generics were missing.
 
--- flags --
--min_go=go1.18
-
 -- go.mod --
 module example.com
 go 1.18

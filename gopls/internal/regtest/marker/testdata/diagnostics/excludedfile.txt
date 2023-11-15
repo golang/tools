@@ -4,7 +4,6 @@ Skip on plan9, an arbitrary GOOS, so that we can exercise GOOS exclusions
 resulting from file suffixes.
 
 -- flags --
--min_go=go1.18
 -skip_goos=plan9
 
 -- go.work --

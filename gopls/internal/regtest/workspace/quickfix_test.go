@@ -10,14 +10,11 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
-	"golang.org/x/tools/internal/testenv"
 
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
 )
 
 func TestQuickFix_UseModule(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // needs go.work
-
 	const files = `
 -- go.work --
 go 1.20
@@ -101,8 +98,6 @@ use (
 }
 
 func TestQuickFix_AddGoWork(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // needs go.work
-
 	const files = `
 -- a/go.mod --
 module mod.com/a
@@ -211,8 +206,6 @@ use (
 }
 
 func TestQuickFix_UnsavedGoWork(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // needs go.work
-
 	const files = `
 -- go.work --
 go 1.21
@@ -276,8 +269,6 @@ func main() {}
 }
 
 func TestQuickFix_GOWORKOff(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // needs go.work
-
 	const files = `
 -- go.work --
 go 1.21

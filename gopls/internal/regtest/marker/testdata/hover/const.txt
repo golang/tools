@@ -1,8 +1,5 @@
 This test checks hovering over constants.
 
--- flags --
--min_go=go1.17
-
 -- go.mod --
 module mod.com
 

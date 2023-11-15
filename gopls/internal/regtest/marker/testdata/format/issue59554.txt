@@ -6,13 +6,11 @@ short var decls.
 
 Note that gofumpt requires Go 1.18.
 
--- flags --
--min_go=go1.18
-
 -- settings.json --
 {
 	"formatting.gofumpt": true
 }
+
 -- main.go --
 package main //@format(main)
 

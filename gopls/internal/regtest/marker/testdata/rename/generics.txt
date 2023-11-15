@@ -9,9 +9,6 @@ Fixed bugs:
 - golang/go#61635: renaming type parameters did not work when they were
   capitalized and the package was imported by another package.
 
--- flags --
--min_go=go1.18
-
 -- go.mod --
 module example.com
 go 1.20

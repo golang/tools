@@ -303,8 +303,6 @@ func main() {
 }
 
 func TestGofumptFormatting(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	// Exercise some gofumpt formatting rules:
 	//  - No empty lines following an assignment operator
 	//  - Octal integer literals should use the 0o prefix on modules using Go

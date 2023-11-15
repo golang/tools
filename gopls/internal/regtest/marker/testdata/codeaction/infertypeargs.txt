@@ -1,8 +1,5 @@
 This test verifies the infertypeargs refactoring.
 
--- flags --
--min_go=go1.18
-
 -- go.mod --
 module mod.test/infertypeargs
 

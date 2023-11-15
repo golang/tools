@@ -1,8 +1,5 @@
 Basic tests of textDocument/documentSymbols with generics.
 
--- flags --
--min_go=go1.18
-
 -- symbol.go --
 //@symbol(want)
 

@@ -79,8 +79,6 @@ const (
 // regression test for golang/go#39446. It also checks that these code lenses
 // only affect the diagnostics and contents of the containing go.mod file.
 func TestUpgradeCodelens(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // uses go.work
-
 	const proxyWithLatest = `
 -- golang.org/x/hello@v1.3.3/go.mod --
 module golang.org/x/hello

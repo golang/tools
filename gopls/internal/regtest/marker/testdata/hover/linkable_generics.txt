@@ -1,8 +1,5 @@
 This file contains tests for documentation links to generic code in hover.
 
--- flags --
--min_go=go1.18
-
 -- go.mod --
 module mod.com
 

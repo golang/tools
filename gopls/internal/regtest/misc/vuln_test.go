@@ -24,7 +24,6 @@ import (
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
 	"golang.org/x/tools/gopls/internal/vulncheck/vulntest"
-	"golang.org/x/tools/internal/testenv"
 )
 
 func TestRunGovulncheckError(t *testing.T) {
@@ -164,7 +163,6 @@ references:
 `
 
 func TestRunGovulncheckStd(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
 	const files = `
 -- go.mod --
 module mod.com
@@ -241,7 +239,6 @@ func main() {
 }
 
 func TestFetchVulncheckResultStd(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
 	const files = `
 -- go.mod --
 module mod.com
@@ -481,8 +478,6 @@ func vulnTestEnv(vulnsDB, proxyData string) (*vulntest.DB, []RunOption, error) {
 }
 
 func TestRunVulncheckPackageDiagnostics(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	db, opts0, err := vulnTestEnv(vulnsData, proxy1)
 	if err != nil {
 		t.Fatal(err)
@@ -628,8 +623,6 @@ func stringify(a interface{}) string {
 }
 
 func TestRunVulncheckWarning(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	db, opts, err := vulnTestEnv(vulnsData, proxy1)
 	if err != nil {
 		t.Fatal(err)
@@ -785,8 +778,6 @@ func OK() {} // ok.
 `
 
 func TestGovulncheckInfo(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	db, opts, err := vulnTestEnv(vulnsData, proxy2)
 	if err != nil {
 		t.Fatal(err)

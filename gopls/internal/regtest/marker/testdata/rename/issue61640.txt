@@ -1,8 +1,5 @@
 This test verifies that gopls can rename instantiated fields.
 
--- flags --
--min_go=go1.18
-
 -- a.go --
 package a
 

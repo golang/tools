@@ -538,8 +538,6 @@ func main() {
 }
 
 func TestUnimportedCompletionHasPlaceholders60269(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // uses type params
-
 	// We can't express this as a marker test because it doesn't support AcceptCompletion.
 	const src = `
 -- go.mod --
@@ -693,7 +691,6 @@ func _() {
 }
 
 func TestDefinition(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17) // in go1.16, The FieldList in func x is not empty
 	files := `
 -- go.mod --
 module mod.com
@@ -742,10 +739,7 @@ package foo
 }
 
 // Test that completing a definition replaces source text when applied, golang/go#56852.
-// Note: With go <= 1.16 the completions does not add parameters and fails these tests.
 func TestDefinitionReplaceRange(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17)
-
 	const mod = `
 -- go.mod --
 module mod.com

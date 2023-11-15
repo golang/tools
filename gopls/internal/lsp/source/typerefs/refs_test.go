@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/gopls/internal/span"
-	"golang.org/x/tools/internal/testenv"
 )
 
 // TestRefs checks that the analysis reports, for each exported member
@@ -30,7 +29,6 @@ func TestRefs(t *testing.T) {
 		srcs      []string            // source for the local package; package name must be p
 		imports   map[string]string   // for simplicity: importPath -> pkgID/pkgName (we set pkgName == pkgID); 'ext' is always available.
 		want      map[string][]string // decl name -> id.<decl name>
-		go118     bool                // test uses generics
 		allowErrs bool                // whether we expect parsing errors
 	}{
 		{
@@ -110,7 +108,6 @@ type D ext.D
 				"C": {"ext.C"},
 				"D": {"ext.D"},
 			},
-			go118: true,
 		},
 		{
 			label: "funcs",
@@ -410,7 +407,6 @@ func (A[B]) M(C) {}
 				"T":  {"ext.T"},
 				"T3": {"ext.T3"},
 			},
-			go118: true,
 		},
 		{
 			label: "instances",
@@ -432,7 +428,6 @@ type E ext.E
 				"D": {"ext.A", "ext.B", "ext.E"},
 				"E": {"ext.E"},
 			},
-			go118: true,
 		},
 		{
 			label: "duplicate decls",
@@ -509,10 +504,6 @@ type Z map[ext.A]ext.B
 
 	for _, test := range tests {
 		t.Run(test.label, func(t *testing.T) {
-			if test.go118 {
-				testenv.NeedsGo1Point(t, 18)
-			}
-
 			var pgfs []*source.ParsedGoFile
 			for i, src := range test.srcs {
 				uri := span.URI(fmt.Sprintf("file:///%d.go", i))

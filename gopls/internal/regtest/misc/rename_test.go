@@ -12,7 +12,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
-	"golang.org/x/tools/internal/testenv"
 )
 
 func TestPrepareRenameMainPackage(t *testing.T) {
@@ -52,7 +51,6 @@ func main() {
 
 // Test case for golang/go#56227
 func TestRenameWithUnsafeSlice(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17) // unsafe.Slice was added in Go 1.17
 	const files = `
 -- go.mod --
 module mod.com
@@ -111,7 +109,6 @@ func main() {
 }
 
 func TestPrepareRenameFailWithUnknownModule(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17)
 	const files = `
 go 1.14
 -- lib/a.go --
@@ -146,7 +143,6 @@ func main() {
 // This test ensures that each import of a renamed package
 // is also renamed if it would otherwise create a conflict.
 func TestRenamePackageWithConflicts(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17)
 	const files = `
 -- go.mod --
 module mod.com
@@ -193,7 +189,6 @@ func main() {
 }
 
 func TestRenamePackageWithAlias(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17)
 	const files = `
 -- go.mod --
 module mod.com
@@ -233,7 +228,6 @@ func main() {
 }
 
 func TestRenamePackageWithDifferentDirectoryPath(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17)
 	const files = `
 -- go.mod --
 module mod.com
@@ -273,7 +267,6 @@ func main() {
 }
 
 func TestRenamePackage(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17)
 	const files = `
 -- go.mod --
 module mod.com
@@ -425,7 +418,6 @@ package b
 }
 
 func TestRenamePackage_Tests(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17)
 	const files = `
 -- go.mod --
 module mod.com
@@ -494,7 +486,6 @@ func main() {
 }
 
 func TestRenamePackage_NestedModule(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
 	const files = `
 -- go.work --
 go 1.18
@@ -576,7 +567,6 @@ func main() {
 }
 
 func TestRenamePackage_DuplicateImport(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17)
 	const files = `
 -- go.mod --
 module mod.com
@@ -618,7 +608,6 @@ func main() {
 }
 
 func TestRenamePackage_DuplicateBlankImport(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17)
 	const files = `
 -- go.mod --
 module mod.com
@@ -783,7 +772,6 @@ const _ = bar.Bar + baz.Baz + foox.Foo
 }
 
 func TestRenamePackage_Nesting(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17)
 	const files = `
 -- go.mod --
 module mod.com
@@ -833,7 +821,6 @@ const C = libx.A + nested.B
 }
 
 func TestRenamePackage_InvalidName(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17)
 	const files = `
 -- go.mod --
 module mod.com
@@ -860,7 +847,6 @@ const A = 1 + nested.B
 }
 
 func TestRenamePackage_InternalPackage(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17)
 	const files = `
 -- go.mod --
 module mod.com

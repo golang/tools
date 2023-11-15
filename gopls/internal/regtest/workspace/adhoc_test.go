@@ -8,14 +8,11 @@ import (
 	"testing"
 
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
-	"golang.org/x/tools/internal/testenv"
 )
 
 // Test for golang/go#57209: editing a file in an ad-hoc package should not
 // trigger conflicting diagnostics.
 func TestAdhoc_Edits(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	const files = `
 -- a.go --
 package foo

@@ -72,7 +72,6 @@ func TestWorkaroundIssue57490(t *testing.T) {
 // suggests alternatives.
 func TestGoplsSourceDoesNotCallTokenFileMethods(t *testing.T) {
 	testenv.NeedsGoPackages(t)
-	testenv.NeedsGo1Point(t, 18)
 	testenv.NeedsLocalXTools(t)
 
 	cfg := &packages.Config{

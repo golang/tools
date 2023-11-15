@@ -9,9 +9,6 @@ Skipping due to go.dev/issue/60584#issuecomment-1622238115.
 There appears to be a real race in the critical error logic causing this test
 to flake with high frequency.
 
--- flags --
--min_go=go1.18
-
 -- a/go.mod --
 module mod.com/a
 

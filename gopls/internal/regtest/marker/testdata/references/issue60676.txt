@@ -5,9 +5,6 @@ shared by types from multiple packages. See golang/go#60676.
 Note that the marker test runner awaits the initial workspace load, so export
 data should be populated at the time references are requested.
 
--- flags --
--min_go=go1.18
-
 -- go.mod --
 module mod.test
 

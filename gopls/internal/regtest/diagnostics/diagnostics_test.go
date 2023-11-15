@@ -1360,9 +1360,6 @@ func b(c bytes.Buffer) {
 }
 
 func TestSwig(t *testing.T) {
-	// This is fixed in Go 1.17, but not earlier.
-	testenv.NeedsGo1Point(t, 17)
-
 	if _, err := exec.LookPath("swig"); err != nil {
 		t.Skip("skipping test: swig not available")
 	}
@@ -1850,7 +1847,6 @@ func main() {}
 }
 
 func TestLangVersion(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // Requires types.Config.GoVersion, new in 1.18.
 	const files = `
 -- go.mod --
 module mod.com
@@ -1874,7 +1870,6 @@ const C = 0b10
 }
 
 func TestNoQuickFixForUndeclaredConstraint(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
 	const files = `
 -- go.mod --
 module mod.com
@@ -1901,7 +1896,6 @@ func F[T C](_ T) {
 }
 
 func TestEditGoDirective(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
 	const files = `
 -- go.mod --
 module mod.com
@@ -1929,7 +1923,6 @@ func F[T any](_ T) {
 }
 
 func TestEditGoDirectiveWorkspace(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
 	const files = `
 -- go.mod --
 module mod.com

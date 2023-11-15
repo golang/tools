@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
-	"golang.org/x/tools/internal/testenv"
 )
 
 // TODO(rfindley): move workspace tests related to metadata bugs into this
@@ -42,8 +41,6 @@ const C = 42
 // Test that moving ignoring a file via build constraints causes diagnostics to
 // be resolved.
 func TestIgnoreFile(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17) // needs native overlays and support for go:build directives
-
 	const src = `
 -- go.mod --
 module mod.test
@@ -94,8 +91,6 @@ func main() {}
 }
 
 func TestReinitializeRepeatedly(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // uses go.work
-
 	const multiModule = `
 -- go.work --
 go 1.18
@@ -174,8 +169,6 @@ func Hello() int {
 // Test for golang/go#59458. With lazy module loading, we may not need
 // transitively required modules.
 func TestNestedModuleLoading_Issue59458(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17) // needs lazy module loading
-
 	// In this test, module b.com/nested requires b.com/other, which in turn
 	// requires b.com, but b.com/nested does not reach b.com through the package
 	// graph. Therefore, b.com/nested does not need b.com on 1.17 and later,

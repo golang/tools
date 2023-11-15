@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/internal/testenv"
 )
 
 // Tests golang/go#38815.
@@ -241,7 +240,6 @@ func TestA(t *testing.T) {
 
 // Test for golang/go#52784
 func TestGoWorkImports(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
 	const pkg = `
 -- go.work --
 go 1.19

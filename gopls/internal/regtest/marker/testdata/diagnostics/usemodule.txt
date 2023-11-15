@@ -3,9 +3,6 @@ go.work file.
 
 Quick-fixes change files on disk, so are tested by regtests.
 
--- flags --
--min_go=go1.18
-
 -- go.work --
 go 1.21
 

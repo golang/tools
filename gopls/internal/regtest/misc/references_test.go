@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/regtest"
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
-	"golang.org/x/tools/internal/testenv"
 )
 
 func TestStdlibReferences(t *testing.T) {
@@ -103,7 +102,6 @@ func _() {
 }
 
 func TestDefsRefsBuiltins(t *testing.T) {
-	testenv.NeedsGo1Point(t, 17) // for unsafe.{Add,Slice}
 	// TODO(adonovan): add unsafe.{SliceData,String,StringData} in later go versions.
 	const files = `
 -- go.mod --
@@ -449,7 +447,6 @@ var _ b.B
 // a <command-line-arguments> package for packages that otherwise
 // wouldn't be found from the go.work file.
 func TestReferencesFromWorkspacePackages59674(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // for go.work support
 	const src = `
 -- a/go.mod --
 module example.com/a

@@ -1,8 +1,5 @@
 This file contains tests for hovering over generic Go code.
 
--- flags --
--min_go=go1.18
-
 -- go.mod --
 // A go.mod is require for correct pkgsite links.
 // TODO(rfindley): don't link to ad-hoc or command-line-arguments packages!

@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/internal/testenv"
 )
 
 func TestMain(m *testing.M) {
@@ -241,7 +240,6 @@ require random.org v1.2.3
 
 // Tests that multiple missing dependencies gives good single fixes.
 func TestMissingDependencyFixesWithGoWork(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
 	const mod = `
 -- go.work --
 go 1.18
@@ -701,7 +699,6 @@ func main() {
 }
 
 func TestMultiModuleModDiagnostics(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // uses go.work
 	const mod = `
 -- go.work --
 go 1.18
@@ -1202,7 +1199,6 @@ import "b.mod.com/aaa"
 import "fmt"
 func main() {fmt.Println(aaa.A)}
 `
-	testenv.NeedsGo1Point(t, 18)
 	WithOptions(
 		ProxyFiles(proxy),
 		Modes(Default),

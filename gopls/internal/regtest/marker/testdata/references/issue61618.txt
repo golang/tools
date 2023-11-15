@@ -1,9 +1,6 @@
 Regression test for 'references' bug golang/go#61618:
 references to instantiated fields were missing.
 
--- flags --
--min_go=go1.18
-
 -- go.mod --
 module example.com
 go 1.18

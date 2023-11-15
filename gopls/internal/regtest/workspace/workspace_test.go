@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/gocommand"
-	"golang.org/x/tools/internal/testenv"
 
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
 )
@@ -207,7 +206,6 @@ func Hello() {}
 `
 
 func TestAutomaticWorkspaceModule_Interdependent(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // uses go.work
 	const multiModule = `
 -- moda/a/go.mod --
 module a.com
@@ -312,7 +310,6 @@ func main() {
 // TODO(golang/go#55331): delete this placeholder along with experimental
 // workspace module.
 func TestDeleteModule_Interdependent(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // uses go.work
 	const multiModule = `
 -- go.work --
 go 1.18
@@ -379,7 +376,6 @@ func Hello() int {
 // Tests that the version of the module used changes after it has been added
 // to the workspace.
 func TestCreateModule_Interdependent(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // uses go.work
 	const multiModule = `
 -- go.work --
 go 1.18
@@ -444,7 +440,6 @@ func Hello() int {
 // This test confirms that a gopls workspace can recover from initialization
 // with one invalid module.
 func TestOneBrokenModule(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // uses go.work
 	const multiModule = `
 -- go.work --
 go 1.18
@@ -508,7 +503,6 @@ module example.com/bar
 }
 
 func TestUseGoWork(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // uses go.work
 	// This test validates certain functionality related to using a go.work
 	// file to specify workspace modules.
 	const multiModule = `
@@ -670,8 +664,6 @@ use (
 }
 
 func TestUseGoWorkDiagnosticMissingModule(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // uses go.work
-
 	const files = `
 -- go.work --
 go 1.18
@@ -703,7 +695,6 @@ module example.com/bar
 }
 
 func TestUseGoWorkDiagnosticSyntaxError(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
 	const files = `
 -- go.work --
 go 1.18
@@ -721,8 +712,6 @@ replace
 }
 
 func TestUseGoWorkHover(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	const files = `
 -- go.work --
 go 1.18
@@ -758,7 +747,6 @@ module example.com/bar/baz
 }
 
 func TestExpandToGoWork(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
 	const workspace = `
 -- moda/a/go.mod --
 module a.com
@@ -832,7 +820,6 @@ var _ = fmt.Printf
 }
 
 func TestGoWork_V2Module(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // uses go.work
 	// When using a go.work, we must have proxy content even if it is replaced.
 	const proxy = `
 -- b.com/v2@v2.1.9/go.mod --
@@ -923,7 +910,6 @@ func TestMultiModule_OneBrokenModule(t *testing.T) {
 	// missing go.sum with diagnostics. With go.work files, this doesn't work:
 	// the go.command will happily write go.work.sum.
 	t.Skip("golang/go#57509: go.mod diagnostics do not work in go.work mode")
-	testenv.NeedsGo1Point(t, 18) // uses go.work
 	const files = `
 -- go.work --
 go 1.18
@@ -1022,7 +1008,6 @@ package main
 }
 
 func TestAddAndRemoveGoWork(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
 	// Use a workspace with a module in the root directory to exercise the case
 	// where a go.work is added to the existing root directory. This verifies
 	// that we're detecting changes to the module source, not just the root
@@ -1132,8 +1117,6 @@ func (Server) Foo() {}
 
 // Test for golang/go#48929.
 func TestClearNonWorkspaceDiagnostics(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // uses go.work
-
 	const ws = `
 -- go.work --
 go 1.18

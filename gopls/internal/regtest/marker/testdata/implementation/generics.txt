@@ -1,8 +1,5 @@
 Test of 'implementation' query on generic types.
 
--- flags --
--min_go=go1.18
-
 -- go.mod --
 module example.com
 go 1.18

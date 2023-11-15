@@ -8,9 +8,6 @@ changed then, and the new @diag marker is quite particular.
 module example.com
 go 1.12
 
--- flags --
--min_go=go1.18
-
 -- a.go --
 package a
 

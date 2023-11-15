@@ -10,13 +10,10 @@ import (
 	"testing"
 
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
-	"golang.org/x/tools/internal/testenv"
 )
 
 // Test that setting go.work via environment variables or settings works.
 func TestUseGoWorkOutsideTheWorkspace(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	// As discussed in
 	// https://github.com/golang/go/issues/59458#issuecomment-1513794691, we must
 	// use \-separated paths in go.work use directives for this test to work
