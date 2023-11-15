@@ -481,14 +481,6 @@ type Hooks struct {
 // TODO(rfindley): even though these settings are not intended for
 // modification, some of them should be surfaced in our documentation.
 type InternalOptions struct {
-	// LiteralCompletions controls whether literal candidates such as
-	// "&someStruct{}" are offered. Tests disable this flag to simplify
-	// their expected values.
-	//
-	// TODO(rfindley): this is almost unnecessary now. Remove it along with the
-	// old marker tests.
-	LiteralCompletions bool
-
 	// VerboseWorkDoneProgress controls whether the LSP server should send
 	// progress reports for all work done outside the scope of an RPC.
 	// Used by the regression tests.

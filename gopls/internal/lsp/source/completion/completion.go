@@ -109,7 +109,6 @@ type completionOptions struct {
 	documentation         bool
 	fullDocumentation     bool
 	placeholders          bool
-	literal               bool
 	snippets              bool
 	postfix               bool
 	matcher               settings.Matcher
@@ -550,7 +549,6 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh file.Handle, p
 			documentation:         opts.CompletionDocumentation && opts.HoverKind != settings.NoDocumentation,
 			fullDocumentation:     opts.HoverKind == settings.FullDocumentation,
 			placeholders:          opts.UsePlaceholders,
-			literal:               opts.LiteralCompletions && opts.InsertTextFormat == protocol.SnippetTextFormat,
 			budget:                opts.CompletionBudget,
 			snippets:              opts.InsertTextFormat == protocol.SnippetTextFormat,
 			postfix:               opts.ExperimentalPostfixCompletions,

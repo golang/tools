@@ -110,7 +110,6 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 				},
 			},
 			InternalOptions: InternalOptions{
-				LiteralCompletions:          true,
 				TempModfile:                 true,
 				CompleteUnimported:          true,
 				CompletionDocumentation:     true,

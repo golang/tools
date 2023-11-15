@@ -21,7 +21,7 @@ import (
 // literal generates composite literal, function literal, and make()
 // completion items.
 func (c *completer) literal(ctx context.Context, literalType types.Type, imp *importInfo) {
-	if !c.opts.literal {
+	if !c.opts.snippets {
 		return
 	}
 
