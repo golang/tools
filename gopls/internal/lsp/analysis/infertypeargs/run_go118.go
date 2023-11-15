@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/versions"
 )
 
 // DiagnoseInferableTypeArgs reports diagnostics describing simplifications to type
@@ -65,6 +66,7 @@ func DiagnoseInferableTypeArgs(fset *token.FileSet, inspect *inspector.Inspector
 			}
 			info := new(types.Info)
 			typeparams.InitInstanceInfo(info)
+			versions.InitFileVersions(info)
 			if err := types.CheckExpr(fset, pkg, call.Pos(), newCall, info); err != nil {
 				// Most likely inference failed.
 				break

@@ -35,6 +35,7 @@ import (
 	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/versions"
 )
 
 // Various optimizations that should not affect correctness.
@@ -1505,6 +1506,7 @@ func doTypeCheck(ctx context.Context, b *typeCheckBatch, inputs typeCheckInputs)
 		},
 	}
 	typeparams.InitInstanceInfo(pkg.typesInfo)
+	versions.InitFileVersions(pkg.typesInfo)
 
 	// Collect parsed files from the type check pass, capturing parse errors from
 	// compiled files.

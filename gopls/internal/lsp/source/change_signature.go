@@ -26,6 +26,7 @@ import (
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/versions"
 )
 
 // RemoveUnusedParameter computes a refactoring to remove the parameter
@@ -446,6 +447,7 @@ func reTypeCheck(logf func(string, ...any), orig Package, fileMask map[span.URI]
 		Scopes:     make(map[ast.Node]*types.Scope),
 		Instances:  make(map[*ast.Ident]types.Instance),
 	}
+	versions.InitFileVersions(info)
 	{
 		var files []*ast.File
 		for _, pgf := range orig.CompiledGoFiles() {

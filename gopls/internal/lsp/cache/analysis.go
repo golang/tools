@@ -43,6 +43,7 @@ import (
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/versions"
 )
 
 /*
@@ -931,6 +932,7 @@ func (an *analysisNode) typeCheck(parsed []*source.ParsedGoFile) *analysisPackag
 		typesSizes: m.TypesSizes,
 	}
 	typeparams.InitInstanceInfo(pkg.typesInfo)
+	versions.InitFileVersions(pkg.typesInfo)
 
 	// Unsafe has no syntax.
 	if m.PkgPath == "unsafe" {
