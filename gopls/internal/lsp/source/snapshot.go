@@ -15,7 +15,6 @@ import (
 	"go/scanner"
 	"go/token"
 	"go/types"
-	"io"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/packages"
@@ -26,9 +25,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/vulncheck"
-	"golang.org/x/tools/internal/event/label"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/packagesinternal"
@@ -43,20 +39,6 @@ type GlobalSnapshotID uint64
 
 // Snapshot represents the current state for the given view.
 type Snapshot interface {
-	// SequenceID is the sequence id of this snapshot within its containing
-	// view.
-	//
-	// Relative to their view sequence ids are monotonically increasing, but this
-	// does not hold globally: when new views are created their initial snapshot
-	// has sequence ID 0. For operations that span multiple views, use global
-	// IDs.
-	SequenceID() uint64
-
-	// GlobalID is a globally unique identifier for this snapshot. Global IDs are
-	// monotonic: subsequent snapshots will have higher global ID, though
-	// subsequent snapshots in a view may not have adjacent global IDs.
-	GlobalID() GlobalSnapshotID
-
 	// FileKind returns the type of a file.
 	//
 	// We can't reliably deduce the kind from the file name alone,
@@ -69,13 +51,6 @@ type Snapshot interface {
 	// Options returns the options associated with this snapshot.
 	Options() *settings.Options
 
-	// View returns the View associated with this snapshot.
-	View() View
-
-	// BackgroundContext returns a context used for all background processing
-	// on behalf of this snapshot.
-	BackgroundContext() context.Context
-
 	// A Snapshot is a caching implementation of FileSource whose
 	// ReadFile method returns consistent information about the existence
 	// and content of each file throughout its lifetime.
@@ -85,19 +60,6 @@ type Snapshot interface {
 	// in the given snapshot.
 	// TODO(adonovan): delete this operation; use ReadFile instead.
 	FindFile(uri protocol.DocumentURI) file.Handle
-
-	// AwaitInitialized waits until the snapshot's view is initialized.
-	AwaitInitialized(ctx context.Context)
-
-	// IsOpen returns whether the editor currently has a file open.
-	IsOpen(uri protocol.DocumentURI) bool
-
-	// IgnoredFile reports if a file would be ignored by a `go list` of the whole
-	// workspace.
-	IgnoredFile(uri protocol.DocumentURI) bool
-
-	// Templates returns the .tmpl files
-	Templates() map[protocol.DocumentURI]file.Handle
 
 	// ParseGo returns the parsed AST for the file.
 	// If the file is not available, returns nil and an error.
@@ -110,21 +72,11 @@ type Snapshot interface {
 	// the analysis pass.
 	Analyze(ctx context.Context, pkgIDs map[PackageID]unit, analyzers []*settings.Analyzer, tracker *progress.Tracker) ([]*Diagnostic, error)
 
-	// RunGoCommandPiped runs the given `go` command, writing its output
-	// to stdout and stderr. Verb, Args, and WorkingDir must be specified.
-	//
-	// RunGoCommandPiped runs the command serially using gocommand.RunPiped,
-	// enforcing that this command executes exclusively to other commands on the
-	// server.
-	RunGoCommandPiped(ctx context.Context, mode InvocationFlags, inv *gocommand.Invocation, stdout, stderr io.Writer) error
-
 	// RunGoCommandDirect runs the given `go` command. Verb, Args, and
 	// WorkingDir must be specified.
+	//
+	// TODO(rfindley): eliminate this from the Snapshot interface.
 	RunGoCommandDirect(ctx context.Context, mode InvocationFlags, inv *gocommand.Invocation) (*bytes.Buffer, error)
-
-	// RunGoCommands runs a series of `go` commands that updates the go.mod
-	// and go.sum file for wd, and returns their updated contents.
-	RunGoCommands(ctx context.Context, allowNetwork bool, wd string, run func(invoke func(...string) (*bytes.Buffer, error)) error) (bool, []byte, []byte, error)
 
 	// RunProcessEnvFunc runs fn with the process env for this snapshot's view.
 	// Note: the process env contains cached module and filesystem state.
@@ -137,37 +89,11 @@ type Snapshot interface {
 	// ParseMod is used to parse go.mod files.
 	ParseMod(ctx context.Context, fh file.Handle) (*ParsedModule, error)
 
-	// ModWhy returns the results of `go mod why` for the module specified by
-	// the given go.mod file.
-	ModWhy(ctx context.Context, fh file.Handle) (map[string]string, error)
-
-	// ModTidy returns the results of `go mod tidy` for the module specified by
-	// the given go.mod file.
-	ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule, error)
-
-	// ModVuln returns import vulnerability analysis for the given go.mod URI.
-	// Concurrent requests are combined into a single command.
-	ModVuln(ctx context.Context, modURI protocol.DocumentURI) (*vulncheck.Result, error)
-
-	// GoModForFile returns the URI of the go.mod file for the given URI.
-	GoModForFile(uri protocol.DocumentURI) protocol.DocumentURI
-
-	// WorkFile, if non-empty, is the go.work file for the workspace.
-	WorkFile() protocol.DocumentURI
-
 	// ParseWork is used to parse go.work files.
 	ParseWork(ctx context.Context, fh file.Handle) (*ParsedWorkFile, error)
 
 	// BuiltinFile returns information about the special builtin package.
 	BuiltinFile(ctx context.Context) (*ParsedGoFile, error)
-
-	// IsBuiltin reports whether uri is part of the builtin package.
-	IsBuiltin(uri protocol.DocumentURI) bool
-
-	// CriticalError returns any critical errors in the workspace.
-	//
-	// A nil result may mean success, or context cancellation.
-	CriticalError(ctx context.Context) *CriticalError
 
 	// Symbols returns all symbols in the snapshot.
 	//
@@ -218,12 +144,6 @@ type Snapshot interface {
 	// It returns an error if the context was cancelled.
 	MetadataForFile(ctx context.Context, uri protocol.DocumentURI) ([]*Metadata, error)
 
-	// OrphanedFileDiagnostics reports diagnostics for files that have no package
-	// associations or which only have only command-line-arguments packages.
-	//
-	// The caller must not mutate the result.
-	OrphanedFileDiagnostics(ctx context.Context) (map[protocol.DocumentURI]*Diagnostic, error)
-
 	// -- package type-checking --
 
 	// TypeCheck parses and type-checks the specified packages,
@@ -257,17 +177,16 @@ type Snapshot interface {
 	// be type-checked.
 	MethodSets(ctx context.Context, ids ...PackageID) ([]*methodsets.Index, error)
 
-	// ModuleUpgrades returns known module upgrades for the dependencies of
-	// modfile.
-	ModuleUpgrades(modfile protocol.DocumentURI) map[string]string
+	// IsGoPrivatePath reports whether target is a private import path, as identified
+	// by the GOPRIVATE environment variable.
+	IsGoPrivatePath(path string) bool
 
-	// Vulnerabilities returns known vulnerabilities for the given modfile.
-	//
-	// Results more than an hour old are excluded.
-	//
-	// TODO(suzmue): replace command.Vuln with a different type, maybe
-	// https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck/govulnchecklib#Summary?
-	Vulnerabilities(modfile ...protocol.DocumentURI) map[protocol.DocumentURI]*vulncheck.Result
+	// Folder returns the folder with which this view was created.
+	Folder() protocol.DocumentURI
+
+	// GoVersionString returns the go version string configured for this view.
+	// Unlike [GoVersion], this encodes the minor version and commit hash information.
+	GoVersionString() string
 }
 
 // NarrowestMetadataForFile returns metadata for the narrowest package
@@ -287,12 +206,6 @@ func NarrowestMetadataForFile(ctx context.Context, snapshot Snapshot, uri protoc
 
 type XrefIndex interface {
 	Lookup(targets map[PackagePath]map[objectpath.Path]struct{}) (locs []protocol.Location)
-}
-
-// SnapshotLabels returns a new slice of labels that should be used for events
-// related to a snapshot.
-func SnapshotLabels(snapshot Snapshot) []label.Label {
-	return []label.Label{tag.Snapshot.Of(snapshot.SequenceID()), tag.Directory.Of(snapshot.View().Folder())}
 }
 
 // NarrowestPackageForFile is a convenience function that selects the narrowest
@@ -383,50 +296,14 @@ func (m InvocationFlags) AllowNetwork() bool {
 	return m&AllowNetwork != 0
 }
 
-// View represents a single build context for a workspace.
-//
-// A unique build is determined by the workspace folder along with a Go
-// environment (GOOS, GOARCH, GOWORK, etc).
-//
-// Additionally, the View holds a pointer to the current state of that build
-// (the Snapshot).
-//
-// TODO(rfindley): move all other state such as module upgrades into the
-// Snapshot.
-type View interface {
-	// ID returns a globally unique identifier for this view.
-	ID() string
-
-	// Name returns the name this view was constructed with.
-	Name() string
-
-	// Folder returns the folder with which this view was created.
-	Folder() protocol.DocumentURI
-
-	// Invalidate is documented at its sole implementation in the cache package.
-	// (this interface is to be deleted).
-	Invalidate(context.Context, StateChange) (Snapshot, func())
-
-	// IsGoPrivatePath reports whether target is a private import path, as identified
-	// by the GOPRIVATE environment variable.
-	IsGoPrivatePath(path string) bool
-
-	// GoVersion returns the configured Go version for this view.
-	GoVersion() int
-
-	// GoVersionString returns the go version string configured for this view.
-	// Unlike [GoVersion], this encodes the minor version and commit hash information.
-	GoVersionString() string
-}
-
-// A StateChange describes external state changes that may affect a snapshot.
-//
-// By far the most common of these is a change to file state, but a query of
-// module upgrade information or vulnerabilities also affects gopls' behavior.
-type StateChange struct {
-	Files          map[protocol.DocumentURI]file.Handle
-	ModuleUpgrades map[protocol.DocumentURI]map[string]string
-	Vulns          map[protocol.DocumentURI]*vulncheck.Result
+// A FileSource maps URIs to FileHandles.
+type FileSource interface {
+	// ReadFile returns the FileHandle for a given URI, either by
+	// reading the content of the file or by obtaining it from a cache.
+	//
+	// Invariant: ReadFile must only return an error in the case of context
+	// cancellation. If ctx.Err() is nil, the resulting error must also be nil.
+	ReadFile(ctx context.Context, uri protocol.DocumentURI) (file.Handle, error)
 }
 
 // A MetadataSource maps package IDs to metadata.

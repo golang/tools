@@ -289,7 +289,7 @@ func VulnerablePackages(ctx context.Context, snapshot source.Snapshot) (*vulnche
 
 	goVersion := snapshot.Options().Env[GoVersionForVulnTest]
 	if goVersion == "" {
-		goVersion = snapshot.View().GoVersionString()
+		goVersion = snapshot.GoVersionString()
 	}
 
 	stdlibModule := &packages.Module{

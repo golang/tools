@@ -48,6 +48,16 @@ type Folder struct {
 	Options *settings.Options
 }
 
+// View represents a single build context for a workspace.
+//
+// A unique build is determined by the workspace folder along with a Go
+// environment (GOOS, GOARCH, GOWORK, etc).
+//
+// Additionally, the View holds a pointer to the current state of that build
+// (the Snapshot).
+//
+// TODO(rfindley): move all other state such as module upgrades into the
+// Snapshot.
 type View struct {
 	id string
 
@@ -391,6 +401,7 @@ const (
 	tempModfile
 )
 
+// ID returns a globally unique identifier for this view.
 func (v *View) ID() string { return v.id }
 
 // tempModFile creates a temporary go.mod file based on the contents
@@ -663,6 +674,9 @@ func (v *View) shutdown() {
 	v.snapshotWG.Wait()
 }
 
+// IgnoredFile reports if a file would be ignored by a `go list` of the whole
+// workspace.
+//
 // While go list ./... skips directories starting with '.', '_', or 'testdata',
 // gopls may still load them via file queries. Explicitly filter them out.
 func (s *Snapshot) IgnoredFile(uri protocol.DocumentURI) bool {
@@ -900,13 +914,23 @@ func (s *Snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 	return loadErr
 }
 
+// A StateChange describes external state changes that may affect a snapshot.
+//
+// By far the most common of these is a change to file state, but a query of
+// module upgrade information or vulnerabilities also affects gopls' behavior.
+type StateChange struct {
+	Files          map[protocol.DocumentURI]file.Handle
+	ModuleUpgrades map[protocol.DocumentURI]map[string]string
+	Vulns          map[protocol.DocumentURI]*vulncheck.Result
+}
+
 // Invalidate processes the provided state change, invalidating any derived
 // results that depend on the changed state.
 //
 // The resulting snapshot is non-nil, representing the outcome of the state
 // change. The second result is a function that must be called to release the
 // snapshot when the snapshot is no longer needed.
-func (v *View) Invalidate(ctx context.Context, changed source.StateChange) (source.Snapshot, func()) {
+func (v *View) Invalidate(ctx context.Context, changed StateChange) (*Snapshot, func()) {
 	// Detach the context so that content invalidation cannot be canceled.
 	ctx = xcontext.Detach(ctx)
 
@@ -1072,10 +1096,14 @@ func defaultCheckPathCase(path string) error {
 	return nil
 }
 
-func (v *View) IsGoPrivatePath(target string) bool {
-	return globsMatchPath(v.goprivate, target)
+// IsGoPrivatePath reports whether target is a private import path, as identified
+// by the GOPRIVATE environment variable.
+func (s *Snapshot) IsGoPrivatePath(target string) bool {
+	return globsMatchPath(s.view.goprivate, target)
 }
 
+// ModuleUpgrades returns known module upgrades for the dependencies of
+// modfile.
 func (s *Snapshot) ModuleUpgrades(modfile protocol.DocumentURI) map[string]string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1093,6 +1121,13 @@ func (s *Snapshot) ModuleUpgrades(modfile protocol.DocumentURI) map[string]strin
 // Mutable for testing.
 var MaxGovulncheckResultAge = 1 * time.Hour
 
+// Vulnerabilities returns known vulnerabilities for the given modfile.
+//
+// Results more than an hour old are excluded.
+//
+// TODO(suzmue): replace command.Vuln with a different type, maybe
+// https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck/govulnchecklib#Summary?
+//
 // TODO(rfindley): move to snapshot.go
 func (s *Snapshot) Vulnerabilities(modfiles ...protocol.DocumentURI) map[protocol.DocumentURI]*vulncheck.Result {
 	m := make(map[protocol.DocumentURI]*vulncheck.Result)
@@ -1114,12 +1149,24 @@ func (s *Snapshot) Vulnerabilities(modfiles ...protocol.DocumentURI) map[protoco
 	return m
 }
 
+// GoVersion returns the effective release Go version (the X in go1.X) for this
+// view.
 func (v *View) GoVersion() int {
 	return v.viewDefinition.goversion
 }
 
+// GoVersionString returns the effective Go version string for this view.
+//
+// Unlike [GoVersion], this encodes the minor version and commit hash information.
 func (v *View) GoVersionString() string {
-	return gocommand.ParseGoVersionOutput(v.viewDefinition.goversionOutput)
+	return gocommand.ParseGoVersionOutput(v.goversionOutput)
+}
+
+// GoVersionString is temporarily available from the snapshot.
+//
+// TODO(rfindley): refactor so that this method is not necessary.
+func (s *Snapshot) GoVersionString() string {
+	return s.view.GoVersionString()
 }
 
 // Copied from

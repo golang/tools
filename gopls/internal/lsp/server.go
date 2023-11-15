@@ -182,7 +182,7 @@ func (s *server) NonstandardRequest(ctx context.Context, method string, params i
 // efficient to compute the set of packages and TypeCheck and
 // Analyze them all at once. Or instead support textDocument/diagnostic
 // (golang/go#60122).
-func (s *server) diagnoseFile(ctx context.Context, snapshot source.Snapshot, uri protocol.DocumentURI) (file.Handle, []*source.Diagnostic, error) {
+func (s *server) diagnoseFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (file.Handle, []*source.Diagnostic, error) {
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, nil, err

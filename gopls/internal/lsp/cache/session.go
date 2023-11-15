@@ -79,7 +79,7 @@ func (s *Session) Cache() *Cache {
 // of its gopls workspace module in that directory, so that client tooling
 // can execute in the same main module.  On success it also returns a release
 // function that must be called when the Snapshot is no longer needed.
-func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, source.Snapshot, func(), error) {
+func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, *Snapshot, func(), error) {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 
@@ -252,7 +252,7 @@ func bestViewForURI(uri protocol.DocumentURI, views []*View) *View {
 	// we need to find the best view for this file
 	var longest *View
 	for _, view := range views {
-		if longest != nil && len(longest.Folder()) > len(view.Folder()) {
+		if longest != nil && len(longest.folder.Dir) > len(view.folder.Dir) {
 			continue
 		}
 		// TODO(rfindley): this should consider the workspace layout (i.e.
@@ -384,7 +384,7 @@ func (s *Session) ResetView(ctx context.Context, uri protocol.DocumentURI) (*Vie
 // TODO(rfindley): what happens if this function fails? It must leave us in a
 // broken state, which we should surface to the user, probably as a request to
 // restart gopls.
-func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modification) (map[source.Snapshot][]protocol.DocumentURI, func(), error) {
+func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modification) (map[*Snapshot][]protocol.DocumentURI, func(), error) {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 
@@ -494,9 +494,9 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 	}
 
 	var releases []func()
-	viewToSnapshot := make(map[*View]source.Snapshot)
+	viewToSnapshot := make(map[*View]*Snapshot)
 	for view, changed := range views {
-		snapshot, release := view.Invalidate(ctx, source.StateChange{Files: changed})
+		snapshot, release := view.Invalidate(ctx, StateChange{Files: changed})
 		releases = append(releases, release)
 		viewToSnapshot[view] = snapshot
 	}
@@ -513,7 +513,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 	// it "most" belongs. We do this by picking the best view for each URI,
 	// and then aggregating the set of snapshots and their URIs (to avoid
 	// diagnosing the same snapshot multiple times).
-	snapshotURIs := map[source.Snapshot][]protocol.DocumentURI{}
+	snapshotURIs := map[*Snapshot][]protocol.DocumentURI{}
 	for _, mod := range changes {
 		viewSlice, ok := affectedViews[mod.URI]
 		if !ok || len(viewSlice) == 0 {
@@ -522,7 +522,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 		view := bestViewForURI(mod.URI, viewSlice)
 		snapshot, ok := viewToSnapshot[view]
 		if !ok {
-			panic(fmt.Sprintf("no snapshot for view %s", view.Folder()))
+			panic(fmt.Sprintf("no snapshot for view %s", view.folder.Dir))
 		}
 		snapshotURIs[snapshot] = append(snapshotURIs[snapshot], mod.URI)
 	}

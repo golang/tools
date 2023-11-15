@@ -12,13 +12,14 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
 )
 
-func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
-	ctx, done := event.Start(ctx, "work.Diagnostics", source.SnapshotLabels(snapshot)...)
+func Diagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
+	ctx, done := event.Start(ctx, "work.Diagnostics", snapshot.Labels()...)
 	defer done()
 
 	reports := map[protocol.DocumentURI][]*source.Diagnostic{}

@@ -11,7 +11,6 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -30,7 +29,7 @@ func (s *server) DidChangeWorkspaceFolders(ctx context.Context, params *protocol
 
 // addView returns a Snapshot and a release function that must be
 // called when it is no longer needed.
-func (s *server) addView(ctx context.Context, name string, uri protocol.DocumentURI) (source.Snapshot, func(), error) {
+func (s *server) addView(ctx context.Context, name string, uri protocol.DocumentURI) (*cache.Snapshot, func(), error) {
 	s.stateMu.Lock()
 	state := s.state
 	s.stateMu.Unlock()

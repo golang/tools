@@ -44,6 +44,7 @@ import (
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/constraints"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/event/label"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
@@ -254,15 +255,37 @@ func (s *Snapshot) destroy(destroyedBy string) {
 	s.vulns.Destroy()
 }
 
+// SequenceID is the sequence id of this snapshot within its containing
+// view.
+//
+// Relative to their view sequence ids are monotonically increasing, but this
+// does not hold globally: when new views are created their initial snapshot
+// has sequence ID 0. For operations that span multiple views, use global
+// IDs.
 func (s *Snapshot) SequenceID() uint64 {
 	return s.sequenceID
 }
 
+// GlobalID is a globally unique identifier for this snapshot. Global IDs are
+// monotonic: subsequent snapshots will have higher global ID, though
+// subsequent snapshots in a view may not have adjacent global IDs.
 func (s *Snapshot) GlobalID() source.GlobalSnapshotID {
 	return s.globalID
 }
 
-func (s *Snapshot) View() source.View {
+// SnapshotLabels returns a new slice of labels that should be used for events
+// related to a snapshot.
+func (s *Snapshot) Labels() []label.Label {
+	return []label.Label{tag.Snapshot.Of(s.SequenceID()), tag.Directory.Of(s.Folder())}
+}
+
+// Folder returns the folder at the base of this snapshot.
+func (s *Snapshot) Folder() protocol.DocumentURI {
+	return s.view.folder.Dir
+}
+
+// View returns the View associated with this snapshot.
+func (s *Snapshot) View() *View {
 	return s.view
 }
 
@@ -301,6 +324,8 @@ func (s *Snapshot) Options() *settings.Options {
 	return s.view.folder.Options
 }
 
+// BackgroundContext returns a context used for all background processing
+// on behalf of this snapshot.
 func (s *Snapshot) BackgroundContext() context.Context {
 	return s.backgroundCtx
 }
@@ -313,11 +338,13 @@ func (s *Snapshot) ModFiles() []protocol.DocumentURI {
 	return uris
 }
 
+// WorkFile, if non-empty, is the go.work file for the workspace.
 func (s *Snapshot) WorkFile() protocol.DocumentURI {
 	gowork, _ := s.view.GOWORK()
 	return gowork
 }
 
+// Templates returns the .tmpl files.
 func (s *Snapshot) Templates() map[protocol.DocumentURI]file.Handle {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -432,6 +459,12 @@ func (s *Snapshot) RunGoCommandDirect(ctx context.Context, mode source.Invocatio
 	return s.view.gocmdRunner.Run(ctx, *inv)
 }
 
+// RunGoCommandPiped runs the given `go` command, writing its output
+// to stdout and stderr. Verb, Args, and WorkingDir must be specified.
+//
+// RunGoCommandPiped runs the command serially using gocommand.RunPiped,
+// enforcing that this command executes exclusively to other commands on the
+// server.
 func (s *Snapshot) RunGoCommandPiped(ctx context.Context, mode source.InvocationFlags, inv *gocommand.Invocation, stdout, stderr io.Writer) error {
 	_, inv, cleanup, err := s.goCommandInvocation(ctx, mode, inv)
 	if err != nil {
@@ -441,6 +474,8 @@ func (s *Snapshot) RunGoCommandPiped(ctx context.Context, mode source.Invocation
 	return s.view.gocmdRunner.RunPiped(ctx, *inv, stdout, stderr)
 }
 
+// RunGoCommands runs a series of `go` commands that updates the go.mod
+// and go.sum file for wd, and returns their updated contents.
 func (s *Snapshot) RunGoCommands(ctx context.Context, allowNetwork bool, wd string, run func(invoke func(...string) (*bytes.Buffer, error)) error) (bool, []byte, []byte, error) {
 	var flags source.InvocationFlags
 	if s.workspaceMode()&tempModfile != 0 {
@@ -1138,6 +1173,8 @@ func (s *Snapshot) AllMetadata(ctx context.Context) ([]*source.Metadata, error) 
 	return meta, nil
 }
 
+// GoModForFile returns the URI of the go.mod file for the given URI.
+//
 // TODO(rfindley): clarify that this is only active modules. Or update to just
 // use findRootPattern.
 func (s *Snapshot) GoModForFile(uri protocol.DocumentURI) protocol.DocumentURI {
@@ -1283,6 +1320,7 @@ func (s lockedSnapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) 
 	return fh, nil
 }
 
+// IsOpen returns whether the editor currently has a file open.
 func (s *Snapshot) IsOpen(uri protocol.DocumentURI) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1304,6 +1342,9 @@ func (s *Snapshot) awaitLoaded(ctx context.Context) error {
 	return nil
 }
 
+// CriticalError returns any critical errors in the workspace.
+//
+// A nil result may mean success, or context cancellation.
 func (s *Snapshot) CriticalError(ctx context.Context) *source.CriticalError {
 	// If we couldn't compute workspace mod files, then the load below is
 	// invalid.
@@ -1447,6 +1488,7 @@ func (s *Snapshot) getInitializationError() *source.CriticalError {
 	return s.initializedErr
 }
 
+// AwaitInitialized waits until the snapshot's view is initialized.
 func (s *Snapshot) AwaitInitialized(ctx context.Context) {
 	select {
 	case <-ctx.Done():
@@ -1603,6 +1645,7 @@ func (s *Snapshot) reloadOrphanedOpenFiles(ctx context.Context) error {
 // If the resulting diagnostic is nil, the file is either not orphaned or we
 // can't produce a good diagnostic.
 //
+// The caller must not mutate the result.
 // TODO(rfindley): reconcile the definition of "orphaned" here with
 // reloadOrphanedFiles. The latter does not include files with
 // command-line-arguments packages.
@@ -1815,7 +1858,7 @@ func inVendor(uri protocol.DocumentURI) bool {
 	return found && strings.Contains(after, "/")
 }
 
-func (s *Snapshot) clone(ctx, bgCtx context.Context, changed source.StateChange) (*Snapshot, func()) {
+func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snapshot, func()) {
 	changedFiles := changed.Files
 	ctx, done := event.Start(ctx, "cache.snapshot.clone")
 	defer done()
@@ -2440,6 +2483,7 @@ func (s *Snapshot) BuiltinFile(ctx context.Context) (*source.ParsedGoFile, error
 	return pgfs[0], nil
 }
 
+// IsBuiltin reports whether uri is part of the builtin package.
 func (s *Snapshot) IsBuiltin(uri protocol.DocumentURI) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()

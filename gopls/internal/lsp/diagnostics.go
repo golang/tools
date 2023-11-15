@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/mod"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -155,14 +156,14 @@ func computeDiagnosticHash(diags ...*source.Diagnostic) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func (s *server) diagnoseSnapshots(snapshots map[source.Snapshot][]protocol.DocumentURI, onDisk bool, cause ModificationSource) {
+func (s *server) diagnoseSnapshots(snapshots map[*cache.Snapshot][]protocol.DocumentURI, onDisk bool, cause ModificationSource) {
 	var diagnosticWG sync.WaitGroup
 	for snapshot, uris := range snapshots {
 		if snapshot.Options().DiagnosticsTrigger == settings.DiagnosticsOnSave && cause == FromDidChange {
 			continue // user requested to update the diagnostics only on save. do not diagnose yet.
 		}
 		diagnosticWG.Add(1)
-		go func(snapshot source.Snapshot, uris []protocol.DocumentURI) {
+		go func(snapshot *cache.Snapshot, uris []protocol.DocumentURI) {
 			defer diagnosticWG.Done()
 			s.diagnoseSnapshot(snapshot, uris, onDisk, snapshot.Options().DiagnosticsDelay)
 		}(snapshot, uris)
@@ -181,9 +182,9 @@ func (s *server) diagnoseSnapshots(snapshots map[source.Snapshot][]protocol.Docu
 //
 // TODO(rfindley): eliminate the onDisk parameter, which looks misplaced. If we
 // don't want to diagnose changes on disk, filter out the changedURIs.
-func (s *server) diagnoseSnapshot(snapshot source.Snapshot, changedURIs []protocol.DocumentURI, onDisk bool, delay time.Duration) {
+func (s *server) diagnoseSnapshot(snapshot *cache.Snapshot, changedURIs []protocol.DocumentURI, onDisk bool, delay time.Duration) {
 	ctx := snapshot.BackgroundContext()
-	ctx, done := event.Start(ctx, "Server.diagnoseSnapshot", source.SnapshotLabels(snapshot)...)
+	ctx, done := event.Start(ctx, "Server.diagnoseSnapshot", snapshot.Labels()...)
 	defer done()
 
 	if delay > 0 {
@@ -228,8 +229,8 @@ func (s *server) diagnoseSnapshot(snapshot source.Snapshot, changedURIs []protoc
 	s.publishDiagnostics(ctx, true, snapshot)
 }
 
-func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot source.Snapshot, uris []protocol.DocumentURI, onDisk bool) {
-	ctx, done := event.Start(ctx, "Server.diagnoseChangedFiles", source.SnapshotLabels(snapshot)...)
+func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snapshot, uris []protocol.DocumentURI, onDisk bool) {
+	ctx, done := event.Start(ctx, "Server.diagnoseChangedFiles", snapshot.Labels()...)
 	defer done()
 
 	toDiagnose := make(map[source.PackageID]*source.Metadata)
@@ -282,8 +283,8 @@ const (
 
 // diagnose is a helper function for running diagnostics with a given context.
 // Do not call it directly. forceAnalysis is only true for testing purposes.
-func (s *server) diagnose(ctx context.Context, snapshot source.Snapshot, analyze analysisMode) {
-	ctx, done := event.Start(ctx, "Server.diagnose", source.SnapshotLabels(snapshot)...)
+func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot, analyze analysisMode) {
+	ctx, done := event.Start(ctx, "Server.diagnose", snapshot.Labels()...)
 	defer done()
 
 	// Wait for a free diagnostics slot.
@@ -303,11 +304,11 @@ func (s *server) diagnose(ctx context.Context, snapshot source.Snapshot, analyze
 	// common code for dispatching diagnostics
 	store := func(dsource diagnosticSource, operation string, diagsByFile map[protocol.DocumentURI][]*source.Diagnostic, err error, merge bool) {
 		if err != nil {
-			event.Error(ctx, "warning: while "+operation, err, source.SnapshotLabels(snapshot)...)
+			event.Error(ctx, "warning: while "+operation, err, snapshot.Labels()...)
 		}
 		for uri, diags := range diagsByFile {
 			if uri == "" {
-				event.Error(ctx, "missing URI while "+operation, fmt.Errorf("empty URI"), tag.Directory.Of(snapshot.View().Folder().Path()))
+				event.Error(ctx, "missing URI while "+operation, fmt.Errorf("empty URI"), tag.Directory.Of(snapshot.Folder().Path()))
 				continue
 			}
 			s.storeDiagnostics(snapshot, uri, dsource, diags, merge)
@@ -426,7 +427,7 @@ func (s *server) diagnose(ctx context.Context, snapshot source.Snapshot, analyze
 		}
 	} else {
 		if ctx.Err() == nil {
-			event.Error(ctx, "computing orphaned file diagnostics", err, source.SnapshotLabels(snapshot)...)
+			event.Error(ctx, "computing orphaned file diagnostics", err, snapshot.Labels()...)
 		}
 	}
 }
@@ -442,8 +443,8 @@ func (s *server) diagnose(ctx context.Context, snapshot source.Snapshot, analyze
 // of concurrent dispatch: as of writing we concurrently run TidyDiagnostics
 // and diagnosePkgs, and diagnosePkgs concurrently runs PackageDiagnostics and
 // analysis.
-func (s *server) diagnosePkgs(ctx context.Context, snapshot source.Snapshot, toDiagnose map[source.PackageID]*source.Metadata, toAnalyze map[source.PackageID]unit) {
-	ctx, done := event.Start(ctx, "Server.diagnosePkgs", source.SnapshotLabels(snapshot)...)
+func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toDiagnose map[source.PackageID]*source.Metadata, toAnalyze map[source.PackageID]unit) {
+	ctx, done := event.Start(ctx, "Server.diagnosePkgs", snapshot.Labels()...)
 	defer done()
 
 	// Analyze and type-check concurrently, since they are independent
@@ -465,7 +466,7 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot source.Snapshot, toD
 		var err error
 		pkgDiags, err = snapshot.PackageDiagnostics(ctx, ids...)
 		if err != nil {
-			event.Error(ctx, "warning: diagnostics failed", err, source.SnapshotLabels(snapshot)...)
+			event.Error(ctx, "warning: diagnostics failed", err, snapshot.Labels()...)
 		}
 	}()
 
@@ -487,7 +488,7 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot source.Snapshot, toD
 				sort.Strings(keys)
 				tagStr = strings.Join(keys, ",")
 			}
-			event.Error(ctx, "warning: analyzing package", err, append(source.SnapshotLabels(snapshot), tag.Package.Of(tagStr))...)
+			event.Error(ctx, "warning: analyzing package", err, append(snapshot.Labels(), tag.Package.Of(tagStr))...)
 			return
 		}
 		for uri, diags := range diags {
@@ -564,7 +565,7 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot source.Snapshot, toD
 	for _, m := range toGCDetail {
 		gcReports, err := source.GCOptimizationDetails(ctx, snapshot, m)
 		if err != nil {
-			event.Error(ctx, "warning: gc details", err, append(source.SnapshotLabels(snapshot), tag.Package.Of(string(m.ID)))...)
+			event.Error(ctx, "warning: gc details", err, append(snapshot.Labels(), tag.Package.Of(string(m.ID)))...)
 		}
 		s.gcOptimizationDetailsMu.Lock()
 		_, enableGCDetails := s.gcOptimizationDetails[m.ID]
@@ -616,7 +617,7 @@ func (s *server) mustPublishDiagnostics(uri protocol.DocumentURI) {
 //
 // TODO(hyangah): investigate whether we can unconditionally overwrite previous report.diags
 // with the new diags and eliminate the need for the `merge` flag.
-func (s *server) storeDiagnostics(snapshot source.Snapshot, uri protocol.DocumentURI, dsource diagnosticSource, diags []*source.Diagnostic, merge bool) {
+func (s *server) storeDiagnostics(snapshot *cache.Snapshot, uri protocol.DocumentURI, dsource diagnosticSource, diags []*source.Diagnostic, merge bool) {
 	// Safeguard: ensure that the file actually exists in the snapshot
 	// (see golang.org/issues/38602).
 	fh := snapshot.FindFile(uri)
@@ -665,7 +666,7 @@ const WorkspaceLoadFailure = "Error loading workspace"
 
 // showCriticalErrorStatus shows the error as a progress report.
 // If the error is nil, it clears any existing error progress report.
-func (s *server) showCriticalErrorStatus(ctx context.Context, snapshot source.Snapshot, err *source.CriticalError) {
+func (s *server) showCriticalErrorStatus(ctx context.Context, snapshot *cache.Snapshot, err *source.CriticalError) {
 	s.criticalErrorStatusMu.Lock()
 	defer s.criticalErrorStatusMu.Unlock()
 
@@ -673,7 +674,7 @@ func (s *server) showCriticalErrorStatus(ctx context.Context, snapshot source.Sn
 	// status bar.
 	var errMsg string
 	if err != nil {
-		event.Error(ctx, "errors loading workspace", err.MainError, source.SnapshotLabels(snapshot)...)
+		event.Error(ctx, "errors loading workspace", err.MainError, snapshot.Labels()...)
 		for _, d := range err.Diagnostics {
 			s.storeDiagnostics(snapshot, d.URI, modParseSource, []*source.Diagnostic{d}, true)
 		}
@@ -698,8 +699,8 @@ func (s *server) showCriticalErrorStatus(ctx context.Context, snapshot source.Sn
 }
 
 // publishDiagnostics collects and publishes any unpublished diagnostic reports.
-func (s *server) publishDiagnostics(ctx context.Context, final bool, snapshot source.Snapshot) {
-	ctx, done := event.Start(ctx, "Server.publishDiagnostics", source.SnapshotLabels(snapshot)...)
+func (s *server) publishDiagnostics(ctx context.Context, final bool, snapshot *cache.Snapshot) {
+	ctx, done := event.Start(ctx, "Server.publishDiagnostics", snapshot.Labels()...)
 	defer done()
 
 	s.diagnosticsMu.Lock()
@@ -814,7 +815,7 @@ func toProtocolDiagnostics(diagnostics []*source.Diagnostic) []protocol.Diagnost
 	return reports
 }
 
-func (s *server) shouldIgnoreError(ctx context.Context, snapshot source.Snapshot, err error) bool {
+func (s *server) shouldIgnoreError(ctx context.Context, snapshot *cache.Snapshot, err error) bool {
 	if err == nil { // if there is no error at all
 		return false
 	}
@@ -825,7 +826,7 @@ func (s *server) shouldIgnoreError(ctx context.Context, snapshot source.Snapshot
 	// TODO(rfindley): surely it is not correct to walk the folder here just to
 	// suppress diagnostics, every time we compute diagnostics.
 	var hasGo bool
-	_ = filepath.Walk(snapshot.View().Folder().Path(), func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(snapshot.Folder().Path(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}

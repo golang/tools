@@ -346,7 +346,7 @@ func hover(ctx context.Context, snapshot Snapshot, fh file.Handle, pp protocol.P
 		}
 	}
 
-	if snapshot.View().IsGoPrivatePath(linkPath) || linkMeta.ForTest != "" {
+	if snapshot.IsGoPrivatePath(linkPath) || linkMeta.ForTest != "" {
 		linkPath = ""
 	} else if linkMeta.Module != nil && linkMeta.Module.Version != "" {
 		mod := linkMeta.Module

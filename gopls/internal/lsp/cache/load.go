@@ -142,7 +142,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 	}
 
 	// This log message is sought for by TestReloadOnlyOnce.
-	labels := append(source.SnapshotLabels(s), tag.Query.Of(query), tag.PackageCount.Of(len(pkgs)))
+	labels := append(s.Labels(), tag.Query.Of(query), tag.PackageCount.Of(len(pkgs)))
 	if err != nil {
 		event.Error(ctx, eventName, err, labels...)
 	} else {
@@ -181,7 +181,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 
 		if !containsDir || s.Options().VerboseOutput {
 			event.Log(ctx, eventName, append(
-				source.SnapshotLabels(s),
+				s.Labels(),
 				tag.Package.Of(pkg.ID),
 				tag.Files.Of(pkg.CompiledGoFiles))...)
 		}

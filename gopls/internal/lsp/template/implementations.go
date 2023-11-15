@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 )
@@ -73,7 +74,7 @@ func Diagnose(f file.Handle) []*source.Diagnostic {
 // does not understand scoping (if any) in templates. This code is
 // for definitions, type definitions, and implementations.
 // Results only for variables and templates.
-func Definition(snapshot source.Snapshot, fh file.Handle, loc protocol.Position) ([]protocol.Location, error) {
+func Definition(snapshot *cache.Snapshot, fh file.Handle, loc protocol.Position) ([]protocol.Location, error) {
 	x, _, err := symAtPosition(fh, loc)
 	if err != nil {
 		return nil, err
@@ -124,7 +125,7 @@ func Hover(ctx context.Context, snapshot source.Snapshot, fh file.Handle, positi
 	return &ans, nil
 }
 
-func References(ctx context.Context, snapshot source.Snapshot, fh file.Handle, params *protocol.ReferenceParams) ([]protocol.Location, error) {
+func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, params *protocol.ReferenceParams) ([]protocol.Location, error) {
 	sym, _, err := symAtPosition(fh, params.Position)
 	if sym == nil || err != nil || sym.name == "" {
 		return nil, err

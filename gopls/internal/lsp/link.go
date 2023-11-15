@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -47,7 +48,7 @@ func (s *server) DocumentLink(ctx context.Context, params *protocol.DocumentLink
 	return links, nil
 }
 
-func modLinks(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]protocol.DocumentLink, error) {
+func modLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.DocumentLink, error) {
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil {
 		return nil, err
@@ -59,7 +60,7 @@ func modLinks(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]
 			continue
 		}
 		// See golang/go#36998: don't link to modules matching GOPRIVATE.
-		if snapshot.View().IsGoPrivatePath(req.Mod.Path) {
+		if snapshot.IsGoPrivatePath(req.Mod.Path) {
 			continue
 		}
 		dep := []byte(req.Mod.Path)
@@ -103,7 +104,7 @@ func modLinks(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]
 }
 
 // goLinks returns the set of hyperlink annotations for the specified Go file.
-func goLinks(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]protocol.DocumentLink, error) {
+func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.DocumentLink, error) {
 
 	pgf, err := snapshot.ParseGo(ctx, fh, source.ParseFull)
 	if err != nil {
@@ -130,7 +131,7 @@ func goLinks(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]p
 				continue // bad import
 			}
 			// See golang/go#36998: don't link to modules matching GOPRIVATE.
-			if snapshot.View().IsGoPrivatePath(string(importPath)) {
+			if snapshot.IsGoPrivatePath(string(importPath)) {
 				continue
 			}
 

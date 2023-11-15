@@ -305,7 +305,7 @@ func collectSymbols(ctx context.Context, snapshots []Snapshot, matcherType setti
 	for _, snapshot := range snapshots {
 		// Use the root view URIs for determining (lexically)
 		// whether a URI is in any open workspace.
-		folderURI := snapshot.View().Folder()
+		folderURI := snapshot.Folder()
 		roots = append(roots, strings.TrimRight(string(folderURI), "/"))
 
 		filters := snapshot.Options().DirectoryFilters

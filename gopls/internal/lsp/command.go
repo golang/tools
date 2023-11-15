@@ -93,7 +93,7 @@ type commandConfig struct {
 // be populated, depending on which configuration is set. See comments in-line
 // for details.
 type commandDeps struct {
-	snapshot source.Snapshot    // present if cfg.forURI was set
+	snapshot *cache.Snapshot    // present if cfg.forURI was set
 	fh       file.Handle        // present if cfg.forURI was set
 	work     *progress.WorkDone // present cfg.progress was set
 }
@@ -217,7 +217,7 @@ func (c *commandHandler) RegenerateCgo(ctx context.Context, args command.URIArg)
 	return c.run(ctx, commandConfig{
 		progress: "Regenerating Cgo",
 	}, func(ctx context.Context, _ commandDeps) error {
-		return c.modifyState(ctx, FromRegenerateCgo, func() (source.Snapshot, func(), error) {
+		return c.modifyState(ctx, FromRegenerateCgo, func() (*cache.Snapshot, func(), error) {
 			// Resetting the view causes cgo to be regenerated via `go list`.
 			v, err := c.s.session.ResetView(ctx, args.URI)
 			if err != nil {
@@ -231,7 +231,7 @@ func (c *commandHandler) RegenerateCgo(ctx context.Context, args command.URIArg)
 // modifyState performs an operation that modifies the snapshot state.
 //
 // It causes a snapshot diagnosis for the provided ModificationSource.
-func (c *commandHandler) modifyState(ctx context.Context, source ModificationSource, work func() (source.Snapshot, func(), error)) error {
+func (c *commandHandler) modifyState(ctx context.Context, source ModificationSource, work func() (*cache.Snapshot, func(), error)) error {
 	var wg sync.WaitGroup // tracks work done on behalf of this function, incl. diagnostics
 	wg.Add(1)
 	defer wg.Done()
@@ -262,12 +262,12 @@ func (c *commandHandler) CheckUpgrades(ctx context.Context, args command.CheckUp
 		forURI:   args.URI,
 		progress: "Checking for upgrades",
 	}, func(ctx context.Context, deps commandDeps) error {
-		return c.modifyState(ctx, FromCheckUpgrades, func() (source.Snapshot, func(), error) {
+		return c.modifyState(ctx, FromCheckUpgrades, func() (*cache.Snapshot, func(), error) {
 			upgrades, err := c.s.getUpgrades(ctx, deps.snapshot, args.URI, args.Modules)
 			if err != nil {
 				return nil, nil, err
 			}
-			snapshot, release := deps.snapshot.View().Invalidate(ctx, source.StateChange{
+			snapshot, release := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
 				ModuleUpgrades: map[protocol.DocumentURI]map[string]string{args.URI: upgrades},
 			})
 			return snapshot, release, nil
@@ -287,8 +287,8 @@ func (c *commandHandler) ResetGoModDiagnostics(ctx context.Context, args command
 	return c.run(ctx, commandConfig{
 		forURI: args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		return c.modifyState(ctx, FromResetGoModDiagnostics, func() (source.Snapshot, func(), error) {
-			snapshot, release := deps.snapshot.View().Invalidate(ctx, source.StateChange{
+		return c.modifyState(ctx, FromResetGoModDiagnostics, func() (*cache.Snapshot, func(), error) {
+			snapshot, release := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
 				ModuleUpgrades: map[protocol.DocumentURI]map[string]string{
 					deps.fh.URI(): nil,
 				},
@@ -493,7 +493,7 @@ func (c *commandHandler) RunTests(ctx context.Context, args command.RunTestsArgs
 	})
 }
 
-func (c *commandHandler) runTests(ctx context.Context, snapshot source.Snapshot, work *progress.WorkDone, uri protocol.DocumentURI, tests, benchmarks []string) error {
+func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot, work *progress.WorkDone, uri protocol.DocumentURI, tests, benchmarks []string) error {
 	// TODO: fix the error reporting when this runs async.
 	meta, err := source.NarrowestMetadataForFile(ctx, snapshot, uri)
 	if err != nil {
@@ -627,7 +627,7 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 	})
 }
 
-func (s *server) runGoModUpdateCommands(ctx context.Context, snapshot source.Snapshot, uri protocol.DocumentURI, run func(invoke func(...string) (*bytes.Buffer, error)) error) error {
+func (s *server) runGoModUpdateCommands(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, run func(invoke func(...string) (*bytes.Buffer, error)) error) error {
 	tmpModfile, newModBytes, newSumBytes, err := snapshot.RunGoCommands(ctx, true, filepath.Dir(uri.Path()), run)
 	if err != nil {
 		return err
@@ -656,7 +656,7 @@ func (s *server) runGoModUpdateCommands(ctx context.Context, snapshot source.Sna
 //
 // TODO(rfindley): fix this API asymmetry. It should be up to the caller to
 // write the file or apply the edits.
-func collectFileEdits(ctx context.Context, snapshot source.Snapshot, uri protocol.DocumentURI, newContent []byte) ([]protocol.TextDocumentEdit, error) {
+func collectFileEdits(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, newContent []byte) ([]protocol.TextDocumentEdit, error) {
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, err
@@ -992,7 +992,7 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 			return err
 		}
 
-		snapshot, release := deps.snapshot.View().Invalidate(ctx, source.StateChange{
+		snapshot, release := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
 			Vulns: map[protocol.DocumentURI]*vulncheck.Result{args.URI: result},
 		})
 		defer release()
@@ -1156,8 +1156,8 @@ func (c *commandHandler) RunGoWorkCommand(ctx context.Context, args command.RunG
 		forView:  args.ViewID,
 	}, func(ctx context.Context, deps commandDeps) (runErr error) {
 		snapshot := deps.snapshot
-		view := snapshot.View().(*cache.View)
-		viewDir := view.Folder().Path()
+		view := snapshot.View()
+		viewDir := snapshot.Folder().Path()
 
 		// If the user has explicitly set GOWORK=off, we should warn them
 		// explicitly and avoid potentially misleading errors below.

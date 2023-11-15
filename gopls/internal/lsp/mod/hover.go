@@ -14,6 +14,7 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -23,7 +24,7 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-func Hover(ctx context.Context, snapshot source.Snapshot, fh file.Handle, position protocol.Position) (*protocol.Hover, error) {
+func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) (*protocol.Hover, error) {
 	var found bool
 	for _, uri := range snapshot.ModFiles() {
 		if fh.URI() == uri {
@@ -57,7 +58,7 @@ func Hover(ctx context.Context, snapshot source.Snapshot, fh file.Handle, positi
 	return hoverOnRequireStatement(ctx, pm, offset, snapshot, fh)
 }
 
-func hoverOnRequireStatement(ctx context.Context, pm *source.ParsedModule, offset int, snapshot source.Snapshot, fh file.Handle) (*protocol.Hover, error) {
+func hoverOnRequireStatement(ctx context.Context, pm *source.ParsedModule, offset int, snapshot *cache.Snapshot, fh file.Handle) (*protocol.Hover, error) {
 	// Confirm that the cursor is at the position of a require statement.
 	var req *modfile.Require
 	var startOffset, endOffset int
@@ -114,7 +115,7 @@ func hoverOnRequireStatement(ctx context.Context, pm *source.ParsedModule, offse
 		return nil, err
 	}
 	options := snapshot.Options()
-	isPrivate := snapshot.View().IsGoPrivatePath(req.Mod.Path)
+	isPrivate := snapshot.IsGoPrivatePath(req.Mod.Path)
 	header := formatHeader(req.Mod.Path, options)
 	explanation = formatExplanation(explanation, req, options, isPrivate)
 	vulns := formatVulnerabilities(affecting, nonaffecting, osvs, options, fromGovulncheck)
@@ -128,7 +129,7 @@ func hoverOnRequireStatement(ctx context.Context, pm *source.ParsedModule, offse
 	}, nil
 }
 
-func hoverOnModuleStatement(ctx context.Context, pm *source.ParsedModule, offset int, snapshot source.Snapshot, fh file.Handle) (*protocol.Hover, bool) {
+func hoverOnModuleStatement(ctx context.Context, pm *source.ParsedModule, offset int, snapshot *cache.Snapshot, fh file.Handle) (*protocol.Hover, bool) {
 	module := pm.File.Module
 	if module == nil {
 		return nil, false // no module stmt
