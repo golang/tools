@@ -52,6 +52,10 @@ type View struct {
 
 	gocmdRunner *gocommand.Runner // limits go command concurrency
 
+	// baseCtx is the context handed to NewView. This is the parent of all
+	// background contexts created for this view.
+	baseCtx context.Context
+
 	folder *Folder
 
 	// Workspace information. The fields below are immutable, and together with
@@ -889,7 +893,7 @@ func (v *View) invalidateContent(ctx context.Context, changes map[span.URI]sourc
 	prevSnapshot.AwaitInitialized(ctx)
 
 	// Save one lease of the cloned snapshot in the view.
-	v.snapshot, v.releaseSnapshot = prevSnapshot.clone(ctx, changes)
+	v.snapshot, v.releaseSnapshot = prevSnapshot.clone(ctx, v.baseCtx, changes)
 
 	prevReleaseSnapshot()
 	v.destroy(prevSnapshot, "View.invalidateContent")

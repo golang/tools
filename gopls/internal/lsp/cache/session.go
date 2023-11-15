@@ -127,6 +127,7 @@ func (s *Session) createView(ctx context.Context, info *workspaceInformation, fo
 		folder:               folder,
 		initialWorkspaceLoad: make(chan struct{}),
 		initializationSema:   make(chan struct{}, 1),
+		baseCtx:              baseCtx,
 		moduleUpgrades:       map[span.URI]map[string]string{},
 		vulns:                map[span.URI]*vulncheck.Result{},
 		parseCache:           s.parseCache,
@@ -134,7 +135,7 @@ func (s *Session) createView(ctx context.Context, info *workspaceInformation, fo
 		workspaceInformation: info,
 	}
 	v.importsState = &importsState{
-		ctx: baseCtx,
+		ctx: backgroundCtx,
 		processEnv: &imports.ProcessEnv{
 			GocmdRunner: s.gocmdRunner,
 			SkipPathInScan: func(dir string) bool {
