@@ -140,6 +140,51 @@ type viewDefinition struct {
 	// a single nested module. In that case, the go command won't be able to find
 	// the module unless we tell it the nested directory.
 	goCommandDir protocol.DocumentURI
+
+	// workspaceModFiles holds the set of mod files active in this snapshot.
+	//
+	// This is either empty, a single entry for the workspace go.mod file, or the
+	// set of mod files used by the workspace go.work file.
+	//
+	// TODO(rfindley): should we just run `go list -m` to compute this set?
+	workspaceModFiles    map[protocol.DocumentURI]struct{}
+	workspaceModFilesErr error // error encountered computing workspaceModFiles
+}
+
+// equal reports whether the receiver is equivalent to other.
+//
+// TODO(rfindley): simplify this by splitting off a comparable struct.
+func viewDefinitionsEqual(x, y *viewDefinition) bool {
+	if (x.workspaceModFilesErr == nil) != (y.workspaceModFilesErr == nil) {
+		return false
+	}
+	if x.workspaceModFilesErr != nil {
+		if x.workspaceModFilesErr.Error() != y.workspaceModFilesErr.Error() {
+			return false
+		}
+	} else if !equalKeys(x.workspaceModFiles, y.workspaceModFiles) {
+		return false
+	}
+	return x.goEnv == y.goEnv &&
+		x.gomod == y.gomod &&
+		x.goversion == y.goversion &&
+		x.goversionOutput == y.goversionOutput &&
+		x.hasGopackagesDriver == y.hasGopackagesDriver &&
+		x.inGOPATH == y.inGOPATH &&
+		x.goCommandDir == y.goCommandDir
+}
+
+// equalKeys reports whether x and y have equal sets of keys.
+func equalKeys[K comparable, V any](x, y map[K]V) bool {
+	if len(x) != len(y) {
+		return false
+	}
+	for k := range x {
+		if _, ok := y[k]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // effectiveGO111MODULE reports the value of GO111MODULE effective in the go
@@ -632,13 +677,13 @@ func (s *snapshot) IgnoredFile(uri protocol.DocumentURI) bool {
 
 	s.ignoreFilterOnce.Do(func() {
 		var dirs []string
-		if len(s.workspaceModFiles) == 0 {
+		if len(s.view.workspaceModFiles) == 0 {
 			for _, entry := range filepath.SplitList(s.view.gopath) {
 				dirs = append(dirs, filepath.Join(entry, "src"))
 			}
 		} else {
 			dirs = append(dirs, s.view.gomodcache)
-			for m := range s.workspaceModFiles {
+			for m := range s.view.workspaceModFiles {
 				dirs = append(dirs, filepath.Dir(m.Path()))
 			}
 		}
@@ -768,8 +813,8 @@ func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 
 	// TODO(rfindley): this should be predicated on the s.view.moduleMode().
 	// There is no point loading ./... if we have an empty go.work.
-	if len(s.workspaceModFiles) > 0 {
-		for modURI := range s.workspaceModFiles {
+	if len(s.view.workspaceModFiles) > 0 {
+		for modURI := range s.view.workspaceModFiles {
 			// Verify that the modfile is valid before trying to load it.
 			//
 			// TODO(rfindley): now that we no longer need to parse the modfile in
@@ -947,6 +992,10 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs file.So
 	} else {
 		def.goCommandDir = folder.Dir
 	}
+
+	gowork, _ := def.GOWORK()
+	def.workspaceModFiles, def.workspaceModFilesErr = computeWorkspaceModFiles(ctx, def.gomod, gowork, def.effectiveGO111MODULE(), fs)
+
 	return def, nil
 }
 

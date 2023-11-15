@@ -45,7 +45,7 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot
 	//
 	// TODO(rfindley): consider instead hashing on-disk modfiles here.
 	var modFileHash file.Hash
-	for m := range snapshot.workspaceModFiles {
+	for m := range snapshot.view.workspaceModFiles {
 		fh, err := snapshot.ReadFile(ctx, m)
 		if err != nil {
 			return err

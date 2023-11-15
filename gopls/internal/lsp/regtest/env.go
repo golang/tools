@@ -152,9 +152,9 @@ func (s State) String() string {
 	b.WriteString("\n")
 	b.WriteString("#### diagnostics:\n")
 	for name, params := range s.diagnostics {
-		fmt.Fprintf(&b, "\t%s (version %d):\n", name, int(params.Version))
+		fmt.Fprintf(&b, "\t%s (version %d):\n", name, params.Version)
 		for _, d := range params.Diagnostics {
-			fmt.Fprintf(&b, "\t\t(%d, %d) [%s]: %s\n", int(d.Range.Start.Line), int(d.Range.Start.Character), d.Source, d.Message)
+			fmt.Fprintf(&b, "\t\t%d:%d [%s]: %s\n", d.Range.Start.Line, d.Range.Start.Character, d.Source, d.Message)
 		}
 	}
 	b.WriteString("\n")

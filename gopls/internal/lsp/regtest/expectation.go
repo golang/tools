@@ -761,7 +761,7 @@ func FromSource(source string) DiagnosticFilter {
 func (e *Env) AtRegexp(name, pattern string) DiagnosticFilter {
 	loc := e.RegexpSearch(name, pattern)
 	return DiagnosticFilter{
-		desc: fmt.Sprintf("at the first position matching %#q in %q", pattern, name),
+		desc: fmt.Sprintf("at the first position (%v) matching %#q in %q", loc.Range.Start, pattern, name),
 		check: func(diagName string, d protocol.Diagnostic) bool {
 			return diagName == name && d.Range.Start == loc.Range.Start
 		},

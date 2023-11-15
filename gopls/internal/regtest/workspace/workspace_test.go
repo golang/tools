@@ -205,8 +205,7 @@ package b
 func Hello() {}
 `
 
-func TestAutomaticWorkspaceModule_Interdependent(t *testing.T) {
-	const multiModule = `
+const multiModule = `
 -- moda/a/go.mod --
 module a.com
 
@@ -235,6 +234,8 @@ func Hello() int {
 	var x int
 }
 `
+
+func TestAutomaticWorkspaceModule_Interdependent(t *testing.T) {
 	WithOptions(
 		ProxyFiles(workspaceModuleProxy),
 	).Run(t, multiModule, func(t *testing.T, env *Env) {
@@ -277,7 +278,7 @@ module b.com
 
 go 1.12
 `
-	const multiModule = `
+	const files = `
 -- go.mod --
 module a.com
 
@@ -296,7 +297,7 @@ func main() {
 `
 	WithOptions(
 		ProxyFiles(proxy),
-	).Run(t, multiModule, func(t *testing.T, env *Env) {
+	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OnceMet(
 			InitialWorkspaceLoad,
 			Diagnostics(env.AtRegexp("main.go", "x")),
@@ -1238,4 +1239,24 @@ func goVersion(t *testing.T) int {
 		t.Fatal(err)
 	}
 	return goversion
+}
+
+func TestGoworkMutation(t *testing.T) {
+	WithOptions(
+		ProxyFiles(workspaceModuleProxy),
+	).Run(t, multiModule, func(t *testing.T, env *Env) {
+		env.RunGoCommand("work", "init")
+		env.RunGoCommand("work", "use", "-r", ".")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("moda/a/a.go", "x")),
+			Diagnostics(env.AtRegexp("modb/b/b.go", "x")),
+			NoDiagnostics(env.AtRegexp("moda/a/a.go", `b\.Hello`)),
+		)
+		env.RunGoCommand("work", "edit", "-dropuse", "modb")
+		env.Await(
+			Diagnostics(env.AtRegexp("moda/a/a.go", "x")),
+			NoDiagnostics(env.AtRegexp("modb/b/b.go", "x")),
+			Diagnostics(env.AtRegexp("moda/a/a.go", `b\.Hello`)),
+		)
+	})
 }

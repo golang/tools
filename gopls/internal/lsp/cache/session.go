@@ -114,9 +114,6 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, source.Sn
 func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *Folder, seqID uint64) (*View, *snapshot, func(), error) {
 	index := atomic.AddInt64(&viewIndex, 1)
 
-	gowork, _ := def.GOWORK()
-	wsModFiles, wsModFilesErr := computeWorkspaceModFiles(ctx, def.gomod, gowork, def.effectiveGO111MODULE(), s)
-
 	// We want a true background context and not a detached context here
 	// the spans need to be unrelated and no tag values should pollute it.
 	baseCtx := event.Detach(xcontext.Detach(ctx))
@@ -151,29 +148,27 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 		},
 	}
 	v.snapshot = &snapshot{
-		sequenceID:           seqID,
-		globalID:             nextSnapshotID(),
-		view:                 v,
-		backgroundCtx:        backgroundCtx,
-		cancel:               cancel,
-		store:                s.cache.store,
-		packages:             new(persistent.Map[PackageID, *packageHandle]),
-		meta:                 new(metadataGraph),
-		files:                newFileMap(),
-		activePackages:       new(persistent.Map[PackageID, *Package]),
-		symbolizeHandles:     new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		shouldLoad:           new(persistent.Map[PackageID, []PackagePath]),
-		unloadableFiles:      new(persistent.Set[protocol.DocumentURI]),
-		parseModHandles:      new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		parseWorkHandles:     new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		modTidyHandles:       new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		modVulnHandles:       new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		modWhyHandles:        new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		workspaceModFiles:    wsModFiles,
-		workspaceModFilesErr: wsModFilesErr,
-		pkgIndex:             typerefs.NewPackageIndex(),
-		moduleUpgrades:       new(persistent.Map[protocol.DocumentURI, map[string]string]),
-		vulns:                new(persistent.Map[protocol.DocumentURI, *vulncheck.Result]),
+		sequenceID:       seqID,
+		globalID:         nextSnapshotID(),
+		view:             v,
+		backgroundCtx:    backgroundCtx,
+		cancel:           cancel,
+		store:            s.cache.store,
+		packages:         new(persistent.Map[PackageID, *packageHandle]),
+		meta:             new(metadataGraph),
+		files:            newFileMap(),
+		activePackages:   new(persistent.Map[PackageID, *Package]),
+		symbolizeHandles: new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		shouldLoad:       new(persistent.Map[PackageID, []PackagePath]),
+		unloadableFiles:  new(persistent.Set[protocol.DocumentURI]),
+		parseModHandles:  new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		parseWorkHandles: new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		modTidyHandles:   new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		modVulnHandles:   new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		modWhyHandles:    new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		pkgIndex:         typerefs.NewPackageIndex(),
+		moduleUpgrades:   new(persistent.Map[protocol.DocumentURI, map[string]string]),
+		vulns:            new(persistent.Map[protocol.DocumentURI, *vulncheck.Result]),
 	}
 	// Save one reference in the view.
 	v.releaseSnapshot = v.snapshot.Acquire()
@@ -413,18 +408,21 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 	checkViews := false
 
 	for _, c := range changes {
+		// Any on-disk change to a go.work file causes a re-diagnosis.
+		//
 		// TODO(rfindley): go.work files need not be named "go.work" -- we need to
-		// check each view's source.
-		if isGoMod(c.URI) || isGoWork(c.URI) {
-			// Change, InvalidateMetadata, and UnknownFileAction actions do not cause
-			// us to re-evaluate views.
-			redoViews := (c.Action != file.Change &&
-				c.Action != file.UnknownAction)
-
-			if redoViews {
-				checkViews = true
-				break
-			}
+		// check each view's source to handle the case of an explicit GOWORK value.
+		// Write a test that fails, and fix this.
+		if isGoWork(c.URI) && (c.Action == file.Save || c.OnDisk) {
+			checkViews = true
+			break
+		}
+		// Opening/Close/Create/Delete of go.mod files all trigger
+		// re-evaluation of Views. Changes do not as they can't affect the set of
+		// Views.
+		if isGoMod(c.URI) && c.Action != file.Change && c.Action != file.Save {
+			checkViews = true
+			break
 		}
 	}
 
@@ -445,7 +443,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 				// TODO(rfindley): consider surfacing this error more loudly. We
 				// could report a bug, but it's not really a bug.
 				event.Error(ctx, "fetching workspace information", err)
-			} else if *info != *view.viewDefinition {
+			} else if !viewDefinitionsEqual(view.viewDefinition, info) {
 				if _, err := s.updateViewLocked(ctx, view, info, view.folder); err != nil {
 					// More catastrophic failure. The view may or may not still exist.
 					// The best we can do is log and move on.

@@ -154,17 +154,6 @@ type snapshot struct {
 	modWhyHandles  *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[modWhyResult]
 	modVulnHandles *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[modVulnResult]
 
-	// workspaceModFiles holds the set of mod files active in this snapshot.
-	//
-	// This is either empty, a single entry for the workspace go.mod file, or the
-	// set of mod files used by the workspace go.work file.
-	//
-	// This set is immutable inside the snapshot, and therefore is not guarded by mu.
-	//
-	// TODO(golang/go#57979): lift this to the view.
-	workspaceModFiles    map[protocol.DocumentURI]struct{}
-	workspaceModFilesErr error // error encountered computing workspaceModFiles
-
 	// importGraph holds a shared import graph to use for type-checking. Adding
 	// more packages to this import graph can speed up type checking, at the
 	// expense of in-use memory.
@@ -318,7 +307,7 @@ func (s *snapshot) BackgroundContext() context.Context {
 
 func (s *snapshot) ModFiles() []protocol.DocumentURI {
 	var uris []protocol.DocumentURI
-	for modURI := range s.workspaceModFiles {
+	for modURI := range s.view.workspaceModFiles {
 		uris = append(uris, modURI)
 	}
 	return uris
@@ -351,7 +340,7 @@ func (s *snapshot) validBuildConfiguration() bool {
 
 	// Check if the user is working within a module or if we have found
 	// multiple modules in the workspace.
-	if len(s.workspaceModFiles) > 0 {
+	if len(s.view.workspaceModFiles) > 0 {
 		return true
 	}
 
@@ -379,7 +368,7 @@ func (s *snapshot) workspaceMode() workspaceMode {
 	// If the view is not in a module and contains no modules, but still has a
 	// valid workspace configuration, do not create the workspace module.
 	// It could be using GOPATH or a different build system entirely.
-	if len(s.workspaceModFiles) == 0 && validBuildConfiguration {
+	if len(s.view.workspaceModFiles) == 0 && validBuildConfiguration {
 		return mode
 	}
 	mode |= moduleMode
@@ -996,8 +985,8 @@ func (s *snapshot) workspaceDirs(ctx context.Context) []string {
 
 	// Additionally, if e.g. go.work indicates other workspace modules, we should
 	// include their directories too.
-	if s.workspaceModFilesErr == nil {
-		for modFile := range s.workspaceModFiles {
+	if s.view.workspaceModFilesErr == nil {
+		for modFile := range s.view.workspaceModFiles {
 			dir := filepath.Dir(modFile.Path())
 			dirSet[dir] = unit{}
 		}
@@ -1152,7 +1141,7 @@ func (s *snapshot) AllMetadata(ctx context.Context) ([]*source.Metadata, error) 
 // TODO(rfindley): clarify that this is only active modules. Or update to just
 // use findRootPattern.
 func (s *snapshot) GoModForFile(uri protocol.DocumentURI) protocol.DocumentURI {
-	return moduleForURI(s.workspaceModFiles, uri)
+	return moduleForURI(s.view.workspaceModFiles, uri)
 }
 
 func moduleForURI(modFiles map[protocol.DocumentURI]struct{}, uri protocol.DocumentURI) protocol.DocumentURI {
@@ -1320,8 +1309,8 @@ func (s *snapshot) CriticalError(ctx context.Context) *source.CriticalError {
 	// invalid.
 	//
 	// TODO(rfindley): is this a clear error to present to the user?
-	if s.workspaceModFilesErr != nil {
-		return &source.CriticalError{MainError: s.workspaceModFilesErr}
+	if s.view.workspaceModFilesErr != nil {
+		return &source.CriticalError{MainError: s.view.workspaceModFilesErr}
 	}
 
 	loadErr := s.awaitLoadedAllErrors(ctx)
@@ -1836,33 +1825,31 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changed source.StateChange)
 
 	bgCtx, cancel := context.WithCancel(bgCtx)
 	result := &snapshot{
-		sequenceID:           s.sequenceID + 1,
-		globalID:             nextSnapshotID(),
-		store:                s.store,
-		view:                 s.view,
-		backgroundCtx:        bgCtx,
-		cancel:               cancel,
-		builtin:              s.builtin,
-		initialized:          s.initialized,
-		initializedErr:       s.initializedErr,
-		packages:             s.packages.Clone(),
-		activePackages:       s.activePackages.Clone(),
-		files:                s.files.Clone(changedFiles),
-		symbolizeHandles:     cloneWithout(s.symbolizeHandles, changedFiles),
-		workspacePackages:    s.workspacePackages,
-		shouldLoad:           s.shouldLoad.Clone(),      // not cloneWithout: shouldLoad is cleared on loads
-		unloadableFiles:      s.unloadableFiles.Clone(), // not cloneWithout: typing in a file doesn't necessarily make it loadable
-		parseModHandles:      cloneWithout(s.parseModHandles, changedFiles),
-		parseWorkHandles:     cloneWithout(s.parseWorkHandles, changedFiles),
-		modTidyHandles:       cloneWithout(s.modTidyHandles, changedFiles),
-		modWhyHandles:        cloneWithout(s.modWhyHandles, changedFiles),
-		modVulnHandles:       cloneWithout(s.modVulnHandles, changedFiles),
-		workspaceModFiles:    s.workspaceModFiles,
-		workspaceModFilesErr: s.workspaceModFilesErr,
-		importGraph:          s.importGraph,
-		pkgIndex:             s.pkgIndex,
-		moduleUpgrades:       cloneWith(s.moduleUpgrades, changed.ModuleUpgrades),
-		vulns:                cloneWith(s.vulns, changed.Vulns),
+		sequenceID:        s.sequenceID + 1,
+		globalID:          nextSnapshotID(),
+		store:             s.store,
+		view:              s.view,
+		backgroundCtx:     bgCtx,
+		cancel:            cancel,
+		builtin:           s.builtin,
+		initialized:       s.initialized,
+		initializedErr:    s.initializedErr,
+		packages:          s.packages.Clone(),
+		activePackages:    s.activePackages.Clone(),
+		files:             s.files.Clone(changedFiles),
+		symbolizeHandles:  cloneWithout(s.symbolizeHandles, changedFiles),
+		workspacePackages: s.workspacePackages,
+		shouldLoad:        s.shouldLoad.Clone(),      // not cloneWithout: shouldLoad is cleared on loads
+		unloadableFiles:   s.unloadableFiles.Clone(), // not cloneWithout: typing in a file doesn't necessarily make it loadable
+		parseModHandles:   cloneWithout(s.parseModHandles, changedFiles),
+		parseWorkHandles:  cloneWithout(s.parseWorkHandles, changedFiles),
+		modTidyHandles:    cloneWithout(s.modTidyHandles, changedFiles),
+		modWhyHandles:     cloneWithout(s.modWhyHandles, changedFiles),
+		modVulnHandles:    cloneWithout(s.modVulnHandles, changedFiles),
+		importGraph:       s.importGraph,
+		pkgIndex:          s.pkgIndex,
+		moduleUpgrades:    cloneWith(s.moduleUpgrades, changed.ModuleUpgrades),
+		vulns:             cloneWith(s.vulns, changed.Vulns),
 	}
 
 	// Create a lease on the new snapshot.
@@ -1912,18 +1899,9 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changed source.StateChange)
 		return !oldFH.SameContentsOnDisk() || oldFH.Identity() != newFH.Identity()
 	}
 
-	if workURI, _ := s.view.GOWORK(); workURI != "" {
-		if newFH, ok := changedFiles[workURI]; ok {
-			result.workspaceModFiles, result.workspaceModFilesErr = computeWorkspaceModFiles(ctx, s.view.gomod, workURI, s.view.effectiveGO111MODULE(), result)
-			if changedOnDisk(oldFiles[workURI], newFH) {
-				reinit = true
-			}
-		}
-	}
-
 	// Reinitialize if any workspace mod file has changed on disk.
 	for uri, newFH := range changedFiles {
-		if _, ok := result.workspaceModFiles[uri]; ok && changedOnDisk(oldFiles[uri], newFH) {
+		if _, ok := result.view.workspaceModFiles[uri]; ok && changedOnDisk(oldFiles[uri], newFH) {
 			reinit = true
 		}
 	}
@@ -1941,7 +1919,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changed source.StateChange)
 		}
 		if base == "go.sum" {
 			modURI := protocol.URIFromPath(filepath.Join(dir, "go.mod"))
-			if _, active := result.workspaceModFiles[modURI]; active {
+			if _, active := result.view.workspaceModFiles[modURI]; active {
 				reinit = true
 			}
 		}

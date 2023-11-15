@@ -608,7 +608,7 @@ func containsPackageLocked(s *snapshot, m *source.Metadata) bool {
 	// will hopefully eliminate the concept of a workspace package soon).
 	if m.Module != nil && s.view.gowork != "" {
 		modURI := protocol.URIFromPath(m.Module.GoMod)
-		_, ok := s.workspaceModFiles[modURI]
+		_, ok := s.view.workspaceModFiles[modURI]
 		if !ok {
 			return false
 		}
