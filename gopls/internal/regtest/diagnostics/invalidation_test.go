@@ -52,8 +52,8 @@ func _() {
 	})
 }
 
-// Test for the "chattyDiagnostics" setting: we should get re-published
-// diagnostics after every file change, even if diagnostics did not change.
+// Test for the "chatty" diagnostics: gopls should re-send diagnostics for
+// changed files after every file change, even if diagnostics did not change.
 func TestChattyDiagnostics(t *testing.T) {
 	const files = `
 -- go.mod --
@@ -70,12 +70,7 @@ func _() {
 // Irrelevant comment #0
 `
 
-	WithOptions(
-		Settings{
-			"chattyDiagnostics": true,
-		},
-	).Run(t, files, func(_ *testing.T, env *Env) { // Create a new workspace-level directory and empty file.
-
+	Run(t, files, func(_ *testing.T, env *Env) { // Create a new workspace-level directory and empty file.
 		env.OpenFile("main.go")
 		var d protocol.PublishDiagnosticsParams
 		env.AfterChange(

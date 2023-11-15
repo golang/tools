@@ -276,26 +276,15 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []file.Modifi
 	// to their files.
 	modifications = s.session.ExpandModificationsToDirectories(ctx, modifications)
 
-	// Build a lookup map for file modifications, so that we can later join
-	// with the snapshot file associations.
-	modMap := make(map[protocol.DocumentURI]file.Modification)
-	for _, mod := range modifications {
-		modMap[mod.URI] = mod
-	}
-
 	snapshots, release, err := s.session.DidModifyFiles(ctx, modifications)
 	if err != nil {
 		return err
 	}
 
-	// golang/go#50267: diagnostics should be re-sent after an open or close. For
-	// some clients, it may be helpful to re-send after each change.
-	for snapshot, uris := range snapshots {
+	// golang/go#50267: diagnostics should be re-sent after each change.
+	for _, uris := range snapshots {
 		for _, uri := range uris {
-			mod := modMap[uri]
-			if snapshot.Options().ChattyDiagnostics || mod.Action == file.Open || mod.Action == file.Close {
-				s.mustPublishDiagnostics(uri)
-			}
+			s.mustPublishDiagnostics(uri)
 		}
 	}
 

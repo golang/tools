@@ -534,11 +534,6 @@ type InternalOptions struct {
 	// summary statistics to a file in os.TmpDir().
 	NewDiff string
 
-	// ChattyDiagnostics controls whether to report file diagnostics for each
-	// file change. If unset, gopls only reports diagnostics when they change, or
-	// when a file is opened or closed.
-	ChattyDiagnostics bool
-
 	// SubdirWatchPatterns configures the file watching glob patterns registered
 	// by gopls.
 	//
@@ -1171,9 +1166,6 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 
 	case "newDiff":
 		result.setString(&o.NewDiff)
-
-	case "chattyDiagnostics":
-		result.setBool(&o.ChattyDiagnostics)
 
 	case "subdirWatchPatterns":
 		if s, ok := result.asOneOf(
