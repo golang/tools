@@ -569,3 +569,31 @@ func TestGoToEmbedDefinition(t *testing.T) {
 		}
 	})
 }
+
+func TestDefinitionOfErrorErrorMethod(t *testing.T) {
+	const src = `Regression test for a panic in definition of error.Error (of course).
+golang/go#64086
+
+-- go.mod --
+module mod.com
+go 1.18
+
+-- a.go --
+package a
+
+func _(err error) {
+	_ = err.Error()
+}
+
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+
+		start := env.RegexpSearch("a.go", `Error`)
+		loc := env.GoToDefinition(start)
+
+		if !strings.HasSuffix(string(loc.URI), "builtin.go") {
+			t.Errorf("GoToDefinition(err.Error) = %#v, want builtin.go", loc)
+		}
+	})
+}

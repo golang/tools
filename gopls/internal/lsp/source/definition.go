@@ -78,55 +78,87 @@ func Definition(ctx context.Context, snapshot Snapshot, fh FileHandle, position 
 
 	// Handle objects with no position: builtin, unsafe.
 	if !obj.Pos().IsValid() {
-		var pgf *ParsedGoFile
-		if obj.Parent() == types.Universe {
-			// pseudo-package "builtin"
-			builtinPGF, err := snapshot.BuiltinFile(ctx)
-			if err != nil {
-				return nil, err
-			}
-			pgf = builtinPGF
+		return builtinDefinition(ctx, snapshot, obj)
+	}
 
-		} else if obj.Pkg() == types.Unsafe {
-			// package "unsafe"
-			unsafe := snapshot.Metadata("unsafe")
-			if unsafe == nil {
-				return nil, fmt.Errorf("no metadata for package 'unsafe'")
-			}
-			uri := unsafe.GoFiles[0]
-			fh, err := snapshot.ReadFile(ctx, uri)
-			if err != nil {
-				return nil, err
-			}
-			pgf, err = snapshot.ParseGo(ctx, fh, ParseFull&^SkipObjectResolution)
-			if err != nil {
-				return nil, err
-			}
+	// Finally, map the object position.
+	loc, err := mapPosition(ctx, pkg.FileSet(), snapshot, obj.Pos(), adjustedObjEnd(obj))
+	if err != nil {
+		return nil, err
+	}
+	return []protocol.Location{loc}, nil
+}
 
-		} else {
-			return nil, bug.Errorf("internal error: no position for %v", obj.Name())
-		}
-		// Inv: pgf ∈ {builtin,unsafe}.go
-
-		// Use legacy (go/ast) object resolution.
-		astObj := pgf.File.Scope.Lookup(obj.Name())
+// builtinDefinition returns the location of the fake source
+// declaration of a built-in in {builtin,unsafe}.go.
+func builtinDefinition(ctx context.Context, snapshot Snapshot, obj types.Object) ([]protocol.Location, error) {
+	// getDecl returns the file-level declaration of name
+	// using legacy (go/ast) object resolution.
+	getDecl := func(file *ast.File, name string) (ast.Node, error) {
+		astObj := file.Scope.Lookup(name)
 		if astObj == nil {
 			// Every built-in should have documentation syntax.
-			return nil, bug.Errorf("internal error: no object for %s", obj.Name())
+			return nil, bug.Errorf("internal error: no object for %s", name)
 		}
 		decl, ok := astObj.Decl.(ast.Node)
 		if !ok {
 			return nil, bug.Errorf("internal error: no declaration for %s", obj.Name())
 		}
-		loc, err := pgf.PosLocation(decl.Pos(), decl.Pos()+token.Pos(len(obj.Name())))
+		return decl, nil
+	}
+
+	var (
+		pgf  *ParsedGoFile
+		decl ast.Node
+		err  error
+	)
+	if obj.Pkg() == types.Unsafe {
+		// package "unsafe":
+		// parse $GOROOT/src/unsafe/unsafe.go
+		unsafe := snapshot.Metadata("unsafe")
+		if unsafe == nil {
+			return nil, fmt.Errorf("no metadata for package 'unsafe'")
+		}
+		uri := unsafe.GoFiles[0]
+		fh, err := snapshot.ReadFile(ctx, uri)
 		if err != nil {
 			return nil, err
 		}
-		return []protocol.Location{loc}, nil
+		pgf, err = snapshot.ParseGo(ctx, fh, ParseFull&^SkipObjectResolution)
+		if err != nil {
+			return nil, err
+		}
+
+		decl, err = getDecl(pgf.File, obj.Name())
+	} else {
+		// pseudo-package "builtin":
+		// use parsed $GOROOT/src/builtin/builtin.go
+		pgf, err = snapshot.BuiltinFile(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if obj.Parent() == types.Universe {
+			// built-in function or type
+			decl, err = getDecl(pgf.File, obj.Name())
+
+		} else if obj.Name() == "Error" {
+			// error.Error method
+			decl, err = getDecl(pgf.File, "error")
+			if err != nil {
+				return nil, err
+			}
+			decl = decl.(*ast.TypeSpec).Type.(*ast.InterfaceType).Methods.List[0]
+
+		} else {
+			return nil, bug.Errorf("unknown built-in %v", obj)
+		}
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	// Finally, map the object position.
-	loc, err := mapPosition(ctx, pkg.FileSet(), snapshot, obj.Pos(), adjustedObjEnd(obj))
+	loc, err := pgf.PosLocation(decl.Pos(), decl.Pos()+token.Pos(len(obj.Name())))
 	if err != nil {
 		return nil, err
 	}
