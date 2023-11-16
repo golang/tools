@@ -45,7 +45,7 @@ func (r *symbols) Run(ctx context.Context, args ...string) error {
 	from := parseSpan(args[0])
 	p := protocol.DocumentSymbolParams{
 		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(from.URI()),
+			URI: from.URI(),
 		},
 	}
 	symbols, err := conn.DocumentSymbol(ctx, &p)

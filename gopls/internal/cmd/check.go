@@ -9,7 +9,7 @@ import (
 	"flag"
 	"fmt"
 
-	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
 // check implements the check verb for gopls.
@@ -37,8 +37,8 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 		// no files, so no results
 		return nil
 	}
-	checking := map[span.URI]*cmdFile{}
-	var uris []span.URI
+	checking := map[protocol.DocumentURI]*cmdFile{}
+	var uris []protocol.DocumentURI
 	// now we ready to kick things off
 	conn, err := c.app.connect(ctx, nil)
 	if err != nil {
@@ -46,7 +46,7 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 	}
 	defer conn.terminate(ctx)
 	for _, arg := range args {
-		uri := span.URIFromPath(arg)
+		uri := protocol.URIFromPath(arg)
 		uris = append(uris, uri)
 		file, err := conn.openFile(ctx, uri)
 		if err != nil {

@@ -19,7 +19,7 @@ import (
 
 // A Definition is the result of a 'definition' query.
 type Definition struct {
-	Span        Span   `json:"span"`        // span of the definition
+	Span        span   `json:"span"`        // span of the definition
 	Description string `json:"description"` // description of the denoted object
 }
 

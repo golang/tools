@@ -9,15 +9,15 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
 // parseSpan returns the location represented by the input.
 // Only file paths are accepted, not URIs.
 // The returned span will be normalized, and thus if printed may produce a
 // different string.
-func parseSpan(input string) Span {
-	uri := span.URIFromPath
+func parseSpan(input string) span {
+	uri := protocol.URIFromPath
 
 	// :0:0#0-0:0#0
 	valid := input

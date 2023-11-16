@@ -10,7 +10,6 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -93,7 +92,7 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 	}
 
 	// Get diagnostics.
-	if err := conn.diagnoseFiles(ctx, []span.URI{uri}); err != nil {
+	if err := conn.diagnoseFiles(ctx, []protocol.DocumentURI{uri}); err != nil {
 		return err
 	}
 	diagnostics := []protocol.Diagnostic{} // LSP wants non-nil slice
@@ -111,7 +110,7 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 	}
 	p := protocol.CodeActionParams{
 		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(uri),
+			URI: uri,
 		},
 		Context: protocol.CodeActionContext{
 			Only:        codeActionKinds,

@@ -57,7 +57,7 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 	}
 	actions, err := conn.CodeAction(ctx, &protocol.CodeActionParams{
 		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(uri),
+			URI: uri,
 		},
 	})
 	if err != nil {

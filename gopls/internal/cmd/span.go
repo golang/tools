@@ -4,7 +4,7 @@
 
 package cmd
 
-// Span and point represent positions and ranges in text files.
+// span and point represent positions and ranges in text files.
 
 import (
 	"encoding/json"
@@ -13,10 +13,10 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
-// A Span represents a range of text within a source file.  The start
+// A span represents a range of text within a source file.  The start
 // and end points of a valid span may be hold either its byte offset,
 // or its (line, column) pair, or both.  Columns are measured in bytes.
 //
@@ -24,37 +24,33 @@ import (
 // and tests where a position is notated without access to the content
 // of the file.
 //
-// Use protocol.Mapper to convert between Span and other
+// Use protocol.Mapper to convert between span and other
 // representations, such as go/token (also UTF-8) or the LSP protocol
 // (UTF-16). The latter requires access to file contents.
 //
 // See overview comments at ../lsp/protocol/mapper.go.
-//
-// TODO(adonovan): unexport, once "span" package is renamed.
-// And perhaps rename to cmd.{range,point} to match protocol.{Range,Point}?
-type Span struct {
+type span struct {
 	v _span
 }
 
 // point represents a single point within a file.
-// In general this should only be used as part of a Span, as on its own it
+// In general this should only be used as part of a span, as on its own it
 // does not carry enough information.
 type point struct {
 	v _point
 }
 
-// The private span/point types have public fields to support JSON
-// encoding, but the public Span/point types hide these fields by
-// defining methods that shadow them. (This is used by a few of the
-// command-line tool subcommands, which emit spans and have a -json
-// flag.)
-
+// The span_/point_ types have public fields to support JSON encoding,
+// but the span/point types hide these fields by defining methods that
+// shadow them. (This is used by a few of the command-line tool
+// subcommands, which emit spans and have a -json flag.)
+//
 // TODO(adonovan): simplify now that it's all internal to cmd.
 
 type _span struct {
-	URI   span.URI `json:"uri"`
-	Start _point   `json:"start"`
-	End   _point   `json:"end"`
+	URI   protocol.DocumentURI `json:"uri"`
+	Start _point               `json:"start"`
+	End   _point               `json:"end"`
 }
 
 type _point struct {
@@ -63,8 +59,8 @@ type _point struct {
 	Offset int `json:"offset"` // 0-based byte offset
 }
 
-func newSpan(uri span.URI, start, end point) Span {
-	s := Span{v: _span{URI: uri, Start: start.v, End: end.v}}
+func newSpan(uri protocol.DocumentURI, start, end point) span {
+	s := span{v: _span{URI: uri, Start: start.v, End: end.v}}
 	s.v.clean()
 	return s
 }
@@ -76,14 +72,14 @@ func newPoint(line, col, offset int) point {
 }
 
 // sortSpans sorts spans into a stable but unspecified order.
-func sortSpans(spans []Span) {
+func sortSpans(spans []span) {
 	sort.SliceStable(spans, func(i, j int) bool {
 		return compare(spans[i], spans[j]) < 0
 	})
 }
 
 // compare implements a three-valued ordered comparison of Spans.
-func compare(a, b Span) int {
+func compare(a, b span) int {
 	// This is a textual comparison. It does not perform path
 	// cleaning, case folding, resolution of symbolic links,
 	// testing for existence, or any I/O.
@@ -121,15 +117,15 @@ func comparePoint(a, b _point) int {
 	return 0
 }
 
-func (s Span) HasPosition() bool             { return s.v.Start.hasPosition() }
-func (s Span) HasOffset() bool               { return s.v.Start.hasOffset() }
-func (s Span) IsValid() bool                 { return s.v.Start.isValid() }
-func (s Span) IsPoint() bool                 { return s.v.Start == s.v.End }
-func (s Span) URI() span.URI                 { return s.v.URI }
-func (s Span) Start() point                  { return point{s.v.Start} }
-func (s Span) End() point                    { return point{s.v.End} }
-func (s *Span) MarshalJSON() ([]byte, error) { return json.Marshal(&s.v) }
-func (s *Span) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, &s.v) }
+func (s span) HasPosition() bool             { return s.v.Start.hasPosition() }
+func (s span) HasOffset() bool               { return s.v.Start.hasOffset() }
+func (s span) IsValid() bool                 { return s.v.Start.isValid() }
+func (s span) IsPoint() bool                 { return s.v.Start == s.v.End }
+func (s span) URI() protocol.DocumentURI     { return s.v.URI }
+func (s span) Start() point                  { return point{s.v.Start} }
+func (s span) End() point                    { return point{s.v.End} }
+func (s *span) MarshalJSON() ([]byte, error) { return json.Marshal(&s.v) }
+func (s *span) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, &s.v) }
 
 func (p point) HasPosition() bool             { return p.v.hasPosition() }
 func (p point) HasOffset() bool               { return p.v.hasOffset() }
@@ -191,7 +187,7 @@ func (p *_point) clean() {
 // TODO(adonovan): this is esoteric, and the formatting options are
 // never used outside of TestFormat. Replace with something simpler
 // along the lines of MappedRange.String.
-func (s Span) Format(f fmt.State, c rune) {
+func (s span) Format(f fmt.State, c rune) {
 	fullForm := f.Flag('+')
 	preferOffset := f.Flag('#')
 	// we should always have a uri, simplify if it is file format

@@ -30,7 +30,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/lsprpc"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/constraints"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -429,11 +428,11 @@ type cmdClient struct {
 	diagnosticsDone chan struct{}
 
 	filesMu sync.Mutex // guards files map and each cmdFile.diagnostics
-	files   map[span.URI]*cmdFile
+	files   map[protocol.DocumentURI]*cmdFile
 }
 
 type cmdFile struct {
-	uri         span.URI
+	uri         protocol.DocumentURI
 	mapper      *protocol.Mapper
 	err         error
 	diagnostics []protocol.Diagnostic
@@ -443,7 +442,7 @@ func newClient(app *Application, onProgress func(*protocol.ProgressParams)) *cmd
 	return &cmdClient{
 		app:        app,
 		onProgress: onProgress,
-		files:      make(map[span.URI]*cmdFile),
+		files:      make(map[protocol.DocumentURI]*cmdFile),
 	}
 }
 
@@ -548,8 +547,8 @@ func (c *cmdClient) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEdi
 // files, honoring the preferred edit mode specified by cli.app.editMode.
 // (Used by rename and by ApplyEdit downcalls.)
 func (cli *cmdClient) applyWorkspaceEdit(edit *protocol.WorkspaceEdit) error {
-	var orderedURIs []span.URI
-	edits := map[span.URI][]protocol.TextEdit{}
+	var orderedURIs []protocol.DocumentURI
+	edits := map[protocol.DocumentURI][]protocol.TextEdit{}
 	for _, c := range edit.DocumentChanges {
 		if c.TextDocumentEdit != nil {
 			uri := c.TextDocumentEdit.TextDocument.URI
@@ -704,7 +703,7 @@ func (c *cmdClient) InlineValueRefresh(context.Context) error {
 	return nil
 }
 
-func (c *cmdClient) getFile(uri span.URI) *cmdFile {
+func (c *cmdClient) getFile(uri protocol.DocumentURI) *cmdFile {
 	file, found := c.files[uri]
 	if !found || file.err != nil {
 		file = &cmdFile{
@@ -723,7 +722,7 @@ func (c *cmdClient) getFile(uri span.URI) *cmdFile {
 	return file
 }
 
-func (c *cmdClient) openFile(uri span.URI) *cmdFile {
+func (c *cmdClient) openFile(uri protocol.DocumentURI) *cmdFile {
 	c.filesMu.Lock()
 	defer c.filesMu.Unlock()
 	return c.getFile(uri)
@@ -732,7 +731,7 @@ func (c *cmdClient) openFile(uri span.URI) *cmdFile {
 // TODO(adonovan): provide convenience helpers to:
 // - map a (URI, protocol.Range) to a MappedRange;
 // - parse a command-line argument to a MappedRange.
-func (c *connection) openFile(ctx context.Context, uri span.URI) (*cmdFile, error) {
+func (c *connection) openFile(ctx context.Context, uri protocol.DocumentURI) (*cmdFile, error) {
 	file := c.client.openFile(uri)
 	if file.err != nil {
 		return nil, file.err
@@ -740,7 +739,7 @@ func (c *connection) openFile(ctx context.Context, uri span.URI) (*cmdFile, erro
 
 	p := &protocol.DidOpenTextDocumentParams{
 		TextDocument: protocol.TextDocumentItem{
-			URI:        protocol.URIFromSpanURI(uri),
+			URI:        uri,
 			LanguageID: "go",
 			Version:    1,
 			Text:       string(file.mapper.Content),
@@ -763,7 +762,7 @@ func (c *connection) semanticTokens(ctx context.Context, p *protocol.SemanticTok
 	return resp, nil
 }
 
-func (c *connection) diagnoseFiles(ctx context.Context, files []span.URI) error {
+func (c *connection) diagnoseFiles(ctx context.Context, files []protocol.DocumentURI) error {
 	var untypedFiles []interface{}
 	for _, file := range files {
 		untypedFiles = append(untypedFiles, string(file))
@@ -802,34 +801,34 @@ func (c *cmdClient) Close() error {
 
 // locationSpan converts a protocol (UTF-16) Location to a (UTF-8) span.
 // Precondition: the URIs of Location and Mapper match.
-func (f *cmdFile) locationSpan(loc protocol.Location) (Span, error) {
+func (f *cmdFile) locationSpan(loc protocol.Location) (span, error) {
 	// TODO(adonovan): check that l.URI matches m.URI.
 	return f.rangeSpan(loc.Range)
 }
 
 // rangeSpan converts a protocol (UTF-16) range to a (UTF-8) span.
 // The resulting span has valid Positions and Offsets.
-func (f *cmdFile) rangeSpan(r protocol.Range) (Span, error) {
+func (f *cmdFile) rangeSpan(r protocol.Range) (span, error) {
 	start, end, err := f.mapper.RangeOffsets(r)
 	if err != nil {
-		return Span{}, err
+		return span{}, err
 	}
 	return f.offsetSpan(start, end)
 }
 
 // offsetSpan converts a byte-offset interval to a (UTF-8) span.
 // The resulting span contains line, column, and offset information.
-func (f *cmdFile) offsetSpan(start, end int) (Span, error) {
+func (f *cmdFile) offsetSpan(start, end int) (span, error) {
 	if start > end {
-		return Span{}, fmt.Errorf("start offset (%d) > end (%d)", start, end)
+		return span{}, fmt.Errorf("start offset (%d) > end (%d)", start, end)
 	}
 	startPoint, err := offsetPoint(f.mapper, start)
 	if err != nil {
-		return Span{}, fmt.Errorf("start: %v", err)
+		return span{}, fmt.Errorf("start: %v", err)
 	}
 	endPoint, err := offsetPoint(f.mapper, end)
 	if err != nil {
-		return Span{}, fmt.Errorf("end: %v", err)
+		return span{}, fmt.Errorf("end: %v", err)
 	}
 	return newSpan(f.mapper.URI, startPoint, endPoint), nil
 }
@@ -848,7 +847,7 @@ func offsetPoint(m *protocol.Mapper, offset int) (point, error) {
 
 // spanLocation converts a (UTF-8) span to a protocol (UTF-16) range.
 // Precondition: the URIs of spanLocation and Mapper match.
-func (f *cmdFile) spanLocation(s Span) (protocol.Location, error) {
+func (f *cmdFile) spanLocation(s span) (protocol.Location, error) {
 	rng, err := f.spanRange(s)
 	if err != nil {
 		return protocol.Location{}, err
@@ -857,8 +856,8 @@ func (f *cmdFile) spanLocation(s Span) (protocol.Location, error) {
 }
 
 // spanRange converts a (UTF-8) span to a protocol (UTF-16) range.
-// Precondition: the URIs of Span and Mapper match.
-func (f *cmdFile) spanRange(s Span) (protocol.Range, error) {
+// Precondition: the URIs of span and Mapper match.
+func (f *cmdFile) spanRange(s span) (protocol.Range, error) {
 	// Assert that we aren't using the wrong mapper.
 	// We check only the base name, and case insensitively,
 	// because we can't assume clean paths, no symbolic links,

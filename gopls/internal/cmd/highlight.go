@@ -63,7 +63,7 @@ func (r *highlight) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 
-	var results []Span
+	var results []span
 	for _, h := range highlights {
 		s, err := file.rangeSpan(h.Range)
 		if err != nil {

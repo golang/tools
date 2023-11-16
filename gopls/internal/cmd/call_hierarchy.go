@@ -110,7 +110,7 @@ func (c *callHierarchy) Run(ctx context.Context, args ...string) error {
 // callItemPrintString returns a protocol.CallHierarchyItem object represented as a string.
 // item and call ranges (protocol.Range) are converted to user friendly spans (1-indexed).
 func callItemPrintString(ctx context.Context, conn *connection, item protocol.CallHierarchyItem, callsURI protocol.DocumentURI, calls []protocol.Range) (string, error) {
-	itemFile, err := conn.openFile(ctx, item.URI.SpanURI())
+	itemFile, err := conn.openFile(ctx, item.URI)
 	if err != nil {
 		return "", err
 	}
@@ -121,7 +121,7 @@ func callItemPrintString(ctx context.Context, conn *connection, item protocol.Ca
 
 	var callRanges []string
 	if callsURI != "" {
-		callsFile, err := conn.openFile(ctx, callsURI.SpanURI())
+		callsFile, err := conn.openFile(ctx, callsURI)
 		if err != nil {
 			return "", err
 		}
@@ -137,7 +137,7 @@ func callItemPrintString(ctx context.Context, conn *connection, item protocol.Ca
 
 	printString := fmt.Sprintf("function %s in %v", item.Name, itemSpan)
 	if len(calls) > 0 {
-		printString = fmt.Sprintf("ranges %s in %s from/to %s", strings.Join(callRanges, ", "), callsURI.SpanURI().Filename(), printString)
+		printString = fmt.Sprintf("ranges %s in %s from/to %s", strings.Join(callRanges, ", "), callsURI.Filename(), printString)
 	}
 	return printString, nil
 }

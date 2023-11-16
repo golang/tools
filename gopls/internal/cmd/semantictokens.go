@@ -15,7 +15,6 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 // generate semantic tokens and interpolate them in the file
@@ -75,7 +74,7 @@ func (c *semtok) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 	defer conn.terminate(ctx)
-	uri := span.URIFromPath(args[0])
+	uri := protocol.URIFromPath(args[0])
 	file, err := conn.openFile(ctx, uri)
 	if err != nil {
 		return err
@@ -84,7 +83,7 @@ func (c *semtok) Run(ctx context.Context, args ...string) error {
 	lines := bytes.Split(file.mapper.Content, []byte{'\n'})
 	p := &protocol.SemanticTokensRangeParams{
 		TextDocument: protocol.TextDocumentIdentifier{
-			URI: protocol.URIFromSpanURI(uri),
+			URI: uri,
 		},
 		Range: protocol.Range{Start: protocol.Position{Line: 0, Character: 0},
 			End: protocol.Position{
