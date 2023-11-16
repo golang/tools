@@ -6,48 +6,88 @@ package checker_test
 
 import (
 	"flag"
+	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path"
 	"regexp"
-	"runtime"
+	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
-	"golang.org/x/tools/go/analysis/internal/checker"
+	"golang.org/x/tools/go/analysis/multichecker"
 	"golang.org/x/tools/internal/testenv"
 )
 
-func main() {
-	checker.Fix = true
-	patterns := flag.Args()
+// These are the analyzers available to the multichecker.
+// (Tests may add more in init functions as needed.)
+var candidates = map[string]*analysis.Analyzer{
+	renameAnalyzer.Name: renameAnalyzer,
+	otherAnalyzer.Name:  otherAnalyzer,
+}
 
-	code := checker.Run(patterns, []*analysis.Analyzer{analyzer, other})
-	os.Exit(code)
+func TestMain(m *testing.M) {
+	// If the ANALYZERS=a,..,z environment is set, then this
+	// process should behave like a multichecker with the
+	// named analyzers.
+	if s, ok := os.LookupEnv("ANALYZERS"); ok {
+		var analyzers []*analysis.Analyzer
+		for _, name := range strings.Split(s, ",") {
+			a := candidates[name]
+			if a == nil {
+				log.Fatalf("no such analyzer: %q", name)
+			}
+			analyzers = append(analyzers, a)
+		}
+		multichecker.Main(analyzers...)
+		panic("unreachable")
+	}
+
+	// ordinary test
+	flag.Parse()
+	os.Exit(m.Run())
+}
+
+const (
+	exitCodeSuccess     = 0 // success (no diagnostics)
+	exitCodeFailed      = 1 // analysis failed to run
+	exitCodeDiagnostics = 3 // diagnostics were reported
+)
+
+// fix runs a multichecker subprocess with -fix in the specified
+// directory, applying the comma-separated list of named analyzers to
+// the packages matching the patterns. It returns the CombinedOutput.
+func fix(t *testing.T, dir, analyzers string, wantExit int, patterns ...string) string {
+	testenv.NeedsExec(t)
+	testenv.NeedsTool(t, "go")
+
+	cmd := exec.Command(os.Args[0], "-fix")
+	cmd.Args = append(cmd.Args, patterns...)
+	cmd.Env = append(os.Environ(),
+		"ANALYZERS="+analyzers,
+		"GOPATH="+dir,
+		"GO111MODULE=off",
+		"GOPROXY=off")
+
+	clean := func(s string) string {
+		return strings.ReplaceAll(s, os.TempDir(), "os.TempDir/")
+	}
+	outBytes, err := cmd.CombinedOutput()
+	out := clean(string(outBytes))
+	t.Logf("$ %s\n%s", clean(fmt.Sprint(cmd)), out)
+	if err, ok := err.(*exec.ExitError); !ok {
+		t.Fatalf("failed to execute multichecker: %v", err)
+	} else if err.ExitCode() != wantExit {
+		t.Errorf("exit code was %d, want %d", err.ExitCode(), wantExit)
+	}
+	return out
 }
 
 // TestFixes ensures that checker.Run applies fixes correctly.
 // This test fork/execs the main function above.
 func TestFixes(t *testing.T) {
-	oses := map[string]bool{"darwin": true, "linux": true}
-	if !oses[runtime.GOOS] {
-		t.Skipf("skipping fork/exec test on this platform")
-	}
-
-	if os.Getenv("TESTFIXES_CHILD") == "1" {
-		// child process
-
-		// replace [progname -test.run=TestFixes -- ...]
-		//      by [progname ...]
-		os.Args = os.Args[2:]
-		os.Args[0] = "vet"
-		main()
-		panic("unreachable")
-	}
-
-	testenv.NeedsTool(t, "go")
-
 	files := map[string]string{
 		"rename/foo.go": `package rename
 
@@ -130,23 +170,7 @@ func Foo() {
 	}
 	defer cleanup()
 
-	args := []string{"-test.run=TestFixes", "--", "rename", "duplicate"}
-	cmd := exec.Command(os.Args[0], args...)
-	cmd.Env = append(os.Environ(), "TESTFIXES_CHILD=1", "GOPATH="+dir, "GO111MODULE=off", "GOPROXY=off")
-
-	out, err := cmd.CombinedOutput()
-	if len(out) > 0 {
-		t.Logf("%s: out=<<%s>>", args, out)
-	}
-	var exitcode int
-	if err, ok := err.(*exec.ExitError); ok {
-		exitcode = err.ExitCode() // requires go1.12
-	}
-
-	const diagnosticsExitCode = 3
-	if exitcode != diagnosticsExitCode {
-		t.Errorf("%s: exited %d, want %d", args, exitcode, diagnosticsExitCode)
-	}
+	fix(t, dir, "rename,other", exitCodeDiagnostics, "rename", "duplicate")
 
 	for name, want := range fixed {
 		path := path.Join(dir, "src", name)
@@ -163,24 +187,6 @@ func Foo() {
 // TestConflict ensures that checker.Run detects conflicts correctly.
 // This test fork/execs the main function above.
 func TestConflict(t *testing.T) {
-	oses := map[string]bool{"darwin": true, "linux": true}
-	if !oses[runtime.GOOS] {
-		t.Skipf("skipping fork/exec test on this platform")
-	}
-
-	if os.Getenv("TESTCONFLICT_CHILD") == "1" {
-		// child process
-
-		// replace [progname -test.run=TestConflict -- ...]
-		//      by [progname ...]
-		os.Args = os.Args[2:]
-		os.Args[0] = "vet"
-		main()
-		panic("unreachable")
-	}
-
-	testenv.NeedsTool(t, "go")
-
 	files := map[string]string{
 		"conflict/foo.go": `package conflict
 
@@ -198,26 +204,14 @@ func Foo() {
 	}
 	defer cleanup()
 
-	args := []string{"-test.run=TestConflict", "--", "conflict"}
-	cmd := exec.Command(os.Args[0], args...)
-	cmd.Env = append(os.Environ(), "TESTCONFLICT_CHILD=1", "GOPATH="+dir, "GO111MODULE=off", "GOPROXY=off")
+	out := fix(t, dir, "rename,other", exitCodeFailed, "conflict")
 
-	out, err := cmd.CombinedOutput()
-	var exitcode int
-	if err, ok := err.(*exec.ExitError); ok {
-		exitcode = err.ExitCode() // requires go1.12
-	}
-	const errExitCode = 1
-	if exitcode != errExitCode {
-		t.Errorf("%s: exited %d, want %d", args, exitcode, errExitCode)
-	}
-
-	pattern := `conflicting edits from rename and rename on /.*/conflict/foo.go`
-	matched, err := regexp.Match(pattern, out)
+	pattern := `conflicting edits from rename and rename on .*foo.go`
+	matched, err := regexp.MatchString(pattern, out)
 	if err != nil {
 		t.Errorf("error matching pattern %s: %v", pattern, err)
 	} else if !matched {
-		t.Errorf("%s: output was=<<%s>>. Expected it to match <<%s>>", args, out, pattern)
+		t.Errorf("output did not match pattern: %s", pattern)
 	}
 
 	// No files updated
@@ -237,24 +231,6 @@ func Foo() {
 // distinct actions correctly.
 // This test fork/execs the main function above.
 func TestOther(t *testing.T) {
-	oses := map[string]bool{"darwin": true, "linux": true}
-	if !oses[runtime.GOOS] {
-		t.Skipf("skipping fork/exec test on this platform")
-	}
-
-	if os.Getenv("TESTOTHER_CHILD") == "1" {
-		// child process
-
-		// replace [progname -test.run=TestOther -- ...]
-		//      by [progname ...]
-		os.Args = os.Args[2:]
-		os.Args[0] = "vet"
-		main()
-		panic("unreachable")
-	}
-
-	testenv.NeedsTool(t, "go")
-
 	files := map[string]string{
 		"other/foo.go": `package other
 
@@ -272,26 +248,14 @@ func Foo() {
 	}
 	defer cleanup()
 
-	args := []string{"-test.run=TestOther", "--", "other"}
-	cmd := exec.Command(os.Args[0], args...)
-	cmd.Env = append(os.Environ(), "TESTOTHER_CHILD=1", "GOPATH="+dir, "GO111MODULE=off", "GOPROXY=off")
+	out := fix(t, dir, "rename,other", exitCodeFailed, "other")
 
-	out, err := cmd.CombinedOutput()
-	var exitcode int
-	if err, ok := err.(*exec.ExitError); ok {
-		exitcode = err.ExitCode() // requires go1.12
-	}
-	const errExitCode = 1
-	if exitcode != errExitCode {
-		t.Errorf("%s: exited %d, want %d", args, exitcode, errExitCode)
-	}
-
-	pattern := `conflicting edits from other and rename on /.*/other/foo.go`
-	matched, err := regexp.Match(pattern, out)
+	pattern := `.*conflicting edits from other and rename on .*foo.go`
+	matched, err := regexp.MatchString(pattern, out)
 	if err != nil {
 		t.Errorf("error matching pattern %s: %v", pattern, err)
 	} else if !matched {
-		t.Errorf("%s: output was=<<%s>>. Expected it to match <<%s>>", args, out, pattern)
+		t.Errorf("output did not match pattern: %s", pattern)
 	}
 
 	// No files updated

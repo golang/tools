@@ -49,7 +49,7 @@ func Foo() {
 	}
 	path := filepath.Join(testdata, "src/rename/test.go")
 	checker.Fix = true
-	checker.Run([]string{"file=" + path}, []*analysis.Analyzer{analyzer})
+	checker.Run([]string{"file=" + path}, []*analysis.Analyzer{renameAnalyzer})
 
 	contents, err := os.ReadFile(path)
 	if err != nil {
@@ -64,16 +64,18 @@ func Foo() {
 	defer cleanup()
 }
 
-var analyzer = &analysis.Analyzer{
+var renameAnalyzer = &analysis.Analyzer{
 	Name:     "rename",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
+	Doc:      "renames symbols named bar to baz",
 }
 
-var other = &analysis.Analyzer{ // like analyzer but with a different Name.
+var otherAnalyzer = &analysis.Analyzer{ // like analyzer but with a different Name.
 	Name:     "other",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
+	Doc:      "renames symbols named bar to baz only in package 'other'",
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
@@ -173,7 +175,7 @@ func Foo(s string) int {
 		code      int
 	}{
 		// parse/type errors
-		{name: "skip-error", pattern: []string{"file=" + path}, analyzers: []*analysis.Analyzer{analyzer}, code: 1},
+		{name: "skip-error", pattern: []string{"file=" + path}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: 1},
 		// RunDespiteErrors allows a driver to run an Analyzer even after parse/type errors.
 		//
 		// The noop analyzer doesn't use facts, so the driver loads only the root
@@ -186,17 +188,17 @@ func Foo(s string) int {
 		// type error, and runs the analyzer.
 		{name: "despite-error-fact", pattern: []string{"file=" + path}, analyzers: []*analysis.Analyzer{noopWithFact}, code: 0},
 		// combination of parse/type errors and no errors
-		{name: "despite-error-and-no-error", pattern: []string{"file=" + path, "sort"}, analyzers: []*analysis.Analyzer{analyzer, noop}, code: 1},
+		{name: "despite-error-and-no-error", pattern: []string{"file=" + path, "sort"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 1},
 		// non-existing package error
-		{name: "no-package", pattern: []string{"xyz"}, analyzers: []*analysis.Analyzer{analyzer}, code: 1},
+		{name: "no-package", pattern: []string{"xyz"}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: 1},
 		{name: "no-package-despite-error", pattern: []string{"abc"}, analyzers: []*analysis.Analyzer{noop}, code: 1},
 		{name: "no-multi-package-despite-error", pattern: []string{"xyz", "abc"}, analyzers: []*analysis.Analyzer{noop}, code: 1},
 		// combination of type/parsing and different errors
-		{name: "different-errors", pattern: []string{"file=" + path, "xyz"}, analyzers: []*analysis.Analyzer{analyzer, noop}, code: 1},
+		{name: "different-errors", pattern: []string{"file=" + path, "xyz"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 1},
 		// non existing dir error
-		{name: "no-match-dir", pattern: []string{"file=non/existing/dir"}, analyzers: []*analysis.Analyzer{analyzer, noop}, code: 1},
+		{name: "no-match-dir", pattern: []string{"file=non/existing/dir"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 1},
 		// no errors
-		{name: "no-errors", pattern: []string{"sort"}, analyzers: []*analysis.Analyzer{analyzer, noop}, code: 0},
+		{name: "no-errors", pattern: []string{"sort"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 0},
 	} {
 		if test.name == "despite-error" && testenv.Go1Point() < 20 {
 			// The behavior in the comment on the despite-error test only occurs for Go 1.20+.
