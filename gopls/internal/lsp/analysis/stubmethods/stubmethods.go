@@ -203,25 +203,30 @@ func fromCallExpr(fset *token.FileSet, ti *types.Info, pos token.Pos, ce *ast.Ca
 //
 // For example, func() io.Writer { return myType{} }
 // would return StubInfo with the interface being io.Writer and the concrete type being myType{}.
-func fromReturnStmt(fset *token.FileSet, ti *types.Info, pos token.Pos, path []ast.Node, rs *ast.ReturnStmt) (*StubInfo, error) {
+func fromReturnStmt(fset *token.FileSet, ti *types.Info, pos token.Pos, path []ast.Node, ret *ast.ReturnStmt) (*StubInfo, error) {
 	returnIdx := -1
-	for i, r := range rs.Results {
+	for i, r := range ret.Results {
 		if pos >= r.Pos() && pos <= r.End() {
 			returnIdx = i
 		}
 	}
 	if returnIdx == -1 {
-		return nil, fmt.Errorf("pos %d not within return statement bounds: [%d-%d]", pos, rs.Pos(), rs.End())
+		return nil, fmt.Errorf("pos %d not within return statement bounds: [%d-%d]", pos, ret.Pos(), ret.End())
 	}
-	concObj, pointer := concreteType(rs.Results[returnIdx], ti)
+	concObj, pointer := concreteType(ret.Results[returnIdx], ti)
 	if concObj == nil || concObj.Obj().Pkg() == nil {
 		return nil, nil
 	}
-	ef := enclosingFunction(path, ti)
-	if ef == nil {
+	funcType := enclosingFunction(path, ti)
+	if funcType == nil {
 		return nil, fmt.Errorf("could not find the enclosing function of the return statement")
 	}
-	iface := ifaceType(ef.Results.List[returnIdx].Type, ti)
+	if len(funcType.Results.List) != len(ret.Results) {
+		return nil, fmt.Errorf("%d-operand return statement in %d-result function",
+			len(ret.Results),
+			len(funcType.Results.List))
+	}
+	iface := ifaceType(funcType.Results.List[returnIdx].Type, ti)
 	if iface == nil {
 		return nil, nil
 	}

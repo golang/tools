@@ -263,6 +263,11 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //     This action is executed for its editing effects on the source files.
 //     Like rename, the golden directory contains the expected transformed files.
 //
+//   - suggestedfixerr(location, regexp, kind, wantError): specifies that the
+//     suggestedfix operation should fail with an error that matches the expectation.
+//     (Failures in the computation to offer a fix do not generally result
+//     in LSP errors, so this marker is not appropriate for testing them.)
+//
 //   - rank(location, ...completionItem): executes a textDocument/completion
 //     request at the given location, and verifies that each expected
 //     completion item occurs in the results, in the expected order. Other
@@ -770,6 +775,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"signature":        actionMarkerFunc(signatureMarker),
 	"snippet":          actionMarkerFunc(snippetMarker),
 	"suggestedfix":     actionMarkerFunc(suggestedfixMarker),
+	"suggestedfixerr":  actionMarkerFunc(suggestedfixErrMarker),
 	"symbol":           actionMarkerFunc(symbolMarker),
 	"token":            actionMarkerFunc(tokenMarker),
 	"typedef":          actionMarkerFunc(typedefMarker),
@@ -2139,6 +2145,20 @@ func suggestedfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, g
 	checkDiffs(mark, changed, golden)
 }
 
+func suggestedfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp, wantErr wantError) {
+	loc.Range.End = loc.Range.Start // diagnostics ignore end position.
+	// Find and remove the matching diagnostic.
+	diag, ok := removeDiagnostic(mark, loc, re)
+	if !ok {
+		mark.errorf("no diagnostic at %v matches %q", loc, re)
+		return
+	}
+
+	// Apply the fix it suggests.
+	_, err := codeAction(mark.run.env, loc.URI, diag.Range, "quickfix", &diag, nil)
+	wantErr.check(mark, err)
+}
+
 // codeAction executes a textDocument/codeAction request for the specified
 // location and kind. If diag is non-nil, it is used as the code action
 // context.
@@ -2253,8 +2273,6 @@ func codeActionChanges(env *Env, uri protocol.DocumentURI, rng protocol.Range, a
 
 	return nil, nil
 }
-
-// TODO(adonovan): suggestedfixerr
 
 // refsMarker implements the @refs marker.
 func refsMarker(mark marker, src protocol.Location, want ...protocol.Location) {

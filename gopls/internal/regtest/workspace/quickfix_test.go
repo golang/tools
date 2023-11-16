@@ -331,3 +331,64 @@ func main() {}
 		})
 	}
 }
+
+func TestStubMethods64087(t *testing.T) {
+	// We can't use the @fix or @suggestedfixerr or @codeactionerr
+	// because the error now reported by the corrected logic
+	// is internal and silently causes no fix to be offered.
+
+	const files = `
+This is a regression test for a panic (issue #64087) in stub methods.
+
+The illegal expression int("") caused a "cannot convert" error that
+spuriously triggered the "stub methods" in a function whose return
+statement had too many operands, leading to an out-of-bounds index.
+
+-- go.mod --
+module mod.com
+go 1.18
+
+-- a.go --
+package a
+
+func f() error {
+	return nil, myerror{int("")}
+}
+
+type myerror struct{any}
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+
+		// Expect a "wrong result count" diagnostic.
+		var d protocol.PublishDiagnosticsParams
+		env.AfterChange(ReadDiagnostics("a.go", &d))
+
+		// In no particular order, we expect:
+		//  "...too many return values..." (compiler)
+		//  "...cannot convert..." (compiler)
+		// and possibly:
+		//  "...too many return values..." (fillreturns)
+		// We check only for the first of these.
+		found := false
+		for i, diag := range d.Diagnostics {
+			t.Logf("Diagnostics[%d] = %q (%s)", i, diag.Message, diag.Source)
+			if strings.Contains(diag.Message, "too many return") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("Expected WrongResultCount diagnostic not found.")
+		}
+
+		// GetQuickFixes should not panic (the original bug).
+		fixes := env.GetQuickFixes("a.go", d.Diagnostics)
+
+		// We should not be offered a "stub methods" fix.
+		for _, fix := range fixes {
+			if strings.Contains(fix.Title, "Implement error") {
+				t.Errorf("unexpected 'stub methods' fix: %#v", fix)
+			}
+		}
+	})
+}
