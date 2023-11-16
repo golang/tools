@@ -7,6 +7,7 @@ package checker_test
 import (
 	"flag"
 	"fmt"
+	"go/token"
 	"log"
 	"os"
 	"os/exec"
@@ -268,5 +269,55 @@ func Foo() {
 		if got := string(contents); got != want {
 			t.Errorf("contents of %s file updated. got=%s, want=%s", path, got, want)
 		}
+	}
+}
+
+// TestNoEnd tests that a missing SuggestedFix.End position is
+// correctly interpreted as if equal to SuggestedFix.Pos (see issue #64199).
+func TestNoEnd(t *testing.T) {
+	files := map[string]string{
+		"a/a.go": "package a\n\nfunc F() {}",
+	}
+	dir, cleanup, err := analysistest.WriteFiles(files)
+	if err != nil {
+		t.Fatalf("Creating test files failed with %s", err)
+	}
+	defer cleanup()
+
+	fix(t, dir, "noend", exitCodeDiagnostics, "a")
+
+	got, err := os.ReadFile(path.Join(dir, "src/a/a.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "package a\n\n/*hello*/\nfunc F() {}\n"
+	if string(got) != want {
+		t.Errorf("new file contents were <<%s>>, want <<%s>>", got, want)
+	}
+}
+
+func init() {
+	candidates["noend"] = &analysis.Analyzer{
+		Name: "noend",
+		Doc:  "inserts /*hello*/ before first decl",
+		Run: func(pass *analysis.Pass) (any, error) {
+			decl := pass.Files[0].Decls[0]
+			pass.Report(analysis.Diagnostic{
+				Pos:     decl.Pos(),
+				End:     token.NoPos,
+				Message: "say hello",
+				SuggestedFixes: []analysis.SuggestedFix{{
+					Message: "say hello",
+					TextEdits: []analysis.TextEdit{
+						{
+							Pos:     decl.Pos(),
+							End:     token.NoPos,
+							NewText: []byte("/*hello*/"),
+						},
+					},
+				}},
+			})
+			return nil, nil
+		},
 	}
 }
