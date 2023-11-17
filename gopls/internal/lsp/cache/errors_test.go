@@ -13,7 +13,6 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 func TestParseErrorMessage(t *testing.T) {
@@ -90,7 +89,7 @@ func TestDiagnosticEncoding(t *testing.T) {
 			SuggestedFixes: []source.SuggestedFix{
 				{
 					Title: "fix it!",
-					Edits: map[span.URI][]protocol.TextEdit{
+					Edits: map[protocol.DocumentURI][]protocol.TextEdit{
 						"file:///foo": {{
 							Range: protocol.Range{
 								Start: protocol.Position{Line: 4, Character: 2},

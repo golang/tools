@@ -14,11 +14,10 @@ import (
 	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 // symbolize returns the result of symbolizing the file identified by uri, using a cache.
-func (s *snapshot) symbolize(ctx context.Context, uri span.URI) ([]source.Symbol, error) {
+func (s *snapshot) symbolize(ctx context.Context, uri protocol.DocumentURI) ([]source.Symbol, error) {
 
 	s.mu.Lock()
 	entry, hit := s.symbolizeHandles.Get(uri)

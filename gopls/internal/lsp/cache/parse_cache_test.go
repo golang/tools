@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 func skipIfNoParseCache(t *testing.T) {
@@ -26,7 +26,7 @@ func TestParseCache(t *testing.T) {
 	skipIfNoParseCache(t)
 
 	ctx := context.Background()
-	uri := span.URI("file:///myfile")
+	uri := protocol.DocumentURI("file:///myfile")
 	fh := makeFakeFileHandle(uri, []byte("package p\n\nconst _ = \"foo\""))
 	fset := token.NewFileSet()
 
@@ -129,7 +129,7 @@ func TestParseCache_TimeEviction(t *testing.T) {
 
 	ctx := context.Background()
 	fset := token.NewFileSet()
-	uri := span.URI("file:///myfile")
+	uri := protocol.DocumentURI("file:///myfile")
 	fh := makeFakeFileHandle(uri, []byte("package p\n\nconst _ = \"foo\""))
 
 	const gcDuration = 10 * time.Millisecond
@@ -179,7 +179,7 @@ func TestParseCache_Duplicates(t *testing.T) {
 	skipIfNoParseCache(t)
 
 	ctx := context.Background()
-	uri := span.URI("file:///myfile")
+	uri := protocol.DocumentURI("file:///myfile")
 	fh := makeFakeFileHandle(uri, []byte("package p\n\nconst _ = \"foo\""))
 
 	cache := newParseCache(0)
@@ -195,14 +195,14 @@ func TestParseCache_Duplicates(t *testing.T) {
 func dummyFileHandles(n int) []source.FileHandle {
 	var fhs []source.FileHandle
 	for i := 0; i < n; i++ {
-		uri := span.URI(fmt.Sprintf("file:///_%d", i))
+		uri := protocol.DocumentURI(fmt.Sprintf("file:///_%d", i))
 		src := []byte(fmt.Sprintf("package p\nvar _ = %d", i))
 		fhs = append(fhs, makeFakeFileHandle(uri, src))
 	}
 	return fhs
 }
 
-func makeFakeFileHandle(uri span.URI, src []byte) fakeFileHandle {
+func makeFakeFileHandle(uri protocol.DocumentURI, src []byte) fakeFileHandle {
 	return fakeFileHandle{
 		uri:  uri,
 		data: src,
@@ -212,12 +212,12 @@ func makeFakeFileHandle(uri span.URI, src []byte) fakeFileHandle {
 
 type fakeFileHandle struct {
 	source.FileHandle
-	uri  span.URI
+	uri  protocol.DocumentURI
 	data []byte
 	hash source.Hash
 }
 
-func (h fakeFileHandle) URI() span.URI {
+func (h fakeFileHandle) URI() protocol.DocumentURI {
 	return h.uri
 }
 

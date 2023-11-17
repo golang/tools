@@ -22,7 +22,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 )
@@ -33,10 +32,10 @@ const concurrentAnalyses = 1
 // messages on the supplied stream.
 func NewServer(session *cache.Session, client protocol.ClientCloser, options *source.Options) protocol.Server {
 	return &server{
-		diagnostics:           map[span.URI]*fileReports{},
+		diagnostics:           map[protocol.DocumentURI]*fileReports{},
 		gcOptimizationDetails: make(map[source.PackageID]struct{}),
 		watchedGlobPatterns:   nil, // empty
-		changedFiles:          make(map[span.URI]struct{}),
+		changedFiles:          make(map[protocol.DocumentURI]struct{}),
 		session:               session,
 		client:                client,
 		diagnosticsSema:       make(chan struct{}, concurrentAnalyses),
@@ -83,7 +82,7 @@ type server struct {
 
 	// changedFiles tracks files for which there has been a textDocument/didChange.
 	changedFilesMu sync.Mutex
-	changedFiles   map[span.URI]struct{}
+	changedFiles   map[protocol.DocumentURI]struct{}
 
 	// folders is only valid between initialize and initialized, and holds the
 	// set of folders to build views for when we are ready
@@ -98,7 +97,7 @@ type server struct {
 	watchRegistrationCount int
 
 	diagnosticsMu sync.Mutex
-	diagnostics   map[span.URI]*fileReports
+	diagnostics   map[protocol.DocumentURI]*fileReports
 
 	// gcOptimizationDetails describes the packages for which we want
 	// optimization details to be included in the diagnostics. The key is the
@@ -181,7 +180,7 @@ func (s *server) nonstandardRequest(ctx context.Context, method string, params i
 // efficient to compute the set of packages and TypeCheck and
 // Analyze them all at once. Or instead support textDocument/diagnostic
 // (golang/go#60122).
-func (s *server) diagnoseFile(ctx context.Context, snapshot source.Snapshot, uri span.URI) (source.FileHandle, []*source.Diagnostic, error) {
+func (s *server) diagnoseFile(ctx context.Context, snapshot source.Snapshot, uri protocol.DocumentURI) (source.FileHandle, []*source.Diagnostic, error) {
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, nil, err

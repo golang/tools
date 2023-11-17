@@ -28,7 +28,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
@@ -267,7 +266,7 @@ func (c *commandHandler) CheckUpgrades(ctx context.Context, args command.CheckUp
 				return nil, nil, err
 			}
 			snapshot, release := deps.snapshot.View().Invalidate(ctx, source.StateChange{
-				ModuleUpgrades: map[span.URI]map[string]string{args.URI.SpanURI(): upgrades},
+				ModuleUpgrades: map[protocol.DocumentURI]map[string]string{args.URI.SpanURI(): upgrades},
 			})
 			return snapshot, release, nil
 		})
@@ -288,10 +287,10 @@ func (c *commandHandler) ResetGoModDiagnostics(ctx context.Context, args command
 	}, func(ctx context.Context, deps commandDeps) error {
 		return c.modifyState(ctx, FromResetGoModDiagnostics, func() (source.Snapshot, func(), error) {
 			snapshot, release := deps.snapshot.View().Invalidate(ctx, source.StateChange{
-				ModuleUpgrades: map[span.URI]map[string]string{
+				ModuleUpgrades: map[protocol.DocumentURI]map[string]string{
 					deps.fh.URI(): nil,
 				},
-				Vulns: map[span.URI]*vulncheck.Result{
+				Vulns: map[protocol.DocumentURI]*vulncheck.Result{
 					deps.fh.URI(): nil,
 				},
 			})
@@ -626,7 +625,7 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 	})
 }
 
-func (s *server) runGoModUpdateCommands(ctx context.Context, snapshot source.Snapshot, uri span.URI, run func(invoke func(...string) (*bytes.Buffer, error)) error) error {
+func (s *server) runGoModUpdateCommands(ctx context.Context, snapshot source.Snapshot, uri protocol.DocumentURI, run func(invoke func(...string) (*bytes.Buffer, error)) error) error {
 	tmpModfile, newModBytes, newSumBytes, err := snapshot.RunGoCommands(ctx, true, filepath.Dir(uri.Filename()), run)
 	if err != nil {
 		return err
@@ -655,7 +654,7 @@ func (s *server) runGoModUpdateCommands(ctx context.Context, snapshot source.Sna
 //
 // TODO(rfindley): fix this API asymmetry. It should be up to the caller to
 // write the file or apply the edits.
-func collectFileEdits(ctx context.Context, snapshot source.Snapshot, uri span.URI, newContent []byte) ([]protocol.TextDocumentEdit, error) {
+func collectFileEdits(ctx context.Context, snapshot source.Snapshot, uri protocol.DocumentURI, newContent []byte) ([]protocol.TextDocumentEdit, error) {
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, err
@@ -739,7 +738,7 @@ func addModuleRequire(invoke func(...string) (*bytes.Buffer, error), args []stri
 }
 
 // TODO(rfindley): inline.
-func (s *server) getUpgrades(ctx context.Context, snapshot source.Snapshot, uri span.URI, modules []string) (map[string]string, error) {
+func (s *server) getUpgrades(ctx context.Context, snapshot source.Snapshot, uri protocol.DocumentURI, modules []string) (map[string]string, error) {
 	stdout, err := snapshot.RunGoCommandDirect(ctx, source.Normal|source.AllowNetwork, &gocommand.Invocation{
 		Verb:       "list",
 		Args:       append([]string{"-m", "-u", "-json"}, modules...),
@@ -992,7 +991,7 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 		}
 
 		snapshot, release := deps.snapshot.View().Invalidate(ctx, source.StateChange{
-			Vulns: map[span.URI]*vulncheck.Result{args.URI.SpanURI(): result},
+			Vulns: map[protocol.DocumentURI]*vulncheck.Result{args.URI.SpanURI(): result},
 		})
 		defer release()
 		c.s.diagnoseSnapshot(snapshot, nil, false, 0)

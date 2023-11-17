@@ -13,10 +13,10 @@ import (
 	"go/types"
 	"sync"
 
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
 	"golang.org/x/tools/gopls/internal/lsp/source/xrefs"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 // Convenient local aliases for typed strings.
@@ -87,13 +87,13 @@ type loadScope interface {
 }
 
 type (
-	fileLoadScope    span.URI // load packages containing a file (including command-line-arguments)
-	packageLoadScope string   // load a specific package (the value is its PackageID)
+	fileLoadScope    protocol.DocumentURI // load packages containing a file (including command-line-arguments)
+	packageLoadScope string               // load a specific package (the value is its PackageID)
 	moduleLoadScope  struct {
 		dir        string // dir containing the go.mod file
 		modulePath string // parsed module path
 	}
-	viewLoadScope span.URI // load the workspace
+	viewLoadScope protocol.DocumentURI // load the workspace
 )
 
 // Implement the loadScope interface.
@@ -106,11 +106,11 @@ func (p *Package) CompiledGoFiles() []*source.ParsedGoFile {
 	return p.pkg.compiledGoFiles
 }
 
-func (p *Package) File(uri span.URI) (*source.ParsedGoFile, error) {
+func (p *Package) File(uri protocol.DocumentURI) (*source.ParsedGoFile, error) {
 	return p.pkg.File(uri)
 }
 
-func (pkg *syntaxPackage) File(uri span.URI) (*source.ParsedGoFile, error) {
+func (pkg *syntaxPackage) File(uri protocol.DocumentURI) (*source.ParsedGoFile, error) {
 	for _, cgf := range pkg.compiledGoFiles {
 		if cgf.URI == uri {
 			return cgf, nil
@@ -160,7 +160,7 @@ func (p *Package) GetTypeErrors() []types.Error {
 	return p.pkg.typeErrors
 }
 
-func (p *Package) DiagnosticsForFile(ctx context.Context, s source.Snapshot, uri span.URI) ([]*source.Diagnostic, error) {
+func (p *Package) DiagnosticsForFile(ctx context.Context, s source.Snapshot, uri protocol.DocumentURI) ([]*source.Diagnostic, error) {
 	var diags []*source.Diagnostic
 	for _, diag := range p.m.Diagnostics {
 		if diag.URI == uri {

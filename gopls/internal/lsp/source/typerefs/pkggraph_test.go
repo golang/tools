@@ -17,9 +17,9 @@ import (
 	"sync"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 const (
@@ -50,7 +50,7 @@ type Package struct {
 type PackageGraph struct {
 	pkgIndex *typerefs.PackageIndex
 	meta     source.MetadataSource
-	parse    func(context.Context, span.URI) (*source.ParsedGoFile, error)
+	parse    func(context.Context, protocol.DocumentURI) (*source.ParsedGoFile, error)
 
 	mu       sync.Mutex
 	packages map[source.PackageID]*futurePackage
@@ -66,7 +66,7 @@ type PackageGraph struct {
 //
 // See the package documentation for more information on the package reference
 // algorithm.
-func BuildPackageGraph(ctx context.Context, meta source.MetadataSource, ids []source.PackageID, parse func(context.Context, span.URI) (*source.ParsedGoFile, error)) (*PackageGraph, error) {
+func BuildPackageGraph(ctx context.Context, meta source.MetadataSource, ids []source.PackageID, parse func(context.Context, protocol.DocumentURI) (*source.ParsedGoFile, error)) (*PackageGraph, error) {
 	g := &PackageGraph{
 		pkgIndex: typerefs.NewPackageIndex(),
 		meta:     meta,

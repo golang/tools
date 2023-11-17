@@ -9,8 +9,8 @@ import (
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 // A metadataGraph is an immutable and transitively closed import
@@ -26,7 +26,7 @@ type metadataGraph struct {
 	// A single file may belong to multiple packages due to tests packages.
 	//
 	// Invariant: all IDs present in the ids map exist in the metadata map.
-	ids map[span.URI][]PackageID
+	ids map[protocol.DocumentURI][]PackageID
 }
 
 // Metadata implements the source.MetadataSource interface.
@@ -73,9 +73,9 @@ func newMetadataGraph(metadata map[PackageID]*source.Metadata) *metadataGraph {
 	}
 
 	// Collect file associations.
-	uriIDs := make(map[span.URI][]PackageID)
+	uriIDs := make(map[protocol.DocumentURI][]PackageID)
 	for id, m := range metadata {
-		uris := map[span.URI]struct{}{}
+		uris := map[protocol.DocumentURI]struct{}{}
 		for _, uri := range m.CompiledGoFiles {
 			uris[uri] = struct{}{}
 		}

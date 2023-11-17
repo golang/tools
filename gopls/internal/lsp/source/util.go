@@ -19,7 +19,6 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -30,7 +29,7 @@ import (
 //
 // TODO(adonovan): opt: this function does too much.
 // Move snapshot.ReadFile into the caller (most of which have already done it).
-func IsGenerated(ctx context.Context, snapshot Snapshot, uri span.URI) bool {
+func IsGenerated(ctx context.Context, snapshot Snapshot, uri protocol.DocumentURI) bool {
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
 		return false
@@ -186,7 +185,7 @@ func CompareDiagnostic(a, b *Diagnostic) int {
 // dependencies of m. When using the Go command, the answer is unique.
 //
 // TODO(rfindley): refactor to share logic with findPackageInDeps?
-func findFileInDeps(s MetadataSource, m *Metadata, uri span.URI) *Metadata {
+func findFileInDeps(s MetadataSource, m *Metadata, uri protocol.DocumentURI) *Metadata {
 	seen := make(map[PackageID]bool)
 	var search func(*Metadata) *Metadata
 	search = func(m *Metadata) *Metadata {

@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -228,7 +227,7 @@ func offsetToLocation(ctx context.Context, snapshot Snapshot, filename string, s
 //
 // The returned Package is the narrowest package containing ppos, which is the
 // package using the resulting obj but not necessarily the declaring package.
-func implementsObj(ctx context.Context, snapshot Snapshot, uri span.URI, ppos protocol.Position) (types.Object, Package, error) {
+func implementsObj(ctx context.Context, snapshot Snapshot, uri protocol.DocumentURI, ppos protocol.Position) (types.Object, Package, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, uri)
 	if err != nil {
 		return nil, nil, err

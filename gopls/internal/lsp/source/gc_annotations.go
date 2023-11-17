@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/gocommand"
 )
 
@@ -34,7 +33,7 @@ const (
 	Bounds Annotation = "bounds"
 )
 
-func GCOptimizationDetails(ctx context.Context, snapshot Snapshot, m *Metadata) (map[span.URI][]*Diagnostic, error) {
+func GCOptimizationDetails(ctx context.Context, snapshot Snapshot, m *Metadata) (map[protocol.DocumentURI][]*Diagnostic, error) {
 	if len(m.CompiledGoFiles) == 0 {
 		return nil, nil
 	}
@@ -54,7 +53,7 @@ func GCOptimizationDetails(ctx context.Context, snapshot Snapshot, m *Metadata) 
 	// GC details doesn't handle Windows URIs in the form of "file:///C:/...",
 	// so rewrite them to "file://C:/...". See golang/go#41614.
 	if !strings.HasPrefix(outDir, "/") {
-		outDirURI = span.URI(strings.Replace(string(outDirURI), "file:///", "file://", 1))
+		outDirURI = protocol.DocumentURI(strings.Replace(string(outDirURI), "file:///", "file://", 1))
 	}
 	inv := &gocommand.Invocation{
 		Verb: "build",
@@ -73,7 +72,7 @@ func GCOptimizationDetails(ctx context.Context, snapshot Snapshot, m *Metadata) 
 	if err != nil {
 		return nil, err
 	}
-	reports := make(map[span.URI][]*Diagnostic)
+	reports := make(map[protocol.DocumentURI][]*Diagnostic)
 	opts := snapshot.Options()
 	var parseError error
 	for _, fn := range files {
@@ -97,13 +96,13 @@ func GCOptimizationDetails(ctx context.Context, snapshot Snapshot, m *Metadata) 
 	return reports, parseError
 }
 
-func parseDetailsFile(filename string, options *Options) (span.URI, []*Diagnostic, error) {
+func parseDetailsFile(filename string, options *Options) (protocol.DocumentURI, []*Diagnostic, error) {
 	buf, err := os.ReadFile(filename)
 	if err != nil {
 		return "", nil, err
 	}
 	var (
-		uri         span.URI
+		uri         protocol.DocumentURI
 		i           int
 		diagnostics []*Diagnostic
 	)

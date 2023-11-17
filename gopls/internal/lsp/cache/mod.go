@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
@@ -180,7 +179,7 @@ func parseWorkImpl(ctx context.Context, fh source.FileHandle) (*source.ParsedWor
 
 // goSum reads the go.sum file for the go.mod file at modURI, if it exists. If
 // it doesn't exist, it returns nil.
-func (s *snapshot) goSum(ctx context.Context, modURI span.URI) []byte {
+func (s *snapshot) goSum(ctx context.Context, modURI protocol.DocumentURI) []byte {
 	// Get the go.sum file, either from the snapshot or directly from the
 	// cache. Avoid (*snapshot).ReadFile here, as we don't want to add
 	// nonexistent file handles to the snapshot if the file does not exist.
@@ -203,7 +202,7 @@ func (s *snapshot) goSum(ctx context.Context, modURI span.URI) []byte {
 	return content
 }
 
-func sumFilename(modURI span.URI) string {
+func sumFilename(modURI protocol.DocumentURI) string {
 	return strings.TrimSuffix(modURI.Filename(), ".mod") + ".sum"
 }
 

@@ -7,7 +7,7 @@ package cache
 import (
 	"context"
 
-	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
 	"golang.org/x/tools/internal/memoize"
@@ -15,7 +15,7 @@ import (
 
 // ModVuln returns import vulnerability analysis for the given go.mod URI.
 // Concurrent requests are combined into a single command.
-func (s *snapshot) ModVuln(ctx context.Context, modURI span.URI) (*vulncheck.Result, error) {
+func (s *snapshot) ModVuln(ctx context.Context, modURI protocol.DocumentURI) (*vulncheck.Result, error) {
 	s.mu.Lock()
 	entry, hit := s.modVulnHandles.Get(modURI)
 	s.mu.Unlock()

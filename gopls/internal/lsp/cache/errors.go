@@ -27,7 +27,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -96,7 +95,7 @@ func goPackagesErrorDiagnostics(ctx context.Context, e packages.Error, m *source
 		return diags, nil
 	}
 	return []*source.Diagnostic{{
-		URI:      span.URI(loc.URI),
+		URI:      protocol.DocumentURI(loc.URI),
 		Range:    loc.Range,
 		Severity: protocol.SeverityError,
 		Source:   source.ListError,
@@ -183,7 +182,7 @@ func typeErrorDiagnostics(moduleMode bool, linkTarget string, pkg *syntaxPackage
 	return []*source.Diagnostic{diag}, nil
 }
 
-func goGetQuickFixes(moduleMode bool, uri span.URI, pkg string) ([]source.SuggestedFix, error) {
+func goGetQuickFixes(moduleMode bool, uri protocol.DocumentURI, pkg string) ([]source.SuggestedFix, error) {
 	// Go get only supports module mode for now.
 	if !moduleMode {
 		return nil, nil
@@ -200,7 +199,7 @@ func goGetQuickFixes(moduleMode bool, uri span.URI, pkg string) ([]source.Sugges
 	return []source.SuggestedFix{source.SuggestedFixFromCommand(cmd, protocol.QuickFix)}, nil
 }
 
-func editGoDirectiveQuickFix(moduleMode bool, uri span.URI, version string) ([]source.SuggestedFix, error) {
+func editGoDirectiveQuickFix(moduleMode bool, uri protocol.DocumentURI, version string) ([]source.SuggestedFix, error) {
 	// Go mod edit only supports module mode.
 	if !moduleMode {
 		return nil, nil
@@ -284,7 +283,7 @@ func decodeDiagnostics(data []byte) []*source.Diagnostic {
 			}
 			for _, gobEdit := range gobFix.TextEdits {
 				if srcFix.Edits == nil {
-					srcFix.Edits = make(map[span.URI][]protocol.TextEdit)
+					srcFix.Edits = make(map[protocol.DocumentURI][]protocol.TextEdit)
 				}
 				srcEdit := protocol.TextEdit{
 					Range:   gobEdit.Location.Range,
@@ -405,9 +404,9 @@ func typesCodeHref(linkTarget string, code typesinternal.ErrorCode) string {
 func suggestedAnalysisFixes(diag *gobDiagnostic, kinds []protocol.CodeActionKind) []source.SuggestedFix {
 	var fixes []source.SuggestedFix
 	for _, fix := range diag.SuggestedFixes {
-		edits := make(map[span.URI][]protocol.TextEdit)
+		edits := make(map[protocol.DocumentURI][]protocol.TextEdit)
 		for _, e := range fix.TextEdits {
-			uri := span.URI(e.Location.URI)
+			uri := protocol.DocumentURI(e.Location.URI)
 			edits[uri] = append(edits[uri], protocol.TextEdit{
 				Range:   e.Location.Range,
 				NewText: string(e.NewText),
@@ -559,7 +558,7 @@ func parseGoListImportCycleError(ctx context.Context, e packages.Error, m *sourc
 // It returns an error if the file could not be read.
 //
 // TODO(rfindley): eliminate this helper.
-func parseGoURI(ctx context.Context, fs source.FileSource, uri span.URI, mode parser.Mode) (*source.ParsedGoFile, error) {
+func parseGoURI(ctx context.Context, fs source.FileSource, uri protocol.DocumentURI, mode parser.Mode) (*source.ParsedGoFile, error) {
 	fh, err := fs.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, err
@@ -571,7 +570,7 @@ func parseGoURI(ctx context.Context, fs source.FileSource, uri span.URI, mode pa
 // source fs.
 //
 // It returns an error if the file could not be read.
-func parseModURI(ctx context.Context, fs source.FileSource, uri span.URI) (*source.ParsedModule, error) {
+func parseModURI(ctx context.Context, fs source.FileSource, uri protocol.DocumentURI) (*source.ParsedModule, error) {
 	fh, err := fs.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, err

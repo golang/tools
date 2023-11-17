@@ -26,7 +26,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event/label"
 	"golang.org/x/tools/internal/event/tag"
@@ -85,20 +84,20 @@ type Snapshot interface {
 	// FindFile returns the FileHandle for the given URI, if it is already
 	// in the given snapshot.
 	// TODO(adonovan): delete this operation; use ReadFile instead.
-	FindFile(uri span.URI) FileHandle
+	FindFile(uri protocol.DocumentURI) FileHandle
 
 	// AwaitInitialized waits until the snapshot's view is initialized.
 	AwaitInitialized(ctx context.Context)
 
 	// IsOpen returns whether the editor currently has a file open.
-	IsOpen(uri span.URI) bool
+	IsOpen(uri protocol.DocumentURI) bool
 
 	// IgnoredFile reports if a file would be ignored by a `go list` of the whole
 	// workspace.
-	IgnoredFile(uri span.URI) bool
+	IgnoredFile(uri protocol.DocumentURI) bool
 
 	// Templates returns the .tmpl files
-	Templates() map[span.URI]FileHandle
+	Templates() map[protocol.DocumentURI]FileHandle
 
 	// ParseGo returns the parsed AST for the file.
 	// If the file is not available, returns nil and an error.
@@ -133,7 +132,7 @@ type Snapshot interface {
 
 	// ModFiles are the go.mod files enclosed in the snapshot's view and known
 	// to the snapshot.
-	ModFiles() []span.URI
+	ModFiles() []protocol.DocumentURI
 
 	// ParseMod is used to parse go.mod files.
 	ParseMod(ctx context.Context, fh FileHandle) (*ParsedModule, error)
@@ -148,13 +147,13 @@ type Snapshot interface {
 
 	// ModVuln returns import vulnerability analysis for the given go.mod URI.
 	// Concurrent requests are combined into a single command.
-	ModVuln(ctx context.Context, modURI span.URI) (*vulncheck.Result, error)
+	ModVuln(ctx context.Context, modURI protocol.DocumentURI) (*vulncheck.Result, error)
 
 	// GoModForFile returns the URI of the go.mod file for the given URI.
-	GoModForFile(uri span.URI) span.URI
+	GoModForFile(uri protocol.DocumentURI) protocol.DocumentURI
 
 	// WorkFile, if non-empty, is the go.work file for the workspace.
-	WorkFile() span.URI
+	WorkFile() protocol.DocumentURI
 
 	// ParseWork is used to parse go.work files.
 	ParseWork(ctx context.Context, fh FileHandle) (*ParsedWorkFile, error)
@@ -163,7 +162,7 @@ type Snapshot interface {
 	BuiltinFile(ctx context.Context) (*ParsedGoFile, error)
 
 	// IsBuiltin reports whether uri is part of the builtin package.
-	IsBuiltin(uri span.URI) bool
+	IsBuiltin(uri protocol.DocumentURI) bool
 
 	// CriticalError returns any critical errors in the workspace.
 	//
@@ -174,7 +173,7 @@ type Snapshot interface {
 	//
 	// If workspaceOnly is set, this only includes symbols from files in a
 	// workspace package. Otherwise, it returns symbols from all loaded packages.
-	Symbols(ctx context.Context, workspaceOnly bool) (map[span.URI][]Symbol, error)
+	Symbols(ctx context.Context, workspaceOnly bool) (map[protocol.DocumentURI][]Symbol, error)
 
 	// -- package metadata --
 
@@ -217,13 +216,13 @@ type Snapshot interface {
 	// The result may include tests and intermediate test variants of
 	// importable packages.
 	// It returns an error if the context was cancelled.
-	MetadataForFile(ctx context.Context, uri span.URI) ([]*Metadata, error)
+	MetadataForFile(ctx context.Context, uri protocol.DocumentURI) ([]*Metadata, error)
 
 	// OrphanedFileDiagnostics reports diagnostics for files that have no package
 	// associations or which only have only command-line-arguments packages.
 	//
 	// The caller must not mutate the result.
-	OrphanedFileDiagnostics(ctx context.Context) (map[span.URI]*Diagnostic, error)
+	OrphanedFileDiagnostics(ctx context.Context) (map[protocol.DocumentURI]*Diagnostic, error)
 
 	// -- package type-checking --
 
@@ -244,7 +243,7 @@ type Snapshot interface {
 	//
 	// If these diagnostics cannot be loaded from cache, the requested packages
 	// may be type-checked.
-	PackageDiagnostics(ctx context.Context, ids ...PackageID) (map[span.URI][]*Diagnostic, error)
+	PackageDiagnostics(ctx context.Context, ids ...PackageID) (map[protocol.DocumentURI][]*Diagnostic, error)
 
 	// References returns cross-references indexes for the specified packages.
 	//
@@ -260,7 +259,7 @@ type Snapshot interface {
 
 	// ModuleUpgrades returns known module upgrades for the dependencies of
 	// modfile.
-	ModuleUpgrades(modfile span.URI) map[string]string
+	ModuleUpgrades(modfile protocol.DocumentURI) map[string]string
 
 	// Vulnerabilities returns known vulnerabilities for the given modfile.
 	//
@@ -268,13 +267,13 @@ type Snapshot interface {
 	//
 	// TODO(suzmue): replace command.Vuln with a different type, maybe
 	// https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck/govulnchecklib#Summary?
-	Vulnerabilities(modfile ...span.URI) map[span.URI]*vulncheck.Result
+	Vulnerabilities(modfile ...protocol.DocumentURI) map[protocol.DocumentURI]*vulncheck.Result
 }
 
 // NarrowestMetadataForFile returns metadata for the narrowest package
 // (the one with the fewest files) that encloses the specified file.
 // The result may be a test variant, but never an intermediate test variant.
-func NarrowestMetadataForFile(ctx context.Context, snapshot Snapshot, uri span.URI) (*Metadata, error) {
+func NarrowestMetadataForFile(ctx context.Context, snapshot Snapshot, uri protocol.DocumentURI) (*Metadata, error) {
 	metas, err := snapshot.MetadataForFile(ctx, uri)
 	if err != nil {
 		return nil, err
@@ -311,7 +310,7 @@ func SnapshotLabels(snapshot Snapshot) []label.Label {
 //
 // Type-checking is expensive. Call snapshot.ParseGo if all you need is a parse
 // tree, or snapshot.MetadataForFile if you only need metadata.
-func NarrowestPackageForFile(ctx context.Context, snapshot Snapshot, uri span.URI) (Package, *ParsedGoFile, error) {
+func NarrowestPackageForFile(ctx context.Context, snapshot Snapshot, uri protocol.DocumentURI) (Package, *ParsedGoFile, error) {
 	return selectPackageForFile(ctx, snapshot, uri, func(metas []*Metadata) *Metadata { return metas[0] })
 }
 
@@ -329,11 +328,11 @@ func NarrowestPackageForFile(ctx context.Context, snapshot Snapshot, uri span.UR
 //
 // Type-checking is expensive. Call snapshot.ParseGo if all you need is a parse
 // tree, or snapshot.MetadataForFile if you only need metadata.
-func WidestPackageForFile(ctx context.Context, snapshot Snapshot, uri span.URI) (Package, *ParsedGoFile, error) {
+func WidestPackageForFile(ctx context.Context, snapshot Snapshot, uri protocol.DocumentURI) (Package, *ParsedGoFile, error) {
 	return selectPackageForFile(ctx, snapshot, uri, func(metas []*Metadata) *Metadata { return metas[len(metas)-1] })
 }
 
-func selectPackageForFile(ctx context.Context, snapshot Snapshot, uri span.URI, selector func([]*Metadata) *Metadata) (Package, *ParsedGoFile, error) {
+func selectPackageForFile(ctx context.Context, snapshot Snapshot, uri protocol.DocumentURI, selector func([]*Metadata) *Metadata) (Package, *ParsedGoFile, error) {
 	metas, err := snapshot.MetadataForFile(ctx, uri)
 	if err != nil {
 		return nil, nil, err
@@ -402,7 +401,7 @@ type View interface {
 	Name() string
 
 	// Folder returns the folder with which this view was created.
-	Folder() span.URI
+	Folder() protocol.DocumentURI
 
 	// Snapshot returns the current snapshot for the view, and a
 	// release function that must be called when the Snapshot is
@@ -433,9 +432,9 @@ type View interface {
 // By far the most common of these is a change to file state, but a query of
 // module upgrade information or vulnerabilities also affects gopls' behavior.
 type StateChange struct {
-	Files          map[span.URI]FileHandle
-	ModuleUpgrades map[span.URI]map[string]string
-	Vulns          map[span.URI]*vulncheck.Result
+	Files          map[protocol.DocumentURI]FileHandle
+	ModuleUpgrades map[protocol.DocumentURI]map[string]string
+	Vulns          map[protocol.DocumentURI]*vulncheck.Result
 }
 
 // A FileSource maps URIs to FileHandles.
@@ -445,7 +444,7 @@ type FileSource interface {
 	//
 	// Invariant: ReadFile must only return an error in the case of context
 	// cancellation. If ctx.Err() is nil, the resulting error must also be nil.
-	ReadFile(ctx context.Context, uri span.URI) (FileHandle, error)
+	ReadFile(ctx context.Context, uri protocol.DocumentURI) (FileHandle, error)
 }
 
 // A MetadataSource maps package IDs to metadata.
@@ -460,7 +459,7 @@ type MetadataSource interface {
 
 // A ParsedGoFile contains the results of parsing a Go file.
 type ParsedGoFile struct {
-	URI  span.URI
+	URI  protocol.DocumentURI
 	Mode parser.Mode
 	File *ast.File
 	Tok  *token.File
@@ -548,7 +547,7 @@ func (pgf *ParsedGoFile) RangePos(r protocol.Range) (token.Pos, token.Pos, error
 
 // A ParsedModule contains the results of parsing a go.mod file.
 type ParsedModule struct {
-	URI         span.URI
+	URI         protocol.DocumentURI
 	File        *modfile.File
 	Mapper      *protocol.Mapper
 	ParseErrors []*Diagnostic
@@ -556,7 +555,7 @@ type ParsedModule struct {
 
 // A ParsedWorkFile contains the results of parsing a go.work file.
 type ParsedWorkFile struct {
-	URI         span.URI
+	URI         protocol.DocumentURI
 	File        *modfile.WorkFile
 	Mapper      *protocol.Mapper
 	ParseErrors []*Diagnostic
@@ -581,9 +580,9 @@ type Metadata struct {
 	Name    PackageName
 
 	// these three fields are as defined by go/packages.Package
-	GoFiles         []span.URI
-	CompiledGoFiles []span.URI
-	IgnoredFiles    []span.URI
+	GoFiles         []protocol.DocumentURI
+	CompiledGoFiles []protocol.DocumentURI
+	IgnoredFiles    []protocol.DocumentURI
 
 	ForTest       PackagePath // q in a "p [q.test]" package, else ""
 	TypesSizes    types.Sizes
@@ -718,7 +717,7 @@ var ErrViewExists = errors.New("view already exists for session")
 
 // FileModification represents a modification to a file.
 type FileModification struct {
-	URI    span.URI
+	URI    protocol.DocumentURI
 	Action FileAction
 
 	// OnDisk is true if a watched file is changed on disk.
@@ -797,7 +796,7 @@ type FileHandle interface {
 	// TODO(rfindley): this is not actually well-defined. In some cases, there
 	// may be more than one URI that resolve to the same FileHandle. Which one is
 	// this?
-	URI() span.URI
+	URI() protocol.DocumentURI
 	// FileIdentity returns a FileIdentity for the file, even if there was an
 	// error reading it.
 	FileIdentity() FileIdentity
@@ -849,7 +848,7 @@ func (h *Hash) XORWith(h2 Hash) {
 
 // FileIdentity uniquely identifies a file at a version from a FileSystem.
 type FileIdentity struct {
-	URI  span.URI
+	URI  protocol.DocumentURI
 	Hash Hash // digest of file contents
 }
 
@@ -980,7 +979,7 @@ type Package interface {
 	// Results of parsing:
 	FileSet() *token.FileSet
 	CompiledGoFiles() []*ParsedGoFile // (borrowed)
-	File(uri span.URI) (*ParsedGoFile, error)
+	File(uri protocol.DocumentURI) (*ParsedGoFile, error)
 	GetSyntax() []*ast.File // (borrowed)
 	GetParseErrors() []scanner.ErrorList
 
@@ -989,7 +988,7 @@ type Package interface {
 	GetTypeErrors() []types.Error
 	GetTypesInfo() *types.Info
 	DependencyTypes(PackagePath) *types.Package // nil for indirect dependency of no consequence
-	DiagnosticsForFile(ctx context.Context, s Snapshot, uri span.URI) ([]*Diagnostic, error)
+	DiagnosticsForFile(ctx context.Context, s Snapshot, uri protocol.DocumentURI) ([]*Diagnostic, error)
 }
 
 type unit = struct{}
@@ -1009,7 +1008,7 @@ type CriticalError struct {
 // https://microsoft.github.io/language-server-protocol/specification#diagnostic
 type Diagnostic struct {
 	// TODO(adonovan): should be a protocol.URI, for symmetry.
-	URI      span.URI // of diagnosed file (not diagnostic documentation)
+	URI      protocol.DocumentURI // of diagnosed file (not diagnostic documentation)
 	Range    protocol.Range
 	Severity protocol.DiagnosticSeverity
 	Code     string

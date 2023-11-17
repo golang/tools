@@ -39,7 +39,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/gopls/internal/lsp/source/xrefs"
 	"golang.org/x/tools/gopls/internal/persistent"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/constraints"
 	"golang.org/x/tools/internal/event"
@@ -89,7 +88,7 @@ type snapshot struct {
 	//
 	// TODO(rfindley): would it make more sense to eagerly parse builtin, and
 	// instead store a *ParsedGoFile here?
-	builtin span.URI
+	builtin protocol.DocumentURI
 
 	// meta holds loaded metadata.
 	//
@@ -104,7 +103,7 @@ type snapshot struct {
 
 	// symbolizeHandles maps each file URI to a handle for the future
 	// result of computing the symbols declared in that file.
-	symbolizeHandles *persistent.Map[span.URI, *memoize.Promise] // *memoize.Promise[symbolizeResult]
+	symbolizeHandles *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[symbolizeResult]
 
 	// packages maps a packageKey to a *packageHandle.
 	// It may be invalidated when a file's content changes.
@@ -133,25 +132,25 @@ type snapshot struct {
 	shouldLoad *persistent.Map[PackageID, []PackagePath]
 
 	// unloadableFiles keeps track of files that we've failed to load.
-	unloadableFiles *persistent.Set[span.URI]
+	unloadableFiles *persistent.Set[protocol.DocumentURI]
 
 	// TODO(rfindley): rename the handles below to "promises". A promise is
 	// different from a handle (we mutate the package handle.)
 
 	// parseModHandles keeps track of any parseModHandles for the snapshot.
 	// The handles need not refer to only the view's go.mod file.
-	parseModHandles *persistent.Map[span.URI, *memoize.Promise] // *memoize.Promise[parseModResult]
+	parseModHandles *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[parseModResult]
 
 	// parseWorkHandles keeps track of any parseWorkHandles for the snapshot.
 	// The handles need not refer to only the view's go.work file.
-	parseWorkHandles *persistent.Map[span.URI, *memoize.Promise] // *memoize.Promise[parseWorkResult]
+	parseWorkHandles *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[parseWorkResult]
 
 	// Preserve go.mod-related handles to avoid garbage-collecting the results
 	// of various calls to the go command. The handles need not refer to only
 	// the view's go.mod file.
-	modTidyHandles *persistent.Map[span.URI, *memoize.Promise] // *memoize.Promise[modTidyResult]
-	modWhyHandles  *persistent.Map[span.URI, *memoize.Promise] // *memoize.Promise[modWhyResult]
-	modVulnHandles *persistent.Map[span.URI, *memoize.Promise] // *memoize.Promise[modVulnResult]
+	modTidyHandles *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[modTidyResult]
+	modWhyHandles  *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[modWhyResult]
+	modVulnHandles *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[modVulnResult]
 
 	// workspaceModFiles holds the set of mod files active in this snapshot.
 	//
@@ -161,7 +160,7 @@ type snapshot struct {
 	// This set is immutable inside the snapshot, and therefore is not guarded by mu.
 	//
 	// TODO(golang/go#57979): lift this to the view.
-	workspaceModFiles    map[span.URI]struct{}
+	workspaceModFiles    map[protocol.DocumentURI]struct{}
 	workspaceModFilesErr error // error encountered computing workspaceModFiles
 
 	// importGraph holds a shared import graph to use for type-checking. Adding
@@ -182,10 +181,10 @@ type snapshot struct {
 
 	// moduleUpgrades tracks known upgrades for module paths in each modfile.
 	// Each modfile has a map of module name to upgrade version.
-	moduleUpgrades *persistent.Map[span.URI, map[string]string]
+	moduleUpgrades *persistent.Map[protocol.DocumentURI, map[string]string]
 
 	// vulns maps each go.mod file's URI to its known vulnerabilities.
-	vulns *persistent.Map[span.URI, *vulncheck.Result]
+	vulns *persistent.Map[protocol.DocumentURI, *vulncheck.Result]
 }
 
 var globalSnapshotID uint64
@@ -315,25 +314,25 @@ func (s *snapshot) BackgroundContext() context.Context {
 	return s.backgroundCtx
 }
 
-func (s *snapshot) ModFiles() []span.URI {
-	var uris []span.URI
+func (s *snapshot) ModFiles() []protocol.DocumentURI {
+	var uris []protocol.DocumentURI
 	for modURI := range s.workspaceModFiles {
 		uris = append(uris, modURI)
 	}
 	return uris
 }
 
-func (s *snapshot) WorkFile() span.URI {
+func (s *snapshot) WorkFile() protocol.DocumentURI {
 	gowork, _ := s.view.GOWORK()
 	return gowork
 }
 
-func (s *snapshot) Templates() map[span.URI]source.FileHandle {
+func (s *snapshot) Templates() map[protocol.DocumentURI]source.FileHandle {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	tmpls := map[span.URI]source.FileHandle{}
-	s.files.Range(func(k span.URI, fh source.FileHandle) {
+	tmpls := map[protocol.DocumentURI]source.FileHandle{}
+	s.files.Range(func(k protocol.DocumentURI, fh source.FileHandle) {
 		if s.FileKind(fh) == source.Tmpl {
 			tmpls[k] = fh
 		}
@@ -497,7 +496,7 @@ func (s *snapshot) RunGoCommands(ctx context.Context, allowNetwork bool, wd stri
 // TODO(adonovan): simplify cleanup mechanism. It's hard to see, but
 // it used only after call to tempModFile. Clarify that it is only
 // non-nil on success.
-func (s *snapshot) goCommandInvocation(ctx context.Context, flags source.InvocationFlags, inv *gocommand.Invocation) (tmpURI span.URI, updatedInv *gocommand.Invocation, cleanup func(), err error) {
+func (s *snapshot) goCommandInvocation(ctx context.Context, flags source.InvocationFlags, inv *gocommand.Invocation) (tmpURI protocol.DocumentURI, updatedInv *gocommand.Invocation, cleanup func(), err error) {
 	allowModfileModificationOption := s.Options().AllowModfileModifications
 	allowNetworkOption := s.Options().AllowImplicitNetworkAccess
 
@@ -535,7 +534,7 @@ func (s *snapshot) goCommandInvocation(ctx context.Context, flags source.Invocat
 	// version, and what we're actually trying to achieve (the
 	// source.InvocationFlags).
 
-	var modURI span.URI
+	var modURI protocol.DocumentURI
 	// Select the module context to use.
 	// If we're type checking, we need to use the workspace context, meaning
 	// the main (workspace) module. Otherwise, we should use the module for
@@ -654,12 +653,12 @@ const (
 	typerefsKind    = "typerefs"
 )
 
-func (s *snapshot) PackageDiagnostics(ctx context.Context, ids ...PackageID) (map[span.URI][]*source.Diagnostic, error) {
+func (s *snapshot) PackageDiagnostics(ctx context.Context, ids ...PackageID) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
 	ctx, done := event.Start(ctx, "cache.snapshot.PackageDiagnostics")
 	defer done()
 
 	var mu sync.Mutex
-	perFile := make(map[span.URI][]*source.Diagnostic)
+	perFile := make(map[protocol.DocumentURI][]*source.Diagnostic)
 	collect := func(diags []*source.Diagnostic) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -737,7 +736,7 @@ func (s *snapshot) MethodSets(ctx context.Context, ids ...PackageID) ([]*methods
 	return indexes, s.forEachPackage(ctx, ids, pre, post)
 }
 
-func (s *snapshot) MetadataForFile(ctx context.Context, uri span.URI) ([]*source.Metadata, error) {
+func (s *snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI) ([]*source.Metadata, error) {
 	if s.view.ViewType() == AdHocView {
 		// As described in golang/go#57209, in ad-hoc workspaces (where we load ./
 		// rather than ./...), preempting the directory load with file loads can
@@ -1039,7 +1038,7 @@ func (s *snapshot) watchSubdirs() bool {
 
 // filesInDir returns all files observed by the snapshot that are contained in
 // a directory with the provided URI.
-func (s *snapshot) filesInDir(uri span.URI) []span.URI {
+func (s *snapshot) filesInDir(uri protocol.DocumentURI) []protocol.DocumentURI {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1047,8 +1046,8 @@ func (s *snapshot) filesInDir(uri span.URI) []span.URI {
 	if !s.files.Dirs().Contains(dir) {
 		return nil
 	}
-	var files []span.URI
-	s.files.Range(func(uri span.URI, _ source.FileHandle) {
+	var files []protocol.DocumentURI
+	s.files.Range(func(uri protocol.DocumentURI, _ source.FileHandle) {
 		if source.InDir(dir, uri.Filename()) {
 			files = append(files, uri)
 		}
@@ -1075,7 +1074,7 @@ func (s *snapshot) WorkspaceMetadata(ctx context.Context) ([]*source.Metadata, e
 // a loaded package. It awaits snapshot loading.
 //
 // TODO(rfindley): move this to the top of cache/symbols.go
-func (s *snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[span.URI][]source.Symbol, error) {
+func (s *snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[protocol.DocumentURI][]source.Symbol, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
@@ -1093,7 +1092,7 @@ func (s *snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[span.UR
 		return nil, fmt.Errorf("loading metadata: %v", err)
 	}
 
-	goFiles := make(map[span.URI]struct{})
+	goFiles := make(map[protocol.DocumentURI]struct{})
 	for _, m := range meta {
 		for _, uri := range m.GoFiles {
 			goFiles[uri] = struct{}{}
@@ -1108,7 +1107,7 @@ func (s *snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[span.UR
 		group    errgroup.Group
 		nprocs   = 2 * runtime.GOMAXPROCS(-1) // symbolize is a mix of I/O and CPU
 		resultMu sync.Mutex
-		result   = make(map[span.URI][]source.Symbol)
+		result   = make(map[protocol.DocumentURI][]source.Symbol)
 	)
 	group.SetLimit(nprocs)
 	for uri := range goFiles {
@@ -1150,12 +1149,12 @@ func (s *snapshot) AllMetadata(ctx context.Context) ([]*source.Metadata, error) 
 
 // TODO(rfindley): clarify that this is only active modules. Or update to just
 // use findRootPattern.
-func (s *snapshot) GoModForFile(uri span.URI) span.URI {
+func (s *snapshot) GoModForFile(uri protocol.DocumentURI) protocol.DocumentURI {
 	return moduleForURI(s.workspaceModFiles, uri)
 }
 
-func moduleForURI(modFiles map[span.URI]struct{}, uri span.URI) span.URI {
-	var match span.URI
+func moduleForURI(modFiles map[protocol.DocumentURI]struct{}, uri protocol.DocumentURI) protocol.DocumentURI {
+	var match protocol.DocumentURI
 	for modURI := range modFiles {
 		if !source.InDir(filepath.Dir(modURI.Filename()), uri.Filename()) {
 			continue
@@ -1171,7 +1170,7 @@ func moduleForURI(modFiles map[span.URI]struct{}, uri span.URI) span.URI {
 // containing uri, or a parent of that directory.
 //
 // The given uri must be a file, not a directory.
-func nearestModFile(ctx context.Context, uri span.URI, fs source.FileSource) (span.URI, error) {
+func nearestModFile(ctx context.Context, uri protocol.DocumentURI, fs source.FileSource) (protocol.DocumentURI, error) {
 	dir := filepath.Dir(uri.Filename())
 	mod, err := findRootPattern(ctx, dir, "go.mod", fs)
 	if err != nil {
@@ -1208,7 +1207,7 @@ func (s *snapshot) clearShouldLoad(scopes ...loadScope) {
 				s.shouldLoad.Delete(id)
 			}
 		case fileLoadScope:
-			uri := span.URI(scope)
+			uri := protocol.DocumentURI(scope)
 			ids := s.meta.ids[uri]
 			for _, id := range ids {
 				s.shouldLoad.Delete(id)
@@ -1217,7 +1216,7 @@ func (s *snapshot) clearShouldLoad(scopes ...loadScope) {
 	}
 }
 
-func (s *snapshot) FindFile(uri span.URI) source.FileHandle {
+func (s *snapshot) FindFile(uri protocol.DocumentURI) source.FileHandle {
 	s.view.markKnown(uri)
 
 	s.mu.Lock()
@@ -1232,7 +1231,7 @@ func (s *snapshot) FindFile(uri span.URI) source.FileHandle {
 //
 // ReadFile succeeds even if the file does not exist. A non-nil error return
 // indicates some type of internal error, for example if ctx is cancelled.
-func (s *snapshot) ReadFile(ctx context.Context, uri span.URI) (source.FileHandle, error) {
+func (s *snapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (source.FileHandle, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1241,14 +1240,14 @@ func (s *snapshot) ReadFile(ctx context.Context, uri span.URI) (source.FileHandl
 
 // preloadFiles delegates to the view FileSource to read the requested uris in
 // parallel, without holding the snapshot lock.
-func (s *snapshot) preloadFiles(ctx context.Context, uris []span.URI) {
+func (s *snapshot) preloadFiles(ctx context.Context, uris []protocol.DocumentURI) {
 	files := make([]source.FileHandle, len(uris))
 	var wg sync.WaitGroup
 	iolimit := make(chan struct{}, 20) // I/O concurrency limiting semaphore
 	for i, uri := range uris {
 		wg.Add(1)
 		iolimit <- struct{}{}
-		go func(i int, uri span.URI) {
+		go func(i int, uri protocol.DocumentURI) {
 			defer wg.Done()
 			fh, err := s.view.fs.ReadFile(ctx, uri)
 			<-iolimit
@@ -1279,7 +1278,7 @@ func (s *snapshot) preloadFiles(ctx context.Context, uris []span.URI) {
 // the lock for the wrapped snapshot.
 type lockedSnapshot struct{ wrapped *snapshot }
 
-func (s lockedSnapshot) ReadFile(ctx context.Context, uri span.URI) (source.FileHandle, error) {
+func (s lockedSnapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (source.FileHandle, error) {
 	s.wrapped.view.markKnown(uri)
 	if fh, ok := s.wrapped.files.Get(uri); ok {
 		return fh, nil
@@ -1293,7 +1292,7 @@ func (s lockedSnapshot) ReadFile(ctx context.Context, uri span.URI) (source.File
 	return fh, nil
 }
 
-func (s *snapshot) IsOpen(uri span.URI) bool {
+func (s *snapshot) IsOpen(uri protocol.DocumentURI) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1548,7 +1547,7 @@ func (s *snapshot) reloadOrphanedOpenFiles(ctx context.Context) error {
 		return nil
 	}
 
-	var uris []span.URI
+	var uris []protocol.DocumentURI
 	for _, file := range files {
 		uris = append(uris, file.URI())
 	}
@@ -1616,7 +1615,7 @@ func (s *snapshot) reloadOrphanedOpenFiles(ctx context.Context) error {
 // TODO(rfindley): reconcile the definition of "orphaned" here with
 // reloadOrphanedFiles. The latter does not include files with
 // command-line-arguments packages.
-func (s *snapshot) OrphanedFileDiagnostics(ctx context.Context) (map[span.URI]*source.Diagnostic, error) {
+func (s *snapshot) OrphanedFileDiagnostics(ctx context.Context) (map[protocol.DocumentURI]*source.Diagnostic, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
@@ -1644,8 +1643,8 @@ searchOverlays:
 		return nil, nil
 	}
 
-	loadedModFiles := make(map[span.URI]struct{}) // all mod files, including dependencies
-	ignoredFiles := make(map[span.URI]bool)       // files reported in packages.Package.IgnoredFiles
+	loadedModFiles := make(map[protocol.DocumentURI]struct{}) // all mod files, including dependencies
+	ignoredFiles := make(map[protocol.DocumentURI]bool)       // files reported in packages.Package.IgnoredFiles
 
 	meta, err := s.AllMetadata(ctx)
 	if err != nil {
@@ -1662,7 +1661,7 @@ searchOverlays:
 		}
 	}
 
-	diagnostics := make(map[span.URI]*source.Diagnostic)
+	diagnostics := make(map[protocol.DocumentURI]*source.Diagnostic)
 	for _, fh := range files {
 		// Only warn about orphaned files if the file is well-formed enough to
 		// actually be part of a package.
@@ -1818,7 +1817,7 @@ https://github.com/golang/tools/blob/master/gopls/doc/settings.md#buildflags-str
 //
 // Most likely, each call site of inVendor needs to be reconsidered to
 // understand and correctly implement the desired behavior.
-func inVendor(uri span.URI) bool {
+func inVendor(uri protocol.DocumentURI) bool {
 	_, after, found := strings.Cut(string(uri), "/vendor/")
 	// Only subdirectories of /vendor/ are considered vendored
 	// (/vendor/a/foo.go is vendored, /vendor/foo.go is not).
@@ -1890,7 +1889,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changed source.StateChange)
 	// they exist. Importantly, we don't call ReadFile here: consider the case
 	// where a file is added on disk; we don't want to read the newly added file
 	// into the old snapshot, as that will break our change detection below.
-	oldFiles := make(map[span.URI]source.FileHandle)
+	oldFiles := make(map[protocol.DocumentURI]source.FileHandle)
 	for uri := range changedFiles {
 		if fh, ok := s.files.Get(uri); ok {
 			oldFiles[uri] = fh
@@ -2200,11 +2199,11 @@ func cloneWith[K constraints.Ordered, V any](m *persistent.Map[K, V], changes ma
 // changed that happens not to be present in the map, but that's OK: the goal
 // of this function is to guarantee that IF the nearest mod file is present in
 // the map, it is invalidated.
-func deleteMostRelevantModFile(m *persistent.Map[span.URI, *memoize.Promise], changed span.URI) {
-	var mostRelevant span.URI
+func deleteMostRelevantModFile(m *persistent.Map[protocol.DocumentURI, *memoize.Promise], changed protocol.DocumentURI) {
+	var mostRelevant protocol.DocumentURI
 	changedFile := changed.Filename()
 
-	m.Range(func(modURI span.URI, _ *memoize.Promise) {
+	m.Range(func(modURI protocol.DocumentURI, _ *memoize.Promise) {
 		if len(modURI) > len(mostRelevant) {
 			if source.InDir(filepath.Dir(modURI.Filename()), changedFile) {
 				mostRelevant = modURI
@@ -2224,7 +2223,7 @@ func deleteMostRelevantModFile(m *persistent.Map[span.URI, *memoize.Promise], ch
 // If packageFileChanged is set, the file is either a new file, or has a new
 // package name. In this case, all known packages in the directory will be
 // invalidated.
-func invalidatedPackageIDs(uri span.URI, known map[span.URI][]PackageID, packageFileChanged bool) map[PackageID]struct{} {
+func invalidatedPackageIDs(uri protocol.DocumentURI, known map[protocol.DocumentURI][]PackageID, packageFileChanged bool) map[PackageID]struct{} {
 	invalidated := make(map[PackageID]struct{})
 
 	// At a minimum, we invalidate packages known to contain uri.
@@ -2461,7 +2460,7 @@ func (s *snapshot) BuiltinFile(ctx context.Context) (*source.ParsedGoFile, error
 	return pgfs[0], nil
 }
 
-func (s *snapshot) IsBuiltin(uri span.URI) bool {
+func (s *snapshot) IsBuiltin(uri protocol.DocumentURI) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// We should always get the builtin URI in a canonical form, so use simple

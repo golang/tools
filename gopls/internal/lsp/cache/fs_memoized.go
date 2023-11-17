@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/robustio"
@@ -30,14 +30,14 @@ type memoizedFS struct {
 // A DiskFile is a file on the filesystem, or a failure to read one.
 // It implements the source.FileHandle interface.
 type DiskFile struct {
-	uri     span.URI
+	uri     protocol.DocumentURI
 	modTime time.Time
 	content []byte
 	hash    source.Hash
 	err     error
 }
 
-func (h *DiskFile) URI() span.URI { return h.uri }
+func (h *DiskFile) URI() protocol.DocumentURI { return h.uri }
 
 func (h *DiskFile) FileIdentity() source.FileIdentity {
 	return source.FileIdentity{
@@ -51,7 +51,7 @@ func (h *DiskFile) Version() int32           { return 0 }
 func (h *DiskFile) Content() ([]byte, error) { return h.content, h.err }
 
 // ReadFile stats and (maybe) reads the file, updates the cache, and returns it.
-func (fs *memoizedFS) ReadFile(ctx context.Context, uri span.URI) (source.FileHandle, error) {
+func (fs *memoizedFS) ReadFile(ctx context.Context, uri protocol.DocumentURI) (source.FileHandle, error) {
 	id, mtime, err := robustio.GetFileID(uri.Filename())
 	if err != nil {
 		// file does not exist
@@ -137,7 +137,7 @@ func (fs *memoizedFS) fileStats() (files, largest, errs int) {
 // ioLimit limits the number of parallel file reads per process.
 var ioLimit = make(chan struct{}, 128)
 
-func readFile(ctx context.Context, uri span.URI, mtime time.Time) (*DiskFile, error) {
+func readFile(ctx context.Context, uri protocol.DocumentURI, mtime time.Time) (*DiskFile, error) {
 	select {
 	case ioLimit <- struct{}{}:
 	case <-ctx.Done():

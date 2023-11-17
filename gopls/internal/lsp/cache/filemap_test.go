@@ -12,7 +12,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 func TestFileMap(t *testing.T) {
@@ -84,7 +83,7 @@ func TestFileMap(t *testing.T) {
 			}
 
 			var gotFiles []string
-			m.Range(func(uri span.URI, _ source.FileHandle) {
+			m.Range(func(uri protocol.DocumentURI, _ source.FileHandle) {
 				gotFiles = append(gotFiles, normalize(uri.Filename()))
 			})
 			sort.Strings(gotFiles)

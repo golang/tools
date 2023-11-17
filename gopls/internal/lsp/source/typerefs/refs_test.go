@@ -13,9 +13,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 // TestRefs checks that the analysis reports, for each exported member
@@ -506,7 +506,7 @@ type Z map[ext.A]ext.B
 		t.Run(test.label, func(t *testing.T) {
 			var pgfs []*source.ParsedGoFile
 			for i, src := range test.srcs {
-				uri := span.URI(fmt.Sprintf("file:///%d.go", i))
+				uri := protocol.DocumentURI(fmt.Sprintf("file:///%d.go", i))
 				pgf, _ := cache.ParseGoSrc(ctx, token.NewFileSet(), uri, []byte(src), source.ParseFull, false)
 				if !test.allowErrs && pgf.ParseErr != nil {
 					t.Fatalf("ParseGoSrc(...) returned parse errors: %v", pgf.ParseErr)

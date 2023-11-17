@@ -25,7 +25,6 @@ import (
 	"golang.org/x/mod/semver"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
@@ -42,7 +41,7 @@ import (
 //
 // Folders must not be mutated, as they may be shared across multiple views.
 type Folder struct {
-	Dir     span.URI
+	Dir     protocol.DocumentURI
 	Name    string
 	Options *source.Options
 }
@@ -72,7 +71,7 @@ type View struct {
 	// TODO(golang/go#57558): this notion is fundamentally problematic, and
 	// should be removed.
 	knownFilesMu sync.Mutex
-	knownFiles   map[span.URI]bool
+	knownFiles   map[protocol.DocumentURI]bool
 
 	// initCancelFirstAttempt can be used to terminate the view's first
 	// attempt at initialization.
@@ -114,7 +113,7 @@ type viewDefinition struct {
 	goEnv
 
 	// gomod holds the relevant go.mod file for this workspace.
-	gomod span.URI
+	gomod protocol.DocumentURI
 
 	// The Go version in use: X in Go 1.X.
 	goversion int
@@ -138,7 +137,7 @@ type viewDefinition struct {
 	// The only case where this should matter is if we've narrowed the workspace to
 	// a single nested module. In that case, the go command won't be able to find
 	// the module unless we tell it the nested directory.
-	goCommandDir span.URI
+	goCommandDir protocol.DocumentURI
 }
 
 // effectiveGO111MODULE reports the value of GO111MODULE effective in the go
@@ -232,7 +231,7 @@ func (w viewDefinition) moduleMode() bool {
 //
 // The second result reports whether the effective GOWORK value is "" because
 // GOWORK=off.
-func (w viewDefinition) GOWORK() (span.URI, bool) {
+func (w viewDefinition) GOWORK() (protocol.DocumentURI, bool) {
 	if w.gowork == "off" || w.gowork == "" {
 		return "", w.gowork == "off"
 	}
@@ -351,7 +350,7 @@ func (v *View) ID() string { return v.id }
 // of the given go.mod file. On success, it is the caller's
 // responsibility to call the cleanup function when the file is no
 // longer needed.
-func tempModFile(modFh source.FileHandle, gosum []byte) (tmpURI span.URI, cleanup func(), err error) {
+func tempModFile(modFh source.FileHandle, gosum []byte) (tmpURI protocol.DocumentURI, cleanup func(), err error) {
 	filenameHash := source.Hashf("%s", modFh.URI().Filename())
 	tmpMod, err := os.CreateTemp("", fmt.Sprintf("go.%s.*.mod", filenameHash))
 	if err != nil {
@@ -402,7 +401,7 @@ func (v *View) Name() string {
 }
 
 // Folder returns the folder at the base of this view.
-func (v *View) Folder() span.URI {
+func (v *View) Folder() protocol.DocumentURI {
 	return v.folder.Dir
 }
 
@@ -411,7 +410,7 @@ func (v *View) Folder() span.URI {
 //
 // Calling this may cause each related view to be invalidated and a replacement
 // view added to the session.
-func (s *Session) SetFolderOptions(ctx context.Context, uri span.URI, options *source.Options) error {
+func (s *Session) SetFolderOptions(ctx context.Context, uri protocol.DocumentURI, options *source.Options) error {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 
@@ -525,7 +524,7 @@ func (s *snapshot) locateTemplateFiles(ctx context.Context) {
 	}
 }
 
-func (v *View) contains(uri span.URI) bool {
+func (v *View) contains(uri protocol.DocumentURI) bool {
 	// If we've expanded the go dir to a parent directory, consider if the
 	// expanded dir contains the uri.
 	// TODO(rfindley): should we ignore the root here? It is not provided by the
@@ -546,10 +545,10 @@ func (v *View) contains(uri span.URI) bool {
 
 // filterFunc returns a func that reports whether uri is filtered by the currently configured
 // directoryFilters.
-func (v *View) filterFunc() func(span.URI) bool {
+func (v *View) filterFunc() func(protocol.DocumentURI) bool {
 	folderDir := v.folder.Dir.Filename()
 	filterer := buildFilterer(folderDir, v.gomodcache, v.folder.Options)
-	return func(uri span.URI) bool {
+	return func(uri protocol.DocumentURI) bool {
 		// Only filter relative to the configured root directory.
 		if source.InDir(folderDir, uri.Filename()) {
 			return pathExcludedByFilter(strings.TrimPrefix(uri.Filename(), folderDir), filterer)
@@ -582,17 +581,17 @@ func (v *View) relevantChange(c source.FileModification) bool {
 	return v.contains(c.URI)
 }
 
-func (v *View) markKnown(uri span.URI) {
+func (v *View) markKnown(uri protocol.DocumentURI) {
 	v.knownFilesMu.Lock()
 	defer v.knownFilesMu.Unlock()
 	if v.knownFiles == nil {
-		v.knownFiles = make(map[span.URI]bool)
+		v.knownFiles = make(map[protocol.DocumentURI]bool)
 	}
 	v.knownFiles[uri] = true
 }
 
 // knownFile reports whether the specified valid URI (or an alias) is known to the view.
-func (v *View) knownFile(uri span.URI) bool {
+func (v *View) knownFile(uri protocol.DocumentURI) bool {
 	v.knownFilesMu.Lock()
 	defer v.knownFilesMu.Unlock()
 	return v.knownFiles[uri]
@@ -619,7 +618,7 @@ func (v *View) shutdown() {
 
 // While go list ./... skips directories starting with '.', '_', or 'testdata',
 // gopls may still load them via file queries. Explicitly filter them out.
-func (s *snapshot) IgnoredFile(uri span.URI) bool {
+func (s *snapshot) IgnoredFile(uri protocol.DocumentURI) bool {
 	// Fast path: if uri doesn't contain '.', '_', or 'testdata', it is not
 	// possible that it is ignored.
 	{
@@ -756,7 +755,7 @@ func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 	// parse, capture the parsing failure as a critical diagnostic.
 	var scopes []loadScope                  // scopes to load
 	var modDiagnostics []*source.Diagnostic // diagnostics for broken go.mod files
-	addError := func(uri span.URI, err error) {
+	addError := func(uri protocol.DocumentURI, err error) {
 		modDiagnostics = append(modDiagnostics, &source.Diagnostic{
 			URI:      uri,
 			Severity: protocol.SeverityError,
@@ -954,7 +953,7 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs source.
 //  1. if there is a go.mod file in a parent directory, return it
 //  2. else, if there is exactly one nested module, return it
 //  3. else, return ""
-func findWorkspaceModFile(ctx context.Context, folderURI span.URI, fs source.FileSource, excludePath func(string) bool) (span.URI, error) {
+func findWorkspaceModFile(ctx context.Context, folderURI protocol.DocumentURI, fs source.FileSource, excludePath func(string) bool) (protocol.DocumentURI, error) {
 	folder := folderURI.Filename()
 	match, err := findRootPattern(ctx, folder, "go.mod", fs)
 	if err != nil {
@@ -1024,7 +1023,7 @@ func (v *View) IsGoPrivatePath(target string) bool {
 	return globsMatchPath(v.goprivate, target)
 }
 
-func (s *snapshot) ModuleUpgrades(modfile span.URI) map[string]string {
+func (s *snapshot) ModuleUpgrades(modfile protocol.DocumentURI) map[string]string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	upgrades := map[string]string{}
@@ -1042,8 +1041,8 @@ func (s *snapshot) ModuleUpgrades(modfile span.URI) map[string]string {
 var MaxGovulncheckResultAge = 1 * time.Hour
 
 // TODO(rfindley): move to snapshot.go
-func (s *snapshot) Vulnerabilities(modfiles ...span.URI) map[span.URI]*vulncheck.Result {
-	m := make(map[span.URI]*vulncheck.Result)
+func (s *snapshot) Vulnerabilities(modfiles ...protocol.DocumentURI) map[protocol.DocumentURI]*vulncheck.Result {
+	m := make(map[protocol.DocumentURI]*vulncheck.Result)
 	now := time.Now()
 
 	s.mu.Lock()
@@ -1118,7 +1117,7 @@ var modFlagRegexp = regexp.MustCompile(`-mod[ =](\w+)`)
 // after we have a version of the workspace go.mod file on disk. Getting a
 // FileHandle from the cache for temporary files is problematic, since we
 // cannot delete it.
-func (s *snapshot) vendorEnabled(ctx context.Context, modURI span.URI, modContent []byte) (bool, error) {
+func (s *snapshot) vendorEnabled(ctx context.Context, modURI protocol.DocumentURI, modContent []byte) (bool, error) {
 	// Legacy GOPATH workspace?
 	if s.workspaceMode()&moduleMode == 0 {
 		return false, nil
@@ -1155,7 +1154,7 @@ func (s *snapshot) vendorEnabled(ctx context.Context, modURI span.URI, modConten
 
 // TODO(rfindley): clean up the redundancy of allFilesExcluded,
 // pathExcludedByFilterFunc, pathExcludedByFilter, view.filterFunc...
-func allFilesExcluded(files []string, filterFunc func(span.URI) bool) bool {
+func allFilesExcluded(files []string, filterFunc func(protocol.DocumentURI) bool) bool {
 	for _, f := range files {
 		uri := protocol.URIFromPath(f)
 		if !filterFunc(uri) {

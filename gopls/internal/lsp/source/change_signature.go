@@ -19,7 +19,6 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/imports"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
@@ -353,7 +352,7 @@ type signatureRewrite struct {
 // By passing an entirely new declaration, rewriteCalls may be used for
 // signature refactorings that may affect the function body, such as removing
 // or adding return values.
-func rewriteCalls(ctx context.Context, rw signatureRewrite) (map[span.URI][]byte, error) {
+func rewriteCalls(ctx context.Context, rw signatureRewrite) (map[protocol.DocumentURI][]byte, error) {
 	// tag is a unique prefix that is added to the delegated declaration.
 	//
 	// It must have a ~0% probability of causing collisions with existing names.
@@ -415,7 +414,7 @@ func rewriteCalls(ctx context.Context, rw signatureRewrite) (map[span.URI][]byte
 	// Type check pkg again with the modified file, to compute the synthetic
 	// callee.
 	logf := logger(ctx, "change signature", rw.snapshot.Options().VerboseOutput)
-	pkg2, info, err := reTypeCheck(logf, rw.pkg, map[span.URI]*ast.File{rw.pgf.URI: modifiedFile}, false)
+	pkg2, info, err := reTypeCheck(logf, rw.pkg, map[protocol.DocumentURI]*ast.File{rw.pgf.URI: modifiedFile}, false)
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +435,7 @@ func rewriteCalls(ctx context.Context, rw signatureRewrite) (map[span.URI][]byte
 // If expectErrors is true, reTypeCheck allows errors in the new package.
 // TODO(rfindley): perhaps this should be a filter to specify which errors are
 // acceptable.
-func reTypeCheck(logf func(string, ...any), orig Package, fileMask map[span.URI]*ast.File, expectErrors bool) (*types.Package, *types.Info, error) {
+func reTypeCheck(logf func(string, ...any), orig Package, fileMask map[protocol.DocumentURI]*ast.File, expectErrors bool) (*types.Package, *types.Info, error) {
 	pkg := types.NewPackage(string(orig.Metadata().PkgPath), string(orig.Metadata().Name))
 	info := &types.Info{
 		Types:      make(map[ast.Expr]types.TypeAndValue),

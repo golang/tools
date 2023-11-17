@@ -20,13 +20,12 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/gopls/internal/vulncheck/govulncheck"
 	"golang.org/x/tools/internal/event"
 )
 
 // Diagnostics returns diagnostics from parsing the modules in the workspace.
-func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[span.URI][]*source.Diagnostic, error) {
+func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
 	ctx, done := event.Start(ctx, "mod.Diagnostics", source.SnapshotLabels(snapshot)...)
 	defer done()
 
@@ -34,7 +33,7 @@ func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[span.URI][]
 }
 
 // Diagnostics returns diagnostics from running go mod tidy.
-func TidyDiagnostics(ctx context.Context, snapshot source.Snapshot) (map[span.URI][]*source.Diagnostic, error) {
+func TidyDiagnostics(ctx context.Context, snapshot source.Snapshot) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
 	ctx, done := event.Start(ctx, "mod.Diagnostics", source.SnapshotLabels(snapshot)...)
 	defer done()
 
@@ -43,7 +42,7 @@ func TidyDiagnostics(ctx context.Context, snapshot source.Snapshot) (map[span.UR
 
 // UpgradeDiagnostics returns upgrade diagnostics for the modules in the
 // workspace with known upgrades.
-func UpgradeDiagnostics(ctx context.Context, snapshot source.Snapshot) (map[span.URI][]*source.Diagnostic, error) {
+func UpgradeDiagnostics(ctx context.Context, snapshot source.Snapshot) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
 	ctx, done := event.Start(ctx, "mod.UpgradeDiagnostics", source.SnapshotLabels(snapshot)...)
 	defer done()
 
@@ -52,20 +51,20 @@ func UpgradeDiagnostics(ctx context.Context, snapshot source.Snapshot) (map[span
 
 // VulnerabilityDiagnostics returns vulnerability diagnostics for the active modules in the
 // workspace with known vulnerabilities.
-func VulnerabilityDiagnostics(ctx context.Context, snapshot source.Snapshot) (map[span.URI][]*source.Diagnostic, error) {
+func VulnerabilityDiagnostics(ctx context.Context, snapshot source.Snapshot) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
 	ctx, done := event.Start(ctx, "mod.VulnerabilityDiagnostics", source.SnapshotLabels(snapshot)...)
 	defer done()
 
 	return collectDiagnostics(ctx, snapshot, ModVulnerabilityDiagnostics)
 }
 
-func collectDiagnostics(ctx context.Context, snapshot source.Snapshot, diagFn func(context.Context, source.Snapshot, source.FileHandle) ([]*source.Diagnostic, error)) (map[span.URI][]*source.Diagnostic, error) {
+func collectDiagnostics(ctx context.Context, snapshot source.Snapshot, diagFn func(context.Context, source.Snapshot, source.FileHandle) ([]*source.Diagnostic, error)) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	cpulimit := runtime.GOMAXPROCS(0)
 	g.SetLimit(cpulimit)
 
 	var mu sync.Mutex
-	reports := make(map[span.URI][]*source.Diagnostic)
+	reports := make(map[protocol.DocumentURI][]*source.Diagnostic)
 
 	for _, uri := range snapshot.ModFiles() {
 		uri := uri
@@ -438,7 +437,7 @@ func sortedKeys(m map[string]bool) []string {
 // for more accurate investigation (if the present vulncheck diagnostics are based on
 // analysis less accurate than govulncheck) or reset the existing govulncheck result
 // (if the present vulncheck diagnostics are already based on govulncheck run).
-func suggestGovulncheckAction(fromGovulncheck bool, uri span.URI) (source.SuggestedFix, error) {
+func suggestGovulncheckAction(fromGovulncheck bool, uri protocol.DocumentURI) (source.SuggestedFix, error) {
 	if fromGovulncheck {
 		resetVulncheck, err := command.NewResetGoModDiagnosticsCommand("Reset govulncheck result", command.ResetGoModDiagnosticsArgs{
 			URIArg:           command.URIArg{URI: protocol.DocumentURI(uri)},

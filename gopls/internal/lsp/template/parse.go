@@ -26,7 +26,6 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -65,13 +64,13 @@ type Token struct {
 
 // All contains the Parse of all the template files
 type All struct {
-	files map[span.URI]*Parsed
+	files map[protocol.DocumentURI]*Parsed
 }
 
 // New returns the Parses of the snapshot's tmpl files
 // (maybe cache these, but then avoiding import cycles needs code rearrangements)
-func New(tmpls map[span.URI]source.FileHandle) *All {
-	all := make(map[span.URI]*Parsed)
+func New(tmpls map[protocol.DocumentURI]source.FileHandle) *All {
+	all := make(map[protocol.DocumentURI]*Parsed)
 	for k, v := range tmpls {
 		buf, err := v.Content()
 		if err != nil { // PJW: decide what to do with these errors

@@ -19,7 +19,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -56,7 +55,7 @@ func parseGoImpl(ctx context.Context, fset *token.FileSet, fh source.FileHandle,
 // ParseGoSrc parses a buffer of Go source, repairing the tree if necessary.
 //
 // The provided ctx is used only for logging.
-func ParseGoSrc(ctx context.Context, fset *token.FileSet, uri span.URI, src []byte, mode parser.Mode, purgeFuncBodies bool) (res *source.ParsedGoFile, fixes []fixType) {
+func ParseGoSrc(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, src []byte, mode parser.Mode, purgeFuncBodies bool) (res *source.ParsedGoFile, fixes []fixType) {
 	if purgeFuncBodies {
 		src = goplsastutil.PurgeFuncBodies(src)
 	}

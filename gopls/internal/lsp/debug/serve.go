@@ -808,7 +808,7 @@ Gopls Path: {{.GoplsPath}}<br>
 		Related []RelatedInformation
 	}
 	RelatedInformation: struct {
-		URI     span.URI
+		URI     protocol.DocumentURI
 		Range   protocol.Range
 		Message string
 	}

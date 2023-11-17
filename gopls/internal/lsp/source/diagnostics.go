@@ -11,12 +11,11 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 type SuggestedFix struct {
 	Title      string
-	Edits      map[span.URI][]protocol.TextEdit
+	Edits      map[protocol.DocumentURI][]protocol.TextEdit
 	Command    *protocol.Command
 	ActionKind protocol.CodeActionKind
 }
@@ -25,7 +24,7 @@ type SuggestedFix struct {
 //
 // If the provided tracker is non-nil, it may be used to provide notifications
 // of the ongoing analysis pass.
-func Analyze(ctx context.Context, snapshot Snapshot, pkgIDs map[PackageID]unit, tracker *progress.Tracker) (map[span.URI][]*Diagnostic, error) {
+func Analyze(ctx context.Context, snapshot Snapshot, pkgIDs map[PackageID]unit, tracker *progress.Tracker) (map[protocol.DocumentURI][]*Diagnostic, error) {
 	// Exit early if the context has been canceled. This also protects us
 	// from a race on Options, see golang/go#36699.
 	if ctx.Err() != nil {
@@ -52,7 +51,7 @@ func Analyze(ctx context.Context, snapshot Snapshot, pkgIDs map[PackageID]unit, 
 	}
 
 	// Report diagnostics and errors from root analyzers.
-	reports := make(map[span.URI][]*Diagnostic)
+	reports := make(map[protocol.DocumentURI][]*Diagnostic)
 	for _, diag := range analysisDiagnostics {
 		reports[diag.URI] = append(reports[diag.URI], diag)
 	}

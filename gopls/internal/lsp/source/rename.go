@@ -62,7 +62,6 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typeparams"
@@ -213,7 +212,7 @@ func checkRenamable(obj types.Object) error {
 // Rename returns a map of TextEdits for each file modified when renaming a
 // given identifier within a package and a boolean value of true for renaming
 // package and false otherwise.
-func Rename(ctx context.Context, snapshot Snapshot, f FileHandle, pp protocol.Position, newName string) (map[span.URI][]protocol.TextEdit, bool, error) {
+func Rename(ctx context.Context, snapshot Snapshot, f FileHandle, pp protocol.Position, newName string) (map[protocol.DocumentURI][]protocol.TextEdit, bool, error) {
 	ctx, done := event.Start(ctx, "source.Rename")
 	defer done()
 
@@ -227,7 +226,7 @@ func Rename(ctx context.Context, snapshot Snapshot, f FileHandle, pp protocol.Po
 		return nil, false, err
 	}
 
-	var editMap map[span.URI][]diff.Edit
+	var editMap map[protocol.DocumentURI][]diff.Edit
 	if inPackageName {
 		editMap, err = renamePackageName(ctx, snapshot, f, PackageName(newName))
 	} else {
@@ -238,7 +237,7 @@ func Rename(ctx context.Context, snapshot Snapshot, f FileHandle, pp protocol.Po
 	}
 
 	// Convert edits to protocol form.
-	result := make(map[span.URI][]protocol.TextEdit)
+	result := make(map[protocol.DocumentURI][]protocol.TextEdit)
 	for uri, edits := range editMap {
 		// Sort and de-duplicate edits.
 		//
@@ -287,7 +286,7 @@ func Rename(ctx context.Context, snapshot Snapshot, f FileHandle, pp protocol.Po
 }
 
 // renameOrdinary renames an ordinary (non-package) name throughout the workspace.
-func renameOrdinary(ctx context.Context, snapshot Snapshot, f FileHandle, pp protocol.Position, newName string) (map[span.URI][]diff.Edit, error) {
+func renameOrdinary(ctx context.Context, snapshot Snapshot, f FileHandle, pp protocol.Position, newName string) (map[protocol.DocumentURI][]diff.Edit, error) {
 	// Type-check the referring package and locate the object(s).
 	//
 	// Unlike NarrowestPackageForFile, this operation prefers the
@@ -476,7 +475,7 @@ func funcOrigin(fn *types.Func) *types.Func {
 // (This neglects obscure edge cases where a _test.go file changes the
 // selectors used only in an ITV, but life is short. Also sin must be
 // punished.)
-func typeCheckReverseDependencies(ctx context.Context, snapshot Snapshot, declURI span.URI, transitive bool) ([]Package, error) {
+func typeCheckReverseDependencies(ctx context.Context, snapshot Snapshot, declURI protocol.DocumentURI, transitive bool) ([]Package, error) {
 	variants, err := snapshot.MetadataForFile(ctx, declURI)
 	if err != nil {
 		return nil, err
@@ -549,7 +548,7 @@ func SortPostOrder(meta MetadataSource, ids []PackageID) {
 // within the specified packages, along with any other objects that
 // must be renamed as a consequence. The slice of packages must be
 // topologically ordered.
-func renameExported(pkgs []Package, declPkgPath PackagePath, declObjPath objectpath.Path, newName string) (map[span.URI][]diff.Edit, error) {
+func renameExported(pkgs []Package, declPkgPath PackagePath, declObjPath objectpath.Path, newName string) (map[protocol.DocumentURI][]diff.Edit, error) {
 
 	// A target is a name for an object that is stable across types.Packages.
 	type target struct {
@@ -575,7 +574,7 @@ func renameExported(pkgs []Package, declPkgPath PackagePath, declObjPath objectp
 	targets := map[target]bool{{declPkgPath, declObjPath}: true}
 
 	// Apply the renaming operation to each package.
-	allEdits := make(map[span.URI][]diff.Edit)
+	allEdits := make(map[protocol.DocumentURI][]diff.Edit)
 	for _, pkg := range pkgs {
 
 		// Resolved target objects within package pkg.
@@ -638,7 +637,7 @@ func renameExported(pkgs []Package, declPkgPath PackagePath, declObjPath objectp
 }
 
 // renamePackageName renames package declarations, imports, and go.mod files.
-func renamePackageName(ctx context.Context, s Snapshot, f FileHandle, newName PackageName) (map[span.URI][]diff.Edit, error) {
+func renamePackageName(ctx context.Context, s Snapshot, f FileHandle, newName PackageName) (map[protocol.DocumentURI][]diff.Edit, error) {
 	// Rename the package decl and all imports.
 	renamingEdits, err := renamePackage(ctx, s, f, newName)
 	if err != nil {
@@ -741,7 +740,7 @@ func renamePackageName(ctx context.Context, s Snapshot, f FileHandle, newName Pa
 // It updates package clauses and import paths for the renamed package as well
 // as any other packages affected by the directory renaming among all packages
 // known to the snapshot.
-func renamePackage(ctx context.Context, s Snapshot, f FileHandle, newName PackageName) (map[span.URI][]diff.Edit, error) {
+func renamePackage(ctx context.Context, s Snapshot, f FileHandle, newName PackageName) (map[protocol.DocumentURI][]diff.Edit, error) {
 	if strings.HasSuffix(string(newName), "_test") {
 		return nil, fmt.Errorf("cannot rename to _test package")
 	}
@@ -774,7 +773,7 @@ func renamePackage(ctx context.Context, s Snapshot, f FileHandle, newName Packag
 	}
 
 	// Rename package and import declarations in all relevant packages.
-	edits := make(map[span.URI][]diff.Edit)
+	edits := make(map[protocol.DocumentURI][]diff.Edit)
 	for _, m := range allMetadata {
 		// Special case: x_test packages for the renamed package will not have the
 		// package path as a dir prefix, but still need their package clauses
@@ -828,7 +827,7 @@ func renamePackage(ctx context.Context, s Snapshot, f FileHandle, newName Packag
 // the package described by the given metadata, to newName.
 //
 // Edits are written into the edits map.
-func renamePackageClause(ctx context.Context, m *Metadata, snapshot Snapshot, newName PackageName, edits map[span.URI][]diff.Edit) error {
+func renamePackageClause(ctx context.Context, m *Metadata, snapshot Snapshot, newName PackageName, edits map[protocol.DocumentURI][]diff.Edit) error {
 	// Rename internal references to the package in the renaming package.
 	for _, uri := range m.CompiledGoFiles {
 		fh, err := snapshot.ReadFile(ctx, uri)
@@ -858,14 +857,14 @@ func renamePackageClause(ctx context.Context, m *Metadata, snapshot Snapshot, ne
 // newPath and name newName.
 //
 // Edits are written into the edits map.
-func renameImports(ctx context.Context, snapshot Snapshot, m *Metadata, newPath ImportPath, newName PackageName, allEdits map[span.URI][]diff.Edit) error {
+func renameImports(ctx context.Context, snapshot Snapshot, m *Metadata, newPath ImportPath, newName PackageName, allEdits map[protocol.DocumentURI][]diff.Edit) error {
 	rdeps, err := snapshot.ReverseDependencies(ctx, m.ID, false) // find direct importers
 	if err != nil {
 		return err
 	}
 
 	// Pass 1: rename import paths in import declarations.
-	needsTypeCheck := make(map[PackageID][]span.URI)
+	needsTypeCheck := make(map[PackageID][]protocol.DocumentURI)
 	for _, rdep := range rdeps {
 		if rdep.IsIntermediateTestVariant() {
 			continue // for renaming, these variants are redundant
@@ -1004,7 +1003,7 @@ func renameImports(ctx context.Context, snapshot Snapshot, m *Metadata, newPath 
 // consequence of the requested renamings.
 //
 // It returns an error if the renaming would cause a conflict.
-func renameObjects(newName string, pkg Package, targets ...types.Object) (map[span.URI][]diff.Edit, map[types.Object]bool, error) {
+func renameObjects(newName string, pkg Package, targets ...types.Object) (map[protocol.DocumentURI][]diff.Edit, map[types.Object]bool, error) {
 	r := renamer{
 		pkg:          pkg,
 		objsToUpdate: make(map[types.Object]bool),
@@ -1048,8 +1047,8 @@ func renameObjects(newName string, pkg Package, targets ...types.Object) (map[sp
 }
 
 // Rename all references to the target objects.
-func (r *renamer) update() (map[span.URI][]diff.Edit, error) {
-	result := make(map[span.URI][]diff.Edit)
+func (r *renamer) update() (map[protocol.DocumentURI][]diff.Edit, error) {
+	result := make(map[protocol.DocumentURI][]diff.Edit)
 
 	// shouldUpdate reports whether obj is one of (or an
 	// instantiation of one of) the target objects.

@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/analysis/fillstruct"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/undeclaredname"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/imports"
 )
 
@@ -100,7 +99,7 @@ func ApplyFix(ctx context.Context, fix string, snapshot Snapshot, fh FileHandle,
 	if suggestion == nil {
 		return nil, nil
 	}
-	editsPerFile := map[span.URI]*protocol.TextDocumentEdit{}
+	editsPerFile := map[protocol.DocumentURI]*protocol.TextDocumentEdit{}
 	for _, edit := range suggestion.TextEdits {
 		tokFile := fset.File(edit.Pos)
 		if tokFile == nil {

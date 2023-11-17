@@ -22,7 +22,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -290,7 +289,7 @@ func go1Point() int {
 
 func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFolder) error {
 	originalViews := len(s.session.Views())
-	viewErrors := make(map[span.URI]error)
+	viewErrors := make(map[protocol.DocumentURI]error)
 
 	var ndiagnose sync.WaitGroup // number of unfinished diagnose calls
 	if s.Options().VerboseWorkDoneProgress {
@@ -466,7 +465,7 @@ func (s *server) SetOptions(opts *source.Options) {
 	s.options = opts
 }
 
-func (s *server) fetchFolderOptions(ctx context.Context, folder span.URI) (*source.Options, error) {
+func (s *server) fetchFolderOptions(ctx context.Context, folder protocol.DocumentURI) (*source.Options, error) {
 	if opts := s.Options(); !opts.ConfigurationSupported {
 		return opts, nil
 	}

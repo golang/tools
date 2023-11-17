@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/tokeninternal"
 )
@@ -126,7 +126,7 @@ func (c *parseCache) stop() {
 
 // parseKey uniquely identifies a parsed Go file.
 type parseKey struct {
-	uri             span.URI
+	uri             protocol.DocumentURI
 	mode            parser.Mode
 	purgeFuncBodies bool
 }

@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/refactor/inline"
 )
 
@@ -43,7 +42,7 @@ import (
 //
 // The code below notes where are assumptions are made that only hold true in
 // the case of parameter removal (annotated with 'Assumption:')
-func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot Snapshot, pkg Package, pgf *ParsedGoFile, origDecl *ast.FuncDecl, callee *inline.Callee, post func([]byte) []byte) (map[span.URI][]byte, error) {
+func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot Snapshot, pkg Package, pgf *ParsedGoFile, origDecl *ast.FuncDecl, callee *inline.Callee, post func([]byte) []byte) (map[protocol.DocumentURI][]byte, error) {
 	// Collect references.
 	var refs []protocol.Location
 	{
@@ -104,7 +103,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot Sna
 		calls []*ast.CallExpr
 	}
 
-	refsByFile := make(map[span.URI]*fileCalls)
+	refsByFile := make(map[protocol.DocumentURI]*fileCalls)
 	for _, ref := range refs {
 		refpkg := pkgs[pkgForRef[ref]]
 		pgf, err := refpkg.File(ref.URI.SpanURI())
@@ -161,7 +160,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot Sna
 	//
 	// Assumption: inlining does not affect the package scope, so we can operate
 	// on separate files independently.
-	result := make(map[span.URI][]byte)
+	result := make(map[protocol.DocumentURI][]byte)
 	for uri, callInfo := range refsByFile {
 		var (
 			calls   = callInfo.calls
@@ -229,7 +228,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot Sna
 			// anything in the surrounding scope.
 			//
 			// TODO(rfindley): improve this.
-			tpkg, tinfo, err = reTypeCheck(logf, callInfo.pkg, map[span.URI]*ast.File{uri: file}, true)
+			tpkg, tinfo, err = reTypeCheck(logf, callInfo.pkg, map[protocol.DocumentURI]*ast.File{uri: file}, true)
 			if err != nil {
 				return nil, bug.Errorf("type checking after inlining failed: %v", err)
 			}

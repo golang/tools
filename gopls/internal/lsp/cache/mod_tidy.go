@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
@@ -378,7 +377,7 @@ func directnessDiagnostic(m *protocol.Mapper, req *modfile.Require, computeEdits
 		Message:  fmt.Sprintf("%s should be %s", req.Mod.Path, direction),
 		SuggestedFixes: []source.SuggestedFix{{
 			Title: fmt.Sprintf("Change %s to %s", req.Mod.Path, direction),
-			Edits: map[span.URI][]protocol.TextEdit{
+			Edits: map[protocol.DocumentURI][]protocol.TextEdit{
 				m.URI: edits,
 			},
 			ActionKind: protocol.QuickFix,

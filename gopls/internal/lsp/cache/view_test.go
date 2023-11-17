@@ -13,7 +13,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 func TestCaseInsensitiveFilesystem(t *testing.T) {
@@ -94,7 +93,7 @@ module fg
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := span.URI("")
+		want := protocol.DocumentURI("")
 		if test.want != "" {
 			want = protocol.URIFromPath(rel.AbsPath(test.want))
 		}

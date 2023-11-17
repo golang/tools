@@ -32,7 +32,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/snippet"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fuzzy"
 	"golang.org/x/tools/internal/imports"
@@ -1257,7 +1256,7 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	// Consider adding a concurrency-safe API for completer.
 	var cMu sync.Mutex // guards c.items and c.matcher
 	var enough int32   // atomic bool
-	quickParse := func(uri span.URI, m *source.Metadata) error {
+	quickParse := func(uri protocol.DocumentURI, m *source.Metadata) error {
 		if atomic.LoadInt32(&enough) != 0 {
 			return nil
 		}

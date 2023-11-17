@@ -22,7 +22,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/template"
 	"golang.org/x/tools/gopls/internal/lsp/work"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 )
@@ -155,14 +154,14 @@ func computeDiagnosticHash(diags ...*source.Diagnostic) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func (s *server) diagnoseSnapshots(snapshots map[source.Snapshot][]span.URI, onDisk bool, cause ModificationSource) {
+func (s *server) diagnoseSnapshots(snapshots map[source.Snapshot][]protocol.DocumentURI, onDisk bool, cause ModificationSource) {
 	var diagnosticWG sync.WaitGroup
 	for snapshot, uris := range snapshots {
 		if snapshot.Options().DiagnosticsTrigger == source.DiagnosticsOnSave && cause == FromDidChange {
 			continue // user requested to update the diagnostics only on save. do not diagnose yet.
 		}
 		diagnosticWG.Add(1)
-		go func(snapshot source.Snapshot, uris []span.URI) {
+		go func(snapshot source.Snapshot, uris []protocol.DocumentURI) {
 			defer diagnosticWG.Done()
 			s.diagnoseSnapshot(snapshot, uris, onDisk, snapshot.Options().DiagnosticsDelay)
 		}(snapshot, uris)
@@ -181,7 +180,7 @@ func (s *server) diagnoseSnapshots(snapshots map[source.Snapshot][]span.URI, onD
 //
 // TODO(rfindley): eliminate the onDisk parameter, which looks misplaced. If we
 // don't want to diagnose changes on disk, filter out the changedURIs.
-func (s *server) diagnoseSnapshot(snapshot source.Snapshot, changedURIs []span.URI, onDisk bool, delay time.Duration) {
+func (s *server) diagnoseSnapshot(snapshot source.Snapshot, changedURIs []protocol.DocumentURI, onDisk bool, delay time.Duration) {
 	ctx := snapshot.BackgroundContext()
 	ctx, done := event.Start(ctx, "Server.diagnoseSnapshot", source.SnapshotLabels(snapshot)...)
 	defer done()
@@ -228,7 +227,7 @@ func (s *server) diagnoseSnapshot(snapshot source.Snapshot, changedURIs []span.U
 	s.publishDiagnostics(ctx, true, snapshot)
 }
 
-func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot source.Snapshot, uris []span.URI, onDisk bool) {
+func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot source.Snapshot, uris []protocol.DocumentURI, onDisk bool) {
 	ctx, done := event.Start(ctx, "Server.diagnoseChangedFiles", source.SnapshotLabels(snapshot)...)
 	defer done()
 
@@ -301,7 +300,7 @@ func (s *server) diagnose(ctx context.Context, snapshot source.Snapshot, analyze
 	}()
 
 	// common code for dispatching diagnostics
-	store := func(dsource diagnosticSource, operation string, diagsByFile map[span.URI][]*source.Diagnostic, err error, merge bool) {
+	store := func(dsource diagnosticSource, operation string, diagsByFile map[protocol.DocumentURI][]*source.Diagnostic, err error, merge bool) {
 		if err != nil {
 			event.Error(ctx, "warning: while "+operation, err, source.SnapshotLabels(snapshot)...)
 		}
@@ -386,7 +385,7 @@ func (s *server) diagnose(ctx context.Context, snapshot source.Snapshot, analyze
 
 	// Run type checking and go/analysis diagnosis of packages in parallel.
 	var (
-		seen       = map[span.URI]struct{}{}
+		seen       = map[protocol.DocumentURI]struct{}{}
 		toDiagnose = make(map[source.PackageID]*source.Metadata)
 		toAnalyze  = make(map[source.PackageID]unit)
 	)
@@ -450,8 +449,8 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot source.Snapshot, toD
 	// operations.
 	var (
 		wg            sync.WaitGroup
-		pkgDiags      map[span.URI][]*source.Diagnostic
-		analysisDiags = make(map[span.URI][]*source.Diagnostic)
+		pkgDiags      map[protocol.DocumentURI][]*source.Diagnostic
+		analysisDiags = make(map[protocol.DocumentURI][]*source.Diagnostic)
 	)
 
 	// Collect package diagnostics.
@@ -521,7 +520,7 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot source.Snapshot, toD
 	// Without explicitly storing empty diagnostics, the eager diagnostics
 	// publication for changed files will not publish anything for files with
 	// empty diagnostics.
-	storedPkgDiags := make(map[span.URI]bool)
+	storedPkgDiags := make(map[protocol.DocumentURI]bool)
 	for _, m := range toDiagnose {
 		for _, uri := range m.CompiledGoFiles {
 			s.storeDiagnostics(snapshot, uri, typeCheckSource, pkgDiags[uri], true)
@@ -596,7 +595,7 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot source.Snapshot, toD
 //
 // This can be used for ensuring gopls publishes diagnostics after certain file
 // events.
-func (s *server) mustPublishDiagnostics(uri span.URI) {
+func (s *server) mustPublishDiagnostics(uri protocol.DocumentURI) {
 	s.diagnosticsMu.Lock()
 	defer s.diagnosticsMu.Unlock()
 
@@ -616,7 +615,7 @@ func (s *server) mustPublishDiagnostics(uri span.URI) {
 //
 // TODO(hyangah): investigate whether we can unconditionally overwrite previous report.diags
 // with the new diags and eliminate the need for the `merge` flag.
-func (s *server) storeDiagnostics(snapshot source.Snapshot, uri span.URI, dsource diagnosticSource, diags []*source.Diagnostic, merge bool) {
+func (s *server) storeDiagnostics(snapshot source.Snapshot, uri protocol.DocumentURI, dsource diagnosticSource, diags []*source.Diagnostic, merge bool) {
 	// Safeguard: ensure that the file actually exists in the snapshot
 	// (see golang.org/issues/38602).
 	fh := snapshot.FindFile(uri)

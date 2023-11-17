@@ -14,7 +14,6 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -146,7 +145,7 @@ func (s *server) didChange(ctx context.Context, params *protocol.DidChangeTextDo
 
 // warnAboutModifyingGeneratedFiles shows a warning if a user tries to edit a
 // generated file for the first time.
-func (s *server) warnAboutModifyingGeneratedFiles(ctx context.Context, uri span.URI) error {
+func (s *server) warnAboutModifyingGeneratedFiles(ctx context.Context, uri protocol.DocumentURI) error {
 	s.changedFilesMu.Lock()
 	_, ok := s.changedFiles[uri]
 	if !ok {
@@ -278,7 +277,7 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []source.File
 
 	// Build a lookup map for file modifications, so that we can later join
 	// with the snapshot file associations.
-	modMap := make(map[span.URI]source.FileModification)
+	modMap := make(map[protocol.DocumentURI]source.FileModification)
 	for _, mod := range modifications {
 		modMap[mod.URI] = mod
 	}
@@ -318,7 +317,7 @@ func DiagnosticWorkTitle(cause ModificationSource) string {
 	return fmt.Sprintf("diagnosing %v", cause)
 }
 
-func (s *server) changedText(ctx context.Context, uri span.URI, changes []protocol.TextDocumentContentChangeEvent) ([]byte, error) {
+func (s *server) changedText(ctx context.Context, uri protocol.DocumentURI, changes []protocol.TextDocumentContentChangeEvent) ([]byte, error) {
 	if len(changes) == 0 {
 		return nil, fmt.Errorf("%w: no content changes provided", jsonrpc2.ErrInternal)
 	}
@@ -331,7 +330,7 @@ func (s *server) changedText(ctx context.Context, uri span.URI, changes []protoc
 	return s.applyIncrementalChanges(ctx, uri, changes)
 }
 
-func (s *server) applyIncrementalChanges(ctx context.Context, uri span.URI, changes []protocol.TextDocumentContentChangeEvent) ([]byte, error) {
+func (s *server) applyIncrementalChanges(ctx context.Context, uri protocol.DocumentURI, changes []protocol.TextDocumentContentChangeEvent) ([]byte, error) {
 	fh, err := s.session.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, err

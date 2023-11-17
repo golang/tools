@@ -28,7 +28,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gcimporter"
@@ -1352,7 +1351,7 @@ func (s *snapshot) typeCheckInputs(ctx context.Context, m *source.Metadata) (typ
 
 // readFiles reads the content of each file URL from the source
 // (e.g. snapshot or cache).
-func readFiles(ctx context.Context, fs source.FileSource, uris []span.URI) (_ []source.FileHandle, err error) {
+func readFiles(ctx context.Context, fs source.FileSource, uris []protocol.DocumentURI) (_ []source.FileHandle, err error) {
 	fhs := make([]source.FileHandle, len(uris))
 	for i, uri := range uris {
 		fhs[i], err = fs.ReadFile(ctx, uri)
@@ -1436,7 +1435,7 @@ func typeCheckImpl(ctx context.Context, b *typeCheckBatch, inputs typeCheckInput
 
 	// Track URIs with parse errors so that we can suppress type errors for these
 	// files.
-	unparseable := map[span.URI]bool{}
+	unparseable := map[protocol.DocumentURI]bool{}
 	for _, e := range pkg.parseErrors {
 		diags, err := parseErrorDiagnostics(pkg, e)
 		if err != nil {

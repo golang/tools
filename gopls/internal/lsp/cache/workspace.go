@@ -15,7 +15,6 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 // TODO(rfindley): now that experimentalWorkspaceModule is gone, this file can
@@ -23,7 +22,7 @@ import (
 
 // computeWorkspaceModFiles computes the set of workspace mod files based on the
 // value of go.mod, go.work, and GO111MODULE.
-func computeWorkspaceModFiles(ctx context.Context, gomod, gowork span.URI, go111module go111module, fs source.FileSource) (map[span.URI]struct{}, error) {
+func computeWorkspaceModFiles(ctx context.Context, gomod, gowork protocol.DocumentURI, go111module go111module, fs source.FileSource) (map[protocol.DocumentURI]struct{}, error) {
 	if go111module == off {
 		return nil, nil
 	}
@@ -42,7 +41,7 @@ func computeWorkspaceModFiles(ctx context.Context, gomod, gowork span.URI, go111
 		if err != nil {
 			return nil, fmt.Errorf("parsing go.work: %w", err)
 		}
-		modFiles := make(map[span.URI]struct{})
+		modFiles := make(map[protocol.DocumentURI]struct{})
 		for _, use := range workFile.Use {
 			modDir := filepath.FromSlash(use.Path)
 			if !filepath.IsAbs(modDir) {
@@ -54,18 +53,18 @@ func computeWorkspaceModFiles(ctx context.Context, gomod, gowork span.URI, go111
 		return modFiles, nil
 	}
 	if gomod != "" {
-		return map[span.URI]struct{}{gomod: {}}, nil
+		return map[protocol.DocumentURI]struct{}{gomod: {}}, nil
 	}
 	return nil, nil
 }
 
 // isGoMod reports if uri is a go.mod file.
-func isGoMod(uri span.URI) bool {
+func isGoMod(uri protocol.DocumentURI) bool {
 	return filepath.Base(uri.Filename()) == "go.mod"
 }
 
 // isGoWork reports if uri is a go.work file.
-func isGoWork(uri span.URI) bool {
+func isGoWork(uri protocol.DocumentURI) bool {
 	return filepath.Base(uri.Filename()) == "go.work"
 }
 
@@ -91,9 +90,9 @@ const fileLimit = 100_000
 // searching stops once modLimit modules have been found.
 //
 // TODO(rfindley): consider overlays.
-func findModules(root span.URI, excludePath func(string) bool, modLimit int) (map[span.URI]struct{}, error) {
+func findModules(root protocol.DocumentURI, excludePath func(string) bool, modLimit int) (map[protocol.DocumentURI]struct{}, error) {
 	// Walk the view's folder to find all modules in the view.
-	modFiles := make(map[span.URI]struct{})
+	modFiles := make(map[protocol.DocumentURI]struct{})
 	searched := 0
 	errDone := errors.New("done")
 	err := filepath.WalkDir(root.Filename(), func(path string, info fs.DirEntry, err error) error {

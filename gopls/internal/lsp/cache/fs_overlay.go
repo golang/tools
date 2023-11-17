@@ -8,8 +8,8 @@ import (
 	"context"
 	"sync"
 
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 // An overlayFS is a source.FileSource that keeps track of overlays on top of a
@@ -18,13 +18,13 @@ type overlayFS struct {
 	delegate source.FileSource
 
 	mu       sync.Mutex
-	overlays map[span.URI]*Overlay
+	overlays map[protocol.DocumentURI]*Overlay
 }
 
 func newOverlayFS(delegate source.FileSource) *overlayFS {
 	return &overlayFS{
 		delegate: delegate,
-		overlays: make(map[span.URI]*Overlay),
+		overlays: make(map[protocol.DocumentURI]*Overlay),
 	}
 }
 
@@ -39,7 +39,7 @@ func (fs *overlayFS) Overlays() []*Overlay {
 	return overlays
 }
 
-func (fs *overlayFS) ReadFile(ctx context.Context, uri span.URI) (source.FileHandle, error) {
+func (fs *overlayFS) ReadFile(ctx context.Context, uri protocol.DocumentURI) (source.FileHandle, error) {
 	fs.mu.Lock()
 	overlay, ok := fs.overlays[uri]
 	fs.mu.Unlock()
@@ -52,7 +52,7 @@ func (fs *overlayFS) ReadFile(ctx context.Context, uri span.URI) (source.FileHan
 // An Overlay is a file open in the editor. It may have unsaved edits.
 // It implements the source.FileHandle interface.
 type Overlay struct {
-	uri     span.URI
+	uri     protocol.DocumentURI
 	content []byte
 	hash    source.Hash
 	version int32
@@ -63,7 +63,7 @@ type Overlay struct {
 	saved bool
 }
 
-func (o *Overlay) URI() span.URI { return o.uri }
+func (o *Overlay) URI() protocol.DocumentURI { return o.uri }
 
 func (o *Overlay) FileIdentity() source.FileIdentity {
 	return source.FileIdentity{

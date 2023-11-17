@@ -13,7 +13,6 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 // line number (1-based) and message
@@ -147,7 +146,7 @@ func References(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 	return ans, nil
 }
 
-func SemanticTokens(ctx context.Context, snapshot source.Snapshot, spn span.URI, add func(line, start, len uint32), d func() []uint32) (*protocol.SemanticTokens, error) {
+func SemanticTokens(ctx context.Context, snapshot source.Snapshot, spn protocol.DocumentURI, add func(line, start, len uint32), d func() []uint32) (*protocol.SemanticTokens, error) {
 	fh, err := snapshot.ReadFile(ctx, spn)
 	if err != nil {
 		return nil, err

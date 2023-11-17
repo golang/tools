@@ -25,7 +25,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -273,7 +272,7 @@ func BenchmarkBuildPackageGraph(b *testing.B) {
 
 type memoizedParser struct {
 	mu    sync.Mutex
-	files map[span.URI]*futureParse
+	files map[protocol.DocumentURI]*futureParse
 }
 
 type futureParse struct {
@@ -284,12 +283,12 @@ type futureParse struct {
 
 func newParser() *memoizedParser {
 	return &memoizedParser{
-		files: make(map[span.URI]*futureParse),
+		files: make(map[protocol.DocumentURI]*futureParse),
 	}
 }
 
-func (p *memoizedParser) parse(ctx context.Context, uri span.URI) (*ParsedGoFile, error) {
-	doParse := func(ctx context.Context, uri span.URI) (*ParsedGoFile, error) {
+func (p *memoizedParser) parse(ctx context.Context, uri protocol.DocumentURI) (*ParsedGoFile, error) {
+	doParse := func(ctx context.Context, uri protocol.DocumentURI) (*ParsedGoFile, error) {
 		// TODO(adonovan): hoist this operation outside the benchmark critsec.
 		content, err := os.ReadFile(uri.Filename())
 		if err != nil {

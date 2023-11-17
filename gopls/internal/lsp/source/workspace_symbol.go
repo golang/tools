@@ -16,7 +16,6 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fuzzy"
 )
@@ -300,7 +299,7 @@ func collectSymbols(ctx context.Context, views []View, matcherType SymbolMatcher
 	// Extract symbols from all files.
 	var work []symbolFile
 	var roots []string
-	seen := make(map[span.URI]bool)
+	seen := make(map[protocol.DocumentURI]bool)
 	// TODO(adonovan): opt: parallelize this loop? How often is len > 1?
 	for _, v := range views {
 		snapshot, release, err := v.Snapshot()
@@ -447,7 +446,7 @@ func convertFilterToRegexp(filter string) *regexp.Regexp {
 
 // symbolFile holds symbol information for a single file.
 type symbolFile struct {
-	uri  span.URI
+	uri  protocol.DocumentURI
 	md   *Metadata
 	syms []Symbol
 }
@@ -591,7 +590,7 @@ type symbolInformation struct {
 	symbol    string
 	container string
 	kind      protocol.SymbolKind
-	uri       span.URI
+	uri       protocol.DocumentURI
 	rng       protocol.Range
 }
 

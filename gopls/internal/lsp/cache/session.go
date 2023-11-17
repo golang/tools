@@ -19,7 +19,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/gopls/internal/persistent"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
@@ -38,7 +37,7 @@ type Session struct {
 
 	viewMu  sync.Mutex
 	views   []*View
-	viewMap map[span.URI]*View // file->best view
+	viewMap map[protocol.DocumentURI]*View // file->best view
 
 	parseCache *parseCache
 
@@ -104,7 +103,7 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, source.Sn
 	}
 	s.views = append(s.views, view)
 	// we always need to drop the view map
-	s.viewMap = make(map[span.URI]*View)
+	s.viewMap = make(map[protocol.DocumentURI]*View)
 	return view, snapshot, release, nil
 }
 
@@ -161,19 +160,19 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 		meta:                 new(metadataGraph),
 		files:                newFileMap(),
 		activePackages:       new(persistent.Map[PackageID, *Package]),
-		symbolizeHandles:     new(persistent.Map[span.URI, *memoize.Promise]),
+		symbolizeHandles:     new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
 		shouldLoad:           new(persistent.Map[PackageID, []PackagePath]),
-		unloadableFiles:      new(persistent.Set[span.URI]),
-		parseModHandles:      new(persistent.Map[span.URI, *memoize.Promise]),
-		parseWorkHandles:     new(persistent.Map[span.URI, *memoize.Promise]),
-		modTidyHandles:       new(persistent.Map[span.URI, *memoize.Promise]),
-		modVulnHandles:       new(persistent.Map[span.URI, *memoize.Promise]),
-		modWhyHandles:        new(persistent.Map[span.URI, *memoize.Promise]),
+		unloadableFiles:      new(persistent.Set[protocol.DocumentURI]),
+		parseModHandles:      new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		parseWorkHandles:     new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		modTidyHandles:       new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		modVulnHandles:       new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		modWhyHandles:        new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
 		workspaceModFiles:    wsModFiles,
 		workspaceModFilesErr: wsModFilesErr,
 		pkgIndex:             typerefs.NewPackageIndex(),
-		moduleUpgrades:       new(persistent.Map[span.URI, map[string]string]),
-		vulns:                new(persistent.Map[span.URI, *vulncheck.Result]),
+		moduleUpgrades:       new(persistent.Map[protocol.DocumentURI, map[string]string]),
+		vulns:                new(persistent.Map[protocol.DocumentURI, *vulncheck.Result]),
 	}
 	// Save one reference in the view.
 	v.releaseSnapshot = v.snapshot.Acquire()
@@ -223,14 +222,14 @@ func (s *Session) View(id string) (*View, error) {
 
 // ViewOf returns a view corresponding to the given URI.
 // If the file is not already associated with a view, pick one using some heuristics.
-func (s *Session) ViewOf(uri span.URI) (*View, error) {
+func (s *Session) ViewOf(uri protocol.DocumentURI) (*View, error) {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 	return s.viewOfLocked(uri)
 }
 
 // Precondition: caller holds s.viewMu lock.
-func (s *Session) viewOfLocked(uri span.URI) (*View, error) {
+func (s *Session) viewOfLocked(uri protocol.DocumentURI) (*View, error) {
 	// Check if we already know this file.
 	if v, found := s.viewMap[uri]; found {
 		return v, nil
@@ -253,7 +252,7 @@ func (s *Session) Views() []*View {
 
 // bestViewForURI returns the most closely matching view for the given URI
 // out of the given set of views.
-func bestViewForURI(uri span.URI, views []*View) *View {
+func bestViewForURI(uri protocol.DocumentURI, views []*View) *View {
 	// we need to find the best view for this file
 	var longest *View
 	for _, view := range views {
@@ -357,7 +356,7 @@ func removeElement(slice []*View, index int) []*View {
 // not found. s.viewMu must be held while calling this function.
 func (s *Session) dropView(v *View) int {
 	// we always need to drop the view map
-	s.viewMap = make(map[span.URI]*View)
+	s.viewMap = make(map[protocol.DocumentURI]*View)
 	for i := range s.views {
 		if v == s.views[i] {
 			// we found the view, drop it and return the index it was found at
@@ -373,7 +372,7 @@ func (s *Session) dropView(v *View) int {
 }
 
 // ResetView resets the best view for the given URI.
-func (s *Session) ResetView(ctx context.Context, uri span.URI) (*View, error) {
+func (s *Session) ResetView(ctx context.Context, uri protocol.DocumentURI) (*View, error) {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 	v := bestViewForURI(uri, s.views)
@@ -389,7 +388,7 @@ func (s *Session) ResetView(ctx context.Context, uri span.URI) (*View, error) {
 // TODO(rfindley): what happens if this function fails? It must leave us in a
 // broken state, which we should surface to the user, probably as a request to
 // restart gopls.
-func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModification) (map[source.Snapshot][]span.URI, func(), error) {
+func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModification) (map[source.Snapshot][]protocol.DocumentURI, func(), error) {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 
@@ -456,8 +455,8 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 	}
 
 	// Collect information about views affected by these changes.
-	views := make(map[*View]map[span.URI]source.FileHandle)
-	affectedViews := map[span.URI][]*View{}
+	views := make(map[*View]map[protocol.DocumentURI]source.FileHandle)
+	affectedViews := map[protocol.DocumentURI][]*View{}
 	for _, c := range changes {
 		// Build the list of affected views.
 		var changedViews []*View
@@ -489,7 +488,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 			// Make sure that the file is added to the view's seenFiles set.
 			view.markKnown(c.URI)
 			if _, ok := views[view]; !ok {
-				views[view] = make(map[span.URI]source.FileHandle)
+				views[view] = make(map[protocol.DocumentURI]source.FileHandle)
 			}
 			views[view][c.URI] = fh
 		}
@@ -515,7 +514,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 	// it "most" belongs. We do this by picking the best view for each URI,
 	// and then aggregating the set of snapshots and their URIs (to avoid
 	// diagnosing the same snapshot multiple times).
-	snapshotURIs := map[source.Snapshot][]span.URI{}
+	snapshotURIs := map[source.Snapshot][]protocol.DocumentURI{}
 	for _, mod := range changes {
 		viewSlice, ok := affectedViews[mod.URI]
 		if !ok || len(viewSlice) == 0 {
@@ -555,7 +554,7 @@ func (s *Session) ExpandModificationsToDirectories(ctx context.Context, changes 
 	// we don't need to invalidate them.
 	var result []source.FileModification
 	for _, c := range changes {
-		expanded := make(map[span.URI]bool)
+		expanded := make(map[protocol.DocumentURI]bool)
 		for _, snapshot := range snapshots {
 			for _, uri := range snapshot.filesInDir(c.URI) {
 				expanded[uri] = true
@@ -664,7 +663,7 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []source.FileMo
 	return nil
 }
 
-func mustReadFile(ctx context.Context, fs source.FileSource, uri span.URI) source.FileHandle {
+func mustReadFile(ctx context.Context, fs source.FileSource, uri protocol.DocumentURI) source.FileHandle {
 	ctx = xcontext.Detach(ctx)
 	fh, err := fs.ReadFile(ctx, uri)
 	if err != nil {
@@ -677,11 +676,11 @@ func mustReadFile(ctx context.Context, fs source.FileSource, uri span.URI) sourc
 
 // A brokenFile represents an unexpected failure to read a file.
 type brokenFile struct {
-	uri span.URI
+	uri protocol.DocumentURI
 	err error
 }
 
-func (b brokenFile) URI() span.URI                     { return b.uri }
+func (b brokenFile) URI() protocol.DocumentURI         { return b.uri }
 func (b brokenFile) FileIdentity() source.FileIdentity { return source.FileIdentity{URI: b.uri} }
 func (b brokenFile) SameContentsOnDisk() bool          { return false }
 func (b brokenFile) Version() int32                    { return 0 }

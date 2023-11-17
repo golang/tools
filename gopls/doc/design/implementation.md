@@ -31,7 +31,6 @@ Package | Description
 [internal/lsp/debug] | features to aid in debugging gopls
 [internal/lsp/protocol] | the types of LSP request and response messages
 [internal/lsp/source] | the core feature implementations
-[internal/span] | a package for dealing with source file locations
 [internal/memoize] | a function invocation cache used to reduce the work done
 [internal/jsonrpc2] | an implementation of the JSON RPC2 specification
 
@@ -41,8 +40,7 @@ Package | Description
 [internal/lsp/cache]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/cache
 [internal/cmd]: https://github.com/golang/tools/tree/master/gopls/internal/cmd
 [internal/lsp/debug]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/debug
-[internal/lsp/protocol]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/protocol
 [internal/lsp/source]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/source
 [internal/memoize]: https://github.com/golang/tools/tree/master/internal/memoize
-[internal/span]: https://github.com/golang/tools/tree/master/gopls/internal/span
+[internal/lsp/protocol]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/protocol
 [x/tools]: https://github.com/golang/tools

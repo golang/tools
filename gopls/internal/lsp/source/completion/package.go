@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/fuzzy"
 )
 
@@ -178,7 +177,7 @@ func cursorInComment(file *token.File, cursor token.Pos, src []byte) bool {
 
 // packageNameCompletions returns name completions for a package clause using
 // the current name as prefix.
-func (c *completer) packageNameCompletions(ctx context.Context, fileURI span.URI, name *ast.Ident) error {
+func (c *completer) packageNameCompletions(ctx context.Context, fileURI protocol.DocumentURI, name *ast.Ident) error {
 	cursor := int(c.pos - name.NamePos)
 	if cursor < 0 || cursor > len(name.Name) {
 		return errors.New("cursor is not in package name identifier")
@@ -202,7 +201,7 @@ func (c *completer) packageNameCompletions(ctx context.Context, fileURI span.URI
 // have the given prefix and are used in the same directory as the given
 // file. This also includes test packages for these packages (<pkg>_test) and
 // the directory name itself.
-func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI span.URI, prefix string) (packages []candidate, err error) {
+func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI protocol.DocumentURI, prefix string) (packages []candidate, err error) {
 	active, err := snapshot.WorkspaceMetadata(ctx)
 	if err != nil {
 		return nil, err
