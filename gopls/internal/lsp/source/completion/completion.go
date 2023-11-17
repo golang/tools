@@ -531,7 +531,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 			triggerKind:      protoContext.TriggerKind,
 		},
 		fh:                        fh,
-		filename:                  fh.URI().Filename(),
+		filename:                  fh.URI().Path(),
 		tokFile:                   pgf.Tok,
 		file:                      pgf.File,
 		path:                      path,

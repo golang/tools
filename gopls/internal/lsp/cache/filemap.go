@@ -104,7 +104,7 @@ func (m *fileMap) Set(key protocol.DocumentURI, fh source.FileHandle) {
 
 // addDirs adds all directories containing u to the dirs set.
 func (m *fileMap) addDirs(u protocol.DocumentURI) {
-	dir := filepath.Dir(u.Filename())
+	dir := filepath.Dir(u.Path())
 	for dir != "" && !m.dirs.Contains(dir) {
 		m.dirs.Add(dir)
 		dir = filepath.Dir(dir)

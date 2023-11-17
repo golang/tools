@@ -196,7 +196,7 @@ func (s span) Format(f fmt.State, c rune) {
 	if c == 'f' {
 		uri = path.Base(uri)
 	} else if !fullForm {
-		uri = s.v.URI.Filename()
+		uri = s.v.URI.Path()
 	}
 	fmt.Fprint(f, uri)
 	if !s.IsValid() || (!fullForm && s.v.Start.isZero() && s.v.End.isZero()) {

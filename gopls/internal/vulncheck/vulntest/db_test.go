@@ -37,7 +37,7 @@ func TestNewDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Clean()
-	dbpath := protocol.DocumentURI(db.URI()).Filename()
+	dbpath := protocol.DocumentURI(db.URI()).Path()
 
 	// The generated JSON file will be in DB/GO-2022-0001.json.
 	got := readOSVEntry(t, filepath.Join(dbpath, "GO-2020-0001.json"))

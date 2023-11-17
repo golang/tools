@@ -48,13 +48,10 @@ func (uri DocumentURI) IsFile() bool {
 	return strings.HasPrefix(string(uri), "file://")
 }
 
-// Filename returns the file path for the given URI.
+// Path returns the file path for the given URI.
 //
-// Filename panics if called on a URI that is not a valid filename.
-//
-// TODO(adonovan): rename to Path for consistency with URIFromPath.
-// (It's the technical name for that portion of a URI, and it's short.)
-func (uri DocumentURI) Filename() string {
+// Path panics if called on a URI that is not a valid filename.
+func (uri DocumentURI) Path() string {
 	filename, err := filename(uri)
 	if err != nil {
 		// e.g. ParseRequestURI failed.

@@ -306,7 +306,7 @@ func (s *server) diagnose(ctx context.Context, snapshot source.Snapshot, analyze
 		}
 		for uri, diags := range diagsByFile {
 			if uri == "" {
-				event.Error(ctx, "missing URI while "+operation, fmt.Errorf("empty URI"), tag.Directory.Of(snapshot.View().Folder().Filename()))
+				event.Error(ctx, "missing URI while "+operation, fmt.Errorf("empty URI"), tag.Directory.Of(snapshot.View().Folder().Path()))
 				continue
 			}
 			s.storeDiagnostics(snapshot, uri, dsource, diags, merge)
@@ -824,7 +824,7 @@ func (s *server) shouldIgnoreError(ctx context.Context, snapshot source.Snapshot
 	// TODO(rfindley): surely it is not correct to walk the folder here just to
 	// suppress diagnostics, every time we compute diagnostics.
 	var hasGo bool
-	_ = filepath.Walk(snapshot.View().Folder().Filename(), func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(snapshot.View().Folder().Path(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -845,7 +845,7 @@ func (s *server) Diagnostics() map[string][]string {
 	s.diagnosticsMu.Lock()
 	defer s.diagnosticsMu.Unlock()
 	for k, v := range s.diagnostics {
-		fn := k.Filename()
+		fn := k.Path()
 		for typ, d := range v.reports {
 			if len(d.diags) == 0 {
 				continue
@@ -863,7 +863,7 @@ func auxStr(v *source.Diagnostic, d *diagnosticReport, typ diagnosticSource) str
 	msg := fmt.Sprintf("(%s)%q(source:%q,code:%q,severity:%s,snapshot:%d,type:%s)",
 		v.Range, v.Message, v.Source, v.Code, v.Severity, d.snapshotID, typ)
 	for _, r := range v.Related {
-		msg += fmt.Sprintf(" [%s:%s,%q]", r.Location.URI.Filename(), r.Location.Range, r.Message)
+		msg += fmt.Sprintf(" [%s:%s,%q]", r.Location.URI.Path(), r.Location.Range, r.Message)
 	}
 	return msg
 }

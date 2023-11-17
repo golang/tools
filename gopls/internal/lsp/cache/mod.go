@@ -70,7 +70,7 @@ func parseModImpl(ctx context.Context, fh source.FileHandle) (*source.ParsedModu
 		return nil, err
 	}
 	m := protocol.NewMapper(fh.URI(), contents)
-	file, parseErr := modfile.Parse(fh.URI().Filename(), contents, nil)
+	file, parseErr := modfile.Parse(fh.URI().Path(), contents, nil)
 	// Attempt to convert the error to a standardized parse error.
 	var parseErrors []*source.Diagnostic
 	if parseErr != nil {
@@ -147,7 +147,7 @@ func parseWorkImpl(ctx context.Context, fh source.FileHandle) (*source.ParsedWor
 		return nil, err
 	}
 	m := protocol.NewMapper(fh.URI(), content)
-	file, parseErr := modfile.ParseWork(fh.URI().Filename(), content, nil)
+	file, parseErr := modfile.ParseWork(fh.URI().Path(), content, nil)
 	// Attempt to convert the error to a standardized parse error.
 	var parseErrors []*source.Diagnostic
 	if parseErr != nil {
@@ -203,7 +203,7 @@ func (s *snapshot) goSum(ctx context.Context, modURI protocol.DocumentURI) []byt
 }
 
 func sumFilename(modURI protocol.DocumentURI) string {
-	return strings.TrimSuffix(modURI.Filename(), ".mod") + ".sum"
+	return strings.TrimSuffix(modURI.Path(), ".mod") + ".sum"
 }
 
 // ModWhy returns the "go mod why" result for each module named in a
@@ -264,7 +264,7 @@ func modWhyImpl(ctx context.Context, snapshot *snapshot, fh source.FileHandle) (
 	inv := &gocommand.Invocation{
 		Verb:       "mod",
 		Args:       []string{"why", "-m"},
-		WorkingDir: filepath.Dir(fh.URI().Filename()),
+		WorkingDir: filepath.Dir(fh.URI().Path()),
 	}
 	for _, req := range pm.File.Require {
 		inv.Args = append(inv.Args, req.Mod.Path)

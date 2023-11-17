@@ -38,7 +38,7 @@ func KnownPackagePaths(ctx context.Context, snapshot Snapshot, fh FileHandle) ([
 	if err != nil {
 		return nil, err
 	}
-	file, err := parser.ParseFile(token.NewFileSet(), fh.URI().Filename(), src, parser.ImportsOnly)
+	file, err := parser.ParseFile(token.NewFileSet(), fh.URI().Path(), src, parser.ImportsOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func KnownPackagePaths(ctx context.Context, snapshot Snapshot, fh FileHandle) ([
 			// TODO(adonovan): what if the actual package path has a vendor/ prefix?
 			seen[PackagePath(ifix.StmtInfo.ImportPath)] = true
 		}
-		return imports.GetAllCandidates(ctx, wrapped, "", fh.URI().Filename(), string(current.Name), o.Env)
+		return imports.GetAllCandidates(ctx, wrapped, "", fh.URI().Path(), string(current.Name), o.Env)
 	}); err != nil {
 		// If goimports failed, proceed with just the candidates from the metadata.
 		event.Error(ctx, "imports.GetAllCandidates", err)

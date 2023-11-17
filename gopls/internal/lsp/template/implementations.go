@@ -27,7 +27,7 @@ func Diagnose(f source.FileHandle) []*source.Diagnostic {
 	buf, err := f.Content()
 	if err != nil {
 		// Is a Diagnostic with no Range useful? event.Error also?
-		msg := fmt.Sprintf("failed to read %s (%v)", f.URI().Filename(), err)
+		msg := fmt.Sprintf("failed to read %s (%v)", f.URI().Path(), err)
 		d := source.Diagnostic{Message: msg, Severity: protocol.SeverityError, URI: f.URI(),
 			Source: source.TemplateError}
 		return []*source.Diagnostic{&d}

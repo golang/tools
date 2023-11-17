@@ -351,7 +351,7 @@ func (v *View) ID() string { return v.id }
 // responsibility to call the cleanup function when the file is no
 // longer needed.
 func tempModFile(modFh source.FileHandle, gosum []byte) (tmpURI protocol.DocumentURI, cleanup func(), err error) {
-	filenameHash := source.Hashf("%s", modFh.URI().Filename())
+	filenameHash := source.Hashf("%s", modFh.URI().Path())
 	tmpMod, err := os.CreateTemp("", fmt.Sprintf("go.%s.*.mod", filenameHash))
 	if err != nil {
 		return "", nil, err
@@ -374,7 +374,7 @@ func tempModFile(modFh source.FileHandle, gosum []byte) (tmpURI protocol.Documen
 	// that both 'return' and 'defer' update the "cleanup" variable.
 	doCleanup := func() {
 		_ = os.Remove(tmpSumName)
-		_ = os.Remove(tmpURI.Filename())
+		_ = os.Remove(tmpURI.Path())
 	}
 
 	// Be careful to clean up if we return an error from this function.
@@ -445,8 +445,8 @@ func viewEnv(v *View) string {
 (build flags: %v)
 (selected go env: %v)
 `,
-		v.folder.Dir.Filename(),
-		v.goCommandDir.Filename(),
+		v.folder.Dir.Path(),
+		v.goCommandDir.Path(),
 		strings.TrimRight(v.viewDefinition.goversionOutput, "\n"),
 		v.snapshot.validBuildConfiguration(),
 		buildFlags,
@@ -491,7 +491,7 @@ func (s *snapshot) locateTemplateFiles(ctx context.Context) {
 
 	searched := 0
 	filterFunc := s.view.filterFunc()
-	err := filepath.WalkDir(s.view.folder.Dir.Filename(), func(path string, entry os.DirEntry, err error) error {
+	err := filepath.WalkDir(s.view.folder.Dir.Path(), func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -531,10 +531,10 @@ func (v *View) contains(uri protocol.DocumentURI) bool {
 	// user. It would be better to explicitly consider the set of active modules
 	// wherever relevant.
 	inGoDir := false
-	if source.InDir(v.goCommandDir.Filename(), v.folder.Dir.Filename()) {
-		inGoDir = source.InDir(v.goCommandDir.Filename(), uri.Filename())
+	if source.InDir(v.goCommandDir.Path(), v.folder.Dir.Path()) {
+		inGoDir = source.InDir(v.goCommandDir.Path(), uri.Path())
 	}
-	inFolder := source.InDir(v.folder.Dir.Filename(), uri.Filename())
+	inFolder := source.InDir(v.folder.Dir.Path(), uri.Path())
 
 	if !inGoDir && !inFolder {
 		return false
@@ -546,12 +546,12 @@ func (v *View) contains(uri protocol.DocumentURI) bool {
 // filterFunc returns a func that reports whether uri is filtered by the currently configured
 // directoryFilters.
 func (v *View) filterFunc() func(protocol.DocumentURI) bool {
-	folderDir := v.folder.Dir.Filename()
+	folderDir := v.folder.Dir.Path()
 	filterer := buildFilterer(folderDir, v.gomodcache, v.folder.Options)
 	return func(uri protocol.DocumentURI) bool {
 		// Only filter relative to the configured root directory.
-		if source.InDir(folderDir, uri.Filename()) {
-			return pathExcludedByFilter(strings.TrimPrefix(uri.Filename(), folderDir), filterer)
+		if source.InDir(folderDir, uri.Path()) {
+			return pathExcludedByFilter(strings.TrimPrefix(uri.Path(), folderDir), filterer)
 		}
 		return false
 	}
@@ -637,13 +637,13 @@ func (s *snapshot) IgnoredFile(uri protocol.DocumentURI) bool {
 		} else {
 			dirs = append(dirs, s.view.gomodcache)
 			for m := range s.workspaceModFiles {
-				dirs = append(dirs, filepath.Dir(m.Filename()))
+				dirs = append(dirs, filepath.Dir(m.Path()))
 			}
 		}
 		s.ignoreFilter = newIgnoreFilter(dirs)
 	})
 
-	return s.ignoreFilter.ignored(uri.Filename())
+	return s.ignoreFilter.ignored(uri.Path())
 }
 
 // An ignoreFilter implements go list's exclusion rules via its 'ignored' method.
@@ -796,7 +796,7 @@ func (s *snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 				addError(modURI, fmt.Errorf("no module path for %s", modURI))
 				continue
 			}
-			moduleDir := filepath.Dir(modURI.Filename())
+			moduleDir := filepath.Dir(modURI.Path())
 			// Previously, we loaded <modulepath>/... for each module path, but that
 			// is actually incorrect when the pattern may match packages in more than
 			// one module. See golang/go#59458 for more details.
@@ -889,13 +889,13 @@ func (v *View) Invalidate(ctx context.Context, changed source.StateChange) (sour
 }
 
 func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs source.FileSource, folder *Folder) (*viewDefinition, error) {
-	if err := checkPathCase(folder.Dir.Filename()); err != nil {
+	if err := checkPathCase(folder.Dir.Path()); err != nil {
 		return nil, fmt.Errorf("invalid workspace folder path: %w; check that the casing of the configured workspace folder path agrees with the casing reported by the operating system", err)
 	}
 	def := new(viewDefinition)
 	var err error
 	inv := gocommand.Invocation{
-		WorkingDir: folder.Dir.Filename(),
+		WorkingDir: folder.Dir.Path(),
 		Env:        folder.Options.EnvSlice(),
 	}
 	def.goversion, err = gocommand.GoVersion(ctx, inv, runner)
@@ -906,7 +906,7 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs source.
 	if err != nil {
 		return nil, err
 	}
-	if err := def.load(ctx, folder.Dir.Filename(), folder.Options.EnvSlice(), runner); err != nil {
+	if err := def.load(ctx, folder.Dir.Path(), folder.Options.EnvSlice(), runner); err != nil {
 		return nil, err
 	}
 	// The value of GOPACKAGESDRIVER is not returned through the go command.
@@ -918,7 +918,7 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs source.
 
 	// filterFunc is the path filter function for this workspace folder. Notably,
 	// it is relative to folder (which is specified by the user), not root.
-	filterFunc := pathExcludedByFilterFunc(folder.Dir.Filename(), def.gomodcache, folder.Options)
+	filterFunc := pathExcludedByFilterFunc(folder.Dir.Path(), def.gomodcache, folder.Options)
 	def.gomod, err = findWorkspaceModFile(ctx, folder.Dir, fs, filterFunc)
 	if err != nil {
 		return nil, err
@@ -926,7 +926,7 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs source.
 
 	// Check if the workspace is within any GOPATH directory.
 	for _, gp := range filepath.SplitList(def.gopath) {
-		if source.InDir(filepath.Join(gp, "src"), folder.Dir.Filename()) {
+		if source.InDir(filepath.Join(gp, "src"), folder.Dir.Path()) {
 			def.inGOPATH = true
 			break
 		}
@@ -941,7 +941,7 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs source.
 	// TODO(golang/go#57514): eliminate the expandWorkspaceToModule setting
 	// entirely.
 	if folder.Options.ExpandWorkspaceToModule && def.gomod != "" {
-		def.goCommandDir = protocol.URIFromPath(filepath.Dir(def.gomod.Filename()))
+		def.goCommandDir = protocol.URIFromPath(filepath.Dir(def.gomod.Path()))
 	} else {
 		def.goCommandDir = folder.Dir
 	}
@@ -954,7 +954,7 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs source.
 //  2. else, if there is exactly one nested module, return it
 //  3. else, return ""
 func findWorkspaceModFile(ctx context.Context, folderURI protocol.DocumentURI, fs source.FileSource, excludePath func(string) bool) (protocol.DocumentURI, error) {
-	folder := folderURI.Filename()
+	folder := folderURI.Path()
 	match, err := findRootPattern(ctx, folder, "go.mod", fs)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -1135,7 +1135,7 @@ func (s *snapshot) vendorEnabled(ctx context.Context, modURI protocol.DocumentUR
 		}
 	}
 
-	modFile, err := modfile.Parse(modURI.Filename(), modContent, nil)
+	modFile, err := modfile.Parse(modURI.Path(), modContent, nil)
 	if err != nil {
 		return false, err
 	}
@@ -1143,7 +1143,7 @@ func (s *snapshot) vendorEnabled(ctx context.Context, modURI protocol.DocumentUR
 	// No vendor directory?
 	// TODO(golang/go#57514): this is wrong if the working dir is not the module
 	// root.
-	if fi, err := os.Stat(filepath.Join(s.view.goCommandDir.Filename(), "vendor")); err != nil || !fi.IsDir() {
+	if fi, err := os.Stat(filepath.Join(s.view.goCommandDir.Path(), "vendor")); err != nil || !fi.IsDir() {
 		return false, nil
 	}
 

@@ -128,7 +128,7 @@ func vendorLens(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 	}
 	// Change the message depending on whether or not the module already has a
 	// vendor directory.
-	vendorDir := filepath.Join(filepath.Dir(fh.URI().Filename()), "vendor")
+	vendorDir := filepath.Join(filepath.Dir(fh.URI().Path()), "vendor")
 	if info, _ := os.Stat(vendorDir); info != nil && info.IsDir() {
 		title = "Sync vendor directory"
 	}

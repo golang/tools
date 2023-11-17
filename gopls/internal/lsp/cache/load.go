@@ -77,9 +77,9 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 			}
 			if isStandaloneFile(contents, s.Options().StandaloneTags) {
 				standalone = true
-				query = append(query, uri.Filename())
+				query = append(query, uri.Path())
 			} else {
-				query = append(query, fmt.Sprintf("file=%s", uri.Filename()))
+				query = append(query, fmt.Sprintf("file=%s", uri.Path()))
 			}
 
 		case moduleLoadScope:
@@ -117,7 +117,7 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		flags |= source.AllowNetwork
 	}
 	_, inv, cleanup, err := s.goCommandInvocation(ctx, flags, &gocommand.Invocation{
-		WorkingDir: s.view.goCommandDir.Filename(),
+		WorkingDir: s.view.goCommandDir.Path(),
 	})
 	if err != nil {
 		return err

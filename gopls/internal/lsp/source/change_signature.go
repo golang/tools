@@ -404,7 +404,7 @@ func rewriteCalls(ctx context.Context, rw signatureRewrite) (map[protocol.Docume
 		// by returning the modified AST from replaceDecl. Investigate if that is
 		// accurate.
 		modifiedSrc = append(modifiedSrc, []byte("\n\n"+FormatNode(fset, wrapper))...)
-		modifiedFile, err = parser.ParseFile(rw.pkg.FileSet(), rw.pgf.URI.Filename(), modifiedSrc, parser.ParseComments|parser.SkipObjectResolution)
+		modifiedFile, err = parser.ParseFile(rw.pkg.FileSet(), rw.pgf.URI.Path(), modifiedSrc, parser.ParseComments|parser.SkipObjectResolution)
 		if err != nil {
 			return nil, err
 		}

@@ -62,7 +62,7 @@ func TestURIFromPath(t *testing.T) {
 		if got != test.wantURI {
 			t.Errorf("URIFromPath(%q): got %q, expected %q", test.path, got, test.wantURI)
 		}
-		gotFilename := got.Filename()
+		gotFilename := got.Path()
 		if gotFilename != test.wantFile {
 			t.Errorf("Filename(%q): got %q, expected %q", got, gotFilename, test.wantFile)
 		}
@@ -109,7 +109,7 @@ func TestURIFromURI(t *testing.T) {
 		if got != test.wantURI {
 			t.Errorf("NewURI(%q): got %q, expected %q", test.inputURI, got, test.wantURI)
 		}
-		gotFilename := got.Filename()
+		gotFilename := got.Path()
 		if gotFilename != test.wantFile {
 			t.Errorf("Filename(%q): got %q, expected %q", got, gotFilename, test.wantFile)
 		}

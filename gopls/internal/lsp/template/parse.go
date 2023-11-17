@@ -74,7 +74,7 @@ func New(tmpls map[protocol.DocumentURI]source.FileHandle) *All {
 	for k, v := range tmpls {
 		buf, err := v.Content()
 		if err != nil { // PJW: decide what to do with these errors
-			log.Printf("failed to read %s (%v)", v.URI().Filename(), err)
+			log.Printf("failed to read %s (%v)", v.URI().Path(), err)
 			continue
 		}
 		all[k] = parseBuffer(buf)

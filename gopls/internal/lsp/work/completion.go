@@ -52,7 +52,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 	pathPrefixSlash := completingFrom
 	pathPrefixAbs := filepath.FromSlash(pathPrefixSlash)
 	if !filepath.IsAbs(pathPrefixAbs) {
-		pathPrefixAbs = filepath.Join(filepath.Dir(pw.URI.Filename()), pathPrefixAbs)
+		pathPrefixAbs = filepath.Join(filepath.Dir(pw.URI.Path()), pathPrefixAbs)
 	}
 
 	// pathPrefixDir is the directory that will be walked to find matches.

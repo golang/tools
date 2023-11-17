@@ -290,7 +290,7 @@ func newParser() *memoizedParser {
 func (p *memoizedParser) parse(ctx context.Context, uri protocol.DocumentURI) (*ParsedGoFile, error) {
 	doParse := func(ctx context.Context, uri protocol.DocumentURI) (*ParsedGoFile, error) {
 		// TODO(adonovan): hoist this operation outside the benchmark critsec.
-		content, err := os.ReadFile(uri.Filename())
+		content, err := os.ReadFile(uri.Path())
 		if err != nil {
 			return nil, err
 		}

@@ -84,7 +84,7 @@ func TestFileMap(t *testing.T) {
 
 			var gotFiles []string
 			m.Range(func(uri protocol.DocumentURI, _ source.FileHandle) {
-				gotFiles = append(gotFiles, normalize(uri.Filename()))
+				gotFiles = append(gotFiles, normalize(uri.Path()))
 			})
 			sort.Strings(gotFiles)
 			if diff := cmp.Diff(test.wantFiles, gotFiles); diff != "" {
@@ -93,7 +93,7 @@ func TestFileMap(t *testing.T) {
 
 			var gotOverlays []string
 			for _, o := range m.Overlays() {
-				gotOverlays = append(gotOverlays, normalize(o.URI().Filename()))
+				gotOverlays = append(gotOverlays, normalize(o.URI().Path()))
 			}
 			if diff := cmp.Diff(test.wantOverlays, gotOverlays); diff != "" {
 				t.Errorf("Overlays mismatch (-want +got):\n%s", diff)

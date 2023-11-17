@@ -137,7 +137,7 @@ func callItemPrintString(ctx context.Context, conn *connection, item protocol.Ca
 
 	printString := fmt.Sprintf("function %s in %v", item.Name, itemSpan)
 	if len(calls) > 0 {
-		printString = fmt.Sprintf("ranges %s in %s from/to %s", strings.Join(callRanges, ", "), callsURI.Filename(), printString)
+		printString = fmt.Sprintf("ranges %s in %s from/to %s", strings.Join(callRanges, ", "), callsURI.Path(), printString)
 	}
 	return printString, nil
 }

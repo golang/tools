@@ -314,7 +314,7 @@ func collectSymbols(ctx context.Context, views []View, matcherType SymbolMatcher
 
 		filters := snapshot.Options().DirectoryFilters
 		filterer := NewFilterer(filters)
-		folder := filepath.ToSlash(v.Folder().Filename())
+		folder := filepath.ToSlash(v.Folder().Path())
 
 		workspaceOnly := true
 		if snapshot.Options().SymbolScope == AllSymbolScope {
@@ -326,7 +326,7 @@ func collectSymbols(ctx context.Context, views []View, matcherType SymbolMatcher
 		}
 
 		for uri, syms := range symbols {
-			norm := filepath.ToSlash(uri.Filename())
+			norm := filepath.ToSlash(uri.Path())
 			nm := strings.TrimPrefix(norm, folder)
 			if filterer.Disallow(nm) {
 				continue

@@ -100,7 +100,7 @@ type TestFns struct {
 func TestsAndBenchmarks(pkg Package, pgf *ParsedGoFile) (TestFns, error) {
 	var out TestFns
 
-	if !strings.HasSuffix(pgf.URI.Filename(), "_test.go") {
+	if !strings.HasSuffix(pgf.URI.Path(), "_test.go") {
 		return out, nil
 	}
 
@@ -180,7 +180,7 @@ func goGenerateCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle) (
 			if err != nil {
 				return nil, err
 			}
-			dir := protocol.URIFromPath(filepath.Dir(fh.URI().Filename()))
+			dir := protocol.URIFromPath(filepath.Dir(fh.URI().Path()))
 			nonRecursiveCmd, err := command.NewGenerateCommand("run go generate", command.GenerateArgs{Dir: dir, Recursive: false})
 			if err != nil {
 				return nil, err

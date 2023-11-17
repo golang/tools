@@ -137,7 +137,7 @@ func (s *server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 			if wantQuickFixes || want[protocol.SourceOrganizeImports] {
 				importEdits, importEditsPerFix, err := source.AllImportsFixes(ctx, snapshot, pgf)
 				if err != nil {
-					event.Error(ctx, "imports fixes", err, tag.File.Of(fh.URI().Filename()))
+					event.Error(ctx, "imports fixes", err, tag.File.Of(fh.URI().Path()))
 					importEdits = nil
 					importEditsPerFix = nil
 				}

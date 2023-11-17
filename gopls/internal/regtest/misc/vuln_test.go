@@ -304,7 +304,7 @@ func testFetchVulncheckResult(t *testing.T, env *Env, want map[string]fetchVulnc
 			ids = append(ids, id)
 		}
 		sort.Strings(ids)
-		modfile := env.Sandbox.Workdir.RelPath(k.Filename())
+		modfile := env.Sandbox.Workdir.RelPath(k.Path())
 		got[modfile] = fetchVulncheckResult{
 			IDs:  ids,
 			Mode: r.Mode,

@@ -285,7 +285,7 @@ func (s *snapshot) FileKind(fh source.FileHandle) source.FileKind {
 		}
 	}
 
-	fext := filepath.Ext(fh.URI().Filename())
+	fext := filepath.Ext(fh.URI().Path())
 	switch fext {
 	case ".go":
 		return source.Go
@@ -477,11 +477,11 @@ func (s *snapshot) RunGoCommands(ctx context.Context, allowNetwork bool, wd stri
 		return false, nil, nil, nil
 	}
 	var modBytes, sumBytes []byte
-	modBytes, err = os.ReadFile(tmpURI.Filename())
+	modBytes, err = os.ReadFile(tmpURI.Path())
 	if err != nil && !os.IsNotExist(err) {
 		return false, nil, nil, err
 	}
-	sumBytes, err = os.ReadFile(strings.TrimSuffix(tmpURI.Filename(), ".mod") + ".sum")
+	sumBytes, err = os.ReadFile(strings.TrimSuffix(tmpURI.Path(), ".mod") + ".sum")
 	if err != nil && !os.IsNotExist(err) {
 		return false, nil, nil, err
 	}
@@ -616,7 +616,7 @@ func (s *snapshot) goCommandInvocation(ctx context.Context, flags source.Invocat
 		if err != nil {
 			return "", nil, cleanup, err
 		}
-		inv.ModFile = tmpURI.Filename()
+		inv.ModFile = tmpURI.Path()
 	}
 
 	return tmpURI, inv, cleanup, nil
@@ -631,7 +631,7 @@ func (s *snapshot) buildOverlay() map[string][]byte {
 		// TODO(rfindley): previously, there was a todo here to make sure we don't
 		// send overlays outside of the current view. IMO we should instead make
 		// sure this doesn't matter.
-		overlays[overlay.URI().Filename()] = overlay.content
+		overlays[overlay.URI().Path()] = overlay.content
 	}
 	return overlays
 }
@@ -924,8 +924,8 @@ func (s *snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]stru
 
 	// If GOWORK is outside the folder, ensure we are watching it.
 	gowork, _ := s.view.GOWORK()
-	if gowork != "" && !source.InDir(s.view.folder.Dir.Filename(), gowork.Filename()) {
-		patterns[gowork.Filename()] = struct{}{}
+	if gowork != "" && !source.InDir(s.view.folder.Dir.Path(), gowork.Path()) {
+		patterns[gowork.Path()] = struct{}{}
 	}
 
 	// Add a pattern for each Go module in the workspace that is not within the view.
@@ -933,7 +933,7 @@ func (s *snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]stru
 	for _, dir := range dirs {
 		// If the directory is within the view's folder, we're already watching
 		// it with the first pattern above.
-		if source.InDir(s.view.folder.Dir.Filename(), dir) {
+		if source.InDir(s.view.folder.Dir.Path(), dir) {
 			continue
 		}
 		// TODO(rstambler): If microsoft/vscode#3025 is resolved before
@@ -989,14 +989,14 @@ func (s *snapshot) workspaceDirs(ctx context.Context) []string {
 	dirSet := make(map[string]unit)
 
 	// Dirs should, at the very least, contain the working directory and folder.
-	dirSet[s.view.goCommandDir.Filename()] = unit{}
-	dirSet[s.view.folder.Dir.Filename()] = unit{}
+	dirSet[s.view.goCommandDir.Path()] = unit{}
+	dirSet[s.view.folder.Dir.Path()] = unit{}
 
 	// Additionally, if e.g. go.work indicates other workspace modules, we should
 	// include their directories too.
 	if s.workspaceModFilesErr == nil {
 		for modFile := range s.workspaceModFiles {
-			dir := filepath.Dir(modFile.Filename())
+			dir := filepath.Dir(modFile.Path())
 			dirSet[dir] = unit{}
 		}
 	}
@@ -1042,13 +1042,13 @@ func (s *snapshot) filesInDir(uri protocol.DocumentURI) []protocol.DocumentURI {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	dir := uri.Filename()
+	dir := uri.Path()
 	if !s.files.Dirs().Contains(dir) {
 		return nil
 	}
 	var files []protocol.DocumentURI
 	s.files.Range(func(uri protocol.DocumentURI, _ source.FileHandle) {
-		if source.InDir(dir, uri.Filename()) {
+		if source.InDir(dir, uri.Path()) {
 			files = append(files, uri)
 		}
 	})
@@ -1156,7 +1156,7 @@ func (s *snapshot) GoModForFile(uri protocol.DocumentURI) protocol.DocumentURI {
 func moduleForURI(modFiles map[protocol.DocumentURI]struct{}, uri protocol.DocumentURI) protocol.DocumentURI {
 	var match protocol.DocumentURI
 	for modURI := range modFiles {
-		if !source.InDir(filepath.Dir(modURI.Filename()), uri.Filename()) {
+		if !source.InDir(filepath.Dir(modURI.Path()), uri.Path()) {
 			continue
 		}
 		if len(modURI) > len(match) {
@@ -1171,7 +1171,7 @@ func moduleForURI(modFiles map[protocol.DocumentURI]struct{}, uri protocol.Docum
 //
 // The given uri must be a file, not a directory.
 func nearestModFile(ctx context.Context, uri protocol.DocumentURI, fs source.FileSource) (protocol.DocumentURI, error) {
-	dir := filepath.Dir(uri.Filename())
+	dir := filepath.Dir(uri.Path())
 	mod, err := findRootPattern(ctx, dir, "go.mod", fs)
 	if err != nil {
 		return "", err
@@ -1690,8 +1690,8 @@ searchOverlays:
 		// is harder to be precise in that case, and less important.
 		if goMod, err := nearestModFile(ctx, fh.URI(), s); err == nil && goMod != "" {
 			if _, ok := loadedModFiles[goMod]; !ok {
-				modDir := filepath.Dir(goMod.Filename())
-				viewDir := s.view.folder.Dir.Filename()
+				modDir := filepath.Dir(goMod.Path())
+				viewDir := s.view.folder.Dir.Path()
 
 				// When the module is underneath the view dir, we offer
 				// "use all modules" quick-fixes.
@@ -1783,12 +1783,12 @@ https://github.com/golang/tools/blob/master/gopls/doc/workspace.md.`, modDir, fi
 				fix = `This file may be excluded due to its build tags; try adding "-tags=<build tag>" to your gopls "buildFlags" configuration
 See the documentation for more information on working with build tags:
 https://github.com/golang/tools/blob/master/gopls/doc/settings.md#buildflags-string.`
-			} else if strings.Contains(filepath.Base(fh.URI().Filename()), "_") {
+			} else if strings.Contains(filepath.Base(fh.URI().Path()), "_") {
 				fix = `This file may be excluded due to its GOOS/GOARCH, or other build constraints.`
 			} else {
 				fix = `This file is ignored by your gopls build.` // we don't know why
 			}
-			msg = fmt.Sprintf("No packages found for open file %s.\n%s", fh.URI().Filename(), fix)
+			msg = fmt.Sprintf("No packages found for open file %s.\n%s", fh.URI().Path(), fix)
 		}
 
 		if msg != "" {
@@ -1931,7 +1931,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changed source.StateChange)
 		if !changedOnDisk(oldFiles[uri], newFH) {
 			continue // like with go.mod files, we only reinit when things change on disk
 		}
-		dir, base := filepath.Split(uri.Filename())
+		dir, base := filepath.Split(uri.Path())
 		if base == "go.work.sum" && s.view.gowork != "" {
 			if dir == filepath.Dir(s.view.gowork) {
 				reinit = true
@@ -1982,7 +1982,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changed source.StateChange)
 		// because the file type that matters is not what the *client* tells us,
 		// but what the Go command sees.
 		var invalidateMetadata, pkgFileChanged, importDeleted bool
-		if strings.HasSuffix(uri.Filename(), ".go") {
+		if strings.HasSuffix(uri.Path(), ".go") {
 			invalidateMetadata, pkgFileChanged, importDeleted = metadataChanges(ctx, s, oldFH, newFH)
 		}
 		if invalidateMetadata {
@@ -2201,11 +2201,11 @@ func cloneWith[K constraints.Ordered, V any](m *persistent.Map[K, V], changes ma
 // the map, it is invalidated.
 func deleteMostRelevantModFile(m *persistent.Map[protocol.DocumentURI, *memoize.Promise], changed protocol.DocumentURI) {
 	var mostRelevant protocol.DocumentURI
-	changedFile := changed.Filename()
+	changedFile := changed.Path()
 
 	m.Range(func(modURI protocol.DocumentURI, _ *memoize.Promise) {
 		if len(modURI) > len(mostRelevant) {
-			if source.InDir(filepath.Dir(modURI.Filename()), changedFile) {
+			if source.InDir(filepath.Dir(modURI.Path()), changedFile) {
 				mostRelevant = modURI
 			}
 		}
@@ -2257,12 +2257,12 @@ func invalidatedPackageIDs(uri protocol.DocumentURI, known map[protocol.Document
 		}{fi, err}
 		return fi, err
 	}
-	dir := filepath.Dir(uri.Filename())
+	dir := filepath.Dir(uri.Path())
 	fi, err := getInfo(dir)
 	if err == nil {
 		// Aggregate all possibly relevant package IDs.
 		for knownURI, ids := range known {
-			knownDir := filepath.Dir(knownURI.Filename())
+			knownDir := filepath.Dir(knownURI.Path())
 			knownFI, err := getInfo(knownDir)
 			if err != nil {
 				continue

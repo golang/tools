@@ -54,7 +54,7 @@ func (s *snapshot) ModTidy(ctx context.Context, pm *source.ParsedModule) (*sourc
 			return nil, err
 		}
 		if _, ok := fh.(*Overlay); ok {
-			if info, _ := os.Stat(uri.Filename()); info == nil {
+			if info, _ := os.Stat(uri.Path()); info == nil {
 				return nil, source.ErrNoModOnDisk
 			}
 		}
@@ -73,7 +73,7 @@ func (s *snapshot) ModTidy(ctx context.Context, pm *source.ParsedModule) (*sourc
 		}
 
 		handle := memoize.NewPromise("modTidy", func(ctx context.Context, arg interface{}) interface{} {
-			tidied, err := modTidyImpl(ctx, arg.(*snapshot), uri.Filename(), pm)
+			tidied, err := modTidyImpl(ctx, arg.(*snapshot), uri.Path(), pm)
 			return modTidyResult{tidied, err}
 		})
 
@@ -116,11 +116,11 @@ func modTidyImpl(ctx context.Context, snapshot *snapshot, filename string, pm *s
 
 	// Go directly to disk to get the temporary mod file,
 	// since it is always on disk.
-	tempContents, err := os.ReadFile(tmpURI.Filename())
+	tempContents, err := os.ReadFile(tmpURI.Path())
 	if err != nil {
 		return nil, err
 	}
-	ideal, err := modfile.Parse(tmpURI.Filename(), tempContents, nil)
+	ideal, err := modfile.Parse(tmpURI.Path(), tempContents, nil)
 	if err != nil {
 		// We do not need to worry about the temporary file's parse errors
 		// since it has been "tidied".

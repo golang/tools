@@ -84,9 +84,9 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, source.Sn
 
 	// Querying the file system to check whether
 	// two folders denote the same existing directory.
-	if inode1, err := os.Stat(filepath.FromSlash(folder.Dir.Filename())); err == nil {
+	if inode1, err := os.Stat(filepath.FromSlash(folder.Dir.Path())); err == nil {
 		for _, view := range s.views {
-			inode2, err := os.Stat(filepath.FromSlash(view.folder.Dir.Filename()))
+			inode2, err := os.Stat(filepath.FromSlash(view.folder.Dir.Path()))
 			if err == nil && os.SameFile(inode1, inode2) {
 				return nil, nil, nil, source.ErrViewExists
 			}

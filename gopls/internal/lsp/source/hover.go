@@ -637,7 +637,7 @@ func hoverLit(pgf *ParsedGoFile, lit *ast.BasicLit, pos token.Pos) (protocol.Ran
 func hoverEmbed(fh FileHandle, rng protocol.Range, pattern string) (protocol.Range, *HoverJSON, error) {
 	s := &strings.Builder{}
 
-	dir := filepath.Dir(fh.URI().Filename())
+	dir := filepath.Dir(fh.URI().Path())
 	var matches []string
 	err := filepath.WalkDir(dir, func(abs string, d fs.DirEntry, e error) error {
 		if e != nil {

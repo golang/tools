@@ -224,7 +224,7 @@ func makeSettings(sandbox *Sandbox, config EditorConfig) map[string]interface{} 
 		env[k] = v
 	}
 	for k, v := range env {
-		v = strings.ReplaceAll(v, "$SANDBOX_WORKDIR", sandbox.Workdir.RootURI().Filename())
+		v = strings.ReplaceAll(v, "$SANDBOX_WORKDIR", sandbox.Workdir.RootURI().Path())
 		env[k] = v
 	}
 
@@ -406,7 +406,7 @@ func (e *Editor) onFileChanges(ctx context.Context, evts []protocol.FileEvent) {
 		}
 		var matchedEvts []protocol.FileEvent
 		for _, evt := range evts {
-			filename := filepath.ToSlash(evt.URI.Filename())
+			filename := filepath.ToSlash(evt.URI.Path())
 			for _, g := range e.watchPatterns {
 				if g.Match(filename) {
 					matchedEvts = append(matchedEvts, evt)

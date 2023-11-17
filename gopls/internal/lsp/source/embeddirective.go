@@ -35,7 +35,7 @@ func EmbedDefinition(m *protocol.Mapper, pos protocol.Position) ([]protocol.Loca
 
 	// Find the first matching file.
 	var match string
-	dir := filepath.Dir(m.URI.Filename())
+	dir := filepath.Dir(m.URI.Path())
 	err := filepath.WalkDir(dir, func(abs string, d fs.DirEntry, e error) error {
 		if e != nil {
 			return e

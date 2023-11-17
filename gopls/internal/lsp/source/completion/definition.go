@@ -25,7 +25,7 @@ func definition(path []ast.Node, obj types.Object, pgf *source.ParsedGoFile) ([]
 	if _, ok := obj.(*types.Func); !ok {
 		return nil, nil // not a function at all
 	}
-	if !strings.HasSuffix(pgf.URI.Filename(), "_test.go") {
+	if !strings.HasSuffix(pgf.URI.Path(), "_test.go") {
 		return nil, nil // not a test file
 	}
 

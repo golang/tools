@@ -71,7 +71,7 @@ func packageCompletionSurrounding(pgf *source.ParsedGoFile, offset int) (*Select
 	// If the file lacks a package declaration, the parser will return an empty
 	// AST. As a work-around, try to parse an expression from the file contents.
 	fset := token.NewFileSet()
-	expr, _ := parser.ParseExprFrom(fset, m.URI.Filename(), pgf.Src, parser.Mode(0))
+	expr, _ := parser.ParseExprFrom(fset, m.URI.Path(), pgf.Src, parser.Mode(0))
 	if expr == nil {
 		return nil, fmt.Errorf("unparseable file (%s)", m.URI)
 	}
@@ -221,7 +221,7 @@ func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI p
 		}
 	}()
 
-	dirPath := filepath.Dir(fileURI.Filename())
+	dirPath := filepath.Dir(fileURI.Path())
 	dirName := filepath.Base(dirPath)
 	if !isValidDirName(dirName) {
 		return packages, nil
@@ -243,7 +243,7 @@ func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI p
 		// Only add packages that are previously used in the current directory.
 		var relevantPkg bool
 		for _, uri := range m.CompiledGoFiles {
-			if filepath.Dir(uri.Filename()) == dirPath {
+			if filepath.Dir(uri.Path()) == dirPath {
 				relevantPkg = true
 				break
 			}

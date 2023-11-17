@@ -87,7 +87,7 @@ func (s *server) initialize(ctx context.Context, params *protocol.ParamInitializ
 		if params.RootURI != "" {
 			folders = []protocol.WorkspaceFolder{{
 				URI:  string(params.RootURI),
-				Name: path.Base(params.RootURI.Filename()),
+				Name: path.Base(params.RootURI.Path()),
 			}}
 		}
 	}

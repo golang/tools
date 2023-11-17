@@ -31,7 +31,7 @@ func Format(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.T
 
 	// Generated files shouldn't be edited. So, don't format them
 	if IsGenerated(ctx, snapshot, fh.URI()) {
-		return nil, fmt.Errorf("can't format %q: file is generated", fh.URI().Filename())
+		return nil, fmt.Errorf("can't format %q: file is generated", fh.URI().Path())
 	}
 
 	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
@@ -124,7 +124,7 @@ func AllImportsFixes(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile) 
 // computeImportEdits computes a set of edits that perform one or all of the
 // necessary import fixes.
 func computeImportEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*ImportFix, err error) {
-	filename := pgf.URI.Filename()
+	filename := pgf.URI.Path()
 
 	// Build up basic information about the original file.
 	allFixes, err := imports.FixImports(ctx, filename, pgf.Src, options)

@@ -80,7 +80,7 @@ func DiagnosticsForWork(ctx context.Context, snapshot source.Snapshot, fh source
 }
 
 func modFileURI(pw *source.ParsedWorkFile, use *modfile.Use) protocol.DocumentURI {
-	workdir := filepath.Dir(pw.URI.Filename())
+	workdir := filepath.Dir(pw.URI.Path())
 
 	modroot := filepath.FromSlash(use.Path)
 	if !filepath.IsAbs(modroot) {

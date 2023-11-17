@@ -35,7 +35,7 @@ func computeWorkspaceModFiles(ctx context.Context, gomod, gowork protocol.Docume
 		if err != nil {
 			return nil, err
 		}
-		filename := gowork.Filename()
+		filename := gowork.Path()
 		dir := filepath.Dir(filename)
 		workFile, err := modfile.ParseWork(filename, content, nil)
 		if err != nil {
@@ -60,12 +60,12 @@ func computeWorkspaceModFiles(ctx context.Context, gomod, gowork protocol.Docume
 
 // isGoMod reports if uri is a go.mod file.
 func isGoMod(uri protocol.DocumentURI) bool {
-	return filepath.Base(uri.Filename()) == "go.mod"
+	return filepath.Base(uri.Path()) == "go.mod"
 }
 
 // isGoWork reports if uri is a go.work file.
 func isGoWork(uri protocol.DocumentURI) bool {
-	return filepath.Base(uri.Filename()) == "go.work"
+	return filepath.Base(uri.Path()) == "go.work"
 }
 
 // fileExists reports whether the file has a Content (which may be empty).
@@ -95,7 +95,7 @@ func findModules(root protocol.DocumentURI, excludePath func(string) bool, modLi
 	modFiles := make(map[protocol.DocumentURI]struct{})
 	searched := 0
 	errDone := errors.New("done")
-	err := filepath.WalkDir(root.Filename(), func(path string, info fs.DirEntry, err error) error {
+	err := filepath.WalkDir(root.Path(), func(path string, info fs.DirEntry, err error) error {
 		if err != nil {
 			// Probably a permission error. Keep looking.
 			return filepath.SkipDir
@@ -103,8 +103,8 @@ func findModules(root protocol.DocumentURI, excludePath func(string) bool, modLi
 		// For any path that is not the workspace folder, check if the path
 		// would be ignored by the go command. Vendor directories also do not
 		// contain workspace modules.
-		if info.IsDir() && path != root.Filename() {
-			suffix := strings.TrimPrefix(path, root.Filename())
+		if info.IsDir() && path != root.Path() {
+			suffix := strings.TrimPrefix(path, root.Path())
 			switch {
 			case checkIgnored(suffix),
 				strings.Contains(filepath.ToSlash(suffix), "/vendor/"),

@@ -102,7 +102,7 @@ func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIde
 	}
 	if int(end-start) > maxFullFileSize {
 		err := fmt.Errorf("semantic tokens: range %s too large (%d > %d)",
-			fh.URI().Filename(), end-start, maxFullFileSize)
+			fh.URI().Path(), end-start, maxFullFileSize)
 		return nil, err
 	}
 

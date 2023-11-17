@@ -146,7 +146,7 @@ func (w *Workdir) URI(path string) protocol.DocumentURI {
 // URIToPath converts a uri to a workdir-relative path (or an absolute path,
 // if the uri is outside of the workdir).
 func (w *Workdir) URIToPath(uri protocol.DocumentURI) string {
-	fp := uri.Filename()
+	fp := uri.Path()
 	return w.RelPath(fp)
 }
 

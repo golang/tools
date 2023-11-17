@@ -52,7 +52,7 @@ func (h *DiskFile) Content() ([]byte, error) { return h.content, h.err }
 
 // ReadFile stats and (maybe) reads the file, updates the cache, and returns it.
 func (fs *memoizedFS) ReadFile(ctx context.Context, uri protocol.DocumentURI) (source.FileHandle, error) {
-	id, mtime, err := robustio.GetFileID(uri.Filename())
+	id, mtime, err := robustio.GetFileID(uri.Path())
 	if err != nil {
 		// file does not exist
 		return &DiskFile{
@@ -145,7 +145,7 @@ func readFile(ctx context.Context, uri protocol.DocumentURI, mtime time.Time) (*
 	}
 	defer func() { <-ioLimit }()
 
-	ctx, done := event.Start(ctx, "cache.readFile", tag.File.Of(uri.Filename()))
+	ctx, done := event.Start(ctx, "cache.readFile", tag.File.Of(uri.Path()))
 	_ = ctx
 	defer done()
 
@@ -153,7 +153,7 @@ func readFile(ctx context.Context, uri protocol.DocumentURI, mtime time.Time) (*
 	// ID, or whose mtime differs from the given mtime. However, in these cases
 	// we expect the client to notify of a subsequent file change, and the file
 	// content should be eventually consistent.
-	content, err := os.ReadFile(uri.Filename()) // ~20us
+	content, err := os.ReadFile(uri.Path()) // ~20us
 	if err != nil {
 		content = nil // just in case
 	}

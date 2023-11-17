@@ -33,7 +33,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 	for fn, fc := range all.files {
 		// collect symbols from all template files
 		filterSyms(syms, fc.symbols)
-		if fn.Filename() != fh.URI().Filename() {
+		if fn.Path() != fh.URI().Path() {
 			continue
 		}
 		if start = inTemplate(fc, pos); start == -1 {
@@ -43,7 +43,7 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 	}
 	if p == nil {
 		// this cannot happen unless the search missed a template file
-		return nil, fmt.Errorf("%s not found", fh.FileIdentity().URI.Filename())
+		return nil, fmt.Errorf("%s not found", fh.FileIdentity().URI.Path())
 	}
 	c := completer{
 		p:      p,
