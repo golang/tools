@@ -325,7 +325,7 @@ func unusedDiagnostic(m *protocol.Mapper, req *modfile.Require, onlyDiagnostic b
 	}
 	title := fmt.Sprintf("Remove dependency: %s", req.Mod.Path)
 	cmd, err := command.NewRemoveDependencyCommand(title, command.RemoveDependencyArgs{
-		URI:            protocol.URIFromSpanURI(m.URI),
+		URI:            m.URI,
 		OnlyDiagnostic: onlyDiagnostic,
 		ModulePath:     req.Mod.Path,
 	})
@@ -398,7 +398,7 @@ func missingModuleDiagnostic(pm *source.ParsedModule, req *modfile.Require) (*so
 	}
 	title := fmt.Sprintf("Add %s to your go.mod file", req.Mod.Path)
 	cmd, err := command.NewAddDependencyCommand(title, command.DependencyArgs{
-		URI:        protocol.URIFromSpanURI(pm.Mapper.URI),
+		URI:        pm.Mapper.URI,
 		AddRequire: !req.Indirect,
 		GoCmdArgs:  []string{req.Mod.Path + "@" + req.Mod.Version},
 	})

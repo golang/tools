@@ -171,7 +171,7 @@ func RemoveUnusedParameter(ctx context.Context, fh FileHandle, rng protocol.Rang
 			TextDocumentEdit: &protocol.TextDocumentEdit{
 				TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
 					Version:                fh.Version(),
-					TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: protocol.URIFromSpanURI(uri)},
+					TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri},
 				},
 				Edits: pedits,
 			},

@@ -31,7 +31,7 @@ func upgradeLenses(ctx context.Context, snapshot source.Snapshot, fh source.File
 	if err != nil || pm.File == nil {
 		return nil, err
 	}
-	uri := protocol.URIFromSpanURI(fh.URI())
+	uri := fh.URI()
 	reset, err := command.NewResetGoModDiagnosticsCommand("Reset go.mod diagnostics", command.ResetGoModDiagnosticsArgs{URIArg: command.URIArg{URI: uri}})
 	if err != nil {
 		return nil, err
@@ -92,7 +92,7 @@ func tidyLens(ctx context.Context, snapshot source.Snapshot, fh source.FileHandl
 	if err != nil || pm.File == nil {
 		return nil, err
 	}
-	uri := protocol.URIFromSpanURI(fh.URI())
+	uri := fh.URI()
 	cmd, err := command.NewTidyCommand("Run go mod tidy", command.URIArgs{URIs: []protocol.DocumentURI{uri}})
 	if err != nil {
 		return nil, err
@@ -121,7 +121,7 @@ func vendorLens(ctx context.Context, snapshot source.Snapshot, fh source.FileHan
 		return nil, err
 	}
 	title := "Create vendor directory"
-	uri := protocol.URIFromSpanURI(fh.URI())
+	uri := fh.URI()
 	cmd, err := command.NewVendorCommand(title, command.URIArg{URI: uri})
 	if err != nil {
 		return nil, err
@@ -172,7 +172,7 @@ func vulncheckLenses(ctx context.Context, snapshot source.Snapshot, fh source.Fi
 	// Place the codelenses near the module statement.
 	// A module may not have the require block,
 	// but vulnerabilities can exist in standard libraries.
-	uri := protocol.URIFromSpanURI(fh.URI())
+	uri := fh.URI()
 	rng, err := moduleStmtRange(fh, pm)
 	if err != nil {
 		return nil, err

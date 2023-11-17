@@ -155,7 +155,7 @@ func (s *server) nonstandardRequest(ctx context.Context, method string, params i
 				return nil, err
 			}
 			if err := s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
-				URI:         protocol.URIFromSpanURI(fh.URI()),
+				URI:         fh.URI(),
 				Diagnostics: toProtocolDiagnostics(diagnostics),
 				Version:     fileID.Version(),
 			}); err != nil {

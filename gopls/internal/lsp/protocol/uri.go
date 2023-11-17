@@ -16,9 +16,6 @@ import (
 )
 
 // TODO(adonovan): inline this away.
-func URIFromSpanURI(uri DocumentURI) DocumentURI { return uri } // no conversion
-
-// TODO(adonovan): inline this away.
 func (uri DocumentURI) SpanURI() DocumentURI { return uri } // no conversion
 
 // UnmarshalText implements decoding of DocumentURI values.

@@ -602,7 +602,7 @@ func (s symbolInformation) asProtocolSymbolInformation() protocol.SymbolInformat
 		Name: s.symbol,
 		Kind: s.kind,
 		Location: protocol.Location{
-			URI:   protocol.URIFromSpanURI(s.uri),
+			URI:   s.uri,
 			Range: s.rng,
 		},
 		ContainerName: s.container,

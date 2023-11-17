@@ -189,7 +189,7 @@ func goGetQuickFixes(moduleMode bool, uri protocol.DocumentURI, pkg string) ([]s
 	}
 	title := fmt.Sprintf("go get package %v", pkg)
 	cmd, err := command.NewGoGetPackageCommand(title, command.GoGetPackageArgs{
-		URI:        protocol.URIFromSpanURI(uri),
+		URI:        uri,
 		AddRequire: true,
 		Pkg:        pkg,
 	})
@@ -206,7 +206,7 @@ func editGoDirectiveQuickFix(moduleMode bool, uri protocol.DocumentURI, version 
 	}
 	title := fmt.Sprintf("go mod edit -go=%s", version)
 	cmd, err := command.NewEditGoDirectiveCommand(title, command.EditGoDirectiveArgs{
-		URI:     protocol.URIFromSpanURI(uri),
+		URI:     uri,
 		Version: version,
 	})
 	if err != nil {
@@ -229,7 +229,7 @@ func encodeDiagnostics(srcDiags []*source.Diagnostic) []byte {
 				for _, srcEdit := range srcEdits {
 					gobFix.TextEdits = append(gobFix.TextEdits, gobTextEdit{
 						Location: protocol.Location{
-							URI:   protocol.URIFromSpanURI(uri),
+							URI:   uri,
 							Range: srcEdit.Range,
 						},
 						NewText: []byte(srcEdit.NewText),
@@ -252,7 +252,7 @@ func encodeDiagnostics(srcDiags []*source.Diagnostic) []byte {
 		}
 		gobDiag := gobDiagnostic{
 			Location: protocol.Location{
-				URI:   protocol.URIFromSpanURI(srcDiag.URI),
+				URI:   srcDiag.URI,
 				Range: srcDiag.Range,
 			},
 			Severity:       srcDiag.Severity,

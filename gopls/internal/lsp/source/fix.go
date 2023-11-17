@@ -119,7 +119,7 @@ func ApplyFix(ctx context.Context, fix string, snapshot Snapshot, fh FileHandle,
 				TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
 					Version: fh.Version(),
 					TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-						URI: protocol.URIFromSpanURI(fh.URI()),
+						URI: fh.URI(),
 					},
 				},
 			}

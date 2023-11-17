@@ -83,7 +83,7 @@ func ConvertStringLiteral(pgf *ParsedGoFile, fh FileHandle, rng protocol.Range) 
 					TextDocumentEdit: &protocol.TextDocumentEdit{
 						TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
 							Version:                fh.Version(),
-							TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: protocol.URIFromSpanURI(fh.URI())},
+							TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: fh.URI()},
 						},
 						Edits: pedits,
 					},

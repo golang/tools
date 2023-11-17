@@ -152,7 +152,7 @@ func ModUpgradeDiagnostics(ctx context.Context, snapshot source.Snapshot, fh sou
 		// Upgrade to the exact version we offer the user, not the most recent.
 		title := fmt.Sprintf("%s%v", upgradeCodeActionPrefix, ver)
 		cmd, err := command.NewUpgradeDependencyCommand(title, command.DependencyArgs{
-			URI:        protocol.URIFromSpanURI(fh.URI()),
+			URI:        fh.URI(),
 			AddRequire: false,
 			GoCmdArgs:  []string{req.Mod.Path + "@" + ver},
 		})
@@ -497,7 +497,7 @@ func href(vulnID string) string {
 
 func getUpgradeCodeAction(fh source.FileHandle, req *modfile.Require, version string) (protocol.Command, error) {
 	cmd, err := command.NewUpgradeDependencyCommand(upgradeTitle(version), command.DependencyArgs{
-		URI:        protocol.URIFromSpanURI(fh.URI()),
+		URI:        fh.URI(),
 		AddRequire: false,
 		GoCmdArgs:  []string{req.Mod.Path + "@" + version},
 	})

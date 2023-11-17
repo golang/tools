@@ -760,7 +760,7 @@ func (s *server) publishDiagnostics(ctx context.Context, final bool, snapshot so
 		}
 		if err := s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
 			Diagnostics: toProtocolDiagnostics(diags),
-			URI:         protocol.URIFromSpanURI(uri),
+			URI:         uri,
 			Version:     version,
 		}); err == nil {
 			r.publishedHash = hash

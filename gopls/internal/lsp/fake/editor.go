@@ -1053,7 +1053,7 @@ func (e *Editor) RunGenerate(ctx context.Context, dir string) error {
 	}
 	absDir := e.sandbox.Workdir.AbsPath(dir)
 	cmd, err := command.NewGenerateCommand("", command.GenerateArgs{
-		Dir:       protocol.URIFromSpanURI(protocol.URIFromPath(absDir)),
+		Dir:       protocol.URIFromPath(absDir),
 		Recursive: false,
 	})
 	if err != nil {

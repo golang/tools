@@ -431,7 +431,7 @@ func (c *commandHandler) RemoveDependency(ctx context.Context, args command.Remo
 							TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
 								Version: deps.fh.Version(),
 								TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-									URI: protocol.URIFromSpanURI(deps.fh.URI()),
+									URI: deps.fh.URI(),
 								},
 							},
 							Edits: nonNilSliceTextEdit(edits),
@@ -686,7 +686,7 @@ func collectFileEdits(ctx context.Context, snapshot source.Snapshot, uri protoco
 		TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
 			Version: fh.Version(),
 			TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-				URI: protocol.URIFromSpanURI(uri),
+				URI: uri,
 			},
 		},
 		Edits: edits,
@@ -950,12 +950,12 @@ func (c *commandHandler) FetchVulncheckResult(ctx context.Context, arg command.U
 				if err != nil {
 					return err
 				}
-				ret[protocol.URIFromSpanURI(modfile)] = res
+				ret[modfile] = res
 			}
 		}
 		// Overwrite if there is any govulncheck-based result.
 		for modfile, result := range deps.snapshot.Vulnerabilities() {
-			ret[protocol.URIFromSpanURI(modfile)] = result
+			ret[modfile] = result
 		}
 		return nil
 	})

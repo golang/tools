@@ -148,7 +148,7 @@ func Lookup(m *source.Metadata, data []byte, targets map[source.PackagePath]map[
 					for _, ref := range gobObj.Refs {
 						uri := m.CompiledGoFiles[ref.FileIndex]
 						locs = append(locs, protocol.Location{
-							URI:   protocol.URIFromSpanURI(uri),
+							URI:   uri,
 							Range: ref.Range,
 						})
 					}

@@ -426,7 +426,7 @@ func (s *snapshot) goCommandDiagnostic(pm *source.ParsedModule, loc protocol.Loc
 
 	switch {
 	case strings.Contains(goCmdError, "inconsistent vendoring"):
-		cmd, err := command.NewVendorCommand("Run go mod vendor", command.URIArg{URI: protocol.URIFromSpanURI(pm.URI)})
+		cmd, err := command.NewVendorCommand("Run go mod vendor", command.URIArg{URI: pm.URI})
 		if err != nil {
 			return nil, err
 		}
@@ -443,7 +443,7 @@ See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
 	case strings.Contains(goCmdError, "updates to go.sum needed"), strings.Contains(goCmdError, "missing go.sum entry"):
 		var args []protocol.DocumentURI
 		for _, uri := range s.ModFiles() {
-			args = append(args, protocol.URIFromSpanURI(uri))
+			args = append(args, uri)
 		}
 		tidyCmd, err := command.NewTidyCommand("Run go mod tidy", command.URIArgs{URIs: args})
 		if err != nil {
@@ -471,7 +471,7 @@ See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
 	case strings.Contains(goCmdError, "disabled by GOPROXY=off") && innermost != nil:
 		title := fmt.Sprintf("Download %v@%v", innermost.Path, innermost.Version)
 		cmd, err := command.NewAddDependencyCommand(title, command.DependencyArgs{
-			URI:        protocol.URIFromSpanURI(pm.URI),
+			URI:        pm.URI,
 			AddRequire: false,
 			GoCmdArgs:  []string{fmt.Sprintf("%v@%v", innermost.Path, innermost.Version)},
 		})

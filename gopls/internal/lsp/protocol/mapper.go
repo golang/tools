@@ -350,7 +350,7 @@ func (m *Mapper) NodeRange(tf *token.File, node ast.Node) (Range, error) {
 
 // RangeLocation pairs a protocol Range with its URI, in a Location.
 func (m *Mapper) RangeLocation(rng Range) Location {
-	return Location{URI: URIFromSpanURI(m.URI), Range: rng}
+	return Location{URI: m.URI, Range: rng}
 }
 
 // PosMappedRange returns a MappedRange for the given token.Pos range.
