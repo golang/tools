@@ -128,7 +128,7 @@ func hashFile(data []byte) string {
 // RootURI returns the root URI for this working directory of this scratch
 // environment.
 func (w *Workdir) RootURI() protocol.DocumentURI {
-	return toURI(string(w.RelativeTo))
+	return protocol.URIFromPath(string(w.RelativeTo))
 }
 
 // AddWatcher registers the given func to be called on any file change.
@@ -140,18 +140,13 @@ func (w *Workdir) AddWatcher(watcher func(context.Context, []protocol.FileEvent)
 
 // URI returns the URI to a the workdir-relative path.
 func (w *Workdir) URI(path string) protocol.DocumentURI {
-	return toURI(w.AbsPath(path))
+	return protocol.URIFromPath(w.AbsPath(path))
 }
 
 // URIToPath converts a uri to a workdir-relative path (or an absolute path,
 // if the uri is outside of the workdir).
 func (w *Workdir) URIToPath(uri protocol.DocumentURI) string {
-	fp := uri.Path()
-	return w.RelPath(fp)
-}
-
-func toURI(fp string) protocol.DocumentURI {
-	return protocol.DocumentURI(protocol.URIFromPath(fp))
+	return w.RelPath(uri.Path())
 }
 
 // ReadFile reads a text file specified by a workdir-relative path.
