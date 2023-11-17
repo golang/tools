@@ -94,7 +94,7 @@ func inTemplate(fc *Parsed, pos protocol.Position) int {
 		}
 		// If the interval [x,offset] does not contain Left or Right
 		// then provide completions. (do we need the test for Right?)
-		if !bytes.Contains(fc.buf[x:offset], []byte(Left)) && !bytes.Contains(fc.buf[x:offset], []byte(Right)) {
+		if !bytes.Contains(fc.buf[x:offset], Left) && !bytes.Contains(fc.buf[x:offset], Right) {
 			return x
 		}
 	}
@@ -127,7 +127,7 @@ func (c *completer) complete() (*protocol.CompletionList, error) {
 	if len(words) == 0 {
 		return nil, nil // if this happens, why were we called?
 	}
-	pattern := string(words[len(words)-1])
+	pattern := words[len(words)-1]
 	if pattern[0] == '$' {
 		// should we also return a raw "$"?
 		for _, s := range c.syms {
@@ -156,7 +156,7 @@ func (c *completer) complete() (*protocol.CompletionList, error) {
 	// could we get completion attempts in strings or numbers, and if so, do we care?
 	// globals
 	for _, kw := range globals {
-		if weakMatch(kw, string(pattern)) != 0 {
+		if weakMatch(kw, pattern) != 0 {
 			ans.Items = append(ans.Items, protocol.CompletionItem{
 				Label:  kw,
 				Kind:   protocol.KeywordCompletion,
@@ -177,7 +177,7 @@ func (c *completer) complete() (*protocol.CompletionList, error) {
 	// keywords if we're at the beginning
 	if len(words) <= 1 || len(words[len(words)-2]) == 1 && words[len(words)-2][0] == '|' {
 		for _, kw := range keywords {
-			if weakMatch(kw, string(pattern)) != 0 {
+			if weakMatch(kw, pattern) != 0 {
 				ans.Items = append(ans.Items, protocol.CompletionItem{
 					Label:  kw,
 					Kind:   protocol.KeywordCompletion,

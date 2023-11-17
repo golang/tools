@@ -85,7 +85,7 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		case moduleLoadScope:
 			modQuery := fmt.Sprintf("%s%c...", scope.dir, filepath.Separator)
 			query = append(query, modQuery)
-			moduleQueries[modQuery] = string(scope.modulePath)
+			moduleQueries[modQuery] = scope.modulePath
 
 		case viewLoadScope:
 			// If we are outside of GOPATH, a module, or some other known

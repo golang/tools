@@ -440,7 +440,7 @@ func sortedKeys(m map[string]bool) []string {
 func suggestGovulncheckAction(fromGovulncheck bool, uri protocol.DocumentURI) (source.SuggestedFix, error) {
 	if fromGovulncheck {
 		resetVulncheck, err := command.NewResetGoModDiagnosticsCommand("Reset govulncheck result", command.ResetGoModDiagnosticsArgs{
-			URIArg:           command.URIArg{URI: protocol.DocumentURI(uri)},
+			URIArg:           command.URIArg{URI: uri},
 			DiagnosticSource: string(source.Govulncheck),
 		})
 		if err != nil {
@@ -449,7 +449,7 @@ func suggestGovulncheckAction(fromGovulncheck bool, uri protocol.DocumentURI) (s
 		return source.SuggestedFixFromCommand(resetVulncheck, protocol.QuickFix), nil
 	}
 	vulncheck, err := command.NewRunGovulncheckCommand("Run govulncheck to verify", command.VulncheckArgs{
-		URI:     protocol.DocumentURI(uri),
+		URI:     uri,
 		Pattern: "./...",
 	})
 	if err != nil {

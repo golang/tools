@@ -55,7 +55,7 @@ func writeFileData(path string, content []byte, rel RelativeTo) error {
 	}
 	backoff := 1 * time.Millisecond
 	for {
-		err := os.WriteFile(fp, []byte(content), 0644)
+		err := os.WriteFile(fp, content, 0644)
 		if err != nil {
 			// This lock file violation is not handled by the robustio package, as it
 			// indicates a real race condition that could be avoided.
@@ -275,7 +275,7 @@ func (w *Workdir) RenameFile(ctx context.Context, oldPath, newPath string) error
 			// the error from Rename may be accurate.
 			return renameErr
 		}
-		if writeErr := writeFileData(newPath, []byte(content), w.RelativeTo); writeErr != nil {
+		if writeErr := writeFileData(newPath, content, w.RelativeTo); writeErr != nil {
 			// At this point we have tried to actually write the file.
 			// If it still doesn't exist, assume that the error from Rename was accurate:
 			// for example, maybe we don't have permission to create the new path.

@@ -61,7 +61,7 @@ func goPackagesErrorDiagnostics(ctx context.Context, e packages.Error, m *source
 			return protocol.Location{}, err
 		}
 		return protocol.Location{
-			URI: protocol.DocumentURI(uri),
+			URI: uri,
 			Range: protocol.Range{
 				Start: posn,
 				End:   posn,
@@ -95,7 +95,7 @@ func goPackagesErrorDiagnostics(ctx context.Context, e packages.Error, m *source
 		return diags, nil
 	}
 	return []*source.Diagnostic{{
-		URI:      protocol.DocumentURI(loc.URI),
+		URI:      loc.URI,
 		Range:    loc.Range,
 		Severity: protocol.SeverityError,
 		Source:   source.ListError,
@@ -406,7 +406,7 @@ func suggestedAnalysisFixes(diag *gobDiagnostic, kinds []protocol.CodeActionKind
 	for _, fix := range diag.SuggestedFixes {
 		edits := make(map[protocol.DocumentURI][]protocol.TextEdit)
 		for _, e := range fix.TextEdits {
-			uri := protocol.DocumentURI(e.Location.URI)
+			uri := e.Location.URI
 			edits[uri] = append(edits[uri], protocol.TextEdit{
 				Range:   e.Location.Range,
 				NewText: string(e.NewText),

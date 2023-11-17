@@ -1966,7 +1966,7 @@ func rename(env *Env, loc protocol.Location, newName string) (map[string][]byte,
 	editMap, err := env.Editor.Server.Rename(env.Ctx, &protocol.RenameParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
 		Position:     loc.Range.Start,
-		NewName:      string(newName),
+		NewName:      newName,
 	})
 	if err != nil {
 		return nil, err

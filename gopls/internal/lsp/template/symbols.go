@@ -180,7 +180,7 @@ func (p *Parsed) findSymbols() {
 			break
 		}
 		// nothing to report, but build one for hover
-		sz := utf8.RuneCount([]byte(x.Text))
+		sz := utf8.RuneCount(x.Text)
 		p.symbols = append(p.symbols, symbol{start: int(x.Pos), length: sz, kind: protocol.Constant})
 	case *parse.VariableNode:
 		p.symbols = append(p.symbols, p.fields(x.Ident, x)...)

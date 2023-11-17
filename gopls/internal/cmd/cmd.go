@@ -672,7 +672,7 @@ func (c *cmdClient) ShowDocument(ctx context.Context, params *protocol.ShowDocum
 	var success bool
 	if params.External {
 		// Open URI in external browser.
-		success = browser.Open(string(params.URI))
+		success = browser.Open(params.URI)
 	} else {
 		// Open file in editor, optionally taking focus and selecting a range.
 		// (cmdClient has no editor. Should it fork+exec $EDITOR?)

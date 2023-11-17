@@ -701,7 +701,7 @@ func renamePackageName(ctx context.Context, s Snapshot, f FileHandle, newName Pa
 				replacedPath = filepath.Join(modFileDir, r.New.Path)
 			}
 
-			suffix := strings.TrimPrefix(replacedPath, string(oldBase))
+			suffix := strings.TrimPrefix(replacedPath, oldBase)
 
 			newReplacedPath, err := filepath.Rel(modFileDir, newPkgDir+suffix)
 			if err != nil {
@@ -807,7 +807,7 @@ func renamePackage(ctx context.Context, s Snapshot, f FileHandle, newName Packag
 
 		pkgName := m.Name
 		if m.PkgPath == oldPkgPath {
-			pkgName = PackageName(newName)
+			pkgName = newName
 
 			if err := renamePackageClause(ctx, m, s, newName, edits); err != nil {
 				return nil, err
