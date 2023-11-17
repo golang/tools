@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"unicode"
 )
@@ -155,14 +154,6 @@ func fixDocumentURI(s string) (string, error) {
 func URIFromPath(path string) DocumentURI {
 	if path == "" {
 		return ""
-	}
-	// Handle standard library paths that contain the literal "$GOROOT".
-	// TODO(rstambler): The go/packages API should allow one to determine a user's $GOROOT.
-	// TODO(adonovan): is this still needed? We don't read compiler export data for std.
-	const prefix = "$GOROOT"
-	if len(path) >= len(prefix) && strings.EqualFold(prefix, path[:len(prefix)]) {
-		suffix := path[len(prefix):]
-		path = runtime.GOROOT() + suffix
 	}
 	if !isWindowsDrivePath(path) {
 		if abs, err := filepath.Abs(path); err == nil {
