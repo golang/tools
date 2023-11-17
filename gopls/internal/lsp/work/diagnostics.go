@@ -88,5 +88,5 @@ func modFileURI(pw *source.ParsedWorkFile, use *modfile.Use) span.URI {
 		modroot = filepath.Join(workdir, modroot)
 	}
 
-	return span.URIFromPath(filepath.Join(modroot, "go.mod"))
+	return protocol.URIFromPath(filepath.Join(modroot, "go.mod"))
 }

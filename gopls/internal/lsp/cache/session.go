@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/gopls/internal/persistent"
@@ -138,7 +139,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 			GocmdRunner: s.gocmdRunner,
 			SkipPathInScan: func(dir string) bool {
 				prefix := strings.TrimSuffix(string(v.folder.Dir), "/") + "/"
-				uri := strings.TrimSuffix(string(span.URIFromPath(dir)), "/")
+				uri := strings.TrimSuffix(string(protocol.URIFromPath(dir)), "/")
 				if !strings.HasPrefix(uri+"/", prefix) {
 					return false
 				}

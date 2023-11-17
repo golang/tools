@@ -635,7 +635,7 @@ func (s *server) runGoModUpdateCommands(ctx context.Context, snapshot source.Sna
 		return nil
 	}
 	modURI := snapshot.GoModForFile(uri)
-	sumURI := span.URIFromPath(strings.TrimSuffix(modURI.Filename(), ".mod") + ".sum")
+	sumURI := protocol.URIFromPath(strings.TrimSuffix(modURI.Filename(), ".mod") + ".sum")
 	modEdits, err := collectFileEdits(ctx, snapshot, modURI, newModBytes)
 	if err != nil {
 		return err

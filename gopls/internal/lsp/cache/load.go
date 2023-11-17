@@ -435,15 +435,15 @@ func buildMetadata(updates map[PackageID]*source.Metadata, pkg *packages.Package
 	updates[id] = m
 
 	for _, filename := range pkg.CompiledGoFiles {
-		uri := span.URIFromPath(filename)
+		uri := protocol.URIFromPath(filename)
 		m.CompiledGoFiles = append(m.CompiledGoFiles, uri)
 	}
 	for _, filename := range pkg.GoFiles {
-		uri := span.URIFromPath(filename)
+		uri := protocol.URIFromPath(filename)
 		m.GoFiles = append(m.GoFiles, uri)
 	}
 	for _, filename := range pkg.IgnoredFiles {
-		uri := span.URIFromPath(filename)
+		uri := protocol.URIFromPath(filename)
 		m.IgnoredFiles = append(m.IgnoredFiles, uri)
 	}
 
@@ -607,7 +607,7 @@ func containsPackageLocked(s *snapshot, m *source.Metadata) bool {
 	// gowork != "". It should suffice to consider workspace mod files (also, we
 	// will hopefully eliminate the concept of a workspace package soon).
 	if m.Module != nil && s.view.gowork != "" {
-		modURI := span.URIFromPath(m.Module.GoMod)
+		modURI := protocol.URIFromPath(m.Module.GoMod)
 		_, ok := s.workspaceModFiles[modURI]
 		if !ok {
 			return false

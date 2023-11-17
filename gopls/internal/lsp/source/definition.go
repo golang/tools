@@ -14,7 +14,6 @@ import (
 
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -247,7 +246,7 @@ func importDefinition(ctx context.Context, s Snapshot, pkg Package, pgf *ParsedG
 // column mapper with each file handle.
 func mapPosition(ctx context.Context, fset *token.FileSet, s FileSource, start, end token.Pos) (protocol.Location, error) {
 	file := fset.File(start)
-	uri := span.URIFromPath(file.Name())
+	uri := protocol.URIFromPath(file.Name())
 	fh, err := s.ReadFile(ctx, uri)
 	if err != nil {
 		return protocol.Location{}, err

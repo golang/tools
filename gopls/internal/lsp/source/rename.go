@@ -437,7 +437,7 @@ func renameOrdinary(ctx context.Context, snapshot Snapshot, f FileHandle, pp pro
 	}
 
 	// Type-check all the packages to inspect.
-	declURI := span.URIFromPath(pkg.FileSet().File(obj.Pos()).Name())
+	declURI := protocol.URIFromPath(pkg.FileSet().File(obj.Pos()).Name())
 	pkgs, err := typeCheckReverseDependencies(ctx, snapshot, declURI, transitive)
 	if err != nil {
 		return nil, err
@@ -1147,7 +1147,7 @@ func (r *renamer) update() (map[span.URI][]diff.Edit, error) {
 			lines := strings.Split(comment.Text, "\n")
 			tokFile := pgf.Tok
 			commentLine := safetoken.Line(tokFile, comment.Pos())
-			uri := span.URIFromPath(tokFile.Name())
+			uri := protocol.URIFromPath(tokFile.Name())
 			for i, line := range lines {
 				lineStart := comment.Pos()
 				if i > 0 {

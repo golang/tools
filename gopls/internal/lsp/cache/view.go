@@ -236,7 +236,7 @@ func (w viewDefinition) GOWORK() (span.URI, bool) {
 	if w.gowork == "off" || w.gowork == "" {
 		return "", w.gowork == "off"
 	}
-	return span.URIFromPath(w.gowork), false
+	return protocol.URIFromPath(w.gowork), false
 }
 
 // GO111MODULE returns the value of GO111MODULE to use for running the go
@@ -359,7 +359,7 @@ func tempModFile(modFh source.FileHandle, gosum []byte) (tmpURI span.URI, cleanu
 	}
 	defer tmpMod.Close()
 
-	tmpURI = span.URIFromPath(tmpMod.Name())
+	tmpURI = protocol.URIFromPath(tmpMod.Name())
 	tmpSumName := sumFilename(tmpURI)
 
 	content, err := modFh.Content()
@@ -506,7 +506,7 @@ func (s *snapshot) locateTemplateFiles(ctx context.Context) {
 		if !fileHasExtension(path, suffixes) {
 			return nil
 		}
-		uri := span.URIFromPath(path)
+		uri := protocol.URIFromPath(path)
 		if filterFunc(uri) {
 			return nil
 		}
@@ -942,7 +942,7 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs source.
 	// TODO(golang/go#57514): eliminate the expandWorkspaceToModule setting
 	// entirely.
 	if folder.Options.ExpandWorkspaceToModule && def.gomod != "" {
-		def.goCommandDir = span.URIFromPath(filepath.Dir(def.gomod.Filename()))
+		def.goCommandDir = protocol.URIFromPath(filepath.Dir(def.gomod.Filename()))
 	} else {
 		def.goCommandDir = folder.Dir
 	}
@@ -964,7 +964,7 @@ func findWorkspaceModFile(ctx context.Context, folderURI span.URI, fs source.Fil
 		return "", err
 	}
 	if match != "" {
-		return span.URIFromPath(match), nil
+		return protocol.URIFromPath(match), nil
 	}
 
 	// ...else we should check if there's exactly one nested module.
@@ -996,7 +996,7 @@ func findWorkspaceModFile(ctx context.Context, folderURI span.URI, fs source.Fil
 func findRootPattern(ctx context.Context, dir, basename string, fs source.FileSource) (string, error) {
 	for dir != "" {
 		target := filepath.Join(dir, basename)
-		fh, err := fs.ReadFile(ctx, span.URIFromPath(target))
+		fh, err := fs.ReadFile(ctx, protocol.URIFromPath(target))
 		if err != nil {
 			return "", err // context cancelled
 		}
@@ -1157,7 +1157,7 @@ func (s *snapshot) vendorEnabled(ctx context.Context, modURI span.URI, modConten
 // pathExcludedByFilterFunc, pathExcludedByFilter, view.filterFunc...
 func allFilesExcluded(files []string, filterFunc func(span.URI) bool) bool {
 	for _, f := range files {
-		uri := span.URIFromPath(f)
+		uri := protocol.URIFromPath(f)
 		if !filterFunc(uri) {
 			return false
 		}

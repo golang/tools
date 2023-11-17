@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
 )
@@ -67,7 +68,7 @@ func TestFileMap(t *testing.T) {
 		t.Run(test.label, func(t *testing.T) {
 			m := newFileMap()
 			for _, op := range test.ops {
-				uri := span.URIFromPath(filepath.FromSlash(op.path))
+				uri := protocol.URIFromPath(filepath.FromSlash(op.path))
 				switch op.op {
 				case set:
 					var fh source.FileHandle

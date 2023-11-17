@@ -13,7 +13,6 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 // ErrNoLinkname is returned by LinknameDefinition when no linkname
@@ -134,7 +133,7 @@ func findLinkname(ctx context.Context, snapshot Snapshot, pkgPath PackagePath, n
 	}
 
 	objURI := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
-	pgf, err := pkg.File(span.URIFromPath(objURI.Filename))
+	pgf, err := pkg.File(protocol.URIFromPath(objURI.Filename))
 	if err != nil {
 		return nil, nil, token.NoPos, err
 	}

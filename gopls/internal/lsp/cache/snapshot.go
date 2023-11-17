@@ -545,7 +545,7 @@ func (s *snapshot) goCommandInvocation(ctx context.Context, flags source.Invocat
 			modURI = s.view.gomod
 		}
 	} else {
-		modURI = s.GoModForFile(span.URIFromPath(inv.WorkingDir))
+		modURI = s.GoModForFile(protocol.URIFromPath(inv.WorkingDir))
 	}
 
 	var modContent []byte
@@ -1177,7 +1177,7 @@ func nearestModFile(ctx context.Context, uri span.URI, fs source.FileSource) (sp
 	if err != nil {
 		return "", err
 	}
-	return span.URIFromPath(mod), nil
+	return protocol.URIFromPath(mod), nil
 }
 
 func (s *snapshot) Metadata(id PackageID) *source.Metadata {
@@ -1654,7 +1654,7 @@ searchOverlays:
 
 	for _, meta := range meta {
 		if meta.Module != nil && meta.Module.GoMod != "" {
-			gomod := span.URIFromPath(meta.Module.GoMod)
+			gomod := protocol.URIFromPath(meta.Module.GoMod)
 			loadedModFiles[gomod] = struct{}{}
 		}
 		for _, ignored := range meta.IgnoredFiles {
@@ -1939,7 +1939,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changed source.StateChange)
 			}
 		}
 		if base == "go.sum" {
-			modURI := span.URIFromPath(filepath.Join(dir, "go.mod"))
+			modURI := protocol.URIFromPath(filepath.Join(dir, "go.mod"))
 			if _, active := result.workspaceModFiles[modURI]; active {
 				reinit = true
 			}
@@ -2473,5 +2473,5 @@ func (s *snapshot) setBuiltin(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.builtin = span.URIFromPath(path)
+	s.builtin = protocol.URIFromPath(path)
 }

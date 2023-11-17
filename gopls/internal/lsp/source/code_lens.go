@@ -15,7 +15,6 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 )
 
 type LensFunc func(context.Context, Snapshot, FileHandle) ([]protocol.CodeLens, error)
@@ -181,7 +180,7 @@ func goGenerateCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle) (
 			if err != nil {
 				return nil, err
 			}
-			dir := protocol.URIFromSpanURI(span.URIFromPath(filepath.Dir(fh.URI().Filename())))
+			dir := protocol.URIFromSpanURI(protocol.URIFromPath(filepath.Dir(fh.URI().Filename())))
 			nonRecursiveCmd, err := command.NewGenerateCommand("run go generate", command.GenerateArgs{Dir: dir, Recursive: false})
 			if err != nil {
 				return nil, err

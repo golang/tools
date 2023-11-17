@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/lsp/fake"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
 )
@@ -87,7 +88,7 @@ module fg
 	for _, test := range tests {
 		ctx := context.Background()
 		rel := fake.RelativeTo(dir)
-		folderURI := span.URIFromPath(rel.AbsPath(test.folder))
+		folderURI := protocol.URIFromPath(rel.AbsPath(test.folder))
 		excludeNothing := func(string) bool { return false }
 		got, err := findWorkspaceModFile(ctx, folderURI, New(nil), excludeNothing)
 		if err != nil {
@@ -95,7 +96,7 @@ module fg
 		}
 		want := span.URI("")
 		if test.want != "" {
-			want = span.URIFromPath(rel.AbsPath(test.want))
+			want = protocol.URIFromPath(rel.AbsPath(test.want))
 		}
 		if got != want {
 			t.Errorf("findWorkspaceModFile(%q) = %q, want %q", test.folder, got, want)
@@ -114,7 +115,7 @@ func TestInVendor(t *testing.T) {
 		{"foo/vendor/foo.txt", false},
 		{"foo/vendor/modules.txt", false},
 	} {
-		if got := inVendor(span.URIFromPath(tt.path)); got != tt.inVendor {
+		if got := inVendor(protocol.URIFromPath(tt.path)); got != tt.inVendor {
 			t.Errorf("expected %s inVendor %v, got %v", tt.path, tt.inVendor, got)
 		}
 	}

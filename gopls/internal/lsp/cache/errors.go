@@ -46,7 +46,7 @@ func goPackagesErrorDiagnostics(ctx context.Context, e packages.Error, m *source
 	// Parse error location and attempt to convert to protocol form.
 	loc, err := func() (protocol.Location, error) {
 		filename, line, col8 := parseGoListError(e, m.LoadDir)
-		uri := span.URIFromPath(filename)
+		uri := protocol.URIFromPath(filename)
 
 		fh, err := fs.ReadFile(ctx, uri)
 		if err != nil {
@@ -110,7 +110,7 @@ func parseErrorDiagnostics(pkg *syntaxPackage, errList scanner.ErrorList) ([]*so
 		return nil, fmt.Errorf("no errors in %v", errList)
 	}
 	e := errList[0]
-	pgf, err := pkg.File(span.URIFromPath(e.Pos.Filename))
+	pgf, err := pkg.File(protocol.URIFromPath(e.Pos.Filename))
 	if err != nil {
 		return nil, err
 	}
@@ -446,7 +446,7 @@ func typeErrorData(pkg *syntaxPackage, terr types.Error) (typesinternal.ErrorCod
 	if !posn.IsValid() {
 		return 0, protocol.Location{}, fmt.Errorf("position %d of type error %q (code %q) not found in FileSet", start, start, terr)
 	}
-	pgf, err := pkg.File(span.URIFromPath(posn.Filename))
+	pgf, err := pkg.File(protocol.URIFromPath(posn.Filename))
 	if err != nil {
 		return 0, protocol.Location{}, err
 	}

@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/gopls/internal/span"
@@ -375,10 +376,10 @@ func load(query string, needExport bool) (map[PackageID]string, MetadataSource, 
 		meta[id] = m
 
 		for _, filename := range pkg.CompiledGoFiles {
-			m.CompiledGoFiles = append(m.CompiledGoFiles, span.URIFromPath(filename))
+			m.CompiledGoFiles = append(m.CompiledGoFiles, protocol.URIFromPath(filename))
 		}
 		for _, filename := range pkg.GoFiles {
-			m.GoFiles = append(m.GoFiles, span.URIFromPath(filename))
+			m.GoFiles = append(m.GoFiles, protocol.URIFromPath(filename))
 		}
 
 		m.DepsByImpPath = make(map[ImportPath]PackageID)

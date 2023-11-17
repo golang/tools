@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/tools/gopls/internal/span"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/vulncheck/osv"
 	"golang.org/x/tools/txtar"
 )
@@ -62,7 +62,7 @@ type DB struct {
 // URI returns the file URI that can be used for VULNDB environment
 // variable.
 func (db *DB) URI() string {
-	u := span.URIFromPath(filepath.Join(db.disk, "ID"))
+	u := protocol.URIFromPath(filepath.Join(db.disk, "ID"))
 	return string(u)
 }
 

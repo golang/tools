@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/robustio"
 )
 
@@ -152,7 +151,7 @@ func (w *Workdir) URIToPath(uri protocol.DocumentURI) string {
 }
 
 func toURI(fp string) protocol.DocumentURI {
-	return protocol.DocumentURI(span.URIFromPath(fp))
+	return protocol.DocumentURI(protocol.URIFromPath(fp))
 }
 
 // ReadFile reads a text file specified by a workdir-relative path.

@@ -27,7 +27,6 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/typeparams"
@@ -823,7 +822,7 @@ func parseFull(ctx context.Context, snapshot Snapshot, fset *token.FileSet, pos 
 		return nil, 0, bug.Errorf("internal error: no file for position %d", pos)
 	}
 
-	uri := span.URIFromPath(f.Name())
+	uri := protocol.URIFromPath(f.Name())
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, 0, err

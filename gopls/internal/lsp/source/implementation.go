@@ -83,7 +83,7 @@ func implementations(ctx context.Context, snapshot Snapshot, fh FileHandle, pp p
 		// by the "local" search, which uses type information to
 		// enumerate all types within the package that satisfy the
 		// query type, even those defined local to a function.
-		declURI := span.URIFromPath(declPosn.Filename)
+		declURI := protocol.URIFromPath(declPosn.Filename)
 		declMetas, err := snapshot.MetadataForFile(ctx, declURI)
 		if err != nil {
 			return nil, err
@@ -210,7 +210,7 @@ func implementations(ctx context.Context, snapshot Snapshot, fh FileHandle, pp p
 // offsetToLocation converts an offset-based position to a protocol.Location,
 // which requires reading the file.
 func offsetToLocation(ctx context.Context, snapshot Snapshot, filename string, start, end int) (protocol.Location, error) {
-	uri := span.URIFromPath(filename)
+	uri := protocol.URIFromPath(filename)
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
 		return protocol.Location{}, err // cancelled, perhaps

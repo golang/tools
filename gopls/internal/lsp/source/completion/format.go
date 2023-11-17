@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/snippet"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typeparams"
@@ -279,7 +278,7 @@ func (c *completer) importEdits(imp *importInfo) ([]protocol.TextEdit, error) {
 		return nil, nil
 	}
 
-	pgf, err := c.pkg.File(span.URIFromPath(c.filename))
+	pgf, err := c.pkg.File(protocol.URIFromPath(c.filename))
 	if err != nil {
 		return nil, err
 	}

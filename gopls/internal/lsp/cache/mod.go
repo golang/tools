@@ -187,7 +187,7 @@ func (s *snapshot) goSum(ctx context.Context, modURI span.URI) []byte {
 	//
 	// TODO(rfindley): but that's not right. Changes to sum files should
 	// invalidate content, even if it's nonexistent content.
-	sumURI := span.URIFromPath(sumFilename(modURI))
+	sumURI := protocol.URIFromPath(sumFilename(modURI))
 	var sumFH source.FileHandle = s.FindFile(sumURI)
 	if sumFH == nil {
 		var err error

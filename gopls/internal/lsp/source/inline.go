@@ -20,7 +20,6 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/refactor/inline"
@@ -72,7 +71,7 @@ func inlineCall(ctx context.Context, snapshot Snapshot, fh FileHandle, rng proto
 
 	// Locate callee by file/line and analyze it.
 	calleePosn := safetoken.StartPosition(callerPkg.FileSet(), fn.Pos())
-	calleePkg, calleePGF, err := NarrowestPackageForFile(ctx, snapshot, span.URIFromPath(calleePosn.Filename))
+	calleePkg, calleePGF, err := NarrowestPackageForFile(ctx, snapshot, protocol.URIFromPath(calleePosn.Filename))
 	if err != nil {
 		return nil, nil, err
 	}

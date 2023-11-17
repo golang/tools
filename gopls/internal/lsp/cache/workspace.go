@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/span"
 )
@@ -47,7 +48,7 @@ func computeWorkspaceModFiles(ctx context.Context, gomod, gowork span.URI, go111
 			if !filepath.IsAbs(modDir) {
 				modDir = filepath.Join(dir, modDir)
 			}
-			modURI := span.URIFromPath(filepath.Join(modDir, "go.mod"))
+			modURI := protocol.URIFromPath(filepath.Join(modDir, "go.mod"))
 			modFiles[modURI] = struct{}{}
 		}
 		return modFiles, nil
@@ -113,7 +114,7 @@ func findModules(root span.URI, excludePath func(string) bool, modLimit int) (ma
 			}
 		}
 		// We're only interested in go.mod files.
-		uri := span.URIFromPath(path)
+		uri := protocol.URIFromPath(path)
 		if isGoMod(uri) {
 			modFiles[uri] = struct{}{}
 		}

@@ -259,7 +259,7 @@ func ordinaryReferences(ctx context.Context, snapshot Snapshot, uri span.URI, pp
 	// Find metadata of all packages containing the object's defining file.
 	// This may include the query pkg, and possibly other variants.
 	declPosn := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
-	declURI := span.URIFromPath(declPosn.Filename)
+	declURI := protocol.URIFromPath(declPosn.Filename)
 	variants, err := snapshot.MetadataForFile(ctx, declURI)
 	if err != nil {
 		return nil, err

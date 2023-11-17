@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
-	"golang.org/x/tools/gopls/internal/span"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 )
@@ -214,7 +213,7 @@ func OutgoingCalls(ctx context.Context, snapshot Snapshot, fh FileHandle, pp pro
 		return nil, bug.Errorf("file not found for %d", obj.Pos())
 	}
 
-	uri := span.URIFromPath(declFile.Name())
+	uri := protocol.URIFromPath(declFile.Name())
 	offset, err := safetoken.Offset(declFile, obj.Pos())
 	if err != nil {
 		return nil, err
