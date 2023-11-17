@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
@@ -388,7 +389,7 @@ func (s *Session) ResetView(ctx context.Context, uri protocol.DocumentURI) (*Vie
 // TODO(rfindley): what happens if this function fails? It must leave us in a
 // broken state, which we should surface to the user, probably as a request to
 // restart gopls.
-func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModification) (map[source.Snapshot][]protocol.DocumentURI, func(), error) {
+func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modification) (map[source.Snapshot][]protocol.DocumentURI, func(), error) {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 
@@ -417,8 +418,8 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 		if isGoMod(c.URI) || isGoWork(c.URI) {
 			// Change, InvalidateMetadata, and UnknownFileAction actions do not cause
 			// us to re-evaluate views.
-			redoViews := (c.Action != source.Change &&
-				c.Action != source.UnknownFileAction)
+			redoViews := (c.Action != file.Change &&
+				c.Action != file.UnknownAction)
 
 			if redoViews {
 				checkViews = true
@@ -455,7 +456,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 	}
 
 	// Collect information about views affected by these changes.
-	views := make(map[*View]map[protocol.DocumentURI]source.FileHandle)
+	views := make(map[*View]map[protocol.DocumentURI]file.Handle)
 	affectedViews := map[protocol.DocumentURI][]*View{}
 	for _, c := range changes {
 		// Build the list of affected views.
@@ -488,7 +489,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 			// Make sure that the file is added to the view's seenFiles set.
 			view.markKnown(c.URI)
 			if _, ok := views[view]; !ok {
-				views[view] = make(map[protocol.DocumentURI]source.FileHandle)
+				views[view] = make(map[protocol.DocumentURI]file.Handle)
 			}
 			views[view][c.URI] = fh
 		}
@@ -534,7 +535,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []source.FileModif
 // ExpandModificationsToDirectories returns the set of changes with the
 // directory changes removed and expanded to include all of the files in
 // the directory.
-func (s *Session) ExpandModificationsToDirectories(ctx context.Context, changes []source.FileModification) []source.FileModification {
+func (s *Session) ExpandModificationsToDirectories(ctx context.Context, changes []file.Modification) []file.Modification {
 	var snapshots []*snapshot
 	s.viewMu.Lock()
 	for _, v := range s.views {
@@ -552,7 +553,7 @@ func (s *Session) ExpandModificationsToDirectories(ctx context.Context, changes 
 	//
 	// There may be other files in the directory, but if we haven't read them yet
 	// we don't need to invalidate them.
-	var result []source.FileModification
+	var result []file.Modification
 	for _, c := range changes {
 		expanded := make(map[protocol.DocumentURI]bool)
 		for _, snapshot := range snapshots {
@@ -564,7 +565,7 @@ func (s *Session) ExpandModificationsToDirectories(ctx context.Context, changes 
 			result = append(result, c)
 		} else {
 			for uri := range expanded {
-				result = append(result, source.FileModification{
+				result = append(result, file.Modification{
 					URI:        uri,
 					Action:     c.Action,
 					LanguageID: "",
@@ -579,7 +580,7 @@ func (s *Session) ExpandModificationsToDirectories(ctx context.Context, changes 
 
 // Precondition: caller holds s.viewMu lock.
 // TODO(rfindley): move this to fs_overlay.go.
-func (fs *overlayFS) updateOverlays(ctx context.Context, changes []source.FileModification) error {
+func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modification) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -594,10 +595,10 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []source.FileMo
 		}
 
 		// Determine the file kind on open, otherwise, assume it has been cached.
-		var kind source.FileKind
+		var kind file.Kind
 		switch c.Action {
-		case source.Open:
-			kind = source.FileKindForLang(c.LanguageID)
+		case file.Open:
+			kind = file.KindForLang(c.LanguageID)
 		default:
 			if !ok {
 				return fmt.Errorf("updateOverlays: modifying unopened overlay %v", c.URI)
@@ -606,7 +607,7 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []source.FileMo
 		}
 
 		// Closing a file just deletes its overlay.
-		if c.Action == source.Close {
+		if c.Action == file.Close {
 			delete(fs.overlays, c.URI)
 			continue
 		}
@@ -615,7 +616,7 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []source.FileMo
 		// overlay. Saves and on-disk file changes don't come with the file's
 		// content.
 		text := c.Text
-		if text == nil && (c.Action == source.Save || c.OnDisk) {
+		if text == nil && (c.Action == file.Save || c.OnDisk) {
 			if !ok {
 				return fmt.Errorf("no known content for overlay for %s", c.Action)
 			}
@@ -623,15 +624,15 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []source.FileMo
 		}
 		// On-disk changes don't come with versions.
 		version := c.Version
-		if c.OnDisk || c.Action == source.Save {
+		if c.OnDisk || c.Action == file.Save {
 			version = o.version
 		}
-		hash := source.HashOf(text)
+		hash := file.HashOf(text)
 		var sameContentOnDisk bool
 		switch c.Action {
-		case source.Delete:
+		case file.Delete:
 			// Do nothing. sameContentOnDisk should be false.
-		case source.Save:
+		case file.Save:
 			// Make sure the version and content (if present) is the same.
 			if false && o.version != version { // Client no longer sends the version
 				return fmt.Errorf("updateOverlays: saving %s at version %v, currently at %v", c.URI, c.Version, o.version)
@@ -643,7 +644,7 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []source.FileMo
 		default:
 			fh := mustReadFile(ctx, fs.delegate, c.URI)
 			_, readErr := fh.Content()
-			sameContentOnDisk = (readErr == nil && fh.FileIdentity().Hash == hash)
+			sameContentOnDisk = (readErr == nil && fh.Identity().Hash == hash)
 		}
 		o = &Overlay{
 			uri:     c.URI,
@@ -663,7 +664,7 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []source.FileMo
 	return nil
 }
 
-func mustReadFile(ctx context.Context, fs source.FileSource, uri protocol.DocumentURI) source.FileHandle {
+func mustReadFile(ctx context.Context, fs file.Source, uri protocol.DocumentURI) file.Handle {
 	ctx = xcontext.Detach(ctx)
 	fh, err := fs.ReadFile(ctx, uri)
 	if err != nil {
@@ -680,11 +681,11 @@ type brokenFile struct {
 	err error
 }
 
-func (b brokenFile) URI() protocol.DocumentURI         { return b.uri }
-func (b brokenFile) FileIdentity() source.FileIdentity { return source.FileIdentity{URI: b.uri} }
-func (b brokenFile) SameContentsOnDisk() bool          { return false }
-func (b brokenFile) Version() int32                    { return 0 }
-func (b brokenFile) Content() ([]byte, error)          { return nil, b.err }
+func (b brokenFile) URI() protocol.DocumentURI { return b.uri }
+func (b brokenFile) Identity() file.Identity   { return file.Identity{URI: b.uri} }
+func (b brokenFile) SameContentsOnDisk() bool  { return false }
+func (b brokenFile) Version() int32            { return 0 }
+func (b brokenFile) Content() ([]byte, error)  { return nil, b.err }
 
 // FileWatchingGlobPatterns returns a new set of glob patterns to
 // watch every directory known by the view. For views within a module,

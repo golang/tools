@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/keys"
@@ -26,7 +27,7 @@ type importsState struct {
 	processEnv             *imports.ProcessEnv
 	cacheRefreshDuration   time.Duration
 	cacheRefreshTimer      *time.Timer
-	cachedModFileHash      source.Hash
+	cachedModFileHash      file.Hash
 	cachedBuildFlags       []string
 	cachedDirectoryFilters []string
 }
@@ -43,13 +44,13 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *snapshot
 	// the mod file shouldn't be changing while people are autocompleting.
 	//
 	// TODO(rfindley): consider instead hashing on-disk modfiles here.
-	var modFileHash source.Hash
+	var modFileHash file.Hash
 	for m := range snapshot.workspaceModFiles {
 		fh, err := snapshot.ReadFile(ctx, m)
 		if err != nil {
 			return err
 		}
-		modFileHash.XORWith(fh.FileIdentity().Hash)
+		modFileHash.XORWith(fh.Identity().Hash)
 	}
 
 	// view.goEnv is immutable -- changes make a new view. Options can change.

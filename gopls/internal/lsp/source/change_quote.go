@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/diff"
@@ -23,7 +24,7 @@ import (
 // Only the following conditions are true, the action in result is valid
 //   - [start, end) is enclosed by a string literal
 //   - if the string is interpreted string, need check whether the convert is allowed
-func ConvertStringLiteral(pgf *ParsedGoFile, fh FileHandle, rng protocol.Range) (protocol.CodeAction, bool) {
+func ConvertStringLiteral(pgf *ParsedGoFile, fh file.Handle, rng protocol.Range) (protocol.CodeAction, bool) {
 	startPos, endPos, err := pgf.RangePos(rng)
 	if err != nil {
 		bug.Reportf("(file=%v).RangePos(%v) failed: %v", pgf.URI, rng, err)

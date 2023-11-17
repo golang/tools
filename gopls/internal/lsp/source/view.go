@@ -7,7 +7,6 @@ package source
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +21,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/objectpath"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
@@ -64,7 +64,7 @@ type Snapshot interface {
 	// language different from the file name heuristic, e.g. that
 	// an .html file actually contains Go "html/template" syntax,
 	// or even that a .go file contains Python.
-	FileKind(FileHandle) FileKind
+	FileKind(file.Handle) file.Kind
 
 	// Options returns the options associated with this snapshot.
 	Options() *Options
@@ -79,12 +79,12 @@ type Snapshot interface {
 	// A Snapshot is a caching implementation of FileSource whose
 	// ReadFile method returns consistent information about the existence
 	// and content of each file throughout its lifetime.
-	FileSource
+	file.Source
 
 	// FindFile returns the FileHandle for the given URI, if it is already
 	// in the given snapshot.
 	// TODO(adonovan): delete this operation; use ReadFile instead.
-	FindFile(uri protocol.DocumentURI) FileHandle
+	FindFile(uri protocol.DocumentURI) file.Handle
 
 	// AwaitInitialized waits until the snapshot's view is initialized.
 	AwaitInitialized(ctx context.Context)
@@ -97,12 +97,12 @@ type Snapshot interface {
 	IgnoredFile(uri protocol.DocumentURI) bool
 
 	// Templates returns the .tmpl files
-	Templates() map[protocol.DocumentURI]FileHandle
+	Templates() map[protocol.DocumentURI]file.Handle
 
 	// ParseGo returns the parsed AST for the file.
 	// If the file is not available, returns nil and an error.
 	// Position information is added to FileSet().
-	ParseGo(ctx context.Context, fh FileHandle, mode parser.Mode) (*ParsedGoFile, error)
+	ParseGo(ctx context.Context, fh file.Handle, mode parser.Mode) (*ParsedGoFile, error)
 
 	// Analyze runs the specified analyzers on the given packages at this snapshot.
 	//
@@ -135,11 +135,11 @@ type Snapshot interface {
 	ModFiles() []protocol.DocumentURI
 
 	// ParseMod is used to parse go.mod files.
-	ParseMod(ctx context.Context, fh FileHandle) (*ParsedModule, error)
+	ParseMod(ctx context.Context, fh file.Handle) (*ParsedModule, error)
 
 	// ModWhy returns the results of `go mod why` for the module specified by
 	// the given go.mod file.
-	ModWhy(ctx context.Context, fh FileHandle) (map[string]string, error)
+	ModWhy(ctx context.Context, fh file.Handle) (map[string]string, error)
 
 	// ModTidy returns the results of `go mod tidy` for the module specified by
 	// the given go.mod file.
@@ -156,7 +156,7 @@ type Snapshot interface {
 	WorkFile() protocol.DocumentURI
 
 	// ParseWork is used to parse go.work files.
-	ParseWork(ctx context.Context, fh FileHandle) (*ParsedWorkFile, error)
+	ParseWork(ctx context.Context, fh file.Handle) (*ParsedWorkFile, error)
 
 	// BuiltinFile returns information about the special builtin package.
 	BuiltinFile(ctx context.Context) (*ParsedGoFile, error)
@@ -432,19 +432,9 @@ type View interface {
 // By far the most common of these is a change to file state, but a query of
 // module upgrade information or vulnerabilities also affects gopls' behavior.
 type StateChange struct {
-	Files          map[protocol.DocumentURI]FileHandle
+	Files          map[protocol.DocumentURI]file.Handle
 	ModuleUpgrades map[protocol.DocumentURI]map[string]string
 	Vulns          map[protocol.DocumentURI]*vulncheck.Result
-}
-
-// A FileSource maps URIs to FileHandles.
-type FileSource interface {
-	// ReadFile returns the FileHandle for a given URI, either by
-	// reading the content of the file or by obtaining it from a cache.
-	//
-	// Invariant: ReadFile must only return an error in the case of context
-	// cancellation. If ctx.Err() is nil, the resulting error must also be nil.
-	ReadFile(ctx context.Context, uri protocol.DocumentURI) (FileHandle, error)
 }
 
 // A MetadataSource maps package IDs to metadata.
@@ -713,59 +703,11 @@ func RemoveIntermediateTestVariants(pmetas *[]*Metadata) {
 	*pmetas = res
 }
 
-var ErrViewExists = errors.New("view already exists for session")
-
-// FileModification represents a modification to a file.
-type FileModification struct {
-	URI    protocol.DocumentURI
-	Action FileAction
-
-	// OnDisk is true if a watched file is changed on disk.
-	// If true, Version will be -1 and Text will be nil.
-	OnDisk bool
-
-	// Version will be -1 and Text will be nil when they are not supplied,
-	// specifically on textDocument/didClose and for on-disk changes.
-	Version int32
-	Text    []byte
-
-	// LanguageID is only sent from the language client on textDocument/didOpen.
-	LanguageID string
-}
-
-type FileAction int
-
-const (
-	UnknownFileAction = FileAction(iota)
-	Open
-	Change
-	Close
-	Save
-	Create
-	Delete
+var (
+	ErrViewExists            = errors.New("view already exists for session")
+	ErrTmpModfileUnsupported = errors.New("-modfile is unsupported for this Go version")
+	ErrNoModOnDisk           = errors.New("go.mod file is not on disk")
 )
-
-func (a FileAction) String() string {
-	switch a {
-	case Open:
-		return "Open"
-	case Change:
-		return "Change"
-	case Close:
-		return "Close"
-	case Save:
-		return "Save"
-	case Create:
-		return "Create"
-	case Delete:
-		return "Delete"
-	default:
-		return "Unknown"
-	}
-}
-
-var ErrTmpModfileUnsupported = errors.New("-modfile is unsupported for this Go version")
-var ErrNoModOnDisk = errors.New("go.mod file is not on disk")
 
 func IsNonFatalGoModError(err error) bool {
 	return err == ErrTmpModfileUnsupported || err == ErrNoModOnDisk
@@ -783,115 +725,6 @@ const (
 	// be considered.
 	ParseFull = parser.AllErrors | parser.ParseComments | SkipObjectResolution
 )
-
-// A FileHandle represents the URI, content, hash, and optional
-// version of a file tracked by the LSP session.
-//
-// File content may be provided by the file system (for Saved files)
-// or from an overlay, for open files with unsaved edits.
-// A FileHandle may record an attempt to read a non-existent file,
-// in which case Content returns an error.
-type FileHandle interface {
-	// URI is the URI for this file handle.
-	// TODO(rfindley): this is not actually well-defined. In some cases, there
-	// may be more than one URI that resolve to the same FileHandle. Which one is
-	// this?
-	URI() protocol.DocumentURI
-	// FileIdentity returns a FileIdentity for the file, even if there was an
-	// error reading it.
-	FileIdentity() FileIdentity
-	// SameContentsOnDisk reports whether the file has the same content on disk:
-	// it is false for files open on an editor with unsaved edits.
-	SameContentsOnDisk() bool
-	// Version returns the file version, as defined by the LSP client.
-	// For on-disk file handles, Version returns 0.
-	Version() int32
-	// Content returns the contents of a file.
-	// If the file is not available, returns a nil slice and an error.
-	Content() ([]byte, error)
-}
-
-// A Hash is a cryptographic digest of the contents of a file.
-// (Although at 32B it is larger than a 16B string header, it is smaller
-// and has better locality than the string header + 64B of hex digits.)
-type Hash [sha256.Size]byte
-
-// HashOf returns the hash of some data.
-func HashOf(data []byte) Hash {
-	return Hash(sha256.Sum256(data))
-}
-
-// Hashf returns the hash of a printf-formatted string.
-func Hashf(format string, args ...interface{}) Hash {
-	// Although this looks alloc-heavy, it is faster than using
-	// Fprintf on sha256.New() because the allocations don't escape.
-	return HashOf([]byte(fmt.Sprintf(format, args...)))
-}
-
-// String returns the digest as a string of hex digits.
-func (h Hash) String() string {
-	return fmt.Sprintf("%64x", [sha256.Size]byte(h))
-}
-
-// Less returns true if the given hash is less than the other.
-func (h Hash) Less(other Hash) bool {
-	return bytes.Compare(h[:], other[:]) < 0
-}
-
-// XORWith updates *h to *h XOR h2.
-func (h *Hash) XORWith(h2 Hash) {
-	// Small enough that we don't need crypto/subtle.XORBytes.
-	for i := range h {
-		h[i] ^= h2[i]
-	}
-}
-
-// FileIdentity uniquely identifies a file at a version from a FileSystem.
-type FileIdentity struct {
-	URI  protocol.DocumentURI
-	Hash Hash // digest of file contents
-}
-
-func (id FileIdentity) String() string {
-	return fmt.Sprintf("%s%s", id.URI, id.Hash)
-}
-
-// FileKind describes the kind of the file in question.
-// It can be one of Go,mod, Sum, or Tmpl.
-type FileKind int
-
-const (
-	// UnknownKind is a file type we don't know about.
-	UnknownKind = FileKind(iota)
-
-	// Go is a normal go source file.
-	Go
-	// Mod is a go.mod file.
-	Mod
-	// Sum is a go.sum file.
-	Sum
-	// Tmpl is a template file.
-	Tmpl
-	// Work is a go.work file.
-	Work
-)
-
-func (k FileKind) String() string {
-	switch k {
-	case Go:
-		return "go"
-	case Mod:
-		return "go.mod"
-	case Sum:
-		return "go.sum"
-	case Tmpl:
-		return "tmpl"
-	case Work:
-		return "go.work"
-	default:
-		return fmt.Sprintf("internal error: unknown file kind %d", k)
-	}
-}
 
 // Analyzer represents a go/analysis analyzer with some boolean properties
 // that let the user know how to use the analyzer.

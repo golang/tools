@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/memoize"
@@ -133,7 +134,7 @@ type parseKey struct {
 
 type parseCacheEntry struct {
 	key      parseKey
-	hash     source.Hash
+	hash     file.Hash
 	promise  *memoize.Promise // memoize.Promise[*source.ParsedGoFile]
 	atime    uint64           // clock time of last access, for use in LRU sorting
 	walltime time.Time        // actual time of last access, for use in time-based eviction; too coarse for LRU on some systems
@@ -146,7 +147,7 @@ type parseCacheEntry struct {
 // The resulting slice has an entry for every given file handle, though some
 // entries may be nil if there was an error reading the file (in which case the
 // resulting error will be non-nil).
-func (c *parseCache) startParse(mode parser.Mode, purgeFuncBodies bool, fhs ...source.FileHandle) ([]*memoize.Promise, error) {
+func (c *parseCache) startParse(mode parser.Mode, purgeFuncBodies bool, fhs ...file.Handle) ([]*memoize.Promise, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -180,7 +181,7 @@ func (c *parseCache) startParse(mode parser.Mode, purgeFuncBodies bool, fhs ...s
 		}
 
 		if e, ok := c.m[key]; ok {
-			if e.hash == fh.FileIdentity().Hash { // cache hit
+			if e.hash == fh.Identity().Hash { // cache hit
 				e.atime = c.clock
 				e.walltime = walltime
 				heap.Fix(&c.lru, e.lruIndex)
@@ -236,7 +237,7 @@ func (c *parseCache) startParse(mode parser.Mode, purgeFuncBodies bool, fhs ...s
 		// add new entry; entries are gc'ed asynchronously
 		e := &parseCacheEntry{
 			key:      key,
-			hash:     fh.FileIdentity().Hash,
+			hash:     fh.Identity().Hash,
 			promise:  promise,
 			atime:    c.clock,
 			walltime: walltime,
@@ -316,7 +317,7 @@ func (c *parseCache) allocateSpace(size int) (int, int) {
 //
 // If parseFiles returns an error, it still returns a slice,
 // but with a nil entry for each file that could not be parsed.
-func (c *parseCache) parseFiles(ctx context.Context, fset *token.FileSet, mode parser.Mode, purgeFuncBodies bool, fhs ...source.FileHandle) ([]*source.ParsedGoFile, error) {
+func (c *parseCache) parseFiles(ctx context.Context, fset *token.FileSet, mode parser.Mode, purgeFuncBodies bool, fhs ...file.Handle) ([]*source.ParsedGoFile, error) {
 	pgfs := make([]*source.ParsedGoFile, len(fhs))
 
 	// Temporary fall-back for 32-bit systems, where reservedForParsing is too

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 )
@@ -47,7 +48,7 @@ func TestParseCache(t *testing.T) {
 
 	// Fill up the cache with other files, but don't evict the file above.
 	cache.gcOnce()
-	files := []source.FileHandle{fh}
+	files := []file.Handle{fh}
 	files = append(files, dummyFileHandles(parseCacheMinFiles-1)...)
 
 	pgfs3, err := cache.parseFiles(ctx, fset, source.ParseFull, false, files...)
@@ -114,7 +115,7 @@ func TestParseCache_Issue59097(t *testing.T) {
 	parsePadding = 0
 
 	danglingSelector := []byte("package p\nfunc _() {\n\tx.\n}")
-	files := []source.FileHandle{makeFakeFileHandle("file:///bad", danglingSelector)}
+	files := []file.Handle{makeFakeFileHandle("file:///bad", danglingSelector)}
 
 	// Parsing should succeed even though we overflow the padding.
 	cache := newParseCache(0)
@@ -192,8 +193,8 @@ func TestParseCache_Duplicates(t *testing.T) {
 	}
 }
 
-func dummyFileHandles(n int) []source.FileHandle {
-	var fhs []source.FileHandle
+func dummyFileHandles(n int) []file.Handle {
+	var fhs []file.Handle
 	for i := 0; i < n; i++ {
 		uri := protocol.DocumentURI(fmt.Sprintf("file:///_%d", i))
 		src := []byte(fmt.Sprintf("package p\nvar _ = %d", i))
@@ -206,15 +207,15 @@ func makeFakeFileHandle(uri protocol.DocumentURI, src []byte) fakeFileHandle {
 	return fakeFileHandle{
 		uri:  uri,
 		data: src,
-		hash: source.HashOf(src),
+		hash: file.HashOf(src),
 	}
 }
 
 type fakeFileHandle struct {
-	source.FileHandle
+	file.Handle
 	uri  protocol.DocumentURI
 	data []byte
-	hash source.Hash
+	hash file.Hash
 }
 
 func (h fakeFileHandle) URI() protocol.DocumentURI {
@@ -225,8 +226,8 @@ func (h fakeFileHandle) Content() ([]byte, error) {
 	return h.data, nil
 }
 
-func (h fakeFileHandle) FileIdentity() source.FileIdentity {
-	return source.FileIdentity{
+func (h fakeFileHandle) Identity() file.Identity {
+	return file.Identity{
 		URI:  h.uri,
 		Hash: h.hash,
 	}

@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -50,7 +51,7 @@ func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIde
 	ctx, done := event.Start(ctx, "lsp.Server.semanticTokens", tag.URI.Of(td.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, td.URI, source.UnknownKind)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, td.URI, file.UnknownKind)
 	defer release()
 	if !ok {
 		return nil, err
@@ -62,7 +63,7 @@ func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIde
 	}
 
 	kind := snapshot.FileKind(fh)
-	if kind == source.Tmpl {
+	if kind == file.Tmpl {
 		// this is a little cumbersome to avoid both exporting 'encoded' and its methods
 		// and to avoid import cycles
 		e := &encoded{
@@ -80,7 +81,7 @@ func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIde
 		}
 		return template.SemanticTokens(ctx, snapshot, fh.URI(), add, data)
 	}
-	if kind != source.Go {
+	if kind != file.Go {
 		return nil, nil
 	}
 	pkg, pgf, err := source.NarrowestPackageForFile(ctx, snapshot, fh.URI())

@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/imports"
@@ -37,7 +38,7 @@ import (
 //   - Improve the extra newlines in output.
 //   - Stream type checking via ForEachPackage.
 //   - Avoid unnecessary additional type checking.
-func RemoveUnusedParameter(ctx context.Context, fh FileHandle, rng protocol.Range, snapshot Snapshot) ([]protocol.DocumentChanges, error) {
+func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Range, snapshot Snapshot) ([]protocol.DocumentChanges, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err

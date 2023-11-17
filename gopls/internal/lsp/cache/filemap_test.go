@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 )
 
 func TestFileMap(t *testing.T) {
@@ -70,7 +70,7 @@ func TestFileMap(t *testing.T) {
 				uri := protocol.URIFromPath(filepath.FromSlash(op.path))
 				switch op.op {
 				case set:
-					var fh source.FileHandle
+					var fh file.Handle
 					if op.overlay {
 						fh = &Overlay{uri: uri}
 					} else {
@@ -83,7 +83,7 @@ func TestFileMap(t *testing.T) {
 			}
 
 			var gotFiles []string
-			m.Range(func(uri protocol.DocumentURI, _ source.FileHandle) {
+			m.Range(func(uri protocol.DocumentURI, _ file.Handle) {
 				gotFiles = append(gotFiles, normalize(uri.Path()))
 			})
 			sort.Strings(gotFiles)

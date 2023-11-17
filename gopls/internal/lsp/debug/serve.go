@@ -322,7 +322,7 @@ func (i *Instance) getFile(r *http.Request) interface{} {
 	}
 	for _, o := range s.Overlays() {
 		// TODO(adonovan): understand and document this comparison.
-		if o.FileIdentity().Hash.String() == identifier {
+		if o.Identity().Hash.String() == identifier {
 			return o
 		}
 	}
@@ -836,7 +836,7 @@ From: <b>{{template "cachelink" .Cache.ID}}</b><br>
 {{$session := .}}
 <ul>{{range .Overlays}}
 <li>
-<a href="/file/{{$session.ID}}/{{.FileIdentity.Hash}}">{{.FileIdentity.URI}}</a>
+<a href="/file/{{$session.ID}}/{{.Identity.Hash}}">{{.Identity.URI}}</a>
 </li>{{end}}</ul>
 {{end}}
 `))
@@ -850,11 +850,11 @@ Folder: <b>{{.Folder}}</b><br>
 `))
 
 var FileTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
-{{define "title"}}Overlay {{.FileIdentity.Hash}}{{end}}
+{{define "title"}}Overlay {{.Identity.Hash}}{{end}}
 {{define "body"}}
 {{with .}}
 	URI: <b>{{.URI}}</b><br>
-	Identifier: <b>{{.FileIdentity.Hash}}</b><br>
+	Identifier: <b>{{.Identity.Hash}}</b><br>
 	Version: <b>{{.Version}}</b><br>
 	Kind: <b>{{.Kind}}</b><br>
 {{end}}

@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/fillstruct"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/undeclaredname"
@@ -29,7 +30,7 @@ type (
 	// TODO(rfindley): the signature of suggestedFixFunc should probably accept
 	// (context.Context, Snapshot, protocol.Diagnostic). No reason for us to
 	// encode as a (URI, Range) pair when we have the protocol type.
-	suggestedFixFunc func(context.Context, Snapshot, FileHandle, protocol.Range) ([]protocol.TextDocumentEdit, error)
+	suggestedFixFunc func(context.Context, Snapshot, file.Handle, protocol.Range) ([]protocol.TextDocumentEdit, error)
 	suggestedFixer   struct {
 		// fixesDiagnostic reports if a diagnostic from the analyzer can be fixed
 		// by Fix. If nil then all diagnostics from the analyzer are assumed to be
@@ -86,7 +87,7 @@ type singleFileFixFunc func(fset *token.FileSet, start, end token.Pos, src []byt
 
 // singleFile calls analyzers that expect inputs for a single file.
 func singleFile(sf singleFileFixFunc) suggestedFixFunc {
-	return func(ctx context.Context, snapshot Snapshot, fh FileHandle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
+	return func(ctx context.Context, snapshot Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
 		pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 		if err != nil {
 			return nil, err
@@ -133,7 +134,7 @@ func CanFix(a *Analyzer, d *Diagnostic) bool {
 
 // ApplyFix applies the command's suggested fix to the given file and
 // range, returning the resulting edits.
-func ApplyFix(ctx context.Context, fix string, snapshot Snapshot, fh FileHandle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
+func ApplyFix(ctx context.Context, fix string, snapshot Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
 	fixer, ok := suggestedFixes[fix]
 	if !ok {
 		return nil, fmt.Errorf("no suggested fix function for %s", fix)
@@ -198,7 +199,7 @@ func fixedByImportingEmbed(diag *Diagnostic) bool {
 }
 
 // addEmbedImport adds a missing embed "embed" import with blank name.
-func addEmbedImport(ctx context.Context, snapshot Snapshot, fh FileHandle, _ protocol.Range) ([]protocol.TextDocumentEdit, error) {
+func addEmbedImport(ctx context.Context, snapshot Snapshot, fh file.Handle, _ protocol.Range) ([]protocol.TextDocumentEdit, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, fmt.Errorf("narrow pkg: %w", err)

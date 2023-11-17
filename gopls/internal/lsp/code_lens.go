@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sort"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/mod"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -21,16 +22,16 @@ func (s *server) codeLens(ctx context.Context, params *protocol.CodeLensParams) 
 	ctx, done := event.Start(ctx, "lsp.Server.codeLens", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.UnknownKind)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
 	defer release()
 	if !ok {
 		return nil, err
 	}
 	var lenses map[command.Command]source.LensFunc
 	switch snapshot.FileKind(fh) {
-	case source.Mod:
+	case file.Mod:
 		lenses = mod.LensFuncs()
-	case source.Go:
+	case file.Go:
 		lenses = source.LensFuncs()
 	default:
 		// Unsupported file kind for a code lens.

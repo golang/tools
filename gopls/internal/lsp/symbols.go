@@ -7,6 +7,7 @@ package lsp
 import (
 	"context"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/template"
@@ -18,16 +19,16 @@ func (s *server) documentSymbol(ctx context.Context, params *protocol.DocumentSy
 	ctx, done := event.Start(ctx, "lsp.Server.documentSymbol", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.UnknownKind)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
 	defer release()
 	if !ok {
 		return []interface{}{}, err
 	}
 	var docSymbols []protocol.DocumentSymbol
 	switch snapshot.FileKind(fh) {
-	case source.Tmpl:
+	case file.Tmpl:
 		docSymbols, err = template.DocumentSymbols(snapshot, fh)
-	case source.Go:
+	case file.Go:
 		docSymbols, err = source.DocumentSymbols(ctx, snapshot, fh)
 	default:
 		return []interface{}{}, nil

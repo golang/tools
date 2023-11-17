@@ -81,25 +81,6 @@ func adjustedObjEnd(obj types.Object) token.Pos {
 //	https://golang.org/s/generatedcode
 var generatedRx = regexp.MustCompile(`// .*DO NOT EDIT\.?`)
 
-// FileKindForLang returns the file kind associated with the given language ID,
-// or UnknownKind if the language ID is not recognized.
-func FileKindForLang(langID string) FileKind {
-	switch langID {
-	case "go":
-		return Go
-	case "go.mod":
-		return Mod
-	case "go.sum":
-		return Sum
-	case "tmpl", "gotmpl":
-		return Tmpl
-	case "go.work":
-		return Work
-	default:
-		return UnknownKind
-	}
-}
-
 // nodeAtPos returns the index and the node whose position is contained inside
 // the node list.
 func nodeAtPos(nodes []ast.Node, pos token.Pos) (ast.Node, int) {

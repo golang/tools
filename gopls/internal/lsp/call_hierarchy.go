@@ -7,6 +7,7 @@ package lsp
 import (
 	"context"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
@@ -16,7 +17,7 @@ func (s *server) prepareCallHierarchy(ctx context.Context, params *protocol.Call
 	ctx, done := event.Start(ctx, "lsp.Server.prepareCallHierarchy")
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.Go)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.Go)
 	defer release()
 	if !ok {
 		return nil, err
@@ -29,7 +30,7 @@ func (s *server) incomingCalls(ctx context.Context, params *protocol.CallHierarc
 	ctx, done := event.Start(ctx, "lsp.Server.incomingCalls")
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.Item.URI, source.Go)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.Item.URI, file.Go)
 	defer release()
 	if !ok {
 		return nil, err
@@ -42,7 +43,7 @@ func (s *server) outgoingCalls(ctx context.Context, params *protocol.CallHierarc
 	ctx, done := event.Start(ctx, "lsp.Server.outgoingCalls")
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.Item.URI, source.Go)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.Item.URI, file.Go)
 	defer release()
 	if !ok {
 		return nil, err

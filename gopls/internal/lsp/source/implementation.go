@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
@@ -45,7 +46,7 @@ import (
 //
 // If the position denotes a method, the computation is applied to its
 // receiver type and then its corresponding methods are returned.
-func Implementation(ctx context.Context, snapshot Snapshot, f FileHandle, pp protocol.Position) ([]protocol.Location, error) {
+func Implementation(ctx context.Context, snapshot Snapshot, f file.Handle, pp protocol.Position) ([]protocol.Location, error) {
 	ctx, done := event.Start(ctx, "source.Implementation")
 	defer done()
 
@@ -69,7 +70,7 @@ func Implementation(ctx context.Context, snapshot Snapshot, f FileHandle, pp pro
 	return locs, nil
 }
 
-func implementations(ctx context.Context, snapshot Snapshot, fh FileHandle, pp protocol.Position) ([]protocol.Location, error) {
+func implementations(ctx context.Context, snapshot Snapshot, fh file.Handle, pp protocol.Position) ([]protocol.Location, error) {
 	obj, pkg, err := implementsObj(ctx, snapshot, fh.URI(), pp)
 	if err != nil {
 		return nil, err

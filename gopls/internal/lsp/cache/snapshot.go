@@ -30,6 +30,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/immutable"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
@@ -275,12 +276,12 @@ func (s *snapshot) View() source.View {
 	return s.view
 }
 
-func (s *snapshot) FileKind(fh source.FileHandle) source.FileKind {
+func (s *snapshot) FileKind(fh file.Handle) file.Kind {
 	// The kind of an unsaved buffer comes from the
 	// TextDocumentItem.LanguageID field in the didChange event,
 	// not from the file name. They may differ.
 	if o, ok := fh.(*Overlay); ok {
-		if o.kind != source.UnknownKind {
+		if o.kind != file.UnknownKind {
 			return o.kind
 		}
 	}
@@ -288,22 +289,22 @@ func (s *snapshot) FileKind(fh source.FileHandle) source.FileKind {
 	fext := filepath.Ext(fh.URI().Path())
 	switch fext {
 	case ".go":
-		return source.Go
+		return file.Go
 	case ".mod":
-		return source.Mod
+		return file.Mod
 	case ".sum":
-		return source.Sum
+		return file.Sum
 	case ".work":
-		return source.Work
+		return file.Work
 	}
 	exts := s.Options().TemplateExtensions
 	for _, ext := range exts {
 		if fext == ext || fext == "."+ext {
-			return source.Tmpl
+			return file.Tmpl
 		}
 	}
 	// and now what? This should never happen, but it does for cgo before go1.15
-	return source.Go
+	return file.Go
 }
 
 func (s *snapshot) Options() *source.Options {
@@ -327,13 +328,13 @@ func (s *snapshot) WorkFile() protocol.DocumentURI {
 	return gowork
 }
 
-func (s *snapshot) Templates() map[protocol.DocumentURI]source.FileHandle {
+func (s *snapshot) Templates() map[protocol.DocumentURI]file.Handle {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	tmpls := map[protocol.DocumentURI]source.FileHandle{}
-	s.files.Range(func(k protocol.DocumentURI, fh source.FileHandle) {
-		if s.FileKind(fh) == source.Tmpl {
+	tmpls := map[protocol.DocumentURI]file.Handle{}
+	s.files.Range(func(k protocol.DocumentURI, fh file.Handle) {
+		if s.FileKind(fh) == file.Tmpl {
 			tmpls[k] = fh
 		}
 	})
@@ -1047,7 +1048,7 @@ func (s *snapshot) filesInDir(uri protocol.DocumentURI) []protocol.DocumentURI {
 		return nil
 	}
 	var files []protocol.DocumentURI
-	s.files.Range(func(uri protocol.DocumentURI, _ source.FileHandle) {
+	s.files.Range(func(uri protocol.DocumentURI, _ file.Handle) {
 		if source.InDir(dir, uri.Path()) {
 			files = append(files, uri)
 		}
@@ -1170,7 +1171,7 @@ func moduleForURI(modFiles map[protocol.DocumentURI]struct{}, uri protocol.Docum
 // containing uri, or a parent of that directory.
 //
 // The given uri must be a file, not a directory.
-func nearestModFile(ctx context.Context, uri protocol.DocumentURI, fs source.FileSource) (protocol.DocumentURI, error) {
+func nearestModFile(ctx context.Context, uri protocol.DocumentURI, fs file.Source) (protocol.DocumentURI, error) {
 	dir := filepath.Dir(uri.Path())
 	mod, err := findRootPattern(ctx, dir, "go.mod", fs)
 	if err != nil {
@@ -1216,7 +1217,7 @@ func (s *snapshot) clearShouldLoad(scopes ...loadScope) {
 	}
 }
 
-func (s *snapshot) FindFile(uri protocol.DocumentURI) source.FileHandle {
+func (s *snapshot) FindFile(uri protocol.DocumentURI) file.Handle {
 	s.view.markKnown(uri)
 
 	s.mu.Lock()
@@ -1231,7 +1232,7 @@ func (s *snapshot) FindFile(uri protocol.DocumentURI) source.FileHandle {
 //
 // ReadFile succeeds even if the file does not exist. A non-nil error return
 // indicates some type of internal error, for example if ctx is cancelled.
-func (s *snapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (source.FileHandle, error) {
+func (s *snapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (file.Handle, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1241,7 +1242,7 @@ func (s *snapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (sour
 // preloadFiles delegates to the view FileSource to read the requested uris in
 // parallel, without holding the snapshot lock.
 func (s *snapshot) preloadFiles(ctx context.Context, uris []protocol.DocumentURI) {
-	files := make([]source.FileHandle, len(uris))
+	files := make([]file.Handle, len(uris))
 	var wg sync.WaitGroup
 	iolimit := make(chan struct{}, 20) // I/O concurrency limiting semaphore
 	for i, uri := range uris {
@@ -1274,11 +1275,11 @@ func (s *snapshot) preloadFiles(ctx context.Context, uris []protocol.DocumentURI
 	}
 }
 
-// A lockedSnapshot implements the source.FileSource interface while holding
+// A lockedSnapshot implements the file.Source interface while holding
 // the lock for the wrapped snapshot.
 type lockedSnapshot struct{ wrapped *snapshot }
 
-func (s lockedSnapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (source.FileHandle, error) {
+func (s lockedSnapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (file.Handle, error) {
 	s.wrapped.view.markKnown(uri)
 	if fh, ok := s.wrapped.files.Get(uri); ok {
 		return fh, nil
@@ -1524,7 +1525,7 @@ func (s *snapshot) reloadOrphanedOpenFiles(ctx context.Context) error {
 	var files []*Overlay
 	for _, o := range open {
 		uri := o.URI()
-		if s.IsBuiltin(uri) || s.FileKind(o) != source.Go {
+		if s.IsBuiltin(uri) || s.FileKind(o) != file.Go {
 			continue
 		}
 		if len(meta.ids[uri]) == 0 {
@@ -1625,7 +1626,7 @@ func (s *snapshot) OrphanedFileDiagnostics(ctx context.Context) (map[protocol.Do
 searchOverlays:
 	for _, o := range s.overlays() {
 		uri := o.URI()
-		if s.IsBuiltin(uri) || s.FileKind(o) != source.Go {
+		if s.IsBuiltin(uri) || s.FileKind(o) != file.Go {
 			continue
 		}
 		md, err := s.MetadataForFile(ctx, uri)
@@ -1889,7 +1890,7 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changed source.StateChange)
 	// they exist. Importantly, we don't call ReadFile here: consider the case
 	// where a file is added on disk; we don't want to read the newly added file
 	// into the old snapshot, as that will break our change detection below.
-	oldFiles := make(map[protocol.DocumentURI]source.FileHandle)
+	oldFiles := make(map[protocol.DocumentURI]file.Handle)
 	for uri := range changedFiles {
 		if fh, ok := s.files.Get(uri); ok {
 			oldFiles[uri] = fh
@@ -1900,14 +1901,14 @@ func (s *snapshot) clone(ctx, bgCtx context.Context, changed source.StateChange)
 	// the old file wasn't saved, or the on-disk contents changed.
 	//
 	// oldFH may be nil.
-	changedOnDisk := func(oldFH, newFH source.FileHandle) bool {
+	changedOnDisk := func(oldFH, newFH file.Handle) bool {
 		if !newFH.SameContentsOnDisk() {
 			return false
 		}
 		if oe, ne := (oldFH != nil && fileExists(oldFH)), fileExists(newFH); !oe || !ne {
 			return oe != ne
 		}
-		return !oldFH.SameContentsOnDisk() || oldFH.FileIdentity() != newFH.FileIdentity()
+		return !oldFH.SameContentsOnDisk() || oldFH.Identity() != newFH.Identity()
 	}
 
 	if workURI, _ := s.view.GOWORK(); workURI != "" {
@@ -2281,7 +2282,7 @@ func invalidatedPackageIDs(uri protocol.DocumentURI, known map[protocol.Document
 // accomplishes this by checking to see if the original and current FileHandles
 // are both overlays, and if the current FileHandle is saved while the original
 // FileHandle was not saved.
-func fileWasSaved(originalFH, currentFH source.FileHandle) bool {
+func fileWasSaved(originalFH, currentFH file.Handle) bool {
 	c, ok := currentFH.(*Overlay)
 	if !ok || c == nil {
 		return true
@@ -2307,14 +2308,14 @@ func fileWasSaved(originalFH, currentFH source.FileHandle) bool {
 //     changed).
 //   - importDeleted means that an import has been deleted, or we can't
 //     determine if an import was deleted due to errors.
-func metadataChanges(ctx context.Context, lockedSnapshot *snapshot, oldFH, newFH source.FileHandle) (invalidate, pkgFileChanged, importDeleted bool) {
+func metadataChanges(ctx context.Context, lockedSnapshot *snapshot, oldFH, newFH file.Handle) (invalidate, pkgFileChanged, importDeleted bool) {
 	if oe, ne := oldFH != nil && fileExists(oldFH), fileExists(newFH); !oe || !ne { // existential changes
 		changed := oe != ne
 		return changed, changed, !ne // we don't know if an import was deleted
 	}
 
 	// If the file hasn't changed, there's no need to reload.
-	if oldFH.FileIdentity() == newFH.FileIdentity() {
+	if oldFH.Identity() == newFH.Identity() {
 		return false, false, false
 	}
 

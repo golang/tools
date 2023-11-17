@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 )
@@ -21,7 +22,7 @@ var errRe = regexp.MustCompile(`template.*:(\d+): (.*)`)
 // Diagnose returns parse errors. There is only one.
 // The errors are not always helpful. For instance { {end}}
 // will likely point to the end of the file.
-func Diagnose(f source.FileHandle) []*source.Diagnostic {
+func Diagnose(f file.Handle) []*source.Diagnostic {
 	// no need for skipTemplate check, as Diagnose is called on the
 	// snapshot's template files
 	buf, err := f.Content()
@@ -72,7 +73,7 @@ func Diagnose(f source.FileHandle) []*source.Diagnostic {
 // does not understand scoping (if any) in templates. This code is
 // for definitions, type definitions, and implementations.
 // Results only for variables and templates.
-func Definition(snapshot source.Snapshot, fh source.FileHandle, loc protocol.Position) ([]protocol.Location, error) {
+func Definition(snapshot source.Snapshot, fh file.Handle, loc protocol.Position) ([]protocol.Location, error) {
 	x, _, err := symAtPosition(fh, loc)
 	if err != nil {
 		return nil, err
@@ -92,7 +93,7 @@ func Definition(snapshot source.Snapshot, fh source.FileHandle, loc protocol.Pos
 	return ans, nil
 }
 
-func Hover(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, position protocol.Position) (*protocol.Hover, error) {
+func Hover(ctx context.Context, snapshot source.Snapshot, fh file.Handle, position protocol.Position) (*protocol.Hover, error) {
 	sym, p, err := symAtPosition(fh, position)
 	if sym == nil || err != nil {
 		return nil, err
@@ -123,7 +124,7 @@ func Hover(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, 
 	return &ans, nil
 }
 
-func References(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, params *protocol.ReferenceParams) ([]protocol.Location, error) {
+func References(ctx context.Context, snapshot source.Snapshot, fh file.Handle, params *protocol.ReferenceParams) ([]protocol.Location, error) {
 	sym, _, err := symAtPosition(fh, params.Position)
 	if sym == nil || err != nil || sym.name == "" {
 		return nil, err

@@ -26,6 +26,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
@@ -35,7 +36,7 @@ import (
 // References returns a list of all references (sorted with
 // definitions before uses) to the object denoted by the identifier at
 // the given file/position, searching the entire workspace.
-func References(ctx context.Context, snapshot Snapshot, fh FileHandle, pp protocol.Position, includeDeclaration bool) ([]protocol.Location, error) {
+func References(ctx context.Context, snapshot Snapshot, fh file.Handle, pp protocol.Position, includeDeclaration bool) ([]protocol.Location, error) {
 	references, err := references(ctx, snapshot, fh, pp, includeDeclaration)
 	if err != nil {
 		return nil, err
@@ -58,7 +59,7 @@ type reference struct {
 // references returns a list of all references (sorted with
 // definitions before uses) to the object denoted by the identifier at
 // the given file/position, searching the entire workspace.
-func references(ctx context.Context, snapshot Snapshot, f FileHandle, pp protocol.Position, includeDeclaration bool) ([]reference, error) {
+func references(ctx context.Context, snapshot Snapshot, f file.Handle, pp protocol.Position, includeDeclaration bool) ([]reference, error) {
 	ctx, done := event.Start(ctx, "source.references")
 	defer done()
 

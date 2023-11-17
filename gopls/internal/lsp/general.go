@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/goversion"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -548,7 +549,7 @@ func (s *server) handleOptionResults(ctx context.Context, results source.OptionR
 // We don't want to return errors for benign conditions like wrong file type,
 // so callers should do if !ok { return err } rather than if err != nil.
 // The returned cleanup function is non-nil even in case of false/error result.
-func (s *server) beginFileRequest(ctx context.Context, pURI protocol.DocumentURI, expectKind source.FileKind) (source.Snapshot, source.FileHandle, bool, func(), error) {
+func (s *server) beginFileRequest(ctx context.Context, pURI protocol.DocumentURI, expectKind file.Kind) (source.Snapshot, file.Handle, bool, func(), error) {
 	uri := pURI
 	if !uri.IsFile() {
 		// Not a file URI. Stop processing the request, but don't return an error.
@@ -567,7 +568,7 @@ func (s *server) beginFileRequest(ctx context.Context, pURI protocol.DocumentURI
 		release()
 		return nil, nil, false, func() {}, err
 	}
-	if expectKind != source.UnknownKind && snapshot.FileKind(fh) != expectKind {
+	if expectKind != file.UnknownKind && snapshot.FileKind(fh) != expectKind {
 		// Wrong kind of file. Nothing to do.
 		release()
 		return nil, nil, false, func() {}, nil

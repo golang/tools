@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/completion"
@@ -28,7 +29,7 @@ func (s *server) completion(ctx context.Context, params *protocol.CompletionPara
 	ctx, done := event.Start(ctx, "lsp.Server.completion", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.UnknownKind)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
 	defer release()
 	if !ok {
 		return nil, err
@@ -36,17 +37,17 @@ func (s *server) completion(ctx context.Context, params *protocol.CompletionPara
 	var candidates []completion.CompletionItem
 	var surrounding *completion.Selection
 	switch snapshot.FileKind(fh) {
-	case source.Go:
+	case file.Go:
 		candidates, surrounding, err = completion.Completion(ctx, snapshot, fh, params.Position, params.Context)
-	case source.Mod:
+	case file.Mod:
 		candidates, surrounding = nil, nil
-	case source.Work:
+	case file.Work:
 		cl, err := work.Completion(ctx, snapshot, fh, params.Position)
 		if err != nil {
 			break
 		}
 		return cl, nil
-	case source.Tmpl:
+	case file.Tmpl:
 		var cl *protocol.CompletionList
 		cl, err = template.Completion(ctx, snapshot, fh, params.Position, params.Context)
 		if err != nil {

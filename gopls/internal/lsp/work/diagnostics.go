@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
@@ -45,7 +46,7 @@ func Diagnostics(ctx context.Context, snapshot source.Snapshot) (map[protocol.Do
 	return reports, nil
 }
 
-func DiagnosticsForWork(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle) ([]*source.Diagnostic, error) {
+func DiagnosticsForWork(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]*source.Diagnostic, error) {
 	pw, err := snapshot.ParseWork(ctx, fh)
 	if err != nil {
 		if pw == nil || len(pw.ParseErrors) == 0 {

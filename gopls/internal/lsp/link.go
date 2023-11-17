@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -27,15 +28,15 @@ func (s *server) documentLink(ctx context.Context, params *protocol.DocumentLink
 	ctx, done := event.Start(ctx, "lsp.Server.documentLink")
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.UnknownKind)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
 	defer release()
 	if !ok {
 		return nil, err
 	}
 	switch snapshot.FileKind(fh) {
-	case source.Mod:
+	case file.Mod:
 		links, err = modLinks(ctx, snapshot, fh)
-	case source.Go:
+	case file.Go:
 		links, err = goLinks(ctx, snapshot, fh)
 	}
 	// Don't return errors for document links.
@@ -46,7 +47,7 @@ func (s *server) documentLink(ctx context.Context, params *protocol.DocumentLink
 	return links, nil
 }
 
-func modLinks(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle) ([]protocol.DocumentLink, error) {
+func modLinks(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]protocol.DocumentLink, error) {
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil {
 		return nil, err
@@ -102,7 +103,7 @@ func modLinks(ctx context.Context, snapshot source.Snapshot, fh source.FileHandl
 }
 
 // goLinks returns the set of hyperlink annotations for the specified Go file.
-func goLinks(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle) ([]protocol.DocumentLink, error) {
+func goLinks(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]protocol.DocumentLink, error) {
 
 	pgf, err := snapshot.ParseGo(ctx, fh, source.ParseFull)
 	if err != nil {

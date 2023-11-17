@@ -13,12 +13,13 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
 )
 
-func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, position protocol.Position) (*protocol.CompletionList, error) {
+func Completion(ctx context.Context, snapshot source.Snapshot, fh file.Handle, position protocol.Position) (*protocol.CompletionList, error) {
 	ctx, done := event.Start(ctx, "work.Completion")
 	defer done()
 

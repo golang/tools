@@ -7,8 +7,8 @@ package cache
 import (
 	"path/filepath"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/persistent"
 )
 
@@ -16,14 +16,14 @@ import (
 // It keeps track of overlays as well as directories containing any observed
 // file.
 type fileMap struct {
-	files    *persistent.Map[protocol.DocumentURI, source.FileHandle]
+	files    *persistent.Map[protocol.DocumentURI, file.Handle]
 	overlays *persistent.Map[protocol.DocumentURI, *Overlay] // the subset of files that are overlays
 	dirs     *persistent.Set[string]                         // all dirs containing files; if nil, dirs have not been initialized
 }
 
 func newFileMap() *fileMap {
 	return &fileMap{
-		files:    new(persistent.Map[protocol.DocumentURI, source.FileHandle]),
+		files:    new(persistent.Map[protocol.DocumentURI, file.Handle]),
 		overlays: new(persistent.Map[protocol.DocumentURI, *Overlay]),
 		dirs:     new(persistent.Set[string]),
 	}
@@ -31,7 +31,7 @@ func newFileMap() *fileMap {
 
 // Clone creates a copy of the fileMap, incorporating the changes specified by
 // the changes map.
-func (m *fileMap) Clone(changes map[protocol.DocumentURI]source.FileHandle) *fileMap {
+func (m *fileMap) Clone(changes map[protocol.DocumentURI]file.Handle) *fileMap {
 	m2 := &fileMap{
 		files:    m.files.Clone(),
 		overlays: m.overlays.Clone(),
@@ -73,18 +73,18 @@ func (m *fileMap) Destroy() {
 
 // Get returns the file handle mapped by the given key, or (nil, false) if the
 // key is not present.
-func (m *fileMap) Get(key protocol.DocumentURI) (source.FileHandle, bool) {
+func (m *fileMap) Get(key protocol.DocumentURI) (file.Handle, bool) {
 	return m.files.Get(key)
 }
 
 // Range calls f for each (uri, fh) in the map.
-func (m *fileMap) Range(f func(uri protocol.DocumentURI, fh source.FileHandle)) {
+func (m *fileMap) Range(f func(uri protocol.DocumentURI, fh file.Handle)) {
 	m.files.Range(f)
 }
 
 // Set stores the given file handle for key, updating overlays and directories
 // accordingly.
-func (m *fileMap) Set(key protocol.DocumentURI, fh source.FileHandle) {
+func (m *fileMap) Set(key protocol.DocumentURI, fh file.Handle) {
 	m.files.Set(key, fh, nil)
 
 	// update overlays
@@ -143,7 +143,7 @@ func (m *fileMap) Overlays() []*Overlay {
 func (m *fileMap) Dirs() *persistent.Set[string] {
 	if m.dirs == nil {
 		m.dirs = new(persistent.Set[string])
-		m.files.Range(func(u protocol.DocumentURI, _ source.FileHandle) {
+		m.files.Range(func(u protocol.DocumentURI, _ file.Handle) {
 			m.addDirs(u)
 		})
 	}

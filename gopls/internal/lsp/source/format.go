@@ -16,6 +16,7 @@ import (
 	"strings"
 	"text/scanner"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/diff"
@@ -25,7 +26,7 @@ import (
 )
 
 // Format formats a file with a given range.
-func Format(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.TextEdit, error) {
+func Format(ctx context.Context, snapshot Snapshot, fh file.Handle) ([]protocol.TextEdit, error) {
 	ctx, done := event.Start(ctx, "source.Format")
 	defer done()
 
@@ -88,7 +89,7 @@ func Format(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.T
 	return computeTextEdits(ctx, snapshot, pgf, formatted)
 }
 
-func formatSource(ctx context.Context, fh FileHandle) ([]byte, error) {
+func formatSource(ctx context.Context, fh file.Handle) ([]byte, error) {
 	_, done := event.Start(ctx, "source.formatSource")
 	defer done()
 

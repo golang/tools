@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/diff"
@@ -57,7 +58,7 @@ loop:
 	return call, fn, nil
 }
 
-func inlineCall(ctx context.Context, snapshot Snapshot, fh FileHandle, rng protocol.Range) (_ []protocol.TextDocumentEdit, err error) {
+func inlineCall(ctx context.Context, snapshot Snapshot, fh file.Handle, rng protocol.Range) (_ []protocol.TextDocumentEdit, err error) {
 	// Find enclosing static call.
 	callerPkg, callerPGF, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {

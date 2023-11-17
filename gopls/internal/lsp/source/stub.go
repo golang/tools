@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/stubmethods"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
@@ -30,7 +31,7 @@ import (
 // stubSuggestedFixFunc returns a suggested fix to declare the missing
 // methods of the concrete type that is assigned to an interface type
 // at the cursor position.
-func stubSuggestedFixFunc(ctx context.Context, snapshot Snapshot, fh FileHandle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
+func stubSuggestedFixFunc(ctx context.Context, snapshot Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, fmt.Errorf("GetTypedFile: %w", err)

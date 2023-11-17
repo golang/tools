@@ -7,6 +7,7 @@ package lsp
 import (
 	"context"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/template"
@@ -18,13 +19,13 @@ func (s *server) documentHighlight(ctx context.Context, params *protocol.Documen
 	ctx, done := event.Start(ctx, "lsp.Server.documentHighlight", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.Go)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.Go)
 	defer release()
 	if !ok {
 		return nil, err
 	}
 
-	if snapshot.FileKind(fh) == source.Tmpl {
+	if snapshot.FileKind(fh) == file.Tmpl {
 		return template.Highlight(ctx, snapshot, fh, params.Position)
 	}
 

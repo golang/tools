@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
@@ -35,7 +36,7 @@ import (
 // diagnostic, using the provided metadata and filesource.
 //
 // The slice of diagnostics may be empty.
-func goPackagesErrorDiagnostics(ctx context.Context, e packages.Error, m *source.Metadata, fs source.FileSource) ([]*source.Diagnostic, error) {
+func goPackagesErrorDiagnostics(ctx context.Context, e packages.Error, m *source.Metadata, fs file.Source) ([]*source.Diagnostic, error) {
 	if diag, err := parseGoListImportCycleError(ctx, e, m, fs); err != nil {
 		return nil, err
 	} else if diag != nil {
@@ -510,7 +511,7 @@ func splitFileLineCol(s string) (file string, line, col8 int) {
 // an import cycle, returning a diagnostic if successful.
 //
 // If the error is not detected as an import cycle error, it returns nil, nil.
-func parseGoListImportCycleError(ctx context.Context, e packages.Error, m *source.Metadata, fs source.FileSource) (*source.Diagnostic, error) {
+func parseGoListImportCycleError(ctx context.Context, e packages.Error, m *source.Metadata, fs file.Source) (*source.Diagnostic, error) {
 	re := regexp.MustCompile(`(.*): import stack: \[(.+)\]`)
 	matches := re.FindStringSubmatch(strings.TrimSpace(e.Msg))
 	if len(matches) < 3 {
@@ -559,7 +560,7 @@ func parseGoListImportCycleError(ctx context.Context, e packages.Error, m *sourc
 // It returns an error if the file could not be read.
 //
 // TODO(rfindley): eliminate this helper.
-func parseGoURI(ctx context.Context, fs source.FileSource, uri protocol.DocumentURI, mode parser.Mode) (*source.ParsedGoFile, error) {
+func parseGoURI(ctx context.Context, fs file.Source, uri protocol.DocumentURI, mode parser.Mode) (*source.ParsedGoFile, error) {
 	fh, err := fs.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, err
@@ -571,7 +572,7 @@ func parseGoURI(ctx context.Context, fs source.FileSource, uri protocol.Document
 // source fs.
 //
 // It returns an error if the file could not be read.
-func parseModURI(ctx context.Context, fs source.FileSource, uri protocol.DocumentURI) (*source.ParsedModule, error) {
+func parseModURI(ctx context.Context, fs file.Source, uri protocol.DocumentURI) (*source.ParsedModule, error) {
 	fh, err := fs.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, err

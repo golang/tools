@@ -7,12 +7,13 @@ package source
 import (
 	"context"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/imports"
 )
 
 // AddImport adds a single import statement to the given file
-func AddImport(ctx context.Context, snapshot Snapshot, fh FileHandle, importPath string) ([]protocol.TextEdit, error) {
+func AddImport(ctx context.Context, snapshot Snapshot, fh file.Handle, importPath string) ([]protocol.TextEdit, error) {
 	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
 	if err != nil {
 		return nil, err

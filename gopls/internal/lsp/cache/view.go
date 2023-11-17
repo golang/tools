@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/vulncheck"
@@ -350,8 +351,8 @@ func (v *View) ID() string { return v.id }
 // of the given go.mod file. On success, it is the caller's
 // responsibility to call the cleanup function when the file is no
 // longer needed.
-func tempModFile(modFh source.FileHandle, gosum []byte) (tmpURI protocol.DocumentURI, cleanup func(), err error) {
-	filenameHash := source.Hashf("%s", modFh.URI().Path())
+func tempModFile(modFh file.Handle, gosum []byte) (tmpURI protocol.DocumentURI, cleanup func(), err error) {
+	filenameHash := file.Hashf("%s", modFh.URI().Path())
 	tmpMod, err := os.CreateTemp("", fmt.Sprintf("go.%s.*.mod", filenameHash))
 	if err != nil {
 		return "", nil, err
@@ -557,7 +558,7 @@ func (v *View) filterFunc() func(protocol.DocumentURI) bool {
 	}
 }
 
-func (v *View) relevantChange(c source.FileModification) bool {
+func (v *View) relevantChange(c file.Modification) bool {
 	// If the file is known to the view, the change is relevant.
 	if v.knownFile(c.URI) {
 		return true
@@ -888,7 +889,7 @@ func (v *View) Invalidate(ctx context.Context, changed source.StateChange) (sour
 	return v.snapshot, v.snapshot.Acquire()
 }
 
-func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs source.FileSource, folder *Folder) (*viewDefinition, error) {
+func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs file.Source, folder *Folder) (*viewDefinition, error) {
 	if err := checkPathCase(folder.Dir.Path()); err != nil {
 		return nil, fmt.Errorf("invalid workspace folder path: %w; check that the casing of the configured workspace folder path agrees with the casing reported by the operating system", err)
 	}
@@ -953,7 +954,7 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs source.
 //  1. if there is a go.mod file in a parent directory, return it
 //  2. else, if there is exactly one nested module, return it
 //  3. else, return ""
-func findWorkspaceModFile(ctx context.Context, folderURI protocol.DocumentURI, fs source.FileSource, excludePath func(string) bool) (protocol.DocumentURI, error) {
+func findWorkspaceModFile(ctx context.Context, folderURI protocol.DocumentURI, fs file.Source, excludePath func(string) bool) (protocol.DocumentURI, error) {
 	folder := folderURI.Path()
 	match, err := findRootPattern(ctx, folder, "go.mod", fs)
 	if err != nil {
@@ -992,7 +993,7 @@ func findWorkspaceModFile(ctx context.Context, folderURI protocol.DocumentURI, f
 //
 // The resulting string is either the file path of a matching file with the
 // given basename, or "" if none was found.
-func findRootPattern(ctx context.Context, dir, basename string, fs source.FileSource) (string, error) {
+func findRootPattern(ctx context.Context, dir, basename string, fs file.Source) (string, error) {
 	for dir != "" {
 		target := filepath.Join(dir, basename)
 		fh, err := fs.ReadFile(ctx, protocol.URIFromPath(target))

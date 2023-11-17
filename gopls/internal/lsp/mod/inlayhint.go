@@ -8,11 +8,12 @@ import (
 	"fmt"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 )
 
-func InlayHint(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, rng protocol.Range) ([]protocol.InlayHint, error) {
+func InlayHint(ctx context.Context, snapshot source.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.InlayHint, error) {
 	// Inlay hints are enabled if the client supports them.
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil {

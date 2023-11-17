@@ -11,6 +11,7 @@ import (
 	"text/template/parse"
 	"unicode/utf8"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
@@ -193,7 +194,7 @@ func (p *Parsed) findSymbols() {
 
 // DocumentSymbols returns a hierarchy of the symbols defined in a template file.
 // (The hierarchy is flat. SymbolInformation might be better.)
-func DocumentSymbols(snapshot source.Snapshot, fh source.FileHandle) ([]protocol.DocumentSymbol, error) {
+func DocumentSymbols(snapshot source.Snapshot, fh file.Handle) ([]protocol.DocumentSymbol, error) {
 	buf, err := fh.Content()
 	if err != nil {
 		return nil, err

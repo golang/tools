@@ -28,6 +28,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/ast/astutil"
 	goplsastutil "golang.org/x/tools/gopls/internal/astutil"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/snippet"
@@ -177,7 +178,7 @@ type completer struct {
 	completionContext completionContext
 
 	// fh is a handle to the file associated with this completion request.
-	fh source.FileHandle
+	fh file.Handle
 
 	// filename is the name of the file associated with this completion request.
 	filename string
@@ -442,7 +443,7 @@ func (e ErrIsDefinition) Error() string {
 // The selection is computed based on the preceding identifier and can be used by
 // the client to score the quality of the completion. For instance, some clients
 // may tolerate imperfect matches as valid completion results, since users may make typos.
-func Completion(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, protoPos protocol.Position, protoContext protocol.CompletionContext) ([]CompletionItem, *Selection, error) {
+func Completion(ctx context.Context, snapshot source.Snapshot, fh file.Handle, protoPos protocol.Position, protoContext protocol.CompletionContext) ([]CompletionItem, *Selection, error) {
 	ctx, done := event.Start(ctx, "completion.Completion")
 	defer done()
 

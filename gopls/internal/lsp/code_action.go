@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/fillstruct"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/infertypeargs"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/stubmethods"
@@ -29,7 +30,7 @@ func (s *server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 	ctx, done := event.Start(ctx, "lsp.Server.codeAction")
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.UnknownKind)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
 	defer release()
 	if !ok {
 		return nil, err
@@ -76,7 +77,7 @@ func (s *server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 	}
 
 	switch kind {
-	case source.Mod:
+	case file.Mod:
 		var actions []protocol.CodeAction
 
 		fixes, err := s.codeActionsMatchingDiagnostics(ctx, fh.URI(), snapshot, params.Context.Diagnostics, want)
@@ -108,7 +109,7 @@ func (s *server) codeAction(ctx context.Context, params *protocol.CodeActionPara
 
 		return actions, nil
 
-	case source.Go:
+	case file.Go:
 		diagnostics := params.Context.Diagnostics
 
 		// Don't suggest fixes for generated files, since they are generally
@@ -418,7 +419,7 @@ func refactorExtract(ctx context.Context, snapshot source.Snapshot, pgf *source.
 	return actions, nil
 }
 
-func refactorRewrite(ctx context.Context, snapshot source.Snapshot, pkg source.Package, pgf *source.ParsedGoFile, fh source.FileHandle, rng protocol.Range) (_ []protocol.CodeAction, rerr error) {
+func refactorRewrite(ctx context.Context, snapshot source.Snapshot, pkg source.Package, pgf *source.ParsedGoFile, fh file.Handle, rng protocol.Range) (_ []protocol.CodeAction, rerr error) {
 	// golang/go#61693: code actions were refactored to run outside of the
 	// analysis framework, but as a result they lost their panic recovery.
 	//
@@ -574,7 +575,7 @@ func canRemoveParameter(pkg source.Package, pgf *source.ParsedGoFile, rng protoc
 }
 
 // refactorInline returns inline actions available at the specified range.
-func refactorInline(ctx context.Context, snapshot source.Snapshot, pkg source.Package, pgf *source.ParsedGoFile, fh source.FileHandle, rng protocol.Range) ([]protocol.CodeAction, error) {
+func refactorInline(ctx context.Context, snapshot source.Snapshot, pkg source.Package, pgf *source.ParsedGoFile, fh file.Handle, rng protocol.Range) ([]protocol.CodeAction, error) {
 	var commands []protocol.Command
 
 	// If range is within call expression, offer inline action.
@@ -602,7 +603,7 @@ func refactorInline(ctx context.Context, snapshot source.Snapshot, pkg source.Pa
 	return actions, nil
 }
 
-func documentChanges(fh source.FileHandle, edits []protocol.TextEdit) []protocol.DocumentChanges {
+func documentChanges(fh file.Handle, edits []protocol.TextEdit) []protocol.DocumentChanges {
 	return []protocol.DocumentChanges{
 		{
 			TextDocumentEdit: &protocol.TextDocumentEdit{

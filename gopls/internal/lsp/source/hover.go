@@ -25,6 +25,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/event"
@@ -61,7 +62,7 @@ type HoverJSON struct {
 }
 
 // Hover implements the "textDocument/hover" RPC for Go files.
-func Hover(ctx context.Context, snapshot Snapshot, fh FileHandle, position protocol.Position) (*protocol.Hover, error) {
+func Hover(ctx context.Context, snapshot Snapshot, fh file.Handle, position protocol.Position) (*protocol.Hover, error) {
 	ctx, done := event.Start(ctx, "source.Hover")
 	defer done()
 
@@ -88,7 +89,7 @@ func Hover(ctx context.Context, snapshot Snapshot, fh FileHandle, position proto
 // hover computes hover information at the given position. If we do not support
 // hovering at the position, it returns _, nil, nil: an error is only returned
 // if the position is valid but we fail to compute hover information.
-func hover(ctx context.Context, snapshot Snapshot, fh FileHandle, pp protocol.Position) (protocol.Range, *HoverJSON, error) {
+func hover(ctx context.Context, snapshot Snapshot, fh file.Handle, pp protocol.Position) (protocol.Range, *HoverJSON, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return protocol.Range{}, nil, err
@@ -634,7 +635,7 @@ func hoverLit(pgf *ParsedGoFile, lit *ast.BasicLit, pos token.Pos) (protocol.Ran
 
 // hoverEmbed computes hover information for a filepath.Match pattern.
 // Assumes that the pattern is relative to the location of fh.
-func hoverEmbed(fh FileHandle, rng protocol.Range, pattern string) (protocol.Range, *HoverJSON, error) {
+func hoverEmbed(fh file.Handle, rng protocol.Range, pattern string) (protocol.Range, *HoverJSON, error) {
 	s := &strings.Builder{}
 
 	dir := filepath.Dir(fh.URI().Path())

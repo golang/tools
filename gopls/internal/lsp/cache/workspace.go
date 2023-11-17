@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 )
 
 // TODO(rfindley): now that experimentalWorkspaceModule is gone, this file can
@@ -22,7 +22,7 @@ import (
 
 // computeWorkspaceModFiles computes the set of workspace mod files based on the
 // value of go.mod, go.work, and GO111MODULE.
-func computeWorkspaceModFiles(ctx context.Context, gomod, gowork protocol.DocumentURI, go111module go111module, fs source.FileSource) (map[protocol.DocumentURI]struct{}, error) {
+func computeWorkspaceModFiles(ctx context.Context, gomod, gowork protocol.DocumentURI, go111module go111module, fs file.Source) (map[protocol.DocumentURI]struct{}, error) {
 	if go111module == off {
 		return nil, nil
 	}
@@ -70,7 +70,7 @@ func isGoWork(uri protocol.DocumentURI) bool {
 
 // fileExists reports whether the file has a Content (which may be empty).
 // An overlay exists even if it is not reflected in the file system.
-func fileExists(fh source.FileHandle) bool {
+func fileExists(fh file.Handle) bool {
 	_, err := fh.Content()
 	return err == nil
 }

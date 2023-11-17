@@ -7,12 +7,13 @@ package mod
 import (
 	"context"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
 )
 
-func Format(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle) ([]protocol.TextEdit, error) {
+func Format(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]protocol.TextEdit, error) {
 	ctx, done := event.Start(ctx, "mod.Format")
 	defer done()
 

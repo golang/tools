@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -483,7 +484,7 @@ func missingModuleForImport(pgf *source.ParsedGoFile, imp *ast.ImportSpec, req *
 // CompiledGoFiles, after cgo processing.)
 //
 // TODO(rfindley): this should key off source.ImportPath.
-func parseImports(ctx context.Context, s *snapshot, files []source.FileHandle) (map[string]bool, error) {
+func parseImports(ctx context.Context, s *snapshot, files []file.Handle) (map[string]bool, error) {
 	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), source.ParseHeader, false, files...)
 	if err != nil { // e.g. context cancellation
 		return nil, err

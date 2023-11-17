@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/template"
@@ -26,15 +27,15 @@ func (s *server) definition(ctx context.Context, params *protocol.DefinitionPara
 	defer done()
 
 	// TODO(rfindley): definition requests should be multiplexed across all views.
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.UnknownKind)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
 	defer release()
 	if !ok {
 		return nil, err
 	}
 	switch kind := snapshot.FileKind(fh); kind {
-	case source.Tmpl:
+	case file.Tmpl:
 		return template.Definition(snapshot, fh, params.Position)
-	case source.Go:
+	case file.Go:
 		return source.Definition(ctx, snapshot, fh, params.Position)
 	default:
 		return nil, fmt.Errorf("can't find definitions for file type %s", kind)
@@ -46,13 +47,13 @@ func (s *server) typeDefinition(ctx context.Context, params *protocol.TypeDefini
 	defer done()
 
 	// TODO(rfindley): type definition requests should be multiplexed across all views.
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.Go)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.Go)
 	defer release()
 	if !ok {
 		return nil, err
 	}
 	switch kind := snapshot.FileKind(fh); kind {
-	case source.Go:
+	case file.Go:
 		return source.TypeDefinition(ctx, snapshot, fh, params.Position)
 	default:
 		return nil, fmt.Errorf("can't find type definitions for file type %s", kind)

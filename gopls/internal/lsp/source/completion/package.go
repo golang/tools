@@ -18,6 +18,7 @@ import (
 	"strings"
 	"unicode"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -26,7 +27,7 @@ import (
 
 // packageClauseCompletions offers completions for a package declaration when
 // one is not present in the given file.
-func packageClauseCompletions(ctx context.Context, snapshot source.Snapshot, fh source.FileHandle, position protocol.Position) ([]CompletionItem, *Selection, error) {
+func packageClauseCompletions(ctx context.Context, snapshot source.Snapshot, fh file.Handle, position protocol.Position) ([]CompletionItem, *Selection, error) {
 	// We know that the AST for this file will be empty due to the missing
 	// package declaration, but parse it anyway to get a mapper.
 	// TODO(adonovan): opt: there's no need to parse just to get a mapper.

@@ -13,11 +13,12 @@ import (
 	"regexp"
 	"strings"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
-type LensFunc func(context.Context, Snapshot, FileHandle) ([]protocol.CodeLens, error)
+type LensFunc func(context.Context, Snapshot, file.Handle) ([]protocol.CodeLens, error)
 
 // LensFuncs returns the supported lensFuncs for Go files.
 func LensFuncs() map[command.Command]LensFunc {
@@ -34,7 +35,7 @@ var (
 	benchmarkRe = regexp.MustCompile(`^Benchmark([^a-z]|$)`)
 )
 
-func runTestCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.CodeLens, error) {
+func runTestCodeLens(ctx context.Context, snapshot Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
 	var codeLens []protocol.CodeLens
 
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
@@ -165,7 +166,7 @@ func matchTestFunc(fn *ast.FuncDecl, pkg Package, nameRe *regexp.Regexp, paramID
 	return namedObj.Id() == paramID
 }
 
-func goGenerateCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.CodeLens, error) {
+func goGenerateCodeLens(ctx context.Context, snapshot Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
 	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
 	if err != nil {
 		return nil, err
@@ -199,7 +200,7 @@ func goGenerateCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle) (
 	return nil, nil
 }
 
-func regenerateCgoLens(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.CodeLens, error) {
+func regenerateCgoLens(ctx context.Context, snapshot Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
 	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
 	if err != nil {
 		return nil, err
@@ -225,7 +226,7 @@ func regenerateCgoLens(ctx context.Context, snapshot Snapshot, fh FileHandle) ([
 	return []protocol.CodeLens{{Range: rng, Command: &cmd}}, nil
 }
 
-func toggleDetailsCodeLens(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]protocol.CodeLens, error) {
+func toggleDetailsCodeLens(ctx context.Context, snapshot Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
 	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
 	if err != nil {
 		return nil, err

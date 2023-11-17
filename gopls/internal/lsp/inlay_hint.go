@@ -7,6 +7,7 @@ package lsp
 import (
 	"context"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/mod"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -18,15 +19,15 @@ func (s *server) inlayHint(ctx context.Context, params *protocol.InlayHintParams
 	ctx, done := event.Start(ctx, "lsp.Server.inlayHint", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.UnknownKind)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
 	defer release()
 	if !ok {
 		return nil, err
 	}
 	switch snapshot.FileKind(fh) {
-	case source.Mod:
+	case file.Mod:
 		return mod.InlayHint(ctx, snapshot, fh, params.Range)
-	case source.Go:
+	case file.Go:
 		return source.InlayHint(ctx, snapshot, fh, params.Range)
 	}
 	return nil, nil

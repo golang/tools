@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/event"
@@ -22,7 +23,7 @@ import (
 )
 
 // PrepareCallHierarchy returns an array of CallHierarchyItem for a file and the position within the file.
-func PrepareCallHierarchy(ctx context.Context, snapshot Snapshot, fh FileHandle, pp protocol.Position) ([]protocol.CallHierarchyItem, error) {
+func PrepareCallHierarchy(ctx context.Context, snapshot Snapshot, fh file.Handle, pp protocol.Position) ([]protocol.CallHierarchyItem, error) {
 	ctx, done := event.Start(ctx, "source.PrepareCallHierarchy")
 	defer done()
 
@@ -63,7 +64,7 @@ func PrepareCallHierarchy(ctx context.Context, snapshot Snapshot, fh FileHandle,
 }
 
 // IncomingCalls returns an array of CallHierarchyIncomingCall for a file and the position within the file.
-func IncomingCalls(ctx context.Context, snapshot Snapshot, fh FileHandle, pos protocol.Position) ([]protocol.CallHierarchyIncomingCall, error) {
+func IncomingCalls(ctx context.Context, snapshot Snapshot, fh file.Handle, pos protocol.Position) ([]protocol.CallHierarchyIncomingCall, error) {
 	ctx, done := event.Start(ctx, "source.IncomingCalls")
 	defer done()
 
@@ -177,7 +178,7 @@ outer:
 }
 
 // OutgoingCalls returns an array of CallHierarchyOutgoingCall for a file and the position within the file.
-func OutgoingCalls(ctx context.Context, snapshot Snapshot, fh FileHandle, pp protocol.Position) ([]protocol.CallHierarchyOutgoingCall, error) {
+func OutgoingCalls(ctx context.Context, snapshot Snapshot, fh file.Handle, pp protocol.Position) ([]protocol.CallHierarchyOutgoingCall, error) {
 	ctx, done := event.Start(ctx, "source.OutgoingCalls")
 	defer done()
 

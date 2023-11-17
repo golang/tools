@@ -24,8 +24,8 @@ import (
 	"text/template/parse"
 	"unicode/utf8"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -69,7 +69,7 @@ type All struct {
 
 // New returns the Parses of the snapshot's tmpl files
 // (maybe cache these, but then avoiding import cycles needs code rearrangements)
-func New(tmpls map[protocol.DocumentURI]source.FileHandle) *All {
+func New(tmpls map[protocol.DocumentURI]file.Handle) *All {
 	all := make(map[protocol.DocumentURI]*Parsed)
 	for k, v := range tmpls {
 		buf, err := v.Content()
@@ -376,7 +376,7 @@ func (p *Parsed) FromPosition(x protocol.Position) int {
 	return pos
 }
 
-func symAtPosition(fh source.FileHandle, loc protocol.Position) (*symbol, *Parsed, error) {
+func symAtPosition(fh file.Handle, loc protocol.Position) (*symbol, *Parsed, error) {
 	buf, err := fh.Content()
 	if err != nil {
 		return nil, nil, err

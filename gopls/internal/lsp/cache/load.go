@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/immutable"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -67,7 +68,7 @@ func (s *snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 				panic(fmt.Sprintf("internal error: load called with multiple scopes when a file scope is present (file: %s)", uri))
 			}
 			fh := s.FindFile(uri)
-			if fh == nil || s.FileKind(fh) != source.Go {
+			if fh == nil || s.FileKind(fh) != file.Go {
 				// Don't try to load a file that doesn't exist, or isn't a go file.
 				continue
 			}
@@ -360,14 +361,14 @@ func (s *snapshot) applyCriticalErrorToFiles(ctx context.Context, msg string, fi
 		// Place the diagnostics on the package or module declarations.
 		var rng protocol.Range
 		switch s.FileKind(fh) {
-		case source.Go:
+		case file.Go:
 			if pgf, err := s.ParseGo(ctx, fh, source.ParseHeader); err == nil {
 				// Check that we have a valid `package foo` range to use for positioning the error.
 				if pgf.File.Package.IsValid() && pgf.File.Name != nil && pgf.File.Name.End().IsValid() {
 					rng, _ = pgf.PosRange(pgf.File.Package, pgf.File.Name.End())
 				}
 			}
-		case source.Mod:
+		case file.Mod:
 			if pmf, err := s.ParseMod(ctx, fh); err == nil {
 				if mod := pmf.File.Module; mod != nil && mod.Syntax != nil {
 					rng, _ = pmf.Mapper.OffsetRange(mod.Syntax.Start.Byte, mod.Syntax.End.Byte)
@@ -557,7 +558,7 @@ func buildMetadata(updates map[PackageID]*source.Metadata, pkg *packages.Package
 // computeLoadDiagnostics computes and sets m.Diagnostics for the given metadata m.
 //
 // It should only be called during metadata construction in snapshot.load.
-func computeLoadDiagnostics(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs source.FileSource, workspacePackages immutable.Map[PackageID, PackagePath]) {
+func computeLoadDiagnostics(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs file.Source, workspacePackages immutable.Map[PackageID, PackagePath]) {
 	for _, packagesErr := range m.Errors {
 		// Filter out parse errors from go list. We'll get them when we
 		// actually parse, and buggy overlay support may generate spurious

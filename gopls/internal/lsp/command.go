@@ -22,6 +22,7 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
@@ -92,7 +93,7 @@ type commandConfig struct {
 // for details.
 type commandDeps struct {
 	snapshot source.Snapshot    // present if cfg.forURI was set
-	fh       source.FileHandle  // present if cfg.forURI was set
+	fh       file.Handle        // present if cfg.forURI was set
 	work     *progress.WorkDone // present cfg.progress was set
 }
 
@@ -124,7 +125,7 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 	if cfg.forURI != "" {
 		var ok bool
 		var release func()
-		deps.snapshot, deps.fh, ok, release, err = c.s.beginFileRequest(ctx, cfg.forURI, source.UnknownKind)
+		deps.snapshot, deps.fh, ok, release, err = c.s.beginFileRequest(ctx, cfg.forURI, file.UnknownKind)
 		defer release()
 		if !ok {
 			if err != nil {
@@ -316,7 +317,7 @@ func (c *commandHandler) UpdateGoSum(ctx context.Context, args command.URIArgs) 
 		progress: "Updating go.sum",
 	}, func(ctx context.Context, deps commandDeps) error {
 		for _, uri := range args.URIs {
-			snapshot, fh, ok, release, err := c.s.beginFileRequest(ctx, uri, source.UnknownKind)
+			snapshot, fh, ok, release, err := c.s.beginFileRequest(ctx, uri, file.UnknownKind)
 			defer release()
 			if !ok {
 				return err
@@ -338,7 +339,7 @@ func (c *commandHandler) Tidy(ctx context.Context, args command.URIArgs) error {
 		progress:    "Running go mod tidy",
 	}, func(ctx context.Context, deps commandDeps) error {
 		for _, uri := range args.URIs {
-			snapshot, fh, ok, release, err := c.s.beginFileRequest(ctx, uri, source.UnknownKind)
+			snapshot, fh, ok, release, err := c.s.beginFileRequest(ctx, uri, file.UnknownKind)
 			defer release()
 			if !ok {
 				return err
@@ -382,7 +383,7 @@ func (c *commandHandler) EditGoDirective(ctx context.Context, args command.EditG
 		requireSave: true, // if go.mod isn't saved it could cause a problem
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		snapshot, fh, ok, release, err := c.s.beginFileRequest(ctx, args.URI, source.UnknownKind)
+		snapshot, fh, ok, release, err := c.s.beginFileRequest(ctx, args.URI, file.UnknownKind)
 		defer release()
 		if !ok {
 			return err

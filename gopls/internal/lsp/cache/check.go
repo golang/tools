@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/immutable"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -264,7 +265,7 @@ func (s *snapshot) resolveImportGraph() (*importGraph, error) {
 	// common case nothing has changed.
 	unchanged := lastImportGraph != nil && len(handles) == len(lastImportGraph.depKeys)
 	var ids []PackageID
-	depKeys := make(map[PackageID]source.Hash)
+	depKeys := make(map[PackageID]file.Hash)
 	for id, ph := range handles {
 		ids = append(ids, id)
 		depKeys[id] = ph.key
@@ -300,9 +301,9 @@ func (s *snapshot) resolveImportGraph() (*importGraph, error) {
 // An importGraph holds selected results of a type-checking pass, to be re-used
 // by subsequent snapshots.
 type importGraph struct {
-	fset    *token.FileSet            // fileset used for type checking imports
-	depKeys map[PackageID]source.Hash // hash of direct dependencies for this graph
-	imports map[PackageID]pkgOrErr    // results of type checking
+	fset    *token.FileSet          // fileset used for type checking imports
+	depKeys map[PackageID]file.Hash // hash of direct dependencies for this graph
+	imports map[PackageID]pkgOrErr  // results of type checking
 }
 
 // Package visiting functions used by forEachPackage; see the documentation of
@@ -786,7 +787,7 @@ type packageHandle struct {
 	// dependencies.
 	localInputs typeCheckInputs
 	// localKey is a hash of localInputs.
-	localKey source.Hash
+	localKey file.Hash
 	// refs is the result of syntactic dependency analysis produced by the
 	// typerefs package.
 	refs map[string][]typerefs.Symbol
@@ -800,12 +801,12 @@ type packageHandle struct {
 	// depKeys records the key of each dependency that was used to calculate the
 	// key above. If the handle becomes invalid, we must re-check that each still
 	// matches.
-	depKeys map[PackageID]source.Hash
+	depKeys map[PackageID]file.Hash
 	// key is the hashed key for the package.
 	//
 	// It includes the all bits of the transitive closure of
 	// dependencies's sources.
-	key source.Hash
+	key file.Hash
 }
 
 // clone returns a copy of the receiver with the validated bit set to the
@@ -1154,7 +1155,7 @@ func (b *packageHandleBuilder) evaluatePackageHandle(prevPH *packageHandle, n *h
 	}
 
 	// Deps have changed, so we must re-evaluate the key.
-	n.ph.depKeys = make(map[PackageID]source.Hash)
+	n.ph.depKeys = make(map[PackageID]file.Hash)
 
 	// See the typerefs package: the reachable set of packages is defined to be
 	// the set of packages containing syntax that is reachable through the
@@ -1209,7 +1210,7 @@ func (b *packageHandleBuilder) evaluatePackageHandle(prevPH *packageHandle, n *h
 
 // typerefs returns typerefs for the package described by m and cgfs, after
 // either computing it or loading it from the file cache.
-func (s *snapshot) typerefs(ctx context.Context, m *source.Metadata, cgfs []source.FileHandle) (map[string][]typerefs.Symbol, error) {
+func (s *snapshot) typerefs(ctx context.Context, m *source.Metadata, cgfs []file.Handle) (map[string][]typerefs.Symbol, error) {
 	imports := make(map[ImportPath]*source.Metadata)
 	for impPath, id := range m.DepsByImpPath {
 		if id != "" {
@@ -1233,7 +1234,7 @@ func (s *snapshot) typerefs(ctx context.Context, m *source.Metadata, cgfs []sour
 
 // typerefData retrieves encoded typeref data from the filecache, or computes it on
 // a cache miss.
-func (s *snapshot) typerefData(ctx context.Context, id PackageID, imports map[ImportPath]*source.Metadata, cgfs []source.FileHandle) ([]byte, error) {
+func (s *snapshot) typerefData(ctx context.Context, id PackageID, imports map[ImportPath]*source.Metadata, cgfs []file.Handle) ([]byte, error) {
 	key := typerefsKey(id, imports, cgfs)
 	if data, err := filecache.Get(typerefsKind, key); err == nil {
 		return data, nil
@@ -1259,7 +1260,7 @@ func (s *snapshot) typerefData(ctx context.Context, id PackageID, imports map[Im
 
 // typerefsKey produces a key for the reference information produced by the
 // typerefs package.
-func typerefsKey(id PackageID, imports map[ImportPath]*source.Metadata, compiledGoFiles []source.FileHandle) source.Hash {
+func typerefsKey(id PackageID, imports map[ImportPath]*source.Metadata, compiledGoFiles []file.Handle) file.Hash {
 	hasher := sha256.New()
 
 	fmt.Fprintf(hasher, "typerefs: %s\n", id)
@@ -1278,7 +1279,7 @@ func typerefsKey(id PackageID, imports map[ImportPath]*source.Metadata, compiled
 
 	fmt.Fprintf(hasher, "compiledGoFiles: %d\n", len(compiledGoFiles))
 	for _, fh := range compiledGoFiles {
-		fmt.Fprintln(hasher, fh.FileIdentity())
+		fmt.Fprintln(hasher, fh.Identity())
 	}
 
 	var hash [sha256.Size]byte
@@ -1297,7 +1298,7 @@ type typeCheckInputs struct {
 	// Used for type checking:
 	pkgPath                  PackagePath
 	name                     PackageName
-	goFiles, compiledGoFiles []source.FileHandle
+	goFiles, compiledGoFiles []file.Handle
 	sizes                    types.Sizes
 	depsByImpPath            map[ImportPath]PackageID
 	goVersion                string // packages.Module.GoVersion, e.g. "1.18"
@@ -1351,8 +1352,8 @@ func (s *snapshot) typeCheckInputs(ctx context.Context, m *source.Metadata) (typ
 
 // readFiles reads the content of each file URL from the source
 // (e.g. snapshot or cache).
-func readFiles(ctx context.Context, fs source.FileSource, uris []protocol.DocumentURI) (_ []source.FileHandle, err error) {
-	fhs := make([]source.FileHandle, len(uris))
+func readFiles(ctx context.Context, fs file.Source, uris []protocol.DocumentURI) (_ []file.Handle, err error) {
+	fhs := make([]file.Handle, len(uris))
 	for i, uri := range uris {
 		fhs[i], err = fs.ReadFile(ctx, uri)
 		if err != nil {
@@ -1364,7 +1365,7 @@ func readFiles(ctx context.Context, fs source.FileSource, uris []protocol.Docume
 
 // localPackageKey returns a key for local inputs into type-checking, excluding
 // dependency information: files, metadata, and configuration.
-func localPackageKey(inputs typeCheckInputs) source.Hash {
+func localPackageKey(inputs typeCheckInputs) file.Hash {
 	hasher := sha256.New()
 
 	// In principle, a key must be the hash of an
@@ -1390,11 +1391,11 @@ func localPackageKey(inputs typeCheckInputs) source.Hash {
 	// file names and contents
 	fmt.Fprintf(hasher, "compiledGoFiles: %d\n", len(inputs.compiledGoFiles))
 	for _, fh := range inputs.compiledGoFiles {
-		fmt.Fprintln(hasher, fh.FileIdentity())
+		fmt.Fprintln(hasher, fh.Identity())
 	}
 	fmt.Fprintf(hasher, "goFiles: %d\n", len(inputs.goFiles))
 	for _, fh := range inputs.goFiles {
-		fmt.Fprintln(hasher, fh.FileIdentity())
+		fmt.Fprintln(hasher, fh.Identity())
 	}
 
 	// types sizes
@@ -1636,7 +1637,7 @@ func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs
 // of pkg, or to 'requires' declarations in the package's go.mod file.
 //
 // TODO(rfindley): move this to load.go
-func depsErrors(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs source.FileSource, workspacePackages immutable.Map[PackageID, PackagePath]) ([]*source.Diagnostic, error) {
+func depsErrors(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs file.Source, workspacePackages immutable.Map[PackageID, PackagePath]) ([]*source.Diagnostic, error) {
 	// Select packages that can't be found, and were imported in non-workspace packages.
 	// Workspace packages already show their own errors.
 	var relevantErrors []*packagesinternal.PackageError

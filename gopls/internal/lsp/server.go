@@ -18,6 +18,7 @@ import (
 	"os"
 	"sync"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -143,8 +144,8 @@ func (s *server) nonstandardRequest(ctx context.Context, method string, params i
 		// TODO(adonovan): opt: parallelize FileDiagnostics(URI...), either
 		// by calling it in multiple goroutines or, better, by making
 		// the relevant APIs accept a set of URIs/packages.
-		for _, file := range paramMap["files"].([]interface{}) {
-			snapshot, fh, ok, release, err := s.beginFileRequest(ctx, protocol.DocumentURI(file.(string)), source.UnknownKind)
+		for _, f := range paramMap["files"].([]interface{}) {
+			snapshot, fh, ok, release, err := s.beginFileRequest(ctx, protocol.DocumentURI(f.(string)), file.UnknownKind)
 			defer release()
 			if !ok {
 				return nil, err
@@ -180,7 +181,7 @@ func (s *server) nonstandardRequest(ctx context.Context, method string, params i
 // efficient to compute the set of packages and TypeCheck and
 // Analyze them all at once. Or instead support textDocument/diagnostic
 // (golang/go#60122).
-func (s *server) diagnoseFile(ctx context.Context, snapshot source.Snapshot, uri protocol.DocumentURI) (source.FileHandle, []*source.Diagnostic, error) {
+func (s *server) diagnoseFile(ctx context.Context, snapshot source.Snapshot, uri protocol.DocumentURI) (file.Handle, []*source.Diagnostic, error) {
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, nil, err

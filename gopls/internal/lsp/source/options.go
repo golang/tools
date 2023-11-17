@@ -53,6 +53,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/unsafeptr"
 	"golang.org/x/tools/go/analysis/passes/unusedresult"
 	"golang.org/x/tools/go/analysis/passes/unusedwrite"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/deprecated"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/fillreturns"
@@ -100,8 +101,8 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 				HierarchicalDocumentSymbolSupport:          true,
 			},
 			ServerOptions: ServerOptions{
-				SupportedCodeActions: map[FileKind]map[protocol.CodeActionKind]bool{
-					Go: {
+				SupportedCodeActions: map[file.Kind]map[protocol.CodeActionKind]bool{
+					file.Go: {
 						protocol.SourceFixAll:          true,
 						protocol.SourceOrganizeImports: true,
 						protocol.QuickFix:              true,
@@ -109,13 +110,13 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						protocol.RefactorInline:        true,
 						protocol.RefactorExtract:       true,
 					},
-					Mod: {
+					file.Mod: {
 						protocol.SourceOrganizeImports: true,
 						protocol.QuickFix:              true,
 					},
-					Work: {},
-					Sum:  {},
-					Tmpl: {},
+					file.Work: {},
+					file.Sum:  {},
+					file.Tmpl: {},
 				},
 				SupportedCommands: commands,
 			},
@@ -252,7 +253,7 @@ type ClientOptions struct {
 // ServerOptions holds LSP-specific configuration that is provided by the
 // server.
 type ServerOptions struct {
-	SupportedCodeActions map[FileKind]map[protocol.CodeActionKind]bool
+	SupportedCodeActions map[file.Kind]map[protocol.CodeActionKind]bool
 	SupportedCommands    []string
 }
 

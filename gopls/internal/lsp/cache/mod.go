@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -24,14 +25,14 @@ import (
 )
 
 // ParseMod parses a go.mod file, using a cache. It may return partial results and an error.
-func (s *snapshot) ParseMod(ctx context.Context, fh source.FileHandle) (*source.ParsedModule, error) {
+func (s *snapshot) ParseMod(ctx context.Context, fh file.Handle) (*source.ParsedModule, error) {
 	uri := fh.URI()
 
 	s.mu.Lock()
 	entry, hit := s.parseModHandles.Get(uri)
 	s.mu.Unlock()
 
-	type parseModKey source.FileIdentity
+	type parseModKey file.Identity
 	type parseModResult struct {
 		parsed *source.ParsedModule
 		err    error
@@ -39,7 +40,7 @@ func (s *snapshot) ParseMod(ctx context.Context, fh source.FileHandle) (*source.
 
 	// cache miss?
 	if !hit {
-		promise, release := s.store.Promise(parseModKey(fh.FileIdentity()), func(ctx context.Context, _ interface{}) interface{} {
+		promise, release := s.store.Promise(parseModKey(fh.Identity()), func(ctx context.Context, _ interface{}) interface{} {
 			parsed, err := parseModImpl(ctx, fh)
 			return parseModResult{parsed, err}
 		})
@@ -61,7 +62,7 @@ func (s *snapshot) ParseMod(ctx context.Context, fh source.FileHandle) (*source.
 
 // parseModImpl parses the go.mod file whose name and contents are in fh.
 // It may return partial results and an error.
-func parseModImpl(ctx context.Context, fh source.FileHandle) (*source.ParsedModule, error) {
+func parseModImpl(ctx context.Context, fh file.Handle) (*source.ParsedModule, error) {
 	_, done := event.Start(ctx, "cache.ParseMod", tag.URI.Of(fh.URI()))
 	defer done()
 
@@ -102,14 +103,14 @@ func parseModImpl(ctx context.Context, fh source.FileHandle) (*source.ParsedModu
 
 // ParseWork parses a go.work file, using a cache. It may return partial results and an error.
 // TODO(adonovan): move to new work.go file.
-func (s *snapshot) ParseWork(ctx context.Context, fh source.FileHandle) (*source.ParsedWorkFile, error) {
+func (s *snapshot) ParseWork(ctx context.Context, fh file.Handle) (*source.ParsedWorkFile, error) {
 	uri := fh.URI()
 
 	s.mu.Lock()
 	entry, hit := s.parseWorkHandles.Get(uri)
 	s.mu.Unlock()
 
-	type parseWorkKey source.FileIdentity
+	type parseWorkKey file.Identity
 	type parseWorkResult struct {
 		parsed *source.ParsedWorkFile
 		err    error
@@ -117,7 +118,7 @@ func (s *snapshot) ParseWork(ctx context.Context, fh source.FileHandle) (*source
 
 	// cache miss?
 	if !hit {
-		handle, release := s.store.Promise(parseWorkKey(fh.FileIdentity()), func(ctx context.Context, _ interface{}) interface{} {
+		handle, release := s.store.Promise(parseWorkKey(fh.Identity()), func(ctx context.Context, _ interface{}) interface{} {
 			parsed, err := parseWorkImpl(ctx, fh)
 			return parseWorkResult{parsed, err}
 		})
@@ -138,7 +139,7 @@ func (s *snapshot) ParseWork(ctx context.Context, fh source.FileHandle) (*source
 }
 
 // parseWorkImpl parses a go.work file. It may return partial results and an error.
-func parseWorkImpl(ctx context.Context, fh source.FileHandle) (*source.ParsedWorkFile, error) {
+func parseWorkImpl(ctx context.Context, fh file.Handle) (*source.ParsedWorkFile, error) {
 	_, done := event.Start(ctx, "cache.ParseWork", tag.URI.Of(fh.URI()))
 	defer done()
 
@@ -187,7 +188,7 @@ func (s *snapshot) goSum(ctx context.Context, modURI protocol.DocumentURI) []byt
 	// TODO(rfindley): but that's not right. Changes to sum files should
 	// invalidate content, even if it's nonexistent content.
 	sumURI := protocol.URIFromPath(sumFilename(modURI))
-	var sumFH source.FileHandle = s.FindFile(sumURI)
+	var sumFH file.Handle = s.FindFile(sumURI)
 	if sumFH == nil {
 		var err error
 		sumFH, err = s.view.fs.ReadFile(ctx, sumURI)
@@ -209,10 +210,10 @@ func sumFilename(modURI protocol.DocumentURI) string {
 // ModWhy returns the "go mod why" result for each module named in a
 // require statement in the go.mod file.
 // TODO(adonovan): move to new mod_why.go file.
-func (s *snapshot) ModWhy(ctx context.Context, fh source.FileHandle) (map[string]string, error) {
+func (s *snapshot) ModWhy(ctx context.Context, fh file.Handle) (map[string]string, error) {
 	uri := fh.URI()
 
-	if s.FileKind(fh) != source.Mod {
+	if s.FileKind(fh) != file.Mod {
 		return nil, fmt.Errorf("%s is not a go.mod file", uri)
 	}
 
@@ -248,7 +249,7 @@ func (s *snapshot) ModWhy(ctx context.Context, fh source.FileHandle) (map[string
 }
 
 // modWhyImpl returns the result of "go mod why -m" on the specified go.mod file.
-func modWhyImpl(ctx context.Context, snapshot *snapshot, fh source.FileHandle) (map[string]string, error) {
+func modWhyImpl(ctx context.Context, snapshot *snapshot, fh file.Handle) (map[string]string, error) {
 	ctx, done := event.Start(ctx, "cache.ModWhy", tag.URI.Of(fh.URI()))
 	defer done()
 

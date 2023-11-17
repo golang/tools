@@ -7,6 +7,7 @@ package lsp
 import (
 	"context"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/mod"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -26,19 +27,19 @@ func (s *server) hover(ctx context.Context, params *protocol.HoverParams) (_ *pr
 	ctx, done := event.Start(ctx, "lsp.Server.hover", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, source.UnknownKind)
+	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
 	defer release()
 	if !ok {
 		return nil, err
 	}
 	switch snapshot.FileKind(fh) {
-	case source.Mod:
+	case file.Mod:
 		return mod.Hover(ctx, snapshot, fh, params.Position)
-	case source.Go:
+	case file.Go:
 		return source.Hover(ctx, snapshot, fh, params.Position)
-	case source.Tmpl:
+	case file.Tmpl:
 		return template.Hover(ctx, snapshot, fh, params.Position)
-	case source.Work:
+	case file.Work:
 		return work.Hover(ctx, snapshot, fh, params.Position)
 	}
 	return nil, nil

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
@@ -109,9 +110,9 @@ func (s *server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 			return err
 		}
 	}
-	return s.didModifyFiles(ctx, []source.FileModification{{
+	return s.didModifyFiles(ctx, []file.Modification{{
 		URI:        uri,
-		Action:     source.Open,
+		Action:     file.Open,
 		Version:    params.TextDocument.Version,
 		Text:       []byte(params.TextDocument.Text),
 		LanguageID: params.TextDocument.LanguageID,
@@ -131,13 +132,13 @@ func (s *server) didChange(ctx context.Context, params *protocol.DidChangeTextDo
 	if err != nil {
 		return err
 	}
-	c := source.FileModification{
+	c := file.Modification{
 		URI:     uri,
-		Action:  source.Change,
+		Action:  file.Change,
 		Version: params.TextDocument.Version,
 		Text:    text,
 	}
-	if err := s.didModifyFiles(ctx, []source.FileModification{c}, FromDidChange); err != nil {
+	if err := s.didModifyFiles(ctx, []file.Modification{c}, FromDidChange); err != nil {
 		return err
 	}
 	return s.warnAboutModifyingGeneratedFiles(ctx, uri)
@@ -185,14 +186,14 @@ func (s *server) didChangeWatchedFiles(ctx context.Context, params *protocol.Did
 	ctx, done := event.Start(ctx, "lsp.Server.didChangeWatchedFiles")
 	defer done()
 
-	var modifications []source.FileModification
+	var modifications []file.Modification
 	for _, change := range params.Changes {
 		uri := change.URI
 		if !uri.IsFile() {
 			continue
 		}
 		action := changeTypeToFileAction(change.Type)
-		modifications = append(modifications, source.FileModification{
+		modifications = append(modifications, file.Modification{
 			URI:    uri,
 			Action: action,
 			OnDisk: true,
@@ -209,14 +210,14 @@ func (s *server) didSave(ctx context.Context, params *protocol.DidSaveTextDocume
 	if !uri.IsFile() {
 		return nil
 	}
-	c := source.FileModification{
+	c := file.Modification{
 		URI:    uri,
-		Action: source.Save,
+		Action: file.Save,
 	}
 	if params.Text != nil {
 		c.Text = []byte(*params.Text)
 	}
-	return s.didModifyFiles(ctx, []source.FileModification{c}, FromDidSave)
+	return s.didModifyFiles(ctx, []file.Modification{c}, FromDidSave)
 }
 
 func (s *server) didClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
@@ -227,17 +228,17 @@ func (s *server) didClose(ctx context.Context, params *protocol.DidCloseTextDocu
 	if !uri.IsFile() {
 		return nil
 	}
-	return s.didModifyFiles(ctx, []source.FileModification{
+	return s.didModifyFiles(ctx, []file.Modification{
 		{
 			URI:     uri,
-			Action:  source.Close,
+			Action:  file.Close,
 			Version: -1,
 			Text:    nil,
 		},
 	}, FromDidClose)
 }
 
-func (s *server) didModifyFiles(ctx context.Context, modifications []source.FileModification, cause ModificationSource) error {
+func (s *server) didModifyFiles(ctx context.Context, modifications []file.Modification, cause ModificationSource) error {
 	// wg guards two conditions:
 	//  1. didModifyFiles is complete
 	//  2. the goroutine diagnosing changes on behalf of didModifyFiles is
@@ -277,7 +278,7 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []source.File
 
 	// Build a lookup map for file modifications, so that we can later join
 	// with the snapshot file associations.
-	modMap := make(map[protocol.DocumentURI]source.FileModification)
+	modMap := make(map[protocol.DocumentURI]file.Modification)
 	for _, mod := range modifications {
 		modMap[mod.URI] = mod
 	}
@@ -292,7 +293,7 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []source.File
 	for snapshot, uris := range snapshots {
 		for _, uri := range uris {
 			mod := modMap[uri]
-			if snapshot.Options().ChattyDiagnostics || mod.Action == source.Open || mod.Action == source.Close {
+			if snapshot.Options().ChattyDiagnostics || mod.Action == file.Open || mod.Action == file.Close {
 				s.mustPublishDiagnostics(uri)
 			}
 		}
@@ -364,14 +365,14 @@ func (s *server) applyIncrementalChanges(ctx context.Context, uri protocol.Docum
 	return content, nil
 }
 
-func changeTypeToFileAction(ct protocol.FileChangeType) source.FileAction {
+func changeTypeToFileAction(ct protocol.FileChangeType) file.Action {
 	switch ct {
 	case protocol.Changed:
-		return source.Change
+		return file.Change
 	case protocol.Created:
-		return source.Create
+		return file.Create
 	case protocol.Deleted:
-		return source.Delete
+		return file.Delete
 	}
-	return source.UnknownFileAction
+	return file.UnknownAction
 }

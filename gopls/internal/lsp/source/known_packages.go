@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 )
@@ -23,7 +24,7 @@ import (
 // all dot-free paths (standard packages) appear before dotful ones.
 //
 // It is part of the gopls.list_known_packages command.
-func KnownPackagePaths(ctx context.Context, snapshot Snapshot, fh FileHandle) ([]PackagePath, error) {
+func KnownPackagePaths(ctx context.Context, snapshot Snapshot, fh file.Handle) ([]PackagePath, error) {
 	// This algorithm is expressed in terms of Metadata, not Packages,
 	// so it doesn't cause or wait for type checking.
 
