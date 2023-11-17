@@ -217,7 +217,7 @@ func (c *commandHandler) RegenerateCgo(ctx context.Context, args command.URIArg)
 	}, func(ctx context.Context, _ commandDeps) error {
 		return c.modifyState(ctx, FromRegenerateCgo, func() (source.Snapshot, func(), error) {
 			// Resetting the view causes cgo to be regenerated via `go list`.
-			v, err := c.s.session.ResetView(ctx, args.URI.SpanURI())
+			v, err := c.s.session.ResetView(ctx, args.URI)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -261,12 +261,12 @@ func (c *commandHandler) CheckUpgrades(ctx context.Context, args command.CheckUp
 		progress: "Checking for upgrades",
 	}, func(ctx context.Context, deps commandDeps) error {
 		return c.modifyState(ctx, FromCheckUpgrades, func() (source.Snapshot, func(), error) {
-			upgrades, err := c.s.getUpgrades(ctx, deps.snapshot, args.URI.SpanURI(), args.Modules)
+			upgrades, err := c.s.getUpgrades(ctx, deps.snapshot, args.URI, args.Modules)
 			if err != nil {
 				return nil, nil, err
 			}
 			snapshot, release := deps.snapshot.View().Invalidate(ctx, source.StateChange{
-				ModuleUpgrades: map[protocol.DocumentURI]map[string]string{args.URI.SpanURI(): upgrades},
+				ModuleUpgrades: map[protocol.DocumentURI]map[string]string{args.URI: upgrades},
 			})
 			return snapshot, release, nil
 		})
@@ -304,7 +304,7 @@ func (c *commandHandler) GoGetModule(ctx context.Context, args command.Dependenc
 		progress: "Running go get",
 		forURI:   args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		return c.s.runGoModUpdateCommands(ctx, deps.snapshot, args.URI.SpanURI(), func(invoke func(...string) (*bytes.Buffer, error)) error {
+		return c.s.runGoModUpdateCommands(ctx, deps.snapshot, args.URI, func(invoke func(...string) (*bytes.Buffer, error)) error {
 			return runGoGetModule(invoke, args.AddRequire, args.GoCmdArgs)
 		})
 	})
@@ -371,7 +371,7 @@ func (c *commandHandler) Vendor(ctx context.Context, args command.URIArg) error 
 		err := deps.snapshot.RunGoCommandPiped(ctx, source.Normal|source.AllowNetwork, &gocommand.Invocation{
 			Verb:       "mod",
 			Args:       []string{"vendor"},
-			WorkingDir: filepath.Dir(args.URI.SpanURI().Filename()),
+			WorkingDir: filepath.Dir(args.URI.Filename()),
 		}, &bytes.Buffer{}, &bytes.Buffer{})
 		return err
 	})
@@ -407,7 +407,7 @@ func (c *commandHandler) RemoveDependency(ctx context.Context, args command.Remo
 		// TODO(rfindley): In Go 1.17+, we will be able to use the go command
 		// without checking if the module is tidy.
 		if args.OnlyDiagnostic {
-			return c.s.runGoModUpdateCommands(ctx, deps.snapshot, args.URI.SpanURI(), func(invoke func(...string) (*bytes.Buffer, error)) error {
+			return c.s.runGoModUpdateCommands(ctx, deps.snapshot, args.URI, func(invoke func(...string) (*bytes.Buffer, error)) error {
 				if err := runGoGetModule(invoke, false, []string{args.ModulePath + "@none"}); err != nil {
 					return err
 				}
@@ -493,7 +493,7 @@ func (c *commandHandler) RunTests(ctx context.Context, args command.RunTestsArgs
 
 func (c *commandHandler) runTests(ctx context.Context, snapshot source.Snapshot, work *progress.WorkDone, uri protocol.DocumentURI, tests, benchmarks []string) error {
 	// TODO: fix the error reporting when this runs async.
-	meta, err := source.NarrowestMetadataForFile(ctx, snapshot, uri.SpanURI())
+	meta, err := source.NarrowestMetadataForFile(ctx, snapshot, uri)
 	if err != nil {
 		return err
 	}
@@ -510,7 +510,7 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot source.Snapshot,
 		inv := &gocommand.Invocation{
 			Verb:       "test",
 			Args:       []string{pkgPath, "-v", "-count=1", "-run", fmt.Sprintf("^%s$", funcName)},
-			WorkingDir: filepath.Dir(uri.SpanURI().Filename()),
+			WorkingDir: filepath.Dir(uri.Filename()),
 		}
 		if err := snapshot.RunGoCommandPiped(ctx, source.Normal, inv, out, out); err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -526,7 +526,7 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot source.Snapshot,
 		inv := &gocommand.Invocation{
 			Verb:       "test",
 			Args:       []string{pkgPath, "-v", "-run=^$", "-bench", fmt.Sprintf("^%s$", funcName)},
-			WorkingDir: filepath.Dir(uri.SpanURI().Filename()),
+			WorkingDir: filepath.Dir(uri.Filename()),
 		}
 		if err := snapshot.RunGoCommandPiped(ctx, source.Normal, inv, out, out); err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -588,7 +588,7 @@ func (c *commandHandler) Generate(ctx context.Context, args command.GenerateArgs
 		inv := &gocommand.Invocation{
 			Verb:       "generate",
 			Args:       []string{"-x", pattern},
-			WorkingDir: args.Dir.SpanURI().Filename(),
+			WorkingDir: args.Dir.Filename(),
 		}
 		stderr := io.MultiWriter(er, progress.NewWorkDoneWriter(ctx, deps.work))
 		if err := deps.snapshot.RunGoCommandPiped(ctx, source.Normal, inv, er, stderr); err != nil {
@@ -607,13 +607,13 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 		stdout, err := deps.snapshot.RunGoCommandDirect(ctx, source.WriteTemporaryModFile|source.AllowNetwork, &gocommand.Invocation{
 			Verb:       "list",
 			Args:       []string{"-f", "{{.Module.Path}}@{{.Module.Version}}", args.Pkg},
-			WorkingDir: filepath.Dir(args.URI.SpanURI().Filename()),
+			WorkingDir: filepath.Dir(args.URI.Filename()),
 		})
 		if err != nil {
 			return err
 		}
 		ver := strings.TrimSpace(stdout.String())
-		return c.s.runGoModUpdateCommands(ctx, deps.snapshot, args.URI.SpanURI(), func(invoke func(...string) (*bytes.Buffer, error)) error {
+		return c.s.runGoModUpdateCommands(ctx, deps.snapshot, args.URI, func(invoke func(...string) (*bytes.Buffer, error)) error {
 			if args.AddRequire {
 				if err := addModuleRequire(invoke, []string{ver}); err != nil {
 					return err
@@ -810,7 +810,7 @@ func (c *commandHandler) ListImports(ctx context.Context, args command.URIArg) (
 	err := c.run(ctx, commandConfig{
 		forURI: args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		fh, err := deps.snapshot.ReadFile(ctx, args.URI.SpanURI())
+		fh, err := deps.snapshot.ReadFile(ctx, args.URI)
 		if err != nil {
 			return err
 		}
@@ -834,7 +834,7 @@ func (c *commandHandler) ListImports(ctx context.Context, args command.URIArg) (
 				})
 			}
 		}
-		meta, err := source.NarrowestMetadataForFile(ctx, deps.snapshot, args.URI.SpanURI())
+		meta, err := source.NarrowestMetadataForFile(ctx, deps.snapshot, args.URI)
 		if err != nil {
 			return err // e.g. cancelled
 		}
@@ -982,7 +982,7 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 		tokenChan <- deps.work.Token()
 
 		workDoneWriter := progress.NewWorkDoneWriter(ctx, deps.work)
-		dir := filepath.Dir(args.URI.SpanURI().Filename())
+		dir := filepath.Dir(args.URI.Filename())
 		pattern := args.Pattern
 
 		result, err := scan.RunGovulncheck(ctx, pattern, deps.snapshot, dir, workDoneWriter)
@@ -991,7 +991,7 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 		}
 
 		snapshot, release := deps.snapshot.View().Invalidate(ctx, source.StateChange{
-			Vulns: map[protocol.DocumentURI]*vulncheck.Result{args.URI.SpanURI(): result},
+			Vulns: map[protocol.DocumentURI]*vulncheck.Result{args.URI: result},
 		})
 		defer release()
 		c.s.diagnoseSnapshot(snapshot, nil, false, 0)

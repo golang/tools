@@ -54,7 +54,7 @@ func PrepareCallHierarchy(ctx context.Context, snapshot Snapshot, fh FileHandle,
 		Name:           obj.Name(),
 		Kind:           protocol.Function,
 		Tags:           []protocol.SymbolTag{},
-		Detail:         fmt.Sprintf("%s • %s", obj.Pkg().Path(), filepath.Base(declLoc.URI.SpanURI().Filename())),
+		Detail:         fmt.Sprintf("%s • %s", obj.Pkg().Path(), filepath.Base(declLoc.URI.Filename())),
 		URI:            declLoc.URI,
 		Range:          rng,
 		SelectionRange: rng,
@@ -106,7 +106,7 @@ func IncomingCalls(ctx context.Context, snapshot Snapshot, fh FileHandle, pos pr
 // enclosingNodeCallItem creates a CallHierarchyItem representing the function call at loc.
 func enclosingNodeCallItem(ctx context.Context, snapshot Snapshot, pkgPath PackagePath, loc protocol.Location) (protocol.CallHierarchyItem, error) {
 	// Parse the file containing the reference.
-	fh, err := snapshot.ReadFile(ctx, loc.URI.SpanURI())
+	fh, err := snapshot.ReadFile(ctx, loc.URI)
 	if err != nil {
 		return protocol.CallHierarchyItem{}, err
 	}
@@ -286,7 +286,7 @@ func OutgoingCalls(ctx context.Context, snapshot Snapshot, fh FileHandle, pp pro
 					Name:           obj.Name(),
 					Kind:           protocol.Function,
 					Tags:           []protocol.SymbolTag{},
-					Detail:         fmt.Sprintf("%s • %s", obj.Pkg().Path(), filepath.Base(loc.URI.SpanURI().Filename())),
+					Detail:         fmt.Sprintf("%s • %s", obj.Pkg().Path(), filepath.Base(loc.URI.Filename())),
 					URI:            loc.URI,
 					Range:          loc.Range,
 					SelectionRange: loc.Range,

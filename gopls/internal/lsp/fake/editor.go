@@ -224,7 +224,7 @@ func makeSettings(sandbox *Sandbox, config EditorConfig) map[string]interface{} 
 		env[k] = v
 	}
 	for k, v := range env {
-		v = strings.ReplaceAll(v, "$SANDBOX_WORKDIR", sandbox.Workdir.RootURI().SpanURI().Filename())
+		v = strings.ReplaceAll(v, "$SANDBOX_WORKDIR", sandbox.Workdir.RootURI().Filename())
 		env[k] = v
 	}
 
@@ -406,7 +406,7 @@ func (e *Editor) onFileChanges(ctx context.Context, evts []protocol.FileEvent) {
 		}
 		var matchedEvts []protocol.FileEvent
 		for _, evt := range evts {
-			filename := filepath.ToSlash(evt.URI.SpanURI().Filename())
+			filename := filepath.ToSlash(evt.URI.Filename())
 			for _, g := range e.watchPatterns {
 				if g.Match(filename) {
 					matchedEvts = append(matchedEvts, evt)
@@ -477,7 +477,7 @@ func (e *Editor) createBuffer(ctx context.Context, path string, dirty bool, cont
 		return fmt.Errorf("buffer %q already exists", path)
 	}
 
-	uri := e.sandbox.Workdir.URI(path).SpanURI()
+	uri := e.sandbox.Workdir.URI(path)
 	buf := buffer{
 		version: 1,
 		path:    path,

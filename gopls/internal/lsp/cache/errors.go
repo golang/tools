@@ -135,7 +135,7 @@ func typeErrorDiagnostics(moduleMode bool, linkTarget string, pkg *syntaxPackage
 		return nil, err
 	}
 	diag := &source.Diagnostic{
-		URI:      loc.URI.SpanURI(),
+		URI:      loc.URI,
 		Range:    loc.Range,
 		Severity: protocol.SeverityError,
 		Source:   source.TypeError,
@@ -168,13 +168,13 @@ func typeErrorDiagnostics(moduleMode bool, linkTarget string, pkg *syntaxPackage
 	}
 
 	if match := importErrorRe.FindStringSubmatch(e.primary.Msg); match != nil {
-		diag.SuggestedFixes, err = goGetQuickFixes(moduleMode, loc.URI.SpanURI(), match[1])
+		diag.SuggestedFixes, err = goGetQuickFixes(moduleMode, loc.URI, match[1])
 		if err != nil {
 			return nil, err
 		}
 	}
 	if match := unsupportedFeatureRe.FindStringSubmatch(e.primary.Msg); match != nil {
-		diag.SuggestedFixes, err = editGoDirectiveQuickFix(moduleMode, loc.URI.SpanURI(), match[1])
+		diag.SuggestedFixes, err = editGoDirectiveQuickFix(moduleMode, loc.URI, match[1])
 		if err != nil {
 			return nil, err
 		}
@@ -289,7 +289,7 @@ func decodeDiagnostics(data []byte) []*source.Diagnostic {
 					Range:   gobEdit.Location.Range,
 					NewText: string(gobEdit.NewText),
 				}
-				uri := gobEdit.Location.URI.SpanURI()
+				uri := gobEdit.Location.URI
 				srcFix.Edits[uri] = append(srcFix.Edits[uri], srcEdit)
 			}
 			if gobCmd := gobFix.Command; gobCmd != nil {
@@ -307,7 +307,7 @@ func decodeDiagnostics(data []byte) []*source.Diagnostic {
 			srcRelated = append(srcRelated, srcRel)
 		}
 		srcDiag := &source.Diagnostic{
-			URI:            gobDiag.Location.URI.SpanURI(),
+			URI:            gobDiag.Location.URI,
 			Range:          gobDiag.Location.Range,
 			Severity:       gobDiag.Severity,
 			Code:           gobDiag.Code,
@@ -356,7 +356,7 @@ func toSourceDiagnostic(srcAnalyzer *source.Analyzer, gobDiag *gobDiagnostic) *s
 	}
 
 	diag := &source.Diagnostic{
-		URI:      gobDiag.Location.URI.SpanURI(),
+		URI:      gobDiag.Location.URI,
 		Range:    gobDiag.Location.Range,
 		Severity: severity,
 		Code:     gobDiag.Code,

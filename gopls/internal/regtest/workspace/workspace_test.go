@@ -171,7 +171,7 @@ func TestReloadOnlyOnce(t *testing.T) {
 		ProxyFiles(workspaceProxy),
 		WorkspaceFolders("pkg"),
 	).Run(t, workspaceModule, func(t *testing.T, env *Env) {
-		dir := env.Sandbox.Workdir.URI("goodbye").SpanURI().Filename()
+		dir := env.Sandbox.Workdir.URI("goodbye").Filename()
 		goModWithReplace := fmt.Sprintf(`%s
 replace random.org => %s
 `, env.ReadWorkspaceFile("pkg/go.mod"), dir)

@@ -87,7 +87,7 @@ func (s *server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 	ctx, done := event.Start(ctx, "lsp.Server.didOpen", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	uri := params.TextDocument.URI.SpanURI()
+	uri := params.TextDocument.URI
 	if !uri.IsFile() {
 		return nil
 	}
@@ -122,7 +122,7 @@ func (s *server) didChange(ctx context.Context, params *protocol.DidChangeTextDo
 	ctx, done := event.Start(ctx, "lsp.Server.didChange", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	uri := params.TextDocument.URI.SpanURI()
+	uri := params.TextDocument.URI
 	if !uri.IsFile() {
 		return nil
 	}
@@ -187,7 +187,7 @@ func (s *server) didChangeWatchedFiles(ctx context.Context, params *protocol.Did
 
 	var modifications []source.FileModification
 	for _, change := range params.Changes {
-		uri := change.URI.SpanURI()
+		uri := change.URI
 		if !uri.IsFile() {
 			continue
 		}
@@ -205,7 +205,7 @@ func (s *server) didSave(ctx context.Context, params *protocol.DidSaveTextDocume
 	ctx, done := event.Start(ctx, "lsp.Server.didSave", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	uri := params.TextDocument.URI.SpanURI()
+	uri := params.TextDocument.URI
 	if !uri.IsFile() {
 		return nil
 	}
@@ -223,7 +223,7 @@ func (s *server) didClose(ctx context.Context, params *protocol.DidCloseTextDocu
 	ctx, done := event.Start(ctx, "lsp.Server.didClose", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	uri := params.TextDocument.URI.SpanURI()
+	uri := params.TextDocument.URI
 	if !uri.IsFile() {
 		return nil
 	}

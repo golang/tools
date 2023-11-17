@@ -15,9 +15,6 @@ import (
 	"unicode"
 )
 
-// TODO(adonovan): inline this away.
-func (uri DocumentURI) SpanURI() DocumentURI { return uri } // no conversion
-
 // UnmarshalText implements decoding of DocumentURI values.
 //
 // In particular, it implements a systematic correction of various odd

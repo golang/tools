@@ -70,7 +70,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot Sna
 	{
 		needPkgs := make(map[PackageID]struct{})
 		for _, ref := range refs {
-			md, err := NarrowestMetadataForFile(ctx, snapshot, ref.URI.SpanURI())
+			md, err := NarrowestMetadataForFile(ctx, snapshot, ref.URI)
 			if err != nil {
 				return nil, fmt.Errorf("finding ref metadata: %v", err)
 			}
@@ -106,7 +106,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot Sna
 	refsByFile := make(map[protocol.DocumentURI]*fileCalls)
 	for _, ref := range refs {
 		refpkg := pkgs[pkgForRef[ref]]
-		pgf, err := refpkg.File(ref.URI.SpanURI())
+		pgf, err := refpkg.File(ref.URI)
 		if err != nil {
 			return nil, bug.Errorf("finding %s in %s: %v", ref.URI, refpkg.Metadata().ID, err)
 		}
@@ -143,13 +143,13 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot Sna
 			return nil, bug.Errorf("cannot inline: corrupted reference %v", ref)
 		}
 
-		callInfo, ok := refsByFile[ref.URI.SpanURI()]
+		callInfo, ok := refsByFile[ref.URI]
 		if !ok {
 			callInfo = &fileCalls{
 				pkg: refpkg,
 				pgf: pgf,
 			}
-			refsByFile[ref.URI.SpanURI()] = callInfo
+			refsByFile[ref.URI] = callInfo
 		}
 		callInfo.calls = append(callInfo.calls, call)
 	}

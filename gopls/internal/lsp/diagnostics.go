@@ -139,7 +139,7 @@ func computeDiagnosticHash(diags ...*source.Diagnostic) string {
 			fmt.Fprintf(h, "tag: %s\n", t)
 		}
 		for _, r := range d.Related {
-			fmt.Fprintf(h, "related: %s %s %s\n", r.Location.URI.SpanURI(), r.Message, r.Location.Range)
+			fmt.Fprintf(h, "related: %s %s %s\n", r.Location.URI, r.Message, r.Location.Range)
 		}
 		fmt.Fprintf(h, "code: %s\n", d.Code)
 		fmt.Fprintf(h, "codeHref: %s\n", d.CodeHref)
@@ -863,7 +863,7 @@ func auxStr(v *source.Diagnostic, d *diagnosticReport, typ diagnosticSource) str
 	msg := fmt.Sprintf("(%s)%q(source:%q,code:%q,severity:%s,snapshot:%d,type:%s)",
 		v.Range, v.Message, v.Source, v.Code, v.Severity, d.snapshotID, typ)
 	for _, r := range v.Related {
-		msg += fmt.Sprintf(" [%s:%s,%q]", r.Location.URI.SpanURI().Filename(), r.Location.Range, r.Message)
+		msg += fmt.Sprintf(" [%s:%s,%q]", r.Location.URI.Filename(), r.Location.Range, r.Message)
 	}
 	return msg
 }

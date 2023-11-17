@@ -87,7 +87,7 @@ func (s *server) initialize(ctx context.Context, params *protocol.ParamInitializ
 		if params.RootURI != "" {
 			folders = []protocol.WorkspaceFolder{{
 				URI:  string(params.RootURI),
-				Name: path.Base(params.RootURI.SpanURI().Filename()),
+				Name: path.Base(params.RootURI.Filename()),
 			}}
 		}
 	}
@@ -549,7 +549,7 @@ func (s *server) handleOptionResults(ctx context.Context, results source.OptionR
 // so callers should do if !ok { return err } rather than if err != nil.
 // The returned cleanup function is non-nil even in case of false/error result.
 func (s *server) beginFileRequest(ctx context.Context, pURI protocol.DocumentURI, expectKind source.FileKind) (source.Snapshot, source.FileHandle, bool, func(), error) {
-	uri := pURI.SpanURI()
+	uri := pURI
 	if !uri.IsFile() {
 		// Not a file URI. Stop processing the request, but don't return an error.
 		return nil, nil, false, func() {}, nil

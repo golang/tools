@@ -146,7 +146,7 @@ func (w *Workdir) URI(path string) protocol.DocumentURI {
 // URIToPath converts a uri to a workdir-relative path (or an absolute path,
 // if the uri is outside of the workdir).
 func (w *Workdir) URIToPath(uri protocol.DocumentURI) string {
-	fp := uri.SpanURI().Filename()
+	fp := uri.Filename()
 	return w.RelPath(fp)
 }
 
@@ -180,7 +180,7 @@ func (w *Workdir) RegexpSearch(path string, re string) (protocol.Location, error
 	if err != nil {
 		return protocol.Location{}, err
 	}
-	mapper := protocol.NewMapper(w.URI(path).SpanURI(), content)
+	mapper := protocol.NewMapper(w.URI(path), content)
 	return regexpLocation(mapper, re)
 }
 
