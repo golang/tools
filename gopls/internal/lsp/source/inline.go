@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
-	"go/token"
 	"go/types"
 	"runtime/debug"
 
@@ -58,22 +57,22 @@ loop:
 	return call, fn, nil
 }
 
-func inlineCall(ctx context.Context, snapshot Snapshot, fh FileHandle, rng protocol.Range) (_ *token.FileSet, _ *analysis.SuggestedFix, err error) {
+func inlineCall(ctx context.Context, snapshot Snapshot, fh FileHandle, rng protocol.Range) (_ []protocol.TextDocumentEdit, err error) {
 	// Find enclosing static call.
 	callerPkg, callerPGF, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	call, fn, err := EnclosingStaticCall(callerPkg, callerPGF, rng)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Locate callee by file/line and analyze it.
 	calleePosn := safetoken.StartPosition(callerPkg.FileSet(), fn.Pos())
 	calleePkg, calleePGF, err := NarrowestPackageForFile(ctx, snapshot, protocol.URIFromPath(calleePosn.Filename))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var calleeDecl *ast.FuncDecl
 	for _, decl := range calleePGF.File.Decls {
@@ -86,7 +85,7 @@ func inlineCall(ctx context.Context, snapshot Snapshot, fh FileHandle, rng proto
 		}
 	}
 	if calleeDecl == nil {
-		return nil, nil, fmt.Errorf("can't find callee")
+		return nil, fmt.Errorf("can't find callee")
 	}
 
 	// The inliner assumes that input is well-typed,
@@ -109,7 +108,7 @@ func inlineCall(ctx context.Context, snapshot Snapshot, fh FileHandle, rng proto
 
 	callee, err := inline.AnalyzeCallee(logf, calleePkg.FileSet(), calleePkg.GetTypes(), calleePkg.GetTypesInfo(), calleeDecl, calleePGF.Src)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Inline the call.
@@ -124,14 +123,13 @@ func inlineCall(ctx context.Context, snapshot Snapshot, fh FileHandle, rng proto
 
 	got, err := inline.Inline(logf, caller, callee)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	// Suggest the fix.
-	return callerPkg.FileSet(), &analysis.SuggestedFix{
+	return suggestedFixToEdits(ctx, snapshot, callerPkg.FileSet(), &analysis.SuggestedFix{
 		Message:   fmt.Sprintf("inline call of %v", callee),
 		TextEdits: diffToTextEdits(callerPGF.Tok, diff.Bytes(callerPGF.Src, got)),
-	}, nil
+	})
 }
 
 // TODO(adonovan): change the inliner to instead accept an io.Writer.

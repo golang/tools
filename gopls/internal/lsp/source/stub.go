@@ -30,21 +30,25 @@ import (
 // stubSuggestedFixFunc returns a suggested fix to declare the missing
 // methods of the concrete type that is assigned to an interface type
 // at the cursor position.
-func stubSuggestedFixFunc(ctx context.Context, snapshot Snapshot, fh FileHandle, rng protocol.Range) (*token.FileSet, *analysis.SuggestedFix, error) {
+func stubSuggestedFixFunc(ctx context.Context, snapshot Snapshot, fh FileHandle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
-		return nil, nil, fmt.Errorf("GetTypedFile: %w", err)
+		return nil, fmt.Errorf("GetTypedFile: %w", err)
 	}
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	nodes, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 	si := stubmethods.GetStubInfo(pkg.FileSet(), pkg.GetTypesInfo(), nodes, start)
 	if si == nil {
-		return nil, nil, fmt.Errorf("nil interface request")
+		return nil, fmt.Errorf("nil interface request")
 	}
-	return stub(ctx, snapshot, si)
+	fset, fix, err := stub(ctx, snapshot, si)
+	if err != nil {
+		return nil, err
+	}
+	return suggestedFixToEdits(ctx, snapshot, fset, fix)
 }
 
 // stub returns a suggested fix to declare the missing methods of si.Concrete.

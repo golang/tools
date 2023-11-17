@@ -334,21 +334,6 @@ func toSourceDiagnostic(srcAnalyzer *source.Analyzer, gobDiag *gobDiagnostic) *s
 	if len(srcAnalyzer.ActionKind) == 0 {
 		kinds = append(kinds, protocol.QuickFix)
 	}
-	fixes := suggestedAnalysisFixes(gobDiag, kinds)
-	if srcAnalyzer.Fix != "" {
-		cmd, err := command.NewApplyFixCommand(gobDiag.Message, command.ApplyFixArgs{
-			URI:   gobDiag.Location.URI,
-			Range: gobDiag.Location.Range,
-			Fix:   srcAnalyzer.Fix,
-		})
-		if err != nil {
-			// JSON marshalling of these argument values cannot fail.
-			log.Fatalf("internal error in NewApplyFixCommand: %v", err)
-		}
-		for _, kind := range kinds {
-			fixes = append(fixes, source.SuggestedFixFromCommand(cmd, kind))
-		}
-	}
 
 	severity := srcAnalyzer.Severity
 	if severity == 0 {
@@ -366,18 +351,34 @@ func toSourceDiagnostic(srcAnalyzer *source.Analyzer, gobDiag *gobDiagnostic) *s
 		Related:  related,
 		Tags:     srcAnalyzer.Tag,
 	}
-	if srcAnalyzer.FixesDiagnostic(diag) {
+	if source.CanFix(srcAnalyzer, diag) {
+		fixes := suggestedAnalysisFixes(gobDiag, kinds)
+		if srcAnalyzer.Fix != "" {
+			cmd, err := command.NewApplyFixCommand(gobDiag.Message, command.ApplyFixArgs{
+				URI:   gobDiag.Location.URI,
+				Range: gobDiag.Location.Range,
+				Fix:   srcAnalyzer.Fix,
+			})
+			if err != nil {
+				// JSON marshalling of these argument values cannot fail.
+				log.Fatalf("internal error in NewApplyFixCommand: %v", err)
+			}
+			for _, kind := range kinds {
+				fixes = append(fixes, source.SuggestedFixFromCommand(cmd, kind))
+			}
+		}
 		diag.SuggestedFixes = fixes
 	}
 
 	// If the fixes only delete code, assume that the diagnostic is reporting dead code.
-	if onlyDeletions(fixes) {
+	if onlyDeletions(diag.SuggestedFixes) {
 		diag.Tags = append(diag.Tags, protocol.Unnecessary)
 	}
 	return diag
 }
 
-// onlyDeletions returns true if all of the suggested fixes are deletions.
+// onlyDeletions returns true if fixes is non-empty and all of the suggested
+// fixes are deletions.
 func onlyDeletions(fixes []source.SuggestedFix) bool {
 	for _, fix := range fixes {
 		if fix.Command != nil {

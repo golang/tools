@@ -1641,10 +1641,9 @@ func defaultAnalyzers() map[string]*Analyzer {
 		useany.Analyzer.Name:           {Analyzer: useany.Analyzer, Enabled: false},
 		timeformat.Analyzer.Name:       {Analyzer: timeformat.Analyzer, Enabled: true},
 		embeddirective.Analyzer.Name: {
-			Analyzer:        embeddirective.Analyzer,
-			Enabled:         true,
-			Fix:             AddEmbedImport,
-			fixesDiagnostic: fixedByImportingEmbed,
+			Analyzer: embeddirective.Analyzer,
+			Enabled:  true,
+			Fix:      AddEmbedImport,
 		},
 
 		// gofmt -s suite:
