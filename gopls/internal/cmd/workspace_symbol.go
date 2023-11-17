@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -43,19 +43,19 @@ func (r *workspaceSymbol) Run(ctx context.Context, args ...string) error {
 	}
 
 	opts := r.app.options
-	r.app.options = func(o *source.Options) {
+	r.app.options = func(o *settings.Options) {
 		if opts != nil {
 			opts(o)
 		}
 		switch strings.ToLower(r.Matcher) {
 		case "fuzzy":
-			o.SymbolMatcher = source.SymbolFuzzy
+			o.SymbolMatcher = settings.SymbolFuzzy
 		case "casesensitive":
-			o.SymbolMatcher = source.SymbolCaseSensitive
+			o.SymbolMatcher = settings.SymbolCaseSensitive
 		case "fastfuzzy":
-			o.SymbolMatcher = source.SymbolFastFuzzy
+			o.SymbolMatcher = settings.SymbolFastFuzzy
 		default:
-			o.SymbolMatcher = source.SymbolCaseInsensitive
+			o.SymbolMatcher = settings.SymbolCaseInsensitive
 		}
 	}
 

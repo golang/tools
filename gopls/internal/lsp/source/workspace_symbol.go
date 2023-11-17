@@ -16,6 +16,7 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fuzzy"
 )
@@ -50,7 +51,7 @@ const maxSymbols = 100
 // with a different configured SymbolMatcher per View. Therefore we assume that
 // Session level configuration will define the SymbolMatcher to be used for the
 // WorkspaceSymbols method.
-func WorkspaceSymbols(ctx context.Context, matcher SymbolMatcher, style SymbolStyle, views []View, query string) ([]protocol.SymbolInformation, error) {
+func WorkspaceSymbols(ctx context.Context, matcher settings.SymbolMatcher, style settings.SymbolStyle, views []View, query string) ([]protocol.SymbolInformation, error) {
 	ctx, done := event.Start(ctx, "source.WorkspaceSymbols")
 	defer done()
 	if query == "" {
@@ -59,11 +60,11 @@ func WorkspaceSymbols(ctx context.Context, matcher SymbolMatcher, style SymbolSt
 
 	var s symbolizer
 	switch style {
-	case DynamicSymbols:
+	case settings.DynamicSymbols:
 		s = dynamicSymbolMatch
-	case FullyQualifiedSymbols:
+	case settings.FullyQualifiedSymbols:
 		s = fullyQualifiedSymbolMatch
-	case PackageQualifiedSymbols:
+	case settings.PackageQualifiedSymbols:
 		s = packageSymbolMatch
 	default:
 		panic(fmt.Errorf("unknown symbol style: %v", style))
@@ -156,17 +157,17 @@ func packageSymbolMatch(space []string, name string, pkg *Metadata, matcher matc
 	return nil, 0
 }
 
-func buildMatcher(matcher SymbolMatcher, query string) matcherFunc {
+func buildMatcher(matcher settings.SymbolMatcher, query string) matcherFunc {
 	switch matcher {
-	case SymbolFuzzy:
+	case settings.SymbolFuzzy:
 		return parseQuery(query, newFuzzyMatcher)
-	case SymbolFastFuzzy:
+	case settings.SymbolFastFuzzy:
 		return parseQuery(query, func(query string) matcherFunc {
 			return fuzzy.NewSymbolMatcher(query).Match
 		})
-	case SymbolCaseSensitive:
+	case settings.SymbolCaseSensitive:
 		return matchExact(query)
-	case SymbolCaseInsensitive:
+	case settings.SymbolCaseInsensitive:
 		q := strings.ToLower(query)
 		exact := matchExact(q)
 		wrapper := []string{""}
@@ -295,7 +296,7 @@ func (c comboMatcher) match(chunks []string) (int, float64) {
 //     of zero indicates no match.
 //   - A symbolizer determines how we extract the symbol for an object. This
 //     enables the 'symbolStyle' configuration option.
-func collectSymbols(ctx context.Context, views []View, matcherType SymbolMatcher, symbolizer symbolizer, query string) ([]protocol.SymbolInformation, error) {
+func collectSymbols(ctx context.Context, views []View, matcherType settings.SymbolMatcher, symbolizer symbolizer, query string) ([]protocol.SymbolInformation, error) {
 	// Extract symbols from all files.
 	var work []symbolFile
 	var roots []string
@@ -317,7 +318,7 @@ func collectSymbols(ctx context.Context, views []View, matcherType SymbolMatcher
 		folder := filepath.ToSlash(v.Folder().Path())
 
 		workspaceOnly := true
-		if snapshot.Options().SymbolScope == AllSymbolScope {
+		if snapshot.Options().SymbolScope == settings.AllSymbolScope {
 			workspaceOnly = false
 		}
 		symbols, err := snapshot.Symbols(ctx, workspaceOnly)

@@ -19,7 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/browser"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -223,7 +223,7 @@ func (j *apiJSON) DetailedHelp(f *flag.FlagSet) {
 }
 
 func (j *apiJSON) Run(ctx context.Context, args ...string) error {
-	js, err := json.MarshalIndent(source.GeneratedAPIJSON, "", "\t")
+	js, err := json.MarshalIndent(settings.GeneratedAPIJSON, "", "\t")
 	if err != nil {
 		return err
 	}
@@ -299,7 +299,7 @@ gopls also includes software made available under these licenses:
 `
 
 func (l *licenses) Run(ctx context.Context, args ...string) error {
-	opts := source.DefaultOptions(l.app.options)
+	opts := settings.DefaultOptions(l.app.options)
 	txt := licensePreamble
 	if opts.LicensesText == "" {
 		txt += "(development gopls, license information not available)"

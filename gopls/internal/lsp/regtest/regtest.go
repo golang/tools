@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/cmd"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/testenv"
@@ -92,7 +92,7 @@ func DefaultModes() Mode {
 }
 
 // Main sets up and tears down the shared regtest state.
-func Main(m *testing.M, hook func(*source.Options)) {
+func Main(m *testing.M, hook func(*settings.Options)) {
 	// golang/go#54461: enable additional debugging around hanging Go commands.
 	gocommand.DebugHangingGoCommands = true
 

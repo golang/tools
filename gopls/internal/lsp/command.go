@@ -29,6 +29,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
@@ -186,7 +187,7 @@ func (c *commandHandler) ApplyFix(ctx context.Context, args command.ApplyFixArgs
 		// Note: no progress here. Applying fixes should be quick.
 		forURI: args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		edits, err := source.ApplyFix(ctx, args.Fix, deps.snapshot, deps.fh, args.Range)
+		edits, err := source.ApplyFix(ctx, settings.Fix(args.Fix), deps.snapshot, deps.fh, args.Range)
 		if err != nil {
 			return err
 		}
@@ -945,7 +946,7 @@ type pkgLoadConfig struct {
 func (c *commandHandler) FetchVulncheckResult(ctx context.Context, arg command.URIArg) (map[protocol.DocumentURI]*vulncheck.Result, error) {
 	ret := map[protocol.DocumentURI]*vulncheck.Result{}
 	err := c.run(ctx, commandConfig{forURI: arg.URI}, func(ctx context.Context, deps commandDeps) error {
-		if deps.snapshot.Options().Vulncheck == source.ModeVulncheckImports {
+		if deps.snapshot.Options().Vulncheck == settings.ModeVulncheckImports {
 			for _, modfile := range deps.snapshot.ModFiles() {
 				res, err := deps.snapshot.ModVuln(ctx, modfile)
 				if err != nil {

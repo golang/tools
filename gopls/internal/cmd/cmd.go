@@ -30,6 +30,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/lsprpc"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/constraints"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -51,7 +52,7 @@ type Application struct {
 	Serve Serve
 
 	// the options configuring function to invoke when building a server
-	options func(*source.Options)
+	options func(*settings.Options)
 
 	// The name of the binary, used in help and telemetry.
 	name string
@@ -76,7 +77,7 @@ type Application struct {
 
 	// PrepareOptions is called to update the options when a new view is built.
 	// It is primarily to allow the behavior of gopls to be modified by hooks.
-	PrepareOptions func(*source.Options)
+	PrepareOptions func(*settings.Options)
 
 	// editFlags holds flags that control how file edit operations
 	// are applied, in particular when the server makes an ApplyEdits
@@ -104,7 +105,7 @@ func (app *Application) verbose() bool {
 }
 
 // New returns a new Application ready to run.
-func New(name, wd string, env []string, options func(*source.Options)) *Application {
+func New(name, wd string, env []string, options func(*settings.Options)) *Application {
 	if wd == "" {
 		wd, _ = os.Getwd()
 	}
@@ -331,7 +332,7 @@ func (app *Application) connect(ctx context.Context, onProgress func(*protocol.P
 	switch {
 	case app.Remote == "":
 		client := newClient(app, onProgress)
-		options := source.DefaultOptions(app.options)
+		options := settings.DefaultOptions(app.options)
 		server := lsp.NewServer(cache.NewSession(ctx, cache.New(nil)), client, options)
 		conn := newConnection(server, client)
 		if err := conn.initialize(protocol.WithClient(ctx, client), app.options); err != nil {
@@ -342,7 +343,7 @@ func (app *Application) connect(ctx context.Context, onProgress func(*protocol.P
 	case strings.HasPrefix(app.Remote, "internal@"):
 		internalMu.Lock()
 		defer internalMu.Unlock()
-		opts := source.DefaultOptions(app.options)
+		opts := settings.DefaultOptions(app.options)
 		key := fmt.Sprintf("%s %v %v %v", app.wd, opts.PreferredContentFormat, opts.HierarchicalDocumentSymbolSupport, opts.SymbolMatcher)
 		if c := internalConnections[key]; c != nil {
 			return c, nil
@@ -377,13 +378,13 @@ func (app *Application) connectRemote(ctx context.Context, remote string) (*conn
 	return connection, connection.initialize(ctx, app.options)
 }
 
-func (c *connection) initialize(ctx context.Context, options func(*source.Options)) error {
+func (c *connection) initialize(ctx context.Context, options func(*settings.Options)) error {
 	params := &protocol.ParamInitialize{}
 	params.RootURI = protocol.URIFromPath(c.client.app.wd)
 	params.Capabilities.Workspace.Configuration = true
 
 	// Make sure to respect configured options when sending initialize request.
-	opts := source.DefaultOptions(options)
+	opts := settings.DefaultOptions(options)
 	// If you add an additional option here, you must update the map key in connect.
 	params.Capabilities.TextDocument.Hover = &protocol.HoverClientCapabilities{
 		ContentFormat: []protocol.MarkupKind{opts.PreferredContentFormat},

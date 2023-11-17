@@ -18,7 +18,7 @@ import (
 	"os/exec"
 
 	"github.com/google/go-cmp/cmp"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 )
 
 const usage = `api-diff <previous version> [<current version>]
@@ -55,9 +55,9 @@ func diffAPI(oldVer, newVer string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("loading %s: %v", oldVer, err)
 	}
-	var currentAPI *source.APIJSON
+	var currentAPI *settings.APIJSON
 	if newVer == "" {
-		currentAPI = source.GeneratedAPIJSON
+		currentAPI = settings.GeneratedAPIJSON
 	} else {
 		var err error
 		currentAPI, err = loadAPI(ctx, newVer)
@@ -69,7 +69,7 @@ func diffAPI(oldVer, newVer string) (string, error) {
 	return cmp.Diff(previousAPI, currentAPI), nil
 }
 
-func loadAPI(ctx context.Context, version string) (*source.APIJSON, error) {
+func loadAPI(ctx context.Context, version string) (*settings.APIJSON, error) {
 	ver := fmt.Sprintf("golang.org/x/tools/gopls@%s", version)
 	cmd := exec.Command("go", "run", ver, "api-json")
 
@@ -81,7 +81,7 @@ func loadAPI(ctx context.Context, version string) (*source.APIJSON, error) {
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("go run failed: %v; stderr:\n%s", err, stderr)
 	}
-	apiJson := &source.APIJSON{}
+	apiJson := &settings.APIJSON{}
 	if err := json.Unmarshal(stdout.Bytes(), apiJson); err != nil {
 		return nil, fmt.Errorf("unmarshal: %v", err)
 	}

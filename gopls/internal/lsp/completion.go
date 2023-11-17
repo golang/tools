@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source/completion"
 	"golang.org/x/tools/gopls/internal/lsp/template"
 	"golang.org/x/tools/gopls/internal/lsp/work"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -73,7 +74,7 @@ func (s *server) completion(ctx context.Context, params *protocol.CompletionPara
 	// When using deep completions/fuzzy matching, report results as incomplete so
 	// client fetches updated completions after every key stroke.
 	options := snapshot.Options()
-	incompleteResults := options.DeepCompletion || options.Matcher == source.Fuzzy
+	incompleteResults := options.DeepCompletion || options.Matcher == settings.Fuzzy
 
 	items := toProtocolCompletionItems(candidates, rng, options)
 
@@ -83,7 +84,7 @@ func (s *server) completion(ctx context.Context, params *protocol.CompletionPara
 	}, nil
 }
 
-func toProtocolCompletionItems(candidates []completion.CompletionItem, rng protocol.Range, options *source.Options) []protocol.CompletionItem {
+func toProtocolCompletionItems(candidates []completion.CompletionItem, rng protocol.Range, options *settings.Options) []protocol.CompletionItem {
 	var (
 		items                  = make([]protocol.CompletionItem, 0, len(candidates))
 		numDeepCompletionsSeen int

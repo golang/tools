@@ -38,6 +38,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/facts"
@@ -170,7 +171,7 @@ const AnalysisProgressTitle = "Analyzing Dependencies"
 // The analyzers list must be duplicate free; order does not matter.
 //
 // Notifications of progress may be sent to the optional reporter.
-func (snapshot *snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, analyzers []*source.Analyzer, reporter *progress.Tracker) ([]*source.Diagnostic, error) {
+func (snapshot *snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, analyzers []*settings.Analyzer, reporter *progress.Tracker) ([]*source.Diagnostic, error) {
 	start := time.Now() // for progress reporting
 
 	var tagStr string // sorted comma-separated list of PackageIDs
@@ -189,7 +190,7 @@ func (snapshot *snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, 
 
 	// Filter and sort enabled root analyzers.
 	// A disabled analyzer may still be run if required by another.
-	toSrc := make(map[*analysis.Analyzer]*source.Analyzer)
+	toSrc := make(map[*analysis.Analyzer]*settings.Analyzer)
 	var enabled []*analysis.Analyzer // enabled subset + transitive requirements
 	for _, a := range analyzers {
 		if a.IsEnabled(snapshot.Options()) {

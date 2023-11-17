@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -63,7 +64,7 @@ func (s *server) initialize(ctx context.Context, params *protocol.ParamInitializ
 	// eliminate this defer.
 	defer func() { s.SetOptions(options) }()
 
-	if err := s.handleOptionResults(ctx, source.SetOptions(options, params.InitializationOptions)); err != nil {
+	if err := s.handleOptionResults(ctx, settings.SetOptions(options, params.InitializationOptions)); err != nil {
 		return nil, err
 	}
 	options.ForClientCapabilities(params.ClientInfo, params.Capabilities)
@@ -451,7 +452,7 @@ func (s *server) registerWatchedDirectoriesLocked(ctx context.Context, patterns 
 // Options returns the current server options.
 //
 // The caller must not modify the result.
-func (s *server) Options() *source.Options {
+func (s *server) Options() *settings.Options {
 	s.optionsMu.Lock()
 	defer s.optionsMu.Unlock()
 	return s.options
@@ -460,13 +461,13 @@ func (s *server) Options() *source.Options {
 // SetOptions sets the current server options.
 //
 // The caller must not subsequently modify the options.
-func (s *server) SetOptions(opts *source.Options) {
+func (s *server) SetOptions(opts *settings.Options) {
 	s.optionsMu.Lock()
 	defer s.optionsMu.Unlock()
 	s.options = opts
 }
 
-func (s *server) fetchFolderOptions(ctx context.Context, folder protocol.DocumentURI) (*source.Options, error) {
+func (s *server) fetchFolderOptions(ctx context.Context, folder protocol.DocumentURI) (*settings.Options, error) {
 	if opts := s.Options(); !opts.ConfigurationSupported {
 		return opts, nil
 	}
@@ -483,7 +484,7 @@ func (s *server) fetchFolderOptions(ctx context.Context, folder protocol.Documen
 
 	folderOpts := s.Options().Clone()
 	for _, config := range configs {
-		if err := s.handleOptionResults(ctx, source.SetOptions(folderOpts, config)); err != nil {
+		if err := s.handleOptionResults(ctx, settings.SetOptions(folderOpts, config)); err != nil {
 			return nil, err
 		}
 	}
@@ -500,13 +501,13 @@ func (s *server) eventuallyShowMessage(ctx context.Context, msg *protocol.ShowMe
 	return nil
 }
 
-func (s *server) handleOptionResults(ctx context.Context, results source.OptionResults) error {
+func (s *server) handleOptionResults(ctx context.Context, results settings.OptionResults) error {
 	var warnings, errors []string
 	for _, result := range results {
 		switch result.Error.(type) {
 		case nil:
 			// nothing to do
-		case *source.SoftError:
+		case *settings.SoftError:
 			warnings = append(warnings, result.Error.Error())
 		default:
 			errors = append(errors, result.Error.Error())
@@ -518,7 +519,7 @@ func (s *server) handleOptionResults(ctx context.Context, results source.OptionR
 	// Having stable content for the message allows clients to de-duplicate. This
 	// matters because we may send duplicate warnings for clients that support
 	// dynamic configuration: one for the initial settings, and then more for the
-	// individual view settings.
+	// individual viewsettings.
 	var msgs []string
 	msgType := protocol.Warning
 	if len(errors) > 0 {

@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
@@ -345,7 +346,7 @@ func unusedDiagnostic(m *protocol.Mapper, req *modfile.Require, onlyDiagnostic b
 
 // directnessDiagnostic extracts errors when a dependency is labeled indirect when
 // it should be direct and vice versa.
-func directnessDiagnostic(m *protocol.Mapper, req *modfile.Require, computeEdits source.DiffFunction) (*source.Diagnostic, error) {
+func directnessDiagnostic(m *protocol.Mapper, req *modfile.Require, computeEdits settings.DiffFunction) (*source.Diagnostic, error) {
 	rng, err := m.OffsetRange(req.Syntax.Start.Byte, req.Syntax.End.Byte)
 	if err != nil {
 		return nil, err
@@ -418,7 +419,7 @@ func missingModuleDiagnostic(pm *source.ParsedModule, req *modfile.Require) (*so
 
 // switchDirectness gets the edits needed to change an indirect dependency to
 // direct and vice versa.
-func switchDirectness(req *modfile.Require, m *protocol.Mapper, computeEdits source.DiffFunction) ([]protocol.TextEdit, error) {
+func switchDirectness(req *modfile.Require, m *protocol.Mapper, computeEdits settings.DiffFunction) ([]protocol.TextEdit, error) {
 	// We need a private copy of the parsed go.mod file, since we're going to
 	// modify it.
 	copied, err := modfile.Parse("", m.Content, nil)

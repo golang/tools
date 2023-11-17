@@ -18,7 +18,6 @@ import (
 	"io"
 
 	"golang.org/x/mod/modfile"
-	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/file"
@@ -26,6 +25,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event/label"
 	"golang.org/x/tools/internal/event/tag"
@@ -67,7 +67,7 @@ type Snapshot interface {
 	FileKind(file.Handle) file.Kind
 
 	// Options returns the options associated with this snapshot.
-	Options() *Options
+	Options() *settings.Options
 
 	// View returns the View associated with this snapshot.
 	View() View
@@ -108,7 +108,7 @@ type Snapshot interface {
 	//
 	// If the provided tracker is non-nil, it may be used to report progress of
 	// the analysis pass.
-	Analyze(ctx context.Context, pkgIDs map[PackageID]unit, analyzers []*Analyzer, tracker *progress.Tracker) ([]*Diagnostic, error)
+	Analyze(ctx context.Context, pkgIDs map[PackageID]unit, analyzers []*settings.Analyzer, tracker *progress.Tracker) ([]*Diagnostic, error)
 
 	// RunGoCommandPiped runs the given `go` command, writing its output
 	// to stdout and stderr. Verb, Args, and WorkingDir must be specified.
@@ -725,53 +725,6 @@ const (
 	// be considered.
 	ParseFull = parser.AllErrors | parser.ParseComments | SkipObjectResolution
 )
-
-// Analyzer represents a go/analysis analyzer with some boolean properties
-// that let the user know how to use the analyzer.
-type Analyzer struct {
-	Analyzer *analysis.Analyzer
-
-	// Enabled reports whether the analyzer is enabled. This value can be
-	// configured per-analysis in user settings. For staticcheck analyzers,
-	// the value of the Staticcheck setting overrides this field.
-	//
-	// Most clients should use the IsEnabled method.
-	Enabled bool
-
-	// Fix is the name of the suggested fix name used to invoke the suggested
-	// fixes for the analyzer. It is non-empty if we expect this analyzer to
-	// provide its fix separately from its diagnostics. That is, we should apply
-	// the analyzer's suggested fixes through a Command, not a TextEdit.
-	Fix string
-
-	// ActionKind is the kind of code action this analyzer produces. If
-	// unspecified the type defaults to quickfix.
-	ActionKind []protocol.CodeActionKind
-
-	// Severity is the severity set for diagnostics reported by this
-	// analyzer. If left unset it defaults to Warning.
-	Severity protocol.DiagnosticSeverity
-
-	// Tag is extra tags (unnecessary, deprecated, etc) for diagnostics
-	// reported by this analyzer.
-	Tag []protocol.DiagnosticTag
-}
-
-func (a *Analyzer) String() string { return a.Analyzer.String() }
-
-// IsEnabled reports whether this analyzer is enabled by the given options.
-func (a Analyzer) IsEnabled(options *Options) bool {
-	// Staticcheck analyzers can only be enabled when staticcheck is on.
-	if _, ok := options.StaticcheckAnalyzers[a.Analyzer.Name]; ok {
-		if !options.Staticcheck {
-			return false
-		}
-	}
-	if enabled, ok := options.Analyses[a.Analyzer.Name]; ok {
-		return enabled
-	}
-	return a.Enabled
-}
 
 // Declare explicit types for package paths, names, and IDs to ensure that we
 // never use an ID where a path belongs, and vice versa. If we confused these,

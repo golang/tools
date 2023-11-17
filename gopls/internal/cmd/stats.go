@@ -25,7 +25,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -79,7 +79,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	}
 
 	opts := s.app.options
-	s.app.options = func(o *source.Options) {
+	s.app.options = func(o *settings.Options) {
 		if opts != nil {
 			opts(o)
 		}

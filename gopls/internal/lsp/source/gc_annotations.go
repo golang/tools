@@ -14,23 +14,8 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/gocommand"
-)
-
-type Annotation string
-
-const (
-	// Nil controls nil checks.
-	Nil Annotation = "nil"
-
-	// Escape controls diagnostics about escape choices.
-	Escape Annotation = "escape"
-
-	// Inline controls diagnostics about inlining choices.
-	Inline Annotation = "inline"
-
-	// Bounds controls bounds checking diagnostics.
-	Bounds Annotation = "bounds"
 )
 
 func GCOptimizationDetails(ctx context.Context, snapshot Snapshot, m *Metadata) (map[protocol.DocumentURI][]*Diagnostic, error) {
@@ -96,7 +81,7 @@ func GCOptimizationDetails(ctx context.Context, snapshot Snapshot, m *Metadata) 
 	return reports, parseError
 }
 
-func parseDetailsFile(filename string, options *Options) (protocol.DocumentURI, []*Diagnostic, error) {
+func parseDetailsFile(filename string, options *settings.Options) (protocol.DocumentURI, []*Diagnostic, error) {
 	buf, err := os.ReadFile(filename)
 	if err != nil {
 		return "", nil, err
@@ -167,7 +152,7 @@ func parseDetailsFile(filename string, options *Options) (protocol.DocumentURI, 
 
 // showDiagnostic reports whether a given diagnostic should be shown to the end
 // user, given the current options.
-func showDiagnostic(msg, source string, o *Options) bool {
+func showDiagnostic(msg, source string, o *settings.Options) bool {
 	if source != "go compiler" {
 		return false
 	}
@@ -178,14 +163,14 @@ func showDiagnostic(msg, source string, o *Options) bool {
 	case strings.HasPrefix(msg, "canInline") ||
 		strings.HasPrefix(msg, "cannotInline") ||
 		strings.HasPrefix(msg, "inlineCall"):
-		return o.Annotations[Inline]
+		return o.Annotations[settings.Inline]
 	case strings.HasPrefix(msg, "escape") || msg == "leak":
-		return o.Annotations[Escape]
+		return o.Annotations[settings.Escape]
 	case strings.HasPrefix(msg, "nilcheck"):
-		return o.Annotations[Nil]
+		return o.Annotations[settings.Nil]
 	case strings.HasPrefix(msg, "isInBounds") ||
 		strings.HasPrefix(msg, "isSliceInBounds"):
-		return o.Annotations[Bounds]
+		return o.Annotations[settings.Bounds]
 	}
 	return false
 }

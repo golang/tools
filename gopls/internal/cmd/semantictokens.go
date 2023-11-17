@@ -14,7 +14,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 )
 
 // generate semantic tokens and interpolate them in the file
@@ -65,7 +65,7 @@ func (c *semtok) Run(ctx context.Context, args ...string) error {
 	}
 	// perhaps simpler if app had just had a FlagSet member
 	origOptions := c.app.options
-	c.app.options = func(opts *source.Options) {
+	c.app.options = func(opts *settings.Options) {
 		origOptions(opts)
 		opts.SemanticTokens = true
 	}

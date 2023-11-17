@@ -11,6 +11,7 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 )
 
 type SuggestedFix struct {
@@ -32,13 +33,13 @@ func Analyze(ctx context.Context, snapshot Snapshot, pkgIDs map[PackageID]unit, 
 	}
 
 	options := snapshot.Options()
-	categories := []map[string]*Analyzer{
+	categories := []map[string]*settings.Analyzer{
 		options.DefaultAnalyzers,
 		options.StaticcheckAnalyzers,
 		options.TypeErrorAnalyzers,
 	}
 
-	var analyzers []*Analyzer
+	var analyzers []*settings.Analyzer
 	for _, cat := range categories {
 		for _, a := range cat {
 			analyzers = append(analyzers, a)

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/tools/gopls/internal/settings"
 )
 
 // CommentToMarkdown converts comment text to formatted markdown.
@@ -29,7 +31,7 @@ import (
 // prefix removed unless empty, in which case it will be converted to a newline.
 //
 // URLs in the comment text are converted into links.
-func CommentToMarkdown(text string, _ *Options) string {
+func CommentToMarkdown(text string, _ *settings.Options) string {
 	buf := &bytes.Buffer{}
 	commentToMarkdown(buf, text)
 	return buf.String()

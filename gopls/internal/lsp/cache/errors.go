@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -325,7 +326,7 @@ func decodeDiagnostics(data []byte) []*source.Diagnostic {
 }
 
 // toSourceDiagnostic converts a gobDiagnostic to "source" form.
-func toSourceDiagnostic(srcAnalyzer *source.Analyzer, gobDiag *gobDiagnostic) *source.Diagnostic {
+func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) *source.Diagnostic {
 	var related []protocol.DiagnosticRelatedInformation
 	for _, gobRelated := range gobDiag.Related {
 		related = append(related, protocol.DiagnosticRelatedInformation(gobRelated))
@@ -358,7 +359,7 @@ func toSourceDiagnostic(srcAnalyzer *source.Analyzer, gobDiag *gobDiagnostic) *s
 			cmd, err := command.NewApplyFixCommand(gobDiag.Message, command.ApplyFixArgs{
 				URI:   gobDiag.Location.URI,
 				Range: gobDiag.Location.Range,
-				Fix:   srcAnalyzer.Fix,
+				Fix:   string(srcAnalyzer.Fix),
 			})
 			if err != nil {
 				// JSON marshalling of these argument values cannot fail.

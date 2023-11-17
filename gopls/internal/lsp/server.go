@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 )
@@ -31,7 +32,7 @@ const concurrentAnalyses = 1
 
 // NewServer creates an LSP server and binds it to handle incoming client
 // messages on the supplied stream.
-func NewServer(session *cache.Session, client protocol.ClientCloser, options *source.Options) protocol.Server {
+func NewServer(session *cache.Session, client protocol.ClientCloser, options *settings.Options) protocol.Server {
 	return &server{
 		diagnostics:           map[protocol.DocumentURI]*fileReports{},
 		gcOptimizationDetails: make(map[source.PackageID]struct{}),
@@ -124,7 +125,7 @@ type server struct {
 
 	// Track most recently requested options.
 	optionsMu sync.Mutex
-	options   *source.Options
+	options   *settings.Options
 }
 
 func (s *server) workDoneProgressCancel(ctx context.Context, params *protocol.WorkDoneProgressCancelParams) error {

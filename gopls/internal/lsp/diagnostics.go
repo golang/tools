@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/template"
 	"golang.org/x/tools/gopls/internal/lsp/work"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 )
@@ -157,7 +158,7 @@ func computeDiagnosticHash(diags ...*source.Diagnostic) string {
 func (s *server) diagnoseSnapshots(snapshots map[source.Snapshot][]protocol.DocumentURI, onDisk bool, cause ModificationSource) {
 	var diagnosticWG sync.WaitGroup
 	for snapshot, uris := range snapshots {
-		if snapshot.Options().DiagnosticsTrigger == source.DiagnosticsOnSave && cause == FromDidChange {
+		if snapshot.Options().DiagnosticsTrigger == settings.DiagnosticsOnSave && cause == FromDidChange {
 			continue // user requested to update the diagnostics only on save. do not diagnose yet.
 		}
 		diagnosticWG.Add(1)

@@ -26,6 +26,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
@@ -44,7 +45,7 @@ import (
 type Folder struct {
 	Dir     protocol.DocumentURI
 	Name    string
-	Options *source.Options
+	Options *settings.Options
 }
 
 type View struct {
@@ -411,7 +412,7 @@ func (v *View) Folder() protocol.DocumentURI {
 //
 // Calling this may cause each related view to be invalidated and a replacement
 // view added to the session.
-func (s *Session) SetFolderOptions(ctx context.Context, uri protocol.DocumentURI, options *source.Options) error {
+func (s *Session) SetFolderOptions(ctx context.Context, uri protocol.DocumentURI, options *settings.Options) error {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 
@@ -1165,7 +1166,7 @@ func allFilesExcluded(files []string, filterFunc func(protocol.DocumentURI) bool
 	return true
 }
 
-func pathExcludedByFilterFunc(folder, gomodcache string, opts *source.Options) func(string) bool {
+func pathExcludedByFilterFunc(folder, gomodcache string, opts *settings.Options) func(string) bool {
 	filterer := buildFilterer(folder, gomodcache, opts)
 	return func(path string) bool {
 		return pathExcludedByFilter(path, filterer)
@@ -1183,7 +1184,7 @@ func pathExcludedByFilter(path string, filterer *source.Filterer) bool {
 	return filterer.Disallow(path)
 }
 
-func buildFilterer(folder, gomodcache string, opts *source.Options) *source.Filterer {
+func buildFilterer(folder, gomodcache string, opts *settings.Options) *source.Filterer {
 	filters := opts.DirectoryFilters
 
 	if pref := strings.TrimPrefix(gomodcache, folder); pref != gomodcache {

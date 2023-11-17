@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -64,7 +64,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	}
 	// Plaintext makes more sense for the command line.
 	opts := d.app.options
-	d.app.options = func(o *source.Options) {
+	d.app.options = func(o *settings.Options) {
 		if opts != nil {
 			opts(o)
 		}

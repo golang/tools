@@ -7,8 +7,8 @@
 
 package hooks
 
-import "golang.org/x/tools/gopls/internal/lsp/source"
+import "golang.org/x/tools/gopls/internal/settings"
 
-func updateAnalyzers(options *source.Options) {
+func updateAnalyzers(options *settings.Options) {
 	options.StaticcheckSupported = false
 }

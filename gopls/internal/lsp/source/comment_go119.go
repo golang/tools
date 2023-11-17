@@ -24,6 +24,8 @@ package source
 import (
 	"fmt"
 	"go/doc/comment"
+
+	"golang.org/x/tools/gopls/internal/settings"
 )
 
 // CommentToMarkdown converts comment text to formatted markdown.
@@ -31,7 +33,7 @@ import (
 // so it is known not to have leading, trailing blank lines
 // nor to have trailing spaces at the end of lines.
 // The comment markers have already been removed.
-func CommentToMarkdown(text string, options *Options) string {
+func CommentToMarkdown(text string, options *settings.Options) string {
 	var p comment.Parser
 	doc := p.Parse(text)
 	var pr comment.Printer

@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/analysis/fillstruct"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/undeclaredname"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/imports"
 )
 
@@ -40,20 +41,6 @@ type (
 	}
 )
 
-// These strings identify kinds of suggested fix, both in Analyzer.Fix
-// and in the ApplyFix subcommand (see ExecuteCommand and ApplyFixArgs.Fix).
-const (
-	FillStruct        = "fill_struct"
-	StubMethods       = "stub_methods"
-	UndeclaredName    = "undeclared_name"
-	ExtractVariable   = "extract_variable"
-	ExtractFunction   = "extract_function"
-	ExtractMethod     = "extract_method"
-	InlineCall        = "inline_call"
-	InvertIfCondition = "invert_if_condition"
-	AddEmbedImport    = "add_embed_import"
-)
-
 // suggestedFixes maps a suggested fix command id to its handler.
 //
 // TODO(adonovan): Every one of these fixers calls NarrowestPackageForFile as
@@ -68,16 +55,16 @@ const (
 // (just calling RangePos) that we can push it down into each singleFile fixer.
 // All the fixers will then have a common and fully general interface, instead
 // of the current two-tier system.
-var suggestedFixes = map[string]suggestedFixer{
-	FillStruct:        {fix: singleFile(fillstruct.SuggestedFix)},
-	UndeclaredName:    {fix: singleFile(undeclaredname.SuggestedFix)},
-	ExtractVariable:   {fix: singleFile(extractVariable)},
-	InlineCall:        {fix: inlineCall},
-	ExtractFunction:   {fix: singleFile(extractFunction)},
-	ExtractMethod:     {fix: singleFile(extractMethod)},
-	InvertIfCondition: {fix: singleFile(invertIfCondition)},
-	StubMethods:       {fix: stubSuggestedFixFunc},
-	AddEmbedImport: {
+var suggestedFixes = map[settings.Fix]suggestedFixer{
+	settings.FillStruct:        {fix: singleFile(fillstruct.SuggestedFix)},
+	settings.UndeclaredName:    {fix: singleFile(undeclaredname.SuggestedFix)},
+	settings.ExtractVariable:   {fix: singleFile(extractVariable)},
+	settings.InlineCall:        {fix: inlineCall},
+	settings.ExtractFunction:   {fix: singleFile(extractFunction)},
+	settings.ExtractMethod:     {fix: singleFile(extractMethod)},
+	settings.InvertIfCondition: {fix: singleFile(invertIfCondition)},
+	settings.StubMethods:       {fix: stubSuggestedFixFunc},
+	settings.AddEmbedImport: {
 		canFix: fixedByImportingEmbed,
 		fix:    addEmbedImport,
 	},
@@ -122,7 +109,7 @@ func SuggestedFixFromCommand(cmd protocol.Command, kind protocol.CodeActionKind)
 //
 // TODO(rfindley): reconcile the semantics of 'Fix' and
 // 'suggestedAnalysisFixes'.
-func CanFix(a *Analyzer, d *Diagnostic) bool {
+func CanFix(a *settings.Analyzer, d *Diagnostic) bool {
 	fixer, ok := suggestedFixes[a.Fix]
 	if !ok || fixer.canFix == nil {
 		// See the above TODO: this doesn't make sense, but preserves pre-existing
@@ -134,7 +121,7 @@ func CanFix(a *Analyzer, d *Diagnostic) bool {
 
 // ApplyFix applies the command's suggested fix to the given file and
 // range, returning the resulting edits.
-func ApplyFix(ctx context.Context, fix string, snapshot Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
+func ApplyFix(ctx context.Context, fix settings.Fix, snapshot Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
 	fixer, ok := suggestedFixes[fix]
 	if !ok {
 		return nil, fmt.Errorf("no suggested fix function for %s", fix)

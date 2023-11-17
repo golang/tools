@@ -24,7 +24,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -41,7 +41,7 @@ type StreamServer struct {
 	daemon bool
 
 	// optionsOverrides is passed to newly created sessions.
-	optionsOverrides func(*source.Options)
+	optionsOverrides func(*settings.Options)
 
 	// serverForTest may be set to a test fake for testing.
 	serverForTest protocol.Server
@@ -50,7 +50,7 @@ type StreamServer struct {
 // NewStreamServer creates a StreamServer using the shared cache. If
 // withTelemetry is true, each session is instrumented with telemetry that
 // records RPC statistics.
-func NewStreamServer(cache *cache.Cache, daemon bool, optionsFunc func(*source.Options)) *StreamServer {
+func NewStreamServer(cache *cache.Cache, daemon bool, optionsFunc func(*settings.Options)) *StreamServer {
 	return &StreamServer{cache: cache, daemon: daemon, optionsOverrides: optionsFunc}
 }
 
@@ -59,7 +59,7 @@ func (s *StreamServer) Binder() *ServerBinder {
 		session := cache.NewSession(ctx, s.cache)
 		server := s.serverForTest
 		if server == nil {
-			options := source.DefaultOptions(s.optionsOverrides)
+			options := settings.DefaultOptions(s.optionsOverrides)
 			server = lsp.NewServer(session, client, options)
 			if instance := debug.GetInstance(ctx); instance != nil {
 				instance.AddService(server, session)
@@ -77,7 +77,7 @@ func (s *StreamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) erro
 	session := cache.NewSession(ctx, s.cache)
 	server := s.serverForTest
 	if server == nil {
-		options := source.DefaultOptions(s.optionsOverrides)
+		options := settings.DefaultOptions(s.optionsOverrides)
 		server = lsp.NewServer(session, client, options)
 		if instance := debug.GetInstance(ctx); instance != nil {
 			instance.AddService(server, session)

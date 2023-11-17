@@ -37,6 +37,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/mod"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 )
 
 func main() {
@@ -52,12 +53,12 @@ func doMain(write bool) (bool, error) {
 		return false, err
 	}
 
-	sourceDir, err := pkgDir("golang.org/x/tools/gopls/internal/lsp/source")
+	settingsDir, err := pkgDir("golang.org/x/tools/gopls/internal/settings")
 	if err != nil {
 		return false, err
 	}
 
-	if ok, err := rewriteFile(filepath.Join(sourceDir, "api_json.go"), api, write, rewriteAPI); !ok || err != nil {
+	if ok, err := rewriteFile(filepath.Join(settingsDir, "api_json.go"), api, write, rewriteAPI); !ok || err != nil {
 		return ok, err
 	}
 
@@ -95,22 +96,22 @@ func pkgDir(pkgPath string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func loadAPI() (*source.APIJSON, error) {
+func loadAPI() (*settings.APIJSON, error) {
 	pkgs, err := packages.Load(
 		&packages.Config{
 			Mode: packages.NeedTypes | packages.NeedTypesInfo | packages.NeedSyntax | packages.NeedDeps,
 		},
-		"golang.org/x/tools/gopls/internal/lsp/source",
+		"golang.org/x/tools/gopls/internal/settings",
 	)
 	if err != nil {
 		return nil, err
 	}
 	pkg := pkgs[0]
 
-	api := &source.APIJSON{
-		Options: map[string][]*source.OptionJSON{},
+	api := &settings.APIJSON{
+		Options: map[string][]*settings.OptionJSON{},
 	}
-	defaults := source.DefaultOptions()
+	defaults := settings.DefaultOptions()
 
 	api.Commands, err = loadCommands(pkg)
 	if err != nil {
@@ -122,7 +123,7 @@ func loadAPI() (*source.APIJSON, error) {
 	for _, c := range api.Commands {
 		c.Command = command.ID(c.Command)
 	}
-	for _, m := range []map[string]*source.Analyzer{
+	for _, m := range []map[string]*settings.Analyzer{
 		defaults.DefaultAnalyzers,
 		defaults.TypeErrorAnalyzers,
 		defaults.ConvenienceAnalyzers,
@@ -152,7 +153,7 @@ func loadAPI() (*source.APIJSON, error) {
 			switch opt.Name {
 			case "analyses":
 				for _, a := range api.Analyzers {
-					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, source.EnumKey{
+					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, settings.EnumKey{
 						Name:    fmt.Sprintf("%q", a.Name),
 						Doc:     a.Doc,
 						Default: strconv.FormatBool(a.Default),
@@ -169,7 +170,7 @@ func loadAPI() (*source.APIJSON, error) {
 					if err != nil {
 						return nil, err
 					}
-					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, source.EnumKey{
+					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, settings.EnumKey{
 						Name:    fmt.Sprintf("%q", l.Lens),
 						Doc:     l.Doc,
 						Default: def,
@@ -177,7 +178,7 @@ func loadAPI() (*source.APIJSON, error) {
 				}
 			case "hints":
 				for _, a := range api.Hints {
-					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, source.EnumKey{
+					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, settings.EnumKey{
 						Name:    fmt.Sprintf("%q", a.Name),
 						Doc:     a.Doc,
 						Default: strconv.FormatBool(a.Default),
@@ -189,7 +190,7 @@ func loadAPI() (*source.APIJSON, error) {
 	return api, nil
 }
 
-func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Package, hierarchy string) ([]*source.OptionJSON, error) {
+func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Package, hierarchy string) ([]*settings.OptionJSON, error) {
 	file, err := fileForPos(pkg, optsType.Pos())
 	if err != nil {
 		return nil, err
@@ -200,7 +201,7 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 		return nil, err
 	}
 
-	var opts []*source.OptionJSON
+	var opts []*settings.OptionJSON
 	optsStruct := optsType.Type().Underlying().(*types.Struct)
 	for i := 0; i < optsStruct.NumFields(); i++ {
 		// The types field gives us the type.
@@ -247,7 +248,7 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 		}
 		name := lowerFirst(typesField.Name())
 
-		var enumKeys source.EnumKeys
+		var enumKeys settings.EnumKeys
 		if m, ok := typesField.Type().(*types.Map); ok {
 			e, ok := enums[m.Key()]
 			if ok {
@@ -269,7 +270,7 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 		}
 		status := reflectStructField.Tag.Get("status")
 
-		opts = append(opts, &source.OptionJSON{
+		opts = append(opts, &settings.OptionJSON{
 			Name:       name,
 			Type:       typ,
 			Doc:        lowerFirst(astField.Doc.Text()),
@@ -283,8 +284,8 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 	return opts, nil
 }
 
-func loadEnums(pkg *packages.Package) (map[types.Type][]source.EnumValue, error) {
-	enums := map[types.Type][]source.EnumValue{}
+func loadEnums(pkg *packages.Package) (map[types.Type][]settings.EnumValue, error) {
+	enums := map[types.Type][]settings.EnumValue{}
 	for _, name := range pkg.Types.Scope().Names() {
 		obj := pkg.Types.Scope().Lookup(name)
 		cnst, ok := obj.(*types.Const)
@@ -299,7 +300,7 @@ func loadEnums(pkg *packages.Package) (map[types.Type][]source.EnumValue, error)
 		spec := path[1].(*ast.ValueSpec)
 		value := cnst.Val().ExactString()
 		doc := valueDoc(cnst.Name(), value, spec.Doc.Text())
-		v := source.EnumValue{
+		v := settings.EnumValue{
 			Value: value,
 			Doc:   doc,
 		}
@@ -308,13 +309,13 @@ func loadEnums(pkg *packages.Package) (map[types.Type][]source.EnumValue, error)
 	return enums, nil
 }
 
-func collectEnumKeys(name string, m *types.Map, reflectField reflect.Value, enumValues []source.EnumValue) (*source.EnumKeys, error) {
+func collectEnumKeys(name string, m *types.Map, reflectField reflect.Value, enumValues []settings.EnumValue) (*settings.EnumKeys, error) {
 	// Make sure the value type gets set for analyses and codelenses
 	// too.
 	if len(enumValues) == 0 && !hardcodedEnumKeys(name) {
 		return nil, nil
 	}
-	keys := &source.EnumKeys{
+	keys := &settings.EnumKeys{
 		ValueType: m.Elem().String(),
 	}
 	// We can get default values for enum -> bool maps.
@@ -331,7 +332,7 @@ func collectEnumKeys(name string, m *types.Map, reflectField reflect.Value, enum
 				return nil, err
 			}
 		}
-		keys.Keys = append(keys.Keys, source.EnumKey{
+		keys.Keys = append(keys.Keys, settings.EnumKey{
 			Name:    v.Value,
 			Doc:     v.Doc,
 			Default: def,
@@ -409,8 +410,8 @@ func valueDoc(name, value, doc string) string {
 	return fmt.Sprintf("`%s`: %s", value, doc)
 }
 
-func loadCommands(pkg *packages.Package) ([]*source.CommandJSON, error) {
-	var commands []*source.CommandJSON
+func loadCommands(pkg *packages.Package) ([]*settings.CommandJSON, error) {
+	var commands []*settings.CommandJSON
 
 	_, cmds, err := commandmeta.Load()
 	if err != nil {
@@ -418,7 +419,7 @@ func loadCommands(pkg *packages.Package) ([]*source.CommandJSON, error) {
 	}
 	// Parse the objects it contains.
 	for _, cmd := range cmds {
-		cmdjson := &source.CommandJSON{
+		cmdjson := &settings.CommandJSON{
 			Command: cmd.Name,
 			Title:   cmd.Title,
 			Doc:     cmd.Doc,
@@ -485,7 +486,7 @@ func structDoc(fields []*commandmeta.Field, level int) string {
 	return b.String()
 }
 
-func loadLenses(commands []*source.CommandJSON) []*source.LensJSON {
+func loadLenses(commands []*settings.CommandJSON) []*settings.LensJSON {
 	all := map[command.Command]struct{}{}
 	for k := range source.LensFuncs() {
 		all[k] = struct{}{}
@@ -497,11 +498,11 @@ func loadLenses(commands []*source.CommandJSON) []*source.LensJSON {
 		all[k] = struct{}{}
 	}
 
-	var lenses []*source.LensJSON
+	var lenses []*settings.LensJSON
 
 	for _, cmd := range commands {
 		if _, ok := all[command.Command(cmd.Command)]; ok {
-			lenses = append(lenses, &source.LensJSON{
+			lenses = append(lenses, &settings.LensJSON{
 				Lens:  cmd.Command,
 				Title: cmd.Title,
 				Doc:   cmd.Doc,
@@ -511,16 +512,16 @@ func loadLenses(commands []*source.CommandJSON) []*source.LensJSON {
 	return lenses
 }
 
-func loadAnalyzers(m map[string]*source.Analyzer) []*source.AnalyzerJSON {
+func loadAnalyzers(m map[string]*settings.Analyzer) []*settings.AnalyzerJSON {
 	var sorted []string
 	for _, a := range m {
 		sorted = append(sorted, a.Analyzer.Name)
 	}
 	sort.Strings(sorted)
-	var json []*source.AnalyzerJSON
+	var json []*settings.AnalyzerJSON
 	for _, name := range sorted {
 		a := m[name]
-		json = append(json, &source.AnalyzerJSON{
+		json = append(json, &settings.AnalyzerJSON{
 			Name:    a.Analyzer.Name,
 			Doc:     a.Analyzer.Doc,
 			URL:     a.Analyzer.URL,
@@ -530,16 +531,16 @@ func loadAnalyzers(m map[string]*source.Analyzer) []*source.AnalyzerJSON {
 	return json
 }
 
-func loadHints(m map[string]*source.Hint) []*source.HintJSON {
+func loadHints(m map[string]*source.Hint) []*settings.HintJSON {
 	var sorted []string
 	for _, h := range m {
 		sorted = append(sorted, h.Name)
 	}
 	sort.Strings(sorted)
-	var json []*source.HintJSON
+	var json []*settings.HintJSON
 	for _, name := range sorted {
 		h := m[name]
-		json = append(json, &source.HintJSON{
+		json = append(json, &settings.HintJSON{
 			Name: h.Name,
 			Doc:  h.Doc,
 		})
@@ -571,7 +572,7 @@ func fileForPos(pkg *packages.Package, pos token.Pos) (*ast.File, error) {
 	return nil, fmt.Errorf("no file for pos %v", pos)
 }
 
-func rewriteFile(file string, api *source.APIJSON, write bool, rewrite func([]byte, *source.APIJSON) ([]byte, error)) (bool, error) {
+func rewriteFile(file string, api *settings.APIJSON, write bool, rewrite func([]byte, *settings.APIJSON) ([]byte, error)) (bool, error) {
 	old, err := os.ReadFile(file)
 	if err != nil {
 		return false, err
@@ -593,10 +594,10 @@ func rewriteFile(file string, api *source.APIJSON, write bool, rewrite func([]by
 	return true, nil
 }
 
-func rewriteAPI(_ []byte, api *source.APIJSON) ([]byte, error) {
+func rewriteAPI(_ []byte, api *settings.APIJSON) ([]byte, error) {
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "// Code generated by \"golang.org/x/tools/gopls/doc/generate\"; DO NOT EDIT.\n\npackage source\n\nvar GeneratedAPIJSON = ")
-	if err := printsrc.NewPrinter("golang.org/x/tools/gopls/internal/lsp/source").Fprint(&buf, api); err != nil {
+	fmt.Fprintf(&buf, "// Code generated by \"golang.org/x/tools/gopls/doc/generate\"; DO NOT EDIT.\n\npackage settings\n\nvar GeneratedAPIJSON = ")
+	if err := printsrc.NewPrinter("golang.org/x/tools/gopls/internal/settings").Fprint(&buf, api); err != nil {
 		return nil, err
 	}
 	return format.Source(buf.Bytes())
@@ -606,10 +607,10 @@ type optionsGroup struct {
 	title   string
 	final   string
 	level   int
-	options []*source.OptionJSON
+	options []*settings.OptionJSON
 }
 
-func rewriteSettings(doc []byte, api *source.APIJSON) ([]byte, error) {
+func rewriteSettings(doc []byte, api *settings.APIJSON) ([]byte, error) {
 	result := doc
 	for category, opts := range api.Options {
 		groups := collectGroups(opts)
@@ -648,8 +649,8 @@ func rewriteSettings(doc []byte, api *source.APIJSON) ([]byte, error) {
 	return replaceSection(result, "Lenses", section.Bytes())
 }
 
-func collectGroups(opts []*source.OptionJSON) []optionsGroup {
-	optsByHierarchy := map[string][]*source.OptionJSON{}
+func collectGroups(opts []*settings.OptionJSON) []optionsGroup {
+	optsByHierarchy := map[string][]*settings.OptionJSON{}
 	for _, opt := range opts {
 		optsByHierarchy[opt.Hierarchy] = append(optsByHierarchy[opt.Hierarchy], opt)
 	}
@@ -735,7 +736,7 @@ func strMultiply(str string, count int) string {
 	return result
 }
 
-func rewriteCommands(doc []byte, api *source.APIJSON) ([]byte, error) {
+func rewriteCommands(doc []byte, api *settings.APIJSON) ([]byte, error) {
 	section := bytes.NewBuffer(nil)
 	for _, command := range api.Commands {
 		command.Write(section)
@@ -743,7 +744,7 @@ func rewriteCommands(doc []byte, api *source.APIJSON) ([]byte, error) {
 	return replaceSection(doc, "Commands", section.Bytes())
 }
 
-func rewriteAnalyzers(doc []byte, api *source.APIJSON) ([]byte, error) {
+func rewriteAnalyzers(doc []byte, api *settings.APIJSON) ([]byte, error) {
 	section := bytes.NewBuffer(nil)
 	for _, analyzer := range api.Analyzers {
 		fmt.Fprintf(section, "## **%v**\n\n", analyzer.Name)
@@ -758,7 +759,7 @@ func rewriteAnalyzers(doc []byte, api *source.APIJSON) ([]byte, error) {
 	return replaceSection(doc, "Analyzers", section.Bytes())
 }
 
-func rewriteInlayHints(doc []byte, api *source.APIJSON) ([]byte, error) {
+func rewriteInlayHints(doc []byte, api *settings.APIJSON) ([]byte, error) {
 	section := bytes.NewBuffer(nil)
 	for _, hint := range api.Hints {
 		fmt.Fprintf(section, "## **%v**\n\n", hint.Name)

@@ -8,12 +8,12 @@
 package hooks // import "golang.org/x/tools/gopls/internal/hooks"
 
 import (
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/diff"
 	"mvdan.cc/xurls/v2"
 )
 
-func Options(options *source.Options) {
+func Options(options *settings.Options) {
 	options.LicensesText = licensesText
 	if options.GoDiff {
 		switch options.NewDiff {

@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/tokeninternal"
@@ -116,9 +117,9 @@ func NewBuiltinSignature(ctx context.Context, s Snapshot, name string) (*signatu
 	results, needResultParens := formatFieldList(ctx, fset, decl.Type.Results, false)
 	d := decl.Doc.Text()
 	switch s.Options().HoverKind {
-	case SynopsisDocumentation:
+	case settings.SynopsisDocumentation:
 		d = doc.Synopsis(d)
-	case NoDocumentation:
+	case settings.NoDocumentation:
 		d = ""
 	}
 	return &signature{
@@ -246,9 +247,9 @@ func NewSignature(ctx context.Context, s Snapshot, pkg Package, sig *types.Signa
 		d = comment.Text()
 	}
 	switch s.Options().HoverKind {
-	case SynopsisDocumentation:
+	case settings.SynopsisDocumentation:
 		d = doc.Synopsis(d)
-	case NoDocumentation:
+	case settings.NoDocumentation:
 		d = ""
 	}
 	return &signature{

@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/vulncheck/govulncheck"
 	"golang.org/x/tools/internal/event"
 )
@@ -190,7 +191,7 @@ func ModVulnerabilityDiagnostics(ctx context.Context, snapshot source.Snapshot, 
 
 	diagSource := source.Govulncheck
 	vs := snapshot.Vulnerabilities(fh.URI())[fh.URI()]
-	if vs == nil && snapshot.Options().Vulncheck == source.ModeVulncheckImports {
+	if vs == nil && snapshot.Options().Vulncheck == settings.ModeVulncheckImports {
 		vs, err = snapshot.ModVuln(ctx, fh.URI())
 		if err != nil {
 			return nil, err

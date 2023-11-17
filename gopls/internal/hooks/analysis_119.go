@@ -9,7 +9,7 @@ package hooks
 
 import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"honnef.co/go/tools/analysis/lint"
 	"honnef.co/go/tools/quickfix"
 	"honnef.co/go/tools/simple"
@@ -17,7 +17,7 @@ import (
 	"honnef.co/go/tools/stylecheck"
 )
 
-func updateAnalyzers(options *source.Options) {
+func updateAnalyzers(options *settings.Options) {
 	options.StaticcheckSupported = true
 
 	mapSeverity := func(severity lint.Severity) protocol.DiagnosticSeverity {

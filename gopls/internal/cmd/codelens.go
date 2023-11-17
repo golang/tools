@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -74,7 +74,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 	// implementation. But this client is not VS Code.
 	// See source.LensFuncs().
 	origOptions := r.app.options
-	r.app.options = func(opts *source.Options) {
+	r.app.options = func(opts *settings.Options) {
 		origOptions(opts)
 		if opts.Codelenses == nil {
 			opts.Codelenses = make(map[string]bool)

@@ -2,17 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package source
+package settings
 
 import (
 	"context"
 	"fmt"
-	"io"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/tools/go/analysis"
@@ -72,137 +70,23 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/diff/myers"
 )
 
-var (
-	optionsOnce    sync.Once
-	defaultOptions *Options
-)
+type Annotation string
 
-// DefaultOptions is the options that are used for Gopls execution independent
-// of any externally provided configuration (LSP initialization, command
-// invocation, etc.).
-func DefaultOptions(overrides ...func(*Options)) *Options {
-	optionsOnce.Do(func() {
-		var commands []string
-		for _, c := range command.Commands {
-			commands = append(commands, c.ID())
-		}
-		defaultOptions = &Options{
-			ClientOptions: ClientOptions{
-				InsertTextFormat:                           protocol.PlainTextTextFormat,
-				PreferredContentFormat:                     protocol.Markdown,
-				ConfigurationSupported:                     true,
-				DynamicConfigurationSupported:              true,
-				DynamicRegistrationSemanticTokensSupported: true,
-				DynamicWatchedFilesSupported:               true,
-				LineFoldingOnly:                            false,
-				HierarchicalDocumentSymbolSupport:          true,
-			},
-			ServerOptions: ServerOptions{
-				SupportedCodeActions: map[file.Kind]map[protocol.CodeActionKind]bool{
-					file.Go: {
-						protocol.SourceFixAll:          true,
-						protocol.SourceOrganizeImports: true,
-						protocol.QuickFix:              true,
-						protocol.RefactorRewrite:       true,
-						protocol.RefactorInline:        true,
-						protocol.RefactorExtract:       true,
-					},
-					file.Mod: {
-						protocol.SourceOrganizeImports: true,
-						protocol.QuickFix:              true,
-					},
-					file.Work: {},
-					file.Sum:  {},
-					file.Tmpl: {},
-				},
-				SupportedCommands: commands,
-			},
-			UserOptions: UserOptions{
-				BuildOptions: BuildOptions{
-					ExpandWorkspaceToModule: true,
-					MemoryMode:              ModeNormal,
-					DirectoryFilters:        []string{"-**/node_modules"},
-					TemplateExtensions:      []string{},
-					StandaloneTags:          []string{"ignore"},
-				},
-				UIOptions: UIOptions{
-					DiagnosticOptions: DiagnosticOptions{
-						Annotations: map[Annotation]bool{
-							Bounds: true,
-							Escape: true,
-							Inline: true,
-							Nil:    true,
-						},
-						Vulncheck:                 ModeVulncheckOff,
-						DiagnosticsDelay:          1 * time.Second,
-						DiagnosticsTrigger:        DiagnosticsOnEdit,
-						AnalysisProgressReporting: true,
-					},
-					InlayHintOptions: InlayHintOptions{},
-					DocumentationOptions: DocumentationOptions{
-						HoverKind:    FullDocumentation,
-						LinkTarget:   "pkg.go.dev",
-						LinksInHover: true,
-					},
-					NavigationOptions: NavigationOptions{
-						ImportShortcut: BothShortcuts,
-						SymbolMatcher:  SymbolFastFuzzy,
-						SymbolStyle:    DynamicSymbols,
-						SymbolScope:    AllSymbolScope,
-					},
-					CompletionOptions: CompletionOptions{
-						Matcher:                        Fuzzy,
-						CompletionBudget:               100 * time.Millisecond,
-						ExperimentalPostfixCompletions: true,
-						CompleteFunctionCalls:          true,
-					},
-					Codelenses: map[string]bool{
-						string(command.Generate):          true,
-						string(command.RegenerateCgo):     true,
-						string(command.Tidy):              true,
-						string(command.GCDetails):         false,
-						string(command.UpgradeDependency): true,
-						string(command.Vendor):            true,
-						// TODO(hyangah): enable command.RunGovulncheck.
-					},
-				},
-			},
-			InternalOptions: InternalOptions{
-				LiteralCompletions:          true,
-				TempModfile:                 true,
-				CompleteUnimported:          true,
-				CompletionDocumentation:     true,
-				DeepCompletion:              true,
-				ChattyDiagnostics:           true,
-				NewDiff:                     "new",
-				SubdirWatchPatterns:         SubdirWatchPatternsAuto,
-				ReportAnalysisProgressAfter: 5 * time.Second,
-				TelemetryPrompt:             false,
-				LinkifyShowMessage:          false,
-			},
-			Hooks: Hooks{
-				// TODO(adonovan): switch to new diff.Strings implementation.
-				ComputeEdits:         myers.ComputeEdits,
-				URLRegexp:            urlRegexp(),
-				DefaultAnalyzers:     defaultAnalyzers(),
-				TypeErrorAnalyzers:   typeErrorAnalyzers(),
-				ConvenienceAnalyzers: convenienceAnalyzers(),
-				StaticcheckAnalyzers: map[string]*Analyzer{},
-				GoDiff:               true,
-			},
-		}
-	})
-	options := defaultOptions.Clone()
-	for _, override := range overrides {
-		if override != nil {
-			override(options)
-		}
-	}
-	return options
-}
+const (
+	// Nil controls nil checks.
+	Nil Annotation = "nil"
+
+	// Escape controls diagnostics about escape choices.
+	Escape Annotation = "escape"
+
+	// Inline controls diagnostics about inlining choices.
+	Inline Annotation = "inline"
+
+	// Bounds controls bounds checking diagnostics.
+	Bounds Annotation = "bounds"
+)
 
 // Options holds various configuration that affects Gopls execution, organized
 // by the nature or origin of the settings.
@@ -1671,160 +1555,4 @@ func urlRegexp() *regexp.Regexp {
 	re := regexp.MustCompile(`\b(http|ftp|https)://([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?\b`)
 	re.Longest()
 	return re
-}
-
-type APIJSON struct {
-	Options   map[string][]*OptionJSON
-	Commands  []*CommandJSON
-	Lenses    []*LensJSON
-	Analyzers []*AnalyzerJSON
-	Hints     []*HintJSON
-}
-
-type OptionJSON struct {
-	Name       string
-	Type       string
-	Doc        string
-	EnumKeys   EnumKeys
-	EnumValues []EnumValue
-	Default    string
-	Status     string
-	Hierarchy  string
-}
-
-func (o *OptionJSON) String() string {
-	return o.Name
-}
-
-func (o *OptionJSON) Write(w io.Writer) {
-	fmt.Fprintf(w, "**%v** *%v*\n\n", o.Name, o.Type)
-	writeStatus(w, o.Status)
-	enumValues := collectEnums(o)
-	fmt.Fprintf(w, "%v%v\nDefault: `%v`.\n\n", o.Doc, enumValues, o.Default)
-}
-
-func writeStatus(section io.Writer, status string) {
-	switch status {
-	case "":
-	case "advanced":
-		fmt.Fprint(section, "**This is an advanced setting and should not be configured by most `gopls` users.**\n\n")
-	case "debug":
-		fmt.Fprint(section, "**This setting is for debugging purposes only.**\n\n")
-	case "experimental":
-		fmt.Fprint(section, "**This setting is experimental and may be deleted.**\n\n")
-	default:
-		fmt.Fprintf(section, "**Status: %s.**\n\n", status)
-	}
-}
-
-var parBreakRE = regexp.MustCompile("\n{2,}")
-
-func collectEnums(opt *OptionJSON) string {
-	var b strings.Builder
-	write := func(name, doc string) {
-		if doc != "" {
-			unbroken := parBreakRE.ReplaceAllString(doc, "\\\n")
-			fmt.Fprintf(&b, "* %s\n", strings.TrimSpace(unbroken))
-		} else {
-			fmt.Fprintf(&b, "* `%s`\n", name)
-		}
-	}
-	if len(opt.EnumValues) > 0 && opt.Type == "enum" {
-		b.WriteString("\nMust be one of:\n\n")
-		for _, val := range opt.EnumValues {
-			write(val.Value, val.Doc)
-		}
-	} else if len(opt.EnumKeys.Keys) > 0 && shouldShowEnumKeysInSettings(opt.Name) {
-		b.WriteString("\nCan contain any of:\n\n")
-		for _, val := range opt.EnumKeys.Keys {
-			write(val.Name, val.Doc)
-		}
-	}
-	return b.String()
-}
-
-func shouldShowEnumKeysInSettings(name string) bool {
-	// These fields have too many possible options to print.
-	return !(name == "analyses" || name == "codelenses" || name == "hints")
-}
-
-type EnumKeys struct {
-	ValueType string
-	Keys      []EnumKey
-}
-
-type EnumKey struct {
-	Name    string
-	Doc     string
-	Default string
-}
-
-type EnumValue struct {
-	Value string
-	Doc   string
-}
-
-type CommandJSON struct {
-	Command   string
-	Title     string
-	Doc       string
-	ArgDoc    string
-	ResultDoc string
-}
-
-func (c *CommandJSON) String() string {
-	return c.Command
-}
-
-func (c *CommandJSON) Write(w io.Writer) {
-	fmt.Fprintf(w, "### **%v**\nIdentifier: `%v`\n\n%v\n\n", c.Title, c.Command, c.Doc)
-	if c.ArgDoc != "" {
-		fmt.Fprintf(w, "Args:\n\n```\n%s\n```\n\n", c.ArgDoc)
-	}
-	if c.ResultDoc != "" {
-		fmt.Fprintf(w, "Result:\n\n```\n%s\n```\n\n", c.ResultDoc)
-	}
-}
-
-type LensJSON struct {
-	Lens  string
-	Title string
-	Doc   string
-}
-
-func (l *LensJSON) String() string {
-	return l.Title
-}
-
-func (l *LensJSON) Write(w io.Writer) {
-	fmt.Fprintf(w, "%s (%s): %s", l.Title, l.Lens, l.Doc)
-}
-
-type AnalyzerJSON struct {
-	Name    string
-	Doc     string
-	URL     string
-	Default bool
-}
-
-func (a *AnalyzerJSON) String() string {
-	return a.Name
-}
-
-func (a *AnalyzerJSON) Write(w io.Writer) {
-	fmt.Fprintf(w, "%s (%s): %v", a.Name, a.Doc, a.Default)
-}
-
-type HintJSON struct {
-	Name    string
-	Doc     string
-	Default bool
-}
-
-func (h *HintJSON) String() string {
-	return h.Name
-}
-
-func (h *HintJSON) Write(w io.Writer) {
-	fmt.Fprintf(w, "%s (%s): %v", h.Name, h.Doc, h.Default)
 }

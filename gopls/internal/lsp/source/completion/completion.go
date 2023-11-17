@@ -33,6 +33,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/snippet"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fuzzy"
 	"golang.org/x/tools/internal/imports"
@@ -111,7 +112,7 @@ type completionOptions struct {
 	literal               bool
 	snippets              bool
 	postfix               bool
-	matcher               source.Matcher
+	matcher               settings.Matcher
 	budget                time.Duration
 	completeFunctionCalls bool
 }
@@ -347,9 +348,9 @@ func (c *completer) setSurrounding(ident *ast.Ident) {
 
 func (c *completer) setMatcherFromPrefix(prefix string) {
 	switch c.opts.matcher {
-	case source.Fuzzy:
+	case settings.Fuzzy:
 		c.matcher = fuzzy.NewMatcher(prefix)
-	case source.CaseSensitive:
+	case settings.CaseSensitive:
 		c.matcher = prefixMatcher(prefix)
 	default:
 		c.matcher = insensitivePrefixMatcher(strings.ToLower(prefix))
@@ -546,8 +547,8 @@ func Completion(ctx context.Context, snapshot source.Snapshot, fh file.Handle, p
 		opts: &completionOptions{
 			matcher:               opts.Matcher,
 			unimported:            opts.CompleteUnimported,
-			documentation:         opts.CompletionDocumentation && opts.HoverKind != source.NoDocumentation,
-			fullDocumentation:     opts.HoverKind == source.FullDocumentation,
+			documentation:         opts.CompletionDocumentation && opts.HoverKind != settings.NoDocumentation,
+			fullDocumentation:     opts.HoverKind == settings.FullDocumentation,
 			placeholders:          opts.UsePlaceholders,
 			literal:               opts.LiteralCompletions && opts.InsertTextFormat == protocol.SnippetTextFormat,
 			budget:                opts.CompletionBudget,

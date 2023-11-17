@@ -11,11 +11,11 @@ import (
 	"context"
 	"fmt"
 
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 	"mvdan.cc/gofumpt/format"
 )
 
-func updateGofumpt(options *source.Options) {
+func updateGofumpt(options *settings.Options) {
 	options.GofumptFormat = func(ctx context.Context, langVersion, modulePath string, src []byte) ([]byte, error) {
 		fixedVersion, err := fixLangVersion(langVersion)
 		if err != nil {

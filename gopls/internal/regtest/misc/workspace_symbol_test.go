@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 )
 
 func TestWorkspaceSymbolMissingMetadata(t *testing.T) {
@@ -61,7 +61,7 @@ const (
 )
 `
 
-	var symbolMatcher = string(source.SymbolFastFuzzy)
+	var symbolMatcher = string(settings.SymbolFastFuzzy)
 	WithOptions(
 		Settings{"symbolMatcher": symbolMatcher},
 	).Run(t, files, func(t *testing.T, env *Env) {
@@ -90,7 +90,7 @@ const (
 )
 `
 
-	var symbolMatcher = string(source.SymbolFastFuzzy)
+	var symbolMatcher = string(settings.SymbolFastFuzzy)
 	WithOptions(
 		Settings{"symbolMatcher": symbolMatcher},
 	).Run(t, files, func(t *testing.T, env *Env) {

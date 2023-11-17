@@ -40,6 +40,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/gopls/internal/lsp/source/xrefs"
 	"golang.org/x/tools/gopls/internal/persistent"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/constraints"
 	"golang.org/x/tools/internal/event"
@@ -307,7 +308,7 @@ func (s *snapshot) FileKind(fh file.Handle) file.Kind {
 	return file.Go
 }
 
-func (s *snapshot) Options() *source.Options {
+func (s *snapshot) Options() *settings.Options {
 	return s.view.folder.Options
 }
 
@@ -1015,11 +1016,11 @@ func (s *snapshot) workspaceDirs(ctx context.Context) []string {
 // when the entire directory is deleted.
 func (s *snapshot) watchSubdirs() bool {
 	switch p := s.Options().SubdirWatchPatterns; p {
-	case source.SubdirWatchPatternsOn:
+	case settings.SubdirWatchPatternsOn:
 		return true
-	case source.SubdirWatchPatternsOff:
+	case settings.SubdirWatchPatternsOff:
 		return false
-	case source.SubdirWatchPatternsAuto:
+	case settings.SubdirWatchPatternsAuto:
 		// See the documentation of InternalOptions.SubdirWatchPatterns for an
 		// explanation of why VS Code gets a different default value here.
 		//
