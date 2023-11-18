@@ -5,6 +5,8 @@
 package misc
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -35,11 +37,13 @@ func main() {}
 		const badURI = "http://foo"
 		params.TextDocument.URI = badURI
 		// This call panicked in the past: golang/vscode-go#1498.
-		if _, err := env.Editor.Server.SemanticTokensFull(env.Ctx, params); err != nil {
-			// Requests to an invalid URI scheme shouldn't result in an error, we
-			// simply don't support this so return empty result. This could be
-			// changed, but for now assert on the current behavior.
-			t.Errorf("SemanticTokensFull(%q): %v", badURI, err)
+		_, err := env.Editor.Server.SemanticTokensFull(env.Ctx, params)
+
+		// Requests to an invalid URI scheme now result in an LSP error.
+		got := fmt.Sprint(err)
+		want := `DocumentURI scheme is not 'file': http://foo`
+		if !strings.Contains(got, want) {
+			t.Errorf("SemanticTokensFull error is %v, want substring %q", got, want)
 		}
 	})
 }

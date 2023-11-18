@@ -28,34 +28,27 @@ import (
 // where there is no pointer of type *K or *V on which to call
 // UnmarshalJSON. (See Go issue #28189 for more detail.)
 //
-// TODO(adonovan): should we reject all non-file DocumentURIs at decoding?
-func (uri *DocumentURI) UnmarshalText(data []byte) error {
-	fixed, err := fixDocumentURI(string(data))
-	if err != nil {
-		return err
-	}
-	*uri = DocumentURI(fixed)
-	return nil
-}
-
-// IsFile reports whether the URI has "file" schema.
-//
-// (This is true for all current valid DocumentURIs. The protocol spec
-// doesn't require it, but all known LSP clients identify editor
-// documents with file URIs.)
-func (uri DocumentURI) IsFile() bool {
-	return strings.HasPrefix(string(uri), "file://")
+// Non-empty DocumentURIs are valid "file"-scheme URIs.
+// The empty DocumentURI is valid.
+func (uri *DocumentURI) UnmarshalText(data []byte) (err error) {
+	*uri, err = ParseDocumentURI(string(data))
+	return
 }
 
 // Path returns the file path for the given URI.
+//
+// DocumentURI("").Path() returns the empty string.
 //
 // Path panics if called on a URI that is not a valid filename.
 func (uri DocumentURI) Path() string {
 	filename, err := filename(uri)
 	if err != nil {
 		// e.g. ParseRequestURI failed.
-		// TODO(adonovan): make this never panic,
-		// and always return the best value it can.
+		//
+		// This can only affect DocumentURIs created by
+		// direct string manipulation; all DocumentURIs
+		// received from the client pass through
+		// ParseRequestURI, which ensures validity.
 		panic(err)
 	}
 	return filepath.FromSlash(filename)
@@ -101,28 +94,15 @@ slow:
 	return u.Path, nil
 }
 
-// URIFromURI returns a DocumentURI, applying VS Code workarounds; see
-// [DocumentURI.UnmarshalText] for details.
-//
-// TODO(adonovan): better name: FromWireURI? It's only used for
-// sanitizing ParamInitialize.WorkspaceFolder.URIs from VS Code. Do
-// they actually need this treatment?
-func URIFromURI(s string) DocumentURI {
-	fixed, err := fixDocumentURI(s)
-	if err != nil {
-		// TODO(adonovan): make this never panic.
-		panic(err)
+// ParseDocumentURI interprets a string as a DocumentURI, applying VS
+// Code workarounds; see [DocumentURI.UnmarshalText] for details.
+func ParseDocumentURI(s string) (DocumentURI, error) {
+	if s == "" {
+		return "", nil
 	}
-	return DocumentURI(fixed)
-}
 
-// fixDocumentURI returns the fixed-up value of a DocumentURI field
-// received from the LSP client; see [DocumentURI.UnmarshalText].
-func fixDocumentURI(s string) (string, error) {
 	if !strings.HasPrefix(s, "file://") {
-		// TODO(adonovan): make this an error,
-		// i.e. reject non-file URIs at ingestion?
-		return s, nil
+		return "", fmt.Errorf("DocumentURI scheme is not 'file': %s", s)
 	}
 
 	// VS Code sends URLs with only two slashes,
@@ -146,11 +126,11 @@ func fixDocumentURI(s string) (string, error) {
 		path = path[:1] + strings.ToUpper(string(path[1])) + path[2:]
 	}
 	u := url.URL{Scheme: fileScheme, Path: path}
-	return u.String(), nil
+	return DocumentURI(u.String()), nil
 }
 
-// URIFromPath returns a "file"-scheme DocumentURI for the supplied
-// file path. Given "", it returns "".
+// URIFromPath returns DocumentURI for the supplied file path.
+// Given "", it returns "".
 func URIFromPath(path string) DocumentURI {
 	if path == "" {
 		return ""

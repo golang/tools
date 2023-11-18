@@ -638,7 +638,6 @@ type CriticalError struct {
 // An Diagnostic corresponds to an LSP Diagnostic.
 // https://microsoft.github.io/language-server-protocol/specification#diagnostic
 type Diagnostic struct {
-	// TODO(adonovan): should be a protocol.URI, for symmetry.
 	URI      protocol.DocumentURI // of diagnosed file (not diagnostic documentation)
 	Range    protocol.Range
 	Severity protocol.DiagnosticSeverity

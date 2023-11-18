@@ -13,7 +13,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
-// TestURI tests the conversion between URIs and filenames. The test cases
+// TestURIFromPath tests the conversion between URIs and filenames. The test cases
 // include Windows-style URIs and filepaths, but we avoid having OS-specific
 // tests by using only forward slashes, assuming that the standard library
 // functions filepath.ToSlash and filepath.FromSlash do not need testing.
@@ -69,44 +69,61 @@ func TestURIFromPath(t *testing.T) {
 	}
 }
 
-func TestURIFromURI(t *testing.T) {
+func TestParseDocumentURI(t *testing.T) {
 	for _, test := range []struct {
-		inputURI, wantFile string
-		wantURI            protocol.DocumentURI
+		input    string
+		want     string // string(DocumentURI) on success or error.Error() on failure
+		wantPath string // expected DocumentURI.Path on success
 	}{
 		{
-			inputURI: `file:///c:/Go/src/bob%20george/george/george.go`,
-			wantFile: `C:\Go\src\bob george\george\george.go`,
-			wantURI:  protocol.DocumentURI("file:///C:/Go/src/bob%20george/george/george.go"),
+			input:    `file:///c:/Go/src/bob%20george/george/george.go`,
+			want:     "file:///C:/Go/src/bob%20george/george/george.go",
+			wantPath: `C:\Go\src\bob george\george\george.go`,
 		},
 		{
-			inputURI: `file:///C%3A/Go/src/bob%20george/george/george.go`,
-			wantFile: `C:\Go\src\bob george\george\george.go`,
-			wantURI:  protocol.DocumentURI("file:///C:/Go/src/bob%20george/george/george.go"),
+			input:    `file:///C%3A/Go/src/bob%20george/george/george.go`,
+			want:     "file:///C:/Go/src/bob%20george/george/george.go",
+			wantPath: `C:\Go\src\bob george\george\george.go`,
 		},
 		{
-			inputURI: `file:///c:/path/to/%25p%25ercent%25/per%25cent.go`,
-			wantFile: `C:\path\to\%p%ercent%\per%cent.go`,
-			wantURI:  protocol.DocumentURI(`file:///C:/path/to/%25p%25ercent%25/per%25cent.go`),
+			input:    `file:///c:/path/to/%25p%25ercent%25/per%25cent.go`,
+			want:     `file:///C:/path/to/%25p%25ercent%25/per%25cent.go`,
+			wantPath: `C:\path\to\%p%ercent%\per%cent.go`,
 		},
 		{
-			inputURI: `file:///C%3A/`,
-			wantFile: `C:\`,
-			wantURI:  protocol.DocumentURI(`file:///C:/`),
+			input:    `file:///C%3A/`,
+			want:     `file:///C:/`,
+			wantPath: `C:\`,
 		},
 		{
-			inputURI: `file:///`,
-			wantFile: `\`,
-			wantURI:  protocol.DocumentURI(`file:///`),
+			input:    `file:///`,
+			want:     `file:///`,
+			wantPath: `\`,
+		},
+		{
+			input:    "",
+			want:     "",
+			wantPath: "",
+		},
+		// Errors:
+		{
+			input: "https://go.dev/",
+			want:  "DocumentURI scheme is not 'file': https://go.dev/",
 		},
 	} {
-		got := protocol.URIFromURI(test.inputURI)
-		if got != test.wantURI {
-			t.Errorf("NewURI(%q): got %q, expected %q", test.inputURI, got, test.wantURI)
+		uri, err := protocol.ParseDocumentURI(test.input)
+		var got string
+		if err != nil {
+			got = err.Error()
+		} else {
+			got = string(uri)
 		}
-		gotFilename := got.Path()
-		if gotFilename != test.wantFile {
-			t.Errorf("Filename(%q): got %q, expected %q", got, gotFilename, test.wantFile)
+		if got != test.want {
+			t.Errorf("ParseDocumentURI(%q): got %q, want %q", test.input, got, test.want)
+		}
+		if err == nil && uri.Path() != test.wantPath {
+			t.Errorf("DocumentURI(%s).Path = %q, want %q", uri,
+				uri.Path(), test.wantPath)
 		}
 	}
 }

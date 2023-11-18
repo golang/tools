@@ -87,7 +87,8 @@ type server struct {
 	changedFiles   map[protocol.DocumentURI]struct{}
 
 	// folders is only valid between initialize and initialized, and holds the
-	// set of folders to build views for when we are ready
+	// set of folders to build views for when we are ready.
+	// Each has a valid, non-empty 'file'-scheme URI.
 	pendingFolders []protocol.WorkspaceFolder
 
 	// watchedGlobPatterns is the set of glob patterns that we have requested

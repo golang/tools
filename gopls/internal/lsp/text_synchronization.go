@@ -89,9 +89,6 @@ func (s *server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 	defer done()
 
 	uri := params.TextDocument.URI
-	if !uri.IsFile() {
-		return nil
-	}
 	// There may not be any matching view in the current session. If that's
 	// the case, try creating a new view based on the opened file path.
 	//
@@ -124,10 +121,6 @@ func (s *server) DidChange(ctx context.Context, params *protocol.DidChangeTextDo
 	defer done()
 
 	uri := params.TextDocument.URI
-	if !uri.IsFile() {
-		return nil
-	}
-
 	text, err := s.changedText(ctx, uri, params.ContentChanges)
 	if err != nil {
 		return err
@@ -188,13 +181,9 @@ func (s *server) DidChangeWatchedFiles(ctx context.Context, params *protocol.Did
 
 	var modifications []file.Modification
 	for _, change := range params.Changes {
-		uri := change.URI
-		if !uri.IsFile() {
-			continue
-		}
 		action := changeTypeToFileAction(change.Type)
 		modifications = append(modifications, file.Modification{
-			URI:    uri,
+			URI:    change.URI,
 			Action: action,
 			OnDisk: true,
 		})
@@ -206,12 +195,8 @@ func (s *server) DidSave(ctx context.Context, params *protocol.DidSaveTextDocume
 	ctx, done := event.Start(ctx, "lsp.Server.didSave", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	uri := params.TextDocument.URI
-	if !uri.IsFile() {
-		return nil
-	}
 	c := file.Modification{
-		URI:    uri,
+		URI:    params.TextDocument.URI,
 		Action: file.Save,
 	}
 	if params.Text != nil {
@@ -224,13 +209,9 @@ func (s *server) DidClose(ctx context.Context, params *protocol.DidCloseTextDocu
 	ctx, done := event.Start(ctx, "lsp.Server.didClose", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	uri := params.TextDocument.URI
-	if !uri.IsFile() {
-		return nil
-	}
 	return s.didModifyFiles(ctx, []file.Modification{
 		{
-			URI:     uri,
+			URI:     params.TextDocument.URI,
 			Action:  file.Close,
 			Version: -1,
 			Text:    nil,
