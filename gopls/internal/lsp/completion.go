@@ -21,7 +21,7 @@ import (
 	"golang.org/x/tools/internal/event/tag"
 )
 
-func (s *server) completion(ctx context.Context, params *protocol.CompletionParams) (_ *protocol.CompletionList, rerr error) {
+func (s *server) Completion(ctx context.Context, params *protocol.CompletionParams) (_ *protocol.CompletionList, rerr error) {
 	recordLatency := telemetry.StartLatencyTimer("completion")
 	defer func() {
 		recordLatency(ctx, rerr)

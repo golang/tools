@@ -84,7 +84,7 @@ func (m ModificationSource) String() string {
 	}
 }
 
-func (s *server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
+func (s *server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.didOpen", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
@@ -119,7 +119,7 @@ func (s *server) didOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 	}}, FromDidOpen)
 }
 
-func (s *server) didChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
+func (s *server) DidChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.didChange", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
@@ -182,7 +182,7 @@ func (s *server) warnAboutModifyingGeneratedFiles(ctx context.Context, uri proto
 	})
 }
 
-func (s *server) didChangeWatchedFiles(ctx context.Context, params *protocol.DidChangeWatchedFilesParams) error {
+func (s *server) DidChangeWatchedFiles(ctx context.Context, params *protocol.DidChangeWatchedFilesParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.didChangeWatchedFiles")
 	defer done()
 
@@ -202,7 +202,7 @@ func (s *server) didChangeWatchedFiles(ctx context.Context, params *protocol.Did
 	return s.didModifyFiles(ctx, modifications, FromDidChangeWatchedFiles)
 }
 
-func (s *server) didSave(ctx context.Context, params *protocol.DidSaveTextDocumentParams) error {
+func (s *server) DidSave(ctx context.Context, params *protocol.DidSaveTextDocumentParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.didSave", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
@@ -220,7 +220,7 @@ func (s *server) didSave(ctx context.Context, params *protocol.DidSaveTextDocume
 	return s.didModifyFiles(ctx, []file.Modification{c}, FromDidSave)
 }
 
-func (s *server) didClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
+func (s *server) DidClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.didClose", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 

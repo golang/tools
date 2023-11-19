@@ -27,7 +27,7 @@ import (
 	"golang.org/x/tools/internal/imports"
 )
 
-func (s *server) codeAction(ctx context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
+func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.codeAction")
 	defer done()
 

@@ -39,7 +39,7 @@ import (
 	"golang.org/x/tools/internal/xcontext"
 )
 
-func (s *server) executeCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (interface{}, error) {
+func (s *server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (interface{}, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.executeCommand")
 	defer done()
 

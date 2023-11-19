@@ -15,7 +15,7 @@ import (
 	"golang.org/x/tools/internal/event/tag"
 )
 
-func (s *server) rename(ctx context.Context, params *protocol.RenameParams) (*protocol.WorkspaceEdit, error) {
+func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*protocol.WorkspaceEdit, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.rename", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
@@ -57,13 +57,13 @@ func (s *server) rename(ctx context.Context, params *protocol.RenameParams) (*pr
 	}, nil
 }
 
-// prepareRename implements the textDocument/prepareRename handler. It may
+// PrepareRename implements the textDocument/prepareRename handler. It may
 // return (nil, nil) if there is no rename at the cursor position, but it is
 // not desirable to display an error to the user.
 //
 // TODO(rfindley): why wouldn't we want to show an error to the user, if the
 // user initiated a rename request at the cursor?
-func (s *server) prepareRename(ctx context.Context, params *protocol.PrepareRenameParams) (*protocol.PrepareRename2Gn, error) {
+func (s *server) PrepareRename(ctx context.Context, params *protocol.PrepareRenameParams) (*protocol.PrepareRename2Gn, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.prepareRename", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 

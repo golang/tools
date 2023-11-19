@@ -15,7 +15,7 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-func (s *server) didChangeWorkspaceFolders(ctx context.Context, params *protocol.DidChangeWorkspaceFoldersParams) error {
+func (s *server) DidChangeWorkspaceFolders(ctx context.Context, params *protocol.DidChangeWorkspaceFoldersParams) error {
 	event := params.Event
 	for _, folder := range event.Removed {
 		view := s.session.ViewByName(folder.Name)
@@ -50,7 +50,7 @@ func (s *server) addView(ctx context.Context, name string, uri protocol.Document
 	return snapshot, release, err
 }
 
-func (s *server) didChangeConfiguration(ctx context.Context, _ *protocol.DidChangeConfigurationParams) error {
+func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChangeConfigurationParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.didChangeConfiguration")
 	defer done()
 

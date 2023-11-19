@@ -29,7 +29,7 @@ import (
 	"golang.org/x/tools/internal/jsonrpc2"
 )
 
-func (s *server) initialize(ctx context.Context, params *protocol.ParamInitialize) (*protocol.InitializeResult, error) {
+func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitialize) (*protocol.InitializeResult, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.initialize")
 	defer done()
 
@@ -202,7 +202,7 @@ See https://github.com/golang/go/issues/45732 for more information.`,
 	}, nil
 }
 
-func (s *server) initialized(ctx context.Context, params *protocol.InitializedParams) error {
+func (s *server) Initialized(ctx context.Context, params *protocol.InitializedParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.initialized")
 	defer done()
 
@@ -579,7 +579,7 @@ func (s *server) beginFileRequest(ctx context.Context, pURI protocol.DocumentURI
 
 // shutdown implements the 'shutdown' LSP handler. It releases resources
 // associated with the server and waits for all ongoing work to complete.
-func (s *server) shutdown(ctx context.Context) error {
+func (s *server) Shutdown(ctx context.Context) error {
 	ctx, done := event.Start(ctx, "lsp.Server.shutdown")
 	defer done()
 
@@ -601,7 +601,7 @@ func (s *server) shutdown(ctx context.Context) error {
 	return nil
 }
 
-func (s *server) exit(ctx context.Context) error {
+func (s *server) Exit(ctx context.Context) error {
 	ctx, done := event.Start(ctx, "lsp.Server.exit")
 	defer done()
 

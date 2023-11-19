@@ -16,7 +16,7 @@ import (
 	"golang.org/x/tools/internal/event/tag"
 )
 
-func (s *server) references(ctx context.Context, params *protocol.ReferenceParams) (_ []protocol.Location, rerr error) {
+func (s *server) References(ctx context.Context, params *protocol.ReferenceParams) (_ []protocol.Location, rerr error) {
 	recordLatency := telemetry.StartLatencyTimer("references")
 	defer func() {
 		recordLatency(ctx, rerr)

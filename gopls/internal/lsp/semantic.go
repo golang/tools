@@ -39,11 +39,11 @@ const maxFullFileSize int = 100000
 // semDebug should NEVER be true in checked-in code
 const semDebug = false
 
-func (s *server) semanticTokensFull(ctx context.Context, params *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
+func (s *server) SemanticTokensFull(ctx context.Context, params *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
 	return s.semanticTokens(ctx, params.TextDocument, nil)
 }
 
-func (s *server) semanticTokensRange(ctx context.Context, params *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
+func (s *server) SemanticTokensRange(ctx context.Context, params *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
 	return s.semanticTokens(ctx, params.TextDocument, &params.Range)
 }
 

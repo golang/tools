@@ -24,7 +24,7 @@ import (
 	"golang.org/x/tools/internal/event/tag"
 )
 
-func (s *server) documentLink(ctx context.Context, params *protocol.DocumentLinkParams) (links []protocol.DocumentLink, err error) {
+func (s *server) DocumentLink(ctx context.Context, params *protocol.DocumentLinkParams) (links []protocol.DocumentLink, err error) {
 	ctx, done := event.Start(ctx, "lsp.Server.documentLink")
 	defer done()
 

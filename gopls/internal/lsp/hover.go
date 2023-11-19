@@ -18,7 +18,7 @@ import (
 	"golang.org/x/tools/internal/event/tag"
 )
 
-func (s *server) hover(ctx context.Context, params *protocol.HoverParams) (_ *protocol.Hover, rerr error) {
+func (s *server) Hover(ctx context.Context, params *protocol.HoverParams) (_ *protocol.Hover, rerr error) {
 	recordLatency := telemetry.StartLatencyTimer("hover")
 	defer func() {
 		recordLatency(ctx, rerr)

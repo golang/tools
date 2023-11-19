@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:generate go run ./helper -d protocol/tsserver.go -o server_gen.go -u .
-
 // Package lsp defines gopls' implementation of the LSP server
 // interface, [protocol.Server]. Call [NewServer] to create an instance.
 //
@@ -25,7 +23,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/jsonrpc2"
 )
 
 const concurrentAnalyses = 1
@@ -33,6 +30,9 @@ const concurrentAnalyses = 1
 // NewServer creates an LSP server and binds it to handle incoming client
 // messages on the supplied stream.
 func NewServer(session *cache.Session, client protocol.ClientCloser, options *settings.Options) protocol.Server {
+	// If this assignment fails to compile after a protocol
+	// upgrade, it means that one or more new methods need new
+	// stub declarations in unimplemented.go.
 	return &server{
 		diagnostics:           map[protocol.DocumentURI]*fileReports{},
 		gcOptimizationDetails: make(map[source.PackageID]struct{}),
@@ -128,14 +128,14 @@ type server struct {
 	options   *settings.Options
 }
 
-func (s *server) workDoneProgressCancel(ctx context.Context, params *protocol.WorkDoneProgressCancelParams) error {
+func (s *server) WorkDoneProgressCancel(ctx context.Context, params *protocol.WorkDoneProgressCancelParams) error {
 	ctx, done := event.Start(ctx, "lsp.Server.workDoneProgressCancel")
 	defer done()
 
 	return s.progress.Cancel(params.Token)
 }
 
-func (s *server) nonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {
+func (s *server) NonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.nonstandardRequest")
 	defer done()
 
@@ -204,8 +204,4 @@ func (s *server) diagnoseFile(ctx context.Context, snapshot source.Snapshot, uri
 	s.storeDiagnostics(snapshot, uri, typeCheckSource, td, true)
 	s.storeDiagnostics(snapshot, uri, analysisSource, ad, true)
 	return fh, append(td, ad...), nil
-}
-
-func notImplemented(method string) error {
-	return fmt.Errorf("%w: %q not yet implemented", jsonrpc2.ErrMethodNotFound, method)
 }
