@@ -6,7 +6,6 @@ package fake
 
 import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/diff"
 )
 
@@ -36,7 +35,7 @@ func EditToChangeEvent(e protocol.TextEdit) protocol.TextDocumentContentChangeEv
 // and returns a new slice containing the lines of the patched file.
 // It is a wrapper around diff.Apply; see that function for preconditions.
 func applyEdits(mapper *protocol.Mapper, edits []protocol.TextEdit, windowsLineEndings bool) ([]byte, error) {
-	diffEdits, err := source.FromProtocolEdits(mapper, edits)
+	diffEdits, err := protocol.EditsToDiffEdits(mapper, edits)
 	if err != nil {
 		return nil, err
 	}

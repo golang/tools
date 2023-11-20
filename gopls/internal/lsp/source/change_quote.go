@@ -69,7 +69,7 @@ func ConvertStringLiteral(pgf *ParsedGoFile, fh file.Handle, rng protocol.Range)
 		End:   end,
 		New:   newText,
 	}}
-	pedits, err := ToProtocolEdits(pgf.Mapper, edits)
+	pedits, err := protocol.EditsFromDiffEdits(pgf.Mapper, edits)
 	if err != nil {
 		bug.Reportf("failed to convert diff.Edit to protocol.TextEdit:%v", err)
 		return protocol.CodeAction{}, false

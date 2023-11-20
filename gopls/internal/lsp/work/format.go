@@ -25,5 +25,5 @@ func Format(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]pr
 	formatted := modfile.Format(pw.File.Syntax)
 	// Calculate the edits to be made due to the change.
 	diffs := snapshot.Options().ComputeEdits(string(pw.Mapper.Content), string(formatted))
-	return source.ToProtocolEdits(pw.Mapper, diffs)
+	return protocol.EditsFromDiffEdits(pw.Mapper, diffs)
 }

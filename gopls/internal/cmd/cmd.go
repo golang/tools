@@ -29,7 +29,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/lsprpc"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/constraints"
 	"golang.org/x/tools/internal/diff"
@@ -585,7 +584,7 @@ func applyTextEdits(mapper *protocol.Mapper, edits []protocol.TextEdit, flags *E
 	if len(edits) == 0 {
 		return nil
 	}
-	newContent, renameEdits, err := source.ApplyProtocolEdits(mapper, edits)
+	newContent, renameEdits, err := protocol.ApplyEdits(mapper, edits)
 	if err != nil {
 		return err
 	}

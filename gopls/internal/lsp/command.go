@@ -471,7 +471,7 @@ func dropDependency(snapshot source.Snapshot, pm *source.ParsedModule, modulePat
 	}
 	// Calculate the edits to be made due to the change.
 	diff := snapshot.Options().ComputeEdits(string(pm.Mapper.Content), string(newContent))
-	return source.ToProtocolEdits(pm.Mapper, diff)
+	return protocol.EditsFromDiffEdits(pm.Mapper, diff)
 }
 
 func (c *commandHandler) Test(ctx context.Context, uri protocol.DocumentURI, tests, benchmarks []string) error {
@@ -677,7 +677,7 @@ func collectFileEdits(ctx context.Context, snapshot *cache.Snapshot, uri protoco
 
 	m := protocol.NewMapper(fh.URI(), oldContent)
 	diff := snapshot.Options().ComputeEdits(string(oldContent), string(newContent))
-	edits, err := source.ToProtocolEdits(m, diff)
+	edits, err := protocol.EditsFromDiffEdits(m, diff)
 	if err != nil {
 		return nil, err
 	}

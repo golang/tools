@@ -164,7 +164,7 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		}
 		edits := diff.Bytes(before, after)
 		mapper := protocol.NewMapper(uri, before)
-		pedits, err := ToProtocolEdits(mapper, edits)
+		pedits, err := protocol.EditsFromDiffEdits(mapper, edits)
 		if err != nil {
 			return nil, fmt.Errorf("computing edits for %s: %v", uri, err)
 		}

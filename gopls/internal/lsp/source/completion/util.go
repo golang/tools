@@ -316,7 +316,7 @@ func (c *completer) editText(from, to token.Pos, newText string) ([]protocol.Tex
 	if err != nil {
 		return nil, err // can't happen: from/to came from c
 	}
-	return source.ToProtocolEdits(c.mapper, []diff.Edit{{
+	return protocol.EditsFromDiffEdits(c.mapper, []diff.Edit{{
 		Start: start,
 		End:   end,
 		New:   newText,

@@ -75,7 +75,6 @@ var (
 	RemoveIntermediateTestVariants = source.RemoveIntermediateTestVariants
 	IsCommandLineArguments         = source.IsCommandLineArguments
 	BundleQuickFixes               = source.BundleQuickFixes
-	ToProtocolEdits                = source.ToProtocolEdits
 	NewFilterer                    = source.NewFilterer
 )
 

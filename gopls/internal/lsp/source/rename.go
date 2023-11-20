@@ -276,7 +276,7 @@ func Rename(ctx context.Context, snapshot Snapshot, f file.Handle, pp protocol.P
 			return nil, false, err
 		}
 		m := protocol.NewMapper(uri, data)
-		protocolEdits, err := ToProtocolEdits(m, edits)
+		protocolEdits, err := protocol.EditsFromDiffEdits(m, edits)
 		if err != nil {
 			return nil, false, err
 		}

@@ -306,7 +306,7 @@ func computeTextEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile,
 	defer done()
 
 	edits := snapshot.Options().ComputeEdits(string(pgf.Src), formatted)
-	return ToProtocolEdits(pgf.Mapper, edits)
+	return protocol.EditsFromDiffEdits(pgf.Mapper, edits)
 }
 
 // protocolEditsFromSource converts text edits to LSP edits using the original
@@ -333,57 +333,6 @@ func protocolEditsFromSource(src []byte, edits []diff.Edit) ([]protocol.TextEdit
 	return result, nil
 }
 
-// ToProtocolEdits converts diff.Edits to a non-nil slice of LSP TextEdits.
-// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textEditArray
 func ToProtocolEdits(m *protocol.Mapper, edits []diff.Edit) ([]protocol.TextEdit, error) {
-	// LSP doesn't require TextEditArray to be sorted:
-	// this is the receiver's concern. But govim, and perhaps
-	// other clients have historically relied on the order.
-	edits = append([]diff.Edit(nil), edits...)
-	diff.SortEdits(edits)
-
-	result := make([]protocol.TextEdit, len(edits))
-	for i, edit := range edits {
-		rng, err := m.OffsetRange(edit.Start, edit.End)
-		if err != nil {
-			return nil, err
-		}
-		result[i] = protocol.TextEdit{
-			Range:   rng,
-			NewText: edit.New,
-		}
-	}
-	return result, nil
-}
-
-// FromProtocolEdits converts LSP TextEdits to diff.Edits.
-// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textEditArray
-func FromProtocolEdits(m *protocol.Mapper, edits []protocol.TextEdit) ([]diff.Edit, error) {
-	if edits == nil {
-		return nil, nil
-	}
-	result := make([]diff.Edit, len(edits))
-	for i, edit := range edits {
-		start, end, err := m.RangeOffsets(edit.Range)
-		if err != nil {
-			return nil, err
-		}
-		result[i] = diff.Edit{
-			Start: start,
-			End:   end,
-			New:   edit.NewText,
-		}
-	}
-	return result, nil
-}
-
-// ApplyProtocolEdits applies the patch (edits) to m.Content and returns the result.
-// It also returns the edits converted to diff-package form.
-func ApplyProtocolEdits(m *protocol.Mapper, edits []protocol.TextEdit) ([]byte, []diff.Edit, error) {
-	diffEdits, err := FromProtocolEdits(m, edits)
-	if err != nil {
-		return nil, nil, err
-	}
-	out, err := diff.ApplyBytes(m.Content, diffEdits)
-	return out, diffEdits, err
+	return protocol.EditsFromDiffEdits(m, edits)
 }

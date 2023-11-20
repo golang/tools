@@ -33,7 +33,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/lsprpc"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/tests"
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 	"golang.org/x/tools/internal/diff"
@@ -1675,9 +1674,7 @@ func acceptCompletionMarker(mark marker, src protocol.Location, label string, go
 	}
 	filename := mark.path()
 	mapper := mark.mapper()
-	patched, _, err := source.ApplyProtocolEdits(mapper, append([]protocol.TextEdit{
-		*selected.TextEdit,
-	}, selected.AdditionalTextEdits...))
+	patched, _, err := protocol.ApplyEdits(mapper, append([]protocol.TextEdit{*selected.TextEdit}, selected.AdditionalTextEdits...))
 
 	if err != nil {
 		mark.errorf("ApplyProtocolEdits failed: %v", err)
@@ -1739,7 +1736,7 @@ func foldingRangeMarker(mark marker, g *Golden) {
 		mark.errorf("Editor.Mapper(%s) failed: %v", filename, err)
 		return
 	}
-	got, _, err := source.ApplyProtocolEdits(mapper, edits)
+	got, _, err := protocol.ApplyEdits(mapper, edits)
 	if err != nil {
 		mark.errorf("ApplyProtocolEdits failed: %v", err)
 		return
@@ -1766,7 +1763,7 @@ func formatMarker(mark marker, golden *Golden) {
 			mark.errorf("Editor.Mapper(%s) failed: %v", filename, err)
 		}
 
-		got, _, err = source.ApplyProtocolEdits(mapper, edits)
+		got, _, err = protocol.ApplyEdits(mapper, edits)
 		if err != nil {
 			mark.errorf("ApplyProtocolEdits failed: %v", err)
 			return
@@ -2008,7 +2005,7 @@ func applyDocumentChanges(env *Env, changes []protocol.DocumentChanges, fileChan
 			if err != nil {
 				return err
 			}
-			patched, _, err := source.ApplyProtocolEdits(mapper, change.TextDocumentEdit.Edits)
+			patched, _, err := protocol.ApplyEdits(mapper, change.TextDocumentEdit.Edits)
 			if err != nil {
 				return err
 			}
@@ -2400,7 +2397,7 @@ func inlayhintsMarker(mark marker, g *Golden) {
 	}
 
 	m := mark.mapper()
-	got, _, err := source.ApplyProtocolEdits(m, edits)
+	got, _, err := protocol.ApplyEdits(m, edits)
 	if err != nil {
 		mark.errorf("ApplyProtocolEdits: %v", err)
 		return

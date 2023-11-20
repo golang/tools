@@ -457,7 +457,7 @@ func switchDirectness(req *modfile.Require, m *protocol.Mapper, computeEdits set
 	}
 	// Calculate the edits to be made due to the change.
 	edits := computeEdits(string(m.Content), string(newContent))
-	return ToProtocolEdits(m, edits)
+	return protocol.EditsFromDiffEdits(m, edits)
 }
 
 // missingModuleForImport creates an error for a given import path that comes
