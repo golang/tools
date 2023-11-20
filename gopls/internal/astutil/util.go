@@ -6,6 +6,7 @@ package astutil
 
 import (
 	"go/ast"
+	"go/token"
 
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -58,4 +59,11 @@ L: // unpack receiver type
 	}
 
 	return
+}
+
+// NodeContains returns true if a node encloses a given position pos.
+//
+// Precondition: n must not be nil.
+func NodeContains(n ast.Node, pos token.Pos) bool {
+	return n.Pos() <= pos && pos <= n.End()
 }

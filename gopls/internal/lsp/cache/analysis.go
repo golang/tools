@@ -31,6 +31,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
@@ -963,7 +964,7 @@ func (an *analysisNode) typeCheck(parsed []*ParsedGoFile) *analysisPackage {
 			// as parser recovery can be quite lossy (#59888).
 			typeError := e.(types.Error)
 			for _, p := range parsed {
-				if p.ParseErr != nil && NodeContains(p.File, typeError.Pos) {
+				if p.ParseErr != nil && astutil.NodeContains(p.File, typeError.Pos) {
 					return
 				}
 			}

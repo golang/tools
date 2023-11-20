@@ -7,8 +7,8 @@ package completion
 import (
 	"go/ast"
 
+	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 )
 
 const (
@@ -74,7 +74,7 @@ func (c *completer) addKeywordCompletions() {
 	if len(c.path) > 2 {
 		// Offer "range" if we are in ast.ForStmt.Init. This is what the
 		// AST looks like before "range" is typed, e.g. "for i := r<>".
-		if loop, ok := c.path[2].(*ast.ForStmt); ok && source.NodeContains(loop.Init, c.pos) {
+		if loop, ok := c.path[2].(*ast.ForStmt); ok && loop.Init != nil && astutil.NodeContains(loop.Init, c.pos) {
 			c.addKeywordItems(seen, stdScore, RANGE)
 		}
 	}

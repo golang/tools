@@ -2365,7 +2365,7 @@ Nodes:
 			}
 			return inf
 		case *ast.RangeStmt:
-			if source.NodeContains(node.X, c.pos) {
+			if goplsastutil.NodeContains(node.X, c.pos) {
 				inf.objKind |= kindSlice | kindArray | kindMap | kindString
 				if node.Value == nil {
 					inf.objKind |= kindChan
@@ -2583,11 +2583,11 @@ func breaksExpectedTypeInference(n ast.Node, pos token.Pos) bool {
 	case *ast.CompositeLit:
 		// Doesn't break inference if pos is in type name.
 		// For example: "Foo<>{Bar: 123}"
-		return !source.NodeContains(n.Type, pos)
+		return n.Type == nil || !goplsastutil.NodeContains(n.Type, pos)
 	case *ast.CallExpr:
 		// Doesn't break inference if pos is in func name.
 		// For example: "Foo<>(123)"
-		return !source.NodeContains(n.Fun, pos)
+		return !goplsastutil.NodeContains(n.Fun, pos)
 	case *ast.FuncLit, *ast.IndexExpr, *ast.SliceExpr:
 		return true
 	default:
@@ -2700,7 +2700,7 @@ Nodes:
 		case *ast.MapType:
 			inf.wantTypeName = true
 			if n.Key != nil {
-				inf.wantComparable = source.NodeContains(n.Key, c.pos)
+				inf.wantComparable = goplsastutil.NodeContains(n.Key, c.pos)
 			} else {
 				// If the key is empty, assume we are completing the key if
 				// pos is directly after the "map[".
@@ -2708,10 +2708,10 @@ Nodes:
 			}
 			break Nodes
 		case *ast.ValueSpec:
-			inf.wantTypeName = source.NodeContains(n.Type, c.pos)
+			inf.wantTypeName = n.Type != nil && goplsastutil.NodeContains(n.Type, c.pos)
 			break Nodes
 		case *ast.TypeSpec:
-			inf.wantTypeName = source.NodeContains(n.Type, c.pos)
+			inf.wantTypeName = goplsastutil.NodeContains(n.Type, c.pos)
 		default:
 			if breaksExpectedTypeInference(p, c.pos) {
 				return typeNameInference{}

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
@@ -203,11 +204,6 @@ func UnquoteImportPath(s *ast.ImportSpec) ImportPath {
 	return ImportPath(path)
 }
 
-// NodeContains returns true if a node encloses a given position pos.
-func NodeContains(n ast.Node, pos token.Pos) bool {
-	return n != nil && n.Pos() <= pos && pos <= n.End()
-}
-
 // CollectScopes returns all scopes in an ast path, ordered as innermost scope
 // first.
 func CollectScopes(info *types.Info, path []ast.Node, pos token.Pos) []*types.Scope {
@@ -217,11 +213,11 @@ func CollectScopes(info *types.Info, path []ast.Node, pos token.Pos) []*types.Sc
 		// Include *FuncType scope if pos is inside the function body.
 		switch node := n.(type) {
 		case *ast.FuncDecl:
-			if node.Body != nil && NodeContains(node.Body, pos) {
+			if node.Body != nil && astutil.NodeContains(node.Body, pos) {
 				n = node.Type
 			}
 		case *ast.FuncLit:
-			if node.Body != nil && NodeContains(node.Body, pos) {
+			if node.Body != nil && astutil.NodeContains(node.Body, pos) {
 				n = node.Type
 			}
 		}

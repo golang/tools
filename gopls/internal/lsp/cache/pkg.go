@@ -70,7 +70,6 @@ var (
 
 // Functions
 var (
-	NodeContains                   = source.NodeContains
 	IsValidImport                  = source.IsValidImport
 	RemoveIntermediateTestVariants = source.RemoveIntermediateTestVariants
 	IsCommandLineArguments         = source.IsCommandLineArguments
