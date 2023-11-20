@@ -198,7 +198,7 @@ func goGetQuickFixes(moduleMode bool, uri protocol.DocumentURI, pkg string) ([]s
 	if err != nil {
 		return nil, err
 	}
-	return []source.SuggestedFix{source.SuggestedFixFromCommand(cmd, protocol.QuickFix)}, nil
+	return []source.SuggestedFix{SuggestedFixFromCommand(cmd, protocol.QuickFix)}, nil
 }
 
 func editGoDirectiveQuickFix(moduleMode bool, uri protocol.DocumentURI, version string) ([]source.SuggestedFix, error) {
@@ -214,7 +214,7 @@ func editGoDirectiveQuickFix(moduleMode bool, uri protocol.DocumentURI, version 
 	if err != nil {
 		return nil, err
 	}
-	return []source.SuggestedFix{source.SuggestedFixFromCommand(cmd, protocol.QuickFix)}, nil
+	return []source.SuggestedFix{SuggestedFixFromCommand(cmd, protocol.QuickFix)}, nil
 }
 
 // encodeDiagnostics gob-encodes the given diagnostics.
@@ -366,7 +366,7 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 				log.Fatalf("internal error in NewApplyFixCommand: %v", err)
 			}
 			for _, kind := range kinds {
-				fixes = append(fixes, source.SuggestedFixFromCommand(cmd, kind))
+				fixes = append(fixes, SuggestedFixFromCommand(cmd, kind))
 			}
 		}
 		diag.SuggestedFixes = fixes

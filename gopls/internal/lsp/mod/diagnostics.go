@@ -173,7 +173,7 @@ func ModUpgradeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh fil
 			Severity:       protocol.SeverityInformation,
 			Source:         source.UpgradeNotification,
 			Message:        fmt.Sprintf("%v can be upgraded", req.Mod.Path),
-			SuggestedFixes: []source.SuggestedFix{source.SuggestedFixFromCommand(cmd, protocol.QuickFix)},
+			SuggestedFixes: []source.SuggestedFix{cache.SuggestedFixFromCommand(cmd, protocol.QuickFix)},
 		})
 	}
 
@@ -274,7 +274,7 @@ func ModVulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, 
 				if err != nil {
 					return nil, err // TODO: bug report
 				}
-				sf := source.SuggestedFixFromCommand(cmd, protocol.QuickFix)
+				sf := cache.SuggestedFixFromCommand(cmd, protocol.QuickFix)
 				switch _, typ := foundVuln(finding); typ {
 				case vulnImported:
 					infoFixes = append(infoFixes, sf)
@@ -301,7 +301,7 @@ func ModVulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, 
 		if err != nil {
 			return nil, err // TODO: bug report
 		}
-		sf := source.SuggestedFixFromCommand(latest, protocol.QuickFix)
+		sf := cache.SuggestedFixFromCommand(latest, protocol.QuickFix)
 		if len(warningFixes) > 0 {
 			warningFixes = append(warningFixes, sf)
 		}
@@ -454,7 +454,7 @@ func suggestGovulncheckAction(fromGovulncheck bool, uri protocol.DocumentURI) (s
 		if err != nil {
 			return source.SuggestedFix{}, err
 		}
-		return source.SuggestedFixFromCommand(resetVulncheck, protocol.QuickFix), nil
+		return cache.SuggestedFixFromCommand(resetVulncheck, protocol.QuickFix), nil
 	}
 	vulncheck, err := command.NewRunGovulncheckCommand("Run govulncheck to verify", command.VulncheckArgs{
 		URI:     uri,
@@ -463,7 +463,7 @@ func suggestGovulncheckAction(fromGovulncheck bool, uri protocol.DocumentURI) (s
 	if err != nil {
 		return source.SuggestedFix{}, err
 	}
-	return source.SuggestedFixFromCommand(vulncheck, protocol.QuickFix), nil
+	return cache.SuggestedFixFromCommand(vulncheck, protocol.QuickFix), nil
 }
 
 func getVulnMessage(mod string, vulns []string, used, fromGovulncheck bool) string {

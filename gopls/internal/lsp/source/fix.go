@@ -94,14 +94,6 @@ func singleFile(sf singleFileFixFunc) suggestedFixFunc {
 	}
 }
 
-func SuggestedFixFromCommand(cmd protocol.Command, kind protocol.CodeActionKind) SuggestedFix {
-	return SuggestedFix{
-		Title:      cmd.Title,
-		Command:    &cmd,
-		ActionKind: kind,
-	}
-}
-
 // CanFix returns true if Analyzer.Fix can fix the Diagnostic.
 //
 // It returns true by default: only if the analyzer is configured explicitly to
