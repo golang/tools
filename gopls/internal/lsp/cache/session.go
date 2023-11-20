@@ -6,6 +6,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,6 +73,9 @@ func (s *Session) Shutdown(ctx context.Context) {
 func (s *Session) Cache() *Cache {
 	return s.cache
 }
+
+// TODO(rfindley): is the logic surrounding this error actually necessary?
+var ErrViewExists = errors.New("view already exists for session")
 
 // NewView creates a new View, returning it and its first snapshot. If a
 // non-empty tempWorkspace directory is provided, the View will record a copy

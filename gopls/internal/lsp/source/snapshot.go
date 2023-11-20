@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -569,16 +568,6 @@ func RemoveIntermediateTestVariants(pmetas *[]*Metadata) {
 		}
 	}
 	*pmetas = res
-}
-
-var (
-	ErrViewExists            = errors.New("view already exists for session")
-	ErrTmpModfileUnsupported = errors.New("-modfile is unsupported for this Go version")
-	ErrNoModOnDisk           = errors.New("go.mod file is not on disk")
-)
-
-func IsNonFatalGoModError(err error) bool {
-	return err == ErrTmpModfileUnsupported || err == ErrNoModOnDisk
 }
 
 // Common parse modes; these should be reused wherever possible to increase

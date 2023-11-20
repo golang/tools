@@ -115,7 +115,12 @@ func ModTidyDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.H
 	}
 
 	tidied, err := snapshot.ModTidy(ctx, pm)
-	if err != nil && !source.IsNonFatalGoModError(err) {
+	if err != nil && err != cache.ErrNoModOnDisk {
+		// TODO(rfindley): the check for ErrNoModOnDisk was historically determined
+		// to be benign, but may date back to the time when the Go command did not
+		// have overlay support.
+		//
+		// See if we can pass the overlay to the Go command, and eliminate this guard..
 		event.Error(ctx, fmt.Sprintf("tidy: diagnosing %s", pm.URI), err)
 	}
 	if err == nil {

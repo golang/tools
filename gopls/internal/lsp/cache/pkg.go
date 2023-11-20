@@ -66,10 +66,6 @@ var (
 	AllowNetwork          = source.AllowNetwork
 	LoadWorkspace         = source.LoadWorkspace
 	WriteTemporaryModFile = source.WriteTemporaryModFile
-
-	// Errors
-	ErrNoModOnDisk = source.ErrNoModOnDisk
-	ErrViewExists  = source.ErrViewExists
 )
 
 // Functions

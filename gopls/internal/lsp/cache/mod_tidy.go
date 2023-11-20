@@ -6,6 +6,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -24,6 +25,9 @@ import (
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
 )
+
+// This error is sought by mod diagnostics.
+var ErrNoModOnDisk = errors.New("go.mod file is not on disk")
 
 // ModTidy returns the go.mod file that would be obtained by running
 // "go mod tidy". Concurrent requests are combined into a single command.
