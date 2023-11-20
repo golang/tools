@@ -35,7 +35,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/gopls/internal/lsp/source/xrefs"
@@ -54,7 +53,7 @@ import (
 
 type Snapshot struct {
 	sequenceID uint64
-	globalID   source.GlobalSnapshotID
+	globalID   GlobalSnapshotID
 
 	// TODO(rfindley): the snapshot holding a reference to the view poses
 	// lifecycle problems: a view may be shut down and waiting for work
@@ -82,7 +81,7 @@ type Snapshot struct {
 	// initializedErr holds the last error resulting from initialization. If
 	// initialization fails, we only retry when the workspace modules change,
 	// to avoid too many go/packages calls.
-	initializedErr *source.CriticalError
+	initializedErr *CriticalError
 
 	// mu guards all of the maps in the snapshot, as well as the builtin URI.
 	mu sync.Mutex
@@ -181,8 +180,8 @@ type Snapshot struct {
 
 var globalSnapshotID uint64
 
-func nextSnapshotID() source.GlobalSnapshotID {
-	return source.GlobalSnapshotID(atomic.AddUint64(&globalSnapshotID, 1))
+func nextSnapshotID() GlobalSnapshotID {
+	return GlobalSnapshotID(atomic.AddUint64(&globalSnapshotID, 1))
 }
 
 var _ memoize.RefCounted = (*Snapshot)(nil) // snapshots are reference-counted
@@ -269,7 +268,7 @@ func (s *Snapshot) SequenceID() uint64 {
 // GlobalID is a globally unique identifier for this snapshot. Global IDs are
 // monotonic: subsequent snapshots will have higher global ID, though
 // subsequent snapshots in a view may not have adjacent global IDs.
-func (s *Snapshot) GlobalID() source.GlobalSnapshotID {
+func (s *Snapshot) GlobalID() GlobalSnapshotID {
 	return s.globalID
 }
 
@@ -423,7 +422,7 @@ func (s *Snapshot) config(ctx context.Context, inv *gocommand.Invocation) *packa
 	return cfg
 }
 
-func (s *Snapshot) RunGoCommandDirect(ctx context.Context, mode source.InvocationFlags, inv *gocommand.Invocation) (*bytes.Buffer, error) {
+func (s *Snapshot) RunGoCommandDirect(ctx context.Context, mode InvocationFlags, inv *gocommand.Invocation) (*bytes.Buffer, error) {
 	_, inv, cleanup, err := s.goCommandInvocation(ctx, mode, inv)
 	if err != nil {
 		return nil, err
@@ -439,7 +438,7 @@ func (s *Snapshot) RunGoCommandDirect(ctx context.Context, mode source.Invocatio
 // RunGoCommandPiped runs the command serially using gocommand.RunPiped,
 // enforcing that this command executes exclusively to other commands on the
 // server.
-func (s *Snapshot) RunGoCommandPiped(ctx context.Context, mode source.InvocationFlags, inv *gocommand.Invocation, stdout, stderr io.Writer) error {
+func (s *Snapshot) RunGoCommandPiped(ctx context.Context, mode InvocationFlags, inv *gocommand.Invocation, stdout, stderr io.Writer) error {
 	_, inv, cleanup, err := s.goCommandInvocation(ctx, mode, inv)
 	if err != nil {
 		return err
@@ -454,7 +453,7 @@ func (s *Snapshot) RunGoCommandPiped(ctx context.Context, mode source.Invocation
 // TODO(rfindley): the signature of RunGoModUpdateCommands is very confusing.
 // Simplify it.
 func (s *Snapshot) RunGoModUpdateCommands(ctx context.Context, wd string, run func(invoke func(...string) (*bytes.Buffer, error)) error) ([]byte, []byte, error) {
-	flags := source.WriteTemporaryModFile | source.AllowNetwork
+	flags := WriteTemporaryModFile | AllowNetwork
 	tmpURI, inv, cleanup, err := s.goCommandInvocation(ctx, flags, &gocommand.Invocation{WorkingDir: wd})
 	if err != nil {
 		return nil, nil, err
@@ -468,7 +467,7 @@ func (s *Snapshot) RunGoModUpdateCommands(ctx context.Context, wd string, run fu
 	if err := run(invoke); err != nil {
 		return nil, nil, err
 	}
-	if flags.Mode() != source.WriteTemporaryModFile {
+	if flags.Mode() != WriteTemporaryModFile {
 		return nil, nil, nil
 	}
 	var modBytes, sumBytes []byte
@@ -490,7 +489,7 @@ func (s *Snapshot) RunGoModUpdateCommands(ctx context.Context, wd string, run fu
 //
 // TODO(adonovan): simplify cleanup mechanism. It's hard to see, but
 // it used only after call to tempModFile.
-func (s *Snapshot) goCommandInvocation(ctx context.Context, flags source.InvocationFlags, inv *gocommand.Invocation) (tmpURI protocol.DocumentURI, updatedInv *gocommand.Invocation, cleanup func(), err error) {
+func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlags, inv *gocommand.Invocation) (tmpURI protocol.DocumentURI, updatedInv *gocommand.Invocation, cleanup func(), err error) {
 	allowModfileModificationOption := s.Options().AllowModfileModifications
 	allowNetworkOption := s.Options().AllowImplicitNetworkAccess
 
@@ -526,7 +525,7 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags source.Invocat
 	// These are dependent on a number of factors: whether we need to run in a
 	// synthetic workspace, whether flags are supported at the current go
 	// version, and what we're actually trying to achieve (the
-	// source.InvocationFlags).
+	// InvocationFlags).
 	//
 	// TODO(rfindley): should we set -overlays here?
 
@@ -535,7 +534,7 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags source.Invocat
 	// If we're type checking, we need to use the workspace context, meaning
 	// the main (workspace) module. Otherwise, we should use the module for
 	// the passed-in working dir.
-	if mode == source.LoadWorkspace {
+	if mode == LoadWorkspace {
 		if gowork, _ := s.view.GOWORK(); gowork == "" && s.view.gomod != "" {
 			modURI = s.view.gomod
 		}
@@ -567,7 +566,7 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags source.Invocat
 	// If the mod flag isn't set, populate it based on the mode and workspace.
 	if inv.ModFlag == "" {
 		switch mode {
-		case source.LoadWorkspace, source.Normal:
+		case LoadWorkspace, Normal:
 			if vendorEnabled {
 				inv.ModFlag = "vendor"
 			} else if !allowModfileModificationOption {
@@ -575,7 +574,7 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags source.Invocat
 			} else {
 				inv.ModFlag = mutableModFlag
 			}
-		case source.WriteTemporaryModFile:
+		case WriteTemporaryModFile:
 			inv.ModFlag = mutableModFlag
 			// -mod must be readonly when using go.work files - see issue #48941
 			inv.Env = append(inv.Env, "GOWORK=off")
@@ -635,13 +634,13 @@ const (
 	typerefsKind    = "typerefs"
 )
 
-func (s *Snapshot) PackageDiagnostics(ctx context.Context, ids ...PackageID) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
+func (s *Snapshot) PackageDiagnostics(ctx context.Context, ids ...PackageID) (map[protocol.DocumentURI][]*Diagnostic, error) {
 	ctx, done := event.Start(ctx, "cache.snapshot.PackageDiagnostics")
 	defer done()
 
 	var mu sync.Mutex
-	perFile := make(map[protocol.DocumentURI][]*source.Diagnostic)
-	collect := func(diags []*source.Diagnostic) {
+	perFile := make(map[protocol.DocumentURI][]*Diagnostic)
+	collect := func(diags []*Diagnostic) {
 		mu.Lock()
 		defer mu.Unlock()
 		for _, diag := range diags {
@@ -666,11 +665,11 @@ func (s *Snapshot) PackageDiagnostics(ctx context.Context, ids ...PackageID) (ma
 	return perFile, s.forEachPackage(ctx, ids, pre, post)
 }
 
-func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]source.XrefIndex, error) {
+func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]XrefIndex_, error) {
 	ctx, done := event.Start(ctx, "cache.snapshot.References")
 	defer done()
 
-	indexes := make([]source.XrefIndex, len(ids))
+	indexes := make([]XrefIndex_, len(ids))
 	pre := func(i int, ph *packageHandle) bool {
 		data, err := filecache.Get(xrefsKind, ph.key)
 		if err == nil { // hit
@@ -689,7 +688,7 @@ func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]source.X
 
 // An XrefIndex is a helper for looking up a package in a given package.
 type XrefIndex struct {
-	m    *source.Metadata
+	m    *Metadata
 	data []byte
 }
 
@@ -718,7 +717,7 @@ func (s *Snapshot) MethodSets(ctx context.Context, ids ...PackageID) ([]*methods
 	return indexes, s.forEachPackage(ctx, ids, pre, post)
 }
 
-func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI) ([]*source.Metadata, error) {
+func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI) ([]*Metadata, error) {
 	if s.view.ViewType() == AdHocView {
 		// As described in golang/go#57209, in ad-hoc workspaces (where we load ./
 		// rather than ./...), preempting the directory load with file loads can
@@ -786,7 +785,7 @@ func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ids = s.meta.ids[uri]
-	metas := make([]*source.Metadata, len(ids))
+	metas := make([]*Metadata, len(ids))
 	for i, id := range ids {
 		metas[i] = s.meta.metadata[id]
 		if metas[i] == nil {
@@ -818,7 +817,7 @@ func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI
 
 func boolLess(x, y bool) bool { return !x && y } // false < true
 
-func (s *Snapshot) ReverseDependencies(ctx context.Context, id PackageID, transitive bool) (map[PackageID]*source.Metadata, error) {
+func (s *Snapshot) ReverseDependencies(ctx context.Context, id PackageID, transitive bool) (map[PackageID]*Metadata, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
@@ -826,7 +825,7 @@ func (s *Snapshot) ReverseDependencies(ctx context.Context, id PackageID, transi
 	meta := s.meta
 	s.mu.Unlock()
 
-	var rdeps map[PackageID]*source.Metadata
+	var rdeps map[PackageID]*Metadata
 	if transitive {
 		rdeps = meta.reverseReflexiveTransitiveClosure(id)
 
@@ -837,7 +836,7 @@ func (s *Snapshot) ReverseDependencies(ctx context.Context, id PackageID, transi
 
 	} else {
 		// direct reverse dependencies
-		rdeps = make(map[PackageID]*source.Metadata)
+		rdeps = make(map[PackageID]*Metadata)
 		for _, rdepID := range meta.importedBy[id] {
 			if rdep := meta.metadata[rdepID]; rdep != nil {
 				rdeps[rdepID] = rdep
@@ -906,7 +905,7 @@ func (s *Snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]stru
 
 	// If GOWORK is outside the folder, ensure we are watching it.
 	gowork, _ := s.view.GOWORK()
-	if gowork != "" && !source.InDir(s.view.folder.Dir.Path(), gowork.Path()) {
+	if gowork != "" && !InDir(s.view.folder.Dir.Path(), gowork.Path()) {
 		patterns[gowork.Path()] = struct{}{}
 	}
 
@@ -915,7 +914,7 @@ func (s *Snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]stru
 	for _, dir := range dirs {
 		// If the directory is within the view's folder, we're already watching
 		// it with the first pattern above.
-		if source.InDir(s.view.folder.Dir.Path(), dir) {
+		if InDir(s.view.folder.Dir.Path(), dir) {
 			continue
 		}
 		// TODO(rstambler): If microsoft/vscode#3025 is resolved before
@@ -956,7 +955,7 @@ func (s *Snapshot) addKnownSubdirs(patterns map[string]unit, wsDirs []string) {
 
 	s.files.Dirs().Range(func(dir string) {
 		for _, wsDir := range wsDirs {
-			if source.InDir(wsDir, dir) {
+			if InDir(wsDir, dir) {
 				patterns[dir] = unit{}
 			}
 		}
@@ -1030,14 +1029,14 @@ func (s *Snapshot) filesInDir(uri protocol.DocumentURI) []protocol.DocumentURI {
 	}
 	var files []protocol.DocumentURI
 	s.files.Range(func(uri protocol.DocumentURI, _ file.Handle) {
-		if source.InDir(dir, uri.Path()) {
+		if InDir(dir, uri.Path()) {
 			files = append(files, uri)
 		}
 	})
 	return files
 }
 
-func (s *Snapshot) WorkspaceMetadata(ctx context.Context) ([]*source.Metadata, error) {
+func (s *Snapshot) WorkspaceMetadata(ctx context.Context) ([]*Metadata, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
@@ -1045,7 +1044,7 @@ func (s *Snapshot) WorkspaceMetadata(ctx context.Context) ([]*source.Metadata, e
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	meta := make([]*source.Metadata, 0, s.workspacePackages.Len())
+	meta := make([]*Metadata, 0, s.workspacePackages.Len())
 	s.workspacePackages.Range(func(id PackageID, _ PackagePath) {
 		meta = append(meta, s.meta.metadata[id])
 	})
@@ -1056,13 +1055,13 @@ func (s *Snapshot) WorkspaceMetadata(ctx context.Context) ([]*source.Metadata, e
 // a loaded package. It awaits snapshot loading.
 //
 // TODO(rfindley): move this to the top of cache/symbols.go
-func (s *Snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[protocol.DocumentURI][]source.Symbol, error) {
+func (s *Snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[protocol.DocumentURI][]Symbol, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
 
 	var (
-		meta []*source.Metadata
+		meta []*Metadata
 		err  error
 	)
 	if workspaceOnly {
@@ -1089,7 +1088,7 @@ func (s *Snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[protoco
 		group    errgroup.Group
 		nprocs   = 2 * runtime.GOMAXPROCS(-1) // symbolize is a mix of I/O and CPU
 		resultMu sync.Mutex
-		result   = make(map[protocol.DocumentURI][]source.Symbol)
+		result   = make(map[protocol.DocumentURI][]Symbol)
 	)
 	group.SetLimit(nprocs)
 	for uri := range goFiles {
@@ -1113,7 +1112,7 @@ func (s *Snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[protoco
 	return result, nil
 }
 
-func (s *Snapshot) AllMetadata(ctx context.Context) ([]*source.Metadata, error) {
+func (s *Snapshot) AllMetadata(ctx context.Context) ([]*Metadata, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
@@ -1122,7 +1121,7 @@ func (s *Snapshot) AllMetadata(ctx context.Context) ([]*source.Metadata, error) 
 	g := s.meta
 	s.mu.Unlock()
 
-	meta := make([]*source.Metadata, 0, len(g.metadata))
+	meta := make([]*Metadata, 0, len(g.metadata))
 	for _, m := range g.metadata {
 		meta = append(meta, m)
 	}
@@ -1140,7 +1139,7 @@ func (s *Snapshot) GoModForFile(uri protocol.DocumentURI) protocol.DocumentURI {
 func moduleForURI(modFiles map[protocol.DocumentURI]struct{}, uri protocol.DocumentURI) protocol.DocumentURI {
 	var match protocol.DocumentURI
 	for modURI := range modFiles {
-		if !source.InDir(filepath.Dir(modURI.Path()), uri.Path()) {
+		if !InDir(filepath.Dir(modURI.Path()), uri.Path()) {
 			continue
 		}
 		if len(modURI) > len(match) {
@@ -1163,7 +1162,7 @@ func nearestModFile(ctx context.Context, uri protocol.DocumentURI, fs file.Sourc
 	return protocol.URIFromPath(mod), nil
 }
 
-func (s *Snapshot) Metadata(id PackageID) *source.Metadata {
+func (s *Snapshot) Metadata(id PackageID) *Metadata {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.meta.metadata[id]
@@ -1301,13 +1300,13 @@ func (s *Snapshot) awaitLoaded(ctx context.Context) error {
 // CriticalError returns any critical errors in the workspace.
 //
 // A nil result may mean success, or context cancellation.
-func (s *Snapshot) CriticalError(ctx context.Context) *source.CriticalError {
+func (s *Snapshot) CriticalError(ctx context.Context) *CriticalError {
 	// If we couldn't compute workspace mod files, then the load below is
 	// invalid.
 	//
 	// TODO(rfindley): is this a clear error to present to the user?
 	if s.view.workspaceModFilesErr != nil {
-		return &source.CriticalError{MainError: s.view.workspaceModFilesErr}
+		return &CriticalError{MainError: s.view.workspaceModFilesErr}
 	}
 
 	loadErr := s.awaitLoadedAllErrors(ctx)
@@ -1320,7 +1319,7 @@ func (s *Snapshot) CriticalError(ctx context.Context) *source.CriticalError {
 	if loadErr == nil {
 		active, _ := s.WorkspaceMetadata(ctx)
 		if msg := shouldShowAdHocPackagesWarning(s, active); msg != "" {
-			return &source.CriticalError{
+			return &CriticalError{
 				MainError: errors.New(msg),
 			}
 		}
@@ -1338,9 +1337,9 @@ func (s *Snapshot) CriticalError(ctx context.Context) *source.CriticalError {
 			err, diags := s.workspaceLayoutError(ctx)
 			if err != nil {
 				if ctx.Err() != nil {
-					return nil // see the API documentation for source.Snapshot
+					return nil // see the API documentation for Snapshot
 				}
-				return &source.CriticalError{
+				return &CriticalError{
 					MainError:   err,
 					Diagnostics: diags,
 				}
@@ -1353,9 +1352,9 @@ func (s *Snapshot) CriticalError(ctx context.Context) *source.CriticalError {
 		err, diags := s.workspaceLayoutError(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil // see the API documentation for source.Snapshot
+				return nil // see the API documentation for Snapshot
 			}
-			return &source.CriticalError{
+			return &CriticalError{
 				MainError:   err,
 				Diagnostics: diags,
 			}
@@ -1369,7 +1368,7 @@ const adHocPackagesWarning = `You are outside of a module and outside of $GOPATH
 If you are using modules, please open your editor to a directory in your module.
 If you believe this warning is incorrect, please file an issue: https://github.com/golang/go/issues/new.`
 
-func shouldShowAdHocPackagesWarning(snapshot *Snapshot, active []*source.Metadata) string {
+func shouldShowAdHocPackagesWarning(snapshot *Snapshot, active []*Metadata) string {
 	if !snapshot.validBuildConfiguration() {
 		for _, m := range active {
 			// A blank entry in DepsByImpPath
@@ -1384,16 +1383,16 @@ func shouldShowAdHocPackagesWarning(snapshot *Snapshot, active []*source.Metadat
 	return ""
 }
 
-func containsCommandLineArguments(metas []*source.Metadata) bool {
+func containsCommandLineArguments(metas []*Metadata) bool {
 	for _, m := range metas {
-		if source.IsCommandLineArguments(m.ID) {
+		if IsCommandLineArguments(m.ID) {
 			return true
 		}
 	}
 	return false
 }
 
-func (s *Snapshot) awaitLoadedAllErrors(ctx context.Context) *source.CriticalError {
+func (s *Snapshot) awaitLoadedAllErrors(ctx context.Context) *CriticalError {
 	// Do not return results until the snapshot's view has been initialized.
 	s.AwaitInitialized(ctx)
 
@@ -1411,7 +1410,7 @@ func (s *Snapshot) awaitLoadedAllErrors(ctx context.Context) *source.CriticalErr
 	// Also: GetCriticalError ignores context cancellation errors. Should we be
 	// returning nil here?
 	if ctx.Err() != nil {
-		return &source.CriticalError{MainError: ctx.Err()}
+		return &CriticalError{MainError: ctx.Err()}
 	}
 
 	// TODO(rfindley): reloading is not idempotent: if we try to reload or load
@@ -1421,7 +1420,7 @@ func (s *Snapshot) awaitLoadedAllErrors(ctx context.Context) *source.CriticalErr
 
 	if err := s.reloadWorkspace(ctx); err != nil {
 		diags := s.extractGoCommandErrors(ctx, err)
-		return &source.CriticalError{
+		return &CriticalError{
 			MainError:   err,
 			Diagnostics: diags,
 		}
@@ -1429,7 +1428,7 @@ func (s *Snapshot) awaitLoadedAllErrors(ctx context.Context) *source.CriticalErr
 
 	if err := s.reloadOrphanedOpenFiles(ctx); err != nil {
 		diags := s.extractGoCommandErrors(ctx, err)
-		return &source.CriticalError{
+		return &CriticalError{
 			MainError:   err,
 			Diagnostics: diags,
 		}
@@ -1437,7 +1436,7 @@ func (s *Snapshot) awaitLoadedAllErrors(ctx context.Context) *source.CriticalErr
 	return nil
 }
 
-func (s *Snapshot) getInitializationError() *source.CriticalError {
+func (s *Snapshot) getInitializationError() *CriticalError {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1605,7 +1604,7 @@ func (s *Snapshot) reloadOrphanedOpenFiles(ctx context.Context) error {
 // TODO(rfindley): reconcile the definition of "orphaned" here with
 // reloadOrphanedFiles. The latter does not include files with
 // command-line-arguments packages.
-func (s *Snapshot) OrphanedFileDiagnostics(ctx context.Context) (map[protocol.DocumentURI]*source.Diagnostic, error) {
+func (s *Snapshot) OrphanedFileDiagnostics(ctx context.Context) (map[protocol.DocumentURI]*Diagnostic, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
@@ -1623,7 +1622,7 @@ searchOverlays:
 			return nil, err
 		}
 		for _, m := range md {
-			if !source.IsCommandLineArguments(m.ID) || m.Standalone {
+			if !IsCommandLineArguments(m.ID) || m.Standalone {
 				continue searchOverlays
 			}
 		}
@@ -1651,13 +1650,13 @@ searchOverlays:
 		}
 	}
 
-	diagnostics := make(map[protocol.DocumentURI]*source.Diagnostic)
+	diagnostics := make(map[protocol.DocumentURI]*Diagnostic)
 	for _, fh := range files {
 		// Only warn about orphaned files if the file is well-formed enough to
 		// actually be part of a package.
 		//
 		// Use ParseGo as for open files this is likely to be a cache hit (we'll have )
-		pgf, err := s.ParseGo(ctx, fh, source.ParseHeader)
+		pgf, err := s.ParseGo(ctx, fh, ParseHeader)
 		if err != nil {
 			continue
 		}
@@ -1670,8 +1669,8 @@ searchOverlays:
 		}
 
 		var (
-			msg            string                // if non-empty, report a diagnostic with this message
-			suggestedFixes []source.SuggestedFix // associated fixes, if any
+			msg            string         // if non-empty, report a diagnostic with this message
+			suggestedFixes []SuggestedFix // associated fixes, if any
 		)
 
 		// If we have a relevant go.mod file, check whether the file is orphaned
@@ -1685,7 +1684,7 @@ searchOverlays:
 
 				// When the module is underneath the view dir, we offer
 				// "use all modules" quick-fixes.
-				inDir := source.InDir(viewDir, modDir)
+				inDir := InDir(viewDir, modDir)
 
 				if rel, err := filepath.Rel(viewDir, modDir); err == nil {
 					modDir = rel
@@ -1699,7 +1698,7 @@ searchOverlays:
 							ViewID: s.view.ID(),
 							Args:   []string{"use", modDir},
 						}); err == nil {
-							suggestedFixes = append(suggestedFixes, source.SuggestedFix{
+							suggestedFixes = append(suggestedFixes, SuggestedFix{
 								Title:      "Use this module in your go.work file",
 								Command:    &cmd,
 								ActionKind: protocol.QuickFix,
@@ -1711,7 +1710,7 @@ searchOverlays:
 								ViewID: s.view.ID(),
 								Args:   []string{"use", "-r", "."},
 							}); err == nil {
-								suggestedFixes = append(suggestedFixes, source.SuggestedFix{
+								suggestedFixes = append(suggestedFixes, SuggestedFix{
 									Title:      "Use all modules in your workspace",
 									Command:    &cmd,
 									ActionKind: protocol.QuickFix,
@@ -1726,7 +1725,7 @@ searchOverlays:
 							InitFirst: true,
 							Args:      []string{"use", modDir},
 						}); err == nil {
-							suggestedFixes = []source.SuggestedFix{
+							suggestedFixes = []SuggestedFix{
 								{
 									Title:      "Add a go.work file using this module",
 									Command:    &cmd,
@@ -1741,7 +1740,7 @@ searchOverlays:
 								InitFirst: true,
 								Args:      []string{"use", "-r", "."},
 							}); err == nil {
-								suggestedFixes = append(suggestedFixes, source.SuggestedFix{
+								suggestedFixes = append(suggestedFixes, SuggestedFix{
 									Title:      "Add a go.work file using all modules in your workspace",
 									Command:    &cmd,
 									ActionKind: protocol.QuickFix,
@@ -1790,15 +1789,15 @@ https://github.com/golang/tools/blob/master/gopls/doc/settings.md#buildflags-str
 		}
 
 		if msg != "" {
-			d := &source.Diagnostic{
+			d := &Diagnostic{
 				URI:            fh.URI(),
 				Range:          rng,
 				Severity:       protocol.SeverityWarning,
-				Source:         source.ListError,
+				Source:         ListError,
 				Message:        msg,
 				SuggestedFixes: suggestedFixes,
 			}
-			if ok := source.BundleQuickFixes(d); !ok {
+			if ok := BundleQuickFixes(d); !ok {
 				bug.Reportf("failed to bundle quick fixes for %v", d)
 			}
 			// Only report diagnostics if we detect an actual exclusion.
@@ -2106,13 +2105,13 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 	// Compute which metadata updates are required. We only need to invalidate
 	// packages directly containing the affected file, and only if it changed in
 	// a relevant way.
-	metadataUpdates := make(map[PackageID]*source.Metadata)
+	metadataUpdates := make(map[PackageID]*Metadata)
 	for k, v := range s.meta.metadata {
 		invalidateMetadata := idsToInvalidate[k]
 
 		// For metadata that has been newly invalidated, capture package paths
 		// requiring reloading in the shouldLoad map.
-		if invalidateMetadata && !source.IsCommandLineArguments(v.ID) {
+		if invalidateMetadata && !IsCommandLineArguments(v.ID) {
 			needsReload := []PackagePath{v.PkgPath}
 			if v.ForTest != "" && v.ForTest != v.PkgPath {
 				// When reloading test variants, always reload their ForTest package as
@@ -2180,7 +2179,7 @@ func deleteMostRelevantModFile(m *persistent.Map[protocol.DocumentURI, *memoize.
 
 	m.Range(func(modURI protocol.DocumentURI, _ *memoize.Promise) {
 		if len(modURI) > len(mostRelevant) {
-			if source.InDir(filepath.Dir(modURI.Path()), changedFile) {
+			if InDir(filepath.Dir(modURI.Path()), changedFile) {
 				mostRelevant = modURI
 			}
 		}
@@ -2295,8 +2294,8 @@ func metadataChanges(ctx context.Context, lockedSnapshot *Snapshot, oldFH, newFH
 
 	fset := token.NewFileSet()
 	// Parse headers to compare package names and imports.
-	oldHeads, oldErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, source.ParseHeader, false, oldFH)
-	newHeads, newErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, source.ParseHeader, false, newFH)
+	oldHeads, oldErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, ParseHeader, false, oldFH)
+	newHeads, newErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, ParseHeader, false, newFH)
 
 	if oldErr != nil || newErr != nil {
 		errChanged := (oldErr == nil) != (newErr == nil)
@@ -2342,8 +2341,8 @@ func metadataChanges(ctx context.Context, lockedSnapshot *Snapshot, oldFH, newFH
 	// Note: if this affects performance we can probably avoid parsing in the
 	// common case by first scanning the source for potential comments.
 	if !invalidate {
-		origFulls, oldErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, source.ParseFull, false, oldFH)
-		newFulls, newErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, source.ParseFull, false, newFH)
+		origFulls, oldErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, ParseFull, false, oldFH)
+		newFulls, newErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, ParseFull, false, newFH)
 		if oldErr == nil && newErr == nil {
 			invalidate = magicCommentsChanged(origFulls[0].File, newFulls[0].File)
 		} else {
@@ -2410,7 +2409,7 @@ func extractMagicComments(f *ast.File) []string {
 	return results
 }
 
-func (s *Snapshot) BuiltinFile(ctx context.Context) (*source.ParsedGoFile, error) {
+func (s *Snapshot) BuiltinFile(ctx context.Context) (*ParsedGoFile, error) {
 	s.AwaitInitialized(ctx)
 
 	s.mu.Lock()
@@ -2427,7 +2426,7 @@ func (s *Snapshot) BuiltinFile(ctx context.Context) (*source.ParsedGoFile, error
 	}
 	// For the builtin file only, we need syntactic object resolution
 	// (since we can't type check).
-	mode := source.ParseFull &^ source.SkipObjectResolution
+	mode := ParseFull &^ SkipObjectResolution
 	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), mode, false, fh)
 	if err != nil {
 		return nil, err

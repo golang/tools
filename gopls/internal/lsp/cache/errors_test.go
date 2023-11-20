@@ -12,7 +12,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 )
 
 func TestParseErrorMessage(t *testing.T) {
@@ -57,7 +56,7 @@ func TestParseErrorMessage(t *testing.T) {
 }
 
 func TestDiagnosticEncoding(t *testing.T) {
-	diags := []*source.Diagnostic{
+	diags := []*Diagnostic{
 		{}, // empty
 		{
 			URI: "file///foo",
@@ -86,7 +85,7 @@ func TestDiagnosticEncoding(t *testing.T) {
 
 			// Fields below are used internally to generate quick fixes. They aren't
 			// part of the LSP spec and don't leave the server.
-			SuggestedFixes: []source.SuggestedFix{
+			SuggestedFixes: []SuggestedFix{
 				{
 					Title: "fix it!",
 					Edits: map[protocol.DocumentURI][]protocol.TextEdit{

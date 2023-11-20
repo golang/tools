@@ -19,12 +19,70 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source/xrefs"
 )
 
-// Convenient local aliases for typed strings.
+// Temporary refactoring, reversing the source import:
+// Types
 type (
+	// Metadata.
 	PackageID   = source.PackageID
 	PackagePath = source.PackagePath
 	PackageName = source.PackageName
 	ImportPath  = source.ImportPath
+	Metadata    = source.Metadata
+
+	// Diagnostics.
+	Diagnostic   = source.Diagnostic
+	SuggestedFix = source.SuggestedFix
+
+	// Computed objects.
+	TidiedModule   = source.TidiedModule
+	ParsedGoFile   = source.ParsedGoFile
+	ParsedModule   = source.ParsedModule
+	ParsedWorkFile = source.ParsedWorkFile
+	Package_       = source.Package // renamed to avoid conflict
+	Symbol         = source.Symbol
+
+	XrefIndex_       = source.XrefIndex // renamed to avoid conflict
+	GlobalSnapshotID = source.GlobalSnapshotID
+	InvocationFlags  = source.InvocationFlags
+	CriticalError    = source.CriticalError
+	Filterer         = source.Filterer
+)
+
+// Values
+var (
+	// Parse Modes
+	ParseFull            = source.ParseFull
+	SkipObjectResolution = source.SkipObjectResolution
+	ParseHeader          = source.ParseHeader
+
+	// Diagnostic sources.
+	ModTidyError = source.ModTidyError
+	ListError    = source.ListError
+	ParseError   = source.ParseError
+	TypeError    = source.TypeError
+
+	// Invocation flags.
+	Normal                = source.Normal
+	AllowNetwork          = source.AllowNetwork
+	LoadWorkspace         = source.LoadWorkspace
+	WriteTemporaryModFile = source.WriteTemporaryModFile
+
+	// Errors
+	ErrNoModOnDisk = source.ErrNoModOnDisk
+	ErrViewExists  = source.ErrViewExists
+)
+
+// Functions
+var (
+	NodeContains                   = source.NodeContains
+	IsValidImport                  = source.IsValidImport
+	RemoveIntermediateTestVariants = source.RemoveIntermediateTestVariants
+	IsCommandLineArguments         = source.IsCommandLineArguments
+	BundleQuickFixes               = source.BundleQuickFixes
+	InDir                          = source.InDir
+	SuggestedFixFromCommand        = source.SuggestedFixFromCommand
+	ToProtocolEdits                = source.ToProtocolEdits
+	NewFilterer                    = source.NewFilterer
 )
 
 // A Package is the union of package metadata and type checking results.
@@ -33,7 +91,7 @@ type (
 // loadDiagnostics, because the value of the snapshot.packages map is just the
 // package handle. Fix this.
 type Package struct {
-	m   *source.Metadata
+	m   *Metadata
 	pkg *syntaxPackage
 }
 
@@ -77,7 +135,7 @@ func (p *syntaxPackage) methodsets() *methodsets.Index {
 
 func (p *Package) String() string { return string(p.m.ID) }
 
-func (p *Package) Metadata() *source.Metadata { return p.m }
+func (p *Package) Metadata() *Metadata { return p.m }
 
 // A loadScope defines a package loading scope for use with go/packages.
 //

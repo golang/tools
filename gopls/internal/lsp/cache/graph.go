@@ -10,14 +10,13 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 )
 
 // A metadataGraph is an immutable and transitively closed import
 // graph of Go packages, as obtained from go/packages.
 type metadataGraph struct {
 	// metadata maps package IDs to their associated metadata.
-	metadata map[PackageID]*source.Metadata
+	metadata map[PackageID]*Metadata
 
 	// importedBy maps package IDs to the list of packages that import them.
 	importedBy map[PackageID][]PackageID
@@ -29,21 +28,21 @@ type metadataGraph struct {
 	ids map[protocol.DocumentURI][]PackageID
 }
 
-// Metadata implements the source.MetadataSource interface.
-func (g *metadataGraph) Metadata(id PackageID) *source.Metadata {
+// Metadata implements the MetadataSource interface.
+func (g *metadataGraph) Metadata(id PackageID) *Metadata {
 	return g.metadata[id]
 }
 
 // Clone creates a new metadataGraph, applying the given updates to the
 // receiver. A nil map value represents a deletion.
-func (g *metadataGraph) Clone(updates map[PackageID]*source.Metadata) *metadataGraph {
+func (g *metadataGraph) Clone(updates map[PackageID]*Metadata) *metadataGraph {
 	if len(updates) == 0 {
 		// Optimization: since the graph is immutable, we can return the receiver.
 		return g
 	}
 
 	// Copy metadata map then apply updates.
-	metadata := make(map[PackageID]*source.Metadata, len(g.metadata))
+	metadata := make(map[PackageID]*Metadata, len(g.metadata))
 	for id, m := range g.metadata {
 		metadata[id] = m
 	}
@@ -63,7 +62,7 @@ func (g *metadataGraph) Clone(updates map[PackageID]*source.Metadata) *metadataG
 
 // newMetadataGraph returns a new metadataGraph,
 // deriving relations from the specified metadata.
-func newMetadataGraph(metadata map[PackageID]*source.Metadata) *metadataGraph {
+func newMetadataGraph(metadata map[PackageID]*Metadata) *metadataGraph {
 	// Build the import graph.
 	importedBy := make(map[PackageID][]PackageID)
 	for id, m := range metadata {
@@ -90,8 +89,8 @@ func newMetadataGraph(metadata map[PackageID]*source.Metadata) *metadataGraph {
 	// Sort and filter file associations.
 	for uri, ids := range uriIDs {
 		sort.Slice(ids, func(i, j int) bool {
-			cli := source.IsCommandLineArguments(ids[i])
-			clj := source.IsCommandLineArguments(ids[j])
+			cli := IsCommandLineArguments(ids[i])
+			clj := IsCommandLineArguments(ids[j])
 			if cli != clj {
 				return clj
 			}
@@ -109,7 +108,7 @@ func newMetadataGraph(metadata map[PackageID]*source.Metadata) *metadataGraph {
 		for i, id := range ids {
 			// If we've seen *anything* prior to command-line arguments package, take
 			// it. Note that ids[0] may itself be command-line-arguments.
-			if i > 0 && source.IsCommandLineArguments(id) {
+			if i > 0 && IsCommandLineArguments(id) {
 				uriIDs[uri] = ids[:i]
 				break
 			}
@@ -126,8 +125,8 @@ func newMetadataGraph(metadata map[PackageID]*source.Metadata) *metadataGraph {
 // reverseReflexiveTransitiveClosure returns a new mapping containing the
 // metadata for the specified packages along with any package that
 // transitively imports one of them, keyed by ID, including all the initial packages.
-func (g *metadataGraph) reverseReflexiveTransitiveClosure(ids ...PackageID) map[PackageID]*source.Metadata {
-	seen := make(map[PackageID]*source.Metadata)
+func (g *metadataGraph) reverseReflexiveTransitiveClosure(ids ...PackageID) map[PackageID]*Metadata {
+	seen := make(map[PackageID]*Metadata)
 	var visitAll func([]PackageID)
 	visitAll = func(ids []PackageID) {
 		for _, id := range ids {
@@ -146,7 +145,7 @@ func (g *metadataGraph) reverseReflexiveTransitiveClosure(ids ...PackageID) map[
 // breakImportCycles breaks import cycles in the metadata by deleting
 // Deps* edges. It modifies only metadata present in the 'updates'
 // subset. This function has an internal test.
-func breakImportCycles(metadata, updates map[PackageID]*source.Metadata) {
+func breakImportCycles(metadata, updates map[PackageID]*Metadata) {
 	// 'go list' should never report a cycle without flagging it
 	// as such, but we're extra cautious since we're combining
 	// information from multiple runs of 'go list'. Also, Bazel
@@ -230,7 +229,7 @@ func breakImportCycles(metadata, updates map[PackageID]*source.Metadata) {
 // detectImportCycles reports cycles in the metadata graph. It returns a new
 // unordered array of all cycles (nontrivial strong components) in the
 // metadata graph reachable from a non-nil 'updates' value.
-func detectImportCycles(metadata, updates map[PackageID]*source.Metadata) [][]*source.Metadata {
+func detectImportCycles(metadata, updates map[PackageID]*Metadata) [][]*Metadata {
 	// We use the depth-first algorithm of Tarjan.
 	// https://doi.org/10.1137/0201010
 	//
@@ -242,7 +241,7 @@ func detectImportCycles(metadata, updates map[PackageID]*source.Metadata) [][]*s
 	// (Unfortunately we can't intrude on shared Metadata.)
 	type node struct {
 		rep            *node
-		m              *source.Metadata
+		m              *Metadata
 		index, lowlink int32
 		scc            int8 // TODO(adonovan): opt: cram these 1.5 bits into previous word
 	}
@@ -256,7 +255,7 @@ func detectImportCycles(metadata, updates map[PackageID]*source.Metadata) [][]*s
 				// Not sure whether a go/packages driver ever
 				// emits this, but create a dummy node in case.
 				// Obviously it won't be part of any cycle.
-				m = &source.Metadata{ID: id}
+				m = &Metadata{ID: id}
 			}
 			n = &node{m: m}
 			n.rep = n
@@ -281,7 +280,7 @@ func detectImportCycles(metadata, updates map[PackageID]*source.Metadata) [][]*s
 	var (
 		index int32 = 1
 		stack []*node
-		sccs  [][]*source.Metadata // set of nontrivial strongly connected components
+		sccs  [][]*Metadata // set of nontrivial strongly connected components
 	)
 
 	// visit implements the depth-first search of Tarjan's SCC algorithm
@@ -327,7 +326,7 @@ func detectImportCycles(metadata, updates map[PackageID]*source.Metadata) [][]*s
 		// Is x the root of an SCC?
 		if x.lowlink == x.index {
 			// Gather all metadata in the SCC (if nontrivial).
-			var scc []*source.Metadata
+			var scc []*Metadata
 			for {
 				// Pop y from stack.
 				i := len(stack) - 1

@@ -12,7 +12,6 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 )
 
 func TestCaseInsensitiveFilesystem(t *testing.T) {
@@ -151,7 +150,7 @@ func TestFilters(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		filterer := source.NewFilterer(tt.filters)
+		filterer := NewFilterer(tt.filters)
 		for _, inc := range tt.included {
 			if pathExcludedByFilter(inc, filterer) {
 				t.Errorf("filters %q excluded %v, wanted included", tt.filters, inc)

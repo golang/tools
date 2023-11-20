@@ -14,18 +14,17 @@ import (
 	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 )
 
 // symbolize returns the result of symbolizing the file identified by uri, using a cache.
-func (s *Snapshot) symbolize(ctx context.Context, uri protocol.DocumentURI) ([]source.Symbol, error) {
+func (s *Snapshot) symbolize(ctx context.Context, uri protocol.DocumentURI) ([]Symbol, error) {
 
 	s.mu.Lock()
 	entry, hit := s.symbolizeHandles.Get(uri)
 	s.mu.Unlock()
 
 	type symbolizeResult struct {
-		symbols []source.Symbol
+		symbols []Symbol
 		err     error
 	}
 
@@ -59,8 +58,8 @@ func (s *Snapshot) symbolize(ctx context.Context, uri protocol.DocumentURI) ([]s
 }
 
 // symbolizeImpl reads and parses a file and extracts symbols from it.
-func symbolizeImpl(ctx context.Context, snapshot *Snapshot, fh file.Handle) ([]source.Symbol, error) {
-	pgfs, err := snapshot.view.parseCache.parseFiles(ctx, token.NewFileSet(), source.ParseFull, false, fh)
+func symbolizeImpl(ctx context.Context, snapshot *Snapshot, fh file.Handle) ([]Symbol, error) {
+	pgfs, err := snapshot.view.parseCache.parseFiles(ctx, token.NewFileSet(), ParseFull, false, fh)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +78,7 @@ type symbolWalker struct {
 	tokFile *token.File
 	mapper  *protocol.Mapper
 
-	symbols    []source.Symbol
+	symbols    []Symbol
 	firstError error
 }
 
@@ -98,7 +97,7 @@ func (w *symbolWalker) atNode(node ast.Node, name string, kind protocol.SymbolKi
 		w.error(err)
 		return
 	}
-	sym := source.Symbol{
+	sym := Symbol{
 		Name:  b.String(),
 		Kind:  kind,
 		Range: rng,

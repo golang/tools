@@ -25,7 +25,6 @@ import (
 	"golang.org/x/mod/semver"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
@@ -569,10 +568,10 @@ func (v *View) contains(uri protocol.DocumentURI) bool {
 	// user. It would be better to explicitly consider the set of active modules
 	// wherever relevant.
 	inGoDir := false
-	if source.InDir(v.goCommandDir.Path(), v.folder.Dir.Path()) {
-		inGoDir = source.InDir(v.goCommandDir.Path(), uri.Path())
+	if InDir(v.goCommandDir.Path(), v.folder.Dir.Path()) {
+		inGoDir = InDir(v.goCommandDir.Path(), uri.Path())
 	}
-	inFolder := source.InDir(v.folder.Dir.Path(), uri.Path())
+	inFolder := InDir(v.folder.Dir.Path(), uri.Path())
 
 	if !inGoDir && !inFolder {
 		return false
@@ -588,7 +587,7 @@ func (v *View) filterFunc() func(protocol.DocumentURI) bool {
 	filterer := buildFilterer(folderDir, v.gomodcache, v.folder.Options)
 	return func(uri protocol.DocumentURI) bool {
 		// Only filter relative to the configured root directory.
-		if source.InDir(folderDir, uri.Path()) {
+		if InDir(folderDir, uri.Path()) {
 			return pathExcludedByFilter(strings.TrimPrefix(uri.Path(), folderDir), filterer)
 		}
 		return false
@@ -796,13 +795,13 @@ func (s *Snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 
 	// Collect module paths to load by parsing go.mod files. If a module fails to
 	// parse, capture the parsing failure as a critical diagnostic.
-	var scopes []loadScope                  // scopes to load
-	var modDiagnostics []*source.Diagnostic // diagnostics for broken go.mod files
+	var scopes []loadScope           // scopes to load
+	var modDiagnostics []*Diagnostic // diagnostics for broken go.mod files
 	addError := func(uri protocol.DocumentURI, err error) {
-		modDiagnostics = append(modDiagnostics, &source.Diagnostic{
+		modDiagnostics = append(modDiagnostics, &Diagnostic{
 			URI:      uri,
 			Severity: protocol.SeverityError,
-			Source:   source.ListError,
+			Source:   ListError,
 			Message:  err.Error(),
 		})
 	}
@@ -861,27 +860,27 @@ func (s *Snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 		return loadErr
 	}
 
-	var criticalErr *source.CriticalError
+	var criticalErr *CriticalError
 	switch {
 	case loadErr != nil && ctx.Err() != nil:
 		event.Error(ctx, fmt.Sprintf("initial workspace load: %v", loadErr), loadErr)
-		criticalErr = &source.CriticalError{
+		criticalErr = &CriticalError{
 			MainError: loadErr,
 		}
 	case loadErr != nil:
 		event.Error(ctx, "initial workspace load failed", loadErr)
 		extractedDiags := s.extractGoCommandErrors(ctx, loadErr)
-		criticalErr = &source.CriticalError{
+		criticalErr = &CriticalError{
 			MainError:   loadErr,
 			Diagnostics: append(modDiagnostics, extractedDiags...),
 		}
 	case len(modDiagnostics) == 1:
-		criticalErr = &source.CriticalError{
+		criticalErr = &CriticalError{
 			MainError:   fmt.Errorf(modDiagnostics[0].Message),
 			Diagnostics: modDiagnostics,
 		}
 	case len(modDiagnostics) > 1:
-		criticalErr = &source.CriticalError{
+		criticalErr = &CriticalError{
 			MainError:   fmt.Errorf("error loading module names"),
 			Diagnostics: modDiagnostics,
 		}
@@ -979,7 +978,7 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs file.So
 
 	// Check if the workspace is within any GOPATH directory.
 	for _, gp := range filepath.SplitList(def.gopath) {
-		if source.InDir(filepath.Join(gp, "src"), folder.Dir.Path()) {
+		if InDir(filepath.Join(gp, "src"), folder.Dir.Path()) {
 			def.inGOPATH = true
 			break
 		}
@@ -1257,17 +1256,17 @@ func pathExcludedByFilterFunc(folder, gomodcache string, opts *settings.Options)
 // TODO(rfindley): passing root and gomodcache here makes it confusing whether
 // path should be absolute or relative, and has already caused at least one
 // bug.
-func pathExcludedByFilter(path string, filterer *source.Filterer) bool {
+func pathExcludedByFilter(path string, filterer *Filterer) bool {
 	path = strings.TrimPrefix(filepath.ToSlash(path), "/")
 	return filterer.Disallow(path)
 }
 
-func buildFilterer(folder, gomodcache string, opts *settings.Options) *source.Filterer {
+func buildFilterer(folder, gomodcache string, opts *settings.Options) *Filterer {
 	filters := opts.DirectoryFilters
 
 	if pref := strings.TrimPrefix(gomodcache, folder); pref != gomodcache {
 		modcacheFilter := "-" + strings.TrimPrefix(filepath.ToSlash(pref), "/")
 		filters = append(filters, modcacheFilter)
 	}
-	return source.NewFilterer(filters)
+	return NewFilterer(filters)
 }

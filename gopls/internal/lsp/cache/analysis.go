@@ -37,7 +37,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/frob"
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -155,7 +154,7 @@ import (
 //   to the driver package.
 //   Steps:
 //   - define a narrow driver.Snapshot interface with only these methods:
-//        Metadata(PackageID) source.Metadata
+//        Metadata(PackageID) Metadata
 //        ReadFile(Context, URI) (file.Handle, error)
 //        View() *View // for Options
 //   - share cache.{goVersionRx,parseGoImpl}
@@ -171,7 +170,7 @@ const AnalysisProgressTitle = "Analyzing Dependencies"
 // The analyzers list must be duplicate free; order does not matter.
 //
 // Notifications of progress may be sent to the optional reporter.
-func (snapshot *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, analyzers []*settings.Analyzer, reporter *progress.Tracker) ([]*source.Diagnostic, error) {
+func (snapshot *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, analyzers []*settings.Analyzer, reporter *progress.Tracker) ([]*Diagnostic, error) {
 	start := time.Now() // for progress reporting
 
 	var tagStr string // sorted comma-separated list of PackageIDs
@@ -436,7 +435,7 @@ func (snapshot *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, 
 	// begin the analysis you asked for".
 	// Even if current callers choose to discard the
 	// results, we should propagate the per-action errors.
-	var results []*source.Diagnostic
+	var results []*Diagnostic
 	for _, root := range roots {
 		for _, a := range enabled {
 			// Skip analyzers that were added only to
@@ -504,7 +503,7 @@ func (an *analysisNode) decrefPreds() {
 // type-checking and analyzing syntax (miss).
 type analysisNode struct {
 	fset            *token.FileSet              // file set shared by entire batch (DAG)
-	m               *source.Metadata            // metadata for this package
+	m               *Metadata                   // metadata for this package
 	files           []file.Handle               // contents of CompiledGoFiles
 	analyzers       []*analysis.Analyzer        // set of analyzers to run
 	preds           []*analysisNode             // graph edges:
@@ -784,7 +783,7 @@ func (an *analysisNode) cacheKey() [sha256.Size]byte {
 func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 	// Parse only the "compiled" Go files.
 	// Do the computation in parallel.
-	parsed := make([]*source.ParsedGoFile, len(an.files))
+	parsed := make([]*ParsedGoFile, len(an.files))
 	{
 		var group errgroup.Group
 		group.SetLimit(4) // not too much: run itself is already called in parallel
@@ -795,7 +794,7 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 				// as cached ASTs require the global FileSet.
 				// ast.Object resolution is unfortunately an implied part of the
 				// go/analysis contract.
-				pgf, err := parseGoImpl(ctx, an.fset, fh, source.ParseFull&^source.SkipObjectResolution, false)
+				pgf, err := parseGoImpl(ctx, an.fset, fh, ParseFull&^SkipObjectResolution, false)
 				parsed[i] = pgf
 				return err
 			})
@@ -909,7 +908,7 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 }
 
 // Postcondition: analysisPackage.types and an.exportDeps are populated.
-func (an *analysisNode) typeCheck(parsed []*source.ParsedGoFile) *analysisPackage {
+func (an *analysisNode) typeCheck(parsed []*ParsedGoFile) *analysisPackage {
 	m := an.m
 
 	if false { // debugging
@@ -964,7 +963,7 @@ func (an *analysisNode) typeCheck(parsed []*source.ParsedGoFile) *analysisPackag
 			// as parser recovery can be quite lossy (#59888).
 			typeError := e.(types.Error)
 			for _, p := range parsed {
-				if p.ParseErr != nil && source.NodeContains(p.File, typeError.Pos) {
+				if p.ParseErr != nil && NodeContains(p.File, typeError.Pos) {
 					return
 				}
 			}
@@ -1000,7 +999,7 @@ func (an *analysisNode) typeCheck(parsed []*source.ParsedGoFile) *analysisPackag
 			}
 
 			// (Duplicates logic from check.go.)
-			if !source.IsValidImport(an.m.PkgPath, dep.m.PkgPath) {
+			if !IsValidImport(an.m.PkgPath, dep.m.PkgPath) {
 				return nil, fmt.Errorf("invalid use of internal package %s", importPath)
 			}
 
@@ -1098,9 +1097,9 @@ func readShallowManifest(export []byte) ([]PackagePath, error) {
 // analysisPackage contains information about a package, including
 // syntax trees, used transiently during its type-checking and analysis.
 type analysisPackage struct {
-	m              *source.Metadata
+	m              *Metadata
 	fset           *token.FileSet // local to this package
-	parsed         []*source.ParsedGoFile
+	parsed         []*ParsedGoFile
 	files          []*ast.File // same as parsed[i].File
 	types          *types.Package
 	compiles       bool // package is transitively free of list/parse/type errors

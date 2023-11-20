@@ -8,14 +8,12 @@ import (
 	"sort"
 	"strings"
 	"testing"
-
-	"golang.org/x/tools/gopls/internal/lsp/source"
 )
 
 // This is an internal test of the breakImportCycles logic.
 func TestBreakImportCycles(t *testing.T) {
 
-	type Graph = map[PackageID]*source.Metadata
+	type Graph = map[PackageID]*Metadata
 
 	// cyclic returns a description of a cycle,
 	// if the graph is cyclic, otherwise "".
@@ -62,11 +60,11 @@ func TestBreakImportCycles(t *testing.T) {
 	// and the set of edges {a->b, b->c, b->d}.
 	parse := func(s string) Graph {
 		m := make(Graph)
-		makeNode := func(name string) *source.Metadata {
+		makeNode := func(name string) *Metadata {
 			id := PackageID(name)
 			n, ok := m[id]
 			if !ok {
-				n = &source.Metadata{
+				n = &Metadata{
 					ID:            id,
 					DepsByPkgPath: make(map[PackagePath]PackageID),
 				}

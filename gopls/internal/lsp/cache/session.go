@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/gopls/internal/persistent"
 	"golang.org/x/tools/gopls/internal/vulncheck"
@@ -89,7 +88,7 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, *Snapshot
 		for _, view := range s.views {
 			inode2, err := os.Stat(filepath.FromSlash(view.folder.Dir.Path()))
 			if err == nil && os.SameFile(inode1, inode2) {
-				return nil, nil, nil, source.ErrViewExists
+				return nil, nil, nil, ErrViewExists
 			}
 		}
 	}
@@ -140,7 +139,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 				if !strings.HasPrefix(uri+"/", prefix) {
 					return false
 				}
-				filterer := source.NewFilterer(folder.Options.DirectoryFilters)
+				filterer := NewFilterer(folder.Options.DirectoryFilters)
 				rel := strings.TrimPrefix(uri, prefix)
 				disallow := filterer.Disallow(rel)
 				return disallow

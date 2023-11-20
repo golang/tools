@@ -37,7 +37,7 @@ import (
 // diagnostic, using the provided metadata and filesource.
 //
 // The slice of diagnostics may be empty.
-func goPackagesErrorDiagnostics(ctx context.Context, e packages.Error, m *source.Metadata, fs file.Source) ([]*source.Diagnostic, error) {
+func goPackagesErrorDiagnostics(ctx context.Context, e packages.Error, m *Metadata, fs file.Source) ([]*source.Diagnostic, error) {
 	if diag, err := parseGoListImportCycleError(ctx, e, m, fs); err != nil {
 		return nil, err
 	} else if diag != nil {
@@ -512,7 +512,7 @@ func splitFileLineCol(s string) (file string, line, col8 int) {
 // an import cycle, returning a diagnostic if successful.
 //
 // If the error is not detected as an import cycle error, it returns nil, nil.
-func parseGoListImportCycleError(ctx context.Context, e packages.Error, m *source.Metadata, fs file.Source) (*source.Diagnostic, error) {
+func parseGoListImportCycleError(ctx context.Context, e packages.Error, m *Metadata, fs file.Source) (*source.Diagnostic, error) {
 	re := regexp.MustCompile(`(.*): import stack: \[(.+)\]`)
 	matches := re.FindStringSubmatch(strings.TrimSpace(e.Msg))
 	if len(matches) < 3 {

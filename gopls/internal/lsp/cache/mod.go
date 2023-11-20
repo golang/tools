@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
@@ -25,7 +24,7 @@ import (
 )
 
 // ParseMod parses a go.mod file, using a cache. It may return partial results and an error.
-func (s *Snapshot) ParseMod(ctx context.Context, fh file.Handle) (*source.ParsedModule, error) {
+func (s *Snapshot) ParseMod(ctx context.Context, fh file.Handle) (*ParsedModule, error) {
 	uri := fh.URI()
 
 	s.mu.Lock()
@@ -34,7 +33,7 @@ func (s *Snapshot) ParseMod(ctx context.Context, fh file.Handle) (*source.Parsed
 
 	type parseModKey file.Identity
 	type parseModResult struct {
-		parsed *source.ParsedModule
+		parsed *ParsedModule
 		err    error
 	}
 
@@ -62,7 +61,7 @@ func (s *Snapshot) ParseMod(ctx context.Context, fh file.Handle) (*source.Parsed
 
 // parseModImpl parses the go.mod file whose name and contents are in fh.
 // It may return partial results and an error.
-func parseModImpl(ctx context.Context, fh file.Handle) (*source.ParsedModule, error) {
+func parseModImpl(ctx context.Context, fh file.Handle) (*ParsedModule, error) {
 	_, done := event.Start(ctx, "cache.ParseMod", tag.URI.Of(fh.URI()))
 	defer done()
 
@@ -73,7 +72,7 @@ func parseModImpl(ctx context.Context, fh file.Handle) (*source.ParsedModule, er
 	m := protocol.NewMapper(fh.URI(), contents)
 	file, parseErr := modfile.Parse(fh.URI().Path(), contents, nil)
 	// Attempt to convert the error to a standardized parse error.
-	var parseErrors []*source.Diagnostic
+	var parseErrors []*Diagnostic
 	if parseErr != nil {
 		mfErrList, ok := parseErr.(modfile.ErrorList)
 		if !ok {
@@ -84,16 +83,16 @@ func parseModImpl(ctx context.Context, fh file.Handle) (*source.ParsedModule, er
 			if err != nil {
 				return nil, err
 			}
-			parseErrors = append(parseErrors, &source.Diagnostic{
+			parseErrors = append(parseErrors, &Diagnostic{
 				URI:      fh.URI(),
 				Range:    rng,
 				Severity: protocol.SeverityError,
-				Source:   source.ParseError,
+				Source:   ParseError,
 				Message:  mfErr.Err.Error(),
 			})
 		}
 	}
-	return &source.ParsedModule{
+	return &ParsedModule{
 		URI:         fh.URI(),
 		Mapper:      m,
 		File:        file,
@@ -103,7 +102,7 @@ func parseModImpl(ctx context.Context, fh file.Handle) (*source.ParsedModule, er
 
 // ParseWork parses a go.work file, using a cache. It may return partial results and an error.
 // TODO(adonovan): move to new work.go file.
-func (s *Snapshot) ParseWork(ctx context.Context, fh file.Handle) (*source.ParsedWorkFile, error) {
+func (s *Snapshot) ParseWork(ctx context.Context, fh file.Handle) (*ParsedWorkFile, error) {
 	uri := fh.URI()
 
 	s.mu.Lock()
@@ -112,7 +111,7 @@ func (s *Snapshot) ParseWork(ctx context.Context, fh file.Handle) (*source.Parse
 
 	type parseWorkKey file.Identity
 	type parseWorkResult struct {
-		parsed *source.ParsedWorkFile
+		parsed *ParsedWorkFile
 		err    error
 	}
 
@@ -139,7 +138,7 @@ func (s *Snapshot) ParseWork(ctx context.Context, fh file.Handle) (*source.Parse
 }
 
 // parseWorkImpl parses a go.work file. It may return partial results and an error.
-func parseWorkImpl(ctx context.Context, fh file.Handle) (*source.ParsedWorkFile, error) {
+func parseWorkImpl(ctx context.Context, fh file.Handle) (*ParsedWorkFile, error) {
 	_, done := event.Start(ctx, "cache.ParseWork", tag.URI.Of(fh.URI()))
 	defer done()
 
@@ -150,7 +149,7 @@ func parseWorkImpl(ctx context.Context, fh file.Handle) (*source.ParsedWorkFile,
 	m := protocol.NewMapper(fh.URI(), content)
 	file, parseErr := modfile.ParseWork(fh.URI().Path(), content, nil)
 	// Attempt to convert the error to a standardized parse error.
-	var parseErrors []*source.Diagnostic
+	var parseErrors []*Diagnostic
 	if parseErr != nil {
 		mfErrList, ok := parseErr.(modfile.ErrorList)
 		if !ok {
@@ -161,16 +160,16 @@ func parseWorkImpl(ctx context.Context, fh file.Handle) (*source.ParsedWorkFile,
 			if err != nil {
 				return nil, err
 			}
-			parseErrors = append(parseErrors, &source.Diagnostic{
+			parseErrors = append(parseErrors, &Diagnostic{
 				URI:      fh.URI(),
 				Range:    rng,
 				Severity: protocol.SeverityError,
-				Source:   source.ParseError,
+				Source:   ParseError,
 				Message:  mfErr.Err.Error(),
 			})
 		}
 	}
-	return &source.ParsedWorkFile{
+	return &ParsedWorkFile{
 		URI:         fh.URI(),
 		Mapper:      m,
 		File:        file,
@@ -270,7 +269,7 @@ func modWhyImpl(ctx context.Context, snapshot *Snapshot, fh file.Handle) (map[st
 	for _, req := range pm.File.Require {
 		inv.Args = append(inv.Args, req.Mod.Path)
 	}
-	stdout, err := snapshot.RunGoCommandDirect(ctx, source.Normal, inv)
+	stdout, err := snapshot.RunGoCommandDirect(ctx, Normal, inv)
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +287,7 @@ func modWhyImpl(ctx context.Context, snapshot *Snapshot, fh file.Handle) (map[st
 // extractGoCommandErrors tries to parse errors that come from the go command
 // and shape them into go.mod diagnostics.
 // TODO: rename this to 'load errors'
-func (s *Snapshot) extractGoCommandErrors(ctx context.Context, goCmdError error) []*source.Diagnostic {
+func (s *Snapshot) extractGoCommandErrors(ctx context.Context, goCmdError error) []*Diagnostic {
 	if goCmdError == nil {
 		return nil
 	}
@@ -297,8 +296,8 @@ func (s *Snapshot) extractGoCommandErrors(ctx context.Context, goCmdError error)
 		loc protocol.Location
 		msg string
 	}
-	diagLocations := map[*source.ParsedModule]locatedErr{}
-	backupDiagLocations := map[*source.ParsedModule]locatedErr{}
+	diagLocations := map[*ParsedModule]locatedErr{}
+	backupDiagLocations := map[*ParsedModule]locatedErr{}
 
 	// If moduleErrs is non-nil, go command errors are scoped to specific
 	// modules.
@@ -357,7 +356,7 @@ func (s *Snapshot) extractGoCommandErrors(ctx context.Context, goCmdError error)
 		diagLocations = backupDiagLocations
 	}
 
-	var srcErrs []*source.Diagnostic
+	var srcErrs []*Diagnostic
 	for pm, le := range diagLocations {
 		diag, err := s.goCommandDiagnostic(pm, le.loc, le.msg)
 		if err != nil {
@@ -380,7 +379,7 @@ var moduleVersionInErrorRe = regexp.MustCompile(`[:\s]([+-._~0-9A-Za-z]+)@([+-._
 //
 // It returns the location of a reference to the one of the modules and true
 // if one exists. If none is found it returns a fallback location and false.
-func (s *Snapshot) matchErrorToModule(ctx context.Context, pm *source.ParsedModule, goCmdError string) (protocol.Location, bool, error) {
+func (s *Snapshot) matchErrorToModule(ctx context.Context, pm *ParsedModule, goCmdError string) (protocol.Location, bool, error) {
 	var reference *modfile.Line
 	matches := moduleVersionInErrorRe.FindAllStringSubmatch(goCmdError, -1)
 
@@ -413,7 +412,7 @@ func (s *Snapshot) matchErrorToModule(ctx context.Context, pm *source.ParsedModu
 }
 
 // goCommandDiagnostic creates a diagnostic for a given go command error.
-func (s *Snapshot) goCommandDiagnostic(pm *source.ParsedModule, loc protocol.Location, goCmdError string) (*source.Diagnostic, error) {
+func (s *Snapshot) goCommandDiagnostic(pm *ParsedModule, loc protocol.Location, goCmdError string) (*Diagnostic, error) {
 	matches := moduleVersionInErrorRe.FindAllStringSubmatch(goCmdError, -1)
 	var innermost *module.Version
 	for i := len(matches) - 1; i >= 0; i-- {
@@ -431,14 +430,14 @@ func (s *Snapshot) goCommandDiagnostic(pm *source.ParsedModule, loc protocol.Loc
 		if err != nil {
 			return nil, err
 		}
-		return &source.Diagnostic{
+		return &Diagnostic{
 			URI:      pm.URI,
 			Range:    loc.Range,
 			Severity: protocol.SeverityError,
-			Source:   source.ListError,
+			Source:   ListError,
 			Message: `Inconsistent vendoring detected. Please re-run "go mod vendor".
 See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
-			SuggestedFixes: []source.SuggestedFix{source.SuggestedFixFromCommand(cmd, protocol.QuickFix)},
+			SuggestedFixes: []SuggestedFix{SuggestedFixFromCommand(cmd, protocol.QuickFix)},
 		}, nil
 
 	case strings.Contains(goCmdError, "updates to go.sum needed"), strings.Contains(goCmdError, "missing go.sum entry"):
@@ -458,15 +457,15 @@ See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
 		if innermost != nil {
 			msg = fmt.Sprintf("go.sum is out of sync with go.mod: entry for %v is missing. Please updating it by applying the quick fix.", innermost)
 		}
-		return &source.Diagnostic{
+		return &Diagnostic{
 			URI:      pm.URI,
 			Range:    loc.Range,
 			Severity: protocol.SeverityError,
-			Source:   source.ListError,
+			Source:   ListError,
 			Message:  msg,
-			SuggestedFixes: []source.SuggestedFix{
-				source.SuggestedFixFromCommand(tidyCmd, protocol.QuickFix),
-				source.SuggestedFixFromCommand(updateCmd, protocol.QuickFix),
+			SuggestedFixes: []SuggestedFix{
+				SuggestedFixFromCommand(tidyCmd, protocol.QuickFix),
+				SuggestedFixFromCommand(updateCmd, protocol.QuickFix),
 			},
 		}, nil
 	case strings.Contains(goCmdError, "disabled by GOPROXY=off") && innermost != nil:
@@ -479,20 +478,20 @@ See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
 		if err != nil {
 			return nil, err
 		}
-		return &source.Diagnostic{
+		return &Diagnostic{
 			URI:            pm.URI,
 			Range:          loc.Range,
 			Severity:       protocol.SeverityError,
 			Message:        fmt.Sprintf("%v@%v has not been downloaded", innermost.Path, innermost.Version),
-			Source:         source.ListError,
-			SuggestedFixes: []source.SuggestedFix{source.SuggestedFixFromCommand(cmd, protocol.QuickFix)},
+			Source:         ListError,
+			SuggestedFixes: []SuggestedFix{SuggestedFixFromCommand(cmd, protocol.QuickFix)},
 		}, nil
 	default:
-		return &source.Diagnostic{
+		return &Diagnostic{
 			URI:      pm.URI,
 			Range:    loc.Range,
 			Severity: protocol.SeverityError,
-			Source:   source.ListError,
+			Source:   ListError,
 			Message:  goCmdError,
 		}, nil
 	}

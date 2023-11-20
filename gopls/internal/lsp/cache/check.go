@@ -27,7 +27,6 @@ import (
 	"golang.org/x/tools/gopls/internal/immutable"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -93,8 +92,8 @@ type pkgOrErr struct {
 // This is different from having type-checking errors: a failure to type-check
 // indicates context cancellation or otherwise significant failure to perform
 // the type-checking operation.
-func (s *Snapshot) TypeCheck(ctx context.Context, ids ...PackageID) ([]source.Package, error) {
-	pkgs := make([]source.Package, len(ids))
+func (s *Snapshot) TypeCheck(ctx context.Context, ids ...PackageID) ([]Package_, error) {
+	pkgs := make([]Package_, len(ids))
 
 	var (
 		needIDs []PackageID // ids to type-check
@@ -200,13 +199,13 @@ func (s *Snapshot) resolveImportGraph() (*importGraph, error) {
 		if err != nil {
 			return nil, err
 		}
-		source.RemoveIntermediateTestVariants(&meta)
+		RemoveIntermediateTestVariants(&meta)
 		for _, m := range meta {
 			openPackages[m.ID] = true
 		}
 	}
 
-	var openPackageIDs []source.PackageID
+	var openPackageIDs []PackageID
 	for id := range openPackages {
 		openPackageIDs = append(openPackageIDs, id)
 	}
@@ -543,7 +542,7 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 
 // importPackage loads the given package from its export data in p.exportData
 // (which must already be populated).
-func (b *typeCheckBatch) importPackage(ctx context.Context, m *source.Metadata, data []byte) (*types.Package, error) {
+func (b *typeCheckBatch) importPackage(ctx context.Context, m *Metadata, data []byte) (*types.Package, error) {
 	ctx, done := event.Start(ctx, "cache.typeCheckBatch.importPackage", tag.Package.Of(string(m.ID)))
 	defer done()
 
@@ -606,7 +605,7 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 	// Parse the compiled go files, bypassing the parse cache as packages checked
 	// for import are unlikely to get cache hits. Additionally, we can optimize
 	// parsing slightly by not passing parser.ParseComments.
-	pgfs := make([]*source.ParsedGoFile, len(ph.localInputs.compiledGoFiles))
+	pgfs := make([]*ParsedGoFile, len(ph.localInputs.compiledGoFiles))
 	{
 		var group errgroup.Group
 		// Set an arbitrary concurrency limit; we want some parallelism but don't
@@ -713,7 +712,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 // unrecoverable error loading export data.
 //
 // TODO(rfindley): inline, now that this is only called in one place.
-func (b *typeCheckBatch) awaitPredecessors(ctx context.Context, m *source.Metadata) error {
+func (b *typeCheckBatch) awaitPredecessors(ctx context.Context, m *Metadata) error {
 	// await predecessors concurrently, as some of them may be non-syntax
 	// packages, and therefore will not have been started by the type-checking
 	// batch.
@@ -730,10 +729,10 @@ func (b *typeCheckBatch) awaitPredecessors(ctx context.Context, m *source.Metada
 
 // importMap returns the map of package path -> package ID relative to the
 // specified ID.
-func (b *typeCheckBatch) importMap(id PackageID) map[string]source.PackageID {
-	impMap := make(map[string]source.PackageID)
-	var populateDeps func(m *source.Metadata)
-	populateDeps = func(parent *source.Metadata) {
+func (b *typeCheckBatch) importMap(id PackageID) map[string]PackageID {
+	impMap := make(map[string]PackageID)
+	var populateDeps func(m *Metadata)
+	populateDeps = func(parent *Metadata) {
 		for _, id := range parent.DepsByPkgPath {
 			m := b.handles[id].m
 			if _, ok := impMap[string(m.PkgPath)]; ok {
@@ -779,7 +778,7 @@ func (b *typeCheckBatch) importMap(id PackageID) map[string]source.PackageID {
 // changed (as detected by the depkeys field), then the packageHandle in
 // question must also not have changed, and we need not re-evaluate its key.
 type packageHandle struct {
-	m *source.Metadata
+	m *Metadata
 
 	// Local data:
 
@@ -853,7 +852,7 @@ func (s *Snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[
 			if n.unfinishedSuccs == 0 {
 				leaves = append(leaves, n)
 			} else {
-				n.succs = make(map[source.PackageID]*handleNode, n.unfinishedSuccs)
+				n.succs = make(map[PackageID]*handleNode, n.unfinishedSuccs)
 			}
 			b.nodes[idxID] = n
 			for _, depID := range m.DepsByPkgPath {
@@ -938,7 +937,7 @@ type packageHandleBuilder struct {
 //
 // It is used to implement a bottom-up construction of packageHandles.
 type handleNode struct {
-	m               *source.Metadata
+	m               *Metadata
 	idxID           typerefs.IndexID
 	ph              *packageHandle
 	err             error
@@ -1210,8 +1209,8 @@ func (b *packageHandleBuilder) evaluatePackageHandle(prevPH *packageHandle, n *h
 
 // typerefs returns typerefs for the package described by m and cgfs, after
 // either computing it or loading it from the file cache.
-func (s *Snapshot) typerefs(ctx context.Context, m *source.Metadata, cgfs []file.Handle) (map[string][]typerefs.Symbol, error) {
-	imports := make(map[ImportPath]*source.Metadata)
+func (s *Snapshot) typerefs(ctx context.Context, m *Metadata, cgfs []file.Handle) (map[string][]typerefs.Symbol, error) {
+	imports := make(map[ImportPath]*Metadata)
 	for impPath, id := range m.DepsByImpPath {
 		if id != "" {
 			imports[impPath] = s.Metadata(id)
@@ -1234,7 +1233,7 @@ func (s *Snapshot) typerefs(ctx context.Context, m *source.Metadata, cgfs []file
 
 // typerefData retrieves encoded typeref data from the filecache, or computes it on
 // a cache miss.
-func (s *Snapshot) typerefData(ctx context.Context, id PackageID, imports map[ImportPath]*source.Metadata, cgfs []file.Handle) ([]byte, error) {
+func (s *Snapshot) typerefData(ctx context.Context, id PackageID, imports map[ImportPath]*Metadata, cgfs []file.Handle) ([]byte, error) {
 	key := typerefsKey(id, imports, cgfs)
 	if data, err := filecache.Get(typerefsKind, key); err == nil {
 		return data, nil
@@ -1242,7 +1241,7 @@ func (s *Snapshot) typerefData(ctx context.Context, id PackageID, imports map[Im
 		bug.Reportf("internal error reading typerefs data: %v", err)
 	}
 
-	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), source.ParseFull&^parser.ParseComments, true, cgfs...)
+	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), ParseFull&^parser.ParseComments, true, cgfs...)
 	if err != nil {
 		return nil, err
 	}
@@ -1260,7 +1259,7 @@ func (s *Snapshot) typerefData(ctx context.Context, id PackageID, imports map[Im
 
 // typerefsKey produces a key for the reference information produced by the
 // typerefs package.
-func typerefsKey(id PackageID, imports map[ImportPath]*source.Metadata, compiledGoFiles []file.Handle) file.Hash {
+func typerefsKey(id PackageID, imports map[ImportPath]*Metadata, compiledGoFiles []file.Handle) file.Hash {
 	hasher := sha256.New()
 
 	fmt.Fprintf(hasher, "typerefs: %s\n", id)
@@ -1309,7 +1308,7 @@ type typeCheckInputs struct {
 	moduleMode         bool
 }
 
-func (s *Snapshot) typeCheckInputs(ctx context.Context, m *source.Metadata) (typeCheckInputs, error) {
+func (s *Snapshot) typeCheckInputs(ctx context.Context, m *Metadata) (typeCheckInputs, error) {
 	// Read both lists of files of this package.
 	//
 	// Parallelism is not necessary here as the files will have already been
@@ -1426,7 +1425,7 @@ func typeCheckImpl(ctx context.Context, b *typeCheckBatch, inputs typeCheckInput
 
 	// Our heuristic for whether to show type checking errors is:
 	//  + If any file was 'fixed', don't show type checking errors as we
-	//    can't guarantee that they reference accurate locations in the source.
+	//    can't guarantee that they reference accurate locations in thesource.
 	//  + If there is a parse error _in the current file_, suppress type
 	//    errors in that file.
 	//  + Otherwise, show type errors even in the presence of parse errors in
@@ -1512,11 +1511,11 @@ func doTypeCheck(ctx context.Context, b *typeCheckBatch, inputs typeCheckInputs)
 	// Collect parsed files from the type check pass, capturing parse errors from
 	// compiled files.
 	var err error
-	pkg.goFiles, err = b.parseCache.parseFiles(ctx, b.fset, source.ParseFull, false, inputs.goFiles...)
+	pkg.goFiles, err = b.parseCache.parseFiles(ctx, b.fset, ParseFull, false, inputs.goFiles...)
 	if err != nil {
 		return nil, err
 	}
-	pkg.compiledGoFiles, err = b.parseCache.parseFiles(ctx, b.fset, source.ParseFull, false, inputs.compiledGoFiles...)
+	pkg.compiledGoFiles, err = b.parseCache.parseFiles(ctx, b.fset, ParseFull, false, inputs.compiledGoFiles...)
 	if err != nil {
 		return nil, err
 	}
@@ -1609,7 +1608,7 @@ func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs
 				// e.g. missing metadata for dependencies in buildPackageHandle
 				return nil, missingPkgError(inputs.id, path, inputs.moduleMode)
 			}
-			if !source.IsValidImport(inputs.pkgPath, depPH.m.PkgPath) {
+			if !IsValidImport(inputs.pkgPath, depPH.m.PkgPath) {
 				return nil, fmt.Errorf("invalid use of internal package %q", path)
 			}
 			return b.getImportPackage(ctx, id)
@@ -1637,7 +1636,7 @@ func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs
 // of pkg, or to 'requires' declarations in the package's go.mod file.
 //
 // TODO(rfindley): move this to load.go
-func depsErrors(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs file.Source, workspacePackages immutable.Map[PackageID, PackagePath]) ([]*source.Diagnostic, error) {
+func depsErrors(ctx context.Context, m *Metadata, meta *metadataGraph, fs file.Source, workspacePackages immutable.Map[PackageID, PackagePath]) ([]*Diagnostic, error) {
 	// Select packages that can't be found, and were imported in non-workspace packages.
 	// Workspace packages already show their own errors.
 	var relevantErrors []*packagesinternal.PackageError
@@ -1668,12 +1667,12 @@ func depsErrors(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs
 
 	// Build an index of all imports in the package.
 	type fileImport struct {
-		cgf *source.ParsedGoFile
+		cgf *ParsedGoFile
 		imp *ast.ImportSpec
 	}
 	allImports := map[string][]fileImport{}
 	for _, uri := range m.CompiledGoFiles {
-		pgf, err := parseGoURI(ctx, fs, uri, source.ParseHeader)
+		pgf, err := parseGoURI(ctx, fs, uri, ParseHeader)
 		if err != nil {
 			return nil, err
 		}
@@ -1692,7 +1691,7 @@ func depsErrors(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs
 
 	// Apply a diagnostic to any import involved in the error, stopping once
 	// we reach the workspace.
-	var errors []*source.Diagnostic
+	var errors []*Diagnostic
 	for _, depErr := range relevantErrors {
 		for i := len(depErr.ImportStack) - 1; i >= 0; i-- {
 			item := depErr.ImportStack[i]
@@ -1709,15 +1708,15 @@ func depsErrors(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs
 				if err != nil {
 					return nil, err
 				}
-				diag := &source.Diagnostic{
+				diag := &Diagnostic{
 					URI:            imp.cgf.URI,
 					Range:          rng,
 					Severity:       protocol.SeverityError,
-					Source:         source.TypeError,
+					Source:         TypeError,
 					Message:        fmt.Sprintf("error while importing %v: %v", item, depErr.Err),
 					SuggestedFixes: fixes,
 				}
-				if !source.BundleQuickFixes(diag) {
+				if !BundleQuickFixes(diag) {
 					bug.Reportf("failed to bundle fixes for diagnostic %q", diag.Message)
 				}
 				errors = append(errors, diag)
@@ -1756,15 +1755,15 @@ func depsErrors(ctx context.Context, m *source.Metadata, meta *metadataGraph, fs
 			if err != nil {
 				return nil, err
 			}
-			diag := &source.Diagnostic{
+			diag := &Diagnostic{
 				URI:            pm.URI,
 				Range:          rng,
 				Severity:       protocol.SeverityError,
-				Source:         source.TypeError,
+				Source:         TypeError,
 				Message:        fmt.Sprintf("error while importing %v: %v", item, depErr.Err),
 				SuggestedFixes: fixes,
 			}
-			if !source.BundleQuickFixes(diag) {
+			if !BundleQuickFixes(diag) {
 				bug.Reportf("failed to bundle fixes for diagnostic %q", diag.Message)
 			}
 			errors = append(errors, diag)
@@ -1781,7 +1780,7 @@ func missingPkgError(from PackageID, pkgPath string, moduleMode bool) error {
 	// access to the full snapshot, and could provide more information (such as
 	// the initialization error).
 	if moduleMode {
-		if source.IsCommandLineArguments(from) {
+		if IsCommandLineArguments(from) {
 			return fmt.Errorf("current file is not included in a workspace module")
 		} else {
 			// Previously, we would present the initialization error here.
