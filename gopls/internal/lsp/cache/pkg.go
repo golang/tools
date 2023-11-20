@@ -74,7 +74,6 @@ var (
 	IsValidImport                  = source.IsValidImport
 	RemoveIntermediateTestVariants = source.RemoveIntermediateTestVariants
 	IsCommandLineArguments         = source.IsCommandLineArguments
-	BundleQuickFixes               = source.BundleQuickFixes
 	NewFilterer                    = source.NewFilterer
 )
 

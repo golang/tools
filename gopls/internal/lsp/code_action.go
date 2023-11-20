@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/analysis/fillstruct"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/infertypeargs"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/stubmethods"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/mod"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -629,7 +630,7 @@ func (s *server) codeActionsMatchingDiagnostics(ctx context.Context, uri protoco
 	var actions []protocol.CodeAction
 	var unbundled []protocol.Diagnostic // diagnostics without bundled code actions in their Data field
 	for _, pd := range pds {
-		bundled := source.BundledQuickFixes(pd)
+		bundled := cache.BundledQuickFixes(pd)
 		if len(bundled) > 0 {
 			for _, fix := range bundled {
 				if want[fix.Kind] {
