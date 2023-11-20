@@ -295,6 +295,40 @@ func deeper(x, y *types.Scope) bool {
 	}
 }
 
+// Scope and Position
+//
+// Consider a function f declared as:
+//
+//	func f[T *U, U *T](p, q T) (r, s U) { var ( v T; w = v ); type (t *t; u t) }
+//	^                                  ^           ^      ^         ^     ^
+///   {T,U}                           {p,q,r,s}        v      w         t     u
+//
+// All objects {T, U, p, q, r, s, local} belong to the same lexical
+// block, the function scope, which is found in types.Info.Scopes
+// for f's FuncType. (A function body's BlockStmt does not have
+// an associated scope; only nested BlockStmts do.)
+//
+// The effective scope of each object is different:
+//
+//   - The type parameters T and U, whose constraints may refer to each
+//     other, all have a scope that starts at the beginning of the
+//     FuncDecl.Type.Func token.
+//
+//   - The parameter and result variables {p,q,r,s} can reference the
+//     type parameters but not each other, so their scopes all start at
+//     the end of the FuncType.
+//     (Prior to go1.22 it was--incorrectly--unset; see #64295).
+//     Beware also that Scope.Innermost does not currently work correctly for
+//     type parameters: it returns the scope of the package, not the function.
+//
+//   - Each const or var {v,w} declared within the function body has a
+//     scope that begins at the end of its ValueSpec, or after the
+//     AssignStmt for a var declared by ":=".
+//
+//   - Each type {t,u} in the body has a scope that that begins at
+//     the start of the TypeSpec, so they can be self-recursive
+//     but--unlike package-level types--not mutually recursive.
+
 // forEachLexicalRef calls fn(id, block) for each identifier id in package
 // pkg that is a reference to obj in lexical scope.  block is the
 // lexical block enclosing the reference.  If fn returns false the
@@ -336,6 +370,7 @@ func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ide
 			if !ok {
 				return visit(nil) // pop stack, don't descend
 			}
+			// TODO(adonovan): fix: for generics, should be T.core not T.underlying.
 			if _, ok := Deref(tv.Type).Underlying().(*types.Struct); ok {
 				if n.Type != nil {
 					ast.Inspect(n.Type, visit)
@@ -365,15 +400,15 @@ func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ide
 	return ok
 }
 
-// enclosingBlock returns the innermost block enclosing the specified
-// AST node, specified in the form of a path from the root of the file,
-// [file...n].
+// enclosingBlock returns the innermost block logically enclosing the
+// specified AST node (an ast.Ident), specified in the form of a path
+// from the root of the file, [file...n].
 func enclosingBlock(info *types.Info, stack []ast.Node) *types.Scope {
 	for i := range stack {
 		n := stack[len(stack)-1-i]
 		// For some reason, go/types always associates a
 		// function's scope with its FuncType.
-		// TODO(adonovan): feature or a bug?
+		// See comments about scope above.
 		switch f := n.(type) {
 		case *ast.FuncDecl:
 			n = f.Type
