@@ -25,6 +25,7 @@ import (
 	"golang.org/x/mod/semver"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/pathutil"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
@@ -568,10 +569,10 @@ func (v *View) contains(uri protocol.DocumentURI) bool {
 	// user. It would be better to explicitly consider the set of active modules
 	// wherever relevant.
 	inGoDir := false
-	if InDir(v.goCommandDir.Path(), v.folder.Dir.Path()) {
-		inGoDir = InDir(v.goCommandDir.Path(), uri.Path())
+	if pathutil.InDir(v.goCommandDir.Path(), v.folder.Dir.Path()) {
+		inGoDir = pathutil.InDir(v.goCommandDir.Path(), uri.Path())
 	}
-	inFolder := InDir(v.folder.Dir.Path(), uri.Path())
+	inFolder := pathutil.InDir(v.folder.Dir.Path(), uri.Path())
 
 	if !inGoDir && !inFolder {
 		return false
@@ -587,7 +588,7 @@ func (v *View) filterFunc() func(protocol.DocumentURI) bool {
 	filterer := buildFilterer(folderDir, v.gomodcache, v.folder.Options)
 	return func(uri protocol.DocumentURI) bool {
 		// Only filter relative to the configured root directory.
-		if InDir(folderDir, uri.Path()) {
+		if pathutil.InDir(folderDir, uri.Path()) {
 			return pathExcludedByFilter(strings.TrimPrefix(uri.Path(), folderDir), filterer)
 		}
 		return false
@@ -978,7 +979,7 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs file.So
 
 	// Check if the workspace is within any GOPATH directory.
 	for _, gp := range filepath.SplitList(def.gopath) {
-		if InDir(filepath.Join(gp, "src"), folder.Dir.Path()) {
+		if pathutil.InDir(filepath.Join(gp, "src"), folder.Dir.Path()) {
 			def.inGOPATH = true
 			break
 		}

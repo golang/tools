@@ -38,6 +38,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/gopls/internal/lsp/source/xrefs"
+	"golang.org/x/tools/gopls/internal/pathutil"
 	"golang.org/x/tools/gopls/internal/persistent"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/vulncheck"
@@ -905,7 +906,7 @@ func (s *Snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]stru
 
 	// If GOWORK is outside the folder, ensure we are watching it.
 	gowork, _ := s.view.GOWORK()
-	if gowork != "" && !InDir(s.view.folder.Dir.Path(), gowork.Path()) {
+	if gowork != "" && !pathutil.InDir(s.view.folder.Dir.Path(), gowork.Path()) {
 		patterns[gowork.Path()] = struct{}{}
 	}
 
@@ -914,7 +915,7 @@ func (s *Snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]stru
 	for _, dir := range dirs {
 		// If the directory is within the view's folder, we're already watching
 		// it with the first pattern above.
-		if InDir(s.view.folder.Dir.Path(), dir) {
+		if pathutil.InDir(s.view.folder.Dir.Path(), dir) {
 			continue
 		}
 		// TODO(rstambler): If microsoft/vscode#3025 is resolved before
@@ -955,7 +956,7 @@ func (s *Snapshot) addKnownSubdirs(patterns map[string]unit, wsDirs []string) {
 
 	s.files.Dirs().Range(func(dir string) {
 		for _, wsDir := range wsDirs {
-			if InDir(wsDir, dir) {
+			if pathutil.InDir(wsDir, dir) {
 				patterns[dir] = unit{}
 			}
 		}
@@ -1029,7 +1030,7 @@ func (s *Snapshot) filesInDir(uri protocol.DocumentURI) []protocol.DocumentURI {
 	}
 	var files []protocol.DocumentURI
 	s.files.Range(func(uri protocol.DocumentURI, _ file.Handle) {
-		if InDir(dir, uri.Path()) {
+		if pathutil.InDir(dir, uri.Path()) {
 			files = append(files, uri)
 		}
 	})
@@ -1139,7 +1140,7 @@ func (s *Snapshot) GoModForFile(uri protocol.DocumentURI) protocol.DocumentURI {
 func moduleForURI(modFiles map[protocol.DocumentURI]struct{}, uri protocol.DocumentURI) protocol.DocumentURI {
 	var match protocol.DocumentURI
 	for modURI := range modFiles {
-		if !InDir(filepath.Dir(modURI.Path()), uri.Path()) {
+		if !pathutil.InDir(filepath.Dir(modURI.Path()), uri.Path()) {
 			continue
 		}
 		if len(modURI) > len(match) {
@@ -1684,7 +1685,7 @@ searchOverlays:
 
 				// When the module is underneath the view dir, we offer
 				// "use all modules" quick-fixes.
-				inDir := InDir(viewDir, modDir)
+				inDir := pathutil.InDir(viewDir, modDir)
 
 				if rel, err := filepath.Rel(viewDir, modDir); err == nil {
 					modDir = rel
@@ -2179,7 +2180,7 @@ func deleteMostRelevantModFile(m *persistent.Map[protocol.DocumentURI, *memoize.
 
 	m.Range(func(modURI protocol.DocumentURI, _ *memoize.Promise) {
 		if len(modURI) > len(mostRelevant) {
-			if InDir(filepath.Dir(modURI.Path()), changedFile) {
+			if pathutil.InDir(filepath.Dir(modURI.Path()), changedFile) {
 				mostRelevant = modURI
 			}
 		}

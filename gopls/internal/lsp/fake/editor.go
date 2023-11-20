@@ -20,7 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/glob"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/pathutil"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
 	"golang.org/x/tools/internal/xcontext"
@@ -1302,7 +1302,7 @@ func (e *Editor) renameBuffers(ctx context.Context, oldPath, newPath string) (cl
 
 	for path := range e.buffers {
 		abs := e.sandbox.Workdir.AbsPath(path)
-		if oldAbs == abs || source.InDir(oldAbs, abs) {
+		if oldAbs == abs || pathutil.InDir(oldAbs, abs) {
 			rel, err := filepath.Rel(oldAbs, abs)
 			if err != nil {
 				return nil, nil, fmt.Errorf("filepath.Rel(%q, %q): %v", oldAbs, abs, err)

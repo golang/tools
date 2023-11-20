@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/immutable"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/pathutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
@@ -759,7 +760,7 @@ func isTestMain(pkg *packages.Package, gocache string) bool {
 	if len(pkg.GoFiles) > 1 {
 		return false
 	}
-	if !InDir(gocache, pkg.GoFiles[0]) {
+	if !pathutil.InDir(gocache, pkg.GoFiles[0]) {
 		return false
 	}
 	return true
