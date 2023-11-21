@@ -380,7 +380,7 @@ type Package interface {
 	GetTypeErrors() []types.Error
 	GetTypesInfo() *types.Info
 	DependencyTypes(PackagePath) *types.Package // nil for indirect dependency of no consequence
-	DiagnosticsForFile(ctx context.Context, s Snapshot, uri protocol.DocumentURI) ([]*Diagnostic, error)
+	DiagnosticsForFile(ctx context.Context, uri protocol.DocumentURI) ([]*Diagnostic, error)
 }
 
 type unit = struct{}

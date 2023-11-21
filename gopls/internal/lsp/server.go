@@ -192,7 +192,7 @@ func (s *server) diagnoseFile(ctx context.Context, snapshot *cache.Snapshot, uri
 	if err != nil {
 		return nil, nil, err
 	}
-	pkgDiags, err := pkg.DiagnosticsForFile(ctx, snapshot, uri)
+	pkgDiags, err := pkg.DiagnosticsForFile(ctx, uri)
 	if err != nil {
 		return nil, nil, err
 	}

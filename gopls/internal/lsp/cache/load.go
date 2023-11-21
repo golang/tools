@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/gopls/internal/immutable"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/pathutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -554,8 +553,8 @@ func buildMetadata(updates map[PackageID]*Metadata, pkg *packages.Package, loadD
 // computeLoadDiagnostics computes and sets m.Diagnostics for the given metadata m.
 //
 // It should only be called during package handle construction in buildPackageHandle.
-func computeLoadDiagnostics(ctx context.Context, snapshot *Snapshot, m *Metadata) []*source.Diagnostic {
-	var diags []*source.Diagnostic
+func computeLoadDiagnostics(ctx context.Context, snapshot *Snapshot, m *Metadata) []*Diagnostic {
+	var diags []*Diagnostic
 	for _, packagesErr := range m.Errors {
 		// Filter out parse errors from go list. We'll get them when we
 		// actually parse, and buggy overlay support may generate spurious

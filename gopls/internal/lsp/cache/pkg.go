@@ -74,6 +74,9 @@ var (
 	IsValidImport                  = source.IsValidImport
 	RemoveIntermediateTestVariants = source.RemoveIntermediateTestVariants
 	NewFilterer                    = source.NewFilterer
+	BuildLink                      = source.BuildLink
+	CanFix                         = source.CanFix
+	AnalyzerErrorKind              = source.AnalyzerErrorKind
 )
 
 // A Package is the union of package metadata and type checking results.
@@ -83,7 +86,7 @@ var (
 // package handle. Fix this.
 type Package struct {
 	m               *Metadata
-	loadDiagnostics []*source.Diagnostic
+	loadDiagnostics []*Diagnostic
 	pkg             *syntaxPackage
 }
 
@@ -94,9 +97,9 @@ type syntaxPackage struct {
 
 	// -- outputs --
 	fset            *token.FileSet // for now, same as the snapshot's FileSet
-	goFiles         []*source.ParsedGoFile
-	compiledGoFiles []*source.ParsedGoFile
-	diagnostics     []*source.Diagnostic
+	goFiles         []*ParsedGoFile
+	compiledGoFiles []*ParsedGoFile
+	diagnostics     []*Diagnostic
 	parseErrors     []scanner.ErrorList
 	typeErrors      []types.Error
 	types           *types.Package
@@ -159,7 +162,7 @@ func (p *Package) File(uri protocol.DocumentURI) (*ParsedGoFile, error) {
 	return p.pkg.File(uri)
 }
 
-func (pkg *syntaxPackage) File(uri protocol.DocumentURI) (*source.ParsedGoFile, error) {
+func (pkg *syntaxPackage) File(uri protocol.DocumentURI) (*ParsedGoFile, error) {
 	for _, cgf := range pkg.compiledGoFiles {
 		if cgf.URI == uri {
 			return cgf, nil
@@ -197,7 +200,7 @@ func (p *Package) GetTypesInfo() *types.Info {
 // package. It returns nil if path is not among the transitive
 // dependencies of p, or if no symbols from that package were
 // referenced during the type-checking of p.
-func (p *Package) DependencyTypes(path source.PackagePath) *types.Package {
+func (p *Package) DependencyTypes(path PackagePath) *types.Package {
 	return p.pkg.importMap[path]
 }
 
@@ -209,8 +212,8 @@ func (p *Package) GetTypeErrors() []types.Error {
 	return p.pkg.typeErrors
 }
 
-func (p *Package) DiagnosticsForFile(ctx context.Context, s source.Snapshot, uri protocol.DocumentURI) ([]*source.Diagnostic, error) {
-	var diags []*source.Diagnostic
+func (p *Package) DiagnosticsForFile(ctx context.Context, uri protocol.DocumentURI) ([]*Diagnostic, error) {
+	var diags []*Diagnostic
 	for _, diag := range p.loadDiagnostics {
 		if diag.URI == uri {
 			diags = append(diags, diag)
