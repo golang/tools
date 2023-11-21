@@ -14,15 +14,17 @@ import (
 	"sort"
 
 	"golang.org/x/tools/go/types/objectpath"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/frob"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/typesutil"
 	"golang.org/x/tools/internal/typeparams"
 )
 
 // Index constructs a serializable index of outbound cross-references
 // for the specified type-checked package.
-func Index(files []*source.ParsedGoFile, pkg *types.Package, info *types.Info) []byte {
+func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 	// pkgObjects maps each referenced package Q to a mapping:
 	// from each referenced symbol in Q to the ordered list
 	// of references to that symbol from this package.
@@ -92,7 +94,7 @@ func Index(files []*source.ParsedGoFile, pkg *types.Package, info *types.Info) [
 			case *ast.ImportSpec:
 				// Report a reference from each import path
 				// string to the imported package.
-				pkgname, ok := source.ImportedPkgName(info, n)
+				pkgname, ok := typesutil.ImportedPkgName(info, n)
 				if !ok {
 					return true // missing import
 				}
@@ -116,7 +118,7 @@ func Index(files []*source.ParsedGoFile, pkg *types.Package, info *types.Info) [
 	for p := range pkgObjects {
 		objects := pkgObjects[p]
 		gp := &gobPackage{
-			PkgPath: source.PackagePath(p.Path()),
+			PkgPath: metadata.PackagePath(p.Path()),
 			Objects: make([]*gobObject, 0, len(objects)),
 		}
 		for _, gobObj := range objects {
@@ -138,7 +140,7 @@ func Index(files []*source.ParsedGoFile, pkg *types.Package, info *types.Info) [
 // operation on m, and returns the locations of all references from m
 // to any object in the target set. Each object is denoted by a pair
 // of (package path, object path).
-func Lookup(m *source.Metadata, data []byte, targets map[source.PackagePath]map[objectpath.Path]struct{}) (locs []protocol.Location) {
+func Lookup(m *metadata.Metadata, data []byte, targets map[metadata.PackagePath]map[objectpath.Path]struct{}) (locs []protocol.Location) {
 	var packages []*gobPackage
 	packageCodec.Decode(data, &packages)
 	for _, gp := range packages {
@@ -177,8 +179,8 @@ var packageCodec = frob.CodecFor[[]*gobPackage]()
 // A gobPackage records the set of outgoing references from the index
 // package to symbols defined in a dependency package.
 type gobPackage struct {
-	PkgPath source.PackagePath // defining package (Q)
-	Objects []*gobObject       // set of Q objects referenced by P
+	PkgPath metadata.PackagePath // defining package (Q)
+	Objects []*gobObject         // set of Q objects referenced by P
 }
 
 // A gobObject records all references to a particular symbol.

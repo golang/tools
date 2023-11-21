@@ -34,12 +34,12 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/immutable"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
+	"golang.org/x/tools/gopls/internal/lsp/cache/xrefs"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
-	"golang.org/x/tools/gopls/internal/lsp/source/xrefs"
 	"golang.org/x/tools/gopls/internal/pathutil"
 	"golang.org/x/tools/gopls/internal/persistent"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -689,7 +689,7 @@ func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]XrefInde
 	return indexes, s.forEachPackage(ctx, ids, pre, post)
 }
 
-// An XrefIndex is a helper for looking up a package in a given package.
+// An XrefIndex is a helper for looking up references in a given package.
 type XrefIndex struct {
 	m    *Metadata
 	data []byte

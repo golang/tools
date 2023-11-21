@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
+	"golang.org/x/tools/gopls/internal/typesutil"
 	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -233,7 +234,7 @@ func Qualifier(f *ast.File, pkg *types.Package, info *types.Info) types.Qualifie
 	// Construct mapping of import paths to their defined or implicit names.
 	imports := make(map[*types.Package]string)
 	for _, imp := range f.Imports {
-		if pkgname, ok := ImportedPkgName(info, imp); ok {
+		if pkgname, ok := typesutil.ImportedPkgName(info, imp); ok {
 			imports[pkgname.Imported()] = pkgname.Name()
 		}
 	}
