@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/build/constraint"
+	"go/parser"
 	"go/token"
 	"go/types"
 	"io"
@@ -2431,7 +2432,7 @@ func (s *Snapshot) BuiltinFile(ctx context.Context) (*ParsedGoFile, error) {
 	}
 	// For the builtin file only, we need syntactic object resolution
 	// (since we can't type check).
-	mode := ParseFull &^ SkipObjectResolution
+	mode := ParseFull &^ parser.SkipObjectResolution
 	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), mode, false, fh)
 	if err != nil {
 		return nil, err

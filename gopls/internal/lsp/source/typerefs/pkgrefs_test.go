@@ -21,8 +21,8 @@ import (
 	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/astutil"
-	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
@@ -296,7 +296,7 @@ func (p *memoizedParser) parse(ctx context.Context, uri protocol.DocumentURI) (*
 			return nil, err
 		}
 		content = astutil.PurgeFuncBodies(content)
-		pgf, _ := cache.ParseGoSrc(ctx, token.NewFileSet(), uri, content, source.ParseFull, false)
+		pgf, _ := parsego.Parse(ctx, token.NewFileSet(), uri, content, source.ParseFull, false)
 		return pgf, nil
 	}
 

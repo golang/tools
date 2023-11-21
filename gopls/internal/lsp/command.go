@@ -24,6 +24,7 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/progress"
@@ -804,7 +805,7 @@ func (c *commandHandler) ListImports(ctx context.Context, args command.URIArg) (
 		if err != nil {
 			return err
 		}
-		pgf, err := deps.snapshot.ParseGo(ctx, fh, source.ParseHeader)
+		pgf, err := deps.snapshot.ParseGo(ctx, fh, parsego.ParseHeader)
 		if err != nil {
 			return err
 		}

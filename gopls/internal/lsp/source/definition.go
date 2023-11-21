@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"go/types"
 
@@ -125,7 +126,7 @@ func builtinDefinition(ctx context.Context, snapshot Snapshot, obj types.Object)
 		if err != nil {
 			return nil, err
 		}
-		pgf, err = snapshot.ParseGo(ctx, fh, ParseFull&^SkipObjectResolution)
+		pgf, err = snapshot.ParseGo(ctx, fh, ParseFull&^parser.SkipObjectResolution)
 		if err != nil {
 			return nil, err
 		}

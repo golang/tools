@@ -9,8 +9,8 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -35,7 +35,7 @@ func (s *server) SelectionRange(ctx context.Context, params *protocol.SelectionR
 		return nil, err
 	}
 
-	pgf, err := snapshot.ParseGo(ctx, fh, source.ParseFull)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.ParseFull)
 	if err != nil {
 		return nil, err
 	}

@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
@@ -507,7 +507,7 @@ type Z map[ext.A]ext.B
 			var pgfs []*source.ParsedGoFile
 			for i, src := range test.srcs {
 				uri := protocol.DocumentURI(fmt.Sprintf("file:///%d.go", i))
-				pgf, _ := cache.ParseGoSrc(ctx, token.NewFileSet(), uri, []byte(src), source.ParseFull, false)
+				pgf, _ := parsego.Parse(ctx, token.NewFileSet(), uri, []byte(src), source.ParseFull, false)
 				if !test.allowErrs && pgf.ParseErr != nil {
 					t.Fatalf("ParseGoSrc(...) returned parse errors: %v", pgf.ParseErr)
 				}

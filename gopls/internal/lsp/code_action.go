@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/analysis/infertypeargs"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/stubmethods"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/mod"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -130,7 +131,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 
 		// Code actions requiring syntax information alone.
 		if wantQuickFixes || want[protocol.SourceOrganizeImports] || want[protocol.RefactorExtract] {
-			pgf, err := snapshot.ParseGo(ctx, fh, source.ParseFull)
+			pgf, err := snapshot.ParseGo(ctx, fh, parsego.ParseFull)
 			if err != nil {
 				return nil, err
 			}

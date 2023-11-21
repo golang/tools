@@ -442,7 +442,7 @@ func parseGoListImportCycleError(ctx context.Context, e packages.Error, m *Metad
 	// Imports have quotation marks around them.
 	circImp := strconv.Quote(importList[1])
 	for _, uri := range m.CompiledGoFiles {
-		pgf, err := parseGoURI(ctx, fs, uri, source.ParseHeader)
+		pgf, err := parseGoURI(ctx, fs, uri, ParseHeader)
 		if err != nil {
 			return nil, err
 		}

@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/tokeninternal"
@@ -199,7 +200,7 @@ func (c *parseCache) startParse(mode parser.Mode, purgeFuncBodies bool, fhs ...f
 			// inside of parseGoSrc without exceeding the allocated space.
 			base, nextBase := c.allocateSpace(2*len(content) + parsePadding)
 
-			pgf, fixes1 := ParseGoSrc(ctx, fileSetWithBase(base), uri, content, mode, purgeFuncBodies)
+			pgf, fixes1 := parsego.Parse(ctx, fileSetWithBase(base), uri, content, mode, purgeFuncBodies)
 			file := pgf.Tok
 			if file.Base()+file.Size()+1 > nextBase {
 				// The parsed file exceeds its allocated space, likely due to multiple
@@ -211,7 +212,7 @@ func (c *parseCache) startParse(mode parser.Mode, purgeFuncBodies bool, fhs ...f
 				// there, as parseGoSrc will repeat them.
 				actual := file.Base() + file.Size() - base // actual size consumed, after re-parsing
 				base2, nextBase2 := c.allocateSpace(actual)
-				pgf2, fixes2 := ParseGoSrc(ctx, fileSetWithBase(base2), uri, content, mode, purgeFuncBodies)
+				pgf2, fixes2 := parsego.Parse(ctx, fileSetWithBase(base2), uri, content, mode, purgeFuncBodies)
 
 				// In golang/go#59097 we observed that this panic condition was hit.
 				// One bug was found and fixed, but record more information here in

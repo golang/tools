@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"go/types"
 	"log"
@@ -795,7 +796,7 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 				// as cached ASTs require the global FileSet.
 				// ast.Object resolution is unfortunately an implied part of the
 				// go/analysis contract.
-				pgf, err := parseGoImpl(ctx, an.fset, fh, ParseFull&^SkipObjectResolution, false)
+				pgf, err := parseGoImpl(ctx, an.fset, fh, ParseFull&^parser.SkipObjectResolution, false)
 				parsed[i] = pgf
 				return err
 			})

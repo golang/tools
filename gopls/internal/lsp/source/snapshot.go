@@ -19,9 +19,9 @@ import (
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/gocommand"
@@ -303,93 +303,7 @@ type FileSource interface {
 	ReadFile(ctx context.Context, uri protocol.DocumentURI) (file.Handle, error)
 }
 
-// A ParsedGoFile contains the results of parsing a Go file.
-type ParsedGoFile struct {
-	URI  protocol.DocumentURI
-	Mode parser.Mode
-	File *ast.File
-	Tok  *token.File
-	// Source code used to build the AST. It may be different from the
-	// actual content of the file if we have fixed the AST.
-	Src []byte
-
-	// FixedSrc and Fixed AST report on "fixing" that occurred during parsing of
-	// this file.
-	//
-	// If FixedSrc == true, the source contained in the Src field was modified
-	// from the original source to improve parsing.
-	//
-	// If FixedAST == true, the ast was modified after parsing, and therefore
-	// positions encoded in the AST may not accurately represent the content of
-	// the Src field.
-	//
-	// TODO(rfindley): there are many places where we haphazardly use the Src or
-	// positions without checking these fields. Audit these places and guard
-	// accordingly. After doing so, we may find that we don't need to
-	// differentiate FixedSrc and FixedAST.
-	FixedSrc bool
-	FixedAST bool
-	Mapper   *protocol.Mapper // may map fixed Src, not file content
-	ParseErr scanner.ErrorList
-}
-
-// Fixed reports whether p was "Fixed", meaning that its source or positions
-// may not correlate with the original file.
-func (p ParsedGoFile) Fixed() bool {
-	return p.FixedSrc || p.FixedAST
-}
-
-// -- go/token domain convenience helpers --
-
-// PositionPos returns the token.Pos of protocol position p within the file.
-func (pgf *ParsedGoFile) PositionPos(p protocol.Position) (token.Pos, error) {
-	offset, err := pgf.Mapper.PositionOffset(p)
-	if err != nil {
-		return token.NoPos, err
-	}
-	return safetoken.Pos(pgf.Tok, offset)
-}
-
-// PosRange returns a protocol Range for the token.Pos interval in this file.
-func (pgf *ParsedGoFile) PosRange(start, end token.Pos) (protocol.Range, error) {
-	return pgf.Mapper.PosRange(pgf.Tok, start, end)
-}
-
-// PosMappedRange returns a MappedRange for the token.Pos interval in this file.
-// A MappedRange can be converted to any other form.
-func (pgf *ParsedGoFile) PosMappedRange(start, end token.Pos) (protocol.MappedRange, error) {
-	return pgf.Mapper.PosMappedRange(pgf.Tok, start, end)
-}
-
-// PosLocation returns a protocol Location for the token.Pos interval in this file.
-func (pgf *ParsedGoFile) PosLocation(start, end token.Pos) (protocol.Location, error) {
-	return pgf.Mapper.PosLocation(pgf.Tok, start, end)
-}
-
-// NodeRange returns a protocol Range for the ast.Node interval in this file.
-func (pgf *ParsedGoFile) NodeRange(node ast.Node) (protocol.Range, error) {
-	return pgf.Mapper.NodeRange(pgf.Tok, node)
-}
-
-// NodeMappedRange returns a MappedRange for the ast.Node interval in this file.
-// A MappedRange can be converted to any other form.
-func (pgf *ParsedGoFile) NodeMappedRange(node ast.Node) (protocol.MappedRange, error) {
-	return pgf.Mapper.NodeMappedRange(pgf.Tok, node)
-}
-
-// NodeLocation returns a protocol Location for the ast.Node interval in this file.
-func (pgf *ParsedGoFile) NodeLocation(node ast.Node) (protocol.Location, error) {
-	return pgf.Mapper.PosLocation(pgf.Tok, node.Pos(), node.End())
-}
-
-// RangePos parses a protocol Range back into the go/token domain.
-func (pgf *ParsedGoFile) RangePos(r protocol.Range) (token.Pos, token.Pos, error) {
-	start, end, err := pgf.Mapper.RangeOffsets(r)
-	if err != nil {
-		return token.NoPos, token.NoPos, err
-	}
-	return pgf.Tok.Pos(start), pgf.Tok.Pos(end), nil
-}
+type ParsedGoFile = parsego.File
 
 // A ParsedModule contains the results of parsing a go.mod file.
 type ParsedModule struct {
@@ -428,17 +342,9 @@ func RemoveIntermediateTestVariants(pmetas *[]*Metadata) {
 	*pmetas = res
 }
 
-// Common parse modes; these should be reused wherever possible to increase
-// cache hits.
 const (
-	// ParseHeader specifies that the main package declaration and imports are needed.
-	// This is the mode used when attempting to examine the package graph structure.
-	ParseHeader = parser.AllErrors | parser.ParseComments | parser.ImportsOnly | SkipObjectResolution
-
-	// ParseFull specifies the full AST is needed.
-	// This is used for files of direct interest where the entire contents must
-	// be considered.
-	ParseFull = parser.AllErrors | parser.ParseComments | SkipObjectResolution
+	ParseHeader = parsego.ParseHeader
+	ParseFull   = parsego.ParseFull
 )
 
 type (
