@@ -899,12 +899,12 @@ func (e *encoded) importSpec(d *ast.ImportSpec) {
 		}
 		return // don't mark anything for . or _
 	}
-	importPath := source.UnquoteImportPath(d)
+	importPath := metadata.UnquoteImportPath(d)
 	if importPath == "" {
 		return
 	}
 	// Import strings are implementation defined. Try to match with parse information.
-	depID := e.pkg.Metadata().DepsByImpPath[importPath]
+	depID := e.pkg.Metadata().DepsByImpPath[metadata.ImportPath(importPath)]
 	if depID == "" {
 		return
 	}

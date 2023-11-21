@@ -860,7 +860,7 @@ func renameImports(ctx context.Context, snapshot Snapshot, m *Metadata, newPath 
 				continue // no package declaration
 			}
 			for _, imp := range f.File.Imports {
-				if rdep.DepsByImpPath[UnquoteImportPath(imp)] != m.ID {
+				if rdep.DepsByImpPath[metadata.UnquoteImportPath(imp)] != m.ID {
 					continue // not the import we're looking for
 				}
 
@@ -913,7 +913,7 @@ func renameImports(ctx context.Context, snapshot Snapshot, m *Metadata, newPath 
 				if imp.Name != nil {
 					continue // has explicit local name
 				}
-				if rdeps[id].DepsByImpPath[UnquoteImportPath(imp)] != m.ID {
+				if rdeps[id].DepsByImpPath[metadata.UnquoteImportPath(imp)] != m.ID {
 					continue // not the import we're looking for
 				}
 

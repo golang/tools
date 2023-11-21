@@ -5,8 +5,10 @@
 package metadata
 
 import (
+	"go/ast"
 	"go/types"
 	"sort"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -197,4 +199,14 @@ func SortPostOrder(meta Source, ids []PackageID) {
 	sort.Slice(ids, func(i, j int) bool {
 		return postorder[ids[i]] < postorder[ids[j]]
 	})
+}
+
+// UnquoteImportPath returns the unquoted import path of s,
+// or "" if the path is not properly quoted.
+func UnquoteImportPath(spec *ast.ImportSpec) ImportPath {
+	path, err := strconv.Unquote(spec.Path.Value)
+	if err != nil {
+		return ""
+	}
+	return ImportPath(path)
 }

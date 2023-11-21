@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 )
 
 // PackageIndex stores common data to enable efficient representation of
@@ -20,21 +20,21 @@ type PackageIndex struct {
 	// For now, PackageIndex just indexes package ids, to save space and allow for
 	// faster unions via sparse int vectors.
 	mu  sync.Mutex
-	ids []source.PackageID
-	m   map[source.PackageID]IndexID
+	ids []metadata.PackageID
+	m   map[metadata.PackageID]IndexID
 }
 
 // NewPackageIndex creates a new PackageIndex instance for use in building
 // reference and package sets.
 func NewPackageIndex() *PackageIndex {
 	return &PackageIndex{
-		m: make(map[source.PackageID]IndexID),
+		m: make(map[metadata.PackageID]IndexID),
 	}
 }
 
 // IndexID returns the packageIdx referencing id, creating one if id is not yet
 // tracked by the receiver.
-func (index *PackageIndex) IndexID(id source.PackageID) IndexID {
+func (index *PackageIndex) IndexID(id metadata.PackageID) IndexID {
 	index.mu.Lock()
 	defer index.mu.Unlock()
 	if i, ok := index.m[id]; ok {
@@ -49,13 +49,13 @@ func (index *PackageIndex) IndexID(id source.PackageID) IndexID {
 // PackageID returns the PackageID for idx.
 //
 // idx must have been created by this PackageIndex instance.
-func (index *PackageIndex) PackageID(idx IndexID) source.PackageID {
+func (index *PackageIndex) PackageID(idx IndexID) metadata.PackageID {
 	index.mu.Lock()
 	defer index.mu.Unlock()
 	return index.ids[idx]
 }
 
-// A PackageSet is a set of source.PackageIDs, optimized for inuse memory
+// A PackageSet is a set of metadata.PackageIDs, optimized for inuse memory
 // footprint and efficient union operations.
 type PackageSet struct {
 	// PackageSet is a sparse int vector of package indexes from parent.
@@ -79,12 +79,12 @@ func (index *PackageIndex) NewSet() *PackageSet {
 
 // DeclaringPackage returns the ID of the symbol's declaring package.
 // The package index must be the one used during decoding.
-func (index *PackageIndex) DeclaringPackage(sym Symbol) source.PackageID {
+func (index *PackageIndex) DeclaringPackage(sym Symbol) metadata.PackageID {
 	return index.PackageID(sym.Package)
 }
 
 // Add records a new element in the package set, for the provided package ID.
-func (s *PackageSet) AddPackage(id source.PackageID) {
+func (s *PackageSet) AddPackage(id metadata.PackageID) {
 	s.Add(s.parent.IndexID(id))
 }
 
@@ -116,7 +116,7 @@ func (s *PackageSet) Union(other *PackageSet) {
 }
 
 // Contains reports whether id is contained in the receiver set.
-func (s *PackageSet) Contains(id source.PackageID) bool {
+func (s *PackageSet) Contains(id metadata.PackageID) bool {
 	i := int(s.parent.IndexID(id))
 	return s.sparse[i/blockSize]&(1<<(i%blockSize)) != 0
 }

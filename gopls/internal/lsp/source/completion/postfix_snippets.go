@@ -16,6 +16,7 @@ import (
 	"sync"
 	"text/template"
 
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/snippet"
@@ -455,7 +456,7 @@ func (c *completer) importIfNeeded(pkgPath string, scope *types.Scope) (string, 
 	for _, s := range c.file.Imports {
 		// TODO(adonovan): what if pkgPath has a vendor/ suffix?
 		// This may be the cause of go.dev/issue/56291.
-		if source.UnquoteImportPath(s) == source.ImportPath(pkgPath) {
+		if string(metadata.UnquoteImportPath(s)) == pkgPath {
 			if s.Name == nil {
 				return defaultName, nil, nil
 			}

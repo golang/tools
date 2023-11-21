@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 )
@@ -45,7 +46,7 @@ func KnownPackagePaths(ctx context.Context, snapshot Snapshot, fh file.Handle) (
 	}
 	imported := make(map[PackagePath]bool)
 	for _, imp := range file.Imports {
-		if id := current.DepsByImpPath[UnquoteImportPath(imp)]; id != "" {
+		if id := current.DepsByImpPath[metadata.UnquoteImportPath(imp)]; id != "" {
 			if m := snapshot.Metadata(id); m != nil {
 				imported[m.PkgPath] = true
 			}

@@ -18,9 +18,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
+	"golang.org/x/tools/gopls/internal/lsp/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 )
 
 const (
@@ -33,7 +33,7 @@ const (
 // A Package holds reference information for a single package.
 type Package struct {
 	// metadata holds metadata about this package and its dependencies.
-	metadata *source.Metadata
+	metadata *metadata.Metadata
 
 	// transitiveRefs records, for each exported declaration in the package, the
 	// transitive set of packages within the containing graph that are
@@ -51,10 +51,10 @@ type Package struct {
 type PackageGraph struct {
 	pkgIndex *typerefs.PackageIndex
 	meta     metadata.Source
-	parse    func(context.Context, protocol.DocumentURI) (*source.ParsedGoFile, error)
+	parse    func(context.Context, protocol.DocumentURI) (*parsego.File, error)
 
 	mu       sync.Mutex
-	packages map[source.PackageID]*futurePackage
+	packages map[metadata.PackageID]*futurePackage
 }
 
 // BuildPackageGraph analyzes the package graph for the requested ids, whose
@@ -67,12 +67,12 @@ type PackageGraph struct {
 //
 // See the package documentation for more information on the package reference
 // algorithm.
-func BuildPackageGraph(ctx context.Context, meta metadata.Source, ids []source.PackageID, parse func(context.Context, protocol.DocumentURI) (*source.ParsedGoFile, error)) (*PackageGraph, error) {
+func BuildPackageGraph(ctx context.Context, meta metadata.Source, ids []metadata.PackageID, parse func(context.Context, protocol.DocumentURI) (*parsego.File, error)) (*PackageGraph, error) {
 	g := &PackageGraph{
 		pkgIndex: typerefs.NewPackageIndex(),
 		meta:     meta,
 		parse:    parse,
-		packages: make(map[source.PackageID]*futurePackage),
+		packages: make(map[metadata.PackageID]*futurePackage),
 	}
 	metadata.SortPostOrder(meta, ids)
 
@@ -101,7 +101,7 @@ type futurePackage struct {
 }
 
 // Package gets the result of analyzing references for a single package.
-func (g *PackageGraph) Package(ctx context.Context, id source.PackageID) (*Package, error) {
+func (g *PackageGraph) Package(ctx context.Context, id metadata.PackageID) (*Package, error) {
 	g.mu.Lock()
 	fut, ok := g.packages[id]
 	if ok {
@@ -123,12 +123,12 @@ func (g *PackageGraph) Package(ctx context.Context, id source.PackageID) (*Packa
 
 // buildPackage parses a package and extracts its reference graph. It should
 // only be called from Package.
-func (g *PackageGraph) buildPackage(ctx context.Context, id source.PackageID) (*Package, error) {
+func (g *PackageGraph) buildPackage(ctx context.Context, id metadata.PackageID) (*Package, error) {
 	p := &Package{
 		metadata:       g.meta.Metadata(id),
 		transitiveRefs: make(map[string]*typerefs.PackageSet),
 	}
-	var files []*source.ParsedGoFile
+	var files []*parsego.File
 	for _, filename := range p.metadata.CompiledGoFiles {
 		f, err := g.parse(ctx, filename)
 		if err != nil {
@@ -136,7 +136,7 @@ func (g *PackageGraph) buildPackage(ctx context.Context, id source.PackageID) (*
 		}
 		files = append(files, f)
 	}
-	imports := make(map[source.ImportPath]*source.Metadata)
+	imports := make(map[metadata.ImportPath]*metadata.Metadata)
 	for impPath, depID := range p.metadata.DepsByImpPath {
 		if depID != "" {
 			imports[impPath] = g.meta.Metadata(depID)
@@ -144,7 +144,7 @@ func (g *PackageGraph) buildPackage(ctx context.Context, id source.PackageID) (*
 	}
 
 	// Compute the symbol-level dependencies through this package.
-	data := typerefs.Encode(files, id, imports)
+	data := typerefs.Encode(files, imports)
 
 	// data can be persisted in a filecache, keyed
 	// by hash(id, CompiledGoFiles, imports).
@@ -157,7 +157,7 @@ func (g *PackageGraph) buildPackage(ctx context.Context, id source.PackageID) (*
 	// package and declarations in this package or another
 	// package. See the package documentation for a detailed
 	// description of what these edges do (and do not) represent.
-	classes := typerefs.Decode(g.pkgIndex, id, data)
+	classes := typerefs.Decode(g.pkgIndex, data)
 
 	// Debug
 	if trace && len(classes) > 0 {
@@ -228,7 +228,7 @@ func (g *PackageGraph) buildPackage(ctx context.Context, id source.PackageID) (*
 
 // reachesByDeps computes the set of packages that are reachable through
 // dependencies of the package m.
-func (g *PackageGraph) reachesByDeps(ctx context.Context, m *source.Metadata) (*typerefs.PackageSet, error) {
+func (g *PackageGraph) reachesByDeps(ctx context.Context, m *metadata.Metadata) (*typerefs.PackageSet, error) {
 	transitive := g.pkgIndex.NewSet()
 	for _, depID := range m.DepsByPkgPath {
 		dep, err := g.Package(ctx, depID)

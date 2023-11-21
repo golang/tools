@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/stubmethods"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/diff"
@@ -73,7 +74,7 @@ func stub(ctx context.Context, snapshot Snapshot, si *stubmethods.StubInfo) (*to
 	// Build import environment for the declaring file.
 	importEnv := make(map[ImportPath]string) // value is local name
 	for _, imp := range declPGF.File.Imports {
-		importPath := UnquoteImportPath(imp)
+		importPath := metadata.UnquoteImportPath(imp)
 		var name string
 		if imp.Name != nil {
 			name = imp.Name.Name

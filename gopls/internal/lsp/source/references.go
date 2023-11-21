@@ -27,6 +27,7 @@ import (
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/cache/methodsets"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
@@ -167,7 +168,7 @@ func packageReferences(ctx context.Context, snapshot Snapshot, uri protocol.Docu
 					return nil, err
 				}
 				for _, imp := range f.File.Imports {
-					if rdep.DepsByImpPath[UnquoteImportPath(imp)] == narrowest.ID {
+					if rdep.DepsByImpPath[metadata.UnquoteImportPath(imp)] == narrowest.ID {
 						refs = append(refs, reference{
 							isDeclaration: false,
 							location:      mustLocation(f, imp),
@@ -668,7 +669,7 @@ func objectsAt(info *types.Info, file *ast.File, pos token.Pos) (map[types.Objec
 		// Look up the implicit *types.PkgName.
 		obj := info.Implicits[leaf]
 		if obj == nil {
-			return nil, nil, fmt.Errorf("%w for import %s", errNoObjectFound, UnquoteImportPath(leaf))
+			return nil, nil, fmt.Errorf("%w for import %s", errNoObjectFound, metadata.UnquoteImportPath(leaf))
 		}
 		targets[obj] = leaf
 	}

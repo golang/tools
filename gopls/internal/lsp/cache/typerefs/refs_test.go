@@ -12,10 +12,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
+	"golang.org/x/tools/gopls/internal/lsp/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 )
 
 // TestRefs checks that the analysis reports, for each exported member
@@ -504,31 +504,31 @@ type Z map[ext.A]ext.B
 
 	for _, test := range tests {
 		t.Run(test.label, func(t *testing.T) {
-			var pgfs []*source.ParsedGoFile
+			var pgfs []*parsego.File
 			for i, src := range test.srcs {
 				uri := protocol.DocumentURI(fmt.Sprintf("file:///%d.go", i))
-				pgf, _ := parsego.Parse(ctx, token.NewFileSet(), uri, []byte(src), source.ParseFull, false)
+				pgf, _ := parsego.Parse(ctx, token.NewFileSet(), uri, []byte(src), parsego.ParseFull, false)
 				if !test.allowErrs && pgf.ParseErr != nil {
 					t.Fatalf("ParseGoSrc(...) returned parse errors: %v", pgf.ParseErr)
 				}
 				pgfs = append(pgfs, pgf)
 			}
 
-			imports := map[source.ImportPath]*source.Metadata{
+			imports := map[metadata.ImportPath]*metadata.Metadata{
 				"ext": {ID: "ext", Name: "ext"}, // this one comes for free
 			}
 			for path, m := range test.imports {
-				imports[source.ImportPath(path)] = &source.Metadata{
-					ID:   source.PackageID(m),
-					Name: source.PackageName(m),
+				imports[metadata.ImportPath(path)] = &metadata.Metadata{
+					ID:   metadata.PackageID(m),
+					Name: metadata.PackageName(m),
 				}
 			}
 
-			data := typerefs.Encode(pgfs, "p", imports)
+			data := typerefs.Encode(pgfs, imports)
 
 			got := make(map[string][]string)
 			index := typerefs.NewPackageIndex()
-			for _, class := range typerefs.Decode(index, "p", data) {
+			for _, class := range typerefs.Decode(index, data) {
 				// We redundantly expand out the name x refs cross product
 				// here since that's what the existing tests expect.
 				for _, name := range class.Decls {

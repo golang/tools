@@ -24,6 +24,7 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
@@ -820,7 +821,7 @@ func (c *commandHandler) ListImports(ctx context.Context, args command.URIArg) (
 					name = imp.Name.Name
 				}
 				result.Imports = append(result.Imports, command.FileImport{
-					Path: string(source.UnquoteImportPath(imp)),
+					Path: string(metadata.UnquoteImportPath(imp)),
 					Name: name,
 				})
 			}

@@ -29,6 +29,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	goplsastutil "golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/snippet"
@@ -1795,7 +1796,7 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 // alreadyImports reports whether f has an import with the specified path.
 func alreadyImports(f *ast.File, path source.ImportPath) bool {
 	for _, s := range f.Imports {
-		if source.UnquoteImportPath(s) == path {
+		if metadata.UnquoteImportPath(s) == path {
 			return true
 		}
 	}

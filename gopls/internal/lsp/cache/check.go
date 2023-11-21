@@ -25,11 +25,11 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
+	"golang.org/x/tools/gopls/internal/lsp/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -1224,7 +1224,7 @@ func (s *Snapshot) typerefs(ctx context.Context, m *Metadata, cgfs []file.Handle
 	if err != nil {
 		return nil, err
 	}
-	classes := typerefs.Decode(s.pkgIndex, m.ID, data)
+	classes := typerefs.Decode(s.pkgIndex, data)
 	refs := make(map[string][]typerefs.Symbol)
 	for _, class := range classes {
 		for _, decl := range class.Decls {
@@ -1248,7 +1248,7 @@ func (s *Snapshot) typerefData(ctx context.Context, id PackageID, imports map[Im
 	if err != nil {
 		return nil, err
 	}
-	data := typerefs.Encode(pgfs, id, imports)
+	data := typerefs.Encode(pgfs, imports)
 
 	// Store the resulting data in the cache.
 	go func() {

@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/event"
 )
@@ -236,7 +237,7 @@ func importDefinition(ctx context.Context, s Snapshot, pkg Package, pgf *ParsedG
 		return nil, nil
 	}
 
-	importPath := UnquoteImportPath(imp)
+	importPath := metadata.UnquoteImportPath(imp)
 	impID := pkg.Metadata().DepsByImpPath[importPath]
 	if impID == "" {
 		return nil, fmt.Errorf("failed to resolve import %q", importPath)

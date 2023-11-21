@@ -18,6 +18,7 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
@@ -127,7 +128,7 @@ func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]p
 		}
 
 		for _, imp := range pgf.File.Imports {
-			importPath := source.UnquoteImportPath(imp)
+			importPath := metadata.UnquoteImportPath(imp)
 			if importPath == "" {
 				continue // bad import
 			}

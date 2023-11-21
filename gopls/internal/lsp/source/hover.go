@@ -26,6 +26,7 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -442,7 +443,7 @@ func hoverImport(ctx context.Context, snapshot Snapshot, pkg Package, pgf *Parse
 		return protocol.Range{}, nil, err
 	}
 
-	importPath := UnquoteImportPath(imp)
+	importPath := metadata.UnquoteImportPath(imp)
 	if importPath == "" {
 		return protocol.Range{}, nil, fmt.Errorf("invalid import path")
 	}

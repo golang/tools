@@ -12,7 +12,6 @@ import (
 	"go/types"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/astutil"
@@ -196,16 +195,6 @@ func findFileInDeps(s metadata.Source, m *Metadata, uri protocol.DocumentURI) *M
 	return search(m)
 }
 
-// UnquoteImportPath returns the unquoted import path of s,
-// or "" if the path is not properly quoted.
-func UnquoteImportPath(s *ast.ImportSpec) ImportPath {
-	path, err := strconv.Unquote(s.Path.Value)
-	if err != nil {
-		return ""
-	}
-	return ImportPath(path)
-}
-
 // CollectScopes returns all scopes in an ast path, ordered as innermost scope
 // first.
 func CollectScopes(info *types.Info, path []ast.Node, pos token.Pos) []*types.Scope {
@@ -352,7 +341,7 @@ func importInfo(s metadata.Source, imp *ast.ImportSpec, m *Metadata) (string, Pa
 	var (
 		name    string // local name
 		pkgName PackageName
-		impPath = UnquoteImportPath(imp)
+		impPath = metadata.UnquoteImportPath(imp)
 		pkgPath PackagePath
 	)
 

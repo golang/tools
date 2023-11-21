@@ -23,9 +23,8 @@ import (
 	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
+	"golang.org/x/tools/gopls/internal/lsp/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -43,7 +42,7 @@ type (
 	PackagePath    = metadata.PackagePath
 	Metadata       = metadata.Metadata
 	MetadataSource = metadata.Source
-	ParsedGoFile   = source.ParsedGoFile
+	ParsedGoFile   = parsego.File
 )
 
 // TestBuildPackageGraph tests the BuildPackageGraph constructor, which uses
@@ -72,7 +71,7 @@ func TestBuildPackageGraph(t *testing.T) {
 	testenv.NeedsGoBuild(t) // for go/packages
 
 	t0 := time.Now()
-	exports, meta, err := load(*query, *verify)
+	exports, meta, err := loadPackages(*query, *verify)
 	if err != nil {
 		t.Fatalf("loading failed: %v", err)
 	}
@@ -251,7 +250,7 @@ func importFromExportData(pkgPath, exportFile string) (*types.Package, error) {
 
 func BenchmarkBuildPackageGraph(b *testing.B) {
 	t0 := time.Now()
-	exports, meta, err := load(*query, *verify)
+	exports, meta, err := loadPackages(*query, *verify)
 	if err != nil {
 		b.Fatalf("loading failed: %v", err)
 	}
@@ -296,7 +295,7 @@ func (p *memoizedParser) parse(ctx context.Context, uri protocol.DocumentURI) (*
 			return nil, err
 		}
 		content = astutil.PurgeFuncBodies(content)
-		pgf, _ := parsego.Parse(ctx, token.NewFileSet(), uri, content, source.ParseFull, false)
+		pgf, _ := parsego.Parse(ctx, token.NewFileSet(), uri, content, parsego.ParseFull, false)
 		return pgf, nil
 	}
 
@@ -332,7 +331,7 @@ func (s mapMetadataSource) Metadata(id PackageID) *Metadata {
 //
 // TODO(rfindley): it may be valuable to extract this logic from the snapshot,
 // since it is otherwise standalone.
-func load(query string, needExport bool) (map[PackageID]string, MetadataSource, error) {
+func loadPackages(query string, needExport bool) (map[PackageID]string, MetadataSource, error) {
 	cfg := &packages.Config{
 		Dir: *dir,
 		Mode: packages.NeedName |

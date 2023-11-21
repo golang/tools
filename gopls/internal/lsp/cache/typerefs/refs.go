@@ -12,8 +12,9 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/astutil"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/frob"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -24,8 +25,8 @@ import (
 //
 // It returns a serializable index of this information.
 // Use Decode to expand the result.
-func Encode(files []*source.ParsedGoFile, id source.PackageID, imports map[source.ImportPath]*source.Metadata) []byte {
-	return index(files, id, imports)
+func Encode(files []*parsego.File, imports map[metadata.ImportPath]*metadata.Metadata) []byte {
+	return index(files, imports)
 }
 
 // Decode decodes a serializable index of symbol
@@ -38,8 +39,8 @@ func Encode(files []*source.ParsedGoFile, id source.PackageID, imports map[sourc
 //
 // See the package documentation for more details as to what a
 // reference does (and does not) represent.
-func Decode(pkgIndex *PackageIndex, id source.PackageID, data []byte) []Class {
-	return decode(pkgIndex, id, data)
+func Decode(pkgIndex *PackageIndex, data []byte) []Class {
+	return decode(pkgIndex, data)
 }
 
 // A Class is a reachability equivalence class.
@@ -77,7 +78,7 @@ type symbolSet map[symbol]bool
 // A symbol is the internal representation of an external
 // (imported) symbol referenced by the analyzed package.
 type symbol struct {
-	pkg  source.PackageID
+	pkg  metadata.PackageID
 	name string
 }
 
@@ -162,7 +163,7 @@ func classKey(set symbolSet) string {
 }
 
 // index builds the reference graph and encodes the index.
-func index(pgfs []*source.ParsedGoFile, id source.PackageID, imports map[source.ImportPath]*source.Metadata) []byte {
+func index(pgfs []*parsego.File, imports map[metadata.ImportPath]*metadata.Metadata) []byte {
 	// First pass: gather package-level names and create a declNode for each.
 	//
 	// In ill-typed code, there may be multiple declarations of the
@@ -255,12 +256,12 @@ func index(pgfs []*source.ParsedGoFile, id source.PackageID, imports map[source.
 
 // visitFile inspects the file syntax for referring identifiers, and
 // populates the internal and external references of decls.
-func visitFile(file *ast.File, imports map[source.ImportPath]*source.Metadata, decls map[string]*declNode) {
+func visitFile(file *ast.File, imports map[metadata.ImportPath]*metadata.Metadata, decls map[string]*declNode) {
 	// Import information for this file. Multiple packages
 	// may be referenced by a given name in the presence
 	// of type errors (or multiple dot imports, which are
 	// keyed by ".").
-	fileImports := make(map[string][]source.PackageID)
+	fileImports := make(map[string][]metadata.PackageID)
 
 	// importEdge records a reference from decl to an imported symbol
 	// (pkgname.name). The package name may be ".".
@@ -339,11 +340,11 @@ func visitFile(file *ast.File, imports map[source.ImportPath]*source.Metadata, d
 				// Record local import names for this file.
 				for _, spec := range d.Specs {
 					spec := spec.(*ast.ImportSpec)
-					path := source.UnquoteImportPath(spec)
+					path := metadata.UnquoteImportPath(spec)
 					if path == "" {
 						continue
 					}
-					dep := imports[path]
+					dep := imports[metadata.ImportPath(path)]
 					if dep == nil {
 						// Note here that we don't try to "guess"
 						// the name of an import based on e.g.
@@ -800,7 +801,7 @@ func encode(classNames map[int][]string, classes []symbolSet) []byte {
 	return classesCodec.Encode(payload)
 }
 
-func decode(pkgIndex *PackageIndex, id source.PackageID, data []byte) []Class {
+func decode(pkgIndex *PackageIndex, data []byte) []Class {
 	var payload gobClasses
 	classesCodec.Decode(data, &payload)
 
@@ -812,7 +813,7 @@ func decode(pkgIndex *PackageIndex, id source.PackageID, data []byte) []Class {
 		}
 		refs := make([]Symbol, len(gobClass.Refs)/2)
 		for i := range refs {
-			pkgID := pkgIndex.IndexID(source.PackageID(payload.Strings[gobClass.Refs[2*i]]))
+			pkgID := pkgIndex.IndexID(metadata.PackageID(payload.Strings[gobClass.Refs[2*i]]))
 			name := payload.Strings[gobClass.Refs[2*i+1]]
 			refs[i] = Symbol{Package: pkgID, Name: name}
 		}
