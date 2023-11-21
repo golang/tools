@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/immutable"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/pathutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -245,14 +246,8 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 
 	event.Log(ctx, fmt.Sprintf("%s: updating metadata for %d packages", eventName, len(updates)))
 
-	// Before mutating the snapshot, ensure that we compute load diagnostics
-	// successfully. This could fail if the context is cancelled, and we don't
-	// want to leave the snapshot metadata in a partial state.
 	meta := s.meta.Clone(updates)
 	workspacePackages := computeWorkspacePackagesLocked(s, meta)
-	for _, update := range updates {
-		computeLoadDiagnostics(ctx, update, meta, lockedSnapshot{s}, workspacePackages)
-	}
 	s.meta = meta
 	s.workspacePackages = workspacePackages
 	s.resetActivePackagesLocked()
@@ -557,8 +552,9 @@ func buildMetadata(updates map[PackageID]*Metadata, pkg *packages.Package, loadD
 
 // computeLoadDiagnostics computes and sets m.Diagnostics for the given metadata m.
 //
-// It should only be called during metadata construction in snapshot.load.
-func computeLoadDiagnostics(ctx context.Context, m *Metadata, meta *metadataGraph, fs file.Source, workspacePackages immutable.Map[PackageID, PackagePath]) {
+// It should only be called during package handle construction in buildPackageHandle.
+func computeLoadDiagnostics(ctx context.Context, snapshot *Snapshot, m *Metadata) []*source.Diagnostic {
+	var diags []*source.Diagnostic
 	for _, packagesErr := range m.Errors {
 		// Filter out parse errors from go list. We'll get them when we
 		// actually parse, and buggy overlay support may generate spurious
@@ -566,28 +562,30 @@ func computeLoadDiagnostics(ctx context.Context, m *Metadata, meta *metadataGrap
 		if strings.Contains(packagesErr.Msg, "expected '") {
 			continue
 		}
-		pkgDiags, err := goPackagesErrorDiagnostics(ctx, packagesErr, m, fs)
+		pkgDiags, err := goPackagesErrorDiagnostics(ctx, packagesErr, m, snapshot)
 		if err != nil {
 			// There are certain cases where the go command returns invalid
 			// positions, so we cannot panic or even bug.Reportf here.
 			event.Error(ctx, "unable to compute positions for list errors", err, tag.Package.Of(string(m.ID)))
 			continue
 		}
-		m.Diagnostics = append(m.Diagnostics, pkgDiags...)
+		diags = append(diags, pkgDiags...)
 	}
 
 	// TODO(rfindley): this is buggy: an insignificant change to a modfile
 	// (or an unsaved modfile) could affect the position of deps errors,
 	// without invalidating the package.
-	depsDiags, err := depsErrors(ctx, m, meta, fs, workspacePackages)
+	depsDiags, err := depsErrors(ctx, snapshot, m)
 	if err != nil {
 		if ctx.Err() == nil {
 			// TODO(rfindley): consider making this a bug.Reportf. depsErrors should
 			// not normally fail.
 			event.Error(ctx, "unable to compute deps errors", err, tag.Package.Of(string(m.ID)))
 		}
+	} else {
+		diags = append(diags, depsDiags...)
 	}
-	m.Diagnostics = append(m.Diagnostics, depsDiags...)
+	return diags
 }
 
 // containsPackageLocked reports whether p is a workspace package for the

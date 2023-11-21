@@ -651,7 +651,7 @@ func (s *Snapshot) PackageDiagnostics(ctx context.Context, ids ...PackageID) (ma
 	pre := func(_ int, ph *packageHandle) bool {
 		data, err := filecache.Get(diagnosticsKind, ph.key)
 		if err == nil { // hit
-			collect(ph.m.Diagnostics)
+			collect(ph.loadDiagnostics)
 			collect(decodeDiagnostics(data))
 			return false
 		} else if err != filecache.ErrNotFound {
@@ -660,7 +660,7 @@ func (s *Snapshot) PackageDiagnostics(ctx context.Context, ids ...PackageID) (ma
 		return true
 	}
 	post := func(_ int, pkg *Package) {
-		collect(pkg.m.Diagnostics)
+		collect(pkg.loadDiagnostics)
 		collect(pkg.pkg.diagnostics)
 	}
 	return perFile, s.forEachPackage(ctx, ids, pre, post)
@@ -1052,6 +1052,15 @@ func (s *Snapshot) WorkspaceMetadata(ctx context.Context) ([]*Metadata, error) {
 	return meta, nil
 }
 
+// isWorkspacePackage reports whether the given package ID refers to a
+// workspace package for the snapshot.
+func (s *Snapshot) isWorkspacePackage(id PackageID) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.workspacePackages.Value(id)
+	return ok
+}
+
 // Symbols extracts and returns symbol information for every file contained in
 // a loaded package. It awaits snapshot loading.
 //
@@ -1219,7 +1228,18 @@ func (s *Snapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (file
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return lockedSnapshot{s}.ReadFile(ctx, uri)
+	s.view.markKnown(uri)
+
+	fh, ok := s.files.Get(uri)
+	if !ok {
+		var err error
+		fh, err = s.view.fs.ReadFile(ctx, uri)
+		if err != nil {
+			return nil, err
+		}
+		s.files.Set(uri, fh)
+	}
+	return fh, nil
 }
 
 // preloadFiles delegates to the view FileSource to read the requested uris in
@@ -1256,24 +1276,6 @@ func (s *Snapshot) preloadFiles(ctx context.Context, uris []protocol.DocumentURI
 			s.files.Set(uri, fh)
 		}
 	}
-}
-
-// A lockedSnapshot implements the file.Source interface while holding
-// the lock for the wrapped snapshot.
-type lockedSnapshot struct{ wrapped *Snapshot }
-
-func (s lockedSnapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (file.Handle, error) {
-	s.wrapped.view.markKnown(uri)
-	if fh, ok := s.wrapped.files.Get(uri); ok {
-		return fh, nil
-	}
-
-	fh, err := s.wrapped.view.fs.ReadFile(ctx, uri)
-	if err != nil {
-		return nil, err
-	}
-	s.wrapped.files.Set(uri, fh)
-	return fh, nil
 }
 
 // IsOpen returns whether the editor currently has a file open.

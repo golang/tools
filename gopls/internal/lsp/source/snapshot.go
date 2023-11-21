@@ -448,9 +448,8 @@ type Metadata struct {
 	DepsByPkgPath map[PackagePath]PackageID // values are unique and non-empty
 	Module        *packages.Module
 	DepsErrors    []*packagesinternal.PackageError
-	Diagnostics   []*Diagnostic // processed diagnostics from 'go list'
-	LoadDir       string        // directory from which go/packages was run
-	Standalone    bool          // package synthesized for a standalone file (e.g. ignore-tagged)
+	LoadDir       string // directory from which go/packages was run
+	Standalone    bool   // package synthesized for a standalone file (e.g. ignore-tagged)
 }
 
 func (m *Metadata) String() string { return string(m.ID) }

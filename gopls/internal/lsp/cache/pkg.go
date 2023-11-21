@@ -23,11 +23,12 @@ import (
 // Types
 type (
 	// Metadata.
-	PackageID   = source.PackageID
-	PackagePath = source.PackagePath
-	PackageName = source.PackageName
-	ImportPath  = source.ImportPath
-	Metadata    = source.Metadata
+	PackageID      = source.PackageID
+	PackagePath    = source.PackagePath
+	PackageName    = source.PackageName
+	ImportPath     = source.ImportPath
+	Metadata       = source.Metadata
+	MetadataSource = source.MetadataSource
 
 	// Diagnostics.
 	Diagnostic   = source.Diagnostic
@@ -82,8 +83,9 @@ var (
 // loadDiagnostics, because the value of the snapshot.packages map is just the
 // package handle. Fix this.
 type Package struct {
-	m   *Metadata
-	pkg *syntaxPackage
+	m               *Metadata
+	loadDiagnostics []*source.Diagnostic
+	pkg             *syntaxPackage
 }
 
 // syntaxPackage contains parse trees and type information for a package.
@@ -150,11 +152,11 @@ func (packageLoadScope) aScope() {}
 func (moduleLoadScope) aScope()  {}
 func (viewLoadScope) aScope()    {}
 
-func (p *Package) CompiledGoFiles() []*source.ParsedGoFile {
+func (p *Package) CompiledGoFiles() []*ParsedGoFile {
 	return p.pkg.compiledGoFiles
 }
 
-func (p *Package) File(uri protocol.DocumentURI) (*source.ParsedGoFile, error) {
+func (p *Package) File(uri protocol.DocumentURI) (*ParsedGoFile, error) {
 	return p.pkg.File(uri)
 }
 
@@ -210,7 +212,7 @@ func (p *Package) GetTypeErrors() []types.Error {
 
 func (p *Package) DiagnosticsForFile(ctx context.Context, s source.Snapshot, uri protocol.DocumentURI) ([]*source.Diagnostic, error) {
 	var diags []*source.Diagnostic
-	for _, diag := range p.m.Diagnostics {
+	for _, diag := range p.loadDiagnostics {
 		if diag.URI == uri {
 			diags = append(diags, diag)
 		}

@@ -24,7 +24,6 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/immutable"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
@@ -730,9 +729,10 @@ func (b *typeCheckBatch) importMap(id PackageID) map[string]PackageID {
 	return impMap
 }
 
-// A packageHandle holds inputs required to compute a type-checked package,
-// including inputs to type checking itself, and a key for looking up
-// precomputed data.
+// A packageHandle holds inputs required to compute a Package, including
+// metadata, derived diagnostics, files, and settings. Additionally,
+// packageHandles manage a key for these inputs, to use in looking up
+// precomputed results.
 //
 // packageHandles may be invalid following an invalidation via snapshot.clone,
 // but the handles returned by getPackageHandles will always be valid.
@@ -762,6 +762,24 @@ func (b *typeCheckBatch) importMap(id PackageID) map[string]PackageID {
 // question must also not have changed, and we need not re-evaluate its key.
 type packageHandle struct {
 	m *Metadata
+
+	// loadDiagnostics memoizes the result of processing error messages from
+	// go/packages (i.e. `go list`).
+	//
+	// These are derived from metadata using a snapshot. Since they depend on
+	// file contents (for translating positions), they should theoretically be
+	// invalidated by file changes, but historically haven't been. In practice
+	// they are rare and indicate a fundamental error that needs to be corrected
+	// before development can continue, so it may not be worth significant
+	// engineering effort to implement accurate invalidation here.
+	//
+	// TODO(rfindley): loadDiagnostics are out of place here, as they don't
+	// directly relate to type checking. We should perhaps move the caching of
+	// load diagnostics to an entirely separate component, so that Packages need
+	// only be concerned with parsing and type checking.
+	// (Nevertheless, since the lifetime of load diagnostics matches that of the
+	// Metadata, it is convienient to memoize them here.)
+	loadDiagnostics []*source.Diagnostic
 
 	// Local data:
 
@@ -1069,11 +1087,12 @@ func (b *packageHandleBuilder) buildPackageHandle(ctx context.Context, n *handle
 			return
 		}
 		n.ph = &packageHandle{
-			m:           n.m,
-			localInputs: inputs,
-			localKey:    localPackageKey(inputs),
-			refs:        refs,
-			validated:   true,
+			m:               n.m,
+			loadDiagnostics: computeLoadDiagnostics(ctx, b.s, n.m),
+			localInputs:     inputs,
+			localKey:        localPackageKey(inputs),
+			refs:            refs,
+			validated:       true,
 		}
 	}
 
@@ -1537,7 +1556,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 		}
 	}
 
-	return &Package{ph.m, pkg}, nil
+	return &Package{ph.m, ph.loadDiagnostics, pkg}, nil
 }
 
 // TODO(golang/go#63472): this looks wrong with the new Go version syntax.
@@ -1592,7 +1611,7 @@ func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs
 // of pkg, or to 'requires' declarations in the package's go.mod file.
 //
 // TODO(rfindley): move this to load.go
-func depsErrors(ctx context.Context, m *Metadata, meta *metadataGraph, fs file.Source, workspacePackages immutable.Map[PackageID, PackagePath]) ([]*Diagnostic, error) {
+func depsErrors(ctx context.Context, snapshot *Snapshot, m *Metadata) ([]*Diagnostic, error) {
 	// Select packages that can't be found, and were imported in non-workspace packages.
 	// Workspace packages already show their own errors.
 	var relevantErrors []*packagesinternal.PackageError
@@ -1605,7 +1624,7 @@ func depsErrors(ctx context.Context, m *Metadata, meta *metadataGraph, fs file.S
 		}
 
 		directImporter := depsError.ImportStack[directImporterIdx]
-		if _, ok := workspacePackages.Value(PackageID(directImporter)); ok {
+		if snapshot.isWorkspacePackage(PackageID(directImporter)) {
 			continue
 		}
 		relevantErrors = append(relevantErrors, depsError)
@@ -1628,7 +1647,7 @@ func depsErrors(ctx context.Context, m *Metadata, meta *metadataGraph, fs file.S
 	}
 	allImports := map[string][]fileImport{}
 	for _, uri := range m.CompiledGoFiles {
-		pgf, err := parseGoURI(ctx, fs, uri, ParseHeader)
+		pgf, err := parseGoURI(ctx, snapshot, uri, ParseHeader)
 		if err != nil {
 			return nil, err
 		}
@@ -1651,7 +1670,7 @@ func depsErrors(ctx context.Context, m *Metadata, meta *metadataGraph, fs file.S
 	for _, depErr := range relevantErrors {
 		for i := len(depErr.ImportStack) - 1; i >= 0; i-- {
 			item := depErr.ImportStack[i]
-			if _, ok := workspacePackages.Value(PackageID(item)); ok {
+			if snapshot.isWorkspacePackage(PackageID(item)) {
 				break
 			}
 
@@ -1676,11 +1695,11 @@ func depsErrors(ctx context.Context, m *Metadata, meta *metadataGraph, fs file.S
 		}
 	}
 
-	modFile, err := nearestModFile(ctx, m.CompiledGoFiles[0], fs)
+	modFile, err := nearestModFile(ctx, m.CompiledGoFiles[0], snapshot)
 	if err != nil {
 		return nil, err
 	}
-	pm, err := parseModURI(ctx, fs, modFile)
+	pm, err := parseModURI(ctx, snapshot, modFile)
 	if err != nil {
 		return nil, err
 	}
@@ -1690,7 +1709,7 @@ func depsErrors(ctx context.Context, m *Metadata, meta *metadataGraph, fs file.S
 	for _, depErr := range relevantErrors {
 		for i := len(depErr.ImportStack) - 1; i >= 0; i-- {
 			item := depErr.ImportStack[i]
-			m := meta.metadata[PackageID(item)]
+			m := snapshot.Metadata(PackageID(item))
 			if m == nil || m.Module == nil {
 				continue
 			}
