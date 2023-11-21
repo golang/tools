@@ -4,6 +4,14 @@
 
 package cmd_test
 
+// This file defines tests to ensure the cmd/usage/*.hlp files match
+// the output of the tool. The .hlp files are not actually needed by
+// the executable (they are not //go:embed-ded, say), but they make it
+// easier to review changes to the gopls command's help logic since
+// any effects are manifest as changes to these files.
+
+//go:generate go test -run Help -update-help-files
+
 import (
 	"bytes"
 	"context"
@@ -17,8 +25,6 @@ import (
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/tool"
 )
-
-//go:generate go test -run Help -update-help-files
 
 var updateHelpFiles = flag.Bool("update-help-files", false, "Write out the help files instead of checking them")
 
