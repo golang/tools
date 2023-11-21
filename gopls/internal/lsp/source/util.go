@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/tokeninternal"
@@ -166,7 +167,7 @@ func CompareDiagnostic(a, b *Diagnostic) int {
 // dependencies of m. When using the Go command, the answer is unique.
 //
 // TODO(rfindley): refactor to share logic with findPackageInDeps?
-func findFileInDeps(s MetadataSource, m *Metadata, uri protocol.DocumentURI) *Metadata {
+func findFileInDeps(s metadata.Source, m *Metadata, uri protocol.DocumentURI) *Metadata {
 	seen := make(map[PackageID]bool)
 	var search func(*Metadata) *Metadata
 	search = func(m *Metadata) *Metadata {
@@ -253,7 +254,7 @@ func Qualifier(f *ast.File, pkg *types.Package, info *types.Info) types.Qualifie
 
 // requalifier returns a function that re-qualifies identifiers and qualified
 // identifiers contained in targetFile using the given metadata qualifier.
-func requalifier(s MetadataSource, targetFile *ast.File, targetMeta *Metadata, mq MetadataQualifier) func(string) string {
+func requalifier(s metadata.Source, targetFile *ast.File, targetMeta *Metadata, mq MetadataQualifier) func(string) string {
 	qm := map[string]string{
 		"": mq(targetMeta.Name, "", targetMeta.PkgPath),
 	}
@@ -284,7 +285,7 @@ type MetadataQualifier func(PackageName, ImportPath, PackagePath) string
 // MetadataQualifierForFile returns a metadata qualifier that chooses the best
 // qualification of an imported package relative to the file f in package with
 // metadata m.
-func MetadataQualifierForFile(s MetadataSource, f *ast.File, m *Metadata) MetadataQualifier {
+func MetadataQualifierForFile(s metadata.Source, f *ast.File, m *Metadata) MetadataQualifier {
 	// Record local names for import paths.
 	localNames := make(map[ImportPath]string) // local names for imports in f
 	for _, imp := range f.Imports {
@@ -346,7 +347,7 @@ func MetadataQualifierForFile(s MetadataSource, f *ast.File, m *Metadata) Metada
 // extracted from m, for extracting package path even in the case where
 // metadata for a dep was missing. This should not be necessary, as we should
 // always have metadata for IDs contained in DepsByPkgPath.
-func importInfo(s MetadataSource, imp *ast.ImportSpec, m *Metadata) (string, PackageName, ImportPath, PackagePath) {
+func importInfo(s metadata.Source, imp *ast.ImportSpec, m *Metadata) (string, PackageName, ImportPath, PackagePath) {
 	var (
 		name    string // local name
 		pkgName PackageName
@@ -428,20 +429,12 @@ func IsValidImport(pkgPath, importPkgPath PackagePath) bool {
 	}
 	// TODO(rfindley): this looks wrong: IsCommandLineArguments is meant to
 	// operate on package IDs, not package paths.
-	if IsCommandLineArguments(PackageID(pkgPath)) {
+	if metadata.IsCommandLineArguments(PackageID(pkgPath)) {
 		return true
 	}
 	// TODO(rfindley): this is wrong. mod.testx/p should not be able to
 	// import mod.test/internal: https://go.dev/play/p/-Ca6P-E4V4q
 	return strings.HasPrefix(string(pkgPath), string(importPkgPath[:i]))
-}
-
-// IsCommandLineArguments reports whether a given value denotes
-// "command-line-arguments" package, which is a package with an unknown ID
-// created by the go command. It can have a test variant, which is why callers
-// should not check that a value equals "command-line-arguments" directly.
-func IsCommandLineArguments(id PackageID) bool {
-	return strings.Contains(string(id), "command-line-arguments")
 }
 
 // embeddedIdent returns the type name identifier for an embedding x, if x in a

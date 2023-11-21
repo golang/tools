@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
@@ -36,12 +37,12 @@ var (
 )
 
 type (
-	packageName    = source.PackageName
-	PackageID      = source.PackageID
-	ImportPath     = source.ImportPath
-	PackagePath    = source.PackagePath
-	Metadata       = source.Metadata
-	MetadataSource = source.MetadataSource
+	packageName    = metadata.PackageName
+	PackageID      = metadata.PackageID
+	ImportPath     = metadata.ImportPath
+	PackagePath    = metadata.PackagePath
+	Metadata       = metadata.Metadata
+	MetadataSource = metadata.Source
 	ParsedGoFile   = source.ParsedGoFile
 )
 

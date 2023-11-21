@@ -61,6 +61,7 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/diff"
@@ -504,7 +505,7 @@ func typeCheckReverseDependencies(ctx context.Context, snapshot Snapshot, declUR
 
 	// Sort the packages into some topological order of the
 	// (unfiltered) metadata graph.
-	SortPostOrder(snapshot, ids)
+	metadata.SortPostOrder(snapshot, ids)
 
 	// Dependencies must be visited first since they can expand
 	// the search set. Ideally we would process the (filtered) set
@@ -518,31 +519,6 @@ func typeCheckReverseDependencies(ctx context.Context, snapshot Snapshot, declUR
 	// Type checking is by far the dominant cost, so
 	// overlapping it with renaming may not be worthwhile.
 	return snapshot.TypeCheck(ctx, ids...)
-}
-
-// SortPostOrder sorts the IDs so that if x depends on y, then y appears before x.
-func SortPostOrder(meta MetadataSource, ids []PackageID) {
-	postorder := make(map[PackageID]int)
-	order := 0
-	var visit func(PackageID)
-	visit = func(id PackageID) {
-		if _, ok := postorder[id]; !ok {
-			postorder[id] = -1 // break recursion
-			if m := meta.Metadata(id); m != nil {
-				for _, depID := range m.DepsByPkgPath {
-					visit(depID)
-				}
-			}
-			order++
-			postorder[id] = order
-		}
-	}
-	for _, id := range ids {
-		visit(id)
-	}
-	sort.Slice(ids, func(i, j int) bool {
-		return postorder[ids[i]] < postorder[ids[j]]
-	})
 }
 
 // renameExported renames the object denoted by (pkgPath, objPath)

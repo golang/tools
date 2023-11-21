@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/immutable"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/pathutil"
@@ -220,7 +221,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 
 	// Assert the invariant s.packages.Get(id).m == s.meta.metadata[id].
 	s.packages.Range(func(id PackageID, ph *packageHandle) {
-		if s.meta.metadata[id] != ph.m {
+		if s.meta.Metadata[id] != ph.m {
 			panic("inconsistent metadata")
 		}
 	})
@@ -231,7 +232,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 	seenFiles := make(map[protocol.DocumentURI]bool)
 	updates := make(map[PackageID]*Metadata)
 	for _, m := range newMetadata {
-		if existing := s.meta.metadata[m.ID]; existing == nil {
+		if existing := s.meta.Metadata[m.ID]; existing == nil {
 			// Record any new files we should pre-load.
 			for _, uri := range m.CompiledGoFiles {
 				if !seenFiles[uri] {
@@ -389,7 +390,7 @@ func buildMetadata(updates map[PackageID]*Metadata, pkg *packages.Package, loadD
 	pkgPath := PackagePath(pkg.PkgPath)
 	id := PackageID(pkg.ID)
 
-	if IsCommandLineArguments(id) {
+	if metadata.IsCommandLineArguments(id) {
 		if len(pkg.CompiledGoFiles) != 1 {
 			bug.Reportf("unexpected files in command-line-arguments package: %v", pkg.CompiledGoFiles)
 			return
@@ -686,14 +687,14 @@ func containsFileInWorkspaceLocked(v *View, m *Metadata) bool {
 // contain intermediate test variants.
 //
 // s.mu must be held while calling this function.
-func computeWorkspacePackagesLocked(s *Snapshot, meta *metadataGraph) immutable.Map[PackageID, PackagePath] {
+func computeWorkspacePackagesLocked(s *Snapshot, meta *metadata.Graph) immutable.Map[PackageID, PackagePath] {
 	workspacePackages := make(map[PackageID]PackagePath)
-	for _, m := range meta.metadata {
+	for _, m := range meta.Metadata {
 		if !containsPackageLocked(s, m) {
 			continue
 		}
 
-		if IsCommandLineArguments(m.ID) {
+		if metadata.IsCommandLineArguments(m.ID) {
 			// If all the files contained in m have a real package, we don't need to
 			// keep m as a workspace package.
 			if allFilesHaveRealPackages(meta, m) {
@@ -731,12 +732,12 @@ func computeWorkspacePackagesLocked(s *Snapshot, meta *metadataGraph) immutable.
 // function returns false.
 //
 // If m is not a command-line-arguments package, this is trivially true.
-func allFilesHaveRealPackages(g *metadataGraph, m *Metadata) bool {
+func allFilesHaveRealPackages(g *metadata.Graph, m *Metadata) bool {
 	n := len(m.CompiledGoFiles)
 checkURIs:
 	for _, uri := range append(m.CompiledGoFiles[0:n:n], m.GoFiles...) {
-		for _, id := range g.ids[uri] {
-			if !IsCommandLineArguments(id) {
+		for _, id := range g.IDs[uri] {
+			if !metadata.IsCommandLineArguments(id) {
 				continue checkURIs
 			}
 		}

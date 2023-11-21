@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
 	"golang.org/x/tools/gopls/internal/persistent"
@@ -175,7 +176,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 		cancel:           cancel,
 		store:            s.cache.store,
 		packages:         new(persistent.Map[PackageID, *packageHandle]),
-		meta:             new(metadataGraph),
+		meta:             new(metadata.Graph),
 		files:            newFileMap(),
 		activePackages:   new(persistent.Map[PackageID, *Package]),
 		symbolizeHandles: new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),

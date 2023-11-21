@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -225,7 +226,7 @@ type encoded struct {
 
 	ctx context.Context
 	// metadataSource is used to resolve imports
-	metadataSource    source.MetadataSource
+	metadataSource    metadata.Source
 	tokTypes, tokMods []string
 	pgf               *source.ParsedGoFile
 	start, end        token.Pos // range of interest

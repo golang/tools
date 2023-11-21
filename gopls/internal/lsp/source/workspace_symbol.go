@@ -15,6 +15,7 @@ import (
 	"strings"
 	"unicode"
 
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
@@ -97,7 +98,7 @@ func fullyQualifiedSymbolMatch(space []string, name string, pkg *Metadata, match
 }
 
 func dynamicSymbolMatch(space []string, name string, pkg *Metadata, matcher matcherFunc) ([]string, float64) {
-	if IsCommandLineArguments(pkg.ID) {
+	if metadata.IsCommandLineArguments(pkg.ID) {
 		// command-line-arguments packages have a non-sensical package path, so
 		// just use their package name.
 		return packageSymbolMatch(space, name, pkg, matcher)

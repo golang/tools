@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package cache
+package metadata
 
 import (
 	"sort"
@@ -12,38 +12,33 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
-// A metadataGraph is an immutable and transitively closed import
+// A Graph is an immutable and transitively closed import
 // graph of Go packages, as obtained from go/packages.
-type metadataGraph struct {
-	// metadata maps package IDs to their associated metadata.
-	metadata map[PackageID]*Metadata
+type Graph struct {
+	// Metadata maps package IDs to their associated Metadata.
+	Metadata map[PackageID]*Metadata
 
-	// importedBy maps package IDs to the list of packages that import them.
-	importedBy map[PackageID][]PackageID
+	// ImportedBy maps package IDs to the list of packages that import them.
+	ImportedBy map[PackageID][]PackageID
 
-	// ids maps file URIs to package IDs, sorted by (!valid, cli, packageID).
+	// IDs maps file URIs to package IDs, sorted by (!valid, cli, packageID).
 	// A single file may belong to multiple packages due to tests packages.
 	//
-	// Invariant: all IDs present in the ids map exist in the metadata map.
-	ids map[protocol.DocumentURI][]PackageID
-}
-
-// Metadata implements the MetadataSource interface.
-func (g *metadataGraph) Metadata(id PackageID) *Metadata {
-	return g.metadata[id]
+	// Invariant: all IDs present in the IDs map exist in the metadata map.
+	IDs map[protocol.DocumentURI][]PackageID
 }
 
 // Clone creates a new metadataGraph, applying the given updates to the
 // receiver. A nil map value represents a deletion.
-func (g *metadataGraph) Clone(updates map[PackageID]*Metadata) *metadataGraph {
+func (g *Graph) Clone(updates map[PackageID]*Metadata) *Graph {
 	if len(updates) == 0 {
 		// Optimization: since the graph is immutable, we can return the receiver.
 		return g
 	}
 
 	// Copy metadata map then apply updates.
-	metadata := make(map[PackageID]*Metadata, len(g.metadata))
-	for id, m := range g.metadata {
+	metadata := make(map[PackageID]*Metadata, len(g.Metadata))
+	for id, m := range g.Metadata {
 		metadata[id] = m
 	}
 	for id, m := range updates {
@@ -62,7 +57,7 @@ func (g *metadataGraph) Clone(updates map[PackageID]*Metadata) *metadataGraph {
 
 // newMetadataGraph returns a new metadataGraph,
 // deriving relations from the specified metadata.
-func newMetadataGraph(metadata map[PackageID]*Metadata) *metadataGraph {
+func newMetadataGraph(metadata map[PackageID]*Metadata) *Graph {
 	// Build the import graph.
 	importedBy := make(map[PackageID][]PackageID)
 	for id, m := range metadata {
@@ -115,25 +110,25 @@ func newMetadataGraph(metadata map[PackageID]*Metadata) *metadataGraph {
 		}
 	}
 
-	return &metadataGraph{
-		metadata:   metadata,
-		importedBy: importedBy,
-		ids:        uriIDs,
+	return &Graph{
+		Metadata:   metadata,
+		ImportedBy: importedBy,
+		IDs:        uriIDs,
 	}
 }
 
-// reverseReflexiveTransitiveClosure returns a new mapping containing the
+// ReverseReflexiveTransitiveClosure returns a new mapping containing the
 // metadata for the specified packages along with any package that
 // transitively imports one of them, keyed by ID, including all the initial packages.
-func (g *metadataGraph) reverseReflexiveTransitiveClosure(ids ...PackageID) map[PackageID]*Metadata {
+func (g *Graph) ReverseReflexiveTransitiveClosure(ids ...PackageID) map[PackageID]*Metadata {
 	seen := make(map[PackageID]*Metadata)
 	var visitAll func([]PackageID)
 	visitAll = func(ids []PackageID) {
 		for _, id := range ids {
 			if seen[id] == nil {
-				if m := g.metadata[id]; m != nil {
+				if m := g.Metadata[id]; m != nil {
 					seen[id] = m
-					visitAll(g.importedBy[id])
+					visitAll(g.ImportedBy[id])
 				}
 			}
 		}

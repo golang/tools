@@ -24,6 +24,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
@@ -838,7 +839,7 @@ func (s *Snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[
 		idxID := b.s.pkgIndex.IndexID(id)
 		n, ok := b.nodes[idxID]
 		if !ok {
-			m := s.meta.metadata[id]
+			m := s.meta.Metadata[id]
 			if m == nil {
 				panic(fmt.Sprintf("nil metadata for %q", id))
 			}
@@ -922,7 +923,7 @@ func (s *Snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[
 // A packageHandleBuilder computes a batch of packageHandles concurrently,
 // sharing computed transitive reachability sets used to compute package keys.
 type packageHandleBuilder struct {
-	meta *metadataGraph
+	meta *metadata.Graph
 	s    *Snapshot
 
 	// nodes are assembled synchronously.
@@ -1113,7 +1114,7 @@ func (b *packageHandleBuilder) buildPackageHandle(ctx context.Context, n *handle
 	//
 	// TODO(rfindley): eventually promote this to an assert.
 	// TODO(rfindley): move this to after building the package handle graph?
-	if b.s.meta.metadata[n.m.ID] != n.m {
+	if b.s.meta.Metadata[n.m.ID] != n.m {
 		bug.Reportf("stale metadata for %s", n.m.ID)
 	}
 
@@ -1747,7 +1748,7 @@ func missingPkgError(from PackageID, pkgPath string, moduleMode bool) error {
 	// access to the full snapshot, and could provide more information (such as
 	// the initialization error).
 	if moduleMode {
-		if IsCommandLineArguments(from) {
+		if metadata.IsCommandLineArguments(from) {
 			return fmt.Errorf("current file is not included in a workspace module")
 		} else {
 			// Previously, we would present the initialization error here.

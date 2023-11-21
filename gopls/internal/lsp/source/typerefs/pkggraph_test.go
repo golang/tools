@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/typerefs"
@@ -49,7 +50,7 @@ type Package struct {
 // dependencies.
 type PackageGraph struct {
 	pkgIndex *typerefs.PackageIndex
-	meta     source.MetadataSource
+	meta     metadata.Source
 	parse    func(context.Context, protocol.DocumentURI) (*source.ParsedGoFile, error)
 
 	mu       sync.Mutex
@@ -66,14 +67,14 @@ type PackageGraph struct {
 //
 // See the package documentation for more information on the package reference
 // algorithm.
-func BuildPackageGraph(ctx context.Context, meta source.MetadataSource, ids []source.PackageID, parse func(context.Context, protocol.DocumentURI) (*source.ParsedGoFile, error)) (*PackageGraph, error) {
+func BuildPackageGraph(ctx context.Context, meta metadata.Source, ids []source.PackageID, parse func(context.Context, protocol.DocumentURI) (*source.ParsedGoFile, error)) (*PackageGraph, error) {
 	g := &PackageGraph{
 		pkgIndex: typerefs.NewPackageIndex(),
 		meta:     meta,
 		parse:    parse,
 		packages: make(map[source.PackageID]*futurePackage),
 	}
-	source.SortPostOrder(meta, ids)
+	metadata.SortPostOrder(meta, ids)
 
 	workers := runtime.GOMAXPROCS(0)
 	if trace {

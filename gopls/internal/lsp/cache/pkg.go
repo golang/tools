@@ -13,6 +13,7 @@ import (
 	"go/types"
 	"sync"
 
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/methodsets"
@@ -23,12 +24,11 @@ import (
 // Types
 type (
 	// Metadata.
-	PackageID      = source.PackageID
-	PackagePath    = source.PackagePath
-	PackageName    = source.PackageName
-	ImportPath     = source.ImportPath
-	Metadata       = source.Metadata
-	MetadataSource = source.MetadataSource
+	PackageID   = metadata.PackageID
+	PackagePath = metadata.PackagePath
+	PackageName = metadata.PackageName
+	ImportPath  = metadata.ImportPath
+	Metadata    = metadata.Metadata
 
 	// Diagnostics.
 	Diagnostic   = source.Diagnostic
@@ -73,7 +73,6 @@ var (
 var (
 	IsValidImport                  = source.IsValidImport
 	RemoveIntermediateTestVariants = source.RemoveIntermediateTestVariants
-	IsCommandLineArguments         = source.IsCommandLineArguments
 	NewFilterer                    = source.NewFilterer
 )
 
