@@ -125,12 +125,39 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 		startOffset, endOffset, exact)
 	var innermostExpr ast.Expr
 	for i, n := range path {
+		// Show set of names defined in each scope.
+		scopeNames := ""
+		{
+			node := n
+			prefix := ""
+
+			// A function (Func{Decl.Lit}) doesn't have a scope of its
+			// own, nor does its Body: only nested BlockStmts do.
+			// The type parameters, parameters, and locals are all
+			// in the scope associated with the FuncType; show it.
+			switch n := n.(type) {
+			case *ast.FuncDecl:
+				node = n.Type
+				prefix = "Type."
+			case *ast.FuncLit:
+				node = n.Type
+				prefix = "Type."
+			}
+
+			if scope := pkg.TypesInfo.Scopes[node]; scope != nil {
+				scopeNames = fmt.Sprintf(" %sScope={%s}",
+					prefix,
+					strings.Join(scope.Names(), ", "))
+			}
+		}
+
 		// TODO(adonovan): turn these into links to highlight the source.
 		start, end := fset.Position(n.Pos()), fset.Position(n.End())
-		fmt.Fprintf(out, "[%d] %T @ %d:%d-%d:%d (#%d-%d)\n",
+		fmt.Fprintf(out, "[%d] %T @ %d:%d-%d:%d (#%d-%d)%s\n",
 			i, n,
 			start.Line, start.Column, end.Line,
-			end.Column, start.Offset, end.Offset)
+			end.Column, start.Offset, end.Offset,
+			scopeNames)
 		if e, ok := n.(ast.Expr); ok && innermostExpr == nil {
 			innermostExpr = e
 		}
@@ -282,7 +309,12 @@ func formatObj(out *strings.Builder, fset *token.FileSet, ref string, obj types.
 	// scope tree
 	fmt.Fprintf(out, "Scopes:\n")
 	for scope := obj.Parent(); scope != nil; scope = scope.Parent() {
-		fmt.Fprintln(out, scope)
+		var (
+			start = fset.Position(scope.Pos())
+			end   = fset.Position(scope.End())
+		)
+		fmt.Fprintf(out, "%d:%d-%d:%d: %s\n",
+			start.Line, start.Column, end.Line, end.Column, scope)
 	}
 }
 
