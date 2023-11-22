@@ -32,12 +32,13 @@ type (
 	Metadata    = metadata.Metadata
 
 	// Diagnostics.
-	Diagnostic   = source.Diagnostic
-	SuggestedFix = source.SuggestedFix
+	Diagnostic       = source.Diagnostic
+	SuggestedFix     = source.SuggestedFix
+	DiagnosticSource = source.DiagnosticSource
 
 	// Computed objects.
 	TidiedModule   = source.TidiedModule
-	ParsedGoFile   = source.ParsedGoFile
+	ParsedGoFile   = parsego.File
 	ParsedModule   = source.ParsedModule
 	ParsedWorkFile = source.ParsedWorkFile
 	Package_       = source.Package // renamed to avoid conflict
@@ -76,7 +77,6 @@ var (
 	NewFilterer                    = source.NewFilterer
 	BuildLink                      = source.BuildLink
 	CanFix                         = source.CanFix
-	AnalyzerErrorKind              = source.AnalyzerErrorKind
 )
 
 // A Package is the union of package metadata and type checking results.

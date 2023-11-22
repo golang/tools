@@ -450,7 +450,3 @@ const (
 	WorkFileError            DiagnosticSource = "go.work file"
 	ConsistencyInfo          DiagnosticSource = "consistency"
 )
-
-func AnalyzerErrorKind(name string) DiagnosticSource {
-	return DiagnosticSource(name)
-}
