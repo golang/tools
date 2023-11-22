@@ -152,12 +152,12 @@ func TestFilters(t *testing.T) {
 	for _, tt := range tests {
 		filterer := NewFilterer(tt.filters)
 		for _, inc := range tt.included {
-			if pathExcludedByFilter(inc, filterer) {
+			if relPathExcludedByFilter(inc, filterer) {
 				t.Errorf("filters %q excluded %v, wanted included", tt.filters, inc)
 			}
 		}
 		for _, exc := range tt.excluded {
-			if !pathExcludedByFilter(exc, filterer) {
+			if !relPathExcludedByFilter(exc, filterer) {
 				t.Errorf("filters %q included %v, wanted excluded", tt.filters, exc)
 			}
 		}

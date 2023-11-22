@@ -171,23 +171,22 @@ package main
 
 func main() {
 	bye.Goodbye()
+	hi.Hello()
 }
 -- p/bye/bye.go --
 package bye
 
 func Goodbye() {}
+-- hi/hi.go --
+package hi
+
+func Hello() {}
 `
 
 	WithOptions(
 		Settings{
-			"directoryFilters": []string{"-**/bye"},
+			"directoryFilters": []string{"-**/bye", "-hi"},
 		},
-		// This test breaks in 'Experimental' mode, because with
-		// experimentalWorkspaceModule set we the goimports scan behaves
-		// differently.
-		//
-		// Since this feature is going away (golang/go#52897), don't investigate.
-		Modes(Default),
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		beforeSave := env.BufferText("main.go")

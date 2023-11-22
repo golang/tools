@@ -585,11 +585,11 @@ func (v *View) contains(uri protocol.DocumentURI) bool {
 // directoryFilters.
 func (v *View) filterFunc() func(protocol.DocumentURI) bool {
 	folderDir := v.folder.Dir.Path()
-	filterer := buildFilterer(folderDir, v.gomodcache, v.folder.Options)
+	filterer := buildFilterer(folderDir, v.gomodcache, v.folder.Options.DirectoryFilters)
 	return func(uri protocol.DocumentURI) bool {
 		// Only filter relative to the configured root directory.
 		if pathutil.InDir(folderDir, uri.Path()) {
-			return pathExcludedByFilter(strings.TrimPrefix(uri.Path(), folderDir), filterer)
+			return relPathExcludedByFilter(strings.TrimPrefix(uri.Path(), folderDir), filterer)
 		}
 		return false
 	}
@@ -971,7 +971,7 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs file.So
 
 	// filterFunc is the path filter function for this workspace folder. Notably,
 	// it is relative to folder (which is specified by the user), not root.
-	filterFunc := pathExcludedByFilterFunc(folder.Dir.Path(), def.gomodcache, folder.Options)
+	filterFunc := relPathExcludedByFilterFunc(folder.Dir.Path(), def.gomodcache, folder.Options.DirectoryFilters)
 	def.gomod, err = findWorkspaceModFile(ctx, folder.Dir, fs, filterFunc)
 	if err != nil {
 		return nil, err
@@ -1197,6 +1197,8 @@ var modFlagRegexp = regexp.MustCompile(`-mod[ =](\w+)`)
 // after we have a version of the workspace go.mod file on disk. Getting a
 // FileHandle from the cache for temporary files is problematic, since we
 // cannot delete it.
+//
+// TODO(rfindley): move this to snapshot.go.
 func (s *Snapshot) vendorEnabled(ctx context.Context, modURI protocol.DocumentURI, modContent []byte) (bool, error) {
 	// Legacy GOPATH workspace?
 	if len(s.view.workspaceModFiles) == 0 {
@@ -1244,27 +1246,26 @@ func allFilesExcluded(files []string, filterFunc func(protocol.DocumentURI) bool
 	return true
 }
 
-func pathExcludedByFilterFunc(folder, gomodcache string, opts *settings.Options) func(string) bool {
-	filterer := buildFilterer(folder, gomodcache, opts)
+// relPathExcludedByFilterFunc returns a func that filters paths relative to the
+// given folder according the given GOMODCACHE value and directory filters (see
+// settings.BuildOptions.DirectoryFilters).
+//
+// The resulting func returns true if the directory should be skipped.
+func relPathExcludedByFilterFunc(folder, gomodcache string, directoryFilters []string) func(string) bool {
+	filterer := buildFilterer(folder, gomodcache, directoryFilters)
 	return func(path string) bool {
-		return pathExcludedByFilter(path, filterer)
+		return relPathExcludedByFilter(path, filterer)
 	}
 }
 
-// pathExcludedByFilter reports whether the path (relative to the workspace
-// folder) should be excluded by the configured directory filters.
-//
-// TODO(rfindley): passing root and gomodcache here makes it confusing whether
-// path should be absolute or relative, and has already caused at least one
-// bug.
-func pathExcludedByFilter(path string, filterer *Filterer) bool {
+func relPathExcludedByFilter(path string, filterer *Filterer) bool {
 	path = strings.TrimPrefix(filepath.ToSlash(path), "/")
 	return filterer.Disallow(path)
 }
 
-func buildFilterer(folder, gomodcache string, opts *settings.Options) *Filterer {
-	filters := opts.DirectoryFilters
-
+func buildFilterer(folder, gomodcache string, directoryFilters []string) *Filterer {
+	var filters []string
+	filters = append(filters, directoryFilters...)
 	if pref := strings.TrimPrefix(gomodcache, folder); pref != gomodcache {
 		modcacheFilter := "-" + strings.TrimPrefix(filepath.ToSlash(pref), "/")
 		filters = append(filters, modcacheFilter)

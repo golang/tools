@@ -122,6 +122,32 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 	baseCtx := event.Detach(xcontext.Detach(ctx))
 	backgroundCtx, cancel := context.WithCancel(baseCtx)
 
+	// Compute a skip function to use for module cache scanning.
+	//
+	// Note that unlike other filtering operations, we definitely don't want to
+	// exclude the gomodcache here, even if it is contained in the workspace
+	// folder.
+	//
+	// TODO(rfindley): consolidate with relPathExcludedByFilter(Func), Filterer,
+	// View.filterFunc.
+	var skipPath func(string) bool
+	{
+		// Compute a prefix match, respecting segment boundaries, by ensuring
+		// the pattern (dir) has a trailing slash.
+		dirPrefix := strings.TrimSuffix(string(folder.Dir), "/") + "/"
+		filterer := NewFilterer(folder.Options.DirectoryFilters)
+		skipPath = func(dir string) bool {
+			uri := strings.TrimSuffix(string(protocol.URIFromPath(dir)), "/")
+			// Note that the logic below doesn't handle the case where uri ==
+			// v.folder.Dir, because there is no point in excluding the entire
+			// workspace folder!
+			if rel := strings.TrimPrefix(uri, dirPrefix); rel != uri {
+				return filterer.Disallow(rel)
+			}
+			return false
+		}
+	}
+
 	v := &View{
 		id:                   strconv.FormatInt(index, 10),
 		gocmdRunner:          s.gocmdRunner,
@@ -132,24 +158,15 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 		parseCache:           s.parseCache,
 		fs:                   s.overlayFS,
 		viewDefinition:       def,
-	}
-	v.importsState = &importsState{
-		ctx: backgroundCtx,
-		processEnv: &imports.ProcessEnv{
-			GocmdRunner: s.gocmdRunner,
-			SkipPathInScan: func(dir string) bool {
-				prefix := strings.TrimSuffix(string(v.folder.Dir), "/") + "/"
-				uri := strings.TrimSuffix(string(protocol.URIFromPath(dir)), "/")
-				if !strings.HasPrefix(uri+"/", prefix) {
-					return false
-				}
-				filterer := NewFilterer(folder.Options.DirectoryFilters)
-				rel := strings.TrimPrefix(uri, prefix)
-				disallow := filterer.Disallow(rel)
-				return disallow
+		importsState: &importsState{
+			ctx: backgroundCtx,
+			processEnv: &imports.ProcessEnv{
+				GocmdRunner:    s.gocmdRunner,
+				SkipPathInScan: skipPath,
 			},
 		},
 	}
+
 	v.snapshot = &Snapshot{
 		sequenceID:       seqID,
 		globalID:         nextSnapshotID(),
