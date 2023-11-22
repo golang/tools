@@ -30,6 +30,7 @@ import (
 
 	"golang.org/x/text/unicode/runenames"
 	goastutil "golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -402,7 +403,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 		return protocol.Range{}, nil, err
 	}
 
-	decl, spec, field, assign := findDeclInfo([]*ast.File{declPGF.File}, declPos) // may be nil^4
+	decl, spec, field, assign := findDeclInfo(declPGF, declPos) // may be nil^4
 
 	var docText string
 	if docComment := chooseDocComment(declPGF, decl, spec, field, assign); docComment != nil {
@@ -812,7 +813,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 
 // typeDeclContent returns a well formatted type definition.
 func typeDeclContent(declPGF *parsego.File, declPos token.Pos, name string) (string, *ast.TypeSpec, error) {
-	_, spec, _, _ := findDeclInfo([]*ast.File{declPGF.File}, declPos) // may be nil^4
+	_, spec, _, _ := findDeclInfo(declPGF, declPos) // may be nil^4
 	// Don't duplicate comments.
 	spec1, ok := spec.(*ast.TypeSpec)
 	if !ok {
@@ -820,12 +821,9 @@ func typeDeclContent(declPGF *parsego.File, declPos token.Pos, name string) (str
 		// (that is not a type parameter or a built-in).
 		// This should be impossible even for ill-formed trees;
 		// we suspect that AST repair may be creating inconsistent
-		// positions. Don't report a bug in that case. (#64241)
-		errorf := fmt.Errorf
-		if !declPGF.Fixed() {
-			errorf = bug.Errorf
-		}
-		return "", nil, errorf("type name %q without type spec", name)
+		// positions, but have struggled to reproduce the problem (#64241),
+		// so we'll just return an error here without recording a bug.
+		return "", nil, fmt.Errorf("cannot locate TypeSpec for declaration of type %q", name)
 	}
 	spec2 := *spec1
 	spec2.Doc = nil
@@ -1346,14 +1344,14 @@ func HoverDocForObject(ctx context.Context, snapshot *cache.Snapshot, fset *toke
 		return nil, fmt.Errorf("re-parsing: %v", err)
 	}
 
-	decl, spec, field, assign := findDeclInfo([]*ast.File{pgf.File}, pos)
+	decl, spec, field, assign := findDeclInfo(pgf, pos)
 	return chooseDocComment(pgf, decl, spec, field, assign), nil
 }
 
 // chooseDocComment returns the best doc comment for the given declaration
 // information.
 func chooseDocComment(pgf *parsego.File, decl ast.Decl, spec ast.Spec, field *ast.Field, assign *ast.AssignStmt) *ast.CommentGroup {
-	if assign != nil {
+	if assign != nil && len(assign.Lhs) == 1 {
 		// AssignStmt lacks a Doc field; locate the comment on the line above.
 		tokFile := pgf.Tok
 		compare := func(cg *ast.CommentGroup, line int) int {
@@ -1656,13 +1654,13 @@ func formatLink(h *hoverResult, options *settings.Options, pkgURL func(path Pack
 	}
 }
 
-// findDeclInfo returns the syntax nodes involved in the declaration of the
-// types.Object with position pos, searching the given list of file syntax
-// trees.
+// findDeclInfo returns the syntax nodes involved in the declaration
+// of the types.Object with position pos, searching the ancestors of
+// the node at that position.
 //
-// Pos may be the position of the name-defining identifier in an AssignStmt,
-// FuncDecl, ValueSpec, TypeSpec, Field, or as a special case the position of
-// Ellipsis.Elt in an ellipsis field.
+// Pos may be the position of any name-defining identifier in an AssignStmt,
+// FuncDecl, ValueSpec, TypeSpec, Field, or as special cases the position of
+// Ellipsis.Elt in an ellipsis field, or the ImportSpec.Path of an import.
 //
 // If found, the resulting decl, spec, field and assign will be the inner-most
 // instance of each node type surrounding pos.
@@ -1675,117 +1673,79 @@ func formatLink(h *hoverResult, options *settings.Options, pkgURL func(path Pack
 //
 // It returns a nil decl if no object-defining node is found at pos.
 //
-// TODO(rfindley): this function has tricky semantics, and may be worth unit
-// testing and/or refactoring.
-func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spec, field *ast.Field, assign *ast.AssignStmt) {
-	found := false
-
-	// Visit the files in search of the node at pos.
-	stack := make([]ast.Node, 0, 20)
-
-	// Allocate the closure once, outside the loop.
-	f := func(n ast.Node, stack []ast.Node) bool {
-		if found {
-			return false
-		}
-
-		// Skip subtrees (incl. files) that don't contain the search point.
-		if !(n.Pos() <= pos && pos < n.End()) {
-			return false
-		}
-
-		switch n := n.(type) {
-		case *ast.AssignStmt:
-			if len(n.Lhs) != 1 {
-				return false
-			}
-			lhs := n.Lhs[0]
-			if lhs.Pos() == pos {
-				assign = n
-				found = true
-				return false
-			}
-
-		case *ast.Field:
-			findEnclosingDeclAndSpec := func() {
-				for _, n := range slices.Backward(stack) {
-					switch n := n.(type) {
-					case ast.Spec:
-						spec = n
-					case ast.Decl:
-						decl = n
-						return
-					}
-				}
-			}
-
-			// Check each field name since you can have
-			// multiple names for the same type expression.
-			for _, id := range n.Names {
-				if id.Pos() == pos {
-					field = n
-					findEnclosingDeclAndSpec()
-					found = true
-					return false
-				}
-			}
-
-			// Check *ast.Field itself. This handles embedded
-			// fields which have no associated *ast.Ident name.
-			if n.Pos() == pos {
-				field = n
-				findEnclosingDeclAndSpec()
-				found = true
-				return false
-			}
-
-			// Also check "X" in "...X". This makes it easy to format variadic
-			// signature params properly.
-			//
-			// TODO(rfindley): I don't understand this comment. How does finding the
-			// field in this case make it easier to format variadic signature params?
-			if ell, ok := n.Type.(*ast.Ellipsis); ok && ell.Elt != nil && ell.Elt.Pos() == pos {
-				field = n
-				findEnclosingDeclAndSpec()
-				found = true
-				return false
-			}
-
-		case *ast.FuncDecl:
-			if n.Name.Pos() == pos {
-				decl = n
-				found = true
-				return false
-			}
-
-		case *ast.GenDecl:
-			for _, s := range n.Specs {
-				switch s := s.(type) {
-				case *ast.TypeSpec:
-					if s.Name.Pos() == pos {
-						decl = n
-						spec = s
-						found = true
-						return false
-					}
-				case *ast.ValueSpec:
-					for _, id := range s.Names {
-						if id.Pos() == pos {
-							decl = n
-							spec = s
-							found = true
-							return false
-						}
-					}
-				}
-			}
-		}
-		return true
+// TODO(adonovan): this abstraction is frankly weird. Now with
+// Cursor.Parent (the ability to ascend the tree) and Var.Kind (the
+// ability to discriminate all object kinds) it should be possible to
+// write clearer direct code in most cases. But it least this logic
+// now has tests: see TestFindDeclInfo.
+func findDeclInfo(pgf *parsego.File, pos token.Pos) (decl ast.Decl, spec ast.Spec, field *ast.Field, assign *ast.AssignStmt) {
+	cur, ok := pgf.Cursor().FindByPos(pos, pos)
+	if !ok {
+		return nil, nil, nil, nil
 	}
-	for _, file := range files {
-		ast.PreorderStack(file, stack, f)
-		if found {
-			return decl, spec, field, assign
+
+	for p := cur; p.Node() != nil; p = p.Parent() {
+		switch p.ParentEdgeKind() {
+		case edge.FuncDecl_Name:
+			// func f()
+			//      ^
+			decl = p.Parent().Node().(*ast.FuncDecl)
+			return decl, nil, nil, nil
+
+		case edge.TypeSpec_Name, edge.ValueSpec_Names, edge.ImportSpec_Name, edge.ImportSpec_Path:
+			// import "..."
+			// import p "..."
+			//   type T ...
+			//    var v ...
+			//        ^
+			spec = p.Parent().Node().(ast.Spec)
+			decl = p.Parent().Parent().Node().(*ast.GenDecl)
+			return decl, spec, nil, nil
+
+		case edge.AssignStmt_Lhs:
+			// v := ...
+			// ^
+			assign = p.Parent().Node().(*ast.AssignStmt)
+			return nil, nil, nil, assign
+
+		case edge.Field_Names:
+			//            func f[T any]()
+			//              func(a, b, c int)
+			//           func() (d int)
+			//             func (r T) f()
+			//    type T struct{ f int }
+			//            type T[P any] struct{}
+			//                   ^
+			field = p.Parent().Node().(*ast.Field)
+
+		case edge.Field_Type:
+			//              func(T)		(param Var)
+			//            func() T		(result Var
+			//    type T struct{ T }	(field Var)
+			// type T interface{ f() }	(method Func)
+			//                   ^
+			f := p.Parent().Node().(*ast.Field)
+			if len(f.Names) == 0 {
+				field = f
+			}
+		}
+		if field != nil {
+			break
+		}
+	}
+
+	if field != nil {
+		for p := cur.Parent(); p.Node() != nil; p = p.Parent() {
+			switch n := p.Node().(type) {
+			case *ast.TypeSpec:
+				spec = n
+			case *ast.FuncDecl:
+				decl = n
+				return decl, spec, field, nil
+			case *ast.GenDecl:
+				decl = n
+				return decl, spec, field, nil
+			}
 		}
 	}
 

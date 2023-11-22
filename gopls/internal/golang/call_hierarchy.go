@@ -204,7 +204,9 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		return nil, err
 	}
 
-	declNode, _, _, _ := findDeclInfo([]*ast.File{declPGF.File}, declPos)
+	// TODO(adonovan): shouldn't this be simply the enclosing FuncDecl?
+	// Or outermost Enclosing(FuncDecl | GenDecl)?
+	declNode, _, _, _ := findDeclInfo(declPGF, declPos)
 	if declNode == nil {
 		// TODO(rfindley): why don't we return an error here, or even bug.Errorf?
 		return nil, nil

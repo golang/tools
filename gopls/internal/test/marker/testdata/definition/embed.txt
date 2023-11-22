@@ -301,6 +301,15 @@ field Field int // through a.S
 ```go
 field A a.A // size=16 (0x10), offset=40 (0x28)
 ```
+
+---
+
+@def("A", AString),hover("A", "A", aA)
+
+
+---
+
+[`(b.S1).A` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S1.A)
 -- @aAlias --
 ```go
 field aAlias aAlias // size=16 (0x10), offset=56 (0x38)
