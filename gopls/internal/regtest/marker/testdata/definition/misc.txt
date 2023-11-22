@@ -1,4 +1,10 @@
 This test exercises miscellaneous definition and hover requests.
+
+Requires go1.19+ for the new go/doc/comment package.
+
+-- flags --
+-min_go=go1.19
+
 -- go.mod --
 module mod.com
 
@@ -118,8 +124,8 @@ func _() {
 	var p Pos
 	_ = p.Sum() //@def("()", PosSum),hover("()", `Sum`, hoverSum)
 }
--- @aPackage/hover.md --
--- @hoverDeclBlocka/hover.md --
+-- @aPackage --
+-- @hoverDeclBlocka --
 ```go
 type a struct {
 	x string
@@ -127,13 +133,13 @@ type a struct {
 ```
 
 1st type declaration block
--- @hoverDeclBlockb/hover.md --
+-- @hoverDeclBlockb --
 ```go
 type b struct{}
 ```
 
 b has a comment
--- @hoverDeclBlockc/hover.md --
+-- @hoverDeclBlockc --
 ```go
 type c struct {
 	f string
@@ -141,13 +147,13 @@ type c struct {
 ```
 
 c is a struct
--- @hoverDeclBlockd/hover.md --
+-- @hoverDeclBlockd --
 ```go
 type d string
 ```
 
 3rd type declaration block
--- @hoverDeclBlocke/hover.md --
+-- @hoverDeclBlocke --
 ```go
 type e struct {
 	f float64
@@ -155,7 +161,7 @@ type e struct {
 ```
 
 e has a comment
--- @hoverH/hover.md --
+-- @hoverH --
 ```go
 type H interface {
 	Goodbye()
@@ -163,7 +169,7 @@ type H interface {
 ```
 
 [`a.H` on pkg.go.dev](https://pkg.go.dev/mod.com#H)
--- @hoverI/hover.md --
+-- @hoverI --
 ```go
 type I interface {
 	B()
@@ -172,7 +178,7 @@ type I interface {
 ```
 
 [`a.I` on pkg.go.dev](https://pkg.go.dev/mod.com#I)
--- @hoverJ/hover.md --
+-- @hoverJ --
 ```go
 type J interface {
 	Hello()
@@ -180,49 +186,49 @@ type J interface {
 ```
 
 [`a.J` on pkg.go.dev](https://pkg.go.dev/mod.com#J)
--- @hoverSum/hover.md --
+-- @hoverSum --
 ```go
 func (*Pos).Sum() int
 ```
 
 [`(a.Pos).Sum` on pkg.go.dev](https://pkg.go.dev/mod.com#Pos.Sum)
--- @hoverTestA/hover.md --
+-- @hoverTestA --
 ```go
 func TestA(t *testing.T)
 ```
--- @hoverfield/hover.md --
+-- @hoverfield --
 ```go
 field field string
 ```
--- @hoverg/hover.md --
+-- @hoverg --
 ```go
 const g untyped int = 1
 ```
 
 When I hover on g, I should see this comment.
--- @hoverh/hover.md --
+-- @hoverh --
 ```go
 const h untyped int = 2
 ```
 
 Constant block. When I hover on h, I should see this comment.
--- @hoverpx/hover.md --
+-- @hoverpx --
 ```go
 field x int
 ```
 
 @loc(PosX, "x"),loc(PosY, "y")
--- @hoverx/hover.md --
+-- @hoverx --
 ```go
 var x string
 ```
 
 x is a variable.
--- @hovery/hover.md --
+-- @hovery --
 ```go
 var y int
 ```
--- @hoverz/hover.md --
+-- @hoverz --
 ```go
 var z string
 ```

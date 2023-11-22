@@ -185,7 +185,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	}
 
 	// Handle builtins, which don't have a package or position.
-	if obj.Pkg() == nil {
+	if !obj.Pos().IsValid() {
 		h, err := hoverBuiltin(ctx, snapshot, obj)
 		return rng, h, err
 	}
@@ -369,12 +369,9 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 // hoverBuiltin computes hover information when hovering over a builtin
 // identifier.
 func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Object) (*HoverJSON, error) {
-	// TODO(rfindley): link to the correct version of Go documentation.
-	builtin, err := snapshot.BuiltinFile(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+	// Special handling for error.Error, which is the only builtin method.
+	//
+	// TODO(rfindley): can this be unified with the handling below?
 	if obj.Name() == "Error" {
 		signature := obj.String()
 		return &HoverJSON{
@@ -387,18 +384,13 @@ func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Objec
 		}, nil
 	}
 
-	builtinObj := builtin.File.Scope.Lookup(obj.Name())
-	if builtinObj == nil {
-		// All builtins should have a declaration in the builtin file.
-		return nil, bug.Errorf("no builtin object for %s", obj.Name())
-	}
-	node, _ := builtinObj.Decl.(ast.Node)
-	if node == nil {
-		return nil, bug.Errorf("no declaration for %s", obj.Name())
+	pgf, node, err := builtinDecl(ctx, snapshot, obj)
+	if err != nil {
+		return nil, err
 	}
 
 	var comment *ast.CommentGroup
-	path, _ := astutil.PathEnclosingInterval(builtin.File, node.Pos(), node.End())
+	path, _ := astutil.PathEnclosingInterval(pgf.File, node.Pos(), node.End())
 	for _, n := range path {
 		switch n := n.(type) {
 		case *ast.GenDecl:
@@ -416,7 +408,7 @@ func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Objec
 		}
 	}
 
-	signature := FormatNodeFile(builtin.Tok, node)
+	signature := FormatNodeFile(pgf.Tok, node)
 	// Replace fake types with their common equivalent.
 	// TODO(rfindley): we should instead use obj.Type(), which would have the
 	// *actual* types of the builtin call.

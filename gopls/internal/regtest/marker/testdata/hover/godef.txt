@@ -1,6 +1,11 @@
 This test was ported from 'godef' in the old marker tests.
 It tests various hover and definition requests.
 
+Requires go1.19+ for the new go/doc/comment package.
+
+-- flags --
+-min_go=go1.19
+
 -- flags --
 -min_go=go1.20
 
@@ -20,11 +25,11 @@ func TestA2(t *testing.T) { //@hover("TestA2", "TestA2", TestA2)
 	Nonexistant() //@diag("Nonexistant", re"(undeclared name|undefined): Nonexistant")
 }
 
--- @TestA2/hover.md --
+-- @TestA2 --
 ```go
 func TestA2(t *testing.T)
 ```
--- @ember/hover.md --
+-- @ember --
 ```go
 field Member string
 ```
@@ -88,13 +93,13 @@ func (n *NextThing) Method3() int {
 
 var nextThing NextThing //@hover("NextThing", "NextThing", NextThing), def("NextThing", NextThing)
 
--- @ings/hover.md --
+-- @ings --
 ```go
 func Things(val []string) []Thing
 ```
 
 [`a.Things` on pkg.go.dev](https://pkg.go.dev/godef.test/a#Things)
--- @ther/hover.md --
+-- @ther --
 ```go
 var Other Thing
 ```
@@ -103,8 +108,8 @@ var Other Thing
 
 
 [`a.Other` on pkg.go.dev](https://pkg.go.dev/godef.test/a#Other)
--- @a/hover.md --
--- @ing/hover.md --
+-- @a --
+-- @ing --
 ```go
 type Thing struct {
 	Member string //@loc(Member, "Member")
@@ -117,7 +122,7 @@ func (*Thing).private()
 ```
 
 [`a.Thing` on pkg.go.dev](https://pkg.go.dev/godef.test/a#Thing)
--- @NextThing/hover.md --
+-- @NextThing --
 ```go
 type NextThing struct {
 	Thing
@@ -129,7 +134,7 @@ func (NextThing).another() string
 ```
 
 [`a.NextThing` on pkg.go.dev](https://pkg.go.dev/godef.test/a#NextThing)
--- @eth/hover.md --
+-- @eth --
 ```go
 func (Thing).Method(i int) string
 ```
@@ -152,15 +157,15 @@ func TypeStuff() {
 	}
 
 }
--- @inty/hover.md --
+-- @inty --
 ```go
 var y int
 ```
--- @stringy/hover.md --
+-- @stringy --
 ```go
 var y string
 ```
--- @y/hover.md --
+-- @y --
 ```go
 var y interface{}
 ```
@@ -312,37 +317,37 @@ func _() {
 	_ = r[0].x //@def("x", returnX)
 	_ = r[0].y //@def("y", returnY)
 }
--- @hoverStructKeyX/hover.md --
+-- @hoverStructKeyX --
 ```go
 field x string
 ```
 
 X value field
--- @hoverStructKeyY/hover.md --
+-- @hoverStructKeyY --
 ```go
 field y string
 ```
 
 Y key field
--- @nestedNumber/hover.md --
+-- @nestedNumber --
 ```go
 field number int64
 ```
 
 nested number
--- @nestedString/hover.md --
+-- @nestedString --
 ```go
 field str string
 ```
 
 nested string
--- @openMethod/hover.md --
+-- @openMethod --
 ```go
 func (interface).open() error
 ```
 
 open method comment
--- @nestedMap/hover.md --
+-- @nestedMap --
 ```go
 field m map[string]float64
 ```
@@ -380,15 +385,15 @@ func _() {
 		fmt.Println(x) //@hover("x", "x", xInt)
 	}
 }
--- @xInt/hover.md --
+-- @xInt --
 ```go
 var x int
 ```
--- @xInterface/hover.md --
+-- @xInterface --
 ```go
 var x interface{}
 ```
--- @xString/hover.md --
+-- @xString --
 ```go
 var x string
 ```

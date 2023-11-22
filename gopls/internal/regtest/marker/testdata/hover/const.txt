@@ -1,5 +1,10 @@
 This test checks hovering over constants.
 
+Requires go1.19+ for the new go/doc/comment package.
+
+-- flags --
+-min_go=go1.19
+
 -- go.mod --
 module mod.com
 
@@ -78,7 +83,7 @@ func _() {
 	_ = math.Log2E //@hover("Log2E", "Log2E", log2eConst)
 }
 
--- @bX/hover.md --
+-- @bX --
 ```go
 const X untyped int = 0
 ```
@@ -87,63 +92,63 @@ const X untyped int = 0
 
 
 [`c.X` on pkg.go.dev](https://pkg.go.dev/mod.com#X)
--- @dur/hover.md --
+-- @dur --
 ```go
 const dur time.Duration = 15*time.Minute + 10*time.Second + 350*time.Millisecond // 15m10.35s
 ```
 
 dur is a constant of type time.Duration.
--- @decimalConst/hover.md --
+-- @decimalConst --
 ```go
 const decimal untyped int = 153
 ```
 
 no inline comment
--- @hexConst/hover.md --
+-- @hexConst --
 ```go
 const hex untyped int = 0xe34e // 58190
 ```
--- @binConst/hover.md --
+-- @binConst --
 ```go
 const bin untyped int = 0b1001001 // 73
 ```
--- @numberWithUnderscoreConst/hover.md --
+-- @numberWithUnderscoreConst --
 ```go
 const numberWithUnderscore int64 = 10_000_000_000 // 10000000000
 ```
--- @octalConst/hover.md --
+-- @octalConst --
 ```go
 const octal untyped int = 0o777 // 511
 ```
--- @exprConst/hover.md --
+-- @exprConst --
 ```go
 const expr untyped int = 2 << (0b111&0b101 - 2) // 16
 ```
--- @boolConst/hover.md --
+-- @boolConst --
 ```go
 const boolean untyped bool = (55 - 3) == (26 * 2) // true
 ```
--- @ln10Const/hover.md --
+-- @ln10Const --
 ```go
 const ln10 untyped float = 2.30258509299404568401799145468436420760110148862877297603332790 // 2.30259
 ```
--- @aIota/hover.md --
+-- @aIota --
 ```go
 const a untyped int = 1 << iota // 1
 ```
--- @bIota/hover.md --
+-- @bIota --
 ```go
 const b untyped int = 2
 ```
--- @strConst/hover.md --
+-- @strConst --
 ```go
 const str untyped string = "hello world"
 ```
--- @longStrConst/hover.md --
+-- @longStrConst --
 ```go
 const longStr untyped string = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur e...
 ```
--- @log2eConst/hover.md --
+-- @log2eConst --
 ```go
 const math.Log2E untyped float = 1 / Ln2 // 1.4427
 ```

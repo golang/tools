@@ -33,7 +33,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/lsprpc"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
-	"golang.org/x/tools/gopls/internal/lsp/tests"
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/diff/myers"
@@ -214,9 +213,9 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //     textDocument/highlight request at the given src location, which should
 //     highlight the provided dst locations.
 //
-//   - hover(src, dst location, g Golden): perform a textDocument/hover at the
-//     src location, and checks that the result is the dst location, with hover
-//     content matching "hover.md" in the golden data g.
+//   - hover(src, dst location, sm stringMatcher): perform a
+//     textDocument/hover at the src location, and checks that the result is
+//     the dst location, with matching hover content.
 //
 //   - implementations(src location, want ...location): makes a
 //     textDocument/implementation query at the src location and
@@ -336,11 +335,13 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 //   - name->location: the argument is replaced by the named location.
 //   - name->Golden: the argument is used to look up golden content prefixed by
 //     @<argument>.
-//   - {string,regexp,identifier}->wantError: a wantError type specifies
-//     an expected error message, either in the form of a substring that
-//     must be present, a regular expression that it must match, or an
-//     identifier (e.g. foo) such that the archive entry @foo
-//     exists and contains the exact expected error.
+//   - {string,regexp,identifier}->stringMatcher: a stringMatcher type
+//     specifies an expected string, either in the form of a substring
+//     that must be present, a regular expression that it must match, or an
+//     identifier (e.g. foo) such that the archive entry @foo exists and
+//     contains the exact expected string.
+//     stringMatchers are used by some markers to match positive results
+//     (outputs) and by other markers to match error messages.
 //
 // # Example
 //
@@ -1259,15 +1260,21 @@ type converter func(marker, any) (any, error)
 
 // Types with special conversions.
 var (
-	goldenType    = reflect.TypeOf(&Golden{})
-	locationType  = reflect.TypeOf(protocol.Location{})
-	markerType    = reflect.TypeOf(marker{})
-	regexpType    = reflect.TypeOf(&regexp.Regexp{})
-	wantErrorType = reflect.TypeOf(wantError{})
+	goldenType        = reflect.TypeOf(&Golden{})
+	locationType      = reflect.TypeOf(protocol.Location{})
+	markerType        = reflect.TypeOf(marker{})
+	regexpType        = reflect.TypeOf(&regexp.Regexp{})
+	stringMatcherType = reflect.TypeOf(stringMatcher{})
 )
 
 func convert(mark marker, arg any, paramType reflect.Type) (any, error) {
-	if paramType == goldenType {
+	// Handle stringMatcher and golden parameters before resolving identifiers,
+	// because golden content lives in a separate namespace from other
+	// identifiers.
+	switch paramType {
+	case stringMatcherType:
+		return convertStringMatcher(mark, arg)
+	case goldenType:
 		id, ok := arg.(expect.Identifier)
 		if !ok {
 			return nil, fmt.Errorf("invalid input type %T: golden key must be an identifier", arg)
@@ -1282,17 +1289,13 @@ func convert(mark marker, arg any, paramType reflect.Type) (any, error) {
 			return arg, nil
 		}
 	}
+	if paramType == locationType {
+		return convertLocation(mark, arg)
+	}
 	if reflect.TypeOf(arg).AssignableTo(paramType) {
 		return arg, nil // no conversion required
 	}
-	switch paramType {
-	case locationType:
-		return convertLocation(mark, arg)
-	case wantErrorType:
-		return convertWantError(mark, arg)
-	default:
-		return nil, fmt.Errorf("cannot convert %v (%T) to %s", arg, arg, paramType)
-	}
+	return nil, fmt.Errorf("cannot convert %v (%T) to %s", arg, arg, paramType)
 }
 
 // convertLocation converts a string or regexp argument into the protocol
@@ -1362,78 +1365,70 @@ func linePreceding(run *markerTestRun, pos token.Pos) (int, []byte, *protocol.Ma
 	return startOff, m.Content[startOff:endOff], m, nil
 }
 
-// convertWantError converts a string, regexp, or identifier
-// argument into a wantError. The string is a substring of the
+// convertStringMatcher converts a string, regexp, or identifier
+// argument into a stringMatcher. The string is a substring of the
 // expected error, the regexp is a pattern than matches the expected
 // error, and the identifier is a golden file containing the expected
 // error.
-func convertWantError(mark marker, arg any) (wantError, error) {
+func convertStringMatcher(mark marker, arg any) (stringMatcher, error) {
 	switch arg := arg.(type) {
 	case string:
-		return wantError{substr: arg}, nil
+		return stringMatcher{substr: arg}, nil
 	case *regexp.Regexp:
-		return wantError{pattern: arg}, nil
+		return stringMatcher{pattern: arg}, nil
 	case expect.Identifier:
 		golden := mark.run.test.getGolden(arg)
-		return wantError{golden: golden}, nil
+		return stringMatcher{golden: golden}, nil
 	default:
-		return wantError{}, fmt.Errorf("cannot convert %T to wantError (want: string, regexp, or identifier)", arg)
+		return stringMatcher{}, fmt.Errorf("cannot convert %T to wantError (want: string, regexp, or identifier)", arg)
 	}
 }
 
-// A wantError represents an expectation of a specific error message.
+// A stringMatcher represents an expectation of a specific string value.
 //
 // It may be indicated in one of three ways, in 'expect' notation:
-// - an identifier 'foo', to compare with the contents of the golden section @foo;
-// - a pattern expression re"ab.*c", to match against a regular expression;
-// - a string literal "abc", to check for a substring.
-type wantError struct {
+//   - an identifier 'foo', to compare (exactly) with the contents of the golden
+//     section @foo;
+//   - a pattern expression re"ab.*c", to match against a regular expression;
+//   - a string literal "abc", to check for a substring.
+type stringMatcher struct {
 	golden  *Golden
 	pattern *regexp.Regexp
 	substr  string
 }
 
-func (we wantError) String() string {
-	if we.golden != nil {
-		return fmt.Sprintf("error from @%s entry", we.golden.id)
-	} else if we.pattern != nil {
-		return fmt.Sprintf("error matching %#q", we.pattern)
+func (sc stringMatcher) String() string {
+	if sc.golden != nil {
+		return fmt.Sprintf("content from @%s entry", sc.golden.id)
+	} else if sc.pattern != nil {
+		return fmt.Sprintf("content matching %#q", sc.pattern)
 	} else {
-		return fmt.Sprintf("error with substring %q", we.substr)
+		return fmt.Sprintf("content with substring %q", sc.substr)
 	}
 }
 
-// check asserts that 'err' matches the wantError's expectations.
-func (we wantError) check(mark marker, err error) {
+// checkErr asserts that the given error matches the stringMatcher's expectations.
+func (sc stringMatcher) checkErr(mark marker, err error) {
 	if err == nil {
-		mark.errorf("@%s succeeded unexpectedly, want %v", mark.note.Name, we)
+		mark.errorf("@%s succeeded unexpectedly, want %v", mark.note.Name, sc)
 		return
 	}
-	got := err.Error()
+	sc.check(mark, err.Error())
+}
 
-	if we.golden != nil {
-		// Error message must match @id golden file.
-		wantBytes, ok := we.golden.Get(mark.T(), "", []byte(got))
-		if !ok {
-			mark.errorf("@%s: missing @%s entry", mark.note.Name, we.golden.id)
-			return
-		}
-		want := strings.TrimSpace(string(wantBytes))
-		if got != want {
-			// (ignore leading/trailing space)
-			mark.errorf("@%s failed with wrong error: got:\n%s\nwant:\n%s\ndiff:\n%s",
-				mark.note.Name, got, want, compare.Text(want, got))
+// check asserts that the given content matches the stringMatcher's expectations.
+func (sc stringMatcher) check(mark marker, got string) {
+	if sc.golden != nil {
+		compareGolden(mark, []byte(got), sc.golden)
+	} else if sc.pattern != nil {
+		// Content must match the regular expression pattern.
+		if !sc.pattern.MatchString(got) {
+			mark.errorf("got %q, does not match pattern %#q", got, sc.pattern)
 		}
 
-	} else if we.pattern != nil {
-		// Error message must match regular expression pattern.
-		if !we.pattern.MatchString(got) {
-			mark.errorf("got error %q, does not match pattern %#q", got, we.pattern)
-		}
-
-	} else if !strings.Contains(got, we.substr) {
-		// Error message must contain expected substring.
-		mark.errorf("got error %q, want substring %q", got, we.substr)
+	} else if !strings.Contains(got, sc.substr) {
+		// Content must contain the expected substring.
+		mark.errorf("got %q, want substring %q", got, sc.substr)
 	}
 }
 
@@ -1776,7 +1771,7 @@ func formatMarker(mark marker, golden *Golden) {
 		}
 	}
 
-	compareGolden(mark, "format", got, golden)
+	compareGolden(mark, got, golden)
 }
 
 func highlightMarker(mark marker, src protocol.Location, dsts ...protocol.Location) {
@@ -1809,7 +1804,7 @@ func highlightMarker(mark marker, src protocol.Location, dsts ...protocol.Locati
 // given src location and asserting that the resulting hover is over the dst
 // location (typically a span surrounding src), and that the markdown content
 // matches the golden content.
-func hoverMarker(mark marker, src, dst protocol.Location, golden *Golden) {
+func hoverMarker(mark marker, src, dst protocol.Location, sc stringMatcher) {
 	content, gotDst := mark.run.env.Hover(src)
 	if gotDst != dst {
 		mark.errorf("hover location does not match:\n\tgot: %s\n\twant %s)", mark.run.fmtLoc(gotDst), mark.run.fmtLoc(dst))
@@ -1818,19 +1813,7 @@ func hoverMarker(mark marker, src, dst protocol.Location, golden *Golden) {
 	if content != nil {
 		gotMD = content.Value
 	}
-	wantMD := ""
-	if golden != nil {
-		wantBytes, _ := golden.Get(mark.T(), "hover.md", []byte(gotMD))
-		wantMD = string(wantBytes)
-	}
-	// Normalize newline termination: archive files can't express non-newline
-	// terminated files.
-	if strings.HasSuffix(wantMD, "\n") && !strings.HasSuffix(gotMD, "\n") {
-		gotMD += "\n"
-	}
-	if diff := tests.DiffMarkdown(wantMD, gotMD); diff != "" {
-		mark.errorf("hover markdown mismatch (-want +got):\n%s", diff)
-	}
+	sc.check(mark, gotMD)
 }
 
 // locMarker implements the @loc marker. It is executed before other
@@ -1874,9 +1857,9 @@ func renameMarker(mark marker, loc protocol.Location, newName string, golden *Go
 }
 
 // renameErrMarker implements the @renamererr(location, new, error) marker.
-func renameErrMarker(mark marker, loc protocol.Location, newName string, wantErr wantError) {
+func renameErrMarker(mark marker, loc protocol.Location, newName string, wantErr stringMatcher) {
 	_, err := rename(mark.run.env, loc, newName)
-	wantErr.check(mark, err)
+	wantErr.checkErr(mark, err)
 }
 
 func selectionRangeMarker(mark marker, loc protocol.Location, g *Golden) {
@@ -1916,7 +1899,7 @@ func selectionRangeMarker(mark marker, loc protocol.Location, g *Golden) {
 		}
 		buf.WriteRune('\n')
 	}
-	compareGolden(mark, "selection range", buf.Bytes(), g)
+	compareGolden(mark, buf.Bytes(), g)
 }
 
 func tokenMarker(mark marker, loc protocol.Location, tokenType, mod string) {
@@ -2048,11 +2031,11 @@ func codeActionEditMarker(mark marker, loc protocol.Location, actionKind string,
 	checkDiffs(mark, changed, g)
 }
 
-func codeActionErrMarker(mark marker, start, end protocol.Location, actionKind string, wantErr wantError) {
+func codeActionErrMarker(mark marker, start, end protocol.Location, actionKind string, wantErr stringMatcher) {
 	loc := start
 	loc.Range.End = end.Range.End
 	_, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil, nil)
-	wantErr.check(mark, err)
+	wantErr.checkErr(mark, err)
 }
 
 // codeLensesMarker runs the @codelenses() marker, collecting @codelens marks
@@ -2106,7 +2089,7 @@ func documentLinkMarker(mark marker, g *Golden) {
 		fmt.Fprintln(&b, mark.run.fmtLocDetails(loc, false), *l.Target)
 	}
 
-	compareGolden(mark, "documentLink", b.Bytes(), g)
+	compareGolden(mark, b.Bytes(), g)
 }
 
 // consumeExtraNotes runs the provided func for each extra note with the given
@@ -2145,7 +2128,7 @@ func suggestedfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, g
 	checkDiffs(mark, changed, golden)
 }
 
-func suggestedfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp, wantErr wantError) {
+func suggestedfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp, wantErr stringMatcher) {
 	loc.Range.End = loc.Range.Start // diagnostics ignore end position.
 	// Find and remove the matching diagnostic.
 	diag, ok := removeDiagnostic(mark, loc, re)
@@ -2156,7 +2139,7 @@ func suggestedfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp
 
 	// Apply the fix it suggests.
 	_, err := codeAction(mark.run.env, loc.URI, diag.Range, "quickfix", &diag, nil)
-	wantErr.check(mark, err)
+	wantErr.checkErr(mark, err)
 }
 
 // codeAction executes a textDocument/codeAction request for the specified
@@ -2421,7 +2404,7 @@ func inlayhintsMarker(mark marker, g *Golden) {
 		return
 	}
 
-	compareGolden(mark, "inlay hints", got, g)
+	compareGolden(mark, got, g)
 }
 
 func prepareRenameMarker(mark marker, src, spn protocol.Location, placeholder string) {
@@ -2554,20 +2537,34 @@ func workspaceSymbolMarker(mark marker, query string, golden *Golden) {
 		fmt.Fprintf(&got, "%s %s %s\n", loc, s.Name, s.Kind)
 	}
 
-	compareGolden(mark, fmt.Sprintf("Symbol(%q)", query), got.Bytes(), golden)
+	compareGolden(mark, got.Bytes(), golden)
 }
 
 // compareGolden compares the content of got with that of g.Get(""), reporting
 // errors on any mismatch.
 //
 // TODO(rfindley): use this helper in more places.
-func compareGolden(mark marker, op string, got []byte, g *Golden) {
+func compareGolden(mark marker, got []byte, g *Golden) {
 	want, ok := g.Get(mark.T(), "", got)
 	if !ok {
 		mark.errorf("missing golden file @%s", g.id)
 		return
 	}
+	// Normalize newline termination: archive files (i.e. Golden content) can't
+	// contain non-newline terminated files, except in the special case where the
+	// file is completely empty.
+	//
+	// Note that txtar partitions a contiguous byte slice, so we must copy before
+	// appending.
+	normalize := func(s []byte) []byte {
+		if n := len(s); n > 0 && s[n-1] != '\n' {
+			s = append(s[:n:n], '\n') // don't mutate array
+		}
+		return s
+	}
+	got = normalize(got)
+	want = normalize(want)
 	if diff := compare.Bytes(want, got); diff != "" {
-		mark.errorf("%s mismatch:\n%s", op, diff)
+		mark.errorf("%s does not match @%s:\n%s", mark.note.Name, g.id, diff)
 	}
 }

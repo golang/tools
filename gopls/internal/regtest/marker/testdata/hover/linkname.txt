@@ -1,4 +1,10 @@
 This test check hover on the 2nd argument in go:linkname directives.
+
+Requires go1.19+ for the new go/doc/comment package.
+
+-- flags --
+-min_go=go1.19
+
 -- go.mod --
 module mod.com
 
@@ -21,7 +27,7 @@ func bar() string {
 	return "foo by bar"
 }
 
--- @bar/hover.md --
+-- @bar --
 ```go
 func bar() string
 ```

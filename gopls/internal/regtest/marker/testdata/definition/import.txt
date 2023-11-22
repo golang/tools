@@ -1,4 +1,10 @@
 This test checks definition and hover over imports.
+
+Requires go1.19+ for the new go/doc/comment package.
+
+-- flags --
+-min_go=go1.19
+
 -- go.mod --
 module mod.com
 
@@ -29,7 +35,7 @@ func _() {
 
 	DoFoo() //@hover("DoFoo", "DoFoo", DoFoo)
 }
--- @DoFoo/hover.md --
+-- @DoFoo --
 ```go
 func DoFoo()
 ```
@@ -38,13 +44,13 @@ DoFoo does foo.
 
 
 [`foo.DoFoo` on pkg.go.dev](https://pkg.go.dev/mod.com/foo#DoFoo)
--- @FooVar/hover.md --
+-- @FooVar --
 ```go
 var _ Foo
 ```
 
 variable of type foo.Foo
--- @myFoo/hover.md --
+-- @myFoo --
 ```go
 package myFoo ("mod.com/foo")
 ```

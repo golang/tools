@@ -1,4 +1,10 @@
 This test checks gopls behavior when hovering over basic literals.
+
+Requires go1.19+ for the new go/doc/comment package.
+
+-- flags --
+-min_go=go1.19
+
 -- basiclit.go --
 package basiclit
 
@@ -53,29 +59,29 @@ func _() {
 	_ = 0X1234567890 //@hover("0X1234567890", "0X1234567890", hexNumber)
 	_ = 0x1000000000000000000 //@hover("0x1", "0x1000000000000000000", bigHex)
 )
--- @bigHex/hover.md --
+-- @bigHex --
 4722366482869645213696
--- @binaryNumber/hover.md --
+-- @binaryNumber --
 9
--- @control/hover.md --
+-- @control --
 U+0007, control
--- @hexNumber/hover.md --
+-- @hexNumber --
 78187493520
--- @latinA/hover.md --
+-- @latinA --
 'a', U+0061, LATIN SMALL LETTER A
--- @latinAHex/hover.md --
+-- @latinAHex --
 97, 'a', U+0061, LATIN SMALL LETTER A
--- @leftCurly/hover.md --
+-- @leftCurly --
 '{', U+007B, LEFT CURLY BRACKET
--- @octalNumber/hover.md --
+-- @octalNumber --
 63
--- @summation/hover.md --
+-- @summation --
 '∑', U+2211, N-ARY SUMMATION
--- @summationHex/hover.md --
+-- @summationHex --
 8721, '∑', U+2211, N-ARY SUMMATION
--- @tilde/hover.md --
+-- @tilde --
 '~', U+007E, TILDE
--- @waterWave/hover.md --
+-- @waterWave --
 '🌊', U+1F30A, WATER WAVE
--- @waterWaveHex/hover.md --
+-- @waterWaveHex --
 127754, '🌊', U+1F30A, WATER WAVE

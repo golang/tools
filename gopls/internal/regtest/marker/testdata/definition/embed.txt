@@ -1,5 +1,10 @@
 This test checks definition and hover operations over embedded fields and methods.
 
+Requires go1.19+ for the new go/doc/comment package.
+
+-- flags --
+-min_go=go1.19
+
 -- go.mod --
 module mod.com
 
@@ -104,13 +109,13 @@ var _ = S1{ //@def("S1", S1),hover("S1", "S1", S1)
 	F1: 99, //@def("F1", S1F1),hover("F1", "F1", S1F1)
 }
 
--- @AHi/hover.md --
+-- @AHi --
 ```go
 func (a.A).Hi()
 ```
 
 [`(a.A).Hi` on pkg.go.dev](https://pkg.go.dev/mod.com/a#A.Hi)
--- @F/hover.md --
+-- @F --
 ```go
 field F int
 ```
@@ -119,7 +124,7 @@ field F int
 
 
 [`(b.Embed).F` on pkg.go.dev](https://pkg.go.dev/mod.com/b#Embed.F)
--- @HGoodbye/hover.md --
+-- @HGoodbye --
 ```go
 func (a.H).Goodbye()
 ```
@@ -128,7 +133,7 @@ func (a.H).Goodbye()
 
 
 [`(a.H).Goodbye` on pkg.go.dev](https://pkg.go.dev/mod.com/a#H.Goodbye)
--- @IB/hover.md --
+-- @IB --
 ```go
 func (a.I).B()
 ```
@@ -137,7 +142,7 @@ func (a.I).B()
 
 
 [`(a.I).B` on pkg.go.dev](https://pkg.go.dev/mod.com/a#I.B)
--- @JHello/hover.md --
+-- @JHello --
 ```go
 func (a.J).Hello()
 ```
@@ -146,13 +151,13 @@ func (a.J).Hello()
 
 
 [`(a.J).Hello` on pkg.go.dev](https://pkg.go.dev/mod.com/a#J.Hello)
--- @M/hover.md --
+-- @M --
 ```go
 func (embed).M()
 ```
 
 [`(b.Embed).M` on pkg.go.dev](https://pkg.go.dev/mod.com/b#Embed.M)
--- @RField2/hover.md --
+-- @RField2 --
 ```go
 field Field2 int
 ```
@@ -161,13 +166,13 @@ field Field2 int
 
 
 [`(a.R).Field2` on pkg.go.dev](https://pkg.go.dev/mod.com/a#R.Field2)
--- @RHey/hover.md --
+-- @RHey --
 ```go
 func (a.R).Hey()
 ```
 
 [`(a.R).Hey` on pkg.go.dev](https://pkg.go.dev/mod.com/a#R.Hey)
--- @S1/hover.md --
+-- @S1 --
 ```go
 type S1 struct {
 	F1     int //@loc(S1F1, "F1")
@@ -178,7 +183,7 @@ type S1 struct {
 ```
 
 [`b.S1` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S1)
--- @S1F1/hover.md --
+-- @S1F1 --
 ```go
 field F1 int
 ```
@@ -187,7 +192,7 @@ field F1 int
 
 
 [`(b.S1).F1` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S1.F1)
--- @S1S2/hover.md --
+-- @S1S2 --
 ```go
 field S2 S2
 ```
@@ -196,7 +201,7 @@ field S2 S2
 
 
 [`(b.S1).S2` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S1.S2)
--- @S2/hover.md --
+-- @S2 --
 ```go
 type S2 struct {
 	F1   string //@loc(S2F1, "F1")
@@ -206,7 +211,7 @@ type S2 struct {
 ```
 
 [`b.S2` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S2)
--- @S2F1/hover.md --
+-- @S2F1 --
 ```go
 field F1 string
 ```
@@ -215,7 +220,7 @@ field F1 string
 
 
 [`(b.S2).F1` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S2.F1)
--- @S2F2/hover.md --
+-- @S2F2 --
 ```go
 field F2 int
 ```
@@ -224,7 +229,7 @@ field F2 int
 
 
 [`(b.S2).F2` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S2.F2)
--- @SField/hover.md --
+-- @SField --
 ```go
 field Field int
 ```
@@ -233,7 +238,7 @@ field Field int
 
 
 [`(a.S).Field` on pkg.go.dev](https://pkg.go.dev/mod.com/a#S.Field)
--- @aA/hover.md --
+-- @aA --
 ```go
 type A string
 
@@ -244,7 +249,7 @@ func (a.A).Hi()
 
 
 [`a.A` on pkg.go.dev](https://pkg.go.dev/mod.com/a#A)
--- @aAlias/hover.md --
+-- @aAlias --
 ```go
 type aAlias = a.A
 

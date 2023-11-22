@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/event"
 )
@@ -96,6 +97,21 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 // builtinDefinition returns the location of the fake source
 // declaration of a built-in in {builtin,unsafe}.go.
 func builtinDefinition(ctx context.Context, snapshot *cache.Snapshot, obj types.Object) ([]protocol.Location, error) {
+	pgf, decl, err := builtinDecl(ctx, snapshot, obj)
+	if err != nil {
+		return nil, err
+	}
+
+	loc, err := pgf.PosLocation(decl.Pos(), decl.Pos()+token.Pos(len(obj.Name())))
+	if err != nil {
+		return nil, err
+	}
+	return []protocol.Location{loc}, nil
+}
+
+// builtinDecl returns the parsed Go file and node corresponding to a builtin
+// object, which may be a universe object or part of types.Unsafe.
+func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object) (*parsego.File, ast.Node, error) {
 	// getDecl returns the file-level declaration of name
 	// using legacy (go/ast) object resolution.
 	getDecl := func(file *ast.File, name string) (ast.Node, error) {
@@ -121,16 +137,18 @@ func builtinDefinition(ctx context.Context, snapshot *cache.Snapshot, obj types.
 		// parse $GOROOT/src/unsafe/unsafe.go
 		unsafe := snapshot.Metadata("unsafe")
 		if unsafe == nil {
-			return nil, fmt.Errorf("no metadata for package 'unsafe'")
+			// If the type checker somehow resolved 'unsafe', we must have metadata
+			// for it.
+			return nil, nil, bug.Errorf("no metadata for package 'unsafe'")
 		}
 		uri := unsafe.GoFiles[0]
 		fh, err := snapshot.ReadFile(ctx, uri)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		pgf, err = snapshot.ParseGo(ctx, fh, ParseFull&^parser.SkipObjectResolution)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		decl, err = getDecl(pgf.File, obj.Name())
@@ -139,7 +157,7 @@ func builtinDefinition(ctx context.Context, snapshot *cache.Snapshot, obj types.
 		// use parsed $GOROOT/src/builtin/builtin.go
 		pgf, err = snapshot.BuiltinFile(ctx)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		if obj.Parent() == types.Universe {
@@ -150,23 +168,15 @@ func builtinDefinition(ctx context.Context, snapshot *cache.Snapshot, obj types.
 			// error.Error method
 			decl, err = getDecl(pgf.File, "error")
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			decl = decl.(*ast.TypeSpec).Type.(*ast.InterfaceType).Methods.List[0]
 
 		} else {
-			return nil, bug.Errorf("unknown built-in %v", obj)
+			return nil, nil, bug.Errorf("unknown built-in %v", obj)
 		}
 	}
-	if err != nil {
-		return nil, err
-	}
-
-	loc, err := pgf.PosLocation(decl.Pos(), decl.Pos()+token.Pos(len(obj.Name())))
-	if err != nil {
-		return nil, err
-	}
-	return []protocol.Location{loc}, nil
+	return pgf, decl, nil
 }
 
 // referencedObject returns the identifier and object referenced at the

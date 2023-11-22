@@ -1,5 +1,10 @@
 This file contains tests for documentation links to generic code in hover.
 
+Requires go1.19+ for the new go/doc/comment package.
+
+-- flags --
+-min_go=go1.19
+
 -- go.mod --
 module mod.com
 
@@ -37,7 +42,7 @@ func (GT[P]) M(p P) { //@hover("GT", "GT", GTrecv),hover("M","M", M),hover(re"p 
 func GF[P any] (p P) { //@hover("GF", "GF", GF)
 }
 
--- @F/hover.md --
+-- @F --
 ```go
 field F P
 ```
@@ -46,17 +51,17 @@ field F P
 
 
 [`(generic.GT).F` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT.F)
--- @FP/hover.md --
+-- @FP --
 ```go
 type parameter P any
 ```
--- @GF/hover.md --
+-- @GF --
 ```go
 func GF[P any](p P)
 ```
 
 [`generic.GF` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GF)
--- @GT/hover.md --
+-- @GT --
 ```go
 type GT[P any] struct {
 	F P //@hover("F", "F", F),hover("P", "P", FP)
@@ -71,11 +76,11 @@ TODO(rfindley): should it? We should probably link to the type.
 
 
 [`generic.GT` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT)
--- @GTP/hover.md --
+-- @GTP --
 ```go
 type parameter P any
 ```
--- @GTrecv/hover.md --
+-- @GTrecv --
 ```go
 type GT[P any] struct {
 	F P //@hover("F", "F", F),hover("P", "P", FP)
@@ -90,33 +95,33 @@ TODO(rfindley): should it? We should probably link to the type.
 
 
 [`generic.GT` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT)
--- @M/hover.md --
+-- @M --
 ```go
 func (GT[P]).M(p P)
 ```
 
 [`(generic.GT).M` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT.M)
--- @f/hover.md --
+-- @f --
 ```go
 var f func(p int)
 ```
--- @fGF/hover.md --
+-- @fGF --
 ```go
 func generic.GF(p int) // func[P any](p P)
 ```
 
 [`generic.GF` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GF)
--- @pP/hover.md --
+-- @pP --
 ```go
 type parameter P any
 ```
--- @x/hover.md --
+-- @x --
 ```go
 var x generic.GT[int]
 ```
 
 @hover("GT", "GT", xGT)
--- @xF/hover.md --
+-- @xF --
 ```go
 field F int
 ```
@@ -125,7 +130,7 @@ field F int
 
 
 [`(generic.GT).F` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT.F)
--- @xGT/hover.md --
+-- @xGT --
 ```go
 type GT[P any] struct {
 	F P //@hover("F", "F", F),hover("P", "P", FP)

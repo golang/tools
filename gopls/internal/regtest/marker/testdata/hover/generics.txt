@@ -1,5 +1,10 @@
 This file contains tests for hovering over generic Go code.
 
+Requires go1.19+ for the new go/doc/comment package.
+
+-- flags --
+-min_go=go1.19
+
 -- go.mod --
 // A go.mod is require for correct pkgsite links.
 // TODO(rfindley): don't link to ad-hoc or command-line-arguments packages!
@@ -40,7 +45,7 @@ func _() {
 	_ = app([]int{}, 0)        //@hover("app", "app", appint)
 }
 
--- @ValueQ/hover.md --
+-- @ValueQ --
 ```go
 field Q int
 ```
@@ -49,25 +54,25 @@ field Q int
 
 
 [`(generics.Value).Q` on pkg.go.dev](https://pkg.go.dev/mod.com#Value.Q)
--- @ValueT/hover.md --
+-- @ValueT --
 ```go
 type parameter T any
 ```
--- @ValuevalT/hover.md --
+-- @ValuevalT --
 ```go
 type parameter T any
 ```
--- @appint/hover.md --
+-- @appint --
 ```go
 func app(s []int, e int) []int // func[S interface{~[]E}, E interface{}](s S, e E) S
 ```
--- @valueQ/hover.md --
+-- @valueQ --
 ```go
 field Q int
 ```
 
 @hover("Q", "Q", valueQ)
--- @valuevalT/hover.md --
+-- @valuevalT --
 ```go
 type parameter T any
 ```

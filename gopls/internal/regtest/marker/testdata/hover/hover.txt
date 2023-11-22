@@ -1,4 +1,10 @@
 This test demonstrates some features of the new marker test runner.
+
+Requires go1.19+ for the new go/doc/comment package.
+
+-- flags --
+-min_go=go1.19
+
 -- a.go --
 package a
 
@@ -13,17 +19,17 @@ func _() {
 		println(x) //@hover("x", "x", xint),hover(")", "x", xint)
 	}
 }
--- @abc/hover.md --
+-- @abc --
 ```go
 const abc untyped int = 0x2a // 42
 ```
 
 @hover("b", "abc", abc),hover(" =", "abc", abc)
--- @x/hover.md --
+-- @x --
 ```go
 var x interface{}
 ```
--- @xint/hover.md --
+-- @xint --
 ```go
 var x int
 ```

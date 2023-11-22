@@ -1,0 +1,9 @@
+This test verifies the fix for issue #64239: hover fails for objects in the
+unsafe package.
+
+-- p.go --
+package p
+
+import "unsafe"
+
+var _ = unsafe.Sizeof(struct{}{}) //@hover("Sizeof", "Sizeof", "`Sizeof` on pkg.go.dev")

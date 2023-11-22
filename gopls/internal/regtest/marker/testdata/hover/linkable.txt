@@ -3,6 +3,12 @@ identifiers.
 
 We should only produce links that work, meaning the object is reachable via the
 package's public API.
+
+Requires go1.19+ for the new go/doc/comment package.
+
+-- flags --
+-min_go=go1.19
+
 -- go.mod --
 module mod.com
 
@@ -54,13 +60,13 @@ func _() {
 	var l Local
 	_ = l.Embed //@hover("Embed", "Embed", Embed)
 }
--- @Embed/hover.md --
+-- @Embed --
 ```go
 field Embed int
 ```
 
 [`(p.E).Embed` on pkg.go.dev](https://pkg.go.dev/mod.com#E.Embed)
--- @F/hover.md --
+-- @F --
 ```go
 field F int
 ```
@@ -69,7 +75,7 @@ field F int
 
 
 [`(p.T).F` on pkg.go.dev](https://pkg.go.dev/mod.com#T.F)
--- @Local/hover.md --
+-- @Local --
 ```go
 type Local struct {
 	E
@@ -77,13 +83,13 @@ type Local struct {
 ```
 
 Local types should not be linkable, even if they are capitalized.
--- @Nested/hover.md --
+-- @Nested --
 ```go
 field Nested int
 ```
 
 Nested fields should also be linkable.
--- @T/hover.md --
+-- @T --
 ```go
 type T struct {
 	f int //@hover("f", "f", f)
@@ -106,13 +112,13 @@ T is in the package scope, and so should be linkable.
 
 
 [`p.T` on pkg.go.dev](https://pkg.go.dev/mod.com#T)
--- @X/hover.md --
+-- @X --
 ```go
 var X int
 ```
 
 Local variables should not be linkable, even if they are capitalized.
--- @f/hover.md --
+-- @f --
 ```go
 field f int
 ```
