@@ -147,14 +147,18 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 		for _, diag := range act.Diagnostics {
 			for _, sf := range diag.SuggestedFixes {
 				for _, edit := range sf.TextEdits {
+					start, end := edit.Pos, edit.End
+					if !end.IsValid() {
+						end = start
+					}
 					// Validate the edit.
-					if edit.Pos > edit.End {
+					if start > end {
 						t.Errorf(
 							"diagnostic for analysis %v contains Suggested Fix with malformed edit: pos (%v) > end (%v)",
-							act.Pass.Analyzer.Name, edit.Pos, edit.End)
+							act.Pass.Analyzer.Name, start, end)
 						continue
 					}
-					file, endfile := act.Pass.Fset.File(edit.Pos), act.Pass.Fset.File(edit.End)
+					file, endfile := act.Pass.Fset.File(start), act.Pass.Fset.File(end)
 					if file == nil || endfile == nil || file != endfile {
 						t.Errorf(
 							"diagnostic for analysis %v contains Suggested Fix with malformed spanning files %v and %v",
@@ -172,8 +176,8 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 						fileEdits[file] = make(map[string][]diff.Edit)
 					}
 					fileEdits[file][sf.Message] = append(fileEdits[file][sf.Message], diff.Edit{
-						Start: file.Offset(edit.Pos),
-						End:   file.Offset(edit.End),
+						Start: file.Offset(start),
+						End:   file.Offset(end),
 						New:   string(edit.NewText),
 					})
 				}

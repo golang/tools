@@ -6,12 +6,14 @@ package analysistest_test
 
 import (
 	"fmt"
+	"go/token"
 	"log"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/findcall"
 	"golang.org/x/tools/internal/testenv"
@@ -157,6 +159,51 @@ func println(...interface{}) { println_TEST_() } // want println:"found" "call o
 			strings.Join(got, "\n"),
 			strings.Join(want, "\n"))
 	}
+}
+
+// TestNoEnd tests that a missing SuggestedFix.End position is
+// correctly interpreted as if equal to SuggestedFix.Pos (see issue #64199).
+func TestNoEnd(t *testing.T) {
+	noend := &analysis.Analyzer{
+		Name: "noend",
+		Doc:  "inserts /*hello*/ before first decl",
+		Run: func(pass *analysis.Pass) (any, error) {
+			decl := pass.Files[0].Decls[0]
+			pass.Report(analysis.Diagnostic{
+				Pos:     decl.Pos(),
+				End:     token.NoPos,
+				Message: "say hello",
+				SuggestedFixes: []analysis.SuggestedFix{{
+					Message: "say hello",
+					TextEdits: []analysis.TextEdit{
+						{
+							Pos:     decl.Pos(),
+							End:     token.NoPos,
+							NewText: []byte("/*hello*/"),
+						},
+					},
+				}},
+			})
+			return nil, nil
+		},
+	}
+
+	filemap := map[string]string{
+		"a/a.go": `package a
+
+func F() {} // want "say hello"`,
+		"a/a.go.golden": `package a
+
+/*hello*/
+func F() {} // want "say hello"`,
+	}
+	dir, cleanup, err := analysistest.WriteFiles(filemap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	analysistest.RunWithSuggestedFixes(t, dir, noend, "a")
 }
 
 type errorfunc func(string)
