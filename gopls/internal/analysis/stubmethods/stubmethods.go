@@ -66,7 +66,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 // MatchesMessage reports whether msg matches the error message sought after by
 // the stubmethods fix.
 func MatchesMessage(msg string) bool {
-	return strings.Contains(msg, "missing method") || strings.HasPrefix(msg, "cannot convert")
+	return strings.Contains(msg, "missing method") || strings.HasPrefix(msg, "cannot convert") || strings.Contains(msg, "not implement")
 }
 
 // DiagnosticForError computes a diagnostic suggesting to implement an

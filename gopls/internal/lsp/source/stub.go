@@ -75,14 +75,30 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 		importEnv[importPath] = name // latest alias wins
 	}
 
+	// Record all direct methods of the current object
+	concreteFuncs := make(map[string]struct{})
+	for i := 0; i < si.Concrete.NumMethods(); i++ {
+		concreteFuncs[si.Concrete.Method(i).Name()] = struct{}{}
+	}
+
 	// Find subset of interface methods that the concrete type lacks.
-	var missing []*types.Func
 	ifaceType := si.Interface.Type().Underlying().(*types.Interface)
+
+	type missingFn struct {
+		fn         *types.Func
+		needSubtle string
+	}
+
+	var (
+		missing                  []missingFn
+		concreteStruct, isStruct = si.Concrete.Origin().Underlying().(*types.Struct)
+	)
+
 	for i := 0; i < ifaceType.NumMethods(); i++ {
 		imethod := ifaceType.Method(i)
-		cmethod, _, _ := types.LookupFieldOrMethod(si.Concrete, si.Pointer, imethod.Pkg(), imethod.Name())
+		cmethod, index, _ := types.LookupFieldOrMethod(si.Concrete, si.Pointer, imethod.Pkg(), imethod.Name())
 		if cmethod == nil {
-			missing = append(missing, imethod)
+			missing = append(missing, missingFn{fn: imethod})
 			continue
 		}
 
@@ -92,10 +108,27 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 				conc.Name(), imethod.Name())
 		}
 
-		if !types.Identical(cmethod.Type(), imethod.Type()) {
-			return nil, nil, fmt.Errorf("method %s.%s already exists but has the wrong type: got %s, want %s",
-				conc.Name(), imethod.Name(), cmethod.Type(), imethod.Type())
+		if _, exist := concreteFuncs[imethod.Name()]; exist {
+			if !types.Identical(cmethod.Type(), imethod.Type()) {
+				return nil, nil, fmt.Errorf("method %s.%s already exists but has the wrong type: got %s, want %s",
+					conc.Name(), imethod.Name(), cmethod.Type(), imethod.Type())
+			}
+			continue
 		}
+
+		mf := missingFn{fn: imethod}
+		if isStruct && len(index) > 0 {
+			field := concreteStruct.Field(index[0])
+
+			fn := field.Name()
+			if _, ok := field.Type().(*types.Pointer); ok {
+				fn = "*" + fn
+			}
+
+			mf.needSubtle = fmt.Sprintf("// Subtle: this method shadows the method (%s).%s of %s.%s.\n", fn, imethod.Name(), si.Concrete.Obj().Name(), field.Name())
+		}
+
+		missing = append(missing, mf)
 	}
 	if len(missing) == 0 {
 		return nil, nil, fmt.Errorf("no missing methods found")
@@ -159,19 +192,20 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 
 	// Format the new methods.
 	var newMethods bytes.Buffer
-	for _, method := range missing {
+	for index := range missing {
 		fmt.Fprintf(&newMethods, `// %s implements %s.
-func (%s%s%s) %s%s {
+%sfunc (%s%s%s) %s%s {
 	panic("unimplemented")
 }
 `,
-			method.Name(),
+			missing[index].fn.Name(),
 			iface,
+			missing[index].needSubtle,
 			star,
 			si.Concrete.Obj().Name(),
 			FormatTypeParams(si.Concrete.TypeParams()),
-			method.Name(),
-			strings.TrimPrefix(types.TypeString(method.Type(), qual), "func"))
+			missing[index].fn.Name(),
+			strings.TrimPrefix(types.TypeString(missing[index].fn.Type(), qual), "func"))
 	}
 
 	// Compute insertion point for new methods:
