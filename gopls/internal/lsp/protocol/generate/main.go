@@ -33,7 +33,7 @@ const vscodeRepo = "https://github.com/microsoft/vscode-languageserver-node"
 // For example, tag release/protocol/3.17.3 of the repo defines protocol version 3.17.0.
 // (Point releases are reflected in the git tag version even when they are cosmetic
 // and don't change the protocol.)
-var lspGitRef = "release/protocol/3.17.4-next.2"
+var lspGitRef = "release/protocol/3.17.6-next.1"
 
 var (
 	repodir   = flag.String("d", "", "directory containing clone of "+vscodeRepo)
@@ -195,12 +195,10 @@ func writeprotocol() {
 	hack("PreviousResultId", "PreviousResultID")
 	hack("WorkspaceFoldersServerCapabilities", "WorkspaceFolders5Gn")
 	hack("_InitializeParams", "XInitializeParams")
-	// and some aliases to make the new code contain the old
-	types["PrepareRename2Gn"] = "type PrepareRename2Gn = Msg_PrepareRename2Gn // (alias) line 13927\n"
-	types["PrepareRenameResult"] = "type PrepareRenameResult = Msg_PrepareRename2Gn // (alias) line 13927\n"
+
 	for _, k := range types.keys() {
 		if k == "WatchKind" {
-			types[k] = "type WatchKind = uint32 // line 13505" // strict gopls compatibility needs the '='
+			types[k] = "type WatchKind = uint32" // strict gopls compatibility needs the '='
 		}
 		out.WriteString(types[k])
 	}

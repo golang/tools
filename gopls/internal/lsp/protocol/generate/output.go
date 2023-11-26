@@ -240,36 +240,36 @@ func genStructs(model Model) {
 	}
 	// base types
 	types["DocumentURI"] = `
-// A DocumentURI is the URI of a client editor document.
-//
-// Care should be taken to handle encoding in URIs. For
-// example, some clients (such as VS Code) may encode colons
-// in drive letters while others do not. The URIs below are
-// both valid, but clients and servers should be consistent
-// with the form they use themselves to ensure the other party
-// doesn’t interpret them as distinct URIs. Clients and
-// servers should not assume that each other are encoding the
-// same way (for example a client encoding colons in drive
-// letters cannot assume server responses will have encoded
-// colons). The same applies to casing of drive letters - one
-// party should not assume the other party will return paths
-// with drive letters cased the same as it.
-//
-//    file:///c:/project/readme.md
-//    file:///C%3A/project/readme.md
-//
-// This is done during JSON unmarshalling;
-// see [DocumentURI.UnmarshalText] for details.
-//
-type DocumentURI string
-`
+	// A DocumentURI is the URI of a client editor document.
+	//
+	// Care should be taken to handle encoding in URIs. For
+	// example, some clients (such as VS Code) may encode colons
+	// in drive letters while others do not. The URIs below are
+	// both valid, but clients and servers should be consistent
+	// with the form they use themselves to ensure the other party
+	// doesn’t interpret them as distinct URIs. Clients and
+	// servers should not assume that each other are encoding the
+	// same way (for example a client encoding colons in drive
+	// letters cannot assume server responses will have encoded
+	// colons). The same applies to casing of drive letters - one
+	// party should not assume the other party will return paths
+	// with drive letters cased the same as it.
+	//
+	//    file:///c:/project/readme.md
+	//    file:///C%3A/project/readme.md
+	//
+	// This is done during JSON unmarshalling;
+	// see [DocumentURI.UnmarshalText] for details.
+	//
+	type DocumentURI string
+	`
 	types["URI"] = `// A URI is an arbitrary URL (e.g. https), not necessarily a file.
-type URI = string
-`
+	type URI = string
+	`
 
 	types["LSPAny"] = "type LSPAny = interface{}\n"
 	// A special case, the only previously existing Or type
-	types["DocumentDiagnosticReport"] = "type DocumentDiagnosticReport = Or_DocumentDiagnosticReport // (alias) line 13909\n"
+	types["DocumentDiagnosticReport"] = "type DocumentDiagnosticReport = Or_DocumentDiagnosticReport // (alias) \n"
 
 }
 
@@ -300,7 +300,7 @@ func genAliases(model Model) {
 			continue // renamed the type, e.g., "DocumentDiagnosticReport", an or-type to "string"
 		}
 		tp := goplsName(ta.Type)
-		fmt.Fprintf(out, "type %s = %s // (alias) line %d\n", nm, tp, ta.Line)
+		fmt.Fprintf(out, "type %s = %s // (alias)\n", nm, tp)
 		types[nm] = out.String()
 	}
 }
@@ -395,7 +395,6 @@ func genMarshal() {
 		}
 		sort.Strings(names)
 		var buf bytes.Buffer
-		fmt.Fprintf(&buf, "// from line %d\n", nt.line)
 		fmt.Fprintf(&buf, "func (t %s) MarshalJSON() ([]byte, error) {\n", nm)
 		buf.WriteString("\tswitch x := t.Value.(type){\n")
 		for _, nmx := range names {

@@ -42,23 +42,16 @@ var goplsStar = map[prop]int{
 	{"Hover", "range"}:                    wantOpt,     // complex expressions
 	{"InlayHint", "kind"}:                 wantOpt,     // temporary variables
 
-	{"Lit_CompletionClientCapabilities_completionItem", "tagSupport"}:     nothing, // A.B.C.
-	{"Lit_SemanticTokensClientCapabilities_requests", "full"}:             nothing, // A.B.C.D
-	{"Lit_SemanticTokensClientCapabilities_requests", "range"}:            nothing, // A.B.C.D
-	{"Lit_SemanticTokensClientCapabilities_requests_full_Item1", "delta"}: nothing, // A.B.C.D
-	{"Lit_SemanticTokensOptions_full_Item1", "delta"}:                     nothing, // A.B.C.
-
-	{"Lit_TextDocumentContentChangeEvent_Item0", "range"}: wantStar, // == nil test
-
-	{"TextDocumentClientCapabilities", "codeAction"}:          wantOpt, // A.B.C.D
-	{"TextDocumentClientCapabilities", "completion"}:          wantOpt, // A.B.C.D
-	{"TextDocumentClientCapabilities", "documentSymbol"}:      wantOpt, // A.B.C.D
-	{"TextDocumentClientCapabilities", "publishDiagnostics"}:  wantOpt, //A.B.C.D
-	{"TextDocumentClientCapabilities", "semanticTokens"}:      wantOpt, // A.B.C.D
-	{"TextDocumentSyncOptions", "change"}:                     wantOpt, // &constant
-	{"WorkDoneProgressParams", "workDoneToken"}:               wantOpt, // regtest
-	{"WorkspaceClientCapabilities", "didChangeConfiguration"}: wantOpt, // A.B.C.D
-	{"WorkspaceClientCapabilities", "didChangeWatchedFiles"}:  wantOpt, // A.B.C.D
+	{"TextDocumentClientCapabilities", "codeAction"}:          wantOpt,     // A.B.C.D
+	{"TextDocumentClientCapabilities", "completion"}:          wantOpt,     // A.B.C.D
+	{"TextDocumentClientCapabilities", "documentSymbol"}:      wantOpt,     // A.B.C.D
+	{"TextDocumentClientCapabilities", "publishDiagnostics"}:  wantOpt,     //A.B.C.D
+	{"TextDocumentClientCapabilities", "semanticTokens"}:      wantOpt,     // A.B.C.D
+	{"TextDocumentContentChangePartial", "range"}:             wantOptStar, // == nil test
+	{"TextDocumentSyncOptions", "change"}:                     wantOpt,     // &constant
+	{"WorkDoneProgressParams", "workDoneToken"}:               wantOpt,     // regtest
+	{"WorkspaceClientCapabilities", "didChangeConfiguration"}: wantOpt,     // A.B.C.D
+	{"WorkspaceClientCapabilities", "didChangeWatchedFiles"}:  wantOpt,     // A.B.C.D
 }
 
 // keep track of which entries in goplsStar are used
@@ -135,103 +128,44 @@ var goplsType = map[string]string{
 	"InitializeParams":                          "ParamInitialize",
 	"LSPAny":                                    "interface{}",
 
-	"Lit_CodeActionClientCapabilities_codeActionLiteralSupport":                "PCodeActionLiteralSupportPCodeAction",
-	"Lit_CodeActionClientCapabilities_codeActionLiteralSupport_codeActionKind": "FCodeActionKindPCodeActionLiteralSupport",
-
-	"Lit_CodeActionClientCapabilities_resolveSupport":     "PResolveSupportPCodeAction",
-	"Lit_CodeAction_disabled":                             "PDisabledMsg_textDocument_codeAction",
-	"Lit_CompletionClientCapabilities_completionItem":     "PCompletionItemPCompletion",
-	"Lit_CompletionClientCapabilities_completionItemKind": "PCompletionItemKindPCompletion",
-
-	"Lit_CompletionClientCapabilities_completionItem_insertTextModeSupport": "FInsertTextModeSupportPCompletionItem",
-
-	"Lit_CompletionClientCapabilities_completionItem_resolveSupport": "FResolveSupportPCompletionItem",
-	"Lit_CompletionClientCapabilities_completionItem_tagSupport":     "FTagSupportPCompletionItem",
-
-	"Lit_CompletionClientCapabilities_completionList":     "PCompletionListPCompletion",
-	"Lit_CompletionList_itemDefaults":                     "PItemDefaultsMsg_textDocument_completion",
-	"Lit_CompletionList_itemDefaults_editRange_Item1":     "FEditRangePItemDefaults",
-	"Lit_CompletionOptions_completionItem":                "PCompletionItemPCompletionProvider",
-	"Lit_DocumentSymbolClientCapabilities_symbolKind":     "PSymbolKindPDocumentSymbol",
-	"Lit_DocumentSymbolClientCapabilities_tagSupport":     "PTagSupportPDocumentSymbol",
-	"Lit_FoldingRangeClientCapabilities_foldingRange":     "PFoldingRangePFoldingRange",
-	"Lit_FoldingRangeClientCapabilities_foldingRangeKind": "PFoldingRangeKindPFoldingRange",
-	"Lit_GeneralClientCapabilities_staleRequestSupport":   "PStaleRequestSupportPGeneral",
-	"Lit_InitializeResult_serverInfo":                     "PServerInfoMsg_initialize",
-	"Lit_InlayHintClientCapabilities_resolveSupport":      "PResolveSupportPInlayHint",
-	"Lit_MarkedString_Item1":                              "Msg_MarkedString",
-	"Lit_NotebookDocumentChangeEvent_cells":               "PCellsPChange",
-	"Lit_NotebookDocumentChangeEvent_cells_structure":     "FStructurePCells",
-	"Lit_NotebookDocumentFilter_Item0":                    "Msg_NotebookDocumentFilter",
-
-	"Lit_NotebookDocumentSyncOptions_notebookSelector_Elem_Item0": "PNotebookSelectorPNotebookDocumentSync",
-
-	"Lit_PrepareRenameResult_Item1": "Msg_PrepareRename2Gn",
-
-	"Lit_PublishDiagnosticsClientCapabilities_tagSupport":       "PTagSupportPPublishDiagnostics",
-	"Lit_SemanticTokensClientCapabilities_requests":             "PRequestsPSemanticTokens",
-	"Lit_SemanticTokensClientCapabilities_requests_full_Item1":  "FFullPRequests",
-	"Lit_SemanticTokensClientCapabilities_requests_range_Item1": "FRangePRequests",
-
-	"Lit_SemanticTokensOptions_full_Item1":  "PFullESemanticTokensOptions",
 	"Lit_SemanticTokensOptions_range_Item1": "PRangeESemanticTokensOptions",
-	"Lit_ServerCapabilities_workspace":      "Workspace6Gn",
 
-	"Lit_ShowMessageRequestClientCapabilities_messageActionItem": "PMessageActionItemPShowMessage",
-	"Lit_SignatureHelpClientCapabilities_signatureInformation":   "PSignatureInformationPSignatureHelp",
-
-	"Lit_SignatureHelpClientCapabilities_signatureInformation_parameterInformation": "FParameterInformationPSignatureInformation",
-
-	"Lit_TextDocumentContentChangeEvent_Item0":                    "Msg_TextDocumentContentChangeEvent",
-	"Lit_TextDocumentFilter_Item0":                                "Msg_TextDocumentFilter",
-	"Lit_TextDocumentFilter_Item1":                                "Msg_TextDocumentFilter",
-	"Lit_WorkspaceEditClientCapabilities_changeAnnotationSupport": "PChangeAnnotationSupportPWorkspaceEdit",
-	"Lit_WorkspaceSymbolClientCapabilities_resolveSupport":        "PResolveSupportPSymbol",
-	"Lit_WorkspaceSymbolClientCapabilities_symbolKind":            "PSymbolKindPSymbol",
-	"Lit_WorkspaceSymbolClientCapabilities_tagSupport":            "PTagSupportPSymbol",
-	"Lit_WorkspaceSymbol_location_Item1":                          "PLocationMsg_workspace_symbol",
-	"Lit__InitializeParams_clientInfo":                            "Msg_XInitializeParams_clientInfo",
-	"Or_CompletionList_itemDefaults_editRange":                    "OrFEditRangePItemDefaults",
 	"Or_Declaration": "[]Location",
 	"Or_DidChangeConfigurationRegistrationOptions_section": "OrPSection_workspace_didChangeConfiguration",
 	"Or_GlobPattern":                "string",
 	"Or_InlayHintLabelPart_tooltip": "OrPTooltipPLabel",
 	"Or_InlayHint_tooltip":          "OrPTooltip_textDocument_inlayHint",
 	"Or_LSPAny":                     "interface{}",
-	"Or_NotebookDocumentFilter":     "Msg_NotebookDocumentFilter",
-	"Or_NotebookDocumentSyncOptions_notebookSelector_Elem": "PNotebookSelectorPNotebookDocumentSync",
 
-	"Or_NotebookDocumentSyncOptions_notebookSelector_Elem_Item0_notebook": "OrFNotebookPNotebookSelector",
+	"Or_ParameterInformation_documentation":            "string",
+	"Or_ParameterInformation_label":                    "string",
+	"Or_PrepareRenameResult":                           "PrepareRenamePlaceholder",
+	"Or_ProgressToken":                                 "interface{}",
+	"Or_Result_textDocument_completion":                "CompletionList",
+	"Or_Result_textDocument_declaration":               "Or_textDocument_declaration",
+	"Or_Result_textDocument_definition":                "[]Location",
+	"Or_Result_textDocument_documentSymbol":            "[]interface{}",
+	"Or_Result_textDocument_implementation":            "[]Location",
+	"Or_Result_textDocument_semanticTokens_full_delta": "interface{}",
+	"Or_Result_textDocument_typeDefinition":            "[]Location",
+	"Or_Result_workspace_symbol":                       "[]SymbolInformation",
+	"Or_TextDocumentContentChangeEvent":                "TextDocumentContentChangePartial",
 
-	"Or_ParameterInformation_documentation":                     "string",
-	"Or_ParameterInformation_label":                             "string",
-	"Or_PrepareRenameResult":                                    "Msg_PrepareRename2Gn",
-	"Or_ProgressToken":                                          "interface{}",
-	"Or_Result_textDocument_completion":                         "CompletionList",
-	"Or_Result_textDocument_declaration":                        "Or_textDocument_declaration",
-	"Or_Result_textDocument_definition":                         "[]Location",
-	"Or_Result_textDocument_documentSymbol":                     "[]interface{}",
-	"Or_Result_textDocument_implementation":                     "[]Location",
-	"Or_Result_textDocument_semanticTokens_full_delta":          "interface{}",
-	"Or_Result_textDocument_typeDefinition":                     "[]Location",
-	"Or_Result_workspace_symbol":                                "[]SymbolInformation",
-	"Or_TextDocumentContentChangeEvent":                         "Msg_TextDocumentContentChangeEvent",
-	"Or_TextDocumentFilter":                                     "Msg_TextDocumentFilter",
 	"Or_WorkspaceFoldersServerCapabilities_changeNotifications": "string",
 	"Or_WorkspaceSymbol_location":                               "OrPLocation_workspace_symbol",
-	"PrepareRenameResult":                                       "PrepareRename2Gn",
-	"Tuple_ParameterInformation_label_Item1":                    "UIntCommaUInt",
-	"WorkspaceFoldersServerCapabilities":                        "WorkspaceFolders5Gn",
-	"[]LSPAny":                                                  "[]interface{}",
-	"[]Or_NotebookDocumentSyncOptions_notebookSelector_Elem":    "[]PNotebookSelectorPNotebookDocumentSync",
-	"[]Or_Result_textDocument_codeAction_Item0_Elem":            "[]CodeAction",
-	"[]PreviousResultId":                                        "[]PreviousResultID",
-	"[]uinteger":                                                "[]uint32",
-	"boolean":                                                   "bool",
-	"decimal":                                                   "float64",
-	"integer":                                                   "int32",
-	"map[DocumentUri][]TextEdit":                                "map[DocumentURI][]TextEdit",
-	"uinteger":                                                  "uint32",
+
+	"Tuple_ParameterInformation_label_Item1": "UIntCommaUInt",
+	"WorkspaceFoldersServerCapabilities":     "WorkspaceFolders5Gn",
+	"[]LSPAny":                               "[]interface{}",
+
+	"[]Or_Result_textDocument_codeAction_Item0_Elem": "[]CodeAction",
+	"[]PreviousResultId":                             "[]PreviousResultID",
+	"[]uinteger":                                     "[]uint32",
+	"boolean":                                        "bool",
+	"decimal":                                        "float64",
+	"integer":                                        "int32",
+	"map[DocumentUri][]TextEdit":                     "map[DocumentURI][]TextEdit",
+	"uinteger":                                       "uint32",
 }
 
 var usedGoplsType = make(map[string]bool)
@@ -321,6 +255,7 @@ var methodNames = map[string]string{
 	"workspace/didDeleteFiles":               "DidDeleteFiles",
 	"workspace/didRenameFiles":               "DidRenameFiles",
 	"workspace/executeCommand":               "ExecuteCommand",
+	"workspace/foldingRange/refresh":         "FoldingRangeRefresh",
 	"workspace/inlayHint/refresh":            "InlayHintRefresh",
 	"workspace/inlineValue/refresh":          "InlineValueRefresh",
 	"workspace/semanticTokens/refresh":       "SemanticTokensRefresh",
