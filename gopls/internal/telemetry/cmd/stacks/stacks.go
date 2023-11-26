@@ -38,6 +38,7 @@ func main() {
 
 	// Maps stack text to Version/GoVersion/GOOS/GOARCH string to counter.
 	stacks := make(map[string]map[string]int64)
+	var total int
 
 	// Maps stack to a telemetry URL.
 	stackToURL := make(map[string]string)
@@ -69,6 +70,14 @@ func main() {
 			}
 			for _, prog := range report.Programs {
 				if prog.Program == "golang.org/x/tools/gopls" && len(prog.Stacks) > 0 {
+					total++
+
+					// Ignore @devel versions as they correspond to
+					// ephemeral (and often numerous) variations of
+					// the program as we work on a fix to a bug.
+					if prog.Version == "devel" {
+						continue
+					}
 					info := fmt.Sprintf("%s@%s %s %s/%s",
 						prog.Program, prog.Version,
 						prog.GoVersion, prog.GOOS, prog.GOARCH)
@@ -118,6 +127,8 @@ func main() {
 		}
 	}
 
+	fmt.Printf("Found %d stacks in last %v days:\n", total, *daysFlag)
+
 	// For each stack, show existing issue or create a new one.
 	for stack, counts := range stacks {
 		id := stackID(stack)
@@ -131,6 +142,7 @@ func main() {
 			} else {
 				// We just created a "New issue" browser tab
 				// for this stackID.
+				issuesByStackID[id] = nil // suppress dups
 			}
 			continue
 		}
