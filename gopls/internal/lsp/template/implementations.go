@@ -75,23 +75,47 @@ func Diagnose(f file.Handle) []*source.Diagnostic {
 // for definitions, type definitions, and implementations.
 // Results only for variables and templates.
 func Definition(snapshot *cache.Snapshot, fh file.Handle, loc protocol.Position) ([]protocol.Location, error) {
-	x, _, err := symAtPosition(fh, loc)
+	sym, p, err := symAtPosition(fh, loc)
 	if err != nil {
 		return nil, err
 	}
-	sym := x.name
 	ans := []protocol.Location{}
-	// PJW: this is probably a pattern to abstract
-	a := New(snapshot.Templates())
-	for k, p := range a.files {
-		for _, s := range p.symbols {
-			if !s.vardef || s.name != sym {
-				continue
+	switch sym.kind {
+	case protocol.Method:
+		workspaceSymbol, err := workspaceSymbolForMethod(context.Background(), sym, p, snapshot)
+		if err != nil {
+			return nil, err
+		}
+		if workspaceSymbol == nil {
+			return ans, nil
+		}
+		ans = append(ans, workspaceSymbol.Location)
+	default:
+		// PJW: this is probably a pattern to abstract
+		a := New(snapshot.Templates())
+		for k, p := range a.files {
+			for _, s := range p.symbols {
+				if !s.vardef || s.name != sym.name {
+					continue
+				}
+				ans = append(ans, protocol.Location{URI: k, Range: p.Range(s.start, s.length)})
 			}
-			ans = append(ans, protocol.Location{URI: k, Range: p.Range(s.start, s.length)})
 		}
 	}
 	return ans, nil
+}
+
+func workspaceSymbolForMethod(ctx context.Context, sym *symbol, p *Parsed, snapshot source.Snapshot) (*protocol.SymbolInformation, error) {
+	if p.goTypePackage == "" || p.goTypeName == "" {
+		return nil, nil
+	}
+	// TODO(mortenson): Support deeply nested fields
+	query := p.goTypePackage + "." + p.goTypeName + "." + sym.name
+	symbols, err := source.WorkspaceSymbols(ctx, snapshot.Options().SymbolMatcher, snapshot.Options().SymbolStyle, []source.Snapshot{snapshot}, query)
+	if err != nil || len(symbols) == 0 {
+		return nil, err
+	}
+	return &symbols[0], nil
 }
 
 func Hover(ctx context.Context, snapshot source.Snapshot, fh file.Handle, position protocol.Position) (*protocol.Hover, error) {
@@ -108,14 +132,23 @@ func Hover(ctx context.Context, snapshot source.Snapshot, fh file.Handle, positi
 	case protocol.Constant:
 		ans.Contents.Value = fmt.Sprintf("constant %s", sym.name)
 	case protocol.Method: // field or method
-		// ans.Contents.Kind = protocol.Markdown
-		metadata := snapshot.Metadata("github.com/snippetsolver/awaysync/src/templates")
-		if metadata != nil {
-			ans.Contents.Value = metadata.CompiledGoFiles[0].Path()
-		} else {
-			ans.Contents.Value = "fuck"
+		workspaceSymbol, err := workspaceSymbolForMethod(ctx, sym, p, snapshot)
+		if err != nil {
+			return nil, err
 		}
-		// ans.Contents.Value = fmt.Sprintf("%s: field or method", sym.name)
+		if workspaceSymbol == nil {
+			ans.Contents.Value = fmt.Sprintf("%s: field or method", sym.name)
+		} else {
+			fh, err := snapshot.ReadFile(ctx, workspaceSymbol.Location.URI)
+			if err != nil {
+				return nil, err
+			}
+			formattedHover, err := source.Hover(ctx, snapshot, fh, workspaceSymbol.Location.Range.Start)
+			if err != nil {
+				return nil, err
+			}
+			ans.Contents.Value = formattedHover.Contents.Value
+		}
 	case protocol.Package: // template use, template def (PJW: do we want two?)
 		ans.Contents.Value = fmt.Sprintf("template %s\n(add definition)", sym.name)
 	case protocol.Namespace:

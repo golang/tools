@@ -97,7 +97,7 @@ func (p *Parsed) fields(flds []string, x parse.Node) []symbol {
 	return ans
 }
 
-var goTypeRegex = regexp.MustCompile(`gotype: (.+)\.([^.\s]+)`)
+var goTypeRegex = regexp.MustCompile(`gotype:\s*(.+)\.([^.\s]+)`)
 
 func (p *Parsed) findSymbols() {
 	if len(p.stack) == 0 {
