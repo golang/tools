@@ -20,11 +20,12 @@ import (
 
 // in local coordinates, to be translated to protocol.DocumentSymbol
 type symbol struct {
-	start  int // for sorting
-	length int // in runes (unicode code points)
-	name   string
-	kind   protocol.SymbolKind
-	vardef bool // is this a variable definition?
+	start       int // for sorting
+	length      int // in runes (unicode code points)
+	name        string
+	kind        protocol.SymbolKind
+	vardef      bool     // is this a variable definition?
+	parentNames []string // TODO(mortenson) better name?
 	// do we care about selection range, or children?
 	// no children yet, and selection range is the same as range
 }
@@ -75,13 +76,14 @@ func (p *Parsed) fields(flds []string, x parse.Node) []symbol {
 		}
 	}
 	at := ix + startsAt
+	parentNames := []string{}
 	for _, f := range flds {
 		at += 1 // .
 		kind := protocol.Method
 		if f[0] == '$' {
 			kind = protocol.Variable
 		}
-		sym := symbol{name: f, kind: kind, start: at, length: utf8.RuneCount([]byte(f))}
+		sym := symbol{name: f, kind: kind, start: at, length: utf8.RuneCount([]byte(f)), parentNames: parentNames}
 		if kind == protocol.Variable && len(p.stack) > 1 {
 			if pipe, ok := p.stack[len(p.stack)-2].(*parse.PipeNode); ok {
 				for _, y := range pipe.Decl {
@@ -91,6 +93,7 @@ func (p *Parsed) fields(flds []string, x parse.Node) []symbol {
 				}
 			}
 		}
+		parentNames = append(parentNames, sym.name)
 		ans = append(ans, sym)
 		at += len(f)
 	}

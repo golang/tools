@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/settings"
 )
 
 // line number (1-based) and message
@@ -109,9 +111,14 @@ func workspaceSymbolForMethod(ctx context.Context, sym *symbol, p *Parsed, snaps
 	if p.goTypePackage == "" || p.goTypeName == "" {
 		return nil, nil
 	}
-	// TODO(mortenson): Support deeply nested fields
-	query := p.goTypePackage + "." + p.goTypeName + "." + sym.name
-	symbols, err := source.WorkspaceSymbols(ctx, snapshot.Options().SymbolMatcher, snapshot.Options().SymbolStyle, []source.Snapshot{snapshot}, query)
+	querySuffix := sym.name
+	if sym.parentNames != nil && len(sym.parentNames) > 0 {
+		querySuffix = strings.Join(sym.parentNames, ".") + "." + querySuffix
+	}
+	query := p.goTypePackage + "." + p.goTypeName + "." + querySuffix
+	// TODO(mortenson) This doesn't actually deeply match fields, which was kind of the hope with storing parentNames.
+	// Maybe we can call WorkspaceSymbols on `p.goTypePackage + "." + p.goTypeName``, then walk from there for each sym.parentNames?
+	symbols, err := source.WorkspaceSymbols(ctx, settings.SymbolCaseSensitive, settings.FullyQualifiedSymbols, []source.Snapshot{snapshot}, query)
 	if err != nil || len(symbols) == 0 {
 		return nil, err
 	}

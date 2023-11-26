@@ -237,7 +237,7 @@ func TestQuotes(t *testing.T) {
 	}
 }
 
-func TestVariables(t *testing.T) {
+func TestGoTypeAnnotation(t *testing.T) {
 	tsts := []string{"{{- /*gotype: golang.org/x/tools/gopls/internal/template.MyType */ -}}{{ .Foo }}"}
 	for _, s := range tsts {
 		p := parseBuffer([]byte(s))
