@@ -113,8 +113,11 @@ func parseBuffer(buf []byte) *Parsed {
 	t := template.New("")
 	tr := parse.New("")
 	tr.Mode = parse.SkipFuncCheck | parse.ParseComments
-	tree, _ := tr.Parse(string(ans.buf), "", "", make(map[string]*parse.Tree))
-	t.AddParseTree("", tree)
+	trees := make(map[string]*parse.Tree)
+	tr.Parse(string(ans.buf), "", "", trees)
+	for name, tree := range trees {
+		t.AddParseTree(name, tree)
+	}
 	ans.named = t.Templates()
 	// set the symbols
 	for _, t := range ans.named {
