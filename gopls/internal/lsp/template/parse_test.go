@@ -236,3 +236,13 @@ func TestQuotes(t *testing.T) {
 		}
 	}
 }
+
+func TestVariables(t *testing.T) {
+	tsts := []string{"{{- /*gotype: golang.org/x/tools/gopls/internal/template.MyType */ -}}{{ .Foo }}"}
+	for _, s := range tsts {
+		p := parseBuffer([]byte(s))
+		if p.goTypePackage != "golang.org/x/tools/gopls/internal/template" || p.goTypeName != "MyType" {
+			t.Errorf("%q: gotype comment not parsed", s)
+		}
+	}
+}

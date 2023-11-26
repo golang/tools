@@ -43,10 +43,12 @@ type Parsed struct {
 	tokens []Token
 
 	// result of parsing
-	named    []*template.Template // the template and embedded templates
-	ParseErr error
-	symbols  []symbol
-	stack    []parse.Node // used while computing symbols
+	named         []*template.Template // the template and embedded templates
+	ParseErr      error
+	symbols       []symbol
+	stack         []parse.Node // used while computing symbols
+	goTypePackage string       // package of Go type
+	goTypeName    string       // symbol of Go type
 
 	// for mapping from offsets in buf to LSP coordinates
 	// See FromPosition() and LineCol()
@@ -108,23 +110,11 @@ func parseBuffer(buf []byte) *Parsed {
 	}
 	ans.setTokens() // ans.buf may be a new []byte
 	ans.lines = bytes.Split(ans.buf, []byte{'\n'})
-	t, err := template.New("").Parse(string(ans.buf))
-	if err != nil {
-		funcs := make(template.FuncMap)
-		for t == nil && ans.ParseErr == nil {
-			// in 1.17 it may be possible to avoid getting this error
-			//  template: :2: function "foo" not defined
-			matches := parseErrR.FindStringSubmatch(err.Error())
-			if len(matches) == 2 {
-				// suppress the error by giving it a function with the right name
-				funcs[matches[1]] = func() interface{} { return nil }
-				t, err = template.New("").Funcs(funcs).Parse(string(ans.buf))
-				continue
-			}
-			ans.ParseErr = err // unfixed error
-			return ans
-		}
-	}
+	t := template.New("")
+	tr := parse.New("")
+	tr.Mode = parse.SkipFuncCheck | parse.ParseComments
+	tree, _ := tr.Parse(string(ans.buf), "", "", make(map[string]*parse.Tree))
+	t.AddParseTree("", tree)
 	ans.named = t.Templates()
 	// set the symbols
 	for _, t := range ans.named {

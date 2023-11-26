@@ -108,7 +108,14 @@ func Hover(ctx context.Context, snapshot source.Snapshot, fh file.Handle, positi
 	case protocol.Constant:
 		ans.Contents.Value = fmt.Sprintf("constant %s", sym.name)
 	case protocol.Method: // field or method
-		ans.Contents.Value = fmt.Sprintf("%s: field or method", sym.name)
+		// ans.Contents.Kind = protocol.Markdown
+		metadata := snapshot.Metadata("github.com/snippetsolver/awaysync/src/templates")
+		if metadata != nil {
+			ans.Contents.Value = metadata.CompiledGoFiles[0].Path()
+		} else {
+			ans.Contents.Value = "fuck"
+		}
+		// ans.Contents.Value = fmt.Sprintf("%s: field or method", sym.name)
 	case protocol.Package: // template use, template def (PJW: do we want two?)
 		ans.Contents.Value = fmt.Sprintf("template %s\n(add definition)", sym.name)
 	case protocol.Namespace:

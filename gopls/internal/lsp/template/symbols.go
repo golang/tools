@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"regexp"
 	"text/template/parse"
 	"unicode/utf8"
 
@@ -96,6 +97,8 @@ func (p *Parsed) fields(flds []string, x parse.Node) []symbol {
 	return ans
 }
 
+var goTypeRegex = regexp.MustCompile(`gotype: (.+)\.([^.\s]+)`)
+
 func (p *Parsed) findSymbols() {
 	if len(p.stack) == 0 {
 		return
@@ -130,8 +133,12 @@ func (p *Parsed) findSymbols() {
 		for _, a := range x.Args {
 			nxt(a)
 		}
-	//case *parse.CommentNode: // go 1.16
-	//	log.Printf("implement %d", x.Type())
+	case *parse.CommentNode:
+		matches := goTypeRegex.FindStringSubmatch(x.Text)
+		if len(matches) == 3 {
+			p.goTypePackage = matches[1]
+			p.goTypeName = matches[2]
+		}
 	case *parse.DotNode:
 		sym := symbol{name: "dot", kind: protocol.Variable, start: int(x.Pos), length: 1}
 		p.symbols = append(p.symbols, sym)
