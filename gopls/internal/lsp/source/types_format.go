@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
@@ -88,7 +89,7 @@ func (s *signature) Params() []string {
 
 // NewBuiltinSignature returns signature for the builtin object with a given
 // name, if a builtin object with the name exists.
-func NewBuiltinSignature(ctx context.Context, s Snapshot, name string) (*signature, error) {
+func NewBuiltinSignature(ctx context.Context, s *cache.Snapshot, name string) (*signature, error) {
 	builtin, err := s.BuiltinFile(ctx)
 	if err != nil {
 		return nil, err
@@ -198,7 +199,7 @@ func FormatTypeParams(tparams *typeparams.TypeParamList) string {
 }
 
 // NewSignature returns formatted signature for a types.Signature struct.
-func NewSignature(ctx context.Context, s Snapshot, pkg Package, sig *types.Signature, comment *ast.CommentGroup, qf types.Qualifier, mq MetadataQualifier) (*signature, error) {
+func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, sig *types.Signature, comment *ast.CommentGroup, qf types.Qualifier, mq MetadataQualifier) (*signature, error) {
 	var tparams []string
 	tpList := typeparams.ForSignature(sig)
 	for i := 0; i < tpList.Len(); i++ {
@@ -268,7 +269,7 @@ func NewSignature(ctx context.Context, s Snapshot, pkg Package, sig *types.Signa
 //
 // TODO(rfindley): this function could return the actual name used in syntax,
 // for better parameter names.
-func FormatVarType(ctx context.Context, snapshot Snapshot, srcpkg Package, obj *types.Var, qf types.Qualifier, mq MetadataQualifier) (string, error) {
+func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.Package, obj *types.Var, qf types.Qualifier, mq MetadataQualifier) (string, error) {
 	// TODO(rfindley): This looks wrong. The previous comment said:
 	// "If the given expr refers to a type parameter, then use the
 	// object's Type instead of the type parameter declaration. This helps

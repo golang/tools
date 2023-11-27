@@ -15,13 +15,14 @@ import (
 
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/event"
 )
 
 // Definition handles the textDocument/definition request for Go files.
-func Definition(ctx context.Context, snapshot Snapshot, fh file.Handle, position protocol.Position) ([]protocol.Location, error) {
+func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) ([]protocol.Location, error) {
 	ctx, done := event.Start(ctx, "source.Definition")
 	defer done()
 
@@ -94,7 +95,7 @@ func Definition(ctx context.Context, snapshot Snapshot, fh file.Handle, position
 
 // builtinDefinition returns the location of the fake source
 // declaration of a built-in in {builtin,unsafe}.go.
-func builtinDefinition(ctx context.Context, snapshot Snapshot, obj types.Object) ([]protocol.Location, error) {
+func builtinDefinition(ctx context.Context, snapshot *cache.Snapshot, obj types.Object) ([]protocol.Location, error) {
 	// getDecl returns the file-level declaration of name
 	// using legacy (go/ast) object resolution.
 	getDecl := func(file *ast.File, name string) (ast.Node, error) {
@@ -185,7 +186,7 @@ func builtinDefinition(ctx context.Context, snapshot Snapshot, obj types.Object)
 // TODO(rfindley): this function exists to preserve the pre-existing behavior
 // of source.Identifier. Eliminate this helper in favor of sharing
 // functionality with objectsAt, after choosing suitable primitives.
-func referencedObject(pkg Package, pgf *ParsedGoFile, pos token.Pos) (*ast.Ident, types.Object, types.Type) {
+func referencedObject(pkg *cache.Package, pgf *ParsedGoFile, pos token.Pos) (*ast.Ident, types.Object, types.Type) {
 	path := pathEnclosingObjNode(pgf.File, pos)
 	if len(path) == 0 {
 		return nil, nil, nil
@@ -225,7 +226,7 @@ func referencedObject(pkg Package, pgf *ParsedGoFile, pos token.Pos) (*ast.Ident
 // import spec containing pos.
 //
 // If pos is not inside an import spec, it returns nil, nil.
-func importDefinition(ctx context.Context, s Snapshot, pkg Package, pgf *ParsedGoFile, pos token.Pos) ([]protocol.Location, error) {
+func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *ParsedGoFile, pos token.Pos) ([]protocol.Location, error) {
 	var imp *ast.ImportSpec
 	for _, spec := range pgf.File.Imports {
 		// We use "<= End" to accept a query immediately after an ImportSpec.

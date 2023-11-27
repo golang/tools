@@ -6,6 +6,8 @@ package source
 
 import (
 	"testing"
+
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 )
 
 func TestParseQuery(t *testing.T) {
@@ -120,7 +122,7 @@ func TestFiltererDisallow(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		filterer := NewFilterer(test.filters)
+		filterer := cache.NewFilterer(test.filters)
 		for _, inc := range test.included {
 			if filterer.Disallow(inc) {
 				t.Errorf("Filters %v excluded %v, wanted included", test.filters, inc)

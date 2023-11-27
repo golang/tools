@@ -14,11 +14,12 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
-type LensFunc func(context.Context, Snapshot, file.Handle) ([]protocol.CodeLens, error)
+type LensFunc func(context.Context, *cache.Snapshot, file.Handle) ([]protocol.CodeLens, error)
 
 // LensFuncs returns the supported lensFuncs for Go files.
 func LensFuncs() map[command.Command]LensFunc {
@@ -35,7 +36,7 @@ var (
 	benchmarkRe = regexp.MustCompile(`^Benchmark([^a-z]|$)`)
 )
 
-func runTestCodeLens(ctx context.Context, snapshot Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
+func runTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
 	var codeLens []protocol.CodeLens
 
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
@@ -98,7 +99,7 @@ type TestFns struct {
 	Benchmarks []TestFn
 }
 
-func TestsAndBenchmarks(pkg Package, pgf *ParsedGoFile) (TestFns, error) {
+func TestsAndBenchmarks(pkg *cache.Package, pgf *ParsedGoFile) (TestFns, error) {
 	var out TestFns
 
 	if !strings.HasSuffix(pgf.URI.Path(), "_test.go") {
@@ -128,7 +129,7 @@ func TestsAndBenchmarks(pkg Package, pgf *ParsedGoFile) (TestFns, error) {
 	return out, nil
 }
 
-func matchTestFunc(fn *ast.FuncDecl, pkg Package, nameRe *regexp.Regexp, paramID string) bool {
+func matchTestFunc(fn *ast.FuncDecl, pkg *cache.Package, nameRe *regexp.Regexp, paramID string) bool {
 	// Make sure that the function name matches a test function.
 	if !nameRe.MatchString(fn.Name.Name) {
 		return false
@@ -166,7 +167,7 @@ func matchTestFunc(fn *ast.FuncDecl, pkg Package, nameRe *regexp.Regexp, paramID
 	return namedObj.Id() == paramID
 }
 
-func goGenerateCodeLens(ctx context.Context, snapshot Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
+func goGenerateCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
 	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
 	if err != nil {
 		return nil, err
@@ -200,7 +201,7 @@ func goGenerateCodeLens(ctx context.Context, snapshot Snapshot, fh file.Handle) 
 	return nil, nil
 }
 
-func regenerateCgoLens(ctx context.Context, snapshot Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
+func regenerateCgoLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
 	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
 	if err != nil {
 		return nil, err
@@ -226,7 +227,7 @@ func regenerateCgoLens(ctx context.Context, snapshot Snapshot, fh file.Handle) (
 	return []protocol.CodeLens{{Range: rng, Command: &cmd}}, nil
 }
 
-func toggleDetailsCodeLens(ctx context.Context, snapshot Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
+func toggleDetailsCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
 	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
 	if err != nil {
 		return nil, err

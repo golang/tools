@@ -97,7 +97,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 	searchFixes:
 		for _, fix := range fixes {
 			for _, diag := range fix.Diagnostics {
-				if diag.Source == string(source.Govulncheck) || diag.Source == string(source.Vulncheck) {
+				if diag.Source == string(cache.Govulncheck) || diag.Source == string(cache.Vulncheck) {
 					vulnFixes[diag.Range] = append(vulnFixes[diag.Range], fix)
 					continue searchFixes
 				}
@@ -281,11 +281,11 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 	}
 }
 
-func (s *server) findMatchingDiagnostics(uri protocol.DocumentURI, pd protocol.Diagnostic) []*source.Diagnostic {
+func (s *server) findMatchingDiagnostics(uri protocol.DocumentURI, pd protocol.Diagnostic) []*cache.Diagnostic {
 	s.diagnosticsMu.Lock()
 	defer s.diagnosticsMu.Unlock()
 
-	var sds []*source.Diagnostic
+	var sds []*cache.Diagnostic
 	for _, report := range s.diagnostics[uri].reports {
 		for _, sd := range report.diags {
 			sameDiagnostic := (pd.Message == strings.TrimSpace(sd.Message) && // extra space may have been trimmed when converting to protocol.Diagnostic
@@ -367,7 +367,7 @@ func fixedByImportFix(fix *imports.ImportFix, diagnostics []protocol.Diagnostic)
 	return results
 }
 
-func refactorExtract(ctx context.Context, snapshot source.Snapshot, pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
+func refactorExtract(ctx context.Context, snapshot *cache.Snapshot, pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
 	if rng.Start == rng.End {
 		return nil, nil
 	}
@@ -422,7 +422,7 @@ func refactorExtract(ctx context.Context, snapshot source.Snapshot, pgf *source.
 	return actions, nil
 }
 
-func refactorRewrite(ctx context.Context, snapshot source.Snapshot, pkg source.Package, pgf *source.ParsedGoFile, fh file.Handle, rng protocol.Range) (_ []protocol.CodeAction, rerr error) {
+func refactorRewrite(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.ParsedGoFile, fh file.Handle, rng protocol.Range) (_ []protocol.CodeAction, rerr error) {
 	// golang/go#61693: code actions were refactored to run outside of the
 	// analysis framework, but as a result they lost their panic recovery.
 	//
@@ -542,7 +542,7 @@ func refactorRewrite(ctx context.Context, snapshot source.Snapshot, pkg source.P
 // This is true if:
 //   - [start, end) is contained within an unused field or parameter name
 //   - ... of a non-method function declaration.
-func canRemoveParameter(pkg source.Package, pgf *source.ParsedGoFile, rng protocol.Range) bool {
+func canRemoveParameter(pkg *cache.Package, pgf *source.ParsedGoFile, rng protocol.Range) bool {
 	info := source.FindParam(pgf, rng)
 	if info.Decl == nil || info.Field == nil {
 		return false
@@ -578,7 +578,7 @@ func canRemoveParameter(pkg source.Package, pgf *source.ParsedGoFile, rng protoc
 }
 
 // refactorInline returns inline actions available at the specified range.
-func refactorInline(ctx context.Context, snapshot source.Snapshot, pkg source.Package, pgf *source.ParsedGoFile, fh file.Handle, rng protocol.Range) ([]protocol.CodeAction, error) {
+func refactorInline(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.ParsedGoFile, fh file.Handle, rng protocol.Range) ([]protocol.CodeAction, error) {
 	var commands []protocol.Command
 
 	// If range is within call expression, offer inline action.
@@ -627,7 +627,7 @@ func documentChanges(fh file.Handle, edits []protocol.TextEdit) []protocol.Docum
 // bundled protocol.Diagnostic.Data field, and failing that by falling back on
 // fetching a matching source.Diagnostic from the set of stored diagnostics for
 // this file.
-func (s *server) codeActionsMatchingDiagnostics(ctx context.Context, uri protocol.DocumentURI, snapshot source.Snapshot, pds []protocol.Diagnostic, want map[protocol.CodeActionKind]bool) ([]protocol.CodeAction, error) {
+func (s *server) codeActionsMatchingDiagnostics(ctx context.Context, uri protocol.DocumentURI, snapshot *cache.Snapshot, pds []protocol.Diagnostic, want map[protocol.CodeActionKind]bool) ([]protocol.CodeAction, error) {
 	var actions []protocol.CodeAction
 	var unbundled []protocol.Diagnostic // diagnostics without bundled code actions in their Data field
 	for _, pd := range pds {
@@ -656,7 +656,7 @@ func (s *server) codeActionsMatchingDiagnostics(ctx context.Context, uri protoco
 	return actions, nil
 }
 
-func codeActionsForDiagnostic(ctx context.Context, snapshot source.Snapshot, sd *source.Diagnostic, pd *protocol.Diagnostic, want map[protocol.CodeActionKind]bool) ([]protocol.CodeAction, error) {
+func codeActionsForDiagnostic(ctx context.Context, snapshot *cache.Snapshot, sd *cache.Diagnostic, pd *protocol.Diagnostic, want map[protocol.CodeActionKind]bool) ([]protocol.CodeAction, error) {
 	var actions []protocol.CodeAction
 	for _, fix := range sd.SuggestedFixes {
 		if !want[fix.ActionKind] {
@@ -684,7 +684,7 @@ func codeActionsForDiagnostic(ctx context.Context, snapshot source.Snapshot, sd 
 	return actions, nil
 }
 
-func goTest(ctx context.Context, snapshot source.Snapshot, pkg source.Package, pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
+func goTest(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
 	fns, err := source.TestsAndBenchmarks(pkg, pgf)
 	if err != nil {
 		return nil, err

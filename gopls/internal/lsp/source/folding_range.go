@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 )
@@ -24,7 +25,7 @@ type FoldingRangeInfo struct {
 }
 
 // FoldingRange gets all of the folding range for f.
-func FoldingRange(ctx context.Context, snapshot Snapshot, fh file.Handle, lineFoldingOnly bool) (ranges []*FoldingRangeInfo, err error) {
+func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, lineFoldingOnly bool) (ranges []*FoldingRangeInfo, err error) {
 	// TODO(suzmue): consider limiting the number of folding ranges returned, and
 	// implement a way to prioritize folding ranges in that case.
 	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)

@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/refactor/inline"
 )
@@ -42,7 +43,7 @@ import (
 //
 // The code below notes where are assumptions are made that only hold true in
 // the case of parameter removal (annotated with 'Assumption:')
-func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot Snapshot, pkg Package, pgf *ParsedGoFile, origDecl *ast.FuncDecl, callee *inline.Callee, post func([]byte) []byte) (map[protocol.DocumentURI][]byte, error) {
+func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *cache.Snapshot, pkg *cache.Package, pgf *ParsedGoFile, origDecl *ast.FuncDecl, callee *inline.Callee, post func([]byte) []byte) (map[protocol.DocumentURI][]byte, error) {
 	// Collect references.
 	var refs []protocol.Location
 	{
@@ -65,7 +66,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot Sna
 	// parallel and to reduce peak memory for this operation.
 	var (
 		pkgForRef = make(map[protocol.Location]PackageID)
-		pkgs      = make(map[PackageID]Package)
+		pkgs      = make(map[PackageID]*cache.Package)
 	)
 	{
 		needPkgs := make(map[PackageID]struct{})
@@ -98,7 +99,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot Sna
 	// declaration, we must re-type check.
 
 	type fileCalls struct {
-		pkg   Package
+		pkg   *cache.Package
 		pgf   *ParsedGoFile
 		calls []*ast.CallExpr
 	}

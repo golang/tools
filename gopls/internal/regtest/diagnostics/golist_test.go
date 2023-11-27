@@ -7,8 +7,8 @@ package diagnostics
 import (
 	"testing"
 
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -54,16 +54,16 @@ const Q = p.P + 1
 			InitialWorkspaceLoad,
 			Diagnostics(
 				env.AtRegexp("a/a.go", "import\n()"),
-				FromSource(string(source.ParseError)),
+				FromSource(string(cache.ParseError)),
 			),
 			Diagnostics(
 				AtPosition("c/c.go", 0, 0),
-				FromSource(string(source.ListError)),
+				FromSource(string(cache.ListError)),
 				WithMessage("may indicate failure to perform cgo processing"),
 			),
 			Diagnostics(
 				env.AtRegexp("p/p.go", `"a.com/q"`),
-				FromSource(string(source.ListError)),
+				FromSource(string(cache.ListError)),
 				WithMessage("import cycle not allowed"),
 			),
 		)

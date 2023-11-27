@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/cache/xrefs"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 )
 
 // Temporary refactoring, reversing the source import:
@@ -31,24 +30,8 @@ type (
 	ImportPath  = metadata.ImportPath
 	Metadata    = metadata.Metadata
 
-	// Diagnostics.
-	Diagnostic       = source.Diagnostic
-	SuggestedFix     = source.SuggestedFix
-	DiagnosticSource = source.DiagnosticSource
-
 	// Computed objects.
-	TidiedModule   = source.TidiedModule
-	ParsedGoFile   = parsego.File
-	ParsedModule   = source.ParsedModule
-	ParsedWorkFile = source.ParsedWorkFile
-	Package_       = source.Package // renamed to avoid conflict
-	Symbol         = source.Symbol
-
-	XrefIndex_       = source.XrefIndex // renamed to avoid conflict
-	GlobalSnapshotID = source.GlobalSnapshotID
-	InvocationFlags  = source.InvocationFlags
-	CriticalError    = source.CriticalError
-	Filterer         = source.Filterer
+	ParsedGoFile = parsego.File
 )
 
 // Values
@@ -56,27 +39,6 @@ var (
 	// Parse Modes
 	ParseHeader = parsego.ParseHeader
 	ParseFull   = parsego.ParseFull
-
-	// Diagnostic sources.
-	ModTidyError = source.ModTidyError
-	ListError    = source.ListError
-	ParseError   = source.ParseError
-	TypeError    = source.TypeError
-
-	// Invocation flags.
-	Normal                = source.Normal
-	AllowNetwork          = source.AllowNetwork
-	LoadWorkspace         = source.LoadWorkspace
-	WriteTemporaryModFile = source.WriteTemporaryModFile
-)
-
-// Functions
-var (
-	IsValidImport                  = source.IsValidImport
-	RemoveIntermediateTestVariants = source.RemoveIntermediateTestVariants
-	NewFilterer                    = source.NewFilterer
-	BuildLink                      = source.BuildLink
-	CanFix                         = source.CanFix
 )
 
 // A Package is the union of package metadata and type checking results.

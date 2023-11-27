@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
@@ -231,7 +232,7 @@ type encoded struct {
 	pgf               *source.ParsedGoFile
 	start, end        token.Pos // range of interest
 	ti                *types.Info
-	pkg               source.Package
+	pkg               *cache.Package
 	fset              *token.FileSet
 	// path from the root of the parse tree, used for debugging
 	stack []ast.Node

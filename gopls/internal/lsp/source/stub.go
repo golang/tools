@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/stubmethods"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
@@ -32,7 +33,7 @@ import (
 // stubSuggestedFixFunc returns a suggested fix to declare the missing
 // methods of the concrete type that is assigned to an interface type
 // at the cursor position.
-func stubSuggestedFixFunc(ctx context.Context, snapshot Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
+func stubSuggestedFixFunc(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, fmt.Errorf("GetTypedFile: %w", err)
@@ -54,7 +55,7 @@ func stubSuggestedFixFunc(ctx context.Context, snapshot Snapshot, fh file.Handle
 }
 
 // stub returns a suggested fix to declare the missing methods of si.Concrete.
-func stub(ctx context.Context, snapshot Snapshot, si *stubmethods.StubInfo) (*token.FileSet, *analysis.SuggestedFix, error) {
+func stub(ctx context.Context, snapshot *cache.Snapshot, si *stubmethods.StubInfo) (*token.FileSet, *analysis.SuggestedFix, error) {
 	// A function-local type cannot be stubbed
 	// since there's nowhere to put the methods.
 	conc := si.Concrete.Obj()

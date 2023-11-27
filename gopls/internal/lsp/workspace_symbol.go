@@ -7,6 +7,7 @@ package lsp
 import (
 	"context"
 
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/telemetry"
@@ -26,7 +27,7 @@ func (s *server) Symbol(ctx context.Context, params *protocol.WorkspaceSymbolPar
 	matcher := s.Options().SymbolMatcher
 	style := s.Options().SymbolStyle
 
-	var snapshots []source.Snapshot
+	var snapshots []*cache.Snapshot
 	for _, v := range views {
 		snapshot, release, err := v.Snapshot()
 		if err != nil {

@@ -73,7 +73,7 @@ func modLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]
 		}
 		// Shift the start position to the location of the
 		// dependency within the require statement.
-		target := source.BuildLink(snapshot.Options().LinkTarget, "mod/"+req.Mod.String(), "")
+		target := cache.BuildLink(snapshot.Options().LinkTarget, "mod/"+req.Mod.String(), "")
 		l, err := toProtocolLink(pm.Mapper, target, start+i, start+i+len(dep))
 		if err != nil {
 			return nil, err
@@ -148,7 +148,7 @@ func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]p
 			if err != nil {
 				return nil, err
 			}
-			targetURL := source.BuildLink(snapshot.Options().LinkTarget, urlPath, "")
+			targetURL := cache.BuildLink(snapshot.Options().LinkTarget, urlPath, "")
 			// Account for the quotation marks in the positions.
 			l, err := toProtocolLink(pgf.Mapper, targetURL, start+len(`"`), end-len(`"`))
 			if err != nil {

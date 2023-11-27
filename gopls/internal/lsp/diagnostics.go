@@ -54,9 +54,9 @@ const (
 
 // A diagnosticReport holds results for a single diagnostic source.
 type diagnosticReport struct {
-	snapshotID    source.GlobalSnapshotID // global snapshot ID on which the report was computed
-	publishedHash string                  // last published hash for this (URI, source)
-	diags         map[string]*source.Diagnostic
+	snapshotID    cache.GlobalSnapshotID // global snapshot ID on which the report was computed
+	publishedHash string                 // last published hash for this (URI, source)
+	diags         map[string]*cache.Diagnostic
 }
 
 // fileReports holds a collection of diagnostic reports for a single file, as
@@ -79,7 +79,7 @@ type fileReports struct {
 	//   yet published.
 	//
 	// This prevents gopls from publishing stale diagnostics.
-	publishedSnapshotID source.GlobalSnapshotID
+	publishedSnapshotID cache.GlobalSnapshotID
 
 	// publishedHash is a hash of the latest diagnostics published for the file.
 	publishedHash string
@@ -120,7 +120,7 @@ func (d diagnosticSource) String() string {
 // hashDiagnostics computes a hash to identify diags.
 //
 // hashDiagnostics mutates its argument (via sorting).
-func hashDiagnostics(diags ...*source.Diagnostic) string {
+func hashDiagnostics(diags ...*cache.Diagnostic) string {
 	if len(diags) == 0 {
 		return emptyDiagnosticsHash
 	}
@@ -133,7 +133,7 @@ var emptyDiagnosticsHash = computeDiagnosticHash()
 // computeDiagnosticHash should only be called from hashDiagnostics.
 //
 // TODO(rfindley): this should use source.Hash.
-func computeDiagnosticHash(diags ...*source.Diagnostic) string {
+func computeDiagnosticHash(diags ...*cache.Diagnostic) string {
 	source.SortDiagnostics(diags)
 	h := sha256.New()
 	for _, d := range diags {
@@ -302,7 +302,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot, analyze
 	}()
 
 	// common code for dispatching diagnostics
-	store := func(dsource diagnosticSource, operation string, diagsByFile map[protocol.DocumentURI][]*source.Diagnostic, err error, merge bool) {
+	store := func(dsource diagnosticSource, operation string, diagsByFile map[protocol.DocumentURI][]*cache.Diagnostic, err error, merge bool) {
 		if err != nil {
 			event.Error(ctx, "warning: while "+operation, err, snapshot.Labels()...)
 		}
@@ -423,7 +423,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot, analyze
 	// the workspace). Otherwise, add a diagnostic to the file.
 	if diags, err := snapshot.OrphanedFileDiagnostics(ctx); err == nil {
 		for uri, diag := range diags {
-			s.storeDiagnostics(snapshot, uri, orphanedSource, []*source.Diagnostic{diag}, true)
+			s.storeDiagnostics(snapshot, uri, orphanedSource, []*cache.Diagnostic{diag}, true)
 		}
 	} else {
 		if ctx.Err() == nil {
@@ -451,8 +451,8 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toD
 	// operations.
 	var (
 		wg            sync.WaitGroup
-		pkgDiags      map[protocol.DocumentURI][]*source.Diagnostic
-		analysisDiags = make(map[protocol.DocumentURI][]*source.Diagnostic)
+		pkgDiags      map[protocol.DocumentURI][]*cache.Diagnostic
+		analysisDiags = make(map[protocol.DocumentURI][]*cache.Diagnostic)
 	)
 
 	// Collect package diagnostics.
@@ -510,7 +510,7 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toD
 			continue
 		}
 		tdiags := pkgDiags[uri]
-		var tdiags2, adiags2 []*source.Diagnostic
+		var tdiags2, adiags2 []*cache.Diagnostic
 		source.CombineDiagnostics(tdiags, adiags, &tdiags2, &adiags2)
 		pkgDiags[uri] = tdiags2
 		s.storeDiagnostics(snapshot, uri, analysisSource, adiags2, true)
@@ -617,7 +617,7 @@ func (s *server) mustPublishDiagnostics(uri protocol.DocumentURI) {
 //
 // TODO(hyangah): investigate whether we can unconditionally overwrite previous report.diags
 // with the new diags and eliminate the need for the `merge` flag.
-func (s *server) storeDiagnostics(snapshot *cache.Snapshot, uri protocol.DocumentURI, dsource diagnosticSource, diags []*source.Diagnostic, merge bool) {
+func (s *server) storeDiagnostics(snapshot *cache.Snapshot, uri protocol.DocumentURI, dsource diagnosticSource, diags []*cache.Diagnostic, merge bool) {
 	// Safeguard: ensure that the file actually exists in the snapshot
 	// (see golang.org/issues/38602).
 	fh := snapshot.FindFile(uri)
@@ -643,7 +643,7 @@ func (s *server) storeDiagnostics(snapshot *cache.Snapshot, uri protocol.Documen
 		return
 	}
 	if report.diags == nil || report.snapshotID != snapshot.GlobalID() || !merge {
-		report.diags = map[string]*source.Diagnostic{}
+		report.diags = map[string]*cache.Diagnostic{}
 	}
 	report.snapshotID = snapshot.GlobalID()
 	for _, d := range diags {
@@ -666,7 +666,7 @@ const WorkspaceLoadFailure = "Error loading workspace"
 
 // showCriticalErrorStatus shows the error as a progress report.
 // If the error is nil, it clears any existing error progress report.
-func (s *server) showCriticalErrorStatus(ctx context.Context, snapshot *cache.Snapshot, err *source.CriticalError) {
+func (s *server) showCriticalErrorStatus(ctx context.Context, snapshot *cache.Snapshot, err *cache.CriticalError) {
 	s.criticalErrorStatusMu.Lock()
 	defer s.criticalErrorStatusMu.Unlock()
 
@@ -676,7 +676,7 @@ func (s *server) showCriticalErrorStatus(ctx context.Context, snapshot *cache.Sn
 	if err != nil {
 		event.Error(ctx, "errors loading workspace", err.MainError, snapshot.Labels()...)
 		for _, d := range err.Diagnostics {
-			s.storeDiagnostics(snapshot, d.URI, modParseSource, []*source.Diagnostic{d}, true)
+			s.storeDiagnostics(snapshot, d.URI, modParseSource, []*cache.Diagnostic{d}, true)
 		}
 		errMsg = strings.ReplaceAll(err.MainError.Error(), "\n", " ")
 	}
@@ -725,12 +725,12 @@ func (s *server) publishDiagnostics(ctx context.Context, final bool, snapshot *c
 
 		anyReportsChanged := false
 		reportHashes := map[diagnosticSource]string{}
-		var diags []*source.Diagnostic
+		var diags []*cache.Diagnostic
 		for dsource, report := range r.reports {
 			if report.snapshotID != snapshot.GlobalID() {
 				continue
 			}
-			var reportDiags []*source.Diagnostic
+			var reportDiags []*cache.Diagnostic
 			for _, d := range report.diags {
 				diags = append(diags, d)
 				reportDiags = append(reportDiags, d)
@@ -791,7 +791,7 @@ func (s *server) publishDiagnostics(ctx context.Context, final bool, snapshot *c
 	}
 }
 
-func toProtocolDiagnostics(diagnostics []*source.Diagnostic) []protocol.Diagnostic {
+func toProtocolDiagnostics(diagnostics []*cache.Diagnostic) []protocol.Diagnostic {
 	reports := []protocol.Diagnostic{}
 	for _, diag := range diagnostics {
 		pdiag := protocol.Diagnostic{
@@ -860,7 +860,7 @@ func (s *server) Diagnostics() map[string][]string {
 	return ans
 }
 
-func auxStr(v *source.Diagnostic, d *diagnosticReport, typ diagnosticSource) string {
+func auxStr(v *cache.Diagnostic, d *diagnosticReport, typ diagnosticSource) string {
 	// Tags? RelatedInformation?
 	msg := fmt.Sprintf("(%s)%q(source:%q,code:%q,severity:%s,snapshot:%d,type:%s)",
 		v.Range, v.Message, v.Source, v.Code, v.Severity, d.snapshotID, typ)

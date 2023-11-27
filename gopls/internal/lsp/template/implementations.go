@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 )
 
 // line number (1-based) and message
@@ -23,27 +22,27 @@ var errRe = regexp.MustCompile(`template.*:(\d+): (.*)`)
 // Diagnose returns parse errors. There is only one.
 // The errors are not always helpful. For instance { {end}}
 // will likely point to the end of the file.
-func Diagnose(f file.Handle) []*source.Diagnostic {
+func Diagnose(f file.Handle) []*cache.Diagnostic {
 	// no need for skipTemplate check, as Diagnose is called on the
 	// snapshot's template files
 	buf, err := f.Content()
 	if err != nil {
 		// Is a Diagnostic with no Range useful? event.Error also?
 		msg := fmt.Sprintf("failed to read %s (%v)", f.URI().Path(), err)
-		d := source.Diagnostic{Message: msg, Severity: protocol.SeverityError, URI: f.URI(),
-			Source: source.TemplateError}
-		return []*source.Diagnostic{&d}
+		d := cache.Diagnostic{Message: msg, Severity: protocol.SeverityError, URI: f.URI(),
+			Source: cache.TemplateError}
+		return []*cache.Diagnostic{&d}
 	}
 	p := parseBuffer(buf)
 	if p.ParseErr == nil {
 		return nil
 	}
-	unknownError := func(msg string) []*source.Diagnostic {
+	unknownError := func(msg string) []*cache.Diagnostic {
 		s := fmt.Sprintf("malformed template error %q: %s", p.ParseErr.Error(), msg)
-		d := source.Diagnostic{
+		d := cache.Diagnostic{
 			Message: s, Severity: protocol.SeverityError, Range: p.Range(p.nls[0], 1),
-			URI: f.URI(), Source: source.TemplateError}
-		return []*source.Diagnostic{&d}
+			URI: f.URI(), Source: cache.TemplateError}
+		return []*cache.Diagnostic{&d}
 	}
 	// errors look like `template: :40: unexpected "}" in operand`
 	// so the string needs to be parsed
@@ -58,8 +57,8 @@ func Diagnose(f file.Handle) []*source.Diagnostic {
 		return unknownError(msg)
 	}
 	msg := matches[2]
-	d := source.Diagnostic{Message: msg, Severity: protocol.SeverityError,
-		Source: source.TemplateError}
+	d := cache.Diagnostic{Message: msg, Severity: protocol.SeverityError,
+		Source: cache.TemplateError}
 	start := p.nls[lineno-1]
 	if lineno < len(p.nls) {
 		size := p.nls[lineno] - start
@@ -67,7 +66,7 @@ func Diagnose(f file.Handle) []*source.Diagnostic {
 	} else {
 		d.Range = p.Range(start, 1)
 	}
-	return []*source.Diagnostic{&d}
+	return []*cache.Diagnostic{&d}
 }
 
 // Definition finds the definitions of the symbol at loc. It
@@ -94,7 +93,7 @@ func Definition(snapshot *cache.Snapshot, fh file.Handle, loc protocol.Position)
 	return ans, nil
 }
 
-func Hover(ctx context.Context, snapshot source.Snapshot, fh file.Handle, position protocol.Position) (*protocol.Hover, error) {
+func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) (*protocol.Hover, error) {
 	sym, p, err := symAtPosition(fh, position)
 	if sym == nil || err != nil {
 		return nil, err
@@ -148,7 +147,7 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	return ans, nil
 }
 
-func SemanticTokens(ctx context.Context, snapshot source.Snapshot, spn protocol.DocumentURI, add func(line, start, len uint32), d func() []uint32) (*protocol.SemanticTokens, error) {
+func SemanticTokens(ctx context.Context, snapshot *cache.Snapshot, spn protocol.DocumentURI, add func(line, start, len uint32), d func() []uint32) (*protocol.SemanticTokens, error) {
 	fh, err := snapshot.ReadFile(ctx, spn)
 	if err != nil {
 		return nil, err

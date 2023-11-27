@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -270,6 +271,39 @@ func decodeDiagnostics(data []byte) []*Diagnostic {
 	return srcDiags
 }
 
+// canFixFuncs maps an analyer to a function that determines whether or not a
+// fix is possible for the given diagnostic.
+//
+// TODO(rfindley): clean this up.
+var canFixFuncs = map[settings.Fix]func(*Diagnostic) bool{
+	settings.AddEmbedImport: fixedByImportingEmbed,
+}
+
+// fixedByImportingEmbed returns true if diag can be fixed by addEmbedImport.
+func fixedByImportingEmbed(diag *Diagnostic) bool {
+	if diag == nil {
+		return false
+	}
+	return diag.Message == embeddirective.MissingImportMessage
+}
+
+// canFix returns true if Analyzer.Fix can fix the Diagnostic.
+//
+// It returns true by default: only if the analyzer is configured explicitly to
+// ignore this diagnostic does it return false.
+//
+// TODO(rfindley): reconcile the semantics of 'Fix' and
+// 'suggestedAnalysisFixes'.
+func canFix(a *settings.Analyzer, d *Diagnostic) bool {
+	f, ok := canFixFuncs[a.Fix]
+	if !ok {
+		// See the above TODO: this doesn't make sense, but preserves pre-existing
+		// semantics.
+		return true
+	}
+	return f(d)
+}
+
 // toSourceDiagnostic converts a gobDiagnostic to "source" form.
 func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) *Diagnostic {
 	var related []protocol.DiagnosticRelatedInformation
@@ -298,7 +332,7 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 		Related:  related,
 		Tags:     srcAnalyzer.Tag,
 	}
-	if CanFix(srcAnalyzer, diag) {
+	if canFix(srcAnalyzer, diag) {
 		fixes := suggestedAnalysisFixes(gobDiag, kinds)
 		if srcAnalyzer.Fix != "" {
 			cmd, err := command.NewApplyFixCommand(gobDiag.Message, command.ApplyFixArgs{
@@ -347,6 +381,15 @@ func onlyDeletions(fixes []SuggestedFix) bool {
 
 func typesCodeHref(linkTarget string, code typesinternal.ErrorCode) string {
 	return BuildLink(linkTarget, "golang.org/x/tools/internal/typesinternal", code.String())
+}
+
+// BuildLink constructs a URL with the given target, path, and anchor.
+func BuildLink(target, path, anchor string) string {
+	link := fmt.Sprintf("https://%s/%s", target, path)
+	if anchor == "" {
+		return link
+	}
+	return link + "#" + anchor
 }
 
 func suggestedAnalysisFixes(diag *gobDiagnostic, kinds []protocol.CodeActionKind) []SuggestedFix {

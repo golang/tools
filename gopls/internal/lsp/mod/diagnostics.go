@@ -21,14 +21,13 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/vulncheck/govulncheck"
 	"golang.org/x/tools/internal/event"
 )
 
 // Diagnostics returns diagnostics from parsing the modules in the workspace.
-func Diagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
+func Diagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	ctx, done := event.Start(ctx, "mod.Diagnostics", snapshot.Labels()...)
 	defer done()
 
@@ -36,7 +35,7 @@ func Diagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.Do
 }
 
 // Diagnostics returns diagnostics from running go mod tidy.
-func TidyDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
+func TidyDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	ctx, done := event.Start(ctx, "mod.Diagnostics", snapshot.Labels()...)
 	defer done()
 
@@ -45,7 +44,7 @@ func TidyDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protoco
 
 // UpgradeDiagnostics returns upgrade diagnostics for the modules in the
 // workspace with known upgrades.
-func UpgradeDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
+func UpgradeDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	ctx, done := event.Start(ctx, "mod.UpgradeDiagnostics", snapshot.Labels()...)
 	defer done()
 
@@ -54,20 +53,20 @@ func UpgradeDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[prot
 
 // VulnerabilityDiagnostics returns vulnerability diagnostics for the active modules in the
 // workspace with known vulnerabilities.
-func VulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
+func VulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	ctx, done := event.Start(ctx, "mod.VulnerabilityDiagnostics", snapshot.Labels()...)
 	defer done()
 
 	return collectDiagnostics(ctx, snapshot, ModVulnerabilityDiagnostics)
 }
 
-func collectDiagnostics(ctx context.Context, snapshot *cache.Snapshot, diagFn func(context.Context, *cache.Snapshot, file.Handle) ([]*source.Diagnostic, error)) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
+func collectDiagnostics(ctx context.Context, snapshot *cache.Snapshot, diagFn func(context.Context, *cache.Snapshot, file.Handle) ([]*cache.Diagnostic, error)) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	cpulimit := runtime.GOMAXPROCS(0)
 	g.SetLimit(cpulimit)
 
 	var mu sync.Mutex
-	reports := make(map[protocol.DocumentURI][]*source.Diagnostic)
+	reports := make(map[protocol.DocumentURI][]*cache.Diagnostic)
 
 	for _, uri := range snapshot.ModFiles() {
 		uri := uri
@@ -96,7 +95,7 @@ func collectDiagnostics(ctx context.Context, snapshot *cache.Snapshot, diagFn fu
 }
 
 // ModParseDiagnostics reports diagnostics from parsing the mod file.
-func ModParseDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (diagnostics []*source.Diagnostic, err error) {
+func ModParseDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (diagnostics []*cache.Diagnostic, err error) {
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil {
 		if pm == nil || len(pm.ParseErrors) == 0 {
@@ -108,7 +107,7 @@ func ModParseDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.
 }
 
 // ModTidyDiagnostics reports diagnostics from running go mod tidy.
-func ModTidyDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (diagnostics []*source.Diagnostic, err error) {
+func ModTidyDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (diagnostics []*cache.Diagnostic, err error) {
 	pm, err := snapshot.ParseMod(ctx, fh) // memoized
 	if err != nil {
 		return nil, nil // errors reported by ModDiagnostics above
@@ -136,7 +135,7 @@ func ModTidyDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.H
 
 // ModUpgradeDiagnostics adds upgrade quick fixes for individual modules if the upgrades
 // are recorded in the view.
-func ModUpgradeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (upgradeDiagnostics []*source.Diagnostic, err error) {
+func ModUpgradeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (upgradeDiagnostics []*cache.Diagnostic, err error) {
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil {
 		// Don't return an error if there are parse error diagnostics to be shown, but also do not
@@ -167,13 +166,13 @@ func ModUpgradeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh fil
 		if err != nil {
 			return nil, err
 		}
-		upgradeDiagnostics = append(upgradeDiagnostics, &source.Diagnostic{
+		upgradeDiagnostics = append(upgradeDiagnostics, &cache.Diagnostic{
 			URI:            fh.URI(),
 			Range:          rng,
 			Severity:       protocol.SeverityInformation,
-			Source:         source.UpgradeNotification,
+			Source:         cache.UpgradeNotification,
 			Message:        fmt.Sprintf("%v can be upgraded", req.Mod.Path),
-			SuggestedFixes: []source.SuggestedFix{cache.SuggestedFixFromCommand(cmd, protocol.QuickFix)},
+			SuggestedFixes: []cache.SuggestedFix{cache.SuggestedFixFromCommand(cmd, protocol.QuickFix)},
 		})
 	}
 
@@ -184,7 +183,7 @@ const upgradeCodeActionPrefix = "Upgrade to "
 
 // ModVulnerabilityDiagnostics adds diagnostics for vulnerabilities in individual modules
 // if the vulnerability is recorded in the view.
-func ModVulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (vulnDiagnostics []*source.Diagnostic, err error) {
+func ModVulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (vulnDiagnostics []*cache.Diagnostic, err error) {
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil {
 		// Don't return an error if there are parse error diagnostics to be shown, but also do not
@@ -195,20 +194,20 @@ func ModVulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, 
 		return nil, err
 	}
 
-	diagSource := source.Govulncheck
+	diagSource := cache.Govulncheck
 	vs := snapshot.Vulnerabilities(fh.URI())[fh.URI()]
 	if vs == nil && snapshot.Options().Vulncheck == settings.ModeVulncheckImports {
 		vs, err = snapshot.ModVuln(ctx, fh.URI())
 		if err != nil {
 			return nil, err
 		}
-		diagSource = source.Vulncheck
+		diagSource = cache.Vulncheck
 	}
 	if vs == nil || len(vs.Findings) == 0 {
 		return nil, nil
 	}
 
-	suggestRunOrResetGovulncheck, err := suggestGovulncheckAction(diagSource == source.Govulncheck, fh.URI())
+	suggestRunOrResetGovulncheck, err := suggestGovulncheckAction(diagSource == cache.Govulncheck, fh.URI())
 	if err != nil {
 		// must not happen
 		return nil, err // TODO: bug report
@@ -240,7 +239,7 @@ func ModVulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, 
 		// Map affecting vulns to 'warning' level diagnostics,
 		// others to 'info' level diagnostics.
 		// Fixes will include only the upgrades for warning level diagnostics.
-		var warningFixes, infoFixes []source.SuggestedFix
+		var warningFixes, infoFixes []cache.SuggestedFix
 		var warningSet, infoSet = map[string]bool{}, map[string]bool{}
 		for _, finding := range findings {
 			// It is possible that the source code was changed since the last
@@ -311,24 +310,24 @@ func ModVulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, 
 		if len(warningSet) > 0 {
 			warning := sortedKeys(warningSet)
 			warningFixes = append(warningFixes, suggestRunOrResetGovulncheck)
-			vulnDiagnostics = append(vulnDiagnostics, &source.Diagnostic{
+			vulnDiagnostics = append(vulnDiagnostics, &cache.Diagnostic{
 				URI:            fh.URI(),
 				Range:          rng,
 				Severity:       protocol.SeverityWarning,
 				Source:         diagSource,
-				Message:        getVulnMessage(req.Mod.Path, warning, true, diagSource == source.Govulncheck),
+				Message:        getVulnMessage(req.Mod.Path, warning, true, diagSource == cache.Govulncheck),
 				SuggestedFixes: warningFixes,
 			})
 		}
 		if len(infoSet) > 0 {
 			info := sortedKeys(infoSet)
 			infoFixes = append(infoFixes, suggestRunOrResetGovulncheck)
-			vulnDiagnostics = append(vulnDiagnostics, &source.Diagnostic{
+			vulnDiagnostics = append(vulnDiagnostics, &cache.Diagnostic{
 				URI:            fh.URI(),
 				Range:          rng,
 				Severity:       protocol.SeverityInformation,
 				Source:         diagSource,
-				Message:        getVulnMessage(req.Mod.Path, info, false, diagSource == source.Govulncheck),
+				Message:        getVulnMessage(req.Mod.Path, info, false, diagSource == cache.Govulncheck),
 				SuggestedFixes: infoFixes,
 			})
 		}
@@ -367,13 +366,13 @@ func ModVulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, 
 		}
 		if len(warningSet) > 0 {
 			warning := sortedKeys(warningSet)
-			fixes := []source.SuggestedFix{suggestRunOrResetGovulncheck}
-			vulnDiagnostics = append(vulnDiagnostics, &source.Diagnostic{
+			fixes := []cache.SuggestedFix{suggestRunOrResetGovulncheck}
+			vulnDiagnostics = append(vulnDiagnostics, &cache.Diagnostic{
 				URI:            fh.URI(),
 				Range:          rng,
 				Severity:       protocol.SeverityWarning,
 				Source:         diagSource,
-				Message:        getVulnMessage("go", warning, true, diagSource == source.Govulncheck),
+				Message:        getVulnMessage("go", warning, true, diagSource == cache.Govulncheck),
 				SuggestedFixes: fixes,
 			})
 
@@ -386,13 +385,13 @@ func ModVulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, 
 		}
 		if len(infoSet) > 0 {
 			info := sortedKeys(infoSet)
-			fixes := []source.SuggestedFix{suggestRunOrResetGovulncheck}
-			vulnDiagnostics = append(vulnDiagnostics, &source.Diagnostic{
+			fixes := []cache.SuggestedFix{suggestRunOrResetGovulncheck}
+			vulnDiagnostics = append(vulnDiagnostics, &cache.Diagnostic{
 				URI:            fh.URI(),
 				Range:          rng,
 				Severity:       protocol.SeverityInformation,
 				Source:         diagSource,
-				Message:        getVulnMessage("go", info, false, diagSource == source.Govulncheck),
+				Message:        getVulnMessage("go", info, false, diagSource == cache.Govulncheck),
 				SuggestedFixes: fixes,
 			})
 		}
@@ -445,14 +444,14 @@ func sortedKeys(m map[string]bool) []string {
 // for more accurate investigation (if the present vulncheck diagnostics are based on
 // analysis less accurate than govulncheck) or reset the existing govulncheck result
 // (if the present vulncheck diagnostics are already based on govulncheck run).
-func suggestGovulncheckAction(fromGovulncheck bool, uri protocol.DocumentURI) (source.SuggestedFix, error) {
+func suggestGovulncheckAction(fromGovulncheck bool, uri protocol.DocumentURI) (cache.SuggestedFix, error) {
 	if fromGovulncheck {
 		resetVulncheck, err := command.NewResetGoModDiagnosticsCommand("Reset govulncheck result", command.ResetGoModDiagnosticsArgs{
 			URIArg:           command.URIArg{URI: uri},
-			DiagnosticSource: string(source.Govulncheck),
+			DiagnosticSource: string(cache.Govulncheck),
 		})
 		if err != nil {
-			return source.SuggestedFix{}, err
+			return cache.SuggestedFix{}, err
 		}
 		return cache.SuggestedFixFromCommand(resetVulncheck, protocol.QuickFix), nil
 	}
@@ -461,7 +460,7 @@ func suggestGovulncheckAction(fromGovulncheck bool, uri protocol.DocumentURI) (s
 		Pattern: "./...",
 	})
 	if err != nil {
-		return source.SuggestedFix{}, err
+		return cache.SuggestedFix{}, err
 	}
 	return cache.SuggestedFixFromCommand(vulncheck, protocol.QuickFix), nil
 }

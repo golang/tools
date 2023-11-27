@@ -27,6 +27,7 @@ import (
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/cache/methodsets"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -37,7 +38,7 @@ import (
 // References returns a list of all references (sorted with
 // definitions before uses) to the object denoted by the identifier at
 // the given file/position, searching the entire workspace.
-func References(ctx context.Context, snapshot Snapshot, fh file.Handle, pp protocol.Position, includeDeclaration bool) ([]protocol.Location, error) {
+func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position, includeDeclaration bool) ([]protocol.Location, error) {
 	references, err := references(ctx, snapshot, fh, pp, includeDeclaration)
 	if err != nil {
 		return nil, err
@@ -60,7 +61,7 @@ type reference struct {
 // references returns a list of all references (sorted with
 // definitions before uses) to the object denoted by the identifier at
 // the given file/position, searching the entire workspace.
-func references(ctx context.Context, snapshot Snapshot, f file.Handle, pp protocol.Position, includeDeclaration bool) ([]reference, error) {
+func references(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp protocol.Position, includeDeclaration bool) ([]reference, error) {
 	ctx, done := event.Start(ctx, "source.references")
 	defer done()
 
@@ -107,7 +108,7 @@ func references(ctx context.Context, snapshot Snapshot, f file.Handle, pp protoc
 // declaration of the specified name and uri by searching among the
 // import declarations of all packages that directly import the target
 // package.
-func packageReferences(ctx context.Context, snapshot Snapshot, uri protocol.DocumentURI) ([]reference, error) {
+func packageReferences(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) ([]reference, error) {
 	metas, err := snapshot.MetadataForFile(ctx, uri)
 	if err != nil {
 		return nil, err
@@ -207,7 +208,7 @@ func packageReferences(ctx context.Context, snapshot Snapshot, uri protocol.Docu
 }
 
 // ordinaryReferences computes references for all ordinary objects (not package declarations).
-func ordinaryReferences(ctx context.Context, snapshot Snapshot, uri protocol.DocumentURI, pp protocol.Position) ([]reference, error) {
+func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, pp protocol.Position) ([]reference, error) {
 	// Strategy: use the reference information computed by the
 	// type checker to find the declaration. First type-check this
 	// package to find the declaration, then type check the
@@ -505,7 +506,7 @@ func ordinaryReferences(ctx context.Context, snapshot Snapshot, uri protocol.Doc
 // The scope is expanded by a sequence of calls (not concurrent) to addRdeps.
 //
 // recv is the method's effective receiver type, for method-set computations.
-func expandMethodSearch(ctx context.Context, snapshot Snapshot, workspaceIDs []PackageID, method *types.Func, recv types.Type, addRdeps func(id PackageID, transitive bool) error, targets map[PackagePath]map[objectpath.Path]unit, expansions map[PackageID]unit) error {
+func expandMethodSearch(ctx context.Context, snapshot *cache.Snapshot, workspaceIDs []PackageID, method *types.Func, recv types.Type, addRdeps func(id PackageID, transitive bool) error, targets map[PackagePath]map[objectpath.Path]unit, expansions map[PackageID]unit) error {
 	// Compute the method-set fingerprint used as a key to the global search.
 	key, hasMethods := methodsets.KeyOf(recv)
 	if !hasMethods {
@@ -562,7 +563,7 @@ func expandMethodSearch(ctx context.Context, snapshot Snapshot, workspaceIDs []P
 // localReferences traverses syntax and reports each reference to one
 // of the target objects, or (if correspond is set) an object that
 // corresponds to one of them via interface satisfaction.
-func localReferences(pkg Package, targets map[types.Object]bool, correspond bool, report func(loc protocol.Location, isDecl bool)) error {
+func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspond bool, report func(loc protocol.Location, isDecl bool)) error {
 	// If we're searching for references to a method optionally
 	// broaden the search to include references to corresponding
 	// methods of mutually assignable receiver types.

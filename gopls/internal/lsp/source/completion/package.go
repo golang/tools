@@ -19,6 +19,7 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -27,7 +28,7 @@ import (
 
 // packageClauseCompletions offers completions for a package declaration when
 // one is not present in the given file.
-func packageClauseCompletions(ctx context.Context, snapshot source.Snapshot, fh file.Handle, position protocol.Position) ([]CompletionItem, *Selection, error) {
+func packageClauseCompletions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) ([]CompletionItem, *Selection, error) {
 	// We know that the AST for this file will be empty due to the missing
 	// package declaration, but parse it anyway to get a mapper.
 	// TODO(adonovan): opt: there's no need to parse just to get a mapper.
@@ -202,7 +203,7 @@ func (c *completer) packageNameCompletions(ctx context.Context, fileURI protocol
 // have the given prefix and are used in the same directory as the given
 // file. This also includes test packages for these packages (<pkg>_test) and
 // the directory name itself.
-func packageSuggestions(ctx context.Context, snapshot source.Snapshot, fileURI protocol.DocumentURI, prefix string) (packages []candidate, err error) {
+func packageSuggestions(ctx context.Context, snapshot *cache.Snapshot, fileURI protocol.DocumentURI, prefix string) (packages []candidate, err error) {
 	active, err := snapshot.WorkspaceMetadata(ctx)
 	if err != nil {
 		return nil, err

@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -27,7 +28,7 @@ func LensFuncs() map[command.Command]source.LensFunc {
 	}
 }
 
-func upgradeLenses(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
+func upgradeLenses(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil || pm.File == nil {
 		return nil, err
@@ -88,7 +89,7 @@ func upgradeLenses(ctx context.Context, snapshot source.Snapshot, fh file.Handle
 	}...), nil
 }
 
-func tidyLens(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
+func tidyLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil || pm.File == nil {
 		return nil, err
@@ -108,7 +109,7 @@ func tidyLens(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]
 	}}, nil
 }
 
-func vendorLens(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
+func vendorLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil || pm.File == nil {
 		return nil, err
@@ -136,7 +137,7 @@ func vendorLens(ctx context.Context, snapshot source.Snapshot, fh file.Handle) (
 	return []protocol.CodeLens{{Range: rng, Command: &cmd}}, nil
 }
 
-func moduleStmtRange(fh file.Handle, pm *source.ParsedModule) (protocol.Range, error) {
+func moduleStmtRange(fh file.Handle, pm *cache.ParsedModule) (protocol.Range, error) {
 	if pm.File == nil || pm.File.Module == nil || pm.File.Module.Syntax == nil {
 		return protocol.Range{}, fmt.Errorf("no module statement in %s", fh.URI())
 	}
@@ -146,7 +147,7 @@ func moduleStmtRange(fh file.Handle, pm *source.ParsedModule) (protocol.Range, e
 
 // firstRequireRange returns the range for the first "require" in the given
 // go.mod file. This is either a require block or an individual require line.
-func firstRequireRange(fh file.Handle, pm *source.ParsedModule) (protocol.Range, error) {
+func firstRequireRange(fh file.Handle, pm *cache.ParsedModule) (protocol.Range, error) {
 	if len(pm.File.Require) == 0 {
 		return protocol.Range{}, fmt.Errorf("no requires in the file %s", fh.URI())
 	}
@@ -165,7 +166,7 @@ func firstRequireRange(fh file.Handle, pm *source.ParsedModule) (protocol.Range,
 	return pm.Mapper.OffsetRange(start.Byte, end.Byte)
 }
 
-func vulncheckLenses(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
+func vulncheckLenses(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil || pm.File == nil {
 		return nil, err

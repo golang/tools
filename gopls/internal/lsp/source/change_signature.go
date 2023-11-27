@@ -18,6 +18,8 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/imports"
@@ -38,7 +40,7 @@ import (
 //   - Improve the extra newlines in output.
 //   - Stream type checking via ForEachPackage.
 //   - Avoid unnecessary additional type checking.
-func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Range, snapshot Snapshot) ([]protocol.DocumentChanges, error) {
+func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Range, snapshot *cache.Snapshot) ([]protocol.DocumentChanges, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err
@@ -304,9 +306,9 @@ func FindParam(pgf *ParsedGoFile, rng protocol.Range) ParamInfo {
 //
 // See rewriteCalls for more details.
 type signatureRewrite struct {
-	snapshot          Snapshot
-	pkg               Package
-	pgf               *ParsedGoFile
+	snapshot          *cache.Snapshot
+	pkg               *cache.Package
+	pgf               *parsego.File
 	origDecl, newDecl *ast.FuncDecl
 	params            *ast.FieldList
 	callArgs          []ast.Expr
@@ -436,7 +438,7 @@ func rewriteCalls(ctx context.Context, rw signatureRewrite) (map[protocol.Docume
 // If expectErrors is true, reTypeCheck allows errors in the new package.
 // TODO(rfindley): perhaps this should be a filter to specify which errors are
 // acceptable.
-func reTypeCheck(logf func(string, ...any), orig Package, fileMask map[protocol.DocumentURI]*ast.File, expectErrors bool) (*types.Package, *types.Info, error) {
+func reTypeCheck(logf func(string, ...any), orig *cache.Package, fileMask map[protocol.DocumentURI]*ast.File, expectErrors bool) (*types.Package, *types.Info, error) {
 	pkg := types.NewPackage(string(orig.Metadata().PkgPath), string(orig.Metadata().Name))
 	info := &types.Info{
 		Types:      make(map[ast.Expr]types.TypeAndValue),

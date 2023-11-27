@@ -14,15 +14,14 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
 )
 
-func Diagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*source.Diagnostic, error) {
+func Diagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	ctx, done := event.Start(ctx, "work.Diagnostics", snapshot.Labels()...)
 	defer done()
 
-	reports := map[protocol.DocumentURI][]*source.Diagnostic{}
+	reports := map[protocol.DocumentURI][]*cache.Diagnostic{}
 	uri := snapshot.WorkFile()
 	if uri == "" {
 		return nil, nil
@@ -31,7 +30,7 @@ func Diagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.Do
 	if err != nil {
 		return nil, err
 	}
-	reports[fh.URI()] = []*source.Diagnostic{}
+	reports[fh.URI()] = []*cache.Diagnostic{}
 	diagnostics, err := DiagnosticsForWork(ctx, snapshot, fh)
 	if err != nil {
 		return nil, err
@@ -47,7 +46,7 @@ func Diagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.Do
 	return reports, nil
 }
 
-func DiagnosticsForWork(ctx context.Context, snapshot source.Snapshot, fh file.Handle) ([]*source.Diagnostic, error) {
+func DiagnosticsForWork(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]*cache.Diagnostic, error) {
 	pw, err := snapshot.ParseWork(ctx, fh)
 	if err != nil {
 		if pw == nil || len(pw.ParseErrors) == 0 {
@@ -57,7 +56,7 @@ func DiagnosticsForWork(ctx context.Context, snapshot source.Snapshot, fh file.H
 	}
 
 	// Add diagnostic if a directory does not contain a module.
-	var diagnostics []*source.Diagnostic
+	var diagnostics []*cache.Diagnostic
 	for _, use := range pw.File.Use {
 		rng, err := pw.Mapper.OffsetRange(use.Syntax.Start.Byte, use.Syntax.End.Byte)
 		if err != nil {
@@ -69,11 +68,11 @@ func DiagnosticsForWork(ctx context.Context, snapshot source.Snapshot, fh file.H
 			return nil, err
 		}
 		if _, err := modfh.Content(); err != nil && os.IsNotExist(err) {
-			diagnostics = append(diagnostics, &source.Diagnostic{
+			diagnostics = append(diagnostics, &cache.Diagnostic{
 				URI:      fh.URI(),
 				Range:    rng,
 				Severity: protocol.SeverityError,
-				Source:   source.WorkFileError,
+				Source:   cache.WorkFileError,
 				Message:  fmt.Sprintf("directory %v does not contain a module", use.Path),
 			})
 		}
@@ -81,7 +80,7 @@ func DiagnosticsForWork(ctx context.Context, snapshot source.Snapshot, fh file.H
 	return diagnostics, nil
 }
 
-func modFileURI(pw *source.ParsedWorkFile, use *modfile.Use) protocol.DocumentURI {
+func modFileURI(pw *cache.ParsedWorkFile, use *modfile.Use) protocol.DocumentURI {
 	workdir := filepath.Dir(pw.URI.Path())
 
 	modroot := filepath.FromSlash(use.Path)

@@ -21,10 +21,8 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
 	"golang.org/x/tools/gopls/internal/vulncheck"
-	"golang.org/x/tools/gopls/internal/vulncheck/scan"
 	"golang.org/x/tools/gopls/internal/vulncheck/vulntest"
 )
 
@@ -196,7 +194,7 @@ func main() {
 			// When fetchinging stdlib package vulnerability info,
 			// behave as if our go version is go1.18 for this testing.
 			// The default behavior is to run `go env GOVERSION` (which isn't mutable env var).
-			scan.GoVersionForVulnTest:         "go1.18",
+			cache.GoVersionForVulnTest:        "go1.18",
 			"_GOPLS_TEST_BINARY_RUN_AS_GOPLS": "true", // needed to run `gopls vulncheck`.
 		},
 		Settings{
@@ -251,7 +249,7 @@ func main() {
 			"GOVULNDB": db.URI(),
 			// When fetchinging stdlib package vulnerability info,
 			// behave as if our go version is go1.18 for this testing.
-			scan.GoVersionForVulnTest:         "go1.18",
+			cache.GoVersionForVulnTest:        "go1.18",
 			"_GOPLS_TEST_BINARY_RUN_AS_GOPLS": "true", // needed to run `gopls vulncheck`.
 		},
 		Settings{"ui.diagnostic.vulncheck": "Imports"},
@@ -452,7 +450,7 @@ func vulnTestEnv(vulnsDB, proxyData string) (*vulntest.DB, []RunOption, error) {
 		// When fetching stdlib package vulnerability info,
 		// behave as if our go version is go1.18 for this testing.
 		// The default behavior is to run `go env GOVERSION` (which isn't mutable env var).
-		scan.GoVersionForVulnTest:         "go1.18",
+		cache.GoVersionForVulnTest:        "go1.18",
 		"_GOPLS_TEST_BINARY_RUN_AS_GOPLS": "true", // needed to run `gopls vulncheck`.
 		"GOSUMDB":                         "off",
 	}
@@ -488,7 +486,7 @@ func TestRunVulncheckPackageDiagnostics(t *testing.T) {
 					{
 						msg:      "golang.org/amod has known vulnerabilities GO-2022-01, GO-2022-03.",
 						severity: protocol.SeverityInformation,
-						source:   string(source.Vulncheck),
+						source:   string(cache.Vulncheck),
 						codeActions: []string{
 							"Run govulncheck to verify",
 							"Upgrade to v1.0.6",
@@ -508,7 +506,7 @@ func TestRunVulncheckPackageDiagnostics(t *testing.T) {
 					{
 						msg:      "golang.org/bmod has a vulnerability GO-2022-02.",
 						severity: protocol.SeverityInformation,
-						source:   string(source.Vulncheck),
+						source:   string(cache.Vulncheck),
 						codeActions: []string{
 							"Run govulncheck to verify",
 						},
@@ -673,7 +671,7 @@ func TestRunVulncheckWarning(t *testing.T) {
 					{
 						msg:      "golang.org/amod has a vulnerability used in the code: GO-2022-01.",
 						severity: protocol.SeverityWarning,
-						source:   string(source.Govulncheck),
+						source:   string(cache.Govulncheck),
 						codeActions: []string{
 							"Upgrade to v1.0.4",
 							"Upgrade to latest",
@@ -683,7 +681,7 @@ func TestRunVulncheckWarning(t *testing.T) {
 					{
 						msg:      "golang.org/amod has a vulnerability GO-2022-03 that is not used in the code.",
 						severity: protocol.SeverityInformation,
-						source:   string(source.Govulncheck),
+						source:   string(cache.Govulncheck),
 						codeActions: []string{
 							"Upgrade to v1.0.6",
 							"Upgrade to latest",
@@ -703,7 +701,7 @@ func TestRunVulncheckWarning(t *testing.T) {
 					{
 						msg:      "golang.org/bmod has a vulnerability used in the code: GO-2022-02.",
 						severity: protocol.SeverityWarning,
-						source:   string(source.Govulncheck),
+						source:   string(cache.Govulncheck),
 						codeActions: []string{
 							"Reset govulncheck result", // no fix, but we should give an option to reset.
 						},
@@ -826,7 +824,7 @@ func TestGovulncheckInfo(t *testing.T) {
 					{
 						msg:      "golang.org/bmod has a vulnerability GO-2022-02 that is not used in the code.",
 						severity: protocol.SeverityInformation,
-						source:   string(source.Govulncheck),
+						source:   string(cache.Govulncheck),
 						codeActions: []string{
 							"Reset govulncheck result",
 						},

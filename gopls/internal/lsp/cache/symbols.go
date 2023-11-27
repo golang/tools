@@ -16,6 +16,15 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
+// Symbol holds a precomputed symbol value. Note: we avoid using the
+// protocol.SymbolInformation struct here in order to reduce the size of each
+// symbol.
+type Symbol struct {
+	Name  string
+	Kind  protocol.SymbolKind
+	Range protocol.Range
+}
+
 // symbolize returns the result of symbolizing the file identified by uri, using a cache.
 func (s *Snapshot) symbolize(ctx context.Context, uri protocol.DocumentURI) ([]Symbol, error) {
 

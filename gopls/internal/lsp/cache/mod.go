@@ -23,6 +23,14 @@ import (
 	"golang.org/x/tools/internal/memoize"
 )
 
+// A ParsedModule contains the results of parsing a go.mod file.
+type ParsedModule struct {
+	URI         protocol.DocumentURI
+	File        *modfile.File
+	Mapper      *protocol.Mapper
+	ParseErrors []*Diagnostic
+}
+
 // ParseMod parses a go.mod file, using a cache. It may return partial results and an error.
 func (s *Snapshot) ParseMod(ctx context.Context, fh file.Handle) (*ParsedModule, error) {
 	uri := fh.URI()
@@ -98,6 +106,14 @@ func parseModImpl(ctx context.Context, fh file.Handle) (*ParsedModule, error) {
 		File:        file,
 		ParseErrors: parseErrors,
 	}, parseErr
+}
+
+// A ParsedWorkFile contains the results of parsing a go.work file.
+type ParsedWorkFile struct {
+	URI         protocol.DocumentURI
+	File        *modfile.WorkFile
+	Mapper      *protocol.Mapper
+	ParseErrors []*Diagnostic
 }
 
 // ParseWork parses a go.work file, using a cache. It may return partial results and an error.

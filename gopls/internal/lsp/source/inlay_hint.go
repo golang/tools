@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typeparams"
@@ -79,7 +80,7 @@ var AllInlayHints = map[string]*Hint{
 	},
 }
 
-func InlayHint(ctx context.Context, snapshot Snapshot, fh file.Handle, pRng protocol.Range) ([]protocol.InlayHint, error) {
+func InlayHint(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pRng protocol.Range) ([]protocol.InlayHint, error) {
 	ctx, done := event.Start(ctx, "source.InlayHint")
 	defer done()
 

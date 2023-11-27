@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/govulncheck"
@@ -58,7 +57,7 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 	return hoverOnRequireStatement(ctx, pm, offset, snapshot, fh)
 }
 
-func hoverOnRequireStatement(ctx context.Context, pm *source.ParsedModule, offset int, snapshot *cache.Snapshot, fh file.Handle) (*protocol.Hover, error) {
+func hoverOnRequireStatement(ctx context.Context, pm *cache.ParsedModule, offset int, snapshot *cache.Snapshot, fh file.Handle) (*protocol.Hover, error) {
 	// Confirm that the cursor is at the position of a require statement.
 	var req *modfile.Require
 	var startOffset, endOffset int
@@ -129,7 +128,7 @@ func hoverOnRequireStatement(ctx context.Context, pm *source.ParsedModule, offse
 	}, nil
 }
 
-func hoverOnModuleStatement(ctx context.Context, pm *source.ParsedModule, offset int, snapshot *cache.Snapshot, fh file.Handle) (*protocol.Hover, bool) {
+func hoverOnModuleStatement(ctx context.Context, pm *cache.ParsedModule, offset int, snapshot *cache.Snapshot, fh file.Handle) (*protocol.Hover, bool) {
 	module := pm.File.Module
 	if module == nil {
 		return nil, false // no module stmt
@@ -351,7 +350,7 @@ func formatExplanation(text string, req *modfile.Require, options *settings.Opti
 		if strings.ToLower(options.LinkTarget) == "pkg.go.dev" {
 			target = strings.Replace(target, req.Mod.Path, req.Mod.String(), 1)
 		}
-		reference = fmt.Sprintf("[%s](%s)", imp, source.BuildLink(options.LinkTarget, target, ""))
+		reference = fmt.Sprintf("[%s](%s)", imp, cache.BuildLink(options.LinkTarget, target, ""))
 	}
 	b.WriteString("This module is necessary because " + reference + " is imported in")
 

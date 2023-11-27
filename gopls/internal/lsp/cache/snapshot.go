@@ -54,6 +54,26 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 )
 
+// A GlobalSnapshotID uniquely identifies a snapshot within this process and
+// increases monotonically with snapshot creation time.
+//
+// We use a distinct integral type for global IDs to help enforce correct
+// usage.
+//
+// TODO(rfindley): remove this as it should not be necessary for correctness.
+type GlobalSnapshotID uint64
+
+// A Snapshot represents the current state for a given view.
+//
+// It is first and foremost an idempotent implementation of file.Source whose
+// ReadFile method returns consistent information about the existence and
+// content of each file throughout its lifetime.
+//
+// However, the snapshot also manages additional state (such as parsed files
+// and packages) that are derived from file content.
+//
+// Snapshots are responsible for bookkeeping and invalidation of this state,
+// implemented in Snapshot.clone.
 type Snapshot struct {
 	sequenceID uint64
 	globalID   GlobalSnapshotID
@@ -291,6 +311,13 @@ func (s *Snapshot) View() *View {
 	return s.view
 }
 
+// FileKind returns the type of a file.
+//
+// We can't reliably deduce the kind from the file name alone,
+// as some editors can be told to interpret a buffer as
+// language different from the file name heuristic, e.g. that
+// an .html file actually contains Go "html/template" syntax,
+// or even that a .go file contains Python.
 func (s *Snapshot) FileKind(fh file.Handle) file.Kind {
 	// The kind of an unsaved buffer comes from the
 	// TextDocumentItem.LanguageID field in the didChange event,
@@ -322,6 +349,7 @@ func (s *Snapshot) FileKind(fh file.Handle) file.Kind {
 	return file.Go
 }
 
+// Options returns the options associated with this snapshot.
 func (s *Snapshot) Options() *settings.Options {
 	return s.view.folder.Options
 }
@@ -332,6 +360,8 @@ func (s *Snapshot) BackgroundContext() context.Context {
 	return s.backgroundCtx
 }
 
+// ModFiles are the go.mod files enclosed in the snapshot's view and known
+// to the snapshot.
 func (s *Snapshot) ModFiles() []protocol.DocumentURI {
 	var uris []protocol.DocumentURI
 	for modURI := range s.view.workspaceModFiles {
@@ -425,6 +455,36 @@ func (s *Snapshot) config(ctx context.Context, inv *gocommand.Invocation) *packa
 	return cfg
 }
 
+// InvocationFlags represents the settings of a particular go command invocation.
+// It is a mode, plus a set of flag bits.
+type InvocationFlags int
+
+const (
+	// Normal is appropriate for commands that might be run by a user and don't
+	// deliberately modify go.mod files, e.g. `go test`.
+	Normal InvocationFlags = iota
+	// WriteTemporaryModFile is for commands that need information from a
+	// modified version of the user's go.mod file, e.g. `go mod tidy` used to
+	// generate diagnostics.
+	WriteTemporaryModFile
+	// LoadWorkspace is for packages.Load, and other operations that should
+	// consider the whole workspace at once.
+	LoadWorkspace
+	// AllowNetwork is a flag bit that indicates the invocation should be
+	// allowed to access the network.
+	AllowNetwork InvocationFlags = 1 << 10
+)
+
+func (m InvocationFlags) Mode() InvocationFlags {
+	return m & (AllowNetwork - 1)
+}
+
+func (m InvocationFlags) AllowNetwork() bool {
+	return m&AllowNetwork != 0
+}
+
+// RunGoCommandDirect runs the given `go` command. Verb, Args, and
+// WorkingDir must be specified.
 func (s *Snapshot) RunGoCommandDirect(ctx context.Context, mode InvocationFlags, inv *gocommand.Invocation) (*bytes.Buffer, error) {
 	_, inv, cleanup, err := s.goCommandInvocation(ctx, mode, inv)
 	if err != nil {
@@ -637,6 +697,11 @@ const (
 	typerefsKind    = "typerefs"
 )
 
+// PackageDiagnostics returns diagnostics for files contained in specified
+// packages.
+//
+// If these diagnostics cannot be loaded from cache, the requested packages
+// may be type-checked.
 func (s *Snapshot) PackageDiagnostics(ctx context.Context, ids ...PackageID) (map[protocol.DocumentURI][]*Diagnostic, error) {
 	ctx, done := event.Start(ctx, "cache.snapshot.PackageDiagnostics")
 	defer done()
@@ -668,11 +733,15 @@ func (s *Snapshot) PackageDiagnostics(ctx context.Context, ids ...PackageID) (ma
 	return perFile, s.forEachPackage(ctx, ids, pre, post)
 }
 
-func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]XrefIndex_, error) {
+// References returns cross-reference indexes for the specified packages.
+//
+// If these indexes cannot be loaded from cache, the requested packages may
+// be type-checked.
+func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]XrefIndex, error) {
 	ctx, done := event.Start(ctx, "cache.snapshot.References")
 	defer done()
 
-	indexes := make([]XrefIndex_, len(ids))
+	indexes := make([]XrefIndex, len(ids))
 	pre := func(i int, ph *packageHandle) bool {
 		data, err := filecache.Get(xrefsKind, ph.key)
 		if err == nil { // hit
@@ -699,6 +768,10 @@ func (index XrefIndex) Lookup(targets map[PackagePath]map[objectpath.Path]struct
 	return xrefs.Lookup(index.m, index.data, targets)
 }
 
+// MethodSets returns method-set indexes for the specified packages.
+//
+// If these indexes cannot be loaded from cache, the requested packages may
+// be type-checked.
 func (s *Snapshot) MethodSets(ctx context.Context, ids ...PackageID) ([]*methodsets.Index, error) {
 	ctx, done := event.Start(ctx, "cache.snapshot.MethodSets")
 	defer done()
@@ -720,6 +793,13 @@ func (s *Snapshot) MethodSets(ctx context.Context, ids ...PackageID) ([]*methods
 	return indexes, s.forEachPackage(ctx, ids, pre, post)
 }
 
+// MetadataForFile returns a new slice containing metadata for each
+// package containing the Go file identified by uri, ordered by the
+// number of CompiledGoFiles (i.e. "narrowest" to "widest" package),
+// and secondarily by IsIntermediateTestVariant (false < true).
+// The result may include tests and intermediate test variants of
+// importable packages.
+// It returns an error if the context was cancelled.
 func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI) ([]*Metadata, error) {
 	if s.view.ViewType() == AdHocView {
 		// As described in golang/go#57209, in ad-hoc workspaces (where we load ./
@@ -820,6 +900,10 @@ func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI
 
 func boolLess(x, y bool) bool { return !x && y } // false < true
 
+// ReverseDependencies returns a new mapping whose entries are
+// the ID and Metadata of each package in the workspace that
+// directly or transitively depend on the package denoted by id,
+// excluding id itself.
 func (s *Snapshot) ReverseDependencies(ctx context.Context, id PackageID, transitive bool) (map[PackageID]*Metadata, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
@@ -1039,6 +1123,17 @@ func (s *Snapshot) filesInDir(uri protocol.DocumentURI) []protocol.DocumentURI {
 	return files
 }
 
+// WorkspaceMetadata returns a new, unordered slice containing
+// metadata for all ordinary and test packages (but not
+// intermediate test variants) in the workspace.
+//
+// The workspace is the set of modules typically defined by a
+// go.work file. It is not transitively closed: for example,
+// the standard library is not usually part of the workspace
+// even though every module in the workspace depends on it.
+//
+// Operations that must inspect all the dependencies of the
+// workspace packages should instead use AllMetadata.
 func (s *Snapshot) WorkspaceMetadata(ctx context.Context) ([]*Metadata, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
@@ -1066,7 +1161,10 @@ func (s *Snapshot) isWorkspacePackage(id PackageID) bool {
 // Symbols extracts and returns symbol information for every file contained in
 // a loaded package. It awaits snapshot loading.
 //
-// TODO(rfindley): move this to the top of cache/symbols.go
+// If workspaceOnly is set, this only includes symbols from files in a
+// workspace package. Otherwise, it returns symbols from all loaded packages.
+//
+// TODO(rfindley): move to symbols.go.
 func (s *Snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[protocol.DocumentURI][]Symbol, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
@@ -1124,6 +1222,14 @@ func (s *Snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[protoco
 	return result, nil
 }
 
+// AllMetadata returns a new unordered array of metadata for
+// all packages known to this snapshot, which includes the
+// packages of all workspace modules plus their transitive
+// import dependencies.
+//
+// It may also contain ad-hoc packages for standalone files.
+// It includes all test variants.
+//
 // TODO(rfindley): just return the metadata graph here.
 func (s *Snapshot) AllMetadata(ctx context.Context) ([]*Metadata, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
@@ -1175,6 +1281,8 @@ func nearestModFile(ctx context.Context, uri protocol.DocumentURI, fs file.Sourc
 	return protocol.URIFromPath(mod), nil
 }
 
+// Metadata returns the metadata for the specified package,
+// or nil if it was not found.
 func (s *Snapshot) Metadata(id PackageID) *Metadata {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1212,6 +1320,9 @@ func (s *Snapshot) clearShouldLoad(scopes ...loadScope) {
 	}
 }
 
+// FindFile returns the FileHandle for the given URI, if it is already
+// in the given snapshot.
+// TODO(adonovan): delete this operation; use ReadFile instead.
 func (s *Snapshot) FindFile(uri protocol.DocumentURI) file.Handle {
 	s.view.markKnown(uri)
 
@@ -2415,6 +2526,7 @@ func extractMagicComments(f *ast.File) []string {
 	return results
 }
 
+// BuiltinFile returns information about the special builtin package.
 func (s *Snapshot) BuiltinFile(ctx context.Context) (*ParsedGoFile, error) {
 	s.AwaitInitialized(ctx)
 

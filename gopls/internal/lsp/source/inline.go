@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/diff"
@@ -27,7 +28,7 @@ import (
 
 // EnclosingStaticCall returns the innermost function call enclosing
 // the selected range, along with the callee.
-func EnclosingStaticCall(pkg Package, pgf *ParsedGoFile, rng protocol.Range) (*ast.CallExpr, *types.Func, error) {
+func EnclosingStaticCall(pkg *cache.Package, pgf *ParsedGoFile, rng protocol.Range) (*ast.CallExpr, *types.Func, error) {
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, nil, err
@@ -58,7 +59,7 @@ loop:
 	return call, fn, nil
 }
 
-func inlineCall(ctx context.Context, snapshot Snapshot, fh file.Handle, rng protocol.Range) (_ []protocol.TextDocumentEdit, err error) {
+func inlineCall(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) (_ []protocol.TextDocumentEdit, err error) {
 	// Find enclosing static call.
 	callerPkg, callerPGF, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
@@ -93,7 +94,7 @@ func inlineCall(ctx context.Context, snapshot Snapshot, fh file.Handle, rng prot
 	// but that is frequently not the case within gopls.
 	// Until we are able to harden the inliner,
 	// report panics as errors to avoid crashing the server.
-	bad := func(p Package) bool { return len(p.GetParseErrors())+len(p.GetTypeErrors()) > 0 }
+	bad := func(p *cache.Package) bool { return len(p.GetParseErrors())+len(p.GetTypeErrors()) > 0 }
 	if bad(calleePkg) || bad(callerPkg) {
 		defer func() {
 			if x := recover(); x != nil {

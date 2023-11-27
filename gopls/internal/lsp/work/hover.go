@@ -13,7 +13,6 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -74,7 +73,7 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 	}, nil
 }
 
-func usePath(pw *source.ParsedWorkFile, offset int) (use *modfile.Use, pathStart, pathEnd int) {
+func usePath(pw *cache.ParsedWorkFile, offset int) (use *modfile.Use, pathStart, pathEnd int) {
 	for _, u := range pw.File.Use {
 		path := []byte(u.Path)
 		s, e := u.Syntax.Start.Byte, u.Syntax.End.Byte

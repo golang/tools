@@ -14,9 +14,9 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/fillstruct"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/undeclaredname"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/imports"
@@ -31,14 +31,7 @@ type (
 	// TODO(rfindley): the signature of suggestedFixFunc should probably accept
 	// (context.Context, Snapshot, protocol.Diagnostic). No reason for us to
 	// encode as a (URI, Range) pair when we have the protocol type.
-	suggestedFixFunc func(context.Context, Snapshot, file.Handle, protocol.Range) ([]protocol.TextDocumentEdit, error)
-	suggestedFixer   struct {
-		// fixesDiagnostic reports if a diagnostic from the analyzer can be fixed
-		// by Fix. If nil then all diagnostics from the analyzer are assumed to be
-		// fixable.
-		canFix func(*Diagnostic) bool
-		fix    suggestedFixFunc
-	}
+	suggestedFixFunc func(context.Context, *cache.Snapshot, file.Handle, protocol.Range) ([]protocol.TextDocumentEdit, error)
 )
 
 // suggestedFixes maps a suggested fix command id to its handler.
@@ -55,26 +48,23 @@ type (
 // (just calling RangePos) that we can push it down into each singleFile fixer.
 // All the fixers will then have a common and fully general interface, instead
 // of the current two-tier system.
-var suggestedFixes = map[settings.Fix]suggestedFixer{
-	settings.FillStruct:        {fix: singleFile(fillstruct.SuggestedFix)},
-	settings.UndeclaredName:    {fix: singleFile(undeclaredname.SuggestedFix)},
-	settings.ExtractVariable:   {fix: singleFile(extractVariable)},
-	settings.InlineCall:        {fix: inlineCall},
-	settings.ExtractFunction:   {fix: singleFile(extractFunction)},
-	settings.ExtractMethod:     {fix: singleFile(extractMethod)},
-	settings.InvertIfCondition: {fix: singleFile(invertIfCondition)},
-	settings.StubMethods:       {fix: stubSuggestedFixFunc},
-	settings.AddEmbedImport: {
-		canFix: fixedByImportingEmbed,
-		fix:    addEmbedImport,
-	},
+var suggestedFixes = map[settings.Fix]suggestedFixFunc{
+	settings.FillStruct:        singleFile(fillstruct.SuggestedFix),
+	settings.UndeclaredName:    singleFile(undeclaredname.SuggestedFix),
+	settings.ExtractVariable:   singleFile(extractVariable),
+	settings.InlineCall:        inlineCall,
+	settings.ExtractFunction:   singleFile(extractFunction),
+	settings.ExtractMethod:     singleFile(extractMethod),
+	settings.InvertIfCondition: singleFile(invertIfCondition),
+	settings.StubMethods:       stubSuggestedFixFunc,
+	settings.AddEmbedImport:    addEmbedImport,
 }
 
 type singleFileFixFunc func(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error)
 
 // singleFile calls analyzers that expect inputs for a single file.
 func singleFile(sf singleFileFixFunc) suggestedFixFunc {
-	return func(ctx context.Context, snapshot Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
+	return func(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
 		pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 		if err != nil {
 			return nil, err
@@ -94,34 +84,17 @@ func singleFile(sf singleFileFixFunc) suggestedFixFunc {
 	}
 }
 
-// CanFix returns true if Analyzer.Fix can fix the Diagnostic.
-//
-// It returns true by default: only if the analyzer is configured explicitly to
-// ignore this diagnostic does it return false.
-//
-// TODO(rfindley): reconcile the semantics of 'Fix' and
-// 'suggestedAnalysisFixes'.
-func CanFix(a *settings.Analyzer, d *Diagnostic) bool {
-	fixer, ok := suggestedFixes[a.Fix]
-	if !ok || fixer.canFix == nil {
-		// See the above TODO: this doesn't make sense, but preserves pre-existing
-		// semantics.
-		return true
-	}
-	return fixer.canFix(d)
-}
-
 // ApplyFix applies the command's suggested fix to the given file and
 // range, returning the resulting edits.
-func ApplyFix(ctx context.Context, fix settings.Fix, snapshot Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
+func ApplyFix(ctx context.Context, fix settings.Fix, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
 	fixer, ok := suggestedFixes[fix]
 	if !ok {
 		return nil, fmt.Errorf("no suggested fix function for %s", fix)
 	}
-	return fixer.fix(ctx, snapshot, fh, rng)
+	return fixer(ctx, snapshot, fh, rng)
 }
 
-func suggestedFixToEdits(ctx context.Context, snapshot Snapshot, fset *token.FileSet, suggestion *analysis.SuggestedFix) ([]protocol.TextDocumentEdit, error) {
+func suggestedFixToEdits(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, suggestion *analysis.SuggestedFix) ([]protocol.TextDocumentEdit, error) {
 	editsPerFile := map[protocol.DocumentURI]*protocol.TextDocumentEdit{}
 	for _, edit := range suggestion.TextEdits {
 		tokFile := fset.File(edit.Pos)
@@ -169,16 +142,8 @@ func suggestedFixToEdits(ctx context.Context, snapshot Snapshot, fset *token.Fil
 	return edits, nil
 }
 
-// fixedByImportingEmbed returns true if diag can be fixed by addEmbedImport.
-func fixedByImportingEmbed(diag *Diagnostic) bool {
-	if diag == nil {
-		return false
-	}
-	return diag.Message == embeddirective.MissingImportMessage
-}
-
 // addEmbedImport adds a missing embed "embed" import with blank name.
-func addEmbedImport(ctx context.Context, snapshot Snapshot, fh file.Handle, _ protocol.Range) ([]protocol.TextDocumentEdit, error) {
+func addEmbedImport(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, _ protocol.Range) ([]protocol.TextDocumentEdit, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, fmt.Errorf("narrow pkg: %w", err)

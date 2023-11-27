@@ -7,29 +7,19 @@ package source
 import (
 	"context"
 	"fmt"
-	"path"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"sort"
 	"strings"
 	"unicode"
 
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fuzzy"
 )
-
-// Symbol holds a precomputed symbol value. Note: we avoid using the
-// protocol.SymbolInformation struct here in order to reduce the size of each
-// symbol.
-type Symbol struct {
-	Name  string
-	Kind  protocol.SymbolKind
-	Range protocol.Range
-}
 
 // maxSymbols defines the maximum number of symbol results that should ever be
 // sent in response to a client.
@@ -52,7 +42,7 @@ const maxSymbols = 100
 // with a different configured SymbolMatcher per View. Therefore we assume that
 // Session level configuration will define the SymbolMatcher to be used for the
 // WorkspaceSymbols method.
-func WorkspaceSymbols(ctx context.Context, matcher settings.SymbolMatcher, style settings.SymbolStyle, snapshots []Snapshot, query string) ([]protocol.SymbolInformation, error) {
+func WorkspaceSymbols(ctx context.Context, matcher settings.SymbolMatcher, style settings.SymbolStyle, snapshots []*cache.Snapshot, query string) ([]protocol.SymbolInformation, error) {
 	ctx, done := event.Start(ctx, "source.WorkspaceSymbols")
 	defer done()
 	if query == "" {
@@ -297,7 +287,7 @@ func (c comboMatcher) match(chunks []string) (int, float64) {
 //     of zero indicates no match.
 //   - A symbolizer determines how we extract the symbol for an object. This
 //     enables the 'symbolStyle' configuration option.
-func collectSymbols(ctx context.Context, snapshots []Snapshot, matcherType settings.SymbolMatcher, symbolizer symbolizer, query string) ([]protocol.SymbolInformation, error) {
+func collectSymbols(ctx context.Context, snapshots []*cache.Snapshot, matcherType settings.SymbolMatcher, symbolizer symbolizer, query string) ([]protocol.SymbolInformation, error) {
 	// Extract symbols from all files.
 	var work []symbolFile
 	var roots []string
@@ -310,7 +300,7 @@ func collectSymbols(ctx context.Context, snapshots []Snapshot, matcherType setti
 		roots = append(roots, strings.TrimRight(string(folderURI), "/"))
 
 		filters := snapshot.Options().DirectoryFilters
-		filterer := NewFilterer(filters)
+		filterer := cache.NewFilterer(filters)
 		folder := filepath.ToSlash(folderURI.Path())
 
 		workspaceOnly := true
@@ -370,82 +360,11 @@ func collectSymbols(ctx context.Context, snapshots []Snapshot, matcherType setti
 	return unified.results(), nil
 }
 
-type Filterer struct {
-	// Whether a filter is excluded depends on the operator (first char of the raw filter).
-	// Slices filters and excluded then should have the same length.
-	filters  []*regexp.Regexp
-	excluded []bool
-}
-
-// NewFilterer computes regular expression form of all raw filters
-func NewFilterer(rawFilters []string) *Filterer {
-	var f Filterer
-	for _, filter := range rawFilters {
-		filter = path.Clean(filepath.ToSlash(filter))
-		// TODO(dungtuanle): fix: validate [+-] prefix.
-		op, prefix := filter[0], filter[1:]
-		// convertFilterToRegexp adds "/" at the end of prefix to handle cases where a filter is a prefix of another filter.
-		// For example, it prevents [+foobar, -foo] from excluding "foobar".
-		f.filters = append(f.filters, convertFilterToRegexp(filepath.ToSlash(prefix)))
-		f.excluded = append(f.excluded, op == '-')
-	}
-
-	return &f
-}
-
-// Disallow return true if the path is excluded from the filterer's filters.
-func (f *Filterer) Disallow(path string) bool {
-	// Ensure trailing but not leading slash.
-	path = strings.TrimPrefix(path, "/")
-	if !strings.HasSuffix(path, "/") {
-		path += "/"
-	}
-
-	// TODO(adonovan): opt: iterate in reverse and break at first match.
-	excluded := false
-	for i, filter := range f.filters {
-		if filter.MatchString(path) {
-			excluded = f.excluded[i] // last match wins
-		}
-	}
-	return excluded
-}
-
-// convertFilterToRegexp replaces glob-like operator substrings in a string file path to their equivalent regex forms.
-// Supporting glob-like operators:
-//   - **: match zero or more complete path segments
-func convertFilterToRegexp(filter string) *regexp.Regexp {
-	if filter == "" {
-		return regexp.MustCompile(".*")
-	}
-	var ret strings.Builder
-	ret.WriteString("^")
-	segs := strings.Split(filter, "/")
-	for _, seg := range segs {
-		// Inv: seg != "" since path is clean.
-		if seg == "**" {
-			ret.WriteString(".*")
-		} else {
-			ret.WriteString(regexp.QuoteMeta(seg))
-		}
-		ret.WriteString("/")
-	}
-	pattern := ret.String()
-
-	// Remove unnecessary "^.*" prefix, which increased
-	// BenchmarkWorkspaceSymbols time by ~20% (even though
-	// filter CPU time increased by only by ~2.5%) when the
-	// default filter was changed to "**/node_modules".
-	pattern = strings.TrimPrefix(pattern, "^.*")
-
-	return regexp.MustCompile(pattern)
-}
-
 // symbolFile holds symbol information for a single file.
 type symbolFile struct {
 	uri  protocol.DocumentURI
 	md   *Metadata
-	syms []Symbol
+	syms []cache.Symbol
 }
 
 // matchFile scans a symbol file and adds matching symbols to the store.

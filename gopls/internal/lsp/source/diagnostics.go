@@ -7,23 +7,17 @@ package source
 import (
 	"context"
 
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 )
 
-type SuggestedFix struct {
-	Title      string
-	Edits      map[protocol.DocumentURI][]protocol.TextEdit
-	Command    *protocol.Command
-	ActionKind protocol.CodeActionKind
-}
-
 // Analyze reports go/analysis-framework diagnostics in the specified package.
 //
 // If the provided tracker is non-nil, it may be used to provide notifications
 // of the ongoing analysis pass.
-func Analyze(ctx context.Context, snapshot Snapshot, pkgIDs map[PackageID]unit, tracker *progress.Tracker) (map[protocol.DocumentURI][]*Diagnostic, error) {
+func Analyze(ctx context.Context, snapshot *cache.Snapshot, pkgIDs map[PackageID]unit, tracker *progress.Tracker) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	// Exit early if the context has been canceled. This also protects us
 	// from a race on Options, see golang/go#36699.
 	if ctx.Err() != nil {
@@ -50,7 +44,7 @@ func Analyze(ctx context.Context, snapshot Snapshot, pkgIDs map[PackageID]unit, 
 	}
 
 	// Report diagnostics and errors from root analyzers.
-	reports := make(map[protocol.DocumentURI][]*Diagnostic)
+	reports := make(map[protocol.DocumentURI][]*cache.Diagnostic)
 	for _, diag := range analysisDiagnostics {
 		reports[diag.URI] = append(reports[diag.URI], diag)
 	}
@@ -77,7 +71,7 @@ func Analyze(ctx context.Context, snapshot Snapshot, pkgIDs map[PackageID]unit, 
 // easily choose whether to keep the results separate or combined.
 //
 // The arguments are not modified.
-func CombineDiagnostics(tdiags []*Diagnostic, adiags []*Diagnostic, outT, outA *[]*Diagnostic) {
+func CombineDiagnostics(tdiags []*cache.Diagnostic, adiags []*cache.Diagnostic, outT, outA *[]*cache.Diagnostic) {
 
 	// Build index of (list+parse+)type errors.
 	type key struct {

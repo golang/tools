@@ -11,6 +11,8 @@ import (
 	"go/token"
 	"strings"
 
+	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 )
@@ -22,7 +24,7 @@ var ErrNoLinkname = errors.New("no linkname directive found")
 
 // LinknameDefinition finds the definition of the linkname directive in m at pos.
 // If there is no linkname directive at pos, returns ErrNoLinkname.
-func LinknameDefinition(ctx context.Context, snapshot Snapshot, m *protocol.Mapper, from protocol.Position) ([]protocol.Location, error) {
+func LinknameDefinition(ctx context.Context, snapshot *cache.Snapshot, m *protocol.Mapper, from protocol.Position) ([]protocol.Location, error) {
 	pkgPath, name, _ := parseLinkname(m, from)
 	if pkgPath == "" {
 		return nil, ErrNoLinkname
@@ -100,7 +102,7 @@ func parseLinkname(m *protocol.Mapper, pos protocol.Position) (pkgPath, name str
 
 // findLinkname searches dependencies of packages containing fh for an object
 // with linker name matching the given package path and name.
-func findLinkname(ctx context.Context, snapshot Snapshot, pkgPath PackagePath, name string) (Package, *ParsedGoFile, token.Pos, error) {
+func findLinkname(ctx context.Context, snapshot *cache.Snapshot, pkgPath PackagePath, name string) (*cache.Package, *ParsedGoFile, token.Pos, error) {
 	// Typically the linkname refers to a forward dependency
 	// or a reverse dependency, but in general it may refer
 	// to any package that is linked with this one.
@@ -109,7 +111,7 @@ func findLinkname(ctx context.Context, snapshot Snapshot, pkgPath PackagePath, n
 	if err != nil {
 		return nil, nil, token.NoPos, err
 	}
-	RemoveIntermediateTestVariants(&metas)
+	metadata.RemoveIntermediateTestVariants(&metas)
 	for _, meta := range metas {
 		if meta.PkgPath == pkgPath {
 			pkgMeta = meta

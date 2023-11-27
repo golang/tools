@@ -19,6 +19,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/cache/methodsets"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
@@ -46,7 +48,7 @@ import (
 //
 // If the position denotes a method, the computation is applied to its
 // receiver type and then its corresponding methods are returned.
-func Implementation(ctx context.Context, snapshot Snapshot, f file.Handle, pp protocol.Position) ([]protocol.Location, error) {
+func Implementation(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp protocol.Position) ([]protocol.Location, error) {
 	ctx, done := event.Start(ctx, "source.Implementation")
 	defer done()
 
@@ -70,13 +72,13 @@ func Implementation(ctx context.Context, snapshot Snapshot, f file.Handle, pp pr
 	return locs, nil
 }
 
-func implementations(ctx context.Context, snapshot Snapshot, fh file.Handle, pp protocol.Position) ([]protocol.Location, error) {
+func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) ([]protocol.Location, error) {
 	obj, pkg, err := implementsObj(ctx, snapshot, fh.URI(), pp)
 	if err != nil {
 		return nil, err
 	}
 
-	var localPkgs []Package
+	var localPkgs []*cache.Package
 	if obj.Pos().IsValid() { // no local package for error or error.Error
 		declPosn := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
 		// Type-check the declaring package (incl. variants) for use
@@ -88,7 +90,7 @@ func implementations(ctx context.Context, snapshot Snapshot, fh file.Handle, pp 
 		if err != nil {
 			return nil, err
 		}
-		RemoveIntermediateTestVariants(&declMetas)
+		metadata.RemoveIntermediateTestVariants(&declMetas)
 		if len(declMetas) == 0 {
 			return nil, fmt.Errorf("no packages for file %s", declURI)
 		}
@@ -141,7 +143,7 @@ func implementations(ctx context.Context, snapshot Snapshot, fh file.Handle, pp 
 	if err != nil {
 		return nil, err
 	}
-	RemoveIntermediateTestVariants(&globalMetas)
+	metadata.RemoveIntermediateTestVariants(&globalMetas)
 	globalIDs := make([]PackageID, 0, len(globalMetas))
 
 	var pkgPath PackagePath
@@ -209,7 +211,7 @@ func implementations(ctx context.Context, snapshot Snapshot, fh file.Handle, pp 
 
 // offsetToLocation converts an offset-based position to a protocol.Location,
 // which requires reading the file.
-func offsetToLocation(ctx context.Context, snapshot Snapshot, filename string, start, end int) (protocol.Location, error) {
+func offsetToLocation(ctx context.Context, snapshot *cache.Snapshot, filename string, start, end int) (protocol.Location, error) {
 	uri := protocol.URIFromPath(filename)
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
@@ -228,7 +230,7 @@ func offsetToLocation(ctx context.Context, snapshot Snapshot, filename string, s
 //
 // The returned Package is the narrowest package containing ppos, which is the
 // package using the resulting obj but not necessarily the declaring package.
-func implementsObj(ctx context.Context, snapshot Snapshot, uri protocol.DocumentURI, ppos protocol.Position) (types.Object, Package, error) {
+func implementsObj(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, ppos protocol.Position) (types.Object, *cache.Package, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, uri)
 	if err != nil {
 		return nil, nil, err
@@ -294,7 +296,7 @@ func implementsObj(ctx context.Context, snapshot Snapshot, uri protocol.Document
 // function's results may include type declarations that are local to
 // a function body. The global search index excludes such types
 // because reliably naming such types is hard.)
-func localImplementations(ctx context.Context, snapshot Snapshot, pkg Package, queryType types.Type, methodID string) ([]protocol.Location, error) {
+func localImplementations(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, queryType types.Type, methodID string) ([]protocol.Location, error) {
 	queryType = methodsets.EnsurePointer(queryType)
 
 	// Scan through all type declarations in the syntax.
@@ -384,7 +386,7 @@ func localImplementations(ctx context.Context, snapshot Snapshot, pkg Package, q
 var errorInterfaceType = types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
 
 // errorLocation returns the location of the 'error' type in builtin.go.
-func errorLocation(ctx context.Context, snapshot Snapshot) (protocol.Location, error) {
+func errorLocation(ctx context.Context, snapshot *cache.Snapshot) (protocol.Location, error) {
 	pgf, err := snapshot.BuiltinFile(ctx)
 	if err != nil {
 		return protocol.Location{}, err

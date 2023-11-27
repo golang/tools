@@ -10,6 +10,7 @@ import (
 	"go/token"
 	"go/types"
 
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/snippet"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -320,7 +321,7 @@ func (c *completer) addErrCheck() {
 // returns "b" etc. An empty string indicates that the function signature
 // does not take a testing.TB parameter or does so but is ignored such
 // as func someFunc(*testing.T).
-func getTestVar(enclosingFunc *funcInfo, pkg source.Package) string {
+func getTestVar(enclosingFunc *funcInfo, pkg *cache.Package) string {
 	if enclosingFunc == nil || enclosingFunc.sig == nil {
 		return ""
 	}

@@ -15,12 +15,13 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 )
 
-func SignatureHelp(ctx context.Context, snapshot Snapshot, fh file.Handle, position protocol.Position) (*protocol.SignatureInformation, int, error) {
+func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) (*protocol.SignatureInformation, int, error) {
 	ctx, done := event.Start(ctx, "source.SignatureHelp")
 	defer done()
 
@@ -140,7 +141,7 @@ FindCall:
 	}, activeParam, nil
 }
 
-func builtinSignature(ctx context.Context, snapshot Snapshot, callExpr *ast.CallExpr, name string, pos token.Pos) (*protocol.SignatureInformation, int, error) {
+func builtinSignature(ctx context.Context, snapshot *cache.Snapshot, callExpr *ast.CallExpr, name string, pos token.Pos) (*protocol.SignatureInformation, int, error) {
 	sig, err := NewBuiltinSignature(ctx, snapshot, name)
 	if err != nil {
 		return nil, 0, err

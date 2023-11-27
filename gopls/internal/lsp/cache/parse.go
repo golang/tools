@@ -15,8 +15,9 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 )
 
-// ParseGo parses the file whose contents are provided by fh, using a cache.
+// ParseGo parses the file whose contents are provided by fh.
 // The resulting tree may have been fixed up.
+// If the file is not available, returns nil and an error.
 func (s *Snapshot) ParseGo(ctx context.Context, fh file.Handle, mode parser.Mode) (*ParsedGoFile, error) {
 	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), mode, false, fh)
 	if err != nil {

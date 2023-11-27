@@ -29,6 +29,14 @@ import (
 // This error is sought by mod diagnostics.
 var ErrNoModOnDisk = errors.New("go.mod file is not on disk")
 
+// A TidiedModule contains the results of running `go mod tidy` on a module.
+type TidiedModule struct {
+	// Diagnostics representing changes made by `go mod tidy`.
+	Diagnostics []*Diagnostic
+	// The bytes of the go.mod file after it was tidied.
+	TidiedContent []byte
+}
+
 // ModTidy returns the go.mod file that would be obtained by running
 // "go mod tidy". Concurrent requests are combined into a single command.
 func (s *Snapshot) ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule, error) {

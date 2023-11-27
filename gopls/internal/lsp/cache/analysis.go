@@ -35,6 +35,7 @@ import (
 	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/frob"
 	"golang.org/x/tools/gopls/internal/lsp/progress"
@@ -1001,7 +1002,7 @@ func (an *analysisNode) typeCheck(parsed []*ParsedGoFile) *analysisPackage {
 			}
 
 			// (Duplicates logic from check.go.)
-			if !IsValidImport(an.m.PkgPath, dep.m.PkgPath) {
+			if !metadata.IsValidImport(an.m.PkgPath, dep.m.PkgPath) {
 				return nil, fmt.Errorf("invalid use of internal package %s", importPath)
 			}
 

@@ -12,11 +12,12 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/event"
 )
 
-func DocumentSymbols(ctx context.Context, snapshot Snapshot, fh file.Handle) ([]protocol.DocumentSymbol, error) {
+func DocumentSymbols(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.DocumentSymbol, error) {
 	ctx, done := event.Start(ctx, "source.DocumentSymbols")
 	defer done()
 

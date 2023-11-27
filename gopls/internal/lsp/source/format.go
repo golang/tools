@@ -17,6 +17,7 @@ import (
 	"text/scanner"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
 	"golang.org/x/tools/internal/diff"
@@ -26,7 +27,7 @@ import (
 )
 
 // Format formats a file with a given range.
-func Format(ctx context.Context, snapshot Snapshot, fh file.Handle) ([]protocol.TextEdit, error) {
+func Format(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.TextEdit, error) {
 	ctx, done := event.Start(ctx, "source.Format")
 	defer done()
 
@@ -109,7 +110,7 @@ type ImportFix struct {
 // In addition to returning the result of applying all edits,
 // it returns a list of fixes that could be applied to the file, with the
 // corresponding TextEdits that would be needed to apply that fix.
-func AllImportsFixes(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile) (allFixEdits []protocol.TextEdit, editsPerFix []*ImportFix, err error) {
+func AllImportsFixes(ctx context.Context, snapshot *cache.Snapshot, pgf *ParsedGoFile) (allFixEdits []protocol.TextEdit, editsPerFix []*ImportFix, err error) {
 	ctx, done := event.Start(ctx, "source.AllImportsFixes")
 	defer done()
 
@@ -124,7 +125,7 @@ func AllImportsFixes(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile) 
 
 // computeImportEdits computes a set of edits that perform one or all of the
 // necessary import fixes.
-func computeImportEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*ImportFix, err error) {
+func computeImportEdits(ctx context.Context, snapshot *cache.Snapshot, pgf *ParsedGoFile, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*ImportFix, err error) {
 	filename := pgf.URI.Path()
 
 	// Build up basic information about the original file.
@@ -154,7 +155,7 @@ func computeImportEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFil
 }
 
 // ComputeOneImportFixEdits returns text edits for a single import fix.
-func ComputeOneImportFixEdits(snapshot Snapshot, pgf *ParsedGoFile, fix *imports.ImportFix) ([]protocol.TextEdit, error) {
+func ComputeOneImportFixEdits(snapshot *cache.Snapshot, pgf *ParsedGoFile, fix *imports.ImportFix) ([]protocol.TextEdit, error) {
 	options := &imports.Options{
 		LocalPrefix: snapshot.Options().Local,
 		// Defaults.
@@ -168,7 +169,7 @@ func ComputeOneImportFixEdits(snapshot Snapshot, pgf *ParsedGoFile, fix *imports
 	return computeFixEdits(snapshot, pgf, options, []*imports.ImportFix{fix})
 }
 
-func computeFixEdits(snapshot Snapshot, pgf *ParsedGoFile, options *imports.Options, fixes []*imports.ImportFix) ([]protocol.TextEdit, error) {
+func computeFixEdits(snapshot *cache.Snapshot, pgf *ParsedGoFile, options *imports.Options, fixes []*imports.ImportFix) ([]protocol.TextEdit, error) {
 	// trim the original data to match fixedData
 	left, err := importPrefix(pgf.Src)
 	if err != nil {
@@ -301,7 +302,7 @@ func scanForCommentEnd(src []byte) int {
 	return 0
 }
 
-func computeTextEdits(ctx context.Context, snapshot Snapshot, pgf *ParsedGoFile, formatted string) ([]protocol.TextEdit, error) {
+func computeTextEdits(ctx context.Context, snapshot *cache.Snapshot, pgf *ParsedGoFile, formatted string) ([]protocol.TextEdit, error) {
 	_, done := event.Start(ctx, "source.computeTextEdits")
 	defer done()
 

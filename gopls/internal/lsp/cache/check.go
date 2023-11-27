@@ -29,7 +29,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -86,7 +85,10 @@ type pkgOrErr struct {
 	err error
 }
 
-// TypeCheck type-checks the specified packages.
+// TypeCheck parses and type-checks the specified packages,
+// and returns them in the same order as the ids.
+// The resulting packages' types may belong to different importers,
+// so types from different packages are incommensurable.
 //
 // The resulting packages slice always contains len(ids) entries, though some
 // of them may be nil if (and only if) the resulting error is non-nil.
@@ -95,8 +97,13 @@ type pkgOrErr struct {
 // This is different from having type-checking errors: a failure to type-check
 // indicates context cancellation or otherwise significant failure to perform
 // the type-checking operation.
-func (s *Snapshot) TypeCheck(ctx context.Context, ids ...PackageID) ([]Package_, error) {
-	pkgs := make([]Package_, len(ids))
+//
+// In general, clients should never need to type-checked syntax for an
+// intermediate test variant (ITV) package. Callers should apply
+// RemoveIntermediateTestVariants (or equivalent) before this method, or any
+// of the potentially type-checking methods below.
+func (s *Snapshot) TypeCheck(ctx context.Context, ids ...PackageID) ([]*Package, error) {
+	pkgs := make([]*Package, len(ids))
 
 	var (
 		needIDs []PackageID // ids to type-check
@@ -202,7 +209,7 @@ func (s *Snapshot) resolveImportGraph() (*importGraph, error) {
 		if err != nil {
 			return nil, err
 		}
-		RemoveIntermediateTestVariants(&meta)
+		metadata.RemoveIntermediateTestVariants(&meta)
 		for _, m := range meta {
 			openPackages[m.ID] = true
 		}
@@ -779,8 +786,8 @@ type packageHandle struct {
 	// load diagnostics to an entirely separate component, so that Packages need
 	// only be concerned with parsing and type checking.
 	// (Nevertheless, since the lifetime of load diagnostics matches that of the
-	// Metadata, it is convienient to memoize them here.)
-	loadDiagnostics []*source.Diagnostic
+	// Metadata, it is convenient to memoize them here.)
+	loadDiagnostics []*Diagnostic
 
 	// Local data:
 
@@ -1584,7 +1591,7 @@ func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs
 				// e.g. missing metadata for dependencies in buildPackageHandle
 				return nil, missingPkgError(inputs.id, path, inputs.moduleMode)
 			}
-			if !IsValidImport(inputs.pkgPath, depPH.m.PkgPath) {
+			if !metadata.IsValidImport(inputs.pkgPath, depPH.m.PkgPath) {
 				return nil, fmt.Errorf("invalid use of internal package %q", path)
 			}
 			return b.getImportPackage(ctx, id)
@@ -1832,11 +1839,11 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget 
 					msg += fmt.Sprintf(" (this error: %v)", e.Msg)
 				}
 			}
-			diag := &source.Diagnostic{
+			diag := &Diagnostic{
 				URI:      pgf.URI,
 				Range:    rng,
 				Severity: protocol.SeverityError,
-				Source:   source.TypeError,
+				Source:   TypeError,
 				Message:  msg,
 			}
 			if code != 0 {

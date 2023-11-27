@@ -501,6 +501,8 @@ func viewEnv(v *View) string {
 	return buf.String()
 }
 
+// RunProcessEnvFunc runs fn with the process env for this snapshot's view.
+// Note: the process env contains cached module and filesystem state.
 func (s *Snapshot) RunProcessEnvFunc(ctx context.Context, fn func(context.Context, *imports.Options) error) error {
 	return s.view.importsState.runProcessEnvFunc(ctx, s, fn)
 }

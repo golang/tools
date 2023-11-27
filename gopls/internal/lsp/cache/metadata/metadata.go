@@ -210,3 +210,33 @@ func UnquoteImportPath(spec *ast.ImportSpec) ImportPath {
 	}
 	return ImportPath(path)
 }
+
+// RemoveIntermediateTestVariants removes intermediate test variants, modifying the array.
+// We use a pointer to a slice make it impossible to forget to use the result.
+func RemoveIntermediateTestVariants(pmetas *[]*Metadata) {
+	metas := *pmetas
+	res := metas[:0]
+	for _, m := range metas {
+		if !m.IsIntermediateTestVariant() {
+			res = append(res, m)
+		}
+	}
+	*pmetas = res
+}
+
+// IsValidImport returns whether importPkgPath is importable
+// by pkgPath
+func IsValidImport(pkgPath, importPkgPath PackagePath) bool {
+	i := strings.LastIndex(string(importPkgPath), "/internal/")
+	if i == -1 {
+		return true
+	}
+	// TODO(rfindley): this looks wrong: IsCommandLineArguments is meant to
+	// operate on package IDs, not package paths.
+	if IsCommandLineArguments(PackageID(pkgPath)) {
+		return true
+	}
+	// TODO(rfindley): this is wrong. mod.testx/p should not be able to
+	// import mod.test/internal: https://go.dev/play/p/-Ca6P-E4V4q
+	return strings.HasPrefix(string(pkgPath), string(importPkgPath[:i]))
+}

@@ -367,7 +367,7 @@ func (c *commandHandler) Vendor(ctx context.Context, args command.URIArg) error 
 		// If golang/go#44119 is resolved, go mod vendor will instead modify
 		// modules.txt in-place. In that case we could theoretically allow this
 		// command to run concurrently.
-		err := deps.snapshot.RunGoCommandPiped(ctx, source.Normal|source.AllowNetwork, &gocommand.Invocation{
+		err := deps.snapshot.RunGoCommandPiped(ctx, cache.Normal|cache.AllowNetwork, &gocommand.Invocation{
 			Verb:       "mod",
 			Args:       []string{"vendor"},
 			WorkingDir: filepath.Dir(args.URI.Path()),
@@ -451,7 +451,7 @@ func (c *commandHandler) RemoveDependency(ctx context.Context, args command.Remo
 
 // dropDependency returns the edits to remove the given require from the go.mod
 // file.
-func dropDependency(snapshot source.Snapshot, pm *source.ParsedModule, modulePath string) ([]protocol.TextEdit, error) {
+func dropDependency(snapshot *cache.Snapshot, pm *cache.ParsedModule, modulePath string) ([]protocol.TextEdit, error) {
 	// We need a private copy of the parsed go.mod file, since we're going to
 	// modify it.
 	copied, err := modfile.Parse("", pm.Mapper.Content, nil)
@@ -511,7 +511,7 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot,
 			Args:       []string{pkgPath, "-v", "-count=1", "-run", fmt.Sprintf("^%s$", funcName)},
 			WorkingDir: filepath.Dir(uri.Path()),
 		}
-		if err := snapshot.RunGoCommandPiped(ctx, source.Normal, inv, out, out); err != nil {
+		if err := snapshot.RunGoCommandPiped(ctx, cache.Normal, inv, out, out); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return err
 			}
@@ -527,7 +527,7 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot,
 			Args:       []string{pkgPath, "-v", "-run=^$", "-bench", fmt.Sprintf("^%s$", funcName)},
 			WorkingDir: filepath.Dir(uri.Path()),
 		}
-		if err := snapshot.RunGoCommandPiped(ctx, source.Normal, inv, out, out); err != nil {
+		if err := snapshot.RunGoCommandPiped(ctx, cache.Normal, inv, out, out); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return err
 			}
@@ -587,7 +587,7 @@ func (c *commandHandler) Generate(ctx context.Context, args command.GenerateArgs
 			WorkingDir: args.Dir.Path(),
 		}
 		stderr := io.MultiWriter(er, progress.NewWorkDoneWriter(ctx, deps.work))
-		if err := deps.snapshot.RunGoCommandPiped(ctx, source.Normal, inv, er, stderr); err != nil {
+		if err := deps.snapshot.RunGoCommandPiped(ctx, cache.Normal, inv, er, stderr); err != nil {
 			return err
 		}
 		return nil
@@ -600,7 +600,7 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 		progress: "Running go get",
 	}, func(ctx context.Context, deps commandDeps) error {
 		// Run on a throwaway go.mod, otherwise it'll write to the real one.
-		stdout, err := deps.snapshot.RunGoCommandDirect(ctx, source.WriteTemporaryModFile|source.AllowNetwork, &gocommand.Invocation{
+		stdout, err := deps.snapshot.RunGoCommandDirect(ctx, cache.WriteTemporaryModFile|cache.AllowNetwork, &gocommand.Invocation{
 			Verb:       "list",
 			Args:       []string{"-f", "{{.Module.Path}}@{{.Module.Version}}", args.Pkg},
 			WorkingDir: filepath.Dir(args.URI.Path()),
@@ -731,8 +731,8 @@ func addModuleRequire(invoke func(...string) (*bytes.Buffer, error), args []stri
 }
 
 // TODO(rfindley): inline.
-func (s *server) getUpgrades(ctx context.Context, snapshot source.Snapshot, uri protocol.DocumentURI, modules []string) (map[string]string, error) {
-	stdout, err := snapshot.RunGoCommandDirect(ctx, source.Normal|source.AllowNetwork, &gocommand.Invocation{
+func (s *server) getUpgrades(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, modules []string) (map[string]string, error) {
+	stdout, err := snapshot.RunGoCommandDirect(ctx, cache.Normal|cache.AllowNetwork, &gocommand.Invocation{
 		Verb:       "list",
 		Args:       append([]string{"-m", "-u", "-json"}, modules...),
 		WorkingDir: filepath.Dir(uri.Path()),

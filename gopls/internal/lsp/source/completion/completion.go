@@ -29,6 +29,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	goplsastutil "golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
@@ -168,8 +169,8 @@ func (ipm insensitivePrefixMatcher) Score(candidateLabel string) float32 {
 
 // completer contains the necessary information for a single completion request.
 type completer struct {
-	snapshot source.Snapshot
-	pkg      source.Package
+	snapshot *cache.Snapshot
+	pkg      *cache.Package
 	qf       types.Qualifier          // for qualifying typed expressions
 	mq       source.MetadataQualifier // for syntactic qualifying
 	opts     *completionOptions
@@ -444,7 +445,7 @@ func (e ErrIsDefinition) Error() string {
 // The selection is computed based on the preceding identifier and can be used by
 // the client to score the quality of the completion. For instance, some clients
 // may tolerate imperfect matches as valid completion results, since users may make typos.
-func Completion(ctx context.Context, snapshot source.Snapshot, fh file.Handle, protoPos protocol.Position, protoContext protocol.CompletionContext) ([]CompletionItem, *Selection, error) {
+func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, protoPos protocol.Position, protoContext protocol.CompletionContext) ([]CompletionItem, *Selection, error) {
 	ctx, done := event.Start(ctx, "completion.Completion")
 	defer done()
 

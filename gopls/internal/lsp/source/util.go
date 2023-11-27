@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/safetoken"
@@ -30,7 +31,7 @@ import (
 //
 // TODO(adonovan): opt: this function does too much.
 // Move snapshot.ReadFile into the caller (most of which have already done it).
-func IsGenerated(ctx context.Context, snapshot Snapshot, uri protocol.DocumentURI) bool {
+func IsGenerated(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) bool {
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
 		return false
@@ -138,13 +139,13 @@ func Deref(typ types.Type) types.Type {
 	}
 }
 
-func SortDiagnostics(d []*Diagnostic) {
+func SortDiagnostics(d []*cache.Diagnostic) {
 	sort.Slice(d, func(i int, j int) bool {
 		return CompareDiagnostic(d[i], d[j]) < 0
 	})
 }
 
-func CompareDiagnostic(a, b *Diagnostic) int {
+func CompareDiagnostic(a, b *cache.Diagnostic) int {
 	if r := protocol.CompareRange(a.Range, b.Range); r != 0 {
 		return r
 	}
@@ -408,23 +409,6 @@ func isDirective(c string) bool {
 		}
 	}
 	return true
-}
-
-// IsValidImport returns whether importPkgPath is importable
-// by pkgPath
-func IsValidImport(pkgPath, importPkgPath PackagePath) bool {
-	i := strings.LastIndex(string(importPkgPath), "/internal/")
-	if i == -1 {
-		return true
-	}
-	// TODO(rfindley): this looks wrong: IsCommandLineArguments is meant to
-	// operate on package IDs, not package paths.
-	if metadata.IsCommandLineArguments(PackageID(pkgPath)) {
-		return true
-	}
-	// TODO(rfindley): this is wrong. mod.testx/p should not be able to
-	// import mod.test/internal: https://go.dev/play/p/-Ca6P-E4V4q
-	return strings.HasPrefix(string(pkgPath), string(importPkgPath[:i]))
 }
 
 // embeddedIdent returns the type name identifier for an embedding x, if x in a

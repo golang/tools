@@ -10,11 +10,11 @@ import (
 	"regexp"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 )
 
-func Highlight(ctx context.Context, snapshot source.Snapshot, fh file.Handle, loc protocol.Position) ([]protocol.DocumentHighlight, error) {
+func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, loc protocol.Position) ([]protocol.DocumentHighlight, error) {
 	buf, err := fh.Content()
 	if err != nil {
 		return nil, err
