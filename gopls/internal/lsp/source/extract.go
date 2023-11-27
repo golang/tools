@@ -333,17 +333,27 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 		// the selection (isAssigned), (2) it must be used at least once after the
 		// selection (isUsed), and (3) its first use after the selection
 		// cannot be its own reassignment or redefinition (objOverriden).
-		if v.obj.Parent() == nil {
+		vscope := v.obj.Parent()
+		if vscope == nil {
 			return nil, fmt.Errorf("parent nil")
 		}
-		isUsed, firstUseAfter := objUsed(info, end, v.obj.Parent().End(), v.obj)
+		isUsed, firstUseAfter := objUsed(info, end, vscope.End(), v.obj)
 		if v.assigned && isUsed && !varOverridden(info, firstUseAfter, v.obj, v.free, outer) {
 			returnTypes = append(returnTypes, &ast.Field{Type: typ})
 			returns = append(returns, identifier)
 			if !v.free {
 				uninitialized = append(uninitialized, v.obj)
-			} else if v.obj.Parent().Pos() == startParent.Pos() {
-				canRedefineCount++
+
+			} else {
+				// In go1.22, Scope.Pos for function scopes changed (#60752):
+				// it used to start at the body ('{'), now it starts at "func".
+				//
+				// The second condition below handles the case when
+				// v's block is the FuncDecl.Body itself.
+				if vscope.Pos() == startParent.Pos() ||
+					startParent == outer.Body && vscope == info.Scopes[outer.Type] {
+					canRedefineCount++
+				}
 			}
 		}
 		// An identifier must meet two conditions to become a parameter of the
