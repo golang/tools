@@ -17,7 +17,7 @@ func SetMode(mode string) error {
 	return nil
 }
 
-func Start() {
+func Upload() {
 }
 
 func RecordClientInfo(params *protocol.ParamInitialize) {

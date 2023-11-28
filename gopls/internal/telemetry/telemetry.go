@@ -26,10 +26,8 @@ func SetMode(mode string) error {
 	return telemetry.SetMode(mode)
 }
 
-// Start starts telemetry instrumentation.
-func Start() {
-	counter.Open()
-	// upload only once at startup, hoping that users restart gopls often.
+// Upload starts a goroutine for telemetry upload.
+func Upload() {
 	go upload.Run(nil)
 }
 

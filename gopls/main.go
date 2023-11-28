@@ -17,14 +17,14 @@ import (
 	"context"
 	"os"
 
+	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/gopls/internal/cmd"
 	"golang.org/x/tools/gopls/internal/hooks"
-	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/internal/tool"
 )
 
 func main() {
-	telemetry.Start()
+	counter.Open() // Enable telemetry counter writing.
 	ctx := context.Background()
 	tool.Main(ctx, cmd.New("gopls", "", nil, hooks.Options), os.Args[1:])
 }
