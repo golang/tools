@@ -82,16 +82,17 @@ func main() {
 `
 
 	tests := []struct {
+		name     string // subtest name
 		response string // response to choose for the telemetry dialog
 		wantMode string // resulting telemetry mode
 		wantMsg  string // substring contained in the follow-up popup (if empty, no popup is expected)
 	}{
-		{lsp.TelemetryYes, "on", "uploading is now enabled"},
-		{lsp.TelemetryNo, "", ""},
-		{"", "", ""},
+		{"yes", lsp.TelemetryYes, "on", "uploading is now enabled"},
+		{"no", lsp.TelemetryNo, "", ""},
+		{"empty", "", "", ""},
 	}
 	for _, test := range tests {
-		t.Run(fmt.Sprintf("response=%s", test.response), func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			modeFile := filepath.Join(t.TempDir(), "mode")
 			msgRE := regexp.MustCompile(".*Would you like to enable Go telemetry?")
 			respond := func(m *protocol.ShowMessageRequestParams) (*protocol.MessageActionItem, error) {

@@ -11,10 +11,10 @@ import (
 )
 
 func init() {
-	checkPathCase = windowsCheckPathCase
+	checkPathValid = windowsCheckPathValid
 }
 
-func windowsCheckPathCase(path string) error {
+func windowsCheckPathValid(path string) error {
 	// Back in the day, Windows used to have short and long filenames, and
 	// it still supports those APIs. GetLongPathName gets the real case for a
 	// path, so we can use it here. Inspired by
@@ -49,7 +49,7 @@ func windowsCheckPathCase(path string) error {
 	}
 	for got, want := path, longstr; !isRoot(got) && !isRoot(want); got, want = filepath.Dir(got), filepath.Dir(want) {
 		if g, w := filepath.Base(got), filepath.Base(want); g != w {
-			return fmt.Errorf("case mismatch in path %q: component %q is listed by Windows as %q", path, g, w)
+			return fmt.Errorf("invalid path %q: component %q is listed by Windows as %q", path, g, w)
 		}
 	}
 	return nil

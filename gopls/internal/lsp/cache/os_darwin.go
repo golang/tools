@@ -15,10 +15,10 @@ import (
 )
 
 func init() {
-	checkPathCase = darwinCheckPathCase
+	checkPathValid = darwinCheckPathValid
 }
 
-func darwinCheckPathCase(path string) error {
+func darwinCheckPathValid(path string) error {
 	// Darwin provides fcntl(F_GETPATH) to get a path for an arbitrary FD.
 	// Conveniently for our purposes, it gives the canonical case back. But
 	// there's no guarantee that it will follow the same route through the
@@ -52,7 +52,7 @@ func darwinCheckPathCase(path string) error {
 			break
 		}
 		if g != w {
-			return fmt.Errorf("case mismatch in path %q: component %q is listed by macOS as %q", path, g, w)
+			return fmt.Errorf("invalid path %q: component %q is listed by macOS as %q", path, g, w)
 		}
 	}
 	return nil

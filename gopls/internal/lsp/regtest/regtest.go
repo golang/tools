@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/cmd"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
@@ -62,6 +63,18 @@ type configuredRunner struct {
 }
 
 func (r configuredRunner) Run(t *testing.T, files string, f TestFunc) {
+	// Print a warning if the test's temporary directory is not
+	// suitable as a workspace folder, as this may lead to
+	// otherwise-cryptic failures. This situation typically occurs
+	// when an arbitrary string (e.g. "foo.") is used as a subtest
+	// name, on a platform with filename restrictions (e.g. no
+	// trailing period on Windows).
+	tmp := t.TempDir()
+	if err := cache.CheckPathValid(tmp); err != nil {
+		t.Logf("Warning: testing.T.TempDir(%s) is not valid as a workspace folder: %s",
+			tmp, err)
+	}
+
 	runner.Run(t, files, f, r.opts...)
 }
 

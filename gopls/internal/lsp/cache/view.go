@@ -932,8 +932,8 @@ func (v *View) Invalidate(ctx context.Context, changed StateChange) (*Snapshot, 
 }
 
 func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs file.Source, folder *Folder) (*viewDefinition, error) {
-	if err := checkPathCase(folder.Dir.Path()); err != nil {
-		return nil, fmt.Errorf("invalid workspace folder path: %w; check that the casing of the configured workspace folder path agrees with the casing reported by the operating system", err)
+	if err := checkPathValid(folder.Dir.Path()); err != nil {
+		return nil, fmt.Errorf("invalid workspace folder path: %w; check that the spelling of the configured workspace folder path agrees with the spelling reported by the operating system", err)
 	}
 	def := new(viewDefinition)
 	var err error
@@ -1059,10 +1059,18 @@ func findRootPattern(ctx context.Context, dir, basename string, fs file.Source) 
 	return "", nil
 }
 
-// OS-specific path case check, for case-insensitive filesystems.
-var checkPathCase = defaultCheckPathCase
+// checkPathValid performs an OS-specific path validity check. The
+// implementation varies for filesystems that are case-insensitive
+// (e.g. macOS, Windows), and for those that disallow certain file
+// names (e.g. path segments ending with a period on Windows, or
+// reserved names such as "com"; see
+// https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file).
+var checkPathValid = defaultCheckPathValid
 
-func defaultCheckPathCase(path string) error {
+// CheckPathValid checks whether a directory is suitable as a workspace folder.
+func CheckPathValid(dir string) error { return checkPathValid(dir) }
+
+func defaultCheckPathValid(path string) error {
 	return nil
 }
 

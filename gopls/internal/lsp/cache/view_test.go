@@ -38,9 +38,9 @@ func TestCaseInsensitiveFilesystem(t *testing.T) {
 		{filepath.Join(base, "a/b/c/defgh/f.go"), true},
 	}
 	for _, tt := range tests {
-		err := checkPathCase(tt.path)
+		err := checkPathValid(tt.path)
 		if err != nil != tt.err {
-			t.Errorf("checkPathCase(%q) = %v, wanted error: %v", tt.path, err, tt.err)
+			t.Errorf("checkPathValid(%q) = %v, wanted error: %v", tt.path, err, tt.err)
 		}
 	}
 }
