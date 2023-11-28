@@ -188,11 +188,6 @@ type Snapshot struct {
 	// pkgIndex is an index of package IDs, for efficient storage of typerefs.
 	pkgIndex *typerefs.PackageIndex
 
-	// Only compute module prefixes once, as they are used with high frequency to
-	// detect ignored files.
-	ignoreFilterOnce sync.Once
-	ignoreFilter     *ignoreFilter
-
 	// moduleUpgrades tracks known upgrades for module paths in each modfile.
 	// Each modfile has a map of module name to upgrade version.
 	moduleUpgrades *persistent.Map[protocol.DocumentURI, map[string]string]

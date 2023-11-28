@@ -341,6 +341,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 	if s.shouldIgnoreError(ctx, snapshot, err) {
 		return
 	}
+
 	criticalErr := snapshot.CriticalError(ctx)
 	if ctx.Err() != nil { // must check ctx after GetCriticalError
 		return

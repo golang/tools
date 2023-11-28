@@ -85,6 +85,9 @@ type View struct {
 	knownFilesMu sync.Mutex
 	knownFiles   map[protocol.DocumentURI]bool
 
+	// ignoreFilter is used for fast checking of ignored files.
+	ignoreFilter *ignoreFilter
+
 	// initCancelFirstAttempt can be used to terminate the view's first
 	// attempt at initialization.
 	initCancelFirstAttempt context.CancelFunc
@@ -671,22 +674,7 @@ func (s *Snapshot) IgnoredFile(uri protocol.DocumentURI) bool {
 		}
 	}
 
-	s.ignoreFilterOnce.Do(func() {
-		var dirs []string
-		if len(s.view.workspaceModFiles) == 0 {
-			for _, entry := range filepath.SplitList(s.view.gopath) {
-				dirs = append(dirs, filepath.Join(entry, "src"))
-			}
-		} else {
-			dirs = append(dirs, s.view.gomodcache)
-			for m := range s.view.workspaceModFiles {
-				dirs = append(dirs, filepath.Dir(m.Path()))
-			}
-		}
-		s.ignoreFilter = newIgnoreFilter(dirs)
-	})
-
-	return s.ignoreFilter.ignored(uri.Path())
+	return s.view.ignoreFilter.ignored(uri.Path())
 }
 
 // An ignoreFilter implements go list's exclusion rules via its 'ignored' method.

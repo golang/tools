@@ -149,6 +149,22 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 		}
 	}
 
+	var ignoreFilter *ignoreFilter
+	{
+		var dirs []string
+		if len(def.workspaceModFiles) == 0 {
+			for _, entry := range filepath.SplitList(def.gopath) {
+				dirs = append(dirs, filepath.Join(entry, "src"))
+			}
+		} else {
+			dirs = append(dirs, def.gomodcache)
+			for m := range def.workspaceModFiles {
+				dirs = append(dirs, filepath.Dir(m.Path()))
+			}
+		}
+		ignoreFilter = newIgnoreFilter(dirs)
+	}
+
 	v := &View{
 		id:                   strconv.FormatInt(index, 10),
 		gocmdRunner:          s.gocmdRunner,
@@ -157,6 +173,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 		initializationSema:   make(chan struct{}, 1),
 		baseCtx:              baseCtx,
 		parseCache:           s.parseCache,
+		ignoreFilter:         ignoreFilter,
 		fs:                   s.overlayFS,
 		viewDefinition:       def,
 		importsState: &importsState{
