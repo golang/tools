@@ -585,8 +585,8 @@ func hoverLit(pgf *ParsedGoFile, lit *ast.BasicLit, pos token.Pos) (protocol.Ran
 					return protocol.Range{}, nil, nil
 				}
 				// Only the rune escape sequence part of the string has to be highlighted, recompute the range.
-				runeLen := len(lit.Value) - (int(i) + len(tail))
-				start = token.Pos(int(lit.Pos()) + int(i))
+				runeLen := len(lit.Value) - (i + len(tail))
+				start = token.Pos(int(lit.Pos()) + i)
 				end = token.Pos(int(start) + runeLen)
 				break
 			}

@@ -344,7 +344,7 @@ func visitFile(file *ast.File, imports map[metadata.ImportPath]*metadata.Metadat
 					if path == "" {
 						continue
 					}
-					dep := imports[metadata.ImportPath(path)]
+					dep := imports[path]
 					if dep == nil {
 						// Note here that we don't try to "guess"
 						// the name of an import based on e.g.

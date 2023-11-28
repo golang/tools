@@ -317,7 +317,7 @@ func MetadataQualifierForFile(s metadata.Source, f *ast.File, m *Metadata) Metad
 			}
 		}
 		if localName, ok := localNames[impPath]; ok && impPath != "" {
-			return string(localName)
+			return localName
 		}
 		if pkgName != "" {
 			return string(pkgName)

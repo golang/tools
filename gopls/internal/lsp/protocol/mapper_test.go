@@ -256,10 +256,10 @@ func TestToUTF16(t *testing.T) {
 				t.Fatalf("expected result %v; got %v", e.resUTF16col, got)
 			}
 			pre, post := getPrePost(e.input, e.offset)
-			if string(pre) != e.pre {
+			if pre != e.pre {
 				t.Fatalf("expected #%d pre %q; got %q", e.offset, e.pre, pre)
 			}
-			if string(post) != e.post {
+			if post != e.post {
 				t.Fatalf("expected #%d, post %q; got %q", e.offset, e.post, post)
 			}
 		})
@@ -269,7 +269,7 @@ func TestToUTF16(t *testing.T) {
 func TestFromUTF16(t *testing.T) {
 	for _, e := range fromUTF16Tests {
 		t.Run(e.scenario, func(t *testing.T) {
-			m := protocol.NewMapper("", []byte(e.input))
+			m := protocol.NewMapper("", e.input)
 			offset, err := m.PositionOffset(protocol.Position{
 				Line:      uint32(e.line - 1),
 				Character: uint32(e.utf16col - 1),
@@ -294,10 +294,10 @@ func TestFromUTF16(t *testing.T) {
 				t.Fatalf("expected resulting col %v; got %v", e.resCol, col8)
 			}
 			pre, post := getPrePost(e.input, offset)
-			if string(pre) != e.pre {
+			if pre != e.pre {
 				t.Fatalf("expected #%d pre %q; got %q", offset, e.pre, pre)
 			}
-			if string(post) != e.post {
+			if post != e.post {
 				t.Fatalf("expected #%d post %q; got %q", offset, e.post, post)
 			}
 		})

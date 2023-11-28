@@ -986,7 +986,7 @@ require random.com v1.2.3
 `
 			var diagnostics []protocol.Diagnostic
 			for _, d := range d.Diagnostics {
-				if d.Range.Start.Line != uint32(pos.Line) {
+				if d.Range.Start.Line != pos.Line {
 					continue
 				}
 				diagnostics = append(diagnostics, d)

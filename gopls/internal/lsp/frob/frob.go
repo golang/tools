@@ -167,15 +167,15 @@ func (fr *frob) encode(out *writer, v reflect.Value) {
 	case reflect.Uint64:
 		out.uint64(v.Uint())
 	case reflect.Uintptr:
-		out.uint64(uint64(v.Uint()))
+		out.uint64(v.Uint())
 	case reflect.Float32:
 		out.uint32(math.Float32bits(float32(v.Float())))
 	case reflect.Float64:
 		out.uint64(math.Float64bits(v.Float()))
 	case reflect.Complex64:
 		z := complex64(v.Complex())
-		out.uint32(uint32(math.Float32bits(real(z))))
-		out.uint32(uint32(math.Float32bits(imag(z))))
+		out.uint32(math.Float32bits(real(z)))
+		out.uint32(math.Float32bits(imag(z)))
 	case reflect.Complex128:
 		z := v.Complex()
 		out.uint64(math.Float64bits(real(z)))

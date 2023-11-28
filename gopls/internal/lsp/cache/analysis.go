@@ -1059,12 +1059,12 @@ func (an *analysisNode) typeCheck(parsed []*ParsedGoFile) *analysisPackage {
 		log.Fatalf("internal error: bad export data: %v", err)
 	}
 	for _, path := range paths {
-		dep, ok := an.allDeps[PackagePath(path)]
+		dep, ok := an.allDeps[path]
 		if !ok {
 			log.Fatalf("%s: missing dependency: %q", an, path)
 		}
 		fmt.Fprintf(hash, "%s %s\n", dep.m.PkgPath, dep.summary.DeepExportHash)
-		an.exportDeps[PackagePath(path)] = dep
+		an.exportDeps[path] = dep
 	}
 	an.exportDeps[m.PkgPath] = an // self
 	hash.Sum(pkg.deepExportHash[:0])

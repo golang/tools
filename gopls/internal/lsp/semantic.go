@@ -905,7 +905,7 @@ func (e *encoded) importSpec(d *ast.ImportSpec) {
 		return
 	}
 	// Import strings are implementation defined. Try to match with parse information.
-	depID := e.pkg.Metadata().DepsByImpPath[metadata.ImportPath(importPath)]
+	depID := e.pkg.Metadata().DepsByImpPath[importPath]
 	if depID == "" {
 		return
 	}
