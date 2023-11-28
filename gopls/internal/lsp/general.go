@@ -289,11 +289,9 @@ func go1Point() int {
 // directories) to the session. It does not return an error, though it
 // may report an error to the client over LSP if one or more folders
 // had problems.
-//
-// addFolders must be called only with valid file URIs.
 func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFolder) {
 	originalViews := len(s.session.Views())
-	viewErrors := make(map[protocol.DocumentURI]error)
+	viewErrors := make(map[protocol.URI]error)
 
 	var ndiagnose sync.WaitGroup // number of unfinished diagnose calls
 	if s.Options().VerboseWorkDoneProgress {
@@ -310,7 +308,7 @@ func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 	for _, folder := range folders {
 		uri, err := protocol.ParseDocumentURI(folder.URI)
 		if err != nil {
-			bug.Reportf("addFolders: invalid folder URI: %v", err)
+			viewErrors[folder.URI] = fmt.Errorf("invalid folder URI: %v", err)
 			continue
 		}
 		work := s.progress.Start(ctx, "Setting up workspace", "Loading packages...", nil, nil)
@@ -319,7 +317,7 @@ func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 			if err == cache.ErrViewExists {
 				continue
 			}
-			viewErrors[uri] = err
+			viewErrors[folder.URI] = err
 			work.End(ctx, fmt.Sprintf("Error loading packages: %s", err))
 			continue
 		}

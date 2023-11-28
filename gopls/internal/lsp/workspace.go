@@ -15,34 +15,34 @@ import (
 )
 
 func (s *server) DidChangeWorkspaceFolders(ctx context.Context, params *protocol.DidChangeWorkspaceFoldersParams) error {
-	event := params.Event
-	for _, folder := range event.Removed {
-		view := s.session.ViewByName(folder.Name)
-		if view != nil {
-			s.session.RemoveView(view)
-		} else {
-			return fmt.Errorf("view %s for %v not found", folder.Name, folder.URI)
+	for _, folder := range params.Event.Removed {
+		dir, err := protocol.ParseDocumentURI(folder.URI)
+		if err != nil {
+			return fmt.Errorf("invalid folder %q: %v", folder.URI, err)
+		}
+		if !s.session.RemoveView(dir) {
+			return fmt.Errorf("view %q for %v not found", folder.Name, folder.URI)
 		}
 	}
-	s.addFolders(ctx, event.Added)
+	s.addFolders(ctx, params.Event.Added)
 	return nil
 }
 
 // addView returns a Snapshot and a release function that must be
 // called when it is no longer needed.
-func (s *server) addView(ctx context.Context, name string, uri protocol.DocumentURI) (*cache.Snapshot, func(), error) {
+func (s *server) addView(ctx context.Context, name string, dir protocol.DocumentURI) (*cache.Snapshot, func(), error) {
 	s.stateMu.Lock()
 	state := s.state
 	s.stateMu.Unlock()
 	if state < serverInitialized {
 		return nil, nil, fmt.Errorf("addView called before server initialized")
 	}
-	options, err := s.fetchFolderOptions(ctx, uri)
+	options, err := s.fetchFolderOptions(ctx, dir)
 	if err != nil {
 		return nil, nil, err
 	}
 	folder := &cache.Folder{
-		Dir:     uri,
+		Dir:     dir,
 		Name:    name,
 		Options: options,
 	}

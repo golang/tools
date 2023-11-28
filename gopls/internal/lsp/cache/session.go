@@ -213,16 +213,24 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 	return v, snapshot, snapshot.Acquire(), nil
 }
 
-// ViewByName returns a view with a matching name, if the session has one.
-func (s *Session) ViewByName(name string) *View {
+// RemoveView removes from the session the view rooted at the specified directory.
+// It reports whether a view of that directory was removed.
+func (s *Session) RemoveView(dir protocol.DocumentURI) bool {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 	for _, view := range s.views {
-		if view.Name() == name {
-			return view
+		if view.folder.Dir == dir {
+			i := s.dropView(view)
+			if i == -1 {
+				return false // can't happen
+			}
+			// delete this view... we don't care about order but we do want to make
+			// sure we can garbage collect the view
+			s.views = removeElement(s.views, i)
+			return true
 		}
 	}
-	return nil
+	return false
 }
 
 // View returns the view with a matching id, if present.
@@ -293,20 +301,6 @@ func bestViewForURI(uri protocol.DocumentURI, views []*View) *View {
 	}
 	// TODO: are there any more heuristics we can use?
 	return views[0]
-}
-
-// RemoveView removes the view v from the session
-func (s *Session) RemoveView(view *View) {
-	s.viewMu.Lock()
-	defer s.viewMu.Unlock()
-
-	i := s.dropView(view)
-	if i == -1 { // error reported elsewhere
-		return
-	}
-	// delete this view... we don't care about order but we do want to make
-	// sure we can garbage collect the view
-	s.views = removeElement(s.views, i)
 }
 
 // updateViewLocked recreates the view with the given options.

@@ -44,7 +44,7 @@ import (
 // Folders must not be mutated, as they may be shared across multiple views.
 type Folder struct {
 	Dir     protocol.DocumentURI
-	Name    string
+	Name    string // decorative name for UI; not necessarily unique
 	Options *settings.Options
 }
 
