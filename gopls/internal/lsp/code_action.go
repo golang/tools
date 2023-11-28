@@ -179,7 +179,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 			}
 
 			if want[protocol.RefactorExtract] {
-				extractions, err := refactorExtract(ctx, snapshot, pgf, params.Range)
+				extractions, err := refactorExtract(pgf, params.Range)
 				if err != nil {
 					return nil, err
 				}
@@ -249,7 +249,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 			}
 
 			if want[protocol.RefactorRewrite] {
-				rewrites, err := refactorRewrite(ctx, snapshot, pkg, pgf, fh, params.Range)
+				rewrites, err := refactorRewrite(snapshot, pkg, pgf, fh, params.Range)
 				if err != nil {
 					return nil, err
 				}
@@ -257,7 +257,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 			}
 
 			if want[protocol.RefactorInline] {
-				rewrites, err := refactorInline(ctx, snapshot, pkg, pgf, fh, params.Range)
+				rewrites, err := refactorInline(pkg, pgf, params.Range)
 				if err != nil {
 					return nil, err
 				}
@@ -265,7 +265,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 			}
 
 			if want[protocol.GoTest] {
-				fixes, err := goTest(ctx, snapshot, pkg, pgf, params.Range)
+				fixes, err := goTest(pkg, pgf, params.Range)
 				if err != nil {
 					return nil, err
 				}
@@ -367,7 +367,7 @@ func fixedByImportFix(fix *imports.ImportFix, diagnostics []protocol.Diagnostic)
 	return results
 }
 
-func refactorExtract(ctx context.Context, snapshot *cache.Snapshot, pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
+func refactorExtract(pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
 	if rng.Start == rng.End {
 		return nil, nil
 	}
@@ -422,7 +422,7 @@ func refactorExtract(ctx context.Context, snapshot *cache.Snapshot, pgf *source.
 	return actions, nil
 }
 
-func refactorRewrite(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.ParsedGoFile, fh file.Handle, rng protocol.Range) (_ []protocol.CodeAction, rerr error) {
+func refactorRewrite(snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.ParsedGoFile, fh file.Handle, rng protocol.Range) (_ []protocol.CodeAction, rerr error) {
 	// golang/go#61693: code actions were refactored to run outside of the
 	// analysis framework, but as a result they lost their panic recovery.
 	//
@@ -578,7 +578,7 @@ func canRemoveParameter(pkg *cache.Package, pgf *source.ParsedGoFile, rng protoc
 }
 
 // refactorInline returns inline actions available at the specified range.
-func refactorInline(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.ParsedGoFile, fh file.Handle, rng protocol.Range) ([]protocol.CodeAction, error) {
+func refactorInline(pkg *cache.Package, pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
 	var commands []protocol.Command
 
 	// If range is within call expression, offer inline action.
@@ -684,7 +684,7 @@ func codeActionsForDiagnostic(ctx context.Context, snapshot *cache.Snapshot, sd 
 	return actions, nil
 }
 
-func goTest(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
+func goTest(pkg *cache.Package, pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
 	fns, err := source.TestsAndBenchmarks(pkg, pgf)
 	if err != nil {
 		return nil, err

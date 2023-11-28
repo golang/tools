@@ -313,7 +313,7 @@ func (c *commandHandler) GoGetModule(ctx context.Context, args command.Dependenc
 func (c *commandHandler) UpdateGoSum(ctx context.Context, args command.URIArgs) error {
 	return c.run(ctx, commandConfig{
 		progress: "Updating go.sum",
-	}, func(ctx context.Context, deps commandDeps) error {
+	}, func(ctx context.Context, _ commandDeps) error {
 		for _, uri := range args.URIs {
 			snapshot, fh, ok, release, err := c.s.beginFileRequest(ctx, uri, file.UnknownKind)
 			defer release()
@@ -335,7 +335,7 @@ func (c *commandHandler) Tidy(ctx context.Context, args command.URIArgs) error {
 	return c.run(ctx, commandConfig{
 		requireSave: true,
 		progress:    "Running go mod tidy",
-	}, func(ctx context.Context, deps commandDeps) error {
+	}, func(ctx context.Context, _ commandDeps) error {
 		for _, uri := range args.URIs {
 			snapshot, fh, ok, release, err := c.s.beginFileRequest(ctx, uri, file.UnknownKind)
 			defer release()
@@ -380,7 +380,7 @@ func (c *commandHandler) EditGoDirective(ctx context.Context, args command.EditG
 	return c.run(ctx, commandConfig{
 		requireSave: true, // if go.mod isn't saved it could cause a problem
 		forURI:      args.URI,
-	}, func(ctx context.Context, deps commandDeps) error {
+	}, func(ctx context.Context, _ commandDeps) error {
 		snapshot, fh, ok, release, err := c.s.beginFileRequest(ctx, args.URI, file.UnknownKind)
 		defer release()
 		if !ok {

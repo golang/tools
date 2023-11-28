@@ -225,7 +225,7 @@ func (s *server) diagnoseSnapshot(snapshot *cache.Snapshot, changedURIs []protoc
 		}
 	}
 
-	s.diagnose(ctx, snapshot, analyzeOpenPackages)
+	s.diagnose(ctx, snapshot)
 	s.publishDiagnostics(ctx, true, snapshot)
 }
 
@@ -272,18 +272,9 @@ func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snaps
 	s.diagnosePkgs(ctx, snapshot, toDiagnose, nil)
 }
 
-// analysisMode parameterizes analysis behavior of a call to diagnosePkgs.
-type analysisMode int
-
-const (
-	analyzeNothing      analysisMode = iota // don't run any analysis
-	analyzeOpenPackages                     // run analysis on packages with open files
-	analyzeEverything                       // run analysis on all packages
-)
-
 // diagnose is a helper function for running diagnostics with a given context.
 // Do not call it directly. forceAnalysis is only true for testing purposes.
-func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot, analyze analysisMode) {
+func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 	ctx, done := event.Start(ctx, "Server.diagnose", snapshot.Labels()...)
 	defer done()
 
@@ -404,7 +395,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot, analyze
 		}
 		if hasNonIgnored {
 			toDiagnose[m.ID] = m
-			if analyze == analyzeEverything || analyze == analyzeOpenPackages && hasOpenFile {
+			if hasOpenFile {
 				toAnalyze[m.ID] = unit{}
 			}
 		}
@@ -826,7 +817,7 @@ func (s *server) shouldIgnoreError(ctx context.Context, snapshot *cache.Snapshot
 	// TODO(rfindley): surely it is not correct to walk the folder here just to
 	// suppress diagnostics, every time we compute diagnostics.
 	var hasGo bool
-	_ = filepath.Walk(snapshot.Folder().Path(), func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(snapshot.Folder().Path(), func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}

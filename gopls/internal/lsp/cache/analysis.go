@@ -173,7 +173,7 @@ const AnalysisProgressTitle = "Analyzing Dependencies"
 // The analyzers list must be duplicate free; order does not matter.
 //
 // Notifications of progress may be sent to the optional reporter.
-func (snapshot *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, analyzers []*settings.Analyzer, reporter *progress.Tracker) ([]*Diagnostic, error) {
+func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, analyzers []*settings.Analyzer, reporter *progress.Tracker) ([]*Diagnostic, error) {
 	start := time.Now() // for progress reporting
 
 	var tagStr string // sorted comma-separated list of PackageIDs
@@ -195,7 +195,7 @@ func (snapshot *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, 
 	toSrc := make(map[*analysis.Analyzer]*settings.Analyzer)
 	var enabled []*analysis.Analyzer // enabled subset + transitive requirements
 	for _, a := range analyzers {
-		if a.IsEnabled(snapshot.Options()) {
+		if a.IsEnabled(s.Options()) {
 			toSrc[a.Analyzer] = a
 			enabled = append(enabled, a.Analyzer)
 		}
@@ -246,7 +246,7 @@ func (snapshot *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, 
 	makeNode = func(from *analysisNode, id PackageID) (*analysisNode, error) {
 		an, ok := nodes[id]
 		if !ok {
-			m := snapshot.Metadata(id)
+			m := s.Metadata(id)
 			if m == nil {
 				return nil, bug.Errorf("no metadata for %s", id)
 			}
@@ -295,7 +295,7 @@ func (snapshot *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, 
 			// files are pre-loaded following packages.Load)
 			an.files = make([]file.Handle, len(m.CompiledGoFiles))
 			for i, uri := range m.CompiledGoFiles {
-				fh, err := snapshot.ReadFile(ctx, uri)
+				fh, err := s.ReadFile(ctx, uri)
 				if err != nil {
 					return nil, err
 				}
@@ -325,8 +325,8 @@ func (snapshot *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, 
 	// Now that we have read all files,
 	// we no longer need the snapshot.
 	// (but options are needed for progress reporting)
-	options := snapshot.Options()
-	snapshot = nil
+	options := s.Options()
+	s = nil
 
 	// Progress reporting. If supported, gopls reports progress on analysis
 	// passes that are taking a long time.
