@@ -8,8 +8,8 @@ import (
 	"sort"
 
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/util/bug"
 )
 
 // A Graph is an immutable and transitively closed graph of [Package] data.

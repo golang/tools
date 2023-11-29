@@ -11,9 +11,9 @@ import (
 	"go/types"
 	"strings"
 
-	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/util/astutil"
 )
 
 // Symbol holds a precomputed symbol value. Note: we avoid using the

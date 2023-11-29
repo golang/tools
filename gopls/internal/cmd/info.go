@@ -15,11 +15,11 @@ import (
 	"sort"
 	"strings"
 
-	goplsbug "golang.org/x/tools/gopls/internal/bug"
-	"golang.org/x/tools/gopls/internal/lsp/browser"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/util/browser"
+	goplsbug "golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/tool"
 )
 

@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
-	"golang.org/x/tools/gopls/internal/bug"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/diff"
 )
 

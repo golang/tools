@@ -23,7 +23,7 @@ import (
 	"io"
 
 	"golang.org/x/telemetry"
-	"golang.org/x/tools/gopls/internal/lsp/browser"
+	"golang.org/x/tools/gopls/internal/util/browser"
 )
 
 // flags
@@ -160,7 +160,7 @@ func main() {
 			//   gopls/.../pkg.Func
 			//   gopls/.../pkg.Type.method
 			//   gopls/.../pkg.(*Type).method
-			if strings.Contains(line, "internal/bug.") {
+			if strings.Contains(line, "internal/util/bug.") {
 				continue // not interesting
 			}
 			if _, rest, ok := strings.Cut(line, "golang.org/x/tools/gopls/"); ok {

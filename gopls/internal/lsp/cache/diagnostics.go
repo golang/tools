@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/util/bug"
 )
 
 // A CriticalError is a workspace-wide error that generally prevents gopls from

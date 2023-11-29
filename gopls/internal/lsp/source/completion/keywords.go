@@ -7,8 +7,8 @@ package completion
 import (
 	"go/ast"
 
-	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/util/astutil"
 )
 
 const (

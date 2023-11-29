@@ -11,10 +11,10 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/tools/gopls/internal/astutil"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
-	"golang.org/x/tools/gopls/internal/lsp/frob"
+	"golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/gopls/internal/util/frob"
 	"golang.org/x/tools/internal/typeparams"
 )
 
