@@ -793,7 +793,7 @@ func toProtocolDiagnostics(diagnostics []*cache.Diagnostic) []protocol.Diagnosti
 			Range:              diag.Range,
 			Severity:           diag.Severity,
 			Source:             string(diag.Source),
-			Tags:               emptySliceDiagnosticTag(diag.Tags),
+			Tags:               protocol.NonNilSlice(diag.Tags),
 			RelatedInformation: diag.Related,
 			Data:               diag.BundledFixes,
 		}

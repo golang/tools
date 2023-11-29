@@ -616,7 +616,7 @@ func documentChanges(fh file.Handle, edits []protocol.TextEdit) []protocol.Docum
 						URI: fh.URI(),
 					},
 				},
-				Edits: nonNilSliceTextEdit(edits),
+				Edits: protocol.NonNilSlice(edits),
 			},
 		},
 	}

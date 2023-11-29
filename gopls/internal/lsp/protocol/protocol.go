@@ -282,3 +282,14 @@ func cancelCall(ctx context.Context, sender connSender, id jsonrpc2.ID) {
 func sendParseError(ctx context.Context, reply jsonrpc2.Replier, err error) error {
 	return reply(ctx, nil, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err))
 }
+
+// NonNilSlice returns x, or an empty slice if x was nil.
+//
+// (Many slice fields of protocol structs must be non-nil
+// to avoid being encoded as JSON "null".)
+func NonNilSlice[T comparable](x []T) []T {
+	if x == nil {
+		return []T{}
+	}
+	return x
+}

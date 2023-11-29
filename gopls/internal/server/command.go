@@ -433,7 +433,7 @@ func (c *commandHandler) RemoveDependency(ctx context.Context, args command.Remo
 									URI: deps.fh.URI(),
 								},
 							},
-							Edits: nonNilSliceTextEdit(edits),
+							Edits: protocol.NonNilSlice(edits),
 						},
 					},
 				},

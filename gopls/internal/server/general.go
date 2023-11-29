@@ -4,6 +4,9 @@
 
 package server
 
+// This file defines server methods related to initialization,
+// options, shutdown, and exit.
+
 import (
 	"context"
 	"encoding/json"
@@ -157,7 +160,7 @@ See https://github.com/golang/go/issues/45732 for more information.`,
 			DocumentSymbolProvider:     &protocol.Or_ServerCapabilities_documentSymbolProvider{Value: true},
 			WorkspaceSymbolProvider:    &protocol.Or_ServerCapabilities_workspaceSymbolProvider{Value: true},
 			ExecuteCommandProvider: &protocol.ExecuteCommandOptions{
-				Commands: nonNilSliceString(options.SupportedCommands),
+				Commands: protocol.NonNilSlice(options.SupportedCommands),
 			},
 			FoldingRangeProvider:      &protocol.Or_ServerCapabilities_foldingRangeProvider{Value: true},
 			HoverProvider:             &protocol.Or_ServerCapabilities_hoverProvider{Value: true},
@@ -171,8 +174,8 @@ See https://github.com/golang/go/issues/45732 for more information.`,
 				Range: &protocol.Or_SemanticTokensOptions_range{Value: true},
 				Full:  &protocol.Or_SemanticTokensOptions_full{Value: true},
 				Legend: protocol.SemanticTokensLegend{
-					TokenTypes:     nonNilSliceString(options.SemanticTypes),
-					TokenModifiers: nonNilSliceString(options.SemanticMods),
+					TokenTypes:     protocol.NonNilSlice(options.SemanticTypes),
+					TokenModifiers: protocol.NonNilSlice(options.SemanticMods),
 				},
 			},
 			SignatureHelpProvider: &protocol.SignatureHelpOptions{
@@ -609,32 +612,4 @@ func (s *server) Exit(ctx context.Context) error {
 	// We don't terminate the process on a normal exit, we just allow it to
 	// close naturally if needed after the connection is closed.
 	return nil
-}
-
-// TODO: when we can assume go1.18, replace with generic
-// (after retiring support for go1.17)
-func nonNilSliceString(x []string) []string {
-	if x == nil {
-		return []string{}
-	}
-	return x
-}
-func nonNilSliceTextEdit(x []protocol.TextEdit) []protocol.TextEdit {
-	if x == nil {
-		return []protocol.TextEdit{}
-	}
-
-	return x
-}
-func nonNilSliceCompletionItemTag(x []protocol.CompletionItemTag) []protocol.CompletionItemTag {
-	if x == nil {
-		return []protocol.CompletionItemTag{}
-	}
-	return x
-}
-func emptySliceDiagnosticTag(x []protocol.DiagnosticTag) []protocol.DiagnosticTag {
-	if x == nil {
-		return []protocol.DiagnosticTag{}
-	}
-	return x
 }
