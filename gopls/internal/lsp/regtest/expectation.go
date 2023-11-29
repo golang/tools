@@ -11,14 +11,14 @@ import (
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
-	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/server"
 )
 
 var (
 	// InitialWorkspaceLoad is an expectation that the workspace initial load has
 	// completed. It is verified via workdone reporting.
-	InitialWorkspaceLoad = CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromInitialWorkspaceLoad), 1, false)
+	InitialWorkspaceLoad = CompletedWork(server.DiagnosticWorkTitle(server.FromInitialWorkspaceLoad), 1, false)
 )
 
 // A Verdict is the result of checking an expectation against the current
@@ -294,16 +294,16 @@ func ShownMessageRequest(messageRegexp string) Expectation {
 // track of
 func (e *Env) DoneDiagnosingChanges() Expectation {
 	stats := e.Editor.Stats()
-	statsBySource := map[lsp.ModificationSource]uint64{
-		lsp.FromDidOpen:                stats.DidOpen,
-		lsp.FromDidChange:              stats.DidChange,
-		lsp.FromDidSave:                stats.DidSave,
-		lsp.FromDidChangeWatchedFiles:  stats.DidChangeWatchedFiles,
-		lsp.FromDidClose:               stats.DidClose,
-		lsp.FromDidChangeConfiguration: stats.DidChangeConfiguration,
+	statsBySource := map[server.ModificationSource]uint64{
+		server.FromDidOpen:                stats.DidOpen,
+		server.FromDidChange:              stats.DidChange,
+		server.FromDidSave:                stats.DidSave,
+		server.FromDidChangeWatchedFiles:  stats.DidChangeWatchedFiles,
+		server.FromDidClose:               stats.DidClose,
+		server.FromDidChangeConfiguration: stats.DidChangeConfiguration,
 	}
 
-	var expected []lsp.ModificationSource
+	var expected []server.ModificationSource
 	for k, v := range statsBySource {
 		if v > 0 {
 			expected = append(expected, k)
@@ -317,7 +317,7 @@ func (e *Env) DoneDiagnosingChanges() Expectation {
 
 	var all []Expectation
 	for _, source := range expected {
-		all = append(all, CompletedWork(lsp.DiagnosticWorkTitle(source), statsBySource[source], true))
+		all = append(all, CompletedWork(server.DiagnosticWorkTitle(source), statsBySource[source], true))
 	}
 
 	return AllOf(all...)
@@ -340,49 +340,49 @@ func (e *Env) AfterChange(expectations ...Expectation) {
 // to be completely processed.
 func (e *Env) DoneWithOpen() Expectation {
 	opens := e.Editor.Stats().DidOpen
-	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidOpen), opens, true)
+	return CompletedWork(server.DiagnosticWorkTitle(server.FromDidOpen), opens, true)
 }
 
 // StartedChange expects that the server has at least started processing all
 // didChange notifications sent from the client.
 func (e *Env) StartedChange() Expectation {
 	changes := e.Editor.Stats().DidChange
-	return StartedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), changes)
+	return StartedWork(server.DiagnosticWorkTitle(server.FromDidChange), changes)
 }
 
 // DoneWithChange expects all didChange notifications currently sent by the
 // editor to be completely processed.
 func (e *Env) DoneWithChange() Expectation {
 	changes := e.Editor.Stats().DidChange
-	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChange), changes, true)
+	return CompletedWork(server.DiagnosticWorkTitle(server.FromDidChange), changes, true)
 }
 
 // DoneWithSave expects all didSave notifications currently sent by the editor
 // to be completely processed.
 func (e *Env) DoneWithSave() Expectation {
 	saves := e.Editor.Stats().DidSave
-	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidSave), saves, true)
+	return CompletedWork(server.DiagnosticWorkTitle(server.FromDidSave), saves, true)
 }
 
 // StartedChangeWatchedFiles expects that the server has at least started
 // processing all didChangeWatchedFiles notifications sent from the client.
 func (e *Env) StartedChangeWatchedFiles() Expectation {
 	changes := e.Editor.Stats().DidChangeWatchedFiles
-	return StartedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), changes)
+	return StartedWork(server.DiagnosticWorkTitle(server.FromDidChangeWatchedFiles), changes)
 }
 
 // DoneWithChangeWatchedFiles expects all didChangeWatchedFiles notifications
 // currently sent by the editor to be completely processed.
 func (e *Env) DoneWithChangeWatchedFiles() Expectation {
 	changes := e.Editor.Stats().DidChangeWatchedFiles
-	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidChangeWatchedFiles), changes, true)
+	return CompletedWork(server.DiagnosticWorkTitle(server.FromDidChangeWatchedFiles), changes, true)
 }
 
 // DoneWithClose expects all didClose notifications currently sent by the
 // editor to be completely processed.
 func (e *Env) DoneWithClose() Expectation {
 	changes := e.Editor.Stats().DidClose
-	return CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromDidClose), changes, true)
+	return CompletedWork(server.DiagnosticWorkTitle(server.FromDidClose), changes, true)
 }
 
 // StartedWork expect a work item to have been started >= atLeast times.
@@ -516,7 +516,7 @@ func NoOutstandingWork(ignore func(title, msg string) bool) Expectation {
 // IgnoreTelemetryPromptWork may be used in conjunction with NoOutStandingWork
 // to ignore the telemetry prompt.
 func IgnoreTelemetryPromptWork(title, msg string) bool {
-	return title == lsp.TelemetryPromptWorkTitle
+	return title == server.TelemetryPromptWorkTitle
 }
 
 // NoErrorLogs asserts that the client has not received any log messages of

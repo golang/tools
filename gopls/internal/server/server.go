@@ -2,13 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package lsp defines gopls' implementation of the LSP server
-// interface, [protocol.Server]. Call [NewServer] to create an instance.
-//
-// TODO(adonovan): rename lsp.NewServer to server.New (and
-// package)--but it's a big change, so first make sure no-one has
-// pending CLs.
-package lsp
+// Package server defines gopls' implementation of the LSP server
+// interface, [protocol.Server]. Call [New] to create an instance.
+package server
 
 import (
 	"context"
@@ -27,9 +23,9 @@ import (
 
 const concurrentAnalyses = 1
 
-// NewServer creates an LSP server and binds it to handle incoming client
+// New creates an LSP server and binds it to handle incoming client
 // messages on the supplied stream.
-func NewServer(session *cache.Session, client protocol.ClientCloser, options *settings.Options) protocol.Server {
+func New(session *cache.Session, client protocol.ClientCloser, options *settings.Options) protocol.Server {
 	// If this assignment fails to compile after a protocol
 	// upgrade, it means that one or more new methods need new
 	// stub declarations in unimplemented.go.

@@ -22,13 +22,13 @@ import (
 	"time"
 
 	bugpkg "golang.org/x/tools/gopls/internal/bug"
-	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/browser"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/lsprpc"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/constraints"
 	"golang.org/x/tools/internal/diff"
@@ -332,7 +332,7 @@ func (app *Application) connect(ctx context.Context, onProgress func(*protocol.P
 	case app.Remote == "":
 		client := newClient(app, onProgress)
 		options := settings.DefaultOptions(app.options)
-		server := lsp.NewServer(cache.NewSession(ctx, cache.New(nil)), client, options)
+		server := server.New(cache.NewSession(ctx, cache.New(nil)), client, options)
 		conn := newConnection(server, client)
 		if err := conn.initialize(protocol.WithClient(ctx, client), app.options); err != nil {
 			return nil, err

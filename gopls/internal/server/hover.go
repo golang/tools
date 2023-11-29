@@ -2,27 +2,29 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package lsp
+package server
 
 import (
 	"context"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/mod"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/template"
+	"golang.org/x/tools/gopls/internal/lsp/work"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 )
 
-func (s *server) References(ctx context.Context, params *protocol.ReferenceParams) (_ []protocol.Location, rerr error) {
-	recordLatency := telemetry.StartLatencyTimer("references")
+func (s *server) Hover(ctx context.Context, params *protocol.HoverParams) (_ *protocol.Hover, rerr error) {
+	recordLatency := telemetry.StartLatencyTimer("hover")
 	defer func() {
 		recordLatency(ctx, rerr)
 	}()
 
-	ctx, done := event.Start(ctx, "lsp.Server.references", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.hover", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
@@ -30,8 +32,15 @@ func (s *server) References(ctx context.Context, params *protocol.ReferenceParam
 	if !ok {
 		return nil, err
 	}
-	if snapshot.FileKind(fh) == file.Tmpl {
-		return template.References(ctx, snapshot, fh, params)
+	switch snapshot.FileKind(fh) {
+	case file.Mod:
+		return mod.Hover(ctx, snapshot, fh, params.Position)
+	case file.Go:
+		return source.Hover(ctx, snapshot, fh, params.Position)
+	case file.Tmpl:
+		return template.Hover(ctx, snapshot, fh, params.Position)
+	case file.Work:
+		return work.Hover(ctx, snapshot, fh, params.Position)
 	}
-	return source.References(ctx, snapshot, fh, params.Position, params.Context.IncludeDeclaration)
+	return nil, nil
 }

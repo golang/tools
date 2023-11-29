@@ -10,9 +10,9 @@ import (
 
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/hooks"
-	"golang.org/x/tools/gopls/internal/lsp"
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
 	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
+	"golang.org/x/tools/gopls/internal/server"
 
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -211,7 +211,7 @@ require golang.org/x/hello v1.2.3
 				env.ExecuteCodeLensCommand("a/go.mod", command.CheckUpgrades, nil)
 				d := &protocol.PublishDiagnosticsParams{}
 				env.OnceMet(
-					CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromCheckUpgrades), 1, true),
+					CompletedWork(server.DiagnosticWorkTitle(server.FromCheckUpgrades), 1, true),
 					Diagnostics(env.AtRegexp("a/go.mod", `require`), WithMessage("can be upgraded")),
 					ReadDiagnostics("a/go.mod", d),
 					// We do not want there to be a diagnostic for b/go.mod,
@@ -223,12 +223,12 @@ require golang.org/x/hello v1.2.3
 				// Check for upgrades in b/go.mod and then clear them.
 				env.ExecuteCodeLensCommand("b/go.mod", command.CheckUpgrades, nil)
 				env.OnceMet(
-					CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromCheckUpgrades), 2, true),
+					CompletedWork(server.DiagnosticWorkTitle(server.FromCheckUpgrades), 2, true),
 					Diagnostics(env.AtRegexp("b/go.mod", `require`), WithMessage("can be upgraded")),
 				)
 				env.ExecuteCodeLensCommand("b/go.mod", command.ResetGoModDiagnostics, nil)
 				env.OnceMet(
-					CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromResetGoModDiagnostics), 1, true),
+					CompletedWork(server.DiagnosticWorkTitle(server.FromResetGoModDiagnostics), 1, true),
 					NoDiagnostics(ForFile("b/go.mod")),
 				)
 
@@ -341,7 +341,7 @@ func Foo() {
 		// Regenerate cgo, fixing the diagnostic.
 		env.ExecuteCodeLensCommand("cgo.go", command.RegenerateCgo, nil)
 		env.OnceMet(
-			CompletedWork(lsp.DiagnosticWorkTitle(lsp.FromRegenerateCgo), 1, true),
+			CompletedWork(server.DiagnosticWorkTitle(server.FromRegenerateCgo), 1, true),
 			NoDiagnostics(ForFile("cgo.go")),
 		)
 	})

@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -50,7 +50,7 @@ func TestCapabilities(t *testing.T) {
 	ctx := context.Background()
 	client := newClient(app, nil)
 	options := settings.DefaultOptions(app.options)
-	server := lsp.NewServer(cache.NewSession(ctx, cache.New(nil)), client, options)
+	server := server.New(cache.NewSession(ctx, cache.New(nil)), client, options)
 	result, err := server.Initialize(ctx, params)
 	if err != nil {
 		t.Fatal(err)

@@ -13,10 +13,10 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/goversion"
 	"golang.org/x/tools/gopls/internal/hooks"
-	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
+	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -555,7 +555,7 @@ func f() {
 		env.OpenFile("a.go")
 		env.AfterChange(
 			// Expect the adHocPackagesWarning.
-			OutstandingWork(lsp.WorkspaceLoadFailure, "outside of a module"),
+			OutstandingWork(server.WorkspaceLoadFailure, "outside of a module"),
 		)
 		// Deleting the import dismisses the warning.
 		env.RegexpReplace("a.go", `import "mod.com/hello"`, "")
@@ -1486,7 +1486,7 @@ package main
 	Run(t, pkg, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
 		env.AfterChange(
-			OutstandingWork(lsp.WorkspaceLoadFailure, "unknown directive"),
+			OutstandingWork(server.WorkspaceLoadFailure, "unknown directive"),
 		)
 		env.EditBuffer("go.mod", fake.NewEdit(0, 0, 3, 0, `module mod.com
 
@@ -1496,7 +1496,7 @@ go 1.hello
 		// they are saved.
 		env.SaveBufferWithoutActions("go.mod")
 		env.AfterChange(
-			OutstandingWork(lsp.WorkspaceLoadFailure, "invalid go version"),
+			OutstandingWork(server.WorkspaceLoadFailure, "invalid go version"),
 		)
 		env.RegexpReplace("go.mod", "go 1.hello", "go 1.12")
 		env.SaveBufferWithoutActions("go.mod")

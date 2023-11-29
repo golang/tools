@@ -20,11 +20,11 @@ import (
 	"time"
 
 	goplsbug "golang.org/x/tools/gopls/internal/bug"
-	"golang.org/x/tools/gopls/internal/lsp"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 )
@@ -94,7 +94,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	onProgress := func(p *protocol.ProgressParams) {
 		switch v := p.Value.(type) {
 		case *protocol.WorkDoneProgressBegin:
-			if v.Title == lsp.DiagnosticWorkTitle(lsp.FromInitialWorkspaceLoad) {
+			if v.Title == server.DiagnosticWorkTitle(server.FromInitialWorkspaceLoad) {
 				iwlMu.Lock()
 				iwlToken = p.Token
 				iwlMu.Unlock()

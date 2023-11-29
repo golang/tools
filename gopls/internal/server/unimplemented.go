@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package lsp
+package server
 
 // This file defines the LSP server methods that gopls does not currently implement.
 

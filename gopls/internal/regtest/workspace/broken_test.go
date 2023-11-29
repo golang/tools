@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/lsp"
 	. "golang.org/x/tools/gopls/internal/lsp/regtest"
+	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -98,7 +98,7 @@ const CompleteMe = 222
 	).Run(t, src, func(t *testing.T, env *Env) {
 		env.OpenFile("package1/main.go")
 		env.AfterChange(
-			OutstandingWork(lsp.WorkspaceLoadFailure, `module example.com/foo appears multiple times in workspace`),
+			OutstandingWork(server.WorkspaceLoadFailure, `module example.com/foo appears multiple times in workspace`),
 		)
 
 		// Remove the redundant vendored copy of example.com.
@@ -208,7 +208,7 @@ package b
 				env.AfterChange(
 					Diagnostics(env.AtRegexp("a/a.go", "package a")),
 					Diagnostics(env.AtRegexp("b/go.mod", "module b.com")),
-					OutstandingWork(lsp.WorkspaceLoadFailure, msg),
+					OutstandingWork(server.WorkspaceLoadFailure, msg),
 				)
 
 				// Changing the workspace folders to the valid modules should resolve
@@ -240,7 +240,7 @@ package b
 					// Diagnostics(env.AtRegexp("a/a.go", "package a")),
 					// Diagnostics(env.AtRegexp("b/go.mod", "module b.com")),
 					Diagnostics(env.AtRegexp("b/b.go", "package b")),
-					OutstandingWork(lsp.WorkspaceLoadFailure, msg),
+					OutstandingWork(server.WorkspaceLoadFailure, msg),
 				)
 			})
 		})

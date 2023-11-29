@@ -1,8 +1,8 @@
-// Copyright 2018 The Go Authors. All rights reserved.
+// Copyright 2022 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package lsp
+package server
 
 import (
 	"context"
@@ -11,13 +11,12 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/mod"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/lsp/work"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 )
 
-func (s *server) Formatting(ctx context.Context, params *protocol.DocumentFormattingParams) ([]protocol.TextEdit, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.formatting", tag.URI.Of(params.TextDocument.URI))
+func (s *server) InlayHint(ctx context.Context, params *protocol.InlayHintParams) ([]protocol.InlayHint, error) {
+	ctx, done := event.Start(ctx, "lsp.Server.inlayHint", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
@@ -27,11 +26,9 @@ func (s *server) Formatting(ctx context.Context, params *protocol.DocumentFormat
 	}
 	switch snapshot.FileKind(fh) {
 	case file.Mod:
-		return mod.Format(ctx, snapshot, fh)
+		return mod.InlayHint(ctx, snapshot, fh, params.Range)
 	case file.Go:
-		return source.Format(ctx, snapshot, fh)
-	case file.Work:
-		return work.Format(ctx, snapshot, fh)
+		return source.InlayHint(ctx, snapshot, fh, params.Range)
 	}
 	return nil, nil
 }
