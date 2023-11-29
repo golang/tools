@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/mod"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
@@ -233,7 +234,7 @@ func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snaps
 	ctx, done := event.Start(ctx, "Server.diagnoseChangedFiles", snapshot.Labels()...)
 	defer done()
 
-	toDiagnose := make(map[source.PackageID]*source.Metadata)
+	toDiagnose := make(map[metadata.PackageID]*metadata.Package)
 	for _, uri := range uris {
 		// If the change is only on-disk and the file is not open, don't
 		// directly request its package. It may not be a workspace package.
@@ -380,12 +381,12 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 	// Run type checking and go/analysis diagnosis of packages in parallel.
 	var (
 		seen       = map[protocol.DocumentURI]struct{}{}
-		toDiagnose = make(map[source.PackageID]*source.Metadata)
-		toAnalyze  = make(map[source.PackageID]unit)
+		toDiagnose = make(map[metadata.PackageID]*metadata.Package)
+		toAnalyze  = make(map[metadata.PackageID]unit)
 	)
-	for _, m := range workspace {
+	for _, mp := range workspace {
 		var hasNonIgnored, hasOpenFile bool
-		for _, uri := range m.CompiledGoFiles {
+		for _, uri := range mp.CompiledGoFiles {
 			seen[uri] = struct{}{}
 			if !hasNonIgnored && !snapshot.IgnoredFile(uri) {
 				hasNonIgnored = true
@@ -395,9 +396,9 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 			}
 		}
 		if hasNonIgnored {
-			toDiagnose[m.ID] = m
+			toDiagnose[mp.ID] = mp
 			if hasOpenFile {
-				toAnalyze[m.ID] = unit{}
+				toAnalyze[mp.ID] = unit{}
 			}
 		}
 	}
@@ -435,7 +436,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 // of concurrent dispatch: as of writing we concurrently run TidyDiagnostics
 // and diagnosePkgs, and diagnosePkgs concurrently runs PackageDiagnostics and
 // analysis.
-func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toDiagnose map[source.PackageID]*source.Metadata, toAnalyze map[source.PackageID]unit) {
+func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toDiagnose map[metadata.PackageID]*metadata.Package, toAnalyze map[metadata.PackageID]unit) {
 	ctx, done := event.Start(ctx, "Server.diagnosePkgs", snapshot.Labels()...)
 	defer done()
 
@@ -451,7 +452,7 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toD
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		var ids []source.PackageID
+		var ids []metadata.PackageID
 		for id := range toDiagnose {
 			ids = append(ids, id)
 		}
@@ -515,8 +516,8 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toD
 	// publication for changed files will not publish anything for files with
 	// empty diagnostics.
 	storedPkgDiags := make(map[protocol.DocumentURI]bool)
-	for _, m := range toDiagnose {
-		for _, uri := range m.CompiledGoFiles {
+	for _, mp := range toDiagnose {
+		for _, uri := range mp.CompiledGoFiles {
 			s.storeDiagnostics(snapshot, uri, typeCheckSource, pkgDiags[uri], true)
 			storedPkgDiags[uri] = true
 		}
@@ -542,25 +543,25 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toD
 	//   2. This should not even run gc_details if the package contains unsaved
 	//      files.
 	//   3. See note below about using FindFile.
-	var toGCDetail map[source.PackageID]*source.Metadata
+	var toGCDetail map[metadata.PackageID]*metadata.Package
 	s.gcOptimizationDetailsMu.Lock()
 	for id := range s.gcOptimizationDetails {
-		if m, ok := toDiagnose[id]; ok {
+		if mp, ok := toDiagnose[id]; ok {
 			if toGCDetail == nil {
-				toGCDetail = make(map[source.PackageID]*source.Metadata)
+				toGCDetail = make(map[metadata.PackageID]*metadata.Package)
 			}
-			toGCDetail[id] = m
+			toGCDetail[id] = mp
 		}
 	}
 	s.gcOptimizationDetailsMu.Unlock()
 
-	for _, m := range toGCDetail {
-		gcReports, err := source.GCOptimizationDetails(ctx, snapshot, m)
+	for _, mp := range toGCDetail {
+		gcReports, err := source.GCOptimizationDetails(ctx, snapshot, mp)
 		if err != nil {
-			event.Error(ctx, "warning: gc details", err, append(snapshot.Labels(), tag.Package.Of(string(m.ID)))...)
+			event.Error(ctx, "warning: gc details", err, append(snapshot.Labels(), tag.Package.Of(string(mp.ID)))...)
 		}
 		s.gcOptimizationDetailsMu.Lock()
-		_, enableGCDetails := s.gcOptimizationDetails[m.ID]
+		_, enableGCDetails := s.gcOptimizationDetails[mp.ID]
 
 		// NOTE(golang/go#44826): hold the gcOptimizationDetails lock, and re-check
 		// whether gc optimization details are enabled, while storing gc_details

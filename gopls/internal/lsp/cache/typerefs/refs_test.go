@@ -514,13 +514,13 @@ type Z map[ext.A]ext.B
 				pgfs = append(pgfs, pgf)
 			}
 
-			imports := map[metadata.ImportPath]*metadata.Metadata{
+			imports := map[metadata.ImportPath]*metadata.Package{
 				"ext": {ID: "ext", Name: "ext"}, // this one comes for free
 			}
-			for path, m := range test.imports {
-				imports[metadata.ImportPath(path)] = &metadata.Metadata{
-					ID:   metadata.PackageID(m),
-					Name: metadata.PackageName(m),
+			for path, mp := range test.imports {
+				imports[metadata.ImportPath(path)] = &metadata.Package{
+					ID:   metadata.PackageID(mp),
+					Name: metadata.PackageName(mp),
 				}
 			}
 

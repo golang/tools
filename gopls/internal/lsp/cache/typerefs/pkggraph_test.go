@@ -32,8 +32,8 @@ const (
 
 // A Package holds reference information for a single package.
 type Package struct {
-	// metadata holds metadata about this package and its dependencies.
-	metadata *metadata.Metadata
+	// metapkg holds metapkg about this package and its dependencies.
+	metapkg *metadata.Package
 
 	// transitiveRefs records, for each exported declaration in the package, the
 	// transitive set of packages within the containing graph that are
@@ -125,19 +125,19 @@ func (g *PackageGraph) Package(ctx context.Context, id metadata.PackageID) (*Pac
 // only be called from Package.
 func (g *PackageGraph) buildPackage(ctx context.Context, id metadata.PackageID) (*Package, error) {
 	p := &Package{
-		metadata:       g.meta.Metadata(id),
+		metapkg:        g.meta.Metadata(id),
 		transitiveRefs: make(map[string]*typerefs.PackageSet),
 	}
 	var files []*parsego.File
-	for _, filename := range p.metadata.CompiledGoFiles {
+	for _, filename := range p.metapkg.CompiledGoFiles {
 		f, err := g.parse(ctx, filename)
 		if err != nil {
 			return nil, err
 		}
 		files = append(files, f)
 	}
-	imports := make(map[metadata.ImportPath]*metadata.Metadata)
-	for impPath, depID := range p.metadata.DepsByImpPath {
+	imports := make(map[metadata.ImportPath]*metadata.Package)
+	for impPath, depID := range p.metapkg.DepsByImpPath {
 		if depID != "" {
 			imports[impPath] = g.meta.Metadata(depID)
 		}
@@ -199,7 +199,7 @@ func (g *PackageGraph) buildPackage(ctx context.Context, id metadata.PackageID) 
 			if symPkgID == id {
 				panic("intra-package edge")
 			}
-			if depP.metadata.ID != symPkgID {
+			if depP.metapkg.ID != symPkgID {
 				// package changed
 				var err error
 				depP, err = g.Package(ctx, symPkgID)
@@ -217,7 +217,7 @@ func (g *PackageGraph) buildPackage(ctx context.Context, id metadata.PackageID) 
 
 	// Finally compute the union of transitiveRefs
 	// across the direct deps of this package.
-	byDeps, err := g.reachesByDeps(ctx, p.metadata)
+	byDeps, err := g.reachesByDeps(ctx, p.metapkg)
 	if err != nil {
 		return nil, err
 	}
@@ -228,14 +228,14 @@ func (g *PackageGraph) buildPackage(ctx context.Context, id metadata.PackageID) 
 
 // reachesByDeps computes the set of packages that are reachable through
 // dependencies of the package m.
-func (g *PackageGraph) reachesByDeps(ctx context.Context, m *metadata.Metadata) (*typerefs.PackageSet, error) {
+func (g *PackageGraph) reachesByDeps(ctx context.Context, mp *metadata.Package) (*typerefs.PackageSet, error) {
 	transitive := g.pkgIndex.NewSet()
-	for _, depID := range m.DepsByPkgPath {
+	for _, depID := range mp.DepsByPkgPath {
 		dep, err := g.Package(ctx, depID)
 		if err != nil {
 			return nil, err
 		}
-		transitive.AddPackage(dep.metadata.ID)
+		transitive.AddPackage(dep.metapkg.ID)
 		for _, set := range dep.transitiveRefs {
 			transitive.Union(set)
 		}

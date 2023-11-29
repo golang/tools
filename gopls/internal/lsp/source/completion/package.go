@@ -234,17 +234,17 @@ func packageSuggestions(ctx context.Context, snapshot *cache.Snapshot, fileURI p
 
 	// The `go` command by default only allows one package per directory but we
 	// support multiple package suggestions since gopls is build system agnostic.
-	for _, m := range active {
-		if m.Name == "main" || m.Name == "" {
+	for _, mp := range active {
+		if mp.Name == "main" || mp.Name == "" {
 			continue
 		}
-		if _, ok := seenPkgs[m.Name]; ok {
+		if _, ok := seenPkgs[mp.Name]; ok {
 			continue
 		}
 
 		// Only add packages that are previously used in the current directory.
 		var relevantPkg bool
-		for _, uri := range m.CompiledGoFiles {
+		for _, uri := range mp.CompiledGoFiles {
 			if filepath.Dir(uri.Path()) == dirPath {
 				relevantPkg = true
 				break
@@ -257,13 +257,13 @@ func packageSuggestions(ctx context.Context, snapshot *cache.Snapshot, fileURI p
 		// Add a found package used in current directory as a high relevance
 		// suggestion and the test package for it as a medium relevance
 		// suggestion.
-		if score := float64(matcher.Score(string(m.Name))); score > 0 {
-			packages = append(packages, toCandidate(string(m.Name), score*highScore))
+		if score := float64(matcher.Score(string(mp.Name))); score > 0 {
+			packages = append(packages, toCandidate(string(mp.Name), score*highScore))
 		}
-		seenPkgs[m.Name] = struct{}{}
+		seenPkgs[mp.Name] = struct{}{}
 
-		testPkgName := m.Name + "_test"
-		if _, ok := seenPkgs[testPkgName]; ok || strings.HasSuffix(string(m.Name), "_test") {
+		testPkgName := mp.Name + "_test"
+		if _, ok := seenPkgs[testPkgName]; ok || strings.HasSuffix(string(mp.Name), "_test") {
 			continue
 		}
 		if score := float64(matcher.Score(string(testPkgName))); score > 0 {

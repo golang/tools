@@ -13,7 +13,7 @@ import (
 // This is an internal test of the breakImportCycles logic.
 func TestBreakImportCycles(t *testing.T) {
 
-	type Graph = map[PackageID]*Metadata
+	type Graph = map[PackageID]*Package
 
 	// cyclic returns a description of a cycle,
 	// if the graph is cyclic, otherwise "".
@@ -34,8 +34,8 @@ func TestBreakImportCycles(t *testing.T) {
 			case visited:
 				return ""
 			}
-			if m := graph[id]; m != nil {
-				for _, depID := range m.DepsByPkgPath {
+			if mp := graph[id]; mp != nil {
+				for _, depID := range mp.DepsByPkgPath {
 					if cycle := visit(depID); cycle != "" {
 						return string(id) + "->" + cycle
 					}
@@ -60,11 +60,11 @@ func TestBreakImportCycles(t *testing.T) {
 	// and the set of edges {a->b, b->c, b->d}.
 	parse := func(s string) Graph {
 		m := make(Graph)
-		makeNode := func(name string) *Metadata {
+		makeNode := func(name string) *Package {
 			id := PackageID(name)
 			n, ok := m[id]
 			if !ok {
-				n = &Metadata{
+				n = &Package{
 					ID:            id,
 					DepsByPkgPath: make(map[PackagePath]PackageID),
 				}
@@ -100,13 +100,13 @@ func TestBreakImportCycles(t *testing.T) {
 	// of each node that has errors.
 	format := func(graph Graph) string {
 		var items []string
-		for _, m := range graph {
-			item := string(m.ID)
-			if len(m.Errors) > 0 {
+		for _, mp := range graph {
+			item := string(mp.ID)
+			if len(mp.Errors) > 0 {
 				item += "!"
 			}
 			var succs []string
-			for _, depID := range m.DepsByPkgPath {
+			for _, depID := range mp.DepsByPkgPath {
 				succs = append(succs, string(depID))
 			}
 			if succs != nil {
@@ -152,8 +152,8 @@ func TestBreakImportCycles(t *testing.T) {
 		// Apply updates.
 		// (parse doesn't have a way to express node deletions,
 		// but they aren't very interesting.)
-		for id, m := range updates {
-			metadata[id] = m
+		for id, mp := range updates {
+			metadata[id] = mp
 		}
 
 		t.Log("updated", format(metadata))

@@ -24,6 +24,7 @@ import (
 	"golang.org/x/tools/gopls/internal/bug"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/analysis/embeddirective"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -34,8 +35,8 @@ import (
 // diagnostic, using the provided metadata and filesource.
 //
 // The slice of diagnostics may be empty.
-func goPackagesErrorDiagnostics(ctx context.Context, e packages.Error, m *Metadata, fs file.Source) ([]*Diagnostic, error) {
-	if diag, err := parseGoListImportCycleError(ctx, e, m, fs); err != nil {
+func goPackagesErrorDiagnostics(ctx context.Context, e packages.Error, mp *metadata.Package, fs file.Source) ([]*Diagnostic, error) {
+	if diag, err := parseGoListImportCycleError(ctx, e, mp, fs); err != nil {
 		return nil, err
 	} else if diag != nil {
 		return []*Diagnostic{diag}, nil
@@ -43,7 +44,7 @@ func goPackagesErrorDiagnostics(ctx context.Context, e packages.Error, m *Metada
 
 	// Parse error location and attempt to convert to protocol form.
 	loc, err := func() (protocol.Location, error) {
-		filename, line, col8 := parseGoListError(e, m.LoadDir)
+		filename, line, col8 := parseGoListError(e, mp.LoadDir)
 		uri := protocol.URIFromPath(filename)
 
 		fh, err := fs.ReadFile(ctx, uri)
@@ -83,7 +84,7 @@ func goPackagesErrorDiagnostics(ctx context.Context, e packages.Error, m *Metada
 		// Unable to parse a valid position.
 		// Apply the error to all files to be safe.
 		var diags []*Diagnostic
-		for _, uri := range m.CompiledGoFiles {
+		for _, uri := range mp.CompiledGoFiles {
 			diags = append(diags, &Diagnostic{
 				URI:      uri,
 				Severity: protocol.SeverityError,
@@ -468,7 +469,7 @@ func splitFileLineCol(s string) (file string, line, col8 int) {
 // an import cycle, returning a diagnostic if successful.
 //
 // If the error is not detected as an import cycle error, it returns nil, nil.
-func parseGoListImportCycleError(ctx context.Context, e packages.Error, m *Metadata, fs file.Source) (*Diagnostic, error) {
+func parseGoListImportCycleError(ctx context.Context, e packages.Error, mp *metadata.Package, fs file.Source) (*Diagnostic, error) {
 	re := regexp.MustCompile(`(.*): import stack: \[(.+)\]`)
 	matches := re.FindStringSubmatch(strings.TrimSpace(e.Msg))
 	if len(matches) < 3 {
@@ -483,7 +484,7 @@ func parseGoListImportCycleError(ctx context.Context, e packages.Error, m *Metad
 	}
 	// Imports have quotation marks around them.
 	circImp := strconv.Quote(importList[1])
-	for _, uri := range m.CompiledGoFiles {
+	for _, uri := range mp.CompiledGoFiles {
 		pgf, err := parseGoURI(ctx, fs, uri, ParseHeader)
 		if err != nil {
 			return nil, err

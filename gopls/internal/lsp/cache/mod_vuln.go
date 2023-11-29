@@ -94,13 +94,13 @@ func modVulnImpl(ctx context.Context, snapshot *Snapshot) (*vulncheck.Result, er
 	// TODO(hyangah): handle vulnerabilities in the standard library.
 
 	// Group packages by modules since vuln db is keyed by module.
-	metadataByModule := map[metadata.PackagePath][]*metadata.Metadata{}
-	for _, md := range allMeta {
+	packagesByModule := map[metadata.PackagePath][]*metadata.Package{}
+	for _, mp := range allMeta {
 		modulePath := metadata.PackagePath(osv.GoStdModulePath)
-		if mi := md.Module; mi != nil {
+		if mi := mp.Module; mi != nil {
 			modulePath = metadata.PackagePath(mi.Path)
 		}
-		metadataByModule[modulePath] = append(metadataByModule[modulePath], md)
+		packagesByModule[modulePath] = append(packagesByModule[modulePath], mp)
 	}
 
 	var (
@@ -125,11 +125,11 @@ func modVulnImpl(ctx context.Context, snapshot *Snapshot) (*vulncheck.Result, er
 
 	var group errgroup.Group
 	group.SetLimit(10) // limit govulncheck api runs
-	for _, mds := range metadataByModule {
-		mds := mds
+	for _, mps := range packagesByModule {
+		mps := mps
 		group.Go(func() error {
 			effectiveModule := stdlibModule
-			if m := mds[0].Module; m != nil {
+			if m := mps[0].Module; m != nil {
 				effectiveModule = m
 			}
 			for effectiveModule.Replace != nil {
@@ -165,7 +165,7 @@ func modVulnImpl(ctx context.Context, snapshot *Snapshot) (*vulncheck.Result, er
 					}
 					for _, imp := range a.EcosystemSpecific.Packages {
 						if knownPkgs == nil {
-							knownPkgs = toPackagePathSet(mds)
+							knownPkgs = toPackagePathSet(mps)
 						}
 						if knownPkgs[metadata.PackagePath(imp.Path)] {
 							vulnerablePkgs = append(vulnerablePkgs, &govulncheck.Finding{
@@ -223,7 +223,7 @@ func GetEnv(snapshot *Snapshot, key string) string {
 }
 
 // toPackagePathSet transforms the metadata to a set of package paths.
-func toPackagePathSet(mds []*metadata.Metadata) map[metadata.PackagePath]bool {
+func toPackagePathSet(mds []*metadata.Package) map[metadata.PackagePath]bool {
 	pkgPaths := make(map[metadata.PackagePath]bool, len(mds))
 	for _, md := range mds {
 		pkgPaths[md.PkgPath] = true

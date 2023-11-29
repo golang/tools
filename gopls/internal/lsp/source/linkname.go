@@ -106,7 +106,7 @@ func findLinkname(ctx context.Context, snapshot *cache.Snapshot, pkgPath Package
 	// Typically the linkname refers to a forward dependency
 	// or a reverse dependency, but in general it may refer
 	// to any package that is linked with this one.
-	var pkgMeta *Metadata
+	var pkgMeta *metadata.Package
 	metas, err := snapshot.AllMetadata(ctx)
 	if err != nil {
 		return nil, nil, token.NoPos, err

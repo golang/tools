@@ -168,32 +168,32 @@ func CompareDiagnostic(a, b *cache.Diagnostic) int {
 // dependencies of m. When using the Go command, the answer is unique.
 //
 // TODO(rfindley): refactor to share logic with findPackageInDeps?
-func findFileInDeps(s metadata.Source, m *Metadata, uri protocol.DocumentURI) *Metadata {
+func findFileInDeps(s metadata.Source, mp *metadata.Package, uri protocol.DocumentURI) *metadata.Package {
 	seen := make(map[PackageID]bool)
-	var search func(*Metadata) *Metadata
-	search = func(m *Metadata) *Metadata {
-		if seen[m.ID] {
+	var search func(*metadata.Package) *metadata.Package
+	search = func(mp *metadata.Package) *metadata.Package {
+		if seen[mp.ID] {
 			return nil
 		}
-		seen[m.ID] = true
-		for _, cgf := range m.CompiledGoFiles {
+		seen[mp.ID] = true
+		for _, cgf := range mp.CompiledGoFiles {
 			if cgf == uri {
-				return m
+				return mp
 			}
 		}
-		for _, dep := range m.DepsByPkgPath {
-			m := s.Metadata(dep)
-			if m == nil {
+		for _, dep := range mp.DepsByPkgPath {
+			mp := s.Metadata(dep)
+			if mp == nil {
 				bug.Reportf("nil metadata for %q", dep)
 				continue
 			}
-			if found := search(m); found != nil {
+			if found := search(mp); found != nil {
 				return found
 			}
 		}
 		return nil
 	}
-	return search(m)
+	return search(mp)
 }
 
 // CollectScopes returns all scopes in an ast path, ordered as innermost scope
@@ -245,7 +245,7 @@ func Qualifier(f *ast.File, pkg *types.Package, info *types.Info) types.Qualifie
 
 // requalifier returns a function that re-qualifies identifiers and qualified
 // identifiers contained in targetFile using the given metadata qualifier.
-func requalifier(s metadata.Source, targetFile *ast.File, targetMeta *Metadata, mq MetadataQualifier) func(string) string {
+func requalifier(s metadata.Source, targetFile *ast.File, targetMeta *metadata.Package, mq MetadataQualifier) func(string) string {
 	qm := map[string]string{
 		"": mq(targetMeta.Name, "", targetMeta.PkgPath),
 	}
@@ -276,21 +276,21 @@ type MetadataQualifier func(PackageName, ImportPath, PackagePath) string
 // MetadataQualifierForFile returns a metadata qualifier that chooses the best
 // qualification of an imported package relative to the file f in package with
 // metadata m.
-func MetadataQualifierForFile(s metadata.Source, f *ast.File, m *Metadata) MetadataQualifier {
+func MetadataQualifierForFile(s metadata.Source, f *ast.File, mp *metadata.Package) MetadataQualifier {
 	// Record local names for import paths.
 	localNames := make(map[ImportPath]string) // local names for imports in f
 	for _, imp := range f.Imports {
-		name, _, impPath, _ := importInfo(s, imp, m)
+		name, _, impPath, _ := importInfo(s, imp, mp)
 		localNames[impPath] = name
 	}
 
 	// Record a package path -> import path mapping.
 	inverseDeps := make(map[PackageID]PackagePath)
-	for path, id := range m.DepsByPkgPath {
+	for path, id := range mp.DepsByPkgPath {
 		inverseDeps[id] = path
 	}
 	importsByPkgPath := make(map[PackagePath]ImportPath) // best import paths by pkgPath
-	for impPath, id := range m.DepsByImpPath {
+	for impPath, id := range mp.DepsByImpPath {
 		if id == "" {
 			continue
 		}
@@ -312,7 +312,7 @@ func MetadataQualifierForFile(s metadata.Source, f *ast.File, m *Metadata) Metad
 			if srcImp := importsByPkgPath[pkgPath]; srcImp != "" {
 				impPath = srcImp
 			}
-			if pkgPath == m.PkgPath {
+			if pkgPath == mp.PkgPath {
 				return ""
 			}
 		}
@@ -338,7 +338,7 @@ func MetadataQualifierForFile(s metadata.Source, f *ast.File, m *Metadata) Metad
 // extracted from m, for extracting package path even in the case where
 // metadata for a dep was missing. This should not be necessary, as we should
 // always have metadata for IDs contained in DepsByPkgPath.
-func importInfo(s metadata.Source, imp *ast.ImportSpec, m *Metadata) (string, PackageName, ImportPath, PackagePath) {
+func importInfo(s metadata.Source, imp *ast.ImportSpec, mp *metadata.Package) (string, PackageName, ImportPath, PackagePath) {
 	var (
 		name    string // local name
 		pkgName PackageName
@@ -353,13 +353,13 @@ func importInfo(s metadata.Source, imp *ast.ImportSpec, m *Metadata) (string, Pa
 
 	// Try to find metadata for the import. If successful and there is no local
 	// name, the package name is the local name.
-	if depID := m.DepsByImpPath[impPath]; depID != "" {
-		if depm := s.Metadata(depID); depm != nil {
+	if depID := mp.DepsByImpPath[impPath]; depID != "" {
+		if depMP := s.Metadata(depID); depMP != nil {
 			if name == "" {
-				name = string(depm.Name)
+				name = string(depMP.Name)
 			}
-			pkgName = depm.Name
-			pkgPath = depm.PkgPath
+			pkgName = depMP.Name
+			pkgPath = depMP.PkgPath
 		}
 	}
 

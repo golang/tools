@@ -117,7 +117,8 @@ type Snapshot struct {
 
 	// meta holds loaded metadata.
 	//
-	// meta is guarded by mu, but the metadataGraph itself is immutable.
+	// meta is guarded by mu, but the Graph itself is immutable.
+	//
 	// TODO(rfindley): in many places we hold mu while operating on meta, even
 	// though we only need to hold mu while reading the pointer.
 	meta *metadata.Graph
@@ -740,7 +741,7 @@ func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]XrefInde
 	pre := func(i int, ph *packageHandle) bool {
 		data, err := filecache.Get(xrefsKind, ph.key)
 		if err == nil { // hit
-			indexes[i] = XrefIndex{m: ph.m, data: data}
+			indexes[i] = XrefIndex{mp: ph.mp, data: data}
 			return false
 		} else if err != filecache.ErrNotFound {
 			event.Error(ctx, "reading xrefs from filecache", err)
@@ -748,19 +749,19 @@ func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]XrefInde
 		return true
 	}
 	post := func(i int, pkg *Package) {
-		indexes[i] = XrefIndex{m: pkg.m, data: pkg.pkg.xrefs()}
+		indexes[i] = XrefIndex{mp: pkg.metadata, data: pkg.pkg.xrefs()}
 	}
 	return indexes, s.forEachPackage(ctx, ids, pre, post)
 }
 
 // An XrefIndex is a helper for looking up references in a given package.
 type XrefIndex struct {
-	m    *Metadata
+	mp   *metadata.Package
 	data []byte
 }
 
 func (index XrefIndex) Lookup(targets map[PackagePath]map[objectpath.Path]struct{}) []protocol.Location {
-	return xrefs.Lookup(index.m, index.data, targets)
+	return xrefs.Lookup(index.mp, index.data, targets)
 }
 
 // MethodSets returns method-set indexes for the specified packages.
@@ -795,7 +796,7 @@ func (s *Snapshot) MethodSets(ctx context.Context, ids ...PackageID) ([]*methods
 // The result may include tests and intermediate test variants of
 // importable packages.
 // It returns an error if the context was cancelled.
-func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI) ([]*Metadata, error) {
+func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI) ([]*metadata.Package, error) {
 	if s.view.ViewType() == AdHocView {
 		// As described in golang/go#57209, in ad-hoc workspaces (where we load ./
 		// rather than ./...), preempting the directory load with file loads can
@@ -863,9 +864,9 @@ func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ids = s.meta.IDs[uri]
-	metas := make([]*Metadata, len(ids))
+	metas := make([]*metadata.Package, len(ids))
 	for i, id := range ids {
-		metas[i] = s.meta.Metadata[id]
+		metas[i] = s.meta.Packages[id]
 		if metas[i] == nil {
 			panic("nil metadata")
 		}
@@ -899,7 +900,7 @@ func boolLess(x, y bool) bool { return !x && y } // false < true
 // the ID and Metadata of each package in the workspace that
 // directly or transitively depend on the package denoted by id,
 // excluding id itself.
-func (s *Snapshot) ReverseDependencies(ctx context.Context, id PackageID, transitive bool) (map[PackageID]*Metadata, error) {
+func (s *Snapshot) ReverseDependencies(ctx context.Context, id PackageID, transitive bool) (map[PackageID]*metadata.Package, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
@@ -907,7 +908,7 @@ func (s *Snapshot) ReverseDependencies(ctx context.Context, id PackageID, transi
 	meta := s.meta
 	s.mu.Unlock()
 
-	var rdeps map[PackageID]*Metadata
+	var rdeps map[PackageID]*metadata.Package
 	if transitive {
 		rdeps = meta.ReverseReflexiveTransitiveClosure(id)
 
@@ -918,9 +919,9 @@ func (s *Snapshot) ReverseDependencies(ctx context.Context, id PackageID, transi
 
 	} else {
 		// direct reverse dependencies
-		rdeps = make(map[PackageID]*Metadata)
+		rdeps = make(map[PackageID]*metadata.Package)
 		for _, rdepID := range meta.ImportedBy[id] {
-			if rdep := meta.Metadata[rdepID]; rdep != nil {
+			if rdep := meta.Packages[rdepID]; rdep != nil {
 				rdeps[rdepID] = rdep
 			}
 		}
@@ -1129,7 +1130,7 @@ func (s *Snapshot) filesInDir(uri protocol.DocumentURI) []protocol.DocumentURI {
 //
 // Operations that must inspect all the dependencies of the
 // workspace packages should instead use AllMetadata.
-func (s *Snapshot) WorkspaceMetadata(ctx context.Context) ([]*Metadata, error) {
+func (s *Snapshot) WorkspaceMetadata(ctx context.Context) ([]*metadata.Package, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
@@ -1137,9 +1138,9 @@ func (s *Snapshot) WorkspaceMetadata(ctx context.Context) ([]*Metadata, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	meta := make([]*Metadata, 0, s.workspacePackages.Len())
+	meta := make([]*metadata.Package, 0, s.workspacePackages.Len())
 	s.workspacePackages.Range(func(id PackageID, _ PackagePath) {
-		meta = append(meta, s.meta.Metadata[id])
+		meta = append(meta, s.meta.Packages[id])
 	})
 	return meta, nil
 }
@@ -1166,7 +1167,7 @@ func (s *Snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[protoco
 	}
 
 	var (
-		meta []*Metadata
+		meta []*metadata.Package
 		err  error
 	)
 	if workspaceOnly {
@@ -1179,11 +1180,11 @@ func (s *Snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[protoco
 	}
 
 	goFiles := make(map[protocol.DocumentURI]struct{})
-	for _, m := range meta {
-		for _, uri := range m.GoFiles {
+	for _, mp := range meta {
+		for _, uri := range mp.GoFiles {
 			goFiles[uri] = struct{}{}
 		}
-		for _, uri := range m.CompiledGoFiles {
+		for _, uri := range mp.CompiledGoFiles {
 			goFiles[uri] = struct{}{}
 		}
 	}
@@ -1226,7 +1227,7 @@ func (s *Snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[protoco
 // It includes all test variants.
 //
 // TODO(rfindley): just return the metadata graph here.
-func (s *Snapshot) AllMetadata(ctx context.Context) ([]*Metadata, error) {
+func (s *Snapshot) AllMetadata(ctx context.Context) ([]*metadata.Package, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
@@ -1235,9 +1236,9 @@ func (s *Snapshot) AllMetadata(ctx context.Context) ([]*Metadata, error) {
 	g := s.meta
 	s.mu.Unlock()
 
-	meta := make([]*Metadata, 0, len(g.Metadata))
-	for _, m := range g.Metadata {
-		meta = append(meta, m)
+	meta := make([]*metadata.Package, 0, len(g.Packages))
+	for _, mp := range g.Packages {
+		meta = append(meta, mp)
 	}
 	return meta, nil
 }
@@ -1278,10 +1279,10 @@ func nearestModFile(ctx context.Context, uri protocol.DocumentURI, fs file.Sourc
 
 // Metadata returns the metadata for the specified package,
 // or nil if it was not found.
-func (s *Snapshot) Metadata(id PackageID) *Metadata {
+func (s *Snapshot) Metadata(id PackageID) *metadata.Package {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.meta.Metadata[id]
+	return s.meta.Packages[id]
 }
 
 // clearShouldLoad clears package IDs that no longer need to be reloaded after
@@ -1480,12 +1481,12 @@ const adHocPackagesWarning = `You are outside of a module and outside of $GOPATH
 If you are using modules, please open your editor to a directory in your module.
 If you believe this warning is incorrect, please file an issue: https://github.com/golang/go/issues/new.`
 
-func shouldShowAdHocPackagesWarning(snapshot *Snapshot, active []*Metadata) string {
+func shouldShowAdHocPackagesWarning(snapshot *Snapshot, active []*metadata.Package) string {
 	if !snapshot.validBuildConfiguration() {
-		for _, m := range active {
+		for _, mp := range active {
 			// A blank entry in DepsByImpPath
 			// indicates a missing dependency.
-			for _, importID := range m.DepsByImpPath {
+			for _, importID := range mp.DepsByImpPath {
 				if importID == "" {
 					return adHocPackagesWarning
 				}
@@ -1495,9 +1496,9 @@ func shouldShowAdHocPackagesWarning(snapshot *Snapshot, active []*Metadata) stri
 	return ""
 }
 
-func containsCommandLineArguments(metas []*Metadata) bool {
-	for _, m := range metas {
-		if metadata.IsCommandLineArguments(m.ID) {
+func containsCommandLineArguments(metas []*metadata.Package) bool {
+	for _, mp := range metas {
+		if metadata.IsCommandLineArguments(mp.ID) {
 			return true
 		}
 	}
@@ -1729,12 +1730,12 @@ searchOverlays:
 		if s.IsBuiltin(uri) || s.FileKind(o) != file.Go {
 			continue
 		}
-		md, err := s.MetadataForFile(ctx, uri)
+		mps, err := s.MetadataForFile(ctx, uri)
 		if err != nil {
 			return nil, err
 		}
-		for _, m := range md {
-			if !metadata.IsCommandLineArguments(m.ID) || m.Standalone {
+		for _, mp := range mps {
+			if !metadata.IsCommandLineArguments(mp.ID) || mp.Standalone {
 				continue searchOverlays
 			}
 		}
@@ -2055,7 +2056,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 
 	// Invalidate all package metadata if the workspace module has changed.
 	if reinit {
-		for k := range s.meta.Metadata {
+		for k := range s.meta.Packages {
 			// TODO(rfindley): this seems brittle; can we just start over?
 			directIDs[k] = true
 		}
@@ -2154,8 +2155,8 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 	// from an unparseable state to a parseable state, as we don't have a
 	// starting point to compare with.
 	if anyImportDeleted {
-		for id, metadata := range s.meta.Metadata {
-			if len(metadata.Errors) > 0 {
+		for id, mp := range s.meta.Packages {
+			if len(mp.Errors) > 0 {
 				directIDs[id] = true
 			}
 		}
@@ -2167,8 +2168,8 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 	// fixed, but until that proves necessary, just invalidate metadata for any
 	// package with missing dependencies.
 	if anyFileAdded {
-		for id, metadata := range s.meta.Metadata {
-			for _, impID := range metadata.DepsByImpPath {
+		for id, mp := range s.meta.Packages {
+			for _, impID := range mp.DepsByImpPath {
 				if impID == "" { // missing import
 					directIDs[id] = true
 					break
@@ -2217,36 +2218,36 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 	// Compute which metadata updates are required. We only need to invalidate
 	// packages directly containing the affected file, and only if it changed in
 	// a relevant way.
-	metadataUpdates := make(map[PackageID]*Metadata)
-	for k, v := range s.meta.Metadata {
-		invalidateMetadata := idsToInvalidate[k]
+	metadataUpdates := make(map[PackageID]*metadata.Package)
+	for id, mp := range s.meta.Packages {
+		invalidateMetadata := idsToInvalidate[id]
 
 		// For metadata that has been newly invalidated, capture package paths
 		// requiring reloading in the shouldLoad map.
-		if invalidateMetadata && !metadata.IsCommandLineArguments(v.ID) {
-			needsReload := []PackagePath{v.PkgPath}
-			if v.ForTest != "" && v.ForTest != v.PkgPath {
+		if invalidateMetadata && !metadata.IsCommandLineArguments(mp.ID) {
+			needsReload := []PackagePath{mp.PkgPath}
+			if mp.ForTest != "" && mp.ForTest != mp.PkgPath {
 				// When reloading test variants, always reload their ForTest package as
 				// well. Otherwise, we may miss test variants in the resulting load.
 				//
 				// TODO(rfindley): is this actually sufficient? Is it possible that
 				// other test variants may be invalidated? Either way, we should
 				// determine exactly what needs to be reloaded here.
-				needsReload = append(needsReload, v.ForTest)
+				needsReload = append(needsReload, mp.ForTest)
 			}
-			result.shouldLoad.Set(k, needsReload, nil)
+			result.shouldLoad.Set(id, needsReload, nil)
 		}
 
 		// Check whether the metadata should be deleted.
 		if invalidateMetadata {
-			metadataUpdates[k] = nil
+			metadataUpdates[id] = nil
 			continue
 		}
 
 	}
 
 	// Update metadata, if necessary.
-	result.meta = s.meta.Clone(metadataUpdates)
+	result.meta = s.meta.Update(metadataUpdates)
 
 	// Update workspace and active packages, if necessary.
 	if result.meta != s.meta || anyFileOpenedOrClosed {

@@ -14,16 +14,17 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/gocommand"
 )
 
-func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, m *Metadata) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
-	if len(m.CompiledGoFiles) == 0 {
+func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.Package) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
+	if len(mp.CompiledGoFiles) == 0 {
 		return nil, nil
 	}
-	pkgDir := filepath.Dir(m.CompiledGoFiles[0].Path())
+	pkgDir := filepath.Dir(mp.CompiledGoFiles[0].Path())
 	outDir := filepath.Join(os.TempDir(), fmt.Sprintf("gopls-%d.details", os.Getpid()))
 
 	if err := os.MkdirAll(outDir, 0700); err != nil {

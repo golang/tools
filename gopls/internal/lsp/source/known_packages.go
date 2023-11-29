@@ -48,8 +48,8 @@ func KnownPackagePaths(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 	imported := make(map[PackagePath]bool)
 	for _, imp := range file.Imports {
 		if id := current.DepsByImpPath[metadata.UnquoteImportPath(imp)]; id != "" {
-			if m := snapshot.Metadata(id); m != nil {
-				imported[m.PkgPath] = true
+			if mp := snapshot.Metadata(id); mp != nil {
+				imported[mp.PkgPath] = true
 			}
 		}
 	}
@@ -131,7 +131,7 @@ func KnownPackagePaths(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 // TODO(adonovan): ensure that metadata graph is always cyclic!
 // Many algorithms will get confused or even stuck in the
 // presence of cycles. Then replace this function by 'false'.
-func isDirectlyCyclical(pkg, imported *Metadata) bool {
+func isDirectlyCyclical(pkg, imported *metadata.Package) bool {
 	_, ok := imported.DepsByPkgPath[pkg.PkgPath]
 	return ok
 }

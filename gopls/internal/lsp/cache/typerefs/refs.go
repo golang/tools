@@ -25,7 +25,7 @@ import (
 //
 // It returns a serializable index of this information.
 // Use Decode to expand the result.
-func Encode(files []*parsego.File, imports map[metadata.ImportPath]*metadata.Metadata) []byte {
+func Encode(files []*parsego.File, imports map[metadata.ImportPath]*metadata.Package) []byte {
 	return index(files, imports)
 }
 
@@ -163,7 +163,7 @@ func classKey(set symbolSet) string {
 }
 
 // index builds the reference graph and encodes the index.
-func index(pgfs []*parsego.File, imports map[metadata.ImportPath]*metadata.Metadata) []byte {
+func index(pgfs []*parsego.File, imports map[metadata.ImportPath]*metadata.Package) []byte {
 	// First pass: gather package-level names and create a declNode for each.
 	//
 	// In ill-typed code, there may be multiple declarations of the
@@ -256,7 +256,7 @@ func index(pgfs []*parsego.File, imports map[metadata.ImportPath]*metadata.Metad
 
 // visitFile inspects the file syntax for referring identifiers, and
 // populates the internal and external references of decls.
-func visitFile(file *ast.File, imports map[metadata.ImportPath]*metadata.Metadata, decls map[string]*declNode) {
+func visitFile(file *ast.File, imports map[metadata.ImportPath]*metadata.Package, decls map[string]*declNode) {
 	// Import information for this file. Multiple packages
 	// may be referenced by a given name in the presence
 	// of type errors (or multiple dot imports, which are

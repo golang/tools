@@ -40,7 +40,7 @@ type (
 	PackageID      = metadata.PackageID
 	ImportPath     = metadata.ImportPath
 	PackagePath    = metadata.PackagePath
-	Metadata       = metadata.Metadata
+	Metadata       = metadata.Package
 	MetadataSource = metadata.Source
 	ParsedGoFile   = parsego.File
 )
@@ -129,10 +129,10 @@ func TestBuildPackageGraph(t *testing.T) {
 		if exportFile == "" {
 			return nil // no exported symbols
 		}
-		m := meta.Metadata(id)
+		mp := meta.Metadata(id)
 		tpkg, ok := exportedPackages[id]
 		if !ok {
-			pkgPath := string(m.PkgPath)
+			pkgPath := string(mp.PkgPath)
 			tpkg, err = importFromExportData(pkgPath, exportFile)
 			if err != nil {
 				t.Fatalf("importFromExportData(%s, %s) failed: %v", pkgPath, exportFile, err)
@@ -204,12 +204,12 @@ func importMap(id PackageID, meta MetadataSource) map[PackagePath]PackageID {
 	imports := make(map[PackagePath]PackageID)
 	var recordIDs func(PackageID)
 	recordIDs = func(id PackageID) {
-		m := meta.Metadata(id)
-		if _, ok := imports[m.PkgPath]; ok {
+		mp := meta.Metadata(id)
+		if _, ok := imports[mp.PkgPath]; ok {
 			return
 		}
-		imports[m.PkgPath] = id
-		for _, id := range m.DepsByPkgPath {
+		imports[mp.PkgPath] = id
+		for _, id := range mp.DepsByPkgPath {
 			recordIDs(id)
 		}
 	}
@@ -361,7 +361,7 @@ func loadPackages(query string, needExport bool) (map[PackageID]string, Metadata
 		if meta[id] != nil {
 			return
 		}
-		m := &Metadata{
+		mp := &Metadata{
 			ID:         id,
 			PkgPath:    PackagePath(pkg.PkgPath),
 			Name:       packageName(pkg.Name),
@@ -372,28 +372,28 @@ func loadPackages(query string, needExport bool) (map[PackageID]string, Metadata
 			Errors:     pkg.Errors,
 			DepsErrors: packagesinternal.GetDepsErrors(pkg),
 		}
-		meta[id] = m
+		meta[id] = mp
 
 		for _, filename := range pkg.CompiledGoFiles {
-			m.CompiledGoFiles = append(m.CompiledGoFiles, protocol.URIFromPath(filename))
+			mp.CompiledGoFiles = append(mp.CompiledGoFiles, protocol.URIFromPath(filename))
 		}
 		for _, filename := range pkg.GoFiles {
-			m.GoFiles = append(m.GoFiles, protocol.URIFromPath(filename))
+			mp.GoFiles = append(mp.GoFiles, protocol.URIFromPath(filename))
 		}
 
-		m.DepsByImpPath = make(map[ImportPath]PackageID)
-		m.DepsByPkgPath = make(map[PackagePath]PackageID)
+		mp.DepsByImpPath = make(map[ImportPath]PackageID)
+		mp.DepsByPkgPath = make(map[PackagePath]PackageID)
 		for importPath, imported := range pkg.Imports {
 			importPath := ImportPath(importPath)
 
 			// see note in gopls/internal/lsp/cache/load.go for an explanation of this check.
 			if importPath != "unsafe" && len(imported.CompiledGoFiles) == 0 {
-				m.DepsByImpPath[importPath] = "" // missing
+				mp.DepsByImpPath[importPath] = "" // missing
 				continue
 			}
 
-			m.DepsByImpPath[importPath] = PackageID(imported.ID)
-			m.DepsByPkgPath[PackagePath(imported.PkgPath)] = PackageID(imported.ID)
+			mp.DepsByImpPath[importPath] = PackageID(imported.ID)
+			mp.DepsByPkgPath[PackagePath(imported.PkgPath)] = PackageID(imported.ID)
 			buildMetadata(imported)
 		}
 	}

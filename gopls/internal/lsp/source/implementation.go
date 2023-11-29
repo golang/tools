@@ -86,17 +86,17 @@ func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 		// enumerate all types within the package that satisfy the
 		// query type, even those defined local to a function.
 		declURI := protocol.URIFromPath(declPosn.Filename)
-		declMetas, err := snapshot.MetadataForFile(ctx, declURI)
+		declMPs, err := snapshot.MetadataForFile(ctx, declURI)
 		if err != nil {
 			return nil, err
 		}
-		metadata.RemoveIntermediateTestVariants(&declMetas)
-		if len(declMetas) == 0 {
+		metadata.RemoveIntermediateTestVariants(&declMPs)
+		if len(declMPs) == 0 {
 			return nil, fmt.Errorf("no packages for file %s", declURI)
 		}
-		ids := make([]PackageID, len(declMetas))
-		for i, m := range declMetas {
-			ids[i] = m.ID
+		ids := make([]PackageID, len(declMPs))
+		for i, mp := range declMPs {
+			ids[i] = mp.ID
 		}
 		localPkgs, err = snapshot.TypeCheck(ctx, ids...)
 		if err != nil {
@@ -150,11 +150,11 @@ func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	if obj.Pkg() != nil { // nil for error
 		pkgPath = PackagePath(obj.Pkg().Path())
 	}
-	for _, m := range globalMetas {
-		if m.PkgPath == pkgPath {
+	for _, mp := range globalMetas {
+		if mp.PkgPath == pkgPath {
 			continue // declaring package is handled by local implementation
 		}
-		globalIDs = append(globalIDs, m.ID)
+		globalIDs = append(globalIDs, mp.ID)
 	}
 	indexes, err := snapshot.MethodSets(ctx, globalIDs...)
 	if err != nil {

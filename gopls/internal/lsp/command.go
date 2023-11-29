@@ -1071,8 +1071,8 @@ func collectViewStats(ctx context.Context, view *cache.View) (command.ViewStats,
 	workspacePackages := collectPackageStats(wsMD)
 
 	var ids []source.PackageID
-	for _, m := range wsMD {
-		ids = append(ids, m.ID)
+	for _, mp := range wsMD {
+		ids = append(ids, mp.ID)
 	}
 
 	diags, err := s.PackageDiagnostics(ctx, ids...)
@@ -1093,19 +1093,19 @@ func collectViewStats(ctx context.Context, view *cache.View) (command.ViewStats,
 	}, nil
 }
 
-func collectPackageStats(md []*source.Metadata) command.PackageStats {
+func collectPackageStats(mps []*metadata.Package) command.PackageStats {
 	var stats command.PackageStats
-	stats.Packages = len(md)
+	stats.Packages = len(mps)
 	modules := make(map[string]bool)
 
-	for _, m := range md {
-		n := len(m.CompiledGoFiles)
+	for _, mp := range mps {
+		n := len(mp.CompiledGoFiles)
 		stats.CompiledGoFiles += n
 		if n > stats.LargestPackage {
 			stats.LargestPackage = n
 		}
-		if m.Module != nil {
-			modules[m.Module.Path] = true
+		if mp.Module != nil {
+			modules[mp.Module.Path] = true
 		}
 	}
 	stats.Modules = len(modules)

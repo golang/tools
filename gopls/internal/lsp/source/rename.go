@@ -300,15 +300,15 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 	var targets map[types.Object]ast.Node
 	var pkg *cache.Package
 	{
-		metas, err := snapshot.MetadataForFile(ctx, f.URI())
+		mps, err := snapshot.MetadataForFile(ctx, f.URI())
 		if err != nil {
 			return nil, err
 		}
-		metadata.RemoveIntermediateTestVariants(&metas)
-		if len(metas) == 0 {
+		metadata.RemoveIntermediateTestVariants(&mps)
+		if len(mps) == 0 {
 			return nil, fmt.Errorf("no package metadata for file %s", f.URI())
 		}
-		widest := metas[len(metas)-1] // widest variant may include _test.go files
+		widest := mps[len(mps)-1] // widest variant may include _test.go files
 		pkgs, err := snapshot.TypeCheck(ctx, widest.ID)
 		if err != nil {
 			return nil, err
@@ -485,7 +485,7 @@ func typeCheckReverseDependencies(ctx context.Context, snapshot *cache.Snapshot,
 	}
 	// variants must include ITVs for the reverse dependency
 	// computation, but they are filtered out before we typecheck.
-	allRdeps := make(map[PackageID]*Metadata)
+	allRdeps := make(map[PackageID]*metadata.Package)
 	for _, variant := range variants {
 		rdeps, err := snapshot.ReverseDependencies(ctx, variant.ID, transitive)
 		if err != nil {
@@ -752,12 +752,12 @@ func renamePackage(ctx context.Context, s *cache.Snapshot, f file.Handle, newNam
 
 	// Rename package and import declarations in all relevant packages.
 	edits := make(map[protocol.DocumentURI][]diff.Edit)
-	for _, m := range allMetadata {
+	for _, mp := range allMetadata {
 		// Special case: x_test packages for the renamed package will not have the
 		// package path as a dir prefix, but still need their package clauses
 		// renamed.
-		if m.PkgPath == oldPkgPath+"_test" {
-			if err := renamePackageClause(ctx, m, s, newName+"_test", edits); err != nil {
+		if mp.PkgPath == oldPkgPath+"_test" {
+			if err := renamePackageClause(ctx, mp, s, newName+"_test", edits); err != nil {
 				return nil, err
 			}
 			continue
@@ -766,34 +766,34 @@ func renamePackage(ctx context.Context, s *cache.Snapshot, f file.Handle, newNam
 		// Subtle: check this condition before checking for valid module info
 		// below, because we should not fail this operation if unrelated packages
 		// lack module info.
-		if !strings.HasPrefix(string(m.PkgPath)+"/", string(oldPkgPath)+"/") {
+		if !strings.HasPrefix(string(mp.PkgPath)+"/", string(oldPkgPath)+"/") {
 			continue // not affected by the package renaming
 		}
 
-		if m.Module == nil {
+		if mp.Module == nil {
 			// This check will always fail under Bazel.
-			return nil, fmt.Errorf("cannot rename package: missing module information for package %q", m.PkgPath)
+			return nil, fmt.Errorf("cannot rename package: missing module information for package %q", mp.PkgPath)
 		}
 
-		if modulePath != PackagePath(m.Module.Path) {
+		if modulePath != PackagePath(mp.Module.Path) {
 			continue // don't edit imports if nested package and renaming package have different module paths
 		}
 
 		// Renaming a package consists of changing its import path and package name.
-		suffix := strings.TrimPrefix(string(m.PkgPath), string(oldPkgPath))
+		suffix := strings.TrimPrefix(string(mp.PkgPath), string(oldPkgPath))
 		newPath := newPathPrefix + suffix
 
-		pkgName := m.Name
-		if m.PkgPath == oldPkgPath {
+		pkgName := mp.Name
+		if mp.PkgPath == oldPkgPath {
 			pkgName = newName
 
-			if err := renamePackageClause(ctx, m, s, newName, edits); err != nil {
+			if err := renamePackageClause(ctx, mp, s, newName, edits); err != nil {
 				return nil, err
 			}
 		}
 
 		imp := ImportPath(newPath) // TODO(adonovan): what if newPath has vendor/ prefix?
-		if err := renameImports(ctx, s, m, imp, pkgName, edits); err != nil {
+		if err := renameImports(ctx, s, mp, imp, pkgName, edits); err != nil {
 			return nil, err
 		}
 	}
@@ -805,9 +805,9 @@ func renamePackage(ctx context.Context, s *cache.Snapshot, f file.Handle, newNam
 // the package described by the given metadata, to newName.
 //
 // Edits are written into the edits map.
-func renamePackageClause(ctx context.Context, m *Metadata, snapshot *cache.Snapshot, newName PackageName, edits map[protocol.DocumentURI][]diff.Edit) error {
+func renamePackageClause(ctx context.Context, mp *metadata.Package, snapshot *cache.Snapshot, newName PackageName, edits map[protocol.DocumentURI][]diff.Edit) error {
 	// Rename internal references to the package in the renaming package.
-	for _, uri := range m.CompiledGoFiles {
+	for _, uri := range mp.CompiledGoFiles {
 		fh, err := snapshot.ReadFile(ctx, uri)
 		if err != nil {
 			return err
@@ -835,8 +835,8 @@ func renamePackageClause(ctx context.Context, m *Metadata, snapshot *cache.Snaps
 // newPath and name newName.
 //
 // Edits are written into the edits map.
-func renameImports(ctx context.Context, snapshot *cache.Snapshot, m *Metadata, newPath ImportPath, newName PackageName, allEdits map[protocol.DocumentURI][]diff.Edit) error {
-	rdeps, err := snapshot.ReverseDependencies(ctx, m.ID, false) // find direct importers
+func renameImports(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.Package, newPath ImportPath, newName PackageName, allEdits map[protocol.DocumentURI][]diff.Edit) error {
+	rdeps, err := snapshot.ReverseDependencies(ctx, mp.ID, false) // find direct importers
 	if err != nil {
 		return err
 	}
@@ -861,7 +861,7 @@ func renameImports(ctx context.Context, snapshot *cache.Snapshot, m *Metadata, n
 				continue // no package declaration
 			}
 			for _, imp := range f.File.Imports {
-				if rdep.DepsByImpPath[metadata.UnquoteImportPath(imp)] != m.ID {
+				if rdep.DepsByImpPath[metadata.UnquoteImportPath(imp)] != mp.ID {
 					continue // not the import we're looking for
 				}
 
@@ -889,7 +889,7 @@ func renameImports(ctx context.Context, snapshot *cache.Snapshot, m *Metadata, n
 
 	// If the imported package's name hasn't changed,
 	// we don't need to rename references within each file.
-	if newName == m.Name {
+	if newName == mp.Name {
 		return nil
 	}
 
@@ -914,7 +914,7 @@ func renameImports(ctx context.Context, snapshot *cache.Snapshot, m *Metadata, n
 				if imp.Name != nil {
 					continue // has explicit local name
 				}
-				if rdeps[id].DepsByImpPath[metadata.UnquoteImportPath(imp)] != m.ID {
+				if rdeps[id].DepsByImpPath[metadata.UnquoteImportPath(imp)] != mp.ID {
 					continue // not the import we're looking for
 				}
 

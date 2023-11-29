@@ -2,6 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// The metadata package defines types and functions for working with package
+// metadata, which describes Go packages and their relationships.
+//
+// Package metadata is loaded by gopls using go/packages, and the [Package]
+// type is itself a projection and translation of data from
+// go/packages.Package.
+//
+// Packages are assembled into an immutable [Graph]
 package metadata
 
 import (
@@ -27,12 +35,12 @@ type (
 	ImportPath  string // path that appears in an import declaration (e.g. "example.com/foo")
 )
 
-// Metadata represents package metadata retrieved from go/packages.
+// Package represents package metadata retrieved from go/packages.
 // The DepsBy{Imp,Pkg}Path maps do not contain self-import edges.
 //
 // An ad-hoc package (without go.mod or GOPATH) has its ID, PkgPath,
 // and LoadDir equal to the absolute path of its directory.
-type Metadata struct {
+type Package struct {
 	ID      PackageID
 	PkgPath PackagePath
 	Name    PackageName
@@ -53,7 +61,7 @@ type Metadata struct {
 	Standalone    bool   // package synthesized for a standalone file (e.g. ignore-tagged)
 }
 
-func (m *Metadata) String() string { return string(m.ID) }
+func (mp *Package) String() string { return string(mp.ID) }
 
 // IsIntermediateTestVariant reports whether the given package is an
 // intermediate test variant (ITV), e.g. "net/http [net/url.test]".
@@ -153,8 +161,8 @@ func (m *Metadata) String() string { return string(m.ID) }
 // before type checking.
 //
 // In general, we should never type check an ITV.
-func (m *Metadata) IsIntermediateTestVariant() bool {
-	return m.ForTest != "" && m.ForTest != m.PkgPath && m.ForTest+"_test" != m.PkgPath
+func (mp *Package) IsIntermediateTestVariant() bool {
+	return mp.ForTest != "" && mp.ForTest != mp.PkgPath && mp.ForTest+"_test" != mp.PkgPath
 }
 
 // A Source maps package IDs to metadata for the packages.
@@ -162,11 +170,14 @@ func (m *Metadata) IsIntermediateTestVariant() bool {
 // TODO(rfindley): replace this with a concrete metadata graph, once it is
 // exposed from the snapshot.
 type Source interface {
-	// Metadata returns Metadata for the given package ID, or nil if it does not
-	// exist.
+	// Metadata returns the [Package] for the given package ID, or nil if it does
+	// not exist.
 	// TODO(rfindley): consider returning (*Metadata, bool)
-	Metadata(PackageID) *Metadata
+	// TODO(rfindley): consider renaming this method.
+	Metadata(PackageID) *Package
 }
+
+// TODO(rfindley): move the utility functions below to a util.go file.
 
 // IsCommandLineArguments reports whether a given value denotes
 // "command-line-arguments" package, which is a package with an unknown ID
@@ -184,8 +195,8 @@ func SortPostOrder(meta Source, ids []PackageID) {
 	visit = func(id PackageID) {
 		if _, ok := postorder[id]; !ok {
 			postorder[id] = -1 // break recursion
-			if m := meta.Metadata(id); m != nil {
-				for _, depID := range m.DepsByPkgPath {
+			if mp := meta.Metadata(id); mp != nil {
+				for _, depID := range mp.DepsByPkgPath {
 					visit(depID)
 				}
 			}
@@ -211,21 +222,22 @@ func UnquoteImportPath(spec *ast.ImportSpec) ImportPath {
 	return ImportPath(path)
 }
 
-// RemoveIntermediateTestVariants removes intermediate test variants, modifying the array.
-// We use a pointer to a slice make it impossible to forget to use the result.
-func RemoveIntermediateTestVariants(pmetas *[]*Metadata) {
+// RemoveIntermediateTestVariants removes intermediate test variants, modifying
+// the array. We use a pointer to a slice make it impossible to forget to use
+// the result.
+func RemoveIntermediateTestVariants(pmetas *[]*Package) {
 	metas := *pmetas
 	res := metas[:0]
-	for _, m := range metas {
-		if !m.IsIntermediateTestVariant() {
-			res = append(res, m)
+	for _, mp := range metas {
+		if !mp.IsIntermediateTestVariant() {
+			res = append(res, mp)
 		}
 	}
 	*pmetas = res
 }
 
 // IsValidImport returns whether importPkgPath is importable
-// by pkgPath
+// by pkgPath.
 func IsValidImport(pkgPath, importPkgPath PackagePath) bool {
 	i := strings.LastIndex(string(importPkgPath), "/internal/")
 	if i == -1 {

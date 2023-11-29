@@ -262,10 +262,10 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	//
 	// If linkPath is empty, the symbol is not linkable.
 	var (
-		linkName string    // => link title, always non-empty
-		linkPath string    // => link path
-		anchor   string    // link anchor
-		linkMeta *Metadata // metadata for the linked package
+		linkName string            // => link title, always non-empty
+		linkPath string            // => link path
+		anchor   string            // link anchor
+		linkMeta *metadata.Package // metadata for the linked package
 	)
 	{
 		linkMeta = findFileInDeps(snapshot, pkg.Metadata(), declPGF.URI)

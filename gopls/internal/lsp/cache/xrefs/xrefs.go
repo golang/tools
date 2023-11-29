@@ -140,7 +140,7 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 // operation on m, and returns the locations of all references from m
 // to any object in the target set. Each object is denoted by a pair
 // of (package path, object path).
-func Lookup(m *metadata.Metadata, data []byte, targets map[metadata.PackagePath]map[objectpath.Path]struct{}) (locs []protocol.Location) {
+func Lookup(mp *metadata.Package, data []byte, targets map[metadata.PackagePath]map[objectpath.Path]struct{}) (locs []protocol.Location) {
 	var packages []*gobPackage
 	packageCodec.Decode(data, &packages)
 	for _, gp := range packages {
@@ -148,7 +148,7 @@ func Lookup(m *metadata.Metadata, data []byte, targets map[metadata.PackagePath]
 			for _, gobObj := range gp.Objects {
 				if _, ok := objectSet[gobObj.Path]; ok {
 					for _, ref := range gobObj.Refs {
-						uri := m.CompiledGoFiles[ref.FileIndex]
+						uri := mp.CompiledGoFiles[ref.FileIndex]
 						locs = append(locs, protocol.Location{
 							URI:   uri,
 							Range: ref.Range,

@@ -28,7 +28,6 @@ type (
 	PackagePath = metadata.PackagePath
 	PackageName = metadata.PackageName
 	ImportPath  = metadata.ImportPath
-	Metadata    = metadata.Metadata
 
 	// Computed objects.
 	ParsedGoFile = parsego.File
@@ -47,7 +46,7 @@ var (
 // loadDiagnostics, because the value of the snapshot.packages map is just the
 // package handle. Fix this.
 type Package struct {
-	m               *Metadata
+	metadata        *metadata.Package
 	loadDiagnostics []*Diagnostic
 	pkg             *syntaxPackage
 }
@@ -89,9 +88,9 @@ func (p *syntaxPackage) methodsets() *methodsets.Index {
 	return p._methodsets
 }
 
-func (p *Package) String() string { return string(p.m.ID) }
+func (p *Package) String() string { return string(p.metadata.ID) }
 
-func (p *Package) Metadata() *Metadata { return p.m }
+func (p *Package) Metadata() *metadata.Package { return p.metadata }
 
 // A loadScope defines a package loading scope for use with go/packages.
 //

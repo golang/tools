@@ -150,9 +150,9 @@ func packageReferences(ctx context.Context, snapshot *cache.Snapshot, uri protoc
 		if err != nil {
 			return nil, err
 		}
-		workspaceMap := make(map[PackageID]*Metadata, len(workspace))
-		for _, m := range workspace {
-			workspaceMap[m.ID] = m
+		workspaceMap := make(map[PackageID]*metadata.Package, len(workspace))
+		for _, mp := range workspace {
+			workspaceMap[mp.ID] = mp
 		}
 
 		for _, rdep := range rdeps {
@@ -274,7 +274,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 	// Is object exported?
 	// If so, compute scope and targets of the global search.
 	var (
-		globalScope   = make(map[PackageID]*Metadata) // (excludes ITVs)
+		globalScope   = make(map[PackageID]*metadata.Package) // (excludes ITVs)
 		globalTargets map[PackagePath]map[objectpath.Path]unit
 		expansions    = make(map[PackageID]unit) // packages that caused search expansion
 	)
@@ -292,11 +292,11 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 		if err != nil {
 			return nil, err
 		}
-		workspaceMap := make(map[PackageID]*Metadata, len(workspace))
+		workspaceMap := make(map[PackageID]*metadata.Package, len(workspace))
 		workspaceIDs := make([]PackageID, 0, len(workspace))
-		for _, m := range workspace {
-			workspaceMap[m.ID] = m
-			workspaceIDs = append(workspaceIDs, m.ID)
+		for _, mp := range workspace {
+			workspaceMap[mp.ID] = mp
+			workspaceIDs = append(workspaceIDs, mp.ID)
 		}
 
 		// addRdeps expands the global scope to include the
@@ -335,8 +335,8 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 		// The scope is the union of rdeps of each variant.
 		// (Each set is disjoint so there's no benefit to
 		// combining the metadata graph traversals.)
-		for _, m := range variants {
-			if err := addRdeps(m.ID, transitive); err != nil {
+		for _, mp := range variants {
+			if err := addRdeps(mp.ID, transitive); err != nil {
 				return nil, err
 			}
 		}
@@ -386,7 +386,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 
 	// Compute local references for each variant.
 	// The target objects are identified by (URI, offset).
-	for _, m := range variants {
+	for _, mp := range variants {
 		// We want the ordinary importable package,
 		// plus any test-augmented variants, since
 		// declarations in _test.go files may change
@@ -396,13 +396,13 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 		// But we don't need intermediate test variants,
 		// as their local references will be covered
 		// already by other variants.
-		if m.IsIntermediateTestVariant() {
+		if mp.IsIntermediateTestVariant() {
 			continue
 		}
-		m := m
+		mp := mp
 		group.Go(func() error {
 			// TODO(adonovan): opt: batch these TypeChecks.
-			pkgs, err := snapshot.TypeCheck(ctx, m.ID)
+			pkgs, err := snapshot.TypeCheck(ctx, mp.ID)
 			if err != nil {
 				return err
 			}

@@ -78,16 +78,16 @@ type matcherFunc func(chunks []string) (int, float64)
 //
 // The space argument is an empty slice with spare capacity that may be used
 // to allocate the result.
-type symbolizer func(space []string, name string, pkg *Metadata, m matcherFunc) ([]string, float64)
+type symbolizer func(space []string, name string, pkg *metadata.Package, m matcherFunc) ([]string, float64)
 
-func fullyQualifiedSymbolMatch(space []string, name string, pkg *Metadata, matcher matcherFunc) ([]string, float64) {
+func fullyQualifiedSymbolMatch(space []string, name string, pkg *metadata.Package, matcher matcherFunc) ([]string, float64) {
 	if _, score := dynamicSymbolMatch(space, name, pkg, matcher); score > 0 {
 		return append(space, string(pkg.PkgPath), ".", name), score
 	}
 	return nil, 0
 }
 
-func dynamicSymbolMatch(space []string, name string, pkg *Metadata, matcher matcherFunc) ([]string, float64) {
+func dynamicSymbolMatch(space []string, name string, pkg *metadata.Package, matcher matcherFunc) ([]string, float64) {
 	if metadata.IsCommandLineArguments(pkg.ID) {
 		// command-line-arguments packages have a non-sensical package path, so
 		// just use their package name.
@@ -140,7 +140,7 @@ func dynamicSymbolMatch(space []string, name string, pkg *Metadata, matcher matc
 	return fullyQualified, score * 0.6
 }
 
-func packageSymbolMatch(space []string, name string, pkg *Metadata, matcher matcherFunc) ([]string, float64) {
+func packageSymbolMatch(space []string, name string, pkg *metadata.Package, matcher matcherFunc) ([]string, float64) {
 	qualified := append(space, string(pkg.Name), ".", name)
 	if _, s := matcher(qualified); s > 0 {
 		return qualified, s
@@ -363,7 +363,7 @@ func collectSymbols(ctx context.Context, snapshots []*cache.Snapshot, matcherTyp
 // symbolFile holds symbol information for a single file.
 type symbolFile struct {
 	uri  protocol.DocumentURI
-	md   *Metadata
+	mp   *metadata.Package
 	syms []cache.Symbol
 }
 
@@ -371,7 +371,7 @@ type symbolFile struct {
 func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, roots []string, i symbolFile) {
 	space := make([]string, 0, 3)
 	for _, sym := range i.syms {
-		symbolParts, score := symbolizer(space, sym.Name, i.md, matcher)
+		symbolParts, score := symbolizer(space, sym.Name, i.mp, matcher)
 
 		// Check if the score is too low before applying any downranking.
 		if store.tooLow(score) {
@@ -453,7 +453,7 @@ func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, r
 			kind:      sym.Kind,
 			uri:       i.uri,
 			rng:       sym.Range,
-			container: string(i.md.PkgPath),
+			container: string(i.mp.PkgPath),
 		}
 		store.store(si)
 	}

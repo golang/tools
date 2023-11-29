@@ -18,16 +18,16 @@ import (
 // NarrowestMetadataForFile returns metadata for the narrowest package
 // (the one with the fewest files) that encloses the specified file.
 // The result may be a test variant, but never an intermediate test variant.
-func NarrowestMetadataForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*Metadata, error) {
-	metas, err := snapshot.MetadataForFile(ctx, uri)
+func NarrowestMetadataForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*metadata.Package, error) {
+	mps, err := snapshot.MetadataForFile(ctx, uri)
 	if err != nil {
 		return nil, err
 	}
-	metadata.RemoveIntermediateTestVariants(&metas)
-	if len(metas) == 0 {
+	metadata.RemoveIntermediateTestVariants(&mps)
+	if len(mps) == 0 {
 		return nil, fmt.Errorf("no package metadata for file %s", uri)
 	}
-	return metas[0], nil
+	return mps[0], nil
 }
 
 // NarrowestPackageForFile is a convenience function that selects the narrowest
@@ -46,7 +46,7 @@ func NarrowestMetadataForFile(ctx context.Context, snapshot *cache.Snapshot, uri
 // Type-checking is expensive. Call snapshot.ParseGo if all you need is a parse
 // tree, or snapshot.MetadataForFile if you only need metadata.
 func NarrowestPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*cache.Package, *ParsedGoFile, error) {
-	return selectPackageForFile(ctx, snapshot, uri, func(metas []*Metadata) *Metadata { return metas[0] })
+	return selectPackageForFile(ctx, snapshot, uri, func(metas []*metadata.Package) *metadata.Package { return metas[0] })
 }
 
 // WidestPackageForFile is a convenience function that selects the widest
@@ -64,20 +64,20 @@ func NarrowestPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri 
 // Type-checking is expensive. Call snapshot.ParseGo if all you need is a parse
 // tree, or snapshot.MetadataForFile if you only need metadata.
 func WidestPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*cache.Package, *ParsedGoFile, error) {
-	return selectPackageForFile(ctx, snapshot, uri, func(metas []*Metadata) *Metadata { return metas[len(metas)-1] })
+	return selectPackageForFile(ctx, snapshot, uri, func(metas []*metadata.Package) *metadata.Package { return metas[len(metas)-1] })
 }
 
-func selectPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, selector func([]*Metadata) *Metadata) (*cache.Package, *ParsedGoFile, error) {
-	metas, err := snapshot.MetadataForFile(ctx, uri)
+func selectPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, selector func([]*metadata.Package) *metadata.Package) (*cache.Package, *ParsedGoFile, error) {
+	mps, err := snapshot.MetadataForFile(ctx, uri)
 	if err != nil {
 		return nil, nil, err
 	}
-	metadata.RemoveIntermediateTestVariants(&metas)
-	if len(metas) == 0 {
+	metadata.RemoveIntermediateTestVariants(&mps)
+	if len(mps) == 0 {
 		return nil, nil, fmt.Errorf("no package metadata for file %s", uri)
 	}
-	md := selector(metas)
-	pkgs, err := snapshot.TypeCheck(ctx, md.ID)
+	mp := selector(mps)
+	pkgs, err := snapshot.TypeCheck(ctx, mp.ID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -111,7 +111,6 @@ type (
 	PackagePath = metadata.PackagePath
 	PackageName = metadata.PackageName
 	ImportPath  = metadata.ImportPath
-	Metadata    = metadata.Metadata
 )
 
 type unit = struct{}

@@ -12,11 +12,10 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
-// A Graph is an immutable and transitively closed import
-// graph of Go packages, as obtained from go/packages.
+// A Graph is an immutable and transitively closed graph of [Package] data.
 type Graph struct {
-	// Metadata maps package IDs to their associated Metadata.
-	Metadata map[PackageID]*Metadata
+	// Packages maps package IDs to their associated Packages.
+	Packages map[PackageID]*Package
 
 	// ImportedBy maps package IDs to the list of packages that import them.
 	ImportedBy map[PackageID][]PackageID
@@ -28,52 +27,55 @@ type Graph struct {
 	IDs map[protocol.DocumentURI][]PackageID
 }
 
-// Clone creates a new metadataGraph, applying the given updates to the
-// receiver. A nil map value represents a deletion.
-func (g *Graph) Clone(updates map[PackageID]*Metadata) *Graph {
+// Update creates a new Graph containing the result of applying the given
+// updates to the receiver, though the receiver is not itself mutated. As a
+// special case, if updates is empty, Update just returns the receiver.
+//
+// A nil map value is used to indicate a deletion.
+func (g *Graph) Update(updates map[PackageID]*Package) *Graph {
 	if len(updates) == 0 {
 		// Optimization: since the graph is immutable, we can return the receiver.
 		return g
 	}
 
-	// Copy metadata map then apply updates.
-	metadata := make(map[PackageID]*Metadata, len(g.Metadata))
-	for id, m := range g.Metadata {
-		metadata[id] = m
+	// Copy pkgs map then apply updates.
+	pkgs := make(map[PackageID]*Package, len(g.Packages))
+	for id, mp := range g.Packages {
+		pkgs[id] = mp
 	}
-	for id, m := range updates {
-		if m == nil {
-			delete(metadata, id)
+	for id, mp := range updates {
+		if mp == nil {
+			delete(pkgs, id)
 		} else {
-			metadata[id] = m
+			pkgs[id] = mp
 		}
 	}
 
 	// Break import cycles involving updated nodes.
-	breakImportCycles(metadata, updates)
+	breakImportCycles(pkgs, updates)
 
-	return newMetadataGraph(metadata)
+	return newGraph(pkgs)
 }
 
-// newMetadataGraph returns a new metadataGraph,
+// newGraph returns a new metadataGraph,
 // deriving relations from the specified metadata.
-func newMetadataGraph(metadata map[PackageID]*Metadata) *Graph {
+func newGraph(pkgs map[PackageID]*Package) *Graph {
 	// Build the import graph.
 	importedBy := make(map[PackageID][]PackageID)
-	for id, m := range metadata {
-		for _, depID := range m.DepsByPkgPath {
+	for id, mp := range pkgs {
+		for _, depID := range mp.DepsByPkgPath {
 			importedBy[depID] = append(importedBy[depID], id)
 		}
 	}
 
 	// Collect file associations.
 	uriIDs := make(map[protocol.DocumentURI][]PackageID)
-	for id, m := range metadata {
+	for id, mp := range pkgs {
 		uris := map[protocol.DocumentURI]struct{}{}
-		for _, uri := range m.CompiledGoFiles {
+		for _, uri := range mp.CompiledGoFiles {
 			uris[uri] = struct{}{}
 		}
-		for _, uri := range m.GoFiles {
+		for _, uri := range mp.GoFiles {
 			uris[uri] = struct{}{}
 		}
 		for uri := range uris {
@@ -111,7 +113,7 @@ func newMetadataGraph(metadata map[PackageID]*Metadata) *Graph {
 	}
 
 	return &Graph{
-		Metadata:   metadata,
+		Packages:   pkgs,
 		ImportedBy: importedBy,
 		IDs:        uriIDs,
 	}
@@ -120,14 +122,14 @@ func newMetadataGraph(metadata map[PackageID]*Metadata) *Graph {
 // ReverseReflexiveTransitiveClosure returns a new mapping containing the
 // metadata for the specified packages along with any package that
 // transitively imports one of them, keyed by ID, including all the initial packages.
-func (g *Graph) ReverseReflexiveTransitiveClosure(ids ...PackageID) map[PackageID]*Metadata {
-	seen := make(map[PackageID]*Metadata)
+func (g *Graph) ReverseReflexiveTransitiveClosure(ids ...PackageID) map[PackageID]*Package {
+	seen := make(map[PackageID]*Package)
 	var visitAll func([]PackageID)
 	visitAll = func(ids []PackageID) {
 		for _, id := range ids {
 			if seen[id] == nil {
-				if m := g.Metadata[id]; m != nil {
-					seen[id] = m
+				if mp := g.Packages[id]; mp != nil {
+					seen[id] = mp
 					visitAll(g.ImportedBy[id])
 				}
 			}
@@ -140,7 +142,7 @@ func (g *Graph) ReverseReflexiveTransitiveClosure(ids ...PackageID) map[PackageI
 // breakImportCycles breaks import cycles in the metadata by deleting
 // Deps* edges. It modifies only metadata present in the 'updates'
 // subset. This function has an internal test.
-func breakImportCycles(metadata, updates map[PackageID]*Metadata) {
+func breakImportCycles(metadata, updates map[PackageID]*Package) {
 	// 'go list' should never report a cycle without flagging it
 	// as such, but we're extra cautious since we're combining
 	// information from multiple runs of 'go list'. Also, Bazel
@@ -184,26 +186,26 @@ func breakImportCycles(metadata, updates map[PackageID]*Metadata) {
 		// invalidated.
 		for _, cycle := range cycles {
 			cyclic := make(map[PackageID]bool)
-			for _, m := range cycle {
-				cyclic[m.ID] = true
+			for _, mp := range cycle {
+				cyclic[mp.ID] = true
 			}
 			for id := range cyclic {
-				if m := updates[id]; m != nil {
-					for path, depID := range m.DepsByImpPath {
+				if mp := updates[id]; mp != nil {
+					for path, depID := range mp.DepsByImpPath {
 						if cyclic[depID] {
-							delete(m.DepsByImpPath, path)
+							delete(mp.DepsByImpPath, path)
 						}
 					}
-					for path, depID := range m.DepsByPkgPath {
+					for path, depID := range mp.DepsByPkgPath {
 						if cyclic[depID] {
-							delete(m.DepsByPkgPath, path)
+							delete(mp.DepsByPkgPath, path)
 						}
 					}
 
 					// Set m.Errors to enable special
 					// invalidation logic in snapshot.clone.
-					if len(m.Errors) == 0 {
-						m.Errors = []packages.Error{{
+					if len(mp.Errors) == 0 {
+						mp.Errors = []packages.Error{{
 							Msg:  "detected import cycle",
 							Kind: packages.ListError,
 						}}
@@ -224,7 +226,7 @@ func breakImportCycles(metadata, updates map[PackageID]*Metadata) {
 // detectImportCycles reports cycles in the metadata graph. It returns a new
 // unordered array of all cycles (nontrivial strong components) in the
 // metadata graph reachable from a non-nil 'updates' value.
-func detectImportCycles(metadata, updates map[PackageID]*Metadata) [][]*Metadata {
+func detectImportCycles(metadata, updates map[PackageID]*Package) [][]*Package {
 	// We use the depth-first algorithm of Tarjan.
 	// https://doi.org/10.1137/0201010
 	//
@@ -236,7 +238,7 @@ func detectImportCycles(metadata, updates map[PackageID]*Metadata) [][]*Metadata
 	// (Unfortunately we can't intrude on shared Metadata.)
 	type node struct {
 		rep            *node
-		m              *Metadata
+		mp             *Package
 		index, lowlink int32
 		scc            int8 // TODO(adonovan): opt: cram these 1.5 bits into previous word
 	}
@@ -244,15 +246,15 @@ func detectImportCycles(metadata, updates map[PackageID]*Metadata) [][]*Metadata
 	nodeOf := func(id PackageID) *node {
 		n, ok := nodes[id]
 		if !ok {
-			m := metadata[id]
-			if m == nil {
+			mp := metadata[id]
+			if mp == nil {
 				// Dangling import edge.
 				// Not sure whether a go/packages driver ever
 				// emits this, but create a dummy node in case.
 				// Obviously it won't be part of any cycle.
-				m = &Metadata{ID: id}
+				mp = &Package{ID: id}
 			}
-			n = &node{m: m}
+			n = &node{mp: mp}
 			n.rep = n
 			nodes[id] = n
 		}
@@ -275,7 +277,7 @@ func detectImportCycles(metadata, updates map[PackageID]*Metadata) [][]*Metadata
 	var (
 		index int32 = 1
 		stack []*node
-		sccs  [][]*Metadata // set of nontrivial strongly connected components
+		sccs  [][]*Package // set of nontrivial strongly connected components
 	)
 
 	// visit implements the depth-first search of Tarjan's SCC algorithm
@@ -289,7 +291,7 @@ func detectImportCycles(metadata, updates map[PackageID]*Metadata) [][]*Metadata
 		stack = append(stack, x) // push
 		x.scc = -1
 
-		for _, yid := range x.m.DepsByPkgPath {
+		for _, yid := range x.mp.DepsByPkgPath {
 			y := nodeOf(yid)
 			// Loop invariant: x is canonical.
 			y = find(y)
@@ -321,14 +323,14 @@ func detectImportCycles(metadata, updates map[PackageID]*Metadata) [][]*Metadata
 		// Is x the root of an SCC?
 		if x.lowlink == x.index {
 			// Gather all metadata in the SCC (if nontrivial).
-			var scc []*Metadata
+			var scc []*Package
 			for {
 				// Pop y from stack.
 				i := len(stack) - 1
 				y := stack[i]
 				stack = stack[:i]
 				if x != y || scc != nil {
-					scc = append(scc, y.m)
+					scc = append(scc, y.mp)
 				}
 				if x == y {
 					break // complete
@@ -346,8 +348,8 @@ func detectImportCycles(metadata, updates map[PackageID]*Metadata) [][]*Metadata
 	// Visit only the updated nodes:
 	// the existing metadata graph has no cycles,
 	// so any new cycle must involve an updated node.
-	for id, m := range updates {
-		if m != nil {
+	for id, mp := range updates {
+		if mp != nil {
 			if n := nodeOf(id); n.index == 0 { // unvisited
 				visit(n)
 			}

@@ -237,16 +237,16 @@ func missingModuleDiagnostics(ctx context.Context, snapshot *Snapshot, pm *Parse
 		return nil, err
 	}
 	// TODO(adonovan): opt: opportunities for parallelism abound.
-	for _, m := range metas {
+	for _, mp := range metas {
 		// Read both lists of files of this package.
 		//
 		// Parallelism is not necessary here as the files will have already been
 		// pre-read at load time.
-		goFiles, err := readFiles(ctx, snapshot, m.GoFiles)
+		goFiles, err := readFiles(ctx, snapshot, mp.GoFiles)
 		if err != nil {
 			return nil, err
 		}
-		compiledGoFiles, err := readFiles(ctx, snapshot, m.CompiledGoFiles)
+		compiledGoFiles, err := readFiles(ctx, snapshot, mp.CompiledGoFiles)
 		if err != nil {
 			return nil, err
 		}

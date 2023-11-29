@@ -140,8 +140,8 @@ func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]p
 			urlPath := string(importPath)
 
 			// For pkg.go.dev, append module version suffix to package import path.
-			if m := snapshot.Metadata(depsByImpPath[importPath]); m != nil && m.Module != nil && m.Module.Path != "" && m.Module.Version != "" {
-				urlPath = strings.Replace(urlPath, m.Module.Path, m.Module.Path+"@"+m.Module.Version, 1)
+			if mp := snapshot.Metadata(depsByImpPath[importPath]); mp != nil && mp.Module != nil && mp.Module.Path != "" && mp.Module.Version != "" {
+				urlPath = strings.Replace(urlPath, mp.Module.Path, mp.Module.Path+"@"+mp.Module.Version, 1)
 			}
 
 			start, end, err := safetoken.Offsets(pgf.Tok, imp.Path.Pos(), imp.Path.End())
