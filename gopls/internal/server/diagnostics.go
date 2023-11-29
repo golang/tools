@@ -158,7 +158,7 @@ func computeDiagnosticHash(diags ...*cache.Diagnostic) file.Hash {
 	return hash
 }
 
-func (s *server) diagnoseSnapshots(snapshots map[*cache.Snapshot][]protocol.DocumentURI, onDisk bool, cause ModificationSource) {
+func (s *server) diagnoseSnapshots(snapshots map[*cache.Snapshot][]protocol.DocumentURI, cause ModificationSource) {
 	var diagnosticWG sync.WaitGroup
 	for snapshot, uris := range snapshots {
 		if snapshot.Options().DiagnosticsTrigger == settings.DiagnosticsOnSave && cause == FromDidChange {
@@ -167,7 +167,7 @@ func (s *server) diagnoseSnapshots(snapshots map[*cache.Snapshot][]protocol.Docu
 		diagnosticWG.Add(1)
 		go func(snapshot *cache.Snapshot, uris []protocol.DocumentURI) {
 			defer diagnosticWG.Done()
-			s.diagnoseSnapshot(snapshot, uris, onDisk, snapshot.Options().DiagnosticsDelay)
+			s.diagnoseSnapshot(snapshot, uris, snapshot.Options().DiagnosticsDelay)
 		}(snapshot, uris)
 	}
 	diagnosticWG.Wait()
@@ -181,10 +181,7 @@ func (s *server) diagnoseSnapshots(snapshots map[*cache.Snapshot][]protocol.Docu
 // If changedURIs is non-empty, it is a set of recently changed files that
 // should be diagnosed immediately, and onDisk reports whether these file
 // changes came from a change to on-disk files.
-//
-// TODO(rfindley): eliminate the onDisk parameter, which looks misplaced. If we
-// don't want to diagnose changes on disk, filter out the changedURIs.
-func (s *server) diagnoseSnapshot(snapshot *cache.Snapshot, changedURIs []protocol.DocumentURI, onDisk bool, delay time.Duration) {
+func (s *server) diagnoseSnapshot(snapshot *cache.Snapshot, changedURIs []protocol.DocumentURI, delay time.Duration) {
 	ctx := snapshot.BackgroundContext()
 	ctx, done := event.Start(ctx, "Server.diagnoseSnapshot", snapshot.Labels()...)
 	defer done()
@@ -210,7 +207,7 @@ func (s *server) diagnoseSnapshot(snapshot *cache.Snapshot, changedURIs []protoc
 		}
 
 		if len(changedURIs) > 0 {
-			s.diagnoseChangedFiles(ctx, snapshot, changedURIs, onDisk)
+			s.diagnoseChangedFiles(ctx, snapshot, changedURIs)
 			s.publishDiagnostics(ctx, false, snapshot)
 		}
 
@@ -231,15 +228,20 @@ func (s *server) diagnoseSnapshot(snapshot *cache.Snapshot, changedURIs []protoc
 	s.publishDiagnostics(ctx, true, snapshot)
 }
 
-func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snapshot, uris []protocol.DocumentURI, onDisk bool) {
+func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snapshot, uris []protocol.DocumentURI) {
 	ctx, done := event.Start(ctx, "Server.diagnoseChangedFiles", snapshot.Labels()...)
 	defer done()
 
 	toDiagnose := make(map[metadata.PackageID]*metadata.Package)
 	for _, uri := range uris {
-		// If the change is only on-disk and the file is not open, don't
-		// directly request its package. It may not be a workspace package.
-		if onDisk && !snapshot.IsOpen(uri) {
+		// If the file is not open, don't diagnose its package.
+		//
+		// We don't care about fast diagnostics for files that are no longer open,
+		// because the user isn't looking at them. Also, explicitly requesting a
+		// package can lead to "command-line-arguments" packages if the file isn't
+		// covered by the current View. By avoiding requesting packages for e.g.
+		// unrelated file movement, we can minimize these unnecessary packages.
+		if !snapshot.IsOpen(uri) {
 			continue
 		}
 		// If the file is not known to the snapshot (e.g., if it was deleted),

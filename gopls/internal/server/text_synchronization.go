@@ -237,8 +237,6 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []file.Modifi
 		}()
 	}
 
-	onDisk := cause == FromDidChangeWatchedFiles
-
 	s.stateMu.Lock()
 	if s.state >= serverShutDown {
 		// This state check does not prevent races below, and exists only to
@@ -267,7 +265,7 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []file.Modifi
 
 	wg.Add(1)
 	go func() {
-		s.diagnoseSnapshots(snapshots, onDisk, cause)
+		s.diagnoseSnapshots(snapshots, cause)
 		release()
 		wg.Done()
 	}()

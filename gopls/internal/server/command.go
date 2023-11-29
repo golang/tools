@@ -247,7 +247,7 @@ func (c *commandHandler) modifyState(ctx context.Context, source ModificationSou
 	}
 	wg.Add(1)
 	go func() {
-		c.s.diagnoseSnapshot(snapshot, nil, true, 0)
+		c.s.diagnoseSnapshot(snapshot, nil, 0)
 		release()
 		wg.Done()
 	}()
@@ -777,7 +777,7 @@ func (c *commandHandler) ToggleGCDetails(ctx context.Context, args command.URIAr
 			c.s.gcOptimizationDetails[meta.ID] = struct{}{}
 		}
 		c.s.gcOptimizationDetailsMu.Unlock()
-		c.s.diagnoseSnapshot(deps.snapshot, nil, false, 0)
+		c.s.diagnoseSnapshot(deps.snapshot, nil, 0)
 		return nil
 	})
 }
@@ -986,7 +986,7 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 			Vulns: map[protocol.DocumentURI]*vulncheck.Result{args.URI: result},
 		})
 		defer release()
-		c.s.diagnoseSnapshot(snapshot, nil, false, 0)
+		c.s.diagnoseSnapshot(snapshot, nil, 0)
 
 		affecting := make(map[string]bool, len(result.Entries))
 		for _, finding := range result.Findings {

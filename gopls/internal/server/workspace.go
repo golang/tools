@@ -86,7 +86,7 @@ func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 				return // view is shut down; no need to diagnose
 			}
 			defer release()
-			s.diagnoseSnapshot(snapshot, nil, false, 0)
+			s.diagnoseSnapshot(snapshot, nil, 0)
 		}()
 	}
 

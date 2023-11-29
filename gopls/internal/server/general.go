@@ -339,7 +339,7 @@ func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 		// Diagnose the newly created view asynchronously.
 		ndiagnose.Add(1)
 		go func() {
-			s.diagnoseSnapshot(snapshot, nil, false, 0)
+			s.diagnoseSnapshot(snapshot, nil, 0)
 			<-initialized
 			release()
 			ndiagnose.Done()
