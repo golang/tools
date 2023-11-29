@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/mod"
@@ -56,8 +57,8 @@ const (
 // A diagnosticReport holds results for a single diagnostic source.
 type diagnosticReport struct {
 	snapshotID    cache.GlobalSnapshotID // global snapshot ID on which the report was computed
-	publishedHash string                 // last published hash for this (URI, source)
-	diags         map[string]*cache.Diagnostic
+	publishedHash file.Hash              // last published hash for this (URI, source)
+	diags         map[file.Hash]*cache.Diagnostic
 }
 
 // fileReports holds a collection of diagnostic reports for a single file, as
@@ -83,7 +84,7 @@ type fileReports struct {
 	publishedSnapshotID cache.GlobalSnapshotID
 
 	// publishedHash is a hash of the latest diagnostics published for the file.
-	publishedHash string
+	publishedHash file.Hash
 
 	// If set, mustPublish marks diagnostics as needing publication, independent
 	// of whether their publishedHash has changed.
@@ -121,7 +122,7 @@ func (d diagnosticSource) String() string {
 // hashDiagnostics computes a hash to identify diags.
 //
 // hashDiagnostics mutates its argument (via sorting).
-func hashDiagnostics(diags ...*cache.Diagnostic) string {
+func hashDiagnostics(diags ...*cache.Diagnostic) file.Hash {
 	if len(diags) == 0 {
 		return emptyDiagnosticsHash
 	}
@@ -132,9 +133,7 @@ func hashDiagnostics(diags ...*cache.Diagnostic) string {
 var emptyDiagnosticsHash = computeDiagnosticHash()
 
 // computeDiagnosticHash should only be called from hashDiagnostics.
-//
-// TODO(rfindley): this should use source.Hash.
-func computeDiagnosticHash(diags ...*cache.Diagnostic) string {
+func computeDiagnosticHash(diags ...*cache.Diagnostic) file.Hash {
 	source.SortDiagnostics(diags)
 	h := sha256.New()
 	for _, d := range diags {
@@ -154,7 +153,9 @@ func computeDiagnosticHash(diags ...*cache.Diagnostic) string {
 			fmt.Fprintf(h, "fixes: %s\n", *d.BundledFixes)
 		}
 	}
-	return fmt.Sprintf("%x", h.Sum(nil))
+	var hash [sha256.Size]byte
+	h.Sum(hash[:0])
+	return hash
 }
 
 func (s *server) diagnoseSnapshots(snapshots map[*cache.Snapshot][]protocol.DocumentURI, onDisk bool, cause ModificationSource) {
@@ -296,7 +297,10 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 	// common code for dispatching diagnostics
 	store := func(dsource diagnosticSource, operation string, diagsByFile map[protocol.DocumentURI][]*cache.Diagnostic, err error, merge bool) {
 		if err != nil {
-			event.Error(ctx, "warning: while "+operation, err, snapshot.Labels()...)
+			if ctx.Err() == nil {
+				event.Error(ctx, "warning: while "+operation, err, snapshot.Labels()...)
+			}
+			return
 		}
 		for uri, diags := range diagsByFile {
 			if uri == "" {
@@ -311,14 +315,14 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 	//  go.work > mod > mod upgrade > mod vuln > package, etc.
 
 	// Diagnose go.work file.
-	workReports, workErr := work.Diagnostics(ctx, snapshot)
+	workReports, workErr := work.Diagnose(ctx, snapshot)
 	if ctx.Err() != nil {
 		return
 	}
 	store(workSource, "diagnosing go.work file", workReports, workErr, true)
 
 	// Diagnose go.mod file.
-	modReports, modErr := mod.Diagnostics(ctx, snapshot)
+	modReports, modErr := mod.ParseDiagnostics(ctx, snapshot)
 	if ctx.Err() != nil {
 		return
 	}
@@ -355,10 +359,10 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 	s.showCriticalErrorStatus(ctx, snapshot, criticalErr)
 
 	// Diagnose template (.tmpl) files.
-	for _, f := range snapshot.Templates() {
-		diags := template.Diagnose(f)
-		s.storeDiagnostics(snapshot, f.URI(), typeCheckSource, diags, true)
-	}
+	tmplReports := template.Diagnostics(snapshot)
+	// NOTE(rfindley): typeCheckSource is not accurate here.
+	// (but this will be gone soon anyway).
+	store(typeCheckSource, "diagnosing templates", tmplReports, nil, false)
 
 	// If there are no workspace packages, there is nothing to diagnose and
 	// there are no orphaned files.
@@ -414,15 +418,8 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 	// Orphaned files.
 	// Confirm that every opened file belongs to a package (if any exist in
 	// the workspace). Otherwise, add a diagnostic to the file.
-	if diags, err := snapshot.OrphanedFileDiagnostics(ctx); err == nil {
-		for uri, diag := range diags {
-			s.storeDiagnostics(snapshot, uri, orphanedSource, []*cache.Diagnostic{diag}, true)
-		}
-	} else {
-		if ctx.Err() == nil {
-			event.Error(ctx, "computing orphaned file diagnostics", err, snapshot.Labels()...)
-		}
-	}
+	orphanedReports, orphanedErr := snapshot.OrphanedFileDiagnostics(ctx)
+	store(orphanedSource, "computing orphaned file diagnostics", orphanedReports, orphanedErr, false)
 }
 
 // diagnosePkgs type checks packages in toDiagnose, and analyzes packages in
@@ -491,20 +488,12 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toD
 
 	wg.Wait()
 
-	// TODO(rfindley): remove the guards against snapshot.IsBuiltin, after the
-	// gopls@v0.12.0 release. Packages should not be producing diagnostics for
-	// the builtin file: I do not know why this logic existed previously.
-
 	// Merge analysis diagnostics with package diagnostics, and store the
 	// resulting analysis diagnostics.
 	for uri, adiags := range analysisDiags {
-		if snapshot.IsBuiltin(uri) {
-			bug.Reportf("go/analysis reported diagnostics for the builtin file: %v", adiags)
-			continue
-		}
 		tdiags := pkgDiags[uri]
 		var tdiags2, adiags2 []*cache.Diagnostic
-		source.CombineDiagnostics(tdiags, adiags, &tdiags2, &adiags2)
+		combineDiagnostics(tdiags, adiags, &tdiags2, &adiags2)
 		pkgDiags[uri] = tdiags2
 		s.storeDiagnostics(snapshot, uri, analysisSource, adiags2, true)
 	}
@@ -585,6 +574,55 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toD
 	}
 }
 
+// combineDiagnostics combines and filters list/parse/type diagnostics from
+// tdiags with adiags, and appends the two lists to *outT and *outA,
+// respectively.
+//
+// Type-error analyzers produce diagnostics that are redundant
+// with type checker diagnostics, but more detailed (e.g. fixes).
+// Rather than report two diagnostics for the same problem,
+// we combine them by augmenting the type-checker diagnostic
+// and discarding the analyzer diagnostic.
+//
+// If an analysis diagnostic has the same range and message as
+// a list/parse/type diagnostic, the suggested fix information
+// (et al) of the latter is merged into a copy of the former.
+// This handles the case where a type-error analyzer suggests
+// a fix to a type error, and avoids duplication.
+//
+// The use of out-slices, though irregular, allows the caller to
+// easily choose whether to keep the results separate or combined.
+//
+// The arguments are not modified.
+func combineDiagnostics(tdiags []*cache.Diagnostic, adiags []*cache.Diagnostic, outT, outA *[]*cache.Diagnostic) {
+
+	// Build index of (list+parse+)type errors.
+	type key struct {
+		Range   protocol.Range
+		message string
+	}
+	index := make(map[key]int) // maps (Range,Message) to index in tdiags slice
+	for i, diag := range tdiags {
+		index[key{diag.Range, diag.Message}] = i
+	}
+
+	// Filter out analysis diagnostics that match type errors,
+	// retaining their suggested fix (etc) fields.
+	for _, diag := range adiags {
+		if i, ok := index[key{diag.Range, diag.Message}]; ok {
+			copy := *tdiags[i]
+			copy.SuggestedFixes = diag.SuggestedFixes
+			copy.Tags = diag.Tags
+			tdiags[i] = &copy
+			continue
+		}
+
+		*outA = append(*outA, diag)
+	}
+
+	*outT = append(*outT, tdiags...)
+}
+
 // mustPublishDiagnostics marks the uri as needing publication, independent of
 // whether the published contents have changed.
 //
@@ -636,7 +674,7 @@ func (s *server) storeDiagnostics(snapshot *cache.Snapshot, uri protocol.Documen
 		return
 	}
 	if report.diags == nil || report.snapshotID != snapshot.GlobalID() || !merge {
-		report.diags = map[string]*cache.Diagnostic{}
+		report.diags = map[file.Hash]*cache.Diagnostic{}
 	}
 	report.snapshotID = snapshot.GlobalID()
 	for _, d := range diags {
@@ -717,7 +755,7 @@ func (s *server) publishDiagnostics(ctx context.Context, final bool, snapshot *c
 		}
 
 		anyReportsChanged := false
-		reportHashes := map[diagnosticSource]string{}
+		reportHashes := map[diagnosticSource]file.Hash{}
 		var diags []*cache.Diagnostic
 		for dsource, report := range r.reports {
 			if report.snapshotID != snapshot.GlobalID() {

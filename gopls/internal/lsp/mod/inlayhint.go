@@ -13,7 +13,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
-func InlayHint(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.InlayHint, error) {
+func InlayHint(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, _ protocol.Range) ([]protocol.InlayHint, error) {
 	// Inlay hints are enabled if the client supports them.
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil {

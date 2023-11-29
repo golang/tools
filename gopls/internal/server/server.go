@@ -197,7 +197,7 @@ func (s *server) diagnoseFile(ctx context.Context, snapshot *cache.Snapshot, uri
 		return nil, nil, err
 	}
 	var td, ad []*cache.Diagnostic // combine load/parse/type + analysis diagnostics
-	source.CombineDiagnostics(pkgDiags, adiags[uri], &td, &ad)
+	combineDiagnostics(pkgDiags, adiags[uri], &td, &ad)
 	s.storeDiagnostics(snapshot, uri, typeCheckSource, td, true)
 	s.storeDiagnostics(snapshot, uri, analysisSource, ad, true)
 	return fh, append(td, ad...), nil

@@ -26,8 +26,8 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-// Diagnostics returns diagnostics from parsing the modules in the workspace.
-func Diagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
+// ParseDiagnostics returns diagnostics from parsing the go.mod files in the workspace.
+func ParseDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	ctx, done := event.Start(ctx, "mod.Diagnostics", snapshot.Labels()...)
 	defer done()
 

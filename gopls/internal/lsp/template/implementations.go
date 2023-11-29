@@ -19,17 +19,25 @@ import (
 // line number (1-based) and message
 var errRe = regexp.MustCompile(`template.*:(\d+): (.*)`)
 
-// Diagnose returns parse errors. There is only one.
+// Diagnostics returns parse errors. There is only one per file.
 // The errors are not always helpful. For instance { {end}}
 // will likely point to the end of the file.
-func Diagnose(f file.Handle) []*cache.Diagnostic {
+func Diagnostics(snapshot *cache.Snapshot) map[protocol.DocumentURI][]*cache.Diagnostic {
+	diags := make(map[protocol.DocumentURI][]*cache.Diagnostic)
+	for uri, fh := range snapshot.Templates() {
+		diags[uri] = diagnoseOne(fh)
+	}
+	return diags
+}
+
+func diagnoseOne(fh file.Handle) []*cache.Diagnostic {
 	// no need for skipTemplate check, as Diagnose is called on the
 	// snapshot's template files
-	buf, err := f.Content()
+	buf, err := fh.Content()
 	if err != nil {
 		// Is a Diagnostic with no Range useful? event.Error also?
-		msg := fmt.Sprintf("failed to read %s (%v)", f.URI().Path(), err)
-		d := cache.Diagnostic{Message: msg, Severity: protocol.SeverityError, URI: f.URI(),
+		msg := fmt.Sprintf("failed to read %s (%v)", fh.URI().Path(), err)
+		d := cache.Diagnostic{Message: msg, Severity: protocol.SeverityError, URI: fh.URI(),
 			Source: cache.TemplateError}
 		return []*cache.Diagnostic{&d}
 	}
@@ -41,7 +49,7 @@ func Diagnose(f file.Handle) []*cache.Diagnostic {
 		s := fmt.Sprintf("malformed template error %q: %s", p.ParseErr.Error(), msg)
 		d := cache.Diagnostic{
 			Message: s, Severity: protocol.SeverityError, Range: p.Range(p.nls[0], 1),
-			URI: f.URI(), Source: cache.TemplateError}
+			URI: fh.URI(), Source: cache.TemplateError}
 		return []*cache.Diagnostic{&d}
 	}
 	// errors look like `template: :40: unexpected "}" in operand`

@@ -17,7 +17,7 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-func Diagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
+func Diagnose(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	ctx, done := event.Start(ctx, "work.Diagnostics", snapshot.Labels()...)
 	defer done()
 
@@ -31,7 +31,7 @@ func Diagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.Do
 		return nil, err
 	}
 	reports[fh.URI()] = []*cache.Diagnostic{}
-	diagnostics, err := DiagnosticsForWork(ctx, snapshot, fh)
+	diagnostics, err := diagnoseOne(ctx, snapshot, fh)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func Diagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.Do
 	return reports, nil
 }
 
-func DiagnosticsForWork(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]*cache.Diagnostic, error) {
+func diagnoseOne(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]*cache.Diagnostic, error) {
 	pw, err := snapshot.ParseWork(ctx, fh)
 	if err != nil {
 		if pw == nil || len(pw.ParseErrors) == 0 {
