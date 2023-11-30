@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/tools/gopls/internal/lsp/filecache"
+	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/internal/testenv"
 )
 

@@ -13,10 +13,10 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/completion"
-	"golang.org/x/tools/gopls/internal/lsp/template"
-	"golang.org/x/tools/gopls/internal/lsp/work"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/telemetry"
+	"golang.org/x/tools/gopls/internal/template"
+	"golang.org/x/tools/gopls/internal/work"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 )

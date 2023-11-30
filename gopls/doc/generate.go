@@ -34,8 +34,8 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/command/commandmeta"
-	"golang.org/x/tools/gopls/internal/lsp/mod"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )

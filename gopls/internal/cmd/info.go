@@ -15,8 +15,8 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/tools/gopls/internal/lsp/debug"
-	"golang.org/x/tools/gopls/internal/lsp/filecache"
+	"golang.org/x/tools/gopls/internal/debug"
+	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/browser"
 	goplsbug "golang.org/x/tools/gopls/internal/util/bug"

@@ -39,8 +39,8 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/cmd"
+	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/hooks"
-	"golang.org/x/tools/gopls/internal/lsp/debug"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/testenv"

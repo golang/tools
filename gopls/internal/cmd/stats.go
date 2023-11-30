@@ -19,9 +19,9 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/debug"
+	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/command"
-	"golang.org/x/tools/gopls/internal/lsp/debug"
-	"golang.org/x/tools/gopls/internal/lsp/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/gopls/internal/settings"

@@ -64,8 +64,8 @@ function in the form of a typical compiler diagnostic, for example:
 
 	$ deadcode -f='{{range .Funcs}}{{println .Position}}{{end}}' -test ./gopls/...
 	gopls/internal/lsp/command.go:1206:6: unreachable func: openClientEditor
-	gopls/internal/lsp/template/parse.go:414:18: unreachable func: Parsed.WriteNode
-	gopls/internal/lsp/template/parse.go:419:18: unreachable func: wrNode.writeNode
+	gopls/internal/template/parse.go:414:18: unreachable func: Parsed.WriteNode
+	gopls/internal/template/parse.go:419:18: unreachable func: wrNode.writeNode
 
 With the -json flag, the command prints an array of Package
 objects, as defined by the JSON schema (see below).
@@ -78,7 +78,7 @@ by package:
 	golang.org/x/tools/gopls/internal/lsp
 		openClientEditor
 
-	golang.org/x/tools/gopls/internal/lsp/template
+	golang.org/x/tools/gopls/internal/template
 		Parsed.WriteNode
 		wrNode.writeNode
 

@@ -28,7 +28,7 @@ Package | Description
 [internal/lsp] | the core message handling package
 [internal/lsp/cache] | the cache layer
 [internal/cmd] | the gopls command line layer
-[internal/lsp/debug] | features to aid in debugging gopls
+[internal/debug] | features to aid in debugging gopls
 [internal/lsp/protocol] | the types of LSP request and response messages
 [internal/lsp/source] | the core feature implementations
 [internal/memoize] | a function invocation cache used to reduce the work done
@@ -39,7 +39,7 @@ Package | Description
 [internal/lsp]: https://github.com/golang/tools/tree/master/gopls/internal/lsp
 [internal/lsp/cache]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/cache
 [internal/cmd]: https://github.com/golang/tools/tree/master/gopls/internal/cmd
-[internal/lsp/debug]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/debug
+[internal/debug]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/debug
 [internal/lsp/source]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/source
 [internal/memoize]: https://github.com/golang/tools/tree/master/internal/memoize
 [internal/lsp/protocol]: https://github.com/golang/tools/tree/master/gopls/internal/lsp/protocol
