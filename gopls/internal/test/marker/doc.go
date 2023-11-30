@@ -50,8 +50,8 @@ Key design decisions motivating this reimplementation are as follows:
   - The old tests did not hew closely to LSP concepts, resulting in, for
     example, each marker implementation doing its own position
     transformations, and inventing its own mechanism for configuration.
-  - The old tests had an ad-hoc session initialization process. The regtest
-    environment has had more time devoted to its initialization, and has a
+  - The old tests had an ad-hoc session initialization process. The integration
+    test environment has had more time devoted to its initialization, and has a
     more convenient API.
   - The old tests lacked documentation, and often had failures that were hard
     to understand. By starting from scratch, we can revisit these aspects.

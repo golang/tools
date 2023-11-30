@@ -114,19 +114,19 @@ go test ./internal/lsp/...
 There is additional information about the `internal/lsp` tests in the
 [internal/lsp/tests `README`](https://github.com/golang/tools/blob/master/internal/lsp/tests/README.md).
 
-### Regtests
+### Integration tests
 
-gopls has a suite of regression tests defined in the `./gopls/internal/regtest`
+gopls has a suite of integration tests defined in the `./gopls/internal/test/integration`
 directory. Each of these tests writes files to a temporary directory, starts a
 separate gopls session, and scripts interactions using an editor-like API. As a
 result of this overhead they can be quite slow, particularly on systems where
 file operations are costly.
 
-Due to the asynchronous nature of the LSP, regtests assertions are written
-as 'expectations' that the editor state must achieve _eventually_. This can
-make debugging the regtests difficult. To aid with debugging, the regtests
+Due to the asynchronous nature of the LSP, integration tests assert
+'expectations' that the editor state must achieve _eventually_. This can
+make debugging the integration tests difficult. To aid with debugging, the tests
 output their LSP logs on any failure. If your CL gets a test failure while
-running the regtests, please do take a look at the description of the error and
+running the tests, please do take a look at the description of the error and
 the LSP logs, but don't hesitate to [reach out](#getting-help) to the gopls
 team if you need help.
 

@@ -25,11 +25,11 @@ const (
 // so a test or initialization would be needed
 var goplsStar = map[prop]int{
 	{"ClientCapabilities", "textDocument"}: wantOpt, // A.B.C.D at fake/editor.go:255
-	{"ClientCapabilities", "window"}:       wantOpt, // regtest failures
-	{"ClientCapabilities", "workspace"}:    wantOpt, // regtest failures
+	{"ClientCapabilities", "window"}:       wantOpt, // test failures
+	{"ClientCapabilities", "workspace"}:    wantOpt, // test failures
 	{"CodeAction", "kind"}:                 wantOpt, // A.B.C.D
 
-	{"CodeActionClientCapabilities", "codeActionLiteralSupport"}: wantOpt, // regtest failures
+	{"CodeActionClientCapabilities", "codeActionLiteralSupport"}: wantOpt, // test failures
 
 	{"CompletionClientCapabilities", "completionItem"}: wantOpt, // A.B.C.D
 	{"CompletionClientCapabilities", "insertTextMode"}: wantOpt, // A.B.C.D
@@ -49,7 +49,7 @@ var goplsStar = map[prop]int{
 	{"TextDocumentClientCapabilities", "semanticTokens"}:      wantOpt,     // A.B.C.D
 	{"TextDocumentContentChangePartial", "range"}:             wantOptStar, // == nil test
 	{"TextDocumentSyncOptions", "change"}:                     wantOpt,     // &constant
-	{"WorkDoneProgressParams", "workDoneToken"}:               wantOpt,     // regtest
+	{"WorkDoneProgressParams", "workDoneToken"}:               wantOpt,     // test failures
 	{"WorkspaceClientCapabilities", "didChangeConfiguration"}: wantOpt,     // A.B.C.D
 	{"WorkspaceClientCapabilities", "didChangeWatchedFiles"}:  wantOpt,     // A.B.C.D
 }

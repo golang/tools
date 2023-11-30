@@ -1,6 +1,6 @@
 These tests check that postfix completions do and do not show up in certain
 cases. Tests for the postfix completion contents are implemented as ad-hoc
-regtests.
+integration tests.
 
 -- flags --
 -ignore_extra_diags

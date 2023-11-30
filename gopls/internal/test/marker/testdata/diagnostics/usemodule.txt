@@ -1,7 +1,7 @@
 This test demonstrates diagnostics for a module that is missing from the
 go.work file.
 
-Quick-fixes change files on disk, so are tested by regtests.
+Quick-fixes change files on disk, so are tested by integration tests.
 
 -- go.work --
 go 1.21

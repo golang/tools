@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/test/integration/fake"
 )
 
 func TestCaseInsensitiveFilesystem(t *testing.T) {

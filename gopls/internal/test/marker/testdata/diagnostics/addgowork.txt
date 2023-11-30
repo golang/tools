@@ -1,6 +1,6 @@
 This test demonstrates diagnostics for adding a go.work file.
 
-Quick-fixes change files on disk, so are tested by regtests.
+Quick-fixes change files on disk, so are tested by integration tests.
 
 TODO(rfindley): improve the "cannot find package" import errors.
 

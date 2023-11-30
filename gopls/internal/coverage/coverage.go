@@ -17,7 +17,7 @@
 //
 // -t tests only tests packages in the given comma-separated list of directories in gopls.
 //
-//	The names should start with ., as in ./internal/regtest/bench
+//	The names should start with ., as in ./internal/test/integrationo/bench
 //
 // -run tests. If set, -run tests is passed on to the go test command.
 //

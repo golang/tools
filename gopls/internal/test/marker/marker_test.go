@@ -33,11 +33,11 @@ import (
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
-	"golang.org/x/tools/gopls/internal/lsp/fake"
 	"golang.org/x/tools/gopls/internal/lsp/lsprpc"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/regtest"
-	"golang.org/x/tools/gopls/internal/lsp/tests/compare"
+	"golang.org/x/tools/gopls/internal/test/compare"
+	"golang.org/x/tools/gopls/internal/test/integration"
+	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
@@ -115,7 +115,7 @@ func Test(t *testing.T) {
 				diags:      make(map[protocol.Location][]protocol.Diagnostic),
 				extraNotes: make(map[protocol.DocumentURI]map[string][]*expect.Note),
 			}
-			// TODO(rfindley): make it easier to clean up the regtest environment.
+			// TODO(rfindley): make it easier to clean up the integration test environment.
 			defer run.env.Editor.Shutdown(context.Background()) // ignore error
 			defer run.env.Sandbox.Close()                       // ignore error
 
@@ -130,7 +130,7 @@ func Test(t *testing.T) {
 			// Wait for the didOpen notifications to be processed, then collect
 			// diagnostics.
 			var diags map[string]*protocol.PublishDiagnosticsParams
-			run.env.AfterChange(regtest.ReadAllDiagnostics(&diags))
+			run.env.AfterChange(integration.ReadAllDiagnostics(&diags))
 			for path, params := range diags {
 				uri := run.env.Sandbox.Workdir.URI(path)
 				for _, diag := range params.Diagnostics {
@@ -734,8 +734,8 @@ func formatTest(test *markerTest) ([]byte, error) {
 // newEnv creates a new environment for a marker test.
 //
 // TODO(rfindley): simplify and refactor the construction of testing
-// environments across regtests, marker tests, and benchmarks.
-func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byte, writeGoSum []string, config fake.EditorConfig) *regtest.Env {
+// environments across integration tests, marker tests, and benchmarks.
+func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byte, writeGoSum []string, config fake.EditorConfig) *integration.Env {
 	sandbox, err := fake.NewSandbox(&fake.SandboxConfig{
 		RootDir:    t.TempDir(),
 		Files:      files,
@@ -756,7 +756,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	ctx := context.Background()
 	ctx = debug.WithInstance(ctx, "", "off")
 
-	awaiter := regtest.NewAwaiter(sandbox.Workdir)
+	awaiter := integration.NewAwaiter(sandbox.Workdir)
 	ss := lsprpc.NewStreamServer(cache, false, hooks.Options)
 	server := servertest.NewPipeServer(ss, jsonrpc2.NewRawStream)
 	const skipApplyEdits = true // capture edits but don't apply them
@@ -765,11 +765,11 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 		sandbox.Close() // ignore error
 		t.Fatal(err)
 	}
-	if err := awaiter.Await(ctx, regtest.InitialWorkspaceLoad); err != nil {
+	if err := awaiter.Await(ctx, integration.InitialWorkspaceLoad); err != nil {
 		sandbox.Close() // ignore error
 		t.Fatal(err)
 	}
-	return &regtest.Env{
+	return &integration.Env{
 		T:       t,
 		Ctx:     ctx,
 		Editor:  editor,
@@ -781,7 +781,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 // A markerTestRun holds the state of one run of a marker test archive.
 type markerTestRun struct {
 	test     *markerTest
-	env      *regtest.Env
+	env      *integration.Env
 	settings map[string]any
 
 	// Collected information.
@@ -1595,7 +1595,7 @@ func signatureMarker(mark marker, src protocol.Location, label string, active in
 
 // rename returns the new contents of the files that would be modified
 // by renaming the identifier at loc to newName.
-func rename(env *regtest.Env, loc protocol.Location, newName string) (map[string][]byte, error) {
+func rename(env *integration.Env, loc protocol.Location, newName string) (map[string][]byte, error) {
 	// We call Server.Rename directly, instead of
 	//   env.Editor.Rename(env.Ctx, loc, newName)
 	// to isolate Rename from PrepareRename, and because we don't
@@ -1622,7 +1622,7 @@ func rename(env *regtest.Env, loc protocol.Location, newName string) (map[string
 // content, recording the resulting contents in the fileChanges map. It is an
 // error for a change to an edit a file that is already present in the
 // fileChanges map.
-func applyDocumentChanges(env *regtest.Env, changes []protocol.DocumentChanges, fileChanges map[string][]byte) error {
+func applyDocumentChanges(env *integration.Env, changes []protocol.DocumentChanges, fileChanges map[string][]byte) error {
 	getMapper := func(path string) (*protocol.Mapper, error) {
 		if _, ok := fileChanges[path]; ok {
 			return nil, fmt.Errorf("internal error: %s is already edited", path)
@@ -1802,7 +1802,7 @@ func suggestedfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp
 // The resulting map contains resulting file contents after the code action is
 // applied. Currently, this function does not support code actions that return
 // edits directly; it only supports code action commands.
-func codeAction(env *regtest.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic, titles []string) (map[string][]byte, error) {
+func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic, titles []string) (map[string][]byte, error) {
 	changes, err := codeActionChanges(env, uri, rng, actionKind, diag, titles)
 	if err != nil {
 		return nil, err
@@ -1818,7 +1818,7 @@ func codeAction(env *regtest.Env, uri protocol.DocumentURI, rng protocol.Range, 
 // specified location and kind, and captures the resulting document changes.
 // If diag is non-nil, it is used as the code action context.
 // If titles is non-empty, the code action title must be present among the provided titles.
-func codeActionChanges(env *regtest.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic, titles []string) ([]protocol.DocumentChanges, error) {
+func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic, titles []string) ([]protocol.DocumentChanges, error) {
 	// Request all code actions that apply to the diagnostic.
 	// (The protocol supports filtering using Context.Only={actionKind}
 	// but we can give a better error if we don't filter.)
