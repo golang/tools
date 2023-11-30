@@ -311,9 +311,9 @@ func (a *Awaiter) checkConditionsLocked() {
 	}
 }
 
-// takeDocumentChanges returns any accumulated document changes (from
+// TakeDocumentChanges returns any accumulated document changes (from
 // server ApplyEdit RPC downcalls) and resets the list.
-func (a *Awaiter) takeDocumentChanges() []protocol.DocumentChanges {
+func (a *Awaiter) TakeDocumentChanges() []protocol.DocumentChanges {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
