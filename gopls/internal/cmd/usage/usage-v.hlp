@@ -15,7 +15,7 @@ Main
   version           print the gopls version information
   bug               report a bug in gopls
   help              print usage information for subcommands
-  api-json          print json describing gopls API
+  api-json          print JSON describing gopls API
   licenses          print licenses of included software
                     
 Features            
@@ -23,6 +23,7 @@ Features
   check             show diagnostic results for the specified file
   codelens          List or execute code lenses for a file
   definition        show declaration of selected identifier
+  execute           Execute a gopls custom LSP command
   folding_ranges    display selected file's folding ranges
   format            format the code according to the go standard
   highlight         display selected identifier's highlights

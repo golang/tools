@@ -741,7 +741,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Command: "gopls.add_telemetry_counters",
-			Title:   "update the given telemetry counters.",
+			Title:   "Update the given telemetry counters",
 			Doc:     "Gopls will prepend \"fwd/\" to all the counters updated using this command\nto avoid conflicts with other counters gopls collects.",
 			ArgDoc:  "{\n\t// Names and Values must have the same length.\n\t\"Names\": []string,\n\t\"Values\": []int64,\n}",
 		},
@@ -753,7 +753,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Command: "gopls.change_signature",
-			Title:   "performs a \"change signature\" refactoring.",
+			Title:   "Perform a \"change signature\" refactoring",
 			Doc:     "This command is experimental, currently only supporting parameter removal.\nIts signature will certainly change in the future (pun intended).",
 			ArgDoc:  "{\n\t\"RemoveParameter\": {\n\t\t\"uri\": string,\n\t\t\"range\": {\n\t\t\t\"start\": { ... },\n\t\t\t\"end\": { ... },\n\t\t},\n\t},\n}",
 		},
@@ -790,7 +790,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Command: "gopls.go_get_package",
-			Title:   "go get a package",
+			Title:   "'go get' a package",
 			Doc:     "Runs `go get` to fetch a package.",
 			ArgDoc:  "{\n\t// Any document URI within the relevant module.\n\t\"URI\": string,\n\t// The package to go get.\n\t\"Pkg\": string,\n\t\"AddRequire\": bool,\n}",
 		},
@@ -810,12 +810,12 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Command: "gopls.maybe_prompt_for_telemetry",
-			Title:   "checks for the right conditions, and then prompts",
-			Doc:     "the user to ask if they want to enable Go telemetry uploading. If the user\nresponds 'Yes', the telemetry mode is set to \"on\".",
+			Title:   "Prompt user to enable telemetry",
+			Doc:     "Checks for the right conditions, and then prompts the user\nto ask if they want to enable Go telemetry uploading. If\nthe user responds 'Yes', the telemetry mode is set to \"on\".",
 		},
 		{
 			Command:   "gopls.mem_stats",
-			Title:     "fetch memory statistics",
+			Title:     "Fetch memory statistics",
 			Doc:       "Call runtime.GC multiple times and return memory statistics as reported by\nruntime.MemStats.\n\nThis command is used for benchmarking, and may change in the future.",
 			ResultDoc: "{\n\t\"HeapAlloc\": uint64,\n\t\"HeapInUse\": uint64,\n\t\"TotalAlloc\": uint64,\n}",
 		},
@@ -839,13 +839,13 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Command: "gopls.run_go_work_command",
-			Title:   "run `go work [args...]`, and apply the resulting go.work",
-			Doc:     "edits to the current go.work file.",
+			Title:   "Run `go work [args...]`, and apply the resulting go.work",
+			Doc:     "edits to the current go.work file",
 			ArgDoc:  "{\n\t\"ViewID\": string,\n\t\"InitFirst\": bool,\n\t\"Args\": []string,\n}",
 		},
 		{
 			Command:   "gopls.run_govulncheck",
-			Title:     "Run vulncheck.",
+			Title:     "Run vulncheck",
 			Doc:       "Run vulnerability check (`govulncheck`).",
 			ArgDoc:    "{\n\t// Any document in the directory from which govulncheck will run.\n\t\"URI\": string,\n\t// Package pattern. E.g. \"\", \".\", \"./...\".\n\t\"Pattern\": string,\n}",
 			ResultDoc: "{\n\t// Token holds the progress token for LSP workDone reporting of the vulncheck\n\t// invocation.\n\t\"Token\": interface{},\n}",
@@ -865,14 +865,14 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Command:   "gopls.start_profile",
-			Title:     "start capturing a profile of gopls' execution.",
+			Title:     "Start capturing a profile of gopls' execution",
 			Doc:       "Start a new pprof profile. Before using the resulting file, profiling must\nbe stopped with a corresponding call to StopProfile.\n\nThis command is intended for internal use only, by the gopls benchmark\nrunner.",
 			ArgDoc:    "struct{}",
 			ResultDoc: "struct{}",
 		},
 		{
 			Command:   "gopls.stop_profile",
-			Title:     "stop an ongoing profile.",
+			Title:     "Stop an ongoing profile",
 			Doc:       "This command is intended for internal use only, by the gopls benchmark\nrunner.",
 			ArgDoc:    "struct{}",
 			ResultDoc: "{\n\t// File is the profile file name.\n\t\"File\": string,\n}",
@@ -915,7 +915,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Command:   "gopls.workspace_stats",
-			Title:     "fetch workspace statistics",
+			Title:     "Fetch workspace statistics",
 			Doc:       "Query statistics about workspace builds, modules, packages, and files.\n\nThis command is intended for internal use only, by the gopls stats\ncommand.",
 			ResultDoc: "{\n\t\"Files\": {\n\t\t\"Total\": int,\n\t\t\"Largest\": int,\n\t\t\"Errs\": int,\n\t},\n\t\"Views\": []{\n\t\t\"GoCommandVersion\": string,\n\t\t\"AllPackages\": {\n\t\t\t\"Packages\": int,\n\t\t\t\"LargestPackage\": int,\n\t\t\t\"CompiledGoFiles\": int,\n\t\t\t\"Modules\": int,\n\t\t},\n\t\t\"WorkspacePackages\": {\n\t\t\t\"Packages\": int,\n\t\t\t\"LargestPackage\": int,\n\t\t\t\"CompiledGoFiles\": int,\n\t\t\t\"Modules\": int,\n\t\t},\n\t\t\"Diagnostics\": int,\n\t},\n}",
 		},
@@ -938,7 +938,7 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Lens:  "run_govulncheck",
-			Title: "Run vulncheck.",
+			Title: "Run vulncheck",
 			Doc:   "Run vulnerability check (`govulncheck`).",
 		},
 		{

@@ -553,7 +553,7 @@ Runs `go generate` for a given directory.
 Identifier: `regenerate_cgo`
 
 Regenerates cgo definitions.
-### **Run vulncheck.**
+### **Run vulncheck**
 
 Identifier: `run_govulncheck`
 

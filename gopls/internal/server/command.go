@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/pprof"
 	"sort"
@@ -84,6 +85,15 @@ func (*commandHandler) AddTelemetryCounters(_ context.Context, args command.AddT
 
 // commandConfig configures common command set-up and execution.
 type commandConfig struct {
+	// TODO(adonovan): whether a command is synchronous or
+	// asynchronous is part of the server interface contract, not
+	// a mere implementation detail of the handler.
+	// Export a (command.Command).IsAsync() property so that
+	// clients can tell. (The tricky part is ensuring the handler
+	// remains consistent with the command.Command metadata, as at
+	// the point were we read the 'async' field below, we no
+	// longer know that command.Command.)
+
 	async       bool                 // whether to run the command asynchronously. Async commands can only return errors.
 	requireSave bool                 // whether all files must be saved for the command to work
 	progress    string               // title to use for progress reporting. If empty, no progress will be reported.
@@ -101,6 +111,14 @@ type commandDeps struct {
 }
 
 type commandFunc func(context.Context, commandDeps) error
+
+// These strings are reported as the final WorkDoneProgressEnd message
+// for each workspace/executeCommand request.
+const (
+	CommandCanceled  = "canceled"
+	CommandFailed    = "failed"
+	CommandCompleted = "completed"
+)
 
 // run performs command setup for command execution, and invokes the given run
 // function. If cfg.async is set, run executes the given func in a separate
@@ -158,12 +176,12 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 		if deps.work != nil {
 			switch {
 			case errors.Is(err, context.Canceled):
-				deps.work.End(ctx, "canceled")
+				deps.work.End(ctx, CommandCanceled)
 			case err != nil:
 				event.Error(ctx, "command error", err)
-				deps.work.End(ctx, "failed")
+				deps.work.End(ctx, CommandFailed)
 			default:
-				deps.work.End(ctx, "completed")
+				deps.work.End(ctx, CommandCompleted)
 			}
 		}
 		return err
@@ -508,7 +526,7 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot,
 	for _, funcName := range tests {
 		inv := &gocommand.Invocation{
 			Verb:       "test",
-			Args:       []string{pkgPath, "-v", "-count=1", "-run", fmt.Sprintf("^%s$", funcName)},
+			Args:       []string{pkgPath, "-v", "-count=1", fmt.Sprintf("-run=^%s$", regexp.QuoteMeta(funcName))},
 			WorkingDir: filepath.Dir(uri.Path()),
 		}
 		if err := snapshot.RunGoCommandPiped(ctx, cache.Normal, inv, out, out); err != nil {
@@ -524,7 +542,7 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot,
 	for _, funcName := range benchmarks {
 		inv := &gocommand.Invocation{
 			Verb:       "test",
-			Args:       []string{pkgPath, "-v", "-run=^$", "-bench", fmt.Sprintf("^%s$", funcName)},
+			Args:       []string{pkgPath, "-v", "-run=^$", fmt.Sprintf("-bench=^%s$", regexp.QuoteMeta(funcName))},
 			WorkingDir: filepath.Dir(uri.Path()),
 		}
 		if err := snapshot.RunGoCommandPiped(ctx, cache.Normal, inv, out, out); err != nil {

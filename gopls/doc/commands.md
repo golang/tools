@@ -41,7 +41,7 @@ Args:
 }
 ```
 
-### **update the given telemetry counters.**
+### **Update the given telemetry counters**
 Identifier: `gopls.add_telemetry_counters`
 
 Gopls will prepend "fwd/" to all the counters updated using this command
@@ -84,7 +84,7 @@ Args:
 }
 ```
 
-### **performs a "change signature" refactoring.**
+### **Perform a "change signature" refactoring**
 Identifier: `gopls.change_signature`
 
 This command is experimental, currently only supporting parameter removal.
@@ -183,7 +183,7 @@ Args:
 }
 ```
 
-### **go get a package**
+### **'go get' a package**
 Identifier: `gopls.go_get_package`
 
 Runs `go get` to fetch a package.
@@ -258,13 +258,14 @@ Result:
 }
 ```
 
-### **checks for the right conditions, and then prompts**
+### **Prompt user to enable telemetry**
 Identifier: `gopls.maybe_prompt_for_telemetry`
 
-the user to ask if they want to enable Go telemetry uploading. If the user
-responds 'Yes', the telemetry mode is set to "on".
+Checks for the right conditions, and then prompts the user
+to ask if they want to enable Go telemetry uploading. If
+the user responds 'Yes', the telemetry mode is set to "on".
 
-### **fetch memory statistics**
+### **Fetch memory statistics**
 Identifier: `gopls.mem_stats`
 
 Call runtime.GC multiple times and return memory statistics as reported by
@@ -334,10 +335,10 @@ Args:
 }
 ```
 
-### **run `go work [args...]`, and apply the resulting go.work**
+### **Run `go work [args...]`, and apply the resulting go.work**
 Identifier: `gopls.run_go_work_command`
 
-edits to the current go.work file.
+edits to the current go.work file
 
 Args:
 
@@ -349,7 +350,7 @@ Args:
 }
 ```
 
-### **Run vulncheck.**
+### **Run vulncheck**
 Identifier: `gopls.run_govulncheck`
 
 Run vulnerability check (`govulncheck`).
@@ -438,7 +439,7 @@ Result:
 }
 ```
 
-### **start capturing a profile of gopls' execution.**
+### **Start capturing a profile of gopls' execution**
 Identifier: `gopls.start_profile`
 
 Start a new pprof profile. Before using the resulting file, profiling must
@@ -459,7 +460,7 @@ Result:
 struct{}
 ```
 
-### **stop an ongoing profile.**
+### **Stop an ongoing profile**
 Identifier: `gopls.stop_profile`
 
 This command is intended for internal use only, by the gopls benchmark
@@ -567,7 +568,7 @@ Args:
 }
 ```
 
-### **fetch workspace statistics**
+### **Fetch workspace statistics**
 Identifier: `gopls.workspace_stats`
 
 Query statistics about workspace builds, modules, packages, and files.

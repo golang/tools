@@ -298,6 +298,7 @@ func (app *Application) featureCommands() []tool.Application {
 		&check{app: app},
 		&codelens{app: app},
 		&definition{app: app},
+		&execute{app: app},
 		&foldingRanges{app: app},
 		&format{app: app},
 		&highlight{app: app},

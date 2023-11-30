@@ -205,14 +205,14 @@ func TestFail(t *testing.T) { t.Fatal("fail") }
 	{
 		res := gopls(t, tree, "codelens", "-exec", "./a/a_test.go:3", "run test")
 		res.checkExit(true)
-		res.checkStdout(`PASS: TestPass`)         // from go test
+		res.checkStderr(`PASS: TestPass`)         // from go test
 		res.checkStderr("Info: all tests passed") // from gopls.test
 	}
 	// run the failing test
 	{
 		res := gopls(t, tree, "codelens", "-exec", "./a/a_test.go:4", "run test")
 		res.checkExit(false)
-		res.checkStdout(`FAIL	example.com/a`)
+		res.checkStderr(`FAIL	example.com/a`)
 		res.checkStderr("Info: 1 / 1 tests failed")
 	}
 }
@@ -265,6 +265,80 @@ func g() {
 				t.Errorf("Description does not start with markdown code block. Got: %s", defn.Description)
 			}
 		}
+	}
+}
+
+// TestExecute tests the 'execute' subcommand (../execute.go).
+func TestExecute(t *testing.T) {
+	t.Parallel()
+
+	tree := writeTree(t, `
+-- go.mod --
+module example.com
+go 1.18
+
+-- hello.go --
+package a
+func main() {}
+
+-- hello_test.go --
+package a
+import "testing"
+func TestHello(t *testing.T) {
+	t.Fatal("oops")
+}
+`)
+	// missing command name
+	{
+		res := gopls(t, tree, "execute")
+		res.checkExit(false)
+		res.checkStderr("requires a command")
+	}
+	// bad command
+	{
+		res := gopls(t, tree, "execute", "gopls.foo")
+		res.checkExit(false)
+		res.checkStderr("unrecognized command: gopls.foo")
+	}
+	// too few arguments
+	{
+		res := gopls(t, tree, "execute", "gopls.run_tests")
+		res.checkExit(false)
+		res.checkStderr("expected 1 input arguments, got 0")
+	}
+	// too many arguments
+	{
+		res := gopls(t, tree, "execute", "gopls.run_tests", "null", "null")
+		res.checkExit(false)
+		res.checkStderr("expected 1 input arguments, got 2")
+	}
+	// argument is not JSON
+	{
+		res := gopls(t, tree, "execute", "gopls.run_tests", "hello")
+		res.checkExit(false)
+		res.checkStderr("argument 1 is not valid JSON: invalid character 'h'")
+	}
+	// add import, show diff
+	hello := "file://" + filepath.ToSlash(tree) + "/hello.go"
+	{
+		res := gopls(t, tree, "execute", "-d", "gopls.add_import", `{"ImportPath": "fmt", "URI": "`+hello+`"}`)
+		res.checkExit(true)
+		res.checkStdout(`[+]import "fmt"`)
+	}
+	// list known packages (has a result)
+	{
+		res := gopls(t, tree, "execute", "gopls.list_known_packages", `{"URI": "`+hello+`"}`)
+		res.checkExit(true)
+		res.checkStdout(`"fmt"`)
+		res.checkStdout(`"encoding/json"`)
+	}
+	// run tests
+	{
+		helloTest := "file://" + filepath.ToSlash(tree) + "/hello_test.go"
+		res := gopls(t, tree, "execute", "gopls.run_tests", `{"URI": "`+helloTest+`", "Tests": ["TestHello"]}`)
+		res.checkExit(false)
+		res.checkStderr(`hello_test.go:4: oops`)
+		res.checkStderr(`1 / 1 tests failed`)
 	}
 }
 

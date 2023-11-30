@@ -32,6 +32,14 @@ import (
 //  3. The first line of the doc string is special. Everything after the colon
 //     is considered the command 'Title'.
 //     TODO(rFindley): reconsider this -- Title may be unnecessary.
+//
+// The doc comment on each method is eventually published at
+// https://github.com/golang/tools/blob/master/gopls/doc/commands.md,
+// so please be consistent in using this form:
+//
+//	Command: Capitalized verb phrase with no period
+//
+//	Longer description here...
 type Interface interface {
 	// ApplyFix: Apply a fix
 	//
@@ -105,7 +113,7 @@ type Interface interface {
 	// Reset diagnostics in the go.mod file of a module.
 	ResetGoModDiagnostics(context.Context, ResetGoModDiagnosticsArgs) error
 
-	// GoGetPackage: go get a package
+	// GoGetPackage: 'go get' a package
 	//
 	// Runs `go get` to fetch a package.
 	GoGetPackage(context.Context, GoGetPackageArgs) error
@@ -146,7 +154,7 @@ type Interface interface {
 	// address.
 	StartDebugging(context.Context, DebuggingArgs) (DebuggingResult, error)
 
-	// StartProfile: start capturing a profile of gopls' execution.
+	// StartProfile: Start capturing a profile of gopls' execution
 	//
 	// Start a new pprof profile. Before using the resulting file, profiling must
 	// be stopped with a corresponding call to StopProfile.
@@ -155,13 +163,13 @@ type Interface interface {
 	// runner.
 	StartProfile(context.Context, StartProfileArgs) (StartProfileResult, error)
 
-	// StopProfile: stop an ongoing profile.
+	// StopProfile: Stop an ongoing profile
 	//
 	// This command is intended for internal use only, by the gopls benchmark
 	// runner.
 	StopProfile(context.Context, StopProfileArgs) (StopProfileResult, error)
 
-	// RunGovulncheck: Run vulncheck.
+	// RunGovulncheck: Run vulncheck
 	//
 	// Run vulnerability check (`govulncheck`).
 	RunGovulncheck(context.Context, VulncheckArgs) (RunVulncheckResult, error)
@@ -171,7 +179,7 @@ type Interface interface {
 	// Fetch the result of latest vulnerability check (`govulncheck`).
 	FetchVulncheckResult(context.Context, URIArg) (map[protocol.DocumentURI]*vulncheck.Result, error)
 
-	// MemStats: fetch memory statistics
+	// MemStats: Fetch memory statistics
 	//
 	// Call runtime.GC multiple times and return memory statistics as reported by
 	// runtime.MemStats.
@@ -179,7 +187,7 @@ type Interface interface {
 	// This command is used for benchmarking, and may change in the future.
 	MemStats(context.Context) (MemStatsResult, error)
 
-	// WorkspaceStats: fetch workspace statistics
+	// WorkspaceStats: Fetch workspace statistics
 	//
 	// Query statistics about workspace builds, modules, packages, and files.
 	//
@@ -187,22 +195,24 @@ type Interface interface {
 	// command.
 	WorkspaceStats(context.Context) (WorkspaceStatsResult, error)
 
-	// RunGoWorkCommand: run `go work [args...]`, and apply the resulting go.work
-	// edits to the current go.work file.
+	// RunGoWorkCommand: Run `go work [args...]`, and apply the resulting go.work
+	// edits to the current go.work file
 	RunGoWorkCommand(context.Context, RunGoWorkArgs) error
 
-	// AddTelemetryCounters: update the given telemetry counters.
+	// AddTelemetryCounters: Update the given telemetry counters
 	//
 	// Gopls will prepend "fwd/" to all the counters updated using this command
 	// to avoid conflicts with other counters gopls collects.
 	AddTelemetryCounters(context.Context, AddTelemetryCountersArgs) error
 
-	// MaybePromptForTelemetry: checks for the right conditions, and then prompts
-	// the user to ask if they want to enable Go telemetry uploading. If the user
-	// responds 'Yes', the telemetry mode is set to "on".
+	// MaybePromptForTelemetry: Prompt user to enable telemetry
+	//
+	// Checks for the right conditions, and then prompts the user
+	// to ask if they want to enable Go telemetry uploading. If
+	// the user responds 'Yes', the telemetry mode is set to "on".
 	MaybePromptForTelemetry(context.Context) error
 
-	// ChangeSignature: performs a "change signature" refactoring.
+	// ChangeSignature: Perform a "change signature" refactoring
 	//
 	// This command is experimental, currently only supporting parameter removal.
 	// Its signature will certainly change in the future (pun intended).

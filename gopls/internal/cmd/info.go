@@ -4,6 +4,8 @@
 
 package cmd
 
+// This file defines the help, bug, version, api-json, licenses commands.
+
 import (
 	"bytes"
 	"context"
@@ -216,7 +218,7 @@ type apiJSON struct {
 func (j *apiJSON) Name() string      { return "api-json" }
 func (j *apiJSON) Parent() string    { return j.app.Name() }
 func (j *apiJSON) Usage() string     { return "" }
-func (j *apiJSON) ShortHelp() string { return "print json describing gopls API" }
+func (j *apiJSON) ShortHelp() string { return "print JSON describing gopls API" }
 func (j *apiJSON) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), ``)
 	printFlagDefaults(f)

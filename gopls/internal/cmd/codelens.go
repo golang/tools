@@ -9,7 +9,6 @@ import (
 	"flag"
 	"fmt"
 
-	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/tool"
@@ -83,22 +82,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 	}
 
 	// TODO(adonovan): cleanup: factor progress with stats subcommand.
-	const cmdProgressToken = "cmd-progress"
-	cmdDone := make(chan bool)
-	onProgress := func(p *protocol.ProgressParams) {
-		switch v := p.Value.(type) {
-		case *protocol.WorkDoneProgressReport:
-			// TODO(adonovan): how can we segregate command's stdout and
-			// stderr so that structure is preserved?
-			fmt.Println(v.Message)
-
-		case *protocol.WorkDoneProgressEnd:
-			if p.Token == cmdProgressToken {
-				// commandHandler.run sends message = canceled | failed | completed
-				cmdDone <- v.Message == "completed"
-			}
-		}
-	}
+	cmdDone, onProgress := commandProgress()
 
 	conn, err := r.app.connect(ctx, onProgress)
 	if err != nil {
@@ -139,33 +123,8 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 
 		// -exec: run the first matching code lens.
 		if r.Exec {
-			// Start the command.
-			if _, err := conn.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
-				Command:   lens.Command.Command,
-				Arguments: lens.Command.Arguments,
-				WorkDoneProgressParams: protocol.WorkDoneProgressParams{
-					WorkDoneToken: cmdProgressToken,
-				},
-			}); err != nil {
-				return err
-			}
-
-			// Wait for it to finish, if it is asynchronous
-			// and honors progress tokens.
-			//
-			// TODO(adonovan): extract this list more
-			// robustly. from lsp.commandConfig.async.
-			switch lens.Command.Command {
-			case "gopls." + string(command.RunGovulncheck),
-				"gopls." + string(command.Test):
-				if ok := <-cmdDone; !ok {
-					// TODO(adonovan): suppress this message;
-					// the command's stderr should suffice.
-					return fmt.Errorf("command failed")
-				}
-			}
-
-			return nil
+			_, err := conn.executeCommand(ctx, cmdDone, lens.Command)
+			return err
 		}
 
 		// No -exec: list matching code lenses.
