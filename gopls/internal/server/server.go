@@ -21,11 +21,10 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-const concurrentAnalyses = 1
-
 // New creates an LSP server and binds it to handle incoming client
 // messages on the supplied stream.
 func New(session *cache.Session, client protocol.ClientCloser, options *settings.Options) protocol.Server {
+	const concurrentAnalyses = 1
 	// If this assignment fails to compile after a protocol
 	// upgrade, it means that one or more new methods need new
 	// stub declarations in unimplemented.go.
@@ -132,6 +131,11 @@ func (s *server) WorkDoneProgressCancel(ctx context.Context, params *protocol.Wo
 	return s.progress.Cancel(params.Token)
 }
 
+// TODO(rfindley): an extension of the LSP is not the right way to do this.
+// Better would be a custom executeCommand RPC.
+// Even better would be textDocument/diagnostics (golang/go#60122).
+// Though note that implementing pull diagnostics may cause some servers to
+// request diagnostics in an ad-hoc manner, and break our intentional pacing.
 func (s *server) NonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.nonstandardRequest")
 	defer done()
@@ -198,7 +202,7 @@ func (s *server) diagnoseFile(ctx context.Context, snapshot *cache.Snapshot, uri
 	}
 	var td, ad []*cache.Diagnostic // combine load/parse/type + analysis diagnostics
 	combineDiagnostics(pkgDiags, adiags[uri], &td, &ad)
-	s.storeDiagnostics(snapshot, uri, typeCheckSource, td, true)
-	s.storeDiagnostics(snapshot, uri, analysisSource, ad, true)
+	s.storeDiagnostics(snapshot, uri, typeCheckSource, td)
+	s.storeDiagnostics(snapshot, uri, analysisSource, ad)
 	return fh, append(td, ad...), nil
 }

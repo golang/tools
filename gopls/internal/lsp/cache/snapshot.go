@@ -40,11 +40,12 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/constraints"
 	"golang.org/x/tools/gopls/internal/util/immutable"
+	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/gopls/internal/util/persistent"
 	"golang.org/x/tools/gopls/internal/vulncheck"
-	"golang.org/x/tools/internal/constraints"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/label"
 	"golang.org/x/tools/internal/event/tag"
@@ -1454,7 +1455,7 @@ func (s *Snapshot) CriticalError(ctx context.Context) *CriticalError {
 				}
 				return &CriticalError{
 					MainError:   err,
-					Diagnostics: diags,
+					Diagnostics: maps.Group(diags, byURI),
 				}
 			}
 		}
@@ -1469,7 +1470,7 @@ func (s *Snapshot) CriticalError(ctx context.Context) *CriticalError {
 			}
 			return &CriticalError{
 				MainError:   err,
-				Diagnostics: diags,
+				Diagnostics: maps.Group(diags, byURI),
 			}
 		}
 	}
@@ -1535,7 +1536,7 @@ func (s *Snapshot) awaitLoadedAllErrors(ctx context.Context) *CriticalError {
 		diags := s.extractGoCommandErrors(ctx, err)
 		return &CriticalError{
 			MainError:   err,
-			Diagnostics: diags,
+			Diagnostics: maps.Group(diags, byURI),
 		}
 	}
 
@@ -1543,7 +1544,7 @@ func (s *Snapshot) awaitLoadedAllErrors(ctx context.Context) *CriticalError {
 		diags := s.extractGoCommandErrors(ctx, err)
 		return &CriticalError{
 			MainError:   err,
-			Diagnostics: diags,
+			Diagnostics: maps.Group(diags, byURI),
 		}
 	}
 	return nil

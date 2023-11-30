@@ -107,30 +107,25 @@ func ModParseDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.
 }
 
 // ModTidyDiagnostics reports diagnostics from running go mod tidy.
-func ModTidyDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (diagnostics []*cache.Diagnostic, err error) {
+func ModTidyDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]*cache.Diagnostic, error) {
 	pm, err := snapshot.ParseMod(ctx, fh) // memoized
 	if err != nil {
 		return nil, nil // errors reported by ModDiagnostics above
 	}
 
 	tidied, err := snapshot.ModTidy(ctx, pm)
-	if err != nil && err != cache.ErrNoModOnDisk {
-		// TODO(rfindley): the check for ErrNoModOnDisk was historically determined
-		// to be benign, but may date back to the time when the Go command did not
-		// have overlay support.
-		//
-		// See if we can pass the overlay to the Go command, and eliminate this guard..
-		event.Error(ctx, fmt.Sprintf("tidy: diagnosing %s", pm.URI), err)
-	}
-	if err == nil {
-		for _, d := range tidied.Diagnostics {
-			if d.URI != fh.URI() {
-				continue
-			}
-			diagnostics = append(diagnostics, d)
+	if err != nil {
+		if err != cache.ErrNoModOnDisk {
+			// TODO(rfindley): the check for ErrNoModOnDisk was historically determined
+			// to be benign, but may date back to the time when the Go command did not
+			// have overlay support.
+			//
+			// See if we can pass the overlay to the Go command, and eliminate this guard..
+			event.Error(ctx, fmt.Sprintf("tidy: diagnosing %s", pm.URI), err)
 		}
+		return nil, nil
 	}
-	return diagnostics, nil
+	return tidied.Diagnostics, nil
 }
 
 // ModUpgradeDiagnostics adds upgrade quick fixes for individual modules if the upgrades

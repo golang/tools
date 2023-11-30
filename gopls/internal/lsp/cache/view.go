@@ -26,6 +26,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
@@ -863,17 +864,17 @@ func (s *Snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 		extractedDiags := s.extractGoCommandErrors(ctx, loadErr)
 		criticalErr = &CriticalError{
 			MainError:   loadErr,
-			Diagnostics: append(modDiagnostics, extractedDiags...),
+			Diagnostics: maps.Group(append(modDiagnostics, extractedDiags...), byURI),
 		}
 	case len(modDiagnostics) == 1:
 		criticalErr = &CriticalError{
 			MainError:   fmt.Errorf(modDiagnostics[0].Message),
-			Diagnostics: modDiagnostics,
+			Diagnostics: maps.Group(modDiagnostics, byURI),
 		}
 	case len(modDiagnostics) > 1:
 		criticalErr = &CriticalError{
 			MainError:   fmt.Errorf("error loading module names"),
-			Diagnostics: modDiagnostics,
+			Diagnostics: maps.Group(modDiagnostics, byURI),
 		}
 	}
 

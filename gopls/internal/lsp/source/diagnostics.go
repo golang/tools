@@ -11,6 +11,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/util/maps"
 )
 
 // Analyze reports go/analysis-framework diagnostics in the specified package.
@@ -42,11 +43,6 @@ func Analyze(ctx context.Context, snapshot *cache.Snapshot, pkgIDs map[PackageID
 	if err != nil {
 		return nil, err
 	}
-
-	// Report diagnostics and errors from root analyzers.
-	reports := make(map[protocol.DocumentURI][]*cache.Diagnostic)
-	for _, diag := range analysisDiagnostics {
-		reports[diag.URI] = append(reports[diag.URI], diag)
-	}
-	return reports, nil
+	byURI := func(d *cache.Diagnostic) protocol.DocumentURI { return d.URI }
+	return maps.Group(analysisDiagnostics, byURI), nil
 }

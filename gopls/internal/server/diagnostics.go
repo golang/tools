@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,9 +23,10 @@ import (
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/template"
-	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/gopls/internal/work"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/event/keys"
 	"golang.org/x/tools/internal/event/tag"
 )
 
@@ -43,7 +43,8 @@ import (
 type diagnosticSource int
 
 const (
-	modParseSource diagnosticSource = iota
+	criticalErrorSource diagnosticSource = iota
+	modParseSource
 	modTidySource
 	gcDetailsSource
 	analysisSource
@@ -273,7 +274,26 @@ func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snaps
 		}
 		toDiagnose[meta.ID] = meta
 	}
-	s.diagnosePkgs(ctx, snapshot, toDiagnose, nil)
+	diags, err := snapshot.PackageDiagnostics(ctx, maps.Keys(toDiagnose)...)
+	if err != nil {
+		if ctx.Err() == nil {
+			event.Error(ctx, "warning: diagnostics failed", err, snapshot.Labels()...)
+		}
+		return
+	}
+	// golang/go#59587: guarantee that we compute type-checking diagnostics
+	// for every compiled package file, otherwise diagnostics won't be quickly
+	// cleared following a fix.
+	for _, meta := range toDiagnose {
+		for _, uri := range meta.CompiledGoFiles {
+			if _, ok := diags[uri]; !ok {
+				diags[uri] = nil
+			}
+		}
+	}
+	for uri, diags := range diags {
+		s.storeDiagnostics(snapshot, uri, typeCheckSource, diags)
+	}
 }
 
 // diagnose is a helper function for running diagnostics with a given context.
@@ -297,7 +317,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 	}()
 
 	// common code for dispatching diagnostics
-	store := func(dsource diagnosticSource, operation string, diagsByFile map[protocol.DocumentURI][]*cache.Diagnostic, err error, merge bool) {
+	store := func(dsource diagnosticSource, operation string, diagsByFile map[protocol.DocumentURI][]*cache.Diagnostic, err error) {
 		if err != nil {
 			if ctx.Err() == nil {
 				event.Error(ctx, "warning: while "+operation, err, snapshot.Labels()...)
@@ -309,7 +329,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 				event.Error(ctx, "missing URI while "+operation, fmt.Errorf("empty URI"), tag.Directory.Of(snapshot.Folder().Path()))
 				continue
 			}
-			s.storeDiagnostics(snapshot, uri, dsource, diags, merge)
+			s.storeDiagnostics(snapshot, uri, dsource, diags)
 		}
 	}
 
@@ -321,30 +341,30 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 	if ctx.Err() != nil {
 		return
 	}
-	store(workSource, "diagnosing go.work file", workReports, workErr, true)
+	store(workSource, "diagnosing go.work file", workReports, workErr)
 
 	// Diagnose go.mod file.
 	modReports, modErr := mod.ParseDiagnostics(ctx, snapshot)
 	if ctx.Err() != nil {
 		return
 	}
-	store(modParseSource, "diagnosing go.mod file", modReports, modErr, true)
+	store(modParseSource, "diagnosing go.mod file", modReports, modErr)
 
 	// Diagnose go.mod upgrades.
 	upgradeReports, upgradeErr := mod.UpgradeDiagnostics(ctx, snapshot)
 	if ctx.Err() != nil {
 		return
 	}
-	store(modCheckUpgradesSource, "diagnosing go.mod upgrades", upgradeReports, upgradeErr, true)
+	store(modCheckUpgradesSource, "diagnosing go.mod upgrades", upgradeReports, upgradeErr)
 
 	// Diagnose vulnerabilities.
 	vulnReports, vulnErr := mod.VulnerabilityDiagnostics(ctx, snapshot)
 	if ctx.Err() != nil {
 		return
 	}
-	store(modVulncheckSource, "diagnosing vulnerabilities", vulnReports, vulnErr, false)
+	store(modVulncheckSource, "diagnosing vulnerabilities", vulnReports, vulnErr)
 
-	workspace, err := snapshot.WorkspaceMetadata(ctx)
+	workspacePkgs, err := snapshot.WorkspaceMetadata(ctx)
 	if s.shouldIgnoreError(ctx, snapshot, err) {
 		return
 	}
@@ -354,21 +374,25 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 		return
 	}
 
+	if criticalErr != nil {
+		store(criticalErrorSource, "critical error", criticalErr.Diagnostics, nil)
+	}
+
 	// Show the error as a progress error report so that it appears in the
 	// status bar. If a client doesn't support progress reports, the error
 	// will still be shown as a ShowMessage. If there is no error, any running
 	// error progress reports will be closed.
-	s.showCriticalErrorStatus(ctx, snapshot, criticalErr)
+	s.updateCriticalErrorStatus(ctx, snapshot, criticalErr)
 
 	// Diagnose template (.tmpl) files.
 	tmplReports := template.Diagnostics(snapshot)
 	// NOTE(rfindley): typeCheckSource is not accurate here.
 	// (but this will be gone soon anyway).
-	store(typeCheckSource, "diagnosing templates", tmplReports, nil, false)
+	store(typeCheckSource, "diagnosing templates", tmplReports, nil)
 
 	// If there are no workspace packages, there is nothing to diagnose and
 	// there are no orphaned files.
-	if len(workspace) == 0 {
+	if len(workspacePkgs) == 0 {
 		return
 	}
 
@@ -381,19 +405,17 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 	go func() {
 		defer wg.Done()
 		modTidyReports, err := mod.TidyDiagnostics(ctx, snapshot)
-		store(modTidySource, "running go mod tidy", modTidyReports, err, true)
+		store(modTidySource, "running go mod tidy", modTidyReports, err)
 	}()
 
 	// Run type checking and go/analysis diagnosis of packages in parallel.
 	var (
-		seen       = map[protocol.DocumentURI]struct{}{}
 		toDiagnose = make(map[metadata.PackageID]*metadata.Package)
 		toAnalyze  = make(map[metadata.PackageID]unit)
 	)
-	for _, mp := range workspace {
+	for _, mp := range workspacePkgs {
 		var hasNonIgnored, hasOpenFile bool
 		for _, uri := range mp.CompiledGoFiles {
-			seen[uri] = struct{}{}
 			if !hasNonIgnored && !snapshot.IgnoredFile(uri) {
 				hasNonIgnored = true
 			}
@@ -411,52 +433,23 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) {
 
 	wg.Add(1)
 	go func() {
-		s.diagnosePkgs(ctx, snapshot, toDiagnose, toAnalyze)
-		wg.Done()
+		defer wg.Done()
+		gcDetailsReports, err := s.gcDetailsDiagnostics(ctx, snapshot, toDiagnose)
+		store(gcDetailsSource, "collecting gc_details", gcDetailsReports, err)
 	}()
 
-	wg.Wait()
-
-	// Orphaned files.
-	// Confirm that every opened file belongs to a package (if any exist in
-	// the workspace). Otherwise, add a diagnostic to the file.
-	orphanedReports, orphanedErr := snapshot.OrphanedFileDiagnostics(ctx)
-	store(orphanedSource, "computing orphaned file diagnostics", orphanedReports, orphanedErr, false)
-}
-
-// diagnosePkgs type checks packages in toDiagnose, and analyzes packages in
-// toAnalyze, merging their diagnostics. Packages in toAnalyze must be a subset
-// of the packages in toDiagnose.
-//
-// It also implements gc_details diagnostics.
-//
-// TODO(rfindley): revisit handling of analysis gc_details. It may be possible
-// to merge this function with Server.diagnose, thereby avoiding the two layers
-// of concurrent dispatch: as of writing we concurrently run TidyDiagnostics
-// and diagnosePkgs, and diagnosePkgs concurrently runs PackageDiagnostics and
-// analysis.
-func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toDiagnose map[metadata.PackageID]*metadata.Package, toAnalyze map[metadata.PackageID]unit) {
-	ctx, done := event.Start(ctx, "Server.diagnosePkgs", snapshot.Labels()...)
-	defer done()
-
-	// Analyze and type-check concurrently, since they are independent
-	// operations.
+	// Package diagnostics and analysis diagnostics must both be computed and
+	// merged before they can be reported.
 	var (
-		wg            sync.WaitGroup
 		pkgDiags      map[protocol.DocumentURI][]*cache.Diagnostic
-		analysisDiags = make(map[protocol.DocumentURI][]*cache.Diagnostic)
+		analysisDiags map[protocol.DocumentURI][]*cache.Diagnostic
 	)
-
 	// Collect package diagnostics.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		var ids []metadata.PackageID
-		for id := range toDiagnose {
-			ids = append(ids, id)
-		}
 		var err error
-		pkgDiags, err = snapshot.PackageDiagnostics(ctx, ids...)
+		pkgDiags, err = snapshot.PackageDiagnostics(ctx, maps.Keys(toDiagnose)...)
 		if err != nil {
 			event.Error(ctx, "warning: diagnostics failed", err, snapshot.Labels()...)
 		}
@@ -467,24 +460,13 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toD
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		diags, err := source.Analyze(ctx, snapshot, toAnalyze, s.progress)
+		var err error
+		// TODO(rfindley): here and above, we should avoid using the first result
+		// if err is non-nil (though as of today it's OK).
+		analysisDiags, err = source.Analyze(ctx, snapshot, toAnalyze, s.progress)
 		if err != nil {
-			var tagStr string // sorted comma-separated list of package IDs
-			{
-				// TODO(adonovan): replace with a generic map[S]any -> string
-				// function in the tag package, and use  maps.Keys + slices.Sort.
-				keys := make([]string, 0, len(toDiagnose))
-				for id := range toDiagnose {
-					keys = append(keys, string(id))
-				}
-				sort.Strings(keys)
-				tagStr = strings.Join(keys, ",")
-			}
-			event.Error(ctx, "warning: analyzing package", err, append(snapshot.Labels(), tag.Package.Of(tagStr))...)
+			event.Error(ctx, "warning: analyzing package", err, append(snapshot.Labels(), tag.Package.Of(keys.Join(maps.Keys(toDiagnose))))...)
 			return
-		}
-		for uri, diags := range diags {
-			analysisDiags[uri] = append(analysisDiags[uri], diags...)
 		}
 	}()
 
@@ -497,36 +479,19 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toD
 		var tdiags2, adiags2 []*cache.Diagnostic
 		combineDiagnostics(tdiags, adiags, &tdiags2, &adiags2)
 		pkgDiags[uri] = tdiags2
-		s.storeDiagnostics(snapshot, uri, analysisSource, adiags2, true)
+		analysisDiags[uri] = adiags2
 	}
+	store(typeCheckSource, "type checking", pkgDiags, nil)          // error reported above
+	store(analysisSource, "analyzing packages", analysisDiags, nil) // error reported above
 
-	// golang/go#59587: guarantee that we store type-checking diagnostics for every compiled
-	// package file.
-	//
-	// Without explicitly storing empty diagnostics, the eager diagnostics
-	// publication for changed files will not publish anything for files with
-	// empty diagnostics.
-	storedPkgDiags := make(map[protocol.DocumentURI]bool)
-	for _, mp := range toDiagnose {
-		for _, uri := range mp.CompiledGoFiles {
-			s.storeDiagnostics(snapshot, uri, typeCheckSource, pkgDiags[uri], true)
-			storedPkgDiags[uri] = true
-		}
-	}
-	// Store the package diagnostics.
-	for uri, diags := range pkgDiags {
-		if storedPkgDiags[uri] {
-			continue
-		}
-		// builtin.go exists only for documentation purposes, and is not valid Go code.
-		// Don't report distracting errors
-		if snapshot.IsBuiltin(uri) {
-			bug.Reportf("type checking reported diagnostics for the builtin file: %v", diags)
-			continue
-		}
-		s.storeDiagnostics(snapshot, uri, typeCheckSource, diags, true)
-	}
+	// Orphaned files.
+	// Confirm that every opened file belongs to a package (if any exist in
+	// the workspace). Otherwise, add a diagnostic to the file.
+	orphanedReports, orphanedErr := snapshot.OrphanedFileDiagnostics(ctx)
+	store(orphanedSource, "computing orphaned file diagnostics", orphanedReports, orphanedErr)
+}
 
+func (s *server) gcDetailsDiagnostics(ctx context.Context, snapshot *cache.Snapshot, toDiagnose map[metadata.PackageID]*metadata.Package) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	// Process requested gc_details diagnostics.
 	//
 	// TODO(rfindley): this could be improved:
@@ -534,6 +499,8 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toD
 	//   2. This should not even run gc_details if the package contains unsaved
 	//      files.
 	//   3. See note below about using FindFile.
+	// Consider that these points, in combination with the note below about
+	// races, suggest that gc_details should be tracked on the Snapshot.
 	var toGCDetail map[metadata.PackageID]*metadata.Package
 	s.gcOptimizationDetailsMu.Lock()
 	for id := range s.gcOptimizationDetails {
@@ -546,10 +513,12 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toD
 	}
 	s.gcOptimizationDetailsMu.Unlock()
 
+	diagnostics := make(map[protocol.DocumentURI][]*cache.Diagnostic)
 	for _, mp := range toGCDetail {
 		gcReports, err := source.GCOptimizationDetails(ctx, snapshot, mp)
 		if err != nil {
 			event.Error(ctx, "warning: gc details", err, append(snapshot.Labels(), tag.Package.Of(string(mp.ID)))...)
+			continue
 		}
 		s.gcOptimizationDetailsMu.Lock()
 		_, enableGCDetails := s.gcOptimizationDetails[mp.ID]
@@ -560,20 +529,21 @@ func (s *server) diagnosePkgs(ctx context.Context, snapshot *cache.Snapshot, toD
 		// diagnostics does not race with storing the results here.
 		if enableGCDetails {
 			for uri, diags := range gcReports {
-				// TODO(rfindley): remove the use of FindFile here, and use ReadFile
-				// instead. Isn't it enough to know that the package came from the
-				// snapshot? Any reports should apply to the snapshot.
-				fh := snapshot.FindFile(uri)
+				fh, err := snapshot.ReadFile(ctx, uri)
+				if err != nil {
+					return nil, err
+				}
 				// Don't publish gc details for unsaved buffers, since the underlying
 				// logic operates on the file on disk.
 				if fh == nil || !fh.SameContentsOnDisk() {
 					continue
 				}
-				s.storeDiagnostics(snapshot, uri, gcDetailsSource, diags, true)
+				diagnostics[uri] = append(diagnostics[uri], diags...)
 			}
 		}
 		s.gcOptimizationDetailsMu.Unlock()
 	}
+	return diagnostics, nil
 }
 
 // combineDiagnostics combines and filters list/parse/type diagnostics from
@@ -647,10 +617,7 @@ func (s *server) mustPublishDiagnostics(uri protocol.DocumentURI) {
 // true, it merges results into any existing results for this snapshot.
 //
 // Mutates (sorts) diags.
-//
-// TODO(hyangah): investigate whether we can unconditionally overwrite previous report.diags
-// with the new diags and eliminate the need for the `merge` flag.
-func (s *server) storeDiagnostics(snapshot *cache.Snapshot, uri protocol.DocumentURI, dsource diagnosticSource, diags []*cache.Diagnostic, merge bool) {
+func (s *server) storeDiagnostics(snapshot *cache.Snapshot, uri protocol.DocumentURI, dsource diagnosticSource, diags []*cache.Diagnostic) {
 	// Safeguard: ensure that the file actually exists in the snapshot
 	// (see golang.org/issues/38602).
 	fh := snapshot.FindFile(uri)
@@ -675,9 +642,7 @@ func (s *server) storeDiagnostics(snapshot *cache.Snapshot, uri protocol.Documen
 	if report.snapshotID > snapshot.GlobalID() {
 		return
 	}
-	if report.diags == nil || report.snapshotID != snapshot.GlobalID() || !merge {
-		report.diags = map[file.Hash]*cache.Diagnostic{}
-	}
+	report.diags = map[file.Hash]*cache.Diagnostic{}
 	report.snapshotID = snapshot.GlobalID()
 	for _, d := range diags {
 		report.diags[hashDiagnostics(d)] = d
@@ -697,9 +662,10 @@ func (s *server) clearDiagnosticSource(dsource diagnosticSource) {
 
 const WorkspaceLoadFailure = "Error loading workspace"
 
-// showCriticalErrorStatus shows the error as a progress report.
-// If the error is nil, it clears any existing error progress report.
-func (s *server) showCriticalErrorStatus(ctx context.Context, snapshot *cache.Snapshot, err *cache.CriticalError) {
+// updateCriticalErrorStatus updates the critical error progress notification
+// based on err.
+// If err is nil, it clears any existing error progress report.
+func (s *server) updateCriticalErrorStatus(ctx context.Context, snapshot *cache.Snapshot, err *cache.CriticalError) {
 	s.criticalErrorStatusMu.Lock()
 	defer s.criticalErrorStatusMu.Unlock()
 
@@ -707,15 +673,12 @@ func (s *server) showCriticalErrorStatus(ctx context.Context, snapshot *cache.Sn
 	// status bar.
 	var errMsg string
 	if err != nil {
-		event.Error(ctx, "errors loading workspace", err.MainError, snapshot.Labels()...)
-		for _, d := range err.Diagnostics {
-			s.storeDiagnostics(snapshot, d.URI, modParseSource, []*cache.Diagnostic{d}, true)
-		}
 		errMsg = strings.ReplaceAll(err.MainError.Error(), "\n", " ")
 	}
 
 	if s.criticalErrorStatus == nil {
 		if errMsg != "" {
+			event.Error(ctx, "errors loading workspace", err.MainError, snapshot.Labels()...)
 			s.criticalErrorStatus = s.progress.Start(ctx, WorkspaceLoadFailure, errMsg, nil, nil)
 		}
 		return
