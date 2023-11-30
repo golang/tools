@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
-	"golang.org/x/tools/gopls/internal/lsp/analysis/unusedvariable"
+	"golang.org/x/tools/gopls/internal/analysis/unusedvariable"
 )
 
 func Test(t *testing.T) {

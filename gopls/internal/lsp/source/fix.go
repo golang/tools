@@ -12,9 +12,9 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
+	"golang.org/x/tools/gopls/internal/analysis/undeclaredname"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/analysis/fillstruct"
-	"golang.org/x/tools/gopls/internal/lsp/analysis/undeclaredname"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"

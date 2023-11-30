@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package simplifyslice_test
+package nonewvars_test
 
 import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
-	"golang.org/x/tools/gopls/internal/lsp/analysis/simplifyslice"
+	"golang.org/x/tools/gopls/internal/analysis/nonewvars"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -18,5 +18,5 @@ func Test(t *testing.T) {
 	if typeparams.Enabled {
 		tests = append(tests, "typeparams")
 	}
-	analysistest.RunWithSuggestedFixes(t, testdata, simplifyslice.Analyzer, tests...)
+	analysistest.RunWithSuggestedFixes(t, testdata, nonewvars.Analyzer, tests...)
 }

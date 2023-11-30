@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package simplifyrange_test
+package undeclaredname_test
 
 import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
-	"golang.org/x/tools/gopls/internal/lsp/analysis/simplifyrange"
+	"golang.org/x/tools/gopls/internal/analysis/undeclaredname"
 )
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.RunWithSuggestedFixes(t, testdata, simplifyrange.Analyzer, "a")
+	analysistest.Run(t, testdata, undeclaredname.Analyzer, "a")
 }

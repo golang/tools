@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package undeclaredname_test
+package simplifycompositelit_test
 
 import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
-	"golang.org/x/tools/gopls/internal/lsp/analysis/undeclaredname"
+	"golang.org/x/tools/gopls/internal/analysis/simplifycompositelit"
 )
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.Run(t, testdata, undeclaredname.Analyzer, "a")
+	analysistest.RunWithSuggestedFixes(t, testdata, simplifycompositelit.Analyzer, "a")
 }

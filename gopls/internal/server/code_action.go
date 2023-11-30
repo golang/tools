@@ -12,10 +12,10 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
+	"golang.org/x/tools/gopls/internal/analysis/infertypeargs"
+	"golang.org/x/tools/gopls/internal/analysis/stubmethods"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/analysis/fillstruct"
-	"golang.org/x/tools/gopls/internal/lsp/analysis/infertypeargs"
-	"golang.org/x/tools/gopls/internal/lsp/analysis/stubmethods"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/command"
