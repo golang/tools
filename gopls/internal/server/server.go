@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -29,12 +30,12 @@ func New(session *cache.Session, client protocol.ClientCloser, options *settings
 	// upgrade, it means that one or more new methods need new
 	// stub declarations in unimplemented.go.
 	return &server{
-		diagnostics:         map[protocol.DocumentURI]*fileReports{},
+		diagnostics:         make(map[protocol.DocumentURI]*fileDiagnostics),
 		watchedGlobPatterns: nil, // empty
-		changedFiles:        make(map[protocol.DocumentURI]struct{}),
+		changedFiles:        make(map[protocol.DocumentURI]unit),
 		session:             session,
 		client:              client,
-		diagnosticsSema:     make(chan struct{}, concurrentAnalyses),
+		diagnosticsSema:     make(chan unit, concurrentAnalyses),
 		progress:            progress.NewTracker(client),
 		options:             options,
 	}
@@ -78,7 +79,7 @@ type server struct {
 
 	// changedFiles tracks files for which there has been a textDocument/didChange.
 	changedFilesMu sync.Mutex
-	changedFiles   map[protocol.DocumentURI]struct{}
+	changedFiles   map[protocol.DocumentURI]unit
 
 	// folders is only valid between initialize and initialized, and holds the
 	// set of folders to build views for when we are ready.
@@ -90,15 +91,15 @@ type server struct {
 	// that the server should watch changes.
 	// The map field may be reassigned but the map is immutable.
 	watchedGlobPatternsMu  sync.Mutex
-	watchedGlobPatterns    map[string]struct{}
+	watchedGlobPatterns    map[string]unit
 	watchRegistrationCount int
 
 	diagnosticsMu sync.Mutex
-	diagnostics   map[protocol.DocumentURI]*fileReports
+	diagnostics   map[protocol.DocumentURI]*fileDiagnostics
 
 	// diagnosticsSema limits the concurrency of diagnostics runs, which can be
 	// expensive.
-	diagnosticsSema chan struct{}
+	diagnosticsSema chan unit
 
 	progress *progress.Tracker
 
@@ -146,15 +147,7 @@ func (s *server) NonstandardRequest(ctx context.Context, method string, params i
 				return nil, err
 			}
 
-			fileID, diagnostics, err := s.diagnoseFile(ctx, snapshot, fh.URI())
-			if err != nil {
-				return nil, err
-			}
-			if err := s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
-				URI:         fh.URI(),
-				Diagnostics: toProtocolDiagnostics(diagnostics),
-				Version:     fileID.Version(),
-			}); err != nil {
+			if err := s.diagnoseFile(ctx, snapshot, fh.URI()); err != nil {
 				return nil, err
 			}
 		}
@@ -176,26 +169,23 @@ func (s *server) NonstandardRequest(ctx context.Context, method string, params i
 // efficient to compute the set of packages and TypeCheck and
 // Analyze them all at once. Or instead support textDocument/diagnostic
 // (golang/go#60122).
-func (s *server) diagnoseFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (file.Handle, []*cache.Diagnostic, error) {
-	fh, err := snapshot.ReadFile(ctx, uri)
-	if err != nil {
-		return nil, nil, err
-	}
+func (s *server) diagnoseFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) error {
 	pkg, _, err := source.NarrowestPackageForFile(ctx, snapshot, uri)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	pkgDiags, err := pkg.DiagnosticsForFile(ctx, uri)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	adiags, err := source.Analyze(ctx, snapshot, map[source.PackageID]unit{pkg.Metadata().ID: {}}, nil /* progress tracker */)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	var td, ad []*cache.Diagnostic // combine load/parse/type + analysis diagnostics
 	combineDiagnostics(pkgDiags, adiags[uri], &td, &ad)
-	s.storeDiagnostics(snapshot, uri, typeCheckSource, td)
-	s.storeDiagnostics(snapshot, uri, analysisSource, ad)
-	return fh, append(td, ad...), nil
+	diags := append(td, ad...)
+	byURI := func(d *cache.Diagnostic) protocol.DocumentURI { return d.URI }
+	s.updateDiagnostics(ctx, s.session.Views(), snapshot, maps.Group(diags, byURI), false)
+	return nil
 }
