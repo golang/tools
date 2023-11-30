@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/goversion"
+	"golang.org/x/tools/gopls/internal/util/goversion"
 )
 
 func TestMessage(t *testing.T) {

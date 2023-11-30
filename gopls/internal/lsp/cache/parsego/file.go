@@ -11,7 +11,7 @@ import (
 	"go/token"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/safetoken"
+	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
 // A File contains the results of parsing a Go file.

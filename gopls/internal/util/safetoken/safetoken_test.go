@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/gopls/internal/lsp/safetoken"
+	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -116,7 +116,7 @@ func TestGoplsSourceDoesNotCallTokenFileMethods(t *testing.T) {
 
 	for _, pkg := range pkgs {
 		switch pkg.PkgPath {
-		case "go/token", "golang.org/x/tools/gopls/internal/lsp/safetoken":
+		case "go/token", "golang.org/x/tools/gopls/internal/util/safetoken":
 			continue // allow calls within these packages
 		}
 

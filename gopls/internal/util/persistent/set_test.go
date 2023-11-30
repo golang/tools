@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/persistent"
+	"golang.org/x/tools/gopls/internal/util/persistent"
 	"golang.org/x/tools/internal/constraints"
 )
 

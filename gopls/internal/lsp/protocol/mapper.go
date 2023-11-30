@@ -71,7 +71,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"golang.org/x/tools/gopls/internal/lsp/safetoken"
+	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
 // A Mapper wraps the content of a file and provides mapping
