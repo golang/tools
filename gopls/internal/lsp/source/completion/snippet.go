@@ -7,7 +7,7 @@ package completion
 import (
 	"go/ast"
 
-	"golang.org/x/tools/gopls/internal/lsp/snippet"
+	"golang.org/x/tools/gopls/internal/lsp/source/completion/snippet"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 

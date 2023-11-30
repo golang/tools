@@ -12,8 +12,8 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/snippet"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/lsp/source/completion/snippet"
 )
 
 // some function definitions in test files can be completed

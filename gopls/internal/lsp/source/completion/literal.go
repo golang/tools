@@ -12,8 +12,8 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/snippet"
 	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/lsp/source/completion/snippet"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typeparams"
 )
