@@ -4,7 +4,11 @@
 
 package protocol
 
-import "golang.org/x/tools/internal/diff"
+import (
+	"fmt"
+
+	"golang.org/x/tools/internal/diff"
+)
 
 // EditsFromDiffEdits converts diff.Edits to a non-nil slice of LSP TextEdits.
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textEditArray
@@ -59,4 +63,41 @@ func ApplyEdits(m *Mapper, edits []TextEdit) ([]byte, []diff.Edit, error) {
 	}
 	out, err := diff.ApplyBytes(m.Content, diffEdits)
 	return out, diffEdits, err
+}
+
+// AsTextEdits converts a slice possibly containing AnnotatedTextEdits
+// to a slice of TextEdits.
+func AsTextEdits(edits []Or_TextDocumentEdit_edits_Elem) []TextEdit {
+	var result []TextEdit
+	for _, e := range edits {
+		var te TextEdit
+		if x, ok := e.Value.(AnnotatedTextEdit); ok {
+			te = x.TextEdit
+		} else if x, ok := e.Value.(TextEdit); ok {
+			te = x
+		} else {
+			panic(fmt.Sprintf("unexpected type %T, expected AnnotatedTextEdit or TextEdit", e.Value))
+		}
+		result = append(result, te)
+	}
+	return result
+}
+
+// AsAnnotatedTextEdits converts a slice of TextEdits
+// to a slice of Or_TextDocumentEdit_edits_Elem.
+// (returning a typed nil is required in server: in code_action.go and command.go))
+func AsAnnotatedTextEdits(edits []TextEdit) []Or_TextDocumentEdit_edits_Elem {
+	if edits == nil {
+		return []Or_TextDocumentEdit_edits_Elem{}
+	}
+	var result []Or_TextDocumentEdit_edits_Elem
+	for _, e := range edits {
+		result = append(result, Or_TextDocumentEdit_edits_Elem{
+			Value: TextEdit{
+				Range:   e.Range,
+				NewText: e.NewText,
+			},
+		})
+	}
+	return result
 }

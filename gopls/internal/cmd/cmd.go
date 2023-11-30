@@ -554,7 +554,7 @@ func (cli *cmdClient) applyWorkspaceEdit(edit *protocol.WorkspaceEdit) error {
 	for _, c := range edit.DocumentChanges {
 		if c.TextDocumentEdit != nil {
 			uri := c.TextDocumentEdit.TextDocument.URI
-			edits[uri] = append(edits[uri], c.TextDocumentEdit.Edits...)
+			edits[uri] = append(edits[uri], protocol.AsTextEdits(c.TextDocumentEdit.Edits)...)
 			orderedURIs = append(orderedURIs, uri)
 		}
 		if c.RenameFile != nil {

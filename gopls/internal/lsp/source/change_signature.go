@@ -176,7 +176,7 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 					Version:                fh.Version(),
 					TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri},
 				},
-				Edits: pedits,
+				Edits: protocol.AsAnnotatedTextEdits(pedits),
 			},
 		})
 	}

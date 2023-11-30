@@ -1650,7 +1650,7 @@ func applyDocumentChanges(env *integration.Env, changes []protocol.DocumentChang
 			if err != nil {
 				return err
 			}
-			patched, _, err := protocol.ApplyEdits(mapper, change.TextDocumentEdit.Edits)
+			patched, _, err := protocol.ApplyEdits(mapper, protocol.AsTextEdits(change.TextDocumentEdit.Edits))
 			if err != nil {
 				return err
 			}

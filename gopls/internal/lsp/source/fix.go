@@ -130,9 +130,11 @@ func suggestedFixToEdits(ctx context.Context, snapshot *cache.Snapshot, fset *to
 		if err != nil {
 			return nil, err
 		}
-		te.Edits = append(te.Edits, protocol.TextEdit{
-			Range:   rng,
-			NewText: string(edit.NewText),
+		te.Edits = append(te.Edits, protocol.Or_TextDocumentEdit_edits_Elem{
+			Value: protocol.TextEdit{
+				Range:   rng,
+				NewText: string(edit.NewText),
+			},
 		})
 	}
 	var edits []protocol.TextDocumentEdit

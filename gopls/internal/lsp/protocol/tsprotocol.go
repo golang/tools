@@ -17,7 +17,7 @@ import "encoding/json"
 // @since 3.16.0.
 type AnnotatedTextEdit struct {
 	// The actual identifier of the change annotation
-	AnnotationID ChangeAnnotationIdentifier `json:"annotationId"`
+	AnnotationID *ChangeAnnotationIdentifier `json:"annotationId,omitempty"`
 	TextEdit
 }
 
@@ -4536,7 +4536,7 @@ type TextDocumentEdit struct {
 	//
 	// @since 3.16.0 - support for AnnotatedTextEdit. This is guarded using a
 	// client capability.
-	Edits []TextEdit `json:"edits"`
+	Edits []Or_TextDocumentEdit_edits_Elem `json:"edits"`
 }
 
 // A document filter denotes a document by different properties like

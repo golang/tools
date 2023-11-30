@@ -24,6 +24,7 @@ const (
 // A.B.C.D means that one of B or C would change to a pointer
 // so a test or initialization would be needed
 var goplsStar = map[prop]int{
+	{"AnnotatedTextEdit", "annotationId"}:  wantOptStar,
 	{"ClientCapabilities", "textDocument"}: wantOpt, // A.B.C.D at fake/editor.go:255
 	{"ClientCapabilities", "window"}:       wantOpt, // test failures
 	{"ClientCapabilities", "workspace"}:    wantOpt, // test failures
@@ -85,7 +86,6 @@ var renameProp = map[prop]string{
 	{"ServerCapabilities", "semanticTokensProvider"}: "interface{}",
 	// slightly tricky
 	{"ServerCapabilities", "textDocumentSync"}: "interface{}",
-	{"TextDocumentEdit", "edits"}:              "[]TextEdit",
 	{"TextDocumentSyncOptions", "save"}:        "SaveOptions",
 	{"WorkspaceEdit", "documentChanges"}:       "[]DocumentChanges",
 }

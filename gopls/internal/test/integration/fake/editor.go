@@ -910,7 +910,7 @@ func (e *Editor) ApplyCodeAction(ctx context.Context, action protocol.CodeAction
 					// Skip edits for old versions.
 					continue
 				}
-				if err := e.EditBuffer(ctx, path, change.TextDocumentEdit.Edits); err != nil {
+				if err := e.EditBuffer(ctx, path, protocol.AsTextEdits(change.TextDocumentEdit.Edits)); err != nil {
 					return fmt.Errorf("editing buffer %q: %w", path, err)
 				}
 			}
@@ -1361,7 +1361,7 @@ func (e *Editor) applyTextDocumentEdit(ctx context.Context, change protocol.Text
 			return err
 		}
 	}
-	return e.EditBuffer(ctx, path, change.Edits)
+	return e.EditBuffer(ctx, path, protocol.AsTextEdits(change.Edits))
 }
 
 // Config returns the current editor configuration.
