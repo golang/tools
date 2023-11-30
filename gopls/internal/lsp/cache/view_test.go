@@ -5,7 +5,6 @@ package cache
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -203,11 +202,6 @@ func TestSuffixes(t *testing.T) {
 			}
 		}
 	}
-}
-
-func toJSON(x interface{}) string {
-	b, _ := json.MarshalIndent(x, "", " ")
-	return string(b)
 }
 
 func TestIgnoreFilter(t *testing.T) {

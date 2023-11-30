@@ -333,7 +333,3 @@ func protocolEditsFromSource(src []byte, edits []diff.Edit) ([]protocol.TextEdit
 	}
 	return result, nil
 }
-
-func ToProtocolEdits(m *protocol.Mapper, edits []diff.Edit) ([]protocol.TextEdit, error) {
-	return protocol.EditsFromDiffEdits(m, edits)
-}
