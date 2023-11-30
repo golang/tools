@@ -498,20 +498,18 @@ func (s *server) gcDetailsDiagnostics(ctx context.Context, snapshot *cache.Snaps
 	//   1. This should memoize its results if the package has not changed.
 	//   2. This should not even run gc_details if the package contains unsaved
 	//      files.
-	//   3. See note below about using FindFile.
+	//   3. See note below about using ReadFile.
 	// Consider that these points, in combination with the note below about
 	// races, suggest that gc_details should be tracked on the Snapshot.
 	var toGCDetail map[metadata.PackageID]*metadata.Package
-	s.gcOptimizationDetailsMu.Lock()
-	for id := range s.gcOptimizationDetails {
-		if mp, ok := toDiagnose[id]; ok {
+	for _, mp := range toDiagnose {
+		if snapshot.WantGCDetails(mp.ID) {
 			if toGCDetail == nil {
 				toGCDetail = make(map[metadata.PackageID]*metadata.Package)
 			}
-			toGCDetail[id] = mp
+			toGCDetail[mp.ID] = mp
 		}
 	}
-	s.gcOptimizationDetailsMu.Unlock()
 
 	diagnostics := make(map[protocol.DocumentURI][]*cache.Diagnostic)
 	for _, mp := range toGCDetail {
@@ -520,28 +518,21 @@ func (s *server) gcDetailsDiagnostics(ctx context.Context, snapshot *cache.Snaps
 			event.Error(ctx, "warning: gc details", err, append(snapshot.Labels(), tag.Package.Of(string(mp.ID)))...)
 			continue
 		}
-		s.gcOptimizationDetailsMu.Lock()
-		_, enableGCDetails := s.gcOptimizationDetails[mp.ID]
-
-		// NOTE(golang/go#44826): hold the gcOptimizationDetails lock, and re-check
-		// whether gc optimization details are enabled, while storing gc_details
-		// results. This ensures that the toggling of GC details and clearing of
-		// diagnostics does not race with storing the results here.
-		if enableGCDetails {
-			for uri, diags := range gcReports {
-				fh, err := snapshot.ReadFile(ctx, uri)
-				if err != nil {
-					return nil, err
-				}
-				// Don't publish gc details for unsaved buffers, since the underlying
-				// logic operates on the file on disk.
-				if fh == nil || !fh.SameContentsOnDisk() {
-					continue
-				}
-				diagnostics[uri] = append(diagnostics[uri], diags...)
+		for uri, diags := range gcReports {
+			// TODO(rfindley): reading here should not be necessary: if a file has
+			// been deleted we should be notified, and diagnostics will eventually
+			// become consistent.
+			fh, err := snapshot.ReadFile(ctx, uri)
+			if err != nil {
+				return nil, err
 			}
+			// Don't publish gc details for unsaved buffers, since the underlying
+			// logic operates on the file on disk.
+			if fh == nil || !fh.SameContentsOnDisk() {
+				continue
+			}
+			diagnostics[uri] = append(diagnostics[uri], diags...)
 		}
-		s.gcOptimizationDetailsMu.Unlock()
 	}
 	return diagnostics, nil
 }
@@ -646,17 +637,6 @@ func (s *server) storeDiagnostics(snapshot *cache.Snapshot, uri protocol.Documen
 	report.snapshotID = snapshot.GlobalID()
 	for _, d := range diags {
 		report.diags[hashDiagnostics(d)] = d
-	}
-}
-
-// clearDiagnosticSource clears all diagnostics for a given source type. It is
-// necessary for cases where diagnostics have been invalidated by something
-// other than a snapshot change, for example when gc_details is toggled.
-func (s *server) clearDiagnosticSource(dsource diagnosticSource) {
-	s.diagnosticsMu.Lock()
-	defer s.diagnosticsMu.Unlock()
-	for _, reports := range s.diagnostics {
-		delete(reports.reports, dsource)
 	}
 }
 

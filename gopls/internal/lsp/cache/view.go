@@ -24,6 +24,7 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/maps"
@@ -893,6 +894,7 @@ type StateChange struct {
 	Files          map[protocol.DocumentURI]file.Handle
 	ModuleUpgrades map[protocol.DocumentURI]map[string]string
 	Vulns          map[protocol.DocumentURI]*vulncheck.Result
+	GCDetails      map[metadata.PackageID]bool // package -> whether or not we want details
 }
 
 // Invalidate processes the provided state change, invalidating any derived

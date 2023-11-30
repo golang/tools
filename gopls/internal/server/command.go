@@ -783,20 +783,19 @@ func (c *commandHandler) ToggleGCDetails(ctx context.Context, args command.URIAr
 		progress:    "Toggling GC Details",
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		meta, err := source.NarrowestMetadataForFile(ctx, deps.snapshot, deps.fh.URI())
-		if err != nil {
-			return err
-		}
-		c.s.gcOptimizationDetailsMu.Lock()
-		if _, ok := c.s.gcOptimizationDetails[meta.ID]; ok {
-			delete(c.s.gcOptimizationDetails, meta.ID)
-			c.s.clearDiagnosticSource(gcDetailsSource)
-		} else {
-			c.s.gcOptimizationDetails[meta.ID] = struct{}{}
-		}
-		c.s.gcOptimizationDetailsMu.Unlock()
-		c.s.diagnoseSnapshot(deps.snapshot, nil, 0)
-		return nil
+		return c.modifyState(ctx, FromToggleGCDetails, func() (*cache.Snapshot, func(), error) {
+			meta, err := source.NarrowestMetadataForFile(ctx, deps.snapshot, deps.fh.URI())
+			if err != nil {
+				return nil, nil, err
+			}
+			wantDetails := !deps.snapshot.WantGCDetails(meta.ID) // toggle the gc details state
+			snapshot, release := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
+				GCDetails: map[metadata.PackageID]bool{
+					meta.ID: wantDetails,
+				},
+			})
+			return snapshot, release, nil
+		})
 	})
 }
 

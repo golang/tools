@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/server"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -46,7 +47,7 @@ func main() {
 		env.ExecuteCodeLensCommand("main.go", command.GCDetails, nil)
 		d := &protocol.PublishDiagnosticsParams{}
 		env.OnceMet(
-			Diagnostics(AtPosition("main.go", 5, 13)),
+			CompletedWork(server.DiagnosticWorkTitle(server.FromToggleGCDetails), 1, true),
 			ReadDiagnostics("main.go", d),
 		)
 		// Confirm that the diagnostics come from the gc details code lens.
@@ -75,7 +76,10 @@ func main() {
 
 		// Toggle the GC details code lens again so now it should be off.
 		env.ExecuteCodeLensCommand("main.go", command.GCDetails, nil)
-		env.Await(NoDiagnostics(ForFile("main.go")))
+		env.OnceMet(
+			CompletedWork(server.DiagnosticWorkTitle(server.FromToggleGCDetails), 2, true),
+			NoDiagnostics(ForFile("main.go")),
+		)
 	})
 }
 
@@ -98,12 +102,10 @@ go 1.12
 	).Run(t, src, func(t *testing.T, env *Env) {
 		env.CreateBuffer("p_test.go", "")
 
-		const gcDetailsCommand = "gopls." + string(command.GCDetails)
-
 		hasGCDetails := func() bool {
 			lenses := env.CodeLens("p_test.go") // should not crash
 			for _, lens := range lenses {
-				if lens.Command.Command == gcDetailsCommand {
+				if lens.Command.Command == command.GCDetails.ID() {
 					return true
 				}
 			}

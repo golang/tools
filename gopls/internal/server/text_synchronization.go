@@ -57,6 +57,10 @@ const (
 	// FromResetGoModDiagnostics refers to state changes resulting from the
 	// ResetGoModDiagnostics command.
 	FromResetGoModDiagnostics
+
+	// FromToggleGCDetails refers to state changes resulting from toggling
+	// gc_details on or off for a package.
+	FromToggleGCDetails
 )
 
 func (m ModificationSource) String() string {

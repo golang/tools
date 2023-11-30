@@ -29,15 +29,14 @@ func New(session *cache.Session, client protocol.ClientCloser, options *settings
 	// upgrade, it means that one or more new methods need new
 	// stub declarations in unimplemented.go.
 	return &server{
-		diagnostics:           map[protocol.DocumentURI]*fileReports{},
-		gcOptimizationDetails: make(map[source.PackageID]struct{}),
-		watchedGlobPatterns:   nil, // empty
-		changedFiles:          make(map[protocol.DocumentURI]struct{}),
-		session:               session,
-		client:                client,
-		diagnosticsSema:       make(chan struct{}, concurrentAnalyses),
-		progress:              progress.NewTracker(client),
-		options:               options,
+		diagnostics:         map[protocol.DocumentURI]*fileReports{},
+		watchedGlobPatterns: nil, // empty
+		changedFiles:        make(map[protocol.DocumentURI]struct{}),
+		session:             session,
+		client:              client,
+		diagnosticsSema:     make(chan struct{}, concurrentAnalyses),
+		progress:            progress.NewTracker(client),
+		options:             options,
 	}
 }
 
@@ -96,12 +95,6 @@ type server struct {
 
 	diagnosticsMu sync.Mutex
 	diagnostics   map[protocol.DocumentURI]*fileReports
-
-	// gcOptimizationDetails describes the packages for which we want
-	// optimization details to be included in the diagnostics. The key is the
-	// ID of the package.
-	gcOptimizationDetailsMu sync.Mutex
-	gcOptimizationDetails   map[source.PackageID]struct{}
 
 	// diagnosticsSema limits the concurrency of diagnostics runs, which can be
 	// expensive.

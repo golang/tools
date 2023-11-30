@@ -196,6 +196,10 @@ type Snapshot struct {
 
 	// vulns maps each go.mod file's URI to its known vulnerabilities.
 	vulns *persistent.Map[protocol.DocumentURI, *vulncheck.Result]
+
+	// gcOptimizationDetails describes the packages for which we want
+	// optimization details to be included in the diagnostics.
+	gcOptimizationDetails map[metadata.PackageID]unit
 }
 
 var globalSnapshotID uint64
@@ -1974,6 +1978,25 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 		vulns:             cloneWith(s.vulns, changed.Vulns),
 	}
 
+	// Compute the new set of packages for which we want gc details, after
+	// applying changed.GCDetails.
+	if len(s.gcOptimizationDetails) > 0 || len(changed.GCDetails) > 0 {
+		newGCDetails := make(map[metadata.PackageID]unit)
+		for id := range s.gcOptimizationDetails {
+			if _, ok := changed.GCDetails[id]; !ok {
+				newGCDetails[id] = unit{} // no change
+			}
+		}
+		for id, want := range changed.GCDetails {
+			if want {
+				newGCDetails[id] = unit{}
+			}
+		}
+		if len(newGCDetails) > 0 {
+			result.gcOptimizationDetails = newGCDetails
+		}
+	}
+
 	// Create a lease on the new snapshot.
 	// (Best to do this early in case the code below hides an
 	// incref/decref operation that might destroy it prematurely.)
@@ -2565,4 +2588,11 @@ func (s *Snapshot) setBuiltin(path string) {
 	defer s.mu.Unlock()
 
 	s.builtin = protocol.URIFromPath(path)
+}
+
+// WantGCDetails reports whether to compute GC optimization details for the
+// specified package.
+func (s *Snapshot) WantGCDetails(id metadata.PackageID) bool {
+	_, ok := s.gcOptimizationDetails[id]
+	return ok
 }
