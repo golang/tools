@@ -196,7 +196,7 @@ func computeFixEdits(snapshot *cache.Snapshot, pgf *ParsedGoFile, options *impor
 	if fixedData == nil || fixedData[len(fixedData)-1] != '\n' {
 		fixedData = append(fixedData, '\n') // ApplyFixes may miss the newline, go figure.
 	}
-	edits := snapshot.Options().ComputeEdits(left, string(fixedData))
+	edits := diff.Strings(left, string(fixedData))
 	return protocolEditsFromSource([]byte(left), edits)
 }
 
@@ -306,7 +306,7 @@ func computeTextEdits(ctx context.Context, snapshot *cache.Snapshot, pgf *Parsed
 	_, done := event.Start(ctx, "source.computeTextEdits")
 	defer done()
 
-	edits := snapshot.Options().ComputeEdits(string(pgf.Src), formatted)
+	edits := diff.Strings(string(pgf.Src), formatted)
 	return protocol.EditsFromDiffEdits(pgf.Mapper, edits)
 }
 

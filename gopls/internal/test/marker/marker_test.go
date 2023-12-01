@@ -1149,6 +1149,15 @@ func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
 	for name, after := range changed {
 		before := mark.run.env.FileContent(name)
 		// TODO(golang/go#64023): switch back to diff.Strings.
+		// The attached issue is only one obstacle to switching.
+		// Another is that different diff algorithms produce
+		// different results, so if we commit diffs in test
+		// expectations, then we need to either (1) state
+		// which diff implementation they use and never change
+		// it, or (2) don't compare diffs, but instead apply
+		// the "want" diff and check that it produces the
+		// "got" output. Option 2 is more robust, as it allows
+		// the test expectation to use any valid diff.
 		edits := myers.ComputeEdits(before, string(after))
 		d, err := diff.ToUnified("before", "after", before, edits, 0)
 		if err != nil {

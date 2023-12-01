@@ -69,7 +69,6 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/internal/diff"
 )
 
 type Annotation string
@@ -434,24 +433,14 @@ func (u *UserOptions) SetEnvSlice(env []string) {
 	}
 }
 
-// DiffFunction is the type for a function that produces a set of edits that
-// convert from the before content to the after content.
-type DiffFunction func(before, after string) []diff.Edit
-
 // Hooks contains configuration that is provided to the Gopls command by the
 // main package.
 type Hooks struct {
 	// LicensesText holds third party licenses for software used by gopls.
 	LicensesText string
 
-	// GoDiff is used in gopls/hooks to get Myers' diff
-	GoDiff bool
-
 	// Whether staticcheck is supported.
 	StaticcheckSupported bool
-
-	// ComputeEdits is used to compute edits between file versions.
-	ComputeEdits DiffFunction
 
 	// URLRegexp is used to find potential URLs in comments/strings.
 	//
@@ -766,9 +755,7 @@ func (o *Options) Clone() *Options {
 		ClientOptions:   o.ClientOptions,
 		InternalOptions: o.InternalOptions,
 		Hooks: Hooks{
-			GoDiff:               o.GoDiff,
 			StaticcheckSupported: o.StaticcheckSupported,
-			ComputeEdits:         o.ComputeEdits,
 			GofumptFormat:        o.GofumptFormat,
 			URLRegexp:            o.URLRegexp,
 		},
@@ -1136,6 +1123,9 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 	case "allExperiments":
 		// This setting should be handled before all of the other options are
 		// processed, so do nothing here.
+
+	case "newDiff":
+		result.deprecated("")
 
 	case "subdirWatchPatterns":
 		if s, ok := result.asOneOf(

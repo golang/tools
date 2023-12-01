@@ -11,6 +11,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -24,6 +25,6 @@ func Format(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]pr
 	}
 	formatted := modfile.Format(pw.File.Syntax)
 	// Calculate the edits to be made due to the change.
-	diffs := snapshot.Options().ComputeEdits(string(pw.Mapper.Content), string(formatted))
+	diffs := diff.Bytes(pw.Mapper.Content, formatted)
 	return protocol.EditsFromDiffEdits(pw.Mapper, diffs)
 }

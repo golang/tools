@@ -9,15 +9,11 @@ package hooks // import "golang.org/x/tools/gopls/internal/hooks"
 
 import (
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/internal/diff"
 	"mvdan.cc/xurls/v2"
 )
 
 func Options(options *settings.Options) {
 	options.LicensesText = licensesText
-	if options.GoDiff {
-			options.ComputeEdits = diff.Strings
-	}
 	options.URLRegexp = xurls.Relaxed()
 	updateAnalyzers(options)
 	updateGofumpt(options)

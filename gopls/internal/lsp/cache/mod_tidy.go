@@ -19,7 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
@@ -180,7 +180,7 @@ func modTidyDiagnostics(ctx context.Context, snapshot *Snapshot, pm *ParsedModul
 	for _, req := range wrongDirectness {
 		// Handle dependencies that are incorrectly labeled indirect and
 		// vice versa.
-		srcDiag, err := directnessDiagnostic(pm.Mapper, req, snapshot.Options().ComputeEdits)
+		srcDiag, err := directnessDiagnostic(pm.Mapper, req)
 		if err != nil {
 			// We're probably in a bad state if we can't compute a
 			// directnessDiagnostic, but try to keep going so as to not suppress
@@ -357,7 +357,7 @@ func unusedDiagnostic(m *protocol.Mapper, req *modfile.Require, onlyDiagnostic b
 
 // directnessDiagnostic extracts errors when a dependency is labeled indirect when
 // it should be direct and vice versa.
-func directnessDiagnostic(m *protocol.Mapper, req *modfile.Require, computeEdits settings.DiffFunction) (*Diagnostic, error) {
+func directnessDiagnostic(m *protocol.Mapper, req *modfile.Require) (*Diagnostic, error) {
 	rng, err := m.OffsetRange(req.Syntax.Start.Byte, req.Syntax.End.Byte)
 	if err != nil {
 		return nil, err
@@ -378,7 +378,7 @@ func directnessDiagnostic(m *protocol.Mapper, req *modfile.Require, computeEdits
 		}
 	}
 	// If the dependency should be indirect, add the // indirect.
-	edits, err := switchDirectness(req, m, computeEdits)
+	edits, err := switchDirectness(req, m)
 	if err != nil {
 		return nil, err
 	}
@@ -430,7 +430,7 @@ func missingModuleDiagnostic(pm *ParsedModule, req *modfile.Require) (*Diagnosti
 
 // switchDirectness gets the edits needed to change an indirect dependency to
 // direct and vice versa.
-func switchDirectness(req *modfile.Require, m *protocol.Mapper, computeEdits settings.DiffFunction) ([]protocol.TextEdit, error) {
+func switchDirectness(req *modfile.Require, m *protocol.Mapper) ([]protocol.TextEdit, error) {
 	// We need a private copy of the parsed go.mod file, since we're going to
 	// modify it.
 	copied, err := modfile.Parse("", m.Content, nil)
@@ -464,7 +464,7 @@ func switchDirectness(req *modfile.Require, m *protocol.Mapper, computeEdits set
 		return nil, err
 	}
 	// Calculate the edits to be made due to the change.
-	edits := computeEdits(string(m.Content), string(newContent))
+	edits := diff.Bytes(m.Content, newContent)
 	return protocol.EditsFromDiffEdits(m, edits)
 }
 

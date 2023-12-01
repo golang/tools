@@ -231,13 +231,13 @@ func (%s%s%s) %s%s {
 	}
 
 	// Pretty-print.
-	var output strings.Builder
+	var output bytes.Buffer
 	if err := format.Node(&output, fset, newF); err != nil {
 		return nil, nil, fmt.Errorf("format.Node: %w", err)
 	}
 
 	// Report the diff.
-	diffs := snapshot.Options().ComputeEdits(string(input), output.String())
+	diffs := diff.Bytes(input, output.Bytes())
 	return tokeninternal.FileSetFor(declPGF.Tok), // edits use declPGF.Tok
 		&analysis.SuggestedFix{TextEdits: diffToTextEdits(declPGF.Tok, diffs)},
 		nil

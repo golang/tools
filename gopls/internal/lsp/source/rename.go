@@ -704,7 +704,7 @@ func renamePackageName(ctx context.Context, s *cache.Snapshot, f file.Handle, ne
 		}
 
 		// Calculate the edits to be made due to the change.
-		edits := s.Options().ComputeEdits(string(pm.Mapper.Content), string(newContent))
+		edits := diff.Bytes(pm.Mapper.Content, newContent)
 		renamingEdits[pm.URI] = append(renamingEdits[pm.URI], edits...)
 	}
 

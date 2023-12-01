@@ -11,7 +11,6 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/internal/diff/myers"
 )
 
 var (
@@ -118,14 +117,11 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 				LinkifyShowMessage:          false,
 			},
 			Hooks: Hooks{
-				// TODO(adonovan): switch to new diff.Strings implementation.
-				ComputeEdits:         myers.ComputeEdits,
 				URLRegexp:            urlRegexp(),
 				DefaultAnalyzers:     defaultAnalyzers(),
 				TypeErrorAnalyzers:   typeErrorAnalyzers(),
 				ConvenienceAnalyzers: convenienceAnalyzers(),
 				StaticcheckAnalyzers: map[string]*Analyzer{},
-				GoDiff:               true,
 			},
 		}
 	})

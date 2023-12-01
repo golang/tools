@@ -37,6 +37,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
+	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/tokeninternal"
@@ -490,7 +491,7 @@ func dropDependency(snapshot *cache.Snapshot, pm *cache.ParsedModule, modulePath
 		return nil, err
 	}
 	// Calculate the edits to be made due to the change.
-	diff := snapshot.Options().ComputeEdits(string(pm.Mapper.Content), string(newContent))
+	diff := diff.Bytes(pm.Mapper.Content, newContent)
 	return protocol.EditsFromDiffEdits(pm.Mapper, diff)
 }
 
@@ -693,7 +694,7 @@ func collectFileEdits(ctx context.Context, snapshot *cache.Snapshot, uri protoco
 	}
 
 	m := protocol.NewMapper(fh.URI(), oldContent)
-	diff := snapshot.Options().ComputeEdits(string(oldContent), string(newContent))
+	diff := diff.Bytes(oldContent, newContent)
 	edits, err := protocol.EditsFromDiffEdits(m, diff)
 	if err != nil {
 		return nil, err

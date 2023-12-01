@@ -1,10 +1,5 @@
 This test checks the quick fix for undefined functions.
 
--- settings.json --
-{
-	"newDiff": "ol"
-}
-
 -- channels.go --
 package missingfunction
 
