@@ -24,22 +24,19 @@ type File struct {
 	// actual content of the file if we have fixed the AST.
 	Src []byte
 
-	// FixedSrc and Fixed AST report on "fixing" that occurred during parsing of
+	// fixedSrc and fixedAST report on "fixing" that occurred during parsing of
 	// this file.
 	//
-	// If FixedSrc == true, the source contained in the Src field was modified
-	// from the original source to improve parsing.
-	//
-	// If FixedAST == true, the ast was modified after parsing, and therefore
-	// positions encoded in the AST may not accurately represent the content of
-	// the Src field.
+	// fixedSrc means Src holds file content that was modified to improve parsing.
+	// fixedAST means File was modified after parsing, so AST positions may not
+	// reflect the content of Src.
 	//
 	// TODO(rfindley): there are many places where we haphazardly use the Src or
 	// positions without checking these fields. Audit these places and guard
 	// accordingly. After doing so, we may find that we don't need to
-	// differentiate FixedSrc and FixedAST.
-	FixedSrc bool
-	FixedAST bool
+	// differentiate fixedSrc and fixedAST.
+	fixedSrc bool
+	fixedAST bool
 	Mapper   *protocol.Mapper // may map fixed Src, not file content
 	ParseErr scanner.ErrorList
 }
@@ -47,7 +44,7 @@ type File struct {
 // Fixed reports whether p was "Fixed", meaning that its source or positions
 // may not correlate with the original file.
 func (p File) Fixed() bool {
-	return p.FixedSrc || p.FixedAST
+	return p.fixedSrc || p.fixedAST
 }
 
 // -- go/token domain convenience helpers --

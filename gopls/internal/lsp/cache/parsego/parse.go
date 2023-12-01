@@ -67,7 +67,7 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 	if parseErr != nil {
 		// Fix any badly parsed parts of the AST.
 		astFixes := fixAST(file, tok, src)
-		fixedAST = len(fixes) > 0
+		fixedAST = len(astFixes) > 0
 		if fixedAST {
 			fixes = append(fixes, astFixes...)
 		}
@@ -119,8 +119,8 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 		URI:      uri,
 		Mode:     mode,
 		Src:      src,
-		FixedSrc: fixedSrc,
-		FixedAST: fixedAST,
+		fixedSrc: fixedSrc,
+		fixedAST: fixedAST,
 		File:     file,
 		Tok:      tok,
 		Mapper:   protocol.NewMapper(uri, src),
@@ -519,7 +519,7 @@ func fixInitStmt(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte)
 		return false
 	}
 	stmtBytes := src[start : end+1]
-	stmt, err := parseStmt(bad.Pos(), stmtBytes)
+	stmt, err := parseStmt(tok, bad.Pos(), stmtBytes)
 	if err != nil {
 		return false
 	}
@@ -621,7 +621,7 @@ func fixArrayType(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte
 	// literal to be parseable.
 	exprBytes = append(exprBytes, '{', '}')
 
-	expr, err := parseExpr(from, exprBytes)
+	expr, err := parseExpr(tok, from, exprBytes)
 	if err != nil {
 		return false
 	}
@@ -786,7 +786,7 @@ FindTo:
 		exprBytes = append(exprBytes, '_')
 	}
 
-	expr, err := parseExpr(from, exprBytes)
+	expr, err := parseExpr(tok, from, exprBytes)
 	if err != nil {
 		return false
 	}
@@ -811,7 +811,10 @@ FindTo:
 
 // parseStmt parses the statement in src and updates its position to
 // start at pos.
-func parseStmt(pos token.Pos, src []byte) (ast.Stmt, error) {
+//
+// tok is the original file containing pos. Used to ensure that all adjusted
+// positions are valid.
+func parseStmt(tok *token.File, pos token.Pos, src []byte) (ast.Stmt, error) {
 	// Wrap our expression to make it a valid Go file we can pass to ParseFile.
 	fileSrc := bytes.Join([][]byte{
 		[]byte("package fake;func _(){"),
@@ -840,15 +843,15 @@ func parseStmt(pos token.Pos, src []byte) (ast.Stmt, error) {
 
 	// parser.ParseFile returns undefined positions.
 	// Adjust them for the current file.
-	offsetPositions(stmt, pos-1-(stmt.Pos()-1))
+	offsetPositions(tok, stmt, pos-1-(stmt.Pos()-1))
 
 	return stmt, nil
 }
 
 // parseExpr parses the expression in src and updates its position to
 // start at pos.
-func parseExpr(pos token.Pos, src []byte) (ast.Expr, error) {
-	stmt, err := parseStmt(pos, src)
+func parseExpr(tok *token.File, pos token.Pos, src []byte) (ast.Expr, error) {
+	stmt, err := parseStmt(tok, pos, src)
 	if err != nil {
 		return nil, err
 	}
@@ -864,7 +867,9 @@ func parseExpr(pos token.Pos, src []byte) (ast.Expr, error) {
 var tokenPosType = reflect.TypeOf(token.NoPos)
 
 // offsetPositions applies an offset to the positions in an ast.Node.
-func offsetPositions(n ast.Node, offset token.Pos) {
+func offsetPositions(tok *token.File, n ast.Node, offset token.Pos) {
+	fileBase := int64(tok.Base())
+	fileEnd := fileBase + int64(tok.Size())
 	ast.Inspect(n, func(n ast.Node) bool {
 		if n == nil {
 			return false
@@ -889,7 +894,18 @@ func offsetPositions(n ast.Node, offset token.Pos) {
 					continue
 				}
 
-				f.SetInt(f.Int() + int64(offset))
+				// Clamp value to valid range; see #64335.
+				//
+				// TODO(golang/go#64335): this is a hack, because our fixes should not
+				// produce positions that overflow (but they do: golang/go#64488).
+				pos := f.Int() + int64(offset)
+				if pos < fileBase {
+					pos = fileBase
+				}
+				if pos > fileEnd {
+					pos = fileEnd
+				}
+				f.SetInt(pos)
 			}
 		}
 

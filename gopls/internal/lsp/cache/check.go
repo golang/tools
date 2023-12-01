@@ -1806,7 +1806,12 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget 
 			if !posn.IsValid() {
 				// All valid positions produced by the type checker should described by
 				// its fileset.
-				bug.Reportf("internal error: type checker error %v not outside its Fset", e)
+				//
+				// Note: in golang/go#64488, we observed an error that was positioned
+				// over fixed syntax, which overflowed its file. So it's definitely
+				// possible that we get here (it's hard to reason about fixing up the
+				// AST). Nevertheless, it's a bug.
+				bug.Reportf("internal error: type checker error %q outside its Fset", e)
 				continue
 			}
 			pgf, err := pkg.File(protocol.URIFromPath(posn.Filename))
