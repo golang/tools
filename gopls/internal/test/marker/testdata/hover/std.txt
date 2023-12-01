@@ -46,7 +46,7 @@ func _() {
 }
 -- @hoverLock --
 ```go
-func (*sync.Mutex).Lock()
+func (m *sync.Mutex) Lock()
 ```
 
 Lock locks m.
@@ -55,7 +55,7 @@ Lock locks m.
 [`(sync.Mutex).Lock` on pkg.go.dev](https://pkg.go.dev/sync#Mutex.Lock)
 -- @hoverName --
 ```go
-func (*types.object).Name() string
+func (obj *types.object) Name() string
 ```
 
 Name returns the object's (package-local, unqualified) name.

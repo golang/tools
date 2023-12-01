@@ -136,7 +136,7 @@ func (NextThing).another() string
 [`a.NextThing` on pkg.go.dev](https://pkg.go.dev/godef.test/a#NextThing)
 -- @eth --
 ```go
-func (Thing).Method(i int) string
+func (t Thing) Method(i int) string
 ```
 
 [`(a.Thing).Method` on pkg.go.dev](https://pkg.go.dev/godef.test/a#Thing.Method)
@@ -343,7 +343,7 @@ field str string
 nested string
 -- @openMethod --
 ```go
-func (interface).open() error
+func (interface) open() error
 ```
 
 open method comment

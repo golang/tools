@@ -97,7 +97,7 @@ TODO(rfindley): should it? We should probably link to the type.
 [`generic.GT` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT)
 -- @M --
 ```go
-func (GT[P]).M(p P)
+func (GT[P]) M(p P)
 ```
 
 [`(generic.GT).M` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT.M)

@@ -27,7 +27,7 @@ type R struct {
 	Field2 int //@loc(RField2, "Field2")
 }
 
-func (_ R) Hey() {} //@loc(RHey, "Hey")
+func (r R) Hey() {} //@loc(RHey, "Hey")
 
 type H interface { //@loc(H, "H")
 	Goodbye() //@loc(HGoodbye, "Goodbye")
@@ -111,7 +111,7 @@ var _ = S1{ //@def("S1", S1),hover("S1", "S1", S1)
 
 -- @AHi --
 ```go
-func (a.A).Hi()
+func (a.A) Hi()
 ```
 
 [`(a.A).Hi` on pkg.go.dev](https://pkg.go.dev/mod.com/a#A.Hi)
@@ -126,7 +126,7 @@ field F int
 [`(b.Embed).F` on pkg.go.dev](https://pkg.go.dev/mod.com/b#Embed.F)
 -- @HGoodbye --
 ```go
-func (a.H).Goodbye()
+func (a.H) Goodbye()
 ```
 
 @loc(HGoodbye, "Goodbye")
@@ -135,7 +135,7 @@ func (a.H).Goodbye()
 [`(a.H).Goodbye` on pkg.go.dev](https://pkg.go.dev/mod.com/a#H.Goodbye)
 -- @IB --
 ```go
-func (a.I).B()
+func (a.I) B()
 ```
 
 @loc(IB, "B")
@@ -144,7 +144,7 @@ func (a.I).B()
 [`(a.I).B` on pkg.go.dev](https://pkg.go.dev/mod.com/a#I.B)
 -- @JHello --
 ```go
-func (a.J).Hello()
+func (a.J) Hello()
 ```
 
 @loc(JHello, "Hello")
@@ -153,7 +153,7 @@ func (a.J).Hello()
 [`(a.J).Hello` on pkg.go.dev](https://pkg.go.dev/mod.com/a#J.Hello)
 -- @M --
 ```go
-func (embed).M()
+func (embed) M()
 ```
 
 [`(b.Embed).M` on pkg.go.dev](https://pkg.go.dev/mod.com/b#Embed.M)
@@ -168,7 +168,7 @@ field Field2 int
 [`(a.R).Field2` on pkg.go.dev](https://pkg.go.dev/mod.com/a#R.Field2)
 -- @RHey --
 ```go
-func (a.R).Hey()
+func (r a.R) Hey()
 ```
 
 [`(a.R).Hey` on pkg.go.dev](https://pkg.go.dev/mod.com/a#R.Hey)

@@ -188,7 +188,7 @@ type J interface {
 [`a.J` on pkg.go.dev](https://pkg.go.dev/mod.com#J)
 -- @hoverSum --
 ```go
-func (*Pos).Sum() int
+func (p *Pos) Sum() int
 ```
 
 [`(a.Pos).Sum` on pkg.go.dev](https://pkg.go.dev/mod.com#Pos.Sum)

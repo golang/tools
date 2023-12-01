@@ -5,6 +5,7 @@
 package source
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -220,6 +221,8 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	//
 	// TODO(rfindley): this should use FormatVarType to get proper qualification
 	// of identifiers, and we should revisit the formatting of method set.
+	//
+	// TODO(adonovan): this logic belongs in objectString.
 	_, isTypeName := obj.(*types.TypeName)
 	_, isTypeParam := obj.Type().(*typeparams.TypeParam)
 	if isTypeName && !isTypeParam {
@@ -695,11 +698,50 @@ func inferredSignatureString(obj types.Object, qf types.Qualifier, inferred *typ
 // It handles adding more information to the object string.
 // If spec is non-nil, it may be used to format additional declaration
 // syntax, and file must be the token.File describing its positions.
+//
+// Precondition: obj is not a built-in function or method.
 func objectString(obj types.Object, qf types.Qualifier, declPos token.Pos, file *token.File, spec ast.Spec) string {
 	str := types.ObjectString(obj, qf)
 
 	switch obj := obj.(type) {
+	case *types.Func:
+		// We fork ObjectString to improve its rendering of methods:
+		// specifically, we show the receiver name,
+		// and replace the period in (T).f by a space (#62190).
+
+		sig := obj.Type().(*types.Signature)
+
+		var buf bytes.Buffer
+		buf.WriteString("func ")
+		if recv := sig.Recv(); recv != nil {
+			buf.WriteByte('(')
+			if _, ok := recv.Type().(*types.Interface); ok {
+				// gcimporter creates abstract methods of
+				// named interfaces using the interface type
+				// (not the named type) as the receiver.
+				// Don't print it in full.
+				buf.WriteString("interface")
+			} else {
+				// Show receiver name (go/types does not).
+				name := recv.Name()
+				if name != "" && name != "_" {
+					buf.WriteString(name)
+					buf.WriteString(" ")
+				}
+				types.WriteType(&buf, recv.Type(), qf)
+			}
+			buf.WriteByte(')')
+			buf.WriteByte(' ') // space (go/types uses a period)
+		} else if s := qf(obj.Pkg()); s != "" {
+			buf.WriteString(s)
+			buf.WriteString(".")
+		}
+		buf.WriteString(obj.Name())
+		types.WriteSignature(&buf, sig, qf)
+		str = buf.String()
+
 	case *types.Const:
+		// Show value of a constant.
 		var (
 			declaration = obj.Val().String() // default formatted declaration
 			comment     = ""                 // if non-empty, a clarifying comment
