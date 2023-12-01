@@ -69,3 +69,37 @@ func main() {
 		)
 	})
 }
+
+func TestGenerateUseNetwork(t *testing.T) {
+	const proxy = `
+-- example.com@v1.2.3/go.mod --
+module example.com
+
+go 1.21
+-- example.com@v1.2.3/main.go --
+package main
+
+func main() {
+	println("hello world")
+}
+`
+	const generatedWorkspace = `
+-- go.mod --
+module fake.test
+
+go 1.21
+-- main.go --
+
+package main
+
+//go:generate go run example.com@latest
+
+`
+	WithOptions(ProxyFiles(proxy)).
+		Run(t, generatedWorkspace, func(t *testing.T, env *Env) {
+			env.OnceMet(
+				InitialWorkspaceLoad,
+			)
+			env.RunGenerate("./")
+		})
+}

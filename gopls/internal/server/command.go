@@ -605,7 +605,7 @@ func (c *commandHandler) Generate(ctx context.Context, args command.GenerateArgs
 			WorkingDir: args.Dir.Path(),
 		}
 		stderr := io.MultiWriter(er, progress.NewWorkDoneWriter(ctx, deps.work))
-		if err := deps.snapshot.RunGoCommandPiped(ctx, cache.Normal, inv, er, stderr); err != nil {
+		if err := deps.snapshot.RunGoCommandPiped(ctx, cache.AllowNetwork, inv, er, stderr); err != nil {
 			return err
 		}
 		return nil
