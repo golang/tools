@@ -50,13 +50,16 @@ import (
 
 var update = flag.Bool("update", false, "if set, update test data during marker tests")
 
+func TestMain(m *testing.M) {
+	bug.PanicOnBugs = true
+	testenv.ExitIfSmallMachine()
+	os.Exit(m.Run())
+}
+
 // Test runs the marker tests from the testdata directory.
 //
 // See package documentation for details on how marker tests work.
 func Test(t *testing.T) {
-	bug.PanicOnBugs = true
-	testenv.ExitIfSmallMachine()
-
 	// The marker tests must be able to run go/packages.Load.
 	testenv.NeedsGoPackages(t)
 
