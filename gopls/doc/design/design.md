@@ -1,5 +1,47 @@
 # `gopls` design documentation
 
+## _A note from the future_
+
+What follows below is the original design document for gopls, aggregated from
+various sources spanning 2018 and 2019. Since then, all of the features listed
+below have been implemented, along with many others. The first two goals have
+been achieved: gopls is a full implementation of the LSP, and the default
+backend for VS Code Go and many other editors. The third goal has only been
+partially realized: while gopls has gained many features, it is not extensible
+in the sense used in this document: the only way to extend gopls is to modify
+gopls. The fourth goal is not achieved: while some notable companies are able
+to use gopls with Bazel, the experience is subpar, and the Go command is the
+only officially supported build system.
+
+On the other hand, two of the explicit non-goals have been reconsidered. One is
+minor: syntax highlighting is now supported in the LSP by way of semantic
+tokens. The other is major: as gopls gained popularity, it became apparent that
+its memory footprint was a problem. The size of developer workspaces was
+increasing faster than the RAM available in typically development environments
+(particularly with containerized development). Gopls now uses a hybrid of
+on-disk indexes and in-memory caches, described in more detail in our
+[blog post on scalability](https://go.dev/blog/gopls-scalability).
+
+Notably, in anticipating difficulties this doc turned out to be prescient.
+Gopls has indeed struggled against the core standary library packages upon
+which it is built, and its user experience is still limited by the LSP.
+Nevertheless, sticking with the standard library and LSP was the right
+approach, as despite our small team these decisions have helped gopls keep up
+with the evolving Go language (i.e. generics), and to integrate with many new
+text editors.
+
+Gopls development continues, more than four years later, with a focus on
+simplicity, reliability, and extensibility. The new, opt-in
+[Go telemetry](https://github.com/golang/tools/releases/tag/gopls%2Fv0.14.0)
+will help us attain a higher standard of stability in our releases than we've
+been able to achieve through Github issues alone. Furthermore, telemetry will
+allow us to focus on high-priority features, and deprecate historical
+workarounds that burden the codebase. With greater velocity, we look forward
+to working with the community on improved refactoring, static analysis, and
+whatever else the future brings.
+
+- _Rob Findley (rfindley@google.com), 2023_
+
 ## Goals
 
 * `gopls` should **become the default editor backend** for the major editors used by Go programmers, fully supported by the Go team.
