@@ -1,0 +1,51 @@
+This test checks call hierarchy queries involving lambdas, which are
+treated as mere statements of their enclosing name function, since
+we can't track calls to them.
+
+Calls from a global var decl are reported at the ValueSpec.Names.
+
+See golang/go#64451.
+
+-- go.mod --
+module example.com
+go 1.0
+
+-- a/a.go --
+package a
+
+func foo() {   //@ loc(foo, "foo")
+	bar()
+}
+
+func bar() { 			//@ loc(bar, "bar")
+	go func() { baz() }()
+}
+
+func baz() {   //@ loc(baz, "baz")
+	bluh()
+}
+
+func bluh() {   //@ loc(bluh, "bluh")
+	print()
+}
+
+var _ = func() int { //@ loc(global, "_")
+	baz()
+	return 0
+}()
+
+func init() { //@ loc(init, "init")
+	baz()
+}
+
+//@ outgoingcalls(foo, bar)
+//@ outgoingcalls(bar, baz)
+//@ outgoingcalls(baz, bluh)
+//@ outgoingcalls(bluh)
+//@ outgoingcalls(init, baz)
+
+//@ incomingcalls(foo)
+//@ incomingcalls(bar, foo)
+//@ incomingcalls(baz, bar, global, init)
+//@ incomingcalls(bluh, baz)
+//@ incomingcalls(init)

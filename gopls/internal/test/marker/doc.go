@@ -175,6 +175,8 @@ The following markers are supported within marker tests:
   - incomingcalls(src location, want ...location): makes a
     callHierarchy/incomingCalls query at the src location, and checks that
     the set of call.From locations matches want.
+    (These locations are the declarations of the functions enclosing
+    the calls, not the calls themselves.)
 
   - item(label, details, kind): defines a completion item with the provided
     fields. This information is not positional, and therefore @item markers

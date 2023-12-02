@@ -26,36 +26,34 @@ func B() { //@loc(outgoingB, "B")
 }
 
 -- hierarchy.go --
-package callhierarchy
+package callhierarchy //@loc(hPkg, "callhierarchy")
 
 import "golang.org/lsptests/callhierarchy/outgoing"
 
-func a() { //@loc(hierarchyA, "a")
+func a() { //@loc(hA, "a")
 	D()
 }
 
-func b() { //@loc(hierarchyB, "b")
+func b() { //@loc(hB, "b")
 	D()
 }
 
 // C is an exported function
-func C() { //@loc(hierarchyC, "C")
+func C() { //@loc(hC, "C")
 	D()
 	D()
 }
 
 // To test hierarchy across function literals
-var x = func() { //@loc(hierarchyLiteral, "func"),loc(hierarchyLiteralOut, "x")
-	D()
-}
+var x = func() { D() } //@loc(hX, "x"),loc(hXGlobal, "x")
 
 // D is exported to test incoming/outgoing calls across packages
-func D() { //@loc(hierarchyD, "D"),incomingcalls(hierarchyD, hierarchyA, hierarchyB, hierarchyC, hierarchyLiteral, incomingA),outgoingcalls(hierarchyD, hierarchyE, hierarchyF, hierarchyG, hierarchyLiteralOut, outgoingB, hierarchyFoo, hierarchyH, hierarchyI, hierarchyJ, hierarchyK)
+func D() { //@loc(hD, "D"),incomingcalls(hD, hA, hB, hC, hXGlobal, incomingA),outgoingcalls(hD, hE, hF, hG, hX, outgoingB, hFoo, hH, hI, hJ, hK)
 	e()
 	x()
 	F()
 	outgoing.B()
-	foo := func() {} //@loc(hierarchyFoo, "foo"),incomingcalls(hierarchyFoo, hierarchyD),outgoingcalls(hierarchyFoo)
+	foo := func() {} //@loc(hFoo, "foo"),incomingcalls(hFoo, hD),outgoingcalls(hFoo)
 	foo()
 
 	func() {
@@ -71,16 +69,16 @@ func D() { //@loc(hierarchyD, "D"),incomingcalls(hierarchyD, hierarchyA, hierarc
 	s.K()
 }
 
-func e() {} //@loc(hierarchyE, "e")
+func e() {} //@loc(hE, "e")
 
 // F is an exported function
-func F() {} //@loc(hierarchyF, "F")
+func F() {} //@loc(hF, "F")
 
-func g() {} //@loc(hierarchyG, "g")
+func g() {} //@loc(hG, "g")
 
 type Interface interface {
-	H() //@loc(hierarchyH, "H")
-	I() //@loc(hierarchyI, "I")
+	H() //@loc(hH, "H")
+	I() //@loc(hI, "I")
 }
 
 type impl struct{}
@@ -89,6 +87,6 @@ func (i impl) H() {}
 func (i impl) I() {}
 
 type Struct struct {
-	J func() //@loc(hierarchyJ, "J")
-	K func() //@loc(hierarchyK, "K")
+	J func() //@loc(hJ, "J")
+	K func() //@loc(hK, "K")
 }
