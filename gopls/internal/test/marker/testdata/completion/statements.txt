@@ -119,3 +119,16 @@ func BenchmarkErr(b *testing.B) {
 	_, err := os.Open("foo")
 	//@snippet("", stmtOneIfErrBFatal, "if err != nil {\n\tb.Fatal(err)\n\\}")
 }
+
+-- return.go --
+package statements
+
+//@item(stmtReturnZeroValues, `return 0, "", nil`)
+
+func foo() (int, string, error) {
+	ret //@snippet(" ", stmtReturnZeroValues, "return ${1:0}, ${2:\"\"}, ${3:nil}")
+}
+
+func bar() (int, string, error) {
+	return //@snippet(" ", stmtReturnZeroValues, "return ${1:0}, ${2:\"\"}, ${3:nil}")
+}

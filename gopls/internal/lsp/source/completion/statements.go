@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -21,6 +22,7 @@ import (
 func (c *completer) addStatementCandidates() {
 	c.addErrCheck()
 	c.addAssignAppend()
+	c.addReturnZeroValues()
 }
 
 // addAssignAppend offers a completion candidate of the form:
@@ -358,4 +360,61 @@ func getTestVar(enclosingFunc *funcInfo, pkg *cache.Package) string {
 	}
 
 	return ""
+}
+
+// addReturnZeroValues offers a snippet candidate on the form:
+//
+//	return 0, "", nil
+//
+// Requires a partially or fully written return keyword at position.
+// Requires current position to be in a function with more than
+// zero return parameters.
+func (c *completer) addReturnZeroValues() {
+	if len(c.path) < 2 || c.enclosingFunc == nil || !c.opts.placeholders {
+		return
+	}
+	result := c.enclosingFunc.sig.Results()
+	if result.Len() == 0 {
+		return
+	}
+
+	// Offer just less than we expect from return as a keyword.
+	var score = stdScore - 0.01
+	switch c.path[0].(type) {
+	case *ast.ReturnStmt, *ast.Ident:
+		f := c.matcher.Score("return")
+		if f <= 0 {
+			return
+		}
+		score *= float64(f)
+	default:
+		return
+	}
+
+	// The snippet will have a placeholder over each return value.
+	// The label will not.
+	var snip snippet.Builder
+	var label strings.Builder
+	snip.WriteText("return ")
+	fmt.Fprintf(&label, "return ")
+
+	for i := 0; i < result.Len(); i++ {
+		if i > 0 {
+			snip.WriteText(", ")
+			fmt.Fprintf(&label, ", ")
+		}
+
+		zero := formatZeroValue(result.At(i).Type(), c.qf)
+		snip.WritePlaceholder(func(b *snippet.Builder) {
+			b.WriteText(zero)
+		})
+		fmt.Fprintf(&label, zero)
+	}
+
+	c.items = append(c.items, CompletionItem{
+		Label:   label.String(),
+		Kind:    protocol.SnippetCompletion,
+		Score:   score,
+		snippet: &snip,
+	})
 }
