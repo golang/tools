@@ -187,6 +187,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 
 	v.snapshot = &Snapshot{
 		sequenceID:       seqID,
+		globalID:         nextSnapshotID(),
 		view:             v,
 		backgroundCtx:    backgroundCtx,
 		cancel:           cancel,

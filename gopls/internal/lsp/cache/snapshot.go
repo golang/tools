@@ -55,6 +55,15 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 )
 
+// A GlobalSnapshotID uniquely identifies a snapshot within this process and
+// increases monotonically with snapshot creation time.
+//
+// We use a distinct integral type for global IDs to help enforce correct
+// usage.
+//
+// TODO(rfindley): remove this as it should not be necessary for correctness.
+type GlobalSnapshotID uint64
+
 // A Snapshot represents the current state for a given view.
 //
 // It is first and foremost an idempotent implementation of file.Source whose
@@ -68,6 +77,7 @@ import (
 // implemented in Snapshot.clone.
 type Snapshot struct {
 	sequenceID uint64
+	globalID   GlobalSnapshotID
 
 	// TODO(rfindley): the snapshot holding a reference to the view poses
 	// lifecycle problems: a view may be shut down and waiting for work
@@ -192,6 +202,12 @@ type Snapshot struct {
 	gcOptimizationDetails map[metadata.PackageID]unit
 }
 
+var globalSnapshotID uint64
+
+func nextSnapshotID() GlobalSnapshotID {
+	return GlobalSnapshotID(atomic.AddUint64(&globalSnapshotID, 1))
+}
+
 var _ memoize.RefCounted = (*Snapshot)(nil) // snapshots are reference-counted
 
 // Acquire prevents the snapshot from being destroyed until the returned function is called.
@@ -206,7 +222,7 @@ var _ memoize.RefCounted = (*Snapshot)(nil) // snapshots are reference-counted
 func (s *Snapshot) Acquire() func() {
 	type uP = unsafe.Pointer
 	if destroyedBy := atomic.LoadPointer((*uP)(uP(&s.destroyedBy))); destroyedBy != nil {
-		log.Panicf("%s:%d: acquire() after Destroy(%q)", s.view.id, s.sequenceID, *(*string)(destroyedBy))
+		log.Panicf("%d: acquire() after Destroy(%q)", s.globalID, *(*string)(destroyedBy))
 	}
 	s.refcount.Add(1)
 	return s.refcount.Done
@@ -245,7 +261,7 @@ func (s *Snapshot) destroy(destroyedBy string) {
 	// Not foolproof: another thread could acquire() at this moment.
 	type uP = unsafe.Pointer // looking forward to generics...
 	if old := atomic.SwapPointer((*uP)(uP(&s.destroyedBy)), uP(&destroyedBy)); old != nil {
-		log.Panicf("%s:%d: Destroy(%q) after Destroy(%q)", s.view.id, s.sequenceID, destroyedBy, *(*string)(old))
+		log.Panicf("%d: Destroy(%q) after Destroy(%q)", s.globalID, destroyedBy, *(*string)(old))
 	}
 
 	s.packages.Destroy()
@@ -271,6 +287,13 @@ func (s *Snapshot) destroy(destroyedBy string) {
 // IDs.
 func (s *Snapshot) SequenceID() uint64 {
 	return s.sequenceID
+}
+
+// GlobalID is a globally unique identifier for this snapshot. Global IDs are
+// monotonic: subsequent snapshots will have higher global ID, though
+// subsequent snapshots in a view may not have adjacent global IDs.
+func (s *Snapshot) GlobalID() GlobalSnapshotID {
+	return s.globalID
 }
 
 // SnapshotLabels returns a new slice of labels that should be used for events
@@ -1929,6 +1952,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 	bgCtx, cancel := context.WithCancel(bgCtx)
 	result := &Snapshot{
 		sequenceID:        s.sequenceID + 1,
+		globalID:          nextSnapshotID(),
 		store:             s.store,
 		view:              s.view,
 		backgroundCtx:     bgCtx,
