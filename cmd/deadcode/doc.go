@@ -100,8 +100,8 @@ the formatting of the list of Edge objects.
 The default format shows, for each edge in the path, whether the call
 is static or dynamic, and its source line number. For example:
 
-	$ deadcode -whylive=bytes.Buffer.String -test ./internal/cmd/deadcode/...
-	                 golang.org/x/tools/internal/cmd/deadcode.main
+	$ deadcode -whylive=bytes.Buffer.String -test ./cmd/deadcode/...
+	                 golang.org/x/tools/cmd/deadcode.main
 	static@L0117 --> golang.org/x/tools/go/packages.Load
 	static@L0262 --> golang.org/x/tools/go/packages.defaultDriver
 	static@L0305 --> golang.org/x/tools/go/packages.goListDriver
