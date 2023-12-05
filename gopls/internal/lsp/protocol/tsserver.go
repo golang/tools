@@ -91,7 +91,7 @@ type Server interface {
 	WillDeleteFiles(context.Context, *DeleteFilesParams) (*WorkspaceEdit, error)                                 // workspace/willDeleteFiles
 	WillRenameFiles(context.Context, *RenameFilesParams) (*WorkspaceEdit, error)                                 // workspace/willRenameFiles
 	ResolveWorkspaceSymbol(context.Context, *WorkspaceSymbol) (*WorkspaceSymbol, error)                          // workspaceSymbol/resolve
-	NonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error)
+
 }
 
 func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
@@ -1183,13 +1183,6 @@ func (s *serverDispatcher) WillRenameFiles(ctx context.Context, params *RenameFi
 func (s *serverDispatcher) ResolveWorkspaceSymbol(ctx context.Context, params *WorkspaceSymbol) (*WorkspaceSymbol, error) {
 	var result *WorkspaceSymbol
 	if err := s.sender.Call(ctx, "workspaceSymbol/resolve", params, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-func (s *serverDispatcher) NonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {
-	var result interface{}
-	if err := s.sender.Call(ctx, method, params, &result); err != nil {
 		return nil, err
 	}
 	return result, nil

@@ -764,6 +764,12 @@ var GeneratedAPIJSON = &APIJSON{
 			ArgDoc:  "{\n\t// The go.mod file URI.\n\t\"URI\": string,\n\t// The modules to check.\n\t\"Modules\": []string,\n}",
 		},
 		{
+			Command: "gopls.diagnose_files",
+			Title:   "Cause server to publish diagnostics for the specified files.",
+			Doc:     "This command is needed by the 'gopls {check,fix}' CLI subcommands.",
+			ArgDoc:  "{\n\t\"Files\": []string,\n}",
+		},
+		{
 			Command: "gopls.edit_go_directive",
 			Title:   "Run go mod edit -go=version",
 			Doc:     "Runs `go mod edit -go=version` for a module.",

@@ -217,6 +217,11 @@ type Interface interface {
 	// This command is experimental, currently only supporting parameter removal.
 	// Its signature will certainly change in the future (pun intended).
 	ChangeSignature(context.Context, ChangeSignatureArgs) error
+
+	// DiagnoseFiles: Cause server to publish diagnostics for the specified files.
+	//
+	// This command is needed by the 'gopls {check,fix}' CLI subcommands.
+	DiagnoseFiles(context.Context, DiagnoseFilesArgs) error
 }
 
 type RunTestsArgs struct {
@@ -539,4 +544,9 @@ type AddTelemetryCountersArgs struct {
 // ChangeSignatureArgs specifies a "change signature" refactoring to perform.
 type ChangeSignatureArgs struct {
 	RemoveParameter protocol.Location
+}
+
+// DiagnoseFilesArgs specifies a set of files for which diagnostics are wanted.
+type DiagnoseFilesArgs struct {
+	Files []protocol.DocumentURI
 }

@@ -145,7 +145,7 @@ func writeserver() {
 	for _, k := range sdecls.keys() {
 		out.WriteString(sdecls[k])
 	}
-	out.WriteString(`	NonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error)
+	out.WriteString(`
 }
 
 func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
@@ -158,15 +158,6 @@ func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, 
 	for _, k := range sfuncs.keys() {
 		out.WriteString(sfuncs[k])
 	}
-	out.WriteString(`func (s *serverDispatcher) NonstandardRequest(ctx context.Context, method string, params interface{}) (interface{}, error) {
-	var result interface{}
-	if err := s.sender.Call(ctx, method, params, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-`)
-
 	x, err := format.Source(out.Bytes())
 	if err != nil {
 		os.WriteFile("/tmp/a.go", out.Bytes(), 0644)

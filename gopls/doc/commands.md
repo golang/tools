@@ -120,6 +120,19 @@ Args:
 }
 ```
 
+### **Cause server to publish diagnostics for the specified files.**
+Identifier: `gopls.diagnose_files`
+
+This command is needed by the 'gopls {check,fix}' CLI subcommands.
+
+Args:
+
+```
+{
+	"Files": []string,
+}
+```
+
 ### **Run go mod edit -go=version**
 Identifier: `gopls.edit_go_directive`
 

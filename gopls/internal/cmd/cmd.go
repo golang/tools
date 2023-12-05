@@ -24,6 +24,7 @@ import (
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/lsprpc"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/server"
@@ -426,9 +427,6 @@ type cmdClient struct {
 	app        *Application
 	onProgress func(*protocol.ProgressParams)
 
-	diagnosticsMu   sync.Mutex
-	diagnosticsDone chan struct{}
-
 	filesMu sync.Mutex // guards files map and each cmdFile.diagnostics
 	files   map[protocol.DocumentURI]*cmdFile
 }
@@ -628,9 +626,6 @@ func applyTextEdits(mapper *protocol.Mapper, edits []protocol.TextEdit, flags *E
 }
 
 func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishDiagnosticsParams) error {
-	if p.URI == "gopls://diagnostics-done" {
-		close(c.diagnosticsDone)
-	}
 	// Don't worry about diagnostics without versions.
 	if p.Version == 0 {
 		return nil
@@ -643,8 +638,8 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 	file.diagnostics = append(file.diagnostics, p.Diagnostics...)
 
 	// Perform a crude in-place deduplication.
-	// TODO(golang/go#60122): replace the ad-hoc gopls/diagnoseFiles
-	// non-standard request with support for textDocument/diagnostic,
+	// TODO(golang/go#60122): replace the gopls.diagnose_files
+	// command with support for textDocument/diagnostic,
 	// so that we don't need to do this de-duplication.
 	type key [6]interface{}
 	seen := make(map[key]bool)
@@ -767,22 +762,17 @@ func (c *connection) semanticTokens(ctx context.Context, p *protocol.SemanticTok
 }
 
 func (c *connection) diagnoseFiles(ctx context.Context, files []protocol.DocumentURI) error {
-	var untypedFiles []interface{}
-	for _, file := range files {
-		untypedFiles = append(untypedFiles, string(file))
-	}
-	c.client.diagnosticsMu.Lock()
-	defer c.client.diagnosticsMu.Unlock()
-
-	c.client.diagnosticsDone = make(chan struct{})
-	_, err := c.Server.NonstandardRequest(ctx, "gopls/diagnoseFiles", map[string]interface{}{"files": untypedFiles})
+	cmd, err := command.NewDiagnoseFilesCommand("Diagnose files", command.DiagnoseFilesArgs{
+		Files: files,
+	})
 	if err != nil {
-		close(c.client.diagnosticsDone)
 		return err
 	}
-
-	<-c.client.diagnosticsDone
-	return nil
+	_, err = c.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
+		Command:   cmd.Command,
+		Arguments: cmd.Arguments,
+	})
+	return err
 }
 
 func (c *connection) terminate(ctx context.Context) {

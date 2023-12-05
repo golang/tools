@@ -158,16 +158,7 @@ func ServerHandler(server Server, handler jsonrpc2.Handler) jsonrpc2.Handler {
 		if handled || err != nil {
 			return err
 		}
-		//TODO: This code is wrong, it ignores handler and assumes non standard
-		// request handles everything
-		// non standard request should just be a layered handler.
-		var params interface{}
-		if err := json.Unmarshal(req.Params(), &params); err != nil {
-			return sendParseError(ctx, reply, err)
-		}
-		resp, err := server.NonstandardRequest(ctx, req.Method(), params)
-		return reply(ctx, resp, err)
-
+		return handler(ctx, reply, req)
 	}
 }
 

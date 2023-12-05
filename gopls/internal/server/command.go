@@ -1290,3 +1290,57 @@ func (c *commandHandler) ChangeSignature(ctx context.Context, args command.Chang
 		return nil
 	})
 }
+
+func (c *commandHandler) DiagnoseFiles(ctx context.Context, args command.DiagnoseFilesArgs) error {
+	return c.run(ctx, commandConfig{
+		progress: "Diagnose files",
+	}, func(ctx context.Context, deps commandDeps) error {
+
+		// TODO(rfindley): even better would be textDocument/diagnostics (golang/go#60122).
+		// Though note that implementing pull diagnostics may cause some servers to
+		// request diagnostics in an ad-hoc manner, and break our intentional pacing.
+
+		ctx, done := event.Start(ctx, "lsp.server.DiagnoseFiles")
+		defer done()
+
+		// TODO(adonovan): opt: parallelize the loop,
+		// grouping file URIs by package and making a
+		// single call to source.Analyze.
+		for _, uri := range args.Files {
+			snapshot, fh, ok, release, err := c.s.beginFileRequest(ctx, uri, file.UnknownKind)
+			defer release()
+			if !ok {
+				return err
+			}
+
+			pkg, _, err := source.NarrowestPackageForFile(ctx, snapshot, uri)
+			if err != nil {
+				return err
+			}
+			pkgDiags, err := pkg.DiagnosticsForFile(ctx, uri)
+			if err != nil {
+				return err
+			}
+			adiags, err := source.Analyze(ctx, snapshot, map[source.PackageID]unit{pkg.Metadata().ID: {}}, nil /* progress tracker */)
+			if err != nil {
+				return err
+			}
+
+			// combine load/parse/type + analysis diagnostics
+			var td, ad []*cache.Diagnostic
+			combineDiagnostics(pkgDiags, adiags[uri], &td, &ad)
+			c.s.storeDiagnostics(snapshot, uri, typeCheckSource, td)
+			c.s.storeDiagnostics(snapshot, uri, analysisSource, ad)
+			diagnostics := append(td, ad...)
+
+			if err := c.s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
+				URI:         fh.URI(),
+				Version:     fh.Version(),
+				Diagnostics: toProtocolDiagnostics(diagnostics),
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
