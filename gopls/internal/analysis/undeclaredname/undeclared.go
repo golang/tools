@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package undeclaredname defines an Analyzer that applies suggested fixes
-// to errors of the type "undeclared name: %s".
 package undeclaredname
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -22,27 +21,16 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 )
 
-const Doc = `suggested fixes for "undeclared name: <>"
-
-This checker provides suggested fixes for type errors of the
-type "undeclared name: <>". It will either insert a new statement,
-such as:
-
-"<> := "
-
-or a new function declaration, such as:
-
-func <>(inferred parameters) {
-	panic("implement me!")
-}
-`
+//go:embed doc.go
+var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:             "undeclaredname",
-	Doc:              Doc,
+	Doc:              analysisinternal.MustExtractDoc(doc, "undeclaredname"),
 	Requires:         []*analysis.Analyzer{},
 	Run:              run,
 	RunDespiteErrors: true,
+	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/undeclaredname",
 }
 
 // The prefix for this error message changed in Go 1.20.

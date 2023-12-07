@@ -18,10 +18,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 )
 
-const Doc = `check for unused variables
-
-The unusedvariable analyzer suggests fixes for unused variables errors.
-`
+const Doc = `check for unused variables and suggest fixes`
 
 var Analyzer = &analysis.Analyzer{
 	Name:             "unusedvariable",
@@ -29,6 +26,7 @@ var Analyzer = &analysis.Analyzer{
 	Requires:         []*analysis.Analyzer{},
 	Run:              run,
 	RunDespiteErrors: true, // an unusedvariable diagnostic is a compile error
+	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedvariable",
 }
 
 // The suffix for this error message changed in Go 1.20.

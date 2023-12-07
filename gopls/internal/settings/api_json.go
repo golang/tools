@@ -287,7 +287,7 @@ var GeneratedAPIJSON = &APIJSON{
 						},
 						{
 							Name:    "\"deprecated\"",
-							Doc:     "check for use of deprecated identifiers\n\nThe deprecated analyzer looks for deprecated symbols and package imports.\n\nSee https://go.dev/wiki/Deprecated to learn about Go's convention\nfor documenting and signaling deprecated identifiers.",
+							Doc:     "check for use of deprecated identifiers\n\nThe deprecated analyzer looks for deprecated symbols and package\nimports.\n\nSee https://go.dev/wiki/Deprecated to learn about Go's convention\nfor documenting and signaling deprecated identifiers.",
 							Default: "true",
 						},
 						{
@@ -357,17 +357,17 @@ var GeneratedAPIJSON = &APIJSON{
 						},
 						{
 							Name:    "\"simplifycompositelit\"",
-							Doc:     "check for composite literal simplifications\n\nAn array, slice, or map composite literal of the form:\n\t[]T{T{}, T{}}\nwill be simplified to:\n\t[]T{{}, {}}\n\nThis is one of the simplifications that \"gofmt -s\" applies.",
+							Doc:     "check for composite literal simplifications\n\nAn array, slice, or map composite literal of the form:\n\n\t[]T{T{}, T{}}\n\nwill be simplified to:\n\n\t[]T{{}, {}}\n\nThis is one of the simplifications that \"gofmt -s\" applies.",
 							Default: "true",
 						},
 						{
 							Name:    "\"simplifyrange\"",
-							Doc:     "check for range statement simplifications\n\nA range of the form:\n\tfor x, _ = range v {...}\nwill be simplified to:\n\tfor x = range v {...}\n\nA range of the form:\n\tfor _ = range v {...}\nwill be simplified to:\n\tfor range v {...}\n\nThis is one of the simplifications that \"gofmt -s\" applies.",
+							Doc:     "check for range statement simplifications\n\nA range of the form:\n\n\tfor x, _ = range v {...}\n\nwill be simplified to:\n\n\tfor x = range v {...}\n\nA range of the form:\n\n\tfor _ = range v {...}\n\nwill be simplified to:\n\n\tfor range v {...}\n\nThis is one of the simplifications that \"gofmt -s\" applies.",
 							Default: "true",
 						},
 						{
 							Name:    "\"simplifyslice\"",
-							Doc:     "check for slice simplifications\n\nA slice expression of the form:\n\ts[a:len(s)]\nwill be simplified to:\n\ts[a:]\n\nThis is one of the simplifications that \"gofmt -s\" applies.",
+							Doc:     "check for slice simplifications\n\nA slice expression of the form:\n\n\ts[a:len(s)]\n\nwill be simplified to:\n\n\ts[a:]\n\nThis is one of the simplifications that \"gofmt -s\" applies.",
 							Default: "true",
 						},
 						{
@@ -447,27 +447,27 @@ var GeneratedAPIJSON = &APIJSON{
 						},
 						{
 							Name:    "\"fillreturns\"",
-							Doc:     "suggest fixes for errors due to an incorrect number of return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\nwill turn into\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.\n",
+							Doc:     "suggest fixes for errors due to an incorrect number of return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\n\nwill turn into\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.",
 							Default: "true",
 						},
 						{
 							Name:    "\"nonewvars\"",
-							Doc:     "suggested fixes for \"no new vars on left side of :=\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"no new vars on left side of :=\". For example:\n\tz := 1\n\tz := 2\nwill turn into\n\tz := 1\n\tz = 2\n",
+							Doc:     "suggested fixes for \"no new vars on left side of :=\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"no new vars on left side of :=\". For example:\n\n\tz := 1\n\tz := 2\n\nwill turn into\n\n\tz := 1\n\tz = 2",
 							Default: "true",
 						},
 						{
 							Name:    "\"noresultvalues\"",
-							Doc:     "suggested fixes for unexpected return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"no result values expected\" or \"too many return values\".\nFor example:\n\tfunc z() { return nil }\nwill turn into\n\tfunc z() { return }\n",
+							Doc:     "suggested fixes for unexpected return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"no result values expected\" or \"too many return values\".\nFor example:\n\n\tfunc z() { return nil }\n\nwill turn into\n\n\tfunc z() { return }",
 							Default: "true",
 						},
 						{
 							Name:    "\"undeclaredname\"",
-							Doc:     "suggested fixes for \"undeclared name: <>\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"undeclared name: <>\". It will either insert a new statement,\nsuch as:\n\n\"<> := \"\n\nor a new function declaration, such as:\n\nfunc <>(inferred parameters) {\n\tpanic(\"implement me!\")\n}\n",
+							Doc:     "suggested fixes for \"undeclared name: <>\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"undeclared name: <>\". It will either insert a new statement,\nsuch as:\n\n\t<> :=\n\nor a new function declaration, such as:\n\n\tfunc <>(inferred parameters) {\n\t\tpanic(\"implement me!\")\n\t}",
 							Default: "true",
 						},
 						{
 							Name:    "\"unusedvariable\"",
-							Doc:     "check for unused variables\n\nThe unusedvariable analyzer suggests fixes for unused variables errors.\n",
+							Doc:     "check for unused variables and suggest fixes",
 							Default: "false",
 						},
 						{
@@ -482,7 +482,7 @@ var GeneratedAPIJSON = &APIJSON{
 						},
 						{
 							Name:    "\"stubmethods\"",
-							Doc:     "stub methods analyzer\n\nThis analyzer generates method stubs for concrete types\nin order to implement a target interface",
+							Doc:     "detect missing methods and fix with stub implementations\n\nThis analyzer detects type-checking errors due to missing methods\nin assignments from concrete types to interface types, and offers\na suggested fix that will create a set of stub methods so that\nthe concrete type satisfies the interface.\n\nFor example, this function will not compile because the value\nNegativeErr{} does not implement the \"error\" interface:\n\n\tfunc sqrt(x float64) (float64, error) {\n\t\tif x < 0 {\n\t\t\treturn 0, NegativeErr{} // error: missing method\n\t\t}\n\t\t...\n\t}\n\n\ttype NegativeErr struct{}\n\nThis analyzer will suggest a fix to declare this method:\n\n\t// Error implements error.Error.\n\tfunc (NegativeErr) Error() string {\n\t\tpanic(\"unimplemented\")\n\t}\n\n(At least, it appears to behave that way, but technically it\ndoesn't use the SuggestedFix mechanism and the stub is created by\nlogic in gopls's source.stub function.)",
 							Default: "true",
 						},
 					},
@@ -1037,7 +1037,8 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Name:    "deprecated",
-			Doc:     "check for use of deprecated identifiers\n\nThe deprecated analyzer looks for deprecated symbols and package imports.\n\nSee https://go.dev/wiki/Deprecated to learn about Go's convention\nfor documenting and signaling deprecated identifiers.",
+			Doc:     "check for use of deprecated identifiers\n\nThe deprecated analyzer looks for deprecated symbols and package\nimports.\n\nSee https://go.dev/wiki/Deprecated to learn about Go's convention\nfor documenting and signaling deprecated identifiers.",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/deprecated",
 			Default: true,
 		},
 		{
@@ -1049,6 +1050,7 @@ var GeneratedAPIJSON = &APIJSON{
 		{
 			Name:    "embed",
 			Doc:     "check //go:embed directive usage\n\nThis analyzer checks that the embed package is imported if //go:embed\ndirectives are present, providing a suggested fix to add the import if\nit is missing.\n\nThis analyzer also checks that //go:embed directives precede the\ndeclaration of a single variable.",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/embeddirective",
 			Default: true,
 		},
 		{
@@ -1117,17 +1119,20 @@ var GeneratedAPIJSON = &APIJSON{
 		},
 		{
 			Name:    "simplifycompositelit",
-			Doc:     "check for composite literal simplifications\n\nAn array, slice, or map composite literal of the form:\n\t[]T{T{}, T{}}\nwill be simplified to:\n\t[]T{{}, {}}\n\nThis is one of the simplifications that \"gofmt -s\" applies.",
+			Doc:     "check for composite literal simplifications\n\nAn array, slice, or map composite literal of the form:\n\n\t[]T{T{}, T{}}\n\nwill be simplified to:\n\n\t[]T{{}, {}}\n\nThis is one of the simplifications that \"gofmt -s\" applies.",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifycompositelit",
 			Default: true,
 		},
 		{
 			Name:    "simplifyrange",
-			Doc:     "check for range statement simplifications\n\nA range of the form:\n\tfor x, _ = range v {...}\nwill be simplified to:\n\tfor x = range v {...}\n\nA range of the form:\n\tfor _ = range v {...}\nwill be simplified to:\n\tfor range v {...}\n\nThis is one of the simplifications that \"gofmt -s\" applies.",
+			Doc:     "check for range statement simplifications\n\nA range of the form:\n\n\tfor x, _ = range v {...}\n\nwill be simplified to:\n\n\tfor x = range v {...}\n\nA range of the form:\n\n\tfor _ = range v {...}\n\nwill be simplified to:\n\n\tfor range v {...}\n\nThis is one of the simplifications that \"gofmt -s\" applies.",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifyrange",
 			Default: true,
 		},
 		{
 			Name:    "simplifyslice",
-			Doc:     "check for slice simplifications\n\nA slice expression of the form:\n\ts[a:len(s)]\nwill be simplified to:\n\ts[a:]\n\nThis is one of the simplifications that \"gofmt -s\" applies.",
+			Doc:     "check for slice simplifications\n\nA slice expression of the form:\n\n\ts[a:len(s)]\n\nwill be simplified to:\n\n\ts[a:]\n\nThis is one of the simplifications that \"gofmt -s\" applies.",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifyslice",
 			Default: true,
 		},
 		{
@@ -1199,6 +1204,7 @@ var GeneratedAPIJSON = &APIJSON{
 		{
 			Name: "unusedparams",
 			Doc:  "check for unused parameters of functions\n\nThe unusedparams analyzer checks functions to see if there are\nany parameters that are not being used.\n\nTo reduce false positives it ignores:\n- methods\n- parameters that do not have a name or have the name '_' (the blank identifier)\n- functions in test files\n- functions with empty bodies or those with just a return stmt",
+			URL:  "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedparams",
 		},
 		{
 			Name:    "unusedresult",
@@ -1214,44 +1220,53 @@ var GeneratedAPIJSON = &APIJSON{
 		{
 			Name: "useany",
 			Doc:  "check for constraints that could be simplified to \"any\"",
+			URL:  "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/useany",
 		},
 		{
 			Name:    "fillreturns",
-			Doc:     "suggest fixes for errors due to an incorrect number of return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\nwill turn into\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.\n",
+			Doc:     "suggest fixes for errors due to an incorrect number of return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\n\nwill turn into\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillreturns",
 			Default: true,
 		},
 		{
 			Name:    "nonewvars",
-			Doc:     "suggested fixes for \"no new vars on left side of :=\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"no new vars on left side of :=\". For example:\n\tz := 1\n\tz := 2\nwill turn into\n\tz := 1\n\tz = 2\n",
+			Doc:     "suggested fixes for \"no new vars on left side of :=\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"no new vars on left side of :=\". For example:\n\n\tz := 1\n\tz := 2\n\nwill turn into\n\n\tz := 1\n\tz = 2",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/nonewvars",
 			Default: true,
 		},
 		{
 			Name:    "noresultvalues",
-			Doc:     "suggested fixes for unexpected return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"no result values expected\" or \"too many return values\".\nFor example:\n\tfunc z() { return nil }\nwill turn into\n\tfunc z() { return }\n",
+			Doc:     "suggested fixes for unexpected return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"no result values expected\" or \"too many return values\".\nFor example:\n\n\tfunc z() { return nil }\n\nwill turn into\n\n\tfunc z() { return }",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/noresultvars",
 			Default: true,
 		},
 		{
 			Name:    "undeclaredname",
-			Doc:     "suggested fixes for \"undeclared name: <>\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"undeclared name: <>\". It will either insert a new statement,\nsuch as:\n\n\"<> := \"\n\nor a new function declaration, such as:\n\nfunc <>(inferred parameters) {\n\tpanic(\"implement me!\")\n}\n",
+			Doc:     "suggested fixes for \"undeclared name: <>\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"undeclared name: <>\". It will either insert a new statement,\nsuch as:\n\n\t<> :=\n\nor a new function declaration, such as:\n\n\tfunc <>(inferred parameters) {\n\t\tpanic(\"implement me!\")\n\t}",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/undeclaredname",
 			Default: true,
 		},
 		{
 			Name: "unusedvariable",
-			Doc:  "check for unused variables\n\nThe unusedvariable analyzer suggests fixes for unused variables errors.\n",
+			Doc:  "check for unused variables and suggest fixes",
+			URL:  "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedvariable",
 		},
 		{
 			Name:    "fillstruct",
 			Doc:     "note incomplete struct initializations\n\nThis analyzer provides diagnostics for any struct literals that do not have\nany fields initialized. Because the suggested fix for this analysis is\nexpensive to compute, callers should compute it separately, using the\nSuggestedFix function below.\n",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillstruct",
 			Default: true,
 		},
 		{
 			Name:    "infertypeargs",
 			Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/infertypeargs",
 			Default: true,
 		},
 		{
 			Name:    "stubmethods",
-			Doc:     "stub methods analyzer\n\nThis analyzer generates method stubs for concrete types\nin order to implement a target interface",
+			Doc:     "detect missing methods and fix with stub implementations\n\nThis analyzer detects type-checking errors due to missing methods\nin assignments from concrete types to interface types, and offers\na suggested fix that will create a set of stub methods so that\nthe concrete type satisfies the interface.\n\nFor example, this function will not compile because the value\nNegativeErr{} does not implement the \"error\" interface:\n\n\tfunc sqrt(x float64) (float64, error) {\n\t\tif x < 0 {\n\t\t\treturn 0, NegativeErr{} // error: missing method\n\t\t}\n\t\t...\n\t}\n\n\ttype NegativeErr struct{}\n\nThis analyzer will suggest a fix to declare this method:\n\n\t// Error implements error.Error.\n\tfunc (NegativeErr) Error() string {\n\t\tpanic(\"unimplemented\")\n\t}\n\n(At least, it appears to behave that way, but technically it\ndoesn't use the SuggestedFix mechanism and the stub is created by\nlogic in gopls's source.stub function.)",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stubmethods",
 			Default: true,
 		},
 	},

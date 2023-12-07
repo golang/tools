@@ -9,6 +9,7 @@ package simplifycompositelit
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"go/ast"
 	"go/printer"
@@ -18,22 +19,18 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/analysisinternal"
 )
 
-const Doc = `check for composite literal simplifications
-
-An array, slice, or map composite literal of the form:
-	[]T{T{}, T{}}
-will be simplified to:
-	[]T{{}, {}}
-
-This is one of the simplifications that "gofmt -s" applies.`
+//go:embed doc.go
+var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "simplifycompositelit",
-	Doc:      Doc,
+	Doc:      analysisinternal.MustExtractDoc(doc, "simplifycompositelit"),
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
+	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifycompositelit",
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {

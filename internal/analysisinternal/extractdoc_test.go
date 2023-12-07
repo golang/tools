@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package analysisutil_test
+package analysisinternal_test
 
 import (
 	"testing"
 
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
+	"golang.org/x/tools/internal/analysisinternal"
 )
 
 func TestExtractDoc(t *testing.T) {
@@ -68,7 +68,7 @@ var x = syntax error
 		{multi, "nocolon",
 			"error: 'Analyzer nocolon' heading not followed by 'nocolon: summary...' line"},
 	} {
-		got, err := analysisutil.ExtractDoc(test.content, test.name)
+		got, err := analysisinternal.ExtractDoc(test.content, test.name)
 		if err != nil {
 			got = "error: " + err.Error()
 		}

@@ -31,6 +31,7 @@ var Analyzer = &analysis.Analyzer{
 	Doc:      Doc,
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
+	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/infertypeargs",
 }
 
 // TODO(rfindley): remove this thin wrapper around the infertypeargs refactoring,

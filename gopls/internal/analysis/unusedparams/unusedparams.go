@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package unusedparams defines an analyzer that checks for unused
-// parameters of functions.
 package unusedparams
 
 import (
+	_ "embed"
 	"fmt"
 	"go/ast"
 	"go/types"
@@ -15,25 +14,19 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/analysisinternal"
 )
 
-const Doc = `check for unused parameters of functions
-
-The unusedparams analyzer checks functions to see if there are
-any parameters that are not being used.
-
-To reduce false positives it ignores:
-- methods
-- parameters that do not have a name or have the name '_' (the blank identifier)
-- functions in test files
-- functions with empty bodies or those with just a return stmt`
+//go:embed doc.go
+var doc string
 
 var (
 	Analyzer = &analysis.Analyzer{
 		Name:     "unusedparams",
-		Doc:      Doc,
+		Doc:      analysisinternal.MustExtractDoc(doc, "unusedparams"),
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
 		Run:      run,
+		URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedparams",
 	}
 	inspectLits     bool
 	inspectWrappers bool

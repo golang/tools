@@ -2,34 +2,28 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package embeddirective defines an Analyzer that validates //go:embed directives.
-// The analyzer defers fixes to its parent source.Analyzer.
 package embeddirective
 
 import (
+	_ "embed"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/internal/analysisinternal"
 )
 
-const Doc = `check //go:embed directive usage
-
-This analyzer checks that the embed package is imported if //go:embed
-directives are present, providing a suggested fix to add the import if
-it is missing.
-
-This analyzer also checks that //go:embed directives precede the
-declaration of a single variable.`
+//go:embed doc.go
+var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:             "embed",
-	Doc:              Doc,
-	Requires:         []*analysis.Analyzer{},
+	Doc:              analysisinternal.MustExtractDoc(doc, "embed"),
 	Run:              run,
 	RunDespiteErrors: true,
+	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/embeddirective",
 }
 
 // source.fixedByImportingEmbed relies on this message to filter

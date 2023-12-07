@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package noresultvalues defines an Analyzer that applies suggested fixes
-// to errors of the type "no result values expected".
 package noresultvalues
 
 import (
@@ -12,28 +10,24 @@ import (
 	"go/format"
 	"strings"
 
+	_ "embed"
+
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 )
 
-const Doc = `suggested fixes for unexpected return values
-
-This checker provides suggested fixes for type errors of the
-type "no result values expected" or "too many return values".
-For example:
-	func z() { return nil }
-will turn into
-	func z() { return }
-`
+//go:embed doc.go
+var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:             "noresultvalues",
-	Doc:              Doc,
+	Doc:              analysisinternal.MustExtractDoc(doc, "noresultvalues"),
 	Requires:         []*analysis.Analyzer{inspect.Analyzer},
 	Run:              run,
 	RunDespiteErrors: true,
+	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/noresultvars",
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {

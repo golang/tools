@@ -748,7 +748,10 @@ func rewriteAnalyzers(doc []byte, api *settings.APIJSON) ([]byte, error) {
 	section := bytes.NewBuffer(nil)
 	for _, analyzer := range api.Analyzers {
 		fmt.Fprintf(section, "## **%v**\n\n", analyzer.Name)
-		fmt.Fprintf(section, "%s\n\n", analyzer.Doc)
+		fmt.Fprintf(section, "%s: %s\n\n", analyzer.Name, analyzer.Doc)
+		if analyzer.URL != "" {
+			fmt.Fprintf(section, "[Full documentation](%s)\n\n", analyzer.URL)
+		}
 		switch analyzer.Default {
 		case true:
 			fmt.Fprintf(section, "**Enabled by default.**\n\n")

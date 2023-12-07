@@ -45,6 +45,7 @@ var Analyzer = &analysis.Analyzer{
 	Doc:              Doc,
 	Requires:         []*analysis.Analyzer{inspect.Analyzer},
 	Run:              run,
+	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillstruct",
 	RunDespiteErrors: true,
 }
 

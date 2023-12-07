@@ -2,13 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package simplifyrange defines an Analyzer that simplifies range statements.
-// https://golang.org/cmd/gofmt/#hdr-The_simplify_command
-// https://github.com/golang/go/blob/master/src/cmd/gofmt/simplify.go
 package simplifyrange
 
 import (
 	"bytes"
+	_ "embed"
 	"go/ast"
 	"go/printer"
 	"go/token"
@@ -16,27 +14,18 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/analysisinternal"
 )
 
-const Doc = `check for range statement simplifications
-
-A range of the form:
-	for x, _ = range v {...}
-will be simplified to:
-	for x = range v {...}
-
-A range of the form:
-	for _ = range v {...}
-will be simplified to:
-	for range v {...}
-
-This is one of the simplifications that "gofmt -s" applies.`
+//go:embed doc.go
+var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "simplifyrange",
-	Doc:      Doc,
+	Doc:      analysisinternal.MustExtractDoc(doc, "simplifyrange"),
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
+	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifyrange",
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {

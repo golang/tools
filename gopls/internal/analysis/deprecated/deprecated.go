@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package deprecated defines an Analyzer that marks deprecated symbols and package imports.
 package deprecated
 
 import (
@@ -14,27 +13,26 @@ import (
 	"strconv"
 	"strings"
 
+	_ "embed"
+
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typeparams"
 )
 
-// TODO(hyangah): use analysisutil.MustExtractDoc.
-var doc = `check for use of deprecated identifiers
-
-The deprecated analyzer looks for deprecated symbols and package imports.
-
-See https://go.dev/wiki/Deprecated to learn about Go's convention
-for documenting and signaling deprecated identifiers.`
+//go:embed doc.go
+var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:             "deprecated",
-	Doc:              doc,
+	Doc:              analysisinternal.MustExtractDoc(doc, "deprecated"),
 	Requires:         []*analysis.Analyzer{inspect.Analyzer},
 	Run:              checkDeprecated,
 	FactTypes:        []analysis.Fact{(*deprecationFact)(nil)},
 	RunDespiteErrors: true,
+	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/deprecated",
 }
 
 // checkDeprecated is a simplified copy of staticcheck.CheckDeprecated.

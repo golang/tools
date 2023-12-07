@@ -8,6 +8,7 @@ package nonewvars
 
 import (
 	"bytes"
+	_ "embed"
 	"go/ast"
 	"go/format"
 	"go/token"
@@ -18,23 +19,16 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 )
 
-const Doc = `suggested fixes for "no new vars on left side of :="
-
-This checker provides suggested fixes for type errors of the
-type "no new vars on left side of :=". For example:
-	z := 1
-	z := 2
-will turn into
-	z := 1
-	z = 2
-`
+//go:embed doc.go
+var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:             "nonewvars",
-	Doc:              Doc,
+	Doc:              analysisinternal.MustExtractDoc(doc, "nonewvars"),
 	Requires:         []*analysis.Analyzer{inspect.Analyzer},
 	Run:              run,
 	RunDespiteErrors: true,
+	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/nonewvars",
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {

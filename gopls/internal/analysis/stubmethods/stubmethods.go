@@ -6,6 +6,7 @@ package stubmethods
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -20,16 +21,15 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 )
 
-const Doc = `stub methods analyzer
-
-This analyzer generates method stubs for concrete types
-in order to implement a target interface`
+//go:embed doc.go
+var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:             "stubmethods",
-	Doc:              Doc,
+	Doc:              analysisinternal.MustExtractDoc(doc, "stubmethods"),
 	Run:              run,
 	RunDespiteErrors: true,
+	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stubmethods",
 }
 
 // TODO(rfindley): remove this thin wrapper around the stubmethods refactoring,

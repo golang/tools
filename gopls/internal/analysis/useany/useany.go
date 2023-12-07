@@ -25,16 +25,13 @@ var Analyzer = &analysis.Analyzer{
 	Doc:      Doc,
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
+	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/useany",
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	universeAny := types.Universe.Lookup("any")
-	if universeAny == nil {
-		// Go <= 1.17. Nothing to check.
-		return nil, nil
-	}
 
 	nodeFilter := []ast.Node{
 		(*ast.TypeSpec)(nil),
