@@ -483,6 +483,38 @@ func TestGenericBodies(t *testing.T) {
 			}
 		}
 		`,
+		`
+		package issue64324
+
+		type bar[T any] interface {
+			Bar(int) T
+		}
+		type foo[T any] interface {
+			bar[[]T]
+			*T
+		}
+		func Foo[T any, F foo[T]](d int) {
+			m := new(T)
+			f := F(m)
+			print(f.Bar(d)) /*@ types("[]T")*/
+		}
+		`, `
+		package issue64324b
+
+		type bar[T any] interface {
+			Bar(int) T
+		}
+		type baz[T any] interface {
+			bar[*int]
+			*int
+		}
+
+		func Baz[I baz[string]](d int) {
+			m := new(int)
+			f := I(m)
+			print(f.Bar(d)) /*@ types("*int")*/
+		}
+		`,
 	} {
 		contents := contents
 		pkgname := packageName(t, contents)
