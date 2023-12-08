@@ -1,4 +1,5 @@
 This test exercises basic 'stub methods' functionality.
+See basic_resolve.txt for the same test with resolve support.
 
 -- go.mod --
 module example.com

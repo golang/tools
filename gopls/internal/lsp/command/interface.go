@@ -44,7 +44,7 @@ type Interface interface {
 	// ApplyFix: Apply a fix
 	//
 	// Applies a fix to a region of source code.
-	ApplyFix(context.Context, ApplyFixArgs) error
+	ApplyFix(context.Context, ApplyFixArgs) (*protocol.WorkspaceEdit, error)
 
 	// Test: Run test(s) (legacy)
 	//
@@ -216,7 +216,7 @@ type Interface interface {
 	//
 	// This command is experimental, currently only supporting parameter removal.
 	// Its signature will certainly change in the future (pun intended).
-	ChangeSignature(context.Context, ChangeSignatureArgs) error
+	ChangeSignature(context.Context, ChangeSignatureArgs) (*protocol.WorkspaceEdit, error)
 
 	// DiagnoseFiles: Cause server to publish diagnostics for the specified files.
 	//
@@ -257,6 +257,8 @@ type ApplyFixArgs struct {
 	URI protocol.DocumentURI
 	// The document range to scan for fixes.
 	Range protocol.Range
+	// Whether to resolve and return the edits.
+	ResolveEdits bool
 }
 
 type URIArg struct {
@@ -500,6 +502,8 @@ type AddTelemetryCountersArgs struct {
 // ChangeSignatureArgs specifies a "change signature" refactoring to perform.
 type ChangeSignatureArgs struct {
 	RemoveParameter protocol.Location
+	// Whether to resolve and return the edits.
+	ResolveEdits bool
 }
 
 // DiagnoseFilesArgs specifies a set of files for which diagnostics are wanted.

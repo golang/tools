@@ -1,6 +1,17 @@
-This test checks the behavior of the 'extract variable' code action.
-See extract_variable_resolve.txt for the same test with resolve support.
+This test checks the behavior of the 'extract variable' code action, with resolve support.
+See extract_variable.txt for the same test without resolve support.
 
+-- capabilities.json --
+{
+	"textDocument": {
+		"codeAction": {
+			"dataSupport": true,
+			"resolveSupport": {
+				"properties": ["edit"]
+			}
+		}
+	}
+}
 -- flags --
 -ignore_extra_diags
 

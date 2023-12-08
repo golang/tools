@@ -63,6 +63,7 @@ var renameProp = map[prop]string{
 	{"CancelParams", "id"}:         "interface{}",
 	{"Command", "arguments"}:       "[]json.RawMessage",
 	{"CompletionItem", "textEdit"}: "TextEdit",
+	{"CodeAction", "data"}:         "json.RawMessage", // delay unmarshalling commands
 	{"Diagnostic", "code"}:         "interface{}",
 	{"Diagnostic", "data"}:         "json.RawMessage", // delay unmarshalling quickfixes
 

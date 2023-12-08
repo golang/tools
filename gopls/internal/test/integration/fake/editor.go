@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake/glob"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
 	"golang.org/x/tools/internal/xcontext"
@@ -263,42 +264,11 @@ func (e *Editor) initialize(ctx context.Context) error {
 	params.InitializationOptions = makeSettings(e.sandbox, config)
 	params.WorkspaceFolders = makeWorkspaceFolders(e.sandbox, config.WorkspaceFolders)
 
-	// Set various client capabilities that are sought by gopls.
-	params.Capabilities.Workspace.Configuration = true // support workspace/configuration
-	params.Capabilities.Window.WorkDoneProgress = true // support window/workDoneProgress
-	params.Capabilities.TextDocument.Completion.CompletionItem.TagSupport = &protocol.CompletionItemTagOptions{}
-	params.Capabilities.TextDocument.Completion.CompletionItem.TagSupport.ValueSet = []protocol.CompletionItemTag{protocol.ComplDeprecated}
-	params.Capabilities.TextDocument.Completion.CompletionItem.SnippetSupport = true
-	params.Capabilities.TextDocument.SemanticTokens.Requests.Full = &protocol.Or_ClientSemanticTokensRequestOptions_full{Value: true}
-	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = []string{
-		"namespace", "type", "class", "enum", "interface",
-		"struct", "typeParameter", "parameter", "variable", "property", "enumMember",
-		"event", "function", "method", "macro", "keyword", "modifier", "comment",
-		"string", "number", "regexp", "operator",
+	capabilities, err := clientCapabilities(config)
+	if err != nil {
+		return fmt.Errorf("unmarshalling EditorConfig.CapabilitiesJSON: %v", err)
 	}
-	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = []string{
-		"declaration", "definition", "readonly", "static",
-		"deprecated", "abstract", "async", "modification", "documentation", "defaultLibrary",
-	}
-	// The LSP tests have historically enabled this flag,
-	// but really we should test both ways for older editors.
-	params.Capabilities.TextDocument.DocumentSymbol.HierarchicalDocumentSymbolSupport = true
-	// Glob pattern watching is enabled.
-	params.Capabilities.Workspace.DidChangeWatchedFiles.DynamicRegistration = true
-	// "rename" operations are used for package renaming.
-	//
-	// TODO(rfindley): add support for other resource operations (create, delete, ...)
-	params.Capabilities.Workspace.WorkspaceEdit = &protocol.WorkspaceEditClientCapabilities{
-		ResourceOperations: []protocol.ResourceOperationKind{
-			"rename",
-		},
-	}
-	// Apply capabilities overlay.
-	if config.CapabilitiesJSON != nil {
-		if err := json.Unmarshal(config.CapabilitiesJSON, &params.Capabilities); err != nil {
-			return fmt.Errorf("unmarshalling EditorConfig.CapabilitiesJSON: %v", err)
-		}
-	}
+	params.Capabilities = capabilities
 
 	trace := protocol.TraceValues("messages")
 	params.Trace = &trace
@@ -323,6 +293,48 @@ func (e *Editor) initialize(ctx context.Context) error {
 	}
 	// TODO: await initial configuration here, or expect gopls to manage that?
 	return nil
+}
+
+func clientCapabilities(cfg EditorConfig) (protocol.ClientCapabilities, error) {
+	var capabilities protocol.ClientCapabilities
+	// Set various client capabilities that are sought by gopls.
+	capabilities.Workspace.Configuration = true // support workspace/configuration
+	capabilities.TextDocument.Completion.CompletionItem.TagSupport = &protocol.CompletionItemTagOptions{}
+	capabilities.TextDocument.Completion.CompletionItem.TagSupport.ValueSet = []protocol.CompletionItemTag{protocol.ComplDeprecated}
+	capabilities.TextDocument.Completion.CompletionItem.SnippetSupport = true
+	capabilities.TextDocument.SemanticTokens.Requests.Full = &protocol.Or_ClientSemanticTokensRequestOptions_full{Value: true}
+	capabilities.Window.WorkDoneProgress = true // support window/workDoneProgress
+	capabilities.TextDocument.SemanticTokens.TokenTypes = []string{
+		"namespace", "type", "class", "enum", "interface",
+		"struct", "typeParameter", "parameter", "variable", "property", "enumMember",
+		"event", "function", "method", "macro", "keyword", "modifier", "comment",
+		"string", "number", "regexp", "operator",
+	}
+	capabilities.TextDocument.SemanticTokens.TokenModifiers = []string{
+		"declaration", "definition", "readonly", "static",
+		"deprecated", "abstract", "async", "modification", "documentation", "defaultLibrary",
+	}
+	// The LSP tests have historically enabled this flag,
+	// but really we should test both ways for older editors.
+	capabilities.TextDocument.DocumentSymbol.HierarchicalDocumentSymbolSupport = true
+	// Glob pattern watching is enabled.
+	capabilities.Workspace.DidChangeWatchedFiles.DynamicRegistration = true
+	// "rename" operations are used for package renaming.
+	//
+	// TODO(rfindley): add support for other resource operations (create, delete, ...)
+	capabilities.Workspace.WorkspaceEdit = &protocol.WorkspaceEditClientCapabilities{
+		ResourceOperations: []protocol.ResourceOperationKind{
+			"rename",
+		},
+	}
+
+	// Apply capabilities overlay.
+	if cfg.CapabilitiesJSON != nil {
+		if err := json.Unmarshal(cfg.CapabilitiesJSON, &capabilities); err != nil {
+			return protocol.ClientCapabilities{}, fmt.Errorf("unmarshalling EditorConfig.CapabilitiesJSON: %v", err)
+		}
+	}
+	return capabilities, nil
 }
 
 // marshalUnmarshal is a helper to json Marshal and then Unmarshal as a
@@ -902,6 +914,21 @@ func (e *Editor) ApplyQuickFixes(ctx context.Context, loc protocol.Location, dia
 
 // ApplyCodeAction applies the given code action.
 func (e *Editor) ApplyCodeAction(ctx context.Context, action protocol.CodeAction) error {
+	// Resolve the code actions if necessary and supported.
+	if action.Edit == nil {
+		editSupport, err := e.EditResolveSupport()
+		if err != nil {
+			return err
+		}
+		if editSupport {
+			ca, err := e.Server.ResolveCodeAction(ctx, &action)
+			if err != nil {
+				return err
+			}
+			action.Edit = ca.Edit
+		}
+	}
+
 	if action.Edit != nil {
 		for _, change := range action.Edit.DocumentChanges {
 			if change.TextDocumentEdit != nil {
@@ -932,11 +959,11 @@ func (e *Editor) ApplyCodeAction(ctx context.Context, action protocol.CodeAction
 
 // GetQuickFixes returns the available quick fix code actions.
 func (e *Editor) GetQuickFixes(ctx context.Context, loc protocol.Location, diagnostics []protocol.Diagnostic) ([]protocol.CodeAction, error) {
-	return e.getCodeActions(ctx, loc, diagnostics, protocol.QuickFix, protocol.SourceFixAll)
+	return e.CodeActions(ctx, loc, diagnostics, protocol.QuickFix, protocol.SourceFixAll)
 }
 
 func (e *Editor) applyCodeActions(ctx context.Context, loc protocol.Location, diagnostics []protocol.Diagnostic, only ...protocol.CodeActionKind) (int, error) {
-	actions, err := e.getCodeActions(ctx, loc, diagnostics, only...)
+	actions, err := e.CodeActions(ctx, loc, diagnostics, only...)
 	if err != nil {
 		return 0, err
 	}
@@ -963,7 +990,7 @@ func (e *Editor) applyCodeActions(ctx context.Context, loc protocol.Location, di
 	return applied, nil
 }
 
-func (e *Editor) getCodeActions(ctx context.Context, loc protocol.Location, diagnostics []protocol.Diagnostic, only ...protocol.CodeActionKind) ([]protocol.CodeAction, error) {
+func (e *Editor) CodeActions(ctx context.Context, loc protocol.Location, diagnostics []protocol.Diagnostic, only ...protocol.CodeActionKind) ([]protocol.CodeAction, error) {
 	if e.Server == nil {
 		return nil, nil
 	}
@@ -1469,6 +1496,14 @@ func (e *Editor) CodeAction(ctx context.Context, loc protocol.Location, diagnost
 		return nil, err
 	}
 	return lens, nil
+}
+
+func (e *Editor) EditResolveSupport() (bool, error) {
+	capabilities, err := clientCapabilities(e.Config())
+	if err != nil {
+		return false, err
+	}
+	return capabilities.TextDocument.CodeAction.ResolveSupport != nil && slices.Contains(capabilities.TextDocument.CodeAction.ResolveSupport.Properties, "edit"), nil
 }
 
 // Hover triggers a hover at the given position in an open buffer.

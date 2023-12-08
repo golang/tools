@@ -7,14 +7,24 @@ package misc
 import (
 	"testing"
 
-	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/compare"
+	. "golang.org/x/tools/gopls/internal/test/integration"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
-// A basic test for fillstruct, now that it uses a command.
+// A basic test for fillstruct, now that it uses a command and supports resolve edits.
 func TestFillStruct(t *testing.T) {
+	tc := []struct {
+		name         string
+		capabilities string
+		wantCommand  bool
+	}{
+		{"default", "{}", true},
+		{"no data", `{ "textDocument": {"codeAction": {	"resolveSupport": { "properties": ["edit"] } } } }`, true},
+		{"resolve support", `{ "textDocument": {"codeAction": {	"dataSupport": true, "resolveSupport": { "properties": ["edit"] } } } }`, false},
+	}
+
 	const basic = `
 -- go.mod --
 module mod.com
@@ -32,12 +42,35 @@ func Foo() {
 	_ = Info{}
 }
 `
-	Run(t, basic, func(t *testing.T, env *Env) {
-		env.OpenFile("main.go")
-		if err := env.Editor.RefactorRewrite(env.Ctx, env.RegexpSearch("main.go", "Info{}")); err != nil {
-			t.Fatal(err)
-		}
-		want := `package main
+
+	for _, tt := range tc {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := WithOptions(CapabilitiesJSON([]byte(tt.capabilities)))
+
+			runner.Run(t, basic, func(t *testing.T, env *Env) {
+				env.OpenFile("main.go")
+				fixes, err := env.Editor.CodeActions(env.Ctx, env.RegexpSearch("main.go", "Info{}"), nil, protocol.RefactorRewrite)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(fixes) != 1 {
+					t.Fatalf("expected 1 code action, got %v", len(fixes))
+				}
+				if tt.wantCommand {
+					if fixes[0].Command == nil || fixes[0].Data != nil {
+						t.Errorf("expected code action to have command not data, got %v", fixes[0])
+					}
+				} else {
+					if fixes[0].Command != nil || fixes[0].Data == nil {
+						t.Errorf("expected code action to have command not data, got %v", fixes[0])
+					}
+				}
+
+				// Apply the code action (handles resolving the code action), and check that the result is correct.
+				if err := env.Editor.RefactorRewrite(env.Ctx, env.RegexpSearch("main.go", "Info{}")); err != nil {
+					t.Fatal(err)
+				}
+				want := `package main
 
 type Info struct {
 	WordCounts map[string]int
@@ -51,10 +84,12 @@ func Foo() {
 	}
 }
 `
-		if got := env.BufferText("main.go"); got != want {
-			t.Fatalf("TestFillStruct failed:\n%s", compare.Text(want, got))
-		}
-	})
+				if got := env.BufferText("main.go"); got != want {
+					t.Fatalf("TestFillStruct failed:\n%s", compare.Text(want, got))
+				}
+			})
+		})
+	}
 }
 
 func TestFillReturns(t *testing.T) {

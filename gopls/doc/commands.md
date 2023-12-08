@@ -81,6 +81,47 @@ Args:
 			"character": uint32,
 		},
 	},
+	// Whether to resolve and return the edits.
+	"ResolveEdits": bool,
+}
+```
+
+Result:
+
+```
+{
+	// Holds changes to existing resources.
+	"changes": map[golang.org/x/tools/gopls/internal/lsp/protocol.DocumentURI][]golang.org/x/tools/gopls/internal/lsp/protocol.TextEdit,
+	// Depending on the client capability `workspace.workspaceEdit.resourceOperations` document changes
+	// are either an array of `TextDocumentEdit`s to express changes to n different text documents
+	// where each text document edit addresses a specific version of a text document. Or it can contain
+	// above `TextDocumentEdit`s mixed with create, rename and delete file / folder operations.
+	//
+	// Whether a client supports versioned document edits is expressed via
+	// `workspace.workspaceEdit.documentChanges` client capability.
+	//
+	// If a client neither supports `documentChanges` nor `workspace.workspaceEdit.resourceOperations` then
+	// only plain `TextEdit`s using the `changes` property are supported.
+	"documentChanges": []{
+		"TextDocumentEdit": {
+			"textDocument": { ... },
+			"edits": { ... },
+		},
+		"RenameFile": {
+			"kind": string,
+			"oldUri": string,
+			"newUri": string,
+			"options": { ... },
+			"ResourceOperation": { ... },
+		},
+	},
+	// A map of change annotations that can be referenced in `AnnotatedTextEdit`s or create, rename and
+	// delete file / folder operations.
+	//
+	// Whether clients honor this property depends on the client capability `workspace.changeAnnotationSupport`.
+	//
+	// @since 3.16.0
+	"changeAnnotations": map[string]golang.org/x/tools/gopls/internal/lsp/protocol.ChangeAnnotation,
 }
 ```
 
@@ -101,6 +142,47 @@ Args:
 			"end": { ... },
 		},
 	},
+	// Whether to resolve and return the edits.
+	"ResolveEdits": bool,
+}
+```
+
+Result:
+
+```
+{
+	// Holds changes to existing resources.
+	"changes": map[golang.org/x/tools/gopls/internal/lsp/protocol.DocumentURI][]golang.org/x/tools/gopls/internal/lsp/protocol.TextEdit,
+	// Depending on the client capability `workspace.workspaceEdit.resourceOperations` document changes
+	// are either an array of `TextDocumentEdit`s to express changes to n different text documents
+	// where each text document edit addresses a specific version of a text document. Or it can contain
+	// above `TextDocumentEdit`s mixed with create, rename and delete file / folder operations.
+	//
+	// Whether a client supports versioned document edits is expressed via
+	// `workspace.workspaceEdit.documentChanges` client capability.
+	//
+	// If a client neither supports `documentChanges` nor `workspace.workspaceEdit.resourceOperations` then
+	// only plain `TextEdit`s using the `changes` property are supported.
+	"documentChanges": []{
+		"TextDocumentEdit": {
+			"textDocument": { ... },
+			"edits": { ... },
+		},
+		"RenameFile": {
+			"kind": string,
+			"oldUri": string,
+			"newUri": string,
+			"options": { ... },
+			"ResourceOperation": { ... },
+		},
+	},
+	// A map of change annotations that can be referenced in `AnnotatedTextEdit`s or create, rename and
+	// delete file / folder operations.
+	//
+	// Whether clients honor this property depends on the client capability `workspace.changeAnnotationSupport`.
+	//
+	// @since 3.16.0
+	"changeAnnotations": map[string]golang.org/x/tools/gopls/internal/lsp/protocol.ChangeAnnotation,
 }
 ```
 

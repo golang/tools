@@ -5,7 +5,9 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"sort"
@@ -24,6 +26,7 @@ import (
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/imports"
@@ -179,7 +182,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 			}
 
 			if want[protocol.RefactorExtract] {
-				extractions, err := refactorExtract(pgf, params.Range)
+				extractions, err := refactorExtract(pgf, params.Range, snapshot.Options())
 				if err != nil {
 					return nil, err
 				}
@@ -226,19 +229,15 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 						return protocol.CodeAction{}, false, nil
 					}
 					cmd, err := command.NewApplyFixCommand(d.Message, command.ApplyFixArgs{
-						URI:   pgf.URI,
-						Fix:   string(settings.StubMethods),
-						Range: pd.Range,
+						URI:          pgf.URI,
+						Fix:          string(settings.StubMethods),
+						Range:        pd.Range,
+						ResolveEdits: supportsResolveEdits(snapshot.Options()),
 					})
 					if err != nil {
 						return protocol.CodeAction{}, false, err
 					}
-					return protocol.CodeAction{
-						Title:       d.Message,
-						Kind:        protocol.QuickFix,
-						Command:     &cmd,
-						Diagnostics: []protocol.Diagnostic{pd},
-					}, true, nil
+					return newCodeAction(d.Message, protocol.QuickFix, &cmd, nil, snapshot.Options()), true, nil
 				}()
 				if err != nil {
 					return nil, err
@@ -249,7 +248,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 			}
 
 			if want[protocol.RefactorRewrite] {
-				rewrites, err := refactorRewrite(snapshot, pkg, pgf, fh, params.Range)
+				rewrites, err := refactorRewrite(snapshot, pkg, pgf, fh, params.Range, snapshot.Options())
 				if err != nil {
 					return nil, err
 				}
@@ -279,6 +278,54 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		// Unsupported file kind for a code action.
 		return nil, nil
 	}
+}
+
+// ResolveCodeAction resolves missing Edit information (that is, computes the
+// details of the necessary patch) in the given code action using the provided
+// Data field of the CodeAction, which should contain the raw json of a protocol.Command.
+//
+// This should be called by the client before applying code actions, when the
+// client has code action resolve support.
+//
+// This feature allows capable clients to preview and selectively apply the diff
+// instead of applying the whole thing unconditionally through workspace/applyEdit.
+func (s *server) ResolveCodeAction(ctx context.Context, ca *protocol.CodeAction) (*protocol.CodeAction, error) {
+	ctx, done := event.Start(ctx, "lsp.Server.resolveCodeAction")
+	defer done()
+
+	// Only resolve the code action if there is Data provided.
+	// TODO(suzmue): publish protocol.unmarshalParams as protocol.UnmarshalJSON
+	// and use it consistently where we need to unmarshal to handle all null checks.
+	if ca.Data != nil && len(*ca.Data) != 0 && !bytes.Equal(*ca.Data, []byte("null")) {
+		var cmd protocol.Command
+		if err := json.Unmarshal(*ca.Data, &cmd); err != nil {
+			return nil, err
+		}
+
+		params := &protocol.ExecuteCommandParams{
+			Command:   cmd.Command,
+			Arguments: cmd.Arguments,
+		}
+
+		handler := &commandHandler{
+			s:      s,
+			params: params,
+		}
+		edit, err := command.Dispatch(ctx, params, handler)
+		if err != nil {
+
+			return nil, err
+		}
+		var ok bool
+		if ca.Edit, ok = edit.(*protocol.WorkspaceEdit); !ok {
+			return nil, fmt.Errorf("unable to resolve code action %q", ca.Title)
+		}
+	}
+	return ca, nil
+}
+
+func supportsResolveEdits(options *settings.Options) bool {
+	return options.CodeActionResolveOptions != nil && slices.Contains(options.CodeActionResolveOptions, "edit")
 }
 
 func (s *server) findMatchingDiagnostics(uri protocol.DocumentURI, pd protocol.Diagnostic) []*cache.Diagnostic {
@@ -367,7 +414,7 @@ func fixedByImportFix(fix *imports.ImportFix, diagnostics []protocol.Diagnostic)
 	return results
 }
 
-func refactorExtract(pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
+func refactorExtract(pgf *source.ParsedGoFile, rng protocol.Range, options *settings.Options) ([]protocol.CodeAction, error) {
 	if rng.Start == rng.End {
 		return nil, nil
 	}
@@ -380,9 +427,10 @@ func refactorExtract(pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.C
 	var commands []protocol.Command
 	if _, ok, methodOk, _ := source.CanExtractFunction(pgf.Tok, start, end, pgf.Src, pgf.File); ok {
 		cmd, err := command.NewApplyFixCommand("Extract function", command.ApplyFixArgs{
-			URI:   puri,
-			Fix:   string(settings.ExtractFunction),
-			Range: rng,
+			URI:          puri,
+			Fix:          string(settings.ExtractFunction),
+			Range:        rng,
+			ResolveEdits: supportsResolveEdits(options),
 		})
 		if err != nil {
 			return nil, err
@@ -390,9 +438,10 @@ func refactorExtract(pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.C
 		commands = append(commands, cmd)
 		if methodOk {
 			cmd, err := command.NewApplyFixCommand("Extract method", command.ApplyFixArgs{
-				URI:   puri,
-				Fix:   string(settings.ExtractMethod),
-				Range: rng,
+				URI:          puri,
+				Fix:          string(settings.ExtractMethod),
+				Range:        rng,
+				ResolveEdits: supportsResolveEdits(options),
 			})
 			if err != nil {
 				return nil, err
@@ -402,9 +451,10 @@ func refactorExtract(pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.C
 	}
 	if _, _, ok, _ := source.CanExtractVariable(start, end, pgf.File); ok {
 		cmd, err := command.NewApplyFixCommand("Extract variable", command.ApplyFixArgs{
-			URI:   puri,
-			Fix:   string(settings.ExtractVariable),
-			Range: rng,
+			URI:          puri,
+			Fix:          string(settings.ExtractVariable),
+			Range:        rng,
+			ResolveEdits: supportsResolveEdits(options),
 		})
 		if err != nil {
 			return nil, err
@@ -413,16 +463,31 @@ func refactorExtract(pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.C
 	}
 	var actions []protocol.CodeAction
 	for i := range commands {
-		actions = append(actions, protocol.CodeAction{
-			Title:   commands[i].Title,
-			Kind:    protocol.RefactorExtract,
-			Command: &commands[i],
-		})
+		actions = append(actions, newCodeAction(commands[i].Title, protocol.RefactorExtract, &commands[i], nil, options))
 	}
 	return actions, nil
 }
 
-func refactorRewrite(snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.ParsedGoFile, fh file.Handle, rng protocol.Range) (_ []protocol.CodeAction, rerr error) {
+func newCodeAction(title string, kind protocol.CodeActionKind, cmd *protocol.Command, diagnostics []protocol.Diagnostic, options *settings.Options) protocol.CodeAction {
+	action := protocol.CodeAction{
+		Title:       title,
+		Kind:        kind,
+		Diagnostics: diagnostics,
+	}
+	if !supportsResolveEdits(options) {
+		action.Command = cmd
+	} else {
+		data, err := json.Marshal(cmd)
+		if err != nil {
+			panic("unable to marshal")
+		}
+		msg := json.RawMessage(data)
+		action.Data = &msg
+	}
+	return action
+}
+
+func refactorRewrite(snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.ParsedGoFile, fh file.Handle, rng protocol.Range, options *settings.Options) (_ []protocol.CodeAction, rerr error) {
 	// golang/go#61693: code actions were refactored to run outside of the
 	// analysis framework, but as a result they lost their panic recovery.
 	//
@@ -442,15 +507,12 @@ func refactorRewrite(snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.P
 				URI:   pgf.URI,
 				Range: rng,
 			},
+			ResolveEdits: supportsResolveEdits(options),
 		})
 		if err != nil {
 			return nil, err
 		}
-		actions = append(actions, protocol.CodeAction{
-			Title:   "Refactor: remove unused parameter",
-			Kind:    protocol.RefactorRewrite,
-			Command: &cmd,
-		})
+		actions = append(actions, newCodeAction("Refactor: remove unused parameter", protocol.RefactorRewrite, &cmd, nil, options))
 	}
 
 	if action, ok := source.ConvertStringLiteral(pgf, fh, rng); ok {
@@ -465,9 +527,10 @@ func refactorRewrite(snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.P
 	var commands []protocol.Command
 	if _, ok, _ := source.CanInvertIfCondition(pgf.File, start, end); ok {
 		cmd, err := command.NewApplyFixCommand("Invert if condition", command.ApplyFixArgs{
-			URI:   pgf.URI,
-			Fix:   string(settings.InvertIfCondition),
-			Range: rng,
+			URI:          pgf.URI,
+			Fix:          string(settings.InvertIfCondition),
+			Range:        rng,
+			ResolveEdits: supportsResolveEdits(options),
 		})
 		if err != nil {
 			return nil, err
@@ -487,9 +550,10 @@ func refactorRewrite(snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.P
 				return nil, err
 			}
 			cmd, err := command.NewApplyFixCommand(d.Message, command.ApplyFixArgs{
-				URI:   pgf.URI,
-				Fix:   string(settings.FillStruct),
-				Range: rng,
+				URI:          pgf.URI,
+				Fix:          string(settings.FillStruct),
+				Range:        rng,
+				ResolveEdits: supportsResolveEdits(options),
 			})
 			if err != nil {
 				return nil, err
@@ -499,11 +563,7 @@ func refactorRewrite(snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.P
 	}
 
 	for i := range commands {
-		actions = append(actions, protocol.CodeAction{
-			Title:   commands[i].Title,
-			Kind:    protocol.RefactorRewrite,
-			Command: &commands[i],
-		})
+		actions = append(actions, newCodeAction(commands[i].Title, protocol.RefactorRewrite, &commands[i], nil, options))
 	}
 
 	if snapshot.Options().IsAnalyzerEnabled(infertypeargs.Analyzer.Name) {

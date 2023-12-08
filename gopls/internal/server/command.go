@@ -199,8 +199,9 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 	return runcmd()
 }
 
-func (c *commandHandler) ApplyFix(ctx context.Context, args command.ApplyFixArgs) error {
-	return c.run(ctx, commandConfig{
+func (c *commandHandler) ApplyFix(ctx context.Context, args command.ApplyFixArgs) (*protocol.WorkspaceEdit, error) {
+	var result *protocol.WorkspaceEdit
+	err := c.run(ctx, commandConfig{
 		// Note: no progress here. Applying fixes should be quick.
 		forURI: args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
@@ -215,10 +216,15 @@ func (c *commandHandler) ApplyFix(ctx context.Context, args command.ApplyFixArgs
 				TextDocumentEdit: &edit,
 			})
 		}
+		edit := protocol.WorkspaceEdit{
+			DocumentChanges: changes,
+		}
+		if args.ResolveEdits {
+			result = &edit
+			return nil
+		}
 		r, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-			Edit: protocol.WorkspaceEdit{
-				DocumentChanges: changes,
-			},
+			Edit: edit,
 		})
 		if err != nil {
 			return err
@@ -228,6 +234,7 @@ func (c *commandHandler) ApplyFix(ctx context.Context, args command.ApplyFixArgs
 		}
 		return nil
 	})
+	return result, err
 }
 
 func (c *commandHandler) RegenerateCgo(ctx context.Context, args command.URIArg) error {
@@ -1266,8 +1273,9 @@ func showDocumentImpl(ctx context.Context, cli protocol.Client, url protocol.URI
 	}
 }
 
-func (c *commandHandler) ChangeSignature(ctx context.Context, args command.ChangeSignatureArgs) error {
-	return c.run(ctx, commandConfig{
+func (c *commandHandler) ChangeSignature(ctx context.Context, args command.ChangeSignatureArgs) (*protocol.WorkspaceEdit, error) {
+	var result *protocol.WorkspaceEdit
+	err := c.run(ctx, commandConfig{
 		forURI: args.RemoveParameter.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		// For now, gopls only supports removing unused parameters.
@@ -1275,10 +1283,15 @@ func (c *commandHandler) ChangeSignature(ctx context.Context, args command.Chang
 		if err != nil {
 			return err
 		}
+		edit := protocol.WorkspaceEdit{
+			DocumentChanges: changes,
+		}
+		if args.ResolveEdits {
+			result = &edit
+			return nil
+		}
 		r, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-			Edit: protocol.WorkspaceEdit{
-				DocumentChanges: changes,
-			},
+			Edit: edit,
 		})
 		if !r.Applied {
 			return fmt.Errorf("failed to apply edits: %v", r.FailureReason)
@@ -1286,6 +1299,7 @@ func (c *commandHandler) ChangeSignature(ctx context.Context, args command.Chang
 
 		return nil
 	})
+	return result, err
 }
 
 func (c *commandHandler) DiagnoseFiles(ctx context.Context, args command.DiagnoseFilesArgs) error {

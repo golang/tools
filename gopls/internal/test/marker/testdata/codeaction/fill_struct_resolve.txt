@@ -1,6 +1,17 @@
-This test checks the behavior of the 'fill struct' code action.
-See fill_struct_resolve.txt for same test with resolve support.
+This test checks the behavior of the 'fill struct' code action, with resolve support.
+See fill_struct.txt for same test without resolve support.
 
+-- capabilities.json --
+{
+	"textDocument": {
+		"codeAction": {
+			"dataSupport": true,
+			"resolveSupport": {
+				"properties": ["edit"]
+			}
+		}
+	}
+}
 -- flags --
 -ignore_extra_diags
 

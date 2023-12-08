@@ -118,13 +118,13 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
-		return nil, s.ApplyFix(ctx, a0)
+		return s.ApplyFix(ctx, a0)
 	case "gopls.change_signature":
 		var a0 ChangeSignatureArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
-		return nil, s.ChangeSignature(ctx, a0)
+		return s.ChangeSignature(ctx, a0)
 	case "gopls.check_upgrades":
 		var a0 CheckUpgradesArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {

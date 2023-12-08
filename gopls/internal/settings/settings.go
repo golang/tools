@@ -131,6 +131,7 @@ type ClientOptions struct {
 	CompletionTags                             bool
 	CompletionDeprecated                       bool
 	SupportedResourceOperations                []protocol.ResourceOperationKind
+	CodeActionResolveOptions                   []string
 }
 
 // ServerOptions holds LSP-specific configuration that is provided by the
@@ -747,6 +748,11 @@ func (o *Options) ForClientCapabilities(clientName *protocol.ClientInfo, caps pr
 		o.CompletionTags = true
 	} else if caps.TextDocument.Completion.CompletionItem.DeprecatedSupport {
 		o.CompletionDeprecated = true
+	}
+
+	// Check if the client supports code actions resolving.
+	if caps.TextDocument.CodeAction.DataSupport && caps.TextDocument.CodeAction.ResolveSupport != nil {
+		o.CodeActionResolveOptions = caps.TextDocument.CodeAction.ResolveSupport.Properties
 	}
 }
 

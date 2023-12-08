@@ -1,6 +1,17 @@
-This test exercises the refactoring to remove unused parameters.
-See removeparam_resolve.txt for same test with resolve support.
+This test exercises the refactoring to remove unused parameters, with resolve support.
+See removeparam.txt for same test without resolve support.
 
+-- capabilities.json --
+{
+	"textDocument": {
+		"codeAction": {
+			"dataSupport": true,
+			"resolveSupport": {
+				"properties": ["edit"]
+			}
+		}
+	}
+}
 -- go.mod --
 module unused.mod
 

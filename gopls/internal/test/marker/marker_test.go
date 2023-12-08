@@ -1919,6 +1919,23 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 	// applied in that order. But since applyDocumentChanges(env,
 	// action.Edit.DocumentChanges) doesn't compose, for now we
 	// assert that actions return one or the other.
+
+	// Resolve code action edits first if the client has resolve support
+	// and the code action has no edits.
+	if action.Edit == nil {
+		editSupport, err := env.Editor.EditResolveSupport()
+		if err != nil {
+			return nil, err
+		}
+		if editSupport {
+			resolved, err := env.Editor.Server.ResolveCodeAction(env.Ctx, &action)
+			if err != nil {
+				return nil, err
+			}
+			action.Edit = resolved.Edit
+		}
+	}
+
 	if action.Edit != nil {
 		if action.Edit.Changes != nil {
 			env.T.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Edit.Changes", action.Kind, action.Title)
