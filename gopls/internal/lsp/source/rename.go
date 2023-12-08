@@ -62,6 +62,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
@@ -1066,7 +1067,7 @@ func (r *renamer) update() (map[protocol.DocumentURI][]diff.Edit, error) {
 		return items[i].node.Pos() < items[j].node.Pos()
 	})
 
-	// Update each identifier.
+	// Update each identifier, and its doc comment if it is a declaration.
 	for _, item := range items {
 		pgf, ok := enclosingFile(r.pkg, item.node.Pos())
 		if !ok {
@@ -1141,7 +1142,212 @@ func (r *renamer) update() (map[protocol.DocumentURI][]diff.Edit, error) {
 		}
 	}
 
+	docLinkEdits, err := r.updateCommentDocLinks()
+	if err != nil {
+		return nil, err
+	}
+	for uri, edits := range docLinkEdits {
+		result[uri] = append(result[uri], edits...)
+	}
+
 	return result, nil
+}
+
+// updateCommentDocLinks updates each doc comment in the package
+// that refers to one of the renamed objects using a doc link
+// (https://golang.org/doc/comment#doclinks) such as "[pkg.Type.Method]".
+func (r *renamer) updateCommentDocLinks() (map[protocol.DocumentURI][]diff.Edit, error) {
+	result := make(map[protocol.DocumentURI][]diff.Edit)
+	var docRenamers []*docLinkRenamer
+	for obj := range r.objsToUpdate {
+		if _, ok := obj.(*types.PkgName); ok {
+			// The dot package name will not be referenced
+			if obj.Name() == "." {
+				continue
+			}
+
+			docRenamers = append(docRenamers, &docLinkRenamer{
+				isDep:       false,
+				isPkgOrType: true,
+				file:        r.pkg.FileSet().File(obj.Pos()),
+				regexp:      docLinkPattern("", "", obj.Name(), true),
+				to:          r.to,
+			})
+			continue
+		}
+		if !obj.Exported() {
+			continue
+		}
+		recvName := ""
+		// Doc links can reference only exported package-level objects
+		// and methods of exported package-level named types.
+		if !isPackageLevel(obj) {
+			_, isFunc := obj.(*types.Func)
+			if !isFunc {
+				continue
+			}
+			recv := obj.Type().(*types.Signature).Recv()
+			if recv == nil {
+				continue
+			}
+			recvT := recv.Type()
+			if ptr, ok := recvT.(*types.Pointer); ok {
+				recvT = ptr.Elem()
+			}
+			named, isNamed := recvT.(*types.Named)
+			if !isNamed {
+				continue
+			}
+			// Doc links can't reference interface methods.
+			if types.IsInterface(named.Underlying()) {
+				continue
+			}
+			name := named.Origin().Obj()
+			if !name.Exported() || !isPackageLevel(name) {
+				continue
+			}
+			recvName = name.Name()
+		}
+
+		// Qualify objects from other packages.
+		pkgName := ""
+		if r.pkg.GetTypes() != obj.Pkg() {
+			pkgName = obj.Pkg().Name()
+		}
+		_, isTypeName := obj.(*types.TypeName)
+		docRenamers = append(docRenamers, &docLinkRenamer{
+			isDep:       r.pkg.GetTypes() != obj.Pkg(),
+			isPkgOrType: isTypeName,
+			packagePath: obj.Pkg().Path(),
+			packageName: pkgName,
+			recvName:    recvName,
+			objName:     obj.Name(),
+			regexp:      docLinkPattern(pkgName, recvName, obj.Name(), isTypeName),
+			to:          r.to,
+		})
+	}
+	for _, pgf := range r.pkg.CompiledGoFiles() {
+		for _, d := range docRenamers {
+			edits, err := d.update(pgf)
+			if err != nil {
+				return nil, err
+			}
+			if len(edits) > 0 {
+				result[pgf.URI] = append(result[pgf.URI], edits...)
+			}
+		}
+	}
+	return result, nil
+}
+
+// docLinkPattern returns a regular expression that matches doclinks in comments.
+// It has one submatch that indicates the symbol to be updated.
+func docLinkPattern(pkgName, recvName, objName string, isPkgOrType bool) *regexp.Regexp {
+	// The doc link may contain a leading star, e.g. [*bytes.Buffer].
+	pattern := `\[\*?`
+	if pkgName != "" {
+		pattern += pkgName + `\.`
+	}
+	if recvName != "" {
+		pattern += recvName + `\.`
+	}
+	// The first submatch is object name.
+	pattern += `(` + objName + `)`
+	// If the object is a *types.TypeName or *types.PkgName, also need
+	// match the objects referenced by them, so add `(\.\w+)*`.
+	if isPkgOrType {
+		pattern += `(?:\.\w+)*`
+	}
+	// There are two type of link in comments:
+	//   1. url link. e.g. [text]: url
+	//   2. doc link. e.g. [pkg.Name]
+	// in order to only match the doc link, add `([^:]|$)` in the end.
+	pattern += `\](?:[^:]|$)`
+
+	return regexp.MustCompile(pattern)
+}
+
+// A docLinkRenamer renames doc links of forms such as these:
+//
+//	[Func]
+//	[pkg.Func]
+//	[RecvType.Method]
+//	[*Type]
+//	[*pkg.Type]
+//	[*pkg.RecvType.Method]
+type docLinkRenamer struct {
+	isDep       bool // object is from a dependency package
+	isPkgOrType bool // object is *types.PkgName or *types.TypeName
+	packagePath string
+	packageName string // e.g. "pkg"
+	recvName    string // e.g. "RecvType"
+	objName     string // e.g. "Func", "Type", "Method"
+	to          string // new name
+	regexp      *regexp.Regexp
+
+	file *token.File // enclosing file, if renaming *types.PkgName
+}
+
+// update updates doc links in the package level comments.
+func (r *docLinkRenamer) update(pgf *parsego.File) (result []diff.Edit, err error) {
+	if r.file != nil && r.file != pgf.Tok {
+		return nil, nil
+	}
+	pattern := r.regexp
+	// If the object is in dependency package,
+	// the imported name in the file may be different from the original package name
+	if r.isDep {
+		for _, spec := range pgf.File.Imports {
+			importPath, _ := strconv.Unquote(spec.Path.Value)
+			if importPath == r.packagePath {
+				// Ignore blank imports
+				if spec.Name == nil || spec.Name.Name == "_" || spec.Name.Name == "." {
+					continue
+				}
+				if spec.Name.Name != r.packageName {
+					pattern = docLinkPattern(spec.Name.Name, r.recvName, r.objName, r.isPkgOrType)
+				}
+				break
+			}
+		}
+	}
+
+	var edits []diff.Edit
+	updateDocLinks := func(doc *ast.CommentGroup) error {
+		if doc != nil {
+			for _, c := range doc.List {
+				for _, locs := range pattern.FindAllStringSubmatchIndex(c.Text, -1) {
+					// The first submatch is the object name, so the locs[2:4] is the index of object name.
+					edit, err := posEdit(pgf.Tok, c.Pos()+token.Pos(locs[2]), c.Pos()+token.Pos(locs[3]), r.to)
+					if err != nil {
+						return err
+					}
+					edits = append(edits, edit)
+				}
+			}
+		}
+		return nil
+	}
+
+	// Update package doc comments.
+	err = updateDocLinks(pgf.File.Doc)
+	if err != nil {
+		return nil, err
+	}
+	for _, decl := range pgf.File.Decls {
+		var doc *ast.CommentGroup
+		switch decl := decl.(type) {
+		case *ast.GenDecl:
+			doc = decl.Doc
+		case *ast.FuncDecl:
+			doc = decl.Doc
+		}
+		err = updateDocLinks(doc)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return edits, nil
 }
 
 // docComment returns the doc for an identifier within the specified file.
