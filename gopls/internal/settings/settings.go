@@ -525,12 +525,6 @@ type InternalOptions struct {
 	// This option applies only during initialization.
 	ShowBugReports bool
 
-	// NewDiff controls the choice of the new diff implementation. It can be
-	// 'new', 'old', or 'both', which is the default. 'both' computes diffs with
-	// both algorithms, checks that the new algorithm has worked, and write some
-	// summary statistics to a file in os.TmpDir().
-	NewDiff string
-
 	// SubdirWatchPatterns configures the file watching glob patterns registered
 	// by gopls.
 	//
@@ -1160,9 +1154,6 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 	case "allExperiments":
 		// This setting should be handled before all of the other options are
 		// processed, so do nothing here.
-
-	case "newDiff":
-		result.setString(&o.NewDiff)
 
 	case "subdirWatchPatterns":
 		if s, ok := result.asOneOf(
