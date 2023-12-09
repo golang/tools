@@ -16,14 +16,7 @@ import (
 func Options(options *settings.Options) {
 	options.LicensesText = licensesText
 	if options.GoDiff {
-		switch options.NewDiff {
-		case "old":
-			options.ComputeEdits = ComputeEdits
-		case "new":
 			options.ComputeEdits = diff.Strings
-		default:
-			options.ComputeEdits = BothDiffs
-		}
 	}
 	options.URLRegexp = xurls.Relaxed()
 	updateAnalyzers(options)

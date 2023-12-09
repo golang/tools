@@ -125,21 +125,6 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 
 	versionInfo := debug.VersionInfo()
 
-	// golang/go#45732: Warn users who've installed sergi/go-diff@v1.2.0, since
-	// it will corrupt the formatting of their files.
-	for _, dep := range versionInfo.Deps {
-		if dep.Path == "github.com/sergi/go-diff" && dep.Version == "v1.2.0" {
-			if err := s.eventuallyShowMessage(ctx, &protocol.ShowMessageParams{
-				Message: `It looks like you have a bad gopls installation.
-Please reinstall gopls by running 'GO111MODULE=on go install golang.org/x/tools/gopls@latest'.
-See https://github.com/golang/go/issues/45732 for more information.`,
-				Type: protocol.Error,
-			}); err != nil {
-				return nil, err
-			}
-		}
-	}
-
 	goplsVersion, err := json.Marshal(versionInfo)
 	if err != nil {
 		return nil, err

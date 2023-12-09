@@ -112,7 +112,6 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 				CompleteUnimported:          true,
 				CompletionDocumentation:     true,
 				DeepCompletion:              true,
-				NewDiff:                     "new",
 				SubdirWatchPatterns:         SubdirWatchPatternsAuto,
 				ReportAnalysisProgressAfter: 5 * time.Second,
 				TelemetryPrompt:             false,
