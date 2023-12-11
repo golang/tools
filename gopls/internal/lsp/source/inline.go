@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
-	"runtime/debug"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
@@ -19,7 +18,6 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
@@ -98,8 +96,7 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, r
 	if bad(calleePkg) || bad(callerPkg) {
 		defer func() {
 			if x := recover(); x != nil {
-				err = bug.Errorf("inlining failed unexpectedly: %v\nstack: %v",
-					x, debug.Stack())
+				err = fmt.Errorf("inlining failed (%q), likely because inputs were ill-typed", x)
 			}
 		}()
 	}
