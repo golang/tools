@@ -27,7 +27,7 @@ type Request interface {
 	Message
 	// Method is a string containing the method name to invoke.
 	Method() string
-	// Params is either a struct or an array with the parameters of the method.
+	// Params is an JSON value (object, array, null, or "") with the parameters of the method.
 	Params() json.RawMessage
 	// isJSONRPC2Request is used to make the set of request implementations closed.
 	isJSONRPC2Request()
@@ -46,7 +46,7 @@ type Notification struct {
 type Call struct {
 	// Method is a string containing the method name to invoke.
 	method string
-	// Params is either a struct or an array with the parameters of the method.
+	// Params is a JSON value (object, array, null, or "") with the parameters of the method.
 	params json.RawMessage
 	// id of this request, used to tie the Response back to the request.
 	id ID

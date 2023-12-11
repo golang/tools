@@ -92,7 +92,7 @@ go 1.21
 
 package main
 
-//go:generate go run example.com@latest
+//go:` + /* hide this string from the go command */ `generate go run example.com@latest
 
 `
 	WithOptions(ProxyFiles(proxy)).

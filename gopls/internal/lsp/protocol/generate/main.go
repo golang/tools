@@ -99,7 +99,6 @@ func writeclient() {
 	out.WriteString(
 		`import (
 	"context"
-	"encoding/json"
 
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -144,7 +143,6 @@ func writeserver() {
 	out.WriteString(
 		`import (
 	"context"
-	"encoding/json"
 
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/jsonrpc2"
