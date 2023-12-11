@@ -37,9 +37,10 @@ func main() {
 `
 
 // This program demonstrates how to run the SSA builder on a single
-// package of one or more already-parsed files.  Its dependencies are
-// loaded from compiler export data.  This is what you'd typically use
-// for a compiler; it does not depend on golang.org/x/tools/go/loader.
+// package of one or more already-parsed files. Its dependencies are
+// loaded from compiler export data. This is what you'd typically use
+// for a compiler; it does not depend on the obsolete
+// [golang.org/x/tools/go/loader].
 //
 // It shows the printed representation of packages, functions, and
 // instructions.  Within the function listing, the name of each
@@ -52,7 +53,7 @@ func main() {
 //
 // Build and run the ssadump.go program if you want a standalone tool
 // with similar functionality. It is located at
-// golang.org/x/tools/cmd/ssadump.
+// [golang.org/x/tools/cmd/ssadump].
 //
 // Use ssautil.BuildPackage only if you have parsed--but not
 // type-checked--syntax trees. Typically, clients already have typed
@@ -127,7 +128,7 @@ func Example_buildPackage() {
 }
 
 // This example builds SSA code for a set of packages using the
-// x/tools/go/packages API. This is what you would typically use for a
+// [golang.org/x/tools/go/packages] API. This is what you would typically use for a
 // analysis capable of operating on a single package.
 func Example_loadPackages() {
 	// Load, parse, and type-check the initial packages.
@@ -157,7 +158,7 @@ func Example_loadPackages() {
 }
 
 // This example builds SSA code for a set of packages plus all their dependencies,
-// using the x/tools/go/packages API.
+// using the [golang.org/x/tools/go/packages] API.
 // This is what you'd typically use for a whole-program analysis.
 func Example_loadWholeProgram() {
 	// Load, parse, and type-check the whole program.
