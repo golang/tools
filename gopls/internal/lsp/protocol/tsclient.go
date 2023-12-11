@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/jsonrpc2"
 )
 
@@ -41,6 +42,12 @@ type Client interface {
 }
 
 func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
+	defer func() {
+		if x := recover(); x != nil {
+			bug.Reportf("client panic in %s request", r.Method())
+			panic(x)
+		}
+	}()
 	switch r.Method() {
 	case "$/logTrace":
 		var params LogTraceParams

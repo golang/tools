@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/jsonrpc2"
 )
 
@@ -95,6 +96,12 @@ type Server interface {
 }
 
 func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
+	defer func() {
+		if x := recover(); x != nil {
+			bug.Reportf("server panic in %s request", r.Method())
+			panic(x)
+		}
+	}()
 	switch r.Method() {
 	case "$/progress":
 		var params ProgressParams
