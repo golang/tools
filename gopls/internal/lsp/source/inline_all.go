@@ -113,7 +113,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 		}
 		start, end, err := pgf.RangePos(ref.Range)
 		if err != nil {
-			return nil, bug.Errorf("RangePos(ref): %v", err)
+			return nil, err // e.g. invalid range
 		}
 
 		// Look for the surrounding call expression.

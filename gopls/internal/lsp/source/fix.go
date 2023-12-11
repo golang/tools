@@ -165,7 +165,7 @@ func addEmbedImport(ctx context.Context, snapshot *cache.Snapshot, fh file.Handl
 	for _, e := range protoEdits {
 		start, end, err := pgf.RangePos(e.Range)
 		if err != nil {
-			return nil, fmt.Errorf("map range: %w", err)
+			return nil, err // e.g. invalid range
 		}
 		edits = append(edits, analysis.TextEdit{
 			Pos:     start,

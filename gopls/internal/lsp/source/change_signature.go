@@ -55,9 +55,9 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		return nil, fmt.Errorf("can't change signatures for packages with parse or type errors: (e.g. %s)", sample)
 	}
 
-	info := FindParam(pgf, rng)
-	if info.Decl == nil {
-		return nil, fmt.Errorf("failed to find declaration")
+	info, err := FindParam(pgf, rng)
+	if err != nil {
+		return nil, err // e.g. invalid range
 	}
 	if info.Decl.Recv != nil {
 		return nil, fmt.Errorf("can't change signature of methods (yet)")
@@ -242,20 +242,18 @@ func rewriteSignature(fset *token.FileSet, declIdx int, src0 []byte, newDecl *as
 
 // ParamInfo records information about a param identified by a position.
 type ParamInfo struct {
-	Decl       *ast.FuncDecl // enclosing func decl, or nil
+	Decl       *ast.FuncDecl // enclosing func decl (non-nil)
 	FieldIndex int           // index of Field in Decl.Type.Params, or -1
-	Field      *ast.Field    // enclosing field of Decl, or nil
+	Field      *ast.Field    // enclosing field of Decl, or nil if range not among parameters
 	NameIndex  int           // index of Name in Field.Names, or nil
 	Name       *ast.Ident    // indicated name (either enclosing, or Field.Names[0] if len(Field.Names) == 1)
 }
 
 // FindParam finds the parameter information spanned by the given range.
-func FindParam(pgf *ParsedGoFile, rng protocol.Range) ParamInfo {
-	info := ParamInfo{FieldIndex: -1, NameIndex: -1}
+func FindParam(pgf *ParsedGoFile, rng protocol.Range) (*ParamInfo, error) {
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
-		bug.Reportf("(file=%v).RangePos(%v) failed: %v", pgf.URI, rng, err)
-		return info
+		return nil, err
 	}
 
 	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
@@ -278,9 +276,13 @@ func FindParam(pgf *ParsedGoFile, rng protocol.Range) ParamInfo {
 	}
 	// Check the conditions described in the docstring.
 	if decl == nil {
-		return info
+		return nil, fmt.Errorf("range is not within a function declaration")
 	}
-	info.Decl = decl
+	info := &ParamInfo{
+		FieldIndex: -1,
+		NameIndex:  -1,
+		Decl:       decl,
+	}
 	for fi, f := range decl.Type.Params.List {
 		if f == field {
 			info.FieldIndex = fi
@@ -299,7 +301,7 @@ func FindParam(pgf *ParsedGoFile, rng protocol.Range) ParamInfo {
 			break
 		}
 	}
-	return info
+	return info, nil
 }
 
 // signatureRewrite defines a rewritten function signature.

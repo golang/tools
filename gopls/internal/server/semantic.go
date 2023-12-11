@@ -97,7 +97,7 @@ func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIde
 		var err error
 		start, end, err = pgf.RangePos(*rng)
 		if err != nil {
-			return nil, fmt.Errorf("range span (%w) error for %s", err, pgf.File.Name)
+			return nil, err // e.g. invalid range
 		}
 	} else {
 		tok := pgf.Tok

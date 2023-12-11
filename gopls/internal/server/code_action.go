@@ -543,15 +543,16 @@ func refactorRewrite(snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.P
 //   - [start, end) is contained within an unused field or parameter name
 //   - ... of a non-method function declaration.
 func canRemoveParameter(pkg *cache.Package, pgf *source.ParsedGoFile, rng protocol.Range) bool {
-	info := source.FindParam(pgf, rng)
-	if info.Decl == nil || info.Field == nil {
-		return false
+	info, err := source.FindParam(pgf, rng)
+	if err != nil {
+		return false // e.g. invalid range
 	}
-
+	if info.Field == nil {
+		return false // range does not span a parameter
+	}
 	if info.Decl.Body == nil {
 		return false // external function
 	}
-
 	if len(info.Field.Names) == 0 {
 		return true // no names => field is unused
 	}
