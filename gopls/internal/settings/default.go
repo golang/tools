@@ -62,7 +62,6 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 			UserOptions: UserOptions{
 				BuildOptions: BuildOptions{
 					ExpandWorkspaceToModule: true,
-					MemoryMode:              ModeNormal,
 					DirectoryFilters:        []string{"-**/node_modules"},
 					TemplateExtensions:      []string{},
 					StandaloneTags:          []string{"ignore"},

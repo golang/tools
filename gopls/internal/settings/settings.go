@@ -175,11 +175,8 @@ type BuildOptions struct {
 	// is the part of the file name after the final dot.)
 	TemplateExtensions []string
 
-	// MemoryMode controls the tradeoff `gopls` makes between memory usage and
-	// correctness.
-	//
-	// Values other than `Normal` are untested and may break in surprising ways.
-	MemoryMode MemoryMode `status:"experimental"`
+	// obsolete, no effect
+	MemoryMode string `status:"experimental"`
 
 	// ExpandWorkspaceToModule instructs `gopls` to adjust the scope of the
 	// workspace to find the best available module root. `gopls` first looks for
@@ -661,16 +658,6 @@ const (
 	Structured HoverKind = "Structured"
 )
 
-type MemoryMode string
-
-const (
-	ModeNormal MemoryMode = "Normal"
-	// In DegradeClosed mode, `gopls` will collect less information about
-	// packages without open files. As a result, features like Find
-	// References and Rename will miss results in such packages.
-	ModeDegradeClosed MemoryMode = "DegradeClosed"
-)
-
 type VulncheckMode string
 
 const (
@@ -941,12 +928,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		o.DirectoryFilters = filters
 
 	case "memoryMode":
-		if s, ok := result.asOneOf(
-			string(ModeNormal),
-			string(ModeDegradeClosed),
-		); ok {
-			o.MemoryMode = MemoryMode(s)
-		}
+		result.deprecated("")
 	case "completionDocumentation":
 		result.setBool(&o.CompletionDocumentation)
 	case "usePlaceholders":

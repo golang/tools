@@ -34,17 +34,10 @@ var GeneratedAPIJSON = &APIJSON{
 				Hierarchy: "build",
 			},
 			{
-				Name: "memoryMode",
-				Type: "enum",
-				Doc:  "memoryMode controls the tradeoff `gopls` makes between memory usage and\ncorrectness.\n\nValues other than `Normal` are untested and may break in surprising ways.\n",
-				EnumValues: []EnumValue{
-					{
-						Value: "\"DegradeClosed\"",
-						Doc:   "`\"DegradeClosed\"`: In DegradeClosed mode, `gopls` will collect less information about\npackages without open files. As a result, features like Find\nReferences and Rename will miss results in such packages.\n",
-					},
-					{Value: "\"Normal\""},
-				},
-				Default:   "\"Normal\"",
+				Name:      "memoryMode",
+				Type:      "string",
+				Doc:       "obsolete, no effect\n",
+				Default:   "\"\"",
 				Status:    "experimental",
 				Hierarchy: "build",
 			},

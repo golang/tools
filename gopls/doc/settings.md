@@ -85,23 +85,13 @@ is the part of the file name after the final dot.)
 
 Default: `[]`.
 
-#### **memoryMode** *enum*
+#### **memoryMode** *string*
 
 **This setting is experimental and may be deleted.**
 
-memoryMode controls the tradeoff `gopls` makes between memory usage and
-correctness.
+obsolete, no effect
 
-Values other than `Normal` are untested and may break in surprising ways.
-
-Must be one of:
-
-* `"DegradeClosed"`: In DegradeClosed mode, `gopls` will collect less information about
-packages without open files. As a result, features like Find
-References and Rename will miss results in such packages.
-* `"Normal"`
-
-Default: `"Normal"`.
+Default: `""`.
 
 #### **expandWorkspaceToModule** *bool*
 
