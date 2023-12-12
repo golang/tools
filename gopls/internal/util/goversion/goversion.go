@@ -14,8 +14,17 @@ import (
 //
 // Exposed for testing.
 type Support struct {
-	GoVersion           int
-	DeprecatedVersion   string // if unset, the version is already deprecated
+	// GoVersion is the Go version to which these settings relate.
+	GoVersion int
+
+	// DeprecatedVersion is the first version of gopls that no longer supports
+	// this Go version.
+	//
+	// If unset, the version is already deprecated.
+	DeprecatedVersion string
+
+	// InstallGoplsVersion is the latest gopls version that supports this Go
+	// version without warnings.
 	InstallGoplsVersion string
 }
 
@@ -29,12 +38,15 @@ type Support struct {
 var Supported = []Support{
 	{12, "", "v0.7.5"},
 	{15, "", "v0.9.5"},
-	{16, "v0.13.0", "v0.11.0"},
-	{17, "v0.13.0", "v0.11.0"},
+	{16, "", "v0.11.0"},
+	{17, "", "v0.11.0"},
+	{18, "v0.16.0", "v0.14.2"},
 }
 
 // OldestSupported is the last X in Go 1.X that this version of gopls
-// supports.
+// supports without warnings.
+//
+// Exported for testing.
 func OldestSupported() int {
 	return Supported[len(Supported)-1].GoVersion + 1
 }

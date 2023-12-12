@@ -5,6 +5,7 @@
 package goversion_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -12,6 +13,33 @@ import (
 )
 
 func TestMessage(t *testing.T) {
+	// Note(rfindley): this test is a change detector, as it must be updated
+	// whenever we deprecate a version.
+	//
+	// However, I chose to leave it as is since it gives us confidence in error
+	// messages served for Go versions that we no longer support (and therefore
+	// no longer run in CI).
+	type test struct {
+		goVersion    int
+		fromBuild    bool
+		wantContains []string // string fragments that we expect to see
+		wantIsError  bool     // an error, not a mere warning
+	}
+
+	deprecated := func(goVersion int, lastVersion string) test {
+		return test{
+			goVersion: goVersion,
+			fromBuild: false,
+			wantContains: []string{
+				fmt.Sprintf("Found Go version 1.%d", goVersion),
+				"not supported",
+				fmt.Sprintf("upgrade to Go 1.%d", goversion.OldestSupported()),
+				fmt.Sprintf("install gopls %s", lastVersion),
+			},
+			wantIsError: true,
+		}
+	}
+
 	tests := []struct {
 		goVersion    int
 		fromBuild    bool
@@ -19,13 +47,13 @@ func TestMessage(t *testing.T) {
 		wantIsError  bool     // an error, not a mere warning
 	}{
 		{-1, false, nil, false},
-		{12, false, []string{"1.12", "not supported", "upgrade to Go 1.18", "install gopls v0.7.5"}, true},
-		{13, false, []string{"1.13", "not supported", "upgrade to Go 1.18", "install gopls v0.9.5"}, true},
-		{15, false, []string{"1.15", "not supported", "upgrade to Go 1.18", "install gopls v0.9.5"}, true},
-		{15, true, []string{"Gopls was built with Go version 1.15", "not supported", "upgrade to Go 1.18", "install gopls v0.9.5"}, true},
-		{16, false, []string{"1.16", "will be unsupported by gopls v0.13.0", "upgrade to Go 1.18", "install gopls v0.11.0"}, false},
-		{17, false, []string{"1.17", "will be unsupported by gopls v0.13.0", "upgrade to Go 1.18", "install gopls v0.11.0"}, false},
-		{17, true, []string{"Gopls was built with Go version 1.17", "will be unsupported by gopls v0.13.0", "upgrade to Go 1.18", "install gopls v0.11.0"}, false},
+		deprecated(12, "v0.7.5"),
+		deprecated(13, "v0.9.5"),
+		deprecated(15, "v0.9.5"),
+		deprecated(16, "v0.11.0"),
+		deprecated(17, "v0.11.0"),
+		{18, false, []string{"Found Go version 1.18", "unsupported by gopls v0.16.0", "upgrade to Go 1.19", "install gopls v0.14.2"}, false},
+		{18, true, []string{"Gopls was built with Go version 1.18", "unsupported by gopls v0.16.0", "upgrade to Go 1.19", "install gopls v0.14.2"}, false},
 	}
 
 	for _, test := range tests {
