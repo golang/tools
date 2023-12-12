@@ -558,3 +558,17 @@ func _[T any]() {
 +	_ = S{
 +		t: *new(T),
 +	} //@codeactionedit("}", "refactor.rewrite", typeparams5)
+-- issue63921.go --
+package fillstruct
+
+// Test for golang/go#63921: fillstruct panicked with invalid fields.
+type invalidStruct struct {
+  F int
+  Undefined
+}
+
+func _() {
+  // Note: the golden content for issue63921 is empty: fillstruct produces no
+  // edits, but does not panic.
+  invalidStruct{} //@codeactionedit("}", "refactor.rewrite", issue63921)
+}
