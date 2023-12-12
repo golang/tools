@@ -50,6 +50,11 @@ func (c *completer) structFieldSnippet(cand candidate, detail string, snip *snip
 }
 
 // functionCallSnippet calculates the snippet for function calls.
+//
+// Callers should omit the suffix of type parameters that are
+// constrained by the argument types, to avoid offering completions
+// that contain instantiations that are redundant because of type
+// inference, such as f[int](1) for func f[T any](x T).
 func (c *completer) functionCallSnippet(name string, tparams, params []string, snip *snippet.Builder) {
 	if !c.opts.completeFunctionCalls {
 		snip.WriteText(name)

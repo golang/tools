@@ -377,6 +377,7 @@ func (c *completer) getSurrounding() *Selection {
 type candidate struct {
 	// obj is the types.Object to complete to.
 	// TODO(adonovan): eliminate dependence on go/types throughout this struct.
+	// See comment in (*completer).selector for explanation.
 	obj types.Object
 
 	// score is used to rank candidates.
@@ -1347,6 +1348,11 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 					return params
 				}
 
+				// Ideally we would eliminate the suffix of type
+				// parameters that are redundant with inference
+				// from the argument types (#51783), but it's
+				// quite fiddly to do using syntax alone.
+				// (See inferableTypeParams in format.go.)
 				tparams := paramList(fn.Type.TypeParams)
 				params := paramList(fn.Type.Params)
 				var sn snippet.Builder

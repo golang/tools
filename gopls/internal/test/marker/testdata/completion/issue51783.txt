@@ -1,0 +1,47 @@
+Regression test for "completion gives unneeded generic type
+instantiation snippet", #51783.
+
+Type parameters that can be inferred from the arguments
+are not part of the offered completion snippet.
+
+-- flags --
+-ignore_extra_diags
+
+-- a.go --
+package a
+
+// identity has a single simple type parameter.
+// The completion omits the instantiation.
+func identity[T any](x T) T
+
+// clone has a second type parameter that is nonetheless constrained by the parameter.
+// The completion omits the instantiation.
+func clone[S ~[]E, E any](s S) S
+
+// unconstrained has a type parameter constrained only by the result.
+// The completion suggests instantiation.
+func unconstrained[X, Y any](x X) Y
+
+// partial has three type parameters,
+// only the last two of which may be omitted as they
+// are constrained by the arguments.
+func partial[R any, S ~[]E, E any](s S) R
+
+//@item(identity, "identity", "details", "kind")
+//@item(clone, "clone", "details", "kind")
+//@item(unconstrained, "unconstrained", "details", "kind")
+//@item(partial, "partial", "details", "kind")
+
+func _() {
+	_ = identity //@snippet("identity", identity, "identity(${1:})")
+
+	_ = clone //@snippet("clone", clone, "clone(${1:})")
+
+	_ = unconstrained //@snippet("unconstrained", unconstrained, "unconstrained[${1:}](${2:})")
+
+	_ = partial //@snippet("partial", partial, "partial[${1:}](${2:})")
+
+	// Result-type inference permits us to omit Y in this (rare) case,
+	// but completion doesn't support that.
+	var _ int = unconstrained //@snippet("unconstrained", unconstrained, "unconstrained[${1:}](${2:})")
+}
