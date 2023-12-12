@@ -13,7 +13,6 @@ import (
 	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func TestVTACallGraph(t *testing.T) {
@@ -119,10 +118,6 @@ func TestVTAPanicMissingDefinitions(t *testing.T) {
 }
 
 func TestVTACallGraphGenerics(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestVTACallGraphGenerics requires type parameters")
-	}
-
 	// TODO(zpavlinovic): add more tests
 	files := []string{
 		"testdata/src/arrays_generics.go",

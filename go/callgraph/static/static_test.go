@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 const input = `package P
@@ -99,12 +98,6 @@ func TestStatic(t *testing.T) {
 			"instantiated[P.B] -> (B).F",
 		}, true},
 	} {
-		if e.typeparams && !typeparams.Enabled {
-			// Skip tests with type parameters when the build
-			// environment is not supporting any.
-			continue
-		}
-
 		conf := loader.Config{ParserMode: parser.ParseComments}
 		f, err := conf.ParseFile("P.go", e.input)
 		if err != nil {

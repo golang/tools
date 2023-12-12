@@ -9,14 +9,9 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	tests := []string{"a"}
-	if typeparams.Enabled {
-		tests = append(tests, "typeparams")
-	}
-	analysistest.Run(t, testdata, fillstruct.Analyzer, tests...)
+	analysistest.Run(t, testdata, fillstruct.Analyzer, "a", "typeparams")
 }

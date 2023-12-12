@@ -13,7 +13,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func TestBadURICrash_VSCodeIssue1498(t *testing.T) {
@@ -109,9 +108,6 @@ func Add[T int](target T, l []T) []T {
 // fix inconsistency in TypeParameters
 // https://github.com/golang/go/issues/57619
 func TestSemantic_57619(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("type parameters are needed for this test")
-	}
 	src := `
 -- go.mod --
 module example.com

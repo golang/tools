@@ -178,10 +178,6 @@ func TestMap(t *testing.T) {
 }
 
 func TestMapGenerics(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("type params are not enabled at this Go version")
-	}
-
 	const src = `
 package p
 

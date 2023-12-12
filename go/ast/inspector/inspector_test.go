@@ -72,10 +72,6 @@ func TestInspectAllNodes(t *testing.T) {
 }
 
 func TestInspectGenericNodes(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("type parameters are not supported at this Go version")
-	}
-
 	// src is using the 16 identifiers i0, i1, ... i15 so
 	// we can easily verify that we've found all of them.
 	const src = `package a

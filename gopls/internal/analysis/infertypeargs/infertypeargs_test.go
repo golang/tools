@@ -9,13 +9,9 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/gopls/internal/analysis/infertypeargs"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func Test(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("type params are not enabled")
-	}
 	testdata := analysistest.TestData()
 	analysistest.RunWithSuggestedFixes(t, testdata, infertypeargs.Analyzer, "a")
 }

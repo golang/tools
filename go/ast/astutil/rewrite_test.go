@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 type rewriteTest struct {
@@ -191,13 +190,9 @@ var z int
 			return true
 		},
 	},
-}
-
-func init() {
-	if typeparams.Enabled {
-		rewriteTests = append(rewriteTests, rewriteTest{
-			name: "replace",
-			orig: `package p
+	{
+		name: "replace",
+		orig: `package p
 
 type T[P1, P2 any] int
 
@@ -205,9 +200,9 @@ type R T[int, string]
 
 func F[Q1 any](q Q1) {}
 `,
-			// TODO: note how the rewrite adds a trailing comma in "func F".
-			// Is that a bug in the test, or in astutil.Apply?
-			want: `package p
+		// TODO: note how the rewrite adds a trailing comma in "func F".
+		// Is that a bug in the test, or in astutil.Apply?
+		want: `package p
 
 type S[R1, P2 any] int32
 
@@ -215,23 +210,22 @@ type R S[int32, string]
 
 func F[X1 any](q X1,) {}
 `,
-			post: func(c *astutil.Cursor) bool {
-				if ident, ok := c.Node().(*ast.Ident); ok {
-					switch ident.Name {
-					case "int":
-						c.Replace(ast.NewIdent("int32"))
-					case "T":
-						c.Replace(ast.NewIdent("S"))
-					case "P1":
-						c.Replace(ast.NewIdent("R1"))
-					case "Q1":
-						c.Replace(ast.NewIdent("X1"))
-					}
+		post: func(c *astutil.Cursor) bool {
+			if ident, ok := c.Node().(*ast.Ident); ok {
+				switch ident.Name {
+				case "int":
+					c.Replace(ast.NewIdent("int32"))
+				case "T":
+					c.Replace(ast.NewIdent("S"))
+				case "P1":
+					c.Replace(ast.NewIdent("R1"))
+				case "Q1":
+					c.Replace(ast.NewIdent("X1"))
 				}
-				return true
-			},
-		})
-	}
+			}
+			return true
+		},
+	},
 }
 
 func valspec(name, typ string) *ast.ValueSpec {

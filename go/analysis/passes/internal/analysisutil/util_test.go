@@ -12,13 +12,9 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func TestHasSideEffects(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("type parameters are not enabled")
-	}
 	src := `package p
 
 type T int

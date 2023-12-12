@@ -68,9 +68,6 @@ func TestStaticCallee(t *testing.T) {
 }
 
 func TestTypeParamStaticCallee(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("type parameters are not enabled")
-	}
 	testStaticCallee(t, []string{
 		`package q
 		func R[T any]() {}

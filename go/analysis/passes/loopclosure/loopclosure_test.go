@@ -13,17 +13,13 @@ import (
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/loopclosure"
 	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/txtar"
 )
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	tests := []string{"a", "golang.org/...", "subtests"}
-	if typeparams.Enabled {
-		tests = append(tests, "typeparams")
-	}
-	analysistest.Run(t, testdata, loopclosure.Analyzer, tests...)
+	analysistest.Run(t, testdata, loopclosure.Analyzer,
+		"a", "golang.org/...", "subtests", "typeparams")
 }
 
 func TestVersions22(t *testing.T) {

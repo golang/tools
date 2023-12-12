@@ -20,7 +20,6 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/facts"
 	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 type myFact struct {
@@ -250,9 +249,6 @@ func TestEncodeDecode(t *testing.T) {
 		test := tests[i]
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			if test.typeparams && !typeparams.Enabled {
-				t.Skip("type parameters are not enabled")
-			}
 			testEncodeDecode(t, test.files, test.plookups)
 		})
 	}
@@ -444,9 +440,6 @@ func TestFactFilter(t *testing.T) {
 // happen when Analyzers have RunDespiteErrors set to true. So this
 // needs to robust, e.g. no infinite loops.
 func TestMalformed(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("type parameters are not enabled")
-	}
 	var findPkg func(*types.Package, string) *types.Package
 	findPkg = func(p *types.Package, name string) *types.Package {
 		if p.Name() == name {

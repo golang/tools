@@ -12,14 +12,9 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/errorsas"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	tests := []string{"a"}
-	if typeparams.Enabled {
-		tests = append(tests, "typeparams")
-	}
-	analysistest.Run(t, testdata, errorsas.Analyzer, tests...)
+	analysistest.Run(t, testdata, errorsas.Analyzer, "a", "typeparams")
 }

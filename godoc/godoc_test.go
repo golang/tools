@@ -10,8 +10,6 @@ import (
 	"go/token"
 	"strings"
 	"testing"
-
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func TestPkgLinkFunc(t *testing.T) {
@@ -372,10 +370,6 @@ func TestFilterOutBuildAnnotations(t *testing.T) {
 }
 
 func TestLinkifyGenerics(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("type params are not enabled at this Go version")
-	}
-
 	got := linkifySource(t, []byte(`
 package foo
 

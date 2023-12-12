@@ -8,15 +8,9 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	tests := []string{"a"}
-	if typeparams.Enabled {
-		tests = append(tests)
-	}
-
-	analysistest.RunWithSuggestedFixes(t, testdata, Analyzer, tests...)
+	analysistest.RunWithSuggestedFixes(t, testdata, Analyzer, "a")
 }

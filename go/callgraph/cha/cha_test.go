@@ -26,7 +26,6 @@ import (
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 var inputs = []string{
@@ -74,10 +73,6 @@ func TestCHA(t *testing.T) {
 
 // TestCHAGenerics is TestCHA tailored for testing generics,
 func TestCHAGenerics(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestCHAGenerics requires type parameters")
-	}
-
 	filename := "testdata/generics.go"
 	prog, f, mainPkg, err := loadProgInfo(filename, ssa.InstantiateGenerics)
 	if err != nil {

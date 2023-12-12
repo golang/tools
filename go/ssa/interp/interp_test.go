@@ -38,7 +38,6 @@ import (
 	"golang.org/x/tools/go/ssa/interp"
 	"golang.org/x/tools/go/ssa/ssautil"
 	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // Each line contains a space-separated list of $GOROOT/test/
@@ -135,19 +134,15 @@ var testdataTests = []string{
 	"static.go",
 	"width32.go",
 	"rangevarlifetime_old.go",
-
 	"fixedbugs/issue52342.go",
 	"fixedbugs/issue55115.go",
+	"fixedbugs/issue52835.go",
+	"fixedbugs/issue55086.go",
+	"typeassert.go",
+	"zeros.go",
 }
 
 func init() {
-	if typeparams.Enabled {
-		testdataTests = append(testdataTests, "fixedbugs/issue52835.go")
-		testdataTests = append(testdataTests, "fixedbugs/issue55086.go")
-		testdataTests = append(testdataTests, "typeassert.go")
-		testdataTests = append(testdataTests, "zeros.go")
-	}
-
 	// GOROOT/test used to assume that GOOS and GOARCH were explicitly set in the
 	// environment, so do that here for TestGorootTest.
 	os.Setenv("GOOS", runtime.GOOS)
@@ -315,9 +310,6 @@ func TestGorootTest(t *testing.T) {
 // in $GOROOT/test/typeparam/*.go.
 
 func TestTypeparamTest(t *testing.T) {
-	if !typeparams.Enabled {
-		return
-	}
 	goroot := makeGoroot(t)
 
 	// Skip known failures for the given reason.

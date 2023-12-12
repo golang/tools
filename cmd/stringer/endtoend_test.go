@@ -23,7 +23,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // This file contains a test that compiles and runs each program in testdata
@@ -61,9 +60,6 @@ func TestEndToEnd(t *testing.T) {
 	names, err := fd.Readdirnames(-1)
 	if err != nil {
 		t.Fatalf("Readdirnames: %s", err)
-	}
-	if typeparams.Enabled {
-		names = append(names, moreTests(t, "testdata/typeparams", "typeparams")...)
 	}
 	// Generate, compile, and run the test programs.
 	for _, name := range names {

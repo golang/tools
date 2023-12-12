@@ -15,10 +15,6 @@ import (
 )
 
 func TestCoreType(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestCoreType requires type parameters.")
-	}
-
 	const source = `
 	package P
 

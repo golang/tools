@@ -18,10 +18,6 @@ import (
 )
 
 func TestStructuralTerms(t *testing.T) {
-	if !Enabled {
-		t.Skip("typeparams are not enabled")
-	}
-
 	// In the following tests, src must define a type T with (at least) one type
 	// parameter. We will compute the structural terms of the first type
 	// parameter.

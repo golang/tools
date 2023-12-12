@@ -15,7 +15,6 @@ import (
 	"text/template"
 
 	"golang.org/x/tools/godoc/vfs/mapfs"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // TestIgnoredGoFiles tests the scenario where a folder has no .go or .c files,
@@ -133,10 +132,6 @@ func TestMarkdown(t *testing.T) {
 }
 
 func TestGenerics(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("type params are not enabled at this Go version")
-	}
-
 	c := NewCorpus(mapfs.New(map[string]string{
 		"blah/blah.go": `package blah
 

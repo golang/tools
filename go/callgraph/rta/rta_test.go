@@ -23,7 +23,6 @@ import (
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // TestRTA runs RTA on each testdata/*.go file and compares the
@@ -38,10 +37,6 @@ func TestRTA(t *testing.T) {
 	}
 	for _, filename := range filenames {
 		t.Run(filename, func(t *testing.T) {
-			if !typeparams.Enabled && strings.HasSuffix(filename, "generics.go") {
-				t.Skip("TestRTAGenerics requires type parameters")
-			}
-
 			// Load main program and build SSA.
 			// TODO(adonovan): use go/packages instead.
 			conf := loader.Config{ParserMode: parser.ParseComments}

@@ -9,18 +9,14 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/tests"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	pkgs := []string{
+	analysistest.Run(t, testdata, tests.Analyzer,
 		"a",        // loads "a", "a [a.test]", and "a.test"
 		"b_x_test", // loads "b" and "b_x_test"
 		"divergent",
-	}
-	if typeparams.Enabled {
-		pkgs = append(pkgs, "typeparams")
-	}
-	analysistest.Run(t, testdata, tests.Analyzer, pkgs...)
+		"typeparams",
+	)
 }

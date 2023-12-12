@@ -9,14 +9,9 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/gopls/internal/analysis/nonewvars"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	tests := []string{"a"}
-	if typeparams.Enabled {
-		tests = append(tests, "typeparams")
-	}
-	analysistest.RunWithSuggestedFixes(t, testdata, nonewvars.Analyzer, tests...)
+	analysistest.RunWithSuggestedFixes(t, testdata, nonewvars.Analyzer, "a", "typeparams")
 }

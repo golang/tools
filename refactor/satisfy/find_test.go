@@ -23,10 +23,6 @@ import (
 // This test exercises various operations on core types of type parameters.
 // (It also provides pretty decent coverage of the non-generic operations.)
 func TestGenericCoreOperations(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("!typeparams.Enabled")
-	}
-
 	const src = `package foo
 
 import "unsafe"
