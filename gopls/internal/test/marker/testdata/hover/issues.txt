@@ -1,0 +1,22 @@
+This test verifies fixes for various issues reported for hover.
+
+-- go.mod --
+module golang.org/lsptests
+
+-- issue64239/p.go --
+package issue64239
+
+// golang/go#64239: hover fails for objects in the unsafe package.
+
+import "unsafe"
+
+var _ = unsafe.Sizeof(struct{}{}) //@hover("Sizeof", "Sizeof", "`Sizeof` on pkg.go.dev")
+
+-- issue64237/p.go --
+package issue64237
+
+// golang/go#64237: hover panics for broken imports.
+
+import "golang.org/lsptests/nonexistant" //@diag("\"golang", re"could not import")
+
+var _ = nonexistant.Value //@hovererr("nonexistant", "no package data")

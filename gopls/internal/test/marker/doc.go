@@ -151,18 +151,18 @@ The following markers are supported within marker tests:
     TODO(adonovan): in the older marker framework, the annotation asserted
     two additional fields (source="compiler", kind="error"). Restore them?
 
-  - def(src, dst location): perform a textDocument/definition request at
+  - def(src, dst location): performs a textDocument/definition request at
     the src location, and check the result points to the dst location.
 
   - documentLink(golden): asserts that textDocument/documentLink returns
     links as described by the golden file.
 
-  - foldingrange(golden): perform a textDocument/foldingRange for the
+  - foldingrange(golden): performs a textDocument/foldingRange for the
     current document, and compare with the golden content, which is the
     original source annotated with numbered tags delimiting the resulting
     ranges (e.g. <1 kind="..."> ... </1>).
 
-  - format(golden): perform a textDocument/format request for the enclosing
+  - format(golden): performs a textDocument/format request for the enclosing
     file, and compare against the named golden file. If the formatting
     request succeeds, the golden file must contain the resulting formatted
     source. If the formatting request fails, the golden file must contain
@@ -172,9 +172,12 @@ The following markers are supported within marker tests:
     textDocument/highlight request at the given src location, which should
     highlight the provided dst locations.
 
-  - hover(src, dst location, sm stringMatcher): perform a
-    textDocument/hover at the src location, and checks that the result is
-    the dst location, with matching hover content.
+  - hover(src, dst location, sm stringMatcher): performs a textDocument/hover
+    at the src location, and checks that the result is the dst location, with
+    matching hover content.
+
+  - hovererr(src, sm stringMatcher): performs a textDocument/hover at the src
+    location, and checks that the error matches the given stringMatcher.
 
   - implementations(src location, want ...location): makes a
     textDocument/implementation query at the src location and

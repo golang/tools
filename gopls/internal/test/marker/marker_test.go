@@ -232,6 +232,9 @@ func (m marker) ctx() context.Context { return m.run.env.Ctx }
 func (m marker) T() testing.TB { return m.run.env.T }
 
 // server returns the LSP server for the marker test run.
+func (m marker) editor() *fake.Editor { return m.run.env.Editor }
+
+// server returns the LSP server for the marker test run.
 func (m marker) server() protocol.Server { return m.run.env.Editor.Server }
 
 // uri returns the URI of the file containing the marker.
@@ -251,7 +254,7 @@ func (mark marker) path() string {
 
 // mapper returns a *protocol.Mapper for the current file.
 func (mark marker) mapper() *protocol.Mapper {
-	mapper, err := mark.run.env.Editor.Mapper(mark.path())
+	mapper, err := mark.editor().Mapper(mark.path())
 	if err != nil {
 		mark.T().Fatalf("failed to get mapper for current mark: %v", err)
 	}
@@ -418,6 +421,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"format":           actionMarkerFunc(formatMarker),
 	"highlight":        actionMarkerFunc(highlightMarker),
 	"hover":            actionMarkerFunc(hoverMarker),
+	"hovererr":         actionMarkerFunc(hoverErrMarker),
 	"implementation":   actionMarkerFunc(implementationMarker),
 	"incomingcalls":    actionMarkerFunc(incomingCallsMarker),
 	"inlayhints":       actionMarkerFunc(inlayhintsMarker),
@@ -1456,10 +1460,6 @@ func highlightMarker(mark marker, src protocol.Location, dsts ...protocol.Locati
 	}
 }
 
-// hoverMarker implements the @hover marker, running textDocument/hover at the
-// given src location and asserting that the resulting hover is over the dst
-// location (typically a span surrounding src), and that the markdown content
-// matches the golden content.
 func hoverMarker(mark marker, src, dst protocol.Location, sc stringMatcher) {
 	content, gotDst := mark.run.env.Hover(src)
 	if gotDst != dst {
@@ -1470,6 +1470,11 @@ func hoverMarker(mark marker, src, dst protocol.Location, sc stringMatcher) {
 		gotMD = content.Value
 	}
 	sc.check(mark, gotMD)
+}
+
+func hoverErrMarker(mark marker, src protocol.Location, em stringMatcher) {
+	_, _, err := mark.editor().Hover(mark.ctx(), src)
+	em.checkErr(mark, err)
 }
 
 // locMarker implements the @loc marker. It is executed before other

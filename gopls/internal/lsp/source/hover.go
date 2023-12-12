@@ -273,7 +273,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	{
 		linkMeta = findFileInDeps(snapshot, pkg.Metadata(), declPGF.URI)
 		if linkMeta == nil {
-			return protocol.Range{}, nil, bug.Errorf("no metadata for %s", declPGF.URI)
+			return protocol.Range{}, nil, bug.Errorf("no package data for %s", declPGF.URI)
 		}
 
 		// For package names, we simply link to their imported package.
@@ -283,7 +283,10 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			impID := linkMeta.DepsByPkgPath[PackagePath(pkgName.Imported().Path())]
 			linkMeta = snapshot.Metadata(impID)
 			if linkMeta == nil {
-				return protocol.Range{}, nil, bug.Errorf("no metadata for %s", declPGF.URI)
+				// Broken imports have fake package paths, so it is not a bug if we
+				// don't have metadata. As of writing, there is no way to distinguish
+				// broken imports from a true bug where expected metadata is missing.
+				return protocol.Range{}, nil, fmt.Errorf("no package data for %s", declPGF.URI)
 			}
 		} else {
 			// For all others, check whether the object is in the package scope, or
