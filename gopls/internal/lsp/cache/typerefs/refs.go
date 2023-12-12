@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/frob"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // Encode analyzes the Go syntax trees of a package, constructs a
@@ -365,7 +364,7 @@ func visitFile(file *ast.File, imports map[metadata.ImportPath]*metadata.Package
 			case token.TYPE:
 				for _, spec := range d.Specs {
 					spec := spec.(*ast.TypeSpec)
-					tparams := tparamsMap(typeparams.ForTypeSpec(spec))
+					tparams := tparamsMap(spec.TypeParams)
 					visit(spec.Name, spec, tparams)
 				}
 
@@ -400,7 +399,7 @@ func visitFile(file *ast.File, imports map[metadata.ImportPath]*metadata.Package
 				}
 			} else {
 				// Non-method.
-				tparams := tparamsMap(typeparams.ForFuncType(d.Type))
+				tparams := tparamsMap(d.Type.TypeParams)
 				visit(d.Name, d, tparams)
 			}
 		}
@@ -450,7 +449,7 @@ func visitDeclOrSpec(node ast.Node, f refVisitor) {
 
 	case *ast.TypeSpec:
 		// Skip Doc, Name, and Comment, which do not affect the decl type.
-		if tparams := typeparams.ForTypeSpec(n); tparams != nil {
+		if tparams := n.TypeParams; tparams != nil {
 			visitFieldList(tparams, f)
 		}
 		visitExpr(n.Type, f)
@@ -563,7 +562,7 @@ func visitExpr(expr ast.Expr, f refVisitor) {
 		visitFieldList(n.Fields, f)
 
 	case *ast.FuncType:
-		if tparams := typeparams.ForFuncType(n); tparams != nil {
+		if tparams := n.TypeParams; tparams != nil {
 			visitFieldList(tparams, f)
 		}
 		if n.Params != nil {

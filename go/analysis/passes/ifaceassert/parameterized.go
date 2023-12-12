@@ -95,7 +95,7 @@ func (w *tpWalker) isParameterized(typ types.Type) (res bool) {
 		return w.isParameterized(t.Elem())
 
 	case *types.Named:
-		list := typeparams.NamedTypeArgs(t)
+		list := t.TypeArgs()
 		for i, n := 0, list.Len(); i < n; i++ {
 			if w.isParameterized(list.At(i)) {
 				return true

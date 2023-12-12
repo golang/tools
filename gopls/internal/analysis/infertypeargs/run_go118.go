@@ -40,7 +40,7 @@ func DiagnoseInferableTypeArgs(fset *token.FileSet, inspect *inspector.Inspector
 		}
 
 		// Confirm that instantiation actually occurred at this ident.
-		idata, ok := typeparams.GetInstances(info)[ident]
+		idata, ok := info.Instances[ident]
 		if !ok {
 			return // something went wrong, but fail open
 		}
@@ -64,14 +64,15 @@ func DiagnoseInferableTypeArgs(fset *token.FileSet, inspect *inspector.Inspector
 				Ellipsis: call.Ellipsis,
 				Rparen:   call.Rparen,
 			}
-			info := new(types.Info)
-			typeparams.InitInstanceInfo(info)
+			info := &types.Info{
+				Instances: make(map[*ast.Ident]types.Instance),
+			}
 			versions.InitFileVersions(info)
 			if err := types.CheckExpr(fset, pkg, call.Pos(), newCall, info); err != nil {
 				// Most likely inference failed.
 				break
 			}
-			newIData := typeparams.GetInstances(info)[ident]
+			newIData := info.Instances[ident]
 			newInstance := newIData.Type
 			if !types.Identical(instance, newInstance) {
 				// The inferred result type does not match the original result type, so

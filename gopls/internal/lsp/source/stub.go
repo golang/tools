@@ -27,7 +27,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/tokeninternal"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // stubSuggestedFixFunc returns a suggested fix to declare the missing
@@ -185,7 +184,7 @@ func (%s%s%s) %s%s {
 			iface,
 			star,
 			si.Concrete.Obj().Name(),
-			FormatTypeParams(typeparams.ForNamed(si.Concrete)),
+			FormatTypeParams(si.Concrete.TypeParams()),
 			method.Name(),
 			strings.TrimPrefix(types.TypeString(method.Type(), qual), "func"))
 	}

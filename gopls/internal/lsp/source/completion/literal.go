@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/lsp/source/completion/snippet"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // literal generates composite literal, function literal, and make()
@@ -513,7 +512,7 @@ func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) 
 		named, _ = literalType.(*types.Named)
 	)
 
-	if named != nil && named.Obj() != nil && typeparams.ForNamed(named).Len() > 0 && !c.fullyInstantiated(named) {
+	if named != nil && named.Obj() != nil && named.TypeParams().Len() > 0 && !c.fullyInstantiated(named) {
 		// We are not "fully instantiated" meaning we have type params that must be specified.
 		if pkg := qf(named.Obj().Pkg()); pkg != "" {
 			typeName = pkg + "."
@@ -524,12 +523,12 @@ func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) 
 		snip.WriteText(typeName + "[")
 
 		if c.opts.placeholders {
-			for i := 0; i < typeparams.ForNamed(named).Len(); i++ {
+			for i := 0; i < named.TypeParams().Len(); i++ {
 				if i > 0 {
 					snip.WriteText(", ")
 				}
 				snip.WritePlaceholder(func(snip *snippet.Builder) {
-					snip.WriteText(types.TypeString(typeparams.ForNamed(named).At(i), qf))
+					snip.WriteText(types.TypeString(named.TypeParams().At(i), qf))
 				})
 			}
 		} else {
@@ -549,8 +548,8 @@ func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) 
 // fullyInstantiated reports whether all of t's type params have
 // specified type args.
 func (c *completer) fullyInstantiated(t *types.Named) bool {
-	tps := typeparams.ForNamed(t)
-	tas := typeparams.NamedTypeArgs(t)
+	tps := t.TypeParams()
+	tas := t.TypeArgs()
 
 	if tps.Len() != tas.Len() {
 		return false

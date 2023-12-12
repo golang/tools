@@ -297,7 +297,7 @@ func (h Hasher) hashFor(t types.Type) uint32 {
 		// We should never encounter a generic signature while hashing another
 		// generic signature, but defensively set sigTParams only if h.mask is
 		// unset.
-		tparams := typeparams.ForSignature(t)
+		tparams := t.TypeParams()
 		if h.sigTParams == nil && tparams.Len() != 0 {
 			h = Hasher{
 				// There may be something more efficient than discarding the existing
@@ -354,7 +354,7 @@ func (h Hasher) hashFor(t types.Type) uint32 {
 
 	case *types.Named:
 		hash := h.hashPtr(t.Obj())
-		targs := typeparams.NamedTypeArgs(t)
+		targs := t.TypeArgs()
 		for i := 0; i < targs.Len(); i++ {
 			targ := targs.At(i)
 			hash += 2 * h.Hash(targ)

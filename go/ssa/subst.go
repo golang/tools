@@ -6,8 +6,6 @@ package ssa
 
 import (
 	"go/types"
-
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // Type substituter for a fixed set of replacement types.
@@ -233,12 +231,12 @@ func (subst *subster) union(u *types.Union) *types.Union {
 			}
 		}
 		if out != nil {
-			out[i] = typeparams.NewTerm(t.Tilde(), r)
+			out[i] = types.NewTerm(t.Tilde(), r)
 		}
 	}
 
 	if out != nil {
-		return typeparams.NewUnion(out)
+		return types.NewUnion(out)
 	}
 	return u
 }
@@ -310,7 +308,7 @@ func (subst *subster) named(t *types.Named) types.Type {
 	// (2) locally scoped type,
 	// (3) generic (type parameters but no type arguments), or
 	// (4) instantiated (type parameters and type arguments).
-	tparams := typeparams.ForNamed(t)
+	tparams := t.TypeParams()
 	if tparams.Len() == 0 {
 		if subst.scope != nil && !subst.scope.Contains(t.Obj().Pos()) {
 			// Outside the current function scope?
@@ -344,7 +342,7 @@ func (subst *subster) named(t *types.Named) types.Type {
 		n.SetUnderlying(subst.typ(t.Underlying()))
 		return n
 	}
-	targs := typeparams.NamedTypeArgs(t)
+	targs := t.TypeArgs()
 
 	// insts are arguments to instantiate using.
 	insts := make([]types.Type, tparams.Len())
@@ -367,13 +365,13 @@ func (subst *subster) named(t *types.Named) types.Type {
 		inst := subst.typ(targs.At(i)) // TODO(generic): Check with rfindley for mutual recursion
 		insts[i] = inst
 	}
-	r, err := typeparams.Instantiate(subst.ctxt, typeparams.NamedTypeOrigin(t), insts, false)
+	r, err := types.Instantiate(subst.ctxt, t.Origin(), insts, false)
 	assert(err == nil, "failed to Instantiate Named type")
 	return r
 }
 
 func (subst *subster) signature(t *types.Signature) types.Type {
-	tparams := typeparams.ForSignature(t)
+	tparams := t.TypeParams()
 
 	// We are choosing not to support tparams.Len() > 0 until a need has been observed in practice.
 	//
@@ -398,7 +396,7 @@ func (subst *subster) signature(t *types.Signature) types.Type {
 	params := subst.tuple(t.Params())
 	results := subst.tuple(t.Results())
 	if recv != t.Recv() || params != t.Params() || results != t.Results() {
-		return typeparams.NewSignatureType(recv, nil, nil, params, results, t.Variadic())
+		return types.NewSignatureType(recv, nil, nil, params, results, t.Variadic())
 	}
 	return t
 }

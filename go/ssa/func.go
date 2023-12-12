@@ -14,8 +14,6 @@ import (
 	"io"
 	"os"
 	"strings"
-
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // Like ObjectOf, but panics instead of returning nil.
@@ -45,7 +43,7 @@ func (f *Function) typ(T types.Type) types.Type {
 // If id is an Instance, returns info.Instances[id].Type.
 // Otherwise returns f.typeOf(id).
 func (f *Function) instanceType(id *ast.Ident) types.Type {
-	if t, ok := typeparams.GetInstances(f.info)[id]; ok {
+	if t, ok := f.info.Instances[id]; ok {
 		return t.Type
 	}
 	return f.typeOf(id)

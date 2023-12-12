@@ -45,7 +45,6 @@ import (
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/facts"
 	"golang.org/x/tools/internal/gcimporter"
-	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/versions"
 )
@@ -928,14 +927,14 @@ func (an *analysisNode) typeCheck(parsed []*ParsedGoFile) *analysisPackage {
 		typesInfo: &types.Info{
 			Types:      make(map[ast.Expr]types.TypeAndValue),
 			Defs:       make(map[*ast.Ident]types.Object),
-			Uses:       make(map[*ast.Ident]types.Object),
+			Instances:  make(map[*ast.Ident]types.Instance),
 			Implicits:  make(map[ast.Node]types.Object),
 			Selections: make(map[*ast.SelectorExpr]*types.Selection),
 			Scopes:     make(map[ast.Node]*types.Scope),
+			Uses:       make(map[*ast.Ident]types.Object),
 		},
 		typesSizes: mp.TypesSizes,
 	}
-	typeparams.InitInstanceInfo(pkg.typesInfo)
 	versions.InitFileVersions(pkg.typesInfo)
 
 	// Unsafe has no syntax.

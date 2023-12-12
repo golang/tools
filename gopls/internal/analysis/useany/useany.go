@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 const Doc = `check for constraints that could be simplified to "any"`
@@ -42,9 +41,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		var tparams *ast.FieldList
 		switch node := node.(type) {
 		case *ast.TypeSpec:
-			tparams = typeparams.ForTypeSpec(node)
+			tparams = node.TypeParams
 		case *ast.FuncType:
-			tparams = typeparams.ForFuncType(node)
+			tparams = node.TypeParams
 		default:
 			panic(fmt.Sprintf("unexpected node type %T", node))
 		}

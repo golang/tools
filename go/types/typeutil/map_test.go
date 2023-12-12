@@ -17,7 +17,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 var (
@@ -280,8 +279,8 @@ var Issue56048b = Issue56048_Ib.m
 		U       = CI.EmbeddedType(0).(*types.Union)
 		Fa1     = scope.Lookup("Fa1").Type().(*types.Signature)
 		Fa2     = scope.Lookup("Fa2").Type().(*types.Signature)
-		Fa1P    = typeparams.ForSignature(Fa1).At(0)
-		Fa2Q    = typeparams.ForSignature(Fa2).At(0)
+		Fa1P    = Fa1.TypeParams().At(0)
+		Fa2Q    = Fa2.TypeParams().At(0)
 		Fb1     = scope.Lookup("Fb1").Type().(*types.Signature)
 		Fb1x    = Fb1.Params().At(0).Type()
 		Fb1y    = scope.Lookup("Fb1").(*types.Func).Scope().Lookup("y").Type()
@@ -392,7 +391,7 @@ var Issue56048b = Issue56048_Ib.m
 }
 
 func instantiate(t *testing.T, origin types.Type, targs ...types.Type) types.Type {
-	inst, err := typeparams.Instantiate(nil, origin, targs, true)
+	inst, err := types.Instantiate(nil, origin, targs, true)
 	if err != nil {
 		t.Fatal(err)
 	}

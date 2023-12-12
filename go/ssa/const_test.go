@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func TestConstString(t *testing.T) {
@@ -93,7 +92,7 @@ func TestConstString(t *testing.T) {
 
 	// Test type-param
 	gen := pkg.Scope().Lookup("gen")
-	tp := typeparams.ForSignature(gen.Type().(*types.Signature)).At(0)
+	tp := gen.Type().(*types.Signature).TypeParams().At(0)
 	if got, want := ssa.NewConst(nil, tp).String(), "0:T"; got != want {
 		t.Errorf("ssa.NewConst(%v, %s).String() = %v, want %v", nil, tup, got, want)
 	}

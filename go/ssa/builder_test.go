@@ -26,7 +26,6 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/txtar"
 )
 
@@ -689,10 +688,10 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 	p := prog.Package(lprog.Package("p").Pkg)
 	p.Build()
 
-	if load := p.Func("Load"); typeparams.ForSignature(load.Signature).Len() != 1 {
+	if load := p.Func("Load"); load.Signature.TypeParams().Len() != 1 {
 		t.Errorf("expected a single type param T for Load got %q", load.Signature)
 	}
-	if ptr := p.Type("Pointer"); typeparams.ForNamed(ptr.Type().(*types.Named)).Len() != 1 {
+	if ptr := p.Type("Pointer"); ptr.Type().(*types.Named).TypeParams().Len() != 1 {
 		t.Errorf("expected a single type param T for Pointer got %q", ptr.Type())
 	}
 }

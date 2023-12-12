@@ -1651,7 +1651,7 @@ func (c *completer) injectType(ctx context.Context, t types.Type) {
 	// considered via a lexical search, so we need to directly inject
 	// them. Also allow generic types since lexical search does not
 	// infer instantiated versions of them.
-	if named, _ := t.(*types.Named); named == nil || typeparams.ForNamed(named).Len() > 0 {
+	if named, _ := t.(*types.Named); named == nil || named.TypeParams().Len() > 0 {
 		// If our expected type is "[]int", this will add a literal
 		// candidate of "[]int{}".
 		c.literal(ctx, t, nil)
@@ -2244,7 +2244,7 @@ Nodes:
 
 				sig, _ := c.pkg.GetTypesInfo().Types[node.Fun].Type.(*types.Signature)
 
-				if sig != nil && typeparams.ForSignature(sig).Len() > 0 {
+				if sig != nil && sig.TypeParams().Len() > 0 {
 					// If we are completing a generic func call, re-check the call expression.
 					// This allows type param inference to work in cases like:
 					//
@@ -2448,9 +2448,9 @@ func (c *completer) expectedCallParamType(inf candidateInference, node *ast.Call
 func expectedConstraint(t types.Type, idx int) types.Type {
 	var tp *types.TypeParamList
 	if named, _ := t.(*types.Named); named != nil {
-		tp = typeparams.ForNamed(named)
+		tp = named.TypeParams()
 	} else if sig, _ := t.Underlying().(*types.Signature); sig != nil {
-		tp = typeparams.ForSignature(sig)
+		tp = sig.TypeParams()
 	}
 	if tp == nil || idx >= tp.Len() {
 		return nil

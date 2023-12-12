@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/internal/gcimporter"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 var isRace = false
@@ -143,10 +142,10 @@ func equalType(x, y types.Type) error {
 			// 	return fmt.Errorf("receiver: %s", err)
 			// }
 		}
-		if err := equalTypeParams(typeparams.ForSignature(x), typeparams.ForSignature(y)); err != nil {
+		if err := equalTypeParams(x.TypeParams(), y.TypeParams()); err != nil {
 			return fmt.Errorf("type params: %s", err)
 		}
-		if err := equalTypeParams(typeparams.RecvTypeParams(x), typeparams.RecvTypeParams(y)); err != nil {
+		if err := equalTypeParams(x.RecvTypeParams(), y.RecvTypeParams()); err != nil {
 			return fmt.Errorf("recv type params: %s", err)
 		}
 	case *types.Slice:
@@ -209,15 +208,15 @@ func equalType(x, y types.Type) error {
 // cmpNamed compares two named types x and y, returning an error for any
 // discrepancies. It does not compare their underlying types.
 func cmpNamed(x, y *types.Named) error {
-	xOrig := typeparams.NamedTypeOrigin(x)
-	yOrig := typeparams.NamedTypeOrigin(y)
+	xOrig := x.Origin()
+	yOrig := y.Origin()
 	if xOrig.String() != yOrig.String() {
 		return fmt.Errorf("unequal named types: %s vs %s", x, y)
 	}
-	if err := equalTypeParams(typeparams.ForNamed(x), typeparams.ForNamed(y)); err != nil {
+	if err := equalTypeParams(x.TypeParams(), y.TypeParams()); err != nil {
 		return fmt.Errorf("type parameters: %s", err)
 	}
-	if err := equalTypeArgs(typeparams.NamedTypeArgs(x), typeparams.NamedTypeArgs(y)); err != nil {
+	if err := equalTypeArgs(x.TypeArgs(), y.TypeArgs()); err != nil {
 		return fmt.Errorf("type arguments: %s", err)
 	}
 	if x.NumMethods() != y.NumMethods() {
@@ -252,7 +251,7 @@ func cmpNamed(x, y *types.Named) error {
 // makeExplicit returns an explicit version of typ, if typ is an implicit
 // interface. Otherwise it returns typ unmodified.
 func makeExplicit(typ types.Type) types.Type {
-	if iface, _ := typ.(*types.Interface); iface != nil && typeparams.IsImplicit(iface) {
+	if iface, _ := typ.(*types.Interface); iface != nil && iface.IsImplicit() {
 		var methods []*types.Func
 		for i := 0; i < iface.NumExplicitMethods(); i++ {
 			methods = append(methods, iface.Method(i))

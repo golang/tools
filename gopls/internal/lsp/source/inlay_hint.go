@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 const (
@@ -188,7 +187,7 @@ func funcTypeParams(node ast.Node, m *protocol.Mapper, tf *token.File, info *typ
 	if !ok {
 		return nil
 	}
-	inst := typeparams.GetInstances(info)[id]
+	inst := info.Instances[id]
 	if inst.TypeArgs == nil {
 		return nil
 	}

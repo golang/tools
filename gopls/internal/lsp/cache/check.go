@@ -35,7 +35,6 @@ import (
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/tokeninternal"
-	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/versions"
 )
@@ -1441,11 +1440,11 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 			Defs:       make(map[*ast.Ident]types.Object),
 			Uses:       make(map[*ast.Ident]types.Object),
 			Implicits:  make(map[ast.Node]types.Object),
+			Instances:  make(map[*ast.Ident]types.Instance),
 			Selections: make(map[*ast.SelectorExpr]*types.Selection),
 			Scopes:     make(map[ast.Node]*types.Scope),
 		},
 	}
-	typeparams.InitInstanceInfo(pkg.typesInfo)
 	versions.InitFileVersions(pkg.typesInfo)
 
 	// Collect parsed files from the type check pass, capturing parse errors from
@@ -1524,7 +1523,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 
 		// Work around golang/go#61561: interface instances aren't concurrency-safe
 		// as they are not completed by the type checker.
-		for _, inst := range typeparams.GetInstances(pkg.typesInfo) {
+		for _, inst := range pkg.typesInfo.Instances {
 			if iface, _ := inst.Type.Underlying().(*types.Interface); iface != nil {
 				iface.Complete()
 			}

@@ -192,7 +192,7 @@ func receiverTypeArgs(obj *types.Func) []types.Type {
 	if !ok {
 		return nil
 	}
-	ts := typeparams.NamedTypeArgs(named)
+	ts := named.TypeArgs()
 	if ts.Len() == 0 {
 		return nil
 	}
@@ -211,7 +211,7 @@ func recvAsFirstArg(sig *types.Signature) *types.Signature {
 	for i := 0; i < sig.Params().Len(); i++ {
 		params = append(params, sig.Params().At(i))
 	}
-	return typeparams.NewSignatureType(nil, nil, nil, types.NewTuple(params...), sig.Results(), sig.Variadic())
+	return types.NewSignatureType(nil, nil, nil, types.NewTuple(params...), sig.Results(), sig.Variadic())
 }
 
 // instance returns whether an expression is a simple or qualified identifier
@@ -228,13 +228,13 @@ func instance(info *types.Info, expr ast.Expr) bool {
 	default:
 		return false
 	}
-	_, ok := typeparams.GetInstances(info)[id]
+	_, ok := info.Instances[id]
 	return ok
 }
 
 // instanceArgs returns the Instance[id].TypeArgs as a slice.
 func instanceArgs(info *types.Info, id *ast.Ident) []types.Type {
-	targList := typeparams.GetInstances(info)[id].TypeArgs
+	targList := info.Instances[id].TypeArgs
 	if targList == nil {
 		return nil
 	}
@@ -358,7 +358,7 @@ func (canon *canonizer) instantiateMethod(m *types.Func, targs []types.Type, ctx
 		recv = p.Elem()
 	}
 	named := recv.(*types.Named)
-	inst, err := typeparams.Instantiate(ctxt, typeparams.NamedTypeOrigin(named), targs, false)
+	inst, err := types.Instantiate(ctxt, named.Origin(), targs, false)
 	if err != nil {
 		panic(err)
 	}

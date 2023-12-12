@@ -283,7 +283,7 @@ func (enc *Encoder) For(obj types.Object) (Path, error) {
 			}
 		} else {
 			if named, _ := T.(*types.Named); named != nil {
-				if r := findTypeParam(obj, typeparams.ForNamed(named), path, nil); r != nil {
+				if r := findTypeParam(obj, named.TypeParams(), path, nil); r != nil {
 					// generic named type
 					return Path(r), nil
 				}
@@ -462,7 +462,7 @@ func find(obj types.Object, T types.Type, path []byte, seen map[*types.TypeName]
 		}
 		return find(obj, T.Elem(), append(path, opElem), seen)
 	case *types.Signature:
-		if r := findTypeParam(obj, typeparams.ForSignature(T), path, seen); r != nil {
+		if r := findTypeParam(obj, T.TypeParams(), path, seen); r != nil {
 			return r
 		}
 		if r := find(obj, T.Params(), append(path, opParams), seen); r != nil {

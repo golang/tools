@@ -8,8 +8,6 @@ import (
 	"errors"
 	"go/ast"
 	"go/types"
-
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // ErrNoIdentFound is error returned when no identifier is found at a particular position
@@ -20,7 +18,7 @@ var ErrNoIdentFound = errors.New("no identifier found")
 //
 // If no such signature exists, it returns nil.
 func inferredSignature(info *types.Info, id *ast.Ident) *types.Signature {
-	inst := typeparams.GetInstances(info)[id]
+	inst := info.Instances[id]
 	sig, _ := inst.Type.(*types.Signature)
 	return sig
 }

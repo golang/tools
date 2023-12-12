@@ -27,7 +27,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // The LSP says that errors for the semantic token requests should only be returned
@@ -789,7 +788,7 @@ func (e *encoded) definitionFor(x *ast.Ident, def types.Object) (tokenType, []st
 }
 
 func isTypeParam(x *ast.Ident, y *ast.FuncType) bool {
-	tp := typeparams.ForFuncType(y)
+	tp := y.TypeParams
 	if tp == nil {
 		return false
 	}

@@ -105,7 +105,7 @@ func computeTermSet(typ types.Type) ([]*types.Term, error) {
 	}
 	var terms []*types.Term
 	for _, term := range tset.terms {
-		terms = append(terms, NewTerm(term.tilde, term.typ))
+		terms = append(terms, types.NewTerm(term.tilde, term.typ))
 	}
 	return terms, nil
 }

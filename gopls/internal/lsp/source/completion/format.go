@@ -19,7 +19,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 var (
@@ -62,7 +61,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 	if isTypeName(obj) && c.wantTypeParams() {
 		x := cand.obj.(*types.TypeName)
 		if named, ok := x.Type().(*types.Named); ok {
-			tp := typeparams.ForNamed(named)
+			tp := named.TypeParams()
 			label += source.FormatTypeParams(tp)
 			insert = label // maintain invariant above (label == insert)
 		}

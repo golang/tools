@@ -9,7 +9,6 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/internal/typeparams"
 
 	_ "unsafe" // for linkname hack
 )
@@ -105,7 +104,7 @@ func AllFunctions(prog *ssa.Program) map[*ssa.Function]bool {
 			// Consider only named types.
 			// (Ignore aliases and unsafe.Pointer.)
 			if named, ok := t.Type().(*types.Named); ok {
-				if typeparams.ForNamed(named) == nil {
+				if named.TypeParams() == nil {
 					methodsOf(named)                   //  T
 					methodsOf(types.NewPointer(named)) // *T
 				}

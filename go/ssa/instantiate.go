@@ -59,7 +59,7 @@ func createInstance(fn *Function, targs []types.Type, cr *creator) *Function {
 		sig = obj.Type().(*types.Signature)
 	} else {
 		// function
-		instSig, err := typeparams.Instantiate(prog.ctxt, fn.Signature, targs, false)
+		instSig, err := types.Instantiate(prog.ctxt, fn.Signature, targs, false)
 		if err != nil {
 			panic(err)
 		}

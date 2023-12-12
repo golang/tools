@@ -676,7 +676,7 @@ func (b *builder) multiconvert(c *ssa.MultiConvert) {
 			// Common case.
 			// Specializing the len=1 case to avoid a slice
 			// had no measurable space/time benefit.
-			terms = []*types.Term{typeparams.NewTerm(false, typ)}
+			terms = []*types.Term{types.NewTerm(false, typ)}
 		}
 
 		if err != nil {

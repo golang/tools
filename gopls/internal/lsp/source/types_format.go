@@ -201,7 +201,7 @@ func FormatTypeParams(tparams *types.TypeParamList) string {
 // NewSignature returns formatted signature for a types.Signature struct.
 func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, sig *types.Signature, comment *ast.CommentGroup, qf types.Qualifier, mq MetadataQualifier) (*signature, error) {
 	var tparams []string
-	tpList := typeparams.ForSignature(sig)
+	tpList := sig.TypeParams()
 	for i := 0; i < tpList.Len(); i++ {
 		tparam := tpList.At(i)
 		// TODO: is it possible to reuse the logic from FormatVarType here?
@@ -310,7 +310,7 @@ func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.
 	// We can't handle type parameters correctly, so we fall back on TypeString
 	// for parameterized decls.
 	if decl, _ := decl.(*ast.FuncDecl); decl != nil {
-		if typeparams.ForFuncType(decl.Type).NumFields() > 0 {
+		if decl.Type.TypeParams.NumFields() > 0 {
 			return types.TypeString(obj.Type(), qf), nil // in generic function
 		}
 		if decl.Recv != nil && len(decl.Recv.List) > 0 {
@@ -323,7 +323,7 @@ func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.
 			}
 		}
 	}
-	if spec, _ := spec.(*ast.TypeSpec); spec != nil && typeparams.ForTypeSpec(spec).NumFields() > 0 {
+	if spec, _ := spec.(*ast.TypeSpec); spec != nil && spec.TypeParams.NumFields() > 0 {
 		return types.TypeString(obj.Type(), qf), nil // in generic type decl
 	}
 

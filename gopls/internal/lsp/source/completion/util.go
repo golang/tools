@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // exprAtPos returns the index of the expression containing pos.
@@ -148,7 +147,7 @@ func isFunc(obj types.Object) bool {
 
 func isEmptyInterface(T types.Type) bool {
 	intf, _ := T.(*types.Interface)
-	return intf != nil && intf.NumMethods() == 0 && typeparams.IsMethodSet(intf)
+	return intf != nil && intf.NumMethods() == 0 && intf.IsMethodSet()
 }
 
 func isUntyped(T types.Type) bool {

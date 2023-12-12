@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/fuzzy"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 //go:embed doc.go
@@ -108,7 +107,7 @@ outer:
 		// have 0 values.
 		// TODO(rfindley): We should be able to handle this if the return
 		// values are all concrete types.
-		if tparams := typeparams.ForFuncType(enclosingFunc); tparams != nil && tparams.NumFields() > 0 {
+		if tparams := enclosingFunc.TypeParams; tparams != nil && tparams.NumFields() > 0 {
 			return nil, nil
 		}
 

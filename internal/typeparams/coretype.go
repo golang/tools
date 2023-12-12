@@ -117,6 +117,6 @@ func _NormalTerms(typ types.Type) ([]*types.Term, error) {
 	case *types.Interface:
 		return InterfaceTermSet(typ)
 	default:
-		return []*types.Term{NewTerm(false, typ)}, nil
+		return []*types.Term{types.NewTerm(false, typ)}, nil
 	}
 }

@@ -732,6 +732,6 @@ func instance(info *types.Info, expr ast.Expr) bool {
 	default:
 		return false
 	}
-	_, ok := typeparams.GetInstances(info)[id]
+	_, ok := info.Instances[id]
 	return ok
 }
