@@ -661,14 +661,14 @@ func addReturnFlows(b *builder, r *ssa.Return, site ssa.Value) {
 func (b *builder) multiconvert(c *ssa.MultiConvert) {
 	// TODO(zpavlinovic): decide what to do on MultiConvert long term.
 	// TODO(zpavlinovic): add unit tests.
-	typeSetOf := func(typ types.Type) []*typeparams.Term {
+	typeSetOf := func(typ types.Type) []*types.Term {
 		// This is a adaptation of x/exp/typeparams.NormalTerms which x/tools cannot depend on.
-		var terms []*typeparams.Term
+		var terms []*types.Term
 		var err error
 		switch typ := typ.(type) {
-		case *typeparams.TypeParam:
+		case *types.TypeParam:
 			terms, err = typeparams.StructuralTerms(typ)
-		case *typeparams.Union:
+		case *types.Union:
 			terms, err = typeparams.UnionTermSet(typ)
 		case *types.Interface:
 			terms, err = typeparams.InterfaceTermSet(typ)
@@ -676,7 +676,7 @@ func (b *builder) multiconvert(c *ssa.MultiConvert) {
 			// Common case.
 			// Specializing the len=1 case to avoid a slice
 			// had no measurable space/time benefit.
-			terms = []*typeparams.Term{typeparams.NewTerm(false, typ)}
+			terms = []*types.Term{typeparams.NewTerm(false, typ)}
 		}
 
 		if err != nil {

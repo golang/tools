@@ -29,7 +29,6 @@ import (
 	"golang.org/x/tools/godoc/analysis"
 	"golang.org/x/tools/godoc/util"
 	"golang.org/x/tools/godoc/vfs"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // handlerServer is a migration from an old godoc http Handler type.
@@ -471,7 +470,7 @@ func addNames(names map[string]bool, decl ast.Decl) {
 				typeName = x.Name
 			case *ast.IndexExpr:
 				typeName = x.X.(*ast.Ident).Name
-			case *typeparams.IndexListExpr:
+			case *ast.IndexListExpr:
 				typeName = x.X.(*ast.Ident).Name
 			}
 			name = typeName + "_" + name

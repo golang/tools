@@ -339,7 +339,7 @@ func iimportCommon(fset *token.FileSet, getPackages GetPackagesFunc, data []byte
 }
 
 type setConstraintArgs struct {
-	t          *typeparams.TypeParam
+	t          *types.TypeParam
 	constraint types.Type
 }
 
@@ -549,7 +549,7 @@ func (r *importReader) obj(name string) {
 		r.declare(types.NewConst(pos, r.currPkg, name, typ, val))
 
 	case 'F', 'G':
-		var tparams []*typeparams.TypeParam
+		var tparams []*types.TypeParam
 		if tag == 'G' {
 			tparams = r.tparamList()
 		}
@@ -584,11 +584,11 @@ func (r *importReader) obj(name string) {
 				base := baseType(recv.Type())
 				assert(base != nil)
 				targs := typeparams.NamedTypeArgs(base)
-				var rparams []*typeparams.TypeParam
+				var rparams []*types.TypeParam
 				if targs.Len() > 0 {
-					rparams = make([]*typeparams.TypeParam, targs.Len())
+					rparams = make([]*types.TypeParam, targs.Len())
 					for i := range rparams {
-						rparams[i] = targs.At(i).(*typeparams.TypeParam)
+						rparams[i] = targs.At(i).(*types.TypeParam)
 					}
 				}
 				msig := r.signature(recv, rparams, nil)
@@ -976,7 +976,7 @@ func (r *importReader) doType(base *types.Named) (res types.Type) {
 		if r.p.version < iexportVersionGenerics {
 			errorf("unexpected instantiation type")
 		}
-		terms := make([]*typeparams.Term, r.uint64())
+		terms := make([]*types.Term, r.uint64())
 		for i := range terms {
 			terms[i] = typeparams.NewTerm(r.bool(), r.typ())
 		}
@@ -1008,23 +1008,23 @@ func (r *importReader) objectPathObject() types.Object {
 	return obj
 }
 
-func (r *importReader) signature(recv *types.Var, rparams []*typeparams.TypeParam, tparams []*typeparams.TypeParam) *types.Signature {
+func (r *importReader) signature(recv *types.Var, rparams []*types.TypeParam, tparams []*types.TypeParam) *types.Signature {
 	params := r.paramList()
 	results := r.paramList()
 	variadic := params.Len() > 0 && r.bool()
 	return typeparams.NewSignatureType(recv, rparams, tparams, params, results, variadic)
 }
 
-func (r *importReader) tparamList() []*typeparams.TypeParam {
+func (r *importReader) tparamList() []*types.TypeParam {
 	n := r.uint64()
 	if n == 0 {
 		return nil
 	}
-	xs := make([]*typeparams.TypeParam, n)
+	xs := make([]*types.TypeParam, n)
 	for i := range xs {
 		// Note: the standard library importer is tolerant of nil types here,
 		// though would panic in SetTypeParams.
-		xs[i] = r.typ().(*typeparams.TypeParam)
+		xs[i] = r.typ().(*types.TypeParam)
 	}
 	return xs
 }

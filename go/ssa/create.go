@@ -117,7 +117,7 @@ func createFunction(prog *Program, obj *types.Func, name string, syntax ast.Node
 	sig := obj.Type().(*types.Signature)
 
 	// Collect type parameters.
-	var tparams *typeparams.TypeParamList
+	var tparams *types.TypeParamList
 	if rtparams := typeparams.RecvTypeParams(sig); rtparams.Len() > 0 {
 		tparams = rtparams // method of generic type
 	} else if sigparams := typeparams.ForSignature(sig); sigparams.Len() > 0 {

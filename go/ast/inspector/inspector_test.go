@@ -17,7 +17,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 var netFiles []*ast.File
@@ -94,7 +93,7 @@ var _ i13[i14, i15]
 	inspect := inspector.New([]*ast.File{f})
 	found := make([]bool, 16)
 
-	indexListExprs := make(map[*typeparams.IndexListExpr]bool)
+	indexListExprs := make(map[*ast.IndexListExpr]bool)
 
 	// Verify that we reach all i* identifiers, and collect IndexListExpr nodes.
 	inspect.Preorder(nil, func(n ast.Node) {
@@ -107,7 +106,7 @@ var _ i13[i14, i15]
 				}
 				found[index] = true
 			}
-		case *typeparams.IndexListExpr:
+		case *ast.IndexListExpr:
 			indexListExprs[n] = false
 		}
 	})
@@ -122,8 +121,8 @@ var _ i13[i14, i15]
 	if len(indexListExprs) == 0 {
 		t.Fatal("no index list exprs found")
 	}
-	inspect.Preorder([]ast.Node{&typeparams.IndexListExpr{}}, func(n ast.Node) {
-		ix := n.(*typeparams.IndexListExpr)
+	inspect.Preorder([]ast.Node{&ast.IndexListExpr{}}, func(n ast.Node) {
+		ix := n.(*ast.IndexListExpr)
 		indexListExprs[ix] = true
 	})
 	for ix, v := range indexListExprs {

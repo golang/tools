@@ -182,7 +182,7 @@ func formatFieldList(ctx context.Context, fset *token.FileSet, list *ast.FieldLi
 // FormatTypeParams turns TypeParamList into its Go representation, such as:
 // [T, Y]. Note that it does not print constraints as this is mainly used for
 // formatting type params in method receivers.
-func FormatTypeParams(tparams *typeparams.TypeParamList) string {
+func FormatTypeParams(tparams *types.TypeParamList) string {
 	if tparams == nil || tparams.Len() == 0 {
 		return ""
 	}
@@ -430,12 +430,12 @@ func qualifyTypeExpr(expr ast.Expr, qf func(string) string) ast.Expr {
 			Rbrack: expr.Rbrack,
 		}
 
-	case *typeparams.IndexListExpr:
+	case *ast.IndexListExpr:
 		indices := make([]ast.Expr, len(expr.Indices))
 		for i, idx := range expr.Indices {
 			indices[i] = qualifyTypeExpr(idx, qf)
 		}
-		return &typeparams.IndexListExpr{
+		return &ast.IndexListExpr{
 			X:       qualifyTypeExpr(expr.X, qf),
 			Lbrack:  expr.Lbrack,
 			Indices: indices,

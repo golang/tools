@@ -102,7 +102,7 @@ func (w *tpWalker) isParameterized(typ types.Type) (res bool) {
 			}
 		}
 
-	case *typeparams.TypeParam:
+	case *types.TypeParam:
 		return true
 
 	default:

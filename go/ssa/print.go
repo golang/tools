@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // relName returns the name of v relative to i.
@@ -51,7 +50,7 @@ func relType(t types.Type, from *types.Package) string {
 	return s
 }
 
-func relTerm(term *typeparams.Term, from *types.Package) string {
+func relTerm(term *types.Term, from *types.Package) string {
 	s := relType(term.Type(), from)
 	if term.Tilde() {
 		return "~" + s

@@ -352,7 +352,7 @@ func (m *typeListMap) hash(ts []types.Type) uint32 {
 }
 
 // instantiateMethod instantiates m with targs and returns a canonical representative for this method.
-func (canon *canonizer) instantiateMethod(m *types.Func, targs []types.Type, ctxt *typeparams.Context) *types.Func {
+func (canon *canonizer) instantiateMethod(m *types.Func, targs []types.Type, ctxt *types.Context) *types.Func {
 	recv := recvType(m)
 	if p, ok := recv.(*types.Pointer); ok {
 		recv = p.Elem()

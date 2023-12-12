@@ -184,8 +184,8 @@ func equalType(x, y types.Type) error {
 				return fmt.Errorf("tuple element %d: %s", i, err)
 			}
 		}
-	case *typeparams.TypeParam:
-		y := y.(*typeparams.TypeParam)
+	case *types.TypeParam:
+		y := y.(*types.TypeParam)
 		if x.String() != y.String() {
 			return fmt.Errorf("unequal named types: %s vs %s", x, y)
 		}
@@ -266,7 +266,7 @@ func makeExplicit(typ types.Type) types.Type {
 	return typ
 }
 
-func equalTypeArgs(x, y *typeparams.TypeList) error {
+func equalTypeArgs(x, y *types.TypeList) error {
 	if x.Len() != y.Len() {
 		return fmt.Errorf("unequal lengths: %d vs %d", x.Len(), y.Len())
 	}
@@ -278,7 +278,7 @@ func equalTypeArgs(x, y *typeparams.TypeList) error {
 	return nil
 }
 
-func equalTypeParams(x, y *typeparams.TypeParamList) error {
+func equalTypeParams(x, y *types.TypeParamList) error {
 	if x.Len() != y.Len() {
 		return fmt.Errorf("unequal lengths: %d vs %d", x.Len(), y.Len())
 	}

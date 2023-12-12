@@ -411,7 +411,7 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 			}
 		}
 
-	case *typeparams.IndexListExpr:
+	case *ast.IndexListExpr:
 		// f[X, Y] -- generic instantiation
 
 	case *ast.SliceExpr:

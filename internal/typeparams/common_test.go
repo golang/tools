@@ -19,7 +19,7 @@ func TestGetIndexExprData(t *testing.T) {
 	x := &ast.Ident{}
 	i := &ast.Ident{}
 
-	want := &IndexListExpr{X: x, Lbrack: 1, Indices: []ast.Expr{i}, Rbrack: 2}
+	want := &ast.IndexListExpr{X: x, Lbrack: 1, Indices: []ast.Expr{i}, Rbrack: 2}
 	tests := map[ast.Node]bool{
 		&ast.IndexExpr{X: x, Lbrack: 1, Index: i, Rbrack: 2}: true,
 		want:         true,

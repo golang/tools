@@ -252,7 +252,7 @@ func (a *application) apply(parent ast.Node, name string, iter *iterator, n ast.
 		a.apply(n, "X", nil, n.X)
 		a.apply(n, "Index", nil, n.Index)
 
-	case *typeparams.IndexListExpr:
+	case *ast.IndexListExpr:
 		a.apply(n, "X", nil, n.X)
 		a.applyList(n, "Indices")
 

@@ -507,7 +507,7 @@ func (p *iexporter) doDecl(obj types.Object) {
 	case *types.TypeName:
 		t := obj.Type()
 
-		if tparam, ok := t.(*typeparams.TypeParam); ok {
+		if tparam, ok := t.(*types.TypeParam); ok {
 			w.tag('P')
 			w.pos(obj.Pos())
 			constraint := tparam.Constraint()
@@ -752,7 +752,7 @@ func (w *exportWriter) doTyp(t types.Type, pkg *types.Package) {
 		w.startType(definedType)
 		w.qualifiedType(t.Obj())
 
-	case *typeparams.TypeParam:
+	case *types.TypeParam:
 		w.startType(typeParamType)
 		w.qualifiedType(t.Obj())
 
@@ -868,7 +868,7 @@ func (w *exportWriter) doTyp(t types.Type, pkg *types.Package) {
 			w.signature(sig)
 		}
 
-	case *typeparams.Union:
+	case *types.Union:
 		w.startType(unionType)
 		nt := t.Len()
 		w.uint64(uint64(nt))
@@ -948,14 +948,14 @@ func (w *exportWriter) signature(sig *types.Signature) {
 	}
 }
 
-func (w *exportWriter) typeList(ts *typeparams.TypeList, pkg *types.Package) {
+func (w *exportWriter) typeList(ts *types.TypeList, pkg *types.Package) {
 	w.uint64(uint64(ts.Len()))
 	for i := 0; i < ts.Len(); i++ {
 		w.typ(ts.At(i), pkg)
 	}
 }
 
-func (w *exportWriter) tparamList(prefix string, list *typeparams.TypeParamList, pkg *types.Package) {
+func (w *exportWriter) tparamList(prefix string, list *types.TypeParamList, pkg *types.Package) {
 	ll := uint64(list.Len())
 	w.uint64(ll)
 	for i := 0; i < list.Len(); i++ {
@@ -973,7 +973,7 @@ const blankMarker = "$"
 // differs from its actual object name: it is prefixed with a qualifier, and
 // blank type parameter names are disambiguated by their index in the type
 // parameter list.
-func tparamExportName(prefix string, tparam *typeparams.TypeParam) string {
+func tparamExportName(prefix string, tparam *types.TypeParam) string {
 	assert(prefix != "")
 	name := tparam.Obj().Name()
 	if name == "_" {

@@ -17,8 +17,6 @@ import (
 	"go/token"
 	"io"
 	"strconv"
-
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // LinkifyText HTML-escapes source text and writes it to w.
@@ -116,7 +114,7 @@ func linksFor(node ast.Node) (links []link) {
 					if ident, _ := x.Index.(*ast.Ident); ident != nil {
 						typeParams[ident.Name] = true
 					}
-				case *typeparams.IndexListExpr:
+				case *ast.IndexListExpr:
 					for _, index := range x.Indices {
 						if ident, _ := index.(*ast.Ident); ident != nil {
 							typeParams[ident.Name] = true

@@ -125,7 +125,7 @@ func zeroString(t types.Type, from *types.Package) string {
 			components[i] = zeroString(t.At(i).Type(), from)
 		}
 		return "(" + strings.Join(components, ", ") + ")"
-	case *typeparams.TypeParam:
+	case *types.TypeParam:
 		return "*new(" + relType(t, from) + ")"
 	}
 	panic(fmt.Sprint("zeroString: unexpected ", t))

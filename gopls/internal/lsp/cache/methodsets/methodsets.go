@@ -434,7 +434,7 @@ func fingerprint(method *types.Func) (string, bool) {
 				buf.WriteString("interface{...}")
 			}
 
-		case *typeparams.TypeParam:
+		case *types.TypeParam:
 			tricky = true
 			// TODO(adonovan): refine this by adding a numeric suffix
 			// indicating the index among the receiver type's parameters.

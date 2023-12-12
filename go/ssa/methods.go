@@ -261,7 +261,7 @@ func forEachReachable(msets *typeutil.MethodSetCache, T types.Type, f func(types
 				visit(T.At(i).Type(), false)
 			}
 
-		case *typeparams.TypeParam, *typeparams.Union:
+		case *types.TypeParam, *types.Union:
 			// forEachReachable must not be called on parameterized types.
 			panic(T)
 

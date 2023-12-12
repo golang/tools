@@ -18,11 +18,11 @@ import (
 //
 // Not concurrency-safe.
 type subster struct {
-	replacements map[*typeparams.TypeParam]types.Type // values should contain no type params
-	cache        map[types.Type]types.Type            // cache of subst results
-	ctxt         *typeparams.Context                  // cache for instantiation
-	scope        *types.Scope                         // *types.Named declared within this scope can be substituted (optional)
-	debug        bool                                 // perform extra debugging checks
+	replacements map[*types.TypeParam]types.Type // values should contain no type params
+	cache        map[types.Type]types.Type       // cache of subst results
+	ctxt         *types.Context                  // cache for instantiation
+	scope        *types.Scope                    // *types.Named declared within this scope can be substituted (optional)
+	debug        bool                            // perform extra debugging checks
 	// TODO(taking): consider adding Pos
 	// TODO(zpavlinovic): replacements can contain type params
 	// when generating instances inside of a generic function body.
@@ -31,11 +31,11 @@ type subster struct {
 // Returns a subster that replaces tparams[i] with targs[i]. Uses ctxt as a cache.
 // targs should not contain any types in tparams.
 // scope is the (optional) lexical block of the generic function for which we are substituting.
-func makeSubster(ctxt *typeparams.Context, scope *types.Scope, tparams *typeparams.TypeParamList, targs []types.Type, debug bool) *subster {
+func makeSubster(ctxt *types.Context, scope *types.Scope, tparams *types.TypeParamList, targs []types.Type, debug bool) *subster {
 	assert(tparams.Len() == len(targs), "makeSubster argument count must match")
 
 	subst := &subster{
-		replacements: make(map[*typeparams.TypeParam]types.Type, tparams.Len()),
+		replacements: make(map[*types.TypeParam]types.Type, tparams.Len()),
 		cache:        make(map[types.Type]types.Type),
 		ctxt:         ctxt,
 		scope:        scope,
@@ -82,7 +82,7 @@ func (subst *subster) typ(t types.Type) (res types.Type) {
 
 	// fall through if result r will be identical to t, types.Identical(r, t).
 	switch t := t.(type) {
-	case *typeparams.TypeParam:
+	case *types.TypeParam:
 		r := subst.replacements[t]
 		assert(r != nil, "type param without replacement encountered")
 		return r
@@ -131,7 +131,7 @@ func (subst *subster) typ(t types.Type) (res types.Type) {
 	case *types.Signature:
 		return subst.signature(t)
 
-	case *typeparams.Union:
+	case *types.Union:
 		return subst.union(t)
 
 	case *types.Interface:
@@ -220,14 +220,14 @@ func (subst *subster) var_(v *types.Var) *types.Var {
 	return v
 }
 
-func (subst *subster) union(u *typeparams.Union) *typeparams.Union {
-	var out []*typeparams.Term // nil => no updates
+func (subst *subster) union(u *types.Union) *types.Union {
+	var out []*types.Term // nil => no updates
 
 	for i, n := 0, u.Len(); i < n; i++ {
 		t := u.Term(i)
 		r := subst.typ(t.Type())
 		if r != t.Type() && out == nil {
-			out = make([]*typeparams.Term, n)
+			out = make([]*types.Term, n)
 			for j := 0; j < i; j++ {
 				out[j] = u.Term(j)
 			}
@@ -422,7 +422,7 @@ func reaches(t types.Type, c map[types.Type]bool) (res bool) {
 	}()
 
 	switch t := t.(type) {
-	case *typeparams.TypeParam, *types.Basic:
+	case *types.TypeParam, *types.Basic:
 		return false
 	case *types.Array:
 		return reaches(t.Elem(), c)
@@ -451,7 +451,7 @@ func reaches(t types.Type, c map[types.Type]bool) (res bool) {
 			return true
 		}
 		return reaches(t.Params(), c) || reaches(t.Results(), c)
-	case *typeparams.Union:
+	case *types.Union:
 		for i := 0; i < t.Len(); i++ {
 			if reaches(t.Term(i).Type(), c) {
 				return true

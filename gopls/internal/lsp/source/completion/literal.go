@@ -194,7 +194,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 			name = p.Name()
 		)
 
-		if tp, _ := p.Type().(*typeparams.TypeParam); tp != nil && !c.typeParamInScope(tp) {
+		if tp, _ := p.Type().(*types.TypeParam); tp != nil && !c.typeParamInScope(tp) {
 			hasTypeParams = true
 		}
 
@@ -285,7 +285,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 				typeStr = strings.Replace(typeStr, "[]", "...", 1)
 			}
 
-			if tp, _ := p.Type().(*typeparams.TypeParam); tp != nil && !c.typeParamInScope(tp) {
+			if tp, _ := p.Type().(*types.TypeParam); tp != nil && !c.typeParamInScope(tp) {
 				snip.WritePlaceholder(func(snip *snippet.Builder) {
 					snip.WriteText(typeStr)
 				})
@@ -306,7 +306,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 
 	var resultHasTypeParams bool
 	for i := 0; i < results.Len(); i++ {
-		if tp, _ := results.At(i).Type().(*typeparams.TypeParam); tp != nil && !c.typeParamInScope(tp) {
+		if tp, _ := results.At(i).Type().(*types.TypeParam); tp != nil && !c.typeParamInScope(tp) {
 			resultHasTypeParams = true
 		}
 	}
@@ -339,7 +339,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 			}
 			return
 		}
-		if tp, _ := r.Type().(*typeparams.TypeParam); tp != nil && !c.typeParamInScope(tp) {
+		if tp, _ := r.Type().(*types.TypeParam); tp != nil && !c.typeParamInScope(tp) {
 			snip.WritePlaceholder(func(snip *snippet.Builder) {
 				snip.WriteText(text)
 			})
@@ -558,7 +558,7 @@ func (c *completer) fullyInstantiated(t *types.Named) bool {
 
 	for i := 0; i < tas.Len(); i++ {
 		switch ta := tas.At(i).(type) {
-		case *typeparams.TypeParam:
+		case *types.TypeParam:
 			// A *TypeParam only counts as specified if it is currently in
 			// scope (i.e. we are in a generic definition).
 			if !c.typeParamInScope(ta) {
@@ -576,7 +576,7 @@ func (c *completer) fullyInstantiated(t *types.Named) bool {
 // typeParamInScope returns whether tp's object is in scope at c.pos.
 // This tells you whether you are in a generic definition and can
 // assume tp has been specified.
-func (c *completer) typeParamInScope(tp *typeparams.TypeParam) bool {
+func (c *completer) typeParamInScope(tp *types.TypeParam) bool {
 	obj := tp.Obj()
 	if obj == nil {
 		return false

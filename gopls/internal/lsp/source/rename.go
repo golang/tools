@@ -353,7 +353,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 		// of the type parameters, unlike methods).
 		switch obj.(type) { // avoid "obj :=" since cases reassign the var
 		case *types.TypeName:
-			if _, ok := obj.Type().(*typeparams.TypeParam); ok {
+			if _, ok := obj.Type().(*types.TypeParam); ok {
 				// As with capitalized function parameters below, type parameters are
 				// local.
 				goto skipObjectPath

@@ -35,7 +35,7 @@ L: // unpack receiver type
 
 	// unpack type parameters, if any
 	switch rtyp.(type) {
-	case *ast.IndexExpr, *typeparams.IndexListExpr:
+	case *ast.IndexExpr, *ast.IndexListExpr:
 		var indices []ast.Expr
 		rtyp, _, indices, _ = typeparams.UnpackIndexExpr(rtyp)
 		for _, arg := range indices {

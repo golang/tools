@@ -2345,7 +2345,7 @@ Nodes:
 				}
 			}
 			return inf
-		case *typeparams.IndexListExpr:
+		case *ast.IndexListExpr:
 			if node.Lbrack < c.pos && c.pos <= node.Rbrack {
 				if tv, ok := c.pkg.GetTypesInfo().Types[node.X]; ok {
 					if ct := expectedConstraint(tv.Type, exprAtPos(c.pos, node.Indices)); ct != nil {
@@ -2438,7 +2438,7 @@ func (c *completer) expectedCallParamType(inf candidateInference, node *ast.Call
 	// If our expected type is an uninstantiated generic type param,
 	// swap to the constraint which will do a decent job filtering
 	// candidates.
-	if tp, _ := inf.objType.(*typeparams.TypeParam); tp != nil {
+	if tp, _ := inf.objType.(*types.TypeParam); tp != nil {
 		inf.objType = tp.Constraint()
 	}
 
@@ -2446,7 +2446,7 @@ func (c *completer) expectedCallParamType(inf candidateInference, node *ast.Call
 }
 
 func expectedConstraint(t types.Type, idx int) types.Type {
-	var tp *typeparams.TypeParamList
+	var tp *types.TypeParamList
 	if named, _ := t.(*types.Named); named != nil {
 		tp = typeparams.ForNamed(named)
 	} else if sig, _ := t.Underlying().(*types.Signature); sig != nil {
@@ -2960,7 +2960,7 @@ func considerTypeConversion(from, to types.Type, path []types.Object) bool {
 		return false
 	}
 
-	if _, ok := from.(*typeparams.TypeParam); ok {
+	if _, ok := from.(*types.TypeParam); ok {
 		return false
 	}
 

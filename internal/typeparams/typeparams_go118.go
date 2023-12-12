@@ -9,10 +9,7 @@ import (
 	"go/types"
 )
 
-// TODO(adonovan): melt the aliases away.
-
-// IndexListExpr is an alias for ast.IndexListExpr.
-type IndexListExpr = ast.IndexListExpr
+// TODO(adonovan): melt the trivial functions away.
 
 // ForTypeSpec returns n.TypeParams.
 func ForTypeSpec(n *ast.TypeSpec) *ast.FieldList {
@@ -30,37 +27,28 @@ func ForFuncType(n *ast.FuncType) *ast.FieldList {
 	return n.TypeParams
 }
 
-// TypeParam is an alias for types.TypeParam
-type TypeParam = types.TypeParam
-
-// TypeParamList is an alias for types.TypeParamList
-type TypeParamList = types.TypeParamList
-
-// TypeList is an alias for types.TypeList
-type TypeList = types.TypeList
-
 // NewTypeParam calls types.NewTypeParam.
-func NewTypeParam(name *types.TypeName, constraint types.Type) *TypeParam {
+func NewTypeParam(name *types.TypeName, constraint types.Type) *types.TypeParam {
 	return types.NewTypeParam(name, constraint)
 }
 
 // SetTypeParamConstraint calls tparam.SetConstraint(constraint).
-func SetTypeParamConstraint(tparam *TypeParam, constraint types.Type) {
+func SetTypeParamConstraint(tparam *types.TypeParam, constraint types.Type) {
 	tparam.SetConstraint(constraint)
 }
 
 // NewSignatureType calls types.NewSignatureType.
-func NewSignatureType(recv *types.Var, recvTypeParams, typeParams []*TypeParam, params, results *types.Tuple, variadic bool) *types.Signature {
+func NewSignatureType(recv *types.Var, recvTypeParams, typeParams []*types.TypeParam, params, results *types.Tuple, variadic bool) *types.Signature {
 	return types.NewSignatureType(recv, recvTypeParams, typeParams, params, results, variadic)
 }
 
 // ForSignature returns sig.TypeParams()
-func ForSignature(sig *types.Signature) *TypeParamList {
+func ForSignature(sig *types.Signature) *types.TypeParamList {
 	return sig.TypeParams()
 }
 
 // RecvTypeParams returns sig.RecvTypeParams().
-func RecvTypeParams(sig *types.Signature) *TypeParamList {
+func RecvTypeParams(sig *types.Signature) *types.TypeParamList {
 	return sig.RecvTypeParams()
 }
 
@@ -86,18 +74,18 @@ func MarkImplicit(iface *types.Interface) {
 
 // ForNamed extracts the (possibly empty) type parameter object list from
 // named.
-func ForNamed(named *types.Named) *TypeParamList {
+func ForNamed(named *types.Named) *types.TypeParamList {
 	return named.TypeParams()
 }
 
 // SetForNamed sets the type params tparams on n. Each tparam must be of
 // dynamic type *types.TypeParam.
-func SetForNamed(n *types.Named, tparams []*TypeParam) {
+func SetForNamed(n *types.Named, tparams []*types.TypeParam) {
 	n.SetTypeParams(tparams)
 }
 
 // NamedTypeArgs returns named.TypeArgs().
-func NamedTypeArgs(named *types.Named) *TypeList {
+func NamedTypeArgs(named *types.Named) *types.TypeList {
 	return named.TypeArgs()
 }
 
@@ -106,19 +94,13 @@ func NamedTypeOrigin(named *types.Named) *types.Named {
 	return named.Origin()
 }
 
-// Term is an alias for types.Term.
-type Term = types.Term
-
 // NewTerm calls types.NewTerm.
-func NewTerm(tilde bool, typ types.Type) *Term {
+func NewTerm(tilde bool, typ types.Type) *types.Term {
 	return types.NewTerm(tilde, typ)
 }
 
-// Union is an alias for types.Union
-type Union = types.Union
-
 // NewUnion calls types.NewUnion.
-func NewUnion(terms []*Term) *Union {
+func NewUnion(terms []*types.Term) *types.Union {
 	return types.NewUnion(terms)
 }
 
@@ -128,23 +110,17 @@ func InitInstanceInfo(info *types.Info) {
 	info.Instances = make(map[*ast.Ident]types.Instance)
 }
 
-// Instance is an alias for types.Instance.
-type Instance = types.Instance
-
 // GetInstances returns info.Instances.
-func GetInstances(info *types.Info) map[*ast.Ident]Instance {
+func GetInstances(info *types.Info) map[*ast.Ident]types.Instance {
 	return info.Instances
 }
 
-// Context is an alias for types.Context.
-type Context = types.Context
-
 // NewContext calls types.NewContext.
-func NewContext() *Context {
+func NewContext() *types.Context {
 	return types.NewContext()
 }
 
 // Instantiate calls types.Instantiate.
-func Instantiate(ctxt *Context, typ types.Type, targs []types.Type, validate bool) (types.Type, error) {
+func Instantiate(ctxt *types.Context, typ types.Type, targs []types.Type, validate bool) (types.Type, error) {
 	return types.Instantiate(ctxt, typ, targs, validate)
 }

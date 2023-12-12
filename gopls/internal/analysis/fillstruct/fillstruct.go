@@ -29,7 +29,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/fuzzy"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 const Doc = `note incomplete struct initializations
@@ -493,7 +492,7 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 		}
 
 	case *types.Interface:
-		if param, ok := typ.(*typeparams.TypeParam); ok {
+		if param, ok := typ.(*types.TypeParam); ok {
 			// *new(T) is the zero value of a type parameter T.
 			// TODO(adonovan): one could give a more specific zero
 			// value if the type has a core type that is, say,

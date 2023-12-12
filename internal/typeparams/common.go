@@ -42,7 +42,7 @@ func UnpackIndexExpr(n ast.Node) (x ast.Expr, lbrack token.Pos, indices []ast.Ex
 	switch e := n.(type) {
 	case *ast.IndexExpr:
 		return e.X, e.Lbrack, []ast.Expr{e.Index}, e.Rbrack
-	case *IndexListExpr:
+	case *ast.IndexListExpr:
 		return e.X, e.Lbrack, e.Indices, e.Rbrack
 	}
 	return nil, token.NoPos, nil, token.NoPos
@@ -63,7 +63,7 @@ func PackIndexExpr(x ast.Expr, lbrack token.Pos, indices []ast.Expr, rbrack toke
 			Rbrack: rbrack,
 		}
 	default:
-		return &IndexListExpr{
+		return &ast.IndexListExpr{
 			X:       x,
 			Lbrack:  lbrack,
 			Indices: indices,
@@ -74,7 +74,7 @@ func PackIndexExpr(x ast.Expr, lbrack token.Pos, indices []ast.Expr, rbrack toke
 
 // IsTypeParam reports whether t is a type parameter.
 func IsTypeParam(t types.Type) bool {
-	_, ok := t.(*TypeParam)
+	_, ok := t.(*types.TypeParam)
 	return ok
 }
 
@@ -157,7 +157,7 @@ func OriginMethod(fn *types.Func) *types.Func {
 //
 // In this case, GenericAssignableTo reports that instantiations of Container
 // are assignable to the corresponding instantiation of Interface.
-func GenericAssignableTo(ctxt *Context, V, T types.Type) bool {
+func GenericAssignableTo(ctxt *types.Context, V, T types.Type) bool {
 	// If V and T are not both named, or do not have matching non-empty type
 	// parameter lists, fall back on types.AssignableTo.
 

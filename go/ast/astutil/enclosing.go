@@ -377,7 +377,7 @@ func childrenOf(n ast.Node) []ast.Node {
 			tok(n.Lbrack, len("[")),
 			tok(n.Rbrack, len("]")))
 
-	case *typeparams.IndexListExpr:
+	case *ast.IndexListExpr:
 		children = append(children,
 			tok(n.Lbrack, len("[")),
 			tok(n.Rbrack, len("]")))
@@ -588,7 +588,7 @@ func NodeDescription(n ast.Node) string {
 		return "decrement statement"
 	case *ast.IndexExpr:
 		return "index expression"
-	case *typeparams.IndexListExpr:
+	case *ast.IndexListExpr:
 		return "index list expression"
 	case *ast.InterfaceType:
 		return "interface type"

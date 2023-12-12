@@ -224,7 +224,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	//
 	// TODO(adonovan): this logic belongs in objectString.
 	_, isTypeName := obj.(*types.TypeName)
-	_, isTypeParam := obj.Type().(*typeparams.TypeParam)
+	_, isTypeParam := obj.Type().(*types.TypeParam)
 	if isTypeName && !isTypeParam {
 		spec, ok := spec.(*ast.TypeSpec)
 		if !ok {
@@ -799,7 +799,7 @@ func objectString(obj types.Object, qf types.Qualifier, declPos token.Pos, file 
 // TODO(rfindley): there appears to be zero(!) tests for this functionality.
 func HoverDocForObject(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, obj types.Object) (*ast.CommentGroup, error) {
 	if _, isTypeName := obj.(*types.TypeName); isTypeName {
-		if _, isTypeParam := obj.Type().(*typeparams.TypeParam); isTypeParam {
+		if _, isTypeParam := obj.Type().(*types.TypeParam); isTypeParam {
 			return nil, nil
 		}
 	}

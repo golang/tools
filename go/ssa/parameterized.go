@@ -117,7 +117,7 @@ func (w *tpWalker) isParameterizedLocked(typ types.Type) (res bool) {
 		}
 		return w.isParameterizedLocked(t.Underlying()) // recurse for types local to parameterized functions
 
-	case *typeparams.TypeParam:
+	case *types.TypeParam:
 		return true
 
 	default:

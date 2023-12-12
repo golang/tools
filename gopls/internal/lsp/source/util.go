@@ -22,7 +22,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/tokeninternal"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // IsGenerated gets and reads the file denoted by uri and reports
@@ -423,7 +422,7 @@ func embeddedIdent(x ast.Expr) *ast.Ident {
 	switch ix := x.(type) { // check for instantiated receivers
 	case *ast.IndexExpr:
 		x = ix.X
-	case *typeparams.IndexListExpr:
+	case *ast.IndexListExpr:
 		x = ix.X
 	}
 	switch x := x.(type) {

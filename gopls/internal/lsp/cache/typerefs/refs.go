@@ -523,7 +523,7 @@ func visitExpr(expr ast.Expr, f refVisitor) {
 		visitExpr(n.X, f)
 		visitExpr(n.Index, f) // may affect type for instantiations
 
-	case *typeparams.IndexListExpr:
+	case *ast.IndexListExpr:
 		visitExpr(n.X, f)
 		for _, index := range n.Indices {
 			visitExpr(index, f) // may affect the type for instantiations
