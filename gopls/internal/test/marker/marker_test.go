@@ -59,6 +59,29 @@ func TestMain(m *testing.M) {
 // Test runs the marker tests from the testdata directory.
 //
 // See package documentation for details on how marker tests work.
+//
+// These tests were inspired by (and in many places copied from) a previous
+// iteration of the marker tests built on top of the packagestest framework.
+// Key design decisions motivating this reimplementation are as follows:
+//   - The old tests had a single global session, causing interaction at a
+//     distance and several awkward workarounds.
+//   - The old tests could not be safely parallelized, because certain tests
+//     manipulated the server options
+//   - Relatedly, the old tests did not have a logic grouping of assertions into
+//     a single unit, resulting in clusters of files serving clusters of
+//     entangled assertions.
+//   - The old tests used locations in the source as test names and as the
+//     identity of golden content, meaning that a single edit could change the
+//     name of an arbitrary number of subtests, and making it difficult to
+//     manually edit golden content.
+//   - The old tests did not hew closely to LSP concepts, resulting in, for
+//     example, each marker implementation doing its own position
+//     transformations, and inventing its own mechanism for configuration.
+//   - The old tests had an ad-hoc session initialization process. The integration
+//     test environment has had more time devoted to its initialization, and has a
+//     more convenient API.
+//   - The old tests lacked documentation, and often had failures that were hard
+//     to understand. By starting from scratch, we can revisit these aspects.
 func Test(t *testing.T) {
 	// The marker tests must be able to run go/packages.Load.
 	testenv.NeedsGoPackages(t)
