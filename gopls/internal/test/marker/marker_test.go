@@ -53,6 +53,8 @@ var update = flag.Bool("update", false, "if set, update test data during marker 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
 	testenv.ExitIfSmallMachine()
+	// Disable GOPACKAGESDRIVER, as it can cause spurious test failures.
+	os.Setenv("GOPACKAGESDRIVER", "off")
 	os.Exit(m.Run())
 }
 
