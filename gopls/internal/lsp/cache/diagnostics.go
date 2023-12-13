@@ -149,7 +149,10 @@ func BundleQuickFixes(sd *Diagnostic) bool {
 // BundledQuickFixes extracts any bundled codeActions from the
 // diag.Data field.
 func BundledQuickFixes(diag protocol.Diagnostic) []protocol.CodeAction {
-	if diag.Data == nil {
+	// Clients may express "no fixes" in a variety of ways (#64503).
+	if diag.Data == nil ||
+		len(*diag.Data) == 0 ||
+		len(*diag.Data) == 4 && string(*diag.Data) == "null" {
 		return nil
 	}
 	var fix quickFixesJSON
