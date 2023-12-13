@@ -68,6 +68,10 @@ type postfixTmplArgs struct {
 	// Type is the type of "foo.bar" in "foo.bar.print!".
 	Type types.Type
 
+	// FuncResult are results of the enclosed function
+	FuncResults []*types.Var
+
+	sel            *ast.SelectorExpr
 	scope          *types.Scope
 	snip           snippet.Builder
 	importIfNeeded func(pkgPath string, scope *types.Scope) (name string, edits []protocol.TextEdit, err error)
@@ -75,6 +79,7 @@ type postfixTmplArgs struct {
 	qf             types.Qualifier
 	varNames       map[string]bool
 	placeholders   bool
+	currentTabStop int
 }
 
 var postfixTmpls = []postfixTmpl{{
@@ -250,26 +255,119 @@ if {{.X}} != nil {
 	body: `{{if (eq .Kind "slice" "map" "array" "chan") -}}
 len({{.X}})
 {{- end}}`,
+}, {
+	label:   "iferr",
+	details: "check error and return",
+	body: `{{if and .StmtOK (eq (.TypeName .Type) "error") -}}
+{{- $errName := (or (and .IsIdent .X) "err") -}}
+if {{if not .IsIdent}}err := {{.X}}; {{end}}{{$errName}} != nil {
+	return {{$a := .}}{{range $i, $v := .FuncResults}}
+		{{- if $i}}, {{end -}}
+		{{- if eq ($a.TypeName $v.Type) "error" -}}
+			{{$a.Placeholder $errName}}
+		{{- else -}}
+			{{$a.Zero $v.Type}}
+		{{- end -}}
+	{{end}}
+}
+{{end}}`,
+}, {
+	label:   "iferr",
+	details: "check error and return",
+	body: `{{if and .StmtOK (eq .Kind "tuple") (len .Tuple) (eq (.TypeName .TupleLast.Type) "error") -}}
+{{- $a := . -}}
+if {{range $i, $v := .Tuple}}{{if $i}}, {{end}}{{if and (eq ($a.TypeName $v.Type) "error") (eq (inc $i) (len $a.Tuple))}}err{{else}}_{{end}}{{end}} := {{.X -}}
+; err != nil {
+	return {{range $i, $v := .FuncResults}}
+		{{- if $i}}, {{end -}}
+		{{- if eq ($a.TypeName $v.Type) "error" -}}
+			{{$a.Placeholder "err"}}
+		{{- else -}}
+			{{$a.Zero $v.Type}}
+		{{- end -}}
+	{{end}}
+}
+{{end}}`,
+}, {
+	// variferr snippets use nested placeholders, as described in
+	// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#snippet_syntax,
+	// so that users can wrap the returned error without modifying the error
+	// variable name.
+	label:   "variferr",
+	details: "assign variables and check error",
+	body: `{{if and .StmtOK (eq .Kind "tuple") (len .Tuple) (eq (.TypeName .TupleLast.Type) "error") -}}
+{{- $a := . -}}
+{{- $errName := "err" -}}
+{{- range $i, $v := .Tuple -}}
+	{{- if $i}}, {{end -}}
+	{{- if and (eq ($a.TypeName $v.Type) "error") (eq (inc $i) (len $a.Tuple)) -}}
+		{{$errName | $a.SpecifiedPlaceholder (len $a.Tuple)}}
+	{{- else -}}
+		{{$a.VarName $v.Type $v.Name | $a.Placeholder}}
+	{{- end -}}
+{{- end}} := {{.X}}
+if {{$errName | $a.SpecifiedPlaceholder (len $a.Tuple)}} != nil {
+	return {{range $i, $v := .FuncResults}}
+		{{- if $i}}, {{end -}}
+		{{- if eq ($a.TypeName $v.Type) "error" -}}
+			{{$errName | $a.SpecifiedPlaceholder (len $a.Tuple) |
+				$a.SpecifiedPlaceholder (inc (len $a.Tuple))}}
+		{{- else -}}
+			{{$a.Zero $v.Type}}
+		{{- end -}}
+	{{end}}
+}
+{{end}}`,
+}, {
+	label:   "variferr",
+	details: "assign variables and check error",
+	body: `{{if and .StmtOK (eq (.TypeName .Type) "error") -}}
+{{- $a := . -}}
+{{- $errName := .VarName nil "err" -}}
+{{$errName | $a.SpecifiedPlaceholder 1}} := {{.X}}
+if {{$errName | $a.SpecifiedPlaceholder 1}} != nil {
+	return {{range $i, $v := .FuncResults}}
+		{{- if $i}}, {{end -}}
+		{{- if eq ($a.TypeName $v.Type) "error" -}}
+			{{$errName | $a.SpecifiedPlaceholder 1 | $a.SpecifiedPlaceholder 2}}
+		{{- else -}}
+			{{$a.Zero $v.Type}}
+		{{- end -}}
+	{{end}}
+}
+{{end}}`,
 }}
 
 // Cursor indicates where the client's cursor should end up after the
 // snippet is done.
 func (a *postfixTmplArgs) Cursor() string {
-	a.snip.WriteFinalTabstop()
-	return ""
+	return "$0"
 }
 
-// Placeholder indicate a tab stops with the placeholder string, the order
+// Placeholder indicate a tab stop with the placeholder string, the order
 // of tab stops is the same as the order of invocation
-func (a *postfixTmplArgs) Placeholder(s string) string {
-	if a.placeholders {
-		a.snip.WritePlaceholder(func(b *snippet.Builder) {
-			b.WriteText(s)
-		})
-	} else {
-		a.snip.WritePlaceholder(nil)
+func (a *postfixTmplArgs) Placeholder(placeholder string) string {
+	if !a.placeholders {
+		placeholder = ""
 	}
-	return ""
+	return fmt.Sprintf("${%d:%s}", a.nextTabStop(), placeholder)
+}
+
+// nextTabStop returns the next tab stop index for a new placeholder.
+func (a *postfixTmplArgs) nextTabStop() int {
+	// Tab stops start from 1, so increment before returning.
+	a.currentTabStop++
+	return a.currentTabStop
+}
+
+// SpecifiedPlaceholder indicate a specified tab stop with the placeholder string.
+// Sometimes the same tab stop appears in multiple places and their numbers
+// need to be specified. e.g. variferr
+func (a *postfixTmplArgs) SpecifiedPlaceholder(tabStop int, placeholder string) string {
+	if !a.placeholders {
+		placeholder = ""
+	}
+	return fmt.Sprintf("${%d:%s}", tabStop, placeholder)
 }
 
 // Import makes sure the package corresponding to path is imported,
@@ -309,7 +407,7 @@ func (a *postfixTmplArgs) KeyType() types.Type {
 	return a.Type.Underlying().(*types.Map).Key()
 }
 
-// Tuple returns the tuple result vars if X is a call expression.
+// Tuple returns the tuple result vars if the type of X is tuple.
 func (a *postfixTmplArgs) Tuple() []*types.Var {
 	tuple, _ := a.Type.(*types.Tuple)
 	if tuple == nil {
@@ -323,12 +421,34 @@ func (a *postfixTmplArgs) Tuple() []*types.Var {
 	return typs
 }
 
+// TupleLast returns the last tuple result vars if the type of X is tuple.
+func (a *postfixTmplArgs) TupleLast() *types.Var {
+	tuple, _ := a.Type.(*types.Tuple)
+	if tuple == nil {
+		return nil
+	}
+	if tuple.Len() == 0 {
+		return nil
+	}
+	return tuple.At(tuple.Len() - 1)
+}
+
 // TypeName returns the textual representation of type t.
 func (a *postfixTmplArgs) TypeName(t types.Type) (string, error) {
 	if t == nil || t == types.Typ[types.Invalid] {
 		return "", fmt.Errorf("invalid type: %v", t)
 	}
 	return types.TypeString(t, a.qf), nil
+}
+
+// Zero return the zero value representation of type t
+func (a *postfixTmplArgs) Zero(t types.Type) string {
+	return formatZeroValue(t, a.qf)
+}
+
+func (a *postfixTmplArgs) IsIdent() bool {
+	_, ok := a.sel.X.(*ast.Ident)
+	return ok
 }
 
 // VarName returns a suitable variable name for the type t. If t
@@ -417,6 +537,17 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 		}
 	}
 
+	var funcResults []*types.Var
+	if c.enclosingFunc != nil {
+		results := c.enclosingFunc.sig.Results()
+		if results != nil {
+			funcResults = make([]*types.Var, results.Len())
+			for i := 0; i < results.Len(); i++ {
+				funcResults[i] = results.At(i)
+			}
+		}
+	}
+
 	scope := c.pkg.GetTypes().Scope().Innermost(c.pos)
 	if scope == nil {
 		return
@@ -455,6 +586,8 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 			StmtOK:         stmtOK,
 			Obj:            exprObj(c.pkg.GetTypesInfo(), sel.X),
 			Type:           selType,
+			FuncResults:    funcResults,
+			sel:            sel,
 			qf:             c.qf,
 			importIfNeeded: c.importIfNeeded,
 			scope:          scope,
@@ -497,7 +630,9 @@ func initPostfixRules() {
 		var idx int
 		for _, rule := range postfixTmpls {
 			var err error
-			rule.tmpl, err = template.New("postfix_snippet").Parse(rule.body)
+			rule.tmpl, err = template.New("postfix_snippet").Funcs(template.FuncMap{
+				"inc": inc,
+			}).Parse(rule.body)
 			if err != nil {
 				log.Panicf("error parsing postfix snippet template: %v", err)
 			}
@@ -506,6 +641,10 @@ func initPostfixRules() {
 		}
 		postfixTmpls = postfixTmpls[:idx]
 	})
+}
+
+func inc(i int) int {
+	return i + 1
 }
 
 // importIfNeeded returns the package identifier and any necessary
