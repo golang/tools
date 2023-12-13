@@ -190,17 +190,46 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 		star = "*"
 	}
 
+	// If there are any that have named receiver, choose the first one.
+	// Otherwise, use lowercase for the first letter of the object.
+	rn := strings.ToLower(si.Concrete.Obj().Name()[0:1])
+	for i := 0; i < si.Concrete.NumMethods(); i++ {
+		if recv, ok := si.Concrete.Method(i).Type().(*types.Signature); ok && recv.Recv().Name() != "" {
+			rn = recv.Recv().Name()
+			break
+		}
+	}
+
+	// Check for receiver name conflicts
+	checkRecvName := func(tuple *types.Tuple) bool {
+		for i := 0; i < tuple.Len(); i++ {
+			if rn == tuple.At(i).Name() {
+				return true
+			}
+		}
+		return false
+	}
+
 	// Format the new methods.
 	var newMethods bytes.Buffer
+
 	for index := range missing {
+		mrn := rn + " "
+		if sig, ok := missing[index].fn.Type().(*types.Signature); ok {
+			if checkRecvName(sig.Params()) || checkRecvName(sig.Results()) {
+				mrn = ""
+			}
+		}
+
 		fmt.Fprintf(&newMethods, `// %s implements %s.
-%sfunc (%s%s%s) %s%s {
+%sfunc (%s%s%s%s) %s%s {
 	panic("unimplemented")
 }
 `,
 			missing[index].fn.Name(),
 			iface,
 			missing[index].needSubtle,
+			mrn,
 			star,
 			si.Concrete.Obj().Name(),
 			FormatTypeParams(si.Concrete.TypeParams()),

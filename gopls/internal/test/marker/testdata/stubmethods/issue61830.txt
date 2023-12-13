@@ -18,7 +18,7 @@ var _ I = &A{} //@suggestedfix(re"&A..", re"missing method M", stub)
 -- @stub/p.go --
 @@ -13 +13,5 @@
 +// M implements I.
-+func (*A) M(io.Reader, B) {
++func (a *A) M(io.Reader, B) {
 +	panic("unimplemented")
 +}
 +

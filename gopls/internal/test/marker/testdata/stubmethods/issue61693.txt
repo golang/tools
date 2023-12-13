@@ -20,7 +20,7 @@ func _() {
 -- @stub/main.go --
 @@ -5 +5,5 @@
 +// Error implements error.
-+func (C) Error() string {
++func (c C) Error() string {
 +	panic("unimplemented")
 +}
 +
