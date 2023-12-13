@@ -192,6 +192,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 		backgroundCtx:    backgroundCtx,
 		cancel:           cancel,
 		store:            s.cache.store,
+		refcount:         1, // Snapshots are born referenced.
 		packages:         new(persistent.Map[PackageID, *packageHandle]),
 		meta:             new(metadata.Graph),
 		files:            newFileMap(),
@@ -208,8 +209,6 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 		moduleUpgrades:   new(persistent.Map[protocol.DocumentURI, map[string]string]),
 		vulns:            new(persistent.Map[protocol.DocumentURI, *vulncheck.Result]),
 	}
-	// Save one reference in the view.
-	v.releaseSnapshot = v.snapshot.Acquire()
 
 	// Record the environment of the newly created view in the log.
 	event.Log(ctx, viewEnv(v))

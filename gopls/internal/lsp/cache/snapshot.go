@@ -15,7 +15,6 @@ import (
 	"go/token"
 	"go/types"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,7 +24,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"unsafe"
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/packages"
@@ -94,8 +92,13 @@ type Snapshot struct {
 
 	store *memoize.Store // cache of handles shared by all snapshots
 
-	refcount    sync.WaitGroup // number of references
-	destroyedBy *string        // atomically set to non-nil in Destroy once refcount = 0
+	refMu sync.Mutex
+	// refcount holds the number of outstanding references to the current
+	// Snapshot. When refcount is decremented to 0, the Snapshot maps can be
+	// safely destroyed.
+	//
+	// TODO(rfindley): use atomic.Int32 on Go 1.19+.
+	refcount int
 
 	// initialized reports whether the snapshot has been initialized. Concurrent
 	// initialization is guarded by the view.initializationSema. Each snapshot is
@@ -210,7 +213,12 @@ func nextSnapshotID() GlobalSnapshotID {
 
 var _ memoize.RefCounted = (*Snapshot)(nil) // snapshots are reference-counted
 
-// Acquire prevents the snapshot from being destroyed until the returned function is called.
+func (s *Snapshot) awaitPromise(ctx context.Context, p *memoize.Promise) (interface{}, error) {
+	return p.Get(ctx, s)
+}
+
+// Acquire prevents the snapshot from being destroyed until the returned
+// function is called.
 //
 // (s.Acquire().release() could instead be expressed as a pair of
 // method calls s.IncRef(); s.DecRef(). The latter has the advantage
@@ -220,62 +228,36 @@ var _ memoize.RefCounted = (*Snapshot)(nil) // snapshots are reference-counted
 // consider the release function at every stage, making a reference
 // leak more obvious.)
 func (s *Snapshot) Acquire() func() {
-	type uP = unsafe.Pointer
-	if destroyedBy := atomic.LoadPointer((*uP)(uP(&s.destroyedBy))); destroyedBy != nil {
-		log.Panicf("%d: acquire() after Destroy(%q)", s.globalID, *(*string)(destroyedBy))
+	s.refMu.Lock()
+	defer s.refMu.Unlock()
+	assert(s.refcount > 0, "non-positive refs")
+	s.refcount++
+
+	return s.decref
+}
+
+// decref should only be referenced by Acquire, and by View when it frees its
+// reference to View.snapshot.
+func (s *Snapshot) decref() {
+	s.refMu.Lock()
+	defer s.refMu.Unlock()
+
+	assert(s.refcount > 0, "non-positive refs")
+	s.refcount--
+	if s.refcount == 0 {
+		s.packages.Destroy()
+		s.activePackages.Destroy()
+		s.files.Destroy()
+		s.symbolizeHandles.Destroy()
+		s.parseModHandles.Destroy()
+		s.parseWorkHandles.Destroy()
+		s.modTidyHandles.Destroy()
+		s.modVulnHandles.Destroy()
+		s.modWhyHandles.Destroy()
+		s.unloadableFiles.Destroy()
+		s.moduleUpgrades.Destroy()
+		s.vulns.Destroy()
 	}
-	s.refcount.Add(1)
-	return s.refcount.Done
-}
-
-func (s *Snapshot) awaitPromise(ctx context.Context, p *memoize.Promise) (interface{}, error) {
-	return p.Get(ctx, s)
-}
-
-// destroy waits for all leases on the snapshot to expire then releases
-// any resources (reference counts and files) associated with it.
-// Snapshots being destroyed can be awaited using v.destroyWG.
-//
-// TODO(adonovan): move this logic into the release function returned
-// by Acquire when the reference count becomes zero. (This would cost
-// us the destroyedBy debug info, unless we add it to the signature of
-// memoize.RefCounted.Acquire.)
-//
-// The destroyedBy argument is used for debugging.
-//
-// v.snapshotMu must be held while calling this function, in order to preserve
-// the invariants described by the docstring for v.snapshot.
-func (v *View) destroy(s *Snapshot, destroyedBy string) {
-	v.snapshotWG.Add(1)
-	go func() {
-		defer v.snapshotWG.Done()
-		s.destroy(destroyedBy)
-	}()
-}
-
-func (s *Snapshot) destroy(destroyedBy string) {
-	// Wait for all leases to end before commencing destruction.
-	s.refcount.Wait()
-
-	// Report bad state as a debugging aid.
-	// Not foolproof: another thread could acquire() at this moment.
-	type uP = unsafe.Pointer // looking forward to generics...
-	if old := atomic.SwapPointer((*uP)(uP(&s.destroyedBy)), uP(&destroyedBy)); old != nil {
-		log.Panicf("%d: Destroy(%q) after Destroy(%q)", s.globalID, destroyedBy, *(*string)(old))
-	}
-
-	s.packages.Destroy()
-	s.activePackages.Destroy()
-	s.files.Destroy()
-	s.symbolizeHandles.Destroy()
-	s.parseModHandles.Destroy()
-	s.parseWorkHandles.Destroy()
-	s.modTidyHandles.Destroy()
-	s.modVulnHandles.Destroy()
-	s.modWhyHandles.Destroy()
-	s.unloadableFiles.Destroy()
-	s.moduleUpgrades.Destroy()
-	s.vulns.Destroy()
 }
 
 // SequenceID is the sequence id of this snapshot within its containing
@@ -1941,7 +1923,12 @@ func inVendor(uri protocol.DocumentURI) bool {
 	return found && strings.Contains(after, "/")
 }
 
-func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snapshot, func()) {
+// clone copies state from the receiver into a new Snapshot, applying the given
+// state changes.
+//
+// The caller of clone must call Snapshot.decref on the returned
+// snapshot when they are finished using it.
+func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) *Snapshot {
 	changedFiles := changed.Files
 	ctx, done := event.Start(ctx, "cache.snapshot.clone")
 	defer done()
@@ -1954,6 +1941,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 		sequenceID:        s.sequenceID + 1,
 		globalID:          nextSnapshotID(),
 		store:             s.store,
+		refcount:          1, // Snapshots are born referenced.
 		view:              s.view,
 		backgroundCtx:     bgCtx,
 		cancel:            cancel,
@@ -1996,11 +1984,6 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 			result.gcOptimizationDetails = newGCDetails
 		}
 	}
-
-	// Create a lease on the new snapshot.
-	// (Best to do this early in case the code below hides an
-	// incref/decref operation that might destroy it prematurely.)
-	release := result.Acquire()
 
 	reinit := false
 
@@ -2095,7 +2078,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 
 	for uri, newFH := range changedFiles {
 		// The original FileHandle for this URI is cached on the snapshot.
-		oldFH, _ := oldFiles[uri] // may be nil
+		oldFH := oldFiles[uri] // may be nil
 		_, oldOpen := oldFH.(*Overlay)
 		_, newOpen := newFH.(*Overlay)
 
@@ -2283,7 +2266,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 		result.workspacePackages = s.workspacePackages
 	}
 
-	return result, release
+	return result
 }
 
 // cloneWithout clones m then deletes from it the keys of changes.

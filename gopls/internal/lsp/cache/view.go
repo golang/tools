@@ -102,10 +102,9 @@ type View struct {
 	// overwritten with nil and destroyed, guaranteeing that all observed
 	// snapshots have been destroyed via the destroy method, and snapshotWG may
 	// be waited upon to let these destroy operations complete.
-	snapshotMu      sync.Mutex
-	snapshot        *Snapshot      // latest snapshot; nil after shutdown has been called
-	releaseSnapshot func()         // called when snapshot is no longer needed
-	snapshotWG      sync.WaitGroup // refcount for pending destroy operations
+	snapshotMu sync.Mutex
+	snapshot   *Snapshot      // latest snapshot; nil after shutdown has been called
+	snapshotWG sync.WaitGroup // refcount for pending destroy operations
 
 	// initialWorkspaceLoad is closed when the first workspace initialization has
 	// completed. If we failed to load, we only retry if the go.mod file changes,
@@ -651,10 +650,8 @@ func (v *View) shutdown() {
 	v.snapshotMu.Lock()
 	if v.snapshot != nil {
 		v.snapshot.cancel()
-		v.releaseSnapshot()
-		v.destroy(v.snapshot, "View.shutdown")
+		v.snapshot.decref()
 		v.snapshot = nil
-		v.releaseSnapshot = nil
 	}
 	v.snapshotMu.Unlock()
 
@@ -911,7 +908,7 @@ func (v *View) Invalidate(ctx context.Context, changed StateChange) (*Snapshot, 
 	v.snapshotMu.Lock()
 	defer v.snapshotMu.Unlock()
 
-	prevSnapshot, prevReleaseSnapshot := v.snapshot, v.releaseSnapshot
+	prevSnapshot := v.snapshot
 
 	if prevSnapshot == nil {
 		panic("invalidateContent called after shutdown")
@@ -922,13 +919,15 @@ func (v *View) Invalidate(ctx context.Context, changed StateChange) (*Snapshot, 
 	prevSnapshot.cancel()
 
 	// Do not clone a snapshot until its view has finished initializing.
+	//
+	// TODO(rfindley): shouldn't we do this before canceling?
 	prevSnapshot.AwaitInitialized(ctx)
 
 	// Save one lease of the cloned snapshot in the view.
-	v.snapshot, v.releaseSnapshot = prevSnapshot.clone(ctx, v.baseCtx, changed)
+	v.snapshot = prevSnapshot.clone(ctx, v.baseCtx, changed)
 
-	prevReleaseSnapshot()
-	v.destroy(prevSnapshot, "View.invalidateContent")
+	// Remove the initial reference created when prevSnapshot was created.
+	prevSnapshot.decref()
 
 	// Return a second lease to the caller.
 	return v.snapshot, v.snapshot.Acquire()

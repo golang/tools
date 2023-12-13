@@ -203,7 +203,7 @@ func (s *Snapshot) goSum(ctx context.Context, modURI protocol.DocumentURI) []byt
 	// TODO(rfindley): but that's not right. Changes to sum files should
 	// invalidate content, even if it's nonexistent content.
 	sumURI := protocol.URIFromPath(sumFilename(modURI))
-	var sumFH file.Handle = s.FindFile(sumURI)
+	sumFH := s.FindFile(sumURI)
 	if sumFH == nil {
 		var err error
 		sumFH, err = s.view.fs.ReadFile(ctx, sumURI)
@@ -458,9 +458,7 @@ See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
 
 	case strings.Contains(goCmdError, "updates to go.sum needed"), strings.Contains(goCmdError, "missing go.sum entry"):
 		var args []protocol.DocumentURI
-		for _, uri := range s.ModFiles() {
-			args = append(args, uri)
-		}
+		args = append(args, s.ModFiles()...)
 		tidyCmd, err := command.NewTidyCommand("Run go mod tidy", command.URIArgs{URIs: args})
 		if err != nil {
 			return nil, err
