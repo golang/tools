@@ -49,18 +49,22 @@ func TestIssue17515(t *testing.T) {
 		{home + "/go", home + "/go/src/test/test.go", filepath.FromSlash(home + "/go/src")},
 	}
 
-	// Add symlink cases if not on Windows, Plan 9
-	if runtime.GOOS != "windows" && runtime.GOOS != "plan9" {
-		// symlink between /tmp/home/go/src and /tmp/home/src
-		if err := os.Symlink(home+"/go/src", home+"/src"); err != nil {
-			t.Fatal(err)
-		}
-
+	// symlink between /tmp/home/go/src and /tmp/home/src
+	symlinkErr := os.Symlink(filepath.Join("go", "src"), home+"/src")
+	if symlinkErr == nil {
 		successTests = append(successTests, []SuccessTest{
 			{home + "/go", home + "/src/test/test.go", filepath.FromSlash(home + "/go/src")},
 			{home, home + "/go/src/test/test.go", filepath.FromSlash(home + "/src")},
 			{home, home + "/src/test/test.go", filepath.FromSlash(home + "/src")},
 		}...)
+	} else {
+		switch runtime.GOOS {
+		case "aix", "darwin", "dragonfly", "freebsd", "illumos", "linux", "netbsd", "openbsd", "solaris":
+			// Non-mobile OS known to always support symlinks.
+			t.Fatal(err)
+		default:
+			t.Logf("omitting symlink cases: %v", err)
+		}
 	}
 
 	for _, test := range successTests {
@@ -85,7 +89,7 @@ func TestIssue17515(t *testing.T) {
 		{home + "/go", home + "/go/src/fake/test.go", errFormat(filepath.FromSlash(home + "/go/src/fake"))},
 	}
 
-	if runtime.GOOS != "windows" && runtime.GOOS != "plan9" {
+	if symlinkErr == nil {
 		failTests = append(failTests, []FailTest{
 			{home + "/go", home + "/src/fake/test.go", errFormat(filepath.FromSlash(home + "/src/fake"))},
 			{home, home + "/src/fake/test.go", errFormat(filepath.FromSlash(home + "/src/fake"))},
