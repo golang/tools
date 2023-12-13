@@ -929,16 +929,6 @@ type vulnDiag struct {
 	source string
 }
 
-func (i vulnRelatedInfo) less(j vulnRelatedInfo) bool {
-	if i.Filename != j.Filename {
-		return i.Filename < j.Filename
-	}
-	if i.Line != j.Line {
-		return i.Line < j.Line
-	}
-	return i.Message < j.Message
-}
-
 // vulnDiagExpectation maps a module path in the require
 // section of a go.mod to diagnostics that will be returned
 // when running vulncheck.

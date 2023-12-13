@@ -46,13 +46,6 @@ func (s *deepCompletionState) enqueue(cand candidate) {
 	s.nextQueue = append(s.nextQueue, cand)
 }
 
-// dequeue removes and returns the leftmost element from the search queue.
-func (s *deepCompletionState) dequeue() *candidate {
-	var cand *candidate
-	cand, s.thisQueue = &s.thisQueue[len(s.thisQueue)-1], s.thisQueue[:len(s.thisQueue)-1]
-	return cand
-}
-
 // scorePenalty computes a deep candidate score penalty. A candidate is
 // penalized based on depth to favor shallower candidates. We also give a
 // slight bonus to unexported objects and a slight additional penalty to

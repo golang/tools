@@ -78,7 +78,6 @@ import (
 type renamer struct {
 	pkg                *cache.Package        // the syntax package in which the renaming is applied
 	objsToUpdate       map[types.Object]bool // records progress of calls to check
-	hadConflicts       bool
 	conflicts          []string
 	from, to           string
 	satisfyConstraints map[satisfy.Constraint]bool

@@ -98,17 +98,6 @@ type State struct {
 	work map[protocol.ProgressToken]*workProgress
 }
 
-// outstandingWork counts started but not complete work items by title.
-func (s State) outstandingWork() map[string]uint64 {
-	outstanding := make(map[string]uint64)
-	for _, work := range s.work {
-		if !work.complete {
-			outstanding[work.title]++
-		}
-	}
-	return outstanding
-}
-
 // completedWork counts complete work items by title.
 func (s State) completedWork() map[string]uint64 {
 	completed := make(map[string]uint64)

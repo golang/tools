@@ -939,17 +939,6 @@ func (c *commandHandler) StopProfile(ctx context.Context, args command.StopProfi
 	return result, nil
 }
 
-// Copy of pkgLoadConfig defined in internal/cmd/vulncheck.go
-// TODO(hyangah): decide where to define this.
-type pkgLoadConfig struct {
-	// BuildFlags is a list of command-line flags to be passed through to
-	// the build system's query tool.
-	BuildFlags []string
-
-	// If Tests is set, the loader includes related test packages.
-	Tests bool
-}
-
 func (c *commandHandler) FetchVulncheckResult(ctx context.Context, arg command.URIArg) (map[protocol.DocumentURI]*vulncheck.Result, error) {
 	ret := map[protocol.DocumentURI]*vulncheck.Result{}
 	err := c.run(ctx, commandConfig{forURI: arg.URI}, func(ctx context.Context, deps commandDeps) error {

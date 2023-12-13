@@ -941,14 +941,14 @@ func (run *markerTestRun) fmtLocDetails(loc protocol.Location, includeTxtPos boo
 
 // converter is the signature of argument converters.
 // A converter should return an error rather than calling marker.errorf().
-type converter func(marker, any) (any, error)
+//
+// type converter func(marker, any) (any, error)
 
 // Types with special conversions.
 var (
 	goldenType        = reflect.TypeOf(&Golden{})
 	locationType      = reflect.TypeOf(protocol.Location{})
 	markerType        = reflect.TypeOf(marker{})
-	regexpType        = reflect.TypeOf(&regexp.Regexp{})
 	stringMatcherType = reflect.TypeOf(stringMatcher{})
 )
 

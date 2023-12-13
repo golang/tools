@@ -144,16 +144,3 @@ func printModuleInfo(w io.Writer, m debug.Module, _ PrintMode) {
 	}
 	fmt.Fprintf(w, "\n")
 }
-
-type field struct {
-	index []int
-}
-
-var fields []field
-
-type sessionOption struct {
-	Name    string
-	Type    string
-	Current string
-	Default string
-}

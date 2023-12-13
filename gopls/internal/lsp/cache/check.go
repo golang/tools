@@ -929,8 +929,7 @@ func (s *Snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[
 // A packageHandleBuilder computes a batch of packageHandles concurrently,
 // sharing computed transitive reachability sets used to compute package keys.
 type packageHandleBuilder struct {
-	meta *metadata.Graph
-	s    *Snapshot
+	s *Snapshot
 
 	// nodes are assembled synchronously.
 	nodes map[typerefs.IndexID]*handleNode

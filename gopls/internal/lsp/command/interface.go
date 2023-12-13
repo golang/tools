@@ -425,12 +425,6 @@ type RunVulncheckResult struct {
 	Token protocol.ProgressToken
 }
 
-type VulncheckResult struct {
-	Vuln []Vuln
-
-	// TODO: Text string format output?
-}
-
 // CallStack models a trace of function calls starting
 // with a client function or method and ending with a
 // call to a vulnerable symbol.
@@ -445,49 +439,6 @@ type StackEntry struct {
 	Name string
 	URI  protocol.DocumentURI
 	Pos  protocol.Position // Start position. (0-based. Column is always 0)
-}
-
-// Vuln models an osv.Entry and representative call stacks.
-// TODO: deprecate
-type Vuln struct {
-	// ID is the vulnerability ID (osv.Entry.ID).
-	// https://ossf.github.io/osv-schema/#id-modified-fields
-	ID string
-	// Details is the description of the vulnerability (osv.Entry.Details).
-	// https://ossf.github.io/osv-schema/#summary-details-fields
-	Details string `json:",omitempty"`
-	// Aliases are alternative IDs of the vulnerability.
-	// https://ossf.github.io/osv-schema/#aliases-field
-	Aliases []string `json:",omitempty"`
-
-	// Symbol is the name of the detected vulnerable function or method.
-	// Can be empty if the vulnerability exists in required modules, but no vulnerable symbols are used.
-	Symbol string `json:",omitempty"`
-	// PkgPath is the package path of the detected Symbol.
-	// Can be empty if the vulnerability exists in required modules, but no vulnerable packages are used.
-	PkgPath string `json:",omitempty"`
-	// ModPath is the module path corresponding to PkgPath.
-	// TODO: how do we specify standard library's vulnerability?
-	ModPath string `json:",omitempty"`
-
-	// URL is the URL for more info about the information.
-	// Either the database specific URL or the one of the URLs
-	// included in osv.Entry.References.
-	URL string `json:",omitempty"`
-
-	// Current is the current module version.
-	CurrentVersion string `json:",omitempty"`
-
-	// Fixed is the minimum module version that contains the fix.
-	FixedVersion string `json:",omitempty"`
-
-	// Example call stacks.
-	CallStacks []CallStack `json:",omitempty"`
-
-	// Short description of each call stack in CallStacks.
-	CallStackSummaries []string `json:",omitempty"`
-
-	// TODO: import graph & module graph.
 }
 
 // MemStatsResult holds selected fields from runtime.MemStats.

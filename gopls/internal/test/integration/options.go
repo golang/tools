@@ -10,10 +10,9 @@ import (
 )
 
 type runConfig struct {
-	editor    fake.EditorConfig
-	sandbox   fake.SandboxConfig
-	modes     Mode
-	skipHooks bool
+	editor  fake.EditorConfig
+	sandbox fake.SandboxConfig
+	modes   Mode
 }
 
 func defaultConfig() runConfig {

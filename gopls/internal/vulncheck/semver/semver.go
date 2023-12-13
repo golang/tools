@@ -10,7 +10,6 @@
 package semver
 
 import (
-	"regexp"
 	"strings"
 
 	"golang.org/x/mod/semver"
@@ -47,13 +46,3 @@ func CanonicalizeSemverPrefix(s string) string {
 func Valid(v string) bool {
 	return semver.IsValid(CanonicalizeSemverPrefix(v))
 }
-
-var (
-	// Regexp for matching go tags. The groups are:
-	// 1  the major.minor version
-	// 2  the patch version, or empty if none
-	// 3  the entire prerelease, if present
-	// 4  the prerelease type ("beta" or "rc")
-	// 5  the prerelease number
-	tagRegexp = regexp.MustCompile(`^go(\d+\.\d+)(\.\d+|)((beta|rc|-pre)(\d+))?$`)
-)

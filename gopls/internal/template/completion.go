@@ -190,41 +190,6 @@ func (c *completer) complete() (*protocol.CompletionList, error) {
 	return ans, nil
 }
 
-// someday think about comments, strings, backslashes, etc
-// this would repeat some of the template parsing, but because the user is typing
-// there may be no parse tree here.
-// (go/scanner will report 2 tokens for $a, as $ is not a legal go identifier character)
-// (go/scanner is about 2.7 times more expensive)
-func (c *completer) analyze(buf []byte) [][]byte {
-	// we want to split on whitespace and before dots
-	var working []byte
-	var ans [][]byte
-	for _, ch := range buf {
-		if ch == '.' && len(working) > 0 {
-			ans = append(ans, working)
-			working = []byte{'.'}
-			continue
-		}
-		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
-			if len(working) > 0 {
-				ans = append(ans, working)
-				working = []byte{}
-				continue
-			}
-		}
-		working = append(working, ch)
-	}
-	if len(working) > 0 {
-		ans = append(ans, working)
-	}
-	ch := buf[len(buf)-1]
-	if ch == ' ' || ch == '\t' {
-		// avoid completing on whitespace
-		ans = append(ans, []byte{ch})
-	}
-	return ans
-}
-
 // version of c.analyze that uses go/scanner.
 func scan(buf []byte) []string {
 	fset := token.NewFileSet()

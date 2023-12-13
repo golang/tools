@@ -116,7 +116,6 @@ func RunGovulncheck(ctx context.Context, pattern string, snapshot *cache.Snapsho
 
 type govulncheckHandler struct {
 	logger io.Writer // forward progress reports to logger.
-	err    error
 
 	osvs     map[string]*osv.Entry
 	findings []*govulncheck.Finding
