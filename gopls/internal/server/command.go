@@ -34,6 +34,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
 	"golang.org/x/tools/internal/event"
@@ -1318,8 +1319,9 @@ func (c *commandHandler) DiagnoseFiles(ctx context.Context, args command.Diagnos
 			// combine load/parse/type + analysis diagnostics
 			var td, ad []*cache.Diagnostic
 			combineDiagnostics(pkgDiags, adiags[uri], &td, &ad)
-			c.s.storeDiagnostics(snapshot, uri, typeCheckSource, td)
-			c.s.storeDiagnostics(snapshot, uri, analysisSource, ad)
+			diags := append(td, ad...)
+			byURI := func(d *cache.Diagnostic) protocol.DocumentURI { return d.URI }
+			c.s.updateDiagnostics(ctx, c.s.session.Views(), snapshot, maps.Group(diags, byURI), false)
 			diagnostics := append(td, ad...)
 
 			if err := c.s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{

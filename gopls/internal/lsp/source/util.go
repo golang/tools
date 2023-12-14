@@ -11,7 +11,6 @@ import (
 	"go/token"
 	"go/types"
 	"regexp"
-	"sort"
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/lsp/cache"
@@ -136,31 +135,6 @@ func Deref(typ types.Type) types.Type {
 		}
 		seen[typ] = struct{}{}
 	}
-}
-
-func SortDiagnostics(d []*cache.Diagnostic) {
-	sort.Slice(d, func(i int, j int) bool {
-		return CompareDiagnostic(d[i], d[j]) < 0
-	})
-}
-
-func CompareDiagnostic(a, b *cache.Diagnostic) int {
-	if r := protocol.CompareRange(a.Range, b.Range); r != 0 {
-		return r
-	}
-	if a.Source < b.Source {
-		return -1
-	}
-	if a.Source > b.Source {
-		return +1
-	}
-	if a.Message < b.Message {
-		return -1
-	}
-	if a.Message > b.Message {
-		return +1
-	}
-	return 0
 }
 
 // findFileInDeps finds package metadata containing URI in the transitive

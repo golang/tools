@@ -17,7 +17,7 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-func Diagnose(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
+func Diagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	ctx, done := event.Start(ctx, "work.Diagnostics", snapshot.Labels()...)
 	defer done()
 

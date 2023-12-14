@@ -27,12 +27,12 @@ func New(session *cache.Session, client protocol.ClientCloser, options *settings
 	// upgrade, it means that one or more new methods need new
 	// stub declarations in unimplemented.go.
 	return &server{
-		diagnostics:         map[protocol.DocumentURI]*fileReports{},
+		diagnostics:         make(map[protocol.DocumentURI]*fileDiagnostics),
 		watchedGlobPatterns: nil, // empty
-		changedFiles:        make(map[protocol.DocumentURI]struct{}),
+		changedFiles:        make(map[protocol.DocumentURI]unit),
 		session:             session,
 		client:              client,
-		diagnosticsSema:     make(chan struct{}, concurrentAnalyses),
+		diagnosticsSema:     make(chan unit, concurrentAnalyses),
 		progress:            progress.NewTracker(client),
 		options:             options,
 	}
@@ -76,7 +76,7 @@ type server struct {
 
 	// changedFiles tracks files for which there has been a textDocument/didChange.
 	changedFilesMu sync.Mutex
-	changedFiles   map[protocol.DocumentURI]struct{}
+	changedFiles   map[protocol.DocumentURI]unit
 
 	// folders is only valid between initialize and initialized, and holds the
 	// set of folders to build views for when we are ready.
@@ -88,15 +88,15 @@ type server struct {
 	// that the server should watch changes.
 	// The map field may be reassigned but the map is immutable.
 	watchedGlobPatternsMu  sync.Mutex
-	watchedGlobPatterns    map[string]struct{}
+	watchedGlobPatterns    map[string]unit
 	watchRegistrationCount int
 
 	diagnosticsMu sync.Mutex
-	diagnostics   map[protocol.DocumentURI]*fileReports
+	diagnostics   map[protocol.DocumentURI]*fileDiagnostics
 
 	// diagnosticsSema limits the concurrency of diagnostics runs, which can be
 	// expensive.
-	diagnosticsSema chan struct{}
+	diagnosticsSema chan unit
 
 	progress *progress.Tracker
 
