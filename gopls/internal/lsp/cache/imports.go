@@ -126,7 +126,7 @@ func populateProcessEnvFromSnapshot(ctx context.Context, pe *imports.ProcessEnv,
 		pe.Logf = nil
 	}
 
-	pe.WorkingDir = snapshot.view.goCommandDir.Path()
+	pe.WorkingDir = snapshot.view.root.Path()
 	pe.ModFlag = "readonly" // processEnv operations should not mutate the modfile
 	pe.Env = map[string]string{}
 	pe.BuildFlags = append([]string{}, snapshot.Options().BuildFlags...)

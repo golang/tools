@@ -177,12 +177,14 @@ type BuildOptions struct {
 	// obsolete, no effect
 	MemoryMode string `status:"experimental"`
 
-	// ExpandWorkspaceToModule instructs `gopls` to adjust the scope of the
-	// workspace to find the best available module root. `gopls` first looks for
-	// a go.mod file in any parent directory of the workspace folder, expanding
-	// the scope to that directory if it exists. If no viable parent directory is
-	// found, gopls will check if there is exactly one child directory containing
-	// a go.mod file, narrowing the scope to that directory if it exists.
+	// ExpandWorkspaceToModule determines which packages are considered
+	// "workspace packages" when the workspace is using modules.
+	//
+	// Workspace packages affect the scope of workspace-wide operations. Notably,
+	// gopls diagnoses all packages considered to be part of the workspace after
+	// every keystroke, so by setting "ExpandWorkspaceToModule" to false, and
+	// opening a nested workspace directory, you can reduce the amount of work
+	// gopls has to do to keep your workspace up to date.
 	ExpandWorkspaceToModule bool `status:"experimental"`
 
 	// AllowModfileModifications disables -mod=readonly, allowing imports from
@@ -1058,7 +1060,9 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		result.setBool(&o.NoSemanticNumber)
 
 	case "expandWorkspaceToModule":
-		result.softErrorf("gopls setting \"expandWorkspaceToModule\" is deprecated.\nPlease comment on https://go.dev/issue/63536 if this impacts your workflow.")
+		// See golang/go#63536: we can consider deprecating
+		// expandWorkspaceToModule, but probably need to change the default
+		// behavior in that case to *not* expand to the module.
 		result.setBool(&o.ExpandWorkspaceToModule)
 
 	case "experimentalPostfixCompletions":

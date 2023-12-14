@@ -1162,8 +1162,9 @@ func main() {}
 	})
 }
 
-// This tests the functionality of the "limitWorkspaceScope"
-func TestLimitWorkspaceScope(t *testing.T) {
+// This test verifies that the workspace scope is effectively limited to the
+// workspace folder, if expandWorkspaceToModule is set.
+func TestExpandWorkspaceToModule(t *testing.T) {
 	const mod = `
 -- go.mod --
 module mod.com
@@ -1195,6 +1196,55 @@ func main() {
 		env.OpenFile("a/main.go")
 		env.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
+		)
+	})
+}
+
+// This test verifies that the workspace scope is effectively limited to the
+// set of active modules.
+//
+// We should not get diagnostics or file watching patterns for paths outside of
+// the active workspace.
+func TestWorkspaceModules(t *testing.T) {
+	const mod = `
+-- go.work --
+go 1.18
+
+use a
+-- a/go.mod --
+module mod.com/a
+
+go 1.12
+-- a/a.go --
+package a
+
+func _() {
+	var x int
+}
+-- b/go.mod --
+module mod.com/b
+
+go 1.18
+`
+	WithOptions(
+		Settings{
+			"subdirWatchPatterns": "on",
+		},
+	).Run(t, mod, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		// Writing this file may cause the snapshot to 'know' about the file b, but
+		// that shouldn't cause it to watch the 'b' directory.
+		env.WriteWorkspaceFile("b/b.go", `package b
+
+func _() {
+	var x int
+}
+`)
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/a.go", "x")),
+			NoDiagnostics(ForFile("b/b.go")),
+			FileWatchMatching("a$"),
+			NoFileWatchMatching("b$"),
 		)
 	})
 }

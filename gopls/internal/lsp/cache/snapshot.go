@@ -937,36 +937,49 @@ func (s *Snapshot) resetActivePackagesLocked() {
 	s.activePackages = new(persistent.Map[PackageID, *Package])
 }
 
+// See Session.FileWatchingGlobPatterns for a description of gopls' file
+// watching heuristic.
 func (s *Snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]struct{} {
 	extensions := "go,mod,sum,work"
 	for _, ext := range s.Options().TemplateExtensions {
 		extensions += "," + ext
 	}
-	// Work-around microsoft/vscode#100870 by making sure that we are,
-	// at least, watching the user's entire workspace. This will still be
-	// applied to every folder in the workspace.
-	patterns := map[string]struct{}{
-		fmt.Sprintf("**/*.{%s}", extensions): {},
-	}
+
+	// Always watch files that may change the view definition.
+	patterns := make(map[string]unit)
 
 	// If GOWORK is outside the folder, ensure we are watching it.
 	gowork, _ := s.view.GOWORK()
-	if gowork != "" && !pathutil.InDir(s.view.folder.Dir.Path(), gowork.Path()) {
-		patterns[gowork.Path()] = struct{}{}
+	if gowork != "" && !s.view.folder.Dir.Encloses(gowork) {
+		patterns[gowork.Path()] = unit{}
 	}
 
-	// Add a pattern for each Go module in the workspace that is not within the view.
-	dirs := s.workspaceDirs(ctx)
-	for _, dir := range dirs {
-		// If the directory is within the view's folder, we're already watching
-		// it with the first pattern above.
-		if pathutil.InDir(s.view.folder.Dir.Path(), dir) {
-			continue
+	var dirs []string
+	if s.view.moduleMode() {
+		// In module mode, watch directories containing active modules, and collect
+		// these dirs for later filtering the set of known directories.
+		//
+		// The assumption is that the user is not actively editing non-workspace
+		// modules, so don't pay the price of file watching.
+		for modFile := range s.view.workspaceModFiles {
+			dir := filepath.Dir(modFile.Path())
+			dirs = append(dirs, dir)
+
+			// TODO(golang/go#64763): Switch to RelativePatterns if RelativePatternSupport
+			// is available. Relative patterns do not have issues with Windows drive
+			// letter casing.
+			// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#relativePattern
+			//
+			// TODO(golang/go#64724): thoroughly test, particularly on on Windows.
+			//
+			// Note that glob patterns should use '/' on Windows:
+			// https://code.visualstudio.com/docs/editor/glob-patterns
+			patterns[fmt.Sprintf("%s/**/*.{%s}", filepath.ToSlash(dir), extensions)] = unit{}
 		}
-		// TODO(rstambler): If microsoft/vscode#3025 is resolved before
-		// microsoft/vscode#101042, we will need a work-around for Windows
-		// drive letter casing.
-		patterns[fmt.Sprintf("%s/**/*.{%s}", dir, extensions)] = struct{}{}
+	} else {
+		// In non-module modes (GOPATH or AdHoc), we just watch the workspace root.
+		dirs = []string{s.view.root.Path()}
+		patterns[fmt.Sprintf("**/*.{%s}", extensions)] = unit{}
 	}
 
 	if s.watchSubdirs() {
@@ -1002,37 +1015,10 @@ func (s *Snapshot) addKnownSubdirs(patterns map[string]unit, wsDirs []string) {
 	s.files.Dirs().Range(func(dir string) {
 		for _, wsDir := range wsDirs {
 			if pathutil.InDir(wsDir, dir) {
-				patterns[dir] = unit{}
+				patterns[filepath.ToSlash(dir)] = unit{}
 			}
 		}
 	})
-}
-
-// workspaceDirs returns the workspace directories for the loaded modules.
-//
-// A workspace directory is, roughly speaking, a directory for which we care
-// about file changes.
-func (s *Snapshot) workspaceDirs(ctx context.Context) []string {
-	dirSet := make(map[string]unit)
-
-	// Dirs should, at the very least, contain the working directory and folder.
-	dirSet[s.view.goCommandDir.Path()] = unit{}
-	dirSet[s.view.folder.Dir.Path()] = unit{}
-
-	// Additionally, if e.g. go.work indicates other workspace modules, we should
-	// include their directories too.
-	if s.view.workspaceModFilesErr == nil {
-		for modFile := range s.view.workspaceModFiles {
-			dir := filepath.Dir(modFile.Path())
-			dirSet[dir] = unit{}
-		}
-	}
-	var dirs []string
-	for d := range dirSet {
-		dirs = append(dirs, d)
-	}
-	sort.Strings(dirs)
-	return dirs
 }
 
 // watchSubdirs reports whether gopls should request separate file watchers for
@@ -1217,7 +1203,7 @@ func (s *Snapshot) GoModForFile(uri protocol.DocumentURI) protocol.DocumentURI {
 func moduleForURI(modFiles map[protocol.DocumentURI]struct{}, uri protocol.DocumentURI) protocol.DocumentURI {
 	var match protocol.DocumentURI
 	for modURI := range modFiles {
-		if !pathutil.InDir(filepath.Dir(modURI.Path()), uri.Path()) {
+		if !modURI.Dir().Encloses(uri) {
 			continue
 		}
 		if len(modURI) > len(match) {

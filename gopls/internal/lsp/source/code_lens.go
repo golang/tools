@@ -9,7 +9,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -182,7 +181,7 @@ func goGenerateCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.H
 			if err != nil {
 				return nil, err
 			}
-			dir := protocol.URIFromPath(filepath.Dir(fh.URI().Path()))
+			dir := fh.URI().Dir()
 			nonRecursiveCmd, err := command.NewGenerateCommand("run go generate", command.GenerateArgs{Dir: dir, Recursive: false})
 			if err != nil {
 				return nil, err

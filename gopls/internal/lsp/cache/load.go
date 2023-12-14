@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/immutable"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
@@ -119,7 +120,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		flags |= AllowNetwork
 	}
 	_, inv, cleanup, err := s.goCommandInvocation(ctx, flags, &gocommand.Invocation{
-		WorkingDir: s.view.goCommandDir.Path(),
+		WorkingDir: s.view.root.Path(),
 	})
 	if err != nil {
 		return err
@@ -588,49 +589,74 @@ func computeLoadDiagnostics(ctx context.Context, snapshot *Snapshot, mp *metadat
 	return diags
 }
 
-// containsPackageLocked reports whether p is a workspace package for the
+// isWorkspacePackageLocked reports whether p is a workspace package for the
 // snapshot s.
 //
+// See the commentary inline for a description of the workspace package
+// heuristics.
+//
 // s.mu must be held while calling this function.
-func containsPackageLocked(s *Snapshot, mp *metadata.Package) bool {
-	// In legacy workspace mode, or if a package does not have an associated
-	// module, a package is considered inside the workspace if any of its files
-	// are under the workspace root (and not excluded).
+func isWorkspacePackageLocked(s *Snapshot, meta *metadata.Graph, pkg *metadata.Package) bool {
+	// Apply filtering logic.
 	//
-	// Otherwise if the package has a module it must be an active module (as
-	// defined by the module root or go.work file) and at least one file must not
-	// be filtered out by directoryFilters.
+	// Workspace packages must contain at least one non-filtered file.
+	filterFunc := s.view.filterFunc()
+	uris := make(map[protocol.DocumentURI]unit) // filtered package URIs
+	for _, uri := range slices.Concat(pkg.CompiledGoFiles, pkg.GoFiles) {
+		if !strings.Contains(string(uri), "/vendor/") && !filterFunc(uri) {
+			uris[uri] = struct{}{}
+		}
+	}
+	if len(uris) == 0 {
+		return false // no non-filtered files
+	}
+
+	// For non-module views (of type GOPATH or AdHoc), or if
+	// expandWorkspaceToModule is unset, workspace packages must be contained in
+	// the workspace folder.
 	//
-	// TODO(rfindley): revisit this function. We should not need to predicate on
-	// gowork != "". It should suffice to consider workspace mod files (also, we
-	// will hopefully eliminate the concept of a workspace package soon).
-	if mp.Module != nil && s.view.gowork != "" {
-		modURI := protocol.URIFromPath(mp.Module.GoMod)
-		_, ok := s.view.workspaceModFiles[modURI]
-		if !ok {
+	// For module views (of type GoMod or GoWork), packages must in any case be
+	// in a workspace module (enforced below).
+	if !s.view.moduleMode() || !s.Options().ExpandWorkspaceToModule {
+		folder := s.view.folder.Dir.Path()
+		inFolder := false
+		for uri := range uris {
+			if pathutil.InDir(folder, uri.Path()) {
+				inFolder = true
+				break
+			}
+		}
+		if !inFolder {
+			return false
+		}
+	}
+
+	// Special case: consider command-line packages to be workspace packages if
+	// they are open and the only package containing a given file.
+	if metadata.IsCommandLineArguments(pkg.ID) {
+		// If all the files contained in m have a real package, we don't need to
+		// keep m as a workspace package.
+		if allFilesHaveRealPackages(meta, pkg) {
 			return false
 		}
 
-		uris := map[protocol.DocumentURI]struct{}{}
-		for _, uri := range mp.CompiledGoFiles {
-			uris[uri] = struct{}{}
-		}
-		for _, uri := range mp.GoFiles {
-			uris[uri] = struct{}{}
-		}
-
-		filterFunc := s.view.filterFunc()
-		for uri := range uris {
-			// Don't use view.contains here. go.work files may include modules
-			// outside of the workspace folder.
-			if !strings.Contains(string(uri), "/vendor/") && !filterFunc(uri) {
-				return true
-			}
-		}
-		return false
+		// We only care about command-line-arguments packages if they are still
+		// open.
+		return containsOpenFileLocked(s, pkg)
 	}
 
-	return containsFileInWorkspaceLocked(s.view, mp)
+	// In module mode, a workspace package must be contained in a workspace
+	// module.
+	if s.view.moduleMode() {
+		if pkg.Module == nil {
+			return false
+		}
+		modURI := protocol.URIFromPath(pkg.Module.GoMod)
+		_, ok := s.view.workspaceModFiles[modURI]
+		return ok
+	}
+
+	return true // an ad-hoc package or GOPATH package
 }
 
 // containsOpenFileLocked reports whether any file referenced by m is open in
@@ -655,32 +681,6 @@ func containsOpenFileLocked(s *Snapshot, mp *metadata.Package) bool {
 	return false
 }
 
-// containsFileInWorkspaceLocked reports whether m contains any file inside the
-// workspace of the snapshot s.
-//
-// s.mu must be held while calling this function.
-func containsFileInWorkspaceLocked(v *View, mp *metadata.Package) bool {
-	uris := map[protocol.DocumentURI]struct{}{}
-	for _, uri := range mp.CompiledGoFiles {
-		uris[uri] = struct{}{}
-	}
-	for _, uri := range mp.GoFiles {
-		uris[uri] = struct{}{}
-	}
-
-	for uri := range uris {
-		// In order for a package to be considered for the workspace, at least one
-		// file must be contained in the workspace and not vendored.
-
-		// The package's files are in this view. It may be a workspace package.
-		// Vendored packages are not likely to be interesting to the user.
-		if !strings.Contains(string(uri), "/vendor/") && v.contains(uri) {
-			return true
-		}
-	}
-	return false
-}
-
 // computeWorkspacePackagesLocked computes workspace packages in the
 // snapshot s for the given metadata graph. The result does not
 // contain intermediate test variants.
@@ -689,22 +689,8 @@ func containsFileInWorkspaceLocked(v *View, mp *metadata.Package) bool {
 func computeWorkspacePackagesLocked(s *Snapshot, meta *metadata.Graph) immutable.Map[PackageID, PackagePath] {
 	workspacePackages := make(map[PackageID]PackagePath)
 	for _, mp := range meta.Packages {
-		if !containsPackageLocked(s, mp) {
+		if !isWorkspacePackageLocked(s, meta, mp) {
 			continue
-		}
-
-		if metadata.IsCommandLineArguments(mp.ID) {
-			// If all the files contained in m have a real package, we don't need to
-			// keep m as a workspace package.
-			if allFilesHaveRealPackages(meta, mp) {
-				continue
-			}
-
-			// We only care about command-line-arguments packages if they are still
-			// open.
-			if !containsOpenFileLocked(s, mp) {
-				continue
-			}
 		}
 
 		switch {

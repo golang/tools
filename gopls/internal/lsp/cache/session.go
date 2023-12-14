@@ -715,14 +715,37 @@ func (b brokenFile) SameContentsOnDisk() bool  { return false }
 func (b brokenFile) Version() int32            { return 0 }
 func (b brokenFile) Content() ([]byte, error)  { return nil, b.err }
 
-// FileWatchingGlobPatterns returns a new set of glob patterns to
-// watch every directory known by the view. For views within a module,
-// this is the module root, any directory in the module root, and any
-// replace targets.
-func (s *Session) FileWatchingGlobPatterns(ctx context.Context) map[string]struct{} {
+// FileWatchingGlobPatterns returns a set of glob patterns patterns that the
+// client is required to watch for changes, and notify the server of them, in
+// order to keep the server's state up to date.
+//
+// This set includes
+//  1. all go.mod and go.work files in the workspace; and
+//  2. for each Snapshot, its modules (or directory for ad-hoc views). In
+//     module mode, this is the set of active modules (and for VS Code, all
+//     workspace directories within them, due to golang/go#42348).
+//
+// The watch for workspace go.work and go.mod files in (1) is sufficient to
+// capture changes to the repo structure that may affect the set of views.
+// Whenever this set changes, we reload the workspace and invalidate memoized
+// files.
+//
+// The watch for workspace directories in (2) should keep each View up to date,
+// as it should capture any newly added/modified/deleted Go files.
+//
+// TODO(golang/go#57979): we need to reset the memoizedFS when a view changes.
+// Consider the case where we incidentally read a file, then it moved outside
+// of an active module, and subsequently changed: we would still observe the
+// original file state.
+func (s *Session) FileWatchingGlobPatterns(ctx context.Context) map[string]unit {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
-	patterns := map[string]struct{}{}
+
+	// Always watch files that may change the set of views.
+	patterns := map[string]unit{
+		"**/*.{mod,work}": {},
+	}
+
 	for _, view := range s.views {
 		snapshot, release, err := view.Snapshot()
 		if err != nil {

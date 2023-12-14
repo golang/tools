@@ -44,7 +44,7 @@ var GeneratedAPIJSON = &APIJSON{
 			{
 				Name:      "expandWorkspaceToModule",
 				Type:      "bool",
-				Doc:       "expandWorkspaceToModule instructs `gopls` to adjust the scope of the\nworkspace to find the best available module root. `gopls` first looks for\na go.mod file in any parent directory of the workspace folder, expanding\nthe scope to that directory if it exists. If no viable parent directory is\nfound, gopls will check if there is exactly one child directory containing\na go.mod file, narrowing the scope to that directory if it exists.\n",
+				Doc:       "expandWorkspaceToModule determines which packages are considered\n\"workspace packages\" when the workspace is using modules.\n\nWorkspace packages affect the scope of workspace-wide operations. Notably,\ngopls diagnoses all packages considered to be part of the workspace after\nevery keystroke, so by setting \"ExpandWorkspaceToModule\" to false, and\nopening a nested workspace directory, you can reduce the amount of work\ngopls has to do to keep your workspace up to date.\n",
 				Default:   "true",
 				Status:    "experimental",
 				Hierarchy: "build",

@@ -142,7 +142,6 @@ func TestDeprecatedSettings(t *testing.T) {
 			"experimentalWatchedFileDelay":   "1s",
 			"experimentalWorkspaceModule":    true,
 			"tempModfile":                    true,
-			"expandWorkspaceToModule":        false,
 		},
 	).Run(t, "", func(t *testing.T, env *Env) {
 		env.OnceMet(
@@ -151,7 +150,6 @@ func TestDeprecatedSettings(t *testing.T) {
 			ShownMessage("experimentalUseInvalidMetadata"),
 			ShownMessage("experimentalWatchedFileDelay"),
 			ShownMessage("tempModfile"),
-			ShownMessage("https://go.dev/issue/63536"), // issue to remove expandWorkspaceToModule
 		)
 	})
 }

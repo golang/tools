@@ -97,12 +97,14 @@ Default: `""`.
 
 **This setting is experimental and may be deleted.**
 
-expandWorkspaceToModule instructs `gopls` to adjust the scope of the
-workspace to find the best available module root. `gopls` first looks for
-a go.mod file in any parent directory of the workspace folder, expanding
-the scope to that directory if it exists. If no viable parent directory is
-found, gopls will check if there is exactly one child directory containing
-a go.mod file, narrowing the scope to that directory if it exists.
+expandWorkspaceToModule determines which packages are considered
+"workspace packages" when the workspace is using modules.
+
+Workspace packages affect the scope of workspace-wide operations. Notably,
+gopls diagnoses all packages considered to be part of the workspace after
+every keystroke, so by setting "ExpandWorkspaceToModule" to false, and
+opening a nested workspace directory, you can reduce the amount of work
+gopls has to do to keep your workspace up to date.
 
 Default: `true`.
 
