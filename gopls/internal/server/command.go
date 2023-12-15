@@ -386,12 +386,16 @@ func (c *commandHandler) Vendor(ctx context.Context, args command.URIArg) error 
 		// If golang/go#44119 is resolved, go mod vendor will instead modify
 		// modules.txt in-place. In that case we could theoretically allow this
 		// command to run concurrently.
+		stderr := new(bytes.Buffer)
 		err := deps.snapshot.RunGoCommandPiped(ctx, cache.Normal|cache.AllowNetwork, &gocommand.Invocation{
 			Verb:       "mod",
 			Args:       []string{"vendor"},
 			WorkingDir: filepath.Dir(args.URI.Path()),
-		}, &bytes.Buffer{}, &bytes.Buffer{})
-		return err
+		}, &bytes.Buffer{}, stderr)
+		if err != nil {
+			return fmt.Errorf("running go mod vendor failed: %v\nstderr:\n%s", err, stderr.String())
+		}
+		return nil
 	})
 }
 
