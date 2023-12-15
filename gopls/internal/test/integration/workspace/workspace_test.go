@@ -999,6 +999,7 @@ package main
 		EnvVars{"GOPATH": filepath.FromSlash("$SANDBOX_WORKDIR/gopath")},
 		Modes(Default),
 	).Run(t, mod, func(t *testing.T, env *Env) {
+		// Because logs are asynchronous, this test can't use OnceMet.
 		env.Await(
 			// Confirm that the build configuration is seen as valid,
 			// even though there are technically multiple go.mod files in the

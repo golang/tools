@@ -542,7 +542,7 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlag
 	if mode == LoadWorkspace {
 		// TODO(rfindley): this seems unnecessary and overly complicated. Remove
 		// this along with 'allowModFileModifications'.
-		if s.view.typ == GoModuleView {
+		if s.view.typ == GoModView {
 			modURI = s.view.gomod
 		}
 	} else {

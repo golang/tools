@@ -27,6 +27,10 @@ type memoizedFS struct {
 	filesByID map[robustio.FileID][]*DiskFile
 }
 
+func newMemoizedFS() *memoizedFS {
+	return &memoizedFS{filesByID: make(map[robustio.FileID][]*DiskFile)}
+}
+
 // A DiskFile is a file on the filesystem, or a failure to read one.
 // It implements the source.FileHandle interface.
 type DiskFile struct {

@@ -123,6 +123,9 @@ type View struct {
 // viewDefinition holds the defining features of the View workspace.
 //
 // This type is compared to see if the View needs to be reconstructed.
+//
+// TODO(golang/go#57979): viewDefinition should be sufficient for running
+// go/packages. Enforce this in the API.
 type viewDefinition struct {
 	viewDef // inner struct for easy comparison
 
@@ -214,10 +217,10 @@ const (
 	// Load: ./... from the workspace folder.
 	GOPATHView
 
-	// GoModuleView is a view in module mode with a single Go module.
+	// GoModView is a view in module mode with a single Go module.
 	//
 	// Load: <modulePath>/... from the module root.
-	GoModuleView
+	GoModView
 
 	// GoWorkView is a view in module mode with a go.work file.
 	//
@@ -234,7 +237,7 @@ const (
 // moduleMode reports whether the view uses Go modules.
 func (w viewDefinition) moduleMode() bool {
 	switch w.typ {
-	case GoModuleView, GoWorkView:
+	case GoModView, GoWorkView:
 		return true
 	default:
 		return false
@@ -243,7 +246,7 @@ func (w viewDefinition) moduleMode() bool {
 
 // loadGoEnv loads `go env` values into the provided map, keyed by Go variable
 // name.
-func loadGoEnv(ctx context.Context, folder string, configEnv []string, runner *gocommand.Runner, vars map[string]*string) error {
+func loadGoEnv(ctx context.Context, dir string, configEnv []string, runner *gocommand.Runner, vars map[string]*string) error {
 	// We can save ~200 ms by requesting only the variables we care about.
 	args := []string{"-json"}
 	for k := range vars {
@@ -254,7 +257,7 @@ func loadGoEnv(ctx context.Context, folder string, configEnv []string, runner *g
 		Verb:       "env",
 		Args:       args,
 		Env:        configEnv,
-		WorkingDir: folder,
+		WorkingDir: dir,
 	}
 	stdout, err := runner.Run(ctx, inv)
 	if err != nil {
@@ -340,7 +343,7 @@ func (s *Session) SetFolderOptions(ctx context.Context, uri protocol.DocumentURI
 		if v.folder.Dir == uri {
 			folder2 := *v.folder
 			folder2.Options = options
-			info, err := getViewDefinition(ctx, s.gocmdRunner, s, &folder2)
+			info, err := defineView(ctx, s, &folder2, "")
 			if err != nil {
 				return err
 			}
@@ -356,7 +359,8 @@ func (s *Session) SetFolderOptions(ctx context.Context, uri protocol.DocumentURI
 //
 // It must not be called concurrently with any other view methods.
 //
-// TODO(#57979): revisit this function and its uses once the dust settles.
+// TODO(golang/go#57979): revisit this function and its uses once the dust
+// settles.
 func viewEnv(v *View) string {
 	env := v.folder.Options.EnvSlice()
 	buildFlags := append([]string{}, v.folder.Options.BuildFlags...)
@@ -816,16 +820,30 @@ func (v *View) Invalidate(ctx context.Context, changed StateChange) (*Snapshot, 
 	return v.snapshot, v.snapshot.Acquire()
 }
 
-func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs file.Source, folder *Folder) (*viewDefinition, error) {
+// defineView computes the view definition for the provided workspace folder
+// and URI.
+//
+// If forURI is non-empty, this view should be the best view including forURI.
+// Otherwise, it is the default view for the folder.
+func defineView(ctx context.Context, fs file.Source, folder *Folder, forURI protocol.DocumentURI) (*viewDefinition, error) {
 	if err := checkPathValid(folder.Dir.Path()); err != nil {
 		return nil, fmt.Errorf("invalid workspace folder path: %w; check that the spelling of the configured workspace folder path agrees with the spelling reported by the operating system", err)
 	}
-	def := new(viewDefinition)
+	dir := folder.Dir.Path()
+	if forURI != "" {
+		dir = filepath.Dir(forURI.Path())
+	}
 	var err error
 	inv := gocommand.Invocation{
-		WorkingDir: folder.Dir.Path(),
+		WorkingDir: dir,
 		Env:        folder.Options.EnvSlice(),
 	}
+
+	// All of the go commands invoked here should be fast. No need to share a
+	// runner with other operations.
+	runner := new(gocommand.Runner)
+
+	def := new(viewDefinition)
 	def.goversion, err = gocommand.GoVersion(ctx, inv, runner)
 	if err != nil {
 		return nil, err
@@ -847,7 +865,7 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs file.So
 			"GOWORK":      &rawGoWork,
 		}
 	)
-	if err := loadGoEnv(ctx, folder.Dir.Path(), folder.Options.EnvSlice(), runner, envvars); err != nil {
+	if err := loadGoEnv(ctx, dir, folder.Options.EnvSlice(), runner, envvars); err != nil {
 		return nil, err
 	}
 
@@ -870,27 +888,42 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs file.So
 	// Check if the workspace is within any GOPATH directory.
 	inGOPATH := false
 	for _, gp := range filepath.SplitList(def.gopath) {
-		if pathutil.InDir(filepath.Join(gp, "src"), folder.Dir.Path()) {
+		if pathutil.InDir(filepath.Join(gp, "src"), dir) {
 			inGOPATH = true
 			break
 		}
 	}
 
+	dirURI := protocol.URIFromPath(dir)
+	goworkFromEnv := false
 	if rawGoWork != "off" && rawGoWork != "" {
+		goworkFromEnv = true
 		def.gowork = protocol.URIFromPath(rawGoWork)
 	} else {
-		def.gowork, err = findRootPattern(ctx, folder.Dir, "go.work", fs)
+		def.gowork, err = findRootPattern(ctx, dirURI, "go.work", fs)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	// filterFunc is the path filter function for this workspace folder. Notably,
-	// it is relative to folder (which is specified by the user), not root.
-	filterFunc := relPathExcludedByFilterFunc(folder.Dir.Path(), def.gomodcache, folder.Options.DirectoryFilters)
-	def.gomod, err = findWorkspaceModFile(ctx, folder.Dir, fs, filterFunc)
-	if err != nil {
-		return nil, err
+	// When deriving the best view for a given file, we only want to search
+	// up the directory hierarchy for modfiles.
+	//
+	// If forURI is unset, we still use the legacy heuristic of scanning for
+	// nested modules (this will be removed as part of golang/go#57979).
+	if forURI != "" {
+		def.gomod, err = findRootPattern(ctx, dirURI, "go.mod", fs)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// filterFunc is the path filter function for this workspace folder. Notably,
+		// it is relative to folder (which is specified by the user), not root.
+		filterFunc := relPathExcludedByFilterFunc(folder.Dir.Path(), def.gomodcache, folder.Options.DirectoryFilters)
+		def.gomod, err = findWorkspaceModFile(ctx, folder.Dir, fs, filterFunc)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Determine how we load and where to load package information for this view
@@ -904,21 +937,27 @@ func getViewDefinition(ctx context.Context, runner *gocommand.Runner, fs file.So
 	switch {
 	case hasGoPackagesDriver:
 		def.typ = GoPackagesDriverView
-		def.root = folder.Dir
+		def.root = dirURI
 	case def.adjustedGO111MODULE != "off" && rawGoWork != "off" && def.gowork != "":
 		def.typ = GoWorkView
-		def.root = folder.Dir
+		if goworkFromEnv {
+			// The go.work file could be anywhere, which can lead to confusing error
+			// messages.
+			def.root = dirURI
+		} else {
+			def.root = def.gowork.Dir()
+		}
 		def.workspaceModFiles, def.workspaceModFilesErr = goWorkModules(ctx, def.gowork, fs)
 	case def.adjustedGO111MODULE != "off" && def.gomod != "":
-		def.typ = GoModuleView
+		def.typ = GoModView
 		def.root = def.gomod.Dir()
 		def.workspaceModFiles = map[protocol.DocumentURI]struct{}{def.gomod: {}}
 	case def.adjustedGO111MODULE != "on" && inGOPATH:
 		def.typ = GOPATHView
-		def.root = folder.Dir
+		def.root = dirURI
 	default:
 		def.typ = AdHocView
-		def.root = folder.Dir
+		def.root = dirURI
 	}
 
 	return def, nil

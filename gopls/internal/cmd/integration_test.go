@@ -1042,7 +1042,7 @@ func writeTree(t *testing.T, archive string) string {
 	root := t.TempDir()
 
 	// This unfortunate step is required because gopls output
-	// expands symbolic links it its input file names (arguably it
+	// expands symbolic links in its input file names (arguably it
 	// should not), and on macOS the temp dir is in /var -> private/var.
 	root, err := filepath.EvalSymlinks(root)
 	if err != nil {

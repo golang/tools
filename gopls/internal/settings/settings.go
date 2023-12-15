@@ -670,15 +670,15 @@ type OptionResults []OptionResult
 
 type OptionResult struct {
 	Name  string
-	Value interface{}
+	Value any
 	Error error
 }
 
-func SetOptions(options *Options, opts interface{}) OptionResults {
+func SetOptions(options *Options, opts any) OptionResults {
 	var results OptionResults
 	switch opts := opts.(type) {
 	case nil:
-	case map[string]interface{}:
+	case map[string]any:
 		// If the user's settings contains "allExperiments", set that first,
 		// and then let them override individual settings independently.
 		var enableExperiments bool

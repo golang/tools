@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
-	"golang.org/x/tools/internal/robustio"
 )
 
 // New Creates a new cache for gopls operation results, using the given file
@@ -33,7 +32,7 @@ func New(store *memoize.Store) *Cache {
 	c := &Cache{
 		id:         strconv.FormatInt(index, 10),
 		store:      store,
-		memoizedFS: &memoizedFS{filesByID: map[robustio.FileID][]*DiskFile{}},
+		memoizedFS: newMemoizedFS(),
 	}
 	return c
 }

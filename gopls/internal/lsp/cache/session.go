@@ -98,7 +98,7 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, *Snapshot
 		}
 	}
 
-	def, err := getViewDefinition(ctx, s.gocmdRunner, s, folder)
+	def, err := defineView(ctx, s, folder, "")
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -290,8 +290,147 @@ func (s *Session) Views() []*View {
 	return result
 }
 
+// selectViews constructs the best set of views covering the provided workspace
+// folders and open files.
+//
+// This implements the zero-config algorithm of golang/go#57979.
+func selectViews(ctx context.Context, fs file.Source, folders []*Folder, openFiles []protocol.DocumentURI) ([]*viewDefinition, error) {
+	var views []*viewDefinition
+
+	// First, compute a default view for each workspace folder.
+	for _, folder := range folders {
+		view, err := defineView(ctx, fs, folder, "")
+		if err != nil {
+			return nil, err
+		}
+		views = append(views, view)
+	}
+
+	// Next, ensure that the set of views covers all open files contained in a
+	// workspace folder.
+	//
+	// We only do this for files contained in a workspace folder, because other
+	// open files are most likely the result of jumping to a definition from a
+	// workspace file; we don't want to create additional views in those cases:
+	// they should be resolved after initialization.
+
+	folderForFile := func(uri protocol.DocumentURI) *Folder {
+		var longest *Folder
+		for _, folder := range folders {
+			if (longest == nil || len(folder.Dir) > len(longest.Dir)) && folder.Dir.Encloses(uri) {
+				longest = folder
+			}
+		}
+		return longest
+	}
+
+checkFiles:
+	for _, uri := range openFiles {
+		folder := folderForFile(uri)
+		if folder == nil {
+			continue // only guess views for open files
+		}
+		view, err := bestViewForURI2(ctx, fs, uri, views)
+		if err != nil {
+			return nil, err
+		}
+		if view != nil {
+			continue // file covered by an existing view
+		}
+		view, err = defineView(ctx, fs, folder, uri)
+		if err != nil {
+			return nil, err
+		}
+		// It need not strictly be the case that the best view for a file is
+		// distinct from other views, as the logic of getViewDefinition and
+		// bestViewForURI does not align perfectly. This is not necessarily a bug:
+		// there may be files for which we can't construct a valid view.
+		//
+		// Nevertheless, we should not create redundant views.
+		for _, alt := range views {
+			if viewDefinitionsEqual(alt, view) {
+				continue checkFiles
+			}
+		}
+		views = append(views, view)
+	}
+
+	return views, nil
+}
+
+// bestViewForURI2 returns the existing view that contains the existing file,
+// or (nil, nil) if no matching view is found.
+//
+// The provided uri must be a file uri, not directory.
+//
+// TODO(rfindley): if we pass a file's []constraint.Expr here, we can implement
+// improved build tag support.
+func bestViewForURI2(ctx context.Context, fs file.Source, uri protocol.DocumentURI, views []*viewDefinition) (*viewDefinition, error) {
+	dir := uri.Dir()
+	modURI, err := findRootPattern(ctx, dir, "go.mod", fs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Prefer GoWork > GoMod > GOPATH > GoPackages > AdHoc.
+	var (
+		goPackagesView *viewDefinition // prefer longest
+		gopathView     *viewDefinition // prefer longest
+		adHocView      *viewDefinition // exact match
+		modView        *viewDefinition // exact match
+		// TODO(rfindley): should we also prefer the longest matching go.work view?
+		// If two go.work files contain a module, which one is more natural to use?
+	)
+	for _, view := range views {
+		switch view.Type() {
+		case GoPackagesDriverView:
+			if goPackagesView != nil && len(goPackagesView.root) > len(view.root) {
+				continue
+			}
+			if view.root.Encloses(dir) {
+				goPackagesView = view
+			}
+		case GoWorkView:
+			if _, ok := view.workspaceModFiles[modURI]; ok {
+				return view, nil
+			}
+		case GoModView:
+			if view.GoMod() == modURI {
+				modView = view
+			}
+		case GOPATHView:
+			if gopathView != nil && len(gopathView.root) > len(view.root) {
+				continue
+			}
+			if view.root.Encloses(dir) {
+				gopathView = view
+			}
+		case AdHocView:
+			if view.root == dir {
+				adHocView = view
+			}
+		}
+	}
+	if modView != nil {
+		return modView, nil
+	}
+	if gopathView != nil {
+		return gopathView, nil
+	}
+	if goPackagesView != nil {
+		return goPackagesView, nil
+	}
+	if adHocView != nil {
+		return adHocView, nil
+	}
+	return nil, nil // no view found
+}
+
 // bestViewForURI returns the most closely matching view for the given URI
 // out of the given set of views.
+//
+// TODO(golang/go#57979): this logic is being replaced, as part of zero-config
+// gopls.
 func bestViewForURI(uri protocol.DocumentURI, views []*View) *View {
 	// we need to find the best view for this file
 	var longest *View
@@ -462,7 +601,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 			// synchronously to change processing? Can we assume that the env did not
 			// change, and derive go.work using a combination of the configured
 			// GOWORK value and filesystem?
-			info, err := getViewDefinition(ctx, s.gocmdRunner, s, view.folder)
+			info, err := defineView(ctx, s, view.folder, "")
 			if err != nil {
 				// Catastrophic failure, equivalent to a failure of session
 				// initialization and therefore should almost never happen. One
