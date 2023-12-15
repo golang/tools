@@ -829,6 +829,7 @@ use ./a/ba
 use ./a/b/
 use ./dir/foo
 use ./dir/foobar/
+use ./missing/
 -- a/go.mod --
 -- go.mod --
 -- a/bar/go.mod --
@@ -853,6 +854,7 @@ use ./dir/foobar/
 			{`use ./a/ba()`, []string{"r"}},
 			{`use ./dir/foo()`, []string{"bar"}},
 			{`use ./dir/foobar/()`, []string{}},
+			{`use ./missing/()`, []string{}},
 		}
 		for _, tt := range tests {
 			completions := env.Completion(env.RegexpSearch("go.work", tt.re))

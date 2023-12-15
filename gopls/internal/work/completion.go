@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -74,7 +75,12 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	const numSeenBound = 10000
 	var numSeen int
 	stopWalking := errors.New("hit numSeenBound")
-	err = filepath.Walk(pathPrefixDir, func(wpath string, info os.FileInfo, err error) error {
+	err = filepath.WalkDir(pathPrefixDir, func(wpath string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			// golang/go#64225: an error reading a dir is expected, as the user may
+			// be typing out a use directive for a directory that doesn't exist.
+			return nil
+		}
 		if numSeen > numSeenBound {
 			// Stop traversing if we hit bound.
 			return stopWalking
@@ -86,7 +92,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		// otherwise it won't match the beginning of the
 		// base component of the path the user typed in.
 		rel := strings.TrimPrefix(wpath[len(pathPrefixDir):], string(filepath.Separator))
-		if info.IsDir() && wpath != pathPrefixDir && !strings.HasPrefix(rel, pathPrefixBase) {
+		if entry.IsDir() && wpath != pathPrefixDir && !strings.HasPrefix(rel, pathPrefixBase) {
 			return filepath.SkipDir
 		}
 
