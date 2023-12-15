@@ -286,7 +286,7 @@ Example Usage:
 ...
 "analyses": {
   "unreachable": false, // Disable the unreachable analyzer.
-  "unusedparams": true  // Enable the unusedparams analyzer.
+  "unusedvariable": true  // Enable the unusedvariable analyzer.
 }
 ...
 ```

@@ -1,3 +1,5 @@
+Regression test for #42134,
+"rename fails to update doc comment for local variable of function type"
 
 -- 1.go --
 package issue42134
@@ -29,7 +31,7 @@ func _() {
 	fmt.Println(minNumber) //@rename("minNumber", "res", minNumberTores)
 }
 
-func min(a, b int) int { return a }
+func min(a, b int) int { return a + b }
 -- @minNumberTores/2.go --
 @@ -6 +6 @@
 -	// minNumber is a min number.

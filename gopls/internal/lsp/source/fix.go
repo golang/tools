@@ -93,7 +93,7 @@ func ApplyFix(ctx context.Context, fix settings.Fix, snapshot *cache.Snapshot, f
 	return suggestedFixToEdits(ctx, snapshot, fixFset, suggestion)
 }
 
-// suggestedFixToEdits converts the suggestion's edits from analysis form into protocol form,
+// suggestedFixToEdits converts the suggestion's edits from analysis form into protocol form.
 func suggestedFixToEdits(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, suggestion *analysis.SuggestedFix) ([]protocol.TextDocumentEdit, error) {
 	editsPerFile := map[protocol.DocumentURI]*protocol.TextDocumentEdit{}
 	for _, edit := range suggestion.TextEdits {

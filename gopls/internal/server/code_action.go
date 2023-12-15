@@ -602,6 +602,9 @@ func refactorRewrite(snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.P
 // This is true if:
 //   - [start, end) is contained within an unused field or parameter name
 //   - ... of a non-method function declaration.
+//
+// (Note that the unusedparam analyzer also computes this property, but
+// much more precisely, allowing it to report its findings as diagnostics.)
 func canRemoveParameter(pkg *cache.Package, pgf *source.ParsedGoFile, rng protocol.Range) bool {
 	info, err := source.FindParam(pgf, rng)
 	if err != nil {

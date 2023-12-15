@@ -312,6 +312,11 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 		// Accumulate command-based fixes computed on demand by
 		// (logic adjacent to) the analyzer.
 		if srcAnalyzer.Fix != "" {
+			// TODO(adonovan): this causes the fix to have the same title
+			// as the problem it fixes, which is confusing. For example,
+			// the fix for a diagnostic "unused parameter: x" should be
+			// titled "Remove parameter x". (The edit-based fixes above
+			// have sensible names provided by the originating analyzer.)
 			cmd, err := command.NewApplyFixCommand(gobDiag.Message, command.ApplyFixArgs{
 				URI:   gobDiag.Location.URI,
 				Range: gobDiag.Location.Range,

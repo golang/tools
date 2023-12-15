@@ -327,7 +327,7 @@ type DiagnosticOptions struct {
 	// ...
 	// "analyses": {
 	//   "unreachable": false, // Disable the unreachable analyzer.
-	//   "unusedparams": true  // Enable the unusedparams analyzer.
+	//   "unusedvariable": true  // Enable the unusedvariable analyzer.
 	// }
 	// ...
 	// ```
@@ -827,9 +827,6 @@ func (o *Options) enableAllExperimentMaps() {
 	}
 	if _, ok := o.Codelenses[string(command.RunGovulncheck)]; !ok {
 		o.Codelenses[string(command.RunGovulncheck)] = true
-	}
-	if _, ok := o.Analyses[unusedparams.Analyzer.Name]; !ok {
-		o.Analyses[unusedparams.Analyzer.Name] = true
 	}
 	if _, ok := o.Analyses[unusedvariable.Analyzer.Name]; !ok {
 		o.Analyses[unusedvariable.Analyzer.Name] = true
@@ -1475,7 +1472,7 @@ func defaultAnalyzers() map[string]*Analyzer {
 		shadow.Analyzer.Name:           {Analyzer: shadow.Analyzer, Enabled: false},
 		sortslice.Analyzer.Name:        {Analyzer: sortslice.Analyzer, Enabled: true},
 		testinggoroutine.Analyzer.Name: {Analyzer: testinggoroutine.Analyzer, Enabled: true},
-		unusedparams.Analyzer.Name:     {Analyzer: unusedparams.Analyzer, Enabled: false},
+		unusedparams.Analyzer.Name:     {Analyzer: unusedparams.Analyzer, Enabled: true},
 		unusedwrite.Analyzer.Name:      {Analyzer: unusedwrite.Analyzer, Enabled: false},
 		useany.Analyzer.Name:           {Analyzer: useany.Analyzer, Enabled: false},
 		timeformat.Analyzer.Name:       {Analyzer: timeformat.Analyzer, Enabled: true},
