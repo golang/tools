@@ -367,6 +367,32 @@ func TestLoadAbsolutePath(t *testing.T) {
 	}
 }
 
+func TestLoadArgumentListIsNotTooLong(t *testing.T) {
+	// NOTE: this test adds about 2s to the test suite running time
+
+	t.Parallel()
+
+	// using the real ARG_MAX for some platforms increases the running time of this test by a lot,
+	// 1_000_000 seems like enough to break Windows and macOS if Load doesn't split provided patterns
+	argMax := 1_000_000
+	exported := packagestest.Export(t, packagestest.GOPATH, []packagestest.Module{{
+		Name: "golang.org/mod",
+		Files: map[string]interface{}{
+			"main.go": `package main"`,
+		}}})
+	defer exported.Cleanup()
+	numOfPatterns := argMax/16 + 1 // the pattern below is approx. 16 chars
+	patterns := make([]string, numOfPatterns)
+	for i := 0; i < numOfPatterns; i++ {
+		patterns[i] = fmt.Sprintf("golang.org/mod/p%d", i)
+	} // patterns have more than argMax number of chars combined with whitespaces b/w patterns
+
+	_, err := packages.Load(exported.Config, patterns...)
+	if err != nil {
+		t.Fatalf("failed to load: %v", err)
+	}
+}
+
 func TestVendorImports(t *testing.T) {
 	t.Parallel()
 
@@ -1308,7 +1334,7 @@ func testNoPatterns(t *testing.T, exporter packagestest.Exporter) {
 
 func TestJSON(t *testing.T) { testAllOrModulesParallel(t, testJSON) }
 func testJSON(t *testing.T, exporter packagestest.Exporter) {
-	//TODO: add in some errors
+	// TODO: add in some errors
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
 		Files: map[string]interface{}{
