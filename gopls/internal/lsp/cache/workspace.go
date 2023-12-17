@@ -20,42 +20,32 @@ import (
 // TODO(rfindley): now that experimentalWorkspaceModule is gone, this file can
 // be massively cleaned up and/or removed.
 
-// computeWorkspaceModFiles computes the set of workspace mod files based on the
-// value of go.mod, go.work, and GO111MODULE.
-func computeWorkspaceModFiles(ctx context.Context, gomod, gowork protocol.DocumentURI, go111module go111module, fs file.Source) (map[protocol.DocumentURI]struct{}, error) {
-	if go111module == off {
-		return nil, nil
+// goWorkModules returns the URIs of go.mod files named by the go.work file.
+func goWorkModules(ctx context.Context, gowork protocol.DocumentURI, fs file.Source) (map[protocol.DocumentURI]unit, error) {
+	fh, err := fs.ReadFile(ctx, gowork)
+	if err != nil {
+		return nil, err // canceled
 	}
-	if gowork != "" {
-		fh, err := fs.ReadFile(ctx, gowork)
-		if err != nil {
-			return nil, err
-		}
-		content, err := fh.Content()
-		if err != nil {
-			return nil, err
-		}
-		filename := gowork.Path()
-		dir := filepath.Dir(filename)
-		workFile, err := modfile.ParseWork(filename, content, nil)
-		if err != nil {
-			return nil, fmt.Errorf("parsing go.work: %w", err)
-		}
-		modFiles := make(map[protocol.DocumentURI]struct{})
-		for _, use := range workFile.Use {
-			modDir := filepath.FromSlash(use.Path)
-			if !filepath.IsAbs(modDir) {
-				modDir = filepath.Join(dir, modDir)
-			}
-			modURI := protocol.URIFromPath(filepath.Join(modDir, "go.mod"))
-			modFiles[modURI] = struct{}{}
-		}
-		return modFiles, nil
+	content, err := fh.Content()
+	if err != nil {
+		return nil, err
 	}
-	if gomod != "" {
-		return map[protocol.DocumentURI]struct{}{gomod: {}}, nil
+	filename := gowork.Path()
+	dir := filepath.Dir(filename)
+	workFile, err := modfile.ParseWork(filename, content, nil)
+	if err != nil {
+		return nil, fmt.Errorf("parsing go.work: %w", err)
 	}
-	return nil, nil
+	modFiles := make(map[protocol.DocumentURI]unit)
+	for _, use := range workFile.Use {
+		modDir := filepath.FromSlash(use.Path)
+		if !filepath.IsAbs(modDir) {
+			modDir = filepath.Join(dir, modDir)
+		}
+		modURI := protocol.URIFromPath(filepath.Join(modDir, "go.mod"))
+		modFiles[modURI] = unit{}
+	}
+	return modFiles, nil
 }
 
 // isGoMod reports if uri is a go.mod file.

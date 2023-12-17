@@ -632,7 +632,7 @@ func renamePackageName(ctx context.Context, s *cache.Snapshot, f file.Handle, ne
 	// Get all workspace modules.
 	// TODO(adonovan): should this operate on all go.mod files,
 	// irrespective of whether they are included in the workspace?
-	modFiles := s.ModFiles()
+	modFiles := s.View().ModFiles()
 	for _, m := range modFiles {
 		fh, err := s.ReadFile(ctx, m)
 		if err != nil {

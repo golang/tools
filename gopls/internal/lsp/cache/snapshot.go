@@ -319,22 +319,6 @@ func (s *Snapshot) BackgroundContext() context.Context {
 	return s.backgroundCtx
 }
 
-// ModFiles are the go.mod files enclosed in the snapshot's view and known
-// to the snapshot.
-func (s *Snapshot) ModFiles() []protocol.DocumentURI {
-	var uris []protocol.DocumentURI
-	for modURI := range s.view.workspaceModFiles {
-		uris = append(uris, modURI)
-	}
-	return uris
-}
-
-// WorkFile, if non-empty, is the go.work file for the workspace.
-func (s *Snapshot) WorkFile() protocol.DocumentURI {
-	gowork, _ := s.view.GOWORK()
-	return gowork
-}
-
 // Templates returns the .tmpl files.
 func (s *Snapshot) Templates() map[protocol.DocumentURI]file.Handle {
 	s.mu.Lock()
@@ -352,7 +336,7 @@ func (s *Snapshot) Templates() map[protocol.DocumentURI]file.Handle {
 func (s *Snapshot) validBuildConfiguration() bool {
 	// Since we only really understand the `go` command, if the user has a
 	// different GOPACKAGESDRIVER, assume that their configuration is valid.
-	if s.view.hasGopackagesDriver {
+	if s.view.typ == GoPackagesDriverView {
 		return true
 	}
 
@@ -362,8 +346,7 @@ func (s *Snapshot) validBuildConfiguration() bool {
 		return true
 	}
 
-	// TODO(rfindley): this should probably be subject to "if GO111MODULES = off {...}".
-	if s.view.inGOPATH {
+	if s.view.typ == GOPATHView {
 		return true
 	}
 
@@ -520,7 +503,7 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlag
 	// this with a non-empty inv.Env?
 	//
 	// We should refactor to make it clearer that the correct env is being used.
-	inv.Env = append(append(append(os.Environ(), s.Options().EnvSlice()...), inv.Env...), "GO111MODULE="+s.view.GO111MODULE())
+	inv.Env = append(append(append(os.Environ(), s.Options().EnvSlice()...), inv.Env...), "GO111MODULE="+s.view.adjustedGO111MODULE)
 	inv.BuildFlags = append([]string{}, s.Options().BuildFlags...)
 	cleanup = func() {} // fallback
 
@@ -557,7 +540,9 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlag
 	// the main (workspace) module. Otherwise, we should use the module for
 	// the passed-in working dir.
 	if mode == LoadWorkspace {
-		if gowork, _ := s.view.GOWORK(); gowork == "" && s.view.gomod != "" {
+		// TODO(rfindley): this seems unnecessary and overly complicated. Remove
+		// this along with 'allowModFileModifications'.
+		if s.view.typ == GoModuleView {
 			modURI = s.view.gomod
 		}
 	} else {
@@ -760,7 +745,7 @@ func (s *Snapshot) MethodSets(ctx context.Context, ids ...PackageID) ([]*methods
 // importable packages.
 // It returns an error if the context was cancelled.
 func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI) ([]*metadata.Package, error) {
-	if s.view.ViewType() == AdHocView {
+	if s.view.typ == AdHocView {
 		// As described in golang/go#57209, in ad-hoc workspaces (where we load ./
 		// rather than ./...), preempting the directory load with file loads can
 		// lead to an inconsistent outcome, where certain files are loaded with
@@ -949,9 +934,9 @@ func (s *Snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]stru
 	patterns := make(map[string]unit)
 
 	// If GOWORK is outside the folder, ensure we are watching it.
-	gowork, _ := s.view.GOWORK()
-	if gowork != "" && !s.view.folder.Dir.Encloses(gowork) {
-		patterns[gowork.Path()] = unit{}
+	if s.view.gowork != "" && !s.view.folder.Dir.Encloses(s.view.gowork) {
+		// TODO(rfindley): use RelativePatterns here as well (see below).
+		patterns[filepath.ToSlash(s.view.gowork.Path())] = unit{}
 	}
 
 	var dirs []string
@@ -1219,11 +1204,7 @@ func moduleForURI(modFiles map[protocol.DocumentURI]struct{}, uri protocol.Docum
 // The given uri must be a file, not a directory.
 func nearestModFile(ctx context.Context, uri protocol.DocumentURI, fs file.Source) (protocol.DocumentURI, error) {
 	dir := filepath.Dir(uri.Path())
-	mod, err := findRootPattern(ctx, dir, "go.mod", fs)
-	if err != nil {
-		return "", err
-	}
-	return protocol.URIFromPath(mod), nil
+	return findRootPattern(ctx, protocol.URIFromPath(dir), "go.mod", fs)
 }
 
 // Metadata returns the metadata for the specified package,
@@ -2001,10 +1982,8 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) *Snaps
 			continue // like with go.mod files, we only reinit when things change on disk
 		}
 		dir, base := filepath.Split(uri.Path())
-		if base == "go.work.sum" && s.view.gowork != "" {
-			if dir == filepath.Dir(s.view.gowork) {
-				reinit = true
-			}
+		if base == "go.work.sum" && s.view.typ == GoWorkView && dir == filepath.Dir(s.view.gowork.Path()) {
+			reinit = true
 		}
 		if base == "go.sum" {
 			modURI := protocol.URIFromPath(filepath.Join(dir, "go.mod"))

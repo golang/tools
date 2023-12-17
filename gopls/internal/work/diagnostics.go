@@ -22,7 +22,7 @@ func Diagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.Do
 	defer done()
 
 	reports := map[protocol.DocumentURI][]*cache.Diagnostic{}
-	uri := snapshot.WorkFile()
+	uri := snapshot.View().GoWork()
 	if uri == "" {
 		return nil, nil
 	}

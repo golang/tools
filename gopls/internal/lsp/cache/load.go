@@ -310,15 +310,15 @@ func (m *moduleErrorMap) Error() string {
 func (s *Snapshot) workspaceLayoutError(ctx context.Context) (error, []*Diagnostic) {
 	// TODO(rfindley): both of the checks below should be delegated to the workspace.
 
-	if s.view.effectiveGO111MODULE() == off {
+	if s.view.adjustedGO111MODULE == "off" {
 		return nil, nil
 	}
 
-	// If the user is using a go.work file, we assume that they know what they
-	// are doing.
+	// If the user is using a go.work file, assume that they know what they are
+	// doing.
 	//
 	// TODO(golang/go#53880): improve orphaned file diagnostics when using go.work.
-	if s.view.gowork != "" {
+	if s.view.typ == GoWorkView {
 		return nil, nil
 	}
 

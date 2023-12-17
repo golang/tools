@@ -949,7 +949,7 @@ func (c *commandHandler) FetchVulncheckResult(ctx context.Context, arg command.U
 	ret := map[protocol.DocumentURI]*vulncheck.Result{}
 	err := c.run(ctx, commandConfig{forURI: arg.URI}, func(ctx context.Context, deps commandDeps) error {
 		if deps.snapshot.Options().Vulncheck == settings.ModeVulncheckImports {
-			for _, modfile := range deps.snapshot.ModFiles() {
+			for _, modfile := range deps.snapshot.View().ModFiles() {
 				res, err := deps.snapshot.ModVuln(ctx, modfile)
 				if err != nil {
 					return err
@@ -1159,21 +1159,23 @@ func (c *commandHandler) RunGoWorkCommand(ctx context.Context, args command.RunG
 		view := snapshot.View()
 		viewDir := snapshot.Folder().Path()
 
-		// If the user has explicitly set GOWORK=off, we should warn them
-		// explicitly and avoid potentially misleading errors below.
-		goworkURI, off := view.GOWORK()
-		if off {
+		if view.Type() != cache.GoWorkView && view.GoWork() != "" {
+			// If we are not using an existing go.work file, GOWORK must be explicitly off.
+			// TODO(rfindley): what about GO111MODULE=off?
 			return fmt.Errorf("cannot modify go.work files when GOWORK=off")
 		}
-		gowork := goworkURI.Path()
 
-		if goworkURI != "" {
-			fh, err := snapshot.ReadFile(ctx, goworkURI)
+		var gowork string
+		// If the user has explicitly set GOWORK=off, we should warn them
+		// explicitly and avoid potentially misleading errors below.
+		if view.GoWork() != "" {
+			gowork = view.GoWork().Path()
+			fh, err := snapshot.ReadFile(ctx, view.GoWork())
 			if err != nil {
-				return fmt.Errorf("reading current go.work file: %v", err)
+				return err // e.g. canceled
 			}
 			if !fh.SameContentsOnDisk() {
-				return fmt.Errorf("must save workspace file %s before running go work commands", goworkURI)
+				return fmt.Errorf("must save workspace file %s before running go work commands", view.GoWork())
 			}
 		} else {
 			if !args.InitFirst {

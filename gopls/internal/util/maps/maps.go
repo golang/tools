@@ -23,3 +23,16 @@ func Keys[M ~map[K]V, K comparable, V any](m M) []K {
 	}
 	return r
 }
+
+// SameKeys reports whether x and y have equal sets of keys.
+func SameKeys[K comparable, V1, V2 any](x map[K]V1, y map[K]V2) bool {
+	if len(x) != len(y) {
+		return false
+	}
+	for k := range x {
+		if _, ok := y[k]; !ok {
+			return false
+		}
+	}
+	return true
+}

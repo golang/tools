@@ -68,7 +68,7 @@ func collectDiagnostics(ctx context.Context, snapshot *cache.Snapshot, diagFn fu
 	var mu sync.Mutex
 	reports := make(map[protocol.DocumentURI][]*cache.Diagnostic)
 
-	for _, uri := range snapshot.ModFiles() {
+	for _, uri := range snapshot.View().ModFiles() {
 		uri := uri
 		g.Go(func() error {
 			fh, err := snapshot.ReadFile(ctx, uri)

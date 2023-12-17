@@ -321,7 +321,7 @@ func (s *Snapshot) extractGoCommandErrors(ctx context.Context, goCmdError error)
 	_ = errors.As(goCmdError, &moduleErrs)
 
 	// Match the error against all the mod files in the workspace.
-	for _, uri := range s.ModFiles() {
+	for _, uri := range s.View().ModFiles() {
 		fh, err := s.ReadFile(ctx, uri)
 		if err != nil {
 			event.Error(ctx, "getting modfile for Go command error", err)
@@ -458,7 +458,7 @@ See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
 
 	case strings.Contains(goCmdError, "updates to go.sum needed"), strings.Contains(goCmdError, "missing go.sum entry"):
 		var args []protocol.DocumentURI
-		args = append(args, s.ModFiles()...)
+		args = append(args, s.View().ModFiles()...)
 		tidyCmd, err := command.NewTidyCommand("Run go mod tidy", command.URIArgs{URIs: args})
 		if err != nil {
 			return nil, err
