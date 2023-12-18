@@ -22,6 +22,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 		// fields exported for cmp.Diff
 		Type ViewType
 		Root string
+		Env  []string
 	}
 
 	type folderSummary struct {
@@ -52,7 +53,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 			},
 			[]folderSummary{{dir: "."}},
 			nil,
-			[]viewSummary{{GoWorkView, "."}},
+			[]viewSummary{{GoWorkView, ".", nil}},
 		},
 		{
 			"basic go.mod workspace",
@@ -61,7 +62,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 			},
 			[]folderSummary{{dir: "."}},
 			nil,
-			[]viewSummary{{GoModView, "."}},
+			[]viewSummary{{GoModView, ".", nil}},
 		},
 		{
 			"basic GOPATH workspace",
@@ -80,7 +81,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 				},
 			}},
 			[]string{"src/golang.org/a//a.go", "src/golang.org/b/b.go"},
-			[]viewSummary{{GOPATHView, "src"}},
+			[]viewSummary{{GOPATHView, "src", nil}},
 		},
 		{
 			"basic AdHoc workspace",
@@ -89,7 +90,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 			},
 			[]folderSummary{{dir: "."}},
 			nil,
-			[]viewSummary{{AdHocView, "."}},
+			[]viewSummary{{AdHocView, ".", nil}},
 		},
 		{
 			"multi-folder workspace",
@@ -99,7 +100,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 			},
 			[]folderSummary{{dir: "a"}, {dir: "b"}},
 			nil,
-			[]viewSummary{{GoModView, "a"}, {GoModView, "b"}},
+			[]viewSummary{{GoModView, "a", nil}, {GoModView, "b", nil}},
 		},
 		{
 			"multi-module workspace",
@@ -109,7 +110,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 			},
 			[]folderSummary{{dir: "."}},
 			nil,
-			[]viewSummary{{AdHocView, "."}},
+			[]viewSummary{{AdHocView, ".", nil}},
 		},
 		{
 			"zero-config open module",
@@ -122,8 +123,8 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 			[]folderSummary{{dir: "."}},
 			[]string{"a/a.go"},
 			[]viewSummary{
-				{AdHocView, "."},
-				{GoModView, "a"},
+				{AdHocView, ".", nil},
+				{GoModView, "a", nil},
 			},
 		},
 		{
@@ -137,9 +138,9 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 			[]folderSummary{{dir: "."}},
 			[]string{"a/a.go", "b/b.go"},
 			[]viewSummary{
-				{AdHocView, "."},
-				{GoModView, "a"},
-				{GoModView, "b"},
+				{AdHocView, ".", nil},
+				{GoModView, "a", nil},
+				{GoModView, "b", nil},
 			},
 		},
 		{
@@ -153,7 +154,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 			},
 			[]folderSummary{{dir: "."}},
 			[]string{"a/a.go", "b/b.go"},
-			[]viewSummary{{GoWorkView, "."}},
+			[]viewSummary{{GoWorkView, ".", nil}},
 		},
 		{
 			"go.work from env",
@@ -175,7 +176,23 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 				},
 			}},
 			[]string{"a/a.go", "b/b.go"},
-			[]viewSummary{{GoWorkView, "."}},
+			[]viewSummary{{GoWorkView, ".", nil}},
+		},
+		{
+			"independent module view",
+			map[string]string{
+				"go.work":  "go 1.18\nuse (\n\t./a\n)\n", // not using b
+				"a/go.mod": "module golang.org/a\ngo 1.18\n",
+				"a/a.go":   "package a",
+				"b/go.mod": "module golang.org/a\ngo 1.18\n",
+				"b/b.go":   "package b",
+			},
+			[]folderSummary{{dir: "."}},
+			[]string{"a/a.go", "b/b.go"},
+			[]viewSummary{
+				{GoWorkView, ".", nil},
+				{GoModView, "b", []string{"GOWORK=off"}},
+			},
 		},
 		{
 			"multiple go.work",
@@ -190,7 +207,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 			},
 			[]folderSummary{{dir: "."}},
 			[]string{"a/a.go", "b/b.go", "b/c/c.go"},
-			[]viewSummary{{GoWorkView, "."}, {GoWorkView, "b/c"}},
+			[]viewSummary{{GoWorkView, ".", nil}, {GoWorkView, "b/c", nil}},
 		},
 	}
 
@@ -237,6 +254,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 				got = append(got, viewSummary{
 					Type: view.Type(),
 					Root: rel.RelPath(view.root.Path()),
+					Env:  view.envOverlay,
 				})
 			}
 			if diff := cmp.Diff(test.want, got); diff != "" {

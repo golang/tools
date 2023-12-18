@@ -42,6 +42,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/gopls/internal/util/persistent"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/label"
@@ -498,12 +499,19 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlag
 	allowModfileModificationOption := s.Options().AllowModfileModifications
 	allowNetworkOption := s.Options().AllowImplicitNetworkAccess
 
-	// TODO(rfindley): this is very hard to follow, and may not even be doing the
-	// right thing: should inv.Env really trample view.options? Do we ever invoke
-	// this with a non-empty inv.Env?
+	// TODO(rfindley): it's not clear that this is doing the right thing.
+	// Should inv.Env really overwrite view.options? Should s.view.envOverlay
+	// overwrite inv.Env? (Do we ever invoke this with a non-empty inv.Env?)
 	//
-	// We should refactor to make it clearer that the correct env is being used.
-	inv.Env = append(append(append(os.Environ(), s.Options().EnvSlice()...), inv.Env...), "GO111MODULE="+s.view.adjustedGO111MODULE)
+	// We should survey existing uses and write down rules for how env is
+	// applied.
+	inv.Env = slices.Concat(
+		os.Environ(),
+		s.Options().EnvSlice(),
+		inv.Env,
+		[]string{"GO111MODULE=" + s.view.adjustedGO111MODULE},
+		s.view.envOverlay,
+	)
 	inv.BuildFlags = append([]string{}, s.Options().BuildFlags...)
 	cleanup = func() {} // fallback
 

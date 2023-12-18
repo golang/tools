@@ -137,6 +137,9 @@ type viewDefinition struct {
 	// TODO(rfindley): should we just run `go list -m` to compute this set?
 	workspaceModFiles    map[protocol.DocumentURI]struct{}
 	workspaceModFilesErr error // error encountered computing workspaceModFiles
+
+	// envOverlay holds additional environment to apply to this viewDefinition.
+	envOverlay []string
 }
 
 type viewDef struct {
@@ -190,6 +193,14 @@ func viewDefinitionsEqual(x, y *viewDefinition) bool {
 		}
 	} else if !maps.SameKeys(x.workspaceModFiles, y.workspaceModFiles) {
 		return false
+	}
+	if len(x.envOverlay) != len(y.envOverlay) {
+		return false
+	}
+	for i, xv := range x.envOverlay {
+		if xv != y.envOverlay[i] {
+			return false
+		}
 	}
 	return x.viewDef == y.viewDef
 }
@@ -875,25 +886,6 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forURI prot
 		def.adjustedGO111MODULE = "auto"
 	}
 
-	hasGoPackagesDriver := false
-	{
-		// The value of GOPACKAGESDRIVER is not returned through the go command.
-		gopackagesdriver := os.Getenv("GOPACKAGESDRIVER")
-		// A user may also have a gopackagesdriver binary on their machine, which
-		// works the same way as setting GOPACKAGESDRIVER.
-		tool, _ := exec.LookPath("gopackagesdriver")
-		hasGoPackagesDriver = gopackagesdriver != "off" && (gopackagesdriver != "" || tool != "")
-	}
-
-	// Check if the workspace is within any GOPATH directory.
-	inGOPATH := false
-	for _, gp := range filepath.SplitList(def.gopath) {
-		if pathutil.InDir(filepath.Join(gp, "src"), dir) {
-			inGOPATH = true
-			break
-		}
-	}
-
 	dirURI := protocol.URIFromPath(dir)
 	goworkFromEnv := false
 	if rawGoWork != "off" && rawGoWork != "" {
@@ -927,18 +919,38 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forURI prot
 	}
 
 	// Determine how we load and where to load package information for this view
-	// (i.e. the ViewType and root).
 	//
-	// If GOPACKAGESDRIVER is set it takes precedence. Otherwise, check if we're
-	// in one of the module modes (go.mod or go.work). From go.dev/ref/mod,
-	// module mode is active if GO111MODULE is on, or in {auto,""} and we are
-	// inside a module or have a GOWORK value. But gopls is less strict, allowing
-	// GOPATH mode if GO111MODULE="", and AdHoc views if no module is found.
-	switch {
-	case hasGoPackagesDriver:
-		def.typ = GoPackagesDriverView
-		def.root = dirURI
-	case def.adjustedGO111MODULE != "off" && rawGoWork != "off" && def.gowork != "":
+	// Specifically, set
+	//  - def.typ
+	//  - def.root
+	//  - def.workspaceModFiles, and
+	//  - def.envOverlay.
+
+	// If GOPACKAGESDRIVER is set it takes precedence.
+	{
+		// The value of GOPACKAGESDRIVER is not returned through the go command.
+		gopackagesdriver := os.Getenv("GOPACKAGESDRIVER")
+		// A user may also have a gopackagesdriver binary on their machine, which
+		// works the same way as setting GOPACKAGESDRIVER.
+		//
+		// TODO(rfindley): remove this call to LookPath. We should not support this
+		// undocumented method of setting GOPACKAGESDRIVER.
+		tool, err := exec.LookPath("gopackagesdriver")
+		if gopackagesdriver != "off" && (gopackagesdriver != "" || (err == nil && tool != "")) {
+			def.typ = GoPackagesDriverView
+			def.root = dirURI
+			return def, nil
+		}
+	}
+
+	// From go.dev/ref/mod, module mode is active if GO111MODULE=on, or
+	// GO111MODULE=auto or "" and we are inside a module or have a GOWORK value.
+	// But gopls is less strict, allowing GOPATH mode if GO111MODULE="", and
+	// AdHoc views if no module is found.
+
+	// Prefer a go.work file if it is available and contains the module relevant
+	// to forURI.
+	if def.adjustedGO111MODULE != "off" && rawGoWork != "off" && def.gowork != "" {
 		def.typ = GoWorkView
 		if goworkFromEnv {
 			// The go.work file could be anywhere, which can lead to confusing error
@@ -948,18 +960,51 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forURI prot
 			def.root = def.gowork.Dir()
 		}
 		def.workspaceModFiles, def.workspaceModFilesErr = goWorkModules(ctx, def.gowork, fs)
-	case def.adjustedGO111MODULE != "off" && def.gomod != "":
+
+		// If forURI is in a module but that module is not
+		// included in the go.work file, use a go.mod view with GOWORK=off.
+		if forURI != "" && def.workspaceModFilesErr == nil && def.gomod != "" {
+			if _, ok := def.workspaceModFiles[def.gomod]; !ok {
+				def.typ = GoModView
+				def.root = def.gomod.Dir()
+				def.workspaceModFiles = map[protocol.DocumentURI]unit{def.gomod: {}}
+				def.envOverlay = []string{"GOWORK=off"}
+			}
+		}
+		return def, nil
+	}
+
+	// Otherwise, use the active module, if in module mode.
+	//
+	// Note, we could override GO111MODULE here via envOverlay if we wanted to
+	// support the case where someone opens a module with GO111MODULE=off. But
+	// that is probably not worth worrying about (at this point, folks probably
+	// shouldn't be setting GO111MODULE).
+	if def.adjustedGO111MODULE != "off" && def.gomod != "" {
 		def.typ = GoModView
 		def.root = def.gomod.Dir()
 		def.workspaceModFiles = map[protocol.DocumentURI]struct{}{def.gomod: {}}
-	case def.adjustedGO111MODULE != "on" && inGOPATH:
-		def.typ = GOPATHView
-		def.root = dirURI
-	default:
-		def.typ = AdHocView
-		def.root = dirURI
+		return def, nil
 	}
 
+	// Check if the workspace is within any GOPATH directory.
+	inGOPATH := false
+	for _, gp := range filepath.SplitList(def.gopath) {
+		if pathutil.InDir(filepath.Join(gp, "src"), dir) {
+			inGOPATH = true
+			break
+		}
+	}
+	if def.adjustedGO111MODULE != "on" && inGOPATH {
+		def.typ = GOPATHView
+		def.root = dirURI
+		return def, nil
+	}
+
+	// We're not in a workspace, module, or GOPATH, so have no better choice than
+	// an ad-hoc view.
+	def.typ = AdHocView
+	def.root = dirURI
 	return def, nil
 }
 
