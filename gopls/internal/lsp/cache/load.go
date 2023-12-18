@@ -592,11 +592,38 @@ func computeLoadDiagnostics(ctx context.Context, snapshot *Snapshot, mp *metadat
 // isWorkspacePackageLocked reports whether p is a workspace package for the
 // snapshot s.
 //
+// Workspace packages are packages that we consider the user to be actively
+// working on. As such, they are re-diagnosed on every keystroke, and searched
+// for various workspace-wide queries such as references or workspace symbols.
+//
 // See the commentary inline for a description of the workspace package
 // heuristics.
 //
 // s.mu must be held while calling this function.
 func isWorkspacePackageLocked(s *Snapshot, meta *metadata.Graph, pkg *metadata.Package) bool {
+	if metadata.IsCommandLineArguments(pkg.ID) {
+		// Ad-hoc command-line-arguments packages aren't workspace packages.
+		// With zero-config gopls (golang/go#57979) they should be very rare, as
+		// they should only arise when the user opens a file outside the workspace
+		// which isn't present in the import graph of a workspace package.
+		//
+		// Considering them as workspace packages tends to be racy, as they don't
+		// deterministically belong to any view.
+		if !pkg.Standalone {
+			return false
+		}
+
+		// If all the files contained in pkg have a real package, we don't need to
+		// keep pkg as a workspace package.
+		if allFilesHaveRealPackages(meta, pkg) {
+			return false
+		}
+
+		// For now, allow open standalone packages (i.e. go:build ignore) to be
+		// workspace packages, but this means they could belong to multiple views.
+		return containsOpenFileLocked(s, pkg)
+	}
+
 	// Apply filtering logic.
 	//
 	// Workspace packages must contain at least one non-filtered file.
@@ -629,20 +656,6 @@ func isWorkspacePackageLocked(s *Snapshot, meta *metadata.Graph, pkg *metadata.P
 		if !inFolder {
 			return false
 		}
-	}
-
-	// Special case: consider command-line packages to be workspace packages if
-	// they are open and the only package containing a given file.
-	if metadata.IsCommandLineArguments(pkg.ID) {
-		// If all the files contained in m have a real package, we don't need to
-		// keep m as a workspace package.
-		if allFilesHaveRealPackages(meta, pkg) {
-			return false
-		}
-
-		// We only care about command-line-arguments packages if they are still
-		// open.
-		return containsOpenFileLocked(s, pkg)
 	}
 
 	// In module mode, a workspace package must be contained in a workspace

@@ -80,12 +80,6 @@ type View struct {
 	// fs is the file source used to populate this view.
 	fs *overlayFS
 
-	// knownFiles tracks files that the view has accessed.
-	// TODO(golang/go#57558): this notion is fundamentally problematic, and
-	// should be removed.
-	knownFilesMu sync.Mutex
-	knownFiles   map[protocol.DocumentURI]bool
-
 	// ignoreFilter is used for fast checking of ignored files.
 	ignoreFilter *ignoreFilter
 
@@ -463,25 +457,6 @@ func (s *Snapshot) locateTemplateFiles(ctx context.Context) {
 	}
 }
 
-func (v *View) contains(uri protocol.DocumentURI) bool {
-	// If we've expanded the go dir to a parent directory, consider if the
-	// expanded dir contains the uri.
-	// TODO(rfindley): should we ignore the root here? It is not provided by the
-	// user. It would be better to explicitly consider the set of active modules
-	// wherever relevant.
-	inGoDir := false
-	if pathutil.InDir(v.root.Path(), v.folder.Dir.Path()) {
-		inGoDir = pathutil.InDir(v.root.Path(), uri.Path())
-	}
-	inFolder := pathutil.InDir(v.folder.Dir.Path(), uri.Path())
-
-	if !inGoDir && !inFolder {
-		return false
-	}
-
-	return !v.filterFunc()(uri)
-}
-
 // filterFunc returns a func that reports whether uri is filtered by the currently configured
 // directoryFilters.
 //
@@ -497,46 +472,6 @@ func (v *View) filterFunc() func(protocol.DocumentURI) bool {
 		}
 		return false
 	}
-}
-
-func (v *View) relevantChange(c file.Modification) bool {
-	// If the file is known to the view, the change is relevant.
-	if v.knownFile(c.URI) {
-		return true
-	}
-	// The go.work file may not be "known" because we first access it through the
-	// session. As a result, treat changes to the view's go.work file as always
-	// relevant, even if they are only on-disk changes.
-	//
-	// TODO(rfindley): Make sure the go.work files are always known
-	// to the view.
-	if v.gowork == c.URI {
-		return true
-	}
-
-	// Note: CL 219202 filtered out on-disk changes here that were not known to
-	// the view, but this introduces a race when changes arrive before the view
-	// is initialized (and therefore, before it knows about files). Since that CL
-	// had neither test nor associated issue, and cited only emacs behavior, this
-	// logic was deleted.
-
-	return v.contains(c.URI)
-}
-
-func (v *View) markKnown(uri protocol.DocumentURI) {
-	v.knownFilesMu.Lock()
-	defer v.knownFilesMu.Unlock()
-	if v.knownFiles == nil {
-		v.knownFiles = make(map[protocol.DocumentURI]bool)
-	}
-	v.knownFiles[uri] = true
-}
-
-// knownFile reports whether the specified valid URI (or an alias) is known to the view.
-func (v *View) knownFile(uri protocol.DocumentURI) bool {
-	v.knownFilesMu.Lock()
-	defer v.knownFilesMu.Unlock()
-	return v.knownFiles[uri]
 }
 
 // shutdown releases resources associated with the view, and waits for ongoing
@@ -798,7 +733,10 @@ type StateChange struct {
 // The resulting snapshot is non-nil, representing the outcome of the state
 // change. The second result is a function that must be called to release the
 // snapshot when the snapshot is no longer needed.
-func (v *View) Invalidate(ctx context.Context, changed StateChange) (*Snapshot, func()) {
+//
+// The resulting bool reports whether the new View needs to be re-diagnosed.
+// See Snapshot.clone for more details.
+func (v *View) Invalidate(ctx context.Context, changed StateChange) (*Snapshot, func(), bool) {
 	// Detach the context so that content invalidation cannot be canceled.
 	ctx = xcontext.Detach(ctx)
 
@@ -822,13 +760,14 @@ func (v *View) Invalidate(ctx context.Context, changed StateChange) (*Snapshot, 
 	prevSnapshot.AwaitInitialized(ctx)
 
 	// Save one lease of the cloned snapshot in the view.
-	v.snapshot = prevSnapshot.clone(ctx, v.baseCtx, changed)
+	var needsDiagnosis bool
+	v.snapshot, needsDiagnosis = prevSnapshot.clone(ctx, v.baseCtx, changed)
 
 	// Remove the initial reference created when prevSnapshot was created.
 	prevSnapshot.decref()
 
 	// Return a second lease to the caller.
-	return v.snapshot, v.snapshot.Acquire()
+	return v.snapshot, v.snapshot.Acquire(), needsDiagnosis
 }
 
 // defineView computes the view definition for the provided workspace folder
@@ -1051,6 +990,8 @@ func findWorkspaceModFile(ctx context.Context, folderURI protocol.DocumentURI, f
 //
 // The resulting string is either the file path of a matching file with the
 // given basename, or "" if none was found.
+//
+// findRootPattern only returns an error in the case of context cancellation.
 func findRootPattern(ctx context.Context, dirURI protocol.DocumentURI, basename string, fs file.Source) (protocol.DocumentURI, error) {
 	dir := dirURI.Path()
 	for dir != "" {

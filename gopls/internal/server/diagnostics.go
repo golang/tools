@@ -36,6 +36,12 @@ type fileDiagnostics struct {
 	publishedHash file.Hash // hash of the last set of diagnostics published for this URI
 	mustPublish   bool      // if set, publish diagnostics even if they haven't changed
 
+	// Orphaned file diagnostics are not necessarily associated with any *View
+	// (since they are orphaned). Instead, keep track of the modification ID at
+	// which they were orphaned (see server.lastModificationID).
+	orphanedAt              uint64 // modification ID at which this file was orphaned.
+	orphanedFileDiagnostics []*cache.Diagnostic
+
 	// Files may have their diagnostics computed by multiple views, and so
 	// diagnostics are organized by View. See the documentation for update for more
 	// details about how the set of file diagnostics evolves over time.
@@ -91,19 +97,69 @@ func sortDiagnostics(d []*cache.Diagnostic) {
 	})
 }
 
-func (s *server) diagnoseSnapshots(snapshots map[*cache.Snapshot][]protocol.DocumentURI, cause ModificationSource) {
-	var diagnosticWG sync.WaitGroup
-	for snapshot, uris := range snapshots {
-		if snapshot.Options().DiagnosticsTrigger == settings.DiagnosticsOnSave && cause == FromDidChange {
-			continue // user requested to update the diagnostics only on save. do not diagnose yet.
+func (s *server) diagnoseChangedViews(ctx context.Context, modID uint64, lastChange map[*cache.View][]protocol.DocumentURI, cause ModificationSource) {
+	// Collect views needing diagnosis.
+	s.modificationMu.Lock()
+	needsDiagnosis := maps.Keys(s.viewsToDiagnose)
+	s.modificationMu.Unlock()
+
+	// Diagnose views concurrently.
+	var wg sync.WaitGroup
+	for _, v := range needsDiagnosis {
+		v := v
+		snapshot, release, err := v.Snapshot()
+		if err != nil {
+			s.modificationMu.Lock()
+			// The View is shut down. Unlike below, no need to check
+			// s.needsDiagnosis[v], since the view can never be diagnosed.
+			delete(s.viewsToDiagnose, v)
+			s.modificationMu.Unlock()
+			continue
 		}
-		diagnosticWG.Add(1)
+
+		// Collect uris for fast diagnosis. We only care about the most recent
+		// change here, because this is just an optimization for the case where the
+		// user is actively editing a single file.
+		uris := lastChange[v]
+		if snapshot.Options().DiagnosticsTrigger == settings.DiagnosticsOnSave && cause == FromDidChange {
+			// The user requested to update the diagnostics only on save.
+			// Do not diagnose yet.
+			release()
+			continue
+		}
+
+		wg.Add(1)
 		go func(snapshot *cache.Snapshot, uris []protocol.DocumentURI) {
-			defer diagnosticWG.Done()
+			defer release()
+			defer wg.Done()
 			s.diagnoseSnapshot(snapshot, uris, snapshot.Options().DiagnosticsDelay)
+			s.modificationMu.Lock()
+
+			// Only remove v from s.viewsToDiagnose if the snapshot is not cancelled.
+			// This ensures that the snapshot was not cloned before its state was
+			// fully evaluated, and therefore avoids missing a change that was
+			// irrelevant to an incomplete snapshot.
+			//
+			// See the documentation for s.viewsToDiagnose for details.
+			if snapshot.BackgroundContext().Err() == nil && s.viewsToDiagnose[v] <= modID {
+				delete(s.viewsToDiagnose, v)
+			}
+			s.modificationMu.Unlock()
 		}(snapshot, uris)
 	}
-	diagnosticWG.Wait()
+
+	wg.Wait()
+
+	// Diagnose orphaned files for the session.
+	orphanedFileDiagnostics, err := s.session.OrphanedFileDiagnostics(ctx)
+	if err == nil {
+		err = s.updateOrphanedFileDiagnostics(ctx, modID, orphanedFileDiagnostics)
+	}
+	if err != nil {
+		if ctx.Err() == nil {
+			event.Error(ctx, "warning: while diagnosing orphaned files", err)
+		}
+	}
 }
 
 // diagnoseSnapshot computes and publishes diagnostics for the given snapshot.
@@ -424,12 +480,6 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 	store("type checking", pkgDiags, nil)           // error reported above
 	store("analyzing packages", analysisDiags, nil) // error reported above
 
-	// Orphaned files.
-	// Confirm that every opened file belongs to a package (if any exist in
-	// the workspace). Otherwise, add a diagnostic to the file.
-	orphanedReports, orphanedErr := snapshot.OrphanedFileDiagnostics(ctx)
-	store("computing orphaned file diagnostics", orphanedReports, orphanedErr)
-
 	return diagnostics, nil
 }
 
@@ -631,45 +681,7 @@ func (s *server) updateDiagnostics(ctx context.Context, allViews []*cache.View, 
 			f.byView[snapshot.View()] = current
 		}
 
-		// Check that the set of views is up-to-date, and de-dupe diagnostics
-		// across views.
-		var (
-			diagHashes = make(map[file.Hash]unit) // unique diagnostic hashes
-			hash       file.Hash                  // XOR of diagnostic hashes
-			unique     []*cache.Diagnostic        // unique diagnostics
-		)
-		for view, viewDiags := range f.byView {
-			if _, ok := viewMap[view]; !ok {
-				delete(f.byView, view) // view no longer exists
-				continue
-			}
-			if viewDiags.version != current.version {
-				continue // a payload of diagnostics applies to a specific file version
-			}
-			for _, diag := range viewDiags.diagnostics {
-				h := hashDiagnostic(diag)
-				if _, ok := diagHashes[h]; !ok {
-					diagHashes[h] = unit{}
-					unique = append(unique, diag)
-					hash.XORWith(h)
-				}
-			}
-		}
-		sortDiagnostics(unique)
-
-		// Publish, if necessary.
-		if hash != f.publishedHash || f.mustPublish {
-			if err := s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
-				Diagnostics: toProtocolDiagnostics(unique),
-				URI:         uri,
-				Version:     current.version,
-			}); err != nil {
-				return err
-			}
-			f.publishedHash = hash
-			f.mustPublish = false
-		}
-		return nil
+		return s.publishFileDiagnosticsLocked(ctx, viewMap, uri, current.version, f)
 	}
 
 	seen := make(map[protocol.DocumentURI]bool)
@@ -706,6 +718,108 @@ func (s *server) updateDiagnostics(ctx context.Context, allViews []*cache.View, 
 			}
 		}
 	}
+}
+
+// updateOrphanedFileDiagnostics records and publishes orphaned file
+// diagnostics as a given modification time.
+func (s *server) updateOrphanedFileDiagnostics(ctx context.Context, modID uint64, diagnostics diagMap) error {
+	views := s.session.Views()
+	viewSet := make(viewSet)
+	for _, v := range views {
+		viewSet[v] = unit{}
+	}
+
+	s.diagnosticsMu.Lock()
+	defer s.diagnosticsMu.Unlock()
+
+	for uri, diags := range diagnostics {
+		f, ok := s.diagnostics[uri]
+		if !ok {
+			f = new(fileDiagnostics)
+			s.diagnostics[uri] = f
+		}
+		if f.orphanedAt > modID {
+			continue
+		}
+		f.orphanedAt = modID
+		f.orphanedFileDiagnostics = diags
+		// TODO(rfindley): the version of this file is potentially inaccurate;
+		// nevertheless, it should be eventually consistent, because all
+		// modifications are diagnosed.
+		fh, err := s.session.ReadFile(ctx, uri)
+		if err != nil {
+			return err
+		}
+		if err := s.publishFileDiagnosticsLocked(ctx, viewSet, uri, fh.Version(), f); err != nil {
+			return err
+		}
+	}
+
+	// Clear any stale orphaned file diagnostics.
+	for uri, f := range s.diagnostics {
+		if f.orphanedAt < modID {
+			f.orphanedFileDiagnostics = nil
+		}
+		fh, err := s.session.ReadFile(ctx, uri)
+		if err != nil {
+			return err
+		}
+		if err := s.publishFileDiagnosticsLocked(ctx, viewSet, uri, fh.Version(), f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// publishFileDiagnosticsLocked publishes a fileDiagnostics value, while holding s.diagnosticsMu.
+//
+// If the publication succeeds, it updates f.publishedHash and f.mustPublish.
+func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet, uri protocol.DocumentURI, version int32, f *fileDiagnostics) error {
+	// Check that the set of views is up-to-date, and de-dupe diagnostics
+	// across views.
+	var (
+		diagHashes = make(map[file.Hash]unit) // unique diagnostic hashes
+		hash       file.Hash                  // XOR of diagnostic hashes
+		unique     []*cache.Diagnostic        // unique diagnostics
+	)
+	add := func(diag *cache.Diagnostic) {
+		h := hashDiagnostic(diag)
+		if _, ok := diagHashes[h]; !ok {
+			diagHashes[h] = unit{}
+			unique = append(unique, diag)
+			hash.XORWith(h)
+		}
+	}
+	for _, diag := range f.orphanedFileDiagnostics {
+		add(diag)
+	}
+	for view, viewDiags := range f.byView {
+		if _, ok := views[view]; !ok {
+			delete(f.byView, view) // view no longer exists
+			continue
+		}
+		if viewDiags.version != version {
+			continue // a payload of diagnostics applies to a specific file version
+		}
+		for _, diag := range viewDiags.diagnostics {
+			add(diag)
+		}
+	}
+	sortDiagnostics(unique)
+
+	// Publish, if necessary.
+	if hash != f.publishedHash || f.mustPublish {
+		if err := s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
+			Diagnostics: toProtocolDiagnostics(unique),
+			URI:         uri,
+			Version:     version,
+		}); err != nil {
+			return err
+		}
+		f.publishedHash = hash
+		f.mustPublish = false
+	}
+	return nil
 }
 
 func toProtocolDiagnostics(diagnostics []*cache.Diagnostic) []protocol.Diagnostic {

@@ -312,7 +312,10 @@ func (vm *validatedMap) set(t *testing.T, key, value int) {
 
 func (vm *validatedMap) remove(t *testing.T, key int) {
 	vm.clock++
-	vm.impl.Delete(key)
+	deleted := vm.impl.Delete(key)
+	if _, ok := vm.expected[key]; ok != deleted {
+		t.Fatalf("Delete(%d) = %t, want %t", key, deleted, ok)
+	}
 	delete(vm.expected, key)
 	vm.validate(t)
 

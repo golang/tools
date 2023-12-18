@@ -8,9 +8,6 @@ package template
 // template files are small enough that the code reprocesses them each time
 // this may be a bad choice for projects with lots of template files.
 
-// This file contains the parsing code, some debugging printing, and
-// implementations for Diagnose, Definition, Hover, References
-
 import (
 	"bytes"
 	"context"

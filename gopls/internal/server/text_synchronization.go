@@ -13,11 +13,13 @@ import (
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/jsonrpc2"
+	"golang.org/x/tools/internal/xcontext"
 )
 
 // ModificationSource identifies the origin of a change.
@@ -96,13 +98,12 @@ func (s *server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 	// There may not be any matching view in the current session. If that's
 	// the case, try creating a new view based on the opened file path.
 	//
-	// TODO(rstambler): This seems like it would continuously add new
-	// views, but it won't because ViewOf only returns an error when there
-	// are no views in the session. I don't know if that logic should go
-	// here, or if we can continue to rely on that implementation detail.
-	//
-	// TODO(golang/go#57979): this will be generalized to a different view calculation.
-	if _, err := s.session.ViewOf(uri); err != nil {
+	// TODO(golang/go#57979): we should separate the logic for managing folders
+	// from the logic for managing views. But it does make sense to ensure at
+	// least one workspace folder the first time a file is opened, and we can't
+	// do that inside didModifyFiles because we don't want to request
+	// configuration while holding a lock.
+	if len(s.session.Views()) == 0 {
 		dir := filepath.Dir(uri.Path())
 		s.addFolders(ctx, []protocol.WorkspaceFolder{{
 			URI:  string(protocol.URIFromPath(dir)),
@@ -157,11 +158,7 @@ func (s *server) warnAboutModifyingGeneratedFiles(ctx context.Context, uri proto
 	// Ideally, we should be able to specify that a generated file should
 	// be opened as read-only. Tell the user that they should not be
 	// editing a generated file.
-	view, err := s.session.ViewOf(uri)
-	if err != nil {
-		return err
-	}
-	snapshot, release, err := view.Snapshot()
+	snapshot, release, err := s.session.SnapshotOf(ctx, uri)
 	if err != nil {
 		return err
 	}
@@ -255,22 +252,21 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []file.Modifi
 	// to their files.
 	modifications = s.session.ExpandModificationsToDirectories(ctx, modifications)
 
-	snapshots, release, err := s.session.DidModifyFiles(ctx, modifications)
+	viewsToDiagnose, err := s.session.DidModifyFiles(ctx, modifications)
 	if err != nil {
 		return err
 	}
 
 	// golang/go#50267: diagnostics should be re-sent after each change.
-	for _, uris := range snapshots {
-		for _, uri := range uris {
-			s.mustPublishDiagnostics(uri)
-		}
+	for _, mod := range modifications {
+		s.mustPublishDiagnostics(mod.URI)
 	}
+
+	modCtx, modID := s.needsDiagnosis(ctx, viewsToDiagnose)
 
 	wg.Add(1)
 	go func() {
-		s.diagnoseSnapshots(snapshots, cause)
-		release()
+		s.diagnoseChangedViews(modCtx, modID, viewsToDiagnose, cause)
 		wg.Done()
 	}()
 
@@ -278,6 +274,29 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []file.Modifi
 	// in case something changed. Compute the new set of directories to watch,
 	// and if it differs from the current set, send updated registrations.
 	return s.updateWatchedDirectories(ctx)
+}
+
+// needsDiagnosis records the given views as needing diagnosis, returning the
+// context and modification id to use for said diagnosis.
+//
+// Only the keys of viewsToDiagnose are used; the changed files are irrelevant.
+func (s *server) needsDiagnosis(ctx context.Context, viewsToDiagnose map[*cache.View][]protocol.DocumentURI) (context.Context, uint64) {
+	s.modificationMu.Lock()
+	defer s.modificationMu.Unlock()
+	if s.cancelPrevDiagnostics != nil {
+		s.cancelPrevDiagnostics()
+	}
+	modCtx := xcontext.Detach(ctx)
+	modCtx, s.cancelPrevDiagnostics = context.WithCancel(modCtx)
+	s.lastModificationID++
+	modID := s.lastModificationID
+
+	for v := range viewsToDiagnose {
+		if needs, ok := s.viewsToDiagnose[v]; !ok || needs < modID {
+			s.viewsToDiagnose[v] = modID
+		}
+	}
+	return modCtx, modID
 }
 
 // DiagnosticWorkTitle returns the title of the diagnostic work resulting from a

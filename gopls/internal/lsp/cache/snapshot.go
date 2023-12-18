@@ -860,10 +860,8 @@ func (s *Snapshot) ReverseDependencies(ctx context.Context, id PackageID, transi
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	meta := s.meta
-	s.mu.Unlock()
 
+	meta := s.MetadataGraph()
 	var rdeps map[PackageID]*metadata.Package
 	if transitive {
 		rdeps = meta.ReverseReflexiveTransitiveClosure(id)
@@ -1104,10 +1102,6 @@ func (s *Snapshot) isWorkspacePackage(id PackageID) bool {
 //
 // TODO(rfindley): move to symbols.go.
 func (s *Snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[protocol.DocumentURI][]Symbol, error) {
-	if err := s.awaitLoaded(ctx); err != nil {
-		return nil, err
-	}
-
 	var (
 		meta []*metadata.Package
 		err  error
@@ -1168,15 +1162,13 @@ func (s *Snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[protoco
 // It may also contain ad-hoc packages for standalone files.
 // It includes all test variants.
 //
-// TODO(rfindley): just return the metadata graph here.
+// TODO(rfindley): Replace this with s.MetadataGraph().
 func (s *Snapshot) AllMetadata(ctx context.Context) ([]*metadata.Package, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
 
-	s.mu.Lock()
-	g := s.meta
-	s.mu.Unlock()
+	g := s.MetadataGraph()
 
 	meta := make([]*metadata.Package, 0, len(g.Packages))
 	for _, mp := range g.Packages {
@@ -1258,8 +1250,6 @@ func (s *Snapshot) clearShouldLoad(scopes ...loadScope) {
 // in the given snapshot.
 // TODO(adonovan): delete this operation; use ReadFile instead.
 func (s *Snapshot) FindFile(uri protocol.DocumentURI) file.Handle {
-	s.view.markKnown(uri)
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1275,8 +1265,6 @@ func (s *Snapshot) FindFile(uri protocol.DocumentURI) file.Handle {
 func (s *Snapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (file.Handle, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	s.view.markKnown(uri)
 
 	fh, ok := s.files.Get(uri)
 	if !ok {
@@ -1336,7 +1324,13 @@ func (s *Snapshot) IsOpen(uri protocol.DocumentURI) bool {
 	return open
 }
 
-// TODO(rfindley): it would make sense for awaitLoaded to return metadata.
+// MetadataGraph returns the current metadata graph for the Snapshot.
+func (s *Snapshot) MetadataGraph() *metadata.Graph {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.meta
+}
+
 func (s *Snapshot) awaitLoaded(ctx context.Context) error {
 	loadErr := s.awaitLoadedAllErrors(ctx)
 
@@ -1464,11 +1458,6 @@ func (s *Snapshot) awaitLoadedAllErrors(ctx context.Context) *CriticalError {
 		return &CriticalError{MainError: ctx.Err()}
 	}
 
-	// TODO(rfindley): reloading is not idempotent: if we try to reload or load
-	// orphaned files below and fail, we won't try again. For that reason, we
-	// could get different results from subsequent calls to this function, which
-	// may cause critical errors to be suppressed.
-
 	if err := s.reloadWorkspace(ctx); err != nil {
 		diags := s.extractGoCommandErrors(ctx, err)
 		return &CriticalError{
@@ -1477,13 +1466,6 @@ func (s *Snapshot) awaitLoadedAllErrors(ctx context.Context) *CriticalError {
 		}
 	}
 
-	if err := s.reloadOrphanedOpenFiles(ctx); err != nil {
-		diags := s.extractGoCommandErrors(ctx, err)
-		return &CriticalError{
-			MainError:   err,
-			Diagnostics: maps.Group(diags, byURI),
-		}
-	}
 	return nil
 }
 
@@ -1546,124 +1528,15 @@ func (s *Snapshot) reloadWorkspace(ctx context.Context) error {
 	return err
 }
 
-// reloadOrphanedOpenFiles attempts to load a package for each open file that
-// does not yet have an associated package. If loading finishes without being
-// canceled, any files still not contained in a package are marked as unloadable.
-//
-// An error is returned if the load is canceled.
-func (s *Snapshot) reloadOrphanedOpenFiles(ctx context.Context) error {
-	s.mu.Lock()
-	meta := s.meta
-	s.mu.Unlock()
-	// When we load ./... or a package path directly, we may not get packages
-	// that exist only in overlays. As a workaround, we search all of the files
-	// available in the snapshot and reload their metadata individually using a
-	// file= query if the metadata is unavailable.
-	open := s.overlays()
-	var files []*Overlay
-	for _, o := range open {
-		uri := o.URI()
-		if s.IsBuiltin(uri) || s.FileKind(o) != file.Go {
-			continue
-		}
-		if len(meta.IDs[uri]) == 0 {
-			files = append(files, o)
-		}
-	}
-
-	// Filter to files that are not known to be unloadable.
-	s.mu.Lock()
-	loadable := files[:0]
-	for _, file := range files {
-		if !s.unloadableFiles.Contains(file.URI()) {
-			loadable = append(loadable, file)
-		}
-	}
-	files = loadable
-	s.mu.Unlock()
-
-	if len(files) == 0 {
-		return nil
-	}
-
-	var uris []protocol.DocumentURI
-	for _, file := range files {
-		uris = append(uris, file.URI())
-	}
-
-	event.Log(ctx, "reloadOrphanedFiles reloading", tag.Files.Of(uris))
-
-	var g errgroup.Group
-
-	cpulimit := runtime.GOMAXPROCS(0)
-	g.SetLimit(cpulimit)
-
-	// Load files one-at-a-time. go/packages can return at most one
-	// command-line-arguments package per query.
-	for _, file := range files {
-		file := file
-		g.Go(func() error {
-			return s.load(ctx, false, fileLoadScope(file.URI()))
-		})
-	}
-
-	// If we failed to load some files, i.e. they have no metadata,
-	// mark the failures so we don't bother retrying until the file's
-	// content changes.
-	//
-	// TODO(rfindley): is it possible that the load stopped early for an
-	// unrelated errors? If so, add a fallback?
-
-	if err := g.Wait(); err != nil {
-		// Check for context cancellation so that we don't incorrectly mark files
-		// as unloadable, but don't return before setting all workspace packages.
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		if !errors.Is(err, errNoPackages) {
-			event.Error(ctx, "reloadOrphanedFiles: failed to load", err, tag.Files.Of(uris))
-		}
-	}
-
-	// If the context was not canceled, we assume that the result of loading
-	// packages is deterministic (though as we saw in golang/go#59318, it may not
-	// be in the presence of bugs). Marking all unloaded files as unloadable here
-	// prevents us from falling into recursive reloading where we only make a bit
-	// of progress each time.
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, file := range files {
-		// TODO(rfindley): instead of locking here, we should have load return the
-		// metadata graph that resulted from loading.
-		uri := file.URI()
-		if len(s.meta.IDs[uri]) == 0 {
-			s.unloadableFiles.Add(uri)
-		}
-	}
-
-	return nil
-}
-
-// OrphanedFileDiagnostics reports diagnostics describing why open files have
-// no packages or have only command-line-arguments packages.
-//
-// If the resulting diagnostic is nil, the file is either not orphaned or we
-// can't produce a good diagnostic.
-//
-// The caller must not mutate the result.
-// TODO(rfindley): reconcile the definition of "orphaned" here with
-// reloadOrphanedFiles. The latter does not include files with
-// command-line-arguments packages.
-func (s *Snapshot) OrphanedFileDiagnostics(ctx context.Context) (map[protocol.DocumentURI][]*Diagnostic, error) {
+func (s *Snapshot) orphanedFileDiagnostics(ctx context.Context, overlays []*Overlay) ([]*Diagnostic, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
 
-	var files []*Overlay
-
+	var diagnostics []*Diagnostic
+	var orphaned []*Overlay
 searchOverlays:
-	for _, o := range s.overlays() {
+	for _, o := range overlays {
 		uri := o.URI()
 		if s.IsBuiltin(uri) || s.FileKind(o) != file.Go {
 			continue
@@ -1677,21 +1550,33 @@ searchOverlays:
 				continue searchOverlays
 			}
 		}
-		files = append(files, o)
+		// With zero-config gopls (golang/go#57979), orphaned file diagnostics
+		// include diagnostics for orphaned files -- not just diagnostics relating
+		// to the reason the files are opened.
+		//
+		// This is because orphaned files are never considered part of a workspace
+		// package: if they are loaded by a view, that view is arbitrary, and they
+		// may be loaded by multiple views. If they were to be diagnosed by
+		// multiple views, their diagnostics may become inconsistent.
+		if len(mps) > 0 {
+			diags, err := s.PackageDiagnostics(ctx, mps[0].ID)
+			if err != nil {
+				return nil, err
+			}
+			diagnostics = append(diagnostics, diags[uri]...)
+		}
+		orphaned = append(orphaned, o)
 	}
-	if len(files) == 0 {
+
+	if len(orphaned) == 0 {
 		return nil, nil
 	}
 
 	loadedModFiles := make(map[protocol.DocumentURI]struct{}) // all mod files, including dependencies
 	ignoredFiles := make(map[protocol.DocumentURI]bool)       // files reported in packages.Package.IgnoredFiles
 
-	meta, err := s.AllMetadata(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, meta := range meta {
+	g := s.MetadataGraph()
+	for _, meta := range g.Packages {
 		if meta.Module != nil && meta.Module.GoMod != "" {
 			gomod := protocol.URIFromPath(meta.Module.GoMod)
 			loadedModFiles[gomod] = struct{}{}
@@ -1701,31 +1586,16 @@ searchOverlays:
 		}
 	}
 
-	// Note: diagnostics holds a slice for consistency with other diagnostic
-	// funcs.
-	diagnostics := make(map[protocol.DocumentURI][]*Diagnostic)
-	for _, fh := range files {
-		// Only warn about orphaned files if the file is well-formed enough to
-		// actually be part of a package.
-		//
-		// Use ParseGo as for open files this is likely to be a cache hit (we'll have )
-		pgf, err := s.ParseGo(ctx, fh, ParseHeader)
-		if err != nil {
-			continue
-		}
-		if !pgf.File.Name.Pos().IsValid() {
-			continue
-		}
-		rng, err := pgf.PosRange(pgf.File.Name.Pos(), pgf.File.Name.End())
-		if err != nil {
-			continue
+	for _, fh := range orphaned {
+		pgf, rng, ok := orphanedFileDiagnosticRange(ctx, s.view.parseCache, fh)
+		if !ok {
+			continue // e.g. cancellation or parse error
 		}
 
 		var (
 			msg            string         // if non-empty, report a diagnostic with this message
 			suggestedFixes []SuggestedFix // associated fixes, if any
 		)
-
 		// If we have a relevant go.mod file, check whether the file is orphaned
 		// due to its go.mod file being inactive. We could also offer a
 		// prescriptive diagnostic in the case that there is no go.mod file, but it
@@ -1854,10 +1724,29 @@ https://github.com/golang/tools/blob/master/gopls/doc/settings.md#buildflags-str
 				bug.Reportf("failed to bundle quick fixes for %v", d)
 			}
 			// Only report diagnostics if we detect an actual exclusion.
-			diagnostics[fh.URI()] = append(diagnostics[fh.URI()], d)
+			diagnostics = append(diagnostics, d)
 		}
 	}
 	return diagnostics, nil
+}
+
+// orphanedFileDiagnosticRange returns the position to use for orphaned file diagnostics.
+// We only warn about an orphaned file if it is well-formed enough to actually
+// be part of a package. Otherwise, we need more information.
+func orphanedFileDiagnosticRange(ctx context.Context, cache *parseCache, fh file.Handle) (*ParsedGoFile, protocol.Range, bool) {
+	pgfs, err := cache.parseFiles(ctx, token.NewFileSet(), ParseHeader, false, fh)
+	if err != nil {
+		return nil, protocol.Range{}, false
+	}
+	pgf := pgfs[0]
+	if !pgf.File.Name.Pos().IsValid() {
+		return nil, protocol.Range{}, false
+	}
+	rng, err := pgf.PosRange(pgf.File.Name.Pos(), pgf.File.Name.End())
+	if err != nil {
+		return nil, protocol.Range{}, false
+	}
+	return pgf, rng, true
 }
 
 // TODO(golang/go#53756): this function needs to consider more than just the
@@ -1879,13 +1768,32 @@ func inVendor(uri protocol.DocumentURI) bool {
 //
 // The caller of clone must call Snapshot.decref on the returned
 // snapshot when they are finished using it.
-func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) *Snapshot {
+//
+// The resulting bool reports whether the change invalidates any derived
+// diagnostics for the snapshot, for example because it invalidates Packages or
+// parsed go.mod files. This is used to mark a view as needing diagnosis in the
+// server.
+//
+// TODO(rfindley): long term, it may be better to move responsibility for
+// diagnostics into the Snapshot (e.g. a Snapshot.Diagnostics method), at which
+// point the Snapshot could be responsible for tracking and forwarding a
+// 'viewsToDiagnose' field. As is, this field is instead externalized in the
+// server.viewsToDiagnose map. Moving it to the snapshot would entirely
+// eliminate any 'relevance' heuristics from Session.DidModifyFiles, but would
+// also require more strictness about diagnostic dependencies. For example,
+// template.Diagnostics currently re-parses every time: there is no Snapshot
+// data responsible for providing these diagnostics.
+func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snapshot, bool) {
 	changedFiles := changed.Files
 	ctx, done := event.Start(ctx, "cache.snapshot.clone")
 	defer done()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// TODO(rfindley): reorganize this function to make the derivation of
+	// needsDiagnosis clearer.
+	needsDiagnosis := len(changed.GCDetails) > 0 || len(changed.ModuleUpgrades) > 0 || len(changed.Vulns) > 0
 
 	bgCtx, cancel := context.WithCancel(bgCtx)
 	result := &Snapshot{
@@ -1901,15 +1809,15 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) *Snaps
 		packages:          s.packages.Clone(),
 		activePackages:    s.activePackages.Clone(),
 		files:             s.files.Clone(changedFiles),
-		symbolizeHandles:  cloneWithout(s.symbolizeHandles, changedFiles),
+		symbolizeHandles:  cloneWithout(s.symbolizeHandles, changedFiles, nil),
 		workspacePackages: s.workspacePackages,
 		shouldLoad:        s.shouldLoad.Clone(),      // not cloneWithout: shouldLoad is cleared on loads
 		unloadableFiles:   s.unloadableFiles.Clone(), // not cloneWithout: typing in a file doesn't necessarily make it loadable
-		parseModHandles:   cloneWithout(s.parseModHandles, changedFiles),
-		parseWorkHandles:  cloneWithout(s.parseWorkHandles, changedFiles),
-		modTidyHandles:    cloneWithout(s.modTidyHandles, changedFiles),
-		modWhyHandles:     cloneWithout(s.modWhyHandles, changedFiles),
-		modVulnHandles:    cloneWithout(s.modVulnHandles, changedFiles),
+		parseModHandles:   cloneWithout(s.parseModHandles, changedFiles, &needsDiagnosis),
+		parseWorkHandles:  cloneWithout(s.parseWorkHandles, changedFiles, &needsDiagnosis),
+		modTidyHandles:    cloneWithout(s.modTidyHandles, changedFiles, &needsDiagnosis),
+		modWhyHandles:     cloneWithout(s.modWhyHandles, changedFiles, &needsDiagnosis),
+		modVulnHandles:    cloneWithout(s.modVulnHandles, changedFiles, &needsDiagnosis),
 		importGraph:       s.importGraph,
 		pkgIndex:          s.pkgIndex,
 		moduleUpgrades:    cloneWith(s.moduleUpgrades, changed.ModuleUpgrades),
@@ -2005,6 +1913,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) *Snaps
 	// detected a change that triggers reinitialization.
 	if reinit {
 		result.initialized = false
+		needsDiagnosis = true
 	}
 
 	// directIDs keeps track of package IDs that have directly changed.
@@ -2044,6 +1953,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) *Snaps
 		if invalidateMetadata {
 			// If this is a metadata-affecting change, perhaps a reload will succeed.
 			result.unloadableFiles.Remove(uri)
+			needsDiagnosis = true
 		}
 
 		invalidateMetadata = invalidateMetadata || reinit
@@ -2162,14 +2072,19 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) *Snaps
 	// Invalidated package information.
 	for id, invalidateMetadata := range idsToInvalidate {
 		if _, ok := directIDs[id]; ok || invalidateMetadata {
-			result.packages.Delete(id)
+			if result.packages.Delete(id) {
+				needsDiagnosis = true
+			}
 		} else {
 			if entry, hit := result.packages.Get(id); hit {
+				needsDiagnosis = true
 				ph := entry.clone(false)
 				result.packages.Set(id, ph, nil)
 			}
 		}
-		result.activePackages.Delete(id)
+		if result.activePackages.Delete(id) {
+			needsDiagnosis = true
+		}
 	}
 
 	// Compute which metadata updates are required. We only need to invalidate
@@ -2197,10 +2112,10 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) *Snaps
 
 		// Check whether the metadata should be deleted.
 		if invalidateMetadata {
+			needsDiagnosis = true
 			metadataUpdates[id] = nil
 			continue
 		}
-
 	}
 
 	// Update metadata, if necessary.
@@ -2208,20 +2123,25 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) *Snaps
 
 	// Update workspace and active packages, if necessary.
 	if result.meta != s.meta || anyFileOpenedOrClosed {
+		needsDiagnosis = true
 		result.workspacePackages = computeWorkspacePackagesLocked(result, result.meta)
 		result.resetActivePackagesLocked()
 	} else {
 		result.workspacePackages = s.workspacePackages
 	}
 
-	return result
+	return result, needsDiagnosis
 }
 
 // cloneWithout clones m then deletes from it the keys of changes.
-func cloneWithout[K constraints.Ordered, V1, V2 any](m *persistent.Map[K, V1], changes map[K]V2) *persistent.Map[K, V1] {
+//
+// The optional didDelete variable is set to true if there were deletions.
+func cloneWithout[K constraints.Ordered, V1, V2 any](m *persistent.Map[K, V1], changes map[K]V2, didDelete *bool) *persistent.Map[K, V1] {
 	m2 := m.Clone()
 	for k := range changes {
-		m2.Delete(k)
+		if m2.Delete(k) && didDelete != nil {
+			*didDelete = true
+		}
 	}
 	return m2
 }

@@ -54,6 +54,17 @@ func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 	ctx, done := event.Start(ctx, "lsp.Server.didChangeConfiguration")
 	defer done()
 
+	var wg sync.WaitGroup
+	wg.Add(1)
+	defer wg.Done()
+	if s.Options().VerboseWorkDoneProgress {
+		work := s.progress.Start(ctx, DiagnosticWorkTitle(FromDidChangeConfiguration), "Calculating diagnostics...", nil, nil)
+		go func() {
+			wg.Wait()
+			work.End(ctx, "Done.")
+		}()
+	}
+
 	// Apply any changes to the session-level settings.
 	options, err := s.fetchFolderOptions(ctx, "")
 	if err != nil {
@@ -75,28 +86,18 @@ func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 		s.session.SetFolderOptions(ctx, view.Folder(), options)
 	}
 
-	var wg sync.WaitGroup
+	// The view set may have been updated above.
+	viewsToDiagnose := make(map[*cache.View][]protocol.DocumentURI)
 	for _, view := range s.session.Views() {
-		view := view
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			snapshot, release, err := view.Snapshot()
-			if err != nil {
-				return // view is shut down; no need to diagnose
-			}
-			defer release()
-			s.diagnoseSnapshot(snapshot, nil, 0)
-		}()
+		viewsToDiagnose[view] = nil
 	}
 
-	if s.Options().VerboseWorkDoneProgress {
-		work := s.progress.Start(ctx, DiagnosticWorkTitle(FromDidChangeConfiguration), "Calculating diagnostics...", nil, nil)
-		go func() {
-			wg.Wait()
-			work.End(ctx, "Done.")
-		}()
-	}
+	modCtx, modID := s.needsDiagnosis(ctx, viewsToDiagnose)
+	wg.Add(1)
+	go func() {
+		s.diagnoseChangedViews(modCtx, modID, viewsToDiagnose, FromDidChangeConfiguration)
+		wg.Done()
+	}()
 
 	// An options change may have affected the detected Go version.
 	s.checkViewGoVersions()

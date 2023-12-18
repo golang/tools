@@ -537,11 +537,7 @@ func (s *server) handleOptionResults(ctx context.Context, results settings.Optio
 // so callers should do if !ok { return err } rather than if err != nil.
 // The returned cleanup function is non-nil even in case of false/error result.
 func (s *server) beginFileRequest(ctx context.Context, uri protocol.DocumentURI, expectKind file.Kind) (*cache.Snapshot, file.Handle, bool, func(), error) {
-	view, err := s.session.ViewOf(uri)
-	if err != nil {
-		return nil, nil, false, func() {}, err
-	}
-	snapshot, release, err := view.Snapshot()
+	snapshot, release, err := s.session.SnapshotOf(ctx, uri)
 	if err != nil {
 		return nil, nil, false, func() {}, err
 	}

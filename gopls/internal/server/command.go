@@ -284,7 +284,7 @@ func (c *commandHandler) CheckUpgrades(ctx context.Context, args command.CheckUp
 			if err != nil {
 				return nil, nil, err
 			}
-			snapshot, release := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
+			snapshot, release, _ := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
 				ModuleUpgrades: map[protocol.DocumentURI]map[string]string{args.URI: upgrades},
 			})
 			return snapshot, release, nil
@@ -305,7 +305,7 @@ func (c *commandHandler) ResetGoModDiagnostics(ctx context.Context, args command
 		forURI: args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		return c.modifyState(ctx, FromResetGoModDiagnostics, func() (*cache.Snapshot, func(), error) {
-			snapshot, release := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
+			snapshot, release, _ := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
 				ModuleUpgrades: map[protocol.DocumentURI]map[string]string{
 					deps.fh.URI(): nil,
 				},
@@ -795,7 +795,7 @@ func (c *commandHandler) ToggleGCDetails(ctx context.Context, args command.URIAr
 				return nil, nil, err
 			}
 			wantDetails := !deps.snapshot.WantGCDetails(meta.ID) // toggle the gc details state
-			snapshot, release := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
+			snapshot, release, _ := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
 				GCDetails: map[metadata.PackageID]bool{
 					meta.ID: wantDetails,
 				},
@@ -994,7 +994,7 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 			return err
 		}
 
-		snapshot, release := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
+		snapshot, release, _ := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
 			Vulns: map[protocol.DocumentURI]*vulncheck.Result{args.URI: result},
 		})
 		defer release()

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/server"
+	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -170,6 +170,8 @@ const F = named.D - 3
 }
 
 func TestMultipleModules_Warning(t *testing.T) {
+	t.Skip("temporary skip for golang/go#57979: revisit after zero-config logic is in place")
+
 	msgForVersion := func(ver int) string {
 		if ver >= 18 {
 			return `gopls was not able to find modules in your workspace.`

@@ -280,17 +280,20 @@ func split(n *mapNode, key any, less func(any, any) bool, requireMid bool) (left
 }
 
 // Delete deletes the value for a key.
-func (pm *Map[K, V]) Delete(key K) {
+//
+// The result reports whether the key was present in the map.
+func (pm *Map[K, V]) Delete(key K) bool {
 	root := pm.root
 	left, mid, right := split(root, key, pm.less, true)
 	if mid == nil {
-		return
+		return false
 	}
 	pm.root = merge(left, right)
 	left.decref()
 	mid.decref()
 	right.decref()
 	root.decref()
+	return true
 }
 
 // merge two trees while preserving the weight invariant.
