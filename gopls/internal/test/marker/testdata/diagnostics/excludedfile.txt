@@ -33,5 +33,5 @@ module mod.com/b
 go 1.18
 
 -- b/b.go --
-package b //@diag(re"package (b)", re"add this module to your go.work")
+package b // Not excluded, due to zero-config gopls.
 

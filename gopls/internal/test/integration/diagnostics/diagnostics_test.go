@@ -1769,9 +1769,13 @@ func helloHelper() {}
 		// Expect a diagnostic in a nested module.
 		env.OpenFile("nested/hello/hello.go")
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("nested/hello/hello.go", "helloHelper")),
-			Diagnostics(env.AtRegexp("nested/hello/hello.go", "package (hello)"), WithMessage("not included in your workspace")),
+			NoDiagnostics(ForFile("nested/hello/hello.go")),
 		)
+		loc := env.GoToDefinition(env.RegexpSearch("nested/hello/hello.go", "helloHelper"))
+		want := "nested/hello/hello_helper.go"
+		if got := env.Sandbox.Workdir.URIToPath(loc.URI); got != want {
+			t.Errorf("Definition() returned %q, want %q", got, want)
+		}
 	})
 }
 

@@ -252,9 +252,9 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 			var got []viewSummary
 			for _, view := range views {
 				got = append(got, viewSummary{
-					Type: view.Type(),
-					Root: rel.RelPath(view.root.Path()),
-					Env:  view.envOverlay,
+					Type: view.def.Type(),
+					Root: rel.RelPath(view.def.root.Path()),
+					Env:  view.def.envOverlay,
 				})
 			}
 			if diff := cmp.Diff(test.want, got); diff != "" {

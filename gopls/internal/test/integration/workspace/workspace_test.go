@@ -638,7 +638,10 @@ use (
 
 		// This fails if guarded with a OnceMet(DoneWithSave(), ...), because it is
 		// delayed (and therefore not synchronous with the change).
-		env.Await(NoDiagnostics(ForFile("modb/go.mod")))
+		//
+		// Note: this check used to assert on NoDiagnostics, but with zero-config
+		// gopls we still have diagnostics.
+		env.Await(Diagnostics(ForFile("modb/go.mod"), WithMessage("example.com is not used")))
 
 		// Test Formatting.
 		env.SetBufferContent("go.work", `go 1.18
@@ -1010,6 +1013,9 @@ package main
 }
 
 func TestAddAndRemoveGoWork(t *testing.T) {
+	// TODO(golang/go#57979): update this test to assert that zero-config
+	// behavior means more than just a lack of diagnostics.
+
 	// Use a workspace with a module in the root directory to exercise the case
 	// where a go.work is added to the existing root directory. This verifies
 	// that we're detecting changes to the module source, not just the root
@@ -1037,11 +1043,11 @@ func main() {}
 	).Run(t, nomod, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.OpenFile("b/main.go")
-		// Since b/main.go is not in the workspace, it should have a warning on its
-		// package declaration.
+
+		// Zero-config gopls makes this work.
 		env.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
-			Diagnostics(env.AtRegexp("b/main.go", "package (main)")),
+			NoDiagnostics(env.AtRegexp("b/main.go", "package (main)")),
 		)
 		env.WriteWorkspaceFile("go.work", `go 1.16
 
@@ -1065,9 +1071,10 @@ use (
 		env.CloseBuffer("b/main.go")
 		env.OpenFile("b/main.go")
 
+		// Again, zero-config gopls makes this work.
 		env.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
-			Diagnostics(env.AtRegexp("b/main.go", "package (main)")),
+			NoDiagnostics(env.AtRegexp("b/main.go", "package (main)")),
 		)
 	})
 }

@@ -1,0 +1,79 @@
+This test checks that gopls works with modules that aren't included in the
+workspace file.
+
+-- go.work --
+go 1.20
+
+use (
+	./a
+	./b
+)
+
+-- a/go.mod --
+module golang.org/lsptests/a
+
+go 1.18
+
+-- a/a.go --
+package a
+
+import (
+	"fmt"
+	"golang.org/lsptests/a/lib"
+)
+
+func _() {
+	fmt.Println(lib.Msg) //@def("Msg", aMsg)
+	fmt.Println(undef) //@diag("undef", re"undefined|undeclared")
+}
+
+-- a/lib/lib.go --
+package lib
+
+const Msg = "hi" //@loc(aMsg, "Msg")
+
+-- b/go.mod --
+module golang.org/lsptests/b
+
+go 1.18
+
+-- b/b.go --
+package b
+
+import (
+	"fmt"
+	"golang.org/lsptests/b/lib"
+)
+
+func main() {
+	fmt.Println(lib.Msg) //@def("Msg", bMsg)
+	fmt.Println(undef) //@diag("undef", re"undefined|undeclared")
+}
+
+-- b/lib/lib.go --
+package lib
+
+const Msg = "hi" //@loc(bMsg, "Msg")
+
+-- c/go.mod --
+module golang.org/lsptests/c
+
+go 1.18
+
+-- c/c.go --
+package c
+
+import (
+	"fmt"
+	"golang.org/lsptests/c/lib"
+)
+
+func main() {
+	fmt.Println(lib.Msg) //@def("Msg", cMsg)
+	fmt.Println(undef) //@diag("undef", re"undefined|undeclared")
+}
+
+-- c/lib/lib.go --
+package lib
+
+const Msg = "hi" //@loc(cMsg, "Msg")

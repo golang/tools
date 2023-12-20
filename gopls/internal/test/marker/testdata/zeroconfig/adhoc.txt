@@ -1,0 +1,49 @@
+This test checks that gopls works with multiple ad-hoc packages, which lack
+a go.mod file.
+
+We should be able to import standard library packages, get diagnostics, and
+reference symbols defined in the same directory.
+
+-- main.go --
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println(mainMsg) //@def("mainMsg", mainMsg)
+	fmt.Println(undef) //@diag("undef", re"undefined|undeclared")
+}
+-- main2.go --
+package main
+
+const mainMsg = "main" //@loc(mainMsg, "mainMsg")
+
+-- a/a.go --
+package a
+
+import "fmt"
+
+func _() {
+	fmt.Println(aMsg) //@def("aMsg", aMsg)
+	fmt.Println(undef) //@diag("undef", re"undefined|undeclared")
+}
+
+-- a/a2.go --
+package a
+
+const aMsg = "a" //@loc(aMsg, "aMsg")
+
+-- b/b.go --
+package b
+
+import "fmt"
+
+func _() {
+	fmt.Println(bMsg) //@def("bMsg", bMsg)
+	fmt.Println(undef) //@diag("undef", re"undefined|undeclared")
+}
+
+-- b/b2.go --
+package b
+
+const bMsg = "b" //@loc(bMsg, "bMsg")

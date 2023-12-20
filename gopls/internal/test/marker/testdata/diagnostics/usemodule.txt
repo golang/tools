@@ -3,6 +3,10 @@ go.work file.
 
 Quick-fixes change files on disk, so are tested by integration tests.
 
+-- skip --
+Temporary skip due to golang/go#57979, with zero-config gopls, these modules
+are no longer orphaned.
+
 -- go.work --
 go 1.21
 

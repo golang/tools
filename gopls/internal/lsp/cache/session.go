@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -206,6 +207,12 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 		vulns:            new(persistent.Map[protocol.DocumentURI, *vulncheck.Result]),
 	}
 
+	// Snapshots must observe all open files, as there are some caching
+	// heuristics that change behavior depending on open files.
+	for _, o := range s.overlayFS.Overlays() {
+		_, _ = v.snapshot.ReadFile(ctx, o.URI())
+	}
+
 	// Record the environment of the newly created view in the log.
 	event.Log(ctx, viewEnv(v))
 
@@ -385,23 +392,30 @@ func (s *Session) Views() []*View {
 	return result
 }
 
+type viewFolder struct {
+	folder *Folder
+	def    *viewDefinition
+}
+
 // selectViews constructs the best set of views covering the provided workspace
 // folders and open files.
 //
 // This implements the zero-config algorithm of golang/go#57979.
-func selectViews(ctx context.Context, fs file.Source, folders []*Folder, openFiles []protocol.DocumentURI) ([]*viewDefinition, error) {
+func selectViews(ctx context.Context, fs file.Source, folders []*Folder, openFiles []protocol.DocumentURI) ([]viewFolder, error) {
 	var views []*viewDefinition
+	var viewFolders []viewFolder
 
 	// First, compute a default view for each workspace folder.
 	// TODO(golang/go#57979): technically, this is path dependent, since
 	// DidChangeWorkspaceFolders could introduce a path-dependent ordering on
 	// folders. We should keep folders sorted, or sort them here.
 	for _, folder := range folders {
-		view, err := defineView(ctx, fs, folder, "")
+		def, err := defineView(ctx, fs, folder, "")
 		if err != nil {
 			return nil, err
 		}
-		views = append(views, view)
+		views = append(views, def)
+		viewFolders = append(viewFolders, viewFolder{folder, def})
 	}
 
 	// Next, ensure that the set of views covers all open files contained in a
@@ -428,14 +442,14 @@ checkFiles:
 		if folder == nil {
 			continue // only guess views for open files
 		}
-		view, err := bestViewDefForURI(ctx, fs, uri, views)
+		def, err := bestViewDefForURI(ctx, fs, uri, views)
 		if err != nil {
 			return nil, err
 		}
-		if view != nil {
+		if def != nil {
 			continue // file covered by an existing view
 		}
-		view, err = defineView(ctx, fs, folder, uri)
+		def, err = defineView(ctx, fs, folder, uri)
 		if err != nil {
 			return nil, err
 		}
@@ -446,14 +460,14 @@ checkFiles:
 		//
 		// Nevertheless, we should not create redundant views.
 		for _, alt := range views {
-			if viewDefinitionsEqual(alt, view) {
+			if viewDefinitionsEqual(alt, def) {
 				continue checkFiles
 			}
 		}
-		views = append(views, view)
+		viewFolders = append(viewFolders, viewFolder{folder, def})
 	}
 
-	return views, nil
+	return viewFolders, nil
 }
 
 // bestViewDefForURI returns the existing view that contains the existing file,
@@ -542,18 +556,8 @@ func (s *Session) updateViewLocked(ctx context.Context, view *View, def *viewDef
 		return nil, fmt.Errorf("view %q not found", view.id)
 	}
 
-	view, snapshot, release := s.createView(ctx, def, folder)
+	view, _, release := s.createView(ctx, def, folder)
 	defer release()
-
-	// The new snapshot has lost the history of the previous view. As a result,
-	// it may not see open files that aren't in its build configuration (as it
-	// would have done via didOpen notifications). This can lead to inconsistent
-	// behavior when configuration is changed mid-session.
-	//
-	// Ensure the new snapshot observes all open files.
-	for _, o := range view.fs.Overlays() {
-		_, _ = snapshot.ReadFile(ctx, o.URI())
-	}
 
 	// substitute the new view into the array where the old view was
 	s.views[i] = view
@@ -619,7 +623,8 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 	// This is done while holding viewMu because the set of open files affects
 	// the set of views, and to prevent views from seeing updated file content
 	// before they have processed invalidations.
-	if err := s.updateOverlays(ctx, changes); err != nil {
+	overlays, err := s.updateOverlays(ctx, changes)
+	if err != nil {
 		return nil, err
 	}
 
@@ -631,7 +636,13 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 	changed := make(map[protocol.DocumentURI]file.Handle)
 	for _, c := range changes {
 		changed[c.URI] = mustReadFile(ctx, s, c.URI)
-		// Any on-disk change to a go.work file causes a re-diagnosis.
+
+		// Any change to the set of open files causes views to be recomputed.
+		if c.Action == file.Open || c.Action == file.Close {
+			checkViews = true
+		}
+
+		// Any on-disk change to a go.work file causes recomputing views.
 		//
 		// TODO(rfindley): go.work files need not be named "go.work" -- we need to
 		// check each view's source to handle the case of an explicit GOWORK value.
@@ -648,29 +659,71 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 	}
 
 	if checkViews {
-		for _, view := range s.views {
-			// TODO(rfindley): can we avoid running the go command (go env)
-			// synchronously to change processing? Can we assume that the env did not
-			// change, and derive go.work using a combination of the configured
-			// GOWORK value and filesystem?
-			info, err := defineView(ctx, s, view.folder, "")
-			if err != nil {
-				// Catastrophic failure, equivalent to a failure of session
-				// initialization and therefore should almost never happen. One
-				// scenario where this failure mode could occur is if some file
-				// permissions have changed preventing us from reading go.mod
-				// files.
-				//
-				// TODO(rfindley): consider surfacing this error more loudly. We
-				// could report a bug, but it's not really a bug.
-				event.Error(ctx, "fetching workspace information", err)
-			} else if !viewDefinitionsEqual(view.viewDefinition, info) {
-				if _, err := s.updateViewLocked(ctx, view, info, view.folder); err != nil {
-					// More catastrophic failure. The view may or may not still exist.
-					// The best we can do is log and move on.
-					event.Error(ctx, "recreating view", err)
+		// Hack: collect folders from existing views.
+		// TODO(golang/go#57979): we really should track folders independent of
+		// Views, but since we always have a default View for each folder, this
+		// works for now.
+		var folders []*Folder // preserve folder order
+		seen := make(map[*Folder]unit)
+		for _, v := range s.views {
+			if _, ok := seen[v.folder]; ok {
+				continue
+			}
+			seen[v.folder] = unit{}
+			folders = append(folders, v.folder)
+		}
+
+		var openFiles []protocol.DocumentURI
+		for _, o := range overlays {
+			openFiles = append(openFiles, o.URI())
+		}
+		// Sort for determinism.
+		sort.Slice(openFiles, func(i, j int) bool {
+			return openFiles[i] < openFiles[j]
+		})
+
+		// TODO(rfindley): can we avoid running the go command (go env)
+		// synchronously to change processing? Can we assume that the env did not
+		// change, and derive go.work using a combination of the configured
+		// GOWORK value and filesystem?
+		viewFolders, err := selectViews(ctx, s, folders, openFiles)
+		if err != nil {
+			// Catastrophic failure, equivalent to a failure of session
+			// initialization and therefore should almost never happen. One
+			// scenario where this failure mode could occur is if some file
+			// permissions have changed preventing us from reading go.mod
+			// files.
+			//
+			// TODO(rfindley): consider surfacing this error more loudly. We
+			// could report a bug, but it's not really a bug.
+			event.Error(ctx, "selecting new views", err)
+		} else {
+			kept := make(map[*View]unit)
+			var newViews []*View
+			for _, vf := range viewFolders {
+				var newView *View
+				// Reuse existing view?
+				for _, v := range s.views {
+					if vf.folder == v.folder && viewDefinitionsEqual(vf.def, v.viewDefinition) {
+						newView = v
+						kept[v] = unit{}
+						break
+					}
+				}
+				if newView == nil {
+					v, _, release := s.createView(ctx, vf.def, vf.folder)
+					release()
+					newView = v
+				}
+				newViews = append(newViews, newView)
+			}
+			for _, v := range s.views {
+				if _, ok := kept[v]; !ok {
+					v.shutdown()
 				}
 			}
+			s.views = newViews
+			s.viewMap = make(map[protocol.DocumentURI]*View)
 		}
 	}
 
@@ -765,7 +818,7 @@ func (s *Session) ExpandModificationsToDirectories(ctx context.Context, changes 
 
 // Precondition: caller holds s.viewMu lock.
 // TODO(rfindley): move this to fs_overlay.go.
-func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modification) error {
+func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modification) ([]*Overlay, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -786,7 +839,7 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modifica
 			kind = file.KindForLang(c.LanguageID)
 		default:
 			if !ok {
-				return fmt.Errorf("updateOverlays: modifying unopened overlay %v", c.URI)
+				return nil, fmt.Errorf("updateOverlays: modifying unopened overlay %v", c.URI)
 			}
 			kind = o.kind
 		}
@@ -803,7 +856,7 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modifica
 		text := c.Text
 		if text == nil && (c.Action == file.Save || c.OnDisk) {
 			if !ok {
-				return fmt.Errorf("no known content for overlay for %s", c.Action)
+				return nil, fmt.Errorf("no known content for overlay for %s", c.Action)
 			}
 			text = o.content
 		}
@@ -820,10 +873,10 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modifica
 		case file.Save:
 			// Make sure the version and content (if present) is the same.
 			if false && o.version != version { // Client no longer sends the version
-				return fmt.Errorf("updateOverlays: saving %s at version %v, currently at %v", c.URI, c.Version, o.version)
+				return nil, fmt.Errorf("updateOverlays: saving %s at version %v, currently at %v", c.URI, c.Version, o.version)
 			}
 			if c.Text != nil && o.hash != hash {
-				return fmt.Errorf("updateOverlays: overlay %s changed on save", c.URI)
+				return nil, fmt.Errorf("updateOverlays: overlay %s changed on save", c.URI)
 			}
 			sameContentOnDisk = true
 		default:
@@ -846,7 +899,12 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modifica
 		fs.overlays[c.URI] = o
 	}
 
-	return nil
+	var overlays []*Overlay
+	for _, o := range fs.overlays {
+		overlays = append(overlays, o)
+	}
+
+	return overlays, nil
 }
 
 func mustReadFile(ctx context.Context, fs file.Source, uri protocol.DocumentURI) file.Handle {

@@ -1,24 +1,20 @@
-This test verifies that we can load multiple orphaned files as
-command-line-arguments packages.
+Previously, this test verifies that we can load multiple orphaned files as
+command-line-arguments packages. In the distant past, we would load only one
+because go/packages returns at most one command-line-arguments package per
+query.
 
-Previously, we would load only one because go/packages returns at most one
-command-line-arguments package per query.
-
-TODO(rfindley): is the error about missing packages desirable?
+With zero-config gopls, these packages are successfully loaded as ad-hoc
+packages.
 
 -- a/main.go --
-package main //@diag("main", re"No packages")
+package main
 
 func main() {
 	var a int //@diag(re"var (a)", re"not used")
 }
 -- b/main.go --
-package main //@diag("main", re"No packages")
+package main
 
 func main() {
 	var b int //@diag(re"var (b)", re"not used")
 }
--- c/go.mod --
-module c.com // The existence of this module avoids a workspace error.
-
-go 1.18

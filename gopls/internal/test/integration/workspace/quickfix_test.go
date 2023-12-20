@@ -15,6 +15,8 @@ import (
 )
 
 func TestQuickFix_UseModule(t *testing.T) {
+	t.Skip("temporary skip for golang/go#57979: with zero-config gopls these files are no longer orphaned")
+
 	const files = `
 -- go.work --
 go 1.20
@@ -98,6 +100,8 @@ use (
 }
 
 func TestQuickFix_AddGoWork(t *testing.T) {
+	t.Skip("temporary skip for golang/go#57979: with zero-config gopls these files are no longer orphaned")
+
 	const files = `
 -- a/go.mod --
 module mod.com/a
@@ -206,6 +210,8 @@ use (
 }
 
 func TestQuickFix_UnsavedGoWork(t *testing.T) {
+	t.Skip("temporary skip for golang/go#57979: with zero-config gopls these files are no longer orphaned")
+
 	const files = `
 -- go.work --
 go 1.21
@@ -269,6 +275,8 @@ func main() {}
 }
 
 func TestQuickFix_GOWORKOff(t *testing.T) {
+	t.Skip("temporary skip for golang/go#57979: with zero-config gopls these files are no longer orphaned")
+
 	const files = `
 -- go.work --
 go 1.21
