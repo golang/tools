@@ -102,7 +102,7 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, *Snapshot
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	view, snapshot, release := s.createView(ctx, def, folder, 0)
+	view, snapshot, release := s.createView(ctx, def, folder)
 	s.views = append(s.views, view)
 	// we always need to drop the view map
 	s.viewMap = make(map[protocol.DocumentURI]*View)
@@ -113,7 +113,7 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, *Snapshot
 // supplied context, detached from events and cancelation.
 //
 // The caller is responsible for calling the release function once.
-func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *Folder, seqID uint64) (*View, *Snapshot, func()) {
+func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *Folder) (*View, *Snapshot, func()) {
 	index := atomic.AddInt64(&viewIndex, 1)
 
 	// We want a true background context and not a detached context here
@@ -184,7 +184,6 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 	}
 
 	v.snapshot = &Snapshot{
-		sequenceID:       seqID,
 		view:             v,
 		backgroundCtx:    backgroundCtx,
 		cancel:           cancel,
@@ -538,22 +537,12 @@ func bestViewDefForURI(ctx context.Context, fs file.Source, uri protocol.Documen
 // If the resulting error is non-nil, the view may or may not have already been
 // dropped from the session.
 func (s *Session) updateViewLocked(ctx context.Context, view *View, def *viewDefinition, folder *Folder) (*View, error) {
-	// Preserve the snapshot ID if we are recreating the view.
-	view.snapshotMu.Lock()
-	if view.snapshot == nil {
-		view.snapshotMu.Unlock()
-		panic("updateView called after View was already shut down")
-	}
-	// TODO(rfindley): we should probably increment the sequence ID here.
-	seqID := view.snapshot.sequenceID // Preserve sequence IDs when updating a view in place.
-	view.snapshotMu.Unlock()
-
 	i := s.dropView(view)
 	if i == -1 {
 		return nil, fmt.Errorf("view %q not found", view.id)
 	}
 
-	view, snapshot, release := s.createView(ctx, def, folder, seqID)
+	view, snapshot, release := s.createView(ctx, def, folder)
 	defer release()
 
 	// The new snapshot has lost the history of the previous view. As a result,

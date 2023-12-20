@@ -65,6 +65,9 @@ import (
 // Snapshots are responsible for bookkeeping and invalidation of this state,
 // implemented in Snapshot.clone.
 type Snapshot struct {
+	// sequenceID is the monotonically increasing ID of this snapshot within its View.
+	//
+	// Sequence IDs for Snapshots from different Views cannot be compared.
 	sequenceID uint64
 
 	// TODO(rfindley): the snapshot holding a reference to the view poses
@@ -249,8 +252,7 @@ func (s *Snapshot) decref() {
 //
 // Relative to their view sequence ids are monotonically increasing, but this
 // does not hold globally: when new views are created their initial snapshot
-// has sequence ID 0. For operations that span multiple views, use global
-// IDs.
+// has sequence ID 0.
 func (s *Snapshot) SequenceID() uint64 {
 	return s.sequenceID
 }
