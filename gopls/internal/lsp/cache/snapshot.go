@@ -273,7 +273,7 @@ func (s *Snapshot) View() *View {
 	return s.view
 }
 
-// FileKind returns the type of a file.
+// FileKind returns the kind of a file.
 //
 // We can't reliably deduce the kind from the file name alone,
 // as some editors can be told to interpret a buffer as
@@ -281,6 +281,28 @@ func (s *Snapshot) View() *View {
 // an .html file actually contains Go "html/template" syntax,
 // or even that a .go file contains Python.
 func (s *Snapshot) FileKind(fh file.Handle) file.Kind {
+	if k := fileKind(fh); k != file.UnknownKind {
+		return k
+	}
+	fext := filepath.Ext(fh.URI().Path())
+	exts := s.Options().TemplateExtensions
+	for _, ext := range exts {
+		if fext == ext || fext == "."+ext {
+			return file.Tmpl
+		}
+	}
+
+	// and now what? This should never happen, but it does for cgo before go1.15
+	//
+	// TODO(rfindley): this doesn't look right. We should default to UnknownKind.
+	// Also, I don't understand the comment above, though I'd guess before go1.15
+	// we encountered cgo files without the .go extension.
+	return file.Go
+}
+
+// fileKind returns the default file kind for a file, before considering
+// template file extensions. See [Snapshot.FileKind].
+func fileKind(fh file.Handle) file.Kind {
 	// The kind of an unsaved buffer comes from the
 	// TextDocumentItem.LanguageID field in the didChange event,
 	// not from the file name. They may differ.
@@ -301,14 +323,7 @@ func (s *Snapshot) FileKind(fh file.Handle) file.Kind {
 	case ".work":
 		return file.Work
 	}
-	exts := s.Options().TemplateExtensions
-	for _, ext := range exts {
-		if fext == ext || fext == "."+ext {
-			return file.Tmpl
-		}
-	}
-	// and now what? This should never happen, but it does for cgo before go1.15
-	return file.Go
+	return file.UnknownKind
 }
 
 // Options returns the options associated with this snapshot.
@@ -512,7 +527,7 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlag
 		s.Options().EnvSlice(),
 		inv.Env,
 		[]string{"GO111MODULE=" + s.view.adjustedGO111MODULE()},
-		s.view.envOverlay,
+		s.view.EnvOverlay(),
 	)
 	inv.BuildFlags = append([]string{}, s.Options().BuildFlags...)
 	cleanup = func() {} // fallback

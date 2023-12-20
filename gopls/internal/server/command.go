@@ -1350,9 +1350,10 @@ func (c *commandHandler) Views(ctx context.Context) ([]command.View, error) {
 	var summaries []command.View
 	for _, view := range c.s.session.Views() {
 		summaries = append(summaries, command.View{
-			Type:   view.Type().String(),
-			Root:   view.Root(),
-			Folder: view.Folder().Dir,
+			Type:       view.Type().String(),
+			Root:       view.Root(),
+			Folder:     view.Folder().Dir,
+			EnvOverlay: view.EnvOverlay(),
 		})
 	}
 	return summaries, nil

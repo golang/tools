@@ -593,6 +593,7 @@ Result:
 	"Type": string,
 	"Root": string,
 	"Folder": string,
+	"EnvOverlay": []string,
 }
 ```
 

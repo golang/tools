@@ -99,7 +99,7 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, *Snapshot
 		}
 	}
 
-	def, err := defineView(ctx, s, folder, "")
+	def, err := defineView(ctx, s, folder, nil)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -366,17 +366,14 @@ func (s *Session) viewOfLocked(ctx context.Context, uri protocol.DocumentURI) (*
 	v, hit := s.viewMap[uri]
 	if !hit {
 		// Cache miss: compute (and memoize) the best view.
-		var defs []*viewDefinition
-		viewLookup := make(map[*viewDefinition]*View)
-		for _, v := range s.views {
-			defs = append(defs, v.viewDefinition)
-			viewLookup[v.viewDefinition] = v
-		}
-		def, err := bestViewDefForURI(ctx, s, uri, defs)
+		fh, err := s.ReadFile(ctx, uri)
 		if err != nil {
 			return nil, err
 		}
-		v = viewLookup[def] // possibly nil
+		v, err = bestView(ctx, s, fh, s.views)
+		if err != nil {
+			return nil, err
+		}
 		if s.viewMap == nil {
 			return nil, errors.New("session is shut down")
 		}
@@ -405,7 +402,7 @@ func selectViewDefs(ctx context.Context, fs file.Source, folders []*Folder, open
 	// DidChangeWorkspaceFolders could introduce a path-dependent ordering on
 	// folders. We should keep folders sorted, or sort them here.
 	for _, folder := range folders {
-		def, err := defineView(ctx, fs, folder, "")
+		def, err := defineView(ctx, fs, folder, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -436,16 +433,24 @@ checkFiles:
 		if folder == nil {
 			continue // only guess views for open files
 		}
-		def, err := bestViewDefForURI(ctx, fs, uri, defs)
+		fh, err := fs.ReadFile(ctx, uri)
 		if err != nil {
 			return nil, err
+		}
+		def, err := bestView(ctx, fs, fh, defs)
+		if err != nil {
+			// We should never call selectViewDefs with a cancellable context, so
+			// this should never fail.
+			return nil, bug.Errorf("failed to find best view for open file: %v", err)
 		}
 		if def != nil {
 			continue // file covered by an existing view
 		}
-		def, err = defineView(ctx, fs, folder, uri)
+		def, err = defineView(ctx, fs, folder, fh)
 		if err != nil {
-			return nil, err
+			// We should never call selectViewDefs with a cancellable context, so
+			// this should never fail.
+			return nil, bug.Errorf("failed to define view for open file: %v", err)
 		}
 		// It need not strictly be the case that the best view for a file is
 		// distinct from other views, as the logic of getViewDefinition and
@@ -464,80 +469,134 @@ checkFiles:
 	return defs, nil
 }
 
-// bestViewDefForURI returns the existing view that contains the existing file,
-// or (nil, nil) if no matching view is found.
+// The viewDefiner interface allows the bestView algorithm to operate on both
+// Views and viewDefinitions.
+type viewDefiner interface{ definition() *viewDefinition }
+
+// bestView returns the best View or viewDefinition that contains the
+// given file, or (nil, nil) if no matching view is found.
 //
-// The provided uri must be a file uri, not directory.
+// bestView only returns an error in the event of context cancellation.
 //
-// bestViewDefForURI only returns an error in the event of context cancellation.
+// Making this function generic is convenient so that we can avoid mapping view
+// definitions back to views inside Session.DidModifyFiles, where performance
+// matters. It is, however, not the cleanest application of generics.
 //
-// TODO(rfindley): if we pass a file's []constraint.Expr here, we can implement
-// improved build tag support.
-func bestViewDefForURI(ctx context.Context, fs file.Source, uri protocol.DocumentURI, views []*viewDefinition) (*viewDefinition, error) {
+// Note: keep this function in sync with defineView.
+func bestView[V viewDefiner](ctx context.Context, fs file.Source, fh file.Handle, views []V) (V, error) {
+	var zero V
+
 	if len(views) == 0 {
-		return nil, nil // avoid the call to findRootPattern
+		return zero, nil // avoid the call to findRootPattern
 	}
+	uri := fh.URI()
 	dir := uri.Dir()
 	modURI, err := findRootPattern(ctx, dir, "go.mod", fs)
 	if err != nil {
-		return nil, err
+		return zero, err
 	}
 
 	// Prefer GoWork > GoMod > GOPATH > GoPackages > AdHoc.
 	var (
-		goPackagesView *viewDefinition // prefer longest
-		gopathView     *viewDefinition // prefer longest
-		adHocView      *viewDefinition // exact match
-		modView        *viewDefinition // exact match
-		// TODO(rfindley): should we also prefer the longest matching go.work view?
-		// If two go.work files contain a module, which one is more natural to use?
+		goPackagesViews []V // prefer longest
+		workViews       []V // prefer longest
+		modViews        []V // exact match
+		gopathViews     []V // prefer longest
+		adHocViews      []V // exact match
 	)
+
+	// pushView updates the views slice with the matching view v, using the
+	// heuristic that views with a longer root are preferable. Accordingly,
+	// pushView may be a no op if v's root is shorter than the roots in the views
+	// slice.
+	//
+	// Invariant: the length of all roots in views is the same.
+	pushView := func(views *[]V, v V) {
+		if len(*views) == 0 {
+			*views = []V{v}
+			return
+		}
+		better := func(l, r V) bool {
+			return len(l.definition().root) > len(r.definition().root)
+		}
+		existing := (*views)[0]
+		switch {
+		case better(existing, v):
+		case better(v, existing):
+			*views = []V{v}
+		default:
+			*views = append(*views, v)
+		}
+	}
+
 	for _, view := range views {
-		switch view.Type() {
+		switch def := view.definition(); def.Type() {
 		case GoPackagesDriverView:
-			if goPackagesView != nil && len(goPackagesView.root) > len(view.root) {
-				continue
-			}
-			if view.root.Encloses(dir) {
-				goPackagesView = view
+			if def.root.Encloses(dir) {
+				pushView(&goPackagesViews, view)
 			}
 		case GoWorkView:
-			if uri == view.gowork {
-				return view, nil
-			}
-			if _, ok := view.workspaceModFiles[modURI]; ok {
-				return view, nil
+			if _, ok := def.workspaceModFiles[modURI]; ok || uri == def.gowork {
+				pushView(&workViews, view)
 			}
 		case GoModView:
-			if modURI == view.gomod {
-				modView = view
+			if modURI == def.gomod {
+				modViews = append(modViews, view)
 			}
 		case GOPATHView:
-			if gopathView != nil && len(gopathView.root) > len(view.root) {
-				continue
-			}
-			if view.root.Encloses(dir) {
-				gopathView = view
+			if def.root.Encloses(dir) {
+				pushView(&gopathViews, view)
 			}
 		case AdHocView:
-			if view.root == dir {
-				adHocView = view
+			if def.root == dir {
+				adHocViews = append(adHocViews, view)
 			}
 		}
 	}
-	if modView != nil {
-		return modView, nil
+
+	// Now that we've collected matching views, choose the best match,
+	// considering ports.
+	//
+	// We only consider one type of view, since the matching view created by
+	// defineView should be of the best type.
+	var bestViews []V
+	switch {
+	case len(workViews) > 0:
+		bestViews = workViews
+	case len(modViews) > 0:
+		bestViews = modViews
+	case len(gopathViews) > 0:
+		bestViews = gopathViews
+	case len(goPackagesViews) > 0:
+		bestViews = goPackagesViews
+	case len(adHocViews) > 0:
+		bestViews = adHocViews
+	default:
+		return zero, nil
 	}
-	if gopathView != nil {
-		return gopathView, nil
+
+	content, err := fh.Content()
+	// Port matching doesn't apply to non-go files, or files that no longer exist.
+	// Note that the behavior here on non-existent files shouldn't matter much,
+	// since there will be a subsequent failure. But it is simpler to preserve
+	// the invariant that bestView only fails on context cancellation.
+	if fileKind(fh) != file.Go || err != nil {
+		return bestViews[0], nil
 	}
-	if goPackagesView != nil {
-		return goPackagesView, nil
+
+	// Find the first view that matches constraints.
+	// Content trimming is nontrivial, so do this outside of the loop below.
+	path := fh.URI().Path()
+	content = trimContentForPortMatch(content)
+	for _, v := range bestViews {
+		def := v.definition()
+		viewPort := port{def.GOOS(), def.GOARCH()}
+		if viewPort.matches(path, content) {
+			return v, nil
+		}
 	}
-	if adHocView != nil {
-		return adHocView, nil
-	}
-	return nil, nil // no view found
+
+	return zero, nil // no view found
 }
 
 // updateViewLocked recreates the view with the given options.
@@ -617,7 +676,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 	// This is done while holding viewMu because the set of open files affects
 	// the set of views, and to prevent views from seeing updated file content
 	// before they have processed invalidations.
-	overlays, err := s.updateOverlays(ctx, changes)
+	replaced, err := s.updateOverlays(ctx, changes)
 	if err != nil {
 		return nil, err
 	}
@@ -629,7 +688,8 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 
 	changed := make(map[protocol.DocumentURI]file.Handle)
 	for _, c := range changes {
-		changed[c.URI] = mustReadFile(ctx, s, c.URI)
+		fh := mustReadFile(ctx, s, c.URI)
+		changed[c.URI] = fh
 
 		// Any change to the set of open files causes views to be recomputed.
 		if c.Action == file.Open || c.Action == file.Close {
@@ -650,6 +710,27 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 		if isGoMod(c.URI) && c.Action != file.Change && c.Action != file.Save {
 			checkViews = true
 		}
+
+		// Any change to the set of supported ports in a file may affect view
+		// selection. This is perhaps more subtle than it first seems: since the
+		// algorithm for selecting views considers open files in a deterministic
+		// order, a change in supported ports may cause a different port to be
+		// chosen, even if all open files still match an existing View!
+		//
+		// We endeavor to avoid that sort of path dependence, so must re-run the
+		// view selection algorithm whenever any input changes.
+		//
+		// However, extracting the build comment is nontrivial, so we don't want to
+		// pay this cost when e.g. processing a bunch of on-disk changes due to a
+		// branch change. Be careful to only do this if both files are open Go
+		// files.
+		if old, ok := replaced[c.URI]; ok && !checkViews && fileKind(fh) == file.Go {
+			if new, ok := fh.(*Overlay); ok {
+				if buildComment(old.content) != buildComment(new.content) {
+					checkViews = true
+				}
+			}
+		}
 	}
 
 	if checkViews {
@@ -668,7 +749,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 		}
 
 		var openFiles []protocol.DocumentURI
-		for _, o := range overlays {
+		for _, o := range s.Overlays() {
 			openFiles = append(openFiles, o.URI())
 		}
 		// Sort for determinism.
@@ -721,20 +802,11 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 		}
 	}
 
-	// Collect view definitions, for resolving the best view for each change.
-	var viewDefinitions []*viewDefinition
-	viewLookup := make(map[*viewDefinition]*View)
-	for _, view := range s.views {
-		viewDefinitions = append(viewDefinitions, view.viewDefinition)
-		viewLookup[view.viewDefinition] = view
-	}
-
 	// We only want to run fast-path diagnostics (i.e. diagnoseChangedFiles) once
-	// for each changed file, in its best view. Collect files into their best
-	// views.
-	viewsToDiagnose := make(map[*View][]protocol.DocumentURI)
+	// for each changed file, in its best view.
+	viewsToDiagnose := map[*View][]protocol.DocumentURI{}
 	for _, mod := range changes {
-		def, err := bestViewDefForURI(ctx, s, mod.URI, viewDefinitions)
+		v, err := s.viewOfLocked(ctx, mod.URI)
 		if err != nil {
 			// bestViewForURI only returns an error in the event of context
 			// cancellation. Since state changes should occur on an uncancellable
@@ -742,14 +814,13 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 			bug.Reportf("finding best view for change: %v", err)
 			continue
 		}
-		if def != nil {
-			v := viewLookup[def]
+		if v != nil {
 			viewsToDiagnose[v] = append(viewsToDiagnose[v], mod.URI)
 		}
 	}
 
 	// ...but changes may be relevant to other views, for example if they are
-	// changes to a shared packaged.
+	// changes to a shared package.
 	for _, v := range s.views {
 		_, release, needsDiagnosis := v.Invalidate(ctx, StateChange{Files: changed})
 		release()
@@ -810,14 +881,21 @@ func (s *Session) ExpandModificationsToDirectories(ctx context.Context, changes 
 	return result
 }
 
+// updateOverlays updates the set of overlays and returns a map of any existing
+// overlay values that were replaced.
+//
 // Precondition: caller holds s.viewMu lock.
 // TODO(rfindley): move this to fs_overlay.go.
-func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modification) ([]*Overlay, error) {
+func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modification) (map[protocol.DocumentURI]*Overlay, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
+	replaced := make(map[protocol.DocumentURI]*Overlay)
 	for _, c := range changes {
 		o, ok := fs.overlays[c.URI]
+		if ok {
+			replaced[c.URI] = o
+		}
 
 		// If the file is not opened in an overlay and the change is on disk,
 		// there's no need to update an overlay. If there is an overlay, we
@@ -893,12 +971,7 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modifica
 		fs.overlays[c.URI] = o
 	}
 
-	var overlays []*Overlay
-	for _, o := range fs.overlays {
-		overlays = append(overlays, o)
-	}
-
-	return overlays, nil
+	return replaced, nil
 }
 
 func mustReadFile(ctx context.Context, fs file.Source, uri protocol.DocumentURI) file.Handle {

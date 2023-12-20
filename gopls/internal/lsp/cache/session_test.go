@@ -274,7 +274,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 				got = append(got, viewSummary{
 					Type: def.Type(),
 					Root: rel.RelPath(def.root.Path()),
-					Env:  def.envOverlay,
+					Env:  def.EnvOverlay(),
 				})
 			}
 			if diff := cmp.Diff(test.want, got); diff != "" {

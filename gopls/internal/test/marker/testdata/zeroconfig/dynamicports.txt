@@ -1,0 +1,118 @@
+This test checks that the zero-config algorithm selects Views to cover first
+class ports.
+
+In this test, package a imports b, and b imports c. Package a contains files
+constrained by go:build directives, package b contains files constrained by the
+GOOS matching their file name, and package c is unconstrained. Various
+assertions check that diagnostics and navigation work as expected.
+
+-- go.mod --
+module golang.org/lsptests
+
+-- a/a.go --
+package a
+
+import "golang.org/lsptests/b"
+
+var _ = b.F //@loc(F, "F")
+
+-- a/linux64.go --
+//go:build (linux && amd64)
+
+package a
+
+import "golang.org/lsptests/b"
+
+var _ int = 1<<32 -1 // OK on 64 bit platforms. Compare linux32.go below.
+
+var (
+	_ = b.LinuxOnly   //@def("LinuxOnly", LinuxOnly)
+	_ = b.DarwinOnly  //@diag("DarwinOnly", re"(undefined|declared)")
+	_ = b.WindowsOnly //@diag("WindowsOnly", re"(undefined|declared)")
+)
+
+-- a/linux32.go --
+//go:build (linux && 386)
+
+package a
+
+import "golang.org/lsptests/b"
+
+var _ int = 1<<32 -1 //@diag("1<<32", re"overflows")
+
+var (
+	_ = b.LinuxOnly   //@def("LinuxOnly", LinuxOnly)
+	_ = b.DarwinOnly  //@diag("DarwinOnly", re"(undefined|declared)")
+	_ = b.WindowsOnly //@diag("WindowsOnly", re"(undefined|declared)")
+)
+
+-- a/darwin64.go --
+//go:build (darwin && amd64)
+
+package a
+
+import "golang.org/lsptests/b"
+
+var (
+	_ = b.LinuxOnly   //@diag("LinuxOnly", re"(undefined|declared)")
+	_ = b.DarwinOnly  //@def("DarwinOnly", DarwinOnly)
+	_ = b.WindowsOnly //@diag("WindowsOnly", re"(undefined|declared)")
+)
+
+-- a/windows64.go --
+//go:build (windows && amd64)
+
+package a
+
+import "golang.org/lsptests/b"
+
+var (
+	_ = b.LinuxOnly   //@diag("LinuxOnly", re"(undefined|declared)")
+	_ = b.DarwinOnly  //@diag("DarwinOnly", re"(undefined|declared)")
+	_ = b.WindowsOnly //@def("WindowsOnly", WindowsOnly)
+)
+
+-- b/b_other.go --
+//go:build !linux && !darwin && !windows
+package b
+
+func F() {}
+
+-- b/b_linux.go --
+package b
+
+import "golang.org/lsptests/c"
+
+func F() { //@refs("F", "F", F)
+	x := c.Common //@diag("x", re"not used"),def("Common", Common)
+}
+
+const LinuxOnly = "darwin" //@loc(LinuxOnly, "LinuxOnly")
+
+-- b/b_darwin.go --
+package b
+
+import "golang.org/lsptests/c"
+
+func F() { //@refs("F", "F", F)
+	x := c.Common //@diag("x", re"not used"),def("Common", Common)
+}
+
+const DarwinOnly = "darwin" //@loc(DarwinOnly, "DarwinOnly")
+
+-- b/b_windows.go --
+package b
+
+import "golang.org/lsptests/c"
+
+func F() { //@refs("F", "F", F)
+	x := c.Common //@diag("x", re"not used"),def("Common", Common)
+}
+
+const WindowsOnly = "windows" //@loc(WindowsOnly, "WindowsOnly")
+
+-- c/c.go --
+package c
+
+const Common = 0 //@loc(Common, "Common")
+

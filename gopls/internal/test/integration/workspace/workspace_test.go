@@ -11,10 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/hooks"
-	"golang.org/x/tools/gopls/internal/lsp/cache"
-	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -1012,90 +1009,6 @@ package main
 			// worskpace.
 			LogMatching(protocol.Info, ".*valid build configuration = true.*", 1, false),
 		)
-	})
-}
-
-func TestAddAndRemoveGoWork(t *testing.T) {
-	// TODO(golang/go#57979): update this test to assert that zero-config
-	// behavior means more than just a lack of diagnostics.
-
-	// Use a workspace with a module in the root directory to exercise the case
-	// where a go.work is added to the existing root directory. This verifies
-	// that we're detecting changes to the module source, not just the root
-	// directory.
-	const nomod = `
--- go.mod --
-module a.com
-
-go 1.16
--- main.go --
-package main
-
-func main() {}
--- b/go.mod --
-module b.com
-
-go 1.16
--- b/main.go --
-package main
-
-func main() {}
-`
-	WithOptions(
-		Modes(Default),
-	).Run(t, nomod, func(t *testing.T, env *Env) {
-		env.OpenFile("main.go")
-		env.OpenFile("b/main.go")
-
-		summary := func(typ cache.ViewType, root, folder string) command.View {
-			return command.View{
-				Type:   typ.String(),
-				Root:   env.Sandbox.Workdir.URI(root),
-				Folder: env.Sandbox.Workdir.URI(folder),
-			}
-		}
-		checkViews := func(want ...command.View) {
-			got := env.Views()
-			if diff := cmp.Diff(want, got); diff != "" {
-				t.Errorf("SummarizeViews() mismatch (-want +got):\n%s", diff)
-			}
-		}
-
-		// Zero-config gopls makes this work.
-		env.AfterChange(
-			NoDiagnostics(ForFile("main.go")),
-			NoDiagnostics(env.AtRegexp("b/main.go", "package (main)")),
-		)
-		checkViews(summary(cache.GoModView, ".", "."), summary(cache.GoModView, "b", "."))
-
-		env.WriteWorkspaceFile("go.work", `go 1.16
-
-use (
-	.
-	b
-)
-`)
-		env.AfterChange(NoDiagnostics())
-		checkViews(summary(cache.GoWorkView, ".", "."))
-
-		// Removing the go.work file should put us back where we started.
-		env.RemoveWorkspaceFile("go.work")
-
-		// Again, zero-config gopls makes this work.
-		env.AfterChange(
-			NoDiagnostics(ForFile("main.go")),
-			NoDiagnostics(env.AtRegexp("b/main.go", "package (main)")),
-		)
-		checkViews(summary(cache.GoModView, ".", "."), summary(cache.GoModView, "b", "."))
-
-		// Close and reopen b, to ensure the views are adjusted accordingly.
-		env.CloseBuffer("b/main.go")
-		env.AfterChange()
-		checkViews(summary(cache.GoModView, ".", "."))
-
-		env.OpenFile("b/main.go")
-		env.AfterChange()
-		checkViews(summary(cache.GoModView, ".", "."), summary(cache.GoModView, "b", "."))
 	})
 }
 

@@ -16,6 +16,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -55,6 +56,8 @@ type Folder struct {
 type GoEnv struct {
 	// Go environment variables. These correspond directly with the Go env var of
 	// the same name.
+	GOOS        string
+	GOARCH      string
 	GOCACHE     string
 	GOMODCACHE  string
 	GOPATH      string
@@ -128,6 +131,9 @@ type View struct {
 	initializationSema chan struct{}
 }
 
+// definition implements the viewDefiner interface.
+func (v *View) definition() *viewDefinition { return v.viewDefinition }
+
 // A viewDefinition is a logical build, i.e. configuration (Folder) along with
 // a build directory and possibly an environment overlay (e.g. GOWORK=off or
 // GOOS, GOARCH=...) to affect the build.
@@ -158,21 +164,53 @@ type viewDefinition struct {
 	workspaceModFilesErr error // error encountered computing workspaceModFiles
 
 	// envOverlay holds additional environment to apply to this viewDefinition.
-	envOverlay []string
+	envOverlay map[string]string
 }
+
+// definition implements the viewDefiner interface.
+func (d *viewDefinition) definition() *viewDefinition { return d }
 
 // Type returns the ViewType type, which determines how go/packages are loaded
 // for this View.
-func (d viewDefinition) Type() ViewType { return d.typ }
+func (d *viewDefinition) Type() ViewType { return d.typ }
 
 // Root returns the view root, which determines where packages are loaded from.
-func (d viewDefinition) Root() protocol.DocumentURI { return d.root }
+func (d *viewDefinition) Root() protocol.DocumentURI { return d.root }
 
 // GoMod returns the nearest go.mod file for this view's root, or "".
-func (d viewDefinition) GoMod() protocol.DocumentURI { return d.gomod }
+func (d *viewDefinition) GoMod() protocol.DocumentURI { return d.gomod }
 
 // GoWork returns the nearest go.work file for this view's root, or "".
-func (d viewDefinition) GoWork() protocol.DocumentURI { return d.gowork }
+func (d *viewDefinition) GoWork() protocol.DocumentURI { return d.gowork }
+
+// EnvOverlay returns a new sorted slice of environment variables (in the form
+// "k=v") for this view definition's env overlay.
+func (d *viewDefinition) EnvOverlay() []string {
+	var env []string
+	for k, v := range d.envOverlay {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+	sort.Strings(env)
+	return env
+}
+
+// GOOS returns the effective GOOS value for this view definition, accounting
+// for its env overlay.
+func (d *viewDefinition) GOOS() string {
+	if goos, ok := d.envOverlay["GOOS"]; ok {
+		return goos
+	}
+	return d.folder.Env.GOOS
+}
+
+// GOOS returns the effective GOARCH value for this view definition, accounting
+// for its env overlay.
+func (d *viewDefinition) GOARCH() string {
+	if goarch, ok := d.envOverlay["GOARCH"]; ok {
+		return goarch
+	}
+	return d.folder.Env.GOARCH
+}
 
 // adjustedGO111MODULE is the value of GO111MODULE to use for loading packages.
 // It is adjusted to default to "auto" rather than "on", since if we are in
@@ -787,23 +825,56 @@ func (v *View) Invalidate(ctx context.Context, changed StateChange) (*Snapshot, 
 //
 // defineView only returns an error in the event of context cancellation.
 //
+// Note: keep this function in sync with bestView.
+//
 // TODO(rfindley): we should be able to remove the error return, as
 // findModules is going away, and all other I/O is memoized.
 //
 // TODO(rfindley): pass in a narrower interface for the file.Source
 // (e.g. fileExists func(DocumentURI) bool) to make clear that this
 // process depends only on directory information, not file contents.
-func defineView(ctx context.Context, fs file.Source, folder *Folder, forURI protocol.DocumentURI) (*viewDefinition, error) {
+func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile file.Handle) (*viewDefinition, error) {
 	if err := checkPathValid(folder.Dir.Path()); err != nil {
 		return nil, fmt.Errorf("invalid workspace folder path: %w; check that the spelling of the configured workspace folder path agrees with the spelling reported by the operating system", err)
 	}
 	dir := folder.Dir.Path()
-	if forURI != "" {
-		dir = filepath.Dir(forURI.Path())
+	if forFile != nil {
+		dir = filepath.Dir(forFile.URI().Path())
 	}
 
 	def := new(viewDefinition)
 	def.folder = folder
+
+	if forFile != nil && fileKind(forFile) == file.Go {
+		// If the file has GOOS/GOARCH build constraints that
+		// don't match the folder's environment (which comes from
+		// 'go env' in the folder, plus user options),
+		// add those constraints to the viewDefinition's environment.
+
+		// Content trimming is nontrivial, so do this outside of the loop below.
+		// Keep this in sync with bestView.
+		path := forFile.URI().Path()
+		if content, err := forFile.Content(); err == nil {
+			// Note the err == nil condition above: by convention a non-existent file
+			// does not have any constraints. See the related note in bestView: this
+			// choice of behavior shouldn't actually matter. In this case, we should
+			// only call defineView with Overlays, which always have content.
+			content = trimContentForPortMatch(content)
+			viewPort := port{def.folder.Env.GOOS, def.folder.Env.GOARCH}
+			if !viewPort.matches(path, content) {
+				for _, p := range preferredPorts {
+					if p.matches(path, content) {
+						if def.envOverlay == nil {
+							def.envOverlay = make(map[string]string)
+						}
+						def.envOverlay["GOOS"] = p.GOOS
+						def.envOverlay["GOARCH"] = p.GOARCH
+						break
+					}
+				}
+			}
+		}
+	}
 
 	var err error
 	dirURI := protocol.URIFromPath(dir)
@@ -823,7 +894,7 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forURI prot
 	//
 	// If forURI is unset, we still use the legacy heuristic of scanning for
 	// nested modules (this will be removed as part of golang/go#57979).
-	if forURI != "" {
+	if forFile != nil {
 		def.gomod, err = findRootPattern(ctx, dirURI, "go.mod", fs)
 		if err != nil {
 			return nil, err
@@ -884,12 +955,15 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forURI prot
 
 		// If forURI is in a module but that module is not
 		// included in the go.work file, use a go.mod view with GOWORK=off.
-		if forURI != "" && def.workspaceModFilesErr == nil && def.gomod != "" {
+		if forFile != nil && def.workspaceModFilesErr == nil && def.gomod != "" {
 			if _, ok := def.workspaceModFiles[def.gomod]; !ok {
 				def.typ = GoModView
 				def.root = def.gomod.Dir()
 				def.workspaceModFiles = map[protocol.DocumentURI]unit{def.gomod: {}}
-				def.envOverlay = []string{"GOWORK=off"}
+				if def.envOverlay == nil {
+					def.envOverlay = make(map[string]string)
+				}
+				def.envOverlay["GOWORK"] = "off"
 			}
 		}
 		return def, nil
@@ -946,6 +1020,8 @@ func FetchGoEnv(ctx context.Context, folder protocol.DocumentURI, opts *settings
 		err error
 	)
 	envvars := map[string]*string{
+		"GOOS":        &env.GOOS,
+		"GOARCH":      &env.GOARCH,
 		"GOCACHE":     &env.GOCACHE,
 		"GOPATH":      &env.GOPATH,
 		"GOPRIVATE":   &env.GOPRIVATE,
