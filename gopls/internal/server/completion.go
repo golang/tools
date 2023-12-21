@@ -30,11 +30,12 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 	ctx, done := event.Start(ctx, "lsp.Server.completion", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	if err != nil {
 		return nil, err
 	}
+	defer release()
+
 	var candidates []completion.CompletionItem
 	var surrounding *completion.Selection
 	switch snapshot.FileKind(fh) {

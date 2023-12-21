@@ -142,37 +142,38 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 		}
 	}
 	var deps commandDeps
+	var release func()
 	if cfg.forURI != "" && cfg.forView != "" {
 		return bug.Errorf("internal error: forURI=%q, forView=%q", cfg.forURI, cfg.forView)
 	}
 	if cfg.forURI != "" {
-		var ok bool
-		var release func()
-		deps.snapshot, deps.fh, ok, release, err = c.s.beginFileRequest(ctx, cfg.forURI, file.UnknownKind)
-		defer release()
-		if !ok {
-			if err != nil {
-				return err
-			}
-			return fmt.Errorf("invalid file URL: %v", cfg.forURI)
+		deps.fh, deps.snapshot, release, err = c.s.fileOf(ctx, cfg.forURI)
+		if err != nil {
+			return err
 		}
+
 	} else if cfg.forView != "" {
 		view, err := c.s.session.View(cfg.forView)
 		if err != nil {
 			return err
 		}
-		var release func()
 		deps.snapshot, release, err = view.Snapshot()
 		if err != nil {
 			return err
 		}
-		defer release()
+
+	} else {
+		release = func() {}
 	}
+	// Inv: release() must be called exactly once after this point.
+	// In the async case, runcmd may outlive run().
+
 	ctx, cancel := context.WithCancel(xcontext.Detach(ctx))
 	if cfg.progress != "" {
 		deps.work = c.s.progress.Start(ctx, cfg.progress, "Running...", c.params.WorkDoneToken, cancel)
 	}
 	runcmd := func() error {
+		defer release()
 		defer cancel()
 		err := run(ctx, deps)
 		if deps.work != nil {
@@ -335,11 +336,11 @@ func (c *commandHandler) UpdateGoSum(ctx context.Context, args command.URIArgs) 
 		progress: "Updating go.sum",
 	}, func(ctx context.Context, _ commandDeps) error {
 		for _, uri := range args.URIs {
-			snapshot, fh, ok, release, err := c.s.beginFileRequest(ctx, uri, file.UnknownKind)
-			defer release()
-			if !ok {
+			fh, snapshot, release, err := c.s.fileOf(ctx, uri)
+			if err != nil {
 				return err
 			}
+			defer release()
 			if err := c.s.runGoModUpdateCommands(ctx, snapshot, fh.URI(), func(invoke func(...string) (*bytes.Buffer, error)) error {
 				_, err := invoke("list", "all")
 				return err
@@ -357,11 +358,11 @@ func (c *commandHandler) Tidy(ctx context.Context, args command.URIArgs) error {
 		progress:    "Running go mod tidy",
 	}, func(ctx context.Context, _ commandDeps) error {
 		for _, uri := range args.URIs {
-			snapshot, fh, ok, release, err := c.s.beginFileRequest(ctx, uri, file.UnknownKind)
-			defer release()
-			if !ok {
+			fh, snapshot, release, err := c.s.fileOf(ctx, uri)
+			if err != nil {
 				return err
 			}
+			defer release()
 			if err := c.s.runGoModUpdateCommands(ctx, snapshot, fh.URI(), func(invoke func(...string) (*bytes.Buffer, error)) error {
 				_, err := invoke("mod", "tidy")
 				return err
@@ -405,11 +406,11 @@ func (c *commandHandler) EditGoDirective(ctx context.Context, args command.EditG
 		requireSave: true, // if go.mod isn't saved it could cause a problem
 		forURI:      args.URI,
 	}, func(ctx context.Context, _ commandDeps) error {
-		snapshot, fh, ok, release, err := c.s.beginFileRequest(ctx, args.URI, file.UnknownKind)
-		defer release()
-		if !ok {
+		fh, snapshot, release, err := c.s.fileOf(ctx, args.URI)
+		if err != nil {
 			return err
 		}
+		defer release()
 		if err := c.s.runGoModUpdateCommands(ctx, snapshot, fh.URI(), func(invoke func(...string) (*bytes.Buffer, error)) error {
 			_, err := invoke("mod", "edit", "-go", args.Version)
 			return err
@@ -1304,12 +1305,14 @@ func (c *commandHandler) DiagnoseFiles(ctx context.Context, args command.Diagnos
 		// grouping file URIs by package and making a
 		// single call to source.Analyze.
 		for _, uri := range args.Files {
-			snapshot, fh, ok, release, err := c.s.beginFileRequest(ctx, uri, file.UnknownKind)
-			defer release()
-			if !ok {
+			fh, snapshot, release, err := c.s.fileOf(ctx, uri)
+			if err != nil {
 				return err
 			}
-
+			defer release()
+			if snapshot.FileKind(fh) != file.Go {
+				continue
+			}
 			pkg, _, err := source.NarrowestPackageForFile(ctx, snapshot, uri)
 			if err != nil {
 				return err

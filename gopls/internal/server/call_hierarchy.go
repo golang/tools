@@ -17,12 +17,14 @@ func (s *server) PrepareCallHierarchy(ctx context.Context, params *protocol.Call
 	ctx, done := event.Start(ctx, "lsp.Server.prepareCallHierarchy")
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.Go)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	if err != nil {
 		return nil, err
 	}
-
+	defer release()
+	if snapshot.FileKind(fh) != file.Go {
+		return nil, nil // empty result
+	}
 	return source.PrepareCallHierarchy(ctx, snapshot, fh, params.Position)
 }
 
@@ -30,12 +32,14 @@ func (s *server) IncomingCalls(ctx context.Context, params *protocol.CallHierarc
 	ctx, done := event.Start(ctx, "lsp.Server.incomingCalls")
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.Item.URI, file.Go)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.Item.URI)
+	if err != nil {
 		return nil, err
 	}
-
+	defer release()
+	if snapshot.FileKind(fh) != file.Go {
+		return nil, nil // empty result
+	}
 	return source.IncomingCalls(ctx, snapshot, fh, params.Item.Range.Start)
 }
 
@@ -43,11 +47,13 @@ func (s *server) OutgoingCalls(ctx context.Context, params *protocol.CallHierarc
 	ctx, done := event.Start(ctx, "lsp.Server.outgoingCalls")
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.Item.URI, file.Go)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.Item.URI)
+	if err != nil {
 		return nil, err
 	}
-
+	defer release()
+	if snapshot.FileKind(fh) != file.Go {
+		return nil, nil // empty result
+	}
 	return source.OutgoingCalls(ctx, snapshot, fh, params.Item.Range.Start)
 }

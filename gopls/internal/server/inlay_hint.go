@@ -19,16 +19,17 @@ func (s *server) InlayHint(ctx context.Context, params *protocol.InlayHintParams
 	ctx, done := event.Start(ctx, "lsp.Server.inlayHint", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	if err != nil {
 		return nil, err
 	}
+	defer release()
+
 	switch snapshot.FileKind(fh) {
 	case file.Mod:
 		return mod.InlayHint(ctx, snapshot, fh, params.Range)
 	case file.Go:
 		return source.InlayHint(ctx, snapshot, fh, params.Range)
 	}
-	return nil, nil
+	return nil, nil // empty result
 }

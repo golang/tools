@@ -19,21 +19,23 @@ func (s *server) DocumentHighlight(ctx context.Context, params *protocol.Documen
 	ctx, done := event.Start(ctx, "lsp.Server.documentHighlight", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.Go)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	if err != nil {
 		return nil, err
 	}
+	defer release()
 
-	if snapshot.FileKind(fh) == file.Tmpl {
+	switch snapshot.FileKind(fh) {
+	case file.Tmpl:
 		return template.Highlight(ctx, snapshot, fh, params.Position)
+	case file.Go:
+		rngs, err := source.Highlight(ctx, snapshot, fh, params.Position)
+		if err != nil {
+			event.Error(ctx, "no highlight", err)
+		}
+		return toProtocolHighlight(rngs), nil
 	}
-
-	rngs, err := source.Highlight(ctx, snapshot, fh, params.Position)
-	if err != nil {
-		event.Error(ctx, "no highlight", err)
-	}
-	return toProtocolHighlight(rngs), nil
+	return nil, nil // empty result
 }
 
 func toProtocolHighlight(rngs []protocol.Range) []protocol.DocumentHighlight {

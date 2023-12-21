@@ -33,11 +33,11 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 	ctx, done := event.Start(ctx, "lsp.Server.codeAction")
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	if err != nil {
 		return nil, err
 	}
+	defer release()
 	uri := fh.URI()
 
 	// Determine the supported actions for this file kind.

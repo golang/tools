@@ -31,11 +31,12 @@ func (s *server) DocumentLink(ctx context.Context, params *protocol.DocumentLink
 	ctx, done := event.Start(ctx, "lsp.Server.documentLink")
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	if err != nil {
 		return nil, err
 	}
+	defer release()
+
 	switch snapshot.FileKind(fh) {
 	case file.Mod:
 		links, err = modLinks(ctx, snapshot, fh)
@@ -45,9 +46,9 @@ func (s *server) DocumentLink(ctx context.Context, params *protocol.DocumentLink
 	// Don't return errors for document links.
 	if err != nil {
 		event.Error(ctx, "failed to compute document links", err, tag.URI.Of(fh.URI()))
-		return nil, nil
+		return nil, nil // empty result
 	}
-	return links, nil
+	return links, nil // may be empty (for other file types)
 }
 
 func modLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.DocumentLink, error) {

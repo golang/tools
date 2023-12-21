@@ -27,11 +27,12 @@ func (s *server) Hover(ctx context.Context, params *protocol.HoverParams) (_ *pr
 	ctx, done := event.Start(ctx, "lsp.Server.hover", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	if err != nil {
 		return nil, err
 	}
+	defer release()
+
 	switch snapshot.FileKind(fh) {
 	case file.Mod:
 		return mod.Hover(ctx, snapshot, fh, params.Position)
@@ -42,5 +43,5 @@ func (s *server) Hover(ctx context.Context, params *protocol.HoverParams) (_ *pr
 	case file.Work:
 		return work.Hover(ctx, snapshot, fh, params.Position)
 	}
-	return nil, nil
+	return nil, nil // empty result
 }

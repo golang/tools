@@ -20,11 +20,12 @@ func (s *server) Formatting(ctx context.Context, params *protocol.DocumentFormat
 	ctx, done := event.Start(ctx, "lsp.Server.formatting", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	if err != nil {
 		return nil, err
 	}
+	defer release()
+
 	switch snapshot.FileKind(fh) {
 	case file.Mod:
 		return mod.Format(ctx, snapshot, fh)
@@ -33,5 +34,5 @@ func (s *server) Formatting(ctx context.Context, params *protocol.DocumentFormat
 	case file.Work:
 		return work.Format(ctx, snapshot, fh)
 	}
-	return nil, nil
+	return nil, nil // empty result
 }

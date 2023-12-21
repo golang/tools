@@ -278,6 +278,8 @@ func (s *Session) View(id string) (*View, error) {
 //
 // SnapshotOf returns an error if a failure occurs along the way (most likely due
 // to context cancellation), or if there are no Views in the Session.
+//
+// On success, the caller must call the returned function to release the snapshot.
 func (s *Session) SnapshotOf(ctx context.Context, uri protocol.DocumentURI) (*Snapshot, func(), error) {
 	// Fast path: if the uri has a static association with a view, return it.
 	s.viewMu.Lock()

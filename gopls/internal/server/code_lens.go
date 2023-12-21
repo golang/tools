@@ -22,11 +22,12 @@ func (s *server) CodeLens(ctx context.Context, params *protocol.CodeLensParams) 
 	ctx, done := event.Start(ctx, "lsp.Server.codeLens", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	if err != nil {
 		return nil, err
 	}
+	defer release()
+
 	var lenses map[command.Command]source.LensFunc
 	switch snapshot.FileKind(fh) {
 	case file.Mod:

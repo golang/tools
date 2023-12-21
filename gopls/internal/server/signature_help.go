@@ -18,11 +18,16 @@ func (s *server) SignatureHelp(ctx context.Context, params *protocol.SignatureHe
 	ctx, done := event.Start(ctx, "lsp.Server.signatureHelp", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.Go)
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
 	defer release()
-	if !ok {
+	if err != nil {
 		return nil, err
 	}
+
+	if snapshot.FileKind(fh) != file.Go {
+		return nil, nil // empty result
+	}
+
 	info, activeParameter, err := source.SignatureHelp(ctx, snapshot, fh, params.Position)
 	if err != nil {
 		event.Error(ctx, "no signature help", err, tag.Position.Of(params.Position))

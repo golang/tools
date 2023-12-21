@@ -25,13 +25,16 @@ func (s *server) References(ctx context.Context, params *protocol.ReferenceParam
 	ctx, done := event.Start(ctx, "lsp.Server.references", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.UnknownKind)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	if err != nil {
 		return nil, err
 	}
-	if snapshot.FileKind(fh) == file.Tmpl {
+	defer release()
+	switch snapshot.FileKind(fh) {
+	case file.Tmpl:
 		return template.References(ctx, snapshot, fh, params)
+	case file.Go:
+		return source.References(ctx, snapshot, fh, params.Position, params.Context.IncludeDeclaration)
 	}
-	return source.References(ctx, snapshot, fh, params.Position, params.Context.IncludeDeclaration)
+	return nil, nil // empty result
 }

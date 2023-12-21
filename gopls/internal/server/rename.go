@@ -6,6 +6,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 
 	"golang.org/x/tools/gopls/internal/file"
@@ -19,11 +20,16 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 	ctx, done := event.Start(ctx, "lsp.Server.rename", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.Go)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	if err != nil {
 		return nil, err
 	}
+	defer release()
+
+	if kind := snapshot.FileKind(fh); kind != file.Go {
+		return nil, fmt.Errorf("cannot rename in file of type %s", kind)
+	}
+
 	// Because we don't handle directory renaming within source.Rename, source.Rename returns
 	// boolean value isPkgRenaming to determine whether an DocumentChanges of type RenameFile should
 	// be added to the return protocol.WorkspaceEdit value.
@@ -67,11 +73,16 @@ func (s *server) PrepareRename(ctx context.Context, params *protocol.PrepareRena
 	ctx, done := event.Start(ctx, "lsp.Server.prepareRename", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.Go)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	if err != nil {
 		return nil, err
 	}
+	defer release()
+
+	if kind := snapshot.FileKind(fh); kind != file.Go {
+		return nil, fmt.Errorf("cannot rename in file of type %s", kind)
+	}
+
 	// Do not return errors here, as it adds clutter.
 	// Returning a nil result means there is not a valid rename.
 	item, usererr, err := source.PrepareRename(ctx, snapshot, fh, params.Position)

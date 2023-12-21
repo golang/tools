@@ -18,12 +18,14 @@ func (s *server) FoldingRange(ctx context.Context, params *protocol.FoldingRange
 	ctx, done := event.Start(ctx, "lsp.Server.foldingRange", tag.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, params.TextDocument.URI, file.Go)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	if err != nil {
 		return nil, err
 	}
-
+	defer release()
+	if snapshot.FileKind(fh) != file.Go {
+		return nil, nil // empty result
+	}
 	ranges, err := source.FoldingRange(ctx, snapshot, fh, snapshot.Options().LineFoldingOnly)
 	if err != nil {
 		return nil, err

@@ -567,27 +567,19 @@ func (s *server) handleOptionResults(ctx context.Context, results settings.Optio
 	return nil
 }
 
-// beginFileRequest checks preconditions for a file-oriented request and routes
-// it to a snapshot.
-// We don't want to return errors for benign conditions like wrong file type,
-// so callers should do if !ok { return err } rather than if err != nil.
-// The returned cleanup function is non-nil even in case of false/error result.
-func (s *server) beginFileRequest(ctx context.Context, uri protocol.DocumentURI, expectKind file.Kind) (*cache.Snapshot, file.Handle, bool, func(), error) {
+// fileOf returns the file for a given URI and its snapshot.
+// On success, the returned function must be called to release the snapshot.
+func (s *server) fileOf(ctx context.Context, uri protocol.DocumentURI) (file.Handle, *cache.Snapshot, func(), error) {
 	snapshot, release, err := s.session.SnapshotOf(ctx, uri)
 	if err != nil {
-		return nil, nil, false, func() {}, err
+		return nil, nil, nil, err
 	}
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
 		release()
-		return nil, nil, false, func() {}, err
+		return nil, nil, nil, err
 	}
-	if expectKind != file.UnknownKind && snapshot.FileKind(fh) != expectKind {
-		// Wrong kind of file. Nothing to do.
-		release()
-		return nil, nil, false, func() {}, nil
-	}
-	return snapshot, fh, true, release, nil
+	return fh, snapshot, release, nil
 }
 
 // shutdown implements the 'shutdown' LSP handler. It releases resources

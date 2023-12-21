@@ -52,11 +52,11 @@ func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIde
 	ctx, done := event.Start(ctx, "lsp.Server.semanticTokens", tag.URI.Of(td.URI))
 	defer done()
 
-	snapshot, fh, ok, release, err := s.beginFileRequest(ctx, td.URI, file.UnknownKind)
-	defer release()
-	if !ok {
+	fh, snapshot, release, err := s.fileOf(ctx, td.URI)
+	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if !snapshot.Options().SemanticTokens {
 		// return an error, so if the option changes
 		// the client won't remember the wrong answer
@@ -83,7 +83,7 @@ func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIde
 		return template.SemanticTokens(ctx, snapshot, fh.URI(), add, data)
 	}
 	if kind != file.Go {
-		return nil, nil
+		return nil, nil // empty result
 	}
 	pkg, pgf, err := source.NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
