@@ -497,7 +497,13 @@ func (b *builder) lookup(l *ssa.Lookup) {
 		// No interesting flows for string lookups.
 		return
 	}
-	b.addInFlowAliasEdges(b.nodeFromVal(l), mapValue{typ: t.Elem()})
+
+	if !l.CommaOk {
+		b.addInFlowAliasEdges(b.nodeFromVal(l), mapValue{typ: t.Elem()})
+	} else {
+		i := indexedLocal{val: l, typ: t.Elem(), index: 0}
+		b.addInFlowAliasEdges(i, mapValue{typ: t.Elem()})
+	}
 }
 
 // mapUpdate handles map update commands m[b] = a where m is of type
