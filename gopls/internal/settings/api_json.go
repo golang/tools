@@ -913,6 +913,12 @@ var GeneratedAPIJSON = &APIJSON{
 			ArgDoc:  "{\n\t// The file URI.\n\t\"URI\": string,\n}",
 		},
 		{
+			Command:   "gopls.views",
+			Title:     "List current Views on the server.",
+			Doc:       "This command is intended for use by gopls tests only.",
+			ResultDoc: "[]{\n\t\"Type\": string,\n\t\"Root\": string,\n\t\"Folder\": string,\n}",
+		},
+		{
 			Command:   "gopls.workspace_stats",
 			Title:     "Fetch workspace statistics",
 			Doc:       "Query statistics about workspace builds, modules, packages, and files.\n\nThis command is intended for internal use only, by the gopls stats\ncommand.",

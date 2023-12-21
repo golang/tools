@@ -261,6 +261,23 @@ const (
 	AdHocView
 )
 
+func (t ViewType) String() string {
+	switch t {
+	case GoPackagesDriverView:
+		return "GoPackagesDriverView"
+	case GOPATHView:
+		return "GOPATHView"
+	case GoModView:
+		return "GoModView"
+	case GoWorkView:
+		return "GoWorkView"
+	case AdHocView:
+		return "AdHocView"
+	default:
+		return "Unknown"
+	}
+}
+
 // moduleMode reports whether the view uses Go modules.
 func (w viewDefinition) moduleMode() bool {
 	switch w.typ {

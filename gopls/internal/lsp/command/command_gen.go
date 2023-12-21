@@ -53,6 +53,7 @@ const (
 	UpdateGoSum             Command = "update_go_sum"
 	UpgradeDependency       Command = "upgrade_dependency"
 	Vendor                  Command = "vendor"
+	Views                   Command = "views"
 	WorkspaceStats          Command = "workspace_stats"
 )
 
@@ -88,6 +89,7 @@ var Commands = []Command{
 	UpdateGoSum,
 	UpgradeDependency,
 	Vendor,
+	Views,
 	WorkspaceStats,
 }
 
@@ -273,6 +275,8 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.Vendor(ctx, a0)
+	case "gopls.views":
+		return s.Views(ctx)
 	case "gopls.workspace_stats":
 		return s.WorkspaceStats(ctx)
 	}
@@ -647,6 +651,18 @@ func NewVendorCommand(title string, a0 URIArg) (protocol.Command, error) {
 	return protocol.Command{
 		Title:     title,
 		Command:   "gopls.vendor",
+		Arguments: args,
+	}, nil
+}
+
+func NewViewsCommand(title string) (protocol.Command, error) {
+	args, err := MarshalArgs()
+	if err != nil {
+		return protocol.Command{}, err
+	}
+	return protocol.Command{
+		Title:     title,
+		Command:   "gopls.views",
 		Arguments: args,
 	}, nil
 }

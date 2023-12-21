@@ -581,6 +581,21 @@ Args:
 }
 ```
 
+### **List current Views on the server.**
+Identifier: `gopls.views`
+
+This command is intended for use by gopls tests only.
+
+Result:
+
+```
+[]{
+	"Type": string,
+	"Root": string,
+	"Folder": string,
+}
+```
+
 ### **Fetch workspace statistics**
 Identifier: `gopls.workspace_stats`
 

@@ -11,7 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/hooks"
+	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -1044,11 +1047,27 @@ func main() {}
 		env.OpenFile("main.go")
 		env.OpenFile("b/main.go")
 
+		summary := func(typ cache.ViewType, root, folder string) command.View {
+			return command.View{
+				Type:   typ.String(),
+				Root:   env.Sandbox.Workdir.URI(root),
+				Folder: env.Sandbox.Workdir.URI(folder),
+			}
+		}
+		checkViews := func(want ...command.View) {
+			got := env.Views()
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("SummarizeViews() mismatch (-want +got):\n%s", diff)
+			}
+		}
+
 		// Zero-config gopls makes this work.
 		env.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
 			NoDiagnostics(env.AtRegexp("b/main.go", "package (main)")),
 		)
+		checkViews(summary(cache.GoModView, ".", "."), summary(cache.GoModView, "b", "."))
+
 		env.WriteWorkspaceFile("go.work", `go 1.16
 
 use (
@@ -1057,25 +1076,26 @@ use (
 )
 `)
 		env.AfterChange(NoDiagnostics())
+		checkViews(summary(cache.GoWorkView, ".", "."))
+
 		// Removing the go.work file should put us back where we started.
 		env.RemoveWorkspaceFile("go.work")
-
-		// TODO(golang/go#57558, golang/go#57508): file watching is asynchronous,
-		// and we must wait for the view to be reconstructed before touching
-		// b/main.go, so that the new view "knows" about b/main.go. This is simply
-		// a bug, but awaiting the change here avoids it.
-		env.Await(env.DoneWithChangeWatchedFiles())
-
-		// TODO(rfindley): fix this bug: reopening b/main.go is necessary here
-		// because we no longer "see" the file in any view.
-		env.CloseBuffer("b/main.go")
-		env.OpenFile("b/main.go")
 
 		// Again, zero-config gopls makes this work.
 		env.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
 			NoDiagnostics(env.AtRegexp("b/main.go", "package (main)")),
 		)
+		checkViews(summary(cache.GoModView, ".", "."), summary(cache.GoModView, "b", "."))
+
+		// Close and reopen b, to ensure the views are adjusted accordingly.
+		env.CloseBuffer("b/main.go")
+		env.AfterChange()
+		checkViews(summary(cache.GoModView, ".", "."))
+
+		env.OpenFile("b/main.go")
+		env.AfterChange()
+		checkViews(summary(cache.GoModView, ".", "."), summary(cache.GoModView, "b", "."))
 	})
 }
 

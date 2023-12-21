@@ -222,6 +222,11 @@ type Interface interface {
 	//
 	// This command is needed by the 'gopls {check,fix}' CLI subcommands.
 	DiagnoseFiles(context.Context, DiagnoseFilesArgs) error
+
+	// Views: List current Views on the server.
+	//
+	// This command is intended for use by gopls tests only.
+	Views(context.Context) ([]View, error)
 }
 
 type RunTestsArgs struct {
@@ -500,4 +505,11 @@ type ChangeSignatureArgs struct {
 // DiagnoseFilesArgs specifies a set of files for which diagnostics are wanted.
 type DiagnoseFilesArgs struct {
 	Files []protocol.DocumentURI
+}
+
+// A View holds summary information about a cache.View.
+type View struct {
+	Type   string               // view type (via cache.ViewType.String)
+	Root   protocol.DocumentURI // root dir of the view (e.g. containing go.mod or go.work)
+	Folder protocol.DocumentURI // workspace folder associated with the view
 }
