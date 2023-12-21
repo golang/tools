@@ -511,7 +511,7 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlag
 		os.Environ(),
 		s.Options().EnvSlice(),
 		inv.Env,
-		[]string{"GO111MODULE=" + s.view.adjustedGO111MODULE},
+		[]string{"GO111MODULE=" + s.view.adjustedGO111MODULE()},
 		s.view.envOverlay,
 	)
 	inv.BuildFlags = append([]string{}, s.Options().BuildFlags...)
@@ -1616,7 +1616,7 @@ searchOverlays:
 				}
 
 				var fix string
-				if s.view.goversion >= 18 {
+				if s.view.folder.Env.GoVersion >= 18 {
 					if s.view.gowork != "" {
 						fix = fmt.Sprintf("To fix this problem, you can add this module to your go.work file (%s)", s.view.gowork)
 						if cmd, err := command.NewRunGoWorkCommandCommand("Run `go work use`", command.RunGoWorkArgs{

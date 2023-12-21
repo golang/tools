@@ -808,7 +808,7 @@ var SessionTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{define "body"}}
 From: <b>{{template "cachelink" .Cache.ID}}</b><br>
 <h2>Views</h2>
-<ul>{{range .Views}}<li>{{.Name}} is {{template "viewlink" .ID}} in {{.Folder}}</li>{{end}}</ul>
+<ul>{{range .Views}}<li>{{.Folder.Name}} is {{template "viewlink" .ID}} in {{.Folder.Dir}}</li>{{end}}</ul>
 <h2>Overlays</h2>
 {{$session := .}}
 <ul>{{range .Overlays}}
@@ -821,8 +821,8 @@ From: <b>{{template "cachelink" .Cache.ID}}</b><br>
 var ViewTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{define "title"}}View {{.ID}}{{end}}
 {{define "body"}}
-Name: <b>{{.Name}}</b><br>
-Folder: <b>{{.Folder}}</b><br>
+Name: <b>{{.Folder.Name}}</b><br>
+Folder: <b>{{.Folder.Dir}}</b><br>
 {{end}}
 `))
 

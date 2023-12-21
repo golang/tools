@@ -130,7 +130,7 @@ func populateProcessEnvFromSnapshot(ctx context.Context, pe *imports.ProcessEnv,
 	pe.ModFlag = "readonly" // processEnv operations should not mutate the modfile
 	pe.Env = map[string]string{}
 	pe.BuildFlags = append([]string{}, snapshot.Options().BuildFlags...)
-	env := append(append(os.Environ(), snapshot.Options().EnvSlice()...), "GO111MODULE="+snapshot.view.adjustedGO111MODULE)
+	env := append(append(os.Environ(), snapshot.Options().EnvSlice()...), "GO111MODULE="+snapshot.view.adjustedGO111MODULE())
 	for _, kv := range env {
 		split := strings.SplitN(kv, "=", 2)
 		if len(split) != 2 {

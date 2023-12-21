@@ -202,7 +202,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 			continue
 		}
 		// Skip test main packages.
-		if isTestMain(pkg, s.view.gocache) {
+		if isTestMain(pkg, s.view.folder.Env.GOCACHE) {
 			continue
 		}
 		// Skip filtered packages. They may be added anyway if they're
@@ -310,7 +310,7 @@ func (m *moduleErrorMap) Error() string {
 func (s *Snapshot) workspaceLayoutError(ctx context.Context) (error, []*Diagnostic) {
 	// TODO(rfindley): both of the checks below should be delegated to the workspace.
 
-	if s.view.adjustedGO111MODULE == "off" {
+	if s.view.adjustedGO111MODULE() == "off" {
 		return nil, nil
 	}
 
@@ -331,7 +331,7 @@ func (s *Snapshot) workspaceLayoutError(ctx context.Context) (error, []*Diagnost
 	// Check for that an warn about it.
 	if !s.validBuildConfiguration() {
 		var msg string
-		if s.view.goversion >= 18 {
+		if s.view.folder.Env.GoVersion >= 18 {
 			msg = `gopls was not able to find modules in your workspace.
 When outside of GOPATH, gopls needs to know which modules you are working on.
 You can fix this by opening your workspace to a folder inside a Go module, or

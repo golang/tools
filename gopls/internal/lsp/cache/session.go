@@ -103,7 +103,7 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, *Snapshot
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	view, snapshot, release := s.createView(ctx, def, folder)
+	view, snapshot, release := s.createView(ctx, def)
 	s.views = append(s.views, view)
 	// we always need to drop the view map
 	s.viewMap = make(map[protocol.DocumentURI]*View)
@@ -114,7 +114,7 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, *Snapshot
 // supplied context, detached from events and cancelation.
 //
 // The caller is responsible for calling the release function once.
-func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *Folder) (*View, *Snapshot, func()) {
+func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *Snapshot, func()) {
 	index := atomic.AddInt64(&viewIndex, 1)
 
 	// We want a true background context and not a detached context here
@@ -134,8 +134,8 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 	{
 		// Compute a prefix match, respecting segment boundaries, by ensuring
 		// the pattern (dir) has a trailing slash.
-		dirPrefix := strings.TrimSuffix(string(folder.Dir), "/") + "/"
-		filterer := NewFilterer(folder.Options.DirectoryFilters)
+		dirPrefix := strings.TrimSuffix(string(def.folder.Dir), "/") + "/"
+		filterer := NewFilterer(def.folder.Options.DirectoryFilters)
 		skipPath = func(dir string) bool {
 			uri := strings.TrimSuffix(string(protocol.URIFromPath(dir)), "/")
 			// Note that the logic below doesn't handle the case where uri ==
@@ -152,11 +152,11 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 	{
 		var dirs []string
 		if len(def.workspaceModFiles) == 0 {
-			for _, entry := range filepath.SplitList(def.gopath) {
+			for _, entry := range filepath.SplitList(def.folder.Env.GOPATH) {
 				dirs = append(dirs, filepath.Join(entry, "src"))
 			}
 		} else {
-			dirs = append(dirs, def.gomodcache)
+			dirs = append(dirs, def.folder.Env.GOMODCACHE)
 			for m := range def.workspaceModFiles {
 				dirs = append(dirs, filepath.Dir(m.Path()))
 			}
@@ -167,7 +167,6 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition, folder *F
 	v := &View{
 		id:                   strconv.FormatInt(index, 10),
 		gocmdRunner:          s.gocmdRunner,
-		folder:               folder,
 		initialWorkspaceLoad: make(chan struct{}),
 		initializationSema:   make(chan struct{}, 1),
 		baseCtx:              baseCtx,
@@ -392,18 +391,12 @@ func (s *Session) Views() []*View {
 	return result
 }
 
-type viewFolder struct {
-	folder *Folder
-	def    *viewDefinition
-}
-
-// selectViews constructs the best set of views covering the provided workspace
+// selectViewDefs constructs the best set of views covering the provided workspace
 // folders and open files.
 //
 // This implements the zero-config algorithm of golang/go#57979.
-func selectViews(ctx context.Context, fs file.Source, folders []*Folder, openFiles []protocol.DocumentURI) ([]viewFolder, error) {
-	var views []*viewDefinition
-	var viewFolders []viewFolder
+func selectViewDefs(ctx context.Context, fs file.Source, folders []*Folder, openFiles []protocol.DocumentURI) ([]*viewDefinition, error) {
+	var defs []*viewDefinition
 
 	// First, compute a default view for each workspace folder.
 	// TODO(golang/go#57979): technically, this is path dependent, since
@@ -414,8 +407,7 @@ func selectViews(ctx context.Context, fs file.Source, folders []*Folder, openFil
 		if err != nil {
 			return nil, err
 		}
-		views = append(views, def)
-		viewFolders = append(viewFolders, viewFolder{folder, def})
+		defs = append(defs, def)
 	}
 
 	// Next, ensure that the set of views covers all open files contained in a
@@ -442,7 +434,7 @@ checkFiles:
 		if folder == nil {
 			continue // only guess views for open files
 		}
-		def, err := bestViewDefForURI(ctx, fs, uri, views)
+		def, err := bestViewDefForURI(ctx, fs, uri, defs)
 		if err != nil {
 			return nil, err
 		}
@@ -459,15 +451,15 @@ checkFiles:
 		// there may be files for which we can't construct a valid view.
 		//
 		// Nevertheless, we should not create redundant views.
-		for _, alt := range views {
+		for _, alt := range defs {
 			if viewDefinitionsEqual(alt, def) {
 				continue checkFiles
 			}
 		}
-		viewFolders = append(viewFolders, viewFolder{folder, def})
+		defs = append(defs, def)
 	}
 
-	return viewFolders, nil
+	return defs, nil
 }
 
 // bestViewDefForURI returns the existing view that contains the existing file,
@@ -556,7 +548,7 @@ func (s *Session) updateViewLocked(ctx context.Context, view *View, def *viewDef
 		return nil, fmt.Errorf("view %q not found", view.id)
 	}
 
-	view, _, release := s.createView(ctx, def, folder)
+	view, _, release := s.createView(ctx, def)
 	defer release()
 
 	// substitute the new view into the array where the old view was
@@ -686,7 +678,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 		// synchronously to change processing? Can we assume that the env did not
 		// change, and derive go.work using a combination of the configured
 		// GOWORK value and filesystem?
-		viewFolders, err := selectViews(ctx, s, folders, openFiles)
+		defs, err := selectViewDefs(ctx, s, folders, openFiles)
 		if err != nil {
 			// Catastrophic failure, equivalent to a failure of session
 			// initialization and therefore should almost never happen. One
@@ -700,18 +692,18 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 		} else {
 			kept := make(map[*View]unit)
 			var newViews []*View
-			for _, vf := range viewFolders {
+			for _, def := range defs {
 				var newView *View
 				// Reuse existing view?
 				for _, v := range s.views {
-					if vf.folder == v.folder && viewDefinitionsEqual(vf.def, v.viewDefinition) {
+					if viewDefinitionsEqual(def, v.viewDefinition) {
 						newView = v
 						kept[v] = unit{}
 						break
 					}
 				}
 				if newView == nil {
-					v, _, release := s.createView(ctx, vf.def, vf.folder)
+					v, _, release := s.createView(ctx, def)
 					release()
 					newView = v
 				}

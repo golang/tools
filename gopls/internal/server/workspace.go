@@ -37,14 +37,9 @@ func (s *server) addView(ctx context.Context, name string, dir protocol.Document
 	if state < serverInitialized {
 		return nil, nil, fmt.Errorf("addView called before server initialized")
 	}
-	options, err := s.fetchFolderOptions(ctx, dir)
+	folder, err := s.newFolder(ctx, dir, name)
 	if err != nil {
 		return nil, nil, err
-	}
-	folder := &cache.Folder{
-		Dir:     dir,
-		Name:    name,
-		Options: options,
 	}
 	_, snapshot, release, err := s.session.NewView(ctx, folder)
 	return snapshot, release, err
@@ -74,17 +69,20 @@ func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 
 	// Collect options for all workspace folders.
 	seen := make(map[protocol.DocumentURI]bool)
+	var newFolders []*cache.Folder
 	for _, view := range s.session.Views() {
-		if seen[view.Folder()] {
+		folder := view.Folder()
+		if seen[folder.Dir] {
 			continue
 		}
-		seen[view.Folder()] = true
-		options, err := s.fetchFolderOptions(ctx, view.Folder())
+		seen[folder.Dir] = true
+		newFolder, err := s.newFolder(ctx, folder.Dir, folder.Name)
 		if err != nil {
 			return err
 		}
-		s.session.SetFolderOptions(ctx, view.Folder(), options)
+		newFolders = append(newFolders, newFolder)
 	}
+	s.session.UpdateFolders(ctx, newFolders)
 
 	// The view set may have been updated above.
 	viewsToDiagnose := make(map[*cache.View][]protocol.DocumentURI)

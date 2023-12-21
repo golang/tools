@@ -98,11 +98,11 @@ func (s *server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 	// There may not be any matching view in the current session. If that's
 	// the case, try creating a new view based on the opened file path.
 	//
-	// TODO(golang/go#57979): we should separate the logic for managing folders
-	// from the logic for managing views. But it does make sense to ensure at
-	// least one workspace folder the first time a file is opened, and we can't
-	// do that inside didModifyFiles because we don't want to request
-	// configuration while holding a lock.
+	// TODO(golang/go#57979): revisit creating a folder here. We should separate
+	// the logic for managing folders from the logic for managing views. But it
+	// does make sense to ensure at least one workspace folder the first time a
+	// file is opened, and we can't do that inside didModifyFiles because we
+	// don't want to request configuration while holding a lock.
 	if len(s.session.Views()) == 0 {
 		dir := filepath.Dir(uri.Path())
 		s.addFolders(ctx, []protocol.WorkspaceFolder{{

@@ -207,7 +207,22 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 			},
 			[]folderSummary{{dir: "."}},
 			[]string{"a/a.go", "b/b.go", "b/c/c.go"},
-			[]viewSummary{{GoWorkView, ".", nil}, {GoWorkView, "b/c", nil}},
+			[]viewSummary{{GoWorkView, ".", nil}, {GoWorkView, "b", nil}},
+		},
+		{
+			"multiple go.work, c unused",
+			map[string]string{
+				"go.work":    "go 1.18\nuse (\n\t./a\n\t./b\n)\n",
+				"a/go.mod":   "module golang.org/a\ngo 1.18\n",
+				"a/a.go":     "package a",
+				"b/go.work":  "go 1.18\nuse (\n\t.\n)\n",
+				"b/go.mod":   "module golang.org/b\ngo 1.18\n",
+				"b/b.go":     "package b",
+				"b/c/go.mod": "module golang.org/c\ngo 1.18\n",
+			},
+			[]folderSummary{{dir: "."}},
+			[]string{"a/a.go", "b/b.go", "b/c/c.go"},
+			[]viewSummary{{GoWorkView, ".", nil}, {GoModView, "b/c", []string{"GOWORK=off"}}},
 		},
 	}
 
@@ -233,10 +248,15 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 						}
 					}
 				}
+				env, err := FetchGoEnv(ctx, toURI(f.dir), opts)
+				if err != nil {
+					t.Fatalf("fetching env: %v", env)
+				}
 				folders = append(folders, &Folder{
 					Dir:     toURI(f.dir),
 					Name:    path.Base(f.dir),
 					Options: opts,
+					Env:     env,
 				})
 			}
 
@@ -245,16 +265,16 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 				openFiles = append(openFiles, toURI(path))
 			}
 
-			views, err := selectViews(ctx, fs, folders, openFiles)
+			defs, err := selectViewDefs(ctx, fs, folders, openFiles)
 			if err != nil {
 				t.Fatal(err)
 			}
 			var got []viewSummary
-			for _, view := range views {
+			for _, def := range defs {
 				got = append(got, viewSummary{
-					Type: view.def.Type(),
-					Root: rel.RelPath(view.def.root.Path()),
-					Env:  view.def.envOverlay,
+					Type: def.Type(),
+					Root: rel.RelPath(def.root.Path()),
+					Env:  def.envOverlay,
 				})
 			}
 			if diff := cmp.Diff(test.want, got); diff != "" {
