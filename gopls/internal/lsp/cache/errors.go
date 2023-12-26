@@ -272,49 +272,11 @@ func decodeDiagnostics(data []byte) []*Diagnostic {
 	return srcDiags
 }
 
-// canFixFuncs maps an analyer to a function that determines whether or not a
-// fix is possible for the given diagnostic.
-//
-// TODO(rfindley): clean this up.
-var canFixFuncs = map[settings.Fix]func(*Diagnostic) bool{
-	settings.AddEmbedImport: fixedByImportingEmbed,
-}
-
-// fixedByImportingEmbed returns true if diag can be fixed by addEmbedImport.
-func fixedByImportingEmbed(diag *Diagnostic) bool {
-	if diag == nil {
-		return false
-	}
-	return diag.Message == embeddirective.MissingImportMessage
-}
-
-// canFix returns true if Analyzer.Fix can fix the Diagnostic.
-//
-// It returns true by default: only if the analyzer is configured explicitly to
-// ignore this diagnostic does it return false.
-//
-// TODO(rfindley): reconcile the semantics of 'Fix' and
-// 'suggestedAnalysisFixes'.
-func canFix(a *settings.Analyzer, d *Diagnostic) bool {
-	f, ok := canFixFuncs[a.Fix]
-	if !ok {
-		// See the above TODO: this doesn't make sense, but preserves pre-existing
-		// semantics.
-		return true
-	}
-	return f(d)
-}
-
 // toSourceDiagnostic converts a gobDiagnostic to "source" form.
 func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) *Diagnostic {
 	var related []protocol.DiagnosticRelatedInformation
 	for _, gobRelated := range gobDiag.Related {
 		related = append(related, protocol.DiagnosticRelatedInformation(gobRelated))
-	}
-
-	kinds := srcAnalyzer.ActionKind
-	if len(srcAnalyzer.ActionKind) == 0 {
-		kinds = append(kinds, protocol.QuickFix)
 	}
 
 	severity := srcAnalyzer.Severity
@@ -334,7 +296,21 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 		Tags:     srcAnalyzer.Tag,
 	}
 	if canFix(srcAnalyzer, diag) {
+		// We cross the set of fixes (whether edit- or command-based)
+		// with the set of kinds, as a single fix may represent more
+		// than one kind of action (e.g. refactor, quickfix, fixall),
+		// each corresponding to a distinct client UI element
+		// or operation.
+		kinds := srcAnalyzer.ActionKind
+		if len(kinds) == 0 {
+			kinds = []protocol.CodeActionKind{protocol.QuickFix}
+		}
+
+		// Accumulate edit-based fixes supplied by the diagnostic itself.
 		fixes := suggestedAnalysisFixes(gobDiag, kinds)
+
+		// Accumulate command-based fixes computed on demand by
+		// (logic adjacent to) the analyzer.
 		if srcAnalyzer.Fix != "" {
 			cmd, err := command.NewApplyFixCommand(gobDiag.Message, command.ApplyFixArgs{
 				URI:   gobDiag.Location.URI,
@@ -357,6 +333,17 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 		diag.Tags = append(diag.Tags, protocol.Unnecessary)
 	}
 	return diag
+}
+
+// canFix reports whether the Analyzer can fix the Diagnostic.
+func canFix(a *settings.Analyzer, diag *Diagnostic) bool {
+	if a.Fix == settings.AddEmbedImport {
+		return diag.Message == embeddirective.MissingImportMessage
+	}
+
+	// This doesn't make sense, but preserves pre-existing semantics.
+	// TODO(rfindley): reconcile the semantics of Fix and suggestedAnalysisFixes.
+	return true
 }
 
 // onlyDeletions returns true if fixes is non-empty and all of the suggested
@@ -393,6 +380,9 @@ func BuildLink(target, path, anchor string) string {
 	return link + "#" + anchor
 }
 
+// suggestedAnalysisFixes converts edit-based fixes associated
+// with a gobDiagnostic to cache.SuggestedFixes.
+// It returns the cross product of fixes and kinds.
 func suggestedAnalysisFixes(diag *gobDiagnostic, kinds []protocol.CodeActionKind) []SuggestedFix {
 	var fixes []SuggestedFix
 	for _, fix := range diag.SuggestedFixes {
@@ -411,7 +401,6 @@ func suggestedAnalysisFixes(diag *gobDiagnostic, kinds []protocol.CodeActionKind
 				ActionKind: kind,
 			})
 		}
-
 	}
 	return fixes
 }

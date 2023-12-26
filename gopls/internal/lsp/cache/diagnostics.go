@@ -27,6 +27,8 @@ func byURI(d *Diagnostic) protocol.DocumentURI { return d.URI } // For use in ma
 
 // An Diagnostic corresponds to an LSP Diagnostic.
 // https://microsoft.github.io/language-server-protocol/specification#diagnostic
+//
+// It is (effectively) gob-serializable; see {encode,decode}Diagnostics.
 type Diagnostic struct {
 	URI      protocol.DocumentURI // of diagnosed file (not diagnostic documentation)
 	Range    protocol.Range
@@ -80,6 +82,15 @@ const (
 	ConsistencyInfo          DiagnosticSource = "consistency"
 )
 
+// A SuggestedFix represents a suggested fix (for a diagnostic)
+// produced by analysis, in protocol form.
+//
+// The fixes are reported to the client as a set of code actions in
+// response to a CodeAction query for a set of diagnostics. Multiple
+// SuggestedFixes may be produced for the same logical fix, varying
+// only in ActionKind. For example, a fix may be both a Refactor
+// (which should appear on the refactoring menu) and a SourceFixAll (a
+// clear fix that can be safely applied without explicit consent).
 type SuggestedFix struct {
 	Title      string
 	Edits      map[protocol.DocumentURI][]protocol.TextEdit

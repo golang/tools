@@ -23,11 +23,11 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 )
 
-func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
+func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	tokFile := fset.File(file.Pos())
 	expr, path, ok, err := CanExtractVariable(start, end, file)
 	if !ok {
-		return nil, fmt.Errorf("extractVariable: cannot extract %s: %v", safetoken.StartPosition(fset, start), err)
+		return nil, nil, fmt.Errorf("extractVariable: cannot extract %s: %v", safetoken.StartPosition(fset, start), err)
 	}
 
 	// Create new AST node for extracted code.
@@ -55,16 +55,16 @@ func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file
 			lhsNames = append(lhsNames, lhsName)
 		}
 	default:
-		return nil, fmt.Errorf("cannot extract %T", expr)
+		return nil, nil, fmt.Errorf("cannot extract %T", expr)
 	}
 
 	insertBeforeStmt := analysisinternal.StmtToInsertVarBefore(path)
 	if insertBeforeStmt == nil {
-		return nil, fmt.Errorf("cannot find location to insert extraction")
+		return nil, nil, fmt.Errorf("cannot find location to insert extraction")
 	}
 	indent, err := calculateIndentation(src, tokFile, insertBeforeStmt)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	newLineIndent := "\n" + indent
 
@@ -76,11 +76,11 @@ func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file
 	}
 	var buf bytes.Buffer
 	if err := format.Node(&buf, fset, assignStmt); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	assignment := strings.ReplaceAll(buf.String(), "\n", newLineIndent) + newLineIndent
 
-	return &analysis.SuggestedFix{
+	return fset, &analysis.SuggestedFix{
 		TextEdits: []analysis.TextEdit{
 			{
 				Pos:     insertBeforeStmt.Pos(),
@@ -182,12 +182,12 @@ type returnVariable struct {
 }
 
 // extractMethod refactors the selected block of code into a new method.
-func extractMethod(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
+func extractMethod(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	return extractFunctionMethod(fset, start, end, src, file, pkg, info, true)
 }
 
 // extractFunction refactors the selected block of code into a new function.
-func extractFunction(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
+func extractFunction(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	return extractFunctionMethod(fset, start, end, src, file, pkg, info, false)
 }
 
@@ -199,7 +199,7 @@ func extractFunction(fset *token.FileSet, start, end token.Pos, src []byte, file
 // and return values of the extracted function/method. Lastly, we construct the call
 // of the function/method and insert this call as well as the extracted function/method into
 // their proper locations.
-func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info, isMethod bool) (*analysis.SuggestedFix, error) {
+func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info, isMethod bool) (*token.FileSet, *analysis.SuggestedFix, error) {
 	errorPrefix := "extractFunction"
 	if isMethod {
 		errorPrefix = "extractMethod"
@@ -207,21 +207,21 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 
 	tok := fset.File(file.Pos())
 	if tok == nil {
-		return nil, bug.Errorf("no file for position")
+		return nil, nil, bug.Errorf("no file for position")
 	}
 	p, ok, methodOk, err := CanExtractFunction(tok, start, end, src, file)
 	if (!ok && !isMethod) || (!methodOk && isMethod) {
-		return nil, fmt.Errorf("%s: cannot extract %s: %v", errorPrefix,
+		return nil, nil, fmt.Errorf("%s: cannot extract %s: %v", errorPrefix,
 			safetoken.StartPosition(fset, start), err)
 	}
 	tok, path, start, end, outer, node := p.tok, p.path, p.start, p.end, p.outer, p.node
 	fileScope := info.Scopes[file]
 	if fileScope == nil {
-		return nil, fmt.Errorf("%s: file scope is empty", errorPrefix)
+		return nil, nil, fmt.Errorf("%s: file scope is empty", errorPrefix)
 	}
 	pkgScope := fileScope.Parent()
 	if pkgScope == nil {
-		return nil, fmt.Errorf("%s: package scope is empty", errorPrefix)
+		return nil, nil, fmt.Errorf("%s: package scope is empty", errorPrefix)
 	}
 
 	// A return statement is non-nested if its parent node is equal to the parent node
@@ -255,7 +255,7 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 	// the appropriate parameters and return values.
 	variables, err := collectFreeVars(info, file, fileScope, pkgScope, start, end, path[0])
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var (
@@ -266,11 +266,11 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 	)
 	if isMethod {
 		if outer == nil || outer.Recv == nil || len(outer.Recv.List) == 0 {
-			return nil, fmt.Errorf("%s: cannot extract need method receiver", errorPrefix)
+			return nil, nil, fmt.Errorf("%s: cannot extract need method receiver", errorPrefix)
 		}
 		receiver = outer.Recv.List[0]
 		if len(receiver.Names) == 0 || receiver.Names[0] == nil {
-			return nil, fmt.Errorf("%s: cannot extract need method receiver name", errorPrefix)
+			return nil, nil, fmt.Errorf("%s: cannot extract need method receiver name", errorPrefix)
 		}
 		recvName := receiver.Names[0]
 		receiverName = recvName.Name
@@ -324,7 +324,7 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 		}
 		typ := analysisinternal.TypeExpr(file, pkg, v.obj.Type())
 		if typ == nil {
-			return nil, fmt.Errorf("nil AST expression for type: %v", v.obj.Name())
+			return nil, nil, fmt.Errorf("nil AST expression for type: %v", v.obj.Name())
 		}
 		seenVars[v.obj] = typ
 		identifier := ast.NewIdent(v.obj.Name())
@@ -335,7 +335,7 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 		// cannot be its own reassignment or redefinition (objOverriden).
 		vscope := v.obj.Parent()
 		if vscope == nil {
-			return nil, fmt.Errorf("parent nil")
+			return nil, nil, fmt.Errorf("parent nil")
 		}
 		isUsed, firstUseAfter := objUsed(info, end, vscope.End(), v.obj)
 		if v.assigned && isUsed && !varOverridden(info, firstUseAfter, v.obj, v.free, outer) {
@@ -407,12 +407,12 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 	// the extracted selection without modifying the original AST.
 	startOffset, endOffset, err := safetoken.Offsets(tok, start, end)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	selection := src[startOffset:endOffset]
 	extractedBlock, err := parseBlockStmt(fset, selection)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// We need to account for return statements in the selected block, as they will complicate
@@ -496,7 +496,7 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 			// the return statements in the extracted function to reflect this change in
 			// signature.
 			if err := adjustReturnStatements(returnTypes, seenVars, file, pkg, extractedBlock); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 		// Collect the additional return values and types needed to accommodate return
@@ -505,7 +505,7 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 		// function.
 		retVars, ifReturn, err = generateReturnInfo(enclosing, pkg, path, file, info, start, hasNonNestedReturn)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -575,18 +575,18 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 
 	var declBuf, replaceBuf, newFuncBuf, ifBuf, commentBuf bytes.Buffer
 	if err := format.Node(&declBuf, fset, declarations); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := format.Node(&replaceBuf, fset, extractedFunCall); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if ifReturn != nil {
 		if err := format.Node(&ifBuf, fset, ifReturn); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if err := format.Node(&newFuncBuf, fset, newFunc); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// Find all the comments within the range and print them to be put somewhere.
 	// TODO(suzmue): print these in the extracted function at the correct place.
@@ -602,13 +602,13 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 	// so preserve the text before and after the selected block.
 	outerStart, outerEnd, err := safetoken.Offsets(tok, outer.Pos(), outer.End())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	before := src[outerStart:startOffset]
 	after := src[endOffset:outerEnd]
 	indent, err := calculateIndentation(src, tok, node)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	newLineIndent := "\n" + indent
 
@@ -633,7 +633,7 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 	fullReplacement.WriteString("\n\n")       // add newlines after the enclosing function
 	fullReplacement.Write(newFuncBuf.Bytes()) // insert the extracted function
 
-	return &analysis.SuggestedFix{
+	return fset, &analysis.SuggestedFix{
 		TextEdits: []analysis.TextEdit{{
 			Pos:     outer.Pos(),
 			End:     outer.End(),

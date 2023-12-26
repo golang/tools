@@ -42,8 +42,8 @@ type Analyzer struct {
 	// the analyzer's suggested fixes through a Command, not a TextEdit.
 	Fix Fix
 
-	// ActionKind is the kind of code action this analyzer produces. If
-	// unspecified the type defaults to quickfix.
+	// ActionKind is the set of kinds of code action this analyzer produces.
+	// If empty, the set is just QuickFix.
 	ActionKind []protocol.CodeActionKind
 
 	// Severity is the severity set for diagnostics reported by this

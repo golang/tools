@@ -17,17 +17,17 @@ import (
 )
 
 // invertIfCondition is a singleFileFixFunc that inverts an if/else statement
-func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, _ *types.Package, _ *types.Info) (*analysis.SuggestedFix, error) {
+func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, _ *types.Package, _ *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	ifStatement, _, err := CanInvertIfCondition(file, start, end)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var replaceElse analysis.TextEdit
 
 	endsWithReturn, err := endsWithReturn(ifStatement.Else)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if endsWithReturn {
@@ -71,7 +71,7 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 	// Replace the if condition with its inverse
 	inverseCondition, err := invertCondition(fset, ifStatement.Cond, src)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	replaceConditionWithInverse := analysis.TextEdit{
 		Pos:     ifStatement.Cond.Pos(),
@@ -80,7 +80,7 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 	}
 
 	// Return a SuggestedFix with just that TextEdit in there
-	return &analysis.SuggestedFix{
+	return fset, &analysis.SuggestedFix{
 		TextEdits: []analysis.TextEdit{
 			replaceConditionWithInverse,
 			replaceBodyWithElse,

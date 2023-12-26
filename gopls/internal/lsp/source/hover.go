@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -192,6 +193,8 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 
 	// For all other objects, consider the full syntax of their declaration in
 	// order to correctly compute their documentation, signature, and link.
+	//
+	// Beware: decl{PGF,Pos} are not necessarily associated with pkg.FileSet().
 	declPGF, declPos, err := parseFull(ctx, snapshot, pkg.FileSet(), obj.Pos())
 	if err != nil {
 		return protocol.Range{}, nil, fmt.Errorf("re-parsing declaration of %s: %v", obj.Name(), err)
@@ -854,9 +857,14 @@ func chooseDocComment(decl ast.Decl, spec ast.Spec, field *ast.Field) *ast.Comme
 // parseFull fully parses the file corresponding to position pos (for
 // which fset provides file/line information).
 //
-// It returns the resulting ParsedGoFile as well as new pos contained in the
-// parsed file.
-func parseFull(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, pos token.Pos) (*ParsedGoFile, token.Pos, error) {
+// It returns the resulting parsego.File as well as new pos contained
+// in the parsed file.
+//
+// BEWARE: the provided FileSet is used only to interpret the provided
+// pos; the resulting File and Pos may belong to the same or a
+// different FileSet, such as one synthesized by the parser cache, if
+// parse-caching is enabled.
+func parseFull(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, pos token.Pos) (*parsego.File, token.Pos, error) {
 	f := fset.File(pos)
 	if f == nil {
 		return nil, 0, bug.Errorf("internal error: no file for position %d", pos)

@@ -580,10 +580,14 @@ func canRemoveParameter(pkg *cache.Package, pgf *source.ParsedGoFile, rng protoc
 
 // refactorInline returns inline actions available at the specified range.
 func refactorInline(pkg *cache.Package, pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
-	var commands []protocol.Command
+	start, end, err := pgf.RangePos(rng)
+	if err != nil {
+		return nil, err
+	}
 
 	// If range is within call expression, offer inline action.
-	if _, fn, err := source.EnclosingStaticCall(pkg, pgf, rng); err == nil {
+	var commands []protocol.Command
+	if _, fn, err := source.EnclosingStaticCall(pkg, pgf, start, end); err == nil {
 		cmd, err := command.NewApplyFixCommand(fmt.Sprintf("Inline call to %s", fn.Name()), command.ApplyFixArgs{
 			URI:   pgf.URI,
 			Fix:   string(settings.InlineCall),

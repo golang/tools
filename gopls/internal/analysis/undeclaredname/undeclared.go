@@ -109,15 +109,15 @@ func runForError(pass *analysis.Pass, err types.Error) {
 	})
 }
 
-func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
+func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	pos := start // don't use the end
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
 	if len(path) < 2 {
-		return nil, fmt.Errorf("no expression found")
+		return nil, nil, fmt.Errorf("no expression found")
 	}
 	ident, ok := path[0].(*ast.Ident)
 	if !ok {
-		return nil, fmt.Errorf("no identifier found")
+		return nil, nil, fmt.Errorf("no identifier found")
 	}
 
 	// Check for a possible call expression, in which case we should add a
@@ -131,7 +131,7 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 	// Get the place to insert the new statement.
 	insertBeforeStmt := analysisinternal.StmtToInsertVarBefore(path)
 	if insertBeforeStmt == nil {
-		return nil, fmt.Errorf("could not locate insertion point")
+		return nil, nil, fmt.Errorf("could not locate insertion point")
 	}
 
 	insertBefore := safetoken.StartPosition(fset, insertBeforeStmt.Pos()).Offset
@@ -145,7 +145,7 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 
 	// Create the new local variable statement.
 	newStmt := fmt.Sprintf("%s := %s", ident.Name, indent)
-	return &analysis.SuggestedFix{
+	return fset, &analysis.SuggestedFix{
 		Message: fmt.Sprintf("Create variable \"%s\"", ident.Name),
 		TextEdits: []analysis.TextEdit{{
 			Pos:     insertBeforeStmt.Pos(),
@@ -155,17 +155,17 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 	}, nil
 }
 
-func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package, info *types.Info, fset *token.FileSet) (*analysis.SuggestedFix, error) {
+func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package, info *types.Info, fset *token.FileSet) (*token.FileSet, *analysis.SuggestedFix, error) {
 	if len(path) < 3 {
-		return nil, fmt.Errorf("unexpected set of enclosing nodes: %v", path)
+		return nil, nil, fmt.Errorf("unexpected set of enclosing nodes: %v", path)
 	}
 	ident, ok := path[0].(*ast.Ident)
 	if !ok {
-		return nil, fmt.Errorf("no name for function declaration %v (%T)", path[0], path[0])
+		return nil, nil, fmt.Errorf("no name for function declaration %v (%T)", path[0], path[0])
 	}
 	call, ok := path[1].(*ast.CallExpr)
 	if !ok {
-		return nil, fmt.Errorf("no call expression found %v (%T)", path[1], path[1])
+		return nil, nil, fmt.Errorf("no call expression found %v (%T)", path[1], path[1])
 	}
 
 	// Find the enclosing function, so that we can add the new declaration
@@ -180,7 +180,7 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 	// TODO(rstambler): Support the situation when there is no enclosing
 	// function.
 	if enclosing == nil {
-		return nil, fmt.Errorf("no enclosing function found: %v", path)
+		return nil, nil, fmt.Errorf("no enclosing function found: %v", path)
 	}
 
 	pos := enclosing.End()
@@ -192,7 +192,7 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 	for _, arg := range call.Args {
 		typ := info.TypeOf(arg)
 		if typ == nil {
-			return nil, fmt.Errorf("unable to determine type for %s", arg)
+			return nil, nil, fmt.Errorf("unable to determine type for %s", arg)
 		}
 
 		switch t := typ.(type) {
@@ -291,9 +291,9 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 
 	b := bytes.NewBufferString("\n\n")
 	if err := format.Node(b, fset, decl); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &analysis.SuggestedFix{
+	return fset, &analysis.SuggestedFix{
 		Message: fmt.Sprintf("Create function \"%s\"", ident.Name),
 		TextEdits: []analysis.TextEdit{{
 			Pos:     pos,

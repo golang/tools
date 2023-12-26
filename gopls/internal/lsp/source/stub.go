@@ -19,42 +19,25 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/analysis/stubmethods"
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/tokeninternal"
 )
 
-// stubSuggestedFixFunc returns a suggested fix to declare the missing
+// stubMethodsFixer returns a suggested fix to declare the missing
 // methods of the concrete type that is assigned to an interface type
 // at the cursor position.
-func stubSuggestedFixFunc(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
-	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
-	if err != nil {
-		return nil, fmt.Errorf("GetTypedFile: %w", err)
-	}
-	start, end, err := pgf.RangePos(rng)
-	if err != nil {
-		return nil, err
-	}
+func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
 	nodes, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 	si := stubmethods.GetStubInfo(pkg.FileSet(), pkg.GetTypesInfo(), nodes, start)
 	if si == nil {
-		return nil, fmt.Errorf("nil interface request")
+		return nil, nil, fmt.Errorf("nil interface request")
 	}
-	fset, fix, err := stub(ctx, snapshot, si)
-	if err != nil {
-		return nil, err
-	}
-	return suggestedFixToEdits(ctx, snapshot, fset, fix)
-}
 
-// stub returns a suggested fix to declare the missing methods of si.Concrete.
-func stub(ctx context.Context, snapshot *cache.Snapshot, si *stubmethods.StubInfo) (*token.FileSet, *analysis.SuggestedFix, error) {
 	// A function-local type cannot be stubbed
 	// since there's nowhere to put the methods.
 	conc := si.Concrete.Obj()
@@ -63,6 +46,8 @@ func stub(ctx context.Context, snapshot *cache.Snapshot, si *stubmethods.StubInf
 	}
 
 	// Parse the file declaring the concrete type.
+	//
+	// Beware: declPGF is not necessarily covered by pkg.FileSet() or si.Fset.
 	declPGF, _, err := parseFull(ctx, snapshot, si.Fset, conc.Pos())
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse file %q declaring implementation type: %w", declPGF.URI, err)
@@ -243,6 +228,7 @@ func (%s%s%s) %s%s {
 		nil
 }
 
+// diffToTextEdits converts diff (offset-based) edits to analysis (token.Pos) form.
 func diffToTextEdits(tok *token.File, diffs []diff.Edit) []analysis.TextEdit {
 	edits := make([]analysis.TextEdit, 0, len(diffs))
 	for _, edit := range diffs {

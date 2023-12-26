@@ -144,9 +144,9 @@ func DiagnoseFillableStructs(inspect *inspector.Inspector, start, end token.Pos,
 
 // SuggestedFix computes the suggested fix for the kinds of
 // diagnostics produced by the Analyzer above.
-func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
+func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	if info == nil {
-		return nil, fmt.Errorf("nil types.Info")
+		return nil, nil, fmt.Errorf("nil types.Info")
 	}
 
 	pos := start // don't use the end
@@ -155,7 +155,7 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 	// calling PathEnclosingInterval. Switch this approach.
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
 	if len(path) == 0 {
-		return nil, fmt.Errorf("no enclosing ast.Node")
+		return nil, nil, fmt.Errorf("no enclosing ast.Node")
 	}
 	var expr *ast.CompositeLit
 	for _, n := range path {
@@ -167,14 +167,14 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 
 	typ := info.TypeOf(expr)
 	if typ == nil {
-		return nil, fmt.Errorf("no composite literal")
+		return nil, nil, fmt.Errorf("no composite literal")
 	}
 
 	// Find reference to the type declaration of the struct being initialized.
 	typ = deref(typ)
 	tStruct, ok := typ.Underlying().(*types.Struct)
 	if !ok {
-		return nil, fmt.Errorf("%s is not a (pointer to) struct type",
+		return nil, nil, fmt.Errorf("%s is not a (pointer to) struct type",
 			types.TypeString(typ, types.RelativeTo(pkg)))
 	}
 	// Inv: typ is the possibly-named struct type.
@@ -240,7 +240,7 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 		} else {
 			names, ok := matches[fieldTyp]
 			if !ok {
-				return nil, fmt.Errorf("invalid struct field type: %v", fieldTyp)
+				return nil, nil, fmt.Errorf("invalid struct field type: %v", fieldTyp)
 			}
 
 			// Find the name most similar to the field name.
@@ -251,7 +251,7 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 			} else if v := populateValue(file, pkg, fieldTyp); v != nil {
 				kv.Value = v
 			} else {
-				return nil, nil
+				return nil, nil, nil // no fix to suggest
 			}
 		}
 		elts = append(elts, kv)
@@ -260,7 +260,7 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 
 	// If all of the struct's fields are unexported, we have nothing to do.
 	if len(elts) == 0 {
-		return nil, fmt.Errorf("no elements to fill")
+		return nil, nil, fmt.Errorf("no elements to fill")
 	}
 
 	// Add the final line for the right brace. Offset is the number of
@@ -292,7 +292,7 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 	// First pass through the formatter: turn the expr into a string.
 	var formatBuf bytes.Buffer
 	if err := format.Node(&formatBuf, fakeFset, cl); err != nil {
-		return nil, fmt.Errorf("failed to run first format on:\n%s\ngot err: %v", cl.Type, err)
+		return nil, nil, fmt.Errorf("failed to run first format on:\n%s\ngot err: %v", cl.Type, err)
 	}
 	sug := indent(formatBuf.Bytes(), whitespace)
 
@@ -304,7 +304,7 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 		}
 	}
 
-	return &analysis.SuggestedFix{
+	return fset, &analysis.SuggestedFix{
 		TextEdits: []analysis.TextEdit{
 			{
 				Pos:     expr.Pos(),
