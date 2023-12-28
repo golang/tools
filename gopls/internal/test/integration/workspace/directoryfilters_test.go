@@ -90,54 +90,6 @@ const X = 1
 	})
 }
 
-func TestDirectoryFiltersWorkspaceModules(t *testing.T) {
-	// Define a module include.com which should be in the workspace, plus a
-	// module exclude.com which should be excluded and therefore come from
-	// the proxy.
-	const files = `
--- include/go.mod --
-module include.com
-
-go 1.12
-
-require exclude.com v1.0.0
-
--- include/go.sum --
-exclude.com v1.0.0 h1:Q5QSfDXY5qyNCBeUiWovUGqcLCRZKoTs9XdBeVz+w1I=
-exclude.com v1.0.0/go.mod h1:hFox2uDlNB2s2Jfd9tHlQVfgqUiLVTmh6ZKat4cvnj4=
-
--- include/include.go --
-package include
-
-import "exclude.com"
-
-var _ = exclude.X // satisfied only by the workspace version
--- exclude/go.mod --
-module exclude.com
-
-go 1.12
--- exclude/exclude.go --
-package exclude
-
-const X = 1
-`
-	const proxy = `
--- exclude.com@v1.0.0/go.mod --
-module exclude.com
-
-go 1.12
--- exclude.com@v1.0.0/exclude.go --
-package exclude
-`
-	WithOptions(
-		Modes(Experimental),
-		ProxyFiles(proxy),
-		Settings{"directoryFilters": []string{"-exclude"}},
-	).Run(t, files, func(t *testing.T, env *Env) {
-		env.Await(Diagnostics(env.AtRegexp("include/include.go", `exclude.(X)`)))
-	})
-}
-
 // Test for golang/go#46438: support for '**' in directory filters.
 func TestDirectoryFilters_Wildcard(t *testing.T) {
 	filters := []string{"-**/bye"}

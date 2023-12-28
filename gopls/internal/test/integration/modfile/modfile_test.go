@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/hooks"
-	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/compare"
+	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/util/bug"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -427,8 +427,9 @@ func main() {
 		{"default", WithOptions(ProxyFiles(proxy), WorkspaceFolders("a"))},
 		{"nested", WithOptions(ProxyFiles(proxy))},
 	}.Run(t, mod, func(t *testing.T, env *Env) {
-		env.OnceMet(
-			InitialWorkspaceLoad,
+		// With zero-config gopls, we must open a/main.go to have a View including a/go.mod.
+		env.OpenFile("a/main.go")
+		env.AfterChange(
 			Diagnostics(env.AtRegexp("a/go.mod", "require")),
 		)
 		env.RunGoCommandInDir("a", "mod", "tidy")

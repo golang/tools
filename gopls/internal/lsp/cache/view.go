@@ -883,22 +883,9 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 
 	// When deriving the best view for a given file, we only want to search
 	// up the directory hierarchy for modfiles.
-	//
-	// If forURI is unset, we still use the legacy heuristic of scanning for
-	// nested modules (this will be removed as part of golang/go#57979).
-	if forFile != nil {
-		def.gomod, err = findRootPattern(ctx, dirURI, "go.mod", fs)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// filterFunc is the path filter function for this workspace folder. Notably,
-		// it is relative to folder (which is specified by the user), not root.
-		filterFunc := relPathExcludedByFilterFunc(folder.Dir.Path(), folder.Env.GOMODCACHE, folder.Options.DirectoryFilters)
-		def.gomod, err = findWorkspaceModFile(ctx, folder.Dir, fs, filterFunc)
-		if err != nil {
-			return nil, err
-		}
+	def.gomod, err = findRootPattern(ctx, dirURI, "go.mod", fs)
+	if err != nil {
+		return nil, err
 	}
 
 	// Determine how we load and where to load package information for this view
@@ -1343,18 +1330,6 @@ func allFilesExcluded(files []string, filterFunc func(protocol.DocumentURI) bool
 		}
 	}
 	return true
-}
-
-// relPathExcludedByFilterFunc returns a func that filters paths relative to the
-// given folder according the given GOMODCACHE value and directory filters (see
-// settings.BuildOptions.DirectoryFilters).
-//
-// The resulting func returns true if the directory should be skipped.
-func relPathExcludedByFilterFunc(folder, gomodcache string, directoryFilters []string) func(string) bool {
-	filterer := buildFilterer(folder, gomodcache, directoryFilters)
-	return func(path string) bool {
-		return relPathExcludedByFilter(path, filterer)
-	}
 }
 
 func relPathExcludedByFilter(path string, filterer *Filterer) bool {
