@@ -39,7 +39,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/constraints"
 	"golang.org/x/tools/gopls/internal/util/immutable"
-	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/gopls/internal/util/persistent"
 	"golang.org/x/tools/gopls/internal/util/slices"
@@ -93,18 +92,23 @@ type Snapshot struct {
 	// TODO(rfindley): use atomic.Int32 on Go 1.19+.
 	refcount int
 
+	// mu guards all of the maps in the snapshot, as well as the builtin URI and
+	// initialized.
+	mu sync.Mutex
+
 	// initialized reports whether the snapshot has been initialized. Concurrent
 	// initialization is guarded by the view.initializationSema. Each snapshot is
 	// initialized at most once: concurrent initialization is guarded by
 	// view.initializationSema.
 	initialized bool
-	// initializedErr holds the last error resulting from initialization. If
+
+	// initialErr holds the last error resulting from initialization. If
 	// initialization fails, we only retry when the workspace modules change,
 	// to avoid too many go/packages calls.
-	initializedErr *CriticalError
-
-	// mu guards all of the maps in the snapshot, as well as the builtin URI.
-	mu sync.Mutex
+	// If initialized is false, initialErr stil holds the error resulting from
+	// the previous initialization.
+	// TODO(rfindley): can we unify the lifecycle of initialized and initialErr.
+	initialErr *InitializationError
 
 	// builtin is the location of builtin.go in GOROOT.
 	//
@@ -617,7 +621,7 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlag
 
 func (s *Snapshot) buildOverlay() map[string][]byte {
 	overlays := make(map[string][]byte)
-	for _, overlay := range s.overlays() {
+	for _, overlay := range s.Overlays() {
 		if overlay.saved {
 			continue
 		}
@@ -629,7 +633,11 @@ func (s *Snapshot) buildOverlay() map[string][]byte {
 	return overlays
 }
 
-func (s *Snapshot) overlays() []*Overlay {
+// Overlays returns the set of overlays at this snapshot.
+//
+// Note that this may differ from the set of overlays on the server, if the
+// snapshot observed a historical state.
+func (s *Snapshot) Overlays() []*Overlay {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1328,149 +1336,20 @@ func (s *Snapshot) MetadataGraph() *metadata.Graph {
 	return s.meta
 }
 
-func (s *Snapshot) awaitLoaded(ctx context.Context) error {
-	loadErr := s.awaitLoadedAllErrors(ctx)
-
-	// TODO(rfindley): eliminate this function as part of simplifying
-	// CriticalErrors.
-	if loadErr != nil {
-		return loadErr.MainError
-	}
-	return nil
-}
-
-// CriticalError returns any critical errors in the workspace.
-//
-// A nil result may mean success, or context cancellation.
-func (s *Snapshot) CriticalError(ctx context.Context) *CriticalError {
-	// If we couldn't compute workspace mod files, then the load below is
-	// invalid.
-	//
-	// TODO(rfindley): is this a clear error to present to the user?
-	if s.view.workspaceModFilesErr != nil {
-		return &CriticalError{MainError: s.view.workspaceModFilesErr}
-	}
-
-	loadErr := s.awaitLoadedAllErrors(ctx)
-	if loadErr != nil && errors.Is(loadErr.MainError, context.Canceled) {
-		return nil
-	}
-
-	// Even if packages didn't fail to load, we still may want to show
-	// additional warnings.
-	if loadErr == nil {
-		active, _ := s.WorkspaceMetadata(ctx)
-		if msg := shouldShowAdHocPackagesWarning(s, active); msg != "" {
-			return &CriticalError{
-				MainError: errors.New(msg),
-			}
-		}
-		// Even if workspace packages were returned, there still may be an error
-		// with the user's workspace layout. Workspace packages that only have the
-		// ID "command-line-arguments" are usually a symptom of a bad workspace
-		// configuration.
-		//
-		// This heuristic is path-dependent: we only get command-line-arguments
-		// packages when we've loaded using file scopes, which only occurs
-		// on-demand or via orphaned file reloading.
-		//
-		// TODO(rfindley): re-evaluate this heuristic.
-		if containsCommandLineArguments(active) {
-			err, diags := s.workspaceLayoutError(ctx)
-			if err != nil {
-				if ctx.Err() != nil {
-					return nil // see the API documentation for Snapshot
-				}
-				return &CriticalError{
-					MainError:   err,
-					Diagnostics: maps.Group(diags, byURI),
-				}
-			}
-		}
-		return nil
-	}
-
-	if errMsg := loadErr.MainError.Error(); strings.Contains(errMsg, "cannot find main module") || strings.Contains(errMsg, "go.mod file not found") {
-		err, diags := s.workspaceLayoutError(ctx)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil // see the API documentation for Snapshot
-			}
-			return &CriticalError{
-				MainError:   err,
-				Diagnostics: maps.Group(diags, byURI),
-			}
-		}
-	}
-	return loadErr
-}
-
-// A portion of this text is expected by TestBrokenWorkspace_OutsideModule.
-const adHocPackagesWarning = `You are outside of a module and outside of $GOPATH/src.
-If you are using modules, please open your editor to a directory in your module.
-If you believe this warning is incorrect, please file an issue: https://github.com/golang/go/issues/new.`
-
-func shouldShowAdHocPackagesWarning(snapshot *Snapshot, active []*metadata.Package) string {
-	if snapshot.view.typ == AdHocView {
-		for _, mp := range active {
-			// A blank entry in DepsByImpPath
-			// indicates a missing dependency.
-			for _, importID := range mp.DepsByImpPath {
-				if importID == "" {
-					return adHocPackagesWarning
-				}
-			}
-		}
-	}
-	return ""
-}
-
-func containsCommandLineArguments(metas []*metadata.Package) bool {
-	for _, mp := range metas {
-		if metadata.IsCommandLineArguments(mp.ID) {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Snapshot) awaitLoadedAllErrors(ctx context.Context) *CriticalError {
-	// Do not return results until the snapshot's view has been initialized.
-	s.AwaitInitialized(ctx)
-
-	// TODO(rfindley): Should we be more careful about returning the
-	// initialization error? Is it possible for the initialization error to be
-	// corrected without a successful reinitialization?
-	if err := s.getInitializationError(); err != nil {
-		return err
-	}
-
-	// TODO(rfindley): revisit this handling. Calling reloadWorkspace with a
-	// cancelled context should have the same effect, so this preemptive handling
-	// should not be necessary.
-	//
-	// Also: GetCriticalError ignores context cancellation errors. Should we be
-	// returning nil here?
-	if ctx.Err() != nil {
-		return &CriticalError{MainError: ctx.Err()}
-	}
-
-	if err := s.reloadWorkspace(ctx); err != nil {
-		diags := s.extractGoCommandErrors(ctx, err)
-		return &CriticalError{
-			MainError:   err,
-			Diagnostics: maps.Group(diags, byURI),
-		}
-	}
-
-	return nil
-}
-
-func (s *Snapshot) getInitializationError() *CriticalError {
+// InitializationError returns the last error from initialization.
+func (s *Snapshot) InitializationError() *InitializationError {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.initialErr
+}
 
-	return s.initializedErr
+// awaitLoaded awaits initialization and package reloading, and returns
+// ctx.Err().
+func (s *Snapshot) awaitLoaded(ctx context.Context) error {
+	// Do not return results until the snapshot's view has been initialized.
+	s.AwaitInitialized(ctx)
+	s.reloadWorkspace(ctx)
+	return ctx.Err()
 }
 
 // AwaitInitialized waits until the snapshot's view is initialized.
@@ -1486,7 +1365,7 @@ func (s *Snapshot) AwaitInitialized(ctx context.Context) {
 }
 
 // reloadWorkspace reloads the metadata for all invalidated workspace packages.
-func (s *Snapshot) reloadWorkspace(ctx context.Context) error {
+func (s *Snapshot) reloadWorkspace(ctx context.Context) {
 	var scopes []loadScope
 	var seen map[PackagePath]bool
 	s.mu.Lock()
@@ -1505,7 +1384,7 @@ func (s *Snapshot) reloadWorkspace(ctx context.Context) error {
 	s.mu.Unlock()
 
 	if len(scopes) == 0 {
-		return nil
+		return
 	}
 
 	// For an ad-hoc view, we cannot reload by package path. Just reload the view.
@@ -1519,9 +1398,10 @@ func (s *Snapshot) reloadWorkspace(ctx context.Context) error {
 	// of the metadata we attempted to load.
 	if !errors.Is(err, context.Canceled) {
 		s.clearShouldLoad(scopes...)
+		if err != nil {
+			event.Error(ctx, "reloading workspace", err, s.Labels()...)
+		}
 	}
-
-	return err
 }
 
 func (s *Snapshot) orphanedFileDiagnostics(ctx context.Context, overlays []*Overlay) ([]*Diagnostic, error) {
@@ -1582,6 +1462,8 @@ searchOverlays:
 		}
 	}
 
+	initialErr := s.InitializationError()
+
 	for _, fh := range orphaned {
 		pgf, rng, ok := orphanedFileDiagnosticRange(ctx, s.view.parseCache, fh)
 		if !ok {
@@ -1592,11 +1474,13 @@ searchOverlays:
 			msg            string         // if non-empty, report a diagnostic with this message
 			suggestedFixes []SuggestedFix // associated fixes, if any
 		)
-		// If we have a relevant go.mod file, check whether the file is orphaned
-		// due to its go.mod file being inactive. We could also offer a
-		// prescriptive diagnostic in the case that there is no go.mod file, but it
-		// is harder to be precise in that case, and less important.
-		if goMod, err := nearestModFile(ctx, fh.URI(), s); err == nil && goMod != "" {
+		if initialErr != nil {
+			msg = fmt.Sprintf("initialization failed: %v", initialErr.MainError)
+		} else if goMod, err := nearestModFile(ctx, fh.URI(), s); err == nil && goMod != "" {
+			// If we have a relevant go.mod file, check whether the file is orphaned
+			// due to its go.mod file being inactive. We could also offer a
+			// prescriptive diagnostic in the case that there is no go.mod file, but it
+			// is harder to be precise in that case, and less important.
 			if _, ok := loadedModFiles[goMod]; !ok {
 				modDir := filepath.Dir(goMod.Path())
 				viewDir := s.view.folder.Dir.Path()
@@ -1801,7 +1685,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 		cancel:            cancel,
 		builtin:           s.builtin,
 		initialized:       s.initialized,
-		initializedErr:    s.initializedErr,
+		initialErr:        s.initialErr,
 		packages:          s.packages.Clone(),
 		activePackages:    s.activePackages.Clone(),
 		files:             s.files.Clone(changedFiles),
@@ -1849,7 +1733,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 	//
 	// TODO(rfindley): revisit the location of this check.
 	for uri := range changedFiles {
-		if inVendor(uri) && s.initializedErr != nil ||
+		if inVendor(uri) && s.initialErr != nil ||
 			strings.HasSuffix(string(uri), "/vendor/modules.txt") {
 			reinit = true
 			break

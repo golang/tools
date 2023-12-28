@@ -368,20 +368,27 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 		return diagnostics, ctx.Err()
 	}
 
-	criticalErr := snapshot.CriticalError(ctx)
-	if ctx.Err() != nil { // must check ctx after GetCriticalError
+	initialErr := snapshot.InitializationError()
+	if ctx.Err() != nil {
+		// Don't update initialization status if the context is cancelled.
 		return nil, ctx.Err()
 	}
 
-	if criticalErr != nil {
-		store("critical error", criticalErr.Diagnostics, nil)
+	if initialErr != nil {
+		store("critical error", initialErr.Diagnostics, nil)
 	}
 
 	// Show the error as a progress error report so that it appears in the
 	// status bar. If a client doesn't support progress reports, the error
 	// will still be shown as a ShowMessage. If there is no error, any running
 	// error progress reports will be closed.
-	s.updateCriticalErrorStatus(ctx, snapshot, criticalErr)
+	statusErr := initialErr
+	if len(snapshot.Overlays()) == 0 {
+		// Don't report a hanging status message if there are no open files at this
+		// snapshot.
+		statusErr = nil
+	}
+	s.updateCriticalErrorStatus(ctx, snapshot, statusErr)
 
 	// Diagnose template (.tmpl) files.
 	tmplReports := template.Diagnostics(snapshot)
@@ -597,8 +604,10 @@ const WorkspaceLoadFailure = "Error loading workspace"
 
 // updateCriticalErrorStatus updates the critical error progress notification
 // based on err.
-// If err is nil, it clears any existing error progress report.
-func (s *server) updateCriticalErrorStatus(ctx context.Context, snapshot *cache.Snapshot, err *cache.CriticalError) {
+//
+// If err is nil, or if there are no open files, it clears any existing error
+// progress report.
+func (s *server) updateCriticalErrorStatus(ctx context.Context, snapshot *cache.Snapshot, err *cache.InitializationError) {
 	s.criticalErrorStatusMu.Lock()
 	defer s.criticalErrorStatusMu.Unlock()
 

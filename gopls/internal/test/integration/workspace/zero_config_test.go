@@ -161,3 +161,27 @@ package a
 		checkViews(summary())
 	})
 }
+
+func TestCriticalErrorsInOrphanedFiles(t *testing.T) {
+	// This test checks that as we open and close files requiring a different
+	// port, the set of Views is adjusted accordingly.
+	const files = `
+-- go.mod --
+modul golang.org/lsptests/broken
+
+go 1.20
+
+-- a.go --
+package broken
+
+const C = 0
+`
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("go.mod", "modul")),
+			Diagnostics(env.AtRegexp("a.go", "broken"), WithMessage("initialization failed")),
+		)
+	})
+}

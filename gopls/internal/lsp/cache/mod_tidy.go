@@ -72,15 +72,6 @@ func (s *Snapshot) ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule
 			}
 		}
 
-		if criticalErr := s.CriticalError(ctx); criticalErr != nil {
-			return &TidiedModule{
-				Diagnostics: criticalErr.Diagnostics[fh.URI()],
-			}, nil
-		}
-		if ctx.Err() != nil { // must check ctx after GetCriticalError
-			return nil, ctx.Err()
-		}
-
 		if err := s.awaitLoaded(ctx); err != nil {
 			return nil, err
 		}

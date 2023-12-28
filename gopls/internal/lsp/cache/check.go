@@ -203,7 +203,7 @@ func (s *Snapshot) resolveImportGraph() (*importGraph, error) {
 	s.mu.Unlock()
 
 	openPackages := make(map[PackageID]bool)
-	for _, fh := range s.overlays() {
+	for _, fh := range s.Overlays() {
 		mps, err := s.MetadataForFile(ctx, fh.URI())
 		if err != nil {
 			return nil, err

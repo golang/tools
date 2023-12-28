@@ -12,14 +12,18 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 )
 
-// A CriticalError is a workspace-wide error that generally prevents gopls from
-// functioning correctly. In the presence of critical errors, other diagnostics
-// in the workspace may not make sense.
-type CriticalError struct {
+// A InitializationError is an error that causes snapshot initialization to fail.
+// It is either the error returned from go/packages.Load, or an error parsing a
+// workspace go.work or go.mod file.
+//
+// Such an error generally indicates that the View is malformed, and will never
+// be usable.
+type InitializationError struct {
 	// MainError is the primary error. Must be non-nil.
 	MainError error
 
-	// Diagnostics contains any supplemental (structured) diagnostics.
+	// Diagnostics contains any supplemental (structured) diagnostics extracted
+	// from the load error.
 	Diagnostics map[protocol.DocumentURI][]*Diagnostic
 }
 

@@ -608,7 +608,24 @@ func (v *View) Snapshot() (*Snapshot, func(), error) {
 	return v.snapshot, v.snapshot.Acquire(), nil
 }
 
+// initialize loads the metadata (and currently, file contents, due to
+// golang/go#57558) for the main package query of the View, which depends on
+// the view type (see ViewType). If s.initialized is already true, initialize
+// is a no op.
+//
+// The first attempt--which populates the first snapshot for a new view--must
+// be allowed to run to completion without being cancelled.
+//
+// Subsequent attempts are triggered by conditions where gopls can't enumerate
+// specific packages that require reloading, such as a change to a go.mod file.
+// These attempts may be cancelled, and then retried by a later call.
+//
+// Postcondition: if ctx was not cancelled, s.initialized is true, s.initialErr
+// holds the error resulting from initialization, if any, and s.metadata holds
+// the resulting metadata graph.
 func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
+	// Acquire initializationSema, which is
+	// (in effect) a mutex with a timeout.
 	select {
 	case <-ctx.Done():
 		return
@@ -627,25 +644,7 @@ func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
 		return
 	}
 
-	s.loadWorkspace(ctx, firstAttempt)
-}
-
-func (s *Snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadErr error) {
-	// A failure is retryable if it may have been due to context cancellation,
-	// and this is not the initial workspace load (firstAttempt==true).
-	//
-	// The IWL runs on a detached context with a long (~10m) timeout, so
-	// if the context was canceled we consider loading to have failed
-	// permanently.
-	retryableFailure := func() bool {
-		return loadErr != nil && ctx.Err() != nil && !firstAttempt
-	}
 	defer func() {
-		if !retryableFailure() {
-			s.mu.Lock()
-			s.initialized = true
-			s.mu.Unlock()
-		}
 		if firstAttempt {
 			close(s.view.initialWorkspaceLoad)
 		}
@@ -668,8 +667,6 @@ func (s *Snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 		})
 	}
 
-	// TODO(rfindley): this should be predicated on the s.view.moduleMode().
-	// There is no point loading ./... if we have an empty go.work.
 	if len(s.view.workspaceModFiles) > 0 {
 		for modURI := range s.view.workspaceModFiles {
 			// Verify that the modfile is valid before trying to load it.
@@ -683,7 +680,7 @@ func (s *Snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 			fh, err := s.ReadFile(ctx, modURI)
 			if err != nil {
 				if ctx.Err() != nil {
-					return ctx.Err()
+					return
 				}
 				addError(modURI, err)
 				continue
@@ -691,7 +688,7 @@ func (s *Snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 			parsed, err := s.ParseMod(ctx, fh)
 			if err != nil {
 				if ctx.Err() != nil {
-					return ctx.Err()
+					return
 				}
 				addError(modURI, err)
 				continue
@@ -716,43 +713,47 @@ func (s *Snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 	if len(scopes) > 0 {
 		scopes = append(scopes, packageLoadScope("builtin"))
 	}
-	loadErr = s.load(ctx, true, scopes...)
+	loadErr := s.load(ctx, true, scopes...)
 
-	if retryableFailure() {
-		return loadErr
+	// A failure is retryable if it may have been due to context cancellation,
+	// and this is not the initial workspace load (firstAttempt==true).
+	//
+	// The IWL runs on a detached context with a long (~10m) timeout, so
+	// if the context was canceled we consider loading to have failed
+	// permanently.
+	if loadErr != nil && ctx.Err() != nil && !firstAttempt {
+		return
 	}
 
-	var criticalErr *CriticalError
+	var initialErr *InitializationError
 	switch {
 	case loadErr != nil && ctx.Err() != nil:
 		event.Error(ctx, fmt.Sprintf("initial workspace load: %v", loadErr), loadErr)
-		criticalErr = &CriticalError{
+		initialErr = &InitializationError{
 			MainError: loadErr,
 		}
 	case loadErr != nil:
 		event.Error(ctx, "initial workspace load failed", loadErr)
 		extractedDiags := s.extractGoCommandErrors(ctx, loadErr)
-		criticalErr = &CriticalError{
+		initialErr = &InitializationError{
 			MainError:   loadErr,
-			Diagnostics: maps.Group(append(modDiagnostics, extractedDiags...), byURI),
+			Diagnostics: maps.Group(extractedDiags, byURI),
 		}
-	case len(modDiagnostics) == 1:
-		criticalErr = &CriticalError{
-			MainError:   fmt.Errorf(modDiagnostics[0].Message),
-			Diagnostics: maps.Group(modDiagnostics, byURI),
+	case s.view.workspaceModFilesErr != nil:
+		initialErr = &InitializationError{
+			MainError: s.view.workspaceModFilesErr,
 		}
-	case len(modDiagnostics) > 1:
-		criticalErr = &CriticalError{
-			MainError:   fmt.Errorf("error loading module names"),
-			Diagnostics: maps.Group(modDiagnostics, byURI),
+	case len(modDiagnostics) > 0:
+		initialErr = &InitializationError{
+			MainError: fmt.Errorf(modDiagnostics[0].Message),
 		}
 	}
 
-	// Lock the snapshot when setting the initialized error.
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.initializedErr = criticalErr
-	return loadErr
+
+	s.initialized = true
+	s.initialErr = initialErr
 }
 
 // A StateChange describes external state changes that may affect a snapshot.

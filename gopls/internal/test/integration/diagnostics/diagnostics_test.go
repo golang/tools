@@ -554,8 +554,14 @@ func f() {
 	Run(t, noModule, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")
 		env.AfterChange(
-			// Expect the adHocPackagesWarning.
-			OutstandingWork(server.WorkspaceLoadFailure, "outside of a module"),
+			// AdHoc views are not critical errors, but their missing import
+			// diagnostics should specifically mention GOROOT or GOPATH (and not
+			// modules).
+			NoOutstandingWork(nil),
+			Diagnostics(
+				env.AtRegexp("a.go", `"mod.com`),
+				WithMessage("GOROOT or GOPATH"),
+			),
 		)
 		// Deleting the import dismisses the warning.
 		env.RegexpReplace("a.go", `import "mod.com/hello"`, "")
