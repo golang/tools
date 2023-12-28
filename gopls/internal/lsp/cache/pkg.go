@@ -106,7 +106,7 @@ type (
 		dir        string // dir containing the go.mod file
 		modulePath string // parsed module path
 	}
-	viewLoadScope protocol.DocumentURI // load the workspace
+	viewLoadScope struct{} // load the workspace
 )
 
 // Implement the loadScope interface.

@@ -410,33 +410,25 @@ func (s *Session) UpdateFolders(ctx context.Context, newFolders []*Folder) error
 // viewEnv returns a string describing the environment of a newly created view.
 //
 // It must not be called concurrently with any other view methods.
-//
-// TODO(golang/go#57979): revisit this function and its uses once the dust
-// settles.
+// TODO(rfindley): rethink this function, or inline sole call.
 func viewEnv(v *View) string {
-	env := v.folder.Options.EnvSlice()
-	buildFlags := append([]string{}, v.folder.Options.BuildFlags...)
-
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, `go info for %v
-(go dir %s)
+(view type %v)
+(root dir %s)
 (go version %s)
-(valid build configuration = %v)
 (build flags: %v)
+(go env: %+v)
+(env overlay: %v)
 `,
 		v.folder.Dir.Path(),
+		v.typ,
 		v.root.Path(),
 		strings.TrimRight(v.folder.Env.GoVersionOutput, "\n"),
-		v.snapshot.validBuildConfiguration(),
-		buildFlags,
+		v.folder.Options.BuildFlags,
+		*v.snapshot.view.folder.Env,
+		v.snapshot.view.envOverlay,
 	)
-
-	for _, v := range env {
-		s := strings.SplitN(v, "=", 2)
-		if len(s) != 2 {
-			continue
-		}
-	}
 
 	return buf.String()
 }
@@ -715,7 +707,7 @@ func (s *Snapshot) loadWorkspace(ctx context.Context, firstAttempt bool) (loadEr
 			scopes = append(scopes, moduleLoadScope{dir: moduleDir, modulePath: parsed.File.Module.Mod.Path})
 		}
 	} else {
-		scopes = append(scopes, viewLoadScope("LOAD_VIEW"))
+		scopes = append(scopes, viewLoadScope{})
 	}
 
 	// If we're loading anything, ensure we also load builtin,

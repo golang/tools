@@ -1007,7 +1007,7 @@ package main
 			// Confirm that the build configuration is seen as valid,
 			// even though there are technically multiple go.mod files in the
 			// worskpace.
-			LogMatching(protocol.Info, ".*valid build configuration = true.*", 1, false),
+			LogMatching(protocol.Info, ".*view type GoModView.*", 1, false),
 		)
 	})
 }

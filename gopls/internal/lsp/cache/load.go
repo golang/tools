@@ -93,7 +93,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		case viewLoadScope:
 			// If we are outside of GOPATH, a module, or some other known
 			// build system, don't load subdirectories.
-			if !s.validBuildConfiguration() {
+			if s.view.typ == AdHocView {
 				query = append(query, "./")
 			} else {
 				query = append(query, "./...")
@@ -329,22 +329,13 @@ func (s *Snapshot) workspaceLayoutError(ctx context.Context) (error, []*Diagnost
 	// If the snapshot does not have a valid build configuration, it may be
 	// that the user has opened a directory that contains multiple modules.
 	// Check for that an warn about it.
-	if !s.validBuildConfiguration() {
-		var msg string
-		if s.view.folder.Env.GoVersion >= 18 {
-			msg = `gopls was not able to find modules in your workspace.
+	if s.view.typ == AdHocView {
+		msg := `gopls was not able to find modules in your workspace.
 When outside of GOPATH, gopls needs to know which modules you are working on.
 You can fix this by opening your workspace to a folder inside a Go module, or
 by using a go.work file to specify multiple modules.
 See the documentation for more information on setting up your workspace:
 https://github.com/golang/tools/blob/master/gopls/doc/workspace.md.`
-		} else {
-			msg = `gopls requires a module at the root of your workspace.
-You can work with multiple modules by upgrading to Go 1.18 or later, and using
-go workspaces (go.work files).
-See the documentation for more information on setting up your workspace:
-https://github.com/golang/tools/blob/master/gopls/doc/workspace.md.`
-		}
 		return fmt.Errorf(msg), s.applyCriticalErrorToFiles(ctx, msg, openFiles)
 	}
 
