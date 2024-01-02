@@ -66,13 +66,19 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	// Handle the case where the cursor is in a linkname directive.
 	locations, err := LinknameDefinition(ctx, snapshot, pgf.Mapper, position)
 	if !errors.Is(err, ErrNoLinkname) {
-		return locations, err
+		return locations, err // may be success or failure
 	}
 
 	// Handle the case where the cursor is in an embed directive.
 	locations, err = EmbedDefinition(pgf.Mapper, position)
 	if !errors.Is(err, ErrNoEmbed) {
-		return locations, err
+		return locations, err // may be success or failure
+	}
+
+	// Handle the case where the cursor is in a doc link.
+	locations, err = docLinkDefinition(ctx, snapshot, pkg, pgf, pos)
+	if !errors.Is(err, errNoCommentReference) {
+		return locations, err // may be success or failure
 	}
 
 	// The general case: the cursor is on an identifier.

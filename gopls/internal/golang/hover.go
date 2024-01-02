@@ -33,6 +33,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	gastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/slices"
@@ -134,28 +135,11 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		return protocol.Range{}, nil, err
 	}
 
-	// Handle hovering over import paths, which do not have an associated
-	// identifier.
-	for _, spec := range pgf.File.Imports {
-		// We are inclusive of the end point here to allow hovering when the cursor
-		// is just after the import path.
-		if spec.Path.Pos() <= pos && pos <= spec.Path.End() {
-			return hoverImport(ctx, snapshot, pkg, pgf, spec)
-		}
-	}
-
 	// Handle hovering over the package name, which does not have an associated
 	// object.
 	// As with import paths, we allow hovering just after the package name.
-	if pgf.File.Name != nil && pgf.File.Name.Pos() <= pos && pos <= pgf.File.Name.Pos() {
+	if pgf.File.Name != nil && gastutil.NodeContains(pgf.File.Name, pos) {
 		return hoverPackageName(pkg, pgf)
-	}
-
-	// Handle hovering over (non-import-path) literals.
-	if path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos); len(path) > 0 {
-		if lit, _ := path[0].(*ast.BasicLit); lit != nil {
-			return hoverLit(pgf, lit, pos)
-		}
 	}
 
 	// Handle hovering over embed directive argument.
@@ -164,21 +148,63 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		return hoverEmbed(fh, embedRng, pattern)
 	}
 
+	// hoverRange is the range reported to the client (e.g. for highlighting).
+	// It may be an expansion around the selected identifier,
+	// for instance when hovering over a linkname directive or doc link.
+	var hoverRange *protocol.Range
 	// Handle linkname directive by overriding what to look for.
-	var linkedRange *protocol.Range // range referenced by linkname directive, or nil
 	if pkgPath, name, offset := parseLinkname(pgf.Mapper, pp); pkgPath != "" && name != "" {
 		// rng covering 2nd linkname argument: pkgPath.name.
 		rng, err := pgf.PosRange(pgf.Tok.Pos(offset), pgf.Tok.Pos(offset+len(pkgPath)+len(".")+len(name)))
 		if err != nil {
 			return protocol.Range{}, nil, fmt.Errorf("range over linkname arg: %w", err)
 		}
-		linkedRange = &rng
+		hoverRange = &rng
 
 		pkg, pgf, pos, err = findLinkname(ctx, snapshot, PackagePath(pkgPath), name)
 		if err != nil {
 			return protocol.Range{}, nil, fmt.Errorf("find linkname: %w", err)
 		}
 	}
+
+	// Handle hovering over a doc link
+	if obj, rng, _ := parseDocLink(pkg, pgf, pos); obj != nil {
+		hoverRange = &rng
+		// Handle builtins, which don't have a package or position.
+		if !obj.Pos().IsValid() {
+			h, err := hoverBuiltin(ctx, snapshot, obj)
+			return *hoverRange, h, err
+		}
+		objURI := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
+		pkg, pgf, err = NarrowestPackageForFile(ctx, snapshot, protocol.URIFromPath(objURI.Filename))
+		if err != nil {
+			return protocol.Range{}, nil, err
+		}
+		pos = pgf.Tok.Pos(objURI.Offset)
+	}
+
+	// Handle hovering over import paths, which do not have an associated
+	// identifier.
+	for _, spec := range pgf.File.Imports {
+		if gastutil.NodeContains(spec, pos) {
+			rng, hoverJSON, err := hoverImport(ctx, snapshot, pkg, pgf, spec)
+			if err != nil {
+				return protocol.Range{}, nil, err
+			}
+			if hoverRange == nil {
+				hoverRange = &rng
+			}
+			return *hoverRange, hoverJSON, nil
+		}
+	}
+	// Handle hovering over (non-import-path) literals.
+	if path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos); len(path) > 0 {
+		if lit, _ := path[0].(*ast.BasicLit); lit != nil {
+			return hoverLit(pgf, lit, pos)
+		}
+	}
+
+	// Handle hover over identifier.
 
 	// The general case: compute hover information for the object referenced by
 	// the identifier at pos.
@@ -188,14 +214,12 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	}
 
 	// Unless otherwise specified, rng covers the ident being hovered.
-	var rng protocol.Range
-	if linkedRange != nil {
-		rng = *linkedRange
-	} else {
-		rng, err = pgf.NodeRange(ident)
+	if hoverRange == nil {
+		rng, err := pgf.NodeRange(ident)
 		if err != nil {
 			return protocol.Range{}, nil, err
 		}
+		hoverRange = &rng
 	}
 
 	// By convention, we qualify hover information relative to the package
@@ -209,7 +233,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	if selectedType != nil {
 		fakeObj := types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), selectedType)
 		signature := types.ObjectString(fakeObj, qf)
-		return rng, &hoverJSON{
+		return *hoverRange, &hoverJSON{
 			Signature:  signature,
 			SingleLine: signature,
 			SymbolName: fakeObj.Name(),
@@ -219,7 +243,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// Handle builtins, which don't have a package or position.
 	if !obj.Pos().IsValid() {
 		h, err := hoverBuiltin(ctx, snapshot, obj)
-		return rng, h, err
+		return *hoverRange, h, err
 	}
 
 	// For all other objects, consider the full syntax of their declaration in
@@ -523,7 +547,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		linkPath = strings.Replace(linkPath, mod.Path, mod.Path+"@"+mod.Version, 1)
 	}
 
-	return rng, &hoverJSON{
+	return *hoverRange, &hoverJSON{
 		Synopsis:          doc.Synopsis(docText),
 		FullDocumentation: docText,
 		SingleLine:        singleLineSignature,
