@@ -16,6 +16,7 @@ import (
 	"go/types"
 	"log"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -72,6 +74,7 @@ func SemanticTokens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handl
 		metadata:       pkg.Metadata(),
 		info:           pkg.GetTypesInfo(),
 		fset:           pkg.FileSet(),
+		pkg:            pkg,
 		pgf:            pgf,
 		start:          start,
 		end:            end,
@@ -95,6 +98,7 @@ type tokenVisitor struct {
 	metadata       *metadata.Package
 	info           *types.Info
 	fset           *token.FileSet
+	pkg            *cache.Package
 	pgf            *parsego.File
 	start, end     token.Pos // range of interest
 
@@ -117,18 +121,134 @@ func (tv *tokenVisitor) visit() {
 		}
 		ast.Inspect(decl, tv.inspect)
 	}
-	for _, cg := range f.Comments {
-		for _, c := range cg.List {
-			if strings.HasPrefix(c.Text, "//go:") {
-				tv.godirective(c)
-				continue
-			}
-			if !strings.Contains(c.Text, "\n") {
-				tv.token(c.Pos(), len(c.Text), semtok.TokComment, nil)
-			} else {
-				tv.multiline(c.Pos(), c.End(), semtok.TokComment)
+
+	// Scan all files for imported pkgs, ignore the ambiguous pkg.
+	// This is to be consistent with the behavior in [go/doc]: https://pkg.go.dev/pkg/go/doc.
+	importByName := make(map[string]*types.PkgName)
+	for _, pgf := range tv.pkg.CompiledGoFiles() {
+		for _, imp := range pgf.File.Imports {
+			if obj, _ := typesutil.ImportedPkgName(tv.pkg.GetTypesInfo(), imp); obj != nil {
+				if old, ok := importByName[obj.Name()]; ok {
+					if old != nil && old.Imported() != obj.Imported() {
+						importByName[obj.Name()] = nil // nil => ambiguous across files
+					}
+					continue
+				}
+				importByName[obj.Name()] = obj
 			}
 		}
+	}
+
+	for _, cg := range f.Comments {
+		for _, c := range cg.List {
+			tv.comment(c, importByName)
+		}
+	}
+}
+
+// Matches (for example) "[F]", "[*p.T]", "[p.T.M]"
+// unless followed by a colon (exclude url link, e.g. "[go]: https://go.dev").
+// The first group is reference name. e.g. The first group of "[*p.T.M]" is "p.T.M".
+var docLinkRegex = regexp.MustCompile(`\[\*?([\pL_][\pL_0-9]*(\.[\pL_][\pL_0-9]*){0,2})](?:[^:]|$)`)
+
+// comment emits semantic tokens for a comment.
+// If the comment contains doc links or "go:" directives,
+// it emits a separate token for each link or directive and
+// each comment portion between them.
+func (tv *tokenVisitor) comment(c *ast.Comment, importByName map[string]*types.PkgName) {
+	if strings.HasPrefix(c.Text, "//go:") {
+		tv.godirective(c)
+		return
+	}
+
+	pkgScope := tv.pkg.GetTypes().Scope()
+	// lookupObjects interprets the name in various forms
+	// (X, p.T, p.T.M, etc) and return the list of symbols
+	// denoted by each identifier in the dotted list.
+	lookupObjects := func(name string) (objs []types.Object) {
+		scope := pkgScope
+		if pkg, suffix, ok := strings.Cut(name, "."); ok {
+			if obj, _ := importByName[pkg]; obj != nil {
+				objs = append(objs, obj)
+				scope = obj.Imported().Scope()
+				name = suffix
+			}
+		}
+
+		if recv, method, ok := strings.Cut(name, "."); ok {
+			obj, ok := scope.Lookup(recv).(*types.TypeName)
+			if !ok {
+				return nil
+			}
+			objs = append(objs, obj)
+			t, ok := obj.Type().(*types.Named)
+			if !ok {
+				return nil
+			}
+			m, _, _ := types.LookupFieldOrMethod(t, true, tv.pkg.GetTypes(), method)
+			if m == nil {
+				return nil
+			}
+			objs = append(objs, m)
+			return objs
+		} else {
+			obj := scope.Lookup(name)
+			if obj == nil {
+				return nil
+			}
+			if _, ok := obj.(*types.PkgName); !ok && !obj.Exported() {
+				return nil
+			}
+			objs = append(objs, obj)
+			return objs
+
+		}
+	}
+
+	tokenTypeByObject := func(obj types.Object) semtok.TokenType {
+		switch obj.(type) {
+		case *types.PkgName:
+			return semtok.TokNamespace
+		case *types.Func:
+			return semtok.TokFunction
+		case *types.TypeName:
+			return semtok.TokType
+		case *types.Const, *types.Var:
+			return semtok.TokVariable
+		default:
+			return semtok.TokComment
+		}
+	}
+
+	pos := c.Pos()
+	for _, line := range strings.Split(c.Text, "\n") {
+		last := 0
+
+		for _, idx := range docLinkRegex.FindAllStringSubmatchIndex(line, -1) {
+			// The first group is the reference name. e.g. "X", "p.T", "p.T.M".
+			name := line[idx[2]:idx[3]]
+			if objs := lookupObjects(name); len(objs) > 0 {
+				if last < idx[2] {
+					tv.token(pos+token.Pos(last), idx[2]-last, semtok.TokComment, nil)
+				}
+				offset := pos + token.Pos(idx[2])
+				for i, obj := range objs {
+					if i > 0 {
+						tv.token(offset, len("."), semtok.TokComment, nil)
+						offset += token.Pos(len("."))
+					}
+					id, rest, _ := strings.Cut(name, ".")
+					name = rest
+					tv.token(offset, len(id), tokenTypeByObject(obj), nil)
+					offset += token.Pos(len(id))
+				}
+				last = idx[3]
+			}
+		}
+		if last != len(c.Text) {
+			tv.token(pos+token.Pos(last), len(line)-last, semtok.TokComment, nil)
+		}
+		pos += token.Pos(len(line) + 1)
 	}
 }
 
