@@ -15,6 +15,25 @@ func Contains[S ~[]E, E comparable](slice S, x E) bool {
 	return false
 }
 
+// IndexFunc returns the first index i satisfying f(s[i]),
+// or -1 if none do.
+// TODO(adonovan): use go1.19 slices.IndexFunc.
+func IndexFunc[S ~[]E, E any](s S, f func(E) bool) int {
+	for i := range s {
+		if f(s[i]) {
+			return i
+		}
+	}
+	return -1
+}
+
+// ContainsFunc reports whether at least one
+// element e of s satisfies f(e).
+// TODO(adonovan): use go1.19 slices.ContainsFunc.
+func ContainsFunc[S ~[]E, E any](s S, f func(E) bool) bool {
+	return IndexFunc(s, f) >= 0
+}
+
 // Concat returns a new slice concatenating the passed in slices.
 // TODO(rfindley): use go1.22 slices.Contains.
 func Concat[S ~[]E, E any](slices ...S) S {

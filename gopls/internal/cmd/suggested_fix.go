@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -148,42 +149,22 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 			continue
 		}
 
-		// Partially apply CodeAction.Edit, a WorkspaceEdit.
-		// (See also conn.Client.applyWorkspaceEdit(a.Edit)).
-		if !from.HasPosition() {
-			for _, c := range a.Edit.DocumentChanges {
-				if c.TextDocumentEdit != nil {
-					if c.TextDocumentEdit.TextDocument.URI == uri {
-						edits = append(edits, protocol.AsTextEdits(c.TextDocumentEdit.Edits)...)
-					}
-				}
-			}
+		// If the provided span has a position (not just offsets),
+		// and the action has diagnostics, the action must have a
+		// diagnostic with the same range as it.
+		if from.HasPosition() && len(a.Diagnostics) > 0 &&
+			!slices.ContainsFunc(a.Diagnostics, func(diag protocol.Diagnostic) bool {
+				return diag.Range.Start == rng.Start
+			}) {
 			continue
 		}
 
-		// The provided span has a position (not just offsets).
-		// Find the code action that has the same range as it.
-		for _, diag := range a.Diagnostics {
-			if diag.Range.Start == rng.Start {
-				for _, c := range a.Edit.DocumentChanges {
-					if c.TextDocumentEdit != nil {
-						if c.TextDocumentEdit.TextDocument.URI == uri {
-							edits = append(edits, protocol.AsTextEdits(c.TextDocumentEdit.Edits)...)
-						}
-					}
-				}
-				break
-			}
-		}
-
-		// If suggested fix is not a diagnostic, still must collect edits.
-		if len(a.Diagnostics) == 0 {
-			for _, c := range a.Edit.DocumentChanges {
-				if c.TextDocumentEdit != nil {
-					if c.TextDocumentEdit.TextDocument.URI == uri {
-						edits = append(edits, protocol.AsTextEdits(c.TextDocumentEdit.Edits)...)
-					}
-				}
+		// Partially apply CodeAction.Edit, a WorkspaceEdit.
+		// (See also conn.Client.applyWorkspaceEdit(a.Edit)).
+		for _, c := range a.Edit.DocumentChanges {
+			tde := c.TextDocumentEdit
+			if tde != nil && tde.TextDocument.URI == uri {
+				edits = append(edits, protocol.AsTextEdits(tde.Edits)...)
 			}
 		}
 	}
