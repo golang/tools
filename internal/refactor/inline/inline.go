@@ -485,7 +485,7 @@ func inline(logf func(string, ...any), caller *Caller, callee *gobCallee) (*resu
 			// check not shadowed at caller.
 			found := caller.lookup(obj.Name) // always finds something
 			if found.Pos().IsValid() {
-				return nil, fmt.Errorf("cannot inline because built-in %q is shadowed in caller by a %s (line %d)",
+				return nil, fmt.Errorf("cannot inline, because the callee refers to built-in %q, which in the caller is shadowed by a %s (declared at line %d)",
 					obj.Name, objectKind(found),
 					caller.Fset.PositionFor(found.Pos(), false).Line)
 			}
@@ -505,8 +505,9 @@ func inline(logf func(string, ...any), caller *Caller, callee *gobCallee) (*resu
 					// around the refactored signature.
 					found := caller.lookup(obj.Name)
 					if found != nil && !isPkgLevel(found) {
-						return nil, fmt.Errorf("cannot inline because %q is shadowed in caller by a %s (line %d)",
-							obj.Name, objectKind(found),
+						return nil, fmt.Errorf("cannot inline, because the callee refers to %s %q, which in the caller is shadowed by a %s (declared at line %d)",
+							obj.Kind, obj.Name,
+							objectKind(found),
 							caller.Fset.PositionFor(found.Pos(), false).Line)
 					}
 				} else {
