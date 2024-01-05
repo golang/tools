@@ -101,3 +101,28 @@ func AsAnnotatedTextEdits(edits []TextEdit) []Or_TextDocumentEdit_edits_Elem {
 	}
 	return result
 }
+
+// TextEditsToDocumentChanges converts a set of edits within the
+// specified (versioned) file to a singleton list of DocumentChanges
+// (as required for a WorkspaceEdit).
+func TextEditsToDocumentChanges(uri DocumentURI, version int32, edits []TextEdit) []DocumentChanges {
+	return []DocumentChanges{{
+		TextDocumentEdit: &TextDocumentEdit{
+			TextDocument: OptionalVersionedTextDocumentIdentifier{
+				Version:                version,
+				TextDocumentIdentifier: TextDocumentIdentifier{URI: uri},
+			},
+			Edits: AsAnnotatedTextEdits(edits),
+		},
+	}}
+}
+
+// TextDocumentEditsToDocumentChanges wraps each TextDocumentEdit in a DocumentChange.
+func TextDocumentEditsToDocumentChanges(edits []TextDocumentEdit) []DocumentChanges {
+	changes := []DocumentChanges{} // non-nil
+	for _, edit := range edits {
+		edit := edit
+		changes = append(changes, DocumentChanges{TextDocumentEdit: &edit})
+	}
+	return changes
+}

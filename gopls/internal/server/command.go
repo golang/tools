@@ -453,19 +453,7 @@ func (c *commandHandler) RemoveDependency(ctx context.Context, args command.Remo
 		}
 		response, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
 			Edit: protocol.WorkspaceEdit{
-				DocumentChanges: []protocol.DocumentChanges{
-					{
-						TextDocumentEdit: &protocol.TextDocumentEdit{
-							TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
-								Version: deps.fh.Version(),
-								TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-									URI: deps.fh.URI(),
-								},
-							},
-							Edits: protocol.AsAnnotatedTextEdits(edits),
-						},
-					},
-				},
+				DocumentChanges: documentChanges(deps.fh, edits),
 			},
 		})
 		if err != nil {
@@ -719,16 +707,9 @@ func applyFileEdits(ctx context.Context, cli protocol.Client, edits []protocol.T
 	if len(edits) == 0 {
 		return nil
 	}
-	documentChanges := []protocol.DocumentChanges{} // must be a slice
-	for _, change := range edits {
-		change := change
-		documentChanges = append(documentChanges, protocol.DocumentChanges{
-			TextDocumentEdit: &change,
-		})
-	}
 	response, err := cli.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
 		Edit: protocol.WorkspaceEdit{
-			DocumentChanges: documentChanges,
+			DocumentChanges: protocol.TextDocumentEditsToDocumentChanges(edits),
 		},
 	})
 	if err != nil {

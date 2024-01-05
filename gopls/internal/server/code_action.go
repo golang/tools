@@ -687,19 +687,7 @@ func refactorInline(pkg *cache.Package, pgf *source.ParsedGoFile, rng protocol.R
 }
 
 func documentChanges(fh file.Handle, edits []protocol.TextEdit) []protocol.DocumentChanges {
-	return []protocol.DocumentChanges{
-		{
-			TextDocumentEdit: &protocol.TextDocumentEdit{
-				TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
-					Version: fh.Version(),
-					TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-						URI: fh.URI(),
-					},
-				},
-				Edits: protocol.AsAnnotatedTextEdits(edits),
-			},
-		},
-	}
+	return protocol.TextEditsToDocumentChanges(fh.URI(), fh.Version(), edits)
 }
 
 // codeActionsMatchingDiagnostics fetches code actions for the provided
