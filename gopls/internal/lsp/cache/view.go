@@ -426,8 +426,8 @@ func viewEnv(v *View) string {
 		v.root.Path(),
 		strings.TrimRight(v.folder.Env.GoVersionOutput, "\n"),
 		v.folder.Options.BuildFlags,
-		*v.snapshot.view.folder.Env,
-		v.snapshot.view.envOverlay,
+		*v.folder.Env,
+		v.envOverlay,
 	)
 
 	return buf.String()
