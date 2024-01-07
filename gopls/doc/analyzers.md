@@ -290,6 +290,31 @@ Default: on.
 
 Package documentation: [framepointer](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/framepointer)
 
+<a id='hostport'></a>
+## `hostport`: check format of addresses passed to net.Dial
+
+
+This analyzer flags code that produce network address strings using
+fmt.Sprintf, as in this example:
+
+    addr := fmt.Sprintf("%s:%d", host, 12345) // "will not work with IPv6"
+    ...
+    conn, err := net.Dial("tcp", addr)       // "when passed to dial here"
+
+The analyzer suggests a fix to use the correct approach, a call to
+net.JoinHostPort:
+
+    addr := net.JoinHostPort(host, "12345")
+    ...
+    conn, err := net.Dial("tcp", addr)
+
+A similar diagnostic and fix are produced for a format string of "%s:%s".
+
+
+Default: on.
+
+Package documentation: [hostport](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/hostport)
+
 <a id='httpresponse'></a>
 ## `httpresponse`: check for mistakes using HTTP responses
 

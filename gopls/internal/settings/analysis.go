@@ -49,6 +49,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/deprecated"
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/fillreturns"
+	"golang.org/x/tools/gopls/internal/analysis/hostport"
 	"golang.org/x/tools/gopls/internal/analysis/infertypeargs"
 	"golang.org/x/tools/gopls/internal/analysis/modernize"
 	"golang.org/x/tools/gopls/internal/analysis/nonewvars"
@@ -158,6 +159,7 @@ func init() {
 		{analyzer: sortslice.Analyzer, enabled: true},
 		{analyzer: embeddirective.Analyzer, enabled: true},
 		{analyzer: waitgroup.Analyzer, enabled: true}, // to appear in cmd/vet@go1.25
+		{analyzer: hostport.Analyzer, enabled: true},  // to appear in cmd/vet@go1.25
 		{analyzer: modernize.Analyzer, enabled: true, severity: protocol.SeverityInformation},
 
 		// disabled due to high false positives
