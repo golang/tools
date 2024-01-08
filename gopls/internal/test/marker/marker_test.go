@@ -85,6 +85,9 @@ func TestMain(m *testing.M) {
 //   - The old tests lacked documentation, and often had failures that were hard
 //     to understand. By starting from scratch, we can revisit these aspects.
 func Test(t *testing.T) {
+	if testing.Short() && strings.HasPrefix(os.Getenv("GO_BUILDER_NAME"), "darwin-") {
+		t.Skip("golang/go#64473: skipping with -short: this test is too slow on darwin builders")
+	}
 	// The marker tests must be able to run go/packages.Load.
 	testenv.NeedsGoPackages(t)
 
