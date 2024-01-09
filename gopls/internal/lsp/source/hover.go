@@ -33,6 +33,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/tokeninternal"
 )
@@ -169,7 +170,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 
 	// By convention, we qualify hover information relative to the package
 	// from which the request originated.
-	qf := Qualifier(pgf.File, pkg.GetTypes(), pkg.GetTypesInfo())
+	qf := typesutil.FileQualifier(pgf.File, pkg.GetTypes(), pkg.GetTypesInfo())
 
 	// Handle type switch identifiers as a special case, since they don't have an
 	// object.

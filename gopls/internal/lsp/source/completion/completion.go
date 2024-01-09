@@ -36,6 +36,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fuzzy"
 	"golang.org/x/tools/internal/imports"
@@ -527,7 +528,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	c := &completer{
 		pkg:      pkg,
 		snapshot: snapshot,
-		qf:       source.Qualifier(pgf.File, pkg.GetTypes(), pkg.GetTypesInfo()),
+		qf:       typesutil.FileQualifier(pgf.File, pkg.GetTypes(), pkg.GetTypesInfo()),
 		mq:       source.MetadataQualifierForFile(snapshot, pgf.File, pkg.Metadata()),
 		completionContext: completionContext{
 			triggerCharacter: protoContext.TriggerCharacter,

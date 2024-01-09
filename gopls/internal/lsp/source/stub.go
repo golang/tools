@@ -13,7 +13,7 @@ import (
 	"go/token"
 	"go/types"
 	"io"
-	"path"
+	pathpkg "path"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -56,23 +56,11 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 		return nil, nil, fmt.Errorf("file contains parse errors: %s", declPGF.URI)
 	}
 
-	// Build import environment for the declaring file.
-	importEnv := make(map[ImportPath]string) // value is local name
-	for _, imp := range declPGF.File.Imports {
-		importPath := metadata.UnquoteImportPath(imp)
-		var name string
-		if imp.Name != nil {
-			name = imp.Name.Name
-			if name == "_" {
-				continue
-			} else if name == "." {
-				name = "" // see types.Qualifier
-			}
-		} else {
-			// TODO(adonovan): may omit a vendor/ prefix; consult the Metadata.
-			name = path.Base(string(importPath))
-		}
-		importEnv[importPath] = name // latest alias wins
+	// Find metadata for the concrete type's declaring package
+	// as we'll need its import mapping.
+	declMeta := findFileInDeps(snapshot, pkg.Metadata(), declPGF.URI)
+	if declMeta == nil {
+		return nil, nil, bug.Errorf("can't find metadata for file %s among dependencies of %s", declPGF.URI, pkg)
 	}
 
 	// Record all direct methods of the current object
@@ -134,10 +122,36 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 		return nil, nil, fmt.Errorf("no missing methods found")
 	}
 
+	// Build import environment for the declaring file.
+	// (typesutil.FileQualifier works only for complete
+	// import mappings, and requires types.)
+	importEnv := make(map[ImportPath]string) // value is local name
+	for _, imp := range declPGF.File.Imports {
+		importPath := metadata.UnquoteImportPath(imp)
+		var name string
+		if imp.Name != nil {
+			name = imp.Name.Name
+			if name == "_" {
+				continue
+			} else if name == "." {
+				name = "" // see types.Qualifier
+			}
+		} else {
+			// Use the correct name from the metadata of the imported
+			// package---not a guess based on the import path.
+			mp := snapshot.Metadata(declMeta.DepsByImpPath[importPath])
+			if mp == nil {
+				continue // can't happen?
+			}
+			name = string(mp.Name)
+		}
+		importEnv[importPath] = name // latest alias wins
+	}
+
 	// Create a package name qualifier that uses the
 	// locally appropriate imported package name.
 	// It records any needed new imports.
-	// TODO(adonovan): factor with source.FormatVarType, stubmethods.RelativeToFiles?
+	// TODO(adonovan): factor with source.FormatVarType?
 	//
 	// Prior to CL 469155 this logic preserved any renaming
 	// imports from the file that declares the interface
@@ -170,7 +184,7 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 			new := newImport{importPath: string(importPath)}
 			// For clarity, use a renaming import whenever the
 			// local name does not match the path's last segment.
-			if name != path.Base(new.importPath) {
+			if name != pathpkg.Base(trimVersionSuffix(new.importPath)) {
 				new.name = name
 			}
 			newImports = append(newImports, new)
@@ -268,7 +282,7 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 
 	// Re-parse the file.
 	fset := token.NewFileSet()
-	newF, err := parser.ParseFile(fset, declPGF.File.Name.Name, buf.Bytes(), parser.ParseComments)
+	newF, err := parser.ParseFile(fset, declPGF.URI.Path(), buf.Bytes(), parser.ParseComments)
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not reparse file: %w", err)
 	}
@@ -302,4 +316,20 @@ func diffToTextEdits(tok *token.File, diffs []diff.Edit) []analysis.TextEdit {
 		})
 	}
 	return edits
+}
+
+// trimVersionSuffix removes a trailing "/v2" (etc) suffix from a module path.
+//
+// This is only a heuristic as to the package's declared name, and
+// should only be used for stylistic decisions, such as whether it
+// would be clearer to use an explicit local name in the import
+// because the declared name differs from the result of this function.
+// When the name matters for correctness, look up the imported
+// package's Metadata.Name.
+func trimVersionSuffix(path string) string {
+	dir, base := pathpkg.Split(path)
+	if len(base) > 1 && base[0] == 'v' && strings.Trim(base[1:], "0123456789") == "" {
+		return dir // sans "/v2"
+	}
+	return path
 }

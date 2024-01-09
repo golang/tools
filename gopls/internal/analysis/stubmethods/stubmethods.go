@@ -12,11 +12,11 @@ import (
 	"go/format"
 	"go/token"
 	"go/types"
-	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -86,7 +86,7 @@ func DiagnosticForError(fset *token.FileSet, file *ast.File, start, end token.Po
 	if si == nil {
 		return analysis.Diagnostic{}, false
 	}
-	qf := RelativeToFiles(si.Concrete.Obj().Pkg(), file, nil, nil)
+	qf := typesutil.FileQualifier(file, si.Concrete.Obj().Pkg(), info)
 	return analysis.Diagnostic{
 		Pos:     start,
 		End:     end,
@@ -325,71 +325,6 @@ func fromAssignStmt(fset *token.FileSet, info *types.Info, assign *ast.AssignStm
 		Concrete:  concType,
 		Interface: ifaceObj,
 		Pointer:   pointer,
-	}
-}
-
-// RelativeToFiles returns a types.Qualifier that formats package
-// names according to the import environments of the files that define
-// the concrete type and the interface type. (Only the imports of the
-// latter file are provided.)
-//
-// This is similar to types.RelativeTo except if a file imports the package with a different name,
-// then it will use it. And if the file does import the package but it is ignored,
-// then it will return the original name. It also prefers package names in importEnv in case
-// an import is missing from concFile but is present among importEnv.
-//
-// Additionally, if missingImport is not nil, the function will be called whenever the concFile
-// is presented with a package that is not imported. This is useful so that as types.TypeString is
-// formatting a function signature, it is identifying packages that will need to be imported when
-// stubbing an interface.
-//
-// TODO(rfindley): investigate if this can be merged with source.Qualifier.
-func RelativeToFiles(concPkg *types.Package, concFile *ast.File, ifaceImports []*ast.ImportSpec, missingImport func(name, path string)) types.Qualifier {
-	return func(other *types.Package) string {
-		if other == concPkg {
-			return ""
-		}
-
-		// Check if the concrete file already has the given import,
-		// if so return the default package name or the renamed import statement.
-		for _, imp := range concFile.Imports {
-			impPath, _ := strconv.Unquote(imp.Path.Value)
-			isIgnored := imp.Name != nil && (imp.Name.Name == "." || imp.Name.Name == "_")
-			// TODO(adonovan): this comparison disregards a vendor prefix in 'other'.
-			if impPath == other.Path() && !isIgnored {
-				importName := other.Name()
-				if imp.Name != nil {
-					importName = imp.Name.Name
-				}
-				return importName
-			}
-		}
-
-		// If the concrete file does not have the import, check if the package
-		// is renamed in the interface file and prefer that.
-		var importName string
-		for _, imp := range ifaceImports {
-			impPath, _ := strconv.Unquote(imp.Path.Value)
-			isIgnored := imp.Name != nil && (imp.Name.Name == "." || imp.Name.Name == "_")
-			// TODO(adonovan): this comparison disregards a vendor prefix in 'other'.
-			if impPath == other.Path() && !isIgnored {
-				if imp.Name != nil && imp.Name.Name != concPkg.Name() {
-					importName = imp.Name.Name
-				}
-				break
-			}
-		}
-
-		if missingImport != nil {
-			missingImport(importName, other.Path())
-		}
-
-		// Up until this point, importName must stay empty when calling missingImport,
-		// otherwise we'd end up with `import time "time"` which doesn't look idiomatic.
-		if importName == "" {
-			importName = other.Name()
-		}
-		return importName
 	}
 }
 
