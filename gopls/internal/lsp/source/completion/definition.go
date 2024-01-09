@@ -20,6 +20,9 @@ import (
 // So far, TestFoo(t *testing.T), TestMain(m *testing.M)
 // BenchmarkFoo(b *testing.B), FuzzFoo(f *testing.F)
 
+// TODO: function definitions in <file>_test.go can also be completed for Test<functionname>
+// when <functionname> is defined in the corresponding source file <file>.go
+
 // path[0] is known to be *ast.Ident
 func definition(path []ast.Node, obj types.Object, pgf *source.ParsedGoFile) ([]CompletionItem, *Selection) {
 	if _, ok := obj.(*types.Func); !ok {
