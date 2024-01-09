@@ -285,10 +285,9 @@ func (c *commandHandler) CheckUpgrades(ctx context.Context, args command.CheckUp
 			if err != nil {
 				return nil, nil, err
 			}
-			snapshot, release, _ := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
+			return c.s.session.InvalidateView(ctx, deps.snapshot.View(), cache.StateChange{
 				ModuleUpgrades: map[protocol.DocumentURI]map[string]string{args.URI: upgrades},
 			})
-			return snapshot, release, nil
 		})
 	})
 }
@@ -306,7 +305,7 @@ func (c *commandHandler) ResetGoModDiagnostics(ctx context.Context, args command
 		forURI: args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		return c.modifyState(ctx, FromResetGoModDiagnostics, func() (*cache.Snapshot, func(), error) {
-			snapshot, release, _ := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
+			return c.s.session.InvalidateView(ctx, deps.snapshot.View(), cache.StateChange{
 				ModuleUpgrades: map[protocol.DocumentURI]map[string]string{
 					deps.fh.URI(): nil,
 				},
@@ -314,7 +313,6 @@ func (c *commandHandler) ResetGoModDiagnostics(ctx context.Context, args command
 					deps.fh.URI(): nil,
 				},
 			})
-			return snapshot, release, nil
 		})
 	})
 }
@@ -443,7 +441,7 @@ func (c *commandHandler) RemoveDependency(ctx context.Context, args command.Remo
 		if err != nil {
 			return err
 		}
-		edits, err := dropDependency(deps.snapshot, pm, args.ModulePath)
+		edits, err := dropDependency(pm, args.ModulePath)
 		if err != nil {
 			return err
 		}
@@ -476,7 +474,7 @@ func (c *commandHandler) RemoveDependency(ctx context.Context, args command.Remo
 
 // dropDependency returns the edits to remove the given require from the go.mod
 // file.
-func dropDependency(snapshot *cache.Snapshot, pm *cache.ParsedModule, modulePath string) ([]protocol.TextEdit, error) {
+func dropDependency(pm *cache.ParsedModule, modulePath string) ([]protocol.TextEdit, error) {
 	// We need a private copy of the parsed go.mod file, since we're going to
 	// modify it.
 	copied, err := modfile.Parse("", pm.Mapper.Content, nil)
@@ -796,12 +794,11 @@ func (c *commandHandler) ToggleGCDetails(ctx context.Context, args command.URIAr
 				return nil, nil, err
 			}
 			wantDetails := !deps.snapshot.WantGCDetails(meta.ID) // toggle the gc details state
-			snapshot, release, _ := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
+			return c.s.session.InvalidateView(ctx, deps.snapshot.View(), cache.StateChange{
 				GCDetails: map[metadata.PackageID]bool{
 					meta.ID: wantDetails,
 				},
 			})
-			return snapshot, release, nil
 		})
 	})
 }
@@ -995,9 +992,12 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 			return err
 		}
 
-		snapshot, release, _ := deps.snapshot.View().Invalidate(ctx, cache.StateChange{
+		snapshot, release, err := c.s.session.InvalidateView(ctx, deps.snapshot.View(), cache.StateChange{
 			Vulns: map[protocol.DocumentURI]*vulncheck.Result{args.URI: result},
 		})
+		if err != nil {
+			return err
+		}
 		defer release()
 		c.s.diagnoseSnapshot(snapshot, nil, 0)
 
@@ -1292,7 +1292,7 @@ func (c *commandHandler) ChangeSignature(ctx context.Context, args command.Chang
 func (c *commandHandler) DiagnoseFiles(ctx context.Context, args command.DiagnoseFilesArgs) error {
 	return c.run(ctx, commandConfig{
 		progress: "Diagnose files",
-	}, func(ctx context.Context, deps commandDeps) error {
+	}, func(ctx context.Context, _ commandDeps) error {
 
 		// TODO(rfindley): even better would be textDocument/diagnostics (golang/go#60122).
 		// Though note that implementing pull diagnostics may cause some servers to
