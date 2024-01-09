@@ -1116,6 +1116,9 @@ func callBuiltin(caller *frame, callpos token.Pos, fn *ssa.Builtin, args []value
 				recvType, methodName, recvType))
 		}
 		return recv
+
+	case "ssa:deferstack":
+		return &caller.defers
 	}
 
 	panic("unknown built-in: " + fn.Name())

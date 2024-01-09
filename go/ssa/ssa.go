@@ -297,9 +297,28 @@ type Node interface {
 //
 // Pos() returns the declaring ast.FuncLit.Type.Func or the position
 // of the ast.FuncDecl.Name, if the function was explicit in the
-// source.  Synthetic wrappers, for which Synthetic != "", may share
+// source. Synthetic wrappers, for which Synthetic != "", may share
 // the same position as the function they wrap.
 // Syntax.Pos() always returns the position of the declaring "func" token.
+//
+// When the operand of a range statement is an iterator function,
+// the loop body is transformed into a synthetic anonymous function
+// that is passed as the yield argument in a call to the iterator.
+// In that case, Function.Pos is the position of the "range" token,
+// and Function.Syntax is the ast.RangeStmt.
+//
+// Synthetic functions, for which Synthetic != "", are functions
+// that do not appear in the source AST. These include:
+//   - method wrappers,
+//   - thunks,
+//   - bound functions,
+//   - empty functions built from loaded type information,
+//   - yield functions created from range-over-func loops,
+//   - package init functions, and
+//   - instantiations of generic functions.
+//
+// Synthetic wrapper functions may share the same position
+// as the function they wrap.
 //
 // Type() returns the function's Signature.
 //
@@ -321,11 +340,10 @@ type Function struct {
 
 	// source information
 	Synthetic string      // provenance of synthetic function; "" for true source functions
-	syntax    ast.Node    // *ast.Func{Decl,Lit}, if from syntax (incl. generic instances)
+	syntax    ast.Node    // *ast.Func{Decl,Lit}, if from syntax (incl. generic instances) or (*ast.RangeStmt if a yield function)
 	info      *types.Info // type annotations (iff syntax != nil)
 	goversion string      // Go version of syntax (NB: init is special)
 
-	build  buildFunc // algorithm to build function body (nil => built)
 	parent *Function // enclosing function if anon; nil if global
 	Pkg    *Package  // enclosing package; nil for shared funcs (wrappers and error.Error)
 	Prog   *Program  // enclosing program
@@ -337,7 +355,7 @@ type Function struct {
 	Locals    []*Alloc      // frame-allocated variables of this function
 	Blocks    []*BasicBlock // basic blocks of the function; nil => external
 	Recover   *BasicBlock   // optional; control transfers here after recovered panic
-	AnonFuncs []*Function   // anonymous functions directly beneath this one
+	AnonFuncs []*Function   // anonymous functions (from FuncLit,RangeStmt) directly beneath this one
 	referrers []Instruction // referring instructions (iff Parent() != nil)
 	anonIdx   int32         // position of a nested function in parent's AnonFuncs. fn.Parent()!=nil => fn.Parent().AnonFunc[fn.anonIdx] == fn.
 
@@ -347,12 +365,19 @@ type Function struct {
 	generic        *generic             // instances of this function, if generic
 
 	// The following fields are cleared after building.
+	build        buildFunc                // algorithm to build function body (nil => built)
 	currentBlock *BasicBlock              // where to emit code
 	vars         map[*types.Var]Value     // addresses of local variables
-	namedResults []*Alloc                 // tuple of named results
+	results      []*Alloc                 // result allocations of the current function
+	returnVars   []*types.Var             // variables for a return statement. Either results or for range-over-func a parent's results
 	targets      *targets                 // linked stack of branch targets
 	lblocks      map[*types.Label]*lblock // labelled blocks
 	subst        *subster                 // type parameter substitutions (if non-nil)
+	jump         *types.Var               // synthetic variable for the yield state (non-nil => range-over-func)
+	deferstack   *types.Var               // synthetic variable holding enclosing ssa:deferstack()
+	source       *Function                // nearest enclosing source function
+	exits        []*exit                  // exits of the function that need to be resolved
+	uniq         int64                    // source of unique ints within the source tree while building
 }
 
 // BasicBlock represents an SSA basic block.
@@ -1230,6 +1255,12 @@ type Go struct {
 // The Defer instruction pushes the specified call onto a stack of
 // functions to be called by a RunDefers instruction or by a panic.
 //
+// If _DeferStack != nil, it indicates the defer list that the defer is
+// added to. Defer list values come from the Builtin function
+// ssa:deferstack. Calls to ssa:deferstack() produces the defer stack
+// of the current function frame. _DeferStack allows for deferring into an
+// alternative function stack than the current function.
+//
 // See CallCommon for generic function call documentation.
 //
 // Pos() returns the ast.DeferStmt.Defer.
@@ -1241,8 +1272,11 @@ type Go struct {
 //	defer invoke t5.Println(...t6)
 type Defer struct {
 	anInstruction
-	Call CallCommon
-	pos  token.Pos
+	Call        CallCommon
+	_DeferStack Value // stack (from ssa:deferstack() intrinsic) onto which this function is pushed
+	pos         token.Pos
+
+	// TODO: Exporting _DeferStack and possibly making _DeferStack != nil awaits proposal https://github.com/golang/go/issues/66601.
 }
 
 // The Send instruction sends X on channel Chan.
@@ -1684,7 +1718,7 @@ func (s *Call) Operands(rands []*Value) []*Value {
 }
 
 func (s *Defer) Operands(rands []*Value) []*Value {
-	return s.Call.Operands(rands)
+	return append(s.Call.Operands(rands), &s._DeferStack)
 }
 
 func (v *ChangeInterface) Operands(rands []*Value) []*Value {
@@ -1835,3 +1869,7 @@ func (v *Const) Operands(rands []*Value) []*Value     { return rands }
 func (v *Function) Operands(rands []*Value) []*Value  { return rands }
 func (v *Global) Operands(rands []*Value) []*Value    { return rands }
 func (v *Parameter) Operands(rands []*Value) []*Value { return rands }
+
+// Exposed to interp using the linkname hack
+// TODO(taking): Remove some form of https://go.dev/issue/66601 is accepted.
+func deferStack(i *Defer) Value { return i._DeferStack }

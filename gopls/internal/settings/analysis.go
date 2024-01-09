@@ -12,7 +12,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/atomic"
 	"golang.org/x/tools/go/analysis/passes/atomicalign"
 	"golang.org/x/tools/go/analysis/passes/bools"
-	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/analysis/passes/buildtag"
 	"golang.org/x/tools/go/analysis/passes/cgocall"
 	"golang.org/x/tools/go/analysis/passes/composite"
@@ -117,7 +116,6 @@ func init() {
 	suppressOnRangeOverFunc := func(a *analysis.Analyzer) {
 		a.Requires = append(a.Requires, norangeoverfunc.Analyzer)
 	}
-	suppressOnRangeOverFunc(buildssa.Analyzer)
 	// buildir is non-exported so we have to scan the Analysis.Requires graph to find it.
 	var buildir *analysis.Analyzer
 	for _, a := range staticcheck.Analyzers {

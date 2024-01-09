@@ -50,7 +50,7 @@ func f(ptr *int) {
 }
 
 -- q/q.go --
-package q // uses range-over-func, so no diagnostics from nilness or SA4010
+package q // uses range-over-func, so no diagnostics from SA4010
 
 type iterSeq[T any] func(yield func(T) bool)
 
@@ -65,7 +65,7 @@ func f(seq iterSeq[int]) {
 
 func _(ptr *int) {
 	if ptr == nil {
-		println(*ptr) // no nilness finding
+		println(*ptr) //@diag(re"[*]ptr", re"nil dereference in load")
 	}
 }
 

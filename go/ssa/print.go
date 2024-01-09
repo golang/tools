@@ -39,7 +39,7 @@ func relName(v Value, i Instruction) string {
 	return v.Name()
 }
 
-// normalizeAnyFortesting controls whether we replace occurrences of
+// normalizeAnyForTesting controls whether we replace occurrences of
 // interface{} with any. It is only used for normalizing test output.
 var normalizeAnyForTesting bool
 
@@ -355,7 +355,12 @@ func (s *Send) String() string {
 }
 
 func (s *Defer) String() string {
-	return printCall(&s.Call, "defer ", s)
+	prefix := "defer "
+	if s._DeferStack != nil {
+		prefix += "[" + relName(s._DeferStack, s) + "] "
+	}
+	c := printCall(&s.Call, prefix, s)
+	return c
 }
 
 func (s *Select) String() string {

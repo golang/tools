@@ -142,6 +142,9 @@ func (subst *subster) typ(t types.Type) (res types.Type) {
 	case *types.Named:
 		return subst.named(t)
 
+	case *opaqueType:
+		return t // opaque types are never substituted
+
 	default:
 		panic("unreachable")
 	}

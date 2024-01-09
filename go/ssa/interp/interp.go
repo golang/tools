@@ -52,6 +52,7 @@ import (
 	"reflect"
 	"runtime"
 	"sync/atomic"
+	_ "unsafe"
 
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/internal/typeparams"
@@ -262,11 +263,15 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 
 	case *ssa.Defer:
 		fn, args := prepareCall(fr, &instr.Call)
-		fr.defers = &deferred{
+		defers := &fr.defers
+		if into := fr.get(deferStack(instr)); into != nil {
+			defers = into.(**deferred)
+		}
+		*defers = &deferred{
 			fn:    fn,
 			args:  args,
 			instr: instr,
-			tail:  fr.defers,
+			tail:  *defers,
 		}
 
 	case *ssa.Go:
@@ -718,3 +723,8 @@ func Interpret(mainpkg *ssa.Package, mode Mode, sizes types.Sizes, filename stri
 	}
 	return
 }
+
+// TODO(taking): Hack while proposal #66601 is being finalized.
+//
+//go:linkname deferStack golang.org/x/tools/go/ssa.deferStack
+func deferStack(i *ssa.Defer) ssa.Value

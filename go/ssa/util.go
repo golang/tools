@@ -43,6 +43,13 @@ func isBlankIdent(e ast.Expr) bool {
 	return ok && id.Name == "_"
 }
 
+// rangePosition is the position to give for the `range` token in a RangeStmt.
+var rangePosition = func(rng *ast.RangeStmt) token.Pos {
+	// Before 1.20, this is unreachable.
+	// rng.For is a close, but incorrect position.
+	return rng.For
+}
+
 //// Type utilities.  Some of these belong in go/types.
 
 // isNonTypeParamInterface reports whether t is an interface type but not a type parameter.

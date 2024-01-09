@@ -27,6 +27,7 @@ package interp
 // - iter --- iterators from 'range' over map or string.
 // - bad --- a poison pill for locals that have gone out of scope.
 // - rtype -- the interpreter's concrete implementation of reflect.Type
+// - **deferred -- the address of a frame's defer stack for a Defer._Stack.
 //
 // Note that nil is not on this list.
 //
