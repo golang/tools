@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
@@ -76,6 +77,7 @@ func (c *Cache) MemStats() map[reflect.Type]int { return c.store.Stats() }
 
 // FileStats returns information about the set of files stored in the cache.
 // It is intended for debugging only.
-func (c *Cache) FileStats() (files, largest, errs int) {
-	return c.fileStats()
+func (c *Cache) FileStats() (stats command.FileStats) {
+	stats.Total, stats.Largest, stats.Errs = c.fileStats()
+	return
 }

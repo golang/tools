@@ -1052,7 +1052,7 @@ func (c *commandHandler) MemStats(ctx context.Context) (command.MemStatsResult, 
 // about the current state of the loaded workspace for the current session.
 func (c *commandHandler) WorkspaceStats(ctx context.Context) (command.WorkspaceStatsResult, error) {
 	var res command.WorkspaceStatsResult
-	res.Files.Total, res.Files.Largest, res.Files.Errs = c.s.session.Cache().FileStats()
+	res.Files = c.s.session.Cache().FileStats()
 
 	for _, view := range c.s.session.Views() {
 		vs, err := collectViewStats(ctx, view)
