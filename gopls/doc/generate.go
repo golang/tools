@@ -108,10 +108,11 @@ func loadAPI() (*settings.APIJSON, error) {
 	}
 	pkg := pkgs[0]
 
-	api := &settings.APIJSON{
-		Options: map[string][]*settings.OptionJSON{},
-	}
 	defaults := settings.DefaultOptions()
+	api := &settings.APIJSON{
+		Options:   map[string][]*settings.OptionJSON{},
+		Analyzers: loadAnalyzers(defaults.DefaultAnalyzers), // no staticcheck analyzers
+	}
 
 	api.Commands, err = loadCommands(pkg)
 	if err != nil {
@@ -122,14 +123,6 @@ func loadAPI() (*settings.APIJSON, error) {
 	// Transform the internal command name to the external command name.
 	for _, c := range api.Commands {
 		c.Command = command.ID(c.Command)
-	}
-	for _, m := range []map[string]*settings.Analyzer{
-		defaults.DefaultAnalyzers,
-		defaults.TypeErrorAnalyzers,
-		defaults.ConvenienceAnalyzers,
-		// Don't yet add staticcheck analyzers.
-	} {
-		api.Analyzers = append(api.Analyzers, loadAnalyzers(m)...)
 	}
 	api.Hints = loadHints(source.AllInlayHints)
 	for _, category := range []reflect.Value{

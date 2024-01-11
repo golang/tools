@@ -9,14 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/ast"
-	"log"
 	"strings"
 
-	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
-	"golang.org/x/tools/gopls/internal/analysis/infertypeargs"
-	"golang.org/x/tools/gopls/internal/analysis/stubmethods"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
@@ -93,69 +89,14 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 		}
 	}
 
-	var stubMethodsDiagnostics []protocol.Diagnostic
-	if wantQuickFixes && snapshot.Options().IsAnalyzerEnabled(stubmethods.Analyzer.Name) {
-		for _, pd := range diagnostics {
-			if stubmethods.MatchesMessage(pd.Message) {
-				stubMethodsDiagnostics = append(stubMethodsDiagnostics, pd)
-			}
-		}
-	}
-
 	// Code actions requiring type information.
-	if len(stubMethodsDiagnostics) > 0 ||
-		want[protocol.RefactorRewrite] ||
+	if want[protocol.RefactorRewrite] ||
 		want[protocol.RefactorInline] ||
 		want[protocol.GoTest] {
 		pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 		if err != nil {
 			return nil, err
 		}
-		for _, pd := range stubMethodsDiagnostics {
-			start, end, err := pgf.RangePos(pd.Range)
-			if err != nil {
-				return nil, err
-			}
-
-			var (
-				diag analysis.Diagnostic
-				ok   bool
-			)
-			func() {
-				// golang/go#61693: code actions were refactored to run
-				// outside of the analysis framework, but as a result
-				// they lost their panic recovery.
-				//
-				// Stubmethods "should never fail"", but put back the
-				// panic recovery as a defensive measure.
-				defer func() {
-					if r := recover(); r != nil {
-						err = bug.Errorf("stubmethods panicked: %v", r)
-					}
-				}()
-				diag, ok = stubmethods.DiagnosticForError(pkg.FileSet(), pgf.File, start, end, pd.Message, pkg.GetTypesInfo())
-			}()
-			if err != nil {
-				return nil, err // panicked
-			}
-			if !ok {
-				continue
-			}
-
-			for _, fix := range diag.SuggestedFixes {
-				cmd, err := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
-					Fix:          diag.Category,
-					URI:          pgf.URI,
-					Range:        pd.Range,
-					ResolveEdits: supportsResolveEdits(snapshot.Options()),
-				})
-				if err != nil {
-					log.Fatalf("NewApplyFixCommand: %v", err)
-				}
-				actions = append(actions, newCodeAction(fix.Message, protocol.QuickFix, &cmd, nil, snapshot.Options()))
-			}
-		}
-
 		if want[protocol.RefactorRewrite] {
 			rewrites, err := getRewriteCodeActions(snapshot, pkg, pgf, fh, rng, snapshot.Options())
 			if err != nil {
@@ -368,56 +309,27 @@ func getRewriteCodeActions(snapshot *cache.Snapshot, pkg *cache.Package, pgf *Pa
 	//
 	// TODO: Consider removing the inspection after convenienceAnalyzers are removed.
 	inspect := inspector.New([]*ast.File{pgf.File})
-	if snapshot.Options().IsAnalyzerEnabled(fillstruct.Analyzer.Name) {
-		for _, diag := range fillstruct.DiagnoseFillableStructs(inspect, start, end, pkg.GetTypes(), pkg.GetTypesInfo()) {
-			rng, err := pgf.Mapper.PosRange(pgf.Tok, diag.Pos, diag.End)
+	for _, diag := range fillstruct.Diagnose(inspect, start, end, pkg.GetTypes(), pkg.GetTypesInfo()) {
+		rng, err := pgf.Mapper.PosRange(pgf.Tok, diag.Pos, diag.End)
+		if err != nil {
+			return nil, err
+		}
+		for _, fix := range diag.SuggestedFixes {
+			cmd, err := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
+				Fix:          diag.Category,
+				URI:          pgf.URI,
+				Range:        rng,
+				ResolveEdits: supportsResolveEdits(options),
+			})
 			if err != nil {
 				return nil, err
 			}
-			for _, fix := range diag.SuggestedFixes {
-				cmd, err := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
-					Fix:          diag.Category,
-					URI:          pgf.URI,
-					Range:        rng,
-					ResolveEdits: supportsResolveEdits(options),
-				})
-				if err != nil {
-					return nil, err
-				}
-				commands = append(commands, cmd)
-			}
+			commands = append(commands, cmd)
 		}
 	}
 
 	for i := range commands {
 		actions = append(actions, newCodeAction(commands[i].Title, protocol.RefactorRewrite, &commands[i], nil, options))
-	}
-
-	if snapshot.Options().IsAnalyzerEnabled(infertypeargs.Analyzer.Name) {
-		for _, d := range infertypeargs.DiagnoseInferableTypeArgs(pkg.FileSet(), inspect, start, end, pkg.GetTypes(), pkg.GetTypesInfo()) {
-			if len(d.SuggestedFixes) != 1 {
-				panic(fmt.Sprintf("unexpected number of suggested fixes from infertypeargs: %v", len(d.SuggestedFixes)))
-			}
-			fix := d.SuggestedFixes[0]
-			var edits []protocol.TextEdit
-			for _, analysisEdit := range fix.TextEdits {
-				rng, err := pgf.Mapper.PosRange(pgf.Tok, analysisEdit.Pos, analysisEdit.End)
-				if err != nil {
-					return nil, err
-				}
-				edits = append(edits, protocol.TextEdit{
-					Range:   rng,
-					NewText: string(analysisEdit.NewText),
-				})
-			}
-			actions = append(actions, protocol.CodeAction{
-				Title: "Simplify type arguments",
-				Kind:  protocol.RefactorRewrite,
-				Edit: &protocol.WorkspaceEdit{
-					DocumentChanges: documentChanges(fh, edits),
-				},
-			})
-		}
 	}
 
 	return actions, nil

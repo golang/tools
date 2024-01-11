@@ -304,6 +304,11 @@ var GeneratedAPIJSON = &APIJSON{
 							Default: "false",
 						},
 						{
+							Name:    "\"fillreturns\"",
+							Doc:     "suggest fixes for errors due to an incorrect number of return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\n\nwill turn into\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.",
+							Default: "true",
+						},
+						{
 							Name:    "\"httpresponse\"",
 							Doc:     "check for mistakes using HTTP responses\n\nA common mistake when using the net/http package is to defer a function\ncall to close the http.Response Body before checking the error that\ndetermines whether the response is valid:\n\n\tresp, err := http.Head(url)\n\tdefer resp.Body.Close()\n\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n\t// (defer statement belongs here)\n\nThis checker helps uncover latent nil dereference bugs by reporting a\ndiagnostic for such mistakes.",
 							Default: "true",
@@ -311,6 +316,11 @@ var GeneratedAPIJSON = &APIJSON{
 						{
 							Name:    "\"ifaceassert\"",
 							Doc:     "detect impossible interface-to-interface type assertions\n\nThis checker flags type assertions v.(T) and corresponding type-switch cases\nin which the static type V of v is an interface that cannot possibly implement\nthe target interface T. This occurs when V and T contain methods with the same\nname but different signatures. Example:\n\n\tvar v interface {\n\t\tRead()\n\t}\n\t_ = v.(io.Reader)\n\nThe Read method in v has a different signature than the Read method in\nio.Reader, so this assertion cannot succeed.",
+							Default: "true",
+						},
+						{
+							Name:    "\"infertypeargs\"",
+							Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
 							Default: "true",
 						},
 						{
@@ -331,6 +341,16 @@ var GeneratedAPIJSON = &APIJSON{
 						{
 							Name:    "\"nilness\"",
 							Doc:     "check for redundant or impossible nil comparisons\n\nThe nilness checker inspects the control-flow graph of each function in\na package and reports nil pointer dereferences, degenerate nil\npointers, and panics with nil values. A degenerate comparison is of the form\nx==nil or x!=nil where x is statically known to be nil or non-nil. These are\noften a mistake, especially in control flow related to errors. Panics with nil\nvalues are checked because they are not detectable by\n\n\tif r := recover(); r != nil {\n\nThis check reports conditions such as:\n\n\tif f == nil { // impossible condition (f is a function)\n\t}\n\nand:\n\n\tp := &v\n\t...\n\tif p != nil { // tautological condition\n\t}\n\nand:\n\n\tif p == nil {\n\t\tprint(*p) // nil dereference\n\t}\n\nand:\n\n\tif p == nil {\n\t\tpanic(p)\n\t}",
+							Default: "true",
+						},
+						{
+							Name:    "\"nonewvars\"",
+							Doc:     "suggested fixes for \"no new vars on left side of :=\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"no new vars on left side of :=\". For example:\n\n\tz := 1\n\tz := 2\n\nwill turn into\n\n\tz := 1\n\tz = 2",
+							Default: "true",
+						},
+						{
+							Name:    "\"noresultvalues\"",
+							Doc:     "suggested fixes for unexpected return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"no result values expected\" or \"too many return values\".\nFor example:\n\n\tfunc z() { return nil }\n\nwill turn into\n\n\tfunc z() { return }",
 							Default: "true",
 						},
 						{
@@ -389,6 +409,11 @@ var GeneratedAPIJSON = &APIJSON{
 							Default: "true",
 						},
 						{
+							Name:    "\"stubmethods\"",
+							Doc:     "detect missing methods and fix with stub implementations\n\nThis analyzer detects type-checking errors due to missing methods\nin assignments from concrete types to interface types, and offers\na suggested fix that will create a set of stub methods so that\nthe concrete type satisfies the interface.\n\nFor example, this function will not compile because the value\nNegativeErr{} does not implement the \"error\" interface:\n\n\tfunc sqrt(x float64) (float64, error) {\n\t\tif x < 0 {\n\t\t\treturn 0, NegativeErr{} // error: missing method\n\t\t}\n\t\t...\n\t}\n\n\ttype NegativeErr struct{}\n\nThis analyzer will suggest a fix to declare this method:\n\n\t// Error implements error.Error.\n\tfunc (NegativeErr) Error() string {\n\t\tpanic(\"unimplemented\")\n\t}\n\n(At least, it appears to behave that way, but technically it\ndoesn't use the SuggestedFix mechanism and the stub is created by\nlogic in gopls's source.stub function.)",
+							Default: "true",
+						},
+						{
 							Name:    "\"testinggoroutine\"",
 							Doc:     "report calls to (*testing.T).Fatal from goroutines started by a test\n\nFunctions that abruptly terminate a test, such as the Fatal, Fatalf, FailNow, and\nSkip{,f,Now} methods of *testing.T, must be called from the test goroutine itself.\nThis checker detects calls to these functions that occur within a goroutine\nstarted by the test. For example:\n\n\tfunc TestFoo(t *testing.T) {\n\t    go func() {\n\t        t.Fatal(\"oops\") // error: (*T).Fatal called from non-test goroutine\n\t    }()\n\t}",
 							Default: "true",
@@ -401,6 +426,11 @@ var GeneratedAPIJSON = &APIJSON{
 						{
 							Name:    "\"timeformat\"",
 							Doc:     "check for calls of (time.Time).Format or time.Parse with 2006-02-01\n\nThe timeformat checker looks for time formats with the 2006-02-01 (yyyy-dd-mm)\nformat. Internationally, \"yyyy-dd-mm\" does not occur in common calendar date\nstandards, and so it is more likely that 2006-01-02 (yyyy-mm-dd) was intended.",
+							Default: "true",
+						},
+						{
+							Name:    "\"undeclaredname\"",
+							Doc:     "suggested fixes for \"undeclared name: <>\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"undeclared name: <>\". It will either insert a new statement,\nsuch as:\n\n\t<> :=\n\nor a new function declaration, such as:\n\n\tfunc <>(inferred parameters) {\n\t\tpanic(\"implement me!\")\n\t}",
 							Default: "true",
 						},
 						{
@@ -429,6 +459,11 @@ var GeneratedAPIJSON = &APIJSON{
 							Default: "true",
 						},
 						{
+							Name:    "\"unusedvariable\"",
+							Doc:     "check for unused variables and suggest fixes",
+							Default: "false",
+						},
+						{
 							Name:    "\"unusedwrite\"",
 							Doc:     "checks for unused writes\n\nThe analyzer reports instances of writes to struct fields and\narrays that are never read. Specifically, when a struct object\nor an array is copied, its elements are copied implicitly by\nthe compiler, and any element write to this copy does nothing\nwith the original object.\n\nFor example:\n\n\ttype T struct { x int }\n\n\tfunc f(input []T) {\n\t\tfor i, v := range input {  // v is a copy\n\t\t\tv.x = i  // unused write to field x\n\t\t}\n\t}\n\nAnother example is about non-pointer receiver:\n\n\ttype T struct { x int }\n\n\tfunc (t T) f() {  // t is a copy\n\t\tt.x = i  // unused write to field x\n\t}",
 							Default: "false",
@@ -437,46 +472,6 @@ var GeneratedAPIJSON = &APIJSON{
 							Name:    "\"useany\"",
 							Doc:     "check for constraints that could be simplified to \"any\"",
 							Default: "false",
-						},
-						{
-							Name:    "\"fillreturns\"",
-							Doc:     "suggest fixes for errors due to an incorrect number of return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\n\nwill turn into\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.",
-							Default: "true",
-						},
-						{
-							Name:    "\"nonewvars\"",
-							Doc:     "suggested fixes for \"no new vars on left side of :=\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"no new vars on left side of :=\". For example:\n\n\tz := 1\n\tz := 2\n\nwill turn into\n\n\tz := 1\n\tz = 2",
-							Default: "true",
-						},
-						{
-							Name:    "\"noresultvalues\"",
-							Doc:     "suggested fixes for unexpected return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"no result values expected\" or \"too many return values\".\nFor example:\n\n\tfunc z() { return nil }\n\nwill turn into\n\n\tfunc z() { return }",
-							Default: "true",
-						},
-						{
-							Name:    "\"undeclaredname\"",
-							Doc:     "suggested fixes for \"undeclared name: <>\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"undeclared name: <>\". It will either insert a new statement,\nsuch as:\n\n\t<> :=\n\nor a new function declaration, such as:\n\n\tfunc <>(inferred parameters) {\n\t\tpanic(\"implement me!\")\n\t}",
-							Default: "true",
-						},
-						{
-							Name:    "\"unusedvariable\"",
-							Doc:     "check for unused variables and suggest fixes",
-							Default: "false",
-						},
-						{
-							Name:    "\"fillstruct\"",
-							Doc:     "note incomplete struct initializations\n\nThis analyzer provides diagnostics for any struct literals that do not have\nany fields initialized. Because the suggested fix for this analysis is\nexpensive to compute, callers should compute it separately, using the\nSuggestedFix function below.\n",
-							Default: "true",
-						},
-						{
-							Name:    "\"infertypeargs\"",
-							Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
-							Default: "true",
-						},
-						{
-							Name:    "\"stubmethods\"",
-							Doc:     "detect missing methods and fix with stub implementations\n\nThis analyzer detects type-checking errors due to missing methods\nin assignments from concrete types to interface types, and offers\na suggested fix that will create a set of stub methods so that\nthe concrete type satisfies the interface.\n\nFor example, this function will not compile because the value\nNegativeErr{} does not implement the \"error\" interface:\n\n\tfunc sqrt(x float64) (float64, error) {\n\t\tif x < 0 {\n\t\t\treturn 0, NegativeErr{} // error: missing method\n\t\t}\n\t\t...\n\t}\n\n\ttype NegativeErr struct{}\n\nThis analyzer will suggest a fix to declare this method:\n\n\t// Error implements error.Error.\n\tfunc (NegativeErr) Error() string {\n\t\tpanic(\"unimplemented\")\n\t}\n\n(At least, it appears to behave that way, but technically it\ndoesn't use the SuggestedFix mechanism and the stub is created by\nlogic in gopls's source.stub function.)",
-							Default: "true",
 						},
 					},
 				},
@@ -1072,6 +1067,12 @@ var GeneratedAPIJSON = &APIJSON{
 			URL:  "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/fieldalignment",
 		},
 		{
+			Name:    "fillreturns",
+			Doc:     "suggest fixes for errors due to an incorrect number of return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\n\nwill turn into\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillreturns",
+			Default: true,
+		},
+		{
 			Name:    "httpresponse",
 			Doc:     "check for mistakes using HTTP responses\n\nA common mistake when using the net/http package is to defer a function\ncall to close the http.Response Body before checking the error that\ndetermines whether the response is valid:\n\n\tresp, err := http.Head(url)\n\tdefer resp.Body.Close()\n\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n\t// (defer statement belongs here)\n\nThis checker helps uncover latent nil dereference bugs by reporting a\ndiagnostic for such mistakes.",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/httpresponse",
@@ -1081,6 +1082,12 @@ var GeneratedAPIJSON = &APIJSON{
 			Name:    "ifaceassert",
 			Doc:     "detect impossible interface-to-interface type assertions\n\nThis checker flags type assertions v.(T) and corresponding type-switch cases\nin which the static type V of v is an interface that cannot possibly implement\nthe target interface T. This occurs when V and T contain methods with the same\nname but different signatures. Example:\n\n\tvar v interface {\n\t\tRead()\n\t}\n\t_ = v.(io.Reader)\n\nThe Read method in v has a different signature than the Read method in\nio.Reader, so this assertion cannot succeed.",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/ifaceassert",
+			Default: true,
+		},
+		{
+			Name:    "infertypeargs",
+			Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/infertypeargs",
 			Default: true,
 		},
 		{
@@ -1105,6 +1112,18 @@ var GeneratedAPIJSON = &APIJSON{
 			Name:    "nilness",
 			Doc:     "check for redundant or impossible nil comparisons\n\nThe nilness checker inspects the control-flow graph of each function in\na package and reports nil pointer dereferences, degenerate nil\npointers, and panics with nil values. A degenerate comparison is of the form\nx==nil or x!=nil where x is statically known to be nil or non-nil. These are\noften a mistake, especially in control flow related to errors. Panics with nil\nvalues are checked because they are not detectable by\n\n\tif r := recover(); r != nil {\n\nThis check reports conditions such as:\n\n\tif f == nil { // impossible condition (f is a function)\n\t}\n\nand:\n\n\tp := &v\n\t...\n\tif p != nil { // tautological condition\n\t}\n\nand:\n\n\tif p == nil {\n\t\tprint(*p) // nil dereference\n\t}\n\nand:\n\n\tif p == nil {\n\t\tpanic(p)\n\t}",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/nilness",
+			Default: true,
+		},
+		{
+			Name:    "nonewvars",
+			Doc:     "suggested fixes for \"no new vars on left side of :=\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"no new vars on left side of :=\". For example:\n\n\tz := 1\n\tz := 2\n\nwill turn into\n\n\tz := 1\n\tz = 2",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/nonewvars",
+			Default: true,
+		},
+		{
+			Name:    "noresultvalues",
+			Doc:     "suggested fixes for unexpected return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"no result values expected\" or \"too many return values\".\nFor example:\n\n\tfunc z() { return nil }\n\nwill turn into\n\n\tfunc z() { return }",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/noresultvars",
 			Default: true,
 		},
 		{
@@ -1173,6 +1192,12 @@ var GeneratedAPIJSON = &APIJSON{
 			Default: true,
 		},
 		{
+			Name:    "stubmethods",
+			Doc:     "detect missing methods and fix with stub implementations\n\nThis analyzer detects type-checking errors due to missing methods\nin assignments from concrete types to interface types, and offers\na suggested fix that will create a set of stub methods so that\nthe concrete type satisfies the interface.\n\nFor example, this function will not compile because the value\nNegativeErr{} does not implement the \"error\" interface:\n\n\tfunc sqrt(x float64) (float64, error) {\n\t\tif x < 0 {\n\t\t\treturn 0, NegativeErr{} // error: missing method\n\t\t}\n\t\t...\n\t}\n\n\ttype NegativeErr struct{}\n\nThis analyzer will suggest a fix to declare this method:\n\n\t// Error implements error.Error.\n\tfunc (NegativeErr) Error() string {\n\t\tpanic(\"unimplemented\")\n\t}\n\n(At least, it appears to behave that way, but technically it\ndoesn't use the SuggestedFix mechanism and the stub is created by\nlogic in gopls's source.stub function.)",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stubmethods",
+			Default: true,
+		},
+		{
 			Name:    "testinggoroutine",
 			Doc:     "report calls to (*testing.T).Fatal from goroutines started by a test\n\nFunctions that abruptly terminate a test, such as the Fatal, Fatalf, FailNow, and\nSkip{,f,Now} methods of *testing.T, must be called from the test goroutine itself.\nThis checker detects calls to these functions that occur within a goroutine\nstarted by the test. For example:\n\n\tfunc TestFoo(t *testing.T) {\n\t    go func() {\n\t        t.Fatal(\"oops\") // error: (*T).Fatal called from non-test goroutine\n\t    }()\n\t}",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/testinggoroutine",
@@ -1188,6 +1213,12 @@ var GeneratedAPIJSON = &APIJSON{
 			Name:    "timeformat",
 			Doc:     "check for calls of (time.Time).Format or time.Parse with 2006-02-01\n\nThe timeformat checker looks for time formats with the 2006-02-01 (yyyy-dd-mm)\nformat. Internationally, \"yyyy-dd-mm\" does not occur in common calendar date\nstandards, and so it is more likely that 2006-01-02 (yyyy-mm-dd) was intended.",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/timeformat",
+			Default: true,
+		},
+		{
+			Name:    "undeclaredname",
+			Doc:     "suggested fixes for \"undeclared name: <>\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"undeclared name: <>\". It will either insert a new statement,\nsuch as:\n\n\t<> :=\n\nor a new function declaration, such as:\n\n\tfunc <>(inferred parameters) {\n\t\tpanic(\"implement me!\")\n\t}",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/undeclaredname",
 			Default: true,
 		},
 		{
@@ -1221,6 +1252,11 @@ var GeneratedAPIJSON = &APIJSON{
 			Default: true,
 		},
 		{
+			Name: "unusedvariable",
+			Doc:  "check for unused variables and suggest fixes",
+			URL:  "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedvariable",
+		},
+		{
 			Name: "unusedwrite",
 			Doc:  "checks for unused writes\n\nThe analyzer reports instances of writes to struct fields and\narrays that are never read. Specifically, when a struct object\nor an array is copied, its elements are copied implicitly by\nthe compiler, and any element write to this copy does nothing\nwith the original object.\n\nFor example:\n\n\ttype T struct { x int }\n\n\tfunc f(input []T) {\n\t\tfor i, v := range input {  // v is a copy\n\t\t\tv.x = i  // unused write to field x\n\t\t}\n\t}\n\nAnother example is about non-pointer receiver:\n\n\ttype T struct { x int }\n\n\tfunc (t T) f() {  // t is a copy\n\t\tt.x = i  // unused write to field x\n\t}",
 			URL:  "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unusedwrite",
@@ -1229,53 +1265,6 @@ var GeneratedAPIJSON = &APIJSON{
 			Name: "useany",
 			Doc:  "check for constraints that could be simplified to \"any\"",
 			URL:  "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/useany",
-		},
-		{
-			Name:    "fillreturns",
-			Doc:     "suggest fixes for errors due to an incorrect number of return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\n\nwill turn into\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.",
-			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillreturns",
-			Default: true,
-		},
-		{
-			Name:    "nonewvars",
-			Doc:     "suggested fixes for \"no new vars on left side of :=\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"no new vars on left side of :=\". For example:\n\n\tz := 1\n\tz := 2\n\nwill turn into\n\n\tz := 1\n\tz = 2",
-			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/nonewvars",
-			Default: true,
-		},
-		{
-			Name:    "noresultvalues",
-			Doc:     "suggested fixes for unexpected return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"no result values expected\" or \"too many return values\".\nFor example:\n\n\tfunc z() { return nil }\n\nwill turn into\n\n\tfunc z() { return }",
-			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/noresultvars",
-			Default: true,
-		},
-		{
-			Name:    "undeclaredname",
-			Doc:     "suggested fixes for \"undeclared name: <>\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"undeclared name: <>\". It will either insert a new statement,\nsuch as:\n\n\t<> :=\n\nor a new function declaration, such as:\n\n\tfunc <>(inferred parameters) {\n\t\tpanic(\"implement me!\")\n\t}",
-			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/undeclaredname",
-			Default: true,
-		},
-		{
-			Name: "unusedvariable",
-			Doc:  "check for unused variables and suggest fixes",
-			URL:  "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedvariable",
-		},
-		{
-			Name:    "fillstruct",
-			Doc:     "note incomplete struct initializations\n\nThis analyzer provides diagnostics for any struct literals that do not have\nany fields initialized. Because the suggested fix for this analysis is\nexpensive to compute, callers should compute it separately, using the\nSuggestedFix function below.\n",
-			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillstruct",
-			Default: true,
-		},
-		{
-			Name:    "infertypeargs",
-			Doc:     "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
-			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/infertypeargs",
-			Default: true,
-		},
-		{
-			Name:    "stubmethods",
-			Doc:     "detect missing methods and fix with stub implementations\n\nThis analyzer detects type-checking errors due to missing methods\nin assignments from concrete types to interface types, and offers\na suggested fix that will create a set of stub methods so that\nthe concrete type satisfies the interface.\n\nFor example, this function will not compile because the value\nNegativeErr{} does not implement the \"error\" interface:\n\n\tfunc sqrt(x float64) (float64, error) {\n\t\tif x < 0 {\n\t\t\treturn 0, NegativeErr{} // error: missing method\n\t\t}\n\t\t...\n\t}\n\n\ttype NegativeErr struct{}\n\nThis analyzer will suggest a fix to declare this method:\n\n\t// Error implements error.Error.\n\tfunc (NegativeErr) Error() string {\n\t\tpanic(\"unimplemented\")\n\t}\n\n(At least, it appears to behave that way, but technically it\ndoesn't use the SuggestedFix mechanism and the stub is created by\nlogic in gopls's source.stub function.)",
-			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stubmethods",
-			Default: true,
 		},
 	},
 	Hints: []*HintJSON{

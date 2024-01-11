@@ -26,6 +26,9 @@ type Analyzer struct {
 
 	// Severity is the severity set for diagnostics reported by this
 	// analyzer. If left unset it defaults to Warning.
+	//
+	// Note: diagnostics with severity protocol.SeverityHint do not show up in
+	// the VS Code "problems" tab.
 	Severity protocol.DiagnosticSeverity
 
 	// Tag is extra tags (unnecessary, deprecated, etc) for diagnostics

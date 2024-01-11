@@ -204,7 +204,7 @@ The following markers are supported within marker tests:
     signatureHelp at the given location should match the provided string, with
     the active parameter (an index) highlighted.
 
-  - suggestedfix(location, regexp, kind, golden): like diag, the location and
+  - suggestedfix(location, regexp, golden): like diag, the location and
     regexp identify an expected diagnostic. This diagnostic must
     to have exactly one associated code action of the specified kind.
     This action is executed for its editing effects on the source files.

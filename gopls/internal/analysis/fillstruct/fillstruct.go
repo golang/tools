@@ -23,7 +23,6 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
@@ -31,41 +30,14 @@ import (
 	"golang.org/x/tools/internal/fuzzy"
 )
 
-const Doc = `note incomplete struct initializations
-
-This analyzer provides diagnostics for any struct literals that do not have
-any fields initialized. Because the suggested fix for this analysis is
-expensive to compute, callers should compute it separately, using the
-SuggestedFix function below.
-`
-
-var Analyzer = &analysis.Analyzer{
-	Name:             "fillstruct",
-	Doc:              Doc,
-	Requires:         []*analysis.Analyzer{inspect.Analyzer},
-	Run:              run,
-	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillstruct",
-	RunDespiteErrors: true,
-}
-
-// TODO(rfindley): remove this thin wrapper around the fillstruct refactoring,
-// and eliminate the fillstruct analyzer.
+// Diagnose computes diagnostics for fillable struct literals overlapping with
+// the provided start and end position.
 //
-// Previous iterations used the analysis framework for computing refactorings,
-// which proved inefficient.
-func run(pass *analysis.Pass) (interface{}, error) {
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	for _, d := range DiagnoseFillableStructs(inspect, token.NoPos, token.NoPos, pass.Pkg, pass.TypesInfo) {
-		pass.Report(d)
-	}
-	return nil, nil
-}
-
-// DiagnoseFillableStructs computes diagnostics for fillable struct composite
-// literals overlapping with the provided start and end position.
+// The diagnostic contains a lazy fix; the actual patch is computed
+// (via the ApplyFix command) by a call to [SuggestedFix].
 //
-// If either start or end is invalid, it is considered an unbounded condition.
-func DiagnoseFillableStructs(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Package, info *types.Info) []analysis.Diagnostic {
+// If either start or end is invalid, the entire package is inspected.
+func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Package, info *types.Info) []analysis.Diagnostic {
 	var diags []analysis.Diagnostic
 	nodeFilter := []ast.Node{(*ast.CompositeLit)(nil)}
 	inspect.Preorder(nodeFilter, func(n ast.Node) {

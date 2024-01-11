@@ -263,6 +263,29 @@ known as "false sharing" that slows down both goroutines.
 
 **Disabled by default. Enable it by setting `"analyses": {"fieldalignment": true}`.**
 
+## **fillreturns**
+
+fillreturns: suggest fixes for errors due to an incorrect number of return values
+
+This checker provides suggested fixes for type errors of the
+type "wrong number of return values (want %d, got %d)". For example:
+
+	func m() (int, string, *bool, error) {
+		return
+	}
+
+will turn into
+
+	func m() (int, string, *bool, error) {
+		return 0, "", nil, nil
+	}
+
+This functionality is similar to https://github.com/sqs/goreturns.
+
+[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillreturns)
+
+**Enabled by default.**
+
 ## **httpresponse**
 
 httpresponse: check for mistakes using HTTP responses
@@ -303,6 +326,24 @@ The Read method in v has a different signature than the Read method in
 io.Reader, so this assertion cannot succeed.
 
 [Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/ifaceassert)
+
+**Enabled by default.**
+
+## **infertypeargs**
+
+infertypeargs: check for unnecessary type arguments in call expressions
+
+Explicit type arguments may be omitted from call expressions if they can be
+inferred from function arguments, or from other type arguments:
+
+	func f[T any](T) {}
+	
+	func _() {
+		f[string]("foo") // string could be inferred
+	}
+
+
+[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/infertypeargs)
 
 **Enabled by default.**
 
@@ -439,6 +480,43 @@ and:
 	}
 
 [Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/nilness)
+
+**Enabled by default.**
+
+## **nonewvars**
+
+nonewvars: suggested fixes for "no new vars on left side of :="
+
+This checker provides suggested fixes for type errors of the
+type "no new vars on left side of :=". For example:
+
+	z := 1
+	z := 2
+
+will turn into
+
+	z := 1
+	z = 2
+
+[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/nonewvars)
+
+**Enabled by default.**
+
+## **noresultvalues**
+
+noresultvalues: suggested fixes for unexpected return values
+
+This checker provides suggested fixes for type errors of the
+type "no result values expected" or "too many return values".
+For example:
+
+	func z() { return nil }
+
+will turn into
+
+	func z() { return }
+
+[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/noresultvars)
 
 **Enabled by default.**
 
@@ -673,6 +751,42 @@ Also report certain struct tags (json, xml) used with unexported fields.
 
 **Enabled by default.**
 
+## **stubmethods**
+
+stubmethods: detect missing methods and fix with stub implementations
+
+This analyzer detects type-checking errors due to missing methods
+in assignments from concrete types to interface types, and offers
+a suggested fix that will create a set of stub methods so that
+the concrete type satisfies the interface.
+
+For example, this function will not compile because the value
+NegativeErr{} does not implement the "error" interface:
+
+	func sqrt(x float64) (float64, error) {
+		if x < 0 {
+			return 0, NegativeErr{} // error: missing method
+		}
+		...
+	}
+
+	type NegativeErr struct{}
+
+This analyzer will suggest a fix to declare this method:
+
+	// Error implements error.Error.
+	func (NegativeErr) Error() string {
+		panic("unimplemented")
+	}
+
+(At least, it appears to behave that way, but technically it
+doesn't use the SuggestedFix mechanism and the stub is created by
+logic in gopls's source.stub function.)
+
+[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stubmethods)
+
+**Enabled by default.**
+
 ## **testinggoroutine**
 
 testinggoroutine: report calls to (*testing.T).Fatal from goroutines started by a test
@@ -716,6 +830,26 @@ format. Internationally, "yyyy-dd-mm" does not occur in common calendar date
 standards, and so it is more likely that 2006-01-02 (yyyy-mm-dd) was intended.
 
 [Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/timeformat)
+
+**Enabled by default.**
+
+## **undeclaredname**
+
+undeclaredname: suggested fixes for "undeclared name: <>"
+
+This checker provides suggested fixes for type errors of the
+type "undeclared name: <>". It will either insert a new statement,
+such as:
+
+	<> :=
+
+or a new function declaration, such as:
+
+	func <>(inferred parameters) {
+		panic("implement me!")
+	}
+
+[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/undeclaredname)
 
 **Enabled by default.**
 
@@ -803,6 +937,14 @@ The set of functions may be controlled using flags.
 
 **Enabled by default.**
 
+## **unusedvariable**
+
+unusedvariable: check for unused variables and suggest fixes
+
+[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedvariable)
+
+**Disabled by default. Enable it by setting `"analyses": {"unusedvariable": true}`.**
+
 ## **unusedwrite**
 
 unusedwrite: checks for unused writes
@@ -842,161 +984,5 @@ useany: check for constraints that could be simplified to "any"
 [Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/useany)
 
 **Disabled by default. Enable it by setting `"analyses": {"useany": true}`.**
-
-## **fillreturns**
-
-fillreturns: suggest fixes for errors due to an incorrect number of return values
-
-This checker provides suggested fixes for type errors of the
-type "wrong number of return values (want %d, got %d)". For example:
-
-	func m() (int, string, *bool, error) {
-		return
-	}
-
-will turn into
-
-	func m() (int, string, *bool, error) {
-		return 0, "", nil, nil
-	}
-
-This functionality is similar to https://github.com/sqs/goreturns.
-
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillreturns)
-
-**Enabled by default.**
-
-## **nonewvars**
-
-nonewvars: suggested fixes for "no new vars on left side of :="
-
-This checker provides suggested fixes for type errors of the
-type "no new vars on left side of :=". For example:
-
-	z := 1
-	z := 2
-
-will turn into
-
-	z := 1
-	z = 2
-
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/nonewvars)
-
-**Enabled by default.**
-
-## **noresultvalues**
-
-noresultvalues: suggested fixes for unexpected return values
-
-This checker provides suggested fixes for type errors of the
-type "no result values expected" or "too many return values".
-For example:
-
-	func z() { return nil }
-
-will turn into
-
-	func z() { return }
-
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/noresultvars)
-
-**Enabled by default.**
-
-## **undeclaredname**
-
-undeclaredname: suggested fixes for "undeclared name: <>"
-
-This checker provides suggested fixes for type errors of the
-type "undeclared name: <>". It will either insert a new statement,
-such as:
-
-	<> :=
-
-or a new function declaration, such as:
-
-	func <>(inferred parameters) {
-		panic("implement me!")
-	}
-
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/undeclaredname)
-
-**Enabled by default.**
-
-## **unusedvariable**
-
-unusedvariable: check for unused variables and suggest fixes
-
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedvariable)
-
-**Disabled by default. Enable it by setting `"analyses": {"unusedvariable": true}`.**
-
-## **fillstruct**
-
-fillstruct: note incomplete struct initializations
-
-This analyzer provides diagnostics for any struct literals that do not have
-any fields initialized. Because the suggested fix for this analysis is
-expensive to compute, callers should compute it separately, using the
-SuggestedFix function below.
-
-
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillstruct)
-
-**Enabled by default.**
-
-## **infertypeargs**
-
-infertypeargs: check for unnecessary type arguments in call expressions
-
-Explicit type arguments may be omitted from call expressions if they can be
-inferred from function arguments, or from other type arguments:
-
-	func f[T any](T) {}
-	
-	func _() {
-		f[string]("foo") // string could be inferred
-	}
-
-
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/infertypeargs)
-
-**Enabled by default.**
-
-## **stubmethods**
-
-stubmethods: detect missing methods and fix with stub implementations
-
-This analyzer detects type-checking errors due to missing methods
-in assignments from concrete types to interface types, and offers
-a suggested fix that will create a set of stub methods so that
-the concrete type satisfies the interface.
-
-For example, this function will not compile because the value
-NegativeErr{} does not implement the "error" interface:
-
-	func sqrt(x float64) (float64, error) {
-		if x < 0 {
-			return 0, NegativeErr{} // error: missing method
-		}
-		...
-	}
-
-	type NegativeErr struct{}
-
-This analyzer will suggest a fix to declare this method:
-
-	// Error implements error.Error.
-	func (NegativeErr) Error() string {
-		panic("unimplemented")
-	}
-
-(At least, it appears to behave that way, but technically it
-doesn't use the SuggestedFix mechanism and the stub is created by
-logic in gopls's source.stub function.)
-
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stubmethods)
-
-**Enabled by default.**
 
 <!-- END Analyzers: DO NOT MANUALLY EDIT THIS SECTION -->

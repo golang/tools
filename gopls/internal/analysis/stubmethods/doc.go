@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package stubmethods defines an analyzer for missing interface methods.
+// Package stubmethods defines a code action for missing interface methods.
 //
 // # Analyzer stubmethods
 //

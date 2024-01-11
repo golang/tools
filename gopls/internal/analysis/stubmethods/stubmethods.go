@@ -73,9 +73,6 @@ func MatchesMessage(msg string) bool {
 // interface to fix the type checking error defined by (start, end, msg).
 //
 // If no such fix is possible, the second result is false.
-//
-// TODO(rfindley): simplify this signature once the stubmethods refactoring is
-// no longer wedged into the analysis framework.
 func DiagnosticForError(fset *token.FileSet, file *ast.File, start, end token.Pos, msg string, info *types.Info) (analysis.Diagnostic, bool) {
 	if !MatchesMessage(msg) {
 		return analysis.Diagnostic{}, false
@@ -89,10 +86,9 @@ func DiagnosticForError(fset *token.FileSet, file *ast.File, start, end token.Po
 	qf := typesutil.FileQualifier(file, si.Concrete.Obj().Pkg(), info)
 	iface := types.TypeString(si.Interface.Type(), qf)
 	return analysis.Diagnostic{
-		Pos: start,
-		End: end,
-		Message: fmt.Sprintf("Type %v lacks methods of interface %s",
-			types.TypeString(si.Concrete, qf), iface),
+		Pos:      start,
+		End:      end,
+		Message:  msg,
 		Category: FixCategory,
 		SuggestedFixes: []analysis.SuggestedFix{{
 			Message: fmt.Sprintf("Declare missing methods of %s", iface),

@@ -30,7 +30,6 @@ func Analyze(ctx context.Context, snapshot *cache.Snapshot, pkgIDs map[PackageID
 	categories := []map[string]*settings.Analyzer{
 		options.DefaultAnalyzers,
 		options.StaticcheckAnalyzers,
-		options.TypeErrorAnalyzers,
 	}
 
 	var analyzers []*settings.Analyzer

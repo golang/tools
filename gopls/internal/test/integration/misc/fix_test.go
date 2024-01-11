@@ -114,23 +114,17 @@ func Foo() error {
 			ReadDiagnostics("main.go", &d),
 		)
 		codeActions := env.CodeAction("main.go", d.Diagnostics)
-		if len(codeActions) != 2 {
-			t.Fatalf("expected 2 code actions, got %v", len(codeActions))
+		if len(codeActions) != 1 {
+			t.Fatalf("expected 1 code actions, got %v\n%v", len(codeActions), codeActions)
 		}
-		var foundQuickFix, foundFixAll bool
+		var foundQuickFix bool
 		for _, a := range codeActions {
 			if a.Kind == protocol.QuickFix {
 				foundQuickFix = true
 			}
-			if a.Kind == protocol.SourceFixAll {
-				foundFixAll = true
-			}
 		}
 		if !foundQuickFix {
 			t.Fatalf("expected quickfix code action, got none")
-		}
-		if !foundFixAll {
-			t.Fatalf("expected fixall code action, got none")
 		}
 		env.ApplyQuickFixes("main.go", d.Diagnostics)
 		env.AfterChange(NoDiagnostics(ForFile("main.go")))

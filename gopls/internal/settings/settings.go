@@ -54,7 +54,6 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/deprecated"
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/fillreturns"
-	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
 	"golang.org/x/tools/gopls/internal/analysis/infertypeargs"
 	"golang.org/x/tools/gopls/internal/analysis/nonewvars"
 	"golang.org/x/tools/gopls/internal/analysis/noresultvalues"
@@ -103,7 +102,7 @@ type Options struct {
 // TODO(rfindley): refactor to simplify this function. We no longer need the
 // different categories of analyzer.
 func (opts *Options) IsAnalyzerEnabled(name string) bool {
-	for _, amap := range []map[string]*Analyzer{opts.DefaultAnalyzers, opts.TypeErrorAnalyzers, opts.ConvenienceAnalyzers, opts.StaticcheckAnalyzers} {
+	for _, amap := range []map[string]*Analyzer{opts.DefaultAnalyzers, opts.StaticcheckAnalyzers} {
 		for _, analyzer := range amap {
 			if analyzer.Analyzer.Name == name && analyzer.IsEnabled(opts) {
 				return true
@@ -457,8 +456,6 @@ type Hooks struct {
 	GofumptFormat func(ctx context.Context, langVersion, modulePath string, src []byte) ([]byte, error)
 
 	DefaultAnalyzers     map[string]*Analyzer
-	TypeErrorAnalyzers   map[string]*Analyzer
-	ConvenienceAnalyzers map[string]*Analyzer
 	StaticcheckAnalyzers map[string]*Analyzer
 }
 
@@ -800,8 +797,6 @@ func (o *Options) Clone() *Options {
 		return dst
 	}
 	result.DefaultAnalyzers = copyAnalyzerMap(o.DefaultAnalyzers)
-	result.TypeErrorAnalyzers = copyAnalyzerMap(o.TypeErrorAnalyzers)
-	result.ConvenienceAnalyzers = copyAnalyzerMap(o.ConvenienceAnalyzers)
 	result.StaticcheckAnalyzers = copyAnalyzerMap(o.StaticcheckAnalyzers)
 	return result
 }
@@ -1380,68 +1375,25 @@ func (r *OptionResult) setStringSlice(s *[]string) {
 	}
 }
 
-func typeErrorAnalyzers() map[string]*Analyzer {
-	return map[string]*Analyzer{
-		fillreturns.Analyzer.Name: {
-			Analyzer: fillreturns.Analyzer,
-			// TODO(rfindley): is SourceFixAll even necessary here? Is that not implied?
-			ActionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
-			Enabled:     true,
-		},
-		nonewvars.Analyzer.Name: {
-			Analyzer: nonewvars.Analyzer,
-			Enabled:  true,
-		},
-		noresultvalues.Analyzer.Name: {
-			Analyzer: noresultvalues.Analyzer,
-			Enabled:  true,
-		},
-		undeclaredname.Analyzer.Name: {
-			Analyzer: undeclaredname.Analyzer,
-			Enabled:  true,
-		},
-		unusedvariable.Analyzer.Name: {
-			Analyzer: unusedvariable.Analyzer,
-			Enabled:  false,
-		},
-	}
-}
-
-// TODO(golang/go#61559): remove convenience analyzers now that they are not
-// used from the analysis framework.
-func convenienceAnalyzers() map[string]*Analyzer {
-	return map[string]*Analyzer{
-		fillstruct.Analyzer.Name: {
-			Analyzer:    fillstruct.Analyzer,
-			Enabled:     true,
-			ActionKinds: []protocol.CodeActionKind{protocol.RefactorRewrite},
-		},
-		stubmethods.Analyzer.Name: {
-			Analyzer: stubmethods.Analyzer,
-			Enabled:  true,
-		},
-		infertypeargs.Analyzer.Name: {
-			Analyzer:    infertypeargs.Analyzer,
-			Enabled:     true,
-			ActionKinds: []protocol.CodeActionKind{protocol.RefactorRewrite},
-		},
-	}
-}
-
-func defaultAnalyzers() map[string]*Analyzer {
+func analyzers() map[string]*Analyzer {
 	return map[string]*Analyzer{
 		// The traditional vet suite:
-		appends.Analyzer.Name:       {Analyzer: appends.Analyzer, Enabled: true},
-		asmdecl.Analyzer.Name:       {Analyzer: asmdecl.Analyzer, Enabled: true},
-		assign.Analyzer.Name:        {Analyzer: assign.Analyzer, Enabled: true},
-		atomic.Analyzer.Name:        {Analyzer: atomic.Analyzer, Enabled: true},
-		bools.Analyzer.Name:         {Analyzer: bools.Analyzer, Enabled: true},
-		buildtag.Analyzer.Name:      {Analyzer: buildtag.Analyzer, Enabled: true},
-		cgocall.Analyzer.Name:       {Analyzer: cgocall.Analyzer, Enabled: true},
-		composite.Analyzer.Name:     {Analyzer: composite.Analyzer, Enabled: true},
-		copylock.Analyzer.Name:      {Analyzer: copylock.Analyzer, Enabled: true},
-		defers.Analyzer.Name:        {Analyzer: defers.Analyzer, Enabled: true},
-		deprecated.Analyzer.Name:    {Analyzer: deprecated.Analyzer, Enabled: true, Severity: protocol.SeverityHint, Tag: []protocol.DiagnosticTag{protocol.Deprecated}},
+		appends.Analyzer.Name:   {Analyzer: appends.Analyzer, Enabled: true},
+		asmdecl.Analyzer.Name:   {Analyzer: asmdecl.Analyzer, Enabled: true},
+		assign.Analyzer.Name:    {Analyzer: assign.Analyzer, Enabled: true},
+		atomic.Analyzer.Name:    {Analyzer: atomic.Analyzer, Enabled: true},
+		bools.Analyzer.Name:     {Analyzer: bools.Analyzer, Enabled: true},
+		buildtag.Analyzer.Name:  {Analyzer: buildtag.Analyzer, Enabled: true},
+		cgocall.Analyzer.Name:   {Analyzer: cgocall.Analyzer, Enabled: true},
+		composite.Analyzer.Name: {Analyzer: composite.Analyzer, Enabled: true},
+		copylock.Analyzer.Name:  {Analyzer: copylock.Analyzer, Enabled: true},
+		defers.Analyzer.Name:    {Analyzer: defers.Analyzer, Enabled: true},
+		deprecated.Analyzer.Name: {
+			Analyzer: deprecated.Analyzer,
+			Enabled:  true,
+			Severity: protocol.SeverityHint,
+			Tag:      []protocol.DiagnosticTag{protocol.Deprecated},
+		},
 		directive.Analyzer.Name:     {Analyzer: directive.Analyzer, Enabled: true},
 		errorsas.Analyzer.Name:      {Analyzer: errorsas.Analyzer, Enabled: true},
 		httpresponse.Analyzer.Name:  {Analyzer: httpresponse.Analyzer, Enabled: true},
@@ -1472,8 +1424,13 @@ func defaultAnalyzers() map[string]*Analyzer {
 		unusedparams.Analyzer.Name:     {Analyzer: unusedparams.Analyzer, Enabled: true},
 		unusedwrite.Analyzer.Name:      {Analyzer: unusedwrite.Analyzer, Enabled: false},
 		useany.Analyzer.Name:           {Analyzer: useany.Analyzer, Enabled: false},
-		timeformat.Analyzer.Name:       {Analyzer: timeformat.Analyzer, Enabled: true},
-		embeddirective.Analyzer.Name:   {Analyzer: embeddirective.Analyzer, Enabled: true},
+		infertypeargs.Analyzer.Name: {
+			Analyzer: infertypeargs.Analyzer,
+			Enabled:  true,
+			Severity: protocol.SeverityHint,
+		},
+		timeformat.Analyzer.Name:     {Analyzer: timeformat.Analyzer, Enabled: true},
+		embeddirective.Analyzer.Name: {Analyzer: embeddirective.Analyzer, Enabled: true},
 
 		// gofmt -s suite:
 		simplifycompositelit.Analyzer.Name: {
@@ -1491,6 +1448,21 @@ func defaultAnalyzers() map[string]*Analyzer {
 			Enabled:     true,
 			ActionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
 		},
+
+		// Type error analyzers.
+		// These analyzers enrich go/types errors with suggested fixes.
+		fillreturns.Analyzer.Name:    {Analyzer: fillreturns.Analyzer, Enabled: true},
+		nonewvars.Analyzer.Name:      {Analyzer: nonewvars.Analyzer, Enabled: true},
+		noresultvalues.Analyzer.Name: {Analyzer: noresultvalues.Analyzer, Enabled: true},
+		stubmethods.Analyzer.Name:    {Analyzer: stubmethods.Analyzer, Enabled: true},
+		undeclaredname.Analyzer.Name: {Analyzer: undeclaredname.Analyzer, Enabled: true},
+		// TODO(rfindley): why isn't the 'unusedvariable' analyzer enabled, if it
+		// is only enhancing type errors with suggested fixes?
+		//
+		// In particular, enabling this analyzer could cause unused variables to be
+		// greyed out, (due to the 'deletions only' fix). That seems like a nice UI
+		// feature.
+		unusedvariable.Analyzer.Name: {Analyzer: unusedvariable.Analyzer, Enabled: false},
 	}
 }
 
