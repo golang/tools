@@ -104,8 +104,8 @@ type T struct {
 	}
 }
 
-func (T).M()
-func (T).m()
+func (T) M()
+func (T) m()
 ```
 
 T is in the package scope, and so should be linkable.

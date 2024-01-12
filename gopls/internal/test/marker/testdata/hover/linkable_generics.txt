@@ -67,7 +67,7 @@ type GT[P any] struct {
 	F P //@hover("F", "F", F),hover("P", "P", FP)
 }
 
-func (GT[P]).M(p P)
+func (GT[P]) M(p P)
 ```
 
 Hovering over type parameters should link to documentation.
@@ -86,7 +86,7 @@ type GT[P any] struct {
 	F P //@hover("F", "F", F),hover("P", "P", FP)
 }
 
-func (GT[P]).M(p P)
+func (GT[P]) M(p P)
 ```
 
 Hovering over type parameters should link to documentation.
@@ -136,7 +136,7 @@ type GT[P any] struct {
 	F P //@hover("F", "F", F),hover("P", "P", FP)
 }
 
-func (generic.GT[P]).M(p P)
+func (generic.GT[P]) M(p P)
 ```
 
 Hovering over type parameters should link to documentation.

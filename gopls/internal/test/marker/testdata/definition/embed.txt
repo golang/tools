@@ -208,6 +208,8 @@ type S2 struct {
 	F2   int    //@loc(S2F2, "F2")
 	*a.A        //@def("A", AString),def("a",AImport)
 }
+
+func (a.A) Hi()
 ```
 
 [`b.S2` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S2)
@@ -242,7 +244,7 @@ field Field int
 ```go
 type A string
 
-func (a.A).Hi()
+func (a.A) Hi()
 ```
 
 @loc(AString, "A")
@@ -253,7 +255,7 @@ func (a.A).Hi()
 ```go
 type aAlias = a.A
 
-func (a.A).Hi()
+func (a.A) Hi()
 ```
 
 @loc(aAlias, "aAlias")

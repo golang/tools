@@ -244,23 +244,42 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			return protocol.Range{}, nil, err
 		}
 
-		// Display the declared methods accessible from the identifier.
-		//
-		// (The format.Node call above displays any struct fields, public
-		// or private, in syntactic form. We choose not to recursively
-		// enumerate any fields and methods promoted from them.)
-		if !types.IsInterface(obj.Type()) {
-			sep := "\n\n"
-			for _, m := range typeutil.IntuitiveMethodSet(obj.Type(), nil) {
-				// Show direct methods that are either exported, or defined in the
-				// current package.
-				if (m.Obj().Exported() || m.Obj().Pkg() == pkg.GetTypes()) && len(m.Index()) == 1 {
-					b.WriteString(sep)
-					sep = "\n"
-					b.WriteString(types.ObjectString(m.Obj(), qf))
+		// For an interface type, explicit methods will have
+		// already been displayed when the node was formatted
+		// above. Don't list these again.
+		var skip map[string]bool
+		if iface, ok := spec.Type.(*ast.InterfaceType); ok {
+			if iface.Methods.List != nil {
+				for _, m := range iface.Methods.List {
+					if len(m.Names) == 1 {
+						if skip == nil {
+							skip = make(map[string]bool)
+						}
+						skip[m.Names[0].Name] = true
+					}
 				}
 			}
 		}
+
+		// Display all the type's accessible methods,
+		// including those that require a pointer receiver,
+		// and those promoted from embedded struct fields or
+		// embedded interfaces.
+		sep := "\n\n"
+		for _, m := range typeutil.IntuitiveMethodSet(obj.Type(), nil) {
+			if m.Obj().Pkg() != pkg.GetTypes() && !m.Obj().Exported() {
+				continue // inaccessible
+			}
+			if skip[m.Obj().Name()] {
+				continue // redundant with format.Node above
+			}
+			b.WriteString(sep)
+			sep = "\n"
+
+			// Use objectString for its prettier rendering of method receivers.
+			b.WriteString(objectString(m.Obj(), qf, token.NoPos, nil, nil))
+		}
+
 		signature = b.String()
 	}
 

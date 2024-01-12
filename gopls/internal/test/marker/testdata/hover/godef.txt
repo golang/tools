@@ -115,10 +115,10 @@ type Thing struct {
 	Member string //@loc(Member, "Member")
 }
 
-func (Thing).Method(i int) string
-func (*Thing).Method2(i int, j int) (error, string)
-func (Thing).Method3()
-func (*Thing).private()
+func (t Thing) Method(i int) string
+func (t *Thing) Method2(i int, j int) (error, string)
+func (t Thing) Method3()
+func (t *Thing) private()
 ```
 
 [`a.Thing` on pkg.go.dev](https://pkg.go.dev/godef.test/a#Thing)
@@ -129,8 +129,11 @@ type NextThing struct {
 	Value int
 }
 
-func (*NextThing).Method3() int
-func (NextThing).another() string
+func (t Thing) Method(i int) string
+func (t *Thing) Method2(i int, j int) (error, string)
+func (n *NextThing) Method3() int
+func (n NextThing) another() string
+func (t *Thing) private()
 ```
 
 [`a.NextThing` on pkg.go.dev](https://pkg.go.dev/godef.test/a#NextThing)

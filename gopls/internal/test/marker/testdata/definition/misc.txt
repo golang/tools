@@ -175,6 +175,8 @@ type I interface {
 	B()
 	J
 }
+
+func (J) Hello()
 ```
 
 [`a.I` on pkg.go.dev](https://pkg.go.dev/mod.com#I)
