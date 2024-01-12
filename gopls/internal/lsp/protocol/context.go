@@ -7,6 +7,7 @@ package protocol
 import (
 	"bytes"
 	"context"
+	"sync"
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/core"
@@ -38,8 +39,27 @@ func LogEvent(ctx context.Context, ev core.Event, lm label.Map, mt MessageType) 
 	if event.IsError(ev) {
 		msg.Type = Error
 	}
-	// TODO(adonovan): the goroutine here could cause log
-	// messages to be delivered out of order! Use a queue.
-	go client.LogMessage(xcontext.Detach(ctx), msg)
+
+	// The background goroutine lives forever once started,
+	// and ensures log messages are sent in order (#61216).
+	startLogSenderOnce.Do(func() {
+		go func() {
+			for f := range logQueue {
+				f()
+			}
+		}()
+	})
+
+	// Add the log item to a queue, rather than sending a
+	// window/logMessage request to the client synchronously,
+	// which would slow down this thread.
+	ctx2 := xcontext.Detach(ctx)
+	logQueue <- func() { client.LogMessage(ctx2, msg) }
+
 	return ctx
 }
+
+var (
+	startLogSenderOnce sync.Once
+	logQueue           = make(chan func(), 100) // big enough for a large transient burst
+)
