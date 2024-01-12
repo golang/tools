@@ -29,7 +29,7 @@ var _ a.I = &B{} //@ suggestedfix("&B{}", re"does not implement", out)
 -- @out/a/v2/b/b.go --
 @@ -7 +7,5 @@
 +// F implements a.I.
-+func (*B) F() a.T {
++func (b *B) F() a.T {
 +	panic("unimplemented")
 +}
 +
@@ -70,7 +70,7 @@ type I = a.I
 +
 @@ -7 +9,5 @@
 +// F implements a.I.
-+func (*B) F() a.T {
++func (b *B) F() a.T {
 +	panic("unimplemented")
 +}
 +
