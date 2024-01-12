@@ -26,5 +26,5 @@ import (
 func main() {
 	counter.Open() // Enable telemetry counter writing.
 	ctx := context.Background()
-	tool.Main(ctx, cmd.New("gopls", "", nil, hooks.Options), os.Args[1:])
+	tool.Main(ctx, cmd.New(hooks.Options), os.Args[1:])
 }

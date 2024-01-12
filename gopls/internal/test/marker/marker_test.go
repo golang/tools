@@ -789,7 +789,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	// Put a debug instance in the context to prevent logging to stderr.
 	// See associated TODO in runner.go: we should revisit this pattern.
 	ctx := context.Background()
-	ctx = debug.WithInstance(ctx, "", "off")
+	ctx = debug.WithInstance(ctx, "off")
 
 	awaiter := integration.NewAwaiter(sandbox.Workdir)
 	ss := lsprpc.NewStreamServer(cache, false, hooks.Options)

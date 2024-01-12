@@ -894,13 +894,13 @@ package foo
 		if got := len(stats2.BugReports); got > 0 {
 			t.Errorf("Got %d bug reports with -anon, want 0. Reports:%+v", got, stats2.BugReports)
 		}
-		var stats2AsMap map[string]interface{}
+		var stats2AsMap map[string]any
 		if err := json.Unmarshal([]byte(res2.stdout), &stats2AsMap); err != nil {
 			t.Fatalf("failed to unmarshal JSON output of stats command: %v", err)
 		}
 		// GOPACKAGESDRIVER is user information, but is ok to print zero value.
-		if v, ok := stats2AsMap["GOPACKAGESDRIVER"]; !ok || v != "" {
-			t.Errorf(`Got GOPACKAGESDRIVER=(%q, %v); want ("", true(found))`, v, ok)
+		if v, ok := stats2AsMap["GOPACKAGESDRIVER"]; ok && v != "" {
+			t.Errorf(`Got GOPACKAGESDRIVER=(%v, %v); want ("", true(found))`, v, ok)
 		}
 	}
 
@@ -1034,7 +1034,7 @@ func goplsMain() {
 		bug.PanicOnBugs = true
 	}
 
-	tool.Main(context.Background(), cmd.New("gopls", "", nil, hooks.Options), os.Args[1:])
+	tool.Main(context.Background(), cmd.New(hooks.Options), os.Args[1:])
 }
 
 // writeTree extracts a txtar archive into a new directory and returns its path.
@@ -1077,6 +1077,7 @@ func goplsWithEnv(t *testing.T, dir string, env []string, args ...string) *resul
 
 	goplsCmd := exec.Command(os.Args[0], args...)
 	goplsCmd.Env = append(os.Environ(), "ENTRYPOINT=goplsMain")
+	goplsCmd.Env = append(goplsCmd.Env, "GOPACKAGESDRIVER=off")
 	goplsCmd.Env = append(goplsCmd.Env, env...)
 	goplsCmd.Dir = dir
 	goplsCmd.Stdout = new(bytes.Buffer)

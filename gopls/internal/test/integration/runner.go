@@ -182,7 +182,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 			}
 
 			// TODO(rfindley): do we need an instance at all? Can it be removed?
-			ctx = debug.WithInstance(ctx, "", "off")
+			ctx = debug.WithInstance(ctx, "off")
 
 			rootDir := filepath.Join(r.tempDir, filepath.FromSlash(t.Name()))
 			if err := os.MkdirAll(rootDir, 0755); err != nil {
@@ -349,7 +349,7 @@ func (r *Runner) experimentalServer(optsHook func(*settings.Options)) jsonrpc2.S
 func (r *Runner) forwardedServer(optsHook func(*settings.Options)) jsonrpc2.StreamServer {
 	r.tsOnce.Do(func() {
 		ctx := context.Background()
-		ctx = debug.WithInstance(ctx, "", "off")
+		ctx = debug.WithInstance(ctx, "off")
 		ss := lsprpc.NewStreamServer(cache.New(nil), false, optsHook)
 		r.ts = servertest.NewTCPServer(ctx, ss, nil)
 	})

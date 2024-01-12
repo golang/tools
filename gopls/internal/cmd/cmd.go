@@ -35,7 +35,6 @@ import (
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/tool"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 // Application is the main application as passed to tool.Main
@@ -53,15 +52,6 @@ type Application struct {
 
 	// the options configuring function to invoke when building a server
 	options func(*settings.Options)
-
-	// The name of the binary, used in help and telemetry.
-	name string
-
-	// The working directory to run commands in.
-	wd string
-
-	// The environment variables to use.
-	env []string
 
 	// Support for remote LSP server.
 	Remote string `flag:"remote" help:"forward all commands to a remote lsp specified by this flag. With no special prefix, this is assumed to be a TCP address. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. If 'auto', or prefixed by 'auto;', the remote address is automatically resolved based on the executing environment."`
@@ -105,15 +95,9 @@ func (app *Application) verbose() bool {
 }
 
 // New returns a new Application ready to run.
-func New(name, wd string, env []string, options func(*settings.Options)) *Application {
-	if wd == "" {
-		wd, _ = os.Getwd()
-	}
+func New(options func(*settings.Options)) *Application {
 	app := &Application{
 		options: options,
-		name:    name,
-		wd:      wd,
-		env:     env,
 		OCAgent: "off", //TODO: Remove this line to default the exporter to on
 
 		Serve: Serve{
@@ -125,7 +109,7 @@ func New(name, wd string, env []string, options func(*settings.Options)) *Applic
 }
 
 // Name implements tool.Application returning the binary name.
-func (app *Application) Name() string { return app.name }
+func (app *Application) Name() string { return "gopls" }
 
 // Usage implements tool.Application returning empty extra argument usage.
 func (app *Application) Usage() string { return "" }
@@ -250,7 +234,7 @@ func (app *Application) Run(ctx context.Context, args ...string) error {
 	// executable, and immediately runs a gc.
 	filecache.Start()
 
-	ctx = debug.WithInstance(ctx, app.wd, app.OCAgent)
+	ctx = debug.WithInstance(ctx, app.OCAgent)
 	if len(args) == 0 {
 		s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
 		return tool.Run(ctx, s, &app.Serve, args)
@@ -341,22 +325,6 @@ func (app *Application) connect(ctx context.Context, onProgress func(*protocol.P
 		}
 		return conn, nil
 
-	case strings.HasPrefix(app.Remote, "internal@"):
-		internalMu.Lock()
-		defer internalMu.Unlock()
-		opts := settings.DefaultOptions(app.options)
-		key := fmt.Sprintf("%s %v %v %v", app.wd, opts.PreferredContentFormat, opts.HierarchicalDocumentSymbolSupport, opts.SymbolMatcher)
-		if c := internalConnections[key]; c != nil {
-			return c, nil
-		}
-		remote := app.Remote[len("internal@"):]
-		ctx := xcontext.Detach(ctx) //TODO:a way of shutting down the internal server
-		connection, err := app.connectRemote(ctx, remote)
-		if err != nil {
-			return nil, err
-		}
-		internalConnections[key] = connection
-		return connection, nil
 	default:
 		return app.connectRemote(ctx, app.Remote)
 	}
@@ -380,8 +348,12 @@ func (app *Application) connectRemote(ctx context.Context, remote string) (*conn
 }
 
 func (c *connection) initialize(ctx context.Context, options func(*settings.Options)) error {
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("finding workdir: %v", err)
+	}
 	params := &protocol.ParamInitialize{}
-	params.RootURI = protocol.URIFromPath(c.client.app.wd)
+	params.RootURI = protocol.URIFromPath(wd)
 	params.Capabilities.Workspace.Configuration = true
 
 	// Make sure to respect configured options when sending initialize request.
@@ -513,16 +485,7 @@ func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfigur
 		if item.Section != "gopls" {
 			continue
 		}
-		env := map[string]interface{}{}
-		for _, value := range c.app.env {
-			l := strings.SplitN(value, "=", 2)
-			if len(l) != 2 {
-				continue
-			}
-			env[l[0]] = l[1]
-		}
 		m := map[string]interface{}{
-			"env": env,
 			"analyses": map[string]any{
 				"fillreturns":    true,
 				"nonewvars":      true,
@@ -776,10 +739,6 @@ func (c *connection) diagnoseFiles(ctx context.Context, files []protocol.Documen
 }
 
 func (c *connection) terminate(ctx context.Context) {
-	if strings.HasPrefix(c.client.app.Remote, "internal@") {
-		// internal connections need to be left alive for the next test
-		return
-	}
 	//TODO: do we need to handle errors on these calls?
 	c.Shutdown(ctx)
 	//TODO: right now calling exit terminates the process, we should rethink that

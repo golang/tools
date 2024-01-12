@@ -63,11 +63,12 @@ func VersionInfo() *ServerVersion {
 
 // PrintServerInfo writes HTML debug info to w for the Instance.
 func (i *Instance) PrintServerInfo(ctx context.Context, w io.Writer) {
+	workDir, _ := os.Getwd()
 	section(w, HTML, "Server Instance", func() {
 		fmt.Fprintf(w, "Start time: %v\n", i.StartTime)
 		fmt.Fprintf(w, "LogFile: %s\n", i.Logfile)
 		fmt.Fprintf(w, "pid: %d\n", os.Getpid())
-		fmt.Fprintf(w, "Working directory: %s\n", i.Workdir)
+		fmt.Fprintf(w, "Working directory: %s\n", workDir)
 		fmt.Fprintf(w, "Address: %s\n", i.ServerAddress)
 		fmt.Fprintf(w, "Debug address: %s\n", i.DebugAddress())
 	})

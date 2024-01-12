@@ -51,7 +51,6 @@ type Instance struct {
 	Logfile       string
 	StartTime     time.Time
 	ServerAddress string
-	Workdir       string
 	OCAgentConfig string
 
 	LogWriter io.Writer
@@ -368,10 +367,9 @@ func GetInstance(ctx context.Context) *Instance {
 
 // WithInstance creates debug instance ready for use using the supplied
 // configuration and stores it in the returned context.
-func WithInstance(ctx context.Context, workdir, agent string) context.Context {
+func WithInstance(ctx context.Context, agent string) context.Context {
 	i := &Instance{
 		StartTime:     time.Now(),
-		Workdir:       workdir,
 		OCAgentConfig: agent,
 	}
 	i.LogWriter = os.Stderr

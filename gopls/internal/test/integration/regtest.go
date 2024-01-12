@@ -114,7 +114,7 @@ func Main(m *testing.M, hook func(*settings.Options)) {
 	// If this magic environment variable is set, run gopls instead of the test
 	// suite. See the documentation for runTestAsGoplsEnvvar for more details.
 	if os.Getenv(runTestAsGoplsEnvvar) == "true" {
-		tool.Main(context.Background(), cmd.New("gopls", "", nil, hook), os.Args[1:])
+		tool.Main(context.Background(), cmd.New(hook), os.Args[1:])
 		os.Exit(0)
 	}
 
