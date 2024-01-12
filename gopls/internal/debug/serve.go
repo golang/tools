@@ -438,6 +438,13 @@ func (i *Instance) Serve(ctx context.Context, addr string) (string, error) {
 		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+		if h, err := startFlightRecorder(); err != nil {
+			stdlog.Printf("failed to start flight recorder: %v", err) // e.g. go1.24
+		} else {
+			mux.HandleFunc("/flightrecorder", h)
+		}
+
 		if i.prometheus != nil {
 			mux.HandleFunc("/metrics/", i.prometheus.Serve)
 		}
@@ -468,11 +475,8 @@ func (i *Instance) Serve(ctx context.Context, addr string) (string, error) {
 			http.Error(w, "made a bug", http.StatusOK)
 		})
 
-		if err := http.Serve(listener, mux); err != nil {
-			event.Error(ctx, "Debug server failed", err)
-			return
-		}
-		event.Log(ctx, "Debug server finished")
+		err := http.Serve(listener, mux) // always non-nil
+		event.Error(ctx, "Debug server failed", err)
 	}()
 	return i.listenedDebugAddress, nil
 }
@@ -650,6 +654,7 @@ body {
 <a href="/metrics">Metrics</a>
 <a href="/rpc">RPC</a>
 <a href="/trace">Trace</a>
+<a href="/flightrecorder">Flight recorder</a>
 <a href="/analysis">Analysis</a>
 <hr>
 <h1>{{template "title" .}}</h1>
