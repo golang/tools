@@ -43,6 +43,7 @@ import (
 	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/version"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/tool"
 	"golang.org/x/tools/txtar"
@@ -55,13 +56,20 @@ func TestVersion(t *testing.T) {
 	tree := writeTree(t, "")
 
 	// There's not much we can robustly assert about the actual version.
-	want := debug.Version() // e.g. "master"
+	want := version.Version() // e.g. "master"
 
 	// basic
 	{
 		res := gopls(t, tree, "version")
 		res.checkExit(true)
 		res.checkStdout(want)
+	}
+
+	// basic, with version override
+	{
+		res := goplsWithEnv(t, tree, []string{"TEST_GOPLS_VERSION=v1.2.3"}, "version")
+		res.checkExit(true)
+		res.checkStdout(`v1\.2\.3`)
 	}
 
 	// -json flag
@@ -1032,6 +1040,10 @@ func goplsMain() {
 	// except in tests that inject calls to bug.Report.
 	if os.Getenv("TEST_GOPLS_BUG") == "" {
 		bug.PanicOnBugs = true
+	}
+
+	if v := os.Getenv("TEST_GOPLS_VERSION"); v != "" {
+		version.VersionOverride = v
 	}
 
 	tool.Main(context.Background(), cmd.New(hooks.Options), os.Args[1:])

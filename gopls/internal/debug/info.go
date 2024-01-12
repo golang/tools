@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+
+	"golang.org/x/tools/gopls/internal/version"
 )
 
 type PrintMode int
@@ -24,16 +26,6 @@ const (
 	HTML
 	JSON
 )
-
-// Version is a manually-updated mechanism for tracking versions.
-func Version() string {
-	if info, ok := debug.ReadBuildInfo(); ok {
-		if info.Main.Version != "" {
-			return info.Main.Version
-		}
-	}
-	return "(unknown)"
-}
 
 // ServerVersion is the format used by gopls to report its version to the
 // client. This format is structured so that the client can parse it easily.
@@ -48,12 +40,12 @@ type ServerVersion struct {
 func VersionInfo() *ServerVersion {
 	if info, ok := debug.ReadBuildInfo(); ok {
 		return &ServerVersion{
-			Version:   Version(),
+			Version:   version.Version(),
 			BuildInfo: info,
 		}
 	}
 	return &ServerVersion{
-		Version: Version(),
+		Version: version.Version(),
 		BuildInfo: &debug.BuildInfo{
 			Path:      "gopls, built in GOPATH mode",
 			GoVersion: runtime.Version(),
@@ -124,11 +116,11 @@ func section(w io.Writer, mode PrintMode, title string, body func()) {
 }
 
 func printBuildInfo(w io.Writer, info *ServerVersion, verbose bool, mode PrintMode) {
-	fmt.Fprintf(w, "%v %v\n", info.Path, Version())
-	printModuleInfo(w, info.Main, mode)
+	fmt.Fprintf(w, "%v %v\n", info.Path, version.Version())
 	if !verbose {
 		return
 	}
+	printModuleInfo(w, info.Main, mode)
 	for _, dep := range info.Deps {
 		printModuleInfo(w, *dep, mode)
 	}
