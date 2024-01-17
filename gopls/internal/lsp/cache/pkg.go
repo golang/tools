@@ -5,7 +5,6 @@
 package cache
 
 import (
-	"context"
 	"fmt"
 	"go/ast"
 	"go/scanner"
@@ -171,20 +170,4 @@ func (p *Package) GetParseErrors() []scanner.ErrorList {
 
 func (p *Package) GetTypeErrors() []types.Error {
 	return p.pkg.typeErrors
-}
-
-func (p *Package) DiagnosticsForFile(ctx context.Context, uri protocol.DocumentURI) ([]*Diagnostic, error) {
-	var diags []*Diagnostic
-	for _, diag := range p.loadDiagnostics {
-		if diag.URI == uri {
-			diags = append(diags, diag)
-		}
-	}
-	for _, diag := range p.pkg.diagnostics {
-		if diag.URI == uri {
-			diags = append(diags, diag)
-		}
-	}
-
-	return diags, nil
 }

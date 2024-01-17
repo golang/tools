@@ -674,7 +674,15 @@ func (s *server) updateDiagnostics(ctx context.Context, allViews []*cache.View, 
 	// views.
 	updateAndPublish := func(uri protocol.DocumentURI, f *fileDiagnostics, diags []*cache.Diagnostic) error {
 		current, ok := f.byView[snapshot.View()]
-		if !ok || current.snapshot <= snapshot.SequenceID() {
+		// Update the stored diagnostics if:
+		//  1. we've never seen diagnostics for this view,
+		//  2. diagnostics are for an older snapshot, or
+		//  3. we're overwriting with final diagnostics
+		//
+		// In other words, we shouldn't overwrite existing diagnostics for a
+		// snapshot with non-final diagnostics. This avoids the race described at
+		// https://github.com/golang/go/issues/64765#issuecomment-1890144575.
+		if !ok || current.snapshot < snapshot.SequenceID() || (current.snapshot == snapshot.SequenceID() && final) {
 			fh, err := snapshot.ReadFile(ctx, uri)
 			if err != nil {
 				return err

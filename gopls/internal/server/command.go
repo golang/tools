@@ -34,7 +34,6 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
 	"golang.org/x/tools/internal/diff"
@@ -1301,47 +1300,31 @@ func (c *commandHandler) DiagnoseFiles(ctx context.Context, args command.Diagnos
 		ctx, done := event.Start(ctx, "lsp.server.DiagnoseFiles")
 		defer done()
 
-		// TODO(adonovan): opt: parallelize the loop,
-		// grouping file URIs by package and making a
-		// single call to source.Analyze.
+		snapshots := make(map[*cache.Snapshot]bool)
 		for _, uri := range args.Files {
 			fh, snapshot, release, err := c.s.fileOf(ctx, uri)
 			if err != nil {
 				return err
 			}
-			defer release()
-			if snapshot.FileKind(fh) != file.Go {
+			if snapshots[snapshot] || snapshot.FileKind(fh) != file.Go {
+				release()
 				continue
 			}
-			pkg, _, err := source.NarrowestPackageForFile(ctx, snapshot, uri)
-			if err != nil {
-				return err
-			}
-			pkgDiags, err := pkg.DiagnosticsForFile(ctx, uri)
-			if err != nil {
-				return err
-			}
-			adiags, err := source.Analyze(ctx, snapshot, map[source.PackageID]unit{pkg.Metadata().ID: {}}, nil /* progress tracker */)
-			if err != nil {
-				return err
-			}
-
-			// combine load/parse/type + analysis diagnostics
-			var td, ad []*cache.Diagnostic
-			combineDiagnostics(pkgDiags, adiags[uri], &td, &ad)
-			diags := append(td, ad...)
-			byURI := func(d *cache.Diagnostic) protocol.DocumentURI { return d.URI }
-			c.s.updateDiagnostics(ctx, c.s.session.Views(), snapshot, maps.Group(diags, byURI), false)
-			diagnostics := append(td, ad...)
-
-			if err := c.s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
-				URI:         fh.URI(),
-				Version:     fh.Version(),
-				Diagnostics: toProtocolDiagnostics(diagnostics),
-			}); err != nil {
-				return err
-			}
+			defer release()
+			snapshots[snapshot] = true
 		}
+
+		var wg sync.WaitGroup
+		for snapshot := range snapshots {
+			snapshot := snapshot
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				c.s.diagnoseSnapshot(snapshot, nil, 0)
+			}()
+		}
+		wg.Wait()
+
 		return nil
 	})
 }
