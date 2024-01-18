@@ -1,0 +1,14 @@
+This test checks the fix for golang/go#64547: the lostcancel analyzer reports
+diagnostics that overflow the file.
+
+-- p.go --
+package p
+
+import "context"
+
+func _() {
+	_, cancel := context.WithCancel(context.Background()) //@diag("_, cancel", re"not used on all paths")
+	if false {
+		cancel()
+	}
+} //@diag("}", re"may be reached without using the cancel")
