@@ -172,7 +172,7 @@ const AnalysisProgressTitle = "Analyzing Dependencies"
 // The analyzers list must be duplicate free; order does not matter.
 //
 // Notifications of progress may be sent to the optional reporter.
-func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, analyzers []*settings.Analyzer, reporter *progress.Tracker) ([]*Diagnostic, error) {
+func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Package, analyzers []*settings.Analyzer, reporter *progress.Tracker) ([]*Diagnostic, error) {
 	start := time.Now() // for progress reporting
 
 	var tagStr string // sorted comma-separated list of PackageIDs

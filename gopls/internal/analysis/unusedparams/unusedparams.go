@@ -52,6 +52,15 @@ func run(pass *analysis.Pass) (any, error) {
 	//    use(func() { ... })				address-taken
 	//
 
+	// Note: this algorithm relies on the assumption that the
+	// analyzer is called only for the "widest" package for a
+	// given file: that is, p_test in preference to p, if both
+	// exist. Analyzing only package p may produce diagnostics
+	// that would be falsified based on declarations in p_test.go
+	// files. The gopls analysis driver does this, but most
+	// drivers to not, so running this command in, say,
+	// unitchecker or multichecker may produce incorrect results.
+
 	// Gather global information:
 	// - uses of functions not in call position
 	// - unexported interface methods

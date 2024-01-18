@@ -415,9 +415,30 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 	}()
 
 	// Run type checking and go/analysis diagnosis of packages in parallel.
+	//
+	// For analysis, we use the *widest* package for each open file,
+	// for two reasons:
+	//
+	// - Correctness: some analyzers (e.g. unusedparam) depend
+	//   on it. If applied to a non-test package for which a
+	//   corresponding test package exists, they make assumptions
+	//   that are falsified in the test package, for example that
+	//   all references to unexported symbols are visible to the
+	//   analysis.
+	//
+	// - Efficiency: it may yield a smaller covering set of
+	//   PackageIDs for a given set of files. For example, {x.go,
+	//   x_test.go} is covered by the single package x_test using
+	//   "widest". (Using "narrowest", it would be covered only by
+	//   the pair of packages {x, x_test}, Originally we used all
+	//   covering packages, so {x.go} alone would be analyzed
+	//   twice.)
 	var (
 		toDiagnose = make(map[metadata.PackageID]*metadata.Package)
-		toAnalyze  = make(map[metadata.PackageID]unit)
+		toAnalyze  = make(map[metadata.PackageID]*metadata.Package)
+
+		// secondary index, used to eliminate narrower packages.
+		toAnalyzeWidest = make(map[source.PackagePath]*metadata.Package)
 	)
 	for _, mp := range workspacePkgs {
 		var hasNonIgnored, hasOpenFile bool
@@ -432,7 +453,16 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 		if hasNonIgnored {
 			toDiagnose[mp.ID] = mp
 			if hasOpenFile {
-				toAnalyze[mp.ID] = unit{}
+				if prev, ok := toAnalyzeWidest[mp.PkgPath]; ok {
+					if len(prev.CompiledGoFiles) >= len(mp.CompiledGoFiles) {
+						// Previous entry is not narrower; keep it.
+						continue
+					}
+					// Evict previous (narrower) entry.
+					delete(toAnalyze, prev.ID)
+				}
+				toAnalyze[mp.ID] = mp
+				toAnalyzeWidest[mp.PkgPath] = mp
 			}
 		}
 	}
