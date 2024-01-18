@@ -214,7 +214,7 @@ func _() {
 -- effects/effects.go --
 package effects
 
-func effects(x, y int) int { //@codeaction("y", "y", "refactor.rewrite", effects)
+func effects(x, y int) int { //@codeaction("y", "y", "refactor.rewrite", effects), diag("y", re"unused")
 	return x
 }
 
@@ -228,7 +228,7 @@ func _() {
 -- @effects/effects/effects.go --
 package effects
 
-func effects(x int) int { //@codeaction("y", "y", "refactor.rewrite", effects)
+func effects(x int) int { //@codeaction("y", "y", "refactor.rewrite", effects), diag("y", re"unused")
 	return x
 }
 
