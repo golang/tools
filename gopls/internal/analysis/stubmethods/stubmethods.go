@@ -87,12 +87,21 @@ func DiagnosticForError(fset *token.FileSet, file *ast.File, start, end token.Po
 		return analysis.Diagnostic{}, false
 	}
 	qf := typesutil.FileQualifier(file, si.Concrete.Obj().Pkg(), info)
+	iface := types.TypeString(si.Interface.Type(), qf)
 	return analysis.Diagnostic{
-		Pos:     start,
-		End:     end,
-		Message: fmt.Sprintf("Implement %s", types.TypeString(si.Interface.Type(), qf)),
+		Pos: start,
+		End: end,
+		Message: fmt.Sprintf("Type %v lacks methods of interface %s",
+			types.TypeString(si.Concrete, qf), iface),
+		Category: FixCategory,
+		SuggestedFixes: []analysis.SuggestedFix{{
+			Message: fmt.Sprintf("Declare missing methods of %s", iface),
+			// No TextEdits => computed later by gopls.
+		}},
 	}, true
 }
+
+const FixCategory = "stubmethods" // recognized by gopls ApplyFix
 
 // StubInfo represents a concrete type
 // that wants to stub out an interface type

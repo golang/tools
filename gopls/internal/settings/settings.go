@@ -1385,8 +1385,8 @@ func typeErrorAnalyzers() map[string]*Analyzer {
 		fillreturns.Analyzer.Name: {
 			Analyzer: fillreturns.Analyzer,
 			// TODO(rfindley): is SourceFixAll even necessary here? Is that not implied?
-			ActionKind: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
-			Enabled:    true,
+			ActionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+			Enabled:     true,
 		},
 		nonewvars.Analyzer.Name: {
 			Analyzer: nonewvars.Analyzer,
@@ -1398,7 +1398,6 @@ func typeErrorAnalyzers() map[string]*Analyzer {
 		},
 		undeclaredname.Analyzer.Name: {
 			Analyzer: undeclaredname.Analyzer,
-			Fix:      UndeclaredName,
 			Enabled:  true,
 		},
 		unusedvariable.Analyzer.Name: {
@@ -1413,20 +1412,18 @@ func typeErrorAnalyzers() map[string]*Analyzer {
 func convenienceAnalyzers() map[string]*Analyzer {
 	return map[string]*Analyzer{
 		fillstruct.Analyzer.Name: {
-			Analyzer:   fillstruct.Analyzer,
-			Fix:        FillStruct,
-			Enabled:    true,
-			ActionKind: []protocol.CodeActionKind{protocol.RefactorRewrite},
+			Analyzer:    fillstruct.Analyzer,
+			Enabled:     true,
+			ActionKinds: []protocol.CodeActionKind{protocol.RefactorRewrite},
 		},
 		stubmethods.Analyzer.Name: {
 			Analyzer: stubmethods.Analyzer,
-			Fix:      StubMethods,
 			Enabled:  true,
 		},
 		infertypeargs.Analyzer.Name: {
-			Analyzer:   infertypeargs.Analyzer,
-			Enabled:    true,
-			ActionKind: []protocol.CodeActionKind{protocol.RefactorRewrite},
+			Analyzer:    infertypeargs.Analyzer,
+			Enabled:     true,
+			ActionKinds: []protocol.CodeActionKind{protocol.RefactorRewrite},
 		},
 	}
 }
@@ -1479,24 +1476,23 @@ func defaultAnalyzers() map[string]*Analyzer {
 		embeddirective.Analyzer.Name: {
 			Analyzer: embeddirective.Analyzer,
 			Enabled:  true,
-			Fix:      AddEmbedImport,
 		},
 
 		// gofmt -s suite:
 		simplifycompositelit.Analyzer.Name: {
-			Analyzer:   simplifycompositelit.Analyzer,
-			Enabled:    true,
-			ActionKind: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+			Analyzer:    simplifycompositelit.Analyzer,
+			Enabled:     true,
+			ActionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
 		},
 		simplifyrange.Analyzer.Name: {
-			Analyzer:   simplifyrange.Analyzer,
-			Enabled:    true,
-			ActionKind: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+			Analyzer:    simplifyrange.Analyzer,
+			Enabled:     true,
+			ActionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
 		},
 		simplifyslice.Analyzer.Name: {
-			Analyzer:   simplifyslice.Analyzer,
-			Enabled:    true,
-			ActionKind: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+			Analyzer:    simplifyslice.Analyzer,
+			Enabled:     true,
+			ActionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
 		},
 	}
 }

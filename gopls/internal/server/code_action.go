@@ -10,9 +10,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/ast"
+	"log"
 	"sort"
 	"strings"
 
+	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
 	"golang.org/x/tools/gopls/internal/analysis/infertypeargs"
@@ -213,37 +215,43 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 				if err != nil {
 					return nil, err
 				}
-				action, ok, err := func() (_ protocol.CodeAction, _ bool, rerr error) {
-					// golang/go#61693: code actions were refactored to run outside of the
-					// analysis framework, but as a result they lost their panic recovery.
+
+				var (
+					diag analysis.Diagnostic
+					ok   bool
+				)
+				func() {
+					// golang/go#61693: code actions were refactored to run
+					// outside of the analysis framework, but as a result
+					// they lost their panic recovery.
 					//
-					// Stubmethods "should never fail"", but put back the panic recovery as a
-					// defensive measure.
+					// Stubmethods "should never fail"", but put back the
+					// panic recovery as a defensive measure.
 					defer func() {
 						if r := recover(); r != nil {
-							rerr = bug.Errorf("stubmethods panicked: %v", r)
+							err = bug.Errorf("stubmethods panicked: %v", r)
 						}
 					}()
-					d, ok := stubmethods.DiagnosticForError(pkg.FileSet(), pgf.File, start, end, pd.Message, pkg.GetTypesInfo())
-					if !ok {
-						return protocol.CodeAction{}, false, nil
-					}
-					cmd, err := command.NewApplyFixCommand(d.Message, command.ApplyFixArgs{
+					diag, ok = stubmethods.DiagnosticForError(pkg.FileSet(), pgf.File, start, end, pd.Message, pkg.GetTypesInfo())
+				}()
+				if err != nil {
+					return nil, err // panicked
+				}
+				if !ok {
+					continue
+				}
+
+				for _, fix := range diag.SuggestedFixes {
+					cmd, err := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
+						Fix:          diag.Category,
 						URI:          pgf.URI,
-						Fix:          string(settings.StubMethods),
 						Range:        pd.Range,
 						ResolveEdits: supportsResolveEdits(snapshot.Options()),
 					})
 					if err != nil {
-						return protocol.CodeAction{}, false, err
+						log.Fatalf("NewApplyFixCommand: %v", err)
 					}
-					return newCodeAction(d.Message, protocol.QuickFix, &cmd, nil, snapshot.Options()), true, nil
-				}()
-				if err != nil {
-					return nil, err
-				}
-				if ok {
-					actions = append(actions, action)
+					actions = append(actions, newCodeAction(fix.Message, protocol.QuickFix, &cmd, nil, snapshot.Options()))
 				}
 			}
 
@@ -414,6 +422,7 @@ func fixedByImportFix(fix *imports.ImportFix, diagnostics []protocol.Diagnostic)
 	return results
 }
 
+// TODO(adonovan): move this into source package and unexport source.ExtractMethod etc.
 func refactorExtract(pgf *source.ParsedGoFile, rng protocol.Range, options *settings.Options) ([]protocol.CodeAction, error) {
 	if rng.Start == rng.End {
 		return nil, nil
@@ -427,8 +436,8 @@ func refactorExtract(pgf *source.ParsedGoFile, rng protocol.Range, options *sett
 	var commands []protocol.Command
 	if _, ok, methodOk, _ := source.CanExtractFunction(pgf.Tok, start, end, pgf.Src, pgf.File); ok {
 		cmd, err := command.NewApplyFixCommand("Extract function", command.ApplyFixArgs{
+			Fix:          source.ExtractFunction,
 			URI:          puri,
-			Fix:          string(settings.ExtractFunction),
 			Range:        rng,
 			ResolveEdits: supportsResolveEdits(options),
 		})
@@ -438,8 +447,8 @@ func refactorExtract(pgf *source.ParsedGoFile, rng protocol.Range, options *sett
 		commands = append(commands, cmd)
 		if methodOk {
 			cmd, err := command.NewApplyFixCommand("Extract method", command.ApplyFixArgs{
+				Fix:          source.ExtractMethod,
 				URI:          puri,
-				Fix:          string(settings.ExtractMethod),
 				Range:        rng,
 				ResolveEdits: supportsResolveEdits(options),
 			})
@@ -451,8 +460,8 @@ func refactorExtract(pgf *source.ParsedGoFile, rng protocol.Range, options *sett
 	}
 	if _, _, ok, _ := source.CanExtractVariable(start, end, pgf.File); ok {
 		cmd, err := command.NewApplyFixCommand("Extract variable", command.ApplyFixArgs{
+			Fix:          source.ExtractVariable,
 			URI:          puri,
-			Fix:          string(settings.ExtractVariable),
 			Range:        rng,
 			ResolveEdits: supportsResolveEdits(options),
 		})
@@ -526,9 +535,9 @@ func refactorRewrite(snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.P
 
 	var commands []protocol.Command
 	if _, ok, _ := source.CanInvertIfCondition(pgf.File, start, end); ok {
-		cmd, err := command.NewApplyFixCommand("Invert if condition", command.ApplyFixArgs{
+		cmd, err := command.NewApplyFixCommand("Invert 'if' condition", command.ApplyFixArgs{
+			Fix:          source.InvertIfCondition,
 			URI:          pgf.URI,
-			Fix:          string(settings.InvertIfCondition),
 			Range:        rng,
 			ResolveEdits: supportsResolveEdits(options),
 		})
@@ -544,21 +553,23 @@ func refactorRewrite(snapshot *cache.Snapshot, pkg *cache.Package, pgf *source.P
 	// TODO: Consider removing the inspection after convenienceAnalyzers are removed.
 	inspect := inspector.New([]*ast.File{pgf.File})
 	if snapshot.Options().IsAnalyzerEnabled(fillstruct.Analyzer.Name) {
-		for _, d := range fillstruct.DiagnoseFillableStructs(inspect, start, end, pkg.GetTypes(), pkg.GetTypesInfo()) {
-			rng, err := pgf.Mapper.PosRange(pgf.Tok, d.Pos, d.End)
+		for _, diag := range fillstruct.DiagnoseFillableStructs(inspect, start, end, pkg.GetTypes(), pkg.GetTypesInfo()) {
+			rng, err := pgf.Mapper.PosRange(pgf.Tok, diag.Pos, diag.End)
 			if err != nil {
 				return nil, err
 			}
-			cmd, err := command.NewApplyFixCommand(d.Message, command.ApplyFixArgs{
-				URI:          pgf.URI,
-				Fix:          string(settings.FillStruct),
-				Range:        rng,
-				ResolveEdits: supportsResolveEdits(options),
-			})
-			if err != nil {
-				return nil, err
+			for _, fix := range diag.SuggestedFixes {
+				cmd, err := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
+					Fix:          diag.Category,
+					URI:          pgf.URI,
+					Range:        rng,
+					ResolveEdits: supportsResolveEdits(options),
+				})
+				if err != nil {
+					return nil, err
+				}
+				commands = append(commands, cmd)
 			}
-			commands = append(commands, cmd)
 		}
 	}
 
@@ -642,6 +653,7 @@ func canRemoveParameter(pkg *cache.Package, pgf *source.ParsedGoFile, rng protoc
 }
 
 // refactorInline returns inline actions available at the specified range.
+// TODO(adonovan): move this into source package and unexport source.InlineCall etc.
 func refactorInline(pkg *cache.Package, pgf *source.ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
@@ -652,8 +664,8 @@ func refactorInline(pkg *cache.Package, pgf *source.ParsedGoFile, rng protocol.R
 	var commands []protocol.Command
 	if _, fn, err := source.EnclosingStaticCall(pkg, pgf, start, end); err == nil {
 		cmd, err := command.NewApplyFixCommand(fmt.Sprintf("Inline call to %s", fn.Name()), command.ApplyFixArgs{
+			Fix:   source.InlineCall,
 			URI:   pgf.URI,
-			Fix:   string(settings.InlineCall),
 			Range: rng,
 		})
 		if err != nil {

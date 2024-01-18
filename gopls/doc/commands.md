@@ -66,7 +66,14 @@ Args:
 
 ```
 {
-	// The fix to apply.
+	// The name of the fix to apply.
+	//
+	// For fixes suggested by analyzers, this is a string constant
+	// advertised by the analyzer that matches the Category of
+	// the analysis.Diagnostic with a SuggestedFix containing no edits.
+	//
+	// For fixes suggested by code actions, this is a string agreed
+	// upon by the code action and source.ApplyFix.
 	"Fix": string,
 	// The file URI for the document to fix.
 	"URI": string,

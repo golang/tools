@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/command"
@@ -295,32 +294,47 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 		Related:  related,
 		Tags:     srcAnalyzer.Tag,
 	}
-	if canFix(srcAnalyzer, diag) {
-		// We cross the set of fixes (whether edit- or command-based)
-		// with the set of kinds, as a single fix may represent more
-		// than one kind of action (e.g. refactor, quickfix, fixall),
-		// each corresponding to a distinct client UI element
-		// or operation.
-		kinds := srcAnalyzer.ActionKind
-		if len(kinds) == 0 {
-			kinds = []protocol.CodeActionKind{protocol.QuickFix}
-		}
 
-		// Accumulate edit-based fixes supplied by the diagnostic itself.
-		fixes := suggestedAnalysisFixes(gobDiag, kinds)
+	// We cross the set of fixes (whether edit- or command-based)
+	// with the set of kinds, as a single fix may represent more
+	// than one kind of action (e.g. refactor, quickfix, fixall),
+	// each corresponding to a distinct client UI element
+	// or operation.
+	kinds := srcAnalyzer.ActionKinds
+	if len(kinds) == 0 {
+		kinds = []protocol.CodeActionKind{protocol.QuickFix}
+	}
 
-		// Accumulate command-based fixes computed on demand by
-		// (logic adjacent to) the analyzer.
-		if srcAnalyzer.Fix != "" {
-			// TODO(adonovan): this causes the fix to have the same title
-			// as the problem it fixes, which is confusing. For example,
-			// the fix for a diagnostic "unused parameter: x" should be
-			// titled "Remove parameter x". (The edit-based fixes above
-			// have sensible names provided by the originating analyzer.)
-			cmd, err := command.NewApplyFixCommand(gobDiag.Message, command.ApplyFixArgs{
+	var fixes []SuggestedFix
+	for _, fix := range gobDiag.SuggestedFixes {
+		if len(fix.TextEdits) > 0 {
+			// Accumulate edit-based fixes supplied by the diagnostic itself.
+			edits := make(map[protocol.DocumentURI][]protocol.TextEdit)
+			for _, e := range fix.TextEdits {
+				uri := e.Location.URI
+				edits[uri] = append(edits[uri], protocol.TextEdit{
+					Range:   e.Location.Range,
+					NewText: string(e.NewText),
+				})
+			}
+			for _, kind := range kinds {
+				fixes = append(fixes, SuggestedFix{
+					Title:      fix.Message,
+					Edits:      edits,
+					ActionKind: kind,
+				})
+			}
+
+		} else {
+			// Accumulate command-based fixes, whose edits
+			// are not provided by the analyzer but are computed on demand
+			// by logic "adjacent to" the analyzer.
+			//
+			// The analysis.Diagnostic.Category is used as the fix name.
+			cmd, err := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
+				Fix:   diag.Code,
 				URI:   gobDiag.Location.URI,
 				Range: gobDiag.Location.Range,
-				Fix:   string(srcAnalyzer.Fix),
 			})
 			if err != nil {
 				// JSON marshalling of these argument values cannot fail.
@@ -329,26 +343,20 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 			for _, kind := range kinds {
 				fixes = append(fixes, SuggestedFixFromCommand(cmd, kind))
 			}
+
+			// Ensure that the analyzer specifies a category for all its no-edit fixes.
+			if diag.Code == "" || diag.Code == "default" {
+				panic(fmt.Sprintf("missing Diagnostic.Code: %#v", *diag))
+			}
 		}
-		diag.SuggestedFixes = fixes
 	}
+	diag.SuggestedFixes = fixes
 
 	// If the fixes only delete code, assume that the diagnostic is reporting dead code.
 	if onlyDeletions(diag.SuggestedFixes) {
 		diag.Tags = append(diag.Tags, protocol.Unnecessary)
 	}
 	return diag
-}
-
-// canFix reports whether the Analyzer can fix the Diagnostic.
-func canFix(a *settings.Analyzer, diag *Diagnostic) bool {
-	if a.Fix == settings.AddEmbedImport {
-		return diag.Message == embeddirective.MissingImportMessage
-	}
-
-	// This doesn't make sense, but preserves pre-existing semantics.
-	// TODO(rfindley): reconcile the semantics of Fix and suggestedAnalysisFixes.
-	return true
 }
 
 // onlyDeletions returns true if fixes is non-empty and all of the suggested

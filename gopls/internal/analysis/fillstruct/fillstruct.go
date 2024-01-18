@@ -130,17 +130,24 @@ func DiagnoseFillableStructs(inspect *inspector.Inspector, start, end token.Pos,
 			if i < totalFields {
 				fillableFields = append(fillableFields, "...")
 			}
-			name = fmt.Sprintf("anonymous struct { %s }", strings.Join(fillableFields, ", "))
+			name = fmt.Sprintf("anonymous struct{ %s }", strings.Join(fillableFields, ", "))
 		}
 		diags = append(diags, analysis.Diagnostic{
-			Message: fmt.Sprintf("Fill %s", name),
-			Pos:     expr.Pos(),
-			End:     expr.End(),
+			Message:  fmt.Sprintf("%s literal has missing fields", name),
+			Pos:      expr.Pos(),
+			End:      expr.End(),
+			Category: FixCategory,
+			SuggestedFixes: []analysis.SuggestedFix{{
+				Message: fmt.Sprintf("Fill %s", name),
+				// No TextEdits => computed later by gopls.
+			}},
 		})
 	})
 
 	return diags
 }
+
+const FixCategory = "fillstruct" // recognized by gopls ApplyFix
 
 // SuggestedFix computes the suggested fix for the kinds of
 // diagnostics produced by the Analyzer above.

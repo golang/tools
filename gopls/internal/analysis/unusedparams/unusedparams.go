@@ -28,6 +28,8 @@ var Analyzer = &analysis.Analyzer{
 	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedparams",
 }
 
+const FixCategory = "unusedparam" // recognized by gopls ApplyFix
+
 func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
@@ -264,28 +266,28 @@ func run(pass *analysis.Pass) (any, error) {
 					if len(field.Names) > 1 {
 						start, end = id.Pos(), id.End()
 					}
-					// This diagnostic carries an edit-based fix to
-					// rename the parameter. Gopls's settings
-					// associate this analyzer with a command-based fix
-					// (RemoveUnusedParam, implemented by
-					// source.RemoveUnusedParameter), so the user
-					// will see a second Code Action offering to
-					// "Remove unused parameter x" (although currently
-					// the fix title is actually that of the diagnostic,
-					// i.e. "unused parameter: x", which is a poor UX.
-					// We should fix that bug in cache.toSourceDiagnostic).
+					// This diagnostic carries both an edit-based fix to
+					// rename the unused parameter, and a command-based fix
+					// to remove it (see source.RemoveUnusedParameter).
 					pass.Report(analysis.Diagnostic{
-						Pos:     start,
-						End:     end,
-						Message: fmt.Sprintf("unused parameter: %s", id.Name),
-						SuggestedFixes: []analysis.SuggestedFix{{
-							Message: `Rename parameter to "_"`,
-							TextEdits: []analysis.TextEdit{{
-								Pos:     id.Pos(),
-								End:     id.End(),
-								NewText: []byte("_"),
-							}},
-						}},
+						Pos:      start,
+						End:      end,
+						Message:  fmt.Sprintf("unused parameter: %s", id.Name),
+						Category: FixCategory,
+						SuggestedFixes: []analysis.SuggestedFix{
+							{
+								Message: `Rename parameter to "_"`,
+								TextEdits: []analysis.TextEdit{{
+									Pos:     id.Pos(),
+									End:     id.End(),
+									NewText: []byte("_"),
+								}},
+							},
+							{
+								Message: fmt.Sprintf("Remove unused parameter %q", id.Name),
+								// No TextEdits => computed by gopls command
+							},
+						},
 					})
 				}
 			}

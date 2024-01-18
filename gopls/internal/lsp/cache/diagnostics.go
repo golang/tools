@@ -37,7 +37,7 @@ type Diagnostic struct {
 	URI      protocol.DocumentURI // of diagnosed file (not diagnostic documentation)
 	Range    protocol.Range
 	Severity protocol.DiagnosticSeverity
-	Code     string
+	Code     string // analysis.Diagnostic.Category (or "default" if empty) or hidden go/types error code
 	CodeHref string
 
 	// Source is a human-readable description of the source of the error.
