@@ -241,7 +241,7 @@ func CancelHandler(handler jsonrpc2.Handler) jsonrpc2.Handler {
 			return handler(ctx, replyWithDetachedContext, req)
 		}
 		var params CancelParams
-		if err := unmarshalParams(req.Params(), &params); err != nil {
+		if err := UnmarshalJSON(req.Params(), &params); err != nil {
 			return sendParseError(ctx, reply, err)
 		}
 		if n, ok := params.ID.(float64); ok {
@@ -271,16 +271,14 @@ func cancelCall(ctx context.Context, sender connSender, id jsonrpc2.ID) {
 	sender.Notify(ctx, "$/cancelRequest", &CancelParams{ID: &id})
 }
 
-// unmarshalParams unmarshals msg into the variable pointed to by
-// params. In JSONRPC, request.params is optional, so msg may may be
+// UnmarshalJSON unmarshals msg into the variable pointed to by
+// params. In JSONRPC, optional messages may be
 // "null", in which case it is a no-op.
-func unmarshalParams(msg json.RawMessage, params any) error {
-	if len(msg) > 0 && !bytes.Equal(msg, []byte("null")) {
-		if err := json.Unmarshal(msg, params); err != nil {
-			return err
-		}
+func UnmarshalJSON(msg json.RawMessage, v any) error {
+	if len(msg) == 0 || bytes.Equal(msg, []byte("null")) {
+		return nil
 	}
-	return nil
+	return json.Unmarshal(msg, v)
 }
 
 func sendParseError(ctx context.Context, reply jsonrpc2.Replier, err error) error {

@@ -5,9 +5,7 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -144,14 +142,13 @@ func (s *server) ResolveCodeAction(ctx context.Context, ca *protocol.CodeAction)
 	defer done()
 
 	// Only resolve the code action if there is Data provided.
-	// TODO(suzmue): publish protocol.unmarshalParams as protocol.UnmarshalJSON
-	// and use it consistently where we need to unmarshal to handle all null checks.
-	if ca.Data != nil && len(*ca.Data) != 0 && !bytes.Equal(*ca.Data, []byte("null")) {
-		var cmd protocol.Command
-		if err := json.Unmarshal(*ca.Data, &cmd); err != nil {
+	var cmd protocol.Command
+	if ca.Data != nil {
+		if err := protocol.UnmarshalJSON(*ca.Data, &cmd); err != nil {
 			return nil, err
 		}
-
+	}
+	if cmd.Command != "" {
 		params := &protocol.ExecuteCommandParams{
 			Command:   cmd.Command,
 			Arguments: cmd.Arguments,

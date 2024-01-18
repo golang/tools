@@ -50,7 +50,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 	switch r.Method() {
 	case "$/logTrace":
 		var params LogTraceParams
-		if err := unmarshalParams(r.Params(), &params); err != nil {
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		err := client.LogTrace(ctx, &params)
@@ -58,7 +58,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 
 	case "$/progress":
 		var params ProgressParams
-		if err := unmarshalParams(r.Params(), &params); err != nil {
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		err := client.Progress(ctx, &params)
@@ -66,7 +66,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 
 	case "client/registerCapability":
 		var params RegistrationParams
-		if err := unmarshalParams(r.Params(), &params); err != nil {
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		err := client.RegisterCapability(ctx, &params)
@@ -74,7 +74,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 
 	case "client/unregisterCapability":
 		var params UnregistrationParams
-		if err := unmarshalParams(r.Params(), &params); err != nil {
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		err := client.UnregisterCapability(ctx, &params)
@@ -82,7 +82,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 
 	case "telemetry/event":
 		var params interface{}
-		if err := unmarshalParams(r.Params(), &params); err != nil {
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		err := client.Event(ctx, &params)
@@ -90,7 +90,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 
 	case "textDocument/publishDiagnostics":
 		var params PublishDiagnosticsParams
-		if err := unmarshalParams(r.Params(), &params); err != nil {
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		err := client.PublishDiagnostics(ctx, &params)
@@ -98,7 +98,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 
 	case "window/logMessage":
 		var params LogMessageParams
-		if err := unmarshalParams(r.Params(), &params); err != nil {
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		err := client.LogMessage(ctx, &params)
@@ -106,7 +106,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 
 	case "window/showDocument":
 		var params ShowDocumentParams
-		if err := unmarshalParams(r.Params(), &params); err != nil {
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := client.ShowDocument(ctx, &params)
@@ -117,7 +117,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 
 	case "window/showMessage":
 		var params ShowMessageParams
-		if err := unmarshalParams(r.Params(), &params); err != nil {
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		err := client.ShowMessage(ctx, &params)
@@ -125,7 +125,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 
 	case "window/showMessageRequest":
 		var params ShowMessageRequestParams
-		if err := unmarshalParams(r.Params(), &params); err != nil {
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := client.ShowMessageRequest(ctx, &params)
@@ -136,7 +136,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 
 	case "window/workDoneProgress/create":
 		var params WorkDoneProgressCreateParams
-		if err := unmarshalParams(r.Params(), &params); err != nil {
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		err := client.WorkDoneProgressCreate(ctx, &params)
@@ -144,7 +144,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 
 	case "workspace/applyEdit":
 		var params ApplyWorkspaceEditParams
-		if err := unmarshalParams(r.Params(), &params); err != nil {
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := client.ApplyEdit(ctx, &params)
@@ -159,7 +159,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 
 	case "workspace/configuration":
 		var params ParamConfiguration
-		if err := unmarshalParams(r.Params(), &params); err != nil {
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
 		resp, err := client.Configuration(ctx, &params)
