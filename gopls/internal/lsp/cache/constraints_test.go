@@ -94,3 +94,33 @@ func TestIsStandaloneFile(t *testing.T) {
 		})
 	}
 }
+
+func TestVersionRegexp(t *testing.T) {
+	// good
+	for _, s := range []string{
+		"go1",
+		"go1.2",
+		"go1.2.3",
+		"go1.0.33",
+	} {
+		if !goVersionRx.MatchString(s) {
+			t.Errorf("Valid Go version %q does not match the regexp", s)
+		}
+	}
+
+	// bad
+	for _, s := range []string{
+		"go",          // missing numbers
+		"go0",         // Go starts at 1
+		"go01",        // leading zero
+		"go1.π",       // non-decimal
+		"go1.-1",      // negative
+		"go1.02.3",    // leading zero
+		"go1.2.3.4",   // too many segments
+		"go1.2.3-pre", // textual suffix
+	} {
+		if goVersionRx.MatchString(s) {
+			t.Errorf("Invalid Go version %q unexpectedly matches the regexp", s)
+		}
+	}
+}

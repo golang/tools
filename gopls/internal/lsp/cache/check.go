@@ -1565,8 +1565,8 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 	return &Package{ph.mp, ph.loadDiagnostics, pkg}, nil
 }
 
-// TODO(golang/go#63472): this looks wrong with the new Go version syntax.
-var goVersionRx = regexp.MustCompile(`^go([1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+// e.g. "go1" or "go1.2" or "go1.2.3"
+var goVersionRx = regexp.MustCompile(`^go[1-9][0-9]*(?:\.(0|[1-9][0-9]*)){0,2}$`)
 
 func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs, onError func(e error)) *types.Config {
 	cfg := &types.Config{
