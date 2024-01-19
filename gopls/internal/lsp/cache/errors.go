@@ -393,31 +393,6 @@ func BuildLink(target, path, anchor string) string {
 	return link + "#" + anchor
 }
 
-// suggestedAnalysisFixes converts edit-based fixes associated
-// with a gobDiagnostic to cache.SuggestedFixes.
-// It returns the cross product of fixes and kinds.
-func suggestedAnalysisFixes(diag *gobDiagnostic, kinds []protocol.CodeActionKind) []SuggestedFix {
-	var fixes []SuggestedFix
-	for _, fix := range diag.SuggestedFixes {
-		edits := make(map[protocol.DocumentURI][]protocol.TextEdit)
-		for _, e := range fix.TextEdits {
-			uri := e.Location.URI
-			edits[uri] = append(edits[uri], protocol.TextEdit{
-				Range:   e.Location.Range,
-				NewText: string(e.NewText),
-			})
-		}
-		for _, kind := range kinds {
-			fixes = append(fixes, SuggestedFix{
-				Title:      fix.Message,
-				Edits:      edits,
-				ActionKind: kind,
-			})
-		}
-	}
-	return fixes
-}
-
 func parseGoListError(e packages.Error, dir string) (filename string, line, col8 int) {
 	input := e.Pos
 	if input == "" {

@@ -57,13 +57,13 @@ func singleFile(fixer1 singleFileFixer) fixer {
 	}
 }
 
-// Names of ApplyFix.Fix created directly by the server's CodeAction handler.
+// Names of ApplyFix.Fix created directly by the CodeAction handler.
 const (
-	ExtractVariable   = "extract_variable"
-	ExtractFunction   = "extract_function"
-	ExtractMethod     = "extract_method"
-	InlineCall        = "inline_call"
-	InvertIfCondition = "invert_if_condition"
+	fixExtractVariable   = "extract_variable"
+	fixExtractFunction   = "extract_function"
+	fixExtractMethod     = "extract_method"
+	fixInlineCall        = "inline_call"
+	fixInvertIfCondition = "invert_if_condition"
 )
 
 // ApplyFix applies the specified kind of suggested fix to the given
@@ -71,7 +71,7 @@ const (
 //
 // A fix kind is either the Category of an analysis.Diagnostic that
 // had a SuggestedFix with no edits; or the name of a fix agreed upon
-// by server.codeAction and this function, such as [ExtractVariable].
+// by [CodeActions] and this function.
 // Fix kinds identify fixes in the command protocol.
 //
 // TODO(adonovan): come up with a better mechanism for registering the
@@ -110,11 +110,11 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 
 		// Ad-hoc fixers: these are used when the command is
 		// constructed directly by logic in server/code_action.
-		ExtractFunction:   singleFile(extractFunction),
-		ExtractMethod:     singleFile(extractMethod),
-		ExtractVariable:   singleFile(extractVariable),
-		InlineCall:        inlineCall,
-		InvertIfCondition: singleFile(invertIfCondition),
+		fixExtractFunction:   singleFile(extractFunction),
+		fixExtractMethod:     singleFile(extractMethod),
+		fixExtractVariable:   singleFile(extractVariable),
+		fixInlineCall:        inlineCall,
+		fixInvertIfCondition: singleFile(invertIfCondition),
 	}
 	fixer, ok := fixers[fix]
 	if !ok {

@@ -78,7 +78,7 @@ func ConvertStringLiteral(pgf *ParsedGoFile, fh file.Handle, rng protocol.Range)
 		Title: title,
 		Kind:  protocol.RefactorRewrite,
 		Edit: &protocol.WorkspaceEdit{
-			DocumentChanges: protocol.TextEditsToDocumentChanges(fh.URI(), fh.Version(), pedits),
+			DocumentChanges: documentChanges(fh, pedits),
 		},
 	}, true
 }
