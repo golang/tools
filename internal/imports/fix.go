@@ -13,6 +13,7 @@ import (
 	"go/build"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"io/fs"
 	"io/ioutil"
 	"os"
@@ -1151,6 +1152,17 @@ func addExternalCandidates(ctx context.Context, pass *pass, refs references, fil
 	}()
 
 	for result := range results {
+		// Don't offer completions that would shadow predeclared
+		// names, such as github.com/coreos/etcd/error.
+		if types.Universe.Lookup(result.pkg.name) != nil { // predeclared
+			// Ideally we would skip this candidate only
+			// if the predeclared name is actually
+			// referenced by the file, but that's a lot
+			// trickier to compute and would still create
+			// an import that is likely to surprise the
+			// user before long.
+			continue
+		}
 		pass.addCandidate(result.imp, result.pkg)
 	}
 	return firstErr
