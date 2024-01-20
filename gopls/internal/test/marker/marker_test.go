@@ -85,8 +85,11 @@ func TestMain(m *testing.M) {
 //   - The old tests lacked documentation, and often had failures that were hard
 //     to understand. By starting from scratch, we can revisit these aspects.
 func Test(t *testing.T) {
-	if testing.Short() && strings.HasPrefix(os.Getenv("GO_BUILDER_NAME"), "darwin-") {
-		t.Skip("golang/go#64473: skipping with -short: this test is too slow on darwin builders")
+	if testing.Short() {
+		builder := os.Getenv("GO_BUILDER_NAME")
+		if strings.HasPrefix(builder, "darwin-") || builder == "solaris-amd64-oraclerel" {
+			t.Skip("golang/go#64473: skipping with -short: this test is too slow on darwin and solaris builders")
+		}
 	}
 	// The marker tests must be able to run go/packages.Load.
 	testenv.NeedsGoPackages(t)
@@ -789,7 +792,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	// Put a debug instance in the context to prevent logging to stderr.
 	// See associated TODO in runner.go: we should revisit this pattern.
 	ctx := context.Background()
-	ctx = debug.WithInstance(ctx, "", "off")
+	ctx = debug.WithInstance(ctx, "off")
 
 	awaiter := integration.NewAwaiter(sandbox.Workdir)
 	ss := lsprpc.NewStreamServer(cache, false, hooks.Options)
@@ -1916,6 +1919,23 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 	// applied in that order. But since applyDocumentChanges(env,
 	// action.Edit.DocumentChanges) doesn't compose, for now we
 	// assert that actions return one or the other.
+
+	// Resolve code action edits first if the client has resolve support
+	// and the code action has no edits.
+	if action.Edit == nil {
+		editSupport, err := env.Editor.EditResolveSupport()
+		if err != nil {
+			return nil, err
+		}
+		if editSupport {
+			resolved, err := env.Editor.Server.ResolveCodeAction(env.Ctx, &action)
+			if err != nil {
+				return nil, err
+			}
+			action.Edit = resolved.Edit
+		}
+	}
+
 	if action.Edit != nil {
 		if action.Edit.Changes != nil {
 			env.T.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Edit.Changes", action.Kind, action.Title)

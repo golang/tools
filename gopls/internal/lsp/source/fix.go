@@ -12,18 +12,20 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
+	"golang.org/x/tools/gopls/internal/analysis/stubmethods"
 	"golang.org/x/tools/gopls/internal/analysis/undeclaredname"
+	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/imports"
 )
 
-// A Fixer is a function that suggests a fix for a diagnostic produced
+// A fixer is a function that suggests a fix for a diagnostic produced
 // by the analysis framework. This is done outside of the analyzer Run
 // function so that the construction of expensive fixes can be
 // deferred until they are requested by the user.
@@ -37,21 +39,8 @@ import (
 // (SuggestedFix.TextEdits[*].{Pos,End}) must belong to the returned
 // FileSet.
 //
-// A Fixer may return (nil, nil) if no fix is available.
-type Fixer func(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error)
-
-// fixers maps each Fix id to its Fixer function.
-var fixers = map[settings.Fix]Fixer{
-	settings.AddEmbedImport:    addEmbedImport,
-	settings.ExtractFunction:   singleFile(extractFunction),
-	settings.ExtractMethod:     singleFile(extractMethod),
-	settings.ExtractVariable:   singleFile(extractVariable),
-	settings.FillStruct:        singleFile(fillstruct.SuggestedFix),
-	settings.InlineCall:        inlineCall,
-	settings.InvertIfCondition: singleFile(invertIfCondition),
-	settings.StubMethods:       stubMethodsFixer,
-	settings.UndeclaredName:    singleFile(undeclaredname.SuggestedFix),
-}
+// A fixer may return (nil, nil) if no fix is available.
+type fixer func(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error)
 
 // A singleFileFixer is a Fixer that inspects only a single file,
 // and does not depend on data types from the cache package.
@@ -62,15 +51,71 @@ var fixers = map[settings.Fix]Fixer{
 type singleFileFixer func(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error)
 
 // singleFile adapts a single-file fixer to a Fixer.
-func singleFile(fixer singleFileFixer) Fixer {
+func singleFile(fixer1 singleFileFixer) fixer {
 	return func(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-		return fixer(pkg.FileSet(), start, end, pgf.Src, pgf.File, pkg.GetTypes(), pkg.GetTypesInfo())
+		return fixer1(pkg.FileSet(), start, end, pgf.Src, pgf.File, pkg.GetTypes(), pkg.GetTypesInfo())
 	}
 }
 
+// Names of ApplyFix.Fix created directly by the CodeAction handler.
+const (
+	fixExtractVariable   = "extract_variable"
+	fixExtractFunction   = "extract_function"
+	fixExtractMethod     = "extract_method"
+	fixInlineCall        = "inline_call"
+	fixInvertIfCondition = "invert_if_condition"
+)
+
 // ApplyFix applies the specified kind of suggested fix to the given
 // file and range, returning the resulting edits.
-func ApplyFix(ctx context.Context, fix settings.Fix, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
+//
+// A fix kind is either the Category of an analysis.Diagnostic that
+// had a SuggestedFix with no edits; or the name of a fix agreed upon
+// by [CodeActions] and this function.
+// Fix kinds identify fixes in the command protocol.
+//
+// TODO(adonovan): come up with a better mechanism for registering the
+// connection between analyzers, code actions, and fixers. A flaw of
+// the current approach is that the same Category could in theory
+// apply to a Diagnostic with several lazy fixes, making them
+// impossible to distinguish. It would more precise if there was a
+// SuggestedFix.Category field, or some other way to squirrel metadata
+// in the fix.
+func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
+	// This can't be expressed as an entry in the fixer table below
+	// because it operates in the protocol (not go/{token,ast}) domain.
+	// (Sigh; perhaps it was a mistake to factor out the
+	// NarrowestPackageForFile/RangePos/suggestedFixToEdits
+	// steps.)
+	if fix == unusedparams.FixCategory {
+		changes, err := RemoveUnusedParameter(ctx, fh, rng, snapshot)
+		if err != nil {
+			return nil, err
+		}
+		// Unwrap TextDocumentEdits again!
+		var edits []protocol.TextDocumentEdit
+		for _, change := range changes {
+			edits = append(edits, *change.TextDocumentEdit)
+		}
+		return edits, nil
+	}
+
+	fixers := map[string]fixer{
+		// Fixes for analyzer-provided diagnostics.
+		// These match the Diagnostic.Category.
+		embeddirective.FixCategory: addEmbedImport,
+		fillstruct.FixCategory:     singleFile(fillstruct.SuggestedFix),
+		stubmethods.FixCategory:    stubMethodsFixer,
+		undeclaredname.FixCategory: singleFile(undeclaredname.SuggestedFix),
+
+		// Ad-hoc fixers: these are used when the command is
+		// constructed directly by logic in server/code_action.
+		fixExtractFunction:   singleFile(extractFunction),
+		fixExtractMethod:     singleFile(extractMethod),
+		fixExtractVariable:   singleFile(extractVariable),
+		fixInlineCall:        inlineCall,
+		fixInvertIfCondition: singleFile(invertIfCondition),
+	}
 	fixer, ok := fixers[fix]
 	if !ok {
 		return nil, fmt.Errorf("no suggested fix function for %s", fix)
@@ -93,7 +138,7 @@ func ApplyFix(ctx context.Context, fix settings.Fix, snapshot *cache.Snapshot, f
 	return suggestedFixToEdits(ctx, snapshot, fixFset, suggestion)
 }
 
-// suggestedFixToEdits converts the suggestion's edits from analysis form into protocol form,
+// suggestedFixToEdits converts the suggestion's edits from analysis form into protocol form.
 func suggestedFixToEdits(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, suggestion *analysis.SuggestedFix) ([]protocol.TextDocumentEdit, error) {
 	editsPerFile := map[protocol.DocumentURI]*protocol.TextDocumentEdit{}
 	for _, edit := range suggestion.TextEdits {

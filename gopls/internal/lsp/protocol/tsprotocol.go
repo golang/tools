@@ -489,7 +489,7 @@ type CodeAction struct {
 	// a `textDocument/codeAction` and a `codeAction/resolve` request.
 	//
 	// @since 3.16.0
-	Data interface{} `json:"data,omitempty"`
+	Data *json.RawMessage `json:"data,omitempty"`
 }
 
 // The Client Capabilities of a {@link CodeActionRequest}.

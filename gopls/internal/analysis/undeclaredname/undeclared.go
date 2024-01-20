@@ -103,12 +103,20 @@ func runForError(pass *analysis.Pass, err types.Error) {
 	offset := safetoken.StartPosition(pass.Fset, err.Pos).Offset
 	end := tok.Pos(offset + len(name)) // TODO(adonovan): dubious! err.Pos + len(name)??
 	pass.Report(analysis.Diagnostic{
-		Pos:     err.Pos,
-		End:     end,
-		Message: err.Msg,
+		Pos:      err.Pos,
+		End:      end,
+		Message:  err.Msg,
+		Category: FixCategory,
+		SuggestedFixes: []analysis.SuggestedFix{{
+			Message: fmt.Sprintf("Create variable %q", name),
+			// No TextEdits => computed by a gopls command
+		}},
 	})
 }
 
+const FixCategory = "undeclaredname" // recognized by gopls ApplyFix
+
+// SuggestedFix computes the edits for the lazy (no-edits) fix suggested by the analyzer.
 func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	pos := start // don't use the end
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
@@ -146,7 +154,7 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 	// Create the new local variable statement.
 	newStmt := fmt.Sprintf("%s := %s", ident.Name, indent)
 	return fset, &analysis.SuggestedFix{
-		Message: fmt.Sprintf("Create variable \"%s\"", ident.Name),
+		Message: fmt.Sprintf("Create variable %q", ident.Name),
 		TextEdits: []analysis.TextEdit{{
 			Pos:     insertBeforeStmt.Pos(),
 			End:     insertBeforeStmt.Pos(),

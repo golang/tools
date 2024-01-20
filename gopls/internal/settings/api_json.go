@@ -214,7 +214,7 @@ var GeneratedAPIJSON = &APIJSON{
 			{
 				Name: "analyses",
 				Type: "map[string]bool",
-				Doc:  "analyses specify analyses that the user would like to enable or disable.\nA map of the names of analysis passes that should be enabled/disabled.\nA full list of analyzers that gopls uses can be found in\n[analyzers.md](https://github.com/golang/tools/blob/master/gopls/doc/analyzers.md).\n\nExample Usage:\n\n```json5\n...\n\"analyses\": {\n  \"unreachable\": false, // Disable the unreachable analyzer.\n  \"unusedparams\": true  // Enable the unusedparams analyzer.\n}\n...\n```\n",
+				Doc:  "analyses specify analyses that the user would like to enable or disable.\nA map of the names of analysis passes that should be enabled/disabled.\nA full list of analyzers that gopls uses can be found in\n[analyzers.md](https://github.com/golang/tools/blob/master/gopls/doc/analyzers.md).\n\nExample Usage:\n\n```json5\n...\n\"analyses\": {\n  \"unreachable\": false, // Disable the unreachable analyzer.\n  \"unusedvariable\": true  // Enable the unusedvariable analyzer.\n}\n...\n```\n",
 				EnumKeys: EnumKeys{
 					ValueType: "bool",
 					Keys: []EnumKey{
@@ -420,8 +420,8 @@ var GeneratedAPIJSON = &APIJSON{
 						},
 						{
 							Name:    "\"unusedparams\"",
-							Doc:     "check for unused parameters of functions\n\nThe unusedparams analyzer checks functions to see if there are\nany parameters that are not being used.\n\nTo reduce false positives it ignores:\n- methods\n- parameters that do not have a name or have the name '_' (the blank identifier)\n- functions in test files\n- functions with empty bodies or those with just a return stmt",
-							Default: "false",
+							Doc:     "check for unused parameters of functions\n\nThe unusedparams analyzer checks functions to see if there are\nany parameters that are not being used.\n\nTo ensure soundness, it ignores:\n  - \"address-taken\" functions, that is, functions that are used as\n    a value rather than being called directly; their signatures may\n    be required to conform to a func type.\n  - exported functions or methods, since they may be address-taken\n    in another package.\n  - unexported methods whose name matches an interface method\n    declared in the same package, since the method's signature\n    may be required to conform to the interface type.\n  - functions with empty bodies, or containing just a call to panic.\n  - parameters that are unnamed, or named \"_\", the blank identifier.\n\nThe analyzer suggests a fix of replacing the parameter name by \"_\",\nbut in such cases a deeper fix can be obtained by invoking the\n\"Refactor: remove unused parameter\" code action, which will\neliminate the parameter entirely, along with all corresponding\narguments at call sites, while taking care to preserve any side\neffects in the argument expressions; see\nhttps://github.com/golang/tools/releases/tag/gopls%2Fv0.14.",
+							Default: "true",
 						},
 						{
 							Name:    "\"unusedresult\"",
@@ -739,16 +739,18 @@ var GeneratedAPIJSON = &APIJSON{
 			ArgDoc:  "{\n\t// Names and Values must have the same length.\n\t\"Names\": []string,\n\t\"Values\": []int64,\n}",
 		},
 		{
-			Command: "gopls.apply_fix",
-			Title:   "Apply a fix",
-			Doc:     "Applies a fix to a region of source code.",
-			ArgDoc:  "{\n\t// The fix to apply.\n\t\"Fix\": string,\n\t// The file URI for the document to fix.\n\t\"URI\": string,\n\t// The document range to scan for fixes.\n\t\"Range\": {\n\t\t\"start\": {\n\t\t\t\"line\": uint32,\n\t\t\t\"character\": uint32,\n\t\t},\n\t\t\"end\": {\n\t\t\t\"line\": uint32,\n\t\t\t\"character\": uint32,\n\t\t},\n\t},\n}",
+			Command:   "gopls.apply_fix",
+			Title:     "Apply a fix",
+			Doc:       "Applies a fix to a region of source code.",
+			ArgDoc:    "{\n\t// The name of the fix to apply.\n\t//\n\t// For fixes suggested by analyzers, this is a string constant\n\t// advertised by the analyzer that matches the Category of\n\t// the analysis.Diagnostic with a SuggestedFix containing no edits.\n\t//\n\t// For fixes suggested by code actions, this is a string agreed\n\t// upon by the code action and source.ApplyFix.\n\t\"Fix\": string,\n\t// The file URI for the document to fix.\n\t\"URI\": string,\n\t// The document range to scan for fixes.\n\t\"Range\": {\n\t\t\"start\": {\n\t\t\t\"line\": uint32,\n\t\t\t\"character\": uint32,\n\t\t},\n\t\t\"end\": {\n\t\t\t\"line\": uint32,\n\t\t\t\"character\": uint32,\n\t\t},\n\t},\n\t// Whether to resolve and return the edits.\n\t\"ResolveEdits\": bool,\n}",
+			ResultDoc: "{\n\t// Holds changes to existing resources.\n\t\"changes\": map[golang.org/x/tools/gopls/internal/lsp/protocol.DocumentURI][]golang.org/x/tools/gopls/internal/lsp/protocol.TextEdit,\n\t// Depending on the client capability `workspace.workspaceEdit.resourceOperations` document changes\n\t// are either an array of `TextDocumentEdit`s to express changes to n different text documents\n\t// where each text document edit addresses a specific version of a text document. Or it can contain\n\t// above `TextDocumentEdit`s mixed with create, rename and delete file / folder operations.\n\t//\n\t// Whether a client supports versioned document edits is expressed via\n\t// `workspace.workspaceEdit.documentChanges` client capability.\n\t//\n\t// If a client neither supports `documentChanges` nor `workspace.workspaceEdit.resourceOperations` then\n\t// only plain `TextEdit`s using the `changes` property are supported.\n\t\"documentChanges\": []{\n\t\t\"TextDocumentEdit\": {\n\t\t\t\"textDocument\": { ... },\n\t\t\t\"edits\": { ... },\n\t\t},\n\t\t\"RenameFile\": {\n\t\t\t\"kind\": string,\n\t\t\t\"oldUri\": string,\n\t\t\t\"newUri\": string,\n\t\t\t\"options\": { ... },\n\t\t\t\"ResourceOperation\": { ... },\n\t\t},\n\t},\n\t// A map of change annotations that can be referenced in `AnnotatedTextEdit`s or create, rename and\n\t// delete file / folder operations.\n\t//\n\t// Whether clients honor this property depends on the client capability `workspace.changeAnnotationSupport`.\n\t//\n\t// @since 3.16.0\n\t\"changeAnnotations\": map[string]golang.org/x/tools/gopls/internal/lsp/protocol.ChangeAnnotation,\n}",
 		},
 		{
-			Command: "gopls.change_signature",
-			Title:   "Perform a \"change signature\" refactoring",
-			Doc:     "This command is experimental, currently only supporting parameter removal.\nIts signature will certainly change in the future (pun intended).",
-			ArgDoc:  "{\n\t\"RemoveParameter\": {\n\t\t\"uri\": string,\n\t\t\"range\": {\n\t\t\t\"start\": { ... },\n\t\t\t\"end\": { ... },\n\t\t},\n\t},\n}",
+			Command:   "gopls.change_signature",
+			Title:     "Perform a \"change signature\" refactoring",
+			Doc:       "This command is experimental, currently only supporting parameter removal.\nIts signature will certainly change in the future (pun intended).",
+			ArgDoc:    "{\n\t\"RemoveParameter\": {\n\t\t\"uri\": string,\n\t\t\"range\": {\n\t\t\t\"start\": { ... },\n\t\t\t\"end\": { ... },\n\t\t},\n\t},\n\t// Whether to resolve and return the edits.\n\t\"ResolveEdits\": bool,\n}",
+			ResultDoc: "{\n\t// Holds changes to existing resources.\n\t\"changes\": map[golang.org/x/tools/gopls/internal/lsp/protocol.DocumentURI][]golang.org/x/tools/gopls/internal/lsp/protocol.TextEdit,\n\t// Depending on the client capability `workspace.workspaceEdit.resourceOperations` document changes\n\t// are either an array of `TextDocumentEdit`s to express changes to n different text documents\n\t// where each text document edit addresses a specific version of a text document. Or it can contain\n\t// above `TextDocumentEdit`s mixed with create, rename and delete file / folder operations.\n\t//\n\t// Whether a client supports versioned document edits is expressed via\n\t// `workspace.workspaceEdit.documentChanges` client capability.\n\t//\n\t// If a client neither supports `documentChanges` nor `workspace.workspaceEdit.resourceOperations` then\n\t// only plain `TextEdit`s using the `changes` property are supported.\n\t\"documentChanges\": []{\n\t\t\"TextDocumentEdit\": {\n\t\t\t\"textDocument\": { ... },\n\t\t\t\"edits\": { ... },\n\t\t},\n\t\t\"RenameFile\": {\n\t\t\t\"kind\": string,\n\t\t\t\"oldUri\": string,\n\t\t\t\"newUri\": string,\n\t\t\t\"options\": { ... },\n\t\t\t\"ResourceOperation\": { ... },\n\t\t},\n\t},\n\t// A map of change annotations that can be referenced in `AnnotatedTextEdit`s or create, rename and\n\t// delete file / folder operations.\n\t//\n\t// Whether clients honor this property depends on the client capability `workspace.changeAnnotationSupport`.\n\t//\n\t// @since 3.16.0\n\t\"changeAnnotations\": map[string]golang.org/x/tools/gopls/internal/lsp/protocol.ChangeAnnotation,\n}",
 		},
 		{
 			Command: "gopls.check_upgrades",
@@ -1207,9 +1209,10 @@ var GeneratedAPIJSON = &APIJSON{
 			Default: true,
 		},
 		{
-			Name: "unusedparams",
-			Doc:  "check for unused parameters of functions\n\nThe unusedparams analyzer checks functions to see if there are\nany parameters that are not being used.\n\nTo reduce false positives it ignores:\n- methods\n- parameters that do not have a name or have the name '_' (the blank identifier)\n- functions in test files\n- functions with empty bodies or those with just a return stmt",
-			URL:  "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedparams",
+			Name:    "unusedparams",
+			Doc:     "check for unused parameters of functions\n\nThe unusedparams analyzer checks functions to see if there are\nany parameters that are not being used.\n\nTo ensure soundness, it ignores:\n  - \"address-taken\" functions, that is, functions that are used as\n    a value rather than being called directly; their signatures may\n    be required to conform to a func type.\n  - exported functions or methods, since they may be address-taken\n    in another package.\n  - unexported methods whose name matches an interface method\n    declared in the same package, since the method's signature\n    may be required to conform to the interface type.\n  - functions with empty bodies, or containing just a call to panic.\n  - parameters that are unnamed, or named \"_\", the blank identifier.\n\nThe analyzer suggests a fix of replacing the parameter name by \"_\",\nbut in such cases a deeper fix can be obtained by invoking the\n\"Refactor: remove unused parameter\" code action, which will\neliminate the parameter entirely, along with all corresponding\narguments at call sites, while taking care to preserve any side\neffects in the argument expressions; see\nhttps://github.com/golang/tools/releases/tag/gopls%2Fv0.14.",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedparams",
+			Default: true,
 		},
 		{
 			Name:    "unusedresult",

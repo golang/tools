@@ -9,22 +9,6 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
-// A Fix identifies kinds of suggested fix, both in Analyzer.Fix and in the
-// ApplyFix subcommand (see ExecuteCommand and ApplyFixArgs.Fix).
-type Fix string
-
-const (
-	FillStruct        Fix = "fill_struct"
-	StubMethods       Fix = "stub_methods"
-	UndeclaredName    Fix = "undeclared_name"
-	ExtractVariable   Fix = "extract_variable"
-	ExtractFunction   Fix = "extract_function"
-	ExtractMethod     Fix = "extract_method"
-	InlineCall        Fix = "inline_call"
-	InvertIfCondition Fix = "invert_if_condition"
-	AddEmbedImport    Fix = "add_embed_import"
-)
-
 // Analyzer augments a go/analysis analyzer with additional LSP configuration.
 type Analyzer struct {
 	Analyzer *analysis.Analyzer
@@ -36,15 +20,9 @@ type Analyzer struct {
 	// Most clients should use the IsEnabled method.
 	Enabled bool
 
-	// Fix is the name of the suggested fix name used to invoke the suggested
-	// fixes for the analyzer. It is non-empty if we expect this analyzer to
-	// provide its fix separately from its diagnostics. That is, we should apply
-	// the analyzer's suggested fixes through a Command, not a TextEdit.
-	Fix Fix
-
-	// ActionKind is the set of kinds of code action this analyzer produces.
+	// ActionKinds is the set of kinds of code action this analyzer produces.
 	// If empty, the set is just QuickFix.
-	ActionKind []protocol.CodeActionKind
+	ActionKinds []protocol.CodeActionKind
 
 	// Severity is the severity set for diagnostics reported by this
 	// analyzer. If left unset it defaults to Warning.

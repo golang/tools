@@ -65,3 +65,18 @@ func Grow[S ~[]E, E any](s S, n int) S {
 	}
 	return s
 }
+
+// Remove removes all values equal to elem from slice.
+//
+// The closest equivalent in the standard slices package is:
+//
+//	DeleteFunc(func(x T) bool { return x == elem })
+func Remove[T comparable](slice []T, elem T) []T {
+	out := slice[:0]
+	for _, v := range slice {
+		if v != elem {
+			out = append(out, v)
+		}
+	}
+	return out
+}

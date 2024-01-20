@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/progress"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -18,7 +19,7 @@ import (
 //
 // If the provided tracker is non-nil, it may be used to provide notifications
 // of the ongoing analysis pass.
-func Analyze(ctx context.Context, snapshot *cache.Snapshot, pkgIDs map[PackageID]unit, tracker *progress.Tracker) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
+func Analyze(ctx context.Context, snapshot *cache.Snapshot, pkgIDs map[PackageID]*metadata.Package, tracker *progress.Tracker) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	// Exit early if the context has been canceled. This also protects us
 	// from a race on Options, see golang/go#36699.
 	if ctx.Err() != nil {

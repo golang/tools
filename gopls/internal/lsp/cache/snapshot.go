@@ -85,12 +85,14 @@ type Snapshot struct {
 	store *memoize.Store // cache of handles shared by all snapshots
 
 	refMu sync.Mutex
+
 	// refcount holds the number of outstanding references to the current
-	// Snapshot. When refcount is decremented to 0, the Snapshot maps can be
-	// safely destroyed.
+	// Snapshot. When refcount is decremented to 0, the Snapshot maps are
+	// destroyed and the done function is called.
 	//
 	// TODO(rfindley): use atomic.Int32 on Go 1.19+.
 	refcount int
+	done     func() // for implementing Session.Shutdown
 
 	// mu guards all of the maps in the snapshot, as well as the builtin URI and
 	// initialized.
@@ -248,6 +250,7 @@ func (s *Snapshot) decref() {
 		s.unloadableFiles.Destroy()
 		s.moduleUpgrades.Destroy()
 		s.vulns.Destroy()
+		s.done()
 	}
 }
 
@@ -1663,10 +1666,10 @@ func inVendor(uri protocol.DocumentURI) bool {
 // also require more strictness about diagnostic dependencies. For example,
 // template.Diagnostics currently re-parses every time: there is no Snapshot
 // data responsible for providing these diagnostics.
-func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snapshot, bool) {
+func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done func()) (*Snapshot, bool) {
 	changedFiles := changed.Files
-	ctx, done := event.Start(ctx, "cache.snapshot.clone")
-	defer done()
+	ctx, stop := event.Start(ctx, "cache.snapshot.clone")
+	defer stop()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1680,6 +1683,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange) (*Snap
 		sequenceID:        s.sequenceID + 1,
 		store:             s.store,
 		refcount:          1, // Snapshots are born referenced.
+		done:              done,
 		view:              s.view,
 		backgroundCtx:     bgCtx,
 		cancel:            cancel,

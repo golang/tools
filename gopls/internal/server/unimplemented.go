@@ -102,10 +102,6 @@ func (s *server) Resolve(context.Context, *protocol.InlayHint) (*protocol.InlayH
 	return nil, notImplemented("Resolve")
 }
 
-func (s *server) ResolveCodeAction(context.Context, *protocol.CodeAction) (*protocol.CodeAction, error) {
-	return nil, notImplemented("ResolveCodeAction")
-}
-
 func (s *server) ResolveCodeLens(context.Context, *protocol.CodeLens) (*protocol.CodeLens, error) {
 	return nil, notImplemented("ResolveCodeLens")
 }

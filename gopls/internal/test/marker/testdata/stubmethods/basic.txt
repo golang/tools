@@ -1,4 +1,5 @@
 This test exercises basic 'stub methods' functionality.
+See basic_resolve.txt for the same test with resolve support.
 
 -- go.mod --
 module example.com
@@ -13,7 +14,7 @@ var _ error = C(0) //@suggestedfix(re"C.0.", re"missing method Error", stub)
 -- @stub/a/a.go --
 @@ -5 +5,5 @@
 +// Error implements error.
-+func (C) Error() string {
++func (c C) Error() string {
 +	panic("unimplemented")
 +}
 +

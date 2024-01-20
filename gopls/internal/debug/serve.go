@@ -51,7 +51,6 @@ type Instance struct {
 	Logfile       string
 	StartTime     time.Time
 	ServerAddress string
-	Workdir       string
 	OCAgentConfig string
 
 	LogWriter io.Writer
@@ -368,10 +367,9 @@ func GetInstance(ctx context.Context) *Instance {
 
 // WithInstance creates debug instance ready for use using the supplied
 // configuration and stores it in the returned context.
-func WithInstance(ctx context.Context, workdir, agent string) context.Context {
+func WithInstance(ctx context.Context, agent string) context.Context {
 	i := &Instance{
 		StartTime:     time.Now(),
-		Workdir:       workdir,
 		OCAgentConfig: agent,
 	}
 	i.LogWriter = os.Stderr
@@ -464,7 +462,6 @@ func (i *Instance) Serve(ctx context.Context, addr string) (string, error) {
 		mux.HandleFunc("/analysis/", render(AnalysisTmpl, i.getAnalysis))
 		mux.HandleFunc("/cache/", render(CacheTmpl, i.getCache))
 		mux.HandleFunc("/session/", render(SessionTmpl, i.getSession))
-		mux.HandleFunc("/view/", render(ViewTmpl, i.getView))
 		mux.HandleFunc("/client/", render(ClientTmpl, i.getClient))
 		mux.HandleFunc("/server/", render(ServerTmpl, i.getServer))
 		mux.HandleFunc("/file/", render(FileTmpl, i.getFile))
@@ -646,11 +643,16 @@ var BaseTemplate = template.Must(template.New("").Parse(`
 	width:6rem;
 }
 td.value {
-  text-align: right;
+	text-align: right;
 }
 ul.spans {
 	font-family: monospace;
 	font-size:   85%;
+}
+body {
+	font-family: sans-serif;
+	font-size: 1rem;
+	line-height: normal;
 }
 </style>
 {{block "head" .}}{{end}}
@@ -676,7 +678,6 @@ Unknown page
 {{define "clientlink"}}<a href="/client/{{.}}">Client {{.}}</a>{{end}}
 {{define "serverlink"}}<a href="/server/{{.}}">Server {{.}}</a>{{end}}
 {{define "sessionlink"}}<a href="/session/{{.}}">Session {{.}}</a>{{end}}
-{{define "viewlink"}}<a href="/view/{{.}}">View {{.}}</a>{{end}}
 `)).Funcs(template.FuncMap{
 	"fuint64":  fuint64,
 	"fuint32":  fuint32,
@@ -708,7 +709,7 @@ Unknown page
 })
 
 var MainTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
-{{define "title"}}GoPls server information{{end}}
+{{define "title"}}Gopls server information{{end}}
 {{define "body"}}
 <h2>Caches</h2>
 <ul>{{range .State.Caches}}<li>{{template "cachelink" .ID}}</li>{{end}}</ul>
@@ -724,7 +725,7 @@ var MainTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 `))
 
 var InfoTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
-{{define "title"}}GoPls version information{{end}}
+{{define "title"}}Gopls version information{{end}}
 {{define "body"}}
 {{.}}
 {{end}}
@@ -773,6 +774,13 @@ var CacheTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{define "body"}}
 <h2>memoize.Store entries</h2>
 <ul>{{range $k,$v := .MemStats}}<li>{{$k}} - {{$v}}</li>{{end}}</ul>
+<h2>File stats</h2>
+<p>
+{{- $stats := .FileStats -}}
+Total: <b>{{$stats.Total}}</b><br>
+Largest: <b>{{$stats.Largest}}</b><br>
+Errors: <b>{{$stats.Errs}}</b><br>
+</p>
 {{end}}
 `))
 
@@ -808,21 +816,22 @@ var SessionTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{define "body"}}
 From: <b>{{template "cachelink" .Cache.ID}}</b><br>
 <h2>Views</h2>
-<ul>{{range .Views}}<li>{{.Folder.Name}} is {{template "viewlink" .ID}} in {{.Folder.Dir}}</li>{{end}}</ul>
+<ul>{{range .Views}}
+{{- $envOverlay := .EnvOverlay -}}
+<li>ID: <b>{{.ID}}</b><br>
+Type: <b>{{.Type}}</b><br>
+Root: <b>{{.Root}}</b><br>
+{{- if $envOverlay}}
+Env overlay: <b>{{$envOverlay}})</b><br>
+{{end -}}
+Folder: <b>{{.Folder.Name}}:{{.Folder.Dir}}</b></li>
+{{end}}</ul>
 <h2>Overlays</h2>
 {{$session := .}}
 <ul>{{range .Overlays}}
 <li>
 <a href="/file/{{$session.ID}}/{{.Identity.Hash}}">{{.Identity.URI}}</a>
 </li>{{end}}</ul>
-{{end}}
-`))
-
-var ViewTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
-{{define "title"}}View {{.ID}}{{end}}
-{{define "body"}}
-Name: <b>{{.Folder.Name}}</b><br>
-Folder: <b>{{.Folder.Dir}}</b><br>
 {{end}}
 `))
 

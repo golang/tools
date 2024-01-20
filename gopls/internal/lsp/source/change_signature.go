@@ -170,15 +170,7 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		if err != nil {
 			return nil, fmt.Errorf("computing edits for %s: %v", uri, err)
 		}
-		changes = append(changes, protocol.DocumentChanges{
-			TextDocumentEdit: &protocol.TextDocumentEdit{
-				TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
-					Version:                fh.Version(),
-					TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri},
-				},
-				Edits: protocol.AsAnnotatedTextEdits(pedits),
-			},
-		})
+		changes = append(changes, documentChanges(fh, pedits)...)
 	}
 	return changes, nil
 }

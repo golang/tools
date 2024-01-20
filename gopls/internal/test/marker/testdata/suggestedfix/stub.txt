@@ -53,7 +53,7 @@ type byteWriter struct{}
 @@ -12 +12,5 @@
 +
 +// WriteByte implements io.ByteWriter.
-+func (*byteWriter) WriteByte(c byte) error {
++func (b *byteWriter) WriteByte(c byte) error {
 +	panic("unimplemented")
 +}
 -- assign_multivars.go --
@@ -73,7 +73,7 @@ type multiByteWriter struct{}
 @@ -13 +13,5 @@
 +
 +// WriteByte implements io.ByteWriter.
-+func (*multiByteWriter) WriteByte(c byte) error {
++func (m *multiByteWriter) WriteByte(c byte) error {
 +	panic("unimplemented")
 +}
 -- call_expr.go --
@@ -94,7 +94,7 @@ type callExpr struct{}
 @@ -14 +14,5 @@
 +
 +// Error implements error.
-+func (*callExpr) Error() string {
++func (c *callExpr) Error() string {
 +	panic("unimplemented")
 +}
 -- embedded.go --
@@ -116,22 +116,22 @@ type embeddedInterface interface {
 -- @embedded/embedded.go --
 @@ -12 +12,20 @@
 +// Len implements embeddedInterface.
-+func (*embeddedConcrete) Len() int {
++func (e *embeddedConcrete) Len() int {
 +	panic("unimplemented")
 +}
 +
 +// Less implements embeddedInterface.
-+func (*embeddedConcrete) Less(i int, j int) bool {
++func (e *embeddedConcrete) Less(i int, j int) bool {
 +	panic("unimplemented")
 +}
 +
 +// Read implements embeddedInterface.
-+func (*embeddedConcrete) Read(p []byte) (n int, err error) {
++func (e *embeddedConcrete) Read(p []byte) (n int, err error) {
 +	panic("unimplemented")
 +}
 +
 +// Swap implements embeddedInterface.
-+func (*embeddedConcrete) Swap(i int, j int) {
++func (e *embeddedConcrete) Swap(i int, j int) {
 +	panic("unimplemented")
 +}
 +
@@ -148,7 +148,7 @@ type customErr struct{}
 @@ -9 +9,5 @@
 +
 +// Error implements error.
-+func (*customErr) Error() string {
++func (c *customErr) Error() string {
 +	panic("unimplemented")
 +}
 -- function_return.go --
@@ -167,7 +167,7 @@ type closer struct{}
 @@ -12 +12,5 @@
 +
 +// Close implements io.Closer.
-+func (closer) Close() error {
++func (c closer) Close() error {
 +	panic("unimplemented")
 +}
 -- generic_receiver.go --
@@ -187,7 +187,7 @@ type genReader[T, Y any] struct {
 @@ -13 +13,5 @@
 +
 +// ReadFrom implements io.ReaderFrom.
-+func (*genReader[T, Y]) ReadFrom(r io.Reader) (n int64, err error) {
++func (g *genReader[T, Y]) ReadFrom(r io.Reader) (n int64, err error) {
 +	panic("unimplemented")
 +}
 -- ignored_imports.go --
@@ -213,7 +213,7 @@ type ignoredResetter struct{}
 @@ -19 +19,5 @@
 +
 +// Reset implements zlib.Resetter.
-+func (*ignoredResetter) Reset(r Reader, dict []byte) error {
++func (i *ignoredResetter) Reset(r Reader, dict []byte) error {
 +	panic("unimplemented")
 +}
 -- issue2606.go --
@@ -227,7 +227,7 @@ var _ I = C(0) //@suggestedfix("C", re"does not implement", issue2606)
 -- @issue2606/issue2606.go --
 @@ -7 +7,5 @@
 +// Error implements I.
-+func (C) Error() string {
++func (c C) Error() string {
 +	panic("unimplemented")
 +}
 +
@@ -247,7 +247,7 @@ type multiVar struct{}
 @@ -12 +12,5 @@
 +
 +// Read implements io.Reader.
-+func (*multiVar) Read(p []byte) (n int, err error) {
++func (m *multiVar) Read(p []byte) (n int, err error) {
 +	panic("unimplemented")
 +}
 -- pointer.go --
@@ -264,7 +264,7 @@ type pointerImpl struct{}
 @@ -10 +10,5 @@
 +
 +// ReadFrom implements io.ReaderFrom.
-+func (*pointerImpl) ReadFrom(r io.Reader) (n int64, err error) {
++func (p *pointerImpl) ReadFrom(r io.Reader) (n int64, err error) {
 +	panic("unimplemented")
 +}
 -- renamed_import.go --
@@ -283,7 +283,7 @@ type myIO struct{}
 @@ -12 +12,5 @@
 +
 +// Reset implements zlib.Resetter.
-+func (*myIO) Reset(r myio.Reader, dict []byte) error {
++func (m *myIO) Reset(r myio.Reader, dict []byte) error {
 +	panic("unimplemented")
 +}
 -- renamed_import_iface.go --
@@ -307,7 +307,7 @@ type otherInterfaceImpl struct{}
 @@ -14 +16,5 @@
 +
 +// Get implements other.Interface.
-+func (*otherInterfaceImpl) Get(context.Context) *bytes.Buffer {
++func (o *otherInterfaceImpl) Get(context.Context) *bytes.Buffer {
 +	panic("unimplemented")
 +}
 -- stdlib.go --
@@ -324,7 +324,7 @@ type writer struct{}
 @@ -10 +10,5 @@
 +
 +// Write implements io.Writer.
-+func (writer) Write(p []byte) (n int, err error) {
++func (w writer) Write(p []byte) (n int, err error) {
 +	panic("unimplemented")
 +}
 -- typedecl_group.go --
@@ -354,12 +354,12 @@ func _() {
 -- @typedecl_group/typedecl_group.go --
 @@ -18 +18,10 @@
 +// Close implements io.ReadCloser.
-+func (rdcloser) Close() error {
++func (r rdcloser) Close() error {
 +	panic("unimplemented")
 +}
 +
 +// Read implements io.ReadCloser.
-+func (rdcloser) Read(p []byte) (n int, err error) {
++func (r rdcloser) Read(p []byte) (n int, err error) {
 +	panic("unimplemented")
 +}
 +

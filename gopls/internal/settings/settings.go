@@ -131,6 +131,7 @@ type ClientOptions struct {
 	CompletionTags                             bool
 	CompletionDeprecated                       bool
 	SupportedResourceOperations                []protocol.ResourceOperationKind
+	CodeActionResolveOptions                   []string
 }
 
 // ServerOptions holds LSP-specific configuration that is provided by the
@@ -326,7 +327,7 @@ type DiagnosticOptions struct {
 	// ...
 	// "analyses": {
 	//   "unreachable": false, // Disable the unreachable analyzer.
-	//   "unusedparams": true  // Enable the unusedparams analyzer.
+	//   "unusedvariable": true  // Enable the unusedvariable analyzer.
 	// }
 	// ...
 	// ```
@@ -748,6 +749,11 @@ func (o *Options) ForClientCapabilities(clientName *protocol.ClientInfo, caps pr
 	} else if caps.TextDocument.Completion.CompletionItem.DeprecatedSupport {
 		o.CompletionDeprecated = true
 	}
+
+	// Check if the client supports code actions resolving.
+	if caps.TextDocument.CodeAction.DataSupport && caps.TextDocument.CodeAction.ResolveSupport != nil {
+		o.CodeActionResolveOptions = caps.TextDocument.CodeAction.ResolveSupport.Properties
+	}
 }
 
 func (o *Options) Clone() *Options {
@@ -821,9 +827,6 @@ func (o *Options) enableAllExperimentMaps() {
 	}
 	if _, ok := o.Codelenses[string(command.RunGovulncheck)]; !ok {
 		o.Codelenses[string(command.RunGovulncheck)] = true
-	}
-	if _, ok := o.Analyses[unusedparams.Analyzer.Name]; !ok {
-		o.Analyses[unusedparams.Analyzer.Name] = true
 	}
 	if _, ok := o.Analyses[unusedvariable.Analyzer.Name]; !ok {
 		o.Analyses[unusedvariable.Analyzer.Name] = true
@@ -1382,8 +1385,8 @@ func typeErrorAnalyzers() map[string]*Analyzer {
 		fillreturns.Analyzer.Name: {
 			Analyzer: fillreturns.Analyzer,
 			// TODO(rfindley): is SourceFixAll even necessary here? Is that not implied?
-			ActionKind: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
-			Enabled:    true,
+			ActionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+			Enabled:     true,
 		},
 		nonewvars.Analyzer.Name: {
 			Analyzer: nonewvars.Analyzer,
@@ -1395,7 +1398,6 @@ func typeErrorAnalyzers() map[string]*Analyzer {
 		},
 		undeclaredname.Analyzer.Name: {
 			Analyzer: undeclaredname.Analyzer,
-			Fix:      UndeclaredName,
 			Enabled:  true,
 		},
 		unusedvariable.Analyzer.Name: {
@@ -1410,20 +1412,18 @@ func typeErrorAnalyzers() map[string]*Analyzer {
 func convenienceAnalyzers() map[string]*Analyzer {
 	return map[string]*Analyzer{
 		fillstruct.Analyzer.Name: {
-			Analyzer:   fillstruct.Analyzer,
-			Fix:        FillStruct,
-			Enabled:    true,
-			ActionKind: []protocol.CodeActionKind{protocol.RefactorRewrite},
+			Analyzer:    fillstruct.Analyzer,
+			Enabled:     true,
+			ActionKinds: []protocol.CodeActionKind{protocol.RefactorRewrite},
 		},
 		stubmethods.Analyzer.Name: {
 			Analyzer: stubmethods.Analyzer,
-			Fix:      StubMethods,
 			Enabled:  true,
 		},
 		infertypeargs.Analyzer.Name: {
-			Analyzer:   infertypeargs.Analyzer,
-			Enabled:    true,
-			ActionKind: []protocol.CodeActionKind{protocol.RefactorRewrite},
+			Analyzer:    infertypeargs.Analyzer,
+			Enabled:     true,
+			ActionKinds: []protocol.CodeActionKind{protocol.RefactorRewrite},
 		},
 	}
 }
@@ -1469,31 +1469,27 @@ func defaultAnalyzers() map[string]*Analyzer {
 		shadow.Analyzer.Name:           {Analyzer: shadow.Analyzer, Enabled: false},
 		sortslice.Analyzer.Name:        {Analyzer: sortslice.Analyzer, Enabled: true},
 		testinggoroutine.Analyzer.Name: {Analyzer: testinggoroutine.Analyzer, Enabled: true},
-		unusedparams.Analyzer.Name:     {Analyzer: unusedparams.Analyzer, Enabled: false},
+		unusedparams.Analyzer.Name:     {Analyzer: unusedparams.Analyzer, Enabled: true},
 		unusedwrite.Analyzer.Name:      {Analyzer: unusedwrite.Analyzer, Enabled: false},
 		useany.Analyzer.Name:           {Analyzer: useany.Analyzer, Enabled: false},
 		timeformat.Analyzer.Name:       {Analyzer: timeformat.Analyzer, Enabled: true},
-		embeddirective.Analyzer.Name: {
-			Analyzer: embeddirective.Analyzer,
-			Enabled:  true,
-			Fix:      AddEmbedImport,
-		},
+		embeddirective.Analyzer.Name:   {Analyzer: embeddirective.Analyzer, Enabled: true},
 
 		// gofmt -s suite:
 		simplifycompositelit.Analyzer.Name: {
-			Analyzer:   simplifycompositelit.Analyzer,
-			Enabled:    true,
-			ActionKind: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+			Analyzer:    simplifycompositelit.Analyzer,
+			Enabled:     true,
+			ActionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
 		},
 		simplifyrange.Analyzer.Name: {
-			Analyzer:   simplifyrange.Analyzer,
-			Enabled:    true,
-			ActionKind: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+			Analyzer:    simplifyrange.Analyzer,
+			Enabled:     true,
+			ActionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
 		},
 		simplifyslice.Analyzer.Name: {
-			Analyzer:   simplifyslice.Analyzer,
-			Enabled:    true,
-			ActionKind: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+			Analyzer:    simplifyslice.Analyzer,
+			Enabled:     true,
+			ActionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
 		},
 	}
 }

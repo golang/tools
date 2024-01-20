@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -78,7 +79,7 @@ FindCall:
 	}
 	// Inv: sig != nil
 
-	qf := Qualifier(pgf.File, pkg.GetTypes(), info)
+	qf := typesutil.FileQualifier(pgf.File, pkg.GetTypes(), info)
 
 	// Get the object representing the function, if available.
 	// There is no object in certain cases such as calling a function returned by

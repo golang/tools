@@ -135,7 +135,27 @@ Suffixes:
 				if err != nil {
 					return CompletionItem{}, err
 				}
-				c.functionCallSnippet("", s.TypeParams(), s.Params(), &snip)
+
+				tparams := s.TypeParams()
+				if len(tparams) > 0 {
+					// Eliminate the suffix of type parameters that are
+					// likely redundant because they can probably be
+					// inferred from the argument types (#51783).
+					//
+					// We don't bother doing the reverse inference from
+					// result types as result-only type parameters are
+					// quite unusual.
+					free := inferableTypeParams(sig)
+					for i := sig.TypeParams().Len() - 1; i >= 0; i-- {
+						tparam := sig.TypeParams().At(i)
+						if !free[tparam] {
+							break
+						}
+						tparams = tparams[:i] // eliminate
+					}
+				}
+
+				c.functionCallSnippet("", tparams, s.Params(), &snip)
 				if sig.Results().Len() == 1 {
 					funcType = sig.Results().At(0).Type()
 				}
@@ -310,6 +330,7 @@ func (c *completer) formatBuiltin(ctx context.Context, cand candidate) (Completi
 		}
 		item.Detail = "func" + sig.Format()
 		item.snippet = &snippet.Builder{}
+		// The signature inferred for a built-in is instantiated, so TypeParams=∅.
 		c.functionCallSnippet(obj.Name(), sig.TypeParams(), sig.Params(), item.snippet)
 	case *types.TypeName:
 		if types.IsInterface(obj.Type()) {
@@ -340,4 +361,79 @@ func (c *completer) wantTypeParams() bool {
 		}
 	}
 	return false
+}
+
+// inferableTypeParams returns the set of type parameters
+// of sig that are constrained by (inferred from) the argument types.
+func inferableTypeParams(sig *types.Signature) map[*types.TypeParam]bool {
+	free := make(map[*types.TypeParam]bool)
+
+	// visit adds to free all the free type parameters of t.
+	var visit func(t types.Type)
+	visit = func(t types.Type) {
+		switch t := t.(type) {
+		case *types.Array:
+			visit(t.Elem())
+		case *types.Chan:
+			visit(t.Elem())
+		case *types.Map:
+			visit(t.Key())
+			visit(t.Elem())
+		case *types.Pointer:
+			visit(t.Elem())
+		case *types.Slice:
+			visit(t.Elem())
+		case *types.Interface:
+			for i := 0; i < t.NumExplicitMethods(); i++ {
+				visit(t.ExplicitMethod(i).Type())
+			}
+			for i := 0; i < t.NumEmbeddeds(); i++ {
+				visit(t.EmbeddedType(i))
+			}
+		case *types.Union:
+			for i := 0; i < t.Len(); i++ {
+				visit(t.Term(i).Type())
+			}
+		case *types.Signature:
+			if tp := t.TypeParams(); tp != nil {
+				// Generic signatures only appear as the type of generic
+				// function declarations, so this isn't really reachable.
+				for i := 0; i < tp.Len(); i++ {
+					visit(tp.At(i).Constraint())
+				}
+			}
+			visit(t.Params())
+			visit(t.Results())
+		case *types.Tuple:
+			for i := 0; i < t.Len(); i++ {
+				visit(t.At(i).Type())
+			}
+		case *types.Struct:
+			for i := 0; i < t.NumFields(); i++ {
+				visit(t.Field(i).Type())
+			}
+		case *types.TypeParam:
+			free[t] = true
+		case *types.Basic, *types.Named:
+			// nop
+		default:
+			panic(t)
+		}
+	}
+
+	visit(sig.Params())
+
+	// Perform induction through constraints.
+restart:
+	for i := 0; i < sig.TypeParams().Len(); i++ {
+		tp := sig.TypeParams().At(i)
+		if free[tp] {
+			n := len(free)
+			visit(tp.Constraint())
+			if len(free) > n {
+				goto restart // iterate until fixed point
+			}
+		}
+	}
+	return free
 }

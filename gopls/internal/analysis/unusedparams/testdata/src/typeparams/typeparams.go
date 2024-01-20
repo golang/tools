@@ -24,28 +24,28 @@ func (y *yuh[int]) n(f bool) {
 	}
 }
 
-func a[T comparable](i1 int, i2 T, i3 int) int { // want "potentially unused parameter: 'i2'"
+func a[T comparable](i1 int, i2 T, i3 int) int { // want "unused parameter: i2"
 	i3 += i1
-	_ = func(z int) int { // want "potentially unused parameter: 'z'"
+	_ = func(z int) int { // want "unused parameter: z"
 		_ = 1
 		return 1
 	}
 	return i3
 }
 
-func b[T any](c bytes.Buffer) { // want "potentially unused parameter: 'c'"
+func b[T any](c bytes.Buffer) { // want "unused parameter: c"
 	_ = 1
 }
 
-func z[T http.ResponseWriter](h T, _ *http.Request) { // want "potentially unused parameter: 'h'"
+func z[T http.ResponseWriter](h T, _ *http.Request) { // no report: func z is address-taken
 	fmt.Println("Before")
 }
 
-func l(h http.Handler) http.Handler {
+func l(h http.Handler) http.Handler { // want "unused parameter: h"
 	return http.HandlerFunc(z[http.ResponseWriter])
 }
 
-func mult(a, b int) int { // want "potentially unused parameter: 'b'"
+func mult(a, b int) int { // want "unused parameter: b"
 	a += 1
 	return a
 }

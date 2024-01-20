@@ -172,7 +172,7 @@ const AnalysisProgressTitle = "Analyzing Dependencies"
 // The analyzers list must be duplicate free; order does not matter.
 //
 // Notifications of progress may be sent to the optional reporter.
-func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]unit, analyzers []*settings.Analyzer, reporter *progress.Tracker) ([]*Diagnostic, error) {
+func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Package, analyzers []*settings.Analyzer, reporter *progress.Tracker) ([]*Diagnostic, error) {
 	start := time.Now() // for progress reporting
 
 	var tagStr string // sorted comma-separated list of PackageIDs
@@ -1269,10 +1269,21 @@ func (act *action) exec() (interface{}, *actionSummary, error) {
 		factFilter[reflect.TypeOf(f)] = true
 	}
 
+	// If the package contains "fixed" files, it's not necessarily an error if we
+	// can't convert positions.
+	hasFixedFiles := false
+	for _, p := range pkg.parsed {
+		if p.Fixed() {
+			hasFixedFiles = true
+			break
+		}
+	}
+
 	// posToLocation converts from token.Pos to protocol form.
 	// TODO(adonovan): improve error messages.
 	posToLocation := func(start, end token.Pos) (protocol.Location, error) {
 		tokFile := pkg.fset.File(start)
+
 		for _, p := range pkg.parsed {
 			if p.Tok == tokFile {
 				if end == token.NoPos {
@@ -1281,8 +1292,11 @@ func (act *action) exec() (interface{}, *actionSummary, error) {
 				return p.PosLocation(start, end)
 			}
 		}
-		return protocol.Location{},
-			bug.Errorf("internal error: token.Pos not within package")
+		errorf := bug.Errorf
+		if hasFixedFiles {
+			errorf = fmt.Errorf
+		}
+		return protocol.Location{}, errorf("token.Pos not within package")
 	}
 
 	// Now run the (pkg, analyzer) action.
@@ -1299,7 +1313,9 @@ func (act *action) exec() (interface{}, *actionSummary, error) {
 		Report: func(d analysis.Diagnostic) {
 			diagnostic, err := toGobDiagnostic(posToLocation, analyzer, d)
 			if err != nil {
-				bug.Reportf("internal error converting diagnostic from analyzer %q: %v", analyzer.Name, err)
+				if !hasFixedFiles {
+					bug.Reportf("internal error converting diagnostic from analyzer %q: %v", analyzer.Name, err)
+				}
 				return
 			}
 			diagnostics = append(diagnostics, diagnostic)

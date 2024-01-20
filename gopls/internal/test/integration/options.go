@@ -73,6 +73,13 @@ func ClientName(name string) RunOption {
 	})
 }
 
+// CapabilitiesJSON sets the capabalities json.
+func CapabilitiesJSON(capabilities []byte) RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.editor.CapabilitiesJSON = capabilities
+	})
+}
+
 // Settings sets user-provided configuration for the LSP server.
 //
 // As a special case, the env setting must not be provided via Settings: use

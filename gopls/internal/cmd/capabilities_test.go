@@ -40,10 +40,10 @@ func TestCapabilities(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	app := New("gopls-test", tmpDir, os.Environ(), nil)
+	app := New(nil)
 
 	params := &protocol.ParamInitialize{}
-	params.RootURI = protocol.URIFromPath(app.wd)
+	params.RootURI = protocol.URIFromPath(tmpDir)
 	params.Capabilities.Workspace.Configuration = true
 
 	// Send an initialize request to the server.

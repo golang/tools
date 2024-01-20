@@ -65,7 +65,7 @@ func TestStartDebugging(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reading HTTP response body: %v", err)
 		}
-		const want = "<title>GoPls"
+		const want = "<title>Gopls"
 		if !strings.Contains(string(data), want) {
 			t.Errorf("GET %s response does not contain %q: <<%s>>", debugURL, want, data)
 		}

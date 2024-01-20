@@ -19,7 +19,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/tokeninternal"
 )
 
@@ -139,8 +138,6 @@ func Deref(typ types.Type) types.Type {
 
 // findFileInDeps finds package metadata containing URI in the transitive
 // dependencies of m. When using the Go command, the answer is unique.
-//
-// TODO(rfindley): refactor to share logic with findPackageInDeps?
 func findFileInDeps(s metadata.Source, mp *metadata.Package, uri protocol.DocumentURI) *metadata.Package {
 	seen := make(map[PackageID]bool)
 	var search func(*metadata.Package) *metadata.Package
@@ -189,31 +186,6 @@ func CollectScopes(info *types.Info, path []ast.Node, pos token.Pos) []*types.Sc
 		scopes = append(scopes, info.Scopes[n])
 	}
 	return scopes
-}
-
-// Qualifier returns a function that appropriately formats a types.PkgName
-// appearing in a *ast.File.
-func Qualifier(f *ast.File, pkg *types.Package, info *types.Info) types.Qualifier {
-	// Construct mapping of import paths to their defined or implicit names.
-	imports := make(map[*types.Package]string)
-	for _, imp := range f.Imports {
-		if pkgname, ok := typesutil.ImportedPkgName(info, imp); ok {
-			imports[pkgname.Imported()] = pkgname.Name()
-		}
-	}
-	// Define qualifier to replace full package paths with names of the imports.
-	return func(p *types.Package) string {
-		if p == pkg {
-			return ""
-		}
-		if name, ok := imports[p]; ok {
-			if name == "." {
-				return ""
-			}
-			return name
-		}
-		return p.Name()
-	}
 }
 
 // requalifier returns a function that re-qualifies identifiers and qualified

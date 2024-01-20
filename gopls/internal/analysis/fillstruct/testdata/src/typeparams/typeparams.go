@@ -12,16 +12,16 @@ type basicStruct[T any] struct {
 	foo T
 }
 
-var _ = basicStruct[int]{} // want `Fill basicStruct\[int\]`
+var _ = basicStruct[int]{} // want `basicStruct\[int\] literal has missing fields`
 
 type twoArgStruct[F, B any] struct {
 	foo F
 	bar B
 }
 
-var _ = twoArgStruct[string, int]{} // want `Fill twoArgStruct\[string, int\]`
+var _ = twoArgStruct[string, int]{} // want `twoArgStruct\[string, int\] literal has missing fields`
 
-var _ = twoArgStruct[int, string]{ // want `Fill twoArgStruct\[int, string\]`
+var _ = twoArgStruct[int, string]{ // want `twoArgStruct\[int, string\] literal has missing fields`
 	bar: "bar",
 }
 
@@ -30,11 +30,11 @@ type nestedStruct struct {
 	basic basicStruct[int]
 }
 
-var _ = nestedStruct{} // want "Fill nestedStruct"
+var _ = nestedStruct{} // want "nestedStruct literal has missing fields"
 
 func _[T any]() {
 	type S struct{ t T }
-	x := S{} // want "Fill S"
+	x := S{} // want "S"
 	_ = x
 }
 
@@ -42,7 +42,7 @@ func Test() {
 	var tests = []struct {
 		a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p string
 	}{
-		{}, // want "Fill anonymous struct { a: string, b: string, c: string, ... }"
+		{}, // want "anonymous struct{ a: string, b: string, c: string, ... } literal has missing fields"
 	}
 	for _, test := range tests {
 		_ = test

@@ -42,6 +42,11 @@ type Session struct {
 	views   []*View
 	viewMap map[protocol.DocumentURI]*View // file->best view; nil after shutdown
 
+	// snapshots is a counting semaphore that records the number
+	// of unreleased snapshots associated with this session.
+	// Shutdown waits for it to fall to zero.
+	snapshotWG sync.WaitGroup
+
 	parseCache *parseCache
 
 	*overlayFS
@@ -68,6 +73,7 @@ func (s *Session) Shutdown(ctx context.Context) {
 		view.shutdown()
 	}
 	s.parseCache.stop()
+	s.snapshotWG.Wait() // wait for all work on associated snapshots to finish
 	event.Log(ctx, "Shutdown session", KeyShutdownSession.Of(s))
 }
 
@@ -183,12 +189,14 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		},
 	}
 
+	s.snapshotWG.Add(1)
 	v.snapshot = &Snapshot{
 		view:             v,
 		backgroundCtx:    backgroundCtx,
 		cancel:           cancel,
 		store:            s.cache.store,
 		refcount:         1, // Snapshots are born referenced.
+		done:             s.snapshotWG.Done,
 		packages:         new(persistent.Map[PackageID, *packageHandle]),
 		meta:             new(metadata.Graph),
 		files:            newFileMap(),
@@ -217,7 +225,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 
 	// Initialize the view without blocking.
 	initCtx, initCancel := context.WithCancel(xcontext.Detach(ctx))
-	v.initCancelFirstAttempt = initCancel
+	v.cancelInitialWorkspaceLoad = initCancel
 	snapshot := v.snapshot
 
 	// Pass a second reference to the background goroutine.
@@ -822,7 +830,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 	// ...but changes may be relevant to other views, for example if they are
 	// changes to a shared package.
 	for _, v := range s.views {
-		_, release, needsDiagnosis := v.Invalidate(ctx, StateChange{Files: changed})
+		_, release, needsDiagnosis := s.invalidateViewLocked(ctx, v, StateChange{Files: changed})
 		release()
 
 		if needsDiagnosis || checkViews {

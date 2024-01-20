@@ -29,6 +29,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
@@ -100,21 +101,12 @@ type View struct {
 	// ignoreFilter is used for fast checking of ignored files.
 	ignoreFilter *ignoreFilter
 
-	// initCancelFirstAttempt can be used to terminate the view's first
+	// cancelInitialWorkspaceLoad can be used to terminate the view's first
 	// attempt at initialization.
-	initCancelFirstAttempt context.CancelFunc
+	cancelInitialWorkspaceLoad context.CancelFunc
 
-	// Track the latest snapshot via the snapshot field, guarded by snapshotMu.
-	//
-	// Invariant: whenever the snapshot field is overwritten, destroy(snapshot)
-	// is called on the previous (overwritten) snapshot while snapshotMu is held,
-	// incrementing snapshotWG. During shutdown the final snapshot is
-	// overwritten with nil and destroyed, guaranteeing that all observed
-	// snapshots have been destroyed via the destroy method, and snapshotWG may
-	// be waited upon to let these destroy operations complete.
 	snapshotMu sync.Mutex
-	snapshot   *Snapshot      // latest snapshot; nil after shutdown has been called
-	snapshotWG sync.WaitGroup // refcount for pending destroy operations
+	snapshot   *Snapshot // latest snapshot; nil after shutdown has been called
 
 	// initialWorkspaceLoad is closed when the first workspace initialization has
 	// completed. If we failed to load, we only retry if the go.mod file changes,
@@ -513,11 +505,10 @@ func (v *View) filterFunc() func(protocol.DocumentURI) bool {
 	}
 }
 
-// shutdown releases resources associated with the view, and waits for ongoing
-// work to complete.
+// shutdown releases resources associated with the view.
 func (v *View) shutdown() {
 	// Cancel the initial workspace load if it is still running.
-	v.initCancelFirstAttempt()
+	v.cancelInitialWorkspaceLoad()
 
 	v.snapshotMu.Lock()
 	if v.snapshot != nil {
@@ -526,8 +517,6 @@ func (v *View) shutdown() {
 		v.snapshot = nil
 	}
 	v.snapshotMu.Unlock()
-
-	v.snapshotWG.Wait()
 }
 
 // IgnoredFile reports if a file would be ignored by a `go list` of the whole
@@ -767,16 +756,33 @@ type StateChange struct {
 	GCDetails      map[metadata.PackageID]bool // package -> whether or not we want details
 }
 
-// Invalidate processes the provided state change, invalidating any derived
+// InvalidateView processes the provided state change, invalidating any derived
 // results that depend on the changed state.
 //
 // The resulting snapshot is non-nil, representing the outcome of the state
 // change. The second result is a function that must be called to release the
 // snapshot when the snapshot is no longer needed.
 //
-// The resulting bool reports whether the new View needs to be re-diagnosed.
-// See Snapshot.clone for more details.
-func (v *View) Invalidate(ctx context.Context, changed StateChange) (*Snapshot, func(), bool) {
+// An error is returned if the given view is no longer active in the session.
+func (s *Session) InvalidateView(ctx context.Context, view *View, changed StateChange) (*Snapshot, func(), error) {
+	s.viewMu.Lock()
+	defer s.viewMu.Unlock()
+
+	if !slices.Contains(s.views, view) {
+		return nil, nil, fmt.Errorf("view is no longer active")
+	}
+	snapshot, release, _ := s.invalidateViewLocked(ctx, view, changed)
+	return snapshot, release, nil
+}
+
+// invalidateViewLocked invalidates the content of the given view.
+// (See [Session.InvalidateView]).
+//
+// The resulting bool reports whether the View needs to be re-diagnosed.
+// (See [Snapshot.clone]).
+//
+// s.viewMu must be held while calling this method.
+func (s *Session) invalidateViewLocked(ctx context.Context, v *View, changed StateChange) (*Snapshot, func(), bool) {
 	// Detach the context so that content invalidation cannot be canceled.
 	ctx = xcontext.Detach(ctx)
 
@@ -799,9 +805,9 @@ func (v *View) Invalidate(ctx context.Context, changed StateChange) (*Snapshot, 
 	// TODO(rfindley): shouldn't we do this before canceling?
 	prevSnapshot.AwaitInitialized(ctx)
 
-	// Save one lease of the cloned snapshot in the view.
 	var needsDiagnosis bool
-	v.snapshot, needsDiagnosis = prevSnapshot.clone(ctx, v.baseCtx, changed)
+	s.snapshotWG.Add(1)
+	v.snapshot, needsDiagnosis = prevSnapshot.clone(ctx, v.baseCtx, changed, s.snapshotWG.Done)
 
 	// Remove the initial reference created when prevSnapshot was created.
 	prevSnapshot.decref()

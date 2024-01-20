@@ -8,6 +8,7 @@
 package protocol_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
@@ -18,6 +19,15 @@ import (
 // tests by using only forward slashes, assuming that the standard library
 // functions filepath.ToSlash and filepath.FromSlash do not need testing.
 func TestURIFromPath(t *testing.T) {
+	rootPath, err := filepath.Abs("/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rootPath) < 2 || rootPath[1] != ':' {
+		t.Fatalf("malformed root path %q", rootPath)
+	}
+	driveLetter := string(rootPath[0])
+
 	for _, test := range []struct {
 		path, wantFile string
 		wantURI        protocol.DocumentURI
@@ -44,13 +54,13 @@ func TestURIFromPath(t *testing.T) {
 		},
 		{
 			path:     `\path\to\dir`,
-			wantFile: `C:\path\to\dir`,
-			wantURI:  protocol.DocumentURI("file:///C:/path/to/dir"),
+			wantFile: driveLetter + `:\path\to\dir`,
+			wantURI:  protocol.DocumentURI("file:///" + driveLetter + ":/path/to/dir"),
 		},
 		{
 			path:     `\a\b\c\src\bob.go`,
-			wantFile: `C:\a\b\c\src\bob.go`,
-			wantURI:  protocol.DocumentURI("file:///C:/a/b/c/src/bob.go"),
+			wantFile: driveLetter + `:\a\b\c\src\bob.go`,
+			wantURI:  protocol.DocumentURI("file:///" + driveLetter + ":/a/b/c/src/bob.go"),
 		},
 		{
 			path:     `c:\Go\src\bob george\george\george.go`,

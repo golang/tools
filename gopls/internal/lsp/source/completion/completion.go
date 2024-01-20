@@ -36,6 +36,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fuzzy"
 	"golang.org/x/tools/internal/imports"
@@ -376,6 +377,7 @@ func (c *completer) getSurrounding() *Selection {
 type candidate struct {
 	// obj is the types.Object to complete to.
 	// TODO(adonovan): eliminate dependence on go/types throughout this struct.
+	// See comment in (*completer).selector for explanation.
 	obj types.Object
 
 	// score is used to rank candidates.
@@ -527,7 +529,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	c := &completer{
 		pkg:      pkg,
 		snapshot: snapshot,
-		qf:       source.Qualifier(pgf.File, pkg.GetTypes(), pkg.GetTypesInfo()),
+		qf:       typesutil.FileQualifier(pgf.File, pkg.GetTypes(), pkg.GetTypesInfo()),
 		mq:       source.MetadataQualifierForFile(snapshot, pgf.File, pkg.Metadata()),
 		completionContext: completionContext{
 			triggerCharacter: protoContext.TriggerCharacter,
@@ -1346,6 +1348,11 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 					return params
 				}
 
+				// Ideally we would eliminate the suffix of type
+				// parameters that are redundant with inference
+				// from the argument types (#51783), but it's
+				// quite fiddly to do using syntax alone.
+				// (See inferableTypeParams in format.go.)
 				tparams := paramList(fn.Type.TypeParams)
 				params := paramList(fn.Type.Params)
 				var sn snippet.Builder

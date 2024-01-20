@@ -36,7 +36,6 @@ var templates = map[string]struct {
 	"TraceTmpl":    {debug.TraceTmpl, debug.TraceResults{}},
 	"CacheTmpl":    {debug.CacheTmpl, &cache.Cache{}},
 	"SessionTmpl":  {debug.SessionTmpl, &cache.Session{}},
-	"ViewTmpl":     {debug.ViewTmpl, &cache.View{}},
 	"ClientTmpl":   {debug.ClientTmpl, &debug.Client{}},
 	"ServerTmpl":   {debug.ServerTmpl, &debug.Server{}},
 	"FileTmpl":     {debug.FileTmpl, &cache.Overlay{}},
