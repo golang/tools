@@ -11,9 +11,12 @@ import (
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestDominatorOrder(t *testing.T) {
+	testenv.NeedsGoBuild(t) // for go/packages
+
 	const src = `package p
 
 func f(cond bool) {
