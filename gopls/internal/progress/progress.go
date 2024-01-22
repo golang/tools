@@ -2,11 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// The progress package defines utilities for reporting the progress
+// of long-running operations using features of the LSP client
+// interface such as Progress and ShowMessage.
 package progress
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -18,6 +22,16 @@ import (
 	"golang.org/x/tools/internal/xcontext"
 )
 
+// NewTracker returns a new Tracker that reports progress to the
+// specified client.
+func NewTracker(client protocol.Client) *Tracker {
+	return &Tracker{
+		client:     client,
+		inProgress: make(map[protocol.ProgressToken]*WorkDone),
+	}
+}
+
+// A Tracker reports the progress of a long-running operation to an LSP client.
 type Tracker struct {
 	client                   protocol.Client
 	supportsWorkDoneProgress bool
@@ -26,27 +40,20 @@ type Tracker struct {
 	inProgress map[protocol.ProgressToken]*WorkDone
 }
 
-func NewTracker(client protocol.Client) *Tracker {
-	return &Tracker{
-		client:     client,
-		inProgress: make(map[protocol.ProgressToken]*WorkDone),
-	}
-}
-
-// SetSupportsWorkDoneProgress sets whether the client supports work done
+// SetSupportsWorkDoneProgress sets whether the client supports "work done"
 // progress reporting. It must be set before using the tracker.
 //
 // TODO(rfindley): fix this broken initialization pattern.
 // Also: do we actually need the fall-back progress behavior using ShowMessage?
 // Surely ShowMessage notifications are too noisy to be worthwhile.
-func (tracker *Tracker) SetSupportsWorkDoneProgress(b bool) {
-	tracker.supportsWorkDoneProgress = b
+func (t *Tracker) SetSupportsWorkDoneProgress(b bool) {
+	t.supportsWorkDoneProgress = b
 }
 
 // SupportsWorkDoneProgress reports whether the tracker supports work done
 // progress reporting.
-func (tracker *Tracker) SupportsWorkDoneProgress() bool {
-	return tracker.supportsWorkDoneProgress
+func (t *Tracker) SupportsWorkDoneProgress() bool {
+	return t.supportsWorkDoneProgress
 }
 
 // Start notifies the client of work being done on the server. It uses either
@@ -247,36 +254,38 @@ func (wd *WorkDone) End(ctx context.Context, message string) {
 	}
 }
 
-// EventWriter writes every incoming []byte to
-// event.Print with the operation=generate tag
-// to distinguish its logs from others.
-type EventWriter struct {
+// NewEventWriter returns an [io.Writer] that calls the context's
+// event printer for each data payload, wrapping it with the
+// operation=generate tag to distinguish its logs from others.
+func NewEventWriter(ctx context.Context, operation string) io.Writer {
+	return &eventWriter{ctx: ctx, operation: operation}
+}
+
+type eventWriter struct {
 	ctx       context.Context
 	operation string
 }
 
-func NewEventWriter(ctx context.Context, operation string) *EventWriter {
-	return &EventWriter{ctx: ctx, operation: operation}
-}
-
-func (ew *EventWriter) Write(p []byte) (n int, err error) {
+func (ew *eventWriter) Write(p []byte) (n int, err error) {
 	event.Log(ew.ctx, string(p), tag.Operation.Of(ew.operation))
 	return len(p), nil
 }
 
-// WorkDoneWriter wraps a workDone handle to provide a Writer interface,
+// NewWorkDoneWriter wraps a WorkDone handle to provide a Writer interface,
 // so that workDone reporting can more easily be hooked into commands.
-type WorkDoneWriter struct {
+func NewWorkDoneWriter(ctx context.Context, wd *WorkDone) io.Writer {
+	return &workDoneWriter{ctx: ctx, wd: wd}
+}
+
+// workDoneWriter wraps a workDone handle to provide a Writer interface,
+// so that workDone reporting can more easily be hooked into commands.
+type workDoneWriter struct {
 	// In order to implement the io.Writer interface, we must close over ctx.
 	ctx context.Context
 	wd  *WorkDone
 }
 
-func NewWorkDoneWriter(ctx context.Context, wd *WorkDone) *WorkDoneWriter {
-	return &WorkDoneWriter{ctx: ctx, wd: wd}
-}
-
-func (wdw *WorkDoneWriter) Write(p []byte) (n int, err error) {
+func (wdw *workDoneWriter) Write(p []byte) (n int, err error) {
 	wdw.wd.Report(wdw.ctx, string(p), 0)
 	// Don't fail just because of a failure to report progress.
 	return len(p), nil
