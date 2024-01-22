@@ -151,15 +151,50 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		event.Log(ctx, eventName, labels...)
 	}
 
+	if standalone {
+		// Handle standalone package result.
+		//
+		// In general, this should just be a single "command-line-arguments"
+		// package containing the requested file. However, if the file is a test
+		// file, go/packages may return test variants of the command-line-arguments
+		// package. We don't support this; theoretically we could, but it seems
+		// unnecessarily complicated.
+		//
+		// Prior to golang/go#64233 we just assumed that we'd get exactly one
+		// package here. The categorization of bug reports below may be a bit
+		// verbose, but anticipates that perhaps we don't fully understand
+		// possible failure modes.
+		errorf := bug.Errorf
+		if s.view.typ == GoPackagesDriverView {
+			errorf = fmt.Errorf // all bets are off
+		}
+
+		var standalonePkg *packages.Package
+		for _, pkg := range pkgs {
+			if pkg.ID == "command-line-arguments" {
+				if standalonePkg != nil {
+					return errorf("internal error: go/packages returned multiple standalone packages")
+				}
+				standalonePkg = pkg
+			} else if packagesinternal.GetForTest(pkg) == "" && !strings.HasSuffix(pkg.ID, ".test") {
+				return errorf("internal error: go/packages returned unexpected package %q for standalone file", pkg.ID)
+			}
+		}
+		if standalonePkg == nil {
+			return errorf("internal error: go/packages failed to return non-test standalone package")
+		}
+		if len(standalonePkg.CompiledGoFiles) > 0 {
+			pkgs = []*packages.Package{standalonePkg}
+		} else {
+			pkgs = nil
+		}
+	}
+
 	if len(pkgs) == 0 {
 		if err == nil {
 			err = errNoPackages
 		}
 		return fmt.Errorf("packages.Load error: %w", err)
-	}
-
-	if standalone && len(pkgs) > 1 {
-		return bug.Errorf("internal error: go/packages returned multiple packages for standalone file")
 	}
 
 	moduleErrs := make(map[string][]packages.Error) // module path -> errors
