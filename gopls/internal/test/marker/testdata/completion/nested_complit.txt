@@ -1,9 +1,11 @@
 This test checks completion of nested composite literals;
 
-TODO(rfindley): investigate an un-skip the disabled test below.
+Parser recovery changed in Go 1.20, so this test requires at least that
+version for consistency.
 
 -- flags --
 -ignore_extra_diags
+-min_go=go1.20
 
 -- nested_complit.go --
 package nested_complit
@@ -15,9 +17,10 @@ type ncBar struct { //@item(structNCBar, "ncBar", "struct{...}", "struct")
 }
 
 func _() {
-	[]ncFoo{} //@item(litNCFoo, "[]ncFoo{}", "", "var")
+	_ = []ncFoo{} //@item(litNCFoo, "[]ncFoo{}", "", "var")
+	_ = make([]ncFoo, 0) //@item(makeNCFoo, "make([]ncFoo, 0)", "", "func")
+
 	_ := ncBar{
-		// disabled - see issue #54822
-		baz: [] // complete(" //", structNCFoo, structNCBar)
+		baz: [] //@complete(" //", litNCFoo, makeNCFoo, structNCBar, structNCFoo)
 	}
 }
