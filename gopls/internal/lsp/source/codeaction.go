@@ -98,7 +98,7 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 			return nil, err
 		}
 		if want[protocol.RefactorRewrite] {
-			rewrites, err := getRewriteCodeActions(snapshot, pkg, pgf, fh, rng, snapshot.Options())
+			rewrites, err := getRewriteCodeActions(pkg, pgf, fh, rng, snapshot.Options())
 			if err != nil {
 				return nil, err
 			}
@@ -253,7 +253,7 @@ func newCodeAction(title string, kind protocol.CodeActionKind, cmd *protocol.Com
 }
 
 // getRewriteCodeActions returns refactor.rewrite code actions available at the specified range.
-func getRewriteCodeActions(snapshot *cache.Snapshot, pkg *cache.Package, pgf *ParsedGoFile, fh file.Handle, rng protocol.Range, options *settings.Options) (_ []protocol.CodeAction, rerr error) {
+func getRewriteCodeActions(pkg *cache.Package, pgf *ParsedGoFile, fh file.Handle, rng protocol.Range, options *settings.Options) (_ []protocol.CodeAction, rerr error) {
 	// golang/go#61693: code actions were refactored to run outside of the
 	// analysis framework, but as a result they lost their panic recovery.
 	//

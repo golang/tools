@@ -92,7 +92,7 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 func endsWithReturn(elseBranch ast.Stmt) (bool, error) {
 	elseBlock, isBlockStatement := elseBranch.(*ast.BlockStmt)
 	if !isBlockStatement {
-		return false, fmt.Errorf("Unable to figure out whether this ends with return: %T", elseBranch)
+		return false, fmt.Errorf("unable to figure out whether this ends with return: %T", elseBranch)
 	}
 
 	if len(elseBlock.List) == 0 {

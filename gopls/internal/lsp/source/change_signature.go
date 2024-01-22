@@ -134,6 +134,7 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 	if err != nil {
 		return nil, err
 	}
+
 	// Finally, rewrite the original declaration. We do this after inlining all
 	// calls, as there may be calls in the same file as the declaration. But none
 	// of the inlining should have changed the location of the original
@@ -149,7 +150,10 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 			src = pgf.Src
 		}
 		fset := tokeninternal.FileSetFor(pgf.Tok)
-		src, err = rewriteSignature(fset, idx, src, newDecl)
+		src, err := rewriteSignature(fset, idx, src, newDecl)
+		if err != nil {
+			return nil, err
+		}
 		newContent[pgf.URI] = src
 	}
 

@@ -402,7 +402,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 	// transitive rdeps. (The exportedness of the field's struct
 	// or method's receiver is irrelevant.)
 	transitive := false
-	switch obj.(type) {
+	switch obj := obj.(type) {
 	case *types.TypeName:
 		// Renaming an exported package-level type
 		// requires us to inspect all transitive rdeps
@@ -418,7 +418,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 		}
 
 	case *types.Var:
-		if obj.(*types.Var).IsField() {
+		if obj.IsField() {
 			transitive = true // field
 		}
 

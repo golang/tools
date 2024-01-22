@@ -150,8 +150,10 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 		if err != nil {
 			return nil, nil, err
 		}
-
 		decl, err = getDecl(pgf.File, obj.Name())
+		if err != nil {
+			return nil, nil, err
+		}
 	} else {
 		// pseudo-package "builtin":
 		// use parsed $GOROOT/src/builtin/builtin.go
@@ -163,7 +165,9 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 		if obj.Parent() == types.Universe {
 			// built-in function or type
 			decl, err = getDecl(pgf.File, obj.Name())
-
+			if err != nil {
+				return nil, nil, err
+			}
 		} else if obj.Name() == "Error" {
 			// error.Error method
 			decl, err = getDecl(pgf.File, "error")
