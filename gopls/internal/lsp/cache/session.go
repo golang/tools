@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
@@ -30,6 +31,25 @@ import (
 	"golang.org/x/tools/internal/xcontext"
 )
 
+// NewSession creates a new gopls session with the given cache.
+func NewSession(ctx context.Context, c *Cache) *Session {
+	index := atomic.AddInt64(&sessionIndex, 1)
+	s := &Session{
+		id:          strconv.FormatInt(index, 10),
+		cache:       c,
+		gocmdRunner: &gocommand.Runner{},
+		overlayFS:   newOverlayFS(c),
+		parseCache:  newParseCache(1 * time.Minute), // keep recently parsed files for a minute, to optimize typing CPU
+		viewMap:     make(map[protocol.DocumentURI]*View),
+	}
+	event.Log(ctx, "New session", KeyCreateSession.Of(s))
+	return s
+}
+
+// A Session holds the state (views, file contents, parse cache,
+// memoized computations) of a gopls server process.
+//
+// It implements the file.Source interface.
 type Session struct {
 	// Unique identifier for this session.
 	id string
@@ -733,7 +753,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 		// branch change. Be careful to only do this if both files are open Go
 		// files.
 		if old, ok := replaced[c.URI]; ok && !checkViews && fileKind(fh) == file.Go {
-			if new, ok := fh.(*Overlay); ok {
+			if new, ok := fh.(*overlay); ok {
 				if buildComment(old.content) != buildComment(new.content) {
 					checkViews = true
 				}
@@ -894,11 +914,11 @@ func (s *Session) ExpandModificationsToDirectories(ctx context.Context, changes 
 //
 // Precondition: caller holds s.viewMu lock.
 // TODO(rfindley): move this to fs_overlay.go.
-func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modification) (map[protocol.DocumentURI]*Overlay, error) {
+func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modification) (map[protocol.DocumentURI]*overlay, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
-	replaced := make(map[protocol.DocumentURI]*Overlay)
+	replaced := make(map[protocol.DocumentURI]*overlay)
 	for _, c := range changes {
 		o, ok := fs.overlays[c.URI]
 		if ok {
@@ -964,7 +984,7 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modifica
 			_, readErr := fh.Content()
 			sameContentOnDisk = (readErr == nil && fh.Identity().Hash == hash)
 		}
-		o = &Overlay{
+		o = &overlay{
 			uri:     c.URI,
 			version: version,
 			content: text,
@@ -1061,7 +1081,7 @@ func (s *Session) OrphanedFileDiagnostics(ctx context.Context) (map[protocol.Doc
 	// funcs.
 	diagnostics := make(map[protocol.DocumentURI][]*Diagnostic)
 
-	byView := make(map[*View][]*Overlay)
+	byView := make(map[*View][]*overlay)
 	for _, o := range s.Overlays() {
 		uri := o.URI()
 		snapshot, release, err := s.SnapshotOf(ctx, uri)

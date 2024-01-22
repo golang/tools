@@ -19,22 +19,16 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 )
 
-// Temporary refactoring, reversing the source import:
-// Types
+// Convenient aliases for very heavily used types.
 type (
-	// Metadata.
-	PackageID   = metadata.PackageID
-	PackagePath = metadata.PackagePath
-	PackageName = metadata.PackageName
-	ImportPath  = metadata.ImportPath
-
-	// Computed objects.
+	PackageID    = metadata.PackageID
+	PackagePath  = metadata.PackagePath
+	PackageName  = metadata.PackageName
+	ImportPath   = metadata.ImportPath
 	ParsedGoFile = parsego.File
 )
 
-// Values
-var (
-	// Parse Modes
+const (
 	ParseHeader = parsego.ParseHeader
 	ParseFull   = parsego.ParseFull
 )

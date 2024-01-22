@@ -4,6 +4,8 @@
 
 package cache
 
+// session event tracing
+
 import (
 	"io"
 

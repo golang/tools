@@ -72,18 +72,18 @@ func TestFileMap(t *testing.T) {
 				case set:
 					var fh file.Handle
 					if op.overlay {
-						fh = &Overlay{uri: uri}
+						fh = &overlay{uri: uri}
 					} else {
-						fh = &DiskFile{uri: uri}
+						fh = &diskFile{uri: uri}
 					}
-					m.Set(uri, fh)
+					m.set(uri, fh)
 				case del:
-					m.Delete(uri)
+					m.delete(uri)
 				}
 			}
 
 			var gotFiles []string
-			m.Range(func(uri protocol.DocumentURI, _ file.Handle) {
+			m.foreach(func(uri protocol.DocumentURI, _ file.Handle) {
 				gotFiles = append(gotFiles, normalize(uri.Path()))
 			})
 			sort.Strings(gotFiles)
@@ -92,7 +92,7 @@ func TestFileMap(t *testing.T) {
 			}
 
 			var gotOverlays []string
-			for _, o := range m.Overlays() {
+			for _, o := range m.getOverlays() {
 				gotOverlays = append(gotOverlays, normalize(o.URI().Path()))
 			}
 			if diff := cmp.Diff(test.wantOverlays, gotOverlays); diff != "" {
@@ -100,7 +100,7 @@ func TestFileMap(t *testing.T) {
 			}
 
 			var gotDirs []string
-			m.Dirs().Range(func(dir string) {
+			m.getDirs().Range(func(dir string) {
 				gotDirs = append(gotDirs, normalize(dir))
 			})
 			sort.Strings(gotDirs)

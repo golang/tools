@@ -636,8 +636,8 @@ func containsOpenFileLocked(s *Snapshot, mp *metadata.Package) bool {
 	}
 
 	for uri := range uris {
-		fh, _ := s.files.Get(uri)
-		if _, open := fh.(*Overlay); open {
+		fh, _ := s.files.get(uri)
+		if _, open := fh.(*overlay); open {
 			return true
 		}
 	}

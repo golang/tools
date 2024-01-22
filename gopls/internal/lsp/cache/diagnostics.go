@@ -119,10 +119,10 @@ type quickFixesJSON struct {
 	Fixes []protocol.CodeAction
 }
 
-// BundleQuickFixes attempts to bundle sd.SuggestedFixes into the
+// bundleQuickFixes attempts to bundle sd.SuggestedFixes into the
 // sd.BundledFixes field, so that it can be round-tripped through the client.
 // It returns false if the quick-fixes cannot be bundled.
-func BundleQuickFixes(sd *Diagnostic) bool {
+func bundleQuickFixes(sd *Diagnostic) bool {
 	if len(sd.SuggestedFixes) == 0 {
 		return true
 	}

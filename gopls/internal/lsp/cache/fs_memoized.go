@@ -24,16 +24,16 @@ type memoizedFS struct {
 	// filesByID maps existing file inodes to the result of a read.
 	// (The read may have failed, e.g. due to EACCES or a delete between stat+read.)
 	// Each slice is a non-empty list of aliases: different URIs.
-	filesByID map[robustio.FileID][]*DiskFile
+	filesByID map[robustio.FileID][]*diskFile
 }
 
 func newMemoizedFS() *memoizedFS {
-	return &memoizedFS{filesByID: make(map[robustio.FileID][]*DiskFile)}
+	return &memoizedFS{filesByID: make(map[robustio.FileID][]*diskFile)}
 }
 
-// A DiskFile is a file on the filesystem, or a failure to read one.
+// A diskFile is a file in the filesystem, or a failure to read one.
 // It implements the source.FileHandle interface.
-type DiskFile struct {
+type diskFile struct {
 	uri     protocol.DocumentURI
 	modTime time.Time
 	content []byte
@@ -41,25 +41,25 @@ type DiskFile struct {
 	err     error
 }
 
-func (h *DiskFile) URI() protocol.DocumentURI { return h.uri }
+func (h *diskFile) URI() protocol.DocumentURI { return h.uri }
 
-func (h *DiskFile) Identity() file.Identity {
+func (h *diskFile) Identity() file.Identity {
 	return file.Identity{
 		URI:  h.uri,
 		Hash: h.hash,
 	}
 }
 
-func (h *DiskFile) SameContentsOnDisk() bool { return true }
-func (h *DiskFile) Version() int32           { return 0 }
-func (h *DiskFile) Content() ([]byte, error) { return h.content, h.err }
+func (h *diskFile) SameContentsOnDisk() bool { return true }
+func (h *diskFile) Version() int32           { return 0 }
+func (h *diskFile) Content() ([]byte, error) { return h.content, h.err }
 
 // ReadFile stats and (maybe) reads the file, updates the cache, and returns it.
 func (fs *memoizedFS) ReadFile(ctx context.Context, uri protocol.DocumentURI) (file.Handle, error) {
 	id, mtime, err := robustio.GetFileID(uri.Path())
 	if err != nil {
 		// file does not exist
-		return &DiskFile{
+		return &diskFile{
 			err: err,
 			uri: uri,
 		}, nil
@@ -79,7 +79,7 @@ func (fs *memoizedFS) ReadFile(ctx context.Context, uri protocol.DocumentURI) (f
 	fs.mu.Lock()
 	fhs, ok := fs.filesByID[id]
 	if ok && fhs[0].modTime.Equal(mtime) {
-		var fh *DiskFile
+		var fh *diskFile
 		// We have already seen this file and it has not changed.
 		for _, h := range fhs {
 			if h.uri == uri {
@@ -108,7 +108,7 @@ func (fs *memoizedFS) ReadFile(ctx context.Context, uri protocol.DocumentURI) (f
 
 	fs.mu.Lock()
 	if !recentlyModified {
-		fs.filesByID[id] = []*DiskFile{fh}
+		fs.filesByID[id] = []*diskFile{fh}
 	} else {
 		delete(fs.filesByID, id)
 	}
@@ -141,7 +141,7 @@ func (fs *memoizedFS) fileStats() (files, largest, errs int) {
 // ioLimit limits the number of parallel file reads per process.
 var ioLimit = make(chan struct{}, 128)
 
-func readFile(ctx context.Context, uri protocol.DocumentURI, mtime time.Time) (*DiskFile, error) {
+func readFile(ctx context.Context, uri protocol.DocumentURI, mtime time.Time) (*diskFile, error) {
 	select {
 	case ioLimit <- struct{}{}:
 	case <-ctx.Done():
@@ -161,7 +161,7 @@ func readFile(ctx context.Context, uri protocol.DocumentURI, mtime time.Time) (*
 	if err != nil {
 		content = nil // just in case
 	}
-	return &DiskFile{
+	return &diskFile{
 		modTime: mtime,
 		uri:     uri,
 		content: content,

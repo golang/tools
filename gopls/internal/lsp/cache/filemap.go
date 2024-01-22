@@ -17,21 +17,21 @@ import (
 // file.
 type fileMap struct {
 	files    *persistent.Map[protocol.DocumentURI, file.Handle]
-	overlays *persistent.Map[protocol.DocumentURI, *Overlay] // the subset of files that are overlays
+	overlays *persistent.Map[protocol.DocumentURI, *overlay] // the subset of files that are overlays
 	dirs     *persistent.Set[string]                         // all dirs containing files; if nil, dirs have not been initialized
 }
 
 func newFileMap() *fileMap {
 	return &fileMap{
 		files:    new(persistent.Map[protocol.DocumentURI, file.Handle]),
-		overlays: new(persistent.Map[protocol.DocumentURI, *Overlay]),
+		overlays: new(persistent.Map[protocol.DocumentURI, *overlay]),
 		dirs:     new(persistent.Set[string]),
 	}
 }
 
-// Clone creates a copy of the fileMap, incorporating the changes specified by
+// clone creates a copy of the fileMap, incorporating the changes specified by
 // the changes map.
-func (m *fileMap) Clone(changes map[protocol.DocumentURI]file.Handle) *fileMap {
+func (m *fileMap) clone(changes map[protocol.DocumentURI]file.Handle) *fileMap {
 	m2 := &fileMap{
 		files:    m.files.Clone(),
 		overlays: m.overlays.Clone(),
@@ -52,18 +52,18 @@ func (m *fileMap) Clone(changes map[protocol.DocumentURI]file.Handle) *fileMap {
 	// first, as a set before a deletion would result in pointless work.
 	for uri, fh := range changes {
 		if !fileExists(fh) {
-			m2.Delete(uri)
+			m2.delete(uri)
 		}
 	}
 	for uri, fh := range changes {
 		if fileExists(fh) {
-			m2.Set(uri, fh)
+			m2.set(uri, fh)
 		}
 	}
 	return m2
 }
 
-func (m *fileMap) Destroy() {
+func (m *fileMap) destroy() {
 	m.files.Destroy()
 	m.overlays.Destroy()
 	if m.dirs != nil {
@@ -71,24 +71,24 @@ func (m *fileMap) Destroy() {
 	}
 }
 
-// Get returns the file handle mapped by the given key, or (nil, false) if the
+// get returns the file handle mapped by the given key, or (nil, false) if the
 // key is not present.
-func (m *fileMap) Get(key protocol.DocumentURI) (file.Handle, bool) {
+func (m *fileMap) get(key protocol.DocumentURI) (file.Handle, bool) {
 	return m.files.Get(key)
 }
 
-// Range calls f for each (uri, fh) in the map.
-func (m *fileMap) Range(f func(uri protocol.DocumentURI, fh file.Handle)) {
+// foreach calls f for each (uri, fh) in the map.
+func (m *fileMap) foreach(f func(uri protocol.DocumentURI, fh file.Handle)) {
 	m.files.Range(f)
 }
 
-// Set stores the given file handle for key, updating overlays and directories
+// set stores the given file handle for key, updating overlays and directories
 // accordingly.
-func (m *fileMap) Set(key protocol.DocumentURI, fh file.Handle) {
+func (m *fileMap) set(key protocol.DocumentURI, fh file.Handle) {
 	m.files.Set(key, fh, nil)
 
 	// update overlays
-	if o, ok := fh.(*Overlay); ok {
+	if o, ok := fh.(*overlay); ok {
 		m.overlays.Set(key, o, nil)
 	} else {
 		// Setting a non-overlay must delete the corresponding overlay, to preserve
@@ -111,9 +111,9 @@ func (m *fileMap) addDirs(u protocol.DocumentURI) {
 	}
 }
 
-// Delete removes a file from the map, and updates overlays and dirs
+// delete removes a file from the map, and updates overlays and dirs
 // accordingly.
-func (m *fileMap) Delete(key protocol.DocumentURI) {
+func (m *fileMap) delete(key protocol.DocumentURI) {
 	m.files.Delete(key)
 	m.overlays.Delete(key)
 
@@ -127,20 +127,20 @@ func (m *fileMap) Delete(key protocol.DocumentURI) {
 	}
 }
 
-// Overlays returns a new unordered array of overlay files.
-func (m *fileMap) Overlays() []*Overlay {
-	var overlays []*Overlay
-	m.overlays.Range(func(_ protocol.DocumentURI, o *Overlay) {
+// getOverlays returns a new unordered array of overlay files.
+func (m *fileMap) getOverlays() []*overlay {
+	var overlays []*overlay
+	m.overlays.Range(func(_ protocol.DocumentURI, o *overlay) {
 		overlays = append(overlays, o)
 	})
 	return overlays
 }
 
-// Dirs reports returns the set of dirs observed by the fileMap.
+// getDirs reports returns the set of dirs observed by the fileMap.
 //
 // This operation mutates the fileMap.
 // The result must not be mutated by the caller.
-func (m *fileMap) Dirs() *persistent.Set[string] {
+func (m *fileMap) getDirs() *persistent.Set[string] {
 	if m.dirs == nil {
 		m.dirs = new(persistent.Set[string])
 		m.files.Range(func(u protocol.DocumentURI, _ file.Handle) {

@@ -240,7 +240,7 @@ func (s *Snapshot) decref() {
 	if s.refcount == 0 {
 		s.packages.Destroy()
 		s.activePackages.Destroy()
-		s.files.Destroy()
+		s.files.destroy()
 		s.symbolizeHandles.Destroy()
 		s.parseModHandles.Destroy()
 		s.parseWorkHandles.Destroy()
@@ -313,7 +313,7 @@ func fileKind(fh file.Handle) file.Kind {
 	// The kind of an unsaved buffer comes from the
 	// TextDocumentItem.LanguageID field in the didChange event,
 	// not from the file name. They may differ.
-	if o, ok := fh.(*Overlay); ok {
+	if o, ok := fh.(*overlay); ok {
 		if o.kind != file.UnknownKind {
 			return o.kind
 		}
@@ -350,7 +350,7 @@ func (s *Snapshot) Templates() map[protocol.DocumentURI]file.Handle {
 	defer s.mu.Unlock()
 
 	tmpls := map[protocol.DocumentURI]file.Handle{}
-	s.files.Range(func(k protocol.DocumentURI, fh file.Handle) {
+	s.files.foreach(func(k protocol.DocumentURI, fh file.Handle) {
 		if s.FileKind(fh) == file.Tmpl {
 			tmpls[k] = fh
 		}
@@ -640,11 +640,11 @@ func (s *Snapshot) buildOverlay() map[string][]byte {
 //
 // Note that this may differ from the set of overlays on the server, if the
 // snapshot observed a historical state.
-func (s *Snapshot) Overlays() []*Overlay {
+func (s *Snapshot) Overlays() []*overlay {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.files.Overlays()
+	return s.files.getOverlays()
 }
 
 // Package data kinds, identifying various package data that may be stored in
@@ -697,15 +697,15 @@ func (s *Snapshot) PackageDiagnostics(ctx context.Context, ids ...PackageID) (ma
 //
 // If these indexes cannot be loaded from cache, the requested packages may
 // be type-checked.
-func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]XrefIndex, error) {
+func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]xrefIndex, error) {
 	ctx, done := event.Start(ctx, "cache.snapshot.References")
 	defer done()
 
-	indexes := make([]XrefIndex, len(ids))
+	indexes := make([]xrefIndex, len(ids))
 	pre := func(i int, ph *packageHandle) bool {
 		data, err := filecache.Get(xrefsKind, ph.key)
 		if err == nil { // hit
-			indexes[i] = XrefIndex{mp: ph.mp, data: data}
+			indexes[i] = xrefIndex{mp: ph.mp, data: data}
 			return false
 		} else if err != filecache.ErrNotFound {
 			event.Error(ctx, "reading xrefs from filecache", err)
@@ -713,18 +713,18 @@ func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]XrefInde
 		return true
 	}
 	post := func(i int, pkg *Package) {
-		indexes[i] = XrefIndex{mp: pkg.metadata, data: pkg.pkg.xrefs()}
+		indexes[i] = xrefIndex{mp: pkg.metadata, data: pkg.pkg.xrefs()}
 	}
 	return indexes, s.forEachPackage(ctx, ids, pre, post)
 }
 
-// An XrefIndex is a helper for looking up references in a given package.
-type XrefIndex struct {
+// An xrefIndex is a helper for looking up references in a given package.
+type xrefIndex struct {
 	mp   *metadata.Package
 	data []byte
 }
 
-func (index XrefIndex) Lookup(targets map[PackagePath]map[objectpath.Path]struct{}) []protocol.Location {
+func (index xrefIndex) Lookup(targets map[PackagePath]map[objectpath.Path]struct{}) []protocol.Location {
 	return xrefs.Lookup(index.mp, index.data, targets)
 }
 
@@ -1011,7 +1011,7 @@ func (s *Snapshot) addKnownSubdirs(patterns map[string]unit, wsDirs []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.files.Dirs().Range(func(dir string) {
+	s.files.getDirs().Range(func(dir string) {
 		for _, wsDir := range wsDirs {
 			if pathutil.InDir(wsDir, dir) {
 				patterns[filepath.ToSlash(dir)] = unit{}
@@ -1055,11 +1055,11 @@ func (s *Snapshot) filesInDir(uri protocol.DocumentURI) []protocol.DocumentURI {
 	defer s.mu.Unlock()
 
 	dir := uri.Path()
-	if !s.files.Dirs().Contains(dir) {
+	if !s.files.getDirs().Contains(dir) {
 		return nil
 	}
 	var files []protocol.DocumentURI
-	s.files.Range(func(uri protocol.DocumentURI, _ file.Handle) {
+	s.files.foreach(func(uri protocol.DocumentURI, _ file.Handle) {
 		if pathutil.InDir(dir, uri.Path()) {
 			files = append(files, uri)
 		}
@@ -1261,7 +1261,7 @@ func (s *Snapshot) FindFile(uri protocol.DocumentURI) file.Handle {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	result, _ := s.files.Get(uri)
+	result, _ := s.files.get(uri)
 	return result
 }
 
@@ -1274,14 +1274,14 @@ func (s *Snapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (file
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fh, ok := s.files.Get(uri)
+	fh, ok := s.files.get(uri)
 	if !ok {
 		var err error
 		fh, err = s.view.fs.ReadFile(ctx, uri)
 		if err != nil {
 			return nil, err
 		}
-		s.files.Set(uri, fh)
+		s.files.set(uri, fh)
 	}
 	return fh, nil
 }
@@ -1316,8 +1316,8 @@ func (s *Snapshot) preloadFiles(ctx context.Context, uris []protocol.DocumentURI
 			continue // error logged above
 		}
 		uri := uris[i]
-		if _, ok := s.files.Get(uri); !ok {
-			s.files.Set(uri, fh)
+		if _, ok := s.files.get(uri); !ok {
+			s.files.set(uri, fh)
 		}
 	}
 }
@@ -1327,8 +1327,8 @@ func (s *Snapshot) IsOpen(uri protocol.DocumentURI) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fh, _ := s.files.Get(uri)
-	_, open := fh.(*Overlay)
+	fh, _ := s.files.get(uri)
+	_, open := fh.(*overlay)
 	return open
 }
 
@@ -1407,13 +1407,13 @@ func (s *Snapshot) reloadWorkspace(ctx context.Context) {
 	}
 }
 
-func (s *Snapshot) orphanedFileDiagnostics(ctx context.Context, overlays []*Overlay) ([]*Diagnostic, error) {
+func (s *Snapshot) orphanedFileDiagnostics(ctx context.Context, overlays []*overlay) ([]*Diagnostic, error) {
 	if err := s.awaitLoaded(ctx); err != nil {
 		return nil, err
 	}
 
 	var diagnostics []*Diagnostic
-	var orphaned []*Overlay
+	var orphaned []*overlay
 searchOverlays:
 	for _, o := range overlays {
 		uri := o.URI()
@@ -1603,7 +1603,7 @@ https://github.com/golang/tools/blob/master/gopls/doc/settings.md#buildflags-str
 				Message:        msg,
 				SuggestedFixes: suggestedFixes,
 			}
-			if ok := BundleQuickFixes(d); !ok {
+			if ok := bundleQuickFixes(d); !ok {
 				bug.Reportf("failed to bundle quick fixes for %v", d)
 			}
 			// Only report diagnostics if we detect an actual exclusion.
@@ -1692,7 +1692,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 		initialErr:        s.initialErr,
 		packages:          s.packages.Clone(),
 		activePackages:    s.activePackages.Clone(),
-		files:             s.files.Clone(changedFiles),
+		files:             s.files.clone(changedFiles),
 		symbolizeHandles:  cloneWithout(s.symbolizeHandles, changedFiles, nil),
 		workspacePackages: s.workspacePackages,
 		shouldLoad:        s.shouldLoad.Clone(),      // not cloneWithout: shouldLoad is cleared on loads
@@ -1750,7 +1750,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	// into the old snapshot, as that will break our change detection below.
 	oldFiles := make(map[protocol.DocumentURI]file.Handle)
 	for uri := range changedFiles {
-		if fh, ok := s.files.Get(uri); ok {
+		if fh, ok := s.files.get(uri); ok {
 			oldFiles[uri] = fh
 		}
 	}
@@ -1820,8 +1820,8 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	for uri, newFH := range changedFiles {
 		// The original FileHandle for this URI is cached on the snapshot.
 		oldFH := oldFiles[uri] // may be nil
-		_, oldOpen := oldFH.(*Overlay)
-		_, newOpen := newFH.(*Overlay)
+		_, oldOpen := oldFH.(*overlay)
+		_, newOpen := newFH.(*overlay)
 
 		anyFileOpenedOrClosed = anyFileOpenedOrClosed || (oldOpen != newOpen)
 		anyFileAdded = anyFileAdded || (oldFH == nil || !fileExists(oldFH)) && fileExists(newFH)
@@ -2130,11 +2130,11 @@ func invalidatedPackageIDs(uri protocol.DocumentURI, known map[protocol.Document
 // are both overlays, and if the current FileHandle is saved while the original
 // FileHandle was not saved.
 func fileWasSaved(originalFH, currentFH file.Handle) bool {
-	c, ok := currentFH.(*Overlay)
+	c, ok := currentFH.(*overlay)
 	if !ok || c == nil {
 		return true
 	}
-	o, ok := originalFH.(*Overlay)
+	o, ok := originalFH.(*overlay)
 	if !ok || o == nil {
 		return c.saved
 	}

@@ -5,16 +5,11 @@
 package cache
 
 import (
-	"context"
 	"reflect"
 	"strconv"
 	"sync/atomic"
-	"time"
 
 	"golang.org/x/tools/gopls/internal/lsp/command"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
 )
 
@@ -49,25 +44,6 @@ type Cache struct {
 	store *memoize.Store
 
 	*memoizedFS // implements source.FileSource
-}
-
-// NewSession creates a new gopls session with the given cache and options overrides.
-//
-// The provided optionsOverrides may be nil.
-//
-// TODO(rfindley): move this to session.go.
-func NewSession(ctx context.Context, c *Cache) *Session {
-	index := atomic.AddInt64(&sessionIndex, 1)
-	s := &Session{
-		id:          strconv.FormatInt(index, 10),
-		cache:       c,
-		gocmdRunner: &gocommand.Runner{},
-		overlayFS:   newOverlayFS(c),
-		parseCache:  newParseCache(1 * time.Minute), // keep recently parsed files for a minute, to optimize typing CPU
-		viewMap:     make(map[protocol.DocumentURI]*View),
-	}
-	event.Log(ctx, "New session", KeyCreateSession.Of(s))
-	return s
 }
 
 var cacheIndex, sessionIndex, viewIndex int64

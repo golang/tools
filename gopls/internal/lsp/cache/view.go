@@ -2,7 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package cache implements the caching layer for gopls.
+// Package cache is the core of gopls: it is concerned with state
+// management, dependency analysis, and invalidation; and it holds the
+// machinery of type checking and modular static analysis. Its
+// principal types are [Session], [Folder], [View], [Snapshot],
+// [Cache], and [Package].
 package cache
 
 import (
