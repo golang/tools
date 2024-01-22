@@ -16,12 +16,12 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-// AutoNetwork is the pseudo network type used to signal that gopls should use
+// autoNetwork is the pseudo network type used to signal that gopls should use
 // automatic discovery to resolve a remote address.
-const AutoNetwork = "auto"
+const autoNetwork = "auto"
 
-// An AutoDialer is a jsonrpc2 dialer that understands the 'auto' network.
-type AutoDialer struct {
+// An autoDialer is a jsonrpc2 dialer that understands the 'auto' network.
+type autoDialer struct {
 	network, addr string // the 'real' network and address
 	isAuto        bool   // whether the server is on the 'auto' network
 
@@ -29,12 +29,12 @@ type AutoDialer struct {
 	argFunc    func(network, addr string) []string
 }
 
-func NewAutoDialer(rawAddr string, argFunc func(network, addr string) []string) (*AutoDialer, error) {
-	d := AutoDialer{
+func newAutoDialer(rawAddr string, argFunc func(network, addr string) []string) (*autoDialer, error) {
+	d := autoDialer{
 		argFunc: argFunc,
 	}
 	d.network, d.addr = ParseAddr(rawAddr)
-	if d.network == AutoNetwork {
+	if d.network == autoNetwork {
 		d.isAuto = true
 		bin, err := os.Executable()
 		if err != nil {
@@ -47,14 +47,14 @@ func NewAutoDialer(rawAddr string, argFunc func(network, addr string) []string) 
 }
 
 // Dial implements the jsonrpc2.Dialer interface.
-func (d *AutoDialer) Dial(ctx context.Context) (io.ReadWriteCloser, error) {
+func (d *autoDialer) Dial(ctx context.Context) (io.ReadWriteCloser, error) {
 	conn, err := d.dialNet(ctx)
 	return conn, err
 }
 
 // TODO(rFindley): remove this once we no longer need to integrate with v1 of
 // the jsonrpc2 package.
-func (d *AutoDialer) dialNet(ctx context.Context) (net.Conn, error) {
+func (d *autoDialer) dialNet(ctx context.Context) (net.Conn, error) {
 	// Attempt to verify that we own the remote. This is imperfect, but if we can
 	// determine that the remote is owned by a different user, we should fail.
 	ok, err := verifyRemoteOwnership(d.network, d.addr)

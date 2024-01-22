@@ -17,6 +17,58 @@ import (
 	. "golang.org/x/tools/gopls/internal/lsp/lsprpc"
 )
 
+// ServerBinder binds incoming connections to a new server.
+type ServerBinder struct {
+	newServer ServerFunc
+}
+
+func NewServerBinder(newServer ServerFunc) *ServerBinder {
+	return &ServerBinder{newServer: newServer}
+}
+
+// streamServer used to have this method, but it was never used.
+// TODO(adonovan): figure out whether we need any of this machinery
+// and, if not, delete it. In the meantime, it's better that it sit
+// in the test package with all the other mothballed machinery
+// than in the production code where it would couple streamServer
+// and ServerBinder.
+/*
+func (s *streamServer) Binder() *ServerBinder {
+	newServer := func(ctx context.Context, client protocol.ClientCloser) protocol.Server {
+		session := cache.NewSession(ctx, s.cache)
+		svr := s.serverForTest
+		if svr == nil {
+			options := settings.DefaultOptions(s.optionsOverrides)
+			svr = server.New(session, client, options)
+			if instance := debug.GetInstance(ctx); instance != nil {
+				instance.AddService(svr, session)
+			}
+		}
+		return svr
+	}
+	return NewServerBinder(newServer)
+}
+*/
+
+func (b *ServerBinder) Bind(ctx context.Context, conn *jsonrpc2_v2.Connection) jsonrpc2_v2.ConnectionOptions {
+	client := protocol.ClientDispatcherV2(conn)
+	server := b.newServer(ctx, client)
+	serverHandler := protocol.ServerHandlerV2(server)
+	// Wrap the server handler to inject the client into each request context, so
+	// that log events are reflected back to the client.
+	wrapped := jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+		ctx = protocol.WithClient(ctx, client)
+		return serverHandler.Handle(ctx, req)
+	})
+	preempter := &Canceler{
+		Conn: conn,
+	}
+	return jsonrpc2_v2.ConnectionOptions{
+		Handler:   wrapped,
+		Preempter: preempter,
+	}
+}
+
 type TestEnv struct {
 	Conns   []*jsonrpc2_v2.Connection
 	Servers []*jsonrpc2_v2.Server

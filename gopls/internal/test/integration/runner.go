@@ -403,7 +403,7 @@ func (r *Runner) separateProcessServer(optsHook func(*settings.Options)) jsonrpc
 	return newForwarder("unix", r.remoteSocket)
 }
 
-func newForwarder(network, address string) *lsprpc.Forwarder {
+func newForwarder(network, address string) jsonrpc2.StreamServer {
 	server, err := lsprpc.NewForwarder(network+";"+address, nil)
 	if err != nil {
 		// This should never happen, as we are passing an explicit address.

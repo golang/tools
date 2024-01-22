@@ -33,9 +33,9 @@ import (
 // Unique identifiers for client/server.
 var serverIndex int64
 
-// The StreamServer type is a jsonrpc2.StreamServer that handles incoming
+// The streamServer type is a jsonrpc2.streamServer that handles incoming
 // streams as a new LSP session, using a shared cache.
-type StreamServer struct {
+type streamServer struct {
 	cache *cache.Cache
 	// daemon controls whether or not to log new connections.
 	daemon bool
@@ -50,29 +50,13 @@ type StreamServer struct {
 // NewStreamServer creates a StreamServer using the shared cache. If
 // withTelemetry is true, each session is instrumented with telemetry that
 // records RPC statistics.
-func NewStreamServer(cache *cache.Cache, daemon bool, optionsFunc func(*settings.Options)) *StreamServer {
-	return &StreamServer{cache: cache, daemon: daemon, optionsOverrides: optionsFunc}
-}
-
-func (s *StreamServer) Binder() *ServerBinder {
-	newServer := func(ctx context.Context, client protocol.ClientCloser) protocol.Server {
-		session := cache.NewSession(ctx, s.cache)
-		svr := s.serverForTest
-		if svr == nil {
-			options := settings.DefaultOptions(s.optionsOverrides)
-			svr = server.New(session, client, options)
-			if instance := debug.GetInstance(ctx); instance != nil {
-				instance.AddService(svr, session)
-			}
-		}
-		return svr
-	}
-	return NewServerBinder(newServer)
+func NewStreamServer(cache *cache.Cache, daemon bool, optionsFunc func(*settings.Options)) jsonrpc2.StreamServer {
+	return &streamServer{cache: cache, daemon: daemon, optionsOverrides: optionsFunc}
 }
 
 // ServeStream implements the jsonrpc2.StreamServer interface, by handling
 // incoming streams using a new lsp server.
-func (s *StreamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) error {
+func (s *streamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) error {
 	client := protocol.ClientDispatcher(conn)
 	session := cache.NewSession(ctx, s.cache)
 	svr := s.serverForTest
@@ -110,14 +94,14 @@ func (s *StreamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) erro
 	return conn.Err()
 }
 
-// A Forwarder is a jsonrpc2.StreamServer that handles an LSP stream by
+// A forwarder is a jsonrpc2.StreamServer that handles an LSP stream by
 // forwarding it to a remote. This is used when the gopls process started by
 // the editor is in the `-remote` mode, which means it finds and connects to a
 // separate gopls daemon. In these cases, we still want the forwarder gopls to
 // be instrumented with telemetry, and want to be able to in some cases hijack
 // the jsonrpc2 connection with the daemon.
-type Forwarder struct {
-	dialer *AutoDialer
+type forwarder struct {
+	dialer *autoDialer
 
 	mu sync.Mutex
 	// Hold on to the server connection so that we can redo the handshake if any
@@ -126,28 +110,29 @@ type Forwarder struct {
 	serverID   string
 }
 
-// NewForwarder creates a new Forwarder, ready to forward connections to the
+// NewForwarder creates a new forwarder (a [jsonrpc2.StreamServer]),
+// ready to forward connections to the
 // remote server specified by rawAddr. If provided and rawAddr indicates an
 // 'automatic' address (starting with 'auto;'), argFunc may be used to start a
 // remote server for the auto-discovered address.
-func NewForwarder(rawAddr string, argFunc func(network, address string) []string) (*Forwarder, error) {
-	dialer, err := NewAutoDialer(rawAddr, argFunc)
+func NewForwarder(rawAddr string, argFunc func(network, address string) []string) (jsonrpc2.StreamServer, error) {
+	dialer, err := newAutoDialer(rawAddr, argFunc)
 	if err != nil {
 		return nil, err
 	}
-	fwd := &Forwarder{
+	fwd := &forwarder{
 		dialer: dialer,
 	}
 	return fwd, nil
 }
 
-// QueryServerState queries the server state of the current server.
-func QueryServerState(ctx context.Context, addr string) (*ServerState, error) {
+// QueryServerState returns a JSON-encodable struct describing the state of the named server.
+func QueryServerState(ctx context.Context, addr string) (any, error) {
 	serverConn, err := dialRemote(ctx, addr)
 	if err != nil {
 		return nil, err
 	}
-	var state ServerState
+	var state serverState
 	if err := protocol.Call(ctx, serverConn, sessionsMethod, nil, &state); err != nil {
 		return nil, fmt.Errorf("querying server state: %w", err)
 	}
@@ -159,7 +144,7 @@ func QueryServerState(ctx context.Context, addr string) (*ServerState, error) {
 // or auto://...).
 func dialRemote(ctx context.Context, addr string) (jsonrpc2.Conn, error) {
 	network, address := ParseAddr(addr)
-	if network == AutoNetwork {
+	if network == autoNetwork {
 		gp, err := os.Executable()
 		if err != nil {
 			return nil, fmt.Errorf("getting gopls path: %w", err)
@@ -175,7 +160,10 @@ func dialRemote(ctx context.Context, addr string) (jsonrpc2.Conn, error) {
 	return serverConn, nil
 }
 
-func ExecuteCommand(ctx context.Context, addr string, id string, request, result interface{}) error {
+// ExecuteCommand connects to the named server, sends it a
+// workspace/executeCommand request (with command 'id' and arguments
+// JSON encoded in 'request'), and populates the result variable.
+func ExecuteCommand(ctx context.Context, addr string, id string, request, result any) error {
 	serverConn, err := dialRemote(ctx, addr)
 	if err != nil {
 		return err
@@ -193,7 +181,7 @@ func ExecuteCommand(ctx context.Context, addr string, id string, request, result
 
 // ServeStream dials the forwarder remote and binds the remote to serve the LSP
 // on the incoming stream.
-func (f *Forwarder) ServeStream(ctx context.Context, clientConn jsonrpc2.Conn) error {
+func (f *forwarder) ServeStream(ctx context.Context, clientConn jsonrpc2.Conn) error {
 	client := protocol.ClientDispatcher(clientConn)
 
 	netConn, err := f.dialer.dialNet(ctx)
@@ -243,7 +231,7 @@ func (f *Forwarder) ServeStream(ctx context.Context, clientConn jsonrpc2.Conn) e
 }
 
 // TODO(rfindley): remove this handshaking in favor of middleware.
-func (f *Forwarder) handshake(ctx context.Context) {
+func (f *forwarder) handshake(ctx context.Context) {
 	// This call to os.Executable is redundant, and will be eliminated by the
 	// transition to the V2 API.
 	goplsPath, err := os.Executable()
@@ -280,7 +268,7 @@ func (f *Forwarder) handshake(ctx context.Context) {
 }
 
 func ConnectToRemote(ctx context.Context, addr string) (net.Conn, error) {
-	dialer, err := NewAutoDialer(addr, nil)
+	dialer, err := newAutoDialer(addr, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +277,7 @@ func ConnectToRemote(ctx context.Context, addr string) (net.Conn, error) {
 
 // handler intercepts messages to the daemon to enrich them with local
 // information.
-func (f *Forwarder) handler(handler jsonrpc2.Handler) jsonrpc2.Handler {
+func (f *forwarder) handler(handler jsonrpc2.Handler) jsonrpc2.Handler {
 	return func(ctx context.Context, reply jsonrpc2.Replier, r jsonrpc2.Request) error {
 		// Intercept certain messages to add special handling.
 		switch r.Method() {
@@ -374,7 +362,7 @@ func addGoEnvToInitializeRequest(ctx context.Context, r jsonrpc2.Request) (jsonr
 	return jsonrpc2.NewCall(call.ID(), "initialize", params)
 }
 
-func (f *Forwarder) replyWithDebugAddress(outerCtx context.Context, r jsonrpc2.Replier, args command.DebuggingArgs) jsonrpc2.Replier {
+func (f *forwarder) replyWithDebugAddress(outerCtx context.Context, r jsonrpc2.Replier, args command.DebuggingArgs) jsonrpc2.Replier {
 	di := debug.GetInstance(outerCtx)
 	if di == nil {
 		event.Log(outerCtx, "no debug instance to start")
@@ -440,24 +428,24 @@ type handshakeResponse struct {
 	GoplsPath string `json:"goplsPath"`
 }
 
-// ClientSession identifies a current client LSP session on the server. Note
+// clientSession identifies a current client LSP session on the server. Note
 // that it looks similar to handshakeResposne, but in fact 'Logfile' and
 // 'DebugAddr' now refer to the client.
-type ClientSession struct {
+type clientSession struct {
 	SessionID string `json:"sessionID"`
 	Logfile   string `json:"logfile"`
 	DebugAddr string `json:"debugAddr"`
 }
 
-// ServerState holds information about the gopls daemon process, including its
+// serverState holds information about the gopls daemon process, including its
 // debug information and debug information of all of its current connected
 // clients.
-type ServerState struct {
+type serverState struct {
 	Logfile         string          `json:"logfile"`
 	DebugAddr       string          `json:"debugAddr"`
 	GoplsPath       string          `json:"goplsPath"`
 	CurrentClientID string          `json:"currentClientID"`
-	Clients         []ClientSession `json:"clients"`
+	Clients         []clientSession `json:"clients"`
 }
 
 const (
@@ -501,7 +489,7 @@ func handshaker(session *cache.Session, goplsPath string, logHandshakes bool, ha
 			return reply(ctx, resp, nil)
 
 		case sessionsMethod:
-			resp := ServerState{
+			resp := serverState{
 				GoplsPath:       goplsPath,
 				CurrentClientID: session.ID(),
 			}
@@ -509,7 +497,7 @@ func handshaker(session *cache.Session, goplsPath string, logHandshakes bool, ha
 				resp.Logfile = di.Logfile
 				resp.DebugAddr = di.ListenedDebugAddress()
 				for _, c := range di.State.Clients() {
-					resp.Clients = append(resp.Clients, ClientSession{
+					resp.Clients = append(resp.Clients, clientSession{
 						SessionID: c.Session.ID(),
 						Logfile:   c.Logfile,
 						DebugAddr: c.DebugAddress,
@@ -535,8 +523,8 @@ func sendError(ctx context.Context, reply jsonrpc2.Replier, err error) {
 func ParseAddr(listen string) (network string, address string) {
 	// Allow passing just -remote=auto, as a shorthand for using automatic remote
 	// resolution.
-	if listen == AutoNetwork {
-		return AutoNetwork, ""
+	if listen == autoNetwork {
+		return autoNetwork, ""
 	}
 	if parts := strings.SplitN(listen, ";", 2); len(parts) == 2 {
 		return parts[0], parts[1]

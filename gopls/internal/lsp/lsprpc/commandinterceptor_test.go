@@ -6,12 +6,31 @@ package lsprpc_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	jsonrpc2_v2 "golang.org/x/tools/internal/jsonrpc2_v2"
 
 	. "golang.org/x/tools/gopls/internal/lsp/lsprpc"
 )
+
+func CommandInterceptor(command string, run func(*protocol.ExecuteCommandParams) (interface{}, error)) Middleware {
+	return BindHandler(func(delegate jsonrpc2_v2.Handler) jsonrpc2_v2.Handler {
+		return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+			if req.Method == "workspace/executeCommand" {
+				var params protocol.ExecuteCommandParams
+				if err := json.Unmarshal(req.Params, &params); err == nil {
+					if params.Command == command {
+						return run(&params)
+					}
+				}
+			}
+
+			return delegate.Handle(ctx, req)
+		})
+	})
+}
 
 func TestCommandInterceptor(t *testing.T) {
 	const command = "foo"
