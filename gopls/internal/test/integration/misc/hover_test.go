@@ -491,3 +491,26 @@ func TestHoverEmbedDirective(t *testing.T) {
 		}
 	})
 }
+
+func TestHoverBrokenImport_Issue60592(t *testing.T) {
+	const files = `
+-- go.mod --
+module testdata
+go 1.18
+
+-- p.go --
+package main
+
+import foo "a"
+
+func _() {
+	foo.Print()
+}
+
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("p.go")
+		// This request should not crash gopls.
+		_, _, _ = env.Editor.Hover(env.Ctx, env.RegexpSearch("p.go", "foo[.]"))
+	})
+}
