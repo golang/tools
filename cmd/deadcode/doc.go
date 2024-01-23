@@ -63,7 +63,7 @@ With no flags, the command prints the name and location of each dead
 function in the form of a typical compiler diagnostic, for example:
 
 	$ deadcode -f='{{range .Funcs}}{{println .Position}}{{end}}' -test ./gopls/...
-	gopls/internal/lsp/command.go:1206:6: unreachable func: openClientEditor
+	gopls/internal/protocol/command.go:1206:6: unreachable func: openClientEditor
 	gopls/internal/template/parse.go:414:18: unreachable func: Parsed.WriteNode
 	gopls/internal/template/parse.go:419:18: unreachable func: wrNode.writeNode
 

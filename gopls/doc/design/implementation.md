@@ -147,7 +147,7 @@ provided as a debugging aid (but see
 
 [cache]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cache
 [cmd]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cmd
-[command]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/command
+[command]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/protocol/command
 [debug]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/debug
 [file]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/file
 [filecache]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/filecache

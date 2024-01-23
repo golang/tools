@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"sync/atomic"
 
-	"golang.org/x/tools/gopls/internal/lsp/command"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/internal/memoize"
 )
 

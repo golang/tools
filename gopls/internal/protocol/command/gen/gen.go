@@ -12,7 +12,7 @@ import (
 	"go/types"
 	"text/template"
 
-	"golang.org/x/tools/gopls/internal/lsp/command/commandmeta"
+	"golang.org/x/tools/gopls/internal/protocol/command/commandmeta"
 	"golang.org/x/tools/internal/imports"
 )
 
@@ -115,7 +115,7 @@ func Generate() ([]byte, error) {
 			"golang.org/x/tools/gopls/internal/protocol": true,
 		},
 	}
-	const thispkg = "golang.org/x/tools/gopls/internal/lsp/command"
+	const thispkg = "golang.org/x/tools/gopls/internal/protocol/command"
 	for _, c := range d.Commands {
 		for _, arg := range c.Args {
 			pth := pkgPath(arg.Type)
