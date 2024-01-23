@@ -117,7 +117,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// Handle hovering over the package name, which does not have an associated
 	// object.
 	// As with import paths, we allow hovering just after the package name.
-	if pgf.File.Name != nil && pgf.File.Name.Pos() <= pos && pos <= pgf.File.Name.Pos() {
+	if pgf.File.Name != nil && pgf.File.Name.Pos() <= pos && pos <= pgf.File.Name.End() {
 		return hoverPackageName(pkg, pgf)
 	}
 
