@@ -12,7 +12,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	jsonrpc2_v2 "golang.org/x/tools/internal/jsonrpc2_v2"
 
-	. "golang.org/x/tools/gopls/internal/lsp/lsprpc"
+	. "golang.org/x/tools/gopls/internal/lsprpc"
 )
 
 func CommandInterceptor(command string, run func(*protocol.ExecuteCommandParams) (interface{}, error)) Middleware {

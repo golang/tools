@@ -14,7 +14,7 @@ import (
 	"os"
 
 	"golang.org/x/tools/gopls/internal/lsp/command"
-	"golang.org/x/tools/gopls/internal/lsp/lsprpc"
+	"golang.org/x/tools/gopls/internal/lsprpc"
 )
 
 type remote struct {

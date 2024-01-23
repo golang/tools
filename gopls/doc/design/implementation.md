@@ -156,7 +156,7 @@ provided as a debugging aid (but see
 [gopls]: https://pkg.go.dev/golang.org/x/tools/gopls@master
 [jsonrpc2]: https://pkg.go.dev/golang.org/x/tools@master/internal/jsonrpc2
 [lsp]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp
-[lsprpc]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/lsprpc
+[lsprpc]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsprpc
 [memoize]: https://github.com/golang/tools/tree/master/internal/memoize
 [metadata]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cache/metadata
 [methodsets]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/cache/methodsets

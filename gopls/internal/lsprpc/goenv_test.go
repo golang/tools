@@ -16,7 +16,7 @@ import (
 	jsonrpc2_v2 "golang.org/x/tools/internal/jsonrpc2_v2"
 	"golang.org/x/tools/internal/testenv"
 
-	. "golang.org/x/tools/gopls/internal/lsp/lsprpc"
+	. "golang.org/x/tools/gopls/internal/lsprpc"
 )
 
 func GoEnvMiddleware() (Middleware, error) {

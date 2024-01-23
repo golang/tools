@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	. "golang.org/x/tools/gopls/internal/lsp/lsprpc"
+	. "golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/internal/event"
 	jsonrpc2_v2 "golang.org/x/tools/internal/jsonrpc2_v2"
 )

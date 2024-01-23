@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
-	"golang.org/x/tools/gopls/internal/lsp/lsprpc"
+	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"

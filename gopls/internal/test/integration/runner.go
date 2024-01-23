@@ -22,8 +22,8 @@ import (
 
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
-	"golang.org/x/tools/gopls/internal/lsp/lsprpc"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/internal/jsonrpc2"
