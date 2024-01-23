@@ -8,7 +8,7 @@
 package hooks
 
 import (
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"honnef.co/go/tools/analysis/lint"
 	"honnef.co/go/tools/quickfix"

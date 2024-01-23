@@ -162,7 +162,7 @@ provided as a debugging aid (but see
 [methodsets]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cache/methodsets
 [mod]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/mod
 [parsego]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cache/parsego
-[protocol]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/protocol
+[protocol]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/protocol
 [server]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/server
 [settings]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/settings
 [source]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/source

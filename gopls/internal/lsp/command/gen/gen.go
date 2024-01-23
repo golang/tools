@@ -112,7 +112,7 @@ func Generate() ([]byte, error) {
 		Imports: map[string]bool{
 			"context": true,
 			"fmt":     true,
-			"golang.org/x/tools/gopls/internal/lsp/protocol": true,
+			"golang.org/x/tools/gopls/internal/protocol": true,
 		},
 	}
 	const thispkg = "golang.org/x/tools/gopls/internal/lsp/command"

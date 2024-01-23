@@ -98,7 +98,7 @@ Result:
 ```
 {
 	// Holds changes to existing resources.
-	"changes": map[golang.org/x/tools/gopls/internal/lsp/protocol.DocumentURI][]golang.org/x/tools/gopls/internal/lsp/protocol.TextEdit,
+	"changes": map[golang.org/x/tools/gopls/internal/protocol.DocumentURI][]golang.org/x/tools/gopls/internal/protocol.TextEdit,
 	// Depending on the client capability `workspace.workspaceEdit.resourceOperations` document changes
 	// are either an array of `TextDocumentEdit`s to express changes to n different text documents
 	// where each text document edit addresses a specific version of a text document. Or it can contain
@@ -128,7 +128,7 @@ Result:
 	// Whether clients honor this property depends on the client capability `workspace.changeAnnotationSupport`.
 	//
 	// @since 3.16.0
-	"changeAnnotations": map[string]golang.org/x/tools/gopls/internal/lsp/protocol.ChangeAnnotation,
+	"changeAnnotations": map[string]golang.org/x/tools/gopls/internal/protocol.ChangeAnnotation,
 }
 ```
 
@@ -159,7 +159,7 @@ Result:
 ```
 {
 	// Holds changes to existing resources.
-	"changes": map[golang.org/x/tools/gopls/internal/lsp/protocol.DocumentURI][]golang.org/x/tools/gopls/internal/lsp/protocol.TextEdit,
+	"changes": map[golang.org/x/tools/gopls/internal/protocol.DocumentURI][]golang.org/x/tools/gopls/internal/protocol.TextEdit,
 	// Depending on the client capability `workspace.workspaceEdit.resourceOperations` document changes
 	// are either an array of `TextDocumentEdit`s to express changes to n different text documents
 	// where each text document edit addresses a specific version of a text document. Or it can contain
@@ -189,7 +189,7 @@ Result:
 	// Whether clients honor this property depends on the client capability `workspace.changeAnnotationSupport`.
 	//
 	// @since 3.16.0
-	"changeAnnotations": map[string]golang.org/x/tools/gopls/internal/lsp/protocol.ChangeAnnotation,
+	"changeAnnotations": map[string]golang.org/x/tools/gopls/internal/protocol.ChangeAnnotation,
 }
 ```
 
@@ -255,7 +255,7 @@ Args:
 Result:
 
 ```
-map[golang.org/x/tools/gopls/internal/lsp/protocol.DocumentURI]*golang.org/x/tools/gopls/internal/vulncheck.Result
+map[golang.org/x/tools/gopls/internal/protocol.DocumentURI]*golang.org/x/tools/gopls/internal/vulncheck.Result
 ```
 
 ### **Toggle gc_details**

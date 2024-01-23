@@ -7,7 +7,7 @@
 
 package telemetry
 
-import "golang.org/x/tools/gopls/internal/lsp/protocol"
+import "golang.org/x/tools/gopls/internal/protocol"
 
 func Mode() string {
 	return "local"

@@ -11,7 +11,7 @@ import (
 	"path"
 	"path/filepath"
 
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake/glob"
 )
 

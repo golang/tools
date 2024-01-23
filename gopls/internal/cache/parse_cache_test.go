@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 )
 
 func skipIfNoParseCache(t *testing.T) {

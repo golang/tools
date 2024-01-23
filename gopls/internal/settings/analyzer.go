@@ -6,7 +6,7 @@ package settings
 
 import (
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 )
 
 // Analyzer augments a go/analysis analyzer with additional LSP configuration.

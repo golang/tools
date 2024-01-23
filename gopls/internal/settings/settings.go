@@ -67,7 +67,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/useany"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsp/command"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 )
 
 type Annotation string

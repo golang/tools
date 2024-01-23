@@ -16,7 +16,7 @@ set -eu
 # The largest real source file in the x/tools repo.
 # file=internal/lsp/source/completion/completion.go
 # file=internal/lsp/source/diagnostics.go
-file=internal/lsp/protocol/tsprotocol.go
+file=internal/protocol/tsprotocol.go
 
 tmp=$(mktemp -d)
 git log $file |

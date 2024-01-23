@@ -59,9 +59,9 @@ For instance, files that are needed to do correct type checking are modified by 
 Monitoring files inside gopls directly has a lot of awkward problems, but the [LSP specification] has methods that allow gopls to request that the client notify it of file system changes, specifically [`workspace/didChangeWatchedFiles`].
 This is currently being added to gopls by a community member, and tracked in [#31553]
 
-[InitializeResult]: https://pkg.go.dev/golang.org/x/tools/gopls/internal/lsp/protocol#InitializeResult
-[ServerCapabilities]: https://pkg.go.dev/golang.org/x/tools/gopls/internal/lsp/protocol#ServerCapabilities
-[`golang.org/x/tools/gopls/internal/lsp/protocol`]: https://pkg.go.dev/golang.org/x/tools/internal/lsp/protocol#NewPoint
+[InitializeResult]: https://pkg.go.dev/golang.org/x/tools/gopls/internal/protocol#InitializeResult
+[ServerCapabilities]: https://pkg.go.dev/golang.org/x/tools/gopls/internal/protocol#ServerCapabilities
+[`golang.org/x/tools/gopls/internal/protocol`]: https://pkg.go.dev/golang.org/x/tools/internal/protocol#NewPoint
 
 [LSP specification]: https://microsoft.github.io/language-server-protocol/specifications/specification-3-14/
 [lsp-response]: https://github.com/Microsoft/language-server-protocol/blob/gh-pages/_specifications/specification-3-14.md#response-message

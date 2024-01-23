@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 )
 
 // TODO(rfindley): now that experimentalWorkspaceModule is gone, this file can

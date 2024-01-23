@@ -15,7 +15,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 
 	"golang.org/x/tools/gopls/internal/lsp/command"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/testenv"
 )
 

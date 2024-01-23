@@ -9,7 +9,7 @@ import (
 
 	. "golang.org/x/tools/gopls/internal/test/integration"
 
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 )
 
 const basicProxy = `

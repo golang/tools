@@ -13,7 +13,7 @@ import (
 	"golang.org/x/telemetry"
 	"golang.org/x/telemetry/counter"
 	"golang.org/x/telemetry/upload"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 )
 
 // Mode calls x/telemetry.Mode.
