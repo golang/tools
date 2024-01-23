@@ -24,12 +24,12 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/progress"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/telemetry"
@@ -205,7 +205,7 @@ func (c *commandHandler) ApplyFix(ctx context.Context, args command.ApplyFixArgs
 		// Note: no progress here. Applying fixes should be quick.
 		forURI: args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		edits, err := source.ApplyFix(ctx, args.Fix, deps.snapshot, deps.fh, args.Range)
+		edits, err := golang.ApplyFix(ctx, args.Fix, deps.snapshot, deps.fh, args.Range)
 		if err != nil {
 			return err
 		}
@@ -509,7 +509,7 @@ func (c *commandHandler) RunTests(ctx context.Context, args command.RunTestsArgs
 
 func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot, work *progress.WorkDone, uri protocol.DocumentURI, tests, benchmarks []string) error {
 	// TODO: fix the error reporting when this runs async.
-	meta, err := source.NarrowestMetadataForFile(ctx, snapshot, uri)
+	meta, err := golang.NarrowestMetadataForFile(ctx, snapshot, uri)
 	if err != nil {
 		return err
 	}
@@ -776,7 +776,7 @@ func (c *commandHandler) ToggleGCDetails(ctx context.Context, args command.URIAr
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		return c.modifyState(ctx, FromToggleGCDetails, func() (*cache.Snapshot, func(), error) {
-			meta, err := source.NarrowestMetadataForFile(ctx, deps.snapshot, deps.fh.URI())
+			meta, err := golang.NarrowestMetadataForFile(ctx, deps.snapshot, deps.fh.URI())
 			if err != nil {
 				return nil, nil, err
 			}
@@ -796,7 +796,7 @@ func (c *commandHandler) ListKnownPackages(ctx context.Context, args command.URI
 		progress: "Listing packages",
 		forURI:   args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		pkgs, err := source.KnownPackagePaths(ctx, deps.snapshot, deps.fh)
+		pkgs, err := golang.KnownPackagePaths(ctx, deps.snapshot, deps.fh)
 		for _, pkg := range pkgs {
 			result.Packages = append(result.Packages, string(pkg))
 		}
@@ -834,7 +834,7 @@ func (c *commandHandler) ListImports(ctx context.Context, args command.URIArg) (
 				})
 			}
 		}
-		meta, err := source.NarrowestMetadataForFile(ctx, deps.snapshot, args.URI)
+		meta, err := golang.NarrowestMetadataForFile(ctx, deps.snapshot, args.URI)
 		if err != nil {
 			return err // e.g. cancelled
 		}
@@ -855,7 +855,7 @@ func (c *commandHandler) AddImport(ctx context.Context, args command.AddImportAr
 		progress: "Adding import",
 		forURI:   args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		edits, err := source.AddImport(ctx, deps.snapshot, deps.fh, args.ImportPath)
+		edits, err := golang.AddImport(ctx, deps.snapshot, deps.fh, args.ImportPath)
 		if err != nil {
 			return fmt.Errorf("could not add import: %v", err)
 		}
@@ -1070,7 +1070,7 @@ func collectViewStats(ctx context.Context, view *cache.View) (command.ViewStats,
 	}
 	workspacePackages := collectPackageStats(wsMD)
 
-	var ids []source.PackageID
+	var ids []golang.PackageID
 	for _, mp := range wsMD {
 		ids = append(ids, mp.ID)
 	}
@@ -1260,7 +1260,7 @@ func (c *commandHandler) ChangeSignature(ctx context.Context, args command.Chang
 		forURI: args.RemoveParameter.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		// For now, gopls only supports removing unused parameters.
-		changes, err := source.RemoveUnusedParameter(ctx, deps.fh, args.RemoveParameter.Range, deps.snapshot)
+		changes, err := golang.RemoveUnusedParameter(ctx, deps.fh, args.RemoveParameter.Range, deps.snapshot)
 		if err != nil {
 			return err
 		}

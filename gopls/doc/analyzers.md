@@ -781,7 +781,7 @@ This analyzer will suggest a fix to declare this method:
 
 (At least, it appears to behave that way, but technically it
 doesn't use the SuggestedFix mechanism and the stub is created by
-logic in gopls's source.stub function.)
+logic in gopls's golang.stub function.)
 
 [Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stubmethods)
 

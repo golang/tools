@@ -13,10 +13,10 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/internal/event"
 )
@@ -107,7 +107,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 	case file.Go:
 		// Don't suggest fixes for generated files, since they are generally
 		// not useful and some editors may apply them automatically on save.
-		if source.IsGenerated(ctx, snapshot, uri) {
+		if golang.IsGenerated(ctx, snapshot, uri) {
 			return nil, nil
 		}
 
@@ -116,7 +116,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 			return nil, err
 		}
 
-		moreActions, err := source.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, want)
+		moreActions, err := golang.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, want)
 		if err != nil {
 			return nil, err
 		}

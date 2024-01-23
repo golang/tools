@@ -73,7 +73,7 @@ Args:
 	// the analysis.Diagnostic with a SuggestedFix containing no edits.
 	//
 	// For fixes suggested by code actions, this is a string agreed
-	// upon by the code action and source.ApplyFix.
+	// upon by the code action and golang.ApplyFix.
 	"Fix": string,
 	// The file URI for the document to fix.
 	"URI": string,

@@ -32,7 +32,7 @@ func newMemoizedFS() *memoizedFS {
 }
 
 // A diskFile is a file in the filesystem, or a failure to read one.
-// It implements the source.FileHandle interface.
+// It implements the file.Source interface.
 type diskFile struct {
 	uri     protocol.DocumentURI
 	modTime time.Time

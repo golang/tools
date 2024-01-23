@@ -277,7 +277,7 @@ func run(pass *analysis.Pass) (any, error) {
 					}
 					// This diagnostic carries both an edit-based fix to
 					// rename the unused parameter, and a command-based fix
-					// to remove it (see source.RemoveUnusedParameter).
+					// to remove it (see golang.RemoveUnusedParameter).
 					pass.Report(analysis.Diagnostic{
 						Pos:      start,
 						End:      end,

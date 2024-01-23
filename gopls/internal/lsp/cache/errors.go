@@ -6,7 +6,7 @@ package cache
 
 // This file defines routines to convert diagnostics from go list, go
 // get, go/packages, parsing, type checking, and analysis into
-// source.Diagnostic form, and suggesting quick fixes.
+// golang.Diagnostic form, and suggesting quick fixes.
 
 import (
 	"context"

@@ -19,10 +19,10 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/template"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/event"
@@ -85,7 +85,7 @@ func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIde
 	if kind != file.Go {
 		return nil, nil // empty result
 	}
-	pkg, pgf, err := source.NarrowestPackageForFile(ctx, snapshot, fh.URI())
+	pkg, pgf, err := golang.NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +228,7 @@ type encoded struct {
 	// metadataSource is used to resolve imports
 	metadataSource    metadata.Source
 	tokTypes, tokMods []string
-	pgf               *source.ParsedGoFile
+	pgf               *golang.ParsedGoFile
 	start, end        token.Pos // range of interest
 	ti                *types.Info
 	pkg               *cache.Package

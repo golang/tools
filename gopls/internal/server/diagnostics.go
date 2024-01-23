@@ -17,10 +17,10 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/template"
@@ -263,7 +263,7 @@ func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snaps
 		}
 
 		// Find all packages that include this file and diagnose them in parallel.
-		meta, err := source.NarrowestMetadataForFile(ctx, snapshot, uri)
+		meta, err := golang.NarrowestMetadataForFile(ctx, snapshot, uri)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
@@ -438,7 +438,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 		toAnalyze  = make(map[metadata.PackageID]*metadata.Package)
 
 		// secondary index, used to eliminate narrower packages.
-		toAnalyzeWidest = make(map[source.PackagePath]*metadata.Package)
+		toAnalyzeWidest = make(map[golang.PackagePath]*metadata.Package)
 	)
 	for _, mp := range workspacePkgs {
 		var hasNonIgnored, hasOpenFile bool
@@ -496,7 +496,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 		var err error
 		// TODO(rfindley): here and above, we should avoid using the first result
 		// if err is non-nil (though as of today it's OK).
-		analysisDiags, err = source.Analyze(ctx, snapshot, toAnalyze, s.progress)
+		analysisDiags, err = golang.Analyze(ctx, snapshot, toAnalyze, s.progress)
 		if err != nil {
 			event.Error(ctx, "warning: analyzing package", err, append(snapshot.Labels(), tag.Package.Of(keys.Join(maps.Keys(toDiagnose))))...)
 			return
@@ -542,7 +542,7 @@ func (s *server) gcDetailsDiagnostics(ctx context.Context, snapshot *cache.Snaps
 
 	diagnostics := make(diagMap)
 	for _, mp := range toGCDetail {
-		gcReports, err := source.GCOptimizationDetails(ctx, snapshot, mp)
+		gcReports, err := golang.GCOptimizationDetails(ctx, snapshot, mp)
 		if err != nil {
 			event.Error(ctx, "warning: gc details", err, append(snapshot.Labels(), tag.Package.Of(string(mp.ID)))...)
 			continue

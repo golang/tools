@@ -43,7 +43,7 @@ type Cache struct {
 
 	store *memoize.Store
 
-	*memoizedFS // implements source.FileSource
+	*memoizedFS // implements file.Source
 }
 
 var cacheIndex, sessionIndex, viewIndex int64

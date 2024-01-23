@@ -32,9 +32,9 @@ import (
 	"github.com/jba/printsrc"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/lsp/command"
 	"golang.org/x/tools/gopls/internal/lsp/command/commandmeta"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
@@ -124,7 +124,7 @@ func loadAPI() (*settings.APIJSON, error) {
 	for _, c := range api.Commands {
 		c.Command = command.ID(c.Command)
 	}
-	api.Hints = loadHints(source.AllInlayHints)
+	api.Hints = loadHints(golang.AllInlayHints)
 	for _, category := range []reflect.Value{
 		reflect.ValueOf(defaults.UserOptions),
 	} {
@@ -481,7 +481,7 @@ func structDoc(fields []*commandmeta.Field, level int) string {
 
 func loadLenses(commands []*settings.CommandJSON) []*settings.LensJSON {
 	all := map[command.Command]struct{}{}
-	for k := range source.LensFuncs() {
+	for k := range golang.LensFuncs() {
 		all[k] = struct{}{}
 	}
 	for k := range mod.LensFuncs() {
@@ -524,7 +524,7 @@ func loadAnalyzers(m map[string]*settings.Analyzer) []*settings.AnalyzerJSON {
 	return json
 }
 
-func loadHints(m map[string]*source.Hint) []*settings.HintJSON {
+func loadHints(m map[string]*golang.Hint) []*settings.HintJSON {
 	var sorted []string
 	for _, h := range m {
 		sorted = append(sorted, h.Name)

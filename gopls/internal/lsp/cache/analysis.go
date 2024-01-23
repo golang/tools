@@ -1437,7 +1437,7 @@ func requiredAnalyzers(analyzers []*analysis.Analyzer) []*analysis.Analyzer {
 
 var analyzeSummaryCodec = frob.CodecFor[*analyzeSummary]()
 
-// -- data types for serialization of analysis.Diagnostic and source.Diagnostic --
+// -- data types for serialization of analysis.Diagnostic and golang.Diagnostic --
 
 // (The name says gob but we use frob.)
 var diagnosticsCodec = frob.CodecFor[[]gobDiagnostic]()

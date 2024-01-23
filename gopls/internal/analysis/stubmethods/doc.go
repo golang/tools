@@ -34,5 +34,5 @@
 //
 // (At least, it appears to behave that way, but technically it
 // doesn't use the SuggestedFix mechanism and the stub is created by
-// logic in gopls's source.stub function.)
+// logic in gopls's golang.stub function.)
 package stubmethods

@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package embeddirective defines an Analyzer that validates //go:embed directives.
-// The analyzer defers fixes to its parent source.Analyzer.
+// The analyzer defers fixes to its parent golang.Analyzer.
 //
 // # Analyzer embed
 //

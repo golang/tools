@@ -73,7 +73,7 @@ func (b buffer) text() string {
 }
 
 // EditorConfig configures the editor's LSP session. This is similar to
-// source.UserOptions, but we use a separate type here so that we expose only
+// golang.UserOptions, but we use a separate type here so that we expose only
 // that configuration which we support.
 //
 // The zero value for EditorConfig is the default configuration.
