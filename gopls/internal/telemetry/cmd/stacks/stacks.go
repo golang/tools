@@ -17,6 +17,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -72,15 +73,30 @@ func main() {
 				if prog.Program == "golang.org/x/tools/gopls" && len(prog.Stacks) > 0 {
 					total++
 
+					// Include applicable client names (e.g. vscode, eglot).
+					var clients []string
+					var clientSuffix string
+					for key := range prog.Counters {
+						client := strings.TrimPrefix(key, "gopls/client:")
+						if client != key {
+							clients = append(clients, client)
+						}
+					}
+					sort.Strings(clients)
+					if len(clients) > 0 {
+						clientSuffix = " " + strings.Join(clients, ",")
+					}
+
 					// Ignore @devel versions as they correspond to
 					// ephemeral (and often numerous) variations of
 					// the program as we work on a fix to a bug.
 					if prog.Version == "devel" {
 						continue
 					}
-					info := fmt.Sprintf("%s@%s %s %s/%s",
+					info := fmt.Sprintf("%s@%s %s %s/%s%s",
 						prog.Program, prog.Version,
-						prog.GoVersion, prog.GOOS, prog.GOARCH)
+						prog.GoVersion, prog.GOOS, prog.GOARCH,
+						clientSuffix)
 					for stack, count := range prog.Stacks {
 						counts := stacks[stack]
 						if counts == nil {
