@@ -133,10 +133,9 @@ var goplsType = map[string]string{
 
 	"Or_Declaration": "[]Location",
 	"Or_DidChangeConfigurationRegistrationOptions_section": "OrPSection_workspace_didChangeConfiguration",
-	"Or_GlobPattern":                "string",
-	"Or_InlayHintLabelPart_tooltip": "OrPTooltipPLabel",
-	"Or_InlayHint_tooltip":          "OrPTooltip_textDocument_inlayHint",
-	"Or_LSPAny":                     "interface{}",
+	"Or_InlayHintLabelPart_tooltip":                        "OrPTooltipPLabel",
+	"Or_InlayHint_tooltip":                                 "OrPTooltip_textDocument_inlayHint",
+	"Or_LSPAny":                                            "interface{}",
 
 	"Or_ParameterInformation_documentation":            "string",
 	"Or_ParameterInformation_label":                    "string",
@@ -151,6 +150,7 @@ var goplsType = map[string]string{
 	"Or_Result_textDocument_typeDefinition":            "[]Location",
 	"Or_Result_workspace_symbol":                       "[]SymbolInformation",
 	"Or_TextDocumentContentChangeEvent":                "TextDocumentContentChangePartial",
+	"Or_RelativePattern_baseUri":                       "DocumentURI",
 
 	"Or_WorkspaceFoldersServerCapabilities_changeNotifications": "string",
 	"Or_WorkspaceSymbol_location":                               "OrPLocation_workspace_symbol",

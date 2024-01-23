@@ -89,7 +89,7 @@ type server struct {
 	// that the server should watch changes.
 	// The map field may be reassigned but the map is immutable.
 	watchedGlobPatternsMu  sync.Mutex
-	watchedGlobPatterns    map[string]unit
+	watchedGlobPatterns    map[protocol.RelativePattern]unit
 	watchRegistrationCount int
 
 	diagnosticsMu sync.Mutex

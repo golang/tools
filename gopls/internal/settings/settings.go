@@ -121,6 +121,7 @@ type ClientOptions struct {
 	DynamicConfigurationSupported              bool
 	DynamicRegistrationSemanticTokensSupported bool
 	DynamicWatchedFilesSupported               bool
+	RelativePatternsSupported                  bool
 	PreferredContentFormat                     protocol.MarkupKind
 	LineFoldingOnly                            bool
 	HierarchicalDocumentSymbolSupport          bool
@@ -718,6 +719,7 @@ func (o *Options) ForClientCapabilities(clientName *protocol.ClientInfo, caps pr
 	o.DynamicConfigurationSupported = caps.Workspace.DidChangeConfiguration.DynamicRegistration
 	o.DynamicRegistrationSemanticTokensSupported = caps.TextDocument.SemanticTokens.DynamicRegistration
 	o.DynamicWatchedFilesSupported = caps.Workspace.DidChangeWatchedFiles.DynamicRegistration
+	o.RelativePatternsSupported = caps.Workspace.DidChangeWatchedFiles.RelativePatternSupport
 
 	// Check which types of content format are supported by this client.
 	if hover := caps.TextDocument.Hover; hover != nil && len(hover.ContentFormat) > 0 {

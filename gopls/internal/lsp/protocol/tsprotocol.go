@@ -2121,7 +2121,7 @@ type GeneralClientCapabilities struct {
 // The glob pattern. Either a string pattern or a relative pattern.
 //
 // @since 3.17.0
-type GlobPattern = string // (alias)
+type GlobPattern = Or_GlobPattern // (alias)
 // The result of a hover request.
 type Hover struct {
 	// The hover's content
@@ -3108,6 +3108,11 @@ type Or_DocumentFilter struct {
 	Value interface{} `json:"value"`
 }
 
+// created for Or [Pattern RelativePattern]
+type Or_GlobPattern struct {
+	Value interface{} `json:"value"`
+}
+
 // created for Or [MarkedString MarkupContent []MarkedString]
 type Or_Hover_contents struct {
 	Value interface{} `json:"value"`
@@ -3165,11 +3170,6 @@ type Or_RelatedFullDocumentDiagnosticReport_relatedDocuments_Value struct {
 
 // created for Or [FullDocumentDiagnosticReport UnchangedDocumentDiagnosticReport]
 type Or_RelatedUnchangedDocumentDiagnosticReport_relatedDocuments_Value struct {
-	Value interface{} `json:"value"`
-}
-
-// created for Or [URI WorkspaceFolder]
-type Or_RelativePattern_baseUri struct {
 	Value interface{} `json:"value"`
 }
 
@@ -3656,7 +3656,7 @@ type RelatedUnchangedDocumentDiagnosticReport struct {
 type RelativePattern struct {
 	// A workspace folder or a base URI to which this pattern will be matched
 	// against relatively.
-	BaseURI Or_RelativePattern_baseUri `json:"baseUri"`
+	BaseURI DocumentURI `json:"baseUri"`
 	// The actual glob pattern;
 	Pattern Pattern `json:"pattern"`
 }

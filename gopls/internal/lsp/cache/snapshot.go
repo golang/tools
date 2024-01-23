@@ -16,6 +16,7 @@ import (
 	"go/types"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -938,20 +939,24 @@ func (s *Snapshot) resetActivePackagesLocked() {
 
 // See Session.FileWatchingGlobPatterns for a description of gopls' file
 // watching heuristic.
-func (s *Snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]struct{} {
+func (s *Snapshot) fileWatchingGlobPatterns() map[protocol.RelativePattern]unit {
+	// Always watch files that may change the view definition.
+	patterns := make(map[protocol.RelativePattern]unit)
+
+	// If GOWORK is outside the folder, ensure we are watching it.
+	if s.view.gowork != "" && !s.view.folder.Dir.Encloses(s.view.gowork) {
+		workPattern := protocol.RelativePattern{
+			BaseURI: s.view.gowork.Dir(),
+			Pattern: path.Base(string(s.view.gowork)),
+		}
+		patterns[workPattern] = unit{}
+	}
+
 	extensions := "go,mod,sum,work"
 	for _, ext := range s.Options().TemplateExtensions {
 		extensions += "," + ext
 	}
-
-	// Always watch files that may change the view definition.
-	patterns := make(map[string]unit)
-
-	// If GOWORK is outside the folder, ensure we are watching it.
-	if s.view.gowork != "" && !s.view.folder.Dir.Encloses(s.view.gowork) {
-		// TODO(rfindley): use RelativePatterns here as well (see below).
-		patterns[filepath.ToSlash(s.view.gowork.Path())] = unit{}
-	}
+	watchGoFiles := fmt.Sprintf("**/*.{%s}", extensions)
 
 	var dirs []string
 	if s.view.moduleMode() {
@@ -964,21 +969,17 @@ func (s *Snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]stru
 			dir := filepath.Dir(modFile.Path())
 			dirs = append(dirs, dir)
 
-			// TODO(golang/go#64763): Switch to RelativePatterns if RelativePatternSupport
-			// is available. Relative patterns do not have issues with Windows drive
-			// letter casing.
-			// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#relativePattern
-			//
-			// TODO(golang/go#64724): thoroughly test, particularly on on Windows.
+			// TODO(golang/go#64724): thoroughly test these patterns, particularly on
+			// on Windows.
 			//
 			// Note that glob patterns should use '/' on Windows:
 			// https://code.visualstudio.com/docs/editor/glob-patterns
-			patterns[fmt.Sprintf("%s/**/*.{%s}", filepath.ToSlash(dir), extensions)] = unit{}
+			patterns[protocol.RelativePattern{BaseURI: modFile.Dir(), Pattern: watchGoFiles}] = unit{}
 		}
 	} else {
 		// In non-module modes (GOPATH or AdHoc), we just watch the workspace root.
 		dirs = []string{s.view.root.Path()}
-		patterns[fmt.Sprintf("**/*.{%s}", extensions)] = unit{}
+		patterns[protocol.RelativePattern{Pattern: watchGoFiles}] = unit{}
 	}
 
 	if s.watchSubdirs() {
@@ -1007,14 +1008,14 @@ func (s *Snapshot) fileWatchingGlobPatterns(ctx context.Context) map[string]stru
 	return patterns
 }
 
-func (s *Snapshot) addKnownSubdirs(patterns map[string]unit, wsDirs []string) {
+func (s *Snapshot) addKnownSubdirs(patterns map[protocol.RelativePattern]unit, wsDirs []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.files.getDirs().Range(func(dir string) {
 		for _, wsDir := range wsDirs {
 			if pathutil.InDir(wsDir, dir) {
-				patterns[filepath.ToSlash(dir)] = unit{}
+				patterns[protocol.RelativePattern{Pattern: filepath.ToSlash(dir)}] = unit{}
 			}
 		}
 	})

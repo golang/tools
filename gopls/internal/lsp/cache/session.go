@@ -1025,9 +1025,9 @@ func (b brokenFile) SameContentsOnDisk() bool  { return false }
 func (b brokenFile) Version() int32            { return 0 }
 func (b brokenFile) Content() ([]byte, error)  { return nil, b.err }
 
-// FileWatchingGlobPatterns returns a set of glob patterns patterns that the
-// client is required to watch for changes, and notify the server of them, in
-// order to keep the server's state up to date.
+// FileWatchingGlobPatterns returns a set of glob patterns that the client is
+// required to watch for changes, and notify the server of them, in order to
+// keep the server's state up to date.
 //
 // This set includes
 //  1. all go.mod and go.work files in the workspace; and
@@ -1043,17 +1043,27 @@ func (b brokenFile) Content() ([]byte, error)  { return nil, b.err }
 // The watch for workspace directories in (2) should keep each View up to date,
 // as it should capture any newly added/modified/deleted Go files.
 //
+// Patterns are returned as a set of protocol.RelativePatterns, since they can
+// always be later translated to glob patterns (i.e. strings) if the client
+// lacks relative pattern support. By convention, any pattern returned with
+// empty baseURI should be served as a glob pattern.
+//
+// In general, we prefer to serve relative patterns, as they work better on
+// most clients that support both, and do not have issues with Windows driver
+// letter casing:
+// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#relativePattern
+//
 // TODO(golang/go#57979): we need to reset the memoizedFS when a view changes.
 // Consider the case where we incidentally read a file, then it moved outside
 // of an active module, and subsequently changed: we would still observe the
 // original file state.
-func (s *Session) FileWatchingGlobPatterns(ctx context.Context) map[string]unit {
+func (s *Session) FileWatchingGlobPatterns(ctx context.Context) map[protocol.RelativePattern]unit {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 
 	// Always watch files that may change the set of views.
-	patterns := map[string]unit{
-		"**/*.{mod,work}": {},
+	patterns := map[protocol.RelativePattern]unit{
+		{Pattern: "**/*.{mod,work}"}: {},
 	}
 
 	for _, view := range s.views {
@@ -1061,7 +1071,7 @@ func (s *Session) FileWatchingGlobPatterns(ctx context.Context) map[string]unit 
 		if err != nil {
 			continue // view is shut down; continue with others
 		}
-		for k, v := range snapshot.fileWatchingGlobPatterns(ctx) {
+		for k, v := range snapshot.fileWatchingGlobPatterns() {
 			patterns[k] = v
 		}
 		release()

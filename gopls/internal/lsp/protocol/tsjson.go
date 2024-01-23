@@ -473,6 +473,36 @@ func (t *Or_DocumentFilter) UnmarshalJSON(x []byte) error {
 	return &UnmarshalError{"unmarshal failed to match one of [NotebookCellTextDocumentFilter TextDocumentFilter]"}
 }
 
+func (t Or_GlobPattern) MarshalJSON() ([]byte, error) {
+	switch x := t.Value.(type) {
+	case Pattern:
+		return json.Marshal(x)
+	case RelativePattern:
+		return json.Marshal(x)
+	case nil:
+		return []byte("null"), nil
+	}
+	return nil, fmt.Errorf("type %T not one of [Pattern RelativePattern]", t)
+}
+
+func (t *Or_GlobPattern) UnmarshalJSON(x []byte) error {
+	if string(x) == "null" {
+		t.Value = nil
+		return nil
+	}
+	var h0 Pattern
+	if err := json.Unmarshal(x, &h0); err == nil {
+		t.Value = h0
+		return nil
+	}
+	var h1 RelativePattern
+	if err := json.Unmarshal(x, &h1); err == nil {
+		t.Value = h1
+		return nil
+	}
+	return &UnmarshalError{"unmarshal failed to match one of [Pattern RelativePattern]"}
+}
+
 func (t Or_Hover_contents) MarshalJSON() ([]byte, error) {
 	switch x := t.Value.(type) {
 	case MarkedString:
@@ -852,36 +882,6 @@ func (t *Or_RelatedUnchangedDocumentDiagnosticReport_relatedDocuments_Value) Unm
 		return nil
 	}
 	return &UnmarshalError{"unmarshal failed to match one of [FullDocumentDiagnosticReport UnchangedDocumentDiagnosticReport]"}
-}
-
-func (t Or_RelativePattern_baseUri) MarshalJSON() ([]byte, error) {
-	switch x := t.Value.(type) {
-	case URI:
-		return json.Marshal(x)
-	case WorkspaceFolder:
-		return json.Marshal(x)
-	case nil:
-		return []byte("null"), nil
-	}
-	return nil, fmt.Errorf("type %T not one of [URI WorkspaceFolder]", t)
-}
-
-func (t *Or_RelativePattern_baseUri) UnmarshalJSON(x []byte) error {
-	if string(x) == "null" {
-		t.Value = nil
-		return nil
-	}
-	var h0 URI
-	if err := json.Unmarshal(x, &h0); err == nil {
-		t.Value = h0
-		return nil
-	}
-	var h1 WorkspaceFolder
-	if err := json.Unmarshal(x, &h1); err == nil {
-		t.Value = h1
-		return nil
-	}
-	return &UnmarshalError{"unmarshal failed to match one of [URI WorkspaceFolder]"}
 }
 
 func (t Or_Result_textDocument_codeAction_Item0_Elem) MarshalJSON() ([]byte, error) {
