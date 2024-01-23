@@ -145,7 +145,7 @@ access to server functionality. These subcommands are primarily
 provided as a debugging aid (but see
 [#63693](https://github.com/golang/go/issues/63693)).
 
-[cache]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/cache
+[cache]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cache
 [cmd]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cmd
 [command]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/command
 [debug]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/debug
@@ -158,16 +158,16 @@ provided as a debugging aid (but see
 [lsp]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp
 [lsprpc]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsprpc
 [memoize]: https://github.com/golang/tools/tree/master/internal/memoize
-[metadata]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/cache/metadata
-[methodsets]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/cache/methodsets
+[metadata]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cache/metadata
+[methodsets]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cache/methodsets
 [mod]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/mod
-[parsego]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/cache/parsego
+[parsego]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cache/parsego
 [protocol]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/protocol
 [server]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/server
 [settings]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/settings
 [source]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/source
 [template]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/template
-[typerefs]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/cache/typerefs
+[typerefs]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cache/typerefs
 [work]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/work
 [x/tools]: https://github.com/golang/tools@master
-[xrefs]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/cache/xrefs
+[xrefs]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cache/xrefs

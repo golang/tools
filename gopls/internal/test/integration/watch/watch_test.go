@@ -258,7 +258,7 @@ func _() {
 }
 
 // Add a new method to an interface and implement it.
-// Inspired by the structure of internal/lsp/source and internal/lsp/cache.
+// Inspired by the structure of internal/lsp/source and internal/cache.
 func TestCreateImplementation(t *testing.T) {
 	const pkg = `
 -- go.mod --

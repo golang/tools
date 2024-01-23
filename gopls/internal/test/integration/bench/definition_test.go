@@ -20,7 +20,7 @@ func BenchmarkDefinition(b *testing.B) {
 		{"kuma", "api/generic/insights.go", `proto\.(Message)`},
 		{"pkgsite", "internal/log/log.go", `derrors\.(Wrap)`},
 		{"starlark", "starlark/eval.go", "prog.compiled.(Encode)"},
-		{"tools", "internal/lsp/cache/check.go", `(snapshot)\) buildKey`},
+		{"tools", "internal/cache/check.go", `(snapshot)\) buildKey`},
 	}
 
 	for _, test := range tests {

@@ -10,7 +10,7 @@ import (
 	"go/token"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/tokeninternal"
 )

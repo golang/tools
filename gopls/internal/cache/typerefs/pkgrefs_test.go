@@ -20,9 +20,9 @@ import (
 
 	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
-	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
-	"golang.org/x/tools/gopls/internal/lsp/cache/typerefs"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
+	"golang.org/x/tools/gopls/internal/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/internal/packagesinternal"
@@ -327,7 +327,7 @@ func (s mapMetadataSource) Metadata(id PackageID) *Metadata {
 }
 
 // This function is a compressed version of snapshot.load from the
-// internal/lsp/cache package, for use in testing.
+// internal/cache package, for use in testing.
 //
 // TODO(rfindley): it may be valuable to extract this logic from the snapshot,
 // since it is otherwise standalone.
@@ -386,7 +386,7 @@ func loadPackages(query string, needExport bool) (map[PackageID]string, Metadata
 		for importPath, imported := range pkg.Imports {
 			importPath := ImportPath(importPath)
 
-			// see note in gopls/internal/lsp/cache/load.go for an explanation of this check.
+			// see note in gopls/internal/cache/load.go for an explanation of this check.
 			if importPath != "unsafe" && len(imported.CompiledGoFiles) == 0 {
 				mp.DepsByImpPath[importPath] = "" // missing
 				continue

@@ -34,7 +34,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/filecache"
-	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/lsp/protocol"
 	"golang.org/x/tools/gopls/internal/progress"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -150,7 +150,7 @@ import (
 //   Even if the ultimate consumer decides to ignore errors,
 //   tests and other situations want to be assured of freedom from
 //   errors, not just missing results. This should be recorded.
-// - Split this into a subpackage, gopls/internal/lsp/cache/driver,
+// - Split this into a subpackage, gopls/internal/cache/driver,
 //   consisting of this file and three helpers from errors.go.
 //   The (*snapshot).Analyze method would stay behind and make calls
 //   to the driver package.

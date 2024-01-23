@@ -21,9 +21,9 @@ import (
 
 	"github.com/jba/templatecheck"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/cache"
 	"golang.org/x/tools/internal/testenv"
 )
 

@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 )
 
 // ParseGo parses the file whose contents are provided by fh.

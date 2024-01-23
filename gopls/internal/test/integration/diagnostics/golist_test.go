@@ -7,7 +7,7 @@ package diagnostics
 import (
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/cache"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/internal/testenv"
 )

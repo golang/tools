@@ -266,7 +266,7 @@ func SetBudget(new int64) (old int64) {
 // The current design instead exploits a trick from the cache
 // implementation used by the go command: writes of small files are in
 // practice atomic (all or nothing) on all platforms.
-// (See GOROOT/src/cmd/go/internal/lsp/cache/cache.go.)
+// (See GOROOT/src/cmd/go/internal/cache/cache.go.)
 //
 // Russ Cox notes: "all file systems use an rwlock around every file
 // system block, including data blocks, so any writes or reads within
