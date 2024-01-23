@@ -12,10 +12,10 @@ import (
 	"regexp"
 	"strings"
 
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/cache"
-	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 )
 
 type LensFunc func(context.Context, *cache.Snapshot, file.Handle) ([]protocol.CodeLens, error)

@@ -18,8 +18,8 @@ claiming it.
 
 ## Getting started
 
-Most of the `gopls` logic is in the `golang.org/x/tools/gopls/internal/lsp`
-directory.
+Most of the `gopls` logic is in the `golang.org/x/tools/gopls/internal`
+directory. See [design/implementation.md] for an overview of the code organization.
 
 ## Build
 
@@ -94,41 +94,43 @@ Users are invited to share it if they are willing.
 
 ## Testing
 
-To run tests for just `gopls/`, run,
+The normal command you should use to run the tests after a change is:
 
 ```bash
-cd /path/to/tools/gopls
-go test ./...
+gopls$ go test -short ./...
 ```
 
-But, much of the gopls work involves `internal/lsp` too, so you will want to
-run both:
+(The `-short` flag skips some slow-running ones. The trybot builders
+run the complete set, on a wide range of platforms.)
 
-```bash
-cd /path/to/tools
-cd gopls && go test ./...
-cd ..
-go test ./internal/lsp/...
-```
+Gopls tests are a mix of two kinds.
 
-There is additional information about the `internal/lsp` tests in the
-[internal/lsp/tests `README`](https://github.com/golang/tools/blob/master/internal/lsp/tests/README.md).
+- [Marker tests](../internal/test/marker) express each test scenario
+  in a standalone text file that contains the target .go, go.mod, and
+  go.work files, in which special annotations embedded in comments
+  drive the test. These tests are generally easy to write and fast
+  to iterate, but have limitations on what they can express.
 
-### Integration tests
+- [Integration tests](../internal/test/integration) are regular Go
+  `func Test(*testing.T)` functions that make a series of calls to an
+  API for a fake LSP-enabled client editor. The API allows you to open
+  and edit a file, navigate to a definition, invoke other LSP
+  operations, and assert properties about the state.
 
-gopls has a suite of integration tests defined in the `./gopls/internal/test/integration`
-directory. Each of these tests writes files to a temporary directory, starts a
-separate gopls session, and scripts interactions using an editor-like API. As a
-result of this overhead they can be quite slow, particularly on systems where
-file operations are costly.
+  Due to the asynchronous nature of the LSP, integration tests make
+  assertions about states that the editor must achieve eventually,
+  even when the program goes wrong quickly, it may take a while before
+  the error is reported as a failure to achieve the desired state
+  within several minutes. We recommend that you set
+  `GOPLS_INTEGRATION_TEST_TIMEOUT=10s` to reduce the timeout for
+  integration tests when debugging.
+  
+  When they fail, the integration tests print the log of the LSP
+  session between client and server. Though verbose, they are very
+  helpful for debugging once you know how to read them.
 
-Due to the asynchronous nature of the LSP, integration tests assert
-'expectations' that the editor state must achieve _eventually_. This can
-make debugging the integration tests difficult. To aid with debugging, the tests
-output their LSP logs on any failure. If your CL gets a test failure while
-running the tests, please do take a look at the description of the error and
-the LSP logs, but don't hesitate to [reach out](#getting-help) to the gopls
-team if you need help.
+Don't hesitate to [reach out](#getting-help) to the gopls team if you
+need help.
 
 ### CI
 

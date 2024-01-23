@@ -17,9 +17,9 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/stubmethods"
 	"golang.org/x/tools/gopls/internal/analysis/undeclaredname"
 	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/imports"
@@ -191,7 +191,7 @@ func suggestedFixToEdits(ctx context.Context, snapshot *cache.Snapshot, fset *to
 
 // addEmbedImport adds a missing embed "embed" import with blank name.
 func addEmbedImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, _, _ token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-	// Like goalng.AddImport, but with _ as Name and using our pgf.
+	// Like golang.AddImport, but with _ as Name and using our pgf.
 	protoEdits, err := ComputeOneImportFixEdits(snapshot, pgf, &imports.ImportFix{
 		StmtInfo: imports.ImportInfo{
 			ImportPath: "embed",

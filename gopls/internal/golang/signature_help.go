@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"

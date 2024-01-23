@@ -11,8 +11,8 @@ import (
 	"go/token"
 	"go/types"
 
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
 )

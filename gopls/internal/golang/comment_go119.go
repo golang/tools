@@ -11,11 +11,7 @@ package golang
 // is a new package (go/doc/comment) for processing them.
 // As long as gopls has to compile under earlier versions, tests
 // have to pass with both the old and new code, which produce
-// slightly different results. (cmd/test/definition.go, source/comment_test.go,
-// and source/source_test.go) Each of the test files checks the results
-// with a function, tests.CheckSameMarkdown, that accepts both the old and the new
-// results. (The old code escapes many characters the new code does not,
-// and the new code sometimes adds a blank line.)
+// slightly different results.
 
 // When gopls no longer needs to compile with go1.18, the old comment.go should
 // be replaced by this file, the golden test files should be updated.

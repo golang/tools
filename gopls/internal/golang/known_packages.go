@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 )

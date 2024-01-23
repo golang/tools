@@ -18,7 +18,7 @@ referred to by their last segment, which is usually unambiguous.
 The height of each blob corresponds loosely to its technical depth.
 Some blocks are wide and shallow, such as [protocol], which declares
 Go types for the entire LSP protocol. Others are deep, such as [cache]
-and [source], as they contain a lot of dense logic and algorithms.
+and [golang], as they contain a lot of dense logic and algorithms.
 
 <!-- Source: https://docs.google.com/drawings/d/1CK6YSLt7G3svRoZf7skJI-lxRol2VI90YOxHcYS0DP4 -->
 ![Gopls architecture](architecture.svg)
@@ -106,7 +106,7 @@ particular language:
 [mod] for go.mod files;
 [work] for go.work files;
 [template] for files in `text/template` syntax; and
-[source], for files in Go itself.
+[golang], for files in Go itself.
 This package, by far the largest, provides the main features of gopls:
 navigation, analysis, and refactoring of Go code.
 As most users imagine it, this package _is_ gopls.
@@ -125,7 +125,7 @@ order the packages based on the sequence in which they are encountered
 during processing of a particular request; in such a view, the bottom
 layer would represent the "wire" (protocol and command), the next
 layer up would hold the RPC-related packages (lsprpc and server), and
-features (e.g. source, mod, work, template) would be at the top.
+features (e.g. golang, mod, work, template) would be at the top.
 
 <!--
 A dynamic view would be an interesting topic for another article.
@@ -148,14 +148,13 @@ provided as a debugging aid (but see
 [cache]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cache
 [cmd]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cmd
 [command]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/protocol/command
-[debug]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/debug
+[debug]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/debug
 [file]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/file
 [filecache]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/filecache
 [go/analysis]: https://pkg.go.dev/golang.org/x/tools@master/go/analysis
 [go/packages]: https://pkg.go.dev/golang.org/x/tools@master/go/packages
 [gopls]: https://pkg.go.dev/golang.org/x/tools/gopls@master
 [jsonrpc2]: https://pkg.go.dev/golang.org/x/tools@master/internal/jsonrpc2
-[lsp]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp
 [lsprpc]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsprpc
 [memoize]: https://github.com/golang/tools/tree/master/internal/memoize
 [metadata]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cache/metadata
@@ -165,7 +164,7 @@ provided as a debugging aid (but see
 [protocol]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/protocol
 [server]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/server
 [settings]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/settings
-[source]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsp/source
+[golang]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/golang
 [template]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/template
 [typerefs]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cache/typerefs
 [work]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/work
