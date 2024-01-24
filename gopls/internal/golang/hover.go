@@ -200,7 +200,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	if err != nil {
 		return protocol.Range{}, nil, fmt.Errorf("re-parsing declaration of %s: %v", obj.Name(), err)
 	}
-	decl, spec, field := findDeclInfo([]*ast.File{declPGF.File}, declPos)
+	decl, spec, field := findDeclInfo([]*ast.File{declPGF.File}, declPos) // may be nil^3
 	comment := chooseDocComment(decl, spec, field)
 	docText := comment.Text()
 
@@ -219,19 +219,22 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// objectString is insufficient:
 	//  (1) large structs are formatted poorly, with no newlines
 	//  (2) we lose inline comments
-	//
 	// Furthermore, we include a summary of their method set.
-	//
-	// TODO(rfindley): this should use FormatVarType to get proper qualification
-	// of identifiers, and we should revisit the formatting of method set.
-	//
-	// TODO(adonovan): this logic belongs in objectString.
 	_, isTypeName := obj.(*types.TypeName)
 	_, isTypeParam := obj.Type().(*types.TypeParam)
 	if isTypeName && !isTypeParam {
 		spec, ok := spec.(*ast.TypeSpec)
 		if !ok {
-			return protocol.Range{}, nil, bug.Errorf("type name %q without type spec", obj.Name())
+			// We cannot find a TypeSpec for this type or alias declaration
+			// (that is not a type parameter or a built-in).
+			// This should be impossible even for ill-formed trees;
+			// we suspect that AST repair may be creating inconsistent
+			// positions. Don't report a bug in that case. (#64241)
+			errorf := fmt.Errorf
+			if !declPGF.Fixed() {
+				errorf = bug.Errorf
+			}
+			return protocol.Range{}, nil, errorf("type name %q without type spec", obj.Name())
 		}
 		spec2 := *spec
 		// Don't duplicate comments when formatting type specs.
