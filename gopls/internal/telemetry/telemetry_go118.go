@@ -7,7 +7,22 @@
 
 package telemetry
 
-import "golang.org/x/tools/gopls/internal/protocol"
+// This file defines dummy implementations of telemetry operations to
+// permit building with go1.18. Until we drop support for go1.18,
+// gopls may not refer to the telemetry module directly, but must go
+// through this file.
+
+func CounterOpen() {}
+
+func StartCrashMonitor() {}
+
+func CrashMonitorSupported() bool { return false }
+
+func NewStackCounter(string, int) dummyCounter { return dummyCounter{} }
+
+type dummyCounter struct{}
+
+func (dummyCounter) Inc() {}
 
 func Mode() string {
 	return "local"
@@ -20,8 +35,7 @@ func SetMode(mode string) error {
 func Upload() {
 }
 
-func RecordClientInfo(params *protocol.ParamInitialize) {
-}
+func RecordClientInfo(string) {}
 
 func RecordViewGoVersion(x int) {
 }

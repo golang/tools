@@ -37,7 +37,11 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 	ctx, done := event.Start(ctx, "lsp.Server.initialize")
 	defer done()
 
-	telemetry.RecordClientInfo(params)
+	var clientName string
+	if params != nil && params.ClientInfo != nil {
+		clientName = params.ClientInfo.Name
+	}
+	telemetry.RecordClientInfo(clientName)
 
 	s.stateMu.Lock()
 	if s.state >= serverInitializing {

@@ -100,7 +100,6 @@ func writeclient() {
 		`import (
 	"context"
 
-	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/jsonrpc2"
 )
 `)
@@ -110,12 +109,7 @@ func writeclient() {
 	}
 	out.WriteString("}\n\n")
 	out.WriteString(`func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
-	defer func() {
-		if x := recover(); x != nil {
-			bug.Reportf("client panic in %s request", r.Method())
-			panic(x)
-		}
-	}()
+	defer recoverHandlerPanic(r.Method())
 	switch r.Method() {
 `)
 	for _, k := range ccases.keys() {
@@ -144,7 +138,6 @@ func writeserver() {
 		`import (
 	"context"
 
-	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/jsonrpc2"
 )
 `)
@@ -156,12 +149,7 @@ func writeserver() {
 }
 
 func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
-	defer func() {
-		if x := recover(); x != nil {
-			bug.Reportf("server panic in %s request", r.Method())
-			panic(x)
-		}
-	}()
+	defer recoverHandlerPanic(r.Method())
 	switch r.Method() {
 `)
 	for _, k := range scases.keys() {

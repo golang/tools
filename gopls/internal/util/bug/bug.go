@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/telemetry/counter"
+	"golang.org/x/tools/gopls/internal/telemetry"
 )
 
 // PanicOnBugs controls whether to panic when bugs are reported.
@@ -66,7 +66,7 @@ func Report(description string) {
 }
 
 // BugReportCount is a telemetry counter that tracks # of bug reports.
-var BugReportCount = counter.NewStack("gopls/bug", 16)
+var BugReportCount = telemetry.NewStackCounter("gopls/bug", 16)
 
 func report(description string) {
 	_, file, line, ok := runtime.Caller(2) // all exported reporting functions call report directly
