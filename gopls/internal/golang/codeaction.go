@@ -304,6 +304,32 @@ func getRewriteCodeActions(pkg *cache.Package, pgf *ParsedGoFile, fh file.Handle
 		commands = append(commands, cmd)
 	}
 
+	if msg, ok, _ := CanSplitLines(pgf.File, pkg.FileSet(), start, end); ok {
+		cmd, err := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
+			Fix:          fixSplitLines,
+			URI:          pgf.URI,
+			Range:        rng,
+			ResolveEdits: supportsResolveEdits(options),
+		})
+		if err != nil {
+			return nil, err
+		}
+		commands = append(commands, cmd)
+	}
+
+	if msg, ok, _ := CanGroupLines(pgf.File, pkg.FileSet(), start, end); ok {
+		cmd, err := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
+			Fix:          fixGroupLines,
+			URI:          pgf.URI,
+			Range:        rng,
+			ResolveEdits: supportsResolveEdits(options),
+		})
+		if err != nil {
+			return nil, err
+		}
+		commands = append(commands, cmd)
+	}
+
 	// N.B.: an inspector only pays for itself after ~5 passes, which means we're
 	// currently not getting a good deal on this inspection.
 	//
