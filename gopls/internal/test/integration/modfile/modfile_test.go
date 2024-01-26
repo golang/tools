@@ -1099,7 +1099,7 @@ func main() {
 		env.AfterChange(
 			Diagnostics(
 				env.AtRegexp("main.go", `"example.com/blah"`),
-				WithMessage(`could not import example.com/blah (no required module provides package "example.com/blah")`),
+				WithMessage(`could not import example.com/blah (package "example.com/blah" does not exist under go.mod in required modules, try running `+"`go mod tidy`)"),
 			),
 			ReadDiagnostics("main.go", d),
 		)
