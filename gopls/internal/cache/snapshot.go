@@ -28,14 +28,14 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/objectpath"
-	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/methodsets"
 	"golang.org/x/tools/gopls/internal/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/cache/xrefs"
-	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/constraints"
@@ -577,7 +577,7 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlag
 	// TODO(rfindley): in the case of go.work mode, modURI is empty and we fall
 	// back on the default behavior of vendorEnabled with an empty modURI. Figure
 	// out what is correct here and implement it explicitly.
-	vendorEnabled, err := s.vendorEnabled(ctx, modURI, modContent)
+	vendorEnabled, err := s.vendorEnabled(modURI, modContent)
 	if err != nil {
 		return "", nil, cleanup, err
 	}
