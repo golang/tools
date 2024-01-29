@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/compare"
+	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -303,6 +303,7 @@ func main() {
 }
 
 func TestGofumptFormatting(t *testing.T) {
+	testenv.NeedsGo1Point(t, 20) // gofumpt requires go 1.20+
 	// Exercise some gofumpt formatting rules:
 	//  - No empty lines following an assignment operator
 	//  - Octal integer literals should use the 0o prefix on modules using Go
