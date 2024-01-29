@@ -27,7 +27,7 @@ func BenchmarkInitialWorkspaceLoad(b *testing.B) {
 		{"oracle", "dataintegration/data_type.go"},
 		{"pkgsite", "internal/frontend/server.go"},
 		{"starlark", "starlark/eval.go"},
-		{"tools", "internal/cache/snapshot.go"},
+		{"tools", "internal/lsp/cache/snapshot.go"},
 		{"hashiform", "internal/provider/provider.go"},
 	}
 

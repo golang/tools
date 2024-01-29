@@ -33,7 +33,7 @@ var didChangeTests = []changeTest{
 	{"oracle", "dataintegration/data_type.go", false}, // diagnoseSave fails because this package is generated
 	{"pkgsite", "internal/frontend/server.go", true},
 	{"starlark", "starlark/eval.go", true},
-	{"tools", "internal/cache/snapshot.go", true},
+	{"tools", "internal/lsp/cache/snapshot.go", true},
 }
 
 // BenchmarkDidChange benchmarks modifications of a single file by making
