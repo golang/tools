@@ -39,6 +39,8 @@ const (
 	exportsLoaded
 )
 
+// directoryPackageInfo holds (possibly incomplete) information about packages
+// contained in a given directory.
 type directoryPackageInfo struct {
 	// status indicates the extent to which this struct has been filled in.
 	status directoryPackageStatus
@@ -63,7 +65,6 @@ type directoryPackageInfo struct {
 	packageName string // the package name, as declared in the source.
 
 	// Set when status >= exportsLoaded.
-
 	exports []string
 }
 

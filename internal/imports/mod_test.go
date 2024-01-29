@@ -1098,7 +1098,7 @@ func writeProxyModule(base, arPath string) error {
 	arName := filepath.Base(arPath)
 	i := strings.LastIndex(arName, "_v")
 	ver := strings.TrimSuffix(arName[i+1:], ".txt")
-	modDir := strings.Replace(arName[:i], "_", "/", -1)
+	modDir := strings.ReplaceAll(arName[:i], "_", "/")
 	modPath, err := module.UnescapePath(modDir)
 	if err != nil {
 		return err

@@ -7,9 +7,6 @@ package cache
 import (
 	"context"
 	"fmt"
-	"os"
-	"reflect"
-	"strings"
 	"sync"
 	"time"
 
@@ -22,13 +19,11 @@ import (
 type importsState struct {
 	ctx context.Context
 
-	mu                     sync.Mutex
-	processEnv             *imports.ProcessEnv
-	cacheRefreshDuration   time.Duration
-	cacheRefreshTimer      *time.Timer
-	cachedModFileHash      file.Hash
-	cachedBuildFlags       []string
-	cachedDirectoryFilters []string
+	mu                   sync.Mutex
+	processEnv           *imports.ProcessEnv
+	cacheRefreshDuration time.Duration
+	cacheRefreshTimer    *time.Timer
+	cachedModFileHash    file.Hash
 }
 
 func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *Snapshot, fn func(context.Context, *imports.Options) error) error {
@@ -52,24 +47,10 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *Snapshot
 		modFileHash.XORWith(fh.Identity().Hash)
 	}
 
-	// view.goEnv is immutable -- changes make a new view. Options can change.
-	// We can't compare build flags directly because we may add -modfile.
-	localPrefix := snapshot.Options().Local
-	currentBuildFlags := snapshot.Options().BuildFlags
-	currentDirectoryFilters := snapshot.Options().DirectoryFilters
-	changed := !reflect.DeepEqual(currentBuildFlags, s.cachedBuildFlags) ||
-		snapshot.Options().VerboseOutput != (s.processEnv.Logf != nil) ||
-		modFileHash != s.cachedModFileHash ||
-		!reflect.DeepEqual(snapshot.Options().DirectoryFilters, s.cachedDirectoryFilters)
-
 	// If anything relevant to imports has changed, clear caches and
 	// update the processEnv. Clearing caches blocks on any background
 	// scans.
-	if changed {
-		if err := populateProcessEnvFromSnapshot(ctx, s.processEnv, snapshot); err != nil {
-			return err
-		}
-
+	if modFileHash != s.cachedModFileHash {
 		if resolver, err := s.processEnv.GetResolver(); err == nil {
 			if modResolver, ok := resolver.(*imports.ModuleResolver); ok {
 				modResolver.ClearForNewMod()
@@ -77,8 +58,6 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *Snapshot
 		}
 
 		s.cachedModFileHash = modFileHash
-		s.cachedBuildFlags = currentBuildFlags
-		s.cachedDirectoryFilters = currentDirectoryFilters
 	}
 
 	// Run the user function.
@@ -91,7 +70,7 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *Snapshot
 		TabIndent:   true,
 		TabWidth:    8,
 		Env:         s.processEnv,
-		LocalPrefix: localPrefix,
+		LocalPrefix: snapshot.Options().Local,
 	}
 
 	if err := fn(ctx, opts); err != nil {
@@ -108,36 +87,6 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *Snapshot
 		s.cacheRefreshTimer = time.AfterFunc(delay, s.refreshProcessEnv)
 	}
 
-	return nil
-}
-
-// populateProcessEnvFromSnapshot sets the dynamically configurable fields for
-// the view's process environment. Assumes that the caller is holding the
-// importsState mutex.
-func populateProcessEnvFromSnapshot(ctx context.Context, pe *imports.ProcessEnv, snapshot *Snapshot) error {
-	ctx, done := event.Start(ctx, "cache.populateProcessEnvFromSnapshot")
-	defer done()
-
-	if snapshot.Options().VerboseOutput {
-		pe.Logf = func(format string, args ...interface{}) {
-			event.Log(ctx, fmt.Sprintf(format, args...))
-		}
-	} else {
-		pe.Logf = nil
-	}
-
-	pe.WorkingDir = snapshot.view.root.Path()
-	pe.ModFlag = "readonly" // processEnv operations should not mutate the modfile
-	pe.Env = map[string]string{}
-	pe.BuildFlags = append([]string{}, snapshot.Options().BuildFlags...)
-	env := append(append(os.Environ(), snapshot.Options().EnvSlice()...), "GO111MODULE="+snapshot.view.adjustedGO111MODULE())
-	for _, kv := range env {
-		split := strings.SplitN(kv, "=", 2)
-		if len(split) != 2 {
-			continue
-		}
-		pe.Env[split[0]] = split[1]
-	}
 	return nil
 }
 
