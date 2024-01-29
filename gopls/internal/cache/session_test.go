@@ -15,9 +15,12 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestZeroConfigAlgorithm(t *testing.T) {
+	testenv.NeedsExec(t) // executes the Go command
+
 	type viewSummary struct {
 		// fields exported for cmp.Diff
 		Type ViewType
@@ -250,7 +253,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 				}
 				env, err := FetchGoEnv(ctx, toURI(f.dir), opts)
 				if err != nil {
-					t.Fatalf("fetching env: %v", env)
+					t.Fatalf("FetchGoEnv failed: %v", err)
 				}
 				folders = append(folders, &Folder{
 					Dir:     toURI(f.dir),
