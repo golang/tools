@@ -201,9 +201,11 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 			}
 		}
 		pe = &imports.ProcessEnv{
-			GocmdRunner:    s.gocmdRunner,
-			BuildFlags:     slices.Clone(def.folder.Options.BuildFlags),
-			ModFlag:        "readonly", // processEnv operations should not mutate the modfile
+			GocmdRunner: s.gocmdRunner,
+			BuildFlags:  slices.Clone(def.folder.Options.BuildFlags),
+			// TODO(rfindley): an old comment said "processEnv operations should not mutate the modfile"
+			// But shouldn't we honor the default behavior of mod vendoring?
+			ModFlag:        "readonly",
 			SkipPathInScan: skipPath,
 			Env:            env,
 			WorkingDir:     def.root.Path(),

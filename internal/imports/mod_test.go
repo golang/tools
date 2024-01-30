@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/mod/module"
 	"golang.org/x/tools/internal/gocommand"
@@ -1291,14 +1292,17 @@ import (
 func BenchmarkScanModCache(b *testing.B) {
 	env := &ProcessEnv{
 		GocmdRunner: &gocommand.Runner{},
-		Logf:        b.Logf,
+		// Uncomment for verbose logging (too verbose to enable by default).
+		// Logf:        b.Logf,
 	}
 	exclude := []gopathwalk.RootType{gopathwalk.RootGOROOT}
 	resolver, err := env.GetResolver()
 	if err != nil {
 		b.Fatal(err)
 	}
+	start := time.Now()
 	scanToSlice(resolver, exclude)
+	b.Logf("warming the mod cache took %v", time.Since(start))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		scanToSlice(resolver, exclude)

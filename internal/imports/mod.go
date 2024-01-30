@@ -34,7 +34,7 @@ import (
 //  - Split scanning the module cache from other ModuleResolver functionality,
 //    as it is the source of performance woes (and inconsistency).
 //  - Allow sharing module cache state across multiple ModuleResolvers.
-//  - Optimize the scan itself, as there is a lot of redundancy statting and
+//  - Optimize the scan itself, as there is some redundancy statting and
 //    reading go.mod files.
 //  - Make it possible to reuse the current state while running a refresh in
 //    the background.
@@ -109,7 +109,6 @@ func (r *ModuleResolver) init() error {
 	inv := gocommand.Invocation{
 		BuildFlags: r.env.BuildFlags,
 		ModFlag:    r.env.ModFlag,
-		ModFile:    r.env.ModFile,
 		Env:        r.env.env(),
 		Logf:       r.env.Logf,
 		WorkingDir: r.env.WorkingDir,

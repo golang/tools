@@ -852,7 +852,6 @@ type ProcessEnv struct {
 
 	BuildFlags []string
 	ModFlag    string
-	ModFile    string
 
 	// SkipPathInScan returns true if the path should be skipped from scans of
 	// the RootCurrentModule root type. The function argument is a clean,
@@ -960,6 +959,12 @@ func (e *ProcessEnv) GetResolver() (Resolver, error) {
 	if err := e.init(); err != nil {
 		return nil, err
 	}
+	// TODO(rfindley): we should only use a gopathResolver here if the working
+	// directory is actually *in* GOPATH. (I seem to recall an open gopls issue
+	// for this behavior, but I can't find it).
+	//
+	// For gopls, we can optionally explicitly choose a resolver type, since we
+	// already know the view type.
 	if len(e.Env["GOMOD"]) == 0 && len(e.Env["GOWORK"]) == 0 {
 		e.resolver = newGopathResolver(e)
 		return e.resolver, nil
@@ -968,6 +973,10 @@ func (e *ProcessEnv) GetResolver() (Resolver, error) {
 	return e.resolver, nil
 }
 
+// buildContext returns the build.Context to use for matching files.
+//
+// TODO(rfindley): support dynamic GOOS, GOARCH here, when doing cross-platform
+// development.
 func (e *ProcessEnv) buildContext() (*build.Context, error) {
 	ctx := build.Default
 	goenv, err := e.goEnv()
