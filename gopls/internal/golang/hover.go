@@ -33,14 +33,19 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/tokeninternal"
 )
 
-// HoverJSON contains information used by hover. It is also the JSON returned
-// for the "structured" hover format
-type HoverJSON struct {
+// hoverJSON contains the structured result of a hover query. It is
+// formatted in one of several formats as determined by the HoverKind
+// setting, one of which is JSON.
+//
+// We believe this is used only by govim.
+// TODO(adonovan): see if we can wean all clients of this interface.
+type hoverJSON struct {
 	// Synopsis is a single sentence synopsis of the symbol's documentation.
 	Synopsis string `json:"synopsis"`
 
@@ -64,6 +69,20 @@ type HoverJSON struct {
 	// LinkAnchor is the pkg.go.dev link anchor for the given symbol.
 	// For example, the "Node" part of "pkg.go.dev/go/ast#Node".
 	LinkAnchor string `json:"linkAnchor"`
+
+	// New fields go below, and are unexported. The existing
+	// exported fields are underspecified and have already
+	// constrained our movements too much. A detailed JSON
+	// interface might be nice, but it needs a design and a
+	// precise specification.
+
+	// typeDecl is the declaration syntax, or "" for a non-type.
+	typeDecl string
+
+	// methods is the list of descriptions of methods of a type,
+	// omitting any that are obvious from TypeDecl.
+	// It is "" for a non-type.
+	methods string
 }
 
 // Hover implements the "textDocument/hover" RPC for Go files.
@@ -94,7 +113,7 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 // hover computes hover information at the given position. If we do not support
 // hovering at the position, it returns _, nil, nil: an error is only returned
 // if the position is valid but we fail to compute hover information.
-func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) (protocol.Range, *HoverJSON, error) {
+func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) (protocol.Range, *hoverJSON, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return protocol.Range{}, nil, err
@@ -179,7 +198,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	if selectedType != nil {
 		fakeObj := types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), selectedType)
 		signature := types.ObjectString(fakeObj, qf)
-		return rng, &HoverJSON{
+		return rng, &hoverJSON{
 			Signature:  signature,
 			SingleLine: signature,
 			SymbolName: fakeObj.Name(),
@@ -215,6 +234,8 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		}
 	}
 
+	var typeDecl, methods string
+
 	// For "objects defined by a type spec", the signature produced by
 	// objectString is insufficient:
 	//  (1) large structs are formatted poorly, with no newlines
@@ -236,16 +257,30 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			}
 			return protocol.Range{}, nil, errorf("type name %q without type spec", obj.Name())
 		}
-		spec2 := *spec
-		// Don't duplicate comments when formatting type specs.
-		spec2.Doc = nil
-		spec2.Comment = nil
-		var b strings.Builder
-		b.WriteString("type ")
-		fset := tokeninternal.FileSetFor(declPGF.Tok)
-		if err := format.Node(&b, fset, &spec2); err != nil {
-			return protocol.Range{}, nil, err
+
+		// Format the type's declaration syntax.
+		{
+			// Don't duplicate comments.
+			spec2 := *spec
+			spec2.Doc = nil
+			spec2.Comment = nil
+
+			var b strings.Builder
+			b.WriteString("type ")
+			fset := tokeninternal.FileSetFor(declPGF.Tok)
+			// TODO(adonovan): use a smarter formatter that omits
+			// inaccessible fields (non-exported ones from other packages).
+			if err := format.Node(&b, fset, &spec2); err != nil {
+				return protocol.Range{}, nil, err
+			}
+			typeDecl = b.String()
 		}
+
+		// -- methods --
+
+		// TODO(adonovan): compute a similar list of
+		// accessible fields, reflecting embedding
+		// (e.g. "T.Embed.Y int").
 
 		// For an interface type, explicit methods will have
 		// already been displayed when the node was formatted
@@ -268,7 +303,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		// including those that require a pointer receiver,
 		// and those promoted from embedded struct fields or
 		// embedded interfaces.
-		sep := "\n\n"
+		var b strings.Builder
 		for _, m := range typeutil.IntuitiveMethodSet(obj.Type(), nil) {
 			if m.Obj().Pkg() != pkg.GetTypes() && !m.Obj().Exported() {
 				continue // inaccessible
@@ -276,14 +311,16 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			if skip[m.Obj().Name()] {
 				continue // redundant with format.Node above
 			}
-			b.WriteString(sep)
-			sep = "\n"
+			if b.Len() > 0 {
+				b.WriteByte('\n')
+			}
 
 			// Use objectString for its prettier rendering of method receivers.
 			b.WriteString(objectString(m.Obj(), qf, token.NoPos, nil, nil))
 		}
+		methods = b.String()
 
-		signature = b.String()
+		signature = typeDecl + "\n" + methods
 	}
 
 	// Compute link data (on pkg.go.dev or other documentation host).
@@ -386,7 +423,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		linkPath = strings.Replace(linkPath, mod.Path, mod.Path+"@"+mod.Version, 1)
 	}
 
-	return rng, &HoverJSON{
+	return rng, &hoverJSON{
 		Synopsis:          doc.Synopsis(docText),
 		FullDocumentation: docText,
 		SingleLine:        singleLineSignature,
@@ -394,18 +431,20 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		Signature:         signature,
 		LinkPath:          linkPath,
 		LinkAnchor:        anchor,
+		typeDecl:          typeDecl,
+		methods:           methods,
 	}, nil
 }
 
 // hoverBuiltin computes hover information when hovering over a builtin
 // identifier.
-func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Object) (*HoverJSON, error) {
+func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Object) (*hoverJSON, error) {
 	// Special handling for error.Error, which is the only builtin method.
 	//
 	// TODO(rfindley): can this be unified with the handling below?
 	if obj.Name() == "Error" {
 		signature := obj.String()
-		return &HoverJSON{
+		return &hoverJSON{
 			Signature:  signature,
 			SingleLine: signature,
 			// TODO(rfindley): these are better than the current behavior.
@@ -446,7 +485,7 @@ func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Objec
 	signature = replacer.Replace(signature)
 
 	docText := comment.Text()
-	return &HoverJSON{
+	return &hoverJSON{
 		Synopsis:          doc.Synopsis(docText),
 		FullDocumentation: docText,
 		Signature:         signature,
@@ -461,7 +500,7 @@ func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Objec
 // imp in the file pgf of pkg.
 //
 // If we do not have metadata for the hovered import, it returns _
-func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *ParsedGoFile, imp *ast.ImportSpec) (protocol.Range, *HoverJSON, error) {
+func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *ParsedGoFile, imp *ast.ImportSpec) (protocol.Range, *hoverJSON, error) {
 	rng, err := pgf.NodeRange(imp.Path)
 	if err != nil {
 		return protocol.Range{}, nil, err
@@ -504,7 +543,7 @@ func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Packa
 	}
 
 	docText := comment.Text()
-	return rng, &HoverJSON{
+	return rng, &hoverJSON{
 		Synopsis:          doc.Synopsis(docText),
 		FullDocumentation: docText,
 	}, nil
@@ -512,7 +551,7 @@ func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Packa
 
 // hoverPackageName computes hover information for the package name of the file
 // pgf in pkg.
-func hoverPackageName(pkg *cache.Package, pgf *ParsedGoFile) (protocol.Range, *HoverJSON, error) {
+func hoverPackageName(pkg *cache.Package, pgf *ParsedGoFile) (protocol.Range, *hoverJSON, error) {
 	var comment *ast.CommentGroup
 	for _, pgf := range pkg.CompiledGoFiles() {
 		if pgf.File.Doc != nil {
@@ -525,7 +564,7 @@ func hoverPackageName(pkg *cache.Package, pgf *ParsedGoFile) (protocol.Range, *H
 		return protocol.Range{}, nil, err
 	}
 	docText := comment.Text()
-	return rng, &HoverJSON{
+	return rng, &hoverJSON{
 		Synopsis:          doc.Synopsis(docText),
 		FullDocumentation: docText,
 		// Note: including a signature is redundant, since the cursor is already on the
@@ -540,7 +579,7 @@ func hoverPackageName(pkg *cache.Package, pgf *ParsedGoFile) (protocol.Range, *H
 // For example, hovering over "\u2211" in "foo \u2211 bar" yields:
 //
 //	'∑', U+2211, N-ARY SUMMATION
-func hoverLit(pgf *ParsedGoFile, lit *ast.BasicLit, pos token.Pos) (protocol.Range, *HoverJSON, error) {
+func hoverLit(pgf *ParsedGoFile, lit *ast.BasicLit, pos token.Pos) (protocol.Range, *hoverJSON, error) {
 	var (
 		value      string    // if non-empty, a constant value to format in hover
 		r          rune      // if non-zero, format a description of this rune in hover
@@ -653,7 +692,7 @@ func hoverLit(pgf *ParsedGoFile, lit *ast.BasicLit, pos token.Pos) (protocol.Ran
 		fmt.Fprintf(&b, "U+%04X, %s", r, runeName)
 	}
 	hover := b.String()
-	return rng, &HoverJSON{
+	return rng, &hoverJSON{
 		Synopsis:          hover,
 		FullDocumentation: hover,
 	}, nil
@@ -661,7 +700,7 @@ func hoverLit(pgf *ParsedGoFile, lit *ast.BasicLit, pos token.Pos) (protocol.Ran
 
 // hoverEmbed computes hover information for a filepath.Match pattern.
 // Assumes that the pattern is relative to the location of fh.
-func hoverEmbed(fh file.Handle, rng protocol.Range, pattern string) (protocol.Range, *HoverJSON, error) {
+func hoverEmbed(fh file.Handle, rng protocol.Range, pattern string) (protocol.Range, *hoverJSON, error) {
 	s := &strings.Builder{}
 
 	dir := filepath.Dir(fh.URI().Path())
@@ -693,7 +732,7 @@ func hoverEmbed(fh file.Handle, rng protocol.Range, pattern string) (protocol.Ra
 		fmt.Fprintf(s, "%s\n\n", m)
 	}
 
-	json := &HoverJSON{
+	json := &hoverJSON{
 		Signature:         fmt.Sprintf("Embedding %q", pattern),
 		Synopsis:          s.String(),
 		FullDocumentation: s.String(),
@@ -917,54 +956,66 @@ func parseFull(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSe
 	return pgf, fullPos, nil
 }
 
-func formatHover(h *HoverJSON, options *settings.Options) (string, error) {
-	signature := formatSignature(h, options)
+func formatHover(h *hoverJSON, options *settings.Options) (string, error) {
+	maybeMarkdown := func(s string) string {
+		if s != "" && options.PreferredContentFormat == protocol.Markdown {
+			s = fmt.Sprintf("```go\n%s\n```", strings.Trim(s, "\n"))
+		}
+		return s
+	}
 
 	switch options.HoverKind {
 	case settings.SingleLine:
 		return h.SingleLine, nil
+
 	case settings.NoDocumentation:
-		return signature, nil
+		return maybeMarkdown(h.Signature), nil
+
 	case settings.Structured:
 		b, err := json.Marshal(h)
 		if err != nil {
 			return "", err
 		}
 		return string(b), nil
-	}
 
-	link := formatLink(h, options)
-	doc := formatDoc(h, options)
+	case settings.SynopsisDocumentation,
+		settings.FullDocumentation:
+		// For types, we display TypeDecl and Methods,
+		// but not Signature, which is redundant (= TypeDecl + "\n" + Methods).
+		// For all other symbols, we display Signature;
+		// TypeDecl and Methods are empty.
+		// (This awkwardness is to preserve JSON compatibility.)
+		parts := []string{
+			maybeMarkdown(h.Signature),
+			maybeMarkdown(h.typeDecl),
+			formatDoc(h, options),
+			maybeMarkdown(h.methods),
+			formatLink(h, options),
+		}
+		if h.typeDecl != "" {
+			parts[0] = "" // type: suppress redundant Signature
+		}
+		parts = slices.Remove(parts, "")
 
-	var b strings.Builder
-	parts := []string{signature, doc, link}
-	for i, el := range parts {
-		if el != "" {
-			b.WriteString(el)
-
-			// If any elements of the remainder of the list are non-empty,
-			// write an extra newline.
-			if anyNonEmpty(parts[i+1:]) {
+		var b strings.Builder
+		for i, part := range parts {
+			if i > 0 {
 				if options.PreferredContentFormat == protocol.Markdown {
 					b.WriteString("\n\n")
 				} else {
-					b.WriteRune('\n')
+					b.WriteByte('\n')
 				}
 			}
+			b.WriteString(part)
 		}
+		return b.String(), nil
+
+	default:
+		return "", fmt.Errorf("invalid HoverKind: %v", options.HoverKind)
 	}
-	return b.String(), nil
 }
 
-func formatSignature(h *HoverJSON, options *settings.Options) string {
-	signature := h.Signature
-	if signature != "" && options.PreferredContentFormat == protocol.Markdown {
-		signature = fmt.Sprintf("```go\n%s\n```", signature)
-	}
-	return signature
-}
-
-func formatLink(h *HoverJSON, options *settings.Options) string {
+func formatLink(h *hoverJSON, options *settings.Options) string {
 	if !options.LinksInHover || options.LinkTarget == "" || h.LinkPath == "" {
 		return ""
 	}
@@ -979,7 +1030,7 @@ func formatLink(h *HoverJSON, options *settings.Options) string {
 	}
 }
 
-func formatDoc(h *HoverJSON, options *settings.Options) string {
+func formatDoc(h *hoverJSON, options *settings.Options) string {
 	var doc string
 	switch options.HoverKind {
 	case settings.SynopsisDocumentation:
@@ -991,15 +1042,6 @@ func formatDoc(h *HoverJSON, options *settings.Options) string {
 		return CommentToMarkdown(doc, options)
 	}
 	return doc
-}
-
-func anyNonEmpty(x []string) bool {
-	for _, el := range x {
-		if el != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // findDeclInfo returns the syntax nodes involved in the declaration of the

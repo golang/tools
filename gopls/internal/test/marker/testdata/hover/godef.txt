@@ -114,7 +114,9 @@ var Other Thing
 type Thing struct {
 	Member string //@loc(Member, "Member")
 }
+```
 
+```go
 func (t Thing) Method(i int) string
 func (t *Thing) Method2(i int, j int) (error, string)
 func (t Thing) Method3()
@@ -128,7 +130,9 @@ type NextThing struct {
 	Thing
 	Value int
 }
+```
 
+```go
 func (t Thing) Method(i int) string
 func (t *Thing) Method2(i int, j int) (error, string)
 func (n *NextThing) Method3() int

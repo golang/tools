@@ -103,13 +103,15 @@ type T struct {
 		Nested int //@hover("Nested", "Nested", Nested)
 	}
 }
-
-func (T) M()
-func (T) m()
 ```
 
 T is in the package scope, and so should be linkable.
 
+
+```go
+func (T) M()
+func (T) m()
+```
 
 [`p.T` on pkg.go.dev](https://pkg.go.dev/mod.com#T)
 -- @X --

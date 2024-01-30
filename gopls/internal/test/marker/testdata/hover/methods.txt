@@ -44,7 +44,9 @@ type I interface {
 	b()
 	J
 }
+```
 
+```go
 func (lib.J) C()
 ```
 
@@ -58,7 +60,9 @@ type J interface{ C() }
 -- @S --
 ```go
 type S struct{ I }
+```
 
+```go
 func (s lib.S) A()
 func (lib.J) C()
 func (s *lib.S) PA()
