@@ -83,6 +83,12 @@ type Local struct {
 ```
 
 Local types should not be linkable, even if they are capitalized.
+
+
+```go
+// Embedded fields:
+Embed int // through E 
+```
 -- @Nested --
 ```go
 field Nested int
@@ -107,6 +113,11 @@ type T struct {
 
 T is in the package scope, and so should be linkable.
 
+
+```go
+// Embedded fields:
+Embed int // through E 
+```
 
 ```go
 func (T) M()

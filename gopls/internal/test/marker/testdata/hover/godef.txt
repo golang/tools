@@ -133,6 +133,11 @@ type NextThing struct {
 ```
 
 ```go
+// Embedded fields:
+Member string // through Thing 
+```
+
+```go
 func (t Thing) Method(i int) string
 func (t *Thing) Method2(i int, j int) (error, string)
 func (n *NextThing) Method3() int

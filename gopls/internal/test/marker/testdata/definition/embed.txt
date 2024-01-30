@@ -182,6 +182,11 @@ type S1 struct {
 }
 ```
 
+```go
+// Embedded fields:
+F2 int // through S2 
+```
+
 [`b.S1` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S1)
 -- @S1F1 --
 ```go

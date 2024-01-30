@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 	"unicode/utf8"
 
@@ -76,13 +77,19 @@ type hoverJSON struct {
 	// interface might be nice, but it needs a design and a
 	// precise specification.
 
-	// typeDecl is the declaration syntax, or "" for a non-type.
+	// typeDecl is the declaration syntax for a type,
+	// or "" for a non-type.
 	typeDecl string
 
 	// methods is the list of descriptions of methods of a type,
-	// omitting any that are obvious from TypeDecl.
+	// omitting any that are obvious from typeDecl.
 	// It is "" for a non-type.
 	methods string
+
+	// promotedFields is the list of descriptions of accessible
+	// fields of a (struct) type that were promoted through an
+	// embedded field.
+	promotedFields string
 }
 
 // Hover implements the "textDocument/hover" RPC for Go files.
@@ -234,7 +241,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		}
 	}
 
-	var typeDecl, methods string
+	var typeDecl, methods, fields string
 
 	// For "objects defined by a type spec", the signature produced by
 	// objectString is insufficient:
@@ -276,11 +283,33 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			typeDecl = b.String()
 		}
 
-		// -- methods --
+		// Promoted fields
+		//
+		// Show a table of accessible fields of the (struct)
+		// type that may not be visible in the syntax (above)
+		// due to promotion through embedded fields.
+		//
+		// Example:
+		//
+		//	// Embedded fields:
+		//	foo int	   // through x.y
+		//	z   string // through x.y
+		if prom := promotedFields(obj.Type(), pkg.GetTypes()); len(prom) > 0 {
+			var b strings.Builder
+			b.WriteString("// Embedded fields:\n")
+			w := tabwriter.NewWriter(&b, 0, 8, 1, ' ', 0)
+			for _, f := range prom {
+				fmt.Fprintf(w, "%s\t%s\t// through %s\t\n",
+					f.field.Name(),
+					types.TypeString(f.field.Type(), qf),
+					f.path)
+			}
+			w.Flush()
+			b.WriteByte('\n')
+			fields = b.String()
+		}
 
-		// TODO(adonovan): compute a similar list of
-		// accessible fields, reflecting embedding
-		// (e.g. "T.Embed.Y int").
+		// -- methods --
 
 		// For an interface type, explicit methods will have
 		// already been displayed when the node was formatted
@@ -305,7 +334,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		// embedded interfaces.
 		var b strings.Builder
 		for _, m := range typeutil.IntuitiveMethodSet(obj.Type(), nil) {
-			if m.Obj().Pkg() != pkg.GetTypes() && !m.Obj().Exported() {
+			if !accessibleTo(m.Obj(), pkg.GetTypes()) {
 				continue // inaccessible
 			}
 			if skip[m.Obj().Name()] {
@@ -433,6 +462,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		LinkAnchor:        anchor,
 		typeDecl:          typeDecl,
 		methods:           methods,
+		promotedFields:    fields,
 	}, nil
 }
 
@@ -989,6 +1019,7 @@ func formatHover(h *hoverJSON, options *settings.Options) (string, error) {
 			maybeMarkdown(h.Signature),
 			maybeMarkdown(h.typeDecl),
 			formatDoc(h, options),
+			maybeMarkdown(h.promotedFields),
 			maybeMarkdown(h.methods),
 			formatLink(h, options),
 		}
@@ -1169,4 +1200,75 @@ func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spe
 	}
 
 	return nil, nil, nil
+}
+
+type promotedField struct {
+	path  string // path (e.g. "x.y" through embedded fields)
+	field *types.Var
+}
+
+// promotedFields returns the list of accessible promoted fields of a struct type t.
+// (Logic plundered from x/tools/cmd/guru/describe.go.)
+func promotedFields(t types.Type, from *types.Package) []promotedField {
+	wantField := func(f *types.Var) bool {
+		if !accessibleTo(f, from) {
+			return false
+		}
+		// Check that the field is not shadowed.
+		obj, _, _ := types.LookupFieldOrMethod(t, true, f.Pkg(), f.Name())
+		return obj == f
+	}
+
+	var fields []promotedField
+	var visit func(t types.Type, stack []*types.Named)
+	visit = func(t types.Type, stack []*types.Named) {
+		tStruct, ok := Deref(t).Underlying().(*types.Struct)
+		if !ok {
+			return
+		}
+	fieldloop:
+		for i := 0; i < tStruct.NumFields(); i++ {
+			f := tStruct.Field(i)
+
+			// Handle recursion through anonymous fields.
+			if f.Anonymous() {
+				tf := f.Type()
+				if ptr, ok := tf.(*types.Pointer); ok {
+					tf = ptr.Elem()
+				}
+				if named, ok := tf.(*types.Named); ok { // (be defensive)
+					// If we've already visited this named type
+					// on this path, break the cycle.
+					for _, x := range stack {
+						if x.Origin() == named.Origin() {
+							continue fieldloop
+						}
+					}
+					visit(f.Type(), append(stack, named))
+				}
+			}
+
+			// Save accessible promoted fields.
+			if len(stack) > 0 && wantField(f) {
+				var path strings.Builder
+				for i, t := range stack {
+					if i > 0 {
+						path.WriteByte('.')
+					}
+					path.WriteString(t.Obj().Name())
+				}
+				fields = append(fields, promotedField{
+					path:  path.String(),
+					field: f,
+				})
+			}
+		}
+	}
+	visit(t, nil)
+
+	return fields
+}
+
+func accessibleTo(obj types.Object, pkg *types.Package) bool {
+	return obj.Exported() || obj.Pkg() == pkg
 }
