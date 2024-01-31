@@ -33,6 +33,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/aliases"
 )
 
 //go:embed doc.go
@@ -385,10 +386,10 @@ func prettyName(fn *ssa.Function, qualified bool) string {
 		// method receiver?
 		if recv := fn.Signature.Recv(); recv != nil {
 			t := recv.Type()
-			if ptr, ok := t.(*types.Pointer); ok {
+			if ptr, ok := aliases.Unalias(t).(*types.Pointer); ok {
 				t = ptr.Elem()
 			}
-			buf.WriteString(t.(*types.Named).Obj().Name())
+			buf.WriteString(aliases.Unalias(t).(*types.Named).Obj().Name())
 			buf.WriteByte('.')
 		}
 
