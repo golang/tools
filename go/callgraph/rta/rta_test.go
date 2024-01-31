@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/aliases"
 )
 
 // TestRTA runs RTA on each testdata/*.go file and compares the
@@ -200,7 +201,7 @@ func check(t *testing.T, f *ast.File, pkg *ssa.Package, res *rta.Result) {
 		got := make(stringset)
 		res.RuntimeTypes.Iterate(func(key types.Type, value interface{}) {
 			if !value.(bool) { // accessible to reflection
-				typ := types.TypeString(key, types.RelativeTo(pkg.Pkg))
+				typ := types.TypeString(aliases.Unalias(key), types.RelativeTo(pkg.Pkg))
 				got[typ] = true
 			}
 		})

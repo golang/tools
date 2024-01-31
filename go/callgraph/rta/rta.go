@@ -45,6 +45,7 @@ import (
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/compat"
 )
 
@@ -416,6 +417,9 @@ func (r *rta) implementations(I *types.Interface) []types.Type {
 // dynamic type of some interface or reflect.Value.
 // Adapted from needMethods in go/ssa/builder.go
 func (r *rta) addRuntimeType(T types.Type, skip bool) {
+	// Never record aliases.
+	T = aliases.Unalias(T)
+
 	if prev, ok := r.result.RuntimeTypes.At(T).(bool); ok {
 		if skip && !prev {
 			r.result.RuntimeTypes.Set(T, skip)
@@ -457,7 +461,7 @@ func (r *rta) addRuntimeType(T types.Type, skip bool) {
 	case *types.Named:
 		n = T
 	case *types.Pointer:
-		n, _ = T.Elem().(*types.Named)
+		n, _ = aliases.Unalias(T.Elem()).(*types.Named)
 	}
 	if n != nil {
 		owner := n.Obj().Pkg()
@@ -476,6 +480,9 @@ func (r *rta) addRuntimeType(T types.Type, skip bool) {
 	}
 
 	switch t := T.(type) {
+	case *aliases.Alias:
+		panic("unreachable")
+
 	case *types.Basic:
 		// nop
 
