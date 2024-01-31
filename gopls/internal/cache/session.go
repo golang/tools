@@ -209,6 +209,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 			SkipPathInScan: skipPath,
 			Env:            env,
 			WorkingDir:     def.root.Path(),
+			ModCache:       s.cache.modCache.dirCache(def.folder.Env.GOMODCACHE),
 		}
 		if def.folder.Options.VerboseOutput {
 			pe.Logf = func(format string, args ...interface{}) {
@@ -227,10 +228,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		ignoreFilter:         ignoreFilter,
 		fs:                   s.overlayFS,
 		viewDefinition:       def,
-		importsState: &importsState{
-			ctx:        backgroundCtx,
-			processEnv: pe,
-		},
+		importsState:         newImportsState(backgroundCtx, s.cache.modCache, pe),
 	}
 
 	s.snapshotWG.Add(1)

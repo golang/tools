@@ -884,6 +884,10 @@ type ProcessEnv struct {
 	// If Logf is non-nil, debug logging is enabled through this function.
 	Logf func(format string, args ...interface{})
 
+	// If set, ModCache holds a shared cache of directory info to use across
+	// multiple ProcessEnvs.
+	ModCache *DirInfoCache
+
 	initialized bool // see TODO above
 
 	// resolver and resolverErr are lazily evaluated (see GetResolver).
@@ -984,7 +988,7 @@ func (e *ProcessEnv) GetResolver() (Resolver, error) {
 		if len(e.Env["GOMOD"]) == 0 && len(e.Env["GOWORK"]) == 0 {
 			e.resolver = newGopathResolver(e)
 		} else {
-			e.resolver, e.resolverErr = newModuleResolver(e)
+			e.resolver, e.resolverErr = newModuleResolver(e, e.ModCache)
 		}
 	}
 
@@ -1252,17 +1256,14 @@ func ImportPathToAssumedName(importPath string) string {
 type gopathResolver struct {
 	env      *ProcessEnv
 	walked   bool
-	cache    *dirInfoCache
+	cache    *DirInfoCache
 	scanSema chan struct{} // scanSema prevents concurrent scans.
 }
 
 func newGopathResolver(env *ProcessEnv) *gopathResolver {
 	r := &gopathResolver{
-		env: env,
-		cache: &dirInfoCache{
-			dirs:      map[string]*directoryPackageInfo{},
-			listeners: map[*int]cacheListener{},
-		},
+		env:      env,
+		cache:    NewDirInfoCache(),
 		scanSema: make(chan struct{}, 1),
 	}
 	r.scanSema <- struct{}{}
@@ -1271,10 +1272,7 @@ func newGopathResolver(env *ProcessEnv) *gopathResolver {
 
 func (r *gopathResolver) ClearForNewScan() {
 	<-r.scanSema
-	r.cache = &dirInfoCache{
-		dirs:      map[string]*directoryPackageInfo{},
-		listeners: map[*int]cacheListener{},
-	}
+	r.cache = NewDirInfoCache()
 	r.walked = false
 	r.scanSema <- struct{}{}
 }

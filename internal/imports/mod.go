@@ -82,11 +82,11 @@ type ModuleResolver struct {
 	//
 	// otherCache stores information about all other roots (even GOROOT), which
 	// may change.
-	moduleCacheCache *dirInfoCache
-	otherCache       *dirInfoCache
+	moduleCacheCache *DirInfoCache
+	otherCache       *DirInfoCache
 }
 
-func newModuleResolver(e *ProcessEnv) (*ModuleResolver, error) {
+func newModuleResolver(e *ProcessEnv, moduleCacheCache *DirInfoCache) (*ModuleResolver, error) {
 	r := &ModuleResolver{
 		env:      e,
 		scanSema: make(chan struct{}, 1),
@@ -196,18 +196,22 @@ func newModuleResolver(e *ProcessEnv) (*ModuleResolver, error) {
 				addDep(mod)
 			}
 		}
+		// If provided, share the moduleCacheCache.
+		//
+		// TODO(rfindley): The module cache is immutable. However, the loaded
+		// exports do depend on GOOS and GOARCH. Fortunately, the
+		// ProcessEnv.buildContext does not adjust these from build.DefaultContext
+		// (even though it should). So for now, this is OK to share, but we need to
+		// add logic for handling GOOS/GOARCH.
+		r.moduleCacheCache = moduleCacheCache
 		r.roots = append(r.roots, gopathwalk.Root{Path: r.moduleCacheDir, Type: gopathwalk.RootModuleCache})
 	}
 
 	r.scannedRoots = map[gopathwalk.Root]bool{}
-	r.moduleCacheCache = &dirInfoCache{
-		dirs:      map[string]*directoryPackageInfo{},
-		listeners: map[*int]cacheListener{},
+	if r.moduleCacheCache == nil {
+		r.moduleCacheCache = NewDirInfoCache()
 	}
-	r.otherCache = &dirInfoCache{
-		dirs:      map[string]*directoryPackageInfo{},
-		listeners: map[*int]cacheListener{},
-	}
+	r.otherCache = NewDirInfoCache()
 	return r, nil
 }
 
@@ -263,11 +267,22 @@ func (r *ModuleResolver) initAllMods() error {
 // contents, since they are assumed to be immutable.
 func (r *ModuleResolver) ClearForNewScan() {
 	<-r.scanSema
+	prevRoots := r.scannedRoots
 	r.scannedRoots = map[gopathwalk.Root]bool{}
-	r.otherCache = &dirInfoCache{
-		dirs:      map[string]*directoryPackageInfo{},
-		listeners: map[*int]cacheListener{},
+	// Invalidate root scans. We don't need to invalidate module cache roots,
+	// because they are immutable.
+	// (We don't support a use case where GOMODCACHE is cleaned in the middle of
+	// e.g. a gopls session: the user must restart gopls to get accurate
+	// imports.)
+	//
+	// Scanning for new directories in GOMODCACHE should be handled elsewhere,
+	// via a call to ScanModuleCache.
+	for _, root := range r.roots {
+		if root.Type == gopathwalk.RootModuleCache && prevRoots[root] {
+			r.scannedRoots[root] = true
+		}
 	}
+	r.otherCache = NewDirInfoCache()
 	r.scanSema <- struct{}{}
 }
 
@@ -282,7 +297,7 @@ func (r *ModuleResolver) ClearForNewScan() {
 // TODO(rfindley): move this to a new env.go, consolidating ProcessEnv methods.
 func (e *ProcessEnv) ClearModuleInfo() {
 	if r, ok := e.resolver.(*ModuleResolver); ok {
-		resolver, resolverErr := newModuleResolver(e)
+		resolver, resolverErr := newModuleResolver(e, e.ModCache)
 		if resolverErr == nil {
 			<-r.scanSema // guards caches
 			resolver.moduleCacheCache = r.moduleCacheCache
@@ -294,8 +309,9 @@ func (e *ProcessEnv) ClearModuleInfo() {
 	}
 }
 
-// findPackage returns the module and directory that contains the package at
-// the given import path, or returns nil, "" if no module is in scope.
+// findPackage returns the module and directory from within the main modules
+// and their dependencies that contains the package at the given import path,
+// or returns nil, "" if no module is in scope.
 func (r *ModuleResolver) findPackage(importPath string) (*gocommand.ModuleJSON, string) {
 	// This can't find packages in the stdlib, but that's harmless for all
 	// the existing code paths.
@@ -429,15 +445,15 @@ func (r *ModuleResolver) dirIsNestedModule(dir string, mod *gocommand.ModuleJSON
 	return modDir != mod.Dir
 }
 
-func (r *ModuleResolver) modInfo(dir string) (modDir string, modName string) {
-	readModName := func(modFile string) string {
-		modBytes, err := os.ReadFile(modFile)
-		if err != nil {
-			return ""
-		}
-		return modulePath(modBytes)
+func readModName(modFile string) string {
+	modBytes, err := os.ReadFile(modFile)
+	if err != nil {
+		return ""
 	}
+	return modulePath(modBytes)
+}
 
+func (r *ModuleResolver) modInfo(dir string) (modDir, modName string) {
 	if r.dirInModuleCache(dir) {
 		if matches := modCacheRegexp.FindStringSubmatch(dir); len(matches) == 3 {
 			index := strings.Index(dir, matches[1]+"@"+matches[2])
@@ -473,6 +489,7 @@ func (r *ModuleResolver) dirInModuleCache(dir string) bool {
 func (r *ModuleResolver) loadPackageNames(importPaths []string, srcDir string) (map[string]string, error) {
 	names := map[string]string{}
 	for _, path := range importPaths {
+		// TODO(rfindley): shouldn't this use the dirInfoCache?
 		_, packageDir := r.findPackage(path)
 		if packageDir == "" {
 			continue
