@@ -51,12 +51,7 @@ func (s *importsState) runProcessEnvFunc(ctx context.Context, snapshot *Snapshot
 	// update the processEnv. Clearing caches blocks on any background
 	// scans.
 	if modFileHash != s.cachedModFileHash {
-		if resolver, err := s.processEnv.GetResolver(); err == nil {
-			if modResolver, ok := resolver.(*imports.ModuleResolver); ok {
-				modResolver.ClearForNewMod()
-			}
-		}
-
+		s.processEnv.ClearModuleInfo()
 		s.cachedModFileHash = modFileHash
 	}
 

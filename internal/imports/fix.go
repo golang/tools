@@ -847,6 +847,21 @@ var requiredGoEnvVars = []string{
 
 // ProcessEnv contains environment variables and settings that affect the use of
 // the go command, the go/build package, etc.
+//
+// ...a ProcessEnv *also* overwrites its Env along with derived state in the
+// form of the resolver. And because it is lazily initialized, an env may just
+// be broken and unusable, but there is no way for the caller to detect that:
+// all queries will just fail.
+//
+// TODO(rfindley): refactor this package so that this type (perhaps renamed to
+// just Env or Config) is an immutable configuration struct, to be exchanged
+// for an initialized object via a constructor that returns an error. Perhaps
+// the signature should be `func NewResolver(*Env) (*Resolver, error)`, where
+// resolver is a concrete type used for resolving imports. Via this
+// refactoring, we can avoid the need to call ProcessEnv.init and
+// ProcessEnv.GoEnv everywhere, and implicitly fix all the places where this
+// these are misused. Also, we'd delegate the caller the decision of how to
+// handle a broken environment.
 type ProcessEnv struct {
 	GocmdRunner *gocommand.Runner
 
@@ -869,11 +884,13 @@ type ProcessEnv struct {
 	// If Logf is non-nil, debug logging is enabled through this function.
 	Logf func(format string, args ...interface{})
 
-	// TODO(rfindley): for simplicity, use a constructor rather than
-	// initialization pattern for ProcessEnv.
-	initialized bool
+	initialized bool // see TODO above
 
-	resolver Resolver
+	// resolver and resolverErr are lazily evaluated (see GetResolver).
+	// This is unclean, but see the big TODO in the docstring for ProcessEnv
+	// above: for now, we can't be sure that the ProcessEnv is fully initialized.
+	resolver    Resolver
+	resolverErr error
 }
 
 func (e *ProcessEnv) goEnv() (map[string]string, error) {
@@ -953,24 +970,25 @@ func (e *ProcessEnv) env() []string {
 }
 
 func (e *ProcessEnv) GetResolver() (Resolver, error) {
-	if e.resolver != nil {
-		return e.resolver, nil
-	}
 	if err := e.init(); err != nil {
 		return nil, err
 	}
-	// TODO(rfindley): we should only use a gopathResolver here if the working
-	// directory is actually *in* GOPATH. (I seem to recall an open gopls issue
-	// for this behavior, but I can't find it).
-	//
-	// For gopls, we can optionally explicitly choose a resolver type, since we
-	// already know the view type.
-	if len(e.Env["GOMOD"]) == 0 && len(e.Env["GOWORK"]) == 0 {
-		e.resolver = newGopathResolver(e)
-		return e.resolver, nil
+
+	if e.resolver == nil && e.resolverErr == nil {
+		// TODO(rfindley): we should only use a gopathResolver here if the working
+		// directory is actually *in* GOPATH. (I seem to recall an open gopls issue
+		// for this behavior, but I can't find it).
+		//
+		// For gopls, we can optionally explicitly choose a resolver type, since we
+		// already know the view type.
+		if len(e.Env["GOMOD"]) == 0 && len(e.Env["GOWORK"]) == 0 {
+			e.resolver = newGopathResolver(e)
+		} else {
+			e.resolver, e.resolverErr = newModuleResolver(e)
+		}
 	}
-	e.resolver = newModuleResolver(e)
-	return e.resolver, nil
+
+	return e.resolver, e.resolverErr
 }
 
 // buildContext returns the build.Context to use for matching files.

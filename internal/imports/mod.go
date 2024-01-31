@@ -62,8 +62,7 @@ import (
 type ModuleResolver struct {
 	env *ProcessEnv
 
-	// Module state, populated by init
-	initialized    bool
+	// Module state, populated during construction
 	dummyVendorMod *gocommand.ModuleJSON            // if vendoring is enabled, a pseudo-module to represent the /vendor directory
 	moduleCacheDir string                           // GOMODCACHE, inferred from GOPATH if unset
 	roots          []gopathwalk.Root                // roots to scan, in approximate order of importance
@@ -87,24 +86,18 @@ type ModuleResolver struct {
 	otherCache       *dirInfoCache
 }
 
-func newModuleResolver(e *ProcessEnv) *ModuleResolver {
+func newModuleResolver(e *ProcessEnv) (*ModuleResolver, error) {
 	r := &ModuleResolver{
 		env:      e,
 		scanSema: make(chan struct{}, 1),
 	}
 	r.scanSema <- struct{}{}
-	return r
-}
-
-func (r *ModuleResolver) init() error {
-	if r.initialized {
-		return nil
-	}
 
 	goenv, err := r.env.goEnv()
 	if err != nil {
-		return err
+		return nil, err
 	}
+
 	// TODO(rfindley): can we refactor to share logic with r.env.invokeGo?
 	inv := gocommand.Invocation{
 		BuildFlags: r.env.BuildFlags,
@@ -125,7 +118,7 @@ func (r *ModuleResolver) init() error {
 		// invocation?
 		vendorEnabled, mainModVendor, err = gocommand.VendorEnabled(context.TODO(), inv, r.env.GocmdRunner)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -146,19 +139,14 @@ func (r *ModuleResolver) init() error {
 		// GO111MODULE=on. Other errors are fatal.
 		if err != nil {
 			if errMsg := err.Error(); !strings.Contains(errMsg, "working directory is not part of a module") && !strings.Contains(errMsg, "go.mod file not found") {
-				return err
+				return nil, err
 			}
 		}
 	}
 
-	if gmc := r.env.Env["GOMODCACHE"]; gmc != "" {
-		r.moduleCacheDir = gmc
-	} else {
-		gopaths := filepath.SplitList(goenv["GOPATH"])
-		if len(gopaths) == 0 {
-			return fmt.Errorf("empty GOPATH")
-		}
-		r.moduleCacheDir = filepath.Join(gopaths[0], "/pkg/mod")
+	r.moduleCacheDir = gomodcacheForEnv(goenv)
+	if r.moduleCacheDir == "" {
+		return nil, fmt.Errorf("cannot resolve GOMODCACHE")
 	}
 
 	sort.Slice(r.modsByModPath, func(i, j int) bool {
@@ -212,20 +200,32 @@ func (r *ModuleResolver) init() error {
 	}
 
 	r.scannedRoots = map[gopathwalk.Root]bool{}
-	if r.moduleCacheCache == nil {
-		r.moduleCacheCache = &dirInfoCache{
-			dirs:      map[string]*directoryPackageInfo{},
-			listeners: map[*int]cacheListener{},
-		}
+	r.moduleCacheCache = &dirInfoCache{
+		dirs:      map[string]*directoryPackageInfo{},
+		listeners: map[*int]cacheListener{},
 	}
-	if r.otherCache == nil {
-		r.otherCache = &dirInfoCache{
-			dirs:      map[string]*directoryPackageInfo{},
-			listeners: map[*int]cacheListener{},
-		}
+	r.otherCache = &dirInfoCache{
+		dirs:      map[string]*directoryPackageInfo{},
+		listeners: map[*int]cacheListener{},
 	}
-	r.initialized = true
-	return nil
+	return r, nil
+}
+
+// gomodcacheForEnv returns the GOMODCACHE value to use based on the given env
+// map, which must have GOMODCACHE and GOPATH populated.
+//
+// TODO(rfindley): this is defensive refactoring.
+//  1. Is this even relevant anymore? Can't we just read GOMODCACHE.
+//  2. Use this to separate module cache scanning from other scanning.
+func gomodcacheForEnv(goenv map[string]string) string {
+	if gmc := goenv["GOMODCACHE"]; gmc != "" {
+		return gmc
+	}
+	gopaths := filepath.SplitList(goenv["GOPATH"])
+	if len(gopaths) == 0 {
+		return ""
+	}
+	return filepath.Join(gopaths[0], "/pkg/mod")
 }
 
 func (r *ModuleResolver) initAllMods() error {
@@ -271,21 +271,27 @@ func (r *ModuleResolver) ClearForNewScan() {
 	r.scanSema <- struct{}{}
 }
 
-// ClearForNewMod invalidates resolver state that depends on the go.mod file
-// (essentially, the output of go list -m -json ...).
+// ClearModuleInfo invalidates resolver state that depends on go.mod file
+// contents (essentially, the output of go list -m -json ...).
 //
 // Notably, it does not forget directory contents, which are reset
 // asynchronously via ClearForNewScan.
-func (r *ModuleResolver) ClearForNewMod() {
-	<-r.scanSema
-	*r = ModuleResolver{
-		env:              r.env,
-		moduleCacheCache: r.moduleCacheCache,
-		otherCache:       r.otherCache,
-		scanSema:         r.scanSema,
+//
+// If the ProcessEnv is a GOPATH environment, ClearModuleInfo is a no op.
+//
+// TODO(rfindley): move this to a new env.go, consolidating ProcessEnv methods.
+func (e *ProcessEnv) ClearModuleInfo() {
+	if r, ok := e.resolver.(*ModuleResolver); ok {
+		resolver, resolverErr := newModuleResolver(e)
+		if resolverErr == nil {
+			<-r.scanSema // guards caches
+			resolver.moduleCacheCache = r.moduleCacheCache
+			resolver.otherCache = r.otherCache
+			r.scanSema <- struct{}{}
+		}
+		e.resolver = resolver
+		e.resolverErr = resolverErr
 	}
-	r.init()
-	r.scanSema <- struct{}{}
 }
 
 // findPackage returns the module and directory that contains the package at
@@ -353,10 +359,6 @@ func (r *ModuleResolver) cacheStore(info directoryPackageInfo) {
 	} else {
 		r.otherCache.Store(info.dir, info)
 	}
-}
-
-func (r *ModuleResolver) cacheKeys() []string {
-	return append(r.moduleCacheCache.Keys(), r.otherCache.Keys()...)
 }
 
 // cachePackageName caches the package name for a dir already in the cache.
@@ -469,9 +471,6 @@ func (r *ModuleResolver) dirInModuleCache(dir string) bool {
 }
 
 func (r *ModuleResolver) loadPackageNames(importPaths []string, srcDir string) (map[string]string, error) {
-	if err := r.init(); err != nil {
-		return nil, err
-	}
 	names := map[string]string{}
 	for _, path := range importPaths {
 		_, packageDir := r.findPackage(path)
@@ -490,10 +489,6 @@ func (r *ModuleResolver) loadPackageNames(importPaths []string, srcDir string) (
 func (r *ModuleResolver) scan(ctx context.Context, callback *scanCallback) error {
 	ctx, done := event.Start(ctx, "imports.ModuleResolver.scan")
 	defer done()
-
-	if err := r.init(); err != nil {
-		return err
-	}
 
 	processDir := func(info directoryPackageInfo) {
 		// Skip this directory if we were not able to get the package information successfully.
@@ -672,9 +667,6 @@ func (r *ModuleResolver) canonicalize(info directoryPackageInfo) (*pkg, error) {
 }
 
 func (r *ModuleResolver) loadExports(ctx context.Context, pkg *pkg, includeTest bool) (string, []string, error) {
-	if err := r.init(); err != nil {
-		return "", nil, err
-	}
 	if info, ok := r.cacheLoad(pkg.dir); ok && !includeTest {
 		return r.cacheExports(ctx, r.env, info)
 	}
