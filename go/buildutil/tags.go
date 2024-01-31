@@ -40,7 +40,7 @@ func splitQuotedFields(s string) ([]string, error) {
 	// Quotes further inside the string do not count.
 	var f []string
 	for len(s) > 0 {
-		for len(s) > 0 && isSpaceByte(s[0]) {
+		for len(s) > 0 && isDelimiterByte(s[0]) {
 			s = s[1:]
 		}
 		if len(s) == 0 {
@@ -62,7 +62,7 @@ func splitQuotedFields(s string) ([]string, error) {
 			continue
 		}
 		i := 0
-		for i < len(s) && !isSpaceByte(s[i]) {
+		for i < len(s) && !isDelimiterByte(s[i]) {
 			i++
 		}
 		f = append(f, s[:i])
@@ -75,6 +75,6 @@ func (v *TagsFlag) String() string {
 	return "<tagsFlag>"
 }
 
-func isSpaceByte(c byte) bool {
-	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
+func isDelimiterByte(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == ','
 }
