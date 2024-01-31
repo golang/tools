@@ -9,3 +9,8 @@ require (
 )
 
 require golang.org/x/sync v0.6.0
+
+require (
+	golang.org/x/sys v0.16.0 // indirect
+	golang.org/x/telemetry v0.0.0-20240201224847-0a1d30dda509
+)
