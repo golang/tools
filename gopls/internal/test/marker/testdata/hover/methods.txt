@@ -9,7 +9,7 @@ Observe that:
 - only accessible methods are shown.
 
 -- go.mod --
-module testdata
+module example.com
 
 -- lib/lib.go --
 package lib
@@ -31,7 +31,7 @@ func (s *S) pb() {}
 -- a/a.go --
 package a
 
-import "testdata/lib"
+import "example.com/lib"
 
 var _ lib.I //@hover("I", "I", I)
 var _ lib.J //@hover("J", "J", J)
@@ -50,13 +50,13 @@ type I interface {
 func (lib.J) C()
 ```
 
-[`lib.I` on pkg.go.dev](https://pkg.go.dev/testdata/lib#I)
+[`lib.I` on pkg.go.dev](https://pkg.go.dev/example.com/lib#I)
 -- @J --
 ```go
 type J interface{ C() }
 ```
 
-[`lib.J` on pkg.go.dev](https://pkg.go.dev/testdata/lib#J)
+[`lib.J` on pkg.go.dev](https://pkg.go.dev/example.com/lib#J)
 -- @S --
 ```go
 type S struct{ I }
@@ -68,4 +68,4 @@ func (lib.J) C()
 func (s *lib.S) PA()
 ```
 
-[`lib.S` on pkg.go.dev](https://pkg.go.dev/testdata/lib#S)
+[`lib.S` on pkg.go.dev](https://pkg.go.dev/example.com/lib#S)

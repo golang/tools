@@ -698,6 +698,15 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 				return nil, fmt.Errorf("%s:%d: unwanted space before marker (// @)", file.Name, line)
 			}
 
+			// The 'go list' command doesn't work correct with modules named
+			// testdata", so don't allow it as a module name (golang/go#65406).
+			// (Otherwise files within it will end up in an ad hoc
+			// package, "command-line-arguments/$TMPDIR/...".)
+			if filepath.Base(file.Name) == "go.mod" &&
+				bytes.Contains(file.Data, []byte("module testdata")) {
+				return nil, fmt.Errorf("'testdata' is not a valid module name")
+			}
+
 			test.notes = append(test.notes, notes...)
 			test.files[file.Name] = file.Data
 		}

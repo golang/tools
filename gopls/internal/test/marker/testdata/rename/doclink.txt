@@ -1,7 +1,7 @@
 This test checks that doc links are also handled correctly (golang/go#64495).
 
 -- go.mod --
-module testdata
+module example.com
 
 go 1.21
 
@@ -35,7 +35,7 @@ func (E[T]) Foo() {} //@rename("Foo", "Bar", EFooToEBar)
 -- b/b.go --
 package b
 
-import aa "testdata/a" //@rename("aa", "a", pkgRename)
+import aa "example.com/a" //@rename("aa", "a", pkgRename)
 
 // FooBar just for test [aa.Foo] [aa.A] [aa.B] [aa.C] [aa.C.F] [aa.C.PF]
 // reference pointer type [*aa.D]
@@ -124,8 +124,8 @@ func FooBar() {
 +// FooBar just for test [aa.Foo] [aa.A] [aa.B] [aa.C] [aa.C.F] [aa.C.PFF]
 -- @pkgRename/b/b.go --
 @@ -3 +3 @@
--import aa "testdata/a" //@rename("aa", "a", pkgRename)
-+import "testdata/a" //@rename("aa", "a", pkgRename)
+-import aa "example.com/a" //@rename("aa", "a", pkgRename)
++import "example.com/a" //@rename("aa", "a", pkgRename)
 @@ -5,3 +5,3 @@
 -// FooBar just for test [aa.Foo] [aa.A] [aa.B] [aa.C] [aa.C.F] [aa.C.PF]
 -// reference pointer type [*aa.D]
