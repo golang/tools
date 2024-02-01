@@ -44,6 +44,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 }
 
 func runForError(pass *analysis.Pass, err types.Error) {
+	// Extract symbol name from error.
 	var name string
 	for _, prefix := range undeclaredNamePrefixes {
 		if !strings.HasPrefix(err.Msg, prefix) {
@@ -54,6 +55,8 @@ func runForError(pass *analysis.Pass, err types.Error) {
 	if name == "" {
 		return
 	}
+
+	// Find file enclosing error.
 	var file *ast.File
 	for _, f := range pass.Files {
 		if f.Pos() <= err.Pos && err.Pos < f.End() {
@@ -65,13 +68,19 @@ func runForError(pass *analysis.Pass, err types.Error) {
 		return
 	}
 
-	// Get the path for the relevant range.
+	// Find path to identifier in the error.
 	path, _ := astutil.PathEnclosingInterval(file, err.Pos, err.Pos)
 	if len(path) < 2 {
 		return
 	}
 	ident, ok := path[0].(*ast.Ident)
 	if !ok || ident.Name != name {
+		return
+	}
+
+	// Skip selector expressions because it might be too complex
+	// to try and provide a suggested fix for fields and methods.
+	if _, ok := path[1].(*ast.SelectorExpr); ok {
 		return
 	}
 
@@ -91,24 +100,19 @@ func runForError(pass *analysis.Pass, err types.Error) {
 	if !inFunc {
 		return
 	}
-	// Skip selector expressions because it might be too complex
-	// to try and provide a suggested fix for fields and methods.
-	if _, ok := path[1].(*ast.SelectorExpr); ok {
-		return
+
+	// Offer a fix.
+	noun := "variable"
+	if isCallPosition(path) {
+		noun = "function"
 	}
-	tok := pass.Fset.File(file.Pos())
-	if tok == nil {
-		return
-	}
-	offset := safetoken.StartPosition(pass.Fset, err.Pos).Offset
-	end := tok.Pos(offset + len(name)) // TODO(adonovan): dubious! err.Pos + len(name)??
 	pass.Report(analysis.Diagnostic{
 		Pos:      err.Pos,
-		End:      end,
+		End:      err.Pos + token.Pos(len(name)),
 		Message:  err.Msg,
 		Category: FixCategory,
 		SuggestedFixes: []analysis.SuggestedFix{{
-			Message: fmt.Sprintf("Create variable %q", name),
+			Message: fmt.Sprintf("Create %s %q", noun, name),
 			// No TextEdits => computed by a gopls command
 		}},
 	})
@@ -130,10 +134,8 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 
 	// Check for a possible call expression, in which case we should add a
 	// new function declaration.
-	if len(path) > 1 {
-		if _, ok := path[1].(*ast.CallExpr); ok {
-			return newFunctionDeclaration(path, file, pkg, info, fset)
-		}
+	if isCallPosition(path) {
+		return newFunctionDeclaration(path, file, pkg, info, fset)
 	}
 
 	// Get the place to insert the new statement.
@@ -279,7 +281,8 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 		Name: ast.NewIdent(ident.Name),
 		Type: &ast.FuncType{
 			Params: params,
-			// TODO(rstambler): Also handle result parameters here.
+			// TODO(golang/go#47558): Also handle result
+			// parameters here based on context of CallExpr.
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
@@ -302,7 +305,7 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 		return nil, nil, err
 	}
 	return fset, &analysis.SuggestedFix{
-		Message: fmt.Sprintf("Create function \"%s\"", ident.Name),
+		Message: fmt.Sprintf("Create function %q", ident.Name),
 		TextEdits: []analysis.TextEdit{{
 			Pos:     pos,
 			End:     pos,
@@ -310,6 +313,7 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 		}},
 	}, nil
 }
+
 func typeToArgName(ty types.Type) string {
 	s := types.Default(ty).String()
 
@@ -340,4 +344,16 @@ func typeToArgName(ty types.Type) string {
 	a := []rune(s[strings.LastIndexByte(s, '.')+1:])
 	a[0] = unicode.ToLower(a[0])
 	return string(a)
+}
+
+// isCallPosition reports whether the path denotes the subtree in call position, f().
+func isCallPosition(path []ast.Node) bool {
+	return len(path) > 1 &&
+		is[*ast.CallExpr](path[1]) &&
+		path[1].(*ast.CallExpr).Fun == path[0]
+}
+
+func is[T any](x any) bool {
+	_, ok := x.(T)
+	return ok
 }
