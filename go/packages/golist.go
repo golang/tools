@@ -128,7 +128,7 @@ func (state *golistState) mustGetEnv() map[string]string {
 // goListDriver uses the go list command to interpret the patterns and produce
 // the build system package structure.
 // See driver for more details.
-func goListDriver(cfg *Config, patterns ...string) (*DriverResponse, error) {
+func goListDriver(cfg *Config, patterns ...string) (_ *DriverResponse, err error) {
 	// Make sure that any asynchronous go commands are killed when we return.
 	parentCtx := cfg.Context
 	if parentCtx == nil {
@@ -146,16 +146,18 @@ func goListDriver(cfg *Config, patterns ...string) (*DriverResponse, error) {
 	}
 
 	// Fill in response.Sizes asynchronously if necessary.
-	var sizeserr error
-	var sizeswg sync.WaitGroup
 	if cfg.Mode&NeedTypesSizes != 0 || cfg.Mode&NeedTypes != 0 {
-		sizeswg.Add(1)
+		errCh := make(chan error)
 		go func() {
 			compiler, arch, err := packagesdriver.GetSizesForArgsGolist(ctx, state.cfgInvocation(), cfg.gocmdRunner)
-			sizeserr = err
 			response.dr.Compiler = compiler
 			response.dr.Arch = arch
-			sizeswg.Done()
+			errCh <- err
+		}()
+		defer func() {
+			if sizesErr := <-errCh; sizesErr != nil {
+				err = sizesErr
+			}
 		}()
 	}
 
@@ -208,10 +210,7 @@ extractQueries:
 		}
 	}
 
-	sizeswg.Wait()
-	if sizeserr != nil {
-		return nil, sizeserr
-	}
+	// (We may yet return an error due to defer.)
 	return response.dr, nil
 }
 
