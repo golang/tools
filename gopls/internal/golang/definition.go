@@ -118,7 +118,9 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 		astObj := file.Scope.Lookup(name)
 		if astObj == nil {
 			// Every built-in should have documentation syntax.
-			return nil, bug.Errorf("internal error: no object for %s", name)
+			// However, it is possible to reach this statement by
+			// commenting out declarations in {builtin,unsafe}.go.
+			return nil, fmt.Errorf("internal error: no object for %s", name)
 		}
 		decl, ok := astObj.Decl.(ast.Node)
 		if !ok {
