@@ -25,6 +25,9 @@ import (
 // PanicOnBugs controls whether to panic when bugs are reported.
 //
 // It may be set to true during testing.
+//
+// TODO(adonovan): should we make the default true, and
+// suppress it only in the product (gopls/main.go)?
 var PanicOnBugs = false
 
 var (
