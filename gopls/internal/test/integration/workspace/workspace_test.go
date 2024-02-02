@@ -259,13 +259,6 @@ func TestWorkspaceVendoring(t *testing.T) {
 		env.AfterChange()
 		env.OpenFile("moda/a/a.go")
 		env.RunGoCommand("work", "vendor")
-
-		// Make an on-disk go.mod change to force a workspace reinitialization.
-		// This will be fixed in a follow-up CL.
-		env.OpenFile("moda/a/go.mod")
-		env.EditBuffer("moda/a/go.mod", protocol.TextEdit{NewText: "// arbitrary\n"})
-		env.SaveBuffer("moda/a/go.mod")
-
 		env.AfterChange()
 		loc := env.GoToDefinition(env.RegexpSearch("moda/a/a.go", "b.(Hello)"))
 		const want = "vendor/b.com/b/b.go"

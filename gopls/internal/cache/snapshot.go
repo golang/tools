@@ -952,6 +952,12 @@ func (s *Snapshot) fileWatchingGlobPatterns() map[protocol.RelativePattern]unit 
 
 	var dirs []string
 	if s.view.moduleMode() {
+		if s.view.typ == GoWorkView {
+			workVendorDir := filepath.Join(s.view.gowork.Dir().Path(), "vendor")
+			workVendorURI := protocol.URIFromPath(workVendorDir)
+			patterns[protocol.RelativePattern{BaseURI: workVendorURI, Pattern: watchGoFiles}] = unit{}
+		}
+
 		// In module mode, watch directories containing active modules, and collect
 		// these dirs for later filtering the set of known directories.
 		//
@@ -1728,10 +1734,14 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	// one or more modules may have moved into or out of the
 	// vendor tree after 'go mod vendor' or 'rm -fr vendor/'.
 	//
+	// In this case, we consider the actual modification to see if was a creation
+	// or deletion.
+	//
 	// TODO(rfindley): revisit the location of this check.
-	for uri := range changedFiles {
-		if inVendor(uri) && s.initialErr != nil ||
-			strings.HasSuffix(string(uri), "/vendor/modules.txt") {
+	for _, mod := range changed.Modifications {
+		if inVendor(mod.URI) && (mod.Action == file.Create || mod.Action == file.Delete) ||
+			strings.HasSuffix(string(mod.URI), "/vendor/modules.txt") {
+
 			reinit = true
 			break
 		}
@@ -1741,6 +1751,11 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	// they exist. Importantly, we don't call ReadFile here: consider the case
 	// where a file is added on disk; we don't want to read the newly added file
 	// into the old snapshot, as that will break our change detection below.
+	//
+	// TODO(rfindley): it may be more accurate to rely on the modification type
+	// here, similarly to what we do for vendored files above. If we happened not
+	// to have read a file in the previous snapshot, that's not the same as it
+	// actually being created.
 	oldFiles := make(map[protocol.DocumentURI]file.Handle)
 	for uri := range changedFiles {
 		if fh, ok := s.files.get(uri); ok {

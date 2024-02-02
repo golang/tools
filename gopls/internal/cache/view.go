@@ -763,6 +763,7 @@ func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
 // By far the most common of these is a change to file state, but a query of
 // module upgrade information or vulnerabilities also affects gopls' behavior.
 type StateChange struct {
+	Modifications  []file.Modification // if set, the raw modifications originating this change
 	Files          map[protocol.DocumentURI]file.Handle
 	ModuleUpgrades map[protocol.DocumentURI]map[string]string
 	Vulns          map[protocol.DocumentURI]*vulncheck.Result
