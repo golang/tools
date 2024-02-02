@@ -15,8 +15,8 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
@@ -350,7 +350,7 @@ func (s *Snapshot) extractGoCommandErrors(ctx context.Context, goCmdError error)
 				// file/position information, so don't even try to find it.
 				continue
 			}
-			loc, found, err := s.matchErrorToModule(ctx, pm, msg)
+			loc, found, err := s.matchErrorToModule(pm, msg)
 			if err != nil {
 				event.Error(ctx, "matching error to module", err)
 				continue
@@ -395,7 +395,7 @@ var moduleVersionInErrorRe = regexp.MustCompile(`[:\s]([+-._~0-9A-Za-z]+)@([+-._
 //
 // It returns the location of a reference to the one of the modules and true
 // if one exists. If none is found it returns a fallback location and false.
-func (s *Snapshot) matchErrorToModule(ctx context.Context, pm *ParsedModule, goCmdError string) (protocol.Location, bool, error) {
+func (s *Snapshot) matchErrorToModule(pm *ParsedModule, goCmdError string) (protocol.Location, bool, error) {
 	var reference *modfile.Line
 	matches := moduleVersionInErrorRe.FindAllStringSubmatch(goCmdError, -1)
 

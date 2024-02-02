@@ -492,8 +492,8 @@ var _ = blah.Name
 		env.AfterChange(
 			// We would like for the error to appear in the v2 module, but
 			// as of writing non-workspace packages are not diagnosed.
-			Diagnostics(env.AtRegexp("a/main.go", `"example.com/blah/v2"`), WithMessage("cannot find module providing")),
-			Diagnostics(env.AtRegexp("a/go.mod", `require example.com/blah/v2`), WithMessage("cannot find module providing")),
+			Diagnostics(env.AtRegexp("a/main.go", `"example.com/blah/v2"`), WithMessage("no required module provides")),
+			Diagnostics(env.AtRegexp("a/go.mod", `require example.com/blah/v2`), WithMessage("no required module provides")),
 			ReadDiagnostics("a/go.mod", &modDiags),
 		)
 

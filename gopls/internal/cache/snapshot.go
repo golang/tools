@@ -547,51 +547,17 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlag
 	//
 	// TODO(rfindley): should we set -overlays here?
 
-	var modURI protocol.DocumentURI
-	// Select the module context to use.
-	// If we're type checking, we need to use the workspace context, meaning
-	// the main (workspace) module. Otherwise, we should use the module for
-	// the passed-in working dir.
-	if mode == LoadWorkspace {
-		// TODO(rfindley): this seems unnecessary and overly complicated. Remove
-		// this along with 'allowModFileModifications'.
-		if s.view.typ == GoModView {
-			modURI = s.view.gomod
-		}
-	} else {
-		modURI = s.GoModForFile(protocol.URIFromPath(inv.WorkingDir))
-	}
-
-	var modContent []byte
-	if modURI != "" {
-		modFH, err := s.ReadFile(ctx, modURI)
-		if err != nil {
-			return "", nil, cleanup, err
-		}
-		modContent, err = modFH.Content()
-		if err != nil {
-			return "", nil, cleanup, err
-		}
-	}
-
-	// TODO(rfindley): in the case of go.work mode, modURI is empty and we fall
-	// back on the default behavior of vendorEnabled with an empty modURI. Figure
-	// out what is correct here and implement it explicitly.
-	vendorEnabled, err := s.vendorEnabled(modURI, modContent)
-	if err != nil {
-		return "", nil, cleanup, err
-	}
-
 	const mutableModFlag = "mod"
+
 	// If the mod flag isn't set, populate it based on the mode and workspace.
+	//
+	// (As noted in various TODOs throughout this function, this is very
+	// confusing and not obviously correct, but tests pass and we will eventually
+	// rewrite this entire function.)
 	if inv.ModFlag == "" {
 		switch mode {
 		case LoadWorkspace, Normal:
-			if vendorEnabled {
-				inv.ModFlag = "vendor"
-			} else if !allowModfileModificationOption {
-				inv.ModFlag = "readonly"
-			} else {
+			if allowModfileModificationOption {
 				inv.ModFlag = mutableModFlag
 			}
 		case WriteTemporaryModFile:
@@ -608,6 +574,32 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlag
 
 	// If the invocation needs to mutate the modfile, we must use a temp mod.
 	if inv.ModFlag == mutableModFlag {
+		var modURI protocol.DocumentURI
+		// Select the module context to use.
+		// If we're type checking, we need to use the workspace context, meaning
+		// the main (workspace) module. Otherwise, we should use the module for
+		// the passed-in working dir.
+		if mode == LoadWorkspace {
+			// TODO(rfindley): this seems unnecessary and overly complicated. Remove
+			// this along with 'allowModFileModifications'.
+			if s.view.typ == GoModView {
+				modURI = s.view.gomod
+			}
+		} else {
+			modURI = s.GoModForFile(protocol.URIFromPath(inv.WorkingDir))
+		}
+
+		var modContent []byte
+		if modURI != "" {
+			modFH, err := s.ReadFile(ctx, modURI)
+			if err != nil {
+				return "", nil, cleanup, err
+			}
+			modContent, err = modFH.Content()
+			if err != nil {
+				return "", nil, cleanup, err
+			}
+		}
 		if modURI == "" {
 			return "", nil, cleanup, fmt.Errorf("no go.mod file found in %s", inv.WorkingDir)
 		}

@@ -25,8 +25,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/mod/modfile"
-	"golang.org/x/mod/semver"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -1300,47 +1298,6 @@ func globsMatchPath(globs, target string) bool {
 }
 
 var modFlagRegexp = regexp.MustCompile(`-mod[ =](\w+)`)
-
-// TODO(rstambler): Consolidate modURI and modContent back into a FileHandle
-// after we have a version of the workspace go.mod file on disk. Getting a
-// FileHandle from the cache for temporary files is problematic, since we
-// cannot delete it.
-//
-// TODO(rfindley): move this to snapshot.go.
-func (s *Snapshot) vendorEnabled(modURI protocol.DocumentURI, modContent []byte) (bool, error) {
-	// Legacy GOPATH workspace?
-	if len(s.view.workspaceModFiles) == 0 {
-		return false, nil
-	}
-
-	// Explicit -mod flag?
-	matches := modFlagRegexp.FindStringSubmatch(s.view.folder.Env.GOFLAGS)
-	if len(matches) != 0 {
-		modFlag := matches[1]
-		if modFlag != "" {
-			// Don't override an explicit '-mod=vendor' argument.
-			// We do want to override '-mod=readonly': it would break various module code lenses,
-			// and on 1.16 we know -modfile is available, so we won't mess with go.mod anyway.
-			return modFlag == "vendor", nil
-		}
-	}
-
-	modFile, err := modfile.Parse(modURI.Path(), modContent, nil)
-	if err != nil {
-		return false, err
-	}
-
-	// No vendor directory?
-	// TODO(golang/go#57514): this is wrong if the working dir is not the module
-	// root.
-	if fi, err := os.Stat(filepath.Join(s.view.root.Path(), "vendor")); err != nil || !fi.IsDir() {
-		return false, nil
-	}
-
-	// Vendoring enabled by default by go declaration in go.mod?
-	vendorEnabled := modFile.Go != nil && modFile.Go.Version != "" && semver.Compare("v"+modFile.Go.Version, "v1.14") >= 0
-	return vendorEnabled, nil
-}
 
 // TODO(rfindley): clean up the redundancy of allFilesExcluded,
 // pathExcludedByFilterFunc, pathExcludedByFilter, view.filterFunc...
