@@ -180,7 +180,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 
 	if _, err := do("Collecting directory info", func() error {
 		var err error
-		stats.DirStats, err = findDirStats(ctx)
+		stats.DirStats, err = findDirStats()
 		if err != nil {
 			return err
 		}
@@ -248,7 +248,7 @@ type dirStats struct {
 
 // findDirStats collects information about the current directory and its
 // subdirectories.
-func findDirStats(ctx context.Context) (dirStats, error) {
+func findDirStats() (dirStats, error) {
 	var ds dirStats
 	filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

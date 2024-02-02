@@ -1291,7 +1291,7 @@ func (e *Editor) SignatureHelp(ctx context.Context, loc protocol.Location) (*pro
 }
 
 func (e *Editor) RenameFile(ctx context.Context, oldPath, newPath string) error {
-	closed, opened, err := e.renameBuffers(ctx, oldPath, newPath)
+	closed, opened, err := e.renameBuffers(oldPath, newPath)
 	if err != nil {
 		return err
 	}
@@ -1317,7 +1317,7 @@ func (e *Editor) RenameFile(ctx context.Context, oldPath, newPath string) error 
 // renameBuffers renames in-memory buffers affected by the renaming of
 // oldPath->newPath, returning the resulting text documents that must be closed
 // and opened over the LSP.
-func (e *Editor) renameBuffers(ctx context.Context, oldPath, newPath string) (closed []protocol.TextDocumentIdentifier, opened []protocol.TextDocumentItem, _ error) {
+func (e *Editor) renameBuffers(oldPath, newPath string) (closed []protocol.TextDocumentIdentifier, opened []protocol.TextDocumentItem, _ error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 

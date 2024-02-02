@@ -655,7 +655,7 @@ func bestView[V viewDefiner](ctx context.Context, fs file.Source, fh file.Handle
 //
 // If the resulting error is non-nil, the view may or may not have already been
 // dropped from the session.
-func (s *Session) updateViewLocked(ctx context.Context, view *View, def *viewDefinition, folder *Folder) (*View, error) {
+func (s *Session) updateViewLocked(ctx context.Context, view *View, def *viewDefinition) (*View, error) {
 	i := s.dropView(view)
 	if i == -1 {
 		return nil, fmt.Errorf("view %q not found", view.id)
@@ -707,7 +707,7 @@ func (s *Session) ResetView(ctx context.Context, uri protocol.DocumentURI) (*Vie
 	if err != nil {
 		return nil, err
 	}
-	return s.updateViewLocked(ctx, v, v.viewDefinition, v.folder)
+	return s.updateViewLocked(ctx, v, v.viewDefinition)
 }
 
 // DidModifyFiles reports a file modification to the session. It returns

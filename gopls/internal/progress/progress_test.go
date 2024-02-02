@@ -63,7 +63,7 @@ func (c *fakeClient) ShowMessage(context.Context, *protocol.ShowMessageParams) e
 	return nil
 }
 
-func setup(token protocol.ProgressToken) (context.Context, *Tracker, *fakeClient) {
+func setup() (context.Context, *Tracker, *fakeClient) {
 	c := &fakeClient{}
 	tracker := NewTracker(c)
 	tracker.SetSupportsWorkDoneProgress(true)
@@ -109,7 +109,7 @@ func TestProgressTracker_Reporting(t *testing.T) {
 	} {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			ctx, tracker, client := setup(test.token)
+			ctx, tracker, client := setup()
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			tracker.supportsWorkDoneProgress = test.supported
@@ -147,7 +147,7 @@ func TestProgressTracker_Reporting(t *testing.T) {
 
 func TestProgressTracker_Cancellation(t *testing.T) {
 	for _, token := range []protocol.ProgressToken{nil, 1, "a"} {
-		ctx, tracker, _ := setup(token)
+		ctx, tracker, _ := setup()
 		var canceled bool
 		cancel := func() { canceled = true }
 		work := tracker.Start(ctx, "work", "message", token, cancel)

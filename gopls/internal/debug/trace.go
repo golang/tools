@@ -150,14 +150,14 @@ func StdTrace(exporter event.Exporter) event.Exporter {
 				ctx = context.WithValue(ctx, traceKey, task)
 			}
 			// Log the start event as it may contain useful labels.
-			msg := formatEvent(ctx, ev, lm)
+			msg := formatEvent(ev, lm)
 			trace.Log(ctx, "start", msg)
 		case event.IsLog(ev):
 			category := ""
 			if event.IsError(ev) {
 				category = "error"
 			}
-			msg := formatEvent(ctx, ev, lm)
+			msg := formatEvent(ev, lm)
 			trace.Log(ctx, category, msg)
 		case event.IsEnd(ev):
 			if v := ctx.Value(traceKey); v != nil {
@@ -168,7 +168,7 @@ func StdTrace(exporter event.Exporter) event.Exporter {
 	}
 }
 
-func formatEvent(ctx context.Context, ev core.Event, lm label.Map) string {
+func formatEvent(ev core.Event, lm label.Map) string {
 	buf := &bytes.Buffer{}
 	p := export.Printer{}
 	p.WriteEvent(buf, ev, lm)

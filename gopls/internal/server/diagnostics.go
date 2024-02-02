@@ -364,7 +364,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 	store("diagnosing vulnerabilities", vulnReports, vulnErr)
 
 	workspacePkgs, err := snapshot.WorkspaceMetadata(ctx)
-	if s.shouldIgnoreError(ctx, snapshot, err) {
+	if s.shouldIgnoreError(snapshot, err) {
 		return diagnostics, ctx.Err()
 	}
 
@@ -893,7 +893,7 @@ func toProtocolDiagnostics(diagnostics []*cache.Diagnostic) []protocol.Diagnosti
 	return reports
 }
 
-func (s *server) shouldIgnoreError(ctx context.Context, snapshot *cache.Snapshot, err error) bool {
+func (s *server) shouldIgnoreError(snapshot *cache.Snapshot, err error) bool {
 	if err == nil { // if there is no error at all
 		return false
 	}

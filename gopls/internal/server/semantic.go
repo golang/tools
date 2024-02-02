@@ -156,7 +156,7 @@ func (e *encoded) semantics() {
 				e.token(c.Pos(), len(c.Text), tokComment, nil)
 				continue
 			}
-			e.multiline(c.Pos(), c.End(), c.Text, tokComment)
+			e.multiline(c.Pos(), c.End(), tokComment)
 		}
 	}
 }
@@ -290,7 +290,7 @@ func (e *encoded) inspector(n ast.Node) bool {
 	case *ast.BasicLit:
 		if strings.Contains(x.Value, "\n") {
 			// has to be a string.
-			e.multiline(x.Pos(), x.End(), x.Value, tokString)
+			e.multiline(x.Pos(), x.End(), tokString)
 			break
 		}
 		ln := len(x.Value)
@@ -802,7 +802,7 @@ func isTypeParam(x *ast.Ident, y *ast.FuncType) bool {
 	return false
 }
 
-func (e *encoded) multiline(start, end token.Pos, val string, tok tokenType) {
+func (e *encoded) multiline(start, end token.Pos, tok tokenType) {
 	f := e.fset.File(start)
 	// the hard part is finding the lengths of lines. include the \n
 	leng := func(line int) int {
