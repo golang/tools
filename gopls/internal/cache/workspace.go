@@ -8,9 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"path/filepath"
-	"strings"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/file"
@@ -74,50 +72,3 @@ var errExhausted = errors.New("exhausted")
 // Note: per golang/go#56496, the previous limit of 1M files was too slow, at
 // which point this limit was decreased to 100K.
 const fileLimit = 100_000
-
-// findModules recursively walks the root directory looking for go.mod files,
-// returning the set of modules it discovers. If modLimit is non-zero,
-// searching stops once modLimit modules have been found.
-//
-// TODO(rfindley): consider overlays.
-func findModules(root protocol.DocumentURI, excludePath func(string) bool, modLimit int) (map[protocol.DocumentURI]struct{}, error) {
-	// Walk the view's folder to find all modules in the view.
-	modFiles := make(map[protocol.DocumentURI]struct{})
-	searched := 0
-	errDone := errors.New("done")
-	err := filepath.WalkDir(root.Path(), func(path string, info fs.DirEntry, err error) error {
-		if err != nil {
-			// Probably a permission error. Keep looking.
-			return filepath.SkipDir
-		}
-		// For any path that is not the workspace folder, check if the path
-		// would be ignored by the go command. Vendor directories also do not
-		// contain workspace modules.
-		if info.IsDir() && path != root.Path() {
-			suffix := strings.TrimPrefix(path, root.Path())
-			switch {
-			case checkIgnored(suffix),
-				strings.Contains(filepath.ToSlash(suffix), "/vendor/"),
-				excludePath(suffix):
-				return filepath.SkipDir
-			}
-		}
-		// We're only interested in go.mod files.
-		uri := protocol.URIFromPath(path)
-		if isGoMod(uri) {
-			modFiles[uri] = struct{}{}
-		}
-		if modLimit > 0 && len(modFiles) >= modLimit {
-			return errDone
-		}
-		searched++
-		if fileLimit > 0 && searched >= fileLimit {
-			return errExhausted
-		}
-		return nil
-	})
-	if err == errDone {
-		return modFiles, nil
-	}
-	return modFiles, err
-}

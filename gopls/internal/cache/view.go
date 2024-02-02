@@ -1101,43 +1101,6 @@ func loadGoEnv(ctx context.Context, dir string, configEnv []string, runner *goco
 	return nil
 }
 
-// findWorkspaceModFile searches for a single go.mod file relative to the given
-// folder URI, using the following algorithm:
-//  1. if there is a go.mod file in a parent directory, return it
-//  2. else, if there is exactly one nested module, return it
-//  3. else, return ""
-func findWorkspaceModFile(ctx context.Context, folderURI protocol.DocumentURI, fs file.Source, excludePath func(string) bool) (protocol.DocumentURI, error) {
-	match, err := findRootPattern(ctx, folderURI, "go.mod", fs)
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return "", ctxErr
-		}
-		return "", err
-	}
-	if match != "" {
-		return match, nil
-	}
-
-	// ...else we should check if there's exactly one nested module.
-	all, err := findModules(folderURI, excludePath, 2)
-	if err == errExhausted {
-		// Fall-back behavior: if we don't find any modules after searching 10000
-		// files, assume there are none.
-		event.Log(ctx, fmt.Sprintf("stopped searching for modules after %d files", fileLimit))
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	if len(all) == 1 {
-		// range to access first element.
-		for uri := range all {
-			return uri, nil
-		}
-	}
-	return "", nil
-}
-
 // findRootPattern looks for files with the given basename in dir or any parent
 // directory of dir, using the provided FileSource. It returns the first match,
 // starting from dir and search parents.
