@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
+	"golang.org/x/tools/gopls/internal/analysis/fillswitch"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
@@ -310,6 +311,25 @@ func getRewriteCodeActions(pkg *cache.Package, pgf *parsego.File, fh file.Handle
 	// TODO: Consider removing the inspection after convenienceAnalyzers are removed.
 	inspect := inspector.New([]*ast.File{pgf.File})
 	for _, diag := range fillstruct.Diagnose(inspect, start, end, pkg.GetTypes(), pkg.GetTypesInfo()) {
+		rng, err := pgf.Mapper.PosRange(pgf.Tok, diag.Pos, diag.End)
+		if err != nil {
+			return nil, err
+		}
+		for _, fix := range diag.SuggestedFixes {
+			cmd, err := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
+				Fix:          diag.Category,
+				URI:          pgf.URI,
+				Range:        rng,
+				ResolveEdits: supportsResolveEdits(options),
+			})
+			if err != nil {
+				return nil, err
+			}
+			commands = append(commands, cmd)
+		}
+	}
+
+	for _, diag := range fillswitch.Diagnose(inspect, start, end, pkg.GetTypes(), pkg.GetTypesInfo()) {
 		rng, err := pgf.Mapper.PosRange(pgf.Tok, diag.Pos, diag.End)
 		if err != nil {
 			return nil, err

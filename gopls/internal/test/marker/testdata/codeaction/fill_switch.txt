@@ -1,0 +1,76 @@
+This test checks the behavior of the 'fill switch' code action.
+See fill_switch_resolve.txt for same test with resolve support.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/fillswitch
+
+go 1.18
+
+-- data/data.go --
+package data
+
+type TypeB int
+
+const (
+  TypeBOne TypeB = iota
+  TypeBTwo
+  TypeBThree
+)
+
+-- a.go --
+package fillswitch
+
+import (
+	"golang.org/lsptests/fillswitch/data"
+)
+
+type typeA int
+
+const (
+	typeAOne typeA = iota
+	typeATwo
+	typeAThree
+)
+
+type notification interface {
+	isNotification()
+}
+
+type notificationOne struct{}
+
+func (notificationOne) isNotification() {}
+
+type notificationTwo struct{}
+
+func (notificationTwo) isNotification() {}
+
+func doSwitch() {
+	var b data.TypeB
+	switch b {
+	case data.TypeBOne: //@codeactionedit(":", "refactor.rewrite", a1)
+	}
+
+	var a typeA
+	switch a {
+	case typeAThree: //@codeactionedit(":", "refactor.rewrite", a2)
+	}
+
+	var n notification
+	switch n.(type) { //@codeactionedit("{", "refactor.rewrite", a3)
+	}
+}
+-- @a1/a.go --
+@@ -31 +31,2 @@
++	case data.TypeBThree:
++	case data.TypeBTwo:
+-- @a2/a.go --
+@@ -36 +36,2 @@
++	case typeAOne:
++	case typeATwo:
+-- @a3/a.go --
+@@ -40 +40,2 @@
++	case notificationOne:
++	case notificationTwo:
