@@ -25,21 +25,20 @@ func CanSplitLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (s
 		return "", false, nil
 	}
 
-	canSplit := false
-	members := getSplitGroupItems(target)
-	for i := 1; i < len(members); i++ {
-		prevLine := safetoken.EndPosition(fset, members[i-1].End()).Line
-		curLine := safetoken.StartPosition(fset, members[i].Pos()).Line
-		if prevLine == curLine {
-			canSplit = true
-		}
-	}
-
-	if !canSplit {
+	items := getSplitGroupItems(target)
+	if !canSplitGroupLines(file, target, len(items)) {
 		return "", false, nil
 	}
 
-	return "Split " + msg + " into separate lines", true, nil
+	for i := 1; i < len(items); i++ {
+		prevLine := safetoken.EndPosition(fset, items[i-1].End()).Line
+		curLine := safetoken.StartPosition(fset, items[i].Pos()).Line
+		if prevLine == curLine {
+			return "Split " + msg + " into separate lines", true, nil
+		}
+	}
+
+	return "", false, nil
 }
 
 // CanGroupLines checks whether each item of the enclosing curly bracket/parens can be joined into a single line.
@@ -49,21 +48,38 @@ func CanGroupLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (s
 		return "", false, nil
 	}
 
-	canGroup := false
-	members := getSplitGroupItems(target)
-	for i := 1; i < len(members); i++ {
-		prevLine := safetoken.EndPosition(fset, members[i-1].End()).Line
-		curLine := safetoken.StartPosition(fset, members[i].Pos()).Line
-		if prevLine != curLine {
-			canGroup = true
-		}
-	}
-
-	if !canGroup {
+	items := getSplitGroupItems(target)
+	if !canSplitGroupLines(file, target, len(items)) {
 		return "", false, nil
 	}
 
-	return "Group " + msg + " into one line", true, nil
+	for i := 1; i < len(items); i++ {
+		prevLine := safetoken.EndPosition(fset, items[i-1].End()).Line
+		curLine := safetoken.StartPosition(fset, items[i].Pos()).Line
+		if prevLine != curLine {
+			return "Group " + msg + " into one line", true, nil
+		}
+	}
+
+	return "", false, nil
+}
+
+// canSplitGroupLines determines whether we should split/group the lines or not.
+func canSplitGroupLines(file *ast.File, target ast.Node, numItems int) bool {
+	haveDoubleSlashComments := false
+	pos, end := getBracePos(target)
+	for _, cg := range file.Comments {
+		if strings.HasPrefix(cg.List[0].Text, "/*") {
+			continue
+		}
+
+		if pos <= cg.Pos() && cg.End() < end {
+			haveDoubleSlashComments = true
+			break
+		}
+	}
+
+	return numItems > 1 && !haveDoubleSlashComments
 }
 
 func splitLines(
@@ -110,17 +126,7 @@ func processLines(
 	file *ast.File,
 	sep, prefix, suffix, indent string,
 ) *analysis.SuggestedFix {
-	// find the position of the opening/closing pair
-	var replPos, replEnd token.Pos
-	switch node := target.(type) {
-	case *ast.FieldList:
-		replPos, replEnd = node.Opening+1, node.Closing
-	case *ast.CallExpr:
-		replPos, replEnd = node.Lparen+1, node.Rparen
-	case *ast.CompositeLit:
-		replPos, replEnd = node.Lbrace+1, node.Rbrace
-	}
-
+	replPos, replEnd := getBracePos(target)
 	members := getSplitGroupItems(target)
 
 	// save /*-style comments inside replPos and replEnd
@@ -266,4 +272,18 @@ func getBraceIndent(src []byte, fset *token.FileSet, target ast.Node) string {
 	trimmed := strings.TrimSpace(string(firstLine))
 
 	return firstLine[:strings.Index(firstLine, trimmed)]
+}
+
+// getBracePos returns the position of the given target's opening and closing curly bracket/parens.
+func getBracePos(target ast.Node) (opening token.Pos, closing token.Pos) {
+	var replPos, replEnd token.Pos
+	switch node := target.(type) {
+	case *ast.FieldList:
+		replPos, replEnd = node.Opening+1, node.Closing
+	case *ast.CallExpr:
+		replPos, replEnd = node.Lparen+1, node.Rparen
+	case *ast.CompositeLit:
+		replPos, replEnd = node.Lbrace+1, node.Rbrace
+	}
+	return replPos, replEnd
 }
