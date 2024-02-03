@@ -117,8 +117,8 @@ func groupLines(
 	return fset, processLines(fset, target, src, file, ", ", "", "", ""), nil
 }
 
-// processLines is the common operation for both split and group lines because the only difference between them
-// is the separating whitespace.
+// processLines is the common operation for both split and group lines because this split/group operation is
+// essentially a transformation of the separating whitespace.
 func processLines(
 	fset *token.FileSet,
 	target ast.Node,
