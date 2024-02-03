@@ -20,13 +20,22 @@ import (
 // CanSplitLines checks whether each item of the enclosing curly bracket/parens can be put into separate lines
 // where each item occupies one line.
 func CanSplitLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
-	msg, lines, numElts, target := findSplitGroupTarget(file, fset, start, end)
+	msg, target := findSplitGroupTarget(file, start, end)
 	if target == nil {
 		return "", false, nil
 	}
 
-	// minus two to discount the parens/brackets.
-	if lines-2 == numElts {
+	canSplit := false
+	members := getSplitGroupItems(target)
+	for i := 1; i < len(members); i++ {
+		prevLine := safetoken.EndPosition(fset, members[i-1].End()).Line
+		curLine := safetoken.StartPosition(fset, members[i].Pos()).Line
+		if prevLine == curLine {
+			canSplit = true
+		}
+	}
+
+	if !canSplit {
 		return "", false, nil
 	}
 
@@ -35,12 +44,22 @@ func CanSplitLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (s
 
 // CanGroupLines checks whether each item of the enclosing curly bracket/parens can be joined into a single line.
 func CanGroupLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
-	msg, lines, _, target := findSplitGroupTarget(file, fset, start, end)
+	msg, target := findSplitGroupTarget(file, start, end)
 	if target == nil {
 		return "", false, nil
 	}
 
-	if lines == 1 {
+	canGroup := false
+	members := getSplitGroupItems(target)
+	for i := 1; i < len(members); i++ {
+		prevLine := safetoken.EndPosition(fset, members[i-1].End()).Line
+		curLine := safetoken.StartPosition(fset, members[i].Pos()).Line
+		if prevLine != curLine {
+			canGroup = true
+		}
+	}
+
+	if !canGroup {
 		return "", false, nil
 	}
 
@@ -56,36 +75,14 @@ func splitLines(
 	_ *types.Package,
 	_ *types.Info,
 ) (*token.FileSet, *analysis.SuggestedFix, error) {
-	_, _, _, target := findSplitGroupTarget(file, fset, start, end)
+	_, target := findSplitGroupTarget(file, start, end)
 	if target == nil {
 		return fset, &analysis.SuggestedFix{}, nil
 	}
 
-	// get the original line indent of target.
 	firstLineIndent := getBraceIndent(src, fset, target)
 	eltIndent := firstLineIndent + "\t"
-
 	return fset, processLines(fset, target, src, file, ",\n", "\n", ",\n"+firstLineIndent, eltIndent), nil
-}
-
-// getBraceIndent returns the line indent of the opening curly bracket/paren.
-func getBraceIndent(src []byte, fset *token.FileSet, target ast.Node) string {
-	var pos token.Pos
-	switch node := target.(type) {
-	case *ast.FieldList:
-		pos = node.Opening
-	case *ast.CallExpr:
-		pos = node.Lparen
-	case *ast.CompositeLit:
-		pos = node.Lbrace
-	}
-
-	split := bytes.Split(src, []byte("\n"))
-	targetLineNumber := safetoken.StartPosition(fset, pos).Line
-	firstLine := string(split[targetLineNumber-1])
-	trimmed := strings.TrimSpace(string(firstLine))
-
-	return firstLine[:strings.Index(firstLine, trimmed)]
 }
 
 func groupLines(
@@ -96,7 +93,7 @@ func groupLines(
 	_ *types.Package,
 	_ *types.Info,
 ) (*token.FileSet, *analysis.SuggestedFix, error) {
-	_, _, _, target := findSplitGroupTarget(file, fset, start, end)
+	_, target := findSplitGroupTarget(file, start, end)
 	if target == nil {
 		return fset, &analysis.SuggestedFix{}, nil
 	}
@@ -113,26 +110,18 @@ func processLines(
 	file *ast.File,
 	sep, prefix, suffix, indent string,
 ) *analysis.SuggestedFix {
+	// find the position of the opening/closing pair
 	var replPos, replEnd token.Pos
-	var members []ast.Node
-
 	switch node := target.(type) {
 	case *ast.FieldList:
 		replPos, replEnd = node.Opening+1, node.Closing
-		for _, field := range node.List {
-			members = append(members, field)
-		}
 	case *ast.CallExpr:
 		replPos, replEnd = node.Lparen+1, node.Rparen
-		for _, arg := range node.Args {
-			members = append(members, arg)
-		}
 	case *ast.CompositeLit:
 		replPos, replEnd = node.Lbrace+1, node.Rbrace
-		for _, arg := range node.Elts {
-			members = append(members, arg)
-		}
 	}
+
+	members := getSplitGroupItems(target)
 
 	// save /*-style comments inside replPos and replEnd
 	for _, cg := range file.Comments {
@@ -160,8 +149,8 @@ func processLines(
 		pos := safetoken.EndPosition(fset, members[i-1].End()).Offset
 		end := safetoken.StartPosition(fset, members[i].Pos()).Offset
 
-		// this will happen if we have a /*-style comment inside a Field, e.g. `a /*comment here */ int`
-		// we will ignore as it's included already when we write members[i-1]
+		// this will happen if we have a /*-style comment inside of a Field, e.g. `a /*comment here */ int`
+		// we will ignore as it's included already when we write members[i-1].
 		if pos > end {
 			continue
 		}
@@ -183,27 +172,12 @@ func processLines(
 	}
 }
 
-func findSplitGroupTarget(
-	file *ast.File,
-	fset *token.FileSet,
-	start, end token.Pos,
-) (targetName string, numLines int, targetElts int, target ast.Node) {
-	// todo: retain /*-style comments and do nothing for //-style comments.
-	isValidTarget := func(opening token.Pos, closing token.Pos, numElts int) bool {
-		// current cursor is inside the parens/bracket
-		isInside := opening < start && end < closing
-
-		// and it has more than 1 element
-		return isInside && numElts > 1
+// findSplitGroupTarget returns the first curly bracket/parens that encloses the current cursor.
+func findSplitGroupTarget(file *ast.File, start, end token.Pos) (targetName string, target ast.Node) {
+	isCursorInside := func(opening token.Pos, closing token.Pos) bool {
+		return opening < start && end < closing
 	}
 
-	countLines := func(start, end token.Pos) int {
-		startPos := safetoken.StartPosition(fset, start)
-		endPos := safetoken.EndPosition(fset, end)
-		return endPos.Line - startPos.Line + 1
-	}
-
-	// find the closest enclosing parens/bracket from the cursor.
 	path, _ := astutil.PathEnclosingInterval(file, start, end)
 	for _, p := range path {
 		switch node := p.(type) {
@@ -211,43 +185,85 @@ func findSplitGroupTarget(
 		//   function (...) someMethod(a int, b int, c int) (d int, e, int) {}
 		case *ast.FuncDecl:
 			fl := node.Type.Params
-			if isValidTarget(fl.Opening, fl.Closing, len(fl.List)) {
-				return "parameters", countLines(fl.Opening, fl.Closing), len(fl.List), fl
+			if isCursorInside(fl.Opening, fl.Closing) {
+				return "parameters", fl
 			}
 
 			fl = node.Type.Results
-			if fl != nil && isValidTarget(fl.Opening, fl.Closing, len(fl.List)) {
-				return "return values", countLines(fl.Opening, fl.Closing), len(fl.List), fl
+			if fl != nil && isCursorInside(fl.Opening, fl.Closing) {
+				return "return values", fl
 			}
 
 		// Case 2: target function signature args and result.
 		//   type someFunc func (a int, b int, c int) (d int, e int)
 		case *ast.FuncType:
 			fl := node.Params
-			if isValidTarget(fl.Opening, fl.Closing, len(fl.List)) {
-				return "parameters", countLines(fl.Opening, fl.Closing), len(fl.List), fl
+			if isCursorInside(fl.Opening, fl.Closing) {
+				return "parameters", fl
 			}
 
 			fl = node.Results
-			if fl != nil && isValidTarget(fl.Opening, fl.Closing, len(fl.List)) {
-				return "return values", countLines(fl.Opening, fl.Closing), len(fl.List), fl
+			if fl != nil && isCursorInside(fl.Opening, fl.Closing) {
+				return "return values", fl
 			}
 
 		// Case 3: target function calls.
 		//   someFunction(a, b, c)
 		case *ast.CallExpr:
-			if isValidTarget(node.Lparen, node.Rparen, len(node.Args)) {
-				return "parameters", countLines(node.Lparen, node.Rparen), len(node.Args), node
+			if isCursorInside(node.Lparen, node.Rparen) {
+				return "parameters", node
 			}
 
 		// Case 4: target composite lit instantiation (structs, maps, arrays).
 		//   A{b: 1, c: 2, d: 3}
 		case *ast.CompositeLit:
-			if isValidTarget(node.Lbrace, node.Rbrace, len(node.Elts)) {
-				return "elements", countLines(node.Lbrace, node.Rbrace), len(node.Elts), node
+			if isCursorInside(node.Lbrace, node.Rbrace) {
+				return "elements", node
 			}
 		}
 	}
 
-	return "", 0, 0, nil
+	return "", nil
+}
+
+// getSplitGroupItems returns the item that will be splitted/joined.
+func getSplitGroupItems(target ast.Node) []ast.Node {
+	var items []ast.Node
+
+	switch node := target.(type) {
+	case *ast.FieldList:
+		for _, field := range node.List {
+			items = append(items, field)
+		}
+	case *ast.CallExpr:
+		for _, arg := range node.Args {
+			items = append(items, arg)
+		}
+	case *ast.CompositeLit:
+		for _, arg := range node.Elts {
+			items = append(items, arg)
+		}
+	}
+
+	return items
+}
+
+// getBraceIndent returns the line indent of the opening curly bracket/paren.
+func getBraceIndent(src []byte, fset *token.FileSet, target ast.Node) string {
+	var pos token.Pos
+	switch node := target.(type) {
+	case *ast.FieldList:
+		pos = node.Opening
+	case *ast.CallExpr:
+		pos = node.Lparen
+	case *ast.CompositeLit:
+		pos = node.Lbrace
+	}
+
+	split := bytes.Split(src, []byte("\n"))
+	targetLineNumber := safetoken.StartPosition(fset, pos).Line
+	firstLine := string(split[targetLineNumber-1])
+	trimmed := strings.TrimSpace(string(firstLine))
+
+	return firstLine[:strings.Index(firstLine, trimmed)]
 }
