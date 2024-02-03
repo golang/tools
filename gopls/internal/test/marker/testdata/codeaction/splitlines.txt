@@ -193,6 +193,7 @@ package mapelts
 func a() {
 	_ = map[string]int{"a": 1, "b": 2} //@codeaction("1", "1", "refactor.rewrite", mapelts)
 }
+
 -- @mapelts/mapelts/mapelts.go --
 package mapelts
 
@@ -202,3 +203,21 @@ func a() {
 		"b": 2,
 	} //@codeaction("1", "1", "refactor.rewrite", mapelts)
 }
+
+-- starcomment/starcomment.go --
+package starcomment
+
+func A(/*1*/ x /*2*/ string /*3*/, /*4*/ y /*5*/ int /*6*/) (string, int) { //@codeaction("x", "x", "refactor.rewrite", starcomment)
+	return x, y
+}
+
+-- @starcomment/starcomment/starcomment.go --
+package starcomment
+
+func A(
+	/*1*/ x /*2*/ string /*3*/,
+	/*4*/ y /*5*/ int /*6*/,
+) (string, int) { //@codeaction("x", "x", "refactor.rewrite", starcomment)
+	return x, y
+}
+

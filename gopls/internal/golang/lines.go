@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -109,36 +110,67 @@ func processLines(
 	fset *token.FileSet,
 	target ast.Node,
 	src []byte,
-	_ *ast.File,
+	file *ast.File,
 	sep, prefix, suffix, indent string,
 ) *analysis.SuggestedFix {
 	var replPos, replEnd token.Pos
-	var lines []string
+	var members []ast.Node
 
 	switch node := target.(type) {
 	case *ast.FieldList:
 		replPos, replEnd = node.Opening+1, node.Closing
-
 		for _, field := range node.List {
-			pos := safetoken.StartPosition(fset, field.Pos())
-			end := safetoken.EndPosition(fset, field.End())
-			lines = append(lines, indent+string(src[pos.Offset:end.Offset]))
+			members = append(members, field)
 		}
 	case *ast.CallExpr:
 		replPos, replEnd = node.Lparen+1, node.Rparen
-
 		for _, arg := range node.Args {
-			pos := safetoken.StartPosition(fset, arg.Pos())
-			end := safetoken.EndPosition(fset, arg.End())
-			lines = append(lines, indent+string(src[pos.Offset:end.Offset]))
+			members = append(members, arg)
 		}
 	case *ast.CompositeLit:
 		replPos, replEnd = node.Lbrace+1, node.Rbrace
-
 		for _, arg := range node.Elts {
-			pos := safetoken.StartPosition(fset, arg.Pos())
-			end := safetoken.EndPosition(fset, arg.End())
-			lines = append(lines, indent+string(src[pos.Offset:end.Offset]))
+			members = append(members, arg)
+		}
+	}
+
+	// save /*-style comments inside replPos and replEnd
+	for _, cg := range file.Comments {
+		if !strings.HasPrefix(cg.List[0].Text, "/*") {
+			continue
+		}
+
+		if replPos <= cg.Pos() && cg.Pos() < replEnd {
+			members = append(members, cg)
+		}
+	}
+
+	sort.Slice(members, func(i, j int) bool {
+		return members[i].Pos() < members[j].Pos()
+	})
+
+	getSrc := func(node ast.Node) string {
+		curPos := safetoken.StartPosition(fset, node.Pos())
+		curEnd := safetoken.EndPosition(fset, node.End())
+		return string(src[curPos.Offset:curEnd.Offset])
+	}
+
+	lines := []string{indent + getSrc(members[0])}
+	for i := 1; i < len(members); i++ {
+		pos := safetoken.EndPosition(fset, members[i-1].End()).Offset
+		end := safetoken.StartPosition(fset, members[i].Pos()).Offset
+
+		// this will happen if we have a /*-style comment inside a Field, e.g. `a /*comment here */ int`
+		// we will ignore as it's included already when we write members[i-1]
+		if pos > end {
+			continue
+		}
+
+		// at this point, the `,` token here must be the field delimiter.
+		if bytes.IndexByte(src[pos:end], ',') >= 0 {
+			lines = append(lines, indent+getSrc(members[i]))
+		} else {
+			lines[len(lines)-1] = lines[len(lines)-1] + " " + getSrc(members[i])
 		}
 	}
 
