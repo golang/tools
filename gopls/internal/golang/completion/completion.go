@@ -647,7 +647,7 @@ func (c *completer) collectCompletions(ctx context.Context) error {
 	// Inside comments, offer completions for the name of the relevant symbol.
 	for _, comment := range c.file.Comments {
 		if comment.Pos() < c.pos && c.pos <= comment.End() {
-			c.populateCommentCompletions(ctx, comment)
+			c.populateCommentCompletions(comment)
 			return nil
 		}
 	}
@@ -922,7 +922,7 @@ func (c *completer) populateImportCompletions(searchImport *ast.ImportSpec) erro
 }
 
 // populateCommentCompletions yields completions for comments preceding or in declarations.
-func (c *completer) populateCommentCompletions(ctx context.Context, comment *ast.CommentGroup) {
+func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 	// If the completion was triggered by a period, ignore it. These types of
 	// completions will not be useful in comments.
 	if c.completionContext.triggerCharacter == "." {
@@ -974,12 +974,12 @@ func (c *completer) populateCommentCompletions(ctx context.Context, comment *ast
 					// add TypeSpec fields to completion
 					switch typeNode := spec.Type.(type) {
 					case *ast.StructType:
-						c.addFieldItems(ctx, typeNode.Fields)
+						c.addFieldItems(typeNode.Fields)
 					case *ast.FuncType:
-						c.addFieldItems(ctx, typeNode.Params)
-						c.addFieldItems(ctx, typeNode.Results)
+						c.addFieldItems(typeNode.Params)
+						c.addFieldItems(typeNode.Results)
 					case *ast.InterfaceType:
-						c.addFieldItems(ctx, typeNode.Methods)
+						c.addFieldItems(typeNode.Methods)
 					}
 
 					if spec.Name.String() == "_" {
@@ -1000,9 +1000,9 @@ func (c *completer) populateCommentCompletions(ctx context.Context, comment *ast
 			}
 		// handle functions
 		case *ast.FuncDecl:
-			c.addFieldItems(ctx, node.Recv)
-			c.addFieldItems(ctx, node.Type.Params)
-			c.addFieldItems(ctx, node.Type.Results)
+			c.addFieldItems(node.Recv)
+			c.addFieldItems(node.Type.Params)
+			c.addFieldItems(node.Type.Results)
 
 			// collect receiver struct fields
 			if node.Recv != nil {
@@ -1086,7 +1086,7 @@ func isValidIdentifierChar(char byte) bool {
 }
 
 // adds struct fields, interface methods, function declaration fields to completion
-func (c *completer) addFieldItems(ctx context.Context, fields *ast.FieldList) {
+func (c *completer) addFieldItems(fields *ast.FieldList) {
 	if fields == nil {
 		return
 	}
@@ -1466,7 +1466,7 @@ func (c *completer) methodsAndFields(typ types.Type, addressable bool, imp *impo
 
 	if isStarTestingDotF(typ) && addressable {
 		// is that a sufficient test? (or is more care needed?)
-		if c.fuzz(typ, mset, imp, cb, c.pkg.FileSet()) {
+		if c.fuzz(mset, imp, cb) {
 			return
 		}
 	}
@@ -1759,8 +1759,6 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		count++
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-
 	var mu sync.Mutex
 	add := func(pkg imports.ImportFix) {
 		if ignoreUnimportedCompletion(&pkg) {
@@ -1776,7 +1774,6 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		}
 
 		if count >= maxUnimportedPackageNames {
-			cancel()
 			return
 		}
 
@@ -1794,10 +1791,11 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		})
 		count++
 	}
+
 	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
-		defer cancel()
 		return imports.GetAllCandidates(ctx, add, prefix, c.filename, c.pkg.GetTypes().Name(), opts.Env)
 	})
+
 	return nil
 }
 

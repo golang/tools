@@ -4,7 +4,7 @@ the server's Signature method never returns an actual error,
 so the best we can assert is that there is no result.
 
 -- go.mod --
-module testdata
+module example.com
 go 1.18
 
 -- a/a.go --

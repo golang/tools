@@ -22,10 +22,10 @@ import (
 	"golang.org/x/mod/module"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/typerefs"
+	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
@@ -610,6 +610,16 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 			if item.Path == string(mp.PkgPath) {
 				id = mp.ID
 				pkg = thisPackage
+
+				// debugging issues #60904, #64235
+				if pkg.Name() != item.Name {
+					// This would mean that mp.Name != item.Name, so the
+					// manifest in the export data of mp.PkgPath is
+					// inconsistent with mp.Name. Or perhaps there
+					// are duplicate PkgPath items in the manifest?
+					return bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904)",
+						pkg.Name(), item.Name, id, item.Path)
+				}
 			} else {
 				id = impMap[item.Path]
 				var err error
@@ -617,14 +627,22 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 				if err != nil {
 					return err
 				}
+
+				// We intentionally duplicate the bug.Errorf calls because
+				// telemetry tells us only the program counter, not the message.
+
+				// debugging issues #60904, #64235
+				if pkg.Name() != item.Name {
+					// This means that, while reading the manifest of the
+					// export data of mp.PkgPath, one of its indirect
+					// dependencies had a name that differs from the
+					// Metadata.Name
+					return bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904)",
+						pkg.Name(), item.Name, id, item.Path)
+				}
 			}
 			items[i].Pkg = pkg
 
-			// debugging issue #60904
-			if pkg.Name() != item.Name {
-				return bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904)",
-					pkg.Name(), item.Name, id, item.Path)
-			}
 		}
 		return nil
 	}
@@ -724,7 +742,11 @@ func (b *typeCheckBatch) importMap(id PackageID) map[string]PackageID {
 	populateDeps = func(parent *metadata.Package) {
 		for _, id := range parent.DepsByPkgPath {
 			mp := b.handles[id].mp
-			if _, ok := impMap[string(mp.PkgPath)]; ok {
+			if prevID, ok := impMap[string(mp.PkgPath)]; ok {
+				// debugging #63822
+				if prevID != mp.ID {
+					bug.Reportf("inconsistent view of dependencies")
+				}
 				continue
 			}
 			impMap[string(mp.PkgPath)] = mp.ID

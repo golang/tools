@@ -837,6 +837,7 @@ func loadIO(t *testing.T) {
 
 func TestCgoCwdIssue46877(t *testing.T) {
 	testenv.NeedsTool(t, "go")
+	testenv.NeedsTool(t, "cgo")
 	var conf loader.Config
 	conf.Import("golang.org/x/tools/go/loader/testdata/issue46877")
 	if _, err := conf.Load(); err != nil {

@@ -8,49 +8,16 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/gopls/internal/util/bug"
 )
+
+func init() {
+	bug.PanicOnBugs = true
+}
 
 // This is an internal test of the breakImportCycles logic.
 func TestBreakImportCycles(t *testing.T) {
-
-	type Graph = map[PackageID]*Package
-
-	// cyclic returns a description of a cycle,
-	// if the graph is cyclic, otherwise "".
-	cyclic := func(graph Graph) string {
-		const (
-			unvisited = 0
-			visited   = 1
-			onstack   = 2
-		)
-		color := make(map[PackageID]int)
-		var visit func(id PackageID) string
-		visit = func(id PackageID) string {
-			switch color[id] {
-			case unvisited:
-				color[id] = onstack
-			case onstack:
-				return string(id) // cycle!
-			case visited:
-				return ""
-			}
-			if mp := graph[id]; mp != nil {
-				for _, depID := range mp.DepsByPkgPath {
-					if cycle := visit(depID); cycle != "" {
-						return string(id) + "->" + cycle
-					}
-				}
-			}
-			color[id] = visited
-			return ""
-		}
-		for id := range graph {
-			if cycle := visit(id); cycle != "" {
-				return cycle
-			}
-		}
-		return ""
-	}
 
 	// parse parses an import dependency graph.
 	// The input is a semicolon-separated list of node descriptions.
@@ -58,8 +25,8 @@ func TestBreakImportCycles(t *testing.T) {
 	// "->" and a comma-separated list of successor IDs.
 	// Thus "a->b;b->c,d;e" represents the set of nodes {a,b,e}
 	// and the set of edges {a->b, b->c, b->d}.
-	parse := func(s string) Graph {
-		m := make(Graph)
+	parse := func(s string) map[PackageID]*Package {
+		m := make(map[PackageID]*Package)
 		makeNode := func(name string) *Package {
 			id := PackageID(name)
 			n, ok := m[id]
@@ -98,7 +65,7 @@ func TestBreakImportCycles(t *testing.T) {
 	// format formats an import graph, in lexicographic order,
 	// in the notation of parse, but with a "!" after the name
 	// of each node that has errors.
-	format := func(graph Graph) string {
+	format := func(graph map[PackageID]*Package) string {
 		var items []string
 		for _, mp := range graph {
 			item := string(mp.ID)

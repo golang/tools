@@ -75,7 +75,7 @@ func endRangeInBuffer(env *Env, name string) protocol.Range {
 
 // Benchmark struct completion in tools codebase.
 func BenchmarkStructCompletion(b *testing.B) {
-	file := "internal/cache/session.go"
+	file := "internal/lsp/cache/session.go"
 
 	setup := func(env *Env) {
 		env.OpenFile(file)
@@ -104,7 +104,7 @@ func BenchmarkImportCompletion(b *testing.B) {
 
 // Benchmark slice completion in tools codebase.
 func BenchmarkSliceCompletion(b *testing.B) {
-	file := "internal/cache/session.go"
+	file := "internal/lsp/cache/session.go"
 
 	setup := func(env *Env) {
 		env.OpenFile(file)

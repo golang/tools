@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/goversion"
 	"golang.org/x/tools/internal/gocommand"
+	"golang.org/x/tools/internal/testenv"
 
 	. "golang.org/x/tools/gopls/internal/test/integration"
 )
@@ -245,6 +246,32 @@ func TestAutomaticWorkspaceModule_Interdependent(t *testing.T) {
 			Diagnostics(env.AtRegexp("modb/b/b.go", "x")),
 			NoDiagnostics(env.AtRegexp("moda/a/a.go", `"b.com/b"`)),
 		)
+	})
+}
+
+func TestWorkspaceVendoring(t *testing.T) {
+	testenv.NeedsGo1Point(t, 22)
+	WithOptions(
+		ProxyFiles(workspaceModuleProxy),
+	).Run(t, multiModule, func(t *testing.T, env *Env) {
+		env.RunGoCommand("work", "init")
+		env.RunGoCommand("work", "use", "moda/a")
+		env.AfterChange()
+		env.OpenFile("moda/a/a.go")
+		env.RunGoCommand("work", "vendor")
+
+		// Make an on-disk go.mod change to force a workspace reinitialization.
+		// This will be fixed in a follow-up CL.
+		env.OpenFile("moda/a/go.mod")
+		env.EditBuffer("moda/a/go.mod", protocol.TextEdit{NewText: "// arbitrary\n"})
+		env.SaveBuffer("moda/a/go.mod")
+
+		env.AfterChange()
+		loc := env.GoToDefinition(env.RegexpSearch("moda/a/a.go", "b.(Hello)"))
+		const want = "vendor/b.com/b/b.go"
+		if got := env.Sandbox.Workdir.URIToPath(loc.URI); got != want {
+			t.Errorf("Definition: got location %q, want %q", got, want)
+		}
 	})
 }
 

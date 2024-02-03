@@ -4,6 +4,14 @@
 
 package slices
 
+// Clone returns a copy of the slice.
+// The elements are copied using assignment, so this is a shallow clone.
+// TODO(rfindley): use go1.19 slices.Clone.
+func Clone[S ~[]E, E any](s S) S {
+	// The s[:0:0] preserves nil in case it matters.
+	return append(s[:0:0], s...)
+}
+
 // Contains reports whether x is present in slice.
 // TODO(adonovan): use go1.19 slices.Contains.
 func Contains[S ~[]E, E comparable](slice S, x E) bool {
@@ -35,7 +43,7 @@ func ContainsFunc[S ~[]E, E any](s S, f func(E) bool) bool {
 }
 
 // Concat returns a new slice concatenating the passed in slices.
-// TODO(rfindley): use go1.22 slices.Contains.
+// TODO(rfindley): use go1.22 slices.Concat.
 func Concat[S ~[]E, E any](slices ...S) S {
 	size := 0
 	for _, s := range slices {

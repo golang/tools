@@ -22,7 +22,7 @@ func BenchmarkRename(b *testing.B) {
 		{"kuma", "pkg/events/interfaces.go", `Delete`, "Delete"},
 		{"pkgsite", "internal/log/log.go", `func (Infof)`, "Infof"},
 		{"starlark", "starlark/eval.go", `Program\) (Filename)`, "Filename"},
-		{"tools", "internal/cache/snapshot.go", `meta \*(metadataGraph)`, "metadataGraph"},
+		{"tools", "internal/lsp/cache/snapshot.go", `meta \*(metadataGraph)`, "metadataGraph"},
 	}
 
 	for _, test := range tests {

@@ -434,7 +434,7 @@ func (v VulnData) Vuln1() {}
 func (v VulnData) Vuln2() {}
 `
 
-func vulnTestEnv(vulnsDB, proxyData string) (*vulntest.DB, []RunOption, error) {
+func vulnTestEnv(proxyData string) (*vulntest.DB, []RunOption, error) {
 	db, err := vulntest.NewDatabase(context.Background(), []byte(vulnsData))
 	if err != nil {
 		return nil, nil, nil
@@ -458,7 +458,7 @@ func vulnTestEnv(vulnsDB, proxyData string) (*vulntest.DB, []RunOption, error) {
 }
 
 func TestRunVulncheckPackageDiagnostics(t *testing.T) {
-	db, opts0, err := vulnTestEnv(vulnsData, proxy1)
+	db, opts0, err := vulnTestEnv(proxy1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -606,7 +606,7 @@ func TestRunGovulncheck_Expiry(t *testing.T) {
 	}(cache.MaxGovulncheckResultAge)
 	cache.MaxGovulncheckResultAge = 99 * time.Millisecond
 
-	db, opts0, err := vulnTestEnv(vulnsData, proxy1)
+	db, opts0, err := vulnTestEnv(proxy1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -638,7 +638,7 @@ func stringify(a interface{}) string {
 }
 
 func TestRunVulncheckWarning(t *testing.T) {
-	db, opts, err := vulnTestEnv(vulnsData, proxy1)
+	db, opts, err := vulnTestEnv(proxy1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -793,7 +793,7 @@ func OK() {} // ok.
 `
 
 func TestGovulncheckInfo(t *testing.T) {
-	db, opts, err := vulnTestEnv(vulnsData, proxy2)
+	db, opts, err := vulnTestEnv(proxy2)
 	if err != nil {
 		t.Fatal(err)
 	}

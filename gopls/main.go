@@ -17,9 +17,9 @@ import (
 	"context"
 	"os"
 
-	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/gopls/internal/cmd"
 	"golang.org/x/tools/gopls/internal/hooks"
+	"golang.org/x/tools/gopls/internal/telemetry"
 	versionpkg "golang.org/x/tools/gopls/internal/version"
 	"golang.org/x/tools/internal/tool"
 )
@@ -29,7 +29,8 @@ var version = "" // if set by the linker, overrides the gopls version
 func main() {
 	versionpkg.VersionOverride = version
 
-	counter.Open() // Enable telemetry counter writing.
+	telemetry.CounterOpen()
+	telemetry.StartCrashMonitor()
 	ctx := context.Background()
 	tool.Main(ctx, cmd.New(hooks.Options), os.Args[1:])
 }

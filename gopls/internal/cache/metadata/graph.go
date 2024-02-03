@@ -38,6 +38,22 @@ func (g *Graph) Update(updates map[PackageID]*Package) *Graph {
 		return g
 	}
 
+	// Debugging golang/go#64227, golang/vscode-go#3126:
+	// Assert that the existing metadata graph is acyclic.
+	if cycle := cyclic(g.Packages); cycle != "" {
+		bug.Reportf("metadata is cyclic even before updates: %s", cycle)
+	}
+	// Assert that the updates contain no self-cycles.
+	for id, mp := range updates {
+		if mp != nil {
+			for _, depID := range mp.DepsByPkgPath {
+				if depID == id {
+					bug.Reportf("self-cycle in metadata update: %s", id)
+				}
+			}
+		}
+	}
+
 	// Copy pkgs map then apply updates.
 	pkgs := make(map[PackageID]*Package, len(g.Packages))
 	for id, mp := range g.Packages {
@@ -221,6 +237,43 @@ func breakImportCycles(metadata, updates map[PackageID]*Package) {
 			}
 		}
 	}
+}
+
+// cyclic returns a description of a cycle,
+// if the graph is cyclic, otherwise "".
+func cyclic(graph map[PackageID]*Package) string {
+	const (
+		unvisited = 0
+		visited   = 1
+		onstack   = 2
+	)
+	color := make(map[PackageID]int)
+	var visit func(id PackageID) string
+	visit = func(id PackageID) string {
+		switch color[id] {
+		case unvisited:
+			color[id] = onstack
+		case onstack:
+			return string(id) // cycle!
+		case visited:
+			return ""
+		}
+		if mp := graph[id]; mp != nil {
+			for _, depID := range mp.DepsByPkgPath {
+				if cycle := visit(depID); cycle != "" {
+					return string(id) + "->" + cycle
+				}
+			}
+		}
+		color[id] = visited
+		return ""
+	}
+	for id := range graph {
+		if cycle := visit(id); cycle != "" {
+			return cycle
+		}
+	}
+	return ""
 }
 
 // detectImportCycles reports cycles in the metadata graph. It returns a new

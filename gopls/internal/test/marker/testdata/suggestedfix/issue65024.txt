@@ -1,11 +1,11 @@
-Regression test for #65024, "incorrect package qualification when
+Regression example.com for #65024, "incorrect package qualification when
 stubbing method in v2 module".
 
 The second test (a-a) ensures that we don't use path-based heuristics
 to guess the PkgName of an import.
 
 -- a/v2/go.mod --
-module testdata/a/v2
+module example.com/a/v2
 go 1.18
 
 -- a/v2/a.go --
@@ -18,7 +18,7 @@ type T struct {}
 -- a/v2/b/b.go --
 package b
 
-import "testdata/a/v2"
+import "example.com/a/v2"
 
 type B struct{}
 
@@ -40,7 +40,7 @@ var _ a.I = &B{} //@ suggestedfix("&B{}", re"does not implement", out)
 // It won't do to use it as an identifier.
 // The correct name is the one in the package decl,
 // which in this case is not what the path heuristic would guess.
-module testdata/a-a/v2
+module example.com/a-a/v2
 go 1.18
 
 -- a-a/v2/a.go --
@@ -61,12 +61,12 @@ var _ I = &B{} //@ suggestedfix("&B{}", re"does not implement", out2)
 
 -- a-a/v2/b/import-a-I.go --
 package b
-import "testdata/a-a/v2"
+import "example.com/a-a/v2"
 type I = a.I
 
 -- @out2/a-a/v2/b/b.go --
 @@ -3 +3,2 @@
-+import a "testdata/a-a/v2"
++import a "example.com/a-a/v2"
 +
 @@ -7 +9,5 @@
 +// F implements a.I.

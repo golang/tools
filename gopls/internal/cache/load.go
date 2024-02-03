@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/immutable"
@@ -341,13 +341,26 @@ func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Packag
 	id := PackageID(pkg.ID)
 
 	if metadata.IsCommandLineArguments(id) {
-		if len(pkg.CompiledGoFiles) != 1 {
-			bug.Reportf("unexpected files in command-line-arguments package: %v", pkg.CompiledGoFiles)
+		var f string // file to use as disambiguating suffix
+		if len(pkg.CompiledGoFiles) > 0 {
+			f = pkg.CompiledGoFiles[0]
+
+			// If there are multiple files,
+			// we can't use only the first.
+			// (Can this happen? #64557)
+			if len(pkg.CompiledGoFiles) > 1 {
+				bug.Reportf("unexpected files in command-line-arguments package: %v", pkg.CompiledGoFiles)
+				return
+			}
+		} else if len(pkg.IgnoredFiles) > 0 {
+			// A file=empty.go query results in IgnoredFiles=[empty.go].
+			f = pkg.IgnoredFiles[0]
+		} else {
+			bug.Reportf("command-line-arguments package has neither CompiledGoFiles nor IgnoredFiles: %#v", "") //*pkg.Metadata)
 			return
 		}
-		suffix := pkg.CompiledGoFiles[0]
-		id = PackageID(pkg.ID + suffix)
-		pkgPath = PackagePath(pkg.PkgPath + suffix)
+		id = PackageID(pkg.ID + f)
+		pkgPath = PackagePath(pkg.PkgPath + f)
 	}
 
 	// Duplicate?

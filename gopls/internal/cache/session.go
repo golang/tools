@@ -17,12 +17,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/typerefs"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/persistent"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
@@ -190,6 +191,32 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		ignoreFilter = newIgnoreFilter(dirs)
 	}
 
+	var pe *imports.ProcessEnv
+	{
+		env := make(map[string]string)
+		envSlice := slices.Concat(os.Environ(), def.folder.Options.EnvSlice(), []string{"GO111MODULE=" + def.adjustedGO111MODULE()})
+		for _, kv := range envSlice {
+			if k, v, ok := strings.Cut(kv, "="); ok {
+				env[k] = v
+			}
+		}
+		pe = &imports.ProcessEnv{
+			GocmdRunner: s.gocmdRunner,
+			BuildFlags:  slices.Clone(def.folder.Options.BuildFlags),
+			// TODO(rfindley): an old comment said "processEnv operations should not mutate the modfile"
+			// But shouldn't we honor the default behavior of mod vendoring?
+			ModFlag:        "readonly",
+			SkipPathInScan: skipPath,
+			Env:            env,
+			WorkingDir:     def.root.Path(),
+		}
+		if def.folder.Options.VerboseOutput {
+			pe.Logf = func(format string, args ...interface{}) {
+				event.Log(ctx, fmt.Sprintf(format, args...))
+			}
+		}
+	}
+
 	v := &View{
 		id:                   strconv.FormatInt(index, 10),
 		gocmdRunner:          s.gocmdRunner,
@@ -201,11 +228,8 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		fs:                   s.overlayFS,
 		viewDefinition:       def,
 		importsState: &importsState{
-			ctx: backgroundCtx,
-			processEnv: &imports.ProcessEnv{
-				GocmdRunner:    s.gocmdRunner,
-				SkipPathInScan: skipPath,
-			},
+			ctx:        backgroundCtx,
+			processEnv: pe,
 		},
 	}
 
@@ -631,7 +655,7 @@ func bestView[V viewDefiner](ctx context.Context, fs file.Source, fh file.Handle
 //
 // If the resulting error is non-nil, the view may or may not have already been
 // dropped from the session.
-func (s *Session) updateViewLocked(ctx context.Context, view *View, def *viewDefinition, folder *Folder) (*View, error) {
+func (s *Session) updateViewLocked(ctx context.Context, view *View, def *viewDefinition) (*View, error) {
 	i := s.dropView(view)
 	if i == -1 {
 		return nil, fmt.Errorf("view %q not found", view.id)
@@ -683,7 +707,7 @@ func (s *Session) ResetView(ctx context.Context, uri protocol.DocumentURI) (*Vie
 	if err != nil {
 		return nil, err
 	}
-	return s.updateViewLocked(ctx, v, v.viewDefinition, v.folder)
+	return s.updateViewLocked(ctx, v, v.viewDefinition)
 }
 
 // DidModifyFiles reports a file modification to the session. It returns

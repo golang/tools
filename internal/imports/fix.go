@@ -828,7 +828,22 @@ func GetPackageExports(ctx context.Context, wrapped func(PackageExport), searchP
 	return getCandidatePkgs(ctx, callback, filename, filePkg, env)
 }
 
-var requiredGoEnvVars = []string{"GO111MODULE", "GOFLAGS", "GOINSECURE", "GOMOD", "GOMODCACHE", "GONOPROXY", "GONOSUMDB", "GOPATH", "GOPROXY", "GOROOT", "GOSUMDB", "GOWORK"}
+// TODO(rfindley): we should depend on GOOS and GOARCH, to provide accurate
+// imports when doing cross-platform development.
+var requiredGoEnvVars = []string{
+	"GO111MODULE",
+	"GOFLAGS",
+	"GOINSECURE",
+	"GOMOD",
+	"GOMODCACHE",
+	"GONOPROXY",
+	"GONOSUMDB",
+	"GOPATH",
+	"GOPROXY",
+	"GOROOT",
+	"GOSUMDB",
+	"GOWORK",
+}
 
 // ProcessEnv contains environment variables and settings that affect the use of
 // the go command, the go/build package, etc.
@@ -837,7 +852,6 @@ type ProcessEnv struct {
 
 	BuildFlags []string
 	ModFlag    string
-	ModFile    string
 
 	// SkipPathInScan returns true if the path should be skipped from scans of
 	// the RootCurrentModule root type. The function argument is a clean,
@@ -847,7 +861,7 @@ type ProcessEnv struct {
 	// Env overrides the OS environment, and can be used to specify
 	// GOPROXY, GO111MODULE, etc. PATH cannot be set here, because
 	// exec.Command will not honor it.
-	// Specifying all of RequiredGoEnvVars avoids a call to `go env`.
+	// Specifying all of requiredGoEnvVars avoids a call to `go env`.
 	Env map[string]string
 
 	WorkingDir string
@@ -855,6 +869,8 @@ type ProcessEnv struct {
 	// If Logf is non-nil, debug logging is enabled through this function.
 	Logf func(format string, args ...interface{})
 
+	// TODO(rfindley): for simplicity, use a constructor rather than
+	// initialization pattern for ProcessEnv.
 	initialized bool
 
 	resolver Resolver
@@ -943,6 +959,12 @@ func (e *ProcessEnv) GetResolver() (Resolver, error) {
 	if err := e.init(); err != nil {
 		return nil, err
 	}
+	// TODO(rfindley): we should only use a gopathResolver here if the working
+	// directory is actually *in* GOPATH. (I seem to recall an open gopls issue
+	// for this behavior, but I can't find it).
+	//
+	// For gopls, we can optionally explicitly choose a resolver type, since we
+	// already know the view type.
 	if len(e.Env["GOMOD"]) == 0 && len(e.Env["GOWORK"]) == 0 {
 		e.resolver = newGopathResolver(e)
 		return e.resolver, nil
@@ -951,6 +973,10 @@ func (e *ProcessEnv) GetResolver() (Resolver, error) {
 	return e.resolver, nil
 }
 
+// buildContext returns the build.Context to use for matching files.
+//
+// TODO(rfindley): support dynamic GOOS, GOARCH here, when doing cross-platform
+// development.
 func (e *ProcessEnv) buildContext() (*build.Context, error) {
 	ctx := build.Default
 	goenv, err := e.goEnv()
@@ -1030,11 +1056,14 @@ func addStdlibCandidates(pass *pass, refs references) error {
 type Resolver interface {
 	// loadPackageNames loads the package names in importPaths.
 	loadPackageNames(importPaths []string, srcDir string) (map[string]string, error)
+
 	// scan works with callback to search for packages. See scanCallback for details.
 	scan(ctx context.Context, callback *scanCallback) error
+
 	// loadExports returns the set of exported symbols in the package at dir.
 	// loadExports may be called concurrently.
 	loadExports(ctx context.Context, pkg *pkg, includeTest bool) (string, []string, error)
+
 	// scoreImportPath returns the relevance for an import path.
 	scoreImportPath(ctx context.Context, path string) float64
 
@@ -1121,7 +1150,7 @@ func addExternalCandidates(ctx context.Context, pass *pass, refs references, fil
 		go func(pkgName string, symbols map[string]bool) {
 			defer wg.Done()
 
-			found, err := findImport(ctx, pass, found[pkgName], pkgName, symbols, filename)
+			found, err := findImport(ctx, pass, found[pkgName], pkgName, symbols)
 
 			if err != nil {
 				firstErrOnce.Do(func() {
@@ -1550,7 +1579,7 @@ func loadExportsFromFiles(ctx context.Context, env *ProcessEnv, dir string, incl
 
 // findImport searches for a package with the given symbols.
 // If no package is found, findImport returns ("", false, nil)
-func findImport(ctx context.Context, pass *pass, candidates []pkgDistance, pkgName string, symbols map[string]bool, filename string) (*pkg, error) {
+func findImport(ctx context.Context, pass *pass, candidates []pkgDistance, pkgName string, symbols map[string]bool) (*pkg, error) {
 	// Sort the candidates by their import package length,
 	// assuming that shorter package names are better than long
 	// ones.  Note that this sorts by the de-vendored name, so

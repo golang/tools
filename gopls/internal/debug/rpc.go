@@ -84,19 +84,19 @@ func (r *Rpcs) ProcessEvent(ctx context.Context, ev core.Event, lm label.Map) co
 	defer r.mu.Unlock()
 	switch {
 	case event.IsStart(ev):
-		if _, stats := r.getRPCSpan(ctx, ev); stats != nil {
+		if _, stats := r.getRPCSpan(ctx); stats != nil {
 			stats.Started++
 		}
 	case event.IsEnd(ev):
-		span, stats := r.getRPCSpan(ctx, ev)
+		span, stats := r.getRPCSpan(ctx)
 		if stats != nil {
-			endRPC(ctx, ev, span, stats)
+			endRPC(span, stats)
 		}
 	case event.IsMetric(ev):
 		sent := byteUnits(tag.SentBytes.Get(lm))
 		rec := byteUnits(tag.ReceivedBytes.Get(lm))
 		if sent != 0 || rec != 0 {
-			if _, stats := r.getRPCSpan(ctx, ev); stats != nil {
+			if _, stats := r.getRPCSpan(ctx); stats != nil {
 				stats.Sent += sent
 				stats.Received += rec
 			}
@@ -105,7 +105,7 @@ func (r *Rpcs) ProcessEvent(ctx context.Context, ev core.Event, lm label.Map) co
 	return ctx
 }
 
-func endRPC(ctx context.Context, ev core.Event, span *export.Span, stats *rpcStats) {
+func endRPC(span *export.Span, stats *rpcStats) {
 	// update the basic counts
 	stats.Completed++
 
@@ -152,7 +152,7 @@ func endRPC(ctx context.Context, ev core.Event, span *export.Span, stats *rpcSta
 	}
 }
 
-func (r *Rpcs) getRPCSpan(ctx context.Context, ev core.Event) (*export.Span, *rpcStats) {
+func (r *Rpcs) getRPCSpan(ctx context.Context) (*export.Span, *rpcStats) {
 	// get the span
 	span := export.GetSpan(ctx)
 	if span == nil {

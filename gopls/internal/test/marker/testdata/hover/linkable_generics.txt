@@ -66,14 +66,16 @@ func GF[P any](p P)
 type GT[P any] struct {
 	F P //@hover("F", "F", F),hover("P", "P", FP)
 }
-
-func (GT[P]) M(p P)
 ```
 
 Hovering over type parameters should link to documentation.
 
 TODO(rfindley): should it? We should probably link to the type.
 
+
+```go
+func (GT[P]) M(p P)
+```
 
 [`generic.GT` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT)
 -- @GTP --
@@ -85,14 +87,16 @@ type parameter P any
 type GT[P any] struct {
 	F P //@hover("F", "F", F),hover("P", "P", FP)
 }
-
-func (GT[P]) M(p P)
 ```
 
 Hovering over type parameters should link to documentation.
 
 TODO(rfindley): should it? We should probably link to the type.
 
+
+```go
+func (GT[P]) M(p P)
+```
 
 [`generic.GT` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT)
 -- @M --
@@ -135,13 +139,15 @@ field F int
 type GT[P any] struct {
 	F P //@hover("F", "F", F),hover("P", "P", FP)
 }
-
-func (generic.GT[P]) M(p P)
 ```
 
 Hovering over type parameters should link to documentation.
 
 TODO(rfindley): should it? We should probably link to the type.
 
+
+```go
+func (generic.GT[P]) M(p P)
+```
 
 [`generic.GT` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT)

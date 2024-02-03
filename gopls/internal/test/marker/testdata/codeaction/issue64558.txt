@@ -1,7 +1,7 @@
 Test of an inlining failure due to an ill-typed input program (#64558).
 
 -- go.mod --
-module testdata
+module example.com
 go 1.18
 
 -- a/a.go --

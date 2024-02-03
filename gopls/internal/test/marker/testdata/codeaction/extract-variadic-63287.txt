@@ -3,7 +3,7 @@ It is a regression test for bug #63287 in which
 the final paramater's "..." would go missing.
 
 -- go.mod --
-module testdata
+module example.com
 go 1.18
 
 -- a/a.go --

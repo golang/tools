@@ -23,23 +23,66 @@ import (
 	"golang.org/x/tools/internal/gopathwalk"
 )
 
-// ModuleResolver implements resolver for modules using the go command as little
-// as feasible.
+// Notes(rfindley): ModuleResolver appears to be heavily optimized for scanning
+// as fast as possible, which is desirable for a call to goimports from the
+// command line, but it doesn't work as well for gopls, where it suffers from
+// slow startup (golang/go#44863) and intermittent hanging (golang/go#59216),
+// both caused by populating the cache, albeit in slightly different ways.
+//
+// A high level list of TODOs:
+//  - Write an additional benchmark for refreshing the directory state.
+//  - Split scanning the module cache from other ModuleResolver functionality,
+//    as it is the source of performance woes (and inconsistency).
+//  - Allow sharing module cache state across multiple ModuleResolvers.
+//  - Optimize the scan itself, as there is some redundancy statting and
+//    reading go.mod files.
+//  - Make it possible to reuse the current state while running a refresh in
+//    the background.
+//  - Fix context cancellation (again): if the context is cancelled while a
+//    root is being walked, nothing stops that ongoing walk.
+//
+// Smaller TODOs are annotated in the code below.
+
+// ModuleResolver implements the Resolver interface for a workspace using
+// modules.
+//
+// A goal of the ModuleResolver is to invoke the Go command as little as
+// possible. To this end, it runs the Go command only for listing module
+// information (i.e. `go list -m -e -json ...`). Package scanning, the process
+// of loading package information for the modules, is implemented internally
+// via the scan method.
+//
+// It has two types of state: the state derived from the go command, which
+// is populated by init, and the state derived from scans, which is populated
+// via scan. A root is considered scanned if it has been walked to discover
+// directories. However, if the scan did not require additional information
+// from the directory (such as package name or exports), the directory
+// information itself may be partially populated. It will be lazily filled in
+// as needed by scans, using the scanCallback.
 type ModuleResolver struct {
-	env            *ProcessEnv
-	moduleCacheDir string
-	dummyVendorMod *gocommand.ModuleJSON // If vendoring is enabled, the pseudo-module that represents the /vendor directory.
-	roots          []gopathwalk.Root
-	scanSema       chan struct{} // scanSema prevents concurrent scans and guards scannedRoots.
-	scannedRoots   map[gopathwalk.Root]bool
+	env *ProcessEnv
 
-	initialized   bool
-	mains         []*gocommand.ModuleJSON
-	mainByDir     map[string]*gocommand.ModuleJSON
-	modsByModPath []*gocommand.ModuleJSON // All modules, ordered by # of path components in module Path...
-	modsByDir     []*gocommand.ModuleJSON // ...or number of path components in their Dir.
+	// Module state, populated by init
+	initialized    bool
+	dummyVendorMod *gocommand.ModuleJSON            // if vendoring is enabled, a pseudo-module to represent the /vendor directory
+	moduleCacheDir string                           // GOMODCACHE, inferred from GOPATH if unset
+	roots          []gopathwalk.Root                // roots to scan, in approximate order of importance
+	mains          []*gocommand.ModuleJSON          // main modules
+	mainByDir      map[string]*gocommand.ModuleJSON // module information by dir, to join with roots
+	modsByModPath  []*gocommand.ModuleJSON          // all modules, ordered by # of path components in their module path
+	modsByDir      []*gocommand.ModuleJSON          // ...or by the number of path components in their Dir.
 
-	// moduleCacheCache stores information about the module cache.
+	// Scanning state, populated by scan
+	scanSema     chan struct{}            // prevents concurrent scans and guards scannedRoots
+	scannedRoots map[gopathwalk.Root]bool // if true, root has been walked
+
+	// Caches of directory info, populated by scans and scan callbacks
+	//
+	// moduleCacheCache stores cached information about roots in the module
+	// cache, which are immutable and therefore do not need to be invalidated.
+	//
+	// otherCache stores information about all other roots (even GOROOT), which
+	// may change.
 	moduleCacheCache *dirInfoCache
 	otherCache       *dirInfoCache
 }
@@ -62,10 +105,10 @@ func (r *ModuleResolver) init() error {
 	if err != nil {
 		return err
 	}
+	// TODO(rfindley): can we refactor to share logic with r.env.invokeGo?
 	inv := gocommand.Invocation{
 		BuildFlags: r.env.BuildFlags,
 		ModFlag:    r.env.ModFlag,
-		ModFile:    r.env.ModFile,
 		Env:        r.env.env(),
 		Logf:       r.env.Logf,
 		WorkingDir: r.env.WorkingDir,
@@ -77,6 +120,9 @@ func (r *ModuleResolver) init() error {
 	// Module vendor directories are ignored in workspace mode:
 	// https://go.googlesource.com/proposal/+/master/design/45713-workspace.md
 	if len(r.env.Env["GOWORK"]) == 0 {
+		// TODO(rfindley): VendorEnabled runs the go command to get GOFLAGS, but
+		// they should be available from the ProcessEnv. Can we avoid the redundant
+		// invocation?
 		vendorEnabled, mainModVendor, err = gocommand.VendorEnabled(context.TODO(), inv, r.env.GocmdRunner)
 		if err != nil {
 			return err
@@ -141,7 +187,11 @@ func (r *ModuleResolver) init() error {
 	} else {
 		addDep := func(mod *gocommand.ModuleJSON) {
 			if mod.Replace == nil {
-				// This is redundant with the cache, but we'll skip it cheaply enough.
+				// This is redundant with the cache, but we'll skip it cheaply enough
+				// when we encounter it in the module cache scan.
+				//
+				// Including it at a lower index in r.roots than the module cache dir
+				// helps prioritize matches from within existing dependencies.
 				r.roots = append(r.roots, gopathwalk.Root{Path: mod.Dir, Type: gopathwalk.RootModuleCache})
 			} else {
 				r.roots = append(r.roots, gopathwalk.Root{Path: mod.Dir, Type: gopathwalk.RootOther})
@@ -206,6 +256,11 @@ func (r *ModuleResolver) initAllMods() error {
 	return nil
 }
 
+// ClearForNewScan invalidates the last scan.
+//
+// It preserves the set of roots, but forgets about the set of directories.
+// Though it forgets the set of module cache directories, it remembers their
+// contents, since they are assumed to be immutable.
 func (r *ModuleResolver) ClearForNewScan() {
 	<-r.scanSema
 	r.scannedRoots = map[gopathwalk.Root]bool{}
@@ -216,6 +271,11 @@ func (r *ModuleResolver) ClearForNewScan() {
 	r.scanSema <- struct{}{}
 }
 
+// ClearForNewMod invalidates resolver state that depends on the go.mod file
+// (essentially, the output of go list -m -json ...).
+//
+// Notably, it does not forget directory contents, which are reset
+// asynchronously via ClearForNewScan.
 func (r *ModuleResolver) ClearForNewMod() {
 	<-r.scanSema
 	*r = ModuleResolver{
@@ -444,18 +504,18 @@ func (r *ModuleResolver) scan(ctx context.Context, callback *scanCallback) error
 		if err != nil {
 			return
 		}
-
 		if !callback.dirFound(pkg) {
 			return
 		}
+
 		pkg.packageName, err = r.cachePackageName(info)
 		if err != nil {
 			return
 		}
-
 		if !callback.packageNameLoaded(pkg) {
 			return
 		}
+
 		_, exports, err := r.loadExports(ctx, pkg, false)
 		if err != nil {
 			return
@@ -494,7 +554,6 @@ func (r *ModuleResolver) scan(ctx context.Context, callback *scanCallback) error
 		return packageScanned
 	}
 
-	// Add anything new to the cache, and process it if we're still listening.
 	add := func(root gopathwalk.Root, dir string) {
 		r.cacheStore(r.scanDirForPackage(root, dir))
 	}

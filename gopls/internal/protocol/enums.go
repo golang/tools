@@ -117,7 +117,7 @@ func init() {
 	namesTextDocumentSaveReason[int(FocusOut)] = "FocusOut"
 }
 
-func formatEnum(f fmt.State, c rune, i int, names []string, unknown string) {
+func formatEnum(f fmt.State, i int, names []string, unknown string) {
 	s := ""
 	if i >= 0 && i < len(names) {
 		s = names[i]
@@ -130,45 +130,45 @@ func formatEnum(f fmt.State, c rune, i int, names []string, unknown string) {
 }
 
 func (e TextDocumentSyncKind) Format(f fmt.State, c rune) {
-	formatEnum(f, c, int(e), namesTextDocumentSyncKind[:], "TextDocumentSyncKind")
+	formatEnum(f, int(e), namesTextDocumentSyncKind[:], "TextDocumentSyncKind")
 }
 
 func (e MessageType) Format(f fmt.State, c rune) {
-	formatEnum(f, c, int(e), namesMessageType[:], "MessageType")
+	formatEnum(f, int(e), namesMessageType[:], "MessageType")
 }
 
 func (e FileChangeType) Format(f fmt.State, c rune) {
-	formatEnum(f, c, int(e), namesFileChangeType[:], "FileChangeType")
+	formatEnum(f, int(e), namesFileChangeType[:], "FileChangeType")
 }
 
 func (e CompletionTriggerKind) Format(f fmt.State, c rune) {
-	formatEnum(f, c, int(e), namesCompletionTriggerKind[:], "CompletionTriggerKind")
+	formatEnum(f, int(e), namesCompletionTriggerKind[:], "CompletionTriggerKind")
 }
 
 func (e DiagnosticSeverity) Format(f fmt.State, c rune) {
-	formatEnum(f, c, int(e), namesDiagnosticSeverity[:], "DiagnosticSeverity")
+	formatEnum(f, int(e), namesDiagnosticSeverity[:], "DiagnosticSeverity")
 }
 
 func (e DiagnosticTag) Format(f fmt.State, c rune) {
-	formatEnum(f, c, int(e), namesDiagnosticTag[:], "DiagnosticTag")
+	formatEnum(f, int(e), namesDiagnosticTag[:], "DiagnosticTag")
 }
 
 func (e CompletionItemKind) Format(f fmt.State, c rune) {
-	formatEnum(f, c, int(e), namesCompletionItemKind[:], "CompletionItemKind")
+	formatEnum(f, int(e), namesCompletionItemKind[:], "CompletionItemKind")
 }
 
 func (e InsertTextFormat) Format(f fmt.State, c rune) {
-	formatEnum(f, c, int(e), namesInsertTextFormat[:], "InsertTextFormat")
+	formatEnum(f, int(e), namesInsertTextFormat[:], "InsertTextFormat")
 }
 
 func (e DocumentHighlightKind) Format(f fmt.State, c rune) {
-	formatEnum(f, c, int(e), namesDocumentHighlightKind[:], "DocumentHighlightKind")
+	formatEnum(f, int(e), namesDocumentHighlightKind[:], "DocumentHighlightKind")
 }
 
 func (e SymbolKind) Format(f fmt.State, c rune) {
-	formatEnum(f, c, int(e), namesSymbolKind[:], "SymbolKind")
+	formatEnum(f, int(e), namesSymbolKind[:], "SymbolKind")
 }
 
 func (e TextDocumentSaveReason) Format(f fmt.State, c rune) {
-	formatEnum(f, c, int(e), namesTextDocumentSaveReason[:], "TextDocumentSaveReason")
+	formatEnum(f, int(e), namesTextDocumentSaveReason[:], "TextDocumentSaveReason")
 }

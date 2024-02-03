@@ -266,7 +266,10 @@ func defaultDriver(cfg *Config, patterns ...string) (*DriverResponse, bool, erro
 	}
 
 	response, err := goListDriver(cfg, patterns...)
-	return response, false, err
+	if err != nil {
+		return nil, false, err
+	}
+	return response, false, nil
 }
 
 // A Package describes a loaded Go package.

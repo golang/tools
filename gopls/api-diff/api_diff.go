@@ -9,7 +9,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -50,8 +49,7 @@ func main() {
 }
 
 func diffAPI(oldVer, newVer string) (string, error) {
-	ctx := context.Background()
-	previousAPI, err := loadAPI(ctx, oldVer)
+	previousAPI, err := loadAPI(oldVer)
 	if err != nil {
 		return "", fmt.Errorf("loading %s: %v", oldVer, err)
 	}
@@ -60,7 +58,7 @@ func diffAPI(oldVer, newVer string) (string, error) {
 		currentAPI = settings.GeneratedAPIJSON
 	} else {
 		var err error
-		currentAPI, err = loadAPI(ctx, newVer)
+		currentAPI, err = loadAPI(newVer)
 		if err != nil {
 			return "", fmt.Errorf("loading %s: %v", newVer, err)
 		}
@@ -69,7 +67,7 @@ func diffAPI(oldVer, newVer string) (string, error) {
 	return cmp.Diff(previousAPI, currentAPI), nil
 }
 
-func loadAPI(ctx context.Context, version string) (*settings.APIJSON, error) {
+func loadAPI(version string) (*settings.APIJSON, error) {
 	ver := fmt.Sprintf("golang.org/x/tools/gopls@%s", version)
 	cmd := exec.Command("go", "run", ver, "api-json")
 

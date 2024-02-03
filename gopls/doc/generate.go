@@ -114,7 +114,7 @@ func loadAPI() (*settings.APIJSON, error) {
 		Analyzers: loadAnalyzers(defaults.DefaultAnalyzers), // no staticcheck analyzers
 	}
 
-	api.Commands, err = loadCommands(pkg)
+	api.Commands, err = loadCommands()
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +403,7 @@ func valueDoc(name, value, doc string) string {
 	return fmt.Sprintf("`%s`: %s", value, doc)
 }
 
-func loadCommands(pkg *packages.Package) ([]*settings.CommandJSON, error) {
+func loadCommands() ([]*settings.CommandJSON, error) {
 	var commands []*settings.CommandJSON
 
 	_, cmds, err := commandmeta.Load()

@@ -18,7 +18,7 @@ func TestChangeConfiguration(t *testing.T) {
 	// Staticcheck only supports Go versions >= 1.19.
 	// Note: keep this in sync with TestStaticcheckWarning. Below this version we
 	// should get an error when setting staticcheck configuration.
-	testenv.NeedsGo1Point(t, 19)
+	testenv.NeedsGo1Point(t, 20)
 
 	const files = `
 -- go.mod --
@@ -55,7 +55,7 @@ var FooErr = errors.New("foo")
 //
 // Gopls should not get confused about buffer content when recreating the view.
 func TestMajorOptionsChange(t *testing.T) {
-	testenv.NeedsGo1Point(t, 19) // needs staticcheck
+	testenv.NeedsGo1Point(t, 20) // needs staticcheck
 
 	const files = `
 -- go.mod --
@@ -96,7 +96,7 @@ var ErrFoo = errors.New("foo")
 
 func TestStaticcheckWarning(t *testing.T) {
 	// Note: keep this in sync with TestChangeConfiguration.
-	testenv.SkipAfterGo1Point(t, 16)
+	testenv.SkipAfterGo1Point(t, 19)
 
 	const files = `
 -- go.mod --

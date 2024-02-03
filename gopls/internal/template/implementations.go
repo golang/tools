@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/semtok"
 )
 
 // line number (1-based) and message
@@ -155,7 +156,7 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	return ans, nil
 }
 
-func SemanticTokens(ctx context.Context, snapshot *cache.Snapshot, spn protocol.DocumentURI, add func(line, start, len uint32), d func() []uint32) (*protocol.SemanticTokens, error) {
+func SemanticTokens(ctx context.Context, snapshot *cache.Snapshot, spn protocol.DocumentURI) (*protocol.SemanticTokens, error) {
 	fh, err := snapshot.ReadFile(ctx, spn)
 	if err != nil {
 		return nil, err
@@ -165,6 +166,17 @@ func SemanticTokens(ctx context.Context, snapshot *cache.Snapshot, spn protocol.
 		return nil, err
 	}
 	p := parseBuffer(buf)
+
+	var items []semtok.Token
+	add := func(line, start, len uint32) {
+		// TODO(adonovan): don't ignore the rng restriction, if any.
+		items = append(items, semtok.Token{
+			Line:  line,
+			Start: start,
+			Len:   len,
+			Type:  semtok.TokMacro,
+		})
+	}
 
 	for _, t := range p.Tokens() {
 		if t.Multiline {
@@ -184,9 +196,15 @@ func SemanticTokens(ctx context.Context, snapshot *cache.Snapshot, spn protocol.
 		line, col := p.LineCol(t.Start)
 		add(line, col, uint32(sz))
 	}
-	data := d()
+	const noStrings = false
+	const noNumbers = false
 	ans := &protocol.SemanticTokens{
-		Data: data,
+		Data: semtok.Encode(
+			items,
+			noStrings,
+			noNumbers,
+			snapshot.Options().SemanticTypes,
+			snapshot.Options().SemanticMods),
 		// for small cache, some day. for now, the LSP client ignores this
 		// (that is, when the LSP client starts returning these, we can cache)
 		ResultID: fmt.Sprintf("%v", time.Now()),

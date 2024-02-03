@@ -25,10 +25,8 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/mod/modfile"
-	"golang.org/x/mod/semver"
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/maps"
@@ -125,6 +123,10 @@ type View struct {
 	// initialization of snapshots. Do not change it without adjusting snapshot
 	// accordingly.
 	initializationSema chan struct{}
+
+	// Document filters are constructed once, in View.filterFunc.
+	filterFuncOnce sync.Once
+	_filterFunc    func(protocol.DocumentURI) bool // only accessed by View.filterFunc
 }
 
 // definition implements the viewDefiner interface.
@@ -494,19 +496,26 @@ func (s *Snapshot) locateTemplateFiles(ctx context.Context) {
 
 // filterFunc returns a func that reports whether uri is filtered by the currently configured
 // directoryFilters.
-//
-// TODO(rfindley): memoize this func or filterer, as it is invariant on the
-// view.
 func (v *View) filterFunc() func(protocol.DocumentURI) bool {
-	folderDir := v.folder.Dir.Path()
-	filterer := buildFilterer(folderDir, v.folder.Env.GOMODCACHE, v.folder.Options.DirectoryFilters)
-	return func(uri protocol.DocumentURI) bool {
-		// Only filter relative to the configured root directory.
-		if pathutil.InDir(folderDir, uri.Path()) {
-			return relPathExcludedByFilter(strings.TrimPrefix(uri.Path(), folderDir), filterer)
+	v.filterFuncOnce.Do(func() {
+		folderDir := v.folder.Dir.Path()
+		gomodcache := v.folder.Env.GOMODCACHE
+		var filters []string
+		filters = append(filters, v.folder.Options.DirectoryFilters...)
+		if pref := strings.TrimPrefix(gomodcache, folderDir); pref != gomodcache {
+			modcacheFilter := "-" + strings.TrimPrefix(filepath.ToSlash(pref), "/")
+			filters = append(filters, modcacheFilter)
 		}
-		return false
-	}
+		filterer := NewFilterer(filters)
+		v._filterFunc = func(uri protocol.DocumentURI) bool {
+			// Only filter relative to the configured root directory.
+			if pathutil.InDir(folderDir, uri.Path()) {
+				return relPathExcludedByFilter(strings.TrimPrefix(uri.Path(), folderDir), filterer)
+			}
+			return false
+		}
+	})
+	return v._filterFunc
 }
 
 // shutdown releases resources associated with the view.
@@ -1290,47 +1299,6 @@ func globsMatchPath(globs, target string) bool {
 
 var modFlagRegexp = regexp.MustCompile(`-mod[ =](\w+)`)
 
-// TODO(rstambler): Consolidate modURI and modContent back into a FileHandle
-// after we have a version of the workspace go.mod file on disk. Getting a
-// FileHandle from the cache for temporary files is problematic, since we
-// cannot delete it.
-//
-// TODO(rfindley): move this to snapshot.go.
-func (s *Snapshot) vendorEnabled(ctx context.Context, modURI protocol.DocumentURI, modContent []byte) (bool, error) {
-	// Legacy GOPATH workspace?
-	if len(s.view.workspaceModFiles) == 0 {
-		return false, nil
-	}
-
-	// Explicit -mod flag?
-	matches := modFlagRegexp.FindStringSubmatch(s.view.folder.Env.GOFLAGS)
-	if len(matches) != 0 {
-		modFlag := matches[1]
-		if modFlag != "" {
-			// Don't override an explicit '-mod=vendor' argument.
-			// We do want to override '-mod=readonly': it would break various module code lenses,
-			// and on 1.16 we know -modfile is available, so we won't mess with go.mod anyway.
-			return modFlag == "vendor", nil
-		}
-	}
-
-	modFile, err := modfile.Parse(modURI.Path(), modContent, nil)
-	if err != nil {
-		return false, err
-	}
-
-	// No vendor directory?
-	// TODO(golang/go#57514): this is wrong if the working dir is not the module
-	// root.
-	if fi, err := os.Stat(filepath.Join(s.view.root.Path(), "vendor")); err != nil || !fi.IsDir() {
-		return false, nil
-	}
-
-	// Vendoring enabled by default by go declaration in go.mod?
-	vendorEnabled := modFile.Go != nil && modFile.Go.Version != "" && semver.Compare("v"+modFile.Go.Version, "v1.14") >= 0
-	return vendorEnabled, nil
-}
-
 // TODO(rfindley): clean up the redundancy of allFilesExcluded,
 // pathExcludedByFilterFunc, pathExcludedByFilter, view.filterFunc...
 func allFilesExcluded(files []string, filterFunc func(protocol.DocumentURI) bool) bool {
@@ -1346,14 +1314,4 @@ func allFilesExcluded(files []string, filterFunc func(protocol.DocumentURI) bool
 func relPathExcludedByFilter(path string, filterer *Filterer) bool {
 	path = strings.TrimPrefix(filepath.ToSlash(path), "/")
 	return filterer.Disallow(path)
-}
-
-func buildFilterer(folder, gomodcache string, directoryFilters []string) *Filterer {
-	var filters []string
-	filters = append(filters, directoryFilters...)
-	if pref := strings.TrimPrefix(gomodcache, folder); pref != gomodcache {
-		modcacheFilter := "-" + strings.TrimPrefix(filepath.ToSlash(pref), "/")
-		filters = append(filters, modcacheFilter)
-	}
-	return NewFilterer(filters)
 }
