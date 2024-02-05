@@ -275,28 +275,30 @@ findEnclosingFunc:
 		}
 	}
 
-	ast.Inspect(funcBody, func(n ast.Node) bool {
-		switch n := n.(type) {
-		case *ast.FuncDecl, *ast.FuncLit:
-			// Don't traverse into any functions other than enclosingFunc.
-			return false
-		case *ast.ReturnStmt:
-			if highlightAll {
-				// Add the entire return statement.
-				result[posRange{n.Pos(), n.End()}] = unit{}
-			} else {
-				// Add the highlighted indexes.
-				for i, expr := range n.Results {
-					if highlightIndexes[i] {
-						result[posRange{expr.Pos(), expr.End()}] = unit{}
+	if funcBody != nil {
+		ast.Inspect(funcBody, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.FuncDecl, *ast.FuncLit:
+				// Don't traverse into any functions other than enclosingFunc.
+				return false
+			case *ast.ReturnStmt:
+				if highlightAll {
+					// Add the entire return statement.
+					result[posRange{n.Pos(), n.End()}] = unit{}
+				} else {
+					// Add the highlighted indexes.
+					for i, expr := range n.Results {
+						if highlightIndexes[i] {
+							result[posRange{expr.Pos(), expr.End()}] = unit{}
+						}
 					}
 				}
-			}
-			return false
+				return false
 
-		}
-		return true
-	})
+			}
+			return true
+		})
+	}
 }
 
 // highlightUnlabeledBreakFlow highlights the innermost enclosing for/range/switch or swlect

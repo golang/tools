@@ -1,0 +1,7 @@
+This test checks that gopls doesn't crash while highlighting functions with no
+body (golang/go#65516).
+
+-- p.go --
+package p
+
+func Foo() (int, string) //@highlight("int", "int"), highlight("func", "func")
