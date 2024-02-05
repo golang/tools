@@ -1289,7 +1289,7 @@ import (
 	}
 }
 
-func BenchmarkScanModCache(b *testing.B) {
+func BenchmarkModuleResolver_RescanModCache(b *testing.B) {
 	env := &ProcessEnv{
 		GocmdRunner: &gocommand.Runner{},
 		// Uncomment for verbose logging (too verbose to enable by default).
@@ -1307,5 +1307,19 @@ func BenchmarkScanModCache(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		scanToSlice(resolver, exclude)
 		resolver.(*ModuleResolver).ClearForNewScan()
+	}
+}
+
+func BenchmarkModuleResolver_InitialScan(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		env := &ProcessEnv{
+			GocmdRunner: &gocommand.Runner{},
+		}
+		exclude := []gopathwalk.RootType{gopathwalk.RootGOROOT}
+		resolver, err := env.GetResolver()
+		if err != nil {
+			b.Fatal(err)
+		}
+		scanToSlice(resolver, exclude)
 	}
 }
