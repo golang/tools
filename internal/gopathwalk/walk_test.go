@@ -37,17 +37,19 @@ func TestSymlinkTraversal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pkgs := []string{}
+	pkgc := make(chan []string, 1)
+	pkgc <- nil
 	add := func(root Root, dir string) {
 		rel, err := filepath.Rel(filepath.Join(root.Path, "src"), dir)
 		if err != nil {
 			t.Error(err)
 		}
-		pkgs = append(pkgs, filepath.ToSlash(rel))
+		pkgc <- append(<-pkgc, filepath.ToSlash(rel))
 	}
 
 	Walk([]Root{{Path: gopath, Type: RootGOPATH}}, add, Options{Logf: t.Logf})
 
+	pkgs := <-pkgc
 	sort.Strings(pkgs)
 	t.Logf("Found packages:\n\t%s", strings.Join(pkgs, "\n\t"))
 
