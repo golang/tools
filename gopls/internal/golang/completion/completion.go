@@ -305,6 +305,9 @@ type completionContext struct {
 
 	// packageCompletion is true if we are completing a package name.
 	packageCompletion bool
+
+	// removeBeforePeriod is true if we are removing content before the period.
+	removeBeforePeriod bool
 }
 
 // A Selection represents the cursor position and surrounding identifier.
@@ -734,6 +737,12 @@ func (c *completer) containingIdent(src []byte) *ast.Ident {
 		// is a keyword. This improves completion after an "accidental
 		// keyword", e.g. completing to "variance" in "someFunc(var<>)".
 		return fakeIdent
+	} else if c.isCompletionAllowed() && tkn == token.IDENT {
+		// Use manually extracted token even when syntax is incomplete
+		// or contains errors. This provides better developer experience.
+		// Only for certain conditions: when completion is allowed and
+		// the token is an IDENT.
+		return fakeIdent
 	}
 
 	return nil
@@ -743,6 +752,7 @@ func (c *completer) containingIdent(src []byte) *ast.Ident {
 func (c *completer) scanToken(contents []byte) (token.Pos, token.Token, string) {
 	tok := c.pkg.FileSet().File(c.pos)
 
+	var prdPos token.Pos
 	var s scanner.Scanner
 	s.Init(tok, contents, nil, 0)
 	for {
@@ -750,6 +760,14 @@ func (c *completer) scanToken(contents []byte) (token.Pos, token.Token, string) 
 		if tkn == token.EOF || tknPos >= c.pos {
 			return token.NoPos, token.ILLEGAL, ""
 		}
+
+		if tkn == token.PERIOD {
+			prdPos = tknPos
+		}
+		// Set removeBeforePeriod to true if cursor is:
+		// - Right after the period (e.g., "foo.")
+		// - One or more characters after the period (e.g., "foo.b", "foo.bar")
+		c.completionContext.removeBeforePeriod = tknPos == prdPos || tknPos == prdPos+1
 
 		if len(lit) > 0 && tknPos <= c.pos && c.pos <= tknPos+token.Pos(len(lit)) {
 			return tknPos, tkn, lit
@@ -3281,5 +3299,27 @@ func forEachPackageMember(content []byte, f func(tok token.Token, id *ast.Ident,
 				f(token.FUNC, decl.Name, decl)
 			}
 		}
+	}
+}
+
+// isCompletionAllowed checks whether completion is allowed even
+// if the current source is incomplete or contains syntax errors.
+func (c *completer) isCompletionAllowed() bool {
+	// Examples
+	//
+	// BlockStmt:
+	//  minimum, maximum := 0, 0
+	//  minimum, max
+	// BadExpr:
+	//  math.Sqrt(,0)
+	//  math.Ab
+	// CallExpr:
+	//  value := 0
+	//  fmt.Println("value:" val)
+	switch c.path[0].(type) {
+	case *ast.BlockStmt, *ast.BadExpr, *ast.CallExpr:
+		return true
+	default:
+		return false
 	}
 }

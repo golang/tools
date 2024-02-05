@@ -67,6 +67,15 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 		}
 	}
 
+	// If source contains syntax errors and removeBeforePeriod is true,
+	// update the label and insert text with the content after the period.
+	if c.isCompletionAllowed() && c.completionContext.removeBeforePeriod {
+		_, afterPeriod, found := strings.Cut(insert, ".")
+		if found {
+			label = afterPeriod
+			insert = afterPeriod
+		}
+	}
 	snip.WriteText(insert)
 
 	switch obj := obj.(type) {
