@@ -244,7 +244,7 @@ import _ "rsc.io/sampler"
 	// Clear out the resolver's cache, since we've changed the environment.
 	mt.env.Env["GOFLAGS"] = "-mod=vendor"
 	mt.env.ClearModuleInfo()
-	mt.env.resolver.ClearForNewScan()
+	mt.env.UpdateResolver(mt.env.resolver.ClearForNewScan())
 	mt.assertModuleFoundInDir("rsc.io/sampler", "sampler", `/vendor/`)
 }
 
@@ -1314,7 +1314,7 @@ func BenchmarkModuleResolver_RescanModCache(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		scanToSlice(resolver, exclude)
-		resolver.(*ModuleResolver).ClearForNewScan()
+		resolver = resolver.ClearForNewScan()
 	}
 }
 

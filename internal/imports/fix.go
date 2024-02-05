@@ -701,20 +701,21 @@ func ScoreImportPaths(ctx context.Context, env *ProcessEnv, paths []string) (map
 	return result, nil
 }
 
-func PrimeCache(ctx context.Context, env *ProcessEnv) error {
+func PrimeCache(ctx context.Context, resolver Resolver) error {
 	// Fully scan the disk for directories, but don't actually read any Go files.
 	callback := &scanCallback{
-		rootFound: func(gopathwalk.Root) bool {
-			return true
+		rootFound: func(root gopathwalk.Root) bool {
+			// See getCandidatePkgs: walking GOROOT is apparently expensive and
+			// unnecessary.
+			return root.Type != gopathwalk.RootGOROOT
 		},
 		dirFound: func(pkg *pkg) bool {
 			return false
 		},
-		packageNameLoaded: func(pkg *pkg) bool {
-			return false
-		},
+		// packageNameLoaded and exportsLoaded must never be called.
 	}
-	return getCandidatePkgs(ctx, callback, "", "", env)
+
+	return resolver.scan(ctx, callback)
 }
 
 func candidateImportName(pkg *pkg) string {
@@ -1089,7 +1090,12 @@ type Resolver interface {
 	// scoreImportPath returns the relevance for an import path.
 	scoreImportPath(ctx context.Context, path string) float64
 
-	ClearForNewScan()
+	// ClearForNewScan returns a new Resolver based on the receiver that has
+	// cleared its internal caches of directory contents.
+	//
+	// The new resolver should be primed and then set via
+	// [ProcessEnv.UpdateResolver].
+	ClearForNewScan() Resolver
 }
 
 // A scanCallback controls a call to scan and receives its results.
@@ -1270,11 +1276,8 @@ func newGopathResolver(env *ProcessEnv) *gopathResolver {
 	return r
 }
 
-func (r *gopathResolver) ClearForNewScan() {
-	<-r.scanSema
-	r.cache = NewDirInfoCache()
-	r.walked = false
-	r.scanSema <- struct{}{}
+func (r *gopathResolver) ClearForNewScan() Resolver {
+	return newGopathResolver(r.env)
 }
 
 func (r *gopathResolver) loadPackageNames(importPaths []string, srcDir string) (map[string]string, error) {

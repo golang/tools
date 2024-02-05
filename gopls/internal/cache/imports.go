@@ -207,21 +207,23 @@ func (s *importsState) refreshProcessEnv() {
 	start := time.Now()
 
 	s.mu.Lock()
-	env := s.processEnv
-	if resolver, err := s.processEnv.GetResolver(); err == nil {
-		resolver.ClearForNewScan()
-	}
-	// TODO(rfindley): it's not clear why we're unlocking here. Shouldn't we
-	// guard the use of env below? In any case, we can prime a separate resolver.
+	resolver, err := s.processEnv.GetResolver()
 	s.mu.Unlock()
+	if err != nil {
+		return
+	}
 
 	event.Log(s.ctx, "background imports cache refresh starting")
 
-	// TODO(rfindley, golang/go#59216): do this priming with a separate resolver,
-	// and then replace, so that we never have to wait on an unprimed cache.
-	if err := imports.PrimeCache(context.Background(), env); err == nil {
+	// Prime the new resolver before updating the processEnv, so that gopls
+	// doesn't wait on an unprimed cache.
+	if err := imports.PrimeCache(context.Background(), resolver); err == nil {
 		event.Log(ctx, fmt.Sprintf("background refresh finished after %v", time.Since(start)))
 	} else {
 		event.Log(ctx, fmt.Sprintf("background refresh finished after %v", time.Since(start)), keys.Err.Of(err))
 	}
+
+	s.mu.Lock()
+	s.processEnv.UpdateResolver(resolver)
+	s.mu.Unlock()
 }

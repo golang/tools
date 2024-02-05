@@ -30,16 +30,11 @@ import (
 // both caused by populating the cache, albeit in slightly different ways.
 //
 // A high level list of TODOs:
-//  - Write an additional benchmark for refreshing the directory state.
-//  - Split scanning the module cache from other ModuleResolver functionality,
-//    as it is the source of performance woes (and inconsistency).
-//  - Allow sharing module cache state across multiple ModuleResolvers.
 //  - Optimize the scan itself, as there is some redundancy statting and
 //    reading go.mod files.
-//  - Make it possible to reuse the current state while running a refresh in
-//    the background.
-//  - Fix context cancellation (again): if the context is cancelled while a
-//    root is being walked, nothing stops that ongoing walk.
+//  - Invert the relationship between ProcessEnv and Resolver (see the
+//    docstring of ProcessEnv).
+//  - Make it easier to use an external resolver implementation.
 //
 // Smaller TODOs are annotated in the code below.
 
@@ -72,7 +67,11 @@ type ModuleResolver struct {
 	modsByDir      []*gocommand.ModuleJSON          // ...or by the number of path components in their Dir.
 
 	// Scanning state, populated by scan
-	scanSema     chan struct{}            // prevents concurrent scans and guards scannedRoots
+
+	// scanSema prevents concurrent scans, and guards scannedRoots and the cache
+	// fields below (though the caches themselves are concurrency safe).
+	// Receive to acquire, send to release.
+	scanSema     chan struct{}
 	scannedRoots map[gopathwalk.Root]bool // if true, root has been walked
 
 	// Caches of directory info, populated by scans and scan callbacks
@@ -86,12 +85,16 @@ type ModuleResolver struct {
 	otherCache       *DirInfoCache
 }
 
+// newModuleResolver returns a new module-aware goimports resolver.
+//
+// Note: use caution when modifying this constructor: changes must also be
+// reflected in ModuleResolver.ClearForNewScan.
 func newModuleResolver(e *ProcessEnv, moduleCacheCache *DirInfoCache) (*ModuleResolver, error) {
 	r := &ModuleResolver{
 		env:      e,
 		scanSema: make(chan struct{}, 1),
 	}
-	r.scanSema <- struct{}{}
+	r.scanSema <- struct{}{} // release
 
 	goenv, err := r.env.goEnv()
 	if err != nil {
@@ -265,10 +268,23 @@ func (r *ModuleResolver) initAllMods() error {
 // It preserves the set of roots, but forgets about the set of directories.
 // Though it forgets the set of module cache directories, it remembers their
 // contents, since they are assumed to be immutable.
-func (r *ModuleResolver) ClearForNewScan() {
-	<-r.scanSema
-	prevRoots := r.scannedRoots
-	r.scannedRoots = map[gopathwalk.Root]bool{}
+func (r *ModuleResolver) ClearForNewScan() Resolver {
+	<-r.scanSema // acquire r, to guard scannedRoots
+	r2 := &ModuleResolver{
+		env:            r.env,
+		dummyVendorMod: r.dummyVendorMod,
+		moduleCacheDir: r.moduleCacheDir,
+		roots:          r.roots,
+		mains:          r.mains,
+		mainByDir:      r.mainByDir,
+		modsByModPath:  r.modsByModPath,
+
+		scanSema:         make(chan struct{}, 1),
+		scannedRoots:     make(map[gopathwalk.Root]bool),
+		otherCache:       NewDirInfoCache(),
+		moduleCacheCache: r.moduleCacheCache,
+	}
+	r2.scanSema <- struct{}{} // r2 must start released
 	// Invalidate root scans. We don't need to invalidate module cache roots,
 	// because they are immutable.
 	// (We don't support a use case where GOMODCACHE is cleaned in the middle of
@@ -278,12 +294,12 @@ func (r *ModuleResolver) ClearForNewScan() {
 	// Scanning for new directories in GOMODCACHE should be handled elsewhere,
 	// via a call to ScanModuleCache.
 	for _, root := range r.roots {
-		if root.Type == gopathwalk.RootModuleCache && prevRoots[root] {
-			r.scannedRoots[root] = true
+		if root.Type == gopathwalk.RootModuleCache && r.scannedRoots[root] {
+			r2.scannedRoots[root] = true
 		}
 	}
-	r.otherCache = NewDirInfoCache()
-	r.scanSema <- struct{}{}
+	r.scanSema <- struct{}{} // release r
+	return r2
 }
 
 // ClearModuleInfo invalidates resolver state that depends on go.mod file
@@ -299,14 +315,25 @@ func (e *ProcessEnv) ClearModuleInfo() {
 	if r, ok := e.resolver.(*ModuleResolver); ok {
 		resolver, resolverErr := newModuleResolver(e, e.ModCache)
 		if resolverErr == nil {
-			<-r.scanSema // guards caches
+			<-r.scanSema // acquire (guards caches)
 			resolver.moduleCacheCache = r.moduleCacheCache
 			resolver.otherCache = r.otherCache
-			r.scanSema <- struct{}{}
+			r.scanSema <- struct{}{} // release
 		}
 		e.resolver = resolver
 		e.resolverErr = resolverErr
 	}
+}
+
+// UpdateResolver sets the resolver for the ProcessEnv to use in imports
+// operations. Only for use with the result of [Resolver.ClearForNewScan].
+//
+// TODO(rfindley): this awkward API is a result of the (arguably) inverted
+// relationship between configuration and state described in the doc comment
+// for [ProcessEnv].
+func (e *ProcessEnv) UpdateResolver(r Resolver) {
+	e.resolver = r
+	e.resolverErr = nil
 }
 
 // findPackage returns the module and directory from within the main modules
@@ -580,9 +607,9 @@ func (r *ModuleResolver) scan(ctx context.Context, callback *scanCallback) error
 		select {
 		case <-ctx.Done():
 			return
-		case <-r.scanSema:
+		case <-r.scanSema: // acquire
 		}
-		defer func() { r.scanSema <- struct{}{} }()
+		defer func() { r.scanSema <- struct{}{} }() // release
 		// We have the lock on r.scannedRoots, and no other scans can run.
 		for _, root := range roots {
 			if ctx.Err() != nil {
