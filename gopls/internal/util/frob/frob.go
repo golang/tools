@@ -93,7 +93,7 @@ func frobFor(t reflect.Type) *frob {
 
 		case reflect.Array,
 			reflect.Slice,
-			reflect.Ptr: // TODO(adonovan): after go1.18, use Pointer
+			reflect.Pointer:
 			fr.addElem(fr.t.Elem())
 
 		case reflect.Map:
@@ -214,7 +214,7 @@ func (fr *frob) encode(out *writer, v reflect.Value) {
 			}
 		}
 
-	case reflect.Ptr: // TODO(adonovan): after go1.18, use Pointer
+	case reflect.Pointer:
 		if v.IsNil() {
 			out.uint8(0)
 		} else {
@@ -341,7 +341,7 @@ func (fr *frob) decode(in *reader, addr reflect.Value) {
 			}
 		}
 
-	case reflect.Ptr: // TODO(adonovan): after go1.18, use Pointer
+	case reflect.Pointer:
 		isNil := in.uint8() == 0
 		if !isNil {
 			ptr := reflect.New(fr.elems[0].t)
