@@ -17,11 +17,7 @@ func Group[K comparable, V any](s []V, key func(V) K) map[K][]V {
 
 // Keys returns the keys of the map M.
 func Keys[M ~map[K]V, K comparable, V any](m M) []K {
-	r := make([]K, 0, len(m))
-	for k := range m {
-		r = append(r, k)
-	}
-	return r
+	return keyS(m)
 }
 
 // SameKeys reports whether x and y have equal sets of keys.
