@@ -818,6 +818,51 @@ use (
 	})
 }
 
+func TestInnerGoWork(t *testing.T) {
+	// This test checks that gopls honors a go.work file defined
+	// inside a go module (golang/go#63917).
+	const workspace = `
+-- go.mod --
+module a.com
+
+require b.com v1.2.3
+-- a/go.work --
+go 1.18
+
+use (
+	..
+	../b
+)
+-- a/a.go --
+package a
+
+import "b.com/b"
+
+var _ = b.B
+-- b/go.mod --
+module b.com/b
+
+-- b/b.go --
+package b
+
+const B = 0
+`
+	WithOptions(
+		// This doesn't work if we open the outer module. I'm not sure it should,
+		// since the go.work file does not apply to the entire module, just a
+		// subdirectory.
+		WorkspaceFolders("a"),
+	).Run(t, workspace, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		loc := env.GoToDefinition(env.RegexpSearch("a/a.go", "b.(B)"))
+		got := env.Sandbox.Workdir.URIToPath(loc.URI)
+		want := "b/b.go"
+		if got != want {
+			t.Errorf("Definition(b.B): got %q, want %q", got, want)
+		}
+	})
+}
+
 func TestNonWorkspaceFileCreation(t *testing.T) {
 	const files = `
 -- work/go.mod --
