@@ -1154,7 +1154,7 @@ func arguments(caller *Caller, calleeDecl *ast.FuncDecl, assign1 func(*types.Var
 
 			// Make * or & explicit.
 			argIsPtr := isPointer(arg.typ)
-			paramIsPtr := isPointer(seln.Obj().Type().(*types.Signature).Recv().Type())
+			paramIsPtr := isPointer(seln.Obj().Type().Underlying().(*types.Signature).Recv().Type())
 			if !argIsPtr && paramIsPtr {
 				// &recv
 				arg.expr = &ast.UnaryExpr{Op: token.AND, X: arg.expr}
