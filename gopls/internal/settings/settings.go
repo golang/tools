@@ -1113,6 +1113,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		result.deprecated("")
 
 	case "allowModfileModifications":
+		result.softErrorf("gopls setting \"allowModfileModifications\" is deprecated.\nPlease comment on https://go.dev/issue/65546 if this impacts your workflow.")
 		result.setBool(&o.AllowModfileModifications)
 
 	case "allowImplicitNetworkAccess":

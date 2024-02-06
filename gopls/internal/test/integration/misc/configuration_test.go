@@ -142,6 +142,7 @@ func TestDeprecatedSettings(t *testing.T) {
 			"experimentalWatchedFileDelay":   "1s",
 			"experimentalWorkspaceModule":    true,
 			"tempModfile":                    true,
+			"allowModfileModifications":      true,
 		},
 	).Run(t, "", func(t *testing.T, env *Env) {
 		env.OnceMet(
@@ -150,6 +151,7 @@ func TestDeprecatedSettings(t *testing.T) {
 			ShownMessage("experimentalUseInvalidMetadata"),
 			ShownMessage("experimentalWatchedFileDelay"),
 			ShownMessage("tempModfile"),
+			ShownMessage("allowModfileModifications"),
 		)
 	})
 }
