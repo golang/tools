@@ -4,7 +4,10 @@ directives.
 Note that gofumpt is needed for this test case, as it reformats var decls into
 short var decls.
 
-Note that gofumpt requires Go 1.18.
+Note that gofumpt requires Go 1.20.
+
+-- flags --
+-min_go=go1.20
 
 -- settings.json --
 {

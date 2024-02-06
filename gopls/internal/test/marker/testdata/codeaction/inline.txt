@@ -1,7 +1,7 @@
 This is a minimal test of the refactor.inline code action.
 
 -- go.mod --
-module testdata/codeaction
+module example.com/codeaction
 go 1.18
 
 -- a/a.go --

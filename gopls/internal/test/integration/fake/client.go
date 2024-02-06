@@ -8,8 +8,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
+	"path/filepath"
 
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake/glob"
 )
 
@@ -130,8 +132,15 @@ func (c *Client) RegisterCapability(ctx context.Context, params *protocol.Regist
 			}
 			var globs []*glob.Glob
 			for _, watcher := range opts.Watchers {
+				var globPattern string
+				switch pattern := watcher.GlobPattern.Value.(type) {
+				case protocol.Pattern:
+					globPattern = pattern
+				case protocol.RelativePattern:
+					globPattern = path.Join(filepath.ToSlash(pattern.BaseURI.Path()), pattern.Pattern)
+				}
 				// TODO(rfindley): honor the watch kind.
-				g, err := glob.Parse(watcher.GlobPattern)
+				g, err := glob.Parse(globPattern)
 				if err != nil {
 					return fmt.Errorf("error parsing glob pattern %q: %v", watcher.GlobPattern, err)
 				}

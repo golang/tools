@@ -1,0 +1,42 @@
+This test checks the behavior of standalone packages, in particular documenting
+our failure to support test files as standalone packages (golang/go#64233).
+
+-- go.mod --
+module golang.org/lsptests/a
+
+go 1.20
+
+-- a.go --
+package a
+
+func F() {} //@loc(F, "F")
+
+-- standalone.go --
+//go:build ignore
+package main
+
+import "golang.org/lsptests/a"
+
+func main() {
+	a.F() //@def("F", F)
+}
+
+-- standalone_test.go --
+//go:build ignore
+package main //@diag("main", re"No packages found")
+
+import "golang.org/lsptests/a"
+
+func main() {
+	a.F() //@hovererr("F", "no package")
+}
+
+-- standalone_x_test.go --
+//go:build ignore
+package main_test //@diag("main", re"No packages found")
+
+import "golang.org/lsptests/a"
+
+func main() {
+	a.F() //@hovererr("F", "no package")
+}

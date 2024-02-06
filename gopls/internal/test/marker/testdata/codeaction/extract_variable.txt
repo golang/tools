@@ -1,4 +1,5 @@
 This test checks the behavior of the 'extract variable' code action.
+See extract_variable_resolve.txt for the same test with resolve support.
 
 -- flags --
 -ignore_extra_diags

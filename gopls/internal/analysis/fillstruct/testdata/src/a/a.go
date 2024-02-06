@@ -19,16 +19,16 @@ type basicStruct struct {
 	foo int
 }
 
-var _ = basicStruct{} // want `Fill basicStruct`
+var _ = basicStruct{} // want `basicStruct literal has missing fields`
 
 type twoArgStruct struct {
 	foo int
 	bar string
 }
 
-var _ = twoArgStruct{} // want `Fill twoArgStruct`
+var _ = twoArgStruct{} // want `twoArgStruct literal has missing fields`
 
-var _ = twoArgStruct{ // want `Fill twoArgStruct`
+var _ = twoArgStruct{ // want `twoArgStruct literal has missing fields`
 	bar: "bar",
 }
 
@@ -37,9 +37,9 @@ type nestedStruct struct {
 	basic basicStruct
 }
 
-var _ = nestedStruct{} // want `Fill nestedStruct`
+var _ = nestedStruct{} // want `nestedStruct literal has missing fields`
 
-var _ = data.B{} // want `Fill b.B`
+var _ = data.B{} // want `b.B literal has missing fields`
 
 type typedStruct struct {
 	m  map[string]int
@@ -49,25 +49,25 @@ type typedStruct struct {
 	a  [2]string
 }
 
-var _ = typedStruct{} // want `Fill typedStruct`
+var _ = typedStruct{} // want `typedStruct literal has missing fields`
 
 type funStruct struct {
 	fn func(i int) int
 }
 
-var _ = funStruct{} // want `Fill funStruct`
+var _ = funStruct{} // want `funStruct literal has missing fields`
 
 type funStructComplex struct {
 	fn func(i int, s string) (string, int)
 }
 
-var _ = funStructComplex{} // want `Fill funStructComplex`
+var _ = funStructComplex{} // want `funStructComplex literal has missing fields`
 
 type funStructEmpty struct {
 	fn func()
 }
 
-var _ = funStructEmpty{} // want `Fill funStructEmpty`
+var _ = funStructEmpty{} // want `funStructEmpty literal has missing fields`
 
 type Foo struct {
 	A int
@@ -78,7 +78,7 @@ type Bar struct {
 	Y *Foo
 }
 
-var _ = Bar{} // want `Fill Bar`
+var _ = Bar{} // want `Bar literal has missing fields`
 
 type importedStruct struct {
 	m  map[*ast.CompositeLit]ast.Field
@@ -89,7 +89,7 @@ type importedStruct struct {
 	st ast.CompositeLit
 }
 
-var _ = importedStruct{} // want `Fill importedStruct`
+var _ = importedStruct{} // want `importedStruct literal has missing fields`
 
 type pointerBuiltinStruct struct {
 	b *bool
@@ -97,17 +97,16 @@ type pointerBuiltinStruct struct {
 	i *int
 }
 
-var _ = pointerBuiltinStruct{} // want `Fill pointerBuiltinStruct`
+var _ = pointerBuiltinStruct{} // want `pointerBuiltinStruct literal has missing fields`
 
 var _ = []ast.BasicLit{
-	{}, // want `Fill go/ast.BasicLit`
+	{}, // want `go/ast.BasicLit literal has missing fields`
 }
 
-var _ = []ast.BasicLit{{}, // want "go/ast.BasicLit"
-}
+var _ = []ast.BasicLit{{}} // want "go/ast.BasicLit literal has missing fields"
 
 type unsafeStruct struct {
 	foo unsafe.Pointer
 }
 
-var _ = unsafeStruct{} // want `Fill unsafeStruct`
+var _ = unsafeStruct{} // want `unsafeStruct literal has missing fields`

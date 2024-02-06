@@ -9,7 +9,7 @@ import (
 
 	. "golang.org/x/tools/gopls/internal/test/integration"
 
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 )
 
 const basicProxy = `
@@ -51,8 +51,7 @@ func _() {
 	).Run(t, pkgThatUsesVendoring, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a1.go")
 		d := &protocol.PublishDiagnosticsParams{}
-		env.OnceMet(
-			InitialWorkspaceLoad,
+		env.AfterChange(
 			Diagnostics(env.AtRegexp("go.mod", "module mod.com"), WithMessage("Inconsistent vendoring")),
 			ReadDiagnostics("go.mod", d),
 		)

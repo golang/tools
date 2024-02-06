@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
-	"golang.org/x/tools/gopls/internal/lsp/source/completion"
+	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/golang/completion"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/template"
@@ -116,7 +116,7 @@ func toProtocolCompletionItems(candidates []completion.CompletionItem, rng proto
 		doc := &protocol.Or_CompletionItem_documentation{
 			Value: protocol.MarkupContent{
 				Kind:  protocol.Markdown,
-				Value: source.CommentToMarkdown(candidate.Documentation, options),
+				Value: golang.CommentToMarkdown(candidate.Documentation, options),
 			},
 		}
 		if options.PreferredContentFormat != protocol.Markdown {

@@ -8,8 +8,8 @@ import (
 	"context"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 )
@@ -28,7 +28,7 @@ func (s *server) SignatureHelp(ctx context.Context, params *protocol.SignatureHe
 		return nil, nil // empty result
 	}
 
-	info, activeParameter, err := source.SignatureHelp(ctx, snapshot, fh, params.Position)
+	info, activeParameter, err := golang.SignatureHelp(ctx, snapshot, fh, params.Position)
 	if err != nil {
 		event.Error(ctx, "no signature help", err, tag.Position.Of(params.Position))
 		return nil, nil // sic? There could be many reasons for failure.

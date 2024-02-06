@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package stubmethods defines an analyzer for missing interface methods.
+// Package stubmethods defines a code action for missing interface methods.
 //
 // # Analyzer stubmethods
 //
@@ -34,5 +34,5 @@
 //
 // (At least, it appears to behave that way, but technically it
 // doesn't use the SuggestedFix mechanism and the stub is created by
-// logic in gopls's source.stub function.)
+// logic in gopls's golang.stub function.)
 package stubmethods

@@ -13,7 +13,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"go/build"
 	"io"
 	"os"
 	"path"
@@ -50,6 +49,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestEndToEnd(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+
 	stringer := stringerPath(t)
 	// Read the testdata directory.
 	fd, err := os.Open("testdata")
@@ -76,8 +77,8 @@ func TestEndToEnd(t *testing.T) {
 			continue
 		}
 		t.Run(name, func(t *testing.T) {
-			if name == "cgo.go" && !build.Default.CgoEnabled {
-				t.Skipf("cgo is not enabled for %s", name)
+			if name == "cgo.go" {
+				testenv.NeedsTool(t, "cgo")
 			}
 			stringerCompileAndRun(t, t.TempDir(), stringer, typeName(name), name)
 		})
@@ -155,6 +156,8 @@ func TestTags(t *testing.T) {
 // TestConstValueChange verifies that if a constant value changes and
 // the stringer code is not regenerated, we'll get a compiler error.
 func TestConstValueChange(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+
 	stringer := stringerPath(t)
 	dir := t.TempDir()
 	source := filepath.Join(dir, "day.go")

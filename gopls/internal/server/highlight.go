@@ -8,8 +8,8 @@ import (
 	"context"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/template"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -29,7 +29,7 @@ func (s *server) DocumentHighlight(ctx context.Context, params *protocol.Documen
 	case file.Tmpl:
 		return template.Highlight(ctx, snapshot, fh, params.Position)
 	case file.Go:
-		rngs, err := source.Highlight(ctx, snapshot, fh, params.Position)
+		rngs, err := golang.Highlight(ctx, snapshot, fh, params.Position)
 		if err != nil {
 			event.Error(ctx, "no highlight", err)
 		}

@@ -104,7 +104,7 @@ func runForError(pass *analysis.Pass, err types.Error, name string) error {
 				continue
 			}
 
-			fixes := removeVariableFromAssignment(pass, path, stmt, ident)
+			fixes := removeVariableFromAssignment(path, stmt, ident)
 			// fixes may be nil
 			if len(fixes) > 0 {
 				diag.SuggestedFixes = fixes
@@ -185,7 +185,7 @@ func removeVariableFromSpec(pass *analysis.Pass, path []ast.Node, stmt *ast.Valu
 	}
 }
 
-func removeVariableFromAssignment(pass *analysis.Pass, path []ast.Node, stmt *ast.AssignStmt, ident *ast.Ident) []analysis.SuggestedFix {
+func removeVariableFromAssignment(path []ast.Node, stmt *ast.AssignStmt, ident *ast.Ident) []analysis.SuggestedFix {
 	// The only variable in the assignment is unused
 	if len(stmt.Lhs) == 1 {
 		// If LHS has only one expression to be valid it has to have 1 expression

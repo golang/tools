@@ -10,7 +10,7 @@ import (
 	"context"
 	"fmt"
 
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/jsonrpc2"
 )
 
@@ -100,10 +100,6 @@ func (s *server) RangesFormatting(context.Context, *protocol.DocumentRangesForma
 
 func (s *server) Resolve(context.Context, *protocol.InlayHint) (*protocol.InlayHint, error) {
 	return nil, notImplemented("Resolve")
-}
-
-func (s *server) ResolveCodeAction(context.Context, *protocol.CodeAction) (*protocol.CodeAction, error) {
-	return nil, notImplemented("ResolveCodeAction")
 }
 
 func (s *server) ResolveCodeLens(context.Context, *protocol.CodeLens) (*protocol.CodeLens, error) {

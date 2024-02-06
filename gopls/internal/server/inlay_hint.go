@@ -8,9 +8,9 @@ import (
 	"context"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/mod"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 )
@@ -29,7 +29,7 @@ func (s *server) InlayHint(ctx context.Context, params *protocol.InlayHintParams
 	case file.Mod:
 		return mod.InlayHint(ctx, snapshot, fh, params.Range)
 	case file.Go:
-		return source.InlayHint(ctx, snapshot, fh, params.Range)
+		return golang.InlayHint(ctx, snapshot, fh, params.Range)
 	}
 	return nil, nil // empty result
 }

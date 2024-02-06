@@ -16,12 +16,12 @@ import (
 	"sync"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/cache"
-	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
-	"golang.org/x/tools/gopls/internal/lsp/cache/parsego"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -121,9 +121,9 @@ func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]p
 
 		// If links are to pkg.go.dev, append module version suffixes.
 		// This requires the import map from the package metadata. Ignore errors.
-		var depsByImpPath map[source.ImportPath]source.PackageID
+		var depsByImpPath map[golang.ImportPath]golang.PackageID
 		if strings.ToLower(snapshot.Options().LinkTarget) == "pkg.go.dev" {
-			if meta, err := source.NarrowestMetadataForFile(ctx, snapshot, fh.URI()); err == nil {
+			if meta, err := golang.NarrowestMetadataForFile(ctx, snapshot, fh.URI()); err == nil {
 				depsByImpPath = meta.DepsByImpPath
 			}
 		}

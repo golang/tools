@@ -1,0 +1,71 @@
+This test checks the formatting of the list of accessible methods.
+
+Observe that:
+- interface methods that appear in the syntax are not repeated
+  in the method set of the type;
+- promoted methods of structs are shown;
+- receiver variables are correctly named;
+- receiver variables have a pointer type if appropriate;
+- only accessible methods are shown.
+
+-- go.mod --
+module example.com
+
+-- lib/lib.go --
+package lib
+
+type I interface {
+	A()
+	b()
+	J
+}
+
+type J interface { C() }
+
+type S struct { I }
+func (s S) A() {}
+func (s S) b() {}
+func (s *S) PA() {}
+func (s *S) pb() {}
+
+-- a/a.go --
+package a
+
+import "example.com/lib"
+
+var _ lib.I //@hover("I", "I", I)
+var _ lib.J //@hover("J", "J", J)
+var _ lib.S //@hover("S", "S", S)
+
+-- @I --
+```go
+type I interface {
+	A()
+	b()
+	J
+}
+```
+
+```go
+func (lib.J) C()
+```
+
+[`lib.I` on pkg.go.dev](https://pkg.go.dev/example.com/lib#I)
+-- @J --
+```go
+type J interface{ C() }
+```
+
+[`lib.J` on pkg.go.dev](https://pkg.go.dev/example.com/lib#J)
+-- @S --
+```go
+type S struct{ I }
+```
+
+```go
+func (s lib.S) A()
+func (lib.J) C()
+func (s *lib.S) PA()
+```
+
+[`lib.S` on pkg.go.dev](https://pkg.go.dev/example.com/lib#S)

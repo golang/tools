@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"runtime"
 	"testing"
+
+	"golang.org/x/tools/gopls/internal/version"
 )
 
 func TestPrintVersionInfoJSON(t *testing.T) {
@@ -27,7 +29,7 @@ func TestPrintVersionInfoJSON(t *testing.T) {
 	if g, w := got.GoVersion, runtime.Version(); g != w {
 		t.Errorf("go version = %v, want %v", g, w)
 	}
-	if g, w := got.Version, Version(); g != w {
+	if g, w := got.Version, version.Version(); g != w {
 		t.Errorf("gopls version = %v, want %v", g, w)
 	}
 	// Other fields of BuildInfo may not be available during test.
@@ -41,7 +43,7 @@ func TestPrintVersionInfoPlainText(t *testing.T) {
 	res := buf.Bytes()
 
 	// Other fields of BuildInfo may not be available during test.
-	wantGoplsVersion, wantGoVersion := Version(), runtime.Version()
+	wantGoplsVersion, wantGoVersion := version.Version(), runtime.Version()
 	if !bytes.Contains(res, []byte(wantGoplsVersion)) || !bytes.Contains(res, []byte(wantGoVersion)) {
 		t.Errorf("plaintext output = %q,\nwant (version: %v, go: %v)", res, wantGoplsVersion, wantGoVersion)
 	}

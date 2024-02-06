@@ -8,8 +8,8 @@ import (
 	"context"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/template"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -30,7 +30,7 @@ func (s *server) DocumentSymbol(ctx context.Context, params *protocol.DocumentSy
 	case file.Tmpl:
 		docSymbols, err = template.DocumentSymbols(snapshot, fh)
 	case file.Go:
-		docSymbols, err = source.DocumentSymbols(ctx, snapshot, fh)
+		docSymbols, err = golang.DocumentSymbols(ctx, snapshot, fh)
 	default:
 		return nil, nil // empty result
 	}

@@ -1,0 +1,28 @@
+This test exercises extract on a variadic function.
+It is a regression test for bug #63287 in which
+the final paramater's "..." would go missing.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+//@codeactionedit(block, "refactor.extract", out, "Extract function")
+
+func _() {
+	var logf func(string, ...any)
+	{ println(logf) } //@loc(block, re`{.*}`)
+}
+
+-- @out/a/a.go --
+@@ -7 +7 @@
+-	{ println(logf) } //@loc(block, re`{.*}`)
++	{ newFunction(logf) } //@loc(block, re`{.*}`)
+@@ -10 +10,4 @@
++func newFunction(logf func( string,  ...any)) {
++	println(logf)
++}
++
+-- end --

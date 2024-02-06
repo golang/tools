@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// The stringintconv command runs the stringintconv analyzer.
+// The unusedparams command runs the unusedparams analyzer.
 package main
 
 import (

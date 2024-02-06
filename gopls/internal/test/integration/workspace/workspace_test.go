@@ -11,11 +11,12 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/hooks"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/goversion"
 	"golang.org/x/tools/internal/gocommand"
+	"golang.org/x/tools/internal/testenv"
 
 	. "golang.org/x/tools/gopls/internal/test/integration"
 )
@@ -245,6 +246,25 @@ func TestAutomaticWorkspaceModule_Interdependent(t *testing.T) {
 			Diagnostics(env.AtRegexp("modb/b/b.go", "x")),
 			NoDiagnostics(env.AtRegexp("moda/a/a.go", `"b.com/b"`)),
 		)
+	})
+}
+
+func TestWorkspaceVendoring(t *testing.T) {
+	testenv.NeedsGo1Point(t, 22)
+	WithOptions(
+		ProxyFiles(workspaceModuleProxy),
+	).Run(t, multiModule, func(t *testing.T, env *Env) {
+		env.RunGoCommand("work", "init")
+		env.RunGoCommand("work", "use", "moda/a")
+		env.AfterChange()
+		env.OpenFile("moda/a/a.go")
+		env.RunGoCommand("work", "vendor")
+		env.AfterChange()
+		loc := env.GoToDefinition(env.RegexpSearch("moda/a/a.go", "b.(Hello)"))
+		const want = "vendor/b.com/b/b.go"
+		if got := env.Sandbox.Workdir.URIToPath(loc.URI); got != want {
+			t.Errorf("Definition: got location %q, want %q", got, want)
+		}
 	})
 }
 
@@ -794,6 +814,51 @@ use (
 		want := "modb/b/b.go"
 		if !strings.HasSuffix(file, want) {
 			t.Errorf("expected %s, got %v", want, file)
+		}
+	})
+}
+
+func TestInnerGoWork(t *testing.T) {
+	// This test checks that gopls honors a go.work file defined
+	// inside a go module (golang/go#63917).
+	const workspace = `
+-- go.mod --
+module a.com
+
+require b.com v1.2.3
+-- a/go.work --
+go 1.18
+
+use (
+	..
+	../b
+)
+-- a/a.go --
+package a
+
+import "b.com/b"
+
+var _ = b.B
+-- b/go.mod --
+module b.com/b
+
+-- b/b.go --
+package b
+
+const B = 0
+`
+	WithOptions(
+		// This doesn't work if we open the outer module. I'm not sure it should,
+		// since the go.work file does not apply to the entire module, just a
+		// subdirectory.
+		WorkspaceFolders("a"),
+	).Run(t, workspace, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		loc := env.GoToDefinition(env.RegexpSearch("a/a.go", "b.(B)"))
+		got := env.Sandbox.Workdir.URIToPath(loc.URI)
+		want := "b/b.go"
+		if got != want {
+			t.Errorf("Definition(b.B): got %q, want %q", got, want)
 		}
 	})
 }

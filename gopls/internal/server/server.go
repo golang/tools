@@ -12,9 +12,9 @@ import (
 	"os"
 	"sync"
 
-	"golang.org/x/tools/gopls/internal/lsp/cache"
-	"golang.org/x/tools/gopls/internal/lsp/progress"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/progress"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 )
@@ -89,7 +89,7 @@ type server struct {
 	// that the server should watch changes.
 	// The map field may be reassigned but the map is immutable.
 	watchedGlobPatternsMu  sync.Mutex
-	watchedGlobPatterns    map[string]unit
+	watchedGlobPatterns    map[protocol.RelativePattern]unit
 	watchRegistrationCount int
 
 	diagnosticsMu sync.Mutex

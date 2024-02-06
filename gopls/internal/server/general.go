@@ -20,14 +20,15 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/cache"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/goversion"
+	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 )
@@ -36,7 +37,11 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 	ctx, done := event.Start(ctx, "lsp.Server.initialize")
 	defer done()
 
-	telemetry.RecordClientInfo(params)
+	var clientName string
+	if params != nil && params.ClientInfo != nil {
+		clientName = params.ClientInfo.Name
+	}
+	telemetry.RecordClientInfo(clientName)
 
 	s.stateMu.Lock()
 	if s.state >= serverInitializing {
@@ -114,6 +119,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 		// Using CodeActionOptions is only valid if codeActionLiteralSupport is set.
 		codeActionProvider = &protocol.CodeActionOptions{
 			CodeActionKinds: s.getSupportedCodeActions(),
+			ResolveProvider: true,
 		}
 	}
 	var renameOpts interface{} = true
@@ -361,7 +367,7 @@ func (s *server) updateWatchedDirectories(ctx context.Context) error {
 	defer s.watchedGlobPatternsMu.Unlock()
 
 	// Nothing to do if the set of workspace directories is unchanged.
-	if equalURISet(s.watchedGlobPatterns, patterns) {
+	if maps.SameKeys(s.watchedGlobPatterns, patterns) {
 		return nil
 	}
 
@@ -389,32 +395,32 @@ func watchedFilesCapabilityID(id int) string {
 	return fmt.Sprintf("workspace/didChangeWatchedFiles-%d", id)
 }
 
-func equalURISet(m1, m2 map[string]struct{}) bool {
-	if len(m1) != len(m2) {
-		return false
-	}
-	for k := range m1 {
-		_, ok := m2[k]
-		if !ok {
-			return false
-		}
-	}
-	return true
-}
-
 // registerWatchedDirectoriesLocked sends the workspace/didChangeWatchedFiles
 // registrations to the client and updates s.watchedDirectories.
 // The caller must not subsequently mutate patterns.
-func (s *server) registerWatchedDirectoriesLocked(ctx context.Context, patterns map[string]struct{}) error {
+func (s *server) registerWatchedDirectoriesLocked(ctx context.Context, patterns map[protocol.RelativePattern]unit) error {
 	if !s.Options().DynamicWatchedFilesSupported {
 		return nil
 	}
+
+	supportsRelativePatterns := s.Options().RelativePatternsSupported
+
 	s.watchedGlobPatterns = patterns
 	watchers := make([]protocol.FileSystemWatcher, 0, len(patterns)) // must be a slice
 	val := protocol.WatchChange | protocol.WatchDelete | protocol.WatchCreate
 	for pattern := range patterns {
+		var value any
+		if supportsRelativePatterns && pattern.BaseURI != "" {
+			value = pattern
+		} else {
+			p := pattern.Pattern
+			if pattern.BaseURI != "" {
+				p = path.Join(filepath.ToSlash(pattern.BaseURI.Path()), p)
+			}
+			value = p
+		}
 		watchers = append(watchers, protocol.FileSystemWatcher{
-			GlobPattern: pattern,
+			GlobPattern: protocol.GlobPattern{Value: value},
 			Kind:        &val,
 		})
 	}

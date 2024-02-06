@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/command"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 )
 
 var (
@@ -118,9 +118,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 			},
 			Hooks: Hooks{
 				URLRegexp:            urlRegexp(),
-				DefaultAnalyzers:     defaultAnalyzers(),
-				TypeErrorAnalyzers:   typeErrorAnalyzers(),
-				ConvenienceAnalyzers: convenienceAnalyzers(),
+				DefaultAnalyzers:     analyzers(),
 				StaticcheckAnalyzers: map[string]*Analyzer{},
 			},
 		}

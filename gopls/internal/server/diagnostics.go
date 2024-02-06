@@ -16,12 +16,12 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/cache"
-	"golang.org/x/tools/gopls/internal/lsp/cache/metadata"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/mod"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/template"
 	"golang.org/x/tools/gopls/internal/util/maps"
@@ -263,7 +263,7 @@ func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snaps
 		}
 
 		// Find all packages that include this file and diagnose them in parallel.
-		meta, err := source.NarrowestMetadataForFile(ctx, snapshot, uri)
+		meta, err := golang.NarrowestMetadataForFile(ctx, snapshot, uri)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
@@ -364,7 +364,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 	store("diagnosing vulnerabilities", vulnReports, vulnErr)
 
 	workspacePkgs, err := snapshot.WorkspaceMetadata(ctx)
-	if s.shouldIgnoreError(ctx, snapshot, err) {
+	if s.shouldIgnoreError(snapshot, err) {
 		return diagnostics, ctx.Err()
 	}
 
@@ -415,9 +415,30 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 	}()
 
 	// Run type checking and go/analysis diagnosis of packages in parallel.
+	//
+	// For analysis, we use the *widest* package for each open file,
+	// for two reasons:
+	//
+	// - Correctness: some analyzers (e.g. unusedparam) depend
+	//   on it. If applied to a non-test package for which a
+	//   corresponding test package exists, they make assumptions
+	//   that are falsified in the test package, for example that
+	//   all references to unexported symbols are visible to the
+	//   analysis.
+	//
+	// - Efficiency: it may yield a smaller covering set of
+	//   PackageIDs for a given set of files. For example, {x.go,
+	//   x_test.go} is covered by the single package x_test using
+	//   "widest". (Using "narrowest", it would be covered only by
+	//   the pair of packages {x, x_test}, Originally we used all
+	//   covering packages, so {x.go} alone would be analyzed
+	//   twice.)
 	var (
 		toDiagnose = make(map[metadata.PackageID]*metadata.Package)
-		toAnalyze  = make(map[metadata.PackageID]unit)
+		toAnalyze  = make(map[metadata.PackageID]*metadata.Package)
+
+		// secondary index, used to eliminate narrower packages.
+		toAnalyzeWidest = make(map[golang.PackagePath]*metadata.Package)
 	)
 	for _, mp := range workspacePkgs {
 		var hasNonIgnored, hasOpenFile bool
@@ -432,7 +453,16 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 		if hasNonIgnored {
 			toDiagnose[mp.ID] = mp
 			if hasOpenFile {
-				toAnalyze[mp.ID] = unit{}
+				if prev, ok := toAnalyzeWidest[mp.PkgPath]; ok {
+					if len(prev.CompiledGoFiles) >= len(mp.CompiledGoFiles) {
+						// Previous entry is not narrower; keep it.
+						continue
+					}
+					// Evict previous (narrower) entry.
+					delete(toAnalyze, prev.ID)
+				}
+				toAnalyze[mp.ID] = mp
+				toAnalyzeWidest[mp.PkgPath] = mp
 			}
 		}
 	}
@@ -466,7 +496,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 		var err error
 		// TODO(rfindley): here and above, we should avoid using the first result
 		// if err is non-nil (though as of today it's OK).
-		analysisDiags, err = source.Analyze(ctx, snapshot, toAnalyze, s.progress)
+		analysisDiags, err = golang.Analyze(ctx, snapshot, toAnalyze, s.progress)
 		if err != nil {
 			event.Error(ctx, "warning: analyzing package", err, append(snapshot.Labels(), tag.Package.Of(keys.Join(maps.Keys(toDiagnose))))...)
 			return
@@ -512,7 +542,7 @@ func (s *server) gcDetailsDiagnostics(ctx context.Context, snapshot *cache.Snaps
 
 	diagnostics := make(diagMap)
 	for _, mp := range toGCDetail {
-		gcReports, err := source.GCOptimizationDetails(ctx, snapshot, mp)
+		gcReports, err := golang.GCOptimizationDetails(ctx, snapshot, mp)
 		if err != nil {
 			event.Error(ctx, "warning: gc details", err, append(snapshot.Labels(), tag.Package.Of(string(mp.ID)))...)
 			continue
@@ -674,7 +704,15 @@ func (s *server) updateDiagnostics(ctx context.Context, allViews []*cache.View, 
 	// views.
 	updateAndPublish := func(uri protocol.DocumentURI, f *fileDiagnostics, diags []*cache.Diagnostic) error {
 		current, ok := f.byView[snapshot.View()]
-		if !ok || current.snapshot <= snapshot.SequenceID() {
+		// Update the stored diagnostics if:
+		//  1. we've never seen diagnostics for this view,
+		//  2. diagnostics are for an older snapshot, or
+		//  3. we're overwriting with final diagnostics
+		//
+		// In other words, we shouldn't overwrite existing diagnostics for a
+		// snapshot with non-final diagnostics. This avoids the race described at
+		// https://github.com/golang/go/issues/64765#issuecomment-1890144575.
+		if !ok || current.snapshot < snapshot.SequenceID() || (current.snapshot == snapshot.SequenceID() && final) {
 			fh, err := snapshot.ReadFile(ctx, uri)
 			if err != nil {
 				return err
@@ -855,7 +893,7 @@ func toProtocolDiagnostics(diagnostics []*cache.Diagnostic) []protocol.Diagnosti
 	return reports
 }
 
-func (s *server) shouldIgnoreError(ctx context.Context, snapshot *cache.Snapshot, err error) bool {
+func (s *server) shouldIgnoreError(snapshot *cache.Snapshot, err error) bool {
 	if err == nil { // if there is no error at all
 		return false
 	}

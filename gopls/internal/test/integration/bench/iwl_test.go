@@ -7,8 +7,8 @@ package bench
 import (
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/lsp/command"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 )
@@ -16,24 +16,20 @@ import (
 // BenchmarkInitialWorkspaceLoad benchmarks the initial workspace load time for
 // a new editing session.
 func BenchmarkInitialWorkspaceLoad(b *testing.B) {
-	tests := []struct {
-		repo string
-		file string
-	}{
-		{"google-cloud-go", "httpreplay/httpreplay.go"},
-		{"istio", "pkg/fuzz/util.go"},
-		{"kubernetes", "pkg/controller/lookup_cache.go"},
-		{"kuma", "api/generic/insights.go"},
-		{"oracle", "dataintegration/data_type.go"},
-		{"pkgsite", "internal/frontend/server.go"},
-		{"starlark", "starlark/eval.go"},
-		{"tools", "internal/lsp/cache/snapshot.go"},
-		{"hashiform", "internal/provider/provider.go"},
+	repoNames := []string{
+		"google-cloud-go",
+		"istio",
+		"kubernetes",
+		"kuma",
+		"oracle",
+		"pkgsite",
+		"starlark",
+		"tools",
+		"hashiform",
 	}
-
-	for _, test := range tests {
-		b.Run(test.repo, func(b *testing.B) {
-			repo := getRepo(b, test.repo)
+	for _, repoName := range repoNames {
+		b.Run(repoName, func(b *testing.B) {
+			repo := getRepo(b, repoName)
 			// get the (initialized) shared env to ensure the cache is warm.
 			// Reuse its GOPATH so that we get cache hits for things in the module
 			// cache.
@@ -41,13 +37,13 @@ func BenchmarkInitialWorkspaceLoad(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				doIWL(b, sharedEnv.Sandbox.GOPATH(), repo, test.file)
+				doIWL(b, sharedEnv.Sandbox.GOPATH(), repo)
 			}
 		})
 	}
 }
 
-func doIWL(b *testing.B, gopath string, repo *repo, file string) {
+func doIWL(b *testing.B, gopath string, repo *repo) {
 	// Exclude the time to set up the env from the benchmark time, as this may
 	// involve installing gopls and/or checking out the repo dir.
 	b.StopTimer()

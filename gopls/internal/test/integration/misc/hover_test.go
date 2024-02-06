@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/internal/testenv"
@@ -489,5 +489,28 @@ func TestHoverEmbedDirective(t *testing.T) {
 				t.Errorf("hover: %q should not contain: %q", content, skip)
 			}
 		}
+	})
+}
+
+func TestHoverBrokenImport_Issue60592(t *testing.T) {
+	const files = `
+-- go.mod --
+module testdata
+go 1.18
+
+-- p.go --
+package main
+
+import foo "a"
+
+func _() {
+	foo.Print()
+}
+
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("p.go")
+		// This request should not crash gopls.
+		_, _, _ = env.Editor.Hover(env.Ctx, env.RegexpSearch("p.go", "foo[.]"))
 	})
 }

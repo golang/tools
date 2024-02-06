@@ -10,12 +10,12 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 )
 
-// TODO(rfindley): update these completion tests to run on multiple repos.
+var completionGOPATH = flag.String("completion_gopath", "", "if set, use this GOPATH for BenchmarkCompletion")
 
 type completionBenchOptions struct {
 	file, locationRegexp string
@@ -25,6 +25,7 @@ type completionBenchOptions struct {
 	beforeCompletion func(*Env) // run before each completion
 }
 
+// Deprecated: new tests should be expressed in BenchmarkCompletion.
 func benchmarkCompletion(options completionBenchOptions, b *testing.B) {
 	repo := getRepo(b, "tools")
 	_ = repo.sharedEnv(b) // ensure cache is warm
@@ -146,7 +147,7 @@ func (c *completer) _() {
 	}, b)
 }
 
-type completionFollowingEditTest struct {
+type completionTest struct {
 	repo           string
 	name           string
 	file           string // repo-relative file to create
@@ -154,7 +155,7 @@ type completionFollowingEditTest struct {
 	locationRegexp string // regexp for completion
 }
 
-var completionFollowingEditTests = []completionFollowingEditTest{
+var completionTests = []completionTest{
 	{
 		"tools",
 		"selector",
@@ -167,6 +168,32 @@ func (c *completer) _() {
 }
 `,
 		`func \(c \*completer\) _\(\) {\n\tc\.inference\.kindMatches\((c)`,
+	},
+	{
+		"tools",
+		"unimportedident",
+		"internal/lsp/source/completion/completion2.go",
+		`
+package completion
+
+func (c *completer) _() {
+	lo
+}
+`,
+		`lo()`,
+	},
+	{
+		"tools",
+		"unimportedselector",
+		"internal/lsp/source/completion/completion2.go",
+		`
+package completion
+
+func (c *completer) _() {
+	log.
+}
+`,
+		`log\.()`,
 	},
 	{
 		"kubernetes",
@@ -213,14 +240,18 @@ func (p *Pivot) _() {
 //
 // Edits force type-checked packages to be invalidated, so we want to measure
 // how long it takes before completion results are available.
-func BenchmarkCompletionFollowingEdit(b *testing.B) {
-	for _, test := range completionFollowingEditTests {
+func BenchmarkCompletion(b *testing.B) {
+	for _, test := range completionTests {
 		b.Run(fmt.Sprintf("%s_%s", test.repo, test.name), func(b *testing.B) {
-			for _, completeUnimported := range []bool{true, false} {
-				b.Run(fmt.Sprintf("completeUnimported=%v", completeUnimported), func(b *testing.B) {
-					for _, budget := range []string{"0s", "100ms"} {
-						b.Run(fmt.Sprintf("budget=%s", budget), func(b *testing.B) {
-							runCompletionFollowingEdit(b, test, completeUnimported, budget)
+			for _, followingEdit := range []bool{true, false} {
+				b.Run(fmt.Sprintf("edit=%v", followingEdit), func(b *testing.B) {
+					for _, completeUnimported := range []bool{true, false} {
+						b.Run(fmt.Sprintf("unimported=%v", completeUnimported), func(b *testing.B) {
+							for _, budget := range []string{"0s", "100ms"} {
+								b.Run(fmt.Sprintf("budget=%s", budget), func(b *testing.B) {
+									runCompletion(b, test, followingEdit, completeUnimported, budget)
+								})
+							}
 						})
 					}
 				})
@@ -229,13 +260,20 @@ func BenchmarkCompletionFollowingEdit(b *testing.B) {
 	}
 }
 
+// For optimizing unimported completion, it can be useful to benchmark with a
+// huge GOMODCACHE.
 var gomodcache = flag.String("gomodcache", "", "optional GOMODCACHE for unimported completion benchmarks")
 
-func runCompletionFollowingEdit(b *testing.B, test completionFollowingEditTest, completeUnimported bool, budget string) {
+func runCompletion(b *testing.B, test completionTest, followingEdit, completeUnimported bool, budget string) {
 	repo := getRepo(b, test.repo)
-	sharedEnv := repo.sharedEnv(b) // ensure cache is warm
+	gopath := *completionGOPATH
+	if gopath == "" {
+		// use a warm GOPATH
+		sharedEnv := repo.sharedEnv(b)
+		gopath = sharedEnv.Sandbox.GOPATH()
+	}
 	envvars := map[string]string{
-		"GOPATH": sharedEnv.Sandbox.GOPATH(), // use the warm cache
+		"GOPATH": gopath,
 	}
 
 	if *gomodcache != "" {
@@ -248,7 +286,7 @@ func runCompletionFollowingEdit(b *testing.B, test completionFollowingEditTest, 
 			"completeUnimported": completeUnimported,
 			"completionBudget":   budget,
 		},
-	}, "completionFollowingEdit", false)
+	}, "completion", false)
 	defer env.Close()
 
 	env.CreateBuffer(test.file, "// __TEST_PLACEHOLDER_0__\n"+test.content)
@@ -278,12 +316,14 @@ func runCompletionFollowingEdit(b *testing.B, test completionFollowingEditTest, 
 
 	b.ResetTimer()
 
-	if stopAndRecord := startProfileIfSupported(b, env, qualifiedName(test.repo, "completionFollowingEdit")); stopAndRecord != nil {
+	if stopAndRecord := startProfileIfSupported(b, env, qualifiedName(test.repo, "completion")); stopAndRecord != nil {
 		defer stopAndRecord()
 	}
 
 	for i := 0; i < b.N; i++ {
-		editPlaceholder()
+		if followingEdit {
+			editPlaceholder()
+		}
 		loc := env.RegexpSearch(test.file, test.locationRegexp)
 		env.Completion(loc)
 	}

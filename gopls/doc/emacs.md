@@ -144,12 +144,14 @@ code action, which you can invoke as needed by running `M-x eglot-code-actions`
 (or a key of your choice bound to the `eglot-code-actions` function) and
 selecting `Organize Imports` at the prompt.
 
-Eglot does not currently support a standalone function to execute a specific
-code action (see
-[joaotavora/eglot#411](https://github.com/joaotavora/eglot/issues/411)), nor an
-option to organize imports as a `before-save-hook` (see
-[joaotavora/eglot#574](https://github.com/joaotavora/eglot/issues/574)). In the
-meantime, see those issues for discussion and possible workarounds.
+To automatically organize imports before saving, add a hook:
+
+```elisp
+(add-hook 'before-save-hook
+    (lambda ()
+        (call-interactively 'eglot-code-action-organize-imports))
+    nil t)
+```
 
 ## Troubleshooting
 

@@ -8,9 +8,13 @@ import (
 	"fmt"
 	"go/types"
 	"reflect"
+
+	"golang.org/x/tools/internal/aliases"
 )
 
 func (d *differ) checkCompatible(otn *types.TypeName, old, new types.Type) {
+	old = aliases.Unalias(old)
+	new = aliases.Unalias(new)
 	switch old := old.(type) {
 	case *types.Interface:
 		if new, ok := new.(*types.Interface); ok {
@@ -268,7 +272,7 @@ func (d *differ) checkCompatibleDefined(otn *types.TypeName, old *types.Named, n
 		return
 	}
 	// Interface method sets are checked in checkCompatibleInterface.
-	if _, ok := old.Underlying().(*types.Interface); ok {
+	if types.IsInterface(old) {
 		return
 	}
 
@@ -287,7 +291,7 @@ func (d *differ) checkMethodSet(otn *types.TypeName, oldt, newt types.Type, addc
 	oldMethodSet := exportedMethods(oldt)
 	newMethodSet := exportedMethods(newt)
 	msname := otn.Name()
-	if _, ok := oldt.(*types.Pointer); ok {
+	if _, ok := aliases.Unalias(oldt).(*types.Pointer); ok {
 		msname = "*" + msname
 	}
 	for name, oldMethod := range oldMethodSet {
@@ -349,9 +353,9 @@ func receiverType(method types.Object) types.Type {
 }
 
 func receiverNamedType(method types.Object) *types.Named {
-	switch t := receiverType(method).(type) {
+	switch t := aliases.Unalias(receiverType(method)).(type) {
 	case *types.Pointer:
-		return t.Elem().(*types.Named)
+		return aliases.Unalias(t.Elem()).(*types.Named)
 	case *types.Named:
 		return t
 	default:
@@ -360,6 +364,6 @@ func receiverNamedType(method types.Object) *types.Named {
 }
 
 func hasPointerReceiver(method types.Object) bool {
-	_, ok := receiverType(method).(*types.Pointer)
+	_, ok := aliases.Unalias(receiverType(method)).(*types.Pointer)
 	return ok
 }

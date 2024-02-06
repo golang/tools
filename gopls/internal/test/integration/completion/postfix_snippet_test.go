@@ -306,6 +306,7 @@ func _() {
 	${1:}, ${2:} := foo()
 }
 `,
+			allowMultipleItem: true,
 		},
 		{
 			name: "var_single_value",
@@ -318,6 +319,7 @@ func _() {
 	foo().var
 }
 `,
+			allowMultipleItem: true,
 			after: `
 package foo
 

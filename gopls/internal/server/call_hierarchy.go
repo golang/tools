@@ -8,8 +8,8 @@ import (
 	"context"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -25,7 +25,7 @@ func (s *server) PrepareCallHierarchy(ctx context.Context, params *protocol.Call
 	if snapshot.FileKind(fh) != file.Go {
 		return nil, nil // empty result
 	}
-	return source.PrepareCallHierarchy(ctx, snapshot, fh, params.Position)
+	return golang.PrepareCallHierarchy(ctx, snapshot, fh, params.Position)
 }
 
 func (s *server) IncomingCalls(ctx context.Context, params *protocol.CallHierarchyIncomingCallsParams) ([]protocol.CallHierarchyIncomingCall, error) {
@@ -40,7 +40,7 @@ func (s *server) IncomingCalls(ctx context.Context, params *protocol.CallHierarc
 	if snapshot.FileKind(fh) != file.Go {
 		return nil, nil // empty result
 	}
-	return source.IncomingCalls(ctx, snapshot, fh, params.Item.Range.Start)
+	return golang.IncomingCalls(ctx, snapshot, fh, params.Item.Range.Start)
 }
 
 func (s *server) OutgoingCalls(ctx context.Context, params *protocol.CallHierarchyOutgoingCallsParams) ([]protocol.CallHierarchyOutgoingCall, error) {
@@ -55,5 +55,5 @@ func (s *server) OutgoingCalls(ctx context.Context, params *protocol.CallHierarc
 	if snapshot.FileKind(fh) != file.Go {
 		return nil, nil // empty result
 	}
-	return source.OutgoingCalls(ctx, snapshot, fh, params.Item.Range.Start)
+	return golang.OutgoingCalls(ctx, snapshot, fh, params.Item.Range.Start)
 }

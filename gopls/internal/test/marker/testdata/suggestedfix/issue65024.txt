@@ -1,0 +1,78 @@
+Regression example.com for #65024, "incorrect package qualification when
+stubbing method in v2 module".
+
+The second test (a-a) ensures that we don't use path-based heuristics
+to guess the PkgName of an import.
+
+-- a/v2/go.mod --
+module example.com/a/v2
+go 1.18
+
+-- a/v2/a.go --
+package a
+
+type I interface { F() T }
+
+type T struct {}
+
+-- a/v2/b/b.go --
+package b
+
+import "example.com/a/v2"
+
+type B struct{}
+
+var _ a.I = &B{} //@ suggestedfix("&B{}", re"does not implement", out)
+
+// This line makes the diff tidier.
+
+-- @out/a/v2/b/b.go --
+@@ -7 +7,5 @@
++// F implements a.I.
++func (b *B) F() a.T {
++	panic("unimplemented")
++}
++
+@@ -10 +15 @@
+-
+-- a-a/v2/go.mod --
+// This module has a hyphenated name--how posh.
+// It won't do to use it as an identifier.
+// The correct name is the one in the package decl,
+// which in this case is not what the path heuristic would guess.
+module example.com/a-a/v2
+go 1.18
+
+-- a-a/v2/a.go --
+package a
+type I interface { F() T }
+type T struct {}
+
+-- a-a/v2/b/b.go --
+package b
+
+// Note: no existing import of a.
+
+type B struct{}
+
+var _ I = &B{} //@ suggestedfix("&B{}", re"does not implement", out2)
+
+// This line makes the diff tidier.
+
+-- a-a/v2/b/import-a-I.go --
+package b
+import "example.com/a-a/v2"
+type I = a.I
+
+-- @out2/a-a/v2/b/b.go --
+@@ -3 +3,2 @@
++import a "example.com/a-a/v2"
++
+@@ -7 +9,5 @@
++// F implements a.I.
++func (b *B) F() a.T {
++	panic("unimplemented")
++}
++
+@@ -10 +17 @@
+-

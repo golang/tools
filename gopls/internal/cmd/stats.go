@@ -19,13 +19,13 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/filecache"
-	"golang.org/x/tools/gopls/internal/lsp/command"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/gopls/internal/settings"
-	goplsbug "golang.org/x/tools/gopls/internal/util/bug"
+	bugpkg "golang.org/x/tools/gopls/internal/util/bug"
+	versionpkg "golang.org/x/tools/gopls/internal/version"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -74,7 +74,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 		GOARCH:           runtime.GOARCH,
 		GOPLSCACHE:       os.Getenv("GOPLSCACHE"),
 		GoVersion:        runtime.Version(),
-		GoplsVersion:     debug.Version(),
+		GoplsVersion:     versionpkg.Version(),
 		GOPACKAGESDRIVER: os.Getenv("GOPACKAGESDRIVER"),
 	}
 
@@ -147,7 +147,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	do("Gathering bug reports", func() error {
 		stats.CacheDir, stats.BugReports = filecache.BugReports()
 		if stats.BugReports == nil {
-			stats.BugReports = []goplsbug.Bug{} // non-nil for JSON
+			stats.BugReports = []bugpkg.Bug{} // non-nil for JSON
 		}
 		return nil
 	})
@@ -180,7 +180,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 
 	if _, err := do("Collecting directory info", func() error {
 		var err error
-		stats.DirStats, err = findDirStats(ctx)
+		stats.DirStats, err = findDirStats()
 		if err != nil {
 			return err
 		}
@@ -232,7 +232,7 @@ type GoplsStats struct {
 	GOPACKAGESDRIVER             string
 	InitialWorkspaceLoadDuration string `anon:"ok"` // in time.Duration string form
 	CacheDir                     string
-	BugReports                   []goplsbug.Bug
+	BugReports                   []bugpkg.Bug
 	MemStats                     command.MemStatsResult       `anon:"ok"`
 	WorkspaceStats               command.WorkspaceStatsResult `anon:"ok"`
 	DirStats                     dirStats                     `anon:"ok"`
@@ -248,7 +248,7 @@ type dirStats struct {
 
 // findDirStats collects information about the current directory and its
 // subdirectories.
-func findDirStats(ctx context.Context) (dirStats, error) {
+func findDirStats() (dirStats, error) {
 	var ds dirStats
 	filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

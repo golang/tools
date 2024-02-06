@@ -15,7 +15,7 @@ package a
 func _() {
 	f() //@ inline(re"f", result)
 	const v = 1
-	f() //@ inline(re"f", re"v.*shadowed.*by.*const .line 5")
+	f() //@ inline(re"f", re"v.*shadowed.*by.*const.*line 5")
 }
 
 func f() int { return v }
@@ -28,7 +28,7 @@ package a
 func _() {
 	_ = v //@ inline(re"f", result)
 	const v = 1
-	f() //@ inline(re"f", re"v.*shadowed.*by.*const .line 5")
+	f() //@ inline(re"f", re"v.*shadowed.*by.*const.*line 5")
 }
 
 func f() int { return v }

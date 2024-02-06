@@ -8,8 +8,8 @@ import (
 	"context"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/template"
 	"golang.org/x/tools/internal/event"
@@ -34,7 +34,7 @@ func (s *server) References(ctx context.Context, params *protocol.ReferenceParam
 	case file.Tmpl:
 		return template.References(ctx, snapshot, fh, params)
 	case file.Go:
-		return source.References(ctx, snapshot, fh, params.Position, params.Context.IncludeDeclaration)
+		return golang.References(ctx, snapshot, fh, params.Position, params.Context.IncludeDeclaration)
 	}
 	return nil, nil // empty result
 }

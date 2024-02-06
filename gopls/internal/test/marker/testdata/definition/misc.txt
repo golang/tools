@@ -177,6 +177,10 @@ type I interface {
 }
 ```
 
+```go
+func (J) Hello()
+```
+
 [`a.I` on pkg.go.dev](https://pkg.go.dev/mod.com#I)
 -- @hoverJ --
 ```go

@@ -5,7 +5,7 @@
 package integration
 
 import (
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 )
 
@@ -70,6 +70,13 @@ func WindowsLineEndings() RunOption {
 func ClientName(name string) RunOption {
 	return optionSetter(func(opts *runConfig) {
 		opts.editor.ClientName = name
+	})
+}
+
+// CapabilitiesJSON sets the capabalities json.
+func CapabilitiesJSON(capabilities []byte) RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.editor.CapabilitiesJSON = capabilities
 	})
 }
 

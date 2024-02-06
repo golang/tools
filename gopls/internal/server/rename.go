@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 )
@@ -30,10 +30,10 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 		return nil, fmt.Errorf("cannot rename in file of type %s", kind)
 	}
 
-	// Because we don't handle directory renaming within source.Rename, source.Rename returns
+	// Because we don't handle directory renaming within golang.Rename, golang.Rename returns
 	// boolean value isPkgRenaming to determine whether an DocumentChanges of type RenameFile should
 	// be added to the return protocol.WorkspaceEdit value.
-	edits, isPkgRenaming, err := source.Rename(ctx, snapshot, fh, params.Position, params.NewName)
+	edits, isPkgRenaming, err := golang.Rename(ctx, snapshot, fh, params.Position, params.NewName)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (s *server) PrepareRename(ctx context.Context, params *protocol.PrepareRena
 
 	// Do not return errors here, as it adds clutter.
 	// Returning a nil result means there is not a valid rename.
-	item, usererr, err := source.PrepareRename(ctx, snapshot, fh, params.Position)
+	item, usererr, err := golang.PrepareRename(ctx, snapshot, fh, params.Position)
 	if err != nil {
 		// Return usererr here rather than err, to avoid cluttering the UI with
 		// internal error details.

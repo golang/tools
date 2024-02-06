@@ -30,7 +30,7 @@ func (v *vulncheck) DetailedHelp(f *flag.FlagSet) {
 	WARNING: this command is for internal-use only.
 
 	By default, the command outputs a JSON-encoded
-	golang.org/x/tools/gopls/internal/lsp/command.VulncheckResult
+	golang.org/x/tools/gopls/internal/protocol/command.VulncheckResult
 	message.
 	Example:
 	$ gopls vulncheck <packages>

@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/lsp/cache"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/testenv"
@@ -40,10 +40,10 @@ func TestCapabilities(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	app := New("gopls-test", tmpDir, os.Environ(), nil)
+	app := New(nil)
 
 	params := &protocol.ParamInitialize{}
-	params.RootURI = protocol.URIFromPath(app.wd)
+	params.RootURI = protocol.URIFromPath(tmpDir)
 	params.Capabilities.Workspace.Configuration = true
 
 	// Send an initialize request to the server.

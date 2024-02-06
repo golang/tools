@@ -4,7 +4,7 @@
 
 package file
 
-import "golang.org/x/tools/gopls/internal/lsp/protocol"
+import "golang.org/x/tools/gopls/internal/protocol"
 
 // Modification represents a modification to a file.
 type Modification struct {

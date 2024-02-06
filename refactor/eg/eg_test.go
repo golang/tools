@@ -12,6 +12,7 @@ package eg_test
 import (
 	"bytes"
 	"flag"
+	"go/build"
 	"go/constant"
 	"go/parser"
 	"go/token"
@@ -47,9 +48,12 @@ func Test(t *testing.T) {
 		t.Skipf("skipping test on %q (no /usr/bin/diff)", runtime.GOOS)
 	}
 
+	ctx := build.Default   // copy
+	ctx.CgoEnabled = false // don't use cgo
 	conf := loader.Config{
 		Fset:       token.NewFileSet(),
 		ParserMode: parser.ParseComments,
+		Build:      &ctx,
 	}
 
 	// Each entry is a single-file package.

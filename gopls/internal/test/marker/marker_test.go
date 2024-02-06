@@ -30,11 +30,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"golang.org/x/tools/go/expect"
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/hooks"
-	"golang.org/x/tools/gopls/internal/lsp/cache"
-	"golang.org/x/tools/gopls/internal/lsp/lsprpc"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/lsprpc"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/compare"
 	"golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
@@ -85,6 +85,16 @@ func TestMain(m *testing.M) {
 //   - The old tests lacked documentation, and often had failures that were hard
 //     to understand. By starting from scratch, we can revisit these aspects.
 func Test(t *testing.T) {
+	if testing.Short() {
+		builder := os.Getenv("GO_BUILDER_NAME")
+		// Note that HasPrefix(builder, "darwin-" only matches legacy builders.
+		// LUCI builder names start with x_tools-goN.NN.
+		// We want to exclude solaris on both legacy and LUCI builders, as
+		// it is timing out.
+		if strings.HasPrefix(builder, "darwin-") || strings.Contains(builder, "solaris") {
+			t.Skip("golang/go#64473: skipping with -short: this test is too slow on darwin and solaris builders")
+		}
+	}
 	// The marker tests must be able to run go/packages.Load.
 	testenv.NeedsGoPackages(t)
 
@@ -692,6 +702,15 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 				return nil, fmt.Errorf("%s:%d: unwanted space before marker (// @)", file.Name, line)
 			}
 
+			// The 'go list' command doesn't work correct with modules named
+			// testdata", so don't allow it as a module name (golang/go#65406).
+			// (Otherwise files within it will end up in an ad hoc
+			// package, "command-line-arguments/$TMPDIR/...".)
+			if filepath.Base(file.Name) == "go.mod" &&
+				bytes.Contains(file.Data, []byte("module testdata")) {
+				return nil, fmt.Errorf("'testdata' is not a valid module name")
+			}
+
 			test.notes = append(test.notes, notes...)
 			test.files[file.Name] = file.Data
 		}
@@ -786,7 +805,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	// Put a debug instance in the context to prevent logging to stderr.
 	// See associated TODO in runner.go: we should revisit this pattern.
 	ctx := context.Background()
-	ctx = debug.WithInstance(ctx, "", "off")
+	ctx = debug.WithInstance(ctx, "off")
 
 	awaiter := integration.NewAwaiter(sandbox.Workdir)
 	ss := lsprpc.NewStreamServer(cache, false, hooks.Options)
@@ -1913,6 +1932,23 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 	// applied in that order. But since applyDocumentChanges(env,
 	// action.Edit.DocumentChanges) doesn't compose, for now we
 	// assert that actions return one or the other.
+
+	// Resolve code action edits first if the client has resolve support
+	// and the code action has no edits.
+	if action.Edit == nil {
+		editSupport, err := env.Editor.EditResolveSupport()
+		if err != nil {
+			return nil, err
+		}
+		if editSupport {
+			resolved, err := env.Editor.Server.ResolveCodeAction(env.Ctx, &action)
+			if err != nil {
+				return nil, err
+			}
+			action.Edit = resolved.Edit
+		}
+	}
+
 	if action.Edit != nil {
 		if action.Edit.Changes != nil {
 			env.T.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Edit.Changes", action.Kind, action.Title)

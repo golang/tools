@@ -13,7 +13,7 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 )
 
 // A span represents a range of text within a source file.  The start
@@ -28,7 +28,7 @@ import (
 // representations, such as go/token (also UTF-8) or the LSP protocol
 // (UTF-16). The latter requires access to file contents.
 //
-// See overview comments at ../lsp/protocol/mapper.go.
+// See overview comments at ../protocol/mapper.go.
 type span struct {
 	v _span
 }

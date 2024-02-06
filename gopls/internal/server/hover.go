@@ -8,9 +8,9 @@ import (
 	"context"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/mod"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/template"
 	"golang.org/x/tools/gopls/internal/work"
@@ -37,7 +37,7 @@ func (s *server) Hover(ctx context.Context, params *protocol.HoverParams) (_ *pr
 	case file.Mod:
 		return mod.Hover(ctx, snapshot, fh, params.Position)
 	case file.Go:
-		return source.Hover(ctx, snapshot, fh, params.Position)
+		return golang.Hover(ctx, snapshot, fh, params.Position)
 	case file.Tmpl:
 		return template.Hover(ctx, snapshot, fh, params.Position)
 	case file.Work:

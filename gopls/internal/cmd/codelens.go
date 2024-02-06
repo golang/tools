@@ -9,7 +9,7 @@ import (
 	"flag"
 	"fmt"
 
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/tool"
 )
@@ -71,7 +71,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 	// Override the default setting for codelenses[Test], which is
 	// off by default because VS Code has a superior client-side
 	// implementation. But this client is not VS Code.
-	// See source.LensFuncs().
+	// See golang.LensFuncs().
 	origOptions := r.app.options
 	r.app.options = func(opts *settings.Options) {
 		origOptions(opts)

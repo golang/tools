@@ -1,4 +1,5 @@
 This test checks the behavior of the 'fill struct' code action.
+See fill_struct_resolve.txt for same test with resolve support.
 
 -- flags --
 -ignore_extra_diags
@@ -89,11 +90,11 @@ type funStruct struct {
 
 var _ = funStruct{} //@codeactionedit("}", "refactor.rewrite", a22)
 
-type funStructCompex struct {
+type funStructComplex struct {
 	fn func(i int, s string) (string, int)
 }
 
-var _ = funStructCompex{} //@codeactionedit("}", "refactor.rewrite", a23)
+var _ = funStructComplex{} //@codeactionedit("}", "refactor.rewrite", a23)
 
 type funStructEmpty struct {
 	fn func()
@@ -120,8 +121,8 @@ var _ = funStructEmpty{} //@codeactionedit("}", "refactor.rewrite", a24)
 +} //@codeactionedit("}", "refactor.rewrite", a22)
 -- @a23/a2.go --
 @@ -23 +23,4 @@
--var _ = funStructCompex{} //@codeactionedit("}", "refactor.rewrite", a23)
-+var _ = funStructCompex{
+-var _ = funStructComplex{} //@codeactionedit("}", "refactor.rewrite", a23)
++var _ = funStructComplex{
 +	fn: func(i int, s string) (string, int) {
 +	},
 +} //@codeactionedit("}", "refactor.rewrite", a23)

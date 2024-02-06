@@ -8,8 +8,8 @@ import (
 	"context"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -32,5 +32,5 @@ func (s *server) Implementation(ctx context.Context, params *protocol.Implementa
 	if snapshot.FileKind(fh) != file.Go {
 		return nil, nil // empty result
 	}
-	return source.Implementation(ctx, snapshot, fh, params.Position)
+	return golang.Implementation(ctx, snapshot, fh, params.Position)
 }

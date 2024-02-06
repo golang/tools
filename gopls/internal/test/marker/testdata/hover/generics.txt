@@ -1,9 +1,10 @@
 This file contains tests for hovering over generic Go code.
 
-Requires go1.19+ for the new go/doc/comment package.
+Requires go1.20+ for the new go/doc/comment package, and a change in Go 1.20
+that affected the formatting of constraint interfaces.
 
 -- flags --
--min_go=go1.19
+-min_go=go1.20
 
 -- go.mod --
 // A go.mod is require for correct pkgsite links.
@@ -25,10 +26,8 @@ type Value[T any] struct { //@hover("T", "T", ValueT)
 	Q   int //@hover("Q", "Q", ValueQ)
 }
 
-// disabled - see issue #54822
-func F[P interface{ ~int | string }]() { // hover("P","P",Ptparam)
-	// disabled - see issue #54822
-	var _ P // hover("P","P",Pvar)
+func F[P interface{ ~int | string }]() { //@hover("P", "P", Ptparam)
+	var _ P //@hover("P","P",Pvar)
 }
 
 -- inferred.go --
@@ -41,7 +40,7 @@ func app[S interface{ ~[]E }, E interface{}](s S, e E) S {
 func _() {
 	_ = app[[]int]             //@hover("app", "app", appint)
 	_ = app[[]int, int]        //@hover("app", "app", appint)
-	_ = app[[]int]([]int{}, 0) //@hover("app", "app", appint)
+	_ = app[[]int]([]int{}, 0) //@hover("app", "app", appint), diag("[[]int]", re"unnecessary")
 	_ = app([]int{}, 0)        //@hover("app", "app", appint)
 }
 
@@ -75,4 +74,12 @@ field Q int
 -- @valuevalT --
 ```go
 type parameter T any
+```
+-- @Ptparam --
+```go
+type parameter P interface{~int | string}
+```
+-- @Pvar --
+```go
+type parameter P interface{~int | string}
 ```

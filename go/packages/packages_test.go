@@ -2953,3 +2953,43 @@ func TestExportFile(t *testing.T) {
 	cfg.Mode = packages.NeedTypes
 	packages.Load(cfg, "fmt")
 }
+
+// TestLoadEitherSucceedsOrFails is an attempt to reproduce a sporadic
+// failure observed on the Android emu builders in which Load would
+// return an empty list of packages but no error. We don't expect
+// packages.Load to succeed on that platform, and testenv.NeedsGoBuild
+// would ordinarily suppress the attempt if called early. But
+// regardless of whether the 'go' command is functional, Load should
+// never return an empty set of packages but no error.
+func TestLoadEitherSucceedsOrFails(t *testing.T) {
+	const src = `package p`
+	dir := t.TempDir()
+	cfg := &packages.Config{
+		Dir:  dir,
+		Mode: packages.LoadSyntax,
+		Overlay: map[string][]byte{
+			filepath.Join(dir, "p.go"): []byte(src),
+		},
+	}
+	initial, err := packages.Load(cfg, "./p.go")
+	if err != nil {
+		// If Load failed because it needed 'go' and the
+		// platform doesn't have it, silently skip the test.
+		testenv.NeedsGoBuild(t)
+
+		// Otherwise, it's a real failure.
+		t.Fatal(err)
+	}
+
+	// If Load returned without error,
+	// it had better give us error-free packages.
+	if packages.PrintErrors(initial) > 0 {
+		t.Errorf("packages contain errors")
+	}
+
+	// If Load returned without error,
+	// it had better give us the correct number packages.
+	if len(initial) != 1 {
+		t.Errorf("Load returned %d packages (want 1) and no error", len(initial))
+	}
+}

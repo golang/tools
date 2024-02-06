@@ -6,9 +6,9 @@ package inlayhint
 import (
 	"testing"
 
+	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/hooks"
 	. "golang.org/x/tools/gopls/internal/test/integration"
-	"golang.org/x/tools/gopls/internal/lsp/source"
 	"golang.org/x/tools/gopls/internal/util/bug"
 )
 
@@ -42,12 +42,12 @@ const (
 		},
 		{
 			label:         "enable const",
-			enabled:       map[string]bool{source.ConstantValues: true},
+			enabled:       map[string]bool{golang.ConstantValues: true},
 			wantInlayHint: true,
 		},
 		{
 			label:         "enable parameter names",
-			enabled:       map[string]bool{source.ParameterNames: true},
+			enabled:       map[string]bool{golang.ParameterNames: true},
 			wantInlayHint: false,
 		},
 	}

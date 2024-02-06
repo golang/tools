@@ -21,8 +21,9 @@ import (
 
 	"github.com/jba/templatecheck"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
-	"golang.org/x/tools/gopls/internal/lsp/cache"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -30,16 +31,18 @@ var templates = map[string]struct {
 	tmpl *template.Template
 	data interface{} // a value of the needed type
 }{
-	"MainTmpl":     {debug.MainTmpl, &debug.Instance{}},
-	"DebugTmpl":    {debug.DebugTmpl, nil},
-	"RPCTmpl":      {debug.RPCTmpl, &debug.Rpcs{}},
-	"TraceTmpl":    {debug.TraceTmpl, debug.TraceResults{}},
-	"CacheTmpl":    {debug.CacheTmpl, &cache.Cache{}},
-	"SessionTmpl":  {debug.SessionTmpl, &cache.Session{}},
-	"ViewTmpl":     {debug.ViewTmpl, &cache.View{}},
-	"ClientTmpl":   {debug.ClientTmpl, &debug.Client{}},
-	"ServerTmpl":   {debug.ServerTmpl, &debug.Server{}},
-	"FileTmpl":     {debug.FileTmpl, &cache.Overlay{}},
+	"MainTmpl":    {debug.MainTmpl, &debug.Instance{}},
+	"DebugTmpl":   {debug.DebugTmpl, nil},
+	"RPCTmpl":     {debug.RPCTmpl, &debug.Rpcs{}},
+	"TraceTmpl":   {debug.TraceTmpl, debug.TraceResults{}},
+	"CacheTmpl":   {debug.CacheTmpl, &cache.Cache{}},
+	"SessionTmpl": {debug.SessionTmpl, &cache.Session{}},
+	"ClientTmpl":  {debug.ClientTmpl, &debug.Client{}},
+	"ServerTmpl":  {debug.ServerTmpl, &debug.Server{}},
+	"FileTmpl": {debug.FileTmpl, *new(interface {
+		file.Handle
+		Kind() file.Kind // (overlay files only)
+	})},
 	"InfoTmpl":     {debug.InfoTmpl, "something"},
 	"MemoryTmpl":   {debug.MemoryTmpl, runtime.MemStats{}},
 	"AnalysisTmpl": {debug.AnalysisTmpl, new(debug.State).Analysis()},
@@ -75,7 +78,7 @@ func TestTemplates(t *testing.T) {
 	if tree == nil {
 		t.Fatalf("found no syntax tree for %s", "serve.go")
 	}
-	renders := callsOf(p, tree, "render")
+	renders := callsOf(tree, "render")
 	if len(renders) == 0 {
 		t.Fatalf("found no calls to render")
 	}
@@ -123,7 +126,7 @@ func TestTemplates(t *testing.T) {
 	}
 }
 
-func callsOf(p *packages.Package, tree *ast.File, name string) []*ast.CallExpr {
+func callsOf(tree *ast.File, name string) []*ast.CallExpr {
 	var ans []*ast.CallExpr
 	f := func(n ast.Node) bool {
 		x, ok := n.(*ast.CallExpr)

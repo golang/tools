@@ -1,0 +1,36 @@
+This test verifies that the named receiver is generated.
+
+-- p.go --
+package p
+
+type A struct{}
+
+func (aa *A) M1() {
+	panic("unimplemented")
+}
+
+type I interface {
+	M1()
+	M2(aa string)
+	M3(bb string)
+	M4() (aa string)
+}
+
+var _ I = &A{} //@suggestedfix(re"&A..", re"missing method M", stub)
+-- @stub/p.go --
+@@ -5 +5,15 @@
++// M2 implements I.
++func (*A) M2(aa string) {
++	panic("unimplemented")
++}
++
++// M3 implements I.
++func (aa *A) M3(bb string) {
++	panic("unimplemented")
++}
++
++// M4 implements I.
++func (*A) M4() (aa string) {
++	panic("unimplemented")
++}
++

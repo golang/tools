@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"sync"
 
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/cache"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -162,7 +162,7 @@ func (s *server) warnAboutModifyingGeneratedFiles(ctx context.Context, uri proto
 	if err != nil {
 		return err
 	}
-	isGenerated := source.IsGenerated(ctx, snapshot, uri)
+	isGenerated := golang.IsGenerated(ctx, snapshot, uri)
 	release()
 
 	if isGenerated {

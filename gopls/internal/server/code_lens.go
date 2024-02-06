@@ -10,10 +10,10 @@ import (
 	"sort"
 
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/command"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/mod"
+	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 )
@@ -28,12 +28,12 @@ func (s *server) CodeLens(ctx context.Context, params *protocol.CodeLensParams) 
 	}
 	defer release()
 
-	var lenses map[command.Command]source.LensFunc
+	var lenses map[command.Command]golang.LensFunc
 	switch snapshot.FileKind(fh) {
 	case file.Mod:
 		lenses = mod.LensFuncs()
 	case file.Go:
-		lenses = source.LensFuncs()
+		lenses = golang.LensFuncs()
 	default:
 		// Unsupported file kind for a code lens.
 		return nil, nil

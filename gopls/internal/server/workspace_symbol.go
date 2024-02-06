@@ -7,9 +7,9 @@ package server
 import (
 	"context"
 
-	"golang.org/x/tools/gopls/internal/lsp/cache"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/internal/event"
 )
@@ -37,5 +37,5 @@ func (s *server) Symbol(ctx context.Context, params *protocol.WorkspaceSymbolPar
 		defer release()
 		snapshots = append(snapshots, snapshot)
 	}
-	return source.WorkspaceSymbols(ctx, matcher, style, snapshots, params.Query)
+	return golang.WorkspaceSymbols(ctx, matcher, style, snapshots, params.Query)
 }

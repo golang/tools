@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/mod/module"
 	"golang.org/x/tools/internal/gocommand"
@@ -93,7 +94,7 @@ package z
 
 	mt.assertFound("y", "y")
 
-	scan, err := scanToSlice(mt.resolver, nil)
+	scan, err := scanToSlice(mt.env.resolver, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +213,7 @@ import _ "rsc.io/quote"
 	}
 
 	// Uninitialize the go.mod dependent cached information and make sure it still finds the package.
-	mt.resolver.ClearForNewMod()
+	mt.env.ClearModuleInfo()
 	mt.assertScanFinds("rsc.io/quote", "quote")
 }
 
@@ -241,8 +242,9 @@ import _ "rsc.io/sampler"
 	}
 
 	// Clear out the resolver's cache, since we've changed the environment.
-	mt.resolver = newModuleResolver(mt.env)
 	mt.env.Env["GOFLAGS"] = "-mod=vendor"
+	mt.env.ClearModuleInfo()
+	mt.env.UpdateResolver(mt.env.resolver.ClearForNewScan())
 	mt.assertModuleFoundInDir("rsc.io/sampler", "sampler", `/vendor/`)
 }
 
@@ -269,6 +271,10 @@ import _ "rsc.io/sampler"
 	if testenv.Go1Point() >= 14 {
 		wantDir = `/vendor/`
 	}
+
+	// Clear out the resolver's module info, since we've changed the environment.
+	// (the presence of a /vendor directory affects `go list -m`).
+	mt.env.ClearModuleInfo()
 	mt.assertModuleFoundInDir("rsc.io/sampler", "sampler", wantDir)
 }
 
@@ -900,7 +906,7 @@ package x
 func (t *modTest) assertFound(importPath, pkgName string) (string, *pkg) {
 	t.Helper()
 
-	names, err := t.resolver.loadPackageNames([]string{importPath}, t.env.WorkingDir)
+	names, err := t.env.resolver.loadPackageNames([]string{importPath}, t.env.WorkingDir)
 	if err != nil {
 		t.Errorf("loading package name for %v: %v", importPath, err)
 	}
@@ -909,13 +915,13 @@ func (t *modTest) assertFound(importPath, pkgName string) (string, *pkg) {
 	}
 	pkg := t.assertScanFinds(importPath, pkgName)
 
-	_, foundDir := t.resolver.findPackage(importPath)
+	_, foundDir := t.env.resolver.(*ModuleResolver).findPackage(importPath)
 	return foundDir, pkg
 }
 
 func (t *modTest) assertScanFinds(importPath, pkgName string) *pkg {
 	t.Helper()
-	scan, err := scanToSlice(t.resolver, nil)
+	scan, err := scanToSlice(t.env.resolver, nil)
 	if err != nil {
 		t.Errorf("scan failed: %v", err)
 	}
@@ -983,10 +989,9 @@ var proxyDir string
 
 type modTest struct {
 	*testing.T
-	env      *ProcessEnv
-	gopath   string
-	resolver *ModuleResolver
-	cleanup  func()
+	env     *ProcessEnv
+	gopath  string
+	cleanup func()
 }
 
 // setup builds a test environment from a txtar and supporting modules
@@ -1046,16 +1051,20 @@ func setup(t *testing.T, extraEnv map[string]string, main, wd string) *modTest {
 		}
 	}
 
-	resolver, err := env.GetResolver()
-	if err != nil {
+	// Ensure the resolver is set for tests that (unsafely) access env.resolver
+	// directly.
+	//
+	// TODO(rfindley): fix this after addressing the TODO in the ProcessEnv
+	// docstring.
+	if _, err := env.GetResolver(); err != nil {
 		t.Fatal(err)
 	}
+
 	return &modTest{
-		T:        t,
-		gopath:   env.Env["GOPATH"],
-		env:      env,
-		resolver: resolver.(*ModuleResolver),
-		cleanup:  func() { removeDir(dir) },
+		T:       t,
+		gopath:  env.Env["GOPATH"],
+		env:     env,
+		cleanup: func() { removeDir(dir) },
 	}
 }
 
@@ -1098,7 +1107,7 @@ func writeProxyModule(base, arPath string) error {
 	arName := filepath.Base(arPath)
 	i := strings.LastIndex(arName, "_v")
 	ver := strings.TrimSuffix(arName[i+1:], ".txt")
-	modDir := strings.Replace(arName[:i], "_", "/", -1)
+	modDir := strings.ReplaceAll(arName[:i], "_", "/")
 	modPath, err := module.UnescapePath(modDir)
 	if err != nil {
 		return err
@@ -1183,7 +1192,7 @@ import _ "rsc.io/quote"
 	want := filepath.Join(mt.gopath, "pkg/mod", "rsc.io/quote@v1.5.2")
 
 	found := mt.assertScanFinds("rsc.io/quote", "quote")
-	modDir, _ := mt.resolver.modInfo(found.dir)
+	modDir, _ := mt.env.resolver.(*ModuleResolver).modInfo(found.dir)
 	if modDir != want {
 		t.Errorf("expected: %s, got: %s", want, modDir)
 	}
@@ -1288,20 +1297,37 @@ import (
 	}
 }
 
-func BenchmarkScanModCache(b *testing.B) {
+func BenchmarkModuleResolver_RescanModCache(b *testing.B) {
 	env := &ProcessEnv{
 		GocmdRunner: &gocommand.Runner{},
-		Logf:        b.Logf,
+		// Uncomment for verbose logging (too verbose to enable by default).
+		// Logf:        b.Logf,
 	}
 	exclude := []gopathwalk.RootType{gopathwalk.RootGOROOT}
 	resolver, err := env.GetResolver()
 	if err != nil {
 		b.Fatal(err)
 	}
+	start := time.Now()
 	scanToSlice(resolver, exclude)
+	b.Logf("warming the mod cache took %v", time.Since(start))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		scanToSlice(resolver, exclude)
-		resolver.(*ModuleResolver).ClearForNewScan()
+		resolver = resolver.ClearForNewScan()
+	}
+}
+
+func BenchmarkModuleResolver_InitialScan(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		env := &ProcessEnv{
+			GocmdRunner: &gocommand.Runner{},
+		}
+		exclude := []gopathwalk.RootType{gopathwalk.RootGOROOT}
+		resolver, err := env.GetResolver()
+		if err != nil {
+			b.Fatal(err)
+		}
+		scanToSlice(resolver, exclude)
 	}
 }

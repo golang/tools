@@ -1,0 +1,57 @@
+This test checks that hover reports accessible embedded fields
+(after the doc comment  and before the accessible methods).
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- q/q.go --
+package q
+
+type Q struct {
+	One int
+	two string
+	q2[chan int]
+}
+
+type q2[T any] struct {
+	Three *T
+	four string
+}
+
+-- p.go --
+package p
+
+import "example.com/q"
+
+// doc
+type P struct {
+	q.Q
+}
+
+func (P) m() {}
+
+var p P //@hover("P", "P", P)
+
+-- @P --
+```go
+type P struct {
+	q.Q
+}
+```
+
+doc
+
+
+```go
+// Embedded fields:
+One   int       // through Q    
+Three *chan int // through Q.q2 
+```
+
+```go
+func (P) m()
+```
+
+[`p.P` on pkg.go.dev](https://pkg.go.dev/example.com#P)

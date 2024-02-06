@@ -11,16 +11,16 @@ import (
 	"path/filepath"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsp/cache"
-	"golang.org/x/tools/gopls/internal/lsp/command"
-	"golang.org/x/tools/gopls/internal/lsp/protocol"
-	"golang.org/x/tools/gopls/internal/lsp/source"
+	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 )
 
 // LensFuncs returns the supported lensFuncs for go.mod files.
-func LensFuncs() map[command.Command]source.LensFunc {
-	return map[command.Command]source.LensFunc{
+func LensFuncs() map[command.Command]golang.LensFunc {
+	return map[command.Command]golang.LensFunc{
 		command.UpgradeDependency: upgradeLenses,
 		command.Tidy:              tidyLens,
 		command.Vendor:            vendorLens,
