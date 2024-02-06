@@ -242,7 +242,7 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 		name := lowerFirst(typesField.Name())
 
 		var enumKeys settings.EnumKeys
-		if m, ok := typesField.Type().(*types.Map); ok {
+		if m, ok := typesField.Type().Underlying().(*types.Map); ok {
 			e, ok := enums[m.Key()]
 			if ok {
 				typ = strings.Replace(typ, m.Key().String(), m.Key().Underlying().String(), 1)
@@ -313,7 +313,7 @@ func collectEnumKeys(name string, m *types.Map, reflectField reflect.Value, enum
 	}
 	// We can get default values for enum -> bool maps.
 	var isEnumBoolMap bool
-	if basic, ok := m.Elem().(*types.Basic); ok && basic.Kind() == types.Bool {
+	if basic, ok := m.Elem().Underlying().(*types.Basic); ok && basic.Kind() == types.Bool {
 		isEnumBoolMap = true
 	}
 	for _, v := range enumValues {
