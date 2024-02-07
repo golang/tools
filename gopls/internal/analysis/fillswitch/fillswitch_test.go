@@ -16,7 +16,7 @@ import (
 )
 
 // analyzer allows us to test the fillswitch code action using the analysistest
-// harness. (fillswitch used to be a gopls analyzer.)
+// harness.
 var analyzer = &analysis.Analyzer{
 	Name:     "fillswitch",
 	Doc:      "test only",
