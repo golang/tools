@@ -11,3 +11,11 @@ const (
 	TypeBTwo
 	TypeBThree
 )
+
+type ExportedInterface interface {
+	isExportedInterface()
+}
+
+type notExportedType struct{}
+
+func (notExportedType) isExportedInterface() {}

@@ -71,4 +71,8 @@ func doTypeSwitch() {
 	switch not.(type) {
 	default:
 	}
+
+	var t data.ExportedInterface
+	switch t {
+	}
 }
