@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package fillswitch provides diagnostics and fixes to fills the missing cases
+// Package fillswitch provides diagnostics and fixes to fill the missing cases
 // in type switches or switches over named types.
 //
 // The analyzer's diagnostic is merely a prompt.
