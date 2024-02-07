@@ -1,6 +1,17 @@
-This is a minimal test of the refactor.inline code action, without resolve support.
-See inline_resolve.txt for same test with resolve support.
+This is a minimal test of the refactor.inline code actions, with resolve support.
+See inline.txt for same test without resolve support.
 
+-- capabilities.json --
+{
+	"textDocument": {
+		"codeAction": {
+			"dataSupport": true,
+			"resolveSupport": {
+				"properties": ["edit"]
+			}
+		}
+	}
+}
 -- go.mod --
 module example.com/codeaction
 go 1.18
