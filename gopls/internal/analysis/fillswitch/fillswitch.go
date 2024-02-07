@@ -50,10 +50,6 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 				return // non-overlapping
 			}
 
-			if defaultHandled(expr.Body) {
-				return
-			}
-
 			namedType, err := namedTypeFromSwitch(expr, info)
 			if err != nil {
 				return
@@ -77,10 +73,6 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 			if start.IsValid() && expr.End() < start ||
 				end.IsValid() && expr.Pos() > end {
 				return // non-overlapping
-			}
-
-			if defaultHandled(expr.Body) {
-				return
 			}
 
 			namedType, err := namedTypeFromTypeSwitch(expr, info)
@@ -109,6 +101,10 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 }
 
 func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
+	if defaultHandled(stmt.Body) {
+		return nil, nil
+	}
+
 	namedType, err := namedTypeFromTypeSwitch(stmt, info)
 	if err != nil {
 		return nil, err
@@ -163,6 +159,10 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 }
 
 func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
+	if defaultHandled(stmt.Body) {
+		return nil, nil
+	}
+
 	namedType, err := namedTypeFromSwitch(stmt, info)
 	if err != nil {
 		return nil, err
