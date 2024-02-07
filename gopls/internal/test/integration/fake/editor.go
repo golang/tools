@@ -337,6 +337,8 @@ func clientCapabilities(cfg EditorConfig) (protocol.ClientCapabilities, error) {
 		"struct", "typeParameter", "parameter", "variable", "property", "enumMember",
 		"event", "function", "method", "macro", "keyword", "modifier", "comment",
 		"string", "number", "regexp", "operator",
+		// Additional types supported by this client:
+		"label",
 	}
 	capabilities.TextDocument.SemanticTokens.TokenModifiers = []string{
 		"declaration", "definition", "readonly", "static",

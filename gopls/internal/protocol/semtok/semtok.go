@@ -18,6 +18,9 @@ type Token struct {
 type TokenType string
 
 const (
+	// These are the tokens defined by LSP 3.17, but a client is
+	// free to send its own set; any tokens that the server emits
+	// that are not in this set are simply not encoded in the bitfield.
 	TokNamespace TokenType = "namespace"
 	TokType      TokenType = "type"
 	TokInterface TokenType = "interface"
@@ -32,6 +35,10 @@ const (
 	TokNumber    TokenType = "number"
 	TokOperator  TokenType = "operator"
 	TokMacro     TokenType = "macro" // for templates
+
+	// not part of LSP 3.17 (even though JS has labels)
+	// https://github.com/microsoft/vscode-languageserver-node/issues/1422
+	TokLabel TokenType = "label"
 )
 
 // Encode returns the LSP encoding of a sequence of tokens.

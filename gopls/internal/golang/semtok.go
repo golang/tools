@@ -231,7 +231,9 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 	case *ast.BlockStmt:
 	case *ast.BranchStmt:
 		tv.token(n.TokPos, len(n.Tok.String()), semtok.TokKeyword, nil)
-		// There's no semantic encoding for labels
+		if n.Label != nil {
+			tv.token(n.Label.Pos(), len(n.Label.Name), semtok.TokLabel, nil)
+		}
 	case *ast.CallExpr:
 		if n.Ellipsis.IsValid() {
 			tv.token(n.Ellipsis, len("..."), semtok.TokOperator, nil)
@@ -303,6 +305,7 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 		tv.token(n.Interface, len("interface"), semtok.TokKeyword, nil)
 	case *ast.KeyValueExpr:
 	case *ast.LabeledStmt:
+		tv.token(n.Label.Pos(), len(n.Label.Name), semtok.TokLabel, []string{"definition"})
 	case *ast.MapType:
 		tv.token(n.Map, len("map"), semtok.TokKeyword, nil)
 	case *ast.ParenExpr:
@@ -411,7 +414,7 @@ func (tv *tokenVisitor) ident(id *ast.Ident) {
 	case *types.Func:
 		emit(semtok.TokFunction)
 	case *types.Label:
-		// nothing to map it to
+		// Labels are reliably covered by the syntax traversal.
 	case *types.Nil:
 		// nil is a predeclared identifier
 		emit(semtok.TokVariable, "readonly", "defaultLibrary")
@@ -571,8 +574,14 @@ func (tv *tokenVisitor) unkIdent(id *ast.Ident) (semtok.TokenType, []string) {
 			return semtok.TokMethod, def
 		}
 		return semtok.TokVariable, nil
-	case *ast.LabeledStmt, *ast.BranchStmt:
-		// nothing to report
+	case *ast.LabeledStmt:
+		if id == parent.Label {
+			return semtok.TokLabel, def
+		}
+	case *ast.BranchStmt:
+		if id == parent.Label {
+			return semtok.TokLabel, nil
+		}
 	case *ast.CompositeLit:
 		if parent.Type == id {
 			return semtok.TokType, nil
@@ -604,7 +613,17 @@ func isDeprecated(n *ast.CommentGroup) bool {
 
 // definitionFor handles a defining identifier.
 func (tv *tokenVisitor) definitionFor(id *ast.Ident, obj types.Object) (semtok.TokenType, []string) {
-	// PJW: obj == types.Label? probably a nothing
+	// The definition of a types.Label cannot be found by
+	// ascending the syntax tree, and doing so will reach the
+	// FuncDecl, causing us to misinterpret the label as a
+	// parameter (#65494).
+	//
+	// However, labels are reliably covered by the syntax
+	// traversal, so we don't need to use type information.
+	if is[*types.Label](obj) {
+		return "", nil
+	}
+
 	// PJW: look into replacing these syntactic tests with types more generally
 	modifiers := []string{"definition"}
 	for i := len(tv.stack) - 1; i >= 0; i-- {
