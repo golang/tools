@@ -155,10 +155,14 @@ func removeVariableFromSpec(pass *analysis.Pass, path []ast.Node, stmt *ast.Valu
 		// Find parent DeclStmt and delete it
 		for _, node := range path {
 			if declStmt, ok := node.(*ast.DeclStmt); ok {
+				edits := deleteStmtFromBlock(path, declStmt)
+				if len(edits) == 0 {
+					return nil // can this happen?
+				}
 				return []analysis.SuggestedFix{
 					{
 						Message:   suggestedFixMessage(ident.Name),
-						TextEdits: deleteStmtFromBlock(path, declStmt),
+						TextEdits: edits,
 					},
 				}
 			}
@@ -208,10 +212,14 @@ func removeVariableFromAssignment(path []ast.Node, stmt *ast.AssignStmt, ident *
 		}
 
 		// RHS does not have any side effects, delete the whole statement
+		edits := deleteStmtFromBlock(path, stmt)
+		if len(edits) == 0 {
+			return nil // can this happen?
+		}
 		return []analysis.SuggestedFix{
 			{
 				Message:   suggestedFixMessage(ident.Name),
-				TextEdits: deleteStmtFromBlock(path, stmt),
+				TextEdits: edits,
 			},
 		}
 	}
