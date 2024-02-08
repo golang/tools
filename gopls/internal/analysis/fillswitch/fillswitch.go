@@ -101,7 +101,7 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 }
 
 func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
-	if defaultHandled(stmt.Body) {
+	if hasDefaultCase(stmt.Body) {
 		return nil, nil
 	}
 
@@ -116,10 +116,6 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		obj := scope.Lookup(name)
 		if _, ok := obj.(*types.TypeName); !ok {
 			continue // not a type
-		}
-
-		if types.Identical(obj.Type(), namedType.Obj().Type()) {
-			continue
 		}
 
 		if types.IsInterface(obj.Type()) {
@@ -159,7 +155,7 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 }
 
 func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
-	if defaultHandled(stmt.Body) {
+	if hasDefaultCase(stmt.Body) {
 		return nil, nil
 	}
 
@@ -169,16 +165,16 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 	}
 
 	scope := namedType.Obj().Pkg().Scope()
-	variants := make([]string, 0)
+	var variants []string
 	for _, name := range scope.Names() {
 		obj := scope.Lookup(name)
-		if obj.Id() == namedType.Obj().Id() {
+		_, ok := obj.(*types.Const)
+		if !ok {
 			continue
 		}
 
 		if types.Identical(obj.Type(), namedType.Obj().Type()) {
-			// TODO: comparing the package name like this feels wrong, is it?
-			if obj.Pkg().Name() != pkg.Name() {
+			if obj.Pkg() != pkg {
 				if !obj.Exported() {
 					continue
 				}
@@ -255,7 +251,7 @@ func namedTypeFromTypeSwitch(stmt *ast.TypeSwitchStmt, info *types.Info) (*types
 	}
 }
 
-func defaultHandled(body *ast.BlockStmt) bool {
+func hasDefaultCase(body *ast.BlockStmt) bool {
 	for _, bl := range body.List {
 		if len(bl.(*ast.CaseClause).List) == 0 {
 			return true
