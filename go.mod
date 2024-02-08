@@ -12,5 +12,5 @@ require golang.org/x/sync v0.6.0
 
 require (
 	golang.org/x/sys v0.17.0 // indirect
-	golang.org/x/telemetry v0.0.0-20240201224847-0a1d30dda509
+	golang.org/x/telemetry v0.0.0-20240208230135-b75ee8823808
 )
