@@ -553,6 +553,12 @@ type InternalOptions struct {
 	// LinkifyShowMessage controls whether the client wants gopls
 	// to linkify links in showMessage. e.g. [go.dev](https://go.dev).
 	LinkifyShowMessage bool
+
+	// IncludeReplaceInWorkspace controls whether locally replaced modules in a
+	// go.mod file are treated like workspace modules.
+	// Or in other words, if a go.mod file with local replaces behaves like a
+	// go.work file.
+	IncludeReplaceInWorkspace bool
 }
 
 type SubdirWatchPatterns string
@@ -1146,8 +1152,12 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 
 	case "telemetryPrompt":
 		result.setBool(&o.TelemetryPrompt)
+
 	case "linkifyShowMessage":
 		result.setBool(&o.LinkifyShowMessage)
+
+	case "includeReplaceInWorkspace":
+		result.setBool(&o.IncludeReplaceInWorkspace)
 
 	// Replaced settings.
 	case "experimentalDisabledAnalyses":

@@ -115,6 +115,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 				ReportAnalysisProgressAfter: 5 * time.Second,
 				TelemetryPrompt:             false,
 				LinkifyShowMessage:          false,
+				IncludeReplaceInWorkspace:   true,
 			},
 			Hooks: Hooks{
 				URLRegexp:            urlRegexp(),

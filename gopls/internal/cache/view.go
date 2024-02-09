@@ -154,8 +154,10 @@ type viewDefinition struct {
 
 	// workspaceModFiles holds the set of mod files active in this snapshot.
 	//
-	// This is either empty, a single entry for the workspace go.mod file, or the
-	// set of mod files used by the workspace go.work file.
+	// For a go.work workspace, this is the set of workspace modfiles. For a
+	// go.mod workspace, this contains the go.mod file defining the workspace
+	// root, as well as any locally replaced modules (if
+	// "includeReplaceInWorkspace" is set).
 	//
 	// TODO(rfindley): should we just run `go list -m` to compute this set?
 	workspaceModFiles    map[protocol.DocumentURI]struct{}
@@ -939,6 +941,22 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 	// But gopls is less strict, allowing GOPATH mode if GO111MODULE="", and
 	// AdHoc views if no module is found.
 
+	// gomodWorkspace is a helper to compute the correct set of workspace
+	// modfiles for a go.mod file, based on folder options.
+	gomodWorkspace := func() map[protocol.DocumentURI]unit {
+		modFiles := map[protocol.DocumentURI]struct{}{def.gomod: {}}
+		if folder.Options.IncludeReplaceInWorkspace {
+			includingReplace, err := goModModules(ctx, def.gomod, fs)
+			if err == nil {
+				modFiles = includingReplace
+			} else {
+				// If the go.mod file fails to parse, we don't know anything about
+				// replace directives, so fall back to a view of just the root module.
+			}
+		}
+		return modFiles
+	}
+
 	// Prefer a go.work file if it is available and contains the module relevant
 	// to forURI.
 	if def.adjustedGO111MODULE() != "off" && folder.Env.GOWORK != "off" && def.gowork != "" {
@@ -959,7 +977,7 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 			if _, ok := def.workspaceModFiles[def.gomod]; !ok {
 				def.typ = GoModView
 				def.root = def.gomod.Dir()
-				def.workspaceModFiles = map[protocol.DocumentURI]unit{def.gomod: {}}
+				def.workspaceModFiles = gomodWorkspace()
 				if def.envOverlay == nil {
 					def.envOverlay = make(map[string]string)
 				}
@@ -978,7 +996,7 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 	if def.adjustedGO111MODULE() != "off" && def.gomod != "" {
 		def.typ = GoModView
 		def.root = def.gomod.Dir()
-		def.workspaceModFiles = map[protocol.DocumentURI]struct{}{def.gomod: {}}
+		def.workspaceModFiles = gomodWorkspace()
 		return def, nil
 	}
 
