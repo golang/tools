@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
-	"golang.org/x/tools/gopls/internal/analysis/fillswitch"
 	"golang.org/x/tools/gopls/internal/analysis/stubmethods"
 	"golang.org/x/tools/gopls/internal/analysis/undeclaredname"
 	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
@@ -108,7 +107,6 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		fillstruct.FixCategory:     singleFile(fillstruct.SuggestedFix),
 		stubmethods.FixCategory:    stubMethodsFixer,
 		undeclaredname.FixCategory: singleFile(undeclaredname.SuggestedFix),
-		fillswitch.FixCategory:     fillswitch.SuggestedFix,
 
 		// Ad-hoc fixers: these are used when the command is
 		// constructed directly by logic in server/code_action.

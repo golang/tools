@@ -18,10 +18,10 @@ const (
 
 func doSwitch() {
 	var a typeA
-	switch a { // want `Switch has missing cases`
+	switch a { // want `Add cases for typeA`
 	}
 
-	switch a { // want `Switch has missing cases`
+	switch a { // want `Add cases for typeA`
 	case typeAOne:
 	}
 
@@ -37,7 +37,7 @@ func doSwitch() {
 	}
 
 	var b data.TypeB
-	switch b { // want `Switch has missing cases`
+	switch b { // want `Add cases for TypeB`
 	case data.TypeBOne:
 	}
 }
@@ -56,10 +56,10 @@ func (notificationTwo) isNotification() {}
 
 func doTypeSwitch() {
 	var not notification
-	switch not.(type) { // want `Switch has missing cases`
+	switch not.(type) { // want `Add cases for notification`
 	}
 
-	switch not.(type) { // want `Switch has missing cases`
+	switch not.(type) { // want `Add cases for notification`
 	case notificationOne:
 	}
 

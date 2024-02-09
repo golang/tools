@@ -14,7 +14,6 @@ package fillswitch
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -24,19 +23,13 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/gopls/internal/cache"
-	"golang.org/x/tools/gopls/internal/cache/parsego"
 )
 
-const FixCategory = "fillswitch" // recognized by gopls ApplyFix
+const FixCategory = "fillswitch"
 
 // Diagnose computes diagnostics for switch statements with missing cases
 // overlapping with the provided start and end position.
-//
-// The diagnostic contains a lazy fix; the actual patch is computed
-// (via the ApplyFix command) by a call to [SuggestedFix].
 //
 // If either start or end is invalid, the entire package is inspected.
 func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Package, info *types.Info) []analysis.Diagnostic {
@@ -50,24 +43,17 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 				return // non-overlapping
 			}
 
-			namedType, err := namedTypeFromSwitch(expr, info)
-			if err != nil {
-				return
-			}
-
-			if fix, err := suggestedFixSwitch(expr, pkg, info); err != nil || fix == nil {
+			fix, err := suggestedFixSwitch(expr, pkg, info)
+			if err != nil || fix == nil {
 				return
 			}
 
 			diags = append(diags, analysis.Diagnostic{
-				Message:  "Switch has missing cases",
-				Pos:      expr.Pos(),
-				End:      expr.End(),
-				Category: FixCategory,
-				SuggestedFixes: []analysis.SuggestedFix{{
-					Message: fmt.Sprintf("Add cases for %s", namedType.Obj().Name()),
-					// No TextEdits => computed later by gopls.
-				}},
+				Message:        fix.Message,
+				Pos:            expr.Pos(),
+				End:            expr.End(),
+				Category:       FixCategory,
+				SuggestedFixes: []analysis.SuggestedFix{*fix},
 			})
 		case *ast.TypeSwitchStmt:
 			if start.IsValid() && expr.End() < start ||
@@ -75,24 +61,17 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 				return // non-overlapping
 			}
 
-			namedType, err := namedTypeFromTypeSwitch(expr, info)
-			if err != nil {
-				return
-			}
-
-			if fix, err := suggestedFixTypeSwitch(expr, pkg, info); err != nil || fix == nil {
+			fix, err := suggestedFixTypeSwitch(expr, pkg, info)
+			if err != nil || fix == nil {
 				return
 			}
 
 			diags = append(diags, analysis.Diagnostic{
-				Message:  "Switch has missing cases",
-				Pos:      expr.Pos(),
-				End:      expr.End(),
-				Category: FixCategory,
-				SuggestedFixes: []analysis.SuggestedFix{{
-					Message: fmt.Sprintf("Add cases for %v", namedType.Obj().Name()),
-					// No TextEdits => computed later by gopls.
-				}},
+				Message:        fix.Message,
+				Pos:            expr.Pos(),
+				End:            expr.End(),
+				Category:       FixCategory,
+				SuggestedFixes: []analysis.SuggestedFix{*fix},
 			})
 		}
 	})
@@ -134,7 +113,7 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		}
 	}
 
-	handledVariants := typeSwitchCases(stmt.Body, info)
+	handledVariants := caseTypes(stmt.Body, info)
 	if len(variants) == 0 || len(variants) == len(handledVariants) {
 		return nil, nil
 	}
@@ -144,7 +123,7 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		TextEdits: []analysis.TextEdit{{
 			Pos:     stmt.End() - 1,
 			End:     stmt.End() - 1,
-			NewText: buildNewTypesText(variants, handledVariants, pkg),
+			NewText: buildTypesText(variants, handledVariants, pkg),
 		}},
 	}, nil
 }
@@ -170,7 +149,7 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 
 		samePkg := obj.Pkg() != pkg
 		if samePkg && !obj.Exported() {
-			continue
+			continue // inaccessible
 		}
 
 		if types.Identical(obj.Type(), namedType.Obj().Type()) {
@@ -188,7 +167,7 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 		TextEdits: []analysis.TextEdit{{
 			Pos:     stmt.End() - 1,
 			End:     stmt.End() - 1,
-			NewText: buildNewConstsText(variants, handledVariants, pkg),
+			NewText: buildConstsText(variants, handledVariants, pkg),
 		}},
 	}, nil
 }
@@ -252,7 +231,7 @@ func hasDefaultCase(body *ast.BlockStmt) bool {
 	return false
 }
 
-func buildNewConstsText(variants []*types.Const, handledVariants []*types.Const, currentPkg *types.Package) []byte {
+func buildConstsText(variants []*types.Const, handledVariants []*types.Const, currentPkg *types.Package) []byte {
 	var textBuilder strings.Builder
 	for _, c := range variants {
 		if slices.Contains(handledVariants, c) {
@@ -287,7 +266,7 @@ func isSameType(c, t types.Type) bool {
 	return false
 }
 
-func buildNewTypesText(variants []types.Type, handledVariants []types.Type, currentPkg *types.Package) []byte {
+func buildTypesText(variants []types.Type, handledVariants []types.Type, currentPkg *types.Package) []byte {
 	var textBuilder strings.Builder
 	for _, c := range variants {
 		if slices.ContainsFunc(handledVariants, func(t types.Type) bool { return isSameType(c, t) }) {
@@ -309,6 +288,7 @@ func buildNewTypesText(variants []types.Type, handledVariants []types.Type, curr
 			}
 
 			if e.Obj().Pkg() != currentPkg {
+				// TODO: use the correct package name when the import is renamed
 				textBuilder.WriteString("*" + e.Obj().Pkg().Name() + "." + e.Obj().Name())
 			} else {
 				textBuilder.WriteString("*" + e.Obj().Name())
@@ -335,6 +315,7 @@ func caseConsts(body *ast.BlockStmt, info *types.Info) []*types.Const {
 				if !ok {
 					continue
 				}
+
 				c, ok := obj.(*types.Const)
 				if !ok {
 					continue
@@ -365,7 +346,7 @@ func caseConsts(body *ast.BlockStmt, info *types.Info) []*types.Const {
 	return out
 }
 
-func typeSwitchCases(body *ast.BlockStmt, info *types.Info) []types.Type {
+func caseTypes(body *ast.BlockStmt, info *types.Info) []types.Type {
 	var out []types.Type
 	for _, stmt := range body.List {
 		for _, e := range stmt.(*ast.CaseClause).List {
@@ -420,33 +401,4 @@ func typeSwitchCases(body *ast.BlockStmt, info *types.Info) []types.Type {
 	}
 
 	return out
-}
-
-// SuggestedFix computes the suggested fix for the kinds of
-// diagnostics produced by the Analyzer above.
-func SuggestedFix(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-	pos := start // don't use the end
-	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
-	if len(path) < 2 {
-		return nil, nil, fmt.Errorf("no expression found")
-	}
-
-	switch stmt := path[0].(type) {
-	case *ast.SwitchStmt:
-		fix, err := suggestedFixSwitch(stmt, pkg.GetTypes(), pkg.GetTypesInfo())
-		if err != nil {
-			return nil, nil, err
-		}
-
-		return pkg.FileSet(), fix, nil
-	case *ast.TypeSwitchStmt:
-		fix, err := suggestedFixTypeSwitch(stmt, pkg.GetTypes(), pkg.GetTypesInfo())
-		if err != nil {
-			return nil, nil, err
-		}
-
-		return pkg.FileSet(), fix, nil
-	default:
-		return nil, nil, fmt.Errorf("no switch statement found")
-	}
 }
