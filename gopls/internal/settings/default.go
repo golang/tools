@@ -116,6 +116,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 				TelemetryPrompt:             false,
 				LinkifyShowMessage:          false,
 				IncludeReplaceInWorkspace:   true,
+				ZeroConfig:                  true,
 			},
 			Hooks: Hooks{
 				URLRegexp:            urlRegexp(),

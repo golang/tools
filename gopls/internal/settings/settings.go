@@ -559,6 +559,11 @@ type InternalOptions struct {
 	// Or in other words, if a go.mod file with local replaces behaves like a
 	// go.work file.
 	IncludeReplaceInWorkspace bool
+
+	// ZeroConfig enables the zero-config algorithm for workspace layout,
+	// dynamically creating build configurations for different modules,
+	// directories, and GOOS/GOARCH combinations to cover open files.
+	ZeroConfig bool
 }
 
 type SubdirWatchPatterns string
@@ -1158,6 +1163,9 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 
 	case "includeReplaceInWorkspace":
 		result.setBool(&o.IncludeReplaceInWorkspace)
+
+	case "zeroConfig":
+		result.setBool(&o.ZeroConfig)
 
 	// Replaced settings.
 	case "experimentalDisabledAnalyses":

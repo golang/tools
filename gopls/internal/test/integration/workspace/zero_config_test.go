@@ -234,3 +234,37 @@ const B = 1
 		})
 	}
 }
+
+func TestDisableZeroConfig(t *testing.T) {
+	// This test checks that we treat locally replaced modules as workspace
+	// modules, according to the "includeReplaceInWorkspace" setting.
+	const files = `
+-- moda/go.mod --
+module golang.org/a
+
+go 1.20
+
+-- moda/a.go --
+package a
+
+-- modb/go.mod --
+module golang.org/b
+
+go 1.20
+
+-- modb/b.go --
+package b
+
+`
+
+	WithOptions(
+		Settings{"zeroConfig": false},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("moda/a.go")
+		env.OpenFile("modb/b.go")
+		env.AfterChange()
+		if got := env.Views(); len(got) != 1 || got[0].Type != cache.AdHocView.String() {
+			t.Errorf("Views: got %v, want one adhoc view", got)
+		}
+	})
+}

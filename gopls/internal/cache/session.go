@@ -480,7 +480,7 @@ func selectViewDefs(ctx context.Context, fs file.Source, folders []*Folder, open
 checkFiles:
 	for _, uri := range openFiles {
 		folder := folderForFile(uri)
-		if folder == nil {
+		if folder == nil || !folder.Options.ZeroConfig {
 			continue // only guess views for open files
 		}
 		fh, err := fs.ReadFile(ctx, uri)
