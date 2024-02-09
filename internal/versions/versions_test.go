@@ -20,6 +20,7 @@ func TestIsValid(t *testing.T) {
 		"go0.0", // ??
 		"go1",
 		"go2",
+		"go1.20.0-bigcorp",
 	} {
 		if !versions.IsValid(x) {
 			t.Errorf("expected versions.IsValid(%q) to hold", x)
@@ -40,6 +41,7 @@ func TestIsValid(t *testing.T) {
 		"go1.21.2_2",
 		"go1.21rc_2",
 		"go1.21rc2_",
+		"go1.600+auto",
 	} {
 		if versions.IsValid(x) {
 			t.Errorf("expected versions.IsValid(%q) to not hold", x)
@@ -52,6 +54,7 @@ func TestVersionComparisons(t *testing.T) {
 		x, y string
 		want int
 	}{
+		// All comparisons of go2, go1.21.2, go1.21rc2, go1.21rc2, go1, go0.0, "", bad
 		{"go2", "go2", 0},
 		{"go2", "go1.21.2", +1},
 		{"go2", "go1.21rc2", +1},
@@ -97,6 +100,11 @@ func TestVersionComparisons(t *testing.T) {
 		{"", "", 0},
 		{"", "bad", 0},
 		{"bad", "bad", 0},
+		// Other tests.
+		{"go1.20", "go1.20.0-bigcorp", 0},
+		{"go1.21", "go1.21.0-bigcorp", -1},  // Starting in Go 1.21, patch missing is different from explicit .0.
+		{"go1.21.0", "go1.21.0-bigcorp", 0}, // Starting in Go 1.21, patch missing is different from explicit .0.
+		{"go1.19rc1", "go1.19", -1},
 	} {
 		got := versions.Compare(item.x, item.y)
 		if got != item.want {
