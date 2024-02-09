@@ -111,7 +111,7 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 	}
 
 	scope := namedType.Obj().Pkg().Scope()
-	var variants []string
+	var variants []types.Type
 	for _, name := range scope.Names() {
 		obj := scope.Lookup(name)
 		if _, ok := obj.(*types.TypeName); !ok {
@@ -122,34 +122,29 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 			continue
 		}
 
-		name := obj.Name()
 		samePkg := obj.Pkg() == pkg
-		if !samePkg {
-			if !obj.Exported() {
-				continue // inaccessible
-			}
-			name = obj.Pkg().Name() + name
+		if !samePkg && !obj.Exported() {
+			continue // inaccessible
 		}
 
 		if types.AssignableTo(obj.Type(), namedType.Obj().Type()) {
-			variants = append(variants, name)
+			variants = append(variants, obj.Type())
 		} else if types.AssignableTo(types.NewPointer(obj.Type()), namedType.Obj().Type()) {
-			variants = append(variants, "*"+name)
+			variants = append(variants, types.NewPointer(obj.Type()))
 		}
 	}
 
-	handledVariants := caseTypes(stmt.Body, info)
+	handledVariants := typeSwitchCases(stmt.Body, info)
 	if len(variants) == 0 || len(variants) == len(handledVariants) {
 		return nil, nil
 	}
 
-	newText := buildNewText(variants, handledVariants)
 	return &analysis.SuggestedFix{
 		Message: fmt.Sprintf("Add cases for %s", namedType.Obj().Name()),
 		TextEdits: []analysis.TextEdit{{
 			Pos:     stmt.End() - 1,
 			End:     stmt.End() - 1,
-			NewText: bytes.ReplaceAll([]byte(newText), []byte("\n"), []byte("\n\t")),
+			NewText: buildNewTypesText(variants, handledVariants, pkg),
 		}},
 	}, nil
 }
@@ -165,39 +160,35 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 	}
 
 	scope := namedType.Obj().Pkg().Scope()
-	var variants []string
+	var variants []*types.Const
 	for _, name := range scope.Names() {
 		obj := scope.Lookup(name)
-		_, ok := obj.(*types.Const)
+		c, ok := obj.(*types.Const)
 		if !ok {
 			continue
 		}
 
-		if types.Identical(obj.Type(), namedType.Obj().Type()) {
-			if obj.Pkg() != pkg {
-				if !obj.Exported() {
-					continue
-				}
+		samePkg := obj.Pkg() != pkg
+		if samePkg && !obj.Exported() {
+			continue
+		}
 
-				variants = append(variants, obj.Pkg().Name()+"."+obj.Name())
-			} else {
-				variants = append(variants, obj.Name())
-			}
+		if types.Identical(obj.Type(), namedType.Obj().Type()) {
+			variants = append(variants, c)
 		}
 	}
 
-	handledVariants := caseTypes(stmt.Body, info)
+	handledVariants := caseConsts(stmt.Body, info)
 	if len(variants) == 0 || len(variants) == len(handledVariants) {
 		return nil, nil
 	}
 
-	newText := buildNewText(variants, handledVariants)
 	return &analysis.SuggestedFix{
 		Message: fmt.Sprintf("Add cases for %s", namedType.Obj().Name()),
 		TextEdits: []analysis.TextEdit{{
 			Pos:     stmt.End() - 1,
 			End:     stmt.End() - 1,
-			NewText: bytes.ReplaceAll([]byte(newText), []byte("\n"), []byte("\n\t")),
+			NewText: buildNewConstsText(variants, handledVariants, pkg),
 		}},
 	}, nil
 }
@@ -261,7 +252,7 @@ func hasDefaultCase(body *ast.BlockStmt) bool {
 	return false
 }
 
-func buildNewText(variants []string, handledVariants []string) string {
+func buildNewConstsText(variants []*types.Const, handledVariants []*types.Const, currentPkg *types.Package) []byte {
 	var textBuilder strings.Builder
 	for _, c := range variants {
 		if slices.Contains(handledVariants, c) {
@@ -269,44 +260,160 @@ func buildNewText(variants []string, handledVariants []string) string {
 		}
 
 		textBuilder.WriteString("case ")
-		textBuilder.WriteString(c)
+		if c.Pkg() != currentPkg {
+			textBuilder.WriteString(c.Pkg().Name() + "." + c.Name())
+		} else {
+			textBuilder.WriteString(c.Name())
+		}
 		textBuilder.WriteString(":\n")
 	}
 
-	return textBuilder.String()
+	return bytes.ReplaceAll([]byte(textBuilder.String()), []byte("\n"), []byte("\n\t"))
 }
 
-func caseTypes(body *ast.BlockStmt, info *types.Info) []string {
-	var out []string
+func isSameType(c, t types.Type) bool {
+	if types.Identical(c, t) {
+		return true
+	}
+
+	if p, ok := c.(*types.Pointer); ok && types.Identical(p.Elem(), t) {
+		return true
+	}
+
+	if p, ok := t.(*types.Pointer); ok && types.Identical(p.Elem(), c) {
+		return true
+	}
+
+	return false
+}
+
+func buildNewTypesText(variants []types.Type, handledVariants []types.Type, currentPkg *types.Package) []byte {
+	var textBuilder strings.Builder
+	for _, c := range variants {
+		if slices.ContainsFunc(handledVariants, func(t types.Type) bool { return isSameType(c, t) }) {
+			continue
+		}
+
+		textBuilder.WriteString("case ")
+		switch t := c.(type) {
+		case *types.Named:
+			if t.Obj().Pkg() != currentPkg {
+				textBuilder.WriteString(t.Obj().Pkg().Name() + "." + t.Obj().Name())
+			} else {
+				textBuilder.WriteString(t.Obj().Name())
+			}
+		case *types.Pointer:
+			e, ok := t.Elem().(*types.Named)
+			if !ok {
+				continue
+			}
+
+			if e.Obj().Pkg() != currentPkg {
+				textBuilder.WriteString("*" + e.Obj().Pkg().Name() + "." + e.Obj().Name())
+			} else {
+				textBuilder.WriteString("*" + e.Obj().Name())
+			}
+		}
+
+		textBuilder.WriteString(":\n")
+	}
+
+	return bytes.ReplaceAll([]byte(textBuilder.String()), []byte("\n"), []byte("\n\t"))
+}
+
+func caseConsts(body *ast.BlockStmt, info *types.Info) []*types.Const {
+	var out []*types.Const
 	for _, stmt := range body.List {
 		for _, e := range stmt.(*ast.CaseClause).List {
+			if !info.Types[e].IsValue() {
+				continue
+			}
+
 			switch e := e.(type) {
 			case *ast.Ident:
-				out = append(out, e.Name)
-			case *ast.SelectorExpr:
-				if _, ok := e.X.(*ast.Ident); !ok {
+				obj, ok := info.Uses[e]
+				if !ok {
+					continue
+				}
+				c, ok := obj.(*types.Const)
+				if !ok {
 					continue
 				}
 
-				out = append(out, e.X.(*ast.Ident).Name+"."+e.Sel.Name)
+				out = append(out, c)
+			case *ast.SelectorExpr:
+				_, ok := e.X.(*ast.Ident)
+				if !ok {
+					continue
+				}
+
+				obj, ok := info.Uses[e.Sel]
+				if !ok {
+					continue
+				}
+
+				c, ok := obj.(*types.Const)
+				if !ok {
+					continue
+				}
+
+				out = append(out, c)
+			}
+		}
+	}
+
+	return out
+}
+
+func typeSwitchCases(body *ast.BlockStmt, info *types.Info) []types.Type {
+	var out []types.Type
+	for _, stmt := range body.List {
+		for _, e := range stmt.(*ast.CaseClause).List {
+			if !info.Types[e].IsType() {
+				continue
+			}
+
+			switch e := e.(type) {
+			case *ast.Ident:
+				obj, ok := info.Uses[e]
+				if !ok {
+					continue
+				}
+
+				out = append(out, obj.Type())
+			case *ast.SelectorExpr:
+				i, ok := e.X.(*ast.Ident)
+				if !ok {
+					continue
+				}
+
+				obj, ok := info.Uses[i]
+				if !ok {
+					continue
+				}
+
+				out = append(out, obj.Type())
 			case *ast.StarExpr:
 				switch v := e.X.(type) {
 				case *ast.Ident:
-					if !info.Types[v].IsType() {
+					obj, ok := info.Uses[v]
+					if !ok {
 						continue
 					}
 
-					out = append(out, "*"+v.Name)
+					out = append(out, obj.Type())
 				case *ast.SelectorExpr:
-					if !info.Types[v].IsType() {
+					i, ok := e.X.(*ast.Ident)
+					if !ok {
 						continue
 					}
 
-					if _, ok := e.X.(*ast.Ident); !ok {
+					obj, ok := info.Uses[i]
+					if !ok {
 						continue
 					}
 
-					out = append(out, "*"+v.X.(*ast.Ident).Name+"."+v.Sel.Name)
+					out = append(out, obj.Type())
 				}
 			}
 		}
