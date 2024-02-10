@@ -4,36 +4,43 @@
 
 // Package fillswitch identifies switches with missing cases.
 //
-// It will provide diagnostics for type switches or switches over named types
-// that are missing cases and provides a code action to fill those in.
+// It reports a diagnostic for each type switch or 'enum' switch that
+// has missing cases, and suggests a fix to fill them in.
 //
-// If the switch statement is over a named type, it will suggest cases for all
-// const values that are assignable to the named type.
+// The possible cases are: for a type switch, each accessible named
+// type T or pointer *T that is assignable to the interface type; and
+// for an 'enum' switch, each accessible named constant of the same
+// type as the switch value.
 //
-//	type T int
-//	const (
-//	  A T = iota
-//	  B
-//	  C
-//	)
+// For an 'enum' switch, it will suggest cases for all possible values of the
+// type.
 //
-//	var t T
-//	switch t {
-//	case A:
-//	}
+//		type Suit int8
+//		const (
+//		  Spades Suit = iota
+//		  Hearts
+//		  Diamonds
+//	   Clubs
+//		)
 //
-// It will provide a diagnostic with a suggested edit to fill in the remaining
+//		var s Suit
+//		switch s {
+//		case Spades:
+//		}
+//
+// It will report a diagnostic with a suggested fix to fill in the remaining
 // cases:
 //
-//	var t T
-//	switch t {
-//	case A:
-//	case B:
-//	case C:
+//	var s Suit
+//	switch s {
+//	case Spades:
+//	case Hearts:
+//	case Diamons:
+//	case Clubs:
 //	}
 //
-// If the switch statement is over type of an interface, it will suggest cases for all types
-// that implement the interface.
+// For a type switch, it will suggest cases for all types that implement the
+// interface.
 //
 //	type I interface {
 //		M()
@@ -50,7 +57,7 @@
 //	case *T:
 //	}
 //
-// It will provide a diagnostic with a suggested edit to fill in the remaining
+// It will report a diagnostic with a suggested fix to fill in the remaining
 // cases:
 //
 //	var i I
@@ -58,8 +65,4 @@
 //	case *T:
 //	case *E:
 //	}
-//
-// The provided diagnostics will only suggest cases for types that are defined
-// on the same package as the switch statement, or for types that are exported;
-// and it will not suggest any case if the switch handles the default case.
 package fillswitch

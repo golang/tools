@@ -26,8 +26,6 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-const FixCategory = "fillswitch"
-
 // Diagnose computes diagnostics for switch statements with missing cases
 // overlapping with the provided start and end position.
 //
@@ -36,44 +34,35 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 	var diags []analysis.Diagnostic
 	nodeFilter := []ast.Node{(*ast.SwitchStmt)(nil), (*ast.TypeSwitchStmt)(nil)}
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		switch expr := n.(type) {
-		case *ast.SwitchStmt:
-			if start.IsValid() && expr.End() < start ||
-				end.IsValid() && expr.Pos() > end {
-				return // non-overlapping
-			}
-
-			fix, err := suggestedFixSwitch(expr, pkg, info)
-			if err != nil || fix == nil {
-				return
-			}
-
-			diags = append(diags, analysis.Diagnostic{
-				Message:        fix.Message,
-				Pos:            expr.Pos(),
-				End:            expr.End(),
-				Category:       FixCategory,
-				SuggestedFixes: []analysis.SuggestedFix{*fix},
-			})
-		case *ast.TypeSwitchStmt:
-			if start.IsValid() && expr.End() < start ||
-				end.IsValid() && expr.Pos() > end {
-				return // non-overlapping
-			}
-
-			fix, err := suggestedFixTypeSwitch(expr, pkg, info)
-			if err != nil || fix == nil {
-				return
-			}
-
-			diags = append(diags, analysis.Diagnostic{
-				Message:        fix.Message,
-				Pos:            expr.Pos(),
-				End:            expr.End(),
-				Category:       FixCategory,
-				SuggestedFixes: []analysis.SuggestedFix{*fix},
-			})
+		if start.IsValid() && n.End() < start ||
+			end.IsValid() && n.Pos() > end {
+			return // non-overlapping
 		}
+
+		var fix *analysis.SuggestedFix
+		switch n := n.(type) {
+		case *ast.SwitchStmt:
+			f, err := suggestedFixSwitch(n, pkg, info)
+			if err != nil || f == nil {
+				return
+			}
+
+			fix = f
+		case *ast.TypeSwitchStmt:
+			f, err := suggestedFixTypeSwitch(n, pkg, info)
+			if err != nil || f == nil {
+				return
+			}
+
+			fix = f
+		}
+
+		diags = append(diags, analysis.Diagnostic{
+			Message:        fix.Message,
+			Pos:            n.Pos(),
+			End:            n.End(),
+			SuggestedFixes: []analysis.SuggestedFix{*fix},
+		})
 	})
 
 	return diags
@@ -89,6 +78,8 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		return nil, err
 	}
 
+	// Gather accessible package-level concrete types
+	// that implement the switch interface type.
 	scope := namedType.Obj().Pkg().Scope()
 	var variants []types.Type
 	for _, name := range scope.Names() {
@@ -108,13 +99,17 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 
 		if types.AssignableTo(obj.Type(), namedType.Obj().Type()) {
 			variants = append(variants, obj.Type())
-		} else if types.AssignableTo(types.NewPointer(obj.Type()), namedType.Obj().Type()) {
-			variants = append(variants, types.NewPointer(obj.Type()))
+		} else if ptr := types.NewPointer(obj.Type()); types.AssignableTo(ptr, namedType.Obj().Type()) {
+			variants = append(variants, ptr)
 		}
 	}
 
-	handledVariants := caseTypes(stmt.Body, info)
-	if len(variants) == 0 || len(variants) == len(handledVariants) {
+	if len(variants) == 0 {
+		return nil, nil
+	}
+
+	newText := buildTypesText(stmt.Body, variants, pkg, info)
+	if newText == nil {
 		return nil, nil
 	}
 
@@ -123,7 +118,7 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		TextEdits: []analysis.TextEdit{{
 			Pos:     stmt.End() - 1,
 			End:     stmt.End() - 1,
-			NewText: buildTypesText(variants, handledVariants, pkg),
+			NewText: newText,
 		}},
 	}, nil
 }
@@ -138,27 +133,24 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 		return nil, err
 	}
 
+	// Gather accessible named constants of the same type as the switch value.
 	scope := namedType.Obj().Pkg().Scope()
 	var variants []*types.Const
 	for _, name := range scope.Names() {
 		obj := scope.Lookup(name)
-		c, ok := obj.(*types.Const)
-		if !ok {
-			continue
-		}
-
-		samePkg := obj.Pkg() != pkg
-		if samePkg && !obj.Exported() {
-			continue // inaccessible
-		}
-
-		if types.Identical(obj.Type(), namedType.Obj().Type()) {
+		if c, ok := obj.(*types.Const); ok &&
+			(obj.Pkg() == pkg || obj.Exported()) && // accessible
+			types.Identical(obj.Type(), namedType.Obj().Type()) {
 			variants = append(variants, c)
 		}
 	}
 
-	handledVariants := caseConsts(stmt.Body, info)
-	if len(variants) == 0 || len(variants) == len(handledVariants) {
+	if len(variants) == 0 {
+		return nil, nil
+	}
+
+	newText := buildConstsText(stmt.Body, variants, pkg, info)
+	if newText == nil {
 		return nil, nil
 	}
 
@@ -167,7 +159,7 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 		TextEdits: []analysis.TextEdit{{
 			Pos:     stmt.End() - 1,
 			End:     stmt.End() - 1,
-			NewText: buildConstsText(variants, handledVariants, pkg),
+			NewText: newText,
 		}},
 	}, nil
 }
@@ -222,8 +214,8 @@ func namedTypeFromTypeSwitch(stmt *ast.TypeSwitchStmt, info *types.Info) (*types
 }
 
 func hasDefaultCase(body *ast.BlockStmt) bool {
-	for _, bl := range body.List {
-		if len(bl.(*ast.CaseClause).List) == 0 {
+	for _, clause := range body.List {
+		if len(clause.(*ast.CaseClause).List) == 0 {
 			return true
 		}
 	}
@@ -231,7 +223,12 @@ func hasDefaultCase(body *ast.BlockStmt) bool {
 	return false
 }
 
-func buildConstsText(variants []*types.Const, handledVariants []*types.Const, currentPkg *types.Package) []byte {
+func buildConstsText(body *ast.BlockStmt, variants []*types.Const, currentPkg *types.Package, info *types.Info) []byte {
+	handledVariants := caseConsts(body, info)
+	if len(variants) == len(handledVariants) {
+		return nil
+	}
+
 	var textBuilder strings.Builder
 	for _, c := range variants {
 		if slices.Contains(handledVariants, c) {
@@ -266,7 +263,12 @@ func isSameType(c, t types.Type) bool {
 	return false
 }
 
-func buildTypesText(variants []types.Type, handledVariants []types.Type, currentPkg *types.Package) []byte {
+func buildTypesText(body *ast.BlockStmt, variants []types.Type, currentPkg *types.Package, info *types.Info) []byte {
+	handledVariants := caseTypes(body, info)
+	if len(variants) == len(handledVariants) {
+		return nil
+	}
+
 	var textBuilder strings.Builder
 	for _, c := range variants {
 		if slices.ContainsFunc(handledVariants, func(t types.Type) bool { return isSameType(c, t) }) {
