@@ -15,18 +15,18 @@
 // For an 'enum' switch, it will suggest cases for all possible values of the
 // type.
 //
-//		type Suit int8
-//		const (
+//	 type Suit int8
+//	 const (
 //		  Spades Suit = iota
 //		  Hearts
 //		  Diamonds
-//	   Clubs
-//		)
+//		  Clubs
+//	 )
 //
-//		var s Suit
-//		switch s {
-//		case Spades:
-//		}
+//	var s Suit
+//	switch s {
+//	case Spades:
+//	}
 //
 // It will report a diagnostic with a suggested fix to fill in the remaining
 // cases:
@@ -42,27 +42,21 @@
 // For a type switch, it will suggest cases for all types that implement the
 // interface.
 //
-//	type I interface {
-//		M()
-//	}
-//
-//	type T struct{}
-//	func (t *T) M() {}
-//
-//	type E struct{}
-//	func (e *E) M() {}
-//
-//	var i I
-//	switch i.(type) {
-//	case *T:
+//	var stmt ast.Stmt
+//	switch stmt.(type) {
+//	case *ast.IfStmt
 //	}
 //
 // It will report a diagnostic with a suggested fix to fill in the remaining
 // cases:
 //
-//	var i I
-//	switch i.(type) {
-//	case *T:
-//	case *E:
+//	var stmt ast.Stmt
+//	switch stmt.(type) {
+//	case *ast.IfStmt
+//	case *ast.ForStmt
+//	case *ast.RangeStmt
+//	case *ast.AssignStmt
+//	case *ast.GoStmt
+//	...
 //	}
 package fillswitch
