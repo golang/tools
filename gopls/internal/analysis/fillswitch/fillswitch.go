@@ -19,7 +19,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -81,7 +80,7 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 	// Gather accessible package-level concrete types
 	// that implement the switch interface type.
 	scope := namedType.Obj().Pkg().Scope()
-	var variants []types.Type
+	var variants []namedVariant
 	for _, name := range scope.Names() {
 		obj := scope.Lookup(name)
 		if _, ok := obj.(*types.TypeName); !ok {
@@ -98,9 +97,19 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		}
 
 		if types.AssignableTo(obj.Type(), namedType.Obj().Type()) {
-			variants = append(variants, obj.Type())
+			named, ok := obj.Type().(*types.Named)
+			if !ok {
+				continue
+			}
+
+			variants = append(variants, namedVariant{named: named, ptr: false})
 		} else if ptr := types.NewPointer(obj.Type()); types.AssignableTo(ptr, namedType.Obj().Type()) {
-			variants = append(variants, ptr)
+			named, ok := obj.Type().(*types.Named)
+			if !ok {
+				continue
+			}
+
+			variants = append(variants, namedVariant{named: named, ptr: true})
 		}
 	}
 
@@ -231,7 +240,7 @@ func buildConstsText(body *ast.BlockStmt, variants []*types.Const, currentPkg *t
 
 	var textBuilder strings.Builder
 	for _, c := range variants {
-		if slices.Contains(handledVariants, c) {
+		if _, ok := handledVariants[c]; ok {
 			continue
 		}
 
@@ -247,23 +256,7 @@ func buildConstsText(body *ast.BlockStmt, variants []*types.Const, currentPkg *t
 	return bytes.ReplaceAll([]byte(textBuilder.String()), []byte("\n"), []byte("\n\t"))
 }
 
-func isSameType(c, t types.Type) bool {
-	if types.Identical(c, t) {
-		return true
-	}
-
-	if p, ok := c.(*types.Pointer); ok && types.Identical(p.Elem(), t) {
-		return true
-	}
-
-	if p, ok := t.(*types.Pointer); ok && types.Identical(p.Elem(), c) {
-		return true
-	}
-
-	return false
-}
-
-func buildTypesText(body *ast.BlockStmt, variants []types.Type, currentPkg *types.Package, info *types.Info) []byte {
+func buildTypesText(body *ast.BlockStmt, variants []namedVariant, currentPkg *types.Package, info *types.Info) []byte {
 	handledVariants := caseTypes(body, info)
 	if len(variants) == len(handledVariants) {
 		return nil
@@ -271,48 +264,40 @@ func buildTypesText(body *ast.BlockStmt, variants []types.Type, currentPkg *type
 
 	var textBuilder strings.Builder
 	for _, c := range variants {
-		if slices.ContainsFunc(handledVariants, func(t types.Type) bool { return isSameType(c, t) }) {
-			continue
+		if handledVariants[c] {
+			continue // already handled
 		}
 
 		textBuilder.WriteString("case ")
-		switch t := c.(type) {
-		case *types.Named:
-			if t.Obj().Pkg() != currentPkg {
-				textBuilder.WriteString(t.Obj().Pkg().Name() + "." + t.Obj().Name())
-			} else {
-				textBuilder.WriteString(t.Obj().Name())
-			}
-		case *types.Pointer:
-			e, ok := t.Elem().(*types.Named)
-			if !ok {
-				continue
-			}
-
-			if e.Obj().Pkg() != currentPkg {
-				// TODO: use the correct package name when the import is renamed
-				textBuilder.WriteString("*" + e.Obj().Pkg().Name() + "." + e.Obj().Name())
-			} else {
-				textBuilder.WriteString("*" + e.Obj().Name())
-			}
+		if c.ptr {
+			textBuilder.WriteString("*")
 		}
 
+		if pkg := c.named.Obj().Pkg(); pkg != currentPkg {
+			// TODO: use the correct package name when the import is renamed
+			textBuilder.WriteString(pkg.Name())
+			textBuilder.WriteByte('.')
+		}
+		textBuilder.WriteString(c.named.Obj().Name())
 		textBuilder.WriteString(":\n")
 	}
 
 	return bytes.ReplaceAll([]byte(textBuilder.String()), []byte("\n"), []byte("\n\t"))
 }
 
-func caseConsts(body *ast.BlockStmt, info *types.Info) []*types.Const {
-	var out []*types.Const
+func caseConsts(body *ast.BlockStmt, info *types.Info) map[*types.Const]bool {
+	out := map[*types.Const]bool{}
 	for _, stmt := range body.List {
 		for _, e := range stmt.(*ast.CaseClause).List {
 			if !info.Types[e].IsValue() {
 				continue
 			}
 
-			switch e := e.(type) {
-			case *ast.Ident:
+			if sel, ok := e.(*ast.SelectorExpr); ok {
+				e = sel.Sel // replace pkg.C with C
+			}
+
+			if e, ok := e.(*ast.Ident); ok {
 				obj, ok := info.Uses[e]
 				if !ok {
 					continue
@@ -323,24 +308,7 @@ func caseConsts(body *ast.BlockStmt, info *types.Info) []*types.Const {
 					continue
 				}
 
-				out = append(out, c)
-			case *ast.SelectorExpr:
-				_, ok := e.X.(*ast.Ident)
-				if !ok {
-					continue
-				}
-
-				obj, ok := info.Uses[e.Sel]
-				if !ok {
-					continue
-				}
-
-				c, ok := obj.(*types.Const)
-				if !ok {
-					continue
-				}
-
-				out = append(out, c)
+				out[c] = true
 			}
 		}
 	}
@@ -348,56 +316,41 @@ func caseConsts(body *ast.BlockStmt, info *types.Info) []*types.Const {
 	return out
 }
 
-func caseTypes(body *ast.BlockStmt, info *types.Info) []types.Type {
-	var out []types.Type
+type namedVariant struct {
+	named *types.Named
+	ptr   bool
+}
+
+func caseTypes(body *ast.BlockStmt, info *types.Info) map[namedVariant]bool {
+	out := map[namedVariant]bool{}
 	for _, stmt := range body.List {
 		for _, e := range stmt.(*ast.CaseClause).List {
 			if !info.Types[e].IsType() {
 				continue
 			}
 
-			switch e := e.(type) {
-			case *ast.Ident:
+			var ptr bool
+			if str, ok := e.(*ast.StarExpr); ok {
+				ptr = true
+				e = str.X // replace *T with T
+			}
+
+			if sel, ok := e.(*ast.SelectorExpr); ok {
+				e = sel.Sel // replace pkg.C with C
+			}
+
+			if e, ok := e.(*ast.Ident); ok {
 				obj, ok := info.Uses[e]
 				if !ok {
 					continue
 				}
 
-				out = append(out, obj.Type())
-			case *ast.SelectorExpr:
-				i, ok := e.X.(*ast.Ident)
+				named, ok := obj.Type().(*types.Named)
 				if !ok {
 					continue
 				}
 
-				obj, ok := info.Uses[i]
-				if !ok {
-					continue
-				}
-
-				out = append(out, obj.Type())
-			case *ast.StarExpr:
-				switch v := e.X.(type) {
-				case *ast.Ident:
-					obj, ok := info.Uses[v]
-					if !ok {
-						continue
-					}
-
-					out = append(out, obj.Type())
-				case *ast.SelectorExpr:
-					i, ok := e.X.(*ast.Ident)
-					if !ok {
-						continue
-					}
-
-					obj, ok := info.Uses[i]
-					if !ok {
-						continue
-					}
-
-					out = append(out, obj.Type())
-				}
+				out[namedVariant{named: named, ptr: ptr}] = true
 			}
 		}
 	}
