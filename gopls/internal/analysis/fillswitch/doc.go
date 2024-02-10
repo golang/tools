@@ -35,7 +35,7 @@
 //	switch s {
 //	case Spades:
 //	case Hearts:
-//	case Diamons:
+//	case Diamonds:
 //	case Clubs:
 //	}
 //
@@ -44,7 +44,7 @@
 //
 //	var stmt ast.Stmt
 //	switch stmt.(type) {
-//	case *ast.IfStmt
+//	case *ast.IfStmt:
 //	}
 //
 // It will report a diagnostic with a suggested fix to fill in the remaining
@@ -52,11 +52,11 @@
 //
 //	var stmt ast.Stmt
 //	switch stmt.(type) {
-//	case *ast.IfStmt
-//	case *ast.ForStmt
-//	case *ast.RangeStmt
-//	case *ast.AssignStmt
-//	case *ast.GoStmt
+//	case *ast.IfStmt:
+//	case *ast.ForStmt:
+//	case *ast.RangeStmt:
+//	case *ast.AssignStmt:
+//	case *ast.GoStmt:
 //	...
 //	}
 package fillswitch

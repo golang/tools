@@ -2,19 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package fillswitch provides diagnostics and fixes to fill the missing cases
-// in type switches or switches over named types.
-//
-// The analyzer's diagnostic is merely a prompt.
-// The actual fix is created by a separate direct call from gopls to
-// the SuggestedFixes function.
-// Tests of Analyzer.Run can be found in ./testdata/src.
-// Tests of the SuggestedFixes logic live in ../../testdata/fillswitch.
 package fillswitch
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -41,19 +31,13 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 		var fix *analysis.SuggestedFix
 		switch n := n.(type) {
 		case *ast.SwitchStmt:
-			f, err := suggestedFixSwitch(n, pkg, info)
-			if err != nil || f == nil {
-				return
-			}
-
-			fix = f
+			fix = suggestedFixSwitch(n, pkg, info)
 		case *ast.TypeSwitchStmt:
-			f, err := suggestedFixTypeSwitch(n, pkg, info)
-			if err != nil || f == nil {
-				return
-			}
+			fix = suggestedFixTypeSwitch(n, pkg, info)
+		}
 
-			fix = f
+		if fix == nil {
+			return
 		}
 
 		diags = append(diags, analysis.Diagnostic{
@@ -67,20 +51,20 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 	return diags
 }
 
-func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
+func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *types.Info) *analysis.SuggestedFix {
 	if hasDefaultCase(stmt.Body) {
-		return nil, nil
+		return nil
 	}
 
-	namedType, err := namedTypeFromTypeSwitch(stmt, info)
-	if err != nil {
-		return nil, err
+	namedType := namedTypeFromTypeSwitch(stmt, info)
+	if namedType == nil {
+		return nil
 	}
 
 	// Gather accessible package-level concrete types
 	// that implement the switch interface type.
 	scope := namedType.Obj().Pkg().Scope()
-	var variants []namedVariant
+	var variants []caseType
 	for _, name := range scope.Names() {
 		obj := scope.Lookup(name)
 		if _, ok := obj.(*types.TypeName); !ok {
@@ -102,45 +86,42 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 				continue
 			}
 
-			variants = append(variants, namedVariant{named: named, ptr: false})
+			variants = append(variants, caseType{named, false})
 		} else if ptr := types.NewPointer(obj.Type()); types.AssignableTo(ptr, namedType.Obj().Type()) {
 			named, ok := obj.Type().(*types.Named)
 			if !ok {
 				continue
 			}
 
-			variants = append(variants, namedVariant{named: named, ptr: true})
+			variants = append(variants, caseType{named, true})
 		}
 	}
 
 	if len(variants) == 0 {
-		return nil, nil
+		return nil
 	}
 
 	newText := buildTypesText(stmt.Body, variants, pkg, info)
 	if newText == nil {
-		return nil, nil
+		return nil
 	}
 
 	return &analysis.SuggestedFix{
 		Message: fmt.Sprintf("Add cases for %s", namedType.Obj().Name()),
 		TextEdits: []analysis.TextEdit{{
-			Pos:     stmt.End() - 1,
-			End:     stmt.End() - 1,
+			Pos:     stmt.End() - token.Pos(len("}")),
+			End:     stmt.End() - token.Pos(len("}")),
 			NewText: newText,
 		}},
-	}, nil
+	}
 }
 
-func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.Info) (*analysis.SuggestedFix, error) {
+func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.Info) *analysis.SuggestedFix {
 	if hasDefaultCase(stmt.Body) {
-		return nil, nil
+		return nil
 	}
 
-	namedType, err := namedTypeFromSwitch(stmt, info)
-	if err != nil {
-		return nil, err
-	}
+	namedType := namedTypeFromSwitch(stmt, info)
 
 	// Gather accessible named constants of the same type as the switch value.
 	scope := namedType.Obj().Pkg().Scope()
@@ -155,70 +136,53 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 	}
 
 	if len(variants) == 0 {
-		return nil, nil
+		return nil
 	}
 
 	newText := buildConstsText(stmt.Body, variants, pkg, info)
 	if newText == nil {
-		return nil, nil
+		return nil
 	}
 
 	return &analysis.SuggestedFix{
 		Message: fmt.Sprintf("Add cases for %s", namedType.Obj().Name()),
 		TextEdits: []analysis.TextEdit{{
-			Pos:     stmt.End() - 1,
-			End:     stmt.End() - 1,
+			Pos:     stmt.End() - token.Pos(len("}")),
+			End:     stmt.End() - token.Pos(len("}")),
 			NewText: newText,
 		}},
-	}, nil
+	}
 }
 
-func namedTypeFromSwitch(stmt *ast.SwitchStmt, info *types.Info) (*types.Named, error) {
-	typ := info.TypeOf(stmt.Tag)
-	if typ == nil {
-		return nil, errors.New("expected switch statement to have a tag")
-	}
-
-	namedType, ok := typ.(*types.Named)
+func namedTypeFromSwitch(stmt *ast.SwitchStmt, info *types.Info) *types.Named {
+	namedType, ok := info.TypeOf(stmt.Tag).(*types.Named)
 	if !ok {
-		return nil, errors.New("switch statement is not on a named type")
+		return nil
 	}
 
-	return namedType, nil
+	return namedType
 }
 
-func namedTypeFromTypeSwitch(stmt *ast.TypeSwitchStmt, info *types.Info) (*types.Named, error) {
+func namedTypeFromTypeSwitch(stmt *ast.TypeSwitchStmt, info *types.Info) *types.Named {
 	switch s := stmt.Assign.(type) {
 	case *ast.ExprStmt:
-		typ, ok := s.X.(*ast.TypeAssertExpr)
-		if !ok {
-			return nil, errors.New("type switch expression is not a type assert expression")
+		if typ, ok := s.X.(*ast.TypeAssertExpr); ok {
+			if named, ok := info.TypeOf(typ.X).(*types.Named); ok {
+				return named
+			}
 		}
 
-		namedType, ok := info.TypeOf(typ.X).(*types.Named)
-		if !ok {
-			return nil, errors.New("type switch expression is not on a named type")
-		}
-
-		return namedType, nil
+		return nil
 	case *ast.AssignStmt:
-		for _, expr := range s.Rhs {
-			typ, ok := expr.(*ast.TypeAssertExpr)
-			if !ok {
-				continue
+		if typ, ok := s.Rhs[0].(*ast.TypeAssertExpr); ok {
+			if named, ok := info.TypeOf(typ.X).(*types.Named); ok {
+				return named
 			}
-
-			namedType, ok := info.TypeOf(typ.X).(*types.Named)
-			if !ok {
-				continue
-			}
-
-			return namedType, nil
 		}
 
-		return nil, errors.New("expected type switch expression to have a named type")
+		return nil
 	default:
-		return nil, errors.New("node is not a type switch statement")
+		return nil
 	}
 }
 
@@ -238,59 +202,59 @@ func buildConstsText(body *ast.BlockStmt, variants []*types.Const, currentPkg *t
 		return nil
 	}
 
-	var textBuilder strings.Builder
+	var buf strings.Builder
 	for _, c := range variants {
 		if _, ok := handledVariants[c]; ok {
 			continue
 		}
 
-		textBuilder.WriteString("case ")
+		buf.WriteString("case ")
 		if c.Pkg() != currentPkg {
-			textBuilder.WriteString(c.Pkg().Name() + "." + c.Name())
-		} else {
-			textBuilder.WriteString(c.Name())
+			buf.WriteString(c.Pkg().Name())
+			buf.WriteByte('.')
 		}
-		textBuilder.WriteString(":\n")
+		buf.WriteString(c.Name())
+		buf.WriteString(":\n\t")
 	}
 
-	return bytes.ReplaceAll([]byte(textBuilder.String()), []byte("\n"), []byte("\n\t"))
+	return []byte(buf.String())
 }
 
-func buildTypesText(body *ast.BlockStmt, variants []namedVariant, currentPkg *types.Package, info *types.Info) []byte {
+func buildTypesText(body *ast.BlockStmt, variants []caseType, currentPkg *types.Package, info *types.Info) []byte {
 	handledVariants := caseTypes(body, info)
 	if len(variants) == len(handledVariants) {
 		return nil
 	}
 
-	var textBuilder strings.Builder
+	var buf strings.Builder
 	for _, c := range variants {
 		if handledVariants[c] {
 			continue // already handled
 		}
 
-		textBuilder.WriteString("case ")
+		buf.WriteString("case ")
 		if c.ptr {
-			textBuilder.WriteString("*")
+			buf.WriteByte('*')
 		}
 
 		if pkg := c.named.Obj().Pkg(); pkg != currentPkg {
 			// TODO: use the correct package name when the import is renamed
-			textBuilder.WriteString(pkg.Name())
-			textBuilder.WriteByte('.')
+			buf.WriteString(pkg.Name())
+			buf.WriteByte('.')
 		}
-		textBuilder.WriteString(c.named.Obj().Name())
-		textBuilder.WriteString(":\n")
+		buf.WriteString(c.named.Obj().Name())
+		buf.WriteString(":\n\t")
 	}
 
-	return bytes.ReplaceAll([]byte(textBuilder.String()), []byte("\n"), []byte("\n\t"))
+	return []byte(buf.String())
 }
 
 func caseConsts(body *ast.BlockStmt, info *types.Info) map[*types.Const]bool {
 	out := map[*types.Const]bool{}
 	for _, stmt := range body.List {
 		for _, e := range stmt.(*ast.CaseClause).List {
-			if !info.Types[e].IsValue() {
-				continue
+			if info.Types[e].Value == nil {
+				continue // not a constant
 			}
 
 			if sel, ok := e.(*ast.SelectorExpr); ok {
@@ -298,17 +262,9 @@ func caseConsts(body *ast.BlockStmt, info *types.Info) map[*types.Const]bool {
 			}
 
 			if e, ok := e.(*ast.Ident); ok {
-				obj, ok := info.Uses[e]
-				if !ok {
-					continue
+				if c, ok := info.Uses[e].(*types.Const); ok {
+					out[c] = true
 				}
-
-				c, ok := obj.(*types.Const)
-				if !ok {
-					continue
-				}
-
-				out[c] = true
 			}
 		}
 	}
@@ -316,41 +272,26 @@ func caseConsts(body *ast.BlockStmt, info *types.Info) map[*types.Const]bool {
 	return out
 }
 
-type namedVariant struct {
+type caseType struct {
 	named *types.Named
 	ptr   bool
 }
 
-func caseTypes(body *ast.BlockStmt, info *types.Info) map[namedVariant]bool {
-	out := map[namedVariant]bool{}
+func caseTypes(body *ast.BlockStmt, info *types.Info) map[caseType]bool {
+	out := map[caseType]bool{}
 	for _, stmt := range body.List {
 		for _, e := range stmt.(*ast.CaseClause).List {
-			if !info.Types[e].IsType() {
-				continue
-			}
-
-			var ptr bool
-			if str, ok := e.(*ast.StarExpr); ok {
-				ptr = true
-				e = str.X // replace *T with T
-			}
-
-			if sel, ok := e.(*ast.SelectorExpr); ok {
-				e = sel.Sel // replace pkg.C with C
-			}
-
-			if e, ok := e.(*ast.Ident); ok {
-				obj, ok := info.Uses[e]
-				if !ok {
-					continue
+			if tv, ok := info.Types[e]; ok && tv.IsType() {
+				t := tv.Type
+				ptr := false
+				if p, ok := t.(*types.Pointer); ok {
+					t = p.Elem()
+					ptr = true
 				}
 
-				named, ok := obj.Type().(*types.Named)
-				if !ok {
-					continue
+				if named, ok := t.(*types.Named); ok {
+					out[caseType{named, ptr}] = true
 				}
-
-				out[namedVariant{named: named, ptr: ptr}] = true
 			}
 		}
 	}
