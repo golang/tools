@@ -61,6 +61,7 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		return nil
 	}
 
+	handledVariants := caseTypes(stmt.Body, info)
 	// Gather accessible package-level concrete types
 	// that implement the switch interface type.
 	scope := namedType.Obj().Pkg().Scope()
@@ -80,20 +81,25 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 			continue // inaccessible
 		}
 
+		var key caseType
 		if types.AssignableTo(obj.Type(), namedType.Obj().Type()) {
-			named, ok := obj.Type().(*types.Named)
-			if !ok {
-				continue
+			if named, ok := obj.Type().(*types.Named); ok {
+				key.named = named
+				key.ptr = false
 			}
-
-			variants = append(variants, caseType{named, false})
 		} else if ptr := types.NewPointer(obj.Type()); types.AssignableTo(ptr, namedType.Obj().Type()) {
-			named, ok := obj.Type().(*types.Named)
-			if !ok {
+			if named, ok := obj.Type().(*types.Named); ok {
+				key.named = named
+				key.ptr = true
+			}
+		}
+
+		if key.named != nil {
+			if _, ok := handledVariants[key]; ok {
 				continue
 			}
 
-			variants = append(variants, caseType{named, true})
+			variants = append(variants, key)
 		}
 	}
 
@@ -101,7 +107,7 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		return nil
 	}
 
-	newText := buildTypesText(stmt.Body, variants, pkg, info)
+	newText := buildTypesText(variants, pkg)
 	if newText == nil {
 		return nil
 	}
@@ -122,7 +128,11 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 	}
 
 	namedType := namedTypeFromSwitch(stmt, info)
+	if namedType == nil {
+		return nil
+	}
 
+	handledVariants := caseConsts(stmt.Body, info)
 	// Gather accessible named constants of the same type as the switch value.
 	scope := namedType.Obj().Pkg().Scope()
 	var variants []*types.Const
@@ -131,6 +141,11 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 		if c, ok := obj.(*types.Const); ok &&
 			(obj.Pkg() == pkg || obj.Exported()) && // accessible
 			types.Identical(obj.Type(), namedType.Obj().Type()) {
+
+			if _, ok := handledVariants[c]; ok {
+				continue
+			}
+
 			variants = append(variants, c)
 		}
 	}
@@ -139,7 +154,7 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 		return nil
 	}
 
-	newText := buildConstsText(stmt.Body, variants, pkg, info)
+	newText := buildConstsText(variants, pkg)
 	if newText == nil {
 		return nil
 	}
@@ -196,18 +211,9 @@ func hasDefaultCase(body *ast.BlockStmt) bool {
 	return false
 }
 
-func buildConstsText(body *ast.BlockStmt, variants []*types.Const, currentPkg *types.Package, info *types.Info) []byte {
-	handledVariants := caseConsts(body, info)
-	if len(variants) == len(handledVariants) {
-		return nil
-	}
-
+func buildConstsText(variants []*types.Const, currentPkg *types.Package) []byte {
 	var buf strings.Builder
 	for _, c := range variants {
-		if _, ok := handledVariants[c]; ok {
-			continue
-		}
-
 		buf.WriteString("case ")
 		if c.Pkg() != currentPkg {
 			buf.WriteString(c.Pkg().Name())
@@ -220,18 +226,9 @@ func buildConstsText(body *ast.BlockStmt, variants []*types.Const, currentPkg *t
 	return []byte(buf.String())
 }
 
-func buildTypesText(body *ast.BlockStmt, variants []caseType, currentPkg *types.Package, info *types.Info) []byte {
-	handledVariants := caseTypes(body, info)
-	if len(variants) == len(handledVariants) {
-		return nil
-	}
-
+func buildTypesText(variants []caseType, currentPkg *types.Package) []byte {
 	var buf strings.Builder
 	for _, c := range variants {
-		if handledVariants[c] {
-			continue // already handled
-		}
-
 		buf.WriteString("case ")
 		if c.ptr {
 			buf.WriteByte('*')
