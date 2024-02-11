@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/cache"
@@ -313,6 +314,7 @@ func (s *server) changedText(ctx context.Context, uri protocol.DocumentURI, chan
 	// Check if the client sent the full content of the file.
 	// We accept a full content change even if the server expected incremental changes.
 	if len(changes) == 1 && changes[0].Range == nil && changes[0].RangeLength == 0 {
+		changeFull.Inc()
 		return []byte(changes[0].Text), nil
 	}
 	return s.applyIncrementalChanges(ctx, uri, changes)
@@ -327,7 +329,10 @@ func (s *server) applyIncrementalChanges(ctx context.Context, uri protocol.Docum
 	if err != nil {
 		return nil, fmt.Errorf("%w: file not found (%v)", jsonrpc2.ErrInternal, err)
 	}
-	for _, change := range changes {
+	if len(changes) > 1 {
+		changeMulti.Inc()
+	}
+	for i, change := range changes {
 		// TODO(adonovan): refactor to use diff.Apply, which is robust w.r.t.
 		// out-of-order or overlapping changes---and much more efficient.
 
@@ -348,8 +353,49 @@ func (s *server) applyIncrementalChanges(ctx context.Context, uri protocol.Docum
 		buf.WriteString(change.Text)
 		buf.Write(content[end:])
 		content = buf.Bytes()
+		if i == 0 { // only look at the first change if there are seversl
+			// TODO(pjw): understand multi-change)
+			s.checkEfficacy(fh.URI(), fh.Version(), change)
+		}
 	}
 	return content, nil
+}
+
+// increment counters if any of the completions look like there were used
+func (s *server) checkEfficacy(uri protocol.DocumentURI, version int32, change protocol.TextDocumentContentChangePartial) {
+	s.efficacyMu.Lock()
+	defer s.efficacyMu.Unlock()
+	if s.efficacyURI != uri {
+		return
+	}
+	// gopls increments the version, the test client does not
+	if version != s.efficacyVersion && version != s.efficacyVersion+1 {
+		return
+	}
+	// does any change at pos match a proposed completion item?
+	for _, item := range s.efficacyItems {
+		if item.TextEdit == nil {
+			continue
+		}
+		if item.TextEdit.Range.Start == change.Range.Start {
+			// the change and the proposed completion start at the same
+			if change.RangeLength == 0 && len(change.Text) == 1 {
+				// a single character added it does not count as a completion
+				continue
+			}
+			ix := strings.Index(item.TextEdit.NewText, "$")
+			if ix < 0 && strings.HasPrefix(change.Text, item.TextEdit.NewText) {
+				// not a snippet, suggested completion is a prefix of the change
+				complUsed.Inc()
+				return
+			}
+			if ix > 1 && strings.HasPrefix(change.Text, item.TextEdit.NewText[:ix]) {
+				// a snippet, suggested completion up to $ marker is a prefix of the change
+				complUsed.Inc()
+				return
+			}
+		}
+	}
 }
 
 func changeTypeToFileAction(ct protocol.FileChangeType) file.Action {

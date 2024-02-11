@@ -40,6 +40,7 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 	var surrounding *completion.Selection
 	switch snapshot.FileKind(fh) {
 	case file.Go:
+		complCnt.Inc() // completion requests for Go programs
 		candidates, surrounding, err = completion.Completion(ctx, snapshot, fh, params.Position, params.Context)
 	case file.Mod:
 		candidates, surrounding = nil, nil
@@ -61,6 +62,7 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 		event.Error(ctx, "no completions found", err, tag.Position.Of(params.Position))
 	}
 	if candidates == nil {
+		complEmpty.Inc()
 		return &protocol.CompletionList{
 			IsIncomplete: true,
 			Items:        []protocol.CompletionItem{},
@@ -78,11 +80,26 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 	incompleteResults := options.DeepCompletion || options.Matcher == settings.Fuzzy
 
 	items := toProtocolCompletionItems(candidates, rng, options)
+	if snapshot.FileKind(fh) == file.Go {
+		s.saveLastCompletion(fh.URI(), fh.Version(), items, params.Position)
+	}
 
+	if len(items) > 10 {
+		// TODO(pjw): long completions are ok for field lists
+		complLong.Inc()
+	}
 	return &protocol.CompletionList{
 		IsIncomplete: incompleteResults,
 		Items:        items,
 	}, nil
+}
+
+func (s *server) saveLastCompletion(uri protocol.DocumentURI, version int32, items []protocol.CompletionItem, pos protocol.Position) {
+	s.efficacyMu.Lock()
+	defer s.efficacyMu.Unlock()
+	s.efficacyURI = uri
+	s.efficacyPos = pos
+	s.efficacyItems = items
 }
 
 func toProtocolCompletionItems(candidates []completion.CompletionItem, rng protocol.Range, options *settings.Options) []protocol.CompletionItem {

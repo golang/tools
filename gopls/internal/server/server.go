@@ -115,6 +115,13 @@ type server struct {
 	optionsMu sync.Mutex
 	options   *settings.Options
 
+	// Track the most recent completion results, for measuring completion efficacy
+	efficacyMu      sync.Mutex
+	efficacyURI     protocol.DocumentURI
+	efficacyVersion int32
+	efficacyItems   []protocol.CompletionItem
+	efficacyPos     protocol.Position
+
 	// # Modification tracking and diagnostics
 	//
 	// For the purpose of tracking diagnostics, we need a monotonically

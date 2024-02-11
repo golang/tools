@@ -6,14 +6,18 @@ package completion
 
 import (
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/telemetry/counter"
+	"golang.org/x/telemetry/counter/countertest"
 	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/server"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -254,6 +258,11 @@ func compareCompletionLabels(want []string, gotItems []protocol.CompletionItem) 
 		return fmt.Sprintf("completion item mismatch (-want +got):\n%s", diff)
 	}
 	return ""
+}
+
+func init() {
+	// useful while debugging
+	log.SetFlags(log.Lshortfile)
 }
 
 func TestUnimportedCompletion(t *testing.T) {
@@ -995,6 +1004,62 @@ func Join() {}
 				if strings.Contains(item.Detail, "golang.org/toolchain") {
 					t.Errorf("Completion(...) returned toolchain item %#v", item)
 				}
+			}
+		}
+	})
+}
+
+func TestCounters(t *testing.T) {
+	const files = `
+-- go.mod --
+module foo
+go 1.21
+-- x.go --
+package foo
+
+func main() {
+}
+
+`
+	WithOptions(
+		Modes(Default),
+	).Run(t, files, func(t *testing.T, env *Env) {
+		cts := func() map[*counter.Counter]uint64 {
+			ans := make(map[*counter.Counter]uint64)
+			for _, c := range server.CompletionCounters {
+				ans[c], _ = countertest.ReadCounter(c)
+			}
+			return ans
+		}
+		env.OpenFile("x.go")
+		env.Await(env.DoneWithOpen())
+		saved := env.BufferText("x.go")
+		lines := strings.Split(saved, "\n")
+		loc := env.RegexpSearch("x.go", "p")
+		before := cts()
+		// all the action is after 4 characters on line 2 (counting from 0)
+		// (doing the whole file is too expensive)
+		for i := 2; i < len(lines); i++ {
+			l := lines[i]
+			loc.Range.Start.Line = uint32(i)
+			for j := 5; j < len(l); j++ {
+				loc.Range.Start.Character = uint32(j)
+				loc.Range.End = loc.Range.Start
+				res := env.Completion(loc)
+				for _, r := range res.Items {
+					env.AcceptCompletion(loc, r)
+					env.SetBufferContent("x.go", saved)
+				}
+			}
+		}
+		after := cts()
+		for c := range after {
+			if c.Name() == "gopls/completion/multi-change" {
+				// don't know how to force multi-change
+				continue
+			}
+			if after[c] <= before[c] {
+				t.Errorf("%s did not increase", c.Name())
 			}
 		}
 	})
