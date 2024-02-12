@@ -90,7 +90,7 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		}
 
 		if key.named != nil {
-			if _, ok := existingCases[key]; ok {
+			if existingCases[key] {
 				continue
 			}
 
@@ -117,12 +117,13 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		return nil
 	}
 
+	// TODO: don't evaluate the assert.X expression a second time,
 	switch assign := stmt.Assign.(type) {
 	case *ast.AssignStmt:
-		addDefaultCase(namedType, 'T', assign.Lhs[0], pkg, &buf)
+		addDefaultCase(&buf, namedType, 'T', assign.Lhs[0], pkg)
 	case *ast.ExprStmt:
 		if assert, ok := assign.X.(*ast.TypeAssertExpr); ok {
-			addDefaultCase(namedType, 'T', assert.X, pkg, &buf)
+			addDefaultCase(&buf, namedType, 'T', assert.X, pkg)
 		}
 	}
 
@@ -175,7 +176,8 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 		return nil
 	}
 
-	addDefaultCase(namedType, 'v', stmt.Tag, pkg, &buf)
+	// TODO: don't re-evaluate stmt.Tag.
+	addDefaultCase(&buf, namedType, 'v', stmt.Tag, pkg)
 
 	return &analysis.SuggestedFix{
 		Message: fmt.Sprintf("Add cases for %s", namedType.Obj().Name()),
@@ -187,7 +189,7 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 	}
 }
 
-func addDefaultCase(named *types.Named, formatVerb byte, expr ast.Expr, pkg *types.Package, buf *bytes.Buffer) {
+func addDefaultCase(buf *bytes.Buffer, named *types.Named, formatVerb byte, expr ast.Expr, pkg *types.Package) {
 	buf.WriteString("\tdefault:\n")
 	buf.WriteString("\t\tpanic(fmt.Sprintf(\"unexpected ")
 	if named.Obj().Pkg() != pkg {
@@ -198,14 +200,7 @@ func addDefaultCase(named *types.Named, formatVerb byte, expr ast.Expr, pkg *typ
 	buf.WriteString(": %")
 	buf.WriteByte(formatVerb)
 	buf.WriteString("\", ")
-	switch tag := expr.(type) {
-	case *ast.SelectorExpr:
-		fmt.Fprint(buf, tag.X)
-		buf.WriteByte('.')
-		buf.WriteString(tag.Sel.Name)
-	case *ast.Ident:
-		buf.WriteString(tag.Name)
-	}
+	buf.WriteString(types.ExprString(expr))
 	buf.WriteString("))\n\t")
 }
 

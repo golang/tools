@@ -15,13 +15,13 @@
 // For an 'enum' switch, it will suggest cases for all possible values of the
 // type.
 //
-//	 type Suit int8
-//	 const (
-//		  Spades Suit = iota
-//		  Hearts
-//		  Diamonds
-//		  Clubs
-//	 )
+//	type Suit int8
+//	const (
+//		 Spades Suit = iota
+//		 Hearts
+//		 Diamonds
+//		 Clubs
+//	)
 //
 //	var s Suit
 //	switch s {
@@ -37,6 +37,8 @@
 //	case Hearts:
 //	case Diamonds:
 //	case Clubs:
+//	default:
+//		 panic(fmt.Sprintf("unexpected Suit: %v", s))
 //	}
 //
 // For a type switch, it will suggest cases for all types that implement the
@@ -58,5 +60,7 @@
 //	case *ast.AssignStmt:
 //	case *ast.GoStmt:
 //	...
+//	default:
+//		 panic(fmt.Sprintf("unexpected ast.Stmt: %T", stmt))
 //	}
 package fillswitch
