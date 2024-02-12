@@ -200,7 +200,7 @@ func addDefaultCase(buf *bytes.Buffer, named *types.Named, formatVerb byte, expr
 	buf.WriteString(": %")
 	buf.WriteByte(formatVerb)
 	buf.WriteString("\", ")
-	buf.WriteString(types.ExprString(expr))
+	types.WriteExpr(buf, expr)
 	buf.WriteString("))\n\t")
 }
 
