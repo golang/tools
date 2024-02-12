@@ -104,8 +104,26 @@ func WorkspaceFolders(relFolders ...string) RunOption {
 		// Use an empty non-nil slice to signal explicitly no folders.
 		relFolders = []string{}
 	}
+
 	return optionSetter(func(opts *runConfig) {
 		opts.editor.WorkspaceFolders = relFolders
+	})
+}
+
+// FolderSettings defines per-folder workspace settings, keyed by relative path
+// to the folder.
+//
+// Use in conjunction with WorkspaceFolders to have different settings for
+// different folders.
+func FolderSettings(folderSettings map[string]Settings) RunOption {
+	// Re-use the Settings type, for symmetry, but translate back into maps for
+	// the editor config.
+	folders := make(map[string]map[string]any)
+	for k, v := range folderSettings {
+		folders[k] = v
+	}
+	return optionSetter(func(opts *runConfig) {
+		opts.editor.FolderSettings = folders
 	})
 }
 
