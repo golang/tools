@@ -5,7 +5,25 @@
 //go:build !plan9
 // +build !plan9
 
-// The getgo command installs Go to the user's system.
+/*
+The getgo command is deprecated.
+
+Deprecated: See https://go.dev/issues/60951.
+
+Follow the instructions at https://go.dev/doc/install to install Go instead.
+
+Tips:
+
+To find the latest available go version, run:
+
+	go list -m -f '{{.Version}}' go@latest
+
+If you want to use the latest go by default, you can use "go env -w" to override "GOTOOLCHAIN":
+
+	go env -w GOTOOLCHAIN=go$(go list -m -f '{{.Version}}' go@latest)+auto
+
+See https://go.dev/blog/toolchain for more information about toolchain management.
+*/
 package main
 
 import (
@@ -32,6 +50,8 @@ var errExitCleanly error = errors.New("exit cleanly sentinel value")
 
 func main() {
 	flag.Parse()
+	fmt.Fprintln(os.Stderr, "getgo is deprecated. See https://pkg.go.dev/golang.org/x/tools/cmd/getgo.")
+
 	if *goVersion != "" && !strings.HasPrefix(*goVersion, "go") {
 		*goVersion = "go" + *goVersion
 	}

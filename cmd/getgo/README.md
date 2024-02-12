@@ -1,3 +1,5 @@
+**Deprecated** - See https://go.dev/issues/60951
+
 # getgo
 
 A proof-of-concept command-line installer for Go.
