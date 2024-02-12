@@ -72,16 +72,45 @@ func doSwitch() {
 	var n notification
 	switch n.(type) { //@codeactionedit("{", "refactor.rewrite", a3)
 	}
+
+	switch nt := n.(type) { //@codeactionedit("{", "refactor.rewrite", a4)
+	}
+
+	var s struct {
+		a typeA
+	}
+
+	switch s.a {
+	case typeAThree: //@codeactionedit(":", "refactor.rewrite", a5)
+	}
 }
 -- @a1/a.go --
-@@ -31 +31,2 @@
+@@ -31 +31,4 @@
 +	case data.TypeBThree:
 +	case data.TypeBTwo:
++	default:
++		panic(fmt.Sprintf("unexpected data.TypeB: %v", b))
 -- @a2/a.go --
-@@ -36 +36,2 @@
+@@ -36 +36,4 @@
 +	case typeAOne:
 +	case typeATwo:
++	default:
++		panic(fmt.Sprintf("unexpected typeA: %v", a))
 -- @a3/a.go --
-@@ -40 +40,2 @@
+@@ -40 +40,4 @@
 +	case notificationOne:
 +	case notificationTwo:
++	default:
++		panic(fmt.Sprintf("unexpected notification: %T", n))
+-- @a4/a.go --
+@@ -43 +43,4 @@
++	case notificationOne:
++	case notificationTwo:
++	default:
++		panic(fmt.Sprintf("unexpected notification: %T", nt))
+-- @a5/a.go --
+@@ -51 +51,4 @@
++	case typeAOne:
++	case typeATwo:
++	default:
++		panic(fmt.Sprintf("unexpected typeA: %v", s.a))

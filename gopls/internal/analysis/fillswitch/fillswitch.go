@@ -117,6 +117,15 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		return nil
 	}
 
+	switch assign := stmt.Assign.(type) {
+	case *ast.AssignStmt:
+		addDefaultCase(namedType, 'T', assign.Lhs[0], pkg, &buf)
+	case *ast.ExprStmt:
+		if assert, ok := assign.X.(*ast.TypeAssertExpr); ok {
+			addDefaultCase(namedType, 'T', assert.X, pkg, &buf)
+		}
+	}
+
 	return &analysis.SuggestedFix{
 		Message: fmt.Sprintf("Add cases for %s", namedType.Obj().Name()),
 		TextEdits: []analysis.TextEdit{{
@@ -145,11 +154,8 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 		obj := scope.Lookup(name)
 		if c, ok := obj.(*types.Const); ok &&
 			(obj.Pkg() == pkg || obj.Exported()) && // accessible
-			types.Identical(obj.Type(), namedType.Obj().Type()) {
-
-			if _, ok := existingCases[c]; ok {
-				continue
-			}
+			types.Identical(obj.Type(), namedType.Obj().Type()) &&
+			!existingCases[c] {
 
 			if buf.Len() > 0 {
 				buf.WriteString("\t")
@@ -169,6 +175,8 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 		return nil
 	}
 
+	addDefaultCase(namedType, 'v', stmt.Tag, pkg, &buf)
+
 	return &analysis.SuggestedFix{
 		Message: fmt.Sprintf("Add cases for %s", namedType.Obj().Name()),
 		TextEdits: []analysis.TextEdit{{
@@ -177,6 +185,28 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 			NewText: buf.Bytes(),
 		}},
 	}
+}
+
+func addDefaultCase(named *types.Named, formatVerb byte, expr ast.Expr, pkg *types.Package, buf *bytes.Buffer) {
+	buf.WriteString("\tdefault:\n")
+	buf.WriteString("\t\tpanic(fmt.Sprintf(\"unexpected ")
+	if named.Obj().Pkg() != pkg {
+		buf.WriteString(named.Obj().Pkg().Name())
+		buf.WriteByte('.')
+	}
+	buf.WriteString(named.Obj().Name())
+	buf.WriteString(": %")
+	buf.WriteByte(formatVerb)
+	buf.WriteString("\", ")
+	switch tag := expr.(type) {
+	case *ast.SelectorExpr:
+		fmt.Fprint(buf, tag.X)
+		buf.WriteByte('.')
+		buf.WriteString(tag.Sel.Name)
+	case *ast.Ident:
+		buf.WriteString(tag.Name)
+	}
+	buf.WriteString("))\n\t")
 }
 
 func namedTypeFromTypeSwitch(stmt *ast.TypeSwitchStmt, info *types.Info) *types.Named {
