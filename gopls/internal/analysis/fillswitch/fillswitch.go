@@ -5,11 +5,11 @@
 package fillswitch
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/inspector"
@@ -43,7 +43,7 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 		diags = append(diags, analysis.Diagnostic{
 			Message:        fix.Message,
 			Pos:            n.Pos(),
-			End:            n.End(),
+			End:            n.Pos() + token.Pos(len("switch")),
 			SuggestedFixes: []analysis.SuggestedFix{*fix},
 		})
 	})
@@ -61,15 +61,15 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		return nil
 	}
 
-	handledVariants := caseTypes(stmt.Body, info)
+	existingCases := caseTypes(stmt.Body, info)
 	// Gather accessible package-level concrete types
 	// that implement the switch interface type.
 	scope := namedType.Obj().Pkg().Scope()
-	var variants []caseType
+	var buf bytes.Buffer
 	for _, name := range scope.Names() {
 		obj := scope.Lookup(name)
-		if _, ok := obj.(*types.TypeName); !ok {
-			continue // not a type
+		if tname, ok := obj.(*types.TypeName); !ok || tname.IsAlias() {
+			continue // not a defined type
 		}
 
 		if types.IsInterface(obj.Type()) {
@@ -83,32 +83,37 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 
 		var key caseType
 		if types.AssignableTo(obj.Type(), namedType.Obj().Type()) {
-			if named, ok := obj.Type().(*types.Named); ok {
-				key.named = named
-				key.ptr = false
-			}
+			key.named = obj.Type().(*types.Named)
 		} else if ptr := types.NewPointer(obj.Type()); types.AssignableTo(ptr, namedType.Obj().Type()) {
-			if named, ok := obj.Type().(*types.Named); ok {
-				key.named = named
-				key.ptr = true
-			}
+			key.named = obj.Type().(*types.Named)
+			key.ptr = true
 		}
 
 		if key.named != nil {
-			if _, ok := handledVariants[key]; ok {
+			if _, ok := existingCases[key]; ok {
 				continue
 			}
 
-			variants = append(variants, key)
+			if buf.Len() > 0 {
+				buf.WriteString("\t")
+			}
+
+			buf.WriteString("case ")
+			if key.ptr {
+				buf.WriteByte('*')
+			}
+
+			if p := key.named.Obj().Pkg(); p != pkg {
+				// TODO: use the correct package name when the import is renamed
+				buf.WriteString(p.Name())
+				buf.WriteByte('.')
+			}
+			buf.WriteString(key.named.Obj().Name())
+			buf.WriteString(":\n")
 		}
 	}
 
-	if len(variants) == 0 {
-		return nil
-	}
-
-	newText := buildTypesText(variants, pkg)
-	if newText == nil {
+	if buf.Len() == 0 {
 		return nil
 	}
 
@@ -117,7 +122,7 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		TextEdits: []analysis.TextEdit{{
 			Pos:     stmt.End() - token.Pos(len("}")),
 			End:     stmt.End() - token.Pos(len("}")),
-			NewText: newText,
+			NewText: buf.Bytes(),
 		}},
 	}
 }
@@ -127,35 +132,40 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 		return nil
 	}
 
-	namedType := namedTypeFromSwitch(stmt, info)
-	if namedType == nil {
+	namedType, ok := info.TypeOf(stmt.Tag).(*types.Named)
+	if !ok {
 		return nil
 	}
 
-	handledVariants := caseConsts(stmt.Body, info)
+	existingCases := caseConsts(stmt.Body, info)
 	// Gather accessible named constants of the same type as the switch value.
 	scope := namedType.Obj().Pkg().Scope()
-	var variants []*types.Const
+	var buf bytes.Buffer
 	for _, name := range scope.Names() {
 		obj := scope.Lookup(name)
 		if c, ok := obj.(*types.Const); ok &&
 			(obj.Pkg() == pkg || obj.Exported()) && // accessible
 			types.Identical(obj.Type(), namedType.Obj().Type()) {
 
-			if _, ok := handledVariants[c]; ok {
+			if _, ok := existingCases[c]; ok {
 				continue
 			}
 
-			variants = append(variants, c)
+			if buf.Len() > 0 {
+				buf.WriteString("\t")
+			}
+
+			buf.WriteString("case ")
+			if c.Pkg() != pkg {
+				buf.WriteString(c.Pkg().Name())
+				buf.WriteByte('.')
+			}
+			buf.WriteString(c.Name())
+			buf.WriteString(":\n")
 		}
 	}
 
-	if len(variants) == 0 {
-		return nil
-	}
-
-	newText := buildConstsText(variants, pkg)
-	if newText == nil {
+	if buf.Len() == 0 {
 		return nil
 	}
 
@@ -164,41 +174,29 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 		TextEdits: []analysis.TextEdit{{
 			Pos:     stmt.End() - token.Pos(len("}")),
 			End:     stmt.End() - token.Pos(len("}")),
-			NewText: newText,
+			NewText: buf.Bytes(),
 		}},
 	}
 }
 
-func namedTypeFromSwitch(stmt *ast.SwitchStmt, info *types.Info) *types.Named {
-	namedType, ok := info.TypeOf(stmt.Tag).(*types.Named)
-	if !ok {
-		return nil
-	}
-
-	return namedType
-}
-
 func namedTypeFromTypeSwitch(stmt *ast.TypeSwitchStmt, info *types.Info) *types.Named {
-	switch s := stmt.Assign.(type) {
+	switch assign := stmt.Assign.(type) {
 	case *ast.ExprStmt:
-		if typ, ok := s.X.(*ast.TypeAssertExpr); ok {
+		if typ, ok := assign.X.(*ast.TypeAssertExpr); ok {
 			if named, ok := info.TypeOf(typ.X).(*types.Named); ok {
 				return named
 			}
 		}
 
-		return nil
 	case *ast.AssignStmt:
-		if typ, ok := s.Rhs[0].(*ast.TypeAssertExpr); ok {
+		if typ, ok := assign.Rhs[0].(*ast.TypeAssertExpr); ok {
 			if named, ok := info.TypeOf(typ.X).(*types.Named); ok {
 				return named
 			}
 		}
-
-		return nil
-	default:
-		return nil
 	}
+
+	return nil
 }
 
 func hasDefaultCase(body *ast.BlockStmt) bool {
@@ -209,41 +207,6 @@ func hasDefaultCase(body *ast.BlockStmt) bool {
 	}
 
 	return false
-}
-
-func buildConstsText(variants []*types.Const, currentPkg *types.Package) []byte {
-	var buf strings.Builder
-	for _, c := range variants {
-		buf.WriteString("case ")
-		if c.Pkg() != currentPkg {
-			buf.WriteString(c.Pkg().Name())
-			buf.WriteByte('.')
-		}
-		buf.WriteString(c.Name())
-		buf.WriteString(":\n\t")
-	}
-
-	return []byte(buf.String())
-}
-
-func buildTypesText(variants []caseType, currentPkg *types.Package) []byte {
-	var buf strings.Builder
-	for _, c := range variants {
-		buf.WriteString("case ")
-		if c.ptr {
-			buf.WriteByte('*')
-		}
-
-		if pkg := c.named.Obj().Pkg(); pkg != currentPkg {
-			// TODO: use the correct package name when the import is renamed
-			buf.WriteString(pkg.Name())
-			buf.WriteByte('.')
-		}
-		buf.WriteString(c.named.Obj().Name())
-		buf.WriteString(":\n\t")
-	}
-
-	return []byte(buf.String())
 }
 
 func caseConsts(body *ast.BlockStmt, info *types.Info) map[*types.Const]bool {
