@@ -78,13 +78,13 @@ type B struct {
 
 	WithOptions(
 		WorkspaceFolders("a"),
-		FolderSettings(map[string]Settings{
+		FolderSettings{
 			"a": {
 				"analyses": map[string]bool{
 					"composites": false,
 				},
 			},
-		}),
+		},
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
 		env.AfterChange(NoDiagnostics())

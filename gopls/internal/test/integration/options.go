@@ -115,16 +115,16 @@ func WorkspaceFolders(relFolders ...string) RunOption {
 //
 // Use in conjunction with WorkspaceFolders to have different settings for
 // different folders.
-func FolderSettings(folderSettings map[string]Settings) RunOption {
+type FolderSettings map[string]Settings
+
+func (fs FolderSettings) set(opts *runConfig) {
 	// Re-use the Settings type, for symmetry, but translate back into maps for
 	// the editor config.
 	folders := make(map[string]map[string]any)
-	for k, v := range folderSettings {
+	for k, v := range fs {
 		folders[k] = v
 	}
-	return optionSetter(func(opts *runConfig) {
-		opts.editor.FolderSettings = folders
-	})
+	opts.editor.FolderSettings = folders
 }
 
 // EnvVars sets environment variables for the LSP session. When applying these
