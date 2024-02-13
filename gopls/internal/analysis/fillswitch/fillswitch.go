@@ -117,7 +117,6 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		return nil
 	}
 
-	// TODO: don't evaluate the assert.X expression a second time,
 	switch assign := stmt.Assign.(type) {
 	case *ast.AssignStmt:
 		addDefaultCase(&buf, namedType, assign.Lhs[0])
@@ -176,7 +175,6 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 		return nil
 	}
 
-	// TODO: don't re-evaluate stmt.Tag.
 	addDefaultCase(&buf, namedType, stmt.Tag)
 
 	return &analysis.SuggestedFix{
@@ -192,42 +190,33 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 func addDefaultCase(buf *bytes.Buffer, named *types.Named, expr ast.Expr) {
 	buf.WriteString("\tdefault:\n")
 	typeName := fmt.Sprintf("%s.%s", named.Obj().Pkg().Name(), named.Obj().Name())
-	format := fmt.Sprintf("unexpected %s: %%#v", typeName)
-
-	switch expr := expr.(type) {
-	case *ast.Ident:
-		fmt.Fprintf(buf, "\t\tpanic(fmt.Sprintf(%q, %s))\n\t", format, expr.Name)
-	case *ast.SelectorExpr:
-		// Use a new buffer to avoid writing to the original buffer if there's an error.
-		var selectorBuf bytes.Buffer
-		if err := writeSelector(&selectorBuf, expr); err != nil {
-			fmt.Fprintf(buf, "\t\tpanic(\"unexpected %s\")\n\t", typeName)
-		} else {
-			fmt.Fprintf(buf, "\t\tpanic(fmt.Sprintf(%q, %s))\n\t", format, selectorBuf.String())
-		}
-	default:
-		fmt.Fprintf(buf, "\t\tpanic(\"unexpected %s\")\n\t", typeName)
+	var dottedBuf bytes.Buffer
+	if writeDotted(&dottedBuf, expr) {
+		// Switch tag expression is a dotted path.
+		// It is safe to re-evaluate it in the default case.
+		format := fmt.Sprintf("unexpected %s: %%#v", typeName)
+		fmt.Fprintf(buf, "\t\tpanic(fmt.Sprintf(%q, %s))\n\t", format, dottedBuf.String())
+	} else {
+		// Emit simpler message, without re-evaluating tag expression.
+		fmt.Fprintf(buf, "\t\tpanic(%q)\n\t", "unexpected "+typeName)
 	}
 }
 
-// writeSelector writes the formatted selector expression to the buffer. If one
-// of the expressions in the chain in expr.X is not an *ast.Ident or
-// *ast.SelectorExpr, an error is returned.
-func writeSelector(buf *bytes.Buffer, expr *ast.SelectorExpr) error {
-	switch expr := expr.X.(type) {
-	case *ast.Ident:
-		buf.WriteString(expr.Name)
+// writeDotted emits a dotted path a.b.c.
+func writeDotted(buf *bytes.Buffer, e ast.Expr) bool {
+	switch e := e.(type) {
 	case *ast.SelectorExpr:
-		if err := writeSelector(buf, expr); err != nil {
-			return err
+		if !writeDotted(buf, e.X) {
+			return false
 		}
-	default:
-		return fmt.Errorf("unexpected type %T", expr)
+		buf.WriteByte('.')
+		buf.WriteString(e.Sel.Name)
+		return true
+	case *ast.Ident:
+		buf.WriteString(e.Name)
+		return true
 	}
-
-	buf.WriteString(".")
-	buf.WriteString(expr.Sel.Name)
-	return nil
+	return false
 }
 
 func namedTypeFromTypeSwitch(stmt *ast.TypeSwitchStmt, info *types.Info) *types.Named {
