@@ -9,7 +9,6 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"os"
 	"testing"
 
 	"golang.org/x/tools/internal/aliases"
@@ -49,9 +48,7 @@ func TestNewAlias(t *testing.T) {
 
 	for _, godebug := range []string{"", "gotypesalias=1"} {
 		t.Run(godebug, func(t *testing.T) {
-			saved := os.Getenv("GODEBUG")
-			defer os.Setenv("GODEBUG", saved)
-			os.Setenv("GODEBUG", godebug) // non parallel.
+			t.Setenv("GODEBUG", godebug)
 
 			A := aliases.NewAlias(token.NoPos, pkg, "A", tv.Type)
 			if got, want := A.Name(), "A"; got != want {
