@@ -85,8 +85,13 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 			}
 		}
 
+		pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
+		if err != nil {
+			return nil, err
+		}
+
 		if want[protocol.RefactorExtract] {
-			extractions, err := getExtractCodeActions(pgf, rng, snapshot.Options())
+			extractions, err := getExtractCodeActions(pkg, pgf, rng, snapshot.Options())
 			if err != nil {
 				return nil, err
 			}
@@ -198,20 +203,18 @@ func fixedByImportFix(fix *imports.ImportFix, diagnostics []protocol.Diagnostic)
 }
 
 // getExtractCodeActions returns any refactor.extract code actions for the selection.
-func getExtractCodeActions(pgf *parsego.File, rng protocol.Range, options *settings.Options) ([]protocol.CodeAction, error) {
-	if rng.Start == rng.End {
-		return nil, nil
-	}
-
+func getExtractCodeActions(pkg *cache.Package, pgf *parsego.File, rng protocol.Range, options *settings.Options) ([]protocol.CodeAction, error) {
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
 	}
+
 	puri := pgf.URI
 	var commands []protocol.Command
-	if _, ok, methodOk, _ := CanExtractFunction(pgf.Tok, start, end, pgf.Src, pgf.File); ok {
-		cmd, err := command.NewApplyFixCommand("Extract function", command.ApplyFixArgs{
-			Fix:          fixExtractFunction,
+
+	if _, _, ok, _ := CanExtractInterface(pkg, start, end, pgf.File); ok {
+		cmd, err := command.NewApplyFixCommand("Extract interface", command.ApplyFixArgs{
+			Fix:          fixExtractInterface,
 			URI:          puri,
 			Range:        rng,
 			ResolveEdits: supportsResolveEdits(options),
@@ -220,9 +223,36 @@ func getExtractCodeActions(pgf *parsego.File, rng protocol.Range, options *setti
 			return nil, err
 		}
 		commands = append(commands, cmd)
-		if methodOk {
-			cmd, err := command.NewApplyFixCommand("Extract method", command.ApplyFixArgs{
-				Fix:          fixExtractMethod,
+	}
+
+	if rng.Start != rng.End {
+		if _, ok, methodOk, _ := CanExtractFunction(pgf.Tok, start, end, pgf.Src, pgf.File); ok {
+			cmd, err := command.NewApplyFixCommand("Extract function", command.ApplyFixArgs{
+				Fix:          fixExtractFunction,
+				URI:          puri,
+				Range:        rng,
+				ResolveEdits: supportsResolveEdits(options),
+			})
+			if err != nil {
+				return nil, err
+			}
+			commands = append(commands, cmd)
+			if methodOk {
+				cmd, err := command.NewApplyFixCommand("Extract method", command.ApplyFixArgs{
+					Fix:          fixExtractMethod,
+					URI:          puri,
+					Range:        rng,
+					ResolveEdits: supportsResolveEdits(options),
+				})
+				if err != nil {
+					return nil, err
+				}
+				commands = append(commands, cmd)
+			}
+		}
+		if _, _, ok, _ := CanExtractVariable(start, end, pgf.File); ok {
+			cmd, err := command.NewApplyFixCommand("Extract variable", command.ApplyFixArgs{
+				Fix:          fixExtractVariable,
 				URI:          puri,
 				Range:        rng,
 				ResolveEdits: supportsResolveEdits(options),
@@ -233,18 +263,7 @@ func getExtractCodeActions(pgf *parsego.File, rng protocol.Range, options *setti
 			commands = append(commands, cmd)
 		}
 	}
-	if _, _, ok, _ := CanExtractVariable(start, end, pgf.File); ok {
-		cmd, err := command.NewApplyFixCommand("Extract variable", command.ApplyFixArgs{
-			Fix:          fixExtractVariable,
-			URI:          puri,
-			Range:        rng,
-			ResolveEdits: supportsResolveEdits(options),
-		})
-		if err != nil {
-			return nil, err
-		}
-		commands = append(commands, cmd)
-	}
+
 	var actions []protocol.CodeAction
 	for i := range commands {
 		actions = append(actions, newCodeAction(commands[i].Title, protocol.RefactorExtract, &commands[i], nil, options))
