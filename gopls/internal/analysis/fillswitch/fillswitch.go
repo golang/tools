@@ -120,10 +120,10 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 	// TODO: don't evaluate the assert.X expression a second time,
 	switch assign := stmt.Assign.(type) {
 	case *ast.AssignStmt:
-		addDefaultCase(&buf, namedType, 'T', assign.Lhs[0], pkg)
+		addDefaultCase(&buf, namedType, assign.Lhs[0])
 	case *ast.ExprStmt:
 		if assert, ok := assign.X.(*ast.TypeAssertExpr); ok {
-			addDefaultCase(&buf, namedType, 'T', assert.X, pkg)
+			addDefaultCase(&buf, namedType, assert.X)
 		}
 	}
 
@@ -177,7 +177,7 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 	}
 
 	// TODO: don't re-evaluate stmt.Tag.
-	addDefaultCase(&buf, namedType, 'v', stmt.Tag, pkg)
+	addDefaultCase(&buf, namedType, stmt.Tag)
 
 	return &analysis.SuggestedFix{
 		Message: fmt.Sprintf("Add cases for %s", namedType.Obj().Name()),
@@ -189,19 +189,45 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 	}
 }
 
-func addDefaultCase(buf *bytes.Buffer, named *types.Named, formatVerb byte, expr ast.Expr, pkg *types.Package) {
+func addDefaultCase(buf *bytes.Buffer, named *types.Named, expr ast.Expr) {
 	buf.WriteString("\tdefault:\n")
-	buf.WriteString("\t\tpanic(fmt.Sprintf(\"unexpected ")
-	if named.Obj().Pkg() != pkg {
-		buf.WriteString(named.Obj().Pkg().Name())
-		buf.WriteByte('.')
+	typeName := fmt.Sprintf("%s.%s", named.Obj().Pkg().Name(), named.Obj().Name())
+	format := fmt.Sprintf("unexpected %s: %%#v", typeName)
+
+	switch expr := expr.(type) {
+	case *ast.Ident:
+		fmt.Fprintf(buf, "\t\tpanic(fmt.Sprintf(%q, %s))\n\t", format, expr.Name)
+	case *ast.SelectorExpr:
+		// Use a new buffer to avoid writing to the original buffer if there's an error.
+		var selectorBuf bytes.Buffer
+		if err := writeSelector(&selectorBuf, expr); err != nil {
+			fmt.Fprintf(buf, "\t\tpanic(\"unexpected %s\")\n\t", typeName)
+		} else {
+			fmt.Fprintf(buf, "\t\tpanic(fmt.Sprintf(%q, %s))\n\t", format, selectorBuf.String())
+		}
+	default:
+		fmt.Fprintf(buf, "\t\tpanic(\"unexpected %s\")\n\t", typeName)
 	}
-	buf.WriteString(named.Obj().Name())
-	buf.WriteString(": %")
-	buf.WriteByte(formatVerb)
-	buf.WriteString("\", ")
-	types.WriteExpr(buf, expr)
-	buf.WriteString("))\n\t")
+}
+
+// writeSelector writes the formatted selector expression to the buffer. If one
+// of the expressions in the chain in expr.X is not an *ast.Ident or
+// *ast.SelectorExpr, an error is returned.
+func writeSelector(buf *bytes.Buffer, expr *ast.SelectorExpr) error {
+	switch expr := expr.X.(type) {
+	case *ast.Ident:
+		buf.WriteString(expr.Name)
+	case *ast.SelectorExpr:
+		if err := writeSelector(buf, expr); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unexpected type %T", expr)
+	}
+
+	buf.WriteString(".")
+	buf.WriteString(expr.Sel.Name)
+	return nil
 }
 
 func namedTypeFromTypeSwitch(stmt *ast.TypeSwitchStmt, info *types.Info) *types.Named {

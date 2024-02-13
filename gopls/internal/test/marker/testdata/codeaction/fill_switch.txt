@@ -78,28 +78,28 @@ func doSwitch() {
 +	case data.TypeBThree:
 +	case data.TypeBTwo:
 +	default:
-+		panic(fmt.Sprintf("unexpected data.TypeB: %v", b))
++		panic(fmt.Sprintf("unexpected data.TypeB: %#v", b))
 -- @a2/a.go --
 @@ -36 +36,4 @@
 +	case typeAOne:
 +	case typeATwo:
 +	default:
-+		panic(fmt.Sprintf("unexpected typeA: %v", a))
++		panic(fmt.Sprintf("unexpected fillswitch.typeA: %#v", a))
 -- @a3/a.go --
 @@ -40 +40,4 @@
 +	case notificationOne:
 +	case notificationTwo:
 +	default:
-+		panic(fmt.Sprintf("unexpected notification: %T", n))
++		panic(fmt.Sprintf("unexpected fillswitch.notification: %#v", n))
 -- @a4/a.go --
 @@ -43 +43,4 @@
 +	case notificationOne:
 +	case notificationTwo:
 +	default:
-+		panic(fmt.Sprintf("unexpected notification: %T", nt))
++		panic(fmt.Sprintf("unexpected fillswitch.notification: %#v", nt))
 -- @a5/a.go --
 @@ -51 +51,4 @@
 +	case typeAOne:
 +	case typeATwo:
 +	default:
-+		panic(fmt.Sprintf("unexpected typeA: %v", s.a))
++		panic(fmt.Sprintf("unexpected fillswitch.typeA: %#v", s.a))
