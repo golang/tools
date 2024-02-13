@@ -21,10 +21,10 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
-	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/typesinternal"
@@ -345,8 +345,10 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 			}
 
 			// Ensure that the analyzer specifies a category for all its no-edit fixes.
+			// This is asserted by analysistest.RunWithSuggestedFixes, but there
+			// may be gaps in test coverage.
 			if diag.Code == "" || diag.Code == "default" {
-				panic(fmt.Sprintf("missing Diagnostic.Code: %#v", *diag))
+				bug.Reportf("missing Diagnostic.Code: %#v", *diag)
 			}
 		}
 	}

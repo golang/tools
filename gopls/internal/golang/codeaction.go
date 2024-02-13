@@ -106,7 +106,7 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 		}
 
 		if want[protocol.RefactorInline] {
-			rewrites, err := getInlineCodeActions(pkg, pgf, rng)
+			rewrites, err := getInlineCodeActions(pkg, pgf, rng, snapshot.Options())
 			if err != nil {
 				return nil, err
 			}
@@ -381,7 +381,7 @@ func canRemoveParameter(pkg *cache.Package, pgf *ParsedGoFile, rng protocol.Rang
 }
 
 // getInlineCodeActions returns refactor.inline actions available at the specified range.
-func getInlineCodeActions(pkg *cache.Package, pgf *ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
+func getInlineCodeActions(pkg *cache.Package, pgf *ParsedGoFile, rng protocol.Range, options *settings.Options) ([]protocol.CodeAction, error) {
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
@@ -391,9 +391,10 @@ func getInlineCodeActions(pkg *cache.Package, pgf *ParsedGoFile, rng protocol.Ra
 	var commands []protocol.Command
 	if _, fn, err := EnclosingStaticCall(pkg, pgf, start, end); err == nil {
 		cmd, err := command.NewApplyFixCommand(fmt.Sprintf("Inline call to %s", fn.Name()), command.ApplyFixArgs{
-			Fix:   fixInlineCall,
-			URI:   pgf.URI,
-			Range: rng,
+			Fix:          fixInlineCall,
+			URI:          pgf.URI,
+			Range:        rng,
+			ResolveEdits: supportsResolveEdits(options),
 		})
 		if err != nil {
 			return nil, err
@@ -404,11 +405,7 @@ func getInlineCodeActions(pkg *cache.Package, pgf *ParsedGoFile, rng protocol.Ra
 	// Convert commands to actions.
 	var actions []protocol.CodeAction
 	for i := range commands {
-		actions = append(actions, protocol.CodeAction{
-			Title:   commands[i].Title,
-			Kind:    protocol.RefactorInline,
-			Command: &commands[i],
-		})
+		actions = append(actions, newCodeAction(commands[i].Title, protocol.RefactorInline, &commands[i], nil, options))
 	}
 	return actions, nil
 }

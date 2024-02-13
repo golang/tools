@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -128,6 +129,19 @@ type Testing interface {
 func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns ...string) []*Result {
 	r := Run(t, dir, a, patterns...)
 
+	// If the immediate caller of RunWithSuggestedFixes is in
+	// x/tools, we apply stricter checks as required by gopls.
+	inTools := false
+	{
+		var pcs [1]uintptr
+		n := runtime.Callers(1, pcs[:])
+		frames := runtime.CallersFrames(pcs[:n])
+		fr, _ := frames.Next()
+		if fr.Func != nil && strings.HasPrefix(fr.Func.Name(), "golang.org/x/tools/") {
+			inTools = true
+		}
+	}
+
 	// Process each result (package) separately, matching up the suggested
 	// fixes into a diff, which we will compare to the .golden file.  We have
 	// to do this per-result in case a file appears in two packages, such as in
@@ -145,8 +159,14 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 
 		// Validate edits, prepare the fileEdits map and read the file contents.
 		for _, diag := range act.Diagnostics {
-			for _, sf := range diag.SuggestedFixes {
-				for _, edit := range sf.TextEdits {
+			for _, fix := range diag.SuggestedFixes {
+
+				// Assert that lazy fixes have a Category (#65578, #65087).
+				if inTools && len(fix.TextEdits) == 0 && diag.Category == "" {
+					t.Errorf("missing Diagnostic.Category for SuggestedFix without TextEdits (gopls requires the category for the name of the fix command")
+				}
+
+				for _, edit := range fix.TextEdits {
 					start, end := edit.Pos, edit.End
 					if !end.IsValid() {
 						end = start
@@ -175,7 +195,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 					if _, ok := fileEdits[file]; !ok {
 						fileEdits[file] = make(map[string][]diff.Edit)
 					}
-					fileEdits[file][sf.Message] = append(fileEdits[file][sf.Message], diff.Edit{
+					fileEdits[file][fix.Message] = append(fileEdits[file][fix.Message], diff.Edit{
 						Start: file.Offset(start),
 						End:   file.Offset(end),
 						New:   string(edit.NewText),

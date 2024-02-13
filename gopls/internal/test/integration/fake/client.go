@@ -99,9 +99,12 @@ func (c *Client) WorkspaceFolders(context.Context) ([]protocol.WorkspaceFolder, 
 func (c *Client) Configuration(_ context.Context, p *protocol.ParamConfiguration) ([]interface{}, error) {
 	results := make([]interface{}, len(p.Items))
 	for i, item := range p.Items {
+		if item.ScopeURI != nil && *item.ScopeURI == "" {
+			return nil, fmt.Errorf(`malformed ScopeURI ""`)
+		}
 		if item.Section == "gopls" {
 			config := c.editor.Config()
-			results[i] = makeSettings(c.editor.sandbox, config)
+			results[i] = makeSettings(c.editor.sandbox, config, item.ScopeURI)
 		}
 	}
 	return results, nil

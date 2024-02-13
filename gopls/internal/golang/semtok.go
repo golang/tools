@@ -132,6 +132,9 @@ func (tv *tokenVisitor) visit() {
 }
 
 func (tv *tokenVisitor) token(start token.Pos, leng int, typ semtok.TokenType, mods []string) {
+	if leng <= 0 {
+		return // vscode doesn't like 0-length Tokens
+	}
 	if !start.IsValid() {
 		// This is not worth reporting. TODO(pjw): does it still happen?
 		return

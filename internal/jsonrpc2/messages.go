@@ -157,17 +157,17 @@ func (r *Response) MarshalJSON() ([]byte, error) {
 	return data, nil
 }
 
-func toWireError(err error) *wireError {
+func toWireError(err error) *WireError {
 	if err == nil {
 		// no error, the response is complete
 		return nil
 	}
-	if err, ok := err.(*wireError); ok {
+	if err, ok := err.(*WireError); ok {
 		// already a wire error, just use it
 		return err
 	}
-	result := &wireError{Message: err.Error()}
-	var wrapped *wireError
+	result := &WireError{Message: err.Error()}
+	var wrapped *WireError
 	if errors.As(err, &wrapped) {
 		// if we wrapped a wire error, keep the code from the wrapped error
 		// but the message from the outer error

@@ -132,7 +132,7 @@ func indirectSelection(seln *types.Selection) bool {
 			return true
 		}
 
-		tParam := seln.Obj().Type().(*types.Signature).Recv().Type()
+		tParam := seln.Obj().Type().Underlying().(*types.Signature).Recv().Type()
 		return isPointer(tArg) && !isPointer(tParam) // implicit *
 	}
 

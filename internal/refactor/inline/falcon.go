@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -446,7 +447,7 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 			// - for an array or *array, use [n]int.
 			// The last two entail progressively stronger index checks.
 			var ct ast.Expr // type syntax for constraint
-			switch t := t.(type) {
+			switch t := aliases.Unalias(t).(type) {
 			case *types.Map:
 				if types.IsInterface(t.Key()) {
 					ct = &ast.MapType{

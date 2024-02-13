@@ -49,6 +49,48 @@ var FooErr = errors.New("foo")
 	})
 }
 
+// Test that clients can configure per-workspace configuration, which is
+// queried via the scopeURI of a workspace/configuration request.
+// (this was broken in golang/go#65519).
+func TestWorkspaceConfiguration(t *testing.T) {
+	const files = `
+-- go.mod --
+module example.com/config
+
+go 1.18
+
+-- a/a.go --
+package a
+
+import "example.com/config/b"
+
+func _() {
+	_ = b.B{2}
+}
+
+-- b/b.go --
+package b
+
+type B struct {
+	F int
+}
+`
+
+	WithOptions(
+		WorkspaceFolders("a"),
+		FolderSettings{
+			"a": {
+				"analyses": map[string]bool{
+					"composites": false,
+				},
+			},
+		},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		env.AfterChange(NoDiagnostics())
+	})
+}
+
 // TestMajorOptionsChange is like TestChangeConfiguration, but modifies an
 // an open buffer before making a major (but inconsequential) change that
 // causes gopls to recreate the view.

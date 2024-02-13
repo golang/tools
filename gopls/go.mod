@@ -6,9 +6,9 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/jba/printsrc v0.2.2
 	github.com/jba/templatecheck v0.6.0
-	golang.org/x/mod v0.14.0
+	golang.org/x/mod v0.15.0
 	golang.org/x/sync v0.6.0
-	golang.org/x/telemetry v0.0.0-20240201224847-0a1d30dda509
+	golang.org/x/telemetry v0.0.0-20240209200032-7b892fcb8a78
 	golang.org/x/text v0.14.0
 	golang.org/x/tools v0.17.1-0.20240206204217-56dc8684fb5a
 	golang.org/x/vuln v1.0.1
@@ -22,7 +22,9 @@ require (
 	github.com/BurntSushi/toml v1.2.1 // indirect
 	github.com/google/safehtml v0.1.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20221212164502-fae10dda9338 // indirect
-	golang.org/x/sys v0.16.0 // indirect
+	golang.org/x/sys v0.17.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 
 )
+
+replace golang.org/x/tools => ../

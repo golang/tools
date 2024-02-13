@@ -1,0 +1,41 @@
+This test confirms that gopls honors configuration even if the client does not
+support dynamic configuration.
+
+-- capabilities.json --
+{
+	"configuration": false
+}
+
+-- settings.json --
+{
+	"usePlaceholders": true,
+	"analyses": {
+		"composites": false
+	}
+}
+
+-- go.mod --
+module example.com/config
+
+go 1.18
+
+-- a/a.go --
+package a
+
+import "example.com/config/b"
+
+func Identity[P ~int](p P) P { //@item(Identity, "Identity", "", "")
+	return p
+}
+
+func _() {
+	_ = b.B{2}
+	_ = Identi //@snippet(" //", Identity, "Identity(${1:p P})"), diag("Ident", re"(undefined|undeclared)")
+}
+
+-- b/b.go --
+package b
+
+type B struct {
+	F int
+}

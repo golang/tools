@@ -480,7 +480,7 @@ func selectViewDefs(ctx context.Context, fs file.Source, folders []*Folder, open
 checkFiles:
 	for _, uri := range openFiles {
 		folder := folderForFile(uri)
-		if folder == nil {
+		if folder == nil || !folder.Options.ZeroConfig {
 			continue // only guess views for open files
 		}
 		fh, err := fs.ReadFile(ctx, uri)
@@ -590,7 +590,7 @@ func bestView[V viewDefiner](ctx context.Context, fs file.Source, fh file.Handle
 				pushView(&workViews, view)
 			}
 		case GoModView:
-			if modURI == def.gomod {
+			if _, ok := def.workspaceModFiles[modURI]; ok {
 				modViews = append(modViews, view)
 			}
 		case GOPATHView:
@@ -746,18 +746,12 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 			checkViews = true
 		}
 
-		// Any on-disk change to a go.work file causes recomputing views.
+		// Any on-disk change to a go.work or go.mod file causes recomputing views.
 		//
 		// TODO(rfindley): go.work files need not be named "go.work" -- we need to
 		// check each view's source to handle the case of an explicit GOWORK value.
 		// Write a test that fails, and fix this.
-		if isGoWork(c.URI) && (c.Action == file.Save || c.OnDisk) {
-			checkViews = true
-		}
-		// Opening/Close/Create/Delete of go.mod files all trigger
-		// re-evaluation of Views. Changes do not as they can't affect the set of
-		// Views.
-		if isGoMod(c.URI) && c.Action != file.Change && c.Action != file.Save {
+		if (isGoWork(c.URI) || isGoMod(c.URI)) && (c.Action == file.Save || c.OnDisk) {
 			checkViews = true
 		}
 

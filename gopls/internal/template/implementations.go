@@ -169,6 +169,9 @@ func SemanticTokens(ctx context.Context, snapshot *cache.Snapshot, spn protocol.
 
 	var items []semtok.Token
 	add := func(line, start, len uint32) {
+		if len == 0 {
+			return // vscode doesn't like 0-length Tokens
+		}
 		// TODO(adonovan): don't ignore the rng restriction, if any.
 		items = append(items, semtok.Token{
 			Line:  line,

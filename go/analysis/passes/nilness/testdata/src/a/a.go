@@ -216,3 +216,29 @@ func f14() {
 		print(x)
 	}
 }
+
+func f15(x any) {
+	ptr, ok := x.(*int)
+	if ok {
+		return
+	}
+	println(*ptr) // want "nil dereference in load"
+}
+
+func f16(x any) {
+	ptr, ok := x.(*int)
+	if !ok {
+		println(*ptr) // want "nil dereference in load"
+		return
+	}
+	println(*ptr)
+}
+
+func f18(x any) {
+	ptr, ok := x.(*int)
+	if ok {
+		println(ptr)
+		// falls through
+	}
+	println(*ptr)
+}

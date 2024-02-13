@@ -185,3 +185,86 @@ const C = 0
 		)
 	})
 }
+
+func TestGoModReplace(t *testing.T) {
+	// This test checks that we treat locally replaced modules as workspace
+	// modules, according to the "includeReplaceInWorkspace" setting.
+	const files = `
+-- moda/go.mod --
+module golang.org/a
+
+require golang.org/b v1.2.3
+
+replace golang.org/b => ../modb
+
+go 1.20
+
+-- moda/a.go --
+package a
+
+import "golang.org/b"
+
+const A = b.B
+
+-- modb/go.mod --
+module golang.org/b
+
+go 1.20
+
+-- modb/b.go --
+package b
+
+const B = 1
+`
+
+	for useReplace, expectation := range map[bool]Expectation{
+		true:  FileWatchMatching("modb"),
+		false: NoFileWatchMatching("modb"),
+	} {
+		WithOptions(
+			WorkspaceFolders("moda"),
+			Settings{
+				"includeReplaceInWorkspace": useReplace,
+			},
+		).Run(t, files, func(t *testing.T, env *Env) {
+			env.OnceMet(
+				InitialWorkspaceLoad,
+				expectation,
+			)
+		})
+	}
+}
+
+func TestDisableZeroConfig(t *testing.T) {
+	// This test checks that we treat locally replaced modules as workspace
+	// modules, according to the "includeReplaceInWorkspace" setting.
+	const files = `
+-- moda/go.mod --
+module golang.org/a
+
+go 1.20
+
+-- moda/a.go --
+package a
+
+-- modb/go.mod --
+module golang.org/b
+
+go 1.20
+
+-- modb/b.go --
+package b
+
+`
+
+	WithOptions(
+		Settings{"zeroConfig": false},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("moda/a.go")
+		env.OpenFile("modb/b.go")
+		env.AfterChange()
+		if got := env.Views(); len(got) != 1 || got[0].Type != cache.AdHocView.String() {
+			t.Errorf("Views: got %v, want one adhoc view", got)
+		}
+	})
+}
