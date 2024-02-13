@@ -65,7 +65,7 @@ const (
 	fixInlineCall        = "inline_call"
 	fixInvertIfCondition = "invert_if_condition"
 	fixSplitLines        = "split_lines"
-	fixGroupLines        = "group_lines"
+	fixJoinLines         = "group_lines"
 )
 
 // ApplyFix applies the specified kind of suggested fix to the given
@@ -118,7 +118,7 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		fixInlineCall:        inlineCall,
 		fixInvertIfCondition: singleFile(invertIfCondition),
 		fixSplitLines:        singleFile(splitLines),
-		fixGroupLines:        singleFile(groupLines),
+		fixJoinLines:         singleFile(joinLines),
 	}
 	fixer, ok := fixers[fix]
 	if !ok {

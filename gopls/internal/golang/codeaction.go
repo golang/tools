@@ -317,9 +317,9 @@ func getRewriteCodeActions(pkg *cache.Package, pgf *ParsedGoFile, fh file.Handle
 		commands = append(commands, cmd)
 	}
 
-	if msg, ok, _ := CanGroupLines(pgf.File, pkg.FileSet(), start, end); ok {
+	if msg, ok, _ := CanJoinLines(pgf.File, pkg.FileSet(), start, end); ok {
 		cmd, err := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
-			Fix:          fixGroupLines,
+			Fix:          fixJoinLines,
 			URI:          pgf.URI,
 			Range:        rng,
 			ResolveEdits: supportsResolveEdits(options),
