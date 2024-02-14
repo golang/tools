@@ -188,10 +188,28 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 }
 
 func addDefaultCase(buf *bytes.Buffer, named *types.Named, expr ast.Expr) {
+	var dottedBuf bytes.Buffer
+	// writeDotted emits a dotted path a.b.c.
+	var writeDotted func(e ast.Expr) bool
+	writeDotted = func(e ast.Expr) bool {
+		switch e := e.(type) {
+		case *ast.SelectorExpr:
+			if !writeDotted(e.X) {
+				return false
+			}
+			dottedBuf.WriteByte('.')
+			dottedBuf.WriteString(e.Sel.Name)
+			return true
+		case *ast.Ident:
+			dottedBuf.WriteString(e.Name)
+			return true
+		}
+		return false
+	}
+
 	buf.WriteString("\tdefault:\n")
 	typeName := fmt.Sprintf("%s.%s", named.Obj().Pkg().Name(), named.Obj().Name())
-	var dottedBuf bytes.Buffer
-	if writeDotted(&dottedBuf, expr) {
+	if writeDotted(expr) {
 		// Switch tag expression is a dotted path.
 		// It is safe to re-evaluate it in the default case.
 		format := fmt.Sprintf("unexpected %s: %%#v", typeName)
@@ -200,23 +218,6 @@ func addDefaultCase(buf *bytes.Buffer, named *types.Named, expr ast.Expr) {
 		// Emit simpler message, without re-evaluating tag expression.
 		fmt.Fprintf(buf, "\t\tpanic(%q)\n\t", "unexpected "+typeName)
 	}
-}
-
-// writeDotted emits a dotted path a.b.c.
-func writeDotted(buf *bytes.Buffer, e ast.Expr) bool {
-	switch e := e.(type) {
-	case *ast.SelectorExpr:
-		if !writeDotted(buf, e.X) {
-			return false
-		}
-		buf.WriteByte('.')
-		buf.WriteString(e.Sel.Name)
-		return true
-	case *ast.Ident:
-		buf.WriteString(e.Name)
-		return true
-	}
-	return false
 }
 
 func namedTypeFromTypeSwitch(stmt *ast.TypeSwitchStmt, info *types.Info) *types.Named {
