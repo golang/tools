@@ -586,6 +586,12 @@ func WriteFunction(buf *bytes.Buffer, f *Function) {
 			default:
 				buf.WriteString(instr.String())
 			}
+			// -mode=S: show line numbers
+			if f.Prog.mode&LogSource != 0 {
+				if pos := instr.Pos(); pos.IsValid() {
+					fmt.Fprintf(buf, " L%d", f.Prog.Fset.Position(pos).Line)
+				}
+			}
 			buf.WriteString("\n")
 		}
 	}
