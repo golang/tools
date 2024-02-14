@@ -25,6 +25,7 @@ import (
 
 	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/internal/aliases"
 )
 
 // A spec specifies an entity to rename.
@@ -465,9 +466,9 @@ func findObjects(info *loader.PackageInfo, spec *spec) ([]types.Object, error) {
 		if spec.searchFor == "" {
 			// If it is an embedded field, return the type of the field.
 			if v, ok := obj.(*types.Var); ok && v.Anonymous() {
-				switch t := v.Type().(type) {
+				switch t := aliases.Unalias(v.Type()).(type) {
 				case *types.Pointer:
-					return []types.Object{t.Elem().(*types.Named).Obj()}, nil
+					return []types.Object{aliases.Unalias(t.Elem()).(*types.Named).Obj()}, nil
 				case *types.Named:
 					return []types.Object{t.Obj()}, nil
 				}

@@ -11,6 +11,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -209,6 +210,9 @@ func forEachReachable(msets *typeutil.MethodSetCache, T types.Type, f func(types
 		}
 
 		switch T := T.(type) {
+		case *aliases.Alias:
+			visit(aliases.Unalias(T), false)
+
 		case *types.Basic:
 			// nop
 

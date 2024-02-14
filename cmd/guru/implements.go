@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/cmd/guru/serial"
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/refactor/importgraph"
 )
 
@@ -157,7 +158,7 @@ func implements(q *Query) error {
 	}
 
 	var pos interface{} = qpos
-	if nt, ok := deref(T).(*types.Named); ok {
+	if nt, ok := aliases.Unalias(deref(T)).(*types.Named); ok {
 		pos = nt.Obj()
 	}
 
@@ -230,7 +231,7 @@ func (r *implementsResult) PrintPlain(printf printfFunc) {
 		for i, sub := range r.to {
 			if !isInterface(sub) {
 				if r.method == nil {
-					printf(deref(sub).(*types.Named).Obj(), "\t%s %s type %s",
+					printf(aliases.Unalias(deref(sub)).(*types.Named).Obj(), "\t%s %s type %s",
 						relation, typeKind(sub), r.qpos.typeString(sub))
 				} else {
 					meth(r.toMethod[i])
@@ -240,7 +241,7 @@ func (r *implementsResult) PrintPlain(printf printfFunc) {
 		for i, sub := range r.to {
 			if isInterface(sub) {
 				if r.method == nil {
-					printf(sub.(*types.Named).Obj(), "\t%s %s type %s",
+					printf(aliases.Unalias(sub).(*types.Named).Obj(), "\t%s %s type %s",
 						relation, typeKind(sub), r.qpos.typeString(sub))
 				} else {
 					meth(r.toMethod[i])
@@ -251,7 +252,7 @@ func (r *implementsResult) PrintPlain(printf printfFunc) {
 		relation = "implements"
 		for i, super := range r.from {
 			if r.method == nil {
-				printf(super.(*types.Named).Obj(), "\t%s %s",
+				printf(aliases.Unalias(super).(*types.Named).Obj(), "\t%s %s",
 					relation, r.qpos.typeString(super))
 			} else {
 				meth(r.fromMethod[i])
@@ -270,7 +271,7 @@ func (r *implementsResult) PrintPlain(printf printfFunc) {
 			}
 			for i, super := range r.from {
 				if r.method == nil {
-					printf(super.(*types.Named).Obj(), "\t%s %s",
+					printf(aliases.Unalias(super).(*types.Named).Obj(), "\t%s %s",
 						relation, r.qpos.typeString(super))
 				} else {
 					meth(r.fromMethod[i])
@@ -288,7 +289,7 @@ func (r *implementsResult) PrintPlain(printf printfFunc) {
 
 			for i, psuper := range r.fromPtr {
 				if r.method == nil {
-					printf(psuper.(*types.Named).Obj(), "\t%s %s",
+					printf(aliases.Unalias(psuper).(*types.Named).Obj(), "\t%s %s",
 						relation, r.qpos.typeString(psuper))
 				} else {
 					meth(r.fromPtrMethod[i])
@@ -332,7 +333,7 @@ func makeImplementsTypes(tt []types.Type, fset *token.FileSet) []serial.Implemen
 
 func makeImplementsType(T types.Type, fset *token.FileSet) serial.ImplementsType {
 	var pos token.Pos
-	if nt, ok := deref(T).(*types.Named); ok { // implementsResult.t may be non-named
+	if nt, ok := aliases.Unalias(deref(T)).(*types.Named); ok { // implementsResult.t may be non-named
 		pos = nt.Obj().Pos()
 	}
 	return serial.ImplementsType{

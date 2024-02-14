@@ -32,6 +32,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -285,7 +286,7 @@ func formatObj(out *strings.Builder, fset *token.FileSet, ref string, obj types.
 		if obj.IsAlias() {
 			kind = "type alias"
 		}
-		if named, ok := obj.Type().(*types.Named); ok {
+		if named, ok := aliases.Unalias(obj.Type()).(*types.Named); ok {
 			origin = named.Obj()
 		}
 	}

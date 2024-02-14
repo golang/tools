@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -51,16 +52,19 @@ func isNonTypeParamInterface(t types.Type) bool {
 
 // isBasic reports whether t is a basic type.
 func isBasic(t types.Type) bool {
-	_, ok := t.(*types.Basic)
+	_, ok := aliases.Unalias(t).(*types.Basic)
 	return ok
 }
 
 // isString reports whether t is exactly a string type.
+// t is assumed to be an Underlying type (not Named or Alias).
 func isString(t types.Type) bool {
-	return isBasic(t) && t.(*types.Basic).Info()&types.IsString != 0
+	basic, ok := t.(*types.Basic)
+	return ok && basic.Info()&types.IsString != 0
 }
 
 // isByteSlice reports whether t is of the form []~bytes.
+// t is assumed to be an Underlying type (not Named or Alias).
 func isByteSlice(t types.Type) bool {
 	if b, ok := t.(*types.Slice); ok {
 		e, _ := b.Elem().Underlying().(*types.Basic)
@@ -70,6 +74,7 @@ func isByteSlice(t types.Type) bool {
 }
 
 // isRuneSlice reports whether t is of the form []~runes.
+// t is assumed to be an Underlying type (not Named or Alias).
 func isRuneSlice(t types.Type) bool {
 	if b, ok := t.(*types.Slice); ok {
 		e, _ := b.Elem().Underlying().(*types.Basic)
@@ -131,8 +136,9 @@ func fieldOf(typ types.Type, index int) *types.Var {
 	return nil
 }
 
-// isUntyped returns true for types that are untyped.
+// isUntyped reports whether typ is the type of an untyped constant.
 func isUntyped(typ types.Type) bool {
+	// No Underlying/Unalias: untyped constant types cannot be Named or Alias.
 	b, ok := typ.(*types.Basic)
 	return ok && b.Info()&types.IsUntyped != 0
 }
@@ -342,10 +348,10 @@ func (m *typeListMap) hash(ts []types.Type) uint32 {
 // instantiateMethod instantiates m with targs and returns a canonical representative for this method.
 func (canon *canonizer) instantiateMethod(m *types.Func, targs []types.Type, ctxt *types.Context) *types.Func {
 	recv := recvType(m)
-	if p, ok := recv.(*types.Pointer); ok {
+	if p, ok := aliases.Unalias(recv).(*types.Pointer); ok {
 		recv = p.Elem()
 	}
-	named := recv.(*types.Named)
+	named := aliases.Unalias(recv).(*types.Named)
 	inst, err := types.Instantiate(ctxt, named.Origin(), targs, false)
 	if err != nil {
 		panic(err)

@@ -45,6 +45,7 @@ import (
 
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/aliases"
 )
 
 type value interface{}
@@ -117,7 +118,7 @@ func usesBuiltinMap(t types.Type) bool {
 	switch t := t.(type) {
 	case *types.Basic, *types.Chan, *types.Pointer:
 		return true
-	case *types.Named:
+	case *types.Named, *aliases.Alias:
 		return usesBuiltinMap(t.Underlying())
 	case *types.Interface, *types.Array, *types.Struct:
 		return false

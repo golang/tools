@@ -12,6 +12,7 @@ import (
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -410,7 +411,7 @@ func (b *builder) tassert(a *ssa.TypeAssert) {
 	// The case where a is <a.AssertedType, bool> register so there
 	// is a flow from a.X to a[0]. Here, a[0] is represented as an
 	// indexedLocal: an entry into local tuple register a at index 0.
-	tup := a.Type().Underlying().(*types.Tuple)
+	tup := a.Type().(*types.Tuple)
 	t := tup.At(0).Type()
 
 	local := indexedLocal{val: a, typ: t, index: 0}
@@ -421,7 +422,7 @@ func (b *builder) tassert(a *ssa.TypeAssert) {
 // and t1 where the source is indexed local representing a value
 // from tuple register t2 at index i and the target is t1.
 func (b *builder) extract(e *ssa.Extract) {
-	tup := e.Tuple.Type().Underlying().(*types.Tuple)
+	tup := e.Tuple.Type().(*types.Tuple)
 	t := tup.At(e.Index).Type()
 
 	local := indexedLocal{val: e.Tuple, typ: t, index: e.Index}
@@ -527,7 +528,7 @@ func (b *builder) next(n *ssa.Next) {
 	if n.IsString {
 		return
 	}
-	tup := n.Type().Underlying().(*types.Tuple)
+	tup := n.Type().(*types.Tuple)
 	kt := tup.At(1).Type()
 	vt := tup.At(2).Type()
 
@@ -657,7 +658,7 @@ func addReturnFlows(b *builder, r *ssa.Return, site ssa.Value) {
 		return
 	}
 
-	tup := site.Type().Underlying().(*types.Tuple)
+	tup := site.Type().(*types.Tuple)
 	for i, r := range results {
 		local := indexedLocal{val: site, typ: tup.At(i).Type(), index: i}
 		b.addInFlowEdge(b.nodeFromVal(r), local)
@@ -671,7 +672,7 @@ func (b *builder) multiconvert(c *ssa.MultiConvert) {
 		// This is a adaptation of x/exp/typeparams.NormalTerms which x/tools cannot depend on.
 		var terms []*types.Term
 		var err error
-		switch typ := typ.(type) {
+		switch typ := aliases.Unalias(typ).(type) {
 		case *types.TypeParam:
 			terms, err = typeparams.StructuralTerms(typ)
 		case *types.Union:
@@ -692,7 +693,7 @@ func (b *builder) multiconvert(c *ssa.MultiConvert) {
 	}
 	// isValuePreserving returns true if a conversion from ut_src to
 	// ut_dst is value-preserving, i.e. just a change of type.
-	// Precondition: neither argument is a named type.
+	// Precondition: neither argument is a named or alias type.
 	isValuePreserving := func(ut_src, ut_dst types.Type) bool {
 		// Identical underlying types?
 		if types.IdenticalIgnoreTags(ut_dst, ut_src) {
@@ -740,7 +741,7 @@ func (b *builder) addInFlowEdge(s, d node) {
 
 // Creates const, pointer, global, func, and local nodes based on register instructions.
 func (b *builder) nodeFromVal(val ssa.Value) node {
-	if p, ok := val.Type().(*types.Pointer); ok && !types.IsInterface(p.Elem()) && !isFunction(p.Elem()) {
+	if p, ok := aliases.Unalias(val.Type()).(*types.Pointer); ok && !types.IsInterface(p.Elem()) && !isFunction(p.Elem()) {
 		// Nested pointer to interfaces are modeled as a special
 		// nestedPtrInterface node.
 		if i := interfaceUnderPtr(p.Elem()); i != nil {

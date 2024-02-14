@@ -375,7 +375,7 @@ func (r *rta) interfaces(C types.Type) []*types.Interface {
 		// and update the 'implements' relation.
 		r.interfaceTypes.Iterate(func(I types.Type, v interface{}) {
 			iinfo := v.(*interfaceTypeInfo)
-			if I := I.(*types.Interface); implements(cinfo, iinfo) {
+			if I := aliases.Unalias(I).(*types.Interface); implements(cinfo, iinfo) {
 				iinfo.implementations = append(iinfo.implementations, C)
 				cinfo.implements = append(cinfo.implements, I)
 			}
@@ -457,7 +457,7 @@ func (r *rta) addRuntimeType(T types.Type, skip bool) {
 	// Each package maintains its own set of types it has visited.
 
 	var n *types.Named
-	switch T := T.(type) {
+	switch T := aliases.Unalias(T).(type) {
 	case *types.Named:
 		n = T
 	case *types.Pointer:

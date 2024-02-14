@@ -28,6 +28,7 @@ import (
 	"go/token"
 	"go/types"
 
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -74,9 +75,9 @@ func PackIndexExpr(x ast.Expr, lbrack token.Pos, indices []ast.Expr, rbrack toke
 	}
 }
 
-// IsTypeParam reports whether t is a type parameter.
+// IsTypeParam reports whether t is a type parameter (or an alias of one).
 func IsTypeParam(t types.Type) bool {
-	_, ok := t.(*types.TypeParam)
+	_, ok := aliases.Unalias(t).(*types.TypeParam)
 	return ok
 }
 
@@ -155,6 +156,9 @@ func OriginMethod(fn *types.Func) *types.Func {
 // In this case, GenericAssignableTo reports that instantiations of Container
 // are assignable to the corresponding instantiation of Interface.
 func GenericAssignableTo(ctxt *types.Context, V, T types.Type) bool {
+	V = aliases.Unalias(V)
+	T = aliases.Unalias(T)
+
 	// If V and T are not both named, or do not have matching non-empty type
 	// parameter lists, fall back on types.AssignableTo.
 

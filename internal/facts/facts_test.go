@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/facts"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -360,7 +361,7 @@ func find(p *types.Package, expr string) types.Object {
 	if err != nil {
 		return nil
 	}
-	if n, ok := tv.Type.(*types.Named); ok {
+	if n, ok := aliases.Unalias(tv.Type).(*types.Named); ok {
 		return n.Obj()
 	}
 	return nil

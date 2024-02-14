@@ -125,10 +125,7 @@ func isDeadStore(store *ssa.Store, obj ssa.Value, addr ssa.Instruction) bool {
 
 // isStructOrArray returns whether the underlying type is struct or array.
 func isStructOrArray(tp types.Type) bool {
-	if named, ok := tp.(*types.Named); ok {
-		tp = named.Underlying()
-	}
-	switch tp.(type) {
+	switch tp.Underlying().(type) {
 	case *types.Array:
 		return true
 	case *types.Struct:
@@ -146,7 +143,7 @@ func hasStructOrArrayType(v ssa.Value) bool {
 			//   func (t T) f() { ...}
 			// the receiver object is of type *T:
 			//   t0 = local T (t)   *T
-			if tp, ok := alloc.Type().(*types.Pointer); ok {
+			if tp, ok := aliases.Unalias(alloc.Type()).(*types.Pointer); ok {
 				return isStructOrArray(tp.Elem())
 			}
 			return false
@@ -162,14 +159,12 @@ func hasStructOrArrayType(v ssa.Value) bool {
 func getFieldName(tp types.Type, index int) string {
 	// TODO(adonovan): use
 	//   stp, ok := typeparams.Deref(tp).Underlying().(*types.Struct); ok {
-	// when Deref is defined.
+	// when Deref is defined. But see CL 565456 for a better fix.
+
 	if pt, ok := aliases.Unalias(tp).(*types.Pointer); ok {
 		tp = pt.Elem()
 	}
-	if named, ok := aliases.Unalias(tp).(*types.Named); ok {
-		tp = named.Underlying()
-	}
-	if stp, ok := tp.(*types.Struct); ok {
+	if stp, ok := tp.Underlying().(*types.Struct); ok {
 		return stp.Field(index).Name()
 	}
 	return fmt.Sprintf("%d", index)

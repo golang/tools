@@ -6,6 +6,8 @@ package ssa
 
 import (
 	"go/types"
+
+	"golang.org/x/tools/internal/aliases"
 )
 
 // Type substituter for a fixed set of replacement types.
@@ -80,6 +82,9 @@ func (subst *subster) typ(t types.Type) (res types.Type) {
 
 	// fall through if result r will be identical to t, types.Identical(r, t).
 	switch t := t.(type) {
+	case *aliases.Alias:
+		return subst.typ(aliases.Unalias(t))
+
 	case *types.TypeParam:
 		r := subst.replacements[t]
 		assert(r != nil, "type param without replacement encountered")
@@ -466,7 +471,7 @@ func reaches(t types.Type, c map[types.Type]bool) (res bool) {
 				return true
 			}
 		}
-	case *types.Named:
+	case *types.Named, *aliases.Alias:
 		return reaches(t.Underlying(), c)
 	default:
 		panic("unreachable")

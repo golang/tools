@@ -7,6 +7,7 @@ package ifaceassert
 import (
 	"go/types"
 
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -93,6 +94,10 @@ func (w *tpWalker) isParameterized(typ types.Type) (res bool) {
 
 	case *types.Chan:
 		return w.isParameterized(t.Elem())
+
+	case *aliases.Alias:
+		// TODO(adonovan): think about generic aliases.
+		return w.isParameterized(aliases.Unalias(t))
 
 	case *types.Named:
 		list := t.TypeArgs()

@@ -17,6 +17,7 @@ import (
 	"unsafe"
 
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/internal/aliases"
 )
 
 // If the target program panics, the interpreter panics with this type.
@@ -172,7 +173,7 @@ func asUnsigned(x value) (value, bool) {
 
 // zero returns a new "zero" value of the specified type.
 func zero(t types.Type) value {
-	switch t := t.(type) {
+	switch t := aliases.Unalias(t).(type) {
 	case *types.Basic:
 		if t.Kind() == types.UntypedNil {
 			panic("untyped nil has no zero value")

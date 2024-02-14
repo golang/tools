@@ -13,6 +13,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/refactor/satisfy"
 )
 
@@ -467,9 +468,10 @@ func (r *renamer) checkStructField(from *types.Var) {
 	// 	type T int       // this and
 	// 	var s struct {T} // this must change too.
 	if from.Anonymous() {
-		if named, ok := from.Type().(*types.Named); ok {
+		// TODO(adonovan): think carefully about aliases.
+		if named, ok := aliases.Unalias(from.Type()).(*types.Named); ok {
 			r.check(named.Obj())
-		} else if named, ok := deref(from.Type()).(*types.Named); ok {
+		} else if named, ok := aliases.Unalias(deref(from.Type())).(*types.Named); ok {
 			r.check(named.Obj())
 		}
 	}
@@ -777,7 +779,7 @@ func (r *renamer) checkMethod(from *types.Func) {
 				var iface string
 
 				I := recv(imeth).Type()
-				if named, ok := I.(*types.Named); ok {
+				if named, ok := aliases.Unalias(I).(*types.Named); ok {
 					pos = named.Obj().Pos()
 					iface = "interface " + named.Obj().Name()
 				} else {
@@ -851,7 +853,7 @@ func someUse(info *loader.PackageInfo, obj types.Object) *ast.Ident {
 func isInterface(T types.Type) bool { return types.IsInterface(T) }
 
 func deref(typ types.Type) types.Type {
-	if p, _ := typ.(*types.Pointer); p != nil {
+	if p, _ := aliases.Unalias(typ).(*types.Pointer); p != nil {
 		return p.Elem()
 	}
 	return typ

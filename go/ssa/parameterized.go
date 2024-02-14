@@ -8,6 +8,7 @@ import (
 	"go/types"
 	"sync"
 
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -47,6 +48,9 @@ func (w *tpWalker) isParameterizedLocked(typ types.Type) (res bool) {
 	switch t := typ.(type) {
 	case nil, *types.Basic: // TODO(gri) should nil be handled here?
 		break
+
+	case *aliases.Alias:
+		return w.isParameterizedLocked(aliases.Unalias(t))
 
 	case *types.Array:
 		return w.isParameterizedLocked(t.Elem())

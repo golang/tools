@@ -7,6 +7,8 @@ package typeparams
 import (
 	"fmt"
 	"go/types"
+
+	"golang.org/x/tools/internal/aliases"
 )
 
 // CoreType returns the core type of T or nil if T does not have a core type.
@@ -110,7 +112,7 @@ func CoreType(T types.Type) types.Type {
 // _NormalTerms makes no guarantees about the order of terms, except that it
 // is deterministic.
 func _NormalTerms(typ types.Type) ([]*types.Term, error) {
-	switch typ := typ.(type) {
+	switch typ := aliases.Unalias(typ).(type) {
 	case *types.TypeParam:
 		return StructuralTerms(typ)
 	case *types.Union:

@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -358,7 +359,7 @@ func appendNames(names []*types.Named, typ types.Type) []*types.Named {
 		Elem() types.Type
 	}
 
-	switch t := typ.(type) {
+	switch t := aliases.Unalias(typ).(type) {
 	case *types.Named:
 		names = append(names, t)
 	case *types.Map:
@@ -469,7 +470,7 @@ func describeType(qpos *queryPos, path []ast.Node) (*describeTypeResult, error) 
 			description = "alias of "
 		} else if obj.Pos() == n.Pos() {
 			description = "definition of " // (Named type)
-		} else if _, ok := typ.(*types.Basic); ok {
+		} else if _, ok := aliases.Unalias(typ).(*types.Basic); ok {
 			description = "reference to built-in "
 		} else {
 			description = "reference to " // (Named type)
@@ -486,7 +487,7 @@ func describeType(qpos *queryPos, path []ast.Node) (*describeTypeResult, error) 
 	description = description + "type " + qpos.typeString(typ)
 
 	// Show sizes for structs and named types (it's fairly obvious for others).
-	switch typ.(type) {
+	switch aliases.Unalias(typ).(type) {
 	case *types.Named, *types.Struct:
 		szs := types.StdSizes{WordSize: 8, MaxAlign: 8} // assume amd64
 		description = fmt.Sprintf("%s (size %d, align %d)", description,
@@ -576,7 +577,7 @@ func (r *describeTypeResult) PrintPlain(printf printfFunc) {
 	printf(r.node, "%s", r.description)
 
 	// Show the underlying type for a reference to a named type.
-	if nt, ok := r.typ.(*types.Named); ok && r.node.Pos() != nt.Obj().Pos() {
+	if nt, ok := aliases.Unalias(r.typ).(*types.Named); ok && r.node.Pos() != nt.Obj().Pos() {
 		// TODO(adonovan): improve display of complex struct/interface types.
 		printf(nt.Obj(), "defined as %s", r.qpos.typeString(nt.Underlying()))
 	}
@@ -585,7 +586,7 @@ func (r *describeTypeResult) PrintPlain(printf printfFunc) {
 	if len(r.methods) == 0 {
 		// Only report null result for type kinds
 		// capable of bearing methods.
-		switch r.typ.(type) {
+		switch aliases.Unalias(r.typ).(type) {
 		case *types.Interface, *types.Struct, *types.Named:
 			printf(r.node, "No methods.")
 		}
@@ -596,7 +597,7 @@ func (r *describeTypeResult) PrintPlain(printf printfFunc) {
 
 func (r *describeTypeResult) JSON(fset *token.FileSet) []byte {
 	var namePos, nameDef string
-	if nt, ok := r.typ.(*types.Named); ok {
+	if nt, ok := aliases.Unalias(r.typ).(*types.Named); ok {
 		namePos = fset.Position(nt.Obj().Pos()).String()
 		nameDef = nt.Underlying().String()
 	}
@@ -727,7 +728,7 @@ func formatMember(obj types.Object, maxname int) string {
 		}
 		var typestr string
 		// Abbreviate long aggregate type names.
-		switch typ := typ.(type) {
+		switch typ := aliases.Unalias(typ).(type) {
 		case *types.Interface:
 			if typ.NumMethods() > 1 {
 				typestr = "interface{...}"

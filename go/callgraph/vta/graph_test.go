@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/aliases"
 )
 
 func TestNodeInterface(t *testing.T) {
@@ -35,7 +36,7 @@ func TestNodeInterface(t *testing.T) {
 	reg := firstRegInstr(main) // t0 := *gl
 	X := pkg.Type("X").Type()
 	gl := pkg.Var("gl")
-	glPtrType, ok := gl.Type().(*types.Pointer)
+	glPtrType, ok := aliases.Unalias(gl.Type()).(*types.Pointer)
 	if !ok {
 		t.Fatalf("could not cast gl variable to pointer type")
 	}

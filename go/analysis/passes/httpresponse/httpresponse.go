@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -136,7 +137,7 @@ func isHTTPFuncOrMethodOnClient(info *types.Info, expr *ast.CallExpr) bool {
 	if analysisutil.IsNamedType(typ, "net/http", "Client") {
 		return true // method on http.Client.
 	}
-	ptr, ok := typ.(*types.Pointer)
+	ptr, ok := aliases.Unalias(typ).(*types.Pointer)
 	return ok && analysisutil.IsNamedType(ptr.Elem(), "net/http", "Client") // method on *http.Client.
 }
 

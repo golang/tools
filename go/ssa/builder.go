@@ -81,16 +81,15 @@ import (
 	"os"
 	"sync"
 
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/versions"
 )
 
-type opaqueType struct {
-	types.Type
-	name string
-}
+type opaqueType struct{ name string }
 
-func (t *opaqueType) String() string { return t.name }
+func (t *opaqueType) String() string         { return t.name }
+func (t *opaqueType) Underlying() types.Type { return t }
 
 var (
 	varOk    = newVar("ok", tBool)
@@ -103,7 +102,7 @@ var (
 	tInvalid    = types.Typ[types.Invalid]
 	tString     = types.Typ[types.String]
 	tUntypedNil = types.Typ[types.UntypedNil]
-	tRangeIter  = &opaqueType{nil, "iter"} // the type of all "range" iterators
+	tRangeIter  = &opaqueType{"iter"} // the type of all "range" iterators
 	tEface      = types.NewInterfaceType(nil, nil).Complete()
 
 	// SSA Value constants.
@@ -802,7 +801,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			if types.IsInterface(rt) {
 				// If v may be an interface type I (after instantiating),
 				// we must emit a check that v is non-nil.
-				if recv, ok := sel.recv.(*types.TypeParam); ok {
+				if recv, ok := aliases.Unalias(sel.recv).(*types.TypeParam); ok {
 					// Emit a nil check if any possible instantiation of the
 					// type parameter is an interface type.
 					if typeSetOf(recv).Len() > 0 {
@@ -1253,7 +1252,7 @@ func (b *builder) compLit(fn *Function, addr Value, e *ast.CompositeLit, isZero 
 	case *types.Array, *types.Slice:
 		var at *types.Array
 		var array Value
-		switch t := t.(type) {
+		switch t := aliases.Unalias(t).(type) {
 		case *types.Slice:
 			at = types.NewArray(t.Elem(), b.arrayLen(fn, e.Elts))
 			array = emitNew(fn, at, e.Lbrace, "slicelit")

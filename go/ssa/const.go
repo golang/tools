@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -47,7 +48,7 @@ func soleTypeKind(typ types.Type) types.BasicInfo {
 	state := types.IsBoolean | types.IsInteger | types.IsString
 	underIs(typeSetOf(typ), func(t types.Type) bool {
 		var c types.BasicInfo
-		if t, ok := t.(*types.Basic); ok {
+		if t, ok := aliases.Unalias(t).(*types.Basic); ok {
 			c = t.Info()
 		}
 		if c&types.IsNumeric != 0 { // int/float/complex
@@ -113,7 +114,7 @@ func zeroString(t types.Type, from *types.Package) string {
 		}
 	case *types.Pointer, *types.Slice, *types.Interface, *types.Chan, *types.Map, *types.Signature:
 		return "nil"
-	case *types.Named:
+	case *types.Named, *aliases.Alias:
 		return zeroString(t.Underlying(), from)
 	case *types.Array, *types.Struct:
 		return relType(t, from) + "{}"

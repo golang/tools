@@ -20,6 +20,8 @@ import (
 	"strings"
 	"text/scanner"
 	"unicode/utf8"
+
+	"golang.org/x/tools/internal/aliases"
 )
 
 type parser struct {
@@ -241,7 +243,7 @@ func (p *parser) parseName() string {
 }
 
 func deref(typ types.Type) types.Type {
-	if p, _ := typ.(*types.Pointer); p != nil {
+	if p, _ := aliases.Unalias(typ).(*types.Pointer); p != nil {
 		typ = p.Elem()
 	}
 	return typ
@@ -260,7 +262,7 @@ func (p *parser) parseField(pkg *types.Package) (field *types.Var, tag string) {
 		if aname, ok := p.aliases[n]; ok {
 			name = aname
 		} else {
-			switch typ := deref(typ).(type) {
+			switch typ := aliases.Unalias(deref(typ)).(type) {
 			case *types.Basic:
 				name = typ.Name()
 			case *types.Named:
@@ -579,7 +581,7 @@ func (p *parser) parseNamedType(nlist []interface{}) types.Type {
 	t := obj.Type()
 	p.update(t, nlist)
 
-	nt, ok := t.(*types.Named)
+	nt, ok := aliases.Unalias(t).(*types.Named)
 	if !ok {
 		// This can happen for unsafe.Pointer, which is a TypeName holding a Basic type.
 		pt := p.parseType(pkg)
@@ -1334,7 +1336,7 @@ func (p *parser) parsePackage() *types.Package {
 	}
 	p.fixups = nil
 	for _, typ := range p.typeList {
-		if it, ok := typ.(*types.Interface); ok {
+		if it, ok := aliases.Unalias(typ).(*types.Interface); ok {
 			it.Complete()
 		}
 	}
