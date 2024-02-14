@@ -178,7 +178,6 @@ func (s *server) diagnoseSnapshot(snapshot *cache.Snapshot, changedURIs []protoc
 	ctx, done := event.Start(ctx, "Server.diagnoseSnapshot", snapshot.Labels()...)
 	defer done()
 
-	allViews := s.session.Views()
 	if delay > 0 {
 		// 2-phase diagnostics.
 		//
@@ -207,7 +206,7 @@ func (s *server) diagnoseSnapshot(snapshot *cache.Snapshot, changedURIs []protoc
 				}
 				return
 			}
-			s.updateDiagnostics(ctx, allViews, snapshot, diagnostics, false)
+			s.updateDiagnostics(ctx, snapshot, diagnostics, false)
 		}
 
 		if delay < minDelay {
@@ -230,7 +229,7 @@ func (s *server) diagnoseSnapshot(snapshot *cache.Snapshot, changedURIs []protoc
 		}
 		return
 	}
-	s.updateDiagnostics(ctx, allViews, snapshot, diagnostics, true)
+	s.updateDiagnostics(ctx, snapshot, diagnostics, true)
 }
 
 func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snapshot, uris []protocol.DocumentURI) (diagMap, error) {
@@ -671,10 +670,7 @@ func (s *server) updateCriticalErrorStatus(ctx context.Context, snapshot *cache.
 
 // updateDiagnostics records the result of diagnosing a snapshot, and publishes
 // any diagnostics that need to be updated on the client.
-//
-// The allViews argument should be the current set of views present in the
-// session, for the purposes of trimming diagnostics produced by deleted views.
-func (s *server) updateDiagnostics(ctx context.Context, allViews []*cache.View, snapshot *cache.Snapshot, diagnostics diagMap, final bool) {
+func (s *server) updateDiagnostics(ctx context.Context, snapshot *cache.Snapshot, diagnostics diagMap, final bool) {
 	ctx, done := event.Start(ctx, "Server.publishDiagnostics")
 	defer done()
 
@@ -697,8 +693,13 @@ func (s *server) updateDiagnostics(ctx context.Context, allViews []*cache.View, 
 		return
 	}
 
+	// golang/go#65312: since the set of diagnostics depends on the set of views,
+	// we get the views *after* locking diagnosticsMu. This ensures that
+	// updateDiagnostics does not incorrectly delete diagnostics that have been
+	// set for an existing view that was created between the call to
+	// s.session.Views() and updateDiagnostics.
 	viewMap := make(viewSet)
-	for _, v := range allViews {
+	for _, v := range s.session.Views() {
 		viewMap[v] = unit{}
 	}
 
