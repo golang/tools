@@ -25,6 +25,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/semtok"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/event"
 )
@@ -392,24 +393,11 @@ func (tv *tokenVisitor) ident(id *ast.Ident) {
 	case *types.Builtin:
 		emit(semtok.TokFunction, "defaultLibrary")
 	case *types.Const:
-		switch t := obj.Type().(type) {
-		// TODO(adonovan): set defaultLibrary modified for symbols in types.Universe.
-		case *types.Basic:
+		if is[*types.Named](obj.Type()) &&
+			(id.Name == "iota" || id.Name == "true" || id.Name == "false") {
+			emit(semtok.TokVariable, "readonly", "defaultLibrary")
+		} else {
 			emit(semtok.TokVariable, "readonly")
-		case *types.Named:
-			if id.Name == "iota" {
-				// TODO(adonovan): this is almost certainly reachable.
-				// Add a test and do something sensible, e.g.
-				// emit(semtok.TokVariable, "readonly", "defaultLibrary")
-				tv.errorf("iota:%T", t)
-			}
-			if is[*types.Basic](t.Underlying()) {
-				emit(semtok.TokVariable, "readonly")
-			} else {
-				tv.errorf("%q/%T", id.Name, t)
-			}
-		default:
-			tv.errorf("%s %T %#v", id.Name, t, t) // can't happen
 		}
 	case *types.Func:
 		emit(semtok.TokFunction)
@@ -479,10 +467,9 @@ func (tv *tokenVisitor) isParam(pos token.Pos) bool {
 // but in that case it is all best-effort from the parse tree.
 func (tv *tokenVisitor) unkIdent(id *ast.Ident) (semtok.TokenType, []string) {
 	def := []string{"definition"}
-	n := len(tv.stack) - 2 // parent of Ident
+	n := len(tv.stack) - 2 // parent of Ident; stack is [File ... Ident]
 	if n < 0 {
-		// TODO(adonovan): I suspect this reachable for the "package p" declaration.
-		tv.errorf("no stack?")
+		tv.errorf("no stack") // can't happen
 		return "", nil
 	}
 	switch parent := tv.stack[n].(type) {
@@ -693,7 +680,7 @@ func (tv *tokenVisitor) definitionFor(id *ast.Ident, obj types.Object) (semtok.T
 	}
 	// can't happen
 	tv.errorf("failed to find the decl for %s", safetoken.Position(tv.pgf.Tok, id.Pos()))
-	return "", []string{""} // TODO(adonovan): shouldn't that be []string{}?
+	return "", nil
 }
 
 func isTypeParam(id *ast.Ident, t *ast.FuncType) bool {
@@ -786,12 +773,10 @@ func (tv *tokenVisitor) importSpec(spec *ast.ImportSpec) {
 	tv.token(start, len(depMD.Name), semtok.TokNamespace, nil)
 }
 
-// errorf logs an error. When debugging is enabled, it panics.
+// errorf logs an error and reports a bug.
 func (tv *tokenVisitor) errorf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
-	if semDebug {
-		panic(msg)
-	}
+	bug.Report(msg)
 	event.Error(tv.ctx, tv.strStack(), errors.New(msg))
 }
 
