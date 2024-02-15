@@ -43,7 +43,7 @@ func hello() {
 }
 
 func hi() {
-	runtime.GOROOT()
+	runtime.NumCPU()
 	fmt.Printf("")
 
 	log.Printf("")
@@ -63,7 +63,7 @@ func hello() {
 }
 
 func hi() {
-	runtime.GOROOT()
+	runtime.NumCPU()
 	fmt.Printf("")
 
 	log.Printf("")
