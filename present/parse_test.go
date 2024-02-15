@@ -79,7 +79,7 @@ func diff(prefix string, name1 string, b1 []byte, name2 string, b2 []byte) ([]by
 		cmd = "/bin/ape/diff"
 	}
 
-	data, err := exec.Command(cmd, "-u", f1, f2).CombinedOutput()
+	data, err := exec.Command(cmd, "-u", f1, f2).Output()
 	if len(data) > 0 {
 		// diff exits with a non-zero status when the files don't match.
 		// Ignore that failure as long as we get output.

@@ -15,7 +15,7 @@ import (
 // pkgConfig runs pkg-config with the specified arguments and returns the flags it prints.
 func pkgConfig(mode string, pkgs []string) (flags []string, err error) {
 	cmd := exec.Command("pkg-config", append([]string{mode}, pkgs...)...)
-	out, err := cmd.CombinedOutput()
+	out, err := cmd.Output()
 	if err != nil {
 		s := fmt.Sprintf("%s failed: %v", strings.Join(cmd.Args, " "), err)
 		if len(out) > 0 {

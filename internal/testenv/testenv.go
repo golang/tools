@@ -83,7 +83,7 @@ func hasTool(tool string) error {
 				// GOROOT. Otherwise, 'some/path/go test ./...' will test against some
 				// version of the 'go' binary other than 'some/path/go', which is almost
 				// certainly not what the user intended.
-				out, err := exec.Command(tool, "env", "GOROOT").CombinedOutput()
+				out, err := exec.Command(tool, "env", "GOROOT").Output()
 				if err != nil {
 					checkGoBuild.err = err
 					return
@@ -141,7 +141,7 @@ func cgoEnabled(bypassEnvironment bool) (bool, error) {
 	if bypassEnvironment {
 		cmd.Env = append(append([]string(nil), os.Environ()...), "CGO_ENABLED=")
 	}
-	out, err := cmd.CombinedOutput()
+	out, err := cmd.Output()
 	if err != nil {
 		return false, err
 	}
@@ -199,6 +199,9 @@ func NeedsTool(t testing.TB, tool string) {
 
 	t.Helper()
 	if allowMissingTool(tool) {
+		// TODO(adonovan): might silently skipping because of
+		// (e.g.) mismatched go env GOROOT and runtime.GOROOT
+		// risk some users not getting the coverage they expect?
 		t.Skipf("skipping because %s tool not available: %v", tool, err)
 	} else {
 		t.Fatalf("%s tool not available: %v", tool, err)

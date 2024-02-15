@@ -64,7 +64,7 @@ func getDiffOutput(a, b string) (string, error) {
 	}
 	cmd := exec.Command("diff", "-u", fileA.Name(), fileB.Name())
 	cmd.Env = append(cmd.Env, "LANG=en_US.UTF-8")
-	out, err := cmd.CombinedOutput()
+	out, err := cmd.Output()
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); !ok {
 			return "", fmt.Errorf("failed to run diff -u %v %v: %v\n%v", fileA.Name(), fileB.Name(), err, string(out))
