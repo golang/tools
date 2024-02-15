@@ -1779,7 +1779,7 @@ func missingPkgError(from PackageID, pkgPath string, moduleMode bool) error {
 			return fmt.Errorf("current file is not included in a workspace module")
 		} else {
 			// Previously, we would present the initialization error here.
-			return fmt.Errorf("no required module provides package %q", pkgPath)
+			return fmt.Errorf("package %q does not exist under go.mod in required modules, try running `go mod tidy`", pkgPath)
 		}
 	} else {
 		// Previously, we would list the directories in GOROOT and GOPATH here.

@@ -723,7 +723,10 @@ func main() {
 		env.SaveBuffer("main.go")
 		var d protocol.PublishDiagnosticsParams
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`), WithMessage("no required module")),
+			Diagnostics(
+				env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`),
+				WithMessage("does not exist under go.mod in required modules, try running `go mod tidy`"),
+			),
 			ReadDiagnostics("main.go", &d),
 		)
 		env.ApplyQuickFixes("main.go", d.Diagnostics)
@@ -1711,7 +1714,7 @@ import (
 		Run(t, mod, func(t *testing.T, env *Env) {
 			env.OnceMet(
 				InitialWorkspaceLoad,
-				Diagnostics(env.AtRegexp("main.go", `"nosuchpkg"`), WithMessage(`could not import nosuchpkg (no required module provides package "nosuchpkg"`)),
+				Diagnostics(env.AtRegexp("main.go", `"nosuchpkg"`), WithMessage(`could not import nosuchpkg (package "nosuchpkg" does not exist under go.mod in required modules, try running `+"`go mod tidy`)")),
 			)
 		})
 	})
