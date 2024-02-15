@@ -16,14 +16,9 @@ import (
 	"golang.org/x/telemetry/upload"
 )
 
-// CounterOpen calls [counter.Open].
-func CounterOpen() {
-	counter.Open()
-}
-
-// StartCrashMonitor calls [crashmonitor.Start].
-func StartCrashMonitor() {
-	crashmonitor.Start()
+// Start starts telemetry, including the crash monitor.
+func Start() {
+	telemetry.Start(telemetry.Config{ReportCrashes: true})
 }
 
 // CrashMonitorSupported calls [crashmonitor.Supported].

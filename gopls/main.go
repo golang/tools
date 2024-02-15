@@ -29,8 +29,7 @@ var version = "" // if set by the linker, overrides the gopls version
 func main() {
 	versionpkg.VersionOverride = version
 
-	telemetry.CounterOpen()
-	telemetry.StartCrashMonitor()
+	telemetry.Start()
 	ctx := context.Background()
 	tool.Main(ctx, cmd.New(hooks.Options), os.Args[1:])
 }

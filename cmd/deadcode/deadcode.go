@@ -26,8 +26,7 @@ import (
 	"strings"
 	"text/template"
 
-	"golang.org/x/telemetry/counter"
-	"golang.org/x/telemetry/crashmonitor"
+	"golang.org/x/telemetry"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/rta"
 	"golang.org/x/tools/go/packages"
@@ -65,8 +64,7 @@ Flags:
 }
 
 func main() {
-	counter.Open()       // Enable telemetry counter writing.
-	crashmonitor.Start() // Enable crash reporting watchdog.
+	telemetry.Start(telemetry.Config{ReportCrashes: true})
 
 	log.SetPrefix("deadcode: ")
 	log.SetFlags(0) // no time prefix

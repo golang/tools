@@ -12,9 +12,7 @@ package telemetry
 // gopls may not refer to the telemetry module directly, but must go
 // through this file.
 
-func CounterOpen() {}
-
-func StartCrashMonitor() {}
+func Start() {}
 
 func CrashMonitorSupported() bool { return false }
 
