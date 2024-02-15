@@ -109,7 +109,7 @@ func modLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]
 // goLinks returns the set of hyperlink annotations for the specified Go file.
 func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.DocumentLink, error) {
 
-	pgf, err := snapshot.ParseGo(ctx, fh, parsego.ParseFull)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
 		return nil, err
 	}

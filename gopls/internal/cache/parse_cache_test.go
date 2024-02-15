@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 )
@@ -31,12 +32,12 @@ func TestParseCache(t *testing.T) {
 	fset := token.NewFileSet()
 
 	cache := newParseCache(0)
-	pgfs1, err := cache.parseFiles(ctx, fset, ParseFull, false, fh)
+	pgfs1, err := cache.parseFiles(ctx, fset, parsego.Full, false, fh)
 	if err != nil {
 		t.Fatal(err)
 	}
 	pgf1 := pgfs1[0]
-	pgfs2, err := cache.parseFiles(ctx, fset, ParseFull, false, fh)
+	pgfs2, err := cache.parseFiles(ctx, fset, parsego.Full, false, fh)
 	pgf2 := pgfs2[0]
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +51,7 @@ func TestParseCache(t *testing.T) {
 	files := []file.Handle{fh}
 	files = append(files, dummyFileHandles(parseCacheMinFiles-1)...)
 
-	pgfs3, err := cache.parseFiles(ctx, fset, ParseFull, false, files...)
+	pgfs3, err := cache.parseFiles(ctx, fset, parsego.Full, false, files...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,13 +69,13 @@ func TestParseCache(t *testing.T) {
 	// Now overwrite the cache, after which we should get new results.
 	cache.gcOnce()
 	files = dummyFileHandles(parseCacheMinFiles)
-	_, err = cache.parseFiles(ctx, fset, ParseFull, false, files...)
+	_, err = cache.parseFiles(ctx, fset, parsego.Full, false, files...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// force a GC, which should collect the recently parsed files
 	cache.gcOnce()
-	pgfs4, err := cache.parseFiles(ctx, fset, ParseFull, false, fh)
+	pgfs4, err := cache.parseFiles(ctx, fset, parsego.Full, false, fh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +99,7 @@ func TestParseCache_Reparsing(t *testing.T) {
 
 	// Parsing should succeed even though we overflow the padding.
 	cache := newParseCache(0)
-	_, err := cache.parseFiles(context.Background(), token.NewFileSet(), ParseFull, false, files...)
+	_, err := cache.parseFiles(context.Background(), token.NewFileSet(), parsego.Full, false, files...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +119,7 @@ func TestParseCache_Issue59097(t *testing.T) {
 
 	// Parsing should succeed even though we overflow the padding.
 	cache := newParseCache(0)
-	_, err := cache.parseFiles(context.Background(), token.NewFileSet(), ParseFull, false, files...)
+	_, err := cache.parseFiles(context.Background(), token.NewFileSet(), parsego.Full, false, files...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,19 +137,19 @@ func TestParseCache_TimeEviction(t *testing.T) {
 	cache := newParseCache(gcDuration)
 	cache.stop() // we'll manage GC manually, for testing.
 
-	pgfs0, err := cache.parseFiles(ctx, fset, ParseFull, false, fh, fh)
+	pgfs0, err := cache.parseFiles(ctx, fset, parsego.Full, false, fh, fh)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	files := dummyFileHandles(parseCacheMinFiles)
-	_, err = cache.parseFiles(ctx, fset, ParseFull, false, files...)
+	_, err = cache.parseFiles(ctx, fset, parsego.Full, false, files...)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Even after filling up the 'min' files, we get a cache hit for our original file.
-	pgfs1, err := cache.parseFiles(ctx, fset, ParseFull, false, fh, fh)
+	pgfs1, err := cache.parseFiles(ctx, fset, parsego.Full, false, fh, fh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,14 +159,14 @@ func TestParseCache_TimeEviction(t *testing.T) {
 	}
 
 	// But after GC, we get a cache miss.
-	_, err = cache.parseFiles(ctx, fset, ParseFull, false, files...) // mark dummy files as newer
+	_, err = cache.parseFiles(ctx, fset, parsego.Full, false, files...) // mark dummy files as newer
 	if err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(gcDuration)
 	cache.gcOnce()
 
-	pgfs2, err := cache.parseFiles(ctx, fset, ParseFull, false, fh, fh)
+	pgfs2, err := cache.parseFiles(ctx, fset, parsego.Full, false, fh, fh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +184,7 @@ func TestParseCache_Duplicates(t *testing.T) {
 	fh := makeFakeFileHandle(uri, []byte("package p\n\nconst _ = \"foo\""))
 
 	cache := newParseCache(0)
-	pgfs, err := cache.parseFiles(ctx, token.NewFileSet(), ParseFull, false, fh, fh)
+	pgfs, err := cache.parseFiles(ctx, token.NewFileSet(), parsego.Full, false, fh, fh)
 	if err != nil {
 		t.Fatal(err)
 	}

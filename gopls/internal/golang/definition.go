@@ -130,7 +130,7 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 	}
 
 	var (
-		pgf  *ParsedGoFile
+		pgf  *parsego.File
 		decl ast.Node
 		err  error
 	)
@@ -148,7 +148,7 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 		if err != nil {
 			return nil, nil, err
 		}
-		pgf, err = snapshot.ParseGo(ctx, fh, ParseFull&^parser.SkipObjectResolution)
+		pgf, err = snapshot.ParseGo(ctx, fh, parsego.Full&^parser.SkipObjectResolution)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -202,7 +202,7 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 // TODO(rfindley): this function exists to preserve the pre-existing behavior
 // of golang.Identifier. Eliminate this helper in favor of sharing
 // functionality with objectsAt, after choosing suitable primitives.
-func referencedObject(pkg *cache.Package, pgf *ParsedGoFile, pos token.Pos) (*ast.Ident, types.Object, types.Type) {
+func referencedObject(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (*ast.Ident, types.Object, types.Type) {
 	path := pathEnclosingObjNode(pgf.File, pos)
 	if len(path) == 0 {
 		return nil, nil, nil
@@ -242,7 +242,7 @@ func referencedObject(pkg *cache.Package, pgf *ParsedGoFile, pos token.Pos) (*as
 // import spec containing pos.
 //
 // If pos is not inside an import spec, it returns nil, nil.
-func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *ParsedGoFile, pos token.Pos) ([]protocol.Location, error) {
+func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, pos token.Pos) ([]protocol.Location, error) {
 	var imp *ast.ImportSpec
 	for _, spec := range pgf.File.Imports {
 		// We use "<= End" to accept a query immediately after an ImportSpec.
@@ -273,7 +273,7 @@ func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package
 			}
 			continue
 		}
-		pgf, err := s.ParseGo(ctx, fh, ParseHeader)
+		pgf, err := s.ParseGo(ctx, fh, parsego.Header)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()

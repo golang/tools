@@ -814,7 +814,7 @@ func (c *commandHandler) ListImports(ctx context.Context, args command.URIArg) (
 		if err != nil {
 			return err
 		}
-		pgf, err := deps.snapshot.ParseGo(ctx, fh, parsego.ParseHeader)
+		pgf, err := deps.snapshot.ParseGo(ctx, fh, parsego.Header)
 		if err != nil {
 			return err
 		}

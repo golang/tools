@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -24,7 +25,7 @@ import (
 // Only the following conditions are true, the action in result is valid
 //   - [start, end) is enclosed by a string literal
 //   - if the string is interpreted string, need check whether the convert is allowed
-func ConvertStringLiteral(pgf *ParsedGoFile, fh file.Handle, rng protocol.Range) (protocol.CodeAction, bool) {
+func ConvertStringLiteral(pgf *parsego.File, fh file.Handle, rng protocol.Range) (protocol.CodeAction, bool) {
 	startPos, endPos, err := pgf.RangePos(rng)
 	if err != nil {
 		return protocol.CodeAction{}, false // e.g. invalid range

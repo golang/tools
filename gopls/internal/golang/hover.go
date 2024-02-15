@@ -530,7 +530,7 @@ func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Objec
 // imp in the file pgf of pkg.
 //
 // If we do not have metadata for the hovered import, it returns _
-func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *ParsedGoFile, imp *ast.ImportSpec) (protocol.Range, *hoverJSON, error) {
+func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, imp *ast.ImportSpec) (protocol.Range, *hoverJSON, error) {
 	rng, err := pgf.NodeRange(imp.Path)
 	if err != nil {
 		return protocol.Range{}, nil, err
@@ -559,7 +559,7 @@ func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Packa
 			}
 			continue
 		}
-		pgf, err := snapshot.ParseGo(ctx, fh, ParseHeader)
+		pgf, err := snapshot.ParseGo(ctx, fh, parsego.Header)
 		if err != nil {
 			if ctx.Err() != nil {
 				return protocol.Range{}, nil, ctx.Err()
@@ -581,7 +581,7 @@ func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Packa
 
 // hoverPackageName computes hover information for the package name of the file
 // pgf in pkg.
-func hoverPackageName(pkg *cache.Package, pgf *ParsedGoFile) (protocol.Range, *hoverJSON, error) {
+func hoverPackageName(pkg *cache.Package, pgf *parsego.File) (protocol.Range, *hoverJSON, error) {
 	var comment *ast.CommentGroup
 	for _, pgf := range pkg.CompiledGoFiles() {
 		if pgf.File.Doc != nil {
@@ -609,7 +609,7 @@ func hoverPackageName(pkg *cache.Package, pgf *ParsedGoFile) (protocol.Range, *h
 // For example, hovering over "\u2211" in "foo \u2211 bar" yields:
 //
 //	'∑', U+2211, N-ARY SUMMATION
-func hoverLit(pgf *ParsedGoFile, lit *ast.BasicLit, pos token.Pos) (protocol.Range, *hoverJSON, error) {
+func hoverLit(pgf *parsego.File, lit *ast.BasicLit, pos token.Pos) (protocol.Range, *hoverJSON, error) {
 	var (
 		value      string    // if non-empty, a constant value to format in hover
 		r          rune      // if non-zero, format a description of this rune in hover
@@ -968,7 +968,7 @@ func parseFull(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSe
 		return nil, 0, err
 	}
 
-	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
 		return nil, 0, err
 	}

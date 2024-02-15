@@ -21,16 +21,10 @@ import (
 
 // Convenient aliases for very heavily used types.
 type (
-	PackageID    = metadata.PackageID
-	PackagePath  = metadata.PackagePath
-	PackageName  = metadata.PackageName
-	ImportPath   = metadata.ImportPath
-	ParsedGoFile = parsego.File
-)
-
-const (
-	ParseHeader = parsego.ParseHeader
-	ParseFull   = parsego.ParseFull
+	PackageID   = metadata.PackageID
+	PackagePath = metadata.PackagePath
+	PackageName = metadata.PackageName
+	ImportPath  = metadata.ImportPath
 )
 
 // A Package is the union of package metadata and type checking results.
@@ -51,8 +45,8 @@ type syntaxPackage struct {
 
 	// -- outputs --
 	fset            *token.FileSet // for now, same as the snapshot's FileSet
-	goFiles         []*ParsedGoFile
-	compiledGoFiles []*ParsedGoFile
+	goFiles         []*parsego.File
+	compiledGoFiles []*parsego.File
 	diagnostics     []*Diagnostic
 	parseErrors     []scanner.ErrorList
 	typeErrors      []types.Error
@@ -108,15 +102,15 @@ func (packageLoadScope) aScope() {}
 func (moduleLoadScope) aScope()  {}
 func (viewLoadScope) aScope()    {}
 
-func (p *Package) CompiledGoFiles() []*ParsedGoFile {
+func (p *Package) CompiledGoFiles() []*parsego.File {
 	return p.pkg.compiledGoFiles
 }
 
-func (p *Package) File(uri protocol.DocumentURI) (*ParsedGoFile, error) {
+func (p *Package) File(uri protocol.DocumentURI) (*parsego.File, error) {
 	return p.pkg.File(uri)
 }
 
-func (pkg *syntaxPackage) File(uri protocol.DocumentURI) (*ParsedGoFile, error) {
+func (pkg *syntaxPackage) File(uri protocol.DocumentURI) (*parsego.File, error) {
 	for _, cgf := range pkg.compiledGoFiles {
 		if cgf.URI == uri {
 			return cgf, nil

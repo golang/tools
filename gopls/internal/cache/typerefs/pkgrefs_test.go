@@ -42,7 +42,6 @@ type (
 	PackagePath    = metadata.PackagePath
 	Metadata       = metadata.Package
 	MetadataSource = metadata.Source
-	ParsedGoFile   = parsego.File
 )
 
 // TestBuildPackageGraph tests the BuildPackageGraph constructor, which uses
@@ -277,7 +276,7 @@ type memoizedParser struct {
 
 type futureParse struct {
 	done chan struct{}
-	pgf  *ParsedGoFile
+	pgf  *parsego.File
 	err  error
 }
 
@@ -287,15 +286,15 @@ func newParser() *memoizedParser {
 	}
 }
 
-func (p *memoizedParser) parse(ctx context.Context, uri protocol.DocumentURI) (*ParsedGoFile, error) {
-	doParse := func(ctx context.Context, uri protocol.DocumentURI) (*ParsedGoFile, error) {
+func (p *memoizedParser) parse(ctx context.Context, uri protocol.DocumentURI) (*parsego.File, error) {
+	doParse := func(ctx context.Context, uri protocol.DocumentURI) (*parsego.File, error) {
 		// TODO(adonovan): hoist this operation outside the benchmark critsec.
 		content, err := os.ReadFile(uri.Path())
 		if err != nil {
 			return nil, err
 		}
 		content = astutil.PurgeFuncBodies(content)
-		pgf, _ := parsego.Parse(ctx, token.NewFileSet(), uri, content, parsego.ParseFull, false)
+		pgf, _ := parsego.Parse(ctx, token.NewFileSet(), uri, content, parsego.Full, false)
 		return pgf, nil
 	}
 

@@ -32,7 +32,7 @@ func _() {
 }
 `
 
-	pgf, _ := parsego.Parse(context.Background(), token.NewFileSet(), "file://foo.go", []byte(src), parsego.ParseFull, false)
+	pgf, _ := parsego.Parse(context.Background(), token.NewFileSet(), "file://foo.go", []byte(src), parsego.Full, false)
 	fset := tokeninternal.FileSetFor(pgf.Tok)
 	ast.Inspect(pgf.File, func(n ast.Node) bool {
 		if n != nil {

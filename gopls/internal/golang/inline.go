@@ -27,7 +27,7 @@ import (
 
 // EnclosingStaticCall returns the innermost function call enclosing
 // the selected range, along with the callee.
-func EnclosingStaticCall(pkg *cache.Package, pgf *ParsedGoFile, start, end token.Pos) (*ast.CallExpr, *types.Func, error) {
+func EnclosingStaticCall(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*ast.CallExpr, *types.Func, error) {
 	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 
 	var call *ast.CallExpr

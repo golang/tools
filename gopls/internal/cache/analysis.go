@@ -32,11 +32,12 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/filecache"
-	"golang.org/x/tools/gopls/internal/cache/metadata"
-	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/progress"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -785,7 +786,7 @@ func (an *analysisNode) cacheKey() [sha256.Size]byte {
 func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 	// Parse only the "compiled" Go files.
 	// Do the computation in parallel.
-	parsed := make([]*ParsedGoFile, len(an.files))
+	parsed := make([]*parsego.File, len(an.files))
 	{
 		var group errgroup.Group
 		group.SetLimit(4) // not too much: run itself is already called in parallel
@@ -796,7 +797,7 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 				// as cached ASTs require the global FileSet.
 				// ast.Object resolution is unfortunately an implied part of the
 				// go/analysis contract.
-				pgf, err := parseGoImpl(ctx, an.fset, fh, ParseFull&^parser.SkipObjectResolution, false)
+				pgf, err := parseGoImpl(ctx, an.fset, fh, parsego.Full&^parser.SkipObjectResolution, false)
 				parsed[i] = pgf
 				return err
 			})
@@ -910,7 +911,7 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 }
 
 // Postcondition: analysisPackage.types and an.exportDeps are populated.
-func (an *analysisNode) typeCheck(parsed []*ParsedGoFile) *analysisPackage {
+func (an *analysisNode) typeCheck(parsed []*parsego.File) *analysisPackage {
 	mp := an.mp
 
 	if false { // debugging
@@ -1101,7 +1102,7 @@ func readShallowManifest(export []byte) ([]PackagePath, error) {
 type analysisPackage struct {
 	mp             *metadata.Package
 	fset           *token.FileSet // local to this package
-	parsed         []*ParsedGoFile
+	parsed         []*parsego.File
 	files          []*ast.File // same as parsed[i].File
 	types          *types.Package
 	compiles       bool // package is transitively free of list/parse/type errors

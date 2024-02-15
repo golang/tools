@@ -25,14 +25,14 @@ import (
 // Common parse modes; these should be reused wherever possible to increase
 // cache hits.
 const (
-	// ParseHeader specifies that the main package declaration and imports are needed.
+	// Header specifies that the main package declaration and imports are needed.
 	// This is the mode used when attempting to examine the package graph structure.
-	ParseHeader = parser.AllErrors | parser.ParseComments | parser.ImportsOnly | parser.SkipObjectResolution
+	Header = parser.AllErrors | parser.ParseComments | parser.ImportsOnly | parser.SkipObjectResolution
 
-	// ParseFull specifies the full AST is needed.
+	// Full specifies the full AST is needed.
 	// This is used for files of direct interest where the entire contents must
 	// be considered.
-	ParseFull = parser.AllErrors | parser.ParseComments | parser.SkipObjectResolution
+	Full = parser.AllErrors | parser.ParseComments | parser.SkipObjectResolution
 )
 
 // Parse parses a buffer of Go source, repairing the tree if necessary.

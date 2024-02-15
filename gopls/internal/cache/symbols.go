@@ -11,6 +11,7 @@ import (
 	"go/types"
 	"strings"
 
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
@@ -68,7 +69,7 @@ func (s *Snapshot) symbolize(ctx context.Context, uri protocol.DocumentURI) ([]S
 
 // symbolizeImpl reads and parses a file and extracts symbols from it.
 func symbolizeImpl(ctx context.Context, snapshot *Snapshot, fh file.Handle) ([]Symbol, error) {
-	pgfs, err := snapshot.view.parseCache.parseFiles(ctx, token.NewFileSet(), ParseFull, false, fh)
+	pgfs, err := snapshot.view.parseCache.parseFiles(ctx, token.NewFileSet(), parsego.Full, false, fh)
 	if err != nil {
 		return nil, err
 	}

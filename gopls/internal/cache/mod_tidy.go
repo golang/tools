@@ -16,9 +16,10 @@ import (
 	"strings"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -281,7 +282,7 @@ func missingModuleDiagnostics(ctx context.Context, snapshot *Snapshot, pm *Parse
 			continue
 		}
 		for _, goFile := range compiledGoFiles {
-			pgf, err := snapshot.ParseGo(ctx, goFile, ParseHeader)
+			pgf, err := snapshot.ParseGo(ctx, goFile, parsego.Header)
 			if err != nil {
 				continue
 			}
@@ -461,7 +462,7 @@ func switchDirectness(req *modfile.Require, m *protocol.Mapper) ([]protocol.Text
 
 // missingModuleForImport creates an error for a given import path that comes
 // from a missing module.
-func missingModuleForImport(pgf *ParsedGoFile, imp *ast.ImportSpec, req *modfile.Require, fixes []SuggestedFix) (*Diagnostic, error) {
+func missingModuleForImport(pgf *parsego.File, imp *ast.ImportSpec, req *modfile.Require, fixes []SuggestedFix) (*Diagnostic, error) {
 	if req.Syntax == nil {
 		return nil, fmt.Errorf("no syntax for %v", req)
 	}
@@ -488,7 +489,7 @@ func missingModuleForImport(pgf *ParsedGoFile, imp *ast.ImportSpec, req *modfile
 //
 // TODO(rfindley): this should key off ImportPath.
 func parseImports(ctx context.Context, s *Snapshot, files []file.Handle) (map[string]bool, error) {
-	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), ParseHeader, false, files...)
+	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), parsego.Header, false, files...)
 	if err != nil { // e.g. context cancellation
 		return nil, err
 	}

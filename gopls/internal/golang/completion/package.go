@@ -19,6 +19,7 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -32,7 +33,7 @@ func packageClauseCompletions(ctx context.Context, snapshot *cache.Snapshot, fh 
 	// We know that the AST for this file will be empty due to the missing
 	// package declaration, but parse it anyway to get a mapper.
 	// TODO(adonovan): opt: there's no need to parse just to get a mapper.
-	pgf, err := snapshot.ParseGo(ctx, fh, golang.ParseFull)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -68,7 +69,7 @@ func packageClauseCompletions(ctx context.Context, snapshot *cache.Snapshot, fh 
 // packageCompletionSurrounding returns surrounding for package completion if a
 // package completions can be suggested at a given cursor offset. A valid location
 // for package completion is above any declarations or import statements.
-func packageCompletionSurrounding(pgf *golang.ParsedGoFile, offset int) (*Selection, error) {
+func packageCompletionSurrounding(pgf *parsego.File, offset int) (*Selection, error) {
 	m := pgf.Mapper
 	// If the file lacks a package declaration, the parser will return an empty
 	// AST. As a work-around, try to parse an expression from the file contents.

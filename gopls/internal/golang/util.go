@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -33,7 +34,7 @@ func IsGenerated(ctx context.Context, snapshot *cache.Snapshot, uri protocol.Doc
 	if err != nil {
 		return false
 	}
-	pgf, err := snapshot.ParseGo(ctx, fh, ParseHeader)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Header)
 	if err != nil {
 		return false
 	}

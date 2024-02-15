@@ -34,7 +34,7 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 
 	// Code actions requiring syntax information alone.
 	if wantQuickFixes || want[protocol.SourceOrganizeImports] || want[protocol.RefactorExtract] {
-		pgf, err := snapshot.ParseGo(ctx, fh, parsego.ParseFull)
+		pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 		if err != nil {
 			return nil, err
 		}
@@ -179,7 +179,7 @@ func fixedByImportFix(fix *imports.ImportFix, diagnostics []protocol.Diagnostic)
 }
 
 // getExtractCodeActions returns any refactor.extract code actions for the selection.
-func getExtractCodeActions(pgf *ParsedGoFile, rng protocol.Range, options *settings.Options) ([]protocol.CodeAction, error) {
+func getExtractCodeActions(pgf *parsego.File, rng protocol.Range, options *settings.Options) ([]protocol.CodeAction, error) {
 	if rng.Start == rng.End {
 		return nil, nil
 	}
@@ -253,7 +253,7 @@ func newCodeAction(title string, kind protocol.CodeActionKind, cmd *protocol.Com
 }
 
 // getRewriteCodeActions returns refactor.rewrite code actions available at the specified range.
-func getRewriteCodeActions(pkg *cache.Package, pgf *ParsedGoFile, fh file.Handle, rng protocol.Range, options *settings.Options) (_ []protocol.CodeAction, rerr error) {
+func getRewriteCodeActions(pkg *cache.Package, pgf *parsego.File, fh file.Handle, rng protocol.Range, options *settings.Options) (_ []protocol.CodeAction, rerr error) {
 	// golang/go#61693: code actions were refactored to run outside of the
 	// analysis framework, but as a result they lost their panic recovery.
 	//
@@ -344,7 +344,7 @@ func getRewriteCodeActions(pkg *cache.Package, pgf *ParsedGoFile, fh file.Handle
 //
 // (Note that the unusedparam analyzer also computes this property, but
 // much more precisely, allowing it to report its findings as diagnostics.)
-func canRemoveParameter(pkg *cache.Package, pgf *ParsedGoFile, rng protocol.Range) bool {
+func canRemoveParameter(pkg *cache.Package, pgf *parsego.File, rng protocol.Range) bool {
 	info, err := FindParam(pgf, rng)
 	if err != nil {
 		return false // e.g. invalid range
@@ -381,7 +381,7 @@ func canRemoveParameter(pkg *cache.Package, pgf *ParsedGoFile, rng protocol.Rang
 }
 
 // getInlineCodeActions returns refactor.inline actions available at the specified range.
-func getInlineCodeActions(pkg *cache.Package, pgf *ParsedGoFile, rng protocol.Range, options *settings.Options) ([]protocol.CodeAction, error) {
+func getInlineCodeActions(pkg *cache.Package, pgf *parsego.File, rng protocol.Range, options *settings.Options) ([]protocol.CodeAction, error) {
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
@@ -411,7 +411,7 @@ func getInlineCodeActions(pkg *cache.Package, pgf *ParsedGoFile, rng protocol.Ra
 }
 
 // getGoTestCodeActions returns any "run this test/benchmark" code actions for the selection.
-func getGoTestCodeActions(pkg *cache.Package, pgf *ParsedGoFile, rng protocol.Range) ([]protocol.CodeAction, error) {
+func getGoTestCodeActions(pkg *cache.Package, pgf *parsego.File, rng protocol.Range) ([]protocol.CodeAction, error) {
 	fns, err := TestsAndBenchmarks(pkg, pgf)
 	if err != nil {
 		return nil, err

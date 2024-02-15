@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
@@ -464,7 +465,7 @@ func parseGoListImportCycleError(ctx context.Context, e packages.Error, mp *meta
 	// Imports have quotation marks around them.
 	circImp := strconv.Quote(importList[1])
 	for _, uri := range mp.CompiledGoFiles {
-		pgf, err := parseGoURI(ctx, fs, uri, ParseHeader)
+		pgf, err := parseGoURI(ctx, fs, uri, parsego.Header)
 		if err != nil {
 			return nil, err
 		}
@@ -497,7 +498,7 @@ func parseGoListImportCycleError(ctx context.Context, e packages.Error, mp *meta
 // It returns an error if the file could not be read.
 //
 // TODO(rfindley): eliminate this helper.
-func parseGoURI(ctx context.Context, fs file.Source, uri protocol.DocumentURI, mode parser.Mode) (*ParsedGoFile, error) {
+func parseGoURI(ctx context.Context, fs file.Source, uri protocol.DocumentURI, mode parser.Mode) (*parsego.File, error) {
 	fh, err := fs.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, err

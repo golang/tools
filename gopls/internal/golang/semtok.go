@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/semtok"
@@ -91,7 +92,7 @@ type tokenVisitor struct {
 	ctx   context.Context // for event logging
 	// metadataSource is used to resolve imports
 	metadataSource metadata.Source
-	pgf            *ParsedGoFile
+	pgf            *parsego.File
 	start, end     token.Pos // range of interest
 	ti             *types.Info
 	pkg            *cache.Package
