@@ -6,6 +6,7 @@ package present
 
 import (
 	"bytes"
+	"fmt"
 	"html/template"
 	"os"
 	"os/exec"
@@ -84,6 +85,8 @@ func diff(prefix string, name1 string, b1 []byte, name2 string, b2 []byte) ([]by
 		// diff exits with a non-zero status when the files don't match.
 		// Ignore that failure as long as we get output.
 		err = nil
+	} else if exit, ok := err.(*exec.ExitError); ok && len(exit.Stderr) > 0 {
+		err = fmt.Errorf("%w\nstderr:\n%s)", err, exit.Stderr)
 	}
 
 	data = bytes.Replace(data, []byte(f1), []byte(name1), -1)

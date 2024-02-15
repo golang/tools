@@ -66,9 +66,15 @@ func getDiffOutput(a, b string) (string, error) {
 	cmd.Env = append(cmd.Env, "LANG=en_US.UTF-8")
 	out, err := cmd.Output()
 	if err != nil {
-		if _, ok := err.(*exec.ExitError); !ok {
-			return "", fmt.Errorf("failed to run diff -u %v %v: %v\n%v", fileA.Name(), fileB.Name(), err, string(out))
+		exit, ok := err.(*exec.ExitError)
+		if !ok {
+			return "", fmt.Errorf("can't exec %s: %v", cmd, err)
 		}
+		if len(out) == 0 {
+			// Nonzero exit with no output: terminated by signal?
+			return "", fmt.Errorf("%s failed: %v; stderr:\n%s", cmd, err, exit.Stderr)
+		}
+		// nonzero exit + output => files differ
 	}
 	diff := string(out)
 	if len(diff) <= 0 {

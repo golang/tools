@@ -596,6 +596,9 @@ func diff(filename string, content []byte) error {
 		return nil
 	}
 	if err != nil {
+		if exit, ok := err.(*exec.ExitError); ok && len(exit.Stderr) > 0 {
+			err = fmt.Errorf("%w\nstderr:\n%s", err, exit.Stderr)
+		}
 		return fmt.Errorf("computing diff: %v", err)
 	}
 	return nil

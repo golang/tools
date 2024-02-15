@@ -21,6 +21,9 @@ func pkgConfig(mode string, pkgs []string) (flags []string, err error) {
 		if len(out) > 0 {
 			s = fmt.Sprintf("%s: %s", s, out)
 		}
+		if err, ok := err.(*exec.ExitError); ok && len(err.Stderr) > 0 {
+			s = fmt.Sprintf("%s\nstderr:\n%s", s, err.Stderr)
+		}
 		return nil, errors.New(s)
 	}
 	if len(out) > 0 {

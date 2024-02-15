@@ -85,6 +85,9 @@ func hasTool(tool string) error {
 				// certainly not what the user intended.
 				out, err := exec.Command(tool, "env", "GOROOT").Output()
 				if err != nil {
+					if exit, ok := err.(*exec.ExitError); ok && len(exit.Stderr) > 0 {
+						err = fmt.Errorf("%w\nstderr:\n%s)", err, exit.Stderr)
+					}
 					checkGoBuild.err = err
 					return
 				}
@@ -143,6 +146,9 @@ func cgoEnabled(bypassEnvironment bool) (bool, error) {
 	}
 	out, err := cmd.Output()
 	if err != nil {
+		if exit, ok := err.(*exec.ExitError); ok && len(exit.Stderr) > 0 {
+			err = fmt.Errorf("%w\nstderr:\n%s", err, exit.Stderr)
+		}
 		return false, err
 	}
 	enabled := strings.TrimSpace(string(out))
@@ -199,9 +205,12 @@ func NeedsTool(t testing.TB, tool string) {
 
 	t.Helper()
 	if allowMissingTool(tool) {
-		// TODO(adonovan): might silently skipping because of
-		// (e.g.) mismatched go env GOROOT and runtime.GOROOT
-		// risk some users not getting the coverage they expect?
+		// TODO(adonovan): if we skip because of (e.g.)
+		// mismatched go env GOROOT and runtime.GOROOT, don't
+		// we risk some users not getting the coverage they expect?
+		// bcmills notes: this shouldn't be a concern as of CL 404134 (Go 1.19).
+		// We could probably safely get rid of that GOPATH consistency
+		// check entirely at this point.
 		t.Skipf("skipping because %s tool not available: %v", tool, err)
 	} else {
 		t.Fatalf("%s tool not available: %v", tool, err)

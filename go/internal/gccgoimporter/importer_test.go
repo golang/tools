@@ -143,6 +143,9 @@ func TestObjImporter(t *testing.T) {
 	verout, err := exec.Command(gpath, "--version").Output()
 	if err != nil {
 		t.Logf("%s", verout)
+		if exit, ok := err.(*exec.ExitError); ok && len(exit.Stderr) > 0 {
+			t.Logf("stderr:\n%s", exit.Stderr)
+		}
 		t.Fatal(err)
 	}
 	vers := regexp.MustCompile(`([0-9]+)\.([0-9]+)`).FindSubmatch(verout)
