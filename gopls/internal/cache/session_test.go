@@ -20,6 +20,7 @@ import (
 
 func TestZeroConfigAlgorithm(t *testing.T) {
 	testenv.NeedsExec(t) // executes the Go command
+	t.Setenv("GOPACKAGESDRIVER", "off")
 
 	type viewSummary struct {
 		// fields exported for cmp.Diff
@@ -31,6 +32,12 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 	type folderSummary struct {
 		dir     string
 		options func(dir string) map[string]any // options may refer to the temp dir
+	}
+
+	includeReplaceInWorkspace := func(string) map[string]any {
+		return map[string]any{
+			"includeReplaceInWorkspace": true,
+		}
 	}
 
 	type test struct {
@@ -235,7 +242,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 				"b/go.mod": "module golang.org/b\ngo 1.18\n",
 				"b/b.go":   "package b",
 			},
-			[]folderSummary{{dir: "."}},
+			[]folderSummary{{dir: ".", options: includeReplaceInWorkspace}},
 			[]string{"a/a.go", "b/b.go"},
 			[]viewSummary{{GoModView, ".", nil}},
 		},
@@ -247,7 +254,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 				"b/go.mod": "module golang.org/b\ngo 1.18\nrequire golang.org/a v1.2.3\nreplace golang.org/a => ../",
 				"b/b.go":   "package b",
 			},
-			[]folderSummary{{dir: "."}},
+			[]folderSummary{{dir: ".", options: includeReplaceInWorkspace}},
 			[]string{"a/a.go", "b/b.go"},
 			[]viewSummary{{GoModView, ".", nil}, {GoModView, "b", nil}},
 		},
@@ -277,12 +284,12 @@ replace (
 				"d/go.mod": "module golang.org/d\ngo 1.18",
 				"d/d.go":   "package d",
 			},
-			[]folderSummary{{dir: "."}},
+			[]folderSummary{{dir: ".", options: includeReplaceInWorkspace}},
 			[]string{"b/b.go", "c/c.go", "d/d.go"},
 			[]viewSummary{{GoModView, ".", nil}, {GoModView, "d", nil}},
 		},
 		{
-			"go.mod with many replace",
+			"go.mod with replace outside the workspace",
 			map[string]string{
 				"go.mod":   "module golang.org/a\ngo 1.18",
 				"a.go":     "package a",
@@ -290,7 +297,7 @@ replace (
 				"b/b.go":   "package b",
 			},
 			[]folderSummary{{dir: "b"}},
-			[]string{"a/a.go", "b/b.go"},
+			[]string{"a.go", "b/b.go"},
 			[]viewSummary{{GoModView, "b", nil}},
 		},
 		{
