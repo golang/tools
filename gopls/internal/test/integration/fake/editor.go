@@ -82,6 +82,8 @@ type EditorConfig struct {
 	//
 	// Since this can only be set during initialization, changing this field via
 	// Editor.ChangeConfiguration has no effect.
+	//
+	// If empty, "fake.Editor" is used.
 	ClientName string
 
 	// Env holds environment variables to apply on top of the default editor
@@ -282,12 +284,15 @@ func makeSettings(sandbox *Sandbox, config EditorConfig, scopeURI *protocol.URI)
 func (e *Editor) initialize(ctx context.Context) error {
 	config := e.Config()
 
+	clientName := config.ClientName
+	if clientName == "" {
+		clientName = "fake.Editor"
+	}
+
 	params := &protocol.ParamInitialize{}
-	if e.config.ClientName != "" {
-		params.ClientInfo = &protocol.ClientInfo{
-			Name:    e.config.ClientName,
-			Version: "v1.0.0",
-		}
+	params.ClientInfo = &protocol.ClientInfo{
+		Name:    clientName,
+		Version: "v1.0.0",
 	}
 	params.InitializationOptions = makeSettings(e.sandbox, config, nil)
 	params.WorkspaceFolders = makeWorkspaceFolders(e.sandbox, config.WorkspaceFolders)
