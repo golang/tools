@@ -103,7 +103,7 @@ func highlightPath(path []ast.Node, file *ast.File, info *types.Info) (map[posRa
 		highlightIdentifier(node, file, info, result)
 	case *ast.ForStmt, *ast.RangeStmt:
 		highlightLoopControlFlow(path, info, result)
-	case *ast.SwitchStmt:
+	case *ast.SwitchStmt, *ast.TypeSwitchStmt:
 		highlightSwitchFlow(path, info, result)
 	case *ast.BranchStmt:
 		// BREAK can exit a loop, switch or select, while CONTINUE exit a loop so
@@ -309,7 +309,7 @@ func highlightUnlabeledBreakFlow(path []ast.Node, info *types.Info, result map[p
 		case *ast.ForStmt, *ast.RangeStmt:
 			highlightLoopControlFlow(path, info, result)
 			return // only highlight the innermost statement
-		case *ast.SwitchStmt:
+		case *ast.SwitchStmt, *ast.TypeSwitchStmt:
 			highlightSwitchFlow(path, info, result)
 			return
 		case *ast.SelectStmt:
@@ -331,7 +331,7 @@ func highlightLabeledFlow(path []ast.Node, info *types.Info, stmt *ast.BranchStm
 			switch label.Stmt.(type) {
 			case *ast.ForStmt, *ast.RangeStmt:
 				highlightLoopControlFlow([]ast.Node{label.Stmt, label}, info, result)
-			case *ast.SwitchStmt:
+			case *ast.SwitchStmt, *ast.TypeSwitchStmt:
 				highlightSwitchFlow([]ast.Node{label.Stmt, label}, info, result)
 			}
 			return
@@ -381,7 +381,7 @@ Outer:
 		switch n.(type) {
 		case *ast.ForStmt, *ast.RangeStmt:
 			return loop == n
-		case *ast.SwitchStmt, *ast.SelectStmt:
+		case *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
 			return false
 		}
 		b, ok := n.(*ast.BranchStmt)
@@ -434,7 +434,7 @@ Outer:
 	// Reverse walk the path till we get to the switch statement.
 	for i := range path {
 		switch n := path[i].(type) {
-		case *ast.SwitchStmt:
+		case *ast.SwitchStmt, *ast.TypeSwitchStmt:
 			switchNodeLabel = labelFor(path[i:])
 			if stmtLabel == nil || switchNodeLabel == stmtLabel {
 				switchNode = n
@@ -457,7 +457,7 @@ Outer:
 	// Traverse AST to find break statements within the same switch.
 	ast.Inspect(switchNode, func(n ast.Node) bool {
 		switch n.(type) {
-		case *ast.SwitchStmt:
+		case *ast.SwitchStmt, *ast.TypeSwitchStmt:
 			return switchNode == n
 		case *ast.ForStmt, *ast.RangeStmt, *ast.SelectStmt:
 			return false
