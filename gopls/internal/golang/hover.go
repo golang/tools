@@ -38,6 +38,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/tokeninternal"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // hoverJSON contains the structured result of a hover query. It is
@@ -1235,11 +1236,7 @@ func promotedFields(t types.Type, from *types.Package) []promotedField {
 
 			// Handle recursion through anonymous fields.
 			if f.Anonymous() {
-				tf := f.Type()
-				if ptr, ok := tf.(*types.Pointer); ok {
-					tf = ptr.Elem()
-				}
-				if named, ok := tf.(*types.Named); ok { // (be defensive)
+				if _, named := typesinternal.ReceiverNamed(f); named != nil {
 					// If we've already visited this named type
 					// on this path, break the cycle.
 					for _, x := range stack {

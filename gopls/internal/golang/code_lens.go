@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 type LensFunc func(context.Context, *cache.Snapshot, file.Handle) ([]protocol.CodeLens, error)
@@ -152,12 +153,8 @@ func matchTestFunc(fn *ast.FuncDecl, pkg *cache.Package, nameRe *regexp.Regexp, 
 	}
 
 	// Check the type of the only parameter
-	paramTyp, ok := sig.Params().At(0).Type().(*types.Pointer)
-	if !ok {
-		return false
-	}
-	named, ok := paramTyp.Elem().(*types.Named)
-	if !ok {
+	isptr, named := typesinternal.ReceiverNamed(sig.Params().At(0))
+	if !isptr || named == nil {
 		return false
 	}
 	namedObj := named.Obj()

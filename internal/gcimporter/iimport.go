@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/types/objectpath"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 type intReader struct {
@@ -587,9 +588,8 @@ func (r *importReader) obj(name string) {
 				// If the receiver has any targs, set those as the
 				// rparams of the method (since those are the
 				// typeparams being used in the method sig/body).
-				base := baseType(recv.Type())
-				assert(base != nil)
-				targs := base.TypeArgs()
+				_, recvNamed := typesinternal.ReceiverNamed(recv)
+				targs := recvNamed.TypeArgs()
 				var rparams []*types.TypeParam
 				if targs.Len() > 0 {
 					rparams = make([]*types.TypeParam, targs.Len())
@@ -1076,14 +1076,4 @@ func (r *importReader) byte() byte {
 		errorf("declReader.ReadByte: %v", err)
 	}
 	return x
-}
-
-func baseType(typ types.Type) *types.Named {
-	// pointer receivers are never types.Named types
-	if p, _ := typ.(*types.Pointer); p != nil {
-		typ = p.Elem()
-	}
-	// receiver base types are always (possibly generic) types.Named types
-	n, _ := typ.(*types.Named)
-	return n
 }

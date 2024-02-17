@@ -69,6 +69,7 @@ import (
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
 )
 
@@ -1189,12 +1190,8 @@ func (r *renamer) updateCommentDocLinks() (map[protocol.DocumentURI][]diff.Edit,
 			if recv == nil {
 				continue
 			}
-			recvT := recv.Type()
-			if ptr, ok := recvT.(*types.Pointer); ok {
-				recvT = ptr.Elem()
-			}
-			named, isNamed := recvT.(*types.Named)
-			if !isNamed {
+			_, named := typesinternal.ReceiverNamed(recv)
+			if named == nil {
 				continue
 			}
 			// Doc links can't reference interface methods.

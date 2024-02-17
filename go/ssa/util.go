@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 //// Sanity checking utilities
@@ -180,17 +181,13 @@ func makeLen(T types.Type) *Builtin {
 	}
 }
 
-// receiverTypeArgs returns the type arguments to a function's receiver.
-// Returns an empty list if obj does not have a receiver or its receiver does not have type arguments.
-func receiverTypeArgs(obj *types.Func) []types.Type {
-	rtype := recvType(obj)
-	if rtype == nil {
-		return nil
-	}
-	rtype, _ = deptr(rtype)
-	named, ok := rtype.(*types.Named)
-	if !ok {
-		return nil
+// receiverTypeArgs returns the type arguments to a method's receiver.
+// Returns an empty list if the receiver does not have type arguments.
+func receiverTypeArgs(method *types.Func) []types.Type {
+	recv := method.Type().(*types.Signature).Recv()
+	_, named := typesinternal.ReceiverNamed(recv)
+	if named == nil {
+		return nil // recv is anonymous struct/interface
 	}
 	ts := named.TypeArgs()
 	if ts.Len() == 0 {

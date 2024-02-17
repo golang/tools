@@ -10,6 +10,7 @@ import (
 	"reflect"
 
 	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 func (d *differ) checkCompatible(otn *types.TypeName, old, new types.Type) {
@@ -305,7 +306,8 @@ func (d *differ) checkMethodSet(otn *types.TypeName, oldt, newt types.Type, addc
 			// T and one for the embedded type U. We want both messages to appear,
 			// but the messageSet dedup logic will allow only one message for a given
 			// object. So use the part string to distinguish them.
-			if receiverNamedType(oldMethod).Obj() != otn {
+			recv := oldMethod.Type().(*types.Signature).Recv()
+			if _, named := typesinternal.ReceiverNamed(recv); named.Obj() != otn {
 				part = fmt.Sprintf(", method set of %s", msname)
 			}
 			d.incompatible(oldMethod, part, "removed")
@@ -336,11 +338,11 @@ func (d *differ) checkMethodSet(otn *types.TypeName, oldt, newt types.Type, addc
 }
 
 // exportedMethods collects all the exported methods of type's method set.
-func exportedMethods(t types.Type) map[string]types.Object {
-	m := map[string]types.Object{}
+func exportedMethods(t types.Type) map[string]*types.Func {
+	m := make(map[string]*types.Func)
 	ms := types.NewMethodSet(t)
 	for i := 0; i < ms.Len(); i++ {
-		obj := ms.At(i).Obj()
+		obj := ms.At(i).Obj().(*types.Func)
 		if obj.Exported() {
 			m[obj.Name()] = obj
 		}
@@ -348,22 +350,7 @@ func exportedMethods(t types.Type) map[string]types.Object {
 	return m
 }
 
-func receiverType(method types.Object) types.Type {
-	return method.Type().(*types.Signature).Recv().Type()
-}
-
-func receiverNamedType(method types.Object) *types.Named {
-	switch t := aliases.Unalias(receiverType(method)).(type) {
-	case *types.Pointer:
-		return aliases.Unalias(t.Elem()).(*types.Named)
-	case *types.Named:
-		return t
-	default:
-		panic("unreachable")
-	}
-}
-
-func hasPointerReceiver(method types.Object) bool {
-	_, ok := aliases.Unalias(receiverType(method)).(*types.Pointer)
-	return ok
+func hasPointerReceiver(method *types.Func) bool {
+	isptr, _ := typesinternal.ReceiverNamed(method.Type().(*types.Signature).Recv())
+	return isptr
 }

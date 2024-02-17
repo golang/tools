@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 const Doc = `report using Go 1.22 enhanced ServeMux patterns in older Go versions
@@ -83,11 +84,8 @@ func isServeMuxRegisterCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 	if !isMethodNamed(fn, "net/http", "Handle", "HandleFunc") {
 		return false
 	}
-	t, ok := fn.Type().(*types.Signature).Recv().Type().(*types.Pointer)
-	if !ok {
-		return false
-	}
-	return analysisutil.IsNamedType(t.Elem(), "net/http", "ServeMux")
+	isPtr, named := typesinternal.ReceiverNamed(fn.Type().(*types.Signature).Recv())
+	return isPtr && analysisutil.IsNamedType(named, "net/http", "ServeMux")
 }
 
 func isMethodNamed(f *types.Func, pkgPath string, names ...string) bool {
