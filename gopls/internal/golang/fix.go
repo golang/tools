@@ -65,7 +65,7 @@ const (
 	fixInlineCall        = "inline_call"
 	fixInvertIfCondition = "invert_if_condition"
 	fixSplitLines        = "split_lines"
-	fixJoinLines         = "group_lines"
+	fixJoinLines         = "join_lines"
 )
 
 // ApplyFix applies the specified kind of suggested fix to the given

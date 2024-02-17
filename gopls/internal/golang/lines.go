@@ -21,8 +21,8 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
-// CanSplitLines checks whether each item of the enclosing curly bracket/parens can be put into separate lines
-// where each item occupies one line.
+// CanSplitLines checks whether we can split lists of elements inside an enclosing curly bracket/parens into separate
+// lines.
 func CanSplitLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
 	itemType, items, comments, _, _, _ := findSplitJoinTarget(fset, file, nil, start, end)
 	if itemType == "" {
@@ -44,7 +44,7 @@ func CanSplitLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (s
 	return "", false, nil
 }
 
-// CanJoinLines checks whether each item of the enclosing curly bracket/parens can be joined into a single line.
+// CanJoinLines checks whether we can join lists of elements inside an enclosing curly bracket/parens into a single line.
 func CanJoinLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
 	itemType, items, comments, _, _, _ := findSplitJoinTarget(fset, file, nil, start, end)
 	if itemType == "" {
@@ -66,7 +66,7 @@ func CanJoinLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (st
 	return "", false, nil
 }
 
-// canSplitJoinLines determines whether we should split/group the lines or not.
+// canSplitJoinLines determines whether we should split/join the lines or not.
 func canSplitJoinLines(items []ast.Node, comments []*ast.CommentGroup) bool {
 	if len(items) <= 1 {
 		return false
@@ -101,7 +101,7 @@ func joinLines(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.
 	return fset, processLines(fset, items, comments, src, braceOpen, braceClose, ", ", "", "", ""), nil
 }
 
-// processLines is the common operation for both split and group lines because this split/group operation is
+// processLines is the common operation for both split and join lines because this split/join operation is
 // essentially a transformation of the separating whitespace.
 func processLines(fset *token.FileSet, items []ast.Node, comments []*ast.CommentGroup, src []byte, braceOpen, braceClose token.Pos, sep, prefix, suffix, indent string) *analysis.SuggestedFix {
 	var nodes []ast.Node
