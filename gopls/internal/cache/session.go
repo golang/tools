@@ -470,7 +470,17 @@ func selectViewDefs(ctx context.Context, fs file.Source, folders []*Folder, open
 	folderForFile := func(uri protocol.DocumentURI) *Folder {
 		var longest *Folder
 		for _, folder := range folders {
-			if (longest == nil || len(folder.Dir) > len(longest.Dir)) && folder.Dir.Encloses(uri) {
+			// Check that this is a better match than longest, but not through a
+			// vendor directory. Count occurrences of "/vendor/" as a quick check
+			// that the vendor directory is between the folder and the file. Note the
+			// addition of a trailing "/" to handle the odd case where the folder is named
+			// vendor (which I hope is exceedingly rare in any case).
+			//
+			// Vendored packages are, by definition, part of an existing view.
+			if (longest == nil || len(folder.Dir) > len(longest.Dir)) &&
+				folder.Dir.Encloses(uri) &&
+				strings.Count(string(uri), "/vendor/") == strings.Count(string(folder.Dir)+"/", "/vendor/") {
+
 				longest = folder
 			}
 		}
