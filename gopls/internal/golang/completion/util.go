@@ -132,6 +132,7 @@ func resolveInvalid(fset *token.FileSet, obj types.Object, node ast.Node, info *
 }
 
 func isPointer(T types.Type) bool {
+	// TODO(adonovan): use CoreType(T).
 	_, ok := T.(*types.Pointer)
 	return ok
 }

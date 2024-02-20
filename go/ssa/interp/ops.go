@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // If the target program panics, the interpreter panics with this type.
@@ -884,7 +885,7 @@ func unop(instr *ssa.UnOp, x value) value {
 			return -x
 		}
 	case token.MUL:
-		return load(deref(instr.X.Type()), x.(*value))
+		return load(typeparams.MustDeref(instr.X.Type()), x.(*value))
 	case token.NOT:
 		return !x.(bool)
 	case token.XOR:

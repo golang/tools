@@ -1134,8 +1134,7 @@ func arguments(caller *Caller, calleeDecl *ast.FuncDecl, assign1 func(*types.Var
 			// updating arg.{expr,typ}.
 			indices := seln.Index()
 			for _, index := range indices[:len(indices)-1] {
-				t := deref(arg.typ)
-				fld := typeparams.CoreType(t).(*types.Struct).Field(index)
+				fld := typeparams.CoreType(typeparams.Deref(arg.typ)).(*types.Struct).Field(index)
 				if fld.Pkg() != caller.Types && !fld.Exported() {
 					return nil, fmt.Errorf("in %s, implicit reference to unexported field .%s cannot be made explicit",
 						debugFormatNode(caller.Fset, caller.Call.Fun),
@@ -1162,7 +1161,7 @@ func arguments(caller *Caller, calleeDecl *ast.FuncDecl, assign1 func(*types.Var
 			} else if argIsPtr && !paramIsPtr {
 				// *recv
 				arg.expr = &ast.StarExpr{X: arg.expr}
-				arg.typ = deref(arg.typ)
+				arg.typ = typeparams.Deref(arg.typ)
 				arg.duplicable = false
 				arg.pure = false
 			}

@@ -24,6 +24,8 @@ import (
 
 	"go/token"
 	"go/types"
+
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // -- wrappers -----------------------------------------------------------
@@ -97,14 +99,12 @@ func (b *builder) buildWrapper(fn *Function) {
 	indices := fn.method.index
 
 	var v Value = fn.Locals[0] // spilled receiver
-	srdt, ptrRecv := deptr(fn.method.recv)
-	if ptrRecv {
+	if isPointer(fn.method.recv) {
 		v = emitLoad(fn, v)
 
 		// For simple indirection wrappers, perform an informative nil-check:
 		// "value method (T).f called using nil *T pointer"
-		_, ptrObj := deptr(recvType(fn.object))
-		if len(indices) == 1 && !ptrObj {
+		if len(indices) == 1 && !isPointer(recvType(fn.object)) {
 			var c Call
 			c.Call.Value = &Builtin{
 				name: "ssa:wrapnilchk",
@@ -114,7 +114,7 @@ func (b *builder) buildWrapper(fn *Function) {
 			}
 			c.Call.Args = []Value{
 				v,
-				stringConst(srdt.String()),
+				stringConst(typeparams.MustDeref(fn.method.recv).String()),
 				stringConst(fn.method.obj.Name()),
 			}
 			c.setType(v.Type())
@@ -138,7 +138,7 @@ func (b *builder) buildWrapper(fn *Function) {
 
 	var c Call
 	if r := recvType(fn.object); !types.IsInterface(r) { // concrete method
-		if _, ptrObj := deptr(r); !ptrObj {
+		if !isPointer(r) {
 			v = emitLoad(fn, v)
 		}
 		c.Call.Value = fn.Prog.objectMethod(fn.object, b.created)

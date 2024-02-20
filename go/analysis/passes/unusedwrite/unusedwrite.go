@@ -6,7 +6,6 @@ package unusedwrite
 
 import (
 	_ "embed"
-	"fmt"
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
@@ -14,6 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/typeparams"
 )
 
 //go:embed doc.go
@@ -37,9 +37,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		for _, store := range reports {
 			switch addr := store.Addr.(type) {
 			case *ssa.FieldAddr:
+				field := typeparams.CoreType(typeparams.MustDeref(addr.X.Type())).(*types.Struct).Field(addr.Field)
 				pass.Reportf(store.Pos(),
-					"unused write to field %s",
-					getFieldName(addr.X.Type(), addr.Field))
+					"unused write to field %s", field.Name())
 			case *ssa.IndexAddr:
 				pass.Reportf(store.Pos(),
 					"unused write to array index %s", addr.Index)
@@ -150,22 +150,4 @@ func hasStructOrArrayType(v ssa.Value) bool {
 		}
 	}
 	return isStructOrArray(v.Type())
-}
-
-// getFieldName returns the name of a field in a struct.
-// It the field is not found, then it returns the string format of the index.
-//
-// For example, for struct T {x int, y int), getFieldName(*T, 1) returns "y".
-func getFieldName(tp types.Type, index int) string {
-	// TODO(adonovan): use
-	//   stp, ok := typeparams.Deref(tp).Underlying().(*types.Struct); ok {
-	// when Deref is defined. But see CL 565456 for a better fix.
-
-	if pt, ok := aliases.Unalias(tp).(*types.Pointer); ok {
-		tp = pt.Elem()
-	}
-	if stp, ok := tp.Underlying().(*types.Struct); ok {
-		return stp.Field(index).Name()
-	}
-	return fmt.Sprintf("%d", index)
 }

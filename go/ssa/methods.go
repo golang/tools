@@ -58,10 +58,8 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 		fn, ok := mset.mapping[id]
 		if !ok {
 			obj := sel.Obj().(*types.Func)
-			_, ptrObj := deptr(recvType(obj))
-			_, ptrRecv := deptr(T)
 			needsPromotion := len(sel.Index()) > 1
-			needsIndirection := !ptrObj && ptrRecv
+			needsIndirection := !isPointer(recvType(obj)) && isPointer(T)
 			if needsPromotion || needsIndirection {
 				fn = createWrapper(prog, toSelection(sel), &cr)
 			} else {

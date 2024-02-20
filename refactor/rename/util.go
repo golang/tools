@@ -102,3 +102,8 @@ func sameFile(x, y string) bool {
 }
 
 func unparen(e ast.Expr) ast.Expr { return astutil.Unparen(e) }
+
+func is[T any](x any) bool {
+	_, ok := x.(T)
+	return ok
+}

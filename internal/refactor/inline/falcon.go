@@ -423,7 +423,7 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 		if e.Type != nil {
 			_ = st.expr(e.Type)
 		}
-		t := deref(typeparams.CoreType(deref(tv.Type)))
+		t := aliases.Unalias(typeparams.Deref(tv.Type))
 		var uniques []ast.Expr
 		for _, elt := range e.Elts {
 			if kv, ok := elt.(*ast.KeyValueExpr); ok {
@@ -447,7 +447,7 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 			// - for an array or *array, use [n]int.
 			// The last two entail progressively stronger index checks.
 			var ct ast.Expr // type syntax for constraint
-			switch t := aliases.Unalias(t).(type) {
+			switch t := t.(type) {
 			case *types.Map:
 				if types.IsInterface(t.Key()) {
 					ct = &ast.MapType{
@@ -508,7 +508,7 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 				if kX != nil {
 					// string
 					x = st.toExpr(kX)
-				} else if arr, ok := deref(st.info.TypeOf(e.X).Underlying()).(*types.Array); ok {
+				} else if arr, ok := typeparams.CoreType(typeparams.Deref(st.info.TypeOf(e.X))).(*types.Array); ok {
 					// array, *array
 					x = &ast.CompositeLit{
 						Type: &ast.ArrayType{
@@ -573,7 +573,7 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 		if kX != nil {
 			// string
 			x = st.toExpr(kX)
-		} else if arr, ok := deref(st.info.TypeOf(e.X).Underlying()).(*types.Array); ok {
+		} else if arr, ok := typeparams.CoreType(typeparams.Deref(st.info.TypeOf(e.X))).(*types.Array); ok {
 			// array, *array
 			x = &ast.CompositeLit{
 				Type: &ast.ArrayType{

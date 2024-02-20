@@ -48,3 +48,7 @@ func Test() {
 		_ = test
 	}
 }
+
+func _[T twoArgStruct[int, int]]() {
+	_ = T{} // want "T literal has missing fields"
+}

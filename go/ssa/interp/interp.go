@@ -54,6 +54,7 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/internal/typeparams"
 )
 
 type continuation int
@@ -245,7 +246,7 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 		fr.get(instr.Chan).(chan value) <- fr.get(instr.X)
 
 	case *ssa.Store:
-		store(deref(instr.Addr.Type()), fr.get(instr.Addr).(*value), fr.get(instr.Val))
+		store(typeparams.MustDeref(instr.Addr.Type()), fr.get(instr.Addr).(*value), fr.get(instr.Val))
 
 	case *ssa.If:
 		succ := 1
@@ -289,7 +290,7 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 			// local
 			addr = fr.env[instr].(*value)
 		}
-		*addr = zero(deref(instr.Type()))
+		*addr = zero(typeparams.MustDeref(instr.Type()))
 
 	case *ssa.MakeSlice:
 		slice := make([]value, asInt64(fr.get(instr.Cap)))
@@ -528,7 +529,7 @@ func callSSA(i *interpreter, caller *frame, callpos token.Pos, fn *ssa.Function,
 	fr.block = fn.Blocks[0]
 	fr.locals = make([]value, len(fn.Locals))
 	for i, l := range fn.Locals {
-		fr.locals[i] = zero(deref(l.Type()))
+		fr.locals[i] = zero(typeparams.MustDeref(l.Type()))
 		fr.env[l] = &fr.locals[i]
 	}
 	for i, p := range fn.Params {
@@ -673,7 +674,7 @@ func Interpret(mainpkg *ssa.Package, mode Mode, sizes types.Sizes, filename stri
 		for _, m := range pkg.Members {
 			switch v := m.(type) {
 			case *ssa.Global:
-				cell := zero(deref(v.Type()))
+				cell := zero(typeparams.MustDeref(v.Type()))
 				i.globals[v] = &cell
 			}
 		}
@@ -716,13 +717,4 @@ func Interpret(mainpkg *ssa.Package, mode Mode, sizes types.Sizes, filename stri
 		exitCode = 1
 	}
 	return
-}
-
-// deref returns a pointer's element type; otherwise it returns typ.
-// TODO(adonovan): Import from ssa?
-func deref(typ types.Type) types.Type {
-	if p, ok := typ.Underlying().(*types.Pointer); ok {
-		return p.Elem()
-	}
-	return typ
 }

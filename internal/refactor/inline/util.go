@@ -120,8 +120,10 @@ func convert(T, x ast.Expr) *ast.CallExpr {
 	}
 }
 
-// isPointer reports whether t is a pointer type.
-func isPointer(t types.Type) bool { return t != deref(t) }
+// isPointer reports whether t's core type is a pointer.
+func isPointer(t types.Type) bool {
+	return is[*types.Pointer](typeparams.CoreType(t))
+}
 
 // indirectSelection is like seln.Indirect() without bug #8353.
 func indirectSelection(seln *types.Selection) bool {
@@ -150,9 +152,9 @@ func effectiveReceiver(seln *types.Selection) (types.Type, bool) {
 	indices := seln.Index()
 	indirect := false
 	for _, index := range indices[:len(indices)-1] {
-		if tElem := deref(t); tElem != t {
+		if isPointer(t) {
 			indirect = true
-			t = tElem
+			t = typeparams.MustDeref(t)
 		}
 		t = typeparams.CoreType(t).(*types.Struct).Field(index).Type()
 	}

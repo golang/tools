@@ -101,24 +101,22 @@ func isBasicConvTypes(tset termList) bool {
 	return all && basics >= 1 && tset.Len()-basics <= 1
 }
 
-// deptr returns a pointer's element type and true; otherwise it returns (typ, false).
-// This function is oblivious to core types and is not suitable for generics.
-//
-// TODO: Deprecate this function once all usages have been audited.
-func deptr(typ types.Type) (types.Type, bool) {
-	if p, ok := typ.Underlying().(*types.Pointer); ok {
-		return p.Elem(), true
-	}
-	return typ, false
+// isPointer reports whether t's underlying type is a pointer.
+func isPointer(t types.Type) bool {
+	return is[*types.Pointer](t.Underlying())
 }
 
-// deref returns the element type of a type with a pointer core type and true;
-// otherwise it returns (typ, false).
-func deref(typ types.Type) (types.Type, bool) {
-	if p, ok := typeparams.CoreType(typ).(*types.Pointer); ok {
-		return p.Elem(), true
-	}
-	return typ, false
+// isPointerCore reports whether t's core type is a pointer.
+//
+// (Most pointer manipulation is related to receivers, in which case
+// isPointer is appropriate. tecallers can use isPointer(t).
+func isPointerCore(t types.Type) bool {
+	return is[*types.Pointer](typeparams.CoreType(t))
+}
+
+func is[T any](x any) bool {
+	_, ok := x.(T)
+	return ok
 }
 
 // recvType returns the receiver type of method obj.

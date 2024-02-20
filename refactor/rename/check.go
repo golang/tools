@@ -14,6 +14,8 @@ import (
 
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
 )
 
@@ -344,7 +346,7 @@ func forEachLexicalRef(info *loader.PackageInfo, obj types.Object, fn func(id *a
 			// Handle recursion ourselves for struct literals
 			// so we don't visit field identifiers.
 			tv := info.Types[n]
-			if _, ok := deref(tv.Type).Underlying().(*types.Struct); ok {
+			if is[*types.Struct](typeparams.CoreType(typeparams.Deref(tv.Type))) {
 				if n.Type != nil {
 					ast.Inspect(n.Type, visit)
 				}
@@ -463,16 +465,17 @@ func (r *renamer) checkStructField(from *types.Var) {
 		}
 	}
 
-	// Renaming an anonymous field requires renaming the type too. e.g.
+	// Renaming an anonymous field requires renaming the TypeName too. e.g.
 	// 	print(s.T)       // if we rename T to U,
 	// 	type T int       // this and
 	// 	var s struct {T} // this must change too.
 	if from.Anonymous() {
-		// TODO(adonovan): think carefully about aliases.
-		if named, ok := aliases.Unalias(from.Type()).(*types.Named); ok {
-			r.check(named.Obj())
-		} else if named, ok := aliases.Unalias(deref(from.Type())).(*types.Named); ok {
-			r.check(named.Obj())
+		// hasTypeName = {Named,Alias,TypeParam}, though
+		// a TypeParam cannot appear as an anonymous field.
+		// TODO(adonovan): add test of aliases.
+		type hasTypeName interface{ Obj() *types.TypeName }
+		if t, ok := typesinternal.Unpointer(from.Type()).(hasTypeName); ok {
+			r.check(t.Obj())
 		}
 	}
 
@@ -851,10 +854,3 @@ func someUse(info *loader.PackageInfo, obj types.Object) *ast.Ident {
 // -- Plundered from golang.org/x/tools/go/ssa -----------------
 
 func isInterface(T types.Type) bool { return types.IsInterface(T) }
-
-func deref(typ types.Type) types.Type {
-	if p, _ := aliases.Unalias(typ).(*types.Pointer); p != nil {
-		return p.Elem()
-	}
-	return typ
-}

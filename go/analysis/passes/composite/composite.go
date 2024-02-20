@@ -84,10 +84,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		default:
 			structuralTypes = append(structuralTypes, typ)
 		}
+
 		for _, typ := range structuralTypes {
-			// TODO(adonovan): this operation is questionable.
-			under := aliases.Unalias(deref(typ.Underlying()))
-			strct, ok := under.(*types.Struct)
+			strct, ok := typeparams.Deref(typ).Underlying().(*types.Struct)
 			if !ok {
 				// skip non-struct composite literals
 				continue
@@ -142,19 +141,6 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		}
 	})
 	return nil, nil
-}
-
-// Note: this is not the usual deref operator!
-// It strips off all Pointer constructors (and their Aliases).
-func deref(typ types.Type) types.Type {
-	for {
-		ptr, ok := aliases.Unalias(typ).(*types.Pointer)
-		if !ok {
-			break
-		}
-		typ = ptr.Elem().Underlying()
-	}
-	return typ
 }
 
 // isLocalType reports whether typ belongs to the same package as pass.

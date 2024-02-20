@@ -149,7 +149,7 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 		case *ast.CompositeLit:
 			// Check for struct literals that refer to unexported fields,
 			// whether keyed or unkeyed. (Logic assumes well-typedness.)
-			litType := deref(info.TypeOf(n))
+			litType := typeparams.Deref(info.TypeOf(n))
 			if s, ok := typeparams.CoreType(litType).(*types.Struct); ok {
 				if n.Type != nil {
 					visit(n.Type)
@@ -494,14 +494,6 @@ func addShadows(shadows map[string]bool, info *types.Info, exclude string, stack
 		}
 	}
 	return shadows
-}
-
-// deref removes a pointer type constructor from the core type of t.
-func deref(t types.Type) types.Type {
-	if ptr, ok := typeparams.CoreType(t).(*types.Pointer); ok {
-		return ptr.Elem()
-	}
-	return t
 }
 
 func isField(obj types.Object) bool {

@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 type parser struct {
@@ -242,13 +243,6 @@ func (p *parser) parseName() string {
 	return name
 }
 
-func deref(typ types.Type) types.Type {
-	if p, _ := aliases.Unalias(typ).(*types.Pointer); p != nil {
-		typ = p.Elem()
-	}
-	return typ
-}
-
 // parseField parses a Field:
 //
 //	Field = Name Type [string] .
@@ -262,7 +256,7 @@ func (p *parser) parseField(pkg *types.Package) (field *types.Var, tag string) {
 		if aname, ok := p.aliases[n]; ok {
 			name = aname
 		} else {
-			switch typ := aliases.Unalias(deref(typ)).(type) {
+			switch typ := aliases.Unalias(typesinternal.Unpointer(typ)).(type) {
 			case *types.Basic:
 				name = typ.Name()
 			case *types.Named:
