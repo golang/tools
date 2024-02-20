@@ -37,10 +37,12 @@ import (
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fuzzy"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // A CompletionItem represents a possible completion suggested by the algorithm.
@@ -1585,7 +1587,7 @@ func (c *completer) lexical(ctx context.Context) error {
 	}
 
 	if c.inference.objType != nil {
-		if named, _ := golang.Deref(c.inference.objType).(*types.Named); named != nil {
+		if named, ok := aliases.Unalias(typesinternal.Unpointer(c.inference.objType)).(*types.Named); ok {
 			// If we expected a named type, check the type's package for
 			// completion items. This is useful when the current file hasn't
 			// imported the type's package yet.
@@ -1651,14 +1653,14 @@ func (c *completer) injectType(ctx context.Context, t types.Type) {
 		return
 	}
 
-	t = golang.Deref(t)
+	t = typesinternal.Unpointer(t)
 
 	// If we have an expected type and it is _not_ a named type, handle
 	// it specially. Non-named types like "[]int" will never be
 	// considered via a lexical search, so we need to directly inject
 	// them. Also allow generic types since lexical search does not
 	// infer instantiated versions of them.
-	if named, _ := t.(*types.Named); named == nil || named.TypeParams().Len() > 0 {
+	if named, ok := aliases.Unalias(t).(*types.Named); !ok || named.TypeParams().Len() > 0 {
 		// If our expected type is "[]int", this will add a literal
 		// candidate of "[]int{}".
 		c.literal(ctx, t, nil)
@@ -1896,7 +1898,7 @@ func enclosingCompositeLiteral(path []ast.Node, pos token.Pos, info *types.Info)
 
 			clInfo := compLitInfo{
 				cl:     n,
-				clType: golang.Deref(tv.Type).Underlying(),
+				clType: typesinternal.Unpointer(tv.Type).Underlying(),
 			}
 
 			var (

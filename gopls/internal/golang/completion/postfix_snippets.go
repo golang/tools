@@ -21,8 +21,10 @@ import (
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // Postfix snippets are artificial methods that allow the user to
@@ -465,7 +467,7 @@ func (a *postfixTmplArgs) VarName(t types.Type, nonNamedDefault string) string {
 	// go/types predicates are undefined on types.Typ[types.Invalid].
 	if !types.Identical(t, types.Typ[types.Invalid]) && types.Implements(t, errorIntf) {
 		name = "err"
-	} else if _, isNamed := golang.Deref(t).(*types.Named); !isNamed {
+	} else if !is[*types.Named](aliases.Unalias(typesinternal.Unpointer(t))) {
 		name = nonNamedDefault
 	}
 

@@ -1226,7 +1226,7 @@ func promotedFields(t types.Type, from *types.Package) []promotedField {
 	var fields []promotedField
 	var visit func(t types.Type, stack []*types.Named)
 	visit = func(t types.Type, stack []*types.Named) {
-		tStruct, ok := Deref(t).Underlying().(*types.Struct)
+		tStruct, ok := typesinternal.Unpointer(t).Underlying().(*types.Struct)
 		if !ok {
 			return
 		}

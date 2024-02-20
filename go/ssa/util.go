@@ -115,15 +115,6 @@ func deref(typ types.Type) (types.Type, bool) {
 	return typ, false
 }
 
-// mustDeref returns the element type of a type with a pointer core type.
-// Panics on failure.
-func mustDeref(typ types.Type) types.Type {
-	if et, ok := deref(typ); ok {
-		return et
-	}
-	panic("cannot dereference type " + typ.String())
-}
-
 // recvType returns the receiver type of method obj.
 func recvType(obj *types.Func) types.Type {
 	return obj.Type().(*types.Signature).Recv().Type()
