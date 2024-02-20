@@ -1274,14 +1274,26 @@ func (s *Snapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (file
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fh, ok := s.files.get(uri)
+	return lockedSnapshot{s}.ReadFile(ctx, uri)
+}
+
+// lockedSnapshot implements the file.Source interface, while holding s.mu.
+//
+// TODO(rfindley): This unfortunate type had been eliminated, but it had to be
+// restored to fix golang/go#65801. We should endeavor to remove it again.
+type lockedSnapshot struct {
+	s *Snapshot
+}
+
+func (s lockedSnapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (file.Handle, error) {
+	fh, ok := s.s.files.get(uri)
 	if !ok {
 		var err error
-		fh, err = s.view.fs.ReadFile(ctx, uri)
+		fh, err = s.s.view.fs.ReadFile(ctx, uri)
 		if err != nil {
 			return nil, err
 		}
-		s.files.set(uri, fh)
+		s.s.files.set(uri, fh)
 	}
 	return fh, nil
 }
@@ -2017,7 +2029,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	// Update workspace and active packages, if necessary.
 	if result.meta != s.meta || anyFileOpenedOrClosed {
 		needsDiagnosis = true
-		result.workspacePackages = computeWorkspacePackagesLocked(result, result.meta)
+		result.workspacePackages = computeWorkspacePackagesLocked(ctx, result, result.meta)
 		result.resetActivePackagesLocked()
 	} else {
 		result.workspacePackages = s.workspacePackages

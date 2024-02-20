@@ -7,9 +7,11 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
@@ -1123,16 +1125,139 @@ import (
 		env.AfterChange(
 			Diagnostics(env.AtRegexp("a/main.go", "V"), WithMessage("not used")),
 		)
+		// Here, diagnostics are added because of zero-config gopls.
+		// In the past, they were added simply due to diagnosing changed files.
+		// (see TestClearNonWorkspaceDiagnostics_NoView below for a
+		// reimplementation of that test).
+		if got, want := len(env.Views()), 2; got != want {
+			t.Errorf("after opening a/main.go, got %d views, want %d", got, want)
+		}
 		env.CloseBuffer("a/main.go")
-
-		// Make an arbitrary edit because gopls explicitly diagnoses a/main.go
-		// whenever it is "changed".
-		//
-		// TODO(rfindley): it should not be necessary to make another edit here.
-		// Gopls should be smart enough to avoid diagnosing a.
-		env.RegexpReplace("b/main.go", "package b", "package b // a package")
 		env.AfterChange(
 			NoDiagnostics(ForFile("a/main.go")),
+		)
+		if got, want := len(env.Views()), 1; got != want {
+			t.Errorf("after closing a/main.go, got %d views, want %d", got, want)
+		}
+	})
+}
+
+// This test is like TestClearNonWorkspaceDiagnostics, but bypasses the
+// zero-config algorithm by opening a nested workspace folder.
+//
+// We should still compute diagnostics correctly for open packages.
+func TestClearNonWorkspaceDiagnostics_NoView(t *testing.T) {
+	const ws = `
+-- a/go.mod --
+module example.com/a
+
+go 1.18
+
+require example.com/b v1.2.3
+
+replace example.com/b => ../b
+
+-- a/a.go --
+package a
+
+import "example.com/b"
+
+func _() {
+	V := b.B // unused
+}
+
+-- b/go.mod --
+module b
+
+go 1.18
+
+-- b/b.go --
+package b
+
+const B = 2
+
+func _() {
+	var V int // unused
+}
+
+-- b/b2.go --
+package b
+
+const B2 = B
+
+-- c/c.go --
+package main
+
+func main() {
+	var V int // unused
+}
+`
+	WithOptions(
+		WorkspaceFolders("a"),
+	).Run(t, ws, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/a.go", "V"), WithMessage("not used")),
+			NoDiagnostics(ForFile("b/b.go")),
+			NoDiagnostics(ForFile("c/c.go")),
+		)
+		env.OpenFile("b/b.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/a.go", "V"), WithMessage("not used")),
+			Diagnostics(env.AtRegexp("b/b.go", "V"), WithMessage("not used")),
+			NoDiagnostics(ForFile("c/c.go")),
+		)
+
+		// Opening b/b.go should not result in a new view, because b is not
+		// contained in a workspace folder.
+		//
+		// Yet we should get diagnostics for b, because it is open.
+		if got, want := len(env.Views()), 1; got != want {
+			t.Errorf("after opening b/b.go, got %d views, want %d", got, want)
+		}
+		env.CloseBuffer("b/b.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/a.go", "V"), WithMessage("not used")),
+			NoDiagnostics(ForFile("b/b.go")),
+			NoDiagnostics(ForFile("c/c.go")),
+		)
+
+		// We should get references in the b package.
+		bUse := env.RegexpSearch("a/a.go", `b\.(B)`)
+		refs := env.References(bUse)
+		wantRefs := []string{"a/a.go", "b/b.go", "b/b2.go"}
+		var gotRefs []string
+		for _, ref := range refs {
+			gotRefs = append(gotRefs, env.Sandbox.Workdir.URIToPath(ref.URI))
+		}
+		sort.Strings(gotRefs)
+		if diff := cmp.Diff(wantRefs, gotRefs); diff != "" {
+			t.Errorf("references(b.B) mismatch (-want +got)\n%s", diff)
+		}
+
+		// Opening c/c.go should also not result in a new view, yet we should get
+		// orphaned file diagnostics.
+		env.OpenFile("c/c.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/a.go", "V"), WithMessage("not used")),
+			NoDiagnostics(ForFile("b/b.go")),
+			Diagnostics(env.AtRegexp("c/c.go", "V"), WithMessage("not used")),
+		)
+		if got, want := len(env.Views()), 1; got != want {
+			t.Errorf("after opening b/b.go, got %d views, want %d", got, want)
+		}
+
+		env.CloseBuffer("c/c.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/a.go", "V"), WithMessage("not used")),
+			NoDiagnostics(ForFile("b/b.go")),
+			NoDiagnostics(ForFile("c/c.go")),
+		)
+		env.CloseBuffer("a/a.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/a.go", "V"), WithMessage("not used")),
+			NoDiagnostics(ForFile("b/b.go")),
+			NoDiagnostics(ForFile("c/c.go")),
 		)
 	})
 }
