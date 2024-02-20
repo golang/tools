@@ -5,6 +5,7 @@
 package workspace
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -265,6 +266,61 @@ package b
 		env.AfterChange()
 		if got := env.Views(); len(got) != 1 || got[0].Type != cache.AdHocView.String() {
 			t.Errorf("Views: got %v, want one adhoc view", got)
+		}
+	})
+}
+
+func TestVendorExcluded(t *testing.T) {
+	// Test that we don't create Views for vendored modules.
+	//
+	// We construct the vendor directory manually here, as `go mod vendor` will
+	// omit the go.mod file. This synthesizes the setup of Kubernetes, where the
+	// entire module is vendored through a symlinked directory.
+	const src = `
+-- go.mod --
+module example.com/a
+
+go 1.18
+
+require other.com/b v1.0.0
+
+-- a.go --
+package a
+import "other.com/b"
+var _ b.B
+
+-- vendor/modules.txt --
+# other.com/b v1.0.0
+## explicit; go 1.14
+other.com/b
+
+-- vendor/other.com/b/go.mod --
+module other.com/b
+go 1.14
+
+-- vendor/other.com/b/b.go --
+package b
+type B int
+
+func _() {
+	var V int // unused
+}
+`
+	WithOptions(
+		Modes(Default),
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+		env.AfterChange(NoDiagnostics())
+		loc := env.GoToDefinition(env.RegexpSearch("a.go", `b\.(B)`))
+		if !strings.Contains(string(loc.URI), "/vendor/") {
+			t.Fatalf("Definition(b.B) = %v, want vendored location", loc.URI)
+		}
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("vendor/other.com/b/b.go", "V"), WithMessage("not used")),
+		)
+
+		if views := env.Views(); len(views) != 1 {
+			t.Errorf("After opening /vendor/, got %d views, want 1. Views:\n%v", len(views), views)
 		}
 	})
 }

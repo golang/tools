@@ -360,8 +360,6 @@ func _() {
 // implementations in vendored modules were not found. The actual fix
 // was the same as for #55995; see TestVendoringInvalidatesMetadata.
 func TestImplementationsInVendor(t *testing.T) {
-	t.Skip("golang/go#56169: file watching does not capture vendor dirs")
-
 	const proxy = `
 -- other.com/b@v1.0.0/go.mod --
 module other.com/b
@@ -415,9 +413,7 @@ var _ b.B
 		checkVendor(env.Implementations(refLoc), false)
 
 		// Run 'go mod vendor' outside the editor.
-		if err := env.Sandbox.RunGoCommand(env.Ctx, ".", "mod", []string{"vendor"}, nil, true); err != nil {
-			t.Fatalf("go mod vendor: %v", err)
-		}
+		env.RunGoCommand("mod", "vendor")
 
 		// Synchronize changes to watched files.
 		env.Await(env.DoneWithChangeWatchedFiles())
