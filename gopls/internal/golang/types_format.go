@@ -27,14 +27,13 @@ import (
 
 // FormatType returns the detail and kind for a types.Type.
 func FormatType(typ types.Type, qf types.Qualifier) (detail string, kind protocol.CompletionItemKind) {
+	typ = typ.Underlying()
 	if types.IsInterface(typ) {
 		detail = "interface{...}"
 		kind = protocol.InterfaceCompletion
 	} else if _, ok := typ.(*types.Struct); ok {
 		detail = "struct{...}"
 		kind = protocol.StructCompletion
-	} else if typ != typ.Underlying() {
-		detail, kind = FormatType(typ.Underlying(), qf)
 	} else {
 		detail = types.TypeString(typ, qf)
 		kind = protocol.ClassCompletion

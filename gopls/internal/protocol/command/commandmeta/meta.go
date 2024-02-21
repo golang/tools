@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/internal/aliases"
 )
 
 type Command struct {
@@ -126,7 +127,7 @@ func (l *fieldLoader) loadMethod(pkg *packages.Package, m *types.Func) (*Command
 		if i == 0 {
 			// Lazy check that the first argument is a context. We could relax this,
 			// but then the generated code gets more complicated.
-			if named, ok := fld.Type.(*types.Named); !ok || named.Obj().Name() != "Context" || named.Obj().Pkg().Path() != "context" {
+			if named, ok := aliases.Unalias(fld.Type).(*types.Named); !ok || named.Obj().Name() != "Context" || named.Obj().Pkg().Path() != "context" {
 				return nil, fmt.Errorf("first method parameter must be context.Context")
 			}
 			// Skip the context argument, as it is implied.

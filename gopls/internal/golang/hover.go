@@ -36,6 +36,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/typesinternal"
@@ -236,6 +237,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	singleLineSignature := signature
 
 	// TODO(rfindley): we could do much better for inferred signatures.
+	// TODO(adonovan): fuse the two calls below.
 	if inferred := inferredSignature(pkg.TypesInfo(), ident); inferred != nil {
 		if s := inferredSignatureString(obj, qf, inferred); s != "" {
 			signature = s
@@ -250,7 +252,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	//  (2) we lose inline comments
 	// Furthermore, we include a summary of their method set.
 	_, isTypeName := obj.(*types.TypeName)
-	_, isTypeParam := obj.Type().(*types.TypeParam)
+	_, isTypeParam := aliases.Unalias(obj.Type()).(*types.TypeParam)
 	if isTypeName && !isTypeParam {
 		spec, ok := spec.(*ast.TypeSpec)
 		if !ok {
@@ -777,7 +779,7 @@ func hoverEmbed(fh file.Handle, rng protocol.Range, pattern string) (protocol.Ra
 func inferredSignatureString(obj types.Object, qf types.Qualifier, inferred *types.Signature) string {
 	// If the signature type was inferred, prefer the inferred signature with a
 	// comment showing the generic signature.
-	if sig, _ := obj.Type().(*types.Signature); sig != nil && sig.TypeParams().Len() > 0 && inferred != nil {
+	if sig, _ := obj.Type().Underlying().(*types.Signature); sig != nil && sig.TypeParams().Len() > 0 && inferred != nil {
 		obj2 := types.NewFunc(obj.Pos(), obj.Pkg(), obj.Name(), inferred)
 		str := types.ObjectString(obj2, qf)
 		// Try to avoid overly long lines.
@@ -869,7 +871,7 @@ func objectString(obj types.Object, qf types.Qualifier, declPos token.Pos, file 
 		}
 
 		// Special formatting cases.
-		switch typ := obj.Type().(type) {
+		switch typ := aliases.Unalias(obj.Type()).(type) {
 		case *types.Named:
 			// Try to add a formatted duration as an inline comment.
 			pkg := typ.Obj().Pkg()
@@ -896,10 +898,8 @@ func objectString(obj types.Object, qf types.Qualifier, declPos token.Pos, file 
 //
 // TODO(rfindley): there appears to be zero(!) tests for this functionality.
 func HoverDocForObject(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, obj types.Object) (*ast.CommentGroup, error) {
-	if _, isTypeName := obj.(*types.TypeName); isTypeName {
-		if _, isTypeParam := obj.Type().(*types.TypeParam); isTypeParam {
-			return nil, nil
-		}
+	if is[*types.TypeName](obj) && is[*types.TypeParam](obj.Type()) {
+		return nil, nil
 	}
 
 	pgf, pos, err := parseFull(ctx, snapshot, fset, obj.Pos())

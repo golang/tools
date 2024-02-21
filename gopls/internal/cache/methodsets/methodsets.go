@@ -54,6 +54,7 @@ import (
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/util/frob"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/aliases"
 )
 
 // An Index records the non-empty method sets of all package-level
@@ -304,7 +305,7 @@ func methodSetInfo(t types.Type, setIndexInfo func(*gobMethod, *types.Func)) gob
 // EnsurePointer wraps T in a types.Pointer if T is a named, non-interface type.
 // This is useful to make sure you consider a named type's full method set.
 func EnsurePointer(T types.Type) types.Type {
-	if _, ok := T.(*types.Named); ok && !types.IsInterface(T) {
+	if _, ok := aliases.Unalias(T).(*types.Named); ok && !types.IsInterface(T) {
 		return types.NewPointer(T)
 	}
 
@@ -329,6 +330,9 @@ func fingerprint(method *types.Func) (string, bool) {
 	var fprint func(t types.Type)
 	fprint = func(t types.Type) {
 		switch t := t.(type) {
+		case *aliases.Alias:
+			fprint(aliases.Unalias(t))
+
 		case *types.Named:
 			tname := t.Obj()
 			if tname.Pkg() != nil {

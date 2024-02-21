@@ -1048,21 +1048,10 @@ func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 
 			// collect receiver struct fields
 			if node.Recv != nil {
-				for _, fields := range node.Recv.List {
-					for _, name := range fields.Names {
-						obj := c.pkg.TypesInfo().ObjectOf(name)
-						if obj == nil {
-							continue
-						}
-
-						recvType := obj.Type().Underlying()
-						if ptr, ok := recvType.(*types.Pointer); ok {
-							recvType = ptr.Elem()
-						}
-						recvStruct, ok := recvType.Underlying().(*types.Struct)
-						if !ok {
-							continue
-						}
+				sig := c.pkg.TypesInfo().Defs[node.Name].(*types.Func).Type().(*types.Signature)
+				_, named := typesinternal.ReceiverNamed(sig.Recv()) // may be nil if ill-typed
+				if named != nil {
+					if recvStruct, ok := named.Underlying().(*types.Struct); ok {
 						for i := 0; i < recvStruct.NumFields(); i++ {
 							field := recvStruct.Field(i)
 							c.deepState.enqueue(candidate{obj: field, score: lowScore})
@@ -1162,8 +1151,7 @@ func (c *completer) wantStructFieldCompletions() bool {
 	if clInfo == nil {
 		return false
 	}
-
-	return clInfo.isStruct() && (clInfo.inKey || clInfo.maybeInFieldName)
+	return is[*types.Struct](clInfo.clType) && (clInfo.inKey || clInfo.maybeInFieldName)
 }
 
 func (c *completer) wantTypeName() bool {
@@ -1575,6 +1563,8 @@ func (c *completer) methodsAndFields(typ types.Type, addressable bool, imp *impo
 
 // isStarTestingDotF reports whether typ is *testing.F.
 func isStarTestingDotF(typ types.Type) bool {
+	// No Unalias, since go test doesn't consider
+	// types when enumeratinf test funcs, only syntax.
 	ptr, _ := typ.(*types.Pointer)
 	if ptr == nil {
 		return false
@@ -1707,10 +1697,11 @@ func (c *completer) lexical(ctx context.Context) error {
 		// If we are completing a type param, offer each structural type.
 		// This ensures we suggest "[]int" and "[]float64" for a constraint
 		// with type union "[]int | []float64".
-		if t, _ := c.inference.objType.(*types.Interface); t != nil {
-			terms, _ := typeparams.InterfaceTermSet(t)
-			for _, term := range terms {
-				c.injectType(ctx, term.Type())
+		if t, ok := c.inference.objType.(*types.Interface); ok {
+			if terms, err := typeparams.InterfaceTermSet(t); err == nil {
+				for _, term := range terms {
+					c.injectType(ctx, term.Type())
+				}
 			}
 		}
 	} else {
@@ -1923,9 +1914,9 @@ func (c *completer) structLiteralFieldName(ctx context.Context) error {
 		}
 	}
 
-	deltaScore := 0.0001
-	switch t := clInfo.clType.(type) {
-	case *types.Struct:
+	// Add struct fields.
+	if t, ok := aliases.Unalias(clInfo.clType).(*types.Struct); ok {
+		const deltaScore = 0.0001
 		for i := 0; i < t.NumFields(); i++ {
 			field := t.Field(i)
 			if !addedFields[field] {
@@ -1936,21 +1927,14 @@ func (c *completer) structLiteralFieldName(ctx context.Context) error {
 			}
 		}
 
-		// Add lexical completions if we aren't certain we are in the key part of a
-		// key-value pair.
-		if clInfo.maybeInFieldName {
-			return c.lexical(ctx)
+		// Fall through and add lexical completions if we aren't
+		// certain we are in the key part of a key-value pair.
+		if !clInfo.maybeInFieldName {
+			return nil
 		}
-	default:
-		return c.lexical(ctx)
 	}
 
-	return nil
-}
-
-func (cl *compLitInfo) isStruct() bool {
-	_, ok := cl.clType.(*types.Struct)
-	return ok
+	return c.lexical(ctx)
 }
 
 // enclosingCompositeLiteral returns information about the composite literal enclosing the
@@ -3364,4 +3348,9 @@ func forEachPackageMember(content []byte, f func(tok token.Token, id *ast.Ident,
 			}
 		}
 	}
+}
+
+func is[T any](x any) bool {
+	_, ok := x.(T)
+	return ok
 }

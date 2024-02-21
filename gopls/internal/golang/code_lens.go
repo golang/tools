@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
-	"golang.org/x/tools/internal/typesinternal"
 )
 
 type LensFunc func(context.Context, *cache.Snapshot, file.Handle) ([]protocol.CodeLens, error)
@@ -139,22 +138,27 @@ func matchTestFunc(fn *ast.FuncDecl, pkg *cache.Package, nameRe *regexp.Regexp, 
 	if info == nil {
 		return false
 	}
-	obj := info.ObjectOf(fn.Name)
-	if obj == nil {
-		return false
-	}
-	sig, ok := obj.Type().(*types.Signature)
+	obj, ok := info.ObjectOf(fn.Name).(*types.Func)
 	if !ok {
 		return false
 	}
+	sig := obj.Type().(*types.Signature)
 	// Test functions should have only one parameter.
 	if sig.Params().Len() != 1 {
 		return false
 	}
 
 	// Check the type of the only parameter
-	isptr, named := typesinternal.ReceiverNamed(sig.Params().At(0))
-	if !isptr || named == nil {
+	// (We don't Unalias or use typesinternal.ReceiverNamed
+	// in the two checks below because "go test" can't see
+	// through aliases when enumerating Test* functions;
+	// it's syntactic.)
+	paramTyp, ok := sig.Params().At(0).Type().(*types.Pointer)
+	if !ok {
+		return false
+	}
+	named, ok := paramTyp.Elem().(*types.Named)
+	if !ok {
 		return false
 	}
 	namedObj := named.Obj()

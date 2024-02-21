@@ -22,7 +22,7 @@ var ErrNoIdentFound = errors.New("no identifier found")
 // If no such signature exists, it returns nil.
 func inferredSignature(info *types.Info, id *ast.Ident) *types.Signature {
 	inst := info.Instances[id]
-	sig, _ := inst.Type.(*types.Signature)
+	sig, _ := aliases.Unalias(inst.Type).(*types.Signature)
 	return sig
 }
 
@@ -66,6 +66,8 @@ func searchForEnclosing(info *types.Info, path []ast.Node) *types.TypeName {
 // a single non-error result, and ignoring built-in named types.
 func typeToObject(typ types.Type) *types.TypeName {
 	switch typ := typ.(type) {
+	case *aliases.Alias:
+		return typ.Obj()
 	case *types.Named:
 		// TODO(rfindley): this should use typeparams.NamedTypeOrigin.
 		return typ.Obj()

@@ -387,7 +387,8 @@ func (a *postfixTmplArgs) EscapeQuotes(v string) string {
 
 // ElemType returns the Elem() type of xType, if applicable.
 func (a *postfixTmplArgs) ElemType() types.Type {
-	if e, _ := a.Type.(interface{ Elem() types.Type }); e != nil {
+	type hasElem interface{ Elem() types.Type } // Array, Chan, Map, Pointer, Slice
+	if e, ok := a.Type.Underlying().(hasElem); ok {
 		return e.Elem()
 	}
 	return nil
@@ -509,7 +510,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 	}
 
 	// Skip empty tuples since there is no value to operate on.
-	if tuple, ok := selType.Underlying().(*types.Tuple); ok && tuple == nil {
+	if tuple, ok := selType.(*types.Tuple); ok && tuple == nil {
 		return
 	}
 

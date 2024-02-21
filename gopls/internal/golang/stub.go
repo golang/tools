@@ -109,7 +109,7 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 			field := concreteStruct.Field(index[0])
 
 			fn := field.Name()
-			if _, ok := field.Type().(*types.Pointer); ok {
+			if is[*types.Pointer](field.Type()) {
 				fn = "*" + fn
 			}
 
@@ -208,8 +208,8 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 	// Otherwise, use lowercase for the first letter of the object.
 	rn := strings.ToLower(si.Concrete.Obj().Name()[0:1])
 	for i := 0; i < si.Concrete.NumMethods(); i++ {
-		if recv, ok := si.Concrete.Method(i).Type().(*types.Signature); ok && recv.Recv().Name() != "" {
-			rn = recv.Recv().Name()
+		if recv := si.Concrete.Method(i).Type().(*types.Signature).Recv(); recv.Name() != "" {
+			rn = recv.Name()
 			break
 		}
 	}
@@ -229,10 +229,9 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 
 	for index := range missing {
 		mrn := rn + " "
-		if sig, ok := missing[index].fn.Type().(*types.Signature); ok {
-			if checkRecvName(sig.Params()) || checkRecvName(sig.Results()) {
-				mrn = ""
-			}
+		sig := missing[index].fn.Type().(*types.Signature)
+		if checkRecvName(sig.Params()) || checkRecvName(sig.Results()) {
+			mrn = ""
 		}
 
 		fmt.Fprintf(&newMethods, `// %s implements %s.

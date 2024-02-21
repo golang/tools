@@ -149,8 +149,11 @@ func Generate() ([]byte, error) {
 }
 
 func pkgPath(t types.Type) string {
-	if n, ok := t.(*types.Named); ok {
-		if pkg := n.Obj().Pkg(); pkg != nil {
+	type hasTypeName interface { // *Named or *Alias (or *TypeParam)
+		Obj() *types.TypeName
+	}
+	if t, ok := t.(hasTypeName); ok {
+		if pkg := t.Obj().Pkg(); pkg != nil {
 			return pkg.Path()
 		}
 	}

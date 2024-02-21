@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 )
@@ -60,7 +61,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 	}
 	if isTypeName(obj) && c.wantTypeParams() {
 		x := cand.obj.(*types.TypeName)
-		if named, ok := x.Type().(*types.Named); ok {
+		if named, ok := aliases.Unalias(x.Type()).(*types.Named); ok {
 			tp := named.TypeParams()
 			label += golang.FormatTypeParams(tp)
 			insert = label // maintain invariant above (label == insert)
@@ -76,7 +77,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 		kind = protocol.ConstantCompletion
 	case *types.Var:
 		if _, ok := obj.Type().(*types.Struct); ok {
-			detail = "struct{...}" // for anonymous structs
+			detail = "struct{...}" // for anonymous unaliased struct types
 		} else if obj.IsField() {
 			var err error
 			detail, err = golang.FormatVarType(ctx, c.snapshot, c.pkg, obj, c.qf, c.mq)
@@ -94,12 +95,9 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 			break
 		}
 	case *types.Func:
-		sig, ok := obj.Type().Underlying().(*types.Signature)
-		if !ok {
-			break
-		}
-		kind = protocol.FunctionCompletion
-		if sig != nil && sig.Recv() != nil {
+		if obj.Type().(*types.Signature).Recv() == nil {
+			kind = protocol.FunctionCompletion
+		} else {
 			kind = protocol.MethodCompletion
 		}
 	case *types.PkgName:
@@ -414,7 +412,14 @@ func inferableTypeParams(sig *types.Signature) map[*types.TypeParam]bool {
 			}
 		case *types.TypeParam:
 			free[t] = true
-		case *types.Basic, *types.Named:
+		case *aliases.Alias:
+			visit(aliases.Unalias(t))
+		case *types.Named:
+			targs := t.TypeArgs()
+			for i := 0; i < targs.Len(); i++ {
+				visit(targs.At(i))
+			}
+		case *types.Basic:
 			// nop
 		default:
 			panic(t)

@@ -46,6 +46,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
 )
@@ -372,8 +373,7 @@ func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ide
 			if !ok {
 				return visit(nil) // pop stack, don't descend
 			}
-			// TODO(adonovan): fix: for generics, should be T.core not T.underlying.
-			if _, ok := typesinternal.Unpointer(tv.Type).Underlying().(*types.Struct); ok {
+			if is[*types.Struct](typeparams.CoreType(typeparams.Deref(tv.Type))) {
 				if n.Type != nil {
 					ast.Inspect(n.Type, visit)
 				}
@@ -812,7 +812,7 @@ func (r *renamer) checkMethod(from *types.Func) {
 				var iface string
 
 				I := recv(imeth).Type()
-				if named, ok := I.(*types.Named); ok {
+				if named, ok := aliases.Unalias(I).(*types.Named); ok {
 					pos = named.Obj().Pos()
 					iface = "interface " + named.Obj().Name()
 				} else {
@@ -909,7 +909,7 @@ func objectKind(obj types.Object) string {
 			return "field"
 		}
 	case *types.Func:
-		if obj.Type().(*types.Signature).Recv() != nil {
+		if recv(obj) != nil {
 			return "method"
 		}
 	}

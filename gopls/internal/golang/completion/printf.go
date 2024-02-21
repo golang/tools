@@ -23,7 +23,7 @@ func printfArgKind(info *types.Info, call *ast.CallExpr, argIdx int) objKind {
 		return kindAny
 	}
 
-	sig, _ := fn.Type().(*types.Signature)
+	sig, _ := fn.Type().Underlying().(*types.Signature)
 	if sig == nil {
 		return kindAny
 	}

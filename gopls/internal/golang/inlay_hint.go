@@ -18,6 +18,8 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 const (
@@ -137,7 +139,7 @@ func parameterNames(node ast.Node, m *protocol.Mapper, tf *token.File, info *typ
 	if !ok {
 		return nil
 	}
-	signature, ok := info.TypeOf(callExpr.Fun).(*types.Signature)
+	signature, ok := typeparams.CoreType(info.TypeOf(callExpr.Fun)).(*types.Signature)
 	if !ok {
 		return nil
 	}
@@ -317,10 +319,8 @@ func compositeLiteralFields(node ast.Node, m *protocol.Mapper, tf *token.File, i
 	if typ == nil {
 		return nil
 	}
-	if t, ok := typ.(*types.Pointer); ok {
-		typ = t.Elem()
-	}
-	strct, ok := typ.Underlying().(*types.Struct)
+	typ = typesinternal.Unpointer(typ)
+	strct, ok := typeparams.CoreType(typ).(*types.Struct)
 	if !ok {
 		return nil
 	}
@@ -369,7 +369,7 @@ func compositeLiteralTypes(node ast.Node, m *protocol.Mapper, tf *token.File, in
 		return nil
 	}
 	prefix := ""
-	if t, ok := typ.(*types.Pointer); ok {
+	if t, ok := typeparams.CoreType(typ).(*types.Pointer); ok {
 		typ = t.Elem()
 		prefix = "&"
 	}

@@ -66,6 +66,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typesinternal"
@@ -352,7 +353,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 		// of the type parameters, unlike methods).
 		switch obj.(type) { // avoid "obj :=" since cases reassign the var
 		case *types.TypeName:
-			if _, ok := obj.Type().(*types.TypeParam); ok {
+			if _, ok := aliases.Unalias(obj.Type()).(*types.TypeParam); ok {
 				// As with capitalized function parameters below, type parameters are
 				// local.
 				goto skipObjectPath
@@ -1163,7 +1164,7 @@ func (r *renamer) updateCommentDocLinks() (map[protocol.DocumentURI][]diff.Edit,
 		// Doc links can reference only exported package-level objects
 		// and methods of exported package-level named types.
 		if !isPackageLevel(obj) {
-			_, isFunc := obj.(*types.Func)
+			obj, isFunc := obj.(*types.Func)
 			if !isFunc {
 				continue
 			}

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/analysisinternal"
 )
 
@@ -147,7 +148,7 @@ func embeddableType(o types.Object) bool {
 
 	// For embed.FS the underlying type is an implementation detail.
 	// As long as the named type resolves to embed.FS, it is OK.
-	if named, ok := o.Type().(*types.Named); ok {
+	if named, ok := aliases.Unalias(o.Type()).(*types.Named); ok {
 		obj := named.Obj()
 		if obj.Pkg() != nil && obj.Pkg().Path() == "embed" && obj.Name() == "FS" {
 			return true

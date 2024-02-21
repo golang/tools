@@ -29,6 +29,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -529,7 +530,7 @@ func (tv *tokenVisitor) ident(id *ast.Ident) {
 	case *types.PkgName:
 		emit(semtok.TokNamespace)
 	case *types.TypeName: // could be a TypeParam
-		if is[*types.TypeParam](obj.Type()) {
+		if is[*types.TypeParam](aliases.Unalias(obj.Type())) {
 			emit(semtok.TokTypeParam)
 		} else if is[*types.Basic](obj.Type()) {
 			emit(semtok.TokType, "defaultLibrary")
@@ -537,7 +538,7 @@ func (tv *tokenVisitor) ident(id *ast.Ident) {
 			emit(semtok.TokType)
 		}
 	case *types.Var:
-		if is[*types.Signature](obj.Type()) {
+		if is[*types.Signature](aliases.Unalias(obj.Type())) {
 			emit(semtok.TokFunction)
 		} else if tv.isParam(obj.Pos()) {
 			// variable, unless use.pos is the pos of a Field in an ancestor FuncDecl

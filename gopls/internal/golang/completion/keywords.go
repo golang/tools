@@ -63,7 +63,7 @@ func (c *completer) addKeywordCompletions() {
 	// If we are at the file scope, only offer decl keywords. We don't
 	// get *ast.Idents at the file scope because non-keyword identifiers
 	// turn into *ast.BadDecl, not *ast.Ident.
-	if len(c.path) == 1 || isASTFile(c.path[1]) {
+	if len(c.path) == 1 || is[*ast.File](c.path[1]) {
 		c.addKeywordItems(seen, stdScore, TYPE, CONST, VAR, FUNC, IMPORT)
 		return
 	} else if _, ok := c.path[0].(*ast.Ident); !ok {
