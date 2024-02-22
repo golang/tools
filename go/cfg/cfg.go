@@ -60,6 +60,7 @@ type CFG struct {
 // that calls a function such as panic that never returns; one for a
 // normal (jump) block; and two for a conditional (if) block.
 type Block struct {
+	Pos   token.Pos  // closest associated source location
 	Nodes []ast.Node // statements, expressions, and ValueSpecs
 	Succs []*Block   // successor nodes in the graph
 	Index int32      // index within CFG.Blocks
@@ -82,7 +83,7 @@ func New(body *ast.BlockStmt, mayReturn func(*ast.CallExpr) bool) *CFG {
 		mayReturn: mayReturn,
 		cfg:       new(CFG),
 	}
-	b.current = b.newBlock("entry")
+	b.current = b.newBlock(body.Pos(), "entry")
 	b.stmt(body)
 
 	// Compute liveness (reachability from entry point), breadth-first.
