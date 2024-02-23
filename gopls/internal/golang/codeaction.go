@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
+	"golang.org/x/tools/gopls/internal/analysis/fillswitch"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
@@ -98,7 +99,7 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 			return nil, err
 		}
 		if want[protocol.RefactorRewrite] {
-			rewrites, err := getRewriteCodeActions(pkg, pgf, fh, rng, snapshot.Options())
+			rewrites, err := getRewriteCodeActions(ctx, pkg, snapshot, pgf, fh, rng, snapshot.Options())
 			if err != nil {
 				return nil, err
 			}
@@ -252,8 +253,7 @@ func newCodeAction(title string, kind protocol.CodeActionKind, cmd *protocol.Com
 	return action
 }
 
-// getRewriteCodeActions returns refactor.rewrite code actions available at the specified range.
-func getRewriteCodeActions(pkg *cache.Package, pgf *parsego.File, fh file.Handle, rng protocol.Range, options *settings.Options) (_ []protocol.CodeAction, rerr error) {
+func getRewriteCodeActions(ctx context.Context, pkg *cache.Package, snapshot *cache.Snapshot, pgf *parsego.File, fh file.Handle, rng protocol.Range, options *settings.Options) (_ []protocol.CodeAction, rerr error) {
 	// golang/go#61693: code actions were refactored to run outside of the
 	// analysis framework, but as a result they lost their panic recovery.
 	//
@@ -354,6 +354,28 @@ func getRewriteCodeActions(pkg *cache.Package, pgf *parsego.File, fh file.Handle
 		}
 	}
 
+	for _, diag := range fillswitch.Diagnose(inspect, start, end, pkg.GetTypes(), pkg.GetTypesInfo()) {
+		edits, err := suggestedFixToEdits(ctx, snapshot, pkg.FileSet(), &diag.SuggestedFixes[0])
+		if err != nil {
+			return nil, err
+		}
+
+		changes := []protocol.DocumentChanges{} // must be a slice
+		for _, edit := range edits {
+			edit := edit
+			changes = append(changes, protocol.DocumentChanges{
+				TextDocumentEdit: &edit,
+			})
+		}
+
+		actions = append(actions, protocol.CodeAction{
+			Title: diag.Message,
+			Kind:  protocol.RefactorRewrite,
+			Edit: &protocol.WorkspaceEdit{
+				DocumentChanges: changes,
+			},
+		})
+	}
 	for i := range commands {
 		actions = append(actions, newCodeAction(commands[i].Title, protocol.RefactorRewrite, &commands[i], nil, options))
 	}
