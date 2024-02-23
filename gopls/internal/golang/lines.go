@@ -13,6 +13,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"slices"
 	"sort"
 	"strings"
 
@@ -104,21 +105,21 @@ func joinLines(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.
 // processLines is the common operation for both split and join lines because this split/join operation is
 // essentially a transformation of the separating whitespace.
 func processLines(fset *token.FileSet, items []ast.Node, comments []*ast.CommentGroup, src []byte, braceOpen, braceClose token.Pos, sep, prefix, suffix, indent string) *analysis.SuggestedFix {
-	var nodes []ast.Node
-	nodes = append(nodes, items...)
+	nodes := slices.Clone(items)
 
-	// box *ast.CommentGroup to *ast.Node for easier processing later.
+	// box *ast.CommentGroup to ast.Node for easier processing later.
 	for _, cg := range comments {
 		nodes = append(nodes, cg)
 	}
 
+	// Sort to interleave comments and nodes.
 	sort.Slice(nodes, func(i, j int) bool {
 		return nodes[i].Pos() < nodes[j].Pos()
 	})
 
 	edits := []analysis.TextEdit{
 		{
-			Pos:     braceOpen + 1,
+			Pos:     token.Pos(int(braceOpen) + len("{")),
 			End:     nodes[0].Pos(),
 			NewText: []byte(prefix + indent),
 		},
@@ -143,6 +144,8 @@ func processLines(fset *token.FileSet, items []ast.Node, comments []*ast.Comment
 		posOffset := safetoken.EndPosition(fset, pos).Offset
 		endOffset := safetoken.StartPosition(fset, end).Offset
 		if bytes.IndexByte(src[posOffset:endOffset], ',') == -1 {
+			// nodes[i] or nodes[i-1] is a comment hence no delimiter in between
+			// in such case, do nothing.
 			continue
 		}
 
