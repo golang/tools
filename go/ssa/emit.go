@@ -11,6 +11,8 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // emitAlloc emits to f a new Alloc instruction allocating a variable
@@ -64,7 +66,7 @@ func emitLocalVar(f *Function, v *types.Var) *Alloc {
 // new temporary, and returns the value so defined.
 func emitLoad(f *Function, addr Value) *UnOp {
 	v := &UnOp{Op: token.MUL, X: addr}
-	v.setType(mustDeref(addr.Type()))
+	v.setType(typeparams.MustDeref(addr.Type()))
 	f.emit(v)
 	return v
 }
@@ -414,7 +416,7 @@ func emitTypeCoercion(f *Function, v Value, typ types.Type) Value {
 // emitStore emits to f an instruction to store value val at location
 // addr, applying implicit conversions as required by assignability rules.
 func emitStore(f *Function, addr, val Value, pos token.Pos) *Store {
-	typ := mustDeref(addr.Type())
+	typ := typeparams.MustDeref(addr.Type())
 	s := &Store{
 		Addr: addr,
 		Val:  emitConv(f, val, typ),

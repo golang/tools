@@ -72,7 +72,7 @@ func escape(info *types.Info, root ast.Node, f func(v *types.Var, escapes bool))
 			if sel, ok := n.Fun.(*ast.SelectorExpr); ok {
 				if seln, ok := info.Selections[sel]; ok &&
 					seln.Kind() == types.MethodVal &&
-					isPointer(seln.Obj().Type().(*types.Signature).Recv().Type()) {
+					isPointer(seln.Obj().Type().Underlying().(*types.Signature).Recv().Type()) {
 					tArg, indirect := effectiveReceiver(seln)
 					if !indirect && !isPointer(tArg) {
 						lvalue(sel.X, true) // &x.f

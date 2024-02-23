@@ -1,0 +1,21 @@
+This is a regression test for issue 65752: a break in a switch should
+highlight the switch, not the enclosing loop.
+
+-- a.go --
+package a
+
+func _(x any) {
+	for {
+		// type switch
+		switch x.(type) { //@loc(tswitch, "switch")
+		default:
+			break //@highlight("break", tswitch, "break")
+		}
+
+		// value switch
+		switch { //@loc(vswitch, "switch")
+		default:
+			break //@highlight("break", vswitch, "break")
+		}
+	}
+}

@@ -209,6 +209,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 			SkipPathInScan: skipPath,
 			Env:            env,
 			WorkingDir:     def.root.Path(),
+			ModCache:       s.cache.modCache.dirCache(def.folder.Env.GOMODCACHE),
 		}
 		if def.folder.Options.VerboseOutput {
 			pe.Logf = func(format string, args ...interface{}) {
@@ -227,10 +228,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		ignoreFilter:         ignoreFilter,
 		fs:                   s.overlayFS,
 		viewDefinition:       def,
-		importsState: &importsState{
-			ctx:        backgroundCtx,
-			processEnv: pe,
-		},
+		importsState:         newImportsState(backgroundCtx, s.cache.modCache, pe),
 	}
 
 	s.snapshotWG.Add(1)
@@ -472,7 +470,17 @@ func selectViewDefs(ctx context.Context, fs file.Source, folders []*Folder, open
 	folderForFile := func(uri protocol.DocumentURI) *Folder {
 		var longest *Folder
 		for _, folder := range folders {
-			if (longest == nil || len(folder.Dir) > len(longest.Dir)) && folder.Dir.Encloses(uri) {
+			// Check that this is a better match than longest, but not through a
+			// vendor directory. Count occurrences of "/vendor/" as a quick check
+			// that the vendor directory is between the folder and the file. Note the
+			// addition of a trailing "/" to handle the odd case where the folder is named
+			// vendor (which I hope is exceedingly rare in any case).
+			//
+			// Vendored packages are, by definition, part of an existing view.
+			if (longest == nil || len(folder.Dir) > len(longest.Dir)) &&
+				folder.Dir.Encloses(uri) &&
+				strings.Count(string(uri), "/vendor/") == strings.Count(string(folder.Dir)+"/", "/vendor/") {
+
 				longest = folder
 			}
 		}
@@ -482,7 +490,7 @@ func selectViewDefs(ctx context.Context, fs file.Source, folders []*Folder, open
 checkFiles:
 	for _, uri := range openFiles {
 		folder := folderForFile(uri)
-		if folder == nil {
+		if folder == nil || !folder.Options.ZeroConfig {
 			continue // only guess views for open files
 		}
 		fh, err := fs.ReadFile(ctx, uri)
@@ -592,7 +600,7 @@ func bestView[V viewDefiner](ctx context.Context, fs file.Source, fh file.Handle
 				pushView(&workViews, view)
 			}
 		case GoModView:
-			if modURI == def.gomod {
+			if _, ok := def.workspaceModFiles[modURI]; ok {
 				modViews = append(modViews, view)
 			}
 		case GOPATHView:
@@ -719,7 +727,7 @@ func (s *Session) ResetView(ctx context.Context, uri protocol.DocumentURI) (*Vie
 // TODO(rfindley): what happens if this function fails? It must leave us in a
 // broken state, which we should surface to the user, probably as a request to
 // restart gopls.
-func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modification) (map[*View][]protocol.DocumentURI, error) {
+func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modification) (map[*View][]protocol.DocumentURI, error) {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 
@@ -728,7 +736,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 	// This is done while holding viewMu because the set of open files affects
 	// the set of views, and to prevent views from seeing updated file content
 	// before they have processed invalidations.
-	replaced, err := s.updateOverlays(ctx, changes)
+	replaced, err := s.updateOverlays(ctx, modifications)
 	if err != nil {
 		return nil, err
 	}
@@ -739,7 +747,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 	checkViews := false
 
 	changed := make(map[protocol.DocumentURI]file.Handle)
-	for _, c := range changes {
+	for _, c := range modifications {
 		fh := mustReadFile(ctx, s, c.URI)
 		changed[c.URI] = fh
 
@@ -748,18 +756,12 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 			checkViews = true
 		}
 
-		// Any on-disk change to a go.work file causes recomputing views.
+		// Any on-disk change to a go.work or go.mod file causes recomputing views.
 		//
 		// TODO(rfindley): go.work files need not be named "go.work" -- we need to
 		// check each view's source to handle the case of an explicit GOWORK value.
 		// Write a test that fails, and fix this.
-		if isGoWork(c.URI) && (c.Action == file.Save || c.OnDisk) {
-			checkViews = true
-		}
-		// Opening/Close/Create/Delete of go.mod files all trigger
-		// re-evaluation of Views. Changes do not as they can't affect the set of
-		// Views.
-		if isGoMod(c.URI) && c.Action != file.Change && c.Action != file.Save {
+		if (isGoWork(c.URI) || isGoMod(c.URI)) && (c.Action == file.Save || c.OnDisk) {
 			checkViews = true
 		}
 
@@ -857,7 +859,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 	// We only want to run fast-path diagnostics (i.e. diagnoseChangedFiles) once
 	// for each changed file, in its best view.
 	viewsToDiagnose := map[*View][]protocol.DocumentURI{}
-	for _, mod := range changes {
+	for _, mod := range modifications {
 		v, err := s.viewOfLocked(ctx, mod.URI)
 		if err != nil {
 			// bestViewForURI only returns an error in the event of context
@@ -874,7 +876,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, changes []file.Modificatio
 	// ...but changes may be relevant to other views, for example if they are
 	// changes to a shared package.
 	for _, v := range s.views {
-		_, release, needsDiagnosis := s.invalidateViewLocked(ctx, v, StateChange{Files: changed})
+		_, release, needsDiagnosis := s.invalidateViewLocked(ctx, v, StateChange{Modifications: modifications, Files: changed})
 		release()
 
 		if needsDiagnosis || checkViews {

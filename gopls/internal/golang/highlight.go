@@ -103,7 +103,7 @@ func highlightPath(path []ast.Node, file *ast.File, info *types.Info) (map[posRa
 		highlightIdentifier(node, file, info, result)
 	case *ast.ForStmt, *ast.RangeStmt:
 		highlightLoopControlFlow(path, info, result)
-	case *ast.SwitchStmt:
+	case *ast.SwitchStmt, *ast.TypeSwitchStmt:
 		highlightSwitchFlow(path, info, result)
 	case *ast.BranchStmt:
 		// BREAK can exit a loop, switch or select, while CONTINUE exit a loop so
@@ -275,28 +275,30 @@ findEnclosingFunc:
 		}
 	}
 
-	ast.Inspect(funcBody, func(n ast.Node) bool {
-		switch n := n.(type) {
-		case *ast.FuncDecl, *ast.FuncLit:
-			// Don't traverse into any functions other than enclosingFunc.
-			return false
-		case *ast.ReturnStmt:
-			if highlightAll {
-				// Add the entire return statement.
-				result[posRange{n.Pos(), n.End()}] = unit{}
-			} else {
-				// Add the highlighted indexes.
-				for i, expr := range n.Results {
-					if highlightIndexes[i] {
-						result[posRange{expr.Pos(), expr.End()}] = unit{}
+	if funcBody != nil {
+		ast.Inspect(funcBody, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.FuncDecl, *ast.FuncLit:
+				// Don't traverse into any functions other than enclosingFunc.
+				return false
+			case *ast.ReturnStmt:
+				if highlightAll {
+					// Add the entire return statement.
+					result[posRange{n.Pos(), n.End()}] = unit{}
+				} else {
+					// Add the highlighted indexes.
+					for i, expr := range n.Results {
+						if highlightIndexes[i] {
+							result[posRange{expr.Pos(), expr.End()}] = unit{}
+						}
 					}
 				}
-			}
-			return false
+				return false
 
-		}
-		return true
-	})
+			}
+			return true
+		})
+	}
 }
 
 // highlightUnlabeledBreakFlow highlights the innermost enclosing for/range/switch or swlect
@@ -307,7 +309,7 @@ func highlightUnlabeledBreakFlow(path []ast.Node, info *types.Info, result map[p
 		case *ast.ForStmt, *ast.RangeStmt:
 			highlightLoopControlFlow(path, info, result)
 			return // only highlight the innermost statement
-		case *ast.SwitchStmt:
+		case *ast.SwitchStmt, *ast.TypeSwitchStmt:
 			highlightSwitchFlow(path, info, result)
 			return
 		case *ast.SelectStmt:
@@ -329,7 +331,7 @@ func highlightLabeledFlow(path []ast.Node, info *types.Info, stmt *ast.BranchStm
 			switch label.Stmt.(type) {
 			case *ast.ForStmt, *ast.RangeStmt:
 				highlightLoopControlFlow([]ast.Node{label.Stmt, label}, info, result)
-			case *ast.SwitchStmt:
+			case *ast.SwitchStmt, *ast.TypeSwitchStmt:
 				highlightSwitchFlow([]ast.Node{label.Stmt, label}, info, result)
 			}
 			return
@@ -379,7 +381,7 @@ Outer:
 		switch n.(type) {
 		case *ast.ForStmt, *ast.RangeStmt:
 			return loop == n
-		case *ast.SwitchStmt, *ast.SelectStmt:
+		case *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
 			return false
 		}
 		b, ok := n.(*ast.BranchStmt)
@@ -432,7 +434,7 @@ Outer:
 	// Reverse walk the path till we get to the switch statement.
 	for i := range path {
 		switch n := path[i].(type) {
-		case *ast.SwitchStmt:
+		case *ast.SwitchStmt, *ast.TypeSwitchStmt:
 			switchNodeLabel = labelFor(path[i:])
 			if stmtLabel == nil || switchNodeLabel == stmtLabel {
 				switchNode = n
@@ -455,7 +457,7 @@ Outer:
 	// Traverse AST to find break statements within the same switch.
 	ast.Inspect(switchNode, func(n ast.Node) bool {
 		switch n.(type) {
-		case *ast.SwitchStmt:
+		case *ast.SwitchStmt, *ast.TypeSwitchStmt:
 			return switchNode == n
 		case *ast.ForStmt, *ast.RangeStmt, *ast.SelectStmt:
 			return false

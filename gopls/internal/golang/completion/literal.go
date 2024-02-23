@@ -14,7 +14,9 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // literal generates composite literal, function literal, and make()
@@ -49,10 +51,11 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 	//
 	// don't offer "mySlice{}" since we have already added a candidate
 	// of "[]int{}".
-	if _, named := literalType.(*types.Named); named && expType != nil {
-		if _, named := golang.Deref(expType).(*types.Named); !named {
-			return
-		}
+	if is[*types.Named](aliases.Unalias(literalType)) &&
+		expType != nil &&
+		!is[*types.Named](aliases.Unalias(typesinternal.Unpointer(expType))) {
+
+		return
 	}
 
 	// Check if an object of type literalType would match our expected type.
@@ -588,4 +591,9 @@ func (c *completer) typeParamInScope(tp *types.TypeParam) bool {
 
 	_, foundObj := scope.LookupParent(obj.Name(), c.pos)
 	return obj == foundObj
+}
+
+func is[T any](x any) bool {
+	_, ok := x.(T)
+	return ok
 }

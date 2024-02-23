@@ -14,6 +14,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // Like ObjectOf, but panics instead of returning nil.
@@ -531,7 +533,7 @@ func WriteFunction(buf *bytes.Buffer, f *Function) {
 	if len(f.Locals) > 0 {
 		buf.WriteString("# Locals:\n")
 		for i, l := range f.Locals {
-			fmt.Fprintf(buf, "# % 3d:\t%s %s\n", i, l.Name(), relType(mustDeref(l.Type()), from))
+			fmt.Fprintf(buf, "# % 3d:\t%s %s\n", i, l.Name(), relType(typeparams.MustDeref(l.Type()), from))
 		}
 	}
 	writeSignature(buf, from, f.Name(), f.Signature)
@@ -585,6 +587,12 @@ func WriteFunction(buf *bytes.Buffer, f *Function) {
 				buf.WriteString("<deleted>")
 			default:
 				buf.WriteString(instr.String())
+			}
+			// -mode=S: show line numbers
+			if f.Prog.mode&LogSource != 0 {
+				if pos := instr.Pos(); pos.IsValid() {
+					fmt.Fprintf(buf, " L%d", f.Prog.Fset.Position(pos).Line)
+				}
 			}
 			buf.WriteString("\n")
 		}

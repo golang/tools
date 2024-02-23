@@ -87,7 +87,11 @@ func TestMain(m *testing.M) {
 func Test(t *testing.T) {
 	if testing.Short() {
 		builder := os.Getenv("GO_BUILDER_NAME")
-		if strings.HasPrefix(builder, "darwin-") || builder == "solaris-amd64-oraclerel" {
+		// Note that HasPrefix(builder, "darwin-" only matches legacy builders.
+		// LUCI builder names start with x_tools-goN.NN.
+		// We want to exclude solaris on both legacy and LUCI builders, as
+		// it is timing out.
+		if strings.HasPrefix(builder, "darwin-") || strings.Contains(builder, "solaris") {
 			t.Skip("golang/go#64473: skipping with -short: this test is too slow on darwin and solaris builders")
 		}
 	}

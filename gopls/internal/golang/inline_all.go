@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/refactor/inline"
@@ -43,7 +44,7 @@ import (
 //
 // The code below notes where are assumptions are made that only hold true in
 // the case of parameter removal (annotated with 'Assumption:')
-func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *cache.Snapshot, pkg *cache.Package, pgf *ParsedGoFile, origDecl *ast.FuncDecl, callee *inline.Callee, post func([]byte) []byte) (map[protocol.DocumentURI][]byte, error) {
+func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, origDecl *ast.FuncDecl, callee *inline.Callee, post func([]byte) []byte) (map[protocol.DocumentURI][]byte, error) {
 	// Collect references.
 	var refs []protocol.Location
 	{
@@ -100,7 +101,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 
 	type fileCalls struct {
 		pkg   *cache.Package
-		pgf   *ParsedGoFile
+		pgf   *parsego.File
 		calls []*ast.CallExpr
 	}
 

@@ -30,6 +30,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // A Path is an opaque name that identifies a types.Object
@@ -395,13 +396,8 @@ func (enc *Encoder) concreteMethod(meth *types.Func) (Path, bool) {
 		return "", false
 	}
 
-	recvT := meth.Type().(*types.Signature).Recv().Type()
-	if ptr, ok := recvT.(*types.Pointer); ok {
-		recvT = ptr.Elem()
-	}
-
-	named, ok := recvT.(*types.Named)
-	if !ok {
+	_, named := typesinternal.ReceiverNamed(meth.Type().(*types.Signature).Recv())
+	if named == nil {
 		return "", false
 	}
 

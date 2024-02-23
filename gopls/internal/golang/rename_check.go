@@ -45,6 +45,8 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
 )
 
@@ -371,7 +373,7 @@ func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ide
 				return visit(nil) // pop stack, don't descend
 			}
 			// TODO(adonovan): fix: for generics, should be T.core not T.underlying.
-			if _, ok := Deref(tv.Type).Underlying().(*types.Struct); ok {
+			if _, ok := typesinternal.Unpointer(tv.Type).Underlying().(*types.Struct); ok {
 				if n.Type != nil {
 					ast.Inspect(n.Type, visit)
 				}
@@ -501,7 +503,7 @@ func (r *renamer) checkStructField(from *types.Var) {
 	if from.Anonymous() {
 		if named, ok := from.Type().(*types.Named); ok {
 			r.check(named.Obj())
-		} else if named, ok := Deref(from.Type()).(*types.Named); ok {
+		} else if named, ok := aliases.Unalias(typesinternal.Unpointer(from.Type())).(*types.Named); ok {
 			r.check(named.Obj())
 		}
 	}

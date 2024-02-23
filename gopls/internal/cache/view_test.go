@@ -4,13 +4,11 @@
 package cache
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/test/integration/fake"
 )
 
 func TestCaseInsensitiveFilesystem(t *testing.T) {
@@ -40,63 +38,6 @@ func TestCaseInsensitiveFilesystem(t *testing.T) {
 		err := checkPathValid(tt.path)
 		if err != nil != tt.err {
 			t.Errorf("checkPathValid(%q) = %v, wanted error: %v", tt.path, err, tt.err)
-		}
-	}
-}
-
-func TestFindWorkspaceModFile(t *testing.T) {
-	workspace := `
--- a/go.mod --
-module a
--- a/x/x.go
-package x
--- a/x/y/y.go
-package x
--- b/go.mod --
-module b
--- b/c/go.mod --
-module bc
--- d/gopls.mod --
-module d-goplsworkspace
--- d/e/go.mod --
-module de
--- f/g/go.mod --
-module fg
-`
-	dir, err := fake.Tempdir(fake.UnpackTxt(workspace))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-
-	tests := []struct {
-		folder, want string
-	}{
-		{"", ""}, // no module at root, and more than one nested module
-		{"a", "a/go.mod"},
-		{"a/x", "a/go.mod"},
-		{"a/x/y", "a/go.mod"},
-		{"b/c", "b/c/go.mod"},
-		{"d", "d/e/go.mod"},
-		{"d/e", "d/e/go.mod"},
-		{"f", "f/g/go.mod"},
-	}
-
-	for _, test := range tests {
-		ctx := context.Background()
-		rel := fake.RelativeTo(dir)
-		folderURI := protocol.URIFromPath(rel.AbsPath(test.folder))
-		excludeNothing := func(string) bool { return false }
-		got, err := findWorkspaceModFile(ctx, folderURI, New(nil), excludeNothing)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := protocol.DocumentURI("")
-		if test.want != "" {
-			want = protocol.URIFromPath(rel.AbsPath(test.want))
-		}
-		if got != want {
-			t.Errorf("findWorkspaceModFile(%q) = %q, want %q", test.folder, got, want)
 		}
 	}
 }

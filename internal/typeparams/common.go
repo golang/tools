@@ -27,6 +27,8 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // UnpackIndexExpr extracts data from AST nodes that represent index
@@ -90,13 +92,8 @@ func OriginMethod(fn *types.Func) *types.Func {
 	if recv == nil {
 		return fn
 	}
-	base := recv.Type()
-	p, isPtr := base.(*types.Pointer)
-	if isPtr {
-		base = p.Elem()
-	}
-	named, isNamed := base.(*types.Named)
-	if !isNamed {
+	_, named := typesinternal.ReceiverNamed(recv)
+	if named == nil {
 		// Receiver is a *types.Interface.
 		return fn
 	}

@@ -84,8 +84,7 @@ func compilePkg(t *testing.T, dirname, filename, outdirname string, packagefiles
 	importreldir := strings.ReplaceAll(outdirname, string(os.PathSeparator), "/")
 	cmd := exec.Command("go", "tool", "compile", "-p", pkg, "-D", importreldir, "-importcfg", importcfgfile, "-o", outname, filename)
 	cmd.Dir = dirname
-	out, err := cmd.CombinedOutput()
-	if err != nil {
+	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Logf("%s", out)
 		t.Fatalf("go tool compile %s failed: %s", filename, err)
 	}

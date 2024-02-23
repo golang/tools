@@ -507,7 +507,7 @@ type Z map[ext.A]ext.B
 			var pgfs []*parsego.File
 			for i, src := range test.srcs {
 				uri := protocol.DocumentURI(fmt.Sprintf("file:///%d.go", i))
-				pgf, _ := parsego.Parse(ctx, token.NewFileSet(), uri, []byte(src), parsego.ParseFull, false)
+				pgf, _ := parsego.Parse(ctx, token.NewFileSet(), uri, []byte(src), parsego.Full, false)
 				if !test.allowErrs && pgf.ParseErr != nil {
 					t.Fatalf("ParseGoSrc(...) returned parse errors: %v", pgf.ParseErr)
 				}

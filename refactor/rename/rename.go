@@ -588,7 +588,7 @@ func diff(filename string, content []byte) error {
 	}
 	defer os.Remove(renamed)
 
-	diff, err := exec.Command(DiffCmd, "-u", filename, renamed).CombinedOutput()
+	diff, err := exec.Command(DiffCmd, "-u", filename, renamed).Output()
 	if len(diff) > 0 {
 		// diff exits with a non-zero status when the files don't match.
 		// Ignore that failure as long as we get output.
@@ -596,6 +596,9 @@ func diff(filename string, content []byte) error {
 		return nil
 	}
 	if err != nil {
+		if exit, ok := err.(*exec.ExitError); ok && len(exit.Stderr) > 0 {
+			err = fmt.Errorf("%w\nstderr:\n%s", err, exit.Stderr)
+		}
 		return fmt.Errorf("computing diff: %v", err)
 	}
 	return nil

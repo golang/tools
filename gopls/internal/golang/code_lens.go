@@ -13,9 +13,11 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 type LensFunc func(context.Context, *cache.Snapshot, file.Handle) ([]protocol.CodeLens, error)
@@ -66,7 +68,7 @@ func runTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	}
 
 	if len(fns.Benchmarks) > 0 {
-		pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
+		pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 		if err != nil {
 			return nil, err
 		}
@@ -98,7 +100,7 @@ type TestFns struct {
 	Benchmarks []TestFn
 }
 
-func TestsAndBenchmarks(pkg *cache.Package, pgf *ParsedGoFile) (TestFns, error) {
+func TestsAndBenchmarks(pkg *cache.Package, pgf *parsego.File) (TestFns, error) {
 	var out TestFns
 
 	if !strings.HasSuffix(pgf.URI.Path(), "_test.go") {
@@ -151,12 +153,8 @@ func matchTestFunc(fn *ast.FuncDecl, pkg *cache.Package, nameRe *regexp.Regexp, 
 	}
 
 	// Check the type of the only parameter
-	paramTyp, ok := sig.Params().At(0).Type().(*types.Pointer)
-	if !ok {
-		return false
-	}
-	named, ok := paramTyp.Elem().(*types.Named)
-	if !ok {
+	isptr, named := typesinternal.ReceiverNamed(sig.Params().At(0))
+	if !isptr || named == nil {
 		return false
 	}
 	namedObj := named.Obj()
@@ -167,7 +165,7 @@ func matchTestFunc(fn *ast.FuncDecl, pkg *cache.Package, nameRe *regexp.Regexp, 
 }
 
 func goGenerateCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
-	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +199,7 @@ func goGenerateCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.H
 }
 
 func regenerateCgoLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
-	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +225,7 @@ func regenerateCgoLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 }
 
 func toggleDetailsCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
-	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
 		return nil, err
 	}

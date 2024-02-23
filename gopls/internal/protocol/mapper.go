@@ -375,7 +375,7 @@ func (m *Mapper) NodeMappedRange(tf *token.File, node ast.Node) (MappedRange, er
 //
 // Construct one by calling Mapper.OffsetMappedRange with start/end offsets.
 // From the go/token domain, call safetoken.Offsets first,
-// or use a helper such as ParsedGoFile.MappedPosRange.
+// or use a helper such as parsego.File.MappedPosRange.
 //
 // Two MappedRanges produced the same Mapper are equal if and only if they
 // denote the same range.  Two MappedRanges produced by different Mappers

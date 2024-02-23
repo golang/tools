@@ -20,15 +20,6 @@ func MapOf[K comparable, V any](m map[K]V) Map[K, V] {
 	return Map[K, V]{m}
 }
 
-// Keys returns all keys present in the map.
-func (m Map[K, V]) Keys() []K {
-	var keys []K
-	for k := range m.m {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
 // Value returns the mapped value for k.
 // It is equivalent to the commaok form of an ordinary go map, and returns
 // (zero, false) if the key is not present.

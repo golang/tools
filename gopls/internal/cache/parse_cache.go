@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/tokeninternal"
@@ -135,7 +135,7 @@ type parseKey struct {
 type parseCacheEntry struct {
 	key      parseKey
 	hash     file.Hash
-	promise  *memoize.Promise // memoize.Promise[*ParsedGoFile]
+	promise  *memoize.Promise // memoize.Promise[*parsego.File]
 	atime    uint64           // clock time of last access, for use in LRU sorting
 	walltime time.Time        // actual time of last access, for use in time-based eviction; too coarse for LRU on some systems
 	lruIndex int              // owned by the queue implementation
@@ -303,7 +303,7 @@ func (c *parseCache) allocateSpace(size int) (int, int) {
 	return base, c.nextBase
 }
 
-// parseFiles returns a ParsedGoFile for each file handle in fhs, in the
+// parseFiles returns a parsego.File for each file handle in fhs, in the
 // requested parse mode.
 //
 // For parsed files that already exists in the cache, access time will be
@@ -317,8 +317,8 @@ func (c *parseCache) allocateSpace(size int) (int, int) {
 //
 // If parseFiles returns an error, it still returns a slice,
 // but with a nil entry for each file that could not be parsed.
-func (c *parseCache) parseFiles(ctx context.Context, fset *token.FileSet, mode parser.Mode, purgeFuncBodies bool, fhs ...file.Handle) ([]*ParsedGoFile, error) {
-	pgfs := make([]*ParsedGoFile, len(fhs))
+func (c *parseCache) parseFiles(ctx context.Context, fset *token.FileSet, mode parser.Mode, purgeFuncBodies bool, fhs ...file.Handle) ([]*parsego.File, error) {
+	pgfs := make([]*parsego.File, len(fhs))
 
 	// Temporary fall-back for 32-bit systems, where reservedForParsing is too
 	// small to be viable. We don't actually support 32-bit systems, so this
@@ -351,7 +351,7 @@ func (c *parseCache) parseFiles(ctx context.Context, fset *token.FileSet, mode p
 			if err != nil {
 				return err
 			}
-			pgfs[i] = result.(*ParsedGoFile)
+			pgfs[i] = result.(*parsego.File)
 			return nil
 		})
 	}

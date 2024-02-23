@@ -40,7 +40,7 @@ func (s *server) SelectionRange(ctx context.Context, params *protocol.SelectionR
 		return nil, fmt.Errorf("SelectionRange not supported for file of type %s", kind)
 	}
 
-	pgf, err := snapshot.ParseGo(ctx, fh, parsego.ParseFull)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
 		return nil, err
 	}

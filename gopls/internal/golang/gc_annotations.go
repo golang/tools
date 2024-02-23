@@ -34,6 +34,7 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 	if err != nil {
 		return nil, err
 	}
+	tmpFile.Close() // ignore error
 	defer os.Remove(tmpFile.Name())
 
 	outDirURI := protocol.URIFromPath(outDir)

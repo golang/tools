@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // exprAtPos returns the index of the expression containing pos.
@@ -38,7 +39,12 @@ func eachField(T types.Type, fn func(*types.Var)) {
 
 	var visit func(T types.Type)
 	visit = func(T types.Type) {
-		if T, ok := golang.Deref(T).Underlying().(*types.Struct); ok {
+		// T may be a Struct, optionally Named, with an optional
+		// Pointer (with optional Aliases at every step!):
+		// Consider: type T *struct{ f int }; _ = T(nil).f
+		//
+		// TODO(adonovan): use typeparams.Deref in next CL.
+		if T, ok := typesinternal.Unpointer(T.Underlying()).Underlying().(*types.Struct); ok {
 			if seen.At(T) != nil {
 				return
 			}

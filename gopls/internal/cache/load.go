@@ -27,6 +27,7 @@ import (
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/packagesinternal"
+	"golang.org/x/tools/internal/xcontext"
 )
 
 var loadID uint64 // atomic identifier for loads
@@ -283,7 +284,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 	event.Log(ctx, fmt.Sprintf("%s: updating metadata for %d packages", eventName, len(updates)))
 
 	meta := s.meta.Update(updates)
-	workspacePackages := computeWorkspacePackagesLocked(s, meta)
+	workspacePackages := computeWorkspacePackagesLocked(ctx, s, meta)
 	s.meta = meta
 	s.workspacePackages = workspacePackages
 	s.resetActivePackagesLocked()
@@ -563,7 +564,7 @@ func computeLoadDiagnostics(ctx context.Context, snapshot *Snapshot, mp *metadat
 // heuristics.
 //
 // s.mu must be held while calling this function.
-func isWorkspacePackageLocked(s *Snapshot, meta *metadata.Graph, pkg *metadata.Package) bool {
+func isWorkspacePackageLocked(ctx context.Context, s *Snapshot, meta *metadata.Graph, pkg *metadata.Package) bool {
 	if metadata.IsCommandLineArguments(pkg.ID) {
 		// Ad-hoc command-line-arguments packages aren't workspace packages.
 		// With zero-config gopls (golang/go#57979) they should be very rare, as
@@ -585,6 +586,16 @@ func isWorkspacePackageLocked(s *Snapshot, meta *metadata.Graph, pkg *metadata.P
 		// For now, allow open standalone packages (i.e. go:build ignore) to be
 		// workspace packages, but this means they could belong to multiple views.
 		return containsOpenFileLocked(s, pkg)
+	}
+
+	// golang/go#65801: any (non command-line-arguments) open package is a
+	// workspace package.
+	//
+	// Otherwise, we'd display diagnostics for changes in an open package (due to
+	// the logic of diagnoseChangedFiles), but then erase those diagnostics when
+	// we do the final diagnostics pass. Diagnostics should be stable.
+	if containsOpenFileLocked(s, pkg) {
+		return true
 	}
 
 	// Apply filtering logic.
@@ -624,10 +635,24 @@ func isWorkspacePackageLocked(s *Snapshot, meta *metadata.Graph, pkg *metadata.P
 	// In module mode, a workspace package must be contained in a workspace
 	// module.
 	if s.view.moduleMode() {
-		if pkg.Module == nil {
-			return false
+		var modURI protocol.DocumentURI
+		if pkg.Module != nil {
+			modURI = protocol.URIFromPath(pkg.Module.GoMod)
+		} else {
+			// golang/go#65816: for std and cmd, Module is nil.
+			// Fall back to an inferior heuristic.
+			if len(pkg.CompiledGoFiles) == 0 {
+				return false // need at least one file to guess the go.mod file
+			}
+			dir := pkg.CompiledGoFiles[0].Dir()
+			var err error
+			modURI, err = findRootPattern(ctx, dir, "go.mod", lockedSnapshot{s})
+			if err != nil || modURI == "" {
+				// err != nil implies context cancellation, in which case the result of
+				// this query does not matter.
+				return false
+			}
 		}
-		modURI := protocol.URIFromPath(pkg.Module.GoMod)
 		_, ok := s.view.workspaceModFiles[modURI]
 		return ok
 	}
@@ -662,10 +687,14 @@ func containsOpenFileLocked(s *Snapshot, mp *metadata.Package) bool {
 // contain intermediate test variants.
 //
 // s.mu must be held while calling this function.
-func computeWorkspacePackagesLocked(s *Snapshot, meta *metadata.Graph) immutable.Map[PackageID, PackagePath] {
+func computeWorkspacePackagesLocked(ctx context.Context, s *Snapshot, meta *metadata.Graph) immutable.Map[PackageID, PackagePath] {
+	// The provided context is used for reading snapshot files, which can only
+	// fail due to context cancellation. Don't let this happen as it could lead
+	// to inconsistent results.
+	ctx = xcontext.Detach(ctx)
 	workspacePackages := make(map[PackageID]PackagePath)
 	for _, mp := range meta.Packages {
-		if !isWorkspacePackageLocked(s, meta, mp) {
+		if !isWorkspacePackageLocked(ctx, s, meta, mp) {
 			continue
 		}
 

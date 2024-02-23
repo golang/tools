@@ -13,6 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/internal/aliases"
 )
 
 //go:embed doc.go
@@ -159,10 +160,13 @@ func hasStructOrArrayType(v ssa.Value) bool {
 //
 // For example, for struct T {x int, y int), getFieldName(*T, 1) returns "y".
 func getFieldName(tp types.Type, index int) string {
-	if pt, ok := tp.(*types.Pointer); ok {
+	// TODO(adonovan): use
+	//   stp, ok := typeparams.Deref(tp).Underlying().(*types.Struct); ok {
+	// when Deref is defined.
+	if pt, ok := aliases.Unalias(tp).(*types.Pointer); ok {
 		tp = pt.Elem()
 	}
-	if named, ok := tp.(*types.Named); ok {
+	if named, ok := aliases.Unalias(tp).(*types.Named); ok {
 		tp = named.Underlying()
 	}
 	if stp, ok := tp.(*types.Struct); ok {

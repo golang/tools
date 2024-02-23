@@ -30,6 +30,7 @@ import (
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/methodsets"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/cache/xrefs"
 	"golang.org/x/tools/gopls/internal/file"
@@ -116,7 +117,7 @@ type Snapshot struct {
 	// builtin is the location of builtin.go in GOROOT.
 	//
 	// TODO(rfindley): would it make more sense to eagerly parse builtin, and
-	// instead store a *ParsedGoFile here?
+	// instead store a *parsego.File here?
 	builtin protocol.DocumentURI
 
 	// meta holds loaded metadata.
@@ -952,6 +953,12 @@ func (s *Snapshot) fileWatchingGlobPatterns() map[protocol.RelativePattern]unit 
 
 	var dirs []string
 	if s.view.moduleMode() {
+		if s.view.typ == GoWorkView {
+			workVendorDir := filepath.Join(s.view.gowork.Dir().Path(), "vendor")
+			workVendorURI := protocol.URIFromPath(workVendorDir)
+			patterns[protocol.RelativePattern{BaseURI: workVendorURI, Pattern: watchGoFiles}] = unit{}
+		}
+
 		// In module mode, watch directories containing active modules, and collect
 		// these dirs for later filtering the set of known directories.
 		//
@@ -1267,14 +1274,26 @@ func (s *Snapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (file
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fh, ok := s.files.get(uri)
+	return lockedSnapshot{s}.ReadFile(ctx, uri)
+}
+
+// lockedSnapshot implements the file.Source interface, while holding s.mu.
+//
+// TODO(rfindley): This unfortunate type had been eliminated, but it had to be
+// restored to fix golang/go#65801. We should endeavor to remove it again.
+type lockedSnapshot struct {
+	s *Snapshot
+}
+
+func (s lockedSnapshot) ReadFile(ctx context.Context, uri protocol.DocumentURI) (file.Handle, error) {
+	fh, ok := s.s.files.get(uri)
 	if !ok {
 		var err error
-		fh, err = s.view.fs.ReadFile(ctx, uri)
+		fh, err = s.s.view.fs.ReadFile(ctx, uri)
 		if err != nil {
 			return nil, err
 		}
-		s.files.set(uri, fh)
+		s.s.files.set(uri, fh)
 	}
 	return fh, nil
 }
@@ -1609,8 +1628,8 @@ https://github.com/golang/tools/blob/master/gopls/doc/settings.md#buildflags-str
 // orphanedFileDiagnosticRange returns the position to use for orphaned file diagnostics.
 // We only warn about an orphaned file if it is well-formed enough to actually
 // be part of a package. Otherwise, we need more information.
-func orphanedFileDiagnosticRange(ctx context.Context, cache *parseCache, fh file.Handle) (*ParsedGoFile, protocol.Range, bool) {
-	pgfs, err := cache.parseFiles(ctx, token.NewFileSet(), ParseHeader, false, fh)
+func orphanedFileDiagnosticRange(ctx context.Context, cache *parseCache, fh file.Handle) (*parsego.File, protocol.Range, bool) {
+	pgfs, err := cache.parseFiles(ctx, token.NewFileSet(), parsego.Header, false, fh)
 	if err != nil {
 		return nil, protocol.Range{}, false
 	}
@@ -1728,10 +1747,14 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	// one or more modules may have moved into or out of the
 	// vendor tree after 'go mod vendor' or 'rm -fr vendor/'.
 	//
+	// In this case, we consider the actual modification to see if was a creation
+	// or deletion.
+	//
 	// TODO(rfindley): revisit the location of this check.
-	for uri := range changedFiles {
-		if inVendor(uri) && s.initialErr != nil ||
-			strings.HasSuffix(string(uri), "/vendor/modules.txt") {
+	for _, mod := range changed.Modifications {
+		if inVendor(mod.URI) && (mod.Action == file.Create || mod.Action == file.Delete) ||
+			strings.HasSuffix(string(mod.URI), "/vendor/modules.txt") {
+
 			reinit = true
 			break
 		}
@@ -1741,6 +1764,11 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	// they exist. Importantly, we don't call ReadFile here: consider the case
 	// where a file is added on disk; we don't want to read the newly added file
 	// into the old snapshot, as that will break our change detection below.
+	//
+	// TODO(rfindley): it may be more accurate to rely on the modification type
+	// here, similarly to what we do for vendored files above. If we happened not
+	// to have read a file in the previous snapshot, that's not the same as it
+	// actually being created.
 	oldFiles := make(map[protocol.DocumentURI]file.Handle)
 	for uri := range changedFiles {
 		if fh, ok := s.files.get(uri); ok {
@@ -2001,7 +2029,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	// Update workspace and active packages, if necessary.
 	if result.meta != s.meta || anyFileOpenedOrClosed {
 		needsDiagnosis = true
-		result.workspacePackages = computeWorkspacePackagesLocked(result, result.meta)
+		result.workspacePackages = computeWorkspacePackagesLocked(ctx, result, result.meta)
 		result.resetActivePackagesLocked()
 	} else {
 		result.workspacePackages = s.workspacePackages
@@ -2161,8 +2189,8 @@ func metadataChanges(ctx context.Context, lockedSnapshot *Snapshot, oldFH, newFH
 
 	fset := token.NewFileSet()
 	// Parse headers to compare package names and imports.
-	oldHeads, oldErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, ParseHeader, false, oldFH)
-	newHeads, newErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, ParseHeader, false, newFH)
+	oldHeads, oldErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, parsego.Header, false, oldFH)
+	newHeads, newErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, parsego.Header, false, newFH)
 
 	if oldErr != nil || newErr != nil {
 		errChanged := (oldErr == nil) != (newErr == nil)
@@ -2208,12 +2236,12 @@ func metadataChanges(ctx context.Context, lockedSnapshot *Snapshot, oldFH, newFH
 	// Note: if this affects performance we can probably avoid parsing in the
 	// common case by first scanning the source for potential comments.
 	if !invalidate {
-		origFulls, oldErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, ParseFull, false, oldFH)
-		newFulls, newErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, ParseFull, false, newFH)
+		origFulls, oldErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, parsego.Full, false, oldFH)
+		newFulls, newErr := lockedSnapshot.view.parseCache.parseFiles(ctx, fset, parsego.Full, false, newFH)
 		if oldErr == nil && newErr == nil {
 			invalidate = magicCommentsChanged(origFulls[0].File, newFulls[0].File)
 		} else {
-			// At this point, we shouldn't ever fail to produce a ParsedGoFile, as
+			// At this point, we shouldn't ever fail to produce a parsego.File, as
 			// we're already past header parsing.
 			bug.Reportf("metadataChanges: unparseable file %v (old error: %v, new error: %v)", oldFH.URI(), oldErr, newErr)
 		}
@@ -2277,7 +2305,7 @@ func extractMagicComments(f *ast.File) []string {
 }
 
 // BuiltinFile returns information about the special builtin package.
-func (s *Snapshot) BuiltinFile(ctx context.Context) (*ParsedGoFile, error) {
+func (s *Snapshot) BuiltinFile(ctx context.Context) (*parsego.File, error) {
 	s.AwaitInitialized(ctx)
 
 	s.mu.Lock()
@@ -2294,7 +2322,7 @@ func (s *Snapshot) BuiltinFile(ctx context.Context) (*ParsedGoFile, error) {
 	}
 	// For the builtin file only, we need syntactic object resolution
 	// (since we can't type check).
-	mode := ParseFull &^ parser.SkipObjectResolution
+	mode := parsego.Full &^ parser.SkipObjectResolution
 	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), mode, false, fh)
 	if err != nil {
 		return nil, err

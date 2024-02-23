@@ -8,7 +8,7 @@ package protocol
 
 import "fmt"
 
-// SemanticTypes to use in case there is no client, as in the command line, or tests
+// SemanticTypes to use in case there is no client, as in the command line, or tests.
 func SemanticTypes() []string {
 	return semanticTypes[:]
 }

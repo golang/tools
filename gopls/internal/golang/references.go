@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/methodsets"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -164,7 +165,7 @@ func packageReferences(ctx context.Context, snapshot *cache.Snapshot, uri protoc
 				if err != nil {
 					return nil, err
 				}
-				f, err := snapshot.ParseGo(ctx, fh, ParseHeader)
+				f, err := snapshot.ParseGo(ctx, fh, parsego.Header)
 				if err != nil {
 					return nil, err
 				}
@@ -193,7 +194,7 @@ func packageReferences(ctx context.Context, snapshot *cache.Snapshot, uri protoc
 		if err != nil {
 			return nil, err
 		}
-		f, err := snapshot.ParseGo(ctx, fh, ParseHeader)
+		f, err := snapshot.ParseGo(ctx, fh, parsego.Header)
 		if err != nil {
 			return nil, err
 		}
@@ -685,7 +686,7 @@ func objectsAt(info *types.Info, file *ast.File, pos token.Pos) (map[types.Objec
 // which must belong to m.File.
 //
 // Safe for use only by references and implementations.
-func mustLocation(pgf *ParsedGoFile, n ast.Node) protocol.Location {
+func mustLocation(pgf *parsego.File, n ast.Node) protocol.Location {
 	loc, err := pgf.NodeLocation(n)
 	if err != nil {
 		panic(err) // can't happen in references or implementations

@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/filecache"
@@ -675,7 +676,7 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 	// Parse the compiled go files, bypassing the parse cache as packages checked
 	// for import are unlikely to get cache hits. Additionally, we can optimize
 	// parsing slightly by not passing parser.ParseComments.
-	pgfs := make([]*ParsedGoFile, len(ph.localInputs.compiledGoFiles))
+	pgfs := make([]*parsego.File, len(ph.localInputs.compiledGoFiles))
 	{
 		var group errgroup.Group
 		// Set an arbitrary concurrency limit; we want some parallelism but don't
@@ -1271,7 +1272,7 @@ func (s *Snapshot) typerefData(ctx context.Context, id PackageID, imports map[Im
 		bug.Reportf("internal error reading typerefs data: %v", err)
 	}
 
-	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), ParseFull&^parser.ParseComments, true, cgfs...)
+	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), parsego.Full&^parser.ParseComments, true, cgfs...)
 	if err != nil {
 		return nil, err
 	}
@@ -1471,11 +1472,11 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 	// Collect parsed files from the type check pass, capturing parse errors from
 	// compiled files.
 	var err error
-	pkg.goFiles, err = b.parseCache.parseFiles(ctx, b.fset, ParseFull, false, inputs.goFiles...)
+	pkg.goFiles, err = b.parseCache.parseFiles(ctx, b.fset, parsego.Full, false, inputs.goFiles...)
 	if err != nil {
 		return nil, err
 	}
-	pkg.compiledGoFiles, err = b.parseCache.parseFiles(ctx, b.fset, ParseFull, false, inputs.compiledGoFiles...)
+	pkg.compiledGoFiles, err = b.parseCache.parseFiles(ctx, b.fset, parsego.Full, false, inputs.compiledGoFiles...)
 	if err != nil {
 		return nil, err
 	}
@@ -1670,12 +1671,12 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 
 	// Build an index of all imports in the package.
 	type fileImport struct {
-		cgf *ParsedGoFile
+		cgf *parsego.File
 		imp *ast.ImportSpec
 	}
 	allImports := map[string][]fileImport{}
 	for _, uri := range mp.CompiledGoFiles {
-		pgf, err := parseGoURI(ctx, snapshot, uri, ParseHeader)
+		pgf, err := parseGoURI(ctx, snapshot, uri, parsego.Header)
 		if err != nil {
 			return nil, err
 		}

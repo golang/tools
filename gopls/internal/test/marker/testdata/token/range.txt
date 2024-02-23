@@ -17,3 +17,13 @@ func F() { //@token("F", "function", "definition")
 	_ = x //@token("x", "variable", "")
 	_ = F //@token("F", "function", "")
 }
+
+func _() {
+	// A goto's label cannot be found by ascending the syntax tree.
+	goto loop //@ token("goto", "keyword", ""), token("loop", "label", "")
+
+loop: //@token("loop", "label", "definition")
+	for {
+		continue loop //@ token("continue", "keyword", ""), token("loop", "label", "")
+	}
+}

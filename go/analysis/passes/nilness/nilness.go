@@ -52,7 +52,7 @@ func runFunc(pass *analysis.Pass, fn *ssa.Function) {
 	// notNil reports an error if v is provably nil.
 	notNil := func(stack []fact, instr ssa.Instruction, v ssa.Value, descr string) {
 		if nilnessOf(stack, v) == isnil {
-			reportf("nilderef", instr.Pos(), "nil dereference in "+descr)
+			reportf("nilderef", instr.Pos(), descr)
 		}
 	}
 
@@ -77,29 +77,50 @@ func runFunc(pass *analysis.Pass, fn *ssa.Function) {
 				// A nil receiver may be okay for type params.
 				cc := instr.Common()
 				if !(cc.IsInvoke() && typeparams.IsTypeParam(cc.Value.Type())) {
-					notNil(stack, instr, cc.Value, cc.Description())
+					notNil(stack, instr, cc.Value, "nil dereference in "+cc.Description())
 				}
 			case *ssa.FieldAddr:
-				notNil(stack, instr, instr.X, "field selection")
+				notNil(stack, instr, instr.X, "nil dereference in field selection")
 			case *ssa.IndexAddr:
-				notNil(stack, instr, instr.X, "index operation")
+				switch typeparams.CoreType(instr.X.Type()).(type) {
+				case *types.Pointer: // *array
+					notNil(stack, instr, instr.X, "nil dereference in array index operation")
+				case *types.Slice:
+					// This is not necessarily a runtime error, because
+					// it is usually dominated by a bounds check.
+					if isRangeIndex(instr) {
+						notNil(stack, instr, instr.X, "range of nil slice")
+					} else {
+						notNil(stack, instr, instr.X, "index of nil slice")
+					}
+				}
 			case *ssa.MapUpdate:
-				notNil(stack, instr, instr.Map, "map update")
+				notNil(stack, instr, instr.Map, "nil dereference in map update")
+			case *ssa.Range:
+				// (Not a runtime error, but a likely mistake.)
+				notNil(stack, instr, instr.X, "range over nil map")
 			case *ssa.Slice:
 				// A nilcheck occurs in ptr[:] iff ptr is a pointer to an array.
-				if _, ok := instr.X.Type().Underlying().(*types.Pointer); ok {
-					notNil(stack, instr, instr.X, "slice operation")
+				if is[*types.Pointer](instr.X.Type().Underlying()) {
+					notNil(stack, instr, instr.X, "nil dereference in slice operation")
 				}
 			case *ssa.Store:
-				notNil(stack, instr, instr.Addr, "store")
+				notNil(stack, instr, instr.Addr, "nil dereference in store")
 			case *ssa.TypeAssert:
 				if !instr.CommaOk {
-					notNil(stack, instr, instr.X, "type assertion")
+					notNil(stack, instr, instr.X, "nil dereference in type assertion")
 				}
 			case *ssa.UnOp:
-				if instr.Op == token.MUL { // *X
-					notNil(stack, instr, instr.X, "load")
+				switch instr.Op {
+				case token.MUL: // *X
+					notNil(stack, instr, instr.X, "nil dereference in load")
+				case token.ARROW: // <-ch
+					// (Not a runtime error, but a likely mistake.)
+					notNil(stack, instr, instr.X, "receive from nil channel")
 				}
+			case *ssa.Send:
+				// (Not a runtime error, but a likely mistake.)
+				notNil(stack, instr, instr.Chan, "send to nil channel")
 			}
 		}
 
@@ -186,6 +207,42 @@ func runFunc(pass *analysis.Pass, fn *ssa.Function) {
 					visit(d, s)
 				}
 				return
+			}
+		}
+
+		// In code of the form:
+		//
+		// 	if ptr, ok := x.(*T); ok { ... } else { fsucc }
+		//
+		// the fsucc block learns that ptr == nil,
+		// since that's its zero value.
+		if If, ok := b.Instrs[len(b.Instrs)-1].(*ssa.If); ok {
+			// Handle "if ok" and "if !ok" variants.
+			cond, fsucc := If.Cond, b.Succs[1]
+			if unop, ok := cond.(*ssa.UnOp); ok && unop.Op == token.NOT {
+				cond, fsucc = unop.X, b.Succs[0]
+			}
+
+			// Match pattern:
+			//   t0 = typeassert (pointerlike)
+			//   t1 = extract t0 #0  // ptr
+			//   t2 = extract t0 #1  // ok
+			//   if t2 goto tsucc, fsucc
+			if extract1, ok := cond.(*ssa.Extract); ok && extract1.Index == 1 {
+				if assert, ok := extract1.Tuple.(*ssa.TypeAssert); ok &&
+					isNillable(assert.AssertedType) {
+					for _, pinstr := range *assert.Referrers() {
+						if extract0, ok := pinstr.(*ssa.Extract); ok &&
+							extract0.Index == 0 &&
+							extract0.Tuple == extract1.Tuple {
+							for _, d := range b.Dominees() {
+								if len(d.Preds) == 1 && d == fsucc {
+									visit(d, append(stack, fact{extract0, isnil}))
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 
@@ -359,4 +416,60 @@ func (ff facts) negate() facts {
 		nn[i] = f.negate()
 	}
 	return nn
+}
+
+func is[T any](x any) bool {
+	_, ok := x.(T)
+	return ok
+}
+
+func isNillable(t types.Type) bool {
+	switch t := typeparams.CoreType(t).(type) {
+	case *types.Pointer,
+		*types.Map,
+		*types.Signature,
+		*types.Chan,
+		*types.Interface,
+		*types.Slice:
+		return true
+	case *types.Basic:
+		return t == types.Typ[types.UnsafePointer]
+	}
+	return false
+}
+
+// isRangeIndex reports whether the instruction is a slice indexing
+// operation slice[i] within a "for range slice" loop. The operation
+// could be explicit, such as slice[i] within (or even after) the
+// loop, or it could be implicit, such as "for i, v := range slice {}".
+// (These cannot be reliably distinguished.)
+func isRangeIndex(instr *ssa.IndexAddr) bool {
+	// Here we reverse-engineer the go/ssa lowering of range-over-slice:
+	//
+	//      n = len(x)
+	//      jump loop
+	// loop:                                                "rangeindex.loop"
+	//      phi = φ(-1, incr) #rangeindex
+	//      incr = phi + 1
+	//      cond = incr < n
+	//      if cond goto body else done
+	// body:                                                "rangeindex.body"
+	//      instr = &x[incr]
+	//      ...
+	// done:
+	if incr, ok := instr.Index.(*ssa.BinOp); ok && incr.Op == token.ADD {
+		if b := incr.Block(); b.Comment == "rangeindex.loop" {
+			if If, ok := b.Instrs[len(b.Instrs)-1].(*ssa.If); ok {
+				if cond := If.Cond.(*ssa.BinOp); cond.X == incr && cond.Op == token.LSS {
+					if call, ok := cond.Y.(*ssa.Call); ok {
+						common := call.Common()
+						if blt, ok := common.Value.(*ssa.Builtin); ok && blt.Name() == "len" {
+							return common.Args[0] == instr.X
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
 }

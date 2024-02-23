@@ -82,6 +82,8 @@ type EditorConfig struct {
 	//
 	// Since this can only be set during initialization, changing this field via
 	// Editor.ChangeConfiguration has no effect.
+	//
+	// If empty, "fake.Editor" is used.
 	ClientName string
 
 	// Env holds environment variables to apply on top of the default editor
@@ -110,7 +112,13 @@ type EditorConfig struct {
 	FileAssociations map[string]string
 
 	// Settings holds user-provided configuration for the LSP server.
-	Settings map[string]interface{}
+	Settings map[string]any
+
+	// FolderSettings holds user-provided per-folder configuration, if any.
+	//
+	// It maps each folder (as a relative path to the sandbox workdir) to its
+	// configuration mapping (like Settings).
+	FolderSettings map[string]map[string]any
 
 	// CapabilitiesJSON holds JSON client capabilities to overlay over the
 	// editor's default client capabilities.
@@ -216,7 +224,7 @@ func (e *Editor) Client() *Client {
 }
 
 // makeSettings builds the settings map for use in LSP settings RPCs.
-func makeSettings(sandbox *Sandbox, config EditorConfig) map[string]interface{} {
+func makeSettings(sandbox *Sandbox, config EditorConfig, scopeURI *protocol.URI) map[string]any {
 	env := make(map[string]string)
 	for k, v := range sandbox.GoEnv() {
 		env[k] = v
@@ -229,7 +237,7 @@ func makeSettings(sandbox *Sandbox, config EditorConfig) map[string]interface{} 
 		env[k] = v
 	}
 
-	settings := map[string]interface{}{
+	settings := map[string]any{
 		"env": env,
 
 		// Use verbose progress reporting so that integration tests can assert on
@@ -248,20 +256,45 @@ func makeSettings(sandbox *Sandbox, config EditorConfig) map[string]interface{} 
 		settings[k] = v
 	}
 
+	// If the server is requesting configuration for a specific scope, apply
+	// settings for the nearest folder that has customized settings, if any.
+	if scopeURI != nil {
+		var (
+			scopePath       = protocol.DocumentURI(*scopeURI).Path()
+			closestDir      string         // longest dir with settings containing the scope, if any
+			closestSettings map[string]any // settings for that dir, if any
+		)
+		for relPath, settings := range config.FolderSettings {
+			dir := sandbox.Workdir.AbsPath(relPath)
+			if strings.HasPrefix(scopePath+string(filepath.Separator), dir+string(filepath.Separator)) && len(dir) > len(closestDir) {
+				closestDir = dir
+				closestSettings = settings
+			}
+		}
+		if closestSettings != nil {
+			for k, v := range closestSettings {
+				settings[k] = v
+			}
+		}
+	}
+
 	return settings
 }
 
 func (e *Editor) initialize(ctx context.Context) error {
 	config := e.Config()
 
-	params := &protocol.ParamInitialize{}
-	if e.config.ClientName != "" {
-		params.ClientInfo = &protocol.ClientInfo{
-			Name:    e.config.ClientName,
-			Version: "v1.0.0",
-		}
+	clientName := config.ClientName
+	if clientName == "" {
+		clientName = "fake.Editor"
 	}
-	params.InitializationOptions = makeSettings(e.sandbox, config)
+
+	params := &protocol.ParamInitialize{}
+	params.ClientInfo = &protocol.ClientInfo{
+		Name:    clientName,
+		Version: "v1.0.0",
+	}
+	params.InitializationOptions = makeSettings(e.sandbox, config, nil)
 	params.WorkspaceFolders = makeWorkspaceFolders(e.sandbox, config.WorkspaceFolders)
 
 	capabilities, err := clientCapabilities(config)
@@ -309,6 +342,8 @@ func clientCapabilities(cfg EditorConfig) (protocol.ClientCapabilities, error) {
 		"struct", "typeParameter", "parameter", "variable", "property", "enumMember",
 		"event", "function", "method", "macro", "keyword", "modifier", "comment",
 		"string", "number", "regexp", "operator",
+		// Additional types supported by this client:
+		"label",
 	}
 	capabilities.TextDocument.SemanticTokens.TokenModifiers = []string{
 		"declaration", "definition", "readonly", "static",

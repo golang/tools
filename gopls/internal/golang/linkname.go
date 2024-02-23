@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
@@ -102,7 +103,7 @@ func parseLinkname(m *protocol.Mapper, pos protocol.Position) (pkgPath, name str
 
 // findLinkname searches dependencies of packages containing fh for an object
 // with linker name matching the given package path and name.
-func findLinkname(ctx context.Context, snapshot *cache.Snapshot, pkgPath PackagePath, name string) (*cache.Package, *ParsedGoFile, token.Pos, error) {
+func findLinkname(ctx context.Context, snapshot *cache.Snapshot, pkgPath PackagePath, name string) (*cache.Package, *parsego.File, token.Pos, error) {
 	// Typically the linkname refers to a forward dependency
 	// or a reverse dependency, but in general it may refer
 	// to any package that is linked with this one.

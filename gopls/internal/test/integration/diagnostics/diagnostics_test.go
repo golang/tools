@@ -557,7 +557,7 @@ func f() {
 			// AdHoc views are not critical errors, but their missing import
 			// diagnostics should specifically mention GOROOT or GOPATH (and not
 			// modules).
-			NoOutstandingWork(nil),
+			NoOutstandingWork(IgnoreTelemetryPromptWork),
 			Diagnostics(
 				env.AtRegexp("a.go", `"mod.com`),
 				WithMessage("GOROOT or GOPATH"),

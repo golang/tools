@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -61,7 +62,9 @@ type (
 	diagMap = map[protocol.DocumentURI][]*cache.Diagnostic
 )
 
-// hashDiagnostics computes a hash to identify a diagnostic.
+// hashDiagnostic computes a hash to identify a diagnostic.
+// The hash is for deduplicating within a file,
+// so it need not incorporate d.URI.
 func hashDiagnostic(d *cache.Diagnostic) file.Hash {
 	h := sha256.New()
 	for _, t := range d.Tags {
@@ -175,7 +178,6 @@ func (s *server) diagnoseSnapshot(snapshot *cache.Snapshot, changedURIs []protoc
 	ctx, done := event.Start(ctx, "Server.diagnoseSnapshot", snapshot.Labels()...)
 	defer done()
 
-	allViews := s.session.Views()
 	if delay > 0 {
 		// 2-phase diagnostics.
 		//
@@ -204,7 +206,7 @@ func (s *server) diagnoseSnapshot(snapshot *cache.Snapshot, changedURIs []protoc
 				}
 				return
 			}
-			s.updateDiagnostics(ctx, allViews, snapshot, diagnostics, false)
+			s.updateDiagnostics(ctx, snapshot, diagnostics, false)
 		}
 
 		if delay < minDelay {
@@ -227,7 +229,7 @@ func (s *server) diagnoseSnapshot(snapshot *cache.Snapshot, changedURIs []protoc
 		}
 		return
 	}
-	s.updateDiagnostics(ctx, allViews, snapshot, diagnostics, true)
+	s.updateDiagnostics(ctx, snapshot, diagnostics, true)
 }
 
 func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snapshot, uris []protocol.DocumentURI) (diagMap, error) {
@@ -668,10 +670,7 @@ func (s *server) updateCriticalErrorStatus(ctx context.Context, snapshot *cache.
 
 // updateDiagnostics records the result of diagnosing a snapshot, and publishes
 // any diagnostics that need to be updated on the client.
-//
-// The allViews argument should be the current set of views present in the
-// session, for the purposes of trimming diagnostics produced by deleted views.
-func (s *server) updateDiagnostics(ctx context.Context, allViews []*cache.View, snapshot *cache.Snapshot, diagnostics diagMap, final bool) {
+func (s *server) updateDiagnostics(ctx context.Context, snapshot *cache.Snapshot, diagnostics diagMap, final bool) {
 	ctx, done := event.Start(ctx, "Server.publishDiagnostics")
 	defer done()
 
@@ -694,8 +693,13 @@ func (s *server) updateDiagnostics(ctx context.Context, allViews []*cache.View, 
 		return
 	}
 
+	// golang/go#65312: since the set of diagnostics depends on the set of views,
+	// we get the views *after* locking diagnosticsMu. This ensures that
+	// updateDiagnostics does not incorrectly delete diagnostics that have been
+	// set for an existing view that was created between the call to
+	// s.session.Views() and updateDiagnostics.
 	viewMap := make(viewSet)
-	for _, v := range allViews {
+	for _, v := range s.session.Views() {
 		viewMap[v] = unit{}
 	}
 
@@ -822,23 +826,25 @@ func (s *server) updateOrphanedFileDiagnostics(ctx context.Context, modID uint64
 //
 // If the publication succeeds, it updates f.publishedHash and f.mustPublish.
 func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet, uri protocol.DocumentURI, version int32, f *fileDiagnostics) error {
-	// Check that the set of views is up-to-date, and de-dupe diagnostics
-	// across views.
-	var (
-		diagHashes = make(map[file.Hash]unit) // unique diagnostic hashes
-		hash       file.Hash                  // XOR of diagnostic hashes
-		unique     []*cache.Diagnostic        // unique diagnostics
-	)
-	add := func(diag *cache.Diagnostic) {
-		h := hashDiagnostic(diag)
-		if _, ok := diagHashes[h]; !ok {
-			diagHashes[h] = unit{}
-			unique = append(unique, diag)
-			hash.XORWith(h)
-		}
+
+	// We add a disambiguating suffix (e.g. " [darwin,arm64]") to
+	// each diagnostic that doesn't occur in the default view;
+	// see golang/go#65496.
+	type diagSuffix struct {
+		diag   *cache.Diagnostic
+		suffix string // "" for default build (or orphans)
 	}
+
+	// diagSuffixes records the set of view suffixes for a given diagnostic.
+	diagSuffixes := make(map[file.Hash][]diagSuffix)
+	add := func(diag *cache.Diagnostic, suffix string) {
+		h := hashDiagnostic(diag)
+		diagSuffixes[h] = append(diagSuffixes[h], diagSuffix{diag, suffix})
+	}
+
+	// Construct the inverse mapping, from diagnostic (hash) to its suffixes (views).
 	for _, diag := range f.orphanedFileDiagnostics {
-		add(diag)
+		add(diag, "")
 	}
 	for view, viewDiags := range f.byView {
 		if _, ok := views[view]; !ok {
@@ -848,9 +854,52 @@ func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet
 		if viewDiags.version != version {
 			continue // a payload of diagnostics applies to a specific file version
 		}
-		for _, diag := range viewDiags.diagnostics {
-			add(diag)
+
+		// Compute the view's suffix (e.g. " [darwin,arm64]").
+		var suffix string
+		{
+			var words []string
+			if view.GOOS() != runtime.GOOS {
+				words = append(words, view.GOOS())
+			}
+			if view.GOARCH() != runtime.GOARCH {
+				words = append(words, view.GOARCH())
+			}
+			if len(words) > 0 {
+				suffix = fmt.Sprintf(" [%s]", strings.Join(words, ","))
+			}
 		}
+
+		for _, diag := range viewDiags.diagnostics {
+			add(diag, suffix)
+		}
+	}
+
+	// De-dup diagnostics across views by hash, and sort.
+	var (
+		hash   file.Hash
+		unique []*cache.Diagnostic
+	)
+	for h, items := range diagSuffixes {
+		// Sort the items by ascending suffix, so that the
+		// default view (if present) is first.
+		// (The others are ordered arbitrarily.)
+		sort.Slice(items, func(i, j int) bool {
+			return items[i].suffix < items[j].suffix
+		})
+
+		// If the diagnostic was not present in
+		// the default view, add the view suffix.
+		first := items[0]
+		if first.suffix != "" {
+			diag2 := *first.diag // shallow copy
+			diag2.Message += first.suffix
+			first.diag = &diag2
+			h = hashDiagnostic(&diag2) // update the hash
+		}
+
+		hash.XORWith(h)
+		unique = append(unique, first.diag)
 	}
 	sortDiagnostics(unique)
 

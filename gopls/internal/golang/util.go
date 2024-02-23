@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -33,7 +34,7 @@ func IsGenerated(ctx context.Context, snapshot *cache.Snapshot, uri protocol.Doc
 	if err != nil {
 		return false
 	}
-	pgf, err := snapshot.ParseGo(ctx, fh, ParseHeader)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Header)
 	if err != nil {
 		return false
 	}
@@ -110,30 +111,6 @@ func FormatNode(fset *token.FileSet, n ast.Node) string {
 func FormatNodeFile(file *token.File, n ast.Node) string {
 	fset := tokeninternal.FileSetFor(file)
 	return FormatNode(fset, n)
-}
-
-// Deref returns a pointer's element type, traversing as many levels as needed.
-// Otherwise it returns typ.
-//
-// It can return a pointer type for cyclic types (see golang/go#45510).
-func Deref(typ types.Type) types.Type {
-	var seen map[types.Type]struct{}
-	for {
-		p, ok := typ.Underlying().(*types.Pointer)
-		if !ok {
-			return typ
-		}
-		if _, ok := seen[p.Elem()]; ok {
-			return typ
-		}
-
-		typ = p.Elem()
-
-		if seen == nil {
-			seen = make(map[types.Type]struct{})
-		}
-		seen[typ] = struct{}{}
-	}
 }
 
 // findFileInDeps finds package metadata containing URI in the transitive

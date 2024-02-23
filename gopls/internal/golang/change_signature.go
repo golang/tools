@@ -246,7 +246,7 @@ type ParamInfo struct {
 }
 
 // FindParam finds the parameter information spanned by the given range.
-func FindParam(pgf *ParsedGoFile, rng protocol.Range) (*ParamInfo, error) {
+func FindParam(pgf *parsego.File, rng protocol.Range) (*ParamInfo, error) {
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
@@ -542,7 +542,7 @@ func remove[T any](s []T, i int) []T {
 // replaceFileDecl replaces old with new in the file described by pgf.
 //
 // TODO(rfindley): generalize, and combine with rewriteSignature.
-func replaceFileDecl(pgf *ParsedGoFile, old, new ast.Decl) ([]byte, error) {
+func replaceFileDecl(pgf *parsego.File, old, new ast.Decl) ([]byte, error) {
 	i := findDecl(pgf.File, old)
 	if i == -1 {
 		return nil, bug.Errorf("didn't find old declaration")

@@ -1,0 +1,17 @@
+This test verifies that gopls spreads initialization cycle errors across
+multiple declarations.
+
+We set -ignore_extra_diags due to golang/go#65877: gopls produces redundant
+diagnostics for initialization cycles.
+
+-- flags --
+-ignore_extra_diags
+
+-- p.go --
+package p
+
+var X = Y //@diag("X", re"initialization cycle")
+
+var Y = Z //@diag("Y", re"initialization cycle")
+
+var Z = X //@diag("Z", re"initialization cycle")

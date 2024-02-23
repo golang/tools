@@ -154,8 +154,10 @@ type viewDefinition struct {
 
 	// workspaceModFiles holds the set of mod files active in this snapshot.
 	//
-	// This is either empty, a single entry for the workspace go.mod file, or the
-	// set of mod files used by the workspace go.work file.
+	// For a go.work workspace, this is the set of workspace modfiles. For a
+	// go.mod workspace, this contains the go.mod file defining the workspace
+	// root, as well as any locally replaced modules (if
+	// "includeReplaceInWorkspace" is set).
 	//
 	// TODO(rfindley): should we just run `go list -m` to compute this set?
 	workspaceModFiles    map[protocol.DocumentURI]struct{}
@@ -763,6 +765,7 @@ func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
 // By far the most common of these is a change to file state, but a query of
 // module upgrade information or vulnerabilities also affects gopls' behavior.
 type StateChange struct {
+	Modifications  []file.Modification // if set, the raw modifications originating this change
 	Files          map[protocol.DocumentURI]file.Handle
 	ModuleUpgrades map[protocol.DocumentURI]map[string]string
 	Vulns          map[protocol.DocumentURI]*vulncheck.Result
@@ -938,6 +941,22 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 	// But gopls is less strict, allowing GOPATH mode if GO111MODULE="", and
 	// AdHoc views if no module is found.
 
+	// gomodWorkspace is a helper to compute the correct set of workspace
+	// modfiles for a go.mod file, based on folder options.
+	gomodWorkspace := func() map[protocol.DocumentURI]unit {
+		modFiles := map[protocol.DocumentURI]struct{}{def.gomod: {}}
+		if folder.Options.IncludeReplaceInWorkspace {
+			includingReplace, err := goModModules(ctx, def.gomod, fs)
+			if err == nil {
+				modFiles = includingReplace
+			} else {
+				// If the go.mod file fails to parse, we don't know anything about
+				// replace directives, so fall back to a view of just the root module.
+			}
+		}
+		return modFiles
+	}
+
 	// Prefer a go.work file if it is available and contains the module relevant
 	// to forURI.
 	if def.adjustedGO111MODULE() != "off" && folder.Env.GOWORK != "off" && def.gowork != "" {
@@ -958,7 +977,7 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 			if _, ok := def.workspaceModFiles[def.gomod]; !ok {
 				def.typ = GoModView
 				def.root = def.gomod.Dir()
-				def.workspaceModFiles = map[protocol.DocumentURI]unit{def.gomod: {}}
+				def.workspaceModFiles = gomodWorkspace()
 				if def.envOverlay == nil {
 					def.envOverlay = make(map[string]string)
 				}
@@ -977,7 +996,7 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 	if def.adjustedGO111MODULE() != "off" && def.gomod != "" {
 		def.typ = GoModView
 		def.root = def.gomod.Dir()
-		def.workspaceModFiles = map[protocol.DocumentURI]struct{}{def.gomod: {}}
+		def.workspaceModFiles = gomodWorkspace()
 		return def, nil
 	}
 
@@ -1098,43 +1117,6 @@ func loadGoEnv(ctx context.Context, dir string, configEnv []string, runner *goco
 	}
 
 	return nil
-}
-
-// findWorkspaceModFile searches for a single go.mod file relative to the given
-// folder URI, using the following algorithm:
-//  1. if there is a go.mod file in a parent directory, return it
-//  2. else, if there is exactly one nested module, return it
-//  3. else, return ""
-func findWorkspaceModFile(ctx context.Context, folderURI protocol.DocumentURI, fs file.Source, excludePath func(string) bool) (protocol.DocumentURI, error) {
-	match, err := findRootPattern(ctx, folderURI, "go.mod", fs)
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return "", ctxErr
-		}
-		return "", err
-	}
-	if match != "" {
-		return match, nil
-	}
-
-	// ...else we should check if there's exactly one nested module.
-	all, err := findModules(folderURI, excludePath, 2)
-	if err == errExhausted {
-		// Fall-back behavior: if we don't find any modules after searching 10000
-		// files, assume there are none.
-		event.Log(ctx, fmt.Sprintf("stopped searching for modules after %d files", fileLimit))
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	if len(all) == 1 {
-		// range to access first element.
-		for uri := range all {
-			return uri, nil
-		}
-	}
-	return "", nil
 }
 
 // findRootPattern looks for files with the given basename in dir or any parent

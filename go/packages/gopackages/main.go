@@ -104,6 +104,7 @@ func (app *application) Run(ctx context.Context, args ...string) error {
 	default:
 		return tool.CommandLineErrorf("invalid mode: %s", app.Mode)
 	}
+	cfg.Mode |= packages.NeedModule
 
 	lpkgs, err := packages.Load(cfg, args...)
 	if err != nil {
@@ -162,6 +163,9 @@ func (app *application) print(lpkg *packages.Package) {
 		kind += "package"
 	}
 	fmt.Printf("Go %s %q:\n", kind, lpkg.ID) // unique ID
+	if mod := lpkg.Module; mod != nil {
+		fmt.Printf("\tmodule %s@%s\n", mod.Path, mod.Version)
+	}
 	fmt.Printf("\tpackage %s\n", lpkg.Name)
 
 	// characterize type info
