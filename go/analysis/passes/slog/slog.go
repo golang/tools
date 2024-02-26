@@ -49,6 +49,7 @@ const (
 )
 
 func run(pass *analysis.Pass) (any, error) {
+	var attrType types.Type // The type of slog.Attr
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
@@ -67,6 +68,11 @@ func run(pass *analysis.Pass) (any, error) {
 			// Not a slog function that takes key-value pairs.
 			return
 		}
+		// Here we know that fn.Pkg() is "log/slog".
+		if attrType == nil {
+			attrType = fn.Pkg().Scope().Lookup("Attr").Type()
+		}
+
 		if isMethodExpr(pass.TypesInfo, call) {
 			// Call is to a method value. Skip the first argument.
 			skipArgs++
@@ -92,8 +98,19 @@ func run(pass *analysis.Pass) (any, error) {
 					pos = key
 				case types.IsInterface(t):
 					// As we do not do dataflow, we do not know what the dynamic type is.
-					// It could be a string or an Attr so we don't know what to expect next.
-					pos = unknown
+					// But we might be able to learn enough to make a decision.
+					if types.AssignableTo(stringType, t) {
+						// t must be an empty interface. So it can also be an Attr.
+						// We don't know enough to make an assumption.
+						pos = unknown
+						continue
+					} else if attrType != nil && types.AssignableTo(attrType, t) {
+						// Assume it is an Attr.
+						pos = key
+						continue
+					}
+					// Can't be either a string or Attr. Definitely an error.
+					fallthrough
 				default:
 					if unknownArg == nil {
 						pass.ReportRangef(arg, "%s arg %q should be a string or a slog.Attr (possible missing key or value)",
