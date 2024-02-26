@@ -873,7 +873,7 @@ func objectString(obj types.Object, qf types.Qualifier, declPos token.Pos, file 
 		case *types.Named:
 			// Try to add a formatted duration as an inline comment.
 			pkg := typ.Obj().Pkg()
-			if pkg.Path() == "time" && typ.Obj().Name() == "Duration" {
+			if pkg.Path() == "time" && typ.Obj().Name() == "Duration" && obj.Val().Kind() == constant.Int {
 				if d, ok := constant.Int64Val(obj.Val()); ok {
 					comment = time.Duration(d).String()
 				}

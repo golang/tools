@@ -89,7 +89,8 @@ func checkLongShift(pass *analysis.Pass, node ast.Node, x, y ast.Expr) {
 	if v == nil {
 		return
 	}
-	amt, ok := constant.Int64Val(v)
+	u := constant.ToInt(v) // either an Int or Unknown
+	amt, ok := constant.Int64Val(u)
 	if !ok {
 		return
 	}
