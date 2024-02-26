@@ -1,101 +1,130 @@
 # Setting up your workspace
 
+**In general, `gopls` should work when you open a Go file contained in your
+workspace folder**. If it isn't working for you, or if you want to better
+understand how gopls models your workspace, please read on.
+
+## Workspace builds
+
 `gopls` supports both Go module and GOPATH modes. However, it needs a defined
 scope in which language features like references, rename, and implementation
-should operate.
+should operate. Put differently, gopls needs to infer which `go build`
+invocations you would use to build your workspace, including the working
+directory, environment, and build flags.
 
-The following options are available for configuring this scope:
+Starting with `gopls@v0.15.0`, gopls will try to guess the builds you are
+working on based on the set of open files. When you open a file in a workspace
+folder, gopls will check whether the file is contained in a module, `go.work`
+workspace, or GOPATH directory, and configure the build accordingly.
+Additionally, if you open a file that is constrained to a different operating
+system or architecture, for example opening `foo_windows.go` when working on
+Linux, gopls will create a scope with `GOOS` and `GOARCH` set to a value that
+matches the file.
 
-## Module mode
+For example, suppose we had a repository with three modules: `moda`, `modb`,
+and `modc`, and a `go.work` file using modules `moda` and `modb`. If we open
+the files `moda/a.go`, `modb/b.go`, `moda/a_windows.go`, and `modc/c.go`, gopls
+will automatically create three builds:
 
-### One module
+![Zero Config gopls](zeroconfig.png)
 
-If you are working with a single module, you can open the module root (the
-directory containing the `go.mod` file), a subdirectory within the module,
-or a parent directory containing the module.
+This allows `gopls` to _just work_ when you open a Go file, but it does come with
+several caveats:
 
-**Note**: If you open a parent directory containing a module, it must **only**
-contain that single module. Otherwise, you are working with multiple modules.
+- This causes gopls to do more work, since it is now tracking three builds
+  instead of one. However, the recent
+  [scalability redesign](https://go.dev/blog/gopls-scalability)
+  allows much of this work to be avoided through efficient caching.
+- In some cases this may cause gopls to do more work, since gopls is now
+  tracking three builds instead of one. However, the recent
+  [scalability redesign](https://go.dev/blog/gopls-scalability) allows us
+  to avoid most of this work by efficient caching.
+- For operations originating from a given file, including finding references
+  and implementations, gopls executes the operation in
+  _the default build for that file_. For example, finding references to
+  a symbol `S` from `foo_linux.go` will return references from the Linux build,
+  and finding references to the same symbol `S` from `foo_windows.go` will
+  return references from the Windows build. This is done for performance
+  reasons, as in the common case one build is sufficient, but may lead to
+  surprising results. Issues [#65757](https://go.dev/issue/65757) and
+  [#65755](https://go.dev/issue/65755) propose improvements to this behavior.
+- When selecting a `GOOS/GOARCH` combination to match a build-constrained file,
+  `gopls` will choose the first matching combination from
+  [this list](https://cs.opensource.google/go/x/tools/+/master:gopls/internal/cache/port.go;l=30;drc=f872b3d6f05822d290bc7bdd29db090fd9d89f5c).
+  In some cases, that may be surprising.
+- When working in a `GOOS/GOARCH` constrained file that does not match your
+  default toolchain, `CGO_ENABLED=0` is implicitly set. This means that `gopls`
+  will not work in files including `import "C"`. Issue
+  [#65758](https://go.dev/issue/65758) may lead to improvements in this
+  behavior.
+- `gopls` is not able to guess build flags that include arbitrary user-defined
+  build constraints. For example, if you are trying to work on a file that is
+  constrained by the build directive `//go:build special`, gopls will not guess
+  that it needs to create a build with `"buildFlags": ["-tags=special"]`. Issue
+  [#65089](https://go.dev/issue/65089) proposes a heuristic by which gopls
+  could handle this automatically.
 
-### Multiple modules
+We hope that you provide feedback on this behavior by upvoting or commenting
+the issues mentioned above, or opening a [new issue](https://go.dev/issue/new)
+for other improvements you'd like to see.
 
-Gopls has several alternatives for working on multiple modules simultaneously,
-described below. Starting with Go 1.18, Go workspaces are the preferred solution.
-
-#### Go workspaces (Go 1.18+)
+## When to use a `go.work` file for development
 
 Starting with Go 1.18, the `go` command has native support for multi-module
-workspaces, via [`go.work`](https://go.dev/ref/mod#workspaces) files. These
-files are recognized by gopls starting with `gopls@v0.8.0`.
+workspaces, via [`go.work`](https://go.dev/ref/mod#workspaces) files. `gopls`
+will recognize these files if they are present in your workspace.
 
-The easiest way to work on multiple modules in Go 1.18 and later is therefore
-to create a `go.work` file containing the modules you wish to work on, and set
-your workspace root to the directory containing the `go.work` file.
+Use a `go.work` file when:
 
-For example, suppose this repo is checked out into the `$WORK/tools` directory.
-We can work on both `golang.org/x/tools` and `golang.org/x/tools/gopls`
-simultaneously by creating a `go.work` file using `go work init`, followed by
-`go work use MODULE_DIRECTORIES...` to add directories containing `go.mod` files to the
-workspace:
+- You want to work on multiple modules simultaneously in a single logical
+  build, for example if you want changes to one module to be reflected in
+  another.
+- You want to improve `gopls'` memory usage or performance by reducing the number
+  of builds it must track.
+- You want `gopls` to know which modules you are working on in a multi-module
+  workspace, without opening any files. For example, if you want to use
+  `workspace/symbol` queries before any files are open.
+- You are using `gopls@v0.14.2` or earlier, and want to work on multiple
+  modules.
+
+For example, suppose this repo is checked out into the `$WORK/tools` directory,
+and [`x/mod`](https://pkg.go.dev/golang.org/x/mod) is checked out into
+`$WORK/mod`, and you are working on a new `x/mod` API for editing `go.mod`
+files that you want to simultaneously integrate into `gopls`.
+
+You can work on both `golang.org/x/tools/gopls` and `golang.org/x/mod`
+simultaneously by creating a `go.work` file:
 
 ```sh
 cd $WORK
 go work init
-go work use ./tools/ ./tools/gopls/
+go work use tools/gopls mod
 ```
 
-...followed by opening the `$WORK` directory in our editor.
+...followed by opening the `$WORK` directory in your editor.
 
-#### DEPRECATED: Experimental workspace module (Go 1.17 and earlier)
+## When to manually configure `GOOS`, `GOARCH`, or `-tags`
 
-**This feature is deprecated and will be removed in future versions of gopls.
-Please see [issue #52897](https://go.dev/issue/52897) for additional
-information.**
+As described in the first section, `gopls@v0.15.0` and later will try to
+configure a new build scope automatically when you open a file that doesn't
+match the system default operating system (`GOOS`) or architecture (`GOARCH`).
 
-With earlier versions of Go, `gopls` can simulate multi-module workspaces by
-creating a synthetic module requiring the modules in the workspace root.
-See [the design document](https://github.com/golang/proposal/blob/master/design/37720-gopls-workspaces.md)
-for more information.
+However, per the caveats listed in that section, this automatic behavior comes
+with limitations. Customize your `gopls` environment by setting `GOOS` or
+`GOARCH` in your
+[`"build.env"`](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#env-mapstringstring)
+or `-tags=...` in your"
+["build.buildFlags"](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#buildflags-string)
+when:
 
-This feature is experimental, and will eventually be removed once `go.work`
-files are accepted by all supported Go versions.
+- You want to modify the default build environment.
+- `gopls` is not guessing the `GOOS/GOARCH` combination you want to use for
+  cross platform development.
+- You need to work on a file that is constrained by a user-defined build tags,
+  such as the build directive `//go:build special`.
 
-You can enable this feature by configuring the
-[experimentalWorkspaceModule](settings.md#experimentalworkspacemodule-bool)
-setting.
+## GOPATH mode
 
-#### Multiple workspace folders
-
-If neither of the above solutions work, and your editor allows configuring the
-set of
-["workspace folders"](https://microsoft.github.io/language-server-protocol/specifications/specification-3-17/#workspaceFolder)
-used during your LSP session, you can still work on multiple modules by adding
-a workspace folder at each module root (the locations of `go.mod` files). This
-means that each module has its own scope, and features will not work across
-modules. 
-
-In VS Code, you can create a workspace folder by setting up a
-[multi-root workspace](https://code.visualstudio.com/docs/editor/multi-root-workspaces).
-View the [documentation for your editor plugin](../README.md#editor) to learn how to
-configure a workspace folder in your editor.
-
-### GOPATH mode
-
-When opening a directory within your GOPATH, the workspace scope will be just
-that directory.
-
-### At your own risk
-
-Some users or companies may have projects that encompass one `$GOPATH`. If you
-open your entire `$GOPATH` or `$GOPATH/src` folder, the workspace scope will be
-your entire `GOPATH`. If your GOPATH is large, `gopls` to be very slow to start
-because it will try to find all of the Go files in the directory you have
-opened. It will then load all of the files it has found.
-
-To work around this case, you can create a new `$GOPATH` that contains only the
-packages you want to work on.
-
----
-
-If you have additional use cases that are not mentioned above, please
-[file a new issue](https://github.com/golang/go/issues/new).
+When opening a directory within your `GOPATH`, the workspace scope will be just
+that directory and all directories contained within it. Note that opening
+a large GOPATH directory can make gopls very slow to start.
