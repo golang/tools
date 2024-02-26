@@ -11,7 +11,7 @@ require (
 	golang.org/x/telemetry v0.0.0-20240228155512-f48c80bd79b2
 	golang.org/x/text v0.14.0
 	golang.org/x/tools v0.18.0
-	golang.org/x/vuln v1.0.1
+	golang.org/x/vuln v1.0.4
 	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.4.7
 	mvdan.cc/gofumpt v0.6.0
