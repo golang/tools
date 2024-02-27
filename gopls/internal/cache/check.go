@@ -1823,6 +1823,12 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget 
 				// report.
 				continue
 			}
+
+			// Invariant: both start and end are IsValid.
+			if !end.IsValid() {
+				panic("end is invalid")
+			}
+
 			posn := safetoken.StartPosition(e.Fset, start)
 			if !posn.IsValid() {
 				// All valid positions produced by the type checker should described by
@@ -1848,10 +1854,34 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget 
 				}
 				continue
 			}
-			if !end.IsValid() || end == start {
+
+			// debugging #65960
+			//
+			// At this point, we know 'start' IsValid, and
+			// StartPosition(start) worked (with e.Fset).
+			//
+			// If the asserted condition is true, 'start'
+			// is also in range for pgf.Tok, which means
+			// the PosRange failure must be caused by 'end'.
+			if pgf.Tok != e.Fset.File(start) {
+				bug.Reportf("internal error: inconsistent token.Files for pos")
+			}
+
+			if end == start {
 				// Expand the end position to a more meaningful span.
 				end = analysisinternal.TypeErrorEndPos(e.Fset, pgf.Src, start)
+
+				// debugging #65960
+				if _, err := safetoken.Offset(pgf.Tok, end); err != nil {
+					bug.Reportf("TypeErrorEndPos returned invalid end: %v", err)
+				}
+			} else {
+				// debugging #65960
+				if _, err := safetoken.Offset(pgf.Tok, end); err != nil {
+					bug.Reportf("ReadGo116ErrorData returned invalid end: %v", err)
+				}
 			}
+
 			rng, err := pgf.Mapper.PosRange(pgf.Tok, start, end)
 			if err != nil {
 				bug.Reportf("internal error: could not compute pos to range for %v: %v", e, err)
