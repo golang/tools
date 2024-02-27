@@ -232,45 +232,47 @@ findEnclosingFunc:
 				}
 			}
 
-			// Scan fields, either adding highlights according to the highlightIndexes
-			// computed above, or accounting for the cursor position within the result
-			// list.
-			// (We do both at once to avoid repeating the cumbersome field traversal.)
-			i := 0
-		findField:
-			for _, field := range funcType.Results.List {
-				for j, name := range field.Names {
-					if inNode(name) || highlightIndexes[i+j] {
-						result[posRange{name.Pos(), name.End()}] = unit{}
-						highlightIndexes[i+j] = true
-						break findField // found/highlighted the specific name
-					}
-				}
-				// If the cursor is in a field but not in a name (e.g. in the space, or
-				// the type), highlight the whole field.
-				//
-				// Note that this may not be ideal if we're at e.g.
-				//
-				//  (x,‸y int, z int8)
-				//
-				// ...where it would make more sense to highlight only y. But we don't
-				// reach this function if not in a func, return, ident, or basiclit.
-				if inNode(field) || highlightIndexes[i] {
-					result[posRange{field.Pos(), field.End()}] = unit{}
-					highlightIndexes[i] = true
-					if inNode(field) {
-						for j := range field.Names {
+			if funcType.Results != nil {
+				// Scan fields, either adding highlights according to the highlightIndexes
+				// computed above, or accounting for the cursor position within the result
+				// list.
+				// (We do both at once to avoid repeating the cumbersome field traversal.)
+				i := 0
+			findField:
+				for _, field := range funcType.Results.List {
+					for j, name := range field.Names {
+						if inNode(name) || highlightIndexes[i+j] {
+							result[posRange{name.Pos(), name.End()}] = unit{}
 							highlightIndexes[i+j] = true
+							break findField // found/highlighted the specific name
 						}
 					}
-					break findField // found/highlighted the field
-				}
+					// If the cursor is in a field but not in a name (e.g. in the space, or
+					// the type), highlight the whole field.
+					//
+					// Note that this may not be ideal if we're at e.g.
+					//
+					//  (x,‸y int, z int8)
+					//
+					// ...where it would make more sense to highlight only y. But we don't
+					// reach this function if not in a func, return, ident, or basiclit.
+					if inNode(field) || highlightIndexes[i] {
+						result[posRange{field.Pos(), field.End()}] = unit{}
+						highlightIndexes[i] = true
+						if inNode(field) {
+							for j := range field.Names {
+								highlightIndexes[i+j] = true
+							}
+						}
+						break findField // found/highlighted the field
+					}
 
-				n := len(field.Names)
-				if n == 0 {
-					n = 1
+					n := len(field.Names)
+					if n == 0 {
+						n = 1
+					}
+					i += n
 				}
-				i += n
 			}
 		}
 	}
