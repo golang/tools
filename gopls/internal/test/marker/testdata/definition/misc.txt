@@ -1,10 +1,5 @@
 This test exercises miscellaneous definition and hover requests.
 
-Requires go1.19+ for the new go/doc/comment package.
-
--- flags --
--min_go=go1.19
-
 -- go.mod --
 module mod.com
 

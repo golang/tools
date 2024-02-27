@@ -94,10 +94,8 @@ func BenchmarkMatchingPreferredPorts(b *testing.B) {
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !windows && !plan9
-// +build !windows,!plan9
-
-// TODO(adonovan): use 'unix' tag when go1.19 can be assumed.
+//go:build unix
+// +build unix
 
 package robustio
 

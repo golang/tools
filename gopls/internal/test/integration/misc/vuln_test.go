@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.18
-// +build go1.18
-
 package misc
 
 import (
@@ -167,7 +164,7 @@ func TestRunGovulncheckStd(t *testing.T) {
 -- go.mod --
 module mod.com
 
-go 1.18
+go 1.19
 -- main.go --
 package main
 
@@ -192,9 +189,9 @@ func main() {
 			// Let the analyzer read vulnerabilities data from the testdata/vulndb.
 			"GOVULNDB": db.URI(),
 			// When fetchinging stdlib package vulnerability info,
-			// behave as if our go version is go1.18 for this testing.
+			// behave as if our go version is go1.19 for this testing.
 			// The default behavior is to run `go env GOVERSION` (which isn't mutable env var).
-			cache.GoVersionForVulnTest:        "go1.18",
+			cache.GoVersionForVulnTest:        "go1.19",
 			"_GOPLS_TEST_BINARY_RUN_AS_GOPLS": "true", // needed to run `gopls vulncheck`.
 		},
 		Settings{

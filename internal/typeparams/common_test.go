@@ -11,7 +11,6 @@ import (
 	"go/types"
 	"testing"
 
-	"golang.org/x/tools/internal/testenv"
 	. "golang.org/x/tools/internal/typeparams"
 )
 
@@ -41,7 +40,6 @@ func TestGetIndexExprData(t *testing.T) {
 }
 
 func TestOriginMethodRecursive(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
 	src := `package p
 
 type N[A any] int
@@ -113,7 +111,6 @@ func (r *N[C]) n() { }
 }
 
 func TestOriginMethodUses(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
 
 	tests := []string{
 		`type T interface { m() }; func _(t T) { t.m() }`,
@@ -209,8 +206,6 @@ func TestOriginMethod60628(t *testing.T) {
 }
 
 func TestGenericAssignableTo(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	tests := []struct {
 		src  string
 		want bool

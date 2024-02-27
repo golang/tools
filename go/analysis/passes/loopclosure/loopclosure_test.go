@@ -33,8 +33,6 @@ func TestVersions22(t *testing.T) {
 }
 
 func TestVersions18(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	testfile := filepath.Join(analysistest.TestData(), "src", "versions", "go18.txtar")
 	runTxtarFile(t, testfile, loopclosure.Analyzer, "golang.org/fake/versions")
 }

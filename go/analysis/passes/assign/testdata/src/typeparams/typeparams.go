@@ -4,8 +4,6 @@
 
 // This file contains tests for the useless-assignment checker.
 
-//go:build go1.18
-
 package testdata
 
 import "math/rand"

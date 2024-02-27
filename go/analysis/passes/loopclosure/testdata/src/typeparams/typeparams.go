@@ -5,7 +5,7 @@
 // This file contains legacy tests for the loopclosure checker for GoVersion <go1.22.
 // Expectations are incorrect after go1.22.
 
-//go:build go1.18
+//go:build go1.19
 
 package typeparams
 

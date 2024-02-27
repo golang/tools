@@ -4,9 +4,6 @@
 
 // Derived from go/internal/gcimporter/ureader.go
 
-//go:build go1.18
-// +build go1.18
-
 package gcimporter
 
 import (

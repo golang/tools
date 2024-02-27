@@ -230,19 +230,14 @@ func Test(t *testing.T) {
 				if err := os.WriteFile(filename, formatted, 0644); err != nil {
 					t.Error(err)
 				}
-			} else {
-				// On go 1.19 and later, verify that the testdata has not changed.
-				//
-				// On earlier Go versions, the golden test data varies due to different
-				// markdown escaping.
+			} else if !t.Failed() {
+				// Verify that the testdata has not changed.
 				//
 				// Only check this if the test hasn't already failed, otherwise we'd
 				// report duplicate mismatches of golden data.
-				if testenv.Go1Point() >= 19 && !t.Failed() {
-					// Otherwise, verify that formatted content matches.
-					if diff := compare.NamedText("formatted", "on-disk", string(formatted), string(test.content)); diff != "" {
-						t.Errorf("formatted test does not match on-disk content:\n%s", diff)
-					}
+				// Otherwise, verify that formatted content matches.
+				if diff := compare.NamedText("formatted", "on-disk", string(formatted), string(test.content)); diff != "" {
+					t.Errorf("formatted test does not match on-disk content:\n%s", diff)
 				}
 			}
 		})

@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !go1.19
-// +build !go1.19
-
 package golang
 
 import "go/types"
@@ -13,14 +10,21 @@ import "go/types"
 // with the same origin as the provided obj (which may be a synthetic object
 // created during instantiation).
 func containsOrigin(objSet map[types.Object]bool, obj types.Object) bool {
-	if obj == nil {
-		return objSet[obj]
-	}
-	// In Go 1.18, we can't use the types.Var.Origin and types.Func.Origin methods.
+	objOrigin := origin(obj)
 	for target := range objSet {
-		if target.Pkg() == obj.Pkg() && target.Pos() == obj.Pos() && target.Name() == obj.Name() {
+		if origin(target) == objOrigin {
 			return true
 		}
 	}
 	return false
+}
+
+func origin(obj types.Object) types.Object {
+	switch obj := obj.(type) {
+	case *types.Var:
+		return obj.Origin()
+	case *types.Func:
+		return obj.Origin()
+	}
+	return obj
 }

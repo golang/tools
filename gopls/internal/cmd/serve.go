@@ -14,11 +14,11 @@ import (
 	"os"
 	"time"
 
+	"golang.org/x/telemetry/upload"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/internal/fakenet"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/tool"
@@ -78,7 +78,8 @@ func (s *Serve) remoteArgs(network, address string) []string {
 // Run configures a server based on the flags, and then runs it.
 // It blocks until the server shuts down.
 func (s *Serve) Run(ctx context.Context, args ...string) error {
-	telemetry.Upload()
+	// TODO(adonovan): eliminate this once telemetry.Start has this effect.
+	go upload.Run(nil) // start telemetry uploader
 
 	if len(args) > 0 {
 		return tool.CommandLineErrorf("server does not take arguments, got %v", args)

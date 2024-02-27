@@ -68,7 +68,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
 )
@@ -347,8 +346,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 	var declObjPath objectpath.Path
 	if obj.Exported() {
 		// objectpath.For requires the origin of a generic function or type, not an
-		// instantiation (a bug?). Unfortunately we can't call Func.Origin as this
-		// is not available in go/types@go1.18. So we take a scenic route.
+		// instantiation (a bug?).
 		//
 		// Note that unlike Funcs, TypeNames are always canonical (they are "left"
 		// of the type parameters, unlike methods).
@@ -360,7 +358,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 				goto skipObjectPath
 			}
 		case *types.Func:
-			obj = funcOrigin(obj.(*types.Func))
+			obj = obj.(*types.Func).Origin()
 		case *types.Var:
 			// TODO(adonovan): do vars need the origin treatment too? (issue #58462)
 
@@ -449,23 +447,6 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 	// Apply the renaming to the (initial) object.
 	declPkgPath := PackagePath(obj.Pkg().Path())
 	return renameExported(pkgs, declPkgPath, declObjPath, newName)
-}
-
-// funcOrigin is a go1.18-portable implementation of (*types.Func).Origin.
-func funcOrigin(fn *types.Func) *types.Func {
-	// Method?
-	if fn.Type().(*types.Signature).Recv() != nil {
-		return typeparams.OriginMethod(fn)
-	}
-
-	// Package-level function?
-	// (Assume the origin has the same position.)
-	gen := fn.Pkg().Scope().Lookup(fn.Name())
-	if gen != nil && gen.Pos() == fn.Pos() {
-		return gen.(*types.Func)
-	}
-
-	return fn
 }
 
 // typeCheckReverseDependencies returns the type-checked packages for

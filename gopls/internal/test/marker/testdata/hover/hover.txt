@@ -1,10 +1,5 @@
 This test demonstrates some features of the new marker test runner.
 
-Requires go1.19+ for the new go/doc/comment package.
-
--- flags --
--min_go=go1.19
-
 -- a.go --
 package a
 

@@ -1,10 +1,5 @@
 This test checks gopls behavior when hovering over basic literals.
 
-Requires go1.19+ for the new go/doc/comment package.
-
--- flags --
--min_go=go1.19
-
 -- basiclit.go --
 package basiclit
 

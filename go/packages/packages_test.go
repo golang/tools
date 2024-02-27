@@ -2444,9 +2444,6 @@ func testIssue37098(t *testing.T, exporter packagestest.Exporter) {
 	// causes C++ sources to be inadvertently included in
 	// (*Package).CompiledGoFiles.
 
-	// This is fixed in Go 1.17, but not earlier.
-	testenv.NeedsGo1Point(t, 17)
-
 	if _, err := exec.LookPath("swig"); err != nil {
 		t.Skip("skipping test: swig not available")
 	}

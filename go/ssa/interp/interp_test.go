@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// This test fails at Go 1.18 due to infinite recursion in go/types.
-
-//go:build go1.19
-
 package interp_test
 
 // This test runs the SSA interpreter over sample Go programs.

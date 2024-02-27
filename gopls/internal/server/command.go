@@ -21,6 +21,7 @@ import (
 	"sync"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
@@ -32,7 +33,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
@@ -80,7 +80,13 @@ func (*commandHandler) AddTelemetryCounters(_ context.Context, args command.AddT
 		return fmt.Errorf("Names and Values must have the same length")
 	}
 	// invalid counter update requests will be silently dropped. (no audience)
-	telemetry.AddForwardedCounters(args.Names, args.Values)
+	for i, n := range args.Names {
+		v := args.Values[i]
+		if n == "" || v < 0 {
+			continue
+		}
+		counter.Add("fwd/"+n, v)
+	}
 	return nil
 }
 

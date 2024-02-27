@@ -11,7 +11,6 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/build"
 	"go/constant"
 	goimporter "go/importer"
 	goparser "go/parser"
@@ -165,8 +164,7 @@ func TestImportTypeparamTests(t *testing.T) {
 		t.Skipf("in short mode, skipping test that requires export data for all of std")
 	}
 
-	testenv.NeedsGo1Point(t, 18) // requires generics
-	testenv.NeedsGoBuild(t)      // to find stdlib export data in the build cache
+	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 
 	// This package only handles gc export data.
 	if runtime.Compiler != "gc" {
@@ -404,18 +402,6 @@ var importedObjectTests = []struct {
 	{"io.ReadWriter", "type ReadWriter interface{Reader; Writer}"},
 	{"go/ast.Node", "type Node interface{End() go/token.Pos; Pos() go/token.Pos}"},
 	{"go/types.Type", "type Type interface{String() string; Underlying() Type}"},
-}
-
-// TODO(rsc): Delete this init func after x/tools no longer needs to test successfully with Go 1.17.
-func init() {
-	if build.Default.ReleaseTags[len(build.Default.ReleaseTags)-1] <= "go1.17" {
-		for i := range importedObjectTests {
-			if importedObjectTests[i].name == "context.Context" {
-				// Expand any to interface{}.
-				importedObjectTests[i].want = "type Context interface{Deadline() (deadline time.Time, ok bool); Done() <-chan struct{}; Err() error; Value(key interface{}) interface{}}"
-			}
-		}
-	}
 }
 
 func TestImportedTypes(t *testing.T) {
@@ -739,8 +725,6 @@ func TestIssue25301(t *testing.T) {
 }
 
 func TestIssue51836(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // requires generics
-
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
 
@@ -770,8 +754,6 @@ func TestIssue51836(t *testing.T) {
 }
 
 func TestIssue61561(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // requires generics
-
 	const src = `package p
 
 type I[P any] interface {
@@ -836,8 +818,6 @@ type K = StillBad[string]
 }
 
 func TestIssue57015(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // requires generics
-
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
 

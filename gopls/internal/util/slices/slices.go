@@ -6,14 +6,14 @@ package slices
 
 // Clone returns a copy of the slice.
 // The elements are copied using assignment, so this is a shallow clone.
-// TODO(rfindley): use go1.19 slices.Clone.
+// TODO(rfindley): use go1.21 slices.Clone.
 func Clone[S ~[]E, E any](s S) S {
 	// The s[:0:0] preserves nil in case it matters.
 	return append(s[:0:0], s...)
 }
 
 // Contains reports whether x is present in slice.
-// TODO(adonovan): use go1.19 slices.Contains.
+// TODO(adonovan): use go1.21 slices.Contains.
 func Contains[S ~[]E, E comparable](slice S, x E) bool {
 	for _, elem := range slice {
 		if elem == x {
@@ -25,7 +25,7 @@ func Contains[S ~[]E, E comparable](slice S, x E) bool {
 
 // IndexFunc returns the first index i satisfying f(s[i]),
 // or -1 if none do.
-// TODO(adonovan): use go1.19 slices.IndexFunc.
+// TODO(adonovan): use go1.21 slices.IndexFunc.
 func IndexFunc[S ~[]E, E any](s S, f func(E) bool) int {
 	for i := range s {
 		if f(s[i]) {
@@ -37,7 +37,7 @@ func IndexFunc[S ~[]E, E any](s S, f func(E) bool) int {
 
 // ContainsFunc reports whether at least one
 // element e of s satisfies f(e).
-// TODO(adonovan): use go1.19 slices.ContainsFunc.
+// TODO(adonovan): use go1.21 slices.ContainsFunc.
 func ContainsFunc[S ~[]E, E any](s S, f func(E) bool) bool {
 	return IndexFunc(s, f) >= 0
 }
@@ -63,7 +63,7 @@ func Concat[S ~[]E, E any](slices ...S) S {
 // another n elements. After Grow(n), at least n elements can be appended
 // to the slice without another allocation. If n is negative or too large to
 // allocate the memory, Grow panics.
-// TODO(rfindley): use go1.19 slices.Grow.
+// TODO(rfindley): use go1.21 slices.Grow.
 func Grow[S ~[]E, E any](s S, n int) S {
 	if n < 0 {
 		panic("cannot be negative")

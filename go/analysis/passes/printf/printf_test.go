@@ -9,12 +9,9 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/printf"
-	"golang.org/x/tools/internal/testenv"
 )
 
 func Test(t *testing.T) {
-	testenv.NeedsGo1Point(t, 19) // tests use fmt.Appendf
-
 	testdata := analysistest.TestData()
 	printf.Analyzer.Flags.Set("funcs", "Warn,Warnf")
 

@@ -16,6 +16,11 @@ func Test(t *testing.T) {
 	analysistest.Run(t, testdata, nilness.Analyzer, "a")
 }
 
+func TestNilness(t *testing.T) {
+	testdata := analysistest.TestData()
+	analysistest.Run(t, testdata, nilness.Analyzer, "b")
+}
+
 func TestInstantiated(t *testing.T) {
 	testdata := analysistest.TestData()
 	analysistest.Run(t, testdata, nilness.Analyzer, "c")

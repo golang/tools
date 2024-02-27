@@ -346,16 +346,9 @@ func isDigit(ch rune) bool {
 }
 
 func comment_htmlFunc(info *PageInfo, comment string) string {
-	var buf bytes.Buffer
 	// TODO(gri) Provide list of words (e.g. function parameters)
 	//           to be emphasized by ToHTML.
-
-	// godocToHTML is:
-	// - buf.Write(info.PDoc.HTML(comment)) on go1.19
-	// - go/doc.ToHTML(&buf, comment, nil) on other versions
-	godocToHTML(&buf, info.PDoc, comment)
-
-	return buf.String()
+	return string(info.PDoc.HTML(comment))
 }
 
 // sanitizeFunc sanitizes the argument src by replacing newlines with

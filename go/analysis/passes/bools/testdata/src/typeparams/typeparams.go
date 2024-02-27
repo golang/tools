@@ -4,8 +4,6 @@
 
 // This file contains tests for the bool checker.
 
-//go:build go1.18
-
 package typeparams
 
 type T[P interface{ ~int }] struct {

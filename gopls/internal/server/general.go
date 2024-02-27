@@ -20,12 +20,12 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/goversion"
 	"golang.org/x/tools/gopls/internal/util/maps"
@@ -41,7 +41,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 	if params != nil && params.ClientInfo != nil {
 		clientName = params.ClientInfo.Name
 	}
-	telemetry.RecordClientInfo(clientName)
+	recordClientInfo(clientName)
 
 	s.stateMu.Lock()
 	if s.state >= serverInitializing {
@@ -249,7 +249,9 @@ func (s *server) checkViewGoVersions() {
 		if oldestVersion == -1 || viewVersion < oldestVersion {
 			oldestVersion, fromBuild = viewVersion, false
 		}
-		telemetry.RecordViewGoVersion(viewVersion)
+		if viewVersion >= 0 {
+			counter.Inc(fmt.Sprintf("gopls/goversion:1.%d", viewVersion))
+		}
 	}
 
 	if msg, isError := goversion.Message(oldestVersion, fromBuild); msg != "" {
@@ -636,4 +638,43 @@ func (s *server) Exit(ctx context.Context) error {
 	// We don't terminate the process on a normal exit, we just allow it to
 	// close naturally if needed after the connection is closed.
 	return nil
+}
+
+// recordClientInfo records gopls client info.
+func recordClientInfo(clientName string) {
+	key := "gopls/client:other"
+	switch clientName {
+	case "Visual Studio Code":
+		key = "gopls/client:vscode"
+	case "Visual Studio Code - Insiders":
+		key = "gopls/client:vscode-insiders"
+	case "VSCodium":
+		key = "gopls/client:vscodium"
+	case "code-server":
+		// https://github.com/coder/code-server/blob/3cb92edc76ecc2cfa5809205897d93d4379b16a6/ci/build/build-vscode.sh#L19
+		key = "gopls/client:code-server"
+	case "Eglot":
+		// https://lists.gnu.org/archive/html/bug-gnu-emacs/2023-03/msg00954.html
+		key = "gopls/client:eglot"
+	case "govim":
+		// https://github.com/govim/govim/pull/1189
+		key = "gopls/client:govim"
+	case "Neovim":
+		// https://github.com/neovim/neovim/blob/42333ea98dfcd2994ee128a3467dfe68205154cd/runtime/lua/vim/lsp.lua#L1361
+		key = "gopls/client:neovim"
+	case "coc.nvim":
+		// https://github.com/neoclide/coc.nvim/blob/3dc6153a85ed0f185abec1deb972a66af3fbbfb4/src/language-client/client.ts#L994
+		key = "gopls/client:coc.nvim"
+	case "Sublime Text LSP":
+		// https://github.com/sublimelsp/LSP/blob/e608f878e7e9dd34aabe4ff0462540fadcd88fcc/plugin/core/sessions.py#L493
+		key = "gopls/client:sublimetext"
+	default:
+		// Accumulate at least a local counter for an unknown
+		// client name, but also fall through to count it as
+		// ":other" for collection.
+		if clientName != "" {
+			counter.New(fmt.Sprintf("gopls/client-other:%s", clientName)).Inc()
+		}
+	}
+	counter.Inc(key)
 }

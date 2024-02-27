@@ -559,8 +559,6 @@ package v
 
 // Tests that go.work files are respected.
 func TestModWorkspace(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	mt := setup(t, nil, `
 -- go.work --
 go 1.18
@@ -595,8 +593,6 @@ package b
 // respected and that a wildcard replace in go.work overrides a versioned replace
 // in go.mod.
 func TestModWorkspaceReplace(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	mt := setup(t, nil, `
 -- go.work --
 use m
@@ -654,8 +650,6 @@ func G() {
 // Tests a case where conflicting replaces are overridden by a replace
 // in the go.work file.
 func TestModWorkspaceReplaceOverride(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	mt := setup(t, nil, `-- go.work --
 use m
 use n
@@ -719,8 +713,6 @@ func G() {
 // workspaces with module pruning. This is based on the
 // cmd/go mod_prune_all script test.
 func TestModWorkspacePrune(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	mt := setup(t, nil, `
 -- go.work --
 go 1.18

@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"golang.org/x/telemetry"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/internal/event"
 )
 

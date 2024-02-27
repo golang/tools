@@ -8,11 +8,9 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
-	"golang.org/x/tools/internal/testenv"
 )
 
 func Test(t *testing.T) {
-	testenv.NeedsGo1Point(t, 19)
 	testdata := analysistest.TestData()
 	analysistest.Run(t, testdata, Analyzer, "a")
 }

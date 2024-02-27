@@ -822,8 +822,6 @@ var indirect = R[int].M
 // TestTypeparamTest builds SSA over compilable examples in $GOROOT/test/typeparam/*.go.
 
 func TestTypeparamTest(t *testing.T) {
-	testenv.NeedsGo1Point(t, 19) // fails with infinite recursion at 1.18 -- not investigated
-
 	// Tests use a fake goroot to stub out standard libraries with delcarations in
 	// testdata/src. Decreases runtime from ~80s to ~1s.
 
@@ -1000,7 +998,6 @@ func TestGenericFunctionSelector(t *testing.T) {
 
 func TestIssue58491(t *testing.T) {
 	// Test that a local type reaches type param in instantiation.
-	testenv.NeedsGo1Point(t, 18)
 	src := `
 		package p
 
@@ -1058,7 +1055,6 @@ func TestIssue58491(t *testing.T) {
 
 func TestIssue58491Rec(t *testing.T) {
 	// Roughly the same as TestIssue58491 but with a recursive type.
-	testenv.NeedsGo1Point(t, 18)
 	src := `
 		package p
 

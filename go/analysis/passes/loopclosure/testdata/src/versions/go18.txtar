@@ -1,11 +1,11 @@
-Test loopclosure at go version go1.18.
+Test loopclosure at go version go1.19.
 
 -- go.mod --
 module golang.org/fake/versions
 
-go 1.18
+go 1.19
 -- pre.go --
-//go:build go1.18
+//go:build go1.19
 
 package versions
 
