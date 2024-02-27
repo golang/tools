@@ -1,0 +1,206 @@
+This test exercises the refactoring of putting arguments, return values, and composite literal elements into a
+single line.
+
+-- go.mod --
+module unused.mod
+
+go 1.18
+
+-- func_arg/func_arg.go --
+package func_arg
+
+func A(
+	a string,
+	b, c int64,
+	x int /*@codeaction("x", "x", "refactor.rewrite", func_arg)*/,
+	y int,
+) (r1 string, r2, r3 int64, r4 int, r5 int) {
+	return a, b, c, x, y
+}
+
+-- @func_arg/func_arg/func_arg.go --
+package func_arg
+
+func A(a string, b, c int64, x int /*@codeaction("x", "x", "refactor.rewrite", func_arg)*/, y int) (r1 string, r2, r3 int64, r4 int, r5 int) {
+	return a, b, c, x, y
+}
+
+-- func_ret/func_ret.go --
+package func_ret
+
+func A(a string, b, c int64, x int, y int) (
+	r1 string /*@codeaction("r1", "r1", "refactor.rewrite", func_ret)*/,
+	r2, r3 int64,
+	r4 int,
+	r5 int,
+) {
+	return a, b, c, x, y
+}
+
+-- @func_ret/func_ret/func_ret.go --
+package func_ret
+
+func A(a string, b, c int64, x int, y int) (r1 string /*@codeaction("r1", "r1", "refactor.rewrite", func_ret)*/, r2, r3 int64, r4 int, r5 int) {
+	return a, b, c, x, y
+}
+
+-- functype_arg/functype_arg.go --
+package functype_arg
+
+type A func(
+	a string,
+	b, c int64,
+	x int /*@codeaction("x", "x", "refactor.rewrite", functype_arg)*/,
+	y int,
+) (r1 string, r2, r3 int64, r4 int, r5 int)
+
+-- @functype_arg/functype_arg/functype_arg.go --
+package functype_arg
+
+type A func(a string, b, c int64, x int /*@codeaction("x", "x", "refactor.rewrite", functype_arg)*/, y int) (r1 string, r2, r3 int64, r4 int, r5 int)
+
+-- functype_ret/functype_ret.go --
+package functype_ret
+
+type A func(a string, b, c int64, x int, y int) (
+	r1 string /*@codeaction("r1", "r1", "refactor.rewrite", functype_ret)*/,
+	r2, r3 int64,
+	r4 int,
+	r5 int,
+)
+
+-- @functype_ret/functype_ret/functype_ret.go --
+package functype_ret
+
+type A func(a string, b, c int64, x int, y int) (r1 string /*@codeaction("r1", "r1", "refactor.rewrite", functype_ret)*/, r2, r3 int64, r4 int, r5 int)
+
+-- func_call/func_call.go --
+package func_call
+
+import "fmt"
+
+func a() {
+	fmt.Println(
+		1 /*@codeaction("1", "1", "refactor.rewrite", func_call)*/,
+		2,
+		3,
+		fmt.Sprintf("hello %d", 4),
+	)
+}
+
+-- @func_call/func_call/func_call.go --
+package func_call
+
+import "fmt"
+
+func a() {
+	fmt.Println(1 /*@codeaction("1", "1", "refactor.rewrite", func_call)*/, 2, 3, fmt.Sprintf("hello %d", 4))
+}
+
+-- indent/indent.go --
+package indent
+
+import "fmt"
+
+func a() {
+	fmt.Println(
+        1,
+        2,
+        3,
+        fmt.Sprintf(
+            "hello %d" /*@codeaction("hello", "hello", "refactor.rewrite", indent, "Join parameters into one line")*/,
+            4,
+        ))
+}
+
+-- @indent/indent/indent.go --
+package indent
+
+import "fmt"
+
+func a() {
+	fmt.Println(
+        1,
+        2,
+        3,
+        fmt.Sprintf("hello %d" /*@codeaction("hello", "hello", "refactor.rewrite", indent, "Join parameters into one line")*/, 4))
+}
+
+-- structelts/structelts.go --
+package structelts
+
+type A struct{
+	a int
+	b int
+}
+
+func a() {
+	_ = A{
+		a: 1,
+		b: 2 /*@codeaction("b", "b", "refactor.rewrite", structelts)*/,
+	}
+}
+
+-- @structelts/structelts/structelts.go --
+package structelts
+
+type A struct{
+	a int
+	b int
+}
+
+func a() {
+	_ = A{a: 1, b: 2 /*@codeaction("b", "b", "refactor.rewrite", structelts)*/}
+}
+
+-- sliceelts/sliceelts.go --
+package sliceelts
+
+func a() {
+	_ = []int{
+		1 /*@codeaction("1", "1", "refactor.rewrite", sliceelts)*/,
+		2,
+	}
+}
+
+-- @sliceelts/sliceelts/sliceelts.go --
+package sliceelts
+
+func a() {
+	_ = []int{1 /*@codeaction("1", "1", "refactor.rewrite", sliceelts)*/, 2}
+}
+
+-- mapelts/mapelts.go --
+package mapelts
+
+func a() {
+	_ = map[string]int{
+		"a": 1 /*@codeaction("1", "1", "refactor.rewrite", mapelts)*/,
+		"b": 2,
+	}
+}
+
+-- @mapelts/mapelts/mapelts.go --
+package mapelts
+
+func a() {
+	_ = map[string]int{"a": 1 /*@codeaction("1", "1", "refactor.rewrite", mapelts)*/, "b": 2}
+}
+
+-- starcomment/starcomment.go --
+package starcomment
+
+func A(
+	/*1*/ x /*2*/ string /*3*/ /*@codeaction("x", "x", "refactor.rewrite", starcomment)*/,
+	/*4*/ y /*5*/ int /*6*/,
+) (string, int) {
+	return x, y
+}
+
+-- @starcomment/starcomment/starcomment.go --
+package starcomment
+
+func A(/*1*/ x /*2*/ string /*3*/ /*@codeaction("x", "x", "refactor.rewrite", starcomment)*/, /*4*/ y /*5*/ int /*6*/) (string, int) {
+	return x, y
+}
+
