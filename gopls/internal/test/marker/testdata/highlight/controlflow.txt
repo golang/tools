@@ -1,0 +1,71 @@
+This test verifies document highlighting for control flow.
+
+-- go.mod --
+module mod.com
+
+go 1.18
+
+-- p.go --
+package p
+
+-- issue60589.go --
+package p
+
+// This test verifies that control flow lighlighting correctly
+// accounts for multi-name result parameters.
+// In golang/go#60589, it did not.
+
+func _() (foo int, bar, baz string) { //@ loc(func, "func"), loc(foo, "foo"), loc(fooint, "foo int"), loc(int, "int"), loc(bar, "bar"), loc(beforebaz, " baz"), loc(baz, "baz"), loc(barbazstring, "bar, baz string"), loc(beforestring, re`() string`), loc(string, "string")
+	return 0, "1", "2" //@ loc(return, `return 0, "1", "2"`), loc(l0, "0"), loc(l1, `"1"`), loc(l2, `"2"`)
+}
+
+// Assertions, expressed here to avoid clutter above.
+// Note that when the cursor is over the field type, there is some
+// (likely harmless) redundancy.
+
+//@ highlight(func, func, return)
+//@ highlight(foo, foo, l0)
+//@ highlight(int, fooint, int, l0)
+//@ highlight(bar, bar, l1)
+//@ highlight(beforebaz)
+//@ highlight(baz, baz, l2)
+//@ highlight(beforestring, baz, l2)
+//@ highlight(string, barbazstring, string, l1, l2)
+//@ highlight(l0, foo, l0)
+//@ highlight(l1, bar, l1)
+//@ highlight(l2, baz, l2)
+
+// Check that duplicate result names do not cause
+// inaccurate highlighting.
+
+func _() (x, x int32) { //@ loc(x1, re`\((x)`), loc(x2, re`(x) int`), diag(x1, re"redeclared"), diag(x2, re"redeclared")
+	return 1, 2 //@ loc(one, "1"), loc(two, "2")
+}
+
+//@ highlight(one, one, x1)
+//@ highlight(two, two, x2)
+//@ highlight(x1, x1, one)
+//@ highlight(x2, x2, two)
+
+-- issue65516.go --
+package p
+
+// This test checks that gopls doesn't crash while highlighting
+// functions with no body (golang/go#65516).
+
+func Foo() (int, string) //@highlight("int", "int"), highlight("func", "func")
+
+-- issue65952.go --
+package p
+
+// This test checks  that gopls doesn't crash while highlighting
+// return values in functions with no results.
+
+func _() {
+	return 0 //@highlight("0", "0"), diag("0", re"too many return")
+}
+
+func _() () {
+	// TODO(golang/go#65966): fix the triplicate diagnostics here.
+	return 0 //@highlight("0", "0"), diag("0", re"too many return"), diag("0", re"too many return"), diag("0", re"too many return")
+}
