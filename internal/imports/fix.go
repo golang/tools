@@ -31,6 +31,7 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/gopathwalk"
+	"golang.org/x/tools/internal/stdlib"
 )
 
 // importToGroup is a list of functions which map from an import path to
@@ -511,9 +512,9 @@ func (p *pass) assumeSiblingImportsValid() {
 		}
 		for left, rights := range refs {
 			if imp, ok := importsByName[left]; ok {
-				if m, ok := stdlib[imp.ImportPath]; ok {
+				if m, ok := stdlib.PackageSymbols[imp.ImportPath]; ok {
 					// We have the stdlib in memory; no need to guess.
-					rights = copyExports(m)
+					rights = symbolNameSet(m)
 				}
 				p.addCandidate(imp, &packageInfo{
 					// no name; we already know it.
@@ -641,7 +642,7 @@ func getCandidatePkgs(ctx context.Context, wrappedCallback *scanCallback, filena
 	dupCheck := map[string]struct{}{}
 
 	// Start off with the standard library.
-	for importPath, exports := range stdlib {
+	for importPath, symbols := range stdlib.PackageSymbols {
 		p := &pkg{
 			dir:             filepath.Join(goenv["GOROOT"], "src", importPath),
 			importPathShort: importPath,
@@ -650,6 +651,13 @@ func getCandidatePkgs(ctx context.Context, wrappedCallback *scanCallback, filena
 		}
 		dupCheck[importPath] = struct{}{}
 		if notSelf(p) && wrappedCallback.dirFound(p) && wrappedCallback.packageNameLoaded(p) {
+			exports := make([]string, 0, len(symbols))
+			for _, sym := range symbols {
+				switch sym.Kind {
+				case stdlib.Func, stdlib.Type, stdlib.Var, stdlib.Const:
+					exports = append(exports, sym.Name)
+				}
+			}
 			wrappedCallback.exportsLoaded(p, exports)
 		}
 	}
@@ -1054,7 +1062,7 @@ func addStdlibCandidates(pass *pass, refs references) error {
 		if path.Base(pkg) == pass.f.Name.Name && filepath.Join(goenv["GOROOT"], "src", pkg) == pass.srcDir {
 			return
 		}
-		exports := copyExports(stdlib[pkg])
+		exports := symbolNameSet(stdlib.PackageSymbols[pkg])
 		pass.addCandidate(
 			&ImportInfo{ImportPath: pkg},
 			&packageInfo{name: path.Base(pkg), exports: exports})
@@ -1066,7 +1074,7 @@ func addStdlibCandidates(pass *pass, refs references) error {
 			add("math/rand")
 			continue
 		}
-		for importPath := range stdlib {
+		for importPath := range stdlib.PackageSymbols {
 			if path.Base(importPath) == left {
 				add(importPath)
 			}
@@ -1295,7 +1303,7 @@ func (r *gopathResolver) loadPackageNames(importPaths []string, srcDir string) (
 // importPathToName finds out the actual package name, as declared in its .go files.
 func importPathToName(bctx *build.Context, importPath, srcDir string) string {
 	// Fast path for standard library without going to disk.
-	if _, ok := stdlib[importPath]; ok {
+	if stdlib.HasPackage(importPath) {
 		return path.Base(importPath) // stdlib packages always match their paths.
 	}
 
@@ -1493,7 +1501,7 @@ func (r *gopathResolver) scan(ctx context.Context, callback *scanCallback) error
 }
 
 func (r *gopathResolver) scoreImportPath(ctx context.Context, path string) float64 {
-	if _, ok := stdlib[path]; ok {
+	if stdlib.HasPackage(path) {
 		return MaxRelevance
 	}
 	return MaxRelevance - 1
@@ -1820,10 +1828,13 @@ func (fn visitFn) Visit(node ast.Node) ast.Visitor {
 	return fn(node)
 }
 
-func copyExports(pkg []string) map[string]bool {
-	m := make(map[string]bool, len(pkg))
-	for _, v := range pkg {
-		m[v] = true
+func symbolNameSet(symbols []stdlib.Symbol) map[string]bool {
+	names := make(map[string]bool)
+	for _, sym := range symbols {
+		switch sym.Kind {
+		case stdlib.Const, stdlib.Var, stdlib.Type, stdlib.Func:
+			names[sym.Name] = true
+		}
 	}
-	return m
+	return names
 }

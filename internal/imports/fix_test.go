@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/gocommand"
+	"golang.org/x/tools/internal/stdlib"
 )
 
 var testDebug = flag.Bool("debug", false, "enable debug output")
@@ -1626,9 +1627,9 @@ import "bytes"
 var _ = bytes.Buffer
 `
 	// Force a scan of the stdlib.
-	savedStdlib := stdlib
-	defer func() { stdlib = savedStdlib }()
-	stdlib = map[string][]string{}
+	savedStdlib := stdlib.PackageSymbols
+	defer func() { stdlib.PackageSymbols = savedStdlib }()
+	stdlib.PackageSymbols = nil
 
 	testConfig{
 		module: packagestest.Module{

@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/gopathwalk"
+	"golang.org/x/tools/internal/stdlib"
 )
 
 // Notes(rfindley): ModuleResolver appears to be heavily optimized for scanning
@@ -632,7 +633,7 @@ func (r *ModuleResolver) scan(ctx context.Context, callback *scanCallback) error
 }
 
 func (r *ModuleResolver) scoreImportPath(ctx context.Context, path string) float64 {
-	if _, ok := stdlib[path]; ok {
+	if stdlib.HasPackage(path) {
 		return MaxRelevance
 	}
 	mod, _ := r.findPackage(path)
