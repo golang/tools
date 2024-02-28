@@ -55,9 +55,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		switch n := n.(type) {
 		case *ast.File:
 			// Only traverse the file if its goversion is strictly before go1.22.
-			goversion := versions.Lang(versions.FileVersions(pass.TypesInfo, n))
-			// goversion is empty for older go versions (or the version is invalid).
-			return goversion == "" || versions.Compare(goversion, "go1.22") < 0
+			goversion := versions.FileVersion(pass.TypesInfo, n)
+			return versions.Before(goversion, versions.Go1_22)
 		case *ast.RangeStmt:
 			body = n.Body
 			addVar(n.Key)

@@ -4,7 +4,9 @@
 
 package versions
 
-import "strings"
+import (
+	"strings"
+)
 
 // Note: If we use build tags to use go/versions when go >=1.22,
 // we run into go.dev/issue/53737. Under some operations users would see an

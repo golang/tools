@@ -17,6 +17,9 @@ import (
 )
 
 func Test(t *testing.T) {
+	// legacy loopclosure test expectations are incorrect > 1.21.
+	testenv.SkipAfterGo1Point(t, 21)
+
 	testdata := analysistest.TestData()
 	analysistest.Run(t, testdata, loopclosure.Analyzer,
 		"a", "golang.org/...", "subtests", "typeparams")

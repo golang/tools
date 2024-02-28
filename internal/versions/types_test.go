@@ -52,11 +52,11 @@ func Test(t *testing.T) {
 			if got, want := versions.GoVersion(pkg), item.pversion; versions.Compare(got, want) != 0 {
 				t.Errorf("GoVersion()=%q. expected %q", got, want)
 			}
-			if got := versions.FileVersions(info, nil); got != "" {
+			if got := versions.FileVersion(info, nil); got != "" {
 				t.Errorf(`FileVersions(nil)=%q. expected ""`, got)
 			}
 			for i, test := range item.tests {
-				if got, want := versions.FileVersions(info, files[i]), test.want; got != want {
+				if got, want := versions.FileVersion(info, files[i]), test.want; got != want {
 					t.Errorf("FileVersions(%s)=%q. expected %q", test.fname, got, want)
 				}
 			}
