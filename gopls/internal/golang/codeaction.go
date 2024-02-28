@@ -181,14 +181,11 @@ func fixedByImportFix(fix *imports.ImportFix, diagnostics []protocol.Diagnostic)
 
 // getExtractCodeActions returns any refactor.extract code actions for the selection.
 func getExtractCodeActions(pgf *parsego.File, rng protocol.Range, options *settings.Options) ([]protocol.CodeAction, error) {
-	if rng.Start == rng.End {
-		return nil, nil
-	}
-
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
 	}
+
 	puri := pgf.URI
 	var commands []protocol.Command
 	if _, ok, methodOk, _ := CanExtractFunction(pgf.Tok, start, end, pgf.Src, pgf.File); ok {
@@ -222,6 +219,16 @@ func getExtractCodeActions(pgf *parsego.File, rng protocol.Range, options *setti
 			Range:        rng,
 			ResolveEdits: supportsResolveEdits(options),
 		})
+		if err != nil {
+			return nil, err
+		}
+		commands = append(commands, cmd)
+	}
+	if canExtractToNewFile(pgf, start, end) {
+		cmd, err := command.NewExtractToNewFileCommand(
+			"Extract declarations to new file",
+			command.ExtractToNewFileArgs{URI: pgf.URI, Range: rng},
+		)
 		if err != nil {
 			return nil, err
 		}

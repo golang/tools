@@ -761,6 +761,18 @@ func (e *Editor) RegexpReplace(ctx context.Context, path, re, replace string) er
 	return e.setBufferContentLocked(ctx, path, true, patched, edits)
 }
 
+// OffsetLocation returns the Location for integers offsets start and end
+func (e *Editor) OffsetLocation(bufName string, start, end int) (protocol.Location, error) {
+	e.mu.Lock()
+	buf, ok := e.buffers[bufName]
+	e.mu.Unlock()
+	if !ok {
+		return protocol.Location{}, ErrUnknownBuffer
+	}
+
+	return buf.mapper.OffsetLocation(start, end)
+}
+
 // EditBuffer applies the given test edits to the buffer identified by path.
 func (e *Editor) EditBuffer(ctx context.Context, path string, edits []protocol.TextEdit) error {
 	e.mu.Lock()
@@ -1402,7 +1414,11 @@ func (e *Editor) applyDocumentChange(ctx context.Context, change protocol.Docume
 	if change.TextDocumentEdit != nil {
 		return e.applyTextDocumentEdit(ctx, *change.TextDocumentEdit)
 	}
-	panic("Internal error: one of RenameFile or TextDocumentEdit must be set")
+	if change.CreateFile != nil {
+		path := e.sandbox.Workdir.URIToPath(change.CreateFile.URI)
+		return e.sandbox.Workdir.WriteFile(ctx, path, "")
+	}
+	panic("Internal error: one of RenameFile, CreateFile, or TextDocumentEdit must be set")
 }
 
 func (e *Editor) applyTextDocumentEdit(ctx context.Context, change protocol.TextDocumentEdit) error {
