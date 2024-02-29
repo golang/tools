@@ -109,9 +109,20 @@ Flags:
 
            Caller and Callee are *ssa.Function values, which print as
            "(*sync/atomic.Mutex).Lock", but other attributes may be
-           derived from them, e.g. Caller.Pkg.Pkg.Path yields the
-           import path of the enclosing package.  Consult the go/ssa
-           API documentation for details.
+           derived from them. For example:
+
+           - {{.Caller.Pkg.Pkg.Path}} yields the import path of the
+             enclosing package; and
+
+           - {{(.Caller.Prog.Fset.Position .Caller.Pos).Filename}}
+             yields the name of the file that declares the caller.
+
+           - The 'posn' template function returns the token.Position
+             of an ssa.Function, so the previous example can be
+             reduced to {{(posn .Caller).Filename}}.
+
+           Consult the documentation for go/token, text/template, and
+           golang.org/x/tools/go/ssa for more detail.
 
 Examples:
 
@@ -238,7 +249,12 @@ func doCallgraph(dir, gopath, algo, format string, tests bool, args []string) er
 		format = `  {{printf "%q" .Caller}} -> {{printf "%q" .Callee}}`
 	}
 
-	tmpl, err := template.New("-format").Parse(format)
+	funcMap := template.FuncMap{
+		"posn": func(f *ssa.Function) token.Position {
+			return f.Prog.Fset.Position(f.Pos())
+		},
+	}
+	tmpl, err := template.New("-format").Funcs(funcMap).Parse(format)
 	if err != nil {
 		return fmt.Errorf("invalid -format template: %v", err)
 	}
