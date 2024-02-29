@@ -348,6 +348,9 @@ func main() {
 		format = *formatFlag
 	}
 	printObjects(format, packages)
+	if len(packages) > 0 {
+		os.Exit(1)
+	}
 }
 
 // prettyName is a fork of Function.String designed to reduce

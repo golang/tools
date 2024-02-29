@@ -113,17 +113,23 @@ func Test(t *testing.T) {
 					cmd.Env = append(os.Environ(), "GOPROXY=", "GO111MODULE=on")
 					var got string
 					if err := cmd.Run(); err != nil {
-						if !tc.wantErr {
-							t.Fatalf("deadcode failed: %v (stderr=%s)", err, cmd.Stderr)
+						switch err.(type) {
+						case *exec.ExitError:
+							if tc.wantErr {
+								got = fmt.Sprint(cmd.Stderr)
+							} else {
+								// If an unreachable code is detected, exit code 1 is notified
+								if cmd.ProcessState.ExitCode() != 1 {
+									t.Fatalf("deadcode failed: %v", err)
+								}
+								got = fmt.Sprint(cmd.Stdout)
+							}
+						default:
+							t.Fatalf("deadcode failed: %v", err)
 						}
-						got = fmt.Sprint(cmd.Stderr)
 					} else {
-						if tc.wantErr {
-							t.Fatalf("deadcode succeeded unexpectedly (stdout=%s)", cmd.Stdout)
-						}
 						got = fmt.Sprint(cmd.Stdout)
 					}
-
 					// Check each want directive.
 					for str, sense := range tc.want {
 						ok := true
