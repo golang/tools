@@ -60,6 +60,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/simplifycompositelit"
 	"golang.org/x/tools/gopls/internal/analysis/simplifyrange"
 	"golang.org/x/tools/gopls/internal/analysis/simplifyslice"
+	"golang.org/x/tools/gopls/internal/analysis/stdversion"
 	"golang.org/x/tools/gopls/internal/analysis/stubmethods"
 	"golang.org/x/tools/gopls/internal/analysis/undeclaredname"
 	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
@@ -1468,6 +1469,10 @@ func analyzers() map[string]*Analyzer {
 			Analyzer:    simplifyslice.Analyzer,
 			Enabled:     true,
 			ActionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+		},
+		stdversion.Analyzer.Name: {
+			Analyzer: stdversion.Analyzer,
+			Enabled:  true,
 		},
 
 		// Type error analyzers.

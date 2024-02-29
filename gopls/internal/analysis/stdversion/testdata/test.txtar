@@ -1,0 +1,101 @@
+Test of "too new" diagnostics from the stdversion analyzer.
+
+This test references go1.21 symbols from std.
+
+It uses a txtar file due to golang/go#37054.
+
+See also gopls/internal/test/marker/testdata/diagnostics/stdversion.txt
+which runs the same test within the gopls analysis driver, to ensure
+coverage of per-file Go version support.
+
+-- go.work --
+use .
+use ./sub
+
+-- go.mod --
+module example.com
+
+go 1.19
+
+-- a/a.go --
+package a
+
+import (
+	"context"
+	"go/types"
+	"time"
+)
+
+func _() {
+	time.Now() // ok: defined by go1.0
+
+	context.Cause(nil) // want `context.Cause requires go1.20 or later \(module is go1.19\)`
+
+	context.WithDeadlineCause(nil, time.Time{}, nil) // want `context.WithDeadlineCause requires go1.21 or later \(module is go1.19\)`
+
+	// GoVersion is a new method of an older type.
+	new(types.Package).GoVersion() // want `types.GoVersion requires go1.21 or later \(module is go1.19\)`
+}
+
+-- a/selections.go --
+package a
+
+import (
+	"go/ast"   // for File.FileEnd field (go1.20)
+	"time"     // for Time.Compare method (go1.20)
+	"log/slog" // for slog.Logger and its Info method (both go1.21)
+)
+
+func _() {
+	_ = new(ast.File).FileEnd // want `ast.FileEnd requires go1.20 or later \(module is go1.19\)`
+	time.Now().Compare(time.Now()) // want `time.Compare requires go1.20 or later \(module is go1.19\)`
+
+	var log slog.Logger // want `slog.Logger requires go1.21 or later \(module is go1.19\)`
+	log.Info("") // no diagnostic
+}
+
+-- sub/go.mod --
+module example.com/sub
+
+go 1.20
+
+-- sub/sub.go --
+package sub
+
+import (
+	"context"
+	"go/types"
+	"time"
+)
+
+func _() {
+	time.Now() // ok: defined by go1.0
+
+	context.Cause(nil) // ok: go.mod requires 1.20
+
+	context.WithDeadlineCause(nil, time.Time{}, nil) // want `context.WithDeadlineCause requires go1.21 or later \(module is go1.20\)`
+
+	// GoVersion is a new (go1.21) method of an old (go1.0) type.
+	new(types.Package).GoVersion() // want `types.GoVersion requires go1.21 or later \(module is go1.20\)`
+}
+
+-- sub/tagged.go --
+//go:build go1.21
+
+package sub
+
+import (
+	"context"
+	"go/types"
+	"time"
+)
+
+func _() {
+	time.Now() // ok: defined by go1.0
+
+	context.Cause(nil) // ok: go.mod requires 1.20
+
+	context.WithDeadlineCause(nil, time.Time{}, nil) // ok: file requires go1.21
+
+	new(types.Package).GoVersion() // ok: file requires go1.21
+}

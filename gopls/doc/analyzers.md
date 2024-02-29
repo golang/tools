@@ -723,6 +723,24 @@ Checked method names include:
 
 **Enabled by default.**
 
+## **stdversion**
+
+stdversion: report uses of too-new standard library symbols
+
+The stdversion analyzer reports references to symbols in the standard
+library that were introduced by a Go release higher than the one in
+force in the referring file. (Recall that the file's Go version is
+defined by the 'go' directive its module's go.mod file, or by a
+"//go:build go1.X" build tag at the top of the file.)
+
+The analyzer does not report a diagnostic for a reference to a "too
+new" field or method of a type that is itself "too new", as this may
+have false positives, for example if fields or methods are accessed
+through a type alias that is guarded by a Go version constraint.
+
+
+**Enabled by default.**
+
 ## **stringintconv**
 
 stringintconv: check for string(int) conversions

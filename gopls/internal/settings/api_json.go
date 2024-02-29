@@ -399,6 +399,11 @@ var GeneratedAPIJSON = &APIJSON{
 							Default: "true",
 						},
 						{
+							Name:    "\"stdversion\"",
+							Doc:     "report uses of too-new standard library symbols\n\nThe stdversion analyzer reports references to symbols in the standard\nlibrary that were introduced by a Go release higher than the one in\nforce in the referring file. (Recall that the file's Go version is\ndefined by the 'go' directive its module's go.mod file, or by a\n\"//go:build go1.X\" build tag at the top of the file.)\n\nThe analyzer does not report a diagnostic for a reference to a \"too\nnew\" field or method of a type that is itself \"too new\", as this may\nhave false positives, for example if fields or methods are accessed\nthrough a type alias that is guarded by a Go version constraint.\n",
+							Default: "true",
+						},
+						{
 							Name:    "\"stringintconv\"",
 							Doc:     "check for string(int) conversions\n\nThis checker flags conversions of the form string(x) where x is an integer\n(but not byte or rune) type. Such conversions are discouraged because they\nreturn the UTF-8 representation of the Unicode code point x, and not a decimal\nstring representation of x as one might expect. Furthermore, if x denotes an\ninvalid code point, the conversion cannot be statically rejected.\n\nFor conversions that intend on using the code point, consider replacing them\nwith string(rune(x)). Otherwise, strconv.Itoa and its equivalents return the\nstring representation of the value in the desired base.",
 							Default: "true",
@@ -1177,6 +1182,11 @@ var GeneratedAPIJSON = &APIJSON{
 			Name:    "stdmethods",
 			Doc:     "check signature of methods of well-known interfaces\n\nSometimes a type may be intended to satisfy an interface but may fail to\ndo so because of a mistake in its method signature.\nFor example, the result of this WriteTo method should be (int64, error),\nnot error, to satisfy io.WriterTo:\n\n\ttype myWriterTo struct{...}\n\tfunc (myWriterTo) WriteTo(w io.Writer) error { ... }\n\nThis check ensures that each method whose name matches one of several\nwell-known interface methods from the standard library has the correct\nsignature for that interface.\n\nChecked method names include:\n\n\tFormat GobEncode GobDecode MarshalJSON MarshalXML\n\tPeek ReadByte ReadFrom ReadRune Scan Seek\n\tUnmarshalJSON UnreadByte UnreadRune WriteByte\n\tWriteTo",
 			URL:     "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/stdmethods",
+			Default: true,
+		},
+		{
+			Name:    "stdversion",
+			Doc:     "report uses of too-new standard library symbols\n\nThe stdversion analyzer reports references to symbols in the standard\nlibrary that were introduced by a Go release higher than the one in\nforce in the referring file. (Recall that the file's Go version is\ndefined by the 'go' directive its module's go.mod file, or by a\n\"//go:build go1.X\" build tag at the top of the file.)\n\nThe analyzer does not report a diagnostic for a reference to a \"too\nnew\" field or method of a type that is itself \"too new\", as this may\nhave false positives, for example if fields or methods are accessed\nthrough a type alias that is guarded by a Go version constraint.\n",
 			Default: true,
 		},
 		{

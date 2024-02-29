@@ -13,7 +13,6 @@ package analyzer
 
 import (
 	"fmt"
-	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -34,11 +33,6 @@ func printfWrapper(format string, args ...interface{}) {
 	fmt.Printf(format, args...)
 }
 
-// slog
-func _() {
-	slog.Info("msg", 1) //@diag("1", re`slog.Info arg "1" should be a string or a slog.Attr`)
-}
-
 // tests
 func Testbad(t *testing.T) { //@diag("", re"Testbad has malformed name: first letter after 'Test' must not be lowercase")
 }
@@ -54,4 +48,16 @@ func _(ptr *int) {
 	if ptr == nil {
 		_ = *ptr //@diag("*ptr", re"nil dereference in load")
 	}
+}
+
+-- bad_test_go121.go --
+//go:build go1.21
+
+package analyzer
+
+import "log/slog"
+
+// slog
+func _() {
+	slog.Info("msg", 1) //@diag("1", re`slog.Info arg "1" should be a string or a slog.Attr`)
 }
