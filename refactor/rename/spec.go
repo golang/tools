@@ -25,7 +25,7 @@ import (
 
 	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/loader"
-	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // A spec specifies an entity to rename.
@@ -459,17 +459,14 @@ func findObjects(info *loader.PackageInfo, spec *spec) ([]types.Object, error) {
 		// search within named type.
 		obj, _, _ := types.LookupFieldOrMethod(tName.Type(), true, info.Pkg, spec.typeMember)
 		if obj == nil {
-			return nil, fmt.Errorf("cannot find field or method %q of %s %s.%s",
-				spec.typeMember, typeKind(tName.Type()), info.Pkg.Path(), tName.Name())
+			return nil, fmt.Errorf("cannot find field or method %q of %s.%s",
+				spec.typeMember, info.Pkg.Path(), tName.Name())
 		}
 
 		if spec.searchFor == "" {
 			// If it is an embedded field, return the type of the field.
 			if v, ok := obj.(*types.Var); ok && v.Anonymous() {
-				switch t := aliases.Unalias(v.Type()).(type) {
-				case *types.Pointer:
-					return []types.Object{aliases.Unalias(t.Elem()).(*types.Named).Obj()}, nil
-				case *types.Named:
+				if t, ok := typesinternal.Unpointer(v.Type()).(hasTypeName); ok {
 					return []types.Object{t.Obj()}, nil
 				}
 			}
@@ -482,7 +479,7 @@ func findObjects(info *loader.PackageInfo, spec *spec) ([]types.Object, error) {
 				spec.searchFor, objectKind(obj), info.Pkg.Path(), tName.Name(),
 				obj.Name())
 		}
-		if isInterface(tName.Type()) {
+		if types.IsInterface(tName.Type()) {
 			return nil, fmt.Errorf("cannot search for local name %q within abstract method (%s.%s).%s",
 				spec.searchFor, info.Pkg.Path(), tName.Name(), searchFunc.Name())
 		}
