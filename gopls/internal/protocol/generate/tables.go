@@ -106,6 +106,7 @@ var disambiguate = map[string]adjust{
 	"FileOperationPatternKind":     {"", "Pattern"},
 	"InlineCompletionTriggerKind":  {"Inline", ""},
 	"InsertTextFormat":             {"", "TextFormat"},
+	"LanguageKind":                 {"Lang", ""},
 	"SemanticTokenModifiers":       {"Mod", ""},
 	"SemanticTokenTypes":           {"", "Type"},
 	"SignatureHelpTriggerKind":     {"Sig", ""},

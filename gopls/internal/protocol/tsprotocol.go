@@ -6,8 +6,8 @@
 
 package protocol
 
-// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.1 (hash d2c907f450cb6d3baff74b31b432b90786d2c3b0).
-// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.1/protocol/metaModel.json
+// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.2 (hash 654dc9be6673c61476c28fda604406279c3258d7).
+// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.2/protocol/metaModel.json
 // LSP metaData.version = 3.17.0.
 
 import "encoding/json"
@@ -401,6 +401,13 @@ type ClientSignatureInformationOptions struct {
 	//
 	// @since 3.16.0
 	ActiveParameterSupport bool `json:"activeParameterSupport,omitempty"`
+	// The client supports the `activeParameter` property on
+	// `SignatureHelp`/`SignatureInformation` being set to `null` to
+	// indicate that no parameter should be active.
+	//
+	// @since 3.18.0
+	// @proposed
+	NoActiveParameterSupport bool `json:"noActiveParameterSupport,omitempty"`
 }
 
 // @since 3.18.0
@@ -529,6 +536,12 @@ type CodeActionClientCapabilities struct {
 	//
 	// @since 3.16.0
 	HonorsChangeAnnotations bool `json:"honorsChangeAnnotations,omitempty"`
+	// Whether the client supports documentation for a class of
+	// code actions.
+	//
+	// @since 3.18.0
+	// @proposed
+	DocumentationSupport bool `json:"documentationSupport,omitempty"`
 }
 
 // Contains additional diagnostic information about the context in which
@@ -565,6 +578,23 @@ type CodeActionDisabled struct {
 // A set of predefined code action kinds
 type CodeActionKind string
 
+// Documentation for a class of code actions.
+//
+// @since 3.18.0
+// @proposed
+type CodeActionKindDocumentation struct {
+	// The kind of the code action being documented.
+	//
+	// If the kind is generic, such as `CodeActionKind.Refactor`, the documentation will be shown whenever any
+	// refactorings are returned. If the kind if more specific, such as `CodeActionKind.RefactorExtract`, the
+	// documentation will only be shown when extract refactoring code actions are returned.
+	Kind CodeActionKind `json:"kind"`
+	// Command that is ued to display the documentation to the user.
+	//
+	// The title of this documentation code action is taken from {@linkcode Command.title}
+	Command Command `json:"command"`
+}
+
 // Provider options for a {@link CodeActionRequest}.
 type CodeActionOptions struct {
 	// CodeActionKinds that this server may return.
@@ -572,6 +602,24 @@ type CodeActionOptions struct {
 	// The list of kinds may be generic, such as `CodeActionKind.Refactor`, or the server
 	// may list out every specific kind they provide.
 	CodeActionKinds []CodeActionKind `json:"codeActionKinds,omitempty"`
+	// Static documentation for a class of code actions.
+	//
+	// Documentation from the provider should be shown in the code actions menu if either:
+	//
+	//
+	//  - Code actions of `kind` are requested by the editor. In this case, the editor will show the documentation that
+	//   most closely matches the requested code action kind. For example, if a provider has documentation for
+	//   both `Refactor` and `RefactorExtract`, when the user requests code actions for `RefactorExtract`,
+	//   the editor will use the documentation for `RefactorExtract` instead of the documentation for `Refactor`.
+	//
+	//
+	//  - Any code actions of `kind` are returned by the provider.
+	//
+	// At most one documentation entry should be shown per provider.
+	//
+	// @since 3.18.0
+	// @proposed
+	Documentation []CodeActionKindDocumentation `json:"documentation,omitempty"`
 	// The server provides support to resolve additional
 	// information for a code action.
 	//
@@ -717,6 +765,11 @@ type ColorPresentationParams struct {
 type Command struct {
 	// Title of the command, like `save`.
 	Title string `json:"title"`
+	// An optional tooltip.
+	//
+	// @since 3.18.0
+	// @proposed
+	Tooltip string `json:"tooltip,omitempty"`
 	// The identifier of the actual command handler.
 	Command string `json:"command"`
 	// Arguments that the command handler should be
@@ -1972,7 +2025,7 @@ type FoldingRange struct {
 	EndLine uint32 `json:"endLine"`
 	// The zero-based character offset before the folded range ends. If not defined, defaults to the length of the end line.
 	EndCharacter uint32 `json:"endCharacter,omitempty"`
-	// Describes the kind of the folding range such as `comment' or 'region'. The kind
+	// Describes the kind of the folding range such as 'comment' or 'region'. The kind
 	// is used to categorize folding ranges and used by commands like 'Fold all comments'.
 	// See {@link FoldingRangeKind} for an enumeration of standardized kinds.
 	Kind string `json:"kind,omitempty"`
@@ -2211,6 +2264,9 @@ type InitializedParams struct {
 // @since 3.17.0
 type InlayHint struct {
 	// The position of this hint.
+	//
+	// If multiple hints have the same position, they will be shown in the order
+	// they appear in the response.
 	Position Position `json:"position"`
 	// The label of this hint. A human readable string or an array of
 	// InlayHintLabelPart label parts.
@@ -2555,6 +2611,11 @@ type LSPErrorCodes int32
 // LSP object definition.
 // @since 3.17.0
 type LSPObject = map[string]LSPAny // (alias)
+// Predefined Language kinds
+// @since 3.18.0
+// @proposed
+type LanguageKind string
+
 // Client capabilities for the linked editing range request.
 //
 // @since 3.16.0
@@ -3385,6 +3446,10 @@ type ParameterInformation struct {
 	// signature label. (see SignatureInformation.label). The offsets are based on a UTF-16
 	// string representation as `Position` and `Range` does.
 	//
+	// To avoid ambiguities a server should use the [start, end] offset value instead of using
+	// a substring. Whether a client support this is controlled via `labelOffsetSupport` client
+	// capability.
+	//
 	// *Note*: a label of type string should be a substring of its containing signature label.
 	// Its intended use case is to highlight the parameter label part in the `SignatureInformation.label`.
 	Label string `json:"label"`
@@ -3607,13 +3672,13 @@ type Registration struct {
 type RegistrationParams struct {
 	Registrations []Registration `json:"registrations"`
 }
-
+type RegularExpressionEngineKind = string // (alias)
 // Client capabilities specific to regular expressions.
 //
 // @since 3.16.0
 type RegularExpressionsClientCapabilities struct {
 	// The engine's name.
-	Engine string `json:"engine"`
+	Engine RegularExpressionEngineKind `json:"engine"`
 	// The engine's version.
 	Version string `json:"version,omitempty"`
 }
@@ -4114,7 +4179,7 @@ type ServerInfo struct {
 	Version string `json:"version,omitempty"`
 }
 type SetTraceParams struct {
-	Value TraceValues `json:"value"`
+	Value TraceValue `json:"value"`
 }
 
 // Client capabilities for the showDocument request.
@@ -4194,13 +4259,22 @@ type SignatureHelp struct {
 	// In future version of the protocol this property might become
 	// mandatory to better express this.
 	ActiveSignature uint32 `json:"activeSignature,omitempty"`
-	// The active parameter of the active signature. If omitted or the value
-	// lies outside the range of `signatures[activeSignature].parameters`
-	// defaults to 0 if the active signature has parameters. If
-	// the active signature has no parameters it is ignored.
+	// The active parameter of the active signature.
+	//
+	// If `null`, no parameter of the signature is active (for example a named
+	// argument that does not match any declared parameters). This is only valid
+	// if the client specifies the client capability
+	// `textDocument.signatureHelp.noActiveParameterSupport === true`
+	//
+	// If omitted or the value lies outside the range of
+	// `signatures[activeSignature].parameters` defaults to 0 if the active
+	// signature has parameters.
+	//
+	// If the active signature has no parameters it is ignored.
+	//
 	// In future version of the protocol this property might become
-	// mandatory to better express the active parameter if the
-	// active signature does have any.
+	// mandatory (but still nullable) to better express the active parameter if
+	// the active signature does have any.
 	ActiveParameter uint32 `json:"activeParameter,omitempty"`
 }
 
@@ -4292,7 +4366,13 @@ type SignatureInformation struct {
 	Parameters []ParameterInformation `json:"parameters,omitempty"`
 	// The index of the active parameter.
 	//
-	// If provided, this is used in place of `SignatureHelp.activeParameter`.
+	// If `null`, no parameter of the signature is active (for example a named
+	// argument that does not match any declared parameters). This is only valid
+	// if the client specifies the client capability
+	// `textDocument.signatureHelp.noActiveParameterSupport === true`
+	//
+	// If provided (or `null`), this is used in place of
+	// `SignatureHelp.activeParameter`.
 	//
 	// @since 3.16.0
 	ActiveParameter uint32 `json:"activeParameter,omitempty"`
@@ -4586,7 +4666,7 @@ type TextDocumentItem struct {
 	// The text document's uri.
 	URI DocumentURI `json:"uri"`
 	// The text document's language identifier.
-	LanguageID string `json:"languageId"`
+	LanguageID LanguageKind `json:"languageId"`
 	// The version number of this document (it will increase after each
 	// change, including undo/redo).
 	Version int32 `json:"version"`
@@ -4662,7 +4742,7 @@ type TextEdit struct {
 	NewText string `json:"newText"`
 }
 type TokenFormat string
-type TraceValues string
+type TraceValue string
 
 // Since 3.6.0
 type TypeDefinitionClientCapabilities struct {
@@ -5261,7 +5341,7 @@ type XInitializeParams struct {
 	// User provided initialization options.
 	InitializationOptions interface{} `json:"initializationOptions,omitempty"`
 	// The initial trace setting. If omitted trace is disabled ('off').
-	Trace *TraceValues `json:"trace,omitempty"`
+	Trace *TraceValue `json:"trace,omitempty"`
 	WorkDoneProgressParams
 }
 
@@ -5302,7 +5382,7 @@ type _InitializeParams struct {
 	// User provided initialization options.
 	InitializationOptions interface{} `json:"initializationOptions,omitempty"`
 	// The initial trace setting. If omitted trace is disabled ('off').
-	Trace *TraceValues `json:"trace,omitempty"`
+	Trace *TraceValue `json:"trace,omitempty"`
 	WorkDoneProgressParams
 }
 
@@ -5335,6 +5415,19 @@ const (
 	//  - Inline constant
 	//  - ...
 	RefactorInline CodeActionKind = "refactor.inline"
+	// Base kind for refactoring move actions: `refactor.move`
+	//
+	// Example move actions:
+	//
+	//
+	//  - Move a function to a new file
+	//  - Move a property between classes
+	//  - Move method to base class
+	//  - ...
+	//
+	// @since 3.18.0
+	// @proposed
+	RefactorMove CodeActionKind = "refactor.move"
 	// Base kind for refactoring rewrite actions: 'refactor.rewrite'
 	//
 	// Example rewrite actions:
@@ -5360,6 +5453,11 @@ const (
 	//
 	// @since 3.15.0
 	SourceFixAll CodeActionKind = "source.fixAll"
+	// Base kind for all code actions applying to the entire notebook's scope. CodeActionKinds using
+	// this should always begin with `notebook.`
+	//
+	// @since 3.18.0
+	Notebook CodeActionKind = "notebook"
 	// The reason why code actions were requested.
 	//
 	// @since 3.17.0
@@ -5505,9 +5603,9 @@ const (
 	// @since 3.18.0
 	// @proposed
 	// Completion was triggered explicitly by a user gesture.
-	InlineInvoked InlineCompletionTriggerKind = 0
+	InlineInvoked InlineCompletionTriggerKind = 1
 	// Completion was triggered automatically while editing.
-	InlineAutomatic InlineCompletionTriggerKind = 1
+	InlineAutomatic InlineCompletionTriggerKind = 2
 	// Defines whether the insert text in a completion item should be interpreted as
 	// plain text or a snippet.
 	// The primary text to be inserted is treated as a plain string.
@@ -5564,6 +5662,75 @@ const (
 	// The client has canceled a request and a server as detected
 	// the cancel.
 	RequestCancelled LSPErrorCodes = -32800
+	// Predefined Language kinds
+	// @since 3.18.0
+	// @proposed
+	LangABAP         LanguageKind = "abap"
+	LangWindowsBat   LanguageKind = "bat"
+	LangBibTeX       LanguageKind = "bibtex"
+	LangClojure      LanguageKind = "clojure"
+	LangCoffeescript LanguageKind = "coffeescript"
+	LangC            LanguageKind = "c"
+	LangCPP          LanguageKind = "cpp"
+	LangCSharp       LanguageKind = "csharp"
+	LangCSS          LanguageKind = "css"
+	// @since 3.18.0
+	// @proposed
+	LangD LanguageKind = "d"
+	// @since 3.18.0
+	// @proposed
+	LangDelphi          LanguageKind = "pascal"
+	LangDiff            LanguageKind = "diff"
+	LangDart            LanguageKind = "dart"
+	LangDockerfile      LanguageKind = "dockerfile"
+	LangElixir          LanguageKind = "elixir"
+	LangErlang          LanguageKind = "erlang"
+	LangFSharp          LanguageKind = "fsharp"
+	LangGitCommit       LanguageKind = "git-commit"
+	LangGitRebase       LanguageKind = "rebase"
+	LangGo              LanguageKind = "go"
+	LangGroovy          LanguageKind = "groovy"
+	LangHandlebars      LanguageKind = "handlebars"
+	LangHTML            LanguageKind = "html"
+	LangIni             LanguageKind = "ini"
+	LangJava            LanguageKind = "java"
+	LangJavaScript      LanguageKind = "javascript"
+	LangJavaScriptReact LanguageKind = "javascriptreact"
+	LangJSON            LanguageKind = "json"
+	LangLaTeX           LanguageKind = "latex"
+	LangLess            LanguageKind = "less"
+	LangLua             LanguageKind = "lua"
+	LangMakefile        LanguageKind = "makefile"
+	LangMarkdown        LanguageKind = "markdown"
+	LangObjectiveC      LanguageKind = "objective-c"
+	LangObjectiveCPP    LanguageKind = "objective-cpp"
+	// @since 3.18.0
+	// @proposed
+	LangPascal          LanguageKind = "pascal"
+	LangPerl            LanguageKind = "perl"
+	LangPerl6           LanguageKind = "perl6"
+	LangPHP             LanguageKind = "php"
+	LangPowershell      LanguageKind = "powershell"
+	LangPug             LanguageKind = "jade"
+	LangPython          LanguageKind = "python"
+	LangR               LanguageKind = "r"
+	LangRazor           LanguageKind = "razor"
+	LangRuby            LanguageKind = "ruby"
+	LangRust            LanguageKind = "rust"
+	LangSCSS            LanguageKind = "scss"
+	LangSASS            LanguageKind = "sass"
+	LangScala           LanguageKind = "scala"
+	LangShaderLab       LanguageKind = "shaderlab"
+	LangShellScript     LanguageKind = "shellscript"
+	LangSQL             LanguageKind = "sql"
+	LangSwift           LanguageKind = "swift"
+	LangTypeScript      LanguageKind = "typescript"
+	LangTypeScriptReact LanguageKind = "typescriptreact"
+	LangTeX             LanguageKind = "tex"
+	LangVisualBasic     LanguageKind = "vb"
+	LangXML             LanguageKind = "xml"
+	LangXSL             LanguageKind = "xsl"
+	LangYAML            LanguageKind = "yaml"
 	// Describes the content type that a client supports in various
 	// result literals like `Hover`, `ParameterInfo` or `CompletionItem`.
 	//
@@ -5585,6 +5752,7 @@ const (
 	// A debug message.
 	//
 	// @since 3.18.0
+	// @proposed
 	Debug MessageType = 5
 	// The moniker kind.
 	//
@@ -5736,11 +5904,11 @@ const (
 	Incremental TextDocumentSyncKind = 2
 	Relative    TokenFormat          = "relative"
 	// Turn tracing off.
-	Off TraceValues = "off"
+	Off TraceValue = "off"
 	// Trace messages only.
-	Messages TraceValues = "messages"
+	Messages TraceValue = "messages"
 	// Verbose message tracing.
-	Verbose TraceValues = "verbose"
+	Verbose TraceValue = "verbose"
 	// Moniker uniqueness level to define scope of the moniker.
 	//
 	// @since 3.16.0

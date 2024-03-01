@@ -303,7 +303,7 @@ func (e *Editor) initialize(ctx context.Context) error {
 	}
 	params.Capabilities = capabilities
 
-	trace := protocol.TraceValues("messages")
+	trace := protocol.TraceValue("messages")
 	params.Trace = &trace
 	// TODO: support workspace folders.
 	if e.Server != nil {
@@ -577,17 +577,17 @@ var defaultFileAssociations = map[string]*regexp.Regexp{
 
 // languageID returns the language identifier for the path p given the user
 // configured fileAssociations.
-func languageID(p string, fileAssociations map[string]string) string {
+func languageID(p string, fileAssociations map[string]string) protocol.LanguageKind {
 	base := path.Base(p)
 	for lang, re := range fileAssociations {
 		re := regexp.MustCompile(re)
 		if re.MatchString(base) {
-			return lang
+			return protocol.LanguageKind(lang)
 		}
 	}
 	for lang, re := range defaultFileAssociations {
 		if re.MatchString(base) {
-			return lang
+			return protocol.LanguageKind(lang)
 		}
 	}
 	return ""
