@@ -80,11 +80,7 @@ func (subst *subster) typ(t types.Type) (res types.Type) {
 		subst.cache[t] = res
 	}()
 
-	// fall through if result r will be identical to t, types.Identical(r, t).
 	switch t := t.(type) {
-	case *aliases.Alias:
-		return subst.typ(aliases.Unalias(t))
-
 	case *types.TypeParam:
 		r := subst.replacements[t]
 		assert(r != nil, "type param without replacement encountered")
@@ -139,6 +135,9 @@ func (subst *subster) typ(t types.Type) (res types.Type) {
 
 	case *types.Interface:
 		return subst.interface_(t)
+
+	case *aliases.Alias:
+		return subst.alias(t)
 
 	case *types.Named:
 		return subst.named(t)
@@ -305,6 +304,18 @@ func (subst *subster) interface_(iface *types.Interface) *types.Interface {
 		initEmbeds(iface.NumEmbeddeds())
 	}
 	return types.NewInterfaceType(methods, embeds).Complete()
+}
+
+func (subst *subster) alias(t *aliases.Alias) types.Type {
+	// TODO(go.dev/issues/46477): support TypeParameters once these are available from go/types.
+	u := aliases.Unalias(t)
+	if s := subst.typ(u); s != u {
+		// If there is any change, do not create a new alias.
+		return s
+	}
+	// If there is no change, t did not reach any type parameter.
+	// Keep the Alias.
+	return t
 }
 
 func (subst *subster) named(t *types.Named) types.Type {

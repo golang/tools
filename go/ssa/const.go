@@ -46,9 +46,9 @@ func soleTypeKind(typ types.Type) types.BasicInfo {
 	// Candidates (perhaps all) are eliminated during the type-set
 	// iteration, which executes at least once.
 	state := types.IsBoolean | types.IsInteger | types.IsString
-	underIs(typeSetOf(typ), func(t types.Type) bool {
+	underIs(typeSetOf(typ), func(ut types.Type) bool {
 		var c types.BasicInfo
-		if t, ok := aliases.Unalias(t).(*types.Basic); ok {
+		if t, ok := ut.(*types.Basic); ok {
 			c = t.Info()
 		}
 		if c&types.IsNumeric != 0 { // int/float/complex

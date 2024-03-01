@@ -50,6 +50,7 @@ func typeSetOf(typ types.Type) termList {
 	// This is a adaptation of x/exp/typeparams.NormalTerms which x/tools cannot depend on.
 	var terms []*types.Term
 	var err error
+	// typeSetOf(t) == typeSetOf(Unalias(t))
 	switch typ := aliases.Unalias(typ).(type) {
 	case *types.TypeParam:
 		terms, err = typeparams.StructuralTerms(typ)

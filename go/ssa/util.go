@@ -51,8 +51,9 @@ func isNonTypeParamInterface(t types.Type) bool {
 }
 
 // isBasic reports whether t is a basic type.
+// t is assumed to be an Underlying type (not Named or Alias).
 func isBasic(t types.Type) bool {
-	_, ok := aliases.Unalias(t).(*types.Basic)
+	_, ok := t.(*types.Basic)
 	return ok
 }
 
@@ -263,13 +264,40 @@ func (c *canonizer) List(ts []types.Type) *typeList {
 		return nil
 	}
 
+	unaliasAll := func(ts []types.Type) []types.Type {
+		// Is there some top level alias?
+		var found bool
+		for _, t := range ts {
+			if _, ok := t.(*aliases.Alias); ok {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return ts // no top level alias
+		}
+
+		cp := make([]types.Type, len(ts)) // copy with top level aliases removed.
+		for i, t := range ts {
+			cp[i] = aliases.Unalias(t)
+		}
+		return cp
+	}
+	l := unaliasAll(ts)
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.lists.rep(ts)
+	return c.lists.rep(l)
 }
 
 // Type returns a canonical representative of type T.
+// Removes top-level aliases.
+//
+// For performance, reasons the canonical instance is order-dependent,
+// and may contain deeply nested aliases.
 func (c *canonizer) Type(T types.Type) types.Type {
+	T = aliases.Unalias(T) // remove the top level alias.
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

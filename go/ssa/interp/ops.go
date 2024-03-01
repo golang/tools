@@ -173,7 +173,7 @@ func asUnsigned(x value) (value, bool) {
 
 // zero returns a new "zero" value of the specified type.
 func zero(t types.Type) value {
-	switch t := aliases.Unalias(t).(type) {
+	switch t := t.(type) {
 	case *types.Basic:
 		if t.Kind() == types.UntypedNil {
 			panic("untyped nil has no zero value")
@@ -235,6 +235,8 @@ func zero(t types.Type) value {
 		return a
 	case *types.Named:
 		return zero(t.Underlying())
+	case *aliases.Alias:
+		return zero(aliases.Unalias(t))
 	case *types.Interface:
 		return iface{} // nil type, methodset and value
 	case *types.Slice:

@@ -12,7 +12,6 @@ import (
 	"go/token"
 	"go/types"
 
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -277,18 +276,20 @@ func emitConv(f *Function, val Value, typ types.Type) Value {
 		sliceTo0ArrayPtr
 		convert
 	)
-	classify := func(s, d types.Type) conversionCase {
+	// classify the conversion case of a source type us to a destination type ud.
+	// us and ud are underlying types (not *Named or *Alias)
+	classify := func(us, ud types.Type) conversionCase {
 		// Just a change of type, but not value or representation?
-		if isValuePreserving(s, d) {
+		if isValuePreserving(us, ud) {
 			return changeType
 		}
 
 		// Conversion from slice to array or slice to array pointer?
-		if slice, ok := aliases.Unalias(s).(*types.Slice); ok {
+		if slice, ok := us.(*types.Slice); ok {
 			var arr *types.Array
 			var ptr bool
 			// Conversion from slice to array pointer?
-			switch d := aliases.Unalias(d).(type) {
+			switch d := ud.(type) {
 			case *types.Array:
 				arr = d
 			case *types.Pointer:
@@ -313,8 +314,8 @@ func emitConv(f *Function, val Value, typ types.Type) Value {
 
 		// The only remaining case in well-typed code is a representation-
 		// changing conversion of basic types (possibly with []byte/[]rune).
-		if !isBasic(s) && !isBasic(d) {
-			panic(fmt.Sprintf("in %s: cannot convert term %s (%s [within %s]) to type %s [within %s]", f, val, val.Type(), s, typ, d))
+		if !isBasic(us) && !isBasic(ud) {
+			panic(fmt.Sprintf("in %s: cannot convert term %s (%s [within %s]) to type %s [within %s]", f, val, val.Type(), us, typ, ud))
 		}
 		return convert
 	}

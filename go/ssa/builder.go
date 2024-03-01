@@ -1253,7 +1253,7 @@ func (b *builder) compLit(fn *Function, addr Value, e *ast.CompositeLit, isZero 
 	case *types.Array, *types.Slice:
 		var at *types.Array
 		var array Value
-		switch t := aliases.Unalias(t).(type) {
+		switch t := t.(type) {
 		case *types.Slice:
 			at = types.NewArray(t.Elem(), b.arrayLen(fn, e.Elts))
 			array = emitNew(fn, at, e.Lbrace, "slicelit")

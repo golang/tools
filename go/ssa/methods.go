@@ -210,7 +210,7 @@ func forEachReachable(msets *typeutil.MethodSetCache, T types.Type, f func(types
 
 		switch T := T.(type) {
 		case *aliases.Alias:
-			visit(aliases.Unalias(T), false)
+			visit(aliases.Unalias(T), skip) // emulates the pre-Alias behavior
 
 		case *types.Basic:
 			// nop

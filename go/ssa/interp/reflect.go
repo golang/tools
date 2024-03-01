@@ -179,8 +179,8 @@ func ext۰reflect۰Zero(fr *frame, args []value) value {
 }
 
 func reflectKind(t types.Type) reflect.Kind {
-	switch t := aliases.Unalias(t).(type) {
-	case *types.Named:
+	switch t := t.(type) {
+	case *types.Named, *aliases.Alias:
 		return reflectKind(t.Underlying())
 	case *types.Basic:
 		switch t.Kind() {

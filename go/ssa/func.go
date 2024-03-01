@@ -37,7 +37,8 @@ func (f *Function) typeOf(e ast.Expr) types.Type {
 	panic(fmt.Sprintf("no type for %T @ %s", e, f.Prog.Fset.Position(e.Pos())))
 }
 
-// typ is the locally instantiated type of T. T==typ(T) if f is not an instantiation.
+// typ is the locally instantiated type of T.
+// If f is not an instantiation, then f.typ(T)==T.
 func (f *Function) typ(T types.Type) types.Type {
 	return f.subst.typ(T)
 }
