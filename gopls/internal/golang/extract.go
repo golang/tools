@@ -78,10 +78,12 @@ func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file
 	if err := format.Node(&buf, fset, assignStmt); err != nil {
 		return nil, nil, err
 	}
-	assignment := strings.ReplaceAll(buf.String(), "\n", newLineIndent) + newLineIndent
+	var edits []analysis.TextEdit
 
-	return fset, &analysis.SuggestedFix{
-		TextEdits: []analysis.TextEdit{
+	switch insertBeforeStmt := insertBeforeStmt.(type) {
+	case *ast.DeclStmt, *ast.AssignStmt:
+		assignment := strings.ReplaceAll(buf.String(), "\n", newLineIndent) + newLineIndent
+		edits = []analysis.TextEdit{
 			{
 				Pos:     insertBeforeStmt.Pos(),
 				End:     insertBeforeStmt.Pos(),
@@ -92,7 +94,19 @@ func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file
 				End:     end,
 				NewText: []byte(lhs),
 			},
-		},
+		}
+	default:
+		assignment := strings.ReplaceAll(buf.String(), "\n", newLineIndent)
+		edits = []analysis.TextEdit{
+			{
+				Pos:     start,
+				End:     end,
+				NewText: []byte(assignment),
+			},
+		}
+	}
+	return fset, &analysis.SuggestedFix{
+		TextEdits: edits,
 	}, nil
 }
 
