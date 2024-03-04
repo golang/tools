@@ -1210,3 +1210,30 @@ func TestGo117Builtins(t *testing.T) {
 		})
 	}
 }
+
+// TestLabels just tests that anonymous labels are handled.
+func TestLabels(t *testing.T) {
+	tests := []string{
+		`package main
+		  func main() { _:println(1) }`,
+		`package main
+		  func main() { _:println(1); _:println(2)}`,
+	}
+	for _, test := range tests {
+		conf := loader.Config{Fset: token.NewFileSet()}
+		f, err := parser.ParseFile(conf.Fset, "<input>", test, 0)
+		if err != nil {
+			t.Errorf("parse error: %s", err)
+			return
+		}
+		conf.CreateFromFiles("main", f)
+		iprog, err := conf.Load()
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+		prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
+		pkg := prog.Package(iprog.Created[0].Pkg)
+		pkg.Build()
+	}
+}

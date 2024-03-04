@@ -2338,6 +2338,12 @@ start:
 		}
 
 	case *ast.LabeledStmt:
+		if s.Label.Name == "_" {
+			// Blank labels can't be the target of a goto, break,
+			// or continue statement, so we don't need a new block.
+			_s = s.Stmt
+			goto start
+		}
 		label = fn.labelledBlock(s.Label)
 		emitJump(fn, label._goto)
 		fn.currentBlock = label._goto

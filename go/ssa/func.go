@@ -106,6 +106,7 @@ type lblock struct {
 
 // labelledBlock returns the branch target associated with the
 // specified label, creating it if needed.
+// label should be a non-blank identifier (label.Name != "_").
 func (f *Function) labelledBlock(label *ast.Ident) *lblock {
 	obj := f.objectOf(label).(*types.Label)
 	lb := f.lblocks[obj]
