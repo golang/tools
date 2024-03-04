@@ -181,6 +181,7 @@ func TestVTAGraphConstruction(t *testing.T) {
 		"testdata/src/store_load_alias.go",
 		"testdata/src/phi_alias.go",
 		"testdata/src/channels.go",
+		"testdata/src/generic_channels.go",
 		"testdata/src/select.go",
 		"testdata/src/stores_arrays.go",
 		"testdata/src/maps.go",

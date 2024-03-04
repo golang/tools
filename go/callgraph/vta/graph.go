@@ -390,7 +390,7 @@ func (b *builder) unop(u *ssa.UnOp) {
 		// Multiplication operator * is used here as a dereference operator.
 		b.addInFlowAliasEdges(b.nodeFromVal(u), b.nodeFromVal(u.X))
 	case token.ARROW:
-		t := u.X.Type().Underlying().(*types.Chan).Elem()
+		t := typeparams.CoreType(u.X.Type()).(*types.Chan).Elem()
 		b.addInFlowAliasEdges(b.nodeFromVal(u), channelElem{typ: t})
 	default:
 		// There is no interesting type flow otherwise.
@@ -444,7 +444,7 @@ func (b *builder) fieldAddr(f *ssa.FieldAddr) {
 }
 
 func (b *builder) send(s *ssa.Send) {
-	t := s.Chan.Type().Underlying().(*types.Chan).Elem()
+	t := typeparams.CoreType(s.Chan.Type()).(*types.Chan).Elem()
 	b.addInFlowAliasEdges(channelElem{typ: t}, b.nodeFromVal(s.X))
 }
 
@@ -458,7 +458,7 @@ func (b *builder) send(s *ssa.Send) {
 func (b *builder) selekt(s *ssa.Select) {
 	recvIndex := 0
 	for _, state := range s.States {
-		t := state.Chan.Type().Underlying().(*types.Chan).Elem()
+		t := typeparams.CoreType(state.Chan.Type()).(*types.Chan).Elem()
 
 		if state.Dir == types.SendOnly {
 			b.addInFlowAliasEdges(channelElem{typ: t}, b.nodeFromVal(state.Send))
