@@ -301,7 +301,7 @@ func (prog *Program) CreatePackage(pkg *types.Package, files []*ast.File, info *
 var printMu sync.Mutex
 
 // AllPackages returns a new slice containing all packages created by
-// prog.CreatePackage in in unspecified order.
+// prog.CreatePackage in unspecified order.
 func (prog *Program) AllPackages() []*Package {
 	pkgs := make([]*Package, 0, len(prog.packages))
 	for _, pkg := range prog.packages {

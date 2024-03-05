@@ -31,7 +31,7 @@ func TestStdWorkspace(t *testing.T) {
 	// (likely a misspelling due to slashes).
 	// TODO(rfindley): investigate and fix this on windows.
 	if runtime.GOOS == "windows" {
-		t.Skip("skipping on windows: fails to to misspelled paths")
+		t.Skip("skipping on windows: fails to misspelled paths")
 	}
 
 	// Query GOROOT. This is slightly more precise than e.g. runtime.GOROOT, as

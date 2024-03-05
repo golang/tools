@@ -234,7 +234,7 @@ The following markers are supported within marker tests:
     textDocument/completion request at the location, and searches for a
     result with label matching that of the provided completion item
     (TODO(rfindley): accept a label rather than a completion item). Check
-    the the result snippet matches the provided snippet.
+    the result snippet matches the provided snippet.
 
   - symbol(golden): makes a textDocument/documentSymbol request
     for the enclosing file, formats the response with one symbol

@@ -65,7 +65,7 @@ type falconType struct {
 //     cannot be eliminated by substitution as its argument value is
 //     negative.
 //
-//   - When inlining sub("", 2, 1), all three parameters cannot be be
+//   - When inlining sub("", 2, 1), all three parameters cannot be
 //     simultaneously eliminated by substitution without violating i
 //     <= len(s) and j <= len(s), but the parameters i and j could be
 //     safely eliminated without s.

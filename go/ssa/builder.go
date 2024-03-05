@@ -1865,7 +1865,7 @@ func (b *builder) forStmtGo122(fn *Function, s *ast.ForStmt, label *lblock) {
 		fn.emit(phi)
 
 		fn.currentBlock = post
-		// If next is is local, it reuses the address and zeroes the old value so
+		// If next is local, it reuses the address and zeroes the old value so
 		// load before allocating next.
 		load := emitLoad(fn, phi)
 		next := emitLocal(fn, typ, v.Pos(), v.Name())

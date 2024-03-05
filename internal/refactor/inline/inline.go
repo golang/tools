@@ -176,7 +176,7 @@ func Inline(logf func(string, ...any), caller *Caller, callee *Callee) ([]byte, 
 		// function body. In essence the question is: which
 		// is more likely to have comments?
 		// Usually the callee body will be larger and more
-		// statement-heavy than the the arguments, but a
+		// statement-heavy than the arguments, but a
 		// strategy may widen the scope of the replacement
 		// (res.old) from CallExpr to, say, its enclosing
 		// block, so the caller nodes dominate.
