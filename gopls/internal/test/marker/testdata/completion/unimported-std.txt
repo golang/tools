@@ -1,0 +1,47 @@
+Test of unimported completions respecting the effective Go version of the file.
+
+These symbols below were introduced in go1.20:
+
+  types.Satisfied
+  ast.File.FileStart
+  (*token.FileSet).RemoveFile
+
+The underlying logic depends on versions.FileVersion, which only
+behaves correctly in go1.22. (When go1.22 is assured, we can remove
+the min_go flag but leave the test inputs unchanged.)
+
+-- flags --
+-ignore_extra_diags -min_go=go1.22
+
+-- go.mod --
+module example.com
+
+go 1.19
+
+-- a/a.go --
+package a
+
+// package-level func
+var _ = types.Imple //@rankl("Imple", "Implements")
+var _ = types.Satis //@rankl("Satis", "!Satisfies")
+
+// (Apparently we don't even offer completions of methods
+// of types from unimported packages, so the fact that
+// we don't implement std version filtering isn't evident.)
+
+// field
+var _ = new(ast.File).Packa //@rankl("Packa", "!Package")
+var _ = new(ast.File).FileS //@rankl("FileS", "!FileStart")
+
+// method
+var _ = new(token.FileSet).Ad //@rankl("Ad", "!Add")
+var _ = new(token.FileSet).Remove //@rankl("Remove", "!RemoveFile")
+
+-- b/b.go --
+//go:build go1.20
+
+package a
+
+// package-level func
+var _ = types.Imple //@rankl("Imple", "Implements")
+var _ = types.Satis //@rankl("Satis", "Satisfies")

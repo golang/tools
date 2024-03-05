@@ -2855,8 +2855,8 @@ func TestGetPackageCompletions(t *testing.T) {
 			defer mu.Unlock()
 			for _, csym := range c.Exports {
 				for _, w := range want {
-					if c.Fix.StmtInfo.ImportPath == w.path && csym == w.symbol {
-						got = append(got, res{c.Fix.Relevance, c.Fix.IdentName, c.Fix.StmtInfo.ImportPath, csym})
+					if c.Fix.StmtInfo.ImportPath == w.path && csym.Name == w.symbol {
+						got = append(got, res{c.Fix.Relevance, c.Fix.IdentName, c.Fix.StmtInfo.ImportPath, csym.Name})
 					}
 				}
 			}

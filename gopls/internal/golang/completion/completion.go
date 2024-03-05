@@ -17,6 +17,7 @@ import (
 	"go/token"
 	"go/types"
 	"math"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,8 +42,10 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fuzzy"
 	"golang.org/x/tools/internal/imports"
+	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/versions"
 )
 
 // A CompletionItem represents a possible completion suggested by the algorithm.
@@ -912,7 +915,7 @@ func (c *completer) populateImportCompletions(searchImport *ast.ImportSpec) erro
 		obj := types.NewPkgName(0, nil, name, types.NewPackage(pkgToConsider, name))
 		c.deepState.enqueue(candidate{
 			obj:    obj,
-			detail: fmt.Sprintf("%q", pkgToConsider),
+			detail: strconv.Quote(pkgToConsider),
 			score:  score,
 		})
 	}
@@ -1185,6 +1188,8 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 		return nil // feature disabled
 	}
 
+	// -- completion of symbols in unimported packages --
+
 	// The deep completion algorithm is exceedingly complex and
 	// deeply coupled to the now obsolete notions that all
 	// token.Pos values can be interpreted by as a single FileSet
@@ -1262,7 +1267,7 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	// Consider adding a concurrency-safe API for completer.
 	var cMu sync.Mutex // guards c.items and c.matcher
 	var enough int32   // atomic bool
-	quickParse := func(uri protocol.DocumentURI, mp *metadata.Package) error {
+	quickParse := func(uri protocol.DocumentURI, mp *metadata.Package, tooNew map[string]bool) error {
 		if atomic.LoadInt32(&enough) != 0 {
 			return nil
 		}
@@ -1283,6 +1288,10 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 
 			if !id.IsExported() {
 				return
+			}
+
+			if tooNew[id.Name] {
+				return // symbol too new for requesting file's Go's version
 			}
 
 			cMu.Lock()
@@ -1372,14 +1381,34 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 		return nil
 	}
 
+	var goversion string
+	// TODO(adonovan): after go1.21, replace with:
+	//    goversion = c.pkg.GetTypesInfo().FileVersions[c.file]
+	if v := reflect.ValueOf(c.pkg.GetTypesInfo()).Elem().FieldByName("FileVersions"); v.IsValid() {
+		goversion = v.Interface().(map[*ast.File]string)[c.file] // may be ""
+	}
+
 	// Extract the package-level candidates using a quick parse.
 	var g errgroup.Group
 	for _, path := range paths {
 		mp := known[golang.PackagePath(path)]
+
+		// For standard packages, build a filter of symbols that
+		// are too new for the requesting file's Go version.
+		var tooNew map[string]bool
+		if syms, ok := stdlib.PackageSymbols[path]; ok && goversion != "" {
+			tooNew = make(map[string]bool)
+			for _, sym := range syms {
+				if versions.Before(goversion, sym.Version.String()) {
+					tooNew[sym.Name] = true
+				}
+			}
+		}
+
 		for _, uri := range mp.CompiledGoFiles {
 			uri := uri
 			g.Go(func() error {
-				return quickParse(uri, mp)
+				return quickParse(uri, mp, tooNew)
 			})
 		}
 	}
@@ -1404,10 +1433,13 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 
 		// Continue with untyped proposals.
 		pkg := types.NewPackage(pkgExport.Fix.StmtInfo.ImportPath, pkgExport.Fix.IdentName)
-		for _, export := range pkgExport.Exports {
+		for _, symbol := range pkgExport.Exports {
+			if goversion != "" && versions.Before(goversion, symbol.Version.String()) {
+				continue // symbol too new for this file
+			}
 			score := unimportedScore(pkgExport.Fix.Relevance)
 			c.deepState.enqueue(candidate{
-				obj:   types.NewVar(0, pkg, export, nil),
+				obj:   types.NewVar(0, pkg, symbol.Name, nil),
 				score: score,
 				imp: &importInfo{
 					importPath: pkgExport.Fix.StmtInfo.ImportPath,

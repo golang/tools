@@ -651,11 +651,11 @@ func getCandidatePkgs(ctx context.Context, wrappedCallback *scanCallback, filena
 		}
 		dupCheck[importPath] = struct{}{}
 		if notSelf(p) && wrappedCallback.dirFound(p) && wrappedCallback.packageNameLoaded(p) {
-			exports := make([]string, 0, len(symbols))
+			var exports []stdlib.Symbol
 			for _, sym := range symbols {
 				switch sym.Kind {
 				case stdlib.Func, stdlib.Type, stdlib.Var, stdlib.Const:
-					exports = append(exports, sym.Name)
+					exports = append(exports, sym)
 				}
 			}
 			wrappedCallback.exportsLoaded(p, exports)
@@ -678,7 +678,7 @@ func getCandidatePkgs(ctx context.Context, wrappedCallback *scanCallback, filena
 			dupCheck[pkg.importPathShort] = struct{}{}
 			return notSelf(pkg) && wrappedCallback.packageNameLoaded(pkg)
 		},
-		exportsLoaded: func(pkg *pkg, exports []string) {
+		exportsLoaded: func(pkg *pkg, exports []stdlib.Symbol) {
 			// If we're an x_test, load the package under test's test variant.
 			if strings.HasSuffix(filePkg, "_test") && pkg.dir == filepath.Dir(filename) {
 				var err error
@@ -803,7 +803,7 @@ func GetImportPaths(ctx context.Context, wrapped func(ImportFix), searchPrefix, 
 // A PackageExport is a package and its exports.
 type PackageExport struct {
 	Fix     *ImportFix
-	Exports []string
+	Exports []stdlib.Symbol
 }
 
 // GetPackageExports returns all known packages with name pkg and their exports.
@@ -818,8 +818,8 @@ func GetPackageExports(ctx context.Context, wrapped func(PackageExport), searchP
 		packageNameLoaded: func(pkg *pkg) bool {
 			return pkg.packageName == searchPkg
 		},
-		exportsLoaded: func(pkg *pkg, exports []string) {
-			sort.Strings(exports)
+		exportsLoaded: func(pkg *pkg, exports []stdlib.Symbol) {
+			sortSymbols(exports)
 			wrapped(PackageExport{
 				Fix: &ImportFix{
 					StmtInfo: ImportInfo{
@@ -1093,7 +1093,7 @@ type Resolver interface {
 
 	// loadExports returns the set of exported symbols in the package at dir.
 	// loadExports may be called concurrently.
-	loadExports(ctx context.Context, pkg *pkg, includeTest bool) (string, []string, error)
+	loadExports(ctx context.Context, pkg *pkg, includeTest bool) (string, []stdlib.Symbol, error)
 
 	// scoreImportPath returns the relevance for an import path.
 	scoreImportPath(ctx context.Context, path string) float64
@@ -1122,7 +1122,7 @@ type scanCallback struct {
 	// If it returns true, the package's exports will be loaded.
 	packageNameLoaded func(pkg *pkg) bool
 	// exportsLoaded is called when a package's exports have been loaded.
-	exportsLoaded func(pkg *pkg, exports []string)
+	exportsLoaded func(pkg *pkg, exports []stdlib.Symbol)
 }
 
 func addExternalCandidates(ctx context.Context, pass *pass, refs references, filename string) error {
@@ -1518,7 +1518,7 @@ func filterRoots(roots []gopathwalk.Root, include func(gopathwalk.Root) bool) []
 	return result
 }
 
-func (r *gopathResolver) loadExports(ctx context.Context, pkg *pkg, includeTest bool) (string, []string, error) {
+func (r *gopathResolver) loadExports(ctx context.Context, pkg *pkg, includeTest bool) (string, []stdlib.Symbol, error) {
 	if info, ok := r.cache.Load(pkg.dir); ok && !includeTest {
 		return r.cache.CacheExports(ctx, r.env, info)
 	}
@@ -1538,7 +1538,7 @@ func VendorlessPath(ipath string) string {
 	return ipath
 }
 
-func loadExportsFromFiles(ctx context.Context, env *ProcessEnv, dir string, includeTest bool) (string, []string, error) {
+func loadExportsFromFiles(ctx context.Context, env *ProcessEnv, dir string, includeTest bool) (string, []stdlib.Symbol, error) {
 	// Look for non-test, buildable .go files which could provide exports.
 	all, err := os.ReadDir(dir)
 	if err != nil {
@@ -1562,7 +1562,7 @@ func loadExportsFromFiles(ctx context.Context, env *ProcessEnv, dir string, incl
 	}
 
 	var pkgName string
-	var exports []string
+	var exports []stdlib.Symbol
 	fset := token.NewFileSet()
 	for _, fi := range files {
 		select {
@@ -1589,19 +1589,39 @@ func loadExportsFromFiles(ctx context.Context, env *ProcessEnv, dir string, incl
 			continue
 		}
 		pkgName = f.Name.Name
-		for name := range f.Scope.Objects {
+		for name, obj := range f.Scope.Objects {
 			if ast.IsExported(name) {
-				exports = append(exports, name)
+				var kind stdlib.Kind
+				switch obj.Kind {
+				case ast.Con:
+					kind = stdlib.Const
+				case ast.Typ:
+					kind = stdlib.Type
+				case ast.Var:
+					kind = stdlib.Var
+				case ast.Fun:
+					kind = stdlib.Func
+				}
+				exports = append(exports, stdlib.Symbol{
+					Name:    name,
+					Kind:    kind,
+					Version: 0, // unknown; be permissive
+				})
 			}
 		}
 	}
+	sortSymbols(exports)
 
 	if env.Logf != nil {
-		sortedExports := append([]string(nil), exports...)
-		sort.Strings(sortedExports)
-		env.Logf("loaded exports in dir %v (package %v): %v", dir, pkgName, strings.Join(sortedExports, ", "))
+		env.Logf("loaded exports in dir %v (package %v): %v", dir, pkgName, exports)
 	}
 	return pkgName, exports, nil
+}
+
+func sortSymbols(syms []stdlib.Symbol) {
+	sort.Slice(syms, func(i, j int) bool {
+		return syms[i].Name < syms[j].Name
+	})
 }
 
 // findImport searches for a package with the given symbols.
@@ -1670,7 +1690,7 @@ func findImport(ctx context.Context, pass *pass, candidates []pkgDistance, pkgNa
 
 				exportsMap := make(map[string]bool, len(exports))
 				for _, sym := range exports {
-					exportsMap[sym] = true
+					exportsMap[sym.Name] = true
 				}
 
 				// If it doesn't have the right

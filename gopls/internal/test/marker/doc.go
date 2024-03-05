@@ -221,6 +221,8 @@ The following markers are supported within marker tests:
     unexpected completion items may occur in the results.
     TODO(rfindley): this exists for compatibility with the old marker tests.
     Replace this with rankl, and rename.
+    A "!" prefix on a label asserts that the symbol is not a
+    completion candidate.
 
   - rankl(location, ...label): like rank, but only cares about completion
     item labels.

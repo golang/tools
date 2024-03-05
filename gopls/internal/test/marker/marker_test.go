@@ -40,6 +40,7 @@ import (
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/diff/myers"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -295,6 +296,7 @@ func (mark marker) mapper() *protocol.Mapper {
 //
 // It formats the error message using mark.sprintf.
 func (mark marker) errorf(format string, args ...any) {
+	mark.T().Helper()
 	msg := mark.sprintf(format, args...)
 	// TODO(adonovan): consider using fmt.Fprintf(os.Stderr)+t.Fail instead of
 	// t.Errorf to avoid reporting uninteresting positions in the Go source of
@@ -1237,19 +1239,35 @@ func completionItemMarker(mark marker, label string, other ...string) completion
 }
 
 func rankMarker(mark marker, src protocol.Location, items ...completionItem) {
+	// Separate positive and negative items (expectations).
+	var pos, neg []completionItem
+	for _, item := range items {
+		if strings.HasPrefix(item.Label, "!") {
+			neg = append(neg, item)
+		} else {
+			pos = append(pos, item)
+		}
+	}
+
+	// Collect results that are present in items, preserving their order.
 	list := mark.run.env.Completion(src)
 	var got []string
-	// Collect results that are present in items, preserving their order.
 	for _, g := range list.Items {
-		for _, w := range items {
+		for _, w := range pos {
 			if g.Label == w.Label {
 				got = append(got, g.Label)
 				break
 			}
 		}
+		for _, w := range neg {
+			if g.Label == w.Label[len("!"):] {
+				mark.errorf("got unwanted completion: %s", g.Label)
+				break
+			}
+		}
 	}
 	var want []string
-	for _, w := range items {
+	for _, w := range pos {
 		want = append(want, w.Label)
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
@@ -1258,18 +1276,27 @@ func rankMarker(mark marker, src protocol.Location, items ...completionItem) {
 }
 
 func ranklMarker(mark marker, src protocol.Location, labels ...string) {
-	list := mark.run.env.Completion(src)
-	var got []string
-	// Collect results that are present in items, preserving their order.
-	for _, g := range list.Items {
-		for _, label := range labels {
-			if g.Label == label {
-				got = append(got, g.Label)
-				break
-			}
+	// Separate positive and negative labels (expectations).
+	var pos, neg []string
+	for _, label := range labels {
+		if strings.HasPrefix(label, "!") {
+			neg = append(neg, label[len("!"):])
+		} else {
+			pos = append(pos, label)
 		}
 	}
-	if diff := cmp.Diff(labels, got); diff != "" {
+
+	// Collect results that are present in items, preserving their order.
+	list := mark.run.env.Completion(src)
+	var got []string
+	for _, g := range list.Items {
+		if slices.Contains(pos, g.Label) {
+			got = append(got, g.Label)
+		} else if slices.Contains(neg, g.Label) {
+			mark.errorf("got unwanted completion: %s", g.Label)
+		}
+	}
+	if diff := cmp.Diff(pos, got); diff != "" {
 		mark.errorf("completion rankings do not match (-want +got):\n%s", diff)
 	}
 }
