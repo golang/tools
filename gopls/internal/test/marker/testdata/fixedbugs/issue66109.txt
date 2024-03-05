@@ -1,0 +1,25 @@
+This test exercises the crash in golang/go#66109: a dangling reference due to
+test variants of a command-line-arguments package.
+
+-- flags --
+-min_go=go1.22
+
+-- go.mod --
+module example.com/tools
+
+go 1.22
+
+-- tools_test.go --
+//go:build tools
+
+package tools //@diag("tools", re"No packages found")
+
+import (
+	_ "example.com/tools/tool"
+)
+
+-- tool/tool.go --
+package main
+
+func main() {
+}

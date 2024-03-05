@@ -336,7 +336,11 @@ func (m *moduleErrorMap) Error() string {
 // buildMetadata populates the updates map with metadata updates to
 // apply, based on the given pkg. It recurs through pkg.Imports to ensure that
 // metadata exists for all dependencies.
-func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Package, loadDir string, standalone bool) {
+//
+// Returns the metadata.Package that was built (or which was already present in
+// updates), or nil if the package could not be built. Notably, the resulting
+// metadata.Package may have an ID that differs from pkg.ID.
+func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Package, loadDir string, standalone bool) *metadata.Package {
 	// Allow for multiple ad-hoc packages in the workspace (see #47584).
 	pkgPath := PackagePath(pkg.PkgPath)
 	id := PackageID(pkg.ID)
@@ -351,27 +355,27 @@ func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Packag
 			// (Can this happen? #64557)
 			if len(pkg.CompiledGoFiles) > 1 {
 				bug.Reportf("unexpected files in command-line-arguments package: %v", pkg.CompiledGoFiles)
-				return
+				return nil
 			}
 		} else if len(pkg.IgnoredFiles) > 0 {
 			// A file=empty.go query results in IgnoredFiles=[empty.go].
 			f = pkg.IgnoredFiles[0]
 		} else {
 			bug.Reportf("command-line-arguments package has neither CompiledGoFiles nor IgnoredFiles: %#v", "") //*pkg.Metadata)
-			return
+			return nil
 		}
 		id = PackageID(pkg.ID + f)
 		pkgPath = PackagePath(pkg.PkgPath + f)
 	}
 
 	// Duplicate?
-	if _, ok := updates[id]; ok {
+	if existing, ok := updates[id]; ok {
 		// A package was encountered twice due to shared
 		// subgraphs (common) or cycles (rare). Although "go
 		// list" usually breaks cycles, we don't rely on it.
 		// breakImportCycles in metadataGraph.Clone takes care
 		// of it later.
-		return
+		return existing
 	}
 
 	if pkg.TypesSizes == nil {
@@ -492,15 +496,21 @@ func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Packag
 			continue
 		}
 
-		buildMetadata(updates, imported, loadDir, false) // only top level packages can be standalone
+		dep := buildMetadata(updates, imported, loadDir, false) // only top level packages can be standalone
 
 		// Don't record edges to packages with no name, as they cause trouble for
 		// the importer (golang/go#60952).
 		//
+		// Also don't record edges to packages whose ID was modified (i.e.
+		// command-line-arguments packages), as encountered in golang/go#66109. In
+		// this case, we could theoretically keep the edge through dep.ID, but
+		// since this import doesn't make any sense in the first place, we instead
+		// choose to consider it invalid.
+		//
 		// However, we do want to insert these packages into the update map
 		// (buildMetadata above), so that we get type-checking diagnostics for the
 		// invalid packages.
-		if imported.Name == "" {
+		if dep == nil || dep.ID != PackageID(imported.ID) || imported.Name == "" {
 			depsByImpPath[importPath] = "" // missing
 			continue
 		}
@@ -510,6 +520,7 @@ func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Packag
 	}
 	mp.DepsByImpPath = depsByImpPath
 	mp.DepsByPkgPath = depsByPkgPath
+	return mp
 
 	// m.Diagnostics is set later in the loading pass, using
 	// computeLoadDiagnostics.

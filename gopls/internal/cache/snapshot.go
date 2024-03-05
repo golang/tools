@@ -1440,6 +1440,8 @@ searchOverlays:
 				continue searchOverlays
 			}
 		}
+		metadata.RemoveIntermediateTestVariants(&mps)
+
 		// With zero-config gopls (golang/go#57979), orphaned file diagnostics
 		// include diagnostics for orphaned files -- not just diagnostics relating
 		// to the reason the files are opened.
