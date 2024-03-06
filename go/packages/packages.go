@@ -1025,7 +1025,7 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 		Sizes: ld.sizes, // may be nil
 	}
 	if lpkg.Module != nil && lpkg.Module.GoVersion != "" {
-		typesinternal.SetGoVersion(tc, "go"+lpkg.Module.GoVersion)
+		tc.GoVersion = "go" + lpkg.Module.GoVersion
 	}
 	if (ld.Mode & typecheckCgo) != 0 {
 		if !typesinternal.SetUsesCgo(tc) {

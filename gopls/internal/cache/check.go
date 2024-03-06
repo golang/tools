@@ -1625,7 +1625,7 @@ func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs
 		// file should probably stop us before we get here, but double check
 		// just in case.
 		if goVersionRx.MatchString(goVersion) {
-			typesinternal.SetGoVersion(cfg, goVersion)
+			cfg.GoVersion = goVersion
 		}
 	}
 

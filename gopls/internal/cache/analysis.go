@@ -1017,7 +1017,7 @@ func (an *analysisNode) typeCheck(parsed []*parsego.File) *analysisPackage {
 		// An unparsable mod file should probably stop us
 		// before we get here, but double check just in case.
 		if goVersionRx.MatchString(goVersion) {
-			typesinternal.SetGoVersion(cfg, goVersion)
+			cfg.GoVersion = goVersion
 		}
 	}
 
