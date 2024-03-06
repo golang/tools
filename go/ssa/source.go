@@ -14,8 +14,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // EnclosingFunction returns the function that contains the syntax
@@ -122,7 +120,7 @@ func findNamedFunc(pkg *Package, pos token.Pos) *Function {
 				obj := mset.At(i).Obj().(*types.Func)
 				if obj.Pos() == pos {
 					// obj from MethodSet may not be the origin type.
-					m := typeparams.OriginMethod(obj)
+					m := obj.Origin()
 					return pkg.objects[m].(*Function)
 				}
 			}

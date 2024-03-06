@@ -12,7 +12,6 @@ import (
 
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/aliases"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // MethodValue returns the Function implementing method sel, building
@@ -103,7 +102,7 @@ func (prog *Program) objectMethod(obj *types.Func, cr *creator) *Function {
 	}
 
 	// Instantiation of generic?
-	if originObj := typeparams.OriginMethod(obj); originObj != obj {
+	if originObj := obj.Origin(); originObj != obj {
 		origin := prog.objectMethod(originObj, cr)
 		assert(origin.typeparams.Len() > 0, "origin is not generic")
 		targs := receiverTypeArgs(obj)

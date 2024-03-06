@@ -39,7 +39,7 @@ func TestGetIndexExprData(t *testing.T) {
 	}
 }
 
-func TestOriginMethodRecursive(t *testing.T) {
+func TestFuncOriginRecursive(t *testing.T) {
 	src := `package p
 
 type N[A any] int
@@ -104,13 +104,13 @@ func (r *N[C]) n() { }
 	}
 
 	for _, test := range tests {
-		if got := OriginMethod(test.input); got != test.want {
-			t.Errorf("OriginMethod(%q) = %v, want %v", test.name, test.input, test.want)
+		if got := test.input.Origin(); got != test.want {
+			t.Errorf("Origin(%q) = %v, want %v", test.name, test.input, test.want)
 		}
 	}
 }
 
-func TestOriginMethodUses(t *testing.T) {
+func TestFuncOriginUses(t *testing.T) {
 
 	tests := []string{
 		`type T interface { m() }; func _(t T) { t.m() }`,
@@ -147,7 +147,7 @@ func TestOriginMethodUses(t *testing.T) {
 			if call, ok := n.(*ast.CallExpr); ok {
 				sel := call.Fun.(*ast.SelectorExpr)
 				use := info.Uses[sel.Sel].(*types.Func)
-				orig := OriginMethod(use)
+				orig := use.Origin()
 				if orig != m {
 					t.Errorf("%s:\nUses[%v] = %v, want %v", src, types.ExprString(sel), use, m)
 				}
@@ -160,8 +160,8 @@ func TestOriginMethodUses(t *testing.T) {
 // Issue #60628 was a crash in gopls caused by inconsistency (#60634) between
 // LookupFieldOrMethod and NewFileSet for methods with an illegal
 // *T receiver type, where T itself is a pointer.
-// This is a regression test for the workaround in OriginMethod.
-func TestOriginMethod60628(t *testing.T) {
+// This is a regression test for the workaround in the (now deleted) OriginMethod.
+func TestFuncOrigin60628(t *testing.T) {
 	const src = `package p; type T[P any] *int; func (r *T[A]) f() {}`
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "p.go", src, 0)
@@ -199,8 +199,8 @@ func TestOriginMethod60628(t *testing.T) {
 		}
 
 		// Check the workaround.
-		if OriginMethod(m) == nil {
-			t.Errorf("OriginMethod(%v) = nil", m)
+		if m.Origin() == nil {
+			t.Errorf("Origin(%v) = nil", m)
 		}
 	}
 }

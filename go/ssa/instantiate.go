@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"go/types"
 	"sync"
-
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // A generic records information about a generic origin function,
@@ -80,7 +78,7 @@ func createInstance(fn *Function, targs []types.Type, cr *creator) *Function {
 	if prog.mode&InstantiateGenerics != 0 && !prog.parameterized.anyParameterized(targs) {
 		synthetic = fmt.Sprintf("instance of %s", fn.Name())
 		if fn.syntax != nil {
-			scope := typeparams.OriginMethod(obj).Scope()
+			scope := obj.Origin().Scope()
 			subst = makeSubster(prog.ctxt, scope, fn.typeparams, targs, false)
 			build = (*builder).buildFromSyntax
 		} else {
