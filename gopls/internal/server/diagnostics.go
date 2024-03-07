@@ -275,7 +275,12 @@ func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snaps
 			// noisy to log (and we'll handle things later in the slow pass).
 			continue
 		}
-		toDiagnose[meta.ID] = meta
+		// golang/go#65801: only diagnose changes to workspace packages. Otherwise,
+		// diagnostics will be unstable, as the slow-path diagnostics will erase
+		// them.
+		if snapshot.IsWorkspacePackage(ctx, meta.ID) {
+			toDiagnose[meta.ID] = meta
+		}
 	}
 	diags, err := snapshot.PackageDiagnostics(ctx, maps.Keys(toDiagnose)...)
 	if err != nil {

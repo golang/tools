@@ -564,6 +564,22 @@ func computeLoadDiagnostics(ctx context.Context, snapshot *Snapshot, mp *metadat
 	return diags
 }
 
+// IsWorkspacePackage reports whether id points to a workspace package in s.
+//
+// Currently, the result depends on the current set of loaded packages, and so
+// is not guaranteed to be stable.
+func (s *Snapshot) IsWorkspacePackage(ctx context.Context, id PackageID) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	mg := s.meta
+	m := mg.Packages[id]
+	if m == nil {
+		return false
+	}
+	return isWorkspacePackageLocked(ctx, s, mg, m)
+}
+
 // isWorkspacePackageLocked reports whether p is a workspace package for the
 // snapshot s.
 //
@@ -575,6 +591,12 @@ func computeLoadDiagnostics(ctx context.Context, snapshot *Snapshot, mp *metadat
 // heuristics.
 //
 // s.mu must be held while calling this function.
+//
+// TODO(rfindley): remove 'meta' from this function signature. Whether or not a
+// package is a workspace package should depend only on the package, view
+// definition, and snapshot file source. While useful, the heuristic
+// "allFilesHaveRealPackages" does not add that much value and is path
+// dependent as it depends on the timing of loads.
 func isWorkspacePackageLocked(ctx context.Context, s *Snapshot, meta *metadata.Graph, pkg *metadata.Package) bool {
 	if metadata.IsCommandLineArguments(pkg.ID) {
 		// Ad-hoc command-line-arguments packages aren't workspace packages.
@@ -599,12 +621,13 @@ func isWorkspacePackageLocked(ctx context.Context, s *Snapshot, meta *metadata.G
 		return containsOpenFileLocked(s, pkg)
 	}
 
-	// golang/go#65801: any (non command-line-arguments) open package is a
-	// workspace package.
+	// If a real package is open, consider it to be part of the workspace.
 	//
-	// Otherwise, we'd display diagnostics for changes in an open package (due to
-	// the logic of diagnoseChangedFiles), but then erase those diagnostics when
-	// we do the final diagnostics pass. Diagnostics should be stable.
+	// TODO(rfindley): reconsider this. In golang/go#66145, we saw that even if a
+	// View sees a real package for a file, it doesn't mean that View is able to
+	// cleanly diagnose the package. Yet, we do want to show diagnostics for open
+	// packages outside the workspace. Is there a better way to ensure that only
+	// the 'best' View gets a workspace package for the open file?
 	if containsOpenFileLocked(s, pkg) {
 		return true
 	}

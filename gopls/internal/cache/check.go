@@ -205,9 +205,17 @@ func (s *Snapshot) resolveImportGraph() (*importGraph, error) {
 
 	openPackages := make(map[PackageID]bool)
 	for _, fh := range s.Overlays() {
-		mps, err := s.MetadataForFile(ctx, fh.URI())
-		if err != nil {
-			return nil, err
+		// golang/go#66145: don't call MetadataForFile here. This function, which
+		// builds a shared import graph, is an optimization. We don't want it to
+		// have the side effect of triggering a load.
+		//
+		// In the past, a call to MetadataForFile here caused a bunch of
+		// unnecessary loads in multi-root workspaces (and as a result, spurious
+		// diagnostics).
+		g := s.MetadataGraph()
+		var mps []*metadata.Package
+		for _, id := range g.IDs[fh.URI()] {
+			mps = append(mps, g.Packages[id])
 		}
 		metadata.RemoveIntermediateTestVariants(&mps)
 		for _, mp := range mps {
