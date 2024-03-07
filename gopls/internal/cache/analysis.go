@@ -1290,6 +1290,15 @@ func (act *action) exec() (interface{}, *actionSummary, error) {
 				if end == token.NoPos {
 					end = start
 				}
+
+				// debugging #64547
+				if start < token.Pos(tokFile.Base()) {
+					bug.Reportf("start < start of file")
+				}
+				if end > token.Pos(tokFile.Base()+tokFile.Size()+1) {
+					bug.Reportf("end > end of file + 1")
+				}
+
 				return p.PosLocation(start, end)
 			}
 		}
