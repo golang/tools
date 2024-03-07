@@ -79,6 +79,8 @@ func _() {
 	new(types.Package).GoVersion() // want `types.GoVersion requires go1.21 or later \(module is go1.20\)`
 }
 
+invalid syntax // exercise RunDespiteErrors
+
 -- sub/tagged.go --
 //go:build go1.21
 
@@ -99,3 +101,4 @@ func _() {
 
 	new(types.Package).GoVersion() // ok: file requires go1.21
 }
+

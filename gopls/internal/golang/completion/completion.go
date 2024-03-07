@@ -29,7 +29,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/gopls/internal/analysis/stdversion"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
@@ -247,7 +246,7 @@ type completer struct {
 	methodSetCache map[methodSetKey]*types.MethodSet
 
 	// tooNewSymbolsCache is a cache of
-	// [stdversion.DisallowedSymbols], recording for each std
+	// [typesinternal.TooNewStdSymbols], recording for each std
 	// package which of its exported symbols are too new for
 	// the version of Go in force in the completion file.
 	// (The value is the minimum version in the form "go1.%d".)
@@ -281,7 +280,7 @@ func (c *completer) tooNew(obj types.Object) bool {
 	}
 	disallowed, ok := c.tooNewSymbolsCache[pkg]
 	if !ok {
-		disallowed = stdversion.DisallowedSymbols(pkg, c.goversion)
+		disallowed = typesinternal.TooNewStdSymbols(pkg, c.goversion)
 		c.tooNewSymbolsCache[pkg] = disallowed
 	}
 	return disallowed[obj] != ""

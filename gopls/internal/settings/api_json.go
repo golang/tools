@@ -1187,6 +1187,7 @@ var GeneratedAPIJSON = &APIJSON{
 		{
 			Name:    "stdversion",
 			Doc:     "report uses of too-new standard library symbols\n\nThe stdversion analyzer reports references to symbols in the standard\nlibrary that were introduced by a Go release higher than the one in\nforce in the referring file. (Recall that the file's Go version is\ndefined by the 'go' directive its module's go.mod file, or by a\n\"//go:build go1.X\" build tag at the top of the file.)\n\nThe analyzer does not report a diagnostic for a reference to a \"too\nnew\" field or method of a type that is itself \"too new\", as this may\nhave false positives, for example if fields or methods are accessed\nthrough a type alias that is guarded by a Go version constraint.\n",
+			URL:     "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stdversion",
 			Default: true,
 		},
 		{

@@ -739,6 +739,8 @@ have false positives, for example if fields or methods are accessed
 through a type alias that is guarded by a Go version constraint.
 
 
+[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stdversion)
+
 **Enabled by default.**
 
 ## **stringintconv**

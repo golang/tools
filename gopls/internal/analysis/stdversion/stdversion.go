@@ -15,8 +15,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/gopls/internal/util/slices"
-	"golang.org/x/tools/internal/stdlib"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/versions"
 )
 
@@ -35,32 +34,34 @@ through a type alias that is guarded by a Go version constraint.
 `
 
 var Analyzer = &analysis.Analyzer{
-	Name:     "stdversion",
-	Doc:      Doc,
-	Requires: []*analysis.Analyzer{inspect.Analyzer},
-	Run:      run,
+	Name:             "stdversion",
+	Doc:              Doc,
+	Requires:         []*analysis.Analyzer{inspect.Analyzer},
+	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stdversion",
+	RunDespiteErrors: true,
+	Run:              run,
 }
 
 func run(pass *analysis.Pass) (any, error) {
 	// Prior to go1.22, versions.FileVersion returns only the
 	// toolchain version, which is of no use to us, so
 	// disable this analyzer on earlier versions.
-	if !slices.Contains(build.Default.ReleaseTags, "go1.22") {
+	if !slicesContains(build.Default.ReleaseTags, "go1.22") {
 		return nil, nil
 	}
 
-	// disallowedSymbolsMemo returns the set of standard library symbols
+	// disallowedSymbols returns the set of standard library symbols
 	// in a given package that are disallowed at the specified Go version.
 	type key struct {
 		pkg     *types.Package
 		version string
 	}
 	memo := make(map[key]map[types.Object]string) // records symbol's minimum Go version
-	disallowedSymbolsMemo := func(pkg *types.Package, version string) map[types.Object]string {
+	disallowedSymbols := func(pkg *types.Package, version string) map[types.Object]string {
 		k := key{pkg, version}
 		disallowed, ok := memo[k]
 		if !ok {
-			disallowed = DisallowedSymbols(pkg, version)
+			disallowed = typesinternal.TooNewStdSymbols(pkg, version)
 			memo[k] = disallowed
 		}
 		return disallowed
@@ -91,7 +92,7 @@ func run(pass *analysis.Pass) (any, error) {
 		case *ast.Ident:
 			if fileVersion != "" {
 				if obj, ok := pass.TypesInfo.Uses[n]; ok && obj.Pkg() != nil {
-					disallowed := disallowedSymbolsMemo(obj.Pkg(), fileVersion)
+					disallowed := disallowedSymbols(obj.Pkg(), fileVersion)
 					if minVersion, ok := disallowed[origin(obj)]; ok {
 						noun := "module"
 						if fileVersion != pkgVersion {
@@ -107,86 +108,7 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// DisallowedSymbols computes the set of package-level symbols
-// exported by pkg that are not available at the specified version.
-// The result maps each symbol to its minimum version.
-//
-// (It is exported for use in gopls' completion.)
-func DisallowedSymbols(pkg *types.Package, version string) map[types.Object]string {
-	disallowed := make(map[types.Object]string)
-
-	// Pass 1: package-level symbols.
-	symbols := stdlib.PackageSymbols[pkg.Path()]
-	for _, sym := range symbols {
-		symver := sym.Version.String()
-		if versions.Before(version, symver) {
-			switch sym.Kind {
-			case stdlib.Func, stdlib.Var, stdlib.Const, stdlib.Type:
-				disallowed[pkg.Scope().Lookup(sym.Name)] = symver
-			}
-		}
-	}
-
-	// Pass 2: fields and methods.
-	//
-	// We allow fields and methods if their associated type is
-	// disallowed, as otherwise we would report false positives
-	// for compatibility shims. Consider:
-	//
-	//   //go:build go1.22
-	//   type T struct { F std.Real } // correct new API
-	//
-	//   //go:build !go1.22
-	//   type T struct { F fake } // shim
-	//   type fake struct { ... }
-	//   func (fake) M () {}
-	//
-	// These alternative declarations of T use either the std.Real
-	// type, introduced in go1.22, or a fake type, for the field
-	// F. (The fakery could be arbitrarily deep, involving more
-	// nested fields and methods than are shown here.) Clients
-	// that use the compatibility shim T will compile with any
-	// version of go, whether older or newer than go1.22, but only
-	// the newer version will use the std.Real implementation.
-	//
-	// Now consider a reference to method M in new(T).F.M() in a
-	// module that requires a minimum of go1.21. The analysis may
-	// occur using a version of Go higher than 1.21, selecting the
-	// first version of T, so the method M is Real.M. This would
-	// spuriously cause the analyzer to report a reference to a
-	// too-new symbol even though this expression compiles just
-	// fine (with the fake implementation) using go1.21.
-	for _, sym := range symbols {
-		symVersion := sym.Version.String()
-		if !versions.Before(version, symVersion) {
-			continue // allowed
-		}
-
-		var obj types.Object
-		switch sym.Kind {
-		case stdlib.Field:
-			typename, name := sym.SplitField()
-			t := pkg.Scope().Lookup(typename)
-			if disallowed[t] == "" {
-				obj, _, _ = types.LookupFieldOrMethod(t.Type(), false, pkg, name)
-			}
-
-		case stdlib.Method:
-			ptr, recvname, name := sym.SplitMethod()
-			t := pkg.Scope().Lookup(recvname)
-			if disallowed[t] == "" {
-				obj, _, _ = types.LookupFieldOrMethod(t.Type(), ptr, pkg, name)
-			}
-		}
-		if obj != nil {
-			disallowed[obj] = symVersion
-		}
-	}
-
-	return disallowed
-}
-
-// Reduced from ../../golang/util.go. Good enough for now.
+// Reduced from x/tools/gopls/internal/golang/util.go. Good enough for now.
 // TODO(adonovan): use ast.IsGenerated in go1.21.
 func isGenerated(f *ast.File) bool {
 	for _, group := range f.Comments {
@@ -217,4 +139,14 @@ func origin(obj types.Object) types.Object {
 		}
 	}
 	return obj
+}
+
+// TODO(adonovan): use go1.21 slices.Contains.
+func slicesContains[S ~[]E, E comparable](slice S, x E) bool {
+	for _, elem := range slice {
+		if elem == x {
+			return true
+		}
+	}
+	return false
 }
