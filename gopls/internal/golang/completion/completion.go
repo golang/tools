@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/constant"
 	"go/parser"
 	"go/printer"
@@ -28,6 +29,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/analysis/stdversion"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
@@ -37,6 +39,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
@@ -194,6 +197,11 @@ type completer struct {
 	// file is the AST of the file associated with this completion request.
 	file *ast.File
 
+	// goversion is the version of Go in force in the file, as
+	// defined by x/tools/internal/versions. Empty if unknown.
+	// TODO(adonovan): with go1.22+ it should always be known.
+	goversion string
+
 	// (tokFile, pos) is the position at which the request was triggered.
 	tokFile *token.File
 	pos     token.Pos
@@ -238,6 +246,13 @@ type completer struct {
 	// for deep completions.
 	methodSetCache map[methodSetKey]*types.MethodSet
 
+	// tooNewSymbolsCache is a cache of
+	// [stdversion.DisallowedSymbols], recording for each std
+	// package which of its exported symbols are too new for
+	// the version of Go in force in the completion file.
+	// (The value is the minimum version in the form "go1.%d".)
+	tooNewSymbolsCache map[*types.Package]map[types.Object]string
+
 	// mapper converts the positions in the file from which the completion originated.
 	mapper *protocol.Mapper
 
@@ -255,6 +270,21 @@ type completer struct {
 	// also includes our package scope and the universal scope at the
 	// end.
 	scopes []*types.Scope
+}
+
+// tooNew reports whether obj is a standard library symbol that is too
+// new for the specified Go version.
+func (c *completer) tooNew(obj types.Object) bool {
+	pkg := obj.Pkg()
+	if pkg == nil {
+		return false // unsafe.Pointer or error.Error
+	}
+	disallowed, ok := c.tooNewSymbolsCache[pkg]
+	if !ok {
+		disallowed = stdversion.DisallowedSymbols(pkg, c.goversion)
+		c.tooNewSymbolsCache[pkg] = disallowed
+	}
+	return disallowed[obj] != ""
 }
 
 // funcInfo holds info about a function object.
@@ -530,6 +560,12 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	scopes := golang.CollectScopes(pkg.GetTypesInfo(), path, pos)
 	scopes = append(scopes, pkg.GetTypes().Scope(), types.Universe)
 
+	var goversion string // "" => no version check
+	// Prior go1.22, the behavior of FileVersion is not useful to us.
+	if slices.Contains(build.Default.ReleaseTags, "go1.22") {
+		goversion = versions.FileVersion(pkg.GetTypesInfo(), pgf.File) // may be ""
+	}
+
 	opts := snapshot.Options()
 	c := &completer{
 		pkg:      pkg,
@@ -544,6 +580,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		filename:                  fh.URI().Path(),
 		tokFile:                   pgf.Tok,
 		file:                      pgf.File,
+		goversion:                 goversion,
 		path:                      path,
 		pos:                       pos,
 		seen:                      make(map[types.Object]bool),
@@ -564,11 +601,12 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 			completeFunctionCalls: opts.CompleteFunctionCalls,
 		},
 		// default to a matcher that always matches
-		matcher:        prefixMatcher(""),
-		methodSetCache: make(map[methodSetKey]*types.MethodSet),
-		mapper:         pgf.Mapper,
-		startTime:      startTime,
-		scopes:         scopes,
+		matcher:            prefixMatcher(""),
+		methodSetCache:     make(map[methodSetKey]*types.MethodSet),
+		tooNewSymbolsCache: make(map[*types.Package]map[types.Object]string),
+		mapper:             pgf.Mapper,
+		startTime:          startTime,
+		scopes:             scopes,
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -1469,6 +1507,9 @@ func (c *completer) packageMembers(pkg *types.Package, score float64, imp *impor
 	scope := pkg.Scope()
 	for _, name := range scope.Names() {
 		obj := scope.Lookup(name)
+		if c.tooNew(obj) {
+			continue // std symbol too new for file's Go version
+		}
 		cb(candidate{
 			obj:         obj,
 			score:       score,
@@ -1506,6 +1547,11 @@ func (c *completer) methodsAndFields(typ types.Type, addressable bool, imp *impo
 	}
 
 	for i := 0; i < mset.Len(); i++ {
+		obj := mset.At(i).Obj()
+		// to the other side of the cb() queue?
+		if c.tooNew(obj) {
+			continue // std method too new for file's Go version
+		}
 		cb(candidate{
 			obj:         mset.At(i).Obj(),
 			score:       stdScore,
@@ -1516,6 +1562,9 @@ func (c *completer) methodsAndFields(typ types.Type, addressable bool, imp *impo
 
 	// Add fields of T.
 	eachField(typ, func(v *types.Var) {
+		if c.tooNew(v) {
+			return // std field too new for file's Go version
+		}
 		cb(candidate{
 			obj:         v,
 			score:       stdScore - 0.01,

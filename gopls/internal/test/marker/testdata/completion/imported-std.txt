@@ -1,6 +1,6 @@
-Test of unimported completions respecting the effective Go version of the file.
+Test of imported completions respecting the effective Go version of the file.
 
-(See unprefixed file for same test of imported completions.)
+(See "un-" prefixed file for same test of unimported completions.)
 
 These symbols below were introduced in go1.20:
 
@@ -23,6 +23,10 @@ go 1.19
 -- a/a.go --
 package a
 
+import "go/ast"
+import "go/token"
+import "go/types"
+
 // package-level func
 var _ = types.Imple //@rankl("Imple", "Implements")
 var _ = types.Satis //@rankl("Satis", "!Satisfies")
@@ -32,11 +36,11 @@ var _ = types.Satis //@rankl("Satis", "!Satisfies")
 // we don't implement std version filtering isn't evident.)
 
 // field
-var _ = new(ast.File).Packa //@rankl("Packa", "!Package")
+var _ = new(ast.File).Packa //@rankl("Packa", "Package")
 var _ = new(ast.File).FileS //@rankl("FileS", "!FileStart")
 
 // method
-var _ = new(token.FileSet).Ad //@rankl("Ad", "!Add")
+var _ = new(token.FileSet).Add //@rankl("Add", "AddFile")
 var _ = new(token.FileSet).Remove //@rankl("Remove", "!RemoveFile")
 
 -- b/b.go --
@@ -44,6 +48,18 @@ var _ = new(token.FileSet).Remove //@rankl("Remove", "!RemoveFile")
 
 package a
 
+import "go/ast"
+import "go/token"
+import "go/types"
+
 // package-level func
 var _ = types.Imple //@rankl("Imple", "Implements")
 var _ = types.Satis //@rankl("Satis", "Satisfies")
+
+// field
+var _ = new(ast.File).Packa //@rankl("Packa", "Package")
+var _ = new(ast.File).FileS //@rankl("FileS", "FileStart")
+
+// method
+var _ = new(token.FileSet).Add //@rankl("Add", "AddFile")
+var _ = new(token.FileSet).Remove //@rankl("Remove", "RemoveFile")

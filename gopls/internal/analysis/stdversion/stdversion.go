@@ -60,7 +60,7 @@ func run(pass *analysis.Pass) (any, error) {
 		k := key{pkg, version}
 		disallowed, ok := memo[k]
 		if !ok {
-			disallowed = disallowedSymbols(pkg, version)
+			disallowed = DisallowedSymbols(pkg, version)
 			memo[k] = disallowed
 		}
 		return disallowed
@@ -107,10 +107,12 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// disallowedSymbols computes the set of package-level symbols
-// exported by direct imports of pkg that are not available at the
-// specified version. The result maps each symbol to its minimum version.
-func disallowedSymbols(pkg *types.Package, version string) map[types.Object]string {
+// DisallowedSymbols computes the set of package-level symbols
+// exported by pkg that are not available at the specified version.
+// The result maps each symbol to its minimum version.
+//
+// (It is exported for use in gopls' completion.)
+func DisallowedSymbols(pkg *types.Package, version string) map[types.Object]string {
 	disallowed := make(map[types.Object]string)
 
 	// Pass 1: package-level symbols.
