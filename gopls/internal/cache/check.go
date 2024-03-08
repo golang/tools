@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -29,6 +30,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
@@ -1628,10 +1630,19 @@ func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs
 
 	if inputs.goVersion != "" {
 		goVersion := "go" + inputs.goVersion
+
 		// types.NewChecker panics if GoVersion is invalid. An unparsable mod
 		// file should probably stop us before we get here, but double check
 		// just in case.
-		if goVersionRx.MatchString(goVersion) {
+		//
+		// Prior to go/types@go1.21 the precondition was stricter:
+		// no patch version. That's not a problem when also using go1.20 list,
+		// as it would reject go.mod files containing a patch version, but
+		// go/types@go1.20 will panic on go.mod versions that are returned
+		// by go1.21 list, hence the need for the extra check.
+		if goVersionRx.MatchString(goVersion) &&
+			(slices.Contains(build.Default.ReleaseTags, "go1.21") ||
+				strings.Count(goVersion, ".") < 2) { // no patch version
 			typesinternal.SetGoVersion(cfg, goVersion)
 		}
 	}
