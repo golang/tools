@@ -22,7 +22,10 @@ func Test(t *testing.T) {
 	testenv.NeedsGo1Point(t, 22)
 
 	testfile := filepath.Join(analysistest.TestData(), "test.txtar")
-	runTxtarFile(t, testfile, stdversion.Analyzer, "example.com/a", "example.com/sub")
+	runTxtarFile(t, testfile, stdversion.Analyzer,
+		"example.com/a",
+		"example.com/sub",
+		"example.com/old")
 }
 
 // runTxtarFile unpacks a txtar archive to a directory, and runs

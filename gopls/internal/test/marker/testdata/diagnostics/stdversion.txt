@@ -12,76 +12,78 @@ which runs the same test in the analysistest framework.
 -- go.mod --
 module example.com
 
-go 1.19
+go 1.21
 
 -- a/a.go --
 package a
 
-import (
-	"context"
-	"time"
-)
+import "go/types"
 
 func _() {
-	time.Now() // ok: defined by go1.0
+	// old package-level type
+	var _ types.Info // ok: defined by go1.0
 
-	context.Cause(nil) //@ diag("Cause", re`context.Cause requires go1.20 or later \(module is go1.19\)`)
+	// new field of older type
+	_ = new(types.Info).FileVersions //@diag("FileVersions", re`types.FileVersions requires go1.22 or later \(module is go1.21\)`)
 
-	context.WithDeadlineCause(nil, time.Time{}, nil) //@ diag("WithDeadlineCause", re`context.WithDeadlineCause requires go1.21 or later \(module is go1.19\)`)
-}
+	// new method of older type
+	_ = new(types.Info).PkgNameOf //@diag("PkgNameOf", re`types.PkgNameOf requires go1.22 or later \(module is go1.21\)`)
 
--- a/selections.go --
-package a
+	// new package-level type
+	var a types.Alias //@diag("Alias", re`types.Alias requires go1.22 or later \(module is go1.21\)`)
 
-import (
-	"go/ast" // for File.FileEnd field (go1.20)
-	"time"   // for Time.Compare method (go1.20)
-	"log/slog" // for slog.Logger and its Info method (both go1.21)
-)
-
-func _() {
-	_ = new(ast.File).FileEnd //@ diag("FileEnd", re`ast.FileEnd requires go1.20 or later \(module is go1.19\)`)
-	time.Now().Compare(time.Now()) //@ diag("Compare", re`time.Compare requires go1.20 or later \(module is go1.19\)`)
-
-	var log slog.Logger //@ diag("Logger", re`slog.Logger requires go1.21 or later \(module is go1.19\)`)
-	log.Info("") // no diagnostic
+	// new method of new type
+	a.Underlying() // no diagnostic
 }
 
 -- sub/go.mod --
 module example.com/sub
 
-go 1.20
+go 1.21
 
 -- sub/sub.go --
 package sub
 
-import (
-	"context"
-	"time"
-)
+import "go/types"
 
 func _() {
-	time.Now() // ok: defined by go1.0
+	// old package-level type
+	var _ types.Info // ok: defined by go1.0
 
-	context.Cause(nil) // ok: go.mod requires 1.20
+	// new field of older type
+	_ = new(types.Info).FileVersions //@diag("FileVersions", re`types.FileVersions requires go1.22 or later \(module is go1.21\)`)
 
-	context.WithDeadlineCause(nil, time.Time{}, nil) //@ diag("WithDeadlineCause", re`context.WithDeadlineCause requires go1.21 or later \(module is go1.20\)`)
+	// new method of older type
+	_ = new(types.Info).PkgNameOf //@diag("PkgNameOf", re`types.PkgNameOf requires go1.22 or later \(module is go1.21\)`)
+
+	// new package-level type
+	var a types.Alias //@diag("Alias", re`types.Alias requires go1.22 or later \(module is go1.21\)`)
+
+	// new method of new type
+	a.Underlying() // no diagnostic
 }
 
 -- sub/tagged.go --
-//go:build go1.21
+//go:build go1.22
 
 package sub
 
-import (
-	"context"
-	"time"
-)
+import "go/types"
 
 func _() {
-	time.Now() // ok: defined by go1.0
+	// old package-level type
+	var _ types.Info
 
-	context.Cause(nil) // ok: go.mod requires 1.20
+	// new field of older type
+	_ = new(types.Info).FileVersions
 
-	context.WithDeadlineCause(nil, time.Time{}, nil) // ok: file requires go1.21
+	// new method of older type
+	_ = new(types.Info).PkgNameOf
+
+	// new package-level type
+	var a types.Alias
+
+	// new method of new type
+	a.Underlying()
 }
+

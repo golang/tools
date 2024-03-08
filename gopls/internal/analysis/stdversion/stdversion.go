@@ -50,6 +50,16 @@ func run(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 
+	// Don't report diagnostics for modules marked before go1.21,
+	// since at that time the go directive wasn't clearly
+	// specified as a toolchain requirement.
+	//
+	// TODO(adonovan): after go1.21, call GoVersion directly.
+	pkgVersion := any(pass.Pkg).(interface{ GoVersion() string }).GoVersion()
+	if !versions.AtLeast(pkgVersion, "go1.21") {
+		return nil, nil
+	}
+
 	// disallowedSymbols returns the set of standard library symbols
 	// in a given package that are disallowed at the specified Go version.
 	type key struct {
@@ -66,9 +76,6 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 		return disallowed
 	}
-
-	// TODO(adonovan): after go1.21, call GoVersion directly.
-	pkgVersion := any(pass.Pkg).(interface{ GoVersion() string }).GoVersion()
 
 	// Scan the syntax looking for references to symbols
 	// that are disallowed by the version of the file.
