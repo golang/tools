@@ -751,6 +751,7 @@ func (s *server) getUpgrades(ctx context.Context, snapshot *cache.Snapshot, uri 
 	stdout, err := snapshot.RunGoCommandDirect(ctx, cache.Normal|cache.AllowNetwork, &gocommand.Invocation{
 		Verb:       "list",
 		Args:       append([]string{"-m", "-u", "-json"}, modules...),
+		ModFlag:    "readonly", // necessary when vendor is present (golang/go#66055)
 		WorkingDir: filepath.Dir(uri.Path()),
 	})
 	if err != nil {
