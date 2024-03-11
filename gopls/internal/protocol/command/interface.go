@@ -63,6 +63,12 @@ type Interface interface {
 	// Runs `go generate` for a given directory.
 	Generate(context.Context, GenerateArgs) error
 
+	// Doc: View package documentation.
+	//
+	// Opens the Go package documentation page for the current
+	// package in a browser.
+	Doc(context.Context, protocol.Location) error
+
 	// RegenerateCgo: Regenerate cgo
 	//
 	// Regenerates cgo definitions.

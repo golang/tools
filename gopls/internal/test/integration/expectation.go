@@ -229,6 +229,23 @@ func ShownDocument(uri protocol.URI) Expectation {
 	}
 }
 
+// ShownDocuments is an expectation that appends each showDocument
+// request into the provided slice, whenever it is evaluated.
+//
+// It can be used in combination with OnceMet or AfterChange to
+// capture the set of showDocument requests when other expectations
+// are satisfied.
+func ShownDocuments(into *[]*protocol.ShowDocumentParams) Expectation {
+	check := func(s State) Verdict {
+		*into = append(*into, s.showDocument...)
+		return Met
+	}
+	return Expectation{
+		Check:       check,
+		Description: "read shown documents",
+	}
+}
+
 // NoShownMessage asserts that the editor has not received a ShowMessage.
 func NoShownMessage(subString string) Expectation {
 	check := func(s State) Verdict {

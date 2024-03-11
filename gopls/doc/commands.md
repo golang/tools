@@ -222,6 +222,30 @@ Args:
 }
 ```
 
+### **View package documentation.**
+Identifier: `gopls.doc`
+
+Opens the Go package documentation page for the current
+package in a browser.
+
+Args:
+
+```
+{
+	"uri": string,
+	"range": {
+		"start": {
+			"line": uint32,
+			"character": uint32,
+		},
+		"end": {
+			"line": uint32,
+			"character": uint32,
+		},
+	},
+}
+```
+
 ### **Run go mod edit -go=version**
 Identifier: `gopls.edit_go_directive`
 

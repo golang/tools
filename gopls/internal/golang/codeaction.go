@@ -93,7 +93,8 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 	// Code actions requiring type information.
 	if want[protocol.RefactorRewrite] ||
 		want[protocol.RefactorInline] ||
-		want[protocol.GoTest] {
+		want[protocol.GoTest] ||
+		want[protocol.GoDoc] {
 		pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 		if err != nil {
 			return nil, err
@@ -120,6 +121,19 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 				return nil, err
 			}
 			actions = append(actions, fixes...)
+		}
+
+		if want[protocol.GoDoc] {
+			loc := protocol.Location{URI: pgf.URI, Range: rng}
+			cmd, err := command.NewDocCommand("View package documentation", loc)
+			if err != nil {
+				return nil, err
+			}
+			actions = append(actions, protocol.CodeAction{
+				Title:   cmd.Title,
+				Kind:    protocol.GoDoc,
+				Command: &cmd,
+			})
 		}
 	}
 	return actions, nil

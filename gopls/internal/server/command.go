@@ -502,6 +502,34 @@ func (c *commandHandler) Test(ctx context.Context, uri protocol.DocumentURI, tes
 	})
 }
 
+func (c *commandHandler) Doc(ctx context.Context, loc protocol.Location) error {
+	return c.run(ctx, commandConfig{
+		progress: "", // the operation should be fast
+		forURI:   loc.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		pkg, _, err := golang.NarrowestPackageForFile(ctx, deps.snapshot, loc.URI)
+		if err != nil {
+			return err
+		}
+
+		// Start web server.
+		web, err := c.s.getWeb()
+		if err != nil {
+			return err
+		}
+
+		// Direct the client to open the /pkg page.
+		//
+		// TODO(adonovan): compute fragment (e.g. "#fmt.Println") based on loc.Range.
+		// (Should it document the selected symbol, or the enclosing decl?)
+		fragment := ""
+		url := web.pkgURL(deps.snapshot.View(), pkg.Metadata().PkgPath, fragment)
+		openClientBrowser(ctx, c.s.client, url)
+
+		return nil
+	})
+}
+
 func (c *commandHandler) RunTests(ctx context.Context, args command.RunTestsArgs) error {
 	return c.run(ctx, commandConfig{
 		async:       true,
@@ -1225,6 +1253,9 @@ func openClientBrowser(ctx context.Context, cli protocol.Client, url protocol.UR
 
 // openClientEditor causes the LSP client to open the specified document
 // and select the indicated range.
+//
+// Note that VS Code 1.87.2 doesn't currently raise the window; this is
+// https://github.com/microsoft/vscode/issues/207634
 func openClientEditor(ctx context.Context, cli protocol.Client, loc protocol.Location) {
 	showDocumentImpl(ctx, cli, protocol.URI(loc.URI), &loc.Range)
 }

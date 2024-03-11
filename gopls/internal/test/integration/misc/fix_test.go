@@ -53,6 +53,7 @@ func Foo() {
 				if err != nil {
 					t.Fatal(err)
 				}
+
 				if len(fixes) != 1 {
 					t.Fatalf("expected 1 code action, got %v", len(fixes))
 				}
@@ -113,18 +114,15 @@ func Foo() error {
 			Diagnostics(env.AtRegexp("main.go", `return`), WithMessage("return values")),
 			ReadDiagnostics("main.go", &d),
 		)
-		codeActions := env.CodeAction("main.go", d.Diagnostics)
-		if len(codeActions) != 1 {
-			t.Fatalf("expected 1 code actions, got %v\n%v", len(codeActions), codeActions)
-		}
-		var foundQuickFix bool
-		for _, a := range codeActions {
-			if a.Kind == protocol.QuickFix {
-				foundQuickFix = true
+		var quickFixes []*protocol.CodeAction
+		for _, act := range env.CodeAction("main.go", d.Diagnostics) {
+			if act.Kind == protocol.QuickFix {
+				act := act // remove in go1.22
+				quickFixes = append(quickFixes, &act)
 			}
 		}
-		if !foundQuickFix {
-			t.Fatalf("expected quickfix code action, got none")
+		if len(quickFixes) != 1 {
+			t.Fatalf("expected 1 quick fix, got %d:\n%v", len(quickFixes), quickFixes)
 		}
 		env.ApplyQuickFixes("main.go", d.Diagnostics)
 		env.AfterChange(NoDiagnostics(ForFile("main.go")))
@@ -146,7 +144,7 @@ go 1.18
 -- external.go --
 package external
 
-func External(z int) //@codeaction("refactor.rewrite", "z", "z", recursive)
+func External(z int)
 
 func _() {
 	External(1)
@@ -154,12 +152,10 @@ func _() {
 	`
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("external.go")
-		actions, err := env.Editor.CodeAction(env.Ctx, env.RegexpSearch("external.go", "z"), nil)
+		_, err := env.Editor.CodeAction(env.Ctx, env.RegexpSearch("external.go", "z"), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(actions) > 0 {
-			t.Errorf("CodeAction(): got %d code actions, want 0", len(actions))
-		}
+		// yay, no panic
 	})
 }

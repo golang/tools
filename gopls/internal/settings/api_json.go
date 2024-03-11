@@ -765,6 +765,12 @@ var GeneratedAPIJSON = &APIJSON{
 			ArgDoc:  "{\n\t\"Files\": []string,\n}",
 		},
 		{
+			Command: "gopls.doc",
+			Title:   "View package documentation.",
+			Doc:     "Opens the Go package documentation page for the current\npackage in a browser.",
+			ArgDoc:  "{\n\t\"uri\": string,\n\t\"range\": {\n\t\t\"start\": {\n\t\t\t\"line\": uint32,\n\t\t\t\"character\": uint32,\n\t\t},\n\t\t\"end\": {\n\t\t\t\"line\": uint32,\n\t\t\t\"character\": uint32,\n\t\t},\n\t},\n}",
+		},
+		{
 			Command: "gopls.edit_go_directive",
 			Title:   "Run go mod edit -go=version",
 			Doc:     "Runs `go mod edit -go=version` for a module.",

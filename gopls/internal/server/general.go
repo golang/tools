@@ -610,6 +610,11 @@ func (s *server) Shutdown(ctx context.Context) error {
 		event.Log(ctx, "server shutdown without initialization")
 	}
 	if s.state != serverShutDown {
+		// Wait for the webserver (if any) to finish.
+		if s.web != nil {
+			s.web.server.Shutdown(ctx)
+		}
+
 		// drop all the active views
 		s.session.Shutdown(ctx)
 		s.state = serverShutDown

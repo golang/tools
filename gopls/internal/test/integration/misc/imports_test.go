@@ -96,15 +96,21 @@ func main() {
 }
 `
 
-	// The file remains unchanged, but if there are any CodeActions returned, they confuse vim.
-	// Therefore check for no CodeActions
+	// The file remains unchanged, but if there any quick fixes
+	// are returned, they confuse vim (according to CL 233117).
+	// Therefore check for no QuickFix CodeActions.
 	Run(t, "", func(t *testing.T, env *Env) {
 		env.CreateBuffer("main.go", vim1)
 		env.OrganizeImports("main.go")
-		actions := env.CodeAction("main.go", nil)
-		if len(actions) > 0 {
+
+		// Assert no quick fixes.
+		for _, act := range env.CodeAction("main.go", nil) {
+			if act.Kind == protocol.QuickFix {
+				t.Errorf("unexpected quick fix action: %#v", act)
+			}
+		}
+		if t.Failed() {
 			got := env.BufferText("main.go")
-			t.Errorf("unexpected actions %#v", actions)
 			if got == vim1 {
 				t.Errorf("no changes")
 			} else {
@@ -134,9 +140,12 @@ func main() {
 	Run(t, "", func(t *testing.T, env *Env) {
 		env.CreateBuffer("main.go", vim2)
 		env.OrganizeImports("main.go")
-		actions := env.CodeAction("main.go", nil)
-		if len(actions) > 0 {
-			t.Errorf("unexpected actions %#v", actions)
+
+		// Assert no quick fixes.
+		for _, act := range env.CodeAction("main.go", nil) {
+			if act.Kind == protocol.QuickFix {
+				t.Errorf("unexpected quick-fix action: %#v", act)
+			}
 		}
 	})
 }

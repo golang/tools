@@ -47,6 +47,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						protocol.RefactorRewrite:       true,
 						protocol.RefactorInline:        true,
 						protocol.RefactorExtract:       true,
+						protocol.GoDoc:                 true,
 					},
 					file.Mod: {
 						protocol.SourceOrganizeImports: true,

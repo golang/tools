@@ -8,4 +8,6 @@ package protocol
 const (
 	GoTest CodeActionKind = "goTest"
 	// TODO: Add GoGenerate, RegenerateCgo etc.
+
+	GoDoc CodeActionKind = "source.doc"
 )

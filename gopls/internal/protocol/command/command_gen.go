@@ -29,6 +29,7 @@ const (
 	ChangeSignature         Command = "change_signature"
 	CheckUpgrades           Command = "check_upgrades"
 	DiagnoseFiles           Command = "diagnose_files"
+	Doc                     Command = "doc"
 	EditGoDirective         Command = "edit_go_directive"
 	FetchVulncheckResult    Command = "fetch_vulncheck_result"
 	GCDetails               Command = "gc_details"
@@ -65,6 +66,7 @@ var Commands = []Command{
 	ChangeSignature,
 	CheckUpgrades,
 	DiagnoseFiles,
+	Doc,
 	EditGoDirective,
 	FetchVulncheckResult,
 	GCDetails,
@@ -137,6 +139,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.DiagnoseFiles(ctx, a0)
+	case "gopls.doc":
+		var a0 protocol.Location
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return nil, s.Doc(ctx, a0)
 	case "gopls.edit_go_directive":
 		var a0 EditGoDirectiveArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -363,6 +371,18 @@ func NewDiagnoseFilesCommand(title string, a0 DiagnoseFilesArgs) (protocol.Comma
 	return protocol.Command{
 		Title:     title,
 		Command:   "gopls.diagnose_files",
+		Arguments: args,
+	}, nil
+}
+
+func NewDocCommand(title string, a0 protocol.Location) (protocol.Command, error) {
+	args, err := MarshalArgs(a0)
+	if err != nil {
+		return protocol.Command{}, err
+	}
+	return protocol.Command{
+		Title:     title,
+		Command:   "gopls.doc",
 		Arguments: args,
 	}, nil
 }
