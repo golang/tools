@@ -198,11 +198,14 @@ func packageReferences(ctx context.Context, snapshot *cache.Snapshot, uri protoc
 		if err != nil {
 			return nil, err
 		}
-		refs = append(refs, reference{
-			isDeclaration: true, // (one of many)
-			location:      mustLocation(f, f.File.Name),
-			pkgPath:       widest.PkgPath,
-		})
+		// golang/go#66250: don't crash if the package file lacks a name.
+		if f.File.Name.Pos().IsValid() {
+			refs = append(refs, reference{
+				isDeclaration: true, // (one of many)
+				location:      mustLocation(f, f.File.Name),
+				pkgPath:       widest.PkgPath,
+			})
+		}
 	}
 
 	return refs, nil

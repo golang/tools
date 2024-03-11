@@ -1,0 +1,17 @@
+This bug checks the fix for golang/go#66250. Package references should not
+crash when one package file lacks a package name.
+
+TODO(rfindley): the -ignore_extra_diags flag is only necessary because of
+problems matching diagnostics in the broken file, likely due to poor parser
+recovery.
+
+-- flags --
+-ignore_extra_diags
+
+-- a.go --
+package x //@refs("x", "x")
+
+-- b.go --
+
+func _() {
+}
