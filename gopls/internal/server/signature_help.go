@@ -19,10 +19,10 @@ func (s *server) SignatureHelp(ctx context.Context, params *protocol.SignatureHe
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
-	defer release()
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 
 	if snapshot.FileKind(fh) != file.Go {
 		return nil, nil // empty result
