@@ -84,26 +84,29 @@ func isServeMuxRegisterCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 	if !isMethodNamed(fn, "net/http", "Handle", "HandleFunc") {
 		return false
 	}
-	isPtr, named := typesinternal.ReceiverNamed(fn.Type().(*types.Signature).Recv())
+	recv := fn.Type().(*types.Signature).Recv() // isMethodNamed() -> non-nil
+	isPtr, named := typesinternal.ReceiverNamed(recv)
 	return isPtr && analysisutil.IsNamedType(named, "net/http", "ServeMux")
 }
 
+// isMethodNamed reports when a function f is a method,
+// in a package with the path pkgPath and the name of f is in names.
 func isMethodNamed(f *types.Func, pkgPath string, names ...string) bool {
 	if f == nil {
 		return false
 	}
 	if f.Pkg() == nil || f.Pkg().Path() != pkgPath {
-		return false
+		return false // not at pkgPath
 	}
 	if f.Type().(*types.Signature).Recv() == nil {
-		return false
+		return false // not a method
 	}
 	for _, n := range names {
 		if f.Name() == n {
 			return true
 		}
 	}
-	return false
+	return false // not in names
 }
 
 // stringConstantExpr returns expression's string constant value.
