@@ -852,6 +852,11 @@ func (ld *loader) refine(response *DriverResponse) ([]*Package, error) {
 			}(lpkg)
 		}
 		wg.Wait()
+
+		// Check if the context was canceled and return nil, context.Canceled if so.
+		if err := ld.Context.Err(); err != nil {
+			return nil, err
+		}
 	}
 
 	result := make([]*Package, len(initial))
@@ -910,6 +915,7 @@ func (ld *loader) refine(response *DriverResponse) ([]*Package, error) {
 // loadRecursive loads the specified package and its dependencies,
 // recursively, in parallel, in topological order.
 // It is atomic and idempotent.
+// May return early if ld.Context is canceled.
 // Precondition: ld.Mode&NeedTypes.
 func (ld *loader) loadRecursive(lpkg *loaderPackage) {
 	lpkg.loadOnce.Do(func() {
@@ -931,6 +937,7 @@ func (ld *loader) loadRecursive(lpkg *loaderPackage) {
 // loadPackage loads the specified package.
 // It must be called only once per Package,
 // after immediate dependencies are loaded.
+// May return early if ld.Context is canceled.
 // Precondition: ld.Mode & NeedTypes.
 func (ld *loader) loadPackage(lpkg *loaderPackage) {
 	if lpkg.PkgPath == "unsafe" {
@@ -1059,6 +1066,12 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 	}
 
 	files, errs := ld.parseFiles(lpkg.CompiledGoFiles)
+	// parseFiles may return nil, nil if ld.Context.Err() != nil
+	// check if the context was canceled and return early if so.
+	// ld.Context will be checked again after loadPackage returns.
+	if err := ld.Context.Err(); err != nil {
+		return
+	}
 	for _, err := range errs {
 		appendError(err)
 	}
@@ -1239,16 +1252,20 @@ func (ld *loader) parseFile(filename string) (*ast.File, error) {
 //
 // Because files are scanned in parallel, the token.Pos
 // positions of the resulting ast.Files are not ordered.
+//
+// May return nil, nil if ld.Context is canceled.
 func (ld *loader) parseFiles(filenames []string) ([]*ast.File, []error) {
 	var wg sync.WaitGroup
 	n := len(filenames)
 	parsed := make([]*ast.File, n)
 	errors := make([]error, n)
 	for i, file := range filenames {
-		if ld.Config.Context.Err() != nil {
-			parsed[i] = nil
-			errors[i] = ld.Config.Context.Err()
-			continue
+		if err := ld.Context.Err(); err != nil {
+			// If the context was canceled: return nil, nil
+			// The context will be checked just after the call to parseFiles.
+			// Wait for all parseFile calls to be interrupted
+			wg.Wait()
+			return nil, nil
 		}
 		wg.Add(1)
 		go func(i int, filename string) {
