@@ -4,9 +4,7 @@
 
 package golang
 
-// This file defines the code action "extract to a new file".
-
-// todo: rename file to extract_to_new_file.go after code review
+// This file defines the code action "Extract declarations to new file".
 
 import (
 	"context"

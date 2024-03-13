@@ -3,8 +3,6 @@
 // license that can be found in the LICENSE file.
 package misc
 
-// todo: rename file to extract_to_new_file_test.go after code review
-
 import (
 	"fmt"
 	"regexp"
