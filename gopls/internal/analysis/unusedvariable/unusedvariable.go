@@ -37,6 +37,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		for _, suffix := range unusedVariableSuffixes {
 			if strings.HasSuffix(typeErr.Msg, suffix) {
 				varName := strings.TrimSuffix(typeErr.Msg, suffix)
+				// Beginning in Go 1.23, go/types began quoting vars as `v'.
+				varName = strings.Trim(varName, "'`'")
+
 				err := runForError(pass, typeErr, varName)
 				if err != nil {
 					return nil, err
