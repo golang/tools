@@ -47,7 +47,7 @@ import (
 )
 
 func TestSomething(t *testing.T) { //@item(TestSomething, "TestSomething(t *testing.T)", "", "func")
-	var x int //@loc(testyX, "x"), diag("x", re"x declared (and|but) not used")
+	var x int //@loc(testyX, "x"), diag("x", re"x.*declared (and|but) not used")
 	a()       //@loc(testyA, "a")
 }
 

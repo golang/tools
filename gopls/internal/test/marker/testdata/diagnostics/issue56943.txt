@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-	var a int               //@diag(re"(a) int", re"a declared.*not used")
+	var a int               //@diag(re"(a) int", re"a.*declared.*not used")
 	var _ ast.Expr = node{} //@diag("node{}", re"missing.*exprNode")
 }
 
