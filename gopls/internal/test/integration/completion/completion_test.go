@@ -6,7 +6,6 @@ package completion
 
 import (
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"testing"
@@ -258,11 +257,6 @@ func compareCompletionLabels(want []string, gotItems []protocol.CompletionItem) 
 		return fmt.Sprintf("completion item mismatch (-want +got):\n%s", diff)
 	}
 	return ""
-}
-
-func init() {
-	// useful while debugging
-	log.SetFlags(log.Lshortfile)
 }
 
 func TestUnimportedCompletion(t *testing.T) {
@@ -1009,6 +1003,9 @@ func Join() {}
 	})
 }
 
+// show that the counters get exercised. Fortuntely a small program
+// exercises them all (except for mulit-chnage, for which see the code
+// in env.setBufferContentLocked)
 func TestCounters(t *testing.T) {
 	const files = `
 -- go.mod --
