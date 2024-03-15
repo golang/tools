@@ -211,9 +211,13 @@ func (g *CFG) Format(fset *token.FileSet) string {
 	return buf.String()
 }
 
-// digraph emits AT&T GraphViz (dot) syntax for the CFG.
-// TODO(adonovan): publish; needs a proposal.
-func (g *CFG) digraph(fset *token.FileSet) string {
+// Dot returns the control-flow graph in the [Dot graph description language].
+// Use a command such as 'dot -Tsvg' to render it in a form viewable in a browser.
+// This method is provided as a debugging aid; the details of the
+// output are unspecified and may change.
+//
+// [Dot graph description language]: ​​https://en.wikipedia.org/wiki/DOT_(graph_description_language)
+func (g *CFG) Dot(fset *token.FileSet) string {
 	var buf bytes.Buffer
 	buf.WriteString("digraph CFG {\n")
 	buf.WriteString("  node [shape=box];\n")
@@ -233,11 +237,6 @@ func (g *CFG) digraph(fset *token.FileSet) string {
 	}
 	buf.WriteString("}\n")
 	return buf.String()
-}
-
-// exposed to main.go
-func digraph(g *CFG, fset *token.FileSet) string {
-	return g.digraph(fset)
 }
 
 func formatNode(fset *token.FileSet, n ast.Node) string {

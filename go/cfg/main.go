@@ -19,10 +19,8 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
-	"go/token"
 	"log"
 	"os"
-	_ "unsafe" // for linkname
 
 	"golang.org/x/tools/go/cfg"
 	"golang.org/x/tools/go/packages"
@@ -47,7 +45,7 @@ func main() {
 				if decl, ok := decl.(*ast.FuncDecl); ok {
 					if decl.Name.Name == funcname {
 						g := cfg.New(decl.Body, mayReturn)
-						fmt.Println(digraph(g, pkg.Fset))
+						fmt.Println(g.Dot(pkg.Fset))
 						os.Exit(0)
 					}
 				}
@@ -67,6 +65,3 @@ func mayReturn(call *ast.CallExpr) bool {
 	}
 	return true
 }
-
-//go:linkname digraph golang.org/x/tools/go/cfg.digraph
-func digraph(g *cfg.CFG, fset *token.FileSet) string
