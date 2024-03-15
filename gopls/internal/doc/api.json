@@ -154,8 +154,8 @@
 			},
 			{
 				"Name": "linksInHover",
-				"Type": "bool",
-				"Doc": "linksInHover toggles the presence of links to documentation in hover.\n",
+				"Type": "any",
+				"Doc": "linksInHover controls the presence of documentation links\nin hover markdown.\n\nIts legal values are:\n- `false`, for no links;\n- `true`, for links to the `linkTarget` domain; or\n- `\"gopls\"`, for links to gopls' internal documentation viewer.\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null

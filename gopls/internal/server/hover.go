@@ -37,7 +37,18 @@ func (s *server) Hover(ctx context.Context, params *protocol.HoverParams) (_ *pr
 	case file.Mod:
 		return mod.Hover(ctx, snapshot, fh, params.Position)
 	case file.Go:
-		return golang.Hover(ctx, snapshot, fh, params.Position)
+		var pkgURL func(path golang.PackagePath, fragment string) protocol.URI
+		if snapshot.Options().LinksInHover == "gopls" {
+			web, err := s.getWeb()
+			if err != nil {
+				event.Error(ctx, "failed to start web server", err)
+			} else {
+				pkgURL = func(path golang.PackagePath, fragment string) protocol.URI {
+					return web.PkgURL(snapshot.View().ID(), path, fragment)
+				}
+			}
+		}
+		return golang.Hover(ctx, snapshot, fh, params.Position, pkgURL)
 	case file.Tmpl:
 		return template.Hover(ctx, snapshot, fh, params.Position)
 	case file.Work:

@@ -244,8 +244,14 @@ type DocumentationOptions struct {
 	// documentation links in hover.
 	LinkTarget string
 
-	// LinksInHover toggles the presence of links to documentation in hover.
-	LinksInHover bool
+	// LinksInHover controls the presence of documentation links
+	// in hover markdown.
+	//
+	// Its legal values are:
+	// - `false`, for no links;
+	// - `true`, for links to the `linkTarget` domain; or
+	// - `"gopls"`, for links to gopls' internal documentation viewer.
+	LinksInHover any
 }
 
 // Note: FormattingOptions must be comparable with reflect.DeepEqual.
@@ -810,7 +816,13 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 		return setString(&o.LinkTarget, value)
 
 	case "linksInHover":
-		return setBool(&o.LinksInHover, value)
+		switch value {
+		case false, true, "gopls":
+			o.LinksInHover = value
+		default:
+			return fmt.Errorf(`invalid value %s; expect false, true, or "gopls"`,
+				value)
+		}
 
 	case "importShortcut":
 		return setEnum(&o.ImportShortcut, value,
