@@ -3,7 +3,7 @@ Test of "too new" diagnostics from the stdversion analyzer.
 This test references go1.21 symbols from std, but the analyzer itself
 depends on the the go1.22 behavior of versions.FileVersion.
 
-See also gopls/internal/analysis/stdversion/testdata/test.txtar,
+See also go/analysis/passes/stdversion/testdata/test.txtar,
 which runs the same test in the analysistest framework.
 
 -- flags --

@@ -739,7 +739,7 @@ have false positives, for example if fields or methods are accessed
 through a type alias that is guarded by a Go version constraint.
 
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stdversion)
+[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/stdversion)
 
 **Enabled by default.**
 

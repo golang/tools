@@ -9,7 +9,7 @@ package main
 
 import (
 	"golang.org/x/tools/go/analysis/singlechecker"
-	"golang.org/x/tools/gopls/internal/analysis/stdversion"
+	"golang.org/x/tools/go/analysis/passes/stdversion"
 )
 
 func main() { singlechecker.Main(stdversion.Analyzer) }

@@ -37,7 +37,7 @@ var Analyzer = &analysis.Analyzer{
 	Name:             "stdversion",
 	Doc:              Doc,
 	Requires:         []*analysis.Analyzer{inspect.Analyzer},
-	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stdversion",
+	URL:              "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/stdversion",
 	RunDespiteErrors: true,
 	Run:              run,
 }

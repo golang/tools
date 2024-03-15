@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
-	"golang.org/x/tools/gopls/internal/analysis/stdversion"
+	"golang.org/x/tools/go/analysis/passes/stdversion"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
 )
