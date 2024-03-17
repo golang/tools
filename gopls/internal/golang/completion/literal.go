@@ -432,7 +432,7 @@ func (c *completer) compositeLiteral(T types.Type, snip *snippet.Builder, typeNa
 	snip.WriteText("{")
 	// Don't put the tab stop inside the composite literal curlies "{}"
 	// for structs that have no accessible fields.
-	if strct, ok := T.(*types.Struct); !ok || fieldsAccessible(strct, c.pkg.GetTypes()) {
+	if strct, ok := T.(*types.Struct); !ok || fieldsAccessible(strct, c.pkg.Types()) {
 		snip.WriteFinalTabstop()
 	}
 	snip.WriteText("}")

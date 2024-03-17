@@ -50,7 +50,7 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, po
 			}
 		}
 	}
-	result, err := highlightPath(path, pgf.File, pkg.GetTypesInfo())
+	result, err := highlightPath(path, pgf.File, pkg.TypesInfo())
 	if err != nil {
 		return nil, err
 	}

@@ -140,8 +140,8 @@ func (r *renamer) checkInFileBlock(from *types.PkgName) {
 func (r *renamer) checkInPackageBlock(from types.Object) {
 	// Check that there are no references to the name from another
 	// package if the renaming would make it unexported.
-	if typ := r.pkg.GetTypes(); typ != from.Pkg() && ast.IsExported(r.from) && !ast.IsExported(r.to) {
-		if id := someUse(r.pkg.GetTypesInfo(), from); id != nil {
+	if typ := r.pkg.Types(); typ != from.Pkg() && ast.IsExported(r.from) && !ast.IsExported(r.to) {
+		if id := someUse(r.pkg.TypesInfo(), from); id != nil {
 			r.checkExport(id, typ, from)
 		}
 	}
@@ -151,7 +151,7 @@ func (r *renamer) checkInPackageBlock(from types.Object) {
 		kind := objectKind(from)
 		if kind == "func" {
 			// Reject if intra-package references to it exist.
-			for id, obj := range r.pkg.GetTypesInfo().Uses {
+			for id, obj := range r.pkg.TypesInfo().Uses {
 				if obj == from {
 					r.errorf(from.Pos(),
 						"renaming this func %q to %q would make it a package initializer",
@@ -167,8 +167,8 @@ func (r *renamer) checkInPackageBlock(from types.Object) {
 	}
 
 	// Check for conflicts between package block and all file blocks.
-	for _, f := range r.pkg.GetSyntax() {
-		fileScope := r.pkg.GetTypesInfo().Scopes[f]
+	for _, f := range r.pkg.Syntax() {
+		fileScope := r.pkg.TypesInfo().Scopes[f]
 		b, prev := fileScope.LookupParent(r.to, token.NoPos)
 		if b == fileScope {
 			r.errorf(from.Pos(), "renaming this %s %q to %q would conflict", objectKind(from), from.Name(), r.to)
@@ -276,9 +276,9 @@ func (r *renamer) checkInLexicalScope(from types.Object) {
 	// 	var s struct {T}
 	// 	print(s.T) // ...this must change too
 	if _, ok := from.(*types.TypeName); ok {
-		for id, obj := range r.pkg.GetTypesInfo().Uses {
+		for id, obj := range r.pkg.TypesInfo().Uses {
 			if obj == from {
-				if field := r.pkg.GetTypesInfo().Defs[id]; field != nil {
+				if field := r.pkg.TypesInfo().Defs[id]; field != nil {
 					r.check(field)
 				}
 			}
@@ -352,8 +352,8 @@ func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ide
 		stack = append(stack, n) // push
 		switch n := n.(type) {
 		case *ast.Ident:
-			if pkg.GetTypesInfo().Uses[n] == obj {
-				block := enclosingBlock(pkg.GetTypesInfo(), stack)
+			if pkg.TypesInfo().Uses[n] == obj {
+				block := enclosingBlock(pkg.TypesInfo(), stack)
 				if !fn(n, block) {
 					ok = false
 				}
@@ -368,7 +368,7 @@ func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ide
 		case *ast.CompositeLit:
 			// Handle recursion ourselves for struct literals
 			// so we don't visit field identifiers.
-			tv, ok := pkg.GetTypesInfo().Types[n]
+			tv, ok := pkg.TypesInfo().Types[n]
 			if !ok {
 				return visit(nil) // pop stack, don't descend
 			}
@@ -390,7 +390,7 @@ func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ide
 		return true
 	}
 
-	for _, f := range pkg.GetSyntax() {
+	for _, f := range pkg.Syntax() {
 		ast.Inspect(f, visit)
 		if len(stack) != 0 {
 			panic(stack)
@@ -472,8 +472,8 @@ func (r *renamer) checkStructField(from *types.Var) {
 			// This struct is also a named type.
 			// We must check for direct (non-promoted) field/field
 			// and method/field conflicts.
-			named := r.pkg.GetTypesInfo().Defs[spec.Name].Type()
-			prev, indices, _ := types.LookupFieldOrMethod(named, true, r.pkg.GetTypes(), r.to)
+			named := r.pkg.TypesInfo().Defs[spec.Name].Type()
+			prev, indices, _ := types.LookupFieldOrMethod(named, true, r.pkg.Types(), r.to)
 			if len(indices) == 1 {
 				r.errorf(from.Pos(), "renaming this field %q to %q",
 					from.Name(), r.to)
@@ -484,7 +484,7 @@ func (r *renamer) checkStructField(from *types.Var) {
 		} else {
 			// This struct is not a named type.
 			// We need only check for direct (non-promoted) field/field conflicts.
-			T := r.pkg.GetTypesInfo().Types[tStruct].Type.Underlying().(*types.Struct)
+			T := r.pkg.TypesInfo().Types[tStruct].Type.Underlying().(*types.Struct)
 			for i := 0; i < T.NumFields(); i++ {
 				if prev := T.Field(i); prev.Name() == r.to {
 					r.errorf(from.Pos(), "renaming this field %q to %q",
@@ -516,15 +516,15 @@ func (r *renamer) checkStructField(from *types.Var) {
 // the specified object would continue to do so after the renaming.
 func (r *renamer) checkSelections(from types.Object) {
 	pkg := r.pkg
-	typ := pkg.GetTypes()
+	typ := pkg.Types()
 	{
-		if id := someUse(pkg.GetTypesInfo(), from); id != nil {
+		if id := someUse(pkg.TypesInfo(), from); id != nil {
 			if !r.checkExport(id, typ, from) {
 				return
 			}
 		}
 
-		for syntax, sel := range pkg.GetTypesInfo().Selections {
+		for syntax, sel := range pkg.TypesInfo().Selections {
 			// There may be extant selections of only the old
 			// name or only the new name, so we must check both.
 			// (If neither, the renaming is sound.)
@@ -642,7 +642,7 @@ func (r *renamer) checkMethod(from *types.Func) {
 		// declaration conflicts too.
 		{
 			// Start with named interface types (better errors)
-			for _, obj := range r.pkg.GetTypesInfo().Defs {
+			for _, obj := range r.pkg.TypesInfo().Defs {
 				if obj, ok := obj.(*types.TypeName); ok && types.IsInterface(obj.Type()) {
 					f, _, _ := types.LookupFieldOrMethod(
 						obj.Type(), false, from.Pkg(), from.Name())
@@ -662,7 +662,7 @@ func (r *renamer) checkMethod(from *types.Func) {
 			}
 
 			// Now look at all literal interface types (includes named ones again).
-			for e, tv := range r.pkg.GetTypesInfo().Types {
+			for e, tv := range r.pkg.TypesInfo().Types {
 				if e, ok := e.(*ast.InterfaceType); ok {
 					_ = e
 					_ = tv.Type.(*types.Interface)
@@ -865,13 +865,13 @@ func (r *renamer) satisfy() map[satisfy.Constraint]bool {
 			// type-checker.
 			//
 			// Only proceed if all packages have no errors.
-			if len(pkg.GetParseErrors()) > 0 || len(pkg.GetTypeErrors()) > 0 {
+			if len(pkg.ParseErrors()) > 0 || len(pkg.TypeErrors()) > 0 {
 				r.errorf(token.NoPos, // we don't have a position for this error.
 					"renaming %q to %q not possible because %q has errors",
 					r.from, r.to, pkg.Metadata().PkgPath)
 				return nil
 			}
-			f.Find(pkg.GetTypesInfo(), pkg.GetSyntax())
+			f.Find(pkg.TypesInfo(), pkg.Syntax())
 		}
 		r.satisfyConstraints = f.Result
 	}

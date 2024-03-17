@@ -130,7 +130,7 @@ func findLinkname(ctx context.Context, snapshot *cache.Snapshot, pkgPath Package
 	}
 	pkg := pkgs[0]
 
-	obj := pkg.GetTypes().Scope().Lookup(name)
+	obj := pkg.Types().Scope().Lookup(name)
 	if obj == nil {
 		return nil, nil, token.NoPos, fmt.Errorf("package %q does not define %s", pkgPath, name)
 	}

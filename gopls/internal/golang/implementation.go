@@ -260,12 +260,12 @@ func implementsObj(ctx context.Context, snapshot *cache.Snapshot, uri protocol.D
 	}
 
 	// Is the object a type or method? Reject other kinds.
-	obj := pkg.GetTypesInfo().Uses[id]
+	obj := pkg.TypesInfo().Uses[id]
 	if obj == nil {
 		// Check uses first (unlike ObjectOf) so that T in
 		// struct{T} is treated as a reference to a type,
 		// not a declaration of a field.
-		obj = pkg.GetTypesInfo().Defs[id]
+		obj = pkg.TypesInfo().Defs[id]
 	}
 	switch obj := obj.(type) {
 	case *types.TypeName:
@@ -308,7 +308,7 @@ func localImplementations(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 			if !ok {
 				return true // not a type declaration
 			}
-			def := pkg.GetTypesInfo().Defs[spec.Name]
+			def := pkg.TypesInfo().Defs[spec.Name]
 			if def == nil {
 				return true // "can't happen" for types
 			}

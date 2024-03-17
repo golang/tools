@@ -53,7 +53,7 @@ type singleFileFixer func(fset *token.FileSet, start, end token.Pos, src []byte,
 // singleFile adapts a single-file fixer to a Fixer.
 func singleFile(fixer1 singleFileFixer) fixer {
 	return func(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-		return fixer1(pkg.FileSet(), start, end, pgf.Src, pgf.File, pkg.GetTypes(), pkg.GetTypesInfo())
+		return fixer1(pkg.FileSet(), start, end, pgf.Src, pgf.File, pkg.Types(), pkg.TypesInfo())
 	}
 }
 

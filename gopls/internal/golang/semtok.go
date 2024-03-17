@@ -72,7 +72,7 @@ func SemanticTokens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handl
 		ctx:            ctx,
 		metadataSource: snapshot,
 		metadata:       pkg.Metadata(),
-		info:           pkg.GetTypesInfo(),
+		info:           pkg.TypesInfo(),
 		fset:           pkg.FileSet(),
 		pkg:            pkg,
 		pgf:            pgf,
@@ -127,7 +127,7 @@ func (tv *tokenVisitor) visit() {
 	importByName := make(map[string]*types.PkgName)
 	for _, pgf := range tv.pkg.CompiledGoFiles() {
 		for _, imp := range pgf.File.Imports {
-			if obj, _ := typesutil.ImportedPkgName(tv.pkg.GetTypesInfo(), imp); obj != nil {
+			if obj, _ := typesutil.ImportedPkgName(tv.pkg.TypesInfo(), imp); obj != nil {
 				if old, ok := importByName[obj.Name()]; ok {
 					if old != nil && old.Imported() != obj.Imported() {
 						importByName[obj.Name()] = nil // nil => ambiguous across files
@@ -161,7 +161,7 @@ func (tv *tokenVisitor) comment(c *ast.Comment, importByName map[string]*types.P
 		return
 	}
 
-	pkgScope := tv.pkg.GetTypes().Scope()
+	pkgScope := tv.pkg.Types().Scope()
 	// lookupObjects interprets the name in various forms
 	// (X, p.T, p.T.M, etc) and return the list of symbols
 	// denoted by each identifier in the dotted list.
@@ -185,7 +185,7 @@ func (tv *tokenVisitor) comment(c *ast.Comment, importByName map[string]*types.P
 			if !ok {
 				return nil
 			}
-			m, _, _ := types.LookupFieldOrMethod(t, true, tv.pkg.GetTypes(), method)
+			m, _, _ := types.LookupFieldOrMethod(t, true, tv.pkg.Types(), method)
 			if m == nil {
 				return nil
 			}

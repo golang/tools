@@ -104,8 +104,8 @@ func InlayHint(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pR
 		return nil, nil
 	}
 
-	info := pkg.GetTypesInfo()
-	q := typesutil.FileQualifier(pgf.File, pkg.GetTypes(), info)
+	info := pkg.TypesInfo()
+	q := typesutil.FileQualifier(pgf.File, pkg.Types(), info)
 
 	// Set the range to the full file if the range is not valid.
 	start, end := pgf.File.Pos(), pgf.File.End()

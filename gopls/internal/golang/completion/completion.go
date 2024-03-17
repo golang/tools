@@ -531,7 +531,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		}
 	case *ast.Ident:
 		// reject defining identifiers
-		if obj, ok := pkg.GetTypesInfo().Defs[n]; ok {
+		if obj, ok := pkg.TypesInfo().Defs[n]; ok {
 			if v, ok := obj.(*types.Var); ok && v.IsField() && v.Embedded() {
 				// An anonymous field is also a reference to a type.
 			} else if pgf.File.Name == n {
@@ -540,7 +540,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 			} else {
 				objStr := ""
 				if obj != nil {
-					qual := types.RelativeTo(pkg.GetTypes())
+					qual := types.RelativeTo(pkg.Types())
 					objStr = types.ObjectString(obj, qual)
 				}
 				ans, sel := definition(path, obj, pgf)
@@ -556,20 +556,20 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 
 	// Collect all surrounding scopes, innermost first.
-	scopes := golang.CollectScopes(pkg.GetTypesInfo(), path, pos)
-	scopes = append(scopes, pkg.GetTypes().Scope(), types.Universe)
+	scopes := golang.CollectScopes(pkg.TypesInfo(), path, pos)
+	scopes = append(scopes, pkg.Types().Scope(), types.Universe)
 
 	var goversion string // "" => no version check
 	// Prior go1.22, the behavior of FileVersion is not useful to us.
 	if slices.Contains(build.Default.ReleaseTags, "go1.22") {
-		goversion = versions.FileVersion(pkg.GetTypesInfo(), pgf.File) // may be ""
+		goversion = versions.FileVersion(pkg.TypesInfo(), pgf.File) // may be ""
 	}
 
 	opts := snapshot.Options()
 	c := &completer{
 		pkg:      pkg,
 		snapshot: snapshot,
-		qf:       typesutil.FileQualifier(pgf.File, pkg.GetTypes(), pkg.GetTypesInfo()),
+		qf:       typesutil.FileQualifier(pgf.File, pkg.Types(), pkg.TypesInfo()),
 		mq:       golang.MetadataQualifierForFile(snapshot, pgf.File, pkg.Metadata()),
 		completionContext: completionContext{
 			triggerCharacter: protoContext.TriggerCharacter,
@@ -583,8 +583,8 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		path:                      path,
 		pos:                       pos,
 		seen:                      make(map[types.Object]bool),
-		enclosingFunc:             enclosingFunction(path, pkg.GetTypesInfo()),
-		enclosingCompositeLiteral: enclosingCompositeLiteral(path, pos, pkg.GetTypesInfo()),
+		enclosingFunc:             enclosingFunction(path, pkg.TypesInfo()),
+		enclosingCompositeLiteral: enclosingCompositeLiteral(path, pos, pkg.TypesInfo()),
 		deepState: deepCompletionState{
 			enabled: opts.DeepCompletion,
 		},
@@ -958,7 +958,7 @@ func (c *completer) populateImportCompletions(searchImport *ast.ImportSpec) erro
 	}
 
 	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
-		return imports.GetImportPaths(ctx, searchImports, prefix, c.filename, c.pkg.GetTypes().Name(), opts.Env)
+		return imports.GetImportPaths(ctx, searchImports, prefix, c.filename, c.pkg.Types().Name(), opts.Env)
 	})
 	return nil
 }
@@ -1009,7 +1009,7 @@ func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 						if name.String() == "_" {
 							continue
 						}
-						obj := c.pkg.GetTypesInfo().ObjectOf(name)
+						obj := c.pkg.TypesInfo().ObjectOf(name)
 						c.deepState.enqueue(candidate{obj: obj, score: stdScore})
 					}
 				case *ast.TypeSpec:
@@ -1028,7 +1028,7 @@ func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 						continue
 					}
 
-					obj := c.pkg.GetTypesInfo().ObjectOf(spec.Name)
+					obj := c.pkg.TypesInfo().ObjectOf(spec.Name)
 					// Type name should get a higher score than fields but not highScore by default
 					// since field near a comment cursor gets a highScore
 					score := stdScore * 1.1
@@ -1050,7 +1050,7 @@ func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 			if node.Recv != nil {
 				for _, fields := range node.Recv.List {
 					for _, name := range fields.Names {
-						obj := c.pkg.GetTypesInfo().ObjectOf(name)
+						obj := c.pkg.TypesInfo().ObjectOf(name)
 						if obj == nil {
 							continue
 						}
@@ -1075,8 +1075,8 @@ func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 				continue
 			}
 
-			obj := c.pkg.GetTypesInfo().ObjectOf(node.Name)
-			if obj == nil || obj.Pkg() != nil && obj.Pkg() != c.pkg.GetTypes() {
+			obj := c.pkg.TypesInfo().ObjectOf(node.Name)
+			if obj == nil || obj.Pkg() != nil && obj.Pkg() != c.pkg.Types() {
 				continue
 			}
 
@@ -1139,7 +1139,7 @@ func (c *completer) addFieldItems(fields *ast.FieldList) {
 			if name.String() == "_" {
 				continue
 			}
-			obj := c.pkg.GetTypesInfo().ObjectOf(name)
+			obj := c.pkg.TypesInfo().ObjectOf(name)
 			if obj == nil {
 				continue
 			}
@@ -1178,10 +1178,10 @@ const (
 
 // selector finds completions for the specified selector expression.
 func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
-	c.inference.objChain = objChain(c.pkg.GetTypesInfo(), sel.X)
+	c.inference.objChain = objChain(c.pkg.TypesInfo(), sel.X)
 
 	// True selector?
-	if tv, ok := c.pkg.GetTypesInfo().Types[sel.X]; ok {
+	if tv, ok := c.pkg.TypesInfo().Types[sel.X]; ok {
 		c.methodsAndFields(tv.Type, tv.Addressable(), nil, c.deepState.enqueue)
 		c.addPostfixSnippetCandidates(ctx, sel)
 		return nil
@@ -1195,7 +1195,7 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	// Treat sel as a qualified identifier.
 	var filter func(*metadata.Package) bool
 	needImport := false
-	if pkgName, ok := c.pkg.GetTypesInfo().Uses[id].(*types.PkgName); ok {
+	if pkgName, ok := c.pkg.TypesInfo().Uses[id].(*types.PkgName); ok {
 		// Qualified identifier with import declaration.
 		imp := pkgName.Imported()
 
@@ -1421,7 +1421,7 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	var goversion string
 	// TODO(adonovan): after go1.21, replace with:
 	//    goversion = c.pkg.GetTypesInfo().FileVersions[c.file]
-	if v := reflect.ValueOf(c.pkg.GetTypesInfo()).Elem().FieldByName("FileVersions"); v.IsValid() {
+	if v := reflect.ValueOf(c.pkg.TypesInfo()).Elem().FieldByName("FileVersions"); v.IsValid() {
 		goversion = v.Interface().(map[*ast.File]string)[c.file] // may be ""
 	}
 
@@ -1491,7 +1491,7 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 
 	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
 		defer cancel()
-		return imports.GetPackageExports(ctx, add, id.Name, c.filename, c.pkg.GetTypes().Name(), opts.Env)
+		return imports.GetPackageExports(ctx, add, id.Name, c.filename, c.pkg.Types().Name(), opts.Env)
 	})
 	return nil
 }
@@ -1628,7 +1628,7 @@ func (c *completer) lexical(ctx context.Context) error {
 					node = c.path[i-1]
 				}
 				if node != nil {
-					if resolved := resolveInvalid(c.pkg.FileSet(), obj, node, c.pkg.GetTypesInfo()); resolved != nil {
+					if resolved := resolveInvalid(c.pkg.FileSet(), obj, node, c.pkg.TypesInfo()); resolved != nil {
 						obj = resolved
 					}
 				}
@@ -1678,7 +1678,7 @@ func (c *completer) lexical(ctx context.Context) error {
 				// Make sure the package name isn't already in use by another
 				// object, and that this file doesn't import the package yet.
 				// TODO(adonovan): what if pkg.Path has vendor/ prefix?
-				if _, ok := seen[pkg.Name()]; !ok && pkg != c.pkg.GetTypes() && !alreadyImports(c.file, golang.ImportPath(pkg.Path())) {
+				if _, ok := seen[pkg.Name()]; !ok && pkg != c.pkg.Types() && !alreadyImports(c.file, golang.ImportPath(pkg.Path())) {
 					seen[pkg.Name()] = struct{}{}
 					obj := types.NewPkgName(0, nil, pkg.Name(), pkg)
 					imp := &importInfo{
@@ -1875,7 +1875,7 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 	}
 
 	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
-		return imports.GetAllCandidates(ctx, add, prefix, c.filename, c.pkg.GetTypes().Name(), opts.Env)
+		return imports.GetAllCandidates(ctx, add, prefix, c.filename, c.pkg.Types().Name(), opts.Env)
 	})
 
 	return nil
@@ -1914,7 +1914,7 @@ func (c *completer) structLiteralFieldName(ctx context.Context) error {
 			}
 
 			if key, ok := kvExpr.Key.(*ast.Ident); ok {
-				if used, ok := c.pkg.GetTypesInfo().Uses[key]; ok {
+				if used, ok := c.pkg.TypesInfo().Uses[key]; ok {
 					if usedVar, ok := used.(*types.Var); ok {
 						addedFields[usedVar] = true
 					}
@@ -2277,7 +2277,7 @@ Nodes:
 			if c.pos < node.OpPos {
 				e = node.Y
 			}
-			if tv, ok := c.pkg.GetTypesInfo().Types[e]; ok {
+			if tv, ok := c.pkg.TypesInfo().Types[e]; ok {
 				switch node.Op {
 				case token.LAND, token.LOR:
 					// Don't infer "bool" type for "&&" or "||". Often you want
@@ -2295,7 +2295,7 @@ Nodes:
 				if i >= len(node.Lhs) {
 					i = len(node.Lhs) - 1
 				}
-				if tv, ok := c.pkg.GetTypesInfo().Types[node.Lhs[i]]; ok {
+				if tv, ok := c.pkg.TypesInfo().Types[node.Lhs[i]]; ok {
 					inf.objType = tv.Type
 				}
 
@@ -2304,19 +2304,19 @@ Nodes:
 				// matching result values.
 				if len(node.Rhs) <= 1 {
 					for _, lhs := range node.Lhs {
-						inf.assignees = append(inf.assignees, c.pkg.GetTypesInfo().TypeOf(lhs))
+						inf.assignees = append(inf.assignees, c.pkg.TypesInfo().TypeOf(lhs))
 					}
 				} else {
 					// Otherwise, record our single assignee, even if its type is
 					// not available. We use this info to downrank functions
 					// with the wrong number of result values.
-					inf.assignees = append(inf.assignees, c.pkg.GetTypesInfo().TypeOf(node.Lhs[i]))
+					inf.assignees = append(inf.assignees, c.pkg.TypesInfo().TypeOf(node.Lhs[i]))
 				}
 			}
 			return inf
 		case *ast.ValueSpec:
 			if node.Type != nil && c.pos > node.Type.End() {
-				inf.objType = c.pkg.GetTypesInfo().TypeOf(node.Type)
+				inf.objType = c.pkg.TypesInfo().TypeOf(node.Type)
 			}
 			return inf
 		case *ast.CallExpr:
@@ -2324,12 +2324,12 @@ Nodes:
 			if node.Lparen < c.pos && c.pos <= node.Rparen {
 				// For type conversions like "int64(foo)" we can only infer our
 				// desired type is convertible to int64.
-				if typ := typeConversion(node, c.pkg.GetTypesInfo()); typ != nil {
+				if typ := typeConversion(node, c.pkg.TypesInfo()); typ != nil {
 					inf.convertibleTo = typ
 					break Nodes
 				}
 
-				sig, _ := c.pkg.GetTypesInfo().Types[node.Fun].Type.(*types.Signature)
+				sig, _ := c.pkg.TypesInfo().Types[node.Fun].Type.(*types.Signature)
 
 				if sig != nil && sig.TypeParams().Len() > 0 {
 					// If we are completing a generic func call, re-check the call expression.
@@ -2340,7 +2340,7 @@ Nodes:
 					//
 					// TODO: remove this after https://go.dev/issue/52503
 					info := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)}
-					types.CheckExpr(c.pkg.FileSet(), c.pkg.GetTypes(), node.Fun.Pos(), node.Fun, info)
+					types.CheckExpr(c.pkg.FileSet(), c.pkg.Types(), node.Fun.Pos(), node.Fun, info)
 					sig, _ = info.Types[node.Fun].Type.(*types.Signature)
 				}
 
@@ -2349,7 +2349,7 @@ Nodes:
 				}
 
 				if funIdent, ok := node.Fun.(*ast.Ident); ok {
-					obj := c.pkg.GetTypesInfo().ObjectOf(funIdent)
+					obj := c.pkg.TypesInfo().ObjectOf(funIdent)
 
 					if obj != nil && obj.Parent() == types.Universe {
 						// Defer call to builtinArgType so we can provide it the
@@ -2387,7 +2387,7 @@ Nodes:
 			return inf
 		case *ast.CaseClause:
 			if swtch, ok := findSwitchStmt(c.path[i+1:], c.pos, node).(*ast.SwitchStmt); ok {
-				if tv, ok := c.pkg.GetTypesInfo().Types[swtch.Tag]; ok {
+				if tv, ok := c.pkg.TypesInfo().Types[swtch.Tag]; ok {
 					inf.objType = tv.Type
 
 					// Record which objects have already been used in the case
@@ -2399,7 +2399,7 @@ Nodes:
 								continue
 							}
 
-							if objs := objChain(c.pkg.GetTypesInfo(), caseExpr); len(objs) > 0 {
+							if objs := objChain(c.pkg.TypesInfo(), caseExpr); len(objs) > 0 {
 								inf.penalized = append(inf.penalized, penalizedObj{objChain: objs, penalty: 0.1})
 							}
 						}
@@ -2416,7 +2416,7 @@ Nodes:
 		case *ast.IndexExpr:
 			// Make sure position falls within the brackets (e.g. "foo[<>]").
 			if node.Lbrack < c.pos && c.pos <= node.Rbrack {
-				if tv, ok := c.pkg.GetTypesInfo().Types[node.X]; ok {
+				if tv, ok := c.pkg.TypesInfo().Types[node.X]; ok {
 					switch t := tv.Type.Underlying().(type) {
 					case *types.Map:
 						inf.objType = t.Key()
@@ -2434,7 +2434,7 @@ Nodes:
 			return inf
 		case *ast.IndexListExpr:
 			if node.Lbrack < c.pos && c.pos <= node.Rbrack {
-				if tv, ok := c.pkg.GetTypesInfo().Types[node.X]; ok {
+				if tv, ok := c.pkg.TypesInfo().Types[node.X]; ok {
 					if ct := expectedConstraint(tv.Type, exprAtPos(c.pos, node.Indices)); ct != nil {
 						inf.objType = ct
 						inf.typeName.wantTypeName = true
@@ -2446,7 +2446,7 @@ Nodes:
 		case *ast.SendStmt:
 			// Make sure we are on right side of arrow (e.g. "foo <- <>").
 			if c.pos > node.Arrow+1 {
-				if tv, ok := c.pkg.GetTypesInfo().Types[node.Chan]; ok {
+				if tv, ok := c.pkg.TypesInfo().Types[node.Chan]; ok {
 					if ch, ok := tv.Type.Underlying().(*types.Chan); ok {
 						inf.objType = ch.Elem()
 					}
@@ -2519,7 +2519,7 @@ func (c *completer) expectedCallParamType(inf candidateInference, node *ast.Call
 		inf.variadic = exprIdx == numParams-1 && len(node.Args) <= numParams
 
 		// Check if we can infer object kind from printf verb.
-		inf.objKind |= printfArgKind(c.pkg.GetTypesInfo(), node, exprIdx)
+		inf.objKind |= printfArgKind(c.pkg.TypesInfo(), node, exprIdx)
 	}
 
 	// If our expected type is an uninstantiated generic type param,
@@ -2705,7 +2705,7 @@ Nodes:
 				// The case clause types must be assertable from the type switch parameter.
 				ast.Inspect(swtch.Assign, func(n ast.Node) bool {
 					if ta, ok := n.(*ast.TypeAssertExpr); ok {
-						inf.assertableFrom = c.pkg.GetTypesInfo().TypeOf(ta.X)
+						inf.assertableFrom = c.pkg.TypesInfo().TypeOf(ta.X)
 						return false
 					}
 					return true
@@ -2722,7 +2722,7 @@ Nodes:
 							continue
 						}
 
-						if t := c.pkg.GetTypesInfo().TypeOf(typeExpr); t != nil {
+						if t := c.pkg.TypesInfo().TypeOf(typeExpr); t != nil {
 							inf.seenTypeSwitchCases = append(inf.seenTypeSwitchCases, t)
 						}
 					}
@@ -2735,7 +2735,7 @@ Nodes:
 			// Expect type names in type assert expressions.
 			if n.Lparen < c.pos && c.pos <= n.Rparen {
 				// The type in parens must be assertable from the expression type.
-				inf.assertableFrom = c.pkg.GetTypesInfo().TypeOf(n.X)
+				inf.assertableFrom = c.pkg.TypesInfo().TypeOf(n.X)
 				inf.wantTypeName = true
 				break Nodes
 			}
@@ -2768,7 +2768,7 @@ Nodes:
 					inf.modifiers = append(inf.modifiers, typeMod{mod: sliceType})
 				} else {
 					// Try to get the array type using the constant value of "Len".
-					tv, ok := c.pkg.GetTypesInfo().Types[n.Len]
+					tv, ok := c.pkg.TypesInfo().Types[n.Len]
 					if ok && tv.Value != nil && tv.Value.Kind() == constant.Int {
 						if arrayLen, ok := constant.Int64Val(tv.Value); ok {
 							inf.modifiers = append(inf.modifiers, typeMod{mod: arrayType, arrayLen: arrayLen})
@@ -2812,7 +2812,7 @@ Nodes:
 }
 
 func (c *completer) fakeObj(T types.Type) *types.Var {
-	return types.NewVar(token.NoPos, c.pkg.GetTypes(), "", T)
+	return types.NewVar(token.NoPos, c.pkg.Types(), "", T)
 }
 
 // derivableTypes iterates types you can derive from t. For example,

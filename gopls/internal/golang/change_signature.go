@@ -45,7 +45,7 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 	if err != nil {
 		return nil, err
 	}
-	if perrors, terrors := pkg.GetParseErrors(), pkg.GetTypeErrors(); len(perrors) > 0 || len(terrors) > 0 {
+	if perrors, terrors := pkg.ParseErrors(), pkg.TypeErrors(); len(perrors) > 0 || len(terrors) > 0 {
 		var sample string
 		if len(perrors) > 0 {
 			sample = perrors[0].Error()
@@ -367,7 +367,7 @@ func rewriteCalls(ctx context.Context, rw signatureRewrite) (map[protocol.Docume
 	{
 		delegate := internalastutil.CloneNode(rw.newDecl) // clone before modifying
 		delegate.Name.Name = tag + delegate.Name.Name
-		if obj := rw.pkg.GetTypes().Scope().Lookup(delegate.Name.Name); obj != nil {
+		if obj := rw.pkg.Types().Scope().Lookup(delegate.Name.Name); obj != nil {
 			return nil, fmt.Errorf("synthetic name %q conflicts with an existing declaration", delegate.Name.Name)
 		}
 
@@ -467,9 +467,9 @@ func reTypeCheck(logf func(string, ...any), orig *cache.Package, fileMask map[pr
 		var importer func(importPath string) (*types.Package, error)
 		{
 			var (
-				importsByPath = make(map[string]*types.Package)   // cached imports
-				toSearch      = []*types.Package{orig.GetTypes()} // packages to search
-				searched      = make(map[string]bool)             // path -> (false, if present in toSearch; true, if already searched)
+				importsByPath = make(map[string]*types.Package) // cached imports
+				toSearch      = []*types.Package{orig.Types()}  // packages to search
+				searched      = make(map[string]bool)           // path -> (false, if present in toSearch; true, if already searched)
 			)
 			importer = func(path string) (*types.Package, error) {
 				if p, ok := importsByPath[path]; ok {

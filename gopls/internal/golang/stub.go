@@ -33,7 +33,7 @@ import (
 // at the cursor position.
 func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
 	nodes, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
-	si := stubmethods.GetStubInfo(pkg.FileSet(), pkg.GetTypesInfo(), nodes, start)
+	si := stubmethods.GetStubInfo(pkg.FileSet(), pkg.TypesInfo(), nodes, start)
 	if si == nil {
 		return nil, nil, fmt.Errorf("nil interface request")
 	}

@@ -235,7 +235,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 	if err != nil {
 		return nil, err
 	}
-	candidates, _, err := objectsAt(pkg.GetTypesInfo(), pgf.File, pos)
+	candidates, _, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +422,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 			if err != nil {
 				return err
 			}
-			objects, _, err := objectsAt(pkg.GetTypesInfo(), pgf.File, pos)
+			objects, _, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
 			if err != nil {
 				return err // unreachable? (probably caught earlier)
 			}
@@ -458,7 +458,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 
 			targets := make(map[types.Object]bool)
 			for objpath := range globalTargets[pkg.Metadata().PkgPath] {
-				obj, err := objectpath.Object(pkg.GetTypes(), objpath)
+				obj, err := objectpath.Object(pkg.Types(), objpath)
 				if err != nil {
 					// No such object, because it was
 					// declared only in the test variant.
@@ -605,7 +605,7 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 	for _, pgf := range pkg.CompiledGoFiles() {
 		ast.Inspect(pgf.File, func(n ast.Node) bool {
 			if id, ok := n.(*ast.Ident); ok {
-				if obj, ok := pkg.GetTypesInfo().Uses[id]; ok && matches(obj) {
+				if obj, ok := pkg.TypesInfo().Uses[id]; ok && matches(obj) {
 					report(mustLocation(pgf, id), false)
 				}
 			}

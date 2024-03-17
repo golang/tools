@@ -197,7 +197,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 
 	// By convention, we qualify hover information relative to the package
 	// from which the request originated.
-	qf := typesutil.FileQualifier(pgf.File, pkg.GetTypes(), pkg.GetTypesInfo())
+	qf := typesutil.FileQualifier(pgf.File, pkg.Types(), pkg.TypesInfo())
 
 	// Handle type switch identifiers as a special case, since they don't have an
 	// object.
@@ -236,7 +236,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	singleLineSignature := signature
 
 	// TODO(rfindley): we could do much better for inferred signatures.
-	if inferred := inferredSignature(pkg.GetTypesInfo(), ident); inferred != nil {
+	if inferred := inferredSignature(pkg.TypesInfo(), ident); inferred != nil {
 		if s := inferredSignatureString(obj, qf, inferred); s != "" {
 			signature = s
 		}
@@ -295,7 +295,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		//	// Embedded fields:
 		//	foo int	   // through x.y
 		//	z   string // through x.y
-		if prom := promotedFields(obj.Type(), pkg.GetTypes()); len(prom) > 0 {
+		if prom := promotedFields(obj.Type(), pkg.Types()); len(prom) > 0 {
 			var b strings.Builder
 			b.WriteString("// Embedded fields:\n")
 			w := tabwriter.NewWriter(&b, 0, 8, 1, ' ', 0)
@@ -335,7 +335,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		// embedded interfaces.
 		var b strings.Builder
 		for _, m := range typeutil.IntuitiveMethodSet(obj.Type(), nil) {
-			if !accessibleTo(m.Obj(), pkg.GetTypes()) {
+			if !accessibleTo(m.Obj(), pkg.Types()) {
 				continue // inaccessible
 			}
 			if skip[m.Obj().Name()] {
@@ -422,7 +422,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			// methods.
 			if recv == nil || !recv.Exported() {
 				path := pathEnclosingObjNode(pgf.File, pos)
-				if enclosing := searchForEnclosing(pkg.GetTypesInfo(), path); enclosing != nil {
+				if enclosing := searchForEnclosing(pkg.TypesInfo(), path); enclosing != nil {
 					recv = enclosing
 				} else {
 					recv = nil // note: just recv = ... could result in a typed nil.

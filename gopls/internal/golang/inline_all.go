@@ -138,7 +138,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 			return nil, fmt.Errorf("cannot inline: found non-call function reference %v", ref)
 		}
 		// Sanity check.
-		if obj := refpkg.GetTypesInfo().ObjectOf(name); obj == nil ||
+		if obj := refpkg.TypesInfo().ObjectOf(name); obj == nil ||
 			obj.Name() != origDecl.Name.Name ||
 			obj.Pkg() == nil ||
 			obj.Pkg().Path() != string(pkg.Metadata().PkgPath) {
@@ -167,8 +167,8 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 		var (
 			calls   = callInfo.calls
 			fset    = callInfo.pkg.FileSet()
-			tpkg    = callInfo.pkg.GetTypes()
-			tinfo   = callInfo.pkg.GetTypesInfo()
+			tpkg    = callInfo.pkg.Types()
+			tinfo   = callInfo.pkg.TypesInfo()
 			file    = callInfo.pgf.File
 			content = callInfo.pgf.Src
 		)

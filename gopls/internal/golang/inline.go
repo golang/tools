@@ -47,7 +47,7 @@ loop:
 	if safetoken.Line(pgf.Tok, call.Lparen) != safetoken.Line(pgf.Tok, start) {
 		return nil, nil, fmt.Errorf("enclosing call is not on this line")
 	}
-	fn := typeutil.StaticCallee(pkg.GetTypesInfo(), call)
+	fn := typeutil.StaticCallee(pkg.TypesInfo(), call)
 	if fn == nil {
 		return nil, nil, fmt.Errorf("not a static call to a Go function")
 	}
@@ -85,7 +85,7 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 	// but that is frequently not the case within gopls.
 	// Until we are able to harden the inliner,
 	// report panics as errors to avoid crashing the server.
-	bad := func(p *cache.Package) bool { return len(p.GetParseErrors())+len(p.GetTypeErrors()) > 0 }
+	bad := func(p *cache.Package) bool { return len(p.ParseErrors())+len(p.TypeErrors()) > 0 }
 	if bad(calleePkg) || bad(callerPkg) {
 		defer func() {
 			if x := recover(); x != nil {
@@ -98,7 +98,7 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 	// why a particular inlining strategy was chosen.
 	logf := logger(ctx, "inliner", snapshot.Options().VerboseOutput)
 
-	callee, err := inline.AnalyzeCallee(logf, calleePkg.FileSet(), calleePkg.GetTypes(), calleePkg.GetTypesInfo(), calleeDecl, calleePGF.Src)
+	callee, err := inline.AnalyzeCallee(logf, calleePkg.FileSet(), calleePkg.Types(), calleePkg.TypesInfo(), calleeDecl, calleePGF.Src)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -106,8 +106,8 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 	// Inline the call.
 	caller := &inline.Caller{
 		Fset:    callerPkg.FileSet(),
-		Types:   callerPkg.GetTypes(),
-		Info:    callerPkg.GetTypesInfo(),
+		Types:   callerPkg.Types(),
+		Info:    callerPkg.TypesInfo(),
 		File:    callerPGF.File,
 		Call:    call,
 		Content: callerPGF.Src,

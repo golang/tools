@@ -208,7 +208,7 @@ func referencedObject(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (*as
 		return nil, nil, nil
 	}
 	var obj types.Object
-	info := pkg.GetTypesInfo()
+	info := pkg.TypesInfo()
 	switch n := path[0].(type) {
 	case *ast.Ident:
 		obj = info.ObjectOf(n)

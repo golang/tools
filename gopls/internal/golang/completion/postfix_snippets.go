@@ -506,7 +506,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 		return
 	}
 
-	selType := c.pkg.GetTypesInfo().TypeOf(sel.X)
+	selType := c.pkg.TypesInfo().TypeOf(sel.X)
 	if selType == nil {
 		return
 	}
@@ -550,7 +550,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 		}
 	}
 
-	scope := c.pkg.GetTypes().Scope().Innermost(c.pos)
+	scope := c.pkg.Types().Scope().Innermost(c.pos)
 	if scope == nil {
 		return
 	}
@@ -586,7 +586,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 		tmplArgs := postfixTmplArgs{
 			X:              golang.FormatNode(c.pkg.FileSet(), sel.X),
 			StmtOK:         stmtOK,
-			Obj:            exprObj(c.pkg.GetTypesInfo(), sel.X),
+			Obj:            exprObj(c.pkg.TypesInfo(), sel.X),
 			Type:           selType,
 			FuncResults:    funcResults,
 			sel:            sel,

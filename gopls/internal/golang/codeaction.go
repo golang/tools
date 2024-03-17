@@ -335,7 +335,7 @@ func getRewriteCodeActions(ctx context.Context, pkg *cache.Package, snapshot *ca
 	//
 	// TODO: Consider removing the inspection after convenienceAnalyzers are removed.
 	inspect := inspector.New([]*ast.File{pgf.File})
-	for _, diag := range fillstruct.Diagnose(inspect, start, end, pkg.GetTypes(), pkg.GetTypesInfo()) {
+	for _, diag := range fillstruct.Diagnose(inspect, start, end, pkg.Types(), pkg.TypesInfo()) {
 		rng, err := pgf.Mapper.PosRange(pgf.Tok, diag.Pos, diag.End)
 		if err != nil {
 			return nil, err
@@ -354,7 +354,7 @@ func getRewriteCodeActions(ctx context.Context, pkg *cache.Package, snapshot *ca
 		}
 	}
 
-	for _, diag := range fillswitch.Diagnose(inspect, start, end, pkg.GetTypes(), pkg.GetTypesInfo()) {
+	for _, diag := range fillswitch.Diagnose(inspect, start, end, pkg.Types(), pkg.TypesInfo()) {
 		edits, err := suggestedFixToEdits(ctx, snapshot, pkg.FileSet(), &diag.SuggestedFixes[0])
 		if err != nil {
 			return nil, err
@@ -413,14 +413,14 @@ func canRemoveParameter(pkg *cache.Package, pgf *parsego.File, rng protocol.Rang
 		return true // trivially unused
 	}
 
-	obj := pkg.GetTypesInfo().Defs[info.Name]
+	obj := pkg.TypesInfo().Defs[info.Name]
 	if obj == nil {
 		return false // something went wrong
 	}
 
 	used := false
 	ast.Inspect(info.Decl.Body, func(node ast.Node) bool {
-		if n, ok := node.(*ast.Ident); ok && pkg.GetTypesInfo().Uses[n] == obj {
+		if n, ok := node.(*ast.Ident); ok && pkg.TypesInfo().Uses[n] == obj {
 			used = true
 		}
 		return !used // keep going until we find a use

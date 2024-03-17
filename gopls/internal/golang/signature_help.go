@@ -66,7 +66,7 @@ FindCall:
 		return nil, 0, fmt.Errorf("cannot find an enclosing function")
 	}
 
-	info := pkg.GetTypesInfo()
+	info := pkg.TypesInfo()
 
 	// Get the type information for the function being called.
 	var sig *types.Signature
@@ -79,7 +79,7 @@ FindCall:
 	}
 	// Inv: sig != nil
 
-	qf := typesutil.FileQualifier(pgf.File, pkg.GetTypes(), info)
+	qf := typesutil.FileQualifier(pgf.File, pkg.Types(), info)
 
 	// Get the object representing the function, if available.
 	// There is no object in certain cases such as calling a function returned by

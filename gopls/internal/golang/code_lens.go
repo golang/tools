@@ -135,7 +135,7 @@ func matchTestFunc(fn *ast.FuncDecl, pkg *cache.Package, nameRe *regexp.Regexp, 
 	if !nameRe.MatchString(fn.Name.Name) {
 		return false
 	}
-	info := pkg.GetTypesInfo()
+	info := pkg.TypesInfo()
 	if info == nil {
 		return false
 	}

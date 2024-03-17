@@ -86,6 +86,7 @@ type loadScope interface {
 	aScope()
 }
 
+// TODO(rfindley): move to load.go
 type (
 	fileLoadScope    protocol.DocumentURI // load packages containing a file (including command-line-arguments)
 	packageLoadScope string               // load a specific package (the value is its PackageID)
@@ -124,7 +125,8 @@ func (pkg *syntaxPackage) File(uri protocol.DocumentURI) (*parsego.File, error) 
 	return nil, fmt.Errorf("no parsed file for %s in %v", uri, pkg.id)
 }
 
-func (p *Package) GetSyntax() []*ast.File {
+// Syntax returns parsed compiled Go files contained in this package.
+func (p *Package) Syntax() []*ast.File {
 	var syntax []*ast.File
 	for _, pgf := range p.pkg.compiledGoFiles {
 		syntax = append(syntax, pgf.File)
@@ -132,15 +134,24 @@ func (p *Package) GetSyntax() []*ast.File {
 	return syntax
 }
 
+// FileSet returns the FileSet describing this package's positions.
+//
+// The returned FileSet is guaranteed to describe all Syntax, but may also
+// describe additional files.
 func (p *Package) FileSet() *token.FileSet {
 	return p.pkg.fset
 }
 
-func (p *Package) GetTypes() *types.Package {
+// Types returns the type checked go/types.Package.
+func (p *Package) Types() *types.Package {
 	return p.pkg.types
 }
 
-func (p *Package) GetTypesInfo() *types.Info {
+// TypesInfo returns the go/types.Info annotating the Syntax of this package
+// with type information.
+//
+// All fields in the resulting Info are populated.
+func (p *Package) TypesInfo() *types.Info {
 	return p.pkg.typesInfo
 }
 
@@ -152,10 +163,14 @@ func (p *Package) DependencyTypes(path PackagePath) *types.Package {
 	return p.pkg.importMap[path]
 }
 
-func (p *Package) GetParseErrors() []scanner.ErrorList {
+// ParseErrors returns a slice containing all non-empty parse errors produces
+// while parsing p.Syntax, or nil if the package contains no parse errors.
+func (p *Package) ParseErrors() []scanner.ErrorList {
 	return p.pkg.parseErrors
 }
 
-func (p *Package) GetTypeErrors() []types.Error {
+// TypeErrors returns the go/types.Errors produced during type checking this
+// package, if any.
+func (p *Package) TypeErrors() []types.Error {
 	return p.pkg.typeErrors
 }

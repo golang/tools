@@ -126,7 +126,7 @@ func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle,
 	if err != nil {
 		return nil, nil, err
 	}
-	targets, node, err := objectsAt(pkg.GetTypesInfo(), pgf.File, pos)
+	targets, node, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -322,7 +322,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 		if err != nil {
 			return nil, err
 		}
-		objects, _, err := objectsAt(pkg.GetTypesInfo(), pgf.File, pos)
+		objects, _, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
 		if err != nil {
 			return nil, err
 		}
@@ -900,10 +900,10 @@ func renameImports(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.P
 					continue // not the import we're looking for
 				}
 
-				pkgname := pkg.GetTypesInfo().Implicits[imp].(*types.PkgName)
+				pkgname := pkg.TypesInfo().Implicits[imp].(*types.PkgName)
 
-				pkgScope := pkg.GetTypes().Scope()
-				fileScope := pkg.GetTypesInfo().Scopes[f.File]
+				pkgScope := pkg.Types().Scope()
+				fileScope := pkg.TypesInfo().Scopes[f.File]
 
 				localName := string(newName)
 				try := 0
@@ -1025,7 +1025,7 @@ func (r *renamer) update() (map[protocol.DocumentURI][]diff.Edit, error) {
 		isDef bool
 	}
 	var items []item
-	info := r.pkg.GetTypesInfo()
+	info := r.pkg.TypesInfo()
 	for id, obj := range info.Uses {
 		if shouldUpdate(obj) {
 			items = append(items, item{id, obj, false})
@@ -1188,12 +1188,12 @@ func (r *renamer) updateCommentDocLinks() (map[protocol.DocumentURI][]diff.Edit,
 
 		// Qualify objects from other packages.
 		pkgName := ""
-		if r.pkg.GetTypes() != obj.Pkg() {
+		if r.pkg.Types() != obj.Pkg() {
 			pkgName = obj.Pkg().Name()
 		}
 		_, isTypeName := obj.(*types.TypeName)
 		docRenamers = append(docRenamers, &docLinkRenamer{
-			isDep:       r.pkg.GetTypes() != obj.Pkg(),
+			isDep:       r.pkg.Types() != obj.Pkg(),
 			isPkgOrType: isTypeName,
 			packagePath: obj.Pkg().Path(),
 			packageName: pkgName,

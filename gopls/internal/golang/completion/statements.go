@@ -70,7 +70,7 @@ func (c *completer) addAssignAppend() {
 			return
 		}
 
-		lhsType := c.pkg.GetTypesInfo().TypeOf(n.Lhs[exprIdx])
+		lhsType := c.pkg.TypesInfo().TypeOf(n.Lhs[exprIdx])
 		if lhsType == nil {
 			return
 		}
@@ -206,7 +206,7 @@ func (c *completer) addErrCheck() {
 	lastAssignee := assign.Lhs[len(assign.Lhs)-1]
 
 	// Make sure the final assignee is an error.
-	if !types.Identical(c.pkg.GetTypesInfo().TypeOf(lastAssignee), errorType) {
+	if !types.Identical(c.pkg.TypesInfo().TypeOf(lastAssignee), errorType) {
 		return
 	}
 
@@ -329,7 +329,7 @@ func getTestVar(enclosingFunc *funcInfo, pkg *cache.Package) string {
 	}
 
 	var testingPkg *types.Package
-	for _, p := range pkg.GetTypes().Imports() {
+	for _, p := range pkg.Types().Imports() {
 		if p.Path() == "testing" {
 			testingPkg = p
 			break
