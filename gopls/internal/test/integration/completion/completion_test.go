@@ -1003,9 +1003,8 @@ func Join() {}
 	})
 }
 
-// show that the counters get exercised. Fortuntely a small program
-// exercises them all (except for mulit-chnage, for which see the code
-// in env.setBufferContentLocked)
+// show that the efficacy counters get exercised. Fortuntely a small program
+// exercises them all
 func TestCounters(t *testing.T) {
 	const files = `
 -- go.mod --
@@ -1028,22 +1027,29 @@ func main() {
 			}
 			return ans
 		}
+		before := cts()
 		env.OpenFile("x.go")
 		env.Await(env.DoneWithOpen())
 		saved := env.BufferText("x.go")
 		lines := strings.Split(saved, "\n")
-		loc := env.RegexpSearch("x.go", "p")
-		before := cts()
+		// make sure the unused counter is exercised
+		loc := env.RegexpSearch("x.go", "main")
+		loc.Range.End = loc.Range.Start
+		env.Completion(loc)                       // ignore the proposed completions
+		env.RegexpReplace("x.go", "main", "Main") // completions are unused
+		env.SetBufferContent("x.go", saved)       // restore x.go
+		// used:no
+
 		// all the action is after 4 characters on line 2 (counting from 0)
-		// (doing the whole file is too expensive)
 		for i := 2; i < len(lines); i++ {
 			l := lines[i]
 			loc.Range.Start.Line = uint32(i)
-			for j := 5; j < len(l); j++ {
+			for j := 4; j < len(l); j++ {
 				loc.Range.Start.Character = uint32(j)
 				loc.Range.End = loc.Range.Start
 				res := env.Completion(loc)
-				for _, r := range res.Items {
+				if len(res.Items) > 0 {
+					r := res.Items[0]
 					env.AcceptCompletion(loc, r)
 					env.SetBufferContent("x.go", saved)
 				}
@@ -1051,10 +1057,6 @@ func main() {
 		}
 		after := cts()
 		for c := range after {
-			if c.Name() == "gopls/completion/multi-change" {
-				// don't know how to force multi-change
-				continue
-			}
 			if after[c] <= before[c] {
 				t.Errorf("%s did not increase", c.Name())
 			}

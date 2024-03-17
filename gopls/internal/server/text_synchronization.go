@@ -329,9 +329,6 @@ func (s *server) applyIncrementalChanges(ctx context.Context, uri protocol.Docum
 	if err != nil {
 		return nil, fmt.Errorf("%w: file not found (%v)", jsonrpc2.ErrInternal, err)
 	}
-	if len(changes) > 1 {
-		changeMulti.Inc()
-	}
 	for i, change := range changes {
 		// TODO(adonovan): refactor to use diff.Apply, which is robust w.r.t.
 		// out-of-order or overlapping changes---and much more efficient.
@@ -396,6 +393,7 @@ func (s *server) checkEfficacy(uri protocol.DocumentURI, version int32, change p
 			}
 		}
 	}
+	complUnused.Inc()
 }
 
 func changeTypeToFileAction(ct protocol.FileChangeType) file.Action {

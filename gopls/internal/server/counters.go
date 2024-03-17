@@ -8,22 +8,21 @@ import "golang.org/x/telemetry/counter"
 
 // Proposed counters for evaluating gopls code completion.
 var (
-	complCnt   = counter.New("gopls/completion/cnt")   // for Go programs
-	complEmpty = counter.New("gopls/completion/empty") // count empty responses
-	complLong  = counter.New("gopls/completion/long")  // returning more than 10 items
+	complEmpty = counter.New("gopls/completion/len:0")    // count empty suggestions
+	complShort = counter.New("gopls/completion/len:<=10") // not empty, not long
+	complLong  = counter.New("gopls/completion/len:>10")  // returning more than 10 items
 
-	changeMulti = counter.New("gopls/completion/multi-change") // multiple changes in didChange
-	changeFull  = counter.New("gopls/completion/full-change")  // full file change in didChange
+	changeFull  = counter.New("gopls/completion/used:unknown") // full file change in didChange
+	complUnused = counter.New("gopls/completion/used:no")      // did not use a completion
+	complUsed   = counter.New("gopls/completion/used:yes")     // used a completion
 
-	complUsed = counter.New("gopls/completion/used") // used a completion
-
-	// exported so tests can verify that counters are incrementd
+	// exported so tests can verify that counters are incremented
 	CompletionCounters = []*counter.Counter{
-		complCnt,
 		complEmpty,
+		complShort,
 		complLong,
-		changeMulti,
 		changeFull,
+		complUnused,
 		complUsed,
 	}
 )

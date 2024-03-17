@@ -40,7 +40,6 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 	var surrounding *completion.Selection
 	switch snapshot.FileKind(fh) {
 	case file.Go:
-		complCnt.Inc() // completion requests for Go programs
 		candidates, surrounding, err = completion.Completion(ctx, snapshot, fh, params.Position, params.Context)
 	case file.Mod:
 		candidates, surrounding = nil, nil
@@ -87,6 +86,8 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 	if len(items) > 10 {
 		// TODO(pjw): long completions are ok for field lists
 		complLong.Inc()
+	} else {
+		complShort.Inc()
 	}
 	return &protocol.CompletionList{
 		IsIncomplete: incompleteResults,
@@ -97,6 +98,7 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 func (s *server) saveLastCompletion(uri protocol.DocumentURI, version int32, items []protocol.CompletionItem, pos protocol.Position) {
 	s.efficacyMu.Lock()
 	defer s.efficacyMu.Unlock()
+	s.efficacyVersion = version
 	s.efficacyURI = uri
 	s.efficacyPos = pos
 	s.efficacyItems = items
