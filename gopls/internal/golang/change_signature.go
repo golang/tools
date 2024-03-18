@@ -45,6 +45,9 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 	if err != nil {
 		return nil, err
 	}
+
+	// Changes to our heuristics for whether we can remove a parameter must also
+	// be reflected in the canRemoveParameter helper.
 	if perrors, terrors := pkg.ParseErrors(), pkg.TypeErrors(); len(perrors) > 0 || len(terrors) > 0 {
 		var sample string
 		if len(perrors) > 0 {
