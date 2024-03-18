@@ -59,9 +59,6 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 	if err != nil {
 		return nil, err // e.g. invalid range
 	}
-	if info.Decl.Recv != nil {
-		return nil, fmt.Errorf("can't change signature of methods (yet)")
-	}
 	if info.Field == nil {
 		return nil, fmt.Errorf("failed to find field")
 	}
@@ -373,8 +370,50 @@ func rewriteCalls(ctx context.Context, rw signatureRewrite) (map[protocol.Docume
 
 		wrapper := internalastutil.CloneNode(rw.origDecl)
 		wrapper.Type.Params = rw.params
+
+		// Get the receiver name, creating it if necessary.
+		var recv string // nonempty => call is a method call with receiver recv
+		if wrapper.Recv.NumFields() > 0 {
+			if len(wrapper.Recv.List[0].Names) > 0 {
+				recv = wrapper.Recv.List[0].Names[0].Name
+			} else {
+				// Create unique name for the temporary receiver, which will be inlined away.
+				//
+				// We use the lexical scope of the original function to avoid conflicts
+				// with (e.g.) named result variables. However, since the parameter syntax
+				// may have been modified/renamed from the original function, we must
+				// reject those names too.
+				usedParams := make(map[string]bool)
+				for _, fld := range wrapper.Type.Params.List {
+					for _, name := range fld.Names {
+						usedParams[name.Name] = true
+					}
+				}
+				scope := rw.pkg.TypesInfo().Scopes[rw.origDecl.Type]
+				if scope == nil {
+					return nil, bug.Errorf("missing function scope for %v", rw.origDecl.Name.Name)
+				}
+				for i := 0; ; i++ {
+					recv = fmt.Sprintf("r%d", i)
+					_, obj := scope.LookupParent(recv, token.NoPos)
+					if obj == nil && !usedParams[recv] {
+						break
+					}
+				}
+				wrapper.Recv.List[0].Names = []*ast.Ident{{Name: recv}}
+			}
+		}
+
+		name := &ast.Ident{Name: delegate.Name.Name}
+		var fun ast.Expr = name
+		if recv != "" {
+			fun = &ast.SelectorExpr{
+				X:   &ast.Ident{Name: recv},
+				Sel: name,
+			}
+		}
 		call := &ast.CallExpr{
-			Fun:  &ast.Ident{Name: delegate.Name.Name},
+			Fun:  fun,
 			Args: rw.callArgs,
 		}
 		if rw.variadic {
