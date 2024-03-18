@@ -61,14 +61,14 @@ func RenderPackageDoc(pkg *cache.Package, posURL func(filename string, line, col
 	// The only loss is doc.classifyExamples.
 	// TODO(adonovan): simulate that too.
 	fileMap := make(map[string]*ast.File)
-	for _, f := range pkg.GetSyntax() {
+	for _, f := range pkg.Syntax() {
 		fileMap[pkg.FileSet().File(f.Pos()).Name()] = f
 	}
 	astpkg := &ast.Package{
-		Name:  pkg.GetTypes().Name(),
+		Name:  pkg.Types().Name(),
 		Files: fileMap,
 	}
-	docpkg := doc.New(astpkg, pkg.GetTypes().Path(), doc.PreserveAST)
+	docpkg := doc.New(astpkg, pkg.Types().Path(), doc.PreserveAST)
 
 	// Ensure doc links (e.g. "[fmt.Println]") become valid links.
 	docpkg.Printer().DocLinkURL = func(link *comment.DocLink) string {
@@ -127,7 +127,7 @@ function httpGET(url) {
 
 		// linkify returns the appropriate URL (if any) for an identifier.
 		linkify := func(id *ast.Ident) protocol.URI {
-			if obj, ok := pkg.GetTypesInfo().Uses[id]; ok && obj.Pkg() != nil {
+			if obj, ok := pkg.TypesInfo().Uses[id]; ok && obj.Pkg() != nil {
 				// imported package name?
 				if pkgname, ok := obj.(*types.PkgName); ok {
 					// TODO(adonovan): do this for Defs of PkgName too.
@@ -136,7 +136,7 @@ function httpGET(url) {
 
 				// package-level symbol?
 				if obj.Parent() == obj.Pkg().Scope() {
-					if obj.Pkg() == pkg.GetTypes() {
+					if obj.Pkg() == pkg.Types() {
 						return "#" + obj.Name() // intra-package ref
 					} else {
 						return pkgURL(PackagePath(obj.Pkg().Path()), obj.Name())
@@ -224,21 +224,21 @@ function httpGET(url) {
 
 	// pkgRelative qualifies types by package name alone
 	pkgRelative := func(other *types.Package) string {
-		if pkg.GetTypes() == other {
+		if pkg.Types() == other {
 			return "" // same package; unqualified
 		}
 		return other.Name()
 	}
 
 	// package name
-	fmt.Fprintf(&buf, "<h1>Package %s</h1>\n", pkg.GetTypes().Name())
+	fmt.Fprintf(&buf, "<h1>Package %s</h1>\n", pkg.Types().Name())
 
 	// import path
-	fmt.Fprintf(&buf, "<pre class='code'>import %q</pre>\n", pkg.GetTypes().Path())
+	fmt.Fprintf(&buf, "<pre class='code'>import %q</pre>\n", pkg.Types().Path())
 
 	// link to same package in pkg.go.dev
 	fmt.Fprintf(&buf, "<div><a href=%q title='View in pkg.go.dev'><img id='pkgsite' src='/assets/go-logo-blue.svg'/></a>\n",
-		"https://pkg.go.dev/"+string(pkg.GetTypes().Path()))
+		"https://pkg.go.dev/"+string(pkg.Types().Path()))
 
 	// package doc
 	fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docpkg.HTML(docpkg.Doc))
@@ -252,7 +252,7 @@ function httpGET(url) {
 	if len(docpkg.Vars) > 0 {
 		fmt.Fprintf(&buf, "<li><a href='#hdr-Variables'>Variables</a></li>\n")
 	}
-	scope := pkg.GetTypes().Scope()
+	scope := pkg.Types().Scope()
 	for _, fn := range docpkg.Funcs {
 		obj := scope.Lookup(fn.Name).(*types.Func)
 		fmt.Fprintf(&buf, "<li><a href='#%s'>%s</a></li>\n",
