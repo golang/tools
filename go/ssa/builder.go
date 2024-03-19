@@ -79,6 +79,7 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"runtime"
 	"sync"
 
 	"golang.org/x/tools/internal/aliases"
@@ -2622,14 +2623,19 @@ func (prog *Program) Build() {
 			p.Build()
 		} else {
 			wg.Add(1)
+			cpuLimit <- struct{}{} // acquire a token
 			go func(p *Package) {
 				p.Build()
 				wg.Done()
+				<-cpuLimit // release a token
 			}(p)
 		}
 	}
 	wg.Wait()
 }
+
+// cpuLimit is a counting semaphore to limit CPU parallelism.
+var cpuLimit = make(chan struct{}, runtime.GOMAXPROCS(0))
 
 // Build builds SSA code for all functions and vars in package p.
 //
