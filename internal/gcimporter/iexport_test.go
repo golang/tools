@@ -32,6 +32,7 @@ import (
 	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/typeparams/genericfeatures"
@@ -145,6 +146,7 @@ type UnknownType undefined
 		t.Errorf("Loaded only %d packages, want at least %d", numPkgs, want)
 	}
 
+	// TODO(adonovan): opt: parallelize this slow loop.
 	for _, pkg := range sorted {
 		if exportdata, err := iexport(conf.Fset, version, pkg); err != nil {
 			t.Error(err)
@@ -333,14 +335,15 @@ func cmpObj(x, y types.Object) error {
 		if xalias, yalias := x.IsAlias(), y.(*types.TypeName).IsAlias(); xalias != yalias {
 			return fmt.Errorf("mismatching IsAlias(): %s vs %s", x, y)
 		}
+
 		// equalType does not recurse into the underlying types of named types, so
 		// we must pass the underlying type explicitly here. However, in doing this
 		// we may skip checking the features of the named types themselves, in
 		// situations where the type name is not referenced by the underlying or
 		// any other top-level declarations. Therefore, we must explicitly compare
 		// named types here, before passing their underlying types into equalType.
-		xn, _ := xt.(*types.Named)
-		yn, _ := yt.(*types.Named)
+		xn, _ := aliases.Unalias(xt).(*types.Named)
+		yn, _ := aliases.Unalias(yt).(*types.Named)
 		if (xn == nil) != (yn == nil) {
 			return fmt.Errorf("mismatching types: %T vs %T", xt, yt)
 		}

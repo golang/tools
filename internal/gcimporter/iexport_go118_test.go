@@ -123,6 +123,12 @@ func TestImportTypeparamTests(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			// TODO(adonovan): delete when #66550 is fixed.
+			if strings.Contains(os.Getenv("GODEBUG"), "gotypesalias=1") &&
+				entry.Name() == "issue50259.go" {
+				t.Skip("Skipping test of defined<->alias cycle under gotypesaliases=1 (#66550)")
+			}
+
 			if !bytes.HasPrefix(src, []byte("// run")) && !bytes.HasPrefix(src, []byte("// compile")) {
 				// We're bypassing the logic of run.go here, so be conservative about
 				// the files we consider in an attempt to make this test more robust to
