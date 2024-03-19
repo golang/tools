@@ -102,11 +102,8 @@ var postfixTmpls = []postfixTmpl{{
 	label:   "reverse",
 	details: "reverse slice",
 	body: `{{if and (eq .Kind "slice") .StmtOK -}}
-{{$i := .VarName nil "i"}}{{$j := .VarName nil "j" -}}
-for {{$i}}, {{$j}} := 0, len({{.X}})-1; {{$i}} < {{$j}}; {{$i}}, {{$j}} = {{$i}}+1, {{$j}}-1 {
-	{{.X}}[{{$i}}], {{.X}}[{{$j}}] = {{.X}}[{{$j}}], {{.X}}[{{$i}}]
-}
-{{end}}`,
+{{.Import "slices"}}.Reverse({{.X}})
+{{- end}}`,
 }, {
 	label:   "range",
 	details: "range over slice",
