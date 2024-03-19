@@ -275,8 +275,8 @@ func formatObj(out *strings.Builder, fset *token.FileSet, ref string, obj types.
 		origin = obj.Origin()
 
 	case *types.Func:
-		if obj.Type().(*types.Signature).Recv() != nil {
-			kind = "method"
+		if recv := obj.Type().(*types.Signature).Recv(); recv != nil {
+			kind = fmt.Sprintf("method (with recv %v)", recv.Type())
 		}
 		origin = obj.Origin()
 
