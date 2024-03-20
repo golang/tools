@@ -1464,9 +1464,10 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 	defer done()
 
 	pkg := &syntaxPackage{
-		id:    inputs.id,
-		fset:  b.fset, // must match parse call below
-		types: types.NewPackage(string(inputs.pkgPath), string(inputs.name)),
+		id:         inputs.id,
+		fset:       b.fset, // must match parse call below
+		types:      types.NewPackage(string(inputs.pkgPath), string(inputs.name)),
+		typesSizes: inputs.sizes,
 		typesInfo: &types.Info{
 			Types:      make(map[ast.Expr]types.TypeAndValue),
 			Defs:       make(map[*ast.Ident]types.Object),

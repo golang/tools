@@ -244,6 +244,80 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		}
 	}
 
+	// Compute size information for types,
+	// and (size, offset) for struct fields.
+	//
+	// This information is useful when debugging crashes or
+	// optimizing layout. To reduce distraction, we show it only
+	// when hovering over the declaring identifier,
+	// but not referring identifiers.
+	//
+	// Size and alignment vary across OS/ARCH.
+	// Gopls will select the appropriate build configuration when
+	// viewing a type declaration in a build-tagged file, but will
+	// use the default build config for all other types, even
+	// if they embed platform-variant types.
+	//
+	var sizeOffset string // optional size/offset description
+	if def, ok := pkg.TypesInfo().Defs[ident]; ok && ident.Pos() == def.Pos() {
+		// This is the declaring identifier.
+		// (We can't simply use ident.Pos() == obj.Pos() because
+		// referencedObject prefers the TypeName for an embedded field).
+
+		// format returns the decimal and hex representation of x.
+		format := func(x int64) string {
+			if x < 10 {
+				return fmt.Sprintf("%d", x)
+			}
+			return fmt.Sprintf("%[1]d (%#[1]x)", x)
+		}
+
+		var data []string // {size, offset}, both optional
+
+		// If the type has free type parameters, its size cannot be
+		// computed. For now, we capture panics from go/types.Sizes.
+		// TODO(adonovan): use newly factored typeparams.Free.
+		try := func(f func()) bool {
+			defer func() { recover() }()
+			f()
+			return true
+		}
+
+		// size (types and fields)
+		if v, ok := obj.(*types.Var); ok && v.IsField() || is[*types.TypeName](obj) {
+			var sz int64
+			if try(func() { sz = pkg.TypesSizes().Sizeof(obj.Type()) }) {
+				data = append(data, "size="+format(sz))
+			}
+		}
+
+		// offset (fields)
+		if v, ok := obj.(*types.Var); ok && v.IsField() {
+			for _, n := range pathEnclosingObjNode(pgf.File, pos) {
+				if n, ok := n.(*ast.StructType); ok {
+					t := pkg.TypesInfo().TypeOf(n).(*types.Struct)
+					var fields []*types.Var
+					for i := 0; i < t.NumFields(); i++ {
+						f := t.Field(i)
+						fields = append(fields, f)
+						if f == v {
+							var offsets []int64
+							if try(func() { offsets = pkg.TypesSizes().Offsetsof(fields) }) {
+								if n := len(offsets); n > 0 {
+									data = append(data, "offset="+format(offsets[n-1]))
+								}
+							}
+							break
+						}
+					}
+					break
+				}
+			}
+		}
+
+		sizeOffset = strings.Join(data, ", ")
+	}
+
 	var typeDecl, methods, fields string
 
 	// For "objects defined by a type spec", the signature produced by
@@ -284,6 +358,16 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 				return protocol.Range{}, nil, err
 			}
 			typeDecl = b.String()
+
+			// Splice in size/offset at end of first line.
+			//   "type T struct { // size=..."
+			if sizeOffset != "" {
+				nl := strings.IndexByte(typeDecl, '\n')
+				if nl < 0 {
+					nl = len(typeDecl)
+				}
+				typeDecl = typeDecl[:nl] + " // " + sizeOffset + typeDecl[nl:]
+			}
 		}
 
 		// Promoted fields
@@ -353,6 +437,11 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		methods = b.String()
 
 		signature = typeDecl + "\n" + methods
+	} else {
+		// Non-types
+		if sizeOffset != "" {
+			signature += " // " + sizeOffset
+		}
 	}
 
 	// Compute link data (on pkg.go.dev or other documentation host).

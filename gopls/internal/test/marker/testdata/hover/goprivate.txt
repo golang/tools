@@ -16,13 +16,13 @@ package lib
 type L struct{} //@hover("L", "L", L)
 -- @L --
 ```go
-type L struct{}
+type L struct{} // size=0
 ```
 
 GOPRIVATE should also match nested packages.
 -- @T --
 ```go
-type T struct{}
+type T struct{} // size=0
 ```
 
 T should not be linked, as it is private.

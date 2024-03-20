@@ -18,12 +18,12 @@ package generics
 
 type value[T any] struct { //hover("lue", "value", value),hover("T", "T", valueT)
 	val T   //@hover("T", "T", valuevalT)
-	Q   int //@hover("Q", "Q", valueQ)
+	Q   int64 //@hover("Q", "Q", valueQ)
 }
 
 type Value[T any] struct { //@hover("T", "T", ValueT)
 	val T   //@hover("T", "T", ValuevalT)
-	Q   int //@hover("Q", "Q", ValueQ)
+	Q   int64 //@hover("Q", "Q", ValueQ)
 }
 
 func F[P interface{ ~int | string }]() { //@hover("P", "P", Ptparam)
@@ -46,7 +46,7 @@ func _() {
 
 -- @ValueQ --
 ```go
-field Q int
+field Q int64 // size=8
 ```
 
 @hover("Q", "Q", ValueQ)
@@ -67,7 +67,7 @@ func app(s []int, e int) []int // func[S interface{~[]E}, E interface{}](s S, e 
 ```
 -- @valueQ --
 ```go
-field Q int
+field Q int64 // size=8
 ```
 
 @hover("Q", "Q", valueQ)

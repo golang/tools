@@ -52,6 +52,7 @@ type syntaxPackage struct {
 	typeErrors      []types.Error
 	types           *types.Package
 	typesInfo       *types.Info
+	typesSizes      types.Sizes
 	importMap       map[PackagePath]*types.Package
 
 	xrefsOnce sync.Once
@@ -153,6 +154,11 @@ func (p *Package) Types() *types.Package {
 // All fields in the resulting Info are populated.
 func (p *Package) TypesInfo() *types.Info {
 	return p.pkg.typesInfo
+}
+
+// TypesSizes returns the sizing function used for types in this package.
+func (p *Package) TypesSizes() types.Sizes {
+	return p.pkg.typesSizes
 }
 
 // DependencyTypes returns the type checker's symbol for the specified

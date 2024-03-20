@@ -115,10 +115,11 @@ func Test(t *testing.T) {
 			if test.skipReason != "" {
 				t.Skip(test.skipReason)
 			}
-			for _, goos := range test.skipGOOS {
-				if runtime.GOOS == goos {
-					t.Skipf("skipping on %s due to -skip_goos", runtime.GOOS)
-				}
+			if slices.Contains(test.skipGOOS, runtime.GOOS) {
+				t.Skipf("skipping on %s due to -skip_goos", runtime.GOOS)
+			}
+			if slices.Contains(test.skipGOARCH, runtime.GOARCH) {
+				t.Skipf("skipping on %s due to -skip_goos", runtime.GOOS)
 			}
 
 			// TODO(rfindley): it may be more useful to have full support for build
@@ -500,6 +501,7 @@ type markerTest struct {
 	cgo              bool
 	writeGoSum       []string // comma separated dirs to write go sum for
 	skipGOOS         []string // comma separated GOOS values to skip
+	skipGOARCH       []string // comma separated GOARCH values to skip
 	ignoreExtraDiags bool
 	filterBuiltins   bool
 	filterKeywords   bool
@@ -513,6 +515,7 @@ func (t *markerTest) flagSet() *flag.FlagSet {
 	flags.BoolVar(&t.cgo, "cgo", false, "if set, requires cgo (both the cgo tool and CGO_ENABLED=1)")
 	flags.Var((*stringListValue)(&t.writeGoSum), "write_sumfile", "if set, write the sumfile for these directories")
 	flags.Var((*stringListValue)(&t.skipGOOS), "skip_goos", "if set, skip this test on these GOOS values")
+	flags.Var((*stringListValue)(&t.skipGOARCH), "skip_goarch", "if set, skip this test on these GOARCH values")
 	flags.BoolVar(&t.ignoreExtraDiags, "ignore_extra_diags", false, "if set, suppress errors for unmatched diagnostics")
 	flags.BoolVar(&t.filterBuiltins, "filter_builtins", true, "if set, filter builtins from completion results")
 	flags.BoolVar(&t.filterKeywords, "filter_keywords", true, "if set, filter keywords from completion results")

@@ -12,22 +12,22 @@ go 1.18
 package p
 
 type E struct {
-	Embed int
+	Embed int64
 }
 
 // T is in the package scope, and so should be linkable.
 type T struct{ //@hover("T", "T", T)
 	// Only exported fields should be linkable
 
-	f int //@hover("f", "f", f)
-	F int //@hover("F", "F", F)
+	f int64 //@hover("f", "f", f)
+	F int64 //@hover("F", "F", F)
 
 	E
 
 	// TODO(rfindley): is the link here correct? It ignores N.
 	N struct {
 		// Nested fields should also be linkable.
-		Nested int //@hover("Nested", "Nested", Nested)
+		Nested int64 //@hover("Nested", "Nested", Nested)
 	}
 }
 // M is an exported method, and so should be linkable.
@@ -43,7 +43,7 @@ func _() {
 	_ = t.Embed //@hover("Embed", "Embed", Embed)
 
 	// Local variables should not be linkable, even if they are capitalized.
-	var X int //@hover("X", "X", X)
+	var X int64 //@hover("X", "X", X)
 	_ = X
 
 	// Local types should not be linkable, even if they are capitalized.
@@ -57,13 +57,13 @@ func _() {
 }
 -- @Embed --
 ```go
-field Embed int
+field Embed int64
 ```
 
 [`(p.E).Embed` on pkg.go.dev](https://pkg.go.dev/mod.com#E.Embed)
 -- @F --
 ```go
-field F int
+field F int64 // size=8, offset=8
 ```
 
 @hover("F", "F", F)
@@ -72,7 +72,7 @@ field F int
 [`(p.T).F` on pkg.go.dev](https://pkg.go.dev/mod.com#T.F)
 -- @Local --
 ```go
-type Local struct {
+type Local struct { // size=8
 	E
 }
 ```
@@ -82,26 +82,26 @@ Local types should not be linkable, even if they are capitalized.
 
 ```go
 // Embedded fields:
-Embed int // through E 
+Embed int64 // through E 
 ```
 -- @Nested --
 ```go
-field Nested int
+field Nested int64 // size=8, offset=0
 ```
 
 Nested fields should also be linkable.
 -- @T --
 ```go
-type T struct {
-	f int //@hover("f", "f", f)
-	F int //@hover("F", "F", F)
+type T struct { // size=32 (0x20)
+	f int64 //@hover("f", "f", f)
+	F int64 //@hover("F", "F", F)
 
 	E
 
 	// TODO(rfindley): is the link here correct? It ignores N.
 	N struct {
 		// Nested fields should also be linkable.
-		Nested int //@hover("Nested", "Nested", Nested)
+		Nested int64 //@hover("Nested", "Nested", Nested)
 	}
 }
 ```
@@ -111,7 +111,7 @@ T is in the package scope, and so should be linkable.
 
 ```go
 // Embedded fields:
-Embed int // through E 
+Embed int64 // through E 
 ```
 
 ```go
@@ -122,13 +122,13 @@ func (T) m()
 [`p.T` on pkg.go.dev](https://pkg.go.dev/mod.com#T)
 -- @X --
 ```go
-var X int
+var X int64
 ```
 
 Local variables should not be linkable, even if they are capitalized.
 -- @f --
 ```go
-field f int
+field f int64 // size=8, offset=0
 ```
 
 @hover("f", "f", f)

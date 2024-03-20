@@ -49,8 +49,9 @@ treatment by the test runner:
     in these directories before running the test.
     -skip_goos=a,b,c instructs the test runner to skip the test for the
     listed GOOS values.
+    -skip_goarch=a,b,c does the same for GOARCH.
     -ignore_extra_diags suppresses errors for unmatched diagnostics
-    TODO(rfindley): using build constraint expressions for -skip_goos would
+    TODO(rfindley): using build constraint expressions for -skip_go{os,arch} would
     be clearer.
     -filter_builtins=false disables the filtering of builtins from
     completion results.

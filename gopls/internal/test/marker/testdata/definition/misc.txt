@@ -1,9 +1,15 @@
 This test exercises miscellaneous definition and hover requests.
 
+Its size expectations assume a 64-bit machine.
+
 -- go.mod --
 module mod.com
 
 go 1.16
+
+-- flags --
+-skip_goarch=386
+
 -- a.go --
 package a //@loc(aPackage, re"package (a)"),hover(aPackage, aPackage, aPackage)
 
@@ -122,7 +128,7 @@ func _() {
 -- @aPackage --
 -- @hoverDeclBlocka --
 ```go
-type a struct {
+type a struct { // size=16 (0x10)
 	x string
 }
 ```
@@ -130,13 +136,13 @@ type a struct {
 1st type declaration block
 -- @hoverDeclBlockb --
 ```go
-type b struct{}
+type b struct{} // size=0
 ```
 
 b has a comment
 -- @hoverDeclBlockc --
 ```go
-type c struct {
+type c struct { // size=16 (0x10)
 	f string
 }
 ```
@@ -144,13 +150,13 @@ type c struct {
 c is a struct
 -- @hoverDeclBlockd --
 ```go
-type d string
+type d string // size=16 (0x10)
 ```
 
 3rd type declaration block
 -- @hoverDeclBlocke --
 ```go
-type e struct {
+type e struct { // size=8
 	f float64
 }
 ```
