@@ -32,7 +32,7 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 		return nil // interface method or type parameter
 	}
 
-	if prog.parameterized.isParameterized(T) {
+	if prog.isParameterized(T) {
 		return nil // generic method
 	}
 

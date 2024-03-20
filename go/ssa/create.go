@@ -34,13 +34,12 @@ import (
 // See the Example tests for simple examples.
 func NewProgram(fset *token.FileSet, mode BuilderMode) *Program {
 	return &Program{
-		Fset:          fset,
-		imported:      make(map[string]*Package),
-		packages:      make(map[*types.Package]*Package),
-		mode:          mode,
-		canon:         newCanonizer(),
-		ctxt:          types.NewContext(),
-		parameterized: tpWalker{seen: make(map[types.Type]bool)},
+		Fset:     fset,
+		imported: make(map[string]*Package),
+		packages: make(map[*types.Package]*Package),
+		mode:     mode,
+		canon:    newCanonizer(),
+		ctxt:     types.NewContext(),
 	}
 }
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package ssa
+package typeparams
 
 import (
 	"go/ast"
@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func TestIsParameterized(t *testing.T) {
+func TestFree(t *testing.T) {
 	const source = `
 package P
 type A int
@@ -44,7 +44,7 @@ func (v *V[T]) Push(x T) { *v = append(*v, x) }
 
 	for _, test := range []struct {
 		expr string // type expression
-		want bool   // expected isParameterized value
+		want bool   // expected value
 	}{
 		{"A", false},
 		{"*A", false},
@@ -65,8 +65,7 @@ func (v *V[T]) Push(x T) { *v = append(*v, x) }
 			t.Errorf("Eval(%s) failed: %v", test.expr, err)
 		}
 
-		param := tpWalker{seen: make(map[types.Type]bool)}
-		if got := param.isParameterized(tv.Type); got != test.want {
+		if got := new(Free).Has(tv.Type); got != test.want {
 			t.Logf("Eval(%s) returned the type %s", test.expr, tv.Type)
 			t.Errorf("isParameterized(%s) = %v, want %v", test.expr, got, test.want)
 		}

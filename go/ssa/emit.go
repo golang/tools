@@ -249,7 +249,7 @@ func emitConv(f *Function, val Value, typ types.Type) Value {
 		// Record the types of operands to MakeInterface, if
 		// non-parameterized, as they are the set of runtime types.
 		t := val.Type()
-		if f.typeparams.Len() == 0 || !f.Prog.parameterized.isParameterized(t) {
+		if f.typeparams.Len() == 0 || !f.Prog.isParameterized(t) {
 			addRuntimeType(f.Prog, t)
 		}
 

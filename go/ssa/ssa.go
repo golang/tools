@@ -33,7 +33,9 @@ type Program struct {
 	methodsMu  sync.Mutex
 	methodSets typeutil.Map // maps type to its concrete *methodSet
 
-	parameterized tpWalker // memoization of whether a type refers to type parameters
+	// memoization of whether a type refers to type parameters
+	hasParamsMu sync.Mutex
+	hasParams   typeparams.Free
 
 	runtimeTypesMu sync.Mutex
 	runtimeTypes   typeutil.Map // set of runtime types (from MakeInterface)
