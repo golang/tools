@@ -587,7 +587,7 @@ func renameExported(pkgs []*cache.Package, declPkgPath PackagePath, declObjPath 
 			// TODO(adonovan): methods requires dynamic
 			// programming of the product targets x
 			// packages as any package might add a new
-			// target (from a foward dep) as a
+			// target (from a forward dep) as a
 			// consequence, and any target might imply a
 			// new set of rdeps. See golang/go#58461.
 		}

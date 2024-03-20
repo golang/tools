@@ -2,7 +2,7 @@ This test verifies that gopls can remove unused parameters from methods.
 
 Specifically, check
 1. basic removal of unused parameters, when the receiver is named, locally and
-   accross package boundaries
+   across package boundaries
 2. handling of unnamed receivers
 
 -- go.mod --

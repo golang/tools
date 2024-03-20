@@ -1285,7 +1285,7 @@ func runTests(t *testing.T, tests []testcase) {
 			// Want error?
 			if rest := strings.TrimPrefix(test.want, "error: "); rest != test.want {
 				if err == nil {
-					t.Fatalf("unexpected sucess: want error matching %q", rest)
+					t.Fatalf("unexpected success: want error matching %q", rest)
 				}
 				msg := err.Error()
 				if ok, err := regexp.MatchString(rest, msg); err != nil {
