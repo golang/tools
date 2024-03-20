@@ -10,9 +10,10 @@ import (
 )
 
 type runConfig struct {
-	editor  fake.EditorConfig
-	sandbox fake.SandboxConfig
-	modes   Mode
+	editor        fake.EditorConfig
+	sandbox       fake.SandboxConfig
+	modes         Mode
+	noLogsOnError bool
 }
 
 func defaultConfig() runConfig {
@@ -56,6 +57,13 @@ func Modes(modes Mode) RunOption {
 			panic("modes set more than once")
 		}
 		opts.modes = modes
+	})
+}
+
+// NoLogsOnError turns off dumping the LSP logs on test failures.
+func NoLogsOnError() RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.noLogsOnError = true
 	})
 }
 

@@ -235,7 +235,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 				if t.Failed() && r.PrintGoroutinesOnFailure {
 					pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
 				}
-				if t.Failed() || *printLogs {
+				if (t.Failed() && !config.noLogsOnError) || *printLogs {
 					ls.printBuffers(t.Name(), os.Stderr)
 				}
 				// For tests that failed due to a timeout, don't fail to shutdown
