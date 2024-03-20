@@ -1151,7 +1151,7 @@ var _ = rand.NewZipf
 `,
 		out: `package p
 
-import "math/rand"
+import "math/rand/v2"
 
 var _ = rand.NewZipf
 `,
