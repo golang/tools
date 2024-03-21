@@ -38,7 +38,9 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -68,7 +70,43 @@ func RenderPackageDoc(pkg *cache.Package, posURL func(filename string, line, col
 		Name:  pkg.Types().Name(),
 		Files: fileMap,
 	}
-	docpkg := doc.New(astpkg, pkg.Types().Path(), doc.PreserveAST)
+	// PreserveAST mode only half works (golang/go#66449): it still
+	// mutates ASTs when filtering out non-exported symbols.
+	// As a workaround, enable AllDecls to suppress filtering,
+	// and do it ourselves.
+	mode := doc.PreserveAST | doc.AllDecls
+	docpkg := doc.New(astpkg, pkg.Types().Path(), mode)
+
+	// Discard non-exported symbols.
+	// TODO(adonovan): do this conditionally, and expose option in UI.
+	const showUnexported = false
+	if !showUnexported {
+		var (
+			unexported   = func(name string) bool { return !token.IsExported(name) }
+			filterValues = func(slice *[]*doc.Value) {
+				delValue := func(v *doc.Value) bool {
+					v.Names = slices.DeleteFunc(v.Names, unexported)
+					return len(v.Names) == 0
+				}
+				*slice = slices.DeleteFunc(*slice, delValue)
+			}
+			filterFuncs = func(funcs *[]*doc.Func) {
+				*funcs = slices.DeleteFunc(*funcs, func(v *doc.Func) bool {
+					return unexported(v.Name)
+				})
+			}
+		)
+		filterValues(&docpkg.Consts)
+		filterValues(&docpkg.Vars)
+		filterFuncs(&docpkg.Funcs)
+		docpkg.Types = slices.DeleteFunc(docpkg.Types, func(t *doc.Type) bool {
+			filterValues(&t.Consts)
+			filterValues(&t.Vars)
+			filterFuncs(&t.Funcs)
+			filterFuncs(&t.Methods)
+			return unexported(t.Name)
+		})
+	}
 
 	// Ensure doc links (e.g. "[fmt.Println]") become valid links.
 	docpkg.Printer().DocLinkURL = func(link *comment.DocLink) string {
@@ -181,9 +219,22 @@ function httpGET(url) {
 		for _, file := range pkg.CompiledGoFiles() {
 			if astutil.NodeContains(file.File, n.Pos()) {
 				pos := n.Pos()
+
+				// emit emits source in the interval [pos:to] and updates pos.
 				emit := func(to token.Pos) {
-					start, _ := safetoken.Offset(file.Tok, pos)
-					end, _ := safetoken.Offset(file.Tok, to)
+					// Ident and BasicLit always have a valid pos.
+					// (Failure means the AST has been corrupted.)
+					if !to.IsValid() {
+						bug.Reportf("invalid Pos")
+					}
+					start, err := safetoken.Offset(file.Tok, pos)
+					if err != nil {
+						bug.Reportf("invalid start Pos: %v", err)
+					}
+					end, err := safetoken.Offset(file.Tok, to)
+					if err != nil {
+						bug.Reportf("invalid end Pos: %v", err)
+					}
 					buf.WriteString(escape(string(file.Src[start:end])))
 					pos = to
 				}
@@ -295,9 +346,9 @@ function httpGET(url) {
 	values := func(vals []*doc.Value) {
 		for _, v := range vals {
 			// declaration
-			decl2 := v.Decl
+			decl2 := *v.Decl // shallow copy
 			decl2.Doc = nil
-			fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n", nodeHTML(decl2))
+			fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n", nodeHTML(&decl2))
 
 			// comment (if any)
 			fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docpkg.HTML(v.Doc))
@@ -346,9 +397,9 @@ function httpGET(url) {
 
 		// declaration
 		// TODO(adonovan): excise non-exported struct fields somehow.
-		decl2 := doctype.Decl
+		decl2 := *doctype.Decl // shallow copy
 		decl2.Doc = nil
-		fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n", nodeHTML(decl2))
+		fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n", nodeHTML(&decl2))
 
 		// comment (if any)
 		fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docpkg.HTML(doctype.Doc))

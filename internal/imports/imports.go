@@ -107,7 +107,7 @@ func ApplyFixes(fixes []*ImportFix, filename string, src []byte, opt *Options, e
 }
 
 // formatFile formats the file syntax tree.
-// It may mutate the token.FileSet.
+// It may mutate the token.FileSet and the ast.File.
 //
 // If an adjust function is provided, it is called after formatting
 // with the original source (formatFile's src parameter) and the

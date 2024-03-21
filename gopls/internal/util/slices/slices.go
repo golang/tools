@@ -74,6 +74,32 @@ func Grow[S ~[]E, E any](s S, n int) S {
 	return s
 }
 
+// DeleteFunc removes any elements from s for which del returns true,
+// returning the modified slice.
+// DeleteFunc zeroes the elements between the new length and the original length.
+// TODO(adonovan): use go1.21 slices.DeleteFunc.
+func DeleteFunc[S ~[]E, E any](s S, del func(E) bool) S {
+	i := IndexFunc(s, del)
+	if i == -1 {
+		return s
+	}
+	// Don't start copying elements until we find one to delete.
+	for j := i + 1; j < len(s); j++ {
+		if v := s[j]; !del(v) {
+			s[i] = v
+			i++
+		}
+	}
+	clear(s[i:]) // zero/nil out the obsolete elements, for GC
+	return s[:i]
+}
+
+func clear[T any](slice []T) {
+	for i := range slice {
+		slice[i] = *new(T)
+	}
+}
+
 // Remove removes all values equal to elem from slice.
 //
 // The closest equivalent in the standard slices package is:
