@@ -314,15 +314,19 @@ func (r *ModuleResolver) ClearForNewScan() Resolver {
 // TODO(rfindley): move this to a new env.go, consolidating ProcessEnv methods.
 func (e *ProcessEnv) ClearModuleInfo() {
 	if r, ok := e.resolver.(*ModuleResolver); ok {
-		resolver, resolverErr := newModuleResolver(e, e.ModCache)
-		if resolverErr == nil {
-			<-r.scanSema // acquire (guards caches)
-			resolver.moduleCacheCache = r.moduleCacheCache
-			resolver.otherCache = r.otherCache
-			r.scanSema <- struct{}{} // release
+		resolver, err := newModuleResolver(e, e.ModCache)
+		if err != nil {
+			e.resolver = nil
+			e.resolverErr = err
+			return
 		}
-		e.resolver = resolver
-		e.resolverErr = resolverErr
+
+		<-r.scanSema // acquire (guards caches)
+		resolver.moduleCacheCache = r.moduleCacheCache
+		resolver.otherCache = r.otherCache
+		r.scanSema <- struct{}{} // release
+
+		e.UpdateResolver(resolver)
 	}
 }
 

@@ -996,8 +996,10 @@ func (e *ProcessEnv) GetResolver() (Resolver, error) {
 		// already know the view type.
 		if len(e.Env["GOMOD"]) == 0 && len(e.Env["GOWORK"]) == 0 {
 			e.resolver = newGopathResolver(e)
+		} else if r, err := newModuleResolver(e, e.ModCache); err != nil {
+			e.resolverErr = err
 		} else {
-			e.resolver, e.resolverErr = newModuleResolver(e, e.ModCache)
+			e.resolver = Resolver(r)
 		}
 	}
 
