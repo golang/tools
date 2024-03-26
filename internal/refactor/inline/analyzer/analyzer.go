@@ -104,7 +104,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			if !ok {
 				var fact inlineMeFact
 				if pass.ImportObjectFact(fn, &fact) {
-					callee = fact.callee
+					callee = fact.Callee
 					inlinable[fn] = callee
 				}
 			}
@@ -157,9 +157,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-type inlineMeFact struct{ callee *inline.Callee }
+type inlineMeFact struct{ Callee *inline.Callee }
 
-func (f *inlineMeFact) String() string { return "inlineme " + f.callee.String() }
+func (f *inlineMeFact) String() string { return "inlineme " + f.Callee.String() }
 func (*inlineMeFact) AFact()           {}
 
 func discard(string, ...any) {}
