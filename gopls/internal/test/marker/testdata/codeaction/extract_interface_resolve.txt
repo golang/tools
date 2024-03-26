@@ -1,0 +1,81 @@
+This test checks the behavior of the 'extract interface' code action.
+See extract_interface_resolve.txt for the same test with resolve support.
+
+-- capabilities.json --
+{
+	"textDocument": {
+		"codeAction": {
+			"dataSupport": true,
+			"resolveSupport": {
+				"properties": ["edit"]
+			}
+		}
+	}
+}
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/extract
+
+go 1.18
+
+-- b/b.go --
+package b
+
+type BFoo struct {}
+
+func (b BFoo) Bar() string {
+	return ""
+}
+
+func (b BFoo) Baz() int {
+	return 0
+}
+
+-- a.go --
+package extract
+
+import (
+	"golang.org/lsptests/extract/b"
+)
+
+// foo doc comment
+type foo struct {
+	fieldOne bar //@codeactionedit("bar", "refactor.extract", a1)
+	fieldTwo b.BFoo //@codeactionedit("BFoo", "refactor.extract", a2)
+}
+
+type bar struct {}
+
+func (b bar) baz() error {}
+func (b bar) qux(a string, b int, c func() string) {}
+
+func (f foo) quux() {
+	f.fieldTwo.Bar()
+	f.fieldOne.baz()
+}
+
+func (f foo) corge() {
+	f.fieldOne.qux("someString", 3, func() string { return "" })
+}
+
+-- @a1/a.go --
+@@ -7 +7,5 @@
++type IfieldOne interface {
++	baz() error
++	qux(a string, b int, c func() string)
++}
++
+@@ -9 +14 @@
+-	fieldOne bar //@codeactionedit("bar", "refactor.extract", a1)
++	fieldOne IfieldOne //@codeactionedit("bar", "refactor.extract", a1)
+-- @a2/a.go --
+@@ -7 +7,4 @@
++type IfieldTwo interface {
++	Bar() string
++}
++
+@@ -10 +14 @@
+-	fieldTwo b.BFoo //@codeactionedit("BFoo", "refactor.extract", a2)
++	fieldTwo IfieldTwo //@codeactionedit("BFoo", "refactor.extract", a2)
