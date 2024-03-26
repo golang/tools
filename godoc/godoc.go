@@ -611,7 +611,8 @@ func (p *Presentation) example_htmlFunc(info *PageInfo, funcName string) string 
 
 		err := p.ExampleHTML.Execute(&buf, struct {
 			Name, Doc, Code, Play, Output string
-		}{eg.Name, eg.Doc, code, play, out})
+			Unordered bool
+		}{eg.Name, eg.Doc, code, play, out, eg.Unordered})
 		if err != nil {
 			log.Print(err)
 		}
