@@ -831,7 +831,6 @@ func (s *server) updateOrphanedFileDiagnostics(ctx context.Context, modID uint64
 //
 // If the publication succeeds, it updates f.publishedHash and f.mustPublish.
 func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet, uri protocol.DocumentURI, version int32, f *fileDiagnostics) error {
-
 	// We add a disambiguating suffix (e.g. " [darwin,arm64]") to
 	// each diagnostic that doesn't occur in the default view;
 	// see golang/go#65496.
@@ -851,6 +850,8 @@ func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet
 	for _, diag := range f.orphanedFileDiagnostics {
 		add(diag, "")
 	}
+
+	var allViews []*cache.View
 	for view, viewDiags := range f.byView {
 		if _, ok := views[view]; !ok {
 			delete(f.byView, view) // view no longer exists
@@ -859,7 +860,34 @@ func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet
 		if viewDiags.version != version {
 			continue // a payload of diagnostics applies to a specific file version
 		}
+		allViews = append(allViews, view)
+	}
 
+	// Only report diagnostics from the best views for a file. This avoids
+	// spurious import errors when a view has only a partial set of dependencies
+	// for a package (golang/go#66425).
+	//
+	// It's ok to use the session to derive the eligible views, because we
+	// publish diagnostics following any state change, so the set of best views
+	// is eventually consistent.
+	bestViews, err := cache.BestViews(ctx, s.session, uri, allViews)
+	if err != nil {
+		return err
+	}
+
+	if len(bestViews) == 0 {
+		// If we have no preferred diagnostics for a given file (i.e., the file is
+		// not naturally nested within a view), then all diagnostics should be
+		// considered valid.
+		//
+		// This could arise if the user jumps to definition outside the workspace.
+		// There is no view that owns the file, so its diagnostics are valid from
+		// any view.
+		bestViews = allViews
+	}
+
+	for _, view := range bestViews {
+		viewDiags := f.byView[view]
 		// Compute the view's suffix (e.g. " [darwin,arm64]").
 		var suffix string
 		{

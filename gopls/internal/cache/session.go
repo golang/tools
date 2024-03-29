@@ -533,27 +533,17 @@ checkFiles:
 // Views and viewDefinitions.
 type viewDefiner interface{ definition() *viewDefinition }
 
-// bestView returns the best View or viewDefinition that contains the
-// given file, or (nil, nil) if no matching view is found.
+// BestViews returns the most relevant subset of views for a given uri.
 //
-// bestView only returns an error in the event of context cancellation.
-//
-// Making this function generic is convenient so that we can avoid mapping view
-// definitions back to views inside Session.DidModifyFiles, where performance
-// matters. It is, however, not the cleanest application of generics.
-//
-// Note: keep this function in sync with defineView.
-func bestView[V viewDefiner](ctx context.Context, fs file.Source, fh file.Handle, views []V) (V, error) {
-	var zero V
-
+// This may be used to filter diagnostics to the most relevant builds.
+func BestViews[V viewDefiner](ctx context.Context, fs file.Source, uri protocol.DocumentURI, views []V) ([]V, error) {
 	if len(views) == 0 {
-		return zero, nil // avoid the call to findRootPattern
+		return nil, nil // avoid the call to findRootPattern
 	}
-	uri := fh.URI()
 	dir := uri.Dir()
 	modURI, err := findRootPattern(ctx, dir, "go.mod", fs)
 	if err != nil {
-		return zero, err
+		return nil, err
 	}
 
 	// Prefer GoWork > GoMod > GOPATH > GoPackages > AdHoc.
@@ -631,8 +621,26 @@ func bestView[V viewDefiner](ctx context.Context, fs file.Source, fh file.Handle
 		bestViews = goPackagesViews
 	case len(adHocViews) > 0:
 		bestViews = adHocViews
-	default:
-		return zero, nil
+	}
+
+	return bestViews, nil
+}
+
+// bestView returns the best View or viewDefinition that contains the
+// given file, or (nil, nil) if no matching view is found.
+//
+// bestView only returns an error in the event of context cancellation.
+//
+// Making this function generic is convenient so that we can avoid mapping view
+// definitions back to views inside Session.DidModifyFiles, where performance
+// matters. It is, however, not the cleanest application of generics.
+//
+// Note: keep this function in sync with defineView.
+func bestView[V viewDefiner](ctx context.Context, fs file.Source, fh file.Handle, views []V) (V, error) {
+	var zero V
+	bestViews, err := BestViews(ctx, fs, fh.URI(), views)
+	if err != nil || len(bestViews) == 0 {
+		return zero, err
 	}
 
 	content, err := fh.Content()
