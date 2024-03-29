@@ -1436,6 +1436,9 @@ func analyzers() map[string]*Analyzer {
 		unusedresult.Analyzer.Name:  {Analyzer: unusedresult.Analyzer, Enabled: true},
 
 		// Non-vet analyzers:
+		// - some (nilness, unusedwrite) use go/ssa;
+		// - some (unusedwrite) report bad code but not always a bug,
+		//   so are not suitable for vet.
 		atomicalign.Analyzer.Name:      {Analyzer: atomicalign.Analyzer, Enabled: true},
 		deepequalerrors.Analyzer.Name:  {Analyzer: deepequalerrors.Analyzer, Enabled: true},
 		fieldalignment.Analyzer.Name:   {Analyzer: fieldalignment.Analyzer, Enabled: false},
@@ -1444,7 +1447,7 @@ func analyzers() map[string]*Analyzer {
 		sortslice.Analyzer.Name:        {Analyzer: sortslice.Analyzer, Enabled: true},
 		testinggoroutine.Analyzer.Name: {Analyzer: testinggoroutine.Analyzer, Enabled: true},
 		unusedparams.Analyzer.Name:     {Analyzer: unusedparams.Analyzer, Enabled: true},
-		unusedwrite.Analyzer.Name:      {Analyzer: unusedwrite.Analyzer, Enabled: false},
+		unusedwrite.Analyzer.Name:      {Analyzer: unusedwrite.Analyzer, Enabled: true},
 		useany.Analyzer.Name:           {Analyzer: useany.Analyzer, Enabled: false},
 		infertypeargs.Analyzer.Name: {
 			Analyzer: infertypeargs.Analyzer,

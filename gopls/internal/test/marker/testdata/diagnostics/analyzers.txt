@@ -50,6 +50,11 @@ func _(ptr *int) {
 	}
 }
 
+// unusedwrite
+func _(s struct{x int}) {
+	s.x = 1  //@diag("x", re"unused write to field x")
+}
+
 -- bad_test_go121.go --
 //go:build go1.21
 

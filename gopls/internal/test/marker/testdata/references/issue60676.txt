@@ -55,10 +55,11 @@ import "mod.test/b"
 
 func _() {
 	x := b.B{
-		F: 42, //@refs("F", FDef, "F")
+		F: 42, //@refs("F", FDef, "F", Fuse)
 	}
 	x.G = "hi" //@refs("G", GDef, "G")
 	_ = x.E //@refs("E", EDef, "E")
+	_ = x.F //@loc(Fuse, "F")
 }
 
 func _(y b.BI) {

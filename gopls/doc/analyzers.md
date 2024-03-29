@@ -1022,7 +1022,7 @@ Another example is about non-pointer receiver:
 
 [Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unusedwrite)
 
-**Disabled by default. Enable it by setting `"analyses": {"unusedwrite": true}`.**
+**Enabled by default.**
 
 ## **useany**
 
