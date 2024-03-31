@@ -17,6 +17,7 @@ import (
 	"go/types"
 	"io/fs"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -39,6 +40,7 @@ import (
 	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/tokeninternal"
+	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -247,6 +249,9 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// Compute size information for types,
 	// and (size, offset) for struct fields.
 	//
+	// Also, if a struct type's field ordering is significantly
+	// wasteful of space, report its optimal size.
+	//
 	// This information is useful when debugging crashes or
 	// optimizing layout. To reduce distraction, we show it only
 	// when hovering over the declaring identifier,
@@ -272,50 +277,24 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			return fmt.Sprintf("%[1]d (%#[1]x)", x)
 		}
 
-		var data []string // {size, offset}, both optional
+		path := pathEnclosingObjNode(pgf.File, pos)
 
-		// If the type has free type parameters, its size cannot be
-		// computed. For now, we capture panics from go/types.Sizes.
-		// TODO(adonovan): use newly factored typeparams.Free.
-		try := func(f func()) bool {
-			defer func() { recover() }()
-			f()
-			return true
-		}
-
-		// size (types and fields)
-		if v, ok := obj.(*types.Var); ok && v.IsField() || is[*types.TypeName](obj) {
-			var sz int64
-			if try(func() { sz = pkg.TypesSizes().Sizeof(obj.Type()) }) {
-				data = append(data, "size="+format(sz))
+		// Build string of form "size=... (X% wasted), offset=...".
+		size, wasted, offset := computeSizeOffsetInfo(pkg, path, obj)
+		var buf strings.Builder
+		if size >= 0 {
+			fmt.Fprintf(&buf, "size=%s", format(size))
+			if wasted >= 20 { // >=20% wasted
+				fmt.Fprintf(&buf, " (%d%% wasted)", wasted)
 			}
 		}
-
-		// offset (fields)
-		if v, ok := obj.(*types.Var); ok && v.IsField() {
-			for _, n := range pathEnclosingObjNode(pgf.File, pos) {
-				if n, ok := n.(*ast.StructType); ok {
-					t := pkg.TypesInfo().TypeOf(n).(*types.Struct)
-					var fields []*types.Var
-					for i := 0; i < t.NumFields(); i++ {
-						f := t.Field(i)
-						fields = append(fields, f)
-						if f == v {
-							var offsets []int64
-							if try(func() { offsets = pkg.TypesSizes().Offsetsof(fields) }) {
-								if n := len(offsets); n > 0 {
-									data = append(data, "offset="+format(offsets[n-1]))
-								}
-							}
-							break
-						}
-					}
-					break
-				}
+		if offset >= 0 {
+			if buf.Len() > 0 {
+				buf.WriteString(", ")
 			}
+			fmt.Fprintf(&buf, "offset=%s", format(offset))
 		}
-
-		sizeOffset = strings.Join(data, ", ")
+		sizeOffset = buf.String()
 	}
 
 	var typeDecl, methods, fields string
@@ -1360,4 +1339,73 @@ func promotedFields(t types.Type, from *types.Package) []promotedField {
 
 func accessibleTo(obj types.Object, pkg *types.Package) bool {
 	return obj.Exported() || obj.Pkg() == pkg
+}
+
+// computeSizeOffsetInfo reports the size of obj (if a type or struct
+// field), its wasted space percentage (if a struct type), and its
+// offset (if a struct field). It returns -1 for undefined components.
+func computeSizeOffsetInfo(pkg *cache.Package, path []ast.Node, obj types.Object) (size, wasted, offset int64) {
+	size, wasted, offset = -1, -1, -1
+
+	var free typeparams.Free
+	sizes := pkg.TypesSizes()
+
+	// size (types and fields)
+	if v, ok := obj.(*types.Var); ok && v.IsField() || is[*types.TypeName](obj) {
+		// If the field's type has free type parameters,
+		// its size cannot be computed.
+		if !free.Has(obj.Type()) {
+			size = sizes.Sizeof(obj.Type())
+		}
+
+		// wasted space (struct types)
+		if tStruct, ok := obj.Type().Underlying().(*types.Struct); ok && is[*types.TypeName](obj) && size > 0 {
+			var fields []*types.Var
+			for i := 0; i < tStruct.NumFields(); i++ {
+				fields = append(fields, tStruct.Field(i))
+			}
+			if len(fields) > 0 {
+				// Sort into descending (most compact) order
+				// and recompute size of entire struct.
+				sort.Slice(fields, func(i, j int) bool {
+					return sizes.Sizeof(fields[i].Type()) >
+						sizes.Sizeof(fields[j].Type())
+				})
+				offsets := sizes.Offsetsof(fields)
+				compactSize := offsets[len(offsets)-1] + sizes.Sizeof(fields[len(fields)-1].Type())
+				wasted = 100 * (size - compactSize) / size
+			}
+		}
+	}
+
+	// offset (fields)
+	if v, ok := obj.(*types.Var); ok && v.IsField() {
+		// Find enclosing struct type.
+		var tStruct *types.Struct
+		for _, n := range path {
+			if n, ok := n.(*ast.StructType); ok {
+				tStruct = pkg.TypesInfo().TypeOf(n).(*types.Struct)
+				break
+			}
+		}
+		if tStruct != nil {
+			var fields []*types.Var
+			for i := 0; i < tStruct.NumFields(); i++ {
+				f := tStruct.Field(i)
+				// If any preceding field's type has free type parameters,
+				// its offset cannot be computed.
+				if free.Has(f.Type()) {
+					break
+				}
+				fields = append(fields, f)
+				if f == v {
+					offsets := sizes.Offsetsof(fields)
+					offset = offsets[len(offsets)-1]
+					break
+				}
+			}
+		}
+	}
+
+	return
 }

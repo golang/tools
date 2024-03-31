@@ -7,9 +7,11 @@ Notes:
 - the offset of a field is undefined if it or any preceding field
   has undefined size/alignment.
 - the test's size expectations assumes a 64-bit machine.
+- requires go1.22 because size information was inaccurate before.
 
 -- flags --
 -skip_goarch=386
+-min_go=go1.22
 
 -- go.mod --
 module example.com
@@ -18,7 +20,7 @@ go 1.18
 -- a.go --
 package a
 
-type T struct {
+type T struct {         //@ hover("T", "T", T)
 	a int		//@ hover("a", "a", a)
 	U U		//@ hover("U", "U", U)
 	y, z int	//@ hover("y", "y", y), hover("z", "z", z)
@@ -38,6 +40,30 @@ var _ struct {
 	Gstring G[string] //@ hover("Gstring", "Gstring", Gstring)
 }
 
+type wasteful struct { //@ hover("wasteful", "wasteful", wasteful)
+	a bool
+	b [2]string
+	c bool
+}
+
+-- @T --
+```go
+type T struct { // size=48 (0x30)
+	a    int //@ hover("a", "a", a)
+	U    U   //@ hover("U", "U", U)
+	y, z int //@ hover("y", "y", y), hover("z", "z", z)
+}
+```
+
+[`a.T` on pkg.go.dev](https://pkg.go.dev/example.com#T)
+-- @wasteful --
+```go
+type wasteful struct { // size=48 (0x30) (29% wasted)
+	a bool
+	b [2]string
+	c bool
+}
+```
 -- @a --
 ```go
 field a int // size=8, offset=0
