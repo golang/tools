@@ -512,6 +512,13 @@ func (c *commandHandler) Doc(ctx context.Context, loc protocol.Location) error {
 			return err
 		}
 
+		// When invoked from a _test.go file, show the
+		// documentation of the package under test.
+		path := pkg.Metadata().PkgPath
+		if pkg.Metadata().ForTest != "" {
+			path = pkg.Metadata().ForTest
+		}
+
 		// Start web server.
 		web, err := c.s.getWeb()
 		if err != nil {
@@ -523,7 +530,7 @@ func (c *commandHandler) Doc(ctx context.Context, loc protocol.Location) error {
 		// TODO(adonovan): compute fragment (e.g. "#fmt.Println") based on loc.Range.
 		// (Should it document the selected symbol, or the enclosing decl?)
 		fragment := ""
-		url := web.pkgURL(deps.snapshot.View(), pkg.Metadata().PkgPath, fragment)
+		url := web.pkgURL(deps.snapshot.View(), path, fragment)
 		openClientBrowser(ctx, c.s.client, url)
 
 		return nil
