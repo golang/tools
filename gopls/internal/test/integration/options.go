@@ -14,6 +14,7 @@ type runConfig struct {
 	sandbox       fake.SandboxConfig
 	modes         Mode
 	noLogsOnError bool
+	writeGoSum    []string
 }
 
 func defaultConfig() runConfig {
@@ -43,6 +44,17 @@ func (f optionSetter) set(opts *runConfig) {
 func ProxyFiles(txt string) RunOption {
 	return optionSetter(func(opts *runConfig) {
 		opts.sandbox.ProxyFiles = fake.UnpackTxt(txt)
+	})
+}
+
+// WriteGoSum causes the environment to write a go.sum file for the requested
+// relative directories (via `go list -mod=mod`), before starting gopls.
+//
+// Useful for tests that use ProxyFiles, but don't care about crafting the
+// go.sum content.
+func WriteGoSum(dirs ...string) RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.writeGoSum = dirs
 	})
 }
 

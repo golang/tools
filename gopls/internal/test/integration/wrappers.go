@@ -318,10 +318,10 @@ func (e *Env) GoVersion() int {
 func (e *Env) DumpGoSum(dir string) {
 	e.T.Helper()
 
-	if err := e.Sandbox.RunGoCommand(e.Ctx, dir, "list", []string{"-mod=mod", "..."}, nil, true); err != nil {
+	if err := e.Sandbox.RunGoCommand(e.Ctx, dir, "list", []string{"-mod=mod", "./..."}, nil, true); err != nil {
 		e.T.Fatal(err)
 	}
-	sumFile := path.Join(dir, "/go.sum")
+	sumFile := path.Join(dir, "go.sum")
 	e.T.Log("\n\n-- " + sumFile + " --\n" + e.ReadWorkspaceFile(sumFile))
 	e.T.Fatal("see contents above")
 }
