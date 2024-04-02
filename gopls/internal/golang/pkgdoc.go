@@ -19,9 +19,7 @@ package golang
 // - add option for doc.AllDecls: show non-exported symbols too.
 // - abbreviate long signatures by replacing parameters 4 onwards with "...".
 // - style the <li> bullets in the index as invisible.
-// - add push notifications (using hanging GET, server-side events,
-//   or polling) like didChange (=> auto reload)
-//   and server death (=> display "server disconnected" banner).
+// - add push notifications such as didChange -> reload.
 
 import (
 	"bytes"
@@ -131,9 +129,21 @@ function httpGET(url) {
 	xhttp.send();
 	return false; // disable usual <a href=...> behavior
 }
+
+// Start a GET /hang request. If it ever completes, the server
+// has disconnected. Show a banner in that case.
+{
+	var x = new XMLHttpRequest();
+	x.open("GET", "/hang", true);
+	x.onloadend = () => {
+		document.getElementById("disconnected").style.display = 'block';
+	};
+	x.send();
+};
   </script>
 </head>
 <body>
+<div id='disconnected'>Gopls server has terminated. Page is inactive.</div>
 `)
 
 	escape := html.EscapeString
@@ -541,4 +551,14 @@ a:hover > * {
 .lit { color: darkgreen; }
 
 #pkgsite { height: 1.5em; }
+
+#disconnected {
+  position: fixed;
+  top: 1em;
+  left: 1em;
+  display: none; /* initially */
+  background-color: white;
+  border: thick solid red;
+  padding: 2em;
+}
 `

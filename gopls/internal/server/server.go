@@ -254,11 +254,16 @@ func (s *server) initWeb() (*web, error) {
 	rootMux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, req *http.Request) {
 		http.Redirect(w, req, "/assets/favicon.ico", http.StatusMovedPermanently)
 	})
+	rootMux.HandleFunc("/hang", func(w http.ResponseWriter, req *http.Request) {
+		// This endpoint hangs until cancelled.
+		// It is used by JS to detect server disconnect.
+		<-req.Context().Done()
+	})
+	rootMux.Handle("/assets/", http.FileServer(http.FS(assets)))
 
 	secret := "/gopls/" + base64.RawURLEncoding.EncodeToString(token)
 	webMux := http.NewServeMux()
 	rootMux.Handle(secret+"/", http.StripPrefix(secret, webMux))
-	rootMux.Handle("/assets/", http.FileServer(http.FS(assets)))
 
 	webServer := &http.Server{Addr: listener.Addr().String(), Handler: rootMux}
 	go func() {
