@@ -20,6 +20,8 @@ package golang
 // - abbreviate long signatures by replacing parameters 4 onwards with "...".
 // - style the <li> bullets in the index as invisible.
 // - add push notifications such as didChange -> reload.
+// - there appears to be a maximum file size beyond which the
+//   "source.doc" code action is not offered. Remove that.
 
 import (
 	"bytes"
@@ -254,8 +256,6 @@ function httpGET(url) {
 						emit(n.Pos())
 						pos = n.End()
 						if url := linkify(n); url != "" {
-							// TODO(adonovan): emit anchors (not hrefs)
-							// for package-level defining idents.
 							fmt.Fprintf(&buf, "<a class='id' href='%s'>%s</a>", url, escape(n.Name))
 						} else {
 							buf.WriteString(escape(n.Name)) // plain
@@ -355,6 +355,11 @@ function httpGET(url) {
 	// constants and variables
 	values := func(vals []*doc.Value) {
 		for _, v := range vals {
+			// anchors
+			for _, name := range v.Names {
+				fmt.Fprintf(&buf, "<a id='%s'></a>\n", escape(name))
+			}
+
 			// declaration
 			decl2 := *v.Decl // shallow copy
 			decl2.Doc = nil

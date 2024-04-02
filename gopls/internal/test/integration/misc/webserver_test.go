@@ -81,6 +81,8 @@ func TestRenderNoPanic66449(t *testing.T) {
 	// that would corrupt the AST while filtering out unexported
 	// symbols such as b, causing nodeHTML to panic.
 	// Now it doesn't crash.
+	//
+	// We also check cross-reference anchors for all symbols.
 	const files = `
 -- go.mod --
 module example.com
@@ -88,27 +90,52 @@ module example.com
 -- a/a.go --
 package a
 
-var A, b = 0, 0
+// The '1' suffix is to reduce risk of spurious matches with other HTML substrings.
 
-func ExportedFunc()
-func unexportedFunc()
-type ExportedType int
-type unexportedType int
+var V1, v1 = 0, 0
+const C1, c1 = 0, 0
+
+func F1()
+func f1()
+
+type T1 int
+type t1 int
+
+func (T1) M1() {}
+func (T1) m1() {}
+
+func (t1) M1() {}
+func (t1) m1() {}
 `
 	Run(t, files, func(t *testing.T, env *Env) {
 		uri1 := viewPkgDoc(t, env, "a/a.go")
-		doc1 := get(t, uri1)
+		doc := get(t, uri1)
 		// (Ideally our code rendering would also
 		// eliminate unexported symbols...)
-		// TODO(adonovan): when we emit var anchors,
-		// check that #A exists and #b does not.
-		checkMatch(t, true, doc1, "var A, b = .*0.*0")
+		checkMatch(t, true, doc, "var V1, v1 = .*0.*0")
+		checkMatch(t, true, doc, "const C1, c1 = .*0.*0")
 
 		// Unexported funcs/types/... must still be discarded.
-		checkMatch(t, true, doc1, "ExportedFunc")
-		checkMatch(t, false, doc1, "unexportedFunc")
-		checkMatch(t, true, doc1, "ExportedType")
-		checkMatch(t, false, doc1, "unexportedType")
+		checkMatch(t, true, doc, "F1")
+		checkMatch(t, false, doc, "f1")
+		checkMatch(t, true, doc, "T1")
+		checkMatch(t, false, doc, "t1")
+
+		// Also, check that anchors exist (only) for exported symbols.
+		// exported:
+		checkMatch(t, true, doc, "<a id='V1'")
+		checkMatch(t, true, doc, "<a id='C1'")
+		checkMatch(t, true, doc, "<h3 id='T1'")
+		checkMatch(t, true, doc, "<h3 id='F1'")
+		checkMatch(t, true, doc, "<h4 id='T1.M1'")
+		// unexported:
+		checkMatch(t, false, doc, "<a id='v1'")
+		checkMatch(t, false, doc, "<a id='c1'")
+		checkMatch(t, false, doc, "<h3 id='t1'")
+		checkMatch(t, false, doc, "<h3 id='f1'")
+		checkMatch(t, false, doc, "<h4 id='T1.m1'")
+		checkMatch(t, false, doc, "<h4 id='t1.M1'")
+		checkMatch(t, false, doc, "<h4 id='t1.m1'")
 	})
 }
 

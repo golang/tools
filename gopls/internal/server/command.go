@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
 	"io"
 	"os"
 	"path/filepath"
@@ -507,16 +508,16 @@ func (c *commandHandler) Doc(ctx context.Context, loc protocol.Location) error {
 		progress: "", // the operation should be fast
 		forURI:   loc.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		pkg, _, err := golang.NarrowestPackageForFile(ctx, deps.snapshot, loc.URI)
+		pkg, pgf, err := golang.NarrowestPackageForFile(ctx, deps.snapshot, loc.URI)
 		if err != nil {
 			return err
 		}
 
 		// When invoked from a _test.go file, show the
 		// documentation of the package under test.
-		path := pkg.Metadata().PkgPath
+		pkgpath := pkg.Metadata().PkgPath
 		if pkg.Metadata().ForTest != "" {
-			path = pkg.Metadata().ForTest
+			pkgpath = pkg.Metadata().ForTest
 		}
 
 		// Start web server.
@@ -525,12 +526,59 @@ func (c *commandHandler) Doc(ctx context.Context, loc protocol.Location) error {
 			return err
 		}
 
+		// Compute fragment (e.g. "#Buffer.Len") based on
+		// enclosing top-level declaration, if exported.
+		var fragment string
+		pos, err := pgf.PositionPos(loc.Range.Start)
+		if err != nil {
+			return err
+		}
+		path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
+		if n := len(path); n > 1 {
+			switch decl := path[n-2].(type) {
+			case *ast.FuncDecl:
+				if decl.Name.IsExported() {
+					// e.g. "#Println"
+					fragment = decl.Name.Name
+
+					// method?
+					if decl.Recv != nil && len(decl.Recv.List) > 0 {
+						recv := decl.Recv.List[0].Type
+						if star, ok := recv.(*ast.StarExpr); ok {
+							recv = star.X // *N -> N
+						}
+						if id, ok := recv.(*ast.Ident); ok && id.IsExported() {
+							// e.g. "#Buffer.Len"
+							fragment = id.Name + "." + fragment
+						} else {
+							fragment = ""
+						}
+					}
+				}
+
+			case *ast.GenDecl:
+				// path=[... Spec? GenDecl File]
+				for _, spec := range decl.Specs {
+					if n > 2 && spec == path[n-3] {
+						var name *ast.Ident
+						switch spec := spec.(type) {
+						case *ast.ValueSpec:
+							// var, const: use first name
+							name = spec.Names[0]
+						case *ast.TypeSpec:
+							name = spec.Name
+						}
+						if name != nil && name.IsExported() {
+							fragment = name.Name
+						}
+						break
+					}
+				}
+			}
+		}
+
 		// Direct the client to open the /pkg page.
-		//
-		// TODO(adonovan): compute fragment (e.g. "#fmt.Println") based on loc.Range.
-		// (Should it document the selected symbol, or the enclosing decl?)
-		fragment := ""
-		url := web.pkgURL(deps.snapshot.View(), path, fragment)
+		url := web.pkgURL(deps.snapshot.View(), pkgpath, fragment)
 		openClientBrowser(ctx, c.s.client, url)
 
 		return nil
