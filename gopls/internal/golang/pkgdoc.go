@@ -38,6 +38,7 @@ import (
 	"html"
 	"log"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -181,6 +182,8 @@ func RenderPackageDoc(pkg *cache.Package, posURL func(filename string, line, col
 		}
 	}
 
+	scope := pkg.Types().Scope()
+
 	var buf bytes.Buffer
 	buf.WriteString(`<!DOCTYPE html>
 <html>
@@ -196,6 +199,13 @@ function httpGET(url) {
 	return false; // disable usual <a href=...> behavior
 }
 
+window.onload = () => {
+	// Hook up the navigation selector.
+	document.getElementById('hdr-Selector').onchange = (e) => {
+		window.location.href = e.target.value;
+	};
+};
+
 // Start a GET /hang request. If it ever completes, the server
 // has disconnected. Show a banner in that case.
 {
@@ -209,8 +219,84 @@ function httpGET(url) {
   </script>
 </head>
 <body>
+<header>
 <div id='disconnected'>Gopls server has terminated. Page is inactive.</div>
+<select id='hdr-Selector'>
+<optgroup label="Documentation">
+  <option label="Overview" value="#hdr-Overview"/>
+  <option label="Index" value="#hdr-Index"/>
+  <option label="Constants" value="#hdr-Constants"/>
+  <option label="Variables" value="#hdr-Variables"/>
+  <option label="Functions" value="#hdr-Functions"/>
+  <option label="Types" value="#hdr-Types"/>
+  <option label="Source Files" value="#hdr-SourceFiles"/>
+</optgroup>
 `)
+
+	// -- header select element --
+
+	// option emits an <option> for the specified symbol.
+	option := func(obj types.Object) {
+		// Render functions/methods as "(recv) Method(p1, ..., pN)".
+		fragment := obj.Name()
+
+		// format parameter names (p1, ..., pN)
+		label := obj.Name() // for a type
+		if fn, ok := obj.(*types.Func); ok {
+			var buf strings.Builder
+			sig := fn.Type().(*types.Signature)
+			if sig.Recv() != nil {
+				_, named := typesinternal.ReceiverNamed(sig.Recv())
+				fmt.Fprintf(&buf, "(%s) ", sig.Recv().Name())
+				fragment = named.Obj().Name() + "." + fn.Name()
+			}
+			fmt.Fprintf(&buf, "%s(", fn.Name())
+			for i := 0; i < sig.Params().Len(); i++ {
+				if i > 0 {
+					buf.WriteString(", ")
+				}
+				buf.WriteString(sig.Params().At(i).Name())
+			}
+			buf.WriteByte(')')
+			label = buf.String()
+		}
+
+		fmt.Fprintf(&buf, "  <option label='%s' value='#%s'/>\n", label, fragment)
+	}
+
+	// index of functions
+	fmt.Fprintf(&buf, "<optgroup label='Functions'>\n")
+	for _, fn := range docpkg.Funcs {
+		option(scope.Lookup(fn.Name))
+	}
+	fmt.Fprintf(&buf, "</optgroup>\n")
+
+	// index of types
+	fmt.Fprintf(&buf, "<optgroup label='Types'>\n")
+	for _, doctype := range docpkg.Types {
+		option(scope.Lookup(doctype.Name))
+	}
+	fmt.Fprintf(&buf, "</optgroup>\n")
+
+	// index of constructors and methods of each type
+	for _, doctype := range docpkg.Types {
+		tname := scope.Lookup(doctype.Name).(*types.TypeName)
+		if len(doctype.Funcs)+len(doctype.Methods) > 0 {
+			fmt.Fprintf(&buf, "<optgroup label='type %s'>\n", doctype.Name)
+			for _, docfn := range doctype.Funcs {
+				option(scope.Lookup(docfn.Name))
+			}
+			for _, docmethod := range doctype.Methods {
+				method, _, _ := types.LookupFieldOrMethod(tname.Type(), true, tname.Pkg(), docmethod.Name)
+				option(method)
+			}
+			fmt.Fprintf(&buf, "</optgroup>\n")
+		}
+	}
+	fmt.Fprintf(&buf, "</select>\n")
+	fmt.Fprintf(&buf, "</header>\n")
+
+	// -- main element --
 
 	escape := html.EscapeString
 
@@ -355,8 +441,10 @@ function httpGET(url) {
 		return other.Name()
 	}
 
+	fmt.Fprintf(&buf, "<main>\n")
+
 	// package name
-	fmt.Fprintf(&buf, "<h1>Package %s</h1>\n", pkg.Types().Name())
+	fmt.Fprintf(&buf, "<h1 id='hdr-Overview'>Package %s</h1>\n", pkg.Types().Name())
 
 	// import path
 	fmt.Fprintf(&buf, "<pre class='code'>import %q</pre>\n", pkg.Types().Path())
@@ -369,7 +457,7 @@ function httpGET(url) {
 	fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(docpkg.Doc))
 
 	// symbol index
-	fmt.Fprintf(&buf, "<h2>Index</h2>\n")
+	fmt.Fprintf(&buf, "<h2 id='hdr-Index'>Index</h2>\n")
 	fmt.Fprintf(&buf, "<ul>\n")
 	if len(docpkg.Consts) > 0 {
 		fmt.Fprintf(&buf, "<li><a href='#hdr-Constants'>Constants</a></li>\n")
@@ -377,7 +465,6 @@ function httpGET(url) {
 	if len(docpkg.Vars) > 0 {
 		fmt.Fprintf(&buf, "<li><a href='#hdr-Variables'>Variables</a></li>\n")
 	}
-	scope := pkg.Types().Scope()
 	for _, fn := range docpkg.Funcs {
 		obj := scope.Lookup(fn.Name).(*types.Func)
 		fmt.Fprintf(&buf, "<li><a href='#%s'>%s</a></li>\n",
@@ -447,7 +534,7 @@ function httpGET(url) {
 	}
 
 	// package-level functions
-	fmt.Fprintf(&buf, "<h2>Functions</h2>\n")
+	fmt.Fprintf(&buf, "<h2 id='hdr-Functions'>Functions</h2>\n")
 	// funcs emits a list of package-level functions,
 	// possibly organized beneath the type they construct.
 	funcs := func(funcs []*doc.Func) {
@@ -467,7 +554,7 @@ function httpGET(url) {
 	funcs(docpkg.Funcs)
 
 	// types and their subelements
-	fmt.Fprintf(&buf, "<h2>Types</h2>\n")
+	fmt.Fprintf(&buf, "<h2 id='hdr-Types'>Types</h2>\n")
 	for _, doctype := range docpkg.Types {
 		tname := scope.Lookup(doctype.Name).(*types.TypeName)
 
@@ -506,11 +593,15 @@ function httpGET(url) {
 	}
 
 	// source files
-	fmt.Fprintf(&buf, "<h2>Source files</h2>\n")
+	fmt.Fprintf(&buf, "<h2 id='hdr-SourceFiles'>Source files</h2>\n")
 	for _, filename := range docpkg.Filenames {
 		fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n",
 			sourceLink(filepath.Base(filename), posURL(filename, 1, 1)))
 	}
+
+	fmt.Fprintf(&buf, "</main>\n")
+	fmt.Fprintf(&buf, "</body>\n")
+	fmt.Fprintf(&buf, "</html>\n")
 
 	return buf.Bytes(), nil
 }
@@ -620,6 +711,21 @@ a:hover > * {
 .lit { color: darkgreen; }
 
 #pkgsite { height: 1.5em; }
+
+header {
+  position: sticky;
+  top: 0;
+  left: 0;
+  width: 100%;
+  padding: 0.3em;
+}
+
+#hdr-Selector {
+  margin-right: 0.3em;
+  float: right;
+  min-width: 25em;
+  padding: 0.3em;
+}
 
 #disconnected {
   position: fixed;
