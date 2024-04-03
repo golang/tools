@@ -106,8 +106,12 @@ func DefaultModes() Mode {
 	return modes
 }
 
+var runFromMain = false // true if Main has been called
+
 // Main sets up and tears down the shared integration test state.
 func Main(m *testing.M, hook func(*settings.Options)) {
+	runFromMain = true
+
 	// golang/go#54461: enable additional debugging around hanging Go commands.
 	gocommand.DebugHangingGoCommands = true
 
@@ -126,6 +130,16 @@ func Main(m *testing.M, hook func(*settings.Options)) {
 
 	// Disable GOPACKAGESDRIVER, as it can cause spurious test failures.
 	os.Setenv("GOPACKAGESDRIVER", "off")
+
+	if skipReason := checkBuilder(); skipReason != "" {
+		fmt.Printf("Skipping all tests: %s\n", skipReason)
+		os.Exit(0)
+	}
+
+	if err := testenv.HasTool("go"); err != nil {
+		fmt.Println("Missing go command")
+		os.Exit(1)
+	}
 
 	flag.Parse()
 

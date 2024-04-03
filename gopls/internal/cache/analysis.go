@@ -32,11 +32,11 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/filecache"
-	"golang.org/x/tools/gopls/internal/cache/metadata"
-	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/progress"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -1012,10 +1012,7 @@ func (an *analysisNode) typeCheck(parsed []*ParsedGoFile) *analysisPackage {
 	// Set Go dialect.
 	if mp.Module != nil && mp.Module.GoVersion != "" {
 		goVersion := "go" + mp.Module.GoVersion
-		// types.NewChecker panics if GoVersion is invalid.
-		// An unparsable mod file should probably stop us
-		// before we get here, but double check just in case.
-		if goVersionRx.MatchString(goVersion) {
+		if validGoVersion(goVersion) {
 			typesinternal.SetGoVersion(cfg, goVersion)
 		}
 	}
