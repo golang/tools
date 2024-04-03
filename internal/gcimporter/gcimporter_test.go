@@ -190,7 +190,6 @@ func TestImportTypeparamTests(t *testing.T) {
 			"nested.go":     "fails to compile",              // TODO(rfindley): investigate this.
 			"issue47631.go": "can not handle local type declarations",
 			"issue55101.go": "fails to compile",
-			"issue50259.go": "compiler crashes if GODEBUG=gotypesalias=1", // TODO(adonovan): delete when #66550 is fixed.
 		}
 	}
 
