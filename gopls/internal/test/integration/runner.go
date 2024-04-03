@@ -135,9 +135,14 @@ type TestFunc func(t *testing.T, env *Env)
 func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOption) {
 	// TODO(rfindley): this function has gotten overly complicated, and warrants
 	// refactoring.
-	t.Helper()
-	checkBuilder(t)
-	testenv.NeedsGoPackages(t)
+
+	if !runFromMain {
+		// Main performs various setup precondition checks.
+		// While it could theoretically be made OK for a Runner to be used outside
+		// of Main, it is simpler to enforce that we only use the Runner from
+		// integration test suites.
+		t.Fatal("integration.Runner.Run must be run from integration.Main")
+	}
 
 	tests := []struct {
 		name      string
@@ -278,16 +283,17 @@ var longBuilders = map[string]string{
 	"windows-arm-zx2c4":       "",
 }
 
-func checkBuilder(t *testing.T) {
-	t.Helper()
+// TODO(rfindley): inline into Main.
+func checkBuilder() string {
 	builder := os.Getenv("GO_BUILDER_NAME")
 	if reason, ok := longBuilders[builder]; ok && testing.Short() {
 		if reason != "" {
-			t.Skipf("Skipping %s with -short due to %s", builder, reason)
+			return fmt.Sprintf("skipping %s with -short due to %s", builder, reason)
 		} else {
-			t.Skipf("Skipping %s with -short", builder)
+			return fmt.Sprintf("skipping %s with -short", builder)
 		}
 	}
+	return ""
 }
 
 type loggingFramer struct {

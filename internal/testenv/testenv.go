@@ -45,7 +45,10 @@ var checkGoBuild struct {
 	err  error
 }
 
-func hasTool(tool string) error {
+// HasTool reports an error if the required tool is not available in PATH.
+//
+// For certain tools, it checks that the tool executable is correct.
+func HasTool(tool string) error {
 	if tool == "cgo" {
 		enabled, err := cgoEnabled(false)
 		if err != nil {
@@ -198,7 +201,7 @@ func allowMissingTool(tool string) bool {
 // NeedsTool skips t if the named tool is not present in the path.
 // As a special case, "cgo" means "go" is present and can compile cgo programs.
 func NeedsTool(t testing.TB, tool string) {
-	err := hasTool(tool)
+	err := HasTool(tool)
 	if err == nil {
 		return
 	}

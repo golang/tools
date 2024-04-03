@@ -1013,10 +1013,7 @@ func (an *analysisNode) typeCheck(parsed []*parsego.File) *analysisPackage {
 	// Set Go dialect.
 	if mp.Module != nil && mp.Module.GoVersion != "" {
 		goVersion := "go" + mp.Module.GoVersion
-		// types.NewChecker panics if GoVersion is invalid.
-		// An unparsable mod file should probably stop us
-		// before we get here, but double check just in case.
-		if goVersionRx.MatchString(goVersion) {
+		if validGoVersion(goVersion) {
 			cfg.GoVersion = goVersion
 		}
 	}
