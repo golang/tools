@@ -90,52 +90,53 @@ module example.com
 -- a/a.go --
 package a
 
-// The '1' suffix is to reduce risk of spurious matches with other HTML substrings.
+// The 'π' suffix is to elimimate spurious matches with other HTML substrings,
+// in particular the random base64 secret tokens that appear in gopls URLs.
 
-var V1, v1 = 0, 0
-const C1, c1 = 0, 0
+var Vπ, vπ = 0, 0
+const Cπ, cπ = 0, 0
 
-func F1()
-func f1()
+func Fπ()
+func fπ()
 
-type T1 int
-type t1 int
+type Tπ int
+type tπ int
 
-func (T1) M1() {}
-func (T1) m1() {}
+func (Tπ) Mπ() {}
+func (Tπ) mπ() {}
 
-func (t1) M1() {}
-func (t1) m1() {}
+func (tπ) Mπ() {}
+func (tπ) mπ() {}
 `
 	Run(t, files, func(t *testing.T, env *Env) {
 		uri1 := viewPkgDoc(t, env, "a/a.go")
 		doc := get(t, uri1)
 		// (Ideally our code rendering would also
 		// eliminate unexported symbols...)
-		checkMatch(t, true, doc, "var V1, v1 = .*0.*0")
-		checkMatch(t, true, doc, "const C1, c1 = .*0.*0")
+		checkMatch(t, true, doc, "var Vπ, vπ = .*0.*0")
+		checkMatch(t, true, doc, "const Cπ, cπ = .*0.*0")
 
 		// Unexported funcs/types/... must still be discarded.
-		checkMatch(t, true, doc, "F1")
-		checkMatch(t, false, doc, "f1")
-		checkMatch(t, true, doc, "T1")
-		checkMatch(t, false, doc, "t1")
+		checkMatch(t, true, doc, "Fπ")
+		checkMatch(t, false, doc, "fπ")
+		checkMatch(t, true, doc, "Tπ")
+		checkMatch(t, false, doc, "tπ")
 
 		// Also, check that anchors exist (only) for exported symbols.
 		// exported:
-		checkMatch(t, true, doc, "<a id='V1'")
-		checkMatch(t, true, doc, "<a id='C1'")
-		checkMatch(t, true, doc, "<h3 id='T1'")
-		checkMatch(t, true, doc, "<h3 id='F1'")
-		checkMatch(t, true, doc, "<h4 id='T1.M1'")
+		checkMatch(t, true, doc, "<a id='Vπ'")
+		checkMatch(t, true, doc, "<a id='Cπ'")
+		checkMatch(t, true, doc, "<h3 id='Tπ'")
+		checkMatch(t, true, doc, "<h3 id='Fπ'")
+		checkMatch(t, true, doc, "<h4 id='Tπ.Mπ'")
 		// unexported:
-		checkMatch(t, false, doc, "<a id='v1'")
-		checkMatch(t, false, doc, "<a id='c1'")
-		checkMatch(t, false, doc, "<h3 id='t1'")
-		checkMatch(t, false, doc, "<h3 id='f1'")
-		checkMatch(t, false, doc, "<h4 id='T1.m1'")
-		checkMatch(t, false, doc, "<h4 id='t1.M1'")
-		checkMatch(t, false, doc, "<h4 id='t1.m1'")
+		checkMatch(t, false, doc, "<a id='vπ'")
+		checkMatch(t, false, doc, "<a id='cπ'")
+		checkMatch(t, false, doc, "<h3 id='tπ'")
+		checkMatch(t, false, doc, "<h3 id='fπ'")
+		checkMatch(t, false, doc, "<h4 id='Tπ.mπ'")
+		checkMatch(t, false, doc, "<h4 id='tπ.Mπ'")
+		checkMatch(t, false, doc, "<h4 id='tπ.mπ'")
 	})
 }
 
