@@ -1289,11 +1289,24 @@ func (act *action) exec() (interface{}, *actionSummary, error) {
 				}
 
 				// debugging #64547
-				if start < token.Pos(tokFile.Base()) {
+				fileStart := token.Pos(tokFile.Base())
+				fileEnd := fileStart + token.Pos(tokFile.Size())
+				if start < fileStart {
 					bug.Reportf("start < start of file")
+					start = fileStart
 				}
-				if end > token.Pos(tokFile.Base()+tokFile.Size()+1) {
+				if end < start {
+					// This can happen if End is zero (#66683)
+					// or a small positive displacement from zero
+					// due to recursively Node.End() computation.
+					// This usually arises from poor parser recovery
+					// of an incomplete term at EOF.
+					bug.Reportf("end < start of file")
+					end = fileEnd
+				}
+				if end > fileEnd+1 {
 					bug.Reportf("end > end of file + 1")
+					end = fileEnd
 				}
 
 				return p.PosLocation(start, end)
