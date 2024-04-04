@@ -8,7 +8,7 @@ module mod.com
 go 1.16
 
 -- flags --
--skip_goarch=386
+-skip_goarch=386,arm
 
 -- a.go --
 package a //@loc(aPackage, re"package (a)"),hover(aPackage, aPackage, aPackage)

@@ -10,7 +10,7 @@ Notes:
 - requires go1.22 because size information was inaccurate before.
 
 -- flags --
--skip_goarch=386
+-skip_goarch=386,arm
 -min_go=go1.22
 
 -- go.mod --

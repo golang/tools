@@ -4,7 +4,7 @@ Its size expectations assume a 64-bit machine,
 and correct sizes information requires go1.21.
 
 -- flags --
--skip_goarch=386
+-skip_goarch=386,arm
 -min_go=go1.21
 
 -- go.mod --
