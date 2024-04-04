@@ -10,6 +10,8 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/util/slices"
 )
 
 // check implements the check verb for gopls.
@@ -34,17 +36,30 @@ Example: show the diagnostic results of this file:
 // results to stdout.
 func (c *check) Run(ctx context.Context, args ...string) error {
 	if len(args) == 0 {
-		// no files, so no results
 		return nil
 	}
-	checking := map[protocol.DocumentURI]*cmdFile{}
-	var uris []protocol.DocumentURI
-	// now we ready to kick things off
+
+	// TODO(adonovan): formally, we are required to set this
+	// option if we want RelatedInformation, but it appears to
+	// have no effect on the server, even though the default is
+	// false. Investigate.
+	origOptions := c.app.options
+	c.app.options = func(opts *settings.Options) {
+		origOptions(opts)
+		opts.RelatedInformationSupported = true
+	}
+
 	conn, err := c.app.connect(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer conn.terminate(ctx)
+
+	// Open and diagnose the requested files.
+	var (
+		uris     []protocol.DocumentURI
+		checking = make(map[protocol.DocumentURI]*cmdFile)
+	)
 	for _, arg := range args {
 		uri := protocol.URIFromPath(arg)
 		uris = append(uris, uri)
@@ -57,16 +72,36 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 	if err := conn.diagnoseFiles(ctx, uris); err != nil {
 		return err
 	}
-	conn.client.filesMu.Lock()
-	defer conn.client.filesMu.Unlock()
+
+	// print prints a single element of a diagnostic.
+	print := func(uri protocol.DocumentURI, rng protocol.Range, message string) error {
+		file, err := conn.openFile(ctx, uri)
+		if err != nil {
+			return err
+		}
+		spn, err := file.rangeSpan(rng)
+		if err != nil {
+			return fmt.Errorf("could not convert position %v for %q", rng, message)
+		}
+		fmt.Printf("%v: %v\n", spn, message)
+		return nil
+	}
 
 	for _, file := range checking {
-		for _, d := range file.diagnostics {
-			spn, err := file.rangeSpan(d.Range)
-			if err != nil {
-				return fmt.Errorf("Could not convert position %v for %q", d.Range, d.Message)
+		file.diagnosticsMu.Lock()
+		diags := slices.Clone(file.diagnostics)
+		file.diagnosticsMu.Unlock()
+
+		for _, diag := range diags {
+			if err := print(file.uri, diag.Range, diag.Message); err != nil {
+				return err
 			}
-			fmt.Printf("%v: %v\n", spn, d.Message)
+			for _, rel := range diag.RelatedInformation {
+				if err := print(rel.Location.URI, rel.Location.Range, "- "+rel.Message); err != nil {
+					return err
+				}
+			}
+
 		}
 	}
 	return nil

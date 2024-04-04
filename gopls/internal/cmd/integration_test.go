@@ -103,6 +103,12 @@ var _ = fmt.Sprintf("%s", 123)
 package a
 import "fmt"
 var _ = fmt.Sprintf("%d", "123")
+-- c/c.go --
+package c
+var C int
+-- c/c2.go --
+package c
+var C int
 `)
 
 	// no files
@@ -127,6 +133,14 @@ var _ = fmt.Sprintf("%d", "123")
 		res.checkExit(true)
 		res.checkStdout(`a.go:.* fmt.Sprintf format %s has arg 123 of wrong type int`)
 		res.checkStdout(`b.go:.* fmt.Sprintf format %d has arg "123" of wrong type string`)
+	}
+
+	// diagnostic with related information spanning files
+	{
+		res := gopls(t, tree, "check", "./c/c2.go")
+		res.checkExit(true)
+		res.checkStdout(`c2.go:2:5-6: C redeclared in this block`)
+		res.checkStdout(`c.go:2:5-6: - other declaration of C`)
 	}
 }
 

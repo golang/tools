@@ -1852,6 +1852,7 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget 
 	var result []*Diagnostic
 
 	// batch records diagnostics for a set of related types.Errors.
+	// (related[0] is the primary error.)
 	batch := func(related []types.Error) {
 		var diags []*Diagnostic
 		for i, e := range related {
@@ -1935,7 +1936,7 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget 
 				bug.Reportf("internal error: could not compute pos to range for %v: %v", e, err)
 				continue
 			}
-			msg := related[0].Msg
+			msg := related[0].Msg // primary
 			if i > 0 {
 				if supportsRelatedInformation {
 					msg += " (see details)"

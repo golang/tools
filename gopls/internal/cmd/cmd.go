@@ -399,15 +399,16 @@ type cmdClient struct {
 	app        *Application
 	onProgress func(*protocol.ProgressParams)
 
-	filesMu sync.Mutex // guards files map and each cmdFile.diagnostics
+	filesMu sync.Mutex // guards files map
 	files   map[protocol.DocumentURI]*cmdFile
 }
 
 type cmdFile struct {
-	uri         protocol.DocumentURI
-	mapper      *protocol.Mapper
-	err         error
-	diagnostics []protocol.Diagnostic
+	uri           protocol.DocumentURI
+	mapper        *protocol.Mapper
+	err           error
+	diagnosticsMu sync.Mutex
+	diagnostics   []protocol.Diagnostic
 }
 
 func newClient(app *Application, onProgress func(*protocol.ProgressParams)) *cmdClient {
@@ -595,9 +596,11 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 	}
 
 	c.filesMu.Lock()
-	defer c.filesMu.Unlock()
-
 	file := c.getFile(p.URI)
+	c.filesMu.Unlock()
+
+	file.diagnosticsMu.Lock()
+	defer file.diagnosticsMu.Unlock()
 	file.diagnostics = append(file.diagnostics, p.Diagnostics...)
 
 	// Perform a crude in-place deduplication.
