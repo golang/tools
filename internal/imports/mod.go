@@ -125,7 +125,7 @@ func newModuleResolver(e *ProcessEnv, moduleCacheCache *DirInfoCache) (*ModuleRe
 			return nil, err
 		}
 	} else {
-		vendorEnabled, mainModsVendor, err = gocommand.WorkspaceVendorEnabled(context.TODO(), inv, r.env.GocmdRunner)
+		vendorEnabled, mainModsVendor, err = gocommand.WorkspaceVendorEnabled(context.Background(), inv, r.env.GocmdRunner)
 		if err != nil {
 			return nil, err
 		}
