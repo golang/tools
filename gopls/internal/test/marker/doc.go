@@ -43,7 +43,8 @@ treatment by the test runner:
 
   - "flags": this file is treated as a whitespace-separated list of flags
     that configure the MarkerTest instance. Supported flags:
-    -min_go=go1.20 sets the minimum Go version for the test;
+    -{min,max}_go=go1.20 sets the {min,max}imum Go version for the test
+    (inclusive)
     -cgo requires that CGO_ENABLED is set and the cgo tool is available
     -write_sumfile=a,b,c instructs the test runner to generate go.sum files
     in these directories before running the test.

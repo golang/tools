@@ -7,10 +7,13 @@ package workspace
 import (
 	"flag"
 	"os"
+	"os/exec"
 	"runtime"
+	"strings"
 	"testing"
 
 	. "golang.org/x/tools/gopls/internal/test/integration"
+	"golang.org/x/tools/internal/testenv"
 )
 
 var go121bin = flag.String("go121bin", "", "bin directory containing go 1.21 or later")
@@ -57,6 +60,67 @@ type I interface { string }
 		env.OpenFile("p.go")
 		env.AfterChange(
 			NoDiagnostics(ForFile("p.go")),
+		)
+	})
+}
+
+func TestTypeCheckingFutureVersions(t *testing.T) {
+	// This test checks the regression in golang/go#66677, where go/types fails
+	// silently when the language version is 1.22.
+	//
+	// It does this by recreating the scenario of a toolchain upgrade to 1.22, as
+	// reported in the issue. For this to work, the test must be able to download
+	// toolchains from proxy.golang.org.
+	//
+	// This is really only a problem for Go 1.21, because with Go 1.23, the bug
+	// is fixed, and starting with 1.23 we're going to *require* 1.23 to build
+	// gopls.
+	//
+	// TODO(golang/go#65917): delete this test after Go 1.23 is released and
+	// gopls requires the latest Go to build.
+	testenv.SkipAfterGo1Point(t, 21)
+
+	if testing.Short() {
+		t.Skip("skipping with -short, as this test uses the network")
+	}
+
+	// If go 1.22.2 is already available in the module cache, reuse it rather
+	// than downloading it anew.
+	out, err := exec.Command("go", "env", "GOPATH").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gopath := strings.TrimSpace(string(out)) // use the ambient 1.22.2 toolchain if available
+
+	const files = `
+-- go.mod --
+module example.com/foo
+
+go 1.22.2
+
+-- main.go --
+package main
+
+func main() {
+	x := 1
+}
+`
+
+	WithOptions(
+		Modes(Default), // slow test, only run in one mode
+		EnvVars{
+			"GOPATH":      gopath,
+			"GOTOOLCHAIN": "", // not local
+			"GOPROXY":     "https://proxy.golang.org",
+			"GOSUMDB":     "sum.golang.org",
+		},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.AfterChange(
+			Diagnostics(
+				env.AtRegexp("main.go", "x"),
+				WithMessage("not used"),
+			),
 		)
 	})
 }

@@ -131,6 +131,13 @@ func Test(t *testing.T) {
 				}
 				testenv.NeedsGo1Point(t, go1point)
 			}
+			if test.maxGoVersion != "" {
+				var go1point int
+				if _, err := fmt.Sscanf(test.maxGoVersion, "go1.%d", &go1point); err != nil {
+					t.Fatalf("parsing -max_go version: %v", err)
+				}
+				testenv.SkipAfterGo1Point(t, go1point)
+			}
 			if test.cgo {
 				testenv.NeedsTool(t, "cgo")
 			}
@@ -498,6 +505,7 @@ type markerTest struct {
 
 	// Parsed flags values.
 	minGoVersion     string
+	maxGoVersion     string
 	cgo              bool
 	writeGoSum       []string // comma separated dirs to write go sum for
 	skipGOOS         []string // comma separated GOOS values to skip
@@ -512,6 +520,7 @@ type markerTest struct {
 func (t *markerTest) flagSet() *flag.FlagSet {
 	flags := flag.NewFlagSet(t.name, flag.ContinueOnError)
 	flags.StringVar(&t.minGoVersion, "min_go", "", "if set, the minimum go1.X version required for this test")
+	flags.StringVar(&t.maxGoVersion, "max_go", "", "if set, the maximum go1.X version required for this test")
 	flags.BoolVar(&t.cgo, "cgo", false, "if set, requires cgo (both the cgo tool and CGO_ENABLED=1)")
 	flags.Var((*stringListValue)(&t.writeGoSum), "write_sumfile", "if set, write the sumfile for these directories")
 	flags.Var((*stringListValue)(&t.skipGOOS), "skip_goos", "if set, skip this test on these GOOS values")
