@@ -18,6 +18,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"os"
@@ -25,17 +26,19 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
 
 var (
-	flagP       = flag.Int("p", runtime.NumCPU(), "run `N` processes in parallel")
-	flagTimeout = flag.Duration("timeout", 10*time.Minute, "timeout each process after `duration`")
-	flagKill    = flag.Bool("kill", true, "kill timed out processes if true, otherwise just print pid (to attach with gdb)")
+	flagCount   = flag.Int("count", 0, "stop after `N` runs (default never stop)")
 	flagFailure = flag.String("failure", "", "fail only if output matches `regexp`")
 	flagIgnore  = flag.String("ignore", "", "ignore failure if output matches `regexp`")
+	flagKill    = flag.Bool("kill", true, "kill timed out processes if true, otherwise just print pid (to attach with gdb)")
 	flagOutput  = flag.String("o", defaultPrefix(), "output failure logs to `path` plus a unique suffix")
+	flagP       = flag.Int("p", runtime.NumCPU(), "run `N` processes in parallel")
+	flagTimeout = flag.Duration("timeout", 10*time.Minute, "timeout each process after `duration`")
 )
 
 func init() {
@@ -78,12 +81,22 @@ func main() {
 		}
 	}
 	res := make(chan []byte)
+	var started atomic.Int64
 	for i := 0; i < *flagP; i++ {
 		go func() {
 			for {
+				// Note: Must started.Add(1) even if not using -count,
+				// because it enables the '%d active' print below.
+				if started.Add(1) > int64(*flagCount) && *flagCount > 0 {
+					break
+				}
 				cmd := exec.Command(flag.Args()[0], flag.Args()[1:]...)
+				var buf bytes.Buffer
+				cmd.Stdout = &buf
+				cmd.Stderr = &buf
+				err := cmd.Start() // make cmd.Process valid for timeout goroutine
 				done := make(chan bool)
-				if *flagTimeout > 0 {
+				if err == nil && *flagTimeout > 0 {
 					go func() {
 						select {
 						case <-done:
@@ -103,7 +116,10 @@ func main() {
 						cmd.Process.Kill()
 					}()
 				}
-				out, err := cmd.CombinedOutput()
+				if err == nil {
+					err = cmd.Wait()
+				}
+				out := buf.Bytes()
 				close(done)
 				if err != nil && (failureRe == nil || failureRe.Match(out)) && (ignoreRe == nil || !ignoreRe.Match(out)) {
 					out = append(out, fmt.Sprintf("\n\nERROR: %v\n", err)...)
@@ -117,35 +133,56 @@ func main() {
 	runs, fails := 0, 0
 	start := time.Now()
 	ticker := time.NewTicker(5 * time.Second).C
+	status := func(context string) {
+		elapsed := time.Since(start).Truncate(time.Second)
+		var pct string
+		if fails > 0 {
+			pct = fmt.Sprintf(" (%0.2f%%)", 100.0*float64(fails)/float64(runs))
+		}
+		var active string
+		n := started.Load() - int64(runs)
+		if *flagCount > 0 {
+			// started counts past *flagCount at end; do not count those
+			// TODO: n = min(n, int64(*flagCount-runs))
+			if x := int64(*flagCount - runs); n > x {
+				n = x
+			}
+		}
+		if n > 0 {
+			active = fmt.Sprintf(", %d active", n)
+		}
+		fmt.Printf("%v: %v runs %s, %v failures%s%s\n", elapsed, runs, context, fails, pct, active)
+	}
 	for {
 		select {
 		case out := <-res:
 			runs++
-			if len(out) == 0 {
-				continue
+			if len(out) > 0 {
+				fails++
+				dir, path := filepath.Split(*flagOutput)
+				f, err := os.CreateTemp(dir, path)
+				if err != nil {
+					fmt.Printf("failed to create temp file: %v\n", err)
+					os.Exit(1)
+				}
+				f.Write(out)
+				f.Close()
+				if len(out) > 2<<10 {
+					out := out[:2<<10]
+					fmt.Printf("\n%s\n%s\n…\n", f.Name(), out)
+				} else {
+					fmt.Printf("\n%s\n%s\n", f.Name(), out)
+				}
 			}
-			fails++
-			dir, path := filepath.Split(*flagOutput)
-			f, err := os.CreateTemp(dir, path)
-			if err != nil {
-				fmt.Printf("failed to create temp file: %v\n", err)
-				os.Exit(1)
-			}
-			f.Write(out)
-			f.Close()
-			if len(out) > 2<<10 {
-				out := out[:2<<10]
-				fmt.Printf("\n%s\n%s\n…\n", f.Name(), out)
-			} else {
-				fmt.Printf("\n%s\n%s\n", f.Name(), out)
+			if *flagCount > 0 && runs >= *flagCount {
+				status("total")
+				if fails > 0 {
+					os.Exit(1)
+				}
+				os.Exit(0)
 			}
 		case <-ticker:
-			elapsed := time.Since(start).Truncate(time.Second)
-			var pct string
-			if fails > 0 {
-				pct = fmt.Sprintf(" (%0.2f%%)", 100.0*float64(fails)/float64(runs))
-			}
-			fmt.Printf("%v: %v runs so far, %v failures%s\n", elapsed, runs, fails, pct)
+			status("so far")
 		}
 	}
 }
