@@ -128,6 +128,8 @@ func Main(m *testing.M, hook func(*settings.Options)) {
 	}
 	testenv.ExitIfSmallMachine()
 
+	flag.Parse()
+
 	// Disable GOPACKAGESDRIVER, as it can cause spurious test failures.
 	os.Setenv("GOPACKAGESDRIVER", "off")
 
@@ -140,8 +142,6 @@ func Main(m *testing.M, hook func(*settings.Options)) {
 		fmt.Println("Missing go command")
 		os.Exit(1)
 	}
-
-	flag.Parse()
 
 	runner = &Runner{
 		DefaultModes:             DefaultModes(),
