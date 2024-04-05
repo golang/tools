@@ -183,6 +183,10 @@ func RenderPackageDoc(pkg *cache.Package, posURL func(filename string, line, col
 	}
 
 	scope := pkg.Types().Scope()
+	escape := html.EscapeString
+
+	title := fmt.Sprintf("%s package - %s - Gopls packages",
+		pkg.Types().Name(), escape(pkg.Types().Path()))
 
 	var buf bytes.Buffer
 	buf.WriteString(`<!DOCTYPE html>
@@ -190,6 +194,7 @@ func RenderPackageDoc(pkg *cache.Package, posURL func(filename string, line, col
 <head>
   <meta charset="UTF-8">
   <style>` + pkgDocStyle + `</style>
+  <title>` + title + `</title>
   <script type='text/javascript'>
 // httpGET requests a URL for its effects only.
 function httpGET(url) {
@@ -297,8 +302,6 @@ window.onload = () => {
 	fmt.Fprintf(&buf, "</header>\n")
 
 	// -- main element --
-
-	escape := html.EscapeString
 
 	// sourceLink returns HTML for a link to open a file in the client editor.
 	sourceLink := func(text, url string) string {
