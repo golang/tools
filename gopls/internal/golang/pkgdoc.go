@@ -241,7 +241,11 @@ window.onload = () => {
 	// -- header select element --
 
 	// option emits an <option> for the specified symbol.
-	option := func(obj types.Object) {
+	//
+	// recvType is the apparent receiver type, which may
+	// differ from ReceiverNamed(obj.Signature.Recv).Name
+	// for promoted methods.
+	option := func(obj types.Object, recvType string) {
 		// Render functions/methods as "(recv) Method(p1, ..., pN)".
 		fragment := obj.Name()
 
@@ -251,9 +255,8 @@ window.onload = () => {
 			var buf strings.Builder
 			sig := fn.Type().(*types.Signature)
 			if sig.Recv() != nil {
-				_, named := typesinternal.ReceiverNamed(sig.Recv())
 				fmt.Fprintf(&buf, "(%s) ", sig.Recv().Name())
-				fragment = named.Obj().Name() + "." + fn.Name()
+				fragment = recvType + "." + fn.Name()
 			}
 			fmt.Fprintf(&buf, "%s(", fn.Name())
 			for i := 0; i < sig.Params().Len(); i++ {
@@ -272,14 +275,14 @@ window.onload = () => {
 	// index of functions
 	fmt.Fprintf(&buf, "<optgroup label='Functions'>\n")
 	for _, fn := range docpkg.Funcs {
-		option(scope.Lookup(fn.Name))
+		option(scope.Lookup(fn.Name), "")
 	}
 	fmt.Fprintf(&buf, "</optgroup>\n")
 
 	// index of types
 	fmt.Fprintf(&buf, "<optgroup label='Types'>\n")
 	for _, doctype := range docpkg.Types {
-		option(scope.Lookup(doctype.Name))
+		option(scope.Lookup(doctype.Name), "")
 	}
 	fmt.Fprintf(&buf, "</optgroup>\n")
 
@@ -289,11 +292,11 @@ window.onload = () => {
 		if len(doctype.Funcs)+len(doctype.Methods) > 0 {
 			fmt.Fprintf(&buf, "<optgroup label='type %s'>\n", doctype.Name)
 			for _, docfn := range doctype.Funcs {
-				option(scope.Lookup(docfn.Name))
+				option(scope.Lookup(docfn.Name), "")
 			}
 			for _, docmethod := range doctype.Methods {
 				method, _, _ := types.LookupFieldOrMethod(tname.Type(), true, tname.Pkg(), docmethod.Name)
-				option(method)
+				option(method, doctype.Name)
 			}
 			fmt.Fprintf(&buf, "</optgroup>\n")
 		}
@@ -470,6 +473,7 @@ window.onload = () => {
 	}
 	for _, fn := range docpkg.Funcs {
 		obj := scope.Lookup(fn.Name).(*types.Func)
+		// TODO(adonovan): show only 3 parameters; elide 4+. Ditto for methods.
 		fmt.Fprintf(&buf, "<li><a href='#%s'>%s</a></li>\n",
 			obj.Name(),
 			escape(types.ObjectString(obj, pkgRelative)))
