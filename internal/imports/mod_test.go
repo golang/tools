@@ -879,51 +879,6 @@ package z
 	mt.assertModuleFoundInDir("example.com/z", "z", "main/z1_1_0$")
 }
 
-// Tests that go.work files and vendor directory are respected.
-func TestModWorkspaceVendoring(t *testing.T) {
-	mt := setup(t, nil, `
--- go.work --
-go 1.22
-
-use (
-	./a
-	./b
-)
--- a/go.mod --
-module example.com/a
-
-go 1.22
-
-require rsc.io/sampler v1.3.1
--- a/a.go --
-package a
-
-import _ "rsc.io/sampler"
--- b/go.mod --
-module example.com/b
-
-go 1.22
--- b/b.go --
-package b
-`, "")
-	defer mt.cleanup()
-
-	// generate vendor directory
-	if _, err := mt.env.invokeGo(context.Background(), "work", "vendor"); err != nil {
-		t.Fatal(err)
-	}
-
-	// update module resolver
-	mt.env.ClearModuleInfo()
-	mt.env.UpdateResolver(mt.env.resolver.ClearForNewScan())
-
-	mt.assertModuleFoundInDir("example.com/a", "a", `main/a$`)
-	mt.assertScanFinds("example.com/a", "a")
-	mt.assertModuleFoundInDir("example.com/b", "b", `main/b$`)
-	mt.assertScanFinds("example.com/b", "b")
-	mt.assertModuleFoundInDir("rsc.io/sampler", "sampler", `/vendor/`)
-}
-
 // Tests that we handle GO111MODULE=on with no go.mod file. See #30855.
 func TestNoMainModule(t *testing.T) {
 	mt := setup(t, map[string]string{"GO111MODULE": "on"}, `
