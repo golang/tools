@@ -1652,6 +1652,10 @@ func validGoVersion(goVersion string) bool {
 		return false // malformed version string
 	}
 
+	if relVer := releaseVersion(); relVer != "" && versions.Compare(relVer, goVersion) < 0 {
+		return false // 'go list' is too new for go/types
+	}
+
 	// TODO(rfindley): remove once we no longer support building gopls with Go
 	// 1.20 or earlier.
 	if !slices.Contains(build.Default.ReleaseTags, "go1.21") && strings.Count(goVersion, ".") >= 2 {
@@ -1659,6 +1663,19 @@ func validGoVersion(goVersion string) bool {
 	}
 
 	return true
+}
+
+// releaseVersion reports the Go language version used to compile gopls, or ""
+// if it cannot be determined.
+func releaseVersion() string {
+	if len(build.Default.ReleaseTags) > 0 {
+		v := build.Default.ReleaseTags[len(build.Default.ReleaseTags)-1]
+		var dummy int
+		if _, err := fmt.Sscanf(v, "go1.%d", &dummy); err == nil {
+			return v
+		}
+	}
+	return ""
 }
 
 // depsErrors creates diagnostics for each metadata error (e.g. import cycle).

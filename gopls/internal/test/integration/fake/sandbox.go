@@ -289,7 +289,9 @@ func (sb *Sandbox) GoVersion(ctx context.Context) (int, error) {
 func (sb *Sandbox) Close() error {
 	var goCleanErr error
 	if sb.gopath != "" {
-		goCleanErr = sb.RunGoCommand(context.Background(), "", "clean", []string{"-modcache"}, nil, false)
+		// Important: run this command in RootDir so that it doesn't interact with
+		// any toolchain downloads that may occur
+		goCleanErr = sb.RunGoCommand(context.Background(), sb.RootDir(), "clean", []string{"-modcache"}, nil, false)
 	}
 	err := robustio.RemoveAll(sb.rootdir)
 	if err != nil || goCleanErr != nil {
