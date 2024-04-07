@@ -25,6 +25,7 @@ import (
 
 	"golang.org/x/telemetry"
 	"golang.org/x/tools/gopls/internal/util/browser"
+	"golang.org/x/tools/gopls/internal/util/maps"
 )
 
 // flags
@@ -39,7 +40,7 @@ func main() {
 
 	// Maps stack text to Version/GoVersion/GOOS/GOARCH string to counter.
 	stacks := make(map[string]map[string]int64)
-	var total int
+	var distinctStacks int
 
 	// Maps stack to a telemetry URL.
 	stackToURL := make(map[string]string)
@@ -71,8 +72,6 @@ func main() {
 			}
 			for _, prog := range report.Programs {
 				if prog.Program == "golang.org/x/tools/gopls" && len(prog.Stacks) > 0 {
-					total++
-
 					// Include applicable client names (e.g. vscode, eglot).
 					var clients []string
 					var clientSuffix string
@@ -93,6 +92,9 @@ func main() {
 					if prog.Version == "devel" {
 						continue
 					}
+
+					distinctStacks++
+
 					info := fmt.Sprintf("%s@%s %s %s/%s%s",
 						prog.Program, prog.Version,
 						prog.GoVersion, prog.GOOS, prog.GOARCH,
@@ -118,6 +120,8 @@ func main() {
 	}
 
 	// Query GitHub for existing GitHub issues.
+	// (Note: there may be multiple Issue records
+	// for the same logical issue, i.e. Issue.Number.)
 	issuesByStackID := make(map[string]*Issue)
 	for len(stackIDs) > 0 {
 		// For some reason GitHub returns 422 UnprocessableEntity
@@ -143,87 +147,49 @@ func main() {
 		}
 	}
 
-	fmt.Printf("Found %d stacks in last %v days:\n", total, *daysFlag)
+	fmt.Printf("Found %d distinct stacks in last %v days:\n", distinctStacks, *daysFlag)
 
 	// For each stack, show existing issue or create a new one.
+	// Aggregate stack IDs by issue summary.
+	var (
+		// Both vars map the summary line to the stack count.
+		existingIssues = make(map[string]int64)
+		newIssues      = make(map[string]int64)
+	)
 	for stack, counts := range stacks {
 		id := stackID(stack)
 
-		// Existing issue?
-		issue, ok := issuesByStackID[id]
-		if ok {
-			if issue != nil {
-				fmt.Printf("#%d: %s [%s]\n",
-					issue.Number, issue.Title, issue.State)
-			} else {
-				// We just created a "New issue" browser tab
-				// for this stackID.
-				issuesByStackID[id] = nil // suppress dups
-			}
-			continue
+		var total int64
+		for _, count := range counts {
+			total += count
 		}
 
-		// Create new issue.
-		issuesByStackID[id] = nil // suppress dups
-
-		// Use a heuristic to find a suitable symbol to blame
-		// in the title: the first public function or method
-		// of a public type, in gopls, to appear in the stack
-		// trace. We can always refine it later.
-		var symbol string
-		for _, line := range strings.Split(stack, "\n") {
-			// Look for:
-			//   gopls/.../pkg.Func
-			//   gopls/.../pkg.Type.method
-			//   gopls/.../pkg.(*Type).method
-			if strings.Contains(line, "internal/util/bug.") {
-				continue // not interesting
-			}
-			if _, rest, ok := strings.Cut(line, "golang.org/x/tools/gopls/"); ok {
-				if i := strings.IndexByte(rest, '.'); i >= 0 {
-					rest = rest[i+1:]
-					rest = strings.TrimPrefix(rest, "(*")
-					if rest != "" && 'A' <= rest[0] && rest[0] <= 'Z' {
-						rest, _, _ = strings.Cut(rest, ":")
-						symbol = " " + rest
-						break
-					}
-				}
-			}
-		}
-
-		// Populate the form (title, body, label)
-		title := fmt.Sprintf("x/tools/gopls:%s bug reported by telemetry", symbol)
-		body := new(bytes.Buffer)
-		fmt.Fprintf(body, "This stack `%s` was [reported by telemetry](%s):\n\n",
-			id, stackToURL[stack])
-		fmt.Fprintf(body, "```\n%s\n```\n", stack)
-
-		// Add counts, gopls version, and platform info.
-		// This isn't very precise but should provide clues.
-		//
-		// TODO(adonovan): link each stack (ideally each frame) to source:
-		// https://cs.opensource.google/go/x/tools/+/gopls/VERSION:gopls/FILE;l=LINE
-		// (Requires parsing stack, shallow-cloning gopls module at that tag, and
-		// computing correct line offsets. Would be labor-saving though.)
-		fmt.Fprintf(body, "```\n")
-		for info, count := range counts {
-			fmt.Fprintf(body, "%s (%d)\n", info, count)
-		}
-		fmt.Fprintf(body, "```\n\n")
-
-		fmt.Fprintf(body, "Issue created by golang.org/x/tools/gopls/internal/telemetry/cmd/stacks.\n")
-
-		const labels = "gopls,Tools,gopls/telemetry-wins,NeedsInvestigation"
-
-		// Report it.
-		if !browser.Open("https://github.com/golang/go/issues/new?labels=" + labels + "&title=" + url.QueryEscape(title) + "&body=" + url.QueryEscape(body.String())) {
-			log.Print("Please file a new issue at golang.org/issue/new using this template:\n\n")
-			log.Printf("Title: %s\n", title)
-			log.Printf("Labels: %s\n", labels)
-			log.Printf("Body: %s\n", body)
+		if issue, ok := issuesByStackID[id]; ok {
+			// existing issue
+			summary := fmt.Sprintf("#%d: %s [%s]",
+				issue.Number, issue.Title, issue.State)
+			existingIssues[summary] += total
+		} else {
+			// new issue
+			title := newIssue(stack, id, stackToURL[stack], counts)
+			summary := fmt.Sprintf("%s: %s [%s]", id, title, "new")
+			newIssues[summary] += total
 		}
 	}
+	print := func(caption string, issues map[string]int64) {
+		// Print items in descending frequency.
+		keys := maps.Keys(issues)
+		sort.Slice(keys, func(i, j int) bool {
+			return issues[keys[i]] > issues[keys[j]]
+		})
+		fmt.Printf("%s issues:\n", caption)
+		for _, summary := range keys {
+			count := issues[summary]
+			fmt.Printf("%s (n=%d)\n", summary, count)
+		}
+	}
+	print("Existing", existingIssues)
+	print("New", newIssues)
 }
 
 // stackID returns a 32-bit identifier for a stack
@@ -243,6 +209,73 @@ func stackID(stack string) string {
 	h := fnv.New32()
 	io.WriteString(h, stack)
 	return base64.URLEncoding.EncodeToString(h.Sum(nil))[:6]
+}
+
+// newIssue creates a browser tab with a populated GitHub "New issue"
+// form for the specified stack. (The triage person is expected to
+// manually de-dup the issue before deciding whether to submit the form.)
+//
+// It returns the title.
+func newIssue(stack, id, jsonURL string, counts map[string]int64) string {
+	// Use a heuristic to find a suitable symbol to blame
+	// in the title: the first public function or method
+	// of a public type, in gopls, to appear in the stack
+	// trace. We can always refine it later.
+	var symbol string
+	for _, line := range strings.Split(stack, "\n") {
+		// Look for:
+		//   gopls/.../pkg.Func
+		//   gopls/.../pkg.Type.method
+		//   gopls/.../pkg.(*Type).method
+		if strings.Contains(line, "internal/util/bug.") {
+			continue // not interesting
+		}
+		if _, rest, ok := strings.Cut(line, "golang.org/x/tools/gopls/"); ok {
+			if i := strings.IndexByte(rest, '.'); i >= 0 {
+				rest = rest[i+1:]
+				rest = strings.TrimPrefix(rest, "(*")
+				if rest != "" && 'A' <= rest[0] && rest[0] <= 'Z' {
+					rest, _, _ = strings.Cut(rest, ":")
+					symbol = " " + rest
+					break
+				}
+			}
+		}
+	}
+
+	// Populate the form (title, body, label)
+	title := fmt.Sprintf("x/tools/gopls:%s bug reported by telemetry", symbol)
+	body := new(bytes.Buffer)
+	fmt.Fprintf(body, "This stack `%s` was [reported by telemetry](%s):\n\n",
+		id, jsonURL)
+	fmt.Fprintf(body, "```\n%s\n```\n", stack)
+
+	// Add counts, gopls version, and platform info.
+	// This isn't very precise but should provide clues.
+	//
+	// TODO(adonovan): link each stack (ideally each frame) to source:
+	// https://cs.opensource.google/go/x/tools/+/gopls/VERSION:gopls/FILE;l=LINE
+	// (Requires parsing stack, shallow-cloning gopls module at that tag, and
+	// computing correct line offsets. Would be labor-saving though.)
+	fmt.Fprintf(body, "```\n")
+	for info, count := range counts {
+		fmt.Fprintf(body, "%s (%d)\n", info, count)
+	}
+	fmt.Fprintf(body, "```\n\n")
+
+	fmt.Fprintf(body, "Issue created by golang.org/x/tools/gopls/internal/telemetry/cmd/stacks.\n")
+
+	const labels = "gopls,Tools,gopls/telemetry-wins,NeedsInvestigation"
+
+	// Report it.
+	if !browser.Open("https://github.com/golang/go/issues/new?labels=" + labels + "&title=" + url.QueryEscape(title) + "&body=" + url.QueryEscape(body.String())) {
+		log.Print("Please file a new issue at golang.org/issue/new using this template:\n\n")
+		log.Printf("Title: %s\n", title)
+		log.Printf("Labels: %s\n", labels)
+		log.Printf("Body: %s\n", body)
+	}
+
+	return title
 }
 
 // -- GitHub search --
