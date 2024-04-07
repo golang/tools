@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/progress"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -263,7 +264,7 @@ func (s *server) initWeb() (*web, error) {
 
 	secret := "/gopls/" + base64.RawURLEncoding.EncodeToString(token)
 	webMux := http.NewServeMux()
-	rootMux.Handle(secret+"/", http.StripPrefix(secret, webMux))
+	rootMux.Handle(secret+"/", withPanicHandler(http.StripPrefix(secret, webMux)))
 
 	webServer := &http.Server{Addr: listener.Addr().String(), Handler: rootMux}
 	go func() {
@@ -395,4 +396,20 @@ func (w *web) url(path, query, fragment string) protocol.URI {
 	url2.RawQuery = query
 	url2.Fragment = fragment
 	return protocol.URI(url2.String())
+}
+
+// withPanicHandler wraps an HTTP handler with telemetry-reporting of
+// panics that would otherwise be silently recovered by the net/http
+// root handler.
+func withPanicHandler(h http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		panicked := true
+		defer func() {
+			if panicked {
+				bug.Report("panic in HTTP handler")
+			}
+		}()
+		h.ServeHTTP(w, req)
+		panicked = false
+	}
 }
