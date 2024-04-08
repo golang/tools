@@ -140,6 +140,49 @@ func (tπ) mπ() {}
 	})
 }
 
+// TestRenderNavigation tests that the symbol selector and index of
+// symbols are well formed.
+func TestRenderNavigation(t *testing.T) {
+	const files = `
+-- go.mod --
+module example.com
+
+-- a/a.go --
+package a
+
+func Func1(int, string, bool, []string) (int, error)
+func Func2(x, y int, a, b string) (int, error)
+
+type Type struct {}
+func (t Type) Method() {}
+func (p *Type) PtrMethod() {}
+
+func Constructor() Type
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		uri1 := viewPkgDoc(t, env, "a/a.go")
+		doc := get(t, uri1)
+
+		q := regexp.QuoteMeta
+
+		// selector
+		checkMatch(t, true, doc, q(`<option label='Func1(_, _, _, _)' value='#Func1'/>`))
+		checkMatch(t, true, doc, q(`<option label='Func2(x, y, a, b)' value='#Func2'/>`))
+		checkMatch(t, true, doc, q(`<option label='Type' value='#Type'/>`))
+		checkMatch(t, true, doc, q(`<option label='Constructor()' value='#Constructor'/>`))
+		checkMatch(t, true, doc, q(`<option label='(t) Method()' value='#Type.Method'/>`))
+		checkMatch(t, true, doc, q(`<option label='(p) PtrMethod()' value='#Type.PtrMethod'/>`))
+
+		// index
+		checkMatch(t, true, doc, q(`<li><a href='#Func1'>func Func1(int, string, bool, ...) (int, error)</a></li>`))
+		checkMatch(t, true, doc, q(`<li><a href='#Func2'>func Func2(x int, y int, a string, ...) (int, error)</a></li>`))
+		checkMatch(t, true, doc, q(`<li><a href='#Type'>type Type</a></li>`))
+		checkMatch(t, true, doc, q(`<li><a href='#Constructor'>func Constructor() Type</a></li>`))
+		checkMatch(t, true, doc, q(`<li><a href='#Type.Method'>func (t Type) Method()</a></li>`))
+		checkMatch(t, true, doc, q(`<li><a href='#Type.PtrMethod'>func (p *Type) PtrMethod()</a></li>`))
+	})
+}
+
 // viewPkgDoc invokes the "View package documention" code action in
 // the specified file. It returns the URI of the document, or fails
 // the test.

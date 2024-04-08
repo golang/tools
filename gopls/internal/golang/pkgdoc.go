@@ -25,6 +25,9 @@ package golang
 // - modify JS httpGET function to give a transient visual indication
 //   when clicking a source link that the editor is being navigated
 //   (in case it doesn't raise itself, like VS Code).
+// - move this into a new package, golang/pkgdoc, and then
+//   split out the various helpers without fear of polluting
+//   the golang package namespace.
 
 import (
 	"bytes"
@@ -263,7 +266,11 @@ window.onload = () => {
 				if i > 0 {
 					buf.WriteString(", ")
 				}
-				buf.WriteString(sig.Params().At(i).Name())
+				name := sig.Params().At(i).Name()
+				if name == "" {
+					name = "_"
+				}
+				buf.WriteString(name)
 			}
 			buf.WriteByte(')')
 			label = buf.String()
@@ -439,12 +446,62 @@ window.onload = () => {
 		return escape(buf.String())
 	}
 
-	// pkgRelative qualifies types by package name alone
-	pkgRelative := func(other *types.Package) string {
-		if pkg.Types() == other {
-			return "" // same package; unqualified
+	// fnString is like fn.String() except that it:
+	// - shows the receiver name;
+	// - uses space "(T) M()" not dot "(T).M()" after receiver;
+	// - doesn't bother with the special case for interface receivers
+	//   since it is unreachable for the methods in go/doc.
+	// - elides parameters after the first three: f(a, b, c, ...).
+	fnString := func(fn *types.Func) string {
+		// pkgRelative qualifies types by package name alone
+		pkgRelative := func(other *types.Package) string {
+			if pkg.Types() == other {
+				return "" // same package; unqualified
+			}
+			return other.Name()
 		}
-		return other.Name()
+
+		sig := fn.Type().(*types.Signature)
+
+		// Emit "func (recv T) F".
+		var buf bytes.Buffer
+		buf.WriteString("func ")
+		if recv := sig.Recv(); recv != nil {
+			buf.WriteByte('(')
+			if recv.Name() != "" {
+				buf.WriteString(recv.Name())
+				buf.WriteByte(' ')
+			}
+			types.WriteType(&buf, recv.Type(), pkgRelative)
+			buf.WriteByte(')')
+			buf.WriteByte(' ') // (ObjectString uses a '.' here)
+		} else if pkg := fn.Pkg(); pkg != nil {
+			if s := pkgRelative(pkg); s != "" {
+				buf.WriteString(s)
+				buf.WriteByte('.')
+			}
+		}
+		buf.WriteString(fn.Name())
+
+		// Emit signature.
+		//
+		// Elide parameters after the third one.
+		// WriteSignature is too complex to fork, so we replace
+		// parameters 4+ with "invalid type", format,
+		// then post-process the string.
+		if sig.Params().Len() > 3 {
+			sig = types.NewSignatureType(
+				sig.Recv(),
+				typesSeqToSlice[*types.TypeParam](sig.RecvTypeParams()),
+				typesSeqToSlice[*types.TypeParam](sig.TypeParams()),
+				types.NewTuple(append(
+					typesSeqToSlice[*types.Var](sig.Params())[:3],
+					types.NewVar(0, nil, "", types.Typ[types.Invalid]))...),
+				sig.Results(),
+				sig.Variadic())
+		}
+		types.WriteSignature(&buf, sig, pkgRelative)
+		return strings.ReplaceAll(buf.String(), ", invalid type)", ", ...)")
 	}
 
 	fmt.Fprintf(&buf, "<main>\n")
@@ -473,10 +530,8 @@ window.onload = () => {
 	}
 	for _, fn := range docpkg.Funcs {
 		obj := scope.Lookup(fn.Name).(*types.Func)
-		// TODO(adonovan): show only 3 parameters; elide 4+. Ditto for methods.
 		fmt.Fprintf(&buf, "<li><a href='#%s'>%s</a></li>\n",
-			obj.Name(),
-			escape(types.ObjectString(obj, pkgRelative)))
+			obj.Name(), escape(fnString(obj)))
 	}
 	for _, doctype := range docpkg.Types {
 		tname := scope.Lookup(doctype.Name).(*types.TypeName)
@@ -490,19 +545,15 @@ window.onload = () => {
 			for _, docfn := range doctype.Funcs {
 				obj := scope.Lookup(docfn.Name).(*types.Func)
 				fmt.Fprintf(&buf, "<li><a href='#%s'>%s</a></li>\n",
-					docfn.Name,
-					escape(types.ObjectString(obj, pkgRelative)))
+					docfn.Name, escape(fnString(obj)))
 			}
 			// methods
 			for _, docmethod := range doctype.Methods {
 				method, _, _ := types.LookupFieldOrMethod(tname.Type(), true, tname.Pkg(), docmethod.Name)
-				// TODO(adonovan): style: change the . into a space in
-				// ObjectString's "func (T).M()", and hide unexported
-				// embedded types.
 				fmt.Fprintf(&buf, "<li><a href='#%s.%s'>%s</a></li>\n",
 					doctype.Name,
 					docmethod.Name,
-					escape(types.ObjectString(method, pkgRelative)))
+					escape(fnString(method.(*types.Func))))
 			}
 			fmt.Fprintf(&buf, "</ul>\n")
 		}
@@ -611,6 +662,22 @@ window.onload = () => {
 	fmt.Fprintf(&buf, "</html>\n")
 
 	return buf.Bytes(), nil
+}
+
+// typesSeq abstracts various go/types sequence types:
+// MethodSet, Tuple, TypeParamList, TypeList.
+// TODO(adonovan): replace with go1.23 iterators.
+type typesSeq[T any] interface {
+	Len() int
+	At(int) T
+}
+
+func typesSeqToSlice[T any](seq typesSeq[T]) []T {
+	slice := make([]T, seq.Len())
+	for i := range slice {
+		slice[i] = seq.At(i)
+	}
+	return slice
 }
 
 // (partly taken from pkgsite's typography.css)
