@@ -42,6 +42,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/frob"
+	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/facts"
@@ -178,8 +179,6 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 
 	var tagStr string // sorted comma-separated list of PackageIDs
 	{
-		// TODO(adonovan): replace with a generic map[S]any -> string
-		// function in the tag package, and use maps.Keys + slices.Sort.
 		keys := make([]string, 0, len(pkgs))
 		for id := range pkgs {
 			keys = append(keys, string(id))
@@ -304,10 +303,10 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 		}
 		// Add edge from predecessor.
 		if from != nil {
-			atomic.AddInt32(&from.unfinishedSuccs, 1) // TODO(adonovan): use generics
+			from.unfinishedSuccs.Add(+1) // incref
 			an.preds = append(an.preds, from)
 		}
-		atomic.AddInt32(&an.unfinishedPreds, 1)
+		an.unfinishedPreds.Add(+1)
 		return an, nil
 	}
 
@@ -388,7 +387,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 	// prevents workers from enqeuing, and thus finishing, and thus allowing the
 	// group to make progress: deadlock.
 	limiter := make(chan unit, runtime.GOMAXPROCS(0))
-	var completed int64
+	var completed atomic.Int64
 
 	var enqueue func(*analysisNode)
 	enqueue = func(an *analysisNode) {
@@ -400,13 +399,13 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 			if err != nil {
 				return err // cancelled, or failed to produce a package
 			}
-			maybeReport(atomic.AddInt64(&completed, 1))
+			maybeReport(completed.Add(1))
 			an.summary = summary
 
 			// Notify each waiting predecessor,
 			// and enqueue it when it becomes a leaf.
 			for _, pred := range an.preds {
-				if atomic.AddInt32(&pred.unfinishedSuccs, -1) == 0 {
+				if pred.unfinishedSuccs.Add(-1) == 0 { // decref
 					enqueue(pred)
 				}
 			}
@@ -426,6 +425,18 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 	}
 	if err := g.Wait(); err != nil {
 		return nil, err // cancelled, or failed to produce a package
+	}
+
+	// Inv: all root nodes now have a summary (#66732).
+	//
+	// We know this is falsified empirically. This means either
+	// the summary was "successfully" set to nil (above), or there
+	// is a problem with the graph such the enqueuing leaves does
+	// not lead to completion of roots (or an error).
+	for _, root := range roots {
+		if root.summary == nil {
+			bug.Report("root analysisNode has nil summary")
+		}
 	}
 
 	// Report diagnostics only from enabled actions that succeeded.
@@ -459,6 +470,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 			}
 
 			// Inv: root.summary is the successful result of run (via runCached).
+			// TODO(adonovan): fix: root.summary is sometimes nil! (#66732).
 			summary, ok := root.summary.Actions[stableNames[a]]
 			if summary == nil {
 				panic(fmt.Sprintf("analyzeSummary.Actions[%q] = (nil, %t); got %v (#60551)",
@@ -476,7 +488,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 }
 
 func (an *analysisNode) decrefPreds() {
-	if atomic.AddInt32(&an.unfinishedPreds, -1) == 0 {
+	if an.unfinishedPreds.Add(-1) == 0 {
 		an.summary.Actions = nil
 	}
 }
@@ -511,8 +523,8 @@ type analysisNode struct {
 	analyzers       []*analysis.Analyzer        // set of analyzers to run
 	preds           []*analysisNode             // graph edges:
 	succs           map[PackageID]*analysisNode //   (preds -> self -> succs)
-	unfinishedSuccs int32
-	unfinishedPreds int32                         // effectively a summary.Actions refcount
+	unfinishedSuccs atomic.Int32
+	unfinishedPreds atomic.Int32                  // effectively a summary.Actions refcount
 	allDeps         map[PackagePath]*analysisNode // all dependencies including self
 	exportDeps      map[PackagePath]*analysisNode // subset of allDeps ref'd by export data (+self)
 	summary         *analyzeSummary               // serializable result of analyzing this package
@@ -665,6 +677,9 @@ func (an *analysisNode) runCached(ctx context.Context) (*analyzeSummary, error) 
 	if data, err := filecache.Get(cacheKind, key); err == nil {
 		// cache hit
 		analyzeSummaryCodec.Decode(data, &summary)
+		if summary == nil { // debugging #66732
+			bug.Reportf("analyzeSummaryCodec.Decode yielded nil *analyzeSummary")
+		}
 	} else if err != filecache.ErrNotFound {
 		return nil, bug.Errorf("internal error reading shared cache: %v", err)
 	} else {
@@ -674,8 +689,11 @@ func (an *analysisNode) runCached(ctx context.Context) (*analyzeSummary, error) 
 		if err != nil {
 			return nil, err
 		}
+		if summary == nil { // debugging #66732 (can't happen)
+			bug.Reportf("analyzeNode.run returned nil *analyzeSummary")
+		}
 
-		atomic.AddInt32(&an.unfinishedPreds, +1) // incref
+		an.unfinishedPreds.Add(+1) // incref
 		go func() {
 			defer an.decrefPreds() //decref
 
@@ -743,13 +761,11 @@ func (an *analysisNode) cacheKey() [sha256.Size]byte {
 	}
 
 	// vdeps, in PackageID order
-	depIDs := make([]string, 0, len(an.succs))
-	for depID := range an.succs {
-		depIDs = append(depIDs, string(depID))
-	}
-	sort.Strings(depIDs) // TODO(adonovan): avoid conversions by using slices.Sort[PackageID]
+	depIDs := maps.Keys(an.succs)
+	// TODO(adonovan): use go1.2x slices.Sort(depIDs).
+	sort.Slice(depIDs, func(i, j int) bool { return depIDs[i] < depIDs[j] })
 	for _, depID := range depIDs {
-		vdep := an.succs[PackageID(depID)]
+		vdep := an.succs[depID]
 		fmt.Fprintf(hasher, "dep: %s\n", vdep.mp.PkgPath)
 		fmt.Fprintf(hasher, "export: %s\n", vdep.summary.DeepExportHash)
 
