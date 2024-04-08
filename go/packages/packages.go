@@ -428,6 +428,10 @@ type Package struct {
 	// The NeedTypes LoadMode bit sets this field for packages matching the
 	// patterns; type information for dependencies may be missing or incomplete,
 	// unless NeedDeps and NeedImports are also set.
+	//
+	// Each call to [Load] returns a consistent set of type
+	// symbols, as defined by the comment at [types.Identical].
+	// Avoid mixing type information from two or more calls to [Load].
 	Types *types.Package
 
 	// Fset provides position information for Types, TypesInfo, and Syntax.
