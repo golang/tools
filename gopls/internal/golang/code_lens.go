@@ -43,7 +43,7 @@ func runTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	if err != nil {
 		return nil, err
 	}
-	fns, err := TestsAndBenchmarks(pkg, pgf)
+	fns, err := testsAndBenchmarks(pkg, pgf)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ type TestFns struct {
 	Benchmarks []TestFn
 }
 
-func TestsAndBenchmarks(pkg *cache.Package, pgf *parsego.File) (TestFns, error) {
+func testsAndBenchmarks(pkg *cache.Package, pgf *parsego.File) (TestFns, error) {
 	var out TestFns
 
 	if !strings.HasSuffix(pgf.URI.Path(), "_test.go") {

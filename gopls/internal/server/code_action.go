@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -42,27 +43,24 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 
 	// The Only field of the context specifies which code actions the client wants.
 	// If Only is empty, assume that the client wants all of the non-explicit code actions.
-	var want map[protocol.CodeActionKind]bool
-	{
-		// Explicit Code Actions are opt-in and shouldn't be returned to the client unless
-		// requested using Only.
+	want := supportedCodeActions
+	if len(params.Context.Only) > 0 {
+		want = make(map[protocol.CodeActionKind]bool)
+
+		// Explicit Code Actions are opt-in and shouldn't be
+		// returned to the client unless requested using Only.
 		// TODO: Add other CodeLenses such as GoGenerate, RegenerateCgo, etc..
 		explicit := map[protocol.CodeActionKind]bool{
 			protocol.GoTest: true,
 		}
 
-		if len(params.Context.Only) == 0 {
-			want = supportedCodeActions
-		} else {
-			want = make(map[protocol.CodeActionKind]bool)
-			for _, only := range params.Context.Only {
-				for k, v := range supportedCodeActions {
-					if only == k || strings.HasPrefix(string(k), string(only)+".") {
-						want[k] = want[k] || v
-					}
+		for _, only := range params.Context.Only {
+			for k, v := range supportedCodeActions {
+				if only == k || strings.HasPrefix(string(k), string(only)+".") {
+					want[k] = want[k] || v
 				}
-				want[only] = want[only] || explicit[only]
 			}
+			want[only] = want[only] || explicit[only]
 		}
 	}
 	if len(want) == 0 {
@@ -103,12 +101,6 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		return actions, nil
 
 	case file.Go:
-		// Don't suggest fixes for generated files, since they are generally
-		// not useful and some editors may apply them automatically on save.
-		if golang.IsGenerated(ctx, snapshot, uri) {
-			return nil, nil
-		}
-
 		actions, err := s.codeActionsMatchingDiagnostics(ctx, uri, snapshot, params.Context.Diagnostics, want)
 		if err != nil {
 			return nil, err
@@ -119,6 +111,20 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 			return nil, err
 		}
 		actions = append(actions, moreActions...)
+
+		// Don't suggest fixes for generated files, since they are generally
+		// not useful and some editors may apply them automatically on save.
+		// (Unfortunately there's no reliable way to distinguish fixes from
+		// queries, so we must list all kinds of queries here.)
+		if golang.IsGenerated(ctx, snapshot, uri) {
+			actions = slices.DeleteFunc(actions, func(a protocol.CodeAction) bool {
+				switch a.Kind {
+				case protocol.GoTest, protocol.GoDoc:
+					return false // read-only query
+				}
+				return true // potential write operation
+			})
+		}
 
 		return actions, nil
 

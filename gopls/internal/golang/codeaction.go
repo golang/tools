@@ -33,6 +33,10 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 	// Only compute quick fixes if there are any diagnostics to fix.
 	wantQuickFixes := want[protocol.QuickFix] && len(diagnostics) > 0
 
+	// Note: don't forget to update the allow-list in Server.CodeAction
+	// when adding new query operations like GoTest and GoDoc that
+	// are permitted even in generated source files
+
 	// Code actions requiring syntax information alone.
 	if wantQuickFixes || want[protocol.SourceOrganizeImports] || want[protocol.RefactorExtract] {
 		pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
@@ -478,7 +482,7 @@ func getInlineCodeActions(pkg *cache.Package, pgf *parsego.File, rng protocol.Ra
 
 // getGoTestCodeActions returns any "run this test/benchmark" code actions for the selection.
 func getGoTestCodeActions(pkg *cache.Package, pgf *parsego.File, rng protocol.Range) ([]protocol.CodeAction, error) {
-	fns, err := TestsAndBenchmarks(pkg, pgf)
+	fns, err := testsAndBenchmarks(pkg, pgf)
 	if err != nil {
 		return nil, err
 	}
