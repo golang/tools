@@ -1936,7 +1936,10 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget 
 			// This is because go/types assumes that errors are read top-down, such as
 			// in the cycle error "A refers to...". The structure of the secondary
 			// error set likely only makes sense for the primary error.
-			if i > 0 {
+			//
+			// NOTE: len(diags) == 0 if the primary diagnostic has invalid positions.
+			// See also golang/go#66731.
+			if i > 0 && len(diags) > 0 {
 				primary := diags[0]
 				primary.Related = append(primary.Related, protocol.DiagnosticRelatedInformation{
 					Location: protocol.Location{URI: diag.URI, Range: diag.Range},
