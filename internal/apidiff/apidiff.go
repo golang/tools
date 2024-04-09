@@ -208,7 +208,8 @@ func (d *differ) typeChanged(obj types.Object, part string, old, new types.Type)
 // Since these can change without affecting compatibility, we don't want users to
 // be distracted by them, so we remove them.
 func removeNamesFromSignature(t types.Type) types.Type {
-	sig, ok := aliases.Unalias(t).(*types.Signature)
+	t = aliases.Unalias(t)
+	sig, ok := t.(*types.Signature)
 	if !ok {
 		return t
 	}
@@ -217,7 +218,7 @@ func removeNamesFromSignature(t types.Type) types.Type {
 		var vars []*types.Var
 		for i := 0; i < p.Len(); i++ {
 			v := p.At(i)
-			vars = append(vars, types.NewVar(v.Pos(), v.Pkg(), "", v.Type()))
+			vars = append(vars, types.NewVar(v.Pos(), v.Pkg(), "", aliases.Unalias(v.Type())))
 		}
 		return types.NewTuple(vars...)
 	}
