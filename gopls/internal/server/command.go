@@ -281,7 +281,9 @@ func (c *commandHandler) modifyState(ctx context.Context, source ModificationSou
 	}
 	wg.Add(1)
 	go func() {
-		c.s.diagnoseSnapshot(snapshot, nil, 0)
+		// Diagnosing with the background context ensures new snapshots are fully
+		// diagnosed.
+		c.s.diagnoseSnapshot(snapshot.BackgroundContext(), snapshot, nil, 0)
 		release()
 		wg.Done()
 	}()
@@ -1076,7 +1078,10 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 			return err
 		}
 		defer release()
-		c.s.diagnoseSnapshot(snapshot, nil, 0)
+
+		// Diagnosing with the background context ensures new snapshots are fully
+		// diagnosed.
+		c.s.diagnoseSnapshot(snapshot.BackgroundContext(), snapshot, nil, 0)
 
 		affecting := make(map[string]bool, len(result.Entries))
 		for _, finding := range result.Findings {
@@ -1408,7 +1413,11 @@ func (c *commandHandler) DiagnoseFiles(ctx context.Context, args command.Diagnos
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				c.s.diagnoseSnapshot(snapshot, nil, 0)
+
+				// Use the operation context for diagnosis, rather than
+				// snapshot.BackgroundContext, because this operation does not create
+				// new snapshots (so they should also be diagnosed by other means).
+				c.s.diagnoseSnapshot(ctx, snapshot, nil, 0)
 			}()
 		}
 		wg.Wait()

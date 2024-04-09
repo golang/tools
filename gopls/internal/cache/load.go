@@ -43,6 +43,11 @@ var errNoPackages = errors.New("no packages returned")
 //
 // If scopes contains a file scope there must be exactly one scope.
 func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadScope) (err error) {
+	if ctx.Err() != nil {
+		// Check context cancellation before incrementing id below: a load on a
+		// cancelled context should be a no-op.
+		return ctx.Err()
+	}
 	id := atomic.AddUint64(&loadID, 1)
 	eventName := fmt.Sprintf("go/packages.Load #%d", id) // unique name for logging
 

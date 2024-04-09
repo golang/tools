@@ -135,16 +135,16 @@ func (s *server) diagnoseChangedViews(ctx context.Context, modID uint64, lastCha
 		go func(snapshot *cache.Snapshot, uris []protocol.DocumentURI) {
 			defer release()
 			defer wg.Done()
-			s.diagnoseSnapshot(snapshot, uris, snapshot.Options().DiagnosticsDelay)
+			s.diagnoseSnapshot(ctx, snapshot, uris, snapshot.Options().DiagnosticsDelay)
 			s.modificationMu.Lock()
 
-			// Only remove v from s.viewsToDiagnose if the snapshot is not cancelled.
+			// Only remove v from s.viewsToDiagnose if the context is not cancelled.
 			// This ensures that the snapshot was not cloned before its state was
 			// fully evaluated, and therefore avoids missing a change that was
 			// irrelevant to an incomplete snapshot.
 			//
 			// See the documentation for s.viewsToDiagnose for details.
-			if snapshot.BackgroundContext().Err() == nil && s.viewsToDiagnose[v] <= modID {
+			if ctx.Err() == nil && s.viewsToDiagnose[v] <= modID {
 				delete(s.viewsToDiagnose, v)
 			}
 			s.modificationMu.Unlock()
@@ -173,8 +173,14 @@ func (s *server) diagnoseChangedViews(ctx context.Context, modID uint64, lastCha
 // If changedURIs is non-empty, it is a set of recently changed files that
 // should be diagnosed immediately, and onDisk reports whether these file
 // changes came from a change to on-disk files.
-func (s *server) diagnoseSnapshot(snapshot *cache.Snapshot, changedURIs []protocol.DocumentURI, delay time.Duration) {
-	ctx := snapshot.BackgroundContext()
+//
+// If the provided context is cancelled, diagnostics may be partially
+// published. Therefore, the provided context should only be cancelled if there
+// will be a subsequent operation to make diagnostics consistent. In general,
+// if an operation creates a new snapshot, it is responsible for ensuring that
+// snapshot (or a subsequent snapshot in the same View) is eventually
+// diagnosed.
+func (s *server) diagnoseSnapshot(ctx context.Context, snapshot *cache.Snapshot, changedURIs []protocol.DocumentURI, delay time.Duration) {
 	ctx, done := event.Start(ctx, "Server.diagnoseSnapshot", snapshot.Labels()...)
 	defer done()
 

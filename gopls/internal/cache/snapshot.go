@@ -1381,6 +1381,10 @@ func (s *Snapshot) AwaitInitialized(ctx context.Context) {
 
 // reloadWorkspace reloads the metadata for all invalidated workspace packages.
 func (s *Snapshot) reloadWorkspace(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
+
 	var scopes []loadScope
 	var seen map[PackagePath]bool
 	s.mu.Lock()

@@ -369,11 +369,11 @@ func (s *Session) SnapshotOf(ctx context.Context, uri protocol.DocumentURI) (*Sn
 		if err != nil {
 			continue // view was shut down
 		}
-		_ = snapshot.awaitLoaded(ctx) // ignore error
-		g := snapshot.MetadataGraph()
 		// We don't check the error from awaitLoaded, because a load failure (that
 		// doesn't result from context cancelation) should not prevent us from
 		// continuing to search for the best view.
+		_ = snapshot.awaitLoaded(ctx)
+		g := snapshot.MetadataGraph()
 		if ctx.Err() != nil {
 			release()
 			return nil, nil, ctx.Err()
@@ -1121,6 +1121,11 @@ func (s *Session) FileWatchingGlobPatterns(ctx context.Context) map[protocol.Rel
 //
 // The caller must not mutate the result.
 func (s *Session) OrphanedFileDiagnostics(ctx context.Context) (map[protocol.DocumentURI][]*Diagnostic, error) {
+	if err := ctx.Err(); err != nil {
+		// Avoid collecting diagnostics if the context is cancelled.
+		// (Previously, it was possible to get all the way to packages.Load on a cancelled context)
+		return nil, err
+	}
 	// Note: diagnostics holds a slice for consistency with other diagnostic
 	// funcs.
 	diagnostics := make(map[protocol.DocumentURI][]*Diagnostic)
