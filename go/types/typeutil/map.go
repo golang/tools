@@ -261,7 +261,7 @@ func (h Hasher) hashFor(t types.Type) uint32 {
 		return uint32(t.Kind())
 
 	case *aliases.Alias:
-		return h.Hash(t.Underlying())
+		return h.Hash(aliases.Unalias(t))
 
 	case *types.Array:
 		return 9043 + 2*uint32(t.Len()) + 3*h.Hash(t.Elem())
@@ -462,7 +462,7 @@ func (h Hasher) shallowHash(t types.Type) uint32 {
 	// so there's no need to optimize anything else.
 	switch t := t.(type) {
 	case *aliases.Alias:
-		return h.shallowHash(t.Underlying())
+		return h.shallowHash(aliases.Unalias(t))
 
 	case *types.Signature:
 		var hash uint32 = 604171
