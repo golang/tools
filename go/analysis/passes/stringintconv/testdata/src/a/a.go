@@ -30,7 +30,7 @@ func StringTest() {
 	_ = string(k)
 	_ = string(p)    // want `^conversion from untyped int to string yields a string of one rune, not a string of digits \(did you mean fmt\.Sprint\(x\)\?\)$`
 	_ = A(l)         // want `^conversion from C \(int\) to A \(string\) yields a string of one rune, not a string of digits \(did you mean fmt\.Sprint\(x\)\?\)$`
-	_ = B(m)         // want `^conversion from uintptr to B \(string\) yields a string of one rune, not a string of digits \(did you mean fmt\.Sprint\(x\)\?\)$`
+	_ = B(m)         // want `^conversion from (uintptr|D \(uintptr\)) to B \(string\) yields a string of one rune, not a string of digits \(did you mean fmt\.Sprint\(x\)\?\)$`
 	_ = string(n[1]) // want `^conversion from int to string yields a string of one rune, not a string of digits \(did you mean fmt\.Sprint\(x\)\?\)$`
 	_ = string(o.x)  // want `^conversion from int to string yields a string of one rune, not a string of digits \(did you mean fmt\.Sprint\(x\)\?\)$`
 }
