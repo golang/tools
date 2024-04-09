@@ -169,7 +169,10 @@ func (s *Snapshot) getImportGraph(ctx context.Context) *importGraph {
 			defer release()
 			importGraph, err := s.resolveImportGraph() // may be nil
 			if err != nil {
-				if ctx.Err() == nil {
+				// resolveImportGraph operates on the background context, because it is
+				// a shared resource across the snapshot. If the snapshot is cancelled,
+				// don't log an error.
+				if s.backgroundCtx.Err() == nil {
 					event.Error(ctx, "computing the shared import graph", err)
 				}
 				importGraph = nil

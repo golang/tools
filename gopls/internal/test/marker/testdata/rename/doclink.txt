@@ -1,5 +1,8 @@
 This test checks that doc links are also handled correctly (golang/go#64495).
 
+-- flags --
+-min_go=go1.21
+
 -- go.mod --
 module example.com
 

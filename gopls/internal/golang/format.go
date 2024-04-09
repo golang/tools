@@ -113,14 +113,14 @@ type importFix struct {
 // it returns a list of fixes that could be applied to the file, with the
 // corresponding TextEdits that would be needed to apply that fix.
 func allImportsFixes(ctx context.Context, snapshot *cache.Snapshot, pgf *parsego.File) (allFixEdits []protocol.TextEdit, editsPerFix []*importFix, err error) {
-	ctx, done := event.Start(ctx, "golang.AllImportsFixes")
+	ctx, done := event.Start(ctx, "golang.allImportsFixes")
 	defer done()
 
 	if err := snapshot.RunProcessEnvFunc(ctx, func(ctx context.Context, opts *imports.Options) error {
 		allFixEdits, editsPerFix, err = computeImportEdits(ctx, pgf, opts)
 		return err
 	}); err != nil {
-		return nil, nil, fmt.Errorf("AllImportsFixes: %v", err)
+		return nil, nil, fmt.Errorf("allImportsFixes: %v", err)
 	}
 	return allFixEdits, editsPerFix, nil
 }

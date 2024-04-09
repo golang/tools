@@ -30,8 +30,16 @@ func (s *server) SignatureHelp(ctx context.Context, params *protocol.SignatureHe
 
 	info, activeParameter, err := golang.SignatureHelp(ctx, snapshot, fh, params.Position)
 	if err != nil {
-		event.Error(ctx, "no signature help", err, tag.Position.Of(params.Position))
-		return nil, nil // sic? There could be many reasons for failure.
+		// TODO(rfindley): is this correct? Apparently, returning an error from
+		// signatureHelp is distracting in some editors, though I haven't confirmed
+		// that recently.
+		//
+		// It's unclear whether we still need to avoid returning this error result.
+		event.Error(ctx, "signature help failed", err, tag.Position.Of(params.Position))
+		return nil, nil
+	}
+	if info == nil {
+		return nil, nil
 	}
 	return &protocol.SignatureHelp{
 		Signatures:      []protocol.SignatureInformation{*info},

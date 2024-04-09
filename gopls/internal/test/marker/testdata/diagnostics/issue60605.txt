@@ -2,6 +2,9 @@ This test verifies that we can export constants with unknown kind.
 Previously, the exporter would panic while attempting to convert such constants
 to their target type (float64, in this case).
 
+-- flags --
+-min_go=go1.20
+
 -- go.mod --
 module mod.txt/p
 

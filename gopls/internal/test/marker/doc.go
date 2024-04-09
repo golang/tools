@@ -58,6 +58,7 @@ treatment by the test runner:
     completion results.
     -filter_keywords=false disables the filtering of keywords from
     completion results.
+    -errors_ok=true suppresses errors for Error level log entries.
     TODO(rfindley): support flag values containing whitespace.
 
   - "settings.json": this file is parsed as JSON, and used as the

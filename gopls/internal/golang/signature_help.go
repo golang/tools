@@ -22,6 +22,9 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
+// SignatureHelp returns information about the signature of the innermost
+// function call enclosing the position, or nil if there is none.
+// On success it also returns the parameter index of the position.
 func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) (*protocol.SignatureInformation, int, error) {
 	ctx, done := event.Start(ctx, "golang.SignatureHelp")
 	defer done()
@@ -54,16 +57,21 @@ FindCall:
 			// The user is within an anonymous function,
 			// which may be the parameter to the *ast.CallExpr.
 			// Don't show signature help in this case.
-			return nil, 0, fmt.Errorf("no signature help within a function declaration")
+			return nil, 0, nil
 		case *ast.BasicLit:
 			if node.Kind == token.STRING {
-				return nil, 0, fmt.Errorf("no signature help within a string literal")
+				// golang/go#43397: don't offer signature help when the user is typing
+				// in a string literal. Most LSP clients use ( or , as trigger
+				// characters, but within a string literal these should not trigger
+				// signature help (and it can be annoying when this happens after
+				// you've already dismissed the help!).
+				return nil, 0, nil
 			}
 		}
 
 	}
 	if callExpr == nil || callExpr.Fun == nil {
-		return nil, 0, fmt.Errorf("cannot find an enclosing function")
+		return nil, 0, nil
 	}
 
 	info := pkg.TypesInfo()
@@ -73,9 +81,9 @@ FindCall:
 	if tv, ok := info.Types[callExpr.Fun]; !ok {
 		return nil, 0, fmt.Errorf("cannot get type for Fun %[1]T (%[1]v)", callExpr.Fun)
 	} else if tv.IsType() {
-		return nil, 0, fmt.Errorf("this is a conversion to %s, not a call", tv.Type)
+		return nil, 0, nil // a conversion, not a call
 	} else if sig, ok = tv.Type.Underlying().(*types.Signature); !ok {
-		return nil, 0, fmt.Errorf("cannot find signature for Fun %[1]T (%[1]v)", callExpr.Fun)
+		return nil, 0, fmt.Errorf("call operand is not a func or type: %[1]T (%[1]v)", callExpr.Fun)
 	}
 	// Inv: sig != nil
 

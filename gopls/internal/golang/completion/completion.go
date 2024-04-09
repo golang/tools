@@ -460,21 +460,6 @@ func (c candidate) hasMod(mod typeModKind) bool {
 	return false
 }
 
-// ErrIsDefinition is an error that informs the user they got no
-// completions because they tried to complete the name of a new object
-// being defined.
-type ErrIsDefinition struct {
-	objStr string
-}
-
-func (e ErrIsDefinition) Error() string {
-	msg := "this is a definition"
-	if e.objStr != "" {
-		msg += " of " + e.objStr
-	}
-	return msg
-}
-
 // Completion returns a list of possible candidates for completion, given a
 // a file and a position.
 //
@@ -530,19 +515,16 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 			return nil, nil, nil
 		}
 	case *ast.Ident:
-		// reject defining identifiers
+		// Don't offer completions for (most) defining identifiers.
 		if obj, ok := pkg.TypesInfo().Defs[n]; ok {
 			if v, ok := obj.(*types.Var); ok && v.IsField() && v.Embedded() {
-				// An anonymous field is also a reference to a type.
+				// Allow completion of anonymous fields, since they may reference type
+				// names.
 			} else if pgf.File.Name == n {
-				// Don't skip completions if Ident is for package name.
-				break
+				// Allow package name completion.
 			} else {
-				objStr := ""
-				if obj != nil {
-					qual := types.RelativeTo(pkg.Types())
-					objStr = types.ObjectString(obj, qual)
-				}
+				// Check if we have special completion for this definition, such as
+				// test function name completion.
 				ans, sel := definition(path, obj, pgf)
 				if ans != nil {
 					sort.Slice(ans, func(i, j int) bool {
@@ -550,7 +532,8 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 					})
 					return ans, sel, nil
 				}
-				return nil, nil, ErrIsDefinition{objStr: objStr}
+
+				return nil, nil, nil // No completions.
 			}
 		}
 	}

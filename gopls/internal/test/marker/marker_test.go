@@ -174,6 +174,7 @@ func Test(t *testing.T) {
 			for file := range test.files {
 				run.env.OpenFile(file)
 			}
+
 			// Wait for the didOpen notifications to be processed, then collect
 			// diagnostics.
 			var diags map[string]*protocol.PublishDiagnosticsParams
@@ -229,6 +230,13 @@ func Test(t *testing.T) {
 						t.Errorf("%s: %d unused %q markers", run.env.Sandbox.Workdir.URIToPath(uri), len(extra), name)
 					}
 				}
+			}
+
+			// Now that all markers have executed, check whether there where any
+			// unexpected error logs.
+			// This guards against noisiness: see golang/go#66746)
+			if !test.errorsOK {
+				run.env.AfterChange(integration.NoErrorLogs())
 			}
 
 			formatted, err := formatTest(test)
@@ -503,16 +511,17 @@ type markerTest struct {
 	skipReason string   // the skip reason extracted from the "skip" archive file
 	flags      []string // flags extracted from the special "flags" archive file.
 
-	// Parsed flags values.
+	// Parsed flags values. See the flag definitions below for documentation.
 	minGoVersion     string
 	maxGoVersion     string
 	cgo              bool
-	writeGoSum       []string // comma separated dirs to write go sum for
-	skipGOOS         []string // comma separated GOOS values to skip
-	skipGOARCH       []string // comma separated GOARCH values to skip
+	writeGoSum       []string
+	skipGOOS         []string
+	skipGOARCH       []string
 	ignoreExtraDiags bool
 	filterBuiltins   bool
 	filterKeywords   bool
+	errorsOK         bool
 }
 
 // flagSet returns the flagset used for parsing the special "flags" file in the
@@ -528,6 +537,7 @@ func (t *markerTest) flagSet() *flag.FlagSet {
 	flags.BoolVar(&t.ignoreExtraDiags, "ignore_extra_diags", false, "if set, suppress errors for unmatched diagnostics")
 	flags.BoolVar(&t.filterBuiltins, "filter_builtins", true, "if set, filter builtins from completion results")
 	flags.BoolVar(&t.filterKeywords, "filter_keywords", true, "if set, filter keywords from completion results")
+	flags.BoolVar(&t.errorsOK, "errors_ok", false, "if set, Error level log messages are acceptable in this test")
 	return flags
 }
 

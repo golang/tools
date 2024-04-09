@@ -6,7 +6,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
@@ -34,9 +33,12 @@ func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIde
 	}
 	defer release()
 	if !snapshot.Options().SemanticTokens {
-		// return an error, so if the option changes
-		// the client won't remember the wrong answer
-		return nil, fmt.Errorf("semantictokens are disabled")
+		// Note: returning new(protocol.SemanticTokens) is necessary here to
+		// invalidate semantic tokens in VS Code (and perhaps other editors).
+		// Previously, an error was returned here to achieve the same effect, but
+		// that had the side effect of very noisy "semantictokens are disabled"
+		// logs on every keystroke.
+		return new(protocol.SemanticTokens), nil
 	}
 
 	switch snapshot.FileKind(fh) {

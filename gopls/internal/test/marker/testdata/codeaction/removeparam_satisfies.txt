@@ -8,6 +8,9 @@ that must be modified), in order to produce the desired outcome for our users.
 Doing so would be more complicated, so for now this test simply records the
 current behavior.
 
+-- flags --
+-min_go=go1.20
+
 -- go.mod --
 module example.com/rm
 

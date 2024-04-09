@@ -1,6 +1,9 @@
 This test checks the behavior of standalone packages, in particular documenting
 our failure to support test files as standalone packages (golang/go#64233).
 
+-- flags --
+-min_go=go1.20
+
 -- go.mod --
 module golang.org/lsptests/a
 

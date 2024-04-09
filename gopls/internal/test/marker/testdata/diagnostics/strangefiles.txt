@@ -9,6 +9,7 @@ noparse.go, and we therefore can't match the EOF error.
 
 -- flags --
 -ignore_extra_diags
+-errors_ok
 
 -- go.mod --
 module golang.org/lsptests
