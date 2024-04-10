@@ -363,6 +363,13 @@ func _() {
 // Tests golang/go#38498. Delete a file and then force a reload.
 // Assert that we no longer try to load the file.
 func TestDeleteFiles(t *testing.T) {
+	// TODO(rfindley): this test is brittle, because it depends on underspecified
+	// logging behavior around loads.
+	//
+	// We should have a robust way to test loads. It should be possible to assert
+	// on the specific loads that have occurred, and without the synchronization
+	// problems associated with logging.
+
 	const pkg = `
 -- go.mod --
 module mod.com
@@ -379,6 +386,8 @@ package a
 `
 	t.Run("close then delete", func(t *testing.T) {
 		WithOptions(
+			// verboseOutput causes Snapshot.load to log package files.
+			// (see the TODO above: this is brittle)
 			Settings{"verboseOutput": true},
 		).Run(t, pkg, func(t *testing.T, env *Env) {
 			env.OpenFile("a/a.go")
