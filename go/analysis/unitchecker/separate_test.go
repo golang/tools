@@ -24,6 +24,7 @@ import (
 	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
 )
 
@@ -82,7 +83,7 @@ func MyPrintf(format string, args ...any) {
 
 	// Expand archive into tmp tree.
 	tmpdir := t.TempDir()
-	if err := extractTxtar(txtar.Parse([]byte(src)), tmpdir); err != nil {
+	if err := testfiles.ExtractTxtar(tmpdir, txtar.Parse([]byte(src))); err != nil {
 		t.Fatal(err)
 	}
 
@@ -291,19 +292,3 @@ func exportTypes(cfg *unitchecker.Config, fset *token.FileSet, pkg *types.Packag
 type importerFunc func(path string) (*types.Package, error)
 
 func (f importerFunc) Import(path string) (*types.Package, error) { return f(path) }
-
-// extractTxtar writes each archive file to the corresponding location beneath dir.
-//
-// TODO(adonovan): move this to txtar package, we need it all the time (#61386).
-func extractTxtar(ar *txtar.Archive, dir string) error {
-	for _, file := range ar.Files {
-		name := filepath.Join(dir, file.Name)
-		if err := os.MkdirAll(filepath.Dir(name), 0777); err != nil {
-			return err
-		}
-		if err := os.WriteFile(name, file.Data, 0666); err != nil {
-			return err
-		}
-	}
-	return nil
-}

@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/packages"
@@ -27,7 +28,7 @@ import (
 	"golang.org/x/tools/go/ssa/ssautil"
 	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/txtar"
+	"golang.org/x/tools/internal/testfiles"
 )
 
 func isEmpty(f *ssa.Function) bool { return f.Blocks == nil }
@@ -172,38 +173,7 @@ func main() {
 func TestNoIndirectCreatePackage(t *testing.T) {
 	testenv.NeedsGoBuild(t) // for go/packages
 
-	src := `
--- go.mod --
-module testdata
-go 1.18
-
--- a/a.go --
-package a
-
-import "testdata/b"
-
-func A() {
-	var x b.B
-	x.F()
-}
-
--- b/b.go --
-package b
-
-import "testdata/c"
-
-type B struct { c.C }
-
--- c/c.go --
-package c
-
-type C int
-func (C) F() {}
-`
-	dir := t.TempDir()
-	if err := extractArchive(dir, src); err != nil {
-		t.Fatal(err)
-	}
+	dir := testfiles.ExtractTxtarToTmp(t, filepath.Join(analysistest.TestData(), "indirect.txtar"))
 	pkgs, err := loadPackages(dir, "testdata/a")
 	if err != nil {
 		t.Fatal(err)
@@ -233,27 +203,6 @@ func (C) F() {}
 	if got != want {
 		t.Errorf("for sole call in a.A, got: <<%s>>, want <<%s>>", got, want)
 	}
-}
-
-// extractArchive extracts the txtar archive into the specified directory.
-func extractArchive(dir, arch string) error {
-	// TODO(adonovan): publish this a helper (#61386).
-	extractTxtar := func(ar *txtar.Archive, dir string) error {
-		for _, file := range ar.Files {
-			name := filepath.Join(dir, file.Name)
-			if err := os.MkdirAll(filepath.Dir(name), 0777); err != nil {
-				return err
-			}
-			if err := os.WriteFile(name, file.Data, 0666); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	// Extract archive to temporary tree.
-	ar := txtar.Parse([]byte(arch))
-	return extractTxtar(ar, dir)
 }
 
 // loadPackages loads packages from the specified directory, using LoadSyntax.
