@@ -271,16 +271,17 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 // longBuilders maps builders that are skipped when -short is set to a
 // (possibly empty) justification.
 var longBuilders = map[string]string{
-	"openbsd-amd64-64":        "golang.org/issues/42789",
-	"openbsd-386-64":          "golang.org/issues/42789",
-	"openbsd-386-68":          "golang.org/issues/42789",
-	"openbsd-amd64-68":        "golang.org/issues/42789",
+	"openbsd-amd64-64":        "go.dev/issue/42789",
+	"openbsd-386-64":          "go.dev/issue/42789",
+	"openbsd-386-68":          "go.dev/issue/42789",
+	"openbsd-amd64-68":        "go.dev/issue/42789",
 	"darwin-amd64-10_12":      "",
 	"freebsd-amd64-race":      "",
 	"illumos-amd64":           "",
 	"netbsd-arm-bsiegert":     "",
 	"solaris-amd64-oraclerel": "",
 	"windows-arm-zx2c4":       "",
+	"linux-ppc64le-power9osu": "go.dev/issue/66748",
 }
 
 // TODO(rfindley): inline into Main.
