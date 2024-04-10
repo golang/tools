@@ -17,6 +17,8 @@ import (
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/findcall"
 	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/txtar"
 )
 
 func init() {
@@ -200,6 +202,62 @@ func F() {} // want "say hello"`,
 	defer cleanup()
 
 	analysistest.RunWithSuggestedFixes(t, dir, noend, "a")
+}
+
+func TestModule(t *testing.T) {
+	const content = `
+Test that analysis.pass.Module is populated.
+
+-- go.mod --
+module golang.org/fake/mod
+
+go 1.21
+
+require golang.org/xyz/fake v0.12.34
+
+-- mod.go --
+// We expect a module.Path and a module.GoVersion, but an empty module.Version.
+
+package mod // want "golang.org/fake/mod,,1.21"
+
+import "golang.org/xyz/fake/ver"
+
+var _ ver.T
+
+-- vendor/modules.txt --
+# golang.org/xyz/fake v0.12.34
+## explicit; go 1.18
+golang.org/xyz/fake/ver
+
+-- vendor/golang.org/xyz/fake/ver/ver.go --
+// This package is vendored so that we can populate a non-empty
+// Pass.Module.Version is in a test.
+
+package ver //want "golang.org/xyz/fake,v0.12.34,1.18"
+
+type T string
+`
+	fs, err := txtar.FS(txtar.Parse([]byte(content)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := testfiles.CopyToTmp(t, fs)
+
+	filever := &analysis.Analyzer{
+		Name: "mod",
+		Doc:  "reports module information",
+		Run: func(pass *analysis.Pass) (any, error) {
+			msg := "no module info"
+			if m := pass.Module; m != nil {
+				msg = fmt.Sprintf("%s,%s,%s", m.Path, m.Version, m.GoVersion)
+			}
+			for _, file := range pass.Files {
+				pass.Reportf(file.Package, "%s", msg)
+			}
+			return nil, nil
+		},
+	}
+	analysistest.Run(t, dir, filever, "golang.org/fake/mod", "golang.org/xyz/fake/ver")
 }
 
 type errorfunc func(string)

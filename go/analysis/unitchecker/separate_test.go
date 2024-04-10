@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -167,6 +168,8 @@ func MyPrintf(format string, args ...any) {
 			if v := pkg.Module.GoVersion; v != "" {
 				cfg.GoVersion = "go" + v
 			}
+			cfg.ModulePath = pkg.Module.Path
+			cfg.ModuleVersion = pkg.Module.Version
 		}
 
 		// Write the JSON configuration message to a file.
@@ -220,6 +223,7 @@ func MyPrintf(format string, args ...any) {
 	// from separate analysis of "main", "lib", and "fmt":
 
 	const want = `/main/main.go:6:2: [printf] separate/lib.MyPrintf format %s has arg 123 of wrong type int`
+	sort.Strings(allDiagnostics)
 	if got := strings.Join(allDiagnostics, "\n"); got != want {
 		t.Errorf("Got: %s\nWant: %s", got, want)
 	}
