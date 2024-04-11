@@ -527,6 +527,7 @@ type DiagnoseFilesArgs struct {
 
 // A View holds summary information about a cache.View.
 type View struct {
+	ID         string               // view ID (the index of this view among all views created)
 	Type       string               // view type (via cache.ViewType.String)
 	Root       protocol.DocumentURI // root dir of the view (e.g. containing go.mod or go.work)
 	Folder     protocol.DocumentURI // workspace folder associated with the view

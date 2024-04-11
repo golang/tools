@@ -460,29 +460,7 @@ func (s *server) SetOptions(opts *settings.Options) {
 	s.options = opts
 }
 
-func (s *server) newFolder(ctx context.Context, folder protocol.DocumentURI, name string) (*cache.Folder, error) {
-	opts := s.Options()
-	if opts.ConfigurationSupported {
-		scope := string(folder)
-		configs, err := s.client.Configuration(ctx, &protocol.ParamConfiguration{
-			Items: []protocol.ConfigurationItem{{
-				ScopeURI: &scope,
-				Section:  "gopls",
-			}},
-		},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get workspace configuration from client (%s): %v", folder, err)
-		}
-
-		opts = opts.Clone()
-		for _, config := range configs {
-			if err := s.handleOptionResults(ctx, settings.SetOptions(opts, config)); err != nil {
-				return nil, err
-			}
-		}
-	}
-
+func (s *server) newFolder(ctx context.Context, folder protocol.DocumentURI, name string, opts *settings.Options) (*cache.Folder, error) {
 	env, err := cache.FetchGoEnv(ctx, folder, opts)
 	if err != nil {
 		return nil, err
@@ -491,7 +469,7 @@ func (s *server) newFolder(ctx context.Context, folder protocol.DocumentURI, nam
 		Dir:     folder,
 		Name:    name,
 		Options: opts,
-		Env:     env,
+		Env:     *env,
 	}, nil
 }
 

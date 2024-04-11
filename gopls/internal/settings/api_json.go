@@ -924,7 +924,7 @@ var GeneratedAPIJSON = &APIJSON{
 			Command:   "gopls.views",
 			Title:     "List current Views on the server.",
 			Doc:       "This command is intended for use by gopls tests only.",
-			ResultDoc: "[]{\n\t\"Type\": string,\n\t\"Root\": string,\n\t\"Folder\": string,\n\t\"EnvOverlay\": []string,\n}",
+			ResultDoc: "[]{\n\t\"ID\": string,\n\t\"Type\": string,\n\t\"Root\": string,\n\t\"Folder\": string,\n\t\"EnvOverlay\": []string,\n}",
 		},
 		{
 			Command:   "gopls.workspace_stats",
