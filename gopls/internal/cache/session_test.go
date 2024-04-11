@@ -351,7 +351,7 @@ replace (
 					Dir:     toURI(f.dir),
 					Name:    path.Base(f.dir),
 					Options: opts,
-					Env:     env,
+					Env:     *env,
 				})
 			}
 

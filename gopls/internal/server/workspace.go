@@ -7,10 +7,12 @@ package server
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -37,7 +39,11 @@ func (s *server) addView(ctx context.Context, name string, dir protocol.Document
 	if state < serverInitialized {
 		return nil, nil, fmt.Errorf("addView called before server initialized")
 	}
-	folder, err := s.newFolder(ctx, dir, name)
+	opts, err := s.fetchFolderOptions(ctx, dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	folder, err := s.newFolder(ctx, dir, name, opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -68,15 +74,45 @@ func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 	s.SetOptions(options)
 
 	// Collect options for all workspace folders.
-	seen := make(map[protocol.DocumentURI]bool)
-	var newFolders []*cache.Folder
-	for _, view := range s.session.Views() {
+	// If none have changed, this is a no op.
+	folderOpts := make(map[protocol.DocumentURI]*settings.Options)
+	changed := false
+	// The set of views is implicitly guarded by the fact that gopls processes
+	// didChange notifications synchronously.
+	//
+	// TODO(rfindley): investigate this assumption: perhaps we should hold viewMu
+	// here.
+	views := s.session.Views()
+	for _, view := range views {
 		folder := view.Folder()
-		if seen[folder.Dir] {
+		if folderOpts[folder.Dir] != nil {
 			continue
 		}
-		seen[folder.Dir] = true
-		newFolder, err := s.newFolder(ctx, folder.Dir, folder.Name)
+		opts, err := s.fetchFolderOptions(ctx, folder.Dir)
+		if err != nil {
+			return err
+		}
+
+		// Ignore hooks for the purposes of equality.
+		sameOptions := reflect.DeepEqual(folder.Options.ClientOptions, opts.ClientOptions) &&
+			reflect.DeepEqual(folder.Options.ServerOptions, opts.ServerOptions) &&
+			reflect.DeepEqual(folder.Options.UserOptions, opts.UserOptions) &&
+			reflect.DeepEqual(folder.Options.InternalOptions, opts.InternalOptions)
+
+		if !sameOptions {
+			changed = true
+		}
+		folderOpts[folder.Dir] = opts
+	}
+	if !changed {
+		return nil
+	}
+
+	var newFolders []*cache.Folder
+	for _, view := range views {
+		folder := view.Folder()
+		opts := folderOpts[folder.Dir]
+		newFolder, err := s.newFolder(ctx, folder.Dir, folder.Name, opts)
 		if err != nil {
 			return err
 		}

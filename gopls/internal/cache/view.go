@@ -51,7 +51,7 @@ type Folder struct {
 	Dir     protocol.DocumentURI
 	Name    string // decorative name for UI; not necessarily unique
 	Options *settings.Options
-	Env     *GoEnv
+	Env     GoEnv
 }
 
 // GoEnv holds the environment variables and data from the Go command that is
@@ -426,7 +426,7 @@ func viewEnv(v *View) string {
 		v.root.Path(),
 		strings.TrimRight(v.folder.Env.GoVersionOutput, "\n"),
 		v.folder.Options.BuildFlags,
-		*v.folder.Env,
+		v.folder.Env,
 		v.envOverlay,
 	)
 

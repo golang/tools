@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 
@@ -53,7 +54,7 @@ func main() {}
 		}
 		checkViews := func(want ...command.View) {
 			got := env.Views()
-			if diff := cmp.Diff(want, got); diff != "" {
+			if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(command.View{}, "ID")); diff != "" {
 				t.Errorf("SummarizeViews() mismatch (-want +got):\n%s", diff)
 			}
 		}
@@ -130,7 +131,7 @@ package a
 		}
 		checkViews := func(want ...command.View) {
 			got := env.Views()
-			if diff := cmp.Diff(want, got); diff != "" {
+			if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(command.View{}, "ID")); diff != "" {
 				t.Errorf("SummarizeViews() mismatch (-want +got):\n%s", diff)
 			}
 		}

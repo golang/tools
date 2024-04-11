@@ -5,9 +5,18 @@
 package settings
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
+
+func TestDefaultsEquivalence(t *testing.T) {
+	opts1 := DefaultOptions()
+	opts2 := DefaultOptions()
+	if !reflect.DeepEqual(opts1, opts2) {
+		t.Fatal("default options are not equivalent using reflect.DeepEqual")
+	}
+}
 
 func TestSetOption(t *testing.T) {
 	tests := []struct {
