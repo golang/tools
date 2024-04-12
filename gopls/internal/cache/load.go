@@ -202,6 +202,14 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 	filterFunc := s.view.filterFunc()
 	newMetadata := make(map[PackageID]*metadata.Package)
 	for _, pkg := range pkgs {
+		if pkg.Module != nil && strings.Contains(pkg.Module.Path, "command-line-arguments") {
+			// golang/go#61543: modules containing "command-line-arguments" cause
+			// gopls to get all sorts of confused, because anything containing the
+			// string "command-line-arguments" is treated as a script. And yes, this
+			// happened in practice! (https://xkcd.com/327). Rather than try to work
+			// around this very rare edge case, just fail loudly.
+			return fmt.Errorf(`load failed: module name in %s contains "command-line-arguments", which is disallowed`, pkg.Module.GoMod)
+		}
 		// The Go command returns synthetic list results for module queries that
 		// encountered module errors.
 		//

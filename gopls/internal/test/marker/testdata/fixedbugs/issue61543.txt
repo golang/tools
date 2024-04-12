@@ -1,0 +1,13 @@
+This test verifies that we fail loudly if a module name contains
+command-line-arguments.
+
+-- flags --
+-errors_ok
+
+-- go.mod --
+module command-line-arguments //@diag("module", re`command-line-arguments.*disallowed`)
+
+go 1.12
+
+-- x/x.go --
+package x //@diag("x", re`command-line-arguments.*disallowed`)
