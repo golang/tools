@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.16
-// +build go1.16
-
 // Command generate creates API (settings, etc) documentation in JSON and
 // Markdown for machine and human consumption.
 package main
@@ -48,6 +45,10 @@ func main() {
 }
 
 func doMain(write bool) (bool, error) {
+	// TODO(adonovan): when we can rely on go1.23,
+	// switch to gotypesalias=1 behavior.
+	os.Setenv("GODEBUG", "gotypesalias=0")
+
 	api, err := loadAPI()
 	if err != nil {
 		return false, err
@@ -451,6 +452,7 @@ func typeDoc(arg *commandmeta.Field, level int) string {
 	case *types.Slice:
 		return fmt.Sprintf("[]%s", u.Elem().Underlying().String())
 	}
+	// TODO(adonovan): use (*types.Package).Name qualifier.
 	return types.TypeString(under, nil)
 }
 
