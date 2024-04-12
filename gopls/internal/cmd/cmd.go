@@ -95,9 +95,8 @@ func (app *Application) verbose() bool {
 }
 
 // New returns a new Application ready to run.
-func New(options func(*settings.Options)) *Application {
+func New() *Application {
 	app := &Application{
-		options: options,
 		OCAgent: "off", //TODO: Remove this line to default the exporter to on
 
 		Serve: Serve{

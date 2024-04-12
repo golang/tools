@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/filecache"
+	licensespkg "golang.org/x/tools/gopls/internal/licenses"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/browser"
 	goplsbug "golang.org/x/tools/gopls/internal/util/bug"
@@ -301,12 +302,11 @@ gopls also includes software made available under these licenses:
 `
 
 func (l *licenses) Run(ctx context.Context, args ...string) error {
-	opts := settings.DefaultOptions(l.app.options)
 	txt := licensePreamble
-	if opts.LicensesText == "" {
+	if licensespkg.Text == "" {
 		txt += "(development gopls, license information not available)"
 	} else {
-		txt += opts.LicensesText
+		txt += licensespkg.Text
 	}
 	fmt.Fprint(os.Stdout, txt)
 	return nil

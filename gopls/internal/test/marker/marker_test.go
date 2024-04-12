@@ -32,7 +32,6 @@ import (
 	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
-	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/compare"
@@ -827,7 +826,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	ctx = debug.WithInstance(ctx, "off")
 
 	awaiter := integration.NewAwaiter(sandbox.Workdir)
-	ss := lsprpc.NewStreamServer(cache, false, hooks.Options)
+	ss := lsprpc.NewStreamServer(cache, false, nil)
 	server := servertest.NewPipeServer(ss, jsonrpc2.NewRawStream)
 	const skipApplyEdits = true // capture edits but don't apply them
 	editor, err := fake.NewEditor(sandbox, config).Connect(ctx, server, awaiter.Hooks(), skipApplyEdits)

@@ -5,10 +5,6 @@
 //go:build !go1.20
 // +build !go1.20
 
-package hooks
+package settings
 
-import "golang.org/x/tools/gopls/internal/settings"
-
-func updateAnalyzers(options *settings.Options) {
-	options.StaticcheckSupported = false
-}
+const StaticcheckSupported = false

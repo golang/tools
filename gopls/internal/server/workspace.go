@@ -93,13 +93,7 @@ func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 			return err
 		}
 
-		// Ignore hooks for the purposes of equality.
-		sameOptions := reflect.DeepEqual(folder.Options.ClientOptions, opts.ClientOptions) &&
-			reflect.DeepEqual(folder.Options.ServerOptions, opts.ServerOptions) &&
-			reflect.DeepEqual(folder.Options.UserOptions, opts.UserOptions) &&
-			reflect.DeepEqual(folder.Options.InternalOptions, opts.InternalOptions)
-
-		if !sameOptions {
+		if !reflect.DeepEqual(folder.Options, opts) {
 			changed = true
 		}
 		folderOpts[folder.Dir] = opts

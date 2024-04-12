@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration"
 	. "golang.org/x/tools/gopls/internal/test/integration"
@@ -17,7 +16,7 @@ import (
 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
-	integration.Main(m, hooks.Options)
+	integration.Main(m)
 }
 
 // TestDocumentURIFix ensures that a DocumentURI supplied by the

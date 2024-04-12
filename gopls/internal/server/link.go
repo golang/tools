@@ -25,6 +25,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/tag"
+	"mvdan.cc/xurls/v2"
 )
 
 func (s *server) DocumentLink(ctx context.Context, params *protocol.DocumentLinkParams) (links []protocol.DocumentLink, err error) {
@@ -87,7 +88,7 @@ func modLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]
 	}
 
 	// Get all the links that are contained in the comments of the file.
-	urlRegexp := snapshot.Options().URLRegexp
+	urlRegexp := xurls.Relaxed()
 	for _, expr := range pm.File.Syntax.Stmt {
 		comments := expr.Comment()
 		if comments == nil {
@@ -159,7 +160,7 @@ func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]p
 		}
 	}
 
-	urlRegexp := snapshot.Options().URLRegexp
+	urlRegexp := xurls.Relaxed()
 
 	// Gather links found in string literals.
 	var str []*ast.BasicLit

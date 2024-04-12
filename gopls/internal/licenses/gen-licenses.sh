@@ -16,9 +16,9 @@ cat > $tempfile <<END
 // license that can be found in the LICENSE file.
 
 //go:generate ./gen-licenses.sh licenses.go
-package hooks
+package licenses
 
-const licensesText = \`
+const Text = \`
 END
 
 # List all the modules gopls depends on, except other golang.org modules, which

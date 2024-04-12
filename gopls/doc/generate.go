@@ -111,7 +111,7 @@ func loadAPI() (*settings.APIJSON, error) {
 	defaults := settings.DefaultOptions()
 	api := &settings.APIJSON{
 		Options:   map[string][]*settings.OptionJSON{},
-		Analyzers: loadAnalyzers(defaults.DefaultAnalyzers), // no staticcheck analyzers
+		Analyzers: loadAnalyzers(settings.DefaultAnalyzers), // no staticcheck analyzers
 	}
 
 	api.Commands, err = loadCommands()
@@ -508,17 +508,17 @@ func loadLenses(commands []*settings.CommandJSON) []*settings.LensJSON {
 func loadAnalyzers(m map[string]*settings.Analyzer) []*settings.AnalyzerJSON {
 	var sorted []string
 	for _, a := range m {
-		sorted = append(sorted, a.Analyzer.Name)
+		sorted = append(sorted, a.Analyzer().Name)
 	}
 	sort.Strings(sorted)
 	var json []*settings.AnalyzerJSON
 	for _, name := range sorted {
 		a := m[name]
 		json = append(json, &settings.AnalyzerJSON{
-			Name:    a.Analyzer.Name,
-			Doc:     a.Analyzer.Doc,
-			URL:     a.Analyzer.URL,
-			Default: a.Enabled,
+			Name:    a.Analyzer().Name,
+			Doc:     a.Analyzer().Doc,
+			URL:     a.Analyzer().URL,
+			Default: a.EnabledByDefault(),
 		})
 	}
 	return json

@@ -18,7 +18,6 @@ import (
 
 	"golang.org/x/telemetry/counter"
 	"golang.org/x/telemetry/counter/countertest" // requires go1.21+
-	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/telemetry"
@@ -33,7 +32,7 @@ func TestMain(m *testing.M) {
 	}
 	countertest.Open(tmp)
 	defer os.RemoveAll(tmp)
-	Main(m, hooks.Options)
+	Main(m)
 }
 
 func TestTelemetry(t *testing.T) {

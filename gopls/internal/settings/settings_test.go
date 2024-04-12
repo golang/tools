@@ -19,12 +19,13 @@ func TestDefaultsEquivalence(t *testing.T) {
 }
 
 func TestSetOption(t *testing.T) {
-	tests := []struct {
+	type testCase struct {
 		name      string
 		value     interface{}
 		wantError bool
 		check     func(Options) bool
-	}{
+	}
+	tests := []testCase{
 		{
 			name:  "symbolStyle",
 			value: "Dynamic",
@@ -51,12 +52,6 @@ func TestSetOption(t *testing.T) {
 			name:  "completionBudget",
 			value: "2s",
 			check: func(o Options) bool { return o.CompletionBudget == 2*time.Second },
-		},
-		{
-			name:      "staticcheck",
-			value:     true,
-			check:     func(o Options) bool { return o.Staticcheck == true },
-			wantError: true, // o.StaticcheckSupported is unset
 		},
 		{
 			name:  "codelenses",
@@ -198,6 +193,15 @@ func TestSetOption(t *testing.T) {
 				return o.Vulncheck == ModeVulncheckImports
 			},
 		},
+	}
+
+	if !StaticcheckSupported {
+		tests = append(tests, testCase{
+			name:      "staticcheck",
+			value:     true,
+			check:     func(o Options) bool { return o.Staticcheck == true },
+			wantError: true, // o.StaticcheckSupported is unset
+		})
 	}
 
 	for _, test := range tests {

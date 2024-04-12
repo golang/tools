@@ -119,11 +119,6 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 				IncludeReplaceInWorkspace:   false,
 				ZeroConfig:                  true,
 			},
-			Hooks: Hooks{
-				URLRegexp:            urlRegexp(),
-				DefaultAnalyzers:     analyzers(),
-				StaticcheckAnalyzers: map[string]*Analyzer{},
-			},
 		}
 	})
 	options := defaultOptions.Clone()

@@ -279,7 +279,7 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 		related = append(related, protocol.DiagnosticRelatedInformation(gobRelated))
 	}
 
-	severity := srcAnalyzer.Severity
+	severity := srcAnalyzer.Severity()
 	if severity == 0 {
 		severity = protocol.SeverityWarning
 	}
@@ -293,7 +293,7 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 		Source:   DiagnosticSource(gobDiag.Source),
 		Message:  gobDiag.Message,
 		Related:  related,
-		Tags:     srcAnalyzer.Tag,
+		Tags:     srcAnalyzer.Tags(),
 	}
 
 	// We cross the set of fixes (whether edit- or command-based)
@@ -301,7 +301,7 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 	// than one kind of action (e.g. refactor, quickfix, fixall),
 	// each corresponding to a distinct client UI element
 	// or operation.
-	kinds := srcAnalyzer.ActionKinds
+	kinds := srcAnalyzer.ActionKinds()
 	if len(kinds) == 0 {
 		kinds = []protocol.CodeActionKind{protocol.QuickFix}
 	}

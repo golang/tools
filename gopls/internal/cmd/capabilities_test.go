@@ -40,7 +40,7 @@ func TestCapabilities(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	app := New(nil)
+	app := New()
 
 	params := &protocol.ParamInitialize{}
 	params.RootURI = protocol.URIFromPath(tmpDir)

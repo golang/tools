@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	. "golang.org/x/tools/gopls/internal/test/integration"
@@ -20,7 +19,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	Main(m, hooks.Options)
+	Main(m)
 }
 
 func TestBugNotification(t *testing.T) {

@@ -5,67 +5,13 @@
 package settings
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"time"
 
-	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/appends"
-	"golang.org/x/tools/go/analysis/passes/asmdecl"
-	"golang.org/x/tools/go/analysis/passes/assign"
-	"golang.org/x/tools/go/analysis/passes/atomic"
-	"golang.org/x/tools/go/analysis/passes/atomicalign"
-	"golang.org/x/tools/go/analysis/passes/bools"
-	"golang.org/x/tools/go/analysis/passes/buildtag"
-	"golang.org/x/tools/go/analysis/passes/cgocall"
-	"golang.org/x/tools/go/analysis/passes/composite"
-	"golang.org/x/tools/go/analysis/passes/copylock"
-	"golang.org/x/tools/go/analysis/passes/deepequalerrors"
-	"golang.org/x/tools/go/analysis/passes/defers"
-	"golang.org/x/tools/go/analysis/passes/directive"
-	"golang.org/x/tools/go/analysis/passes/errorsas"
-	"golang.org/x/tools/go/analysis/passes/fieldalignment"
-	"golang.org/x/tools/go/analysis/passes/httpresponse"
-	"golang.org/x/tools/go/analysis/passes/ifaceassert"
-	"golang.org/x/tools/go/analysis/passes/loopclosure"
-	"golang.org/x/tools/go/analysis/passes/lostcancel"
-	"golang.org/x/tools/go/analysis/passes/nilfunc"
-	"golang.org/x/tools/go/analysis/passes/nilness"
-	"golang.org/x/tools/go/analysis/passes/printf"
-	"golang.org/x/tools/go/analysis/passes/shadow"
-	"golang.org/x/tools/go/analysis/passes/shift"
-	"golang.org/x/tools/go/analysis/passes/slog"
-	"golang.org/x/tools/go/analysis/passes/sortslice"
-	"golang.org/x/tools/go/analysis/passes/stdmethods"
-	"golang.org/x/tools/go/analysis/passes/stdversion"
-	"golang.org/x/tools/go/analysis/passes/stringintconv"
-	"golang.org/x/tools/go/analysis/passes/structtag"
-	"golang.org/x/tools/go/analysis/passes/testinggoroutine"
-	"golang.org/x/tools/go/analysis/passes/tests"
-	"golang.org/x/tools/go/analysis/passes/timeformat"
-	"golang.org/x/tools/go/analysis/passes/unmarshal"
-	"golang.org/x/tools/go/analysis/passes/unreachable"
-	"golang.org/x/tools/go/analysis/passes/unsafeptr"
-	"golang.org/x/tools/go/analysis/passes/unusedresult"
-	"golang.org/x/tools/go/analysis/passes/unusedwrite"
-	"golang.org/x/tools/gopls/internal/analysis/deprecated"
-	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
-	"golang.org/x/tools/gopls/internal/analysis/fillreturns"
-	"golang.org/x/tools/gopls/internal/analysis/infertypeargs"
-	"golang.org/x/tools/gopls/internal/analysis/nonewvars"
-	"golang.org/x/tools/gopls/internal/analysis/noresultvalues"
-	"golang.org/x/tools/gopls/internal/analysis/simplifycompositelit"
-	"golang.org/x/tools/gopls/internal/analysis/simplifyrange"
-	"golang.org/x/tools/gopls/internal/analysis/simplifyslice"
-	"golang.org/x/tools/gopls/internal/analysis/stubmethods"
-	"golang.org/x/tools/gopls/internal/analysis/undeclaredname"
-	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
 	"golang.org/x/tools/gopls/internal/analysis/unusedvariable"
-	"golang.org/x/tools/gopls/internal/analysis/useany"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
@@ -89,32 +35,19 @@ const (
 
 // Options holds various configuration that affects Gopls execution, organized
 // by the nature or origin of the settings.
+//
+// Options must be comparable with reflect.DeepEqual.
 type Options struct {
 	ClientOptions
 	ServerOptions
 	UserOptions
 	InternalOptions
-	Hooks
-}
-
-// IsAnalyzerEnabled reports whether an analyzer with the given name is
-// enabled.
-//
-// TODO(rfindley): refactor to simplify this function. We no longer need the
-// different categories of analyzer.
-func (opts *Options) IsAnalyzerEnabled(name string) bool {
-	for _, amap := range []map[string]*Analyzer{opts.DefaultAnalyzers, opts.StaticcheckAnalyzers} {
-		for _, analyzer := range amap {
-			if analyzer.Analyzer.Name == name && analyzer.IsEnabled(opts) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // ClientOptions holds LSP-specific configuration that is provided by the
 // client.
+//
+// ClientOptions must be comparable with reflect.DeepEqual.
 type ClientOptions struct {
 	ClientInfo                                 *protocol.ClientInfo
 	InsertTextFormat                           protocol.InsertTextFormat
@@ -137,11 +70,14 @@ type ClientOptions struct {
 
 // ServerOptions holds LSP-specific configuration that is provided by the
 // server.
+//
+// ServerOptions must be comparable with reflect.DeepEqual.
 type ServerOptions struct {
 	SupportedCodeActions map[file.Kind]map[protocol.CodeActionKind]bool
 	SupportedCommands    []string
 }
 
+// Note: BuildOptions must be comparable with reflect.DeepEqual.
 type BuildOptions struct {
 	// BuildFlags is the set of flags passed on to the build system when invoked.
 	// It is applied to queries like `go list`, which is used when discovering files.
@@ -219,6 +155,7 @@ type BuildOptions struct {
 	StandaloneTags []string
 }
 
+// Note: UIOptions must be comparable with reflect.DeepEqual.
 type UIOptions struct {
 	DocumentationOptions
 	CompletionOptions
@@ -256,6 +193,7 @@ type UIOptions struct {
 	NoSemanticNumber bool `status:"experimental"`
 }
 
+// Note: CompletionOptions must be comparable with reflect.DeepEqual.
 type CompletionOptions struct {
 	// Placeholders enables placeholders for function parameters or struct
 	// fields in completion responses.
@@ -284,6 +222,7 @@ type CompletionOptions struct {
 	CompleteFunctionCalls bool
 }
 
+// Note: DocumentationOptions must be comparable with reflect.DeepEqual.
 type DocumentationOptions struct {
 	// HoverKind controls the information that appears in the hover text.
 	// SingleLine and Structured are intended for use only by authors of editor plugins.
@@ -305,6 +244,7 @@ type DocumentationOptions struct {
 	LinksInHover bool
 }
 
+// Note: FormattingOptions must be comparable with reflect.DeepEqual.
 type FormattingOptions struct {
 	// Local is the equivalent of the `goimports -local` flag, which puts
 	// imports beginning with this string after third-party packages. It should
@@ -316,6 +256,7 @@ type FormattingOptions struct {
 	Gofumpt bool
 }
 
+// Note: DiagnosticOptions must be comparable with reflect.DeepEqual.
 type DiagnosticOptions struct {
 	// Analyses specify analyses that the user would like to enable or disable.
 	// A map of the names of analysis passes that should be enabled/disabled.
@@ -407,6 +348,8 @@ type NavigationOptions struct {
 
 // UserOptions holds custom Gopls configuration (not part of the LSP) that is
 // modified by the client.
+//
+// UserOptions must be comparable with reflect.DeepEqual.
 type UserOptions struct {
 	BuildOptions
 	UIOptions
@@ -435,30 +378,6 @@ func (u *UserOptions) SetEnvSlice(env []string) {
 		}
 		u.Env[split[0]] = split[1]
 	}
-}
-
-// Hooks contains configuration that is provided to the Gopls command by the
-// main package.
-type Hooks struct {
-	// LicensesText holds third party licenses for software used by gopls.
-	LicensesText string
-
-	// Whether staticcheck is supported.
-	StaticcheckSupported bool
-
-	// URLRegexp is used to find potential URLs in comments/strings.
-	//
-	// Not all matches are shown to the user: if the matched URL is not detected
-	// as valid, it will be skipped.
-	URLRegexp *regexp.Regexp
-
-	// GofumptFormat allows the gopls module to wire-in a call to
-	// gofumpt/format.Source. langVersion and modulePath are used for some
-	// Gofumpt formatting rules -- see the Gofumpt documentation for details.
-	GofumptFormat func(ctx context.Context, langVersion, modulePath string, src []byte) ([]byte, error)
-
-	DefaultAnalyzers     map[string]*Analyzer
-	StaticcheckAnalyzers map[string]*Analyzer
 }
 
 // InternalOptions contains settings that are not intended for use by the
@@ -773,13 +692,8 @@ func (o *Options) Clone() *Options {
 	result := &Options{
 		ClientOptions:   o.ClientOptions,
 		InternalOptions: o.InternalOptions,
-		Hooks: Hooks{
-			StaticcheckSupported: o.StaticcheckSupported,
-			GofumptFormat:        o.GofumptFormat,
-			URLRegexp:            o.URLRegexp,
-		},
-		ServerOptions: o.ServerOptions,
-		UserOptions:   o.UserOptions,
+		ServerOptions:   o.ServerOptions,
+		UserOptions:     o.UserOptions,
 	}
 	// Fully clone any slice or map fields. Only Hooks, ExperimentalOptions,
 	// and UserOptions can be modified.
@@ -803,24 +717,7 @@ func (o *Options) Clone() *Options {
 	result.DirectoryFilters = copySlice(o.DirectoryFilters)
 	result.StandaloneTags = copySlice(o.StandaloneTags)
 
-	copyAnalyzerMap := func(src map[string]*Analyzer) map[string]*Analyzer {
-		dst := make(map[string]*Analyzer)
-		for k, v := range src {
-			dst[k] = v
-		}
-		return dst
-	}
-	result.DefaultAnalyzers = copyAnalyzerMap(o.DefaultAnalyzers)
-	result.StaticcheckAnalyzers = copyAnalyzerMap(o.StaticcheckAnalyzers)
 	return result
-}
-
-func (o *Options) AddStaticcheckAnalyzer(a *analysis.Analyzer, enabled bool, severity protocol.DiagnosticSeverity) {
-	o.StaticcheckAnalyzers[a.Name] = &Analyzer{
-		Analyzer: a,
-		Enabled:  enabled,
-		Severity: severity,
-	}
 }
 
 // EnableAllExperiments turns on all of the experimental "off-by-default"
@@ -1030,7 +927,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 	case "staticcheck":
 		if v, ok := result.asBool(); ok {
 			o.Staticcheck = v
-			if v && !o.StaticcheckSupported {
+			if v && !StaticcheckSupported {
 				result.Error = fmt.Errorf("applying setting %q: staticcheck is not supported at %s;"+
 					" rebuild gopls with a more recent version of Go", result.Name, runtime.Version())
 			}
@@ -1054,7 +951,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 	case "gofumpt":
 		if v, ok := result.asBool(); ok {
 			o.Gofumpt = v
-			if v && o.GofumptFormat == nil {
+			if v && !GofumptSupported {
 				result.Error = fmt.Errorf("applying setting %q: gofumpt is not supported at %s;"+
 					" rebuild gopls with a more recent version of Go", result.Name, runtime.Version())
 			}
@@ -1395,109 +1292,4 @@ func (r *OptionResult) setStringSlice(s *[]string) {
 	if v, ok := r.asStringSlice(); ok {
 		*s = v
 	}
-}
-
-func analyzers() map[string]*Analyzer {
-	return map[string]*Analyzer{
-		// The traditional vet suite:
-		appends.Analyzer.Name:   {Analyzer: appends.Analyzer, Enabled: true},
-		asmdecl.Analyzer.Name:   {Analyzer: asmdecl.Analyzer, Enabled: true},
-		assign.Analyzer.Name:    {Analyzer: assign.Analyzer, Enabled: true},
-		atomic.Analyzer.Name:    {Analyzer: atomic.Analyzer, Enabled: true},
-		bools.Analyzer.Name:     {Analyzer: bools.Analyzer, Enabled: true},
-		buildtag.Analyzer.Name:  {Analyzer: buildtag.Analyzer, Enabled: true},
-		cgocall.Analyzer.Name:   {Analyzer: cgocall.Analyzer, Enabled: true},
-		composite.Analyzer.Name: {Analyzer: composite.Analyzer, Enabled: true},
-		copylock.Analyzer.Name:  {Analyzer: copylock.Analyzer, Enabled: true},
-		defers.Analyzer.Name:    {Analyzer: defers.Analyzer, Enabled: true},
-		deprecated.Analyzer.Name: {
-			Analyzer: deprecated.Analyzer,
-			Enabled:  true,
-			Severity: protocol.SeverityHint,
-			Tag:      []protocol.DiagnosticTag{protocol.Deprecated},
-		},
-		directive.Analyzer.Name:     {Analyzer: directive.Analyzer, Enabled: true},
-		errorsas.Analyzer.Name:      {Analyzer: errorsas.Analyzer, Enabled: true},
-		httpresponse.Analyzer.Name:  {Analyzer: httpresponse.Analyzer, Enabled: true},
-		ifaceassert.Analyzer.Name:   {Analyzer: ifaceassert.Analyzer, Enabled: true},
-		loopclosure.Analyzer.Name:   {Analyzer: loopclosure.Analyzer, Enabled: true},
-		lostcancel.Analyzer.Name:    {Analyzer: lostcancel.Analyzer, Enabled: true},
-		nilfunc.Analyzer.Name:       {Analyzer: nilfunc.Analyzer, Enabled: true},
-		printf.Analyzer.Name:        {Analyzer: printf.Analyzer, Enabled: true},
-		shift.Analyzer.Name:         {Analyzer: shift.Analyzer, Enabled: true},
-		slog.Analyzer.Name:          {Analyzer: slog.Analyzer, Enabled: true},
-		stdmethods.Analyzer.Name:    {Analyzer: stdmethods.Analyzer, Enabled: true},
-		stringintconv.Analyzer.Name: {Analyzer: stringintconv.Analyzer, Enabled: true},
-		structtag.Analyzer.Name:     {Analyzer: structtag.Analyzer, Enabled: true},
-		tests.Analyzer.Name:         {Analyzer: tests.Analyzer, Enabled: true},
-		unmarshal.Analyzer.Name:     {Analyzer: unmarshal.Analyzer, Enabled: true},
-		unreachable.Analyzer.Name:   {Analyzer: unreachable.Analyzer, Enabled: true},
-		unsafeptr.Analyzer.Name:     {Analyzer: unsafeptr.Analyzer, Enabled: true},
-		unusedresult.Analyzer.Name:  {Analyzer: unusedresult.Analyzer, Enabled: true},
-
-		// Non-vet analyzers:
-		// - some (nilness, unusedwrite) use go/ssa;
-		// - some (unusedwrite) report bad code but not always a bug,
-		//   so are not suitable for vet.
-		atomicalign.Analyzer.Name:      {Analyzer: atomicalign.Analyzer, Enabled: true},
-		deepequalerrors.Analyzer.Name:  {Analyzer: deepequalerrors.Analyzer, Enabled: true},
-		fieldalignment.Analyzer.Name:   {Analyzer: fieldalignment.Analyzer, Enabled: false},
-		nilness.Analyzer.Name:          {Analyzer: nilness.Analyzer, Enabled: true},
-		shadow.Analyzer.Name:           {Analyzer: shadow.Analyzer, Enabled: false},
-		sortslice.Analyzer.Name:        {Analyzer: sortslice.Analyzer, Enabled: true},
-		testinggoroutine.Analyzer.Name: {Analyzer: testinggoroutine.Analyzer, Enabled: true},
-		unusedparams.Analyzer.Name:     {Analyzer: unusedparams.Analyzer, Enabled: true},
-		unusedwrite.Analyzer.Name:      {Analyzer: unusedwrite.Analyzer, Enabled: true},
-		useany.Analyzer.Name:           {Analyzer: useany.Analyzer, Enabled: false},
-		infertypeargs.Analyzer.Name: {
-			Analyzer: infertypeargs.Analyzer,
-			Enabled:  true,
-			Severity: protocol.SeverityHint,
-		},
-		timeformat.Analyzer.Name:     {Analyzer: timeformat.Analyzer, Enabled: true},
-		embeddirective.Analyzer.Name: {Analyzer: embeddirective.Analyzer, Enabled: true},
-
-		// gofmt -s suite:
-		simplifycompositelit.Analyzer.Name: {
-			Analyzer:    simplifycompositelit.Analyzer,
-			Enabled:     true,
-			ActionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
-		},
-		simplifyrange.Analyzer.Name: {
-			Analyzer:    simplifyrange.Analyzer,
-			Enabled:     true,
-			ActionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
-		},
-		simplifyslice.Analyzer.Name: {
-			Analyzer:    simplifyslice.Analyzer,
-			Enabled:     true,
-			ActionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
-		},
-		stdversion.Analyzer.Name: {
-			Analyzer: stdversion.Analyzer,
-			Enabled:  true,
-		},
-
-		// Type error analyzers.
-		// These analyzers enrich go/types errors with suggested fixes.
-		fillreturns.Analyzer.Name:    {Analyzer: fillreturns.Analyzer, Enabled: true},
-		nonewvars.Analyzer.Name:      {Analyzer: nonewvars.Analyzer, Enabled: true},
-		noresultvalues.Analyzer.Name: {Analyzer: noresultvalues.Analyzer, Enabled: true},
-		stubmethods.Analyzer.Name:    {Analyzer: stubmethods.Analyzer, Enabled: true},
-		undeclaredname.Analyzer.Name: {Analyzer: undeclaredname.Analyzer, Enabled: true},
-		// TODO(rfindley): why isn't the 'unusedvariable' analyzer enabled, if it
-		// is only enhancing type errors with suggested fixes?
-		//
-		// In particular, enabling this analyzer could cause unused variables to be
-		// greyed out, (due to the 'deletions only' fix). That seems like a nice UI
-		// feature.
-		unusedvariable.Analyzer.Name: {Analyzer: unusedvariable.Analyzer, Enabled: false},
-	}
-}
-
-func urlRegexp() *regexp.Regexp {
-	// Ensure links are matched as full words, not anywhere.
-	re := regexp.MustCompile(`\b(http|ftp|https)://([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?\b`)
-	re.Longest()
-	return re
 }

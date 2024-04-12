@@ -5,9 +5,10 @@
 //go:build !go1.20
 // +build !go1.20
 
-package hooks
+package settings
 
-import "golang.org/x/tools/gopls/internal/settings"
+import "context"
 
-func updateGofumpt(options *settings.Options) {
-}
+const GofumptSupported = false
+
+var GofumptFormat func(ctx context.Context, langVersion, modulePath string, src []byte) ([]byte, error)

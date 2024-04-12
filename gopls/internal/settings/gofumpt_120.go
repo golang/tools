@@ -5,27 +5,29 @@
 //go:build go1.20
 // +build go1.20
 
-package hooks
+package settings
 
 import (
 	"context"
 	"fmt"
 
-	"golang.org/x/tools/gopls/internal/settings"
 	"mvdan.cc/gofumpt/format"
 )
 
-func updateGofumpt(options *settings.Options) {
-	options.GofumptFormat = func(ctx context.Context, langVersion, modulePath string, src []byte) ([]byte, error) {
-		fixedVersion, err := fixLangVersion(langVersion)
-		if err != nil {
-			return nil, err
-		}
-		return format.Source(src, format.Options{
-			LangVersion: fixedVersion,
-			ModulePath:  modulePath,
-		})
+const GofumptSupported = true
+
+// GofumptFormat allows the gopls module to wire in a call to
+// gofumpt/format.Source. langVersion and modulePath are used for some
+// Gofumpt formatting rules -- see the Gofumpt documentation for details.
+var GofumptFormat = func(ctx context.Context, langVersion, modulePath string, src []byte) ([]byte, error) {
+	fixedVersion, err := fixLangVersion(langVersion)
+	if err != nil {
+		return nil, err
 	}
+	return format.Source(src, format.Options{
+		LangVersion: fixedVersion,
+		ModulePath:  modulePath,
+	})
 }
 
 // fixLangVersion function cleans the input so that gofumpt doesn't panic. It is

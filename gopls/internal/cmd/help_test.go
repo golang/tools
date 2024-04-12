@@ -32,7 +32,7 @@ const appName = "gopls"
 
 func TestHelpFiles(t *testing.T) {
 	testenv.NeedsGoBuild(t) // This is a lie. We actually need the source code.
-	app := cmd.New(nil)
+	app := cmd.New()
 	ctx := context.Background()
 	for _, page := range append(app.Commands(), app) {
 		t.Run(page.Name(), func(t *testing.T) {
@@ -65,7 +65,7 @@ func TestHelpFiles(t *testing.T) {
 
 func TestVerboseHelp(t *testing.T) {
 	testenv.NeedsGoBuild(t) // This is a lie. We actually need the source code.
-	app := cmd.New(nil)
+	app := cmd.New()
 	ctx := context.Background()
 	var buf bytes.Buffer
 	s := flag.NewFlagSet(appName, flag.ContinueOnError)

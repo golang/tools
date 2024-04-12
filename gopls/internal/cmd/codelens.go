@@ -74,7 +74,9 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 	// See golang.LensFuncs().
 	origOptions := r.app.options
 	r.app.options = func(opts *settings.Options) {
-		origOptions(opts)
+		if origOptions != nil {
+			origOptions(opts)
+		}
 		if opts.Codelenses == nil {
 			opts.Codelenses = make(map[string]bool)
 		}

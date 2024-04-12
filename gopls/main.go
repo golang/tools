@@ -19,7 +19,6 @@ import (
 
 	"golang.org/x/telemetry"
 	"golang.org/x/tools/gopls/internal/cmd"
-	"golang.org/x/tools/gopls/internal/hooks"
 	versionpkg "golang.org/x/tools/gopls/internal/version"
 	"golang.org/x/tools/internal/tool"
 )
@@ -31,5 +30,5 @@ func main() {
 
 	telemetry.Start(telemetry.Config{ReportCrashes: true})
 	ctx := context.Background()
-	tool.Main(ctx, cmd.New(hooks.Options), os.Args[1:])
+	tool.Main(ctx, cmd.New(), os.Args[1:])
 }

@@ -45,7 +45,9 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 	// false. Investigate.
 	origOptions := c.app.options
 	c.app.options = func(opts *settings.Options) {
-		origOptions(opts)
+		if origOptions != nil {
+			origOptions(opts)
+		}
 		opts.RelatedInformationSupported = true
 	}
 

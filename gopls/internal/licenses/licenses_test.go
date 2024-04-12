@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package hooks
+package licenses_test
 
 import (
 	"bytes"
@@ -42,6 +42,6 @@ func TestLicenses(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(got, want) {
-		t.Error("combined license text needs updating. Run: `go generate ./internal/hooks` from the gopls module.")
+		t.Error("combined license text needs updating. Run: `go generate ./internal/licenses` from the gopls module.")
 	}
 }

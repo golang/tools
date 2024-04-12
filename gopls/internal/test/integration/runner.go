@@ -106,11 +106,10 @@ func (m Mode) String() string {
 // state.
 type Runner struct {
 	// Configuration
-	DefaultModes             Mode                    // modes to run for each test
-	Timeout                  time.Duration           // per-test timeout, if set
-	PrintGoroutinesOnFailure bool                    // whether to dump goroutines on test failure
-	SkipCleanup              bool                    // if set, don't delete test data directories when the test exits
-	OptionsHook              func(*settings.Options) // if set, use these options when creating gopls sessions
+	DefaultModes             Mode          // modes to run for each test
+	Timeout                  time.Duration // per-test timeout, if set
+	PrintGoroutinesOnFailure bool          // whether to dump goroutines on test failure
+	SkipCleanup              bool          // if set, don't delete test data directories when the test exits
 
 	// Immutable state shared across test invocations
 	goplsPath string         // path to the gopls executable (for SeparateProcess mode)
@@ -147,7 +146,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 	tests := []struct {
 		name      string
 		mode      Mode
-		getServer func(func(*settings.Options)) jsonrpc2.StreamServer
+		getServer func() jsonrpc2.StreamServer
 	}{
 		{"default", Default, r.defaultServer},
 		{"forwarded", Forwarded, r.forwardedServer},
@@ -222,7 +221,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 				}
 			}
 
-			ss := tc.getServer(r.OptionsHook)
+			ss := tc.getServer()
 
 			framer := jsonrpc2.NewRawStream
 			ls := &loggingFramer{}
@@ -346,25 +345,24 @@ func (s *loggingFramer) printBuffers(testname string, w io.Writer) {
 }
 
 // defaultServer handles the Default execution mode.
-func (r *Runner) defaultServer(optsHook func(*settings.Options)) jsonrpc2.StreamServer {
-	return lsprpc.NewStreamServer(cache.New(r.store), false, optsHook)
+func (r *Runner) defaultServer() jsonrpc2.StreamServer {
+	return lsprpc.NewStreamServer(cache.New(r.store), false, nil)
 }
 
 // experimentalServer handles the Experimental execution mode.
-func (r *Runner) experimentalServer(optsHook func(*settings.Options)) jsonrpc2.StreamServer {
+func (r *Runner) experimentalServer() jsonrpc2.StreamServer {
 	options := func(o *settings.Options) {
-		optsHook(o)
 		o.EnableAllExperiments()
 	}
 	return lsprpc.NewStreamServer(cache.New(nil), false, options)
 }
 
 // forwardedServer handles the Forwarded execution mode.
-func (r *Runner) forwardedServer(optsHook func(*settings.Options)) jsonrpc2.StreamServer {
+func (r *Runner) forwardedServer() jsonrpc2.StreamServer {
 	r.tsOnce.Do(func() {
 		ctx := context.Background()
 		ctx = debug.WithInstance(ctx, "off")
-		ss := lsprpc.NewStreamServer(cache.New(nil), false, optsHook)
+		ss := lsprpc.NewStreamServer(cache.New(nil), false, nil)
 		r.ts = servertest.NewTCPServer(ctx, ss, nil)
 	})
 	return newForwarder("tcp", r.ts.Addr)
@@ -376,7 +374,7 @@ func (r *Runner) forwardedServer(optsHook func(*settings.Options)) jsonrpc2.Stre
 const runTestAsGoplsEnvvar = "_GOPLS_TEST_BINARY_RUN_AS_GOPLS"
 
 // separateProcessServer handles the SeparateProcess execution mode.
-func (r *Runner) separateProcessServer(optsHook func(*settings.Options)) jsonrpc2.StreamServer {
+func (r *Runner) separateProcessServer() jsonrpc2.StreamServer {
 	if runtime.GOOS != "linux" {
 		panic("separate process execution mode is only supported on linux")
 	}

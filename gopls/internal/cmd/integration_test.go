@@ -40,7 +40,6 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cmd"
 	"golang.org/x/tools/gopls/internal/debug"
-	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/version"
@@ -1060,7 +1059,7 @@ func goplsMain() {
 		version.VersionOverride = v
 	}
 
-	tool.Main(context.Background(), cmd.New(hooks.Options), os.Args[1:])
+	tool.Main(context.Background(), cmd.New(), os.Args[1:])
 }
 
 // writeTree extracts a txtar archive into a new directory and returns its path.

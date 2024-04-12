@@ -3,9 +3,9 @@
 // license that can be found in the LICENSE file.
 
 //go:generate ./gen-licenses.sh licenses.go
-package hooks
+package licenses
 
-const licensesText = `
+const Text = `
 -- github.com/BurntSushi/toml COPYING --
 
 The MIT License (MIT)

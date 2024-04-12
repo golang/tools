@@ -192,30 +192,30 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 	// Filter and sort enabled root analyzers.
 	// A disabled analyzer may still be run if required by another.
 	toSrc := make(map[*analysis.Analyzer]*settings.Analyzer)
-	var enabled []*analysis.Analyzer // enabled subset + transitive requirements
+	var enabledAnalyzers []*analysis.Analyzer // enabled subset + transitive requirements
 	for _, a := range analyzers {
-		if a.IsEnabled(s.Options()) {
-			toSrc[a.Analyzer] = a
-			enabled = append(enabled, a.Analyzer)
+		if enabled, ok := s.Options().Analyses[a.Analyzer().Name]; enabled || !ok && a.EnabledByDefault() {
+			toSrc[a.Analyzer()] = a
+			enabledAnalyzers = append(enabledAnalyzers, a.Analyzer())
 		}
 	}
-	sort.Slice(enabled, func(i, j int) bool {
-		return enabled[i].Name < enabled[j].Name
+	sort.Slice(enabledAnalyzers, func(i, j int) bool {
+		return enabledAnalyzers[i].Name < enabledAnalyzers[j].Name
 	})
 	analyzers = nil // prevent accidental use
 
-	enabled = requiredAnalyzers(enabled)
+	enabledAnalyzers = requiredAnalyzers(enabledAnalyzers)
 
 	// Perform basic sanity checks.
 	// (Ideally we would do this only once.)
-	if err := analysis.Validate(enabled); err != nil {
+	if err := analysis.Validate(enabledAnalyzers); err != nil {
 		return nil, fmt.Errorf("invalid analyzer configuration: %v", err)
 	}
 
 	stableNames := make(map[*analysis.Analyzer]string)
 
 	var facty []*analysis.Analyzer // facty subset of enabled + transitive requirements
-	for _, a := range enabled {
+	for _, a := range enabledAnalyzers {
 		// TODO(adonovan): reject duplicate stable names (very unlikely).
 		stableNames[a] = stableName(a)
 
@@ -317,7 +317,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 		if err != nil {
 			return nil, err
 		}
-		root.analyzers = enabled
+		root.analyzers = enabledAnalyzers
 		roots = append(roots, root)
 	}
 
@@ -451,7 +451,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 	// results, we should propagate the per-action errors.
 	var results []*Diagnostic
 	for _, root := range roots {
-		for _, a := range enabled {
+		for _, a := range enabledAnalyzers {
 			// Skip analyzers that were added only to
 			// fulfil requirements of the original set.
 			srcAnalyzer, ok := toSrc[a]

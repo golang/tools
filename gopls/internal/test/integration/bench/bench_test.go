@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/cmd"
-	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
@@ -57,7 +56,7 @@ const runAsGopls = "_GOPLS_BENCH_RUN_AS_GOPLS"
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
 	if os.Getenv(runAsGopls) == "true" {
-		tool.Main(context.Background(), cmd.New(hooks.Options), os.Args[1:])
+		tool.Main(context.Background(), cmd.New(), os.Args[1:])
 		os.Exit(0)
 	}
 	event.SetExporter(nil) // don't log to stderr
