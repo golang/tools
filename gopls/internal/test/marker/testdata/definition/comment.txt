@@ -3,7 +3,7 @@ This test executes definition requests over doc links.
 -- go.mod --
 module mod.com
 
-go 1.21
+go 1.19
 
 -- a.go --
 package p

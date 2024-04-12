@@ -8,7 +8,7 @@ Requires go1.20+ for the unsafe package test.
 -- go.mod --
 module mod.com
 
-go 1.21
+go 1.20
 
 -- a.go --
 package p
