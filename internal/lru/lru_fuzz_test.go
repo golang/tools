@@ -7,7 +7,7 @@ package lru_test
 import (
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/util/lru"
+	"golang.org/x/tools/internal/lru"
 )
 
 // Simple fuzzing test for consistency.
