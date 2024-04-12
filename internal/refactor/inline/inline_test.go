@@ -649,26 +649,26 @@ func TestSubstitution(t *testing.T) {
 func TestTailCallStrategy(t *testing.T) {
 	runTests(t, []testcase{
 		{
-			"Tail call.",
+			"simple",
 			`func f() int { return 1 }`,
 			`func _() int { return f() }`,
 			`func _() int { return 1 }`,
 		},
 		{
-			"Void tail call.",
+			"void",
 			`func f() { println() }`,
 			`func _() { f() }`,
 			`func _() { println() }`,
 		},
 		{
-			"Void tail call with defer.", // => literalized
+			"void with defer", // => literalized
 			`func f() { defer f(); println() }`,
 			`func _() { f() }`,
 			`func _() { func() { defer f(); println() }() }`,
 		},
 		// Tests for issue #63336:
 		{
-			"Tail call with non-trivial return conversion (caller.sig = callee.sig).",
+			"non-trivial return conversion (caller.sig = callee.sig)",
 			`func f() error { if true { return nil } else { return e } }; var e struct{error}`,
 			`func _() error { return f() }`,
 			`func _() error {
@@ -680,7 +680,7 @@ func TestTailCallStrategy(t *testing.T) {
 }`,
 		},
 		{
-			"Tail call with non-trivial return conversion (caller.sig != callee.sig).",
+			"non-trivial return conversion (caller.sig != callee.sig)",
 			`func f() error { return E{} }; type E struct{error}`,
 			`func _() any { return f() }`,
 			`func _() any { return error(E{}) }`,
@@ -724,11 +724,169 @@ func TestSpreadCalls(t *testing.T) {
 			`func _() (int, error) { return f() }`,
 			`func _() (int, error) { return 0, nil }`,
 		},
+	})
+}
+
+func TestAssignmentCallStrategy(t *testing.T) {
+	runTests(t, []testcase{
 		{
-			"Implicit return conversions defeat reduction of spread returns, for now.",
+			"splice: basic",
+			`func f(x int) (int, int) { return x, 2 }`,
+			`func _() { x, y := f(1); _, _ = x, y }`,
+			`func _() { x, y := 1, 2; _, _ = x, y }`,
+		},
+		{
+			"spread: basic",
+			`func f(x int) (any, any) { return g() }; func g() (error, error) { return nil, nil }`,
+			`func _() {
+	var x any
+	x, y := f(0)
+	_, _ = x, y
+}`,
+			`func _() {
+	var x any
+	var y any
+	x, y = g()
+	_, _ = x, y
+}`,
+		},
+		{
+			"spread: free var conflict",
+			`func f(x int) (any, any) { return g(x) }; func g(x int) (int, int) { return x, x }`,
+			`func _() {
+	y := 2
+	{
+		var x any
+		x, y := f(y)
+		_, _ = x, y
+	}
+}`,
+			`func _() {
+	y := 2
+	{
+		var x any
+		x, y := func() (any, any) { return g(y) }()
+		_, _ = x, y
+	}
+}`,
+		},
+		{
+			"convert: basic",
+			`func f(x int) (int32, int8) { return 1, 2 }`,
+			`func _() {
+	var x int32
+  x, y := f(0)
+	_, _ = x, y
+}`,
+			`func _() {
+	var x int32
+	x, y := 1, int8(2)
+	_, _ = x, y
+}`,
+		},
+		{
+			"convert: rune and byte",
+			`func f(x int) (rune, byte) { return 0, 0 }`,
+			`func _() {
+	x, y := f(0)
+	_, _ = x, y
+}`,
+			`func _() {
+	x, y := rune(0), byte(0)
+	_, _ = x, y
+}`,
+		},
+		{
+			"convert: interface conversions",
 			`func f(x int) (_, _ error) { return nil, nil }`,
-			`func _() { _, _ = f(0) }`,
-			`func _() { _, _ = func() (_, _ error) { return nil, nil }() }`,
+			`func _() {
+  x, y := f(0)
+	_, _ = x, y
+}`,
+			`func _() {
+	x, y := error(nil), error(nil)
+	_, _ = x, y
+}`,
+		},
+		{
+			"convert: implicit nil conversions",
+			`func f(x int) (_, _ error) { return nil, nil }`,
+			`func _() { x, y := f(0); _, _ = x, y }`,
+			`func _() { x, y := error(nil), error(nil); _, _ = x, y }`,
+		},
+		{
+			"convert: pruning nil assignments left",
+			`func f(x int) (_, _ error) { return nil, nil }`,
+			`func _() { _, y := f(0); _ = y }`,
+			`func _() { y := error(nil); _ = y }`,
+		},
+		{
+			"convert: pruning nil assignments right",
+			`func f(x int) (_, _ error) { return nil, nil }`,
+			`func _() { x, _ := f(0); _ = x }`,
+			`func _() { x := error(nil); _ = x }`,
+		},
+		{
+			"convert: partial assign",
+			`func f(x int) (_, _ error) { return nil, nil }`,
+			`func _() {
+	var x error
+  x, y := f(0)
+	_, _ = x, y
+}`,
+			`func _() {
+	var x error
+	x, y := nil, error(nil)
+	_, _ = x, y
+}`,
+		},
+		{
+			"convert: single assignment left",
+			`func f() int { return 0 }`,
+			`func _() {
+	x, y := f(), "hello"
+	_, _ = x, y
+}`,
+			`func _() {
+	x, y := 0, "hello"
+	_, _ = x, y
+}`,
+		},
+		{
+			"convert: single assignment left with conversion",
+			`func f() int32 { return 0 }`,
+			`func _() {
+	x, y := f(), "hello"
+	_, _ = x, y
+}`,
+			`func _() {
+	x, y := int32(0), "hello"
+	_, _ = x, y
+}`,
+		},
+		{
+			"convert: single assignment right",
+			`func f() int32 { return 0 }`,
+			`func _() {
+	x, y := "hello", f()
+	_, _ = x, y
+}`,
+			`func _() {
+	x, y := "hello", int32(0)
+	_, _ = x, y
+}`,
+		},
+		{
+			"convert: single assignment middle",
+			`func f() int32 { return 0 }`,
+			`func _() {
+	x, y, z := "hello", f(), 1.56
+	_, _, _ = x, y, z
+}`,
+			`func _() {
+	x, y, z := "hello", int32(0), 1.56
+	_, _, _ = x, y, z
+}`,
 		},
 	})
 }

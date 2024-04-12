@@ -32,25 +32,33 @@ type gobCallee struct {
 	Content []byte // file content, compacted to a single func decl
 
 	// results of type analysis (does not reach go/types data structures)
-	PkgPath          string       // package path of declaring package
-	Name             string       // user-friendly name for error messages
-	Unexported       []string     // names of free objects that are unexported
-	FreeRefs         []freeRef    // locations of references to free objects
-	FreeObjs         []object     // descriptions of free objects
-	ValidForCallStmt bool         // function body is "return expr" where expr is f() or <-ch
-	NumResults       int          // number of results (according to type, not ast.FieldList)
-	Params           []*paramInfo // information about parameters (incl. receiver)
-	Results          []*paramInfo // information about result variables
-	Effects          []int        // order in which parameters are evaluated (see calleefx)
-	HasDefer         bool         // uses defer
-	HasBareReturn    bool         // uses bare return in non-void function
-	TotalReturns     int          // number of return statements
-	TrivialReturns   int          // number of return statements with trivial result conversions
-	Labels           []string     // names of all control labels
-	Falcon           falconResult // falcon constraint system
+	PkgPath          string                 // package path of declaring package
+	Name             string                 // user-friendly name for error messages
+	Unexported       []string               // names of free objects that are unexported
+	FreeRefs         []freeRef              // locations of references to free objects
+	FreeObjs         []object               // descriptions of free objects
+	ValidForCallStmt bool                   // function body is "return expr" where expr is f() or <-ch
+	NumResults       int                    // number of results (according to type, not ast.FieldList)
+	Params           []*paramInfo           // information about parameters (incl. receiver)
+	Results          []*paramInfo           // information about result variables
+	Effects          []int                  // order in which parameters are evaluated (see calleefx)
+	HasDefer         bool                   // uses defer
+	HasBareReturn    bool                   // uses bare return in non-void function
+	Returns          [][]returnOperandFlags // metadata about result expressions for each return
+	Labels           []string               // names of all control labels
+	Falcon           falconResult           // falcon constraint system
 }
 
-// A freeRef records a reference to a free object.  Gob-serializable.
+// returnOperandFlags records metadata about a single result expression in a return
+// statement.
+type returnOperandFlags int
+
+const (
+	nonTrivialResult returnOperandFlags = 1 << iota // return operand has non-trivial conversion to result type
+	untypedNilResult                                // return operand is nil literal
+)
+
+// A freeRef records a reference to a free object. Gob-serializable.
 // (This means free relative to the FuncDecl as a whole, i.e. excluding parameters.)
 type freeRef struct {
 	Offset int // byte offset of the reference relative to the FuncDecl
@@ -264,11 +272,10 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 	// Record information about control flow in the callee
 	// (but not any nested functions).
 	var (
-		hasDefer       = false
-		hasBareReturn  = false
-		totalReturns   = 0
-		trivialReturns = 0
-		labels         []string
+		hasDefer      = false
+		hasBareReturn = false
+		returnInfo    [][]returnOperandFlags
+		labels        []string
 	)
 	ast.Inspect(decl.Body, func(n ast.Node) bool {
 		switch n := n.(type) {
@@ -279,34 +286,37 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 		case *ast.LabeledStmt:
 			labels = append(labels, n.Label.Name)
 		case *ast.ReturnStmt:
-			totalReturns++
 
 			// Are implicit assignment conversions
 			// to result variables all trivial?
-			trivial := true
+			var resultInfo []returnOperandFlags
 			if len(n.Results) > 0 {
-				argType := func(i int) types.Type {
-					return info.TypeOf(n.Results[i])
+				argInfo := func(i int) (ast.Expr, types.Type) {
+					expr := n.Results[i]
+					return expr, info.TypeOf(expr)
 				}
 				if len(n.Results) == 1 && sig.Results().Len() > 1 {
 					// Spread return: return f() where f.Results > 1.
 					tuple := info.TypeOf(n.Results[0]).(*types.Tuple)
-					argType = func(i int) types.Type {
-						return tuple.At(i).Type()
+					argInfo = func(i int) (ast.Expr, types.Type) {
+						return nil, tuple.At(i).Type()
 					}
 				}
 				for i := 0; i < sig.Results().Len(); i++ {
-					if !trivialConversion(argType(i), sig.Results().At(i)) {
-						trivial = false
-						break
+					expr, typ := argInfo(i)
+					var flags returnOperandFlags
+					if typ == types.Typ[types.UntypedNil] { // untyped nil is preserved by go/types
+						flags |= untypedNilResult
 					}
+					if !trivialConversion(info.Types[expr].Value, typ, sig.Results().At(i).Type()) {
+						flags |= nonTrivialResult
+					}
+					resultInfo = append(resultInfo, flags)
 				}
 			} else if sig.Results().Len() > 0 {
 				hasBareReturn = true
 			}
-			if trivial {
-				trivialReturns++
-			}
+			returnInfo = append(returnInfo, resultInfo)
 		}
 		return true
 	})
@@ -353,8 +363,7 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 		Effects:          effects,
 		HasDefer:         hasDefer,
 		HasBareReturn:    hasBareReturn,
-		TotalReturns:     totalReturns,
-		TrivialReturns:   trivialReturns,
+		Returns:          returnInfo,
 		Labels:           labels,
 		Falcon:           falcon,
 	}}, nil
