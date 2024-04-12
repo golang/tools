@@ -16,7 +16,7 @@ import (
 // NewAlias creates a new TypeName in Package pkg that
 // is an alias for the type rhs.
 //
-// When GoVersion>=1.22 and GODEBUG=gotypesalias=1,
+// When GoVersion>=1.22 and GODEBUG=gotypesalias=1 (or unset),
 // the Type() of the return value is a *types.Alias.
 func NewAlias(pos token.Pos, pkg *types.Package, name string, rhs types.Type) *types.TypeName {
 	if enabled() {

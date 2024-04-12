@@ -5,8 +5,6 @@
 package misc
 
 import (
-	"os"
-	"strings"
 	"testing"
 
 	"golang.org/x/tools/internal/testenv"
@@ -18,9 +16,7 @@ func TestStaticcheckGenerics(t *testing.T) {
 	testenv.NeedsGo1Point(t, 20) // staticcheck requires go1.20+
 
 	// TODO(golang/go#65249): re-enable and fix this test with gotypesalias=1.
-	if strings.Contains(os.Getenv("GODEBUG"), "gotypesalias=1") {
-		t.Skipf("staticcheck needs updates for materialized aliases")
-	}
+	testenv.SkipMaterializedAliases(t, "staticcheck needs updates for materialized aliases")
 
 	const files = `
 -- go.mod --
@@ -88,9 +84,7 @@ func TestStaticcheckRelatedInfo(t *testing.T) {
 	testenv.NeedsGo1Point(t, 20) // staticcheck is only supported at Go 1.20+
 
 	// TODO(golang/go#65249): re-enable and fix this test with gotypesalias=1.
-	if strings.Contains(os.Getenv("GODEBUG"), "gotypesalias=1") {
-		t.Skipf("staticcheck needs updates for materialized aliases")
-	}
+	testenv.SkipMaterializedAliases(t, "staticcheck needs updates for materialized aliases")
 
 	const files = `
 -- go.mod --

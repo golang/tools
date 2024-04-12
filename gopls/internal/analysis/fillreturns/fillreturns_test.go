@@ -5,19 +5,17 @@
 package fillreturns_test
 
 import (
-	"os"
-	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/gopls/internal/analysis/fillreturns"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func Test(t *testing.T) {
-	// TODO(golang/go#65294): delete once gotypesalias=1 is the default.
-	if strings.Contains(os.Getenv("GODEBUG"), "gotypesalias=1") {
-		t.Skip("skipping due to gotypesalias=1, which changes (improves) the result; reenable and update the expectations once it is the default")
-	}
+	// TODO(golang/go#65294): delete (and update expectations)
+	// once gotypesalias=1 is the default.
+	testenv.SkipMaterializedAliases(t, "expectations need updating for materialized aliases")
 
 	testdata := analysistest.TestData()
 	analysistest.RunWithSuggestedFixes(t, testdata, fillreturns.Analyzer, "a", "typeparams")

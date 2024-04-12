@@ -20,7 +20,7 @@ var _ func(*aliases.Alias) *types.TypeName = (*aliases.Alias).Obj
 
 // TestNewAlias tests that alias.NewAlias creates an alias of a type
 // whose underlying and Unaliased type is *Named.
-// When gotypesalias=1 and GoVersion >= 1.22, the type will
+// When gotypesalias=1 (or unset) and GoVersion >= 1.22, the type will
 // be an *aliases.Alias.
 func TestNewAlias(t *testing.T) {
 	const source = `
@@ -46,7 +46,10 @@ func TestNewAlias(t *testing.T) {
 		t.Fatalf("Eval(%s) failed: %v", expr, err)
 	}
 
-	for _, godebug := range []string{"", "gotypesalias=1"} {
+	for _, godebug := range []string{
+		// "", // The default is in transition; suppress this case for now
+		"gotypesalias=0",
+		"gotypesalias=1"} {
 		t.Run(godebug, func(t *testing.T) {
 			t.Setenv("GODEBUG", godebug)
 
@@ -62,7 +65,7 @@ func TestNewAlias(t *testing.T) {
 				t.Errorf("Expected Unalias(A)==%q. got %q", want, got)
 			}
 
-			if testenv.Go1Point() >= 22 && godebug == "gotypesalias=1" {
+			if testenv.Go1Point() >= 22 && godebug != "gotypesalias=0" {
 				if _, ok := A.Type().(*aliases.Alias); !ok {
 					t.Errorf("Expected A.Type() to be a types.Alias(). got %q", A.Type())
 				}

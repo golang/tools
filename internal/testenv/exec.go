@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -189,4 +190,23 @@ func CommandContext(t testing.TB, ctx context.Context, name string, args ...stri
 func Command(t testing.TB, name string, args ...string) *exec.Cmd {
 	t.Helper()
 	return CommandContext(t, context.Background(), name, args...)
+}
+
+// SkipMaterializedAliases skips the test if go/types would create
+// instances of types.Alias, which some tests do not yet handle
+// correctly.
+func SkipMaterializedAliases(t *testing.T, message string) {
+	if hasMaterializedAliases(Go1Point()) {
+		t.Skipf("%s", message)
+	}
+}
+
+func hasMaterializedAliases(minor int) bool {
+	if minor >= 23 && !strings.Contains(os.Getenv("GODEBUG"), "gotypesalias=0") {
+		return true // gotypesalias=1 became the default in go1.23
+	}
+	if minor == 22 && strings.Contains(os.Getenv("GODEBUG"), "gotypesalias=1") {
+		return true // gotypesalias=0 was the default in go1.22
+	}
+	return false // types.Alias didn't exist in go1.21
 }
