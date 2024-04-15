@@ -197,7 +197,7 @@ var GeneratedAPIJSON = &APIJSON{
 			{
 				Name: "symbolScope",
 				Type: "enum",
-				Doc:  "symbolScope controls which packages are searched for workspace/symbol\nrequests. The default value, \"workspace\", searches only workspace\npackages. The legacy behavior, \"all\", causes all loaded packages to be\nsearched, including dependencies; this is more expensive and may return\nunwanted results.\n",
+				Doc:  "symbolScope controls which packages are searched for workspace/symbol\nrequests. When the scope is \"workspace\", gopls searches only workspace\npackages. When the scope is \"all\", gopls searches all loaded packages,\nincluding dependencies and the standard library.\n",
 				EnumValues: []EnumValue{
 					{
 						Value: "\"all\"",

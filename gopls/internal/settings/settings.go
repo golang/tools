@@ -339,10 +339,9 @@ type NavigationOptions struct {
 	SymbolStyle SymbolStyle `status:"advanced"`
 
 	// SymbolScope controls which packages are searched for workspace/symbol
-	// requests. The default value, "workspace", searches only workspace
-	// packages. The legacy behavior, "all", causes all loaded packages to be
-	// searched, including dependencies; this is more expensive and may return
-	// unwanted results.
+	// requests. When the scope is "workspace", gopls searches only workspace
+	// packages. When the scope is "all", gopls searches all loaded packages,
+	// including dependencies and the standard library.
 	SymbolScope SymbolScope
 }
 
