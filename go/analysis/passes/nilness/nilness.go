@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -281,6 +282,7 @@ func (n nilness) String() string { return nilnessStrings[n+1] }
 // nilnessOf reports whether v is definitely nil, definitely not nil,
 // or unknown given the dominating stack of facts.
 func nilnessOf(stack []fact, v ssa.Value) nilness {
+
 	switch v := v.(type) {
 	// unwrap ChangeInterface and Slice values recursively, to detect if underlying
 	// values have any facts recorded or are otherwise known with regard to nilness.
@@ -296,6 +298,24 @@ func nilnessOf(stack []fact, v ssa.Value) nilness {
 		if underlying := nilnessOf(stack, v.X); underlying != unknown {
 			return underlying
 		}
+	case *ssa.MakeInterface:
+		// A MakeInterface is non-nil unless its operand is a type parameter.
+		tparam, ok := aliases.Unalias(v.X.Type()).(*types.TypeParam)
+		if !ok {
+			return isnonnil
+		}
+
+		// A MakeInterface of a type parameter is non-nil if
+		// the type parameter cannot be instantiated as an
+		// interface type (#66835).
+		if terms, err := typeparams.NormalTerms(tparam.Constraint()); err == nil && len(terms) > 0 {
+			return isnonnil
+		}
+
+		// If the type parameter can be instantiated as an
+		// interface (and thus also as a concrete type),
+		// we can't determine the nilness.
+
 	case *ssa.Slice:
 		if underlying := nilnessOf(stack, v.X); underlying != unknown {
 			return underlying
@@ -332,10 +352,10 @@ func nilnessOf(stack []fact, v ssa.Value) nilness {
 		*ssa.IndexAddr,
 		*ssa.MakeChan,
 		*ssa.MakeClosure,
-		*ssa.MakeInterface,
 		*ssa.MakeMap,
 		*ssa.MakeSlice:
 		return isnonnil
+
 	case *ssa.Const:
 		if v.IsNil() {
 			return isnil // nil or zero value of a pointer-like type
@@ -424,6 +444,9 @@ func is[T any](x any) bool {
 }
 
 func isNillable(t types.Type) bool {
+	// TODO(adonovan): CoreType (+ case *Interface) looks wrong.
+	// This should probably use Underlying, and handle TypeParam
+	// by computing the union across its normal terms.
 	switch t := typeparams.CoreType(t).(type) {
 	case *types.Pointer,
 		*types.Map,
