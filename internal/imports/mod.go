@@ -166,8 +166,9 @@ func newModuleResolver(e *ProcessEnv, moduleCacheCache *DirInfoCache) (*ModuleRe
 		return count(j) < count(i) // descending order
 	})
 
-	r.roots = []gopathwalk.Root{
-		{Path: filepath.Join(goenv["GOROOT"], "/src"), Type: gopathwalk.RootGOROOT},
+	r.roots = []gopathwalk.Root{}
+	if goenv["GOROOT"] != "" { // "" happens in tests
+		r.roots = append(r.roots, gopathwalk.Root{Path: filepath.Join(goenv["GOROOT"], "/src"), Type: gopathwalk.RootGOROOT})
 	}
 	r.mainByDir = make(map[string]*gocommand.ModuleJSON)
 	for _, main := range r.mains {
