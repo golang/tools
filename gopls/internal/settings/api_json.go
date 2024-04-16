@@ -675,8 +675,8 @@ var GeneratedAPIJSON = &APIJSON{
 			{
 				Name:      "semanticTokens",
 				Type:      "bool",
-				Doc:       "semanticTokens controls whether the LSP server will send\nsemantic tokens to the client.\n",
-				Default:   "false",
+				Doc:       "semanticTokens controls whether the LSP server will send\nsemantic tokens to the client. If false, gopls will send empty semantic\ntokens.\n",
+				Default:   "true",
 				Status:    "experimental",
 				Hierarchy: "ui",
 			},

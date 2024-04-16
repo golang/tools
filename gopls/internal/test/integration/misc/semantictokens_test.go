@@ -90,7 +90,6 @@ func Add[T int](target T, l []T) []T {
 `
 	WithOptions(
 		Modes(Default),
-		Settings{"semanticTokens": true},
 	).Run(t, src, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.AfterChange(
@@ -127,7 +126,6 @@ func New[K int, V any]() Smap[K, V] {
 `
 	WithOptions(
 		Modes(Default),
-		Settings{"semanticTokens": true},
 	).Run(t, src, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		seen := env.SemanticTokensFull("main.go")
@@ -183,7 +181,6 @@ func bar() {}
 
 	WithOptions(
 		Modes(Default),
-		Settings{"semanticTokens": true},
 	).Run(t, src, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		seen := env.SemanticTokensFull("main.go")
@@ -198,7 +195,7 @@ func TestSemantic_65254(t *testing.T) {
 	src := `
 -- go.mod --
 module example.com
-	
+
 go 1.21
 -- main.go --
 package main
@@ -227,7 +224,6 @@ const bad = `
 	}
 	WithOptions(
 		Modes(Default),
-		Settings{"semanticTokens": true},
 	).Run(t, src, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		seen := env.SemanticTokensFull("main.go")

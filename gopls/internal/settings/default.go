@@ -106,6 +106,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						string(command.Vendor):            true,
 						// TODO(hyangah): enable command.RunGovulncheck.
 					},
+					SemanticTokens: true,
 				},
 			},
 			InternalOptions: InternalOptions{
