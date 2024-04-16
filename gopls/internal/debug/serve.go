@@ -26,6 +26,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug/log"
+	label1 "golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/event"
@@ -36,7 +37,6 @@ import (
 	"golang.org/x/tools/internal/event/export/prometheus"
 	"golang.org/x/tools/internal/event/keys"
 	"golang.org/x/tools/internal/event/label"
-	"golang.org/x/tools/internal/event/tag"
 )
 
 type contextKeyType int
@@ -440,7 +440,7 @@ func (i *Instance) Serve(ctx context.Context, addr string) (string, error) {
 	if strings.HasSuffix(i.debugAddress, ":0") {
 		stdlog.Printf("debug server listening at http://localhost:%d", port)
 	}
-	event.Log(ctx, "Debug serving", tag.Port.Of(port))
+	event.Log(ctx, "Debug serving", label1.Port.Of(port))
 	go func() {
 		mux := http.NewServeMux()
 		mux.HandleFunc("/", render(MainTmpl, func(*http.Request) interface{} { return i }))
@@ -561,27 +561,27 @@ func makeInstanceExporter(i *Instance) event.Exporter {
 			if s := cache.KeyCreateSession.Get(ev); s != nil {
 				i.State.addClient(s)
 			}
-			if sid := tag.NewServer.Get(ev); sid != "" {
+			if sid := label1.NewServer.Get(ev); sid != "" {
 				i.State.updateServer(&Server{
 					ID:           sid,
-					Logfile:      tag.Logfile.Get(ev),
-					DebugAddress: tag.DebugAddress.Get(ev),
-					GoplsPath:    tag.GoplsPath.Get(ev),
-					ClientID:     tag.ClientID.Get(ev),
+					Logfile:      label1.Logfile.Get(ev),
+					DebugAddress: label1.DebugAddress.Get(ev),
+					GoplsPath:    label1.GoplsPath.Get(ev),
+					ClientID:     label1.ClientID.Get(ev),
 				})
 			}
 			if s := cache.KeyShutdownSession.Get(ev); s != nil {
 				i.State.dropClient(s)
 			}
-			if sid := tag.EndServer.Get(ev); sid != "" {
+			if sid := label1.EndServer.Get(ev); sid != "" {
 				i.State.dropServer(sid)
 			}
 			if s := cache.KeyUpdateSession.Get(ev); s != nil {
 				if c := i.State.Client(s.ID()); c != nil {
-					c.DebugAddress = tag.DebugAddress.Get(ev)
-					c.Logfile = tag.Logfile.Get(ev)
-					c.ServerID = tag.ServerID.Get(ev)
-					c.GoplsPath = tag.GoplsPath.Get(ev)
+					c.DebugAddress = label1.DebugAddress.Get(ev)
+					c.Logfile = label1.Logfile.Get(ev)
+					c.ServerID = label1.ServerID.Get(ev)
+					c.GoplsPath = label1.GoplsPath.Get(ev)
 				}
 			}
 		}

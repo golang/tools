@@ -15,10 +15,10 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
 )
@@ -70,7 +70,7 @@ func (s *Snapshot) ParseMod(ctx context.Context, fh file.Handle) (*ParsedModule,
 // parseModImpl parses the go.mod file whose name and contents are in fh.
 // It may return partial results and an error.
 func parseModImpl(ctx context.Context, fh file.Handle) (*ParsedModule, error) {
-	_, done := event.Start(ctx, "cache.ParseMod", tag.URI.Of(fh.URI()))
+	_, done := event.Start(ctx, "cache.ParseMod", label.URI.Of(fh.URI()))
 	defer done()
 
 	contents, err := fh.Content()
@@ -155,7 +155,7 @@ func (s *Snapshot) ParseWork(ctx context.Context, fh file.Handle) (*ParsedWorkFi
 
 // parseWorkImpl parses a go.work file. It may return partial results and an error.
 func parseWorkImpl(ctx context.Context, fh file.Handle) (*ParsedWorkFile, error) {
-	_, done := event.Start(ctx, "cache.ParseWork", tag.URI.Of(fh.URI()))
+	_, done := event.Start(ctx, "cache.ParseWork", label.URI.Of(fh.URI()))
 	defer done()
 
 	content, err := fh.Content()
@@ -265,7 +265,7 @@ func (s *Snapshot) ModWhy(ctx context.Context, fh file.Handle) (map[string]strin
 
 // modWhyImpl returns the result of "go mod why -m" on the specified go.mod file.
 func modWhyImpl(ctx context.Context, snapshot *Snapshot, fh file.Handle) (map[string]string, error) {
-	ctx, done := event.Start(ctx, "cache.ModWhy", tag.URI.Of(fh.URI()))
+	ctx, done := event.Start(ctx, "cache.ModWhy", label.URI.Of(fh.URI()))
 	defer done()
 
 	pm, err := snapshot.ParseMod(ctx, fh)

@@ -21,12 +21,12 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/jsonrpc2"
 )
 
@@ -259,11 +259,11 @@ func (f *forwarder) handshake(ctx context.Context) {
 		event.Error(ctx, "", fmt.Errorf("forwarder: gopls path mismatch: forwarder is %q, remote is %q", goplsPath, hresp.GoplsPath))
 	}
 	event.Log(ctx, "New server",
-		tag.NewServer.Of(f.serverID),
-		tag.Logfile.Of(hresp.Logfile),
-		tag.DebugAddress.Of(hresp.DebugAddr),
-		tag.GoplsPath.Of(hresp.GoplsPath),
-		tag.ClientID.Of(hresp.SessionID),
+		label.NewServer.Of(f.serverID),
+		label.Logfile.Of(hresp.Logfile),
+		label.DebugAddress.Of(hresp.DebugAddr),
+		label.GoplsPath.Of(hresp.GoplsPath),
+		label.ClientID.Of(hresp.SessionID),
 	)
 }
 
@@ -473,10 +473,10 @@ func handshaker(session *cache.Session, goplsPath string, logHandshakes bool, ha
 			}
 			event.Log(ctx, "Handshake session update",
 				cache.KeyUpdateSession.Of(session),
-				tag.DebugAddress.Of(req.DebugAddr),
-				tag.Logfile.Of(req.Logfile),
-				tag.ServerID.Of(req.ServerID),
-				tag.GoplsPath.Of(req.GoplsPath),
+				label.DebugAddress.Of(req.DebugAddr),
+				label.Logfile.Of(req.Logfile),
+				label.ServerID.Of(req.ServerID),
+				label.GoplsPath.Of(req.GoplsPath),
 			)
 			resp := handshakeResponse{
 				SessionID: session.ID(),

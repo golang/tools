@@ -9,10 +9,10 @@ import (
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/template"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 )
 
 func (s *server) SemanticTokensFull(ctx context.Context, params *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
@@ -24,7 +24,7 @@ func (s *server) SemanticTokensRange(ctx context.Context, params *protocol.Seman
 }
 
 func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIdentifier, rng *protocol.Range) (*protocol.SemanticTokens, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.semanticTokens", tag.URI.Of(td.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.semanticTokens", label.URI.Of(td.URI))
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, td.URI)

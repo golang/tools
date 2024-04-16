@@ -35,6 +35,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/xrefs"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/filecache"
+	label1 "golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -47,7 +48,6 @@ import (
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/label"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/packagesinternal"
@@ -269,7 +269,11 @@ func (s *Snapshot) SequenceID() uint64 {
 // SnapshotLabels returns a new slice of labels that should be used for events
 // related to a snapshot.
 func (s *Snapshot) Labels() []label.Label {
-	return []label.Label{tag.Snapshot.Of(s.SequenceID()), tag.Directory.Of(s.Folder())}
+	return []label.Label{
+		label1.ViewID.Of(s.view.id),
+		label1.Snapshot.Of(s.SequenceID()),
+		label1.Directory.Of(s.Folder().Path()),
+	}
 }
 
 // Folder returns the folder at the base of this snapshot.

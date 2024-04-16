@@ -12,13 +12,13 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/golang/completion"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/template"
 	"golang.org/x/tools/gopls/internal/work"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 )
 
 func (s *server) Completion(ctx context.Context, params *protocol.CompletionParams) (_ *protocol.CompletionList, rerr error) {
@@ -27,7 +27,7 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 		recordLatency(ctx, rerr)
 	}()
 
-	ctx, done := event.Start(ctx, "lsp.Server.completion", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.completion", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
@@ -58,7 +58,7 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 		return cl, nil
 	}
 	if err != nil {
-		event.Error(ctx, "no completions found", err, tag.Position.Of(params.Position))
+		event.Error(ctx, "no completions found", err, label.Position.Of(params.Position))
 	}
 	if candidates == nil {
 		complEmpty.Inc()

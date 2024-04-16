@@ -18,11 +18,11 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
 )
@@ -99,7 +99,7 @@ func (s *Snapshot) ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule
 
 // modTidyImpl runs "go mod tidy" on a go.mod file.
 func modTidyImpl(ctx context.Context, snapshot *Snapshot, filename string, pm *ParsedModule) (*TidiedModule, error) {
-	ctx, done := event.Start(ctx, "cache.ModTidy", tag.URI.Of(filename))
+	ctx, done := event.Start(ctx, "cache.ModTidy", label.File.Of(filename))
 	defer done()
 
 	inv := &gocommand.Invocation{

@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/robustio"
 )
 
@@ -149,7 +149,7 @@ func readFile(ctx context.Context, uri protocol.DocumentURI, mtime time.Time) (*
 	}
 	defer func() { <-ioLimit }()
 
-	ctx, done := event.Start(ctx, "cache.readFile", tag.File.Of(uri.Path()))
+	ctx, done := event.Start(ctx, "cache.readFile", label.File.Of(uri.Path()))
 	_ = ctx
 	defer done()
 

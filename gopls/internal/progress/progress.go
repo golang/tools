@@ -16,9 +16,9 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/xcontext"
 )
 
@@ -267,7 +267,7 @@ type eventWriter struct {
 }
 
 func (ew *eventWriter) Write(p []byte) (n int, err error) {
-	event.Log(ew.ctx, string(p), tag.Operation.Of(ew.operation))
+	event.Log(ew.ctx, string(p), label.Operation.Of(ew.operation))
 	return len(p), nil
 }
 

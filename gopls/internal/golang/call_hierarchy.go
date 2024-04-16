@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 )
 
 // PrepareCallHierarchy returns an array of CallHierarchyItem for a file and the position within the file.
@@ -83,7 +82,7 @@ func IncomingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	for _, ref := range refs {
 		callItem, err := enclosingNodeCallItem(ctx, snapshot, ref.pkgPath, ref.location)
 		if err != nil {
-			event.Error(ctx, "error getting enclosing node", err, tag.Method.Of(string(ref.pkgPath)))
+			event.Error(ctx, fmt.Sprintf("error getting enclosing node for %q", ref.pkgPath), err)
 			continue
 		}
 		loc := protocol.Location{

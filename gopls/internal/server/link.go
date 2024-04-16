@@ -21,10 +21,10 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"mvdan.cc/xurls/v2"
 )
 
@@ -46,7 +46,7 @@ func (s *server) DocumentLink(ctx context.Context, params *protocol.DocumentLink
 	}
 	// Don't return errors for document links.
 	if err != nil {
-		event.Error(ctx, "failed to compute document links", err, tag.URI.Of(fh.URI()))
+		event.Error(ctx, "failed to compute document links", err, label.URI.Of(fh.URI()))
 		return nil, nil // empty result
 	}
 	return links, nil // may be empty (for other file types)

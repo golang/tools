@@ -17,13 +17,13 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/imports"
 )
 
@@ -48,7 +48,7 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 		if wantQuickFixes || want[protocol.SourceOrganizeImports] {
 			importEdits, importEditsPerFix, err := allImportsFixes(ctx, snapshot, pgf)
 			if err != nil {
-				event.Error(ctx, "imports fixes", err, tag.File.Of(fh.URI().Path()))
+				event.Error(ctx, "imports fixes", err, label.File.Of(fh.URI().Path()))
 				importEdits = nil
 				importEditsPerFix = nil
 			}

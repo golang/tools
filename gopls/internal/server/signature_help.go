@@ -9,13 +9,13 @@ import (
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 )
 
 func (s *server) SignatureHelp(ctx context.Context, params *protocol.SignatureHelpParams) (*protocol.SignatureHelp, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.signatureHelp", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.signatureHelp", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
@@ -35,7 +35,7 @@ func (s *server) SignatureHelp(ctx context.Context, params *protocol.SignatureHe
 		// that recently.
 		//
 		// It's unclear whether we still need to avoid returning this error result.
-		event.Error(ctx, "signature help failed", err, tag.Position.Of(params.Position))
+		event.Error(ctx, "signature help failed", err, label.Position.Of(params.Position))
 		return nil, nil
 	}
 	if info == nil {

@@ -16,9 +16,9 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/xcontext"
 )
@@ -92,7 +92,7 @@ func (m ModificationSource) String() string {
 }
 
 func (s *server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didOpen", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.didOpen", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	uri := params.TextDocument.URI
@@ -121,7 +121,7 @@ func (s *server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 }
 
 func (s *server) DidChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didChange", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.didChange", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	uri := params.TextDocument.URI
@@ -190,7 +190,7 @@ func (s *server) DidChangeWatchedFiles(ctx context.Context, params *protocol.Did
 }
 
 func (s *server) DidSave(ctx context.Context, params *protocol.DidSaveTextDocumentParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didSave", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.didSave", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	c := file.Modification{
@@ -204,7 +204,7 @@ func (s *server) DidSave(ctx context.Context, params *protocol.DidSaveTextDocume
 }
 
 func (s *server) DidClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didClose", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.didClose", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	return s.didModifyFiles(ctx, []file.Modification{

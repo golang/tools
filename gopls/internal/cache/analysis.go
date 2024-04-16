@@ -36,6 +36,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/filecache"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/progress"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -44,7 +45,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/frob"
 	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/facts"
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/typesinternal"
@@ -186,7 +186,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 		sort.Strings(keys)
 		tagStr = strings.Join(keys, ",")
 	}
-	ctx, done := event.Start(ctx, "snapshot.Analyze", tag.Package.Of(tagStr))
+	ctx, done := event.Start(ctx, "snapshot.Analyze", label.Package.Of(tagStr))
 	defer done()
 
 	// Filter and sort enabled root analyzers.

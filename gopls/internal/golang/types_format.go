@@ -20,7 +20,6 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -154,7 +153,7 @@ func formatFieldList(ctx context.Context, fset *token.FileSet, list *ast.FieldLi
 		cfg := printer.Config{Mode: printer.UseSpaces | printer.TabIndent, Tabwidth: 4}
 		b := &bytes.Buffer{}
 		if err := cfg.Fprint(b, fset, p.Type); err != nil {
-			event.Error(ctx, "unable to print type", nil, tag.Type.Of(p.Type))
+			event.Error(ctx, fmt.Sprintf("error printing type %s", types.ExprString(p.Type)), err)
 			continue
 		}
 		typ := replacer.Replace(b.String())

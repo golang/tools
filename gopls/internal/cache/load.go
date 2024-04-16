@@ -18,13 +18,13 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/immutable"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/xcontext"
@@ -113,8 +113,10 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 	}
 	sort.Strings(query) // for determinism
 
-	ctx, done := event.Start(ctx, "cache.snapshot.load", tag.Query.Of(query))
+	ctx, done := event.Start(ctx, "cache.snapshot.load", label.Query.Of(query))
 	defer done()
+
+	startTime := time.Now()
 
 	flags := LoadWorkspace
 	if allowNetwork {
@@ -145,11 +147,17 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 	}
 
 	// This log message is sought for by TestReloadOnlyOnce.
-	labels := append(s.Labels(), tag.Query.Of(query), tag.PackageCount.Of(len(pkgs)))
-	if err != nil {
-		event.Error(ctx, eventName, err, labels...)
-	} else {
-		event.Log(ctx, eventName, labels...)
+	{
+		lbls := append(s.Labels(),
+			label.Query.Of(query),
+			label.PackageCount.Of(len(pkgs)),
+			label.Duration.Of(time.Since(startTime)),
+		)
+		if err != nil {
+			event.Error(ctx, eventName, err, lbls...)
+		} else {
+			event.Log(ctx, eventName, lbls...)
+		}
 	}
 
 	if standalone {
@@ -228,8 +236,8 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		if s.Options().VerboseOutput {
 			event.Log(ctx, eventName, append(
 				s.Labels(),
-				tag.Package.Of(pkg.ID),
-				tag.Files.Of(pkg.CompiledGoFiles))...)
+				label.Package.Of(pkg.ID),
+				label.Files.Of(pkg.CompiledGoFiles))...)
 		}
 
 		// Ignore packages with no sources, since we will never be able to
@@ -289,7 +297,9 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		}
 	}
 
-	event.Log(ctx, fmt.Sprintf("%s: updating metadata for %d packages", eventName, len(updates)))
+	if s.Options().VerboseOutput {
+		event.Log(ctx, fmt.Sprintf("%s: updating metadata for %d packages", eventName, len(updates)))
+	}
 
 	meta := s.meta.Update(updates)
 	workspacePackages := computeWorkspacePackagesLocked(ctx, s, meta)
@@ -560,7 +570,7 @@ func computeLoadDiagnostics(ctx context.Context, snapshot *Snapshot, mp *metadat
 		if err != nil {
 			// There are certain cases where the go command returns invalid
 			// positions, so we cannot panic or even bug.Reportf here.
-			event.Error(ctx, "unable to compute positions for list errors", err, tag.Package.Of(string(mp.ID)))
+			event.Error(ctx, "unable to compute positions for list errors", err, label.Package.Of(string(mp.ID)))
 			continue
 		}
 		diags = append(diags, pkgDiags...)
@@ -574,7 +584,7 @@ func computeLoadDiagnostics(ctx context.Context, snapshot *Snapshot, mp *metadat
 		if ctx.Err() == nil {
 			// TODO(rfindley): consider making this a bug.Reportf. depsErrors should
 			// not normally fail.
-			event.Error(ctx, "unable to compute deps errors", err, tag.Package.Of(string(mp.ID)))
+			event.Error(ctx, "unable to compute deps errors", err, label.Package.Of(string(mp.ID)))
 		}
 	} else {
 		diags = append(diags, depsDiags...)

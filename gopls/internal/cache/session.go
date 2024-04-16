@@ -20,12 +20,14 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/persistent"
 	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/event/keys"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/memoize"
@@ -263,7 +265,15 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 	}
 
 	// Record the environment of the newly created view in the log.
-	event.Log(ctx, viewEnv(v))
+	event.Log(ctx, fmt.Sprintf("Created View (#%s)", v.id),
+		label.Directory.Of(v.folder.Dir.Path()),
+		viewTypeKey.Of(v.typ.String()),
+		rootDirKey.Of(string(v.root)),
+		goVersionKey.Of(strings.TrimRight(v.folder.Env.GoVersionOutput, "\n")),
+		buildFlagsKey.Of(fmt.Sprint(v.folder.Options.BuildFlags)),
+		envKey.Of(fmt.Sprintf("%+v", v.folder.Env)),
+		envOverlayKey.Of(v.EnvOverlay()),
+	)
 
 	// Initialize the view without blocking.
 	initCtx, initCancel := context.WithCancel(xcontext.Detach(ctx))
@@ -280,6 +290,16 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 	// Return a third reference to the caller.
 	return v, snapshot, snapshot.Acquire()
 }
+
+// These keys are used to log view metadata in createView.
+var (
+	viewTypeKey   = keys.NewString("view_type", "")
+	rootDirKey    = keys.NewString("root_dir", "")
+	goVersionKey  = keys.NewString("go_version", "")
+	buildFlagsKey = keys.New("build_flags", "")
+	envKey        = keys.New("env", "")
+	envOverlayKey = keys.New("env_overlay", "")
+)
 
 // RemoveView removes from the session the view rooted at the specified directory.
 // It reports whether a view of that directory was removed.

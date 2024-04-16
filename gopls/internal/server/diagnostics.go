@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -29,7 +30,6 @@ import (
 	"golang.org/x/tools/gopls/internal/work"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/keys"
-	"golang.org/x/tools/internal/event/tag"
 )
 
 // fileDiagnostics holds the current state of published diagnostics for a file.
@@ -511,7 +511,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 		// if err is non-nil (though as of today it's OK).
 		analysisDiags, err = golang.Analyze(ctx, snapshot, toAnalyze, s.progress)
 		if err != nil {
-			event.Error(ctx, "warning: analyzing package", err, append(snapshot.Labels(), tag.Package.Of(keys.Join(maps.Keys(toDiagnose))))...)
+			event.Error(ctx, "warning: analyzing package", err, append(snapshot.Labels(), label.Package.Of(keys.Join(maps.Keys(toDiagnose))))...)
 			return
 		}
 	}()
@@ -557,7 +557,7 @@ func (s *server) gcDetailsDiagnostics(ctx context.Context, snapshot *cache.Snaps
 	for _, mp := range toGCDetail {
 		gcReports, err := golang.GCOptimizationDetails(ctx, snapshot, mp)
 		if err != nil {
-			event.Error(ctx, "warning: gc details", err, append(snapshot.Labels(), tag.Package.Of(string(mp.ID)))...)
+			event.Error(ctx, "warning: gc details", err, append(snapshot.Labels(), label.Package.Of(string(mp.ID)))...)
 			continue
 		}
 		for uri, diags := range gcReports {
@@ -758,7 +758,7 @@ func (s *server) updateDiagnostics(ctx context.Context, snapshot *cache.Snapshot
 			if ctx.Err() != nil {
 				return
 			} else {
-				event.Error(ctx, "updateDiagnostics: failed to deliver diagnostics", err, tag.URI.Of(uri))
+				event.Error(ctx, "updateDiagnostics: failed to deliver diagnostics", err, label.URI.Of(uri))
 			}
 		}
 	}
@@ -774,7 +774,7 @@ func (s *server) updateDiagnostics(ctx context.Context, snapshot *cache.Snapshot
 					if ctx.Err() != nil {
 						return
 					} else {
-						event.Error(ctx, "updateDiagnostics: failed to deliver diagnostics", err, tag.URI.Of(uri))
+						event.Error(ctx, "updateDiagnostics: failed to deliver diagnostics", err, label.URI.Of(uri))
 					}
 				}
 			}

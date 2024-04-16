@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/keys"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/imports"
 )
 
@@ -95,7 +95,7 @@ func (c *sharedModCache) refreshDir(ctx context.Context, dir string, logf func(s
 	timer, ok := c.timers[dir]
 	if !ok {
 		timer = newRefreshTimer(func() {
-			_, done := event.Start(ctx, "cache.sharedModCache.refreshDir", tag.Directory.Of(dir))
+			_, done := event.Start(ctx, "cache.sharedModCache.refreshDir", label.Directory.Of(dir))
 			defer done()
 			imports.ScanModuleCache(dir, cache, logf)
 		})

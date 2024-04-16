@@ -28,13 +28,13 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/filecache"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/tokeninternal"
@@ -347,7 +347,7 @@ type (
 //
 // Both pre and post may be called concurrently.
 func (s *Snapshot) forEachPackage(ctx context.Context, ids []PackageID, pre preTypeCheck, post postTypeCheck) error {
-	ctx, done := event.Start(ctx, "cache.forEachPackage", tag.PackageCount.Of(len(ids)))
+	ctx, done := event.Start(ctx, "cache.forEachPackage", label.PackageCount.Of(len(ids)))
 	defer done()
 
 	if len(ids) == 0 {
@@ -612,7 +612,7 @@ func storePackageResults(ctx context.Context, ph *packageHandle, p *Package) {
 // importPackage loads the given package from its export data in p.exportData
 // (which must already be populated).
 func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package, data []byte) (*types.Package, error) {
-	ctx, done := event.Start(ctx, "cache.typeCheckBatch.importPackage", tag.Package.Of(string(mp.ID)))
+	ctx, done := event.Start(ctx, "cache.typeCheckBatch.importPackage", label.Package.Of(string(mp.ID)))
 	defer done()
 
 	impMap := b.importMap(mp.ID)
@@ -678,7 +678,7 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 // checkPackageForImport type checks, but skips function bodies and does not
 // record syntax information.
 func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageHandle) (*types.Package, error) {
-	ctx, done := event.Start(ctx, "cache.typeCheckBatch.checkPackageForImport", tag.Package.Of(string(ph.mp.ID)))
+	ctx, done := event.Start(ctx, "cache.typeCheckBatch.checkPackageForImport", label.Package.Of(string(ph.mp.ID)))
 	defer done()
 
 	onError := func(e error) {
@@ -1469,7 +1469,7 @@ func localPackageKey(inputs typeCheckInputs) file.Hash {
 // deps holds the future results of type-checking the direct dependencies.
 func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*Package, error) {
 	inputs := ph.localInputs
-	ctx, done := event.Start(ctx, "cache.typeCheckBatch.checkPackage", tag.Package.Of(string(inputs.id)))
+	ctx, done := event.Start(ctx, "cache.typeCheckBatch.checkPackage", label.Package.Of(string(inputs.id)))
 	defer done()
 
 	pkg := &syntaxPackage{
@@ -1586,7 +1586,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 	for _, e := range pkg.parseErrors {
 		diags, err := parseErrorDiagnostics(pkg, e)
 		if err != nil {
-			event.Error(ctx, "unable to compute positions for parse errors", err, tag.Package.Of(string(inputs.id)))
+			event.Error(ctx, "unable to compute positions for parse errors", err, label.Package.Of(string(inputs.id)))
 			continue
 		}
 		for _, diag := range diags {

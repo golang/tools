@@ -10,7 +10,6 @@
 package cache
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -302,15 +301,15 @@ const (
 func (t ViewType) String() string {
 	switch t {
 	case GoPackagesDriverView:
-		return "GoPackagesDriverView"
+		return "GoPackagesDriver"
 	case GOPATHView:
-		return "GOPATHView"
+		return "GOPATH"
 	case GoModView:
-		return "GoModView"
+		return "GoMod"
 	case GoWorkView:
-		return "GoWorkView"
+		return "GoWork"
 	case AdHocView:
-		return "AdHocView"
+		return "AdHoc"
 	default:
 		return "Unknown"
 	}
@@ -405,32 +404,6 @@ func (s *Session) UpdateFolders(ctx context.Context, newFolders []*Folder) error
 	}
 	s.views = newViews
 	return nil
-}
-
-// viewEnv returns a string describing the environment of a newly created view.
-//
-// It must not be called concurrently with any other view methods.
-// TODO(rfindley): rethink this function, or inline sole call.
-func viewEnv(v *View) string {
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, `go info for %v
-(view type %v)
-(root dir %s)
-(go version %s)
-(build flags: %v)
-(go env: %+v)
-(env overlay: %v)
-`,
-		v.folder.Dir.Path(),
-		v.typ,
-		v.root.Path(),
-		strings.TrimRight(v.folder.Env.GoVersionOutput, "\n"),
-		v.folder.Options.BuildFlags,
-		v.folder.Env,
-		v.envOverlay,
-	)
-
-	return buf.String()
 }
 
 // RunProcessEnvFunc runs fn with the process env for this snapshot's view.
