@@ -14,7 +14,6 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -408,73 +407,28 @@ func (s *Snapshot) config(ctx context.Context, inv *gocommand.Invocation) *packa
 	return cfg
 }
 
-// InvocationFlags represents the settings of a particular go command invocation.
-// It is a mode, plus a set of flag bits.
-type InvocationFlags int
-
-const (
-	// Normal is appropriate for commands that might be run by a user and don't
-	// deliberately modify go.mod files, e.g. `go test`.
-	Normal InvocationFlags = iota
-	// WriteTemporaryModFile is for commands that need information from a
-	// modified version of the user's go.mod file, e.g. `go mod tidy` used to
-	// generate diagnostics.
-	WriteTemporaryModFile
-	// LoadWorkspace is for packages.Load, and other operations that should
-	// consider the whole workspace at once.
-	LoadWorkspace
-	// AllowNetwork is a flag bit that indicates the invocation should be
-	// allowed to access the network.
-	AllowNetwork InvocationFlags = 1 << 10
-)
-
-func (m InvocationFlags) Mode() InvocationFlags {
-	return m & (AllowNetwork - 1)
-}
-
-func (m InvocationFlags) AllowNetwork() bool {
-	return m&AllowNetwork != 0
-}
-
-// RunGoCommandDirect runs the given `go` command. Verb, Args, and
-// WorkingDir must be specified.
-func (s *Snapshot) RunGoCommandDirect(ctx context.Context, mode InvocationFlags, inv *gocommand.Invocation) (*bytes.Buffer, error) {
-	_, inv, cleanup, err := s.goCommandInvocation(ctx, mode, inv)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-
-	return s.view.gocmdRunner.Run(ctx, *inv)
-}
-
-// RunGoCommandPiped runs the given `go` command, writing its output
-// to stdout and stderr. Verb, Args, and WorkingDir must be specified.
-//
-// RunGoCommandPiped runs the command serially using gocommand.RunPiped,
-// enforcing that this command executes exclusively to other commands on the
-// server.
-func (s *Snapshot) RunGoCommandPiped(ctx context.Context, mode InvocationFlags, inv *gocommand.Invocation, stdout, stderr io.Writer) error {
-	_, inv, cleanup, err := s.goCommandInvocation(ctx, mode, inv)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	return s.view.gocmdRunner.RunPiped(ctx, *inv, stdout, stderr)
-}
-
 // RunGoModUpdateCommands runs a series of `go` commands that updates the go.mod
 // and go.sum file for wd, and returns their updated contents.
 //
-// TODO(rfindley): the signature of RunGoModUpdateCommands is very confusing.
+// TODO(rfindley): the signature of RunGoModUpdateCommands is very confusing,
+// and is the only thing forcing the ModFlag and ModFile indirection.
 // Simplify it.
-func (s *Snapshot) RunGoModUpdateCommands(ctx context.Context, wd string, run func(invoke func(...string) (*bytes.Buffer, error)) error) ([]byte, []byte, error) {
-	flags := WriteTemporaryModFile | AllowNetwork
-	tmpURI, inv, cleanup, err := s.goCommandInvocation(ctx, flags, &gocommand.Invocation{WorkingDir: wd})
+func (s *Snapshot) RunGoModUpdateCommands(ctx context.Context, modURI protocol.DocumentURI, run func(invoke func(...string) (*bytes.Buffer, error)) error) ([]byte, []byte, error) {
+	tempDir, cleanup, err := TempModDir(ctx, s, modURI)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer cleanup()
+
+	// TODO(rfindley): we must use ModFlag and ModFile here (rather than simply
+	// setting Args), because without knowing the verb, we can't know whether
+	// ModFlag is appropriate. Refactor so that args can be set by the caller.
+	inv := s.GoCommandInvocation(true, &gocommand.Invocation{
+		WorkingDir: modURI.Dir().Path(),
+		ModFlag:    "mod",
+		ModFile:    filepath.Join(tempDir, "go.mod"),
+		Env:        []string{"GOWORK=off"},
+	})
 	invoke := func(args ...string) (*bytes.Buffer, error) {
 		inv.Verb = args[0]
 		inv.Args = args[1:]
@@ -483,37 +437,81 @@ func (s *Snapshot) RunGoModUpdateCommands(ctx context.Context, wd string, run fu
 	if err := run(invoke); err != nil {
 		return nil, nil, err
 	}
-	if flags.Mode() != WriteTemporaryModFile {
-		return nil, nil, nil
-	}
 	var modBytes, sumBytes []byte
-	modBytes, err = os.ReadFile(tmpURI.Path())
+	modBytes, err = os.ReadFile(filepath.Join(tempDir, "go.mod"))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, nil, err
 	}
-	sumBytes, err = os.ReadFile(strings.TrimSuffix(tmpURI.Path(), ".mod") + ".sum")
+	sumBytes, err = os.ReadFile(filepath.Join(tempDir, "go.sum"))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, nil, err
 	}
 	return modBytes, sumBytes, nil
 }
 
-// goCommandInvocation populates inv with configuration for running go commands on the snapshot.
-//
-// TODO(rfindley): refactor this function to compose the required configuration
-// explicitly, rather than implicitly deriving it from flags and inv.
-//
-// TODO(adonovan): simplify cleanup mechanism. It's hard to see, but
-// it used only after call to tempModFile.
-func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlags, inv *gocommand.Invocation) (tmpURI protocol.DocumentURI, updatedInv *gocommand.Invocation, cleanup func(), err error) {
-	allowNetworkOption := s.Options().AllowImplicitNetworkAccess
+// TempModDir creates a temporary directory with the contents of the provided
+// modURI, as well as its corresponding go.sum file, if it exists. On success,
+// it is the caller's responsibility to call the cleanup function to remove the
+// directory when it is no longer needed.
+func TempModDir(ctx context.Context, fs file.Source, modURI protocol.DocumentURI) (dir string, _ func(), rerr error) {
+	dir, err := os.MkdirTemp("", "gopls-tempmod")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() {
+		if err := os.RemoveAll(dir); err != nil {
+			event.Error(ctx, "cleaning temp dir", err)
+		}
+	}
+	defer func() {
+		if rerr != nil {
+			cleanup()
+		}
+	}()
 
+	// If go.mod exists, write it.
+	modFH, err := fs.ReadFile(ctx, modURI)
+	if err != nil {
+		return "", nil, err // context cancelled
+	}
+	if data, err := modFH.Content(); err == nil {
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), data, 0666); err != nil {
+			return "", nil, err
+		}
+	}
+
+	// If go.sum exists, write it.
+	sumURI := protocol.DocumentURI(strings.TrimSuffix(string(modURI), ".mod") + ".sum")
+	sumFH, err := fs.ReadFile(ctx, sumURI)
+	if err != nil {
+		return "", nil, err // context cancelled
+	}
+	if data, err := sumFH.Content(); err == nil {
+		if err := os.WriteFile(filepath.Join(dir, "go.sum"), data, 0666); err != nil {
+			return "", nil, err
+		}
+	}
+
+	return dir, cleanup, nil
+}
+
+// GoCommandInvocation populates inv with configuration for running go commands
+// on the snapshot.
+//
+// TODO(rfindley): although this function has been simplified significantly,
+// additional refactoring is still required: the responsibility for Env and
+// BuildFlags should be more clearly expressed in the API.
+//
+// If allowNetwork is set, do not set GOPROXY=off.
+func (s *Snapshot) GoCommandInvocation(allowNetwork bool, inv *gocommand.Invocation) *gocommand.Invocation {
 	// TODO(rfindley): it's not clear that this is doing the right thing.
 	// Should inv.Env really overwrite view.options? Should s.view.envOverlay
 	// overwrite inv.Env? (Do we ever invoke this with a non-empty inv.Env?)
 	//
 	// We should survey existing uses and write down rules for how env is
 	// applied.
+	//
+	// TODO(rfindley): historically, we have not set -overlays here. Is that right?
 	inv.Env = slices.Concat(
 		os.Environ(),
 		s.Options().EnvSlice(),
@@ -521,95 +519,13 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlag
 		[]string{"GO111MODULE=" + s.view.adjustedGO111MODULE()},
 		s.view.EnvOverlay(),
 	)
-	inv.BuildFlags = append([]string{}, s.Options().BuildFlags...)
-	cleanup = func() {} // fallback
+	inv.BuildFlags = slices.Clone(s.Options().BuildFlags)
 
-	// All logic below is for module mode.
-	if len(s.view.workspaceModFiles) == 0 {
-		return "", inv, cleanup, nil
-	}
-
-	mode, allowNetwork := flags.Mode(), flags.AllowNetwork()
-	if !allowNetwork && !allowNetworkOption {
+	if !allowNetwork && !s.Options().AllowImplicitNetworkAccess {
 		inv.Env = append(inv.Env, "GOPROXY=off")
 	}
 
-	// What follows is rather complicated logic for how to actually run the go
-	// command. A word of warning: this is the result of various incremental
-	// features added to gopls, and varying behavior of the Go command across Go
-	// versions. It can surely be cleaned up significantly, but tread carefully.
-	//
-	// Roughly speaking we need to resolve four things:
-	//  - the working directory.
-	//  - the -mod flag
-	//  - the -modfile flag
-	//
-	// These are dependent on a number of factors: whether we need to run in a
-	// synthetic workspace, whether flags are supported at the current go
-	// version, and what we're actually trying to achieve (the
-	// InvocationFlags).
-	//
-	// TODO(rfindley): should we set -overlays here?
-
-	const mutableModFlag = "mod"
-
-	// If the mod flag isn't set, populate it based on the mode and workspace.
-	//
-	// (As noted in various TODOs throughout this function, this is very
-	// confusing and not obviously correct, but tests pass and we will eventually
-	// rewrite this entire function.)
-	if inv.ModFlag == "" && mode == WriteTemporaryModFile {
-		inv.ModFlag = mutableModFlag
-		// -mod must be readonly when using go.work files - see issue #48941
-		inv.Env = append(inv.Env, "GOWORK=off")
-	}
-
-	// TODO(rfindley): if inv.ModFlag was already set to "mod", we may not have
-	// set GOWORK=off here. But that doesn't happen. Clean up this entire API so
-	// that we don't have this mutation of the invocation, which is quite hard to
-	// follow.
-
-	// If the invocation needs to mutate the modfile, we must use a temp mod.
-	if inv.ModFlag == mutableModFlag {
-		var modURI protocol.DocumentURI
-		// Select the module context to use.
-		// If we're type checking, we need to use the workspace context, meaning
-		// the main (workspace) module. Otherwise, we should use the module for
-		// the passed-in working dir.
-		if mode == LoadWorkspace {
-			// TODO(rfindley): this seems unnecessary and overly complicated. Remove
-			// this along with 'allowModFileModifications'.
-			if s.view.typ == GoModView {
-				modURI = s.view.gomod
-			}
-		} else {
-			modURI = s.GoModForFile(protocol.URIFromPath(inv.WorkingDir))
-		}
-
-		var modContent []byte
-		if modURI != "" {
-			modFH, err := s.ReadFile(ctx, modURI)
-			if err != nil {
-				return "", nil, cleanup, err
-			}
-			modContent, err = modFH.Content()
-			if err != nil {
-				return "", nil, cleanup, err
-			}
-		}
-		if modURI == "" {
-			return "", nil, cleanup, fmt.Errorf("no go.mod file found in %s", inv.WorkingDir)
-		}
-		// Use the go.sum if it happens to be available.
-		gosum := s.goSum(ctx, modURI)
-		tmpURI, cleanup, err = tempModFile(modURI, modContent, gosum)
-		if err != nil {
-			return "", nil, cleanup, err
-		}
-		inv.ModFile = tmpURI.Path()
-	}
-
-	return tmpURI, inv, cleanup, nil
+	return inv
 }
 
 func (s *Snapshot) buildOverlay() map[string][]byte {

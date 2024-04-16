@@ -118,16 +118,9 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 
 	startTime := time.Now()
 
-	flags := LoadWorkspace
-	if allowNetwork {
-		flags |= AllowNetwork
-	}
-	_, inv, cleanup, err := s.goCommandInvocation(ctx, flags, &gocommand.Invocation{
+	inv := s.GoCommandInvocation(allowNetwork, &gocommand.Invocation{
 		WorkingDir: s.view.root.Path(),
 	})
-	if err != nil {
-		return err
-	}
 
 	// Set a last resort deadline on packages.Load since it calls the go
 	// command, which may hang indefinitely if it has a bug. golang/go#42132
@@ -137,7 +130,6 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 
 	cfg := s.config(ctx, inv)
 	pkgs, err := packages.Load(cfg, query...)
-	cleanup()
 
 	// If the context was canceled, return early. Otherwise, we might be
 	// type-checking an incomplete result. Check the context directly,

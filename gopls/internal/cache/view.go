@@ -325,50 +325,12 @@ func (w viewDefinition) moduleMode() bool {
 	}
 }
 
+// ID returns the unique ID of this View.
 func (v *View) ID() string { return v.id }
 
-// tempModFile creates a temporary go.mod file based on the contents
-// of the given go.mod file. On success, it is the caller's
-// responsibility to call the cleanup function when the file is no
-// longer needed.
-func tempModFile(modURI protocol.DocumentURI, gomod, gosum []byte) (tmpURI protocol.DocumentURI, cleanup func(), err error) {
-	filenameHash := file.HashOf([]byte(modURI.Path()))
-	tmpMod, err := os.CreateTemp("", fmt.Sprintf("go.%s.*.mod", filenameHash))
-	if err != nil {
-		return "", nil, err
-	}
-	defer tmpMod.Close()
-
-	tmpURI = protocol.URIFromPath(tmpMod.Name())
-	tmpSumName := sumFilename(tmpURI)
-
-	if _, err := tmpMod.Write(gomod); err != nil {
-		return "", nil, err
-	}
-
-	// We use a distinct name here to avoid subtlety around the fact
-	// that both 'return' and 'defer' update the "cleanup" variable.
-	doCleanup := func() {
-		_ = os.Remove(tmpSumName)
-		_ = os.Remove(tmpURI.Path())
-	}
-
-	// Be careful to clean up if we return an error from this function.
-	defer func() {
-		if err != nil {
-			doCleanup()
-			cleanup = nil
-		}
-	}()
-
-	// Create an analogous go.sum, if one exists.
-	if gosum != nil {
-		if err := os.WriteFile(tmpSumName, gosum, 0655); err != nil {
-			return "", nil, err
-		}
-	}
-
-	return tmpURI, doCleanup, nil
+// GoCommandRunner returns the shared gocommand.Runner for this view.
+func (v *View) GoCommandRunner() *gocommand.Runner {
+	return v.gocmdRunner
 }
 
 // Folder returns the folder at the base of this view.

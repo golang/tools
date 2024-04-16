@@ -193,35 +193,6 @@ func parseWorkImpl(ctx context.Context, fh file.Handle) (*ParsedWorkFile, error)
 	}, parseErr
 }
 
-// goSum reads the go.sum file for the go.mod file at modURI, if it exists. If
-// it doesn't exist, it returns nil.
-func (s *Snapshot) goSum(ctx context.Context, modURI protocol.DocumentURI) []byte {
-	// Get the go.sum file, either from the snapshot or directly from the
-	// cache. Avoid (*snapshot).ReadFile here, as we don't want to add
-	// nonexistent file handles to the snapshot if the file does not exist.
-	//
-	// TODO(rfindley): but that's not right. Changes to sum files should
-	// invalidate content, even if it's nonexistent content.
-	sumURI := protocol.URIFromPath(sumFilename(modURI))
-	sumFH := s.FindFile(sumURI)
-	if sumFH == nil {
-		var err error
-		sumFH, err = s.view.fs.ReadFile(ctx, sumURI)
-		if err != nil {
-			return nil
-		}
-	}
-	content, err := sumFH.Content()
-	if err != nil {
-		return nil
-	}
-	return content
-}
-
-func sumFilename(modURI protocol.DocumentURI) string {
-	return strings.TrimSuffix(modURI.Path(), ".mod") + ".sum"
-}
-
 // ModWhy returns the "go mod why" result for each module named in a
 // require statement in the go.mod file.
 // TODO(adonovan): move to new mod_why.go file.
@@ -277,15 +248,16 @@ func modWhyImpl(ctx context.Context, snapshot *Snapshot, fh file.Handle) (map[st
 		return nil, nil // empty result
 	}
 	// Run `go mod why` on all the dependencies.
-	inv := &gocommand.Invocation{
-		Verb:       "mod",
-		Args:       []string{"why", "-m"},
-		WorkingDir: filepath.Dir(fh.URI().Path()),
-	}
+	args := []string{"why", "-m"}
 	for _, req := range pm.File.Require {
-		inv.Args = append(inv.Args, req.Mod.Path)
+		args = append(args, req.Mod.Path)
 	}
-	stdout, err := snapshot.RunGoCommandDirect(ctx, Normal, inv)
+	inv := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
+		Verb:       "mod",
+		Args:       args,
+		WorkingDir: filepath.Dir(fh.URI().Path()),
+	})
+	stdout, err := snapshot.View().GoCommandRunner().Run(ctx, *inv)
 	if err != nil {
 		return nil, err
 	}

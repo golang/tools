@@ -78,7 +78,7 @@ func (s *Snapshot) ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule
 		}
 
 		handle := memoize.NewPromise("modTidy", func(ctx context.Context, arg interface{}) interface{} {
-			tidied, err := modTidyImpl(ctx, arg.(*Snapshot), uri.Path(), pm)
+			tidied, err := modTidyImpl(ctx, arg.(*Snapshot), pm)
 			return modTidyResult{tidied, err}
 		})
 
@@ -98,34 +98,35 @@ func (s *Snapshot) ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule
 }
 
 // modTidyImpl runs "go mod tidy" on a go.mod file.
-func modTidyImpl(ctx context.Context, snapshot *Snapshot, filename string, pm *ParsedModule) (*TidiedModule, error) {
-	ctx, done := event.Start(ctx, "cache.ModTidy", label.File.Of(filename))
+func modTidyImpl(ctx context.Context, snapshot *Snapshot, pm *ParsedModule) (*TidiedModule, error) {
+	ctx, done := event.Start(ctx, "cache.ModTidy", label.URI.Of(pm.URI))
 	defer done()
 
-	inv := &gocommand.Invocation{
-		Verb:       "mod",
-		Args:       []string{"tidy"},
-		WorkingDir: filepath.Dir(filename),
-	}
-	// TODO(adonovan): ensure that unsaved overlays are passed through to 'go'.
-	tmpURI, inv, cleanup, err := snapshot.goCommandInvocation(ctx, WriteTemporaryModFile, inv)
+	tempDir, cleanup, err := TempModDir(ctx, snapshot, pm.URI)
 	if err != nil {
 		return nil, err
 	}
-	// Keep the temporary go.mod file around long enough to parse it.
 	defer cleanup()
 
+	// TODO(adonovan): ensure that unsaved overlays are passed through to 'go'.
+	inv := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
+		Verb:       "mod",
+		Args:       []string{"tidy", "-modfile=" + filepath.Join(tempDir, "go.mod")},
+		Env:        []string{"GOWORK=off"},
+		WorkingDir: pm.URI.Dir().Path(),
+	})
 	if _, err := snapshot.view.gocmdRunner.Run(ctx, *inv); err != nil {
 		return nil, err
 	}
 
 	// Go directly to disk to get the temporary mod file,
 	// since it is always on disk.
-	tempContents, err := os.ReadFile(tmpURI.Path())
+	tempMod := filepath.Join(tempDir, "go.mod")
+	tempContents, err := os.ReadFile(tempMod)
 	if err != nil {
 		return nil, err
 	}
-	ideal, err := modfile.Parse(tmpURI.Path(), tempContents, nil)
+	ideal, err := modfile.Parse(tempMod, tempContents, nil)
 	if err != nil {
 		// We do not need to worry about the temporary file's parse errors
 		// since it has been "tidied".

@@ -402,11 +402,12 @@ func (c *commandHandler) Vendor(ctx context.Context, args command.URIArg) error 
 		// modules.txt in-place. In that case we could theoretically allow this
 		// command to run concurrently.
 		stderr := new(bytes.Buffer)
-		err := deps.snapshot.RunGoCommandPiped(ctx, cache.Normal|cache.AllowNetwork, &gocommand.Invocation{
+		inv := deps.snapshot.GoCommandInvocation(true, &gocommand.Invocation{
 			Verb:       "mod",
 			Args:       []string{"vendor"},
 			WorkingDir: filepath.Dir(args.URI.Path()),
-		}, &bytes.Buffer{}, stderr)
+		})
+		err := deps.snapshot.View().GoCommandRunner().RunPiped(ctx, *inv, &bytes.Buffer{}, stderr)
 		if err != nil {
 			return fmt.Errorf("running go mod vendor failed: %v\nstderr:\n%s", err, stderr.String())
 		}
@@ -614,12 +615,12 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot,
 	// Run `go test -run Func` on each test.
 	var failedTests int
 	for _, funcName := range tests {
-		inv := &gocommand.Invocation{
+		inv := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
 			Verb:       "test",
 			Args:       []string{pkgPath, "-v", "-count=1", fmt.Sprintf("-run=^%s$", regexp.QuoteMeta(funcName))},
 			WorkingDir: filepath.Dir(uri.Path()),
-		}
-		if err := snapshot.RunGoCommandPiped(ctx, cache.Normal, inv, out, out); err != nil {
+		})
+		if err := snapshot.View().GoCommandRunner().RunPiped(ctx, *inv, out, out); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return err
 			}
@@ -630,12 +631,12 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot,
 	// Run `go test -run=^$ -bench Func` on each test.
 	var failedBenchmarks int
 	for _, funcName := range benchmarks {
-		inv := &gocommand.Invocation{
+		inv := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
 			Verb:       "test",
 			Args:       []string{pkgPath, "-v", "-run=^$", fmt.Sprintf("-bench=^%s$", regexp.QuoteMeta(funcName))},
 			WorkingDir: filepath.Dir(uri.Path()),
-		}
-		if err := snapshot.RunGoCommandPiped(ctx, cache.Normal, inv, out, out); err != nil {
+		})
+		if err := snapshot.View().GoCommandRunner().RunPiped(ctx, *inv, out, out); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return err
 			}
@@ -689,13 +690,13 @@ func (c *commandHandler) Generate(ctx context.Context, args command.GenerateArgs
 		if args.Recursive {
 			pattern = "./..."
 		}
-		inv := &gocommand.Invocation{
+		inv := deps.snapshot.GoCommandInvocation(true, &gocommand.Invocation{
 			Verb:       "generate",
 			Args:       []string{"-x", pattern},
 			WorkingDir: args.Dir.Path(),
-		}
+		})
 		stderr := io.MultiWriter(er, progress.NewWorkDoneWriter(ctx, deps.work))
-		if err := deps.snapshot.RunGoCommandPiped(ctx, cache.AllowNetwork, inv, er, stderr); err != nil {
+		if err := deps.snapshot.View().GoCommandRunner().RunPiped(ctx, *inv, er, stderr); err != nil {
 			return err
 		}
 		return nil
@@ -707,17 +708,29 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 		forURI:   args.URI,
 		progress: "Running go get",
 	}, func(ctx context.Context, deps commandDeps) error {
-		// Run on a throwaway go.mod, otherwise it'll write to the real one.
-		stdout, err := deps.snapshot.RunGoCommandDirect(ctx, cache.WriteTemporaryModFile|cache.AllowNetwork, &gocommand.Invocation{
+		snapshot := deps.snapshot
+		modURI := snapshot.GoModForFile(args.URI)
+		if modURI == "" {
+			return fmt.Errorf("no go.mod file found for %s", args.URI)
+		}
+		tempDir, cleanup, err := cache.TempModDir(ctx, snapshot, modURI)
+		if err != nil {
+			return fmt.Errorf("creating a temp go.mod: %v", err)
+		}
+		defer cleanup()
+
+		inv := snapshot.GoCommandInvocation(true, &gocommand.Invocation{
 			Verb:       "list",
-			Args:       []string{"-f", "{{.Module.Path}}@{{.Module.Version}}", args.Pkg},
-			WorkingDir: filepath.Dir(args.URI.Path()),
+			Args:       []string{"-f", "{{.Module.Path}}@{{.Module.Version}}", "-mod=mod", "-modfile=" + filepath.Join(tempDir, "go.mod"), args.Pkg},
+			Env:        []string{"GOWORK=off"},
+			WorkingDir: modURI.Dir().Path(),
 		})
+		stdout, err := snapshot.View().GoCommandRunner().Run(ctx, *inv)
 		if err != nil {
 			return err
 		}
 		ver := strings.TrimSpace(stdout.String())
-		return c.s.runGoModUpdateCommands(ctx, deps.snapshot, args.URI, func(invoke func(...string) (*bytes.Buffer, error)) error {
+		return c.s.runGoModUpdateCommands(ctx, snapshot, args.URI, func(invoke func(...string) (*bytes.Buffer, error)) error {
 			if args.AddRequire {
 				if err := addModuleRequire(invoke, []string{ver}); err != nil {
 					return err
@@ -730,16 +743,20 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 }
 
 func (s *server) runGoModUpdateCommands(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, run func(invoke func(...string) (*bytes.Buffer, error)) error) error {
-	newModBytes, newSumBytes, err := snapshot.RunGoModUpdateCommands(ctx, filepath.Dir(uri.Path()), run)
+	// TODO(rfindley): can/should this use findRootPattern?
+	modURI := snapshot.GoModForFile(uri)
+	if modURI == "" {
+		return fmt.Errorf("no go.mod file found for %s", uri.Path())
+	}
+	newModBytes, newSumBytes, err := snapshot.RunGoModUpdateCommands(ctx, modURI, run)
 	if err != nil {
 		return err
 	}
-	modURI := snapshot.GoModForFile(uri)
-	sumURI := protocol.URIFromPath(strings.TrimSuffix(modURI.Path(), ".mod") + ".sum")
 	modEdits, err := collectFileEdits(ctx, snapshot, modURI, newModBytes)
 	if err != nil {
 		return err
 	}
+	sumURI := protocol.URIFromPath(strings.TrimSuffix(modURI.Path(), ".mod") + ".sum")
 	sumEdits, err := collectFileEdits(ctx, snapshot, sumURI, newSumBytes)
 	if err != nil {
 		return err
@@ -833,12 +850,13 @@ func addModuleRequire(invoke func(...string) (*bytes.Buffer, error), args []stri
 
 // TODO(rfindley): inline.
 func (s *server) getUpgrades(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, modules []string) (map[string]string, error) {
-	stdout, err := snapshot.RunGoCommandDirect(ctx, cache.Normal|cache.AllowNetwork, &gocommand.Invocation{
-		Verb:       "list",
-		Args:       append([]string{"-m", "-u", "-json"}, modules...),
-		ModFlag:    "readonly", // necessary when vendor is present (golang/go#66055)
+	inv := snapshot.GoCommandInvocation(true, &gocommand.Invocation{
+		Verb: "list",
+		// -mod=readonly is necessary when vendor is present (golang/go#66055)
+		Args:       append([]string{"-mod=readonly", "-m", "-u", "-json"}, modules...),
 		WorkingDir: filepath.Dir(uri.Path()),
 	})
+	stdout, err := snapshot.View().GoCommandRunner().Run(ctx, *inv)
 	if err != nil {
 		return nil, err
 	}
