@@ -239,6 +239,7 @@ func TestDeprecatedSettings(t *testing.T) {
 			"experimentalWorkspaceModule":    true,
 			"tempModfile":                    true,
 			"allowModfileModifications":      true,
+			"allowImplicitNetworkAccess":     true,
 		},
 	).Run(t, "", func(t *testing.T, env *Env) {
 		env.OnceMet(
@@ -248,6 +249,7 @@ func TestDeprecatedSettings(t *testing.T) {
 			ShownMessage("experimentalWatchedFileDelay"),
 			ShownMessage("tempModfile"),
 			ShownMessage("allowModfileModifications"),
+			ShownMessage("allowImplicitNetworkAccess"),
 		)
 	})
 }
