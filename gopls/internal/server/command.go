@@ -71,6 +71,14 @@ type commandHandler struct {
 	params *protocol.ExecuteCommandParams
 }
 
+func (h *commandHandler) Modules(context.Context, command.ModulesArgs) (command.ModulesResult, error) {
+	panic("unimplemented")
+}
+
+func (h *commandHandler) Packages(context.Context, command.PackagesArgs) (command.PackagesResult, error) {
+	panic("unimplemented")
+}
+
 func (h *commandHandler) MaybePromptForTelemetry(ctx context.Context) error {
 	go h.s.maybePromptForTelemetry(ctx, true)
 	return nil

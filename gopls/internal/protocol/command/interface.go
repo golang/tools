@@ -269,6 +269,21 @@ type Interface interface {
 	//
 	// This command is intended for use by gopls tests only.
 	ScanImports(context.Context) error
+
+	// Packages: Return information about packages
+	//
+	// This command returns an empty result if the specified files
+	// or directories are not associated with any Views on the
+	// server yet.
+	Packages(context.Context, PackagesArgs) (PackagesResult, error)
+
+	// Modules: Return information about modules within a directory
+	//
+	// This command returns an empty result if there is no module,
+	// or if module mode is disabled.
+	// The result does not includes the modules that are not
+	// associated with any Views on the server yet.
+	Modules(context.Context, ModulesArgs) (ModulesResult, error)
 }
 
 type RunTestsArgs struct {
@@ -568,4 +583,146 @@ type View struct {
 	Root       protocol.DocumentURI // root dir of the view (e.g. containing go.mod or go.work)
 	Folder     protocol.DocumentURI // workspace folder associated with the view
 	EnvOverlay []string             // environment variable overrides
+}
+
+// PackagesArgs holds arguments for the Packages command.
+type PackagesArgs struct {
+	// Files is a list of files and directories whose associated
+	// packages should be described by the result.
+	//
+	// In some cases, a file may belong to more than one package;
+	// the result may describe any of them.
+	Files []protocol.DocumentURI
+
+	// Enumerate all packages under the directry loadable with
+	// the ... pattern.
+	// The search does not cross the module boundaries and
+	// does not return packages that are not yet loaded.
+	// (e.g. those excluded by the gopls directory filter setting,
+	// or the go.work configuration)
+	Recursive bool `json:"Recursive,omitempty"`
+
+	// Mode controls the types of information returned for each package.
+	Mode PackagesMode
+}
+
+// PackagesMode controls the details to include in PackagesResult.
+type PackagesMode uint64
+
+const (
+	// Populate the [TestFile.Tests] field in [Package] returned by the
+	// Packages command.
+	NeedTests PackagesMode = 1 << iota
+)
+
+// PackagesResult is the result of the Packages command.
+type PackagesResult struct {
+	// Packages is an unordered list of package metadata.
+	Packages []Package
+
+	// Modules maps module path to module metadata for
+	// all the modules of the returned Packages.
+	Module map[string]Module
+}
+
+// Package describes a Go package (not an empty parent).
+type Package struct {
+	// Package path.
+	Path string
+	// Module path. Empty if the package doesn't
+	// belong to any module.
+	ModulePath string
+
+	// Note: the result does not include the directory name
+	// of the package because mapping between a package and
+	// a folder is not possible in certain build systems.
+	// If directory info is needed, one can guess it
+	// from the TestFile's file name.
+
+	// TestFiles contains the subset of the files of the package
+	// whose name ends with "_test.go".
+	// They are ordered deterministically as determined
+	// by the underlying build system.
+	TestFiles []TestFile
+}
+
+type Module struct {
+	Path    string               // module path
+	Version string               // module version if any.
+	GoMod   protocol.DocumentURI // path to the go.mod file.
+}
+
+type TestFile struct {
+	URI protocol.DocumentURI // a *_test.go file
+
+	// Tests is the list of tests in File, including subtests.
+	//
+	// The set of subtests is not exhaustive as in general they may be
+	// dynamically generated, so it is impossible for static heuristics
+	// to enumerate them.
+	//
+	// Tests are lexically ordered.
+	// Since subtest names are prefixed by their top-level test names
+	// each top-level test precedes its subtests.
+	Tests []TestCase
+}
+
+// TestCase represents a test case.
+// A test case can be a top-level Test/Fuzz/Benchmark/Example function,
+// as recognized by 'go list' or 'go test -list', or
+// a subtest within a top-level function.
+type TestCase struct {
+	// Name is the complete name of the test (Test, Benchmark, Example, or Fuzz)
+	// or the subtest as it appears in the output of go test -json.
+	// The server may attempt to infer names of subtests by static
+	// analysis; if so, it should aim to simulate the actual computed
+	// name of the test, including any disambiguating suffix such as "#01".
+	// To run only this test, clients need to compute the -run, -bench, -fuzz
+	// flag values by first splitting the Name with “/” and
+	// quoting each element with "^" + regexp.QuoteMeta(Name) + "$".
+	// e.g. TestToplevel/Inner.Subtest → -run=^TestToplevel$/^Inner\.Subtest$
+	Name string
+
+	// Loc is the filename and range enclosing this test function
+	// or the subtest. This is used to place the gutter marker
+	// and group tests based on location.
+	// For subtests whose test names can be determined statically,
+	// this can be either t.Run or the test data table
+	// for table-driven setup.
+	// Some testing frameworks allow to declare the actual test
+	// logic in a different file. For example, one can define
+	// a testify test suite in suite_test.go and use it from
+	// main_test.go.
+	/*
+	   -- main_test.go --
+	   ...
+	   func TestFoo(t *testing.T) {
+	       suite.Run(t, new(MyTestSuite))
+	   }
+	   -- suite_test.go --
+	   type MyTestSuite struct {
+	   	suite.Suite
+	   }
+	   func (suite *MyTestSuite) TestBar() { ... }
+	*/
+	// In this case, the testing framework creates "TestFoo/TestBar"
+	// and the corresponding test case belongs to "main_test.go"
+	// TestFile. However, the test case has "suite_test.go" as its
+	// file location.
+	Loc protocol.Location
+}
+
+type ModulesArgs struct {
+	// Dir is the directory in which to search for go.mod files.
+	Dir protocol.DocumentURI
+
+	// MaxDepth is the directory walk limit.
+	// A value of 0 means inspect only Dir.
+	// 1 means inspect its child directories too, and so on.
+	// A negative value removes the limit.
+	MaxDepth int
+}
+
+type ModulesResult struct {
+	Modules []Module
 }

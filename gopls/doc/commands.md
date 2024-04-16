@@ -515,6 +515,88 @@ Result:
 }
 ```
 
+<a id='gopls.modules'></a>
+## `gopls.modules`: **Return information about modules within a directory**
+
+This command returns an empty result if there is no module,
+or if module mode is disabled.
+The result does not includes the modules that are not
+associated with any Views on the server yet.
+
+Args:
+
+```
+{
+	// Dir is the directory in which to search for go.mod files.
+	"Dir": string,
+	// MaxDepth is the directory walk limit.
+	// A value of 0 means inspect only Dir.
+	// 1 means inspect its child directories too, and so on.
+	// A negative value removes the limit.
+	"MaxDepth": int,
+}
+```
+
+Result:
+
+```
+{
+	"Modules": []{
+		"Path": string,
+		"Version": string,
+		"GoMod": string,
+	},
+}
+```
+
+<a id='gopls.packages'></a>
+## `gopls.packages`: **Return information about packages**
+
+This command returns an empty result if the specified files
+or directories are not associated with any Views on the
+server yet.
+
+Args:
+
+```
+{
+	// Files is a list of files and directories whose associated
+	// packages should be described by the result.
+	//
+	// In some cases, a file may belong to more than one package;
+	// the result may describe any of them.
+	"Files": []string,
+	// Enumerate all packages under the directry loadable with
+	// the ... pattern.
+	// The search does not cross the module boundaries and
+	// does not return packages that are not yet loaded.
+	// (e.g. those excluded by the gopls directory filter setting,
+	// or the go.work configuration)
+	"Recursive": bool,
+	// Mode controls the types of information returned for each package.
+	"Mode": uint64,
+}
+```
+
+Result:
+
+```
+{
+	// Packages is an unordered list of package metadata.
+	"Packages": []{
+		"Path": string,
+		"ModulePath": string,
+		"TestFiles": []{
+			"URI": string,
+			"Tests": { ... },
+		},
+	},
+	// Modules maps module path to module metadata for
+	// all the modules of the returned Packages.
+	"Module": map[string]golang.org/x/tools/gopls/internal/protocol/command.Module,
+}
+```
+
 <a id='gopls.regenerate_cgo'></a>
 ## `gopls.regenerate_cgo`: **Regenerate cgo**
 

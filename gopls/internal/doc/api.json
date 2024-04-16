@@ -1081,6 +1081,20 @@
 			"ResultDoc": "{\n\t\"HeapAlloc\": uint64,\n\t\"HeapInUse\": uint64,\n\t\"TotalAlloc\": uint64,\n}"
 		},
 		{
+			"Command": "gopls.modules",
+			"Title": "Return information about modules within a directory",
+			"Doc": "This command returns an empty result if there is no module,\nor if module mode is disabled.\nThe result does not includes the modules that are not\nassociated with any Views on the server yet.",
+			"ArgDoc": "{\n\t// Dir is the directory in which to search for go.mod files.\n\t\"Dir\": string,\n\t// MaxDepth is the directory walk limit.\n\t// A value of 0 means inspect only Dir.\n\t// 1 means inspect its child directories too, and so on.\n\t// A negative value removes the limit.\n\t\"MaxDepth\": int,\n}",
+			"ResultDoc": "{\n\t\"Modules\": []{\n\t\t\"Path\": string,\n\t\t\"Version\": string,\n\t\t\"GoMod\": string,\n\t},\n}"
+		},
+		{
+			"Command": "gopls.packages",
+			"Title": "Return information about packages",
+			"Doc": "This command returns an empty result if the specified files\nor directories are not associated with any Views on the\nserver yet.",
+			"ArgDoc": "{\n\t// Files is a list of files and directories whose associated\n\t// packages should be described by the result.\n\t//\n\t// In some cases, a file may belong to more than one package;\n\t// the result may describe any of them.\n\t\"Files\": []string,\n\t// Enumerate all packages under the directry loadable with\n\t// the ... pattern.\n\t// The search does not cross the module boundaries and\n\t// does not return packages that are not yet loaded.\n\t// (e.g. those excluded by the gopls directory filter setting,\n\t// or the go.work configuration)\n\t\"Recursive\": bool,\n\t// Mode controls the types of information returned for each package.\n\t\"Mode\": uint64,\n}",
+			"ResultDoc": "{\n\t// Packages is an unordered list of package metadata.\n\t\"Packages\": []{\n\t\t\"Path\": string,\n\t\t\"ModulePath\": string,\n\t\t\"TestFiles\": []{\n\t\t\t\"URI\": string,\n\t\t\t\"Tests\": { ... },\n\t\t},\n\t},\n\t// Modules maps module path to module metadata for\n\t// all the modules of the returned Packages.\n\t\"Module\": map[string]golang.org/x/tools/gopls/internal/protocol/command.Module,\n}"
+		},
+		{
 			"Command": "gopls.regenerate_cgo",
 			"Title": "Regenerate cgo",
 			"Doc": "Regenerates cgo definitions.",
