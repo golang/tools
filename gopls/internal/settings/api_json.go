@@ -50,14 +50,6 @@ var GeneratedAPIJSON = &APIJSON{
 				Hierarchy: "build",
 			},
 			{
-				Name:      "allowModfileModifications",
-				Type:      "bool",
-				Doc:       "allowModfileModifications disables -mod=readonly, allowing imports from\nout-of-scope modules. This option will eventually be removed.\n",
-				Default:   "false",
-				Status:    "experimental",
-				Hierarchy: "build",
-			},
-			{
 				Name:      "allowImplicitNetworkAccess",
 				Type:      "bool",
 				Doc:       "allowImplicitNetworkAccess disables GOPROXY=off, allowing implicit module\ndownloads rather than requiring user action. This option will eventually\nbe removed.\n",

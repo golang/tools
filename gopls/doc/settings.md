@@ -108,15 +108,6 @@ gopls has to do to keep your workspace up to date.
 
 Default: `true`.
 
-#### **allowModfileModifications** *bool*
-
-**This setting is experimental and may be deleted.**
-
-allowModfileModifications disables -mod=readonly, allowing imports from
-out-of-scope modules. This option will eventually be removed.
-
-Default: `false`.
-
 #### **allowImplicitNetworkAccess** *bool*
 
 **This setting is experimental and may be deleted.**

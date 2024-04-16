@@ -502,7 +502,6 @@ func (s *Snapshot) RunGoModUpdateCommands(ctx context.Context, wd string, run fu
 // TODO(adonovan): simplify cleanup mechanism. It's hard to see, but
 // it used only after call to tempModFile.
 func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlags, inv *gocommand.Invocation) (tmpURI protocol.DocumentURI, updatedInv *gocommand.Invocation, cleanup func(), err error) {
-	allowModfileModificationOption := s.Options().AllowModfileModifications
 	allowNetworkOption := s.Options().AllowImplicitNetworkAccess
 
 	// TODO(rfindley): it's not clear that this is doing the right thing.
@@ -555,17 +554,10 @@ func (s *Snapshot) goCommandInvocation(ctx context.Context, flags InvocationFlag
 	// (As noted in various TODOs throughout this function, this is very
 	// confusing and not obviously correct, but tests pass and we will eventually
 	// rewrite this entire function.)
-	if inv.ModFlag == "" {
-		switch mode {
-		case LoadWorkspace, Normal:
-			if allowModfileModificationOption {
-				inv.ModFlag = mutableModFlag
-			}
-		case WriteTemporaryModFile:
-			inv.ModFlag = mutableModFlag
-			// -mod must be readonly when using go.work files - see issue #48941
-			inv.Env = append(inv.Env, "GOWORK=off")
-		}
+	if inv.ModFlag == "" && mode == WriteTemporaryModFile {
+		inv.ModFlag = mutableModFlag
+		// -mod must be readonly when using go.work files - see issue #48941
+		inv.Env = append(inv.Env, "GOWORK=off")
 	}
 
 	// TODO(rfindley): if inv.ModFlag was already set to "mod", we may not have

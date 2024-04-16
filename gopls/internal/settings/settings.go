@@ -123,10 +123,6 @@ type BuildOptions struct {
 	// gopls has to do to keep your workspace up to date.
 	ExpandWorkspaceToModule bool `status:"experimental"`
 
-	// AllowModfileModifications disables -mod=readonly, allowing imports from
-	// out-of-scope modules. This option will eventually be removed.
-	AllowModfileModifications bool `status:"experimental"`
-
 	// AllowImplicitNetworkAccess disables GOPROXY=off, allowing implicit module
 	// downloads rather than requiring user action. This option will eventually
 	// be removed.
@@ -986,8 +982,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		result.deprecated("")
 
 	case "allowModfileModifications":
-		result.softErrorf("gopls setting \"allowModfileModifications\" is deprecated.\nPlease comment on https://go.dev/issue/65546 if this impacts your workflow.")
-		result.setBool(&o.AllowModfileModifications)
+		result.deprecated("")
 
 	case "allowImplicitNetworkAccess":
 		result.setBool(&o.AllowImplicitNetworkAccess)
