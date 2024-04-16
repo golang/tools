@@ -11,10 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/tools/gopls/internal/analysis/unusedvariable"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/protocol/command"
 )
 
 type Annotation string
@@ -608,23 +606,9 @@ func SetOptions(options *Options, opts any) OptionResults {
 	switch opts := opts.(type) {
 	case nil:
 	case map[string]any:
-		// If the user's settings contains "allExperiments", set that first,
-		// and then let them override individual settings independently.
-		var enableExperiments bool
-		for name, value := range opts {
-			if b, ok := value.(bool); name == "allExperiments" && ok && b {
-				enableExperiments = true
-				options.EnableAllExperiments()
-			}
-		}
 		seen := map[string]struct{}{}
 		for name, value := range opts {
 			results = append(results, options.set(name, value, seen))
-		}
-		// Finally, enable any experimental features that are specified in
-		// maps, which allows users to individually toggle them on or off.
-		if enableExperiments {
-			options.enableAllExperimentMaps()
 		}
 	default:
 		results = append(results, OptionResult{
@@ -694,8 +678,7 @@ func (o *Options) Clone() *Options {
 		ServerOptions:   o.ServerOptions,
 		UserOptions:     o.UserOptions,
 	}
-	// Fully clone any slice or map fields. Only Hooks, ExperimentalOptions,
-	// and UserOptions can be modified.
+	// Fully clone any slice or map fields. Only UserOptions can be modified.
 	copyStringMap := func(src map[string]bool) map[string]bool {
 		dst := make(map[string]bool)
 		for k, v := range src {
@@ -717,25 +700,6 @@ func (o *Options) Clone() *Options {
 	result.StandaloneTags = copySlice(o.StandaloneTags)
 
 	return result
-}
-
-// EnableAllExperiments turns on all of the experimental "off-by-default"
-// features offered by gopls. Any experimental features specified in maps
-// should be enabled in enableAllExperimentMaps.
-func (o *Options) EnableAllExperiments() {
-	o.SemanticTokens = true
-}
-
-func (o *Options) enableAllExperimentMaps() {
-	if _, ok := o.Codelenses[string(command.GCDetails)]; !ok {
-		o.Codelenses[string(command.GCDetails)] = true
-	}
-	if _, ok := o.Codelenses[string(command.RunGovulncheck)]; !ok {
-		o.Codelenses[string(command.RunGovulncheck)] = true
-	}
-	if _, ok := o.Analyses[unusedvariable.Analyzer.Name]; !ok {
-		o.Analyses[unusedvariable.Analyzer.Name] = true
-	}
 }
 
 // validateDirectoryFilter validates if the filter string
@@ -1034,8 +998,12 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		result.setStringSlice(&o.StandaloneTags)
 
 	case "allExperiments":
-		// This setting should be handled before all of the other options are
-		// processed, so do nothing here.
+		// golang/go#65548: this setting is a no-op, but we fail don't report it as
+		// deprecated, since the nightly VS Code injects it.
+		//
+		// If, in the future, VS Code stops injecting this, we could theoretically
+		// report an error here, but it also seems harmless to keep ignoring this
+		// setting forever.
 
 	case "newDiff":
 		result.deprecated("")

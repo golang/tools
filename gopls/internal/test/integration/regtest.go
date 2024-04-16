@@ -97,7 +97,10 @@ func (r RunMultiple) Run(t *testing.T, files string, f TestFunc) {
 func DefaultModes() Mode {
 	modes := Default
 	if !testing.Short() {
-		modes |= Experimental | Forwarded
+		// TODO(rfindley): we should just run a few select integration tests in
+		// "Forwarded" mode, and call it a day. No need to run every single test in
+		// two ways.
+		modes |= Forwarded
 	}
 	if *runSubprocessTests {
 		modes |= SeparateProcess

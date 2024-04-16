@@ -15,7 +15,6 @@ import (
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/goversion"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -1381,36 +1380,6 @@ func _() {
 		// it yet.
 		env.RegexpReplace("a/a.go", "package a", "package a // arbitrary comment")
 		env.AfterChange(loadOnce)
-	})
-}
-
-func TestEnableAllExperiments(t *testing.T) {
-	// Before the oldest supported Go version, gopls sends a warning to upgrade
-	// Go, which fails the expectation below.
-	testenv.NeedsGo1Point(t, goversion.OldestSupported())
-
-	const mod = `
--- go.mod --
-module mod.com
-
-go 1.12
--- main.go --
-package main
-
-import "bytes"
-
-func b(c bytes.Buffer) {
-	_ = 1
-}
-`
-	WithOptions(
-		Settings{"allExperiments": true},
-	).Run(t, mod, func(t *testing.T, env *Env) {
-		// Confirm that the setting doesn't cause any warnings.
-		env.OnceMet(
-			InitialWorkspaceLoad,
-			NoShownMessage(""), // empty substring to match any message
-		)
 	})
 }
 

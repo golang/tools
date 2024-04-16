@@ -24,7 +24,6 @@ import (
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
@@ -45,17 +44,15 @@ import (
 // TODO(rfindley, cleanup): rather than using arbitrary names for these modes,
 // we can compose them explicitly out of the features described here, allowing
 // individual tests more freedom in constructing problematic execution modes.
-// For example, a test could assert on a certain behavior when running with
-// experimental options on a separate process. Moreover, we could unify 'Modes'
-// with 'Options', and use RunMultiple rather than a hard-coded loop through
-// modes.
+// For example, a test could assert on a certain behavior when running on a
+// separate process. Moreover, we could unify 'Modes' with 'Options', and use
+// RunMultiple rather than a hard-coded loop through modes.
 //
 // Mode            | Options      | Shared Cache? | Shared Server? | In-process?
 // ---------------------------------------------------------------------------
 // Default         | Default      | Y             | N              | Y
 // Forwarded       | Default      | Y             | Y              | Y
 // SeparateProcess | Default      | Y             | Y              | N
-// Experimental    | Experimental | N             | N              | Y
 type Mode int
 
 const (
@@ -76,13 +73,6 @@ const (
 	//
 	// Only supported on GOOS=linux.
 	SeparateProcess
-
-	// Experimental enables all of the experimental configurations that are
-	// being developed, and runs gopls in sidecar mode.
-	//
-	// It uses a separate cache for each test, to exercise races that may only
-	// appear with cache misses.
-	Experimental
 )
 
 func (m Mode) String() string {
@@ -93,8 +83,6 @@ func (m Mode) String() string {
 		return "forwarded"
 	case SeparateProcess:
 		return "separate process"
-	case Experimental:
-		return "experimental"
 	default:
 		return "unknown mode"
 	}
@@ -151,7 +139,6 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 		{"default", Default, r.defaultServer},
 		{"forwarded", Forwarded, r.forwardedServer},
 		{"separate_process", SeparateProcess, r.separateProcessServer},
-		{"experimental", Experimental, r.experimentalServer},
 	}
 
 	for _, tc := range tests {
@@ -347,14 +334,6 @@ func (s *loggingFramer) printBuffers(testname string, w io.Writer) {
 // defaultServer handles the Default execution mode.
 func (r *Runner) defaultServer() jsonrpc2.StreamServer {
 	return lsprpc.NewStreamServer(cache.New(r.store), false, nil)
-}
-
-// experimentalServer handles the Experimental execution mode.
-func (r *Runner) experimentalServer() jsonrpc2.StreamServer {
-	options := func(o *settings.Options) {
-		o.EnableAllExperiments()
-	}
-	return lsprpc.NewStreamServer(cache.New(nil), false, options)
 }
 
 // forwardedServer handles the Forwarded execution mode.
