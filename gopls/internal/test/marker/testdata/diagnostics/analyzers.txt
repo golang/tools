@@ -34,7 +34,7 @@ func printfWrapper(format string, args ...interface{}) {
 }
 
 // tests
-func Testbad(t *testing.T) { //@diag("", re"Testbad has malformed name: first letter after 'Test' must not be lowercase")
+func Testbad(t *testing.T) { //@diag("Testbad", re"Testbad has malformed name: first letter after 'Test' must not be lowercase")
 }
 
 // timeformat
