@@ -2422,11 +2422,11 @@ func testForTestField(t *testing.T, exporter packagestest.Exporter) {
 	}
 }
 
-func TestIssue37529(t *testing.T) {
-	testAllOrModulesParallel(t, testIssue37529)
+func TestIssue37629(t *testing.T) {
+	testAllOrModulesParallel(t, testIssue37629)
 }
-func testIssue37529(t *testing.T, exporter packagestest.Exporter) {
-	// Tests #37529. When automatic vendoring is triggered, and we try to determine
+func testIssue37629(t *testing.T, exporter packagestest.Exporter) {
+	// Tests #37629. When automatic vendoring is triggered, and we try to determine
 	// the module root dir for a new overlay package, we previously would do a go list -m all,
 	// which is incompatible with automatic vendoring.
 
