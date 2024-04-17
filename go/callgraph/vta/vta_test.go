@@ -27,6 +27,7 @@ func TestVTACallGraph(t *testing.T) {
 		"testdata/src/callgraph_recursive_types.go",
 		"testdata/src/callgraph_issue_57756.go",
 		"testdata/src/callgraph_comma_maps.go",
+		"testdata/src/callgraph_type_aliases.go",
 	} {
 		t.Run(file, func(t *testing.T) {
 			prog, want, err := testProg(file, ssa.BuilderMode(0))
@@ -40,7 +41,7 @@ func TestVTACallGraph(t *testing.T) {
 			g := CallGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
 			got := callGraphStr(g)
 			if diff := setdiff(want, got); len(diff) > 0 {
-				t.Errorf("computed callgraph %v should contain %v (diff: %v)", got, want, diff)
+				t.Errorf("computed callgraph %v\nshould contain\n%v\n(diff: %v)", got, want, diff)
 			}
 		})
 	}
