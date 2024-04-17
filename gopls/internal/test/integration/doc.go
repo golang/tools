@@ -33,7 +33,7 @@
 //	)
 //
 //	func TestMain(m *testing.M) {
-//		Main(m, hooks.Options)
+//		os.Exit(Main(m, hooks.Options))
 //	}
 //
 // # Writing a simple integration test

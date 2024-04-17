@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 )
 
@@ -25,11 +26,16 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 		return nil, nil
 	}
 	pkgDir := filepath.Dir(mp.CompiledGoFiles[0].Path())
-	outDir := filepath.Join(os.TempDir(), fmt.Sprintf("gopls-%d.details", os.Getpid()))
-
-	if err := os.MkdirAll(outDir, 0700); err != nil {
+	outDir, err := os.MkdirTemp("", fmt.Sprintf("gopls-%d.details", os.Getpid()))
+	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err := os.RemoveAll(outDir); err != nil {
+			event.Error(ctx, "cleaning gcdetails dir", err)
+		}
+	}()
+
 	tmpFile, err := os.CreateTemp(os.TempDir(), "gopls-x")
 	if err != nil {
 		return nil, err

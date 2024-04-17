@@ -6,6 +6,7 @@ package completion
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -24,7 +25,7 @@ import (
 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
-	Main(m)
+	os.Exit(Main(m))
 }
 
 const proxy = `

@@ -5,6 +5,7 @@
 package modfile
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -19,7 +20,7 @@ import (
 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
-	Main(m)
+	os.Exit(Main(m))
 }
 
 const workspaceProxy = `

@@ -111,7 +111,24 @@ func DefaultModes() Mode {
 var runFromMain = false // true if Main has been called
 
 // Main sets up and tears down the shared integration test state.
-func Main(m *testing.M) {
+func Main(m *testing.M) (code int) {
+	defer func() {
+		if runner != nil {
+			if err := runner.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "closing test runner: %v\n", err)
+				// Cleanup is broken in go1.12 and earlier, and sometimes flakes on
+				// Windows due to file locking, but this is OK for our CI.
+				//
+				// Fail on go1.13+, except for windows and android which have shutdown problems.
+				if testenv.Go1Point() >= 13 && runtime.GOOS != "windows" && runtime.GOOS != "android" {
+					if code == 0 {
+						code = 1
+					}
+				}
+			}
+		}
+	}()
+
 	runFromMain = true
 
 	// golang/go#54461: enable additional debugging around hanging Go commands.
@@ -121,12 +138,12 @@ func Main(m *testing.M) {
 	// suite. See the documentation for runTestAsGoplsEnvvar for more details.
 	if os.Getenv(runTestAsGoplsEnvvar) == "true" {
 		tool.Main(context.Background(), cmd.New(), os.Args[1:])
-		os.Exit(0)
+		return 0
 	}
 
 	if !testenv.HasExec() {
 		fmt.Printf("skipping all tests: exec not supported on %s/%s\n", runtime.GOOS, runtime.GOARCH)
-		os.Exit(0)
+		return 0
 	}
 	testenv.ExitIfSmallMachine()
 
@@ -137,12 +154,12 @@ func Main(m *testing.M) {
 
 	if skipReason := checkBuilder(); skipReason != "" {
 		fmt.Printf("Skipping all tests: %s\n", skipReason)
-		os.Exit(0)
+		return 0
 	}
 
 	if err := testenv.HasTool("go"); err != nil {
 		fmt.Println("Missing go command")
-		os.Exit(1)
+		return 1
 	}
 
 	runner = &Runner{
@@ -168,19 +185,5 @@ func Main(m *testing.M) {
 	}
 	runner.tempDir = dir
 
-	var code int
-	defer func() {
-		if err := runner.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "closing test runner: %v\n", err)
-			// Cleanup is broken in go1.12 and earlier, and sometimes flakes on
-			// Windows due to file locking, but this is OK for our CI.
-			//
-			// Fail on go1.13+, except for windows and android which have shutdown problems.
-			if testenv.Go1Point() >= 13 && runtime.GOOS != "windows" && runtime.GOOS != "android" {
-				os.Exit(1)
-			}
-		}
-		os.Exit(code)
-	}()
-	code = m.Run()
+	return m.Run()
 }

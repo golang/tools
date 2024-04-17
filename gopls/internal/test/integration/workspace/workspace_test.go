@@ -7,6 +7,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -24,7 +25,7 @@ import (
 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
-	Main(m)
+	os.Exit(Main(m))
 }
 
 const workspaceProxy = `

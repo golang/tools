@@ -5,6 +5,7 @@
 package template
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -15,7 +16,7 @@ import (
 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
-	Main(m)
+	os.Exit(Main(m))
 }
 
 func TestMultilineTokens(t *testing.T) {

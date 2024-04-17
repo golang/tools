@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -19,7 +20,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	Main(m)
+	os.Exit(Main(m))
 }
 
 func TestBugNotification(t *testing.T) {

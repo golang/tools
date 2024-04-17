@@ -6,6 +6,7 @@ package codelens
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/server"
@@ -20,7 +21,7 @@ import (
 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
-	Main(m)
+	os.Exit(Main(m))
 }
 
 func TestDisablingCodeLens(t *testing.T) {

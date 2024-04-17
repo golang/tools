@@ -5,6 +5,7 @@
 package misc
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -16,7 +17,7 @@ import (
 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
-	integration.Main(m)
+	os.Exit(integration.Main(m))
 }
 
 // TestDocumentURIFix ensures that a DocumentURI supplied by the

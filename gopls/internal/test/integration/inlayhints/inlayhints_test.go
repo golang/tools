@@ -4,6 +4,7 @@
 package inlayhint
 
 import (
+	"os"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/golang"
@@ -13,7 +14,7 @@ import (
 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
-	Main(m)
+	os.Exit(Main(m))
 }
 
 func TestEnablingInlayHints(t *testing.T) {

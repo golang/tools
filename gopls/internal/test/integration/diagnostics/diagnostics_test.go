@@ -7,6 +7,7 @@ package diagnostics
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"testing"
 
@@ -20,7 +21,7 @@ import (
 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
-	Main(m)
+	os.Exit(Main(m))
 }
 
 // Use mod.com for all go.mod files due to golang/go#35230.

@@ -31,8 +31,9 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	countertest.Open(tmp)
-	defer os.RemoveAll(tmp)
-	Main(m)
+	code := Main(m)
+	os.RemoveAll(tmp)
+	os.Exit(code)
 }
 
 func TestTelemetry(t *testing.T) {

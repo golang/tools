@@ -5,6 +5,7 @@
 package watch
 
 import (
+	"os"
 	"testing"
 
 	. "golang.org/x/tools/gopls/internal/test/integration"
@@ -16,7 +17,7 @@ import (
 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
-	Main(m)
+	os.Exit(Main(m))
 }
 
 func TestEditFile(t *testing.T) {
