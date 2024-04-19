@@ -47,6 +47,10 @@ func main() {
 func doMain(write bool) (bool, error) {
 	// TODO(adonovan): when we can rely on go1.23,
 	// switch to gotypesalias=1 behavior.
+	//
+	// (Since this program is run by 'go run',
+	// the gopls/go.mod file's go 1.19 directive doesn't
+	// have its usual effect of setting gotypesalias=0.)
 	os.Setenv("GODEBUG", "gotypesalias=0")
 
 	api, err := loadAPI()

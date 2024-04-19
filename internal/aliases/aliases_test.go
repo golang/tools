@@ -53,7 +53,9 @@ func TestNewAlias(t *testing.T) {
 		t.Run(godebug, func(t *testing.T) {
 			t.Setenv("GODEBUG", godebug)
 
-			A := aliases.NewAlias(token.NoPos, pkg, "A", tv.Type)
+			enabled := aliases.Enabled()
+
+			A := aliases.NewAlias(enabled, token.NoPos, pkg, "A", tv.Type)
 			if got, want := A.Name(), "A"; got != want {
 				t.Errorf("Expected A.Name()==%q. got %q", want, got)
 			}

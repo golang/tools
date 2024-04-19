@@ -12,9 +12,6 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"os"
-	"strings"
-	"sync"
 )
 
 // Alias is an alias of types.Alias.
@@ -33,40 +30,23 @@ func newAlias(tname *types.TypeName, rhs types.Type) *Alias {
 	return a
 }
 
-// enabled returns true when types.Aliases are enabled.
-func enabled() bool {
-	// Use the gotypesalias value in GODEBUG if set.
-	godebug := os.Getenv("GODEBUG")
-	value := -1 // last set value.
-	for _, f := range strings.Split(godebug, ",") {
-		switch f {
-		case "gotypesalias=1":
-			value = 1
-		case "gotypesalias=0":
-			value = 0
-		}
-	}
-	switch value {
-	case 0:
-		return false
-	case 1:
-		return true
-	default:
-		return aliasesDefault()
-	}
+// Enabled reports whether [NewAlias] should create [types.Alias] types.
+//
+// This function is expensive! Call it sparingly.
+func Enabled() bool {
+	// The only reliable way to compute the answer is to invoke go/types.
+	// We don't parse the GODEBUG environment variable, because
+	// (a) it's tricky to do so in a manner that is consistent
+	//     with the godebug package; in particular, a simple
+	//     substring check is not good enough. The value is a
+	//     rightmost-wins list of options. But more importantly:
+	// (b) it is impossible to detect changes to the effective
+	//     setting caused by os.Setenv("GODEBUG"), as happens in
+	//     many tests. Therefore any attempt to cache the result
+	//     is just incorrect.
+	fset := token.NewFileSet()
+	f, _ := parser.ParseFile(fset, "a.go", "package p; type A = int", 0)
+	pkg, _ := new(types.Config).Check("p", fset, []*ast.File{f}, nil)
+	_, enabled := pkg.Scope().Lookup("A").Type().(*types.Alias)
+	return enabled
 }
-
-// aliasesDefault reports if aliases are enabled by default.
-func aliasesDefault() bool {
-	// Dynamically check if Aliases will be produced from go/types.
-	aliasesDefaultOnce.Do(func() {
-		fset := token.NewFileSet()
-		f, _ := parser.ParseFile(fset, "a.go", "package p; type A = int", 0)
-		pkg, _ := new(types.Config).Check("p", fset, []*ast.File{f}, nil)
-		_, gotypesaliasDefault = pkg.Scope().Lookup("A").Type().(*types.Alias)
-	})
-	return gotypesaliasDefault
-}
-
-var gotypesaliasDefault bool
-var aliasesDefaultOnce sync.Once

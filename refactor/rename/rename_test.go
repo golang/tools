@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/buildutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -1320,12 +1321,12 @@ func main() {
 			return nil
 		}
 
-		if !test.alias {
-			t.Setenv("GODEBUG", "gotypesalias=0")
-		} else if !strings.Contains(fmt.Sprint(build.Default.ReleaseTags), " go1.22") {
-			t.Skip("skipping test that requires materialized type aliases")
-		} else {
-			t.Setenv("GODEBUG", "gotypesalias=1")
+		// Skip tests that require aliases when not enables.
+		// (No test requires _no_ aliases,
+		// so there is no contrapositive case.)
+		if test.alias && !aliases.Enabled() {
+			t.Log("test requires aliases")
+			continue
 		}
 
 		err := Main(ctxt, test.offset, test.from, test.to)

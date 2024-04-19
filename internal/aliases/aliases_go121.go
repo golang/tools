@@ -24,7 +24,9 @@ func (*Alias) Obj() *types.TypeName { panic("unreachable") }
 // Unalias returns the type t for go <=1.21.
 func Unalias(t types.Type) types.Type { return t }
 
-// Always false for go <=1.21. Ignores GODEBUG.
-func enabled() bool { return false }
-
 func newAlias(name *types.TypeName, rhs types.Type) *Alias { panic("unreachable") }
+
+// Enabled reports whether [NewAlias] should create [types.Alias] types.
+//
+// Before go1.22, this function always returns false.
+func Enabled() bool { return false }
