@@ -1663,7 +1663,7 @@ func validGoVersion(goVersion string) bool {
 		return false // malformed version string
 	}
 
-	if relVer := releaseVersion(); relVer != "" && versions.Before(relVer, goVersion) {
+	if relVer := releaseVersion(); relVer != "" && versions.Before(versions.Lang(relVer), versions.Lang(goVersion)) {
 		return false // 'go list' is too new for go/types
 	}
 
