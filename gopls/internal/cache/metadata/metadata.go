@@ -154,7 +154,7 @@ func (mp *Package) String() string { return string(mp.ID) }
 // to discard them before requesting type checking, or the products of
 // type-checking such as the cross-reference index or method set index.
 //
-// MetadataForFile doesn't do this filtering itself becaused in some
+// MetadataForFile doesn't do this filtering itself because in some
 // cases we need to make a reverse dependency query on the metadata
 // graph, and it's important to include the rdeps of ITVs in that
 // query. But the filtering of ITVs should be applied after that step,

@@ -62,7 +62,7 @@ type u1 int
 var V5 u1
 
 // new
-var V5 u2 // OK: V5 has changed type, but old u1 corresopnds to new u2
+var V5 u2 // OK: V5 has changed type, but old u1 corresponds to new u2
 
 //// Splitting a single type into two is an incompatible change.
 // both

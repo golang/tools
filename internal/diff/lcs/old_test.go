@@ -129,7 +129,7 @@ func TestRandOld(t *testing.T) {
 }
 
 // TestDiffAPI tests the public API functions (Diff{Bytes,Strings,Runes})
-// to ensure at least miminal parity of the three representations.
+// to ensure at least minimal parity of the three representations.
 func TestDiffAPI(t *testing.T) {
 	for _, test := range []struct {
 		a, b                              string

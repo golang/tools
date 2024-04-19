@@ -135,7 +135,7 @@ type repo struct {
 	inDir  *string // if set, use this dir as url@commit, and don't delete
 
 	dirOnce sync.Once
-	dir     string // directory contaning source code checked out to url@commit
+	dir     string // directory containing source code checked out to url@commit
 
 	// shared editor state
 	editorOnce sync.Once

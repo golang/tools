@@ -45,7 +45,7 @@ func TestAxioms(t *testing.T) {
 func TestMap(t *testing.T) {
 	var tmap *typeutil.Map
 
-	// All methods but Set are safe on on (*T)(nil).
+	// All methods but Set are safe on (*T)(nil).
 	tmap.Len()
 	tmap.At(tPStr1)
 	tmap.Delete(tPStr1)
