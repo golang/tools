@@ -172,7 +172,7 @@ func writeprotocol() {
 	fmt.Fprintln(out, fileHdr)
 	out.WriteString("import \"encoding/json\"\n\n")
 
-	// The followiing are unneeded, but make the new code a superset of the old
+	// The following are unneeded, but make the new code a superset of the old
 	hack := func(newer, existing string) {
 		if _, ok := types[existing]; !ok {
 			log.Fatalf("types[%q] not found", existing)

@@ -272,7 +272,7 @@ type pkgLookups struct {
 //  2. calls (*facts.Decoder).Decode to load the facts exported by its imports,
 //  3. exports a myFact Fact for all of package level objects,
 //  4. For each lookup for the current package:
-//     4.a) lookup the types.Object for an Go source expression in the curent package
+//     4.a) lookup the types.Object for a Go source expression in the current package
 //     (or confirms one is not expected want=="no object"),
 //     4.b) finds a Fact for the object (or confirms one is not expected want=="no fact"),
 //     4.c) compares the content of the Fact to want.

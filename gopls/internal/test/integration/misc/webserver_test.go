@@ -183,7 +183,7 @@ func Constructor() Type
 	})
 }
 
-// viewPkgDoc invokes the "View package documention" code action in
+// viewPkgDoc invokes the "View package documentation" code action in
 // the specified file. It returns the URI of the document, or fails
 // the test.
 func viewPkgDoc(t *testing.T, env *Env, filename string) protocol.URI {
