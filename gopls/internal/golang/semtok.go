@@ -142,6 +142,10 @@ func (tv *tokenVisitor) visit() {
 
 	for _, cg := range f.Comments {
 		for _, c := range cg.List {
+			// Only look at the comment that overlap the range.
+			if c.End() <= tv.start || c.Pos() >= tv.end {
+				continue
+			}
 			tv.comment(c, importByName)
 		}
 	}
