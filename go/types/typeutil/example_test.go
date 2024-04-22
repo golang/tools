@@ -52,7 +52,7 @@ func g(rune) (uint8, bool)
 
 	// Format, sort, and print the map entries.
 	var lines []string
-	namesByType.Iterate(func(T types.Type, names interface{}) {
+	namesByType.Iterate(func(T types.Type, names any) {
 		lines = append(lines, fmt.Sprintf("%s   %s", names, T))
 	})
 	sort.Strings(lines)
