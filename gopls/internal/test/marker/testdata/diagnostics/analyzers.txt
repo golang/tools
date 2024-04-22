@@ -1,5 +1,5 @@
 Test of warning diagnostics from various analyzers:
-copylocks, printf, slog, tests, timeformat, and nilness.
+copylocks, printf, slog, tests, timeformat, nilness, and cgocall.
 
 -- go.mod --
 module example.com
@@ -53,6 +53,19 @@ func _(ptr *int) {
 // unusedwrite
 func _(s struct{x int}) {
 	s.x = 1  //@diag("x", re"unused write to field x")
+}
+
+-- cgocall.go --
+package analyzer
+
+import "unsafe"
+
+// void f(void *ptr) {}
+import "C"
+
+// cgocall
+func _(c chan bool) {
+	C.f(unsafe.Pointer(&c)) //@ diag("unsafe", re"passing Go type with embedded pointer to C")
 }
 
 -- bad_test_go121.go --

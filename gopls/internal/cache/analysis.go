@@ -44,6 +44,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/frob"
 	"golang.org/x/tools/gopls/internal/util/maps"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/facts"
@@ -255,6 +256,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 
 			an = &analysisNode{
 				fset:        fset,
+				fsource:     struct{ file.Source }{s}, // expose only ReadFile
 				mp:          mp,
 				analyzers:   facty, // all nodes run at least the facty analyzers
 				allDeps:     make(map[PackagePath]*analysisNode),
@@ -519,6 +521,7 @@ func (an *analysisNode) decrefPreds() {
 // type-checking and analyzing syntax (miss).
 type analysisNode struct {
 	fset            *token.FileSet              // file set shared by entire batch (DAG)
+	fsource         file.Source                 // Snapshot.ReadFile, for use by Pass.ReadFile
 	mp              *metadata.Package           // metadata for this package
 	files           []file.Handle               // contents of CompiledGoFiles
 	analyzers       []*analysis.Analyzer        // set of analyzers to run
@@ -885,6 +888,7 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 			}
 			act = &action{
 				a:          a,
+				fsource:    an.fsource,
 				stableName: an.stableNames[a],
 				pkg:        pkg,
 				vdeps:      an.succs,
@@ -902,7 +906,7 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 	}
 
 	// Execute the graph in parallel.
-	execActions(roots)
+	execActions(ctx, roots)
 	// Inv: each root's summary is set (whether success or error).
 
 	// Don't return (or cache) the result in case of cancellation.
@@ -1135,7 +1139,8 @@ type analysisPackage struct {
 type action struct {
 	once       sync.Once
 	a          *analysis.Analyzer
-	stableName string // cross-process stable name of analyzer
+	fsource    file.Source // Snapshot.ReadFile, for Pass.ReadFile
+	stableName string      // cross-process stable name of analyzer
 	pkg        *analysisPackage
 	hdeps      []*action                   // horizontal dependencies
 	vdeps      map[PackageID]*analysisNode // vertical dependencies
@@ -1152,7 +1157,7 @@ func (act *action) String() string {
 
 // execActions executes a set of action graph nodes in parallel.
 // Postcondition: each action.summary is set, even in case of error.
-func execActions(actions []*action) {
+func execActions(ctx context.Context, actions []*action) {
 	var wg sync.WaitGroup
 	for _, act := range actions {
 		act := act
@@ -1160,8 +1165,8 @@ func execActions(actions []*action) {
 		go func() {
 			defer wg.Done()
 			act.once.Do(func() {
-				execActions(act.hdeps) // analyze "horizontal" dependencies
-				act.result, act.summary, act.err = act.exec()
+				execActions(ctx, act.hdeps) // analyze "horizontal" dependencies
+				act.result, act.summary, act.err = act.exec(ctx)
 				if act.err != nil {
 					act.summary = &actionSummary{Err: act.err.Error()}
 					// TODO(adonovan): suppress logging. But
@@ -1185,7 +1190,7 @@ func execActions(actions []*action) {
 // along with its (serializable) facts and diagnostics.
 // Or it returns an error if the analyzer did not run to
 // completion and deliver a valid result.
-func (act *action) exec() (interface{}, *actionSummary, error) {
+func (act *action) exec(ctx context.Context) (any, *actionSummary, error) {
 	analyzer := act.a
 	pkg := act.pkg
 
@@ -1284,75 +1289,114 @@ func (act *action) exec() (interface{}, *actionSummary, error) {
 		factFilter[reflect.TypeOf(f)] = true
 	}
 
-	// If the package contains "fixed" files, it's not necessarily an error if we
-	// can't convert positions.
-	hasFixedFiles := false
-	for _, p := range pkg.parsed {
-		if p.Fixed() {
-			hasFixedFiles = true
-			break
-		}
-	}
-
 	// posToLocation converts from token.Pos to protocol form.
-	// TODO(adonovan): improve error messages.
 	posToLocation := func(start, end token.Pos) (protocol.Location, error) {
 		tokFile := pkg.fset.File(start)
 
+		// Find existing mapper by file name.
+		// (Don't require an exact token.File match
+		// as the analyzer may have re-parsed the file.)
+		var (
+			mapper *protocol.Mapper
+			fixed  bool
+		)
 		for _, p := range pkg.parsed {
-			if p.Tok == tokFile {
-				if end == token.NoPos {
-					end = start
-				}
-
-				// debugging #64547
-				fileStart := token.Pos(tokFile.Base())
-				fileEnd := fileStart + token.Pos(tokFile.Size())
-				if start < fileStart {
-					bug.Reportf("start < start of file")
-					start = fileStart
-				}
-				if end < start {
-					// This can happen if End is zero (#66683)
-					// or a small positive displacement from zero
-					// due to recursively Node.End() computation.
-					// This usually arises from poor parser recovery
-					// of an incomplete term at EOF.
-					bug.Reportf("end < start of file")
-					end = fileEnd
-				}
-				if end > fileEnd+1 {
-					bug.Reportf("end > end of file + 1")
-					end = fileEnd
-				}
-
-				return p.PosLocation(start, end)
+			if p.Tok.Name() == tokFile.Name() {
+				mapper = p.Mapper
+				fixed = p.Fixed() // suppress some assertions after parser recovery
+				break
 			}
 		}
-		errorf := bug.Errorf
-		if hasFixedFiles {
-			errorf = fmt.Errorf
+		if mapper == nil {
+			// The start position was not among the package's parsed
+			// Go files, indicating that the analyzer added new files
+			// to the FileSet.
+			//
+			// For example, the cgocall analyzer re-parses and
+			// type-checks some of the files in a special environment;
+			// and asmdecl and other low-level runtime analyzers call
+			// ReadFile to parse non-Go files.
+			// (This is a supported feature, documented at go/analysis.)
+			//
+			// In principle these files could be:
+			//
+			// - OtherFiles (non-Go files such as asm).
+			//   However, we set Pass.OtherFiles=[] because
+			//   gopls won't service "diagnose" requests
+			//   for non-Go files, so there's no point
+			//   reporting diagnostics in them.
+			//
+			// - IgnoredFiles (files tagged for other configs).
+			//   However, we set Pass.IgnoredFiles=[] because,
+			//   in most cases, zero-config gopls should create
+			//   another view that covers these files.
+			//
+			// - Referents of //line directives, as in cgo packages.
+			//   The file names in this case are not known a priori.
+			//   gopls generally tries to avoid honoring line directives,
+			//   but analyzers such as cgocall may honor them.
+			//
+			// In short, it's unclear how this can be reached
+			// other than due to an analyzer bug.
+			return protocol.Location{}, bug.Errorf("diagnostic location is not among files of package: %s", tokFile.Name())
 		}
-		return protocol.Location{}, errorf("token.Pos not within package")
+		// Inv: mapper != nil
+
+		if end == token.NoPos {
+			end = start
+		}
+
+		// debugging #64547
+		fileStart := token.Pos(tokFile.Base())
+		fileEnd := fileStart + token.Pos(tokFile.Size())
+		if start < fileStart {
+			if !fixed {
+				bug.Reportf("start < start of file")
+			}
+			start = fileStart
+		}
+		if end < start {
+			// This can happen if End is zero (#66683)
+			// or a small positive displacement from zero
+			// due to recursive Node.End() computation.
+			// This usually arises from poor parser recovery
+			// of an incomplete term at EOF.
+			if !fixed {
+				bug.Reportf("end < start of file")
+			}
+			end = fileEnd
+		}
+		if end > fileEnd+1 {
+			if !fixed {
+				bug.Reportf("end > end of file + 1")
+			}
+			end = fileEnd
+		}
+
+		return mapper.PosLocation(tokFile, start, end)
 	}
 
 	// Now run the (pkg, analyzer) action.
 	var diagnostics []gobDiagnostic
+
 	pass := &analysis.Pass{
-		Analyzer:   analyzer,
-		Fset:       pkg.fset,
-		Files:      pkg.files,
-		Pkg:        pkg.types,
-		TypesInfo:  pkg.typesInfo,
-		TypesSizes: pkg.typesSizes,
-		TypeErrors: pkg.typeErrors,
-		ResultOf:   inputs,
+		Analyzer:     analyzer,
+		Fset:         pkg.fset,
+		Files:        pkg.files,
+		OtherFiles:   nil, // since gopls doesn't handle non-Go (e.g. asm) files
+		IgnoredFiles: nil, // zero-config gopls should analyze these files in another view
+		Pkg:          pkg.types,
+		TypesInfo:    pkg.typesInfo,
+		TypesSizes:   pkg.typesSizes,
+		TypeErrors:   pkg.typeErrors,
+		ResultOf:     inputs,
 		Report: func(d analysis.Diagnostic) {
 			diagnostic, err := toGobDiagnostic(posToLocation, analyzer, d)
 			if err != nil {
-				if !hasFixedFiles {
-					bug.Reportf("internal error converting diagnostic from analyzer %q: %v", analyzer.Name, err)
-				}
+				// Don't bug.Report here: these errors all originate in
+				// posToLocation, and we can more accurately discriminate
+				// severe errors from benign ones in that function.
+				event.Error(ctx, fmt.Sprintf("internal error converting diagnostic from analyzer %q", analyzer.Name), err)
 				return
 			}
 			diagnostics = append(diagnostics, diagnostic)
@@ -1364,9 +1408,29 @@ func (act *action) exec() (interface{}, *actionSummary, error) {
 		AllObjectFacts:    func() []analysis.ObjectFact { return factset.AllObjectFacts(factFilter) },
 		AllPackageFacts:   func() []analysis.PackageFact { return factset.AllPackageFacts(factFilter) },
 	}
-	// TODO(adonovan): integrate this into the snapshot's file
-	// cache and its dependency analysis.
-	pass.ReadFile = analysisinternal.MakeReadFile(pass)
+
+	pass.ReadFile = func(filename string) ([]byte, error) {
+		// Read file from snapshot, to ensure reads are consistent.
+		//
+		// TODO(adonovan): make the dependency analysis sound by
+		// incorporating these additional files into the the analysis
+		// hash. This requires either (a) preemptively reading and
+		// hashing a potentially large number of mostly irrelevant
+		// files; or (b) some kind of dynamic dependency discovery
+		// system like used in Bazel for C++ headers. Neither entices.
+		if err := analysisinternal.CheckReadable(pass, filename); err != nil {
+			return nil, err
+		}
+		h, err := act.fsource.ReadFile(ctx, protocol.URIFromPath(filename))
+		if err != nil {
+			return nil, err
+		}
+		content, err := h.Content()
+		if err != nil {
+			return nil, err // file doesn't exist
+		}
+		return slices.Clone(content), nil // follow ownership of os.ReadFile
+	}
 
 	// Recover from panics (only) within the analyzer logic.
 	// (Use an anonymous function to limit the recover scope.)
