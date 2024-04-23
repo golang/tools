@@ -62,7 +62,7 @@ type typeCheckBatch struct {
 	syntaxIndex map[PackageID]int // requested ID -> index in ids
 	pre         preTypeCheck
 	post        postTypeCheck
-	handles     map[PackageID]*packageHandle
+	handles     map[PackageID]*packageHandle // (immutable)
 	parseCache  *parseCache
 	fset        *token.FileSet // describes all parsed or imported files
 	cpulimit    chan unit      // concurrency limiter for CPU-bound operations
@@ -473,6 +473,7 @@ func (b *typeCheckBatch) getImportPackage(ctx context.Context, id PackageID) (pk
 
 	// Do a second check for "unsafe" defensively, due to golang/go#60890.
 	if ph.mp.PkgPath == "unsafe" {
+		// (This assertion is reached.)
 		bug.Reportf("encountered \"unsafe\" as %s (golang/go#60890)", id)
 		return types.Unsafe, nil
 	}
@@ -957,6 +958,11 @@ func (s *Snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[
 	for _, v := range b.nodes {
 		assert(v.ph != nil, "nil handle")
 		handles[v.mp.ID] = v.ph
+
+		// debugging #60890
+		if v.ph.mp.PkgPath == "unsafe" && v.mp.ID != "unsafe" {
+			bug.Reportf("PackagePath \"unsafe\" with ID %q", v.mp.ID)
+		}
 	}
 
 	return handles, nil
