@@ -150,7 +150,7 @@ func main() {
 			data = fixGo(data, rel, srcMod, dstMod, isRoot)
 		}
 		if rel == "go.mod" {
-			data = fixGoMod(data, srcMod, dstMod)
+			data = fixGoMod(data, dstMod)
 		}
 
 		if err := os.WriteFile(dst, data, 0666); err != nil {
@@ -219,7 +219,7 @@ func fixGo(data []byte, file string, srcMod, dstMod string, isRoot bool) []byte 
 
 // fixGoMod rewrites the go.mod content in data to replace srcMod with dstMod
 // in the module path.
-func fixGoMod(data []byte, srcMod, dstMod string) []byte {
+func fixGoMod(data []byte, dstMod string) []byte {
 	f, err := modfile.ParseLax("go.mod", data, nil)
 	if err != nil {
 		log.Fatalf("parsing source module:\n%s", err)
