@@ -27,7 +27,8 @@ const vscodeRepo = "https://github.com/microsoft/vscode-languageserver-node"
 
 // lspGitRef names a branch or tag in vscodeRepo.
 // It implicitly determines the protocol version of the LSP used by gopls.
-// For example, tag release/protocol/3.17.3 of the repo defines protocol version 3.17.0.
+// For example, tag release/protocol/3.17.3 of the repo defines
+// protocol version 3.17.0 (as declared by the metaData.version field).
 // (Point releases are reflected in the git tag version even when they are cosmetic
 // and don't change the protocol.)
 var lspGitRef = "release/protocol/3.17.6-next.2"
@@ -116,16 +117,7 @@ func writeclient() {
 	for _, k := range cfuncs.keys() {
 		out.WriteString(cfuncs[k])
 	}
-
-	x, err := format.Source(out.Bytes())
-	if err != nil {
-		os.WriteFile("/tmp/a.go", out.Bytes(), 0644)
-		log.Fatalf("tsclient.go: %v", err)
-	}
-
-	if err := os.WriteFile(filepath.Join(*outputdir, "tsclient.go"), x, 0644); err != nil {
-		log.Fatalf("%v writing tsclient.go", err)
-	}
+	formatTo("tsclient.go", out.Bytes())
 }
 
 func writeserver() {
@@ -156,15 +148,7 @@ func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, 
 	for _, k := range sfuncs.keys() {
 		out.WriteString(sfuncs[k])
 	}
-	x, err := format.Source(out.Bytes())
-	if err != nil {
-		os.WriteFile("/tmp/a.go", out.Bytes(), 0644)
-		log.Fatalf("tsserver.go: %v", err)
-	}
-
-	if err := os.WriteFile(filepath.Join(*outputdir, "tsserver.go"), x, 0644); err != nil {
-		log.Fatalf("%v writing tsserver.go", err)
-	}
+	formatTo("tsserver.go", out.Bytes())
 }
 
 func writeprotocol() {
@@ -197,14 +181,7 @@ func writeprotocol() {
 		out.WriteString(consts[k])
 	}
 	out.WriteString(")\n\n")
-	x, err := format.Source(out.Bytes())
-	if err != nil {
-		os.WriteFile("/tmp/a.go", out.Bytes(), 0644)
-		log.Fatalf("tsprotocol.go: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(*outputdir, "tsprotocol.go"), x, 0644); err != nil {
-		log.Fatalf("%v writing tsprotocol.go", err)
-	}
+	formatTo("tsprotocol.go", out.Bytes())
 }
 
 func writejsons() {
@@ -228,18 +205,24 @@ func (e UnmarshalError) Error() string {
 	for _, k := range jsons.keys() {
 		out.WriteString(jsons[k])
 	}
-	x, err := format.Source(out.Bytes())
+	formatTo("tsjson.go", out.Bytes())
+}
+
+// formatTo formats the Go source and writes it to *outputdir/basename.
+func formatTo(basename string, src []byte) {
+	formatted, err := format.Source(src)
 	if err != nil {
-		os.WriteFile("/tmp/a.go", out.Bytes(), 0644)
-		log.Fatalf("tsjson.go: %v", err)
+		failed := filepath.Join("/tmp", basename+".fail")
+		os.WriteFile(failed, src, 0644)
+		log.Fatalf("formatting %s: %v (see %s)", basename, err, failed)
 	}
-	if err := os.WriteFile(filepath.Join(*outputdir, "tsjson.go"), x, 0644); err != nil {
-		log.Fatalf("%v writing tsjson.go", err)
+	if err := os.WriteFile(filepath.Join(*outputdir, basename), formatted, 0644); err != nil {
+		log.Fatal(err)
 	}
 }
 
 // create the common file header for the output files
-func fileHeader(model Model) string {
+func fileHeader(model *Model) string {
 	fname := filepath.Join(*repodir, ".git", "HEAD")
 	buf, err := os.ReadFile(fname)
 	if err != nil {
@@ -281,14 +264,14 @@ package protocol
 		model.Version.Version)     // 5
 }
 
-func parse(fname string) Model {
+func parse(fname string) *Model {
 	buf, err := os.ReadFile(fname)
 	if err != nil {
 		log.Fatal(err)
 	}
 	buf = addLineNumbers(buf)
-	var model Model
-	if err := json.Unmarshal(buf, &model); err != nil {
+	model := new(Model)
+	if err := json.Unmarshal(buf, model); err != nil {
 		log.Fatal(err)
 	}
 	return model

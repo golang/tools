@@ -28,19 +28,19 @@ var (
 	jsons = make(sortedMap[string])
 )
 
-func generateOutput(model Model) {
+func generateOutput(model *Model) {
 	for _, r := range model.Requests {
-		genDecl(r.Method, r.Params, r.Result, r.Direction)
-		genCase(r.Method, r.Params, r.Result, r.Direction)
-		genFunc(r.Method, r.Params, r.Result, r.Direction, false)
+		genDecl(model, r.Method, r.Params, r.Result, r.Direction)
+		genCase(model, r.Method, r.Params, r.Result, r.Direction)
+		genFunc(model, r.Method, r.Params, r.Result, r.Direction, false)
 	}
 	for _, n := range model.Notifications {
 		if n.Method == "$/cancelRequest" {
 			continue // handled internally by jsonrpc2
 		}
-		genDecl(n.Method, n.Params, nil, n.Direction)
-		genCase(n.Method, n.Params, nil, n.Direction)
-		genFunc(n.Method, n.Params, nil, n.Direction, true)
+		genDecl(model, n.Method, n.Params, nil, n.Direction)
+		genCase(model, n.Method, n.Params, nil, n.Direction)
+		genFunc(model, n.Method, n.Params, nil, n.Direction, true)
 	}
 	genStructs(model)
 	genAliases(model)
@@ -49,7 +49,7 @@ func generateOutput(model Model) {
 	genMarshal()
 }
 
-func genDecl(method string, param, result *Type, dir string) {
+func genDecl(model *Model, method string, param, result *Type, dir string) {
 	fname := methodName(method)
 	p := ""
 	if notNil(param) {
@@ -71,7 +71,8 @@ func genDecl(method string, param, result *Type, dir string) {
 		p = ", *ParamConfiguration"
 		ret = "([]LSPAny, error)"
 	}
-	msg := fmt.Sprintf("\t%s(context.Context%s) %s // %s\n", fname, p, ret, method)
+	fragment := strings.ReplaceAll(strings.TrimPrefix(method, "$/"), "/", "_")
+	msg := fmt.Sprintf("\t%s\t%s(context.Context%s) %s\n", lspLink(model, fragment), fname, p, ret)
 	switch dir {
 	case "clientToServer":
 		sdecls[method] = msg
@@ -85,7 +86,7 @@ func genDecl(method string, param, result *Type, dir string) {
 	}
 }
 
-func genCase(method string, param, result *Type, dir string) {
+func genCase(model *Model, method string, param, result *Type, dir string) {
 	out := new(bytes.Buffer)
 	fmt.Fprintf(out, "\tcase %q:\n", method)
 	var p string
@@ -127,7 +128,7 @@ func genCase(method string, param, result *Type, dir string) {
 	}
 }
 
-func genFunc(method string, param, result *Type, dir string, isnotify bool) {
+func genFunc(model *Model, method string, param, result *Type, dir string, isnotify bool) {
 	out := new(bytes.Buffer)
 	var p, r string
 	var goResult string
@@ -202,7 +203,7 @@ func genFunc(method string, param, result *Type, dir string, isnotify bool) {
 	}
 }
 
-func genStructs(model Model) {
+func genStructs(model *Model) {
 	structures := make(map[string]*Structure) // for expanding Extends
 	for _, s := range model.Structures {
 		structures[s.Name] = s
@@ -215,6 +216,8 @@ func genStructs(model Model) {
 			// a weird case, and needed only so the generated code contains the old gopls code
 			nm = "DocumentDiagnosticParams"
 		}
+		fmt.Fprintf(out, "//\n")
+		out.WriteString(lspLink(model, camelCase(s.Name)))
 		fmt.Fprintf(out, "type %s struct {%s\n", nm, linex(s.Line))
 		// for gpls compatibilitye, embed most extensions, but expand the rest some day
 		props := append([]NameType{}, s.Properties...)
@@ -245,6 +248,19 @@ func genStructs(model Model) {
 
 }
 
+// "FooBar" -> "fooBar"
+func camelCase(TitleCased string) string {
+	return strings.ToLower(TitleCased[:1]) + TitleCased[1:]
+}
+
+func lspLink(model *Model, fragment string) string {
+	// Derive URL version from metaData.version in JSON file.
+	parts := strings.Split(model.Version.Version, ".") // e.g. "3.17.0"
+	return fmt.Sprintf("// See https://microsoft.github.io/language-server-protocol/specifications/lsp/%s.%s/specification#%s\n",
+		parts[0], parts[1], // major.minor
+		fragment)
+}
+
 func genProps(out *bytes.Buffer, props []NameType, name string) {
 	for _, p := range props {
 		tp := goplsName(p.Type)
@@ -263,7 +279,7 @@ func genProps(out *bytes.Buffer, props []NameType, name string) {
 	}
 }
 
-func genAliases(model Model) {
+func genAliases(model *Model) {
 	for _, ta := range model.TypeAliases {
 		out := new(bytes.Buffer)
 		generateDoc(out, ta.Documentation)
@@ -272,6 +288,8 @@ func genAliases(model Model) {
 			continue // renamed the type, e.g., "DocumentDiagnosticReport", an or-type to "string"
 		}
 		tp := goplsName(ta.Type)
+		fmt.Fprintf(out, "//\n")
+		out.WriteString(lspLink(model, camelCase(ta.Name)))
 		fmt.Fprintf(out, "type %s = %s // (alias)\n", nm, tp)
 		types[nm] = out.String()
 	}
@@ -320,7 +338,7 @@ func genGenTypes() {
 		types[nm] = out.String()
 	}
 }
-func genConsts(model Model) {
+func genConsts(model *Model) {
 	for _, e := range model.Enumerations {
 		out := new(bytes.Buffer)
 		generateDoc(out, e.Documentation)

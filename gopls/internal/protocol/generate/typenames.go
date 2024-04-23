@@ -13,7 +13,7 @@ import (
 var typeNames = make(map[*Type]string)
 var genTypes []*newType
 
-func findTypeNames(model Model) {
+func findTypeNames(model *Model) {
 	for _, s := range model.Structures {
 		for _, e := range s.Extends {
 			nameType(e, nil) // all references
