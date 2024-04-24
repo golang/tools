@@ -12,8 +12,10 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"os"
 	"strconv"
 
+	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/internal/aliases"
 )
 
@@ -392,4 +394,39 @@ func equivalentTypes(want, got types.Type) bool {
 		}
 	}
 	return types.AssignableTo(want, got)
+}
+
+// MakeReadFile returns a simple implementation of the Pass.ReadFile function.
+func MakeReadFile(pass *analysis.Pass) func(filename string) ([]byte, error) {
+	return func(filename string) ([]byte, error) {
+		if err := checkReadable(pass, filename); err != nil {
+			return nil, err
+		}
+		return os.ReadFile(filename)
+	}
+}
+
+// checkReadable enforces the access policy defined by the ReadFile field of [analysis.Pass].
+func checkReadable(pass *analysis.Pass, filename string) error {
+	if slicesContains(pass.OtherFiles, filename) ||
+		slicesContains(pass.IgnoredFiles, filename) {
+		return nil
+	}
+	for _, f := range pass.Files {
+		// TODO(adonovan): use go1.20 f.FileStart
+		if pass.Fset.File(f.Pos()).Name() == filename {
+			return nil
+		}
+	}
+	return fmt.Errorf("Pass.ReadFile: %s is not among OtherFiles, IgnoredFiles, or names of Files", filename)
+}
+
+// TODO(adonovan): use go1.21 slices.Contains.
+func slicesContains[S ~[]E, E comparable](slice S, x E) bool {
+	for _, elem := range slice {
+		if elem == x {
+			return true
+		}
+	}
+	return false
 }

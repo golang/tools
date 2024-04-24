@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/analysis"
@@ -18,6 +19,8 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/txtar"
 )
 
 func TestApplyFixes(t *testing.T) {
@@ -252,5 +255,92 @@ func TestURL(t *testing.T) {
 	want := []string{"https://pkg.go.dev/golang.org/x/tools/go/analysis/internal/checker"}
 	if !reflect.DeepEqual(urls, want) {
 		t.Errorf("Expected Diagnostics.URLs %v. got %v", want, urls)
+	}
+}
+
+// TestPassReadFile exercises the Pass.ReadFile function.
+func TestPassReadFile(t *testing.T) {
+	cwd, _ := os.Getwd()
+
+	const src = `
+-- go.mod --
+module example.com
+
+-- p/file.go --
+package p
+
+-- p/ignored.go --
+//go:build darwin && mips64
+
+package p
+
+hello from ignored
+
+-- p/other.s --
+hello from other
+`
+
+	// Expand archive into tmp tree.
+	tmpdir := t.TempDir()
+	if err := testfiles.ExtractTxtar(tmpdir, txtar.Parse([]byte(src))); err != nil {
+		t.Fatal(err)
+	}
+
+	ran := false
+	a := &analysis.Analyzer{
+		Name:     "a",
+		Requires: []*analysis.Analyzer{inspect.Analyzer},
+		Doc:      "doc",
+		Run: func(pass *analysis.Pass) (any, error) {
+			if len(pass.OtherFiles)+len(pass.IgnoredFiles) == 0 {
+				t.Errorf("OtherFiles and IgnoredFiles are empty")
+				return nil, nil
+			}
+
+			for _, test := range []struct {
+				filename string
+				want     string // substring of file content or error message
+			}{
+				{
+					pass.OtherFiles[0], // [other.s]
+					"hello from other",
+				},
+				{
+					pass.IgnoredFiles[0], // [ignored.go]
+					"hello from ignored",
+				},
+				{
+					"nonesuch",
+					"nonesuch is not among OtherFiles, ", // etc
+				},
+				{
+					filepath.Join(cwd, "checker_test.go"),
+					"checker_test.go is not among OtherFiles, ", // etc
+				},
+			} {
+				content, err := pass.ReadFile(test.filename)
+				var got string
+				if err != nil {
+					got = err.Error()
+				} else {
+					got = string(content)
+					if len(got) > 100 {
+						got = got[:100] + "..."
+					}
+				}
+				if !strings.Contains(got, test.want) {
+					t.Errorf("Pass.ReadFile(%q) did not contain %q; got:\n%s",
+						test.filename, test.want, got)
+				}
+			}
+			ran = true
+			return nil, nil
+		},
+	}
+
+	analysistest.Run(t, tmpdir, a, "example.com/p")
+
+	if !ran {
+		t.Error("analyzer did not run")
 	}
 }

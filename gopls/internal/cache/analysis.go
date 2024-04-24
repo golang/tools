@@ -44,6 +44,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/frob"
 	"golang.org/x/tools/gopls/internal/util/maps"
+	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/facts"
 	"golang.org/x/tools/internal/gcimporter"
@@ -1363,6 +1364,9 @@ func (act *action) exec() (interface{}, *actionSummary, error) {
 		AllObjectFacts:    func() []analysis.ObjectFact { return factset.AllObjectFacts(factFilter) },
 		AllPackageFacts:   func() []analysis.PackageFact { return factset.AllPackageFacts(factFilter) },
 	}
+	// TODO(adonovan): integrate this into the snapshot's file
+	// cache and its dependency analysis.
+	pass.ReadFile = analysisinternal.MakeReadFile(pass)
 
 	// Recover from panics (only) within the analyzer logic.
 	// (Use an anonymous function to limit the recover scope.)
