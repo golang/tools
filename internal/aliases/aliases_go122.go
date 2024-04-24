@@ -17,6 +17,17 @@ import (
 // Alias is an alias of types.Alias.
 type Alias = types.Alias
 
+// Rhs returns the type on the right-hand side of the alias declaration.
+func Rhs(alias *Alias) types.Type {
+	if alias, ok := any(alias).(interface{ Rhs() types.Type }); ok {
+		return alias.Rhs() // go1.23+
+	}
+
+	// go1.22's Alias didn't have the Rhs method,
+	// so Unalias is the best we can do.
+	return Unalias(alias)
+}
+
 // Unalias is a wrapper of types.Unalias.
 func Unalias(t types.Type) types.Type { return types.Unalias(t) }
 
