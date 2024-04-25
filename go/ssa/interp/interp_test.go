@@ -134,6 +134,7 @@ var testdataTests = []string{
 	"fixedbugs/issue55115.go",
 	"fixedbugs/issue52835.go",
 	"fixedbugs/issue55086.go",
+	"fixedbugs/issue66783.go",
 	"typeassert.go",
 	"zeros.go",
 }

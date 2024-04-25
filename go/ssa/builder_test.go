@@ -1186,3 +1186,28 @@ func TestLabels(t *testing.T) {
 		pkg.Build()
 	}
 }
+
+func TestFixedBugs(t *testing.T) {
+	for _, name := range []string{
+		"issue66783a",
+		"issue66783b",
+	} {
+
+		t.Run(name, func(t *testing.T) {
+			base := name + ".go"
+			path := filepath.Join(analysistest.TestData(), "fixedbugs", base)
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+			if err != nil {
+				t.Fatal(err)
+			}
+			files := []*ast.File{f}
+			pkg := types.NewPackage(name, name)
+			mode := ssa.SanityCheckFunctions | ssa.InstantiateGenerics
+			// mode |= ssa.PrintFunctions // debug mode
+			if _, _, err := ssautil.BuildPackage(&types.Config{}, fset, pkg, files, mode); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}

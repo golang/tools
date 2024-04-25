@@ -78,8 +78,7 @@ func createInstance(fn *Function, targs []types.Type, cr *creator) *Function {
 	if prog.mode&InstantiateGenerics != 0 && !prog.isParameterized(targs...) {
 		synthetic = fmt.Sprintf("instance of %s", fn.Name())
 		if fn.syntax != nil {
-			scope := obj.Origin().Scope()
-			subst = makeSubster(prog.ctxt, scope, fn.typeparams, targs, false)
+			subst = makeSubster(prog.ctxt, obj, fn.typeparams, targs, false)
 			build = (*builder).buildFromSyntax
 		} else {
 			build = (*builder).buildParamsOnly
