@@ -2432,11 +2432,19 @@ func testIssue37629(t *testing.T, exporter packagestest.Exporter) {
 
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
-		Files: map[string]interface{}{
+		Files: map[string]any{
 			"c/c2.go":             `package c`,
 			"a/a.go":              `package a; import "b.com/b"; const A = b.B`,
 			"vendor/b.com/b/b.go": `package b; const B = 4`,
-		}}})
+			"vendor/modules.txt": `# b.com/b v1.0.0
+## explicit
+b.com/b`,
+		}}, {
+		Name: "b.com/b@v1.0.0",
+		Files: map[string]any{
+			"arbitrary.txt": "",
+		}},
+	})
 	rootDir := filepath.Dir(filepath.Dir(exported.File("golang.org/fake", "a/a.go")))
 	exported.Config.Overlay = map[string][]byte{
 		filepath.Join(rootDir, "c/c.go"): []byte(`package c; import "golang.org/fake/a"; const C = a.A`),

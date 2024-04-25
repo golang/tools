@@ -5,6 +5,7 @@
 package packagestest
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -98,7 +99,8 @@ func (modules) Finalize(exported *Exported) error {
 	}
 
 	exported.written[exported.primary]["go.mod"] = filepath.Join(primaryDir, "go.mod")
-	primaryGomod := "module " + exported.primary + "\nrequire (\n"
+	var primaryGomod bytes.Buffer
+	fmt.Fprintf(&primaryGomod, "module %s\nrequire (\n", exported.primary)
 	for other := range exported.written {
 		if other == exported.primary {
 			continue
@@ -110,10 +112,10 @@ func (modules) Finalize(exported *Exported) error {
 			other = v.module
 			version = v.version
 		}
-		primaryGomod += fmt.Sprintf("\t%v %v\n", other, version)
+		fmt.Fprintf(&primaryGomod, "\t%v %v\n", other, version)
 	}
-	primaryGomod += ")\n"
-	if err := os.WriteFile(filepath.Join(primaryDir, "go.mod"), []byte(primaryGomod), 0644); err != nil {
+	fmt.Fprintf(&primaryGomod, ")\n")
+	if err := os.WriteFile(filepath.Join(primaryDir, "go.mod"), primaryGomod.Bytes(), 0644); err != nil {
 		return err
 	}
 
