@@ -18,7 +18,7 @@ import (
 )
 
 // Modules is the exporter that produces module layouts.
-// Each "repository" is put in it's own module, and the module file generated
+// Each "repository" is put in its own module, and the module file generated
 // will have replace directives for all other modules.
 // Given the two files
 //
