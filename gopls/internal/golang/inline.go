@@ -113,14 +113,14 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 		Content: callerPGF.Src,
 	}
 
-	got, err := inline.Inline(logf, caller, callee)
+	res, err := inline.Inline(caller, callee, &inline.Options{Logf: logf})
 	if err != nil {
 		return nil, nil, err
 	}
 
 	return callerPkg.FileSet(), &analysis.SuggestedFix{
 		Message:   fmt.Sprintf("inline call of %v", callee),
-		TextEdits: diffToTextEdits(callerPGF.Tok, diff.Bytes(callerPGF.Src, got)),
+		TextEdits: diffToTextEdits(callerPGF.Tok, diff.Bytes(callerPGF.Src, res.Content)),
 	}, nil
 }
 

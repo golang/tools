@@ -193,11 +193,11 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 				Call:    calls[currentCall],
 				Content: content,
 			}
-			var err error
-			content, err = inline.Inline(logf, caller, callee)
+			res, err := inline.Inline(caller, callee, &inline.Options{Logf: logf})
 			if err != nil {
 				return nil, fmt.Errorf("inlining failed: %v", err)
 			}
+			content = res.Content
 			if post != nil {
 				content = post(content)
 			}

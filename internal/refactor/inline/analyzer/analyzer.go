@@ -126,11 +126,12 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				Call:    call,
 				Content: content,
 			}
-			got, err := inline.Inline(discard, caller, callee)
+			res, err := inline.Inline(caller, callee, &inline.Options{Logf: discard})
 			if err != nil {
 				pass.Reportf(call.Lparen, "%v", err)
 				return
 			}
+			got := res.Content
 
 			// Suggest the "fix".
 			var textEdits []analysis.TextEdit

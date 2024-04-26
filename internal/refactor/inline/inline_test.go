@@ -244,7 +244,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 
 	// Do the inlining. For the purposes of the test,
 	// AnalyzeCallee and Inline are a single operation.
-	got, err := func() ([]byte, error) {
+	res, err := func() (*inline.Result, error) {
 		filename := calleePkg.Fset.File(calleeDecl.Pos()).Name()
 		content, err := os.ReadFile(filename)
 		if err != nil {
@@ -267,7 +267,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 
 		check := checkNoMutation(caller.File)
 		defer check()
-		return inline.Inline(logf, caller, callee)
+		return inline.Inline(caller, callee, &inline.Options{Logf: logf})
 	}()
 	if err != nil {
 		if wantRE, ok := want.(*regexp.Regexp); ok {
@@ -280,6 +280,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 	}
 
 	// Inline succeeded.
+	got := res.Content
 	if want, ok := want.([]byte); ok {
 		got = append(bytes.TrimSpace(got), '\n')
 		want = append(bytes.TrimSpace(want), '\n')
@@ -331,7 +332,7 @@ const funcName = "f"
 // strategy with the checklist of concerns enumerated in the package
 // doc comment.
 type testcase struct {
-	descr          string
+	descr          string // description; substrings enable options (e.g. "IgnoreEffects")
 	callee, caller string // Go source files (sans package decl) of caller, callee
 	want           string // expected new portion of caller file, or "error: regexp"
 }
@@ -1223,6 +1224,12 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func _() { f(g(1), g(2), g(3)) }`,
 			`func _() { func() { defer println(any(g(1)), any(g(2)), g(3)) }() }`,
 		},
+		{
+			"Effects are ignored when IgnoreEffects",
+			`func f(x, y int) { println(y, x) }; func g(int) int`,
+			`func _() { f(g(1), g(2)) }`,
+			`func _() { println(g(2), g(1)) }`,
+		},
 	})
 }
 
@@ -1417,7 +1424,7 @@ func runTests(t *testing.T, tests []testcase) {
 			}
 
 			// Analyze callee and inline call.
-			doIt := func() ([]byte, error) {
+			doIt := func() (*inline.Result, error) {
 				callee, err := inline.AnalyzeCallee(t.Logf, fset, pkg, info, decl, []byte(calleeContent))
 				if err != nil {
 					return nil, err
@@ -1436,9 +1443,12 @@ func runTests(t *testing.T, tests []testcase) {
 				}
 				check := checkNoMutation(caller.File)
 				defer check()
-				return inline.Inline(t.Logf, caller, callee)
+				return inline.Inline(caller, callee, &inline.Options{
+					Logf:          t.Logf,
+					IgnoreEffects: strings.Contains(test.descr, "IgnoreEffects"),
+				})
 			}
-			gotContent, err := doIt()
+			res, err := doIt()
 
 			// Want error?
 			if rest := strings.TrimPrefix(test.want, "error: "); rest != test.want {
@@ -1458,6 +1468,8 @@ func runTests(t *testing.T, tests []testcase) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
+			gotContent := res.Content
 
 			// Compute a single-hunk line-based diff.
 			srcLines := strings.Split(callerContent, "\n")

@@ -40,20 +40,54 @@ type Caller struct {
 	enclosingFunc *ast.FuncDecl // top-level function/method enclosing the call, if any
 }
 
-type unit struct{} // for representing sets as maps
+// Options specifies parameters affecting the inliner algorithm.
+// All fields are optional.
+type Options struct {
+	Logf          func(string, ...any) // log output function, records decision-making process
+	IgnoreEffects bool                 // ignore potential side effects of arguments (unsound)
+}
+
+// Result holds the result of code transformation.
+type Result struct {
+	Content     []byte // formatted, transformed content of caller file
+	Literalized bool   // chosen strategy replaced callee() with func(){...}()
+
+	// TODO(adonovan): provide an API for clients that want structured
+	// output: a list of import additions and deletions plus one or more
+	// localized diffs (or even AST transformations, though ownership and
+	// mutation are tricky) near the call site.
+}
 
 // Inline inlines the called function (callee) into the function call (caller)
 // and returns the updated, formatted content of the caller source file.
 //
 // Inline does not mutate any public fields of Caller or Callee.
-//
-// The log records the decision-making process.
-//
-// TODO(adonovan): provide an API for clients that want structured
-// output: a list of import additions and deletions plus one or more
-// localized diffs (or even AST transformations, though ownership and
-// mutation are tricky) near the call site.
-func Inline(logf func(string, ...any), caller *Caller, callee *Callee) ([]byte, error) {
+func Inline(caller *Caller, callee *Callee, opts *Options) (*Result, error) {
+	copy := *opts // shallow copy
+	opts = &copy
+	// Set default options.
+	if opts.Logf == nil {
+		opts.Logf = func(string, ...any) {}
+	}
+
+	st := &state{
+		caller: caller,
+		callee: callee,
+		opts:   opts,
+	}
+	return st.inline()
+}
+
+// state holds the working state of the inliner.
+type state struct {
+	caller *Caller
+	callee *Callee
+	opts   *Options
+}
+
+func (st *state) inline() (*Result, error) {
+	logf, caller, callee := st.opts.Logf, st.caller, st.callee
+
 	logf("inline %s @ %v",
 		debugFormatNode(caller.Fset, caller.Call),
 		caller.Fset.PositionFor(caller.Call.Lparen, false))
@@ -68,7 +102,7 @@ func Inline(logf func(string, ...any), caller *Caller, callee *Callee) ([]byte, 
 		return nil, fmt.Errorf("cannot inline calls from files that import \"C\"")
 	}
 
-	res, err := inline(logf, caller, &callee.impl)
+	res, err := st.inlineCall()
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +338,17 @@ func Inline(logf func(string, ...any), caller *Caller, callee *Callee) ([]byte, 
 		}
 		newSrc = formatted
 	}
-	return newSrc, nil
+
+	literalized := false
+	if call, ok := res.new.(*ast.CallExpr); ok && is[*ast.FuncLit](call.Fun) {
+		literalized = true
+	}
+
+	return &Result{
+		Content:     newSrc,
+		Literalized: literalized,
+	}, nil
+
 }
 
 type newImport struct {
@@ -312,7 +356,7 @@ type newImport struct {
 	spec    *ast.ImportSpec
 }
 
-type result struct {
+type inlineCallResult struct {
 	newImports []newImport
 	// If elideBraces is set, old is an ast.Stmt and new is an ast.BlockStmt to
 	// be spliced in. This allows the inlining analysis to assert that inlining
@@ -329,9 +373,7 @@ type result struct {
 	old, new    ast.Node // e.g. replace call expr by callee function body expression
 }
 
-type logger = func(string, ...any)
-
-// inline returns a pair of an old node (the call, or something
+// inlineCall returns a pair of an old node (the call, or something
 // enclosing it) and a new node (its replacement, which may be a
 // combination of caller, callee, and new nodes), along with the set
 // of new imports needed.
@@ -350,7 +392,9 @@ type logger = func(string, ...any)
 // candidate for evaluating an alternative fully self-contained tree
 // representation, such as any proposed solution to #20744, or even
 // dst or some private fork of go/ast.)
-func inline(logf logger, caller *Caller, callee *gobCallee) (*result, error) {
+func (st *state) inlineCall() (*inlineCallResult, error) {
+	logf, caller, callee := st.opts.Logf, st.caller, &st.callee.impl
+
 	checkInfoFields(caller.Info)
 
 	// Inlining of dynamic calls is not currently supported,
@@ -554,7 +598,7 @@ func inline(logf logger, caller *Caller, callee *gobCallee) (*result, error) {
 		objRenames[i] = newName
 	}
 
-	res := &result{
+	res := &inlineCallResult{
 		newImports: newImports,
 	}
 
@@ -582,7 +626,7 @@ func inline(logf logger, caller *Caller, callee *gobCallee) (*result, error) {
 
 	// Gather the effective call arguments, including the receiver.
 	// Later, elements will be eliminated (=> nil) by parameter substitution.
-	args, err := arguments(caller, calleeDecl, assign1)
+	args, err := st.arguments(caller, calleeDecl, assign1)
 	if err != nil {
 		return nil, err // e.g. implicit field selection cannot be made explicit
 	}
@@ -880,7 +924,7 @@ func inline(logf logger, caller *Caller, callee *gobCallee) (*result, error) {
 			(!needBindingDecl || (bindingDecl != nil && len(bindingDecl.names) == 0)) {
 
 			// Reduces to: { var (bindings); lhs... := rhs... }
-			if newStmts, ok := assignStmts(logf, caller, stmt, callee, results); ok {
+			if newStmts, ok := st.assignStmts(stmt, results); ok {
 				logf("strategy: reduce assign-context call to { return exprs }")
 				clearPositions(calleeDecl.Body)
 
@@ -1151,7 +1195,7 @@ type argument struct {
 //
 // We compute type-based predicates like pure, duplicable,
 // freevars, etc, now, before we start modifying syntax.
-func arguments(caller *Caller, calleeDecl *ast.FuncDecl, assign1 func(*types.Var) bool) ([]*argument, error) {
+func (st *state) arguments(caller *Caller, calleeDecl *ast.FuncDecl, assign1 func(*types.Var) bool) ([]*argument, error) {
 	var args []*argument
 
 	callArgs := caller.Call.Args
@@ -1175,7 +1219,7 @@ func arguments(caller *Caller, calleeDecl *ast.FuncDecl, assign1 func(*types.Var
 				typ:        caller.Info.TypeOf(recvArg),
 				constant:   caller.Info.Types[recvArg].Value,
 				pure:       pure(caller.Info, assign1, recvArg),
-				effects:    effects(caller.Info, recvArg),
+				effects:    st.effects(caller.Info, recvArg),
 				duplicable: duplicable(caller.Info, recvArg),
 				freevars:   freeVars(caller.Info, recvArg),
 			}
@@ -1229,7 +1273,7 @@ func arguments(caller *Caller, calleeDecl *ast.FuncDecl, assign1 func(*types.Var
 			constant:   tv.Value,
 			spread:     is[*types.Tuple](tv.Type), // => last
 			pure:       pure(caller.Info, assign1, expr),
-			effects:    effects(caller.Info, expr),
+			effects:    st.effects(caller.Info, expr),
 			duplicable: duplicable(caller.Info, expr),
 			freevars:   freeVars(caller.Info, expr),
 		})
@@ -1911,7 +1955,7 @@ func freeishNames(free map[string]bool, t ast.Expr) {
 // effects reports whether an expression might change the state of the
 // program (through function calls and channel receives) and affect
 // the evaluation of subsequent expressions.
-func effects(info *types.Info, expr ast.Expr) bool {
+func (st *state) effects(info *types.Info, expr ast.Expr) bool {
 	effects := false
 	ast.Inspect(expr, func(n ast.Node) bool {
 		switch n := n.(type) {
@@ -1939,6 +1983,15 @@ func effects(info *types.Info, expr ast.Expr) bool {
 		}
 		return true
 	})
+
+	// Even if consideration of effects is not desired,
+	// we continue to compute, log, and discard them.
+	if st.opts.IgnoreEffects && effects {
+		effects = false
+		st.opts.Logf("ignoring potential effects of argument %s",
+			debugFormatNode(st.caller.Fset, expr))
+	}
+
 	return effects
 }
 
@@ -2766,7 +2819,9 @@ func declares(stmts []ast.Stmt) map[string]bool {
 //
 // Note: assignStmts may return (nil, true) if it determines that the rewritten
 // assignment consists only of _ = nil assignments.
-func assignStmts(logf logger, caller *Caller, callerStmt *ast.AssignStmt, callee *gobCallee, returnOperands []ast.Expr) ([]ast.Stmt, bool) {
+func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Expr) ([]ast.Stmt, bool) {
+	logf, caller, callee := st.opts.Logf, st.caller, &st.callee.impl
+
 	assert(len(callee.Returns) == 1, "unexpected multiple returns")
 	resultInfo := callee.Returns[0]
 
@@ -3084,3 +3139,5 @@ func hasNonTrivialReturn(returnInfo [][]returnOperandFlags) bool {
 	}
 	return false
 }
+
+type unit struct{} // for representing sets as maps
