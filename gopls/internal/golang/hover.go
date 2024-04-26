@@ -262,6 +262,11 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	signature := objectString(obj, qf, declPos, declPGF.Tok, spec)
 	singleLineSignature := signature
 
+	// Display struct tag for struct fields at the end of the signature.
+	if field != nil && field.Tag != nil {
+		signature += " " + field.Tag.Value
+	}
+
 	// TODO(rfindley): we could do much better for inferred signatures.
 	// TODO(adonovan): fuse the two calls below.
 	if inferred := inferredSignature(pkg.TypesInfo(), ident); inferred != nil {
