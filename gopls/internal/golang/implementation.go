@@ -73,19 +73,29 @@ func Implementation(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 }
 
 func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) ([]protocol.Location, error) {
+	// First, find the object referenced at the cursor by type checking the
+	// current package.
 	obj, pkg, err := implementsObj(ctx, snapshot, fh.URI(), pp)
 	if err != nil {
 		return nil, err
 	}
 
-	var localPkgs []*cache.Package
+	// If the resulting object has a position, we can expand the search to types
+	// in the declaring package(s). In this case, we must re-type check these
+	// packages in the same realm.
+	var (
+		declOffset int
+		declURI    protocol.DocumentURI
+		localPkgs  []*cache.Package
+	)
 	if obj.Pos().IsValid() { // no local package for error or error.Error
 		declPosn := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
+		declOffset = declPosn.Offset
 		// Type-check the declaring package (incl. variants) for use
 		// by the "local" search, which uses type information to
 		// enumerate all types within the package that satisfy the
 		// query type, even those defined local to a function.
-		declURI := protocol.URIFromPath(declPosn.Filename)
+		declURI = protocol.URIFromPath(declPosn.Filename)
 		declMPs, err := snapshot.MetadataForFile(ctx, declURI)
 		if err != nil {
 			return nil, err
@@ -104,20 +114,25 @@ func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 		}
 	}
 
+	pkg = nil // no longer used
+
 	// Is the selected identifier a type name or method?
 	// (For methods, report the corresponding method names.)
-	var queryType types.Type
-	var queryMethodID string
-	switch obj := obj.(type) {
-	case *types.TypeName:
-		queryType = obj.Type()
-	case *types.Func:
-		// For methods, use the receiver type, which may be anonymous.
-		if recv := obj.Type().(*types.Signature).Recv(); recv != nil {
-			queryType = recv.Type()
-			queryMethodID = obj.Id()
+	//
+	// This logic is reused for local queries.
+	typeOrMethod := func(obj types.Object) (types.Type, string) {
+		switch obj := obj.(type) {
+		case *types.TypeName:
+			return obj.Type(), ""
+		case *types.Func:
+			// For methods, use the receiver type, which may be anonymous.
+			if recv := obj.Type().(*types.Signature).Recv(); recv != nil {
+				return recv.Type(), obj.Id()
+			}
 		}
+		return nil, ""
 	}
+	queryType, queryMethodID := typeOrMethod(obj)
 	if queryType == nil {
 		return nil, bug.Errorf("%s is not a type or method", obj.Name()) // should have been handled by implementsObj
 	}
@@ -169,11 +184,42 @@ func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	)
 	// local search
 	for _, localPkg := range localPkgs {
-		localPkg := localPkg
+		// The localImplementations algorithm assumes needle and haystack
+		// belong to a single package (="realm" of types symbol identities),
+		// so we need to recompute obj for each local package.
+		// (By contrast the global algorithm is name-based.)
+		declPkg := localPkg
 		group.Go(func() error {
-			localLocs, err := localImplementations(ctx, snapshot, localPkg, queryType, queryMethodID)
+			pkgID := declPkg.Metadata().ID
+			declFile, err := declPkg.File(declURI)
 			if err != nil {
-				return err
+				return err // "can't happen"
+			}
+
+			// Find declaration of corresponding object
+			// in this package based on (URI, offset).
+			pos, err := safetoken.Pos(declFile.Tok, declOffset)
+			if err != nil {
+				return err // also "can't happen"
+			}
+			// TODO(adonovan): simplify: use objectsAt?
+			path := pathEnclosingObjNode(declFile.File, pos)
+			if path == nil {
+				return ErrNoIdentFound // checked earlier
+			}
+			id, ok := path[0].(*ast.Ident)
+			if !ok {
+				return ErrNoIdentFound // checked earlier
+			}
+			// Shadow obj, queryType, and queryMethodID in this package.
+			obj := declPkg.TypesInfo().ObjectOf(id) // may be nil
+			queryType, queryMethodID := typeOrMethod(obj)
+			if queryType == nil {
+				return fmt.Errorf("querying method sets in package %q: %v", pkgID, err)
+			}
+			localLocs, err := localImplementations(ctx, snapshot, declPkg, queryType, queryMethodID)
+			if err != nil {
+				return fmt.Errorf("querying local implementations %q: %v", pkgID, err)
 			}
 			locsMu.Lock()
 			locs = append(locs, localLocs...)

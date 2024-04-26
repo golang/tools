@@ -1,0 +1,37 @@
+This test verifies that implementations uses the correct object when querying
+local implementations . As described in golang/go#67041), a bug led to it
+comparing types from different realms.
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- a/a.go --
+package a
+
+type A struct{}
+
+type Aer interface { //@loc(Aer, "Aer")
+	GetA() A
+}
+
+type X struct{} //@loc(X, "X")
+
+func (X) GetA() A
+
+-- a/a_test.go --
+package a
+
+// Verify that we also find implementations in a test variant.
+type Y struct{} //@loc(Y, "Y")
+
+func (Y) GetA() A
+-- b/b.go --
+package b
+
+import "example.com/a"
+
+var _ a.X //@implementation("X", Aer)
+
+var _ a.Aer //@implementation("Aer", X, Y)
