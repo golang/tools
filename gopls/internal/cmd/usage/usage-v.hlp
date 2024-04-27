@@ -20,7 +20,7 @@ Main
                     
 Features            
   call_hierarchy    display selected identifier's call hierarchy
-  check             show diagnostic results for the specified file
+  check             show diagnostic results for the specified files
   codelens          List or execute code lenses for a file
   definition        show declaration of selected identifier
   execute           Execute a gopls custom LSP command
