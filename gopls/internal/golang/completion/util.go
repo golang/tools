@@ -142,10 +142,17 @@ func isPkgName(obj types.Object) bool  { return is[*types.PkgName](obj) }
 // TODO(adonovan): shouldn't this use CoreType(T)?
 func isPointer(T types.Type) bool { return is[*types.Pointer](aliases.Unalias(T)) }
 
+// isEmptyInterface whether T is a (possibly Named or Alias) empty interface
+// type, such that every type is assignable to T.
+//
+// isEmptyInterface returns false for type parameters, since they have
+// different assignability rules.
 func isEmptyInterface(T types.Type) bool {
-	// TODO(adonovan): shouldn't this use Underlying?
-	intf, _ := T.(*types.Interface)
-	return intf != nil && intf.NumMethods() == 0 && intf.IsMethodSet()
+	if _, ok := T.(*types.TypeParam); ok {
+		return false
+	}
+	intf, _ := T.Underlying().(*types.Interface)
+	return intf != nil && intf.Empty()
 }
 
 func isUntyped(T types.Type) bool {

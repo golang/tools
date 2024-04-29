@@ -2936,6 +2936,13 @@ func (ci *candidateInference) candTypeMatches(cand *candidate) bool {
 
 		for _, expType := range expTypes {
 			if isEmptyInterface(expType) {
+				// If any type matches the expected type, fall back to other
+				// considerations below.
+				//
+				// TODO(rfindley): can this be expressed via scoring, rather than a boolean?
+				// Why is it the case that we break ties for the empty interface, but
+				// not for other expected types that may be satisfied by a lot of
+				// types, such as fmt.Stringer?
 				continue
 			}
 
