@@ -8,6 +8,13 @@ See also gopls/internal/test/marker/testdata/diagnostics/stdversion.txt
 which runs the same test within the gopls analysis driver, to ensure
 coverage of per-file Go version support.
 
+-- go.work --
+go 1.21
+
+use .
+use sub
+use old
+
 -- go.mod --
 module example.com
 

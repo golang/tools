@@ -369,11 +369,16 @@ type Result = checker.TestAnalyzerResult
 // loadPackages returns an error if any package had an error, or the pattern
 // matched no packages.
 func loadPackages(a *analysis.Analyzer, dir string, patterns ...string) ([]*packages.Package, error) {
-	env := []string{"GOPATH=" + dir, "GO111MODULE=off"} // GOPATH mode
+	env := []string{"GOPATH=" + dir, "GO111MODULE=off", "GOWORK=off"} // GOPATH mode
 
 	// Undocumented module mode. Will be replaced by something better.
 	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-		env = []string{"GO111MODULE=on", "GOPROXY=off"} // module mode
+		gowork := filepath.Join(dir, "go.work")
+		if _, err := os.Stat(gowork); err != nil {
+			gowork = "off"
+		}
+
+		env = []string{"GO111MODULE=on", "GOPROXY=off", "GOWORK=" + gowork} // module mode
 	}
 
 	// packages.Load loads the real standard library, not a minimal
@@ -397,12 +402,23 @@ func loadPackages(a *analysis.Analyzer, dir string, patterns ...string) ([]*pack
 		return nil, err
 	}
 
+	// If any named package couldn't be loaded at all
+	// (e.g. the Name field is unset), fail fast.
+	for _, pkg := range pkgs {
+		if pkg.Name == "" {
+			return nil, fmt.Errorf("failed to load %q: Errors=%v",
+				pkg.PkgPath, pkg.Errors)
+		}
+	}
+
 	// Do NOT print errors if the analyzer will continue running.
 	// It is incredibly confusing for tests to be printing to stderr
 	// willy-nilly instead of their test logs, especially when the
 	// errors are expected and are going to be fixed.
 	if !a.RunDespiteErrors {
-		packages.PrintErrors(pkgs)
+		if packages.PrintErrors(pkgs) > 0 {
+			return nil, fmt.Errorf("there were package loading errors (and RunDespiteErrors is false)")
+		}
 	}
 
 	if len(pkgs) == 0 {
