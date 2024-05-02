@@ -23,5 +23,6 @@ func Test(t *testing.T) {
 	analysistest.Run(t, dir, stdversion.Analyzer,
 		"example.com/a",
 		"example.com/sub",
+		"example.com/sub20",
 		"example.com/old")
 }
