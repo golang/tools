@@ -1,0 +1,36 @@
+Regression test for golang/go#67142.
+
+-- flags --
+-ignore_extra_diags
+-min_go=go1.21
+
+-- settings.json --
+{
+	"hints": {
+		"assignVariableTypes": true,
+		"compositeLiteralFields": true,
+		"compositeLiteralTypes": true,
+		"constantValues": true,
+		"functionTypeParameters": true,
+		"parameterNames": true,
+		"rangeVariabletypes": true
+	}
+}
+
+-- go.mod --
+module w
+
+go 1.21.9
+
+-- p.go --
+//@inlayhints(out)
+package p
+
+var _ = rand.Float64() 
+
+-- @out --
+//@inlayhints(out)
+package p
+
+var _ = rand.Float64() 
+

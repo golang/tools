@@ -139,7 +139,11 @@ func parameterNames(node ast.Node, m *protocol.Mapper, tf *token.File, info *typ
 	if !ok {
 		return nil
 	}
-	signature, ok := typeparams.CoreType(info.TypeOf(callExpr.Fun)).(*types.Signature)
+	t := info.TypeOf(callExpr.Fun)
+	if t == nil {
+		return nil
+	}
+	signature, ok := typeparams.CoreType(t).(*types.Signature)
 	if !ok {
 		return nil
 	}
