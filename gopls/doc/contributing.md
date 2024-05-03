@@ -1,4 +1,4 @@
-# Documentation for contributors
+# Gopls: Documentation for contributors
 
 This documentation augments the general documentation for contributing to the
 x/tools repository, described at the [repository root](../../CONTRIBUTING.md).

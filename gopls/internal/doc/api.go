@@ -10,7 +10,7 @@ package doc
 
 import _ "embed"
 
-// API is a JSON value of type API.
+// JSON is a JSON encoding of value of type API.
 // The 'gopls api-json' command prints it.
 //
 //go:embed api.json

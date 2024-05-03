@@ -1,4 +1,4 @@
-# Setting up your workspace
+# Gopls: Setting up your workspace
 
 In the language server protocol, a "workspace" consists of a folder along with
 per-folder configuration. Some LSP clients such as VS Code allow configuring

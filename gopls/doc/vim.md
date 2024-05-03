@@ -1,4 +1,4 @@
-# Vim / Neovim
+# Gopls: Using Vim or Neovim
 
 * [vim-go](#vimgo)
 * [LanguageClient-neovim](#lcneovim)

@@ -13,6 +13,8 @@
 // Run it with this command:
 //
 //	$ cd gopls/internal/doc && go generate
+//
+// TODO(adonovan): move this package to gopls/internal/doc/generate.
 package main
 
 import (
@@ -204,7 +206,7 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 		return nil, err
 	}
 
-	enums, err := loadEnums(pkg)
+	enums, err := loadEnums(pkg) // TODO(adonovan): do this only once at toplevel.
 	if err != nil {
 		return nil, err
 	}
@@ -694,7 +696,7 @@ func rewriteSettings(prevContent []byte, api *doc.API) ([]byte, error) {
 				//
 				// We do not display the undocumented dotted-path alias
 				// (h.title + "." + opt.Name) used by VS Code only.
-				fmt.Fprintf(&buf, "### `%s` *%v*\n\n", opt.Name, opt.Type)
+				fmt.Fprintf(&buf, "### `%s %s`\n\n", opt.Name, opt.Type)
 
 				// status
 				switch opt.Status {
@@ -829,6 +831,9 @@ func rewriteCodeLenses(prevContent []byte, api *doc.API) ([]byte, error) {
 func rewriteCommands(prevContent []byte, api *doc.API) ([]byte, error) {
 	var buf bytes.Buffer
 	for _, command := range api.Commands {
+		// Emit HTML anchor as GitHub markdown doesn't support
+		// "# Heading {#anchor}" syntax.
+		fmt.Fprintf(&buf, "<a id='%s'></a>\n", command.Command)
 		fmt.Fprintf(&buf, "## `%s`: **%s**\n\n%v\n\n", command.Command, command.Title, command.Doc)
 		if command.ArgDoc != "" {
 			fmt.Fprintf(&buf, "Args:\n\n```\n%s\n```\n\n", command.ArgDoc)

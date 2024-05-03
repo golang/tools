@@ -190,7 +190,6 @@ func (s *server) ResolveCodeAction(ctx context.Context, ca *protocol.CodeAction)
 		}
 		edit, err := command.Dispatch(ctx, params, handler)
 		if err != nil {
-
 			return nil, err
 		}
 		var ok bool

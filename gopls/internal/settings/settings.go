@@ -343,7 +343,11 @@ type DocumentationOptions struct {
 	// SingleLine and Structured are intended for use only by authors of editor plugins.
 	HoverKind HoverKind
 
-	// LinkTarget controls where documentation links go.
+	// LinkTarget is the base URL for links to Go package
+	// documentation returned by LSP operations such as Hover and
+	// DocumentLinks and in the CodeDescription field of each
+	// Diagnostic.
+	//
 	// It might be one of:
 	//
 	// * `"godoc.org"`
@@ -375,6 +379,11 @@ type FormattingOptions struct {
 	// imports beginning with this string after third-party packages. It should
 	// be the prefix of the import path whose imports should be grouped
 	// separately.
+	//
+	// It is used when tidying imports (during an LSP Organize
+	// Imports request) or when inserting new ones (for example,
+	// during completion); an LSP Formatting request merely sorts the
+	// existing imports.
 	Local string
 
 	// Gofumpt indicates if we should run gofumpt formatting.
@@ -790,7 +799,7 @@ func (o *Options) Set(value any) (errors []error) {
 		seen := make(map[string]struct{})
 		for name, value := range value {
 			if err := o.set(name, value, seen); err != nil {
-				err := fmt.Errorf("setting option %v: %w", name, err)
+				err := fmt.Errorf("setting option %q: %w", name, err)
 				errors = append(errors, err)
 			}
 		}

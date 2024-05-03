@@ -1,4 +1,4 @@
-# Emacs
+# Gopls: Using Emacs
 
 ## Installing `gopls`
 
@@ -115,6 +115,9 @@ project root.
   (add-hook 'before-save-hook #'eglot-format-buffer -10 t))
 (add-hook 'go-mode-hook #'eglot-format-buffer-before-save)
 ```
+
+Use `M-x eglot-upgrade-eglot` to upgrade to the latest version of
+Eglot.
 
 ### Configuring `gopls` via Eglot
 

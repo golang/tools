@@ -3,7 +3,9 @@
 [![PkgGoDev](https://pkg.go.dev/badge/golang.org/x/tools/gopls)](https://pkg.go.dev/golang.org/x/tools/gopls)
 
 `gopls` (pronounced "Go please") is the official Go [language server] developed
-by the Go team. It provides IDE features to any [LSP]-compatible editor.
+by the Go team.
+It provides a wide variety of [IDE features](doc/features/README.md)
+to any [LSP]-compatible editor.
 
 <!--TODO(rfindley): Add gifs here.-->
 
@@ -11,10 +13,15 @@ You should not need to interact with `gopls` directly--it will be automatically
 integrated into your editor. The specific features and settings vary slightly
 by editor, so we recommend that you proceed to the
 [documentation for your editor](#editors) below.
+Also, the gopls documentation for each feature describes whether it is
+supported in each client editor.
 
 ## Editors
 
 To get started with `gopls`, install an LSP plugin in your editor of choice.
+
+TODO: ensure that each editor has a local page (and move these to doc/clients/$EDITOR.md).
+TODO: also, be more consistent about editor (e.g. Emacs) vs. client (e.g. eglot).
 
 * [VS Code](https://github.com/golang/vscode-go/blob/master/README.md)
 * [Vim / Neovim](doc/vim.md)
@@ -137,8 +144,9 @@ If you are having issues with `gopls`, please follow the steps described in the
 
 ## Additional information
 
-* [Features](doc/features.md)
+* [Index of features](doc/features/README.md)
 * [Command-line interface](doc/command-line.md)
+* [Configuration settings](doc/settings.md)
 * [Advanced topics](doc/advanced.md)
 * [Contributing to `gopls`](doc/contributing.md)
 * [Integrating `gopls` with an editor](doc/design/integrating.md)

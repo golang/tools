@@ -1,4 +1,4 @@
-# Gopls release policy
+# Gopls: Release policy
 
 Gopls releases follow [semver](http://semver.org), with major changes and new
 features introduced only in new minor versions (i.e. versions of the form

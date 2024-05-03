@@ -1,4 +1,4 @@
-# Advanced topics
+# Gopls: Advanced topics
 
 This documentation is for advanced `gopls` users, who may want to test
 unreleased versions or try out special features.
@@ -53,28 +53,5 @@ go work init . cmd
 Note that you must work inside the `GOROOT/src` subdirectory, as the `go`
 command does not recognize `go.work` files in a parent of `GOROOT/src`
 (https://go.dev/issue/59429).
-
-## Working with generic code
-
-Gopls has support for editing generic Go code. To enable this support, you need
-to **install gopls using Go 1.18 or later**. The easiest way to do this is by
-[installing Go 1.18+](https://go.dev/dl) and then using this Go version to
-install gopls:
-
-```
-$ go install golang.org/x/tools/gopls@latest
-```
-
-It is strongly recommended that you install the latest version of `gopls`, or
-the latest **unstable** version as [described above](#installing-unreleased-versions).
-
-The `gopls` built with these instructions understands generic code. See the
-[generics tutorial](https://go.dev/doc/tutorial/generics) for more information
-on how to use generics in Go!
-
-### Known issues
-
-  * [`staticcheck`](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#staticcheck)
-    on generic code is not supported yet.
 
 [Go project]: https://go.googlesource.com/go

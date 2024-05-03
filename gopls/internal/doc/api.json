@@ -142,7 +142,7 @@
 			{
 				"Name": "linkTarget",
 				"Type": "string",
-				"Doc": "linkTarget controls where documentation links go.\nIt might be one of:\n\n* `\"godoc.org\"`\n* `\"pkg.go.dev\"`\n\nIf company chooses to use its own `godoc.org`, its address can be used as well.\n\nModules matching the GOPRIVATE environment variable will not have\ndocumentation links in hover.\n",
+				"Doc": "linkTarget is the base URL for links to Go package\ndocumentation returned by LSP operations such as Hover and\nDocumentLinks and in the CodeDescription field of each\nDiagnostic.\n\nIt might be one of:\n\n* `\"godoc.org\"`\n* `\"pkg.go.dev\"`\n\nIf company chooses to use its own `godoc.org`, its address can be used as well.\n\nModules matching the GOPRIVATE environment variable will not have\ndocumentation links in hover.\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null
@@ -901,7 +901,7 @@
 			{
 				"Name": "local",
 				"Type": "string",
-				"Doc": "local is the equivalent of the `goimports -local` flag, which puts\nimports beginning with this string after third-party packages. It should\nbe the prefix of the import path whose imports should be grouped\nseparately.\n",
+				"Doc": "local is the equivalent of the `goimports -local` flag, which puts\nimports beginning with this string after third-party packages. It should\nbe the prefix of the import path whose imports should be grouped\nseparately.\n\nIt is used when tidying imports (during an LSP Organize\nImports request) or when inserting new ones (for example,\nduring completion); an LSP Formatting request merely sorts the\nexisting imports.\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null

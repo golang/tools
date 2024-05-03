@@ -1,4 +1,4 @@
-# Analyzers
+# Gopls: Analyzers
 
 <!-- No Table of Contents: GitHub's Markdown renderer synthesizes it. -->
 
@@ -15,18 +15,19 @@ before you run your tests, or even before you save your files.
 This document describes the suite of analyzers available in gopls,
 which aggregates analyzers from a variety of sources:
 
-- all the usual bug-finding analyzers from the `go vet` suite;
-- a number of analyzers with more substantial dependencies that prevent them from being used in `go vet`;
-- analyzers that augment compilation errors by suggesting quick fixes to common mistakes; and
-- a handful of analyzers that suggest possible style improvements.
+- all the usual bug-finding analyzers from the `go vet` suite (e.g. `printf`; run `go tool vet help` for the complete list);
+- a number of analyzers with more substantial dependencies that prevent them from being used in `go vet` (e.g. `nilness`);
+- analyzers that augment compilation errors by suggesting quick fixes to common mistakes (e.g. `fillreturns`); and
+- a handful of analyzers that suggest possible style improvements (e.g. `simplifyrange`).
 
-More details about how to enable and disable analyzers can be found
-[here](settings.md#analyses).
+To enable or disable analyzers, use the [analyses](settings.md#analyses) setting.
 
 In addition, gopls includes the [`staticcheck` suite](https://staticcheck.dev/docs/checks),
 though these analyzers are off by default.
 Use the [`staticcheck`](settings.md#staticcheck`) setting to enable them,
 and consult staticcheck's documentation for analyzer details.
+
+<!-- When staticcheck=true, we currently use the {S SA ST QF} suites, sans {SA5009, SA5011} -->
 
 
 <!-- BEGIN Analyzers: DO NOT MANUALLY EDIT THIS SECTION -->
