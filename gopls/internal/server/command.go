@@ -216,28 +216,19 @@ func (c *commandHandler) ApplyFix(ctx context.Context, args command.ApplyFixArgs
 		if err != nil {
 			return err
 		}
-		changes := []protocol.DocumentChanges{} // must be a slice
-		for _, edit := range edits {
-			edit := edit
-			changes = append(changes, protocol.DocumentChanges{
-				TextDocumentEdit: &edit,
-			})
-		}
-		edit := protocol.WorkspaceEdit{
-			DocumentChanges: changes,
-		}
+		wsedit := protocol.NewWorkspaceEdit(edits...)
 		if args.ResolveEdits {
-			result = &edit
+			result = wsedit
 			return nil
 		}
-		r, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-			Edit: edit,
+		resp, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
+			Edit: *wsedit,
 		})
 		if err != nil {
 			return err
 		}
-		if !r.Applied {
-			return errors.New(r.FailureReason)
+		if !resp.Applied {
+			return errors.New(resp.FailureReason)
 		}
 		return nil
 	})
@@ -462,9 +453,9 @@ func (c *commandHandler) RemoveDependency(ctx context.Context, args command.Remo
 			return err
 		}
 		response, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-			Edit: protocol.WorkspaceEdit{
-				DocumentChanges: documentChanges(deps.fh, edits),
-			},
+			Edit: *protocol.NewWorkspaceEdit(
+				protocol.NewTextDocumentEdit(deps.fh, edits),
+			),
 		})
 		if err != nil {
 			return err
@@ -752,27 +743,37 @@ func (s *server) runGoModUpdateCommands(ctx context.Context, snapshot *cache.Sna
 	if err != nil {
 		return err
 	}
-	modEdits, err := collectFileEdits(ctx, snapshot, modURI, newModBytes)
-	if err != nil {
-		return err
-	}
 	sumURI := protocol.URIFromPath(strings.TrimSuffix(modURI.Path(), ".mod") + ".sum")
-	sumEdits, err := collectFileEdits(ctx, snapshot, sumURI, newSumBytes)
+
+	modEdit, err := collectFileEdits(ctx, snapshot, modURI, newModBytes)
 	if err != nil {
 		return err
 	}
-	return applyFileEdits(ctx, s.client, append(sumEdits, modEdits...))
+	sumEdit, err := collectFileEdits(ctx, snapshot, sumURI, newSumBytes)
+	if err != nil {
+		return err
+	}
+
+	var docedits []*protocol.TextDocumentEdit
+	if modEdit != nil {
+		docedits = append(docedits, modEdit)
+	}
+	if sumEdit != nil {
+		docedits = append(docedits, sumEdit)
+	}
+	return applyEdits(ctx, s.client, docedits)
 }
 
-// collectFileEdits collects any file edits required to transform the snapshot
-// file specified by uri to the provided new content.
+// collectFileEdits collects any file edits required to transform the
+// snapshot file specified by uri to the provided new content. It
+// returns nil if none was necessary.
 //
 // If the file is not open, collectFileEdits simply writes the new content to
 // disk.
 //
 // TODO(rfindley): fix this API asymmetry. It should be up to the caller to
 // write the file or apply the edits.
-func collectFileEdits(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, newContent []byte) ([]protocol.TextDocumentEdit, error) {
+func collectFileEdits(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, newContent []byte) (*protocol.TextDocumentEdit, error) {
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, err
@@ -796,29 +797,19 @@ func collectFileEdits(ctx context.Context, snapshot *cache.Snapshot, uri protoco
 
 	m := protocol.NewMapper(fh.URI(), oldContent)
 	diff := diff.Bytes(oldContent, newContent)
-	edits, err := protocol.EditsFromDiffEdits(m, diff)
+	textedits, err := protocol.EditsFromDiffEdits(m, diff)
 	if err != nil {
 		return nil, err
 	}
-	return []protocol.TextDocumentEdit{{
-		TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
-			Version: fh.Version(),
-			TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-				URI: uri,
-			},
-		},
-		Edits: protocol.AsAnnotatedTextEdits(edits),
-	}}, nil
+	return protocol.NewTextDocumentEdit(fh, textedits), nil
 }
 
-func applyFileEdits(ctx context.Context, cli protocol.Client, edits []protocol.TextDocumentEdit) error {
+func applyEdits(ctx context.Context, cli protocol.Client, edits []*protocol.TextDocumentEdit) error {
 	if len(edits) == 0 {
 		return nil
 	}
 	response, err := cli.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-		Edit: protocol.WorkspaceEdit{
-			DocumentChanges: protocol.TextDocumentEditsToDocumentChanges(edits),
-		},
+		Edit: *protocol.NewWorkspaceEdit(edits...),
 	})
 	if err != nil {
 		return err
@@ -969,12 +960,15 @@ func (c *commandHandler) AddImport(ctx context.Context, args command.AddImportAr
 		if err != nil {
 			return fmt.Errorf("could not add import: %v", err)
 		}
-		if _, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-			Edit: protocol.WorkspaceEdit{
-				DocumentChanges: documentChanges(deps.fh, edits),
-			},
-		}); err != nil {
+		r, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
+			Edit: *protocol.NewWorkspaceEdit(
+				protocol.NewTextDocumentEdit(deps.fh, edits)),
+		})
+		if err != nil {
 			return fmt.Errorf("could not apply import edits: %v", err)
+		}
+		if !r.Applied {
+			return fmt.Errorf("failed to apply edits: %v", r.FailureReason)
 		}
 		return nil
 	})
@@ -1376,24 +1370,21 @@ func (c *commandHandler) ChangeSignature(ctx context.Context, args command.Chang
 		forURI: args.RemoveParameter.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		// For now, gopls only supports removing unused parameters.
-		changes, err := golang.RemoveUnusedParameter(ctx, deps.fh, args.RemoveParameter.Range, deps.snapshot)
+		docedits, err := golang.RemoveUnusedParameter(ctx, deps.fh, args.RemoveParameter.Range, deps.snapshot)
 		if err != nil {
 			return err
 		}
-		edit := protocol.WorkspaceEdit{
-			DocumentChanges: changes,
-		}
+		wsedit := protocol.NewWorkspaceEdit(docedits...)
 		if args.ResolveEdits {
-			result = &edit
+			result = wsedit
 			return nil
 		}
 		r, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-			Edit: edit,
+			Edit: *wsedit,
 		})
 		if !r.Applied {
 			return fmt.Errorf("failed to apply edits: %v", r.FailureReason)
 		}
-
 		return nil
 	})
 	return result, err

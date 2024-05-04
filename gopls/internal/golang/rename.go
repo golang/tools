@@ -279,11 +279,11 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 			return nil, false, err
 		}
 		m := protocol.NewMapper(uri, data)
-		protocolEdits, err := protocol.EditsFromDiffEdits(m, edits)
+		textedits, err := protocol.EditsFromDiffEdits(m, edits)
 		if err != nil {
 			return nil, false, err
 		}
-		result[uri] = protocolEdits
+		result[uri] = textedits
 	}
 
 	return result, inPackageName, nil

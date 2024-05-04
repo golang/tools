@@ -65,17 +65,15 @@ func convertStringLiteral(pgf *parsego.File, fh file.Handle, startPos, endPos to
 		End:   end,
 		New:   newText,
 	}}
-	pedits, err := protocol.EditsFromDiffEdits(pgf.Mapper, edits)
+	textedits, err := protocol.EditsFromDiffEdits(pgf.Mapper, edits)
 	if err != nil {
 		bug.Reportf("failed to convert diff.Edit to protocol.TextEdit:%v", err)
 		return protocol.CodeAction{}, false
 	}
-
 	return protocol.CodeAction{
 		Title: title,
 		Kind:  protocol.RefactorRewrite,
-		Edit: &protocol.WorkspaceEdit{
-			DocumentChanges: documentChanges(fh, pedits),
-		},
+		Edit: protocol.NewWorkspaceEdit(
+			protocol.NewTextDocumentEdit(fh, textedits)),
 	}, true
 }

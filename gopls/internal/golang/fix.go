@@ -83,23 +83,14 @@ const (
 // impossible to distinguish. It would more precise if there was a
 // SuggestedFix.Category field, or some other way to squirrel metadata
 // in the fix.
-func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
+func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]*protocol.TextDocumentEdit, error) {
 	// This can't be expressed as an entry in the fixer table below
 	// because it operates in the protocol (not go/{token,ast}) domain.
 	// (Sigh; perhaps it was a mistake to factor out the
 	// NarrowestPackageForFile/RangePos/suggestedFixToEdits
 	// steps.)
 	if fix == unusedparams.FixCategory {
-		changes, err := RemoveUnusedParameter(ctx, fh, rng, snapshot)
-		if err != nil {
-			return nil, err
-		}
-		// Unwrap TextDocumentEdits again!
-		var edits []protocol.TextDocumentEdit
-		for _, change := range changes {
-			edits = append(edits, *change.TextDocumentEdit)
-		}
-		return edits, nil
+		return RemoveUnusedParameter(ctx, fh, rng, snapshot)
 	}
 
 	fixers := map[string]fixer{
@@ -143,8 +134,13 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 }
 
 // suggestedFixToEdits converts the suggestion's edits from analysis form into protocol form.
-func suggestedFixToEdits(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, suggestion *analysis.SuggestedFix) ([]protocol.TextDocumentEdit, error) {
-	editsPerFile := map[protocol.DocumentURI]*protocol.TextDocumentEdit{}
+func suggestedFixToEdits(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, suggestion *analysis.SuggestedFix) ([]*protocol.TextDocumentEdit, error) {
+	type fileInfo struct {
+		fh     file.Handle
+		mapper *protocol.Mapper
+		edits  []protocol.TextEdit
+	}
+	files := make(map[protocol.DocumentURI]*fileInfo)
 	for _, edit := range suggestion.TextEdits {
 		tokFile := fset.File(edit.Pos)
 		if tokFile == nil {
@@ -154,43 +150,36 @@ func suggestedFixToEdits(ctx context.Context, snapshot *cache.Snapshot, fset *to
 		if !end.IsValid() {
 			end = edit.Pos
 		}
-		fh, err := snapshot.ReadFile(ctx, protocol.URIFromPath(tokFile.Name()))
-		if err != nil {
-			return nil, err
-		}
-		te, ok := editsPerFile[fh.URI()]
+		uri := protocol.URIFromPath(tokFile.Name())
+		info, ok := files[uri]
 		if !ok {
-			te = &protocol.TextDocumentEdit{
-				TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
-					Version: fh.Version(),
-					TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-						URI: fh.URI(),
-					},
-				},
+			// First edit: create a mapper.
+			fh, err := snapshot.ReadFile(ctx, uri)
+			if err != nil {
+				return nil, err
 			}
-			editsPerFile[fh.URI()] = te
+			content, err := fh.Content()
+			if err != nil {
+				return nil, err
+			}
+			mapper := protocol.NewMapper(uri, content)
+			info = &fileInfo{fh, mapper, nil}
+			files[uri] = info
 		}
-		content, err := fh.Content()
+		rng, err := info.mapper.PosRange(tokFile, edit.Pos, end)
 		if err != nil {
 			return nil, err
 		}
-		m := protocol.NewMapper(fh.URI(), content) // TODO(adonovan): opt: memoize in map
-		rng, err := m.PosRange(tokFile, edit.Pos, end)
-		if err != nil {
-			return nil, err
-		}
-		te.Edits = append(te.Edits, protocol.Or_TextDocumentEdit_edits_Elem{
-			Value: protocol.TextEdit{
-				Range:   rng,
-				NewText: string(edit.NewText),
-			},
+		info.edits = append(info.edits, protocol.TextEdit{
+			Range:   rng,
+			NewText: string(edit.NewText),
 		})
 	}
-	var edits []protocol.TextDocumentEdit
-	for _, edit := range editsPerFile {
-		edits = append(edits, *edit)
+	var docedits []*protocol.TextDocumentEdit
+	for _, info := range files {
+		docedits = append(docedits, protocol.NewTextDocumentEdit(info.fh, info.edits))
 	}
-	return edits, nil
+	return docedits, nil
 }
 
 // addEmbedImport adds a missing embed "embed" import with blank name.

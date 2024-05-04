@@ -102,27 +102,29 @@ func AsAnnotatedTextEdits(edits []TextEdit) []Or_TextDocumentEdit_edits_Elem {
 	return result
 }
 
-// TextEditsToDocumentChanges converts a set of edits within the
-// specified (versioned) file to a singleton list of DocumentChanges
-// (as required for a WorkspaceEdit).
-func TextEditsToDocumentChanges(uri DocumentURI, version int32, edits []TextEdit) []DocumentChanges {
-	return []DocumentChanges{{
-		TextDocumentEdit: &TextDocumentEdit{
-			TextDocument: OptionalVersionedTextDocumentIdentifier{
-				Version:                version,
-				TextDocumentIdentifier: TextDocumentIdentifier{URI: uri},
-			},
-			Edits: AsAnnotatedTextEdits(edits),
-		},
-	}}
+// fileHandle abstracts file.Handle to avoid a cycle.
+type fileHandle interface {
+	URI() DocumentURI
+	Version() int32
 }
 
-// TextDocumentEditsToDocumentChanges wraps each TextDocumentEdit in a DocumentChange.
-func TextDocumentEditsToDocumentChanges(edits []TextDocumentEdit) []DocumentChanges {
-	changes := []DocumentChanges{} // non-nil
-	for _, edit := range edits {
-		edit := edit
-		changes = append(changes, DocumentChanges{TextDocumentEdit: &edit})
+// NewTextDocumentEdit constructs a TextDocumentEdit from a list of TextEdits and a file.Handle.
+func NewTextDocumentEdit(fh fileHandle, textedits []TextEdit) *TextDocumentEdit {
+	return &TextDocumentEdit{
+		TextDocument: OptionalVersionedTextDocumentIdentifier{
+			Version:                fh.Version(),
+			TextDocumentIdentifier: TextDocumentIdentifier{URI: fh.URI()},
+		},
+		Edits: AsAnnotatedTextEdits(textedits),
 	}
-	return changes
+}
+
+// NewWorkspaceEdit constructs a WorkspaceEdit from a list of document edits.
+// (Any RenameFile DocumentChanges must be added after.)
+func NewWorkspaceEdit(docedits ...*TextDocumentEdit) *WorkspaceEdit {
+	changes := []DocumentChanges{} // non-nil
+	for _, edit := range docedits {
+		changes = append(changes, DocumentChanges{TextDocumentEdit: edit})
+	}
+	return &WorkspaceEdit{DocumentChanges: changes}
 }

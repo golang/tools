@@ -40,7 +40,7 @@ import (
 //   - Improve the extra newlines in output.
 //   - Stream type checking via ForEachPackage.
 //   - Avoid unnecessary additional type checking.
-func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Range, snapshot *cache.Snapshot) ([]protocol.DocumentChanges, error) {
+func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Range, snapshot *cache.Snapshot) ([]*protocol.TextDocumentEdit, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err
@@ -157,8 +157,8 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		newContent[pgf.URI] = src
 	}
 
-	// Translate the resulting state into document changes.
-	var changes []protocol.DocumentChanges
+	// Translate the resulting state into document edits.
+	var docedits []*protocol.TextDocumentEdit
 	for uri, after := range newContent {
 		fh, err := snapshot.ReadFile(ctx, uri)
 		if err != nil {
@@ -170,13 +170,13 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		}
 		edits := diff.Bytes(before, after)
 		mapper := protocol.NewMapper(uri, before)
-		pedits, err := protocol.EditsFromDiffEdits(mapper, edits)
+		textedits, err := protocol.EditsFromDiffEdits(mapper, edits)
 		if err != nil {
 			return nil, fmt.Errorf("computing edits for %s: %v", uri, err)
 		}
-		changes = append(changes, documentChanges(fh, pedits)...)
+		docedits = append(docedits, protocol.NewTextDocumentEdit(fh, textedits))
 	}
-	return changes, nil
+	return docedits, nil
 }
 
 // rewriteSignature rewrites the signature of the declIdx'th declaration in src

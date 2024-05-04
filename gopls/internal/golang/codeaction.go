@@ -63,9 +63,9 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 					actions = append(actions, protocol.CodeAction{
 						Title: importFixTitle(importFix.fix),
 						Kind:  protocol.QuickFix,
-						Edit: &protocol.WorkspaceEdit{
-							DocumentChanges: documentChanges(fh, importFix.edits),
-						},
+						Edit: protocol.NewWorkspaceEdit(
+							protocol.NewTextDocumentEdit(fh, importFix.edits),
+						),
 						Diagnostics: fixed,
 					})
 				}
@@ -77,9 +77,8 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 				actions = append(actions, protocol.CodeAction{
 					Title: "Organize Imports",
 					Kind:  protocol.SourceOrganizeImports,
-					Edit: &protocol.WorkspaceEdit{
-						DocumentChanges: documentChanges(fh, importEdits),
-					},
+					Edit: protocol.NewWorkspaceEdit(
+						protocol.NewTextDocumentEdit(fh, importEdits)),
 				})
 			}
 		}
@@ -374,21 +373,10 @@ func getRewriteCodeActions(ctx context.Context, pkg *cache.Package, snapshot *ca
 		if err != nil {
 			return nil, err
 		}
-
-		changes := []protocol.DocumentChanges{} // must be a slice
-		for _, edit := range edits {
-			edit := edit
-			changes = append(changes, protocol.DocumentChanges{
-				TextDocumentEdit: &edit,
-			})
-		}
-
 		actions = append(actions, protocol.CodeAction{
 			Title: diag.Message,
 			Kind:  protocol.RefactorRewrite,
-			Edit: &protocol.WorkspaceEdit{
-				DocumentChanges: changes,
-			},
+			Edit:  protocol.NewWorkspaceEdit(edits...),
 		})
 	}
 	for i := range commands {
@@ -511,8 +499,4 @@ func getGoTestCodeActions(pkg *cache.Package, pgf *parsego.File, rng protocol.Ra
 		Kind:    protocol.GoTest,
 		Command: &cmd,
 	}}, nil
-}
-
-func documentChanges(fh file.Handle, edits []protocol.TextEdit) []protocol.DocumentChanges {
-	return protocol.TextEditsToDocumentChanges(fh.URI(), fh.Version(), edits)
 }
