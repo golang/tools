@@ -118,9 +118,13 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 
 	startTime := time.Now()
 
-	inv := s.GoCommandInvocation(allowNetwork, &gocommand.Invocation{
+	inv, cleanupInvocation, err := s.GoCommandInvocation(allowNetwork, &gocommand.Invocation{
 		WorkingDir: s.view.root.Path(),
 	})
+	if err != nil {
+		return err
+	}
+	defer cleanupInvocation()
 
 	// Set a last resort deadline on packages.Load since it calls the go
 	// command, which may hang indefinitely if it has a bug. golang/go#42132

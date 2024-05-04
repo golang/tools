@@ -114,3 +114,11 @@ func Remove[T comparable](slice []T, elem T) []T {
 	}
 	return out
 }
+
+// Reverse reverses the elements of the slice in place.
+// TODO(adonovan): use go1.21 slices.Reverse.
+func Reverse[S ~[]E, E any](s S) {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
+}

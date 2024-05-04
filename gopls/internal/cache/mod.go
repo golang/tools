@@ -252,11 +252,15 @@ func modWhyImpl(ctx context.Context, snapshot *Snapshot, fh file.Handle) (map[st
 	for _, req := range pm.File.Require {
 		args = append(args, req.Mod.Path)
 	}
-	inv := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
 		Verb:       "mod",
 		Args:       args,
 		WorkingDir: filepath.Dir(fh.URI().Path()),
 	})
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupInvocation()
 	stdout, err := snapshot.View().GoCommandRunner().Run(ctx, *inv)
 	if err != nil {
 		return nil, err

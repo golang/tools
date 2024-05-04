@@ -21,6 +21,14 @@ import (
 	"golang.org/x/tools/internal/gocommand"
 )
 
+// GCOptimizationDetails invokes the Go compiler on the specified
+// package and reports its log of optimizations decisions as a set of
+// diagnostics.
+//
+// TODO(adonovan): this feature needs more consistent and informative naming.
+// Now that the compiler is cmd/compile, "GC" now means only "garbage collection".
+// I propose "(Toggle|Display) Go compiler optimization details" in the UI,
+// and CompilerOptimizationDetails for this function and compileropts.go for the file.
 func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.Package) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	if len(mp.CompiledGoFiles) == 0 {
 		return nil, nil
@@ -49,7 +57,7 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 	if !strings.HasPrefix(outDir, "/") {
 		outDirURI = protocol.DocumentURI(strings.Replace(string(outDirURI), "file:///", "file://", 1))
 	}
-	inv := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
 		Verb: "build",
 		Args: []string{
 			fmt.Sprintf("-gcflags=-json=0,%s", outDirURI),
@@ -58,6 +66,10 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 		},
 		WorkingDir: pkgDir,
 	})
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupInvocation()
 	_, err = snapshot.View().GoCommandRunner().Run(ctx, *inv)
 	if err != nil {
 		return nil, err

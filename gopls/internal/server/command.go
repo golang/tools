@@ -358,8 +358,7 @@ func (c *commandHandler) UpdateGoSum(ctx context.Context, args command.URIArgs) 
 
 func (c *commandHandler) Tidy(ctx context.Context, args command.URIArgs) error {
 	return c.run(ctx, commandConfig{
-		requireSave: true,
-		progress:    "Running go mod tidy",
+		progress: "Running go mod tidy",
 	}, func(ctx context.Context, _ commandDeps) error {
 		for _, uri := range args.URIs {
 			fh, snapshot, release, err := c.s.fileOf(ctx, uri)
@@ -380,7 +379,7 @@ func (c *commandHandler) Tidy(ctx context.Context, args command.URIArgs) error {
 
 func (c *commandHandler) Vendor(ctx context.Context, args command.URIArg) error {
 	return c.run(ctx, commandConfig{
-		requireSave: true,
+		requireSave: true, // TODO(adonovan): probably not needed; but needs a test.
 		progress:    "Running go mod vendor",
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
@@ -393,12 +392,16 @@ func (c *commandHandler) Vendor(ctx context.Context, args command.URIArg) error 
 		// modules.txt in-place. In that case we could theoretically allow this
 		// command to run concurrently.
 		stderr := new(bytes.Buffer)
-		inv := deps.snapshot.GoCommandInvocation(true, &gocommand.Invocation{
+		inv, cleanupInvocation, err := deps.snapshot.GoCommandInvocation(true, &gocommand.Invocation{
 			Verb:       "mod",
 			Args:       []string{"vendor"},
 			WorkingDir: filepath.Dir(args.URI.Path()),
 		})
-		err := deps.snapshot.View().GoCommandRunner().RunPiped(ctx, *inv, &bytes.Buffer{}, stderr)
+		if err != nil {
+			return err
+		}
+		defer cleanupInvocation()
+		err = deps.snapshot.View().GoCommandRunner().RunPiped(ctx, *inv, &bytes.Buffer{}, stderr)
 		if err != nil {
 			return fmt.Errorf("running go mod vendor failed: %v\nstderr:\n%s", err, stderr.String())
 		}
@@ -583,7 +586,7 @@ func (c *commandHandler) RunTests(ctx context.Context, args command.RunTestsArgs
 	return c.run(ctx, commandConfig{
 		async:       true,
 		progress:    "Running go test",
-		requireSave: true,
+		requireSave: true, // go test honors overlays, but tests themselves cannot
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		return c.runTests(ctx, deps.snapshot, deps.work, args.URI, args.Tests, args.Benchmarks)
@@ -606,11 +609,15 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot,
 	// Run `go test -run Func` on each test.
 	var failedTests int
 	for _, funcName := range tests {
-		inv := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
+		inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
 			Verb:       "test",
 			Args:       []string{pkgPath, "-v", "-count=1", fmt.Sprintf("-run=^%s$", regexp.QuoteMeta(funcName))},
 			WorkingDir: filepath.Dir(uri.Path()),
 		})
+		if err != nil {
+			return err
+		}
+		defer cleanupInvocation()
 		if err := snapshot.View().GoCommandRunner().RunPiped(ctx, *inv, out, out); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return err
@@ -622,11 +629,15 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot,
 	// Run `go test -run=^$ -bench Func` on each test.
 	var failedBenchmarks int
 	for _, funcName := range benchmarks {
-		inv := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
+		inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
 			Verb:       "test",
 			Args:       []string{pkgPath, "-v", "-run=^$", fmt.Sprintf("-bench=^%s$", regexp.QuoteMeta(funcName))},
 			WorkingDir: filepath.Dir(uri.Path()),
 		})
+		if err != nil {
+			return err
+		}
+		defer cleanupInvocation()
 		if err := snapshot.View().GoCommandRunner().RunPiped(ctx, *inv, out, out); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return err
@@ -671,7 +682,7 @@ func (c *commandHandler) Generate(ctx context.Context, args command.GenerateArgs
 		title = "Running go generate ./..."
 	}
 	return c.run(ctx, commandConfig{
-		requireSave: true,
+		requireSave: true, // commands executed by go generate cannot honor overlays
 		progress:    title,
 		forURI:      args.Dir,
 	}, func(ctx context.Context, deps commandDeps) error {
@@ -681,11 +692,15 @@ func (c *commandHandler) Generate(ctx context.Context, args command.GenerateArgs
 		if args.Recursive {
 			pattern = "./..."
 		}
-		inv := deps.snapshot.GoCommandInvocation(true, &gocommand.Invocation{
+		inv, cleanupInvocation, err := deps.snapshot.GoCommandInvocation(true, &gocommand.Invocation{
 			Verb:       "generate",
 			Args:       []string{"-x", pattern},
 			WorkingDir: args.Dir.Path(),
 		})
+		if err != nil {
+			return err
+		}
+		defer cleanupInvocation()
 		stderr := io.MultiWriter(er, progress.NewWorkDoneWriter(ctx, deps.work))
 		if err := deps.snapshot.View().GoCommandRunner().RunPiped(ctx, *inv, er, stderr); err != nil {
 			return err
@@ -704,18 +719,22 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 		if modURI == "" {
 			return fmt.Errorf("no go.mod file found for %s", args.URI)
 		}
-		tempDir, cleanup, err := cache.TempModDir(ctx, snapshot, modURI)
+		tempDir, cleanupModDir, err := cache.TempModDir(ctx, snapshot, modURI)
 		if err != nil {
 			return fmt.Errorf("creating a temp go.mod: %v", err)
 		}
-		defer cleanup()
+		defer cleanupModDir()
 
-		inv := snapshot.GoCommandInvocation(true, &gocommand.Invocation{
+		inv, cleanupInvocation, err := snapshot.GoCommandInvocation(true, &gocommand.Invocation{
 			Verb:       "list",
 			Args:       []string{"-f", "{{.Module.Path}}@{{.Module.Version}}", "-mod=mod", "-modfile=" + filepath.Join(tempDir, "go.mod"), args.Pkg},
 			Env:        []string{"GOWORK=off"},
 			WorkingDir: modURI.Dir().Path(),
 		})
+		if err != nil {
+			return err
+		}
+		defer cleanupInvocation()
 		stdout, err := snapshot.View().GoCommandRunner().Run(ctx, *inv)
 		if err != nil {
 			return err
@@ -841,12 +860,16 @@ func addModuleRequire(invoke func(...string) (*bytes.Buffer, error), args []stri
 
 // TODO(rfindley): inline.
 func (s *server) getUpgrades(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, modules []string) (map[string]string, error) {
-	inv := snapshot.GoCommandInvocation(true, &gocommand.Invocation{
+	inv, cleanup, err := snapshot.GoCommandInvocation(true, &gocommand.Invocation{
 		Verb: "list",
 		// -mod=readonly is necessary when vendor is present (golang/go#66055)
 		Args:       append([]string{"-mod=readonly", "-m", "-u", "-json"}, modules...),
 		WorkingDir: filepath.Dir(uri.Path()),
 	})
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 	stdout, err := snapshot.View().GoCommandRunner().Run(ctx, *inv)
 	if err != nil {
 		return nil, err
@@ -872,9 +895,8 @@ func (c *commandHandler) GCDetails(ctx context.Context, uri protocol.DocumentURI
 
 func (c *commandHandler) ToggleGCDetails(ctx context.Context, args command.URIArg) error {
 	return c.run(ctx, commandConfig{
-		requireSave: true,
-		progress:    "Toggling GC Details",
-		forURI:      args.URI,
+		progress: "Toggling GC Details",
+		forURI:   args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		return c.modifyState(ctx, FromToggleGCDetails, func() (*cache.Snapshot, func(), error) {
 			meta, err := golang.NarrowestMetadataForFile(ctx, deps.snapshot, deps.fh.URI())
@@ -1069,7 +1091,7 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 	err := c.run(ctx, commandConfig{
 		async:       true, // need to be async to be cancellable
 		progress:    "govulncheck",
-		requireSave: true,
+		requireSave: true, // govulncheck cannot honor overlays
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		tokenChan <- deps.work.Token()

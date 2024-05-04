@@ -367,7 +367,7 @@ func (s *Snapshot) Templates() map[protocol.DocumentURI]file.Handle {
 // the go/packages API. It uses the given working directory.
 //
 // TODO(rstambler): go/packages requires that we do not provide overlays for
-// multiple modules in on config, so buildOverlay needs to filter overlays by
+// multiple modules in one config, so buildOverlay needs to filter overlays by
 // module.
 func (s *Snapshot) config(ctx context.Context, inv *gocommand.Invocation) *packages.Config {
 
@@ -387,7 +387,7 @@ func (s *Snapshot) config(ctx context.Context, inv *gocommand.Invocation) *packa
 			packages.LoadMode(packagesinternal.DepsErrors) |
 			packages.LoadMode(packagesinternal.ForTest),
 		Fset:    nil, // we do our own parsing
-		Overlay: s.buildOverlay(),
+		Overlay: s.buildOverlays(),
 		ParseFile: func(*token.FileSet, string, []byte) (*ast.File, error) {
 			panic("go/packages must not be used to parse files")
 		},
@@ -414,21 +414,25 @@ func (s *Snapshot) config(ctx context.Context, inv *gocommand.Invocation) *packa
 // and is the only thing forcing the ModFlag and ModFile indirection.
 // Simplify it.
 func (s *Snapshot) RunGoModUpdateCommands(ctx context.Context, modURI protocol.DocumentURI, run func(invoke func(...string) (*bytes.Buffer, error)) error) ([]byte, []byte, error) {
-	tempDir, cleanup, err := TempModDir(ctx, s, modURI)
+	tempDir, cleanupModDir, err := TempModDir(ctx, s, modURI)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer cleanup()
+	defer cleanupModDir()
 
 	// TODO(rfindley): we must use ModFlag and ModFile here (rather than simply
 	// setting Args), because without knowing the verb, we can't know whether
 	// ModFlag is appropriate. Refactor so that args can be set by the caller.
-	inv := s.GoCommandInvocation(true, &gocommand.Invocation{
+	inv, cleanupInvocation, err := s.GoCommandInvocation(true, &gocommand.Invocation{
 		WorkingDir: modURI.Dir().Path(),
 		ModFlag:    "mod",
 		ModFile:    filepath.Join(tempDir, "go.mod"),
 		Env:        []string{"GOWORK=off"},
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	defer cleanupInvocation()
 	invoke := func(args ...string) (*bytes.Buffer, error) {
 		inv.Verb = args[0]
 		inv.Args = args[1:]
@@ -498,20 +502,21 @@ func TempModDir(ctx context.Context, fs file.Source, modURI protocol.DocumentURI
 // GoCommandInvocation populates inv with configuration for running go commands
 // on the snapshot.
 //
+// On success, the caller must call the cleanup function exactly once
+// when the invocation is no longer needed.
+//
 // TODO(rfindley): although this function has been simplified significantly,
 // additional refactoring is still required: the responsibility for Env and
 // BuildFlags should be more clearly expressed in the API.
 //
 // If allowNetwork is set, do not set GOPROXY=off.
-func (s *Snapshot) GoCommandInvocation(allowNetwork bool, inv *gocommand.Invocation) *gocommand.Invocation {
+func (s *Snapshot) GoCommandInvocation(allowNetwork bool, inv *gocommand.Invocation) (_ *gocommand.Invocation, cleanup func(), _ error) {
 	// TODO(rfindley): it's not clear that this is doing the right thing.
 	// Should inv.Env really overwrite view.options? Should s.view.envOverlay
 	// overwrite inv.Env? (Do we ever invoke this with a non-empty inv.Env?)
 	//
 	// We should survey existing uses and write down rules for how env is
 	// applied.
-	//
-	// TODO(rfindley): historically, we have not set -overlays here. Is that right?
 	inv.Env = slices.Concat(
 		os.Environ(),
 		s.Options().EnvSlice(),
@@ -525,10 +530,19 @@ func (s *Snapshot) GoCommandInvocation(allowNetwork bool, inv *gocommand.Invocat
 		inv.Env = append(inv.Env, "GOPROXY=off")
 	}
 
-	return inv
+	// Write overlay files for unsaved editor buffers.
+	overlay, cleanup, err := gocommand.WriteOverlays(s.buildOverlays())
+	if err != nil {
+		return nil, nil, err
+	}
+	inv.Overlay = overlay
+	return inv, cleanup, nil
 }
 
-func (s *Snapshot) buildOverlay() map[string][]byte {
+// buildOverlays returns a new mapping from logical file name to
+// effective content, for each unsaved editor buffer, in the same form
+// as [packages.Cfg]'s Overlay field.
+func (s *Snapshot) buildOverlays() map[string][]byte {
 	overlays := make(map[string][]byte)
 	for _, overlay := range s.Overlays() {
 		if overlay.saved {

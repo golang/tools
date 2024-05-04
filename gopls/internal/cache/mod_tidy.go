@@ -108,13 +108,16 @@ func modTidyImpl(ctx context.Context, snapshot *Snapshot, pm *ParsedModule) (*Ti
 	}
 	defer cleanup()
 
-	// TODO(adonovan): ensure that unsaved overlays are passed through to 'go'.
-	inv := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
 		Verb:       "mod",
 		Args:       []string{"tidy", "-modfile=" + filepath.Join(tempDir, "go.mod")},
 		Env:        []string{"GOWORK=off"},
 		WorkingDir: pm.URI.Dir().Path(),
 	})
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupInvocation()
 	if _, err := snapshot.view.gocmdRunner.Run(ctx, *inv); err != nil {
 		return nil, err
 	}

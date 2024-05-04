@@ -536,11 +536,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 func (s *server) gcDetailsDiagnostics(ctx context.Context, snapshot *cache.Snapshot, toDiagnose map[metadata.PackageID]*metadata.Package) (diagMap, error) {
 	// Process requested gc_details diagnostics.
 	//
-	// TODO(rfindley): this could be improved:
-	//   1. This should memoize its results if the package has not changed.
-	//   2. This should not even run gc_details if the package contains unsaved
-	//      files.
-	//   3. See note below about using ReadFile.
+	// TODO(rfindley): This should memoize its results if the package has not changed.
 	// Consider that these points, in combination with the note below about
 	// races, suggest that gc_details should be tracked on the Snapshot.
 	var toGCDetail map[metadata.PackageID]*metadata.Package
@@ -561,18 +557,6 @@ func (s *server) gcDetailsDiagnostics(ctx context.Context, snapshot *cache.Snaps
 			continue
 		}
 		for uri, diags := range gcReports {
-			// TODO(rfindley): reading here should not be necessary: if a file has
-			// been deleted we should be notified, and diagnostics will eventually
-			// become consistent.
-			fh, err := snapshot.ReadFile(ctx, uri)
-			if err != nil {
-				return nil, err
-			}
-			// Don't publish gc details for unsaved buffers, since the underlying
-			// logic operates on the file on disk.
-			if fh == nil || !fh.SameContentsOnDisk() {
-				continue
-			}
 			diagnostics[uri] = append(diagnostics[uri], diags...)
 		}
 	}

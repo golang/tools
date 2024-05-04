@@ -331,6 +331,8 @@ go 1.14
 
 require golang.org/x/hello v1.0.0
 require golang.org/x/unused v1.0.0
+
+// EOF
 -- go.sum --
 golang.org/x/hello v1.0.0 h1:qbzE1/qT0/zojAMd/JcPsO2Vb9K4Bkeyq0vB2JGMmsw=
 golang.org/x/hello v1.0.0/go.mod h1:WW7ER2MRNXWA6c8/4bDIek4Hc/+DofTrMaQQitGXcco=
@@ -347,6 +349,7 @@ func main() {
 `
 	WithOptions(ProxyFiles(proxy)).Run(t, shouldRemoveDep, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
+		env.RegexpReplace("go.mod", "// EOF", "// EOF unsaved edit") // unsaved edits ok
 		env.ExecuteCodeLensCommand("go.mod", command.Tidy, nil)
 		env.AfterChange()
 		got := env.BufferText("go.mod")
@@ -355,6 +358,8 @@ func main() {
 go 1.14
 
 require golang.org/x/hello v1.0.0
+
+// EOF unsaved edit
 `
 		if got != wantGoMod {
 			t.Fatalf("go.mod tidy failed:\n%s", compare.Text(wantGoMod, got))
