@@ -22,9 +22,9 @@ import (
 	"golang.org/x/tools/gopls/internal/util/slices"
 )
 
-// CanSplitLines checks whether we can split lists of elements inside an enclosing curly bracket/parens into separate
-// lines.
-func CanSplitLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
+// canSplitLines checks whether we can split lists of elements inside
+// an enclosing curly bracket/parens into separate lines.
+func canSplitLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
 	itemType, items, comments, _, _, _ := findSplitJoinTarget(fset, file, nil, start, end)
 	if itemType == "" {
 		return "", false, nil
@@ -45,8 +45,9 @@ func CanSplitLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (s
 	return "", false, nil
 }
 
-// CanJoinLines checks whether we can join lists of elements inside an enclosing curly bracket/parens into a single line.
-func CanJoinLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
+// canJoinLines checks whether we can join lists of elements inside an
+// enclosing curly bracket/parens into a single line.
+func canJoinLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
 	itemType, items, comments, _, _, _ := findSplitJoinTarget(fset, file, nil, start, end)
 	if itemType == "" {
 		return "", false, nil

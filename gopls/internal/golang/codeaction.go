@@ -11,7 +11,6 @@ import (
 	"go/ast"
 	"strings"
 
-	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
 	"golang.org/x/tools/gopls/internal/analysis/fillswitch"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -299,17 +298,17 @@ func getRewriteCodeActions(ctx context.Context, pkg *cache.Package, snapshot *ca
 		actions = append(actions, newCodeAction("Refactor: remove unused parameter", protocol.RefactorRewrite, &cmd, nil, options))
 	}
 
-	if action, ok := ConvertStringLiteral(pgf, fh, rng); ok {
-		actions = append(actions, action)
-	}
-
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
 	}
 
+	if action, ok := convertStringLiteral(pgf, fh, start, end); ok {
+		actions = append(actions, action)
+	}
+
 	var commands []protocol.Command
-	if _, ok, _ := CanInvertIfCondition(pgf.File, start, end); ok {
+	if _, ok, _ := canInvertIfCondition(pgf.File, start, end); ok {
 		cmd, err := command.NewApplyFixCommand("Invert 'if' condition", command.ApplyFixArgs{
 			Fix:          fixInvertIfCondition,
 			URI:          pgf.URI,
@@ -322,7 +321,7 @@ func getRewriteCodeActions(ctx context.Context, pkg *cache.Package, snapshot *ca
 		commands = append(commands, cmd)
 	}
 
-	if msg, ok, _ := CanSplitLines(pgf.File, pkg.FileSet(), start, end); ok {
+	if msg, ok, _ := canSplitLines(pgf.File, pkg.FileSet(), start, end); ok {
 		cmd, err := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
 			Fix:          fixSplitLines,
 			URI:          pgf.URI,
@@ -335,7 +334,7 @@ func getRewriteCodeActions(ctx context.Context, pkg *cache.Package, snapshot *ca
 		commands = append(commands, cmd)
 	}
 
-	if msg, ok, _ := CanJoinLines(pgf.File, pkg.FileSet(), start, end); ok {
+	if msg, ok, _ := canJoinLines(pgf.File, pkg.FileSet(), start, end); ok {
 		cmd, err := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
 			Fix:          fixJoinLines,
 			URI:          pgf.URI,
@@ -348,12 +347,10 @@ func getRewriteCodeActions(ctx context.Context, pkg *cache.Package, snapshot *ca
 		commands = append(commands, cmd)
 	}
 
-	// N.B.: an inspector only pays for itself after ~5 passes, which means we're
-	// currently not getting a good deal on this inspection.
-	//
-	// TODO: Consider removing the inspection after convenienceAnalyzers are removed.
-	inspect := inspector.New([]*ast.File{pgf.File})
-	for _, diag := range fillstruct.Diagnose(inspect, start, end, pkg.Types(), pkg.TypesInfo()) {
+	// fillstruct.Diagnose is a lazy analyzer: all it gives us is
+	// the (start, end, message) of each SuggestedFix; the actual
+	// edit is computed only later by ApplyFix, which calls fillstruct.SuggestedFix.
+	for _, diag := range fillstruct.Diagnose(pgf.File, start, end, pkg.Types(), pkg.TypesInfo()) {
 		rng, err := pgf.Mapper.PosRange(pgf.Tok, diag.Pos, diag.End)
 		if err != nil {
 			return nil, err
@@ -372,7 +369,7 @@ func getRewriteCodeActions(ctx context.Context, pkg *cache.Package, snapshot *ca
 		}
 	}
 
-	for _, diag := range fillswitch.Diagnose(inspect, start, end, pkg.Types(), pkg.TypesInfo()) {
+	for _, diag := range fillswitch.Diagnose(pgf.File, start, end, pkg.Types(), pkg.TypesInfo()) {
 		edits, err := suggestedFixToEdits(ctx, snapshot, pkg.FileSet(), &diag.SuggestedFixes[0])
 		if err != nil {
 			return nil, err

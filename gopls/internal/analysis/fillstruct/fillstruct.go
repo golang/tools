@@ -24,7 +24,6 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/analysisinternal"
@@ -33,32 +32,35 @@ import (
 )
 
 // Diagnose computes diagnostics for fillable struct literals overlapping with
-// the provided start and end position.
+// the provided start and end position of file f.
 //
 // The diagnostic contains a lazy fix; the actual patch is computed
 // (via the ApplyFix command) by a call to [SuggestedFix].
 //
-// If either start or end is invalid, the entire package is inspected.
-func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Package, info *types.Info) []analysis.Diagnostic {
+// If either start or end is invalid, the entire file is inspected.
+func Diagnose(f *ast.File, start, end token.Pos, pkg *types.Package, info *types.Info) []analysis.Diagnostic {
 	var diags []analysis.Diagnostic
-	nodeFilter := []ast.Node{(*ast.CompositeLit)(nil)}
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		expr := n.(*ast.CompositeLit)
-
-		if (start.IsValid() && expr.End() < start) || (end.IsValid() && expr.Pos() > end) {
-			return // non-overlapping
+	ast.Inspect(f, func(n ast.Node) bool {
+		if n == nil {
+			return true // pop
 		}
-
+		if start.IsValid() && n.End() < start || end.IsValid() && n.Pos() > end {
+			return false // skip non-overlapping subtree
+		}
+		expr, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
 		typ := info.TypeOf(expr)
 		if typ == nil {
-			return
+			return true
 		}
 
 		// Find reference to the type declaration of the struct being initialized.
 		typ = typeparams.Deref(typ)
 		tStruct, ok := typeparams.CoreType(typ).(*types.Struct)
 		if !ok {
-			return
+			return true
 		}
 		// Inv: typ is the possibly-named struct type.
 
@@ -66,7 +68,7 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 
 		// Skip any struct that is already populated or that has no fields.
 		if fieldCount == 0 || fieldCount == len(expr.Elts) {
-			return
+			return true
 		}
 
 		// Are any fields in need of filling?
@@ -80,7 +82,7 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 			fillableFields = append(fillableFields, fmt.Sprintf("%s: %s", field.Name(), field.Type().String()))
 		}
 		if len(fillableFields) == 0 {
-			return
+			return true
 		}
 
 		// Derive a name for the struct type.
@@ -116,6 +118,7 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 				// No TextEdits => computed later by gopls.
 			}},
 		})
+		return true
 	})
 
 	return diags

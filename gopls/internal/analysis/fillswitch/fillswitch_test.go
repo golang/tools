@@ -10,21 +10,19 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
-	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/analysis/fillswitch"
 )
 
 // analyzer allows us to test the fillswitch code action using the analysistest
 // harness.
 var analyzer = &analysis.Analyzer{
-	Name:     "fillswitch",
-	Doc:      "test only",
-	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Name: "fillswitch",
+	Doc:  "test only",
 	Run: func(pass *analysis.Pass) (any, error) {
-		inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-		for _, d := range fillswitch.Diagnose(inspect, token.NoPos, token.NoPos, pass.Pkg, pass.TypesInfo) {
-			pass.Report(d)
+		for _, f := range pass.Files {
+			for _, diag := range fillswitch.Diagnose(f, token.NoPos, token.NoPos, pass.Pkg, pass.TypesInfo) {
+				pass.Report(diag)
+			}
 		}
 		return nil, nil
 	},
