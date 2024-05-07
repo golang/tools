@@ -1,0 +1,77 @@
+
+This test verifies that SSA-based analyzers don't run on packages that
+use range-over-func. This is an emergency fix of #67237 (for buildssa)
+until we land https://go.dev/cl/555075.
+
+Similarly, it is an emergency fix of dominikh/go-tools#1494 (for
+buildir) until that package is similarly fixed for go1.23.
+
+Explanation:
+- Package p depends on q and r, and analyzers buildssa and buildir
+  depend on norangeoverfunc.
+- Analysis pass norangeoverfunc@q fails, thus norangeoverfunc@p is not
+  executed; but norangeoverfunc@r is ok
+- nilness requires buildssa, which is not facty, so it can run on p and r.
+- SA1025 requires buildir, which is facty, so SA1025 can run only on r.
+
+-- flags --
+-min_go=go1.23
+
+-- settings.json --
+{
+	"staticcheck": true
+}
+
+-- go.mod --
+module example.com
+
+go 1.23
+
+-- p/p.go --
+package p // a dependency uses range-over-func, so nilness runs but SA1025 cannot (buildir is facty)
+
+import (
+	_ "example.com/q"
+	_ "example.com/r"
+	"fmt"
+)
+
+func _(ptr *int) {
+	if ptr == nil {
+		println(*ptr) //@diag(re"[*]ptr", re"nil dereference in load")
+	}
+	_ = fmt.Sprintf("%s", "abc") // no SA1025 finding
+}
+
+-- q/q.go --
+package q // uses range-over-func, so no diagnostics from nilness or SA1025
+
+import "fmt"
+
+type iterSeq[T any] func(yield func(T) bool)
+
+func _(seq iterSeq[int]) {
+	for x := range seq {
+		println(x)
+	}
+
+	_  = fmt.Sprintf("%s", "abc")
+}
+
+func _(ptr *int) {
+	if ptr == nil {
+		println(*ptr) // no nilness finding
+	}
+}
+
+-- r/r.go --
+package r // does not use range-over-func, so nilness and SA1025 report diagnosticcs
+
+import "fmt"
+
+func _(ptr *int) {
+	if ptr == nil {
+		println(*ptr) //@diag(re"[*]ptr", re"nil dereference in load")
+	}
+	_ = fmt.Sprintf("%s", "abc") //@diag(re"fmt", re"no need to use fmt.Sprintf")
+}

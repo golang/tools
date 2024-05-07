@@ -12,6 +12,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/atomic"
 	"golang.org/x/tools/go/analysis/passes/atomicalign"
 	"golang.org/x/tools/go/analysis/passes/bools"
+	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/analysis/passes/buildtag"
 	"golang.org/x/tools/go/analysis/passes/cgocall"
 	"golang.org/x/tools/go/analysis/passes/composite"
@@ -49,6 +50,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/fillreturns"
 	"golang.org/x/tools/gopls/internal/analysis/infertypeargs"
 	"golang.org/x/tools/gopls/internal/analysis/nonewvars"
+	"golang.org/x/tools/gopls/internal/analysis/norangeoverfunc"
 	"golang.org/x/tools/gopls/internal/analysis/noresultvalues"
 	"golang.org/x/tools/gopls/internal/analysis/simplifycompositelit"
 	"golang.org/x/tools/gopls/internal/analysis/simplifyrange"
@@ -59,6 +61,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/unusedvariable"
 	"golang.org/x/tools/gopls/internal/analysis/useany"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"honnef.co/go/tools/staticcheck"
 )
 
 // Analyzer augments a [analysis.Analyzer] with additional LSP configuration.
@@ -104,6 +107,33 @@ func (a *Analyzer) String() string { return a.analyzer.String() }
 var DefaultAnalyzers = make(map[string]*Analyzer) // initialized below
 
 func init() {
+	// Emergency workaround for #67237 to allow standard library
+	// to use range over func: disable SSA-based analyses of
+	// go1.23 packages that use range-over-func.
+	suppressOnRangeOverFunc := func(a *analysis.Analyzer) {
+		a.Requires = append(a.Requires, norangeoverfunc.Analyzer)
+	}
+	suppressOnRangeOverFunc(buildssa.Analyzer)
+	// buildir is non-exported so we have to scan the Analysis.Requires graph to find it.
+	var buildir *analysis.Analyzer
+	for _, a := range staticcheck.Analyzers {
+		for _, req := range a.Analyzer.Requires {
+			if req.Name == "buildir" {
+				buildir = req
+			}
+		}
+
+		// Temporarily disable SA4004 CheckIneffectiveLoop as
+		// it crashes when encountering go1.23 range-over-func
+		// (#67237, dominikh/go-tools#1494).
+		if a.Analyzer.Name == "SA4004" {
+			suppressOnRangeOverFunc(a.Analyzer)
+		}
+	}
+	if buildir != nil {
+		suppressOnRangeOverFunc(buildir)
+	}
+
 	// The traditional vet suite:
 	analyzers := []*Analyzer{
 		{analyzer: appends.Analyzer, enabled: true},
