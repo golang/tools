@@ -92,10 +92,12 @@ type EditorConfig struct {
 	// directory.
 	Env map[string]string
 
-	// WorkspaceFolders is the workspace folders to configure on the LSP server,
-	// relative to the sandbox workdir.
+	// WorkspaceFolders is the workspace folders to configure on the LSP server.
+	// Each workspace folder is a file path relative to the sandbox workdir, or
+	// a uri (used when testing behavior with virtual file system or non-'file'
+	// scheme document uris).
 	//
-	// As a special case, if WorkspaceFolders is nil the editor defaults to
+	// As special cases, if WorkspaceFolders is nil the editor defaults to
 	// configuring a single workspace folder corresponding to the workdir root.
 	// To explicitly send no workspace folders, use an empty (non-nil) slice.
 	WorkspaceFolders []string
@@ -395,6 +397,9 @@ func (e *Editor) HasCommand(id string) bool {
 	return false
 }
 
+// Examples: https://www.iana.org/assignments/uri-schemes/uri-schemes.xhtml
+var uriRE = regexp.MustCompile(`^[a-z][a-z0-9+\-.]*://\S+`)
+
 // makeWorkspaceFolders creates a slice of workspace folders to use for
 // this editing session, based on the editor configuration.
 func makeWorkspaceFolders(sandbox *Sandbox, paths []string) (folders []protocol.WorkspaceFolder) {
@@ -403,7 +408,10 @@ func makeWorkspaceFolders(sandbox *Sandbox, paths []string) (folders []protocol.
 	}
 
 	for _, path := range paths {
-		uri := string(sandbox.Workdir.URI(path))
+		uri := path
+		if !uriRE.MatchString(path) { // relative file path
+			uri = string(sandbox.Workdir.URI(path))
+		}
 		folders = append(folders, protocol.WorkspaceFolder{
 			URI:  uri,
 			Name: filepath.Base(uri),

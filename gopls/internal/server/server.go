@@ -94,7 +94,7 @@ type server struct {
 
 	// folders is only valid between initialize and initialized, and holds the
 	// set of folders to build views for when we are ready.
-	// Each has a valid, non-empty 'file'-scheme URI.
+	// Only the valid, non-empty 'file'-scheme URIs will be added.
 	pendingFolders []protocol.WorkspaceFolder
 
 	// watchedGlobPatterns is the set of glob patterns that we have requested

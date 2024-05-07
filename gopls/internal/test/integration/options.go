@@ -115,8 +115,8 @@ func (s Settings) set(opts *runConfig) {
 	}
 }
 
-// WorkspaceFolders configures the workdir-relative workspace folders to send
-// to the LSP server. By default the editor sends a single workspace folder
+// WorkspaceFolders configures the workdir-relative workspace folders or uri
+// to send to the LSP server. By default the editor sends a single workspace folder
 // corresponding to the workdir root. To explicitly configure no workspace
 // folders, use WorkspaceFolders with no arguments.
 func WorkspaceFolders(relFolders ...string) RunOption {

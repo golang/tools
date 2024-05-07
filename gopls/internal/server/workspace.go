@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/cache"
@@ -18,6 +19,12 @@ import (
 
 func (s *server) DidChangeWorkspaceFolders(ctx context.Context, params *protocol.DidChangeWorkspaceFoldersParams) error {
 	for _, folder := range params.Event.Removed {
+		if !strings.HasPrefix(folder.URI, "file://") {
+			// Some clients that support virtual file systems may send workspace change messages
+			// about workspace folders in the virtual file systems. addFolders must not add
+			// those folders, so they don't need to be removed either.
+			continue
+		}
 		dir, err := protocol.ParseDocumentURI(folder.URI)
 		if err != nil {
 			return fmt.Errorf("invalid folder %q: %v", folder.URI, err)

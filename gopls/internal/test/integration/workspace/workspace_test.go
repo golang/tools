@@ -13,7 +13,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/goversion"
@@ -1352,4 +1355,114 @@ func TestGoworkMutation(t *testing.T) {
 			Diagnostics(env.AtRegexp("moda/a/a.go", `b\.Hello`)),
 		)
 	})
+}
+
+func TestInitializeWithNonFileWorkspaceFolders(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		folders       []string
+		wantViewRoots []string
+	}{
+		{
+			name:          "real,virtual",
+			folders:       []string{"modb", "virtual:///virtualpath"},
+			wantViewRoots: []string{"./modb"},
+		},
+		{
+			name:          "virtual,real",
+			folders:       []string{"virtual:///virtualpath", "modb"},
+			wantViewRoots: []string{"./modb"},
+		},
+		{
+			name:          "real,virtual,real",
+			folders:       []string{"moda/a", "virtual:///virtualpath", "modb"},
+			wantViewRoots: []string{"./moda/a", "./modb"},
+		},
+		{
+			name:          "virtual",
+			folders:       []string{"virtual:///virtualpath"},
+			wantViewRoots: nil,
+		},
+	} {
+
+		t.Run(tt.name, func(t *testing.T) {
+			opts := []RunOption{ProxyFiles(workspaceProxy), WorkspaceFolders(tt.folders...)}
+			WithOptions(opts...).Run(t, multiModule, func(t *testing.T, env *Env) {
+				summary := func(typ cache.ViewType, root, folder string) command.View {
+					return command.View{
+						Type:   typ.String(),
+						Root:   env.Sandbox.Workdir.URI(root),
+						Folder: env.Sandbox.Workdir.URI(folder),
+					}
+				}
+				checkViews := func(want ...command.View) {
+					got := env.Views()
+					if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(command.View{}, "ID")); diff != "" {
+						t.Errorf("SummarizeViews() mismatch (-want +got):\n%s", diff)
+					}
+				}
+				var wantViews []command.View
+				for _, root := range tt.wantViewRoots {
+					wantViews = append(wantViews, summary(cache.GoModView, root, root))
+				}
+				env.Await(
+					LogMatching(protocol.Warning, "skip adding virtual folder", 1, false),
+				)
+				checkViews(wantViews...)
+			})
+		})
+	}
+}
+
+// Test that non-file scheme Document URIs in ChangeWorkspaceFolders
+// notification does not produce errors.
+func TestChangeNonFileWorkspaceFolders(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		before        []string
+		after         []string
+		wantViewRoots []string
+	}{
+		{
+			name:          "add",
+			before:        []string{"modb"},
+			after:         []string{"modb", "moda/a", "virtual:///virtualpath"},
+			wantViewRoots: []string{"./modb", "moda/a"},
+		},
+		{
+			name:          "remove",
+			before:        []string{"modb", "virtual:///virtualpath", "moda/a"},
+			after:         []string{"modb"},
+			wantViewRoots: []string{"./modb"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := []RunOption{ProxyFiles(workspaceProxy), WorkspaceFolders(tt.before...)}
+			WithOptions(opts...).Run(t, multiModule, func(t *testing.T, env *Env) {
+				summary := func(typ cache.ViewType, root, folder string) command.View {
+					return command.View{
+						Type:   typ.String(),
+						Root:   env.Sandbox.Workdir.URI(root),
+						Folder: env.Sandbox.Workdir.URI(folder),
+					}
+				}
+				checkViews := func(want ...command.View) {
+					got := env.Views()
+					if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(command.View{}, "ID")); diff != "" {
+						t.Errorf("SummarizeViews() mismatch (-want +got):\n%s", diff)
+					}
+				}
+				var wantViews []command.View
+				for _, root := range tt.wantViewRoots {
+					wantViews = append(wantViews, summary(cache.GoModView, root, root))
+				}
+				env.ChangeWorkspaceFolders(tt.after...)
+				env.Await(
+					LogMatching(protocol.Warning, "skip adding virtual folder", 1, false),
+					NoOutstandingWork(IgnoreTelemetryPromptWork),
+				)
+				checkViews(wantViews...)
+			})
+		})
+	}
 }

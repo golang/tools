@@ -23,6 +23,7 @@ import (
 	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
+	debuglog "golang.org/x/tools/gopls/internal/debug/log"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -101,15 +102,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 			}}
 		}
 	}
-	for _, folder := range folders {
-		if folder.URI == "" {
-			return nil, fmt.Errorf("empty WorkspaceFolder.URI")
-		}
-		if _, err := protocol.ParseDocumentURI(folder.URI); err != nil {
-			return nil, fmt.Errorf("invalid WorkspaceFolder.URI: %v", err)
-		}
-		s.pendingFolders = append(s.pendingFolders, folder)
-	}
+	s.pendingFolders = append(s.pendingFolders, folders...)
 
 	var codeActionProvider interface{} = true
 	if ca := params.Capabilities.TextDocument.CodeAction; len(ca.CodeActionLiteralSupport.CodeActionKind.ValueSet) > 0 {
@@ -284,10 +277,27 @@ func go1Point() int {
 // addFolders adds the specified list of "folders" (that's Windows for
 // directories) to the session. It does not return an error, though it
 // may report an error to the client over LSP if one or more folders
-// had problems.
+// had problems, for example, folders with unsupported file system.
 func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFolder) {
 	originalViews := len(s.session.Views())
 	viewErrors := make(map[protocol.URI]error)
+
+	// Skip non-'file' scheme, or invalid workspace folders,
+	// and log them form error reports.
+	// VS Code's file system API
+	// (https://code.visualstudio.com/api/references/vscode-api#FileSystem)
+	// allows extension to define their own schemes and register
+	// them with the workspace. We've seen gitlens://, decompileFs://, etc
+	// but the list can grow over time.
+	var filtered []protocol.WorkspaceFolder
+	for _, f := range folders {
+		if _, err := protocol.ParseDocumentURI(f.URI); err != nil {
+			debuglog.Warning.Logf(ctx, "skip adding virtual folder %q - invalid folder URI: %v", f.Name, err)
+			continue
+		}
+		filtered = append(filtered, f)
+	}
+	folders = filtered
 
 	var ndiagnose sync.WaitGroup // number of unfinished diagnose calls
 	if s.Options().VerboseWorkDoneProgress {
