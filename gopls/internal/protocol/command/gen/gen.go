@@ -89,16 +89,15 @@ type data struct {
 }
 
 // Generate computes the new contents of ../command_gen.go from a
-// combination of static and dynamic analysis of the
-// gopls/internal/protocol/command package (that is, packages.Load and
-// reflection).
+// static analysis of the command.Interface type.
 func Generate() ([]byte, error) {
-	pkg, cmds, err := commandmeta.Load()
+	cmds, err := commandmeta.Load()
 	if err != nil {
 		return nil, fmt.Errorf("loading command data: %v", err)
 	}
+	const thispkg = "golang.org/x/tools/gopls/internal/protocol/command"
 	qf := func(p *types.Package) string {
-		if p == pkg.Types {
+		if p.Path() == thispkg {
 			return ""
 		}
 		return p.Name()
@@ -119,7 +118,6 @@ func Generate() ([]byte, error) {
 			"golang.org/x/tools/gopls/internal/protocol": true,
 		},
 	}
-	const thispkg = "golang.org/x/tools/gopls/internal/protocol/command"
 	for _, c := range d.Commands {
 		for _, arg := range c.Args {
 			pth := pkgPath(arg.Type)

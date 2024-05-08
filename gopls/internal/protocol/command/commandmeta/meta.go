@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package commandmeta provides metadata about LSP commands, by analyzing the
-// command.Interface type.
+// Package commandmeta provides metadata about LSP commands, by
+// statically analyzing the command.Interface type.
 package commandmeta
 
 import (
@@ -17,10 +17,11 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/internal/aliases"
+	// (does not depend on gopls itself)
 )
 
+// A Command describes a workspace/executeCommand extension command.
 type Command struct {
 	MethodName string
 	Name       string
@@ -32,9 +33,8 @@ type Command struct {
 	Result *Field
 }
 
-func (c *Command) ID() string {
-	return command.ID(c.Name)
-}
+// (used by the ../command/gen template)
+func (c *Command) ID() string { return "gopls." + c.Name }
 
 type Field struct {
 	Name     string
@@ -47,7 +47,9 @@ type Field struct {
 	Fields []*Field
 }
 
-func Load() (*packages.Package, []*Command, error) {
+// Load returns a description of the workspace/executeCommand commands
+// supported by gopls based on static analysis of the command.Interface type.
+func Load() ([]*Command, error) {
 	pkgs, err := packages.Load(
 		&packages.Config{
 			Mode:       packages.NeedTypes | packages.NeedTypesInfo | packages.NeedSyntax | packages.NeedImports | packages.NeedDeps,
@@ -56,17 +58,15 @@ func Load() (*packages.Package, []*Command, error) {
 		"golang.org/x/tools/gopls/internal/protocol/command",
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("packages.Load: %v", err)
+		return nil, fmt.Errorf("packages.Load: %v", err)
 	}
 	pkg := pkgs[0]
 	if len(pkg.Errors) > 0 {
-		return pkg, nil, pkg.Errors[0]
+		return nil, pkg.Errors[0]
 	}
 
-	// For a bit of type safety, use reflection to get the interface name within
-	// the package scope.
-	it := reflect.TypeOf((*command.Interface)(nil)).Elem()
-	obj := pkg.Types.Scope().Lookup(it.Name()).Type().Underlying().(*types.Interface)
+	// command.Interface
+	obj := pkg.Types.Scope().Lookup("Interface").Type().Underlying().(*types.Interface)
 
 	// Load command metadata corresponding to each interface method.
 	var commands []*Command
@@ -75,11 +75,11 @@ func Load() (*packages.Package, []*Command, error) {
 		m := obj.Method(i)
 		c, err := loader.loadMethod(pkg, m)
 		if err != nil {
-			return nil, nil, fmt.Errorf("loading %s: %v", m.Name(), err)
+			return nil, fmt.Errorf("loading %s: %v", m.Name(), err)
 		}
 		commands = append(commands, c)
 	}
-	return pkg, commands, nil
+	return commands, nil
 }
 
 // fieldLoader loads field information, memoizing results to prevent infinite

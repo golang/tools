@@ -22,7 +22,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -211,6 +210,8 @@ func loadAPI() (*doc.API, error) {
 	return api, nil
 }
 
+// loadOptions computes a single category of settings by a combination
+// of static analysis and reflection over gopls internal types.
 func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Package, hierarchy string) ([]*doc.Option, error) {
 	file, err := fileForPos(pkg, optsType.Pos())
 	if err != nil {
@@ -305,6 +306,7 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 	return opts, nil
 }
 
+// loadEnums returns a description of gopls' settings enum types based on static analysis.
 func loadEnums(pkg *packages.Package) (map[types.Type][]doc.EnumValue, error) {
 	enums := map[types.Type][]doc.EnumValue{}
 	for _, name := range pkg.Types.Scope().Names() {
@@ -434,7 +436,7 @@ func valueDoc(name, value, doc string) string {
 func loadCommands() ([]*doc.Command, error) {
 	var commands []*doc.Command
 
-	_, cmds, err := commandmeta.Load()
+	cmds, err := commandmeta.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -599,97 +601,107 @@ func rewriteAPI(_ []byte, api *doc.API) ([]byte, error) {
 }
 
 type optionsGroup struct {
-	title   string
-	final   string
+	title   string // dotted path (e.g. "ui.documentation")
+	final   string // finals segment of title (e.g. "documentation")
 	level   int
 	options []*doc.Option
 }
 
-func rewriteSettings(content []byte, api *doc.API) ([]byte, error) {
-	result := content
+func rewriteSettings(prevContent []byte, api *doc.API) ([]byte, error) {
+	content := prevContent
 	for category, opts := range api.Options {
 		groups := collectGroups(opts)
 
-		// First, print a table of contents.
-		section := bytes.NewBuffer(nil)
-		fmt.Fprintln(section, "")
+		var buf bytes.Buffer
+
+		// First, print a table of contents (ToC).
+		fmt.Fprintln(&buf)
 		for _, h := range groups {
-			writeBullet(section, h.final, h.level)
+			title := h.final
+			if title != "" {
+				fmt.Fprintf(&buf, "%s* [%s](#%s)\n",
+					strings.Repeat("  ", h.level),
+					capitalize(title),
+					strings.ToLower(title))
+			}
 		}
-		fmt.Fprintln(section, "")
 
 		// Currently, the settings document has a title and a subtitle, so
 		// start at level 3 for a header beginning with "###".
+		fmt.Fprintln(&buf)
 		baseLevel := 3
 		for _, h := range groups {
 			level := baseLevel + h.level
-			writeTitle(section, h.final, level)
+			title := h.final
+			if title != "" {
+				fmt.Fprintf(&buf, "%s %s\n\n",
+					strings.Repeat("#", level),
+					capitalize(title))
+			}
 			for _, opt := range h.options {
-				header := strMultiply("#", level+1)
-				fmt.Fprintf(section, "%s ", header)
-				writeOption(section, opt)
+				// heading
+				fmt.Fprintf(&buf, "%s **%v** *%v*\n\n",
+					strings.Repeat("#", level+1),
+					opt.Name,
+					opt.Type)
+
+				// status
+				switch opt.Status {
+				case "":
+				case "advanced":
+					fmt.Fprint(&buf, "**This is an advanced setting and should not be configured by most `gopls` users.**\n\n")
+				case "debug":
+					fmt.Fprint(&buf, "**This setting is for debugging purposes only.**\n\n")
+				case "experimental":
+					fmt.Fprint(&buf, "**This setting is experimental and may be deleted.**\n\n")
+				default:
+					fmt.Fprintf(&buf, "**Status: %s.**\n\n", opt.Status)
+				}
+
+				// doc comment
+				buf.WriteString(opt.Doc)
+
+				// enums
+				write := func(name, doc string) {
+					if doc != "" {
+						unbroken := parBreakRE.ReplaceAllString(doc, "\\\n")
+						fmt.Fprintf(&buf, "* %s\n", strings.TrimSpace(unbroken))
+					} else {
+						fmt.Fprintf(&buf, "* `%s`\n", name)
+					}
+				}
+				if len(opt.EnumValues) > 0 && opt.Type == "enum" {
+					buf.WriteString("\nMust be one of:\n\n")
+					for _, val := range opt.EnumValues {
+						write(val.Value, val.Doc)
+					}
+				} else if len(opt.EnumKeys.Keys) > 0 && shouldShowEnumKeysInSettings(opt.Name) {
+					buf.WriteString("\nCan contain any of:\n\n")
+					for _, val := range opt.EnumKeys.Keys {
+						write(val.Name, val.Doc)
+					}
+				}
+
+				// default value
+				fmt.Fprintf(&buf, "\nDefault: `%v`.\n\n", opt.Default)
 			}
 		}
-		var err error
-		result, err = replaceSection(result, category, section.Bytes())
+		newContent, err := replaceSection(content, category, buf.Bytes())
 		if err != nil {
 			return nil, err
 		}
+		content = newContent
 	}
 
-	section := bytes.NewBuffer(nil)
+	// Replace the lenses section.
+	var buf bytes.Buffer
 	for _, lens := range api.Lenses {
-		fmt.Fprintf(section, "### **%v**\n\nIdentifier: `%v`\n\n%v\n", lens.Title, lens.Lens, lens.Doc)
+		fmt.Fprintf(&buf, "### **%v**\n\nIdentifier: `%v`\n\n%v\n", lens.Title, lens.Lens, lens.Doc)
 	}
-	return replaceSection(result, "Lenses", section.Bytes())
-}
-
-func writeOption(w *bytes.Buffer, o *doc.Option) {
-	fmt.Fprintf(w, "**%v** *%v*\n\n", o.Name, o.Type)
-	writeStatus(w, o.Status)
-	enumValues := collectEnums(o)
-	fmt.Fprintf(w, "%v%v\nDefault: `%v`.\n\n", o.Doc, enumValues, o.Default)
-}
-
-func writeStatus(section *bytes.Buffer, status string) {
-	switch status {
-	case "":
-	case "advanced":
-		fmt.Fprint(section, "**This is an advanced setting and should not be configured by most `gopls` users.**\n\n")
-	case "debug":
-		fmt.Fprint(section, "**This setting is for debugging purposes only.**\n\n")
-	case "experimental":
-		fmt.Fprint(section, "**This setting is experimental and may be deleted.**\n\n")
-	default:
-		fmt.Fprintf(section, "**Status: %s.**\n\n", status)
-	}
+	return replaceSection(content, "Lenses", buf.Bytes())
 }
 
 var parBreakRE = regexp.MustCompile("\n{2,}")
-
-func collectEnums(opt *doc.Option) string {
-	var b strings.Builder
-	write := func(name, doc string) {
-		if doc != "" {
-			unbroken := parBreakRE.ReplaceAllString(doc, "\\\n")
-			fmt.Fprintf(&b, "* %s\n", strings.TrimSpace(unbroken))
-		} else {
-			fmt.Fprintf(&b, "* `%s`\n", name)
-		}
-	}
-	if len(opt.EnumValues) > 0 && opt.Type == "enum" {
-		b.WriteString("\nMust be one of:\n\n")
-		for _, val := range opt.EnumValues {
-			write(val.Value, val.Doc)
-		}
-	} else if len(opt.EnumKeys.Keys) > 0 && shouldShowEnumKeysInSettings(opt.Name) {
-		b.WriteString("\nCan contain any of:\n\n")
-		for _, val := range opt.EnumKeys.Keys {
-			write(val.Name, val.Doc)
-		}
-	}
-	return b.String()
-}
 
 func shouldShowEnumKeysInSettings(name string) bool {
 	// These fields have too many possible options to print.
@@ -754,86 +766,61 @@ func hardcodedEnumKeys(name string) bool {
 	return name == "analyses" || name == "codelenses"
 }
 
-func writeBullet(w io.Writer, title string, level int) {
-	if title == "" {
-		return
-	}
-	// Capitalize the first letter of each title.
-	prefix := strMultiply("  ", level)
-	fmt.Fprintf(w, "%s* [%s](#%s)\n", prefix, capitalize(title), strings.ToLower(title))
-}
-
-func writeTitle(w io.Writer, title string, level int) {
-	if title == "" {
-		return
-	}
-	// Capitalize the first letter of each title.
-	fmt.Fprintf(w, "%s %s\n\n", strMultiply("#", level), capitalize(title))
-}
-
 func capitalize(s string) string {
 	return string(unicode.ToUpper(rune(s[0]))) + s[1:]
 }
 
-func strMultiply(str string, count int) string {
-	var result string
-	for i := 0; i < count; i++ {
-		result += str
-	}
-	return result
-}
-
-func rewriteCommands(content []byte, api *doc.API) ([]byte, error) {
-	section := bytes.NewBuffer(nil)
+func rewriteCommands(prevContent []byte, api *doc.API) ([]byte, error) {
+	var buf bytes.Buffer
 	for _, command := range api.Commands {
-		writeCommand(section, command)
+		fmt.Fprintf(&buf, "### **%v**\nIdentifier: `%v`\n\n%v\n\n", command.Title, command.Command, command.Doc)
+		if command.ArgDoc != "" {
+			fmt.Fprintf(&buf, "Args:\n\n```\n%s\n```\n\n", command.ArgDoc)
+		}
+		if command.ResultDoc != "" {
+			fmt.Fprintf(&buf, "Result:\n\n```\n%s\n```\n\n", command.ResultDoc)
+		}
 	}
-	return replaceSection(content, "Commands", section.Bytes())
+	return replaceSection(prevContent, "Commands", buf.Bytes())
 }
 
-func writeCommand(w *bytes.Buffer, c *doc.Command) {
-	fmt.Fprintf(w, "### **%v**\nIdentifier: `%v`\n\n%v\n\n", c.Title, c.Command, c.Doc)
-	if c.ArgDoc != "" {
-		fmt.Fprintf(w, "Args:\n\n```\n%s\n```\n\n", c.ArgDoc)
-	}
-	if c.ResultDoc != "" {
-		fmt.Fprintf(w, "Result:\n\n```\n%s\n```\n\n", c.ResultDoc)
-	}
-}
-
-func rewriteAnalyzers(content []byte, api *doc.API) ([]byte, error) {
-	section := bytes.NewBuffer(nil)
+func rewriteAnalyzers(prevContent []byte, api *doc.API) ([]byte, error) {
+	var buf bytes.Buffer
 	for _, analyzer := range api.Analyzers {
-		fmt.Fprintf(section, "## **%v**\n\n", analyzer.Name)
-		fmt.Fprintf(section, "%s: %s\n\n", analyzer.Name, analyzer.Doc)
+		fmt.Fprintf(&buf, "## **%v**\n\n", analyzer.Name)
+		fmt.Fprintf(&buf, "%s: %s\n\n", analyzer.Name, analyzer.Doc)
 		if analyzer.URL != "" {
-			fmt.Fprintf(section, "[Full documentation](%s)\n\n", analyzer.URL)
+			fmt.Fprintf(&buf, "[Full documentation](%s)\n\n", analyzer.URL)
 		}
 		switch analyzer.Default {
 		case true:
-			fmt.Fprintf(section, "**Enabled by default.**\n\n")
+			fmt.Fprintf(&buf, "**Enabled by default.**\n\n")
 		case false:
-			fmt.Fprintf(section, "**Disabled by default. Enable it by setting `\"analyses\": {\"%s\": true}`.**\n\n", analyzer.Name)
+			fmt.Fprintf(&buf, "**Disabled by default. Enable it by setting `\"analyses\": {\"%s\": true}`.**\n\n", analyzer.Name)
 		}
 	}
-	return replaceSection(content, "Analyzers", section.Bytes())
+	return replaceSection(prevContent, "Analyzers", buf.Bytes())
 }
 
-func rewriteInlayHints(content []byte, api *doc.API) ([]byte, error) {
-	section := bytes.NewBuffer(nil)
+func rewriteInlayHints(prevContent []byte, api *doc.API) ([]byte, error) {
+	var buf bytes.Buffer
 	for _, hint := range api.Hints {
-		fmt.Fprintf(section, "## **%v**\n\n", hint.Name)
-		fmt.Fprintf(section, "%s\n\n", hint.Doc)
+		fmt.Fprintf(&buf, "## **%v**\n\n", hint.Name)
+		fmt.Fprintf(&buf, "%s\n\n", hint.Doc)
 		switch hint.Default {
 		case true:
-			fmt.Fprintf(section, "**Enabled by default.**\n\n")
+			fmt.Fprintf(&buf, "**Enabled by default.**\n\n")
 		case false:
-			fmt.Fprintf(section, "**Disabled by default. Enable it by setting `\"hints\": {\"%s\": true}`.**\n\n", hint.Name)
+			fmt.Fprintf(&buf, "**Disabled by default. Enable it by setting `\"hints\": {\"%s\": true}`.**\n\n", hint.Name)
 		}
 	}
-	return replaceSection(content, "Hints", section.Bytes())
+	return replaceSection(prevContent, "Hints", buf.Bytes())
 }
 
+// replaceSection replaces the portion of a file delimited by comments of the form:
+//
+//	<!-- BEGIN sectionName -->
+//	<!-- END section Name -->
 func replaceSection(content []byte, sectionName string, replacement []byte) ([]byte, error) {
 	re := regexp.MustCompile(fmt.Sprintf(`(?s)<!-- BEGIN %v.* -->\n(.*?)<!-- END %v.* -->`, sectionName, sectionName))
 	idx := re.FindSubmatchIndex(content)
