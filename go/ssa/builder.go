@@ -2274,6 +2274,21 @@ func (b *builder) rangeStmt(fn *Function, s *ast.RangeStmt, label *lblock) {
 			panic("Cannot range over basic type: " + rt.String())
 		}
 
+	case *types.Signature:
+		// Temporary hack to avoid crashes
+		// until Tim's principled fix (CL 555075) lands:
+		// compile range-over-func to a panic.
+		//
+		// This will cause statements in the loop body to be
+		// unreachable, and thus the call graph may be
+		// incomplete.
+		fn.emit(&Panic{
+			X:   NewConst(constant.MakeString("go1.23 range-over-func is not yet supported"), tString),
+			pos: s.For,
+		})
+		fn.currentBlock = fn.newBasicBlock("unreachable")
+		return
+
 	default:
 		panic("Cannot range over: " + rt.String())
 	}
