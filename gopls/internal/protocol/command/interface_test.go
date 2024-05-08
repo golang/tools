@@ -13,6 +13,7 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
+// TestGenerated ensures that we haven't forgotten to update command_gen.go.
 func TestGenerated(t *testing.T) {
 	testenv.NeedsGoPackages(t)
 	testenv.NeedsLocalXTools(t)

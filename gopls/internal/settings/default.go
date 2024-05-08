@@ -21,6 +21,8 @@ var (
 // DefaultOptions is the options that are used for Gopls execution independent
 // of any externally provided configuration (LSP initialization, command
 // invocation, etc.).
+//
+// It is the source from which gopls/doc/settings.md is generated.
 func DefaultOptions(overrides ...func(*Options)) *Options {
 	optionsOnce.Do(func() {
 		var commands []string

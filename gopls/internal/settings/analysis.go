@@ -104,6 +104,8 @@ func (a *Analyzer) String() string { return a.analyzer.String() }
 
 // DefaultAnalyzers holds the set of Analyzers available to all gopls sessions,
 // independent of build version, keyed by analyzer name.
+//
+// It is the source from which gopls/doc/analyzers.md is generated.
 var DefaultAnalyzers = make(map[string]*Analyzer) // initialized below
 
 func init() {

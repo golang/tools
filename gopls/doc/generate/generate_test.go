@@ -23,6 +23,6 @@ func TestGenerated(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !ok {
-		t.Error("documentation needs updating. Run: cd gopls && go generate")
+		t.Error("documentation needs updating. Run: cd gopls && go generate ./...")
 	}
 }

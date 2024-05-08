@@ -1,9 +1,18 @@
-// Copyright 2020 The Go Authors. All rights reserved.
+// Copyright 2024 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Command generate creates API (settings, etc) documentation in JSON and
-// Markdown for machine and human consumption.
+// The generate command updates the following files of documentation:
+//
+//	gopls/doc/settings.md   -- from linking gopls/internal/settings.DefaultOptions
+//	gopls/doc/commands.md   -- from loading gopls/internal/protocol/command
+//	gopls/doc/analyzers.md  -- from linking gopls/internal/settings.DefaultAnalyzers
+//	gopls/doc/inlayHints.md -- from linking gopls/internal/golang.AllInlayHints
+//	gopls/internal/doc/api.json -- all of the above in a single value, for 'gopls api-json'
+//
+// Run it with this command:
+//
+//	$ cd gopls/doc && go generate
 package main
 
 import (
@@ -11,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/ast"
-	"go/format"
 	"go/token"
 	"go/types"
 	"io"
@@ -26,9 +34,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/jba/printsrc"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/gopls/internal/doc"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/protocol/command"
@@ -44,6 +52,9 @@ func main() {
 	}
 }
 
+// doMain regenerates the output files. On success:
+// - if write, it updates them;
+// - if !write, it reports whether they would change.
 func doMain(write bool) (bool, error) {
 	// TODO(adonovan): when we can rely on go1.23,
 	// switch to gotypesalias=1 behavior.
@@ -58,35 +69,45 @@ func doMain(write bool) (bool, error) {
 		return false, err
 	}
 
-	settingsDir, err := pkgDir("golang.org/x/tools/gopls/internal/settings")
-	if err != nil {
-		return false, err
-	}
-
-	if ok, err := rewriteFile(filepath.Join(settingsDir, "api_json.go"), api, write, rewriteAPI); !ok || err != nil {
-		return ok, err
-	}
-
 	goplsDir, err := pkgDir("golang.org/x/tools/gopls")
 	if err != nil {
 		return false, err
 	}
 
-	if ok, err := rewriteFile(filepath.Join(goplsDir, "doc", "settings.md"), api, write, rewriteSettings); !ok || err != nil {
-		return ok, err
-	}
-	if ok, err := rewriteFile(filepath.Join(goplsDir, "doc", "commands.md"), api, write, rewriteCommands); !ok || err != nil {
-		return ok, err
-	}
-	if ok, err := rewriteFile(filepath.Join(goplsDir, "doc", "analyzers.md"), api, write, rewriteAnalyzers); !ok || err != nil {
-		return ok, err
-	}
-	if ok, err := rewriteFile(filepath.Join(goplsDir, "doc", "inlayHints.md"), api, write, rewriteInlayHints); !ok || err != nil {
-		return ok, err
-	}
+	for _, f := range []struct {
+		name    string // relative to gopls
+		rewrite rewriter
+	}{
+		{"internal/doc/api.json", rewriteAPI},
+		{"doc/settings.md", rewriteSettings},
+		{"doc/commands.md", rewriteCommands},
+		{"doc/analyzers.md", rewriteAnalyzers},
+		{"doc/inlayHints.md", rewriteInlayHints},
+	} {
+		file := filepath.Join(goplsDir, f.name)
+		old, err := os.ReadFile(file)
+		if err != nil {
+			return false, err
+		}
 
+		new, err := f.rewrite(old, api)
+		if err != nil {
+			return false, fmt.Errorf("rewriting %q: %v", file, err)
+		}
+
+		if write {
+			if err := os.WriteFile(file, new, 0); err != nil {
+				return false, err
+			}
+		} else if !bytes.Equal(old, new) {
+			return false, nil // files would change
+		}
+	}
 	return true, nil
 }
+
+// A rewriter is a function that transforms the content of a file.
+type rewriter = func([]byte, *doc.API) ([]byte, error)
 
 // pkgDir returns the directory corresponding to the import path pkgPath.
 func pkgDir(pkgPath string) (string, error) {
@@ -101,7 +122,9 @@ func pkgDir(pkgPath string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func loadAPI() (*settings.APIJSON, error) {
+// loadAPI computes the JSON-encodable value that describes gopls'
+// interfaces, by a combination of static and dynamic analysis.
+func loadAPI() (*doc.API, error) {
 	pkgs, err := packages.Load(
 		&packages.Config{
 			Mode: packages.NeedTypes | packages.NeedTypesInfo | packages.NeedSyntax | packages.NeedDeps,
@@ -114,8 +137,8 @@ func loadAPI() (*settings.APIJSON, error) {
 	pkg := pkgs[0]
 
 	defaults := settings.DefaultOptions()
-	api := &settings.APIJSON{
-		Options:   map[string][]*settings.OptionJSON{},
+	api := &doc.API{
+		Options:   map[string][]*doc.Option{},
 		Analyzers: loadAnalyzers(settings.DefaultAnalyzers), // no staticcheck analyzers
 	}
 
@@ -151,7 +174,7 @@ func loadAPI() (*settings.APIJSON, error) {
 			switch opt.Name {
 			case "analyses":
 				for _, a := range api.Analyzers {
-					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, settings.EnumKey{
+					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, doc.EnumKey{
 						Name:    fmt.Sprintf("%q", a.Name),
 						Doc:     a.Doc,
 						Default: strconv.FormatBool(a.Default),
@@ -168,7 +191,7 @@ func loadAPI() (*settings.APIJSON, error) {
 					if err != nil {
 						return nil, err
 					}
-					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, settings.EnumKey{
+					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, doc.EnumKey{
 						Name:    fmt.Sprintf("%q", l.Lens),
 						Doc:     l.Doc,
 						Default: def,
@@ -176,7 +199,7 @@ func loadAPI() (*settings.APIJSON, error) {
 				}
 			case "hints":
 				for _, a := range api.Hints {
-					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, settings.EnumKey{
+					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, doc.EnumKey{
 						Name:    fmt.Sprintf("%q", a.Name),
 						Doc:     a.Doc,
 						Default: strconv.FormatBool(a.Default),
@@ -188,7 +211,7 @@ func loadAPI() (*settings.APIJSON, error) {
 	return api, nil
 }
 
-func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Package, hierarchy string) ([]*settings.OptionJSON, error) {
+func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Package, hierarchy string) ([]*doc.Option, error) {
 	file, err := fileForPos(pkg, optsType.Pos())
 	if err != nil {
 		return nil, err
@@ -199,7 +222,7 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 		return nil, err
 	}
 
-	var opts []*settings.OptionJSON
+	var opts []*doc.Option
 	optsStruct := optsType.Type().Underlying().(*types.Struct)
 	for i := 0; i < optsStruct.NumFields(); i++ {
 		// The types field gives us the type.
@@ -246,7 +269,7 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 		}
 		name := lowerFirst(typesField.Name())
 
-		var enumKeys settings.EnumKeys
+		var enumKeys doc.EnumKeys
 		if m, ok := typesField.Type().Underlying().(*types.Map); ok {
 			e, ok := enums[m.Key()]
 			if ok {
@@ -268,7 +291,7 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 		}
 		status := reflectStructField.Tag.Get("status")
 
-		opts = append(opts, &settings.OptionJSON{
+		opts = append(opts, &doc.Option{
 			Name:       name,
 			Type:       typ,
 			Doc:        lowerFirst(astField.Doc.Text()),
@@ -282,8 +305,8 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 	return opts, nil
 }
 
-func loadEnums(pkg *packages.Package) (map[types.Type][]settings.EnumValue, error) {
-	enums := map[types.Type][]settings.EnumValue{}
+func loadEnums(pkg *packages.Package) (map[types.Type][]doc.EnumValue, error) {
+	enums := map[types.Type][]doc.EnumValue{}
 	for _, name := range pkg.Types.Scope().Names() {
 		obj := pkg.Types.Scope().Lookup(name)
 		cnst, ok := obj.(*types.Const)
@@ -297,23 +320,23 @@ func loadEnums(pkg *packages.Package) (map[types.Type][]settings.EnumValue, erro
 		path, _ := astutil.PathEnclosingInterval(f, cnst.Pos(), cnst.Pos())
 		spec := path[1].(*ast.ValueSpec)
 		value := cnst.Val().ExactString()
-		doc := valueDoc(cnst.Name(), value, spec.Doc.Text())
-		v := settings.EnumValue{
+		docstring := valueDoc(cnst.Name(), value, spec.Doc.Text())
+		v := doc.EnumValue{
 			Value: value,
-			Doc:   doc,
+			Doc:   docstring,
 		}
 		enums[obj.Type()] = append(enums[obj.Type()], v)
 	}
 	return enums, nil
 }
 
-func collectEnumKeys(name string, m *types.Map, reflectField reflect.Value, enumValues []settings.EnumValue) (*settings.EnumKeys, error) {
+func collectEnumKeys(name string, m *types.Map, reflectField reflect.Value, enumValues []doc.EnumValue) (*doc.EnumKeys, error) {
 	// Make sure the value type gets set for analyses and codelenses
 	// too.
 	if len(enumValues) == 0 && !hardcodedEnumKeys(name) {
 		return nil, nil
 	}
-	keys := &settings.EnumKeys{
+	keys := &doc.EnumKeys{
 		ValueType: m.Elem().String(),
 	}
 	// We can get default values for enum -> bool maps.
@@ -330,7 +353,7 @@ func collectEnumKeys(name string, m *types.Map, reflectField reflect.Value, enum
 				return nil, err
 			}
 		}
-		keys.Keys = append(keys.Keys, settings.EnumKey{
+		keys.Keys = append(keys.Keys, doc.EnumKey{
 			Name:    v.Value,
 			Doc:     v.Doc,
 			Default: def,
@@ -408,8 +431,8 @@ func valueDoc(name, value, doc string) string {
 	return fmt.Sprintf("`%s`: %s", value, doc)
 }
 
-func loadCommands() ([]*settings.CommandJSON, error) {
-	var commands []*settings.CommandJSON
+func loadCommands() ([]*doc.Command, error) {
+	var commands []*doc.Command
 
 	_, cmds, err := commandmeta.Load()
 	if err != nil {
@@ -417,7 +440,7 @@ func loadCommands() ([]*settings.CommandJSON, error) {
 	}
 	// Parse the objects it contains.
 	for _, cmd := range cmds {
-		cmdjson := &settings.CommandJSON{
+		cmdjson := &doc.Command{
 			Command: cmd.Name,
 			Title:   cmd.Title,
 			Doc:     cmd.Doc,
@@ -485,7 +508,7 @@ func structDoc(fields []*commandmeta.Field, level int) string {
 	return b.String()
 }
 
-func loadLenses(commands []*settings.CommandJSON) []*settings.LensJSON {
+func loadLenses(commands []*doc.Command) []*doc.Lens {
 	all := map[command.Command]struct{}{}
 	for k := range golang.LensFuncs() {
 		all[k] = struct{}{}
@@ -497,11 +520,11 @@ func loadLenses(commands []*settings.CommandJSON) []*settings.LensJSON {
 		all[k] = struct{}{}
 	}
 
-	var lenses []*settings.LensJSON
+	var lenses []*doc.Lens
 
 	for _, cmd := range commands {
 		if _, ok := all[command.Command(cmd.Command)]; ok {
-			lenses = append(lenses, &settings.LensJSON{
+			lenses = append(lenses, &doc.Lens{
 				Lens:  cmd.Command,
 				Title: cmd.Title,
 				Doc:   cmd.Doc,
@@ -511,16 +534,16 @@ func loadLenses(commands []*settings.CommandJSON) []*settings.LensJSON {
 	return lenses
 }
 
-func loadAnalyzers(m map[string]*settings.Analyzer) []*settings.AnalyzerJSON {
+func loadAnalyzers(m map[string]*settings.Analyzer) []*doc.Analyzer {
 	var sorted []string
 	for _, a := range m {
 		sorted = append(sorted, a.Analyzer().Name)
 	}
 	sort.Strings(sorted)
-	var json []*settings.AnalyzerJSON
+	var json []*doc.Analyzer
 	for _, name := range sorted {
 		a := m[name]
-		json = append(json, &settings.AnalyzerJSON{
+		json = append(json, &doc.Analyzer{
 			Name:    a.Analyzer().Name,
 			Doc:     a.Analyzer().Doc,
 			URL:     a.Analyzer().URL,
@@ -530,16 +553,16 @@ func loadAnalyzers(m map[string]*settings.Analyzer) []*settings.AnalyzerJSON {
 	return json
 }
 
-func loadHints(m map[string]*golang.Hint) []*settings.HintJSON {
+func loadHints(m map[string]*golang.Hint) []*doc.Hint {
 	var sorted []string
 	for _, h := range m {
 		sorted = append(sorted, h.Name)
 	}
 	sort.Strings(sorted)
-	var json []*settings.HintJSON
+	var json []*doc.Hint
 	for _, name := range sorted {
 		h := m[name]
-		json = append(json, &settings.HintJSON{
+		json = append(json, &doc.Hint{
 			Name: h.Name,
 			Doc:  h.Doc,
 		})
@@ -571,46 +594,19 @@ func fileForPos(pkg *packages.Package, pos token.Pos) (*ast.File, error) {
 	return nil, fmt.Errorf("no file for pos %v", pos)
 }
 
-func rewriteFile(file string, api *settings.APIJSON, write bool, rewrite func([]byte, *settings.APIJSON) ([]byte, error)) (bool, error) {
-	old, err := os.ReadFile(file)
-	if err != nil {
-		return false, err
-	}
-
-	new, err := rewrite(old, api)
-	if err != nil {
-		return false, fmt.Errorf("rewriting %q: %v", file, err)
-	}
-
-	if !write {
-		return bytes.Equal(old, new), nil
-	}
-
-	if err := os.WriteFile(file, new, 0); err != nil {
-		return false, err
-	}
-
-	return true, nil
-}
-
-func rewriteAPI(_ []byte, api *settings.APIJSON) ([]byte, error) {
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "// Code generated by \"golang.org/x/tools/gopls/doc/generate\"; DO NOT EDIT.\n\npackage settings\n\nvar GeneratedAPIJSON = ")
-	if err := printsrc.NewPrinter("golang.org/x/tools/gopls/internal/settings").Fprint(&buf, api); err != nil {
-		return nil, err
-	}
-	return format.Source(buf.Bytes())
+func rewriteAPI(_ []byte, api *doc.API) ([]byte, error) {
+	return json.MarshalIndent(api, "", "\t")
 }
 
 type optionsGroup struct {
 	title   string
 	final   string
 	level   int
-	options []*settings.OptionJSON
+	options []*doc.Option
 }
 
-func rewriteSettings(doc []byte, api *settings.APIJSON) ([]byte, error) {
-	result := doc
+func rewriteSettings(content []byte, api *doc.API) ([]byte, error) {
+	result := content
 	for category, opts := range api.Options {
 		groups := collectGroups(opts)
 
@@ -631,7 +627,7 @@ func rewriteSettings(doc []byte, api *settings.APIJSON) ([]byte, error) {
 			for _, opt := range h.options {
 				header := strMultiply("#", level+1)
 				fmt.Fprintf(section, "%s ", header)
-				opt.Write(section)
+				writeOption(section, opt)
 			}
 		}
 		var err error
@@ -648,8 +644,60 @@ func rewriteSettings(doc []byte, api *settings.APIJSON) ([]byte, error) {
 	return replaceSection(result, "Lenses", section.Bytes())
 }
 
-func collectGroups(opts []*settings.OptionJSON) []optionsGroup {
-	optsByHierarchy := map[string][]*settings.OptionJSON{}
+func writeOption(w *bytes.Buffer, o *doc.Option) {
+	fmt.Fprintf(w, "**%v** *%v*\n\n", o.Name, o.Type)
+	writeStatus(w, o.Status)
+	enumValues := collectEnums(o)
+	fmt.Fprintf(w, "%v%v\nDefault: `%v`.\n\n", o.Doc, enumValues, o.Default)
+}
+
+func writeStatus(section *bytes.Buffer, status string) {
+	switch status {
+	case "":
+	case "advanced":
+		fmt.Fprint(section, "**This is an advanced setting and should not be configured by most `gopls` users.**\n\n")
+	case "debug":
+		fmt.Fprint(section, "**This setting is for debugging purposes only.**\n\n")
+	case "experimental":
+		fmt.Fprint(section, "**This setting is experimental and may be deleted.**\n\n")
+	default:
+		fmt.Fprintf(section, "**Status: %s.**\n\n", status)
+	}
+}
+
+var parBreakRE = regexp.MustCompile("\n{2,}")
+
+func collectEnums(opt *doc.Option) string {
+	var b strings.Builder
+	write := func(name, doc string) {
+		if doc != "" {
+			unbroken := parBreakRE.ReplaceAllString(doc, "\\\n")
+			fmt.Fprintf(&b, "* %s\n", strings.TrimSpace(unbroken))
+		} else {
+			fmt.Fprintf(&b, "* `%s`\n", name)
+		}
+	}
+	if len(opt.EnumValues) > 0 && opt.Type == "enum" {
+		b.WriteString("\nMust be one of:\n\n")
+		for _, val := range opt.EnumValues {
+			write(val.Value, val.Doc)
+		}
+	} else if len(opt.EnumKeys.Keys) > 0 && shouldShowEnumKeysInSettings(opt.Name) {
+		b.WriteString("\nCan contain any of:\n\n")
+		for _, val := range opt.EnumKeys.Keys {
+			write(val.Name, val.Doc)
+		}
+	}
+	return b.String()
+}
+
+func shouldShowEnumKeysInSettings(name string) bool {
+	// These fields have too many possible options to print.
+	return !(name == "analyses" || name == "codelenses" || name == "hints")
+}
+
+func collectGroups(opts []*doc.Option) []optionsGroup {
+	optsByHierarchy := map[string][]*doc.Option{}
 	for _, opt := range opts {
 		optsByHierarchy[opt.Hierarchy] = append(optsByHierarchy[opt.Hierarchy], opt)
 	}
@@ -735,15 +783,25 @@ func strMultiply(str string, count int) string {
 	return result
 }
 
-func rewriteCommands(doc []byte, api *settings.APIJSON) ([]byte, error) {
+func rewriteCommands(content []byte, api *doc.API) ([]byte, error) {
 	section := bytes.NewBuffer(nil)
 	for _, command := range api.Commands {
-		command.Write(section)
+		writeCommand(section, command)
 	}
-	return replaceSection(doc, "Commands", section.Bytes())
+	return replaceSection(content, "Commands", section.Bytes())
 }
 
-func rewriteAnalyzers(doc []byte, api *settings.APIJSON) ([]byte, error) {
+func writeCommand(w *bytes.Buffer, c *doc.Command) {
+	fmt.Fprintf(w, "### **%v**\nIdentifier: `%v`\n\n%v\n\n", c.Title, c.Command, c.Doc)
+	if c.ArgDoc != "" {
+		fmt.Fprintf(w, "Args:\n\n```\n%s\n```\n\n", c.ArgDoc)
+	}
+	if c.ResultDoc != "" {
+		fmt.Fprintf(w, "Result:\n\n```\n%s\n```\n\n", c.ResultDoc)
+	}
+}
+
+func rewriteAnalyzers(content []byte, api *doc.API) ([]byte, error) {
 	section := bytes.NewBuffer(nil)
 	for _, analyzer := range api.Analyzers {
 		fmt.Fprintf(section, "## **%v**\n\n", analyzer.Name)
@@ -758,10 +816,10 @@ func rewriteAnalyzers(doc []byte, api *settings.APIJSON) ([]byte, error) {
 			fmt.Fprintf(section, "**Disabled by default. Enable it by setting `\"analyses\": {\"%s\": true}`.**\n\n", analyzer.Name)
 		}
 	}
-	return replaceSection(doc, "Analyzers", section.Bytes())
+	return replaceSection(content, "Analyzers", section.Bytes())
 }
 
-func rewriteInlayHints(doc []byte, api *settings.APIJSON) ([]byte, error) {
+func rewriteInlayHints(content []byte, api *doc.API) ([]byte, error) {
 	section := bytes.NewBuffer(nil)
 	for _, hint := range api.Hints {
 		fmt.Fprintf(section, "## **%v**\n\n", hint.Name)
@@ -773,17 +831,17 @@ func rewriteInlayHints(doc []byte, api *settings.APIJSON) ([]byte, error) {
 			fmt.Fprintf(section, "**Disabled by default. Enable it by setting `\"hints\": {\"%s\": true}`.**\n\n", hint.Name)
 		}
 	}
-	return replaceSection(doc, "Hints", section.Bytes())
+	return replaceSection(content, "Hints", section.Bytes())
 }
 
-func replaceSection(doc []byte, sectionName string, replacement []byte) ([]byte, error) {
+func replaceSection(content []byte, sectionName string, replacement []byte) ([]byte, error) {
 	re := regexp.MustCompile(fmt.Sprintf(`(?s)<!-- BEGIN %v.* -->\n(.*?)<!-- END %v.* -->`, sectionName, sectionName))
-	idx := re.FindSubmatchIndex(doc)
+	idx := re.FindSubmatchIndex(content)
 	if idx == nil {
 		return nil, fmt.Errorf("could not find section %q", sectionName)
 	}
-	result := append([]byte(nil), doc[:idx[2]]...)
+	result := append([]byte(nil), content[:idx[2]]...)
 	result = append(result, replacement...)
-	result = append(result, doc[idx[3]:]...)
+	result = append(result, content[idx[3]:]...)
 	return result, nil
 }

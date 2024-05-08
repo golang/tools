@@ -44,6 +44,9 @@ const (
 	FunctionTypeParameters     = "functionTypeParameters"
 )
 
+// AllInlayHints describes the various inlay-hints options.
+//
+// It is the source from which gopls/doc/inlayHints.md is generated.
 var AllInlayHints = map[string]*Hint{
 	AssignVariableTypes: {
 		Name: AssignVariableTypes,
