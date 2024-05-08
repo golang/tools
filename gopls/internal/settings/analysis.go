@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/directive"
 	"golang.org/x/tools/go/analysis/passes/errorsas"
 	"golang.org/x/tools/go/analysis/passes/fieldalignment"
+	"golang.org/x/tools/go/analysis/passes/framepointer"
 	"golang.org/x/tools/go/analysis/passes/httpresponse"
 	"golang.org/x/tools/go/analysis/passes/ifaceassert"
 	"golang.org/x/tools/go/analysis/passes/loopclosure"
@@ -31,6 +32,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/printf"
 	"golang.org/x/tools/go/analysis/passes/shadow"
 	"golang.org/x/tools/go/analysis/passes/shift"
+	"golang.org/x/tools/go/analysis/passes/sigchanyzer"
 	"golang.org/x/tools/go/analysis/passes/slog"
 	"golang.org/x/tools/go/analysis/passes/sortslice"
 	"golang.org/x/tools/go/analysis/passes/stdmethods"
@@ -151,6 +153,7 @@ func init() {
 		{analyzer: deprecated.Analyzer, enabled: true, severity: protocol.SeverityHint, tags: []protocol.DiagnosticTag{protocol.Deprecated}},
 		{analyzer: directive.Analyzer, enabled: true},
 		{analyzer: errorsas.Analyzer, enabled: true},
+		{analyzer: framepointer.Analyzer, enabled: true},
 		{analyzer: httpresponse.Analyzer, enabled: true},
 		{analyzer: ifaceassert.Analyzer, enabled: true},
 		{analyzer: loopclosure.Analyzer, enabled: true},
@@ -158,6 +161,7 @@ func init() {
 		{analyzer: nilfunc.Analyzer, enabled: true},
 		{analyzer: printf.Analyzer, enabled: true},
 		{analyzer: shift.Analyzer, enabled: true},
+		{analyzer: sigchanyzer.Analyzer, enabled: true},
 		{analyzer: slog.Analyzer, enabled: true},
 		{analyzer: stdmethods.Analyzer, enabled: true},
 		{analyzer: stringintconv.Analyzer, enabled: true},

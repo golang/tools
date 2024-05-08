@@ -445,6 +445,11 @@
 							"Default": "true"
 						},
 						{
+							"Name": "\"framepointer\"",
+							"Doc": "report assembly that clobbers the frame pointer before saving it",
+							"Default": "true"
+						},
+						{
 							"Name": "\"httpresponse\"",
 							"Doc": "check for mistakes using HTTP responses\n\nA common mistake when using the net/http package is to defer a function\ncall to close the http.Response Body before checking the error that\ndetermines whether the response is valid:\n\n\tresp, err := http.Head(url)\n\tdefer resp.Body.Close()\n\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n\t// (defer statement belongs here)\n\nThis checker helps uncover latent nil dereference bugs by reporting a\ndiagnostic for such mistakes.",
 							"Default": "true"
@@ -502,6 +507,11 @@
 						{
 							"Name": "\"shift\"",
 							"Doc": "check for shifts that equal or exceed the width of the integer",
+							"Default": "true"
+						},
+						{
+							"Name": "\"sigchanyzer\"",
+							"Doc": "check for unbuffered channel of os.Signal\n\nThis checker reports call expression of the form\n\n\tsignal.Notify(c \u003c-chan os.Signal, sig ...os.Signal),\n\nwhere c is an unbuffered channel, which can be at risk of missing the signal.",
 							"Default": "true"
 						},
 						{
@@ -1313,6 +1323,12 @@
 			"Default": true
 		},
 		{
+			"Name": "framepointer",
+			"Doc": "report assembly that clobbers the frame pointer before saving it",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/framepointer",
+			"Default": true
+		},
+		{
 			"Name": "httpresponse",
 			"Doc": "check for mistakes using HTTP responses\n\nA common mistake when using the net/http package is to defer a function\ncall to close the http.Response Body before checking the error that\ndetermines whether the response is valid:\n\n\tresp, err := http.Head(url)\n\tdefer resp.Body.Close()\n\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n\t// (defer statement belongs here)\n\nThis checker helps uncover latent nil dereference bugs by reporting a\ndiagnostic for such mistakes.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/httpresponse",
@@ -1382,6 +1398,12 @@
 			"Name": "shift",
 			"Doc": "check for shifts that equal or exceed the width of the integer",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/shift",
+			"Default": true
+		},
+		{
+			"Name": "sigchanyzer",
+			"Doc": "check for unbuffered channel of os.Signal\n\nThis checker reports call expression of the form\n\n\tsignal.Notify(c \u003c-chan os.Signal, sig ...os.Signal),\n\nwhere c is an unbuffered channel, which can be at risk of missing the signal.",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/sigchanyzer",
 			"Default": true
 		},
 		{

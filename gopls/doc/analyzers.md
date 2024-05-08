@@ -286,6 +286,14 @@ This functionality is similar to https://github.com/sqs/goreturns.
 
 **Enabled by default.**
 
+## **framepointer**
+
+framepointer: report assembly that clobbers the frame pointer before saving it
+
+[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/framepointer)
+
+**Enabled by default.**
+
 ## **httpresponse**
 
 httpresponse: check for mistakes using HTTP responses
@@ -600,6 +608,20 @@ For example:
 shift: check for shifts that equal or exceed the width of the integer
 
 [Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/shift)
+
+**Enabled by default.**
+
+## **sigchanyzer**
+
+sigchanyzer: check for unbuffered channel of os.Signal
+
+This checker reports call expression of the form
+
+	signal.Notify(c <-chan os.Signal, sig ...os.Signal),
+
+where c is an unbuffered channel, which can be at risk of missing the signal.
+
+[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/sigchanyzer)
 
 **Enabled by default.**
 
