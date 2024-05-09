@@ -73,6 +73,11 @@ func doMain(write bool) (bool, error) {
 		return false, err
 	}
 
+	// TODO(adonovan): consider using HTML, not Markdown, for the
+	// generated reference documents. It's not more difficult, the
+	// layout is easier to read, and we can use go/doc-comment
+	// rendering logic.
+
 	for _, f := range []struct {
 		name    string // relative to gopls
 		rewrite rewriter
@@ -639,8 +644,17 @@ func rewriteSettings(prevContent []byte, api *doc.API) ([]byte, error) {
 					capitalize(title))
 			}
 			for _, opt := range h.options {
+				// Emit HTML anchor as GitHub markdown doesn't support
+				// "# Heading {#anchor}" syntax.
+				//
+				// (Each option name is the camelCased name of a field of
+				// settings.UserOptions or one of its FooOptions subfields.)
+				fmt.Fprintf(&buf, "<a id='%s'></a>\n", opt.Name)
+
 				// heading
-				fmt.Fprintf(&buf, "%s **%v** *%v*\n\n",
+				// (The blob helps the reader see the start of each item,
+				// which is otherwise hard to discern in GitHub markdown.)
+				fmt.Fprintf(&buf, "%s ⬤ **%v** *%v*\n\n",
 					strings.Repeat("#", level+1),
 					opt.Name,
 					opt.Type)

@@ -39,7 +39,8 @@ still be able to independently override specific experimental features.
 
 ### Build
 
-#### **buildFlags** *[]string*
+<a id='buildFlags'></a>
+#### ⬤ **buildFlags** *[]string*
 
 buildFlags is the set of flags passed on to the build system when invoked.
 It is applied to queries like `go list`, which is used when discovering files.
@@ -47,13 +48,15 @@ The most common use is to set `-tags`.
 
 Default: `[]`.
 
-#### **env** *map[string]string*
+<a id='env'></a>
+#### ⬤ **env** *map[string]string*
 
 env adds environment variables to external commands run by `gopls`, most notably `go list`.
 
 Default: `{}`.
 
-#### **directoryFilters** *[]string*
+<a id='directoryFilters'></a>
+#### ⬤ **directoryFilters** *[]string*
 
 directoryFilters can be used to exclude unwanted directories from the
 workspace. By default, all directories are included. Filters are an
@@ -76,7 +79,8 @@ Include only project_a, but not node_modules inside it: `-`, `+project_a`, `-pro
 
 Default: `["-**/node_modules"]`.
 
-#### **templateExtensions** *[]string*
+<a id='templateExtensions'></a>
+#### ⬤ **templateExtensions** *[]string*
 
 templateExtensions gives the extensions of file names that are treateed
 as template files. (The extension
@@ -84,7 +88,8 @@ is the part of the file name after the final dot.)
 
 Default: `[]`.
 
-#### **memoryMode** *string*
+<a id='memoryMode'></a>
+#### ⬤ **memoryMode** *string*
 
 **This setting is experimental and may be deleted.**
 
@@ -92,7 +97,8 @@ obsolete, no effect
 
 Default: `""`.
 
-#### **expandWorkspaceToModule** *bool*
+<a id='expandWorkspaceToModule'></a>
+#### ⬤ **expandWorkspaceToModule** *bool*
 
 **This setting is experimental and may be deleted.**
 
@@ -107,7 +113,8 @@ gopls has to do to keep your workspace up to date.
 
 Default: `true`.
 
-#### **allowImplicitNetworkAccess** *bool*
+<a id='allowImplicitNetworkAccess'></a>
+#### ⬤ **allowImplicitNetworkAccess** *bool*
 
 **This setting is experimental and may be deleted.**
 
@@ -117,7 +124,8 @@ be removed.
 
 Default: `false`.
 
-#### **standaloneTags** *[]string*
+<a id='standaloneTags'></a>
+#### ⬤ **standaloneTags** *[]string*
 
 standaloneTags specifies a set of build constraints that identify
 individual Go source files that make up the entire main package of an
@@ -142,7 +150,8 @@ Default: `["ignore"]`.
 
 ### Formatting
 
-#### **local** *string*
+<a id='local'></a>
+#### ⬤ **local** *string*
 
 local is the equivalent of the `goimports -local` flag, which puts
 imports beginning with this string after third-party packages. It should
@@ -151,7 +160,8 @@ separately.
 
 Default: `""`.
 
-#### **gofumpt** *bool*
+<a id='gofumpt'></a>
+#### ⬤ **gofumpt** *bool*
 
 gofumpt indicates if we should run gofumpt formatting.
 
@@ -159,7 +169,8 @@ Default: `false`.
 
 ### UI
 
-#### **codelenses** *map[string]bool*
+<a id='codelenses'></a>
+#### ⬤ **codelenses** *map[string]bool*
 
 codelenses overrides the enabled/disabled state of code lenses. See the
 "Code Lenses" section of the
@@ -181,7 +192,8 @@ Example Usage:
 
 Default: `{"gc_details":false,"generate":true,"regenerate_cgo":true,"tidy":true,"upgrade_dependency":true,"vendor":true}`.
 
-#### **semanticTokens** *bool*
+<a id='semanticTokens'></a>
+#### ⬤ **semanticTokens** *bool*
 
 **This setting is experimental and may be deleted.**
 
@@ -191,7 +203,8 @@ tokens.
 
 Default: `true`.
 
-#### **noSemanticString** *bool*
+<a id='noSemanticString'></a>
+#### ⬤ **noSemanticString** *bool*
 
 **This setting is experimental and may be deleted.**
 
@@ -199,7 +212,8 @@ noSemanticString turns off the sending of the semantic token 'string'
 
 Default: `false`.
 
-#### **noSemanticNumber** *bool*
+<a id='noSemanticNumber'></a>
+#### ⬤ **noSemanticNumber** *bool*
 
 **This setting is experimental and may be deleted.**
 
@@ -209,14 +223,16 @@ Default: `false`.
 
 #### Completion
 
-##### **usePlaceholders** *bool*
+<a id='usePlaceholders'></a>
+##### ⬤ **usePlaceholders** *bool*
 
 placeholders enables placeholders for function parameters or struct
 fields in completion responses.
 
 Default: `false`.
 
-##### **completionBudget** *time.Duration*
+<a id='completionBudget'></a>
+##### ⬤ **completionBudget** *time.Duration*
 
 **This setting is for debugging purposes only.**
 
@@ -228,7 +244,8 @@ results. Zero means unlimited.
 
 Default: `"100ms"`.
 
-##### **matcher** *enum*
+<a id='matcher'></a>
+##### ⬤ **matcher** *enum*
 
 **This is an advanced setting and should not be configured by most `gopls` users.**
 
@@ -243,7 +260,8 @@ Must be one of:
 
 Default: `"Fuzzy"`.
 
-##### **experimentalPostfixCompletions** *bool*
+<a id='experimentalPostfixCompletions'></a>
+##### ⬤ **experimentalPostfixCompletions** *bool*
 
 **This setting is experimental and may be deleted.**
 
@@ -252,7 +270,8 @@ such as "someSlice.sort!".
 
 Default: `true`.
 
-##### **completeFunctionCalls** *bool*
+<a id='completeFunctionCalls'></a>
+##### ⬤ **completeFunctionCalls** *bool*
 
 completeFunctionCalls enables function call completion.
 
@@ -264,7 +283,8 @@ Default: `true`.
 
 #### Diagnostic
 
-##### **analyses** *map[string]bool*
+<a id='analyses'></a>
+##### ⬤ **analyses** *map[string]bool*
 
 analyses specify analyses that the user would like to enable or disable.
 A map of the names of analysis passes that should be enabled/disabled.
@@ -284,7 +304,8 @@ Example Usage:
 
 Default: `{}`.
 
-##### **staticcheck** *bool*
+<a id='staticcheck'></a>
+##### ⬤ **staticcheck** *bool*
 
 **This setting is experimental and may be deleted.**
 
@@ -294,7 +315,8 @@ These analyses are documented on
 
 Default: `false`.
 
-##### **annotations** *map[string]bool*
+<a id='annotations'></a>
+##### ⬤ **annotations** *map[string]bool*
 
 **This setting is experimental and may be deleted.**
 
@@ -310,7 +332,8 @@ Can contain any of:
 
 Default: `{"bounds":true,"escape":true,"inline":true,"nil":true}`.
 
-##### **vulncheck** *enum*
+<a id='vulncheck'></a>
+##### ⬤ **vulncheck** *enum*
 
 **This setting is experimental and may be deleted.**
 
@@ -324,7 +347,8 @@ directly and indirectly used by the analyzed main module.
 
 Default: `"Off"`.
 
-##### **diagnosticsDelay** *time.Duration*
+<a id='diagnosticsDelay'></a>
+##### ⬤ **diagnosticsDelay** *time.Duration*
 
 **This is an advanced setting and should not be configured by most `gopls` users.**
 
@@ -337,7 +361,8 @@ This option must be set to a valid duration string, for example `"250ms"`.
 
 Default: `"1s"`.
 
-##### **diagnosticsTrigger** *enum*
+<a id='diagnosticsTrigger'></a>
+##### ⬤ **diagnosticsTrigger** *enum*
 
 **This setting is experimental and may be deleted.**
 
@@ -351,7 +376,8 @@ or configuration change will still trigger diagnostics.
 
 Default: `"Edit"`.
 
-##### **analysisProgressReporting** *bool*
+<a id='analysisProgressReporting'></a>
+##### ⬤ **analysisProgressReporting** *bool*
 
 analysisProgressReporting controls whether gopls sends progress
 notifications when construction of its index of analysis facts is taking a
@@ -367,7 +393,8 @@ Default: `true`.
 
 #### Documentation
 
-##### **hoverKind** *enum*
+<a id='hoverKind'></a>
+##### ⬤ **hoverKind** *enum*
 
 hoverKind controls the information that appears in the hover text.
 SingleLine and Structured are intended for use only by authors of editor plugins.
@@ -385,7 +412,8 @@ This should only be used by clients that support this behavior.
 
 Default: `"FullDocumentation"`.
 
-##### **linkTarget** *string*
+<a id='linkTarget'></a>
+##### ⬤ **linkTarget** *string*
 
 linkTarget controls where documentation links go.
 It might be one of:
@@ -400,7 +428,8 @@ documentation links in hover.
 
 Default: `"pkg.go.dev"`.
 
-##### **linksInHover** *bool*
+<a id='linksInHover'></a>
+##### ⬤ **linksInHover** *bool*
 
 linksInHover toggles the presence of links to documentation in hover.
 
@@ -408,7 +437,8 @@ Default: `true`.
 
 #### Inlayhint
 
-##### **hints** *map[string]bool*
+<a id='hints'></a>
+##### ⬤ **hints** *map[string]bool*
 
 **This setting is experimental and may be deleted.**
 
@@ -420,7 +450,8 @@ Default: `{}`.
 
 #### Navigation
 
-##### **importShortcut** *enum*
+<a id='importShortcut'></a>
+##### ⬤ **importShortcut** *enum*
 
 importShortcut specifies whether import statements should link to
 documentation or go to definitions.
@@ -433,7 +464,8 @@ Must be one of:
 
 Default: `"Both"`.
 
-##### **symbolMatcher** *enum*
+<a id='symbolMatcher'></a>
+##### ⬤ **symbolMatcher** *enum*
 
 **This is an advanced setting and should not be configured by most `gopls` users.**
 
@@ -448,7 +480,8 @@ Must be one of:
 
 Default: `"FastFuzzy"`.
 
-##### **symbolStyle** *enum*
+<a id='symbolStyle'></a>
+##### ⬤ **symbolStyle** *enum*
 
 **This is an advanced setting and should not be configured by most `gopls` users.**
 
@@ -477,7 +510,8 @@ just "Foo.Field".
 
 Default: `"Dynamic"`.
 
-##### **symbolScope** *enum*
+<a id='symbolScope'></a>
+##### ⬤ **symbolScope** *enum*
 
 symbolScope controls which packages are searched for workspace/symbol
 requests. When the scope is "workspace", gopls searches only workspace
@@ -492,7 +526,8 @@ dependencies.
 
 Default: `"all"`.
 
-#### **verboseOutput** *bool*
+<a id='verboseOutput'></a>
+#### ⬤ **verboseOutput** *bool*
 
 **This setting is for debugging purposes only.**
 
