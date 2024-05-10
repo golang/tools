@@ -491,10 +491,21 @@ window.onload = () => {
 		// parameters 4+ with "invalid type", format,
 		// then post-process the string.
 		if sig.Params().Len() > 3 {
+
+			// Clone each TypeParam as NewSignatureType modifies them (#67294).
+			cloneTparams := func(seq *types.TypeParamList) []*types.TypeParam {
+				slice := make([]*types.TypeParam, seq.Len())
+				for i := range slice {
+					tparam := seq.At(i)
+					slice[i] = types.NewTypeParam(tparam.Obj(), tparam.Constraint())
+				}
+				return slice
+			}
+
 			sig = types.NewSignatureType(
 				sig.Recv(),
-				typesSeqToSlice[*types.TypeParam](sig.RecvTypeParams()),
-				typesSeqToSlice[*types.TypeParam](sig.TypeParams()),
+				cloneTparams(sig.RecvTypeParams()),
+				cloneTparams(sig.TypeParams()),
 				types.NewTuple(append(
 					typesSeqToSlice[*types.Var](sig.Params())[:3],
 					types.NewVar(0, nil, "", types.Typ[types.Invalid]))...),

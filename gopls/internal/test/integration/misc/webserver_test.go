@@ -29,6 +29,9 @@ package a
 
 const A = 1
 
+type G[T any] int
+func (G[T]) F(int, int, int, int, int, int, int, ...int) {}
+
 // EOF
 `
 	Run(t, files, func(t *testing.T, env *Env) {
@@ -37,6 +40,9 @@ const A = 1
 		uri1 := viewPkgDoc(t, env, "a/a.go")
 		doc1 := get(t, uri1)
 		checkMatch(t, true, doc1, "const A =.*1")
+
+		// Regression test for signature truncation (#67287, #67294).
+		checkMatch(t, true, doc1, regexp.QuoteMeta("func (G[T]) F(int, int, int, ...)"))
 
 		// Check that edits to the buffer (even unsaved) are
 		// reflected in the HTML document.
