@@ -28,6 +28,7 @@ package golang
 // - move this into a new package, golang/pkgdoc, and then
 //   split out the various helpers without fear of polluting
 //   the golang package namespace.
+// - show "Deprecated" chip when appropriate.
 
 import (
 	"bytes"
@@ -498,7 +499,7 @@ window.onload = () => {
 					typesSeqToSlice[*types.Var](sig.Params())[:3],
 					types.NewVar(0, nil, "", types.Typ[types.Invalid]))...),
 				sig.Results(),
-				sig.Variadic())
+				false) // any final ...T parameter is truncated
 		}
 		types.WriteSignature(&buf, sig, pkgRelative)
 		return strings.ReplaceAll(buf.String(), ", invalid type)", ", ...)")
