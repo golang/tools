@@ -164,6 +164,9 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 		for _, c := range a.Edit.DocumentChanges {
 			tde := c.TextDocumentEdit
 			if tde != nil && tde.TextDocument.URI == uri {
+				// TODO(adonovan): this logic will butcher an edit that spans files.
+				// It will also ignore create/delete/rename operations.
+				// Fix or document.
 				edits = append(edits, protocol.AsTextEdits(tde.Edits)...)
 			}
 		}

@@ -212,11 +212,11 @@ func (c *commandHandler) ApplyFix(ctx context.Context, args command.ApplyFixArgs
 		// Note: no progress here. Applying fixes should be quick.
 		forURI: args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		edits, err := golang.ApplyFix(ctx, args.Fix, deps.snapshot, deps.fh, args.Range)
+		changes, err := golang.ApplyFix(ctx, args.Fix, deps.snapshot, deps.fh, args.Range)
 		if err != nil {
 			return err
 		}
-		wsedit := protocol.NewWorkspaceEdit(edits...)
+		wsedit := protocol.NewWorkspaceEdit(changes...)
 		if args.ResolveEdits {
 			result = wsedit
 			return nil
@@ -457,8 +457,7 @@ func (c *commandHandler) RemoveDependency(ctx context.Context, args command.Remo
 		}
 		response, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
 			Edit: *protocol.NewWorkspaceEdit(
-				protocol.NewTextDocumentEdit(deps.fh, edits),
-			),
+				protocol.DocumentChangeEdit(deps.fh, edits)),
 		})
 		if err != nil {
 			return err
@@ -764,46 +763,46 @@ func (s *server) runGoModUpdateCommands(ctx context.Context, snapshot *cache.Sna
 	}
 	sumURI := protocol.URIFromPath(strings.TrimSuffix(modURI.Path(), ".mod") + ".sum")
 
-	modEdit, err := collectFileEdits(ctx, snapshot, modURI, newModBytes)
+	modChange, err := computeEditChange(ctx, snapshot, modURI, newModBytes)
 	if err != nil {
 		return err
 	}
-	sumEdit, err := collectFileEdits(ctx, snapshot, sumURI, newSumBytes)
+	sumChange, err := computeEditChange(ctx, snapshot, sumURI, newSumBytes)
 	if err != nil {
 		return err
 	}
 
-	var docedits []*protocol.TextDocumentEdit
-	if modEdit != nil {
-		docedits = append(docedits, modEdit)
+	var changes []protocol.DocumentChanges
+	if modChange.Valid() {
+		changes = append(changes, modChange)
 	}
-	if sumEdit != nil {
-		docedits = append(docedits, sumEdit)
+	if sumChange.Valid() {
+		changes = append(changes, sumChange)
 	}
-	return applyEdits(ctx, s.client, docedits)
+	return applyChanges(ctx, s.client, changes)
 }
 
-// collectFileEdits collects any file edits required to transform the
-// snapshot file specified by uri to the provided new content. It
-// returns nil if none was necessary.
+// computeEditChange computes the edit change required to transform the
+// snapshot file specified by uri to the provided new content.
+// Beware: returns a DocumentChange that is !Valid() if none were necessary.
 //
-// If the file is not open, collectFileEdits simply writes the new content to
+// If the file is not open, computeEditChange simply writes the new content to
 // disk.
 //
 // TODO(rfindley): fix this API asymmetry. It should be up to the caller to
 // write the file or apply the edits.
-func collectFileEdits(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, newContent []byte) (*protocol.TextDocumentEdit, error) {
+func computeEditChange(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, newContent []byte) (protocol.DocumentChanges, error) {
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
-		return nil, err
+		return protocol.DocumentChanges{}, err
 	}
 	oldContent, err := fh.Content()
 	if err != nil && !os.IsNotExist(err) {
-		return nil, err
+		return protocol.DocumentChanges{}, err
 	}
 
 	if bytes.Equal(oldContent, newContent) {
-		return nil, nil
+		return protocol.DocumentChanges{}, nil // note: result is !Valid()
 	}
 
 	// Sending a workspace edit to a closed file causes VS Code to open the
@@ -811,24 +810,24 @@ func collectFileEdits(ctx context.Context, snapshot *cache.Snapshot, uri protoco
 	// especially to go.sum, which should be mostly invisible to the user.
 	if !snapshot.IsOpen(uri) {
 		err := os.WriteFile(uri.Path(), newContent, 0666)
-		return nil, err
+		return protocol.DocumentChanges{}, err
 	}
 
 	m := protocol.NewMapper(fh.URI(), oldContent)
 	diff := diff.Bytes(oldContent, newContent)
 	textedits, err := protocol.EditsFromDiffEdits(m, diff)
 	if err != nil {
-		return nil, err
+		return protocol.DocumentChanges{}, err
 	}
-	return protocol.NewTextDocumentEdit(fh, textedits), nil
+	return protocol.DocumentChangeEdit(fh, textedits), nil
 }
 
-func applyEdits(ctx context.Context, cli protocol.Client, edits []*protocol.TextDocumentEdit) error {
-	if len(edits) == 0 {
+func applyChanges(ctx context.Context, cli protocol.Client, changes []protocol.DocumentChanges) error {
+	if len(changes) == 0 {
 		return nil
 	}
 	response, err := cli.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-		Edit: *protocol.NewWorkspaceEdit(edits...),
+		Edit: *protocol.NewWorkspaceEdit(changes...),
 	})
 	if err != nil {
 		return err
@@ -984,7 +983,7 @@ func (c *commandHandler) AddImport(ctx context.Context, args command.AddImportAr
 		}
 		r, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
 			Edit: *protocol.NewWorkspaceEdit(
-				protocol.NewTextDocumentEdit(deps.fh, edits)),
+				protocol.DocumentChangeEdit(deps.fh, edits)),
 		})
 		if err != nil {
 			return fmt.Errorf("could not apply import edits: %v", err)

@@ -828,8 +828,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	awaiter := integration.NewAwaiter(sandbox.Workdir)
 	ss := lsprpc.NewStreamServer(cache, false, nil)
 	server := servertest.NewPipeServer(ss, jsonrpc2.NewRawStream)
-	const skipApplyEdits = true // capture edits but don't apply them
-	editor, err := fake.NewEditor(sandbox, config).Connect(ctx, server, awaiter.Hooks(), skipApplyEdits)
+	editor, err := fake.NewEditor(sandbox, config).Connect(ctx, server, awaiter.Hooks())
 	if err != nil {
 		sandbox.Close() // ignore error
 		t.Fatal(err)
@@ -1706,7 +1705,7 @@ func rename(env *integration.Env, loc protocol.Location, newName string) (map[st
 	// want to modify the file system in a scenario with multiple
 	// @rename markers.
 
-	editMap, err := env.Editor.Server.Rename(env.Ctx, &protocol.RenameParams{
+	wsedit, err := env.Editor.Server.Rename(env.Ctx, &protocol.RenameParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
 		Position:     loc.Range.Start,
 		NewName:      newName,
@@ -1714,52 +1713,106 @@ func rename(env *integration.Env, loc protocol.Location, newName string) (map[st
 	if err != nil {
 		return nil, err
 	}
-
-	fileChanges := make(map[string][]byte)
-	if err := applyDocumentChanges(env, editMap.DocumentChanges, fileChanges); err != nil {
-		return nil, fmt.Errorf("applying document changes: %v", err)
-	}
-	return fileChanges, nil
+	return changedFiles(env, wsedit.DocumentChanges)
 }
 
-// applyDocumentChanges applies the given document changes to the editor buffer
-// content, recording the resulting contents in the fileChanges map. It is an
-// error for a change to an edit a file that is already present in the
-// fileChanges map.
-func applyDocumentChanges(env *integration.Env, changes []protocol.DocumentChanges, fileChanges map[string][]byte) error {
-	getMapper := func(path string) (*protocol.Mapper, error) {
-		if _, ok := fileChanges[path]; ok {
-			return nil, fmt.Errorf("internal error: %s is already edited", path)
+// changedFiles applies the given sequence of document changes to the
+// editor buffer content, recording the final contents in the returned map.
+// The actual editor state is not changed.
+// Deleted files are indicated by a content of []byte(nil).
+//
+// See also:
+//   - Editor.applyWorkspaceEdit ../integration/fake/editor.go for the
+//     implementation of this operation used in normal testing.
+//   - cmdClient.applyWorkspaceEdit in ../../../cmd/cmd.go for the
+//     CLI variant.
+func changedFiles(env *integration.Env, changes []protocol.DocumentChanges) (map[string][]byte, error) {
+	uriToPath := env.Sandbox.Workdir.URIToPath
+
+	// latest maps each updated file name to a mapper holding its
+	// current contents, or nil if the file has been deleted.
+	latest := make(map[protocol.DocumentURI]*protocol.Mapper)
+
+	// read reads a file. It returns an error if the file never
+	// existed or was deleted.
+	read := func(uri protocol.DocumentURI) (*protocol.Mapper, error) {
+		if m, ok := latest[uri]; ok {
+			if m == nil {
+				return nil, fmt.Errorf("read: file %s was deleted", uri)
+			}
+			return m, nil
 		}
-		return env.Editor.Mapper(path)
+		return env.Editor.Mapper(uriToPath(uri))
 	}
 
+	// write (over)writes a file. A nil content indicates a deletion.
+	write := func(uri protocol.DocumentURI, content []byte) {
+		var m *protocol.Mapper
+		if content != nil {
+			m = protocol.NewMapper(uri, content)
+		}
+		latest[uri] = m
+	}
+
+	// Process the sequence of changes.
 	for _, change := range changes {
-		if change.RenameFile != nil {
-			// rename
-			oldFile := env.Sandbox.Workdir.URIToPath(change.RenameFile.OldURI)
-			mapper, err := getMapper(oldFile)
+		switch {
+		case change.TextDocumentEdit != nil:
+			uri := change.TextDocumentEdit.TextDocument.URI
+			m, err := read(uri)
 			if err != nil {
-				return err
+				return nil, err // missing
 			}
-			newFile := env.Sandbox.Workdir.URIToPath(change.RenameFile.NewURI)
-			fileChanges[newFile] = mapper.Content
-		} else {
-			// edit
-			filename := env.Sandbox.Workdir.URIToPath(change.TextDocumentEdit.TextDocument.URI)
-			mapper, err := getMapper(filename)
+			patched, _, err := protocol.ApplyEdits(m, protocol.AsTextEdits(change.TextDocumentEdit.Edits))
 			if err != nil {
-				return err
+				return nil, err // bad edit
 			}
-			patched, _, err := protocol.ApplyEdits(mapper, protocol.AsTextEdits(change.TextDocumentEdit.Edits))
+			write(uri, patched)
+
+		case change.RenameFile != nil:
+			old := change.RenameFile.OldURI
+			m, err := read(old)
 			if err != nil {
-				return err
+				return nil, err // missing
 			}
-			fileChanges[filename] = patched
+			write(old, nil)
+
+			new := change.RenameFile.NewURI
+			if _, err := read(old); err == nil {
+				return nil, fmt.Errorf("RenameFile: destination %s exists", new)
+			}
+			write(new, m.Content)
+
+		case change.CreateFile != nil:
+			uri := change.CreateFile.URI
+			if _, err := read(uri); err == nil {
+				return nil, fmt.Errorf("CreateFile %s: file exists", uri)
+			}
+			write(uri, []byte("")) // initially empty
+
+		case change.DeleteFile != nil:
+			uri := change.DeleteFile.URI
+			if _, err := read(uri); err != nil {
+				return nil, fmt.Errorf("DeleteFile %s: file does not exist", uri)
+			}
+			write(uri, nil)
+
+		default:
+			return nil, fmt.Errorf("invalid DocumentChange")
 		}
 	}
 
-	return nil
+	// Convert into result form.
+	result := make(map[string][]byte)
+	for uri, mapper := range latest {
+		var content []byte
+		if mapper != nil {
+			content = mapper.Content
+		}
+		result[uriToPath(uri)] = content
+	}
+
+	return result, nil
 }
 
 func codeActionMarker(mark marker, start, end protocol.Location, actionKind string, g *Golden, titles ...string) {
@@ -1911,11 +1964,7 @@ func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Ran
 	if err != nil {
 		return nil, err
 	}
-	fileChanges := make(map[string][]byte)
-	if err := applyDocumentChanges(env, changes, fileChanges); err != nil {
-		return nil, fmt.Errorf("applying document changes: %v", err)
-	}
-	return fileChanges, nil
+	return changedFiles(env, changes)
 }
 
 // codeActionChanges executes a textDocument/codeAction request for the
@@ -1993,7 +2042,7 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 	}
 
 	if action.Edit != nil {
-		if action.Edit.Changes != nil {
+		if len(action.Edit.Changes) > 0 {
 			env.T.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Edit.Changes", action.Kind, action.Title)
 		}
 		if action.Edit.DocumentChanges != nil {
@@ -2015,9 +2064,16 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 		// which dispatches it to the ApplyFix handler.
 		// ApplyFix dispatches to the "stub_methods" suggestedfix hook (the meat).
 		// The server then makes an ApplyEdit RPC to the client,
-		// whose Awaiter hook gathers the edits instead of applying them.
+		// whose WorkspaceEditFunc hook temporarily gathers the edits
+		// instead of applying them.
 
-		_ = env.Awaiter.TakeDocumentChanges() // reset (assuming Env is confined to this thread)
+		var changes []protocol.DocumentChanges
+		cli := env.Editor.Client()
+		restore := cli.SetApplyEditHandler(func(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
+			changes = append(changes, wsedit.DocumentChanges...)
+			return nil
+		})
+		defer restore()
 
 		if _, err := env.Editor.Server.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
 			Command:   action.Command.Command,
@@ -2025,7 +2081,7 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 		}); err != nil {
 			return nil, err
 		}
-		return env.Awaiter.TakeDocumentChanges(), nil
+		return changes, nil // populated as a side effect of ExecuteCommand
 	}
 
 	return nil, nil

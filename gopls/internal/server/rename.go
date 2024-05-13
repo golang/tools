@@ -38,30 +38,27 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 		return nil, err
 	}
 
-	var docedits []*protocol.TextDocumentEdit
+	var changes []protocol.DocumentChanges
 	for uri, e := range edits {
 		fh, err := snapshot.ReadFile(ctx, uri)
 		if err != nil {
 			return nil, err
 		}
-		docedits = append(docedits, protocol.NewTextDocumentEdit(fh, e))
+		change := protocol.DocumentChangeEdit(fh, e)
+		changes = append(changes, change)
 	}
-	wsedit := protocol.NewWorkspaceEdit(docedits...)
 
 	if isPkgRenaming {
 		// Update the last component of the file's enclosing directory.
-		oldBase := filepath.Dir(fh.URI().Path())
-		newURI := filepath.Join(filepath.Dir(oldBase), params.NewName)
-		wsedit.DocumentChanges = append(wsedit.DocumentChanges, protocol.DocumentChanges{
-			RenameFile: &protocol.RenameFile{
-				Kind:   "rename",
-				OldURI: protocol.URIFromPath(oldBase),
-				NewURI: protocol.URIFromPath(newURI),
-			},
-		})
+		oldDir := filepath.Dir(fh.URI().Path())
+		newDir := filepath.Join(filepath.Dir(oldDir), params.NewName)
+		change := protocol.DocumentChangeRename(
+			protocol.URIFromPath(oldDir),
+			protocol.URIFromPath(newDir))
+		changes = append(changes, change)
 	}
 
-	return wsedit, nil
+	return protocol.NewWorkspaceEdit(changes...), nil
 }
 
 // PrepareRename implements the textDocument/prepareRename handler. It may

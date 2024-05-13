@@ -108,23 +108,53 @@ type fileHandle interface {
 	Version() int32
 }
 
-// NewTextDocumentEdit constructs a TextDocumentEdit from a list of TextEdits and a file.Handle.
-func NewTextDocumentEdit(fh fileHandle, textedits []TextEdit) *TextDocumentEdit {
-	return &TextDocumentEdit{
-		TextDocument: OptionalVersionedTextDocumentIdentifier{
-			Version:                fh.Version(),
-			TextDocumentIdentifier: TextDocumentIdentifier{URI: fh.URI()},
+// NewWorkspaceEdit constructs a WorkspaceEdit from a list of document changes.
+//
+// Any ChangeAnnotations must be added after.
+func NewWorkspaceEdit(changes ...DocumentChanges) *WorkspaceEdit {
+	return &WorkspaceEdit{DocumentChanges: changes}
+}
+
+// DocumentChangeEdit constructs a DocumentChange containing a
+// TextDocumentEdit from a file.Handle and a list of TextEdits.
+func DocumentChangeEdit(fh fileHandle, textedits []TextEdit) DocumentChanges {
+	return DocumentChanges{
+		TextDocumentEdit: &TextDocumentEdit{
+			TextDocument: OptionalVersionedTextDocumentIdentifier{
+				Version:                fh.Version(),
+				TextDocumentIdentifier: TextDocumentIdentifier{URI: fh.URI()},
+			},
+			Edits: AsAnnotatedTextEdits(textedits),
 		},
-		Edits: AsAnnotatedTextEdits(textedits),
 	}
 }
 
-// NewWorkspaceEdit constructs a WorkspaceEdit from a list of document edits.
-// (Any RenameFile DocumentChanges must be added after.)
-func NewWorkspaceEdit(docedits ...*TextDocumentEdit) *WorkspaceEdit {
-	changes := []DocumentChanges{} // non-nil
-	for _, edit := range docedits {
-		changes = append(changes, DocumentChanges{TextDocumentEdit: edit})
+// DocumentChangeRename constructs a DocumentChange that renames a file.
+func DocumentChangeRename(src, dst DocumentURI) DocumentChanges {
+	return DocumentChanges{
+		RenameFile: &RenameFile{
+			Kind:   "rename",
+			OldURI: src,
+			NewURI: dst,
+		},
 	}
-	return &WorkspaceEdit{DocumentChanges: changes}
+}
+
+// Valid reports whether the DocumentChange sum-type value is valid,
+// that is, exactly one of create, delete, edit, or rename.
+func (ch DocumentChanges) Valid() bool {
+	n := 0
+	if ch.TextDocumentEdit != nil {
+		n++
+	}
+	if ch.CreateFile != nil {
+		n++
+	}
+	if ch.RenameFile != nil {
+		n++
+	}
+	if ch.DeleteFile != nil {
+		n++
+	}
+	return n == 1
 }

@@ -217,18 +217,19 @@ func codeActionsForDiagnostic(ctx context.Context, snapshot *cache.Snapshot, sd 
 		if !want[fix.ActionKind] {
 			continue
 		}
-		var docedits []*protocol.TextDocumentEdit
+		var changes []protocol.DocumentChanges
 		for uri, edits := range fix.Edits {
 			fh, err := snapshot.ReadFile(ctx, uri)
 			if err != nil {
 				return nil, err
 			}
-			docedits = append(docedits, protocol.NewTextDocumentEdit(fh, edits))
+			change := protocol.DocumentChangeEdit(fh, edits)
+			changes = append(changes, change)
 		}
 		actions = append(actions, protocol.CodeAction{
 			Title:       fix.Title,
 			Kind:        fix.ActionKind,
-			Edit:        protocol.NewWorkspaceEdit(docedits...),
+			Edit:        protocol.NewWorkspaceEdit(changes...),
 			Command:     fix.Command,
 			Diagnostics: []protocol.Diagnostic{*pd},
 		})

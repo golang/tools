@@ -74,7 +74,6 @@ func (a *Awaiter) Hooks() fake.ClientHooks {
 		OnShowMessageRequest:     a.onShowMessageRequest,
 		OnRegisterCapability:     a.onRegisterCapability,
 		OnUnregisterCapability:   a.onUnregisterCapability,
-		OnApplyEdit:              a.onApplyEdit,
 	}
 }
 
@@ -90,7 +89,6 @@ type State struct {
 	registrations          []*protocol.RegistrationParams
 	registeredCapabilities map[string]protocol.Registration
 	unregistrations        []*protocol.UnregistrationParams
-	documentChanges        []protocol.DocumentChanges // collected from ApplyEdit downcalls
 
 	// outstandingWork is a map of token->work summary. All tokens are assumed to
 	// be string, though the spec allows for numeric tokens as well.  When work
@@ -171,15 +169,6 @@ func (s State) String() string {
 type condition struct {
 	expectations []Expectation
 	verdict      chan Verdict
-}
-
-func (a *Awaiter) onApplyEdit(_ context.Context, params *protocol.ApplyWorkspaceEditParams) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	a.state.documentChanges = append(a.state.documentChanges, params.Edit.DocumentChanges...)
-	a.checkConditionsLocked()
-	return nil
 }
 
 func (a *Awaiter) onDiagnostics(_ context.Context, d *protocol.PublishDiagnosticsParams) error {
@@ -298,17 +287,6 @@ func (a *Awaiter) checkConditionsLocked() {
 			condition.verdict <- v
 		}
 	}
-}
-
-// TakeDocumentChanges returns any accumulated document changes (from
-// server ApplyEdit RPC downcalls) and resets the list.
-func (a *Awaiter) TakeDocumentChanges() []protocol.DocumentChanges {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	res := a.state.documentChanges
-	a.state.documentChanges = nil
-	return res
 }
 
 // checkExpectations reports whether s meets all expectations.

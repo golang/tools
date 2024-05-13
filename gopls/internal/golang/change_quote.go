@@ -73,7 +73,6 @@ func convertStringLiteral(pgf *parsego.File, fh file.Handle, startPos, endPos to
 	return protocol.CodeAction{
 		Title: title,
 		Kind:  protocol.RefactorRewrite,
-		Edit: protocol.NewWorkspaceEdit(
-			protocol.NewTextDocumentEdit(fh, textedits)),
+		Edit:  protocol.NewWorkspaceEdit(protocol.DocumentChangeEdit(fh, textedits)),
 	}, true
 }

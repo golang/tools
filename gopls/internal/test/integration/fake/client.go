@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"sync/atomic"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake/glob"
@@ -29,16 +30,33 @@ type ClientHooks struct {
 	OnShowMessageRequest     func(context.Context, *protocol.ShowMessageRequestParams) error
 	OnRegisterCapability     func(context.Context, *protocol.RegistrationParams) error
 	OnUnregisterCapability   func(context.Context, *protocol.UnregistrationParams) error
-	OnApplyEdit              func(context.Context, *protocol.ApplyWorkspaceEditParams) error
 }
 
 // Client is an implementation of the [protocol.Client] interface
 // based on the test's fake [Editor]. It mostly delegates
 // functionality to hooks that can be configured by tests.
 type Client struct {
-	editor         *Editor
-	hooks          ClientHooks
-	skipApplyEdits bool // don't apply edits from ApplyEdit downcalls to Editor
+	editor      *Editor
+	hooks       ClientHooks
+	onApplyEdit atomic.Pointer[ApplyEditHandler] // hook for marker tests to intercept edits
+}
+
+type ApplyEditHandler = func(context.Context, *protocol.WorkspaceEdit) error
+
+// SetApplyEditHandler sets the (non-nil) handler for ApplyEdit
+// downcalls, and returns a function to restore the previous one.
+// Use it around client-to-server RPCs to capture the edits.
+// The default handler is c.Editor.onApplyEdit
+func (c *Client) SetApplyEditHandler(h ApplyEditHandler) func() {
+	if h == nil {
+		panic("h is nil")
+	}
+	prev := c.onApplyEdit.Swap(&h)
+	return func() {
+		if c.onApplyEdit.Swap(prev) != &h {
+			panic("improper nesting of SetApplyEditHandler, restore")
+		}
+	}
 }
 
 func (c *Client) CodeLensRefresh(context.Context) error { return nil }
@@ -189,20 +207,15 @@ func (c *Client) ShowDocument(ctx context.Context, params *protocol.ShowDocument
 }
 
 func (c *Client) ApplyEdit(ctx context.Context, params *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResult, error) {
-	if len(params.Edit.Changes) != 0 {
+	if len(params.Edit.Changes) > 0 {
 		return &protocol.ApplyWorkspaceEditResult{FailureReason: "Edit.Changes is unsupported"}, nil
 	}
-	if c.hooks.OnApplyEdit != nil {
-		if err := c.hooks.OnApplyEdit(ctx, params); err != nil {
-			return nil, err
-		}
+	onApplyEdit := c.editor.applyWorkspaceEdit
+	if ptr := c.onApplyEdit.Load(); ptr != nil {
+		onApplyEdit = *ptr
 	}
-	if !c.skipApplyEdits {
-		for _, change := range params.Edit.DocumentChanges {
-			if err := c.editor.applyDocumentChange(ctx, change); err != nil {
-				return nil, err
-			}
-		}
+	if err := onApplyEdit(ctx, &params.Edit); err != nil {
+		return nil, err
 	}
 	return &protocol.ApplyWorkspaceEditResult{Applied: true}, nil
 }

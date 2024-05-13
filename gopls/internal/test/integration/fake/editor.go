@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/test/integration/fake/glob"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -150,14 +151,14 @@ func NewEditor(sandbox *Sandbox, config EditorConfig) *Editor {
 // It returns the editor, so that it may be called as follows:
 //
 //	editor, err := NewEditor(s).Connect(ctx, conn, hooks)
-func (e *Editor) Connect(ctx context.Context, connector servertest.Connector, hooks ClientHooks, skipApplyEdits bool) (*Editor, error) {
+func (e *Editor) Connect(ctx context.Context, connector servertest.Connector, hooks ClientHooks) (*Editor, error) {
 	bgCtx, cancelConn := context.WithCancel(xcontext.Detach(ctx))
 	conn := connector.Connect(bgCtx)
 	e.cancelConn = cancelConn
 
 	e.serverConn = conn
 	e.Server = protocol.ServerDispatcher(conn)
-	e.client = &Client{editor: e, hooks: hooks, skipApplyEdits: skipApplyEdits}
+	e.client = &Client{editor: e, hooks: hooks}
 	conn.Go(bgCtx,
 		protocol.Handlers(
 			protocol.ClientHandler(e.client,
@@ -602,6 +603,7 @@ func languageID(p string, fileAssociations map[string]string) protocol.LanguageK
 }
 
 // CloseBuffer removes the current buffer (regardless of whether it is saved).
+// CloseBuffer returns an error if the buffer is not open.
 func (e *Editor) CloseBuffer(ctx context.Context, path string) error {
 	e.mu.Lock()
 	_, ok := e.buffers[path]
@@ -1284,16 +1286,11 @@ func (e *Editor) Rename(ctx context.Context, loc protocol.Location, newName stri
 		Position:     loc.Range.Start,
 		NewName:      newName,
 	}
-	wsEdits, err := e.Server.Rename(ctx, params)
+	wsedit, err := e.Server.Rename(ctx, params)
 	if err != nil {
 		return err
 	}
-	for _, change := range wsEdits.DocumentChanges {
-		if err := e.applyDocumentChange(ctx, change); err != nil {
-			return err
-		}
-	}
-	return nil
+	return e.applyWorkspaceEdit(ctx, wsedit)
 }
 
 // Implementations returns implementations for the object at loc, as
@@ -1400,17 +1397,47 @@ func (e *Editor) renameBuffers(oldPath, newPath string) (closed []protocol.TextD
 	return closed, opened, nil
 }
 
-func (e *Editor) applyDocumentChange(ctx context.Context, change protocol.DocumentChanges) error {
-	if change.RenameFile != nil {
-		oldPath := e.sandbox.Workdir.URIToPath(change.RenameFile.OldURI)
-		newPath := e.sandbox.Workdir.URIToPath(change.RenameFile.NewURI)
+// applyWorkspaceEdit applies the sequence of document changes in
+// wsedit to the Editor.
+//
+// See also:
+//   - changedFiles in ../../marker/marker_test.go for the
+//     handler used by the marker test to intercept edits.
+//   - cmdClient.applyWorkspaceEdit in ../../../cmd/cmd.go for the
+//     CLI variant.
+func (e *Editor) applyWorkspaceEdit(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
+	uriToPath := e.sandbox.Workdir.URIToPath
 
-		return e.RenameFile(ctx, oldPath, newPath)
+	for _, change := range wsedit.DocumentChanges {
+		switch {
+		case change.TextDocumentEdit != nil:
+			if err := e.applyTextDocumentEdit(ctx, *change.TextDocumentEdit); err != nil {
+				return err
+			}
+
+		case change.RenameFile != nil:
+			old := uriToPath(change.RenameFile.OldURI)
+			new := uriToPath(change.RenameFile.NewURI)
+			return e.RenameFile(ctx, old, new)
+
+		case change.CreateFile != nil:
+			path := uriToPath(change.CreateFile.URI)
+			if err := e.CreateBuffer(ctx, path, ""); err != nil {
+				return err // e.g. already exists
+			}
+
+		case change.DeleteFile != nil:
+			path := uriToPath(change.CreateFile.URI)
+			_ = e.CloseBuffer(ctx, path) // returns error if not open
+			if err := e.sandbox.Workdir.RemoveFile(ctx, path); err != nil {
+				return err // e.g. doesn't exist
+			}
+
+		default:
+			return bug.Errorf("invalid DocumentChange")
+		}
 	}
-	if change.TextDocumentEdit != nil {
-		return e.applyTextDocumentEdit(ctx, *change.TextDocumentEdit)
-	}
-	panic("Internal error: one of RenameFile or TextDocumentEdit must be set")
+	return nil
 }
 
 func (e *Editor) applyTextDocumentEdit(ctx context.Context, change protocol.TextDocumentEdit) error {

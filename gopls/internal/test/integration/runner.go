@@ -216,8 +216,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 			ts := servertest.NewPipeServer(ss, framer)
 
 			awaiter := NewAwaiter(sandbox.Workdir)
-			const skipApplyEdits = false
-			editor, err := fake.NewEditor(sandbox, config.editor).Connect(ctx, ts, awaiter.Hooks(), skipApplyEdits)
+			editor, err := fake.NewEditor(sandbox, config.editor).Connect(ctx, ts, awaiter.Hooks())
 			if err != nil {
 				t.Fatal(err)
 			}

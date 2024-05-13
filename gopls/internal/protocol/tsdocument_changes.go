@@ -9,16 +9,20 @@ import (
 	"fmt"
 )
 
-// DocumentChanges is a union of a file edit and directory rename operations
-// for package renaming feature. At most one field of this struct is non-nil.
+// DocumentChanges is a union of various file edit operations.
+// At most one field of this struct is non-nil.
+// (TODO(adonovan): rename to DocumentChange.)
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#resourceChanges
 type DocumentChanges struct {
 	TextDocumentEdit *TextDocumentEdit
+	CreateFile       *CreateFile
 	RenameFile       *RenameFile
+	DeleteFile       *DeleteFile
 }
 
 func (d *DocumentChanges) UnmarshalJSON(data []byte) error {
-	var m map[string]interface{}
-
+	var m map[string]any
 	if err := json.Unmarshal(data, &m); err != nil {
 		return err
 	}
@@ -28,15 +32,31 @@ func (d *DocumentChanges) UnmarshalJSON(data []byte) error {
 		return json.Unmarshal(data, d.TextDocumentEdit)
 	}
 
-	d.RenameFile = new(RenameFile)
-	return json.Unmarshal(data, d.RenameFile)
+	// The {Create,Rename,Delete}File types all share a 'kind' field.
+	kind := m["kind"]
+	switch kind {
+	case "create":
+		d.CreateFile = new(CreateFile)
+		return json.Unmarshal(data, d.CreateFile)
+	case "rename":
+		d.RenameFile = new(RenameFile)
+		return json.Unmarshal(data, d.RenameFile)
+	case "delete":
+		d.DeleteFile = new(DeleteFile)
+		return json.Unmarshal(data, d.DeleteFile)
+	}
+	return fmt.Errorf("DocumentChanges: unexpected kind: %q", kind)
 }
 
 func (d *DocumentChanges) MarshalJSON() ([]byte, error) {
 	if d.TextDocumentEdit != nil {
 		return json.Marshal(d.TextDocumentEdit)
+	} else if d.CreateFile != nil {
+		return json.Marshal(d.CreateFile)
 	} else if d.RenameFile != nil {
 		return json.Marshal(d.RenameFile)
+	} else if d.DeleteFile != nil {
+		return json.Marshal(d.DeleteFile)
 	}
-	return nil, fmt.Errorf("Empty DocumentChanges union value")
+	return nil, fmt.Errorf("empty DocumentChanges union value")
 }

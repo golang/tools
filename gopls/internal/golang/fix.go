@@ -69,7 +69,7 @@ const (
 )
 
 // ApplyFix applies the specified kind of suggested fix to the given
-// file and range, returning the resulting edits.
+// file and range, returning the resulting changes.
 //
 // A fix kind is either the Category of an analysis.Diagnostic that
 // had a SuggestedFix with no edits; or the name of a fix agreed upon
@@ -83,7 +83,7 @@ const (
 // impossible to distinguish. It would more precise if there was a
 // SuggestedFix.Category field, or some other way to squirrel metadata
 // in the fix.
-func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]*protocol.TextDocumentEdit, error) {
+func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.DocumentChanges, error) {
 	// This can't be expressed as an entry in the fixer table below
 	// because it operates in the protocol (not go/{token,ast}) domain.
 	// (Sigh; perhaps it was a mistake to factor out the
@@ -130,11 +130,11 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 	if suggestion == nil {
 		return nil, nil
 	}
-	return suggestedFixToEdits(ctx, snapshot, fixFset, suggestion)
+	return suggestedFixToDocumentChanges(ctx, snapshot, fixFset, suggestion)
 }
 
-// suggestedFixToEdits converts the suggestion's edits from analysis form into protocol form.
-func suggestedFixToEdits(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, suggestion *analysis.SuggestedFix) ([]*protocol.TextDocumentEdit, error) {
+// suggestedFixToDocumentChanges converts the suggestion's edits from analysis form into protocol form.
+func suggestedFixToDocumentChanges(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, suggestion *analysis.SuggestedFix) ([]protocol.DocumentChanges, error) {
 	type fileInfo struct {
 		fh     file.Handle
 		mapper *protocol.Mapper
@@ -175,11 +175,12 @@ func suggestedFixToEdits(ctx context.Context, snapshot *cache.Snapshot, fset *to
 			NewText: string(edit.NewText),
 		})
 	}
-	var docedits []*protocol.TextDocumentEdit
+	var changes []protocol.DocumentChanges
 	for _, info := range files {
-		docedits = append(docedits, protocol.NewTextDocumentEdit(info.fh, info.edits))
+		change := protocol.DocumentChangeEdit(info.fh, info.edits)
+		changes = append(changes, change)
 	}
-	return docedits, nil
+	return changes, nil
 }
 
 // addEmbedImport adds a missing embed "embed" import with blank name.

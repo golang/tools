@@ -69,10 +69,10 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 			continue
 		}
 		for _, c := range a.Edit.DocumentChanges {
-			if c.TextDocumentEdit != nil {
-				if c.TextDocumentEdit.TextDocument.URI == uri {
-					edits = append(edits, protocol.AsTextEdits(c.TextDocumentEdit.Edits)...)
-				}
+			// This code action should affect only the specified file;
+			// it is safe to ignore others.
+			if c.TextDocumentEdit != nil && c.TextDocumentEdit.TextDocument.URI == uri {
+				edits = append(edits, protocol.AsTextEdits(c.TextDocumentEdit.Edits)...)
 			}
 		}
 	}

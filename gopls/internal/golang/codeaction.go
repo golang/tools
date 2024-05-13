@@ -64,8 +64,7 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 						Title: importFixTitle(importFix.fix),
 						Kind:  protocol.QuickFix,
 						Edit: protocol.NewWorkspaceEdit(
-							protocol.NewTextDocumentEdit(fh, importFix.edits),
-						),
+							protocol.DocumentChangeEdit(fh, importFix.edits)),
 						Diagnostics: fixed,
 					})
 				}
@@ -78,7 +77,7 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 					Title: "Organize Imports",
 					Kind:  protocol.SourceOrganizeImports,
 					Edit: protocol.NewWorkspaceEdit(
-						protocol.NewTextDocumentEdit(fh, importEdits)),
+						protocol.DocumentChangeEdit(fh, importEdits)),
 				})
 			}
 		}
@@ -369,14 +368,14 @@ func getRewriteCodeActions(ctx context.Context, pkg *cache.Package, snapshot *ca
 	}
 
 	for _, diag := range fillswitch.Diagnose(pgf.File, start, end, pkg.Types(), pkg.TypesInfo()) {
-		edits, err := suggestedFixToEdits(ctx, snapshot, pkg.FileSet(), &diag.SuggestedFixes[0])
+		changes, err := suggestedFixToDocumentChanges(ctx, snapshot, pkg.FileSet(), &diag.SuggestedFixes[0])
 		if err != nil {
 			return nil, err
 		}
 		actions = append(actions, protocol.CodeAction{
 			Title: diag.Message,
 			Kind:  protocol.RefactorRewrite,
-			Edit:  protocol.NewWorkspaceEdit(edits...),
+			Edit:  protocol.NewWorkspaceEdit(changes...),
 		})
 	}
 	for i := range commands {

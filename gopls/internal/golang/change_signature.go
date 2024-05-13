@@ -40,7 +40,7 @@ import (
 //   - Improve the extra newlines in output.
 //   - Stream type checking via ForEachPackage.
 //   - Avoid unnecessary additional type checking.
-func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Range, snapshot *cache.Snapshot) ([]*protocol.TextDocumentEdit, error) {
+func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Range, snapshot *cache.Snapshot) ([]protocol.DocumentChanges, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err
@@ -157,8 +157,8 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		newContent[pgf.URI] = src
 	}
 
-	// Translate the resulting state into document edits.
-	var docedits []*protocol.TextDocumentEdit
+	// Translate the resulting state into document changes.
+	var changes []protocol.DocumentChanges
 	for uri, after := range newContent {
 		fh, err := snapshot.ReadFile(ctx, uri)
 		if err != nil {
@@ -174,9 +174,10 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		if err != nil {
 			return nil, fmt.Errorf("computing edits for %s: %v", uri, err)
 		}
-		docedits = append(docedits, protocol.NewTextDocumentEdit(fh, textedits))
+		change := protocol.DocumentChangeEdit(fh, textedits)
+		changes = append(changes, change)
 	}
-	return docedits, nil
+	return changes, nil
 }
 
 // rewriteSignature rewrites the signature of the declIdx'th declaration in src

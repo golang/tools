@@ -227,13 +227,12 @@ func TestDebugInfoLifecycle(t *testing.T) {
 	}
 	tsForwarder := servertest.NewPipeServer(forwarder, nil)
 
-	const skipApplyEdits = false
-	ed1, err := fake.NewEditor(sb, fake.EditorConfig{}).Connect(clientCtx, tsForwarder, fake.ClientHooks{}, skipApplyEdits)
+	ed1, err := fake.NewEditor(sb, fake.EditorConfig{}).Connect(clientCtx, tsForwarder, fake.ClientHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ed1.Close(clientCtx)
-	ed2, err := fake.NewEditor(sb, fake.EditorConfig{}).Connect(baseCtx, tsBackend, fake.ClientHooks{}, skipApplyEdits)
+	ed2, err := fake.NewEditor(sb, fake.EditorConfig{}).Connect(baseCtx, tsBackend, fake.ClientHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}

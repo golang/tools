@@ -118,8 +118,7 @@ func connectEditor(dir string, config fake.EditorConfig, ts servertest.Connector
 	}
 
 	a := integration.NewAwaiter(s.Workdir)
-	const skipApplyEdits = false
-	editor, err := fake.NewEditor(s, config).Connect(context.Background(), ts, a.Hooks(), skipApplyEdits)
+	editor, err := fake.NewEditor(s, config).Connect(context.Background(), ts, a.Hooks())
 	if err != nil {
 		return nil, nil, nil, err
 	}
