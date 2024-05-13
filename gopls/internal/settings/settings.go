@@ -60,6 +60,7 @@ type Options struct {
 type ClientOptions struct {
 	ClientInfo                                 *protocol.ClientInfo
 	InsertTextFormat                           protocol.InsertTextFormat
+	InsertReplaceSupported                     bool
 	ConfigurationSupported                     bool
 	DynamicConfigurationSupported              bool
 	DynamicRegistrationSemanticTokensSupported bool
@@ -627,13 +628,14 @@ func SetOptions(options *Options, opts any) OptionResults {
 
 func (o *Options) ForClientCapabilities(clientName *protocol.ClientInfo, caps protocol.ClientCapabilities) {
 	o.ClientInfo = clientName
-	// Check if the client supports snippets in completion items.
 	if caps.Workspace.WorkspaceEdit != nil {
 		o.SupportedResourceOperations = caps.Workspace.WorkspaceEdit.ResourceOperations
 	}
+	// Check if the client supports snippets in completion items.
 	if c := caps.TextDocument.Completion; c.CompletionItem.SnippetSupport {
 		o.InsertTextFormat = protocol.SnippetTextFormat
 	}
+	o.InsertReplaceSupported = caps.TextDocument.Completion.CompletionItem.InsertReplaceSupport
 	// Check if the client supports configuration messages.
 	o.ConfigurationSupported = caps.Workspace.Configuration
 	o.DynamicConfigurationSupported = caps.Workspace.DidChangeConfiguration.DynamicRegistration

@@ -57,12 +57,11 @@ var usedGoplsStar = make(map[prop]bool)
 
 // For gopls compatibility, use a different, typically more restrictive, type for some fields.
 var renameProp = map[prop]string{
-	{"CancelParams", "id"}:         "interface{}",
-	{"Command", "arguments"}:       "[]json.RawMessage",
-	{"CompletionItem", "textEdit"}: "TextEdit",
-	{"CodeAction", "data"}:         "json.RawMessage", // delay unmarshalling commands
-	{"Diagnostic", "code"}:         "interface{}",
-	{"Diagnostic", "data"}:         "json.RawMessage", // delay unmarshalling quickfixes
+	{"CancelParams", "id"}:   "interface{}",
+	{"Command", "arguments"}: "[]json.RawMessage",
+	{"CodeAction", "data"}:   "json.RawMessage", // delay unmarshalling commands
+	{"Diagnostic", "code"}:   "interface{}",
+	{"Diagnostic", "data"}:   "json.RawMessage", // delay unmarshalling quickfixes
 
 	{"DocumentDiagnosticReportPartialResult", "relatedDocuments"}: "map[DocumentURI]interface{}",
 

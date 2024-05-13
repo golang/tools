@@ -374,19 +374,31 @@ func (s *server) checkEfficacy(uri protocol.DocumentURI, version int32, change p
 		if item.TextEdit == nil {
 			continue
 		}
-		if item.TextEdit.Range.Start == change.Range.Start {
+		// CompletionTextEdit may have both insert/replace mode ranges.
+		// According to the LSP spec, if an `InsertReplaceEdit` is returned
+		// the edit's insert range must be a prefix of the edit's replace range,
+		// that means it must be contained and starting at the same position.
+		// The efficacy computation uses only the start range, so it is not
+		// affected by whether the client applied the suggestion in insert
+		// or replace mode. Let's just use the replace mode that was the default
+		// in gopls for a while.
+		edit, err := protocol.SelectCompletionTextEdit(item, false)
+		if err != nil {
+			continue
+		}
+		if edit.Range.Start == change.Range.Start {
 			// the change and the proposed completion start at the same
 			if change.RangeLength == 0 && len(change.Text) == 1 {
 				// a single character added it does not count as a completion
 				continue
 			}
-			ix := strings.Index(item.TextEdit.NewText, "$")
-			if ix < 0 && strings.HasPrefix(change.Text, item.TextEdit.NewText) {
+			ix := strings.Index(edit.NewText, "$")
+			if ix < 0 && strings.HasPrefix(change.Text, edit.NewText) {
 				// not a snippet, suggested completion is a prefix of the change
 				complUsed.Inc()
 				return
 			}
-			if ix > 1 && strings.HasPrefix(change.Text, item.TextEdit.NewText[:ix]) {
+			if ix > 1 && strings.HasPrefix(change.Text, edit.NewText[:ix]) {
 				// a snippet, suggested completion up to $ marker is a prefix of the change
 				complUsed.Inc()
 				return

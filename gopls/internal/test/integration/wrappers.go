@@ -519,6 +519,11 @@ func (e *Env) Completion(loc protocol.Location) *protocol.CompletionList {
 	return completions
 }
 
+func (e *Env) SetSuggestionInsertReplaceMode(useReplaceMode bool) {
+	e.T.Helper()
+	e.Editor.SetSuggestionInsertReplaceMode(e.Ctx, useReplaceMode)
+}
+
 // AcceptCompletion accepts a completion for the given item at the given
 // position.
 func (e *Env) AcceptCompletion(loc protocol.Location, item protocol.CompletionItem) {

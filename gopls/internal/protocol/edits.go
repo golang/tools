@@ -139,3 +139,27 @@ func DocumentChangeRename(src, dst DocumentURI) DocumentChange {
 		},
 	}
 }
+
+// SelectCompletionTextEdit returns insert or replace mode TextEdit
+// included in the completion item.
+func SelectCompletionTextEdit(item CompletionItem, useReplaceMode bool) (TextEdit, error) {
+	var edit TextEdit
+	switch typ := item.TextEdit.Value.(type) {
+	case TextEdit: // old style completion item.
+		return typ, nil
+	case InsertReplaceEdit:
+		if useReplaceMode {
+			return TextEdit{
+				NewText: typ.NewText,
+				Range:   typ.Replace,
+			}, nil
+		} else {
+			return TextEdit{
+				NewText: typ.NewText,
+				Range:   typ.Insert,
+			}, nil
+		}
+	default:
+		return edit, fmt.Errorf("unsupported edit type %T", typ)
+	}
+}

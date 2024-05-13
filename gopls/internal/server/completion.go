@@ -60,7 +60,7 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 	if err != nil {
 		event.Error(ctx, "no completions found", err, label.Position.Of(params.Position))
 	}
-	if candidates == nil {
+	if candidates == nil || surrounding == nil {
 		complEmpty.Inc()
 		return &protocol.CompletionList{
 			IsIncomplete: true,
@@ -68,17 +68,15 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 		}, nil
 	}
 
-	rng, err := surrounding.Range()
-	if err != nil {
-		return nil, err
-	}
-
 	// When using deep completions/fuzzy matching, report results as incomplete so
 	// client fetches updated completions after every key stroke.
 	options := snapshot.Options()
 	incompleteResults := options.DeepCompletion || options.Matcher == settings.Fuzzy
 
-	items := toProtocolCompletionItems(candidates, rng, options)
+	items, err := toProtocolCompletionItems(candidates, surrounding, options)
+	if err != nil {
+		return nil, err
+	}
 	if snapshot.FileKind(fh) == file.Go {
 		s.saveLastCompletion(fh.URI(), fh.Version(), items, params.Position)
 	}
@@ -104,7 +102,17 @@ func (s *server) saveLastCompletion(uri protocol.DocumentURI, version int32, ite
 	s.efficacyItems = items
 }
 
-func toProtocolCompletionItems(candidates []completion.CompletionItem, rng protocol.Range, options *settings.Options) []protocol.CompletionItem {
+func toProtocolCompletionItems(candidates []completion.CompletionItem, surrounding *completion.Selection, options *settings.Options) ([]protocol.CompletionItem, error) {
+	replaceRng, err := surrounding.Range()
+	if err != nil {
+		return nil, err
+	}
+	insertRng0, err := surrounding.PrefixRange()
+	if err != nil {
+		return nil, err
+	}
+	suffix := surrounding.Suffix()
+
 	var (
 		items                  = make([]protocol.CompletionItem, 0, len(candidates))
 		numDeepCompletionsSeen int
@@ -141,14 +149,36 @@ func toProtocolCompletionItems(candidates []completion.CompletionItem, rng proto
 		if options.PreferredContentFormat != protocol.Markdown {
 			doc.Value = candidate.Documentation
 		}
+		var edits *protocol.Or_CompletionItem_textEdit
+		if options.InsertReplaceSupported {
+			insertRng := insertRng0
+			if suffix == "" || strings.Contains(insertText, suffix) {
+				insertRng = replaceRng
+			}
+			// Insert and Replace ranges share the same start position and
+			// the same text edit but the end position may differ.
+			// See the comment for the CompletionItem's TextEdit field.
+			// https://pkg.go.dev/golang.org/x/tools/gopls/internal/protocol#CompletionItem
+			edits = &protocol.Or_CompletionItem_textEdit{
+				Value: protocol.InsertReplaceEdit{
+					NewText: insertText,
+					Insert:  insertRng, // replace up to the cursor position.
+					Replace: replaceRng,
+				},
+			}
+		} else {
+			edits = &protocol.Or_CompletionItem_textEdit{
+				Value: protocol.TextEdit{
+					NewText: insertText,
+					Range:   replaceRng,
+				},
+			}
+		}
 		item := protocol.CompletionItem{
-			Label:  candidate.Label,
-			Detail: candidate.Detail,
-			Kind:   candidate.Kind,
-			TextEdit: &protocol.TextEdit{
-				NewText: insertText,
-				Range:   rng,
-			},
+			Label:               candidate.Label,
+			Detail:              candidate.Detail,
+			Kind:                candidate.Kind,
+			TextEdit:            edits,
 			InsertTextFormat:    &options.InsertTextFormat,
 			AdditionalTextEdits: candidate.AdditionalTextEdits,
 			// This is a hack so that the client sorts completion results in the order
@@ -167,5 +197,5 @@ func toProtocolCompletionItems(candidates []completion.CompletionItem, rng proto
 		}
 		items = append(items, item)
 	}
-	return items
+	return items, nil
 }

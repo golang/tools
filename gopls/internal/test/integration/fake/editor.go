@@ -41,12 +41,13 @@ type Editor struct {
 	sandbox    *Sandbox
 
 	// TODO(rfindley): buffers should be keyed by protocol.DocumentURI.
-	mu                 sync.Mutex
-	config             EditorConfig                // editor configuration
-	buffers            map[string]buffer           // open buffers (relative path -> buffer content)
-	serverCapabilities protocol.ServerCapabilities // capabilities / options
-	semTokOpts         protocol.SemanticTokensOptions
-	watchPatterns      []*glob.Glob // glob patterns to watch
+	mu                       sync.Mutex
+	config                   EditorConfig                // editor configuration
+	buffers                  map[string]buffer           // open buffers (relative path -> buffer content)
+	serverCapabilities       protocol.ServerCapabilities // capabilities / options
+	semTokOpts               protocol.SemanticTokensOptions
+	watchPatterns            []*glob.Glob // glob patterns to watch
+	suggestionUseReplaceMode bool
 
 	// Call metrics for the purpose of expectations. This is done in an ad-hoc
 	// manner for now. Perhaps in the future we should do something more
@@ -338,6 +339,7 @@ func clientCapabilities(cfg EditorConfig) (protocol.ClientCapabilities, error) {
 	capabilities.TextDocument.Completion.CompletionItem.TagSupport = &protocol.CompletionItemTagOptions{}
 	capabilities.TextDocument.Completion.CompletionItem.TagSupport.ValueSet = []protocol.CompletionItemTag{protocol.ComplDeprecated}
 	capabilities.TextDocument.Completion.CompletionItem.SnippetSupport = true
+	capabilities.TextDocument.Completion.CompletionItem.InsertReplaceSupport = true
 	capabilities.TextDocument.SemanticTokens.Requests.Full = &protocol.Or_ClientSemanticTokensRequestOptions_full{Value: true}
 	capabilities.Window.WorkDoneProgress = true // support window/workDoneProgress
 	capabilities.TextDocument.SemanticTokens.TokenTypes = []string{
@@ -1190,8 +1192,17 @@ func (e *Editor) Completion(ctx context.Context, loc protocol.Location) (*protoc
 	return completions, nil
 }
 
-// AcceptCompletion accepts a completion for the given item at the given
-// position.
+func (e *Editor) SetSuggestionInsertReplaceMode(_ context.Context, useReplaceMode bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.suggestionUseReplaceMode = useReplaceMode
+}
+
+// AcceptCompletion accepts a completion for the given item
+// at the given position based on the editor's suggestion insert mode.
+// The server provides separate insert/replace ranges only if the
+// Editor declares `InsertReplaceSupport` capability during initialization.
+// Otherwise, it returns a single range and the insert/replace mode is ignored.
 func (e *Editor) AcceptCompletion(ctx context.Context, loc protocol.Location, item protocol.CompletionItem) error {
 	if e.Server == nil {
 		return nil
@@ -1203,8 +1214,12 @@ func (e *Editor) AcceptCompletion(ctx context.Context, loc protocol.Location, it
 	if !ok {
 		return fmt.Errorf("buffer %q is not open", path)
 	}
+	edit, err := protocol.SelectCompletionTextEdit(item, e.suggestionUseReplaceMode)
+	if err != nil {
+		return err
+	}
 	return e.editBufferLocked(ctx, path, append([]protocol.TextEdit{
-		*item.TextEdit,
+		edit,
 	}, item.AdditionalTextEdits...))
 }
 

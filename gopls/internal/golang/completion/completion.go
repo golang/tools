@@ -349,8 +349,14 @@ type Selection struct {
 	mapper             *protocol.Mapper
 }
 
+// Range returns the surrounding identifier's protocol.Range.
 func (p Selection) Range() (protocol.Range, error) {
 	return p.mapper.PosRange(p.tokFile, p.start, p.end)
+}
+
+// PrefixRange returns the protocol.Range of the prefix of the selection.
+func (p Selection) PrefixRange() (protocol.Range, error) {
+	return p.mapper.PosRange(p.tokFile, p.start, p.cursor)
 }
 
 func (p Selection) Prefix() string {

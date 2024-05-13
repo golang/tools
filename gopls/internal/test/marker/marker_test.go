@@ -1334,7 +1334,9 @@ func snippetMarker(mark marker, src protocol.Location, item completionItem, want
 		if i.Label == item.Label {
 			found = true
 			if i.TextEdit != nil {
-				got = i.TextEdit.NewText
+				if edit, err := protocol.SelectCompletionTextEdit(i, false); err == nil {
+					got = edit.NewText
+				}
 			}
 			break
 		}
@@ -1428,9 +1430,14 @@ func acceptCompletionMarker(mark marker, src protocol.Location, label string, go
 		mark.errorf("Completion(...) did not return an item labeled %q", label)
 		return
 	}
+	edit, err := protocol.SelectCompletionTextEdit(*selected, false)
+	if err != nil {
+		mark.errorf("Completion(...) did not return a valid edit: %v", err)
+		return
+	}
 	filename := mark.path()
 	mapper := mark.mapper()
-	patched, _, err := protocol.ApplyEdits(mapper, append([]protocol.TextEdit{*selected.TextEdit}, selected.AdditionalTextEdits...))
+	patched, _, err := protocol.ApplyEdits(mapper, append([]protocol.TextEdit{edit}, selected.AdditionalTextEdits...))
 
 	if err != nil {
 		mark.errorf("ApplyProtocolEdits failed: %v", err)
