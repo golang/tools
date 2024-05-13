@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/doc"
+	"golang.org/x/tools/internal/testenv"
 )
 
 // TestVetSuite ensures that gopls's analyser suite is a superset of vet's.
@@ -19,6 +20,8 @@ import (
 // This test may fail spuriously if gopls/doc/generate.TestGenerated
 // fails. In that case retry after re-running the JSON generator.
 func TestVetSuite(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+
 	// Read gopls' suite from the API JSON.
 	goplsAnalyzers := make(map[string]bool)
 	var api doc.API
