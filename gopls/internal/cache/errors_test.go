@@ -19,8 +19,8 @@ func TestParseErrorMessage(t *testing.T) {
 		name             string
 		in               string
 		expectedFileName string
-		expectedLine     int
-		expectedColumn   int
+		expectedLine     int // (missing => 1)
+		expectedColumn   int // (missing => 1)
 	}{
 		{
 			name:             "from go list output",
@@ -34,7 +34,7 @@ func TestParseErrorMessage(t *testing.T) {
 			in:               "C:\\foo\\bar.go:13: message",
 			expectedFileName: "bar.go",
 			expectedLine:     13,
-			expectedColumn:   0,
+			expectedColumn:   1,
 		},
 	}
 

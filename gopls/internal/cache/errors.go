@@ -433,13 +433,13 @@ func splitFileLineCol(s string) (file string, line, col8 int) {
 	// strip col ":%d"
 	s, n1 := stripColonDigits(s)
 	if n1 < 0 {
-		return s, 0, 0 // "filename"
+		return s, 1, 1 // "filename"
 	}
 
 	// strip line ":%d"
 	s, n2 := stripColonDigits(s)
 	if n2 < 0 {
-		return s, n1, 0 // "filename:line"
+		return s, n1, 1 // "filename:line"
 	}
 
 	return s, n2, n1 // "filename:line:col"
