@@ -79,7 +79,7 @@ func (s *Serve) remoteArgs(network, address string) []string {
 // It blocks until the server shuts down.
 func (s *Serve) Run(ctx context.Context, args ...string) error {
 	// TODO(adonovan): eliminate this once telemetry.Start has this effect.
-	go upload.Run(nil) // start telemetry uploader
+	go upload.Run(upload.RunConfig{}) // start telemetry uploader
 
 	if len(args) > 0 {
 		return tool.CommandLineErrorf("server does not take arguments, got %v", args)
