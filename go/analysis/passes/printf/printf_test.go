@@ -16,4 +16,5 @@ func Test(t *testing.T) {
 	printf.Analyzer.Flags.Set("funcs", "Warn,Warnf")
 
 	analysistest.Run(t, testdata, printf.Analyzer, "a", "b", "nofmt", "typeparams")
+	analysistest.RunWithSuggestedFixes(t, testdata, printf.Analyzer, "fix")
 }
