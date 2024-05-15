@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
@@ -125,6 +126,39 @@ func CanExtractVariable(start, end token.Pos, file *ast.File) (ast.Expr, []ast.N
 		return expr, path, true, nil
 	}
 	return nil, nil, false, fmt.Errorf("cannot extract an %T to a variable", expr)
+}
+
+// CanExtractInterface reports whether the code in the given position is for a
+// type which can be represented as an interface.
+func CanExtractInterface(pkg *cache.Package, start, end token.Pos, file *ast.File) (ast.Expr, []ast.Node, bool, error) {
+	path, _ := astutil.PathEnclosingInterval(file, start, end)
+	if len(path) == 0 {
+		return nil, nil, false, fmt.Errorf("no path enclosing interval")
+	}
+
+	node := path[0]
+	expr, ok := node.(ast.Expr)
+	if !ok {
+		return nil, nil, false, fmt.Errorf("node is not an expression")
+	}
+
+	switch e := expr.(type) {
+	case *ast.Ident:
+		o, ok := pkg.TypesInfo().ObjectOf(e).(*types.TypeName)
+		if !ok {
+			return nil, nil, false, fmt.Errorf("cannot extract a %T to an interface", expr)
+		}
+
+		if _, ok := o.Type().(*types.Basic); ok {
+			return nil, nil, false, fmt.Errorf("cannot extract a basic type to an interface")
+		}
+
+		return expr, path, true, nil
+	case *ast.StarExpr, *ast.SelectorExpr:
+		return expr, path, true, nil
+	default:
+		return nil, nil, false, fmt.Errorf("cannot extract a %T to an interface", expr)
+	}
 }
 
 // Calculate indentation for insertion.
