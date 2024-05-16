@@ -170,7 +170,7 @@ Default: `false`.
 ### UI
 
 <a id='codelenses'></a>
-#### ⬤ **codelenses** *map[string]bool*
+#### ⬤ **codelenses** *map[golang.org/x/tools/gopls/internal/protocol.CodeLensSource]bool*
 
 codelenses overrides the enabled/disabled state of code lenses. See the
 "Code Lenses" section of the
@@ -190,7 +190,7 @@ Example Usage:
 }
 ```
 
-Default: `{"gc_details":false,"generate":true,"regenerate_cgo":true,"tidy":true,"upgrade_dependency":true,"vendor":true}`.
+Default: `{"gc_details":false,"generate":true,"regenerate_cgo":true,"run_govulncheck":false,"tidy":true,"upgrade_dependency":true,"vendor":true}`.
 
 <a id='semanticTokens'></a>
 #### ⬤ **semanticTokens** *bool*
@@ -550,49 +550,149 @@ Default: 'both'.
 
 ## Code Lenses
 
-These are the code lenses that `gopls` currently supports. They can be enabled
-and disabled using the `codelenses` setting, documented above. Their names and
-features are subject to change.
+A "code lens" is a command associated with a range of a source file.
+(They are so named because VS Code displays them with a magnifying
+glass icon in the margin.) The VS Code manual describes code lenses as
+"[actionable, contextual information, interspersed in your source
+code](https://code.visualstudio.com/blogs/2017/02/12/code-lens-roundup)".
+The LSP `CodeLens` operation requests the
+current set of code lenses for a file.
+
+Gopls generates code lenses from a number of sources.
+They are described below.
+
+They can be enabled and disabled using the `codelenses` setting,
+documented above. Their names and features are subject to change.
 
 <!-- BEGIN Lenses: DO NOT MANUALLY EDIT THIS SECTION -->
-### **Toggle gc_details**
+### ⬤ `gc_details`: Toggle display of Go compiler optimization decisions
 
-Identifier: `gc_details`
 
-Toggle the calculation of gc annotations.
-### **Run go generate**
+This codelens source causes the `package` declaration of
+each file to be annotated with a command to toggle the
+state of the per-session variable that controls whether
+optimization decisions from the Go compiler (formerly known
+as "gc") should be displayed as diagnostics.
 
-Identifier: `generate`
+Optimization decisions include:
+- whether a variable escapes, and how escape is inferred;
+- whether a nil-pointer check is implied or eliminated;
+- whether a function can be inlined.
 
-Runs `go generate` for a given directory.
-### **Regenerate cgo**
+TODO(adonovan): this source is off by default because the
+annotation is annoying and because VS Code has a separate
+"Toggle gc details" command. Replace it with a Code Action
+("Source action...").
 
-Identifier: `regenerate_cgo`
 
-Regenerates cgo definitions.
-### **Run vulncheck**
+Default: off
 
-Identifier: `run_govulncheck`
+File type: Go
 
-Run vulnerability check (`govulncheck`).
-### **Run test(s) (legacy)**
+### ⬤ `generate`: Run `go generate`
 
-Identifier: `test`
 
-Runs `go test` for a specific set of test or benchmark functions.
-### **Run go mod tidy**
+This codelens source annotates any `//go:generate` comments
+with commands to run `go generate` in this directory, on
+all directories recursively beneath this one.
 
-Identifier: `tidy`
+See [Generating code](https://go.dev/blog/generate) for
+more details.
 
-Runs `go mod tidy` for a module.
-### **Upgrade a dependency**
 
-Identifier: `upgrade_dependency`
+Default: on
 
-Upgrades a dependency in the go.mod file for a module.
-### **Run go mod vendor**
+File type: Go
 
-Identifier: `vendor`
+### ⬤ `regenerate_cgo`: Re-generate cgo declarations
 
-Runs `go mod vendor` for a module.
+
+This codelens source annotates an `import "C"` declaration
+with a command to re-run the [cgo
+command](https://pkg.go.dev/cmd/cgo) to regenerate the
+corresponding Go declarations.
+
+Use this after editing the C code in comments attached to
+the import, or in C header files included by it.
+
+
+Default: on
+
+File type: Go
+
+### ⬤ `test`: Run tests and benchmarks
+
+
+This codelens source annotates each `Test` and `Benchmark`
+function in a `*_test.go` file with a command to run it.
+
+This source is off by default because VS Code has
+a more sophisticated client-side Test Explorer.
+See golang/go#67400 for a discussion of this feature.
+
+
+Default: off
+
+File type: Go
+
+### ⬤ `run_govulncheck`: Run govulncheck
+
+
+This codelens source annotates the `module` directive in a
+go.mod file with a command to run Govulncheck.
+
+[Govulncheck](https://go.dev/blog/vuln) is a static
+analysis tool that computes the set of functions reachable
+within your application, including dependencies;
+queries a database of known security vulnerabilities; and
+reports any potential problems it finds.
+
+
+Default: off
+
+File type: go.mod
+
+### ⬤ `tidy`: Tidy go.mod file
+
+
+This codelens source annotates the `module` directive in a
+go.mod file with a command to run [`go mod
+tidy`](https://go.dev/ref/mod#go-mod-tidy), which ensures
+that the go.mod file matches the source code in the module.
+
+
+Default: on
+
+File type: go.mod
+
+### ⬤ `upgrade_dependency`: Update dependencies
+
+
+This codelens source annotates the `module` directive in a
+go.mod file with commands to:
+
+- check for available upgrades,
+- upgrade direct dependencies, and
+- upgrade all dependencies transitively.
+
+
+Default: on
+
+File type: go.mod
+
+### ⬤ `vendor`: Update vendor directory
+
+
+This codelens source annotates the `module` directive in a
+go.mod file with a command to run [`go mod
+vendor`](https://go.dev/ref/mod#go-mod-vendor), which
+creates or updates the directory named `vendor` in the
+module root so that it contains an up-to-date copy of all
+necessary package dependencies.
+
+
+Default: on
+
+File type: go.mod
+
 <!-- END Lenses: DO NOT MANUALLY EDIT THIS SECTION -->

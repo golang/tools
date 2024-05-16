@@ -9,15 +9,17 @@ import (
 	"fmt"
 	"sort"
 
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/internal/event"
 )
 
+// CodeLens reports the set of available CodeLenses
+// (range-associated commands) in the given file.
 func (s *server) CodeLens(ctx context.Context, params *protocol.CodeLensParams) ([]protocol.CodeLens, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.codeLens", label.URI.Of(params.TextDocument.URI))
 	defer done()
@@ -28,36 +30,36 @@ func (s *server) CodeLens(ctx context.Context, params *protocol.CodeLensParams) 
 	}
 	defer release()
 
-	var lenses map[command.Command]golang.LensFunc
+	var lensFuncs map[protocol.CodeLensSource]cache.CodeLensSourceFunc
 	switch snapshot.FileKind(fh) {
 	case file.Mod:
-		lenses = mod.LensFuncs()
+		lensFuncs = mod.CodeLensSources()
 	case file.Go:
-		lenses = golang.LensFuncs()
+		lensFuncs = golang.CodeLensSources()
 	default:
 		// Unsupported file kind for a code lens.
 		return nil, nil
 	}
-	var result []protocol.CodeLens
-	for cmd, lf := range lenses {
-		if !snapshot.Options().Codelenses[string(cmd)] {
+	var lenses []protocol.CodeLens
+	for kind, lensFunc := range lensFuncs {
+		if !snapshot.Options().Codelenses[kind] {
 			continue
 		}
-		added, err := lf(ctx, snapshot, fh)
+		added, err := lensFunc(ctx, snapshot, fh)
 		// Code lens is called on every keystroke, so we should just operate in
 		// a best-effort mode, ignoring errors.
 		if err != nil {
-			event.Error(ctx, fmt.Sprintf("code lens %s failed", cmd), err)
+			event.Error(ctx, fmt.Sprintf("code lens %s failed", kind), err)
 			continue
 		}
-		result = append(result, added...)
+		lenses = append(lenses, added...)
 	}
-	sort.Slice(result, func(i, j int) bool {
-		a, b := result[i], result[j]
+	sort.Slice(lenses, func(i, j int) bool {
+		a, b := lenses[i], lenses[j]
 		if cmp := protocol.CompareRange(a.Range, b.Range); cmp != 0 {
 			return cmp < 0
 		}
 		return a.Command.Command < b.Command.Command
 	})
-	return result, nil
+	return lenses, nil
 }

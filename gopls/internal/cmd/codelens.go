@@ -68,7 +68,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 
 	r.app.editFlags = &r.EditFlags // in case a codelens perform an edit
 
-	// Override the default setting for codelenses[Test], which is
+	// Override the default setting for codelenses["test"], which is
 	// off by default because VS Code has a superior client-side
 	// implementation. But this client is not VS Code.
 	// See golang.LensFuncs().
@@ -78,9 +78,9 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 			origOptions(opts)
 		}
 		if opts.Codelenses == nil {
-			opts.Codelenses = make(map[string]bool)
+			opts.Codelenses = make(map[protocol.CodeLensSource]bool)
 		}
-		opts.Codelenses["test"] = true
+		opts.Codelenses[protocol.CodeLensTest] = true
 	}
 
 	// TODO(adonovan): cleanup: factor progress with stats subcommand.

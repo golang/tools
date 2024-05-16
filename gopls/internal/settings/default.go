@@ -99,14 +99,14 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						ExperimentalPostfixCompletions: true,
 						CompleteFunctionCalls:          true,
 					},
-					Codelenses: map[string]bool{
-						string(command.Generate):          true,
-						string(command.RegenerateCgo):     true,
-						string(command.Tidy):              true,
-						string(command.GCDetails):         false,
-						string(command.UpgradeDependency): true,
-						string(command.Vendor):            true,
-						// TODO(hyangah): enable command.RunGovulncheck.
+					Codelenses: map[protocol.CodeLensSource]bool{
+						protocol.CodeLensGenerate:          true,
+						protocol.CodeLensRegenerateCgo:     true,
+						protocol.CodeLensTidy:              true,
+						protocol.CodeLensGCDetails:         false,
+						protocol.CodeLensUpgradeDependency: true,
+						protocol.CodeLensVendor:            true,
+						protocol.CodeLensRunGovulncheck:    false, // TODO(hyangah): enable
 					},
 					SemanticTokens: true,
 				},

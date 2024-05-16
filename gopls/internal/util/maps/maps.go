@@ -45,3 +45,12 @@ func SameKeys[K comparable, V1, V2 any](x map[K]V1, y map[K]V2) bool {
 	}
 	return true
 }
+
+// Clone returns a new map with the same entries as m.
+func Clone[M ~map[K]V, K comparable, V any](m M) M {
+	copy := make(map[K]V, len(m))
+	for k, v := range m {
+		copy[k] = v
+	}
+	return copy
+}

@@ -19,15 +19,13 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol/command"
 )
 
-type LensFunc func(context.Context, *cache.Snapshot, file.Handle) ([]protocol.CodeLens, error)
-
-// LensFuncs returns the supported lensFuncs for Go files.
-func LensFuncs() map[command.Command]LensFunc {
-	return map[command.Command]LensFunc{
-		command.Generate:      goGenerateCodeLens,
-		command.Test:          runTestCodeLens,
-		command.RegenerateCgo: regenerateCgoLens,
-		command.GCDetails:     toggleDetailsCodeLens,
+// CodeLensSources returns the supported sources of code lenses for Go files.
+func CodeLensSources() map[protocol.CodeLensSource]cache.CodeLensSourceFunc {
+	return map[protocol.CodeLensSource]cache.CodeLensSourceFunc{
+		protocol.CodeLensGenerate:      goGenerateCodeLens,    // commands: Generate
+		protocol.CodeLensTest:          runTestCodeLens,       // commands: Test
+		protocol.CodeLensRegenerateCgo: regenerateCgoLens,     // commands: RegenerateCgo
+		protocol.CodeLensGCDetails:     toggleDetailsCodeLens, // commands: GCDetails
 	}
 }
 

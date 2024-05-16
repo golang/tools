@@ -35,12 +35,15 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/doc"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/mod"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/protocol/command/commandmeta"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
@@ -133,12 +136,23 @@ func loadAPI() (*doc.API, error) {
 		&packages.Config{
 			Mode: packages.NeedTypes | packages.NeedTypesInfo | packages.NeedSyntax | packages.NeedDeps,
 		},
-		"golang.org/x/tools/gopls/internal/settings",
+		"golang.org/x/tools/gopls/internal/settings", // for settings
+		"golang.org/x/tools/gopls/internal/protocol", // for lenses
 	)
 	if err != nil {
 		return nil, err
 	}
-	pkg := pkgs[0]
+	// TODO(adonovan): document at packages.Load that the result
+	// order does not match the pattern order.
+	var protocolPkg, settingsPkg *packages.Package
+	for _, pkg := range pkgs {
+		switch pkg.Types.Name() {
+		case "settings":
+			settingsPkg = pkg
+		case "protocol":
+			protocolPkg = pkg
+		}
+	}
 
 	defaults := settings.DefaultOptions()
 	api := &doc.API{
@@ -150,7 +164,10 @@ func loadAPI() (*doc.API, error) {
 	if err != nil {
 		return nil, err
 	}
-	api.Lenses = loadLenses(api.Commands)
+	api.Lenses, err = loadLenses(protocolPkg, defaults.Codelenses)
+	if err != nil {
+		return nil, err
+	}
 
 	// Transform the internal command name to the external command name.
 	for _, c := range api.Commands {
@@ -161,11 +178,11 @@ func loadAPI() (*doc.API, error) {
 		reflect.ValueOf(defaults.UserOptions),
 	} {
 		// Find the type information and ast.File corresponding to the category.
-		optsType := pkg.Types.Scope().Lookup(category.Type().Name())
+		optsType := settingsPkg.Types.Scope().Lookup(category.Type().Name())
 		if optsType == nil {
-			return nil, fmt.Errorf("could not find %v in scope %v", category.Type().Name(), pkg.Types.Scope())
+			return nil, fmt.Errorf("could not find %v in scope %v", category.Type().Name(), settingsPkg.Types.Scope())
 		}
-		opts, err := loadOptions(category, optsType, pkg, "")
+		opts, err := loadOptions(category, optsType, settingsPkg, "")
 		if err != nil {
 			return nil, err
 		}
@@ -516,30 +533,65 @@ func structDoc(fields []*commandmeta.Field, level int) string {
 	return b.String()
 }
 
-func loadLenses(commands []*doc.Command) []*doc.Lens {
-	all := map[command.Command]struct{}{}
-	for k := range golang.LensFuncs() {
-		all[k] = struct{}{}
-	}
-	for k := range mod.LensFuncs() {
-		if _, ok := all[k]; ok {
-			panic(fmt.Sprintf("duplicate lens %q", string(k)))
+// loadLenses combines the syntactic comments from the protocol
+// package with the default values from settings.DefaultOptions(), and
+// returns a list of Code Lens descriptors.
+func loadLenses(protocolPkg *packages.Package, defaults map[protocol.CodeLensSource]bool) ([]*doc.Lens, error) {
+	// Find the CodeLensSource enums among the files of the protocol package.
+	// Map each enum value to its doc comment.
+	enumDoc := make(map[string]string)
+	for _, f := range protocolPkg.Syntax {
+		for _, decl := range f.Decls {
+			if decl, ok := decl.(*ast.GenDecl); ok && decl.Tok == token.CONST {
+				for _, spec := range decl.Specs {
+					spec := spec.(*ast.ValueSpec)
+					posn := safetoken.StartPosition(protocolPkg.Fset, spec.Pos())
+					if id, ok := spec.Type.(*ast.Ident); ok && id.Name == "CodeLensSource" {
+						if len(spec.Names) != 1 || len(spec.Values) != 1 {
+							return nil, fmt.Errorf("%s: declare one CodeLensSource per line", posn)
+						}
+						lit, ok := spec.Values[0].(*ast.BasicLit)
+						if !ok && lit.Kind != token.STRING {
+							return nil, fmt.Errorf("%s: CodeLensSource value is not a string literal", posn)
+						}
+						value, _ := strconv.Unquote(lit.Value) // ignore error: AST is well-formed
+						if spec.Doc == nil {
+							return nil, fmt.Errorf("%s: %s lacks doc comment", posn, spec.Names[0].Name)
+						}
+						enumDoc[value] = spec.Doc.Text()
+					}
+				}
+			}
 		}
-		all[k] = struct{}{}
+	}
+	if len(enumDoc) == 0 {
+		return nil, fmt.Errorf("failed to extract any CodeLensSource declarations")
 	}
 
+	// Build list of Lens descriptors.
 	var lenses []*doc.Lens
-
-	for _, cmd := range commands {
-		if _, ok := all[command.Command(cmd.Command)]; ok {
+	addAll := func(sources map[protocol.CodeLensSource]cache.CodeLensSourceFunc, fileType string) error {
+		slice := maps.Keys(sources)
+		sort.Slice(slice, func(i, j int) bool { return slice[i] < slice[j] })
+		for _, source := range slice {
+			docText, ok := enumDoc[string(source)]
+			if !ok {
+				return fmt.Errorf("missing CodeLensSource declaration for %s", source)
+			}
+			title, docText, _ := strings.Cut(docText, "\n") // first line is title
 			lenses = append(lenses, &doc.Lens{
-				Lens:  cmd.Command,
-				Title: cmd.Title,
-				Doc:   cmd.Doc,
+				FileType: fileType,
+				Lens:     string(source),
+				Title:    title,
+				Doc:      docText,
+				Default:  defaults[source],
 			})
 		}
+		return nil
 	}
-	return lenses
+	addAll(golang.CodeLensSources(), "Go")
+	addAll(mod.CodeLensSources(), "go.mod")
+	return lenses, nil
 }
 
 func loadAnalyzers(m map[string]*settings.Analyzer) []*doc.Analyzer {
@@ -711,7 +763,10 @@ func rewriteSettings(prevContent []byte, api *doc.API) ([]byte, error) {
 	// Replace the lenses section.
 	var buf bytes.Buffer
 	for _, lens := range api.Lenses {
-		fmt.Fprintf(&buf, "### **%v**\n\nIdentifier: `%v`\n\n%v\n", lens.Title, lens.Lens, lens.Doc)
+		fmt.Fprintf(&buf, "### ⬤ `%s`: %s\n\n", lens.Lens, lens.Title)
+		fmt.Fprintf(&buf, "%s\n\n", lens.Doc)
+		fmt.Fprintf(&buf, "Default: %v\n\n", onOff(lens.Default))
+		fmt.Fprintf(&buf, "File type: %s\n\n", lens.FileType)
 	}
 	return replaceSection(content, "Lenses", buf.Bytes())
 }
@@ -846,4 +901,14 @@ func replaceSection(content []byte, sectionName string, replacement []byte) ([]b
 	result = append(result, replacement...)
 	result = append(result, content[idx[3]:]...)
 	return result, nil
+}
+
+type onOff bool
+
+func (o onOff) String() string {
+	if o {
+		return "on"
+	} else {
+		return "off"
+	}
 }

@@ -2284,3 +2284,7 @@ func (s *Snapshot) WantGCDetails(id metadata.PackageID) bool {
 	_, ok := s.gcOptimizationDetails[id]
 	return ok
 }
+
+// A CodeLensSourceFunc is a function that reports CodeLenses (range-associated
+// commands) for a given file.
+type CodeLensSourceFunc func(context.Context, *Snapshot, file.Handle) ([]protocol.CodeLens, error)

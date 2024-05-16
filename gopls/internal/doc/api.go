@@ -63,9 +63,11 @@ type Command struct {
 }
 
 type Lens struct {
-	Lens  string
-	Title string
-	Doc   string
+	FileType string // e.g. "Go", "go.mod"
+	Lens     string
+	Title    string
+	Doc      string
+	Default  bool
 }
 
 type Analyzer struct {

@@ -13,6 +13,8 @@ import (
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/maps"
+	"golang.org/x/tools/gopls/internal/util/slices"
 )
 
 type Annotation string
@@ -183,7 +185,7 @@ type UIOptions struct {
 	// ...
 	// }
 	// ```
-	Codelenses map[string]bool
+	Codelenses map[protocol.CodeLensSource]bool
 
 	// SemanticTokens controls whether the LSP server will send
 	// semantic tokens to the client. If false, gopls will send empty semantic
@@ -603,7 +605,7 @@ type OptionResults []OptionResult
 
 type OptionResult struct {
 	Name  string
-	Value any
+	Value any // JSON value (e.g. string, int, bool, map[string]any)
 	Error error
 }
 
@@ -685,25 +687,12 @@ func (o *Options) Clone() *Options {
 		UserOptions:     o.UserOptions,
 	}
 	// Fully clone any slice or map fields. Only UserOptions can be modified.
-	copyStringMap := func(src map[string]bool) map[string]bool {
-		dst := make(map[string]bool)
-		for k, v := range src {
-			dst[k] = v
-		}
-		return dst
-	}
-	result.Analyses = copyStringMap(o.Analyses)
-	result.Codelenses = copyStringMap(o.Codelenses)
-
-	copySlice := func(src []string) []string {
-		dst := make([]string, len(src))
-		copy(dst, src)
-		return dst
-	}
+	result.Analyses = maps.Clone(o.Analyses)
+	result.Codelenses = maps.Clone(o.Codelenses)
 	result.SetEnvSlice(o.EnvSlice())
-	result.BuildFlags = copySlice(o.BuildFlags)
-	result.DirectoryFilters = copySlice(o.DirectoryFilters)
-	result.StandaloneTags = copySlice(o.StandaloneTags)
+	result.BuildFlags = slices.Clone(o.BuildFlags)
+	result.DirectoryFilters = slices.Clone(o.DirectoryFilters)
+	result.StandaloneTags = slices.Clone(o.StandaloneTags)
 
 	return result
 }
@@ -732,12 +721,12 @@ func validateDirectoryFilter(ifilter string) (string, error) {
 	return strings.TrimRight(filepath.FromSlash(filter), "/"), nil
 }
 
-func (o *Options) set(name string, value interface{}, seen map[string]struct{}) OptionResult {
+func (o *Options) set(name string, value any, seen map[string]struct{}) OptionResult {
 	// Flatten the name in case we get options with a hierarchy.
 	split := strings.Split(name, ".")
 	name = split[len(split)-1]
 
-	result := OptionResult{Name: name, Value: value}
+	result := &OptionResult{Name: name, Value: value}
 	if _, ok := seen[name]; ok {
 		result.parseErrorf("duplicate configuration for %s", name)
 	}
@@ -745,7 +734,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 
 	switch name {
 	case "env":
-		menv, ok := value.(map[string]interface{})
+		menv, ok := value.(map[string]any)
 		if !ok {
 			result.parseErrorf("invalid type %T, expect map", value)
 			break
@@ -759,7 +748,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 
 	case "buildFlags":
 		// TODO(rfindley): use asStringSlice.
-		iflags, ok := value.([]interface{})
+		iflags, ok := value.([]any)
 		if !ok {
 			result.parseErrorf("invalid type %T, expect list", value)
 			break
@@ -772,7 +761,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 
 	case "directoryFilters":
 		// TODO(rfindley): use asStringSlice.
-		ifilters, ok := value.([]interface{})
+		ifilters, ok := value.([]any)
 		if !ok {
 			result.parseErrorf("invalid type %T, expect list", value)
 			break
@@ -782,7 +771,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 			filter, err := validateDirectoryFilter(fmt.Sprintf("%v", ifilter))
 			if err != nil {
 				result.parseErrorf("%v", err)
-				return result
+				return *result
 			}
 			filters = append(filters, strings.TrimRight(filepath.FromSlash(filter), "/"))
 		}
@@ -859,10 +848,10 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		}
 
 	case "analyses":
-		result.setBoolMap(&o.Analyses)
+		o.Analyses = asBoolMap[string](result)
 
 	case "hints":
-		result.setBoolMap(&o.Hints)
+		o.Hints = asBoolMap[string](result)
 
 	case "annotations":
 		result.setAnnotationMap(&o.Annotations)
@@ -876,14 +865,13 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		}
 
 	case "codelenses", "codelens":
-		var lensOverrides map[string]bool
-		result.setBoolMap(&lensOverrides)
+		lensOverrides := asBoolMap[protocol.CodeLensSource](result)
 		if result.Error == nil {
 			if o.Codelenses == nil {
-				o.Codelenses = make(map[string]bool)
+				o.Codelenses = make(map[protocol.CodeLensSource]bool)
 			}
-			for lens, enabled := range lensOverrides {
-				o.Codelenses[lens] = enabled
+			for source, enabled := range lensOverrides {
+				o.Codelenses[source] = enabled
 			}
 		}
 
@@ -953,7 +941,7 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 		result.deprecated("")
 
 	case "templateExtensions":
-		if iexts, ok := value.([]interface{}); ok {
+		if iexts, ok := value.([]any); ok {
 			ans := []string{}
 			for _, x := range iexts {
 				ans = append(ans, fmt.Sprint(x))
@@ -1076,11 +1064,11 @@ func (o *Options) set(name string, value interface{}, seen map[string]struct{}) 
 	default:
 		result.unexpected()
 	}
-	return result
+	return *result
 }
 
 // parseErrorf reports an error parsing the current configuration value.
-func (r *OptionResult) parseErrorf(msg string, values ...interface{}) {
+func (r *OptionResult) parseErrorf(msg string, values ...any) {
 	if false {
 		_ = fmt.Sprintf(msg, values...) // this causes vet to check this like printf
 	}
@@ -1143,13 +1131,8 @@ func (r *OptionResult) setDuration(d *time.Duration) {
 	}
 }
 
-func (r *OptionResult) setBoolMap(bm *map[string]bool) {
-	m := r.asBoolMap()
-	*bm = m
-}
-
 func (r *OptionResult) setAnnotationMap(bm *map[Annotation]bool) {
-	all := r.asBoolMap()
+	all := asBoolMap[string](r)
 	if all == nil {
 		return
 	}
@@ -1188,16 +1171,16 @@ func (r *OptionResult) setAnnotationMap(bm *map[Annotation]bool) {
 	*bm = m
 }
 
-func (r *OptionResult) asBoolMap() map[string]bool {
-	all, ok := r.Value.(map[string]interface{})
+func asBoolMap[K ~string](r *OptionResult) map[K]bool {
+	all, ok := r.Value.(map[string]any)
 	if !ok {
 		r.parseErrorf("invalid type %T for map[string]bool option", r.Value)
 		return nil
 	}
-	m := make(map[string]bool)
+	m := make(map[K]bool)
 	for a, enabled := range all {
 		if e, ok := enabled.(bool); ok {
-			m[a] = e
+			m[K(a)] = e
 		} else {
 			r.parseErrorf("invalid type %T for map key %q", enabled, a)
 			return m
@@ -1216,7 +1199,7 @@ func (r *OptionResult) asString() (string, bool) {
 }
 
 func (r *OptionResult) asStringSlice() ([]string, bool) {
-	iList, ok := r.Value.([]interface{})
+	iList, ok := r.Value.([]any)
 	if !ok {
 		r.parseErrorf("invalid type %T, expect list", r.Value)
 		return nil, false
